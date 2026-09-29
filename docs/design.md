@@ -105,7 +105,8 @@ The first line of the goal file is the state the collector reads:
 |---|---|---|
 | (goal text) | working | running |
 | `BLOCKED: <reason> WATCH=<live pid>` | waiting on something outside the machine (CI, review) | waiting; normal |
-| `BLOCKED: <reason>` (no watcher, or dead pid) | stuck | Triage |
+| `BLOCKED: <reason> OWNER=<who> ACTION=<what>` | needs a named person to act | Triage, owner notified once |
+| `BLOCKED: <reason>` (no watcher, dead pid, or no owner) | stuck | Triage as "recovery required" |
 | `DONE` | agent says the goal is met | verify on GitHub, then free the worker |
 
 **fleet-board ships a generic version of this** (goal file, `DONE`/`BLOCKED`
@@ -130,6 +131,11 @@ the owner on 2026-09-28). It is configurable per repo.
 The agent writes its own goal file, so `DONE` is a claim, not proof. A worker
 is free only when the goal says `DONE` **and** GitHub agrees: the linked PR is
 merged, or the issue is closed. If they disagree, the goal goes to Triage.
+
+A `BLOCKED` line must say how it gets unblocked: a live watcher, or an owner
+and an action (rule adopted from Paperclip). The owner is notified exactly
+once per block; leaving and re-entering Blocked is a new block. A `BLOCKED`
+line that names neither is treated as stuck, never as waiting.
 
 ### Claims
 
@@ -159,14 +165,37 @@ CI failures and review rounds happen inside the goal, driven by the agents.
 Separate PR jobs (fix checks, address reviews) are only for PRs that no goal
 owns.
 
+## Reliability rules
+
+Adopted from Paperclip (see [research/paperclip.md](research/paperclip.md)):
+
+- **One corrective nudge.** A goal that stops without `DONE` or a valid
+  `BLOCKED` line gets exactly one automatic nudge ("write DONE or BLOCKED
+  with an owner or watcher"). If it stops again, it goes to Triage.
+- **Escalating cooldown.** After 2 consecutive runs with no progress (no new
+  commits, no goal-file change), the goal is paused with a cooldown that grows
+  from 2 to 30 minutes before the next nudge.
+- **Review-loop cap.** After 3 consecutive CI-fix or review rounds on the same
+  PR with no merge, the goal is paused and escalated to Triage.
+- **Preflight before dispatch.** On the target machine, check that the harness
+  is signed in (usage probe answers), `gh` can push to the repo, the checkout
+  exists, the folder is trusted, and disk has room. Refuse with a named reason
+  (`harness_not_signed_in`, `push_access_missing`, `checkout_missing`,
+  `folder_untrusted`, `disk_low`).
+- **No catch-up floods.** After a hub outage or a reset, dispatch resumes at
+  the normal pace; it never starts every backlog item at once.
+- **Review each stopped state once.** Stuck and verifying states are
+  fingerprinted (goal line + head commit + PR state) so the same state is
+  never raised twice.
+
 ## Views
 
 | View | Job | Key actions |
 |---|---|---|
-| Triage (home) | What needs me right now: goals blocked with no watcher, `DONE` goals GitHub disagrees with, permission prompts, pacing alerts | `j`/`k` move, `a` act, `s` snooze, `o` open |
+| Triage (home) | One ranked decisions feed: permission prompts, blocked goals by chip (needs decision, recovery required, external wait, owner paused), `DONE` claims GitHub disagrees with, pacing alerts. Items expire after 7 days; snooze per item | `j`/`k` move, `a` act, `s` snooze, `o` open |
 | Work | What should run next | Board by lifecycle stage, dispatch a goal for an issue, take over a PR no goal owns |
-| Session | Step into one session | Sidebar of all sessions on all machines, pane, send keys, attach, move, restart, stop |
-| Fleet | Manage the machines | Drain / resume, agent limits, capacity, settings, audit log |
+| Session | Step into one session | Sidebar of all sessions on all machines, pane, send keys, attach, move, restart, stop; run history per goal (restarts, nudges, usage consumed, transcript path) |
+| Fleet | Manage the machines | Drain / resume, limits, weekly burn-down per account, settings, audit log; a timeline of which goal ran where and when (7 days) |
 
 On every view: a summary strip (working, needs you, stuck, free slots, usage
 left per agent), `⌘K` or `/` jump-to switcher, `n` next session that needs
@@ -272,10 +301,26 @@ screen that no longer parses is reported as "unknown", never guessed.
   prompt. Today that is Claude (via its `Notification` hook). Codex and Muse
   are notice-only until waiting detection is verified.
 - Drain means "finish current work, take nothing new". It never kills.
+- **Trusted issues only.** Issue bodies are untrusted input to an agent with
+  push and merge rights. Auto-dispatch only takes issues opened or labelled
+  `agent-ready` by an allow-listed user; anything else needs a manual dispatch
+  (low-trust idea from Paperclip).
+- The audit log is permanent, filterable and exportable (CSV).
 - Moving a session only carries pushed work. The collector should warn about
   uncommitted changes in the worktree before a move.
 - The hub listens only on the Tailscale interface. Browser terminal attach
   requires login.
+
+## Deployment and CLI
+
+- Two modes (from Paperclip): `local_trusted` (hub on localhost, no login) and
+  `authenticated` (login required; private over Tailscale/LAN, or public). The
+  first login uses a one-time claim URL printed by the hub.
+- `fleet` CLI: `--json` output is the stable interface, exit codes 0/1,
+  `FLEET_URL` and `FLEET_TOKEN` env vars for scripts, `--yes` required for
+  destructive commands (stop, drain, delete).
+- `fleet export` / `fleet import`: `fleet.yaml` plus goal-protocol hooks, no
+  secrets, `--dry-run` first; imported machines start drained.
 
 ## Configuration
 
@@ -330,6 +375,8 @@ Checked on 2026-09-28. Re-verify before relying on them.
 | Eshu goal file states (`DONE`, `BLOCKED: … WATCH=<pid>`, `CONSENT:`) and the Stop hook that keeps a goal running | `eshu-hq/eshu` `.claude/hooks/goal-continue.sh`, `docs/internal/agent-hooks.md` |
 | Eshu issue driver posts a claim comment and drives an issue to merged/closed | `eshu-hq/eshu` `.agents/skills/eshu-issue-driver/SKILL.md` |
 | Codex and Muse `/goal` run until the goal is complete, like Claude's | Owner, 2026-09-28 (not yet probed by the controller) |
+| Anthropic paused (June 15, 2026) a change that would move `claude -p`, Agent SDK and third-party app usage off subscription limits; interactive Claude Code stays on them | support.claude.com article 15036540, last updated June 16, 2026 |
+| Paperclip shows subscription quota windows but does not schedule on them | docs.paperclip.ing `/guides/day-to-day/costs/` |
 
 ## Open questions
 
@@ -372,6 +419,9 @@ Checked on 2026-09-28. Re-verify before relying on them.
    from the start.
 2. **v2 dispatch.** Read goal files, verify `DONE` against GitHub, dispatch
    goals into new worktrees with default consent, read claim comments, active
-   and total limits, drain / resume, audit log persisted in the hub.
+   and total limits, drain / resume, audit log persisted in the hub. Includes
+   the reliability rules (preflight, one corrective nudge, cooldown,
+   review-loop cap, fingerprinting), the trusted-issues gate, and the
+   `fleet` CLI contract.
 3. **v3 remote.** Tailscale on every machine, hub bound to the tailnet, browser
    terminal attach with login, push notifications for blocking prompts only.
