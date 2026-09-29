@@ -7,52 +7,62 @@ const until = d => { const s = Math.round((d - Date.now()) / 1000); return s <= 
 const hhmm = d => new Date(d).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 const mById = id => machines.find(m => m.id === id);
 const sById = id => sessions.find(s => s.id === id);
-const qById = id => questions.find(q => q.id === id);
-const agentColor = { claude: "var(--accent)", codex: "var(--ok)", muse: "var(--warn)", shell: "var(--idle)" };
-const agentChip = a => `<span class="agent" style="color:${agentColor[a] ?? "var(--fg)"}">${esc(a)}</span>`;
+const pById = id => permissions.find(p => p.id === id);
+const harnessColor = { claude: "var(--accent)", codex: "var(--ok)", muse: "var(--warn)", shell: "var(--idle)" };
+const agentChip = h => `<span class="agent" style="color:${harnessColor[h] ?? "var(--fg)"}">${esc(h)}</span>`;
 const where = s => `${mById(s.m).short} ${s.target}`;
+const ref = s => s.issue ? `${shortName(s.repo)}#${s.issue}` : s.pr ? `${shortName(s.repo)} PR #${s.pr}` : s.repo;
 
-const ui = { view: "triage", selected: "s5", triageIdx: 0, answered: {}, choice: {}, snoozed: {}, dismissed: {}, confirm: null, switcher: false, swIdx: 0, swQuery: "" };
+const ui = { view: "triage", selected: "g2", triageIdx: 0, answered: {}, choice: {}, snoozed: {}, dismissed: {}, confirm: null, switcher: false, swIdx: 0, swQuery: "" };
 const VIEWS = ["triage", "work", "session", "fleet"];
+const STATE_PILL = { working: "working", waiting: "waiting", stuck: "stuck", verifying: "verifying", merged: "done", none: "idle" };
 
-function log(what, s) { audit.unshift({ at: new Date(), who: "you", what, where: s ? where(s) : "", s: s?.id }); }
-const liveState = s => (s.q && ui.answered[s.q] && s.state === "waiting") ? "working" : s.state;
+function log(what, s, who = "you") { audit.unshift({ at: new Date(), who, what, where: s ? where(s) : "", s: s?.id }); }
 const sessionOrder = () => machines.flatMap(m => sessions.filter(s => s.m === m.id));
+const liveState = s => s.harness === "shell" ? "none" : goalState(s);
 
-// Work items: every watched PR and backlog issue, with a lifecycle stage.
+// Work items: watched PRs and issues, with a lifecycle stage.
+const goalFor = it => sessions.find(s => isGoal(s) && s.repo === it.repo && (it.kind === "pr" ? s.pr === it.n : s.issue === it.n) && goalState(s) !== "merged");
 function stageOf(it) {
-  const s = sessionFor(it);
-  if (s) { const st = liveState(s); return st === "waiting" ? "needs" : st === "stuck" ? "stuck" : st === "done" ? "review" : "running"; }
+  if (it.kind === "pr" && it.state === "merged") return "merged";
+  const s = goalFor(it) ?? (it.kind === "issue" ? sessions.find(x => x.repo === it.repo && x.issue === it.n) : null);
+  if (s) { const st = goalState(s); return st === "merged" ? "merged" : st; }
   if (it.kind === "issue") return "queued";
-  return it.ci.fail ? "cired" : "review";
+  return "unowned";
 }
-const sessionFor = it => it.kind === "pr" ? onBranch(it) : sessions.find(s => s.ref === keyOf(it) && s.state !== "done");
-const workItems = () => [...backlog, ...prs].filter(it => watched(it.repo));
+function workItems() {
+  const issuesFromGoals = sessions.filter(s => isGoal(s) && s.issue && !backlog.some(b => b.repo === s.repo && b.n === s.issue) && !prs.some(p => p.issues.includes(s.issue)))
+    .map(s => ({ kind: "issue", repo: s.repo, n: s.issue, t: s.line?.startsWith("Drive") ? s.line : `Issue #${s.issue}` }));
+  return [...backlog, ...issuesFromGoals, ...prs].filter(it => watched(it.repo));
+}
 
-// Triage: everything that wants a decision, most urgent first.
+// Triage: only things that need a person.
 function triageItems() {
   const out = [];
-  questions.forEach(q => { if (!ui.answered[q.id] && !ui.snoozed[q.id]) out.push({ type: "question", id: q.id, q, s: sById(q.s), rank: q.kind === "perm" ? 0 : 1 }); });
-  sessions.filter(s => s.state === "stuck" && !ui.snoozed[s.id]).forEach(s => out.push({ type: "stuck", id: s.id, s, rank: 2 }));
-  prs.filter(p => watched(p.repo) && p.ci.fail && !onBranch(p) && !ui.dismissed[keyOf(p)])
-    .forEach(p => out.push({ type: "suggest", id: keyOf(p), pr: p, rank: 3 }));
-  return out.sort((a, b) => a.rank - b.rank || ((a.q?.deadline ?? 9e15) - (b.q?.deadline ?? 9e15)));
+  permissions.forEach(p => { if (!ui.answered[p.id] && !ui.snoozed[p.id]) out.push({ type: "perm", id: p.id, p, s: sById(p.s), rank: 0 }); });
+  sessions.filter(s => isGoal(s) && goalState(s) === "stuck" && !ui.snoozed[s.id]).forEach(s => out.push({ type: "stuck", id: s.id, s, rank: 1 }));
+  sessions.filter(s => isGoal(s) && goalState(s) === "verifying" && !ui.snoozed[s.id]).forEach(s => out.push({ type: "verify", id: s.id, s, rank: 2 }));
+  accounts.filter(a => pace(a).state === "reserve" && !ui.dismissed[a.id]).forEach(a => out.push({ type: "pace", id: a.id, a, rank: 3 }));
+  return out.sort((x, y) => x.rank - y.rank);
 }
 
 function counts() {
-  const live = sessions.map(liveState);
-  return { working: live.filter(s => s === "working").length, needs: triageItems().length, stuck: live.filter(s => s === "stuck").length,
-    free: machines.reduce((n, m) => n + free(m), 0), slots: machines.reduce((n, m) => n + (m.drained ? 0 : m.slots), 0) };
+  const st = sessions.filter(isGoal).map(goalState);
+  const c = k => st.filter(x => x === k).length;
+  return { working: c("working"), waiting: c("waiting"), stuck: c("stuck"), needs: triageItems().length,
+    freeA: machines.reduce((n, m) => n + freeActive(m), 0), slotsA: machines.reduce((n, m) => n + (m.drained ? 0 : m.maxActive), 0) };
 }
 
 function renderStrip() {
   const c = counts();
   $("nav").innerHTML = VIEWS.map((v, i) => `<a href="#${v}" class="tab" aria-current="${ui.view === v ? "page" : "false"}">
     <span class="k">${i + 1}</span>${v === "triage" ? `Triage <b class="badge">${c.needs}</b>` : v[0].toUpperCase() + v.slice(1)}</a>`).join("");
-  $("summary").innerHTML = `<span><b>${c.working}</b> working</span><span class="warn"><b>${c.needs}</b> need you</span>
-    <span class="bad"><b>${c.stuck}</b> stuck</span><span><b>${c.free}/${c.slots}</b> slots free</span>
-    ${agents.map(a => { const h = headroom(a); const tone = h === null ? "idle" : h < settings.headroomMin ? "bad" : h < 40 ? "warn" : "ok";
-      return `<span class="use">${agentChip(a.id)}<span class="mini"><i class="${tone}" style="width:${h ?? 0}%"></i></span><span class="num">${h === null ? "?" : h + "%"}</span></span>`; }).join("")}`;
+  $("summary").innerHTML = `<span><b>${c.working}</b> working</span><span><b>${c.waiting}</b> waiting on CI/review</span>
+    <span class="bad"><b>${c.stuck}</b> stuck</span><span class="warn"><b>${c.needs}</b> need you</span><span><b>${c.freeA}/${c.slotsA}</b> active slots free</span>
+    <span class="auto ${settings.autoDispatch ? "on" : ""}">auto-dispatch ${settings.autoDispatch ? "on" : "off"}</span>
+    ${accounts.map(a => { const p = pace(a); const tone = p.state === "reserve" ? "bad" : p.state === "ahead" ? "warn" : "ok";
+      return `<span class="use" title="${esc(`${a.label}: ${p.used}% used, pace line ${Math.round(p.target)}%, ${PACE_LABEL[p.state]}`)}">${agentChip(a.harness)}
+        <span class="mini"><i class="${tone}" style="width:${p.used}%"></i><s style="left:${p.target}%"></s></span><span class="num">${p.used}%</span></span>`; }).join("")}`;
 }
 
 function rerender() {
@@ -60,7 +70,7 @@ function rerender() {
   ({ triage: renderTriage, work: renderWorkView, session: renderSessionView, fleet: renderFleetView })[ui.view]();
   renderSwitcher();
 }
-const renderAll = rerender; // used by the dispatcher
+const renderAll = rerender;
 
 function go(view, sessionId) {
   if (sessionId) ui.selected = sessionId;
@@ -69,11 +79,11 @@ function go(view, sessionId) {
 }
 window.addEventListener("hashchange", () => { const v = location.hash.slice(1); if (VIEWS.includes(v)) { ui.view = v; ui.confirm = null; rerender(); window.scrollTo(0, 0); } });
 
-// Jump-to switcher (⌘K or /): sessions first, then machines, work items and views.
 function switcherEntries() {
   const e = [];
-  sessionOrder().forEach(s => e.push({ label: `${s.agent} · ${where(s)} · ${s.repo}`, sub: s.task, tag: liveState(s), run: () => go("session", s.id) }));
-  machines.forEach(m => e.push({ label: `${m.name} · ${m.ip}`, sub: `${busy(m)}/${m.slots} agents · ${m.ram} GB`, tag: "machine", run: () => { ui.fleetFocus = m.id; go("fleet"); } }));
+  sessionOrder().forEach(s => e.push({ label: `${s.harness} · ${where(s)} · ${ref(s)}`, sub: s.line ?? s.repo, tag: STATE_PILL[liveState(s)], run: () => go("session", s.id) }));
+  machines.forEach(m => e.push({ label: `${m.name} · ${m.ip}`, sub: `${activeOn(m)}/${m.maxActive} active · ${totalOn(m)}/${m.maxTotal} total · ${m.ram} GB`, tag: "machine", run: () => { ui.fleetFocus = m.id; go("fleet"); } }));
+  accounts.forEach(a => e.push({ label: `${a.label} account`, sub: `${used(a)}% used · ${PACE_LABEL[pace(a).state]}`, tag: "account", run: () => go("fleet") }));
   workItems().forEach(it => e.push({ label: `${shortName(it.repo)}#${it.n}`, sub: it.t, tag: it.kind, run: () => { ui.workFocus = keyOf(it); go("work"); } }));
   VIEWS.forEach(v => e.push({ label: `Go to ${v}`, sub: "", tag: "view", run: () => go(v) }));
   const terms = ui.swQuery.toLowerCase().split(/\s+/).filter(Boolean);
@@ -81,21 +91,21 @@ function switcherEntries() {
 }
 
 function renderSwitcher() {
-  const box = $("switcher");
-  box.hidden = !ui.switcher;
+  $("switcher").hidden = !ui.switcher;
   if (!ui.switcher) return;
   const list = switcherEntries().slice(0, 12);
   ui.swIdx = Math.min(ui.swIdx, Math.max(0, list.length - 1));
   $("swList").innerHTML = list.length ? list.map((x, i) => `<li role="option" aria-selected="${i === ui.swIdx}" data-i="${i}">
       <span class="sw-label">${esc(x.label)}</span><span class="sw-sub">${esc(x.sub)}</span><span class="pill ${esc(x.tag)}">${esc(x.tag)}</span></li>`).join("")
-    : `<li class="sw-empty">Nothing matches. Try a machine, repo, agent or issue number.</li>`;
+    : `<li class="sw-empty">Nothing matches. Try a machine, repo, harness or issue number.</li>`;
   $("swList").querySelectorAll("li[data-i]").forEach(li => li.onclick = () => { closeSwitcher(); list[+li.dataset.i].run(); });
 }
 function openSwitcher() { ui.switcher = true; ui.swIdx = 0; ui.swQuery = ""; $("swInput").value = ""; renderSwitcher(); $("swInput").focus(); }
 function closeSwitcher() { ui.switcher = false; renderSwitcher(); }
 
 function nextNeedsYou() {
-  const order = sessionOrder().filter(s => ["waiting", "stuck"].includes(liveState(s)));
+  const ids = [...new Set(triageItems().map(t => t.s?.id).filter(Boolean))];
+  const order = sessionOrder().filter(s => ids.includes(s.id));
   if (!order.length) return;
   const i = order.findIndex(s => s.id === ui.selected);
   go("session", order[(i + 1) % order.length].id);
@@ -136,18 +146,10 @@ function tick() {
   $("clock").textContent = new Date().toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit", second: "2-digit" });
   if (Date.now() - lastRefresh >= 10000) {
     lastRefresh = Date.now();
-    sById("s1").last = new Date(Date.now() - 4000); sById("s4").last = new Date();
+    sById("g2").last = new Date(Date.now() - 4000); sById("s0").last = new Date();
     machines.forEach(m => { m.beat = new Date(Date.now() - 1000 * (1 + Math.floor(Math.random() * 5))); });
   }
   $("upd").textContent = `updated ${Math.round((Date.now() - lastRefresh) / 1000)}s ago`;
-  document.querySelectorAll("[data-timer]").forEach(el => { el.textContent = timerText(qById(el.dataset.timer)); });
   document.querySelectorAll("[data-t]").forEach(el => { el.textContent = rel(+el.dataset.t); });
-}
-
-function timerText(q) {
-  if (ui.answered[q.id]) return "";
-  if (!q.deadline) return "Waits for you. No auto-default.";
-  const ms = q.deadline - Date.now();
-  if (ms <= 0) return "Default applied";
-  return `Default in ${Math.floor(ms / 60000)}:${String(Math.floor(ms % 60000 / 1000)).padStart(2, "0")}`;
+  document.querySelectorAll("[data-until]").forEach(el => { el.textContent = until(+el.dataset.until); });
 }
