@@ -333,10 +333,15 @@ Checked on 2026-09-28. Re-verify before relying on them.
 
 ## Open questions
 
-- **Terms of service.** Running subscription accounts unattended, around the
-  clock, across many machines may conflict with provider usage policies. Not
-  yet checked for any harness. Must be verified before offering this to
-  anyone else.
+- **Terms of service.** Researched 2026-09-28, see
+  [research/terms-of-service.md](research/terms-of-service.md). Anthropic is
+  the highest risk: its Consumer Terms bar access "through automated or
+  non-human means" and its limits assume "ordinary, individual usage".
+  OpenAI documents multi-machine sign-in and is lowest risk. Meta's
+  subscription and Muse supplemental terms are not read yet. Hard product
+  rule from Anthropic's Claude Code terms: never collect, store or proxy
+  credentials; only drive the unmodified harness binaries. Get written
+  confirmation from each provider before offering fleet-board to others.
 - **Merge churn.** Goals merge their own PRs, so the owner's review time is not
   the limit, but many goals merging into one repo at once means rebases, CI
   queue time and conflicts. Likely needs a cap on parallel goals per repo.

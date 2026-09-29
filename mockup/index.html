@@ -218,6 +218,32 @@ nav#nav { display: flex; gap: 2px; flex-wrap: wrap; }
 .audit .num { font-family: var(--f-mono); color: var(--muted); font-size: 11.5px; }
 @media (max-width: 600px) { .audit li { grid-template-columns: 48px minmax(0, 1fr); } .audit li .mono { grid-column: 2; } }
 
+
+/* goals, pacing, burn-down */
+.mini { position: relative; overflow: visible; }
+.mini s { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--fg); opacity: .6; text-decoration: none; }
+.auto { font-size: 11.5px; border: 1px solid var(--line); border-radius: 10px; padding: 0 8px; }
+.auto.on { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 50%, var(--line)); }
+.sdot.waiting { background: transparent; border: 2px solid var(--warn); }
+.sdot.verifying { background: var(--accent); }
+.sdot.merged, .sdot.none { background: transparent; border: 1.5px solid var(--idle); }
+.pill.verifying { color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.pill.account, .pill.machine, .pill.view { color: var(--muted); }
+.nextup { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px 16px; align-items: center; background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--ok); border-radius: 6px; padding: 12px 14px; }
+.nextup > div:first-child { display: grid; gap: 2px; min-width: 0; }
+.nu-k { font-size: 11.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.nu-t { font-family: var(--f-display); font-size: 15px; overflow-wrap: anywhere; }
+.goal-line { font-family: var(--f-mono); font-size: 11px; color: var(--warn); overflow-wrap: anywhere; }
+.claim { font-size: 11.5px; color: var(--muted); font-style: italic; }
+.goalfile { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; background: var(--panel); border: 1px solid var(--line); border-radius: 5px; padding: 8px 10px; }
+.goalfile code { font-size: 12.5px; color: var(--fg); overflow-wrap: anywhere; }
+code.inline { font-size: 12px; background: var(--raise); padding: 1px 5px; border-radius: 3px; }
+.burn { width: 100%; height: auto; display: block; }
+.burn-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: var(--muted); }
+.burn-legend i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; vertical-align: -1px; }
+.burn-legend i.dash { width: 14px; height: 0; border-radius: 0; border-top: 2px dashed var(--muted); vertical-align: 3px; }
+.pair { display: inline-flex; gap: 6px; }
+
 /* switcher */
 #switcher[hidden] { display: none; }
 #switcher { position: fixed; inset: 0; z-index: 50; background: var(--scrim); display: flex; justify-content: center; align-items: flex-start; padding: calc(env(safe-area-inset-top, 0px) + 10vh) 16px 16px; }
@@ -244,13 +270,13 @@ nav#nav { display: flex; gap: 2px; flex-wrap: wrap; }
       <span class="clock num" id="clock"></span>
     </div>
     <div id="summary" aria-label="Fleet summary"></div>
-    <div class="meta-line"><span class="sample" title="Sessions, questions, tasks and Claude usage are invented. Machines, RAM, tools, Codex usage, PRs and issues are real.">mixed real + sample</span>
-      <span>hub: this laptop · 192.168.1.118</span><span id="upd">updated 0s ago</span><span>n = next session that needs you</span></div>
+    <div class="meta-line"><span class="sample" title="Real: machines, RAM, tools, weekly usage read from /usage and /status on 2026-09-28, PRs, issues, merges. Sample: goals, goal-file lines, audit.">mixed real + sample</span>
+      <span>hub: this laptop · 192.168.1.118</span><span id="upd">updated 0s ago</span><span>goals run until merged · n = next session that needs you</span></div>
   </header>
 
   <main id="view"></main>
 
-  <p class="foot">Mockup. Real: machine names, IPs, OS, RAM and installed tools (SSH, 2026-09-28); Codex weekly usage (rollout log, 2026-09-27); PRs and issues (gh, 2026-09-28). Sample: sessions, tasks, questions, Claude usage, audit history. No action here sends keys, starts or stops anything.</p>
+  <p class="foot">Mockup. Real: machine names, IPs, OS, RAM and installed tools (SSH, 2026-09-28); PRs and issues (gh, 2026-09-28). Weekly usage for Claude, Codex and Muse read from their status screens on 2026-09-28. Sample: goals, goal-file lines, audit history. No action here sends keys, starts or stops anything.</p>
 </div>
 
 <div id="switcher" hidden>
