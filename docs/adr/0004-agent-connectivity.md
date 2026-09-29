@@ -40,9 +40,25 @@ a separate `FleetAgent.Terminal` stream on the same connection. Enrollment
 exchanges a one-time token for a client certificate.
 
 - The hub machine runs its own `fleet-agent` too, dialing loopback, so there is
-  one code path; the mockup's "hub" special case goes away.
-- Tailscale is a recommended way to give the hub a stable name, never a
-  requirement. The agent accepts an ordered list of hub addresses.
+  one code path. Installing the hub installs its agent by default; it can be
+  removed if the hub machine should never run goals. An agent is preferred
+  over SSH everywhere: tmux control mode pushes output over the agent's
+  persistent connection (streaming), typed commands and reconnect logic live in
+  one place (correctness), and hub and agent can each be tested against a fake
+  of the other over an in-memory connection, with no `sshd` or keys in tests
+  (testability).
+- **Finding the hub** (addresses change with DHCP). The agent never trusts an
+  address; it trusts the hub CA it pinned at enrollment. Discovery only
+  produces candidates, and a candidate is used only if the TLS check passes, so
+  an impostor at a discovered address is rejected. The agent tries, in order:
+  1. the last address that worked (cached),
+  2. mDNS on the LAN (`_fleetd._tcp`, e.g. `fleetd.local`); built into macOS,
+     `avahi` on Linux; does not cross VPNs or subnets,
+  3. addresses the owner configured (hostname, DHCP reservation, DNS name),
+  4. a Tailscale name, only if the owner enabled it and both ends are on a
+     tailnet.
+  **Tailscale is optional and never required.** Defaults need no setup on a
+  home LAN; configured addresses always work as the override.
 - The hub exposes one TLS port (default 7443). Workers expose nothing.
 
 Comparable systems (from general knowledge, not verified for this ADR): GitHub
@@ -65,9 +81,15 @@ URI SAN `fleet://machine/<machine_id>` and the hub CA chain. The agent pins the
 CA fingerprint, which `fleetd` prints and the UI shows so the owner can
 compare. Containers pass the token as `FLEET_ENROLL_TOKEN` on first boot.
 
-**Rotation and revocation.** Certificates last 30 days (open question) and
-renew at two-thirds of their lifetime over the existing connection
-(`RenewCert`). An expired machine re-enrolls with a new token. Deleting a
+**Rotation and revocation.** The certificate is the agent's identity: it is how
+the hub knows a connection really is a given machine, replacing SSH keys.
+Expiry limits the damage when agent files are copied without the owner knowing
+(stolen laptop, cloned VM, leaked backup); revocation only helps when the owner
+knows. Lifetime is configurable per machine and per group, **default 90 days,
+capped at 1 year** (longer is refused with a warning). Agents renew
+automatically at two-thirds of the lifetime over the existing connection
+(`RenewCert`), so an online machine never needs attention. A machine offline
+longer than the full lifetime re-enrolls with one command and a new token. Deleting a
 machine revokes its certificate serials; the hub is the only relying party, so
 revocation is a lookup at handshake and on every `Hello`.
 
@@ -86,14 +108,26 @@ that file; there is deliberately no config-push RPC. Policy also sets:
   **default `none`** ([0006](0006-tmux-sessions.md)),
 - a maximum number of windows and per-kind rate limits.
 
+**Layered settings (per machine and per group).** Machines carry labels (for
+example `laptop`, `always-on`, `container`). Settings resolve machine → group →
+fleet default. The local policy file is the **ceiling**: hub-side machine and
+group settings can only tighten within it, never loosen it. The hub can turn
+local approval on for a group, but cannot turn it off on a machine whose local
+file requires it, and cannot enable raw exec or `default_server: control`.
+
 `SendKeys` takes literal text and a small set of named keys (`Enter`, `C-c`,
 `Escape`, arrows), never a tmux command string.
 
 **Local confirmation.** Kinds marked dangerous (`KillWindow`, `RespawnPane`,
 `SendKeys` when enabled, raw exec) can require approval on the machine itself
 (`fleet-agent approve <command_id>` or a desktop notification) before the
-command's deadline. Off by default for goals; documented as the "I don't fully
-trust my hub" mode.
+command's deadline. Configurable per machine and per group (layered as above);
+off by default.
+
+**Confirming typed input in the UI.** Typing into a pane asks for confirmation
+in the UI only when it looks risky: answering a detected permission prompt, or
+typing into a goal that is running. Typing into a session the owner created
+goes straight through. Configurable per machine and per group.
 
 **Envelope.** Every command carries `command_id` (also the idempotency key),
 `issued_at` and `not_after` in hub time, the connection `epoch` and a
@@ -153,7 +187,7 @@ Destructive permission prompts default to Deny and are never auto-answered.
   typing again.
 - **Hub asleep for hours, or a partition.** Goals keep running. The agent keeps
   observing and probing usage, and buffers state transitions in a bounded ring
-  (latest state per pane wins; 24 hours or 10,000 entries). Pane output is not
+  (latest state per pane wins; kept 1 week, size-capped). Pane output is not
   buffered. On reconnect it sends a snapshot plus the ring so the timeline can
   be backfilled. The hub marks the machine offline and schedules nothing there.
 - **Duplicate identity** (cloned VM, copied state directory): newest connection
@@ -193,8 +227,10 @@ running harness.
 - The agent runs a fleet-owned server with an agent-managed config
   (`tmux -L fleet -f <fleet.conf>`) so options are predictable. Goal windows
   live in session `fleet`, named `<repo>-<issue>`.
-- Ad-hoc sessions from the UI: `EnsureSession{session_id, name, cwd_repo,
-  initial_command?}`. Names match `[a-z0-9][a-z0-9-]{0,31}` and are unique per
+- Sessions from the UI: `EnsureSession{session_id, name, cwd_repo, harness?,
+  reuse}` creates the named session or, with `reuse`, attaches to it if it
+  already exists, and optionally starts a harness in it (`claude`, `codex`,
+  `muse`, or any harness the machine's policy allows). Names match `[a-z0-9][a-z0-9-]{0,31}` and are unique per
   machine. The agent sets `FLEET_SESSION_ID` and `FLEET_OWNER` in the session
   environment so the session is recognized in every snapshot even after a
   rename; the hub keys it by `session_id`.
@@ -274,6 +310,7 @@ service FleetAgent {                                         // served by fleetd
   rpc Connect(stream AgentMessage) returns (stream HubMessage); // mTLS, one per agent
   rpc Terminal(stream TermUp) returns (stream TermDown);       // mTLS, one per attach
   rpc RenewCert(RenewRequest) returns (RenewResponse);
+  rpc SessionLog(stream LogChunk) returns (stream LogAck);     // mTLS, session logs (0010)
 }
 
 AgentMessage = oneof {
@@ -298,6 +335,8 @@ HubMessage = oneof {
 
 TermUp   { attach_id, oneof { output bytes, closed { exit_reason } } }
 TermDown { oneof { input bytes, resize { cols, rows }, close {} } }
+LogChunk { session_id, stream (terminal | harness_transcript), offset, zstd bytes }
+LogAck   { session_id, stream, acked_offset }
 ```
 
 New command kinds are gated by capability strings in `Hello`
@@ -307,17 +346,16 @@ New command kinds are gated by capability strings in `Hello`
 
 ## Consequences
 
-- The hub needs a name workers can resolve when it roams: a LAN hostname, a
-  Tailscale name or a DNS record. This is the one networking step in the
-  quickstart.
+- On a home LAN the agent finds the hub with no setup (mDNS). Across networks,
+  the owner adds an address, or enables the optional Tailscale lookup.
 - The hub's SQLite is the durable command outbox and event log; the agent keeps
   a small state directory (`~/.local/state/fleet-agent/`: certificate, key,
   pinned CA, command log, event ring).
 - Every mockup action that rendered a shell string becomes a typed command. The
   "copy an `ssh … tmux attach` command" fallback stays, generated in the
   browser only.
-- Browser attach needs tmux 3.2+ on workers; older tmux supports everything
-  else.
+- Workers need tmux 3.2 or newer (control-mode flow control). The agent
+  refuses to start goals on older tmux and says why.
 
 ## Rejected
 
@@ -338,18 +376,16 @@ New command kinds are gated by capability strings in `Hello`
 - **Mandatory command signatures in v1:** no protection against the realistic
   threat (a compromised hub holds the key); kept as an optional field.
 
-## Open questions
+## Resolved questions (2026-09-29)
 
-1. Hub addressing when the hub laptop roams: LAN hostname or Tailscale name in
-   the quickstart, or also try mDNS (`fleetd.local`)?
-2. Should sending keys to a goal window from the UI always need a confirm
-   dialog, or only text that looks like a permission answer?
-3. Local confirmation for `KillWindow` / `RespawnPane`: off by default, or on
-   for machines marked "personal laptop"?
-4. Minimum tmux version: 3.2+ everywhere, or degrade attach on older versions?
-   Verify control-mode flow-control flags against that version.
-5. Certificate lifetime: 30 days with explicit re-enroll, or 90 days for
-   laptops that sit unused?
-6. Is the hub's own agent mandatory (one code path) or optional?
-7. Retention for pane summaries and the agent event ring (proposed 24 hours or
-   10,000 entries).
+1. Hub addressing: automatic discovery (cached → mDNS → configured → optional
+   Tailscale) guarded by the pinned CA; manual override always available.
+2. UI confirmation for typed input: only when risky; configurable per machine
+   and group.
+3. Local approval for dangerous kinds: configurable per machine and group,
+   local file is the ceiling.
+4. Minimum tmux: 3.2.
+5. Certificates: needed as agent identity; default 90 days, capped at 1 year,
+   auto-renewed, configurable per machine and group.
+6. The hub machine runs an agent by default; agents over SSH everywhere.
+7. Live-state retention: 1 week. Full session logs: [0010](0010-session-logs.md).

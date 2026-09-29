@@ -23,9 +23,10 @@ activity never collides with the owner's own tmux:
 | `tmux -L fleet-probe` | one hidden idle session per harness account for usage probes |
 | default server | the owner's own sessions; untouched unless that machine's local policy allows `observe` or `control` |
 
-**Creating sessions from the hub.** An `EnsureSession` command names the
-machine, a session name, a working directory and what to run: a login shell or
-a known harness (`claude`, `codex`, `muse`, …). Arbitrary commands are refused
+**Creating or reusing sessions from the hub.** An `EnsureSession` command names
+the machine, a session name and a working directory. It creates the session, or
+reuses it if it already exists, and optionally starts a harness in it: a login
+shell or a known harness (`claude`, `codex`, `muse`, …). Arbitrary commands are refused
 unless the machine's local policy allows them
 ([0004](0004-agent-connectivity.md)). The request may target the `fleet` server
 (default) or the owner's default server, so the session also shows up in their
@@ -59,9 +60,13 @@ verified merged. Sessions the owner created are never closed automatically.
 ## Consequences
 
 - The owner's own tmux setup is untouched unless they opt in.
-- Control mode gives push-style updates, at the cost of parsing its protocol;
-  it must be tested per tmux version (3.x).
+- Control mode gives push-style updates, at the cost of parsing its protocol.
+  **Minimum tmux version: 3.2** on every worker; tested in CI against 3.2 and
+  the latest release.
 - Two extra tmux servers per worker (cheap).
+
+**Session logs.** Every fleet session's terminal output is recorded for later
+reading; see [0010](0010-session-logs.md).
 
 ## Open questions
 

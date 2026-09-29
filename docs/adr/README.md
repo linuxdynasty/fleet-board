@@ -14,6 +14,8 @@ accepted; a later ADR supersedes an earlier one and says so.
 | [0006](0006-tmux-sessions.md) | tmux: fleet-owned servers and user-created sessions | Accepted |
 | [0007](0007-web-ui-react.md) | Web UI: React, TypeScript and Vite, embedded in the hub | Accepted |
 | [0008](0008-goal-consent-and-account-modes.md) | Configurable goal consent and interactive-only accounts | Accepted |
+| [0009](0009-machine-groups-and-layered-settings.md) | Machine groups and layered settings | Accepted |
+| [0010](0010-session-logs.md) | Session logs and retention | Accepted |
 
 ## Template
 
