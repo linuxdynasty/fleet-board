@@ -1,0 +1,34 @@
+# Architecture decision records
+
+Each ADR records one decision: the context, the options considered, what was
+decided, and what follows from it. ADRs are not edited after they are
+accepted; a later ADR supersedes an earlier one and says so.
+
+| ADR | Title | Status |
+|---|---|---|
+| [0001](0001-system-architecture.md) | System architecture and dependencies | Accepted |
+| [0002](0002-storage-sqlite.md) | Storage: embedded SQLite | Accepted |
+| [0003](0003-transport-grpc.md) | Transport and contract: gRPC with protobuf | Accepted |
+| [0004](0004-agent-connectivity.md) | Agent connectivity and command model | Accepted |
+| [0005](0005-github-app.md) | GitHub integration through a GitHub App | Accepted |
+| [0006](0006-tmux-sessions.md) | tmux: fleet-owned servers and user-created sessions | Accepted |
+| [0007](0007-web-ui-react.md) | Web UI: React, TypeScript and Vite, embedded in the hub | Accepted |
+| [0008](0008-goal-consent-and-account-modes.md) | Configurable goal consent and interactive-only accounts | Accepted |
+| [0009](0009-machine-groups-and-layered-settings.md) | Machine groups and layered settings | Accepted |
+| [0010](0010-session-logs.md) | Session logs and retention | Accepted |
+
+## Template
+
+```markdown
+# NNNN. Title
+
+- Status: Proposed | Accepted | Superseded by NNNN
+- Date: YYYY-MM-DD
+- Deciders: ...
+
+## Context
+## Options
+## Decision
+## Consequences
+## Open questions
+```
