@@ -33,6 +33,21 @@ and the Claude Code legal page.
 - Weekly limits were added in 2025 after some users ran Claude Code 24/7. [2nd,
   TechCrunch 2025-07-28]
 - No device or concurrent-session cap found.
+- **Agent SDK / `claude -p` change, paused.** Anthropic announced moving
+  Agent SDK, `claude -p` and third-party app usage off subscription limits to
+  a separate credit, then wrote "Update June 15: We're pausing the changes".
+  For now they "still draw from your subscription's usage limits". Interactive
+  Claude Code is in the group that stays on the subscription. The same page
+  says teams running shared production automation should use an API key.
+  [E, support.claude.com/en/articles/15036540, updated June 16, 2026]
+  **Design consequence:** fleet-board drives interactive sessions in tmux,
+  not `claude -p`, which keeps it in the category least affected if the
+  change resumes.
+- **Unverified:** a user in paperclipai/paperclip#2681 quotes an Anthropic
+  email: "Starting April 4 … you'll no longer be able to use your Claude
+  subscription limits for third-party harnesses including OpenClaw." Not
+  found on any Anthropic page (searched anthropic.com, claude.com,
+  support.claude.com, code.claude.com on 2026-09-29).
 
 **Risk: highest.** The Consumer Terms' script clause and "ordinary, individual
 usage" sit awkwardly with unattended 24/7 fleets, even though headless modes
@@ -98,6 +113,9 @@ lights-out operation (Meta AUP), and consistently using 100% of quota.
    terms.
 
 ## Sources
+
+- https://support.claude.com/en/articles/15036540-use-the-claude-agent-sdk-with-your-claude-plan
+- https://github.com/paperclipai/paperclip/issues/2681 (user report, unverified)
 
 - https://www.anthropic.com/legal/consumer-terms
 - https://code.claude.com/docs/en/legal-and-compliance
