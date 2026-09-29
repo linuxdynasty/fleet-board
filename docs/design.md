@@ -27,14 +27,14 @@ one fleet (hosts, users, repos) is configuration.
 
 The table below is the author's fleet, used for the mockup and first build.
 
-| Host | Address | SSH user | RAM | Max agents |
+| Host | Address | SSH user | RAM | Max active goals |
 |---|---|---|---|---|
 | Linuxdynasty-MacBook-Pro-14 (hub) | 192.168.1.118 | asanabria | 64 GB | 2 |
 | omarchy | 192.168.1.150 | linuxdynasty | 62 GB | 2 |
 | allens-Apple-MacBook-Pro | 192.168.1.232 | allen | 128 GB | 4 |
 | ip-192-168-1-124 | 192.168.1.124 | linuxdynasty | 64 GB | 2 |
 
-Rule: 128 GB machine runs up to 4 agents, everything else up to 2. Limits are
+Rule: 128 GB machine runs up to 4 active goals, everything else up to 2. Limits are
 configurable per machine.
 
 All four have tmux, claude, codex and muse. On the macOS remotes these are only
@@ -45,80 +45,126 @@ on the login-shell PATH (`/opt/homebrew/bin`, `~/.local/bin`). A plain
 
 ```mermaid
 flowchart LR
-  subgraph each machine
-    H[agent hooks<br/>claude / codex / muse] -->|events| C[collector]
+  subgraph each worker
+    G[goal file<br/>DONE / BLOCKED / active] --> C[collector]
     T[tmux<br/>list-panes, capture-pane] --> C
-    F[session files<br/>transcripts, usage] --> C
-    A[fleet ask CLI] -->|question + default| C
+    P[usage probe<br/>/usage, /status] --> C
+    H[harness hooks<br/>optional] -->|events| C
   end
-  C -->|state + events| HUB[(hub on .118<br/>SQLite)]
-  GH[GitHub via gh] --> HUB
+  C -->|state + events| HUB[(hub<br/>SQLite)]
+  GH[GitHub via gh<br/>issues, PRs, claim comments] --> HUB
   HUB -->|SSE| UI[web UI]
   HUB --> CLI[fleet CLI / tmux popup]
   UI -->|actions| HUB
-  HUB -->|tmux send-keys / new-window over SSH| C
+  HUB -->|start goal / send-keys over SSH| C
 ```
 
-Three inputs per machine, from most general to most specific:
+Inputs per worker, from most general to most specific:
 
-1. **tmux** (polled): every pane, its command, last activity, a text preview,
-   stuck detection (output unchanged for N minutes). Works for any process.
-2. **Session files** (one reader per agent): task list, last message, repo,
-   branch, usage limits.
-3. **Hooks / notify** (pushed): instant "waiting on you", "turn finished",
-   "tool failed".
+1. **tmux** (polled): every pane, its command, last activity, a text preview.
+   Works for any process.
+2. **Goal file** (polled): the state of the goal the session is driving. This
+   is the main status source (see [Goal protocol](#goal-protocol)).
+3. **Usage probe** (polled): one idle session per harness account running the
+   harness's status command (see [Reading usage](#reading-usage)).
+4. **Hooks** (pushed, optional): instant "waiting on a permission prompt",
+   "turn finished".
 
-An agent without hooks still shows up through tmux, with less detail.
+A worker without hooks still shows up through tmux and its goal file.
 
 All inputs are normalized to one event shape before they reach the hub:
 
 ```json
-{"machine": "omarchy", "agent": "claude", "session": "...", "tmux_pane": "0:1",
- "type": "question|turn_end|tool|heartbeat|usage", "payload": {}, "ts": "..."}
+{"machine": "omarchy", "harness": "claude", "account": "claude-max",
+ "session": "...", "tmux_pane": "0:1",
+ "type": "goal|turn_end|permission|heartbeat|usage", "payload": {}, "ts": "..."}
 ```
 
-### Questions without hooks
+## Goal protocol
 
-Agents post questions with a small CLI that returns immediately:
+Work runs as **goals**, not as a series of prompts. Each dispatched session
+gets one goal and keeps working until the goal is complete. Claude, Codex and
+Muse all support this (`/goal`), and a goal runs through CI and review until
+the issue is merged or closed.
+
+The reference setup is the eshu repo (`eshu-hq/eshu`):
+
+- `/goal consent <acts> -- <text>` writes the goal file
+  (`.claude/active-goal.<session_id>` for Claude; `.muse/hooks/` has the same
+  pair for Muse). The `CONSENT:` line records what the owner already allowed.
+- A `Stop` hook (`goal-continue.sh`) refuses to end the turn while the goal is
+  unfinished, so nobody has to type "continue".
+- The `eshu-issue-driver` skill takes an issue to merged or closed: a worktree
+  per leaf, a claim comment on the issue, review, CI, merge.
+- Questions do not go to the owner. Anything the agent cannot settle goes to
+  an arbiter model.
+
+The first line of the goal file is the state the collector reads:
+
+| First line | Meaning | Controller |
+|---|---|---|
+| (goal text) | working | running |
+| `BLOCKED: <reason> WATCH=<live pid>` | waiting on something outside the machine (CI, review) | waiting; normal |
+| `BLOCKED: <reason>` (no watcher, or dead pid) | stuck | Triage |
+| `DONE` | agent says the goal is met | verify on GitHub, then free the worker |
+
+**fleet-board ships a generic version of this** (goal file, `DONE`/`BLOCKED`
+states, and a Stop hook per harness) as its worker protocol, so users without
+eshu's hooks get the same "start it and walk away" behavior. Eshu is the first
+and most complete implementation.
+
+### Dispatching a goal
+
+Dispatch is one command: create a worktree for the issue, start the harness in
+it, and send
 
 ```
-fleet ask "Store hub state in SQLite or keep it in memory?" --default sqlite
+/goal consent push, pr-open, merge -- drive <owner/repo>#<n> to merged
 ```
 
-Any agent can run a shell command, so one line in CLAUDE.md / AGENTS.md makes
-all of them report questions the same way. The agent keeps going with the
-default; the question shows up in Triage with a countdown.
+Default consent for dispatched goals is **push, pr-open, merge** (granted by
+the owner on 2026-09-28). It is configurable per repo.
+
+### When a worker is free
+
+The agent writes its own goal file, so `DONE` is a claim, not proof. A worker
+is free only when the goal says `DONE` **and** GitHub agrees: the linked PR is
+merged, or the issue is closed. If they disagree, the goal goes to Triage.
+
+### Claims
+
+The issue driver posts a claim comment on the issue before its first edit. The
+controller reads claim comments and never dispatches an issue that is already
+claimed, by this fleet or anyone else.
 
 ## Primary object: the work item
 
-Machines and agent usage are resources. Sessions are how work runs. The thing
+Machines and harness accounts are resources. Goals are how work runs. The thing
 being managed is the work item (an issue or a PR) moving through a lifecycle:
 
 ```mermaid
 stateDiagram-v2
-  [*] --> queued: open issue, no PR
-  queued --> running: assigned
-  running --> needs_you: question posted
-  needs_you --> running: answered / default applied
-  running --> stuck: no progress for N min
+  [*] --> queued: open issue, unclaimed
+  queued --> running: goal dispatched
+  running --> waiting: BLOCKED with live watcher (CI, review)
+  waiting --> running: watcher fires
+  running --> stuck: BLOCKED without watcher, or no progress
   stuck --> running: nudge / restart / move
-  running --> ci: PR opened
-  ci --> ci_red: checks fail
-  ci_red --> running: fix-checks job assigned
-  ci --> review: checks pass
-  review --> running: address-review job assigned
-  review --> [*]: merged
+  running --> verifying: goal says DONE
+  verifying --> [*]: PR merged or issue closed on GitHub
+  verifying --> stuck: GitHub disagrees
 ```
 
-Automation hangs off transitions ("CI went red → suggest a fix-checks job").
-Default autonomy is **suggest, then approve**. Nothing starts on its own.
+CI failures and review rounds happen inside the goal, driven by the agents.
+Separate PR jobs (fix checks, address reviews) are only for PRs that no goal
+owns.
 
 ## Views
 
 | View | Job | Key actions |
 |---|---|---|
-| Triage (home) | What needs me right now | `j`/`k` move, `a` act, `d` accept default, `s` snooze, `o` open |
-| Work | What should run next | Board by lifecycle stage, assign agent to issue or PR, pick PR job |
+| Triage (home) | What needs me right now: goals blocked with no watcher, `DONE` goals GitHub disagrees with, permission prompts, pacing alerts | `j`/`k` move, `a` act, `s` snooze, `o` open |
+| Work | What should run next | Board by lifecycle stage, dispatch a goal for an issue, take over a PR no goal owns |
 | Session | Step into one session | Sidebar of all sessions on all machines, pane, send keys, attach, move, restart, stop |
 | Fleet | Manage the machines | Drain / resume, agent limits, capacity, settings, audit log |
 
@@ -156,6 +202,8 @@ expiring inventory:
 6. **Cap concurrency per account.** Weekly budget left does not mean ten
    sessions can run at once; the short window and per-account limits still
    apply. The cap is learned from observed short-window behavior.
+   Only **active** goals count here; goals waiting on a watcher use almost no
+   quota.
 7. **Read reset times from the harness.** Resets are per account (for example
    Claude Sep 30 10 pm, Codex Oct 4 9:29 pm, Muse Oct 4 8 pm), not a calendar
    week.
@@ -190,15 +238,23 @@ screen that no longer parses is reported as "unknown", never guessed.
 ## Dispatch rules
 
 - Machine must be online, not draining, have the harness installed, and have a
-  free slot.
+  free **active** slot and a free **total** slot.
+- **Two limits per machine.** A goal until merge holds its worker for hours or
+  days, much of it in `BLOCKED … WATCH=` waiting on CI or review, using RAM but
+  almost no quota. So each machine has `max_active` (goals using quota, set
+  by the RAM rule: 4 on 128 GB, 2 elsewhere) and `max_total` (active plus
+  waiting, bounded by RAM and disk for worktrees).
+- The issue must be open, watched, and **unclaimed** (no claim comment from
+  anyone).
 - The harness account must be under its pacing line and above the owner's
   reserve (see [Scheduling](#scheduling-weekly-usage-is-the-budget)).
 - Unknown usage (parser failed) is never picked automatically.
 - Prefer machines other than the hub, then the one with the most free slots.
 - **One agent per PR branch.** Two agents on one branch would push over each
   other.
-- PR jobs: fix failing checks, address review comments, rebase and resolve
-  conflicts, continue the work.
+- Work is dispatched as a goal (see [Dispatching a goal](#dispatching-a-goal)).
+  Separate PR jobs (fix failing checks, address review comments, rebase) are
+  only for PRs that no goal owns.
 
 ## Safety rails
 
@@ -207,6 +263,11 @@ screen that no longer parses is reported as "unknown", never guessed.
 - Every action is written to the audit log: who, what, where, when.
 - Permission prompts (a menu, not free text) never auto-apply. Destructive
   ones (for example `docker compose down -v`) always default to No.
+- Dispatched goals carry explicit consent in the goal file (`CONSENT:` line).
+  Default is push, pr-open, merge; anything else (force-push, releases,
+  deleting branches others own) is never granted by default.
+- A goal's `DONE` frees its worker only after GitHub confirms the merge or
+  close.
 - Send-to-pane is only enabled when the pane is confirmed to be waiting on a
   prompt. Today that is Claude (via its `Notification` hook). Codex and Muse
   are notice-only until waiting detection is verified.
@@ -223,6 +284,7 @@ hub: 192.168.1.118
 repos:
   - eshu-hq/eshu
 dispatch:
+  consent: [push, pr-open, merge]   # written into every dispatched goal
   prefer_non_hub: true
   one_agent_per_branch: true
   pacing: even            # burn-down line; loosens in the last 24h before reset
@@ -240,7 +302,8 @@ machines:
   - name: allens-Apple-MacBook-Pro
     host: allen@192.168.1.232
     ram_gb: 128
-    max_agents: 4
+    max_active: 4         # goals using quota
+    max_total: 8          # active + waiting on CI/review
     accounts: [claude-max, chatgpt-pro, muse-power]
   # ...
 ```
@@ -264,6 +327,9 @@ Checked on 2026-09-28. Re-verify before relying on them.
 | Muse schema has a detailed approval model; mentions `quota` once | `muse schema generate-json-schema --out DIR` then `rg` |
 | Tools on macOS remotes are only on the login-shell PATH | `ssh allen@192.168.1.232 'zsh -lic "command -v tmux claude codex muse"'` |
 | RAM per machine | `sysctl hw.memsize` (macOS), `/proc/meminfo` (Linux) |
+| Eshu goal file states (`DONE`, `BLOCKED: … WATCH=<pid>`, `CONSENT:`) and the Stop hook that keeps a goal running | `eshu-hq/eshu` `.claude/hooks/goal-continue.sh`, `docs/internal/agent-hooks.md` |
+| Eshu issue driver posts a claim comment and drives an issue to merged/closed | `eshu-hq/eshu` `.agents/skills/eshu-issue-driver/SKILL.md` |
+| Codex and Muse `/goal` run until the goal is complete, like Claude's | Owner, 2026-09-28 (not yet probed by the controller) |
 
 ## Open questions
 
@@ -271,15 +337,18 @@ Checked on 2026-09-28. Re-verify before relying on them.
   clock, across many machines may conflict with provider usage policies. Not
   yet checked for any harness. Must be verified before offering this to
   anyone else.
-- **What counts as done.** Proposed: PR open and CI green, checked by the
-  controller, never taken from the agent's word. Worker is free at that point;
-  review follow-ups go back into the queue.
-- **Review capacity.** A WIP limit on "In review" so the fleet can't produce
-  PRs faster than the owner can review them. Limit not set yet.
+- **Merge churn.** Goals merge their own PRs, so the owner's review time is not
+  the limit, but many goals merging into one repo at once means rebases, CI
+  queue time and conflicts. Likely needs a cap on parallel goals per repo.
+- **Generic goal protocol.** The file format and Stop hook each harness needs
+  for users who do not have eshu's hooks. Codex and Muse hook payloads must be
+  probed per version, as eshu's own hook doc warns.
 - **Which issues are agent-ready.** Proposed: an `agent-ready` label set after
   an LLM triage pass (ready / needs owner / too big) that the owner approves.
 - **Containers and VMs.** Long-lived workers for v1. Throwaway workers would
   make the hub a provisioner and need harness logins baked in; deferred.
+- **Folder trust.** Every harness asks to trust a new folder before starting.
+  Dispatch must trust the worktree base once, or answer the prompt.
 - **Probe placement.** Where the one-per-account usage probe runs, and what
   happens when that machine is asleep.
 - **Muse hook events.** Plugin hooks exist; event names are not confirmed.
@@ -292,11 +361,12 @@ Checked on 2026-09-28. Re-verify before relying on them.
 ## Milestones
 
 1. **v1 read-only.** Go hub + collector on all four machines: tmux panes,
-   session files, weekly usage for all three harnesses via status-command
+   goal files, weekly usage for all three harnesses via status-command
    probes, `gh` PRs and issues, burn-down line per account. Session and Fleet views on
    live data. OTEL spans and metrics on the collector poll loop and hub ingest
    from the start.
-2. **v2 actions.** `fleet ask`, send answers (Claude first), assign agents to
-   issues and PRs, drain / resume, audit log persisted in the hub.
+2. **v2 dispatch.** Read goal files, verify `DONE` against GitHub, dispatch
+   goals into new worktrees with default consent, read claim comments, active
+   and total limits, drain / resume, audit log persisted in the hub.
 3. **v3 remote.** Tailscale on every machine, hub bound to the tailnet, browser
    terminal attach with login, push notifications for blocking prompts only.
