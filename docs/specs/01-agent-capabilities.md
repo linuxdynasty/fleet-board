@@ -52,8 +52,10 @@ Phase: **v1** read-only, **v2** actions, **v3** later.
 | C1 | Harness inventory (+ parser and fixture versions) | S | v1 |
 | C2 | Account identity and sign-in | S, E | v1 |
 | C3 | Folder pre-trust at setup | L | v1 |
+| C4 | Harness command catalog (discovered per machine) | S | v1 |
 | D1 | Probe session: ensure, run, tear down, report health | C, E | v1 |
 | D2 | Usage reading | E | v1 |
+| D3 | Passive usage signals (banners, status line) | E | v1 |
 | E1 | tmux inventory | S | v1 |
 | E2 | Control-mode observer | L | v1 |
 | E3 | Pane lifecycle (created, exited + exit status) | E | v1 |
@@ -70,6 +72,7 @@ Phase: **v1** read-only, **v2** actions, **v3** later.
 | F4 | Interrupt | C | v2 |
 | F5 | Respawn pane (resume harness) | C | v2 |
 | F6 | Kill window | C | v2 |
+| F8 | Run harness command (allow-listed slash command) | C | v2 |
 | G1 | Goal hooks: install and verify (Claude first) | C, S | v2 |
 | G2 | Goal state (line + HEAD + dirty, one event) | E | v1 |
 | G3 | Start goal (agent-side composite) | C | v2 |
@@ -142,6 +145,7 @@ A **harness adapter** is the extension point for a new tool:
 | `ReadyPattern`, `PromptPatterns`, `TrustPrompt` | Screen recognition |
 | `StatusCommand`, `UsageCommand`, `ParseStatus`, `ParseUsage` | Identity and usage screens; versioned parsers |
 | `GoalCommand(consent, text)` | The `/goal …` line |
+| `CommandCatalog()` | Discover the slash commands this install offers, and classify them |
 | `SessionIDSource` | How to learn the harness session id for a pane |
 | `TranscriptLocator` | Where the harness keeps its transcript |
 | `SupportedVersions` | Harness versions the parsers have fixtures for |
@@ -168,6 +172,48 @@ A **harness adapter** is the extension point for a new tool:
   goals never stall on the trust prompt. It does not answer trust prompts at
   run time.
 
+- **C4 Harness command catalog.** Each harness has many slash commands beyond
+  `/status` and `/usage`, and the set changes with the harness version **and**
+  with what is installed on that machine (skills and plugins appear as
+  commands). Observed on 2026-09-30:
+  - Codex 0.159.2: `/agents /app /approve /archive /cd /clear /compact /copy
+    /daemon /delete /diff /exit /experimental /export /fast /feedback /fork
+    /goal /hooks /ide /import /init /keymap /logout /mcp /memories /mention
+    /model /new /permissions /pets /plan /plugins /private /ps /pwd /raw /recap
+    /rename /resume /review /side /skills /status /statusline /stop /subagents
+    /theme /title /tui /usage /vim /voice /warnings /worktree`
+  - Muse 1.4.1 built-ins: `/agents /bug /chronicle /clear /compact /copy
+    /create-plugin /create-skill /delete /doctor /effort /export /feedback
+    /fork /goal /help /hud /init /keymap /logout /mcp /model /name /new
+    /permissions /quit /recap /resume /rewind /rules /settings /side /skills
+    /status /stop /subagents /tasks /theme /upgrade /usage /vim /voice
+    /workflows`, plus installed skills.
+  - Claude Code 2.1.285 built-ins include
+    `/clear /compact /config /context /diff /doctor /effort /export /fast /fork
+    /goal /hooks /login /logout /mcp /memory /model /permissions /plan /plugin
+    /rate-limit-options /recap /release-notes /rename /resume /rewind /sandbox
+    /status /statusline /tasks /usage`, plus installed skills and plugins
+    (capture was partial; the full list goes into fixtures).
+
+  All three have a native `/goal` command. The agent discovers the catalog by
+  walking the harness's own command list in the probe session at start and on
+  version change, and reports it with a hash. Every command is classified by the
+  adapter (unknown commands fall into **deny**):
+
+  | Class | Examples | From the hub |
+  |---|---|---|
+  | observe | `/status`, `/usage`, `/context`, `/diff`, `/ps`, `/tasks`, `/recap`, `/hud` | allowed, any idle prompt |
+  | session | `/compact`, `/model`, `/effort`, `/fast`, `/plan`, `/rename`, `/resume`, `/stop`, `/fork` | allowed with `operator` role |
+  | goal | `/goal <text>`, `/goal consent …`, `/goal done` | allowed; the goal command itself (G3) |
+  | review | `/review`, `/code-review`, `/security-review` | allowed with `operator` role |
+  | destructive | `/clear`, `/rewind`, `/delete`, `/archive`, `/exit`, `/quit` | local approval or explicit owner action |
+  | deny | `/login`, `/logout`, `/permissions`, `/config`, `/settings`, `/hooks`, `/plugin(s)`, `/sandbox`, `/privacy-settings`, `/upgrade`, `/install-*`, `/remote-control`, `/rate-limit-options`, `/usage-credits`, anything unknown | never |
+
+  `deny` covers anything that changes credentials, permissions, hooks,
+  installed code, or buys usage (Claude's `/usage-credits` and
+  `/rate-limit-options` offer paid overage). Local policy can move a command to
+  a stricter class, never a looser one.
+
 ## D. Usage
 
 - **D1 Probe session** (command from the hub, since the hub assigns one prober
@@ -182,6 +228,14 @@ A **harness adapter** is the extension point for a new tool:
   UTC and sends both. On parse failure the reading is `unknown`; the raw screen
   is attached only with emails and org names redacted, or only if the owner
   opted in.
+
+- **D3 Passive usage signals.** Harnesses show usage without being asked:
+  Claude's banner read "You've used 96% of your weekly limit · resets 10pm
+  (America/New_York)" on 2026-09-30, and each harness has a configurable status
+  line (`/statusline`). The adapter parses these from panes it is already
+  observing and reports them as readings with `source: passive`. The scheduler
+  prefers the latest probe reading and uses passive signals to notice sharp
+  changes between probes.
 
 ## E. tmux observation
 
@@ -226,6 +280,11 @@ All pass local policy, carry a `command_id`, and are idempotent except F3.
   idempotent: a retry after an unknown outcome returns `UNKNOWN_OUTCOME`.
 - **F4 Interrupt**, **F5 Respawn pane** (adapter `ResumeArgs`), **F6 Kill
   window.** Resize belongs to J1.
+- **F8 Run harness command:** `RunHarnessCommand{target, command, args}`,
+  where `command` must be in the machine's catalog (C4) and its class must be
+  allowed for the requester. Only typed at an idle prompt (ready pattern
+  matched), never into a running turn. Replaces free-typed slash commands
+  through F3.
 
 ## G. Goals
 
@@ -365,7 +424,8 @@ To be made in step 2 as a superseding ADR, not by editing the originals:
 
 - 0004: add hub settings delivery (A8), agent `Bye` (A7), `SnapshotRequest`
   handling, `StartGoal` and `StopGoal` as agent-side commands (G3, G4),
-  `EnsureProbe`/`StopProbe` (D1), `Undrain` (M4), `prompt_id` on `SendKeys`;
+  `EnsureProbe`/`StopProbe` (D1), `Undrain` (M4), `prompt_id` on `SendKeys`,
+  `RunHarnessCommand` with the command classes (F8);
   remove `RunExec` from v1; move Tailscale lookup and default-server
   observation to v3.
 - 0009: labels are assigned on the hub; local config can only add.
@@ -393,7 +453,11 @@ Assumes 50 machines, 10 panes each, 3 accounts.
 - tmux capabilities against real tmux 3.2 and the latest release in CI.
 - Harness parsers against captured screens (the real `/status` and `/usage`
   captures from 2026-09-28/29 are the first fixtures), one set per harness
-  version.
+  version. Versions move fast: Codex went 0.157.1 → 0.159.2 and Muse 1.4.0 →
+  1.4.1 between 2026-09-28 and 2026-09-30, so fixture capture is a scripted
+  job (`fleet-agent capture-fixtures`), not a manual step. Fixtures are
+  scrubbed of emails, names and installed skill names before they are
+  committed.
 - Agent end to end against an in-memory fake hub; hub against fake agents.
 
 ## Open questions
