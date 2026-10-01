@@ -488,6 +488,7 @@ testing approach are in [01c-handoff.md](01c-handoff.md).
 - Usage display mirrors each harness; probes every 10 min plus on events.
 - Emails hidden by default; log volume measured before step 3.
 - Security: pass-through, no root, no sandbox requirement, optional hardening guide.
+- No auto-dispatch to OpenCode on an Anthropic subscription (owner confirmed).
 
 ## Open questions
 
