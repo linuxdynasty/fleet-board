@@ -377,14 +377,23 @@ All pass local policy, carry a `command_id`, and are idempotent except F3.
 
 ## J. Terminal attach (v2)
 
-- **J1** Attach from the browser to any session on the developer's tmux server,
-  existing or newly created: a PTY running `tmux attach -t <session>` at the
-  browser's size, streamed both ways; read-only mode drops input; resize; idle
-  timeout; a banner when attaching to a running goal. The board also shows the
-  plain `ssh -t <user>@<host> tmux attach -t <session>` line for attaching from
-  the developer's own terminal. Escape sequences that can act on the viewer's
-  machine (clipboard writes via OSC 52, hyperlinks) are stripped before they
-  reach the browser.
+- **J1 Attach** from the browser to any session, existing or new. The browser
+  terminal is a real tmux client (a PTY running `tmux attach`) on the
+  developer's own server, so their prefix key and bindings work unchanged:
+  `prefix n`/`p`/`1–9` to switch windows, `prefix o` and arrows to switch
+  panes, splits, zoom. The board also shows a clickable window strip (index and
+  name, like the status bar) for switching with the mouse. Browsers reserve a
+  few shortcuts (for example Ctrl+W); the strip and the tmux prefix cover them.
+- **Independent view.** The current window belongs to the tmux session, not the
+  client, so the browser attaches through a **grouped session**
+  (`tmux new-session -t <session> -s <view>`): same windows, its own current
+  window, so switching in the browser never moves the developer's own terminal.
+  The view session has `destroy-unattached on` and disappears when the browser
+  disconnects (both confirmed in tmux's man page, 2026-10-01).
+- Read-only mode drops input; resize; idle timeout; a banner on running goals;
+  the plain `ssh -t <user>@<host> tmux attach -t <session>` line is shown for
+  the developer's own terminal. Escape sequences that act on the viewer's
+  machine (OSC 52 clipboard writes, hyperlinks) are stripped.
 
 ## K. Session logs
 
@@ -410,9 +419,8 @@ All pass local policy, carry a `command_id`, and are idempotent except F3.
 
 ## M. Self-management
 
-- **M1 Local audit log**, **M2 OTEL telemetry**, **M3 Doctor** (tmux version,
-  harness paths, mDNS, policy validity, certificate expiry, hub reachability,
-  clock skew).
+- **M1 Local audit log**, **M2 OTEL telemetry**, **M3 Doctor** (tmux, harness
+  paths, mDNS, policy, certificate expiry, hub reachability, clock skew).
 - **M4 Drain and undrain** (v2): from the hub or locally
   (`fleet-agent drain|undrain`); reported in snapshot and heartbeat. While
   draining, the agent refuses G3 and F1/F2 that start a harness, with
@@ -463,22 +471,8 @@ on its own during a goal. tmux `server-access` was added in 3.3.
 
 ## Hand-off to step 2
 
-Contract-readiness rules, required ADR changes and volume estimates are in
-[01c-handoff.md](01c-handoff.md).
-
-## Testing approach
-
-- Interfaces with fakes for tmux, harness adapters, power, network, clock and
-  file watching.
-- tmux capabilities against real tmux 3.2 and the latest release in CI.
-- Harness parsers against captured screens (the real `/status` and `/usage`
-  captures from 2026-09-28/29 are the first fixtures), one set per harness
-  version. Versions move fast: Codex went 0.157.1 → 0.159.2 and Muse 1.4.0 →
-  1.4.1 between 2026-09-28 and 2026-09-30, so fixture capture is a scripted
-  job (`fleet-agent capture-fixtures`), not a manual step. Fixtures are
-  scrubbed of emails, names and installed skill names before they are
-  committed.
-- Agent end to end against an in-memory fake hub; hub against fake agents.
+Contract-readiness rules, required ADR changes, volume estimates and the
+testing approach are in [01c-handoff.md](01c-handoff.md).
 
 ## Resolved (2026-10-01)
 

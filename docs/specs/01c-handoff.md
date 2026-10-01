@@ -53,3 +53,17 @@ Assumes 50 machines, 10 panes each, 3 accounts.
 | Usage readings | 3 accounts × every 10–15 min | 1–3 KB |
 | Terminal logs | unknown | estimate 1–20 MB/hour per busy pane raw; **measure before step 3** |
 | Snapshots | on connect | 10–100 KB |
+
+## Testing approach
+
+- Interfaces with fakes for tmux, harness adapters, power, network, clock and
+  file watching.
+- tmux capabilities against real tmux 3.2 and the latest release in CI.
+- Harness parsers against captured screens (the real `/status` and `/usage`
+  captures from 2026-09-28/29 are the first fixtures), one set per harness
+  version. Versions move fast: Codex went 0.157.1 → 0.159.2 and Muse 1.4.0 →
+  1.4.1 between 2026-09-28 and 2026-09-30, so fixture capture is a scripted
+  job (`fleet-agent capture-fixtures`), not a manual step. Fixtures are
+  scrubbed of emails, names and installed skill names before they are
+  committed.
+- Agent end to end against an in-memory fake hub; hub against fake agents.
