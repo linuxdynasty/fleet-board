@@ -51,8 +51,36 @@ Assumes 50 machines, 10 panes each, 3 accounts.
 | Resource samples | ≈ 1.7/s | < 1 KB |
 | Goal state | a few per goal per hour | < 2 KB |
 | Usage readings | 3 accounts × every 10–15 min | 1–3 KB |
-| Terminal logs | unknown | estimate 1–20 MB/hour per busy pane raw; **measure before step 3** |
+| Terminal logs | measured, see below | **26.9 MB/hour raw, 0.23 MB/hour zstd-3** per busy pane |
 | Snapshots | on connect | 10–100 KB |
+
+## Measured: one real goal (2026-10-01)
+
+Muse 1.4.2 working eshu-hq/eshu#7398 for 60 minutes on macOS, recorded with
+`tmux pipe-pane`, sampled every minute. Only sizes were kept.
+
+| Measure | Result |
+|---|---|
+| Raw terminal output | 26.9 MB in 60 min (26.9 MB/hour) |
+| Per minute | median 288 KB, p90 974 KB, max 1,734 KB, **min 274 KB** |
+| gzip | 581 KB (46×) |
+| zstd level 3 | 234 KB (115×) |
+| zstd level 19 | 68 KB (400×) |
+| Muse's own transcript for the session | 13 MB after 60 min |
+
+Findings:
+- **Most of the raw volume is screen redraw.** Even quiet minutes produced
+  about 274 KB (the TUI repaints its timer, spinner and status line), which is
+  why it compresses so well.
+- **The agent compresses before shipping** (zstd, streaming). At about 0.23 MB
+  per busy pane per hour, 30 busy panes are about 7 MB/hour, roughly 5 GB a
+  month before retention. Network cost is negligible.
+- **Harness transcripts are larger than compressed terminal logs** (13 MB/hour
+  raw for Muse), so K3 stays opt-in and compressed.
+- **Real prompt observed:** after an hour the goal stopped at a Muse approval
+  prompt for `git fetch https://x-access-token:$(gh auth token)@github.com/…`,
+  which embeds a token in a URL. E6 must flag prompts that put credentials on a
+  command line as destructive, defaulting to Deny.
 
 ## Testing approach
 
