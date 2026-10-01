@@ -163,10 +163,18 @@ A **harness adapter** is the extension point for a new tool:
 | `TranscriptLocator` | Where the harness keeps its transcript |
 | `SupportedVersions` | Harness versions the parsers have fixtures for |
 
-Harnesses in scope: Claude Code, Codex and Muse, plus **OpenCode**, installed
-on all four of the author's machines (1.18.30–1.18.34, checked 2026-10-01). Its
-status and usage screens, prompts and goal support are not probed yet; its
-adapter starts with inventory, sessions and attach only.
+Harnesses in scope: Claude Code, Codex, Muse and **OpenCode** (installed on
+all four of the author's machines, 1.18.30–1.18.34). OpenCode is a router
+across several provider accounts with no `/usage` and no `/goal`; see
+[01b-harness-commands.md](01b-harness-commands.md#opencode).
+
+**Usage belongs to accounts, not harnesses.** A harness can draw on several
+accounts (OpenCode: Anthropic, OpenAI, Google and Copilot by OAuth, DeepSeek
+and Moonshot by API key), and several harnesses can share one account
+(OpenCode on Anthropic OAuth spends the same Claude weekly limit as Claude
+Code). Each session is linked to the account it is currently spending from,
+and budgets are per account: a weekly % for subscriptions, a dollar cap per
+period for API-key providers.
 
 - **C1 Harness inventory:** name, version, path, parser version, and whether
   the version is within `SupportedVersions`. Outside it, usage readings are

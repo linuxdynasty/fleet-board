@@ -45,3 +45,33 @@ adapter (unknown commands fall into **deny**):
 installed code, or buys usage (Claude's `/usage-credits` and
 `/rate-limit-options` offer paid overage). Local policy can move a command to
 a stricter class, never a looser one.
+
+## OpenCode
+
+Probed 2026-10-01 on OpenCode 1.18.30.
+
+- **In-app commands:** `/agents /connect /debug /diff /editor /exit /help /init
+  /mcps /models /move /new /review /sessions /skills /status /themes /variants`,
+  plus installed command packs (27 `/gsd/*` commands on this machine). No
+  `/usage`, no `/goal`. Command palette on `ctrl+p`.
+- **`/status`** shows MCP servers, formatters and plugins only: no account, no
+  usage.
+- **Usage:** `opencode stats` (CLI) prints all-time totals (sessions, messages,
+  days, total cost, average cost per day, tokens in, out, cache read and
+  write, tool usage). There is no per-window or per-account limit view.
+- **Accounts:** `opencode providers list` prints configured providers and login
+  type (OAuth or API key) without secrets. The agent uses this output only and
+  never opens OpenCode's credential file.
+- **Model line** under the input box: agent, model and provider (for example
+  "Build · Kimi K3 Moonshot AI · high"). The adapter reads it to link a session
+  to the account it is spending from.
+- **No folder-trust prompt** at startup.
+- **Server mode:** `opencode serve`, `opencode attach <url>`, `--mdns`. A future
+  adapter could read structured session events from it instead of the screen.
+- **Goals:** needs fleet-board's generic goal protocol (goal file plus a hook or
+  plugin) before it can run goals; until then: inventory, sessions, attach.
+- **Terms:** OpenCode on an Anthropic OAuth login is the third-party-harness
+  case in [../research/terms-of-service.md](../research/terms-of-service.md).
+  Fleet-board does not change how the developer uses it, but by default it does
+  not auto-dispatch goals to OpenCode on an Anthropic subscription; manual
+  dispatch remains the developer's choice.
