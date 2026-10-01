@@ -16,6 +16,7 @@ accepted; a later ADR supersedes an earlier one and says so.
 | [0008](0008-goal-consent-and-account-modes.md) | Configurable goal consent and interactive-only accounts | Accepted |
 | [0009](0009-machine-groups-and-layered-settings.md) | Machine groups and layered settings | Accepted |
 | [0010](0010-session-logs.md) | Session logs and retention | Accepted |
+| [0011](0011-contract-amendments.md) | Contract amendments to 0004, 0006, 0009 and 0010 | Proposed |
 
 ## Template
 

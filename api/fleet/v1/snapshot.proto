@@ -1,0 +1,448 @@
+// fleet.v1 snapshot: machine facts, inventories, settings and the full
+// Snapshot the agent sends on every connect (A3). A snapshot supersedes
+// every event with a lower seq. Fields observed from tmux, harnesses, goal
+// files or git are UNTRUSTED TEXT.
+syntax = "proto3";
+
+package fleet.v1;
+
+import "fleet/v1/common.proto";
+import "fleet/v1/usage.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/linuxdynasty/fleet-board/api/fleet/v1;fleetv1";
+
+// ---------------------------------------------------------------------------
+// B. Machine facts and resources
+// ---------------------------------------------------------------------------
+
+// MachineFacts (B1). Sent at Enroll and in every Snapshot.
+message MachineFacts {
+  string hostname = 1;
+  // "darwin" | "linux".
+  string os = 2;
+  string os_version = 3;
+  // "arm64" | "amd64".
+  string arch = 4;
+  uint32 cpu_count = 5;
+  uint64 ram_bytes = 6;
+  // IANA timezone, e.g. "America/New_York", used to resolve screen times.
+  string timezone = 7;
+  int32 utc_offset_seconds = 8;
+  string agent_version = 9;
+  // Hex digest of the running agent binary, for change display only.
+  string agent_binary_hash = 10;
+  // tmux version as `tmux -V` prints it; empty if tmux is missing.
+  string tmux_version = 11;
+  string policy_schema_version = 12;
+  // Random id minted at agent process start; changes on restart.
+  string boot_id = 13;
+  // True if the machine is a container (FLEET_ENROLL_TOKEN boot path).
+  bool container = 14;
+}
+
+// ResourceSample (B2), every 30 s.
+message ResourceSample {
+  double load1 = 1;
+  double load5 = 2;
+  uint64 mem_total_bytes = 3;
+  uint64 mem_available_bytes = 4;
+  // macOS memory pressure level when available: 1 normal, 2 warn, 4 critical.
+  uint32 mem_pressure_level = 5;
+  repeated DiskFree disk = 6;
+}
+
+// DiskFree is free space under one path the agent cares about.
+message DiskFree {
+  // Repo root or the agent state directory.
+  string path = 1;
+  uint64 free_bytes = 2;
+  uint64 total_bytes = 3;
+}
+
+// PowerState (B3, v2).
+message PowerState {
+  bool on_battery = 1;
+  Percent battery = 2;
+}
+
+// ---------------------------------------------------------------------------
+// C. Harnesses
+// ---------------------------------------------------------------------------
+
+// CatalogEntry is one slash command the harness install offers (C4).
+message CatalogEntry {
+  // As shown, including the leading slash. Untrusted text.
+  string name = 1;
+  CommandClass class = 2;
+  // True when local policy moved it to a stricter class than the adapter's.
+  bool tightened_by_policy = 3;
+}
+
+// CommandCatalog (C4): discovered per machine, reported with a hash.
+message CommandCatalog {
+  // Hex digest over the sorted entry names; RunHarnessCommand must match it.
+  string hash = 1;
+  repeated CatalogEntry entries = 2;
+  google.protobuf.Timestamp discovered_at = 3;
+}
+
+// GoalHooksState (G1): generic goal-protocol hooks for one harness.
+message GoalHooksState {
+  bool installed = 1;
+  bool verified = 2;
+  string hook_version = 3;
+  string hook_hash = 4;
+  // True when the repo ships its own hooks (eshu) and fleet left them alone.
+  bool repo_ships_own = 5;
+}
+
+// HarnessInfo (C1) for one harness installed on the machine.
+message HarnessInfo {
+  Harness harness = 1;
+  // Version as the binary reports it. Untrusted text.
+  string version = 2;
+  // Absolute path resolved through the login shell.
+  string path = 3;
+  string parser_version = 4;
+  bool version_supported = 5;
+  // Versions the parsers have fixtures for.
+  repeated string supported_versions = 6;
+  CommandCatalog catalog = 7;
+  GoalHooksState goal_hooks = 8;
+  // Send-to-pane is enabled only once prompt detection is verified (E6).
+  bool prompt_detection_verified = 9;
+  // True when local policy allows launching this harness.
+  bool launch_allowed = 10;
+}
+
+// ---------------------------------------------------------------------------
+// E. tmux inventory
+// ---------------------------------------------------------------------------
+
+// Activity is the pane's output activity state (E4).
+enum Activity {
+  ACTIVITY_UNSPECIFIED = 0;
+  ACTIVITY_ACTIVE = 1;
+  ACTIVITY_IDLE = 2;
+}
+
+// Availability (E11): idle and available-for-work are distinct.
+message Availability {
+  // Ready pattern showing, no active goal, no output or input for the
+  // configured idle threshold.
+  bool idle = 1;
+  // Fleet started it and its goal is verified merged, or the developer
+  // marked it on the board. Idle alone never makes a session take work.
+  bool available_for_work = 2;
+  google.protobuf.Timestamp since = 3;
+}
+
+// TmuxPane is one pane with its fleet tags and derived state.
+message TmuxPane {
+  PaneKey key = 1;
+  WindowKey window = 2;
+  uint32 index = 3;
+  bool active = 4;
+  // tmux pane_current_command. Untrusted text.
+  string current_command = 5;
+  // Harness detected from the process, never from the window name.
+  Harness harness = 6;
+  // Harness session id learned through hooks (E9). Untrusted text.
+  string harness_session_id = 7;
+  // FLEET_* environment tags: FLEET_SESSION_ID, FLEET_OWNER, FLEET_PANE_KEY,
+  // FLEET_GOAL_ID. Empty for the developer's own panes.
+  map<string, string> fleet_tags = 8;
+  bool started_by_fleet = 9;
+  Activity activity = 10;
+  google.protobuf.Timestamp last_output_at = 11;
+  bool dead = 12;
+  // Exit status when dead.
+  int32 exit_status = 13;
+  Availability availability = 14;
+  // Terminal log capture (pipe-pane) is on for this pane (K1).
+  bool log_capture = 15;
+  uint32 cols = 16;
+  uint32 rows = 17;
+}
+
+// TmuxWindow is a window as the status bar shows it.
+message TmuxWindow {
+  WindowKey key = 1;
+  uint32 index = 2;
+  // Name as shown. Untrusted text, capped at 256 bytes.
+  string name = 3;
+  bool automatic_rename = 4;
+  bool active = 5;
+  repeated TmuxPane panes = 6;
+}
+
+// TmuxSession is one session on a server.
+message TmuxSession {
+  // tmux session id like "$2".
+  string tmux_id = 1;
+  // Name as shown. Untrusted text, capped at 256 bytes.
+  string name = 2;
+  // Hub-assigned id from FLEET_SESSION_ID; empty for the developer's own.
+  SessionId session_id = 3;
+  bool started_by_fleet = 4;
+  // FLEET_OWNER principal name when started by fleet.
+  string owner = 5;
+  google.protobuf.Timestamp created_at = 6;
+  uint32 attached_clients = 7;
+  // True for a grouped view session created for a browser attach (J1).
+  bool attach_view = 8;
+  repeated TmuxWindow windows = 9;
+}
+
+// TmuxServer is one tmux server the agent observes.
+message TmuxServer {
+  TmuxServerKind kind = 1;
+  string socket_name = 2;
+  string server_start_id = 3;
+  string version = 4;
+  bool running = 5;
+  // Control-mode observer attached (E2).
+  bool observed = 6;
+  repeated TmuxSession sessions = 7;
+}
+
+// ---------------------------------------------------------------------------
+// G. Goals, H. repositories
+// ---------------------------------------------------------------------------
+
+// GoalLineState is the parsed first line of a goal file (design.md).
+enum GoalLineState {
+  GOAL_LINE_STATE_UNSPECIFIED = 0;
+  GOAL_LINE_STATE_WORKING = 1;
+  GOAL_LINE_STATE_BLOCKED_WATCH = 2;
+  GOAL_LINE_STATE_BLOCKED_OWNER = 3;
+  // BLOCKED with neither a live watcher nor an owner: stuck.
+  GOAL_LINE_STATE_BLOCKED_STUCK = 4;
+  GOAL_LINE_STATE_DONE = 5;
+  // Goal file missing or unreadable.
+  GOAL_LINE_STATE_MISSING = 6;
+}
+
+// GoalState (G2): goal line plus HEAD plus dirty, in one message because the
+// hub fingerprints them as one state. Fleet panes only.
+message GoalState {
+  GoalId goal_id = 1;
+  PaneKey pane = 2;
+  SessionId session_id = 3;
+  // First line, control characters stripped, capped at 4 KiB. Untrusted.
+  string first_line = 4;
+  // The CONSENT: line as written, same treatment. Untrusted.
+  string consent_line = 5;
+  GoalLineState state = 6;
+  // For BLOCKED_WATCH: the pid and whether it is alive.
+  uint32 watch_pid = 7;
+  bool watch_alive = 8;
+  // For BLOCKED_OWNER. Untrusted text, each capped at 256 bytes.
+  string owner = 9;
+  string action = 10;
+  string head_commit = 11;
+  bool dirty = 12;
+  // Path of the goal file relative to the worktree, for display.
+  string goal_file = 13;
+  google.protobuf.Timestamp observed_at = 14;
+}
+
+// BranchState (H3) for one goal worktree.
+message BranchState {
+  RepoKey repo = 1;
+  string path = 2;
+  GoalId goal_id = 3;
+  // Untrusted text.
+  string branch = 4;
+  string head_commit = 5;
+  uint32 ahead = 6;
+  uint32 behind = 7;
+  bool dirty = 8;
+  // Upstream missing or not fetched; ahead/behind then unknown.
+  bool upstream_unknown = 9;
+  google.protobuf.Timestamp observed_at = 10;
+}
+
+// RepoCheckout (H1): one checkout or worktree under an allowed root.
+message RepoCheckout {
+  RepoKey repo = 1;
+  string path = 2;
+  string default_branch = 3;
+  bool is_worktree = 4;
+  // For worktrees, the main checkout they belong to.
+  string main_checkout_path = 5;
+  // Set when the worktree was created by fleet for a goal.
+  GoalId goal_id = 6;
+  BranchState branch = 7;
+}
+
+// RepoAccess (H4) from `gh repo view --json viewerPermission`.
+message RepoAccess {
+  RepoKey repo = 1;
+  // As gh prints it: READ, TRIAGE, WRITE, MAINTAIN, ADMIN.
+  string viewer_permission = 2;
+  // WRITE, MAINTAIN or ADMIN.
+  bool push_access = 3;
+  google.protobuf.Timestamp checked_at = 4;
+}
+
+// GhStatus (H4) from `gh auth status`; the token line is dropped.
+message GhStatus {
+  bool signed_in = 1;
+  string user = 2;
+  string host = 3;
+  google.protobuf.Timestamp checked_at = 4;
+  repeated RepoAccess access = 5;
+}
+
+// ---------------------------------------------------------------------------
+// K, L, M. Spool, policy, settings, drain
+// ---------------------------------------------------------------------------
+
+// SpoolStatus (K2): local session-log spool.
+message SpoolStatus {
+  uint64 pending_bytes = 1;
+  uint64 cap_bytes = 2;
+  // Chunks dropped because the cap was hit; gaps are marked in LogChunk.
+  uint32 gap_marks = 3;
+  bool shipping_paused = 4;
+  // Set when the hub paused shipping; empty when paused locally.
+  string paused_reason = 5;
+  uint32 sessions_capturing = 6;
+}
+
+// PolicyInfo (L1): the local policy file. Hash only, never contents.
+message PolicyInfo {
+  string schema_version = 1;
+  string hash = 2;
+  google.protobuf.Timestamp loaded_at = 3;
+  // True when the file changed on disk since load; takes effect on restart.
+  bool changed_since_load = 4;
+}
+
+// DefaultServerMode is the local ceiling for the developer's own tmux
+// server. ADR 0011 makes CONTROL the default.
+enum DefaultServerMode {
+  DEFAULT_SERVER_MODE_UNSPECIFIED = 0;
+  DEFAULT_SERVER_MODE_NONE = 1;
+  DEFAULT_SERVER_MODE_OBSERVE = 2;
+  DEFAULT_SERVER_MODE_CONTROL = 3;
+}
+
+// SettingLayer says which layer produced an effective value (ADR 0009).
+enum SettingLayer {
+  SETTING_LAYER_UNSPECIFIED = 0;
+  SETTING_LAYER_AGENT_DEFAULT = 1;
+  SETTING_LAYER_FLEET_DEFAULT = 2;
+  SETTING_LAYER_GROUP = 3;
+  SETTING_LAYER_MACHINE = 4;
+  // The local policy file capped the hub's value.
+  SETTING_LAYER_LOCAL_CEILING = 5;
+}
+
+// LocalApprovalRule requires `fleet-agent approve` for a command kind.
+message LocalApprovalRule {
+  // Command kind name as in commands.proto, e.g. "KillWindow".
+  string command_kind = 1;
+  bool required = 2;
+}
+
+// RateLimit caps one command kind.
+message RateLimit {
+  string command_kind = 1;
+  uint32 per_minute = 2;
+}
+
+// SettingValues are the settings the hub can deliver (A8) and the agent
+// reports as effective (L2). Unset optional fields mean "no opinion".
+message SettingValues {
+  optional uint32 max_active = 1;
+  optional uint32 max_total = 2;
+  optional uint32 max_windows = 3;
+  repeated LocalApprovalRule local_approval = 4;
+  repeated RateLimit rate_limits = 5;
+  optional google.protobuf.Duration cert_lifetime = 6;
+  // Tighten-only: the effective set is the intersection with local policy.
+  repeated string allowed_harnesses = 7;
+  repeated string allowed_repo_roots = 8;
+  optional DefaultServerMode default_server = 9;
+  // Window name template, default "{harness} {repo}#{issue}".
+  optional string window_name_template = 10;
+  optional google.protobuf.Duration idle_threshold = 11;
+  optional google.protobuf.Duration attach_idle_timeout = 12;
+  // Owner setting: send the email exactly as the harness shows it (C2).
+  optional bool share_identity_email = 13;
+  optional uint64 spool_cap_bytes = 14;
+  // Block goal starts while on battery (B3).
+  optional bool block_on_battery = 15;
+  // Default probe interval; EnsureProbe can set a per-account value.
+  optional google.protobuf.Duration probe_interval = 16;
+  // Grace before pruning a merged goal's worktree and window.
+  optional google.protobuf.Duration merged_grace = 17;
+}
+
+// SettingSource records which layer set one field of SettingValues.
+message SettingSource {
+  // Field name in SettingValues, e.g. "max_active".
+  string field = 1;
+  SettingLayer layer = 2;
+}
+
+// EffectiveSettings (L2): the tighten-only merge under the local ceiling.
+message EffectiveSettings {
+  // Generation of the hub settings that were merged; 0 before any delivery.
+  uint64 generation = 1;
+  SettingValues values = 2;
+  repeated SettingSource sources = 3;
+  // Labels: hub-assigned plus local additions. Local can only add.
+  repeated string labels = 4;
+}
+
+// DrainState (M4).
+message DrainState {
+  bool draining = 1;
+  // "hub" or "local".
+  string requested_by = 2;
+  string reason = 3;
+  google.protobuf.Timestamp since = 4;
+}
+
+// ---------------------------------------------------------------------------
+// The Snapshot
+// ---------------------------------------------------------------------------
+
+// Snapshot (A3) is the full level-triggered state of the machine. Sent after
+// Hello on every connect and on SnapshotRequest. It supersedes every event
+// with seq <= Snapshot.seq. Size: typically 10-100 KiB; hard cap 1 MiB.
+message Snapshot {
+  // Agent event sequence at the moment of the snapshot.
+  uint64 seq = 1;
+  google.protobuf.Timestamp taken_at = 2;
+  MachineFacts facts = 3;
+  ResourceSample resources = 4;
+  PowerState power = 5;
+  repeated HarnessInfo harnesses = 6;
+  repeated AccountIdentity accounts = 7;
+  repeated TmuxServer tmux_servers = 8;
+  repeated GoalState goals = 9;
+  repeated RepoCheckout repos = 10;
+  GhStatus gh = 11;
+  // Latest reading per account key.
+  repeated UsageReading usage = 12;
+  repeated ProbeHealth probes = 13;
+  repeated SessionAccountLink account_links = 14;
+  SpoolStatus spool = 15;
+  PolicyInfo policy = 16;
+  EffectiveSettings settings = 17;
+  DrainState drain = 18;
+  // Attaches the agent still holds open (J1).
+  repeated AttachId open_attaches = 19;
+  // Last hub command seq (per epoch) the agent applied; HelloAck epoch tells
+  // the hub which epoch it belongs to.
+  uint64 last_applied_command_seq = 20;
+  // Command ids whose results the hub never acknowledged; the results
+  // themselves follow as CommandResult messages right after the snapshot.
+  repeated CommandId unacked_results = 21;
+}

@@ -1,0 +1,314 @@
+// fleet.v1 events: agent -> hub facts between snapshots (A3). Events are an
+// optimization over snapshots, never the source of truth. Every Event
+// carries the agent-wide monotonic seq that survives reconnects; the offline
+// ring replays them in order. Which kinds may be dropped under backpressure
+// is fixed per kind in docs/specs/02-contracts.md, not negotiated.
+// Screen, goal-file and git text in here is UNTRUSTED TEXT.
+syntax = "proto3";
+
+package fleet.v1;
+
+import "fleet/v1/common.proto";
+import "fleet/v1/snapshot.proto";
+import "fleet/v1/usage.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/linuxdynasty/fleet-board/api/fleet/v1;fleetv1";
+
+// Event is one timestamped fact. body kinds are numbered by capability
+// group: 10-19 machine, 20-29 harness/usage, 30-49 tmux, 50-59 goals and
+// repos, 60-69 logs, 70-79 policy and self-management.
+message Event {
+  // Agent-wide monotonic sequence, persisted, never reused.
+  uint64 seq = 1;
+  // When the fact was observed (UTC, agent clock).
+  google.protobuf.Timestamp at = 2;
+  // True when replayed from the offline ring after a reconnect.
+  bool replayed = 3;
+
+  oneof body {
+    // B2, droppable.
+    ResourceSample resource_sample = 10;
+    // B3, not droppable (preflight depends on it).
+    PowerState power_state = 11;
+
+    // C2: identity re-read at start or on version change.
+    AccountIdentity account_identity = 20;
+    // C1: harness version or catalog changed (C4). Carries the full info.
+    HarnessInfo harness_changed = 21;
+    // D1 probe health, not droppable.
+    ProbeHealth probe_health = 22;
+    // D2 and D3, not droppable.
+    UsageReading usage_reading = 23;
+    // Session -> account link changed (OpenCode model line).
+    SessionAccountLink session_account_link = 24;
+
+    // E1: a tmux server started or stopped.
+    TmuxServerEvent tmux_server = 30;
+    // E1: session created, renamed or closed.
+    SessionEvent session = 31;
+    // E1: window created, renamed or closed.
+    WindowEvent window = 32;
+    // E3: pane created.
+    PaneCreated pane_created = 33;
+    // E3: pane exited with status; the one-nudge rule depends on it.
+    PaneExited pane_exited = 34;
+    // E4, never dropped.
+    ActivityTransition activity = 35;
+    // E5, droppable, at most one per pane per 5 s.
+    PaneSummary pane_summary = 36;
+    // E6, never dropped.
+    PromptDetected prompt_detected = 37;
+    // E6 companion: the prompt is no longer on screen.
+    PromptGone prompt_gone = 38;
+    // E7 (v2).
+    HarnessReady harness_ready = 39;
+    // E8 (v2).
+    HarnessHookEvent harness_hook = 40;
+    // E9: harness session id learned for a pane.
+    PaneHarnessSession pane_harness_session = 41;
+    // E11, never dropped; the dispatcher depends on it.
+    AvailabilityChanged availability = 42;
+    // Provider error, rate limit or similar shown by the harness (E12).
+    HarnessCondition harness_condition = 43;
+
+    // G2, never dropped.
+    GoalState goal_state = 50;
+    // H3, not droppable.
+    BranchState branch_state = 51;
+    // H1: checkout or worktree appeared or disappeared.
+    RepoEvent repo = 52;
+
+    // K2, droppable (also summarized in Heartbeat).
+    SpoolStatus spool_status = 60;
+
+    // L1: the policy file hash changed on disk.
+    PolicyChanged policy_changed = 70;
+    // L3: a local approve/deny decision for a command.
+    LocalApprovalDecision local_approval = 71;
+    // M4: drain state changed (hub or local).
+    DrainState drain_state = 72;
+  }
+}
+
+// ChangeKind for inventory events.
+enum ChangeKind {
+  CHANGE_KIND_UNSPECIFIED = 0;
+  CHANGE_KIND_CREATED = 1;
+  CHANGE_KIND_RENAMED = 2;
+  CHANGE_KIND_CLOSED = 3;
+}
+
+// TmuxServerEvent: a server started (full inventory follows in sessions) or
+// stopped (all its panes are gone).
+message TmuxServerEvent {
+  ChangeKind kind = 1;
+  TmuxServer server = 2;
+}
+
+// SessionEvent carries the session after the change (closed: ids only).
+message SessionEvent {
+  ChangeKind kind = 1;
+  TmuxServerKind server_kind = 2;
+  string server_start_id = 3;
+  TmuxSession session = 4;
+}
+
+// WindowEvent carries the window after the change (closed: key only).
+message WindowEvent {
+  ChangeKind kind = 1;
+  // Session the window belongs to (tmux id).
+  string session_tmux_id = 2;
+  TmuxWindow window = 3;
+}
+
+// PaneCreated (E3).
+message PaneCreated {
+  TmuxPane pane = 1;
+}
+
+// PaneExited (E3).
+message PaneExited {
+  PaneKey pane = 1;
+  int32 exit_status = 2;
+  // Goal that was running there, if any, so "stopped without DONE" is cheap.
+  GoalId goal_id = 3;
+  // tmux remain-on-exit kept the pane; false means the pane is gone.
+  bool remains = 4;
+}
+
+// ActivityTransition (E4), never dropped.
+message ActivityTransition {
+  PaneKey pane = 1;
+  Activity from = 2;
+  Activity to = 3;
+  google.protobuf.Timestamp last_output_at = 4;
+}
+
+// PaneSummary (E5), droppable.
+message PaneSummary {
+  PaneKey pane = 1;
+  // Last lines, ANSI stripped, capped at 4 KiB. Untrusted text.
+  string last_lines = 2;
+  google.protobuf.Timestamp last_output_at = 3;
+  Activity activity = 4;
+}
+
+// PromptSource says how a prompt was detected.
+enum PromptSource {
+  PROMPT_SOURCE_UNSPECIFIED = 0;
+  PROMPT_SOURCE_SCREEN_PATTERN = 1;
+  PROMPT_SOURCE_HOOK = 2;
+}
+
+// PromptOption is one menu choice as shown. Untrusted text.
+message PromptOption {
+  // The key or number to type, e.g. "1", "y".
+  string key = 1;
+  string label = 2;
+}
+
+// PromptDetected (E6). A SendKeys answering it must carry prompt_id.
+message PromptDetected {
+  PromptId prompt_id = 1;
+  PaneKey pane = 2;
+  Harness harness = 3;
+  // Prompt text, capped at 16 KiB. Untrusted text.
+  string text = 4;
+  repeated PromptOption options = 5;
+  // Destructive prompts default to Deny in the UI and are never
+  // auto-answered. Set for `rm -rf`, `docker compose down -v`, and for any
+  // command line that embeds a credential (01c, measured goal).
+  bool destructive = 6;
+  // Why it was flagged destructive, for the triage card. Untrusted text.
+  string destructive_reason = 7;
+  PromptSource source = 8;
+  // 0..100: how sure the adapter is this is a prompt.
+  uint32 confidence = 9;
+  // True when the adapter's detection is verified for this harness and
+  // send-to-pane is therefore enabled.
+  bool answerable = 10;
+  GoalId goal_id = 11;
+}
+
+// HarnessCondition (E12): a state the harness shows that is neither a prompt
+// nor normal work, such as "Meta Model API server error (HTTP 500) · retrying
+// in 7s · attempt 6/10" (observed 2026-10-01). Never dropped under
+// backpressure. A condition is reported when it appears and again with
+// `cleared` when it leaves the screen.
+message HarnessCondition {
+  PaneKey pane = 1;
+  Harness harness = 2;
+  HarnessConditionKind kind = 3;
+  // True while the harness says it is retrying on its own.
+  bool retrying = 4;
+  // Retry attempt and limit as shown, 0 when not shown.
+  uint32 attempt = 5;
+  uint32 max_attempts = 6;
+  // When the harness says it will retry next, if shown.
+  google.protobuf.Timestamp next_retry_at = 7;
+  // HTTP status if the harness shows one (500, 429, 529…), 0 otherwise.
+  uint32 http_status = 8;
+  // The line as shown, capped at 4 KiB. Untrusted text.
+  string text = 9;
+  google.protobuf.Timestamp since = 10;
+  bool cleared = 11;
+  GoalId goal_id = 12;
+}
+
+enum HarnessConditionKind {
+  HARNESS_CONDITION_KIND_UNSPECIFIED = 0;
+  // Provider returned a server error (5xx).
+  HARNESS_CONDITION_KIND_PROVIDER_ERROR = 1;
+  // Provider rate limit or overload (429, 529).
+  HARNESS_CONDITION_KIND_RATE_LIMITED = 2;
+  // A usage limit was reached (short window or weekly).
+  HARNESS_CONDITION_KIND_USAGE_LIMIT = 3;
+  // The harness wants the developer to sign in again.
+  HARNESS_CONDITION_KIND_SIGN_IN_REQUIRED = 4;
+  // Network unreachable from the harness.
+  HARNESS_CONDITION_KIND_NETWORK = 5;
+  // Recognised as an error by the adapter but not classified.
+  HARNESS_CONDITION_KIND_OTHER = 15;
+}
+
+// PromptGone (E6): the prompt left the screen (answered locally, timed out,
+// or the pane moved on). After this a SendKeys with that prompt_id gets
+// REASON_CODE_PROMPT_GONE.
+message PromptGone {
+  PromptId prompt_id = 1;
+  PaneKey pane = 2;
+}
+
+// HarnessReady (E7, v2): the adapter's ready pattern matched.
+message HarnessReady {
+  PaneKey pane = 1;
+  Harness harness = 2;
+  // True after a resume rather than a fresh start.
+  bool resumed = 3;
+}
+
+// HookEventKind is the normalized hook event (E8, v2).
+enum HookEventKind {
+  HOOK_EVENT_KIND_UNSPECIFIED = 0;
+  HOOK_EVENT_KIND_SESSION_START = 1;
+  HOOK_EVENT_KIND_SESSION_STOP = 2;
+  HOOK_EVENT_KIND_TURN_END = 3;
+  HOOK_EVENT_KIND_PERMISSION_REQUEST = 4;
+  HOOK_EVENT_KIND_GOAL_WRITTEN = 5;
+}
+
+// HarnessHookEvent (E8, v2): what the harness hooks report.
+message HarnessHookEvent {
+  PaneKey pane = 1;
+  Harness harness = 2;
+  HookEventKind kind = 3;
+  // Harness session id from the hook payload. Untrusted text.
+  string harness_session_id = 4;
+  // Harness's own event name, for unmapped kinds. Untrusted text.
+  string raw_event_name = 5;
+  GoalId goal_id = 6;
+}
+
+// PaneHarnessSession (E9).
+message PaneHarnessSession {
+  PaneKey pane = 1;
+  Harness harness = 2;
+  // Untrusted text.
+  string harness_session_id = 3;
+  // Where the harness keeps its transcript, for K3; path only, never read
+  // from credential or config files.
+  string transcript_path = 4;
+}
+
+// AvailabilityChanged (E11), never dropped.
+message AvailabilityChanged {
+  PaneKey pane = 1;
+  SessionId session_id = 2;
+  Availability from = 3;
+  Availability to = 4;
+  // Short machine reason: "keystroke", "goal_merged", "marked_on_board",
+  // "output", "idle_threshold".
+  string reason = 5;
+}
+
+// RepoEvent (H1).
+message RepoEvent {
+  ChangeKind kind = 1;
+  RepoCheckout checkout = 2;
+}
+
+// PolicyChanged (L1). Takes effect only after an agent restart.
+message PolicyChanged {
+  PolicyInfo policy = 1;
+  string previous_hash = 2;
+}
+
+// LocalApprovalDecision (L3).
+message LocalApprovalDecision {
+  CommandId command_id = 1;
+  bool approved = 2;
+  // "cli" or "notification".
+  string via = 3;
+  google.protobuf.Timestamp decided_at = 4;
+}

@@ -79,6 +79,7 @@ Phase: **v1** read-only, **v2** actions, **v3** later.
 | E9 | Pane ↔ harness session mapping | S, E | v1 |
 | E10 | Capture pane | C | v1 |
 | E11 | Session availability (idle and available for work) | S, E | v1 |
+| E12 | Harness condition (provider error, rate limit, sign-in required) | E | v1 |
 | F1 | Ensure session (create or reuse, optional harness) | C | v2 |
 | F2 | Ensure window | C | v2 |
 | F3 | Send keys (bound to `prompt_id` when answering) | C | v2 |
@@ -303,6 +304,8 @@ period for API-key providers.
   limits, and starts the next goal in it (G3) instead of opening a new window.
   Any keystroke from the developer in that session clears "idle" at once, and
   a goal is never typed into a session whose input line is not empty.
+- **E12 Harness condition:** provider errors, rate limits, sign-in needed (e.g.
+  Muse's "HTTP 500 · retrying · attempt 6/10"), reported until cleared.
 - **E10 Capture pane:** visible screen or last N lines, ANSI stripped by
   default.
 
@@ -427,8 +430,8 @@ All pass local policy, carry a `command_id`, and are idempotent except F3.
 
 ## M. Self-management
 
-- **M1 Local audit log**, **M2 OTEL telemetry**, **M3 Doctor** (tmux, harness
-  paths, mDNS, policy, certificate expiry, hub reachability, clock skew).
+- **M1** local audit log, **M2** OTEL, **M3** `doctor` (tmux, harness paths,
+  mDNS, policy, cert expiry, hub reachability, clock skew).
 - **M4 Drain and undrain** (v2): from the hub or locally
   (`fleet-agent drain|undrain`); reported in snapshot and heartbeat. While
   draining, the agent refuses G3 and F1/F2 that start a harness, with
@@ -488,8 +491,7 @@ testing approach are in [01c-handoff.md](01c-handoff.md).
 - Usage display mirrors each harness; probes every 10 min plus on events.
 - Emails hidden by default; log volume measured before step 3.
 - Security: pass-through, no root, no sandbox requirement, optional hardening guide.
-- No auto-dispatch to OpenCode on an Anthropic subscription (owner confirmed).
-- Auto-dispatch uses subscriptions only; API-key providers are for manual work.
+- Auto-dispatch: subscriptions only (API keys manual); never OpenCode on Anthropic.
 
 ## Open questions
 
