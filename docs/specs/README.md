@@ -6,6 +6,7 @@ the next starts, and no implementation code is written until step 4 is done.
 | Step | Spec | Question it answers | Status |
 |---|---|---|---|
 | 1 | [01-agent-capabilities.md](01-agent-capabilities.md) | What can an agent observe and do on a machine? | Draft |
+| 1b | [01b-harness-commands.md](01b-harness-commands.md) | Which harness commands exist and which may the hub send? | Draft |
 | 2 | 02-contracts.md + `api/fleet/v1/*.proto` | What exactly crosses the wire for each capability? | Not started |
 | 3 | 03-workflows.md | How do agent and hub cooperate for each flow (sequence, state machines, volumes, consistency)? | Not started |
 | 4 | 04-technology-review.md | Given the workflows, which storage, queueing and other technologies do we need? | Not started |

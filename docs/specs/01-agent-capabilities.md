@@ -162,57 +162,31 @@ A **harness adapter** is the extension point for a new tool:
 
   The agent sends an **account key** = hash(fleet salt from A1, identity it can
   see), so the same account matches across machines, plus a display label.
-  Email is sent only if the owner opts in. This is pseudonymous, not anonymous:
+  Whether the email itself is sent and shown is an owner setting (see open
+  question 2). This is pseudonymous, not anonymous:
   a compromised hub holding the salt could confirm a guessed email. Codex has no
-  unique identity on screen, so the hub maps `(machine, harness)` → account from
-  owner configuration. Identity is read by a short transient probe at agent
+  unique identity on screen (checked: `codex login status` prints only "Logged in
+  using ChatGPT"), so the owner picks the Codex account for each machine on the
+  hub (for example "Codex: ChatGPT Pro (personal)").
+- **Machine naming.** Machines are named automatically from the hostname the
+  agent reports at enrollment (B1); the owner can rename them. "Add machine" on
+  the hub creates the enrollment token and a one-line install command. The owner
+  may enter the expected hostname or IP first; the hub then warns if a
+  different machine enrolls with that token. The hub still never connects to the
+  machine ([0004](../adr/0004-agent-connectivity.md)). Identity is read by a short transient probe at agent
   start and when the harness version changes, so machines don't keep idle
   harness processes just for identity.
 - **C3 Folder pre-trust.** At setup, the agent pre-trusts allowed repo roots so
   goals never stall on the trust prompt. It does not answer trust prompts at
   run time.
 
-- **C4 Harness command catalog.** Each harness has many slash commands beyond
-  `/status` and `/usage`, and the set changes with the harness version **and**
-  with what is installed on that machine (skills and plugins appear as
-  commands). Observed on 2026-09-30:
-  - Codex 0.159.2: `/agents /app /approve /archive /cd /clear /compact /copy
-    /daemon /delete /diff /exit /experimental /export /fast /feedback /fork
-    /goal /hooks /ide /import /init /keymap /logout /mcp /memories /mention
-    /model /new /permissions /pets /plan /plugins /private /ps /pwd /raw /recap
-    /rename /resume /review /side /skills /status /statusline /stop /subagents
-    /theme /title /tui /usage /vim /voice /warnings /worktree`
-  - Muse 1.4.1 built-ins: `/agents /bug /chronicle /clear /compact /copy
-    /create-plugin /create-skill /delete /doctor /effort /export /feedback
-    /fork /goal /help /hud /init /keymap /logout /mcp /model /name /new
-    /permissions /quit /recap /resume /rewind /rules /settings /side /skills
-    /status /stop /subagents /tasks /theme /upgrade /usage /vim /voice
-    /workflows`, plus installed skills.
-  - Claude Code 2.1.285 built-ins include
-    `/clear /compact /config /context /diff /doctor /effort /export /fast /fork
-    /goal /hooks /login /logout /mcp /memory /model /permissions /plan /plugin
-    /rate-limit-options /recap /release-notes /rename /resume /rewind /sandbox
-    /status /statusline /tasks /usage`, plus installed skills and plugins
-    (capture was partial; the full list goes into fixtures).
-
-  All three have a native `/goal` command. The agent discovers the catalog by
-  walking the harness's own command list in the probe session at start and on
-  version change, and reports it with a hash. Every command is classified by the
-  adapter (unknown commands fall into **deny**):
-
-  | Class | Examples | From the hub |
-  |---|---|---|
-  | observe | `/status`, `/usage`, `/context`, `/diff`, `/ps`, `/tasks`, `/recap`, `/hud` | allowed, any idle prompt |
-  | session | `/compact`, `/model`, `/effort`, `/fast`, `/plan`, `/rename`, `/resume`, `/stop`, `/fork` | allowed with `operator` role |
-  | goal | `/goal <text>`, `/goal consent …`, `/goal done` | allowed; the goal command itself (G3) |
-  | review | `/review`, `/code-review`, `/security-review` | allowed with `operator` role |
-  | destructive | `/clear`, `/rewind`, `/delete`, `/archive`, `/exit`, `/quit` | local approval or explicit owner action |
-  | deny | `/login`, `/logout`, `/permissions`, `/config`, `/settings`, `/hooks`, `/plugin(s)`, `/sandbox`, `/privacy-settings`, `/upgrade`, `/install-*`, `/remote-control`, `/rate-limit-options`, `/usage-credits`, anything unknown | never |
-
-  `deny` covers anything that changes credentials, permissions, hooks,
-  installed code, or buys usage (Claude's `/usage-credits` and
-  `/rate-limit-options` offer paid overage). Local policy can move a command to
-  a stricter class, never a looser one.
+- **C4 Harness command catalog.** Each install offers many slash commands,
+  and the set changes with the harness version and with the skills and plugins
+  installed on that machine. The agent discovers the catalog in the probe
+  session at start and on version change, reports it with a hash, and the
+  adapter classifies every command (observe, session, goal, review,
+  destructive, deny; unknown commands are denied). Observed lists and the class
+  table: [01b-harness-commands.md](01b-harness-commands.md).
 
 ## D. Usage
 
@@ -221,14 +195,32 @@ A **harness adapter** is the extension point for a new tool:
   `StopProbe`. The agent keeps one idle harness session on the `fleet-probe`
   server, runs the usage command on schedule, and reports probe health (alive,
   last success, consecutive failures). No speed-up near the reserve line.
-- **D2 Usage reading** (event): `probe_id`, account key, buckets (label, %
-  used as integer 0–100 or `unknown`, reset time), short window if shown,
-  `read_at`, parser version. Reset times on screen are local strings without a
-  year ("Resets Sep 30 at 10pm"); the agent resolves them with B1's timezone to
-  UTC and sends both. On parse failure the reading is `unknown`; the raw screen
-  is attached only with emails and org names redacted, or only if the owner
-  opted in.
+- **D2 Usage reading** (event). **The reading carries every detail the harness
+  shows**, and the board displays them in the harness's own terms, so the owner
+  sees exactly what they would see by typing the command. Observed fields:
 
+  | Harness | Shown by the harness |
+  |---|---|
+  | Claude Code `/usage` | current session % used and reset; current week (all models) % used and reset; current week per model (for example Fable) % used and reset; the "what's contributing" breakdown, which Claude labels approximate and local to that machine |
+  | Codex `/status` | weekly limit % left and reset; plan ("Account: Pro"); model and server; credits when shown (session logs carry `credits.has_credits` and `balance`) |
+  | Muse `/usage` | current % used and reset; weekly % used and reset; the "as of" time; session tokens (input, cached, output, total), turns, subagents; plan ("Muse Code Power Usage") |
+
+  Each reading has two parts:
+  - **as shown:** every field the parser recognized, with the harness's labels,
+    plus the raw screen text (personal data redacted per C2), for display;
+  - **standardized:** a list of limit buckets (label, % used as integer 0–100
+    or `unknown`, reset time in UTC, window length if known, and whether it is
+    a short window or the weekly budget), for the scheduler. Codex's "% left"
+    becomes "% used" here; the display keeps "% left".
+
+  Also: `probe_id`, account key, `read_at`, parser version. Reset times on
+  screen are local strings without a year ("Resets Sep 30 at 10pm"); the agent
+  resolves them with B1's timezone and sends both the original text and UTC. On
+  parse failure the reading is `unknown` and the redacted raw screen is still
+  shown, never a guessed value.
+- **Probe timing.** Every 10 minutes by default, configurable per account;
+  plus an immediate probe when a goal on that account starts or finishes, and
+  when a passive signal (D3) shows a jump.
 - **D3 Passive usage signals.** Harnesses show usage without being asked:
   Claude's banner read "You've used 96% of your weekly limit · resets 10pm
   (America/New_York)" on 2026-09-30, and each harness has a configurable status
@@ -460,12 +452,19 @@ Assumes 50 machines, 10 panes each, 3 accounts.
   committed.
 - Agent end to end against an in-memory fake hub; hub against fake agents.
 
+## Resolved (2026-10-01)
+
+- Codex accounts: the owner picks the account per machine on the hub.
+- Machine names: automatic from the agent's hostname, renameable; optional
+  expected hostname or IP checked at enrollment.
+- Usage display: every detail the harness shows, in its own terms, plus a
+  standardized copy for the scheduler. Probes every 10 minutes by default,
+  configurable, plus event-triggered probes.
+
 ## Open questions
 
-1. Codex accounts: owner-assigned mapping per machine (proposed), or another
-   signal?
-2. Should account emails ever reach the hub, or only the key and a label?
-3. Probe interval default: 10 or 15 minutes?
-4. Measure terminal log volume on a real goal before step 3 (proposed: yes).
-5. Root-owned policy file: require it for machines that run unattended goals,
+1. Account emails: show them as the harness shows them, or hide them behind a
+   label by default with display as an opt-in?
+2. Measure terminal log volume on a real goal before step 3 (proposed: yes).
+3. Root-owned policy file: require it for machines that run unattended goals,
    or only recommend it?
