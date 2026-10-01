@@ -163,6 +163,11 @@ A **harness adapter** is the extension point for a new tool:
 | `TranscriptLocator` | Where the harness keeps its transcript |
 | `SupportedVersions` | Harness versions the parsers have fixtures for |
 
+Harnesses in scope: Claude Code, Codex and Muse, plus **OpenCode**, installed
+on all four of the author's machines (1.18.30–1.18.34, checked 2026-10-01). Its
+status and usage screens, prompts and goal support are not probed yet; its
+adapter starts with inventory, sessions and attach only.
+
 - **C1 Harness inventory:** name, version, path, parser version, and whether
   the version is within `SupportedVersions`. Outside it, usage readings are
   `unknown` and preflight refuses with `harness_version_unsupported`.
@@ -247,7 +252,12 @@ A **harness adapter** is the extension point for a new tool:
 
 - **E1 Inventory:** every session, window and pane on the developer's tmux
   server (marked "yours" or "started by fleet" from `FLEET_*` tags), plus the
-  internal `fleet-probe` server. Panes are keyed by `(server, server_start_id, pane_id)` plus
+  internal `fleet-probe` server. Windows are reported with their index and
+  name exactly as the status bar shows them (developers name windows by
+  purpose, e.g. `codex prompt 1`, `claude w2`, `btop`) and whether tmux
+  renames them automatically. The harness in a pane is identified from the
+  running process (`pane_current_command` and the adapter's `Detect()`), never
+  from the window name. Panes are keyed by `(server, server_start_id, pane_id)` plus
   `FLEET_*` environment tags, because tmux ids restart from zero with a new
   server.
 - **E2 Control-mode observer:** one `tmux -C` client per server, attached with
@@ -297,6 +307,12 @@ All pass local policy, carry a `command_id`, and are idempotent except F3.
   starting a harness through its adapter; new sessions are tagged with
   `FLEET_SESSION_ID`, `FLEET_OWNER`, `FLEET_PANE_KEY` so they show as "started
   by fleet" while appearing in the developer's normal `tmux ls`.
+- **Window naming.** Fleet-created windows are named after the harness and the
+  work: default template `{harness} {repo}#{issue}` (`muse eshu#7398`,
+  `claude eshu#7380`); for sessions without an issue, the name the developer
+  typed. The template is configurable per machine or group. Fleet turns off
+  `automatic-rename` for its own windows only, so the harness process doesn't
+  overwrite the name; the developer's windows are untouched.
 - **F2 Ensure window:** same, for a window in a session.
 - **F3 Send keys:** literal text plus named keys, rate-limited. When answering a
   prompt it carries the `prompt_id` from E6; if that prompt is no longer on
