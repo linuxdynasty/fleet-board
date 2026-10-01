@@ -484,18 +484,10 @@ testing approach are in [01c-handoff.md](01c-handoff.md).
 
 ## Resolved (2026-10-01)
 
-- Codex accounts: the owner picks the account per machine on the hub.
-- Machine names: automatic from the agent's hostname, renameable; optional
-  expected hostname or IP checked at enrollment.
-- Usage display: every detail the harness shows, in its own terms, plus a
-  standardized copy for the scheduler. Probes every 10 minutes by default,
-  configurable, plus event-triggered probes.
-
-- Emails: hidden by default, opt-in to show.
-- Terminal log volume: measure on a real goal before step 3.
-
-- Security: pass-through. No root, no sandbox requirement, no extra accounts;
-  optional hardening guide only.
+- Codex account chosen per machine; machine names from hostname, renameable.
+- Usage display mirrors each harness; probes every 10 min plus on events.
+- Emails hidden by default; log volume measured before step 3.
+- Security: pass-through, no root, no sandbox requirement, optional hardening guide.
 
 ## Open questions
 
