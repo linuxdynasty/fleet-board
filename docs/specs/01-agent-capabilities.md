@@ -12,6 +12,13 @@ event, a snapshot field or a stream.
 
 ## Principles
 
+0. **Pass-through: nothing the developer doesn't already do.** fleet-board is
+   a fleet dashboard and dispatcher for developers running subscription
+   harnesses across machines and projects. It runs each harness exactly as the
+   developer already runs it: same user, same logins, same permission and
+   sandbox settings, same repos. It requires no root, no extra accounts, no
+   sandbox mode and no new security setup. Its goals are visibility across
+   machines and keeping subscription quota from sitting idle.
 1. **The agent reports facts; the hub decides.** The agent is the source of
    truth for its machine (tmux, goal files, harnesses, usage, resources). The
    hub owns desired state, assignments, settings and anything computed from
@@ -368,29 +375,45 @@ All pass local policy, carry a `command_id`, and are idempotent except F3.
   everywhere); they run on the machine through the package manager or install
   script.
 
-## Security and privacy limits
+## Security and privacy
 
-- **Same-user limit (the biggest).** The agent, its policy file, its
-  certificate, the goal hooks and the harness all run as the same user. A goal
-  driven by a malicious issue could edit the policy file or hooks, or run
-  `fleet-agent approve`. Mitigations:
-  - A policy file owned by root (`/etc/fleet-agent/policy.yaml`) is preferred
-    and used when present; a user-owned file works, with a `doctor` warning.
-  - Policy changes take effect only after a restart; a hash change while
-    running is reported to the hub (L1), and so are hook hash changes (G1).
-  - The trusted-issues gate keeps untrusted issue text away from agents with
-    push rights.
-  - **Local approval protects against a compromised hub, not against a
-    compromised harness on the same machine.** A TTY check does not help,
-    because every harness runs in a tmux pane. This limit is documented.
-- **Fleet scope.** Goal files, pane content, logs and transcripts are read only
-  for fleet panes unless the owner opts in.
-- **Untrusted text.** Goal lines, pane summaries and prompts are written by
-  agents and harnesses; the hub and UI treat them as data (length caps, control
-  characters stripped, no HTML).
-- **Secrets on screen.** Pane content and logs can contain secrets. They stay
-  on the hub, readable by `owner` only ([0010](../adr/0010-session-logs.md)).
-- **Identity.** Emails are opt-in; account keys are pseudonymous.
+fleet-board does not change how a machine is secured. The harness's own
+settings (approval mode, sandbox, Auto-review, permission prompts) govern what
+a goal may do, exactly as when the developer runs it by hand. What fleet-board
+itself adds is kept safe by construction, with no setup:
+
+- **What the hub can make an agent do** is limited to the typed commands in
+  this spec (no shell strings, no raw exec), and never includes deny-class
+  harness commands (C4) such as `/login`, `/logout`, `/permissions`, `/hooks`
+  or buying usage.
+- **Credentials are never touched** (principle 3).
+- **Local policy** is a plain file in the developer's config directory with
+  safe defaults; most people never edit it. Its hash, and the hashes of the
+  agent binary and goal hooks, are reported so the hub can show when they
+  change. Nothing blocks dispatch on this; it is information.
+- **Untrusted text** (goal lines, pane summaries, prompts) is treated as data:
+  length caps, control characters stripped, no HTML.
+- **Fleet scope:** goal files, pane content, logs and transcripts are read only
+  for fleet panes unless the developer opts in.
+- **Secrets on screen** stay on the hub, readable by `owner` only
+  ([0010](../adr/0010-session-logs.md)).
+- **Emails** hidden by default; account keys are pseudonymous.
+
+**Known limit, stated plainly.** The harness and the agent run as the same
+user, as the harness does today, so a goal that goes wrong can do whatever that
+user can do, including editing fleet-board's own files. That is the same
+exposure the developer already accepts when running a harness unattended.
+Developers who want more can follow an optional hardening guide (harness
+sandbox modes, rootless containers on Linux, root-owned install, separate
+worker account with tmux `server-access` on 3.3+); none of it is required or
+assumed.
+
+**Checked 2026-10-01 (for the hardening guide, not as requirements):**
+`codex sandbox -- <cmd>` on macOS runs under Seatbelt with a default that
+blocks all writes (even in the working directory) and all network, but allows
+reading `~/.ssh`; forcing goals into it would break `git push` and `gh`. Muse's
+Auto-review mode reviewed and allowed a network request to `api.github.com`
+on its own during a goal. tmux `server-access` was added in 3.3.
 
 ## Contract-readiness rules for step 2
 
@@ -465,7 +488,10 @@ Assumes 50 machines, 10 panes each, 3 accounts.
 - Emails: hidden by default, opt-in to show.
 - Terminal log volume: measure on a real goal before step 3.
 
+- Security: pass-through. No root, no sandbox requirement, no extra accounts;
+  optional hardening guide only.
+
 ## Open questions
 
-1. Root-owned policy file: require it for machines that run unattended goals,
-   or only recommend it?
+None for this step. Terminal log volume is being measured on a real Muse goal
+(eshu-hq/eshu#7398, started 2026-10-01); results go into step 3.
