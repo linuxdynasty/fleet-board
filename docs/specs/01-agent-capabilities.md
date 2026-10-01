@@ -162,8 +162,9 @@ A **harness adapter** is the extension point for a new tool:
 
   The agent sends an **account key** = hash(fleet salt from A1, identity it can
   see), so the same account matches across machines, plus a display label.
-  Whether the email itself is sent and shown is an owner setting (see open
-  question 2). This is pseudonymous, not anonymous:
+  **Emails are hidden by default**: the board shows the account's label and
+  the agent sends only the key. An owner setting turns on sending and showing
+  the email exactly as the harness displays it. This is pseudonymous, not anonymous:
   a compromised hub holding the salt could confirm a guessed email. Codex has no
   unique identity on screen (checked: `codex login status` prints only "Logged in
   using ChatGPT"), so the owner picks the Codex account for each machine on the
@@ -461,10 +462,10 @@ Assumes 50 machines, 10 panes each, 3 accounts.
   standardized copy for the scheduler. Probes every 10 minutes by default,
   configurable, plus event-triggered probes.
 
+- Emails: hidden by default, opt-in to show.
+- Terminal log volume: measure on a real goal before step 3.
+
 ## Open questions
 
-1. Account emails: show them as the harness shows them, or hide them behind a
-   label by default with display as an opt-in?
-2. Measure terminal log volume on a real goal before step 3 (proposed: yes).
-3. Root-owned policy file: require it for machines that run unattended goals,
+1. Root-owned policy file: require it for machines that run unattended goals,
    or only recommend it?
