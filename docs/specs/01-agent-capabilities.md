@@ -489,6 +489,7 @@ testing approach are in [01c-handoff.md](01c-handoff.md).
 - Emails hidden by default; log volume measured before step 3.
 - Security: pass-through, no root, no sandbox requirement, optional hardening guide.
 - No auto-dispatch to OpenCode on an Anthropic subscription (owner confirmed).
+- Auto-dispatch uses subscriptions only; API-key providers are for manual work.
 
 ## Open questions
 
