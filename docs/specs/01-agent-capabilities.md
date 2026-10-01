@@ -31,8 +31,13 @@ event, a snapshot field or a stream.
 4. **Declarative where possible**, so a repeated command is harmless.
 5. **Every capability is advertised** with a versioned capability string
    (`usage.probe.codex@1`), so the hub never sends what a machine can't run.
-6. **Fleet scope only.** Unless local policy opts in, the agent observes only
-   what fleet started: fleet tmux servers, fleet panes, and their goal files.
+6. **Your tmux is the fleet's tmux.** The agent works with the developer's
+   normal tmux server, the one `tmux ls` shows: it lists every session there,
+   lets the developer attach to any of them or create new ones, and starts
+   goals there too. Only the usage probes live on a hidden internal server
+   (`tmux -L fleet-probe`). Terminal logs and transcripts are recorded for goal
+   sessions by default and for the developer's own sessions only when turned on
+   per session.
 7. **Testable without a real fleet**: every capability behind an interface with
    a fake; tmux and screen parsing tested against real tmux and captured
    fixtures.
@@ -73,6 +78,7 @@ Phase: **v1** read-only, **v2** actions, **v3** later.
 | E8 | Harness hook events | E | v2 |
 | E9 | Pane ↔ harness session mapping | S, E | v1 |
 | E10 | Capture pane | C | v1 |
+| E11 | Session availability (idle and available for work) | S, E | v1 |
 | F1 | Ensure session (create or reuse, optional harness) | C | v2 |
 | F2 | Ensure window | C | v2 |
 | F3 | Send keys (bound to `prompt_id` when answering) | C | v2 |
@@ -89,7 +95,7 @@ Phase: **v1** read-only, **v2** actions, **v3** later.
 | H3 | Branch state per goal worktree | S, E | v1 |
 | H4 | GitHub CLI sign-in and push access | S | v1 |
 | I1 | Preflight | C | v2 |
-| J1 | Terminal attach (incl. resize) | T | v3 |
+| J1 | Terminal attach to any session, existing or new (incl. resize) | T | v2 |
 | K1 | Terminal log capture and shipping | T | v2 |
 | K2 | Log spool status; pause and resume shipping | S, C | v2 |
 | K3 | Harness transcripts, shipped incrementally | T | v3 |
@@ -101,9 +107,9 @@ Phase: **v1** read-only, **v2** actions, **v3** later.
 | M3 | Doctor | L | v1 |
 | M4 | Drain and undrain | C, L, S | v2 |
 
-Not in v1 or v2: observing the owner's default tmux server (v3), Tailscale
-lookup (v3), raw exec (capability string reserved, not in the v1 contract),
-moving a goal between machines (v2 ships "stop here, dispatch there").
+Not in v1 or v2: Tailscale lookup (v3), raw exec (capability string reserved,
+not in the v1 contract), moving a goal between machines (v2 ships "stop here,
+dispatch there").
 
 ## A. Identity, connection, settings
 
@@ -239,12 +245,14 @@ A **harness adapter** is the extension point for a new tool:
 
 ## E. tmux observation
 
-- **E1 Inventory:** servers (`fleet`, `fleet-probe`), sessions, windows,
-  panes. Panes are keyed by `(server, server_start_id, pane_id)` plus
+- **E1 Inventory:** every session, window and pane on the developer's tmux
+  server (marked "yours" or "started by fleet" from `FLEET_*` tags), plus the
+  internal `fleet-probe` server. Panes are keyed by `(server, server_start_id, pane_id)` plus
   `FLEET_*` environment tags, because tmux ids restart from zero with a new
   server.
-- **E2 Control-mode observer:** one `tmux -C` client per fleet server, with
-  `refresh-client -f pause-after=<s>` (`%pause`, `%continue`,
+- **E2 Control-mode observer:** one `tmux -C` client per server, attached with
+  the `ignore-size` client flag (added in tmux 3.2) so it never changes the
+  size of the developer's windows, and with `refresh-client -f pause-after=<s>` (`%pause`, `%continue`,
   `%extended-output`; confirmed in tmux 3.7c's man page, confirm the release
   that introduced it is ≤ 3.2).
 - **E3 Pane lifecycle:** created and exited with exit status. "Stopped without
@@ -263,6 +271,20 @@ A **harness adapter** is the extension point for a new tool:
   `FLEET_PANE_KEY` in their environment; fleet goal hooks record the harness
   session id against it. This lets G2 attribute `.claude/active-goal.<session_id>`
   files to panes, and K3 find transcripts.
+- **E11 Session availability.** Each harness session reports whether it is
+  **idle**: the adapter's ready pattern is showing, no goal is active in it (G2),
+  and there has been no output or keyboard input for a configurable time
+  (default 2 minutes). Idle alone never makes a session take work. A session
+  is **available for work** when:
+  - fleet started it for a goal and that goal is verified merged, or
+  - the developer marked it "available for work" on the board (their own
+    sessions are never taken over without that mark).
+
+  The agent reports availability changes as events; the hub's dispatcher
+  treats an available session as free capacity, subject to pacing and machine
+  limits, and starts the next goal in it (G3) instead of opening a new window.
+  Any keystroke from the developer in that session clears "idle" at once, and
+  a goal is never typed into a session whose input line is not empty.
 - **E10 Capture pane:** visible screen or last N lines, ANSI stripped by
   default.
 
@@ -270,9 +292,11 @@ A **harness adapter** is the extension point for a new tool:
 
 All pass local policy, carry a `command_id`, and are idempotent except F3.
 
-- **F1 Ensure session:** create or reuse a named session in an allowed repo
-  root, optionally start a harness through its adapter; tag with
-  `FLEET_SESSION_ID`, `FLEET_OWNER`, `FLEET_PANE_KEY`.
+- **F1 Ensure session:** create a new session or attach to an existing one on
+  the developer's tmux server (by name), in an allowed repo root, optionally
+  starting a harness through its adapter; new sessions are tagged with
+  `FLEET_SESSION_ID`, `FLEET_OWNER`, `FLEET_PANE_KEY` so they show as "started
+  by fleet" while appearing in the developer's normal `tmux ls`.
 - **F2 Ensure window:** same, for a window in a session.
 - **F3 Send keys:** literal text plus named keys, rate-limited. When answering a
   prompt it carries the `prompt_id` from E6; if that prompt is no longer on
@@ -301,8 +325,10 @@ All pass local policy, carry a `command_id`, and are idempotent except F3.
   stripped, rendered as data.
 - **G3 Start goal** (v2), agent-side composite under one `command_id`, so it
   survives a hub outage: preflight → ensure worktree (H2) if the repo's goal
-  driver doesn't create its own → ensure window with harness → wait for ready
-  → type the adapter's `GoalCommand` → confirm the goal file appears. Each step
+  driver doesn't create its own → either reuse an available idle session
+  (E11, re-checked on the agent just before typing) or ensure a new window with
+  the harness → wait for ready → type the adapter's `GoalCommand` → confirm
+  the goal file appears. Each step
   is reported as `command_id+step`; a failure names the step
   (`ready_timeout`, `goal_file_not_seen`, …).
 - **G4 Stop goal gracefully** (v2): ask the goal to push work in progress and
@@ -333,17 +359,21 @@ All pass local policy, carry a `command_id`, and are idempotent except F3.
   `tmux_too_old`, `tmux_server_down`, `on_battery_blocked`, `policy_denied`,
   `draining`.
 
-## J. Terminal attach (v3)
+## J. Terminal attach (v2)
 
-- **J1** PTY attach to a fleet pane, streamed; read-only mode drops input;
-  resize; idle timeout; banner on running goals. Terminal escape sequences that
-  can act on the viewer's machine (clipboard writes via OSC 52, hyperlinks) are
-  stripped before reaching the browser.
+- **J1** Attach from the browser to any session on the developer's tmux server,
+  existing or newly created: a PTY running `tmux attach -t <session>` at the
+  browser's size, streamed both ways; read-only mode drops input; resize; idle
+  timeout; a banner when attaching to a running goal. The board also shows the
+  plain `ssh -t <user>@<host> tmux attach -t <session>` line for attaching from
+  the developer's own terminal. Escape sequences that can act on the viewer's
+  machine (clipboard writes via OSC 52, hyperlinks) are stripped before they
+  reach the browser.
 
 ## K. Session logs
 
-- **K1 Terminal log** (v2): `tmux pipe-pane -o` for fleet panes only into a
-  local spool; shipped in compressed chunks with byte offsets; kept until
+- **K1 Terminal log** (v2): `tmux pipe-pane -o` for goal panes, and for the
+  developer's own panes when turned on per session, into a local spool; shipped in compressed chunks with byte offsets; kept until
   acknowledged, up to a size cap; gaps are marked.
 - **K2 Spool status and control** (v2): pending bytes and gap marks in the
   snapshot and heartbeat; the hub can pause and resume shipping (for example
@@ -415,52 +445,10 @@ reading `~/.ssh`; forcing goals into it would break `git push` and `gh`. Muse's
 Auto-review mode reviewed and allowed a network request to `api.github.com`
 on its own during a goal. tmux `server-access` was added in 3.3.
 
-## Contract-readiness rules for step 2
+## Hand-off to step 2
 
-- **Identifiers:** `machine_id`, `account_id` (hub) vs `account_key` (agent),
-  `session_id` (hub-assigned), `goal_id`, `prompt_id`, `probe_id`, `command_id`,
-  pane key `(server, server_start_id, pane_id)`, normalized repo key.
-- **Time:** UTC `Timestamp` everywhere, plus the machine timezone in B1.
-- **Numbers:** percentages as integers 0–100 with an explicit `unknown` case,
-  never 0 for unknown; sizes in bytes.
-- **Ordering:** one monotonic `seq` per agent that survives reconnects (the
-  offline ring replays in order); a snapshot supersedes earlier events.
-- **Idempotency:** `command_id` on every command; composite steps as
-  `command_id+step`; F3 explicitly not idempotent.
-- **Errors:** one status enum (`OK`, `FAILED`, `EXPIRED`, `REJECTED_BY_POLICY`,
-  `UNSUPPORTED`, `UNKNOWN_OUTCOME`, `AWAITING_LOCAL_CONFIRM`) plus a structured
-  reason code shared with preflight.
-- **Versioning:** capability strings with versions; parser version and
-  supported harness versions (C1); hook version (G1); policy schema version
-  (B1); settings generation (A8); a maximum message size for captures.
-
-## Changes needed in accepted ADRs
-
-To be made in step 2 as a superseding ADR, not by editing the originals:
-
-- 0004: add hub settings delivery (A8), agent `Bye` (A7), `SnapshotRequest`
-  handling, `StartGoal` and `StopGoal` as agent-side commands (G3, G4),
-  `EnsureProbe`/`StopProbe` (D1), `Undrain` (M4), `prompt_id` on `SendKeys`,
-  `RunHarnessCommand` with the command classes (F8);
-  remove `RunExec` from v1; move Tailscale lookup and default-server
-  observation to v3.
-- 0009: labels are assigned on the hub; local config can only add.
-- 0010: harness transcripts ship incrementally (K3).
-
-## Volumes (estimates, to be measured)
-
-Assumes 50 machines, 10 panes each, 3 accounts.
-
-| Stream | Rate | Size |
-|---|---|---|
-| Heartbeats | ≈ 3.3/s | < 1 KB |
-| Activity transitions | bursty, ≈ up to 10/s | < 0.5 KB |
-| Pane summaries | ≤ 100/s, droppable | 1–4 KB |
-| Resource samples | ≈ 1.7/s | < 1 KB |
-| Goal state | a few per goal per hour | < 2 KB |
-| Usage readings | 3 accounts × every 10–15 min | 1–3 KB |
-| Terminal logs | unknown | estimate 1–20 MB/hour per busy pane raw; **measure before step 3** |
-| Snapshots | on connect | 10–100 KB |
+Contract-readiness rules, required ADR changes and volume estimates are in
+[01c-handoff.md](01c-handoff.md).
 
 ## Testing approach
 
