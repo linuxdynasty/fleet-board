@@ -48,42 +48,62 @@ on the login-shell PATH (`/opt/homebrew/bin`, `~/.local/bin`). A plain
 
 ## Architecture
 
+Three Go programs ([ADR 0001](adr/0001-system-architecture.md)): `fleetd`
+(the hub), `fleet-agent` (one per machine, running as the logged-in user) and
+`fleet` (the CLI), plus a React dashboard served by `fleetd`. Every arrow below
+is a stream unless it says otherwise; the full set of diagrams is in
+[docs/flows/](flows/README.md).
+
 ```mermaid
 flowchart LR
-  subgraph each worker
-    G[goal file<br/>DONE / BLOCKED / active] --> C[collector]
-    T[tmux<br/>list-panes, capture-pane] --> C
-    P[usage probe<br/>/usage, /status] --> C
-    H[harness hooks<br/>optional] -->|events| C
+  subgraph each machine
+    T[tmux server<br/>control mode] -->|pushed| A[fleet-agent]
+    G[goal files] -->|file watch| A
+    H[harness hooks] -->|pushed| A
+    P[probe session<br/>/usage, /status] -->|every 10 min + on events| A
   end
-  C -->|state + events| HUB[(hub<br/>SQLite)]
-  GH[GitHub via gh<br/>issues, PRs, claim comments] --> HUB
-  HUB -->|SSE| UI[web UI]
-  HUB --> CLI[fleet CLI / tmux popup]
-  UI -->|actions| HUB
-  HUB -->|start goal / send-keys over SSH| C
+  A <-->|one gRPC stream, mTLS<br/>events up, typed commands down| HUB[(fleetd<br/>state.db, logs.db)]
+  GH[GitHub App<br/>issues, PRs, checks] -->|polled, conditional| HUB
+  HUB <-->|Connect API + Watch stream| UI[dashboard]
+  HUB <-->|Connect API| CLI[fleet CLI]
 ```
 
-Inputs per worker, from most general to most specific:
+**Agent and hub.** The agent dials out to the hub and holds one long-lived,
+mutually authenticated gRPC stream ([ADR 0004](adr/0004-agent-connectivity.md)).
+Events go up as they happen; the hub sends typed commands (start a goal, answer
+a prompt, attach) down the same stream, and the agent accepts only command
+kinds its local policy allows. The hub never runs `ssh` or a shell string.
+Nothing on a worker listens on the network.
 
-1. **tmux** (polled): every pane, its command, last activity, a text preview.
-   Works for any process.
-2. **Goal file** (polled): the state of the goal the session is driving. This
-   is the main status source (see [Goal protocol](#goal-protocol)).
-3. **Usage probe** (polled): one idle session per harness account running the
-   harness's status command (see [Reading usage](#reading-usage)).
-4. **Hooks** (pushed, optional): instant "waiting on a permission prompt",
-   "turn finished".
+**Inputs on each machine, and how they arrive:**
 
-A worker without hooks still shows up through tmux and its goal file.
+| Input | How | Why not the other way |
+|---|---|---|
+| tmux panes (output, windows, lifecycle, activity) | **Streamed**: one `tmux -C` control-mode client per server pushes changes; a snapshot only on reconnect ([01](specs/01-agent-capabilities.md) E1-E5) | Polling `list-panes`/`capture-pane` would lag and cost CPU |
+| Goal files (`DONE`, `BLOCKED …`, working) | **Watched** with file-system notifications, plus a slow rescan for missed events ([ADR 0020](adr/0020-dependencies.md)) | |
+| Harness hooks (Stop, interrupt, permission, session start) | **Pushed** by the harness ([01d](specs/01d-goal-hooks.md)) | |
+| Developer typing in a goal pane | **Polled** cheaply from `tmux list-clients` activity ([02h](specs/02h-goal-binding-and-pane-signals.md)) | tmux control mode does not report keyboard input |
+| Weekly usage | **Probe every 10 min** per account in an idle probe session, **plus** an immediate probe when a goal starts or finishes or when a usage banner seen in a pane differs from the last reading ([03b](specs/03b-usage-and-sync.md)) | No harness offers a usage API or event today; a probe of push sources is [#46](https://github.com/linuxdynasty/fleet-board/issues/46) |
+| Heartbeat, resource samples | Periodic (15 s, 30 s) | Liveness is periodic by nature |
 
-All inputs are normalized to one event shape before they reach the hub:
+**Hub and the outside world.** GitHub is **polled** with conditional requests
+through a read-only GitHub App ([ADR 0005](adr/0005-github-app.md),
+[03j](specs/03j-provider-sync-and-trust.md)): a `304` costs nothing against the
+rate limit, and webhooks would need a public URL and are not redelivered when
+missed, so they stay an optional addition with polling as the backstop. When a
+goal says `DONE`, the hub checks that change request at once.
 
-```json
-{"machine": "omarchy", "harness": "claude", "account": "claude-max",
- "session": "...", "tmux_pane": "0:1",
- "type": "goal|turn_end|permission|heartbeat|usage", "payload": {}, "ts": "..."}
-```
+**Hub and people.** The dashboard and the CLI use the hub API (`fleet.hub.v1`,
+[02b](specs/02b-hub-api.md)); live updates come over `Watch`, one resumable
+server stream per browser tab ([ADR 0016](adr/0016-browser-transport.md),
+[02c](specs/02c-hub-watch-and-filters.md)), and terminal attach over a
+WebSocket.
+
+Every agent event shares one envelope (`Event` in
+[events.proto](../api/fleet/agent/v1/events.proto)): a per-agent sequence
+number, a delivery class (shed under pressure, keep latest, or never drop) and
+a typed body ([02i](specs/02i-delivery-and-sequencing.md)). A worker without
+hooks still shows up fully through tmux and its goal files.
 
 ## Goal protocol
 
