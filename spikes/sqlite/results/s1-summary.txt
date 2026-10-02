@@ -1,0 +1,38 @@
+## summary-rate=100 summary-bytes=600
+rows=5079 (127/s) commits=701 (17.5/s) disk_written=46.6 MB (1165 KB/s) wal_max=4.1 MB
+writer_commit          n=701     p50=6.022ms    p99=12.657ms   max=20.5ms
+## summary-rate=17 summary-bytes=2048
+rows=1759 (44/s) commits=703 (17.6/s) disk_written=26.2 MB (654 KB/s) wal_max=4.1 MB
+writer_commit          n=703     p50=5.707ms    p99=9.905ms    max=32.438ms
+## summary-rate=17 summary-bytes=600
+rows=1760 (44/s) commits=703 (17.6/s) disk_written=26.2 MB (655 KB/s) wal_max=4.1 MB
+writer_commit          n=703     p50=5.654ms    p99=10.028ms   max=20.939ms
+## summary-rate=0 summary-bytes=2048
+rows=1080 (27/s) commits=708 (17.7/s) disk_written=19.7 MB (493 KB/s) wal_max=4.1 MB
+writer_commit          n=708     p50=5.539ms    p99=8.532ms    max=18.454ms
+## summary-rate=100 batch-window=250ms
+rows=5078 (127/s) commits=155 (3.9/s) disk_written=31.7 MB (793 KB/s) wal_max=4.2 MB
+writer_commit          n=155     p50=7.999ms    p99=19.59ms    max=32.434ms
+msg_enqueue_to_commit  n=5078    p50=139.685ms  p99=268.474ms  max=284.129ms
+read_sidebar_500       n=395     p50=17.148ms   p99=20.701ms   max=22.414ms
+## summary-rate=100 batch-window=1s
+rows=5078 (127/s) commits=51 (1.3/s) disk_written=27.0 MB (676 KB/s) wal_max=4.4 MB
+writer_commit          n=51      p50=10.624ms   p99=20.758ms   max=33.182ms
+msg_enqueue_to_commit  n=5078    p50=401.379ms  p99=789.836ms  max=824.697ms
+read_sidebar_500       n=392     p50=17.035ms   p99=20.499ms   max=20.756ms
+## summary-rate=17 batch-window=1s
+rows=1759 (44/s) commits=40 (1.0/s) disk_written=7.8 MB (195 KB/s) wal_max=4.2 MB
+writer_commit          n=40      p50=7.533ms    p99=23.677ms   max=34.769ms
+msg_enqueue_to_commit  n=1759    p50=510.655ms  p99=1.009746s  max=1.042831s
+read_sidebar_500       n=398     p50=17.725ms   p99=21.695ms   max=22.72ms
+## summary-rate=17 batch-window=250ms steady
+rows=1758 (44/s) commits=156 (3.9/s) disk_written=11.9 MB (298 KB/s) wal_max=4.1 MB
+writer_commit          n=156     p50=6.814ms    p99=17.855ms   max=32.425ms
+msg_enqueue_to_commit  n=1758    p50=137.382ms  p99=264.075ms  max=291.889ms
+read_sidebar_500       n=397     p50=16.723ms   p99=20.436ms   max=21.654ms
+## summary-rate=17 batch-window=250ms burst
+rows=152639 (2543/s) commits=1527 (25.4/s) disk_written=806.6 MB (13438 KB/s) wal_max=4.5 MB
+writer_commit          n=1527    p50=8.699ms    p99=27.177ms   max=30.353ms
+msg_enqueue_to_commit  n=152639  p50=30.562ms   p99=58.907ms   max=70.58ms
+read_sidebar_500       n=599     p50=15.211ms   p99=21.403ms   max=23.819ms
+read_timeline_50       n=599     p50=1.06ms     p99=2.362ms    max=3.375ms

@@ -1,0 +1,22 @@
+# driver=modernc fullfsync=true synchronous=FULL scenario=logs
+prefill: 500000 chunks, 1389 sessions, 2074 MB, 10.857s
+ingest: 30 chunks/s x 2048 B, disk_written=325 KB/s
+logs_commit_1s_batch   n=60      p50=9.168ms    p99=19.291ms   max=20.21ms
+replay_session_1h      n=300     p50=15.842ms   p99=19.666ms   max=20.218ms
+point_lookup_offset    n=300     p50=186µs      p99=811µs      max=1.219ms
+delete_one_session: 6.441ms
+prune_oldest_10pct: 138 sessions in 938ms
+prune_tx_per_session   n=138     p50=6.097ms    p99=17.284ms   max=21.052ms
+incremental_vacuum: 50568 free pages in 1.393s, file 2080 MB -> 1874 MB
+vacuum_step_2000pages  n=26      p50=53.057ms   p99=62.204ms   max=65.871ms
+# driver=modernc fullfsync=true synchronous=FULL scenario=logs
+prefill: 500000 chunks, 1389 sessions, 423 MB, 4.079s
+ingest: 30 chunks/s x 650 B, disk_written=164 KB/s
+logs_commit_1s_batch   n=60      p50=8.497ms    p99=16.076ms   max=27.486ms
+replay_session_1h      n=300     p50=7.057ms    p99=10.486ms   max=11.173ms
+point_lookup_offset    n=300     p50=92µs       p99=1.874ms    max=2.782ms
+delete_one_session: 5.71ms
+prune_oldest_10pct: 138 sessions in 986ms
+prune_tx_per_session   n=138     p50=6.048ms    p99=21.807ms   max=23.368ms
+incremental_vacuum: 9582 free pages in 280ms, file 427 MB -> 388 MB
+vacuum_step_2000pages  n=5       p50=56.789ms   p99=57.359ms   max=66.027ms

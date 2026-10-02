@@ -1,0 +1,11 @@
+# driver=modernc fullfsync=true synchronous=FULL scenario=logs
+prefill: 500000 chunks, 1389 sessions, 2074 MB, 7.69s
+ingest: 30 chunks/s x 3300 B, disk_written=326 KB/s
+logs_commit_1s_batch   n=60      p50=7.767ms    p99=19.929ms   max=20.069ms
+replay_session_1h      n=300     p50=10.618ms   p99=18.387ms   max=19.731ms
+point_lookup_offset    n=300     p50=90µs       p99=852µs      max=1.528ms
+delete_one_session: 5.46ms
+prune_oldest_10pct: 138 sessions in 849ms
+prune_tx_per_session   n=138     p50=5.968ms    p99=14.879ms   max=17.949ms
+incremental_vacuum: 50568 free pages in 954ms, file 2080 MB -> 1874 MB
+vacuum_step_2000pages  n=26      p50=37.918ms   p99=41.779ms   max=43.709ms

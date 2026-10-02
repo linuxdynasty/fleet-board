@@ -1,0 +1,45 @@
+Linux 7.2.5-3-omarchy
+/dev/mapper/root btrfs  475G  373G   82G  83% /home
+# driver=modernc fullfsync=false synchronous=FULL scenario=commit
+commit_1row            n=300     p50=1.208ms    p99=3.241ms    max=3.967ms
+# driver=modernc fullfsync=true synchronous=FULL scenario=commit
+commit_1row            n=300     p50=1.029ms    p99=2.589ms    max=4.382ms
+# driver=ncruces fullfsync=true synchronous=FULL scenario=commit
+commit_1row            n=300     p50=1.049ms    p99=1.517ms    max=2.4ms
+# driver=modernc fullfsync=true synchronous=FULL scenario=steady
+rows=7619 (127/s) commits=1136 (18.9/s) disk_written=134.1 MB (2234 KB/s) wal_max=4.2 MB
+writer_commit          n=1136    p50=1.826ms    p99=9.163ms    max=49.167ms
+msg_enqueue_to_commit  n=7619    p50=29.572ms   p99=58.167ms   max=102.414ms
+read_sidebar_500       n=595     p50=22.268ms   p99=36.551ms   max=39.719ms
+read_visible_30        n=595     p50=519µs      p99=8.193ms    max=12.654ms
+read_timeline_50       n=595     p50=86µs       p99=3.193ms    max=4.882ms
+# driver=modernc fullfsync=true synchronous=FULL scenario=burst
+rows=157436 (2622/s) commits=1575 (26.2/s) disk_written=820.9 MB (13673 KB/s) wal_max=4.8 MB
+writer_commit          n=1575    p50=3.89ms     p99=21.648ms   max=61.471ms
+msg_enqueue_to_commit  n=157436  p50=24.491ms   p99=54.452ms   max=102.5ms
+read_sidebar_500       n=600     p50=22.598ms   p99=36.549ms   max=43.682ms
+read_visible_30        n=600     p50=638µs      p99=10.571ms   max=14.638ms
+read_timeline_50       n=600     p50=420µs      p99=10.482ms   max=17.859ms
+# driver=modernc fullfsync=true synchronous=FULL scenario=steady
+rows=5078 (127/s) commits=143 (3.6/s) disk_written=37.3 MB (932 KB/s) wal_max=4.3 MB
+writer_commit          n=143     p50=10.899ms   p99=348.561ms  max=513.954ms
+msg_enqueue_to_commit  n=5078    p50=166.944ms  p99=739.288ms  max=990.801ms
+read_sidebar_500       n=400     p50=22.139ms   p99=35.331ms   max=37.748ms
+read_visible_30        n=400     p50=467µs      p99=8.362ms    max=16.194ms
+read_timeline_50       n=400     p50=69µs       p99=2.748ms    max=4.909ms
+# driver=modernc fullfsync=true synchronous=FULL scenario=logs
+prefill: 500000 chunks, 1389 sessions, 2074 MB, 16.297s
+ingest: 30 chunks/s x 3300 B, disk_written=349 KB/s
+logs_commit_1s_batch   n=60      p50=40.883ms   p99=715.794ms  max=948.671ms
+replay_session_1h      n=300     p50=20.578ms   p99=37.174ms   max=38.89ms
+point_lookup_offset    n=300     p50=89µs       p99=2.159ms    max=10.076ms
+delete_one_session: 59.528ms
+prune_oldest_10pct: 138 sessions in 5.586s
+prune_tx_per_session   n=138     p50=40.234ms   p99=300.358ms  max=554.505ms
+incremental_vacuum: 50568 free pages in 2.148s, file 2080 MB -> 1874 MB
+vacuum_step_2000pages  n=26      p50=83.875ms   p99=88.646ms   max=89.46ms
+codex.idx
+codex.raw
+s1
+zstdchunk
+/dev/mapper/root  475G  375G   80G  83% /home
