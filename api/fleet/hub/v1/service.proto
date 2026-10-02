@@ -2,8 +2,12 @@
 // later a phone (ADR 0018). Served by fleetd over gRPC, gRPC-Web and
 // Connect JSON from the same handlers (ADR 0003). Conventions (resources,
 // paging, request_id idempotency, versions as ETags, Operations, Watch,
-// scopes, errors) are in docs/specs/02b-hub-api.md. Scope per RPC is noted
-// as [READ], [SESSIONS_WRITE], [APPROVALS], [SETTINGS], [ADMIN].
+// scopes, errors) are in docs/specs/02b-hub-api.md; the Watch grammar and
+// filter fields in 02c-hub-watch-and-filters.md; the scope of every RPC and
+// every Watch topic in 02d-hub-authz.md, which is authoritative. Scope per
+// RPC is noted as [READ], [SESSIONS_WRITE], [APPROVALS], [SETTINGS], [ADMIN],
+// [LOGS]; [A|B] means either scope is enough; [self] means any signed-in
+// principal on its own rows (ADMIN on everyone's); [none] is unauthenticated.
 syntax = "proto3";
 
 package fleet.hub.v1;
@@ -21,19 +25,20 @@ import "fleet/hub/v1/triage.proto";
 import "fleet/hub/v1/watch.proto";
 import "fleet/hub/v1/work.proto";
 
-option go_package = "github.com/linuxdynasty/fleet-board/api/fleet/hub/v1;hubv1";
-
 // FleetService is everything a person-facing client can do.
 service FleetService {
   // --- Server, summary, changes ---------------------------------------------
 
   // [none] API version, features, the caller. Works before sign-in.
   rpc GetServerInfo(GetServerInfoRequest) returns (GetServerInfoResponse);
-  // [READ] The summary strip.
+  // [READ|APPROVALS] The summary strip.
   rpc GetFleetSummary(GetFleetSummaryRequest) returns (GetFleetSummaryResponse);
-  // [READ] Resource changes, filtered by topic; resumable.
+  // [per topic] Resource changes, one filter per topic; resumable. The scope
+  // each topic needs is in 02d-hub-authz.md; a topic the caller cannot read
+  // is refused when the stream opens.
   rpc Watch(WatchRequest) returns (stream WatchResponse);
-  // [READ] One operation (an agent command and its outcome).
+  // [READ], or the caller that requested it. One operation (an agent command
+  // and its outcome).
   rpc GetOperation(GetOperationRequest) returns (GetOperationResponse);
 
   // --- Machines (Fleet view) ------------------------------------------------
@@ -79,7 +84,7 @@ service FleetService {
   rpc SetLogCapture(SetLogCaptureRequest) returns (SetLogCaptureResponse);
   // [READ] read-only, [SESSIONS_WRITE] with input. Browser attach (J1).
   rpc AttachTerminal(stream AttachTerminalRequest) returns (stream AttachTerminalResponse);
-  // [READ] Stored session log, optionally following new data (K1, K3).
+  // [LOGS] Stored session log, optionally following new data (K1, K3).
   rpc ReadSessionLog(ReadSessionLogRequest) returns (stream ReadSessionLogResponse);
 
   // --- Goals ----------------------------------------------------------------
@@ -114,7 +119,7 @@ service FleetService {
 
   // [READ]
   rpc ListAccounts(ListAccountsRequest) returns (ListAccountsResponse);
-  // [READ]
+  // [READ]; include_raw_screen also needs [LOGS].
   rpc GetAccount(GetAccountRequest) returns (GetAccountResponse);
   // [SETTINGS]
   rpc UpdateAccount(UpdateAccountRequest) returns (UpdateAccountResponse);
@@ -125,17 +130,17 @@ service FleetService {
 
   // --- Triage and approvals -------------------------------------------------
 
-  // [READ]
+  // [READ|APPROVALS]
   rpc ListTriageItems(ListTriageItemsRequest) returns (ListTriageItemsResponse);
-  // [READ]
+  // [READ|APPROVALS]
   rpc GetTriageItem(GetTriageItemRequest) returns (GetTriageItemResponse);
   // [APPROVALS]
   rpc SnoozeTriageItem(SnoozeTriageItemRequest) returns (SnoozeTriageItemResponse);
   // [APPROVALS]
   rpc DismissTriageItem(DismissTriageItemRequest) returns (DismissTriageItemResponse);
-  // [READ]
+  // [READ|APPROVALS]
   rpc ListApprovals(ListApprovalsRequest) returns (ListApprovalsResponse);
-  // [READ]
+  // [READ|APPROVALS]
   rpc GetApproval(GetApprovalRequest) returns (GetApprovalResponse);
   // [APPROVALS] Answer a prompt, confirm or deny a command.
   rpc DecideApproval(DecideApprovalRequest) returns (DecideApprovalResponse);
@@ -168,22 +173,23 @@ service FleetService {
 
   // --- Devices and notifications --------------------------------------------
 
-  // [none] Sent by a new device; creates a pending Device.
+  // [none] Sent by a new device; creates a pending Device. Rate limited per
+  // peer address; idempotency is keyed by (peer address, public key).
   rpc RequestPairing(RequestPairingRequest) returns (RequestPairingResponse);
   // [ADMIN]
   rpc ApprovePairing(ApprovePairingRequest) returns (ApprovePairingResponse);
-  // [ADMIN], or the device itself.
+  // [ADMIN], or [self] for the device itself.
   rpc RevokeDevice(RevokeDeviceRequest) returns (RevokeDeviceResponse);
   // [ADMIN]
   rpc ListDevices(ListDevicesRequest) returns (ListDevicesResponse);
-  // [ADMIN], or the device itself.
+  // [ADMIN], or [self] for the device itself.
   rpc GetDevice(GetDeviceRequest) returns (GetDeviceResponse);
-  // [READ] own targets; [ADMIN] all.
+  // [self] own targets; [ADMIN] all.
   rpc ListNotificationTargets(ListNotificationTargetsRequest) returns (ListNotificationTargetsResponse);
-  // [READ] for own targets.
+  // [self]
   rpc CreateNotificationTarget(CreateNotificationTargetRequest) returns (CreateNotificationTargetResponse);
-  // [READ] for own targets.
+  // [self]
   rpc UpdateNotificationTarget(UpdateNotificationTargetRequest) returns (UpdateNotificationTargetResponse);
-  // [READ] for own targets.
+  // [self]
   rpc DeleteNotificationTarget(DeleteNotificationTargetRequest) returns (DeleteNotificationTargetResponse);
 }

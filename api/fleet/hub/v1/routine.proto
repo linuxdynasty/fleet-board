@@ -7,18 +7,19 @@ syntax = "proto3";
 package fleet.hub.v1;
 
 import "fleet/hub/v1/common.proto";
+import "fleet/type/v1/consent.proto";
 import "fleet/type/v1/ids.proto";
 import "fleet/type/v1/status.proto";
 import "fleet/type/v1/work.proto";
+import "google/protobuf/duration.proto";
 import "google/protobuf/field_mask.proto";
 import "google/protobuf/timestamp.proto";
 
-option go_package = "github.com/linuxdynasty/fleet-board/api/fleet/hub/v1;hubv1";
-
 // QueueEmptyTrigger runs the routine when the repo has no READY work item
-// and a slot and account are free, at most once per min_interval_hours.
+// and a slot and account are free, at most once per min_interval.
 message QueueEmptyTrigger {
-  uint32 min_interval_hours = 1;
+  // At least 1 minute; default 1 hour when unset.
+  google.protobuf.Duration min_interval = 1;
 }
 
 // CronTrigger runs the routine on a schedule (5-field cron).
@@ -49,6 +50,37 @@ enum DoneRule {
   DONE_RULE_REPORT_WRITTEN = 3;
 }
 
+// RoutineSpec is what the owner configured. Covered by Routine.version, so a
+// run starting between loading and saving the form is not a conflict.
+message RoutineSpec {
+  string display_name = 1;
+  bool enabled = 2;
+  fleet.type.v1.RepoRef repo = 3;
+  // Unset = any harness the scheduler picks.
+  fleet.type.v1.Harness harness = 4;
+  string profile = 5;
+  RoutineTrigger trigger = 6;
+  // Goal text with placeholders {repo}, {run}, {date}; 4 KiB.
+  string goal_text_template = 7;
+  // Consent acts for its goals, further limited by repo ∩ account.
+  repeated fleet.type.v1.ConsentAct consent = 8;
+  DoneRule done_rule = 9;
+  // For DONE_RULE_REPORT_WRITTEN: path relative to the checkout.
+  string report_path = 10;
+  fleet.type.v1.Principal owner = 11;
+}
+
+// RoutineStatus is the run bookkeeping. Not versioned.
+message RoutineStatus {
+  google.protobuf.Timestamp observed_time = 1;
+  // Watch hub_seq of the change that last touched this status.
+  uint64 hub_seq = 2;
+  google.protobuf.Timestamp last_run_time = 10;
+  google.protobuf.Timestamp next_run_time = 11;
+  fleet.type.v1.GoalId last_goal = 12;
+  uint32 run_count = 13;
+}
+
 // Routine is one configured routine.
 message Routine {
   RoutineId id = 1;
@@ -56,28 +88,11 @@ message Routine {
   google.protobuf.Timestamp create_time = 3;
   google.protobuf.Timestamp update_time = 4;
 
-  string display_name = 10;
-  bool enabled = 11;
-  fleet.type.v1.RepoRef repo = 12;
-  // Unset = any harness the scheduler picks.
-  fleet.type.v1.Harness harness = 13;
-  string profile = 14;
-  RoutineTrigger trigger = 15;
-  // Goal text with placeholders {repo}, {run}, {date}; 4 KiB.
-  string goal_text_template = 16;
-  // Consent acts for its goals, further limited by repo ∩ account.
-  repeated string consent = 17;
-  DoneRule done_rule = 18;
-  // For DONE_RULE_REPORT_WRITTEN: path relative to the checkout.
-  string report_path = 19;
-  fleet.type.v1.Principal owner = 20;
-  google.protobuf.Timestamp last_run_time = 21;
-  google.protobuf.Timestamp next_run_time = 22;
-  fleet.type.v1.GoalId last_goal = 23;
-  uint32 run_count = 24;
+  RoutineSpec spec = 10;
+  RoutineStatus status = 11;
 }
 
-// ListRoutinesRequest. Filter fields: enabled, repo.
+// ListRoutinesRequest. Filter and order_by names: 02c-hub-watch-and-filters.md.
 message ListRoutinesRequest {
   int32 page_size = 1;
   string page_token = 2;
@@ -101,7 +116,7 @@ message GetRoutineResponse {
   Routine routine = 1;
 }
 
-// CreateRoutineRequest. id, version and times are assigned by the hub.
+// CreateRoutineRequest. id, version, times and status are assigned by the hub.
 message CreateRoutineRequest {
   string request_id = 1;
   Routine routine = 2;
@@ -112,7 +127,7 @@ message CreateRoutineResponse {
   Routine routine = 1;
 }
 
-// UpdateRoutineRequest.
+// UpdateRoutineRequest. Masks name spec fields, e.g. "spec.enabled".
 message UpdateRoutineRequest {
   string request_id = 1;
   Routine routine = 2;

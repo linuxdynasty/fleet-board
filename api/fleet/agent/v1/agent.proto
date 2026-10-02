@@ -12,13 +12,12 @@ import "fleet/agent/v1/command.proto";
 import "fleet/agent/v1/events.proto";
 import "fleet/agent/v1/snapshot.proto";
 import "fleet/agent/v1/streams.proto";
+import "fleet/type/v1/harness.proto";
 import "fleet/type/v1/ids.proto";
 import "fleet/type/v1/settings.proto";
 import "fleet/type/v1/status.proto";
 import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
-
-option go_package = "github.com/linuxdynasty/fleet-board/api/fleet/agent/v1;agentv1";
 
 // AgentService is served by fleetd. Enroll runs over server-authenticated TLS
 // with a single-use token; every other RPC needs the machine's client cert.
@@ -71,7 +70,7 @@ message EnrollResponse {
   bytes ca_chain_pem = 3;
   // Fingerprint the agent pins; fleetd prints it and the UI shows it.
   string ca_fingerprint = 4;
-  google.protobuf.Timestamp cert_not_after = 5;
+  google.protobuf.Timestamp cert_not_after_time = 5;
   // Fleet-wide salt for AccountKey (C2); never logged by the agent.
   bytes account_salt = 6;
   // Which hash construction the salt is for; bump on change.
@@ -96,7 +95,7 @@ message RenewCertRequest {
 message RenewCertResponse {
   bytes cert_pem = 1;
   bytes ca_chain_pem = 2;
-  google.protobuf.Timestamp cert_not_after = 3;
+  google.protobuf.Timestamp cert_not_after_time = 3;
 }
 
 // ---------------------------------------------------------------------------
@@ -157,7 +156,7 @@ message Hello {
   uint64 last_event_seq = 9;
   ConnectReason reason = 10;
   // Agent wall clock at send, for skew detection against hub_time.
-  google.protobuf.Timestamp sent_at = 11;
+  google.protobuf.Timestamp sent_time = 11;
   // Settings generation the agent currently holds (0 = none).
   uint64 settings_generation = 12;
   // EnrollRequest.install_id, repeated on every connect.
@@ -169,7 +168,7 @@ message Hello {
 // HelloAck (A3).
 message HelloAck {
   string hub_version = 1;
-  // Hub time; the agent evaluates not_after in hub time.
+  // Hub time; the agent evaluates not_after_time in hub time.
   google.protobuf.Timestamp hub_time = 2;
   // Connection epoch; bumped on every new stream for this machine.
   uint64 epoch = 3;
@@ -197,19 +196,25 @@ message HelloAck {
   repeated fleet.type.v1.Capability hub_capabilities = 12;
 }
 
+// GoalPaneCount is the number of panes whose goal file is in one state. A
+// repeated message, not a map, because proto map keys cannot be enums.
+message GoalPaneCount {
+  fleet.type.v1.GoalLineState state = 1;
+  uint32 count = 2;
+}
+
 // PaneCounts are the raw counts in a heartbeat; the hub computes slots.
 message PaneCounts {
   uint32 fleet_panes = 1;
   map<string, uint32> panes_by_harness = 2;
-  // Keyed by GoalLineState name, e.g. "WORKING", "BLOCKED_WATCH".
-  map<string, uint32> goal_panes_by_state = 3;
+  repeated GoalPaneCount goal_panes_by_state = 3;
   uint32 available_sessions = 4;
 }
 
 // Heartbeat (A5), every 15 s. Droppable under backpressure; the hub marks
 // stale at 45 s and offline at 3 min. Carries no seq.
 message Heartbeat {
-  google.protobuf.Timestamp sent_at = 1;
+  google.protobuf.Timestamp sent_time = 1;
   // Monotonic uptime of the agent process.
   google.protobuf.Duration uptime = 2;
   double load1 = 3;
@@ -234,10 +239,6 @@ message Settings {
   // Labels assigned on the hub; local config can add, never remove.
   repeated string labels = 2;
   fleet.type.v1.SettingValues values = 3;
-  // Was probe intervals per account id as integer seconds; replaced by
-  // probe_interval_by_account so every duration on the wire is a Duration.
-  reserved 4;
-  reserved "probe_interval_seconds_by_account";
   // Store incarnation this generation belongs to (HelloAck.settings_epoch).
   string settings_epoch = 5;
   // Probe intervals keyed by AccountId.value (map keys cannot be messages);

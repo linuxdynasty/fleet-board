@@ -7,14 +7,13 @@ syntax = "proto3";
 package fleet.hub.v1;
 
 import "fleet/hub/v1/common.proto";
+import "fleet/type/v1/consent.proto";
 import "fleet/type/v1/ids.proto";
 import "fleet/type/v1/status.proto";
 import "fleet/type/v1/usage.proto";
 import "google/protobuf/duration.proto";
 import "google/protobuf/field_mask.proto";
 import "google/protobuf/timestamp.proto";
-
-option go_package = "github.com/linuxdynasty/fleet-board/api/fleet/hub/v1;hubv1";
 
 // AccountMode (ADR 0008).
 enum AccountMode {
@@ -38,8 +37,16 @@ enum PacingState {
   PACING_STATE_EXCLUDED = 8;
 }
 
+// AccountBindingSpec maps the account to one machine and harness profile
+// (empty = the harness default). The owner sets it for an account the harness
+// shows no identity for (Codex); the agent's observation is AccountBinding.
+message AccountBindingSpec {
+  fleet.type.v1.MachineId machine = 1;
+  string profile = 2;
+}
+
 // AccountBinding is one machine where the account is signed in, and the
-// harness profile it is signed in under (empty = the harness default).
+// harness profile it is signed in under, as observed.
 message AccountBinding {
   fleet.type.v1.MachineId machine = 1;
   string profile = 2;
@@ -96,6 +103,48 @@ message AccountProbe {
   google.protobuf.Duration interval = 8;
 }
 
+// AccountSpec is what the owner decided about an account. Covered by
+// Account.version and expected_version.
+message AccountSpec {
+  string display_name = 1;
+  AccountMode mode = 2;
+  fleet.type.v1.BudgetKind budget_kind = 3;
+  // Never used by the fleet; kept for the owner (design.md rule 3).
+  uint32 reserve_percent = 4;
+  // Consent acts this account allows (ADR 0008).
+  repeated fleet.type.v1.ConsentAct consent = 5;
+  // For BUDGET_KIND_DOLLAR_CAP: the owner's cap for display, micro-units.
+  int64 spend_cap_micros = 6;
+  // Owner-mapped machines (a Codex account that shows no identity).
+  repeated AccountBindingSpec bindings = 7;
+}
+
+// AccountStatus is everything observed or computed about an account: the
+// identity as the harness shows it, where it is signed in, the latest
+// reading, the scheduler's pacing and the probe. Not versioned.
+message AccountStatus {
+  google.protobuf.Timestamp observed_time = 1;
+  // Watch hub_seq of the change that last touched this status.
+  uint64 hub_seq = 2;
+
+  fleet.type.v1.Harness harness = 10;
+  fleet.type.v1.AccountKey account_key = 11;
+  // As the harness shows them. Untrusted text. email is empty unless the
+  // owner turned on share_identity_email.
+  string label = 12;
+  string plan = 13;
+  string login_method = 14;
+  string organization = 15;
+  string email = 16;
+  bool identity_not_shown = 17;
+  repeated AccountBinding bindings = 18;
+  AccountUsage usage = 19;
+  // Rewritten at every scheduler evaluation; ahead_points, rank and
+  // projected_unused_percent are volatile (02c, "Volatile fields").
+  AccountPacing pacing = 20;
+  AccountProbe probe = 21;
+}
+
 // Account is one harness account (subscription or API key).
 message Account {
   fleet.type.v1.AccountId id = 1;
@@ -103,32 +152,11 @@ message Account {
   google.protobuf.Timestamp create_time = 3;
   google.protobuf.Timestamp update_time = 4;
 
-  fleet.type.v1.Harness harness = 10;
-  string display_name = 11;
-  fleet.type.v1.AccountKey account_key = 12;
-  AccountMode mode = 13;
-  fleet.type.v1.BudgetKind budget_kind = 14;
-  // Never used by the fleet; kept for the owner (design.md rule 3).
-  uint32 reserve_percent = 15;
-  // Consent acts this account allows (ADR 0008).
-  repeated string consent = 16;
-  // As the harness shows them. Untrusted text. email is empty unless the
-  // owner turned on share_identity_email.
-  string label = 17;
-  string plan = 18;
-  string login_method = 19;
-  string organization = 20;
-  string email = 21;
-  bool identity_not_shown = 22;
-  repeated AccountBinding bindings = 23;
-  AccountUsage usage = 24;
-  AccountPacing pacing = 25;
-  AccountProbe probe = 26;
-  // For BUDGET_KIND_DOLLAR_CAP: the owner's cap for display, micro-units.
-  int64 spend_cap_micros = 27;
+  AccountSpec spec = 10;
+  AccountStatus status = 11;
 }
 
-// ListAccountsRequest. Filter fields: harness, mode, pacing.state.
+// ListAccountsRequest. Filter and order_by names: 02c-hub-watch-and-filters.md.
 message ListAccountsRequest {
   int32 page_size = 1;
   string page_token = 2;
@@ -145,6 +173,7 @@ message ListAccountsResponse {
 // GetAccountRequest.
 message GetAccountRequest {
   fleet.type.v1.AccountId id = 1;
+  // Needs SCOPE_LOGS: the redacted raw usage screen is terminal text.
   bool include_raw_screen = 2;
 }
 
@@ -153,9 +182,10 @@ message GetAccountResponse {
   Account account = 1;
 }
 
-// UpdateAccountRequest. Updatable: display_name, mode, reserve_percent,
-// consent, budget_kind, spend_cap_micros, and bindings (to map a Codex
-// account that shows no identity to a machine).
+// UpdateAccountRequest. Updatable: spec.display_name, spec.mode,
+// spec.reserve_percent, spec.consent, spec.budget_kind,
+// spec.spend_cap_micros and spec.bindings (to map a Codex account that shows
+// no identity to a machine). status is output-only.
 message UpdateAccountRequest {
   string request_id = 1;
   Account account = 2;
@@ -189,7 +219,7 @@ message UsageReading {
   fleet.type.v1.SpendReading spend = 6;
 }
 
-// ListUsageReadingsRequest. Filter fields: read_time, source.
+// ListUsageReadingsRequest. Filter and order_by names: 02c-hub-watch-and-filters.md.
 message ListUsageReadingsRequest {
   int32 page_size = 1;
   string page_token = 2;

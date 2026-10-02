@@ -12,8 +12,6 @@ import "fleet/type/v1/work.proto";
 import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
 
-option go_package = "github.com/linuxdynasty/fleet-board/api/fleet/agent/v1;agentv1";
-
 // SessionTarget names a session on a server. Fleet sessions are addressed by
 // hub id or fleet name; the developer's own sessions (whose names may contain
 // spaces, e.g. "codex prompt 1") are addressed by tmux's session id from the
@@ -73,9 +71,6 @@ message EnsureSession {
   bool resume = 6;
   // Attach to an existing session of that name instead of failing.
   bool reuse = 7;
-  // Was the FLEET_OWNER display name; replaced by owner_principal.
-  reserved 8;
-  reserved "owner";
   // Name for the first window; empty = settings template.
   string window_name = 9;
   fleet.type.v1.GoalId goal_id = 10;
@@ -162,7 +157,7 @@ message CapturePane {
 message CapturePaneResult {
   string text = 1;
   bool truncated = 2;
-  google.protobuf.Timestamp captured_at = 3;
+  google.protobuf.Timestamp captured_time = 3;
 }
 
 // RunHarnessCommand (F8): type an allow-listed slash command at an idle

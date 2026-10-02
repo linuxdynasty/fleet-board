@@ -8,9 +8,8 @@ package fleet.agent.v1;
 
 import "fleet/type/v1/harness.proto";
 import "fleet/type/v1/ids.proto";
+import "fleet/type/v1/status.proto";
 import "google/protobuf/timestamp.proto";
-
-option go_package = "github.com/linuxdynasty/fleet-board/api/fleet/agent/v1;agentv1";
 
 // TerminalRequest: one agent -> hub message on the Terminal stream.
 message TerminalRequest {
@@ -58,8 +57,7 @@ message TermReady {
 
 // TermClosed.
 message TermClosed {
-  // "idle_timeout", "session_ended", "hub_closed", "agent_shutdown".
-  string reason = 1;
+  fleet.type.v1.AttachCloseReason reason = 1;
 }
 
 // TermDown: hub -> agent input and control.
@@ -100,7 +98,8 @@ message TermClose {}
 // ---------------------------------------------------------------------------
 
 // LogChunk: one compressed chunk at a byte offset in the raw stream. The
-// agent keeps it in the spool until acked. At most 1 MiB compressed.
+// agent keeps it in the spool until acked. At most 960 KiB compressed, so
+// the framed message stays under the 1 MiB message cap.
 //
 // Framing (spike S2, 2026-10-02, 60 min Codex goal): the agent keeps ONE
 // zstd frame per stream open for up to 5 minutes or 4 MiB raw and flushes
@@ -111,10 +110,6 @@ message TermClose {}
 // chunk starts a new frame. Seek granularity is therefore one frame
 // (<= 5 min): replay decodes from the chunk at frame_raw_offset.
 message LogChunk {
-  // Were session_id, pane and stream; now one LogStreamKey shared with
-  // LogAck, so an ack names exactly the stream a chunk came from.
-  reserved 1, 2, 3;
-  reserved "session_id", "pane", "stream";
   // Offset of the first raw byte in this chunk.
   uint64 offset = 4;
   // zstd blocks (part of the frame that starts at frame_raw_offset) that
@@ -123,8 +118,8 @@ message LogChunk {
   uint32 raw_length = 6;
   // Bytes lost before this chunk because the spool cap was hit.
   uint64 gap_before = 7;
-  google.protobuf.Timestamp first_byte_at = 8;
-  google.protobuf.Timestamp last_byte_at = 9;
+  google.protobuf.Timestamp first_byte_time = 8;
+  google.protobuf.Timestamp last_byte_time = 9;
   // True when the stream ended (pane exited, capture turned off).
   bool final = 10;
   fleet.type.v1.GoalId goal_id = 11;
@@ -141,10 +136,6 @@ message LogChunk {
 // hub may also send it unsolicited: with pause to stop shipping, and with
 // all_streams and pause=false to resume every stream of the machine.
 message LogAck {
-  // Were session_id and stream (no pane, so two panes of one session were
-  // ambiguous); replaced by key.
-  reserved 1, 2;
-  reserved "session_id", "stream";
   uint64 acked_offset = 3;
   // Hub asks the agent to pause shipping (disk low); same as SetLogShipping.
   bool pause = 4;

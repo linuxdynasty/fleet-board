@@ -32,22 +32,22 @@ Severity: I important, M minor. Risk: refactor risk if deferred (h/m/l).
 
 | Theme | Id | Sev | Risk | Finding | Status |
 |---|---|---|---|---|---|
-| A | `watch-filter-resume-contradiction` | I | h | Watch: changing the filter is both 'resume with last token' and RESYNC_REQUIRED; pane-visible filtering has no grammar | open |
-| A | `version-etag-vs-volatile-fields` | M | h | `version` bumps on every committed change, so expected_version is unusable on resources that carry live status | open |
-| A | `scope-model-incomplete` | M | h | Scope model has no table for Watch topics, 'self' rules live only in proto comments, and READ is too broad for a phone | open |
-| A | `watch-subscription-model` | I | h | Watch has one filter for all topics, and changing the filter contradicts RESYNC rules; pane-summary subscription cannot work as designed | open |
-| A | `etag-volatile-status` | I | h | `version` as ETag covers volatile status on Machine, Account and Goal, so expected_version fails constantly | open |
-| A | `volatile-fields-in-watched-resources` | I | h | Telemetry and log counters inside versioned Watch resources (Machine, Session) contradict the version/dedupe rule and the load model | open |
-| A | `consent-acts-free-strings` | I | h | Consent acts are `repeated string` in six messages although they are a closed set typed into the harness | open |
-| A | `naming-units-and-json-conventions` | M | h | Inconsistent timestamp suffixes, units, id field names and string-typed enums across packages | open |
-| A | `contract-freeze-gate` | I | h | Additive-only rule is already in force before any implementation, and the confirmed fixes need non-additive changes | open |
-| A | `logs-scope-mismatch` | I | m | Logs are READ scope in the API but owner-only in ADR 0010; a viewer or phone device can read all terminal history | open |
-| A | `filter-grammar-and-field-catalogue` | I | m | List/Watch filter fields named in request comments are not fields of the resource, and the grammar is undefined | open |
-| A | `workitemref-identity-undefined` | M | m | WorkItemRef mixes identity with display fields and is used as the Watch/dedupe id | open |
-| A | `codegen-config-and-64bit-ints` | M | m | No buf.gen.yaml or TypeScript/Go codegen decisions; uint64 versions become bigint/strings in JSON and TS | open |
-| A | `error-model-gaps` | M | l | Error model leaves common failures without reason codes; field-level validation and WebSocket errors unspecified | open |
-| A | `capability-map-and-size-limits-incomplete` | M | l | Command-to-capability map and hub API size limits are not specified; payload caps equal the message cap | open |
-| A | `small-doc-proto-contradictions` | M | l | Minor scope and idempotency contradictions between 02b and the protos | open |
+| A | `watch-filter-resume-contradiction` | I | h | Watch: changing the filter is both 'resume with last token' and RESYNC_REQUIRED; pane-visible filtering has no grammar | fixed |
+| A | `version-etag-vs-volatile-fields` | M | h | `version` bumps on every committed change, so expected_version is unusable on resources that carry live status | fixed |
+| A | `scope-model-incomplete` | M | h | Scope model has no table for Watch topics, 'self' rules live only in proto comments, and READ is too broad for a phone | fixed |
+| A | `watch-subscription-model` | I | h | Watch has one filter for all topics, and changing the filter contradicts RESYNC rules; pane-summary subscription cannot work as designed | fixed |
+| A | `etag-volatile-status` | I | h | `version` as ETag covers volatile status on Machine, Account and Goal, so expected_version fails constantly | fixed |
+| A | `volatile-fields-in-watched-resources` | I | h | Telemetry and log counters inside versioned Watch resources (Machine, Session) contradict the version/dedupe rule and the load model | fixed |
+| A | `consent-acts-free-strings` | I | h | Consent acts are `repeated string` in six messages although they are a closed set typed into the harness | fixed |
+| A | `naming-units-and-json-conventions` | M | h | Inconsistent timestamp suffixes, units, id field names and string-typed enums across packages | fixed |
+| A | `contract-freeze-gate` | I | h | Additive-only rule is already in force before any implementation, and the confirmed fixes need non-additive changes | fixed |
+| A | `logs-scope-mismatch` | I | m | Logs are READ scope in the API but owner-only in ADR 0010; a viewer or phone device can read all terminal history | fixed |
+| A | `filter-grammar-and-field-catalogue` | I | m | List/Watch filter fields named in request comments are not fields of the resource, and the grammar is undefined | fixed |
+| A | `workitemref-identity-undefined` | M | m | WorkItemRef mixes identity with display fields and is used as the Watch/dedupe id | fixed |
+| A | `codegen-config-and-64bit-ints` | M | m | No buf.gen.yaml or TypeScript/Go codegen decisions; uint64 versions become bigint/strings in JSON and TS | fixed |
+| A | `error-model-gaps` | M | l | Error model leaves common failures without reason codes; field-level validation and WebSocket errors unspecified | fixed |
+| A | `capability-map-and-size-limits-incomplete` | M | l | Command-to-capability map and hub API size limits are not specified; payload caps equal the message cap | fixed |
+| A | `small-doc-proto-contradictions` | M | l | Minor scope and idempotency contradictions between 02b and the protos | fixed |
 | B | `no-signin-flow` | M | h | No sign-in, claim, session or API-token flow for authenticated mode; credential carriage is undefined | open |
 | B | `local-trusted-attack-surface` | I | h | local_trusted mode and WebSocket attach: no Origin/Host rules, no attach ticket, principal and auth_mode type undefined | open |
 | B | `hub-identity-and-restore` | I | h | Hub identity material (CA key, fleet_id, account salt, settings_epoch) is absent from the data model and backup, and nothing mints a new settings_epoch on restore | open |

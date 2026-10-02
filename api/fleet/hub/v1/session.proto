@@ -13,8 +13,6 @@ import "fleet/type/v1/status.proto";
 import "fleet/type/v1/work.proto";
 import "google/protobuf/timestamp.proto";
 
-option go_package = "github.com/linuxdynasty/fleet-board/api/fleet/hub/v1;hubv1";
-
 // Pane is one tmux pane as the hub knows it.
 message Pane {
   fleet.type.v1.PaneKey key = 1;
@@ -24,8 +22,9 @@ message Pane {
   string current_command = 4;
   // Detected from the process, never from the window name.
   fleet.type.v1.Harness harness = 5;
+  // Volatile: at most one Watch message per 5 s when only activity changes
+  // (02c, "Volatile fields"). The last output time is on PaneSummary.
   fleet.type.v1.Activity activity = 6;
-  google.protobuf.Timestamp last_output_time = 7;
   bool dead = 8;
   int32 exit_status = 9;
   fleet.type.v1.Availability availability = 10;
@@ -65,15 +64,20 @@ message SessionLogInfo {
   uint64 gap_bytes = 6;
 }
 
-// Session is one tmux session. The hub assigns a SessionId to every session
-// it observes: fleet-started ones carry it in FLEET_SESSION_ID; the
-// developer's own get one bound to (machine, server_start_id, tmux_id), so
-// a tmux server restart yields new ids.
-message Session {
-  fleet.type.v1.SessionId id = 1;
-  uint64 version = 2;
-  google.protobuf.Timestamp create_time = 3;
-  google.protobuf.Timestamp update_time = 4;
+// SessionSpec is what the owner chose for a session: terminal capture on a
+// developer session. Covered by Session.version.
+message SessionSpec {
+  // Terminal capture turned on for a developer session (goal panes always).
+  // SetLogCapture changes it; Pane.log_capture reports what the agent does.
+  bool log_capture = 1;
+}
+
+// SessionStatus is everything observed about a session: identity in tmux,
+// windows and panes, attach count, stored logs. Not versioned.
+message SessionStatus {
+  google.protobuf.Timestamp observed_time = 1;
+  // Watch hub_seq of the change that last touched this status.
+  uint64 hub_seq = 2;
 
   fleet.type.v1.MachineId machine = 10;
   fleet.type.v1.TmuxServerKind server = 11;
@@ -84,15 +88,30 @@ message Session {
   string name = 14;
   bool started_by_fleet = 15;
   fleet.type.v1.Principal owner = 16;
+  // Volatile: at most one Watch message per 5 s when only it changes.
   uint32 attached_clients = 17;
   repeated SessionWindow windows = 18;
+  // Counters are volatile: at most one Watch message per 5 s.
   repeated SessionLogInfo logs = 19;
-  // Terminal capture turned on for a developer session (goal panes always).
-  bool log_capture = 20;
+}
+
+// Session is one tmux session. The hub assigns a SessionId to every session
+// it observes: fleet-started ones carry it in FLEET_SESSION_ID; the
+// developer's own get one bound to (machine, server_start_id, tmux_id), so
+// a tmux server restart yields new ids.
+message Session {
+  fleet.type.v1.SessionId id = 1;
+  uint64 version = 2;
+  google.protobuf.Timestamp create_time = 3;
+  google.protobuf.Timestamp update_time = 4;
+
+  SessionSpec spec = 10;
+  SessionStatus status = 11;
 }
 
 // PaneSummary is the latest screen summary of one pane (E5; ADR 0013:
-// latest only). Watch delivers it latest-wins and may skip versions.
+// latest only). Observed-only: version is a counter for dedupe, may skip
+// values (Watch delivers latest-wins), and nothing takes expected_version.
 message PaneSummary {
   fleet.type.v1.PaneKey pane = 1;
   uint64 version = 2;
@@ -106,8 +125,7 @@ message PaneSummary {
   fleet.type.v1.Activity activity = 14;
 }
 
-// ListSessionsRequest. Filter fields: machine, started_by_fleet, harness,
-// available_for_work, goal.
+// ListSessionsRequest. Filter and order_by names: 02c-hub-watch-and-filters.md.
 message ListSessionsRequest {
   int32 page_size = 1;
   string page_token = 2;

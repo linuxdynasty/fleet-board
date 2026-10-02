@@ -227,11 +227,13 @@ poll.
   library question.
 - **Live updates:** one server stream per browser tab or phone
   (`FleetService.Watch`, [ADR 0018](../adr/0018-hub-api-and-contract-amendments.md))
-  carries every topic the client asked for. The subscription is in the
-  request, never server-side state keyed by a stream id: to change it the
-  client reopens the stream with its last `resume_token`, which survives
-  phone reconnects and a restarted hub. When the hub cannot resume from the
-  token it sends `RESYNC_REQUIRED` and the client re-reads. One stream per
+  carries every topic the client asked for, each with its own filter. The
+  subscription is in the request, never server-side state keyed by a stream
+  id: to change it the client reopens the stream with its last `resume_token`
+  and the new list; unchanged subscriptions resume and new or changed ones
+  start with their initial state (02c), which survives phone reconnects.
+  When the hub cannot honour the token (older than the change log, hub
+  restarted) it sends `RESYNC_REQUIRED` and the client re-reads. One stream per
   tab stays under the HTTP/1.1 limit. Slow consumers lose summaries only
   (latest wins per pane).
 - **Terminal attach:** WebSocket carrying the hub API's

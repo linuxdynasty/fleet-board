@@ -71,7 +71,7 @@ function triageDetail(it) {
     return `${head(s)}<h3>${esc(c.kind)}${c.retrying ? " — the harness is retrying on its own" : " — needs you on the machine"}</h3>
       <p class="dflt"><b>${esc(c.kind)}</b>${c.http ? ` · HTTP ${c.http}` : ""}${c.attempt ? ` · attempt ${c.attempt}/${c.max}` : ""}${c.nextRetry && c.retrying ? ` · next retry <b data-until="${+c.nextRetry}">${until(c.nextRetry)}</b>` : ""} · since ${hhmm(c.since)}.
         ${c.retrying ? "Not stuck: the goal is unchanged and the harness will carry on by itself. This clears when the message leaves the screen." : "The board never signs in for you (<code class=\"inline\">/login</code>, <code class=\"inline\">/connect</code> are never sent). Sign in on the machine yourself."}</p>
-      <div class="meta-line"><span class="mono">${esc(c.text)}</span>${c.sample ? `<span class="samp">sample</span>` : ""}${dt("tc-" + c.id, "<span>HarnessCondition{kind, retrying, attempt, max_attempts, http_status, next_retry_at, since, cleared}; sign-in commands are COMMAND_CLASS_DENY</span>")}</div>
+      <div class="meta-line"><span class="mono">${esc(c.text)}</span>${c.sample ? `<span class="samp">sample</span>` : ""}${dt("tc-" + c.id, "<span>HarnessCondition{kind, retrying, attempt, max_attempts, http_status, next_retry_time, since, cleared}; sign-in commands are COMMAND_CLASS_DENY</span>")}</div>
       ${term(s.pane)}
       <div class="actions"><button class="btn primary" data-act="open">Open session <kbd>a</kbd></button>
         ${c.retrying ? `<button class="btn" data-act="snooze">Watch quietly 15m <kbd>s</kbd></button>` : `<button class="btn" data-act="attachline">Attach from your terminal…</button><button class="btn" data-act="snooze">Snooze 15m <kbd>s</kbd></button>`}</div>
@@ -102,7 +102,7 @@ function triageAct(it, act) {
   if (it.type === "perm" && act === "review") {
     const val = ui.choice[it.id] ?? it.p.def, key = it.p.keys[it.p.options.indexOf(val)];
     ui.confirm = { id: it.id, label: `Answer “${val}”: the agent presses ${key} in this prompt and nowhere else.`, cmd: answerCmd(s, it.p, key), go: "Send", what: `answered prompt ${it.p.promptId}: ${val}`,
-      note: "If the prompt is gone by then, nothing is typed. If the machine stays offline for 2 minutes, the answer is dropped.", raw: "PROMPT_GONE if the prompt left the screen · not_after 2 min → EXPIRED", danger: val !== it.p.def && it.p.destructive };
+      note: "If the prompt is gone by then, nothing is typed. If the machine stays offline for 2 minutes, the answer is dropped.", raw: "PROMPT_GONE if the prompt left the screen · not_after_time 2 min → EXPIRED", danger: val !== it.p.def && it.p.destructive };
   }
   if (act === "hint") ui.confirm = { id: s.id, label: "Type a hint into the goal session (it keeps its goal):", cmd: sendKeysCmd(s, "Start the test DB with make db-up, then retry.", { require_empty_input_line: true }), go: "Send hint", what: "sent a hint", note: "Typed only when the input line is empty.", raw: "PANE_BUSY otherwise" };
   if (act === "reopen") {

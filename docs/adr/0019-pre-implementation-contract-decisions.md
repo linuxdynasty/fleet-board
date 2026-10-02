@@ -62,3 +62,47 @@ allowing a deliberate exception.
 - The contract fixes from the review may rename and retype fields; history
   stays readable in git, not in `reserved` lines.
 - Phone pairing defaults exclude logs.
+
+## Addendum: hub API conventions (review theme A)
+
+Taken while applying the review's theme A, because they change what clients
+see. They follow from decision 3 (unfrozen) and are listed so the owner can
+check them; detail is in 02b to 02e.
+
+**5. Spec and status.** A mutable hub resource has `spec` (what the owner or
+hub decided; `version` and `expected_version` cover it) and `status` (what was
+observed or computed; not versioned, carries `observed_time` and `hub_seq`).
+Heartbeats, probes, pacing and delivery acks therefore never invalidate an
+open form. `Goal.status.phase` is status, so `ControlGoal` guards it with
+`expected_phase`. Decision records (`TriageItem`, `Approval`) keep one version
+that every state change bumps.
+
+**6. Watch has one filter per topic.** `WatchRequest.subscriptions` replaces
+`topics` and the single `filter`. Changing a subscription opens a new stream
+with the last token: unchanged subscriptions resume, new or changed ones start
+with their initial state, and `RESYNC_REQUIRED` is only for a token the hub
+cannot honour. Status that changes at heartbeat rate is coalesced (30 s, or 5
+s for pane activity and goal progress).
+
+**7. Roles map to scopes in one table.** VIEWER: READ. OPERATOR: READ,
+SESSIONS_WRITE, APPROVALS. OWNER: all six including LOGS. Tokens and devices
+are clamped to their user's role on every call. A phone that only holds
+APPROVALS can read approvals, triage items, the summary strip and the
+operations it caused, nothing else; no extra read scope for now.
+
+**8. Naming.** Every `Timestamp` field ends `_time` (the `_at` fields, `since`,
+`until`, bare `at` and `not_after` were renamed: `resets_at` to `resets_time`,
+`not_after` to `not_after_time`, `issued_at` to `issued_time`, `since` to
+`since_time`, `Event.at` to `observed_time`, `updated_at` to `update_time`);
+durations are `Duration` (`min_interval`, `sync_lag`); ids are wrapper messages
+(new `PrincipalId`, `SettingsId`; `Principal.device_id` is `device`); closed
+sets are enums (`ConsentAct`, `AuthMode`, `OperationKind`, `DevicePlatform`,
+`AttachCloseReason`, `WorkSize`). `WorkItemKey` is the identity of a work item;
+`WorkItemRef` is the key plus display fields.
+
+**9. Reservations dropped.** The `reserved` lines for fields no consumer saw
+are gone; only `Command` 99 / `run_exec` stays, as a security rule. Generated
+code comes from `buf.gen.yaml` (Go: protoc-gen-go, connect-go; TypeScript:
+protoc-gen-es v2 with connect-es v2) in managed mode, so `.proto` files carry
+no `go_package`. 64-bit integers are strings in JSON and `bigint` in
+TypeScript.

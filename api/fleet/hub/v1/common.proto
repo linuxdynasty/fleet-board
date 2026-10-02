@@ -2,12 +2,20 @@
 // every agent-command action returns, server info and the summary strip.
 //
 // Conventions for every hub resource (02b-hub-api.md):
-//   - field 1 is the id, 2 the version (the ETag: bumped on every change),
-//     3 create_time, 4 update_time; resource fields start at 10.
-//   - List requests: page_size 1, page_token 2, filter 3 (AIP-160), order_by
-//     4. Responses: items 1, next_page_token 2 (empty on the last page).
+//   - field 1 is the id, 2 the version, 3 create_time, 4 update_time;
+//     resource fields start at 10. A resource a person can edit splits into
+//     `spec = 10` (what the owner or hub decided; covered by version, the
+//     ETag, and by expected_version; update_time is its last change) and
+//     `status = 11` (what was observed; not versioned, never checked by
+//     expected_version, carries observed_time and hub_seq). Observed-only
+//     resources have neither and put their fields at 10.
+//   - List requests: page_size 1, page_token 2, filter 3 (AIP-160 subset,
+//     02c-hub-watch-and-filters.md), order_by 4. Responses: items 1,
+//     next_page_token 2 (empty on the last page).
 //   - Mutating requests: request_id 1 (client-generated idempotency key).
 //     Updates add update_mask and expected_version (0 = do not check).
+//   - 64-bit integers (version, hub_seq, byte counts) are decimal strings in
+//     JSON and bigint in TypeScript (02b-hub-api.md, "64-bit integers").
 //   - Actions that make an agent do something return an Operation, never
 //     the final state; the final state arrives through Watch or
 //     GetOperation.
@@ -20,8 +28,6 @@ package fleet.hub.v1;
 import "fleet/type/v1/ids.proto";
 import "fleet/type/v1/status.proto";
 import "google/protobuf/timestamp.proto";
-
-option go_package = "github.com/linuxdynasty/fleet-board/api/fleet/hub/v1;hubv1";
 
 // ---------------------------------------------------------------------------
 // Hub-only identifiers
@@ -38,7 +44,7 @@ message ApprovalId {
 }
 
 // RoutineId is hub-assigned per routine; also the prefix of the routine's
-// WorkItemRef.key ("<routine id>/<run number>").
+// WorkItemKey.key ("<routine id>/<run number>").
 message RoutineId {
   string value = 1;
 }
@@ -53,17 +59,24 @@ message AuditEntryId {
   string value = 1;
 }
 
+// SettingsId names one settings layer: "fleet", "group/<label>" or
+// "machine/<machine id>". Derived from the scope, never chosen by a client.
+message SettingsId {
+  string value = 1;
+}
+
 // ---------------------------------------------------------------------------
 // Scopes
 // ---------------------------------------------------------------------------
 
-// Scope is one permission set an RPC requires (02b-hub-api.md table). Roles
-// map to scopes (VIEWER: READ; OPERATOR: + SESSIONS_WRITE, APPROVALS; OWNER:
-// all). A device or API token holds a subset of its owner's scopes. Scopes
-// are sets, never ordered.
+// Scope is one permission set an RPC requires (02d-hub-authz.md has the table
+// for every RPC and every Watch topic). Roles map to scopes (VIEWER: READ;
+// OPERATOR: READ, SESSIONS_WRITE, APPROVALS; OWNER: all six). A device or API
+// token holds a subset of its user's scopes. Scopes are sets, never ordered.
 enum Scope {
   SCOPE_UNSPECIFIED = 0;
-  // Read every resource, Watch, read logs, read-only attach.
+  // Read every resource and Watch, live read-only attach and CapturePane.
+  // Not stored logs (SCOPE_LOGS).
   SCOPE_READ = 1;
   // Type into sessions: keys, attach input, harness commands, goal control,
   // dispatch, create sessions.
@@ -72,8 +85,22 @@ enum Scope {
   SCOPE_APPROVALS = 3;
   // Change settings, accounts, routines, integrations' watched lists.
   SCOPE_SETTINGS = 4;
-  // Machines (enroll, delete, drain), devices, notification targets.
+  // Machines (enroll, delete, drain), devices, all notification targets.
   SCOPE_ADMIN = 5;
+  // Stored session logs, transcripts, archived pane summaries and the raw
+  // usage screen. Owner only by default (ADR 0010, 0019): a viewer, API token
+  // or paired device has it only when the owner grants it explicitly, and a
+  // phone pairing never requests it by default.
+  SCOPE_LOGS = 6;
+}
+
+// AuthMode is how the hub authenticates callers (design.md deployment modes).
+enum AuthMode {
+  AUTH_MODE_UNSPECIFIED = 0;
+  // Loopback only, no sign-in; the caller is the owner (ADR 0019).
+  AUTH_MODE_LOCAL_TRUSTED = 1;
+  // Passkey or GitHub sign-in, API tokens, paired devices.
+  AUTH_MODE_AUTHENTICATED = 2;
 }
 
 // ---------------------------------------------------------------------------
@@ -83,7 +110,7 @@ enum Scope {
 // OperationState follows the hub outbox row (02-contracts.md delivery).
 enum OperationState {
   OPERATION_STATE_UNSPECIFIED = 0;
-  // In the outbox; the machine may be offline. not_after still applies.
+  // In the outbox; the machine may be offline. not_after_time still applies.
   OPERATION_STATE_PENDING = 1;
   // Sent and acknowledged (CommandAck) by the agent.
   OPERATION_STATE_DELIVERED = 2;
@@ -93,7 +120,37 @@ enum OperationState {
   OPERATION_STATE_DONE = 4;
 }
 
+// OperationKind is the agent command an Operation runs. Values equal the
+// field numbers of fleet.agent.v1.Command.kind (the hub API never imports the
+// agent package, so the numbers are repeated and kept in step by review).
+enum OperationKind {
+  OPERATION_KIND_UNSPECIFIED = 0;
+  OPERATION_KIND_ENSURE_PROBE = 10;
+  OPERATION_KIND_STOP_PROBE = 11;
+  OPERATION_KIND_ENSURE_SESSION = 20;
+  OPERATION_KIND_ENSURE_WINDOW = 21;
+  OPERATION_KIND_SEND_KEYS = 22;
+  OPERATION_KIND_INTERRUPT = 23;
+  OPERATION_KIND_RESPAWN_PANE = 24;
+  OPERATION_KIND_KILL_WINDOW = 25;
+  OPERATION_KIND_CAPTURE_PANE = 26;
+  OPERATION_KIND_RUN_HARNESS_COMMAND = 27;
+  OPERATION_KIND_SET_SESSION_AVAILABILITY = 28;
+  OPERATION_KIND_PREFLIGHT = 40;
+  OPERATION_KIND_START_GOAL = 41;
+  OPERATION_KIND_ENSURE_WORKTREE = 43;
+  OPERATION_KIND_PRUNE_WORKTREE = 44;
+  OPERATION_KIND_ENSURE_GOAL_HOOKS = 45;
+  OPERATION_KIND_OPEN_ATTACH = 50;
+  OPERATION_KIND_CLOSE_ATTACH = 51;
+  OPERATION_KIND_SET_LOG_CAPTURE = 60;
+  OPERATION_KIND_SET_LOG_SHIPPING = 61;
+  OPERATION_KIND_DRAIN = 70;
+  OPERATION_KIND_UNDRAIN = 71;
+}
+
 // Operation is the handle for one agent command caused by an API action.
+// Observed-only: version bumps on every state change, nothing edits it.
 // Its id is the command's CommandId, so the UI, the audit log and the
 // agent's local log all name the same thing.
 message Operation {
@@ -103,8 +160,7 @@ message Operation {
   google.protobuf.Timestamp update_time = 4;
 
   fleet.type.v1.MachineId machine = 10;
-  // Command kind as in fleet.agent.v1, e.g. "SendKeys", "StartGoal".
-  string kind = 11;
+  OperationKind kind = 11;
   OperationState state = 12;
   // Set when state is DONE: the agent's Status, or EXPIRED from the hub.
   fleet.type.v1.Status status = 13;
@@ -119,7 +175,7 @@ message Operation {
   fleet.type.v1.Principal requested_by = 19;
   // The request_id of the API call that created it.
   string request_id = 20;
-  google.protobuf.Timestamp not_after = 21;
+  google.protobuf.Timestamp not_after_time = 21;
   // Text output for CapturePane and OBSERVE-class harness commands.
   // Untrusted text, capped as on the agent wire.
   string output_text = 22;
@@ -162,8 +218,7 @@ message GetServerInfoResponse {
   // Optional features, e.g. {"watch.pane_summaries", 1}, {"attach", 1},
   // {"routines", 1}, {"devices", 1}. Clients hide what is not listed.
   repeated fleet.type.v1.Capability features = 6;
-  // "local_trusted" or "authenticated" (design.md deployment modes).
-  string auth_mode = 7;
+  AuthMode auth_mode = 7;
   // The caller as the hub sees it; unset when not signed in.
   fleet.type.v1.Principal caller = 8;
   // Scopes in effect for the caller: a user gets the scopes of its role, a
@@ -171,7 +226,8 @@ message GetServerInfoResponse {
   repeated Scope caller_scopes = 9;
 }
 
-// FleetSummary is the summary strip on every view: hub-derived counts.
+// FleetSummary is the summary strip on every view: hub-derived counts. A
+// singleton, observed-only; Watch coalesces it to one change per second.
 message FleetSummary {
   uint64 version = 2;
   google.protobuf.Timestamp update_time = 4;

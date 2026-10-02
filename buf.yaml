@@ -1,8 +1,11 @@
-# buf configuration for the fleet-board contracts (ADR 0003, 0017).
+# buf configuration for the fleet-board contracts (ADR 0003, 0017, 0019).
 # Run from the repository root:
-#   go run github.com/bufbuild/buf/cmd/buf@latest build
-#   go run github.com/bufbuild/buf/cmd/buf@latest lint
-#   go run github.com/bufbuild/buf/cmd/buf@latest breaking --against '.git#branch=main'
+#   go run github.com/bufbuild/buf/cmd/buf@v1.73.0 build
+#   go run github.com/bufbuild/buf/cmd/buf@v1.73.0 lint
+#   go run github.com/bufbuild/buf/cmd/buf@v1.73.0 generate   (buf.gen.yaml)
+# The contracts are unfrozen until the v0.1 tag (ADR 0019), so `breaking` is
+# not run yet. From the tag on, CI runs
+#   buf breaking --against '.git#tag=v0.1'
 version: v2
 modules:
   - path: api

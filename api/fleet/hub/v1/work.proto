@@ -9,10 +9,9 @@ package fleet.hub.v1;
 import "fleet/integration/v1/integration.proto";
 import "fleet/type/v1/ids.proto";
 import "fleet/type/v1/work.proto";
+import "google/protobuf/duration.proto";
 import "google/protobuf/field_mask.proto";
 import "google/protobuf/timestamp.proto";
-
-option go_package = "github.com/linuxdynasty/fleet-board/api/fleet/hub/v1;hubv1";
 
 // WorkStage is the hub-owned stage of a work item (03b state machine).
 enum WorkStage {
@@ -31,9 +30,22 @@ enum WorkStage {
   WORK_STAGE_CLOSED = 9;
 }
 
-// WorkItem is the hub's record of one issue, ticket or routine run.
+// WorkSize is the size estimate triage gives a work item.
+enum WorkSize {
+  WORK_SIZE_UNSPECIFIED = 0;
+  WORK_SIZE_SMALL = 1;
+  WORK_SIZE_MEDIUM = 2;
+  WORK_SIZE_LARGE = 3;
+}
+
+// WorkItem is the hub's record of one issue, ticket or routine run. A mirror
+// with no owner-editable fields, so no spec/status split: id is the
+// WorkItemKey, version bumps when the provider data, stage, trust or goal link
+// changes. A sync that finds nothing new does not bump version and is never
+// the only reason for a Watch message; last_sync_time is refreshed in storage
+// and arrives with the next real change or a Get.
 message WorkItem {
-  fleet.type.v1.WorkItemRef id = 1;
+  fleet.type.v1.WorkItemKey id = 1;
   uint64 version = 2;
   google.protobuf.Timestamp create_time = 3;
   google.protobuf.Timestamp update_time = 4;
@@ -45,14 +57,15 @@ message WorkItem {
   bool trusted = 12;
   // Active goal for this item, if any; past goals via ListGoals.
   fleet.type.v1.GoalId goal = 13;
-  // Size estimate (S/M/L) from triage, when set.
-  string size = 14;
+  // Size estimate from triage, when set.
+  WorkSize size = 14;
   google.protobuf.Timestamp last_sync_time = 15;
 }
 
-// ChangeRequest is the hub's record of one pull or merge request.
+// ChangeRequest is the hub's record of one pull or merge request; versioned
+// like WorkItem.
 message ChangeRequest {
-  fleet.type.v1.WorkItemRef id = 1;
+  fleet.type.v1.WorkItemKey id = 1;
   uint64 version = 2;
   google.protobuf.Timestamp create_time = 3;
   google.protobuf.Timestamp update_time = 4;
@@ -72,6 +85,38 @@ enum IntegrationHealth {
   INTEGRATION_HEALTH_DISABLED = 3;
 }
 
+// IntegrationSpec is what the owner edits. Credentials are never part of the
+// API. Covered by Integration.version.
+message IntegrationSpec {
+  // Display name chosen by the owner.
+  string label = 1;
+  // Repos (code host) or projects (tracker) the owner chose to watch.
+  repeated string watched = 2;
+}
+
+// IntegrationStatus is the configured provider and the sync's health. Not
+// versioned: every sync round rewrites sync_lag and last_sync_time.
+message IntegrationStatus {
+  google.protobuf.Timestamp observed_time = 1;
+  // Watch hub_seq of the change that last touched this status.
+  uint64 hub_seq = 2;
+
+  fleet.type.v1.ProviderKind provider = 10;
+  // Open provider name ("github", "gitea"); see IntegrationCapabilities.
+  string provider_name = 11;
+  // Base URL or host ("https://github.com", "https://acme.atlassian.net").
+  string base_url = 12;
+  fleet.integration.v1.IntegrationCapabilities capabilities = 13;
+  IntegrationHealth health = 14;
+  // Short reason when DEGRADED. Untrusted where it echoes the provider.
+  string health_reason = 15;
+  // Volatile: sync_lag and last_sync_time reach Watch at most once per 30 s.
+  google.protobuf.Timestamp last_sync_time = 16;
+  // How far behind the provider the mirror is, the planner's max_sync_lag
+  // input.
+  google.protobuf.Duration sync_lag = 17;
+}
+
 // Integration is one configured integration instance.
 message Integration {
   fleet.type.v1.IntegrationId id = 1;
@@ -79,17 +124,11 @@ message Integration {
   google.protobuf.Timestamp create_time = 3;
   google.protobuf.Timestamp update_time = 4;
 
-  fleet.integration.v1.Integration integration = 10;
-  IntegrationHealth health = 11;
-  // Short reason when DEGRADED. Untrusted where it echoes the provider.
-  string health_reason = 12;
-  google.protobuf.Timestamp last_sync_time = 13;
-  // Seconds behind the provider, the planner's max_sync_lag input.
-  uint32 sync_lag_seconds = 14;
+  IntegrationSpec spec = 10;
+  IntegrationStatus status = 11;
 }
 
-// ListWorkItemsRequest. Filter fields: stage, integration, repo, kind,
-// trusted, label.
+// ListWorkItemsRequest. Filter and order_by names: 02c-hub-watch-and-filters.md.
 message ListWorkItemsRequest {
   int32 page_size = 1;
   string page_token = 2;
@@ -105,7 +144,7 @@ message ListWorkItemsResponse {
 
 // GetWorkItemRequest.
 message GetWorkItemRequest {
-  fleet.type.v1.WorkItemRef id = 1;
+  fleet.type.v1.WorkItemKey id = 1;
   // Fetch the body from the provider (64 KiB cap). Untrusted text.
   bool include_body = 2;
 }
@@ -116,7 +155,7 @@ message GetWorkItemResponse {
   string body = 2;
 }
 
-// ListChangeRequestsRequest. Filter fields: repo, state, goal, owned.
+// ListChangeRequestsRequest. Filter and order_by names: 02c-hub-watch-and-filters.md.
 message ListChangeRequestsRequest {
   int32 page_size = 1;
   string page_token = 2;
@@ -132,7 +171,7 @@ message ListChangeRequestsResponse {
 
 // GetChangeRequestRequest.
 message GetChangeRequestRequest {
-  fleet.type.v1.WorkItemRef id = 1;
+  fleet.type.v1.WorkItemKey id = 1;
 }
 
 // GetChangeRequestResponse.
@@ -154,8 +193,8 @@ message ListIntegrationsResponse {
   string next_page_token = 2;
 }
 
-// UpdateIntegrationRequest. Updatable: integration.label,
-// integration.watched. Credentials are never set through this API.
+// UpdateIntegrationRequest. Updatable: spec.label, spec.watched. Credentials
+// are never set through this API.
 message UpdateIntegrationRequest {
   string request_id = 1;
   Integration integration = 2;

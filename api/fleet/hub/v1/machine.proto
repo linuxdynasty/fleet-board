@@ -15,8 +15,6 @@ import "google/protobuf/duration.proto";
 import "google/protobuf/field_mask.proto";
 import "google/protobuf/timestamp.proto";
 
-option go_package = "github.com/linuxdynasty/fleet-board/api/fleet/hub/v1;hubv1";
-
 // MachineState is the hub-side connection state (03-workflows W1, W2).
 enum MachineState {
   MACHINE_STATE_UNSPECIFIED = 0;
@@ -71,7 +69,7 @@ message MachineForgeCli {
   // Untrusted text.
   string user = 6;
   repeated MachineRepoAccess access = 7;
-  google.protobuf.Timestamp checked_at = 8;
+  google.protobuf.Timestamp checked_time = 8;
 }
 
 // MachineRepoAccess is push access to one repo as the forge CLI sees it.
@@ -102,6 +100,83 @@ message MachineSlots {
   uint32 total_max = 4;
 }
 
+// MachineDrain is the owner's drain request (M4). The hub sets it when
+// DrainMachine or UndrainMachine is accepted; MachineStatus.draining is what
+// the agent reports back, which also covers a local `fleet-agent drain`.
+message MachineDrain {
+  bool draining = 1;
+  string reason = 2;
+  fleet.type.v1.Principal by = 3;
+  google.protobuf.Timestamp drain_time = 4;
+}
+
+// MachineSpec is what the owner and hub decided about a machine. Covered by
+// Machine.version and expected_version.
+message MachineSpec {
+  // Owner-chosen name (hostname by default).
+  string display_name = 1;
+  // Hub-assigned labels; local additions show in MachineStatus.labels.
+  repeated string labels = 2;
+  MachineDrain drain = 3;
+}
+
+// MachineTelemetry is the heartbeat-fed part of the status: it changes every
+// few seconds and is never worth a Watch message on its own. A change that
+// only touches telemetry reaches Watch at most once per 30 s per machine
+// (02c-hub-watch-and-filters.md, "Volatile fields").
+message MachineTelemetry {
+  google.protobuf.Timestamp last_seen_time = 1;
+  bool on_battery = 2;
+  fleet.type.v1.Percent battery = 3;
+  double load1 = 4;
+  uint64 mem_available_bytes = 5;
+  // Agent clock minus hub clock; a warning above 5 minutes.
+  google.protobuf.Duration clock_skew = 6;
+}
+
+// MachineStatus is everything observed about a machine: connection state,
+// facts, inventories, effective settings. Not versioned; observed_time and
+// hub_seq order it (02b-hub-api.md, "Versions and ETags").
+message MachineStatus {
+  google.protobuf.Timestamp observed_time = 1;
+  // Watch hub_seq of the change that last touched this status.
+  uint64 hub_seq = 2;
+
+  MachineState state = 10;
+  // Facts (B1). Untrusted text where noted on the agent wire.
+  string hostname = 11;
+  string os = 12;
+  string os_version = 13;
+  string arch = 14;
+  uint32 cpu_count = 15;
+  uint64 ram_bytes = 16;
+  string timezone = 17;
+  // Login user, for the copyable ssh line.
+  string username = 18;
+  string agent_version = 19;
+  string tmux_version = 20;
+  bool container = 21;
+  bool is_hub = 22;
+  // Effective labels: hub-assigned (spec.labels) plus local additions.
+  repeated string labels = 23;
+  // Effective drain: the hub's request or a local drain, as reported.
+  bool draining = 24;
+  MachineSlots slots = 25;
+  uint32 available_sessions = 26;
+  repeated MachineHarness harnesses = 27;
+  repeated MachineForgeCli forge_cli = 28;
+  repeated MachineRepo repos = 29;
+  string policy_hash = 30;
+  bool policy_changed_since_load = 31;
+  fleet.type.v1.EffectiveSettings effective_settings = 32;
+  // Settings fields the local policy capped.
+  repeated string capped_settings = 33;
+  google.protobuf.Timestamp cert_not_after_time = 34;
+  repeated fleet.type.v1.Capability capabilities = 35;
+  string install_id = 36;
+  MachineTelemetry telemetry = 37;
+}
+
 // Machine is one enrolled worker.
 message Machine {
   fleet.type.v1.MachineId id = 1;
@@ -109,51 +184,11 @@ message Machine {
   google.protobuf.Timestamp create_time = 3;
   google.protobuf.Timestamp update_time = 4;
 
-  // Owner-chosen name (hostname by default).
-  string display_name = 10;
-  MachineState state = 11;
-  google.protobuf.Timestamp last_seen_time = 12;
-  // Facts (B1). Untrusted text where noted on the agent wire.
-  string hostname = 13;
-  string os = 14;
-  string os_version = 15;
-  string arch = 16;
-  uint32 cpu_count = 17;
-  uint64 ram_bytes = 18;
-  string timezone = 19;
-  // Login user, for the copyable ssh line.
-  string username = 20;
-  string agent_version = 21;
-  string tmux_version = 22;
-  bool container = 23;
-  bool is_hub = 24;
-  // Effective labels: hub-assigned plus local additions.
-  repeated string labels = 25;
-  bool draining = 26;
-  string drain_reason = 27;
-  fleet.type.v1.Principal drained_by = 28;
-  MachineSlots slots = 29;
-  uint32 available_sessions = 30;
-  repeated MachineHarness harnesses = 31;
-  repeated MachineForgeCli forge_cli = 32;
-  repeated MachineRepo repos = 33;
-  string policy_hash = 34;
-  bool policy_changed_since_load = 35;
-  fleet.type.v1.EffectiveSettings effective_settings = 36;
-  // Settings fields the local policy capped.
-  repeated string capped_settings = 37;
-  google.protobuf.Timestamp cert_not_after = 38;
-  repeated fleet.type.v1.Capability capabilities = 39;
-  bool on_battery = 40;
-  fleet.type.v1.Percent battery = 41;
-  double load1 = 42;
-  uint64 mem_available_bytes = 43;
-  // Agent clock minus hub clock; a warning above 5 minutes.
-  google.protobuf.Duration clock_skew = 44;
-  string install_id = 45;
+  MachineSpec spec = 10;
+  MachineStatus status = 11;
 }
 
-// ListMachinesRequest. Filter fields: state, label, harness, draining.
+// ListMachinesRequest. Filter and order_by names: 02c-hub-watch-and-filters.md.
 message ListMachinesRequest {
   int32 page_size = 1;
   string page_token = 2;
@@ -177,7 +212,8 @@ message GetMachineResponse {
   Machine machine = 1;
 }
 
-// UpdateMachineRequest. Updatable: display_name, labels (hub-assigned only).
+// UpdateMachineRequest. Updatable: spec.display_name, spec.labels. spec.drain
+// changes only through DrainMachine and UndrainMachine; status is output-only.
 message UpdateMachineRequest {
   string request_id = 1;
   Machine machine = 2;
@@ -194,12 +230,15 @@ message UpdateMachineResponse {
 message DrainMachineRequest {
   string request_id = 1;
   fleet.type.v1.MachineId id = 2;
+  // Up to 512 bytes.
   string reason = 3;
 }
 
 // DrainMachineResponse.
 message DrainMachineResponse {
   Operation operation = 1;
+  // The machine with spec.drain already set (version bumped).
+  Machine machine = 2;
 }
 
 // UndrainMachineRequest sends Undrain; a local drain answers
@@ -212,6 +251,7 @@ message UndrainMachineRequest {
 // UndrainMachineResponse.
 message UndrainMachineResponse {
   Operation operation = 1;
+  Machine machine = 2;
 }
 
 // DeleteMachineRequest revokes the certificate serials; the next Hello is
@@ -237,8 +277,9 @@ message CreateEnrollmentTokenRequest {
 }
 
 // CreateEnrollmentTokenResponse. The token is shown once and stored only as
-// a hash; a retry with the same request_id inside the idempotency window
-// gets the same token from memory, after that a new request is needed.
+// a hash, and it is excluded from the stored idempotent response: a retry
+// with the same request_id inside the idempotency window fails with
+// ALREADY_EXISTS / SECRET_ALREADY_DELIVERED and the owner creates a new one.
 message CreateEnrollmentTokenResponse {
   string token = 1;
   google.protobuf.Timestamp expire_time = 2;

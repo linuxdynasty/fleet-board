@@ -15,8 +15,6 @@ import "fleet/type/v1/ids.proto";
 import "fleet/type/v1/work.proto";
 import "google/protobuf/timestamp.proto";
 
-option go_package = "github.com/linuxdynasty/fleet-board/api/fleet/integration/v1;integrationv1";
-
 // IntegrationRole: what an integration is used for. One integration can
 // have both roles (GitHub, GitLab) or one (Jira is a work tracker only).
 enum IntegrationRole {
@@ -120,7 +118,7 @@ enum WorkItemState {
 message Claim {
   ClaimMechanism mechanism = 1;
   Person by = 2;
-  google.protobuf.Timestamp at = 3;
+  google.protobuf.Timestamp claim_time = 3;
   // Comment text or label name, capped at 4 KiB. Untrusted text.
   string text = 4;
   // True when the claim was made by this fleet (matched by its marker).
@@ -143,7 +141,7 @@ message WorkItem {
   repeated fleet.type.v1.WorkItemRef linked_change_requests = 9;
   // For trackers: the repo(s) the work is expected to touch, when known.
   repeated fleet.type.v1.RepoRef repos = 10;
-  google.protobuf.Timestamp updated_at = 11;
+  google.protobuf.Timestamp update_time = 11;
   // Body is fetched on demand only; this is its size in bytes.
   uint64 body_bytes = 12;
 }
@@ -169,7 +167,7 @@ enum ReviewState {
 message Review {
   Person by = 1;
   ReviewState state = 2;
-  google.protobuf.Timestamp at = 3;
+  google.protobuf.Timestamp review_time = 3;
   // Unresolved review threads at the time of the review.
   uint32 open_threads = 4;
 }
@@ -193,8 +191,8 @@ message ChangeRequest {
   // Work items this change request closes or references.
   repeated fleet.type.v1.WorkItemRef linked_work_items = 12;
   Person author = 13;
-  google.protobuf.Timestamp updated_at = 14;
-  google.protobuf.Timestamp merged_at = 15;
+  google.protobuf.Timestamp update_time = 14;
+  google.protobuf.Timestamp merged_time = 15;
   // Review rounds so far: changes-requested reviews each followed by new
   // commits. Feeds the review-loop cap (design.md: 3 rounds, no merge).
   // source_branch is the head ref and head_commit the head sha that
@@ -217,10 +215,10 @@ message ListWorkItemsRequest {
   // Project or repo path to list.
   string project = 1;
   // Only items updated after this time.
-  google.protobuf.Timestamp updated_after = 2;
+  google.protobuf.Timestamp updated_after_time = 2;
   // Opaque token from the previous page's next_page_token (AIP-158 names).
   string page_token = 3;
-  uint32 page_size = 4;
+  int32 page_size = 4;
 }
 
 // ListWorkItemsResponse is one page.
@@ -232,7 +230,7 @@ message ListWorkItemsResponse {
 
 // GetWorkItemRequest fetches one item, optionally with its body.
 message GetWorkItemRequest {
-  fleet.type.v1.WorkItemRef ref = 1;
+  fleet.type.v1.WorkItemKey ref = 1;
   // Fetch the body (capped at 64 KiB).
   bool include_body = 2;
 }
@@ -248,9 +246,9 @@ message GetWorkItemResponse {
 // ListChangeRequestsRequest pages through a repo's change requests.
 message ListChangeRequestsRequest {
   fleet.type.v1.RepoRef repo = 1;
-  google.protobuf.Timestamp updated_after = 2;
+  google.protobuf.Timestamp updated_after_time = 2;
   string page_token = 3;
-  uint32 page_size = 4;
+  int32 page_size = 4;
 }
 
 // ListChangeRequestsResponse is one page.
@@ -261,7 +259,7 @@ message ListChangeRequestsResponse {
 
 // GetChangeRequestRequest fetches one change request.
 message GetChangeRequestRequest {
-  fleet.type.v1.WorkItemRef ref = 1;
+  fleet.type.v1.WorkItemKey ref = 1;
 }
 
 // GetChangeRequestResponse.
@@ -281,8 +279,8 @@ message WatchResponse {
 
 // ChangeNotice says something changed; the hub then fetches the details.
 message ChangeNotice {
-  fleet.type.v1.WorkItemRef ref = 1;
-  google.protobuf.Timestamp at = 2;
+  fleet.type.v1.WorkItemKey ref = 1;
+  google.protobuf.Timestamp notice_time = 2;
 }
 
 // IntegrationProviderService is implemented once per provider. Read-only by

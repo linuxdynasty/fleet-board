@@ -32,7 +32,7 @@ sequenceDiagram
   W->>W: tx: triage_items{kind=prompt, fingerprint=prompt_id, default = Deny if destructive, state=OPEN}
   W-->>U: live update (fan-out)
   U->>W: answer option "2" (operator role · UI confirm because risky)
-  W->>W: tx: in-flight answer for prompt_id (unique) · outbox SendKeys{pane, keys:[literal "2", ENTER], answering_prompt=prompt_id} not_after +2 min · audit
+  W->>W: tx: in-flight answer for prompt_id (unique) · outbox SendKeys{pane, keys:[literal "2", ENTER], answering_prompt=prompt_id} not_after_time +2 min · audit
   W-->>A: Command{SendKeys}
   A->>A: prompt_id still on screen? → type · else REASON_CODE_PROMPT_GONE
   A->>W: CommandResult{OK | FAILED PROMPT_GONE | UNKNOWN_OUTCOME}
@@ -48,7 +48,7 @@ credential on a command line) shows Deny preselected and `destructive_reason`.
 item is notice-only with the `ssh -t … tmux attach` line (W8). One answer in
 flight per `prompt_id` (DB unique); a second click is refused until the
 result lands. `UNKNOWN_OUTCOME` keeps the item open with a `CapturePane`
-button; the hub never retries typing. Snooze sets `snoozed_until`; the item
+button; the hub never retries typing. Snooze sets `snoozed_until_time`; the item
 reappears unless retired meanwhile. Expiry at 7 days moves it to `EXPIRED`
 and audits it; a prompt that is still on screen after 7 days is re-raised by
 the next `Snapshot.prompts[]` (03g) because the fingerprint is new only if the
@@ -258,7 +258,7 @@ sequenceDiagram
   participant W as writer
   T->>A: pipe-pane -o output (raw bytes)
   A->>A: append to spool segment · every 10 s or 256 KiB raw: zstd-3 frame → chunk{offset, raw_length}
-  A->>H: SessionLog: LogChunk{key LogStreamKey{session_id, pane, stream=TERMINAL}, offset, zstd, raw_length, gap_before, first_byte_at, last_byte_at, goal_id}
+  A->>H: SessionLog: LogChunk{key LogStreamKey{session_id, pane, stream=TERMINAL}, offset, zstd, raw_length, gap_before, first_byte_time, last_byte_time, goal_id}
   H->>H: offset ≤ stored end? → duplicate (re-ack) · offset = stored end → append · > end → refuse (ack stays)
   H->>F: append frame to <session>/<stream>/<day>.zst
   H->>W: tx (batched 1 s): log_segments{session, stream, file, file_offset, raw_offset, raw_length, first_at, last_at, gap_before}
@@ -288,7 +288,7 @@ because a paused agent sends no chunks to ack (semantic note, 03g). Retention:
 total size cap (setting), oldest sessions pruned first; per-session delete is
 one audited action. Replay: the UI asks for `(session, from_raw_offset | from
 time)`; the hub maps through the index, decompresses frames, streams to
-xterm.js; chunk `first_byte_at/last_byte_at` give time navigation. Harness
+xterm.js; chunk `first_byte_time/last_byte_time` give time navigation. Harness
 transcripts (K3, v3) reuse the path with `stream=HARNESS_TRANSCRIPT` from
 `PaneHarnessSession.transcript_path`, opt-in per repo or machine.
 

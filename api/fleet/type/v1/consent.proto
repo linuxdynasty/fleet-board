@@ -1,0 +1,23 @@
+// fleet.type.v1 consent acts (ADR 0008): the closed set of things a goal may
+// do beyond editing files. Used by the agent wire (GoalSpec) and the hub API
+// (goals, accounts, routines, settings).
+syntax = "proto3";
+
+package fleet.type.v1;
+
+// ConsentAct is one act an owner can allow. The effective set for a goal is
+// the intersection of the repo, account and routine sets (ADR 0008). It is an
+// enum, not a string, because the agent types it into the harness: the
+// adapter renders the lowercase hyphenated words itself ("push", "pr-open",
+// "merge"), so a hub value can never inject text into the goal line. A new
+// act is a new enum value plus an agent capability; an agent that does not
+// know a value refuses the goal with INVALID_ARGUMENT.
+enum ConsentAct {
+  CONSENT_ACT_UNSPECIFIED = 0;
+  // Push commits to the goal's branch.
+  CONSENT_ACT_PUSH = 1;
+  // Open a change request (pull or merge request) on any code host.
+  CONSENT_ACT_PR_OPEN = 2;
+  // Merge the change request.
+  CONSENT_ACT_MERGE = 3;
+}

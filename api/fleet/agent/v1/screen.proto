@@ -10,8 +10,6 @@ import "fleet/type/v1/harness.proto";
 import "fleet/type/v1/ids.proto";
 import "google/protobuf/timestamp.proto";
 
-option go_package = "github.com/linuxdynasty/fleet-board/api/fleet/agent/v1;agentv1";
-
 // PromptDetected (E6). A SendKeys answering it must carry prompt_id.
 message PromptDetected {
   fleet.type.v1.PromptId prompt_id = 1;
@@ -50,16 +48,16 @@ message HarnessCondition {
   uint32 attempt = 5;
   uint32 max_attempts = 6;
   // When the harness says it will retry next, if shown.
-  google.protobuf.Timestamp next_retry_at = 7;
+  google.protobuf.Timestamp next_retry_time = 7;
   // HTTP status if the harness shows one (500, 429, 529…), 0 otherwise.
   uint32 http_status = 8;
   // The line as shown, capped at 4 KiB. Untrusted text.
   string text = 9;
-  google.protobuf.Timestamp since = 10;
+  google.protobuf.Timestamp since_time = 10;
   bool cleared = 11;
   fleet.type.v1.GoalId goal_id = 12;
   // For RATE_LIMITED and USAGE_LIMIT: when the limit resets, as the harness
   // shows it ("resets 9:29 PM"), resolved to UTC. The hub holds the goal in
   // LIMIT_WAIT until then and resumes it (02-contracts.md).
-  google.protobuf.Timestamp resets_at = 13;
+  google.protobuf.Timestamp resets_time = 13;
 }

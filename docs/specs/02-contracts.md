@@ -14,12 +14,17 @@
   0009, 0010), [ADR 0017](../adr/0017-contract-packages.md) (package
   layout and names) and [ADR 0018](../adr/0018-hub-api-and-contract-amendments.md)
   (hub API, principals, devices, routines, profiles)
-- Hub API conventions (`fleet.hub.v1`): [02b-hub-api.md](02b-hub-api.md)
+- Hub API conventions (`fleet.hub.v1`): [02b-hub-api.md](02b-hub-api.md),
+  [02c-hub-watch-and-filters.md](02c-hub-watch-and-filters.md),
+  [02d-hub-authz.md](02d-hub-authz.md)
+- Rules for every package (naming, codegen, freeze, capability map, agent size
+  limits, compile check): [02e-contract-rules.md](02e-contract-rules.md)
 
 This spec says what crosses the wire for every capability in step 1. The
 `.proto` files are the source of truth; this document explains the mapping,
-delivery semantics, versioning, errors, limits and security rules. Built and
-linted with `buf` (commands at the end).
+delivery semantics, versioning, errors and security rules. Built and linted
+with `buf` (commands in [02e](02e-contract-rules.md#compile-check)). The
+contracts are unfrozen until the `v0.1` tag (ADR 0019, 02e).
 
 ## Package layout
 
@@ -45,24 +50,25 @@ packages; `fleet.hub.v1` never imports `fleet.agent.v1`.
 
 | File | Holds |
 |---|---|
-| `type/v1/ids.proto` | `MachineId`, `AccountKey` vs `AccountId`, `SessionId`, `GoalId`, `PromptId`, `ProbeId`, `CommandId`, `AttachId`, `IntegrationId`, `PaneKey`, `WindowKey`, `TmuxServerKind`, `Harness` |
-| `type/v1/work.proto` | `RepoRef`, `ProviderKind`, `WorkItemKind`, `WorkItemRef`, `Workdir` |
-| `type/v1/status.proto` | `Percent` with explicit unknown, `Status`, `ReasonCode`, `Capability`, `Role`, `Principal` |
+| `type/v1/ids.proto` | `MachineId`, `AccountKey` vs `AccountId`, `SessionId`, `GoalId`, `PromptId`, `ProbeId`, `CommandId`, `AttachId`, `IntegrationId`, `DeviceId`, `PrincipalId`, `PaneKey`, `WindowKey`, `TmuxServerKind`, `Harness`; the rules header |
+| `type/v1/work.proto` | `RepoRef`, `ProviderKind`, `WorkItemKind`, `WorkItemKey` (identity), `WorkItemRef` (key plus display fields), `Workdir` |
+| `type/v1/consent.proto` | `ConsentAct` |
+| `type/v1/status.proto` | `Percent` with explicit unknown, `Status`, `ReasonCode`, `ErrorDetail`, `FieldViolation`, `AttachCloseReason`, `Capability`, `Role`, `PrincipalKind`, `Principal` |
 | `type/v1/harness.proto` | `CommandClass`, `CatalogEntry`, `CommandCatalog`, `GoalHooksState`, `Activity`, `Availability`, `GoalLineState`, `NamedKey`, `KeyInput`, `PromptSource`, `PromptOption`, `HarnessConditionKind`, `LogStream` |
 | `type/v1/usage.proto` | `LimitBucket`, `ResetTime`, `ShownField`, `ShownUsage`, `SpendReading`, `UsageSource`, `WindowKind`, `BudgetKind`, `ParseOutcome` |
 | `type/v1/settings.proto` | `SettingValues`, `SettingSource`, `EffectiveSettings`, `SettingLayer`, `DefaultServerMode`, `LocalApprovalRule`, `RateLimit` |
-| `type/v1` additions (ADR 0018) | `DeviceId`, `PrincipalKind`, `ErrorDetail`, `VersionSupport`, `ParserFeature`, `ParserSupport`, `HarnessGoalHooks`, `LogStreamKey` |
+| `type/v1` additions (ADR 0018) | `VersionSupport`, `ParserFeature`, `ParserSupport`, `HarnessGoalHooks`, `LogStreamKey` |
 | `agent/v1/agent.proto` | `service AgentService`, `ConnectRequest`/`ConnectResponse`, `Hello`/`HelloAck`, `Heartbeat`, `Settings`/`SettingsAck`, `ResultAck`, `Bye`, `Enroll`, `RenewCert` |
 | `agent/v1/streams.proto` | `TerminalRequest{up TermUp}` / `TerminalResponse{down TermDown}`, `SessionLogRequest{chunk LogChunk}` / `SessionLogResponse{ack LogAck}` |
 | `agent/v1/command.proto` | `Command` envelope, `CommandAck`, `CommandProgress`, `CommandResult` |
 | `agent/v1/command_tmux.proto` | `SessionTarget`, probe kinds (D1), tmux control kinds (F, E10, E11) |
 | `agent/v1/command_goal.proto` | `GoalSpec`, `Preflight`, `StartGoal`, worktree, goal-hook, attach, log and drain kinds |
-| `agent/v1/events.proto` | `Event{seq, at, delivery, coalesce_key, body}`, `DeliveryClass` and every event body except the screen ones |
+| `agent/v1/events.proto` | `Event{seq, observed_time, delivery, coalesce_key, body}`, `DeliveryClass` and every event body except the screen ones |
 | `agent/v1/screen.proto` | `PromptDetected`, `HarnessCondition` (events and `Snapshot.prompts` / `conditions`) |
 | `agent/v1/snapshot.proto` | facts and inventories (`MachineFacts`, `HarnessInfo`, tmux `TmuxServer/Session/Window/Pane`, `GoalState`, `RepoCheckout`, `BranchState`, `ForgeCliStatus`, `SpoolStatus`, `PolicyInfo`, `DrainState`) and the `Snapshot` |
 | `agent/v1/usage.proto` | `UsageReading` (as shown + standardized buckets), `AccountIdentity`, `SessionAccountLink`, `ProbeHealth` |
 | `integration/v1/integration.proto` | `IntegrationCapabilities`, `WorkItem`, `ChangeRequest`, `CheckSummary`, `Review`, `Claim`, and the read-only `IntegrationProviderService` that GitHub implements first |
-| `hub/v1/*.proto` | `FleetService` and its resources; see [02b](02b-hub-api.md) |
+| `hub/v1/*.proto` | `FleetService` and its resources; see [02b](02b-hub-api.md), [02c](02c-hub-watch-and-filters.md), [02d](02d-hub-authz.md) |
 
 **Naming (buf STANDARD).** Services end in `Service`; every RPC has its own
 `<Rpc>Request`/`<Rpc>Response`. Where a stream body already had a name the
@@ -131,7 +137,7 @@ sequence; `none` means unordered. Droppable: may be shed under backpressure.
 | E9 | `TmuxPane.harness_session_id`, `Event.pane_harness_session` | A→H | — | seq | no |
 | E10 | `CapturePane{pane, last_lines, keep_ansi, max_bytes}` → `CapturePaneResult` | H→A | yes | cmd | no |
 | E11 | `TmuxPane.availability`, `Event.availability AvailabilityChanged`; `SetSessionAvailability` (board mark) | A→H; H→A | yes | seq; cmd | never |
-| E12 | `Event.harness_condition HarnessCondition{…, resets_at}` (provider error, rate limit, usage limit, sign-in required, network), reported again with `cleared`; open ones in `Snapshot.conditions` | A→H | yes | seq | never |
+| E12 | `Event.harness_condition HarnessCondition{…, resets_time}` (provider error, rate limit, usage limit, sign-in required, network), reported again with `cleared`; open ones in `Snapshot.conditions` | A→H | yes | seq | never |
 | F1 | `EnsureSession{…, owner_principal, profile}` → `EnsureSessionResult{session, created, pane}` | H→A | yes | cmd | no |
 | F2 | `EnsureWindow` → `EnsureWindowResult` | H→A | yes | cmd | no |
 | F3 | `SendKeys{pane, keys[], answering_prompt, require_empty_input_line}` | H→A | **no** | cmd | no |
@@ -176,7 +182,7 @@ ids and the results are re-sent right after the snapshot. A duplicate
 
 **Envelope checks, in order.** First, a `command_id` already in the local
 log returns the logged result without re-checking or re-executing (so a
-re-send after reconnect never trips the `seq` check). Then `not_after` in hub
+re-send after reconnect never trips the `seq` check). Then `not_after_time` in hub
 time (else `EXPIRED`);
 `epoch` equals the current `HelloAck.epoch` (else `FAILED` /
 `EPOCH_MISMATCH`, `retryable = true`: the hub re-issues it under the new
@@ -188,12 +194,12 @@ harness command class (else `REJECTED_BY_POLICY` / `ROLE_INSUFFICIENT`);
 local approval if required (`AWAITING_LOCAL_CONFIRM`, then the final
 result or `LOCAL_CONFIRM_TIMEOUT`).
 
-**Deadlines.** `not_after` defaults: 2 min for `SendKeys`, `Interrupt`,
+**Deadlines.** `not_after_time` defaults: 2 min for `SendKeys`, `Interrupt`,
 `RunHarnessCommand`, `CapturePane`, `OpenAttach`; 30 min for `StartGoal`,
 `EnsureWorktree`, `PruneWorktree`, `EnsureGoalHooks`; 10 min for
 everything else. The agent evaluates deadlines in hub time
 (`HelloAck.hub_time` plus local monotonic elapsed). The hub measures skew from
-`Heartbeat.sent_at` against its own clock and raises a machine warning over
+`Heartbeat.sent_time` against its own clock and raises a machine warning over
 5 minutes (ADR 0004).
 
 **Not idempotent: `SendKeys`.** After an agent restart mid-command the
@@ -282,21 +288,18 @@ decodes block by block; the next chunk starts a new frame.
 ## Versioning and capability negotiation
 
 - **Proto version.** `Hello.proto_min/max` and `HelloAck.proto_version`.
-  Within each `v1` package changes are additive only (checked by
-  `buf breaking`, WIRE_JSON); the hub supports agents one minor version
-  behind (ADR 0003). No common version → `Bye{PROTO_UNSUPPORTED}`.
+  Within each `v1` package, changes are free until the `v0.1` tag and
+  additive only after it (`buf breaking` against the tag, WIRE_JSON; ADR 0019,
+  02e); the hub supports agents one minor version behind (ADR 0003). No
+  common version → `Bye{PROTO_UNSUPPORTED}`.
 - **Capabilities** are `Capability{name, version}` in `Hello`; the hub echoes
   `capabilities_accepted` and lists its own in `HelloAck.hub_capabilities`
   (`snapshot.parts`, `event.delivery`); neither side uses a feature the
-  other did not list. Every `Command` names the capability it needs in
-  `requires`, so an agent that lacks it answers `UNSUPPORTED` without
-  decoding the kind. Names used in v1:
-  `tmux.observe`, `tmux.control`, `tmux.default_server.control`,
-  `tmux.fleet_server`, `attach.pty`, `harness.<name>` (launch),
-  `harness.catalog`, `usage.probe.<harness>`, `usage.passive.<harness>`,
-  `prompt.detect.<harness>`, `goal.start`, `goal.stop`, `goal.hooks.<harness>`,
-  `worktree`, `preflight`, `logs.terminal`, `logs.transcript`, `confirm.local`,
-  `drain`, `power`, `settings`. Reserved, never advertised: `exec.raw`.
+  other did not list. Every `Command` names the one capability it needs in
+  `requires` (a minimum version), so an agent that lacks it answers
+  `UNSUPPORTED` without decoding the kind. The command-kind to capability
+  table, the names in use and the version rule are in
+  [02e](02e-contract-rules.md#command-kinds-and-capabilities).
 - **Other versions on the wire:** `HarnessInfo.parser_version` and
   `supported_versions` (C1), `GoalHooksState.hook_version` (G1),
   `HarnessInfo.version_support` and `parser_support[]` (C1),
@@ -312,7 +315,8 @@ cause shared with preflight. `retryable`, `retry_after` and `metadata` (on
 kind may be sent again with a new `command_id`, when, and small structured
 facts (`{"step": "wait_ready"}`; ≤ 16 entries of 256 bytes, no screen text).
 `UNKNOWN_OUTCOME` is never retryable. The hub API exposes the same four
-fields as `fleet.type.v1.ErrorDetail` ([02b](02b-hub-api.md#errors)).
+fields, plus `violations`, as `fleet.type.v1.ErrorDetail`
+([02b](02b-hub-api.md#errors)).
 Preflight reports every failed check as `PreflightFailure{reason, detail,
 retryable}`; durable facts (`HARNESS_NOT_SIGNED_IN`) are not retryable,
 passing ones (`DISK_LOW`, `SLOTS_FULL`) are. Valid pairs:
@@ -320,12 +324,18 @@ passing ones (`DISK_LOW`, `SLOTS_FULL`) are. Valid pairs:
 | Status | Reasons |
 |---|---|
 | `OK` | none |
-| `FAILED` | any execution (100–119), goal (300–306) or probe (400–402) code; `EPOCH_MISMATCH` (retryable); `PreflightResult.failed_checks[]` for `Preflight` |
+| `FAILED` | any execution (100–119), goal (300–306) or probe (400–402) code; `EPOCH_MISMATCH` (retryable); for `Preflight`, `PreflightResult.failed_checks[]` carries the preflight codes 1–12 and 16 (`HARNESS_NOT_INSTALLED` … `ON_BATTERY_BLOCKED`, `HARNESS_PROFILE_MISSING`) |
 | `EXPIRED` | `EXPIRED` |
-| `REJECTED_BY_POLICY` | preflight 13–15, `COMMAND_CLASS_DENIED`, `HARNESS_NOT_ALLOWED`, `REPO_ROOT_NOT_ALLOWED`, `SEQ_REPLAYED`, `SIGNATURE_INVALID`, `ROLE_INSUFFICIENT`, `LOCAL_DENIED`, `LOCAL_CONFIRM_TIMEOUT`, `DRAINING` |
+| `REJECTED_BY_POLICY` | preflight 13–15 (`POLICY_DENIED`, `DRAINING`, `SLOTS_FULL`), `COMMAND_CLASS_DENIED`, `HARNESS_NOT_ALLOWED`, `REPO_ROOT_NOT_ALLOWED`, `SEQ_REPLAYED`, `SIGNATURE_INVALID`, `ROLE_INSUFFICIENT`, `LOCAL_DENIED`, `LOCAL_CONFIRM_TIMEOUT`, `DRAINING` |
 | `UNSUPPORTED` | `CAPABILITY_MISSING` plus `missing_capability` |
 | `UNKNOWN_OUTCOME` | `INTERNAL` or the step reached |
 | `AWAITING_LOCAL_CONFIRM` | none (interim; a final result follows) |
+
+The hub API codes (500–520: version, request id, scope, approval, pairing,
+page, resume, filter, order, mask, not found, exists, machine offline,
+credentials, goal phase, secret, size) never appear in a `CommandResult`;
+they are `ErrorDetail.reason` on an RPC error, with `FieldViolation`s for
+field-level detail ([02b](02b-hub-api.md#errors)).
 
 `Percent` is never 0-as-unknown: `PercentUnknown.reason` says why. A
 reading with `parse = FAILED` still ships `ShownUsage.raw_screen` (redacted)
@@ -333,9 +343,10 @@ and no buckets; the hub never schedules on it.
 
 ## Principals, profiles, goals (ADR 0018)
 
-- **Principal** = `{id, name, role, kind, device_id, on_behalf_of}`. `id` is
-  the stable key (audit, `FLEET_OWNER`); `name` is display only. Kinds:
-  `USER`, `SCHEDULER`, `ARBITER`, `API_TOKEN`, `DEVICE` (with `device_id` and
+- **Principal** = `{id, name, role, kind, device, on_behalf_of}`. `id` is a
+  `PrincipalId`, the stable key (audit, `FLEET_OWNER`); `name` is display
+  only. Kinds:
+  `USER`, `SCHEDULER`, `ARBITER`, `API_TOKEN`, `DEVICE` (with `device` and
   `on_behalf_of` the approving user), `LOCAL_USER` (the OS user at the
   machine, `id = "local:<user>"`). Owners are Principals everywhere:
   `EnsureSession.owner_principal`, `TmuxSession.owner_principal` (the agent
@@ -357,34 +368,23 @@ and no buckets; the hub never schedules on it.
   `/clear` first, only in a session the fleet started (`/clear` is
   destructive, 01b); otherwise `FRESH_CONTEXT_NOT_ALLOWED`.
   `dispatch_reason` is rendered into the goal text. Routine runs use
-  `WorkItemRef{kind: ROUTINE, provider_name: "fleet"}` ([02b](02b-hub-api.md)).
+  a `WorkItemKey` with `kind: ROUTINE` and `provider_name: "fleet"`
+  ([02b](02b-hub-api.md)). `GoalSpec.consent` is `repeated ConsentAct`, an
+  enum the adapter renders itself, never hub text.
 - **Limit wait.** `HarnessCondition{kind: USAGE_LIMIT | RATE_LIMITED,
-  resets_at}` moves the goal to `LIMIT_WAIT` until `resets_at` (no nudges, no
-  no-progress counting). At `resets_at` + 1 min, once the condition cleared or
+  resets_time}` moves the goal to `LIMIT_WAIT` until `resets_time` (no nudges, no
+  no-progress counting). At `resets_time` + 1 min, once the condition cleared or
   the account's reading shows room, the hub resumes per harness: Claude Code
   `SendKeys{"continue", ENTER, require_empty_input_line}`; Codex and Muse
   `RunHarnessCommand{"/goal", "resume"}` (01b probes, 2026-10-02). If the
-  condition is still showing, the wait extends to the next `resets_at`.
+  condition is still showing, the wait extends to the next `resets_time`.
 
 ## Size limits
 
-| Item | Cap | Where enforced |
-|---|---|---|
-| Any `Connect` message | 1 MiB (`HelloAck.max_message_bytes`) | both sides; gRPC max receive size |
-| `Snapshot` | 1 MiB per part; typical 10–100 KiB in one part | agent: larger snapshots go in parts (`snapshot_id`, `part_index`, `part_count`) that split whole servers, sessions or list entries, never a pane; `raw_screen` always omitted |
-| `CapturePaneResult.text` | 256 KiB (`CapturePane.max_bytes` clamps) | agent |
-| `RunHarnessCommandResult.screen`, `ShownUsage.raw_screen` | 64 KiB | agent |
-| `PromptDetected.text` | 16 KiB | agent |
-| `PaneSummary.last_lines`, `GoalState.first_line`, `KeyInput.literal`, `RunHarnessCommand.args`, `GoalSpec.goal_text` | 4 KiB | agent (hub validates before sending) |
-| Labels, names, window names, `ShownField` strings, `ResetTime.original_text` | 256 bytes | agent |
-| `CommandResult.message`, `CommandProgress.message`, `parse_message` | 1 KiB | agent |
-| `TermUp.output` | 64 KiB per message | agent |
-| `TermDown.input` | 4 KiB per message | hub |
-| `LogChunk.zstd` | 1 MiB per chunk | agent |
-| Per-agent rate | hub-side per-kind limits; agent-side `SettingValues.rate_limits` | both |
-
-All strings are UTF-8 with control characters stripped (except `\n` and
-`\t` in multi-line screen text); the hub rejects anything else.
+Agent-wire caps (message 1 MiB, snapshot parts and log chunks 960 KiB,
+captures, prompts, names) are in
+[02e](02e-contract-rules.md#size-limits-agent-wire); the hub API's are in
+[02b](02b-hub-api.md#size-limits).
 
 ## Security notes
 
@@ -468,11 +468,13 @@ What the hub can never ask for, by construction of the contract:
     measurement run).
 14. **No `StopGoal`.** Goals are paused, resumed, edited and cleared with
     each harness's own `/goal` subcommands (probed 2026-10-01; see 01b), sent
-    through `RunHarnessCommand`. Field 42 and `REASON_CODE` 303 are reserved.
+    through `RunHarnessCommand`. Field 42 and `REASON_CODE` 303 are unused.
     A goal still starting is cancelled the same way (`/goal clear`, or
     `Interrupt`), so no `CancelCommand` is needed.
 15. **Max message 1 MiB** rather than gRPC's 4 MiB default; captures and
-    log chunks are capped below it.
+    log chunks are capped below it (960 KiB for chunks and snapshot parts).
+16. **Unfrozen until `v0.1`** (ADR 0019): free renames until the tag, then
+    additive only, `buf breaking` against the tag.
 
 ## Resolved questions (2026-10-02)
 
@@ -486,14 +488,6 @@ What the hub can never ask for, by construction of the contract:
 
 ## Compile check
 
-Run from the repository root (`buf.yaml`: module `api`, lint `STANDARD`,
-breaking `WIRE_JSON`):
-
-```
-go run github.com/bufbuild/buf/cmd/buf@latest build
-go run github.com/bufbuild/buf/cmd/buf@latest lint
-go run github.com/bufbuild/buf/cmd/buf@latest breaking --against '.git#ref=HEAD~1'
-```
-
-All exit 0 with buf 1.73.0 on 2026-10-02, no lint exceptions; `breaking`
-against the ADR 0017 commit shows only the reservations ADR 0018 lists.
+`buf build`, `buf lint` and `buf generate`: see
+[02e](02e-contract-rules.md#compile-check). All exit 0 with buf 1.73.0 on
+2026-10-02, no lint exceptions.

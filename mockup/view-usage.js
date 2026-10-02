@@ -18,7 +18,7 @@ const emailOf = a => settings.showEmails ? a.email : "email hidden";
 function wasteItem(a) {
   const o = outlook(a), cls = a.stale ? "stale" : o.p.state === "reserve" ? "bad" : o.alert ? "alert" : "ok";
   return `<li class="${cls}">${agentChip(a.harness)}<b>${esc(a.label)}</b><span>${esc(wasteLine(a))}</span>
-    ${dt("w-" + a.id, `<span>projected unused = (100 − reserve ${a.reserve}%) − (${o.p.used}% + burn rate × ${Math.round(hoursLeft(a))} h left), burn rate = % used ÷ hours elapsed</span><span>binding bucket: ${esc(bindingBucket(a).label)} · LimitBucket.percent_used ${o.p.used} · resets_at ${esc(new Date(a.resets).toISOString())}</span>`)}</li>`;
+    ${dt("w-" + a.id, `<span>projected unused = (100 − reserve ${a.reserve}%) − (${o.p.used}% + burn rate × ${Math.round(hoursLeft(a))} h left), burn rate = % used ÷ hours elapsed</span><span>binding bucket: ${esc(bindingBucket(a).label)} · LimitBucket.percent_used ${o.p.used} · resets_time ${esc(new Date(a.resets).toISOString())}</span>`)}</li>`;
 }
 const spendItem = a => `<li class="api">${agentChip(a.provider.split(" ")[0].toLowerCase())}<b>${esc(a.label)}</b><span>${esc(spendLine(a))}</span></li>`;
 
@@ -46,7 +46,7 @@ function burnCard(a) {
     <div class="burn-legend"><span><i style="background:${tone}"></i>used ${p.used}%${a.buckets.length > 1 ? ` (${esc(bindingBucket(a).label)}; ${a.buckets.filter(b => b !== bindingBucket(a)).map(b => `${esc(b.label)} ${b.used}%`).join(", ")})` : ""}${bindingBucket(a).remaining ? " (shown as % left)" : ""}</span>
       <span><i class="dash"></i>line ${Math.round(p.target)}%</span><span>${a.stale ? "next reset" : "resets"} in <b data-until="${a.resets}">${until(a.resets)}</b></span></div>
     <div class="src"><span class="real">real</span> ${esc(src)} · ${goalsTxt(runningOn(a.harness))}</div>
-    ${dt("u-" + a.id, `<span>goal consent: ${esc(a.consent.join(", "))} · mode: ${esc(a.mode)}</span><span>UsageReading.shown (as shown) · LimitBucket.percent_used, resets_at (chart) · source ${esc(a.sourceKind === "probe" ? "USAGE_SOURCE_PROBE" : "USAGE_SOURCE_PASSIVE")}${a.passive ? ` · "${esc(a.passive)}"` : ""}</span>`)}</div>`;
+    ${dt("u-" + a.id, `<span>goal consent: ${esc(a.consent.join(", "))} · mode: ${esc(a.mode)}</span><span>UsageReading.shown (as shown) · LimitBucket.percent_used, resets_time (chart) · source ${esc(a.sourceKind === "probe" ? "USAGE_SOURCE_PROBE" : "USAGE_SOURCE_PASSIVE")}${a.passive ? ` · "${esc(a.passive)}"` : ""}</span>`)}</div>`;
 }
 
 // API-key accounts: dollar cap per period, manual dispatch only.

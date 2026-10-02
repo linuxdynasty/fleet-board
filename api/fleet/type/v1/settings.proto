@@ -8,8 +8,6 @@ package fleet.type.v1;
 
 import "google/protobuf/duration.proto";
 
-option go_package = "github.com/linuxdynasty/fleet-board/api/fleet/type/v1;typev1";
-
 // DefaultServerMode is the local ceiling for the developer's own tmux
 // server. ADR 0011 makes CONTROL the default.
 enum DefaultServerMode {

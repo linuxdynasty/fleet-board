@@ -8,8 +8,6 @@ package fleet.type.v1;
 import "fleet/type/v1/ids.proto";
 import "google/protobuf/duration.proto";
 
-option go_package = "github.com/linuxdynasty/fleet-board/api/fleet/type/v1;typev1";
-
 // ---------------------------------------------------------------------------
 // Percent with an explicit unknown. Never 0-as-unknown.
 // ---------------------------------------------------------------------------
@@ -52,7 +50,7 @@ enum Status {
   STATUS_OK = 1;
   // Attempted and failed; reason says why.
   STATUS_FAILED = 2;
-  // Arrived after not_after (hub time); nothing was done.
+  // Arrived after not_after_time (hub time); nothing was done.
   STATUS_EXPIRED = 3;
   // Local policy or the effective settings refused it; nothing was done.
   STATUS_REJECTED_BY_POLICY = 4;
@@ -61,7 +59,7 @@ enum Status {
   // The agent cannot tell whether the effect happened (SendKeys after a
   // crash, UI must ask a person). Never retried automatically.
   STATUS_UNKNOWN_OUTCOME = 6;
-  // Waiting for `fleet-agent approve <command_id>` before not_after.
+  // Waiting for `fleet-agent approve <command_id>` before not_after_time.
   STATUS_AWAITING_LOCAL_CONFIRM = 7;
 }
 
@@ -137,8 +135,7 @@ enum ReasonCode {
   REASON_CODE_READY_TIMEOUT = 300;
   REASON_CODE_GOAL_FILE_NOT_SEEN = 301;
   REASON_CODE_GOAL_NOT_RUNNING = 302;
-  // 303 was STOP_TIMEOUT for the removed StopGoal composite.
-  reserved 303;
+  // 303 was STOP_TIMEOUT for the removed StopGoal composite; unused.
   REASON_CODE_TRUST_PROMPT_SEEN = 304;
   // The harness's /goal has no such subcommand (for example pause on
   // Claude Code 2.1.286, which offers only set and clear).
@@ -165,6 +162,78 @@ enum ReasonCode {
   REASON_CODE_PAIRING_CODE_MISMATCH = 504;
   // The device is revoked or not yet approved.
   REASON_CODE_DEVICE_NOT_ACTIVE = 505;
+  // page_token is malformed, from another query, or older than 10 minutes.
+  // The client reloads the list from the first page.
+  REASON_CODE_PAGE_TOKEN_INVALID = 506;
+  // resume_token is malformed or from another fleet. (A well-formed token
+  // the hub cannot honour is not an error: it is RESYNC_REQUIRED.)
+  REASON_CODE_RESUME_TOKEN_INVALID = 507;
+  // filter does not parse or names a field outside the resource's filter
+  // catalogue (02c-hub-watch-and-filters.md); the violations say which.
+  REASON_CODE_FILTER_INVALID = 508;
+  // order_by names a field the resource does not sort by.
+  REASON_CODE_ORDER_BY_INVALID = 509;
+  // update_mask is empty, names a field that does not exist, an output-only
+  // field (status.*, id, version) or a field not updatable on this resource.
+  REASON_CODE_UPDATE_MASK_INVALID = 510;
+  // A mutating request without request_id.
+  REASON_CODE_REQUEST_ID_MISSING = 511;
+  // The id names no resource the caller may see (also for resources the
+  // caller's scopes hide, so ids cannot be probed).
+  REASON_CODE_RESOURCE_NOT_FOUND = 512;
+  // Create with an id or unique name that already exists.
+  REASON_CODE_RESOURCE_ALREADY_EXISTS = 513;
+  // The action needs a live agent connection (attach, capture) and the
+  // machine is OFFLINE or STALE. retryable; actions that queue (SendKeys)
+  // return an Operation instead.
+  REASON_CODE_MACHINE_OFFLINE = 514;
+  // No credentials, or credentials the hub does not know.
+  REASON_CODE_CREDENTIALS_INVALID = 515;
+  // The credentials were valid and have expired: the client signs in again.
+  REASON_CODE_CREDENTIALS_EXPIRED = 516;
+  // ControlGoalRequest.expected_phase does not match the goal's phase.
+  REASON_CODE_GOAL_PHASE_CHANGED = 517;
+  // A one-time secret (enrollment token) was already delivered for this
+  // request_id and is not stored; create a new one.
+  REASON_CODE_SECRET_ALREADY_DELIVERED = 518;
+  // A field is over its limit (02b-hub-api.md, "Size limits").
+  REASON_CODE_FIELD_TOO_LARGE = 519;
+  // The pairing request expired before the owner approved it.
+  REASON_CODE_PAIRING_EXPIRED = 520;
+}
+
+// AttachCloseReason says why a terminal attach ended (J1). Used by the
+// agent's Terminal stream and the hub's AttachTerminal, so a browser can tell
+// "idle, reconnect" from "session gone" without parsing text.
+enum AttachCloseReason {
+  ATTACH_CLOSE_REASON_UNSPECIFIED = 0;
+  // No input or output for attach_idle_timeout.
+  ATTACH_CLOSE_REASON_IDLE_TIMEOUT = 1;
+  // The tmux session or window the attach viewed ended.
+  ATTACH_CLOSE_REASON_SESSION_ENDED = 2;
+  // The hub closed it (revoked device or token, hub shutdown).
+  ATTACH_CLOSE_REASON_HUB_CLOSED = 3;
+  // The agent is shutting down.
+  ATTACH_CLOSE_REASON_AGENT_SHUTDOWN = 4;
+  // The agent's connection dropped (hub to client only).
+  ATTACH_CLOSE_REASON_AGENT_OFFLINE = 5;
+  // The client detached (AttachClose).
+  ATTACH_CLOSE_REASON_DETACHED = 6;
+  // The attach failed or was refused; the error field says why.
+  ATTACH_CLOSE_REASON_ERROR = 7;
+}
+
+// FieldViolation says what is wrong with one field of a request, so a form
+// can mark the field. Carried in ErrorDetail.violations on INVALID_ARGUMENT.
+message FieldViolation {
+  // Path from the request message, in proto field names with indexes:
+  // "update_mask.paths[0]", "spec.display_name", "filter" (a parse error
+  // has the offset in metadata["offset"] of the enclosing ErrorDetail).
+  string field = 1;
+  // INVALID_ARGUMENT, INVALID_NAME, FIELD_TOO_LARGE, FILTER_INVALID, ...
+  ReasonCode reason = 2;
+  // One line for a person. Never echoes untrusted text. 256 bytes.
+  string description = 3;
 }
 
 // ErrorDetail is the machine-readable half of an error, shared by command
@@ -182,6 +251,8 @@ message ErrorDetail {
   // "goal.start"}, {"current_version": "7"}. No screen text, no secrets;
   // keys and values capped at 256 bytes, at most 16 entries.
   map<string, string> metadata = 4;
+  // Field-level detail for hub API INVALID_ARGUMENT errors; at most 16.
+  repeated FieldViolation violations = 5;
 }
 
 // ---------------------------------------------------------------------------
@@ -190,6 +261,8 @@ message ErrorDetail {
 
 // Capability is one advertised feature, for example {"usage.probe.codex", 1}.
 // The hub never sends a command whose capability the agent did not advertise.
+// In Command.requires, version is the minimum version the command needs; an
+// advertised version equal or higher satisfies it (02e-contract-rules.md).
 // "exec.raw" is reserved and never advertised or accepted in v1.
 message Capability {
   string name = 1;
@@ -198,8 +271,9 @@ message Capability {
 
 // Role of the principal that requested a command (ADR 0004 "People on the
 // hub"). The agent re-checks role against harness command class (01b).
-// Each value names a permission set (02b-hub-api.md); values are never
-// compared numerically, and ROLE_SCHEDULER is not "above" ROLE_OWNER.
+// Each value names a permission set (02d-hub-authz.md maps roles to scopes);
+// values are never compared numerically, and ROLE_SCHEDULER is not "above"
+// ROLE_OWNER.
 enum Role {
   ROLE_UNSPECIFIED = 0;
   ROLE_VIEWER = 1;
@@ -233,13 +307,12 @@ message Principal {
   // Display only; never used as a key.
   string name = 1;
   Role role = 2;
-  // Stable hub-assigned id; survives renames. The key for audit, ownership
-  // (FLEET_OWNER holds it) and idempotency scoping. For LOCAL_USER the agent
-  // sends "local:<os user>".
-  string id = 3;
+  // The key for audit, ownership (FLEET_OWNER holds it) and idempotency
+  // scoping. For LOCAL_USER the value is "local:<os user>".
+  PrincipalId id = 3;
   PrincipalKind kind = 4;
   // Set when kind is DEVICE: the paired device that acted.
-  DeviceId device_id = 5;
+  DeviceId device = 5;
   // Set for DEVICE and API_TOKEN (the user they act for) and for SCHEDULER
   // or ARBITER when acting for a routine's or goal's owner. One level deep:
   // on_behalf_of never has its own on_behalf_of.

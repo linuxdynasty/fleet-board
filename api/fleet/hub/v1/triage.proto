@@ -13,8 +13,6 @@ import "fleet/type/v1/status.proto";
 import "fleet/type/v1/work.proto";
 import "google/protobuf/timestamp.proto";
 
-option go_package = "github.com/linuxdynasty/fleet-board/api/fleet/hub/v1;hubv1";
-
 // TriageKind (03d W7 table).
 enum TriageKind {
   TRIAGE_KIND_UNSPECIFIED = 0;
@@ -90,7 +88,17 @@ message ConditionDetail {
   google.protobuf.Timestamp since_time = 9;
 }
 
-// TriageItem is one entry in the Triage feed.
+// NoteDetail is free text for the other kinds (goal line, verifier finding).
+// A message, not a bare string, so a kind can grow structured fields later
+// without a new oneof arm. Untrusted text.
+message NoteDetail {
+  string text = 1;
+}
+
+// TriageItem is one entry in the Triage feed. A decision record, not a
+// spec/status resource: it holds no observed telemetry, so version bumps on
+// every state change and Snooze, Dismiss and DecideApproval guard it with
+// expected_version.
 message TriageItem {
   TriageItemId id = 1;
   uint64 version = 2;
@@ -113,12 +121,11 @@ message TriageItem {
   oneof detail {
     PromptDetail prompt = 21;
     ConditionDetail condition = 22;
-    // Free text for the other kinds (goal line, verifier finding).
-    string note = 23;
+    NoteDetail note = 23;
   }
   // The approval that acts on this item, if any.
   ApprovalId approval = 24;
-  google.protobuf.Timestamp snoozed_until = 25;
+  google.protobuf.Timestamp snoozed_until_time = 25;
   google.protobuf.Timestamp expire_time = 26;
   fleet.type.v1.Principal acted_by = 27;
   google.protobuf.Timestamp acted_time = 28;
@@ -166,7 +173,8 @@ enum ApprovalState {
   APPROVAL_STATE_WITHDRAWN = 4;
 }
 
-// Approval is one pending or past decision.
+// Approval is one pending or past decision. Like TriageItem it is a decision
+// record: version bumps on every state change and DecideApproval needs it.
 message Approval {
   ApprovalId id = 1;
   uint64 version = 2;
@@ -191,7 +199,7 @@ message Approval {
   google.protobuf.Timestamp expire_time = 22;
   // Lowest role or scope that may decide.
   fleet.type.v1.Role required_role = 23;
-  // Who decided and from which device (Principal.device_id), and what.
+  // Who decided and from which device (Principal.device), and what.
   fleet.type.v1.Principal decided_by = 24;
   string decision = 25;
   google.protobuf.Timestamp decided_time = 26;
@@ -199,8 +207,8 @@ message Approval {
   fleet.type.v1.CommandId operation = 27;
 }
 
-// ListTriageItemsRequest. Filter fields: state, kind, severity, machine,
-// goal. Default order: severity, then age.
+// ListTriageItemsRequest. Filter and order_by names:
+// 02c-hub-watch-and-filters.md. Default order: severity, then age.
 message ListTriageItemsRequest {
   int32 page_size = 1;
   string page_token = 2;
@@ -229,7 +237,7 @@ message SnoozeTriageItemRequest {
   string request_id = 1;
   TriageItemId id = 2;
   uint64 expected_version = 3;
-  google.protobuf.Timestamp until = 4;
+  google.protobuf.Timestamp until_time = 4;
 }
 
 // SnoozeTriageItemResponse.
@@ -250,7 +258,7 @@ message DismissTriageItemResponse {
   TriageItem triage_item = 1;
 }
 
-// ListApprovalsRequest. Filter fields: state, kind, machine.
+// ListApprovalsRequest. Filter and order_by names: 02c-hub-watch-and-filters.md.
 message ListApprovalsRequest {
   int32 page_size = 1;
   string page_token = 2;
@@ -275,7 +283,9 @@ message GetApprovalResponse {
 }
 
 // DecideApprovalRequest. expected_version is required (non-zero): a
-// decision always names the exact approval state it saw.
+// decision always names the exact approval state it saw. A decision on an
+// approval that is no longer PENDING fails with APPROVAL_CLOSED, which wins
+// over VERSION_MISMATCH, so the phone says "already decided", not "stale".
 message DecideApprovalRequest {
   string request_id = 1;
   ApprovalId id = 2;

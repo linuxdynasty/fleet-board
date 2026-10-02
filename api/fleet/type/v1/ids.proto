@@ -1,12 +1,30 @@
 // fleet.type.v1 identifiers: the wrapper ids and tmux keys every fleet
 // protocol shares (agent wire, integrations, hub API).
 //
-// Rules for every file in every fleet package (ADR 0003, 0017):
-//   - proto3, additive changes only; field numbers are never reused or
-//     renumbered. Removed fields are `reserved` by number and name. Gaps are
-//     left on purpose for growth.
-//   - Every timestamp is google.protobuf.Timestamp in UTC. Local time strings
-//     observed on a harness screen travel alongside, never instead.
+// Rules for every file in every fleet package (ADR 0003, 0017, 0019;
+// docs/specs/02e-contract-rules.md has the long form):
+//   - proto3. Until the first implementation release is tagged v0.1 the
+//     contracts are UNFROZEN (ADR 0019): renames and type changes are
+//     allowed, nothing is `reserved` for fields no consumer ever saw, and
+//     only `buf build` and `buf lint` gate a change. From the v0.1 tag on,
+//     changes are additive only: field numbers are never reused or
+//     renumbered, removed fields are `reserved` by number and name, and CI
+//     runs `buf breaking` against the tag. Gaps are left on purpose.
+//   - Every timestamp is google.protobuf.Timestamp in UTC and its field name
+//     ends in `_time` (create_time, resets_time, not_after_time). Local time
+//     strings observed on a harness screen travel alongside, never instead.
+//   - Every duration is google.protobuf.Duration, or an integer whose name
+//     ends in its unit (`utc_offset_seconds`, `ram_bytes`). Never a bare
+//     number of hours or seconds.
+//   - Every identifier is a wrapper message (`MachineId{value}`), and a field
+//     that holds one is named for the entity (`machine`, `goal`), not
+//     `machine_id`. The exceptions are protocol correlation keys that are
+//     the identity of their own message (`command_id`, `prompt_id`,
+//     `attach_id`, `probe_id`). 64-bit integers are strings in JSON
+//     (docs/specs/02b-hub-api.md, "64-bit integers").
+//   - A closed set is an enum, never a string. A string field is either
+//     untrusted text, a name the user chose, or an open vocabulary that the
+//     comment says is open (`Harness.name`).
 //   - Anything an agent read from a harness screen, a goal file, a tmux
 //     window name or a repository is UNTRUSTED TEXT: length-capped and
 //     control-character-stripped by the agent, rendered as data by the hub.
@@ -16,8 +34,6 @@
 syntax = "proto3";
 
 package fleet.type.v1;
-
-option go_package = "github.com/linuxdynasty/fleet-board/api/fleet/type/v1;typev1";
 
 // Each identifier is a wrapper so generated code keeps them distinct.
 
@@ -82,6 +98,14 @@ message IntegrationId {
 
 // DeviceId is hub-assigned when a device asks to pair (ADR 0018).
 message DeviceId {
+  string value = 1;
+}
+
+// PrincipalId is the stable hub-assigned id of a Principal; survives
+// renames. The key for audit, ownership (FLEET_OWNER holds it) and
+// idempotency scoping. For PRINCIPAL_KIND_LOCAL_USER the agent sends
+// "local:<os user>"; the scheduler and arbiter use fixed ids.
+message PrincipalId {
   string value = 1;
 }
 

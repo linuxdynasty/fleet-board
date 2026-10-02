@@ -54,7 +54,7 @@ sequenceDiagram
 
 1. **Work items:** stage `READY` (open, trusted, unclaimed, repo watched),
    integration lag ≤ `max_sync_lag`, no active goal for the same
-   `WorkItemRef` (DB unique), no active goal on the same branch, repo below
+   `WorkItemKey` (DB unique), no active goal on the same branch, repo below
    `max_parallel_goals_per_repo` (default 3, open question).
 2. **Accounts:** `pacing_state ∈ {OK, BEHIND, AHEAD}` with
    `active_goals < allowed_active`; ranked by waste risk (W3). Excluded:
@@ -97,6 +97,11 @@ writes consent into the objective text: `/goal <goal_text> (consent: push,
 pr-open, merge)`, having written the goal file itself just before typing
 (Codex hooks never see `/goal` lines, [01d](01d-goal-hooks.md)). The exact
 line typed is reported back for the audit log (03g: `StartGoalResult.typed_goal_line`).
+The consent list on the wire is `repeated ConsentAct` (`PUSH`, `PR_OPEN`,
+`MERGE`), never text: the adapter renders each act as its lowercase hyphenated
+word and joins them itself, so nothing the hub sends can add a `--`, a comma
+or a newline to the typed line. An act the agent does not know is
+`INVALID_ARGUMENT` and the goal is not typed.
 
 ### State machine (goal start, owned by the hub)
 
@@ -130,7 +135,7 @@ suggested.
 
 | What | Where | Transaction |
 |---|---|---|
-| `goals` row (`goal_id`, `work_item WorkItemRef`, `repo RepoRef`, machine, account, harness, consent, text, state, pane, session, timestamps) | hub store | planning tx; result tx |
+| `goals` row (`goal_id`, `work_item WorkItemKey`, `repo RepoRef`, machine, account, harness, consent, text, state, pane, session, timestamps) | hub store | planning tx; result tx |
 | `sessions.reserved_for_goal` | hub store | planning tx; released in result/expiry tx |
 | Outbox `StartGoal` (`pending → delivered → done/expired/failed`) | hub store | planning tx; delivery and result txs |
 | Audit: who dispatched, consent written, machine, account | hub store (permanent) | planning tx |
@@ -158,7 +163,7 @@ suggested.
 | Hub restart after send | Outbox re-sends the same `command_id`; the agent answers from its log or continues the composite (W2) |
 | Duplicate `StartGoal` | Logged result; a composite in progress is not restarted |
 | Agent restart mid-composite | Resumes from the last declarative step; `type_goal` reached without `confirm_goal_file` → `UNKNOWN_OUTCOME` unless the goal file is now present → `OK` |
-| `not_after` (30 min) passes mid-composite | The agent finishes the step in flight, then reports `EXPIRED` for the remainder; a window already created is left (tagged) and the hub kills it only after a triage decision |
+| `not_after_time` (30 min) passes mid-composite | The agent finishes the step in flight, then reports `EXPIRED` for the remainder; a window already created is left (tagged) and the hub kills it only after a triage decision |
 | Harness crashes during `wait_ready` | `PaneExited` + `READY_TIMEOUT`; one retry with a new window; then another machine |
 | Provider error at start (sign-in, 5xx) | `HarnessCondition` from the new pane; the composite waits up to `ready_timeout`, then `READY_TIMEOUT`; the condition item (W7) explains why |
 | Trust prompt appears | `TRUST_PROMPT_SEEN`; preflight should have refused `FOLDER_UNTRUSTED`; the agent never answers trust prompts (C3); machine marked unfit for that repo |
@@ -224,7 +229,7 @@ sequenceDiagram
   W->>W: tx: VERIFYING · verify_deadline = now + verify_grace
   W->>V: wakeup(goal_id)
   V->>C: verify now: change request by head_ref (or linked work item)
-  C-->>V: ChangeRequest{state=MERGED, merged_at} | OPEN | none
+  C-->>V: ChangeRequest{state=MERGED, merged_time} | OPEN | none
   alt merged or work item closed
     V->>W: tx: goals MERGED · outbox SetSessionAvailability{session, true} · timer merged_grace
     W-->>A: Command{SetSessionAvailability{available_for_work=true}}
@@ -271,7 +276,7 @@ Sub-flags held alongside the state and used by the rules below:
 `provider_condition` (set while a `HarnessCondition` for the pane is not
 cleared), `prompt_pending` (an open prompt item for the pane),
 `human_at_keyboard_until` (10 min after an `AvailabilityChanged{reason="keystroke"}`
-on the pane), `nudges`, `no_progress_runs`, `cooldown_until`, `review_rounds`,
+on the pane), `nudges`, `no_progress_runs`, `cooldown_until_time`, `review_rounds`,
 `block_epoch`.
 
 ### Rules
@@ -342,12 +347,12 @@ on the pane), `nudges`, `no_progress_runs`, `cooldown_until`, `review_rounds`,
 
 ### Ordering and consistency
 
-- `GoalState` events apply in `seq` order; an older `observed_at` than the
+- `GoalState` events apply in `seq` order; an older `observed_time` than the
   stored one is history only.
 - Verification joins two sources (agent goal line, provider mirror); the
   fingerprint includes both, so re-evaluation after either changes is
   idempotent.
-- Timers (`cooldown_until`, `verify_deadline`, `merged_grace`) are persisted
+- Timers (`cooldown_until_time`, `verify_deadline`, `merged_grace`) are persisted
   and re-armed from the store at hub start; no decision depends on in-memory
   timers surviving.
 - Nudges and goal-control commands are typed input (not idempotent): the hub
@@ -360,7 +365,7 @@ on the pane), `nudges`, `no_progress_runs`, `cooldown_until`, `review_rounds`,
 | Agent offline | Goal state frozen at last known; stuck/no-progress evaluation suspended while `OFFLINE`; timers that fire act only when `ONLINE` |
 | Hub restart | All flags and timers are in the store; re-armed at start; a nudge sent but unacked is in the outbox and may be `EXPIRED` (2 min) → nothing typed |
 | Duplicate command | Logged result |
-| Nudge `not_after` expires | `EXPIRED`; the next stop evaluation may nudge again only if `nudges` is still 0 (it is not incremented for an undelivered nudge) |
+| Nudge `not_after_time` expires | `EXPIRED`; the next stop evaluation may nudge again only if `nudges` is still 0 (it is not incremented for an undelivered nudge) |
 | Harness crash (`PaneExited`) | `STOPPED`; respawn + nudge once; second crash → `STUCK` |
 | Provider error / rate limit / usage limit (`HarnessCondition`) | `provider_condition` set; no stop or no-progress counting; `USAGE_LIMIT` also marks the account `SHORT_LIMIT`/`RESERVE` in W3; cleared → counting resumes |
 | Prompt appears | `prompt_pending`; nudges suppressed; W7 handles the answer |

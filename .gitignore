@@ -6,3 +6,6 @@
 .claude/settings.local.json
 
 __pycache__/
+
+# Generated code from `buf generate` (buf.gen.yaml); never committed.
+gen/

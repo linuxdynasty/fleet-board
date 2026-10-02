@@ -10,8 +10,6 @@ package fleet.type.v1;
 import "fleet/type/v1/ids.proto";
 import "google/protobuf/timestamp.proto";
 
-option go_package = "github.com/linuxdynasty/fleet-board/api/fleet/type/v1;typev1";
-
 // ---------------------------------------------------------------------------
 // Harness command catalog (C4) and goal hooks (G1)
 // ---------------------------------------------------------------------------
@@ -42,7 +40,7 @@ message CommandCatalog {
   // Hex digest over the sorted entry names; RunHarnessCommand must match it.
   string hash = 1;
   repeated CatalogEntry entries = 2;
-  google.protobuf.Timestamp discovered_at = 3;
+  google.protobuf.Timestamp discovered_time = 3;
 }
 
 // GoalHooksState (G1): generic goal-protocol hooks for one harness.
@@ -138,7 +136,7 @@ message Availability {
   // Fleet started it and its goal is verified merged, or the developer
   // marked it on the board. Idle alone never makes a session take work.
   bool available_for_work = 2;
-  google.protobuf.Timestamp since = 3;
+  google.protobuf.Timestamp since_time = 3;
 }
 
 // GoalLineState is the parsed first line of a goal file (design.md).

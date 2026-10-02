@@ -6,13 +6,12 @@ package fleet.agent.v1;
 
 import "fleet/agent/v1/command_tmux.proto";
 import "fleet/agent/v1/snapshot.proto";
+import "fleet/type/v1/consent.proto";
 import "fleet/type/v1/harness.proto";
 import "fleet/type/v1/ids.proto";
 import "fleet/type/v1/status.proto";
 import "fleet/type/v1/work.proto";
 import "google/protobuf/duration.proto";
-
-option go_package = "github.com/linuxdynasty/fleet-board/api/fleet/agent/v1;agentv1";
 
 // ===== G, H, I. Goals, worktrees, preflight =====
 
@@ -27,9 +26,6 @@ enum WorktreeMode {
 
 // GoalSpec is everything the agent needs to preflight or start a goal.
 message GoalSpec {
-  // 3 was a GitHub-only IssueRef; replaced by work_item and repo below.
-  reserved 3;
-  reserved "issue";
   fleet.type.v1.GoalId goal_id = 1;
   fleet.type.v1.SessionId session_id = 2;
   fleet.type.v1.Workdir workdir = 4;
@@ -37,10 +33,11 @@ message GoalSpec {
   fleet.type.v1.AccountId account_id = 6;
   // Expected identity; ACCOUNT_MISMATCH if the harness shows another.
   fleet.type.v1.AccountKey account_key = 7;
-  // Consent acts written into the goal (ADR 0008): "push", "pr-open",
-  // "merge". "pr-open" means opening a change request on any code host; the
-  // adapter renders it in the harness and provider's terms.
-  repeated string consent = 8;
+  // Consent acts written into the goal (ADR 0008). PR_OPEN means opening a
+  // change request on any code host; the adapter renders each act as its
+  // lowercase hyphenated word in the harness and provider's terms, so the
+  // hub never supplies text that is typed. UNSPECIFIED is INVALID_ARGUMENT.
+  repeated fleet.type.v1.ConsentAct consent = 8;
   // Goal text after "--". Capped at 4 KiB.
   string goal_text = 9;
   WorktreeMode worktree_mode = 10;
@@ -81,10 +78,6 @@ message Preflight {
 // PreflightResult: ok, or every check that failed.
 message PreflightResult {
   bool ok = 1;
-  // Were parallel lists of reasons and detail lines; replaced by
-  // failed_checks so each reason carries its own detail and retry flag.
-  reserved 2, 3;
-  reserved "failures", "details";
   // Session the agent would reuse (E11), if any.
   fleet.type.v1.PaneKey would_reuse = 4;
   repeated PreflightFailure failed_checks = 5;

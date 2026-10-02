@@ -241,7 +241,7 @@ period for API-key providers.
     a short window or the weekly budget), for the scheduler. Codex's "% left"
     becomes "% used" here; the display keeps "% left".
 
-  Also: `probe_id`, account key, `read_at`, parser version. Reset times on
+  Also: `probe_id`, account key, `read_time`, parser version. Reset times on
   screen are local strings without a year ("Resets Sep 30 at 10pm"); the agent
   resolves them with B1's timezone and sends both the original text and UTC. On
   parse failure the reading is `unknown` and the redacted raw screen is still

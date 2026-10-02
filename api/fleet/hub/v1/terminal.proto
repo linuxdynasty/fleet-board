@@ -10,12 +10,12 @@ package fleet.hub.v1;
 
 import "fleet/type/v1/harness.proto";
 import "fleet/type/v1/ids.proto";
+import "fleet/type/v1/status.proto";
 import "google/protobuf/timestamp.proto";
 
-option go_package = "github.com/linuxdynasty/fleet-board/api/fleet/hub/v1;hubv1";
-
 // AttachOpen is the first message: which session, size and mode. The hub
-// sends OpenAttach to the agent; read_only is forced for READ-scope callers.
+// sends OpenAttach to the agent; read_only is forced for callers without
+// SCOPE_SESSIONS_WRITE.
 message AttachOpen {
   string request_id = 1;
   fleet.type.v1.SessionId session = 2;
@@ -57,7 +57,7 @@ message AttachTerminalRequest {
 // AttachAck is the browser's flow control (ADR 0016): sent after the
 // terminal has written output. The hub stops reading the agent's Terminal
 // stream while output_bytes_sent - bytes_written exceeds its high-water
-// mark (256 KiB proposed), so HTTP/2 flow control blocks the agent's PTY
+// mark (256 KiB), so HTTP/2 flow control blocks the agent's PTY
 // read and no output is dropped. Neither WebSocket nor xterm.js has
 // backpressure of its own.
 message AttachAck {
@@ -76,10 +76,15 @@ message AttachReady {
   fleet.type.v1.CommandId command_id = 6;
 }
 
-// AttachClosed ends the stream.
+// AttachClosed ends the stream. It is also the error channel: a WebSocket has
+// no Connect error trailer, so a refused or failed attach is sent as
+// AttachClosed{reason: ERROR, error} before the socket closes. Failures before
+// the upgrade (no credentials, bad Origin) are plain HTTP 401/403 responses.
 message AttachClosed {
-  // "idle_timeout", "session_ended", "agent_offline", "detached".
-  string reason = 1;
+  fleet.type.v1.AttachCloseReason reason = 1;
+  // Set when reason is ERROR: SCOPE_MISSING, MACHINE_OFFLINE,
+  // RESOURCE_NOT_FOUND, DEVICE_NOT_ACTIVE, RATE_LIMITED, ...
+  fleet.type.v1.ErrorDetail error = 2;
 }
 
 // AttachTerminalResponse: hub -> client.
@@ -94,6 +99,7 @@ message AttachTerminalResponse {
 }
 
 // ReadSessionLogRequest reads one stored stream, from an offset or a time.
+// Needs SCOPE_LOGS (owner only by default, ADR 0010, 0019).
 message ReadSessionLogRequest {
   fleet.type.v1.LogStreamKey key = 1;
   oneof start {

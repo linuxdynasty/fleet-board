@@ -38,8 +38,8 @@ agent-side tool that reports sign-in and push access.
 
 **Contract names.** Diagrams use the message names in `api/fleet/*/v1`,
 including the provider-neutral types merged in #7 (ADR 0012):
-`RepoRef{host, path}`, `WorkItemRef{integration, kind, project, key, url,
-display}`, `ForgeCliStatus{tool, host, signed_in, user, access[]}`,
+`RepoRef{host, path}`, `WorkItemKey{integration, kind, project, key,
+provider_name}` (identity) and `WorkItemRef{key, provider, url, display}`, `ForgeCliStatus{tool, host, signed_in, user, access[]}`,
 `GoalSpec.work_item` + `GoalSpec.repo` as separate fields, and
 `integration/v1/integration.proto` (`WorkItem`, `ChangeRequest`, `CheckSummary`, `Review`,
 `Claim`, `IntegrationCapabilities`) for hub-side mirrors. Anything a workflow
@@ -68,7 +68,7 @@ has `fleet_hub_commands_total{kind,status}` and
 assumed by every workflow and not repeated.
 
 **Shared failure handling.** The envelope checks of 02-contracts.md (known
-`command_id` → logged result; `not_after`; epoch; seq; capability; policy;
+`command_id` → logged result; `not_after_time`; epoch; seq; capability; policy;
 role; local approval) apply to every command and are not repeated per
 workflow. "Duplicate command" below always means: the agent returns the logged
 result without re-executing.
@@ -91,7 +91,7 @@ sequenceDiagram
   participant A as fleet-agent
   participant T as tmux / harnesses
   O->>H: enroll-token --machine omarchy
-  H->>H: tx: enroll_tokens{hash, name, expected_hostname, not_after}
+  H->>H: tx: enroll_tokens{hash, name, expected_hostname, not_after_time}
   H-->>O: token (once), CA fingerprint
   O->>A: fleet-agent enroll --token T
   A->>A: Ed25519 key, CSR · MachineFacts (B1)
@@ -100,7 +100,7 @@ sequenceDiagram
   H-->>A: EnrollResponse{machine_id, cert_pem, ca_chain_pem, ca_fingerprint, account_salt, salt_version, hub_addresses, machine_name}
   A->>A: persist cert/key/CA/salt (0600), cache hub address
   A->>T: identity + catalog probe per harness (C2, C4) on fleet-probe
-  A->>H: Connect [mTLS] Hello{machine_id, capabilities, boot_id, last_epoch=0, last_event_seq=0, reason=START, sent_at, settings_generation=0}
+  A->>H: Connect [mTLS] Hello{machine_id, capabilities, boot_id, last_epoch=0, last_event_seq=0, reason=START, sent_time, settings_generation=0}
   H->>H: tx: machine_connections{epoch=1}, machine ONLINE · revocation lookup
   H-->>A: HelloAck{hub_time, epoch=1, proto_version, capabilities_accepted, hub_last_event_seq=0, max_message_bytes, heartbeat_interval, settings_generation}
   H-->>A: Settings{generation, labels, values} (if generation > 0)
@@ -129,7 +129,7 @@ whose machine is this one but which the snapshot's `probes[]` does not show →
 `EnsureProbe`; goal rows the hub has in `RUNNING` whose pane is absent from the
 snapshot → goal `PANE_LOST` (W6); panes with a `FLEET_GOAL_ID` the hub does not
 know → triage `orphan_goal_pane` (W7); outbox rows `pending`/`delivered` for
-this machine → re-sent after commit unless past `not_after`, which become
+this machine → re-sent after commit unless past `not_after_time`, which become
 `EXPIRED`.
 
 ### State machine (agent connection, owned by the agent)
@@ -160,7 +160,7 @@ Snapshot applied) → `STALE` (no heartbeat 45 s) → `OFFLINE` (3 min, or agent
 | What | Where | Transaction |
 |---|---|---|
 | Enrollment token hash, expected hostname, TTL, `used_at` | hub store | one tx at `enroll-token`; burned in the Enroll tx |
-| Machine row (id, name, facts, labels), cert serial + `not_after` | hub store | the Enroll tx (token burn + machine + serial together; signing is local CPU, not a network call) |
+| Machine row (id, name, facts, labels), cert serial + `not_after_time` | hub store | the Enroll tx (token burn + machine + serial together; signing is local CPU, not a network call) |
 | Key, cert, CA chain + pinned fingerprint, `machine_id`, salt, cached hub address | agent state dir, mode 0600 | written before `Enroll` returns to the shell; salt never logged |
 | `machine_connections{epoch, boot_id, peer_addr, reason, connected_at}` | hub store | the Hello tx (also marks ONLINE) |
 | Inventory from the snapshot | hub store | the snapshot tx (replace per machine) |
@@ -189,7 +189,7 @@ Snapshot applied) → `STALE` (no heartbeat 45 s) → `OFFLINE` (3 min, or agent
 | Agent restart before the state dir is fully written | Enroll is atomic on disk (write temp + rename); a half-written dir is detected and the user re-runs enroll with a new token |
 | Certificate expired (machine offline longer than lifetime) | Hello refused at TLS; agent logs `cert_expired` and `doctor` says "re-enroll" |
 | Duplicate identity (same cert from two hosts) | W2 |
-| Clock skew > 5 min (`Hello.sent_at` vs hub time) | HelloAck still sent; machine warning; commands still evaluated in hub time |
+| Clock skew > 5 min (`Hello.sent_time` vs hub time) | HelloAck still sent; machine warning; commands still evaluated in hub time |
 | Snapshot would exceed 1 MiB | Agent drops `PaneSummary`-like detail first, never panes; logs `snapshot.trimmed` |
 | Hub writer backlog while 50 agents reconnect | HTTP/2 flow control holds the stream; snapshot apply is one tx per machine, batched by the writer ([03g](03g-load-and-handoff.md)) |
 | Harness crash during the identity/catalog probe | `HarnessInfo` reported with `version_support` as detected and `AccountIdentity.signed_in=false`; probe retried in 1 min, max 3, then only on version change |
@@ -235,7 +235,7 @@ sequenceDiagram
   H->>H: tx: epoch=8 · machine ONLINE · load outbox for machine
   H-->>A: HelloAck{epoch=8, hub_last_event_seq=89950, settings_generation=12}
   A->>H: Snapshot{seq=90210, … , unacked_results=[c17, c19], probes[], goals[]}
-  H->>H: tx: apply snapshot (state) · expire outbox rows past not_after
+  H->>H: tx: apply snapshot (state) · expire outbox rows past not_after_time
   A->>H: CommandResult{c17}, CommandResult{c19} (from local log)
   H->>H: tx: close outbox rows (ignore if already done)
   H-->>A: ResultAck{[c17, c19]}
@@ -286,7 +286,7 @@ stateDiagram-v2
   DISPLACED --> OFFLINE: Bye{DUPLICATE_IDENTITY} sent, stream closed
 ```
 
-Hub start: every machine is set to `STALE` with `since = hub_start`, so the
+Hub start: every machine is set to `STALE` with `since_time = hub_start`, so the
 usual 3-minute rule turns silent ones `OFFLINE`; nothing is scheduled on a
 machine until it is `ONLINE` again. On graceful shutdown the hub sends
 `Bye{HUB_RESTART}` so agents reconnect quickly with backoff rather than

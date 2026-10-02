@@ -26,7 +26,7 @@ sequenceDiagram
   A->>P: type /usage (or /status), wait settled, capture-pane
   A->>A: ParseUsage(version-pinned) → shown fields + buckets, or PARSE_FAILED with redacted raw
   A->>W: Event{usage_reading UsageReading{probe_id, account_key, source=PROBE, shown, buckets[], parse}}
-  A->>W: Event{probe_health ProbeHealth{alive, last_success_at, consecutive_failures, next_run_at}}
+  A->>W: Event{probe_health ProbeHealth{alive, last_success_time, consecutive_failures, next_run_time}}
   A->>W: CommandResult{OK}
   W->>W: tx: usage_readings append · accounts.latest_reading · probes.state=ALIVE
   W->>S: wakeup(account)
@@ -54,11 +54,11 @@ STALE and a 45 s blip must not move probes) or `ProbeHealth.consecutive_failures
 returns; harmless if the session is already gone), new probe assigned. Two
 probes briefly alive for one account during failover is harmless: status
 commands cost no quota and both are idle sessions; the hub keeps readings from
-either, newest `read_at` wins.
+either, newest `read_time` wins.
 
 **Readings (D2).** Every reading is stored with both halves: `shown.fields[]`
 + `shown.raw_screen` (redacted; 7-day retention) for display in the harness's
-own terms, and `buckets[]` (`key`, `percent_used`, `resets_at`, `window`,
+own terms, and `buckets[]` (`key`, `percent_used`, `resets_time`, `window`,
 `kind`) for the scheduler. `Percent` is never 0-as-unknown; a `PARSE_FAILED`
 reading has no buckets and the account becomes `UNKNOWN` for pacing until a
 good reading arrives. Readings from an unsupported harness version carry
@@ -66,7 +66,7 @@ good reading arrives. Readings from an unsupported harness version carry
 
 **Passive signals (D3).** The adapter parses banners and status lines in panes
 it already observes and emits `UsageReading{source=PASSIVE}` only when a
-bucket's `percent_used` or `resets_at` differs from the last passive value it
+bucket's `percent_used` or `resets_time` differs from the last passive value it
 emitted for that account (so a status line that repaints every second costs
 nothing). The scheduler never paces on a passive reading alone; it uses it to
 trigger a probe.
@@ -83,7 +83,7 @@ interval), account `reserve_percent`, `BudgetKind`, `mode` (fleet /
 interactive-only, ADR 0008), active goal count per account (from goals ×
 `SessionAccountLink`).
 
-1. For each bucket with a known window: `elapsed = now − (resets_at − window)`,
+1. For each bucket with a known window: `elapsed = now − (resets_time − window)`,
    `target = elapsed / window × (100 − reserve)`. Weekly buckets without a
    `window` assume 7 days; a short bucket without a window is used only as a
    speed limit (step 4 below).
@@ -140,8 +140,8 @@ stateDiagram-v2
 
 ### Ordering and consistency
 
-- Readings are ordered by `read_at` per account; a replayed reading older than
-  `latest_reading.read_at` is stored but does not become latest.
+- Readings are ordered by `read_time` per account; a replayed reading older than
+  `latest_reading.read_time` is stored but does not become latest.
 - Pacing is evaluated by the single scheduler goroutine from a consistent read;
   dispatch (W5) re-reads `account_pacing` in the same pass, so the decision and
   the dispatch use one view.
@@ -164,7 +164,7 @@ stateDiagram-v2
 | Provider error during the probe | Status commands do not call the model; if the harness fails to start because the provider is down, `HarnessCondition` from the probe pane and `PROBE_START_FAILED` |
 | Developer attached to the probe session (`tmux -L fleet-probe attach`) | Agent sees `attached_clients > 0`, skips the run, reports health with `last_failure=INTERNAL` and a message; never types into a watched probe |
 | Passive readings disagree with probe | Passive only triggers a probe; the probe wins |
-| Two readings arrive out of order after a reconnect | `read_at` ordering; latest by time, not by arrival |
+| Two readings arrive out of order after a reconnect | `read_time` ordering; latest by time, not by arrival |
 | Reset text unresolvable ("Resets Sep 30 at 10pm" with no year around New Year) | `ResetTime.at` unset, `original_text` kept; bucket treated as `UNKNOWN` for the line, shown as text |
 
 ### Telemetry
@@ -201,8 +201,8 @@ tracker adapter, the code host adapter, writer, scheduler, verifier.
 **Two roles, one mirror.** An *integration* is configured as a work tracker,
 a code host, or both. The hub stores mirrors in the shapes of
 `integration/v1/integration.proto`: `WorkItem{ref WorkItemRef, state, title, author, labels[],
-trusted, claim Claim, updated_at}`, `ChangeRequest{ref, repo RepoRef, head_ref,
-head_sha, state, merged_at, mergeable, review_decision, checks CheckSummary,
+trusted, claim Claim, update_time}`, `ChangeRequest{ref, repo RepoRef, head_ref,
+head_sha, state, merged_time, mergeable, review_decision, checks CheckSummary,
 reviews[] Review, linked_work_items[] WorkItemRef, review_rounds}`, and
 `IntegrationCapabilities{webhooks, conditional_requests, batch_query, claims,
 labels, merge_state}` which tells the syncer which loop to run.
@@ -217,15 +217,15 @@ sequenceDiagram
   loop every 60 s per watched repo
     G->>T: list open work items (If-None-Match: etag, since=cursor)
     T-->>G: 304 (no change) | 200 + items + ETag + x-ratelimit-*
-    G->>W: tx: upsert WorkItem rows (updated_at guard), cursors{etag, since}
+    G->>W: tx: upsert WorkItem rows (update_time guard), cursors{etag, since}
   end
   loop every 5 min per candidate work item (queued/running)
     G->>T: list comments since cursor (ETag)
-    G->>W: tx: WorkItem.claim = first matching Claim{author, at, by_this_fleet}
+    G->>W: tx: WorkItem.claim = first matching Claim{author, claim_time, by_this_fleet}
   end
   loop every 60 s
     G->>C: GraphQL batch: change requests by head_ref for running/verifying goals (≤ 50 per query) + rateLimit{cost remaining resetAt}
-    G->>W: tx: upsert ChangeRequest rows (state, merged_at, checks, reviews, review_rounds)
+    G->>W: tx: upsert ChangeRequest rows (state, merged_time, checks, reviews, review_rounds)
     W->>V: wakeup(goal_ids whose change request changed)
   end
   V->>G: verify now (goal DONE)
@@ -257,14 +257,14 @@ intervals (step 4 input, not a decision here).
 | Concern | GitHub | GitLab | Jira (tracker only) |
 |---|---|---|---|
 | Push vs poll | Poll (webhooks need a public URL; optional via tunnel) | Webhooks per project/group are common on self-hosted; poll fallback | Jira Cloud webhooks; Server/DC poll |
-| Conditional requests | ETag / 304 | ETag on some endpoints; `updated_after` filter | `updated >= …` JQL; no ETag |
+| Conditional requests | ETag / 304 | ETag on some endpoints; `updated_after_time` filter | `updated >= …` JQL; no ETag |
 | Batch query | GraphQL, one call for 50 change requests | GraphQL (less coverage; REST per MR for pipelines) | REST search, 50–100 per page |
 | Repo identity | `RepoRef{host="github.com", path="owner/repo"}` | nested: `RepoRef{host, path="group/sub/repo"}` | none; code lives on a separate code host |
 | Change request ref | `WorkItemRef{kind=CHANGE_REQUEST, key="7412"}` | `key="!12"` (iid), project path | n/a |
 | Claim mechanism | comment pattern | comment pattern or assignee | assignee or a transition to "In Progress" by the fleet's user |
 | Trusted gate | author allowlist, `agent-ready` label actor | same with labels / "ready" label events | label or status set by allow-listed user |
 | Linked ticket | `closingIssuesReferences`, "Fixes #n" | "Closes #n" in MR description, branch `n-…` | ticket key in branch or MR/PR title (`PROJ-123`); the code host adapter extracts it |
-| Merge detection | `merged`, `mergedAt` | MR `state=merged`, `merged_at` | from the paired code host |
+| Merge detection | `merged`, `mergedAt` | MR `state=merged`, `merged_time` | from the paired code host |
 
 A tracker-only integration (Jira) must be paired with a code host; a goal's
 `GoalSpec.work_item` and `GoalSpec.repo` are separate fields for that reason.
@@ -297,7 +297,7 @@ stateDiagram-v2
 
 ### Ordering and consistency
 
-- Per resource, pages apply in order; an `updated_at` older than the stored
+- Per resource, pages apply in order; an `update_time` older than the stored
   row is ignored (late poll result after a targeted verify).
 - The scheduler reads mirrors only; freshness is bounded by the interval and
   shown as `fleet_hub_sync_lag_seconds`. Auto-dispatch pauses when the lag for

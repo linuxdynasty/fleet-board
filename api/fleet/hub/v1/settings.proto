@@ -7,6 +7,7 @@ syntax = "proto3";
 package fleet.hub.v1;
 
 import "fleet/hub/v1/common.proto";
+import "fleet/type/v1/consent.proto";
 import "fleet/type/v1/ids.proto";
 import "fleet/type/v1/settings.proto";
 import "fleet/type/v1/status.proto";
@@ -14,13 +15,13 @@ import "google/protobuf/duration.proto";
 import "google/protobuf/field_mask.proto";
 import "google/protobuf/timestamp.proto";
 
-option go_package = "github.com/linuxdynasty/fleet-board/api/fleet/hub/v1;hubv1";
-
 // SettingsScope names one settings layer.
 message SettingsScope {
+  // The fleet default layer has no parameters.
+  message Fleet {}
   oneof kind {
     // The fleet default layer.
-    bool fleet = 1;
+    Fleet fleet = 1;
     // A machine group, named by label.
     string group_label = 2;
     fleet.type.v1.MachineId machine = 3;
@@ -32,7 +33,7 @@ message HubSettings {
   // Pause WORKING goals at an account's reserve line (design.md rule 5).
   optional bool auto_pause_at_reserve = 1;
   optional uint32 max_parallel_goals_per_repo = 2;
-  repeated string default_consent = 3;
+  repeated fleet.type.v1.ConsentAct default_consent = 3;
   // Trusted-issues gate: label and allow-listed provider logins.
   optional string trusted_label = 4;
   repeated string trusted_users = 5;
@@ -44,22 +45,37 @@ message HubSettings {
   optional google.protobuf.Duration approval_timeout = 9;
 }
 
-// Settings is one layer. Only the fleet layer has hub settings.
+// SettingsSpec is what the owner set for one layer. Covered by
+// Settings.version.
+message SettingsSpec {
+  SettingsScope scope = 1;
+  fleet.type.v1.SettingValues values = 2;
+  // Groups only: higher wins when a machine is in several groups.
+  int32 priority = 3;
+  // Only the fleet layer has hub settings.
+  HubSettings hub = 4;
+}
+
+// SettingsStatus is where delivery to agents stands. Not versioned, so a
+// delivery acknowledgement never makes an open settings form stale.
+message SettingsStatus {
+  google.protobuf.Timestamp observed_time = 1;
+  // Watch hub_seq of the change that last touched this status.
+  uint64 hub_seq = 2;
+  // Generation and epoch this layer was last delivered under.
+  uint64 generation = 10;
+  string settings_epoch = 11;
+}
+
+// Settings is one layer, fleet -> group -> machine.
 message Settings {
-  // Resource id: "fleet", "group/<label>" or "machine/<machine id>".
-  string id = 1;
+  SettingsId id = 1;
   uint64 version = 2;
   google.protobuf.Timestamp create_time = 3;
   google.protobuf.Timestamp update_time = 4;
 
-  SettingsScope scope = 10;
-  fleet.type.v1.SettingValues values = 11;
-  // Groups only: higher wins when a machine is in several groups.
-  int32 priority = 12;
-  HubSettings hub = 13;
-  // Generation and epoch this layer was last delivered under.
-  uint64 generation = 14;
-  string settings_epoch = 15;
+  SettingsSpec spec = 10;
+  SettingsStatus status = 11;
 }
 
 // GetSettingsRequest.
@@ -86,8 +102,9 @@ message ListSettingsResponse {
   string next_page_token = 2;
 }
 
-// UpdateSettingsRequest creates the layer if it does not exist. Masks name
-// fields of Settings, e.g. "values.max_active", "hub.auto_dispatch".
+// UpdateSettingsRequest creates the layer if it does not exist (the id is
+// derived from settings.spec.scope). Masks name fields of Settings, e.g.
+// "spec.values.max_active", "spec.hub.auto_dispatch"; status is output-only.
 message UpdateSettingsRequest {
   string request_id = 1;
   Settings settings = 2;
@@ -111,7 +128,8 @@ message AuditEntry {
 
   fleet.type.v1.Principal actor = 10;
   // Dotted action name, e.g. "goal.start", "approval.decide",
-  // "settings.update", "device.revoke".
+  // "settings.update", "device.revoke". An open vocabulary: new actions
+  // appear with new features, so clients show it as text.
   string action = 11;
   // Resource the action touched, as "<collection>/<id>".
   string target = 12;
@@ -126,9 +144,9 @@ message AuditEntry {
   string detail = 19;
 }
 
-// ListAuditEntriesRequest. Filter fields: actor.id, action, machine, goal,
-// create_time. Default order: newest first. CSV export is the CLI paging
-// through this.
+// ListAuditEntriesRequest. Filter and order_by names:
+// 02c-hub-watch-and-filters.md. Default order: newest first. CSV export is
+// the CLI paging through this.
 message ListAuditEntriesRequest {
   int32 page_size = 1;
   string page_token = 2;

@@ -24,8 +24,8 @@
   "fix": "The Subscription list is optional. Smaller fix: (1) the resume token's filter hash must exclude the PANE_SUMMARIES filter; (2) reopening with a changed pane filter sends INITIAL only for pane summaries and never RESYNC_REQUIRED, since summaries are latest-wins and not replayable anyway; (3) add a per-topic filterable-fields table to 02b, stating the pane filter is `session in (...)` or `machine = ...`. Do not fall back to a second stream per tab, because ADR 0016 keeps one stream per tab to stay under the HTTP/1.1 six-connection limit on local_trusted.",
   "verify": "The contradiction is confirmed. 02b:119-121, watch.proto:2-3, 04-technology-review.md Q5 and ADR 0016:30-32 all say a client changes topics or filter by reopening with its last resume_token. 02b:129-130 and 134-136 put a filter hash in the token and send RESYNC_REQUIRED when the filter differs. Watch is server-stream only because browsers cannot stream request bodies, so the sidebar's visible-pane filter (02b:147-148, ui-contract-map.md:95, 03g row 5) can only change by reopening. Every scroll would then force a full resync of all topics. watch.proto:66-76 has a single filter for all topics, and no per-topic filterable-field list exists. The pane grammar objection is overstated: PaneSummary has `session` and `machine` fields (session.proto:96-97), so `session in (...)` works (watch.proto:69-70). PaneKey has no string form.",
   "theme": "A",
-  "status": "open",
-  "resolution": ""
+  "status": "fixed",
+  "resolution": "watch.proto: WatchRequest now holds TopicSubscription{topic, filter, send_initial}; the token covers (topic, filter hash) per subscription, so a changed pane filter restarts only PANE_SUMMARIES and never sends RESYNC_REQUIRED (ResyncReason says why it is sent). 02c-hub-watch-and-filters.md has the rules, the AIP-160 grammar and the per-topic field catalogue (`session in (...)` for visible panes)."
  },
  {
   "dim": "hub-api-semantics",
@@ -38,8 +38,8 @@
   "fix": "Add one rule to 02b. Heartbeat- and probe-derived fields (last_seen_time, load1, mem, battery, clock_skew, device last_seen) are updated in memory, do not bump `version`, and reach Watch only on a state change or at most once per 30 s. State whether settings delivery acks (generation, epoch) bump Settings.version. No proto change.",
   "verify": "The ambiguity is real. 02b:84-90 bumps version on every committed change and dedupes Watch by (id, version). Machine carries last_seen_time, load1, mem_available_bytes and battery (machine.proto:115,148-150). Account carries usage, pacing and probe (account.proto:124-126). Device carries last_seen_time (device.proto:39). Settings carries generation and epoch updated on delivery (settings.proto:60-61). The docs never say whether these bump version. The impact is overstated. VERSION_MISMATCH with metadata current_version is retryable, and updates use field masks, so a retry is safe. Clients that follow Watch already hold the current version. Session has no expected_version writer. 03g row 3 and 03f:87 say heartbeats are latest-in-memory, 'last_seen write optional' and 'coalesced to the summary strip', so they likely do not reach Watch per heartbeat. A new `generation` field on every resource is not needed.",
   "theme": "A",
-  "status": "open",
-  "resolution": ""
+  "status": "fixed",
+  "resolution": "Every editable resource is split into spec (covered by version and expected_version) and status (observed_time, hub_seq, never versioned): Machine, Account, Goal, Session, Routine, Integration, Settings, Device. 02b \"Versions and ETags\" states that status and settings delivery acks never bump version; volatile status fields are coalesced (02c, \"Volatile fields\")."
  },
  {
   "dim": "hub-api-semantics",
@@ -52,8 +52,8 @@
   "fix": "Add to 02b a Watch topic to scope table. The default is the scope of the matching List RPC. DEVICES is ADMIN or the caller's own device. NOTIFICATION_TARGETS is own rows unless ADMIN. Add the 'self' rules to the 02b scope table. Mark NotificationTarget.principal_id output-only: server-set from the caller and ignored on create. Note that a narrower approvals-read scope for the phone can be added later without breaking anyone, and defer it. Do not add SCOPE_READ_APPROVALS now.",
   "verify": "Partly confirmed. 02b:144-145 only says unreadable topics are refused at open, and no table maps the 17 topics (watch.proto:23-44) to scopes. DEVICES and NOTIFICATION_TARGETS need row-level rules, because ListDevices is [ADMIN] and notification targets are 'own' (service.proto:177-188). The 'self' rules appear only in service.proto comments, not in the 02b scope table (02b:158-164). device.proto:140-141 and 168-171 let the client set principal_id with no server-set rule. A Watch handler cannot be written without this. The READ-too-broad point is a real design concern but belongs to the phone (v3). Adding a narrower scope later is backward compatible if those RPCs accept READ or the new scope. Refactor risk is low, so 'high' is overstated.",
   "theme": "A",
-  "status": "open",
-  "resolution": ""
+  "status": "fixed",
+  "resolution": "New 02d-hub-authz.md: role to scope table, scope for every RPC (with self rules for devices and notification targets) and for all 17 Watch topics with row rules; service.proto notes [READ|APPROVALS], [self], [LOGS]; NotificationTarget.principal is output-only. A phone with only APPROVALS reads approvals, triage, the summary strip and its own operations; a separate approvals-read scope stays deferred as the finding proposed."
  },
  {
   "dim": "hub-api-semantics",
@@ -94,8 +94,8 @@
   "fix": "Only do the doc fixes now. Add PAIRING_CODE_MISMATCH to the 02b table, state that APPROVAL_CLOSED takes precedence over VERSION_MISMATCH on DecideApproval, and give a one-line code or reason for invalid page, resume and filter tokens. Leave the extra reason codes, WebSocket close codes and `limits` message for when the code needs them.",
   "verify": "Partly confirmed. REASON_CODE_PAIRING_CODE_MISMATCH exists (status.proto:164-165) but is absent from the 02b:197-206 error table. 'Machine offline for an attach' is listed under FAILED_PRECONDITION with no reason. Page, resume and filter parse failures have no stated code. When an approval is both stale and closed, VERSION_MISMATCH versus APPROVAL_CLOSED is unspecified (02b:88-89,202; triage.proto:277-279). AttachClosed.reason is a free string (terminal.proto:81-83). Most of the list is additive polish (new ReasonCode values can be added without breaking anything) and none blocks implementation. Rate-limit values belong in configuration.",
   "theme": "A",
-  "status": "open",
-  "resolution": ""
+  "status": "fixed",
+  "resolution": "status.proto: reason codes 506-520 (page, resume, filter, order, mask, request id missing, not found, exists, machine offline, credentials invalid and expired, goal phase changed, secret already delivered, field too large, pairing expired), FieldViolation and ErrorDetail.violations; AttachClosed carries reason enum plus ErrorDetail; 02b \"Errors\" has the full table, precedence (APPROVAL_CLOSED before VERSION_MISMATCH) and the WebSocket rules. Rate-limit values stay in hub configuration, not in GetServerInfo (deferred until code needs them)."
  },
  {
   "dim": "agent-capabilities",
@@ -276,8 +276,8 @@
   "fix": "Decide before codegen. Minimum: fix 02b:121 and watch.proto:3-4 so a changed topics or filter always means a new stream with send_initial and no token (the hash only protects resume with the same filter). Then either (a) add per-topic filters (`repeated TopicSubscription{topic, filter}`, keeping `filter` as default), or (b) move PANE_SUMMARIES out of Watch into its own latest-wins server stream such as WatchPaneSummaries{repeated PaneKey} with no resume token, and state that the ui-contract-map views open one durable Watch plus one summaries stream. Both are additive.",
   "verify": "Contradiction confirmed: docs/specs/02b-hub-api.md:120-121 and watch.proto:3-4 say a client changes topics or filter by reopening with its last resume_token, but 02b:128-129 puts a filter hash in the token and 02b:134-136 makes a differing filter RESYNC_REQUIRED. WatchRequest (watch.proto:66-76) has a single `filter` for all topics, and 'Fields a topic lacks do not filter it'. ui-contract-map.md:29 and :95 say one Watch with 'filtered to visible panes', PaneSummary is Watch-only (02b:29, no Get/List in service.proto). A `pane in (...)` filter would also filter Goal, which has a `pane` field (goal.proto:16). Not a blocker: a client can open two Watch streams (02b:119 says 'one server stream per client view', not one per client), and the contradiction is fixable in the spec before codegen. The claim that every navigation forces a send_initial of every topic holds only if one stream carries both.",
   "theme": "A",
-  "status": "open",
-  "resolution": ""
+  "status": "fixed",
+  "resolution": "Per-topic subscriptions in WatchRequest (see watch-filter-resume-contradiction); filter is validated against the topic, so a sidebar filter cannot leak into goals or triage; PANE_SUMMARIES stays on the same stream and is never replayed; CHANGE_TYPE_UNMATCHED added for resources that leave a filter."
  },
  {
   "dim": "hub-api-dashboard",
@@ -318,8 +318,8 @@
   "fix": "Pick one rule before codegen and write it in 02b and ADR 0010. Either add SCOPE_LOGS (owner role only by default, required for ReadSessionLog, log list/delete/search and include_raw_screen, and not grantable to a device unless the owner ticks it), or amend ADR 0010 to say READ includes logs and drop the owner-only claim. The enum addition is additive, so keep the severity at important, not blocker.",
   "verify": "Confirmed contradiction. ADR 0010:47-49: logs 'readable only by the hub user and people with the owner role'. 02b-hub-api.md:160 puts 'logs, read-only attach, CapturePane' in SCOPE_READ, held by viewer, operator and owner; service.proto:80-83 tags ReadSessionLog and read-only attach as [READ]; the Scope enum (common.proto:64-77) has no logs scope; GetAccountRequest.include_raw_screen (account.proto:148) is also READ-scoped. A viewer-role user or a READ-scope device can therefore read every stored terminal stream.",
   "theme": "A",
-  "status": "open",
-  "resolution": ""
+  "status": "fixed",
+  "resolution": "common.proto: SCOPE_LOGS (owner only by default, never in a phone pairing request) required for ReadSessionLog and GetAccount.include_raw_screen and for archived pane summaries; roles map in 02d; ADR 0019 addendum records the rule."
  },
  {
   "dim": "hub-api-dashboard",
@@ -416,8 +416,8 @@
   "fix": "Write one rule in 02b before codegen: either add config_version (bumped only by Update RPCs) to Machine, Account, Goal, Routine and Integration and define expected_version against it, or state that version bumps only on persisted-resource content change and that heartbeat-fed fields (load1, mem, battery) and unchanged pacing never bump it nor produce a Watch update except on state transitions or at most once a minute.",
   "verify": "Confirmed ambiguity. 02b-hub-api.md:84-87 defines version as increasing on every committed change and the ETag for expected_version; Machine (machine.proto:106-154) mixes editable display_name/labels with load1, mem_available_bytes, battery and slots, and Account embeds pacing, which 03b-usage-and-sync.md:137 says is rewritten per scheduler evaluation. 03g-load-and-handoff.md:30 treats heartbeats as can-lose, in-memory and coalesced, so it is unspecified whether heartbeat-fed fields bump version or are emitted on Watch MACHINES at heartbeat rate. The failure case (UpdateAccount failing with VERSION_MISMATCH after an unrelated pacing rewrite) is plausible but not certain; the 'high refactor risk' rating is overstated because config_version is additive.",
   "theme": "A",
-  "status": "open",
-  "resolution": ""
+  "status": "fixed",
+  "resolution": "Same spec/status split as version-etag-vs-volatile-fields: Machine telemetry, Account usage and pacing, Goal phase and goal-file facts are status; ControlGoal gets expected_phase (GOAL_PHASE_CHANGED) next to expected_version, which now covers the spec (EDIT)."
  },
  {
   "dim": "hub-api-dashboard",
@@ -836,8 +836,8 @@
   "fix": "Decide before code and write it in 02b. Option A (clean): move last_seen_time, load1, mem_available_bytes, on_battery, battery, clock_skew into a separate MachineStatus message on a coalesced topic (<=1 per 5-30 s, latest-wins, like FLEET_SUMMARY). Move SessionLogInfo counters to Get-only or a coalesced topic, and drop Pane.last_output_time because PaneSummary carries it. Option B (smaller): keep the fields in Machine/Session, but state that volatile fields are re-sent at most once per N seconds and that the (id, version) dedupe applies to the version, so a throttled bump is expected. Either way add the rule to 02b Versions and ETags. Adding new messages and topics is additive.",
   "verify": "Confirmed. machine.proto:115 last_seen_time, :147-152 on_battery/battery/load1/mem_available_bytes/clock_skew sit in Machine beside inventories. common.proto:5 says version is 'bumped on every change'. 02b-hub-api.md:84-90 says version bumps on every committed change and clients drop (id, version) they already hold. 02b:137-141 says every topic except PANE_SUMMARIES and FLEET_SUMMARY is never dropped. ui-contract-map.md:152 uses Machine.last_seen_time on the Machine card, so there is no other path to the value. 03g row 3 says heartbeats reach browsers only coalesced into the summary strip; row 4 puts resource samples on the Machines view. Nothing defines a volatile-field rule. session.proto:58-66 SessionLogInfo counters and Pane.last_output_time/activity (:27-28) have the same ambiguity. The 100x figure is not computed anywhere, but the either/or contradiction is real.",
   "theme": "A",
-  "status": "open",
-  "resolution": ""
+  "status": "fixed",
+  "resolution": "MachineTelemetry (status), Session status counters and pane activity, Goal first_line and head_commit are marked volatile and coalesced to one Watch message per 30 s or 5 s (02c table); Pane.last_output_time dropped because PaneSummary carries it."
  },
  {
   "dim": "hygiene-consistency",
@@ -878,8 +878,8 @@
   "fix": "Doc and comment only. Add a per-resource table to 02b (filter name, resource path, type, operators, literal syntax, order_by names). State that enums are written by short name, timestamps are RFC 3339, and id wrappers compare by .value. Mark derived names (pane-level harness, owned) as such, or rename the comments to real resource paths.",
   "verify": "Confirmed. 02b:52-55 says AIP-160 subset 'on the fields named in each request's comment'. The mismatches exist. ListSessionsRequest (session.proto:109) names harness, available_for_work and goal, which are Pane fields, not Session fields. ListMachinesRequest (machine.proto:156) names label and harness, but the fields are labels and harnesses[].harness. ListWorkItemsRequest (work.proto:91) names integration, repo, kind, label, which live inside id and item. ListChangeRequestsRequest (work.proto:119) names owned, which exists nowhere (the field is goal). ListDevicesRequest (device.proto:92) names revoked, but the field is revoked_time. Nothing defines enum literals, timestamp literals, id-wrapper comparison or order_by names (grep of 02-contracts and ui-contract-map finds nothing).",
   "theme": "A",
-  "status": "open",
-  "resolution": ""
+  "status": "fixed",
+  "resolution": "02c defines the grammar (operators, precedence, literals: enums by short name, RFC 3339 timestamps, id wrappers by value, limits) and a catalogue of filter and order_by names per resource with the resource path and derived (D) fields; List request comments now point to it."
  },
  {
   "dim": "hygiene-consistency",
@@ -906,8 +906,8 @@
   "fix": "Add enum ConsentAct {UNSPECIFIED, PUSH, PR_OPEN, MERGE} to fleet.type.v1 and use repeated ConsentAct in all six places. The agent adapter renders the lowercase hyphenated text itself, and new acts are additive enum values plus an agent capability. If the owner keeps strings, document the allow-list and make the agent reject anything else with INVALID_ARGUMENT.",
   "verify": "Confirmed. consent is repeated string in command_goal.proto:43, hub/goal.proto:77 and :158, hub/account.proto:114, hub/routine.proto:69 and hub/settings.proto:35. ADR 0008:25-34 defines the set push, pr-open, merge. 03c:95-99 shows the adapter typing the list into the harness, joined with commas around '--'. command_goal.proto:40 documents the allowed values only in a comment. The string-to-enum change later would alter JSON values in every hub resource, so it is breaking under WIRE_JSON, while doing it now is free.",
   "theme": "A",
-  "status": "open",
-  "resolution": ""
+  "status": "fixed",
+  "resolution": "New type/v1/consent.proto enum ConsentAct {PUSH, PR_OPEN, MERGE}; used by GoalSpec (agent), GoalDefinition, StartGoalRequest, AccountSpec, RoutineSpec and HubSettings.default_consent; the adapter renders the words itself (03c, 02-contracts)."
  },
  {
   "dim": "hygiene-consistency",
@@ -920,8 +920,8 @@
   "fix": "Add a comment on WorkItemRef and a line in 02b: identity = (integration, kind, project, key), with provider_name authoritative only when integration is empty. Hub APIs ignore url, display and provider on input and fill them on output. Align the change_requests key in 03f:100 with this.",
   "verify": "Partly mitigated but still a gap. work.proto:55-59 says 'kind is part of the identity', but it never states the full identity tuple, and WorkItemRef also carries mutable or derived url, display and provider (:61-75). hub/work.proto:36,55 use it as the Watch id. 03f:99-101 keys work items by (integration_id, kind, project, key) and change_requests by (integration_id, repo, key), which differs. 02b:215-216 relies on provider_name for routine runs. A comment-level fix is enough; no new message is needed.",
   "theme": "A",
-  "status": "open",
-  "resolution": ""
+  "status": "fixed",
+  "resolution": "type/v1/work.proto: WorkItemKey{integration, kind, project, key, provider_name} is the identity (id of WorkItem and ChangeRequest, input of Get and StartGoal/PreflightGoal); WorkItemRef is key plus derived url, display, provider. 02b states the rule and 03f keys change_requests the same way."
  },
  {
   "dim": "hygiene-consistency",
@@ -976,8 +976,8 @@
   "fix": "Take one pre-code decision and write it in the ids.proto header and 02-contracts.md: timestamp suffix (_time everywhere, or document the _at/_time split), durations as Duration, and wrapper-id naming. Convert min_interval_hours and sync_lag_seconds to Duration, turn auth_mode, Operation.kind and platform into enums (or declare them open strings), and fix the 'WORKING' example key. The rest can be handled in normal review.",
   "verify": "The inconsistencies are confirmed. Timestamps use _time in hub resources and _at in agent, type and integration files (resets_at, next_retry_at, discovered_at, and the type messages that hub Account and Machine embed). routine.proto:21 min_interval_hours and work.proto:88 sync_lag_seconds are not Durations. device.proto:27,50 platform, common.proto:107 Operation.kind and :166 auth_mode are strings. settings.proto:50 Settings.id is a bare string, and settings.proto:23 SettingsScope.fleet is a bare bool in a oneof. agent.proto:204 documents the key as 'WORKING' while the enum name is GOAL_LINE_STATE_WORKING (harness.proto:147). status.proto:140-141 reserves 303 by number only. ids.proto:4-15 has no suffix or unit rules. These are nits and conventions, not blockers, and only some are breaking later.",
   "theme": "A",
-  "status": "open",
-  "resolution": ""
+  "status": "fixed",
+  "resolution": "All Timestamp fields end _time (about 45 renames across agent, type, integration and hub); min_interval_hours and sync_lag_seconds are Durations; PrincipalId and SettingsId wrappers, Principal.device_id is device; auth_mode, Operation.kind, Device.platform, AttachClosed/TermClosed reason, WorkItem.size and PaneCounts.goal_panes_by_state are enums or typed; SettingsScope.Fleet and NoteDetail replace bare scalars; page_size is int32; the reserved 303 name is gone. Rules are in ids.proto header and 02e."
  },
  {
   "dim": "hygiene-consistency",
@@ -990,8 +990,8 @@
   "fix": "Make it an implementation step 0, not a contract fix. Add buf.gen.yaml with pinned plugins and output dirs (and a managed-mode decision for go_package), plus a short 'Codegen' section in 02-contracts.md. In it, decide whether the UI uses bigint for version and expected_version or adds a jstype annotation for the hot fields. Add a generation step to the compile check.",
   "verify": "Confirmed that the repo has only buf.yaml, with no buf.gen.yaml, go.mod or generated-code location, and docs name only @connectrpc/connect-web 2.2.0 (04:226) with no generator, options or 64-bit handling (grep for bigint, jstype, buf.gen, protobuf-es and codegen finds nothing in docs). uint64 version/hub_seq/bytes_written are on hot paths (hub/common.proto:101, watch.proto:82, terminal.proto:65). It is overstated as a contract defect. It is repo and tooling setup, and a jstype annotation is an option change that does not alter the wire. Proto3 JSON already encodes uint64 as a string, so the decision only affects UI code.",
   "theme": "A",
-  "status": "open",
-  "resolution": ""
+  "status": "fixed",
+  "resolution": "buf.gen.yaml (managed mode, pinned protoc-gen-go, connect-go, protoc-gen-es v2 with connect-es v2) verified with `buf generate`; go_package options removed; gen/ ignored by git. 02b \"64-bit integers\" fixes the JSON string and TypeScript bigint rule with no jstype. go.mod and CI wiring stay implementation step 0 (02e freeze checklist)."
  },
  {
   "dim": "hygiene-consistency",
@@ -1004,8 +1004,8 @@
   "fix": "Add a Command kind to capability table and a one-line rule for Capability.version in requires (minimum version) to 02-contracts.md. Add a short hub API limits table to 02b (request_id, page_token, filter, free-text, display names, public_key). Set LogChunk.zstd and Snapshot part caps to about 960 KiB, or raise the receive limit above 1 MiB.",
   "verify": "Confirmed. command.proto:39-41 and 02-contracts.md:288-299 list capability names but no Command-kind to capability table and no meaning for Capability.version in requires. Size limits (02-contracts.md:369-384) cover only the agent wire, and 02b has no hub limits for request_id, page_token, filter, notes and the like. The 1 MiB message cap equals the LogChunk.zstd cap and the per-part Snapshot cap (rows 369-370, 383, streams.proto:103), against decision 15 'caps are below it' (02-contracts.md:474-475). In practice chunks are about 100 KiB (10 s cadence), so the cap is rarely hit.",
   "theme": "A",
-  "status": "open",
-  "resolution": ""
+  "status": "fixed",
+  "resolution": "02e: command kind to capability table and the Capability.version minimum rule; agent size limits moved there with LogChunk and Snapshot parts at 960 KiB (streams.proto, snapshot.proto). 02b \"Size limits\": every hub request and message field."
  },
  {
   "dim": "hygiene-consistency",
@@ -1018,8 +1018,8 @@
   "fix": "Doc and comment fixes only. Add a self-service notification-target rule to 02b scopes. State that enrollment token, pairing code and push handle are excluded from the stored idempotent response, so a replay returns ALREADY_EXISTS or a fresh token. Key unauthenticated RPCs by (peer address, public key). Fix the ui-contract-map row to UpdateSettingsRequest{settings{scope, values}, update_mask}. Extend the reason table in 02-contracts.md.",
   "verify": "All sub-points confirmed. service.proto:181-188 puts Create/Update/DeleteNotificationTarget under [READ for own targets], while 02b:160 defines READ as read-only and :164 puts only 'all notification targets' under ADMIN. machine.proto:239-241 says the enrollment token is stored only as a hash yet returned from memory on a retry, while 02b:67-71 stores the whole response for 24 h. 02b:69-70 keys idempotency by principal id, but RequestPairing is [none] (service.proto:171). ui-contract-map.md:175 shows UpdateSettings{scope, values, update_mask}, but settings.proto:91-96 takes settings, update_mask and expected_version. The 02-contracts.md:320-328 status/reason table omits the preflight codes and the 500-505 range.",
   "theme": "A",
-  "status": "open",
-  "resolution": ""
+  "status": "fixed",
+  "resolution": "Notification target RPCs are [self] in 02d and service.proto; enrollment token, pairing code and push handle are excluded from stored idempotent responses (SECRET_ALREADY_DELIVERED); RequestPairing is keyed by (peer address, public key); the 256 KiB attach high-water mark is decided; ui-contract-map UpdateSettings row corrected; 02-contracts reason table lists preflight codes and the 500-520 hub range."
  },
  {
   "dim": "critic",
@@ -1032,8 +1032,8 @@
   "fix": "Add a short ADR or a section in 02-contracts.md: contracts are mutable without `reserved` scars until a tagged baseline (for example `api/v1.0.0`, cut when the first generated client compiles in CI). Drop the reservations for fields that never reached a consumer. Point `buf breaking` at the last tag, not HEAD~1. List a freeze checklist: confirmed findings applied, codegen config decided (buf.gen.yaml), mockup data validated against the protos. Process and doc change only; additive.",
   "verify": "critic (verified in files by the critic)",
   "theme": "A",
-  "status": "open",
-  "resolution": ""
+  "status": "fixed",
+  "resolution": "ADR 0019 addendum and 02e: contracts are unfrozen until the v0.1 tag, then additive only with `buf breaking --against .git#tag=v0.1`; the reserved lines for never-shipped fields are removed (only Command 99 / run_exec stays); freeze checklist in 02e; buf.yaml and ids.proto header updated."
  },
  {
   "dim": "critic",
