@@ -74,12 +74,13 @@ Phase: **v1** read-only, **v2** actions, **v3** later.
 | E4 | Activity transitions (active ↔ idle), not droppable | E | v1 |
 | E5 | Pane summaries, droppable | E | v1 |
 | E6 | Prompt detected (with `prompt_id`, source, confidence) | E | v1 |
-| E7 | Harness ready | E | v2 |
+| E7 | Harness ready (a level, with a snapshot field) | S, E | v2 |
 | E8 | Harness hook events | E | v2 |
-| E9 | Pane ↔ harness session mapping | S, E | v1 |
+| E9 | Pane ↔ harness session mapping, goal registry | S, E | v1 |
 | E10 | Capture pane | C | v1 |
-| E11 | Session availability (idle and available for work) | S, E | v1 |
-| E12 | Harness condition (provider error, rate limit, sign-in required) | E | v1 |
+| E11 | Pane availability (idle and available for work) | S, E | v1 |
+| E12 | Harness condition (provider error, rate limit, sign-in, goal interrupted) | E | v1 |
+| E13 | Developer input on a pane | S, E | v1 |
 | F1 | Ensure session (create or reuse, optional harness) | C | v2 |
 | F2 | Ensure window | C | v2 |
 | F3 | Send keys (bound to `prompt_id` when answering) | C | v2 |
@@ -125,7 +126,8 @@ dispatch there").
 - **A4 Renew certificate** at two-thirds of its lifetime.
 - **A5 Heartbeat** every 15 s: load, raw counts (fleet panes, panes by harness,
   goal panes by goal state), wall clock and monotonic uptime for skew
-  detection. The agent does not compute free slots.
+  detection. The hub computes slots; the agent computes two aggregate goal counts
+  for its own safety cap (02h).
 - **A6 Wake and network change** triggers an immediate reconnect. Exact macOS
   and Linux APIs to be confirmed in a spike; fallback is a wall-clock jump
   check.
@@ -261,7 +263,9 @@ period for API-key providers.
 
 - **E1 Inventory:** every session, window and pane on the developer's tmux
   server (marked "yours" or "started by fleet" from `FLEET_*` tags), plus the
-  internal `fleet-probe` server. Windows are reported with their index and
+  internal `fleet-probe` server (internal sessions are marked and the hub
+  ignores them). Panes carry their directory, repo and dirty flag when under an
+  allowed root; attribute changes are `PaneChanged` events (02h). Windows are reported with their index and
   name exactly as the status bar shows them (developers name windows by
   purpose, e.g. `codex prompt 1`, `claude w2`, `btop`) and whether tmux
   renames them automatically. The harness in a pane is identified from the
@@ -283,29 +287,34 @@ period for API-key providers.
 - **E6 Prompt detected:** `prompt_id`, text, options, destructive flag, source
   (screen pattern or hook) and confidence. Send-to-pane stays disabled for a
   harness until its detection is verified (Claude first).
-- **E7 Harness ready** (v2): the adapter's ready pattern matched in a pane.
+- **E7 Harness ready** (v2): whether the adapter's ready pattern is showing in
+  a pane, as a snapshot field and an event for both edges.
 - **E8 Harness hook events** (v2): turn end, session start, Codex interrupt,
   with the harness session id; per-harness events in [01d](01d-goal-hooks.md).
-- **E9 Pane ↔ harness session mapping.** Fleet panes run with
-  `FLEET_PANE_KEY` in their environment; fleet goal hooks record the harness
-  session id against it. This lets G2 attribute `.claude/active-goal.<session_id>`
-  files to panes, and K3 find transcripts.
-- **E11 Session availability.** Each harness session reports whether it is
-  **idle**: the adapter's ready pattern is showing, no goal is active in it (G2),
-  and there has been no output or keyboard input for a configurable time
-  (default 2 minutes). Idle alone never makes a session take work. A session
-  is **available for work** when:
+- **E9 Pane ↔ harness session mapping and the goal registry.** The agent's
+  registry binds a goal to a pane (and its worktree and harness session id) for
+  every harness; goal hooks record the session id against that entry (02h). This
+  lets G2 attribute `.claude/active-goal.<session_id>` files to panes, and K3
+  find transcripts.
+- **E11 Pane availability.** Each harness pane reports whether it is **idle**:
+  the adapter's ready pattern is showing, no goal is active in it (G2), and
+  there has been no output or keyboard input for a configurable time (default 2
+  minutes). Idle alone never makes a pane take work. A pane is **available for
+  work** when:
   - fleet started it for a goal and that goal is verified merged, or
   - the developer marked it "available for work" on the board (their own
     sessions are never taken over without that mark).
 
-  The agent reports availability changes as events; the hub's dispatcher
-  treats an available session as free capacity, subject to pacing and machine
-  limits, and starts the next goal in it (G3) instead of opening a new window.
-  Any keystroke from the developer in that session clears "idle" at once, and
-  a goal is never typed into a session whose input line is not empty.
+  The agent reports changes as events and keeps the mark per pane (02h); the
+  hub's dispatcher treats an available pane as free capacity, subject to pacing
+  and machine limits, and starts the next goal in it (G3) instead of opening a
+  new window. Any input from the developer clears "idle" at once (E13), and a
+  goal is never typed into a pane whose input line is not empty.
 - **E12 Harness condition:** provider errors, rate limits, sign-in needed (e.g.
-  Muse's "HTTP 500 · retrying · attempt 6/10"), reported until cleared.
+  Muse's "HTTP 500 · retrying · attempt 6/10"), a goal interrupted or paused
+  at the machine, reported until cleared.
+- **E13 Developer input:** when a person last typed into a pane (snapshot field
+  plus a rate-limited event); goal panes are never idle, so this is the signal.
 - **E10 Capture pane:** visible screen or last N lines, ANSI stripped by
   default.
 
@@ -321,13 +330,13 @@ All pass local policy, carry a `command_id`, and are idempotent except F3.
 - **Window naming.** Fleet-created windows are named after the harness and the
   work: default template `{harness} {work}`, where `{work}` is the work item's
   short form (`muse eshu#7398`, `codex eshu!12`, `claude PROJ-123`); for
-  sessions without a work item, the name the developer typed. The template is configurable per machine or group. Fleet turns off
-  `automatic-rename` for its own windows only, so the harness process doesn't
-  overwrite the name; the developer's windows are untouched.
+  sessions without a work item, the name the developer typed. The template is
+  configurable per machine or group. Fleet turns off `automatic-rename` for its
+  own windows only; the developer's windows are untouched.
 - **F2 Ensure window:** same, for a window in a session.
-- **F3 Send keys:** literal text plus named keys, rate-limited. When answering a
-  prompt it carries the `prompt_id` from E6; if that prompt is no longer on
-  screen the agent refuses with `prompt_gone` instead of typing. Not
+- **F3 Send keys:** literal text plus named keys, rate-limited, each with a
+  purpose that decides the gate (02h). A prompt answer carries the `prompt_id`
+  from E6; if that prompt is gone the agent refuses with `prompt_gone`. Not
   idempotent: a retry after an unknown outcome returns `UNKNOWN_OUTCOME`.
 - **F4 Interrupt**, **F5 Respawn pane** (adapter `ResumeArgs`), **F6 Kill
   window.** Resize belongs to J1.
@@ -339,8 +348,8 @@ All pass local policy, carry a `command_id`, and are idempotent except F3.
 
 ## G. Goals
 
-- **G1 Goal hooks** (v2): user-level hooks, inert unless `FLEET_GOAL_ID` is
-  set; merge-installed with backup, verified, version and hash reported; Codex
+- **G1 Goal hooks** (v2): user-level hooks, inert unless the agent's goal
+  registry names the pane; merge-installed with backup, verified, version and hash reported; Codex
   needs one-time `/hooks` trust; Muse not probed. Repos that ship their own
   (eshu) are left alone. Design and probe record: [01d](01d-goal-hooks.md).
 - **G2 Goal state** (v1): for fleet panes only, one event carrying the goal
@@ -351,13 +360,11 @@ All pass local policy, carry a `command_id`, and are idempotent except F3.
   Goal text is agent-written and untrusted: length-capped, control characters
   stripped, rendered as data.
 - **G3 Start goal** (v2), agent-side composite under one `command_id`, so it
-  survives a hub outage: preflight → ensure worktree (H2) if the repo's goal
-  driver doesn't create its own → either reuse an available idle session
-  (E11, re-checked on the agent just before typing) or ensure a new window with
-  the harness → wait for ready → type the adapter's `GoalCommand` → confirm
-  the goal file appears. Each step
-  is reported as `command_id+step`; a failure names the step
-  (`ready_timeout`, `goal_file_not_seen`, …).
+  survives a hub outage: preflight → reuse an available clean pane working in a
+  checkout of the goal's repo (new branch in place), or ensure a worktree (H2)
+  and a new window → register the goal → wait for ready → model, effort, clear
+  → write the goal file → type the `GoalCommand` → confirm the goal file. 14
+  named steps, each a `command_id+step` with its own failure reason (02h).
 - **G4 Goal control** (v2): the harness's own `/goal` subcommands (pause,
   resume, edit, clear) typed at an idle prompt via F8, as the developer would
   ([01b](01b-harness-commands.md#goal-subcommands)); F4 Interrupt where a
@@ -379,12 +386,10 @@ All pass local policy, carry a `command_id`, and are idempotent except F3.
 
 ## I. Preflight
 
-- **I1 Preflight** (v2) returns ok or a reason code from the shared error enum:
-  `harness_not_installed`, `harness_version_unsupported`,
-  `harness_not_signed_in`, `account_mismatch`, `push_access_missing`,
-  `checkout_missing`, `folder_untrusted`, `worktree_dirty`, `disk_low`,
-  `tmux_too_old`, `tmux_server_down`, `on_battery_blocked`, `policy_denied`,
-  `draining`.
+- **I1 Preflight** (v2) returns ok or every failed check with a reason code from
+  the shared error enum (`harness_not_signed_in`, `push_access_missing`,
+  `disk_low`, `agent_goal_cap_reached`, …; and for a pane the hub means to reuse,
+  `session_workdir_mismatch`, `checkout_dirty`).
 
 ## J. Terminal attach (v2)
 
@@ -432,13 +437,11 @@ All pass local policy, carry a `command_id`, and are idempotent except F3.
 
 - **M1** local audit log, **M2** OTEL, **M3** `doctor` (tmux, harness paths,
   mDNS, policy, cert expiry, hub reachability, clock skew).
-- **M4 Drain and undrain** (v2): from the hub or locally
-  (`fleet-agent drain|undrain`); reported in snapshot and heartbeat. While
-  draining, the agent refuses G3 and F1/F2 that start a harness, with
-  `draining`.
+- **M4 Drain and undrain** (v2): from the hub or locally (`fleet-agent
+  drain|undrain`); reported in snapshot and heartbeat. While draining, the agent
+  refuses G3 and harness-starting F1/F2 with `draining`.
 - **Upgrades are never a hub command** (a compromised hub could run new code
-  everywhere); they run on the machine through the package manager or install
-  script.
+  everywhere); they run on the machine, through the package manager or script.
 
 ## Security and privacy
 
@@ -453,15 +456,13 @@ itself adds is kept safe by construction, with no setup:
   or buying usage.
 - **Credentials are never touched** (principle 3).
 - **Local policy** is a plain file in the developer's config directory with
-  safe defaults; most people never edit it. Its hash, and the hashes of the
-  agent binary and goal hooks, are reported so the hub can show when they
-  change. Nothing blocks dispatch on this; it is information.
+  safe defaults. Its hash, and the hashes of the agent binary and goal hooks,
+  are reported so the hub can show when they change; nothing blocks on this.
 - **Untrusted text** (goal lines, pane summaries, prompts) is treated as data:
   length caps, control characters stripped, no HTML.
 - **Fleet scope:** goal files, pane content, logs and transcripts are read only
   for fleet panes unless the developer opts in.
-- **Secrets on screen** stay on the hub, readable by `owner` only
-  ([0010](../adr/0010-session-logs.md)).
+- **Secrets on screen** stay on the hub, `owner` only ([0010](../adr/0010-session-logs.md)).
 - **Emails** hidden by default; account keys are pseudonymous.
 
 **Known limit, stated plainly.** The harness and the agent run as the same
@@ -482,8 +483,7 @@ on its own during a goal. tmux `server-access` was added in 3.3.
 
 ## Hand-off to step 2
 
-Contract-readiness rules, required ADR changes, volume estimates and the
-testing approach are in [01c-handoff.md](01c-handoff.md).
+Contract-readiness rules, ADR changes, volumes and testing: [01c-handoff.md](01c-handoff.md).
 
 ## Resolved (2026-10-01)
 

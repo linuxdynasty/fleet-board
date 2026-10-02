@@ -59,28 +59,28 @@ Severity: I important, M minor. Risk: refactor risk if deferred (h/m/l).
 | B | `connect-enroll-failure-wire` | M | l | Enroll/Connect-level failures (token reasons, fleet mismatch, unknown machine) have no typed representation | fixed |
 | B | `local-actions-not-audited` | M | l | Security-relevant agent-side decisions have no permanent audit mapping | fixed |
 | B | `no-trace-context-on-wire` | M | l | Docs promise hub-to-agent traces, but Command, Event and Settings carry no trace context | fixed |
-| C | `goal-binding-reused-pane` | I | h | Goal identity for hooks is bound by pane env or by cwd, and neither works for a reused session | open |
-| C | `reuse-workdir-mismatch` | I | h | Session reuse has no check that the pane is in the goal's repo or worktree | open |
-| C | `keystroke-signal-goal-panes` | I | h | The developer-keystroke signal that suppresses nudges and drives the typing banner has no wire carrier for goal panes | open |
-| C | `reuse-path-goal-identity` | I | h | Reused-session goals cannot get FLEET_GOAL_ID or the right cwd, so hooks, goal registry and adoption all break on the reuse path | open |
-| C | `goal-pause-interrupt-state` | I | h | Developer interrupts and harness-side pauses have no wire representation and contradict W6's nudge rule | open |
-| C | `goal-pane-input-and-ready-signals` | I | h | No wire signal for keystrokes or ready-prompt state on goal panes, but W6 depends on both | open |
-| C | `owner-interrupt-and-pause-reason` | I | h | A person interrupting or pausing a goal at the machine (owner-paused) has no wire event, condition kind, phase or triage kind, and 03c contradicts 01d; PAUSED has no reason | open |
-| C | `pane-attribute-events-and-internal-sessions` | I | h | No event for mutable pane/window/session attributes, and internal tmux sessions (attach view, probe server) have no hub treatment | open |
-| C | `interrupt-pause-no-wire-state` | I | m | Interrupt and pause have no wire representation, although 01d says they are reported as a HarnessCondition | open |
-| C | `goal-subcommand-support-not-advertised` | M | m | The hub is told to check /goal subcommand support before sending, but the agent never reports it | open |
-| C | `sendkeys-overloaded-gating` | M | m | SendKeys is used for nudges, Claude resume and limit-wait resume, but its gating is tied to prompt answering and it lacks an idle check | open |
-| C | `availability-mark-session-vs-pane` | I | m | SetSessionAvailability addresses a tmux session but availability is a per-pane fact | open |
-| C | `startgoal-steps-stale-vs-goalspec-and-01d` | M | m | The StartGoal composite step list and its retry/idempotency classification omit steps that GoalSpec and 01d require | open |
-| C | `harness-goal-control-capabilities` | M | m | Per-harness goal-control actions (pause, resume, continue) live in hub code, not on the wire; LIMIT_WAIT resume cites a probe that did not cover it | open |
-| C | `startgoal-steps-and-reasons` | I | m | StartGoal composite omits steps and reason codes the specs require (register, goal file, model/effort/clear, startup prompts) | open |
-| C | `startgoal-composite-omits-model-effort-clear` | M | m | GoalSpec.model/effort/fresh_context have no composite steps, failure reasons, role path or auto-dispatch defaults; per-model pacing has no input when model is empty | open |
-| C | `reuse-vs-worktree-and-prune-order` | I | m | Session reuse contradicts agent-ensured worktrees (harness cwd cannot change), the hub cannot see a pane's workdir, and prune is ordered before KillWindow | open |
-| C | `repo-driver-branch-visibility` | I | m | For REPO_DRIVER goals (eshu, the primary repo) the hub never learns the branch or worktree, breaking CR lookup by head_ref and the one-agent-per-branch rule | open |
-| C | `repo-identity-derivation` | M | m | How the agent derives RepoRef from a checkout (remote choice, forks, multiple checkouts, code_host) is unspecified | open |
-| C | `hook-trust-and-stale-names` | M | l | Hook trust is a Codex-only bool with no unknown state, and several contract names have no capability behind them | open |
-| C | `slots-full-ownership` | M | l | SLOTS_FULL and max_active enforcement have no owner: agent 'does not compute slots' but a preflight code and a local ceiling assume it does | open |
-| C | `id-format-and-new-session-name` | M | l | Opaque ids are used as tmux names, env values, file paths and resource keys with no format rule; StartGoal's new-session name is ambiguous | open |
+| C | `goal-binding-reused-pane` | I | h | Goal identity for hooks is bound by pane env or by cwd, and neither works for a reused session | fixed |
+| C | `reuse-workdir-mismatch` | I | h | Session reuse has no check that the pane is in the goal's repo or worktree | fixed |
+| C | `keystroke-signal-goal-panes` | I | h | The developer-keystroke signal that suppresses nudges and drives the typing banner has no wire carrier for goal panes | fixed |
+| C | `reuse-path-goal-identity` | I | h | Reused-session goals cannot get FLEET_GOAL_ID or the right cwd, so hooks, goal registry and adoption all break on the reuse path | fixed |
+| C | `goal-pause-interrupt-state` | I | h | Developer interrupts and harness-side pauses have no wire representation and contradict W6's nudge rule | fixed |
+| C | `goal-pane-input-and-ready-signals` | I | h | No wire signal for keystrokes or ready-prompt state on goal panes, but W6 depends on both | fixed |
+| C | `owner-interrupt-and-pause-reason` | I | h | A person interrupting or pausing a goal at the machine (owner-paused) has no wire event, condition kind, phase or triage kind, and 03c contradicts 01d; PAUSED has no reason | fixed |
+| C | `pane-attribute-events-and-internal-sessions` | I | h | No event for mutable pane/window/session attributes, and internal tmux sessions (attach view, probe server) have no hub treatment | fixed |
+| C | `interrupt-pause-no-wire-state` | I | m | Interrupt and pause have no wire representation, although 01d says they are reported as a HarnessCondition | fixed |
+| C | `goal-subcommand-support-not-advertised` | M | m | The hub is told to check /goal subcommand support before sending, but the agent never reports it | fixed |
+| C | `sendkeys-overloaded-gating` | M | m | SendKeys is used for nudges, Claude resume and limit-wait resume, but its gating is tied to prompt answering and it lacks an idle check | fixed |
+| C | `availability-mark-session-vs-pane` | I | m | SetSessionAvailability addresses a tmux session but availability is a per-pane fact | fixed |
+| C | `startgoal-steps-stale-vs-goalspec-and-01d` | M | m | The StartGoal composite step list and its retry/idempotency classification omit steps that GoalSpec and 01d require | fixed |
+| C | `harness-goal-control-capabilities` | M | m | Per-harness goal-control actions (pause, resume, continue) live in hub code, not on the wire; LIMIT_WAIT resume cites a probe that did not cover it | fixed |
+| C | `startgoal-steps-and-reasons` | I | m | StartGoal composite omits steps and reason codes the specs require (register, goal file, model/effort/clear, startup prompts) | fixed |
+| C | `startgoal-composite-omits-model-effort-clear` | M | m | GoalSpec.model/effort/fresh_context have no composite steps, failure reasons, role path or auto-dispatch defaults; per-model pacing has no input when model is empty | fixed |
+| C | `reuse-vs-worktree-and-prune-order` | I | m | Session reuse contradicts agent-ensured worktrees (harness cwd cannot change), the hub cannot see a pane's workdir, and prune is ordered before KillWindow | fixed |
+| C | `repo-driver-branch-visibility` | I | m | For REPO_DRIVER goals (eshu, the primary repo) the hub never learns the branch or worktree, breaking CR lookup by head_ref and the one-agent-per-branch rule | fixed |
+| C | `repo-identity-derivation` | M | m | How the agent derives RepoRef from a checkout (remote choice, forks, multiple checkouts, code_host) is unspecified | fixed |
+| C | `hook-trust-and-stale-names` | M | l | Hook trust is a Codex-only bool with no unknown state, and several contract names have no capability behind them | fixed |
+| C | `slots-full-ownership` | M | l | SLOTS_FULL and max_active enforcement have no owner: agent 'does not compute slots' but a preflight code and a local ceiling assume it does | fixed |
+| C | `id-format-and-new-session-name` | M | l | Opaque ids are used as tmux names, env values, file paths and resource keys with no format rule; StartGoal's new-session name is ambiguous | fixed |
 | D | `logstreamkey-session-id-for-developer-sessions` | I | h | LogStreamKey requires a hub-assigned SessionId the agent cannot know for developer sessions | open |
 | D | `forge-status-snapshot-only-unfit-never-clears` | I | m | Durable preflight reasons clear 'on the next snapshot or event', but forge CLI status and folder trust have neither | open |
 | D | `seq-epoch-monotonic-counters` | I | m | Agent event seq and hub connection epoch can regress after a crash or restore, silently discarding events or commands | open |

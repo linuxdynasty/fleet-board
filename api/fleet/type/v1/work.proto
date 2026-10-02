@@ -11,7 +11,9 @@ import "fleet/type/v1/ids.proto";
 // host is the code host's hostname ("github.com", "gitlab.acme.dev");
 // path is the project path on that host, lowercase, no ".git", and may be
 // nested ("eshu-hq/eshu", "group/subgroup/repo"). SSH and HTTPS remotes
-// normalize to the same value.
+// normalize to the same value. Identity is (host, path) only: code_host is
+// filled by the hub, never by an agent, and is ignored when two RepoRefs are
+// compared. How the agent derives it from a checkout: 02h, "Repo identity".
 message RepoRef {
   string host = 1;
   string path = 2;
@@ -93,4 +95,24 @@ message Workdir {
   // Optional path relative to the checkout (for example a worktree under
   // .worktrees/). Empty means the main checkout.
   string relative_path = 2;
+}
+
+// PaneWorkdir is where a pane's process is working, as far as the agent may
+// say: the hub uses it to pick sessions a goal may reuse (same repo, clean
+// checkout) and to show where a developer's session is. Paths outside the
+// allowed repo roots are never reported: the whole message is then unset.
+message PaneWorkdir {
+  // tmux pane_current_path, under an allowed root. Untrusted text.
+  string current_path = 1;
+  // The repo of the checkout that contains current_path (derivation in
+  // 02h). Unset when the path is under a root but not in a git checkout.
+  RepoRef repo = 2;
+  // Root of the checkout or worktree that contains current_path.
+  string checkout_path = 3;
+  bool is_worktree = 4;
+  // Branch checked out there; empty when detached. Untrusted text.
+  string branch = 5;
+  // Uncommitted changes, including untracked files. A goal is started in a
+  // reused pane only when this is false (CHECKOUT_DIRTY otherwise).
+  bool dirty = 6;
 }

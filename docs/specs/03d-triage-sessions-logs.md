@@ -101,7 +101,7 @@ stateDiagram-v2
 | Harness crash | `PaneExited` retires prompt and condition items for the pane; W6 raises `stuck`/`recovery_required` instead |
 | Provider error while a prompt is open | Both items exist; the condition item explains why the answer may not be processed yet |
 | Prompt already answered at the keyboard | `PromptGone` retires; a late answer gets `PROMPT_GONE`, nothing typed |
-| Developer typing in the pane while the operator answers | The agent's `require_empty_input_line` is false for prompt answers (menus), but the prompt check still runs; if the prompt moved, `PROMPT_GONE` |
+| Developer typing in the pane while the operator answers | A `PROMPT_ANSWER` `SendKeys` needs no empty input line or ready pattern (menus have neither), but the prompt check still runs; if the prompt moved, `PROMPT_GONE` |
 | Code host unavailable | Only verification-derived items are delayed; prompts and conditions are unaffected |
 | Fingerprint collision across machines | Fingerprints include `machine_id` (and `pane` where relevant); `prompt_id` is agent-minted and scoped by machine in the hub key |
 
@@ -147,9 +147,9 @@ sequenceDiagram
   H-->>A: Command{EnsureSession{session_id, server=DEFAULT, name, workdir{repo RepoRef}, harness, owner, window_name, reuse=true}}
   A->>T: new-session -s scratch -c <root/eshu> · set-environment FLEET_SESSION_ID/FLEET_OWNER/FLEET_PANE_KEY · launch harness
   A->>H: CommandResult{OK, ensure_session EnsureSessionResult{session, created, pane}}
-  U->>H: mark "available for work"
-  H-->>A: Command{SetSessionAvailability{session{session_id}, available_for_work=true}}
-  A->>H: Event{availability{reason="marked_on_board"}}
+  U->>H: mark the claude pane "available for work"
+  H-->>A: Command{SetPaneAvailability{pane, available_for_work=true, reason=MARKED_ON_BOARD}}
+  A->>H: Event{availability{reason=MARKED_ON_BOARD}}
   U->>H: attach (WebSocket)
   H->>H: attach_id · audit open
   H-->>A: Command{OpenAttach{attach_id, session, cols, rows, read_only}}
@@ -173,7 +173,12 @@ sequenceDiagram
 **Rules.** The list shows every session on the developer's server, marked
 "yours" or "started by fleet" from `FLEET_*` tags, windows by index and name
 as the status bar shows them, the harness per pane from the process, activity
-and availability. Creating uses `EnsureSession` with `reuse=true` so a repeated
+and availability (one mark per harness pane, never per session; 02h). Sessions
+the fleet made for itself (`TmuxSession.internal`: attach views, anything on the
+probe server) are never listed, and their panes are not counted: a view shares
+its windows, so the same `PaneKey`, with the real session. A pane that
+starts a harness or changes directory arrives as `PaneChanged`, so the list is
+not stale until the next reconnect. Creating uses `EnsureSession` with `reuse=true` so a repeated
 click is harmless. The browser attaches through a **grouped view session**
 (`new-session -t <session>`) so switching windows in the browser never moves
 the developer's own current window; the developer's prefix key and bindings
@@ -189,7 +194,7 @@ peer address; the hub never runs it.
 
 | What | Where | Transaction |
 |---|---|---|
-| `sessions{session_id, machine, name, owner, created_at, available_for_work, log_capture, reserved_for_goal}` | hub store | create tx; availability tx on event |
+| `sessions{session_id, machine, name, owner, created_at, log_capture}` and `panes{pane_key, available_for_work, reserved_for_goal}` | hub store | create tx; availability tx on event |
 | Attach registry (`attach_id`, session, principal, read_only, opened_at) | hub memory + audit row open/close with byte counts (no content) | audit tx |
 | `FLEET_*` tags, view session | tmux environment on the machine | n/a |
 | Developer-created sessions | hub mirror from snapshot/events only; never owned | snapshot/event tx |
@@ -202,8 +207,10 @@ peer address; the hub never runs it.
 - `Terminal` bytes are never dropped (HTTP/2 flow control; the PTY blocks);
   input is never dropped for operators; terminal traffic is a separate
   stream, so it cannot delay commands.
-- `SetSessionAvailability` is declarative; the agent's `AvailabilityChanged`
-  is the truth the scheduler uses, not the command result.
+- `SetPaneAvailability` is declarative; the agent's `AvailabilityChanged`
+  is the truth the scheduler uses, not the command result. The agent keeps
+  each mark per pane key and reports it in `TmuxPane.availability` on every
+  snapshot, so the hub re-sends one that is missing.
 
 ### Failure modes
 
@@ -216,7 +223,7 @@ peer address; the hub never runs it.
 | Harness crash in the session | Pane `dead=true` with `exit_status`; UI offers `RespawnPane{resume=true}` (dangerous kind) |
 | Provider error | `HarnessCondition` shown inline on the session card |
 | Prompt appears | W7 item; the session card shows it; answering from the attach is just typing |
-| Developer typing at the same time | Two tmux clients on one session is normal; availability flips to not idle (`keystroke`) |
+| Developer typing at the same time | Two tmux clients on one session is normal; the agent reports `PaneInput` and the pane stops being idle |
 | tmux server not running | `TMUX_SERVER_DOWN`; `EnsureSession` would start it, but only if local policy allows `control` |
 | Session renamed or killed by the developer | Renamed: still recognised by tag; killed: `SessionEvent{CLOSED}`, attaches closed `session_ended`, any goal in it goes `STOPPED` (W6) |
 | `view` session name collides | Names carry `attach_id`; unique |

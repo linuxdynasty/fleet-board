@@ -86,10 +86,18 @@ enum ReasonCode {
   REASON_CODE_ON_BATTERY_BLOCKED = 12;
   REASON_CODE_POLICY_DENIED = 13;
   REASON_CODE_DRAINING = 14;
+  // The hub's own refusal: the machine is at max_active or max_total by the
+  // hub's goal table (PreflightGoalResponse.hub_checks). The agent never
+  // emits it; its own limit is AGENT_GOAL_CAP_REACHED.
   REASON_CODE_SLOTS_FULL = 15;
   // GoalSpec.profile (or EnsureProbe.profile) names a harness profile the
   // machine does not have. Empty profile always means the harness default.
   REASON_CODE_HARNESS_PROFILE_MISSING = 16;
+  // The agent's local safety cap: starting this goal would take the
+  // machine past its effective max_active or max_total, counted from the
+  // agent's own goal registry (defence in depth; the hub schedules from its
+  // table and normally never trips it). REJECTED_BY_POLICY, retryable.
+  REASON_CODE_AGENT_GOAL_CAP_REACHED = 17;
 
   // Command execution.
   REASON_CODE_SESSION_NOT_FOUND = 100;
@@ -120,6 +128,16 @@ enum ReasonCode {
   REASON_CODE_HOOKS_INSTALL_FAILED = 117;
   REASON_CODE_ATTACH_NOT_FOUND = 118;
   REASON_CODE_INTERNAL = 119;
+  // Reuse of a pane: its working directory is not a checkout of the goal's
+  // repo (or is outside the allowed roots). Also a Preflight failure when
+  // Preflight.reuse_pane names such a pane.
+  REASON_CODE_SESSION_WORKDIR_MISMATCH = 130;
+  // Reuse of a pane: the checkout it works in has uncommitted changes, so a
+  // new branch cannot be started there. The hub opens a new window instead.
+  REASON_CODE_CHECKOUT_DIRTY = 131;
+  // PruneWorktree: a live pane's working directory is inside the worktree.
+  // Close the window (KillWindow) first.
+  REASON_CODE_WORKTREE_IN_USE = 132;
 
   // Envelope and policy.
   REASON_CODE_EXPIRED = 200;
@@ -144,6 +162,17 @@ enum ReasonCode {
   // GoalSpec.fresh_context on a session the fleet did not start; /clear is
   // destructive (01b) and is never typed into the developer's own session.
   REASON_CODE_FRESH_CONTEXT_NOT_ALLOWED = 306;
+  // A startup screen the agent never answers: metadata kind is trust,
+  // update, login or release_notes (01b). TRUST_PROMPT_SEEN stays as the
+  // trust case; update and login are durable per (machine, harness) and go
+  // to Triage instead of a retry.
+  REASON_CODE_STARTUP_PROMPT_SEEN = 307;
+  // The harness's /model picker has no such model for this account.
+  REASON_CODE_MODEL_NOT_AVAILABLE = 308;
+  // The harness's /effort has no such level for this model.
+  REASON_CODE_EFFORT_NOT_SUPPORTED = 309;
+  // The agent could not write the goal file (disk, sandbox, path).
+  REASON_CODE_GOAL_FILE_WRITE_FAILED = 310;
 
   // Probes and parsing (D1, D2).
   REASON_CODE_PROBE_START_FAILED = 400;

@@ -162,3 +162,41 @@ follows it, and a revoked machine re-enrolls under its old id. Decisions made at
 the machine (local approvals, local drain, policy refusals and changes) are
 appended to the permanent audit log. Commands, events, results and settings
 carry an optional W3C trace context. Enroll failures have typed reason codes.
+
+## Addendum: goal binding, reuse and pane signals (review theme C)
+
+Taken while applying theme C. They carry out decision 1 (reuse and the goal
+registry); detail is in
+[02h](../specs/02h-goal-binding-and-pane-signals.md).
+
+**17. The registry is the only goal identity, and reuse never moves a pane.**
+`StartGoal` has 14 named steps in a closed vocabulary (`register_goal` before
+`type_goal`); a reused pane keeps its directory and the goal starts a new
+branch in it (`prepare_branch`), so no worktree is made for it. Reuse needs the
+pane's checkout to be the goal's repo (`SESSION_WORKDIR_MISMATCH`) and clean
+(`CHECKOUT_DIRTY`); a pane marked available is chosen by pane, never by
+session (`SetPaneAvailability` replaces `SetSessionAvailability`). The hub can
+re-send `RegisterGoal` or `ReleaseGoal` to repair a registry; cleanup is
+`KillWindow` then `PruneWorktree`. The scheduler may run the `/model`,
+`/effort` and `/clear` steps inside `StartGoal` (fleet-started sessions for
+`/clear`), with any local approval asked once before step 1. Auto-dispatch
+into a reused pane sets `fresh_context`.
+
+**18. A person's interrupt is the owner's decision.** The agent reports
+developer input (`PaneInput`, `TmuxPane.last_input_time`), the ready pattern as
+a level, and an interrupted or paused goal as `HarnessCondition` kinds
+`GOAL_INTERRUPTED` and `GOAL_PAUSED` with a `pause_cause`. The hub maps that to
+`GOAL_PHASE_PAUSED` with `pause_reason = OWNER_AT_MACHINE`, a `GOAL_PAUSED`
+triage item, no nudge and no automatic resume; only a `RESERVE` pause resumes
+by itself. `SendKeys` states a purpose (prompt answer, nudge, resume, operator
+text) so each is gated on its own. The agent advertises what `/goal` supports
+per harness version (`GoalControl`), so the hub keeps no per-harness table.
+Sessions the fleet creates for itself (attach views, the probe server) are
+marked `internal` and are never shown to the hub's users.
+
+**19. Slots, ids and repo identity.** The hub owns `max_active` enforcement
+(`SLOTS_FULL` is its reason); the agent keeps a local safety cap with its own
+reason (`AGENT_GOAL_CAP_REACHED`). Hub-assigned ids are 1 to 32 characters of
+`[a-z0-9-]`, so a `SessionId` is a valid tmux session name. A `RepoRef` is
+identified by host and path only; the agent derives it from the `origin` remote
+unless local policy names another, and reports every remote.

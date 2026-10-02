@@ -22,6 +22,21 @@
 //     the identity of their own message (`command_id`, `prompt_id`,
 //     `attach_id`, `probe_id`). 64-bit integers are strings in JSON
 //     (docs/specs/02b-hub-api.md, "64-bit integers").
+//   - Id format. A hub-assigned id (MachineId, AccountId, SessionId, GoalId,
+//     ProbeId, CommandId, AttachId, IntegrationId, DeviceId) is 1 to 32
+//     characters of [a-z0-9-], starting with [a-z0-9]; the hub mints a
+//     lowercase Crockford ULID (26 characters). That makes every one of them
+//     safe as a tmux session name, an environment value (FLEET_SESSION_ID,
+//     FLEET_GOAL_ID), a file or directory name and a "group/<label>" key,
+//     and a SessionId is the tmux session name of a session the fleet
+//     creates. Agent-minted correlation ids (PromptId, PaneKey.server_start_id)
+//     use the same alphabet. A name a person chooses and that ends up in the
+//     same places (labels, group names, profile names, EnsureSession.name)
+//     follows [a-z0-9][a-z0-9-]{0,31} and is refused with INVALID_NAME
+//     otherwise. PrincipalId is the one exception: it is also a path-like
+//     key ("device/<id>", "local:<os user>") that is only ever an environment
+//     value (FLEET_OWNER) or an audit key, 1 to 128 characters of
+//     [A-Za-z0-9._:/@-], never a tmux name or a path.
 //   - A closed set is an enum, never a string. A string field is either
 //     untrusted text, a name the user chose, or an open vocabulary that the
 //     comment says is open (`Harness.name`).
@@ -64,7 +79,9 @@ message SessionId {
   string value = 1;
 }
 
-// GoalId is hub-assigned; written into FLEET_GOAL_ID on the goal's pane.
+// GoalId is hub-assigned. The agent's goal registry binds it to a pane
+// (docs/specs/02h-goal-binding-and-pane-signals.md); FLEET_GOAL_ID in the
+// pane environment is only a fast path for a window the fleet just created.
 message GoalId {
   string value = 1;
 }

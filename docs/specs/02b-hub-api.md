@@ -32,7 +32,7 @@ type. The hub API imports `fleet.type.v1` (ids, values) and
 | Resource | Id | RPCs | Watch topic | Views |
 |---|---|---|---|---|
 | `Machine` | `MachineId` | List, Get, Update, Drain, Undrain, Revoke, Delete, CreateEnrollmentToken | `MACHINES` | Fleet |
-| `Session` (windows, panes) | `SessionId` (hub-assigned to every observed session) | List, Get, Create, SendKeys, InterruptPane, RunHarnessCommand, CapturePane, SetSessionAvailability, RespawnPane, KillWindow, SetLogCapture, CreateAttachTicket, AttachTerminal, ReadSessionLog | `SESSIONS` | Session, ⌘K |
+| `Session` (windows, panes) | `SessionId` (hub-assigned to every observed session) | List, Get, Create, SendKeys, InterruptPane, RunHarnessCommand, CapturePane, SetPaneAvailability, RespawnPane, KillWindow, SetLogCapture, CreateAttachTicket, AttachTerminal, ReadSessionLog | `SESSIONS` | Session, ⌘K |
 | `PaneSummary` | `PaneKey` | Watch only | `PANE_SUMMARIES` (latest-wins) | Session sidebar |
 | `Goal` | `GoalId` | List, Get, StartGoal, PreflightGoal, ControlGoal | `GOALS` | Work, Session, Triage, Fleet timeline |
 | `WorkItem`, `ChangeRequest` (mirrors) | `WorkItemKey` | List, Get | `WORK_ITEMS`, `CHANGE_REQUESTS` | Work |
@@ -210,14 +210,15 @@ on their own resources (a new window on the `Session`, the goal's `phase`).
 | Hub RPC | Agent command (02-contracts.md) |
 |---|---|
 | `CreateSession` | `EnsureSession` |
-| `SendKeys`, `InterruptPane`, `RespawnPane`, `KillWindow`, `CapturePane`, `RunHarnessCommand`, `SetSessionAvailability`, `SetLogCapture` | the kind of the same name |
+| `SendKeys`, `InterruptPane`, `RespawnPane`, `KillWindow`, `CapturePane`, `RunHarnessCommand`, `SetPaneAvailability`, `SetLogCapture` | the kind of the same name |
 | `CreateAttachTicket` | none (hub only) |
 | `AttachTerminal` | `OpenAttach` / `CloseAttach` + the `Terminal` stream |
 | `RevokeMachine` | none to the agent but `Bye{REVOKED}` on its live stream ([02g](02g-agent-security.md#machine-lifecycle-revoke-and-delete)) |
 | `StartGoal`, `RunRoutine` | `StartGoal` (after hub checks; `Preflight` inside the composite) |
 | `PreflightGoal` | `Preflight` |
-| `ControlGoal` | per harness: `RunHarnessCommand{/goal …}`, `Interrupt`, or `SendKeys{"continue"}` (Claude resume); `RECHECK`, `NOT_DONE` text nudge, `MARK_NOT_STARTED` are hub-side or `SendKeys` |
-| `DecideApproval` | `SendKeys{answering_prompt}` for prompts; the confirmed command otherwise; nothing for deny |
+| `ControlGoal` | as `MachineHarness.goal_control` says: `RunHarnessCommand{/goal …}`, `Interrupt`, or `SendKeys{GOAL_RESUME}`; `RECHECK`, `NOT_DONE` text nudge, `MARK_NOT_STARTED` are hub-side or `SendKeys{GOAL_NUDGE}` |
+| none (hub-internal) | `RegisterGoal`, `ReleaseGoal` (registry reconciliation, [02h](02h-goal-binding-and-pane-signals.md#goal-registry)) |
+| `DecideApproval` | `SendKeys{purpose PROMPT_ANSWER, answering_prompt}` for prompts; the confirmed command otherwise; nothing for deny |
 | `DrainMachine`, `UndrainMachine` | `Drain`, `Undrain` |
 | sign-in, user, token and login-session RPCs | none (hub only) |
 | `ProbeAccount` | `EnsureProbe{run_now}` |

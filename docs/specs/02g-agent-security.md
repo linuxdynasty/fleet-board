@@ -123,7 +123,7 @@ knows against what it holds:
 | A machine (valid certificate from this CA, machine id unknown) enrolled after the backup | Adopt it: recreate the row from the certificate and snapshot in state `ONLINE`, raise an info triage item "machine adopted after restore"; outside the 24 h window it gets `Bye{UNKNOWN_MACHINE}` |
 | A probe in `Snapshot.probes` for an account the hub has | Adopt the assignment; for an unknown account, `StopProbe` |
 | A tmux session with a `FLEET_SESSION_ID` the hub does not know | Recreate the `Session` row under that id, as a fleet session |
-| A pane with a `FLEET_GOAL_ID` the hub does not know | Existing `orphan_goal_pane` triage (W7) |
+| A `Snapshot.goal_registry` entry for a goal the hub does not know | Existing `orphan_goal_pane` triage (W7); `ReleaseGoal` only after the owner decides |
 | Unacknowledged results for commands the hub never issued | Stored as history only, then acked |
 
 Machines the hub knows but that never reconnect stay `OFFLINE`. Nothing in
@@ -208,14 +208,16 @@ covers that kind; the default rule is off. `L!` always waits for local approval.
 | `Preflight`, `EnsureSession`, `EnsureWindow`, `EnsureWorktree` | — | A | A | A | — |
 | `StartGoal` (incl. `model`, `effort` steps; class SESSION) | — | A | A | A | — |
 | `StartGoal` with `fresh_context` (types `/clear`) | — | A, F | A, F | A, F | — |
-| `SendKeys`, literal text | — | L | L | L, F (nudge, "continue") | — |
-| `SendKeys` with `answering_prompt` | — | L | L | — | — |
+| `SendKeys` purpose `OPERATOR_TEXT` | — | L | L | — | — |
+| `SendKeys` purpose `GOAL_NUDGE`, `GOAL_RESUME` (ready prompt, empty input line, goal-bound pane) | — | L | L | L, F | — |
+| `SendKeys` purpose `PROMPT_ANSWER` (`answering_prompt`) | — | L | L | — | — |
 | `Interrupt` | — | A | A | A | — |
 | `RespawnPane` | — | L | L | L, F | — |
 | `KillWindow` on a fleet window | — | L | L | L, F (after `merged_grace`) | — |
 | `KillWindow` on a developer's window | — | — | L | — | — |
 | `CapturePane` | A | A | A | A | A |
-| `SetSessionAvailability` | — | A | A | A | — |
+| `SetPaneAvailability` | — | A | A | A | — |
+| `RegisterGoal`, `ReleaseGoal` | — | — | A | A | — |
 | `RunHarnessCommand` class OBSERVE | A | A | A | A | A |
 | `RunHarnessCommand` class SESSION | — | A | A | — | — |
 | `RunHarnessCommand` class GOAL (`/goal pause\|resume\|edit\|clear`) | — | A | A | A | — |
@@ -240,7 +242,10 @@ Notes:
 - **`fresh_context`** is judged as part of `StartGoal`, not as a separate
   DESTRUCTIVE command: the owner or operator chose it in the goal (or the
   routine), and the agent refuses it with `FRESH_CONTEXT_NOT_ALLOWED` in a
-  session the fleet did not start, whatever the role.
+  session the fleet did not start, whatever the role. A local approval rule for
+  `StartGoal` is asked once, before step 1, never between `clear_context` and
+  `type_goal`; a timeout is `LOCAL_CONFIRM_TIMEOUT` and the hub opens a new
+  window instead ([02h](02h-goal-binding-and-pane-signals.md#startgoal-steps)).
 - **Unattended recovery and local approval.** If a machine's rule makes
   `RespawnPane` or `SendKeys` `L`, the scheduler's recovery on that machine
   waits for someone at the keyboard; `LOCAL_CONFIRM_TIMEOUT` ends the wait and

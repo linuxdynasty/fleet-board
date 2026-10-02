@@ -418,8 +418,9 @@ Checked on 2026-09-28. Re-verify before relying on them.
   [01d](specs/01d-goal-hooks.md#muse-hooks-are-a-plugin-package): user-level
   hooks are a plugin package; 19 events including `Stop`. The `Stop` probe
   (same day) confirmed `decision: block` continues the turn, and found that
-  Muse hooks do not see the pane environment, so they recognise fleet goals
-  by `cwd`/`session_id` instead of `FLEET_GOAL_ID`.
+  Muse hooks do not see the pane environment. Since a running harness cannot
+  gain an environment variable at all, every harness now recognises fleet goals
+  through the agent's goal registry (ADR 0019, [02h](specs/02h-goal-binding-and-pane-signals.md)).
 - **Codex and Muse waiting detection.** Needed before Send-to-pane is enabled
   for them.
 - **Collector PATH strategy.** Record absolute tool paths at install time

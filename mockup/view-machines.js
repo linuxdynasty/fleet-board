@@ -21,7 +21,7 @@ function hookPlain(h, st) {
   if (!st) return h === "muse" ? ["", "no fleet hooks yet (Muse takes them as a plugin); goals run on Muse's own /goal"] : ["", "no fleet hooks"];
   if (!st.installed) return ["warn", `hooks not installed${st.why ? ": " + st.why : ""}`];
   if (!st.verified) return ["warn", "hooks installed, self-check failed: reinstall on the machine"];
-  if (st.trust_pending) return ["warn", `hooks installed, trust pending — open ${h === "codex" ? "Codex" : h} /hooks to approve`];
+  if (st.trust === "PENDING") return ["warn", `hooks installed, trust pending — open ${h === "codex" ? "Codex" : h} /hooks to approve`];
   if (st.repo_ships_own) return ["ok", "hooks installed; eshu ships its own, so fleet's stay off there"];
   return ["ok", "hooks installed and checked"];
 }

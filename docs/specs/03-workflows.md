@@ -49,7 +49,8 @@ needs beyond those is listed in
 **Persistence vocabulary.** *Hub store* = the hub's embedded database (ADR
 0002, provisional until step 4). *Hub files* = session-log files on the hub
 disk (ADR 0010). *Agent state dir* = `~/.local/state/fleet-agent/` (cert, key,
-pinned CA, command log, event ring, spool, settings, probe assignments).
+pinned CA, command log, event ring, spool, settings, probe assignments, goal
+registry, availability marks).
 *Work tracker / code host* = the provider's own truth, never copied beyond a
 mirror with cursors.
 
@@ -128,8 +129,11 @@ replace the machine's sessions/windows/panes/goals/repos/harness rows, store
 `Snapshot.seq` as `last_event_seq`, then diff desired state: probe assignments
 whose machine is this one but which the snapshot's `probes[]` does not show →
 `EnsureProbe`; goal rows the hub has in `RUNNING` whose pane is absent from the
-snapshot → goal `PANE_LOST` (W6); panes with a `FLEET_GOAL_ID` the hub does not
-know → triage `orphan_goal_pane` (W7); outbox rows `pending`/`delivered` for
+snapshot → goal `PANE_LOST` (W6); `goal_registry[]` entries the hub does not
+know → triage `orphan_goal_pane` (W7), and goals the hub expects in `STARTING`
+to `STOPPED` that the registry lacks → `RegisterGoal` (02h); availability marks
+the hub holds that `TmuxPane.availability` lacks → `SetPaneAvailability`;
+outbox rows `pending`/`delivered` for
 this machine → re-sent after commit unless past `not_after_time`, which become
 `EXPIRED`.
 
@@ -311,6 +315,7 @@ waiting for keepalive timeouts.
 | Event ring (`seq`, body, 1 week, size cap) | agent state dir (append file + index) | per event, fsync batched ≤ 1 s |
 | Command log (last 10,000 or 7 days; status, result, step reached) | agent state dir | per state change, before `CommandAck` is sent |
 | Probe assignments (`EnsureProbe` as received) | agent state dir | with the command log |
+| Goal registry (`GoalRegistration` per pane) and availability marks (per pane key) | agent state dir | `register_goal`, `RegisterGoal`, `ReleaseGoal`, mark commands; both reported in every snapshot (02h) |
 | Outbox rows (`pending/delivered/done/expired/failed`, epoch, seq) | hub store | Hello tx (expiry), result tx (close) |
 | Event history (replayed and live, 1 week) | hub store | per writer batch |
 | `machine_connections` (epoch, boot_id, reason, peer, displaced_by) | hub store | Hello tx |
@@ -325,7 +330,7 @@ waiting for keepalive timeouts.
   older backup) go to the audit log and a triage info item.
 - Re-issued commands keep their `command_id`; the agent's log answers them.
 - A `StartGoal` that expired during the outage is `EXPIRED` on the hub, but if
-  the snapshot shows a pane with that `FLEET_GOAL_ID`, the goal is adopted as
+  `Snapshot.goal_registry` binds that goal to a pane, the goal is adopted as
   `RUNNING` (W5) rather than re-planned.
 
 ### Failure modes
@@ -334,13 +339,13 @@ waiting for keepalive timeouts.
 |---|---|
 | Agent offline for hours | Goals run on; ring fills (latest per key); on reconnect snapshot gives truth, ring gives timeline; dropped ring entries counted and `gap` shown on the timeline |
 | Hub restart mid-snapshot apply | Stream drops; the partial tx rolls back; the agent reconnects and sends a fresh snapshot |
-| Hub store restored from backup | Unknown `FLEET_GOAL_ID` panes → `orphan_goal_pane` triage; unknown results → audit only; settings generation on the agent may be newer than the hub's → hub re-sends its current generation and the agent applies it (generation compare is "different", not "greater", after a restore flag in `HelloAck`; see 03g required changes) |
+| Hub store restored from backup | Registry entries for unknown goals → `orphan_goal_pane` triage; unknown results → audit only; settings generation on the agent may be newer than the hub's → hub re-sends its current generation and the agent applies it (generation compare is "different", not "greater", after a restore flag in `HelloAck`; see 03g required changes) |
 | Duplicate `command_id` re-issued | Logged result returned, nothing re-executed |
 | Deadline expired while offline | Hub marks `EXPIRED` without sending; UI shows "not delivered, machine was offline"; dispatch re-plans (W5), prompt answers are dropped (W7) |
 | Harness crashed while offline | `PaneExited{goal_id}` is in the ring (never dropped); replayed after the snapshot, which already shows the pane dead; W6 evaluates the one-nudge rule once, keyed on the snapshot's fingerprint |
 | Provider error while offline | `HarnessCondition` with `cleared` pairs replay into history; current conditions come from the snapshot (requires `Snapshot.conditions[]`, 03g) |
 | Prompt appeared and vanished while offline | `PromptDetected` + `PromptGone` replay; the hub raises and retires in one batch; a prompt still showing must come from `Snapshot.prompts[]` (03g) |
-| Developer typed in a goal pane while offline | `AvailabilityChanged{reason="keystroke"}` in the ring; W6's "human at keyboard" suppression applies from the replayed timestamp |
+| Developer typed in a goal pane while offline | `PaneInput` in the ring (coalesced, latest time) and `TmuxPane.last_input_time` in the snapshot; W6's "human at keyboard" suppression applies from that time |
 | Work tracker / code host unavailable at reconnect | W4 lag rises; verification waits; dispatch stays paused while lag exceeds its threshold |
 | Flapping network (reconnect every few seconds) | Each reconnect costs a snapshot; the agent rate-limits reconnects to one per 5 s and the hub to one Hello per machine per 5 s; `fleet_hub_reconnects_total` shows it |
 | Ring replay floods the hub after a long outage | Replay is rate-limited per agent; the writer batches; HTTP/2 flow control blocks the agent, never the hub's other machines (per-stream windows) |

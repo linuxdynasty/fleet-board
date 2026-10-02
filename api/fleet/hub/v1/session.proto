@@ -40,6 +40,16 @@ message Pane {
   string model = 17;
   // Open triage items for this pane, so the session view can draw strips.
   repeated TriageItemId open_triage = 18;
+  // Where the pane works (repo, checkout, branch, dirty), when under an
+  // allowed root. The planner reuses only panes whose repo is the goal's and
+  // whose checkout is clean.
+  fleet.type.v1.PaneWorkdir workdir = 19;
+  // Last time a person typed into the pane (the typing banner, and the
+  // 10-minute hold-off of nudges and goal control). Volatile: at most one
+  // Watch message per 5 s when only it changes.
+  google.protobuf.Timestamp last_input_time = 20;
+  // The harness's ready pattern is on screen. Volatile like activity.
+  bool ready_pattern_showing = 21;
 }
 
 // SessionWindow is one window as the status bar shows it.
@@ -171,15 +181,17 @@ message CreateSessionResponse {
   Operation operation = 2;
 }
 
-// SendKeysRequest sends SendKeys (F3). Not for prompt answers: those go
-// through DecideApproval, so every answer is bound to its prompt_id and
-// audited once.
+// SendKeysRequest sends SendKeys (F3) with purpose OPERATOR_TEXT: free text
+// an operator types as a hint, only at a ready prompt with an empty input
+// line (PANE_BUSY otherwise). Not for prompt answers: those go through
+// DecideApproval, so every answer is bound to its prompt_id and audited
+// once. Nudges and resume text are the scheduler's (SendKeysPurpose), never
+// an API field.
 message SendKeysRequest {
   string request_id = 1;
   fleet.type.v1.SessionId session = 2;
   fleet.type.v1.PaneKey pane = 3;
   repeated fleet.type.v1.KeyInput keys = 4;
-  bool require_empty_input_line = 5;
 }
 
 // SendKeysResponse.
@@ -235,15 +247,18 @@ message CapturePaneResponse {
   Operation operation = 1;
 }
 
-// SetSessionAvailabilityRequest sends SetSessionAvailability (E11).
-message SetSessionAvailabilityRequest {
+// SetPaneAvailabilityRequest sends SetPaneAvailability (E11) with reason
+// MARKED_ON_BOARD or CLEARED_ON_BOARD. The pane must run a harness; a session
+// with several harness panes needs the one chosen.
+message SetPaneAvailabilityRequest {
   string request_id = 1;
   fleet.type.v1.SessionId session = 2;
-  bool available_for_work = 3;
+  fleet.type.v1.PaneKey pane = 3;
+  bool available_for_work = 4;
 }
 
-// SetSessionAvailabilityResponse.
-message SetSessionAvailabilityResponse {
+// SetPaneAvailabilityResponse.
+message SetPaneAvailabilityResponse {
   Operation operation = 1;
 }
 

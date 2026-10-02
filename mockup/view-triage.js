@@ -104,7 +104,7 @@ function triageAct(it, act) {
     ui.confirm = { id: it.id, label: `Answer “${val}”: the agent presses ${key} in this prompt and nowhere else.`, cmd: answerCmd(s, it.p, key), go: "Send", what: `answered prompt ${it.p.promptId}: ${val}`,
       note: "If the prompt is gone by then, nothing is typed. If the machine stays offline for 2 minutes, the answer is dropped.", raw: "PROMPT_GONE if the prompt left the screen · not_after_time 2 min → EXPIRED", danger: val !== it.p.def && it.p.destructive };
   }
-  if (act === "hint") ui.confirm = { id: s.id, label: "Type a hint into the goal session (it keeps its goal):", cmd: sendKeysCmd(s, "Start the test DB with make db-up, then retry.", { require_empty_input_line: true }), go: "Send hint", what: "sent a hint", note: "Typed only when the input line is empty.", raw: "PANE_BUSY otherwise" };
+  if (act === "hint") ui.confirm = { id: s.id, label: "Type a hint into the goal session (it keeps its goal):", cmd: sendKeysCmd(s, "Start the test DB with make db-up, then retry.", {}), go: "Send hint", what: "sent a hint", note: "Typed only when the input line is empty.", raw: "PANE_BUSY otherwise" };
   if (act === "reopen") {
     const g = goalLine(`${crName(s)} is still open with failing checks; drive it to merged`, acctFor(s.harness), s.repo);
     ui.confirm = { id: s.id, label: "Put the goal back to work through the harness's own /goal:", cmd: harnessCmd(s, "/goal", "goal", g.text.replace(/^\/goal /, "")), go: "Reopen goal", what: "reopened goal", reopen: true, note: `The agent will type: ${g.text}`, raw: g.note };

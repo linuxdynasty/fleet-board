@@ -35,6 +35,10 @@ enum TriageKind {
   TRIAGE_KIND_HOSTNAME_MISMATCH = 17;
   TRIAGE_KIND_DIRTY_WORKTREE = 18;
   TRIAGE_KIND_LIMIT_WAIT = 19;
+  // A person interrupted or paused the goal at the machine, or an operator
+  // paused it, and it waits for a decision to resume (01d, 03c). Never
+  // resolved by a nudge.
+  TRIAGE_KIND_GOAL_PAUSED = 30;
   TRIAGE_KIND_OTHER = 63;
 }
 

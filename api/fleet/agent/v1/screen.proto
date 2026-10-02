@@ -35,9 +35,11 @@ message PromptDetected {
 
 // HarnessCondition (E12): a state the harness shows that is neither a prompt
 // nor normal work, such as "Meta Model API server error (HTTP 500) · retrying
-// in 7s · attempt 6/10" (observed 2026-10-01). Never dropped under
+// in 7s · attempt 6/10" (observed 2026-10-01), or a goal a person interrupted
+// or paused ("Interrupted", "Goal paused"). Never dropped under
 // backpressure. A condition is reported when it appears and again with
-// `cleared` when it leaves the screen.
+// `cleared` when it leaves the screen; the ones showing now are in
+// Snapshot.conditions.
 message HarnessCondition {
   fleet.type.v1.PaneKey pane = 1;
   fleet.type.v1.Harness harness = 2;
@@ -55,9 +57,15 @@ message HarnessCondition {
   string text = 9;
   google.protobuf.Timestamp since_time = 10;
   bool cleared = 11;
+  // From the goal registry, not the pane environment.
   fleet.type.v1.GoalId goal_id = 12;
   // For RATE_LIMITED and USAGE_LIMIT: when the limit resets, as the harness
   // shows it ("resets 9:29 PM"), resolved to UTC. The hub holds the goal in
   // LIMIT_WAIT until then and resumes it (02-contracts.md).
   google.protobuf.Timestamp resets_time = 13;
+  // For GOAL_INTERRUPTED and GOAL_PAUSED: who or what paused the goal. The
+  // hub maps DEVELOPER_INPUT and HARNESS to a pause that is never resumed
+  // automatically (GoalPauseReason OWNER_AT_MACHINE), FLEET_COMMAND to the
+  // pause the hub itself asked for, LIMIT to the limit wait.
+  fleet.type.v1.GoalPauseCause pause_cause = 14;
 }

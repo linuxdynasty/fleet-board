@@ -75,7 +75,7 @@ message Event {
     PromptDetected prompt_detected = 37;
     // E6 companion: the prompt is no longer on screen.
     PromptGone prompt_gone = 38;
-    // E7 (v2).
+    // E7 (v2): the ready pattern as a level, shown or gone.
     HarnessReady harness_ready = 39;
     // E8 (v2).
     HarnessHookEvent harness_hook = 40;
@@ -83,8 +83,14 @@ message Event {
     PaneHarnessSession pane_harness_session = 41;
     // E11, never dropped; the dispatcher depends on it.
     AvailabilityChanged availability = 42;
-    // Provider error, rate limit or similar shown by the harness (E12).
+    // Provider error, rate limit, goal interrupted or paused, or similar
+    // shown by the harness (E12).
     HarnessCondition harness_condition = 43;
+    // E13: a person typed into a pane. COALESCE, key "input:<pane>".
+    PaneInput pane_input = 44;
+    // E1: a mutable attribute of a pane changed (harness, current command,
+    // working directory, dead, capture...). COALESCE, key "pane:<pane>".
+    PaneChanged pane_changed = 45;
 
     // G2, never dropped.
     GoalState goal_state = 50;
@@ -92,6 +98,8 @@ message Event {
     BranchState branch_state = 51;
     // H1: checkout or worktree appeared or disappeared.
     RepoEvent repo = 52;
+    // G5: a goal registry entry was written, updated or removed.
+    GoalRegistryChanged goal_registry = 53;
 
     // K2, droppable (also summarized in Heartbeat).
     SpoolStatus spool_status = 60;
@@ -123,6 +131,9 @@ enum ChangeKind {
   CHANGE_KIND_CREATED = 1;
   CHANGE_KIND_RENAMED = 2;
   CHANGE_KIND_CLOSED = 3;
+  // An attribute other than the name changed (a window's automatic_rename,
+  // a pane's harness). Carries the object after the change.
+  CHANGE_KIND_UPDATED = 4;
 }
 
 // TmuxServerEvent: a server started (full inventory follows in sessions) or
@@ -132,7 +143,9 @@ message TmuxServerEvent {
   TmuxServer server = 2;
 }
 
-// SessionEvent carries the session after the change (closed: ids only).
+// SessionEvent carries the session after the change (closed: ids only). A
+// session with internal = true (attach view, probe server) is reported like
+// any other so the hub's picture of tmux is complete; the hub drops it.
 message SessionEvent {
   ChangeKind kind = 1;
   fleet.type.v1.TmuxServerKind server_kind = 2;
@@ -153,11 +166,35 @@ message PaneCreated {
   TmuxPane pane = 1;
 }
 
+// PaneChanged (E1): the pane after a change to a mutable attribute that no
+// other event carries: harness (a developer starts `claude` in a shell
+// pane), current_command, workdir, harness_session_id, goal, dead,
+// log_capture, size. Activity, output time, input time, availability and
+// ready state have their own events and never raise this one. Without it the
+// hub's Session view and every harness-dependent rule would be stale until
+// the next reconnect.
+message PaneChanged {
+  TmuxPane pane = 1;
+}
+
+// PaneInput (E13): someone typed into the pane. Goal panes are never idle,
+// so this is the only carrier of "a person is at the keyboard": it holds
+// off nudges and goal control (03c) and drives the typing banner. Sent at
+// most once per 10 s per pane, latest wins. How the agent detects it is in
+// 02h, "Developer input"; keys the agent itself sent are not input.
+message PaneInput {
+  fleet.type.v1.PaneKey pane = 1;
+  google.protobuf.Timestamp input_time = 2;
+  // The goal bound to the pane at that moment, if any.
+  fleet.type.v1.GoalId goal = 3;
+}
+
 // PaneExited (E3).
 message PaneExited {
   fleet.type.v1.PaneKey pane = 1;
   int32 exit_status = 2;
-  // Goal that was running there, if any, so "stopped without DONE" is cheap.
+  // Goal the registry had bound to the pane, if any, so "stopped without
+  // DONE" is cheap. The entry is removed after this event.
   fleet.type.v1.GoalId goal_id = 3;
   // tmux remain-on-exit kept the pane; false means the pane is gone.
   bool remains = 4;
@@ -188,12 +225,17 @@ message PromptGone {
   fleet.type.v1.PaneKey pane = 2;
 }
 
-// HarnessReady (E7, v2): the adapter's ready pattern matched.
+// HarnessReady (E7, v2): the adapter's ready pattern appeared or went away.
+// A level fact, mirrored in TmuxPane.ready_pattern_showing, so a reconnect
+// snapshot rebuilds it. COALESCE, key "ready:<pane>".
 message HarnessReady {
   fleet.type.v1.PaneKey pane = 1;
   fleet.type.v1.Harness harness = 2;
   // True after a resume rather than a fresh start.
   bool resumed = 3;
+  // True when the pattern is showing now; false when it left the screen (a
+  // turn started, a prompt opened).
+  bool showing = 4;
 }
 
 // HookEventKind is the normalized hook event (E8, v2).
@@ -203,7 +245,24 @@ enum HookEventKind {
   HOOK_EVENT_KIND_SESSION_STOP = 2;
   HOOK_EVENT_KIND_TURN_END = 3;
   HOOK_EVENT_KIND_PERMISSION_REQUEST = 4;
-  HOOK_EVENT_KIND_GOAL_WRITTEN = 5;
+  // Codex's and Muse's Interrupt hook. Claude Code has none: its interrupt
+  // is read from the screen (01d).
+  HOOK_EVENT_KIND_INTERRUPT = 5;
+  // UserPromptSubmit, or PreToolUse where a harness fires no prompt hook for
+  // /goal lines (Codex). The first one after registration is where the
+  // harness session id is learned for a reused pane (E9).
+  HOOK_EVENT_KIND_USER_PROMPT = 6;
+}
+
+// HookDecision is what a fleet Stop hook decided, so a guard that blocked
+// can be told from one that never fired (03c treats the latter as a
+// finding).
+enum HookDecision {
+  HOOK_DECISION_UNSPECIFIED = 0;
+  HOOK_DECISION_ALLOW = 1;
+  // The Stop guard refused the stop: the goal file says unfinished and
+  // nothing watches it.
+  HOOK_DECISION_BLOCK = 2;
 }
 
 // HarnessHookEvent (E8, v2): what the harness hooks report.
@@ -215,7 +274,11 @@ message HarnessHookEvent {
   string harness_session_id = 4;
   // Harness's own event name, for unmapped kinds. Untrusted text.
   string raw_event_name = 5;
+  // From the agent's goal registry (never only from the pane environment).
   fleet.type.v1.GoalId goal_id = 6;
+  // For kind SESSION_STOP and TURN_END of a goal pane: the Stop guard's
+  // answer.
+  HookDecision decision = 7;
 }
 
 // PaneHarnessSession (E9).
@@ -227,6 +290,17 @@ message PaneHarnessSession {
   // Where the harness keeps its transcript, for K3; path only, never read
   // from credential or config files.
   string transcript_path = 4;
+  // The goal the registry binds to the pane, and how; set when this event
+  // completed a registration entry's harness_session_id.
+  fleet.type.v1.GoalId goal = 5;
+  GoalBindingSource binding = 6;
+}
+
+// GoalRegistryChanged (G5): one registry entry after the change (removed:
+// the entry as it was). The snapshot carries the whole registry.
+message GoalRegistryChanged {
+  ChangeKind kind = 1;
+  GoalRegistration registration = 2;
 }
 
 // AvailabilityChanged (E11), never dropped.
@@ -235,9 +309,7 @@ message AvailabilityChanged {
   fleet.type.v1.SessionId session_id = 2;
   fleet.type.v1.Availability from = 3;
   fleet.type.v1.Availability to = 4;
-  // Short machine reason: "keystroke", "goal_merged", "marked_on_board",
-  // "output", "idle_threshold".
-  string reason = 5;
+  fleet.type.v1.AvailabilityReason reason = 5;
 }
 
 // RepoEvent (H1).

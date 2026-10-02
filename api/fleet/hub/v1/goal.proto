@@ -32,7 +32,9 @@ enum GoalPhase {
   // Stopped without DONE; one corrective nudge pending or sent.
   GOAL_PHASE_STOPPED = 8;
   GOAL_PHASE_COOLDOWN = 9;
-  // Paused by an operator, the review-loop cap or the opt-in reserve rule.
+  // Paused by an operator, a person at the machine (interrupt), the
+  // review-loop cap or the opt-in reserve rule; GoalStatus.pause_reason says
+  // which. No nudge and no no-progress counting while paused.
   GOAL_PHASE_PAUSED = 10;
   // A usage or rate limit stopped the harness (HarnessCondition with
   // resets_time). The hub resumes it at limit_wait_until_time with the harness's
@@ -50,6 +52,24 @@ enum GoalPhase {
   GOAL_PHASE_PANE_LOST = 17;
   // Failed to start on three machines; manual dispatch only.
   GOAL_PHASE_MANUAL_ONLY = 18;
+}
+
+// GoalPauseReason says why a goal is PAUSED, and with it whether the hub may
+// resume it. Only RESERVE resumes by itself (at auto_resume_time); the other
+// three wait for a person. A usage or rate limit is not a pause: it is the
+// LIMIT_WAIT phase.
+enum GoalPauseReason {
+  GOAL_PAUSE_REASON_UNSPECIFIED = 0;
+  // An operator paused it through ControlGoal.
+  GOAL_PAUSE_REASON_OPERATOR = 1;
+  // A person at the machine interrupted or paused it (HarnessCondition kind
+  // GOAL_INTERRUPTED, or GOAL_PAUSED with cause DEVELOPER_INPUT or HARNESS).
+  // Their decision: never nudged, never resumed automatically.
+  GOAL_PAUSE_REASON_OWNER_AT_MACHINE = 2;
+  // The review-loop cap was hit (03c).
+  GOAL_PAUSE_REASON_REVIEW_LOOP = 3;
+  // The opt-in reserve rule paused it; resumes when the bucket resets.
+  GOAL_PAUSE_REASON_RESERVE = 4;
 }
 
 // GoalDefinition is what was dispatched: what the goal works on, where and
@@ -114,6 +134,19 @@ message GoalStatus {
   fleet.type.v1.CommandId last_operation = 27;
   // Exactly what was typed (StartGoalResult.typed_goal_line).
   string typed_goal_line = 28;
+
+  // Set while phase is PAUSED.
+  GoalPauseReason pause_reason = 40;
+  // The operator who paused it, for reason OPERATOR; unset otherwise (the
+  // agent cannot say who was at the machine).
+  fleet.type.v1.Principal paused_by = 41;
+  // review_rounds when the cap last paused the goal. The cap compares
+  // review_rounds minus this, so an operator's resume is not re-paused at
+  // once by the rounds that already counted.
+  uint32 review_rounds_baseline = 42;
+  // For RESERVE: when the hub resumes the goal (the deciding bucket's
+  // resets_time). Unset for the reasons that wait for a person.
+  google.protobuf.Timestamp auto_resume_time = 43;
 }
 
 // Goal is one dispatched goal and its run history head.
@@ -213,12 +246,15 @@ message PreflightGoalResponse {
   GoalPlacement placement = 3;
 }
 
-// GoalAction is an operator's intent on a running goal.
+// GoalAction is an operator's intent on a running goal. The hub translates
+// it with the machine's MachineHarness.goal_control (the adapter's own
+// account of the installed version), not a table of harness names.
 enum GoalAction {
   GOAL_ACTION_UNSPECIFIED = 0;
-  // Claude: Interrupt; Codex, Muse: /goal pause.
+  // pause_mode SUBCOMMAND: /goal pause; INTERRUPT: Interrupt.
   GOAL_ACTION_PAUSE = 1;
-  // Claude: type "continue"; Codex, Muse: /goal resume.
+  // resume_mode SUBCOMMAND: /goal resume; TYPE_TEXT: SendKeys
+  // GOAL_RESUME with resume_text.
   GOAL_ACTION_RESUME = 2;
   // /goal edit <text> where the harness has it.
   GOAL_ACTION_EDIT = 3;

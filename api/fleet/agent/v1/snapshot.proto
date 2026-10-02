@@ -99,6 +99,9 @@ message HarnessInfo {
   fleet.type.v1.VersionSupport version_support = 12;
   // Per parser feature, for UNVERIFIED_PARSING: which reads are trusted.
   repeated fleet.type.v1.ParserSupport parser_support = 13;
+  // The /goal subcommands this version offers and how pause and resume are
+  // done, so the hub never hard-codes a harness name (G4, 01b).
+  fleet.type.v1.GoalControl goal_control = 14;
 }
 
 // ---------------------------------------------------------------------------
@@ -118,7 +121,9 @@ message TmuxPane {
   // Harness session id learned through hooks (E9). Untrusted text.
   string harness_session_id = 7;
   // FLEET_* environment tags: FLEET_SESSION_ID, FLEET_OWNER, FLEET_PANE_KEY,
-  // FLEET_GOAL_ID. Empty for the developer's own panes.
+  // FLEET_GOAL_ID. Empty for the developer's own panes. The environment of a
+  // running harness cannot change, so after a pane is reused FLEET_GOAL_ID is
+  // missing or the previous goal's: use `goal` below, never this tag.
   map<string, string> fleet_tags = 8;
   bool started_by_fleet = 9;
   fleet.type.v1.Activity activity = 10;
@@ -131,6 +136,17 @@ message TmuxPane {
   bool log_capture = 15;
   uint32 cols = 16;
   uint32 rows = 17;
+  // Where the pane works, when under an allowed root (repo, checkout, branch,
+  // dirty). Reuse of a pane for a goal depends on it (02h, "Reuse").
+  fleet.type.v1.PaneWorkdir workdir = 18;
+  // Last time a person typed into this pane (02h, "Developer input"). Level
+  // fact; PaneInput events carry the changes. Unset = never seen.
+  google.protobuf.Timestamp last_input_time = 19;
+  // The adapter's ready pattern is on screen now (E7 as a level, not an
+  // edge). False while a turn runs, a prompt shows or the harness is not up.
+  bool ready_pattern_showing = 20;
+  // The goal the agent's registry binds to this pane, empty when none.
+  fleet.type.v1.GoalId goal = 21;
 }
 
 // TmuxWindow is a window as the status bar shows it.
@@ -162,6 +178,13 @@ message TmuxSession {
   // FLEET_OWNER holds (Principal.id) and fills id alone; the hub resolves
   // name, role and kind.
   fleet.type.v1.Principal owner_principal = 10;
+  // Created by fleet-board for its own use: a grouped attach-view session
+  // (attach_view) or any session on the probe server. The hub never makes a
+  // Session of it, never lists its panes (a view shares its windows, and so
+  // its PaneKeys, with the real session) and never counts its clients in
+  // attached_clients. attached_clients here already excludes the agent's own
+  // control client and attach clients.
+  bool internal = 11;
 }
 
 // TmuxServer is one tmux server the agent observes.
@@ -202,6 +225,47 @@ message GoalState {
   // Path of the goal file relative to the worktree, for display.
   string goal_file = 13;
   google.protobuf.Timestamp observed_time = 14;
+  // Directory the goal file lives in (git rev-parse --show-toplevel of the
+  // goal file's directory) and its branch, filled for every fleet goal and
+  // re-sent when they change. For a REPO_DRIVER goal this is how the hub
+  // learns the driver's worktree and branch: Goal.status.branch and the
+  // change-request lookup by head_ref key on it. Untrusted text.
+  string worktree_path = 15;
+  string branch = 16;
+}
+
+// GoalBindingSource says how the agent bound a goal to a pane.
+enum GoalBindingSource {
+  GOAL_BINDING_SOURCE_UNSPECIFIED = 0;
+  // StartGoal or RegisterGoal wrote the entry before typing the goal.
+  GOAL_BINDING_SOURCE_REGISTRY = 1;
+  // Rebuilt after state loss from FLEET_GOAL_ID in the pane environment,
+  // which only a window the fleet created can have. A reused pane cannot be
+  // rebuilt this way: the hub re-sends RegisterGoal (02h).
+  GOAL_BINDING_SOURCE_ENV = 2;
+}
+
+// GoalRegistration is one entry of the agent's goal registry, the single
+// way a goal is identified on a machine for every harness (ADR 0019). Hooks
+// and goal-file attribution ask the registry; FLEET_GOAL_ID is only a fast
+// path for a new window. Entries are written by StartGoal (step
+// register_goal) or RegisterGoal, and removed on ReleaseGoal, pane exit,
+// PruneWorktree or when another goal registers in the same pane.
+message GoalRegistration {
+  fleet.type.v1.GoalId goal = 1;
+  fleet.type.v1.PaneKey pane = 2;
+  fleet.type.v1.Harness harness = 3;
+  // Worktree or checkout the goal works in. In REPO_DRIVER mode this is the
+  // main checkout and is never the hook's match key (a developer's other
+  // sessions run there): the match is (pane, harness_session_id), then the
+  // goal file.
+  string worktree_path = 4;
+  // Learned from the first UserPromptSubmit or PreToolUse hook after
+  // registration (E9); empty until then. Untrusted text.
+  string harness_session_id = 5;
+  GoalBindingSource source = 6;
+  google.protobuf.Timestamp register_time = 7;
+  bool repo_driver = 8;
 }
 
 // BranchState (H3) for one goal worktree.
@@ -234,6 +298,22 @@ message RepoCheckout {
   // Goal-hook state per harness for this checkout (03g change #7), so the
   // consent form is known before EnsureGoalHooks runs.
   repeated fleet.type.v1.HarnessGoalHooks goal_hooks = 8;
+  // Remote that `repo` was derived from: `origin` unless the local policy
+  // names another (02h, "Repo identity"). Empty when the checkout has no
+  // remote, in which case `repo` is unset and the checkout is never a goal
+  // target.
+  string remote_name = 9;
+  // Every remote of the checkout with its normalized repo, so a fork setup
+  // (origin = fork, upstream = the watched repo) is visible. No URLs: they
+  // can embed credentials.
+  repeated GitRemote remotes = 10;
+}
+
+// GitRemote is one git remote reduced to its repo.
+message GitRemote {
+  // Name as git lists it. Untrusted text.
+  string name = 1;
+  fleet.type.v1.RepoRef repo = 2;
 }
 
 // RepoAccess (H4): the forge CLI's view of the signed-in user's access to a
@@ -345,6 +425,9 @@ message Snapshot {
   // is rebuilt at once after a reconnect even when the ring was trimmed.
   repeated PromptDetected prompts = 23;
   repeated HarnessCondition conditions = 24;
+  // The goal registry, complete, so the hub finds a lost or stale entry and
+  // re-sends RegisterGoal or ReleaseGoal (02h, "Goal registry").
+  repeated GoalRegistration goal_registry = 28;
   // Agent-minted id shared by every part of one snapshot.
   string snapshot_id = 25;
   // 0-based part number and the total; part_count 0 or 1 = not split.

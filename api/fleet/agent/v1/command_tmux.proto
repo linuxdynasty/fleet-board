@@ -102,6 +102,11 @@ message EnsureWindow {
   fleet.type.v1.GoalId goal_id = 7;
   // Harness profile to start under; empty = the harness default.
   string profile = 8;
+  // With resume: the exact harness conversation to resume, from
+  // PaneHarnessSession (E9), instead of the harness's "last" one, which is
+  // the wrong conversation when several share a directory. Empty = adapter
+  // default.
+  string harness_session_id = 9;
 }
 
 // EnsureWindowResult.
@@ -112,14 +117,18 @@ message EnsureWindowResult {
 }
 
 // SendKeys (F3). NOT idempotent: a retry after UNKNOWN_OUTCOME is refused;
-// the hub asks a person. Rate-limited per settings.
+// the hub asks a person. Rate-limited per settings. The purpose decides the
+// gate (02h, "SendKeys purposes"): PROMPT_ANSWER needs the E6 detection
+// verified and the prompt still on screen; every other purpose types text
+// and needs the ready pattern showing and an empty input line (else
+// PANE_BUSY), so nothing is queued into a running turn.
 message SendKeys {
   fleet.type.v1.PaneKey pane = 1;
   repeated fleet.type.v1.KeyInput keys = 2;
-  // Required when answering a prompt; PROMPT_GONE if it left the screen.
+  // Required for PROMPT_ANSWER and refused for any other purpose;
+  // PROMPT_GONE if the prompt left the screen.
   fleet.type.v1.PromptId answering_prompt = 3;
-  // Refuse with PANE_BUSY unless the input line is empty (goal typing).
-  bool require_empty_input_line = 4;
+  fleet.type.v1.SendKeysPurpose purpose = 4;
 }
 
 // Interrupt (F4): C-c to the pane. Idempotent in effect.
@@ -135,6 +144,8 @@ message RespawnPane {
   bool resume = 3;
   // Harness profile to restart under; empty = the harness default.
   string profile = 4;
+  // With resume: resume this conversation, not "last" (see EnsureWindow).
+  string harness_session_id = 5;
 }
 
 // KillWindow (F6). Dangerous kind; may need local approval. Never used on
@@ -184,12 +195,18 @@ message RunHarnessCommandResult {
   string screen = 2;
 }
 
-// SetSessionAvailability (E11): the developer marked a session "available
-// for work" on the board (or cleared it). Idle is still decided locally.
-message SetSessionAvailability {
-  SessionTarget session = 1;
+// SetPaneAvailability (E11): the developer marked a pane "available for
+// work" on the board, or cleared it, or the hub frees the pane of a merged
+// goal. Availability is a fact about one harness pane, never a session: a
+// session often holds several harness panes and a mark on it could not say
+// which is free. Idle is still decided locally. The agent keeps each mark in
+// its state directory keyed by pane key (which includes server_start_id),
+// drops it when the pane dies, and reports it in TmuxPane.availability on
+// every snapshot so the hub can re-send a missing one.
+message SetPaneAvailability {
+  fleet.type.v1.PaneKey pane = 1;
   bool available_for_work = 2;
-  // Echoed in AvailabilityChanged.reason (03g change #6): "marked_on_board",
-  // "goal_merged", "cleared_on_board".
-  string reason = 3;
+  // Echoed in AvailabilityChanged.reason: MARKED_ON_BOARD,
+  // CLEARED_ON_BOARD or GOAL_MERGED.
+  fleet.type.v1.AvailabilityReason reason = 3;
 }

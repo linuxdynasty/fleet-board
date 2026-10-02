@@ -1,6 +1,7 @@
 // fleet.type.v1 harness and pane values: command classes and catalogs,
-// goal-hook state, pane activity and availability, goal-line states, keys,
-// prompt options, harness condition kinds, version support and log streams.
+// goal-hook state, goal-control support, pane activity and availability,
+// goal-line states, keys and why they are sent, prompt options, harness
+// condition kinds, version support and log streams.
 // The agent reports them; the hub API shows them and sends keys and harness
 // commands with them.
 syntax = "proto3";
@@ -51,12 +52,31 @@ message GoalHooksState {
   string hook_hash = 4;
   // True when the repo ships its own hooks (eshu) and fleet left them alone.
   bool repo_ships_own = 5;
-  // Codex only: installed but not yet approved in the harness's /hooks
-  // (trust is per hook hash). The agent never approves it (01d).
-  bool trust_pending = 6;
+  // Whether the harness runs these hooks. Codex and Muse run a new or
+  // changed hook only after the user approves it (trust is per hook hash);
+  // the agent never approves it (01d). UNKNOWN when the agent cannot tell,
+  // so "unknown" is never read as "trusted".
+  HookTrustState trust = 6;
+  // What the person types to approve, for the Triage card: "/hooks" in Codex,
+  // "muse plugins approve fleet-goal-hooks" for Muse. Empty unless trust is
+  // PENDING or UNKNOWN. Agent-written text, not harness output.
+  string trust_approve_command = 8;
   // User-level config file the entries were merged into, e.g.
   // ~/.claude/settings.json. Hooks are user level, inert unless FLEET_GOAL_ID.
   string config_path = 7;
+}
+
+// HookTrustState is the per-harness trust of the installed goal hooks.
+enum HookTrustState {
+  HOOK_TRUST_STATE_UNSPECIFIED = 0;
+  // The agent cannot read the harness's trust record (or has not looked).
+  HOOK_TRUST_STATE_UNKNOWN = 1;
+  // Installed, not yet approved in the harness. Goals still run; only E8
+  // events and the Stop guard are missing.
+  HOOK_TRUST_STATE_PENDING = 2;
+  HOOK_TRUST_STATE_TRUSTED = 3;
+  // The harness needs no approval for user-level hooks (Claude Code).
+  HOOK_TRUST_STATE_NOT_REQUIRED = 4;
 }
 
 // HarnessGoalHooks is the goal-hook state of one harness in one checkout
@@ -65,6 +85,58 @@ message GoalHooksState {
 message HarnessGoalHooks {
   Harness harness = 1;
   GoalHooksState state = 2;
+}
+
+// ---------------------------------------------------------------------------
+// Goal control support (G4), per harness version
+// ---------------------------------------------------------------------------
+
+// GoalSubcommand is a /goal subcommand a harness version offers (01b).
+enum GoalSubcommand {
+  GOAL_SUBCOMMAND_UNSPECIFIED = 0;
+  GOAL_SUBCOMMAND_SET = 1;
+  GOAL_SUBCOMMAND_PAUSE = 2;
+  GOAL_SUBCOMMAND_RESUME = 3;
+  GOAL_SUBCOMMAND_EDIT = 4;
+  GOAL_SUBCOMMAND_CLEAR = 5;
+}
+
+// GoalPauseMode says how a goal is paused on this harness.
+enum GoalPauseMode {
+  GOAL_PAUSE_MODE_UNSPECIFIED = 0;
+  // RunHarnessCommand{"/goal", "pause"} (Codex, Muse).
+  GOAL_PAUSE_MODE_SUBCOMMAND = 1;
+  // Interrupt: the harness keeps the goal active but stops the turn
+  // (Claude Code 2.1.286 has no pause subcommand).
+  GOAL_PAUSE_MODE_INTERRUPT = 2;
+  GOAL_PAUSE_MODE_NONE = 3;
+}
+
+// GoalResumeMode says how a paused or interrupted goal is resumed.
+enum GoalResumeMode {
+  GOAL_RESUME_MODE_UNSPECIFIED = 0;
+  // RunHarnessCommand{"/goal", "resume"}.
+  GOAL_RESUME_MODE_SUBCOMMAND = 1;
+  // SendKeys{purpose GOAL_RESUME} typing GoalControl.resume_text.
+  GOAL_RESUME_MODE_TYPE_TEXT = 2;
+  GOAL_RESUME_MODE_NONE = 3;
+}
+
+// GoalControl is what the adapter knows about /goal for the installed harness
+// version, so the hub never hard-codes a harness name: it sends only what is
+// listed here and falls back (Interrupt, a person) when a mode is NONE. The
+// adapter fills it from the version's fixtures, never by trying commands.
+message GoalControl {
+  repeated GoalSubcommand subcommands = 1;
+  GoalPauseMode pause_mode = 2;
+  GoalResumeMode resume_mode = 3;
+  // Text typed to resume when resume_mode is TYPE_TEXT ("continue" for
+  // Claude Code). Adapter-owned, so a harness update changes it in one place.
+  string resume_text = 4;
+  // True when resuming after a usage limit has been probed on this version.
+  // False means the hub's limit wait uses the same resume but marks the
+  // result unverified (02-contracts.md, "Limit wait").
+  bool limit_resume_verified = 5;
 }
 
 // ---------------------------------------------------------------------------
@@ -139,6 +211,27 @@ message Availability {
   google.protobuf.Timestamp since_time = 3;
 }
 
+// AvailabilityReason says why a pane's availability changed (E11) or why the
+// board changed it. Developer input is not a reason here: it is its own
+// signal, TmuxPane.last_input_time and the PaneInput event (02h).
+enum AvailabilityReason {
+  AVAILABILITY_REASON_UNSPECIFIED = 0;
+  // The developer marked the pane available on the board.
+  AVAILABILITY_REASON_MARKED_ON_BOARD = 1;
+  // The board mark was removed, or the pane took a goal.
+  AVAILABILITY_REASON_CLEARED_ON_BOARD = 2;
+  // The pane's goal was verified merged (the hub's SetPaneAvailability).
+  AVAILABILITY_REASON_GOAL_MERGED = 3;
+  // Output resumed, so the pane is no longer idle.
+  AVAILABILITY_REASON_OUTPUT = 4;
+  // The idle threshold passed with the ready pattern showing.
+  AVAILABILITY_REASON_IDLE_THRESHOLD = 5;
+  // A goal was started or registered in the pane.
+  AVAILABILITY_REASON_GOAL_STARTED = 6;
+  // The pane exited or its harness changed.
+  AVAILABILITY_REASON_PANE_CHANGED = 7;
+}
+
 // GoalLineState is the parsed first line of a goal file (design.md).
 enum GoalLineState {
   GOAL_LINE_STATE_UNSPECIFIED = 0;
@@ -155,6 +248,25 @@ enum GoalLineState {
 // ---------------------------------------------------------------------------
 // Keys (F3) and prompts (E6)
 // ---------------------------------------------------------------------------
+
+// SendKeysPurpose is why a SendKeys types what it types. The agent gates
+// each purpose differently, so a nudge is never mistaken for a prompt answer
+// and free text is never typed into a running turn (02h, "SendKeys purposes").
+enum SendKeysPurpose {
+  // INVALID_ARGUMENT: every SendKeys states its purpose.
+  SEND_KEYS_PURPOSE_UNSPECIFIED = 0;
+  // Answers the prompt named by answering_prompt. Needs PARSER_FEATURE_PROMPT
+  // verified for the harness version (E6); PROMPT_GONE if it left the
+  // screen. No empty-line or ready check: a menu has neither.
+  SEND_KEYS_PURPOSE_PROMPT_ANSWER = 1;
+  // The corrective nudge for a stopped goal (03c). Hub-authored text, typed
+  // only into a pane bound to a fleet goal.
+  SEND_KEYS_PURPOSE_GOAL_NUDGE = 2;
+  // Resume text for a paused or limit-waiting goal (GoalControl.resume_text).
+  SEND_KEYS_PURPOSE_GOAL_RESUME = 3;
+  // Free text from an operator ("send a hint").
+  SEND_KEYS_PURPOSE_OPERATOR_TEXT = 4;
+}
 
 // NamedKey is the closed set of non-literal keys SendKeys may type.
 enum NamedKey {
@@ -206,8 +318,32 @@ enum HarnessConditionKind {
   HARNESS_CONDITION_KIND_SIGN_IN_REQUIRED = 4;
   // Network unreachable from the harness.
   HARNESS_CONDITION_KIND_NETWORK = 5;
+  // A person interrupted the goal at the machine (Esc, Ctrl-C): Claude shows
+  // "Interrupted", Codex "Goal paused", Muse "goal paused by interrupt". The
+  // goal is the person's to resume: no nudge, no automatic resume. Cleared
+  // when the goal runs again or ends.
+  HARNESS_CONDITION_KIND_GOAL_INTERRUPTED = 6;
+  // The harness shows the goal as paused, however it got there (/goal pause
+  // typed by a person or by the fleet, a limit). GoalPauseCause says who.
+  HARNESS_CONDITION_KIND_GOAL_PAUSED = 7;
   // Recognised as an error by the adapter but not classified.
   HARNESS_CONDITION_KIND_OTHER = 15;
+}
+
+// GoalPauseCause says who or what paused a goal, for conditions of kind
+// GOAL_INTERRUPTED and GOAL_PAUSED. The agent knows FLEET_COMMAND because it
+// typed the pause itself; DEVELOPER_INPUT when pane input preceded the pause.
+enum GoalPauseCause {
+  GOAL_PAUSE_CAUSE_UNSPECIFIED = 0;
+  // A person at the machine pressed a key just before (last_input_time).
+  GOAL_PAUSE_CAUSE_DEVELOPER_INPUT = 1;
+  // The harness paused itself with no input and no fleet command in flight.
+  GOAL_PAUSE_CAUSE_HARNESS = 2;
+  // An Interrupt or /goal pause the agent executed for the hub.
+  GOAL_PAUSE_CAUSE_FLEET_COMMAND = 3;
+  // A usage or rate limit; a USAGE_LIMIT or RATE_LIMITED condition is open
+  // too and owns the resume (02-contracts.md, "Limit wait").
+  GOAL_PAUSE_CAUSE_LIMIT = 4;
 }
 
 // ---------------------------------------------------------------------------

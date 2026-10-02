@@ -60,7 +60,7 @@ observed), so paths below read `Account.status.pacing` or `Machine.spec.labels`
 | Usage-limit card "resumes at …" | `Goal.status.phase = LIMIT_WAIT`, `limit_wait_until_time`; kind `LIMIT_WAIT` | `HarnessCondition.resets_time` (ADR 0018) |
 | "Sign in on the machine yourself" | no RPC | `/login`, `/connect` are `COMMAND_CLASS_DENY` (C4, F8) |
 | Stuck goal card, title in plain words ("… (nothing is watching it)"); raw line under details | `TriageItem.kind = STUCK`, `Goal.status.phase = STUCK`, `Goal.status.first_line` | `GoalState.state = BLOCKED_STUCK` (G2) |
-| "Send a hint…" preview | calls `SendKeys{session, pane, keys, require_empty_input_line: true}` | `SendKeys`; `PANE_BUSY` otherwise (F3) |
+| "Send a hint…" preview | calls `SendKeys{session, pane, keys}` (purpose `OPERATOR_TEXT`, implied) | `SendKeys{purpose}`; `PANE_BUSY` unless the ready prompt shows and the input line is empty (F3, 02h) |
 | "done? code host disagrees" card | `TriageItem.kind = DONE_DISAGREEMENT`, `Goal.status.phase = DISAGREE`, `ChangeRequest` | `GoalState.state = DONE` vs `ChangeRequest.state` (G2, ADR 0012) |
 | "Reopen goal…" preview | calls `ControlGoal{action: NOT_DONE}` or `EDIT` | `SendKeys` nudge or `RunHarnessCommand{"/goal", …}` (G4, F8) |
 | Reserve-reached card; "reading is from before the last reset" | `TriageItem.kind = PACING`, `Account.status.pacing{state = RESERVE, reading_stale}` | hub pacing over `LimitBucket` (design.md) |
@@ -77,7 +77,7 @@ observed), so paths below read `Account.status.pacing` or `Machine.spec.labels`
 | CI marks on change requests | `ChangeRequest.change_request.checks`, `merged_time`, `review_rounds` | `CheckSummary` (ADR 0012) |
 | Goal line on a card in plain words ("waiting on CI (watcher running)"); raw `BLOCKED: … WATCH=48213` under details | `Goal.status{line_state, first_line}` | `GoalState{state: GOAL_LINE_STATE_BLOCKED_WATCH, first_line, watch_pid, watch_alive}` (G2) |
 | Routine cards | `ListRoutines`; runs as `WorkItem` with `kind = ROUTINE`; "run now" calls `RunRoutine` | ADR 0018 |
-| "Next up … will use available session X" / "new window …" | calls `PreflightGoal` → `placement` (`reuse_session` / `in_session`), `hub_checks` | `StartGoal.reuse_pane` / `in_session`, `PreflightResult.would_reuse` (G3, E11) |
+| "Next up … will use available session X" / "new window …" | calls `PreflightGoal` → `placement` (`reuse_session` / `in_session`), `hub_checks`; candidates are panes whose `Pane.workdir.repo` is the goal's repo and not dirty | `StartGoal.reuse_pane` / `in_session`, `PreflightResult.would_reuse`, `SESSION_WORKDIR_MISMATCH`, `CHECKOUT_DIRTY` (G3, E11, 02h) |
 | Dispatch panel account list incl. "via OpenCode (manual only)" | `ListAccounts` → `spec.mode`, `spec.budget_kind`, `status.pacing.state = EXCLUDED` | `AccountIdentity.budget_kind` (01 §C, ADR 0008) |
 | "OpenCode has no /goal yet" reason | `Machine.status.harnesses[].catalog` has no `/goal` | `CommandCatalog`; `GOAL_SUBCOMMAND_UNSUPPORTED` (01b) |
 | HARNESS_VERSION_UNSUPPORTED reason (codex 0.157.1 on .124) | `MachineHarness.version_support`, `parser_support[]`, `health` | `HarnessInfo.version_support`; preflight `ReasonCode` 2 (C1, I1) |
@@ -109,7 +109,9 @@ lists every window on every machine; the Details drawer holds the controls.
 | "Session ended / machine offline / reconnect" notice over the terminal | `AttachClosed.reason` (`SESSION_ENDED`, `AGENT_OFFLINE`, `IDLE_TIMEOUT`, `HUB_CLOSED`) and `error.reason` | `TermClosed.reason` (J1) |
 | Terminal focus, typing, Ctrl keys, arrows, prefix keys | `AttachTerminalRequest.input` bytes; nothing is interpreted by the hub | `TermDown.input` (J1) |
 | "[detached …]" after prefix `d`; re-attach | `AttachTerminalRequest.close`; re-attach opens a new `AttachTerminal` | `CloseAttach`, `OpenAttach` (J1) |
-| "You're typing into a running goal (…)" banner | `Pane.goal` set and `Goal.status.phase` not `MERGED`/`CLOSED`/`CLEARED` | `FLEET_GOAL_ID`, `GoalState` (G2, ADR 0004) |
+| "You're typing into a running goal (…)" banner | `Pane.goal` set and `Goal.status.phase` not `MERGED`/`CLOSED`/`CLEARED` | the goal registry (`TmuxPane.goal`), `GoalState` (G2, 02h) |
+| "Someone is typing in this pane" | `Pane.last_input_time` within the last 10 min | `PaneInput`, `TmuxPane.last_input_time` (E13) |
+| "Paused at the machine — resume?" card | `TriageItem.kind = GOAL_PAUSED`, `Goal.status{phase = PAUSED, pause_reason = OWNER_AT_MACHINE}`; "Resume" calls `ControlGoal{RESUME}` | `HarnessCondition{GOAL_INTERRUPTED \| GOAL_PAUSED, pause_cause}` (E12) |
 | Read-only toggle | `AttachOpen.read_only` (forced for callers without `SESSIONS_WRITE`); `select` still allowed | `OpenAttach.read_only` (J1) |
 | "Destructive prompt … → Triage" in the banner | `Pane.open_triage[]` → `TriageItem`, `Approval` | `PromptDetected.destructive` (E6, F3) |
 | Condition and permission strips above the terminal | `Pane.open_triage[]` → `TriageItem.condition` / `.prompt` | `HarnessCondition`, `PromptDetected` (E12, E6) |
@@ -127,7 +129,7 @@ lists every window on every machine; the Details drawer holds the controls.
 | Details drawer: "Harness command…" palette, grouped by class, deny never shown | `Machine.status.harnesses[].catalog`; calls `RunHarnessCommand{command, expected_class, catalog_hash}` | `CommandCatalog`, `RunHarnessCommand` (C4, F8) |
 | Destructive commands need confirm | `RunHarnessCommandResponse.approval` → `DecideApproval` | `COMMAND_CLASS_DESTRUCTIVE` (01b) |
 | Observe result note | `Operation.output_text` | `RunHarnessCommandResult.screen` (F8) |
-| Details drawer: "Mark available for work" | calls `SetSessionAvailability{session, available_for_work}` | `SetSessionAvailability{reason: "marked_on_board"}` (E11) |
+| Details drawer: "Mark available for work" (on a harness pane) | calls `SetPaneAvailability{session, pane, available_for_work}` | `SetPaneAvailability{reason: MARKED_ON_BOARD}` (E11) |
 | "Becomes available after a verified merge" | `Pane.availability` after `Goal.status.phase = MERGED` | set by the agent (E11) |
 | Details drawer: "Restart harness in place…" | calls `RespawnPane{resume: true}`; `Operation.state = RUNNING` while local approval waits | `RespawnPane` (F5, L3) |
 | Details drawer: "Kill window…" | calls `KillWindow`; a developer's window returns an `approval` | `KillWindow` (F6, ADR 0011) |
@@ -164,7 +166,7 @@ lists every window on every machine; the Details drawer holds the controls.
 | "policy <hash> · unchanged/changed" | `Machine.status{policy_hash, policy_changed_since_load}` | `PolicyInfo`, `PolicyChanged` (L1) |
 | Harness chips with versions | `Machine.status.harnesses[]{harness, profile, version, version_support, health}` | `HarnessInfo` (C1) |
 | Goal hooks per harness: "hooks installed and checked" | shows `Machine.status.harnesses[].goal_hooks{installed, verified}` | `HarnessInfo.goal_hooks` `GoalHooksState` (G1, 01d) |
-| "hooks installed, trust pending — open Codex /hooks to approve" | `MachineHarness.goal_hooks.trust_pending` | Codex trusts per hook hash; `/hooks` is deny-class, the agent never approves (G1, 01d) |
+| "hooks installed, trust pending — open Codex /hooks to approve" | `MachineHarness.goal_hooks{trust = PENDING, trust_approve_command}`; `UNKNOWN` shows "trust not known" | Codex and Muse trust per hook hash; `/hooks` is deny-class, the agent never approves (G1, 01d) |
 | "hooks installed; eshu ships its own, so fleet's stay off there" | `Machine.status.repos[].goal_hooks[].state.repo_ships_own` | `RepoCheckout.goal_hooks[]` (G1, 03g #7) |
 | "hooks not installed: …" / "self-check failed" | `MachineHarness.goal_hooks{installed, verified}` | `REASON_CODE_HOOKS_INSTALL_FAILED` (G1, 01d) |
 | "no fleet hooks yet (Muse: plugin package)" | no `goal_hooks` for Muse | 01d "Muse hooks are a plugin package" |

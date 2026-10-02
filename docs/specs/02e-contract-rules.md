@@ -51,6 +51,7 @@ checklist, to be ticked when cutting `v0.1`:
 | Every `Timestamp` field ends `_time`; resources use `create_time` and `update_time`; observation fields end `_time` too | `resets_time`, `not_after_time`, `cert_not_after_time`, `observed_time`, `since_time` |
 | Every duration is `google.protobuf.Duration`, or an integer whose name ends in its unit | `min_interval`, `sync_lag`, `utc_offset_seconds`, `ram_bytes` |
 | Every id is a wrapper message with `value`; the field that holds it is named for the entity | `MachineId machine`, `PrincipalId id`, `SettingsId id` |
+| A hub-assigned id is 1 to 32 characters of `[a-z0-9-]` (lowercase ULID); user-chosen names used as tmux names, env values, paths or `group/<label>` keys are `[a-z0-9][a-z0-9-]{0,31}` | `SessionId` is the tmux session name; `INVALID_NAME` otherwise ([02h](02h-goal-binding-and-pane-signals.md#ids)) |
 | `_id` stays only on protocol correlation keys that are the identity of their own message | `command_id`, `prompt_id`, `attach_id`, `probe_id` |
 | A closed set is an enum, never a string | `ConsentAct`, `AuthMode`, `OperationKind`, `DevicePlatform`, `AttachCloseReason`, `WorkSize` |
 | A string is untrusted text, a user-chosen name, or a documented open vocabulary | `Harness.name`, `AuditEntry.action`, `Operation.step` |
@@ -98,18 +99,19 @@ rises only when its behaviour changes in a way a command could notice.
 |---|---|
 | `EnsureProbe`, `StopProbe` | `usage.probe.<harness>` |
 | `EnsureSession`, `EnsureWindow` | `tmux.control`; `tmux.default_server.control` for the developer's server; `tmux.fleet_server` for `tmux -L fleet`; launching a harness also needs `harness.<name>` |
-| `SendKeys`, `Interrupt`, `RespawnPane`, `KillWindow`, `SetSessionAvailability` | `tmux.control` (`tmux.default_server.control` on the developer's server) |
+| `SendKeys`, `Interrupt`, `RespawnPane`, `KillWindow`, `SetPaneAvailability` | `tmux.control` (`tmux.default_server.control` on the developer's server) |
 | `CapturePane` | `tmux.observe` |
 | `RunHarnessCommand` | `harness.catalog` |
 | `Preflight` | `preflight` |
 | `StartGoal` | `goal.start` |
+| `RegisterGoal`, `ReleaseGoal` | `goal.registry` |
 | `EnsureGoalHooks` | `goal.hooks.<harness>` |
 | `EnsureWorktree`, `PruneWorktree` | `worktree` |
 | `OpenAttach`, `CloseAttach` | `attach.pty` |
 | `SetLogCapture`, `SetLogShipping` | `logs.terminal` |
 | `Drain`, `Undrain` | `drain` |
 
-Other names in use: `usage.passive.<harness>`, `prompt.detect.<harness>`,
+Other names in use: `usage.passive.<harness>`, `prompt.detect.<harness>`, `pane.input` (E13), `goal.pause_signals` (interrupt and pause conditions),
 `logs.transcript`, `confirm.local`, `power`, `settings` (they gate events and
 settings, not commands). Hub features the agent may rely on are in
 `HelloAck.hub_capabilities` (`snapshot.parts`, `event.delivery`). Reserved,

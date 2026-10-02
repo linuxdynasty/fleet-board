@@ -123,7 +123,7 @@ every row. `none` = no authentication.
 | `UpdateMachine` | `SETTINGS` |
 | `DrainMachine`, `UndrainMachine`, `RevokeMachine`, `DeleteMachine`, `CreateEnrollmentToken` | `ADMIN` |
 | `ListSessions`, `GetSession`, `CapturePane` | `READ` |
-| `CreateSession`, `SendKeys`, `InterruptPane`, `RunHarnessCommand`, `SetSessionAvailability`, `RespawnPane`, `KillWindow`, `SetLogCapture` | `SESSIONS_WRITE` |
+| `CreateSession`, `SendKeys`, `InterruptPane`, `RunHarnessCommand`, `SetPaneAvailability`, `RespawnPane`, `KillWindow`, `SetLogCapture` | `SESSIONS_WRITE` |
 | `AttachTerminal` | `READ` read-only; `SESSIONS_WRITE` when `read_only` is false; over WebSocket also a valid ticket |
 | `ReadSessionLog` | `LOGS` |
 | `ListGoals`, `GetGoal` | `READ` |

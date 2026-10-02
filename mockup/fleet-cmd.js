@@ -42,12 +42,12 @@ function goalCtl(s, sub, text) {
   return { ok: true, cmd: fmtCmd("RunHarnessCommand", { ...base, args }), label: `keys the agent will type: /goal ${args}`, what: `${sub === "clear" ? "cleared" : sub + "d"} goal` };
 }
 
-const sendKeysCmd = (s, text, extra) => fmtCmd("SendKeys", { pane: paneKey(s), keys: [`literal "${text}"`, "Enter"], ...extra });
-const answerCmd = (s, p, key) => fmtCmd("SendKeys", { pane: paneKey(s), keys: [`literal "${key}"`], answering_prompt: p.promptId });
+const sendKeysCmd = (s, text, extra) => fmtCmd("SendKeys", { pane: paneKey(s), keys: [`literal "${text}"`, "Enter"], purpose: "OPERATOR_TEXT", ...extra });
+const answerCmd = (s, p, key) => fmtCmd("SendKeys", { pane: paneKey(s), keys: [`literal "${key}"`], purpose: "PROMPT_ANSWER", answering_prompt: p.promptId });
 const harnessCmd = (s, command, cls, args) => fmtCmd("RunHarnessCommand", { pane: paneKey(s), command, args, expected_class: cls.toUpperCase(), catalog_hash: CATALOG[s.harness]?.hash });
 const respawnCmd = s => fmtCmd("RespawnPane", { pane: paneKey(s), harness: s.harness, resume: true });
 const killCmd = s => fmtCmd("KillWindow", { window: `{server: default, window_id: @${s.idx}}` });
-const availCmd = (s, on) => fmtCmd("SetSessionAvailability", { session: sessTarget(s), available_for_work: on });
+const availCmd = (s, on) => fmtCmd("SetPaneAvailability", { pane: paneKey(s), available_for_work: on, reason: on ? "MARKED_ON_BOARD" : "CLEARED_ON_BOARD" });
 const attachCmd = (s, ro) => fmtCmd("OpenAttach", { attach_id: `att-${s.id}`, session: sessTarget(s), cols: 160, rows: 44, read_only: ro });
 const ensureSessionCmd = o => fmtCmd("EnsureSession", { session_id: o.id, server: "DEFAULT", name: o.name, workdir: o.repo ? `{repo: ${o.repo}}` : undefined, harness: o.harness || undefined, reuse: o.reuse, owner: "you" });
 const drainCmd = (m, on) => on ? fmtCmd("Drain", { reason: "owner" }) : "Undrain{}";

@@ -160,7 +160,6 @@ enum ConnectReason {
   CONNECT_REASON_RECONNECT = 2;
   CONNECT_REASON_WAKE = 3;
   CONNECT_REASON_NETWORK_CHANGE = 4;
-  CONNECT_REASON_HUB_REQUESTED = 5;
 }
 
 // Hello is the first message on Connect (A3).
@@ -235,12 +234,20 @@ message GoalPaneCount {
   uint32 count = 2;
 }
 
-// PaneCounts are the raw counts in a heartbeat; the hub computes slots.
+// PaneCounts are the raw counts in a heartbeat. The hub owns slot
+// enforcement and computes slots from its goal table; the agent computes only
+// the two aggregates below from its registry, for its own safety cap
+// (AGENT_GOAL_CAP_REACHED) and so the hub can compare exactly these two
+// numbers, not the per-state counts, to detect a mismatch (02h, "Slots").
 message PaneCounts {
   uint32 fleet_panes = 1;
   map<string, uint32> panes_by_harness = 2;
   repeated GoalPaneCount goal_panes_by_state = 3;
   uint32 available_sessions = 4;
+  // Registered goals in a live pane that count against max_active (line state
+  // WORKING) and against max_total (any registered goal with a live pane).
+  uint32 goals_active = 5;
+  uint32 goals_total = 6;
 }
 
 // Heartbeat (A5), every 15 s. Droppable under backpressure; the hub marks

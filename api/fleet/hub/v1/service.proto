@@ -82,8 +82,8 @@ service FleetService {
   rpc RunHarnessCommand(RunHarnessCommandRequest) returns (RunHarnessCommandResponse);
   // [READ] CapturePane (E10).
   rpc CapturePane(CapturePaneRequest) returns (CapturePaneResponse);
-  // [SESSIONS_WRITE] SetSessionAvailability (E11).
-  rpc SetSessionAvailability(SetSessionAvailabilityRequest) returns (SetSessionAvailabilityResponse);
+  // [SESSIONS_WRITE] SetPaneAvailability (E11): availability is per pane.
+  rpc SetPaneAvailability(SetPaneAvailabilityRequest) returns (SetPaneAvailabilityResponse);
   // [SESSIONS_WRITE] RespawnPane (F5).
   rpc RespawnPane(RespawnPaneRequest) returns (RespawnPaneResponse);
   // [SESSIONS_WRITE] KillWindow (F6); a developer's window needs an approval.

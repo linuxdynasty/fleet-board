@@ -106,7 +106,7 @@ values are held in memory and the change log stores the coalesced message.
 |---|---|---|
 | `Machine` | `status.telemetry.*` (last seen, load, memory, battery, clock skew) | 30 s |
 | `Account` | `status.pacing.ahead_points`, `rank`, `projected_unused_percent` (rewritten at every scheduler evaluation) | 30 s |
-| `Session` | `status.attached_clients`, `status.windows[].panes[].activity`, `status.logs[]` counters | 5 s |
+| `Session` | `status.attached_clients`, `status.windows[].panes[].activity`, `last_input_time`, `ready_pattern_showing`, `status.logs[]` counters | 5 s |
 | `Goal` | `status.first_line`, `status.head_commit` | 5 s |
 | `Device` | `status.last_seen_time` | 30 s |
 | `Integration` | `status.last_sync_time`, `status.sync_lag` | 30 s |

@@ -113,8 +113,12 @@ Probed 2026-10-01 by typing `/goal` and `/goal ` without Enter, then bare
   adapter writes consent into the objective text.
 - After an interrupt, Muse printed "goal paused by interrupt — resume with
   /goal resume", and `/goal clear` printed "Goal cleared" (2026-10-01).
-- The adapter records which subcommands each harness version supports; the
-  hub never sends one that isn't listed.
+- The adapter records which subcommands each harness version supports and
+  how pause and resume are done, and the agent reports it as
+  `HarnessInfo.goal_control` ([02h](02h-goal-binding-and-pane-signals.md#goal-control-support));
+  the hub sends only what is listed and keeps no per-harness table. Resume
+  after a usage limit is not probed yet on any harness (an open question to
+  probe), so `limit_resume_verified` stays false until it is.
 - Hooks see `/goal` differently per harness (Claude fires `UserPromptSubmit`
   for it, Codex does not). Claude's hooks do not see an interrupt at all and
   Codex's `Interrupt` hook is notify-only; see

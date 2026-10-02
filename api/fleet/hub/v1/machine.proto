@@ -58,6 +58,8 @@ message MachineHarness {
   HarnessHealth health = 6;
   fleet.type.v1.CommandCatalog catalog = 7;
   fleet.type.v1.GoalHooksState goal_hooks = 8;
+  // /goal subcommands and pause and resume modes for this version.
+  fleet.type.v1.GoalControl goal_control = 13;
   bool prompt_detection_verified = 9;
   bool launch_allowed = 10;
   // Account this harness/profile is signed in to, once the hub mapped it.
