@@ -1,0 +1,334 @@
+// fleet.v1 FleetAgent service: the agent dials out to the hub over mTLS gRPC
+// (ADR 0003, 0004). The hub serves it; the agent is the client of every RPC.
+// Connect is the one long-lived control stream; Terminal and SessionLog are
+// separate streams on the same connection so bytes never delay commands.
+syntax = "proto3";
+
+package fleet.v1;
+
+import "fleet/v1/commands.proto";
+import "fleet/v1/common.proto";
+import "fleet/v1/events.proto";
+import "fleet/v1/snapshot.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/linuxdynasty/fleet-board/api/fleet/v1;fleetv1";
+
+// FleetAgent is served by fleetd. Enroll runs over server-authenticated TLS
+// with a single-use token; every other RPC needs the machine's client cert.
+service FleetAgent {
+  // A1. Exchange a single-use token and CSR for a client certificate.
+  rpc Enroll(EnrollRequest) returns (EnrollResponse);
+  // A3. One per agent. Agent sends Hello then Snapshot; hub sends HelloAck,
+  // then commands and settings.
+  rpc Connect(stream AgentMessage) returns (stream HubMessage);
+  // J1. One per browser attach, opened by the agent on OpenAttach.
+  rpc Terminal(stream TermUp) returns (stream TermDown);
+  // K1, K3. Session log chunks with byte offsets (ADR 0010).
+  rpc SessionLog(stream LogChunk) returns (stream LogAck);
+  // A4. Renew at two-thirds of the certificate lifetime.
+  rpc RenewCert(RenewRequest) returns (RenewResponse);
+}
+
+// ---------------------------------------------------------------------------
+// Enrollment and certificates
+// ---------------------------------------------------------------------------
+
+// EnrollRequest (A1).
+message EnrollRequest {
+  // The single-use token printed by `fleetd enroll-token`.
+  string token = 1;
+  // PEM CSR for an Ed25519 key generated on the machine.
+  bytes csr_pem = 2;
+  MachineFacts facts = 3;
+  repeated Capability capabilities = 4;
+  uint32 proto_min = 5;
+  uint32 proto_max = 6;
+}
+
+// EnrollResponse (A1).
+message EnrollResponse {
+  MachineId machine_id = 1;
+  // PEM client certificate with URI SAN fleet://machine/<machine_id>.
+  bytes cert_pem = 2;
+  bytes ca_chain_pem = 3;
+  // Fingerprint the agent pins; fleetd prints it and the UI shows it.
+  string ca_fingerprint = 4;
+  google.protobuf.Timestamp cert_not_after = 5;
+  // Fleet-wide salt for AccountKey (C2); never logged by the agent.
+  bytes account_salt = 6;
+  // Which hash construction the salt is for; bump on change.
+  uint32 salt_version = 7;
+  // Addresses the owner configured, as a hint for A2 discovery.
+  repeated string hub_addresses = 8;
+  // Display name the hub assigned (hostname by default, renameable).
+  string machine_name = 9;
+  // Expected hostname the owner typed, so the agent can warn on mismatch.
+  string expected_hostname = 10;
+}
+
+// RenewRequest (A4), over the existing mTLS connection.
+message RenewRequest {
+  bytes csr_pem = 1;
+}
+
+// RenewResponse (A4).
+message RenewResponse {
+  bytes cert_pem = 1;
+  bytes ca_chain_pem = 2;
+  google.protobuf.Timestamp cert_not_after = 3;
+}
+
+// ---------------------------------------------------------------------------
+// Connect stream
+// ---------------------------------------------------------------------------
+
+// AgentMessage is everything the agent sends on Connect.
+message AgentMessage {
+  oneof body {
+    Hello hello = 1;
+    Snapshot snapshot = 2;
+    Heartbeat heartbeat = 3;
+    Event event = 4;
+    CommandAck command_ack = 5;
+    CommandProgress command_progress = 6;
+    CommandResult command_result = 7;
+    SettingsAck settings_ack = 8;
+    Bye bye = 9;
+  }
+}
+
+// HubMessage is everything the hub sends on Connect.
+message HubMessage {
+  oneof body {
+    HelloAck hello_ack = 1;
+    Command command = 2;
+    SnapshotRequest snapshot_request = 3;
+    Settings settings = 4;
+    // Hub acknowledges results so the agent can drop them from its log.
+    ResultAck result_ack = 5;
+    Bye bye = 6;
+  }
+}
+
+// ConnectReason says why the agent is (re)connecting (A6).
+enum ConnectReason {
+  CONNECT_REASON_UNSPECIFIED = 0;
+  CONNECT_REASON_START = 1;
+  CONNECT_REASON_RECONNECT = 2;
+  CONNECT_REASON_WAKE = 3;
+  CONNECT_REASON_NETWORK_CHANGE = 4;
+  CONNECT_REASON_HUB_REQUESTED = 5;
+}
+
+// Hello is the first message on Connect (A3).
+message Hello {
+  MachineId machine_id = 1;
+  string agent_version = 2;
+  uint32 proto_min = 3;
+  uint32 proto_max = 4;
+  repeated Capability capabilities = 5;
+  // Random id per agent process; a new value means the agent restarted.
+  string boot_id = 6;
+  // Epoch and per-epoch command seq last applied, so the hub can re-issue.
+  uint64 last_epoch = 7;
+  uint64 last_applied_command_seq = 8;
+  // Agent-wide event seq last sent; the hub replies with what it holds.
+  uint64 last_event_seq = 9;
+  ConnectReason reason = 10;
+  // Agent wall clock at send, for skew detection against hub_time.
+  google.protobuf.Timestamp sent_at = 11;
+  // Settings generation the agent currently holds (0 = none).
+  uint64 settings_generation = 12;
+}
+
+// HelloAck (A3).
+message HelloAck {
+  string hub_version = 1;
+  // Hub time; the agent evaluates not_after in hub time.
+  google.protobuf.Timestamp hub_time = 2;
+  // Connection epoch; bumped on every new stream for this machine.
+  uint64 epoch = 3;
+  uint32 proto_version = 4;
+  repeated Capability capabilities_accepted = 5;
+  // Last event seq the hub has durably stored; the agent replays after it.
+  uint64 hub_last_event_seq = 6;
+  // Hard cap for any single Connect message; larger is rejected.
+  uint32 max_message_bytes = 7;
+  google.protobuf.Duration heartbeat_interval = 8;
+  // Current settings generation; a Settings message follows if newer than
+  // Hello.settings_generation.
+  uint64 settings_generation = 9;
+}
+
+// PaneCounts are the raw counts in a heartbeat; the hub computes slots.
+message PaneCounts {
+  uint32 fleet_panes = 1;
+  map<string, uint32> panes_by_harness = 2;
+  // Keyed by GoalLineState name, e.g. "WORKING", "BLOCKED_WATCH".
+  map<string, uint32> goal_panes_by_state = 3;
+  uint32 available_sessions = 4;
+}
+
+// Heartbeat (A5), every 15 s. Droppable under backpressure; the hub marks
+// stale at 45 s and offline at 3 min. Carries no seq.
+message Heartbeat {
+  google.protobuf.Timestamp sent_at = 1;
+  // Monotonic uptime of the agent process.
+  google.protobuf.Duration uptime = 2;
+  double load1 = 3;
+  PaneCounts counts = 4;
+  bool draining = 5;
+  SpoolStatus spool = 6;
+  uint32 open_attaches = 7;
+  // Highest event seq sent so far, so the hub notices dropped events.
+  uint64 event_seq = 8;
+}
+
+// SnapshotRequest: the hub wants a full Snapshot now.
+message SnapshotRequest {
+  // "reconcile", "ui_refresh", "after_settings", etc.
+  string reason = 1;
+}
+
+// Settings (A8): hub-side machine and group settings with a generation.
+// The agent merges under the local ceiling and answers with SettingsAck.
+message Settings {
+  uint64 generation = 1;
+  // Labels assigned on the hub; local config can add, never remove.
+  repeated string labels = 2;
+  SettingValues values = 3;
+  // Probe intervals per account id (tighten-only against probe_interval).
+  map<string, int64> probe_interval_seconds_by_account = 4;
+}
+
+// SettingsAck (A8): the generation applied and the effective values.
+message SettingsAck {
+  uint64 generation = 1;
+  EffectiveSettings effective = 2;
+  // Fields the local ceiling capped, for the UI's "capped by local policy".
+  repeated string capped_fields = 3;
+}
+
+// ResultAck: the hub stored these results; the agent may forget them.
+message ResultAck {
+  repeated CommandId command_ids = 1;
+}
+
+// ByeReason, for both directions.
+enum ByeReason {
+  BYE_REASON_UNSPECIFIED = 0;
+  // Agent: SIGTERM, container stop, logout.
+  BYE_REASON_SHUTDOWN = 1;
+  // Agent: restarting for an upgrade done on the machine (never by the hub).
+  BYE_REASON_UPGRADE = 2;
+  // Agent: re-enrolling with a new token.
+  BYE_REASON_RE_ENROLL = 3;
+  // Hub: a newer connection for this machine_id won.
+  BYE_REASON_DUPLICATE_IDENTITY = 4;
+  // Hub: certificate revoked; the agent must re-enroll.
+  BYE_REASON_REVOKED = 5;
+  // Hub: no common proto version.
+  BYE_REASON_PROTO_UNSUPPORTED = 6;
+  // Hub: hub restarting; reconnect with backoff.
+  BYE_REASON_HUB_RESTART = 7;
+}
+
+// Bye (A7 from the agent; duplicate identity and revocation from the hub).
+message Bye {
+  ByeReason reason = 1;
+  string message = 2;
+}
+
+// ---------------------------------------------------------------------------
+// Terminal stream (J1)
+// ---------------------------------------------------------------------------
+
+// TermUp: agent -> hub bytes from the PTY-backed tmux client.
+message TermUp {
+  AttachId attach_id = 1;
+  oneof body {
+    // The PTY is open at this size; output follows.
+    TermReady ready = 2;
+    // Raw terminal bytes, at most 64 KiB per message. Escape sequences
+    // that act on the viewer's machine (OSC 52, hyperlinks) are stripped.
+    bytes output = 3;
+    TermClosed closed = 4;
+  }
+}
+
+// TermReady.
+message TermReady {
+  uint32 cols = 1;
+  uint32 rows = 2;
+  string view_session_name = 3;
+}
+
+// TermClosed.
+message TermClosed {
+  // "idle_timeout", "session_ended", "hub_closed", "agent_shutdown".
+  string reason = 1;
+}
+
+// TermDown: hub -> agent input and control.
+message TermDown {
+  AttachId attach_id = 1;
+  oneof body {
+    // Keystrokes, at most 4 KiB per message; dropped for read-only attaches.
+    bytes input = 2;
+    TermResize resize = 3;
+    TermClose close = 4;
+  }
+}
+
+// TermResize.
+message TermResize {
+  uint32 cols = 1;
+  uint32 rows = 2;
+}
+
+// TermClose.
+message TermClose {}
+
+// ---------------------------------------------------------------------------
+// Session log stream (K1, K3; ADR 0010)
+// ---------------------------------------------------------------------------
+
+// LogStream distinguishes terminal output from harness transcripts.
+enum LogStream {
+  LOG_STREAM_UNSPECIFIED = 0;
+  // tmux pipe-pane output (K1).
+  LOG_STREAM_TERMINAL = 1;
+  // The harness's own transcript file, shipped by offset (K3, v3).
+  LOG_STREAM_HARNESS_TRANSCRIPT = 2;
+}
+
+// LogChunk: one compressed chunk at a byte offset in the raw stream. The
+// agent keeps it in the spool until acked. At most 1 MiB compressed.
+message LogChunk {
+  SessionId session_id = 1;
+  PaneKey pane = 2;
+  LogStream stream = 3;
+  // Offset of the first raw byte in this chunk.
+  uint64 offset = 4;
+  // zstd frame of raw_length bytes.
+  bytes zstd = 5;
+  uint32 raw_length = 6;
+  // Bytes lost before this chunk because the spool cap was hit.
+  uint64 gap_before = 7;
+  google.protobuf.Timestamp first_byte_at = 8;
+  google.protobuf.Timestamp last_byte_at = 9;
+  // True when the stream ended (pane exited, capture turned off).
+  bool final = 10;
+  GoalId goal_id = 11;
+}
+
+// LogAck: the hub stored everything up to acked_offset for this stream.
+message LogAck {
+  SessionId session_id = 1;
+  LogStream stream = 2;
+  uint64 acked_offset = 3;
+  // Hub asks the agent to pause shipping (disk low); same as SetLogShipping.
+  bool pause = 4;
+}

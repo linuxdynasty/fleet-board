@@ -1,0 +1,214 @@
+// fleet.v1 usage: readings from harness usage screens (D2), passive signals
+// (D3), probe health (D1), account identity (C2) and session->account links.
+//
+// Usage belongs to accounts, not harnesses (01-agent-capabilities.md, C).
+// Everything the agent read from a screen is UNTRUSTED TEXT.
+syntax = "proto3";
+
+package fleet.v1;
+
+import "fleet/v1/common.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/linuxdynasty/fleet-board/api/fleet/v1;fleetv1";
+
+// UsageSource says how a reading was obtained.
+enum UsageSource {
+  USAGE_SOURCE_UNSPECIFIED = 0;
+  // The probe session ran the harness's usage command (D1/D2).
+  USAGE_SOURCE_PROBE = 1;
+  // Parsed from a banner or status line in a pane already observed (D3).
+  USAGE_SOURCE_PASSIVE = 2;
+  // A transient identity probe at agent start or version change (C2).
+  USAGE_SOURCE_IDENTITY_PROBE = 3;
+}
+
+// WindowKind classifies a limit bucket for the scheduler.
+enum WindowKind {
+  WINDOW_KIND_UNSPECIFIED = 0;
+  // A short window (Claude "Current session", Muse "Current"): a speed limit.
+  WINDOW_KIND_SHORT = 1;
+  // The weekly budget across all models.
+  WINDOW_KIND_WEEKLY = 2;
+  // A weekly budget for one model (Claude "Current week (Fable)").
+  WINDOW_KIND_PER_MODEL = 3;
+}
+
+// BudgetKind is how an account's budget is expressed.
+enum BudgetKind {
+  BUDGET_KIND_UNSPECIFIED = 0;
+  // Subscription: a weekly percentage that resets on the harness's schedule.
+  BUDGET_KIND_WEEKLY_PERCENT = 1;
+  // API-key provider: a dollar cap per period; never auto-dispatched.
+  BUDGET_KIND_DOLLAR_CAP = 2;
+}
+
+// ParseOutcome says how much of a screen the parser recognized.
+enum ParseOutcome {
+  PARSE_OUTCOME_UNSPECIFIED = 0;
+  PARSE_OUTCOME_OK = 1;
+  // Some fields parsed; the rest are unknown. Never guessed.
+  PARSE_OUTCOME_PARTIAL = 2;
+  // Nothing parsed; shown.raw_screen is still sent for display.
+  PARSE_OUTCOME_FAILED = 3;
+}
+
+// ResetTime is a reset moment resolved to UTC plus the text the harness
+// showed ("Resets Sep 30 at 10pm"), which has no year and is local time.
+message ResetTime {
+  // UTC instant, resolved by the agent with the machine timezone (B1).
+  // Unset when resolution failed; original_text is still present.
+  google.protobuf.Timestamp at = 1;
+  // Exactly as shown on screen. Untrusted text, capped at 256 bytes.
+  string original_text = 2;
+  // IANA timezone used to resolve the text, e.g. "America/New_York".
+  string resolved_with_timezone = 3;
+}
+
+// ShownField is one field the parser recognized, in the harness's own terms,
+// for display. Untrusted text, each string capped at 256 bytes.
+message ShownField {
+  // Section on screen, e.g. "Current week (all models)" or "Session".
+  string group = 1;
+  // Label as shown, e.g. "% used", "Resets", "Plan", "Model".
+  string label = 2;
+  // Value as shown, e.g. "81%", "Sep 30 at 10pm", "Account: Pro".
+  string value = 3;
+}
+
+// ShownUsage is the "as shown" half of a reading: everything the parser
+// recognized plus the redacted raw screen, so the owner sees what the
+// harness shows.
+message ShownUsage {
+  repeated ShownField fields = 1;
+  // Raw screen text, ANSI stripped, emails and names redacted per C2 unless
+  // the owner enabled identity sharing. Untrusted text, capped at 64 KiB.
+  string raw_screen = 2;
+  // True if raw_screen was cut at the cap.
+  bool raw_truncated = 3;
+}
+
+// LimitBucket is the standardized half: one limit the scheduler tracks.
+message LimitBucket {
+  // Stable per-harness key, e.g. "session", "weekly_all", "weekly_fable".
+  // Defined by the adapter and fixed across parser versions.
+  string key = 1;
+  // Label as the harness shows it. Untrusted text.
+  string label = 2;
+  // Percent USED (Codex "% left" is converted; display keeps "% left").
+  Percent percent_used = 3;
+  ResetTime resets_at = 4;
+  // Window length when known (Codex rate_limits has 10080 minutes).
+  google.protobuf.Duration window = 5;
+  WindowKind kind = 6;
+  // Model name for WINDOW_KIND_PER_MODEL. Untrusted text.
+  string model = 7;
+  // True when the harness displayed remaining rather than used.
+  bool shown_as_remaining = 8;
+}
+
+// SpendReading is the dollar-cap counterpart for API-key providers
+// (OpenCode `opencode stats`). Display and manual budgeting only.
+message SpendReading {
+  // Amount in micro-units of currency (1 USD = 1_000_000).
+  int64 amount_micros = 1;
+  // ISO 4217 code, e.g. "USD".
+  string currency = 2;
+  // What the amount covers as the tool labels it ("all-time", "today").
+  string period_label = 3;
+  // Period start when the tool states it; otherwise unset.
+  google.protobuf.Timestamp period_start = 4;
+}
+
+// UsageReading is one observation of an account's usage (D2, D3).
+message UsageReading {
+  // Set for USAGE_SOURCE_PROBE; empty for passive signals.
+  ProbeId probe_id = 1;
+  AccountKey account_key = 2;
+  Harness harness = 3;
+  // Harness version the screen came from.
+  string harness_version = 4;
+  // Parser version (fixtures) used; unknown values cite this.
+  string parser_version = 5;
+  // When the screen was captured (UTC, agent clock).
+  google.protobuf.Timestamp read_at = 6;
+  UsageSource source = 7;
+  // Pane the text came from (the probe pane, or the observed pane for D3).
+  PaneKey pane = 8;
+  ShownUsage shown = 9;
+  repeated LimitBucket buckets = 10;
+  ParseOutcome parse = 11;
+  // Parser diagnostic, no screen text. Capped at 1 KiB.
+  string parse_message = 12;
+  // Dollar spend when the account is BUDGET_KIND_DOLLAR_CAP.
+  SpendReading spend = 13;
+  // Harness-reported credit balance when shown (Codex "credits").
+  // Untrusted text; empty when not shown.
+  string credits_text = 14;
+}
+
+// AccountIdentity is what the harness's own status screen says about the
+// signed-in account (C2). Never read from credential files.
+message AccountIdentity {
+  AccountKey account_key = 1;
+  Harness harness = 2;
+  // Display label, e.g. "Claude Max" or "Account: Pro". Untrusted text.
+  string label = 3;
+  // Login method as shown ("Claude Max account", "Logged in using ChatGPT").
+  string login_method = 4;
+  // Plan as shown ("Pro", "Muse Code Power Usage"). Untrusted text.
+  string plan = 5;
+  // Organization as shown, when the harness displays one. Untrusted text.
+  string organization = 6;
+  // Email exactly as the harness shows it. EMPTY unless the owner setting
+  // `share_identity_email` is on (A8 settings). Untrusted text.
+  string email = 7;
+  // True when the status screen shows a signed-in state.
+  bool signed_in = 8;
+  // True when the harness shows no unique identity (Codex) and the owner
+  // picks the account on the hub; account_key then hashes "<harness>:<machine>".
+  bool identity_not_shown = 9;
+  google.protobuf.Timestamp observed_at = 10;
+  // Parser version used for the status screen.
+  string parser_version = 11;
+  // Budget kind the agent can infer from the login type (OAuth -> weekly
+  // percent, API key -> dollar cap). The hub may override.
+  BudgetKind budget_kind = 12;
+}
+
+// SessionAccountLink says which account a harness session is currently
+// spending from. OpenCode can switch providers per session (model line
+// "Build · Kimi K3 Moonshot AI"); other harnesses have one account.
+message SessionAccountLink {
+  PaneKey pane = 1;
+  // Hub-assigned session id when the pane belongs to a fleet session.
+  SessionId session_id = 2;
+  Harness harness = 3;
+  AccountKey account_key = 4;
+  // Provider and model as shown on screen. Untrusted text.
+  string provider = 5;
+  string model = 6;
+  google.protobuf.Timestamp observed_at = 7;
+  UsageSource source = 8;
+}
+
+// ProbeHealth reports one probe session's state (D1).
+message ProbeHealth {
+  ProbeId probe_id = 1;
+  AccountId account_id = 2;
+  AccountKey account_key = 3;
+  Harness harness = 4;
+  // Probe pane on the fleet-probe server.
+  PaneKey pane = 5;
+  bool alive = 6;
+  google.protobuf.Timestamp last_success_at = 7;
+  google.protobuf.Timestamp last_attempt_at = 8;
+  uint32 consecutive_failures = 9;
+  // Reason of the last failure, if any.
+  ReasonCode last_failure = 10;
+  // Effective interval the agent is running (settings may have tightened it).
+  google.protobuf.Duration interval = 11;
+  // Next scheduled run (UTC); unset when stopped.
+  google.protobuf.Timestamp next_run_at = 12;
+}

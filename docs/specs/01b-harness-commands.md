@@ -75,3 +75,27 @@ Probed 2026-10-01 on OpenCode 1.18.30.
   Fleet-board does not change how the developer uses it, but by default it does
   not auto-dispatch goals to OpenCode on an Anthropic subscription; manual
   dispatch remains the developer's choice.
+
+## Goal subcommands
+
+Probed 2026-10-01 by typing `/goal` and `/goal ` without Enter, then bare
+`/goal` (which only shows status):
+
+| Harness | Syntax shown by the harness | Bare `/goal` |
+|---|---|---|
+| Claude Code 2.1.286 | `/goal [<condition> \| clear]` | "Goal · No goal set · /goal <condition> to set one" |
+| Codex 0.159.2 | `/goal [<objective>\|clear\|edit\|pause\|resume]` | prints that usage and "No goal is currently set." |
+| Muse 1.4.2 | `/goal [<objective>\|edit <objective>\|clear\|pause\|resume]` | "No goal is set." |
+
+- Claude Code has only set and clear; pausing a Claude goal means
+  interrupting it (F4).
+- None of the three has a native `consent` subcommand. The
+  `/goal consent <acts> -- <text>` form is eshu's hook convention (its
+  `UserPromptSubmit` router writes the `CONSENT:` line); a harness without
+  those hooks takes the whole line as the objective. For generic goals the
+  adapter writes consent into the objective text.
+- After an interrupt, Muse printed "goal paused by interrupt — resume with
+  /goal resume", and `/goal clear` printed "Goal cleared" (2026-10-01).
+- The adapter records which subcommands each harness version supports; the
+  hub never sends one that isn't listed.
+

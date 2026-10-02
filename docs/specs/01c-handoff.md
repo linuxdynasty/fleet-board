@@ -32,7 +32,8 @@ To be made in step 2 as a superseding ADR, not by editing the originals:
   `control`; local policy can lower it); the separate `tmux -L fleet` server
   becomes optional; browser attach moves to v2.
 - 0004: add hub settings delivery (A8), agent `Bye` (A7), `SnapshotRequest`
-  handling, `StartGoal` and `StopGoal` as agent-side commands (G3, G4),
+  handling, `StartGoal` as an agent-side command (G3) and goal control through
+  the harness's own `/goal` subcommands (G4),
   `EnsureProbe`/`StopProbe` (D1), `Undrain` (M4), `prompt_id` on `SendKeys`,
   `RunHarnessCommand` with the command classes (F8);
   remove `RunExec` from v1; move Tailscale lookup to v3.
