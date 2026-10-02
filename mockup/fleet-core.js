@@ -15,9 +15,27 @@ const provChip = p => p ? `<span class="prov ${esc(p)}" title="${esc(PROVIDER[p]
 const where = s => `${mById(s.m).short} ${s.target}`;
 const ref = s => s.display ?? (s.repo ? shortName(s.repo) : s.win);
 
-const ui = { view: "triage", selected: "g2", triageIdx: 0, answered: {}, choice: {}, snoozed: {}, dismissed: {}, confirm: null, switcher: false, swIdx: 0, swQuery: "", attachRO: false };
-const VIEWS = ["triage", "work", "session", "fleet"];
+const ui = { view: "triage", selected: "g2", triageIdx: 0, answered: {}, choice: {}, snoozed: {}, dismissed: {}, confirm: null, switcher: false, swIdx: 0, swQuery: "", attachRO: false, dt: {} };
+const VIEWS = ["triage", "work", "session", "usage", "machines", "settings"];
+const VIEW_ALIAS = { fleet: "usage" };   // old links to the single Fleet page
+const viewOf = h => VIEW_ALIAS[h] ?? h;
 const STATE_PILL = { working: "working", waiting: "waiting", stuck: "stuck", verifying: "verifying", merged: "done", none: "idle", idle: "idle", available: "available" };
+
+// One "details" toggle everywhere for the raw contract text (typed commands, proto names, hashes, ADR refs).
+// `html` must already be escaped. Open state survives a rerender, keyed by `key`.
+const dt = (key, html) => `<details class="dt" data-dk="${esc(key)}" ${ui.dt[key] ? "open" : ""}><summary>details</summary><div class="dt-body">${html}</div></details>`;
+// Confirm boxes: the typed command stays one click away under "details"; a line to copy (attach) stays visible.
+const cmdBlock = (c, key) => c.copy ? `<code>${esc(c.cmd)}</code>` : dt(key, `<code>${esc(c.cmd)}</code>${c.raw ? `<span>${esc(c.raw)}</span>` : ""}`);
+document.addEventListener("toggle", e => { const k = e.target.dataset?.dk; if (k) ui.dt[k] = e.target.open; }, true);
+
+// The goal file's first line in plain words ("waiting on CI (watcher running)"); callers keep the raw line under details.
+function plainLine(s) {
+  const l = s.line ?? "";
+  if (l.startsWith("DONE")) return verified(s) ? "done and merged" : "agent says done; waiting for the code host to confirm the merge";
+  if (!l.startsWith("BLOCKED")) return l;
+  const why = l.replace(/^BLOCKED:\s*/, "").replace(/\s*WATCH=\d+/, "").replace(/ (for|on) #\d+$/, "");
+  return `${why} (${s.watchAlive ? "watcher running" : "nothing is watching it"})`;
+}
 
 function log(what, s, who = "you") { audit.unshift({ at: new Date(), who, what, where: s ? where(s) : "", s: s?.id }); }
 const sessionOrder = () => machines.flatMap(m => sessions.filter(s => s.m === m.id).sort((a, b) => (a.sess === "fleet") - (b.sess === "fleet") || a.sess.localeCompare(b.sess) || a.idx - b.idx));
@@ -63,18 +81,19 @@ function renderStrip() {
   const c = counts();
   $("nav").innerHTML = VIEWS.map((v, i) => `<a href="#${v}" class="tab" aria-current="${ui.view === v ? "page" : "false"}">
     <span class="k">${i + 1}</span>${v === "triage" ? `Triage <b class="badge">${c.needs}</b>` : v[0].toUpperCase() + v.slice(1)}</a>`).join("");
+  // Per subscription: the waste headline in short form (full line on Usage). API-key accounts: spend vs cap only.
   $("summary").innerHTML = `<span><b>${c.working}</b> working</span><span><b>${c.waiting}</b> waiting on CI/review</span>
     <span class="bad"><b>${c.stuck}</b> stuck</span><span class="warn"><b>${c.needs}</b> need you</span><span><b>${c.freeA}/${c.slotsA}</b> active slots free</span><span><b>${c.avail}</b> available session${c.avail === 1 ? "" : "s"}</span>
     <span class="auto ${settings.autoDispatch ? "on" : ""}">auto-dispatch ${settings.autoDispatch ? "on" : "off"}</span>
-    ${accounts.map(a => { const p = pace(a); const tone = p.state === "reserve" ? "bad" : p.state === "ahead" ? "warn" : "ok";
-      return `<span class="use" title="${esc(`${a.label}: ${p.used}% used, pace line ${Math.round(p.target)}%, ${PACE_LABEL[p.state]}`)}">${agentChip(a.harness)}
-        <span class="mini"><i class="${tone}" style="width:${p.used}%"></i><s style="left:${p.target}%"></s></span><span class="num">${p.used}%</span></span>`; }).join("")}
-    ${apiAccounts.map(a => `<span class="use" title="${esc(`${a.label}: $${a.spentUsd} of $${a.capUsd} cap, manual only`)}">${agentChip("opencode")}<span class="num">$${a.spentUsd.toFixed(0)}/${a.capUsd}</span></span>`).join("")}`;
+    <span class="acct-row">${accounts.map(a => { const o = outlook(a), p = o.p, tone = a.stale ? "idle" : p.state === "reserve" ? "bad" : o.alert ? "warn" : "ok";
+      return `<a href="#usage" class="use ${o.alert ? "alert" : ""} ${a.stale ? "stale" : ""}" title="${esc(`${a.label}: ${wasteLine(a)}`)}">${agentChip(a.harness)}
+        <span class="mini"><i class="${tone}" style="width:${p.used}%"></i><s style="left:${p.target}%"></s></span><span class="num">${esc(wasteLine(a, true))}</span></a>`; }).join("")}
+    ${apiAccounts.map(a => `<a href="#usage" class="use" title="${esc(`${a.label}: ${spendLine(a)}`)}">${agentChip(a.provider.split(" ")[0].toLowerCase())}<span class="num">$${a.spentUsd.toFixed(0)} of $${a.capUsd}</span></a>`).join("")}</span>`;
 }
 
 function rerender() {
   renderStrip();
-  ({ triage: renderTriage, work: renderWorkView, session: renderSessionView, fleet: renderFleetView })[ui.view]();
+  ({ triage: renderTriage, work: renderWorkView, session: renderSessionView, usage: renderUsageView, machines: renderMachinesView, settings: renderSettingsView })[ui.view]();
   renderSwitcher();
 }
 const renderAll = rerender;
@@ -84,14 +103,15 @@ function go(view, sessionId) {
   ui.confirm = null;
   if (location.hash !== "#" + view) location.hash = view; else { ui.view = view; rerender(); }
 }
-window.addEventListener("hashchange", () => { const v = location.hash.slice(1); if (VIEWS.includes(v)) { ui.view = v; ui.confirm = null; rerender(); window.scrollTo(0, 0); } });
+window.addEventListener("hashchange", () => { const v = viewOf(location.hash.slice(1)); if (VIEWS.includes(v)) { ui.view = v; ui.confirm = null; rerender(); window.scrollTo(0, 0); } });
 
 function switcherEntries() {
   const e = [];
   sessionOrder().forEach(s => e.push({ label: `${s.win} · ${where(s)}`, sub: `${s.harness} · ${s.line ?? (s.yours ? "yours" : s.repo)}`, tag: STATE_PILL[liveState(s)], run: () => go("session", s.id) }));
-  machines.forEach(m => e.push({ label: `${m.name} · ${m.ip}`, sub: `${activeOn(m)}/${m.maxActive} active · ${totalOn(m)}/${m.maxTotal} total · ${m.ram} GB · ${m.labels.join(", ")}`, tag: "machine", run: () => { ui.fleetFocus = m.id; go("fleet"); } }));
-  accounts.forEach(a => e.push({ label: `${a.label} account`, sub: `${used(a)}% used · ${PACE_LABEL[pace(a).state]}`, tag: "account", run: () => go("fleet") }));
-  apiAccounts.forEach(a => e.push({ label: `${a.label} account`, sub: `$${a.spentUsd} of $${a.capUsd} · manual only`, tag: "account", run: () => go("fleet") }));
+  machines.forEach(m => e.push({ label: `${m.name} · ${m.ip}`, sub: `${activeOn(m)}/${m.maxActive} active · ${totalOn(m)}/${m.maxTotal} total · ${m.ram} GB · ${m.labels.join(", ")}`, tag: "machine", run: () => { ui.fleetFocus = m.id; go("machines"); } }));
+  accounts.forEach(a => e.push({ label: `${a.label} account`, sub: wasteLine(a), tag: "account", run: () => go("usage") }));
+  apiAccounts.forEach(a => e.push({ label: `${a.label} account`, sub: spendLine(a), tag: "account", run: () => go("usage") }));
+  e.push({ label: "Audit log", sub: `${audit.length} entries · every action, yours and the fleet's`, tag: "view", run: () => { ui.dt.audit = true; ui.auditFocus = true; go("machines"); } });
   workItems().forEach(it => e.push({ label: it.display, sub: `${PROVIDER[it.provider]} · ${it.t}`, tag: it.kind === "pr" ? "change request" : it.kindLabel ?? "issue", run: () => { ui.workFocus = keyOf(it); go("work"); } }));
   VIEWS.forEach(v => e.push({ label: `Go to ${v}`, sub: "", tag: "view", run: () => go(v) }));
   const terms = ui.swQuery.toLowerCase().split(/\s+/).filter(Boolean);
@@ -133,7 +153,7 @@ document.addEventListener("keydown", e => {
   if (typing) { if (e.key === "Escape") e.target.blur(); return; }
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   if (e.key === "/") { e.preventDefault(); openSwitcher(); }
-  else if (/^[1-4]$/.test(e.key)) go(VIEWS[+e.key - 1]);
+  else if (/^[1-6]$/.test(e.key)) go(VIEWS[+e.key - 1]);
   else if (e.key === "n") nextNeedsYou();
   else if (ui.view === "triage") triageKey(e);
   else if (ui.view === "session") sessionKey(e);
@@ -144,7 +164,7 @@ function boot() {
   $("swClose").onclick = closeSwitcher;
   $("swBtn").onclick = openSwitcher;
   $("switcher").onclick = e => { if (e.target.id === "switcher") closeSwitcher(); };
-  const v = location.hash.slice(1);
+  const v = viewOf(location.hash.slice(1));
   if (VIEWS.includes(v)) ui.view = v;
   rerender(); tick(); setInterval(tick, 1000);
 }

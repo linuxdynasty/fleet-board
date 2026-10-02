@@ -41,7 +41,7 @@ function prefixKey(k, s) {
   if (k === "z") { if (panes.length > 1) T.zoom[s.id] = !T.zoom[s.id]; else T.msg = "only one pane"; return; }
   if (k === "w") { T.overlay = "windows"; T.ovIdx = Math.max(0, i); return; }
   if (k === "s") { T.overlay = "sessions"; T.ovIdx = Math.max(0, sessNames(s).indexOf(s.sess)); return; }
-  if (k === "d") { T.detached = sessKey(s); T.msg = null; log(`detached the browser terminal from ${s.sess} on ${mById(s.m).short} (CloseAttach ${attachId(s)}; mock)`, s); return; }
+  if (k === "d") { T.detached = sessKey(s); T.msg = null; log(`detached the browser terminal from ${s.sess} on ${mById(s.m).short} (mock)`, s); return; }
   if (k === "?") { T.overlay = "help"; return; }
   T.msg = `unknown key: ${k}`;
 }
@@ -68,7 +68,7 @@ function typeInto(s, bytes) {
   if (bytes === "\x7f") { T.input[k] = inp.slice(0, -1); return; }
   if (bytes === "\r") {
     const pi = promptIdx(p.pane), [cls, text] = p.pane[pi];
-    p.pane.splice(pi, 1, [cls, text + inp], ["dim", inp ? `(mock: ${JSON.stringify(inp)} typed over TermDown.input; the reply arrives as TermUp.output)` : "(mock: Enter sent)"], [cls, text]);
+    p.pane.splice(pi, 1, [cls, text + inp], ["dim", inp ? `(mock: ${JSON.stringify(inp)} sent to the pane; the reply would appear here)` : "(mock: Enter sent)"], [cls, text]);
     while (p.pane.length > 16) p.pane.shift();
     T.input[k] = ""; s.last = new Date();
     return;

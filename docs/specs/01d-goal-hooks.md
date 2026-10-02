@@ -75,7 +75,7 @@ harness config), not into each repo.
 
 `fleet-agent hooks uninstall [--harness]` removes only fleet entries (same
 match rule), keeps the backup, and deletes the scripts. Upgrades of the agent
-re-run step 3; a hash change is shown in the Fleet view, never applied
+re-run step 3; a hash change is shown in the Machines view, never applied
 silently to a running goal.
 
 ## Who writes the goal file

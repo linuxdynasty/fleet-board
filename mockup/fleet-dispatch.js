@@ -24,6 +24,40 @@ function pace(a) {
 const PACE_LABEL = { reserve: "reserve reached", ahead: "ahead of pace", on: "on pace", behind: "behind pace" };
 const dispatchable = a => a.mode === "fleet" && ["on", "behind"].includes(pace(a).state);
 
+// A reset that already passed (relative to the mock clock) rolls forward by whole windows. The reading was taken
+// before that reset, so it is marked stale until the next probe; it never shows "resets in now".
+function rollResets(now = Date.now()) {
+  accounts.forEach(a => { while (a.resets <= now) { a.resets += a.windowDays * DAY; a.stale = true; } });
+}
+rollResets();
+
+// Waste outlook: will this subscription leave quota unused when the window resets? Simple linear projection:
+//   burn rate     = % used ÷ hours elapsed in the window (average so far)
+//   projected use = % used + burn rate × hours left (capped at 100)
+//   unused        = usable share (100 − reserve) − projected use, floored at 0
+// The reserve is left out on purpose: it is kept for you, so leaving it unused is not waste.
+// An account "wastes" when ≥ WASTE_MIN points would go unused; it is "idle" when no goal runs on it while it is
+// behind pace. Stale readings get no projection.
+const WASTE_MIN = 5;
+const runningOn = h => sessions.filter(s => isGoal(s) && s.harness === h && goalState(s) === "working").length;
+function outlook(a) {
+  const p = pace(a), elapsedH = Math.max(1, p.frac * a.windowDays * 24), rate = p.used / elapsedH;
+  const projected = Math.min(100, p.used + rate * hoursLeft(a)), unused = Math.max(0, Math.round(p.cap - projected));
+  const running = runningOn(a.harness), wastes = !a.stale && p.state !== "reserve" && unused >= WASTE_MIN;
+  const idle = !a.stale && running === 0 && p.state === "behind";
+  return { p, left: 100 - p.used, unused, running, wastes, idle, alert: wastes || idle };
+}
+const goalsTxt = n => `${n} goal${n === 1 ? "" : "s"} running`;
+// One plain line per subscription account (Usage headline); `short` is the summary-strip version.
+function wasteLine(a, short) {
+  const o = outlook(a), p = o.p;
+  if (a.stale) return short ? "stale reading" : `stale — reset passed, re-probe pending · last read ${o.left}% left · next reset in ${until(a.resets)} · ${goalsTxt(o.running)}`;
+  const fate = p.state === "reserve" ? "reserve reached, new work goes to other accounts" : o.unused ? `on pace to leave ~${o.unused}% unused` : "on pace to use it all";
+  if (short) return `${o.left}% left${p.state === "reserve" ? " · reserve reached" : o.unused ? ` · ~${o.unused}% unused` : ""}${o.idle ? " · no goals" : ""}`;
+  return `${o.left}% left · resets in ${until(a.resets)} · ${goalsTxt(o.running)} · ${fate}${o.idle ? " · nothing running while behind pace" : ""}`;
+}
+const spendLine = a => `$${a.spentUsd.toFixed(2)} of $${a.capUsd} this ${a.period} · manual only`;
+
 // Goal states come from the first line of the goal file (G2).
 function goalState(s) {
   if (!s.line) return "none";
@@ -76,7 +110,7 @@ function reasons(it, st) {
   else if (freeActive(m) === 0) out.push(["bad", `${m.name} has no free active slot (${activeOn(m)}/${m.maxActive}).`]);
   else if (freeTotal(m) === 0) out.push(["bad", `${m.name} is at its total limit (${totalOn(m)}/${m.maxTotal}).`]);
   else out.push(["ok", `${m.name}: ${freeActive(m)}/${m.maxActive} active and ${freeTotal(m)}/${m.maxTotal} total free · ${m.ram} GB.`]);
-  if (m.versions?.[a.harness] && a.harness === "codex" && m.versions.codex === "0.157.1") out.push(["bad", `codex ${m.versions.codex} on ${m.short} is outside the parser's supported versions: preflight refuses with HARNESS_VERSION_UNSUPPORTED.`]);
+  if (m.versions?.[a.harness] && a.harness === "codex" && m.versions.codex === "0.157.1") out.push(["bad", `codex ${m.versions.codex} on ${m.short} is older than the supported versions: the agent will refuse to start it.`]);
   const reuse = availableFor(m, a.harness);
   out.push(reuse ? ["ok", `Will use available session ${reuse.win} on ${m.short} (${reuse.yours ? "marked available on the board" : "fleet-started, goal merged"}); re-checked just before typing.`]
     : ["dim", `No available ${a.harness} session on ${m.short}: new window ${a.harness} ${it.display} in session fleet.`]);
@@ -85,7 +119,7 @@ function reasons(it, st) {
     out.push([p.state === "reserve" ? "bad" : p.state === "ahead" ? "warn" : "ok", `${a.label}: ${p.used}% used (${bindingBucket(a).label}), pace line ${Math.round(p.target)}%, reserve at ${p.cap}%, resets in ${until(a.resets)}. ${PACE_LABEL[p.state]}.`]);
     accounts.filter(x => x.id !== a.id && !dispatchable(x)).forEach(x => out.push(["dim", `${x.label} skipped: ${PACE_LABEL[pace(x).state]}.`]));
   }
-  if (it.provider === "jira") out.push(["dim", `Jira ticket ${it.display}: code goes to ${it.targetRepo}; claim = status In Progress (CLAIM_MECHANISM_STATUS).`]);
+  if (it.provider === "jira") out.push(["dim", `Jira ticket ${it.display}: code goes to ${it.targetRepo}; claiming it sets the status to In Progress.`]);
   return out;
 }
 
@@ -106,8 +140,8 @@ function dispatchPanel(it) {
       <label>Machine <select data-f="m" id="dm-${id}">${machines.map(x => `<option value="${x.id}" ${x.id === st.m ? "selected" : ""}>${esc(x.name)} (${freeActive(x)}/${x.maxActive} active free)</option>`).join("")}</select></label>
     </div>
     <ul class="why-list">${rs.map(([c, t]) => `<li class="${c}">${esc(t)}</li>`).join("")}</ul>
-    ${g ? `<div class="why">Command the hub sends to the agent on ${esc(m.short)} (one command_id; steps: ${esc(g.steps)}):</div><code class="cmd">${esc(g.cmd)}</code>
-    <div class="why">Keys the agent will type at the ready prompt · <span class="conv">${esc(g.note)}</span></div><code class="cmd">${esc(g.keys)}</code>` : ""}
+    ${g ? `<div class="why">The agent on ${esc(m.short)} will type this at the ready prompt:</div><code class="cmd">${esc(g.keys)}</code>
+    ${dt("disp", `<span>command sent to the agent (one command_id):</span><code class="cmd">${esc(g.cmd)}</code><span>steps: ${esc(g.steps)}</span><span class="conv">${esc(g.note)}</span>`)}` : ""}
     <div class="actions"><button class="btn primary" data-start="${esc(k)}" ${blocked ? "disabled" : ""}>Dispatch goal</button>
       <button class="btn" data-cancel="${esc(k)}">Cancel</button><span class="why">Mockup: adds a sample goal, sends nothing.</span></div>
   </div>`;

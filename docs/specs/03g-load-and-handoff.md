@@ -28,7 +28,7 @@ KB, snapshot 100 KB, log chunk every 10 s per stream.
 | 1 | W1/W2 snapshots | ≈ 0 (reconnects rare) | ≈ 0 | hub restart: 4 × 100 KB in ≤ 60 s = 6.7 KB/s; 50 × 100 KB = 5 MB in 60 s = **83 KB/s**, 50 apply-txs | must-persist | Hello → Snapshot → results → events, per agent | none (UI re-reads) |
 | 2 | W2 ring replay | ≈ 0 | ≈ 0 | per agent ≤ 200 ev/s × 0.5 KB = 100 KB/s; 50 agents uncapped = 10,000 ev/s = 5 MB/s → **hub-wide budget 2,500 ev/s (1.25 MB/s) for ~1 min** | must-persist (history) | per agent `seq` | none |
 | 3 | A5 heartbeats | 4 ÷ 15 = 0.27/s × 0.5 KB = 0.13 KB/s | 50 ÷ 15 = 3.3/s = **1.7 KB/s** | same | can-lose (latest in memory; `last_seen` write optional, 3.3 rows/s at A50) | none | coalesced to the summary strip, 1/s per browser |
-| 4 | B2 resource samples | 4 ÷ 30 = 0.13/s = 0.07 KB/s | 50 ÷ 30 = 1.7/s = **0.8 KB/s** | same | can-lose; 1 week = 1.7 × 604,800 = **1.0 M rows/week** | none | Fleet view only |
+| 4 | B2 resource samples | 4 ÷ 30 = 0.13/s = 0.07 KB/s | 50 ÷ 30 = 1.7/s = **0.8 KB/s** | same | can-lose; 1 week = 1.7 × 604,800 = **1.0 M rows/week** | none | Machines view only |
 | 5 | E5 pane summaries | 20 × 0.2 = 4/s × 2 KB = **8 KB/s** | 500 × 0.2 = 100/s × 2 KB = **200 KB/s** (720 MB/h) | same | can-lose; **latest per pane only** (persisting 1 week = 100 × 86,400 = 8.6 M rows/day, 17 GB/day; see Q2) | per pane, latest wins | unfiltered: 2 browsers × 8 = 16 KB/s; 10 × 200 = **2 MB/s**; filtered to ~30 visible panes per browser: 10 × 6/s × 2 KB = 120 KB/s |
 | 6 | E4 activity transitions | 10 × 2 ÷ 60 = 0.33/s × 0.3 KB = 0.1 KB/s | 150 × 2 ÷ 60 = **5/s**, 1.5 KB/s | provider incident: 150 in 10 s = 15/s; replay bursts (row 2) | must-persist, never dropped | per agent `seq` | Session view, per visible pane |
 | 7 | G2/H3 goal + branch state | 10 × 12 ÷ 3600 = 0.03/s, 0.07 KB/s | 300 × 12 ÷ 3600 = **1/s**, 2 KB/s | dispatch wave: 50 goals × 2 in 1 min = 1.7/s | must-persist, never dropped | per agent `seq` | all browsers: 10 × 1/s = 10 msg/s, 20 KB/s |
@@ -41,7 +41,7 @@ KB, snapshot 100 KB, log chunk every 10 s per stream.
 | 12a | W9 raw into agent spools (not shipped) | 10 × 7.47 = 75 KB/s across agents | 300 × 7.47 = **2.24 MB/s** across agents (≤ 75 KB/s per machine); compressed in spool: 65 B/s per pane | — | agent-local | — | — |
 | 13 | K3 transcripts (v3, opt-in) | 10 × 3.6 = 36 KB/s raw | 300 × 3.6 = **1.08 MB/s raw**; compression unmeasured | — | must-persist if enabled | by offset | replay only |
 | 14 | J1 attach | 2 attaches × ≤ 7.5 KB/s = 15 KB/s | 10 × 7.5 = **75 KB/s** | redraw on resize | never dropped (PTY blocks) | per attach | 1:1 |
-| 15 | W10/W11 settings, drift | rare | rare (≤ 100 catalog rows per change) | fleet-wide setting change: 50 Settings + 50 acks | must-persist | by generation | Fleet view |
+| 15 | W10/W11 settings, drift | rare | rare (≤ 100 catalog rows per change) | fleet-wide setting change: 50 Settings + 50 acks | must-persist | by generation | Machines and Settings views |
 
 **Totals.**
 

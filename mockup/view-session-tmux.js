@@ -2,7 +2,7 @@
 // Status line ↔ TmuxWindow{index, name, active}; pane boxes ↔ TmuxWindow.panes[] (TmuxPane{index, current_command});
 // screen text ↔ CapturePaneResult.text / TermUp.output. Terminal state lives in T; keys are in view-session-keys.js.
 const T = { focused: false, prefix: false, zoom: {}, overlay: null, ovIdx: 0, detached: null, ro: false, msg: null,
-  drawer: false, side: true, lastDown: null, active: {}, input: {}, cur: {}, rendering: false };
+  drawer: false, side: !matchMedia("(max-width: 760px)").matches, lastDown: null, active: {}, input: {}, cur: {}, rendering: false };
 // Pane neighbours per layout for prefix + arrow (tmux select-pane -LRUD). Pane 0 is the window's main pane.
 const PANE_DIRS = { single: {}, cols: { 0: { ArrowRight: 1 }, 1: { ArrowLeft: 0 } }, rows: { 0: { ArrowDown: 1 }, 1: { ArrowUp: 0 } },
   "main-vertical": { 0: { ArrowRight: 1 }, 1: { ArrowLeft: 0, ArrowDown: 2 }, 2: { ArrowLeft: 0, ArrowUp: 1 } } };
@@ -33,8 +33,8 @@ function renderTmux(s, m) {
   return `<div class="tm-wrap">${runningGoal(s) ? goalBanner(s) : ""}
     <div id="tmuxTerm" class="tmux ${T.focused ? "focused" : ""}" tabindex="0" role="application" aria-label="tmux session ${esc(s.sess)} on ${esc(m.short)}; click to focus, ${esc(settings.tmuxPrefix)} is the prefix">
       ${status}<div class="tm-panes ${z ? "single" : layoutOf(s)}">${shown.map(([p, i]) => paneHtml(p, i, i === ai)).join("")}</div>${T.overlay ? overlayHtml(s) : ""}</div>
-    <div class="tm-caption"><span>Click the terminal to focus it; then every key is typed into the active pane and <span class="mono">${esc(settings.tmuxPrefix)}</span> arms the tmux prefix (<span class="mono">${esc(settings.tmuxPrefix)} ?</span> lists the keys). In the real build the keys go straight to tmux over the Terminal stream as <span class="mono">TermDown.input</span>, so your own prefix and bindings apply; a click on a window tab sends <span class="mono">TermDown.select{window_id}</span> (contract addition). Esc leaves the terminal.</span>
-      <span class="mono small">${esc(attachCmd(s, T.ro))} → ${esc(viewSess(s))}${T.lastDown ? ` · last sent: ${esc(T.lastDown)}` : ""}</span></div></div>`;
+    <div class="tm-caption"><span>Click the terminal to type into it. <span class="mono">${esc(settings.tmuxPrefix)}</span> is the tmux prefix (<span class="mono">${esc(settings.tmuxPrefix)} ?</span> lists the keys); your own bindings apply in the real board. Esc leaves the terminal.</span>
+      ${dt("tm", `<span>keys: TermDown.input on the Terminal stream · window tab click: TermDown.select{window_id} (contract addition)</span><span>${esc(attachCmd(s, T.ro))} → ${esc(viewSess(s))}${T.lastDown ? ` · last sent: ${esc(T.lastDown)}` : ""}</span>`)}</div></div>`;
 }
 
 const promptIdx = lines => { for (let i = lines.length - 1; i >= 0; i--) if (/(^>\s?$)|([%$#]\s?$)/.test(lines[i][1])) return i; return lines.length - 1; };
@@ -48,7 +48,7 @@ function paneHtml(p, i, active) {
 function goalBanner(s) {
   const perm = s.perm && !ui.answered[s.perm] ? pById(s.perm) : null;
   return `<div class="tm-goal ${T.ro ? "ro" : ""}"><b>${T.ro ? "Read-only" : "You're typing into a running goal"} (${esc(s.display ?? s.win)})</b>
-    <span class="why">${T.ro ? "input is dropped on the hub and the agent (OpenAttach.read_only); switching windows and panes still works" : "keystrokes go to the harness, not the board; the goal file keeps the goal (ADR 0004)"}</span>
+    <span class="why">${T.ro ? "your typing is dropped; switching windows and panes still works" : "keystrokes go to the harness, not the board; the goal stays set"}</span>
     <button class="btn sm ${T.ro ? "on" : ""}" data-act="ro">${T.ro ? "Read-write" : "Read-only"}</button>
     ${perm ? `<button class="btn sm" data-tri="${perm.id}">Destructive prompt ${esc(perm.promptId)} → Triage</button>` : `<span class="why">destructive prompts in this pane are answered in Triage, never by typing</span>`}</div>`;
 }
@@ -72,10 +72,10 @@ function overlayHtml(s) {
 
 function detachedPanel(s, wins) {
   return `<div class="tm-wrap"><div id="tmuxTerm" class="tmux detached" tabindex="0" role="application" aria-label="detached"><div class="tm-det"><div>[detached (from session ${esc(s.sess)})]</div>
-    <div class="dim">The grouped view session ${esc(viewSess(s))} is gone (destroy-unattached). Enter, Attach, or a window below opens a new OpenAttach.</div>
+    <div class="dim">The browser's view of this session is closed. Enter, Attach, or a window below opens it again.</div>
     <div class="tm-det-list">${wins.map(w => `<button class="btn sm" data-tab="${w.id}"><span class="num">${w.idx}</span> ${esc(w.win)}</button>`).join("")}</div>
     <div><button class="btn primary" data-act="reattach">Attach</button></div></div></div>
-    <div class="tm-caption"><span class="mono small">CloseAttach{attach_id: ${esc(attachId(s))}} sent · the sidebar still switches windows and machines</span></div></div>`;
+    <div class="tm-caption"><span>Detached. The sidebar still switches windows and machines.</span>${dt("tmd", `<span>CloseAttach{attach_id: ${esc(attachId(s))}} sent</span>`)}</div></div>`;
 }
 
 function selectWindow(s, id, click) {

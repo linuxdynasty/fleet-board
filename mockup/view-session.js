@@ -18,7 +18,7 @@ function renderSessionView() {
         <span class="spacer"></span><button class="btn sm" data-step="-1" aria-label="Previous window">[</button><span class="num why">${pos} of ${order.length}</span><button class="btn sm" data-step="1" aria-label="Next window">]</button>
         <button class="btn sm ${drawer ? "on" : ""}" data-act="drawer" aria-expanded="${drawer}">Details <kbd>i</kbd></button></div>
       ${cond ? `<div class="sess-q cond"><b>${esc(cond.kind)}${cond.retrying ? ", retrying" : ""}:</b> ${esc(cond.text)} <button class="btn sm" data-tri="${cond.id}">See in Triage</button></div>` : ""}
-      ${perm ? `<div class="sess-q"><b>Permission prompt ${esc(perm.promptId)}:</b> ${esc(perm.text)} <span class="why">default ${esc(perm.def)}${perm.destructive ? " · destructive: " + esc(perm.reason) : ""}</span> <button class="btn sm" data-tri="${perm.id}">Answer in Triage</button></div>` : ""}
+      ${perm ? `<div class="sess-q"><b>Permission prompt:</b> ${esc(perm.text)} <span class="why">default ${esc(perm.def)}${perm.destructive ? " · destructive: " + esc(perm.reason) : ""}</span> <button class="btn sm" data-tri="${perm.id}">Answer in Triage</button></div>` : ""}
       ${renderTmux(s, m)}
     </div>
     ${drawer ? drawerHtml(s, m) : ""}</div>`;
@@ -55,14 +55,14 @@ function drawerHtml(s, m) {
       <div>${pr.ci.fail ? `<span class="ci bad">✗ ${pr.ci.fail} failing</span>` : ""} <span class="ci ok">✓ ${pr.ci.pass}</span> ${pr.ci.pend ? `<span class="ci warn">● ${pr.ci.pend}</span>` : ""}</div></section>` : ""}
     ${s.harness !== "shell" ? goalControls(s) : ""}
     <section><h2>Send keys</h2><div class="keys"><input id="keysIn" class="field" placeholder="Keys for the main pane" aria-label="Keys to send"><button class="btn" data-act="keys">Send…</button></div>
-      <div class="why">Typing in the terminal goes over TermDown.input unconfirmed; this path is SendKeys, confirmed for goal panes (ADR 0004).</div></section>
+      <div class="why">Typing in the terminal sends at once; this box asks first when the window runs a goal.</div>${dt("sk", "<span>terminal: TermDown.input, unconfirmed · this box: SendKeys, confirmed for goal panes (ADR 0004)</span>")}</section>
     ${s.harness !== "shell" ? `<section><h2>Harness command</h2><button class="btn ${ui.paletteOpen ? "on" : ""}" data-act="palette">${ui.paletteOpen ? "Hide the palette" : "Harness command…"}</button>${ui.paletteOpen ? palettePanel(s) : ""}</section>` : ""}
     <section><h2>Session</h2><div class="ctl">
       ${s.yours && s.harness !== "shell" ? `<button class="btn" data-act="avail">${s.available ? "Withdraw “available for work”" : "Mark available for work"}</button>` : ""}
-      ${!s.yours && isGoal(s) ? `<span class="why">Becomes available for work after a verified merge (E11)${goalState(s) === "merged" ? ": available now" : ""}.</span>` : ""}
+      ${!s.yours && isGoal(s) ? `<span class="why">Becomes available for work after a verified merge${goalState(s) === "merged" ? ": available now" : ""}.</span>` : ""}
       ${isGoal(s) ? `<button class="btn" data-act="move">Move to another machine…</button>` : ""}
       ${s.harness !== "shell" ? `<button class="btn" data-act="restart">Restart harness in place…</button>` : ""}
-      ${!s.yours ? `<button class="btn danger" data-act="kill">Kill window…</button>` : `<span class="why">Your own windows are never killed from the board (ROLE_OWNER only).</span>`}
+      ${!s.yours ? `<button class="btn danger" data-act="kill">Kill window…</button>` : `<span class="why">Your own windows are never killed from the board.</span>`}
       <button class="btn" data-act="attachline">Attach from your terminal…</button><button class="btn" data-new="${m.id}">New session on ${esc(m.short)}…</button></div></section>
     ${attachSection(s, m)}
     <section><h2>History</h2><button class="btn ${ui.histOpen ? "on" : ""}" data-act="history">${ui.histOpen ? "Hide history" : "History…"}</button>${ui.histOpen ? historyPanel(s) : ""}</section>
@@ -70,7 +70,7 @@ function drawerHtml(s, m) {
       <li><span class="num">${hhmm(s.started)}</span> window created</li></ol></section></aside>`;
 }
 
-const confirmBoxS = () => `<div class="confirm"><div>${esc(ui.confirm.label)}</div><code>${esc(ui.confirm.cmd)}</code>${ui.confirm.note ? `<div class="why">${esc(ui.confirm.note)}</div>` : ""}
+const confirmBoxS = () => `<div class="confirm"><div>${esc(ui.confirm.label)}</div>${ui.confirm.note ? `<div class="why">${esc(ui.confirm.note)}</div>` : ""}${cmdBlock(ui.confirm, "cfs")}
   ${ui.confirm.input !== undefined ? `<input id="cfIn" class="field mono" value="${esc(ui.confirm.input)}" aria-label="Text">` : ""}
   <div class="actions">${ui.confirm.copy ? `<button class="btn primary" data-act="copy">Copy line</button>` : `<button class="btn primary ${ui.confirm.danger ? "danger" : ""}" data-act="do">${esc(ui.confirm.go)}</button>`}
   <button class="btn" data-act="cancel">Cancel</button></div></div>`;
@@ -83,7 +83,7 @@ function goalControls(s) {
       ${btn("resume", "Resume", has("resume"), has("resume") ? "RunHarnessCommand /goal resume" : "GOAL_SUBCOMMAND_UNSUPPORTED")}
       ${btn("edit", "Edit…", has("edit") || s.harness === "claude", has("edit") ? "RunHarnessCommand /goal edit" : s.harness === "claude" ? "No /goal edit: sets /goal again" : "GOAL_SUBCOMMAND_UNSUPPORTED")}
       ${btn("clear", "Clear…", has("clear"), has("clear") ? "RunHarnessCommand /goal clear" : "GOAL_SUBCOMMAND_UNSUPPORTED")}</div>
-    <div class="why">Each button sends the harness's own /goal subcommand through RunHarnessCommand (class GOAL) at an idle prompt. ${s.harness === "claude" ? "Claude Code has no pause/resume: Pause sends Interrupt (F4)." : s.harness === "opencode" ? "OpenCode has no /goal; goals need the generic goal protocol first." : "No composite stop exists; a goal ends with /goal clear."}</div></section>`;
+    <div class="why">Each button types the harness's own /goal command at an idle prompt. ${s.harness === "claude" ? "Claude Code has no pause or resume: Pause presses Esc instead." : s.harness === "opencode" ? "OpenCode has no /goal; goals need the generic goal protocol first." : "A goal ends with /goal clear."}</div>${dt("gc", "<span>RunHarnessCommand{command: /goal, args, expected_class: GOAL} · Interrupt where there is no pause · GOAL_SUBCOMMAND_UNSUPPORTED otherwise</span>")}</section>`;
 }
 
 function movePanel(s) {
@@ -91,10 +91,10 @@ function movePanel(s) {
   const pick = ui.moveTo && ui.moveTo !== s.m ? ui.moveTo : (targets.filter(x => freeActive(x) > 0).sort((a, b) => freeActive(b) - freeActive(a))[0] ?? targets[0]).id;
   ui.moveTo = pick;
   const to = mById(pick), full = freeActive(to) === 0 || freeTotal(to) === 0;
-  return `<div class="confirm move"><div><b>Move this goal.</b> v2 has no move command: the goal is cleared here and dispatched there from the pushed branch. Unpushed work stays behind.</div>
+  return `<div class="confirm move"><div><b>Move this goal.</b> The goal is cleared here and started there from the pushed branch. Unpushed work stays behind.</div>
     <label class="slot"><span>Move to</span><select id="moveTo">${targets.map(x => `<option value="${x.id}" ${x.id === pick ? "selected" : ""}>${esc(x.name)} (${freeActive(x)}/${x.maxActive} active free${x.drained ? ", draining" : ""})</option>`).join("")}</select></label>
     ${full ? `<p class="bad-t">${esc(to.name)} has no free slot${to.drained ? " (draining)" : ""}.</p>` : ""}
-    <code>${esc(moveCmds(s, to))}</code>
+    ${dt("mv", `<code>${esc(moveCmds(s, to))}</code><span>no move command in v2: /goal clear (or Interrupt) here, StartGoal there</span>`)}
     <div class="actions"><button class="btn primary" data-act="domove" ${full ? "disabled" : ""}>Move goal</button><button class="btn" data-act="closemove">Cancel</button></div></div>`;
 }
 
@@ -116,14 +116,14 @@ function wireSession(s, m) {
   wireTmux(s);
 }
 
-function setReadOnly(s, ro) { T.ro = ro; log(`browser terminal ${ro ? "read-only" : "read-write"} (OpenAttach read_only=${ro})`, s); rerender(); }
+function setReadOnly(s, ro) { T.ro = ro; log(`browser terminal ${ro ? "read-only" : "read-write"}`, s); rerender(); }
 
 function goalAct(s, sub) {
   const text = sub === "edit" ? (s.line ?? "").replace(/^Drive /, "drive ") : "";
   const g = goalCtl(s, sub, text);
   if (!g.ok) return;
   ui.confirm = { sid: s.id, label: g.label, cmd: g.cmd, go: sub[0].toUpperCase() + sub.slice(1), what: g.what, danger: sub === "clear", sub, input: sub === "edit" ? text : undefined,
-    note: "Typed only at an idle prompt (ready pattern showing, input line empty); otherwise PANE_BUSY. A composite is never used." };
+    note: "Typed only at an idle prompt with an empty input line.", raw: "PANE_BUSY otherwise; never a composite command" };
   rerender();
 }
 
@@ -132,13 +132,13 @@ function sessionAct(s, m, act) {
   if (act === "drawer") { T.drawer = !T.drawer; if (!T.drawer) { ui.confirm = null; ui.moveOpen = false; ui.newOpen = null; } }
   if (act === "side") T.side = !T.side;
   if (act === "ro") return setReadOnly(s, !T.ro);
-  if (act === "reattach") { T.detached = null; T.focused = true; log(`re-attached the browser terminal to ${s.sess} on ${m.short} (${attachCmd(s, T.ro)}; mock)`, s); }
-  if (act === "keys") { const k = $("keysIn").value; if (!k) return $("keysIn").focus(); ui.confirm = { sid: s.id, label: "Send these keys to the pane (literal text plus Enter; never a tmux command string):", cmd: sendKeysCmd(s, k, isGoal(s) ? { require_empty_input_line: true } : {}), go: "Send", what: `sent keys “${k}”`, note: isGoal(s) ? "Typing into a running goal asks for confirmation (ADR 0004); your own windows go straight through." : "" }; }
+  if (act === "reattach") { T.detached = null; T.focused = true; log(`re-attached the browser terminal to ${s.sess} on ${m.short} (mock)`, s); }
+  if (act === "keys") { const k = $("keysIn").value; if (!k) return $("keysIn").focus(); ui.confirm = { sid: s.id, label: "Send these keys to the pane (literal text plus Enter; never a tmux command string):", cmd: sendKeysCmd(s, k, isGoal(s) ? { require_empty_input_line: true } : {}), go: "Send", what: `sent keys “${k}”`, note: isGoal(s) ? "Typing into a running goal asks first; your own windows go straight through." : "" }; }
   if (act === "attachline") ui.confirm = { sid: s.id, label: "Attach from your own terminal. This line runs on your machine; the hub never runs ssh.", cmd: attachLine(m, s), copy: true };
   if (act === "palette") { ui.paletteOpen = !ui.paletteOpen; ui.confirm = null; }
   if (act === "history") { ui.histOpen = !ui.histOpen; }
   if (act === "avail") ui.confirm = { sid: s.id, label: s.available ? "Withdraw the mark; the dispatcher stops treating this session as free capacity:" : "Let the dispatcher start the next goal in this idle session instead of opening a new window:", cmd: availCmd(s, !s.available), go: s.available ? "Withdraw" : "Mark available", what: s.available ? "withdrew availability" : "marked available for work", avail: !s.available, note: "Any keystroke of yours clears idle at once; a goal is never typed into a non-empty input line." };
-  if (act === "restart") ui.confirm = { sid: s.id, label: `Restart the harness in the same window through the adapter's ResumeArgs (${RESUME[s.harness]}); the goal file keeps the goal:`, cmd: respawnCmd(s), go: "Restart", danger: true, what: "restarted harness in place", note: "Dangerous kind: may wait for `fleet-agent approve <command_id>` on the machine (AWAITING_LOCAL_CONFIRM)." };
+  if (act === "restart") ui.confirm = { sid: s.id, label: `Restart the harness in the same window (${RESUME[s.harness]}); the goal stays set.`, cmd: respawnCmd(s), go: "Restart", danger: true, what: "restarted harness in place", note: "The machine may ask you to approve it there first (fleet-agent approve).", raw: "AWAITING_LOCAL_CONFIRM until approved on the machine" };
   if (act === "kill") ui.confirm = { sid: s.id, label: "Close this fleet-started window. The branch, worktree and claim stay. Clear the goal first if it is still set.", cmd: killCmd(s), go: "Kill window", danger: true, what: "killed window", kill: true };
   if (act === "move") { ui.moveOpen = true; ui.confirm = null; }
   if (act === "closemove") ui.moveOpen = false;

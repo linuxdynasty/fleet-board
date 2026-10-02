@@ -16,13 +16,19 @@ hub would send that command; "shows" means the element renders agent-reported
 state. The hub never sends ssh or a shell string; the one `ssh` line in the UI
 is the copyable attach fallback and runs on the developer's own machine.
 
+Default views use plain words. The contract names in this table (typed
+commands, proto fields, reason codes, hashes, ADR refs) are what each
+element's small **details** toggle shows; the views were split from one Fleet
+page into Usage, Machines and Settings on 2026-10-02.
+
 ## Shell and switcher
 
 | UI element | Contract | Source |
 |---|---|---|
 | Summary strip counts (working, waiting, stuck, need you, slots, available sessions) | hub-derived from `GoalState`, `Heartbeat.counts`, `TmuxPane.availability` | A5, G2, E11 |
-| Per-account mini bars | `UsageReading.buckets[]` (`LimitBucket.percent_used`), hub pacing | D2 |
-| API-key account `$spent/cap` | `UsageReading.spend` (`SpendReading`), `BudgetKind.DOLLAR_CAP` | D2, 01 §C |
+| Per-account mini bar and short waste line ("58% left · ~25% unused", "stale reading") | `UsageReading.buckets[]` (`LimitBucket.percent_used`, `resets_at`), hub pacing and waste projection | D2 |
+| API-key account "$6 of $20" | `UsageReading.spend` (`SpendReading`), `BudgetKind.DOLLAR_CAP` | D2, 01 §C |
+| ⌘K entries for accounts (waste line) and "Audit log" | hub-derived; audit log opens on Machines | D2, M1 |
 | ⌘K entries for windows | `TmuxWindow.name`, `TmuxSession.name`, `started_by_fleet` | E1 |
 | ⌘K entries for work items | `WorkItemRef.display`, `ProviderKind` | ADR 0012 |
 
@@ -38,9 +44,10 @@ is the copyable attach fallback and runs on the developer's own machine.
 | "not delivered, machine was offline" text | `Command.not_after` (2 min) → `Status.EXPIRED` | ADR 0004 deadlines |
 | Harness condition card (provider error, rate limited, sign-in required) | `HarnessCondition{kind, retrying, attempt, max_attempts, http_status, next_retry_at, text, since, cleared}` | E12 |
 | "Sign in on the machine yourself" | `/login`, `/connect` are `COMMAND_CLASS_DENY`, never sendable | C4, F8 |
-| Stuck goal card | `GoalState.state = BLOCKED_STUCK` (BLOCKED, watcher dead) | G2 |
+| Stuck goal card, title in plain words ("… (nothing is watching it)") | `GoalState.state = BLOCKED_STUCK` (BLOCKED, watcher dead); raw `GoalState.first_line` in the card | G2 |
 | "Send a hint…" preview | sends `SendKeys{…, require_empty_input_line: true}`; `PANE_BUSY` otherwise | F3 |
 | "done? code host disagrees" card | `GoalState.state = DONE` vs `ChangeRequest.state != MERGED` | G2, ADR 0012 |
+| Reserve-reached card: "reading is from before the last reset" | `UsageReading.read_at` older than the bucket's previous `resets_at` | D1, D2 |
 | "Reopen goal…" preview | sends `RunHarnessCommand{command: "/goal", args: …, expected_class: GOAL, catalog_hash}` | G4, F8 |
 | Reserve-reached card | hub pacing over `LimitBucket` | design.md dispatch rules |
 
@@ -52,6 +59,7 @@ is the copyable attach fallback and runs on the developer's own machine.
 | "code: github.com/eshu-hq/eshu" on a Jira card | `WorkItem.repos[]` (`RepoRef{host, path}`) | ADR 0012 open question (ticket → repo) |
 | "claimed by …" | `WorkItem.claims[]` (`Claim.mechanism`, `by_fleet`) | ADR 0012 |
 | CI marks on change requests | `ChangeRequest.checks` (`CheckSummary`), `merged_at` | ADR 0012 |
+| Goal line on a card, e.g. "waiting on CI (watcher running)"; raw `BLOCKED: … WATCH=48213` under details | `GoalState{state: GOAL_LINE_STATE_BLOCKED_WATCH, first_line, watch_pid, watch_alive}` | G2 |
 | Column names ("change request", "code host") | provider-neutral wording; `ChangeRequest` covers PR and MR | ADR 0012 |
 | "Next up … will use available session X" / "new window …" | `StartGoal.reuse_pane` vs `in_session` + `window_name`; `PreflightResult.would_reuse` | G3, E11 |
 | Dispatch panel account list incl. "via OpenCode (manual only)" | `AccountIdentity.budget_kind`; API-key accounts never auto-dispatched | 01 §C, ADR 0008 mode |
@@ -113,28 +121,53 @@ lists every window on every machine; the Details drawer holds the controls.
 | Details drawer: Timeline | hub audit log entries for this session | M1 (hub side) |
 | Settings: tmux prefix (`C-b` / `C-a`) | mock-only emulation switch; the real build forwards raw keys, so no contract field | J1 |
 
-## Fleet
+## Usage
 
 | UI element | Contract | Source |
 |---|---|---|
+| "Will any subscription go to waste?" line per subscription ("Codex · 58% left · resets in 2d 10h · 1 goal running · on pace to leave ~25% unused") | hub-derived from `LimitBucket.percent_used`, `resets_at` and running `GoalState`s: projected unused = (100 − reserve) − (used + used ÷ hours elapsed × hours left) | D2, design.md dispatch rules |
+| Highlight: will waste ≥ 5 points, or no goal running while behind pace | hub pacing; the same inputs `suggest()` uses to pick the account with the most quota that would otherwise expire | G3, ADR 0008 |
+| "stale — reset passed, re-probe pending"; next reset = old `resets_at` + one window | `UsageReading.read_at` < bucket `resets_at`; next `EnsureProbe` run replaces it | D1, D2 |
+| API-key line "$6.40 of $20 this month · manual only" (no waste line) | `SpendReading`, `BUDGET_KIND_DOLLAR_CAP` | 01 §C |
 | Account card "as shown" table (Claude session / weekly all models / weekly Fable; Codex "% left"; Muse current / weekly) | `UsageReading.shown` (`ShownUsage.fields[] ShownField{group, label, value}`), `LimitBucket.shown_as_remaining` | D2 "as shown" |
 | Burn-down chart | `LimitBucket.percent_used`, `resets_at` (standardized half) | D2 |
-| "source: probe /usage 10 min ago" / "passive (banner)" | `UsageReading.source` (`USAGE_SOURCE_PROBE` / `PASSIVE`), `read_at` | D1, D3 |
+| "read from /usage 10m ago" / "read from the status line" | `UsageReading.source` (`USAGE_SOURCE_PROBE` / `PASSIVE`), `read_at` | D1, D3 |
 | Plan, email hidden/shown | `AccountIdentity{plan, login_method, email}`; email empty unless `share_identity_email` | C2, A8 |
-| Consent and mode per account | `GoalSpec.consent[]` source; account `mode: fleet \| interactive-only` | ADR 0008 |
+| Consent and mode per account (under details) | `GoalSpec.consent[]` source; account `mode: fleet \| interactive-only` | ADR 0008 |
 | API-key cards (DeepSeek, Moonshot) with "$ of cap", "manual only" | `SpendReading`, `BUDGET_KIND_DOLLAR_CAP`; never auto-dispatched | 01 §C, usage.proto |
 | OpenCode card | router; `SessionAccountLink`; no `/usage`, no `/goal`; not auto-dispatched on Anthropic | 01b OpenCode |
-| Machine card: OS, RAM, agent version, tmux version, timezone-resolved times | `MachineFacts{os, ram_bytes, agent_version, tmux_version, timezone}` | B1 |
-| Labels | `EffectiveSettings.labels` (hub-assigned, local can add) | ADR 0009, 0011 |
-| "gh signed in as … · push: eshu ADMIN" | `ForgeCliStatus{tool, host, signed_in, user, access[] RepoAccess{push_access, provider_permission}}` | H4, ADR 0012 |
-| "agent cert expires in Nd" | `EnrollResponse.cert_not_after`, `RenewCert` at ⅔ lifetime | A4, ADR 0004 |
-| "policy <hash> · unchanged/changed" | `PolicyInfo{hash, changed_since_load}`, `PolicyChanged` event | L1 |
-| Harness chips with versions | `HarnessInfo{harness, version}` | C1 |
-| Window chips | `TmuxSession.name:index` + `TmuxWindow.name` | E1 |
-| "Drain…" / "Undrain" | sends `Drain{reason}` / `Undrain{}`; `DrainState`; local drain → `REJECTED_BY_POLICY DRAINING` | M4 |
-| "Attach from your terminal…" | copyable `ssh -t … tmux attach`; not a hub command | ADR 0006 |
-| Settings: effective values with layer chips | `EffectiveSettings.sources[] SettingSource{field, layer}`; "capped by local policy" = `SETTING_LAYER_LOCAL_CEILING` / `SettingsAck.capped_fields` | A8, L2, ADR 0009 |
-| Settings: limits, idle threshold, window template, show emails | `SettingValues{max_active, max_total, idle_threshold, window_name_template, share_identity_email}` | A8, ADR 0011 |
-| Settings: watched repos with host and provider, `hooks: eshu \| generic` | `Integration.watched[]`, `RepoRef{host, path}`; `GoalHooksState.repo_ships_own` | ADR 0012, G1 |
-| Settings: Integrations (GitHub connected; GitLab, Jira, Bitbucket, Linear planned) | `Integration{provider, capabilities IntegrationCapabilities{roles, claim_mechanisms, sync_modes, checks, reviews, merge_detection}}` | ADR 0012, integrations.proto |
-| Audit log | hub audit; agent `M1` local audit mirrors command results | ADR 0004 |
+
+## Machines
+
+| UI element | Contract | Source |
+|---|---|---|
+| State pill, active/total/available, "seen 3s ago" | `DrainState`, `Heartbeat.counts`, `TmuxPane.availability`, heartbeat time | A5, M4, E11 |
+| Warnings only when they matter ("certificate expires in 4 days", "local policy file changed") | `EnrollResponse.cert_not_after`; `PolicyInfo.changed_since_load`, `PolicyChanged` | A4, L1 |
+| Harness line with version | `HarnessInfo{harness, version}` | C1 |
+| Goal hooks per harness: "hooks installed and checked" | `GoalHooksState{installed: true, verified: true}` | G1, 01d |
+| "hooks installed, trust pending — open Codex /hooks to approve" | `GoalHooksState.trust_pending = true` (Codex trusts per hook hash; `/hooks` is deny-class, the agent never approves) | G1, 01d |
+| "hooks installed; eshu ships its own, so fleet's stay off there" | `GoalHooksState.repo_ships_own = true` | G1, 01d |
+| "hooks not installed: …" / "self-check failed" | `GoalHooksState.installed = false` / `verified = false`; install failure `REASON_CODE_HOOKS_INSTALL_FAILED` | G1, 01d |
+| "no fleet hooks yet (Muse hooks not probed)" | no `HarnessInfo.goal_hooks` for Muse until its probe | 01d open questions |
+| Machine details: raw `GoalHooksState{installed, verified, trust_pending, repo_ships_own, hook_version, hook_hash, config_path}` | `HarnessInfo.goal_hooks`; `config_path` = the user-level file (`~/.claude/settings.json`, `~/.codex/hooks.json`); result of `EnsureGoalHooks` | G1, 01d |
+| Machine details: OS, RAM, agent version, tmux version, default server | `MachineFacts{os, ram_bytes, agent_version, tmux_version, timezone}` | B1 |
+| Machine details: labels | `EffectiveSettings.labels` (hub-assigned, local can add) | ADR 0009, 0011 |
+| Machine details: "gh signed in as … · push: eshu ADMIN" | `ForgeCliStatus{tool, host, signed_in, user, access[] RepoAccess{push_access, provider_permission}}` | H4, ADR 0012 |
+| Machine details: "agent cert expires in Nd" | `EnrollResponse.cert_not_after`, `RenewCert` at ⅔ lifetime | A4, ADR 0004 |
+| Machine details: "policy <hash> · unchanged/changed" | `PolicyInfo{hash, changed_since_load}`, `PolicyChanged` event | L1 |
+| Goal window chips, "+ N windows of yours" | `TmuxSession.name:index` + `TmuxWindow.name`; `started_by_fleet` | E1 |
+| "Drain…" / "Undrain" (command under details) | sends `Drain{reason}` / `Undrain{}`; `DrainState`; local drain → `REJECTED_BY_POLICY DRAINING` | M4 |
+| "Attach from your terminal…" (line stays visible) | copyable `ssh -t … tmux attach`; not a hub command | ADR 0006 |
+| Audit log (collapsible, linked from the header and ⌘K) | hub audit; agent `M1` local audit mirrors command results | ADR 0004 |
+
+## Settings
+
+| UI element | Contract | Source |
+|---|---|---|
+| Watched repos with host and provider, `hooks: eshu \| generic` | `Integration.watched[]`, `RepoRef{host, path}`; `GoalHooksState.repo_ships_own`; `EnsureGoalHooks` for generic | ADR 0012, G1 |
+| Goals: auto-dispatch, consent, window template, idle threshold | `GoalSpec.consent[]`; `SettingValues{window_name_template, idle_threshold}` | ADR 0008, 0011 |
+| Reserve per account; limits per machine | hub pacing; `SettingValues{max_active, max_total}` | A8, ADR 0011 |
+| Privacy: show emails | `SettingValues.share_identity_email` | A8 |
+| Integrations (GitHub connected; GitLab, Jira, Bitbucket, Linear planned) | `Integration{provider, capabilities IntegrationCapabilities{roles, claim_mechanisms, sync_modes, checks, reviews, merge_detection}}` | ADR 0012, integrations.proto |
+| Effective values per machine (collapsed), plain field names, layer chips | `EffectiveSettings.sources[] SettingSource{field, layer}`; "capped by local policy" = `SETTING_LAYER_LOCAL_CEILING` / `SettingsAck.capped_fields` | A8, L2, ADR 0009 |
+| fleet.yaml (collapsed) | hub config file the settings write | ADR 0009 |

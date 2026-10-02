@@ -5,9 +5,9 @@
 // grouped view session so the browser's current window never moves the developer's own terminal.
 function attachSection(s, m) {
   return `<section><h2>Browser attach</h2>
-    <div class="why">Grouped session <span class="mono">${esc(viewSess(s))}</span>: same windows as <span class="mono">${esc(s.sess)}</span>, its own current window, destroy-unattached on. OSC 52 and hyperlinks stripped. Your prefix and bindings work unchanged (the mock emulates <span class="mono">${esc(settings.tmuxPrefix)}</span>); the window tabs cover shortcuts the browser reserves (Ctrl+W).</div>
-    <label class="chk"><input type="checkbox" id="roToggle" ${T.ro ? "checked" : ""}> Read-only (input dropped on the hub and the agent)</label>
-    <span class="mono small">${esc(attachCmd(s, T.ro))}</span>
+    <div class="why">The browser gets its own view of <span class="mono">${esc(s.sess)}</span>: same windows, its own current window, so it never moves your terminal. Your prefix and bindings work unchanged; the window tabs cover shortcuts the browser keeps for itself (Ctrl+W).</div>
+    <label class="chk"><input type="checkbox" id="roToggle" ${T.ro ? "checked" : ""}> Read-only (your typing is dropped)</label>
+    ${dt("att", `<span>grouped view session ${esc(viewSess(s))} · destroy-unattached · OSC 52 and hyperlinks stripped</span><span>${esc(attachCmd(s, T.ro))}</span>`)}
     <div class="why">From your own terminal: <code class="inline">${esc(attachLine(m, s))}</code> <button class="btn sm" data-act="attachline">Copy</button></div></section>`;
 }
 
@@ -15,17 +15,17 @@ function attachSection(s, m) {
 function palettePanel(s) {
   const cat = CATALOG[s.harness];
   if (!cat) return "";
-  return `<div class="palette"><div class="section-head"><h2>Harness command · ${esc(s.harness)} ${esc(mById(s.m).versions?.[s.harness] ?? "")}</h2><span class="hint">catalog ${esc(cat.hash)} · discovered in the probe session · unknown commands are deny-class and never listed</span></div>
+  return `<div class="palette"><div class="section-head"><h2>Harness command · ${esc(s.harness)} ${esc(mById(s.m).versions?.[s.harness] ?? "")}</h2><span class="hint">commands found on this install · sign-in, permission and hook commands are never sent</span></div>
     <div class="pal-grid">${CLASSES.map(cls => `<div class="pal-col"><div class="pal-k ${cls}">${cls}${cls === "session" || cls === "review" ? " · operator" : cls === "destructive" ? " · confirm" : ""}</div>
       ${cat[cls].length ? cat[cls].map(c => `<button class="btn sm ${cls === "destructive" ? "danger" : ""}" data-cmd="${esc(c)}" data-cls="${cls}">${esc(c)}</button>`).join("") : `<span class="why">none</span>`}</div>`).join("")}</div>
-    <div class="why">Each sends <span class="mono">RunHarnessCommand{pane, command, expected_class, catalog_hash}</span>; the agent refuses COMMAND_NOT_IN_CATALOG, CATALOG_STALE, COMMAND_CLASS_DENIED or PANE_BUSY. Deny class (/login, /logout, /permissions, /hooks, /config, /plugins, /usage-credits…) is never sendable.</div></div>`;
+    ${dt("pal", `<span>catalog ${esc(cat.hash)} · each button sends RunHarnessCommand{pane, command, expected_class, catalog_hash}</span><span>refusals: COMMAND_NOT_IN_CATALOG, CATALOG_STALE, COMMAND_CLASS_DENIED, PANE_BUSY · deny class: /login, /logout, /permissions, /hooks, /config, /plugins, /usage-credits…</span>`)}</div>`;
 }
 
 function paletteAct(s, command, cls) {
   const cmd = harnessCmd(s, command, cls);
   if (cls === "destructive") { ui.confirm = { sid: s.id, label: `${command} is destructive. Confirm; the machine may also require local approval:`, cmd, go: "Run " + command, danger: true, what: `ran ${command} (destructive)` }; return rerender(); }
   if (command === "/goal") { ui.confirm = { sid: s.id, label: "Use the goal controls (pause / resume / edit / clear) in the rail; they send /goal subcommands the harness supports.", cmd, go: "OK", what: "viewed /goal" }; return rerender(); }
-  log(`ran ${command} (${cls}) · ${cmd}${cls === "observe" ? " · screen returned in RunHarnessCommandResult" : ""} (mock, not sent)`, s);
+  log(`ran ${command} (${cls}) (mock, not sent)`, s);
   if (cls === "observe") s.pane = [...s.pane, ["dim", `> ${command}`], ["dim", `(mock: ${command} output would appear here, ANSI stripped, 64 KiB cap)`]];
   rerender();
 }
@@ -47,27 +47,27 @@ function newSessionPanel(m) {
   const st = ui.newState ?? (ui.newState = { name: "scratch", repo: settings.repos[0].repo, harness: "", reuse: true });
   const exists = sessions.some(s => s.m === m.id && s.sess === st.name);
   const ok = /^[a-z0-9][a-z0-9-]{0,31}$/.test(st.name);
-  return `<div class="confirm newsess"><div><b>New session on ${esc(m.name)}</b> · shows up in your own <span class="mono">tmux ls</span>, tagged FLEET_SESSION_ID / FLEET_OWNER so the board knows it is fleet-started.</div>
+  return `<div class="confirm newsess"><div><b>New session on ${esc(m.name)}</b> · shows up in your own <span class="mono">tmux ls</span>, marked as started by fleet.</div>
     <div class="disp">
       <label>Name <input class="field mono" id="nsName" value="${esc(st.name)}" placeholder="[a-z0-9-]"></label>
       <label>Repo <select id="nsRepo">${settings.repos.map(r => `<option value="${esc(r.repo)}" ${r.repo === st.repo ? "selected" : ""}>${esc(r.host)}/${esc(r.repo)}</option>`).join("")}</select></label>
       <label>Harness <select id="nsHarness"><option value="">login shell</option>${m.harnesses.map(h => `<option value="${h}" ${h === st.harness ? "selected" : ""}>${h} ${esc(m.versions?.[h] ?? "")}</option>`).join("")}</select></label>
       <label class="chk"><input type="checkbox" id="nsReuse" ${st.reuse ? "checked" : ""}> Reuse/attach if a session of that name exists${exists ? " (it does)" : ""}</label>
     </div>
-    ${ok ? "" : `<p class="bad-t">Name must match [a-z0-9][a-z0-9-]{0,31} (INVALID_NAME). Your own sessions may have any name; fleet-created ones are restricted.</p>`}
-    <code>${esc(ensureSessionCmd({ id: `sess-${Date.now().toString(36).slice(-4)}`, name: st.name, repo: st.repo, harness: st.harness, reuse: st.reuse }))}</code>
+    ${ok ? "" : `<p class="bad-t">Use lowercase letters, digits and dashes, up to 32 characters. Your own sessions may have any name; fleet-created ones are restricted.</p>`}
+    ${dt("ns", `<code>${esc(ensureSessionCmd({ id: `sess-${Date.now().toString(36).slice(-4)}`, name: st.name, repo: st.repo, harness: st.harness, reuse: st.reuse }))}</code><span>tags FLEET_SESSION_ID / FLEET_OWNER · name rule [a-z0-9][a-z0-9-]{0,31} → INVALID_NAME</span>`)}
     <div class="why">The agent joins the repo to an allowed root (never an absolute path from the hub), resolves the harness path locally, and pre-trusts the folder. ${st.harness === "opencode" ? "OpenCode: inventory, sessions and attach only; no goals until the generic goal protocol." : ""}</div>
     <div class="actions"><button class="btn primary" data-act="newgo" ${ok ? "" : "disabled"}>${exists && st.reuse ? "Reuse session" : "Create session"}</button><button class="btn" data-act="newcancel">Cancel</button></div></div>`;
 }
 
 function newSessionGo() {
   const st = ui.newState, m = mById(ui.newOpen), exists = sessions.find(s => s.m === m.id && s.sess === st.name);
-  if (exists && st.reuse) { log(`reused session ${st.name} on ${m.short} (EnsureSession reuse=true, created=false; mock)`, exists); ui.newOpen = null; return go("session", exists.id); }
+  if (exists && st.reuse) { log(`reused session ${st.name} on ${m.short} (mock)`, exists); ui.newOpen = null; return go("session", exists.id); }
   const id = "n" + Date.now().toString(36).slice(-5), h = st.harness || "shell";
   const s = { id, m: m.id, harness: h, sess: st.name, idx: 0, win: h === "shell" ? "zsh" : h, paneId: `%${60 + sessions.length}`, repo: st.repo, line: null, last: new Date(), started: new Date(), tasks: [], idle: h !== "shell", available: false, fleetSess: true,
     pane: [["dim", `EnsureSession{name: ${st.name}} → created=true`], ["", h === "shell" ? `$ ` : `${h} starting in ~/repos/${shortName(st.repo)}…`]] };
   s.target = `${s.sess}:0`;
   sessions.push(s);
-  log(`created session ${st.name} on ${m.short}${h !== "shell" ? ` with ${h}` : ""} (EnsureSession; mock, nothing ran)`, s);
+  log(`created session ${st.name} on ${m.short}${h !== "shell" ? ` with ${h}` : ""} (mock, nothing ran)`, s);
   ui.newOpen = null; go("session", id);
 }

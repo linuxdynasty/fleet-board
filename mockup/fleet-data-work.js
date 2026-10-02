@@ -123,7 +123,7 @@ const audit = [
   { at: ago(10 * 60), who: "fleet", what: "probe /usage: claude 81% all models · 53% Fable · session 10%", where: "fleet-probe" },
   { at: ago(22 * 60), who: "you", what: "dispatched OPS-142 (Jira → github.com/eshu-hq/eshu) to claude", where: "allen fleet:3", s: "g9" },
   { at: ago(35 * 60), who: "fleet", what: "auto-dispatched eshu#7407 to muse (behind pace, 2% used)", where: "allen fleet:2", s: "g4" },
-  { at: ago(41 * 60), who: "you", what: "marked claude w2 available for work (SetSessionAvailability)", where: "omarchy main:7", s: "s2" },
+  { at: ago(41 * 60), who: "you", what: "marked claude w2 available for work", where: "omarchy main:7", s: "s2" },
   { at: ago(80 * 60), who: "fleet", what: "auto-dispatched virtual-humidor#780 to muse", where: "allen fleet:1", s: "g3" },
   { at: ago(5 * 3600), who: "you", what: "dispatched eshu#7380 to claude", where: "omarchy fleet:1", s: "g1" },
 ];
