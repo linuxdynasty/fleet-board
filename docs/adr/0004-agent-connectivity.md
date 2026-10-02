@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-09-29
-- Deciders: linuxdynasty (design drafted with Claude Fable 5.1, reviewed)
+- Deciders: linuxdynasty
 
 ## Context
 

@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-10-02
-- Deciders: linuxdynasty (drafted with Claude Opus 5.5)
+- Deciders: linuxdynasty
 - Supersedes, in part: [0010](0010-session-logs.md) ("Storage": one file per
   session per day on disk, indexed in SQLite)
 - Amends: [0013](0013-live-state-retention.md) (pane summaries: archived at

@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-10-02
-- Deciders: linuxdynasty (drafted with Claude Opus 5.5)
+- Deciders: linuxdynasty
 - Confirms: [0001](0001-system-architecture.md) (no Redis, no broker, no
   Postgres) and [0002](0002-storage-sqlite.md) (SQLite), which were
   provisional until step 4
