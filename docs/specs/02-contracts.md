@@ -75,7 +75,7 @@ packages; `fleet.hub.v1` never imports `fleet.agent.v1`.
 | `agent/v1/screen.proto` | `PromptDetected`, `HarnessCondition` (events and `Snapshot.prompts` / `conditions`) |
 | `agent/v1/snapshot.proto` | facts and inventories (`MachineFacts`, `HarnessInfo`, tmux `TmuxServer/Session/Window/Pane`, `GoalState`, `GoalRegistration`, `RepoCheckout`, `BranchState`, `ForgeCliStatus`, `SpoolStatus`, `PolicyInfo`, `DrainState`) and the `Snapshot` |
 | `agent/v1/usage.proto` | `UsageReading` (as shown + standardized buckets), `AccountIdentity`, `SessionAccountLink`, `ProbeHealth` |
-| `integration/v1/integration.proto` | `IntegrationCapabilities`, `WorkItem`, `ChangeRequest`, `CheckSummary`, `Review`, `Claim`, and the read-only `IntegrationProviderService` that GitHub implements first |
+| `integration/v1/{integration,model,sync,service}.proto` | `IntegrationCapabilities`; `WorkItem`, `Label`, `ChangeRequest`, `CheckSummary` (with `CheckRollup`), `Review`, `ReviewDecision`, `MergeState`, `Claim`; `ChangeCursor`, `Validators`, `RateLimitState`, `ResponseMeta`, `ProviderError`; and the read-only `IntegrationProviderService` that GitHub implements first ([03j](03j-provider-sync-and-trust.md)) |
 | `hub/v1/*.proto` | `FleetService` and its resources; see [02b](02b-hub-api.md), [02c](02c-hub-watch-and-filters.md), [02d](02d-hub-authz.md), [02f](02f-hub-authentication.md) (`auth.proto` users, passkeys, sessions; `token.proto` API tokens) |
 
 **Naming (buf STANDARD).** Services end in `Service`; every RPC has its own

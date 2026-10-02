@@ -59,7 +59,9 @@ sequenceDiagram
 
 ### Planning rules (auto-dispatch, one scheduler pass)
 
-1. **Work items:** stage `READY` (open, trusted, unclaimed, repo watched),
+1. **Work items:** stage `READY` (open, trusted, unclaimed, repo watched; the
+   trusted-issues verdict is recomputed from the mirror at plan time, so an
+   edit since the last sync demotes the item before it is taken, 03j),
    integration lag ≤ `max_sync_lag`, no live goal for the same `WorkItemKey` (DB
    unique) or on the same branch, the repo `enabled` and below its cap
    (`Repo.spec.max_parallel_goals`, else `HubSettings.max_parallel_goals_per_repo`,
@@ -406,7 +408,8 @@ Sub-flags held with the phase (on `GoalStatus`): `provider_condition`,
   after `verify_grace` (default 10 min, covers sync lag) → `DISAGREE` with a
   triage item; the worker stays held. Without `merge` consent (ADR 0008) the
   done state is "approved and green": `review_decision=APPROVED` and
-  `checks.rollup=SUCCESS` → triage `ready_for_human_merge`; still `VERIFYING`
+  `checks.rollup=SUCCESS` (both computed by the adapter for `head_commit`, 03j;
+  `UNSPECIFIED` is "not known", never green) → triage `ready_for_human_merge`; still `VERIFYING`
   until the merge is seen.
 - **Free the worker.** Only on `MERGED`: `SetPaneAvailability{true, GOAL_MERGED}`
   makes the pane `available_for_work` (E11) and `ReleaseGoal` drops its registry

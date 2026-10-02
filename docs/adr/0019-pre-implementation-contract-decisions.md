@@ -297,3 +297,39 @@ RPCs, because a backup holds the CA key.
 delete, search and store status. Search in v1 is a bounded literal scan of the
 decompressed frames, with no index; the log size cap and retention are hub
 settings.
+
+## Addendum: integration contract (review theme F)
+
+Taken while applying theme F, because they decide what a provider adapter must
+supply and what the hub concludes from it. Detail is in
+[03j](../specs/03j-provider-sync-and-trust.md).
+
+**31. The hub owns the polling loop; adapters are stateless.** The plugin seam
+of ADR 0012 stays. Cursors (`ChangeCursor`), conditional-request `Validators`,
+rate-limit state, back-off and health live in the hub's store; every request
+carries what the adapter needs and every response carries `not_modified`, the
+next cursor and `ResponseMeta` (rate limits, cost, provider clock). Failures are
+a typed `ProviderError` (`NOT_FOUND`, `UNAUTHENTICATED`, `FORBIDDEN`,
+`RATE_LIMITED`, `UNAVAILABLE`, `CURSOR_EXPIRED`, `UNSUPPORTED`) with `retryable`
+and `retry_after`, defined in the integration package so an out-of-process
+adapter needs none of the hub's reason codes. `Integration.status` gains a
+`health_reason` enum, the last error, the rate limits and a back-off time.
+Verification queries (change requests by head ref, head sha or linked work item,
+batched up to `max_batch_size`) and the fields W6 reads (`review_decision`,
+`CheckSummary.rollup`, `merge_state`, `merged_by`, `head_repo`) are adapter-computed
+normalized values; the hub never derives them from `reviews[]` or counts.
+
+**32. The trusted-issues gate is the hub's rule over adapter evidence, and it
+fails closed.** The adapter returns `author`, `Label{applied_by, applied_time}`
+for the trusted labels and `last_editor` / `last_edit_time`; it never sees the
+allow-list. `HubSettings.trusted_gate` and `Repo.spec.trusted_gate` name allow-listed
+accounts per integration (`TrustedUser{integration, login, provider_user_id}`) and
+a label per integration. An item is trusted by the author path or the label path
+unless someone outside the allow-list edited it after the trust event
+(`EDITED_AFTER_TRUST`, `MANUAL_ONLY`; an allow-listed person labelling it again
+restores it). Unknown actors, or an adapter that does not report actors or edits,
+never pass. The verdict (`WorkItem.trust`) is recomputed at sync, at plan time and
+on the body fetch itself. Incompatible renames: `IntegrationCapabilities.batch_query`
+became `max_batch_size`, `WorkItem.labels` became `Label` messages, `ChangeRequest.mergeable`
+became `merge_state`, `WorkItem.trusted` became `trust`, `HubSettings.trusted_label` and
+`trusted_users` became `trusted_gate`.

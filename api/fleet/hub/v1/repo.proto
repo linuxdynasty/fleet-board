@@ -11,14 +11,16 @@
 //   parallel cap   = Repo.max_parallel_goals, else
 //                    HubSettings.max_parallel_goals_per_repo
 //   auto-dispatch  = Repo.auto_dispatch, else HubSettings.auto_dispatch
-//   trusted gate   = Repo label, else HubSettings.trusted_label; allow-list =
-//                    HubSettings.trusted_users plus Repo users
+//   trusted gate   = Repo label, else HubSettings.trusted_gate label for the
+//                    item's integration; allow-list = HubSettings
+//                    trusted_gate.users plus Repo users, for that integration
 syntax = "proto3";
 
 package fleet.hub.v1;
 
 import "fleet/hub/v1/common.proto";
 import "fleet/hub/v1/dispatch_block.proto";
+import "fleet/hub/v1/trusted_gate.proto";
 import "fleet/hub/v1/work.proto";
 import "fleet/type/v1/consent.proto";
 import "fleet/type/v1/harness.proto";
@@ -79,14 +81,16 @@ message TrackerProject {
 
 // RepoTrustedGate overrides the trusted-issues gate for one repo
 // (design.md safety rails). Only a work item that passes is READY; anything
-// else is MANUAL_ONLY with reason UNTRUSTED.
+// else is MANUAL_ONLY (UNTRUSTED or EDITED_AFTER_TRUST). The rule itself is
+// in trusted_gate.proto.
 message RepoTrustedGate {
   // Label that, applied by an allow-listed person, marks an item
-  // dispatchable. Unset = HubSettings.trusted_label.
+  // dispatchable, whichever integration the item comes from. Unset = the
+  // HubSettings.trusted_gate label for the item's integration.
   optional string label = 1;
-  // Provider logins allowed in addition to HubSettings.trusted_users. To be
+  // Accounts allowed in addition to HubSettings.trusted_gate.users. To be
   // stricter than the fleet, set the repo's auto_dispatch off instead.
-  repeated string users = 2;
+  repeated TrustedUser users = 2;
 }
 
 // RepoSpec is what the owner decided about a repo. Covered by Repo.version.

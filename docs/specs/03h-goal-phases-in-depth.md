@@ -132,7 +132,7 @@ branches on codes, never on strings.
 | Severity | Meaning | Reasons |
 |---|---|---|
 | `BLOCK` | `StartGoal` fails `FAILED_PRECONDITION` with the first one's reason, every BLOCK listed in `violations` | `SLOTS_FULL`, `NO_FIT_MACHINE`, `WORK_ITEM_BUSY`, `BRANCH_BUSY`, `REPO_NOT_WATCHED`, `CONSENT_EMPTY`, `MACHINE_UNFIT` (for a pinned machine), `DRAINING`, `MACHINE_OFFLINE`, `ACCOUNT_NOT_DISPATCHABLE` with `cause` `interactive_only` or `opencode_on_anthropic`, and every agent failure |
-| `CONFIRM` | `StartGoal` returns `approval` (`DISPATCH_CONFIRM`, required role `OWNER`) and starts nothing; approving creates the goal and sends `StartGoal` | `WORK_ITEM_UNTRUSTED`, `WORK_ITEM_CLAIMED` (bypassing a safety gate), `ACCOUNT_NOT_DISPATCHABLE` with `cause` `dollar_cap` (spends money), `HARNESS_VERSION_UNSUPPORTED` with `parsing = unverified` (a version whose usage or ready parse is not live) |
+| `CONFIRM` | `StartGoal` returns `approval` (`DISPATCH_CONFIRM`, required role `OWNER`) and starts nothing; approving creates the goal and sends `StartGoal` | `WORK_ITEM_UNTRUSTED` (also an item edited after it was trusted; the card shows `TrustVerdict.denial`), `WORK_ITEM_CLAIMED` (bypassing a safety gate), `ACCOUNT_NOT_DISPATCHABLE` with `cause` `dollar_cap` (spends money), `HARNESS_VERSION_UNSUPPORTED` with `parsing = unverified` (a version whose usage or ready parse is not live) |
 | `WARN` | allowed once the request lists the reason in `acknowledged_warnings` | `ACCOUNT_PACING_BLOCKED`, `ACCOUNT_USAGE_UNKNOWN`, `INTEGRATION_LAG`, `INTEGRATION_DEGRADED`, `REPO_PARALLEL_LIMIT` |
 | `INFO` | shown | the session that would be reused, the model the harness shows |
 
@@ -161,9 +161,10 @@ an approval is approved.
 | `STUCK` then cleared | as `CLEARED` | same |
 
 `MANUAL_ONLY` has two ways out and no timer: the item becomes trusted (an
-allow-listed person labels it; seen at the next sync) or an operator calls
-`RequeueWorkItem`, which is refused for an `UNTRUSTED` item, so a click cannot
-bypass the gate. A routine run's item (03i) is hub-made: it goes `CLOSED` in
+allow-listed person labels it, or labels it again after an outsider's edit;
+seen at the next sync, [03j](03j-provider-sync-and-trust.md#the-trusted-issues-gate))
+or an operator calls `RequeueWorkItem`, which is refused for an `UNTRUSTED` or
+`EDITED_AFTER_TRUST` item, so a click cannot bypass the gate. A routine run's item (03i) is hub-made: it goes `CLOSED` in
 every ended case, and the next trigger starts a new run.
 
 ## Provider-side changes under a live goal

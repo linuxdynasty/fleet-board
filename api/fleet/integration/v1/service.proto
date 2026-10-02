@@ -1,0 +1,178 @@
+// fleet.integration.v1 service: the read-only provider interface the hub's
+// syncer and verifier call (03b W4, 03c W6). Every list call takes a
+// ChangeCursor and Validators and answers not_modified, next_since and
+// ResponseMeta; every failure is a ProviderError (sync.proto). The queries W4
+// and W6 need are all here: changes since a cursor, change requests by head
+// ref, head sha or linked work item, review and check state, merge state.
+syntax = "proto3";
+
+package fleet.integration.v1;
+
+import "fleet/integration/v1/integration.proto";
+import "fleet/integration/v1/model.proto";
+import "fleet/integration/v1/sync.proto";
+import "fleet/type/v1/work.proto";
+import "google/protobuf/timestamp.proto";
+
+// DescribeRequest asks an adapter what it supports.
+message DescribeRequest {}
+
+// DescribeResponse carries the adapter's capability declaration.
+message DescribeResponse {
+  IntegrationCapabilities capabilities = 1;
+}
+
+// ListWorkItemsRequest pages through a project's work items.
+message ListWorkItemsRequest {
+  // Project or repo path to list.
+  string project = 1;
+  // Only items changed since the cursor the last complete round returned;
+  // unset on the first poll and on a periodic full poll.
+  ChangeCursor since = 2;
+  // From the previous response of this same query and page; the adapter
+  // answers not_modified when nothing changed. For a provider that sorts by
+  // update time, not_modified on the first page ends the round.
+  Validators validators = 3;
+  // Opaque token from the previous page's next_page_token (AIP-158 names).
+  string page_token = 4;
+  int32 page_size = 5;
+  // Include closed items. The hub needs the closing of an item it mirrors
+  // as open (SEEN to CLOSED), so a poll with a cursor sets it; the first
+  // poll lists open items only.
+  bool include_closed = 6;
+  // Labels whose Label.applied_by and applied_time the adapter must fill: the
+  // trusted labels the hub is configured with. Other labels are names only,
+  // which keeps the timeline lookups to the items that matter.
+  repeated string evidence_labels = 7;
+}
+
+// ListWorkItemsResponse is one page.
+message ListWorkItemsResponse {
+  repeated WorkItem items = 1;
+  // Empty on the last page.
+  string next_page_token = 2;
+  // The validators matched: items is empty and nothing changed.
+  bool not_modified = 3;
+  // Validators of this page, to send with the next poll of the same page.
+  Validators validators = 4;
+  // Set on the last page: store it as the next round's `since`.
+  ChangeCursor next_since = 5;
+  ResponseMeta meta = 6;
+}
+
+// GetWorkItemRequest fetches one item, optionally with its body.
+message GetWorkItemRequest {
+  fleet.type.v1.WorkItemKey ref = 1;
+  // Fetch the body (capped at 64 KiB).
+  bool include_body = 2;
+  // As in ListWorkItemsRequest. A fetch for dispatch asks it again, so the
+  // hub re-evaluates trust on the same read that returns the body.
+  repeated string evidence_labels = 3;
+}
+
+// GetWorkItemResponse.
+message GetWorkItemResponse {
+  WorkItem item = 1;
+  // Untrusted text: it reaches agents with push rights only through the
+  // trusted-issues gate. The gate runs on `item` of this same response
+  // (labels, last_editor, last_edit_time), never on an earlier mirror.
+  string body = 2;
+  ResponseMeta meta = 3;
+}
+
+// ListChangeRequestsRequest pages through a repo's change requests. The
+// filters combine with AND; the values inside one repeated filter with OR. A
+// lookup (any of the three filters set) returns change requests in every
+// state unless `states` says otherwise, because a goal's change request is
+// merged by the time it is verified.
+message ListChangeRequestsRequest {
+  fleet.type.v1.RepoRef repo = 1;
+  ChangeCursor since = 2;
+  Validators validators = 3;
+  string page_token = 4;
+  int32 page_size = 5;
+  // Head refs to find: the branches agents report in BranchState.branch. The
+  // sum of source_branches and head_commits is at most
+  // capabilities.max_batch_size (1 when that is 0). A fork's change request
+  // matches by name too; compare ChangeRequest.head_repo.
+  repeated string source_branches = 6;
+  // Head shas to find (a goal's cr_head_sha).
+  repeated string head_commits = 7;
+  // Change requests that close or reference this work item: the verifier's
+  // fallback when no head ref matches (03b).
+  fleet.type.v1.WorkItemKey linked_work_item = 8;
+  repeated WorkItemState states = 9;
+}
+
+// ListChangeRequestsResponse is one page.
+message ListChangeRequestsResponse {
+  repeated ChangeRequest change_requests = 1;
+  string next_page_token = 2;
+  bool not_modified = 3;
+  Validators validators = 4;
+  ChangeCursor next_since = 5;
+  ResponseMeta meta = 6;
+}
+
+// GetChangeRequestRequest fetches one change request: the targeted read the
+// verifier makes when a goal says DONE (at most one per 10 s per goal).
+message GetChangeRequestRequest {
+  fleet.type.v1.WorkItemKey ref = 1;
+}
+
+// GetChangeRequestResponse.
+message GetChangeRequestResponse {
+  ChangeRequest change_request = 1;
+  ResponseMeta meta = 2;
+}
+
+// PathExistsRequest asks whether a path exists at a ref of a repo, without
+// cloning: the verifier's check for a routine run's report file on the run's
+// pushed branch (hub DoneRule REPORT_WRITTEN, 03i).
+message PathExistsRequest {
+  fleet.type.v1.RepoRef repo = 1;
+  // Branch name or commit sha.
+  string ref = 2;
+  // Relative to the repo root; no "..", at most 512 bytes.
+  string path = 3;
+}
+
+// PathExistsResponse.
+message PathExistsResponse {
+  bool exists = 1;
+  // The commit the ref resolved to, so the answer is about one commit.
+  string resolved_commit = 2;
+  ResponseMeta meta = 3;
+}
+
+// WatchRequest names the projects to watch.
+message WatchRequest {
+  repeated string projects = 1;
+}
+
+// WatchResponse is one change notice on the stream.
+message WatchResponse {
+  ChangeNotice notice = 1;
+}
+
+// ChangeNotice says something changed; the hub then fetches the details.
+message ChangeNotice {
+  fleet.type.v1.WorkItemKey ref = 1;
+  google.protobuf.Timestamp notice_time = 2;
+}
+
+// IntegrationProviderService is implemented once per provider. Read-only by
+// design: the hub never writes to a provider (ADR 0005); claims, pushes and
+// merges happen inside goals on workers with the developer's own tools.
+// Failures are errors carrying a ProviderError detail (sync.proto).
+service IntegrationProviderService {
+  rpc Describe(DescribeRequest) returns (DescribeResponse);
+  rpc ListWorkItems(ListWorkItemsRequest) returns (ListWorkItemsResponse);
+  rpc GetWorkItem(GetWorkItemRequest) returns (GetWorkItemResponse);
+  rpc ListChangeRequests(ListChangeRequestsRequest) returns (ListChangeRequestsResponse);
+  rpc GetChangeRequest(GetChangeRequestRequest) returns (GetChangeRequestResponse);
+  // Does a path exist at a ref; code hosts with IntegrationCapabilities.path_exists.
+  rpc PathExists(PathExistsRequest) returns (PathExistsResponse);
+  // Change notices from webhooks or polling; optional (SYNC_MODE).
+  rpc Watch(WatchRequest) returns (stream WatchResponse);
+}

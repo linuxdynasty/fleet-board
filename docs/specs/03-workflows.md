@@ -27,6 +27,7 @@ operator uses at 3 AM. Split across files to stay under 500 lines each:
 | [03g-load-and-handoff.md](03g-load-and-handoff.md) | load table, questions for step 4, required contract changes, open questions |
 | [03h-goal-phases-in-depth.md](03h-goal-phases-in-depth.md) | start-failure reactions, dispatch checks, drain and the outbox, provider-side changes, limit wait, re-arm, scheduler explanations |
 | [03i-routines.md](03i-routines.md) | **W5b** routine runs: triggers, numbering, done rules |
+| [03j-provider-sync-and-trust.md](03j-provider-sync-and-trust.md) | the provider interface in use: queries, cursors and validators, rate limits, typed errors, the trusted-issues gate |
 
 ## Conventions
 
@@ -43,8 +44,8 @@ including the provider-neutral types merged in #7 (ADR 0012):
 `RepoRef{host, path}`, `WorkItemKey{integration, kind, project, key,
 provider_name}` (identity) and `WorkItemRef{key, provider, url, display}`, `ForgeCliStatus{tool, host, signed_in, user, access[]}`,
 `GoalSpec.work_item` + `GoalSpec.repo` as separate fields, and
-`integration/v1/integration.proto` (`WorkItem`, `ChangeRequest`, `CheckSummary`, `Review`,
-`Claim`, `IntegrationCapabilities`) for hub-side mirrors. Anything a workflow
+`integration/v1/` (`model.proto`: `WorkItem`, `ChangeRequest`, `CheckSummary`, `Review`,
+`Claim`, `Label`; `integration.proto`: `IntegrationCapabilities`; `sync.proto`, `service.proto`) for hub-side mirrors. Anything a workflow
 needs beyond those is listed in
 [03g](03g-load-and-handoff.md#required-contract-changes).
 

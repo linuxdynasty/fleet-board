@@ -102,10 +102,10 @@ the repo path), which 03f now says too.
 | `Machine` | `display_name`, hub `labels`, `drain` request | state, facts, inventories, effective settings, `telemetry`, `unfit` markers |
 | `Account` | name, mode, budget, reserve, consent, owner-mapped bindings | identity as shown, provider, origin, usage, pacing and `idle_causes`, probe, observed bindings |
 | `Goal` | `GoalDefinition`: what, where, consent, text, attempt, routine snapshot | `GoalStatus`: phase and reason, timers, goal-file line, git state, counters, start and end time, usage |
-| `Repo` | consent, parallel cap, worktree mode, branch pattern, hooks mode, tracker mapping, trusted gate | integration health, live goals, checkouts and their hooks, why it takes no work |
+| `Repo` | consent, parallel cap, worktree mode, branch pattern, hooks mode, tracker mapping, trusted gate (label, `TrustedUser{integration, login}` entries) | integration health, live goals, checkouts and their hooks, why it takes no work |
 | `Session` | `log_capture` | tmux identity, windows, panes, attach count, log counters, `state` (live or ended) and `end_time` |
 | `Routine` | trigger, goal template, consent, done rule | last and next run, run count |
-| `Integration` | label, watched tracker projects | provider, capabilities, health, sync lag |
+| `Integration` | label, watched tracker projects | provider, capabilities, health and `health_reason`, last provider error, rate limits, back-off time, sync lag |
 | `Settings` | scope, values, priority, hub settings | generation and epoch delivered |
 | `Device` | name, platform, key, requested and granted scopes, approval, revocation | `last_seen_time` |
 | `User` | name, role, GitHub allow-list entry, disabled | state, passkeys, GitHub link, last sign-in |

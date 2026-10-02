@@ -110,7 +110,7 @@ values are held in memory and the change log stores the coalesced message.
 | `Session` | `status.attached_clients`, `status.windows[].panes[].activity`, `last_input_time`, `ready_pattern_showing`, `status.logs[]` counters | 5 s |
 | `Goal` | `status.first_line`, `status.head_commit`, `status.usage_consumed` | 5 s |
 | `Device` | `status.last_seen_time` | 30 s |
-| `Integration` | `status.last_sync_time`, `status.sync_lag` | 30 s |
+| `Integration` | `status.last_sync_time`, `status.sync_lag`, `status.rate_limits` | 30 s |
 
 State changes are not volatile and are sent at once: a machine going `STALE`,
 a goal changing `phase`, a pane going from `ACTIVE` to a dead pane, a pacing
@@ -217,8 +217,8 @@ timeline.
 | `repo` (D) | `item.repos[]` as `host/path` | repeated string | `:` |
 | `stage` | `stage` | `WorkStage` | `=` `!=` `in` |
 | `state` | `item.state` | `WorkItemState` | `=` `in` |
-| `trusted` | `trusted` | bool | `=` |
-| `label` (D) | `item.labels` | repeated string | `:` |
+| `trusted` | `trust.trusted` | bool | `=` |
+| `label` (D) | `item.labels[].name` | repeated string | `:` |
 | `goal` | `goal` | string | `=` |
 | `manual_reason` | `manual_reason` | `WorkManualReason` | `=` `in` |
 

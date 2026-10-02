@@ -724,8 +724,8 @@
   "fix": "Add ChangeRequest.review_decision (NONE|REQUIRED|APPROVED|CHANGES_REQUESTED) computed by the adapter and either CheckSummary.rollup or a documented derivation from the counts; fix the 03b:203-208 mirror text to the real proto names; add ListChangeRequestsRequest.source_branches or BatchGetChangeRequests and only advertise batch_query when it exists (or drop the flag).",
   "verify": "Confirmed with caveats. integration.proto:249-254 ListChangeRequestsRequest has no source_branch filter, and the service (:288-299) has no batch RPC although batch_query is declared (:73-75). ChangeRequest (:152-203) has no review_decision and CheckSummary (:~165-172) has no rollup, yet 03c:308-309 and open question 9 (03g:151-152) use `review_decision=APPROVED` and `checks.rollup=SUCCESS`; 03b:203-208 mirror text names head_ref, head_sha, review_decision, trusted and a singular claim, which do not exist in the proto (03g:125 reconciled only head_ref/head_sha). Overstated: the hub can find a CR by branch from its own mirror (03f:122 index on head_ref) since ListChangeRequests with updated_after feeds it, and CheckSummary counts let a rollup be derived, so the branch-lookup and batch gaps cost efficiency and provider neutrality rather than blocking implementation. The review_decision gap is real: reviews[] cannot encode required-reviewer/CODEOWNERS rules.",
   "theme": "F",
-  "status": "open",
-  "resolution": ""
+  "status": "fixed",
+  "resolution": "ListChangeRequestsRequest gained source_branches, head_commits, linked_work_item and states (batched up to IntegrationCapabilities.max_batch_size, which replaces the empty batch_query flag); ChangeRequest gained review_decision (ReviewDecision), merge_state, merged_by, closed_time, head_repo and merge_commit, and CheckSummary gained rollup (CheckRollup), all adapter-computed. The integration package is split into integration, model, sync and service .proto, and 03b's mirror text now uses the real names (claims, source_branch, head_commit); see 03j."
  },
  {
   "dim": "goal-lifecycle",
@@ -738,8 +738,8 @@
   "fix": "Have the adapter return label evidence (repeated LabelEvent{name, applied_by Person, applied_at}, capability labels_with_actor) and let the hub compute `trusted` at plan time. Make trusted_users repeated TrustedUser{integration IntegrationId, login} with trusted_label per integration. State in 03b/03c that trust is re-evaluated at plan time from the mirror (updated_at guard) and that a body edit by a non-allow-listed user after the label demotes the item to MANUAL_ONLY.",
   "verify": "Confirmed. 03b-usage-and-sync.md:241-243 has the GitHub adapter checking `LABELED_EVENT.actor in allowlist`, but integration.WorkItem.labels is repeated string (integration.proto:139/:~136) with no actor or time, the adapter service is read-only and does not hold the allow-list, and HubSettings.trusted_label/trusted_users (settings.proto:36-38) are flat fleet-wide values; WorkItem.trusted (work.proto:44-45) is a hub bool with no stated computation point. 03b:203-204 claims the integration WorkItem has `trusted`, which it does not. Logins are provider-local, and no rule covers revocation (label removed, body edited after labelling), the main safety rail per design.md:311-313.",
   "theme": "F",
-  "status": "open",
-  "resolution": ""
+  "status": "fixed",
+  "resolution": "WorkItem.labels became Label{name, applied_by, applied_time} (ask-for-evidence via evidence_labels, capabilities labels_with_actor and edit_evidence), plus last_editor, last_edit_time, create_time and Person.provider_id; the hub computes WorkItem.trust (TrustVerdict) from the new hub/v1/trusted_gate.proto, where trusted_label/trusted_users became TrustedGate with per-integration TrustedLabel and TrustedUser{integration, login, provider_user_id}. Re-evaluation at sync, plan time and body fetch, and EDITED_AFTER_TRUST demotion, are specified in 03j and ADR 0019 (32)."
  },
  {
   "dim": "goal-lifecycle",
@@ -1116,8 +1116,8 @@
   "fix": "Decide where the polling loop lives. If the plugin seam stays, add a `ProviderError` detail (reasons RATE_LIMITED with reset_at, ACCESS_LOST, NOT_FOUND, UNAVAILABLE, retry_after) via fleet.type.v1 ErrorDetail and new ReasonCodes (6xx). Add `etag`/`cursor` to list requests, `not_modified` plus `RateLimit{remaining, reset_at}` to responses, and make Integration.health_reason an enum plus detail. If it does not, say in ADR 0012 that the interface is in-process only. Additive.",
   "verify": "critic (verified in files by the critic)",
   "theme": "F",
-  "status": "open",
-  "resolution": ""
+  "status": "fixed",
+  "resolution": "The plugin seam stays and the hub owns polling state (ADR 0019, 31). integration/v1/sync.proto adds ChangeCursor, Validators, RateLimitState, ResponseMeta and ProviderError (kinds with retryable and retry_after), every list/get response carries ResponseMeta and lists carry not_modified and next_since; hub IntegrationStatus.health_reason is now an enum with health_message, last_error, rate_limits and backoff_until_time. ProviderError lives in the integration package instead of fleet.type.v1 ErrorDetail and 6xx ReasonCodes (6xx are taken by Enroll, status.proto is at its line limit, and a plugin should not need hub reason codes); see 03j."
  },
  {
   "dim": "critic",

@@ -1,13 +1,18 @@
 // fleet.hub.v1 work: the hub's mirrors of work items and change requests
 // (03b W4) with the hub's own stage and goal links, and the configured
 // integrations. The provider data is the provider-neutral model of
-// fleet.integration.v1, embedded unchanged.
+// fleet.integration.v1, embedded unchanged. The hub adds its own verdicts on
+// top: stage, the trusted-issues gate (trusted_gate.proto) and integration
+// health from the typed provider errors and rate limits the syncer sees.
 syntax = "proto3";
 
 package fleet.hub.v1;
 
 import "fleet/hub/v1/dispatch_block.proto";
+import "fleet/hub/v1/trusted_gate.proto";
 import "fleet/integration/v1/integration.proto";
+import "fleet/integration/v1/model.proto";
+import "fleet/integration/v1/sync.proto";
 import "fleet/type/v1/ids.proto";
 import "fleet/type/v1/work.proto";
 import "google/protobuf/duration.proto";
@@ -40,14 +45,21 @@ enum WorkStage {
 // after a goal ends").
 enum WorkManualReason {
   WORK_MANUAL_REASON_UNSPECIFIED = 0;
-  // Failed the trusted-issues gate. Needs the label from an allow-listed
-  // person; RequeueWorkItem refuses (REQUEUE_NOT_ALLOWED).
+  // Failed the trusted-issues gate (TrustVerdict.denial NOT_ALLOW_LISTED or
+  // EVIDENCE_MISSING). Needs the label from an allow-listed person;
+  // RequeueWorkItem refuses (REQUEUE_NOT_ALLOWED).
   WORK_MANUAL_REASON_UNTRUSTED = 1;
   // An operator cleared the goal (CLEARED); the fleet does not redispatch
   // what a person just stopped.
   WORK_MANUAL_REASON_GOAL_CLEARED = 2;
   // Three attempts failed to start on three machines (START_EXHAUSTED).
   WORK_MANUAL_REASON_START_EXHAUSTED = 3;
+  // Was trusted, then someone outside the allow-list edited the title or
+  // body (TrustVerdict.denial EDITED_AFTER_TRUST). An allow-listed person
+  // labels it again after reading the edit; RequeueWorkItem refuses, like
+  // UNTRUSTED. A goal already running is not stopped: the agent has the
+  // text, and the dispatch audit records what was sent.
+  WORK_MANUAL_REASON_EDITED_AFTER_TRUST = 4;
 }
 
 // WorkSize is the size estimate triage gives a work item.
@@ -73,8 +85,10 @@ message WorkItem {
   // The provider's data as last synced; for ROUTINE runs, hub-made.
   fleet.integration.v1.WorkItem item = 10;
   WorkStage stage = 11;
-  // Passed the trusted-issues gate (design.md safety rails).
-  bool trusted = 12;
+  // The trusted-issues gate's verdict and why (design.md safety rails): who
+  // made the item trusted, or what is missing. Computed by the hub from the
+  // mirror, never taken from the provider.
+  TrustVerdict trust = 12;
   // Active goal for this item, if any; past goals via ListGoals.
   fleet.type.v1.GoalId goal = 13;
   // Size estimate from triage, when set.
@@ -108,9 +122,36 @@ message ChangeRequest {
 enum IntegrationHealth {
   INTEGRATION_HEALTH_UNSPECIFIED = 0;
   INTEGRATION_HEALTH_OK = 1;
-  // Access lost, rate limited or failing; dispatch for its repos stops.
+  // Access lost or failing; dispatch for its repos stops. Why: health_reason.
   INTEGRATION_HEALTH_DEGRADED = 2;
   INTEGRATION_HEALTH_DISABLED = 3;
+  // Waiting out a rate limit or an outage back-off: the data is only
+  // late. Dispatch pauses only past max_sync_lag. Why: health_reason.
+  INTEGRATION_HEALTH_BACKING_OFF = 4;
+}
+
+// IntegrationHealthReason says why the health is not OK. The hub maps the
+// adapter's ProviderErrorKind (integration sync.proto) to these; the same
+// reason is the label on `fleet_hub_integration_state`.
+enum IntegrationHealthReason {
+  INTEGRATION_HEALTH_REASON_UNSPECIFIED = 0;
+  // NOT_FOUND or FORBIDDEN on a watched repo or project (App uninstalled,
+  // repo removed, permission lost). DEGRADED; raises triage
+  // integration_access_lost for that project.
+  INTEGRATION_HEALTH_REASON_ACCESS_LOST = 1;
+  // UNAUTHENTICATED: the credential is invalid and could not be refreshed.
+  // DEGRADED; the owner must act.
+  INTEGRATION_HEALTH_REASON_CREDENTIALS_INVALID = 2;
+  // RATE_LIMITED: BACKING_OFF until backoff_until_time.
+  INTEGRATION_HEALTH_REASON_RATE_LIMITED = 3;
+  // UNAVAILABLE: BACKING_OFF with exponential back-off, at most 5 min.
+  INTEGRATION_HEALTH_REASON_PROVIDER_UNAVAILABLE = 4;
+  // The mirror is older than max_sync_lag for another cause (a stuck
+  // syncer). DEGRADED.
+  INTEGRATION_HEALTH_REASON_SYNC_LAG_EXCEEDED = 5;
+  // The adapter's declared capabilities no longer cover what the integration
+  // is configured for (an upgrade removed one). DEGRADED.
+  INTEGRATION_HEALTH_REASON_CAPABILITY_MISSING = 6;
 }
 
 // WatchedProject is one project of a work tracker the owner chose to sync
@@ -149,9 +190,22 @@ message IntegrationStatus {
   string base_url = 12;
   fleet.integration.v1.IntegrationCapabilities capabilities = 13;
   IntegrationHealth health = 14;
-  // Short reason when DEGRADED. Untrusted where it echoes the provider.
-  string health_reason = 15;
-  // Volatile: sync_lag and last_sync_time reach Watch at most once per 30 s.
+  // Why, when health is not OK.
+  IntegrationHealthReason health_reason = 15;
+  // One line for a person. Untrusted where it echoes the provider.
+  string health_message = 18;
+  // The provider error behind health_reason, as the adapter returned it
+  // (retryable, retry_after, the exhausted budget). Unset when OK.
+  fleet.integration.v1.ProviderError last_error = 19;
+  // The budgets as last reported, one per kind. The syncer slows its
+  // intervals when remaining is under 10 % and sleeps to reset_time at 0.
+  repeated fleet.integration.v1.RateLimitState rate_limits = 20;
+  // No provider call before this time (rate limit reset, Retry-After or
+  // back-off). Unset when polling normally.
+  google.protobuf.Timestamp backoff_until_time = 21;
+  // Volatile: sync_lag, last_sync_time and rate_limits reach Watch at most
+  // once per 30 s; a change of health, health_reason or backoff_until_time
+  // is sent at once.
   google.protobuf.Timestamp last_sync_time = 16;
   // How far behind the provider the mirror is, the planner's max_sync_lag
   // input.
@@ -254,7 +308,8 @@ message UpdateIntegrationResponse {
 // RequeueWorkItemRequest puts a MANUAL_ONLY work item back to READY, so the
 // scheduler may take it again after a person stopped it or it failed to
 // start. Refused (FAILED_PRECONDITION / REQUEUE_NOT_ALLOWED) for an item that
-// is not MANUAL_ONLY or whose manual_reason is UNTRUSTED: a gate is not
+// is not MANUAL_ONLY or whose manual_reason is UNTRUSTED or
+// EDITED_AFTER_TRUST: a gate is not
 // bypassed by a click; dispatch it manually instead (a CONFIRM check).
 message RequeueWorkItemRequest {
   string request_id = 1;

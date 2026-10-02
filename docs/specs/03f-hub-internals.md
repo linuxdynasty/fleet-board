@@ -101,10 +101,10 @@ at **4 machines** / **50 machines × 10 panes** from the load table in
 | `events` (history, never-dropped kinds + replays) | `(machine_id, seq)` | all | ≈ 0.4 / 7 steady; bursts 2,500/s at hub restart (rate-limited) | timeline by machine/goal/time | 1 week |
 | `resource_samples` | `(machine_id, at)` | B2 | 0.13 / 1.7 | last 24 h per machine (chart) | 1 week |
 | `harness_installs`, `catalog_entries` | `(machine_id, harness)`; `(…, catalog_hash, name)` | W11 | rare (bursts of ≤ 100 rows per catalog) | per machine | current + 30-day history |
-| `work_items` (mirror) | `WorkItemKey` (`integration_id, kind, project, key`; `provider_name` when no integration); `manual_reason`; `dispatch_block` | W4, W5 | ≤ 2 / ≤ 10 (page upserts, bursty) | by stage; by repo; READY in `dispatch_order` | while open + 30 days |
-| `change_requests` (mirror) | `WorkItemKey` (`integration_id, kind = CHANGE_REQUEST, project = repo path, key`); `repo RepoRef` is a column for lookups | W4 | ≤ 1 / ≤ 5 | by head_ref; by goal | while linked goal exists + 30 days |
+| `work_items` (mirror) | `WorkItemKey` (`integration_id, kind, project, key`; `provider_name` when no integration); `manual_reason`; `trust` verdict; `dispatch_block` | W4, W5 | ≤ 2 / ≤ 10 (page upserts, bursty) | by stage; by repo; READY in `dispatch_order` | while open + 30 days |
+| `change_requests` (mirror) | `WorkItemKey` (`integration_id, kind = CHANGE_REQUEST, project = repo path, key`); `repo RepoRef` is a column for lookups | W4 | ≤ 1 / ≤ 5 | by source_branch (head ref); by goal | while linked goal exists + 30 days |
 | `claims` | `(work_item, author)` | W4 | rare | per work item | with the work item |
-| `sync_cursors`, `rate_limit_state` | `(integration, resource)` | W4 | per poll (≈ 0.05 / 0.3) | per syncer | current |
+| `sync_cursors` (since, validators per page), `rate_limit_state` (per kind), integration `backoff_until_time` and last `ProviderError` | `(integration, resource, page)`; `(integration, kind)` | W4 | per poll (≈ 0.05 / 0.3) | per syncer | current |
 | `goals` | `goal_id`; `attempt` and `previous_goal`; unique live per `work_item`; unique live `(repo, branch)`; unique live `(routine)` | W5, W6 | 0.02 / 1 (goal + branch state) | by phase; per machine; per account; timeline by `start_time` / `end_time` | permanent (run history) |
 | `goal_transitions`, `goal_runs` | `(goal_id, seq)`; `(goal_id, number)` | W6 | same | per goal timeline and run list (`ListGoalTransitions`, `ListGoalRuns`) | permanent with the goal (a few rows per goal; the 7-day timeline filters goals, not rows) |
 | `repos` | `repo_id` (`host/path`) | owner (`CreateRepo`, `UpdateRepo`, `ImportConfig`) | rare | by id; list; per planning pass (cached) | permanent until deleted |
@@ -126,7 +126,7 @@ ranking, the summary strip counts.
 `goals(machine_id, state)`, `goals(account_id, state)`, `commands(machine_id,
 state)`, `triage_items(state, kind, raised_at)`, `events(machine_id, seq)`,
 `events(goal_id, at)`, `log_segments(session_id, pane, stream, raw_offset)` and
-`(session_id, pane, stream, first_at)`, `change_requests(integration_id, head_ref)`,
+`(session_id, pane, stream, first_at)`, `change_requests(integration_id, source_branch)`,
 `work_items(stage, integration_id)`.
 
 ## Hub identity, backup and restore

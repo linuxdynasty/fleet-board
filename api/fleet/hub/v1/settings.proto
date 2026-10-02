@@ -7,6 +7,7 @@ syntax = "proto3";
 package fleet.hub.v1;
 
 import "fleet/hub/v1/common.proto";
+import "fleet/hub/v1/trusted_gate.proto";
 import "fleet/type/v1/consent.proto";
 import "fleet/type/v1/ids.proto";
 import "fleet/type/v1/settings.proto";
@@ -38,10 +39,10 @@ message HubSettings {
   // The consent a repo gets when it sets none; the goal's consent is this (or
   // the repo's) intersected with the account's.
   repeated fleet.type.v1.ConsentAct default_consent = 3;
-  // Trusted-issues gate: label and allow-listed provider logins. A Repo
-  // (repo.proto) may add users and set its own label.
-  optional string trusted_label = 4;
-  repeated string trusted_users = 5;
+  // Trusted-issues gate: the label per integration and the allow-listed
+  // provider accounts (trusted_gate.proto). A Repo (repo.proto) may add users
+  // and set its own label.
+  TrustedGate trusted_gate = 4;
   optional bool prefer_non_hub = 6;
   // Master switch for auto-dispatch (manual dispatch always works).
   optional bool auto_dispatch = 7;
