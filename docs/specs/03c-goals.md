@@ -94,7 +94,8 @@ eshu#7398`; `automatic-rename off` on this window only; `FLEET_SESSION_ID`,
 for that harness and workdir) the adapter types `/goal consent push,pr-open,merge
 -- <goal_text>` and the hook writes the `CONSENT:` line. Otherwise the adapter
 writes consent into the objective text: `/goal <goal_text> (consent: push,
-pr-open, merge)` and fleet's generic Stop hook writes the goal file. The exact
+pr-open, merge)`, having written the goal file itself just before typing
+(Codex hooks never see `/goal` lines, [01d](01d-goal-hooks.md)). The exact
 line typed is reported back for the audit log (03g: `StartGoalResult.typed_goal_line`).
 
 ### State machine (goal start, owned by the hub)
