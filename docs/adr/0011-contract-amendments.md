@@ -54,7 +54,7 @@ spreads one decision over four files.
 - **Accepted kinds** become: `EnsureProbe`, `StopProbe`, `EnsureSession`,
   `EnsureWindow`, `SendKeys`, `Interrupt`, `RespawnPane`, `KillWindow`,
   `CapturePane`, `RunHarnessCommand`, `SetSessionAvailability`, `Preflight`,
-  `StartGoal`, `StopGoal`, `EnsureWorktree`, `PruneWorktree`,
+  `StartGoal`, `EnsureWorktree`, `PruneWorktree`,
   `EnsureGoalHooks`, `OpenAttach`, `CloseAttach`, `SetLogCapture`,
   `SetLogShipping`, `Drain`, `Undrain`. `ProbeUsage` is replaced by
   `EnsureProbe`/`StopProbe` (D1): the hub assigns one prober per account and
@@ -70,9 +70,11 @@ spreads one decision over four files.
   and its class (`observe`, `session`, `goal`, `review`, `destructive`,
   `deny`) allowed for the requester's role and local policy. `deny` is never
   sendable; unknown commands are `deny`.
-- **`StartGoal` and `StopGoal`** are agent-side composites under one
-  `command_id` with `CommandProgress` per step, so a goal start survives a
-  hub outage.
+- **`StartGoal`** is an agent-side composite under one `command_id`, with
+  steps reported as `CommandProgress`. There is no `StopGoal`: pausing,
+  resuming, editing and clearing a goal use the harness's own `/goal`
+  subcommands through `RunHarnessCommand` (or `Interrupt` where a harness has
+  no pause), so fleet-board never defines a goal protocol of its own.
 - **Hub settings delivery (A8):** `Settings{generation, labels, values}` is
   a hub message; the agent answers `SettingsAck{generation, effective,
   capped_fields}`. This is not a config push: it can only tighten, and the

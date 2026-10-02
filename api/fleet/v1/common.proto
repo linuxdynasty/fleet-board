@@ -235,12 +235,16 @@ enum ReasonCode {
   // The requester's role is below what this kind or class needs.
   REASON_CODE_ROLE_INSUFFICIENT = 207;
 
-  // Goal composite steps (G3, G4).
+  // Goal composite steps (G3) and goal control (G4).
   REASON_CODE_READY_TIMEOUT = 300;
   REASON_CODE_GOAL_FILE_NOT_SEEN = 301;
   REASON_CODE_GOAL_NOT_RUNNING = 302;
-  REASON_CODE_STOP_TIMEOUT = 303;
+  // 303 was STOP_TIMEOUT for the removed StopGoal composite.
+  reserved 303;
   REASON_CODE_TRUST_PROMPT_SEEN = 304;
+  // The harness's /goal has no such subcommand (for example pause on
+  // Claude Code 2.1.286, which offers only set and clear).
+  REASON_CODE_GOAL_SUBCOMMAND_UNSUPPORTED = 305;
 
   // Probes and parsing (D1, D2).
   REASON_CODE_PROBE_START_FAILED = 400;

@@ -90,7 +90,7 @@ Phase: **v1** read-only, **v2** actions, **v3** later.
 | G1 | Goal hooks: install and verify (Claude first) | C, S | v2 |
 | G2 | Goal state (line + HEAD + dirty, one event) | E | v1 |
 | G3 | Start goal (agent-side composite) | C | v2 |
-| G4 | Stop goal gracefully | C | v2 |
+| G4 | Goal control through the harness's own `/goal` | C | v2 |
 | H1 | Repository inventory | S | v1 |
 | H2 | Worktree ensure and prune | C | v2 |
 | H3 | Branch state per goal worktree | S, E | v1 |
@@ -358,10 +358,10 @@ All pass local policy, carry a `command_id`, and are idempotent except F3.
   the goal file appears. Each step
   is reported as `command_id+step`; a failure names the step
   (`ready_timeout`, `goal_file_not_seen`, …).
-- **G4 Stop goal gracefully** (v2): ask the goal to push work in progress and
-  write `BLOCKED: paused … OWNER=fleet` (through the adapter), then interrupt
-  after a timeout. Used for reserve-line pauses, cooldowns, drain and "stop
-  here, dispatch there".
+- **G4 Goal control** (v2): the harness's own `/goal` subcommands (pause,
+  resume, edit, clear) typed at an idle prompt via F8, as the developer would
+  ([01b](01b-harness-commands.md#goal-subcommands)); F4 Interrupt where a
+  harness has no pause. Fleet-board defines no goal protocol of its own.
 
 ## H. Repositories
 

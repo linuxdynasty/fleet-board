@@ -38,6 +38,11 @@ message Command {
 
   // Kinds are numbered by group: 10-19 probes, 20-39 tmux control, 40-49
   // goals and worktrees, 50-59 attach, 60-69 logs, 70-79 self-management.
+  // 42 was stop_goal. Goals are paused, resumed, edited and cleared with the
+  // harness's own /goal subcommands sent through RunHarnessCommand (G4).
+  reserved 42;
+  reserved "stop_goal";
+
   oneof kind {
     EnsureProbe ensure_probe = 10;
     StopProbe stop_probe = 11;
@@ -54,7 +59,6 @@ message Command {
 
     Preflight preflight = 40;
     StartGoal start_goal = 41;
-    StopGoal stop_goal = 42;
     EnsureWorktree ensure_worktree = 43;
     PruneWorktree prune_worktree = 44;
     EnsureGoalHooks ensure_goal_hooks = 45;
@@ -110,6 +114,9 @@ message CommandResult {
   // Capability the agent lacks, for STATUS_UNSUPPORTED.
   Capability missing_capability = 7;
 
+  reserved 42;
+  reserved "stop_goal";
+
   oneof detail {
     EnsureSessionResult ensure_session = 20;
     EnsureWindowResult ensure_window = 21;
@@ -117,7 +124,6 @@ message CommandResult {
     RunHarnessCommandResult run_harness_command = 27;
     PreflightResult preflight = 40;
     StartGoalResult start_goal = 41;
-    StopGoalResult stop_goal = 42;
     EnsureWorktreeResult ensure_worktree = 43;
     GoalHooksState ensure_goal_hooks = 45;
     OpenAttachResult open_attach = 50;
@@ -367,37 +373,6 @@ message StartGoalResult {
   string worktree_path = 4;
   // First GoalState observed after typing the goal command.
   GoalState goal = 5;
-}
-
-// StopReason says why a goal is being stopped (G4).
-enum StopReason {
-  STOP_REASON_UNSPECIFIED = 0;
-  STOP_REASON_RESERVE_LINE = 1;
-  STOP_REASON_COOLDOWN = 2;
-  STOP_REASON_DRAIN = 3;
-  STOP_REASON_MOVE = 4;
-  STOP_REASON_OWNER = 5;
-  STOP_REASON_REVIEW_LOOP_CAP = 6;
-}
-
-// StopGoal (G4): ask the goal to push work in progress and write
-// `BLOCKED: paused ... OWNER=fleet` through the adapter, then Interrupt
-// after grace. Composite with progress steps "request_pause",
-// "wait_blocked", "interrupt".
-message StopGoal {
-  GoalId goal_id = 1;
-  PaneKey pane = 2;
-  StopReason reason = 3;
-  google.protobuf.Duration grace = 4;
-  // Also kill the window after the goal is paused (drain and move).
-  bool close_window = 5;
-}
-
-// StopGoalResult.
-message StopGoalResult {
-  GoalState goal = 1;
-  bool interrupted = 2;
-  bool window_closed = 3;
 }
 
 // EnsureWorktree (H2). Declarative: existing worktree on the same branch is

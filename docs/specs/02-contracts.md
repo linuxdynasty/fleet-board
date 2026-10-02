@@ -98,7 +98,7 @@ sequence; `none` means unordered. Droppable: may be shed under backpressure.
 | G1 | `EnsureGoalHooks{harness, workdir, expected_version}` → `GoalHooksState`; also in `HarnessInfo.goal_hooks` | H→A; A→H | yes | cmd | no |
 | G2 | `GoalState` in `Snapshot.goals` and `Event.goal_state` | A→H | — | seq | never |
 | G3 | `StartGoal{spec GoalSpec, reuse_pane, in_session, timeouts}`; `CommandProgress{command_id, step}` per step; `StartGoalResult` | H→A; A→H | composite: yes per step | cmd | never |
-| G4 | `StopGoal{goal_id, pane, reason, grace, close_window}`; progress; `StopGoalResult` | H→A | yes | cmd | never |
+| G4 | `RunHarnessCommand{command: "/goal", args: pause\|resume\|edit …\|clear}` (class GOAL), or `Interrupt` where the harness has no pause; `GOAL_SUBCOMMAND_UNSUPPORTED` otherwise | H→A | no (typed input) | cmd | never |
 | H1 | `Snapshot.repos[] RepoCheckout`, `Event.repo` | A→H | — | seq | no |
 | H2 | `EnsureWorktree` → `EnsureWorktreeResult`; `PruneWorktree{allow_dirty, delete_branch}` | H→A | yes | cmd | no |
 | H3 | `BranchState` in `RepoCheckout` and `Event.branch_state` | A→H | — | seq | no |
@@ -145,7 +145,7 @@ result or `LOCAL_CONFIRM_TIMEOUT`).
 
 **Deadlines.** `not_after` defaults: 2 min for `SendKeys`, `Interrupt`,
 `RunHarnessCommand`, `CapturePane`, `OpenAttach`; 30 min for `StartGoal`,
-`StopGoal`, `EnsureWorktree`, `PruneWorktree`, `EnsureGoalHooks`; 10 min for
+`EnsureWorktree`, `PruneWorktree`, `EnsureGoalHooks`; 10 min for
 everything else. The agent evaluates deadlines in hub time
 (`HelloAck.hub_time` plus local monotonic elapsed). The hub measures skew from
 `Heartbeat.sent_at` against its own clock and raises a machine warning over
@@ -157,7 +157,7 @@ result is `UNKNOWN_OUTCOME`; the hub never retries it and asks a person.
 `REVIEW` or `DESTRUCTIVE` command that ends `UNKNOWN_OUTCOME` is treated like
 `SendKeys`.
 
-**Composites (`StartGoal`, `StopGoal`).** One `command_id`, steps named in
+**Composite (`StartGoal`).** One `command_id`, steps named in
 `CommandProgress.step`. The agent persists the step it reached; after a
 restart it resumes from the last declarative step (preflight, worktree,
 window) and treats `type_goal` as `UNKNOWN_OUTCOME` unless
@@ -288,7 +288,7 @@ the affected parts of 0004, 0006, 0009 and 0010:
   (`default_server` defaults to `control`); `tmux -L fleet` is optional;
   browser attach is v2.
 - 0004: add `Settings`/`SettingsAck`, agent `Bye`, `SnapshotRequest`
-  reasons, `StartGoal`/`StopGoal`, `EnsureProbe`/`StopProbe` (replacing
+  reasons, `StartGoal` (goal control uses the harness's own `/goal`), `EnsureProbe`/`StopProbe` (replacing
   `ProbeUsage`), `Undrain`, `prompt_id` on `SendKeys`, `RunHarnessCommand`
   with classes, `Preflight`, `EnsureWorktree`/`PruneWorktree`,
   `EnsureGoalHooks`, `SetLogCapture`/`SetLogShipping`,
@@ -334,20 +334,23 @@ the affected parts of 0004, 0006, 0009 and 0010:
     usage limits and sign-in prompts, never dropped, so Triage can tell
     "provider error, retrying" from "stuck" (observed during the 2026-10-01
     measurement run).
-14. **Max message 1 MiB** rather than gRPC's 4 MiB default; captures and
+14. **No `StopGoal`.** Goals are paused, resumed, edited and cleared with
+    each harness's own `/goal` subcommands (probed 2026-10-01; see 01b), sent
+    through `RunHarnessCommand`. Field 42 and `REASON_CODE` 303 are reserved.
+    A goal still starting is cancelled the same way (`/goal clear`, or
+    `Interrupt`), so no `CancelCommand` is needed.
+15. **Max message 1 MiB** rather than gRPC's 4 MiB default; captures and
     log chunks are capped below it.
 
 ## Open questions
 
-1. Should there be a `CancelCommand` for an in-flight `StartGoal` (today:
-   `StopGoal` or let it expire)?
-2. Exact `AccountKey` construction (proposed HMAC-SHA256(salt, identity
+1. Exact `AccountKey` construction (proposed HMAC-SHA256(salt, identity
    string), `salt_version = 1`) and what counts as the identity string per
    harness.
-3. Whether `Snapshot` should be chunked above 1 MiB on machines with very
+2. Whether `Snapshot` should be chunked above 1 MiB on machines with very
    many panes, or whether the cap is simply never reached at 10 panes × 50
    machines.
-4. Whether `Event.harness_hook` payload fields are enough once Codex and
+3. Whether `Event.harness_hook` payload fields are enough once Codex and
    Muse hook payloads are probed (E8 is v2).
 
 ## Compile check
