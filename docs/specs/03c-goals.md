@@ -211,8 +211,9 @@ window, elsewhere, triage; which count toward `START_EXHAUSTED`) is the table in
 
 - `fleet_hub_dispatch_total{mode=auto|manual, result}`, `fleet_hub_dispatch_latency_seconds`
   (plan → `RUNNING`), `fleet_hub_scheduler_pass_seconds`, `fleet_hub_scheduler_skips_total{reason}`
-  (`no_ready_items`, `no_account_capacity`, `pacing_ahead`, `no_fit_machine`,
-  `sync_stale`, `flood_guard`, `repo_cap`), `fleet_hub_goals{state}`,
+  (the lower-cased short names of the 540-range `ReasonCode`s: `no_ready_items`,
+  `account_pacing_blocked`, `account_usage_unknown`, `account_not_dispatchable`,
+  `no_fit_machine`, `integration_lag`, `flood_guard`, `repo_parallel_limit`), `fleet_hub_goals{state}`,
   `fleet_hub_machine_slots_used{machine, kind=active|total}` and `_limit`,
   `fleet_hub_machine_unfit{machine, harness, reason}`, `fleet_hub_plan_conflicts_total`.
 - `fleet_agent_start_goal_step_seconds{step, result}`, `fleet_agent_start_goal_total{result, reason}`.
@@ -260,7 +261,7 @@ sequenceDiagram
   A->>W: Event{goal_state{state=DONE}}
   W->>W: tx: VERIFYING · verify_deadline = now + verify_grace
   W->>V: wakeup(goal_id)
-  V->>C: verify now: change request by head_ref (or linked work item)
+  V->>C: verify now: change request by source_branch (or linked work item)
   C-->>V: ChangeRequest{state=MERGED, merged_time} | OPEN | none
   alt merged or work item closed
     V->>W: tx: goals MERGED · outbox SetPaneAvailability{pane, true, GOAL_MERGED} · outbox ReleaseGoal · timer merged_grace

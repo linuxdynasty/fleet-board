@@ -118,3 +118,31 @@ Severity: I important, M minor. Risk: refactor risk if deferred (h/m/l).
 | F | `trusted-gate-not-computable` | I | m | The trusted-issues gate cannot be evaluated from the integration contract: label actor is not carried, and the allow-list is a flat string list | fixed |
 | G | `workflow-text-drift` | M | l | Stale or inconsistent workflow text that will mislead implementers (small, mostly doc-only) | fixed |
 | G | `stale-docs-contradict-adr-0015-and-0018` | I | l | Specs still describe superseded designs (log files, owner strings, SUPPORTED-only dispatch, goal.stop) | fixed |
+
+## Outcome
+
+Verified against the protos and specs on the `contracts-review-2` branch after
+the seven theme commits (buf build and buf lint exit 0, every file under 500
+lines except this review's machine-written JSON data file, every backticked
+message, enum, RPC and field name in the specs and ADRs 0014 to 0019 resolves
+to a proto or is marked as a historical name).
+
+| Status | Count |
+|---|---|
+| fixed | 86 |
+| deferred | 0 |
+| wont-fix | 0 |
+
+No finding is deferred as a whole. A few fixed findings carry a part that was
+declined or is tracked for later, each with its reason and where it is tracked:
+
+| Finding | Part not done | Reason and tracking |
+|---|---|---|
+| `scope-model-incomplete` | a separate approvals-read scope | `READ\|APPROVALS` rows cover the phone; can be added later without breaking anyone (02d) |
+| `error-model-gaps` | rate-limit values in `GetServerInfo` | values stay in hub configuration until code needs them (02b, error table and limits) |
+| `interrupt-pause-no-wire-state` | `GOAL_LINE_STATE_PAUSED` | the goal file still says WORKING, so the pause is a `HarnessCondition` (02h) |
+| `account-lifecycle` | `MergeAccounts` | wont-fix: a stale duplicate is deleted once signed out (02b, account.proto) |
+| `small-hub-api-gaps` | `total_size`, `queue_rank` | wont-fix: speculative, no screen needs them (02b) |
+| `rearm-after-done` | probe of the Codex and Muse re-arm form | needs a live harness; recorded as unverified in 01b |
+| `harness-goal-control-capabilities` | limit-resume probe | `GoalControl.limit_resume_verified` is false until probed (01b, 02h) |
+| `codegen-config-and-64bit-ints` | `go.mod` and CI wiring | belongs to implementation step 0; item 4 of the freeze checklist in 02e |

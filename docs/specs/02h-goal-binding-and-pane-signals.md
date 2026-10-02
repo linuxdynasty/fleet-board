@@ -63,7 +63,7 @@ Rules:
   pane and `harness_session_id`, then by the goal file. The agent reports the
   driver's real worktree and branch in `GoalState.worktree_path` and
   `GoalState.branch`; the hub keeps them as `Goal.status.branch`, so the
-  change-request lookup by `head_ref` and the one-agent-per-branch rule work.
+  change-request lookup by `source_branch` and the one-agent-per-branch rule work.
   The agent also sets `BranchState.goal_id` for any worktree that holds a
   fleet goal file, whoever created it. `PruneWorktree` never touches a
   driver-created worktree.

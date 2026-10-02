@@ -233,7 +233,7 @@ message GoalState {
   // goal file's directory) and its branch, filled for every fleet goal and
   // re-sent when they change. For a REPO_DRIVER goal this is how the hub
   // learns the driver's worktree and branch: Goal.status.branch and the
-  // change-request lookup by head_ref key on it. Untrusted text.
+  // change-request lookup by source_branch key on it. Untrusted text.
   string worktree_path = 15;
   string branch = 16;
 }
