@@ -80,8 +80,12 @@ enum VersionSupport {
   // Fixtures exist for this version; every parser feature is verified.
   VERSION_SUPPORT_SUPPORTED = 1;
   // The harness runs, but at least one parser feature is not verified for
-  // this version (see ParserSupport). Manual dispatch only, with a warning;
-  // unverified readings are unknown, never guessed.
+  // this version (see ParserSupport). Auto-dispatch continues while USAGE
+  // and READY are verified or parse this version's live screens
+  // (ParserSupport.parsing_live) and the usage reading agrees with a passive
+  // reading where one exists; otherwise manual dispatch only. Prompts stay
+  // notice-only (answerable=false) until PROMPT is verified. Readings that
+  // do not parse are unknown, never guessed.
   VERSION_SUPPORT_UNVERIFIED_PARSING = 2;
   // Known not to work with the adapter (for example /goal missing).
   VERSION_SUPPORT_UNSUPPORTED = 3;
@@ -107,7 +111,12 @@ enum ParserFeature {
 message ParserSupport {
   ParserFeature feature = 1;
   string parser_version = 2;
+  // Verified against fixtures of this harness version.
   bool supported = 3;
+  // Not verified, but the parser has read this version's live screens
+  // without a PARSE_FAILED since the version appeared. Keeps auto-dispatch
+  // going after a harness auto-update until fixtures catch up.
+  bool parsing_live = 4;
 }
 
 // ---------------------------------------------------------------------------

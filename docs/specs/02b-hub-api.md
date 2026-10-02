@@ -223,7 +223,9 @@ work-item check: `CHANGE_REQUEST_MERGED`, `GOAL_DONE_ONLY`, or
 
 1. API tokens and user management (invite, roles) as RPCs, or `fleetd`
    commands only for v1.
-2. Browser transport for `AttachTerminal` (bidirectional): Connect over
-   HTTP/2, or a WebSocket carrying the same messages (step 4, Q5).
+2. ~~Browser transport for `AttachTerminal`~~ Decided in step 4
+   ([04](04-technology-review.md), ADR 0016): the CLI streams over HTTP/2;
+   a browser sends the same messages over a WebSocket and acks written
+   bytes with `AttachAck`.
 3. Device authentication mechanism (signed requests vs per-device client
    certificate) and push providers, when the phone app is built.

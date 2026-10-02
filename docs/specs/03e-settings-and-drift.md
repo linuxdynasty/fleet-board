@@ -210,6 +210,7 @@ stateDiagram-v2
   [*] --> SUPPORTED: HarnessInfo.version_support = SUPPORTED
   [*] --> UNVERIFIED_PARSING: version_support = UNVERIFIED_PARSING (ParserSupport says which reads)
   UNVERIFIED_PARSING --> SUPPORTED: new parser_version verifies every feature
+  UNVERIFIED_PARSING --> PARSER_DEGRADED: USAGE or READY stops parsing live screens (auto-dispatch off)
   SUPPORTED --> UNSUPPORTED: harness_changed with version_support=UNSUPPORTED
   SUPPORTED --> PARSER_DEGRADED: 3 consecutive PARSE_FAILED on a supported version
   PARSER_DEGRADED --> SUPPORTED: a PARSE_OUTCOME_OK reading

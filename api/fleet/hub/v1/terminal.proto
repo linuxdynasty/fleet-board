@@ -1,8 +1,9 @@
 // fleet.hub.v1 terminal and logs: browser attach to a live session (J1) and
 // reading stored session logs (K1, K3). The hub bridges AttachTerminal to the
-// agent's Terminal stream; it never interprets the bytes. The browser-side
-// transport (gRPC-web, Connect streaming or a WebSocket carrying these same
-// messages) is step 4 question Q5.
+// agent's Terminal stream; it never interprets the bytes. Transport (step 4,
+// ADR 0016): the CLI uses Connect or gRPC bidirectional streaming over
+// HTTP/2; a browser cannot stream a request body, so it sends these same
+// messages, protobuf-encoded, one per frame over a WebSocket.
 syntax = "proto3";
 
 package fleet.hub.v1;
@@ -49,7 +50,19 @@ message AttachTerminalRequest {
     AttachResize resize = 3;
     AttachSelect select = 4;
     AttachClose close = 5;
+    AttachAck ack = 6;
   }
+}
+
+// AttachAck is the browser's flow control (ADR 0016): sent after the
+// terminal has written output. The hub stops reading the agent's Terminal
+// stream while output_bytes_sent - bytes_written exceeds its high-water
+// mark (256 KiB proposed), so HTTP/2 flow control blocks the agent's PTY
+// read and no output is dropped. Neither WebSocket nor xterm.js has
+// backpressure of its own.
+message AttachAck {
+  // Total output bytes the client has written to its terminal so far.
+  uint64 bytes_written = 1;
 }
 
 // AttachReady: the PTY is open; output follows.

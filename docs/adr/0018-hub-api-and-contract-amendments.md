@@ -56,7 +56,7 @@ an `Operation` (command id and status), not the final state. `Watch` is one
 resumable server stream with `hub_seq`, `resume_token` and an explicit
 `RESYNC_REQUIRED`.
 
-**Principals and devices (B, C).** `Principal` gains a stable `id`, a `kind`
+**Principals and devices.** `Principal` gains a stable `id`, a `kind`
 (`USER`, `SCHEDULER`, `ARBITER`, `API_TOKEN`, `DEVICE`, and `LOCAL_USER` for
 the OS user at the machine), `device_id` and `on_behalf_of`. String owners
 on the agent wire become Principals (`EnsureSession`, `TmuxSession`,
@@ -71,28 +71,31 @@ opaque and a placeholder chat binding; push delivery is not built in v1.
 DENY, decided_by principal + device}` is what a phone acts on; triage items
 gain a `severity`.
 
-**Routines (I).** A hub-side `Routine{name, repo, harness?, trigger
+**Routines.** A hub-side `Routine{name, repo, harness?, trigger
 (queue_empty | cron), goal_text_template, consent, done_rule
 (change_request_merged | goal_done_only | report_written)}`. Each run is a
 normal goal with `WorkItemRef{kind: WORK_ITEM_KIND_ROUTINE, provider_name:
 "fleet"}`, so pacing, consent, triage and verification apply unchanged.
 
-**Profiles (I).** `profile` (empty = harness default) on `HarnessInfo`,
+**Profiles.** `profile` (empty = harness default) on `HarnessInfo`,
 `AccountIdentity`, `EnsureProbe`, `GoalSpec` and the commands that start a
 harness. One account per harness per machine for now; a second profile is
 another entry with the same fields, not a new field.
 
-**Limit wait (I).** `HarnessCondition.resets_at` and goal phase
+**Limit wait.** `HarnessCondition.resets_at` and goal phase
 `LIMIT_WAIT` (hub `GoalPhase`, with `limit_wait_until`). At the reset the
 hub resumes the goal the harness's own way: Claude Code types `continue`;
 Codex and Muse `/goal resume` (01b probes, 2026-10-02). `LIMIT_WAIT` is a
 hub phase, not a `GoalLineState`, because the goal file does not say it.
 
-**Version support (I).** `HarnessInfo.version_support` (`SUPPORTED`,
+**Version support.** `HarnessInfo.version_support` (`SUPPORTED`,
 `UNVERIFIED_PARSING`, `UNSUPPORTED`) and `parser_support[]` per feature
 (usage, identity, prompt, ready, condition) replace the bool
-`version_supported`, so a harness that runs but is not yet parsed is
-manual-dispatch only instead of unusable.
+`version_supported`. After a harness auto-update, auto-dispatch keeps going
+while the usage and ready parsers still read the new version's live screens
+(`ParserSupport.parsing_live`) and usage agrees with a passive reading;
+prompts stay notice-only until verified. A harness update no longer stops
+the fleet until fleet-agent ships new fixtures.
 
 **Other amendments.** Snapshot parts; `Event.delivery` and `coalesce_key`
 so an older hub handles unknown event kinds; `HelloAck.hub_capabilities`;
@@ -122,6 +125,5 @@ effort, `fresh_context` and `dispatch_reason` on `GoalSpec`; every 03g
 ## Open questions
 
 - API tokens and user management as RPCs, or `fleetd` commands for v1.
-- Browser transport for the bidirectional `AttachTerminal` (step 4, Q5).
 - Device authentication mechanism and push providers, when the phone app
   is built.

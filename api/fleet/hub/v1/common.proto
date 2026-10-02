@@ -187,6 +187,9 @@ message FleetSummary {
   uint32 machines_online = 17;
   uint32 machines_total = 18;
   uint32 goals_limit_wait = 19;
+  // Subscription accounts projected to leave >= 5 points unused, or idle
+  // while behind pace (AccountPacing).
+  uint32 accounts_wasting = 20;
 }
 
 // GetFleetSummaryRequest.

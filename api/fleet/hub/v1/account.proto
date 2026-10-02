@@ -74,6 +74,14 @@ message AccountPacing {
   int32 ahead_points = 5;
   // Bucket that decided the state, e.g. "weekly_all".
   string deciding_bucket = 6;
+  // Usable quota (100 - reserve) projected to be left unused at reset at the
+  // burn rate so far; the Usage view's "will it go to waste?" line. The
+  // reserve is never counted as waste. Unset while the reading is stale.
+  optional int32 projected_unused_percent = 7;
+  // No goal is running on the account while it is behind pace.
+  bool idle_while_behind = 8;
+  // The reading predates the last reset; a re-probe is pending.
+  bool reading_stale = 9;
 }
 
 // AccountProbe is the probe the hub assigned for this account (D1).

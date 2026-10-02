@@ -348,8 +348,8 @@ and no buckets; the hub never schedules on it.
   per machine for now; a second is a second `HarnessInfo` entry, no new
   fields. Unknown profile → `HARNESS_PROFILE_MISSING`.
 - **Version support.** `HarnessInfo.version_support` is `SUPPORTED`,
-  `UNVERIFIED_PARSING` (the harness runs, some parsers unverified:
-  manual dispatch only, unverified reads are unknown) or `UNSUPPORTED`;
+  `UNVERIFIED_PARSING` (some parsers unverified; auto-dispatch continues
+  while usage and ready parse live screens) or `UNSUPPORTED`;
   `parser_support[]` says which of usage, identity, prompt, ready and
   condition parsing is verified (replaces the bool `version_supported`).
 - **Goal fields.** `GoalSpec.model` and `effort` are set with the harness's
