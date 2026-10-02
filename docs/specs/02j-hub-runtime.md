@@ -1,6 +1,6 @@
 # 02j. Hub runtime: listeners, configuration, state directory, commands
 
-- Status: Draft for review
+- Status: Accepted; contracts unfrozen until v0.1 (ADR 0019)
 - Date: 2026-10-02
 - Part of: [02-contracts.md](02-contracts.md), [02f](02f-hub-authentication.md)
 - Decisions: [ADR 0022](../adr/0022-drift-audit-decisions.md) (supersedes the
@@ -39,9 +39,9 @@ Tailscale certificate (`tls.api_tailscale: true`); without one `fleetd` refuses
 to start.
 
 **Discovery.** While `discovery.mdns` is true (default) `fleetd` advertises
-`_fleetd._tcp` on the agent port, by running `dns-sd -R` on macOS or
-`avahi-publish-service` on Linux (ADR 0022). Where the tool is missing it logs
-once and the agents use their cached or configured addresses.
+`_fleetd._tcp` on the agent port with `hashicorp/mdns` (ADR 0023). Where no
+multicast interface is usable it logs once and the agents use their cached or
+configured addresses.
 
 ## Configuration file
 

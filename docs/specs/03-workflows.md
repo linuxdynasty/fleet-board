@@ -1,6 +1,6 @@
 # 03. Agent ↔ hub workflows
 
-- Status: Draft for review
+- Status: Accepted
 - Date: 2026-10-02
 - Inputs: [01-agent-capabilities.md](01-agent-capabilities.md),
   [01b-harness-commands.md](01b-harness-commands.md),
@@ -119,8 +119,8 @@ sequenceDiagram
 ```
 
 **Hub discovery (A2).** Candidate order: cached last-good address → mDNS
-`_fleetd._tcp` (macOS built-in; Linux needs `avahi`, otherwise skipped and
-`doctor` says so) → configured addresses (`EnrollResponse.hub_addresses` plus
+`_fleetd._tcp` (`hashicorp/mdns`, ADR 0023; skipped with no usable multicast
+interface, and `doctor` says so) → configured addresses (`EnrollResponse.hub_addresses` plus
 local config) → Tailscale name (v3, only if enabled on both ends). A candidate
 is accepted only when TLS verifies against the pinned CA and the server
 certificate names the hub; an impostor at a discovered address fails TLS and

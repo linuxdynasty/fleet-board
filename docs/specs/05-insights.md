@@ -1,6 +1,6 @@
 # 05. Insights: what the fleet's own data says
 
-- Status: Draft for review
+- Status: Accepted; contracts unfrozen until v0.1 (ADR 0019)
 - Date: 2026-10-02
 - Part of: [README](README.md), step 5 (after the workflows, 03)
 - Output: `api/fleet/hub/v1/insights.proto`, `insights_stuck.proto`,

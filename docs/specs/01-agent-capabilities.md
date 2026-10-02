@@ -1,6 +1,6 @@
 # 01. Agent capabilities
 
-- Status: Draft for review (revised after an independent review)
+- Status: Accepted (revised after an independent review)
 - Date: 2026-09-29
 - Inputs: [design.md](../design.md), ADRs [0004](../adr/0004-agent-connectivity.md),
   [0006](../adr/0006-tmux-sessions.md), [0009](../adr/0009-machine-groups-and-layered-settings.md),
@@ -120,7 +120,7 @@ dispatch there").
   the CA. Single-use, retry-safe. Hub returns the **account salt** (C2).
 - **A2 Find the hub.** Cached last-good address, then mDNS (`_fleetd._tcp`),
   then configured addresses. Accept a candidate only if TLS verifies against
-  the pinned CA. Linux without `avahi` skips mDNS; `doctor` says so.
+  the pinned CA. No multicast interface: mDNS is skipped; `doctor` says so.
 - **A3 Connect and reconcile.** `Hello`, then a full snapshot, plus results
   the hub never acknowledged. The hub may send `SnapshotRequest` at any time.
 - **A4 Renew certificate** at two-thirds of its lifetime.

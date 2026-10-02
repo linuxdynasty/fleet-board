@@ -1,7 +1,8 @@
 # Agent and hub flows, part 3: starting a goal (A7)
 
 - Parts: [1](agent-hub.md) (A1 to A3) | [2](agent-hub-2.md) (A4 to A6) |
-  **3** (this file, A7) | [4](agent-hub-4.md) (A8 to A10) | [5](agent-hub-5.md) (A11 to A13)
+  **3** (this file, A7) | [4](agent-hub-4.md) (A8 to A10) | [5](agent-hub-5.md) (A11 to A13) |
+  [6](agent-hub-6.md) (A14)
 - Protos named in this part: [`command_goal.proto`][command-goal] (`StartGoal`,
   `GoalSpec`, `Preflight`, `RegisterGoal`, `ReleaseGoal`), [`command.proto`][command]
   (`Command`, `CommandProgress`, `CommandResult`), [`snapshot.proto`][snapshot]

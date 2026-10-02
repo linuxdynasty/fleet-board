@@ -1,6 +1,6 @@
 # 01c. Hand-off from capabilities to contracts
 
-- Status: Draft for review
+- Status: Accepted
 - Date: 2026-10-01
 - Part of: [01-agent-capabilities.md](01-agent-capabilities.md)
 

@@ -1,6 +1,6 @@
 # 05b. Observability: fleetd and fleet-agent watching themselves
 
-- Status: Draft for review
+- Status: Accepted; contracts unfrozen until v0.1 (ADR 0019)
 - Date: 2026-10-02
 - Part of: [README](README.md), step 5; companion of [05-insights.md](05-insights.md)
 - Output: `api/fleet/hub/v1/system.proto` (`GetSystemStatus`,

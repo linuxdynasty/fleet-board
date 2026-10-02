@@ -15,7 +15,7 @@ skill and enforces it; it never restates the rule.
 
 Scripts live in `.claude/hooks/` and are shared by all three harnesses; the
 harness configs only point at them. The tier is set by the exit code: only the
-two marked **blocking** can stop anything.
+three marked **blocking** can stop anything.
 
 | Hook | Does | Tier |
 |---|---|---|
@@ -89,11 +89,12 @@ governed; nothing else needs to change.
 - `scripts/verify-agent-canon.sh` fails if a rule names a missing skill, a
   skill is neither mapped nor exempt, or the JSON is invalid.
 
-Current map: `api/**/*.proto`, `buf*.yaml` to `fleet-contract-rigor`; `*.go`,
-`go.mod` to `fleet-go`; `internal/**/store/**`, `*sqlite*`, `migrations`,
+Current map (the exact globs are in `.agents/skill-paths.json`):
+`api/**/*.proto`, `buf*.yaml` to `fleet-contract-rigor`; `*.go`, `go.mod`,
+`go.sum`, `go.work` to `fleet-go`; `internal/**/store/**`, `*sqlite*`, `migrations`,
 `*.sql` to `fleet-sqlite-store`; `internal/harness/**` and harness fixtures to
 `fleet-harness-adapter`; `internal/**/tmux/**` to `fleet-tmux`; `web/**`,
-`mockup/**` to `fleet-frontend`; `**/telemetry/**` to
+`mockup/**` to `fleet-frontend`; `**/telemetry/**` and `**/observability/**` to
 `fleet-telemetry-coverage`; auth, scope and credential paths to
 `fleet-security`.
 

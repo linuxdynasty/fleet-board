@@ -1,13 +1,14 @@
-# Dashboard, hub and agent flows (part 3 of 4)
+# Dashboard, hub and agent flows (part 3 of 5)
 
-- Status: Draft for review
+- Status: Accepted
 - Date: 2026-10-02
 - Part of: [dashboard-hub-agent.md](dashboard-hub-agent.md), which has the cast, the two wires and the
   building blocks every flow here relies on (the Operation lifecycle, `request_id` idempotency, [`Watch`](../../api/fleet/hub/v1/service.proto)). Read its
   "Shared building blocks" first.
 - Flows in this part: **D6** goal control, **D7** terminal attach, **D8** drain a machine
 - Other parts: [1](dashboard-hub-agent.md) (D1, D2), [2](dashboard-hub-agent-2.md) (D3, D4, D5),
-  [3](dashboard-hub-agent-3.md) (D6, D7, D8), [4](dashboard-hub-agent-4.md) (D9, D10, D11, D12)
+  [3](dashboard-hub-agent-3.md) (D6, D7, D8), [4](dashboard-hub-agent-4.md) (D9, D10, D11, D12),
+  [5](dashboard-hub-agent-5.md) (D13)
 - Conventions: arrows are numbered by hand and the numbered list under each diagram explains them. Where a
   spec and a proto disagree, the proto wins. Names are the proto names; the first mention of a message in a file links to its proto.
   Unverified (not probed on a live harness, 01b and 03h): a re-arm on Codex and Muse, and resuming after a usage limit.

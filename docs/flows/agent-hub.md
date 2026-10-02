@@ -1,10 +1,10 @@
 # Agent and hub flows, part 1: enrollment, connect, reconnect (A1 to A3)
 
-- Status: Draft for implementers and the owner
+- Status: Accepted
 - Date: 2026-10-02
-- Parts: **1** (this file: orientation, A1 to A3) |
-  [2](agent-hub-2.md) (A4 to A6) | [3](agent-hub-3.md) (A7) |
-  [4](agent-hub-4.md) (A8 to A10) | [5](agent-hub-5.md) (A11 to A13)
+- Parts: **1** (this file: orientation, A1 to A3) | [2](agent-hub-2.md) (A4 to A6) |
+  [3](agent-hub-3.md) (A7) | [4](agent-hub-4.md) (A8 to A10) |
+  [5](agent-hub-5.md) (A11 to A13) | [6](agent-hub-6.md) (A14)
 - Contracts: [`api/fleet/agent/v1/`](../../api/fleet/agent/v1/) and
   [`api/fleet/type/v1/`](../../api/fleet/type/v1/); the `.proto` files are the source
   of truth and every message, RPC and field name below is copied from them. Specs
@@ -46,6 +46,7 @@ only as the thing that causes a command.
 | A11 | Session logs | [5](agent-hub-5.md) |
 | A12 | Settings and the local policy ceiling | [5](agent-hub-5.md) |
 | A13 | Harness upgrade drift and parser support | [5](agent-hub-5.md) |
+| A14 | System health: `AgentHealth`, ten signals, the SYSTEM triage item | [6](agent-hub-6.md) |
 
 These ids belong to this document set. They are **not** the capability ids
 (A1, A3, D1, G3 and so on) that appear in comments inside the `.proto` files and in

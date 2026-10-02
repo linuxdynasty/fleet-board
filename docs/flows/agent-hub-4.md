@@ -1,7 +1,8 @@
 # Agent and hub flows, part 4: a goal running, prompts, terminal (A8 to A10)
 
 - Parts: [1](agent-hub.md) (A1 to A3) | [2](agent-hub-2.md) (A4 to A6) |
-  [3](agent-hub-3.md) (A7) | **4** (this file) | [5](agent-hub-5.md) (A11 to A13)
+  [3](agent-hub-3.md) (A7) | **4** (this file) | [5](agent-hub-5.md) (A11 to A13) |
+  [6](agent-hub-6.md) (A14)
 - Read [A7](agent-hub-3.md) first: it explains the goal registry and the line the
   agent typed. Counters and storage names are in [part 1](agent-hub.md).
 - Protos named in this part: [`events.proto`][events], [`snapshot.proto`][snapshot],

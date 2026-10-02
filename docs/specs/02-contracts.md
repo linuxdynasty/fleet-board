@@ -1,6 +1,6 @@
 # 02. Agent ↔ hub contracts
 
-- Status: Draft for review
+- Status: Accepted; contracts unfrozen until v0.1 (ADR 0019)
 - Date: 2026-10-01
 - Inputs: [01-agent-capabilities.md](01-agent-capabilities.md),
   [01b-harness-commands.md](01b-harness-commands.md),

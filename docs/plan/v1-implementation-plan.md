@@ -19,7 +19,10 @@ where it needs a decision it says so.
 
 ## 1. What v1 is, and is not
 
-**v1 sees the whole fleet and changes nothing on it.** On all four machines
+**v1 sees the whole fleet and changes nothing on it.** (The owner still
+configures fleet-board itself in v1: which repos to watch, the reserve of each
+account, the Codex account mapping and GitHub; PR 13a. That changes the hub's
+settings, never a machine.) On all four machines
 the owner sees every tmux pane and what runs in it, every goal and its state,
 weekly usage of every subscription account with its burn-down and waste line,
 GitHub issues and PRs for the watched repos, and the health of fleet-board
@@ -36,7 +39,7 @@ In v1 (capabilities tagged v1 in 01):
 | tmux | E1 inventory, E2 control-mode observer, E3 pane lifecycle, E4 activity, E5 pane summaries, E6 prompt detected (notice-only), E9 registry observation, E10 capture pane (visible screen), E11 availability, E12 harness conditions, E13 developer input | A5, A8, A9 |
 | Goals and repos | G2 goal state, H1 repo inventory, H3 branch state, H4 forge CLI sign-in and push access | A8 |
 | Local control | L1 local policy, L2 effective settings, M1 local audit, M2 telemetry, M3 doctor | A12 |
-| Hub | GitHub sync (W4) read-only, pacing and waste projection (03b, 05), hub API reads and `Watch`, System health (05b), subscription-efficiency insights (05) | D2, D3 |
+| Hub | GitHub sync (W4) read-only, pacing and waste projection (03b, 05), hub API reads and `Watch`, owner configuration writes (02j), nightly backup (03f), System health (05b), subscription-efficiency insights (05) | D2, D3, D10 |
 
 **Not in v1** (v2 unless noted): anything that types into or changes a pane
 (F1-F8, G3, G4, I1), goal hooks (G1, E8), harness ready level (E7), worktrees
@@ -66,10 +69,11 @@ machines for seven consecutive days:
    and goal state within 5 s of a change.
 4. Work items and change requests for the watched repos match GitHub, with
    sync lag under 5 minutes, inside the installation's rate limit.
-5. The System section shows all ten signals (05b) and raised a SYSTEM triage
-   item when an `always-on` machine was taken offline on purpose for over 10
-   minutes (05b `AGENT_CONNECTED` counts only such machines and machines with a
-   live goal).
+5. The System section lists all ten signals (05b): nine are measured, and
+   `LOG_STORE_USAGE` shows `UNKNOWN` because `logs.db` arrives in v2. It raised
+   a SYSTEM triage item when an `always-on` machine was taken offline on purpose
+   for over 10 minutes (05b `AGENT_CONNECTED` counts only such machines and
+   machines with a live goal), and `BACKUP_AGE` reads the nightly backup.
 6. `fleet --json` returns machines, accounts, goals and work items.
 7. The 02e freeze checklist is ticked (generated Go and TypeScript clients
    compile in CI; mockup data checked against the protos or marked
@@ -82,7 +86,7 @@ These are cheap and unblock everything; each is its own PR.
 | # | Item | Why |
 |---|---|---|
 | 0.1 | Fixtures of the usage and status screens for the installed versions of Claude Code, Codex and Muse, captured with the `fleet-live-probe` protocol | D2 parsers are fixture-tested (01, `fleet-harness-adapter`); harnesses auto-update (Muse moved to 1.4.2 on 2026-10-02) |
-| 0.2 | Owner creates the GitHub App (the read-only permission set of ADR 0022, which adds Contents: read) and installs it on the watched repos | W4 sync needs an installation; only the owner can do it |
+| 0.2 | Owner creates the GitHub App (the read-only permission set of ADR 0022, which adds Contents: read) and installs it on the watched repos; `fleetd setup github` (PR 13a) writes the manifest, until then by hand | W4 sync needs an installation; only the owner can do it |
 | 0.3 | Decide the release mechanism (plain `go build` matrix in CI vs GoReleaser) and the service manager units (launchd LaunchAgent, systemd `--user`; no root) | Packaging PR 12 depends on it; not covered by ADR 0020 |
 | 0.4 | Owner sets `MUSE_NO_AUTO_UPDATE=1` on fleet machines, or accepts parser drift handled by `parsing_live` (ADR 0018) | Muse's launcher updates itself in the background (01d) |
 
@@ -136,24 +140,25 @@ new code, `fleet-code-review` before push, the full local gate once.
 |---|---|---|---|---|---|
 | 1 | **Scaffolding:** `go.mod`, `Makefile` targets (`gen`, `test`, `lint`, `gates`), `buf generate` into `gen/`, CI workflow (buf build/lint, go vet/test/race on changed packages, golangci-lint, file cap, agent canon, docs-stale), empty `cmd/` binaries that print versions | — | CI green on an empty build; generated Go and TS compile | develop | fleet-go, fleet-contract-rigor |
 | 2 | **Telemetry and store foundations:** `internal/telemetry` (slog JSON, OTEL providers, no exporter by default, `/metrics` handler); `internal/store` (open with the ADR 0014 pragmas, single writer goroutine, 250 ms / 100-message batches, forward-only migrations, read pool) | 1 | writer batching and durability tests; a fullfsync check on darwin like spike S1 | develop-deep | fleet-sqlite-store, fleet-telemetry-coverage |
-| 3 | **Fleet CA and enrollment (hub):** CA and `hub_identity` row, enroll tokens with CA hash, `Enroll` (retry-safe), cert serials, revocation lookup | 2 | enroll, replayed enroll, expired token, wrong CA hash refused | develop | fleet-security, fleet-go |
-| 4 | **Agent connection:** `fleet-agent enroll` and `run`, discovery (cached, mDNS through `dns-sd` or `avahi`, configured: ADR 0022), mTLS connect, `Hello`/`HelloAck`, epoch, backoff with jitter, wake and network-change detection, `Bye`, `RenewCert`; `agent.db` with seq high-water mark and command log | 3 | in-memory hub fake: connect, reconnect after hub restart, seq never goes backwards, duplicate identity displaced | develop-deep | fleet-go, fleet-sqlite-store |
-| 5 | **Hub gateway and ingest:** `Connect` server, snapshot apply in one tx, event apply with delivery classes, heartbeat and `last_seen` cadence (written at most once a minute: defaults.md), `EventCounters`, machine state ONLINE/STALE/OFFLINE, settings send and `SettingsAck` | 2, 4 | agent fake against real hub: snapshot then replayed events, shed counted not lost, STALE at 45 s | develop-deep | fleet-sqlite-store, fleet-telemetry-coverage |
-| 6 | **Machine facts, policy, doctor:** B1, B2 (sampling per OS: ADR 0022), L1 local policy file with change detection, L2 tighten-only merge, M1 local audit, M3 `fleet-agent doctor` | 4 | policy refusals audited; doctor lists every check with a reason | develop | fleet-go, fleet-security |
+| 3 | **Fleet CA and enrollment (hub):** CA and `hub_identity` row, enroll tokens with CA hash, `Enroll` (retry-safe), cert serials, revocation lookup; the nightly `VACUUM INTO` backup into `backups/` (mode 0600) and `fleetd backup [--encrypt]` (03f: a backup holds the CA key), which is what `BACKUP_AGE` reads | 2 | enroll, replayed enroll, expired token, wrong CA hash refused; a backup opens, holds `hub_identity`, and is mode 0600 | develop | fleet-security, fleet-go |
+| 4 | **Agent connection:** `fleet-agent enroll` and `run`, discovery (cached, mDNS through `hashicorp/mdns`, configured: ADR 0023), mTLS connect, `Hello`/`HelloAck`, epoch, backoff with jitter, wake and network-change detection, `Bye`, `RenewCert`; `agent.db` with seq high-water mark and command log | 3 | in-memory hub fake: connect, reconnect after hub restart, seq never goes backwards, duplicate identity displaced | develop-deep | fleet-go, fleet-sqlite-store |
+| 5 | **Hub gateway and ingest:** `Connect` server, snapshot apply in one tx, event apply with delivery classes, heartbeat and `last_seen` cadence (written at most once a minute: defaults.md), `EventCounters`, machine state ONLINE/STALE/OFFLINE, settings send and `SettingsAck`; `fleetd restore` with the 24 h reconcile flag (03f, 02g) | 2, 3, 4 | agent fake against real hub: snapshot then replayed events, shed counted not lost, STALE at 45 s; after a restore agents reconnect with the pinned CA and the hub adopts what they know | develop-deep | fleet-sqlite-store, fleet-telemetry-coverage |
+| 6 | **Machine facts, policy, doctor:** B1, B2 (sampling with gopsutil: ADR 0023), L1 local policy file with change detection, L2 tighten-only merge, M1 local audit, M3 `fleet-agent doctor` | 4 | policy refusals audited; doctor lists every check with a reason | develop | fleet-go, fleet-security |
 | 7 | **tmux observer (epic, 2-3 PRs):** E1 inventory, E2 control mode, E3 lifecycle, E4 activity, E5 summaries (latest per pane, persisted), E10 capture (visible screen), E11 availability, E13 developer input; internal sessions marked | 5 | against real tmux 3.2 and the latest release in CI; fakes for unit tests | develop-deep | fleet-tmux, fleet-go |
 | 8 | **Harness adapters and usage probes (epic):** C1-C4, D1 probe sessions on the `fleet-probe` server, D2 parsers for Claude `/usage`, Codex `/status`, Muse `/usage` with fixtures from 0.1, D3 passive signals, `VersionSupport`/`ParserSupport`/`parsing_live`, E6 prompt detection (notice-only), E12 conditions | 7, 0.1 | every fixture parses or returns `UNKNOWN`; never a guessed number; probe types only the status command | develop (parsers), develop-deep (probe session control) | fleet-harness-adapter, fleet-tmux, fleet-live-probe |
 | 9 | **Goals and repos (observe only):** G2 goal state from goal files (eshu files and the generic file), E9 registry observation, H1 repo inventory and `RepoRef` derivation, H3 branch state, H4 `gh` status | 7 | eshu goal-file fixtures; a dirty checkout and a detached HEAD reported correctly | develop | fleet-go |
 | 10 | **Usage, pacing and accounts (hub):** usage readings, account discovery and Codex mapping, `AccountPacing` with burn-down and `projected_unused_percent`, `reading_stale` | 5, 8 | pacing math table tests from 03b and 05; stale reading after a passed reset | develop | fleet-sqlite-store |
 | 11 | **GitHub sync (read-only):** typed REST wrapper, installation tokens, conditional requests, rate-limit handling, cursors, `ProviderError`, work item and change request mirrors, trusted-gate evidence stored (not acted on), Repo resource | 2, 0.2 | recorded HTTP fixtures; 304s not counted; rate-limit back-off; sync lag metric | develop | fleet-go, fleet-security |
 | 12 | **Hub API reads and Watch:** Connect handlers for machine, session, pane summary, goal, account, work item, change request, repo, triage (read), FleetSummary, GetServerInfo; `Watch` with per-topic subscriptions, resume tokens, `RESYNC_REQUIRED`, latest-wins summaries; `local_trusted` only, Host and Origin checks, loopback bind | 5, 10, 11 | contract tests per RPC; Watch resume after reconnect; slow consumer drops summaries only | develop-deep (Watch), develop (reads) | fleet-contract-rigor, fleet-security |
-| 13 | **System health and insights v1:** the ten System signals, `GetSystemStatus`, SYSTEM triage items with hysteresis; subscription-efficiency rollups and `GetInsights` for them | 12 | each signal driven over its thresholds in a test; rollup equals a hand-computed week | develop | fleet-telemetry-coverage |
-| 14 | **Web UI (epic):** Vite scaffold, generated client, Watch hook, then views in this order: Machines (+ System), Usage, Session (read-only panes, no attach), Triage (read-only: prompts notice-only, conditions, system), Work (read-only board), Insights (efficiency only); `web/dist` embedded in `fleetd` | 12, 13 | vitest per component; Playwright smoke per view against a hub with a seeded store; phone width | develop | fleet-frontend |
-| 15 | **CLI `fleet` (read):** `fleet status`, `machines`, `accounts`, `goals`, `work`, all `--json`; `FLEET_URL`, `FLEET_TOKEN` reserved for v3 | 12 | golden JSON outputs against a seeded hub | develop | fleet-go |
-| 16 | **Packaging and install:** release builds for darwin/linux amd64/arm64, launchd and systemd `--user` units, `fleetd init`, enroll-token flow, runbook in docs/ | all above, 0.3 | install, enroll and upgrade on a clean VM and on the four machines | develop | fleet-go, fleet-security |
+| 13 | **System health and insights v1:** the ten System signals, `GetSystemStatus`, SYSTEM triage items with hysteresis; subscription-efficiency rollups and `GetInsights` for them | 12 | each signal driven over its thresholds in a test (`LOG_STORE_USAGE` with an injected value; it reads `UNKNOWN` on a real v1 hub, which has no `logs.db`); rollup equals a hand-computed week | develop | fleet-telemetry-coverage |
+| 13a | **Owner configuration:** the write RPCs of [02j](../specs/02j-hub-runtime.md#configuring-a-fresh-hub) behind `SETTINGS` and `request_id`/`expected_version`: `CreateRepo`/`UpdateRepo` (watched repos, caps, consent), `CreateAccount`/`UpdateAccount` (`reserve_percent`, default 10; Codex `bindings`), `UpdateIntegration` (label, tracker projects), `UpdateSettings`, `ExportConfig`/`ImportConfig` with `plan_hash`; `fleetd setup github` (App manifest and the hub config `github:` keys, which create the `Integration` row, since there is no `CreateIntegration`) | 10, 11, 12 | a fresh hub is configured only through these calls (no SQL, no hand-edited database; the dashboard forms are PR 14, the CLI is PR 15): watch a repo, set a reserve, map a Codex account, import a `fleet.yaml` plan and apply it; a stale `expected_version` is refused; the Watch topics `REPOS`, `ACCOUNTS`, `SETTINGS` show each change | develop | fleet-contract-rigor, fleet-security, fleet-go |
+| 14 | **Web UI (epic):** Vite scaffold, generated client, Watch hook, then views in this order: Machines (+ System), Usage, Session (read-only panes, no attach), Triage (read-only: prompts notice-only, conditions, system), Work (read-only board), Insights (efficiency only), Settings (the forms for the writes of PR 13a); `web/dist` embedded in `fleetd` | 12, 13, 13a | vitest per component; Playwright smoke per view against a hub with a seeded store; phone width | develop | fleet-frontend |
+| 15 | **CLI `fleet` (read, and the writes of 13a):** `fleet status`, `machines`, `accounts`, `goals`, `work`, all `--json`; `fleet repo`, `fleet account`, `fleet settings`, `fleet config export\|import`; `FLEET_URL`, `FLEET_TOKEN` reserved for v3 | 12, 13a | golden JSON outputs against a seeded hub; the configuration walk of 13a repeated through the CLI | develop | fleet-go |
+| 16 | **Packaging and install:** release builds for darwin/linux amd64/arm64, launchd and systemd `--user` units, `fleetd init` (writes the default `fleetd.yaml` and the state directory: [02j](../specs/02j-hub-runtime.md#commands)), the documented `fleetd enroll-token` and `claim` flow, runbook in docs/ | all above, 0.3 | install, enroll and upgrade on a clean VM and on the four machines | develop | fleet-go, fleet-security |
 | 17 | **v1 acceptance and `v0.1`:** the seven-day run of section 2, fixes found there, freeze checklist, tag, `buf breaking` in CI | 16 | section 2 met; review by `review-fleet-deep`; `arbiter-fleet` ruling before tagging | review-fleet-deep, arbiter-fleet | fleet-code-review |
 
 Parallel lanes once PR 5 lands: 6, 7 and 11 are independent; 8 and 9 follow
-7; 10 follows 8; 12 waits for 10 and 11; 14 can start its scaffold against
+7; 10 follows 8; 12 waits for 10 and 11; 13a follows 10, 11 and 12; 14 can start its scaffold against
 the mockup while 12 is in review.
 
 ## 6. How it is tested
@@ -180,7 +185,7 @@ the mockup while 12 is in review.
 
 - **Tiers from `.agents/roles.json`:** `scan-fleet` (fast) for evidence
   gathering; `develop-fleet` and `review-fleet` (workhorse) by default;
-  `-deep` only for PRs 2, 4, 5, 7, the Watch half of 12, and fixes a
+  `-deep` only for PRs 2, 4, 5, 7, the probe-session half of 8, the Watch half of 12, and fixes a
   workhorse attempt got wrong; `arbiter-fleet` only for design forks, disputed
   findings and the `v0.1` tag.
 - **Small PRs** (one row or sub-row of section 5), so reviews stay cheap and a
@@ -215,7 +220,9 @@ before the v2 PRs that need them:
 - Re-arm after `DONE` on Codex and Muse, and resume after a usage limit on all
   three harnesses (01b, 02h).
 - Compression of Muse and Claude Code goal hours under the 5-minute framing,
-  and `logs.db` at the 50 GB cap (04, "Not proven").
+  and `logs.db` at the 50 GB cap (04, "Not proven"). 04 gates both re-runs on
+  v1; logs are v2 (K1, K2), so they gate the first logs PR instead of `v0.1`.
+  This narrows 04.
 - Cost of the weekly insights report (05, `NOT_MEASURED`).
 
 ## 10. Tracking

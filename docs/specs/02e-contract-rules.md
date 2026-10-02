@@ -1,6 +1,6 @@
 # 02e. Contract rules: naming, codegen, freeze, capabilities, limits
 
-- Status: Draft for review
+- Status: Accepted; contracts unfrozen until v0.1 (ADR 0019)
 - Date: 2026-10-02
 - Part of: [02-contracts.md](02-contracts.md)
 - Output: the header of `api/fleet/type/v1/ids.proto`, `buf.yaml`,

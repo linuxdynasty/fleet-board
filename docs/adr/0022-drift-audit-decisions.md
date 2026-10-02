@@ -8,7 +8,8 @@
   [0005](0005-github-app.md) (permissions),
   [0018](0018-hub-api-and-contract-amendments.md) and
   [0019](0019-pre-implementation-contract-decisions.md) (clearing a reused
-  pane), [0020](0020-dependencies.md) (library table)
+  pane), [0020](0020-dependencies.md) (library table; see also
+  [0023](0023-additional-libraries.md))
 
 ## Context
 
@@ -43,16 +44,13 @@ agent port. Configuration is one owner-edited file,
 `~/.config/fleetd/fleetd.yaml`; state is `~/.local/state/fleetd/`; the start
 command is `fleetd run`. Detail: [02j](../specs/02j-hub-runtime.md).
 
-**3. Three dependencies ADR 0020 did not list.** Added to its table:
-
-| Need | Choice | Notes |
-|---|---|---|
-| mDNS (agent browse, hub advertise) | no library: run `dns-sd` (macOS) or `avahi-browse` and `avahi-publish-service` (Linux) | the specs already say Linux needs `avahi` and `doctor` reports its absence; keeps cgo and a resolver out of the binary |
-| System sampling (B2: load, memory pressure, free bytes) | `golang.org/x/sys` (BSD-3) plus `/proc` | disk: `statfs`; load: `vm.loadavg` sysctl on macOS, `/proc/loadavg` on Linux; memory pressure: `kern.memorystatus_vm_pressure_level` on macOS, `/proc/pressure/memory` on Linux (fallback: `MemAvailable`); no cgo |
-| Ids (lowercase ULID, 02e) | `github.com/oklog/ulid/v2` (Apache-2.0), lowercased | monotonic within a millisecond |
-
-Versions are pinned and licenses checked in the PR that first imports them
-(ADR 0020, rules for changing dependencies).
+**3. Ids.** Lowercase ULIDs (02e) use `github.com/oklog/ulid/v2`
+(Apache-2.0), lowercased, monotonic within a millisecond. The two other
+libraries the v1 plan needed, mDNS and system sampling, are decided in
+[0023](0023-additional-libraries.md); this ADR first proposed running `dns-sd` or
+`avahi` and reading `/proc`, and 0023 replaces that with a library after
+building the candidates. Versions are pinned and licenses checked in the PR that
+first imports them (ADR 0020, rules for changing dependencies).
 
 **4. GitHub App permissions.** Read-only, repository permissions only:
 Metadata, Issues, Pull requests, Checks and Commit statuses (read), plus
@@ -99,7 +97,8 @@ intervals everywhere; 05b and 03d name later escalations only. Heartbeat
 
 - The scheduler and agent code for reused panes needs `started_by_fleet` and the
   mark's option; the dashboard's "Mark available" gets one checkbox.
-- ADR 0020's table has three more lines; a new library still needs a line or an ADR.
+- ADR 0020's table gains the ULID line here and two more in 0023; a new
+  library still needs a line or an ADR.
 - An owner who wants merged panes cleaned in developer sessions ticks the option
   per pane; nothing is cleared otherwise.
 - The first v1 PR set needs a way to configure repos, reserves and GitHub

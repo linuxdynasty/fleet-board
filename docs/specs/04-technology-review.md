@@ -1,6 +1,6 @@
 # 04. Technology review
 
-- Status: Draft for review
+- Status: Accepted
 - Date: 2026-10-02
 - Inputs: [03g](03g-load-and-handoff.md) (load table, questions Q1–Q9),
   [03f](03f-hub-internals.md) (concurrency model, data model),

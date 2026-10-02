@@ -17,9 +17,11 @@ short and rule-shaped.
 
 Read this file and any scoped `AGENTS.md` in the directories you touch. Use
 [Read These First](#read-these-first) and [Skill Routing](#skill-routing) to
-load only what the task needs. Design phase is not over: until the owner says
-implementation starts, `docs/` is the product. See
-[docs/specs/README.md](docs/specs/README.md) for the order and status.
+load only what the task needs. Design steps 1 to 5b are merged. Implementation
+starts when the owner approves
+[the v1 plan](docs/plan/v1-implementation-plan.md); until then `docs/` and
+`api/` are the product. See [docs/specs/README.md](docs/specs/README.md) for the
+order and status.
 
 Resolve uncertainty from source, docs, ADRs, or a bounded experiment. When those
 cannot settle it (ownership, design intent, acceptance criteria, an irreversible
@@ -40,11 +42,12 @@ stopping point. Report actual state; anything not checked is `NOT_CHECKED`.
    writer per database, unique constraints behind every ownership rule.
 3. **Never waste or overspend quota.** Pacing and the reserve line decide
    dispatch; an unknown usage reading stays unknown, it is never guessed.
-4. **Never type into a pane without the checks for that purpose:** a prompt
-   answer needs the prompt still showing, bound to its `prompt_id`; a nudge,
-   resume or operator text needs the ready prompt and an empty input line;
-   every command passes local policy; in any probe every screen is read before
-   any key is pressed.
+4. **Never type into a pane without the checks for that purpose**
+   (`SendKeys.purpose`, [02h](docs/specs/02h-goal-binding-and-pane-signals.md)):
+   a prompt answer needs the prompt still showing, bound to its `prompt_id`; a
+   nudge, resume or operator text needs the ready prompt and an empty input
+   line; every command passes local policy; in any probe every screen is read
+   before any key is pressed.
 
 ## Non-Negotiable Rules
 
@@ -76,10 +79,12 @@ stopping point. Report actual state; anything not checked is `NOT_CHECKED`.
 | Change | Read |
 |---|---|
 | Anything | [docs/design.md](docs/design.md), [ADR index](docs/adr/README.md) |
+| What to build next | [docs/plan/v1-implementation-plan.md](docs/plan/v1-implementation-plan.md) |
 | Agent capabilities, harness behavior | [01](docs/specs/01-agent-capabilities.md), [01b](docs/specs/01b-harness-commands.md), [01d](docs/specs/01d-goal-hooks.md) |
-| Wire contracts | [02](docs/specs/02-contracts.md), [02b](docs/specs/02b-hub-api.md), ADR 0017, 0018, 0019 |
-| Workflows, hub internals | [03](docs/specs/03-workflows.md) and 03b-03g |
-| Storage, load, transport | [04](docs/specs/04-technology-review.md), ADR 0014-0016 |
+| Wire contracts | [02](docs/specs/02-contracts.md), [02b](docs/specs/02b-hub-api.md) to [02j](docs/specs/02j-hub-runtime.md), ADR 0011, 0012, 0017, 0018, 0019 |
+| Workflows, hub internals | [03](docs/specs/03-workflows.md) and 03b-03j, [docs/flows/](docs/flows/README.md), [defaults](docs/specs/defaults.md) |
+| Insights, observability | [05](docs/specs/05-insights.md), [05b](docs/specs/05b-observability.md), ADR 0021 |
+| Storage, load, transport, libraries | [04](docs/specs/04-technology-review.md), ADR 0014-0016, 0020, 0023 |
 | UI | [mockup/](mockup/README.md), [ui-contract-map](docs/specs/ui-contract-map.md), ADR 0007, 0016 |
 | Agent setup, roles, tiers | [docs/development/](docs/development/README.md) |
 | Dev hooks, goal file protocol, turning hooks off | [docs/development/hooks.md](docs/development/hooks.md) |

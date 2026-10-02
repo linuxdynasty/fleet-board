@@ -1,6 +1,6 @@
-# Dashboard, hub and agent flows (part 1 of 4)
+# Dashboard, hub and agent flows (part 1 of 5)
 
-- Status: Draft for review
+- Status: Accepted
 - Date: 2026-10-02
 - Audience: the developer who is about to implement fleet-board, and the owner
   who wants to see exactly how the parts talk to each other
@@ -13,7 +13,7 @@
   [ADR 0019](../adr/0019-pre-implementation-contract-decisions.md)
 
 This is the dashboard to hub to agent half of the flow catalogue. It walks
-twelve flows, **D1 to D12**, from the dashboard's click down to tmux and back
+thirteen flows, **D1 to D13**, from the dashboard's click down to tmux and back
 up to the screen. Each flow has a plain-language summary, a diagram that uses
 the exact message, RPC and field names from the protos, numbered steps (one
 per arrow), what is persisted where, and what happens when it goes wrong.
@@ -24,6 +24,7 @@ per arrow), what is persisted where, and what happens when it goes wrong.
 | [2](dashboard-hub-agent-2.md) | **D3** live updates, **D4** dispatch a goal end to end, **D5** answer a prompt via approvals |
 | [3](dashboard-hub-agent-3.md) | **D6** goal control, **D7** terminal attach, **D8** drain a machine |
 | [4](dashboard-hub-agent-4.md) | **D9** run a routine, **D10** change a setting, **D11** replay a session log, **D12** pair a phone |
+| [5](dashboard-hub-agent-5.md) | **D13** insights, suggestions and the weekly report |
 
 ## The cast and the two wires
 

@@ -1,6 +1,6 @@
 # UI ↔ contract map
 
-- Status: Draft, with the mockup under `mockup/`
+- Status: Accepted, with the mockup under `mockup/`; contracts unfrozen until v0.1 (ADR 0019)
 - Date: 2026-10-02
 - Inputs: [02-contracts.md](02-contracts.md), [02b-hub-api.md](02b-hub-api.md),
   `api/fleet/*/v1/*.proto`,

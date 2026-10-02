@@ -1,6 +1,6 @@
 # Defaults
 
-- Status: Draft for review
+- Status: Accepted
 - Date: 2026-10-02
 - Decisions: [ADR 0022](../adr/0022-drift-audit-decisions.md) (the rows marked
   "decided here")

@@ -1,6 +1,6 @@
 # 02b. Hub API (`fleet.hub.v1`)
 
-- Status: Draft for review
+- Status: Accepted; contracts unfrozen until v0.1 (ADR 0019)
 - Date: 2026-10-02
 - Part of: [02-contracts.md](02-contracts.md)
 - Inputs: [03-workflows.md](03-workflows.md) and 03b–03g,
