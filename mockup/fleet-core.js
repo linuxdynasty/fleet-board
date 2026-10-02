@@ -8,41 +8,46 @@ const hhmm = d => new Date(d).toLocaleTimeString([], { hour: "2-digit", minute: 
 const mById = id => machines.find(m => m.id === id);
 const sById = id => sessions.find(s => s.id === id);
 const pById = id => permissions.find(p => p.id === id);
-const harnessColor = { claude: "var(--accent)", codex: "var(--ok)", muse: "var(--warn)", shell: "var(--idle)" };
+const cById = id => conditions.find(c => c.id === id);
+const harnessColor = { claude: "var(--accent)", codex: "var(--ok)", muse: "var(--warn)", opencode: "var(--fg)", shell: "var(--idle)" };
 const agentChip = h => `<span class="agent" style="color:${harnessColor[h] ?? "var(--fg)"}">${esc(h)}</span>`;
+const provChip = p => p ? `<span class="prov ${esc(p)}" title="${esc(PROVIDER[p] ?? p)}">${esc(PROVIDER[p] ?? p)}</span>` : "";
 const where = s => `${mById(s.m).short} ${s.target}`;
-const ref = s => s.issue ? `${shortName(s.repo)}#${s.issue}` : s.pr ? `${shortName(s.repo)} PR #${s.pr}` : s.repo;
+const ref = s => s.display ?? (s.repo ? shortName(s.repo) : s.win);
 
-const ui = { view: "triage", selected: "g2", triageIdx: 0, answered: {}, choice: {}, snoozed: {}, dismissed: {}, confirm: null, switcher: false, swIdx: 0, swQuery: "" };
+const ui = { view: "triage", selected: "g2", triageIdx: 0, answered: {}, choice: {}, snoozed: {}, dismissed: {}, confirm: null, switcher: false, swIdx: 0, swQuery: "", attachRO: false };
 const VIEWS = ["triage", "work", "session", "fleet"];
-const STATE_PILL = { working: "working", waiting: "waiting", stuck: "stuck", verifying: "verifying", merged: "done", none: "idle" };
+const STATE_PILL = { working: "working", waiting: "waiting", stuck: "stuck", verifying: "verifying", merged: "done", none: "idle", idle: "idle", available: "available" };
 
 function log(what, s, who = "you") { audit.unshift({ at: new Date(), who, what, where: s ? where(s) : "", s: s?.id }); }
-const sessionOrder = () => machines.flatMap(m => sessions.filter(s => s.m === m.id));
-const liveState = s => s.harness === "shell" ? "none" : goalState(s);
+const sessionOrder = () => machines.flatMap(m => sessions.filter(s => s.m === m.id).sort((a, b) => (a.sess === "fleet") - (b.sess === "fleet") || a.sess.localeCompare(b.sess) || a.idx - b.idx));
+// Live state: goal state for fleet panes; idle/available for the developer's own harness windows (E11).
+const liveState = s => s.harness === "shell" ? "none" : s.yours ? (s.available ? "available" : s.idle ? "idle" : "none") : goalState(s);
+const activeCond = s => s.cond && !ui.snoozed[s.cond] ? cById(s.cond) : null;
 
-// Work items: watched PRs and issues, with a lifecycle stage.
+// Work items: watched change requests and issues/tickets, with a lifecycle stage.
 const goalFor = it => sessions.find(s => isGoal(s) && s.repo === it.repo && (it.kind === "pr" ? s.pr === it.n : s.issue === it.n) && goalState(s) !== "merged");
 function stageOf(it) {
   if (it.kind === "pr" && it.state === "merged") return "merged";
-  const s = goalFor(it) ?? (it.kind === "issue" ? sessions.find(x => x.repo === it.repo && x.issue === it.n) : null);
+  const s = goalFor(it) ?? (it.kind === "issue" ? sessions.find(x => isGoal(x) && x.repo === it.repo && x.issue === it.n) : null);
   if (s) { const st = goalState(s); return st === "merged" ? "merged" : st; }
   if (it.kind === "issue") return "queued";
   return "unowned";
 }
 function workItems() {
-  const issuesFromGoals = sessions.filter(s => isGoal(s) && s.issue && !backlog.some(b => b.repo === s.repo && b.n === s.issue) && !prs.some(p => p.issues.includes(s.issue)))
-    .map(s => ({ kind: "issue", repo: s.repo, n: s.issue, t: s.line?.startsWith("Drive") ? s.line : `Issue #${s.issue}` }));
+  const issuesFromGoals = sessions.filter(s => isGoal(s) && s.issue && !backlog.some(b => b.repo === s.repo && b.n === s.issue) && !prs.some(p => p.repo === s.repo && p.issues.includes(s.issue)))
+    .map(s => ({ kind: "issue", repo: s.repo, host: s.host ?? "github.com", provider: s.provider ?? "github", n: s.issue, display: s.display, t: s.line?.startsWith("Drive") ? s.line : `Issue ${s.display}` }));
   return [...backlog, ...issuesFromGoals, ...prs].filter(it => watched(it.repo));
 }
 
-// Triage: only things that need a person.
+// Triage: only things that need a person. Conditions (E12) are listed apart from stuck goals.
 function triageItems() {
   const out = [];
   permissions.forEach(p => { if (!ui.answered[p.id] && !ui.snoozed[p.id]) out.push({ type: "perm", id: p.id, p, s: sById(p.s), rank: 0 }); });
   sessions.filter(s => isGoal(s) && goalState(s) === "stuck" && !ui.snoozed[s.id]).forEach(s => out.push({ type: "stuck", id: s.id, s, rank: 1 }));
-  sessions.filter(s => isGoal(s) && goalState(s) === "verifying" && !ui.snoozed[s.id]).forEach(s => out.push({ type: "verify", id: s.id, s, rank: 2 }));
-  accounts.filter(a => pace(a).state === "reserve" && !ui.dismissed[a.id]).forEach(a => out.push({ type: "pace", id: a.id, a, rank: 3 }));
+  conditions.filter(c => !ui.snoozed[c.id] && sById(c.s)).forEach(c => out.push({ type: "cond", id: c.id, c, s: sById(c.s), rank: c.retrying ? 2 : 1 }));
+  sessions.filter(s => isGoal(s) && goalState(s) === "verifying" && !ui.snoozed[s.id]).forEach(s => out.push({ type: "verify", id: s.id, s, rank: 3 }));
+  accounts.filter(a => pace(a).state === "reserve" && !ui.dismissed[a.id]).forEach(a => out.push({ type: "pace", id: a.id, a, rank: 4 }));
   return out.sort((x, y) => x.rank - y.rank);
 }
 
@@ -50,6 +55,7 @@ function counts() {
   const st = sessions.filter(isGoal).map(goalState);
   const c = k => st.filter(x => x === k).length;
   return { working: c("working"), waiting: c("waiting"), stuck: c("stuck"), needs: triageItems().length,
+    avail: sessions.filter(s => liveState(s) === "available" || (!s.yours && goalState(s) === "merged" && !s.stopped)).length,
     freeA: machines.reduce((n, m) => n + freeActive(m), 0), slotsA: machines.reduce((n, m) => n + (m.drained ? 0 : m.maxActive), 0) };
 }
 
@@ -58,11 +64,12 @@ function renderStrip() {
   $("nav").innerHTML = VIEWS.map((v, i) => `<a href="#${v}" class="tab" aria-current="${ui.view === v ? "page" : "false"}">
     <span class="k">${i + 1}</span>${v === "triage" ? `Triage <b class="badge">${c.needs}</b>` : v[0].toUpperCase() + v.slice(1)}</a>`).join("");
   $("summary").innerHTML = `<span><b>${c.working}</b> working</span><span><b>${c.waiting}</b> waiting on CI/review</span>
-    <span class="bad"><b>${c.stuck}</b> stuck</span><span class="warn"><b>${c.needs}</b> need you</span><span><b>${c.freeA}/${c.slotsA}</b> active slots free</span>
+    <span class="bad"><b>${c.stuck}</b> stuck</span><span class="warn"><b>${c.needs}</b> need you</span><span><b>${c.freeA}/${c.slotsA}</b> active slots free</span><span><b>${c.avail}</b> available session${c.avail === 1 ? "" : "s"}</span>
     <span class="auto ${settings.autoDispatch ? "on" : ""}">auto-dispatch ${settings.autoDispatch ? "on" : "off"}</span>
     ${accounts.map(a => { const p = pace(a); const tone = p.state === "reserve" ? "bad" : p.state === "ahead" ? "warn" : "ok";
       return `<span class="use" title="${esc(`${a.label}: ${p.used}% used, pace line ${Math.round(p.target)}%, ${PACE_LABEL[p.state]}`)}">${agentChip(a.harness)}
-        <span class="mini"><i class="${tone}" style="width:${p.used}%"></i><s style="left:${p.target}%"></s></span><span class="num">${p.used}%</span></span>`; }).join("")}`;
+        <span class="mini"><i class="${tone}" style="width:${p.used}%"></i><s style="left:${p.target}%"></s></span><span class="num">${p.used}%</span></span>`; }).join("")}
+    ${apiAccounts.map(a => `<span class="use" title="${esc(`${a.label}: $${a.spentUsd} of $${a.capUsd} cap, manual only`)}">${agentChip("opencode")}<span class="num">$${a.spentUsd.toFixed(0)}/${a.capUsd}</span></span>`).join("")}`;
 }
 
 function rerender() {
@@ -81,10 +88,11 @@ window.addEventListener("hashchange", () => { const v = location.hash.slice(1); 
 
 function switcherEntries() {
   const e = [];
-  sessionOrder().forEach(s => e.push({ label: `${s.harness} · ${where(s)} · ${ref(s)}`, sub: s.line ?? s.repo, tag: STATE_PILL[liveState(s)], run: () => go("session", s.id) }));
-  machines.forEach(m => e.push({ label: `${m.name} · ${m.ip}`, sub: `${activeOn(m)}/${m.maxActive} active · ${totalOn(m)}/${m.maxTotal} total · ${m.ram} GB`, tag: "machine", run: () => { ui.fleetFocus = m.id; go("fleet"); } }));
+  sessionOrder().forEach(s => e.push({ label: `${s.win} · ${where(s)}`, sub: `${s.harness} · ${s.line ?? (s.yours ? "yours" : s.repo)}`, tag: STATE_PILL[liveState(s)], run: () => go("session", s.id) }));
+  machines.forEach(m => e.push({ label: `${m.name} · ${m.ip}`, sub: `${activeOn(m)}/${m.maxActive} active · ${totalOn(m)}/${m.maxTotal} total · ${m.ram} GB · ${m.labels.join(", ")}`, tag: "machine", run: () => { ui.fleetFocus = m.id; go("fleet"); } }));
   accounts.forEach(a => e.push({ label: `${a.label} account`, sub: `${used(a)}% used · ${PACE_LABEL[pace(a).state]}`, tag: "account", run: () => go("fleet") }));
-  workItems().forEach(it => e.push({ label: `${shortName(it.repo)}#${it.n}`, sub: it.t, tag: it.kind, run: () => { ui.workFocus = keyOf(it); go("work"); } }));
+  apiAccounts.forEach(a => e.push({ label: `${a.label} account`, sub: `$${a.spentUsd} of $${a.capUsd} · manual only`, tag: "account", run: () => go("fleet") }));
+  workItems().forEach(it => e.push({ label: it.display, sub: `${PROVIDER[it.provider]} · ${it.t}`, tag: it.kind === "pr" ? "change request" : it.kindLabel ?? "issue", run: () => { ui.workFocus = keyOf(it); go("work"); } }));
   VIEWS.forEach(v => e.push({ label: `Go to ${v}`, sub: "", tag: "view", run: () => go(v) }));
   const terms = ui.swQuery.toLowerCase().split(/\s+/).filter(Boolean);
   return e.filter(x => terms.every(t => (x.label + " " + x.sub + " " + x.tag).toLowerCase().includes(t)));
@@ -97,7 +105,7 @@ function renderSwitcher() {
   ui.swIdx = Math.min(ui.swIdx, Math.max(0, list.length - 1));
   $("swList").innerHTML = list.length ? list.map((x, i) => `<li role="option" aria-selected="${i === ui.swIdx}" data-i="${i}">
       <span class="sw-label">${esc(x.label)}</span><span class="sw-sub">${esc(x.sub)}</span><span class="pill ${esc(x.tag)}">${esc(x.tag)}</span></li>`).join("")
-    : `<li class="sw-empty">Nothing matches. Try a machine, repo, harness or issue number.</li>`;
+    : `<li class="sw-empty">Nothing matches. Try a machine, repo, harness, window name or work item.</li>`;
   $("swList").querySelectorAll("li[data-i]").forEach(li => li.onclick = () => { closeSwitcher(); list[+li.dataset.i].run(); });
 }
 function openSwitcher() { ui.switcher = true; ui.swIdx = 0; ui.swQuery = ""; $("swInput").value = ""; renderSwitcher(); $("swInput").focus(); }

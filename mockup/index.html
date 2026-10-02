@@ -244,6 +244,48 @@ code.inline { font-size: 12px; background: var(--raise); padding: 1px 5px; borde
 .burn-legend i.dash { width: 14px; height: 0; border-radius: 0; border-top: 2px dashed var(--muted); vertical-align: 3px; }
 .pair { display: inline-flex; gap: 6px; }
 
+/* providers, tags, tmux sidebar, attach, palette, history, facts, layers, integrations */
+.prov { font-family: var(--f-mono); font-size: 10px; letter-spacing: .04em; padding: 1px 5px; border-radius: 3px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
+.prov.github { color: var(--fg); } .prov.gitlab { color: var(--warn); } .prov.jira { color: var(--accent); } .prov.bitbucket, .prov.linear { color: var(--muted); }
+.tag { font-size: 10px; letter-spacing: .04em; text-transform: uppercase; padding: 0 5px; border-radius: 3px; background: var(--raise); color: var(--muted); white-space: nowrap; }
+.tag.ok { color: var(--ok); } .tag.fleet { color: var(--accent); }
+.side-sess { display: flex; justify-content: space-between; align-items: center; gap: 6px; font-size: 11.5px; color: var(--muted); padding: 6px 6px 1px; }
+.side-group { grid-template-columns: minmax(0, 1fr); min-width: 0; } .side-s, .side-sess { min-width: 0; overflow: hidden; }
+.side-s { grid-template-columns: 8px 14px minmax(0, 1fr) auto; }
+.pill.available { color: var(--ok); background: color-mix(in srgb, var(--ok) 14%, transparent); } .pill.idle { color: var(--muted); }
+.sdot.available { background: transparent; border: 2px solid var(--ok); } .sdot.idle { background: transparent; border: 1.5px solid var(--idle); }
+.btn.on { border-color: var(--accent); color: var(--accent); } .btn.ghost { background: none; color: var(--muted); margin-top: 4px; }
+.conv { color: var(--warn); } .sess-q.cond { background: color-mix(in srgb, var(--bad) 8%, var(--panel)); border-color: color-mix(in srgb, var(--bad) 40%, var(--line)); }
+.attach { display: grid; gap: 0; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.strip { display: flex; flex-wrap: wrap; gap: 2px; align-items: center; background: var(--ok); color: var(--term-bg); font-family: var(--f-mono); font-size: 12px; padding: 2px 6px; }
+.strip-s { padding: 0 6px; opacity: .85; } .strip-s:last-child { margin-left: auto; }
+.strip-w { background: none; border: 0; padding: 1px 7px; border-radius: 3px; font: inherit; color: inherit; }
+.strip-w.cur { background: var(--term-bg); color: var(--term-fg); } .strip-w:hover { background: color-mix(in srgb, var(--term-bg) 25%, transparent); }
+.attach-term { border-radius: 0; min-height: 260px; } .cursor { color: var(--term-fg); animation: blink 1s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } } @media (prefers-reduced-motion: reduce) { .cursor { animation: none; } }
+.attach-foot { display: grid; gap: 5px; padding: 10px 12px; font-size: 12px; color: var(--muted); background: var(--panel); } .small { font-size: 11px; overflow-wrap: anywhere; }
+.palette, .hist { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 12px; display: grid; gap: 10px; }
+.pal-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
+.pal-col { display: flex; flex-wrap: wrap; gap: 4px; align-content: start; }
+.pal-k { width: 100%; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.pal-k.destructive { color: var(--bad); } .pal-k.goal { color: var(--accent); }
+.replay-bar { display: flex; gap: 10px; align-items: center; font-size: 12px; } .replay-bar .track { flex: 1; height: 6px; background: var(--raise); border-radius: 3px; overflow: hidden; }
+.replay-bar .track i { display: block; height: 100%; background: var(--line); }
+.shown { border-collapse: collapse; font-size: 12px; width: 100%; } .shown td { padding: 2px 6px 2px 0; vertical-align: top; } .shown td:first-child { color: var(--muted); white-space: nowrap; }
+.labels { display: flex; flex-wrap: wrap; gap: 4px; } .label { font-size: 11px; border: 1px solid var(--line); border-radius: 10px; padding: 0 8px; color: var(--muted); }
+.facts { display: grid; gap: 3px; font-size: 12px; color: var(--muted); } .facts b { color: var(--fg); font-weight: 500; }
+.warn-t { color: var(--warn); } .ok-t { color: var(--ok); }
+.set-grid fieldset.wide { grid-column: 1 / -1; }
+.layer-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; }
+.layers { border-collapse: collapse; font-size: 12px; width: 100%; } .layers caption { text-align: left; font-weight: 600; padding-bottom: 4px; }
+.layers td { padding: 3px 8px 3px 0; border-top: 1px solid var(--line); }
+.layer { font-size: 11px; border-radius: 10px; padding: 0 7px; border: 1px solid var(--line); color: var(--muted); display: inline-block; }
+.set-grid .chk { flex-wrap: wrap; } .set-grid .chk .mono { overflow-wrap: anywhere; } #winTpl { width: 150px; flex: none; }
+.layer.machine { color: var(--fg); } .layer.group { color: var(--accent); } .layer.capped { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 50%, var(--line)); }
+.integs { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; }
+.integ { border: 1px solid var(--line); border-radius: 6px; padding: 10px; display: grid; gap: 5px; align-content: start; } .integ.planned { border-style: dashed; }
+.caps-line { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; }
+
 /* switcher */
 #switcher[hidden] { display: none; }
 #switcher { position: fixed; inset: 0; z-index: 50; background: var(--scrim); display: flex; justify-content: center; align-items: flex-start; padding: calc(env(safe-area-inset-top, 0px) + 10vh) 16px 16px; }
@@ -270,29 +312,32 @@ code.inline { font-size: 12px; background: var(--raise); padding: 1px 5px; borde
       <span class="clock num" id="clock"></span>
     </div>
     <div id="summary" aria-label="Fleet summary"></div>
-    <div class="meta-line"><span class="sample" title="Real: machines, RAM, tools, weekly usage read from /usage and /status on 2026-09-28, PRs, issues, merges. Sample: goals, goal-file lines, audit.">mixed real + sample</span>
-      <span>hub: this laptop · 192.168.1.118</span><span id="upd">updated 0s ago</span><span>goals run until merged · n = next session that needs you</span></div>
+    <div class="meta-line"><span class="sample" title="Real: machines, RAM, tools, weekly usage read from /usage and /status on 2026-09-28, PRs, issues, merges. Sample: goals, goal-file lines, prompts, conditions, the Jira ticket, the GitLab MR, API-key accounts, audit.">mixed real + sample</span>
+      <span>hub: this laptop · 192.168.1.118 · agents dial out, typed commands only</span><span id="upd">updated 0s ago</span><span>goals run until merged · n = next session that needs you</span></div>
   </header>
 
   <main id="view"></main>
 
-  <p class="foot">Mockup. Real: machine names, IPs, OS, RAM and installed tools (SSH, 2026-09-28); PRs and issues (gh, 2026-09-28). Weekly usage for Claude, Codex and Muse read from their status screens on 2026-09-28. Sample: goals, goal-file lines, audit history. No action here sends keys, starts or stops anything.</p>
+  <p class="foot">Mockup. Real: machine names, IPs, OS, RAM and installed tools (SSH, 2026-09-28); PRs and issues (gh, 2026-09-28); weekly usage for Claude, Codex and Muse read from their status screens on 2026-09-28; harness command catalogs and /goal syntax (probed 2026-09-30/10-01); the credential prompt and the log sizes (measured 2026-10-01). Sample: goals, goal-file lines, conditions, the Jira ticket and GitLab MR, API-key accounts, audit. Every action shows the typed command the hub would send (api/fleet/v1); nothing here sends it.</p>
 </div>
 
 <div id="switcher" hidden>
   <div class="sw-box" role="dialog" aria-label="Jump to">
-    <div class="sw-in"><input id="swInput" placeholder="Session, machine, repo, issue number…" aria-label="Search" autocomplete="off"><button class="btn sm" id="swClose">Esc</button></div>
+    <div class="sw-in"><input id="swInput" placeholder="Window name, machine, repo, eshu#7398, OPS-142, infra!12…" aria-label="Search" autocomplete="off"><button class="btn sm" id="swClose">Esc</button></div>
     <ul id="swList" role="listbox"></ul>
     <div class="sw-foot"><span>↑↓ move · Enter open · Esc close</span><span>Same switcher in tmux: prefix + F (planned)</span></div>
   </div>
 </div>
 
 <script src="fleet-data.js"></script>
+<script src="fleet-data-work.js"></script>
+<script src="fleet-cmd.js"></script>
 <script src="fleet-dispatch.js"></script>
 <script src="fleet-settings.js"></script>
 <script src="fleet-core.js"></script>
 <script src="view-triage.js"></script>
 <script src="view-work.js"></script>
+<script src="view-session-panels.js"></script>
 <script src="view-session.js"></script>
 <script src="view-fleet.js"></script>
 <script>boot();</script>

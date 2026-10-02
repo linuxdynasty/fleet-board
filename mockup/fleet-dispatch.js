@@ -1,7 +1,8 @@
-// Dispatcher: weekly-usage pacing per account, two slot limits per machine,
-// and goal dispatch. Pure functions first, UI panel after.
+// Dispatcher: weekly-usage pacing per account, two slot limits per machine, available sessions (E11)
+// and goal dispatch as a StartGoal command (G3). Pure functions first, UI panel after.
 const HOUR = 3600e3, DAY = 24 * HOUR;
 const acctFor = h => accounts.find(a => a.harness === h);
+const anyAcct = id => accounts.find(a => a.id === id) ?? apiAccounts.find(a => a.id === id);
 const used = a => Math.max(...a.buckets.map(b => b.used));
 const bindingBucket = a => a.buckets.reduce((p, b) => (b.used > p.used ? b : p));
 const hoursLeft = a => Math.max(0, (a.resets - Date.now()) / HOUR);
@@ -17,14 +18,13 @@ function pace(a) {
   else if (u > target + 5 && !lastDay) state = "ahead";
   else if (u < target - 5 || lastDay) state = "behind";
   else state = "on";
-  // What would be wasted: usable quota left per hour until reset.
   const waste = (cap - u) / Math.max(1, hoursLeft(a));
   return { target, cap, used: u, frac, state, lastDay, waste };
 }
 const PACE_LABEL = { reserve: "reserve reached", ahead: "ahead of pace", on: "on pace", behind: "behind pace" };
-const dispatchable = a => ["on", "behind"].includes(pace(a).state);
+const dispatchable = a => a.mode === "fleet" && ["on", "behind"].includes(pace(a).state);
 
-// Goal states come from the first line of the goal file.
+// Goal states come from the first line of the goal file (G2).
 function goalState(s) {
   if (!s.line) return "none";
   if (s.line.startsWith("DONE")) return verified(s) ? "merged" : "verifying";
@@ -32,71 +32,84 @@ function goalState(s) {
   return "working";
 }
 function verified(s) {
-  const pr = prs.find(p => p.n === s.pr);
+  const pr = prs.find(p => p.n === s.pr && p.repo === s.repo);
   return !s.pr ? false : pr?.state === "merged";
 }
-const isGoal = s => s.harness !== "shell";
+const isGoal = s => s.harness !== "shell" && !s.yours;
 const activeOn = m => sessions.filter(s => s.m === m.id && isGoal(s) && ["working", "stuck"].includes(goalState(s))).length;
 const totalOn = m => sessions.filter(s => s.m === m.id && isGoal(s) && !["merged", "none"].includes(goalState(s))).length;
 const freeActive = m => m.drained ? 0 : Math.max(0, m.maxActive - activeOn(m));
 const freeTotal = m => m.drained ? 0 : Math.max(0, m.maxTotal - totalOn(m));
 
+// E11: a session is available for work when fleet started it and its goal is verified merged, or the developer
+// marked it on the board. Idle alone never makes a session take work.
+const availableFor = (m, harness) => sessions.find(s => s.m === m.id && s.harness === harness && s.idle !== false &&
+  ((s.yours && s.available) || (!s.yours && goalState(s) === "merged" && !s.stopped)));
+
 const watched = repo => settings.repos.some(r => r.on && r.repo === repo);
-const shortName = repo => repo.split("/")[1];
-const keyOf = it => `${it.repo}#${it.n}`;
-const claimedByFleet = it => sessions.some(s => s.repo === it.repo && (s.issue === it.n || s.pr === it.n) && goalState(s) !== "merged");
+const shortName = repo => repo.split("/")[1] ?? repo;
+const keyOf = it => `${it.provider}:${it.repo}#${it.n}`;
+const claimedByFleet = it => sessions.some(s => isGoal(s) && s.repo === it.repo && (s.issue === it.n || s.pr === it.n) && goalState(s) !== "merged");
 const readyIssues = () => backlog.filter(i => watched(i.repo) && !i.claim && !claimedByFleet(i));
 
-// Pick account first (most quota that would otherwise expire), then machine.
+// Pick account first (most quota that would otherwise expire), then a machine with an available session for that
+// harness, then any machine with free slots. API-key accounts never enter this loop (manual only).
 function suggest() {
   const accts = accounts.filter(dispatchable).sort((x, y) => pace(y).waste - pace(x).waste);
   const ms = machines.filter(m => !m.drained && freeActive(m) > 0 && freeTotal(m) > 0)
     .sort((x, y) => (!!x.hub - !!y.hub) || (freeActive(y) - freeActive(x)));
-  for (const a of accts) for (const m of ms) if (m.harnesses.includes(a.harness)) return { m: m.id, a: a.id };
+  for (const a of accts) {
+    const withSess = ms.find(m => availableFor(m, a.harness));
+    if (withSess) return { m: withSess.id, a: a.id };
+    for (const m of ms) if (m.harnesses.includes(a.harness)) return { m: m.id, a: a.id };
+  }
   return null;
 }
 
 function reasons(it, st) {
-  const m = mById(st.m), a = accounts.find(x => x.id === st.a), p = pace(a), out = [];
+  const m = mById(st.m), a = anyAcct(st.a), out = [];
   if (it.claim) out.push(["bad", `Claimed by ${it.claim}. Never dispatched.`]);
+  if (a.harness === "opencode") out.push(["bad", `OpenCode has no /goal yet: it needs fleet-board's generic goal protocol. Until then: inventory, sessions, attach.`]);
+  if (a.capUsd !== undefined) out.push(["warn", `${a.label}: API key, $${a.spentUsd.toFixed(2)} of $${a.capUsd} cap this ${a.period}. Manual dispatch only; never auto.`]);
   if (m.drained) out.push(["bad", `${m.name} is draining.`]);
-  else if (!m.harnesses.includes(a.harness)) out.push(["bad", `${a.label} is not installed on ${m.name}.`]);
+  else if (!m.harnesses.includes(a.harness)) out.push(["bad", `${a.harness} is not installed on ${m.name}.`]);
   else if (freeActive(m) === 0) out.push(["bad", `${m.name} has no free active slot (${activeOn(m)}/${m.maxActive}).`]);
   else if (freeTotal(m) === 0) out.push(["bad", `${m.name} is at its total limit (${totalOn(m)}/${m.maxTotal}).`]);
   else out.push(["ok", `${m.name}: ${freeActive(m)}/${m.maxActive} active and ${freeTotal(m)}/${m.maxTotal} total free · ${m.ram} GB.`]);
-  const txt = `${a.label}: ${p.used}% used (${bindingBucket(a).label}), pace line ${Math.round(p.target)}%, reserve at ${p.cap}%, resets in ${until(a.resets)}.`;
-  out.push([p.state === "reserve" ? "bad" : p.state === "ahead" ? "warn" : "ok", `${txt} ${PACE_LABEL[p.state]}.`]);
-  accounts.filter(x => x.id !== a.id && !dispatchable(x)).forEach(x => out.push(["dim", `${x.label} skipped: ${PACE_LABEL[pace(x).state]}.`]));
+  if (m.versions?.[a.harness] && a.harness === "codex" && m.versions.codex === "0.157.1") out.push(["bad", `codex ${m.versions.codex} on ${m.short} is outside the parser's supported versions: preflight refuses with HARNESS_VERSION_UNSUPPORTED.`]);
+  const reuse = availableFor(m, a.harness);
+  out.push(reuse ? ["ok", `Will use available session ${reuse.win} on ${m.short} (${reuse.yours ? "marked available on the board" : "fleet-started, goal merged"}); re-checked just before typing.`]
+    : ["dim", `No available ${a.harness} session on ${m.short}: new window ${a.harness} ${it.display} in session fleet.`]);
+  if (a.buckets) {
+    const p = pace(a);
+    out.push([p.state === "reserve" ? "bad" : p.state === "ahead" ? "warn" : "ok", `${a.label}: ${p.used}% used (${bindingBucket(a).label}), pace line ${Math.round(p.target)}%, reserve at ${p.cap}%, resets in ${until(a.resets)}. ${PACE_LABEL[p.state]}.`]);
+    accounts.filter(x => x.id !== a.id && !dispatchable(x)).forEach(x => out.push(["dim", `${x.label} skipped: ${PACE_LABEL[pace(x).state]}.`]));
+  }
+  if (it.provider === "jira") out.push(["dim", `Jira ticket ${it.display}: code goes to ${it.targetRepo}; claim = status In Progress (CLAIM_MECHANISM_STATUS).`]);
   return out;
-}
-
-function goalCmd(it, st) {
-  const m = mById(st.m), a = accounts.find(x => x.id === st.a), short = shortName(it.repo);
-  const checkout = `${m.repoRoot}/${short}`; // the goal's issue driver creates its own worktree
-  const goal = `/goal consent ${settings.consent.join(", ")} -- drive ${it.repo}#${it.n} to merged`;
-  const via = m.hub ? "" : `ssh ${m.user}@${m.ip} `;
-  return `${via}tmux new-window -d -t ${m.tmux} -n ${short}-${it.n} -c ${checkout} ${a.harness}\n# then, once the harness is up:\n${via}tmux send-keys -t ${m.tmux}:${short}-${it.n} "${goal}" Enter`;
 }
 
 const dispatchState = {};
 function openDispatch(it) {
   Object.keys(dispatchState).forEach(k => delete dispatchState[k]);
-  const pick = suggest() ?? { m: machines[0].id, a: accounts[0].id };
-  dispatchState[keyOf(it)] = pick;
+  dispatchState[keyOf(it)] = suggest() ?? { m: machines[0].id, a: accounts[0].id };
 }
 
 function dispatchPanel(it) {
-  const k = keyOf(it), st = dispatchState[k], id = k.replace(/[^a-z0-9]/gi, "_");
+  const k = keyOf(it), st = dispatchState[k], id = k.replace(/[^a-z0-9]/gi, "_"), m = mById(st.m), a = anyAcct(st.a);
   const rs = reasons(it, st), blocked = rs.some(r => r[0] === "bad");
+  const g = a.buckets ? startGoalCmd(it, m, a, availableFor(m, a.harness)) : null;
   return `<div class="disp-panel" data-k="${esc(k)}">
     <div class="disp">
-      <label>Account <select data-f="a" id="da-${id}">${accounts.map(a => `<option value="${a.id}" ${a.id === st.a ? "selected" : ""}>${a.label} (${PACE_LABEL[pace(a).state]})</option>`).join("")}</select></label>
-      <label>Machine <select data-f="m" id="dm-${id}">${machines.map(m => `<option value="${m.id}" ${m.id === st.m ? "selected" : ""}>${esc(m.name)} (${freeActive(m)}/${m.maxActive} active free)</option>`).join("")}</select></label>
+      <label>Account <select data-f="a" id="da-${id}">${accounts.map(x => `<option value="${x.id}" ${x.id === st.a ? "selected" : ""}>${esc(x.label)} (${PACE_LABEL[pace(x).state]})</option>`).join("")}
+        ${apiAccounts.map(x => `<option value="${x.id}" ${x.id === st.a ? "selected" : ""}>${esc(x.label)} via OpenCode (manual only)</option>`).join("")}</select></label>
+      <label>Machine <select data-f="m" id="dm-${id}">${machines.map(x => `<option value="${x.id}" ${x.id === st.m ? "selected" : ""}>${esc(x.name)} (${freeActive(x)}/${x.maxActive} active free)</option>`).join("")}</select></label>
     </div>
     <ul class="why-list">${rs.map(([c, t]) => `<li class="${c}">${esc(t)}</li>`).join("")}</ul>
-    <code class="cmd">${esc(goalCmd(it, st))}</code>
+    ${g ? `<div class="why">Command the hub sends to the agent on ${esc(m.short)} (one command_id; steps: ${esc(g.steps)}):</div><code class="cmd">${esc(g.cmd)}</code>
+    <div class="why">Keys the agent will type at the ready prompt · <span class="conv">${esc(g.note)}</span></div><code class="cmd">${esc(g.keys)}</code>` : ""}
     <div class="actions"><button class="btn primary" data-start="${esc(k)}" ${blocked ? "disabled" : ""}>Dispatch goal</button>
-      <button class="btn" data-cancel="${esc(k)}">Cancel</button><span class="why">Mockup: adds a sample goal, runs nothing.</span></div>
+      <button class="btn" data-cancel="${esc(k)}">Cancel</button><span class="why">Mockup: adds a sample goal, sends nothing.</span></div>
   </div>`;
 }
 
@@ -111,13 +124,16 @@ function wireDispatch(root, items) {
 function startGoal(it, who) {
   const k = keyOf(it), st = dispatchState[k] ?? suggest();
   if (!st) return;
-  const m = mById(st.m), a = accounts.find(x => x.id === st.a), short = shortName(it.repo), id = "d" + it.n;
-  const s = { id, m: m.id, harness: a.harness, target: `${m.tmux}:${short}-${it.n}`, repo: it.repo,
-    issue: it.kind === "issue" ? it.n : null, pr: it.kind === "pr" ? it.n : null, branch: it.branch ?? "(new branch)",
-    line: `Drive ${it.repo}#${it.n} to merged`, last: new Date(), started: new Date(),
-    tasks: [[`Claim #${it.n}`, 0]], pane: goalCmd(it, st).split("\n").map(l => ["dim", l]).concat([["hl", "Starting goal…"]]) };
-  sessions.push(s);
-  log(`${who === "you" ? "dispatched" : "auto-dispatched"} ${short}#${it.n} to ${a.harness} (mock, nothing ran)`, s, who);
+  const m = mById(st.m), a = anyAcct(st.a), reuse = availableFor(m, a.harness), id = "d" + String(it.n).replace(/\W/g, "");
+  const g = startGoalCmd(it, m, a, reuse), fleetWins = sessions.filter(s => s.m === m.id && s.sess === "fleet");
+  const idx = reuse ? reuse.idx : Math.max(-1, ...fleetWins.map(s => s.idx)) + 1;
+  const s = { id, m: m.id, harness: a.harness, sess: reuse ? reuse.sess : "fleet", idx, win: reuse ? reuse.win : `${a.harness} ${it.display}`, paneId: reuse ? reuse.paneId : `%${50 + sessions.length}`,
+    repo: it.repo, host: it.host, provider: it.provider, display: it.display, issue: it.kind === "issue" ? it.n : null, pr: it.kind === "pr" ? it.n : null, branch: it.branch ?? "(new branch)",
+    line: `Drive ${it.display} to merged`, last: new Date(), started: new Date(), tasks: [[`Claim ${it.display}`, 0]],
+    pane: [["dim", g.cmd], ["dim", `step 1/7 preflight ok · step 3/7 pick_session ${reuse ? "reuse " + reuse.win : "new window"}`], ["", `> ${g.keys}`], ["hl", "Starting goal…"]] };
+  s.target = `${s.sess}:${s.idx}`;
+  if (reuse) { const i = sessions.indexOf(reuse); sessions.splice(i, 1, s); } else sessions.push(s);
+  log(`${who === "you" ? "dispatched" : "auto-dispatched"} ${it.display} to ${a.harness}${reuse ? ` in available session ${reuse.win}` : ""} (mock, nothing ran)`, s, who);
   delete dispatchState[k];
   if (who === "you") go("session", id);
 }
