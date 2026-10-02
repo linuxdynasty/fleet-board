@@ -193,10 +193,18 @@ message DeleteRoutineResponse {}
 message RunRoutineRequest {
   string request_id = 1;
   RoutineId id = 2;
+  // WARN reasons the caller saw and accepts, as in StartGoalRequest. A run
+  // started by a trigger acknowledges none, so a WARN or CONFIRM check there
+  // means "do not start" and the reason is recorded as a DispatchBlock.
+  repeated fleet.type.v1.ReasonCode acknowledged_warnings = 3;
 }
 
-// RunRoutineResponse.
+// RunRoutineResponse. As in StartGoalResponse: with a CONFIRM check the hub
+// creates an Approval and nothing else; the goal and the operation arrive in
+// DecideApprovalResponse once an owner approves it.
 message RunRoutineResponse {
   fleet.type.v1.GoalId goal = 1;
   Operation operation = 2;
+  // Set when a CONFIRM check holds the run.
+  ApprovalId approval = 3;
 }

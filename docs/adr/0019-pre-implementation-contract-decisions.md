@@ -363,3 +363,22 @@ void: decision 9 dropped reservations while the contracts are unfrozen, so
 is `requested_by_principal`. Its two open questions are answered: API tokens and
 user management are RPCs (02f), and a device signs requests with an Ed25519 key
 (02f). Session logs live in `logs.db` (ADR 0015); no spec describes log files.
+
+## Addendum: gaps the flow diagrams exposed
+
+Taken while checking [docs/flows](../flows/README.md) against the specs and
+protos. Each closes a place where the contracts were silent.
+
+**35. Small rules the flows settled.** `RunRoutine` takes the same checks as a
+manual dispatch: `RunRoutineRequest.acknowledged_warnings` for `WARN`, and
+`RunRoutineResponse.approval` when a `CONFIRM` check holds the run (a trigger
+acknowledges nothing, so `WARN` and `CONFIRM` mean "do not start" there). A
+`ControlGoal` while a person is typing in the goal pane is refused, not queued
+(`GOAL_ACTION_NOT_ALLOWED`, `metadata{"held": "person_typing"}`). A pending device
+may call `GetDevice` on itself, and nothing else, to learn that the owner approved
+it. When a prompt item returns to `OPEN` after a failed answer the hub raises a
+new `Approval` for the same `prompt_id`. The reconnect diff re-sends `Drain` or
+`Undrain` when the hub's drain flag differs from `Snapshot.drain`. The
+`AuthMode` comment is corrected: in `local_trusted` mode the local owner may
+mint API tokens, while passkey, GitHub and device RPCs answer
+`FAILED_PRECONDITION`.

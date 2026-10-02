@@ -353,7 +353,8 @@ severity}` (`BLOCK`, `CONFIRM`, `WARN`, `INFO`) beside the agent's
 re-runs the checks: a `BLOCK` fails with its reason, a `WARN` the request did
 not list in `acknowledged_warnings` fails `PREFLIGHT_WARNINGS_UNACKNOWLEDGED`, and
 a `CONFIRM` returns an `Approval` of kind `DISPATCH_CONFIRM` (required role
-`OWNER`) instead of a goal. "Next up" is `PreflightGoal` on the first item of
+`OWNER`) instead of a goal; `RunRoutine` takes the same `acknowledged_warnings` and returns
+the same `approval` (03i). "Next up" is `PreflightGoal` on the first item of
 `ListWorkItems{filter: stage = READY, order_by: dispatch_order}` with an empty
 placement.
 

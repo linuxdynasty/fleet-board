@@ -138,7 +138,7 @@ every row. `none` = no authentication.
 | `SnoozeTriageItem`, `DismissTriageItem`, `DecideApproval` | `APPROVALS` (`DecideApproval` also checks `Approval.required_role`) |
 | `ListRoutines`, `GetRoutine`, `GetSettings`, `ListSettings`, `ListAuditEntries` | `READ` |
 | `ApprovePairing`, `ListDevices` | `ADMIN` |
-| `GetDevice`, `RevokeDevice` | `ADMIN`, or `self` (the device itself) |
+| `GetDevice`, `RevokeDevice` | `ADMIN`, or `self` (the device itself; a **pending** device may call only `GetDevice`, to learn that the owner approved it, and every other call is `DEVICE_NOT_ACTIVE`) |
 | `ListNotificationTargets` | `self`; `ADMIN` lists every principal's |
 | `CreateNotificationTarget`, `UpdateNotificationTarget`, `DeleteNotificationTarget` | `self`; `ADMIN` may change any |
 

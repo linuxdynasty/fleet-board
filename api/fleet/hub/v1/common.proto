@@ -129,8 +129,9 @@ enum AuthMode {
   // The hub binds loopback addresses only and refuses to start on any other
   // (ADR 0019). No sign-in: every call that passes the Host and Origin checks
   // runs as Principal{id "local-owner", kind USER, role OWNER}. Passkey,
-  // GitHub, API-token and device RPCs answer FAILED_PRECONDITION; attach
-  // still needs a ticket (02f-hub-authentication.md).
+  // GitHub and device RPCs answer FAILED_PRECONDITION; the local owner may
+  // still mint and revoke API tokens (a script on the hub host can use one);
+  // attach still needs a ticket (02f-hub-authentication.md).
   AUTH_MODE_LOCAL_TRUSTED = 1;
   // Passkey or GitHub sign-in (cookie), API tokens (bearer), paired devices
   // (signed requests).

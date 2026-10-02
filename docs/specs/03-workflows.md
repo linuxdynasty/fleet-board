@@ -138,7 +138,9 @@ snapshot → goal `PANE_LOST` (W6); `goal_registry[]` entries the hub does not
 know → triage `orphan_goal_pane` (W7), and goals the hub expects in `STARTING`
 to `STOPPED` that the registry lacks → `RegisterGoal` (02h); availability marks
 the hub holds that `TmuxPane.availability` lacks → `SetPaneAvailability`;
-outbox rows `pending`/`delivered` for
+a `spec.drain.draining` that differs from `Snapshot.drain.draining` (and the
+agent's drain is not local) → `Drain` or `Undrain`, so a `Drain` that expired while
+the machine was offline is not lost; outbox rows `pending`/`delivered` for
 this machine → re-sent after commit unless past `not_after_time`, which become
 `EXPIRED`.
 

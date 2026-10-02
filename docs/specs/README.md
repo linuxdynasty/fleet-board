@@ -21,6 +21,12 @@ the next starts, and no implementation code is written until step 4 is done.
 | 3 | [03-workflows.md](03-workflows.md) (+ [03b](03b-usage-and-sync.md)–[03j](03j-provider-sync-and-trust.md)) | How do agent and hub cooperate for each flow (sequence, state machines, volumes, consistency)? | Draft |
 | 4 | [04-technology-review.md](04-technology-review.md) + [`spikes/`](../../spikes/README.md) | Given the workflows, which storage, queueing and other technologies do we need? | Draft |
 
+Once the contracts and workflows are written, [docs/flows](../flows/README.md)
+shows them in motion: the whole system on one page, a glossary, and one flow per
+situation (enrollment, reconnect, starting a goal, answering a prompt, signing in,
+dispatching from the dashboard, and more), each with the exact message names from
+the protos, numbered steps, what is stored where and what happens on failure.
+
 ## How the steps connect
 
 - **Capabilities → contracts.** Every capability becomes a command, a query, an

@@ -5,6 +5,8 @@ Implementation decisions: [docs/adr/](adr/README.md). Where this document or the
 mockup shows the hub running `ssh … tmux …`, [ADR 0004](adr/0004-agent-connectivity.md)
 supersedes it: agents dial out and receive typed commands.
 Mockup: [`mockup/`](../mockup/) (see [mockup/README.md](../mockup/README.md)).
+How the parts talk to each other, flow by flow, with diagrams and a glossary:
+[docs/flows](flows/README.md).
 
 ## Goal
 

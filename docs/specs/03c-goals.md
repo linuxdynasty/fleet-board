@@ -473,7 +473,7 @@ Sub-flags held with the phase (on `GoalStatus`): `provider_condition`,
 | Harness crash (`PaneExited`) | `STOPPED`; respawn + nudge once; second crash → `STUCK` |
 | Provider error / rate limit / usage limit (`HarnessCondition`) | `provider_condition` set; no stop or no-progress counting; a usage limit moves the goal to `LIMIT_WAIT` and marks the account `SHORT_LIMIT` until its reset (the W3 rule in 03h); cleared → counting resumes |
 | Prompt appears | `prompt_pending`; nudges suppressed; W7 handles the answer |
-| Developer typing in the goal pane | `PaneInput` sets `human_at_keyboard_until`; nudges and goal-control suppressed for 10 min; the board shows "someone is typing" from `Pane.last_input_time` |
+| Developer typing in the goal pane | `PaneInput` sets `human_at_keyboard_until`; nudges suppressed and `ControlGoal` refused (never queued) for 10 min: `FAILED_PRECONDITION` / `GOAL_ACTION_NOT_ALLOWED` with `metadata{"held": "person_typing"}`; the board shows "someone is typing" from `Pane.last_input_time` |
 | Developer interrupts or pauses the goal | `GOAL_INTERRUPTED` / `GOAL_PAUSED`: phase `PAUSED{OWNER_AT_MACHINE}`, triage `goal_paused`, no nudge, no automatic resume |
 | Code host unavailable | `VERIFYING` holds past `verify_grace` without raising `DISAGREE` while the integration is `DEGRADED` (the disagreement is unknowable); shows "verification waiting on <integration>" |
 | Change request found but head differs from the agent's HEAD | Not a disagreement by itself (driver may have rebased); verification uses provider merge state only |

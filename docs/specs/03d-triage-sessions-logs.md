@@ -60,7 +60,9 @@ credential on a command line) shows Deny preselected and `destructive_reason`.
 item is notice-only with the `ssh -t … tmux attach` line (W8). One answer in
 flight per `prompt_id` (DB unique); a second click is refused until the
 result lands. `UNKNOWN_OUTCOME` keeps the item open with a `CapturePane`
-button; the hub never retries typing. Snooze sets `snoozed_until_time`; the item
+button; the hub never retries typing. When an item returns to `OPEN` after a failed
+answer its `Approval` is already `DECIDED`, so the hub raises a new `Approval` for the
+same `prompt_id` and points `TriageItem.approval` at it: that is the second try. Snooze sets `snoozed_until_time`; the item
 reappears unless retired meanwhile. Expiry at 7 days moves it to `EXPIRED`
 and audits it; a prompt that is still on screen after 7 days is re-raised by
 the next `Snapshot.prompts[]` (03g) because the fingerprint is new only if the

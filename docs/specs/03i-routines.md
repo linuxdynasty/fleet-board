@@ -14,7 +14,12 @@ apply unchanged. This file says what is different: how a run is triggered,
 numbered and verified.
 
 **Trigger.** The scheduler pass (every 30 s, plus the usual wakeups) evaluates
-every enabled routine; `RunRoutine` plans one now.
+every enabled routine; `RunRoutine` plans one now. `RunRoutine` takes the same
+checks as a manual dispatch: a `BLOCK` fails the call, a `WARN` must be listed in
+`acknowledged_warnings`, and a `CONFIRM` returns an approval (`RunRoutineResponse.approval`)
+and starts nothing until an owner approves it. A run started by a trigger acknowledges
+nothing, so a `WARN` or `CONFIRM` check means "do not start" and the reason lands in
+`DispatchBlock`.
 
 **Actors.** Scheduler, writer, verifier, the code host adapter, `fleet-agent`
 (unchanged `StartGoal`).
