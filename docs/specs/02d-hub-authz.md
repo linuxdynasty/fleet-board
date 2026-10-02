@@ -185,6 +185,10 @@ device RPCs answer `FAILED_PRECONDITION` ([02f](02f-hub-authentication.md#modes)
 | `ListTriageItems`, `GetTriageItem`, `ListApprovals`, `GetApproval` | `READ\|APPROVALS` |
 | `SnoozeTriageItem`, `DismissTriageItem`, `DecideApproval` | `APPROVALS` (`DecideApproval` also checks `Approval.required_role`) |
 | `ListRoutines`, `GetRoutine`, `GetSettings`, `ListSettings`, `ListAuditEntries` | `READ` |
+| `GetInsights`, `ListInsightReports`, `GetInsightReport`, `ListSuggestions`, `GetSystemStatus` | `READ` (numbers, ids and enums only; a report's text is model-written, scrubbed and rendered as sanitized markdown, [05](05-insights.md#7-the-weekly-written-report)) |
+| `DismissSuggestion` | `APPROVALS` (like `DismissTriageItem`) |
+| `GET /metrics` (not an RPC) | a loopback peer, or an API token with `ADMIN`; never a cookie or a device ([05b](05b-observability.md#4-prometheus-endpoint-metrics)) |
+| `/debug/pprof` (not an RPC, off by default) | loopback listener only, and `ADMIN` ([05b](05b-observability.md#9-pprof)) |
 | `ApprovePairing` | `ADMIN`, user principal only, `scopes` a subset of the approver's effective scopes ([no escalation](#no-escalation)) |
 | `ListDevices` | `ADMIN` |
 | `GetDevice`, `RevokeDevice` | `ADMIN`, or `self` (the device itself; a **pending** device may call only `GetDevice`, to learn that the owner approved it, and every other call is `DEVICE_NOT_ACTIVE`) |

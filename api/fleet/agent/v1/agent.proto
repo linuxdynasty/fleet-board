@@ -302,6 +302,34 @@ message Heartbeat {
   // Drop counters, so the hub tells deliberate shedding from loss: an
   // increase of events.evicted_total is loss and gets a SnapshotRequest.
   EventCounters events = 9;
+  // The agent's own health, so the hub shows it without a collector
+  // (docs/specs/05b-observability.md). Sent in every heartbeat.
+  AgentHealth health = 10;
+}
+
+// AgentHealth is what an operator asks about an agent at 3 AM, in numbers
+// only: no names, paths or text. The hub keeps the latest per machine
+// (MachineTelemetry.agent_health) and exports it as fleet_hub_agent_* gauges
+// labelled by machine; the agent's own fleet_agent_* metrics carry the same
+// values for a collector.
+message AgentHealth {
+  // Event ring: events and bytes held (cap: size or one week).
+  uint64 ring_events = 1;
+  uint64 ring_bytes = 2;
+  // Command results sent and not yet acknowledged (ResultAck).
+  uint32 unacked_results = 3;
+  // Reconnects of the Connect stream since this process started.
+  uint64 reconnects_total = 4;
+  // Resident memory of the agent process.
+  uint64 rss_bytes = 5;
+  // tmux servers whose control connection is down (observed, not asked).
+  uint32 tmux_control_down = 6;
+  // Accounts whose usage probe has failed three times in a row on this
+  // machine.
+  uint32 probes_failing = 7;
+  // Commands refused by local policy, the envelope checks or capability
+  // since this process started.
+  uint64 commands_refused_total = 8;
 }
 
 // SnapshotRequest: the hub wants a full Snapshot now.

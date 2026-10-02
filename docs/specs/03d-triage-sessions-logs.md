@@ -18,6 +18,8 @@ snoozes or dismisses; items expire after 7 days.
 | `work_item_changed` | the provider closed, cancelled or reopened the item under a live goal (03h) | `(goal_id, provider state)` | goal resumed, cleared or ended |
 | `routine_blocked` | a routine run live longer than `blocked_after` (03i) | `(routine, run)` | the run ends |
 | `log_disk_low` | W9 hub disk below the threshold | `hub` | disk above the higher threshold |
+| `system` | a signal about fleetd or an agent itself left OK ([05b](05b-observability.md#8-the-system-health-model)): writer lag, disk, clock skew, an always-on machine offline | `system:<signal>:<subject>` | the signal stays OK for 5 minutes |
+| `suggestion` | a rule-based insight, only with `HubSettings.suggestions_in_triage` ([05](05-insights.md#8-suggestions)), `SEVERITY_INFO`, never notified | `SuggestionId` | the rule stops firing, or dismissed |
 | `policy_invalid` | W10 agent policy file invalid (safe mode) | `machine` | snapshot shows safe mode off |
 | `parser_degraded` | W11 three parse failures on a supported version | `(machine, harness, version)` | a good reading |
 | `settings_unenforced` | W10 a safety setting the agent does not know | `(machine, field)` | agent upgraded |

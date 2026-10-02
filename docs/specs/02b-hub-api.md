@@ -52,6 +52,7 @@ type. The hub API imports `fleet.type.v1` (ids, values) and
 | `NotificationTarget` | `NotificationTargetId` | List, Create, Update, Delete | `NOTIFICATION_TARGETS` | Settings |
 | `Operation` | `CommandId` | GetOperation | `OPERATIONS` | every action |
 | `FleetSummary` | singleton | GetFleetSummary | `FLEET_SUMMARY` (≤ 1/s) | summary strip |
+| Insights: rollups, `InsightReport`, `Suggestion`; `SystemStatus` (singleton) | `InsightReportId`, `SuggestionId` | GetInsights, ListInsightReports, GetInsightReport, ListSuggestions, DismissSuggestion, GetSystemStatus ([05](05-insights.md), [05b](05b-observability.md)) | none (re-read) | Usage, Insights, Machines (System) |
 
 Plus `GetServerInfo` (API version, `fleet_id`, `hub_instance_id`, features,
 `auth_mode`, `sign_in_methods`, `claim_pending`, the caller and its scopes),
@@ -480,7 +481,8 @@ read-only attach toggle is a re-attach (a new `attach.open`).
 | Goals and work | `goal.start`, `goal.control`, `goal.rearm`, `goal.state_change` (hub decisions: expiry, abandon, external merge), `work_item.requeue`, `routine.run`, `approval.decide`, `triage.snooze`, `triage.dismiss` |
 | Configuration | `settings.update`, `account.create`, `account.update`, `account.delete`, `integration.update`, `repo.create`, `repo.update`, `repo.delete`, `config.import`, `machine.hooks`, `routine.create`, `routine.update`, `routine.delete`, `notification_target.create`, `notification_target.update`, `notification_target.delete`, `policy.changed`, `policy.safe_mode` |
 | Logs | `logs.delete`, `logs.search` |
-| Hub | `hub.restore` |
+| Insights | `suggestion.dismiss` (`suggestions/<id>`), `insights.report_stored` (`insight_reports/<id>`, actor the verifier) |
+| Hub | `hub.restore`, `hub.pprof_enable` |
 
 ## Open questions
 

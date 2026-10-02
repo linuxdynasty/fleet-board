@@ -142,6 +142,8 @@ enum ReasonCode {
   // PruneWorktree: a live pane's working directory is inside the worktree.
   // Close the window (KillWindow) first.
   REASON_CODE_WORKTREE_IN_USE = 132;
+  // Scratch directory or file absent, not a regular file, or a link.
+  REASON_CODE_SCRATCH_MISSING = 133;
 
   // Envelope and policy.
   REASON_CODE_EXPIRED = 200;
@@ -345,6 +347,10 @@ enum ReasonCode {
   // ImportConfig could not apply the document: the plan names every entry
   // that failed; nothing was applied.
   REASON_CODE_CONFIG_INVALID = 562;
+  // A spare-quota routine found no account to run on (a DispatchBlock reason).
+  REASON_CODE_ROUTINE_NEEDS_SPARE_QUOTA = 563;
+  // Collected report empty, not UTF-8, too large or without the bundle marker.
+  REASON_CODE_REPORT_INVALID = 564;
 
   // Enroll (A1), carried in the ErrorDetail of the Enroll RPC error.
   // The token is not one the hub issued (or its secret part is wrong).

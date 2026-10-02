@@ -1,0 +1,92 @@
+// fleet.hub.v1 insights reports (docs/specs/05-insights.md, "The weekly
+// written report"): a markdown summary a harness writes from the numbers the
+// hub exported, stored by the hub when the built-in routine's run is verified
+// (DONE_RULE_REPORT_COLLECTED). The report text is UNTRUSTED: a model wrote
+// it. The hub scrubs secrets from it before storing and every client renders
+// it as sanitized markdown (no raw HTML, no images, links shown as text).
+syntax = "proto3";
+
+package fleet.hub.v1;
+
+import "fleet/hub/v1/common.proto";
+import "fleet/hub/v1/goal.proto";
+import "fleet/hub/v1/insights.proto";
+import "fleet/type/v1/ids.proto";
+import "google/protobuf/timestamp.proto";
+
+// InsightReport is one stored report. Immutable, like AuditEntry: version is
+// always 1 and update_time equals create_time.
+message InsightReport {
+  InsightReportId id = 1;
+  uint64 version = 2;
+  google.protobuf.Timestamp create_time = 3;
+  google.protobuf.Timestamp update_time = 4;
+
+  // The range the stats bundle covered.
+  InsightRange period = 10;
+  // The goal (a run of the built-in routine) that wrote it.
+  fleet.type.v1.GoalId goal = 11;
+  RoutineId routine = 12;
+  fleet.type.v1.Harness harness = 13;
+  // The effective model, as the harness named it.
+  string model = 14;
+  fleet.type.v1.AccountId account = 15;
+  fleet.type.v1.MachineId machine = 16;
+  // What the report cost, in points of the account's quota buckets
+  // (Goal.status.usage_consumed at the end of the run). Never dollars: the
+  // report runs on a subscription harness only.
+  repeated GoalUsage usage_consumed = 17;
+  // The stats bundle's schema version and the lowercase hex SHA-256 of its
+  // bytes; the report's first line carries the first 12 characters.
+  uint32 bundle_schema_version = 18;
+  string bundle_digest = 19;
+  // The first 400 bytes of the text, cut at a character boundary. Untrusted
+  // text. Present in lists and gets.
+  string excerpt = 20;
+  // The whole markdown text, at most 64 KiB, secrets scrubbed. Untrusted
+  // text. Empty in ListInsightReports; GetInsightReport returns it.
+  string text = 21;
+  bool text_truncated = 22;
+  // The stats bundle the report was written from (JSON, numbers only), only
+  // from GetInsightReport{include_bundle}, so a person can check the report
+  // against its numbers.
+  string bundle_json = 23;
+  // The aliases the bundle used instead of machine and account names, so the
+  // model never sees them; the Insights view shows this as a legend.
+  repeated InsightAlias aliases = 24;
+}
+
+// InsightAlias maps a bundle alias ("machine-2", "acct-1") to what it stands
+// for. Repos, harnesses and models are not aliased.
+message InsightAlias {
+  string alias = 1;
+  fleet.type.v1.MachineId machine = 2;
+  fleet.type.v1.AccountId account = 3;
+}
+
+// ListInsightReportsRequest. Filter and order_by names: 02c-hub-watch-and-
+// filters.md (routine, create_time). Default: create_time, newest first.
+message ListInsightReportsRequest {
+  int32 page_size = 1;
+  string page_token = 2;
+  string filter = 3;
+  string order_by = 4;
+}
+
+// ListInsightReportsResponse. Reports without text and bundle.
+message ListInsightReportsResponse {
+  repeated InsightReport reports = 1;
+  string next_page_token = 2;
+}
+
+// GetInsightReportRequest.
+message GetInsightReportRequest {
+  InsightReportId id = 1;
+  // Also return bundle_json (up to 256 KiB).
+  bool include_bundle = 2;
+}
+
+// GetInsightReportResponse.
+message GetInsightReportResponse {
+  InsightReport report = 1;
+}

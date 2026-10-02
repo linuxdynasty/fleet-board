@@ -8,6 +8,7 @@ syntax = "proto3";
 package fleet.hub.v1;
 
 import "fleet/hub/v1/common.proto";
+import "fleet/hub/v1/dispatch_block.proto";
 import "fleet/type/v1/consent.proto";
 import "fleet/type/v1/ids.proto";
 import "fleet/type/v1/status.proto";
@@ -62,6 +63,25 @@ enum DoneRule {
   // integration with IntegrationCapabilities.path_exists. Without one the rule
   // cannot be saved (INVALID_ARGUMENT on the routine).
   DONE_RULE_REPORT_WRITTEN = 3;
+  // DONE and the file named by report_path, in the run's scratch directory
+  // on the machine (WORKTREE_MODE_SCRATCH), was read back by the hub with
+  // CollectScratch and passed the checks (non-empty, UTF-8, at most 64 KiB,
+  // the bundle marker line first). For a routine with no repository. The hub
+  // stores the text (insight_report.proto); the verifier needs no code host.
+  // Only a routine with a builtin kind or an unset repo may use it.
+  DONE_RULE_REPORT_COLLECTED = 4;
+}
+
+// RoutineBuiltin marks a routine the hub itself owns. Its goal template and
+// done rule are fixed by the hub and an update that changes them is
+// INVALID_ARGUMENT; the owner may still change enabled, trigger, harness,
+// profile, account, machine, model, effort and blocked_after. The hub creates
+// the routine once, at first start, with enabled true; deleting it is
+// refused (disable it instead).
+enum RoutineBuiltin {
+  ROUTINE_BUILTIN_UNSPECIFIED = 0;
+  // The weekly written insights report (docs/specs/05-insights.md).
+  ROUTINE_BUILTIN_INSIGHTS_WEEKLY = 1;
 }
 
 // RoutineSpec is what the owner configured. Covered by Routine.version, so a
@@ -69,6 +89,9 @@ enum DoneRule {
 message RoutineSpec {
   string display_name = 1;
   bool enabled = 2;
+  // Unset only for a routine that needs no repository: the built-in
+  // insights routine and any routine whose done_rule is REPORT_COLLECTED or
+  // GOAL_DONE_ONLY. Its goals then run in a scratch directory.
   fleet.type.v1.RepoRef repo = 3;
   // Unset = any harness the scheduler picks.
   fleet.type.v1.Harness harness = 4;
@@ -79,7 +102,9 @@ message RoutineSpec {
   // Consent acts for its goals, further limited by repo ∩ account.
   repeated fleet.type.v1.ConsentAct consent = 8;
   DoneRule done_rule = 9;
-  // For DONE_RULE_REPORT_WRITTEN: path relative to the checkout.
+  // For DONE_RULE_REPORT_WRITTEN: path relative to the checkout. For
+  // DONE_RULE_REPORT_COLLECTED: a bare file name in the scratch directory
+  // (the pattern of agent.v1 ScratchFile.name), "report.md" for the built-in.
   string report_path = 10;
   fleet.type.v1.Principal owner = 11;
   // What the run's goals ask of the harness, as GoalSpecInput does for a
@@ -97,6 +122,16 @@ message RoutineSpec {
   // (TRIAGE_KIND_ROUTINE_BLOCKED); a stuck or limit-waiting run would
   // otherwise stop the routine for days without a word. Default 12 hours.
   google.protobuf.Duration blocked_after = 17;
+  // Set only for a routine the hub owns (see RoutineBuiltin); the scheduler
+  // gives it its input (the stats bundle) and its verification.
+  RoutineBuiltin builtin = 18;
+  // Start a run only on an account that is dispatchable, is behind pace or
+  // would leave quota unused at reset (the same test as AccountPacing's
+  // idle_while_behind and projected_unused_percent, 03b), and whose reserve
+  // the run's expected cost would not cross. Otherwise the fire stays due and
+  // the reason is the DispatchBlock ROUTINE_NEEDS_SPARE_QUOTA. True for the
+  // built-in insights routine; any routine may set it.
+  bool only_spare_quota = 19;
 }
 
 // RoutineStatus is the run bookkeeping. Not versioned.
@@ -115,6 +150,10 @@ message RoutineStatus {
   uint32 run_count = 13;
   // Cron fires skipped because the hub could not run them in time.
   uint32 skipped_fires = 14;
+  // Why the routine is not starting a run it is due for (for example
+  // ROUTINE_NEEDS_SPARE_QUOTA, NO_FIT_MACHINE). Unset while nothing holds it
+  // back.
+  DispatchBlock dispatch_block = 15;
 }
 
 // Routine is one configured routine.

@@ -300,6 +300,31 @@ enum PromptSource {
   PROMPT_SOURCE_HOOK = 2;
 }
 
+// PromptClass is the adapter's closed classification of what a prompt asks,
+// so insights can count "what blocks goals most" without grouping by screen
+// text (docs/specs/05-insights.md). Chosen by the adapter from the prompt's
+// structure and options, never from free text a model wrote; UNSPECIFIED when
+// the adapter cannot tell. A newer adapter may add values, and a receiver
+// treats an unknown one as OTHER.
+enum PromptClass {
+  PROMPT_CLASS_UNSPECIFIED = 0;
+  // Permission to run a command or a tool.
+  PROMPT_CLASS_RUN_COMMAND = 1;
+  // Permission to edit, write or delete files.
+  PROMPT_CLASS_EDIT_FILES = 2;
+  // Permission for the network, a web fetch or an MCP tool.
+  PROMPT_CLASS_NETWORK_OR_TOOL = 3;
+  // Trust this folder, or accept a hook, plugin or config.
+  PROMPT_CLASS_TRUST = 4;
+  // Approve a plan the harness wrote.
+  PROMPT_CLASS_PLAN_APPROVAL = 5;
+  // The agent asks the person a question (not a permission).
+  PROMPT_CLASS_QUESTION = 6;
+  // Sign in, update or another setup screen.
+  PROMPT_CLASS_SETUP = 7;
+  PROMPT_CLASS_OTHER = 15;
+}
+
 // PromptOption is one menu choice as shown. Untrusted text.
 message PromptOption {
   // The key or number to type, e.g. "1", "y".

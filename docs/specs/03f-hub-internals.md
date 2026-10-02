@@ -95,6 +95,8 @@ at **4 machines** / **50 machines × 10 panes** from the load table in
 | `probes` | `probe_id`; unique active per `account_id` | W3 | ≈ 0 | per account | history 30 days |
 | `usage_readings` | `(account_id, read_time)` | W3 | 0.005 / 0.005 (+ passive ≤ 0.07 / 0.8 worst) | latest per account; time series for burn-down | buckets 1 year; `raw_screen` 7 days |
 | `account_pacing` | `account_id` | scheduler | per evaluation (≤ 1/30 s) | per account | current only |
+| `insight_pacing_interval` | `(account_id, start_time)` | scheduler, on a change of `(PacingState, idle_while_behind)` | a few per account per day | efficiency windows (05) | 1 year |
+| `insight_*` rollups (`insight_goal_daily`, `insight_label_daily`, `insight_quota_window`, `insight_stuck_daily`, `insight_incident`, `insight_routine_daily`), `suggestions`, `insight_reports` | see [05](05-insights.md#2-rollup-tables) | one hourly housekeeping job through the writer; the verifier for a report | ≤ 600 rows/day at A50 (one transaction an hour); one report a week | `GetInsights`, `ListSuggestions`, `ListInsightReports` on the read pool | rollups and reports 1 year; dismissed or resolved suggestions 30 days |
 | `sessions` | `session_id`; unique `(machine_id, name)` | W5, W8 | rare | per machine; available set | permanent (fleet-created) |
 | `panes` (latest state per pane) | `(machine_id, server, server_start_id, pane_id)` | snapshots, pane events | activity 0.33 / 5 (peak 20); summaries 4 / 100 **if persisted** | per machine; per session | current only |
 | `pane_summaries` | pane key | E5 | 4 / 100 | per visible pane | **latest only** (see 03g question Q2) |

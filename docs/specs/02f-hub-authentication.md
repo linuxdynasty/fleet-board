@@ -90,6 +90,13 @@ An HTTP-level refusal is a Connect error body (`{"code":
 credentials and 403 for Host and Origin. A WebSocket refused before the upgrade
 gets the same.
 
+**Operational endpoints.** `GET /metrics` and the optional `/debug/pprof` are
+not RPCs and take only two credentials: a loopback TCP peer (proxy headers are
+never trusted) or an API token (`Authorization: Bearer`) whose effective scopes
+include `ADMIN`; `/debug/pprof` needs both the loopback listener and `ADMIN`. A
+cookie or a device signature is refused, so a browser page cannot scrape them,
+and the Host check applies ([05b](05b-observability.md#4-prometheus-endpoint-metrics)).
+
 ## First run: the claim URL
 
 In `authenticated` mode a hub with no users has no owner. On start `fleetd`

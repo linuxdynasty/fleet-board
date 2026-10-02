@@ -16,7 +16,7 @@ const where = s => `${mById(s.m).short} ${s.target}`;
 const ref = s => s.display ?? (s.repo ? shortName(s.repo) : s.win);
 
 const ui = { view: "triage", selected: "g2", triageIdx: 0, answered: {}, choice: {}, snoozed: {}, dismissed: {}, confirm: null, switcher: false, swIdx: 0, swQuery: "", attachRO: false, dt: {} };
-const VIEWS = ["triage", "work", "session", "usage", "machines", "settings"];
+const VIEWS = ["triage", "work", "session", "usage", "machines", "settings", "insights"];
 const VIEW_ALIAS = { fleet: "usage" };   // old links to the single Fleet page
 const viewOf = h => VIEW_ALIAS[h] ?? h;
 const STATE_PILL = { working: "working", waiting: "waiting", stuck: "stuck", verifying: "verifying", merged: "done", none: "idle", idle: "idle", available: "available" };
@@ -85,6 +85,8 @@ function renderStrip() {
   $("summary").innerHTML = `<span><b>${c.working}</b> working</span><span><b>${c.waiting}</b> waiting on CI/review</span>
     <span class="bad"><b>${c.stuck}</b> stuck</span><span class="warn"><b>${c.needs}</b> need you</span><span><b>${c.freeA}/${c.slotsA}</b> active slots free</span><span><b>${c.avail}</b> available session${c.avail === 1 ? "" : "s"}</span>
     <span class="auto ${settings.autoDispatch ? "on" : ""}">auto-dispatch ${settings.autoDispatch ? "on" : "off"}</span>
+    ${(() => { const w = systemSignals.filter(x => x.state === "warning").length, c = systemSignals.filter(x => x.state === "critical").length;
+      return w + c ? `<a href="#machines" class="use ${c ? "alert" : ""}" title="System: ${w} warning${w === 1 ? "" : "s"}, ${c} critical (Machines → System)"><span class="dot ${c ? "bad" : "warn"}"></span><span class="num">system ${w + c}</span></a>` : ""; })()}
     <span class="acct-row">${accounts.map(a => { const o = outlook(a), p = o.p, tone = a.stale ? "idle" : p.state === "reserve" ? "bad" : o.alert ? "warn" : "ok";
       return `<a href="#usage" class="use ${o.alert ? "alert" : ""} ${a.stale ? "stale" : ""}" title="${esc(`${a.label}: ${wasteLine(a)}`)}">${agentChip(a.harness)}
         <span class="mini"><i class="${tone}" style="width:${p.used}%"></i><s style="left:${p.target}%"></s></span><span class="num">${esc(wasteLine(a, true))}</span></a>`; }).join("")}
@@ -93,7 +95,7 @@ function renderStrip() {
 
 function rerender() {
   renderStrip();
-  ({ triage: renderTriage, work: renderWorkView, session: renderSessionView, usage: renderUsageView, machines: renderMachinesView, settings: renderSettingsView })[ui.view]();
+  ({ triage: renderTriage, work: renderWorkView, session: renderSessionView, usage: renderUsageView, machines: renderMachinesView, settings: renderSettingsView, insights: renderInsightsView })[ui.view]();
   renderSwitcher();
 }
 const renderAll = rerender;
@@ -153,7 +155,7 @@ document.addEventListener("keydown", e => {
   if (typing) { if (e.key === "Escape") e.target.blur(); return; }
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   if (e.key === "/") { e.preventDefault(); openSwitcher(); }
-  else if (/^[1-6]$/.test(e.key)) go(VIEWS[+e.key - 1]);
+  else if (/^[1-7]$/.test(e.key)) go(VIEWS[+e.key - 1]);
   else if (e.key === "n") nextNeedsYou();
   else if (ui.view === "triage") triageKey(e);
   else if (ui.view === "session") sessionKey(e);

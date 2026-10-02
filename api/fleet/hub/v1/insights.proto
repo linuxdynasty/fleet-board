@@ -1,0 +1,299 @@
+// fleet.hub.v1 insights (docs/specs/05-insights.md): numbers the hub computes
+// from state it already keeps, with no model and no API spend. GetInsights
+// returns typed tables and series from the daily rollups; the weekly written
+// report is insight_report.proto and the rule-based suggestions are
+// suggestion.proto. Every message here is counts, durations, percentages and
+// ids: no goal text, no screen text, no issue bodies, no secrets, so reading
+// it needs only SCOPE_READ (02d). A group key echoes ids and open names the
+// hub validated; the one text dimension (LABEL) is restricted to a safe
+// pattern before it is rolled up.
+syntax = "proto3";
+
+package fleet.hub.v1;
+
+import "fleet/hub/v1/common.proto";
+import "fleet/hub/v1/insights_stuck.proto";
+import "fleet/hub/v1/work.proto";
+import "fleet/type/v1/ids.proto";
+import "fleet/type/v1/status.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+
+// InsightSection names one part of the response, so a view asks only for what
+// it draws.
+enum InsightSection {
+  INSIGHT_SECTION_UNSPECIFIED = 0;
+  // Subscription efficiency per account and window.
+  INSIGHT_SECTION_EFFICIENCY = 1;
+  // Goal outcomes grouped by InsightDimension.
+  INSIGHT_SECTION_OUTCOMES = 2;
+  INSIGHT_SECTION_STUCK = 3;
+  INSIGHT_SECTION_SIZE_ACCURACY = 4;
+  INSIGHT_SECTION_ROUTINES = 5;
+  INSIGHT_SECTION_SERIES = 6;
+}
+
+// InsightDimension is what outcome and size rows are grouped by.
+enum InsightDimension {
+  INSIGHT_DIMENSION_UNSPECIFIED = 0;
+  INSIGHT_DIMENSION_HARNESS = 1;
+  // The effective model (GoalStatus.effective_model); "" groups the goals
+  // whose harness did not say.
+  INSIGHT_DIMENSION_MODEL = 2;
+  INSIGHT_DIMENSION_REPO = 3;
+  INSIGHT_DIMENSION_ACCOUNT = 4;
+  INSIGHT_DIMENSION_MACHINE = 5;
+  INSIGHT_DIMENSION_WORK_SIZE = 6;
+  // A work item label ("perf", "bug"). Rolled up only for labels that match
+  // [a-z0-9][a-z0-9 :/_-]{0,31} after lower-casing and that are on at least 5
+  // merged goals in the range, at most 16 labels; a goal with several labels
+  // counts under each, so label rows are not additive. Combines only with the
+  // harness filter (INVALID_ARGUMENT otherwise).
+  INSIGHT_DIMENSION_LABEL = 7;
+}
+
+// InsightGranularity is the bucket of a series.
+enum InsightGranularity {
+  INSIGHT_GRANULARITY_UNSPECIFIED = 0;
+  // A UTC day.
+  INSIGHT_GRANULARITY_DAY = 1;
+  // A UTC week starting Monday.
+  INSIGHT_GRANULARITY_WEEK = 2;
+}
+
+// InsightUnit says what a series value counts.
+enum InsightUnit {
+  INSIGHT_UNIT_UNSPECIFIED = 0;
+  INSIGHT_UNIT_COUNT = 1;
+  INSIGHT_UNIT_PERCENT = 2;
+  INSIGHT_UNIT_SECONDS = 3;
+  // Percentage points of an account's weekly quota bucket.
+  INSIGHT_UNIT_QUOTA_POINTS = 4;
+}
+
+// InsightMetric is one series.
+enum InsightMetric {
+  INSIGHT_METRIC_UNSPECIFIED = 0;
+  // Per account and bucket: the last reading of each bucket.
+  INSIGHT_METRIC_QUOTA_USED_PERCENT = 1;
+  // Per account and bucket: usable quota unused at each reset (waste).
+  INSIGHT_METRIC_QUOTA_UNUSED_PERCENT = 2;
+  // Per account: seconds with no goal while behind pace.
+  INSIGHT_METRIC_IDLE_BEHIND_SECONDS = 3;
+  // Per group: goals that ended in the bucket, and how many merged.
+  INSIGHT_METRIC_GOALS_ENDED = 10;
+  INSIGHT_METRIC_GOALS_MERGED = 11;
+  // Per group: share of goals that ran and merged; unset below 5 goals.
+  INSIGHT_METRIC_MERGE_RATE_PERCENT = 12;
+  INSIGHT_METRIC_GOALS_STUCK = 13;
+  INSIGHT_METRIC_NUDGES = 14;
+  // Per group: quota points spent by goals that ended in the bucket.
+  INSIGHT_METRIC_QUOTA_POINTS_SPENT = 15;
+}
+
+// InsightRange is [start_time, end_time), aligned down to UTC days by the
+// hub and echoed back. At most 366 days; default the last 30.
+message InsightRange {
+  google.protobuf.Timestamp start_time = 1;
+  google.protobuf.Timestamp end_time = 2;
+}
+
+// InsightGroupKey names one group. Only the field of the requested dimension
+// is set (for LABEL only `label`); a series for an account sets `account`.
+message InsightGroupKey {
+  fleet.type.v1.Harness harness = 1;
+  string model = 2;
+  RepoId repo = 3;
+  fleet.type.v1.AccountId account = 4;
+  fleet.type.v1.MachineId machine = 5;
+  WorkSize work_size = 6;
+  string label = 7;
+}
+
+// InsightFilter narrows the goals counted. Empty list = no restriction; lists
+// are ANDed, values inside one list ORed.
+message InsightFilter {
+  repeated fleet.type.v1.Harness harnesses = 1;
+  repeated string models = 2;
+  repeated RepoId repos = 3;
+  repeated fleet.type.v1.AccountId accounts = 4;
+  repeated fleet.type.v1.MachineId machines = 5;
+  repeated WorkSize sizes = 6;
+}
+
+// QuotaWindow is one reset cycle of one quota bucket of one account. Only
+// buckets whose window is at least 24 hours (the weekly ones) have windows:
+// a 5-hour session bucket cannot "go to waste" in a useful sense. Quota is
+// the account's whole pool: interactive use counts as used, and `fleet_used`
+// says how much of it the fleet's goals spent.
+message QuotaWindow {
+  // The bucket key as on LimitBucket ("weekly_all", "weekly").
+  string bucket_key = 1;
+  google.protobuf.Timestamp start_time = 2;
+  // The reset. For the current window, the next reset.
+  google.protobuf.Timestamp end_time = 3;
+  // False for the window in progress: its values are "so far".
+  bool complete = 4;
+  // The account's reserve when the window ended (or now).
+  uint32 reserve_percent = 5;
+  // The last reading before the reset, percent of the bucket used. Unknown
+  // when no good reading exists in the last 24 hours of the window.
+  fleet.type.v1.Percent used_at_end = 6;
+  // Share of the usable quota (100 minus the reserve) that was used,
+  // capped at 100.
+  fleet.type.v1.Percent usable_used = 7;
+  // Usable quota left unused at the reset, in points: the waste. The reserve
+  // is never counted as waste.
+  fleet.type.v1.Percent unused = 8;
+  // Points the fleet's goals spent in the window (GoalUsage, approximate:
+  // other sessions draw from the same pool).
+  fleet.type.v1.Percent fleet_used = 9;
+  // Time the account was behind the burn-down pace, and the part of it with
+  // no goal running there (the idle_while_behind intervals of 03b).
+  google.protobuf.Duration behind = 10;
+  google.protobuf.Duration idle_behind = 11;
+  // Readings that fell in the window. Under 20 the window is low confidence.
+  uint32 readings = 12;
+}
+
+// EfficiencySummary is one bucket of one account over the windows in range.
+message EfficiencySummary {
+  string bucket_key = 1;
+  // Complete windows counted.
+  uint32 windows = 2;
+  // Means over the complete windows with a known value; unknown when none.
+  fleet.type.v1.Percent mean_usable_used = 3;
+  fleet.type.v1.Percent mean_unused = 4;
+  // Slope of the unused points over the last 8 complete windows, in points per
+  // window (least squares, rounded); unset below 3 windows. Positive means the
+  // waste is growing.
+  optional int32 waste_trend_points = 5;
+  google.protobuf.Duration idle_behind_total = 6;
+}
+
+// AccountEfficiency is the subscription-efficiency block of one account.
+message AccountEfficiency {
+  fleet.type.v1.AccountId account = 1;
+  repeated QuotaWindow windows = 2;
+  repeated EfficiencySummary summaries = 3;
+}
+
+// OutcomeRow is what happened to the goals of one group that ended in the
+// range. Goals still live are not counted (GetInsightsResponse.goals_live).
+// A goal that ended CANCELLED (the provider closed the work) or never ran
+// (START_FAILED, START_EXHAUSTED, EXPIRED, ABANDONED) is counted but is not
+// in the rates.
+message OutcomeRow {
+  InsightGroupKey group = 1;
+  // Goals that ran and ended: merged plus cleared. The denominator of the
+  // rates.
+  uint32 ran = 2;
+  uint32 merged = 3;
+  // Ended by an operator's clear after running.
+  uint32 cleared = 4;
+  uint32 cancelled = 5;
+  uint32 never_ran = 6;
+  // Ran goals that were in STUCK at some point.
+  uint32 ever_stuck = 7;
+  // Unset below 5 ran goals (low_confidence).
+  optional uint32 merge_rate_percent = 8;
+  optional uint32 stuck_rate_percent = 9;
+  // Time from the goal's start_time to the merge; approximate (histogram
+  // buckets), unset below 5 merged goals.
+  google.protobuf.Duration time_to_merge_p50 = 10;
+  google.protobuf.Duration time_to_merge_p90 = 11;
+  // Totals over the ran goals; divide by `ran` for the mean.
+  uint32 nudges_total = 12;
+  uint32 restarts_total = 13;
+  uint32 review_rounds_total = 14;
+  // Quota points the ran goals spent, each on its own account's weekly bucket
+  // (comparable inside one account; a point of one plan is not a point of
+  // another), and the share of them spent by goals that did not merge.
+  double quota_points_total = 15;
+  double quota_points_unmerged = 16;
+  // Points per merged goal; unset when none merged.
+  optional double quota_points_per_merged = 17;
+  bool low_confidence = 18;
+}
+
+// SizeAccuracyRow compares the size estimate of work items with what the goals
+// that merged took.
+message SizeAccuracyRow {
+  WorkSize size = 1;
+  uint32 merged = 2;
+  google.protobuf.Duration time_to_merge_p50 = 3;
+  google.protobuf.Duration time_to_merge_p90 = 4;
+  optional double quota_points_per_merged = 5;
+  // Share of this size's merged goals that took longer than the p50 of the
+  // next larger size: items that were sized too small. Unset for LARGE and
+  // below 5 merged goals.
+  optional uint32 slower_than_next_size_percent = 6;
+}
+
+// RoutineOutcomeRow is one routine's runs that ended in the range.
+message RoutineOutcomeRow {
+  RoutineId routine = 1;
+  uint32 runs = 2;
+  uint32 runs_done = 3;
+  // Runs that ended without the done rule being met (DISAGREE, STUCK cleared,
+  // START_EXHAUSTED).
+  uint32 runs_failed = 4;
+  uint32 skipped_fires = 5;
+  google.protobuf.Duration run_time_p50 = 6;
+  double quota_points_total = 7;
+}
+
+// InsightPoint is one bucket of a series.
+message InsightPoint {
+  // The start of the bucket.
+  google.protobuf.Timestamp start_time = 1;
+  // Unset when there is no data (never 0 for "unknown").
+  optional double value = 2;
+  // Goals or readings behind the value.
+  uint32 sample_size = 3;
+}
+
+// InsightSeries is one metric over time for one group.
+message InsightSeries {
+  InsightMetric metric = 1;
+  InsightUnit unit = 2;
+  InsightGroupKey group = 3;
+  // For the quota metrics: the bucket key.
+  string bucket_key = 4;
+  repeated InsightPoint points = 5;
+}
+
+// GetInsightsRequest. SCOPE_READ. Every part is computed from the daily
+// rollups (docs/specs/05-insights.md); the day in progress is computed from
+// source rows on the read pool, so a response is at most one hour behind.
+message GetInsightsRequest {
+  InsightRange range = 1;
+  // For series; default DAY (WEEK above 90 days).
+  InsightGranularity granularity = 2;
+  // Empty = every section.
+  repeated InsightSection sections = 3;
+  // Required for OUTCOMES and SERIES of the goal metrics; default HARNESS.
+  InsightDimension group_by = 4;
+  InsightFilter filter = 5;
+}
+
+// GetInsightsResponse. Rows are ordered by their impact and capped (500
+// outcome rows, 200 series, 366 points each); `truncated` says a cap was hit.
+message GetInsightsResponse {
+  // The range as served, aligned to UTC days.
+  InsightRange range = 1;
+  // When the rollups behind this were last computed, and the first day any
+  // rollup exists (the history begins there).
+  google.protobuf.Timestamp computed_time = 2;
+  google.protobuf.Timestamp data_start_time = 3;
+  repeated AccountEfficiency efficiency = 4;
+  repeated OutcomeRow outcomes = 5;
+  StuckInsights stuck = 6;
+  repeated SizeAccuracyRow size_accuracy = 7;
+  repeated RoutineOutcomeRow routines = 8;
+  repeated InsightSeries series = 9;
+  // Goals started in the range that are still live, so a rate over a short
+  // range is read with them in mind.
+  uint32 goals_live = 10;
+  bool truncated = 11;
+}

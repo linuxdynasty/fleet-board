@@ -31,6 +31,9 @@ message PromptDetected {
   // send-to-pane is therefore enabled.
   bool answerable = 10;
   fleet.type.v1.GoalId goal_id = 11;
+  // What the prompt asks, as the adapter classifies it (insights count
+  // blocking prompts by class, never by text).
+  fleet.type.v1.PromptClass prompt_class = 12;
 }
 
 // HarnessCondition (E12): a state the harness shows that is neither a prompt

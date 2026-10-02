@@ -3,6 +3,7 @@
 // the "details" toggle. Goal-hook states are sample data (fleet-data.js `goalHooks`, 01d).
 function renderMachinesView() {
   $("view").innerHTML = `
+    ${systemSection()}
     <div class="section-head"><h2>Machines</h2><span class="hint">active = goals using quota · total = active + waiting on CI or review · drain = finish what runs, take nothing new · <button class="link" id="toAudit">audit log ↓</button></span></div>
     <div class="fleet">${machines.map(machineCard).join("")}</div>
     <details class="fold" id="audit" data-dk="audit" ${ui.dt.audit ? "open" : ""}><summary>Audit log <span class="hint">${audit.length} entries · every action, yours and the fleet's</span></summary>
@@ -13,6 +14,15 @@ function renderMachinesView() {
   $("toAudit").onclick = () => { $("audit").open = true; $("audit").scrollIntoView({ block: "start" }); };
   if (ui.fleetFocus) { $("fm-" + ui.fleetFocus)?.scrollIntoView({ block: "center" }); ui.fleetFocus = null; }
   if (ui.auditFocus) { $("audit").scrollIntoView({ block: "start" }); ui.auditFocus = false; }
+}
+
+// System section (05b): the hub's and the agents' own health. Ten signals with fixed thresholds; sample values here.
+// A signal that leaves OK raises one triage item of kind SYSTEM (deduplicated); this list is GetSystemStatus.
+function systemSection() {
+  const bad = systemSignals.filter(s => s.state === "warning" || s.state === "critical").length;
+  return `<section aria-label="System"><div class="section-head"><h2>System</h2><span class="samp">sample</span><span class="hint">${bad ? `${bad} thing${bad === 1 ? "" : "s"} to look at` : "everything is fine"} · fleetd v0.3.1 · up 6d 4h · metrics on, OTLP off, pprof off</span></div>
+    <ul class="sys">${systemSignals.map(s => `<li class="${s.state}"><b>${esc(s.plain)}</b><span class="why">${esc(s.value)}</span>${s.state === "ok" ? "" : `<span class="pill waiting">${esc(s.state)}</span>`}${s.note ? `<span class="warn-t small-t">${esc(s.note)}</span>` : ""}
+      ${dt("sy-" + s.kind + s.subject, `<span>SystemSignal{kind SYSTEM_SIGNAL_KIND_${esc(s.kind)}, subject ${esc(s.subject)}, state ${esc(s.state.toUpperCase())}} · ${esc(s.limits)}</span>${s.state === "ok" ? "" : `<span>raises TriageItem{kind SYSTEM, fingerprint system:${esc(s.kind.toLowerCase())}:${esc(s.subject)}}</span>`}`)}</li>`).join("")}</ul></section>`;
 }
 
 // GoalHooksState (01d) in plain words, with a tone for the line.
@@ -33,6 +43,9 @@ function harnessList(m) {
     return `<li>${agentChip(h)}<span class="num why">${esc(m.versions?.[h] ?? "")}</span><span class="${tone ? tone + "-t" : "why"}">${esc(text)}</span></li>`; }).join("")}</ul>`;
 }
 
+// MachineAgentHealth from the heartbeat (AgentHealth, 05b section 6), sample values.
+const agentHealthLine = m => { const h = agentHealth[m.id]; return h ? `agent health (sample): ring ${h[0]} events · ${h[1]} MiB · unacknowledged results ${h[2]} · reconnects ${h[3]} · memory ${h[4]} MiB` : "agent health: not reported"; };
+
 function machineCard(m) {
   const ss = sessions.filter(s => s.m === m.id), goals = ss.filter(s => !s.yours), own = ss.filter(s => s.yours);
   const stale = Date.now() - m.beat > 30e3, certDays = Math.round((m.certExpires - Date.now()) / 86400e3);
@@ -41,7 +54,7 @@ function machineCard(m) {
     m.policyChanged && "the machine's local policy file changed; it applies after the agent restarts"].filter(Boolean);
   const facts = [`${m.user} · ${m.os} · ${m.ram} GB${m.hub ? " · hub" : ""} · agent ${m.agentVersion}`, `labels: ${m.labels.join(", ")}`,
     `${m.tmuxVersion} · default server: ${m.defaultServer}`, ...m.forge.map(f => `${f.tool} signed in as ${f.user} (${f.host}) · push: ${f.access.map(([r, p]) => `${shortName(r)} ${p}`).join(", ")}`),
-    `agent cert expires in ${certDays}d (renews at ⅔ lifetime)`, `policy ${m.policyHash} · ${m.policyChanged ? "changed on disk (PolicyChanged)" : "unchanged"}`,
+    `agent cert expires in ${certDays}d (renews at ⅔ lifetime)`, agentHealthLine(m), `policy ${m.policyHash} · ${m.policyChanged ? "changed on disk (PolicyChanged)" : "unchanged"}`,
     ...m.harnesses.filter(h => h !== "opencode").map(h => `${h}: ${hookRaw((goalHooks[m.id] ?? {})[h])}`)];
   return `<article class="fm${ui.fleetFocus === m.id ? " focus" : ""}" id="fm-${m.id}">
     <div class="top"><span class="dot ${stale ? "bad" : m.drained ? "warn" : "ok"}"></span><span class="name">${esc(m.name)}</span><span class="ip">${esc(m.ip)}</span></div>

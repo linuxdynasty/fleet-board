@@ -106,7 +106,8 @@ values are held in memory and the change log stores the coalesced message.
 
 | Resource | Volatile fields | Interval |
 |---|---|---|
-| `Machine` | `status.telemetry.*` (last seen, load, memory, disk, spool, battery, clock skew), `status.unfit[].next_check_time` | 30 s |
+| `Machine` | `status.telemetry.*` (last seen, load, memory, disk, spool, battery, clock skew, `agent_health`), `status.unfit[].next_check_time` | 30 s |
+| `Routine` | `status.dispatch_block` (recomputed each scheduler pass) | 30 s |
 | `Account` | `status.pacing.ahead_points`, `rank`, `projected_unused_percent`, `idle_causes` (rewritten at every scheduler evaluation) | 30 s |
 | `WorkItem`, `Repo` | `dispatch_block`, `status.dispatch_block` (recomputed each scheduler pass) | 30 s |
 | `Session` | `status.attached_clients`, `status.windows[].panes[].activity`, `last_input_time`, `ready_pattern_showing`, `status.logs[]` counters | 5 s |
@@ -295,9 +296,26 @@ first, ties by canonical key; `desc` is not allowed).
 `order_by`: `last_time` (default `last_time desc`), `first_time`. No `id`,
 `create_time` or `update_time`. `SearchSessionLogs` takes the same filter.
 
+| Suggestion (`ListSuggestions`; no Watch topic) | Path | Type | Operators |
+|---|---|---|---|
+| `kind` | `kind` | `SuggestionKind` | `=` `in` |
+| `state` | `state` | `SuggestionState` | `=` `!=` `in` |
+
+`order_by`: `ct`, `ut` (default `state = OPEN` and `create_time desc`).
+
+| InsightReport (`ListInsightReports`; no Watch topic) | Path | Type | Operators |
+|---|---|---|---|
+| `routine` | `routine` | string | `=` `in` |
+| `harness` | `harness.name` | string | `=` `in` |
+
+`order_by`: `ct` (default `ct desc`). Reports are immutable: no `update_time`.
+`GetInsights` does not use the filter grammar: it takes the typed
+`InsightFilter` (lists of harness, model, repo, account, machine and size).
+
 | Routine (`ROUTINES`, `ListRoutines`) | Path | Type | Operators |
 |---|---|---|---|
 | `enabled` | `spec.enabled` | bool | `=` |
+| `builtin` | `spec.builtin` | `RoutineBuiltin` | `=` `in` |
 | `repo` | `spec.repo` as `host/path` | string | `=` `in` |
 
 `order_by`: `name` (`spec.display_name`), `ct`.

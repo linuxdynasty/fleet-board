@@ -91,6 +91,18 @@ message LoginSessionId {
   string value = 1;
 }
 
+// SuggestionId is hub-assigned and deterministic: the first 32 hex characters
+// of SHA-256 over the suggestion's kind and subject, so the same finding keeps
+// one id across recomputations and a dismissal sticks to it.
+message SuggestionId {
+  string value = 1;
+}
+
+// InsightReportId is hub-assigned per stored insights report (lowercase ULID).
+message InsightReportId {
+  string value = 1;
+}
+
 // ---------------------------------------------------------------------------
 // Scopes
 // ---------------------------------------------------------------------------
@@ -206,6 +218,8 @@ enum OperationKind {
   OPERATION_KIND_SET_LOG_SHIPPING = 61;
   OPERATION_KIND_DRAIN = 70;
   OPERATION_KIND_UNDRAIN = 71;
+  OPERATION_KIND_ENSURE_SCRATCH = 80;
+  OPERATION_KIND_COLLECT_SCRATCH = 81;
 }
 
 // Operation is the handle for one agent command caused by an API action.
@@ -322,6 +336,10 @@ message FleetSummary {
   // INTEGRATION_LAG, INTEGRATION_DEGRADED. Per-account, per-machine and
   // per-item reasons are on those resources.
   repeated DispatchBlock dispatch_blocks = 21;
+  // System signals (system.proto) not OK: the strip's health dot. Counts
+  // only; GetSystemStatus has the signals.
+  uint32 system_warnings = 22;
+  uint32 system_critical = 23;
 }
 
 // GetFleetSummaryRequest.
