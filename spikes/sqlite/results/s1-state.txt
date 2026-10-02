@@ -1,0 +1,28 @@
+# driver=modernc fullfsync=true synchronous=FULL scenario=steady
+rows=7620 (127/s) commits=1057 (17.6/s) disk_written=71.3 MB (1187 KB/s) wal_max=4.1 MB
+writer_commit          n=1057    p50=5.962ms    p99=11.846ms   max=33.777ms
+msg_enqueue_to_commit  n=7620    p50=35.782ms   p99=64.821ms   max=89.036ms
+read_sidebar_500       n=599     p50=16.566ms   p99=21.072ms   max=22.703ms
+read_visible_30        n=599     p50=791µs      p99=2.45ms     max=3.365ms
+read_timeline_50       n=599     p50=117µs      p99=1.206ms    max=1.936ms
+# driver=modernc fullfsync=true synchronous=FULL scenario=burst
+rows=157620 (2626/s) commits=1577 (26.3/s) disk_written=909.1 MB (15146 KB/s) wal_max=4.6 MB
+writer_commit          n=1577    p50=9.188ms    p99=28.155ms   max=33.272ms
+msg_enqueue_to_commit  n=157620  p50=30.23ms    p99=57.793ms   max=71.259ms
+read_sidebar_500       n=599     p50=14.242ms   p99=20.815ms   max=21.943ms
+read_visible_30        n=599     p50=844µs      p99=1.957ms    max=2.961ms
+read_timeline_50       n=599     p50=1.04ms     p99=2.337ms    max=2.865ms
+# driver=ncruces fullfsync=true synchronous=FULL scenario=steady
+rows=7615 (127/s) commits=1054 (17.6/s) disk_written=71.1 MB (1185 KB/s) wal_max=4.1 MB
+writer_commit          n=1054    p50=5.9ms      p99=11.971ms   max=197.015ms
+msg_enqueue_to_commit  n=7615    p50=35.943ms   p99=66.54ms    max=253.009ms
+read_sidebar_500       n=597     p50=8.045ms    p99=14.051ms   max=14.533ms
+read_visible_30        n=597     p50=223µs      p99=2.487ms    max=3.322ms
+read_timeline_50       n=597     p50=65µs       p99=1.591ms    max=2.73ms
+# driver=ncruces fullfsync=true synchronous=FULL scenario=burst
+rows=157620 (2626/s) commits=1577 (26.3/s) disk_written=912.1 MB (15196 KB/s) wal_max=4.7 MB
+writer_commit          n=1577    p50=8.561ms    p99=27.264ms   max=38.309ms
+msg_enqueue_to_commit  n=157620  p50=29.74ms    p99=57.559ms   max=79.636ms
+read_sidebar_500       n=600     p50=10.626ms   p99=14.765ms   max=15.308ms
+read_visible_30        n=600     p50=267µs      p99=2.426ms    max=3.132ms
+read_timeline_50       n=600     p50=235µs      p99=2.449ms    max=3.152ms

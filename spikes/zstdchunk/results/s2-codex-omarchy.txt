@@ -1,0 +1,11 @@
+recording: 1.00 h, raw 17.8 MB (17.8 MB/h)
+
+method (zstd level 3)                              MB/h    ratio     B/s/pane    chunk p50 B
+whole recording, one frame (01c baseline)         1.173      15x          326              -
+independent frame per 10 s chunk                  2.176       8x          605           5459
+independent frame per 30 s chunk                  1.689      11x          469          13831
+independent frame per 60 s chunk                  1.467      12x          408          23654
+frame per 5 min, flushed every 10 s               1.251      14x          348           3227
+frame per 60 min, flushed every 10 s              1.183      15x          329           3049
+independent 10 s chunk + trained dictionary       1.958       9x          544           7341  (dict 27847 B, last 80%)
+

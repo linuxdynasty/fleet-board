@@ -1,0 +1,19 @@
+ 10:55:21 up 6 days, 21:59,  4 users,  load average: 14.95, 14.90, 7.72
+# driver=modernc fullfsync=true synchronous=FULL scenario=steady
+rows=5079 (127/s) commits=158 (3.9/s) disk_written=39.2 MB (980 KB/s) wal_max=4.2 MB
+writer_commit          n=158     p50=2.235ms    p99=15.887ms   max=59.075ms
+msg_enqueue_to_commit  n=5079    p50=130.873ms  p99=255.097ms  max=312.007ms
+read_sidebar_500       n=399     p50=21.216ms   p99=31.829ms   max=35.178ms
+read_visible_30        n=399     p50=782µs      p99=5.641ms    max=8.85ms
+read_timeline_50       n=399     p50=63µs       p99=2.043ms    max=4.893ms
+# driver=modernc fullfsync=true synchronous=FULL scenario=logs
+prefill: 500000 chunks, 1389 sessions, 2074 MB, 14.601s
+ingest: 30 chunks/s x 3300 B, disk_written=367 KB/s
+logs_commit_1s_batch   n=60      p50=3.036ms    p99=45.867ms   max=87.8ms
+replay_session_1h      n=300     p50=17.042ms   p99=26.737ms   max=30.678ms
+point_lookup_offset    n=300     p50=76µs       p99=1.192ms    max=1.779ms
+delete_one_session: 5.434ms
+prune_oldest_10pct: 138 sessions in 475ms
+prune_tx_per_session   n=138     p50=3.169ms    p99=7.644ms    max=9.627ms
+incremental_vacuum: 50568 free pages in 1.69s, file 2080 MB -> 1874 MB
+vacuum_step_2000pages  n=26      p50=61.783ms   p99=85.963ms   max=90.405ms
