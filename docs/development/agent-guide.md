@@ -120,3 +120,11 @@ invented or widened.
   do.
 - Run `git diff --check` and `scripts/verify-agent-canon.sh` for changes to
   agent files or skills.
+
+## Development hooks
+
+Project hooks for Claude Code, Codex and Muse enforce the rules that must hold
+before CI runs: skill loading per path, goal continuation, doc freshness and
+named roles. What each hook does, the path-to-skill map, the goal file
+protocol and how to turn a hook off locally are in
+[hooks.md](hooks.md); `scripts/test-dev-hooks.sh` is their self-test.

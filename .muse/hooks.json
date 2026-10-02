@@ -1,0 +1,101 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "r=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; [ -x \"$r/.claude/hooks/on-compact.sh\" ] || exit 0; exec \"$r/.claude/hooks/on-compact.sh\""
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "r=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; [ -x \"$r/.claude/hooks/on-compact.sh\" ] || exit 0; exec \"$r/.claude/hooks/on-compact.sh\""
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "r=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; [ -x \"$r/.claude/hooks/goal-refresh.sh\" ] || exit 0; exec \"$r/.claude/hooks/goal-refresh.sh\""
+          },
+          {
+            "type": "command",
+            "command": "r=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; [ -f \"$r/scripts/goal-role-router.py\" ] || exit 0; command -v python3 >/dev/null 2>&1 || exit 0; exec python3 \"$r/scripts/goal-role-router.py\" muse"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "write_file",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "r=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; [ -x \"$r/.claude/hooks/skill-nudge.sh\" ] || exit 0; exec \"$r/.claude/hooks/skill-nudge.sh\""
+          }
+        ]
+      },
+      {
+        "matcher": "edit_file",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "r=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; [ -x \"$r/.claude/hooks/skill-nudge.sh\" ] || exit 0; exec \"$r/.claude/hooks/skill-nudge.sh\""
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "write_file",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "r=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; [ -x \"$r/.claude/hooks/doc-staleness.sh\" ] || exit 0; exec \"$r/.claude/hooks/doc-staleness.sh\""
+          }
+        ]
+      },
+      {
+        "matcher": "edit_file",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "r=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; [ -x \"$r/.claude/hooks/doc-staleness.sh\" ] || exit 0; exec \"$r/.claude/hooks/doc-staleness.sh\""
+          }
+        ]
+      },
+      {
+        "matcher": "read_skill",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "r=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; [ -x \"$r/.claude/hooks/skill-loaded.sh\" ] || exit 0; exec \"$r/.claude/hooks/skill-loaded.sh\""
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "r=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; [ -x \"$r/.claude/hooks/goal-continue.sh\" ] || exit 0; exec \"$r/.claude/hooks/goal-continue.sh\""
+          }
+        ]
+      }
+    ]
+  }
+}

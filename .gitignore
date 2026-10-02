@@ -1,0 +1,8 @@
+# Per-session goal files written by .claude/hooks/goal-refresh.sh, and the local
+# switch that turns the dev hooks off. See docs/development/hooks.md.
+.claude/active-goal
+.claude/active-goal.*
+.claude/hooks-off
+.claude/settings.local.json
+
+__pycache__/
