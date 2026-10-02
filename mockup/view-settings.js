@@ -1,8 +1,10 @@
-// Settings panel: watched repos, goals and consent (ADR 0008), reserves, per-machine limits with their layer
-// (ADR 0009 / SettingSource), integrations (ADR 0012), privacy (share_identity_email), fleet.yaml preview.
-let settingsOpen = true;
+// Settings view: watched repos, goals and consent (ADR 0008), reserves, per-machine limits, browser terminal, privacy
+// (share_identity_email), integrations (ADR 0012), the effective value per machine with its layer (ADR 0009 /
+// SettingSource) and the fleet.yaml preview. The last two are collapsed; raw names sit behind "details".
 const CONSENT_OPTS = ["push", "pr-open", "merge"];
 const LAYER_CLASS = l => l.startsWith("local") ? "capped" : l.startsWith("machine") ? "machine" : l.startsWith("group") ? "group" : "fleet";
+const FIELD_LABEL = { max_active: "goals using quota at once", max_total: "goals in total", default_server: "tmux server", cert_lifetime: "agent certificate lifetime",
+  local_approval: "ask on the machine before kill or restart", idle_threshold: "idle after", window_name_template: "window name" };
 
 function fleetYaml() {
   const l = ["repos:"];
@@ -17,44 +19,41 @@ function fleetYaml() {
 
 function layeredRows(m) {
   const rows = [["max_active", m.maxActive, m.sources.max_active], ["max_total", m.maxTotal, m.sources.max_total], ["default_server", m.defaultServer, m.sources.default_server],
-    ["cert_lifetime", "90d", m.sources.cert_lifetime], ["local_approval", m.sources.local_approval === "local ceiling" ? "KillWindow, RespawnPane: required" : "off", m.sources.local_approval],
-    ["idle_threshold", `${settings.idleMinutes}m`, m.sources.idle_threshold], ["window_name_template", settings.windowTemplate, "fleet default"]];
-  return rows.map(([f, v, src]) => `<tr><td class="mono">${esc(f)}</td><td class="mono">${esc(v)}</td><td><span class="layer ${LAYER_CLASS(src)}">${esc(src === "local ceiling" ? "capped by local policy" : src)}</span></td></tr>`).join("");
+    ["cert_lifetime", "90 days", m.sources.cert_lifetime], ["local_approval", m.sources.local_approval === "local ceiling" ? "required" : "off", m.sources.local_approval],
+    ["idle_threshold", `${settings.idleMinutes} min`, m.sources.idle_threshold], ["window_name_template", settings.windowTemplate, "fleet default"]];
+  return rows.map(([f, v, src]) => `<tr><td title="${esc(f)}">${esc(FIELD_LABEL[f])}</td><td class="mono">${esc(v)}</td><td><span class="layer ${LAYER_CLASS(src)}">${esc(src === "local ceiling" ? "capped by local policy" : src)}</span></td></tr>`).join("");
 }
 
 function integrationCard(i) {
   const cap = (b, t) => `<span class="${b ? "ok-t" : "why"}">${b ? "✓" : "–"} ${t}</span>`;
   return `<div class="integ ${i.status}"><div class="cap-top"><span class="prov ${esc(i.id.split("-")[0])}">${esc(i.provider)}</span><span class="cap-name">${esc(i.provider)}</span><span class="pill ${i.status === "connected" ? "working" : ""}">${esc(i.status)}</span></div>
     ${i.how ? `<div class="why">${esc(i.how)} · the hub never writes to a provider; claims, pushes and merges happen inside goals with your own tools</div>` : ""}
-    <div class="why">roles: ${esc(i.roles.join(" + "))} · claims: ${esc(i.claims.join(", "))} · sync: ${esc(i.sync)}</div>
+    <div class="why">${esc(i.roles.join(" + "))} · claims by ${esc(i.claims.join(", "))}</div>
     <div class="caps-line">${cap(i.checks, "checks")} ${cap(i.reviews, "reviews")} ${cap(i.merge, "merge detection")}</div>
     ${i.watched ? `<div class="why">watched: ${i.watched.map(w => `<span class="mono">${esc(w)}</span>`).join(", ")}</div>` : ""}${i.note ? `<div class="why">${esc(i.note)}</div>` : ""}</div>`;
 }
 
-function renderSettings() {
-  $("settings").innerHTML = `<details id="settingsBox" ${settingsOpen ? "open" : ""}>
-    <summary>Settings <span class="hint">${settings.repos.filter(r => r.on).length} repos · auto-dispatch ${settings.autoDispatch ? "on" : "off"} · consent ${esc(settings.consent.join(", "))} · emails ${settings.showEmails ? "shown" : "hidden"}</span></summary>
+function renderSettingsView() {
+  $("view").innerHTML = `
+    <div class="section-head"><h2>Settings</h2><span class="hint">${settings.repos.filter(r => r.on).length} repos watched · auto-dispatch ${settings.autoDispatch ? "on" : "off"} · consent ${esc(settings.consent.join(", "))} · emails ${settings.showEmails ? "shown" : "hidden"}. A machine's own policy can only tighten these.</span></div>
     <div class="set-grid">
       <fieldset><legend>Watched repos</legend>
         ${settings.repos.map((r, i) => `<label class="chk"><input type="checkbox" id="repo-${i}" data-repo="${i}" ${r.on ? "checked" : ""}> <span class="mono">${esc(r.host)}/${esc(r.repo)}</span> ${provChip(r.provider)} <span class="why">hooks: ${esc(r.hooks)}</span>${r.sample ? `<span class="samp">sample</span>` : ""}</label>`).join("")}
         <div class="add-row"><input id="newRepo" placeholder="host/owner/repo" aria-label="Add repo"><button class="btn" id="addRepo">Add</button></div>
         <div class="why" id="repoErr"></div>
-        <div class="why">hooks: <span class="mono">eshu</span> = the repo ships its own goal hooks and the <span class="mono">/goal consent … -- …</span> form (eshu hook convention); <span class="mono">generic</span> = fleet installs its hooks (EnsureGoalHooks) and writes consent into the objective text.</div>
+        <div class="why">hooks: <span class="mono">eshu</span> = the repo ships its own goal hooks; <span class="mono">generic</span> = fleet's user-level hooks run the goal.</div>
+        ${dt("s-hooks", `<span>eshu: /goal consent &lt;acts&gt; -- &lt;text&gt; form (eshu hook convention), GoalHooksState.repo_ships_own = true</span><span>generic: EnsureGoalHooks installs the fleet hooks; consent is written into the objective text</span>`)}
       </fieldset>
       <fieldset><legend>Goals</legend>
         <label class="chk"><input type="checkbox" id="autoD" ${settings.autoDispatch ? "checked" : ""}> Start the next goal when a worker or an available session frees up</label>
-        <div class="why">Consent written into every dispatched goal (repo default; each account intersects it):</div>
+        <div class="why">Every goal may (repo default; each account can narrow it):</div>
         ${CONSENT_OPTS.map(c => `<label class="chk"><input type="checkbox" id="cons-${c}" data-cons="${c}" ${settings.consent.includes(c) ? "checked" : ""}> <span class="mono">${c}</span></label>`).join("")}
         <div class="why">Turning off merge adds a human gate: goals stop at an approved, green change request. <span class="mono">pr-open</span> means a change request on any code host.</div>
         <label class="slot"><span>Window name template</span><input class="field mono" id="winTpl" value="${esc(settings.windowTemplate)}" aria-label="Window name template"></label>
         <label class="slot"><span>Idle threshold (min)</span><input type="number" min="1" max="60" id="idleMin" value="${settings.idleMinutes}" aria-label="Idle threshold"></label>
       </fieldset>
-      <fieldset><legend>Browser terminal</legend>
-        <label class="slot"><span>tmux prefix <span class="why">emulated in this mock</span></span><select id="tmuxPrefix" aria-label="tmux prefix">${["C-b", "C-a"].map(p => `<option ${settings.tmuxPrefix === p ? "selected" : ""}>${p}</option>`).join("")}</select></label>
-        <div class="why">The real build forwards raw keys over the Terminal stream (TermDown.input), so your own tmux prefix and bindings apply unchanged; this setting only tells the mock which key to treat as the prefix.</div>
-      </fieldset>
       <fieldset><legend>Reserve per account</legend>
-        ${accounts.map(a => `<label class="slot"><span>${esc(a.label)} <span class="why">kept for you · ${esc(a.mode)}</span></span><input type="number" min="0" max="90" step="5" id="res-${a.id}" data-res="${a.id}" value="${a.reserve}"></label>`).join("")}
+        ${accounts.map(a => `<label class="slot"><span>${esc(a.label)} <span class="why">% kept for you</span></span><input type="number" min="0" max="90" step="5" id="res-${a.id}" data-res="${a.id}" value="${a.reserve}"></label>`).join("")}
         ${apiAccounts.map(a => `<label class="slot"><span>${esc(a.label)} <span class="why">cap · manual only</span></span><span class="mono">$${a.capUsd}/${esc(a.period)}</span></label>`).join("")}
       </fieldset>
       <fieldset><legend>Limits per machine (active · total)</legend>
@@ -62,26 +61,31 @@ function renderSettings() {
           <input type="number" min="0" max="8" id="ma-${m.id}" data-ma="${m.id}" value="${m.maxActive}" aria-label="${esc(m.short)} max active">
           <input type="number" min="0" max="16" id="mt-${m.id}" data-mt="${m.id}" value="${m.maxTotal}" aria-label="${esc(m.short)} max total"></span></label>`).join("")}
       </fieldset>
-      <fieldset class="wide"><legend>Effective values and their layer (machine → group → fleet default; local policy is the ceiling)</legend>
-        <div class="layer-grid">${machines.map(m => `<table class="layers" aria-label="${esc(m.short)} settings"><caption>${esc(m.name)} · labels ${esc(m.labels.join(", "))}</caption>${layeredRows(m)}</table>`).join("")}</div>
-        <div class="why">Hub settings can only tighten. A value "capped by local policy" was lowered by <span class="mono">~/.config/fleet-agent/policy.yaml</span> on that machine (SettingsAck.capped_fields).</div>
-      </fieldset>
-      <fieldset class="wide"><legend>Integrations</legend>
-        <div class="integs">${integrations.map(integrationCard).join("")}</div>
-        <div class="why">Add integration: the planned adapters above declare IntegrationCapabilities (roles, work-item kinds, claim mechanisms, sync modes, checks/reviews/merge); the hub never asks a provider for something it did not declare.</div>
+      <fieldset><legend>Browser terminal</legend>
+        <label class="slot"><span>tmux prefix <span class="why">this mock only</span></span><select id="tmuxPrefix" aria-label="tmux prefix">${["C-b", "C-a"].map(p => `<option ${settings.tmuxPrefix === p ? "selected" : ""}>${p}</option>`).join("")}</select></label>
+        <div class="why">The real board passes your keys straight to tmux, so your own prefix and bindings work; this only tells the mock which key is the prefix.</div>
+        ${dt("s-term", "<span>keys travel as TermDown.input on the Terminal stream; no contract field for the prefix</span>")}
       </fieldset>
       <fieldset><legend>Privacy</legend>
-        <label class="chk"><input type="checkbox" id="showEmails" ${settings.showEmails ? "checked" : ""}> Show account emails (share_identity_email; owner only)</label>
-        <div class="why">Off: agents send only a salted account key and the board shows the account label. On: the email exactly as the harness's status screen shows it.</div>
+        <label class="chk"><input type="checkbox" id="showEmails" ${settings.showEmails ? "checked" : ""}> Show account emails (owner only)</label>
+        <div class="why">Off: the board shows only the account name. On: the email exactly as the tool's status screen shows it.</div>
+        ${dt("s-priv", "<span>share_identity_email; off = agents send only a salted account key</span>")}
       </fieldset>
-      <fieldset class="yaml wide"><legend>fleet.yaml</legend><pre class="cmd">${esc(fleetYaml())}</pre></fieldset>
-    </div></details>`;
+    </div>
+
+    <div class="section-head"><h2>Integrations</h2><span class="hint">Where work comes from and where code lives. Planned ones list what they will be able to do; the hub never asks a provider for more.</span></div>
+    <div class="integs">${integrations.map(integrationCard).join("")}</div>
+    ${dt("s-integ", `<span>IntegrationCapabilities{roles, work-item kinds, claim_mechanisms, sync_modes, checks, reviews, merge_detection}</span>${integrations.map(i => `<span>${esc(i.provider)} sync: ${esc(i.sync)}</span>`).join("")}`)}
+
+    <details class="fold" data-dk="layers" ${ui.dt.layers ? "open" : ""}><summary>Effective values per machine <span class="hint">machine → group → fleet default; local policy is the ceiling</span></summary>
+      <div class="layer-grid">${machines.map(m => `<table class="layers" aria-label="${esc(m.short)} settings"><caption>${esc(m.name)} · ${esc(m.labels.join(", "))}</caption>${layeredRows(m)}</table>`).join("")}</div>
+      <div class="why">"capped by local policy" = the machine's own policy file lowered the value. ${dt("s-layers", "<span>~/.config/fleet-agent/policy.yaml · SettingsAck.capped_fields · SettingSource.layer = SETTING_LAYER_LOCAL_CEILING</span>")}</div></details>
+    <details class="fold yaml" data-dk="yaml" ${ui.dt.yaml ? "open" : ""}><summary>fleet.yaml <span class="hint">what these settings write</span></summary><pre class="cmd">${esc(fleetYaml())}</pre></details>`;
 
   const num = (v, lo, hi) => Math.max(lo, Math.min(hi, parseInt(v, 10) || 0));
-  $("settingsBox").ontoggle = e => { settingsOpen = e.target.open; };
   document.querySelectorAll("[data-repo]").forEach(c => c.onchange = () => { settings.repos[+c.dataset.repo].on = c.checked; rerender(); });
   $("autoD").onchange = e => { settings.autoDispatch = e.target.checked; log(`turned auto-dispatch ${e.target.checked ? "on" : "off"}`); rerender(); };
-  $("showEmails").onchange = e => { settings.showEmails = e.target.checked; log(`share_identity_email ${e.target.checked ? "on" : "off"}`); rerender(); };
+  $("showEmails").onchange = e => { settings.showEmails = e.target.checked; log(`account emails ${e.target.checked ? "shown" : "hidden"}`); rerender(); };
   $("winTpl").onchange = e => { settings.windowTemplate = e.target.value.trim() || "{harness} {work}"; rerender(); };
   $("idleMin").onchange = e => { settings.idleMinutes = num(e.target.value, 1, 60); rerender(); };
   $("tmuxPrefix").onchange = e => { settings.tmuxPrefix = e.target.value === "C-a" ? "C-a" : "C-b"; log(`browser terminal emulates prefix ${settings.tmuxPrefix} (mock only)`); rerender(); };

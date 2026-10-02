@@ -35,6 +35,17 @@ const machines = [
     sources: { max_active: "group laptop", max_total: "group laptop", default_server: "local ceiling", cert_lifetime: "fleet default", local_approval: "local ceiling", idle_threshold: "fleet default" } },
 ];
 
+// G1 GoalHooksState per machine and harness (01d: user-level hooks, inert outside fleet goals). Sample.
+// Fields use the proto names so the "details" toggle can show them as they are; `why` is mock-only explanation.
+const hk = o => ({ installed: true, verified: true, trust_pending: false, repo_ships_own: false, hook_version: "0.3.1", hook_hash: "5d2e9a", ...o });
+const CLAUDE_HOOKS = "~/.claude/settings.json", CODEX_HOOKS = "~/.codex/hooks.json";
+const goalHooks = {
+  mbp: { claude: hk({ config_path: CLAUDE_HOOKS }), codex: hk({ config_path: CODEX_HOOKS, hook_hash: "b41c07", trust_pending: true }) },
+  omarchy: { claude: hk({ config_path: CLAUDE_HOOKS, repo_ships_own: true }), codex: hk({ config_path: CODEX_HOOKS, hook_hash: "b41c07" }) },
+  allen: { claude: hk({ config_path: CLAUDE_HOOKS }), codex: hk({ config_path: CODEX_HOOKS, hook_hash: "b41c07", trust_pending: true }) },
+  m124: { claude: hk({ config_path: CLAUDE_HOOKS }), codex: hk({ installed: false, verified: false, hook_version: "", hook_hash: "", config_path: CODEX_HOOKS, why: "codex 0.157.1 is older than the supported versions; update Codex" }) },
+};
+
 // Subscription accounts (BUDGET_KIND_WEEKLY_PERCENT). `shown` mirrors the harness's own screen (D2 "as shown");
 // `buckets` is the standardized half the scheduler uses. Emails are sample and hidden unless settings.showEmails.
 const accounts = [

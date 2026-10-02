@@ -35,7 +35,7 @@ function startGoalCmd(it, m, a, reuse) {
 // G4 goal control through the harness's own /goal (RunHarnessCommand, class GOAL); Interrupt where there is no pause.
 function goalCtl(s, sub, text) {
   const subs = GOAL_SUBS[s.harness] ?? [], base = { pane: paneKey(s), command: "/goal", expected_class: "GOAL", catalog_hash: CATALOG[s.harness]?.hash };
-  if (sub === "pause" && !subs.includes("pause")) return { ok: s.harness === "claude", cmd: fmtCmd("Interrupt", { pane: paneKey(s) }), label: `${s.harness} has no /goal pause: the hub sends Interrupt (F4) instead; the goal file keeps the goal`, what: "interrupted goal" };
+  if (sub === "pause" && !subs.includes("pause")) return { ok: s.harness === "claude", cmd: fmtCmd("Interrupt", { pane: paneKey(s) }), label: `${s.harness} has no /goal pause: this presses Esc instead; the goal stays set`, what: "interrupted goal" };
   if (sub === "edit" && !subs.includes("edit")) return { ok: s.harness === "claude", cmd: fmtCmd("RunHarnessCommand", { ...base, args: text }), label: `${s.harness} has no /goal edit: setting /goal again replaces the condition`, what: "replaced goal" };
   if (!subs.includes(sub)) return { ok: false, cmd: "", label: `${GOAL_SYNTAX[s.harness]} · GOAL_SUBCOMMAND_UNSUPPORTED`, what: "" };
   const args = sub === "edit" && s.harness === "muse" ? `edit ${text}` : sub;

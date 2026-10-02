@@ -84,7 +84,7 @@ at **4 machines** / **50 machines × 10 panes** from the load table in
 
 | Entity | Key | Written by | Writes/s (4 / 50) | Read pattern | Retention |
 |---|---|---|---|---|---|
-| `machines` | `machine_id` | W1, W2, W10, W11 | ≈ 0 (state changes) + last_seen every heartbeat if persisted: 0.27 / 3.3 | by id; list for Fleet view | permanent until deleted |
+| `machines` | `machine_id` | W1, W2, W10, W11 | ≈ 0 (state changes) + last_seen every heartbeat if persisted: 0.27 / 3.3 | by id; list for Machines view | permanent until deleted |
 | `machine_connections` | `(machine_id, epoch)` | W1, W2 | per connect | latest per machine | 30 days |
 | `enroll_tokens`, `cert_serials` | token hash; serial | W1 | rare | lookup at Enroll/Hello | until used / expired + 30 days |
 | `accounts`, `account_machines` (Codex mapping) | `account_id`; `(account_id, machine_id)` | W3, owner | rare | by id; per machine | permanent |

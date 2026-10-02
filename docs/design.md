@@ -198,11 +198,13 @@ Adopted from Paperclip (see [research/paperclip.md](research/paperclip.md)):
 | Triage (home) | One ranked decisions feed: permission prompts, blocked goals by chip (needs decision, recovery required, external wait, owner paused), `DONE` claims GitHub disagrees with, pacing alerts. Items expire after 7 days; snooze per item | `j`/`k` move, `a` act, `s` snooze, `o` open |
 | Work | What should run next | Board by lifecycle stage, dispatch a goal for an issue, take over a PR no goal owns |
 | Session | Step into one session | Sidebar of all sessions on all machines, pane, send keys, attach, move, restart, stop; run history per goal (restarts, nudges, usage consumed, transcript path) |
-| Fleet | Manage the machines | Drain / resume, limits, weekly burn-down per account, settings, audit log; a timeline of which goal ran where and when (7 days) |
+| Usage | Is any subscription idle or going to waste? | One waste line per account (left, reset, goals running, projected unused), weekly burn-down per account, API-key spend |
+| Machines | Manage the machines | Drain / resume, goal-hook status per harness, attach line, audit log; a timeline of which goal ran where and when (7 days) |
+| Settings | Configure the fleet | Repos, consent, reserves, limits with their layer, integrations, privacy, `fleet.yaml` |
 
 On every view: a summary strip (working, needs you, stuck, free slots, usage
 left per agent), `⌘K` or `/` jump-to switcher, `n` next session that needs
-you, `1`–`4` switch views. Planned: the same switcher as a tmux popup
+you, `1`–`6` switch views. Planned: the same switcher as a tmux popup
 (`prefix + F`).
 
 ## Scheduling: weekly usage is the budget
@@ -419,7 +421,7 @@ Checked on 2026-09-28. Re-verify before relying on them.
 
 1. **v1 read-only.** Go hub + collector on all four machines: tmux panes,
    goal files, weekly usage for all three harnesses via status-command
-   probes, `gh` PRs and issues, burn-down line per account. Session and Fleet views on
+   probes, `gh` PRs and issues, burn-down line per account. Session, Usage and Machines views on
    live data. OTEL spans and metrics on the collector poll loop and hub ingest
    from the start.
 2. **v2 dispatch.** Read goal files, verify `DONE` against GitHub, dispatch

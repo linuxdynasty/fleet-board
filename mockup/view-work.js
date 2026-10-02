@@ -61,6 +61,6 @@ function workCard(it) {
   return `<article class="card${ui.workFocus === k ? " focus" : ""}" data-card="${esc(k)}">
     <div class="card-top"><span class="mono ref">${esc(it.display)}</span>${provChip(it.provider)}${it.sample ? `<span class="samp">sample</span>` : ""}${ci}</div>
     <div class="card-t">${esc(it.t)}</div>${closes}${target}
-    ${s?.line && st !== "working" ? `<div class="goal-line">${esc(s.line)}</div>` : ""}
+    ${s?.line && st !== "working" ? `<div class="goal-line">${esc(plainLine(s))} ${dt("wk-" + s.id, `<span>goal file, first line: ${esc(s.line)}</span>`)}</div>` : ""}
     <div class="card-act">${act}</div></article>`;
 }
