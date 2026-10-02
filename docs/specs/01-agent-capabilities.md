@@ -284,8 +284,8 @@ period for API-key providers.
   (screen pattern or hook) and confidence. Send-to-pane stays disabled for a
   harness until its detection is verified (Claude first).
 - **E7 Harness ready** (v2): the adapter's ready pattern matched in a pane.
-- **E8 Harness hook events** (v2): what the harness hooks report (turn end,
-  permission request, session start and stop, with the harness session id).
+- **E8 Harness hook events** (v2): turn end, session start, Codex interrupt,
+  with the harness session id; per-harness events in [01d](01d-goal-hooks.md).
 - **E9 Pane ↔ harness session mapping.** Fleet panes run with
   `FLEET_PANE_KEY` in their environment; fleet goal hooks record the harness
   session id against it. This lets G2 attribute `.claude/active-goal.<session_id>`
@@ -339,10 +339,10 @@ All pass local policy, carry a `command_id`, and are idempotent except F3.
 
 ## G. Goals
 
-- **G1 Goal hooks** (v2): install and verify the generic goal-protocol hooks,
-  **Claude first** (Codex and Muse hook payloads are not verified yet); report
-  hook version and hash. Repos that ship their own hooks (eshu) are detected and
-  left alone.
+- **G1 Goal hooks** (v2): user-level hooks, inert unless `FLEET_GOAL_ID` is
+  set; merge-installed with backup, verified, version and hash reported; Codex
+  needs one-time `/hooks` trust; Muse not probed. Repos that ship their own
+  (eshu) are left alone. Design and probe record: [01d](01d-goal-hooks.md).
 - **G2 Goal state** (v1): for fleet panes only, one event carrying the goal
   file's first line and `CONSENT:` line, the parsed state (working, `BLOCKED`
   with watcher and whether its pid is alive, `BLOCKED` with owner and action,

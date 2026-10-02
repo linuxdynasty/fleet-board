@@ -96,6 +96,12 @@ message GoalHooksState {
   string hook_hash = 4;
   // True when the repo ships its own hooks (eshu) and fleet left them alone.
   bool repo_ships_own = 5;
+  // Codex only: installed but not yet approved in the harness's /hooks
+  // (trust is per hook hash). The agent never approves it (01d).
+  bool trust_pending = 6;
+  // User-level config file the entries were merged into, e.g.
+  // ~/.claude/settings.json. Hooks are user level, inert unless FLEET_GOAL_ID.
+  string config_path = 7;
 }
 
 // HarnessInfo (C1) for one harness installed on the machine.

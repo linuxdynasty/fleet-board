@@ -68,8 +68,9 @@ Probed 2026-10-01 on OpenCode 1.18.30.
 - **No folder-trust prompt** at startup.
 - **Server mode:** `opencode serve`, `opencode attach <url>`, `--mdns`. A future
   adapter could read structured session events from it instead of the screen.
-- **Goals:** needs fleet-board's generic goal protocol (goal file plus a hook or
-  plugin) before it can run goals; until then: inventory, sessions, attach.
+- **Goals:** no native `/goal`; needs fleet-board's generic goal protocol
+  ([01d](01d-goal-hooks.md)) plus a plugin before it can run goals; until then:
+  inventory, sessions, attach.
 - **Terms:** OpenCode on an Anthropic OAuth login is the third-party-harness
   case in [../research/terms-of-service.md](../research/terms-of-service.md).
   Fleet-board does not change how the developer uses it, but by default it does
@@ -114,4 +115,7 @@ Probed 2026-10-01 by typing `/goal` and `/goal ` without Enter, then bare
   /goal resume", and `/goal clear` printed "Goal cleared" (2026-10-01).
 - The adapter records which subcommands each harness version supports; the
   hub never sends one that isn't listed.
-
+- Hooks see `/goal` differently per harness (Claude fires `UserPromptSubmit`
+  for it, Codex does not). Claude's hooks do not see an interrupt at all and
+  Codex's `Interrupt` hook is notify-only; see
+  [01d](01d-goal-hooks.md#probe-record-2026-10-02).

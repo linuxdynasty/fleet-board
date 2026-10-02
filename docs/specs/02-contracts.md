@@ -96,7 +96,7 @@ sequence; `none` means unordered. Droppable: may be shed under backpressure.
 | F5 | `RespawnPane{pane, harness, resume}` | H→A | yes | cmd | no |
 | F6 | `KillWindow{window}` | H→A | yes | cmd | no |
 | F8 | `RunHarnessCommand{pane, command, args, expected_class, catalog_hash}` → `RunHarnessCommandResult` | H→A | observe: yes; others: no | cmd | no |
-| G1 | `EnsureGoalHooks{harness, workdir, expected_version}` → `GoalHooksState`; also in `HarnessInfo.goal_hooks` | H→A; A→H | yes | cmd | no |
+| G1 | `EnsureGoalHooks{harness, workdir, expected_version}` → `GoalHooksState` (`trust_pending`, `config_path`, [01d](01d-goal-hooks.md)); also in `HarnessInfo.goal_hooks` | H→A; A→H | yes | cmd | no |
 | G2 | `GoalState` in `Snapshot.goals` and `Event.goal_state` | A→H | — | seq | never |
 | G3 | `StartGoal{spec GoalSpec, reuse_pane, in_session, timeouts}`; `CommandProgress{command_id, step}` per step; `StartGoalResult` | H→A; A→H | composite: yes per step | cmd | never |
 | G4 | `RunHarnessCommand{command: "/goal", args: pause\|resume\|edit …\|clear}` (class GOAL), or `Interrupt` where the harness has no pause; `GOAL_SUBCOMMAND_UNSUPPORTED` otherwise | H→A | no (typed input) | cmd | never |
