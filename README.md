@@ -6,6 +6,8 @@ unstick stuck work, and assign issues and PRs to machines with free capacity.
 
 - [docs/design.md](docs/design.md): architecture, views, dispatch rules,
   safety rails, verified facts, open questions, milestones
+- [docs/plan/v1-implementation-plan.md](docs/plan/v1-implementation-plan.md):
+  the ordered PR plan for v1, the read-only fleet
 - [docs/development/](docs/development/README.md): how agents develop this
   repo: roles, cost tiers, skills and local gates (rules in
   [AGENTS.md](AGENTS.md))
