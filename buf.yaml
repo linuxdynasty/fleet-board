@@ -1,0 +1,16 @@
+# buf configuration for the fleet-board contracts (ADR 0003, 0017).
+# Run from the repository root:
+#   go run github.com/bufbuild/buf/cmd/buf@latest build
+#   go run github.com/bufbuild/buf/cmd/buf@latest lint
+#   go run github.com/bufbuild/buf/cmd/buf@latest breaking --against '.git#branch=main'
+version: v2
+modules:
+  - path: api
+lint:
+  use:
+    - STANDARD
+breaking:
+  # WIRE_JSON: the hub API is served as Connect JSON to browsers and the CLI,
+  # so a field rename breaks clients even though the binary wire is unchanged.
+  use:
+    - WIRE_JSON

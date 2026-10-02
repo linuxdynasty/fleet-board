@@ -1,0 +1,74 @@
+// fleet.type.v1 work references: provider-neutral names for repositories,
+// work items and working directories (ADR 0012). Used by the agent wire
+// (GoalSpec, RepoCheckout), integrations and the hub API.
+syntax = "proto3";
+
+package fleet.type.v1;
+
+import "fleet/type/v1/ids.proto";
+
+option go_package = "github.com/linuxdynasty/fleet-board/api/fleet/type/v1;typev1";
+
+// RepoRef names a repository on a code host, independent of provider.
+// host is the code host's hostname ("github.com", "gitlab.acme.dev");
+// path is the project path on that host, lowercase, no ".git", and may be
+// nested ("eshu-hq/eshu", "group/subgroup/repo"). SSH and HTTPS remotes
+// normalize to the same value.
+message RepoRef {
+  // Was the single "owner/repo" string, which had no host and no nesting.
+  reserved 1;
+  reserved "value";
+  string host = 2;
+  string path = 3;
+  // The configured code-host integration this repo belongs to, if any.
+  IntegrationId code_host = 4;
+}
+
+// ProviderKind is the product behind an integration.
+enum ProviderKind {
+  PROVIDER_KIND_UNSPECIFIED = 0;
+  PROVIDER_KIND_GITHUB = 1;
+  PROVIDER_KIND_GITLAB = 2;
+  PROVIDER_KIND_JIRA = 3;
+  PROVIDER_KIND_BITBUCKET = 4;
+  PROVIDER_KIND_LINEAR = 5;
+  PROVIDER_KIND_OTHER = 15;
+}
+
+// WorkItemKind distinguishes things that can drive a goal.
+enum WorkItemKind {
+  WORK_ITEM_KIND_UNSPECIFIED = 0;
+  // An issue on a code host's tracker (GitHub, GitLab issues).
+  WORK_ITEM_KIND_ISSUE = 1;
+  // A ticket in a separate tracker (Jira, Linear).
+  WORK_ITEM_KIND_TICKET = 2;
+  // A pull request or merge request.
+  WORK_ITEM_KIND_CHANGE_REQUEST = 3;
+}
+
+// WorkItemRef names an issue, ticket or change request in any integration.
+// key is the provider's own identifier as a string: "7398" (GitHub issue or
+// PR), "12" for a GitLab MR (shown "!12"), "PROJ-123" (Jira). GitLab numbers
+// issues and MRs separately, so kind is part of the identity.
+message WorkItemRef {
+  IntegrationId integration = 1;
+  ProviderKind provider = 2;
+  WorkItemKind kind = 3;
+  // Repo path for code-host items, project key for trackers ("PROJ").
+  string project = 4;
+  string key = 5;
+  // Canonical web URL. Untrusted text.
+  string url = 6;
+  // Short display form used in UI and window names: "eshu#7398",
+  // "eshu!12", "PROJ-123". Untrusted text.
+  string display = 7;
+}
+
+// Workdir is how the hub names a working directory. The hub never sends an
+// absolute path: the agent joins repo to an allowed root and rejects "..".
+message Workdir {
+  RepoRef repo = 1;
+  // Optional path relative to the checkout (for example a worktree under
+  // .worktrees/). Empty means the main checkout.
+  string relative_path = 2;
+}

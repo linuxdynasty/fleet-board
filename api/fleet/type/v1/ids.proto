@@ -1,0 +1,120 @@
+// fleet.type.v1 identifiers: the wrapper ids and tmux keys every fleet
+// protocol shares (agent wire, integrations, hub API).
+//
+// Rules for every file in every fleet package (ADR 0003, 0017):
+//   - proto3, additive changes only; field numbers are never reused or
+//     renumbered. Removed fields are `reserved` by number and name. Gaps are
+//     left on purpose for growth.
+//   - Every timestamp is google.protobuf.Timestamp in UTC. Local time strings
+//     observed on a harness screen travel alongside, never instead.
+//   - Anything an agent read from a harness screen, a goal file, a tmux
+//     window name or a repository is UNTRUSTED TEXT: length-capped and
+//     control-character-stripped by the agent, rendered as data by the hub.
+//   - Percentages are never 0-as-unknown; see Percent.
+//   - A type lives in fleet.type.v1 only when two or more protocols use it
+//     (docs/specs/02-contracts.md, "Package layout").
+syntax = "proto3";
+
+package fleet.type.v1;
+
+option go_package = "github.com/linuxdynasty/fleet-board/api/fleet/type/v1;typev1";
+
+// Each identifier is a wrapper so generated code keeps them distinct.
+
+// MachineId is assigned by the hub at enrollment and is the subject of the
+// agent's client certificate (URI SAN fleet://machine/<value>). Opaque string.
+message MachineId {
+  string value = 1;
+}
+
+// AccountKey is computed by the agent: hash(fleet salt from Enroll, the
+// identity the harness shows on its own status screen). The same account
+// yields the same key on every machine. Pseudonymous, not anonymous.
+message AccountKey {
+  // Hex-encoded 32-byte digest (algorithm pinned by salt_version in Enroll).
+  string value = 1;
+}
+
+// AccountId is the hub's own identifier for an account record. The hub maps
+// AccountKey -> AccountId; the agent only ever learns AccountId through
+// commands that reference it (EnsureProbe, StartGoal).
+message AccountId {
+  string value = 1;
+}
+
+// SessionId is hub-assigned and stored in the tmux session environment as
+// FLEET_SESSION_ID so the session is recognized after a rename or restart.
+message SessionId {
+  string value = 1;
+}
+
+// GoalId is hub-assigned; written into FLEET_GOAL_ID on the goal's pane.
+message GoalId {
+  string value = 1;
+}
+
+// PromptId is agent-assigned when a prompt is detected (E6). A SendKeys that
+// answers a prompt must carry it; the agent refuses if the prompt is gone.
+message PromptId {
+  string value = 1;
+}
+
+// ProbeId is hub-assigned per EnsureProbe (D1).
+message ProbeId {
+  string value = 1;
+}
+
+// CommandId is hub-assigned, unique per command, and the idempotency key.
+message CommandId {
+  string value = 1;
+}
+
+// AttachId is hub-assigned per browser attach (J1); scopes a Terminal stream.
+message AttachId {
+  string value = 1;
+}
+
+// IntegrationId names one configured integration instance on the hub, e.g.
+// "github-com", "github-acme-ghe", "gitlab-acme", "jira-acme". Hub-assigned.
+message IntegrationId {
+  string value = 1;
+}
+
+// PaneKey identifies a tmux pane across server restarts. tmux pane ids
+// restart from zero with a new server, so the server start id is part of
+// the key. Also stored in the pane environment as FLEET_PANE_KEY.
+message PaneKey {
+  // tmux server socket name: "default" for the developer's own server,
+  // "fleet-probe" for the hidden probe server, "fleet" if that optional
+  // server is enabled (ADR 0011).
+  string server = 1;
+  // Opaque id minted by the agent the first time it sees a server start
+  // (derived from the server pid and start time).
+  string server_start_id = 2;
+  // tmux pane id as tmux prints it, e.g. "%12".
+  string pane_id = 3;
+}
+
+// WindowKey identifies a tmux window the same way (tmux id like "@3").
+message WindowKey {
+  string server = 1;
+  string server_start_id = 2;
+  string window_id = 3;
+}
+
+// TmuxServerKind picks which tmux server a command targets.
+enum TmuxServerKind {
+  TMUX_SERVER_KIND_UNSPECIFIED = 0;
+  // The developer's normal server, the one `tmux ls` shows. Default.
+  TMUX_SERVER_KIND_DEFAULT = 1;
+  // The optional separate `tmux -L fleet` server (ADR 0011).
+  TMUX_SERVER_KIND_FLEET = 2;
+  // The hidden `tmux -L fleet-probe` server; probes only.
+  TMUX_SERVER_KIND_PROBE = 3;
+}
+
+// Harness names a harness adapter. Free string because adapters are an
+// extension point; known values: "claude", "codex", "muse", "opencode".
+message Harness {
+  string name = 1;
+}

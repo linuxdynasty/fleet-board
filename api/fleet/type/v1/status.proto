@@ -1,0 +1,175 @@
+// fleet.type.v1 status: Percent with an explicit unknown, the shared result
+// Status and ReasonCode, capabilities, roles and principals. The agent
+// returns these in command results; the hub API shows them unchanged.
+syntax = "proto3";
+
+package fleet.type.v1;
+
+option go_package = "github.com/linuxdynasty/fleet-board/api/fleet/type/v1;typev1";
+
+// ---------------------------------------------------------------------------
+// Percent with an explicit unknown. Never 0-as-unknown.
+// ---------------------------------------------------------------------------
+
+// Percent is an integer 0..100 or an explicit unknown with a reason.
+message Percent {
+  oneof kind {
+    // 0..100 inclusive. Values above 100 are rejected by the hub.
+    uint32 value = 1;
+    PercentUnknown unknown = 2;
+  }
+}
+
+// PercentUnknown says why a percentage could not be read.
+message PercentUnknown {
+  UnknownReason reason = 1;
+}
+
+// UnknownReason explains an unknown reading. The hub never schedules on an
+// unknown value (design.md dispatch rules).
+enum UnknownReason {
+  UNKNOWN_REASON_UNSPECIFIED = 0;
+  // The screen did not parse with the fixtures for this harness version.
+  UNKNOWN_REASON_PARSE_FAILED = 1;
+  // The harness did not show this value at all (for example no short window).
+  UNKNOWN_REASON_NOT_SHOWN = 2;
+  // The harness version is outside the parser's SupportedVersions (C1).
+  UNKNOWN_REASON_HARNESS_VERSION_UNSUPPORTED = 3;
+  // The probe session could not run the usage command (D1 health).
+  UNKNOWN_REASON_PROBE_FAILED = 4;
+}
+
+// ---------------------------------------------------------------------------
+// Status and reason codes.
+// ---------------------------------------------------------------------------
+
+// Status is the single result status for commands and composite steps.
+enum Status {
+  STATUS_UNSPECIFIED = 0;
+  STATUS_OK = 1;
+  // Attempted and failed; reason says why.
+  STATUS_FAILED = 2;
+  // Arrived after not_after (hub time); nothing was done.
+  STATUS_EXPIRED = 3;
+  // Local policy or the effective settings refused it; nothing was done.
+  STATUS_REJECTED_BY_POLICY = 4;
+  // The agent does not advertise the capability this command needs.
+  STATUS_UNSUPPORTED = 5;
+  // The agent cannot tell whether the effect happened (SendKeys after a
+  // crash, UI must ask a person). Never retried automatically.
+  STATUS_UNKNOWN_OUTCOME = 6;
+  // Waiting for `fleet-agent approve <command_id>` before not_after.
+  STATUS_AWAITING_LOCAL_CONFIRM = 7;
+}
+
+// ReasonCode is the shared structured reason for preflight refusals,
+// command failures and policy rejections. Values 1..99 are preflight (I1);
+// 100..199 command execution; 200..299 envelope and policy; 300..399 goal
+// composite steps; 400..499 probes and parsing.
+enum ReasonCode {
+  REASON_CODE_UNSPECIFIED = 0;
+
+  // Preflight (I1), also used by StartGoal's preflight step.
+  REASON_CODE_HARNESS_NOT_INSTALLED = 1;
+  REASON_CODE_HARNESS_VERSION_UNSUPPORTED = 2;
+  REASON_CODE_HARNESS_NOT_SIGNED_IN = 3;
+  REASON_CODE_ACCOUNT_MISMATCH = 4;
+  REASON_CODE_PUSH_ACCESS_MISSING = 5;
+  REASON_CODE_CHECKOUT_MISSING = 6;
+  REASON_CODE_FOLDER_UNTRUSTED = 7;
+  REASON_CODE_WORKTREE_DIRTY = 8;
+  REASON_CODE_DISK_LOW = 9;
+  REASON_CODE_TMUX_TOO_OLD = 10;
+  REASON_CODE_TMUX_SERVER_DOWN = 11;
+  REASON_CODE_ON_BATTERY_BLOCKED = 12;
+  REASON_CODE_POLICY_DENIED = 13;
+  REASON_CODE_DRAINING = 14;
+  REASON_CODE_SLOTS_FULL = 15;
+
+  // Command execution.
+  REASON_CODE_SESSION_NOT_FOUND = 100;
+  REASON_CODE_WINDOW_NOT_FOUND = 101;
+  REASON_CODE_PANE_NOT_FOUND = 102;
+  // The prompt named by prompt_id is no longer on screen (F3).
+  REASON_CODE_PROMPT_GONE = 103;
+  // The pane's input line is not empty or a turn is running (F8, G3, E11).
+  REASON_CODE_PANE_BUSY = 104;
+  // The session is not idle/available any more (E11 re-check before typing).
+  REASON_CODE_SESSION_NOT_AVAILABLE = 105;
+  // The command is not in the machine's catalog (C4).
+  REASON_CODE_COMMAND_NOT_IN_CATALOG = 106;
+  // The command's class is not allowed for the requester or by local policy.
+  REASON_CODE_COMMAND_CLASS_DENIED = 107;
+  // The catalog_hash in the request does not match the current catalog.
+  REASON_CODE_CATALOG_STALE = 108;
+  REASON_CODE_RATE_LIMITED = 109;
+  REASON_CODE_MAX_WINDOWS_REACHED = 110;
+  REASON_CODE_INVALID_NAME = 111;
+  REASON_CODE_INVALID_ARGUMENT = 112;
+  // The requested harness is not allowed by local policy or settings.
+  REASON_CODE_HARNESS_NOT_ALLOWED = 113;
+  // The repo root is not in the allowed set, or the path escapes it.
+  REASON_CODE_REPO_ROOT_NOT_ALLOWED = 114;
+  REASON_CODE_WORKTREE_EXISTS = 115;
+  REASON_CODE_GIT_FAILED = 116;
+  REASON_CODE_HOOKS_INSTALL_FAILED = 117;
+  REASON_CODE_ATTACH_NOT_FOUND = 118;
+  REASON_CODE_INTERNAL = 119;
+
+  // Envelope and policy.
+  REASON_CODE_EXPIRED = 200;
+  REASON_CODE_EPOCH_MISMATCH = 201;
+  REASON_CODE_SEQ_REPLAYED = 202;
+  REASON_CODE_SIGNATURE_INVALID = 203;
+  REASON_CODE_CAPABILITY_MISSING = 204;
+  REASON_CODE_LOCAL_CONFIRM_TIMEOUT = 205;
+  REASON_CODE_LOCAL_DENIED = 206;
+  // The requester's role is below what this kind or class needs.
+  REASON_CODE_ROLE_INSUFFICIENT = 207;
+
+  // Goal composite steps (G3) and goal control (G4).
+  REASON_CODE_READY_TIMEOUT = 300;
+  REASON_CODE_GOAL_FILE_NOT_SEEN = 301;
+  REASON_CODE_GOAL_NOT_RUNNING = 302;
+  // 303 was STOP_TIMEOUT for the removed StopGoal composite.
+  reserved 303;
+  REASON_CODE_TRUST_PROMPT_SEEN = 304;
+  // The harness's /goal has no such subcommand (for example pause on
+  // Claude Code 2.1.286, which offers only set and clear).
+  REASON_CODE_GOAL_SUBCOMMAND_UNSUPPORTED = 305;
+
+  // Probes and parsing (D1, D2).
+  REASON_CODE_PROBE_START_FAILED = 400;
+  REASON_CODE_PROBE_COMMAND_TIMEOUT = 401;
+  REASON_CODE_PARSE_FAILED = 402;
+}
+
+// ---------------------------------------------------------------------------
+// Capabilities, roles, principals.
+// ---------------------------------------------------------------------------
+
+// Capability is one advertised feature, for example {"usage.probe.codex", 1}.
+// The hub never sends a command whose capability the agent did not advertise.
+// "exec.raw" is reserved and never advertised or accepted in v1.
+message Capability {
+  string name = 1;
+  uint32 version = 2;
+}
+
+// Role of the principal that requested a command (ADR 0004 "People on the
+// hub"). The agent re-checks role against harness command class (01b).
+enum Role {
+  ROLE_UNSPECIFIED = 0;
+  ROLE_VIEWER = 1;
+  ROLE_OPERATOR = 2;
+  ROLE_OWNER = 3;
+  // The hub's own scheduler, not a person.
+  ROLE_SCHEDULER = 4;
+}
+
+// Principal names who asked for a command.
+message Principal {
+  // Display name or login on the hub; "scheduler" for ROLE_SCHEDULER.
+  string name = 1;
+  Role role = 2;
+}

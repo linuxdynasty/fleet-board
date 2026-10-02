@@ -1,0 +1,135 @@
+// fleet.agent.v1 commands: hub -> agent typed commands (ADR 0004 envelope), and
+// agent -> hub ack, progress and result. No shell string anywhere; the agent
+// re-checks every command against local policy, settings, role and
+// capability. RunExec is reserved and not defined in v1. Command kinds are
+// defined in command_tmux.proto (probes, tmux control) and command_goal.proto
+// (goals, worktrees, preflight, attach, logs, drain).
+syntax = "proto3";
+
+package fleet.agent.v1;
+
+import "fleet/agent/v1/command_goal.proto";
+import "fleet/agent/v1/command_tmux.proto";
+import "fleet/type/v1/harness.proto";
+import "fleet/type/v1/ids.proto";
+import "fleet/type/v1/status.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/linuxdynasty/fleet-board/api/fleet/agent/v1;agentv1";
+
+// ===== Envelope =====
+
+// Command is the envelope. The agent refuses expired (hub time), out-of-epoch
+// and replayed commands; a known command_id returns its logged result.
+message Command {
+  // Idempotency key; unique per command.
+  fleet.type.v1.CommandId command_id = 1;
+  // Connection epoch from HelloAck; commands from another epoch are refused.
+  uint64 epoch = 2;
+  // Per-epoch sequence, strictly increasing; a lower or equal seq is replayed.
+  uint64 seq = 3;
+  // Hub time.
+  google.protobuf.Timestamp issued_at = 4;
+  // Hub time. Default 2 min for interactive kinds, 30 min for dispatch.
+  google.protobuf.Timestamp not_after = 5;
+  fleet.type.v1.Principal requested_by = 6;
+  // Optional detached Ed25519 signature over the canonical envelope and kind
+  // bytes, for deployments with a hardware signing key. Unused in v1.
+  bytes sig = 7;
+  // Capability this kind needs, so an unknown kind can still be answered
+  // with STATUS_UNSUPPORTED and the capability name.
+  fleet.type.v1.Capability requires = 8;
+
+  // Kinds are numbered by group: 10-19 probes, 20-39 tmux control, 40-49
+  // goals and worktrees, 50-59 attach, 60-69 logs, 70-79 self-management.
+  // 42 was stop_goal. Goals are paused, resumed, edited and cleared with the
+  // harness's own /goal subcommands sent through RunHarnessCommand (G4).
+  reserved 42;
+  reserved "stop_goal";
+
+  oneof kind {
+    EnsureProbe ensure_probe = 10;
+    StopProbe stop_probe = 11;
+
+    EnsureSession ensure_session = 20;
+    EnsureWindow ensure_window = 21;
+    SendKeys send_keys = 22;
+    Interrupt interrupt = 23;
+    RespawnPane respawn_pane = 24;
+    KillWindow kill_window = 25;
+    CapturePane capture_pane = 26;
+    RunHarnessCommand run_harness_command = 27;
+    SetSessionAvailability set_session_availability = 28;
+
+    Preflight preflight = 40;
+    StartGoal start_goal = 41;
+    EnsureWorktree ensure_worktree = 43;
+    PruneWorktree prune_worktree = 44;
+    EnsureGoalHooks ensure_goal_hooks = 45;
+
+    OpenAttach open_attach = 50;
+    CloseAttach close_attach = 51;
+
+    SetLogCapture set_log_capture = 60;
+    SetLogShipping set_log_shipping = 61;
+
+    Drain drain = 70;
+    Undrain undrain = 71;
+  }
+
+  // RunExec (raw exec): number and name reserved, not defined in v1;
+  // capability "exec.raw" is likewise reserved and never advertised.
+  reserved 99;
+  reserved "run_exec";
+}
+
+// CommandAck: the agent received and persisted the command.
+message CommandAck {
+  fleet.type.v1.CommandId command_id = 1;
+  google.protobuf.Timestamp received_at = 2;
+}
+
+// CommandProgress reports one step of a composite command (G3, G4) as
+// command_id+step. Never dropped. A FAILED step ends the composite.
+message CommandProgress {
+  fleet.type.v1.CommandId command_id = 1;
+  // Stable step name, e.g. "preflight", "ensure_worktree", "pick_session",
+  // "ensure_window", "wait_ready", "type_goal", "confirm_goal_file".
+  string step = 2;
+  uint32 step_index = 3;
+  uint32 step_count = 4;
+  fleet.type.v1.Status status = 5;
+  fleet.type.v1.ReasonCode reason = 6;
+  google.protobuf.Timestamp at = 7;
+  // Short diagnostic, no screen text. Capped at 1 KiB.
+  string message = 8;
+}
+
+// CommandResult is the final outcome. Kept in the agent's local log and
+// replayed until the hub acknowledges it (Snapshot.unacked_results).
+message CommandResult {
+  fleet.type.v1.CommandId command_id = 1;
+  fleet.type.v1.Status status = 2;
+  fleet.type.v1.ReasonCode reason = 3;
+  // Short diagnostic, no screen text unless the kind returns one. 1 KiB.
+  string message = 4;
+  google.protobuf.Timestamp started_at = 5;
+  google.protobuf.Timestamp finished_at = 6;
+  // Capability the agent lacks, for STATUS_UNSUPPORTED.
+  fleet.type.v1.Capability missing_capability = 7;
+
+  reserved 42;
+  reserved "stop_goal";
+
+  oneof detail {
+    EnsureSessionResult ensure_session = 20;
+    EnsureWindowResult ensure_window = 21;
+    CapturePaneResult capture_pane = 26;
+    RunHarnessCommandResult run_harness_command = 27;
+    PreflightResult preflight = 40;
+    StartGoalResult start_goal = 41;
+    EnsureWorktreeResult ensure_worktree = 43;
+    fleet.type.v1.GoalHooksState ensure_goal_hooks = 45;
+    OpenAttachResult open_attach = 50;
+  }
+}

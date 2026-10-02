@@ -108,7 +108,7 @@ superseding ADR.
 
 ## Required contract changes
 
-Found while writing the workflows. Each is additive within `fleet.v1`.
+Found while writing the workflows. Each is additive within the v1 packages (`fleet.agent.v1`, `fleet.integration.v1`; ADR 0017).
 
 | # | Change | Reason (workflow) |
 |---|---|---|

@@ -1,20 +1,21 @@
-// Integrations: the provider-neutral model of work items and change requests
-// (ADR 0012). GitHub is the first implementation; GitLab, Jira, Bitbucket and
-// Linear fit the same shape. In v1 adapters are compiled into fleetd and
-// implement IntegrationProvider in-process; the same service can later be
-// served by an out-of-process plugin without changing the hub.
+// fleet.integration.v1: the provider-neutral model of work items and change
+// requests (ADR 0012). GitHub is the first implementation; GitLab, Jira,
+// Bitbucket and Linear fit the same shape. In v1 adapters are compiled into
+// fleetd and implement IntegrationProviderService in-process; the same
+// service can later be served by an out-of-process plugin without changing
+// the hub. The hub API (fleet.hub.v1) mirrors these messages to the UI.
 //
 // Everything a provider returns (titles, bodies, names, labels, URLs) is
 // untrusted text.
-
 syntax = "proto3";
 
-package fleet.v1;
+package fleet.integration.v1;
 
-import "fleet/v1/common.proto";
+import "fleet/type/v1/ids.proto";
+import "fleet/type/v1/work.proto";
 import "google/protobuf/timestamp.proto";
 
-option go_package = "github.com/linuxdynasty/fleet-board/api/fleet/v1;fleetv1";
+option go_package = "github.com/linuxdynasty/fleet-board/api/fleet/integration/v1;integrationv1";
 
 // IntegrationRole: what an integration is used for. One integration can
 // have both roles (GitHub, GitLab) or one (Jira is a work tracker only).
@@ -51,9 +52,9 @@ enum SyncMode {
 // IntegrationCapabilities: what a provider adapter supports, so the hub
 // never asks for something a provider can't do.
 message IntegrationCapabilities {
-  ProviderKind provider = 1;
+  fleet.type.v1.ProviderKind provider = 1;
   repeated IntegrationRole roles = 2;
-  repeated WorkItemKind work_item_kinds = 3;
+  repeated fleet.type.v1.WorkItemKind work_item_kinds = 3;
   repeated ClaimMechanism claim_mechanisms = 4;
   repeated SyncMode sync_modes = 5;
   // Code host: check results on change requests.
@@ -73,8 +74,8 @@ message IntegrationCapabilities {
 
 // Integration: one configured instance on the hub.
 message Integration {
-  IntegrationId id = 1;
-  ProviderKind provider = 2;
+  fleet.type.v1.IntegrationId id = 1;
+  fleet.type.v1.ProviderKind provider = 2;
   // Base URL or host ("https://github.com", "https://acme.atlassian.net").
   string base_url = 3;
   // Display name chosen by the owner.
@@ -114,7 +115,7 @@ message Claim {
 
 // WorkItem: an issue or ticket that can drive a goal.
 message WorkItem {
-  WorkItemRef ref = 1;
+  fleet.type.v1.WorkItemRef ref = 1;
   // Untrusted text.
   string title = 2;
   WorkItemState state = 3;
@@ -125,9 +126,9 @@ message WorkItem {
   repeated Person assignees = 7;
   repeated Claim claims = 8;
   // Change requests linked to this item (closing keywords, ticket keys).
-  repeated WorkItemRef linked_change_requests = 9;
+  repeated fleet.type.v1.WorkItemRef linked_change_requests = 9;
   // For trackers: the repo(s) the work is expected to touch, when known.
-  repeated RepoRef repos = 10;
+  repeated fleet.type.v1.RepoRef repos = 10;
   google.protobuf.Timestamp updated_at = 11;
   // Body is fetched on demand only; this is its size in bytes.
   uint64 body_bytes = 12;
@@ -161,8 +162,8 @@ message Review {
 
 // ChangeRequest: a pull request (GitHub) or merge request (GitLab).
 message ChangeRequest {
-  WorkItemRef ref = 1;
-  RepoRef repo = 2;
+  fleet.type.v1.WorkItemRef ref = 1;
+  fleet.type.v1.RepoRef repo = 2;
   // Untrusted text.
   string title = 3;
   WorkItemState state = 4;
@@ -176,7 +177,7 @@ message ChangeRequest {
   // Provider says it can merge now (no conflicts, required checks met).
   bool mergeable = 11;
   // Work items this change request closes or references.
-  repeated WorkItemRef linked_work_items = 12;
+  repeated fleet.type.v1.WorkItemRef linked_work_items = 12;
   Person author = 13;
   google.protobuf.Timestamp updated_at = 14;
   google.protobuf.Timestamp merged_at = 15;
@@ -184,29 +185,40 @@ message ChangeRequest {
 
 // --- Provider service ------------------------------------------------------
 
+// DescribeRequest asks an adapter what it supports.
 message DescribeRequest {}
 
+// DescribeResponse carries the adapter's capability declaration.
+message DescribeResponse {
+  IntegrationCapabilities capabilities = 1;
+}
+
+// ListWorkItemsRequest pages through a project's work items.
 message ListWorkItemsRequest {
   // Project or repo path to list.
   string project = 1;
   // Only items updated after this time.
   google.protobuf.Timestamp updated_after = 2;
-  // Opaque cursor from the previous page.
-  string cursor = 3;
+  // Opaque token from the previous page's next_page_token (AIP-158 names).
+  string page_token = 3;
   uint32 page_size = 4;
 }
 
+// ListWorkItemsResponse is one page.
 message ListWorkItemsResponse {
   repeated WorkItem items = 1;
-  string next_cursor = 2;
+  // Empty on the last page.
+  string next_page_token = 2;
 }
 
+// GetWorkItemRequest fetches one item, optionally with its body.
 message GetWorkItemRequest {
-  WorkItemRef ref = 1;
+  fleet.type.v1.WorkItemRef ref = 1;
   // Fetch the body (capped at 64 KiB).
   bool include_body = 2;
 }
 
+// GetWorkItemResponse.
 message GetWorkItemResponse {
   WorkItem item = 1;
   // Untrusted text: it reaches agents with push rights only through the
@@ -214,41 +226,55 @@ message GetWorkItemResponse {
   string body = 2;
 }
 
+// ListChangeRequestsRequest pages through a repo's change requests.
 message ListChangeRequestsRequest {
-  RepoRef repo = 1;
+  fleet.type.v1.RepoRef repo = 1;
   google.protobuf.Timestamp updated_after = 2;
-  string cursor = 3;
+  string page_token = 3;
   uint32 page_size = 4;
 }
 
+// ListChangeRequestsResponse is one page.
 message ListChangeRequestsResponse {
   repeated ChangeRequest change_requests = 1;
-  string next_cursor = 2;
+  string next_page_token = 2;
 }
 
+// GetChangeRequestRequest fetches one change request.
 message GetChangeRequestRequest {
-  WorkItemRef ref = 1;
+  fleet.type.v1.WorkItemRef ref = 1;
 }
 
+// GetChangeRequestResponse.
+message GetChangeRequestResponse {
+  ChangeRequest change_request = 1;
+}
+
+// WatchRequest names the projects to watch.
 message WatchRequest {
   repeated string projects = 1;
 }
 
+// WatchResponse is one change notice on the stream.
+message WatchResponse {
+  ChangeNotice notice = 1;
+}
+
 // ChangeNotice says something changed; the hub then fetches the details.
 message ChangeNotice {
-  WorkItemRef ref = 1;
+  fleet.type.v1.WorkItemRef ref = 1;
   google.protobuf.Timestamp at = 2;
 }
 
-// IntegrationProvider is implemented once per provider. Read-only by
+// IntegrationProviderService is implemented once per provider. Read-only by
 // design: the hub never writes to a provider (ADR 0005); claims, pushes and
 // merges happen inside goals on workers with the developer's own tools.
-service IntegrationProvider {
-  rpc Describe(DescribeRequest) returns (IntegrationCapabilities);
+service IntegrationProviderService {
+  rpc Describe(DescribeRequest) returns (DescribeResponse);
   rpc ListWorkItems(ListWorkItemsRequest) returns (ListWorkItemsResponse);
   rpc GetWorkItem(GetWorkItemRequest) returns (GetWorkItemResponse);
   rpc ListChangeRequests(ListChangeRequestsRequest) returns (ListChangeRequestsResponse);
-  rpc GetChangeRequest(GetChangeRequestRequest) returns (ChangeRequest);
+  rpc GetChangeRequest(GetChangeRequestRequest) returns (GetChangeRequestResponse);
   // Change notices from webhooks or polling; optional (SYNC_MODE).
-  rpc Watch(WatchRequest) returns (stream ChangeNotice);
+  rpc Watch(WatchRequest) returns (stream WatchResponse);
 }

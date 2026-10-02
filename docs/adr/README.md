@@ -19,6 +19,7 @@ accepted; a later ADR supersedes an earlier one and says so.
 | [0011](0011-contract-amendments.md) | Contract amendments to 0004, 0006, 0009 and 0010 | Accepted |
 | [0012](0012-integration-model.md) | Integration model: work trackers and code hosts | Accepted |
 | [0013](0013-live-state-retention.md) | Live-state retention: latest pane summary only | Accepted |
+| [0017](0017-contract-packages.md) | Contract packages and names | Accepted |
 
 ## Template
 

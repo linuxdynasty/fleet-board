@@ -13,7 +13,7 @@ is the serialization point". Transactions never span a network call.
 flowchart LR
   subgraph per agent
     CR[connReader<br/>decode, size + machine_id checks,<br/>droppable kinds shed when queue full]
-    CW[connWriter<br/>per-machine outbox queue → HubMessage]
+    CW[connWriter<br/>per-machine outbox queue → ConnectResponse]
     LR[logReceiver<br/>SessionLog stream → files, index batch, LogAck]
     AB[attachBridge × N<br/>Terminal ⇄ WebSocket, bytes only]
   end

@@ -1,0 +1,166 @@
+// fleet.type.v1 harness and pane values: command classes and catalogs,
+// goal-hook state, pane activity and availability, goal-line states, keys,
+// prompt options, harness condition kinds and log streams. The agent reports
+// them; the hub API shows them and sends keys and harness commands with them.
+syntax = "proto3";
+
+package fleet.type.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/linuxdynasty/fleet-board/api/fleet/type/v1;typev1";
+
+// ---------------------------------------------------------------------------
+// Harness command catalog (C4) and goal hooks (G1)
+// ---------------------------------------------------------------------------
+
+// CommandClass classifies a harness slash command (01b). DENY is never
+// sendable; unknown commands are DENY.
+enum CommandClass {
+  COMMAND_CLASS_UNSPECIFIED = 0;
+  COMMAND_CLASS_OBSERVE = 1;
+  COMMAND_CLASS_SESSION = 2;
+  COMMAND_CLASS_GOAL = 3;
+  COMMAND_CLASS_REVIEW = 4;
+  COMMAND_CLASS_DESTRUCTIVE = 5;
+  COMMAND_CLASS_DENY = 6;
+}
+
+// CatalogEntry is one slash command the harness install offers (C4).
+message CatalogEntry {
+  // As shown, including the leading slash. Untrusted text.
+  string name = 1;
+  CommandClass class = 2;
+  // True when local policy moved it to a stricter class than the adapter's.
+  bool tightened_by_policy = 3;
+}
+
+// CommandCatalog (C4): discovered per machine, reported with a hash.
+message CommandCatalog {
+  // Hex digest over the sorted entry names; RunHarnessCommand must match it.
+  string hash = 1;
+  repeated CatalogEntry entries = 2;
+  google.protobuf.Timestamp discovered_at = 3;
+}
+
+// GoalHooksState (G1): generic goal-protocol hooks for one harness.
+message GoalHooksState {
+  bool installed = 1;
+  bool verified = 2;
+  string hook_version = 3;
+  string hook_hash = 4;
+  // True when the repo ships its own hooks (eshu) and fleet left them alone.
+  bool repo_ships_own = 5;
+  // Codex only: installed but not yet approved in the harness's /hooks
+  // (trust is per hook hash). The agent never approves it (01d).
+  bool trust_pending = 6;
+  // User-level config file the entries were merged into, e.g.
+  // ~/.claude/settings.json. Hooks are user level, inert unless FLEET_GOAL_ID.
+  string config_path = 7;
+}
+
+// ---------------------------------------------------------------------------
+// Pane activity (E4), availability (E11), goal line (G2)
+// ---------------------------------------------------------------------------
+
+// Activity is the pane's output activity state (E4).
+enum Activity {
+  ACTIVITY_UNSPECIFIED = 0;
+  ACTIVITY_ACTIVE = 1;
+  ACTIVITY_IDLE = 2;
+}
+
+// Availability (E11): idle and available-for-work are distinct.
+message Availability {
+  // Ready pattern showing, no active goal, no output or input for the
+  // configured idle threshold.
+  bool idle = 1;
+  // Fleet started it and its goal is verified merged, or the developer
+  // marked it on the board. Idle alone never makes a session take work.
+  bool available_for_work = 2;
+  google.protobuf.Timestamp since = 3;
+}
+
+// GoalLineState is the parsed first line of a goal file (design.md).
+enum GoalLineState {
+  GOAL_LINE_STATE_UNSPECIFIED = 0;
+  GOAL_LINE_STATE_WORKING = 1;
+  GOAL_LINE_STATE_BLOCKED_WATCH = 2;
+  GOAL_LINE_STATE_BLOCKED_OWNER = 3;
+  // BLOCKED with neither a live watcher nor an owner: stuck.
+  GOAL_LINE_STATE_BLOCKED_STUCK = 4;
+  GOAL_LINE_STATE_DONE = 5;
+  // Goal file missing or unreadable.
+  GOAL_LINE_STATE_MISSING = 6;
+}
+
+// ---------------------------------------------------------------------------
+// Keys (F3) and prompts (E6)
+// ---------------------------------------------------------------------------
+
+// NamedKey is the closed set of non-literal keys SendKeys may type.
+enum NamedKey {
+  NAMED_KEY_UNSPECIFIED = 0;
+  NAMED_KEY_ENTER = 1;
+  NAMED_KEY_ESCAPE = 2;
+  NAMED_KEY_TAB = 3;
+  NAMED_KEY_BACKSPACE = 4;
+  NAMED_KEY_UP = 5;
+  NAMED_KEY_DOWN = 6;
+  NAMED_KEY_LEFT = 7;
+  NAMED_KEY_RIGHT = 8;
+  NAMED_KEY_CTRL_C = 9;
+}
+
+// KeyInput is one literal string or one named key.
+message KeyInput {
+  oneof input {
+    // Literal text, capped at 4 KiB; never interpreted by tmux.
+    string literal = 1;
+    NamedKey key = 2;
+  }
+}
+
+// PromptSource says how a prompt was detected.
+enum PromptSource {
+  PROMPT_SOURCE_UNSPECIFIED = 0;
+  PROMPT_SOURCE_SCREEN_PATTERN = 1;
+  PROMPT_SOURCE_HOOK = 2;
+}
+
+// PromptOption is one menu choice as shown. Untrusted text.
+message PromptOption {
+  // The key or number to type, e.g. "1", "y".
+  string key = 1;
+  string label = 2;
+}
+
+// HarnessConditionKind classifies a HarnessCondition (E12).
+enum HarnessConditionKind {
+  HARNESS_CONDITION_KIND_UNSPECIFIED = 0;
+  // Provider returned a server error (5xx).
+  HARNESS_CONDITION_KIND_PROVIDER_ERROR = 1;
+  // Provider rate limit or overload (429, 529).
+  HARNESS_CONDITION_KIND_RATE_LIMITED = 2;
+  // A usage limit was reached (short window or weekly).
+  HARNESS_CONDITION_KIND_USAGE_LIMIT = 3;
+  // The harness wants the developer to sign in again.
+  HARNESS_CONDITION_KIND_SIGN_IN_REQUIRED = 4;
+  // Network unreachable from the harness.
+  HARNESS_CONDITION_KIND_NETWORK = 5;
+  // Recognised as an error by the adapter but not classified.
+  HARNESS_CONDITION_KIND_OTHER = 15;
+}
+
+// ---------------------------------------------------------------------------
+// Session logs (K1, K3; ADR 0010)
+// ---------------------------------------------------------------------------
+
+// LogStream distinguishes terminal output from harness transcripts.
+enum LogStream {
+  LOG_STREAM_UNSPECIFIED = 0;
+  // tmux pipe-pane output (K1).
+  LOG_STREAM_TERMINAL = 1;
+  // The harness's own transcript file, shipped by offset (K3, v3).
+  LOG_STREAM_HARNESS_TRANSCRIPT = 2;
+}

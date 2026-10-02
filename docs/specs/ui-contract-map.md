@@ -2,7 +2,7 @@
 
 - Status: Draft, with the mockup under `mockup/`
 - Date: 2026-10-02
-- Inputs: [02-contracts.md](02-contracts.md), `api/fleet/v1/*.proto`,
+- Inputs: [02-contracts.md](02-contracts.md), `api/fleet/*/v1/*.proto`,
   [01b-harness-commands.md](01b-harness-commands.md), ADRs
   [0004](../adr/0004-agent-connectivity.md), [0006](../adr/0006-tmux-sessions.md),
   [0008](../adr/0008-goal-consent-and-account-modes.md),
@@ -134,7 +134,7 @@ lists every window on every machine; the Details drawer holds the controls.
 | "read from /usage 10m ago" / "read from the status line" | `UsageReading.source` (`USAGE_SOURCE_PROBE` / `PASSIVE`), `read_at` | D1, D3 |
 | Plan, email hidden/shown | `AccountIdentity{plan, login_method, email}`; email empty unless `share_identity_email` | C2, A8 |
 | Consent and mode per account (under details) | `GoalSpec.consent[]` source; account `mode: fleet \| interactive-only` | ADR 0008 |
-| API-key cards (DeepSeek, Moonshot) with "$ of cap", "manual only" | `SpendReading`, `BUDGET_KIND_DOLLAR_CAP`; never auto-dispatched | 01 §C, usage.proto |
+| API-key cards (DeepSeek, Moonshot) with "$ of cap", "manual only" | `SpendReading`, `BUDGET_KIND_DOLLAR_CAP`; never auto-dispatched | 01 §C, `type/v1/usage.proto` |
 | OpenCode card | router; `SessionAccountLink`; no `/usage`, no `/goal`; not auto-dispatched on Anthropic | 01b OpenCode |
 
 ## Machines
@@ -168,6 +168,6 @@ lists every window on every machine; the Details drawer holds the controls.
 | Goals: auto-dispatch, consent, window template, idle threshold | `GoalSpec.consent[]`; `SettingValues{window_name_template, idle_threshold}` | ADR 0008, 0011 |
 | Reserve per account; limits per machine | hub pacing; `SettingValues{max_active, max_total}` | A8, ADR 0011 |
 | Privacy: show emails | `SettingValues.share_identity_email` | A8 |
-| Integrations (GitHub connected; GitLab, Jira, Bitbucket, Linear planned) | `Integration{provider, capabilities IntegrationCapabilities{roles, claim_mechanisms, sync_modes, checks, reviews, merge_detection}}` | ADR 0012, integrations.proto |
+| Integrations (GitHub connected; GitLab, Jira, Bitbucket, Linear planned) | `Integration{provider, capabilities IntegrationCapabilities{roles, claim_mechanisms, sync_modes, checks, reviews, merge_detection}}` | ADR 0012, `integration/v1/integration.proto` |
 | Effective values per machine (collapsed), plain field names, layer chips | `EffectiveSettings.sources[] SettingSource{field, layer}`; "capped by local policy" = `SETTING_LAYER_LOCAL_CEILING` / `SettingsAck.capped_fields` | A8, L2, ADR 0009 |
 | fleet.yaml (collapsed) | hub config file the settings write | ADR 0009 |

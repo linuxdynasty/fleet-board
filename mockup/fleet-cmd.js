@@ -1,5 +1,5 @@
 // Typed-command previews. The hub never runs ssh or a shell string: agents dial out (ADR 0004) and receive the
-// typed kinds in api/fleet/v1/commands.proto. Every preview here is rendered through esc() by its caller.
+// typed kinds in api/fleet/agent/v1/command*.proto. Every preview here is rendered through esc() by its caller.
 // The only ssh line anywhere is attachLine(): the copyable "attach from your own terminal" fallback (ADR 0006).
 const fmtVal = v => Array.isArray(v) ? `[${v.join(", ")}]` : String(v);
 const fmtCmd = (name, fields) => `${name}{${Object.entries(fields).filter(([, v]) => v !== undefined && v !== null && v !== "").map(([k, v]) => `${k}: ${fmtVal(v)}`).join(", ")}}`;

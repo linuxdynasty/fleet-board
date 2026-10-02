@@ -5,7 +5,7 @@
 - Inputs: [01-agent-capabilities.md](01-agent-capabilities.md),
   [01b-harness-commands.md](01b-harness-commands.md),
   [01c-handoff.md](01c-handoff.md) (measured volumes),
-  [02-contracts.md](02-contracts.md), `api/fleet/v1/*.proto`,
+  [02-contracts.md](02-contracts.md), `api/fleet/*/v1/*.proto`,
   ADRs [0001](../adr/0001-system-architecture.md)–[0011](../adr/0011-contract-amendments.md),
   [design.md](../design.md), [research/paperclip.md](../research/paperclip.md)
 - Output: the numbers and requirements step 4 (technology review) decides on.
@@ -36,12 +36,12 @@ ticket paired with a GitHub change request is valid. "Work item" replaces
 "issue", "change request" replaces "PR", **forge CLI** (`gh`, `glab`) is the
 agent-side tool that reports sign-in and push access.
 
-**Contract names.** Diagrams use the message names in `api/fleet/v1`,
+**Contract names.** Diagrams use the message names in `api/fleet/*/v1`,
 including the provider-neutral types merged in #7 (ADR 0012):
 `RepoRef{host, path}`, `WorkItemRef{integration, kind, project, key, url,
 display}`, `ForgeCliStatus{tool, host, signed_in, user, access[]}`,
 `GoalSpec.work_item` + `GoalSpec.repo` as separate fields, and
-`integrations.proto` (`WorkItem`, `ChangeRequest`, `CheckSummary`, `Review`,
+`integration/v1/integration.proto` (`WorkItem`, `ChangeRequest`, `CheckSummary`, `Review`,
 `Claim`, `IntegrationCapabilities`) for hub-side mirrors. Anything a workflow
 needs beyond those is listed in
 [03g](03g-load-and-handoff.md#required-contract-changes).

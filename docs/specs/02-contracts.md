@@ -9,30 +9,68 @@
   [0008](../adr/0008-goal-consent-and-account-modes.md),
   [0009](../adr/0009-machine-groups-and-layered-settings.md),
   [0010](../adr/0010-session-logs.md)
-- Output: `api/fleet/v1/*.proto` (the contract) and
+- Output: `api/fleet/*/v1/*.proto` (the contract),
   [ADR 0011](../adr/0011-contract-amendments.md) (what changes in 0004, 0006,
-  0009, 0010)
+  0009, 0010) and [ADR 0017](../adr/0017-contract-packages.md) (package
+  layout and names)
 
 This spec says what crosses the wire for every capability in step 1. The
 `.proto` files are the source of truth; this document explains the mapping,
-delivery semantics, versioning, errors, limits and security rules. Compiled
-with `protoc 36.2` (command at the end).
+delivery semantics, versioning, errors, limits and security rules. Built and
+linted with `buf` (commands at the end).
 
-## Files
+## Package layout
+
+Four packages, one directory each under `api/` (`buf.yaml` at the repository
+root, module path `api`). The package and service names are part of every
+gRPC path and every Connect JSON client, so they are fixed before any code
+exists (ADR 0017).
+
+| Package | Directory | Go package | Holds | Spoken by |
+|---|---|---|---|---|
+| `fleet.type.v1` | `api/fleet/type/v1/` | `typev1` | identifiers, enums and value messages shared by two or more protocols | imported by all |
+| `fleet.agent.v1` | `api/fleet/agent/v1/` | `agentv1` | `AgentService`, the agent wire: connect handshake, commands, events, snapshot, usage as the agent reports it, terminal and log streams | `fleetd` ↔ `fleet-agent` only |
+| `fleet.integration.v1` | `api/fleet/integration/v1/` | `integrationv1` | `IntegrationProviderService` and the provider-neutral work model (ADR 0012) | `fleetd` ↔ provider adapters (in-process in v1) |
+| `fleet.hub.v1` | `api/fleet/hub/v1/` | `hubv1` | the hub API for UI, CLI and later phone (added with ADR 0018) | browsers, `fleet` CLI, phone ↔ `fleetd` |
+
+**Placement rule.** A type goes in `fleet.type.v1` when two or more of the
+agent, integration and hub protocols use it; otherwise it lives in the one
+package that uses it. Inventories, envelopes, events, commands and RPC
+messages always stay in their protocol package. Placement counts the hub API
+as a user, because moving a type between packages later changes its full name
+and breaks JSON clients. `fleet.type.v1` imports nothing from the other
+packages; `fleet.hub.v1` never imports `fleet.agent.v1`.
 
 | File | Holds |
 |---|---|
-| `common.proto` | Identifiers (`MachineId`, `AccountKey` vs `AccountId`, `SessionId`, `GoalId`, `PromptId`, `ProbeId`, `CommandId`, `AttachId`, `PaneKey`, `WindowKey`, `RepoRef`, `WorkItemRef`, `Workdir`), `Percent` with explicit unknown, `Status`, `ReasonCode`, `Capability`, `Role`, `Principal`, `CommandClass`, `TmuxServerKind`, `Harness` |
-| `usage.proto` | `UsageReading` (as shown + standardized buckets), `LimitBucket`, `ResetTime`, `SpendReading`, `AccountIdentity`, `SessionAccountLink`, `ProbeHealth`, `BudgetKind`, `WindowKind`, `UsageSource` |
-| `snapshot.proto` | Facts and inventories (`MachineFacts`, `HarnessInfo` + `CommandCatalog` + `GoalHooksState`, tmux `TmuxServer/Session/Window/Pane`, `Availability`, `GoalState`, `RepoCheckout`, `BranchState`, `ForgeCliStatus`, `SpoolStatus`, `PolicyInfo`, `SettingValues`, `EffectiveSettings`, `DrainState`) and the `Snapshot` |
-| `events.proto` | `Event{seq, at, body}` and every event body |
-| `commands.proto` | `Command` envelope, every command kind, `CommandAck`, `CommandProgress`, `CommandResult` |
-| `agent.proto` | `service FleetAgent`, `AgentMessage`/`HubMessage`, `Hello`/`HelloAck`, `Heartbeat`, `Settings`/`SettingsAck`, `ResultAck`, `Bye`, `Enroll`/`RenewCert`, `TermUp`/`TermDown`, `LogChunk`/`LogAck` |
-| `integrations.proto` | Provider-neutral work model for the hub (ADR 0012): `IntegrationCapabilities`, `WorkItem`, `ChangeRequest`, `CheckSummary`, `Review`, `Claim`, and the read-only `IntegrationProvider` service that GitHub implements first and GitLab, Jira and others can implement later |
+| `type/v1/ids.proto` | `MachineId`, `AccountKey` vs `AccountId`, `SessionId`, `GoalId`, `PromptId`, `ProbeId`, `CommandId`, `AttachId`, `IntegrationId`, `PaneKey`, `WindowKey`, `TmuxServerKind`, `Harness` |
+| `type/v1/work.proto` | `RepoRef`, `ProviderKind`, `WorkItemKind`, `WorkItemRef`, `Workdir` |
+| `type/v1/status.proto` | `Percent` with explicit unknown, `Status`, `ReasonCode`, `Capability`, `Role`, `Principal` |
+| `type/v1/harness.proto` | `CommandClass`, `CatalogEntry`, `CommandCatalog`, `GoalHooksState`, `Activity`, `Availability`, `GoalLineState`, `NamedKey`, `KeyInput`, `PromptSource`, `PromptOption`, `HarnessConditionKind`, `LogStream` |
+| `type/v1/usage.proto` | `LimitBucket`, `ResetTime`, `ShownField`, `ShownUsage`, `SpendReading`, `UsageSource`, `WindowKind`, `BudgetKind`, `ParseOutcome` |
+| `type/v1/settings.proto` | `SettingValues`, `SettingSource`, `EffectiveSettings`, `SettingLayer`, `DefaultServerMode`, `LocalApprovalRule`, `RateLimit` |
+| `agent/v1/agent.proto` | `service AgentService`, `ConnectRequest`/`ConnectResponse`, `Hello`/`HelloAck`, `Heartbeat`, `Settings`/`SettingsAck`, `ResultAck`, `Bye`, `Enroll`, `RenewCert` |
+| `agent/v1/streams.proto` | `TerminalRequest{up TermUp}` / `TerminalResponse{down TermDown}`, `SessionLogRequest{chunk LogChunk}` / `SessionLogResponse{ack LogAck}` |
+| `agent/v1/command.proto` | `Command` envelope, `CommandAck`, `CommandProgress`, `CommandResult` |
+| `agent/v1/command_tmux.proto` | `SessionTarget`, probe kinds (D1), tmux control kinds (F, E10, E11) |
+| `agent/v1/command_goal.proto` | `GoalSpec`, `Preflight`, `StartGoal`, worktree, goal-hook, attach, log and drain kinds |
+| `agent/v1/events.proto` | `Event{seq, at, body}` and every event body |
+| `agent/v1/snapshot.proto` | facts and inventories (`MachineFacts`, `HarnessInfo`, tmux `TmuxServer/Session/Window/Pane`, `GoalState`, `RepoCheckout`, `BranchState`, `ForgeCliStatus`, `SpoolStatus`, `PolicyInfo`, `DrainState`) and the `Snapshot` |
+| `agent/v1/usage.proto` | `UsageReading` (as shown + standardized buckets), `AccountIdentity`, `SessionAccountLink`, `ProbeHealth` |
+| `integration/v1/integration.proto` | `IntegrationCapabilities`, `WorkItem`, `ChangeRequest`, `CheckSummary`, `Review`, `Claim`, and the read-only `IntegrationProviderService` that GitHub implements first |
 
-Package `fleet.v1`, Go package `fleetv1`. Field numbers are grouped with gaps
-(commands 10–19 probes, 20–39 tmux, 40–49 goals, 50–59 attach, 60–69 logs,
-70–79 self-management; events likewise) so additions land in their group.
+**Naming (buf STANDARD).** Services end in `Service`; every RPC has its own
+`<Rpc>Request`/`<Rpc>Response`. Where a stream body already had a name the
+specs use (`TermUp`, `TermDown`, `LogChunk`, `LogAck`, `ChangeNotice`,
+`IntegrationCapabilities`, `ChangeRequest`), the RPC message wraps it as a
+single field. The `Connect` bodies were renamed instead (`AgentMessage` →
+`ConnectRequest`, `HubMessage` → `ConnectResponse`). Paged lists use
+`page_size`, `page_token` and `next_page_token`. On `AgentService` the agent
+is the client, so "request" is always agent → hub and "response" hub → agent.
+
+Field numbers are grouped with gaps (commands 10–19 probes, 20–39 tmux, 40–49
+goals, 50–59 attach, 60–69 logs, 70–79 self-management; events likewise) so
+additions land in their group.
 
 ## Wire model
 
@@ -193,8 +231,9 @@ and sets `gap_before` on the next chunk.
 ## Versioning and capability negotiation
 
 - **Proto version.** `Hello.proto_min/max` and `HelloAck.proto_version`.
-  Within `fleet.v1` changes are additive only; the hub supports agents one
-  minor version behind (ADR 0003). No common version → `Bye{PROTO_UNSUPPORTED}`.
+  Within each `v1` package changes are additive only (checked by
+  `buf breaking`, WIRE_JSON); the hub supports agents one minor version
+  behind (ADR 0003). No common version → `Bye{PROTO_UNSUPPORTED}`.
 - **Capabilities** are `Capability{name, version}` in `Hello`; the hub echoes
   `capabilities_accepted`. Every `Command` names the capability it needs in
   `requires`, so an agent that lacks it answers `UNSUPPORTED` without
@@ -328,7 +367,7 @@ the affected parts of 0004, 0006, 0009 and 0010:
 11. **`LogAck.pause`** duplicates `SetLogShipping` so the hub can apply
     backpressure on the log stream without a command round trip.
 12. **Developer sessions by tmux id.** `SessionTarget` (now in
-    `common.proto`) has a `tmux_id` arm plus `server_start_id`, because the
+    `agent/v1/command_tmux.proto`) has a `tmux_id` arm plus `server_start_id`, because the
     developer's own sessions have names like `codex prompt 1` that the fleet
     name pattern rejects, and tmux reuses ids after a server restart.
 13. **`HarnessCondition` (E12)** reports provider errors, rate limits,
@@ -355,9 +394,13 @@ the affected parts of 0004, 0006, 0009 and 0010:
 
 ## Compile check
 
+Run from the repository root (`buf.yaml`: module `api`, lint `STANDARD`,
+breaking `WIRE_JSON`):
+
 ```
-protoc --proto_path=api --proto_path=$(brew --prefix)/include \
-  --descriptor_set_out=/dev/null api/fleet/v1/*.proto
+go run github.com/bufbuild/buf/cmd/buf@latest build
+go run github.com/bufbuild/buf/cmd/buf@latest lint
 ```
 
-Exit 0 with protoc 36.2 on 2026-10-01.
+Both exit 0 with buf 1.73.0 on 2026-10-02 (ADR 0017 layout). No lint
+exceptions.

@@ -200,7 +200,7 @@ tracker adapter, the code host adapter, writer, scheduler, verifier.
 
 **Two roles, one mirror.** An *integration* is configured as a work tracker,
 a code host, or both. The hub stores mirrors in the shapes of
-`integrations.proto`: `WorkItem{ref WorkItemRef, state, title, author, labels[],
+`integration/v1/integration.proto`: `WorkItem{ref WorkItemRef, state, title, author, labels[],
 trusted, claim Claim, updated_at}`, `ChangeRequest{ref, repo RepoRef, head_ref,
 head_sha, state, merged_at, mergeable, review_decision, checks CheckSummary,
 reviews[] Review, linked_work_items[] WorkItemRef, review_rounds}`, and
