@@ -1,0 +1,87 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "r=${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null)}; [ -f \"$r/scripts/goal-role-router.py\" ] || exit 0; command -v python3 >/dev/null 2>&1 || exit 0; python3 \"$r/scripts/goal-role-router.py\" claude-dispatch",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|MultiEdit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "r=${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null)}; [ -x \"$r/.claude/hooks/skill-nudge.sh\" ] || exit 0; exec \"$r/.claude/hooks/skill-nudge.sh\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|MultiEdit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "r=${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null)}; [ -x \"$r/.claude/hooks/doc-staleness.sh\" ] || exit 0; exec \"$r/.claude/hooks/doc-staleness.sh\"",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Skill",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "r=${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null)}; [ -x \"$r/.claude/hooks/skill-loaded.sh\" ] || exit 0; exec \"$r/.claude/hooks/skill-loaded.sh\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "compact|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "r=${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null)}; [ -x \"$r/.claude/hooks/on-compact.sh\" ] || exit 0; exec \"$r/.claude/hooks/on-compact.sh\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "r=${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null)}; [ -x \"$r/.claude/hooks/goal-continue.sh\" ] || exit 0; exec \"$r/.claude/hooks/goal-continue.sh\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "r=${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null)}; [ -x \"$r/.claude/hooks/goal-refresh.sh\" ] || exit 0; exec \"$r/.claude/hooks/goal-refresh.sh\"",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "r=${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null)}; [ -f \"$r/scripts/goal-role-router.py\" ] || exit 0; command -v python3 >/dev/null 2>&1 || exit 0; python3 \"$r/scripts/goal-role-router.py\" claude",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

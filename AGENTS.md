@@ -80,6 +80,7 @@ stopping point. Report actual state; anything not checked is `NOT_CHECKED`.
 | Storage, load, transport | [04](docs/specs/04-technology-review.md), ADR 0014-0016 |
 | UI | [mockup/](mockup/README.md), [ui-contract-map](docs/specs/ui-contract-map.md), ADR 0007, 0016 |
 | Agent setup, roles, tiers | [docs/development/](docs/development/README.md) |
+| Dev hooks, goal file protocol, turning hooks off | [docs/development/hooks.md](docs/development/hooks.md) |
 
 ## Skill Routing
 

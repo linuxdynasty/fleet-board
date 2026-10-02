@@ -15,6 +15,13 @@
 #      skill and nothing else.
 #   5. Every fleet-* skill named in roles.json exists.
 #   6. Agent-facing files stay under the 500-line cap.
+#   7. .agents/skill-paths.json (the path-to-skill map the skill-nudge hook
+#      reads) is valid, names only existing skills, and maps or exempts every
+#      skill.
+#   8. The three hook configs (.claude/settings.json, .codex/hooks.json,
+#      .muse/hooks.json) are valid JSON and reference only scripts that exist;
+#      hook scripts parse (bash -n, python ast) and the shell ones are
+#      executable.
 #
 # Portable to the macOS system bash 3.2 (no associative arrays, no mapfile), so
 # `#!/usr/bin/env bash` works with either /bin/bash or Homebrew bash. Needs
@@ -121,7 +128,9 @@ printf 'verify-agent-canon: every skill named in roles.json exists.\n'
 
 # 6. File cap on agent-facing files.
 over=""
-for f in "$agents" "$root"/docs/development/*.md "$root"/.agents/roles.json "$root"/scripts/agent-roles.py "$root"/scripts/verify-agent-canon.sh; do
+for f in "$agents" "$root"/docs/development/*.md "$root"/.agents/roles.json "$root"/.agents/skill-paths.json \
+  "$root"/scripts/*.py "$root"/scripts/*.sh "$root"/.claude/settings.json "$root"/.codex/hooks.json \
+  "$root"/.muse/hooks.json "$root"/.claude/hooks/*.sh "$root"/.claude/hooks/lib/*; do
   [ -f "$f" ] || continue
   n="$(wc -l < "$f" | tr -d ' ')"
   if [ "$n" -gt "$max_file_lines" ]; then
@@ -130,3 +139,65 @@ for f in "$agents" "$root"/docs/development/*.md "$root"/.agents/roles.json "$ro
 done
 [ -z "$over" ] || fail "files over the $max_file_lines-line cap:$over"
 printf 'verify-agent-canon: agent-facing files are within the %s-line cap.\n' "$max_file_lines"
+
+# 7. The path-to-skill map. skill_paths.py check validates the JSON, every skill
+# it names (and every exemption) exists, and no skill is unrouted.
+skill_paths="$root/.claude/hooks/lib/skill_paths.py"
+[ -f "$root/.agents/skill-paths.json" ] || fail "missing .agents/skill-paths.json"
+[ -f "$skill_paths" ] || fail "missing $skill_paths"
+problems="$(python3 "$skill_paths" check "$root")" || fail "skill path map problems:
+$problems"
+printf 'verify-agent-canon: .agents/skill-paths.json names only existing skills and routes every skill.\n'
+
+# 8. Hook configs reference scripts that exist, and the scripts parse.
+for config in .claude/settings.json .codex/hooks.json .muse/hooks.json; do
+  [ -f "$root/$config" ] || fail "missing hook config $config"
+done
+problems="$(python3 - "$root" <<'PY'
+import json, re, sys
+from pathlib import Path
+
+root = Path(sys.argv[1])
+ref = re.compile(r"(?:\.claude/hooks|\.codex/hooks|\.muse/hooks|scripts)/[A-Za-z0-9_./-]+\.(?:sh|py)")
+for config in (".claude/settings.json", ".codex/hooks.json", ".muse/hooks.json"):
+    try:
+        hooks = json.loads((root / config).read_text())["hooks"]
+    except (ValueError, KeyError) as err:
+        print("%s is not valid hook JSON: %s" % (config, err))
+        continue
+    count = 0
+    for event, rows in hooks.items():
+        for row in rows:
+            for hook in row.get("hooks", []):
+                command = hook.get("command", "")
+                if hook.get("type") != "command" or not command:
+                    print("%s %s: every hook needs type command and a command" % (config, event))
+                    continue
+                count += 1
+                found = ref.findall(command)
+                if not found:
+                    print("%s %s: command references no repo script" % (config, event))
+                for path in found:
+                    if not (root / path).is_file():
+                        print("%s %s: references %s, which does not exist" % (config, event, path))
+    if count == 0:
+        print("%s declares no hooks" % config)
+PY
+)" || fail "hook config check could not run"
+[ -z "$problems" ] || fail "hook config problems:
+$problems"
+hook_scripts=0
+for script in "$root"/.claude/hooks/*.sh "$root"/.claude/hooks/lib/*.sh "$root"/scripts/test-dev-hooks.sh; do
+  [ -f "$script" ] || continue
+  hook_scripts=$((hook_scripts + 1))
+  bash -n "$script" || fail "$script does not parse (bash -n)"
+done
+for script in "$root"/.claude/hooks/*.sh "$root"/scripts/test-dev-hooks.sh; do
+  [ -x "$script" ] || fail "$script is not executable"
+done
+for script in "$root"/.claude/hooks/lib/*.py "$root"/scripts/*.py; do
+  [ -f "$script" ] || continue
+  hook_scripts=$((hook_scripts + 1))
+  python3 -c 'import ast, sys; ast.parse(open(sys.argv[1]).read())' "$script" || fail "$script does not parse (python)"
+done
+printf 'verify-agent-canon: three hook configs are valid JSON and reference existing scripts; %s hook and test scripts parse.\n' "$hook_scripts"
