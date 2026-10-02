@@ -85,8 +85,9 @@ is newer or its epoch differs. The agent ignores a generation ≤ the one it hol
 under the same epoch and re-acks the held one; a different epoch (a restore) is
 accepted whatever its generation (02, "Settings order"). Applying is immediate for rate limits,
 approval rules, idle threshold, spool cap, window template, probe intervals;
-`cert_lifetime` at the next renewal; `max_active`/`max_total` are hub-side
-limits the agent only echoes.
+`cert_lifetime` at the next renewal; the hub enforces `max_active`/`max_total`
+slots and the agent applies the effective values only as a local safety cap at
+`StartGoal` preflight (`AGENT_GOAL_CAP_REACHED`).
 
 **Drain.** `Drain{reason}` → agent `DrainState{draining, requested_by_principal}` (the hub principal; kind `LOCAL_USER` for a local drain)
 → `Event.drain_state` + `Heartbeat.draining=true`; the scheduler excludes the

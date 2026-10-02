@@ -57,8 +57,9 @@ message EnrollRequest {
   // Replay: the same token secret with the same install_id and the same CSR
   // public key inside the token's lifetime returns the stored response
   // (same machine_id and certificate, replayed = true), so a lost response
-  // is recovered by running enroll again. Any other combination after the
-  // first success is ENROLL_TOKEN_USED.
+  // is recovered by running enroll again (checked before expiry; not once the
+  // machine is REVOKED or deleted). Any other combination after the first
+  // success is ENROLL_TOKEN_USED.
   string token = 1;
   // PEM CSR for an Ed25519 key generated on the machine. The key is kept in
   // the state directory until Enroll succeeds, so a retry sends the same one.
@@ -71,8 +72,12 @@ message EnrollRequest {
   // a long offline period, BYE_REASON_RE_ENROLL), so its history, labels and
   // settings carry over instead of a second machine appearing. The owner
   // names the machine when creating the token (it must be REVOKED or past its
-  // certificate lifetime); a value here that differs from the token's is
-  // ENROLL_PREVIOUS_MACHINE_MISMATCH, and an unknown id is ignored.
+  // certificate lifetime): the token alone decides which machine id returns.
+  // This value is a hint: it is ENROLL_PREVIOUS_MACHINE_MISMATCH only when the
+  // token names a machine and this names a different one. With a token that
+  // names none (or a deleted machine) it is ignored and a new machine is
+  // enrolled, so an agent that kept its old id after Bye{UNKNOWN_MACHINE}
+  // recovers by enrolling fresh.
   fleet.type.v1.MachineId previous_machine_id = 7;
   // Random id minted once when the agent is installed and kept in the state
   // directory; survives restarts and re-enrollment, unlike boot_id. A copied

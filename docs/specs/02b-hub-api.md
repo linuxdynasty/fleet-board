@@ -135,7 +135,7 @@ the repo path), which 03f now says too.
 Every mutating RPC takes `request_id`, a client-generated key (UUIDv4 or
 ULID, at most 64 bytes). The hub stores `(principal id, request_id) →
 response` for 24 h. The unauthenticated `RequestPairing` is keyed by
-`(peer address, public key)` and `RedeemInvite` by `(peer address, SHA-256 of
+`(peer address, public key)` (it takes no `request_id`) and `RedeemInvite` by `(peer address, SHA-256 of
 the invite token)`; the passkey ceremonies take no `request_id` (a `Begin` only
 mints a 5-minute ceremony, and the single-use `ceremony_id` of a `Finish` is its
 key):
@@ -206,7 +206,7 @@ name the same thing. The operation follows the outbox: `PENDING` →
 `DONE` with `status` and, if not OK, `error` (`ErrorDetail`). Expiry
 (`not_after_time`) ends it `DONE / EXPIRED` ("not delivered, machine was
 offline"). Results that carry text (CapturePane, OBSERVE harness commands,
-the preflight goal-line preview) land in `output_text`. The effects show up
+the preflight goal-line preview) land in `output_text` (requester and `LOGS` holders only). The effects show up
 on their own resources (a new window on the `Session`, the goal's `phase`).
 `Operation.kind` is an `OperationKind` enum numbered like the agent's
 `Command.kind` arms, so a command kind and its operation share one number.
@@ -244,9 +244,8 @@ filter grammar and the filterable fields of every resource are in
 
 Every call runs as a `Principal`; roles map to six scopes (`READ`,
 `SESSIONS_WRITE`, `APPROVALS`, `SETTINGS`, `ADMIN`, `LOGS`) and every RPC and
-Watch topic names its scope. `LOGS` (stored logs, transcripts, archived pane
-summaries, the raw usage screen) is owner-only unless the owner grants it
-(ADR 0019). Pairing, approvals and the self-service rules are in
+Watch topic names its scope. `LOGS` (stored or scrolled-back terminal history, including `CapturePane` history lines) is owner-only unless the owner grants it
+(`UserSpec.extra_scopes`, or a ticked scope on a token or device; ADR 0019). No credential or grant goes above the caller's scopes or comes from a token or device (02d). Pairing, approvals and the self-service rules are in
 [02d](02d-hub-authz.md); the sign-in flows are in
 [02f](02f-hub-authentication.md).
 
@@ -307,8 +306,8 @@ Agent command failures are not RPC errors: the RPC succeeds with an
 | `INVALID_ARGUMENT` | bad field, name rule, over a size limit, bad mask, filter or order; unknown, used or expired invite; expired WebAuthn ceremony | `INVALID_ARGUMENT`, `INVALID_NAME`, `FIELD_TOO_LARGE`, `REQUEST_ID_MISSING`, `UPDATE_MASK_INVALID`, `FILTER_INVALID`, `ORDER_BY_INVALID`, `PAGE_TOKEN_INVALID`, `RESUME_TOKEN_INVALID`, `INVITE_INVALID`, `PASSKEY_CEREMONY_INVALID` |
 | `NOT_FOUND` | unknown id, or one the caller's scopes hide | `RESOURCE_NOT_FOUND` |
 | `ALREADY_EXISTS` | `request_id` reused with another body; create of an existing name; a one-time secret already handed out | `REQUEST_ID_CONFLICT`, `RESOURCE_ALREADY_EXISTS`, `SECRET_ALREADY_DELIVERED` |
-| `FAILED_PRECONDITION` | `expected_version` or `expected_phase` mismatch; approval already decided or expired; goal action the harness lacks; machine offline for an attach or capture; pairing code wrong or expired; delete of a machine not revoked, or a command for a revoked one; sign-in RPC in `local_trusted` mode; a change that removes the last sign-in method or owner | `VERSION_MISMATCH`, `GOAL_PHASE_CHANGED`, `APPROVAL_CLOSED`, `GOAL_SUBCOMMAND_UNSUPPORTED`, `MACHINE_OFFLINE`, `PAIRING_CODE_MISMATCH`, `PAIRING_EXPIRED`, `MACHINE_NOT_REVOKED`, `MACHINE_NOT_REENROLLABLE`, `MACHINE_REVOKED`, `SIGN_IN_METHOD_DISABLED`, `LAST_CREDENTIAL` |
-| `PERMISSION_DENIED` | scope or role missing; device not active; token or device asks for a scope its creator lacks; Host or Origin not allowed (HTTP 403); attach ticket bad; GitHub account not on the allow-list | `SCOPE_MISSING` (`metadata["scope"]`), `ROLE_INSUFFICIENT`, `DEVICE_NOT_ACTIVE`, `SCOPE_NOT_GRANTABLE`, `HOST_NOT_ALLOWED`, `ORIGIN_NOT_ALLOWED`, `ATTACH_TICKET_INVALID`, `GITHUB_NOT_ALLOWED` |
+| `FAILED_PRECONDITION` | `expected_version` or `expected_phase` mismatch; approval already decided or expired; goal action the harness lacks; machine offline for an attach or capture; pairing code wrong or expired; delete of a machine not revoked, or a command for a revoked one; sign-in RPC in `local_trusted` mode; a change that removes the last sign-in method or owner; the dispatch and goal reasons 540 to 562 (`status.proto`): a dispatch `BLOCK` reason, unacknowledged warnings, a goal action not allowed (or held while a person types), an account in use, a log stream open, a requeue not allowed, an invalid config | `VERSION_MISMATCH`, `GOAL_PHASE_CHANGED`, `APPROVAL_CLOSED`, `GOAL_SUBCOMMAND_UNSUPPORTED`, `MACHINE_OFFLINE`, `PAIRING_CODE_MISMATCH`, `PAIRING_EXPIRED`, `MACHINE_NOT_REVOKED`, `MACHINE_NOT_REENROLLABLE`, `MACHINE_REVOKED`, `SIGN_IN_METHOD_DISABLED`, `LAST_CREDENTIAL`, `WORK_ITEM_UNTRUSTED` … `CONFIG_INVALID` (540 to 562), `PREFLIGHT_WARNINGS_UNACKNOWLEDGED`, `GOAL_ACTION_NOT_ALLOWED`, `ACCOUNT_IN_USE`, `LOG_STREAM_OPEN`, `REQUEUE_NOT_ALLOWED` |
+| `PERMISSION_DENIED` | scope or role missing; device not active; a grant above the grantor's own scopes, or a token or device minting a credential; Host or Origin not allowed (HTTP 403); attach ticket bad; GitHub account not on the allow-list | `SCOPE_MISSING` (`metadata["scope"]`), `ROLE_INSUFFICIENT`, `DEVICE_NOT_ACTIVE`, `SCOPE_NOT_GRANTABLE`, `HOST_NOT_ALLOWED`, `ORIGIN_NOT_ALLOWED`, `ATTACH_TICKET_INVALID`, `GITHUB_NOT_ALLOWED` |
 | `UNAUTHENTICATED` | no, bad or expired credentials; a failed passkey assertion | `CREDENTIALS_INVALID`, `CREDENTIALS_EXPIRED` ("sign in again") |
 | `RESOURCE_EXHAUSTED` | per-principal rate limit | `RATE_LIMITED` with `retry_after` |
 | `UNAVAILABLE` | hub starting or store busy | `retryable = true` |
@@ -424,7 +423,7 @@ secrets and no ids. `ImportConfig` validates the whole document, diffs it, and
 applies it in **one transaction or not at all**; `dry_run` returns the plan
 (`ConfigChange` lines: create, update, unchanged, skipped) and its `plan_hash`,
 and a real import passes that hash as `expected_plan_hash`, so what runs is what
-was shown. Import only creates and updates. A machine entry that matches an
+was shown. A plan with any `SKIPPED` line applies nothing unless `allow_skipped` is set (`applied = false`). Import only creates and updates. A machine entry that matches an
 enrolled machine's display name sets its labels and settings; one that matches
 none is kept as a **pending machine**, applied when a machine enrolls under that
 name (the token's `machine_name`), and that machine **starts drained**. Import

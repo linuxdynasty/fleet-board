@@ -42,7 +42,7 @@ sequenceDiagram
     A->>T: prepare_branch: git switch -c branch in the pane's checkout (AGENT_ENSURES)
   else new window
     A->>T: ensure_worktree (AGENT_ENSURES only)
-    A->>T: ensure_window "{harness} {repo}#{key}" with FLEET_* env · launch harness
+    A->>T: ensure_window "{harness} {work}" with FLEET_* env · launch harness
   end
   A->>A: register_goal (registry entry) · start_log_capture
   A->>T: wait ready pattern (startup screen → FAILED TRUST_PROMPT_SEEN / STARTUP_PROMPT_SEEN)
@@ -108,7 +108,7 @@ sequenceDiagram
    as `DispatchBlock`s (03h, "Scheduler explanations").
 
 **Composite steps on the agent** (G3; each persisted `started` and `done`):
-14 steps in a closed vocabulary, with the restart class and failure reasons of
+14 steps in a fixed vocabulary, with the restart class and failure reasons of
 each in [02h](02h-goal-binding-and-pane-signals.md#startgoal-steps):
 `preflight` (skipped when `skip_preflight` and the hub's preflight is < 1 min
 old) → reuse path `pick_session` (`reuse_pane` re-checked just before typing;
@@ -116,7 +116,7 @@ fails with its own reason rather than silently opening a window, so the hub's
 reservation stays truthful) and `prepare_branch`, or new-window path
 `ensure_worktree` (only `AGENT_ENSURES`; eshu's driver creates its own, so
 `REPO_DRIVER` starts in the main checkout) and `ensure_window` (template
-`{harness} {repo}#{key}`, e.g. `muse eshu#7398`; `automatic-rename off` on this
+`{harness} {work}`, e.g. `muse eshu#7398`; `automatic-rename off` on this
 window only; `FLEET_*` in the pane environment as a fast path) →
 `register_goal` (the agent's registry, the goal's identity for every harness) →
 `start_log_capture` → `wait_ready` → `set_model` → `set_effort` →
@@ -387,7 +387,7 @@ Sub-flags held with the phase (on `GoalStatus`): `provider_condition`,
   failures and the pacing rule are in [03h](03h-goal-phases-in-depth.md#limit-wait):
   no nudges and no no-progress counting meanwhile; the resume is the harness's own,
   from `goal_control`.
-- **One corrective nudge.** First stop: if the pane is dead →
+- **One corrective nudge.** First stop: if the pane is dead but remains (registry entry kept, same `PaneKey`) →
   `RespawnPane{harness, resume=true, harness_session_id}` (dangerous kind; may
   need local approval; the id keeps `--last` from picking another conversation),
   wait for ready, then `SendKeys{purpose=GOAL_NUDGE, keys:
@@ -445,7 +445,7 @@ Sub-flags held with the phase (on `GoalStatus`): `provider_condition`,
 | What | Where | Transaction |
 |---|---|---|
 | `goals` (state, flags above, fingerprint, `cr_ref`, timestamps) | hub store | one tx per applying event or timer; commands enqueued in the same tx |
-| `goal_transitions` (seq, from, to, reason, pause_reason, actor, command, fingerprint, time) and `goal_runs` (number, cause, start and end, end phase and reason, machine, pane, harness session id, nudges, usage consumed from readings, log and transcript keys) | hub store, kept with the goal (`ListGoalTransitions`, `ListGoalRuns`); the 7-day timeline filters goals by `start_time` and `end_time` | same tx |
+| `goal_transitions` (seq, from, to, reason, pause_reason, actor, command, fingerprint, transition_time) and `goal_runs` (number, cause, start and end, end phase and reason, machine, pane, harness session id, nudges, usage consumed from readings, log and transcript keys) | hub store, kept with the goal (`ListGoalTransitions`, `ListGoalRuns`); the 7-day timeline filters goals by `start_time` and `end_time` | same tx |
 | Triage items raised here | hub store | same tx (W7) |
 | On the agent: the command log and the goal registry (02h); the goal file itself belongs to the harness and lives in the worktree | machine disk | n/a |
 

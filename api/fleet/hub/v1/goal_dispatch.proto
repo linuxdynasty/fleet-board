@@ -22,12 +22,12 @@ message GoalPlacement {
   fleet.type.v1.Harness harness = 2;
   string profile = 3;
   fleet.type.v1.AccountId account = 4;
-  // Prefer this available session (E11).
-  fleet.type.v1.SessionId reuse_session = 5;
-  fleet.type.v1.PaneKey reuse_pane = 6;
+  // Prefer this available pane (E11). Reuse is by pane, never by session: a
+  // session can hold several harness panes (ADR 0019, 17).
+  fleet.type.v1.PaneKey reuse_pane = 5;
   // New window in this session instead of a new session.
-  fleet.type.v1.SessionId in_session = 7;
-  string window_name = 8;
+  fleet.type.v1.SessionId in_session = 6;
+  string window_name = 7;
 }
 
 // GoalSpecInput is everything an operator can choose about a dispatch. Both

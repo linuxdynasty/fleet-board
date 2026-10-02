@@ -115,7 +115,7 @@ sequence; `none` means unordered. Droppable: `yes` is SHED; `coalesce` keeps the
 
 | ID | Message(s) | Dir | Idem. | Ordering | Droppable |
 |---|---|---|---|---|---|
-| A1 | `Enroll` RPC: `EnrollRequest{token (embeds the CA fingerprint), csr, facts, capabilities, previous_machine_id, install_id}` → `EnrollResponse{machine_id, cert, ca, account_salt, fleet_id, replayed}`; typed failures `ENROLL_*` ([02g](02g-agent-security.md)) | A→H | same token + install_id + CSR key replays | n/a | no |
+| A1 | `Enroll` RPC: `EnrollRequest{token (embeds the CA fingerprint), csr_pem, facts, capabilities, proto_min, proto_max, previous_machine_id, install_id}` → `EnrollResponse{machine_id, cert_pem, ca_chain_pem, account_salt, fleet_id, replayed}`; typed failures `ENROLL_*` ([02g](02g-agent-security.md)) | A→H | same token + install_id + CSR key replays | n/a | no |
 | A2 | local only; `EnrollResponse.hub_addresses` seeds discovery | — | — | — | — |
 | A3 | `Hello{install_id, settings_epoch, event_counters, …}`/`HelloAck{hub_instance_id, settings_epoch, hub_capabilities, hub_addresses, fleet_id, …}`, `Snapshot{…, prompts[], conditions[], snapshot_id, part_index, part_count}`, `SnapshotRequest{reason}` | both | snapshot replaces | first on stream | no |
 | A4 | `RenewCert` RPC | A→H | yes | n/a | no |
@@ -156,7 +156,7 @@ sequence; `none` means unordered. Droppable: `yes` is SHED; `coalesce` keeps the
 | F8 | `RunHarnessCommand{pane, command, args, expected_class, catalog_hash}` → `RunHarnessCommandResult` | H→A | observe: yes; others: no | cmd | no |
 | G1 | `EnsureGoalHooks{harness, workdir, expected_version, profile}` → `EnsureGoalHooksResult{state GoalHooksState}`; per checkout in `RepoCheckout.goal_hooks[]` (`trust` `HookTrustState`, `trust_approve_command`, `config_path`, [01d](01d-goal-hooks.md)); also in `HarnessInfo.goal_hooks`; `HarnessInfo.goal_control` (G4) | H→A; A→H | yes | cmd | no |
 | G2 | `GoalState{…, worktree_path, branch}` in `Snapshot.goals` and `Event.goal_state` | A→H | — | seq | never |
-| G3 | `StartGoal{spec GoalSpec{…, model, effort, fresh_context, dispatch_reason, profile}, reuse_pane, in_session, timeouts, rearm_reason}`; `CommandProgress{command_id, step}` per step (14 named steps, 02h); `StartGoalResult{…, typed_goal_line, branch, model, effort, registration}` | H→A; A→H | composite: per step class (02h) | cmd | never |
+| G3 | `StartGoal{spec GoalSpec{…, model, effort, fresh_context, dispatch_reason, profile}, reuse_pane, in_session, ready_timeout, goal_file_timeout, rearm_reason}`; `CommandProgress{command_id, step}` per step (14 named steps, 02h); `StartGoalResult{…, typed_goal_line, branch, model, effort, registration}` | H→A; A→H | composite: per step class (02h) | cmd | never |
 | G4 | `RunHarnessCommand{command: "/goal", args: pause\|resume\|edit …\|clear}` (class GOAL), `Interrupt`, or `SendKeys{GOAL_RESUME}`, as `HarnessInfo.goal_control` says; `GOAL_SUBCOMMAND_UNSUPPORTED` otherwise | H→A | no (typed input) | cmd | never |
 | G5 | goal registry: `Snapshot.goal_registry[] GoalRegistration`, `Event.goal_registry`, `RegisterGoal{goal, pane, repo_driver}`, `ReleaseGoal{goal, pane}` | both | yes | seq; cmd | never |
 | H1 | `Snapshot.repos[] RepoCheckout{…, remote_name, remotes[]}`, `Event.repo` | A→H | — | seq | no |
@@ -327,7 +327,7 @@ passing ones (`DISK_LOW`, `AGENT_GOAL_CAP_REACHED`, `CHECKOUT_DIRTY`) are. Valid
 | Status | Reasons |
 |---|---|
 | `OK` | none |
-| `FAILED` | any execution (100–132), goal (300–310) or probe (400–402) code; `EPOCH_MISMATCH` (retryable); for `Preflight`, `PreflightResult.failed_checks[]` carries the preflight codes 1–12 and 16 (`HARNESS_NOT_INSTALLED` … `ON_BATTERY_BLOCKED`, `HARNESS_PROFILE_MISSING`) and, for `reuse_pane`, `SESSION_NOT_AVAILABLE`, `SESSION_WORKDIR_MISMATCH`, `CHECKOUT_DIRTY` |
+| `FAILED` | any execution (100–132, except 107, 113 and 114), goal (300–310) or probe (400–402) code; `EPOCH_MISMATCH` (retryable); for `Preflight`, `PreflightResult.failed_checks[]` carries the preflight codes 1–12 and 16 (`HARNESS_NOT_INSTALLED` … `ON_BATTERY_BLOCKED`, `HARNESS_PROFILE_MISSING`) and, for `reuse_pane`, `SESSION_NOT_AVAILABLE`, `SESSION_WORKDIR_MISMATCH`, `CHECKOUT_DIRTY` |
 | `EXPIRED` | `EXPIRED` |
 | `REJECTED_BY_POLICY` | preflight 13, 14 and 17 (`POLICY_DENIED`, `DRAINING`, `AGENT_GOAL_CAP_REACHED`; `SLOTS_FULL` is the hub's own), `COMMAND_CLASS_DENIED`, `HARNESS_NOT_ALLOWED`, `REPO_ROOT_NOT_ALLOWED`, `SEQ_REPLAYED`, `SIGNATURE_INVALID`, `ROLE_INSUFFICIENT`, `LOCAL_DENIED`, `LOCAL_CONFIRM_TIMEOUT`, `POLICY_SAFE_MODE`, `DRAINING` |
 | `UNSUPPORTED` | `CAPABILITY_MISSING` plus `missing_capability` |

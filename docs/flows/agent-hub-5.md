@@ -106,8 +106,10 @@ sequenceDiagram
    `SpoolStatus{pending_bytes, cap_bytes, gap_marks, shipping_paused, paused_reason,
    sessions_capturing}` rides in `Heartbeat.spool` and the `spool_status` event.
 7. **End of a stream.** `LogChunk.final` is sent when the pane exits or capture is turned
-   off (on reconnect if the pane exited offline). A respawned pane has a new `PaneKey` and
-   so a new stream under the same session. When a session ends the hub moves the last pane
+   off (on reconnect if the pane exited offline). A respawn keeps the `PaneKey` (tmux keeps
+   the pane id), so the log stream continues: the `final` chunk ends one segment and the
+   next chunk on the same key starts with a new `frame_start` at the stored end. A new key
+   appears only when the window is recreated or the tmux server restarts. When a session ends the hub moves the last pane
    summary of each pane into `logs.db` and the session row becomes `ENDED`.
 8. **Reading and managing logs (hub API, `LOGS` scope).** `ReadSessionLog{key, start
    offset or time, max_bytes, follow}` ([`terminal.proto`][hub-terminal]) streams
@@ -157,7 +159,7 @@ stateDiagram-v2
 | The hub disk is below its threshold | `LogAck{all_streams, pause}` to every agent, triage `log_disk_low`, resume above a higher threshold (hysteresis) |
 | The spool cap is hit | newest kept, `gap_marks` rises, `gap_before` on the next chunk |
 | The agent crashes mid chunk | up to one flush interval (10 s) of output not yet durable is lost; the spool file keeps what was written |
-| The harness crashes or the tmux server restarts | `final` after the pane exits; new pane keys start new streams; old streams are `FINAL` on the next snapshot diff |
+| The harness crashes or the tmux server restarts | `final` after the pane exits; a respawn continues on the same key, a new window or server restart starts new keys and streams; old streams are `FINAL` on the next snapshot diff |
 | Retention would prune a session with an open stream | never; only `FINAL` sessions older than the cursor are pruned |
 
 ---
@@ -246,7 +248,9 @@ sequenceDiagram
      the agent; the owner can override per machine.
 5. **What applies when.** Rate limits, approval rules, idle threshold, spool cap, window
    template and probe intervals apply at once; `cert_lifetime` at the next renewal;
-   `max_active` and `max_total` are enforced by the hub and only echoed by the agent.
+   the hub enforces `max_active` and `max_total` slots; the agent applies the effective
+   values only as a local safety cap at `StartGoal` preflight (`AGENT_GOAL_CAP_REACHED`).
+   `merged_grace` is the only echo-only field.
 6. **The local policy file** (`~/.config/fleet-agent/policy.yaml`) is read at agent start,
    so a change takes effect only after a restart. The agent reports `PolicyInfo{schema_version,
    hash, loaded_time, changed_since_load, safe_mode, error}` in every snapshot and sends
@@ -264,7 +268,9 @@ sequenceDiagram
    has a registered live goal. The hub also cancels `StartGoal` rows still `pending` in the
    outbox (A4). A drain started locally with `fleet-agent drain` (principal kind
    `LOCAL_USER`) cannot be undone from the hub: `Undrain` answers `REJECTED_BY_POLICY` with
-   `DRAINING`, and the UI says "drained on the machine".
+   `DRAINING`, and the UI says "drained on the machine". A drain set at the hub while the agent was
+   offline (or `start_drained` at enrollment) reaches it at reconnect: the snapshot diff (A2) compares
+   `spec.drain` with `Snapshot.drain` and sends `Drain` or `Undrain`, never undoing a local drain.
 
 **Settings delivery per machine (owned by the hub)**
 
@@ -296,6 +302,7 @@ stateDiagram-v2
 | The hub restarts | generation and values are durable and re-sent on each Hello as needed |
 | The same generation arrives twice | the agent re-acks and does not re-apply |
 | An invalid value (`max_windows = 0`, a bad duration) | that field is `rejected` with `INVALID_ARGUMENT`; the previous value stands |
+| A drain was set while the agent was offline, or its `Drain` expired | the next `Snapshot.drain.draining` differs from `spec.drain`, so the reconnect diff sends `Drain` (or `Undrain`) |
 | The hub sends a field the agent does not know | listed in `unrecognized_value_fields`; shown as not enforced; a safety field keeps the machine out of auto-dispatch |
 | The hub store is restored from an older backup | `fleetd restore` mints a new `settings_epoch`, and the agent accepts any generation under a new epoch |
 | The policy file is invalid at restart | safe mode, as in step 6 |

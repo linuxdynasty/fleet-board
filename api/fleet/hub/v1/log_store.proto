@@ -84,9 +84,12 @@ message GetStoredSessionResponse {
 
 // DeleteSessionLogsRequest removes one session's stored logs, index rows and
 // archived summaries in one transaction (ADR 0010: per-session delete, one
-// audited action "logs.delete" with the byte count, never the content). The
-// Session row and its goals stay. A session whose streams are still capturing
-// is FAILED_PRECONDITION / LOG_STREAM_OPEN: end capture first.
+// audited action "logs.delete" with the byte count, never the content). An
+// ENDED session's row is kept only while its logs exist (Session.status), so
+// after the delete it leaves ListSessions(state = ENDED); a LIVE session's row
+// stays. Goals, goal runs and the audit trail stay. A session whose streams
+// are still capturing is FAILED_PRECONDITION / LOG_STREAM_OPEN: end capture
+// first.
 message DeleteSessionLogsRequest {
   string request_id = 1;
   fleet.type.v1.SessionId session = 2;
@@ -103,7 +106,7 @@ message SessionLogMatch {
   // Raw offset of the match in the stream; ReadSessionLog{start_offset}
   // opens the replay there.
   uint64 raw_offset = 2;
-  google.protobuf.Timestamp time = 3;
+  google.protobuf.Timestamp match_time = 3;
   // The matching line with ANSI stripped, at most 512 bytes. Untrusted text;
   // may contain secrets, which is why search needs SCOPE_LOGS.
   string snippet = 4;

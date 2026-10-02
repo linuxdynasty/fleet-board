@@ -9,8 +9,7 @@
 - Other parts: [1](dashboard-hub-agent.md) (D1, D2), [2](dashboard-hub-agent-2.md) (D3, D4, D5),
   [3](dashboard-hub-agent-3.md) (D6, D7, D8), [4](dashboard-hub-agent-4.md) (D9, D10, D11, D12)
 - Conventions: arrows are numbered by hand and the numbered list under each diagram explains them. Where a
-  spec and a proto disagreed while this was written, the spec or proto was corrected, so nothing here relies on an open question.
-  Names are the proto names; the first mention of a message in a file links to its proto.
+  spec and a proto disagree, the proto wins. Names are the proto names; the first mention of a message in a file links to its proto.
 
 ---
 
@@ -105,7 +104,8 @@ with the latest values; any other change goes at once and includes the current v
 |---|---|---|
 | [`Machine`](../../api/fleet/hub/v1/machine.proto) | `status.telemetry.*`, `status.unfit[].next_check_time` | 30 s |
 | [`Account`](../../api/fleet/hub/v1/account.proto) | `status.pacing.ahead_points`, `rank`, `projected_unused_percent`, `idle_causes` | 30 s |
-| [`Session`](../../api/fleet/hub/v1/session.proto), [`Goal`](../../api/fleet/hub/v1/goal.proto) | pane `activity`, `last_input_time`, `ready_pattern_showing`, log counters; `status.first_line`, `head_commit`, `usage_consumed` | 5 s |
+| [`Session`](../../api/fleet/hub/v1/session.proto), [`Goal`](../../api/fleet/hub/v1/goal.proto) | pane `activity`, `last_input_time`, `ready_pattern_showing`, log counters; `status.attached_clients`; `status.first_line`, `head_commit`, `usage_consumed` | 5 s |
+| [`WorkItem`](../../api/fleet/hub/v1/work.proto), [`Repo`](../../api/fleet/hub/v1/repo.proto) | `status.dispatch_block` | 30 s |
 | [`Device`](../../api/fleet/hub/v1/device.proto), [`Integration`](../../api/fleet/hub/v1/work.proto) | `status.last_seen_time`; `last_sync_time`, `sync_lag`, `rate_limits` | 30 s |
 
 State changes are never volatile: a machine going `STALE`, a goal changing `phase` or a pacing
@@ -167,7 +167,7 @@ sequenceDiagram
 
 1. [`GoalSpecInput`](../../api/fleet/hub/v1/goal_dispatch.proto) is everything an operator can choose.
    `placement` ([`GoalPlacement`](../../api/fleet/hub/v1/goal_dispatch.proto): `machine`, `harness`,
-   `profile`, `account`, `reuse_session`, `reuse_pane`, `in_session`, `window_name`) may be empty:
+   `profile`, `account`, `reuse_pane`, `in_session`, `window_name`) may be empty:
    "next up" is `PreflightGoal` on the first item of `ListWorkItems{filter: stage = READY, order_by:
    dispatch_order}` with an empty placement, and the scheduler then chooses with the same rules as
    auto-dispatch. `consent` empty means repo consent intersected with the account's.
@@ -253,7 +253,7 @@ sequenceDiagram
    result and never re-runs. If the machine's local policy requires approval, a [`CommandProgress`](../../api/fleet/agent/v1/command.proto) with step
    `awaiting_local_confirm` (status `AWAITING_LOCAL_CONFIRM`, outside the 14 steps) is sent first and the
    approval is asked **once, before step 1**.
-9. to 17. The closed vocabulary of 14 steps, each persisted `started` then `done`, so a restart knows where it was:
+9. to 17. The fixed vocabulary of 14 steps, each persisted `started` then `done`, so a restart knows where it was:
    `preflight`, `pick_session`, `prepare_branch`, `ensure_worktree`, `ensure_window`, `register_goal`,
    `start_log_capture`, `wait_ready`, `set_model`, `set_effort`, `clear_context`, `write_goal_file`,
    `type_goal`, `confirm_goal_file`. `step_count` is always 14 and a skipped step is not reported, so a
@@ -359,8 +359,8 @@ sequenceDiagram
   A->>A: 10. envelope and role checks, PROMPT parser verified, is prompt_id still on screen?
   A->>T: 11. tmux send-keys: literal 2, then Enter
   A-->>H: 12. CommandResult{status OK}
-  A-->>H: 13. Event{prompt_gone PromptGone{prompt_id, pane}}
-  H->>H: 14. one tx: TriageItem state ACTED with acted_by and acted_time, in-flight cleared, prompt_pending false
+  H->>H: 13. one tx: TriageItem state ACTED with acted_by and acted_time, in-flight cleared, Operation DONE, prompt_pending false
+  A-->>H: 14. Event{prompt_gone PromptGone{prompt_id, pane}}, a no-op for an ACTED item
   H-->>D: 15. Watch: OPERATIONS DONE, TRIAGE UPDATED, APPROVALS UPDATED
 ```
 
@@ -395,9 +395,11 @@ sequenceDiagram
    `PROMPT_ANSWER` needs prompt detection verified for the harness version (`PARSER_FEATURE_PROMPT`) and `answering_prompt`
    still on screen (`PROMPT_GONE` otherwise). It needs no empty input line or ready pattern, because a
    menu has neither. `SendKeys` is **not idempotent**.
-12. to 13. `CommandResult` is `OK`, `FAILED` / `PROMPT_GONE`, or `UNKNOWN_OUTCOME`. [`PromptGone`](../../api/fleet/agent/v1/events.proto) follows when
-    the prompt leaves the screen.
-14. to 15. The item becomes `ACTED`. The `Operation` is `DONE`.
+12. to 13. `CommandResult` is `OK`, `FAILED` / `PROMPT_GONE`, or `UNKNOWN_OUTCOME`. On `OK` the result transaction sets
+    the item `ACTED` (`acted_by`, `acted_time`), clears the in-flight row and makes the `Operation` `DONE`.
+14. to 15. [`PromptGone`](../../api/fleet/agent/v1/events.proto) follows when the prompt leaves the screen. It can arrive before the
+    result: while the item is `IN_FLIGHT` it retires nothing, for an `ACTED` item it is a no-op, and only an item still `OPEN`
+    becomes `RETIRED`.
 
 ```mermaid
 stateDiagram-v2

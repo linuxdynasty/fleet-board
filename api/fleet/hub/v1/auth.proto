@@ -1,19 +1,23 @@
 // fleet.hub.v1 sign-in, users and login sessions (ADR 0019, 02f-hub-
-// authentication.md). Only authenticated mode uses these; in local_trusted
-// mode every RPC here except GetServerInfo answers FAILED_PRECONDITION
-// (nobody signs in, the caller is the fixed local owner).
+// authentication.md). Only authenticated mode (HTTPS only) uses these; in
+// local_trusted mode every RPC in this file answers FAILED_PRECONDITION
+// (nobody signs in, the caller is the fixed local owner). GetServerInfo is
+// in service.proto and always answers; the API-token RPCs (token.proto) work
+// in both modes.
 //
-// How a browser proves who it is: an HttpOnly, SameSite=Strict session cookie
-// set by the hub in the response of RedeemInvite, FinishPasskeyLogin or the
-// GitHub callback; the cookie never appears in a message body. The hub stores
-// only a hash of it. The same cookie covers unary calls, Watch and the
+// How a browser proves who it is: a Secure, HttpOnly, SameSite=Strict session
+// cookie set by the hub in the response of RedeemInvite, FinishPasskeyLogin or
+// the GitHub callback; the cookie never appears in a message body. The hub
+// stores only a hash of it. The same cookie covers unary calls, Watch and the
 // same-origin WebSocket attach. The CLI and scripts use an API token
 // (token.proto), a phone a paired device (device.proto).
 //
 // The hub stores no passwords: a user signs in with a WebAuthn passkey or a
 // GitHub account on the allow-list. GitHub sign-in is a browser redirect
-// flow served as plain HTTP (GET /auth/github/start and /auth/github/
-// callback, 02f), not an RPC; its result is the same cookie.
+// flow served as plain GET endpoints (/auth/github/start and /auth/github/
+// callback, 02f), not an RPC; its result is the same cookie. A short-lived
+// SameSite=Lax, HttpOnly state cookie bound to the OAuth state parameter
+// carries the redirect; the session cookie itself stays SameSite=Strict.
 syntax = "proto3";
 
 package fleet.hub.v1;
@@ -66,10 +70,21 @@ message UserSpec {
   // INVALID_ARGUMENT. Roles map to scopes in 02d-hub-authz.md.
   fleet.type.v1.Role role = 2;
   // The GitHub login allowed to sign in as this user (lower case, 39 bytes);
-  // empty = no GitHub sign-in for this user. This field is the allow-list.
-  // The first successful sign-in pins the numeric id in status.github.
+  // empty = no GitHub sign-in for this user. This field is the allow-list:
+  // the logins of users in state INVITED or ACTIVE, so a GitHub-only invitee
+  // can sign in (that sign-in makes the user ACTIVE). The first successful
+  // sign-in pins the numeric id in status.github. Unique across users
+  // (ALREADY_EXISTS). Linking GitHub from a session never changes it, except
+  // in the claim owner's registration session (02f).
   string github_login = 3;
   bool disabled = 4;
+  // Scopes granted on top of the role's (02d, "Principals and roles"). Only
+  // SCOPE_LOGS is allowed in v1 (anything else is INVALID_ARGUMENT), so a
+  // viewer or operator can read stored logs without becoming an owner. Part
+  // of the user's effective scopes, which clamp the user's tokens and devices.
+  // Setting it needs SCOPE_ADMIN from a user principal and a value the
+  // caller itself holds (SCOPE_NOT_GRANTABLE otherwise); audited.
+  repeated Scope extra_scopes = 5;
 }
 
 // UserStatus is what the hub observed.
@@ -114,10 +129,13 @@ message ListUsersResponse {
 }
 
 // UpdateUserRequest. Updatable: spec.display_name, spec.role,
-// spec.github_login, spec.disabled. Demoting or disabling a user narrows its
-// tokens and devices on their next call. A change that leaves the hub with no
-// active owner, or the user with no sign-in method, is FAILED_PRECONDITION /
-// LAST_CREDENTIAL.
+// spec.github_login, spec.disabled, spec.extra_scopes. Needs SCOPE_ADMIN and a
+// USER principal (a token or device is SCOPE_NOT_GRANTABLE even with ADMIN);
+// the new role's scopes and extra_scopes must be covered by the caller's own,
+// so only an owner can make an owner (02d, "No escalation"). Demoting or
+// disabling a user, or removing extra_scopes, narrows its tokens and devices
+// on their next call. A change that leaves the hub with no active owner, or
+// the user with no sign-in method, is FAILED_PRECONDITION / LAST_CREDENTIAL.
 message UpdateUserRequest {
   string request_id = 1;
   User user = 2;
@@ -130,9 +148,12 @@ message UpdateUserResponse {
   User user = 1;
 }
 
-// CreateUserInviteRequest invites a person (SCOPE_ADMIN). It creates the User
-// in state INVITED and a one-time invite. The first owner is created the same
-// way by `fleetd`, which prints the invite as the claim URL.
+// CreateUserInviteRequest invites a person (SCOPE_ADMIN, USER principal only:
+// a token or device is SCOPE_NOT_GRANTABLE). The role must be covered by the
+// caller's own effective scopes, so only an owner can invite an owner. It
+// creates the User in state INVITED and a one-time invite. The first owner is
+// created the same way by `fleetd`, which prints the invite as the claim URL
+// to its terminal only, never to a log.
 message CreateUserInviteRequest {
   string request_id = 1;
   string display_name = 2;
@@ -167,10 +188,12 @@ message RedeemInviteRequest {
   string display_name = 3;
 }
 
-// RedeemInviteResponse. The hub burns the invite and sets a registration
-// session cookie: it allows only passkey registration (or the GitHub link
-// flow) for this user, for 15 minutes. If the person registers nothing in
-// that time the invite is reissued (claim URL: reprinted by `fleetd`).
+// RedeemInviteResponse. The hub burns the invite, activates the User the
+// invite already created (a restart of an unclaimed hub reuses that row) and
+// sets a registration session cookie: it allows only passkey registration (or
+// the GitHub link flow) for this user, for 15 minutes. If the person
+// registers nothing in that time the invite is reissued (claim URL: shown
+// only by `fleetd claim`, never logged).
 message RedeemInviteResponse {
   User user = 1;
   google.protobuf.Timestamp registration_expire_time = 2;
@@ -247,7 +270,8 @@ message FinishPasskeyLoginResponse {
 }
 
 // DeletePasskeyRequest removes one passkey of the caller's own user (ADMIN may
-// remove anyone's). Removing the last sign-in method is LAST_CREDENTIAL.
+// remove anyone's, from a USER principal only). Removing the last sign-in
+// method is LAST_CREDENTIAL.
 message DeletePasskeyRequest {
   string request_id = 1;
   PasskeyId id = 2;
@@ -324,7 +348,8 @@ message ListLoginSessionsResponse {
   string next_page_token = 2;
 }
 
-// RevokeLoginSessionRequest ends one session (the caller's own; ADMIN any).
+// RevokeLoginSessionRequest ends one session (the caller's own; ADMIN any, from
+// a USER principal only).
 message RevokeLoginSessionRequest {
   string request_id = 1;
   LoginSessionId id = 2;

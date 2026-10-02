@@ -355,9 +355,11 @@ finds ended sessions with `ListStoredSessions` (filter machine, goal, harness,
 state, time), which returns each stream's `LogStreamKey`, the sizes and times,
 and the archived summaries, so `ReadSessionLog` and `fleet logs export <session>`
 have an entry point after the window is gone. `DeleteSessionLogs` removes one
-session's chunks, session row and summaries in one `logs.db` transaction, with one audit row in `state.db`
+session's chunks, `log_sessions` row and summaries in one `logs.db` transaction, with one audit row in `state.db`
 (`logs.delete`: bytes, never content) and is refused while a stream still
-captures (`LOG_STREAM_OPEN`). `SearchSessionLogs` is a literal, case-insensitive
+captures (`LOG_STREAM_OPEN`). Right after it commits the hub also removes the
+**ended** `Session` row from `state.db` (a row is kept only while its logs
+exist), so `ListSessions(state = ENDED)` no longer lists it; goals and goal runs stay. `SearchSessionLogs` is a literal, case-insensitive
 scan of the decompressed frames the filter selects, bounded per call and
 continued by `page_token` (no index in v1). `GetLogStoreStatus` reports bytes
 against the cap, free disk, the oldest data (days retained) and whether shipping
@@ -413,7 +415,7 @@ stateDiagram-v2
 | Hub disk below threshold | `LogAck{all_streams=true, pause=true}` to every agent; capture continues; triage `log_disk_low`; resume above a higher threshold (hysteresis) |
 | Spool cap hit on the agent | Newest kept, `gap_marks++`, `gap_before` on the next chunk; `SpoolStatus` in heartbeat shows it |
 | Agent crash mid-chunk | Up to one chunk interval (10 s) of raw output lost before compression; the pipe-pane process keeps writing to the spool file, so loss is bounded by what was not yet durable |
-| Harness crash | `final=true` after the pane exits; a respawned pane is a new pane key and a new stream under the same `session_id` |
+| Harness crash | `final=true` after the pane exits; a respawn keeps the pane key, so the stream continues on the same key at the stored end with a new `frame_start` (a new window or server restart makes new keys) |
 | tmux server restart | New `server_start_id`; new pane keys; old streams `FINAL` on the next snapshot diff |
 | Developer typing | Captured only in their own sessions when capture is on for that session |
 | Provider error / prompts | Captured as output; no special handling |

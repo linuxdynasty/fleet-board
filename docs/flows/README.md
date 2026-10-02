@@ -54,7 +54,7 @@ Every flow has the same five parts:
 | [type/v1/harness.proto](../../api/fleet/type/v1/harness.proto) | `GoalLineState` |
 | [type/v1/ids.proto](../../api/fleet/type/v1/ids.proto) | `AccountId`, `AccountKey`, `CommandId`, `GoalId`, `MachineId`, `PaneKey`, `SessionId` |
 | [type/v1/status.proto](../../api/fleet/type/v1/status.proto) | `ErrorDetail`, `Principal`, `ReasonCode`, `Role`, `Status` |
-| [agent/v1/agent.proto](../../api/fleet/agent/v1/agent.proto) | `AgentService`, `Connect`, `Enroll`, `Heartbeat`, `Hello`, `RenewCert`, `ResultAck`, `SessionLog`, `Settings`, `Terminal` |
+| [agent/v1/agent.proto](../../api/fleet/agent/v1/agent.proto) | `AgentService`, `Connect`, `Enroll`, `Heartbeat`, `Hello`, `HelloAck`, `RenewCert`, `ResultAck`, `SessionLog`, `Settings`, `Terminal` |
 | [agent/v1/command.proto](../../api/fleet/agent/v1/command.proto) | `Command`, `CommandAck`, `CommandProgress`, `CommandResult` |
 | [agent/v1/command_goal.proto](../../api/fleet/agent/v1/command_goal.proto) | `Drain`, `EnsureWorktree`, `Preflight`, `StartGoal` |
 | [agent/v1/command_tmux.proto](../../api/fleet/agent/v1/command_tmux.proto) | `EnsureProbe` |
@@ -65,16 +65,16 @@ Every flow has the same five parts:
 | [integration/v1/model.proto](../../api/fleet/integration/v1/model.proto) | `ChangeRequest`, `WorkItem` |
 | [integration/v1/service.proto](../../api/fleet/integration/v1/service.proto) | `IntegrationProviderService`, `Watch` |
 | [integration/v1/sync.proto](../../api/fleet/integration/v1/sync.proto) | `ProviderError` |
-| [hub/v1/account.proto](../../api/fleet/hub/v1/account.proto) | `Account`, `AccountPacing`, `PacingState`, `UsageReading` |
+| [hub/v1/account.proto](../../api/fleet/hub/v1/account.proto) | `Account`, `AccountPacing`, `AccountSpec`, `PacingState`, `UsageReading` |
 | [hub/v1/common.proto](../../api/fleet/hub/v1/common.proto) | `Operation`, `OperationKind`, `Scope` |
 | [hub/v1/goal.proto](../../api/fleet/hub/v1/goal.proto) | `Goal`, `GoalDefinition`, `GoalPhase`, `GoalStatus` |
 | [hub/v1/routine.proto](../../api/fleet/hub/v1/routine.proto) | `Routine` |
 | [hub/v1/service.proto](../../api/fleet/hub/v1/service.proto) | `ApprovePairing`, `AttachTerminal`, `ControlGoal`, `CreateApiToken`, `CreateAttachTicket`, `CreateEnrollmentToken`, `DecideApproval`, `DrainMachine`, `FleetService`, `GetOperation`, `PreflightGoal`, `ReadSessionLog`, `RequestPairing`, `RunRoutine`, `StartGoal`, `UpdateSettings`, `Watch` |
 | [hub/v1/session.proto](../../api/fleet/hub/v1/session.proto) | `Session` |
-| [hub/v1/settings.proto](../../api/fleet/hub/v1/settings.proto) | `Settings` |
+| [hub/v1/settings.proto](../../api/fleet/hub/v1/settings.proto) | `HubSettings`, `Settings` |
 | [hub/v1/terminal.proto](../../api/fleet/hub/v1/terminal.proto) | `AttachOpen`, `AttachTerminalRequest`, `AttachTerminalResponse` |
 | [hub/v1/triage.proto](../../api/fleet/hub/v1/triage.proto) | `Approval`, `TriageItem`, `TriageKind`, `TriageState` |
-| [hub/v1/watch.proto](../../api/fleet/hub/v1/watch.proto) | `TopicSubscription` |
+| [hub/v1/watch.proto](../../api/fleet/hub/v1/watch.proto) | `TopicSubscription`, `WatchRequest`, `WatchResponse` |
 | [hub/v1/work.proto](../../api/fleet/hub/v1/work.proto) | `ChangeRequest`, `WorkItem` |
 
 </details>
@@ -181,7 +181,7 @@ Reading the picture:
 - **Machines never accept a connection.** The agent dials out and holds one long-lived stream, so a sleeping laptop, a container and a machine behind NAT work the same way. The hub machine runs its own agent over loopback, so there is one code path.
 - **One writer.** Every change to `state.db` goes through the store writer, in one transaction per batch, and commands are handed to the gateway only after the transaction commits. A hub transaction never spans a network call.
 - **The agent is the only thing that touches tmux and the harness.** It types literal text and named keys, runs allow-listed slash commands, reads goal files and the screen, and never reads a harness credential. There is no shell string and no raw exec anywhere in the protocol.
-- **Hooks never talk to the hub.** A harness hook runs a local command that asks the agent which goal (if any) the pane belongs to, and reports through the agent (flow A8).
+- **Hooks never talk to the hub.** A harness hook runs a local command that asks the agent which goal, if any, this hook call belongs to (matched by session id, pane or, for Muse, directory), and reports through the agent (flow A8).
 - **Providers are read-only.** The syncers poll GitHub (and later others) for work items and change requests. The hub never writes to a provider; claims, pushes and merges are done inside goals, by the harness, with the developer's own tools. Sync is described in [03b](../specs/03b-usage-and-sync.md) (W4) and [03j](../specs/03j-provider-sync-and-trust.md), not as a flow in this folder.
 
 Where each box appears in the flows:
@@ -260,7 +260,7 @@ What is **not** a protocol in the protos:
 | **drain** | `Drain`: finish current work, take nothing new, never kill. Set from the hub with `DrainMachine` or locally with `fleet-agent drain`; a local drain cannot be undone from the hub |
 | **epoch** | `HelloAck.epoch`: the connection epoch, `max(stored, Hello.last_epoch) + 1`, so it only ever increases. Every `Command` carries it and the agent refuses one from another epoch |
 | **goal** | One unit of work handed to a harness session through the harness's own `/goal`. The hub's `Goal` has a `spec` (`GoalDefinition`) and a `status` (`GoalStatus`, with a `GoalPhase`). Every dispatch attempt is a new goal (`attempt`, `previous_goal`) |
-| **goal file** | The file in the worktree whose first line is the goal's state: the objective while working, `BLOCKED: ...`, or `DONE`. The agent writes the first version; the model updates it; hooks and the agent only read it (a repo that ships its own goal hooks, such as eshu, keeps its own file and the agent writes nothing). Parsed into `GoalState` (`GoalLineState`) |
+| **goal file** | The file in the worktree whose first line is the goal's state: the objective while working, `BLOCKED: ...`, or `DONE`. The agent writes the first version; the model updates it; hooks and the agent only read it (a repo that ships its own goal hooks, such as eshu, keeps its own file: `StartGoal` skips `write_goal_file` there and the agent writes nothing). Parsed into `GoalState` (`GoalLineState`) |
 | **goal registry** | The agent's table that binds a goal to a pane (`GoalRegistration`: goal, pane, harness, worktree path, harness session id). It is the one goal identity for every harness; `FLEET_GOAL_ID` in the pane environment is only a fast path for a window the fleet just created |
 | **harness** | An unmodified interactive coding agent in a tmux pane: Claude Code, Codex, Muse, OpenCode. fleet-board never runs one headless and never reads its credentials |
 | **heartbeat** | `Heartbeat`, every 15 s, droppable, no seq. 45 s without one is `STALE`, 3 minutes `OFFLINE` |

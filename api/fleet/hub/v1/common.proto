@@ -97,12 +97,16 @@ message LoginSessionId {
 
 // Scope is one permission set an RPC requires (02d-hub-authz.md has the table
 // for every RPC and every Watch topic). Roles map to scopes (VIEWER: READ;
-// OPERATOR: READ, SESSIONS_WRITE, APPROVALS; OWNER: all six). A device or API
-// token holds a subset of its user's scopes. Scopes are sets, never ordered.
+// OPERATOR: READ, SESSIONS_WRITE, APPROVALS; OWNER: all six); a user may hold
+// SCOPE_LOGS on top of its role (UserSpec.extra_scopes). A device or API
+// token holds a subset of its user's effective scopes. Scopes are sets, never
+// ordered. Granting never exceeds the grantor's own scopes, and only a user
+// principal grants (02d, "No escalation").
 enum Scope {
   SCOPE_UNSPECIFIED = 0;
-  // Read every resource and Watch, live read-only attach and CapturePane.
-  // Not stored logs (SCOPE_LOGS).
+  // Read every resource and Watch, and view live: read-only attach and
+  // CapturePane of the visible screen. Not stored or scrolled-back terminal
+  // history (SCOPE_LOGS).
   SCOPE_READ = 1;
   // Type into sessions: keys, attach input, harness commands, goal control,
   // dispatch, create sessions.
@@ -112,14 +116,19 @@ enum Scope {
   // Change settings, accounts, repos, routines, integrations' watched
   // projects, hook installs, and import a config document.
   SCOPE_SETTINGS = 4;
-  // Machines (enroll, delete, drain), devices, all notification targets, the
-  // store status.
+  // Machines (enroll, revoke, delete, drain), devices, users (list, invite,
+  // update), other users' passkeys, login sessions and tokens, all
+  // notification targets, the store status, and the HubSettings fields for
+  // sign-in, session lifetime and log retention.
   SCOPE_ADMIN = 5;
-  // Stored session logs and their management (list, search, delete, store
-  // status), transcripts, archived pane summaries and the raw usage screen.
-  // Owner only by default (ADR 0010, 0019): a viewer, API token
-  // or paired device has it only when the owner grants it explicitly, and a
-  // phone pairing never requests it by default.
+  // Stored or scrolled-back terminal history: stored session logs and their
+  // management (list, search, delete, store status), transcripts, archived
+  // pane summaries, the raw usage screen, CapturePane history lines
+  // (last_lines above 0) and any Operation.output_text that is not the
+  // caller's own. Owner only by default (ADR 0010, 0019): a user gets it
+  // through UserSpec.extra_scopes, a token or paired device only when ticked
+  // at creation or approval, and a phone pairing never requests it by
+  // default.
   SCOPE_LOGS = 6;
 }
 
@@ -130,11 +139,15 @@ enum AuthMode {
   // (ADR 0019). No sign-in: every call that passes the Host and Origin checks
   // runs as Principal{id "local-owner", kind USER, role OWNER}. Passkey,
   // GitHub and device RPCs answer FAILED_PRECONDITION; the local owner may
-  // still mint and revoke API tokens (a script on the hub host can use one);
-  // attach still needs a ticket (02f-hub-authentication.md).
+  // still mint and revoke API tokens (a script on the hub host can use one;
+  // a valid Bearer token only narrows the call, an invalid one is
+  // CREDENTIALS_INVALID); a WebSocket attach still needs a ticket, an HTTP/2
+  // attach does not (02f-hub-authentication.md). Plain HTTP on loopback is
+  // allowed only in this mode.
   AUTH_MODE_LOCAL_TRUSTED = 1;
   // Passkey or GitHub sign-in (cookie), API tokens (bearer), paired devices
-  // (signed requests).
+  // (signed requests). HTTPS only: an owner-supplied or Tailscale certificate;
+  // the hub refuses to start without one.
   AUTH_MODE_AUTHENTICATED = 2;
 }
 
@@ -223,7 +236,9 @@ message Operation {
   string request_id = 20;
   google.protobuf.Timestamp not_after_time = 21;
   // Text output for CapturePane and OBSERVE-class harness commands.
-  // Untrusted text, capped as on the agent wire.
+  // Untrusted text, capped as on the agent wire. Terminal text can hold
+  // secrets and scrollback, so GetOperation and the OPERATIONS topic return
+  // it only to the requester and to SCOPE_LOGS holders (02d).
   string output_text = 22;
   bool output_truncated = 23;
   // Goal the operation belongs to, if any.
@@ -271,7 +286,8 @@ message GetServerInfoResponse {
   // The caller as the hub sees it; unset when not signed in. In
   // local_trusted mode it is the fixed local owner.
   fleet.type.v1.Principal caller = 8;
-  // Scopes in effect for the caller: a user gets the scopes of its role, a
+  // Scopes in effect for the caller: a user gets the scopes of its role plus
+  // its extra_scopes, a
   // device or API token at most those, narrowed to what was granted.
   repeated Scope caller_scopes = 9;
   // Sign-in methods the owner turned on (authenticated mode; empty in

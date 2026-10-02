@@ -314,10 +314,12 @@ message UndrainMachineResponse {
   Machine machine = 2;
 }
 
-// RevokeMachineRequest cuts a machine off and keeps its row (03-workflows.md,
-// "Revoke and delete"). In one transaction the hub adds every certificate
-// serial of the machine to the revocation list, marks it REVOKED and ends its
-// goals; after commit it sends Bye{REVOKED} on the live Connect stream and
+// RevokeMachineRequest cuts a machine off and keeps its row (02g, "Machine
+// lifecycle: revoke and delete"). In one transaction the hub adds every
+// certificate serial of the machine to the revocation list, marks it REVOKED,
+// abandons its goals that never confirmed running (ABANDONED, MACHINE_REVOKED)
+// and sets the rest STUCK with phase_reason MACHINE_REVOKED (their work items
+// stay held until an operator clears them); after commit it sends Bye{REVOKED} on the live Connect stream and
 // closes that agent's Terminal, SessionLog and attach streams, so a stolen
 // laptop stops receiving commands at once instead of at its next reconnect.
 // Idempotent: a revoked machine returns itself.
@@ -340,6 +342,9 @@ message RevokeMachineResponse {
 // inventory, attaches) are removed; sessions, goals and logs it ran keep
 // their history under the machine id, and the audit log keeps everything.
 // After delete, `previous_machine` of an enrollment token can no longer name it.
+// The machine's revoked certificate serials stay on the revocation list until
+// each certificate's not_after, and RenewCert, Terminal and SessionLog are
+// refused for an id with no live row.
 message DeleteMachineRequest {
   string request_id = 1;
   fleet.type.v1.MachineId id = 2;

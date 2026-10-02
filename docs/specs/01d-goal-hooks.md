@@ -119,7 +119,8 @@ for every harness, just before `type_goal`, from what it already knows
 `BLOCKED …`) as the objective text instructs; hooks only read it.
 
 - eshu repos keep their own file (`.claude/active-goal.<session_id>`) and
-  their own `CONSENT:` handling; the agent reads it (G2) and writes nothing.
+  their own `CONSENT:` handling; the agent reads it (G2) and writes nothing
+  (`StartGoal` skips its `write_goal_file` step when `repo_ships_own` is true).
 - Generic file location: open question (below). It must be writable from
   inside the harness sandbox and must not show up as a repo change.
 

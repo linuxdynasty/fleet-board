@@ -219,7 +219,9 @@ message PaneExited {
   fleet.type.v1.PaneKey pane = 1;
   int32 exit_status = 2;
   // Goal the registry had bound to the pane, if any, so "stopped without
-  // DONE" is cheap. The entry is removed after this event.
+  // DONE" is cheap. The entry is removed after this event only when the pane
+  // is gone (remains false); with remain-on-exit it stays, so RespawnPane (the
+  // pane keeps its PaneKey) and the one nudge still match it.
   fleet.type.v1.GoalId goal_id = 3;
   // tmux remain-on-exit kept the pane; false means the pane is gone.
   bool remains = 4;
@@ -349,12 +351,21 @@ message PolicyChanged {
   string previous_hash = 2;
 }
 
+// LocalApprovalChannel is how a local approval was given (a closed pair).
+enum LocalApprovalChannel {
+  LOCAL_APPROVAL_CHANNEL_UNSPECIFIED = 0;
+  // `fleet-agent approve` or deny on the command line.
+  LOCAL_APPROVAL_CHANNEL_CLI = 1;
+  // The desktop notification's action buttons.
+  LOCAL_APPROVAL_CHANNEL_NOTIFICATION = 2;
+}
+
 // LocalApprovalDecision (L3).
 message LocalApprovalDecision {
   fleet.type.v1.CommandId command_id = 1;
   bool approved = 2;
-  // Channel, not identity: "cli" or "notification".
-  string via = 3;
+  // Channel, not identity.
+  LocalApprovalChannel via = 3;
   google.protobuf.Timestamp decided_time = 4;
   // Who decided: kind LOCAL_USER, id "local:<os user>".
   fleet.type.v1.Principal decided_by = 5;

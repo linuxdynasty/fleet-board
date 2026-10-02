@@ -105,9 +105,10 @@ message CommandAck {
 // and the agent's result log only ever see that one.
 message CommandProgress {
   fleet.type.v1.CommandId command_id = 1;
-  // Step name from the closed vocabulary of the composite (for StartGoal the
+  // Step name from the fixed set of names of the composite (for StartGoal the
   // 14 names in command_goal.proto, in that order; 02h has their restart
-  // classes). step_index is the position in the full list and step_count is
+  // classes), kept as a string so a newer agent can add steps; the hub treats
+  // an unknown name as display-only. step_index is the position in the full list and step_count is
   // its length, so a progress bar is stable even when steps are skipped.
   string step = 2;
   uint32 step_index = 3;

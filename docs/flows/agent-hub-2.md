@@ -157,9 +157,10 @@ created is left in place, tagged, for a person to decide.
 stateDiagram-v2
   [*] --> pending: decision tx commits
   pending --> delivered: CommandAck
-  pending --> expired: not_after_time passes, or cancelled by DrainMachine or RevokeMachine
-  delivered --> done: CommandResult
-  delivered --> expired: not_after_time passes with no result, or RevokeMachine
+  pending --> expired: not_after_time passes, or cancelled by DrainMachine
+  pending --> done: RevokeMachine (status EXPIRED)
+  delivered --> done: CommandResult, or RevokeMachine (status EXPIRED)
+  delivered --> expired: not_after_time passes with no result
   done --> [*]: ResultAck
   expired --> [*]
 ```
@@ -169,7 +170,7 @@ A revoked machine's `pending` and `delivered` rows become `done` with status
 with the message "cancelled by drain"
 ([03h](../specs/03h-goal-phases-in-depth.md#drain-the-outbox-and-respawn)).
 [02-contracts](../specs/02-contracts.md#delivery-semantics) also lists a state
-`failed` without a trigger of its own; an implementation can start with the three
+`failed` without a trigger of its own; an implementation can start with the four
 above.
 
 **Stored where**

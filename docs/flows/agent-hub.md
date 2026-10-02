@@ -209,7 +209,7 @@ sequenceDiagram
 | Token already used by another install or CSR key | `ALREADY_EXISTS`, `ENROLL_TOKEN_USED` | owner makes a new token |
 | CSR does not parse, is not Ed25519, or names another subject | `INVALID_ARGUMENT`, `ENROLL_CSR_INVALID` | agent regenerates and retries |
 | No common `proto_min` to `proto_max` | `FAILED_PRECONDITION`, `ENROLL_PROTO_UNSUPPORTED` | upgrade the older side |
-| `previous_machine_id` differs from the token's | `FAILED_PRECONDITION`, `ENROLL_PREVIOUS_MACHINE_MISMATCH` | an id that does not exist is ignored |
+| The token names a machine and `previous_machine_id` names a different one | `FAILED_PRECONDITION`, `ENROLL_PREVIOUS_MACHINE_MISMATCH` | the token alone decides: with a token that names none (or a deleted machine) the request id is ignored and a new machine is enrolled |
 | Hub starting or store busy | `UNAVAILABLE`, `retryable = true` | the agent retries with backoff |
 | The response is lost after the token burned | none | run `enroll` again: same token, `install_id` and CSR key return the stored response with `replayed = true`, same `machine_id`, no second row |
 | A different machine uses a token whose `expected_hostname` it does not match | Enroll succeeds | machine flagged `hostname_mismatch`, triage info item `TRIAGE_KIND_HOSTNAME_MISMATCH` |
@@ -246,7 +246,7 @@ sequenceDiagram
   H->>H: one tx: replace the machine's inventory, store Snapshot.seq, diff wanted against seen, expire outbox rows past not_after_time
   A->>H: CommandResult for every id in unacked_results
   H-->>A: ResultAck{command_ids}
-  H-->>A: repair commands after commit: EnsureProbe, StopProbe, RegisterGoal, ReleaseGoal, SetPaneAvailability, EnsureGoalHooks, pending outbox rows
+  H-->>A: repair commands after commit: EnsureProbe, StopProbe, RegisterGoal, ReleaseGoal, SetPaneAvailability, EnsureGoalHooks, Drain or Undrain, pending outbox rows
   A->>H: SettingsAck{settings_epoch, generation, effective, capped_fields, rejected, unrecognized_value_fields}
   loop every heartbeat_interval, 15 s
     A->>H: Heartbeat{sent_time, uptime, load1, counts, draining, spool, open_attaches, event_seq, events}
@@ -302,16 +302,17 @@ derived state (goals, triage) is diffed, never replaced.
 
 | `Snapshot` field | Hub effect |
 |---|---|
-| `facts` (`MachineFacts`), `harnesses[]` (`HarnessInfo`), `accounts[]` (`AccountIdentity`), `forge_cli[]`, `repos[]`, `policy`, `settings`, `drain` | replace the machine row and its inventories; `accounts[]` feeds account discovery (A6) |
+| `facts` (`MachineFacts`), `harnesses[]` (`HarnessInfo`), `accounts[]` (`AccountIdentity`), `forge_cli[]`, `repos[]`, `policy`, `settings` | replace the machine row and its inventories; `accounts[]` feeds account discovery (A6) |
+| `drain` | compare `spec.drain` with `Snapshot.drain.draining`: a difference sends `Drain` or `Undrain` (so a `start_drained` machine and a drain set while offline reach the agent), except that a local drain is never undone |
 | `tmux_servers[]` | replace sessions, windows, panes; sessions with `internal = true` are dropped |
 | `seq` | stored as `hub_last_event_seq`; replayed events at or below it are history only (A3) |
 | `usage[]`, `probes[]` | latest reading per account, probe health; a probe the hub does not assign to this machine gets `StopProbe` |
-| `goals[]`, `goal_registry[]` | a live goal whose pane is absent becomes `PANE_LOST`; a registry entry for an unknown goal raises `TRIAGE_KIND_ORPHAN_GOAL_PANE`; a goal in `STARTING` to `STOPPED` that the registry lacks gets `RegisterGoal` |
+| `goals[]`, `goal_registry[]` | a live goal whose pane is absent becomes `PANE_LOST`; a registry entry for an unknown goal raises `TRIAGE_KIND_ORPHAN_GOAL_PANE`; a live goal with a pane (all live phases but `STARTING`, `START_UNKNOWN`, `PANE_LOST`) that the registry lacks gets `RegisterGoal`, and an ENDED goal's leftover entry gets `ReleaseGoal` |
 | `prompts[]`, `conditions[]` | rebuild Triage at once (A9, A8) |
 | `TmuxPane.availability` | marks the hub holds that are missing get `SetPaneAvailability` |
 | `open_attaches[]` | informational: a hub restart already ended every attach (A10), so this lists only attaches still live on the agent |
 | `last_applied_command_seq`, `unacked_results[]` | outbox rows in `pending` or `delivered` for this machine are re-sent after commit unless past `not_after_time`, which become `EXPIRED` |
-| `HarnessInfo.goal_hooks` per checkout | hook reconcile: `EnsureGoalHooks` for a missing, unverified or old state when `Repo.spec.hooks_mode` asks for it, never while a goal is live in a pane of that harness |
+| `RepoCheckout.goal_hooks[]` (per checkout) and `HarnessInfo.goal_hooks` | hook reconcile: `EnsureGoalHooks` for a missing, unverified or old state when `Repo.spec.hooks_mode` asks for it, never while a goal is live in a pane of that harness |
 
 **Stored where.** `machine_connections{epoch, boot_id, peer_addr, reason,
 connect_time}` and the machine's state in the hub store in the Hello transaction;
@@ -349,7 +350,7 @@ is kept until `DeleteMachine`, and a token naming `previous_machine` returns it 
 | Failure | What happens |
 |---|---|
 | Hub unreachable, or every candidate fails TLS | backoff loop; `fleet-agent doctor` shows the last error per candidate; goals keep running |
-| Machine revoked | `Bye{REVOKED}`, then close. The agent goes Unenrolled and needs a new token naming `previous_machine`. The hub already moved its goals to `PANE_LOST`, expired its outbox rows and closed its attaches ([02g](../specs/02g-agent-security.md#machine-lifecycle-revoke-and-delete)) |
+| Machine revoked | `Bye{REVOKED}`, then close. The agent goes Unenrolled and needs a new token naming `previous_machine`. The hub already abandoned its never-started goals, set its other goals `STUCK` (`MACHINE_REVOKED`), expired its outbox rows and closed its attaches ([02g](../specs/02g-agent-security.md#machine-lifecycle-revoke-and-delete)) |
 | Valid certificate, machine id unknown (store recreated, or a backup older than the enrollment) | `Bye{UNKNOWN_MACHINE}`; the agent goes Unenrolled. During the 24 hour restore reconcile window the hub adopts the machine instead |
 | No common protocol version | `Bye{PROTO_UNSUPPORTED}` |
 | `HelloAck.fleet_id` is another fleet | agent sends `Bye{FLEET_MISMATCH}` and does not reconnect until re-enrolled |

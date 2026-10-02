@@ -52,8 +52,12 @@ plus 24 h. In one transaction a first call burns the token, creates the machine
 row and the certificate, and stores the response; the same triple later returns
 the stored response with `replayed = true` (same `machine_id`, same
 certificate). So a response lost in transit is recovered by running `enroll`
-again, and no second machine row appears. Any other call with a used token is
-`ENROLL_TOKEN_USED`.
+again, and no second machine row appears. **Check order:** unknown token, then
+(for a burned token) the replay triple, then expiry, so a replay after the
+token's TTL still succeeds within the 24 h. Any other call with a used token is
+`ENROLL_TOKEN_USED`, and so is a replay once the machine is `REVOKED` or
+deleted: a stored response is never replayed for a machine that is no longer
+live.
 
 **Typed failures.** An Enroll failure is a gRPC error whose `ErrorDetail.reason`
 is a code the CLI prints and `doctor` shows:
@@ -61,12 +65,20 @@ is a code the CLI prints and `doctor` shows:
 | Case | gRPC code | `ErrorDetail.reason` |
 |---|---|---|
 | Not a token this hub issued, or the secret part is wrong | `UNAUTHENTICATED` | `ENROLL_TOKEN_UNKNOWN` |
-| Past its TTL | `UNAUTHENTICATED` | `ENROLL_TOKEN_EXPIRED` |
+| Unburned and past its TTL | `UNAUTHENTICATED` | `ENROLL_TOKEN_EXPIRED` |
 | Burned by another install or CSR key | `ALREADY_EXISTS` | `ENROLL_TOKEN_USED` |
 | CSR does not parse, is not Ed25519, or names another subject | `INVALID_ARGUMENT` | `ENROLL_CSR_INVALID` |
 | No common `proto_min`/`proto_max` | `FAILED_PRECONDITION` | `ENROLL_PROTO_UNSUPPORTED` |
-| `previous_machine_id` differs from the token's | `FAILED_PRECONDITION` | `ENROLL_PREVIOUS_MACHINE_MISMATCH` |
+| `previous_machine_id` names a machine and the token names a different one | `FAILED_PRECONDITION` | `ENROLL_PREVIOUS_MACHINE_MISMATCH` |
 | Hub starting or store busy | `UNAVAILABLE` | `retryable = true` |
+
+**One rule for re-enrollment: the token alone decides.** The token's
+`previous_machine` (an existing `REVOKED` or expired machine, set by the owner)
+is the only thing that returns an old machine id. A request `previous_machine_id`
+is a hint: it matters only as a mismatch when the token names a machine and the
+request names a different one. A request id with a token that names none, or a
+machine that was deleted, is ignored and Enroll creates a new machine; so an
+agent that sends its old id after `Bye{UNKNOWN_MACHINE}` just enrolls fresh.
 
 A failed Enroll writes an audit row (`machine.enroll_failed`) with the code and
 peer address, never the token.
@@ -77,7 +89,7 @@ handshake through `Bye` (`ByeReason`), not through a missing message:
 | Situation | What the hub or agent does |
 |---|---|
 | Machine revoked | Hub: `Bye{REVOKED}`, then closes; the agent goes Unenrolled and `doctor` says "revoked, needs a new token" |
-| Certificate valid, machine id unknown to the hub (store recreated with the CA kept, or a backup that predates the enrollment) | Hub: `Bye{UNKNOWN_MACHINE}`, except the restore adoption below. The agent goes Unenrolled; the owner issues a token (a `previous_machine` that no longer exists is ignored, so history cannot carry over) |
+| Certificate valid, machine id unknown to the hub (store recreated with the CA kept, or a backup that predates the enrollment) | Hub: `Bye{UNKNOWN_MACHINE}`, except the restore adoption below. The agent goes Unenrolled; the owner issues a token (a request `previous_machine_id` that no longer exists is ignored, so history cannot carry over) |
 | `HelloAck.fleet_id` is not the enrolled fleet | Agent: `Bye{FLEET_MISMATCH}`, does not reconnect until re-enrolled. mTLS against the pinned CA already makes this rare; the field covers a hub rebuilt with the same CA and a new id |
 | No common protocol version | Hub: `Bye{PROTO_UNSUPPORTED}` |
 
@@ -120,14 +132,18 @@ knows against what it holds:
 
 | Agent has, hub does not | Action |
 |---|---|
-| A machine (valid certificate from this CA, machine id unknown) enrolled after the backup | Adopt it: recreate the row from the certificate and snapshot in state `ONLINE`, raise an info triage item "machine adopted after restore"; outside the 24 h window it gets `Bye{UNKNOWN_MACHINE}` |
+| A machine (valid certificate from this CA, **serial not revoked**, machine id unknown) enrolled after the backup | Adopt it: recreate the row from the certificate and snapshot in state `ONLINE`, raise an info triage item "machine adopted after restore"; outside the 24 h window, or for a revoked serial, it gets `Bye{UNKNOWN_MACHINE}` |
 | A probe in `Snapshot.probes` for an account the hub has | Adopt the assignment; for an unknown account, `StopProbe` |
 | A tmux session with a `FLEET_SESSION_ID` the hub does not know | Recreate the `Session` row under that id, as a fleet session |
 | A `Snapshot.goal_registry` entry for a goal the hub does not know | Existing `orphan_goal_pane` triage (W7); `ReleaseGoal` only after the owner decides |
 | Unacknowledged results for commands the hub never issued | Stored as history only, then acked |
 
 Machines the hub knows but that never reconnect stay `OFFLINE`. Nothing in
-restore touches `fleet_id`, the CA, the salt or the account bindings.
+restore touches `fleet_id`, the CA, the salt or the account bindings. **Restore
+keeps revocations:** the revocation list is also appended to `revoked-serials`
+in the hub's state directory, outside `state.db`, and `fleetd restore`
+re-applies it, so a backup older than a revoke does not bring a revoked
+certificate back.
 
 ## Machine lifecycle: revoke and delete
 
@@ -156,11 +172,11 @@ can be revoked without losing its history.
 
 | Thing | What happens |
 |---|---|
-| Certificate serials | All serials of the machine go on the revocation list; the next TLS handshake with them fails, and a `Hello` that still gets through is answered `Bye{REVOKED}` |
+| Certificate serials | All serials of the machine go on the revocation list; the next TLS handshake with them fails, and a `Hello` that still gets through is answered `Bye{REVOKED}`. A revoked serial stays on the list until that certificate's `not_after`, independent of `DeleteMachine` |
 | Live streams | After commit the hub sends `Bye{REVOKED}` on Connect and closes Connect, `Terminal` and `SessionLog` at once. A compromised machine does not keep receiving commands until it next reconnects |
 | Open attaches | Closed with `HUB_CLOSED` |
 | Outbox | Rows `pending` or `delivered` for the machine become `DONE / EXPIRED`; nothing is sent to it again |
-| Goals in a non-terminal phase | Move to `PANE_LOST` (its pane is unreachable), a triage item says why; the work item is freed for another machine by the usual rules |
+| Goals | `STARTING` and `START_UNKNOWN` (never confirmed running) end `ABANDONED` with reason `MACHINE_REVOKED` and the work item returns to `READY`. Every other live goal goes straight to `STUCK` with `phase_reason MACHINE_REVOKED` (its pane never comes back, so no `PANE_LOST` wait) and a `STUCK` triage item says why; its work item stays held until an operator clears the goal (`CLEARED`) or requeues it |
 | Probes | Assignments on the machine fail over to another machine in the next scheduler pass |
 | Sessions, panes, windows | Rows stay, flagged by the machine's state; they are not shown as available |
 | Log streams | Finalised at the last stored offset; stored logs stay under the machine id and `LOGS` rules |
@@ -175,7 +191,10 @@ its row exists. The Enroll that uses it returns the same `machine_id` with new
 certificate serials and sets the state back to `ENROLLED`; the revoked serials
 stay revoked. The revocation record stays in the audit log. After delete, the
 history under the machine id remains, and a new machine can only enroll as a
-new id.
+new id. **A revoked or deleted machine stays out:** `RenewCert`, `Terminal` and
+`SessionLog` (and `Connect`) need a live machine row for the certificate's
+machine id, checked on every call and not only at TLS and `Hello`; the one
+exception is the restore adoption above.
 
 **Duplicate identity.** A newer `Hello` for a `machine_id` that has a live
 stream always wins, silently. The old stream gets `Bye{DUPLICATE_IDENTITY}`
@@ -231,6 +250,10 @@ covers that kind; the default rule is off. `L!` always waits for local approval.
 | `SetLogShipping` | — | — | A | A | — |
 | `Drain`, `Undrain` | — | — | A | — | — |
 
+The hub refuses `DrainMachine` and `UndrainMachine` up front for a caller whose
+mapped role is not `OWNER` ([02d](02d-hub-authz.md#role-sent-to-the-agent)), so
+`spec.drain` never changes for a drain the agent would refuse.
+
 Notes:
 
 - **The scheduler** is the hub's own principal: unattended auto-dispatch (with
@@ -244,8 +267,9 @@ Notes:
   routine), and the agent refuses it with `FRESH_CONTEXT_NOT_ALLOWED` in a
   session the fleet did not start, whatever the role. A local approval rule for
   `StartGoal` is asked once, before step 1, never between `clear_context` and
-  `type_goal`; a timeout is `LOCAL_CONFIRM_TIMEOUT` and the hub opens a new
-  window instead ([02h](02h-goal-binding-and-pane-signals.md#startgoal-steps)).
+  `type_goal`; a timeout is `LOCAL_CONFIRM_TIMEOUT`, nobody is at the keyboard,
+  and the hub skips that machine for 30 minutes and plans elsewhere
+  ([03h](03h-goal-phases-in-depth.md), [02h](02h-goal-binding-and-pane-signals.md#startgoal-steps)).
 - **Unattended recovery and local approval.** If a machine's rule makes
   `RespawnPane` or `SendKeys` `L`, the scheduler's recovery on that machine
   waits for someone at the keyboard; `LOCAL_CONFIRM_TIMEOUT` ends the wait and

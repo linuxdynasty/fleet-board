@@ -118,14 +118,17 @@ message PreflightFailure {
 }
 
 // StartGoal (G3): agent-side composite under one command_id so it survives
-// a hub outage. Steps are reported as CommandProgress in this closed
-// vocabulary and order (a skipped step is not reported; step_index is the
+// a hub outage. Steps are reported as CommandProgress in this fixed
+// set of names (a string, so a newer agent can add steps) and order (a skipped step is not reported; step_index is the
 // position in the full list and step_count is always 14); the restart class
 // of each is in 02h, "StartGoal steps":
 //   1 preflight  2 pick_session  3 prepare_branch  4 ensure_worktree
 //   5 ensure_window  6 register_goal  7 start_log_capture  8 wait_ready
 //   9 set_model  10 set_effort  11 clear_context  12 write_goal_file
 //   13 type_goal  14 confirm_goal_file
+// Step 12 is skipped (not reported) for a checkout whose goal hooks are the
+// repo's own (GoalHooksState.repo_ships_own, a REPO_DRIVER goal): the repo's
+// file is the goal file and step 14 reads it.
 // pick_session and prepare_branch belong to the reuse path, ensure_worktree
 // and ensure_window to the new-window path. Dispatch deadline.
 message StartGoal {
@@ -149,16 +152,19 @@ message StartGoal {
   bool skip_preflight = 7;
   // Non-empty = re-arm: the goal in spec.goal_id finished (the harness
   // achieved and cleared it) but a person says it is not done, so the hub asks
-  // the same pane to take it up again (03c, "Re-arm"). reuse_pane must be the
-  // pane the goal's registry entry names (anything else is
-  // SESSION_NOT_AVAILABLE); the entry is kept, not replaced, and the checks
+  // the same pane to take it up again (03h, "Re-arm after DONE"). reuse_pane
+  // must be the pane the goal's registry entry names; the agent checks it
+  // before step 1, even with skip_preflight, and anything else is
+  // SESSION_NOT_AVAILABLE. The entry is kept, not replaced, and the checks
   // that a pane is free of a live goal pass for its own goal. Steps
   // pick_session, prepare_branch, ensure_worktree, ensure_window,
   // register_goal, start_log_capture, set_model, set_effort and clear_context
   // are skipped (not reported). preflight (unless skipped), wait_ready,
   // write_goal_file (the first line rewritten as the objective plus
-  // "reopened: <rearm_reason>"), type_goal and confirm_goal_file run as in
-  // StartGoal, with spec.goal_text carrying the objective. Up to 1 KiB.
+  // "reopened: <rearm_reason>", truncated to the 4 KiB first-line cap),
+  // type_goal and confirm_goal_file run as in StartGoal, with spec.goal_text
+  // carrying the objective. Step write_goal_file is skipped for a repo-owned
+  // goal file (see step 12). Up to 4 KiB (ControlGoalRequest.text's cap).
   string rearm_reason = 8;
 }
 

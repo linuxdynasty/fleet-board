@@ -31,7 +31,7 @@ Claude Code, Codex, Muse and OpenCode.
 | Entry | `GoalRegistration{goal, pane, harness, worktree_path, harness_session_id, source, register_time, repo_driver}` |
 | Written | `StartGoal` step `register_goal`, after the pane exists and before the goal is typed; or `RegisterGoal` from the hub |
 | Updated | `harness_session_id` is learned from the first `UserPromptSubmit` (or `PreToolUse` where a harness fires no prompt hook for `/goal`, Codex) after registration: the hook asks the agent, which matches by pane and records the id. `SessionStart` has already fired in a reused pane, so E9 cannot rely on it |
-| Removed | `ReleaseGoal`; `PaneExited` (the entry is dropped after the event); `PruneWorktree` for entries pointing into the worktree; another goal registering in the same pane |
+| Removed | `ReleaseGoal`; `PaneExited` only when the pane is gone (`remains` false; with remain-on-exit the entry stays, so `RespawnPane` (same `PaneKey`) and the one nudge still match it); `PruneWorktree` for entries pointing into the worktree; another goal registering in the same pane |
 | Kept | `state.db` in the agent state directory, with the command log; one entry per pane |
 | Reported | `Snapshot.goal_registry` (complete), `Event.goal_registry` (`GoalRegistryChanged`, never dropped), `TmuxPane.goal`, `PaneHarnessSession.goal` |
 
@@ -75,9 +75,12 @@ Rules:
   is the existing `orphan_goal_pane` triage; the hub may `ReleaseGoal` it
   after the owner decides.
 - **Reconciliation** is level-triggered: after every snapshot the hub
-  compares `goal_registry` with its goals in `STARTING` to `STOPPED`, then
-  re-sends or releases. `RegisterGoal` and `ReleaseGoal` are declarative, so
-  a repeat is harmless.
+  compares `goal_registry` with its live goals that have a pane (all live
+  phases but `STARTING`, `START_UNKNOWN` and `PANE_LOST`, the same set as the
+  heartbeat count in 03c, so a `PAUSED` or `LIMIT_WAIT` goal is covered), then
+  re-sends `RegisterGoal` for a missing entry and releases the leftover entry
+  of an ENDED goal (`MERGED`, `CLEARED`, `START_FAILED`). Both commands are
+  declarative, so a repeat is harmless.
 - **No path from the hub.** The agent derives `worktree_path` from its own
   worktree or the pane's checkout.
 
@@ -122,7 +125,7 @@ agent created is pruned.
 
 ## StartGoal steps
 
-The vocabulary is closed. `CommandProgress.step` is one of these names;
+The names are a fixed set, kept as a string so a newer agent can add steps (the hub treats an unknown name as display-only). `CommandProgress.step` is one of these names;
 `step_index` is the position in the full list and `step_count` is always 14,
 so a progress bar is stable when steps are skipped (a skipped step is not
 reported).
@@ -140,7 +143,7 @@ reported).
 | 9 | `set_model` | when `spec.model` | the harness's `/model` (SESSION class), picker handled | verify: read the shown model first, type only when it differs | `MODEL_NOT_AVAILABLE`, `PANE_BUSY` |
 | 10 | `set_effort` | when `spec.effort` | the harness's `/effort` | verify, as above | `EFFORT_NOT_SUPPORTED`, `PANE_BUSY` |
 | 11 | `clear_context` | `fresh_context`, reuse | `/clear` (DESTRUCTIVE class) | **not idempotent**: started without done is `UNKNOWN_OUTCOME` | `FRESH_CONTEXT_NOT_ALLOWED` |
-| 12 | `write_goal_file` | both | the agent writes the initial goal file | declarative: same content again is OK | `GOAL_FILE_WRITE_FAILED` |
+| 12 | `write_goal_file` | both; skipped when the checkout's hooks are repo-owned (`repo_ships_own`, `REPO_DRIVER`) | the agent writes the initial goal file; for a repo-owned file it writes nothing and step 14 reads the repo's own | declarative: same content again is OK | `GOAL_FILE_WRITE_FAILED` |
 | 13 | `type_goal` | both | the adapter's `GoalCommand` plus Enter | **not idempotent**: `UNKNOWN_OUTCOME` unless step 14 proves it | `PANE_BUSY` |
 | 14 | `confirm_goal_file` | both | goal file appears within `goal_file_timeout` | read-only | `GOAL_FILE_NOT_SEEN` |
 
@@ -155,11 +158,13 @@ effective `model` and `effort` (the hub paces by that model's bucket; when
 
 **Re-arm.** `StartGoal.rearm_reason` (non-empty) re-arms a goal whose harness
 already finished it ([03h](03h-goal-phases-in-depth.md#re-arm-after-done)): the
-same goal id, `reuse_pane` the pane its registry entry names. Step 2 passes for
-that pane (it is its own goal's, so it counts as free); steps 3 to 7 and 9 to 11
-are skipped; 1, 8, 12 (the first line rewritten as the objective plus `reopened:
-<reason>`), 13 and 14 run as above, with the same restart classes. The registry
-entry is kept, not replaced.
+same goal id, `reuse_pane` the pane its registry entry names (the agent checks
+that before step 1, even with `skip_preflight`; any other pane is
+`SESSION_NOT_AVAILABLE`, and the pane counts as free because the live goal is its
+own). Steps 2 to 7 and 9 to 11 are skipped (so `pick_session` does not run); 1,
+8, 12 (the first line rewritten as the objective plus `reopened: <reason>`,
+truncated to the 4 KiB first-line cap), 13 and 14 run as above, with the same
+restart classes. The registry entry is kept, not replaced.
 
 **Roles and approval.** The scheduler may run `StartGoal` including steps 9
 to 11: they are part of the composite the owner or routine chose (02g). The
@@ -167,8 +172,9 @@ to 11: they are part of the composite the owner or routine chose (02g). The
 session the fleet started (`FRESH_CONTEXT_NOT_ALLOWED` otherwise). If a local
 rule needs approval for `StartGoal`, the wait happens before step 1, never
 between steps, and is reported as `CommandProgress{step "awaiting_local_confirm",
-step_index 0}`, not as one of the 14 steps and never as a `CommandResult`; a timeout ends the start with `LOCAL_CONFIRM_TIMEOUT` and the
-hub opens a new window instead. Auto-dispatch into a reused session sets
+step_index 0}`, not as one of the 14 steps and never as a `CommandResult`; a timeout ends the start with `LOCAL_CONFIRM_TIMEOUT`:
+nobody is at the keyboard, so the hub skips the machine for 30 minutes and plans
+elsewhere (03h). Auto-dispatch into a reused session sets
 `fresh_context = true` (a session after `MERGED` still carries the previous
 goal's context); model and effort come from the repo, routine or dispatch
 settings.

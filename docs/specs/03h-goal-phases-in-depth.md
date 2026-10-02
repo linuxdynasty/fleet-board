@@ -126,8 +126,8 @@ interplay with commands:
 The hub's own checks run in `PreflightGoal` and again in `StartGoal`, before
 anything is sent. Each finding is a `PreflightCheck{ErrorDetail, severity}`;
 the agent's `failed_checks` come back in `Operation.failed_checks` and are all
-`BLOCK`. The reasons are hub-dispatch `ReasonCode`s (540 to 562), so a client
-branches on codes, never on strings.
+`BLOCK`. The reasons are hub `ReasonCode`s (540 to 562; 540 to 556 are dispatch
+rules, 557 to 562 other hub refusals), so a client branches on codes, never on strings.
 
 | Severity | Meaning | Reasons |
 |---|---|---|
@@ -250,7 +250,7 @@ So the hub re-arms instead of nudging:
    input.
 2. The hub sends `StartGoal` for the **same goal id** with `reuse_pane` set to the
    goal's pane, `rearm_reason = text` and `spec.goal_text` = the objective (EDIT:
-   the new text). The agent skips every step that creates something (02h), writes
+   the new text). The agent skips every step that creates something, `pick_session` included (02h), writes
    the first line as the objective plus `reopened: <reason>`, waits ready, types
    the harness's set-goal form (`/goal <text>`, in the consent form the checkout's
    hooks need), and confirms the goal file.

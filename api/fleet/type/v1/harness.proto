@@ -62,7 +62,9 @@ message GoalHooksState {
   // PENDING or UNKNOWN. Agent-written text, not harness output.
   string trust_approve_command = 8;
   // User-level config file the entries were merged into, e.g.
-  // ~/.claude/settings.json. Hooks are user level, inert unless FLEET_GOAL_ID.
+  // ~/.claude/settings.json. Hooks are user level and inert unless the
+  // agent's goal registry matches the hook call (session_id, pane or, for
+  // Muse, cwd; 02h); FLEET_GOAL_ID is only a fast path for a new window.
   string config_path = 7;
 }
 

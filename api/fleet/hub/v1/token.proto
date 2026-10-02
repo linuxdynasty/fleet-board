@@ -2,7 +2,10 @@
 // authenticated mode (FLEET_TOKEN; ADR 0019, 02f-hub-authentication.md). A
 // token acts as Principal{kind API_TOKEN, id "token/<id>", on_behalf_of: the
 // user who created it}; its scopes are at most that user's, checked again on
-// every call, so demoting the user narrows the token at once.
+// every call (the role plus UserSpec.extra_scopes), so demoting the user
+// narrows the token at once. A token can mint no credential (CreateApiToken,
+// ApprovePairing, CreateUserInvite and UpdateUser need a user principal), so
+// revoking one leaves nothing it created behind (02d, "No escalation").
 //
 // The secret has the form `fbt_<token id>.<32 random bytes, base64url>`: the
 // prefix lets secret scanners find a leaked token, and the id lets the hub
@@ -23,8 +26,9 @@ message ApiTokenSpec {
   string name = 1;
   // The user it acts for (its creator).
   fleet.type.v1.PrincipalId principal = 2;
-  // Granted scopes, never empty. SCOPE_LOGS only when the creator holds it
-  // and ticks it (ADR 0019); anything the creator lacks is SCOPE_NOT_GRANTABLE.
+  // Granted scopes, never empty; a subset of the creator's effective scopes.
+  // SCOPE_LOGS only when the creator holds it (by role or extra_scopes) and
+  // ticks it (ADR 0019); anything the creator lacks is SCOPE_NOT_GRANTABLE.
   repeated Scope scopes = 3;
   // Always set; default 90 days, at most 365.
   google.protobuf.Timestamp expire_time = 4;
@@ -53,12 +57,14 @@ message ApiToken {
   ApiTokenStatus status = 11;
 }
 
-// CreateApiTokenRequest. Only a signed-in user (or the local owner) can
-// create a token: a token or device cannot mint another. SCOPE self.
+// CreateApiTokenRequest. Only a user principal (a signed-in user, or the local
+// owner, including `fleetd token create` on the hub host through its local
+// admin socket) can create a token: a token or device cannot mint another
+// (SCOPE_NOT_GRANTABLE). SCOPE self.
 message CreateApiTokenRequest {
   string request_id = 1;
   string name = 2;
-  // Required, non-empty; a subset of the caller's own scopes.
+  // Required, non-empty; a subset of the caller's own effective scopes.
   repeated Scope scopes = 3;
   // Optional lifetime; zero means 90 days; over 365 days is INVALID_ARGUMENT.
   google.protobuf.Duration ttl = 4;

@@ -247,13 +247,16 @@ enum ReasonCode {
   // the client begins again. A failed assertion is CREDENTIALS_INVALID.
   REASON_CODE_PASSKEY_CEREMONY_INVALID = 523;
   // The GitHub account signed in correctly but is not on the allow-list (no
-  // active user has its login).
+  // INVITED or ACTIVE user has its login), or a link names a login other than
+  // the user's spec.github_login.
   REASON_CODE_GITHUB_NOT_ALLOWED = 524;
   // The change would leave a user with no way to sign in, or the hub with
   // no active owner.
   REASON_CODE_LAST_CREDENTIAL = 525;
-  // A token or device asks for a scope its creator does not hold (or LOGS
-  // without the owner's explicit grant).
+  // A grant above the grantor's own scopes (a token, device, role or extra
+  // scope its creator does not hold, or LOGS without an explicit tick), or a
+  // credential-minting RPC (ApprovePairing, CreateUserInvite, UpdateUser,
+  // CreateApiToken) called by a token or device instead of a user.
   REASON_CODE_SCOPE_NOT_GRANTABLE = 526;
   // The attach ticket is unknown, expired (60 s), already used, or was
   // issued for another session, principal or Origin.
@@ -326,8 +329,10 @@ enum ReasonCode {
   // violations.
   REASON_CODE_PREFLIGHT_WARNINGS_UNACKNOWLEDGED = 557;
   // ControlGoal action that the goal's phase does not allow (NOT_DONE on a
-  // RUNNING goal, RESUME on a MERGED one). Not a stale phase: see
-  // GOAL_PHASE_CHANGED.
+  // RUNNING goal, RESUME on a MERGED one), or any action while a person is
+  // typing in the goal pane: then metadata {"held": "person_typing"} tells
+  // the two apart and the action is refused, never queued. Not a stale phase:
+  // see GOAL_PHASE_CHANGED.
   REASON_CODE_GOAL_ACTION_NOT_ALLOWED = 558;
   // DeleteAccount while a live goal or session still spends from it, or
   // while the harness still shows it signed in somewhere.
@@ -352,8 +357,8 @@ enum ReasonCode {
   REASON_CODE_ENROLL_CSR_INVALID = 603;
   // No common proto version (proto_min/proto_max).
   REASON_CODE_ENROLL_PROTO_UNSUPPORTED = 604;
-  // EnrollRequest.previous_machine_id differs from the one the owner put in
-  // the token.
+  // EnrollRequest.previous_machine_id names a machine and the token names a
+  // different one. A request id with a token that names none is ignored.
   REASON_CODE_ENROLL_PREVIOUS_MACHINE_MISMATCH = 605;
 }
 

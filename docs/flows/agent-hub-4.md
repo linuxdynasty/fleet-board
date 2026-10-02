@@ -70,7 +70,7 @@ sequenceDiagram
   alt harness stopped without DONE
     A->>H: Event{pane_exited{pane, exit_status, goal_id}} or Event{activity{to IDLE}} on a pane showing the ready prompt with a WORKING line
     H->>H: phase STOPPED, one corrective nudge allowed
-    opt the pane is dead
+    opt the pane is dead but remains (remain-on-exit)
       H-->>A: Command{RespawnPane{pane, harness, resume true, harness_session_id}}
     end
     H-->>A: Command{SendKeys{pane, keys, purpose GOAL_NUDGE}}
@@ -143,7 +143,7 @@ sequenceDiagram
    | Hooks live in | `~/.claude/settings.json` | `~/.codex/hooks.json` | a plugin package at user scope |
    | Stop guard | `Stop` fired when the goal finished (probed); a block continues a turn | `Stop` fired on a finished goal (probed); continuation by block is not probed | probed: `block` plus a reason continues the turn; the next stop has `stop_hook_active: true`, so the guard allows it to avoid a loop |
    | Interrupt | no hook; read from the screen ("Interrupted") | `Interrupt` fires, output ignored (notify only) | an `Interrupt` hook exists, not probed live |
-   | Goal found by | pane, then session id | pane, then session id | `cwd` bootstrap, then session id |
+   | Goal found by | session id, then pane | session id, then pane | session id; `cwd` only until the id is learned |
    | Needs trust | no (`NOT_REQUIRED`) | yes, once in `/hooks` | yes, once with `muse plugins approve fleet-goal-hooks` |
 
    `GoalHooksState.trust` is a `HookTrustState` (`UNKNOWN` is never read as trusted,
@@ -165,8 +165,10 @@ sequenceDiagram
 6. **Stopped without DONE and the one nudge.** A pane that exited
    (`PaneExited{goal_id}`), or that is idle at the ready prompt with a `WORKING` line
    for longer than `idle_threshold`, makes the goal `STOPPED`. The hub allows **one**
-   nudge: if the pane is dead, `RespawnPane` with `resume` and the exact
-   `harness_session_id` (so `--last` cannot pick another conversation), then
+   nudge: if the pane is dead but remains (`PaneExited.remains`; the registry entry
+   is kept and `RespawnPane` keeps the `PaneKey`), `RespawnPane` with `resume` and the exact
+   `harness_session_id` (so `--last` cannot pick another conversation); a pane that is
+   gone follows `PANE_LOST`, not a respawn. Then
    `SendKeys{purpose GOAL_NUDGE}` with the hub-authored text. The agent gates it: the
    pane is bound to a fleet goal, the ready pattern shows, the input line is empty
    (`PANE_BUSY` otherwise). A second stop makes the goal `STUCK` and raises a triage

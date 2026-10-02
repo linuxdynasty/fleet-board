@@ -20,11 +20,11 @@ transport, and how a terminal attach over WebSocket is opened and closed.
 
 | | `local_trusted` | `authenticated` |
 |---|---|---|
-| Listens on | loopback only (`127.0.0.1`, `::1`); `fleetd` refuses to start on any other address, with no override flag | any address the owner configures, normally the Tailscale or LAN interface, with TLS |
+| Listens on | loopback only (`127.0.0.1`, `::1`), plain HTTP; `fleetd` refuses to start on any other address, with no override flag | any address the owner configures, normally the Tailscale or LAN interface, **HTTPS only**: the owner supplies a certificate or uses a Tailscale certificate, and `fleetd` refuses to start in this mode without one (no plain-HTTP listener, no override flag) |
 | Who calls | the owner, with no sign-in | users (passkey or GitHub), API tokens, paired devices |
-| Principal | fixed `{id "local-owner", name "owner", kind USER, role OWNER}` | by credential, below |
-| Sign-in RPCs | `FAILED_PRECONDITION` (nobody signs in) | all of [auth.proto](../../api/fleet/hub/v1/auth.proto) |
-| Attach | needs a ticket and passes the Host and Origin checks | same |
+| Principal | fixed `{id "local-owner", name "owner", kind USER, role OWNER}`; a valid `Authorization: Bearer` token narrows it to that token's scopes (a convenience, not a boundary: no header means OWNER); an invalid one is `CREDENTIALS_INVALID` | by credential, below |
+| Sign-in and device RPCs | `FAILED_PRECONDITION`: every RPC of [auth.proto](../../api/fleet/hub/v1/auth.proto) (users, invites, passkeys, login sessions, sign-out) and the device RPCs of `device.proto` (`RequestPairing`, `ApprovePairing`, `ListDevices`, `GetDevice`, `RevokeDevice`). API-token RPCs and notification targets work for the local owner | all of them |
+| Attach | a WebSocket needs a ticket in both modes; a CLI over HTTP/2 needs none. Both pass the Host and Origin checks | same |
 
 `design.md` once said the hub listens only on the Tailscale interface and attach
 needs login; both statements are now scoped to `authenticated` mode.
@@ -35,7 +35,7 @@ Origin checks below are what keep a web page the owner visits from using it.
 
 | Caller | Credential | Carried as | Hub principal |
 |---|---|---|---|
-| Browser | session cookie | `Cookie: __Host-fleet_session=<256-bit random>` over TLS, `fleet_session` over loopback HTTP; `HttpOnly`, `SameSite=Strict`, `Path=/`, no `Domain`. The hub stores a SHA-256 of it | `{kind USER, id <user>, role <user's role>}` |
+| Browser | session cookie | `Cookie: __Host-fleet_session=<256-bit random>`; `Secure`, `HttpOnly`, `SameSite=Strict`, `Path=/`, no `Domain`. The hub stores a SHA-256 of it. Authenticated mode only, so always over HTTPS | `{kind USER, id <user>, role <user's role>}` |
 | `fleet` CLI, scripts | API token | `Authorization: Bearer fbt_<token id>.<secret>` (`FLEET_TOKEN`) | `{kind API_TOKEN, id "token/<id>", role mapped, on_behalf_of <user>}` |
 | Phone | paired device | `Authorization: Fleet-Device <device id>.<unix seconds>.<nonce>.<Ed25519 signature>` over method, path, SHA-256 of the body, timestamp and nonce; the hub refuses a timestamp more than 60 s off or a nonce it saw in that window | `{kind DEVICE, device, id "device/<id>", role mapped, on_behalf_of <user>}` |
 | Owner in `local_trusted` | none | nothing | the fixed local owner |
@@ -49,8 +49,9 @@ cookie covers unary calls, `Watch` and the same-origin WebSocket attach; the
 bearer and device carriers cover the same calls for non-browser clients.
 
 `GetServerInfo`, `RedeemInvite`, `BeginPasskeyLogin`, `FinishPasskeyLogin`,
-`RequestPairing` and the two GitHub redirect endpoints need no credential and
-are rate limited per peer address. Every other RPC needs one. A missing, unknown
+`RequestPairing`, `GET /auth/github/start?purpose=signin` and the GitHub
+callback need no credential and are rate limited per peer address
+(`purpose=link` needs a session, below). Every other RPC needs one. A missing, unknown
 or revoked credential is `UNAUTHENTICATED` / `CREDENTIALS_INVALID`; an expired
 cookie, token or session is `CREDENTIALS_EXPIRED` ("sign in again").
 
@@ -66,16 +67,23 @@ Applied to every request on every transport, before any handler, in both modes:
 2. **Origin.** A request that carries an `Origin` header must carry exactly an
    allowed origin (scheme, host and port of a configured public origin, or the
    loopback origin in `local_trusted`); otherwise HTTP 403 with
-   `ORIGIN_NOT_ALLOWED`. A cookie-authenticated request, and every WebSocket
-   upgrade, must carry an `Origin`. A bearer or device request, and in
+   `ORIGIN_NOT_ALLOWED`. A cookie-authenticated POST RPC, `Watch`, and every
+   WebSocket upgrade must carry an `Origin`. A bearer or device request, and in
    `local_trusted` a request from a non-browser process, may omit it.
+   **Exempt:** plain `GET`s for the web app's static assets, and the two GitHub
+   redirect endpoints. A top-level browser navigation sends no `Origin`, and
+   the callback arrives as a cross-site redirect from github.com, so the
+   callback is protected by its `state` check instead (GitHub sign-in, below).
+   The exemption covers those paths only, never an RPC.
 3. **No CORS.** The hub sends no `Access-Control-Allow-*` headers, so a page on
    another site cannot read a response even if it could send the request. A
    Connect POST must carry `Connect-Protocol-Version` or a gRPC content type
    (not CORS-safelisted, so a cross-site form cannot forge it), and no mutating
    RPC accepts a Connect GET.
-4. **Cookies are `SameSite=Strict`**, so the browser does not attach them to a
-   cross-site request at all.
+4. **The session cookie is `SameSite=Strict`**, so the browser does not attach
+   it to a cross-site request at all. The one exception is the short-lived
+   GitHub state cookie, which is `SameSite=Lax` on purpose (below) and carries
+   no authority of its own.
 
 An HTTP-level refusal is a Connect error body (`{"code":
 "permission_denied", "details": [ErrorDetail]}`) with status 401 for
@@ -86,16 +94,21 @@ gets the same.
 
 In `authenticated` mode a hub with no users has no owner. On start `fleetd`
 creates a one-time owner invite exactly as `CreateUserInvite` would (role
-`OWNER`, 24 h) and prints the **claim URL** to its log and terminal:
+`OWNER`, 24 h) and prints the **claim URL** to the terminal only (stderr of
+an interactive `fleetd`, or `fleetd claim`), never to the structured log or
+journald; the log records only `auth.claim` and `claim_pending`:
 `https://<public origin>/invite#<token>`. The token is in the fragment, so it
 reaches no server log or `Referer`. Every start while the hub is unclaimed
-replaces the token; `fleetd claim` prints a fresh one. `GetServerInfo`
-reports `claim_pending` so the web UI shows "claim this hub".
+replaces the token; `fleetd claim` prints a fresh one. The 15-minute reissue
+below is shown only by `fleetd claim`, never re-printed or logged.
+`GetServerInfo` reports `claim_pending` so the web UI shows "claim this hub".
 
 1. The page reads the fragment and calls `RedeemInvite{invite_token,
-   display_name}`. The hub burns the invite, creates the owner (state
-   `INVITED`) and sets a **registration session** cookie: it can register a
-   passkey or link GitHub for that user and do nothing else, for 15 minutes.
+   display_name}`. The invite already created the user (state `INVITED`; a
+   restart reuses that same row, so restarts never leave orphan owners).
+   `RedeemInvite` burns the invite, activates that pre-created user and sets a
+   **registration session** cookie: it can register a passkey or link GitHub
+   for that user and do nothing else, for 15 minutes.
 2. The owner registers a passkey (`BeginPasskeyRegistration`,
    `FinishPasskeyRegistration`), or links a GitHub account (below). The first
    credential makes the user `ACTIVE` and upgrades the session to a full one.
@@ -107,7 +120,9 @@ operator's terminal and the owner claims before exposing the hub. A wrong token
 is `INVITE_INVALID` with no hint, and redemptions are limited to 10 a minute per
 peer address. Other users come in the same way: `CreateUserInvite` (ADMIN)
 returns an invite URL, or only a `github_login` for someone who will sign in
-with GitHub.
+with GitHub. An invite never grants more than the inviter holds
+([02d, no escalation](02d-hub-authz.md#no-escalation)); the claim invite is the
+one exception, made by `fleetd` on the hub host.
 
 ## Passkeys
 
@@ -120,10 +135,11 @@ one. The options and the credential travel as the W3C JSON forms in
 `parseCreationOptionsFromJSON` and `toJSON` helpers apply and no client code
 interprets them. Ceremonies live 5 minutes and are single use.
 
-WebAuthn works only in a secure context: HTTPS, or `localhost`. An
-`authenticated` hub reached over plain HTTP at a LAN name offers GitHub sign-in
-or needs TLS (Tailscale serves a certificate). `GetServerInfo.sign_in_methods`
-lists what is usable.
+WebAuthn works only in a secure context, which `authenticated` mode always
+provides because it serves HTTPS only (an owner-supplied or Tailscale
+certificate). `GetServerInfo.sign_in_methods` lists what is usable: a method
+the owner turned off, or GitHub without its App settings, is
+`SIGN_IN_METHOD_DISABLED`.
 
 `FinishPasskeyLogin` sets the session cookie. A bad assertion, an unknown
 credential and a disabled user all answer `CREDENTIALS_INVALID`, so the answer
@@ -140,13 +156,23 @@ endpoints, because it is a browser redirect:
 
 | Endpoint | What it does |
 |---|---|
-| `GET /auth/github/start?purpose=signin\|link` | Sets a short-lived `__Host-fleet_oauth` cookie holding a random `state` and a PKCE verifier, then redirects to GitHub's authorize URL. `link` needs a full or registration session |
-| `GET /auth/github/callback?code&state` | Checks `state` against the cookie, exchanges the code, reads the user, then: `signin` finds the user whose `spec.github_login` equals the login (case-insensitive; pins the numeric id on first use) and sets the session cookie; `link` stores the link on the signed-in user. Redirects to `/` on success or `/signin?error=<REASON>` on failure |
+| `GET /auth/github/start?purpose=signin\|link` | Sets the `__Host-fleet_oauth` **state cookie** and redirects to GitHub's authorize URL. The cookie is `Secure`, `HttpOnly`, **`SameSite=Lax`**, `Path=/auth/github`, valid 10 minutes, and holds the random OAuth `state` and a PKCE verifier. `link` needs a full or registration session: this request is same-site, so the Strict session cookie arrives, and the hub records `state -> {purpose, user, session}` server-side (hashed, single use, 10 minutes) |
+| `GET /auth/github/callback?code&state` | Arrives as a cross-site top-level redirect from github.com, so the Strict session cookie is not sent but the Lax state cookie is. Checks `state` against the cookie and the server-side record (either missing or different: `/signin?error=CREDENTIALS_INVALID`), burns it, exchanges the code, reads the user, then: `signin` finds the user whose `spec.github_login` equals the login (case-insensitive; pins the numeric id on first use) and sets the session cookie; `link` takes its user from the server-side record, never from a cookie. Redirects to `/` on success or `/signin?error=<REASON>` on failure; the page then re-reads the session with a same-site fetch |
+
+The two endpoints are exempt from the Origin-required rule (above): they are
+top-level `GET` navigations, and the `state` check is their CSRF defence.
 
 A GitHub account that is not on the allow-list ends at `GITHUB_NOT_ALLOWED`. The
-allow-list is `UserSpec.github_login` of the active users, so there is one list
-and one place to edit it. After the first sign-in the numeric id is what
-matches, so a renamed or recycled login cannot take over a user. Setup adds the
+allow-list is `UserSpec.github_login` of the users in state `INVITED` or `ACTIVE`
+(not `DISABLED`), so a GitHub-only invitee can sign in, and there is one list and
+one place to edit it. A first sign-in from `INVITED` makes the user `ACTIVE`.
+`link` links only a GitHub login equal to the user's `spec.github_login`
+(else `GITHUB_NOT_ALLOWED`); it never writes the allow-list, with one exception:
+the registration session of the claim owner, whose invite carried no login, may
+set `spec.github_login` to the linked login. `github_login`, and the pinned
+numeric id, are unique across users (`ALREADY_EXISTS`). After the first sign-in
+the numeric id is what matches, so a renamed or recycled login cannot take over
+a user. Setup adds the
 App's client id and secret and the callback URL
 `<public origin>/auth/github/callback` to the hub configuration (secret file
 mode 0600, like the private key); until then `github_sign_in` is
@@ -159,7 +185,9 @@ A session cookie lasts `HubSettings.session_max_age` (30 days) and ends after
 session and clears the cookie. `ListLoginSessions` and `RevokeLoginSession`
 show and end a user's sessions (ADMIN: anyone's). Revoking a session, disabling
 a user or revoking a token or device takes effect at once, including on open
-streams: `Watch` ends `UNAUTHENTICATED`, an attach closes with `HUB_CLOSED`.
+streams: `Watch` ends `UNAUTHENTICATED`, an attach closes with `HUB_CLOSED`. So
+does the **expiry** of a cookie, session, token or device (`expire_time`): the
+hub ends open streams at the moment of expiry, not at the next call.
 Demoting a user ends its streams with `RESYNC_REQUIRED` / `SCOPES_CHANGED`
 ([02d](02d-hub-authz.md#scope-per-watch-topic)).
 
@@ -167,22 +195,31 @@ Demoting a user ends its streams with `RESYNC_REQUIRED` / `SCOPES_CHANGED`
 
 For the CLI and scripts. A user (a signed-in session, or the local owner)
 creates one with `CreateApiToken{name, scopes, ttl}`; a token or device cannot
-create another. Scopes are required, are a subset of the creator's own, and
-include `LOGS` only if the creator holds it and ticks it; anything else is
-`SCOPE_NOT_GRANTABLE`. Lifetime defaults to 90 days, at most 365. The secret
+create another (every credential-minting RPC needs a user, see
+[02d](02d-hub-authz.md#no-escalation)). Scopes are required, are a subset of the
+creator's own effective scopes, and include `LOGS` only if the creator holds it
+and ticks it; anything else is `SCOPE_NOT_GRANTABLE`. Lifetime defaults to 90 days, at most 365. The secret
 `fbt_<id>.<secret>` is shown once in the response and never stored (only a
 SHA-256 of it); a retry of the same `request_id` gets `SECRET_ALREADY_DELIVERED`
 and the user makes a new one. The `fbt_` prefix lets secret scanners find a
 leaked token. The CLI keeps it in `FLEET_TOKEN` or `~/.config/fleet/token`
 (mode 0600). `RevokeApiToken` takes effect at once. Because creating the first
-token needs a session, `fleetd token create` does the same on the hub host
-(it talks to the running hub through its local admin socket, so it needs no
-network and no password).
+token needs a session, `fleetd token create` does the same on the hub host. It
+talks to the running hub through a local admin socket (mode 0600, owned by the
+`fleetd` OS user, so nobody else can open it and it needs no network and no
+password). The token acts for a named owner (`--user`, default the sole active
+owner), its scopes are capped to that owner's, and the audit actor is
+`Principal{LOCAL_USER, local:<os user>}` with `on_behalf_of` the owner.
+**Break-glass:** if the last owner loses every passkey and GitHub link,
+`fleetd user invite --owner` (same socket) creates a new one-time owner invite
+and prints it like the claim URL, audited as `auth.claim`; `fleetd claim` itself
+works only while the hub is unclaimed.
 
 ## Devices
 
 Pairing is unchanged ([02d](02d-hub-authz.md#pairing)): `RequestPairing`, a
-six-digit code the owner compares, `ApprovePairing` with the granted scopes. An
+six-digit code the phone shows and the owner types, `ApprovePairing` with the
+granted scopes (a subset of the approving user's effective scopes). An
 empty `requested_scopes` means `READ` and `APPROVALS`. `LOGS`, `ADMIN` and
 `SETTINGS` are never in the default, and `LOGS` is granted only when the owner
 lists it. The device then signs every request with its Ed25519 key (table
@@ -194,7 +231,8 @@ above); the private key never leaves the device. Push providers are still open
 A browser cannot stream a request body, so it carries `AttachTerminalRequest`
 and `AttachTerminalResponse` (the hub messages, never the agent's `TermUp` and
 `TermDown`, which hub messages must not embed) over a WebSocket. A CLI uses the
-same RPC over HTTP/2 with its bearer header and needs no ticket.
+same RPC over HTTP/2 with its bearer header and needs no ticket (in
+`local_trusted` with no header at all: the local owner).
 
 **Why a ticket.** A WebSocket upgrade carries ambient authority: the cookie, or
 nothing at all in `local_trusted` mode. WebSockets are not subject to CORS, so a

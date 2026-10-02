@@ -62,7 +62,9 @@ So scrolling a session sidebar changes only the `PANE_SUMMARIES` filter:
 that topic restarts with `send_initial`, every other topic resumes, and no
 `RESYNC_REQUIRED` is sent. The visible-pane filter is
 `session in ("s-1", "s-2", …)` (or `machine = "m-12"`): a pane is filtered
-by its session or machine, never by `PaneKey`, which has no string form.
+by its session or machine, never by `PaneKey`. `PaneKey` has a canonical string
+form (`ids.proto`) for coalesce keys and `FLEET_PANE_KEY`, but it is not a filter
+field.
 
 ### Resume and `RESYNC_REQUIRED`
 

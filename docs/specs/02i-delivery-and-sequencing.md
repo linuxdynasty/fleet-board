@@ -16,11 +16,11 @@ something did not. The rules here replace the shorter "backpressure classes" and
 The agent stamps `Event.delivery` and `Event.coalesce_key` from this table, so a
 hub that does not know a newer kind still queues, sheds or coalesces it
 correctly. A key names the thing the event is about; `<pane>` is
-`<server>/<server_start_id>/<pane_id>` of the `PaneKey`.
+`<server>/<server_start_id>/<pane_id>` of the `PaneKey` (its canonical string form, `ids.proto`).
 
 | Body | Class | `coalesce_key` | Why |
 |---|---|---|---|
-| `resource_sample` | SHED | | a sample every few seconds; the next one replaces it |
+| `resource_sample` | SHED | | a sample every 30 s; the next one replaces it |
 | `power_state` | NEVER_DROP | | preflight depends on it; rare |
 | `account_identity` | COALESCE | `identity:<harness>:<profile>` | a level: the latest identity is the identity |
 | `harness_changed` | COALESCE | `harness:<harness>:<profile>` | carries the full `HarnessInfo`, so latest wins |

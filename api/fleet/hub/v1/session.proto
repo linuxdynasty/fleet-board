@@ -251,17 +251,21 @@ message RunHarnessCommandResponse {
   ApprovalId approval = 2;
 }
 
-// CapturePaneRequest sends CapturePane (E10).
+// CapturePaneRequest sends CapturePane (E10). The visible screen
+// (last_lines 0) is a live view and needs SCOPE_READ; history lines
+// (last_lines above 0) are terminal scrollback and need SCOPE_LOGS (02d).
 message CapturePaneRequest {
   string request_id = 1;
   fleet.type.v1.SessionId session = 2;
   fleet.type.v1.PaneKey pane = 3;
+  // 0 = visible screen (READ); otherwise the last N lines of history (LOGS).
   uint32 last_lines = 4;
   bool keep_ansi = 5;
   uint32 max_bytes = 6;
 }
 
-// CapturePaneResponse. Text arrives as Operation.output_text.
+// CapturePaneResponse. Text arrives as Operation.output_text, which only the
+// requester and SCOPE_LOGS holders can read.
 message CapturePaneResponse {
   Operation operation = 1;
 }

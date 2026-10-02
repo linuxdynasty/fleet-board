@@ -9,8 +9,7 @@
 - Other parts: [1](dashboard-hub-agent.md) (D1, D2), [2](dashboard-hub-agent-2.md) (D3, D4, D5),
   [3](dashboard-hub-agent-3.md) (D6, D7, D8), [4](dashboard-hub-agent-4.md) (D9, D10, D11, D12)
 - Conventions: arrows are numbered by hand and the numbered list under each diagram explains them. Where a
-  spec and a proto disagreed while this was written, the spec or proto was corrected, so nothing here relies on an open question.
-  Names are the proto names; the first mention of a message in a file links to its proto.
+  spec and a proto disagree, the proto wins. Names are the proto names; the first mention of a message in a file links to its proto.
 
 ---
 
@@ -272,7 +271,7 @@ sequenceDiagram
    [`SessionLogMatch`](../../api/fleet/hub/v1/log_store.proto) has the `key` and a `raw_offset` to pass as `start_offset`.
 10. `ReadSessionLog` is a server stream (it works over plain Connect, no WebSocket). Exactly one of `start_offset` or `start_time` selects the start; `max_bytes` 0 means to the end; `follow` keeps
     the stream open and sends new data as it is stored.
-11. Every RPC in this flow needs `LOGS`. Owners hold it; a viewer, API token or paired device has it only if the owner granted it, and a phone pairing never requests it by default. Replay decodes
+11. `ReadSessionLog`, `ListStoredSessions`, `GetStoredSession`, `SearchSessionLogs`, `DeleteSessionLogs` and `GetLogStoreStatus` need `LOGS`; `SetLogCapture` needs `SESSIONS_WRITE`; `ListGoalRuns` needs `READ`. Owners hold `LOGS`; a viewer gets it through `UserSpec.extra_scopes`, an API token or paired device only if ticked at creation or approval, and a phone pairing never requests it by default. Replay decodes
     from the chunk at `frame_raw_offset`, which is at most 5 minutes of data before any byte it needs.
 12. `data` is at most 256 KiB per message and is **untrusted** (terminal bytes with escape sequences, or transcript text). `gap_before` is the number of bytes missing before this span.
 13. The dashboard draws the bytes through xterm.js and never as markup, and shows a gap marker and the `first_byte_time` and `last_byte_time` for time navigation.
@@ -331,12 +330,12 @@ sequenceDiagram
   participant A as fleet-agent
   participant T as tmux and harness
   P->>P: 1. generate an Ed25519 key pair, the private key never leaves the phone
-  P->>H: 2. RequestPairing{request_id, display_name, platform, public_key, requested_scopes}
+  P->>H: 2. RequestPairing{display_name, platform, public_key, requested_scopes}
   H->>H: 3. tx: pending Device, six-digit code derived from the key and a hub nonce, valid 10 minutes
-  H-->>P: 4. RequestPairingResponse{device, pairing_code, expire_time}
+  H-->>P: 4. RequestPairingResponse{device, pairing_code, expire_time}, the code shown on the phone only
   H-->>D: 5. Watch DEVICES CREATED (pending device)
-  D->>H: 6. ApprovePairing{request_id, id, expected_version, pairing_code, scopes}
-  H->>H: 7. tx: code matches, scopes are a subset, spec.principal and approved_time set, audit device.approve
+  D->>H: 6. ApprovePairing{request_id, id, expected_version, pairing_code, scopes} (the owner types the code the phone shows)
+  H->>H: 7. tx: caller is a user, code matches, scopes are a subset of the approver's own effective scopes and of the request, spec.principal and approved_time set, audit device.approve
   H-->>D: 8. ApprovePairingResponse{device}
   P->>H: 8b. GetDevice{id}, signed with its key, polled until spec.approved_time is set (the only call a pending device may make)
   P->>H: 9. any RPC with Authorization: Fleet-Device ID.TIMESTAMP.NONCE.SIGNATURE
@@ -355,16 +354,16 @@ sequenceDiagram
 ```
 
 1. to 4. [`RequestPairing`](../../api/fleet/hub/v1/device.proto) is unauthenticated (there is no principal yet) and rate limited per peer address; it is idempotent by
-   `(peer address, public key)`, and a replay returns the pending device and a recomputed code. `public_key` is the raw 32-byte key. An **empty** `requested_scopes` means `READ` and
+   `(peer address, public key)` (it carries no `request_id`), and a replay returns the pending device and a recomputed code. `public_key` is the raw 32-byte key. An **empty** `requested_scopes` means `READ` and
    `APPROVALS`. The code is six digits derived from the public key and a hub nonce and is never stored.
 5. Pending devices need `ADMIN` to see (`DEVICES` topic: `ADMIN` for all, or `self` for the device itself).
-6. to 8. [`ApprovePairing`](../../api/fleet/hub/v1/service.proto) needs `ADMIN`. `pairing_code` must equal what the phone shows (`PAIRING_CODE_MISMATCH`); a code older than 10 minutes is `PAIRING_EXPIRED`. `scopes` may be
-   fewer than requested, never more, and `SCOPE_LOGS` is granted **only if the owner lists it**, even if the device asked for it (`SCOPE_NOT_GRANTABLE` otherwise). `expected_version`
+6. to 8. [`ApprovePairing`](../../api/fleet/hub/v1/service.proto) needs `ADMIN` and a **user** principal (a token or device, even with `ADMIN`, gets `SCOPE_NOT_GRANTABLE`). `pairing_code` is what the owner read off the phone and typed (`PAIRING_CODE_MISMATCH`); a code older than 10 minutes is `PAIRING_EXPIRED`. `scopes` may be
+   fewer than requested, never more, never above the approver's own effective scopes, and `SCOPE_LOGS` is granted **only if the owner lists it** and holds it, even if the device asked for it (`SCOPE_NOT_GRANTABLE` otherwise). `expected_version`
    guards the spec only, so a pending device that keeps pinging never makes the approval conflict with itself. Arrow 8b: the phone learns of the approval by
    polling `GetDevice` on itself with its signed request until `spec.approved_time` is set; every other call from a pending device is `DEVICE_NOT_ACTIVE` ([02d](../specs/02d-hub-authz.md)).
 9. to 10. The signature covers the method, path, SHA-256 of the body, a timestamp and a nonce; the hub refuses a timestamp more than 60 s off or a nonce it saw in that window. A
    stream (`Watch`) is signed **once at open** and ends the moment the device is revoked. The hub also refuses a request with a second credential.
-11. The device's scopes are re-intersected with the role of its user on every call, so demoting the user narrows the phone at once.
+11. The device's scopes are re-intersected with the effective scopes of its user (role plus `extra_scopes`) on every call, so demoting the user narrows the phone at once.
 12. to 14. Same path as D5. A phone that holds `APPROVALS` without `READ` (the owner unticked it) sees only the approval, its triage item, the summary strip and the operations it caused:
     those topics accept `READ|APPROVALS`.
 15. to 16. [`Approval.required_role`](../../api/fleet/hub/v1/triage.proto) is a **role**, not a scope: the decider's mapped role must cover it. A prompt answer is within reach of the default phone; a developer's [`KillWindow`](../../api/fleet/hub/v1/service.proto)
@@ -398,6 +397,7 @@ sequenceDiagram
 | Phone asks for a scope its user lacks | `PERMISSION_DENIED` / `SCOPE_NOT_GRANTABLE` at approval |
 | Phone calls something outside its scopes | `PERMISSION_DENIED` / `SCOPE_MISSING` with `metadata["scope"]`; a row its scopes hide is `NOT_FOUND`, so ids cannot be probed |
 | Phone tries a developer's `KillWindow` or [`PruneWorktree{allow_dirty}`](../../api/fleet/agent/v1/command_goal.proto) | `ROLE_INSUFFICIENT` (hub or agent) |
+| Phone tries to mint a credential (`ApprovePairing`, `CreateUserInvite`, `UpdateUser`, `CreateApiToken`) | `PERMISSION_DENIED` / `SCOPE_NOT_GRANTABLE`, even with `ADMIN` ([02d](../specs/02d-hub-authz.md#no-escalation)) |
 | Phone is offline when a prompt appears | no push in v1; the card is waiting when the app opens, until `expire_time` (then fallback `DENY`) |
 | User demoted | the phone narrows on its next call; open streams get `RESYNC_REQUIRED` / `SCOPES_CHANGED` |
 | Phone lost | [`RevokeDevice`](../../api/fleet/hub/v1/service.proto) (`ADMIN`, or the device itself): effective at once, including open streams |

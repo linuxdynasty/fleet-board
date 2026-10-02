@@ -129,6 +129,12 @@ message PrincipalId {
 // PaneKey identifies a tmux pane across server restarts. tmux pane ids
 // restart from zero with a new server, so the server start id is part of
 // the key. Also stored in the pane environment as FLEET_PANE_KEY.
+//
+// Canonical string form (FLEET_PANE_KEY, coalesce keys, hub logs, 02i):
+// "<server>/<server_start_id>/<pane_id>", e.g. "default/s9f2a1/%12". The
+// pane_id keeps tmux's "%" and is the one place the id alphabet is not
+// enforced; the other two parts are [a-z0-9-]. It is never a filter field:
+// panes are filtered by session or machine (02c).
 message PaneKey {
   // tmux server socket name: "default" for the developer's own server,
   // "fleet-probe" for the hidden probe server, "fleet" if that optional

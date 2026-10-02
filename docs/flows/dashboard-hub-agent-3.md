@@ -9,8 +9,8 @@
 - Other parts: [1](dashboard-hub-agent.md) (D1, D2), [2](dashboard-hub-agent-2.md) (D3, D4, D5),
   [3](dashboard-hub-agent-3.md) (D6, D7, D8), [4](dashboard-hub-agent-4.md) (D9, D10, D11, D12)
 - Conventions: arrows are numbered by hand and the numbered list under each diagram explains them. Where a
-  spec and a proto disagreed while this was written, the spec or proto was corrected, so nothing here relies on an open question.
-  Names are the proto names; the first mention of a message in a file links to its proto.
+  spec and a proto disagree, the proto wins. Names are the proto names; the first mention of a message in a file links to its proto.
+  Unverified (not probed on a live harness, 01b and 03h): a re-arm on Codex and Muse, and resuming after a usage limit.
 
 ---
 
@@ -36,14 +36,14 @@ sequenceDiagram
   participant T as tmux and harness
   D->>H: 1. ControlGoal{request_id, goal, action, text, expected_phase, expected_version}
   H->>H: 2. scope SESSIONS_WRITE, phase matches expected_phase, action allowed in this phase, goal_control supports it
+  H->>H: 3. tx: outbox row for the control command, plus its own row (own command_id) for a precursor Interrupt when the harness is mid-turn, audit goal.control
+  H-->>D: 4. ControlGoalResponse{goal, operation PENDING}, the operation of the control command
   alt PAUSE, RESUME or CLEAR
     opt harness is mid-turn
-      H-->>A: 3. Command{interrupt Interrupt{pane}}
-      A->>T: 4. C-c to the pane, then wait for the ready pattern
-      A-->>H: 5. CommandResult{status OK}, Event{harness_ready HarnessReady{showing true}}
+      H-->>A: 5. Command{interrupt Interrupt{pane}}
+      A->>T: 6. C-c to the pane, then wait for the ready pattern
+      A-->>H: 7. CommandResult{status OK}, Event{harness_ready HarnessReady{showing true}}
     end
-    H->>H: 6. tx: outbox row for the control command, audit goal.control
-    H-->>D: 7. ControlGoalResponse{goal, operation PENDING}
     alt pause_mode or resume_mode or clear is a /goal subcommand
       H-->>A: 8. Command{run_harness_command RunHarnessCommand{pane, command /goal, args pause or resume or clear, expected_class GOAL, catalog_hash}}
       A->>T: 9. type the line at an idle prompt, wait for the screen to settle
@@ -52,7 +52,7 @@ sequenceDiagram
       A->>T: 11. type continue
     end
     A-->>H: 12. CommandResult{status OK}
-    A-->>H: 13. Event{harness_condition HarnessCondition{kind GOAL_PAUSED, pause_cause FLEET_COMMAND}} (pause only)
+    A-->>H: 13. Event{harness_condition HarnessCondition{kind GOAL_INTERRUPTED (Interrupt) or GOAL_PAUSED (/goal pause), pause_cause FLEET_COMMAND}} (pause only)
     H->>H: 14. tx: phase PAUSED (pause_reason OPERATOR, paused_by), or RUNNING (phase_reason RESUMED), or CLEARED
   else NOT_DONE or EDIT on a finished goal
     H-->>A: 15. Command{start_goal StartGoal{spec GoalSpec, reuse_pane, rearm_reason}}
@@ -71,11 +71,13 @@ sequenceDiagram
    `GOAL_SUBCOMMAND_UNSUPPORTED`, which is raised **before**
    sending when `goal_control` says the mode is `NONE` or the subcommand is missing. For a pause the hub then
    falls back to `Interrupt` and records "paused by interrupt".
-3. to 5. A typed command only goes in at an idle prompt. If the harness is mid-turn the hub sends `Interrupt`
-   first, waits for ready, then types the subcommand. Where `goal_control.pause_mode` is `INTERRUPT` (a harness with no
-   `/goal pause`) this `Interrupt` **is** the pause and arrows 8 to 11 are skipped.
-6. to 7. As in every action the outbox row and audit row commit with the decision. `RECHECK` and
-   `MARK_NOT_STARTED` are hub-only: no operation, [`ControlGoalResponse.operation`](../../api/fleet/hub/v1/goal.proto) is unset.
+3. to 4. As in every action the decision, its outbox row and the audit row commit before anything is sent, and the response is
+   the `PENDING` operation; it does not wait for the pane. `ControlGoalResponse.operation` names the **control command**
+   (the typed `/goal` line or `SendKeys`). `RECHECK` and `MARK_NOT_STARTED` are hub-only: no operation, the field is unset.
+5. to 7. A typed command only goes in at an idle prompt. If the harness is mid-turn the transaction also holds a precursor
+   `Interrupt` row with its own `command_id`; the hub sends it first and releases the control command only after its result and
+   `HarnessReady`. Where `goal_control.pause_mode` is `INTERRUPT` (a harness with no `/goal pause`, Claude Code) a `PAUSE` is
+   that same `Interrupt`: it is the control command, its operation is the one in the response, and arrows 8 to 11 are skipped.
 8. to 9. [`RunHarnessCommand`](../../api/fleet/agent/v1/command_tmux.proto) in class `GOAL` is allowed for an
    `OPERATOR` and above. The agent checks the command is in the catalog, `catalog_hash` is current and the
    class matches `expected_class`.
@@ -83,7 +85,8 @@ sequenceDiagram
     `resume_mode` is `TYPE_TEXT` and the text comes from [`GoalControl.resume_text`](../../api/fleet/type/v1/harness.proto). Codex 0.160.0 and Muse show
     "goal paused" after an interrupt and resume with `/goal resume`. None of the three resumed by itself.
 12. to 14. [`HarnessCondition`](../../api/fleet/agent/v1/screen.proto) with `pause_cause FLEET_COMMAND` is the agent's way of saying the hub's own pause
-    took effect; the hub keeps the reason it recorded. A pause by a person at the machine looks the same
+    took effect: kind `GOAL_INTERRUPTED` after an `Interrupt` (Claude Code) or `GOAL_PAUSED` after `/goal pause`, and the hub accepts either
+    kind when it matches its own pause; the hub keeps the reason it recorded. A pause by a person at the machine looks the same
     but with cause `DEVELOPER_INPUT` or `HARNESS`: that becomes `PAUSED` with `pause_reason OWNER_AT_MACHINE`, a `goal_paused` triage
     item, no nudge and no automatic resume.
 15. to 18. `NOT_DONE` and `EDIT` are valid only in `VERIFYING` and `DISAGREE`. The hub sends [`StartGoal`](../../api/fleet/agent/v1/command_goal.proto) for the
@@ -286,7 +289,7 @@ sequenceDiagram
   participant A as fleet-agent
   participant T as tmux and harness
   D->>H: 1. DrainMachine{request_id, id, reason}
-  H->>H: 2. scope ADMIN. One tx: spec.drain set, StartGoal rows still PENDING cancelled, their goals ABANDONED, outbox row for Drain, audit machine.drain
+  H->>H: 2. scope ADMIN and mapped role OWNER (else ROLE_INSUFFICIENT, nothing changes). One tx: spec.drain set, StartGoal rows still PENDING cancelled, their goals ABANDONED, outbox row for Drain, audit machine.drain
   H-->>D: 3. DrainMachineResponse{operation PENDING, machine with spec.drain set}
   H-->>D: 4. Watch: MACHINES UPDATED, GOALS UPDATED (ABANDONED, reason DRAINING), OPERATIONS
   H-->>A: 5. ConnectResponse{command Command{drain Drain{reason}}}
@@ -310,10 +313,10 @@ sequenceDiagram
    that goal `ABANDONED` with reason `DRAINING` and puts the work item back to `READY`; none of it counts as a failed attempt. It enqueues the
    `Drain` command. And it writes the audit row.
 3. The response has the `Operation` for `Drain` and the machine with `spec.drain` already set.
-5. to 7. [`Drain`](../../api/fleet/agent/v1/command_goal.proto) is `OWNER` only on the agent. The hub checks the `ADMIN` scope, and the agent re-checks
-   the mapped role: a token or device holding only `ADMIN` maps to `VIEWER`, so the hub accepts the call and the agent
-   answers `REJECTED_BY_POLICY` / `ROLE_INSUFFICIENT`. A principal needs `SESSIONS_WRITE`, `APPROVALS`, `SETTINGS` and `ADMIN` together to map to
-   `OWNER`.
+5. to 7. [`Drain`](../../api/fleet/agent/v1/command_goal.proto) is `OWNER` only on the agent. A principal needs `SESSIONS_WRITE`, `APPROVALS`, `SETTINGS` and `ADMIN` together to map to
+   `OWNER`; a token or device holding only `ADMIN` maps to `VIEWER`. So the hub checks the `ADMIN` scope **and** the mapped role up front and refuses
+   `DrainMachine` and `UndrainMachine` with `ROLE_INSUFFICIENT` before changing `spec.drain`: a machine is never shown drained at the hub while the agent
+   is not draining, and no rejected `Drain` is re-sent on every reconnect. The agent still re-checks the role.
 8. [`DrainState`](../../api/fleet/agent/v1/snapshot.proto) records who asked: a hub principal, or kind `LOCAL_USER` for a local drain. The
    dashboard's [`Machine.status.draining`](../../api/fleet/hub/v1/machine.proto) is the **effective** drain: the hub's request or a local one, as reported.
 11. to 12. While draining the agent refuses `StartGoal`, and [`EnsureSession`](../../api/fleet/agent/v1/command_tmux.proto) or [`EnsureWindow`](../../api/fleet/agent/v1/command_tmux.proto) that start a harness, with `DRAINING`.
@@ -339,8 +342,8 @@ What happens to a `StartGoal` that is in flight when the drain is accepted:
 |---|---|
 | Machine offline | `spec.drain` is set at once, so the scheduler already excludes it; the `Drain` command waits in the outbox |
 | `Drain` expires while offline | the default deadline is 10 minutes, after which the operation is `EXPIRED` and the agent never heard of it; the next `Snapshot` shows `drain.draining` false, so the reconnect diff re-sends `Drain` (see [W1](../specs/03-workflows.md)) |
-| Machine revoked meanwhile | [`Bye{reason REVOKED}`](../../api/fleet/agent/v1/agent.proto), outbox rows `DONE` / `EXPIRED`, goals to `PANE_LOST` (see [02g](../specs/02g-agent-security.md#machine-lifecycle-revoke-and-delete)) |
-| Caller lacks the scope | `PERMISSION_DENIED` / `SCOPE_MISSING` (`ADMIN`), or `ROLE_INSUFFICIENT` at the agent for a narrowed token |
+| Machine revoked meanwhile | [`Bye{reason REVOKED}`](../../api/fleet/agent/v1/agent.proto), outbox rows `DONE` / `EXPIRED`, goals `ABANDONED` or `STUCK` (see [02g](../specs/02g-agent-security.md#machine-lifecycle-revoke-and-delete)) |
+| Caller lacks the scope, or its mapped role is not `OWNER` | `PERMISSION_DENIED` / `SCOPE_MISSING` (`ADMIN`), or `ROLE_INSUFFICIENT` at the hub, before anything changes |
 | A goal's harness crashes on a drained machine | the goal recovers there (respawn, one nudge) or goes `STUCK` for a person; drain never turns it into a failed start |
 | `UndrainMachine` after a local drain | `REJECTED_BY_POLICY` / `DRAINING` in the operation |
 | Duplicate `DrainMachine` | same `request_id`: the stored response; a repeat with a new id is harmless because `Drain` is declarative |

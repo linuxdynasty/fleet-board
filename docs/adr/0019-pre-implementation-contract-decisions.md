@@ -52,7 +52,8 @@ on every change.
 stored session logs, transcripts and archived pane summaries needs a separate
 `LOGS` scope. Owners have it; a viewer, API token or paired device has it only
 when the owner grants it. This keeps ADR 0010's "owner only" rule while
-allowing a deliberate exception.
+allowing a deliberate exception (a user gets it through `UserSpec.extra_scopes`;
+see 37 and 40).
 
 ## Consequences
 
@@ -133,7 +134,7 @@ Users, tokens and login sessions have no Watch topic.
 
 **12. API tokens.** `fbt_<id>.<secret>`, shown once, stored as a hash, scopes
 required and a subset of the creator's, 90 days by default and 365 at most.
-Only a user can mint one.
+Only a user can mint one (and see 36 for every other credential).
 
 **13. Attach over WebSocket needs a ticket.** `CreateAttachTicket` returns a
 60 s, single-use ticket bound to principal, session, mode and Origin; the first
@@ -157,7 +158,7 @@ CA key, the account salt and `settings_epoch` live in one `hub_identity` row in
 `settings_epoch` and reconciles agents.
 
 **16. Revoke is not delete.** `RevokeMachine` keeps the row, closes the live
-streams with `Bye{REVOKED}` and ends the machine's goals; `DeleteMachine` only
+streams with `Bye{REVOKED}` and ends or sticks the machine's goals (42); `DeleteMachine` only
 follows it, and a revoked machine re-enrolls under its old id. Decisions made at
 the machine (local approvals, local drain, policy refusals and changes) are
 appended to the permanent audit log. Commands, events, results and settings
@@ -170,7 +171,7 @@ registry); detail is in
 [02h](../specs/02h-goal-binding-and-pane-signals.md).
 
 **17. The registry is the only goal identity, and reuse never moves a pane.**
-`StartGoal` has 14 named steps in a closed vocabulary (`register_goal` before
+`StartGoal` has 14 named steps in a fixed vocabulary (`register_goal` before
 `type_goal`); a reused pane keeps its directory and the goal starts a new
 branch in it (`prepare_branch`), so no worktree is made for it. Reuse needs the
 pane's checkout to be the goal's repo (`SESSION_WORKDIR_MISMATCH`) and clean
@@ -382,3 +383,78 @@ new `Approval` for the same `prompt_id`. The reconnect diff re-sends `Drain` or
 `AuthMode` comment is corrected: in `local_trusted` mode the local owner may
 mint API tokens, while passkey, GitHub and device RPCs answer
 `FAILED_PRECONDITION`.
+
+## Addendum: final review defaults (owner)
+
+Taken while resolving the final contract review. They tighten items 4, 10, 11,
+12 and 14 and follow from decision 3; detail is in
+[02d](../specs/02d-hub-authz.md), [02f](../specs/02f-hub-authentication.md) and
+[02g](../specs/02g-agent-security.md).
+
+**36. No escalation.** Any RPC that creates or changes a credential or a grant
+(`ApprovePairing`, `CreateUserInvite`, `UpdateUser`, `CreateApiToken`, device
+scope changes) can only grant scopes the caller itself holds, and minting
+needs a `USER` principal (a signed-in user or the local owner), never an API
+token or a device, even one holding `ADMIN`. Only an owner can create an owner.
+`DeletePasskey` and `RevokeLoginSession` on another user's rows need a user too.
+A token or device can mint nothing, so revoking it leaves nothing behind.
+
+**37. `LOGS` covers stored or scrolled-back terminal history.** That is stored
+logs, transcripts, archived pane summaries, the raw usage screen, `CapturePane`
+history lines (`last_lines` above 0) and any `Operation.output_text` that is not
+the caller's own (the requester and `LOGS` holders read it). Live viewing, which
+is a read-only attach, a `CapturePane` of the visible screen and live pane
+summaries, stays `READ` by design.
+
+**38. Authenticated mode is HTTPS only.** The owner supplies a certificate or
+uses a Tailscale certificate, and `fleetd` refuses to start in that mode without
+one. Plain HTTP is allowed only for `local_trusted` on loopback. The session
+cookie is therefore always `__Host-fleet_session` with `Secure`.
+
+**39. GitHub state cookie.** Sign-in and link use a short-lived
+`SameSite=Lax`, `HttpOnly`, `Secure` state cookie bound to the OAuth `state`
+parameter; the session cookie stays `SameSite=Strict`. `link` takes its user
+from a server-side record made at `/start`, not from a cookie the cross-site
+callback cannot carry. The Origin rule covers POST RPCs, `Watch` and WebSocket
+upgrades; static `GET`s and the two GitHub redirect endpoints are exempt, and the
+callback is protected by its `state` check.
+
+**40. Extra scopes on a user.** `UserSpec.extra_scopes` grants scopes on top of
+the role; only `LOGS` is allowed in v1, so a viewer or operator can read logs
+without becoming an owner. A user's effective scopes are the role's plus
+`extra_scopes`, and tokens and devices are clamped to them on every call.
+
+**41. Field-level `HubSettings` scopes.** Changing the sign-in methods, the
+session lifetimes or the log size cap and retention needs `ADMIN`, not
+`SETTINGS` alone, in `UpdateSettings` and `ImportConfig`, with minimum and
+maximum bounds (`INVALID_ARGUMENT`). Invite and claim lifetime is not a setting
+(7 days at most).
+
+**42. Smaller rules the final review settled.**
+- The GitHub allow-list is the `github_login` of `INVITED` and `ACTIVE` users, so
+  a GitHub-only invitee can sign in (which makes the user `ACTIVE`). `link` must
+  match `spec.github_login`; only the claim owner's registration session may set
+  it. Both `github_login` and the pinned numeric id are unique.
+- The claim URL is printed to the terminal only, never to a log; a reissue is
+  shown by `fleetd claim` only. `fleetd user invite --owner` is the audited
+  break-glass when the last owner loses every credential.
+- For re-enrollment the token alone decides; a request `previous_machine_id` is
+  a mismatch only when the token names a different machine, else it is ignored.
+- A revoked certificate serial stays on the revocation list until its
+  `not_after`, even after `DeleteMachine` and across a restore; `RenewCert`,
+  `Terminal` and `SessionLog` need a live machine row; an Enroll replay is
+  `ENROLL_TOKEN_USED` once the machine is revoked or deleted.
+- Revoking a machine abandons goals that never confirmed running (`ABANDONED`,
+  `MACHINE_REVOKED`, item back to `READY`) and sets every other live goal
+  `STUCK` with that reason; its work item stays held until an operator clears it.
+- `DrainMachine` and `UndrainMachine` are refused up front with
+  `ROLE_INSUFFICIENT` for a caller whose mapped role is not `OWNER`, so the hub
+  never flags a machine drained that the agent would not drain.
+- In `local_trusted` every `auth.proto` RPC and the device RPCs answer
+  `FAILED_PRECONDITION`; a valid Bearer token only narrows the call and an
+  invalid one is `CREDENTIALS_INVALID`; a WebSocket attach needs a ticket in both
+  modes, an HTTP/2 attach in neither.
+- The agent applies `max_active` and `max_total` only as a local safety cap
+  (`AGENT_GOAL_CAP_REACHED`); a `LOCAL_CONFIRM_TIMEOUT` skips the machine for 30
+  minutes and plans elsewhere. A `PaneExited` keeps the registry entry while the
+  pane remains, and a respawn keeps the `PaneKey`.

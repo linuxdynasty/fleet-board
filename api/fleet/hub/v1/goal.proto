@@ -93,10 +93,11 @@ enum GoalPhase {
   // ENDED. StartGoal was not delivered in time (machine offline 30 minutes).
   // Nothing ran; the work item goes back to READY.
   GOAL_PHASE_EXPIRED = 19;
-  // ENDED. The hub gave up on a goal that never confirmed running: the
-  // operator said it never started, the machine drained before it began, or
-  // the machine was revoked. Nothing ran (or nothing can be known); the work
-  // item goes back to READY.
+  // ENDED. The hub gave up on a goal that never confirmed running (STARTING
+  // or START_UNKNOWN): the operator said it never started, the machine
+  // drained before it began, or the machine was revoked. Nothing ran (or
+  // nothing can be known); the work item goes back to READY. A goal that did
+  // run on a revoked machine is STUCK instead (MACHINE_REVOKED).
   GOAL_PHASE_ABANDONED = 20;
   // ENDED. The provider says the work is no longer wanted: the work item
   // was closed without being done ("not planned", "Won't Do") or the change
@@ -169,7 +170,9 @@ enum GoalPhaseReason {
   // ABANDONED: the machine started draining before the composite passed
   // preflight (the goal moves to another machine).
   GOAL_PHASE_REASON_DRAINING = 22;
-  // ABANDONED: the machine was revoked.
+  // ABANDONED (goal never confirmed running) or STUCK (goal that ran): the
+  // machine was revoked (02g). A STUCK goal's work item stays held until an
+  // operator clears it.
   GOAL_PHASE_REASON_MACHINE_REVOKED = 23;
   // CANCELLED: the work item was closed without being done.
   GOAL_PHASE_REASON_WORK_ITEM_CLOSED = 30;
@@ -231,8 +234,9 @@ message GoalStatus {
   fleet.type.v1.PaneKey pane = 11;
   GoalPhase phase = 12;
   google.protobuf.Timestamp phase_time = 13;
-  // From the goal file (G2). Untrusted text. first_line and head_commit are
-  // volatile: at most one Watch message per 5 s when only they change.
+  // From the goal file (G2). Untrusted text. first_line, head_commit and
+  // usage_consumed are volatile: at most one Watch message per 5 s when only
+  // they change (02c).
   fleet.type.v1.GoalLineState line_state = 14;
   string first_line = 15;
   string consent_line = 16;
@@ -323,7 +327,8 @@ message Goal {
 }
 
 // ListGoalsRequest. Filter and order_by names: 02c-hub-watch-and-filters.md
-// (the Fleet view timeline filters create_time to the last 7 days).
+// (the Machines timeline filters start_time and end_time and live, not
+// create_time, which is plan time; 02c).
 message ListGoalsRequest {
   int32 page_size = 1;
   string page_token = 2;
@@ -371,7 +376,7 @@ enum GoalAction {
   // would be an ordinary prompt with no goal loop. The agent rewrites the goal
   // file's first line ("reopened: <text>") and types the harness's set-goal
   // form in the same pane under the same goal id (StartGoal.rearm_reason,
-  // 03c, "Re-arm"); the goal returns to RUNNING when the goal line is
+  // 03h, "Re-arm after DONE"); the goal returns to RUNNING when the goal line is
   // WORKING again. `text` is the reason (4 KiB). Refused in any other phase
   // with GOAL_ACTION_NOT_ALLOWED.
   GOAL_ACTION_NOT_DONE = 6;
@@ -401,6 +406,9 @@ message ControlGoalRequest {
 // unsupported action fails with GOAL_SUBCOMMAND_UNSUPPORTED before sending, and
 // an action the goal's phase does not allow fails with FAILED_PRECONDITION /
 // GOAL_ACTION_NOT_ALLOWED (the table is in 03c, "Control actions by phase").
+// The same code, with metadata {"held": "person_typing"}, refuses any action
+// while a person is typing in the goal pane (human_at_keyboard_until_time):
+// it is refused, never queued (03c).
 message ControlGoalResponse {
   Goal goal = 1;
   Operation operation = 2;

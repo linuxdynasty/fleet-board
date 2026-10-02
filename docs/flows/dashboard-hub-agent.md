@@ -4,9 +4,8 @@
 - Date: 2026-10-02
 - Audience: the developer who is about to implement fleet-board, and the owner
   who wants to see exactly how the parts talk to each other
-- Source of truth: the protos in [`api/fleet/`](../../api/fleet/) (read fresh
-  for this document). Where a spec and a proto disagree, the proto wins; the
-  disagreements found while writing this were corrected in the specs and protos.
+- Source of truth: the protos in [`api/fleet/`](../../api/fleet/). Where a spec
+  and a proto disagree, the proto wins.
 - Specs behind it: [02b](../specs/02b-hub-api.md), [02c](../specs/02c-hub-watch-and-filters.md),
   [02d](../specs/02d-hub-authz.md), [02f](../specs/02f-hub-authentication.md),
   [02g](../specs/02g-agent-security.md), [02h](../specs/02h-goal-binding-and-pane-signals.md),
@@ -171,7 +170,7 @@ stateDiagram-v2
 ```
 
 Default deadlines (`Command.not_after_time`): 2 min for [`SendKeys`](../../api/fleet/agent/v1/command_tmux.proto), [`Interrupt`](../../api/fleet/agent/v1/command_tmux.proto),
-[`RunHarnessCommand`](../../api/fleet/agent/v1/command_tmux.proto), [`CapturePane`](../../api/fleet/agent/v1/command_tmux.proto), [`OpenAttach`](../../api/fleet/agent/v1/command_goal.proto); 30 min for `StartGoal`; 24 h
+[`RunHarnessCommand`](../../api/fleet/agent/v1/command_tmux.proto), [`CapturePane`](../../api/fleet/agent/v1/command_tmux.proto), [`OpenAttach`](../../api/fleet/agent/v1/command_goal.proto); 30 min for `StartGoal`, `EnsureWorktree`, `PruneWorktree`, `EnsureGoalHooks`; 24 h
 for [`StopProbe`](../../api/fleet/agent/v1/command_tmux.proto); 10 min otherwise. An action that needs an approval first
 (a dispatch with a `CONFIRM` check, a DESTRUCTIVE command, [`KillWindow`](../../api/fleet/hub/v1/service.proto) on a
 developer's window) returns the approval and **no operation**; the operation
@@ -199,9 +198,10 @@ outcome: it sees the `Operation` and the changed resource arrive on the stream.
 
 **What happens and why.** In `authenticated` mode nobody is trusted until they
 prove who they are, and the hub stores no passwords. The very first time,
-`fleetd` prints a one-time **claim URL** on the hub host; whoever opens it
+`fleetd` prints a one-time **claim URL** on the hub host's terminal (never to a log); whoever opens it
 becomes the owner and registers a passkey or links a GitHub account. After that
 a browser signs in with a passkey or GitHub and holds an HttpOnly session cookie.
+`authenticated` mode serves HTTPS only (an owner-supplied or Tailscale certificate).
 The `fleet` CLI uses an **API token** the owner mints from a signed-in session,
 and a phone uses a paired device (D12). In `local_trusted` mode (loopback only)
 there is no sign-in at all: every call that passes the Host and Origin checks
@@ -213,7 +213,9 @@ HTTP 403 `HOST_NOT_ALLOWED`, a disallowed `Origin` 403 `ORIGIN_NOT_ALLOWED`, no 
 headers are ever sent), then carries **one** credential: a cookie, a bearer
 token or a device signature. Two kinds at once is `UNAUTHENTICATED` /
 `CREDENTIALS_INVALID`. The hub scopes the call as the credential's scopes
-intersected with its user's role ([02d](../specs/02d-hub-authz.md)).
+intersected with its user's effective scopes ([02d](../specs/02d-hub-authz.md)). The Origin
+rule covers POST RPCs, `Watch` and WebSocket upgrades; static `GET`s and the two GitHub
+redirect endpoints are exempt, and the callback is protected by its `state` check instead.
 
 ### D1a. First run: claim, then register a passkey
 
@@ -221,12 +223,12 @@ intersected with its user's role ([02d](../specs/02d-hub-authz.md)).
 sequenceDiagram
   participant D as Dashboard (owner's browser)
   participant H as fleetd
-  Note over H: first start with no users: creates an OWNER invite (24 h) and prints the claim URL (token in the fragment) on the hub host
+  Note over H: first start with no users: creates an OWNER invite (24 h) and prints the claim URL (token in the fragment) on the hub host's terminal only
   D->>H: 1. GET /invite (static page, the fragment never leaves the browser)
   D->>H: 2. GetServerInfo{}
   H-->>D: 3. GetServerInfoResponse{auth_mode AUTHENTICATED, sign_in_methods, claim_pending true}
   D->>H: 4. RedeemInvite{request_id, invite_token, display_name}
-  H->>H: 5. tx: burn invite, create User (state INVITED), registration session
+  H->>H: 5. tx: burn invite, activate the pre-created INVITED User, registration session
   H-->>D: 6. RedeemInviteResponse{user, registration_expire_time} + Set-Cookie registration session
   D->>H: 7. BeginPasskeyRegistration{name}
   H-->>D: 8. BeginPasskeyRegistrationResponse{ceremony_id, options_json, expire_time}
@@ -239,21 +241,26 @@ sequenceDiagram
 
 1. The claim page is static; the token sits in the URL **fragment** so it reaches
    no server log or `Referer`. The URL is printed only on the operator's
-   terminal (`fleetd claim` prints a fresh one).
+   terminal (stderr of an interactive `fleetd`, or `fleetd claim`), never to the structured log.
 2. to 3. [`GetServerInfo`](../../api/fleet/hub/v1/common.proto) needs no credential.
    `claim_pending` is true while the hub has no owner, so the UI shows "claim this hub".
 4. [`RedeemInvite`](../../api/fleet/hub/v1/auth.proto) is unauthenticated. Its
    idempotency key is `(peer address, SHA-256 of invite_token)`; redemptions are
    limited to 10 a minute per peer address.
-5. The invite is burned and the owner created in one transaction. A wrong, used or
+5. The invite is burned and the user (created with the invite, so a restart reuses the row) activated in one transaction. A wrong, used or
    expired token is `INVALID_ARGUMENT` / `INVITE_INVALID` with no hint.
 6. The cookie is a **registration session**: it may register a credential and do
    nothing else, for 15 minutes. If nothing is registered the invite is reissued
-   (the claim URL is reprinted) and `claim_pending` stays true.
+   (shown only by `fleetd claim`) and `claim_pending` stays true. The owner may link GitHub
+   instead of registering a passkey: in the registration session
+   `GET /auth/github/start?purpose=link` works (D1b), its callback stores the link (and, for the
+   claim owner, `spec.github_login`), makes the user `ACTIVE` and rotates the cookie, as
+   `FinishPasskeyRegistration` does.
 7. to 8. A passkey ceremony lives 5 minutes and is single use. `options_json` is
    W3C `PublicKeyCredentialCreationOptionsJSON`; no client code interprets it.
-9. The browser and authenticator do the WebAuthn work. It needs a secure context
-   (HTTPS or `localhost`); otherwise [`GetServerInfoResponse.sign_in_methods`](../../api/fleet/hub/v1/common.proto) lacks `PASSKEY`.
+9. The browser and authenticator do the WebAuthn work. It needs a secure context, which HTTPS-only
+   `authenticated` mode always is; a method the owner turned off shows as `SIGN_IN_METHOD_DISABLED` in
+   [`GetServerInfoResponse.sign_in_methods`](../../api/fleet/hub/v1/common.proto).
 10. to 12. The hub validates with its WebAuthn library (user verification required,
     discoverable credential required, attestation `none`). The first credential makes
     the user `ACTIVE` and rotates the cookie to a full session. Replaying `Finish`
@@ -276,12 +283,12 @@ sequenceDiagram
     H-->>D: 6. FinishPasskeyLoginResponse{user, session_expire_time} + Set-Cookie
   else GitHub
     D->>H: 7. GET /auth/github/start?purpose=signin
-    H-->>D: 8. 302 to GitHub + __Host-fleet_oauth cookie (state, PKCE verifier)
+    H-->>D: 8. 302 to GitHub + __Host-fleet_oauth state cookie (SameSite=Lax, HttpOnly, 10 min: state, PKCE verifier)
     D->>G: 9. user authorizes the App (user authorization only)
-    G-->>D: 10. 302 to /auth/github/callback?code&state
-    D->>H: 11. GET /auth/github/callback?code&state
+    G-->>D: 10. 302 to /auth/github/callback?code&state (cross-site: only the Lax state cookie travels)
+    D->>H: 11. GET /auth/github/callback?code&state, state checked against the cookie, no Origin required
     H->>G: 12. exchange code, GET /user once, discard the token
-    H->>H: 13. tx: match UserSpec.github_login (pin numeric id on first use), create login session
+    H->>H: 13. tx: match UserSpec.github_login of an INVITED or ACTIVE user (pin numeric id on first use, INVITED becomes ACTIVE), create login session
     H-->>D: 14. 302 to / + Set-Cookie (or /signin?error=REASON)
   end
 ```
@@ -291,13 +298,16 @@ sequenceDiagram
    `UNAUTHENTICATED` / `CREDENTIALS_INVALID`, so the answer never reveals which users exist.
 7. to 14. GitHub sign-in is two plain HTTP endpoints because it is a browser redirect,
    not RPCs. The hub asks for no repository access on the user's behalf. The allow-list
-   is [`UserSpec.github_login`](../../api/fleet/hub/v1/auth.proto) of the active users; after the first sign-in the numeric
+   is [`UserSpec.github_login`](../../api/fleet/hub/v1/auth.proto) of the `INVITED` and `ACTIVE` users, so a
+   GitHub-only invitee can sign in; after the first sign-in the numeric
    GitHub id is what matches, so a renamed or recycled login cannot take over a user.
    A GitHub account that is not on the list ends at `GITHUB_NOT_ALLOWED`; GitHub sign-in
    without the App's client id and secret in hub config is `SIGN_IN_METHOD_DISABLED`.
-   The `link` purpose (same endpoints) attaches GitHub to the signed-in user.
-6. and 14. The cookie is `__Host-fleet_session` over TLS (`fleet_session` over loopback
-   HTTP), `HttpOnly`, `SameSite=Strict`, no `Domain`. The hub stores only its SHA-256, in a
+   The `link` purpose (same endpoints) attaches GitHub to the signed-in user, or to the claim
+   owner's registration session: the hub records the user server-side at `/start` (where the
+   Strict session cookie does arrive) keyed by `state`, because the cross-site callback carries
+   no session cookie. The linked login must equal `spec.github_login` (else `GITHUB_NOT_ALLOWED`), except for the claim owner, whose link sets it.
+6. and 14. The cookie is `__Host-fleet_session` (HTTPS only), `Secure`, `HttpOnly`, `SameSite=Strict`, no `Domain`. The hub stores only its SHA-256, in a
    [`LoginSession`](../../api/fleet/hub/v1/auth.proto). It lasts `session_max_age` (30 days) and
    ends after `session_idle_timeout` (7 days) unused.
 
@@ -318,8 +328,8 @@ sequenceDiagram
   D->>H: 8. RevokeApiToken{request_id, id, expected_version} (takes effect at once, open streams end)
 ```
 
-1. to 3. Only a signed-in user (not a token or device) can mint a token. `scopes` is
-   required and must be a subset of the creator's own; `SCOPE_LOGS` only if the creator
+1. to 3. Only a signed-in user or the local owner (not a token or device) can mint a token. `scopes` is
+   required and must be a subset of the creator's own effective scopes; `SCOPE_LOGS` only if the creator
    holds it and ticks it, else `PERMISSION_DENIED` / `SCOPE_NOT_GRANTABLE`. `ttl` of zero
    means 90 days, over 365 days is `INVALID_ARGUMENT`. The secret `fbt_<id>.<secret>` is
    shown once and never stored; a retry of the same `request_id` is
@@ -328,7 +338,8 @@ sequenceDiagram
    checked again on every call, demoting the user narrows the token at once.
 8. Revoked tokens stay listed ([`ListApiTokens`](../../api/fleet/hub/v1/service.proto)) for the audit trail. Bootstrap without a
    browser: `fleetd token create` on the hub host talks to the running hub over its local
-   admin socket.
+   admin socket (mode 0600, the `fleetd` OS user): the token acts for a named owner (`--user`, default the sole active
+   owner), its scopes are capped to that owner's, and the audit actor is `LOCAL_USER` `local:<os user>`.
 
 ### D1: persisted, and what goes wrong
 

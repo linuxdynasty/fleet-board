@@ -65,7 +65,7 @@ message GoalTransition {
   fleet.type.v1.GoalId goal = 1;
   // From 1 per goal, no gaps.
   uint64 seq = 2;
-  google.protobuf.Timestamp time = 3;
+  google.protobuf.Timestamp transition_time = 3;
   GoalPhase from = 4;
   GoalPhase to = 5;
   GoalPhaseReason reason = 6;

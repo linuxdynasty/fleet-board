@@ -48,13 +48,13 @@ checklist, to be ticked when cutting `v0.1`:
 
 | Rule | Example |
 |---|---|
-| Every `Timestamp` field ends `_time`; resources use `create_time` and `update_time`; observation fields end `_time` too | `resets_time`, `not_after_time`, `cert_not_after_time`, `observed_time`, `since_time` |
+| Every `Timestamp` field ends `_time`; resources use `create_time` and `update_time`; observation fields end `_time` too | `resets_time`, `not_after_time`, `cert_not_after_time`, `observed_time`, `since_time`, `match_time`, `transition_time` |
 | Every duration is `google.protobuf.Duration`, or an integer whose name ends in its unit | `min_interval`, `sync_lag`, `utc_offset_seconds`, `ram_bytes` |
 | Every id is a wrapper message with `value`; the field that holds it is named for the entity | `MachineId machine`, `PrincipalId id`, `SettingsId id` |
 | A hub-assigned id is 1 to 32 characters of `[a-z0-9-]` (lowercase ULID); user-chosen names used as tmux names, env values, paths or `group/<label>` keys are `[a-z0-9][a-z0-9-]{0,31}` | `SessionId` is the tmux session name; `INVALID_NAME` otherwise ([02h](02h-goal-binding-and-pane-signals.md#ids)) |
 | `_id` stays only on protocol correlation keys that are the identity of their own message | `command_id`, `prompt_id`, `attach_id`, `probe_id` |
 | A closed set is an enum, never a string | `ConsentAct`, `AuthMode`, `OperationKind`, `DevicePlatform`, `AttachCloseReason`, `WorkSize` |
-| A string is untrusted text, a user-chosen name, or a documented open vocabulary | `Harness.name`, `AuditEntry.action`, `Operation.step` |
+| A string is untrusted text, a user-chosen name, or a documented open vocabulary (a fixed set of names a newer sender may extend; a receiver treats an unknown one as display-only) | `Harness.name`, `AuditEntry.action`, `Operation.step`, `CommandProgress.step` |
 | A oneof arm is a message, not a bare scalar, so it can grow | `SettingsScope.Fleet`, `NoteDetail` |
 | Map keys are strings or integers; a count by enum is a repeated message | `GoalPaneCount{state, count}` |
 | `page_size` is `int32` everywhere | hub and integration List requests |

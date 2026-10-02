@@ -142,7 +142,9 @@ sequenceDiagram
    reused pane, because a pane after `MERGED` still carries the last goal's context.
    The result returns the effective `model` and `effort`, which the hub paces by (A6).
 8. **The goal file and the line (steps 12 and 13).** The agent writes the initial goal
-   file itself, because Codex hooks never see `/goal` lines. `type_goal` then types
+   file itself, because Codex hooks never see `/goal` lines, except where the checkout
+   ships its own goal hooks (`repo_ships_own`, a `REPO_DRIVER` goal): step 12 is then
+   skipped, the repo's own file is the goal file and step 14 reads it. `type_goal` then types
    the adapter's `GoalCommand`. When the checkout ships eshu's hooks the form is
    `/goal consent push,pr-open,merge -- <goal_text>`; otherwise consent goes into the
    objective, `/goal <goal_text> (consent: push, pr-open, merge)`. The exact line is
@@ -158,7 +160,7 @@ sequenceDiagram
     step with `TRUST_PROMPT_SEEN` or `STARTUP_PROMPT_SEEN` (`metadata.kind`); the
     harness's update prompt once ran an upgrade when a key was pressed blind.
 
-**The 14 steps.** The names are a closed vocabulary; `step_count` is always 14 and a
+**The 14 steps.** The names are a fixed vocabulary (a string, so a newer agent can add steps); `step_count` is always 14 and a
 skipped step is simply not reported.
 
 | # | Step | Path | What | If the agent restarts here |
@@ -174,14 +176,16 @@ skipped step is simply not reported.
 | 9 | `set_model` | when `model` set | `/model` | verify, type only if different |
 | 10 | `set_effort` | when `effort` set | `/effort` | verify, as above |
 | 11 | `clear_context` | `fresh_context`, reuse | `/clear` | **not idempotent**: `UNKNOWN_OUTCOME` |
-| 12 | `write_goal_file` | both | initial goal file | same content again is OK |
+| 12 | `write_goal_file` | both, skipped for a `repo_ships_own` checkout | initial goal file | same content again is OK |
 | 13 | `type_goal` | both | the `/goal` line plus Enter | **not idempotent**: `UNKNOWN_OUTCOME`, turned into OK if the file already shows this goal id |
 | 14 | `confirm_goal_file` | both | file appears | read only |
 
 **Re-arm.** `StartGoal.rearm_reason` (non-empty) re-arms a goal whose harness already
 finished it but whom a person says is not done: same `goal_id`, `reuse_pane` the pane
-the registry names. Steps 2 to 7 and 9 to 11 are skipped; 1, 8, 12 (first line
-rewritten as the objective plus `reopened: <reason>`), 13 and 14 run. See A8.
+the registry names (checked before step 1, even with `skip_preflight`; otherwise
+`SESSION_NOT_AVAILABLE`). Steps 2 to 7 and 9 to 11 are skipped; 1, 8, 12 (first line
+rewritten as the objective plus `reopened: <reason>`; skipped for a `repo_ships_own`
+checkout), 13 and 14 run. See A8.
 
 **What the hub does with the outcome.** The goal's phase moves as below; the full
 phase diagram is in [A8](agent-hub-4.md#goal-phase-state-machine).
@@ -207,7 +211,7 @@ a goal to `STARTING`: the work item goes back to `READY` (or `MANUAL_ONLY` after
 | Group of failure reasons | Hub reaction |
 |---|---|
 | Durable facts: `HARNESS_NOT_INSTALLED`, `HARNESS_VERSION_UNSUPPORTED`, `HARNESS_NOT_SIGNED_IN`, `PUSH_ACCESS_MISSING`, `CHECKOUT_MISSING`, `FOLDER_UNTRUSTED`, `TMUX_TOO_OLD`, `POLICY_DENIED`, `POLICY_SAFE_MODE`, `CAPABILITY_MISSING`, `HARNESS_PROFILE_MISSING` | mark the machine unfit for that harness or repo until a snapshot, event or the hub's re-check (10 minutes, doubling to 1 hour) shows the fact changed; not counted |
-| Passing facts: `DISK_LOW`, `TMUX_SERVER_DOWN`, `ON_BATTERY_BLOCKED`, `AGENT_GOAL_CAP_REACHED`, `MAX_WINDOWS_REACHED`, `LOCAL_CONFIRM_TIMEOUT` | skip the machine for a while (5 to 30 minutes, or until the battery fact changes); not counted |
+| Passing facts: `DISK_LOW`, `TMUX_SERVER_DOWN`, `ON_BATTERY_BLOCKED`, `AGENT_GOAL_CAP_REACHED`, `MAX_WINDOWS_REACHED`, `LOCAL_CONFIRM_TIMEOUT` | skip the machine for a while (5 to 30 minutes, 30 for `LOCAL_CONFIRM_TIMEOUT`, or until the battery fact changes); not counted |
 | Reuse refused: `PANE_BUSY`, `SESSION_NOT_AVAILABLE`, `SESSION_WORKDIR_MISMATCH`, `CHECKOUT_DIRTY`, `FRESH_CONTEXT_NOT_ALLOWED` | retry once in a new window on the same machine; the pane is not offered again for that repo until `PaneChanged` shows its directory moved |
 | About this item or account on this machine: `ACCOUNT_MISMATCH`, `READY_TIMEOUT`, `MODEL_NOT_AVAILABLE`, `EFFORT_NOT_SUPPORTED`, `GOAL_FILE_WRITE_FAILED`, `GIT_FAILED`, `WORKTREE_EXISTS` | one new window or a skip, a marker for that account, or plan elsewhere with the machine excluded for the item for an hour, as the normative table says; all are **counted**, and three on three machines end `START_EXHAUSTED` with a triage item |
 | A person must act: update or login screen, model missing, leftover worktree, `LOCAL_DENIED` | triage `TRIAGE_KIND_START_FAILED` |
@@ -240,7 +244,7 @@ The normative table is in [03h](../specs/03h-goal-phases-in-depth.md#start-failu
 | A person is typing in the reused pane | `pick_session` fails `SESSION_NOT_AVAILABLE` or `PANE_BUSY`; new window next pass. Typing in a new window during `wait_ready` makes `type_goal` fail `PANE_BUSY`; one retry after 30 s |
 | The agent's state directory is lost | new windows are rebuilt from `FLEET_GOAL_ID` (`source ENV`); a reused pane is missing from `Snapshot.goal_registry` and the hub sends `RegisterGoal` |
 | `StartGoal` expired during an outage but the registry binds the goal | adopted as `RUNNING` instead of re-planned |
-| A local approval rule needs a person | the wait happens once, before step 1, as `CommandProgress{awaiting_local_confirm}`; a timeout ends the start with `LOCAL_CONFIRM_TIMEOUT` and the hub opens a new window instead |
+| A local approval rule needs a person | the wait happens once, before step 1, as `CommandProgress{awaiting_local_confirm}`; a timeout ends the start with `LOCAL_CONFIRM_TIMEOUT`: nobody is at the keyboard, so the hub skips the machine for 30 minutes and plans elsewhere ([03h](../specs/03h-goal-phases-in-depth.md)) |
 | A foreign claim appears after dispatch | triage `double_claim`; the goal keeps running until a person decides |
 | Slots disagree with the heartbeat | `SnapshotRequest{"slot_mismatch"}`, machine skipped this pass |
 
