@@ -39,7 +39,7 @@ sequenceDiagram
   H-->>D: 3. GetInsightsResponse{efficiency, outcomes, stuck, size_accuracy, routines, series, computed_time, goals_live}
   D->>H: 4. ListSuggestions{}, DismissSuggestion{request_id, id, expected_version}
   Note over H: cron fires (default Monday 07:00) or the owner calls RunRoutine
-  H->>H: 5. spare-quota guard picks (harness, account); export stats bundle from the rollups
+  H->>H: 5. spare-quota guard picks (harness, account), export stats bundle from the rollups
   H->>H: 6. one tx: run number, work item kind ROUTINE, Goal{done_rule REPORT_COLLECTED}, outbox
   H-->>A: 7. Command{ensure_scratch EnsureScratch{goal, files[stats.json]}}, then Command{start_goal StartGoal{worktree_mode SCRATCH}}
   A->>T: 8. the StartGoal composite of A7 in the scratch directory: /goal with the fixed report text

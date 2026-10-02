@@ -341,8 +341,8 @@ CI or review, using RAM but almost no quota. So `max_active` counts goals using 
 policy can only lower them ([ADR 0009](adr/0009-machine-groups-and-layered-settings.md)).
 
 The planner prefers a reusable pane, then a machine other than the hub, then the most free slots.
-Auto-dispatch is off until the owner turns it on; manual dispatch always works and shows each failed
-check as a reason.
+Auto-dispatch is off until the owner turns it on. A manual dispatch shows every check with its
+severity: BLOCK stops it, CONFIRM needs an owner's approval, WARN must be acknowledged ([03h](specs/03h-goal-phases-in-depth.md)).
 
 ## Safety rails
 
@@ -423,7 +423,7 @@ repos:                        # a repo is watched only when listed
 accounts:
   - harness: claude
     spec: {display_name: claude-max, mode: fleet,   # or interactive-only
-           reserve_percent: 25,   # never used by the fleet; kept for the owner
+           reserve_percent: 25,   # kept for you: dispatch stops at 75 % used
            consent: [push, pr-open]}   # narrows the repo's consent
 ```
 
@@ -432,7 +432,8 @@ sign-ins are observed, and the hub address is not in this file. Subscription acc
 discovered, so one no machine has signed in is skipped and blocks the import unless `allow_skipped`
 is set; only API-key accounts (a dollar cap, never auto-dispatched, such as OpenCode providers) are added by hand. A repo is
 watched only when the owner adds it and the GitHub App is installed on it (`eshu-hq/eshu` is the
-author's first). Imported machines start drained.
+author's first). A machine named in an imported config that has not enrolled yet starts drained when
+it enrolls; import never drains a machine that is already enrolled.
 
 ## Open questions
 

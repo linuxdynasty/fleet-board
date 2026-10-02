@@ -96,12 +96,12 @@ sequenceDiagram
   participant T as tmux / harnesses
   O->>H: enroll-token --machine omarchy
   H->>H: tx: enroll_tokens{secret hash, name, expected_hostname, labels, start_drained, not_after_time}
-  H-->>O: token (once; embeds the CA SHA-256)
+  H-->>O: token (once, embeds the CA SHA-256)
   O->>A: fleet-agent enroll --token T
   A->>A: Ed25519 key, CSR · MachineFacts (B1)
   A->>H: TLS: verify server chain against the token's CA SHA-256 (abort here on mismatch)
   A->>H: Enroll(EnrollRequest{token, csr_pem, facts, capabilities, proto_min/max, install_id})
-  H->>H: tx: burn token, insert machine (labels, settings layer and spec.drain from the token or a pending imported entry of that name; start_drained → drained), cert serial, store response keyed by (token, install_id, CSR key) · warn if hostname ≠ expected
+  H->>H: tx: burn token, insert machine (labels, settings layer and spec.drain from the token or a pending imported entry of that name, start_drained → drained), cert serial, store response keyed by (token, install_id, CSR key) · warn if hostname ≠ expected
   H-->>A: EnrollResponse{machine_id, cert_pem, ca_chain_pem, ca_fingerprint, account_salt, salt_version, hub_addresses, machine_name, fleet_id, replayed}
   A->>A: persist cert/key/CA/salt (0600), cache hub address
   A->>T: identity + catalog probe per harness (C2, C4) on fleet-probe

@@ -282,7 +282,7 @@ sequenceDiagram
   participant H as fleetd log receiver
   participant W as log writer (logs.db)
   T->>A: pipe-pane -o output (raw bytes)
-  A->>A: append to spool segment · flush the open zstd frame every 10 s (or 256 KiB raw) → one chunk{offset, raw_length}; a frame closes after 5 min or 4 MiB raw
+  A->>A: append to spool segment · flush the open zstd frame every 10 s (or 256 KiB raw) → one chunk{offset, raw_length}, a frame closes after 5 min or 4 MiB raw
   A->>H: SessionLog: LogChunk{key LogStreamKey{pane, stream=TERMINAL (session_id if known)}, offset, zstd, raw_length, frame_start, frame_raw_offset, gap_before, first_byte_time, last_byte_time, goal_id}
   H->>H: resolve key.pane to a session (UNKNOWN_STREAM if not yet) · offset + raw_length ≤ end → DUPLICATE · offset = stored end + gap_before → append · else HOLE
   H->>W: tx (one per ≤ 1 s batch across all streams): insert log_chunks{session, pane, stream, raw_offset, raw_length, frame_start, frame_raw_offset, first_time, last_time, gap_before, data = the zstd blocks as received}

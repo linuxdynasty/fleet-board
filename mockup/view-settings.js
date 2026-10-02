@@ -11,7 +11,7 @@ const FIELD_LABEL = { max_active: "goals using quota at once", max_total: "goals
 function fleetYaml() {
   const l = ["format_version: 1", "hub:", `  auto_dispatch: ${settings.autoDispatch}`, `  default_consent: [${settings.consent.join(", ").toUpperCase()}]`,
     "fleet_values:", `  window_name_template: "${settings.windowTemplate}"`, `  idle_threshold: ${settings.idleMinutes * 60}s`, `  share_identity_email: ${settings.showEmails}`, "repos:"];
-  settings.repos.forEach(r => l.push(`  - repo: {host: ${r.host}, path: ${r.repo}}`, `    enabled: ${!!r.on}`, `    hooks_mode: ${r.hooks === "eshu" ? "REPO_SHIPS_OWN" : "FLEET_GENERIC"}`));
+  settings.repos.forEach(r => l.push(`  - repo: {host: ${r.host}, path: ${r.repo}}`, `    enabled: ${!!r.on}`, `    hooks_mode: ${r.hooks === "eshu" ? "ESHU" : "GENERIC"}`));
   l.push("accounts:");
   accounts.forEach(a => l.push(`  - harness: ${a.harness}`, `    spec: {display_name: ${a.id}, mode: FLEET, reserve_percent: ${a.reserve}}`));
   apiAccounts.forEach(a => l.push(`  - harness: opencode`, `    spec: {display_name: ${a.id}, mode: FLEET, budget_kind: DOLLAR_CAP, spend_cap_micros: ${a.capUsd * 1e6}}`));

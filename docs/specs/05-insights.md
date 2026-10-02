@@ -193,7 +193,7 @@ sequenceDiagram
   participant A as fleet-agent
   participant H as harness (subscription)
   participant V as verifier (hub)
-  S->>S: cron fire due; spare-quota guard picks (harness, account)
+  S->>S: cron fire due, spare-quota guard picks (harness, account)
   S->>S: export stats bundle from the rollups (read pool)
   S->>W: plan job: run number, work item, goal (done rule REPORT_COLLECTED)
   W->>A: EnsureScratch{goal, files[stats.json]}
