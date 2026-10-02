@@ -166,6 +166,16 @@ own). Steps 2 to 7 and 9 to 11 are skipped (so `pick_session` does not run); 1,
 truncated to the 4 KiB first-line cap), 13 and 14 run as above, with the same
 restart classes. The registry entry is kept, not replaced.
 
+**Scratch goals.** `GoalSpec.worktree_mode = SCRATCH` (the weekly insights
+report, [05](05-insights.md#7-the-weekly-written-report)) has no repo, branch or
+worktree and an empty consent list: steps 2 to 4 and 11 are skipped (9 and 10 still
+set the routine's model and effort, 7 still captures the log), step 5
+starts the harness with the goal's scratch directory
+(`<agent state dir>/scratch/<goal id>/`, made by `EnsureScratch` just before)
+as its working directory, step 12 writes the goal file there, and `preflight`
+adds `SCRATCH_MISSING`. The registry entry binds by pane and harness session id,
+like a `REPO_DRIVER` goal, and `ReleaseGoal` removes the directory.
+
 **Roles and approval.** The scheduler may run `StartGoal` including steps 9
 to 11: they are part of the composite the owner or routine chose (02g). The
 `/clear` is judged once, up front, with the rest of `StartGoal`, and only in a

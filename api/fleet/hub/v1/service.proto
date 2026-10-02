@@ -24,12 +24,16 @@ import "fleet/hub/v1/device.proto";
 import "fleet/hub/v1/goal.proto";
 import "fleet/hub/v1/goal_dispatch.proto";
 import "fleet/hub/v1/goal_history.proto";
+import "fleet/hub/v1/insight_report.proto";
+import "fleet/hub/v1/insights.proto";
 import "fleet/hub/v1/log_store.proto";
 import "fleet/hub/v1/machine.proto";
 import "fleet/hub/v1/repo.proto";
 import "fleet/hub/v1/routine.proto";
 import "fleet/hub/v1/session.proto";
 import "fleet/hub/v1/settings.proto";
+import "fleet/hub/v1/suggestion.proto";
+import "fleet/hub/v1/system.proto";
 import "fleet/hub/v1/terminal.proto";
 import "fleet/hub/v1/token.proto";
 import "fleet/hub/v1/triage.proto";
@@ -222,6 +226,23 @@ service FleetService {
   rpc DeleteRoutine(DeleteRoutineRequest) returns (DeleteRoutineResponse);
   // [SESSIONS_WRITE] Start a run now.
   rpc RunRoutine(RunRoutineRequest) returns (RunRoutineResponse);
+
+  // --- Insights and system health (05, 05b) ---------------------------------
+
+  // [READ] Subscription efficiency, goal outcomes, where work gets stuck, size
+  // accuracy and routine outcomes, from the hub's daily rollups. Numbers only.
+  rpc GetInsights(GetInsightsRequest) returns (GetInsightsResponse);
+  // [READ] The weekly written reports, newest first, without their text.
+  rpc ListInsightReports(ListInsightReportsRequest) returns (ListInsightReportsResponse);
+  // [READ] One report with its text (untrusted: render as sanitized
+  // markdown); include_bundle also returns the numbers it was written from.
+  rpc GetInsightReport(GetInsightReportRequest) returns (GetInsightReportResponse);
+  // [READ] Rule-based recommendations with the numbers behind each.
+  rpc ListSuggestions(ListSuggestionsRequest) returns (ListSuggestionsResponse);
+  // [APPROVALS] Hide a suggestion for 30 days (and its triage item).
+  rpc DismissSuggestion(DismissSuggestionRequest) returns (DismissSuggestionResponse);
+  // [READ] The System section: the hub's and the agents' own health signals.
+  rpc GetSystemStatus(GetSystemStatusRequest) returns (GetSystemStatusResponse);
 
   // --- Settings and audit ---------------------------------------------------
 

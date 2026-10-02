@@ -28,6 +28,14 @@ enum WorktreeMode {
   // the shared checkout path, and learns the driver's worktree and branch
   // from the goal file (GoalState.worktree_path, branch).
   WORKTREE_MODE_REPO_DRIVER = 2;
+  // No repository: the harness starts in the goal's scratch directory
+  // (EnsureScratch first, same epoch, so command order guarantees it; a
+  // missing directory is SCRATCH_MISSING at preflight). GoalSpec.repo,
+  // workdir and branch are empty, no worktree and no branch state exist, and
+  // the consent list is empty (nothing to push or merge). The goal file lives
+  // in the scratch directory. Used by routines that only write a report
+  // (docs/specs/05-insights.md); needs capability "scratch".
+  WORKTREE_MODE_SCRATCH = 3;
 }
 
 // GoalSpec is everything the agent needs to preflight or start a goal.

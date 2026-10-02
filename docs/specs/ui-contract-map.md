@@ -39,6 +39,7 @@ observed), so paths below read `Account.status.pacing` or `Machine.spec.labels`
 | UI element | Hub API | Agent wire / source |
 |---|---|---|
 | Summary strip counts (working, waiting, stuck, need you, slots, available sessions) | shows `FleetSummary` (`GetFleetSummary`, topic `FLEET_SUMMARY`) | hub-derived from `GoalState`, `Heartbeat.counts`, `TmuxPane.availability` (A5, G2, E11) |
+| System dot in the summary strip (amber or red, links to Machines → System) | shows `FleetSummary.system_warnings`, `system_critical` (`FLEET_SUMMARY`) | hub evaluation of the System signals (05b) |
 | Per-account mini bar and short waste line ("58% left · ~25% unused", "stale reading") | shows `Account.status.usage.buckets[]`, `Account.status.pacing{projected_unused_percent, idle_while_behind, reading_stale}`; `FleetSummary.accounts_wasting` | `LimitBucket.percent_used`, `resets_time` (D2) |
 | API-key account "$6 of $20" | shows `Account.status.usage.spend`, `Account.spec.spend_cap_micros` | `SpendReading`, `BUDGET_KIND_DOLLAR_CAP` (D2, 01 §C) |
 | ⌘K entries for windows | `ListSessions` → `Session.status.windows[].name`, `Session.status.name`, `started_by_fleet` | `TmuxWindow.name`, `TmuxSession.name` (E1) |
@@ -66,6 +67,8 @@ observed), so paths below read `Account.status.pacing` or `Machine.spec.labels`
 | "Work item closed under a running goal" card ("keep going" / "cancel") | `TriageItem.kind = WORK_ITEM_CHANGED`, `Goal.status{phase = PAUSED, pause_reason = WORK_ITEM_CLOSED}`; "Keep going" calls `ControlGoal{RESUME}`, "Cancel" `ControlGoal{CLEAR}` (ends `CANCELLED`) | provider mirror (W4), 03h |
 | "Could not start" card (login or update screen, model missing, 3 attempts failed) | `TriageItem.kind = START_FAILED`, `Goal.status.start_error`; the item's `GoalDefinition.attempt` chain | `CommandProgress` failure `reason` (03h) |
 | Reserve-reached card; "reading is from before the last reset" | `TriageItem.kind = PACING`, `Account.status.pacing{state = RESERVE, reading_stale}` | hub pacing over `LimitBucket` (design.md) |
+| "Hub or machine health" card (writer lagging, disk low, always-on machine offline) | `TriageItem.kind = SYSTEM`, `system SystemDetail{signal, state, value, unit, threshold}`; severity follows the signal's state | `GetSystemStatus` signals; 05b section 8 |
+| "Suggestion" card with its numbers (INFO, only when the setting is on) | `TriageItem.kind = SUGGESTION`, `suggestion SuggestionDetail{suggestion, kind}` → `ListSuggestions` evidence; dismissing it calls `DismissTriageItem` and dismisses the suggestion | 05 section 8 |
 | Snooze / dismiss | calls `SnoozeTriageItem`, `DismissTriageItem` | hub only (03d) |
 
 ## Work
@@ -167,6 +170,27 @@ lists every window on every machine; the Details drawer holds the controls.
 | "This Codex account is the one on machine X" | `UpdateAccount{spec.bindings}` folds the machine's placeholder account into this one | `AccountIdentity.identity_not_shown` (01 §C) |
 | OpenCode card | `Account`, `Pane{provider, model}` | `SessionAccountLink`; no `/usage`, no `/goal` (01b) |
 | "Why is nothing using this account?" next to the waste line | `Account.status.pacing.idle_causes[]` | 03h |
+| Efficiency per account: share of usable quota used before reset, unused at reset (waste), waste trend, idle hours behind pace, one row per past window | `GetInsights{sections: EFFICIENCY}` → `AccountEfficiency{windows[] QuotaWindow, summaries[]}` | hub rollups of `usage_readings` and pace history (05 section 3) |
+| "Suggestions" list under the waste lines, with evidence numbers and "dismiss" | `ListSuggestions`, `DismissSuggestion{id, expected_version}` | 05 section 8 |
+
+## Insights
+
+Key 7. Numbers from the hub's rollups, in plain words with the typed fields under
+`details`; every number says how many goals or windows are behind it, and a
+rate under 5 goals is not shown as a rate. Nothing here is a Watch topic: the
+view reads on open and every few minutes.
+
+| UI element | Hub API | Source |
+|---|---|---|
+| Range picker (7, 30, 90 days) and "history begins" note | `GetInsightsRequest.range`; `GetInsightsResponse.data_start_time`, `computed_time` | rollups (05 section 2) |
+| Efficiency per account: bar of usable quota used per window, waste, trend | `GetInsights{sections: EFFICIENCY, SERIES}` → `QuotaWindow`, `EfficiencySummary`, `InsightSeries{QUOTA_UNUSED_PERCENT}` | 05 section 3 |
+| Outcomes per harness (switch to model, repo, account, machine, size): merge rate, time to merge, nudges, stuck rate, review rounds, restarts, quota per merged change request | `GetInsights{sections: OUTCOMES, group_by}` → `OutcomeRow{group, ran, merged, merge_rate_percent, time_to_merge_p50, p90, quota_points_per_merged, low_confidence}` | 05 section 5 |
+| Where work gets stuck: blocking prompts by class, conditions, provider incidents, parser failures after updates, start failures per machine | `GetInsights{sections: STUCK}` → `StuckInsights` | 05 section 4 |
+| Size estimate versus actual | `GetInsights{sections: SIZE_ACCURACY}` → `SizeAccuracyRow` | 05 section 5 |
+| Routine outcomes | `GetInsights{sections: ROUTINES}` → `RoutineOutcomeRow` | 05 section 5 |
+| Latest written report (sanitized markdown, excerpt, "full report", legend, cost in quota points) | `ListInsightReports` (newest) → `InsightReport{excerpt, usage_consumed, aliases}`; `GetInsightReport{id, include_bundle}` | 05 section 7; text is untrusted |
+| "Run the report now" | calls `RunRoutine{id}` on the built-in routine (`SESSIONS_WRITE`); a spare-quota wait shows `Routine.status.dispatch_block` | 03i |
+| Suggestions | `ListSuggestions`, `DismissSuggestion` | 05 section 8 |
 
 ## Machines
 
@@ -180,6 +204,8 @@ lists every window on every machine; the Details drawer holds the controls.
 | Harness chips with versions | `Machine.status.harnesses[]{harness, profile, version, version_support, health}` | `HarnessInfo` (C1) |
 | Goal hooks per harness: "hooks installed and checked" | shows `Machine.status.harnesses[].goal_hooks{installed, verified}`; "Reinstall on the machine" / "Re-verify" calls `EnsureMachineHooks{machine, harness, repo}` → `Operation`s | `HarnessInfo.goal_hooks` `GoalHooksState`; `EnsureGoalHooks` (G1, 01d, [03](03-workflows.md) "Hook reconcile") |
 | "Not taking new work: signed out of gh, folder not trusted, …" | `Machine.status.unfit[]{harness, repo, reason, since_time, next_check_time}` | durable start-failure markers (03h) |
+| **System** section: hub row (version, uptime, exporters on or off, overall state) and the signal table with value, thresholds and state | `GetSystemStatus` → `SystemStatus{overall, signals[] SystemSignal, exporters, watch_subscribers}`; re-read every 30 s and on a `TRIAGE` change of kind SYSTEM | 05b section 8 |
+| Agent health in each machine card (ring, unacknowledged results, reconnects, memory, tmux control, probes failing) | shows `Machine.status.telemetry.agent_health MachineAgentHealth` | `Heartbeat.health AgentHealth`, `Heartbeat.events` (05b section 6) |
 | Disk, load, memory pressure, log spool and shipping state | `Machine.status.telemetry{disk[], load5, memory_pressure_level, spool_pending_bytes, spool_gap_bytes, log_shipping_paused}`; no 24 h chart in the contract | `ResourceSample` (B2), `SpoolStatus` |
 | "hooks installed, trust pending — open Codex /hooks to approve" | `MachineHarness.goal_hooks{trust = PENDING, trust_approve_command}`; `UNKNOWN` shows "trust not known" | Codex and Muse trust per hook hash; `/hooks` is deny-class, the agent never approves (G1, 01d) |
 | "hooks installed; eshu ships its own, so fleet's stay off there" | `Machine.status.repos[].goal_hooks[].state.repo_ships_own` | `RepoCheckout.goal_hooks[]` (G1, 03g #7) |
@@ -205,7 +231,8 @@ lists every window on every machine; the Details drawer holds the controls.
 | Settings: export and import `fleet.yaml`, "Preview changes" | `ExportConfig` → `FleetConfig`; `ImportConfig{config, dry_run}` → `changes[]` and `plan_hash`, then `ImportConfig{expected_plan_hash}` | [02b](02b-hub-api.md#config-export-and-import) |
 | Settings: storage (database sizes, last backup, free disk) | `GetStoreStatus` (backup itself is `fleetd backup` on the hub host) | 03f, ADR 0002 |
 | Settings: Integrations (GitHub connected; GitLab, Jira, Bitbucket, Linear planned) | `ListIntegrations` → `Integration{spec, status{health, health_reason, health_message, rate_limits, backoff_until_time, sync_lag}}`; "access lost" and "rate limited, resumes at 14:02" read `health_reason` and `backoff_until_time` | `IntegrationCapabilities` (ADR 0012), `ProviderError` ([03j](03j-provider-sync-and-trust.md)) |
-| Settings: routines | `ListRoutines`, `CreateRoutine`, `UpdateRoutine`, `DeleteRoutine` | ADR 0018 |
+| Settings: routines, including the built-in weekly insights report (on or off, day and time, harness, model) | `ListRoutines{filter: builtin = INSIGHTS_WEEKLY}`, `UpdateRoutine{spec.enabled, spec.trigger, spec.harness, spec.model, spec.effort}`; a built-in cannot be deleted or have its text edited | ADR 0018, 03i, 05 section 7 |
+| Settings: "also show suggestions in Triage" | `Settings.spec.hub.suggestions_in_triage` (`UpdateSettings`) | 05 section 8 |
 | Sign-in page (passkey, "Sign in with GitHub") and "claim this hub" | `GetServerInfo{auth_mode, sign_in_methods, claim_pending}`; `BeginPasskeyLogin` / `FinishPasskeyLogin`; `GET /auth/github/start`; the claim page calls `RedeemInvite`, then `BeginPasskeyRegistration` / `FinishPasskeyRegistration` | none on the agent wire ([02f](02f-hub-authentication.md)) |
 | Settings: people (invite, role, GitHub allow-list, disable) | `ListUsers`, `CreateUserInvite` (shows the invite URL once), `UpdateUser{spec.role, spec.github_login, spec.disabled, spec.extra_scopes}` (`extra_scopes` = `LOGS` on top of the role); `HubSettings.passkey_sign_in`, `github_sign_in` (`ADMIN`) | hub only |
 | Settings: passkeys and signed-in browsers | `User.status.passkeys[]`, `DeletePasskey`; `ListLoginSessions`, `RevokeLoginSession`; "Sign out" calls `SignOut` | hub only |

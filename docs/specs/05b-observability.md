@@ -1,0 +1,296 @@
+# 05b. Observability: fleetd and fleet-agent watching themselves
+
+- Status: Draft for review
+- Date: 2026-10-02
+- Part of: [README](README.md), step 5; companion of [05-insights.md](05-insights.md)
+- Output: `api/fleet/hub/v1/system.proto` (`GetSystemStatus`,
+  `TRIAGE_KIND_SYSTEM`), `agent/v1/agent.proto` (`AgentHealth` in
+  `Heartbeat`), `hub/v1/machine.proto` (`MachineAgentHealth`)
+- Decision: [ADR 0021](../adr/0021-insights-and-observability.md); libraries
+  in [ADR 0020](../adr/0020-dependencies.md)
+- Builds on: the Telemetry list of every workflow in
+  [03](03-workflows.md) to [03j](03j-provider-sync-and-trust.md),
+  [02g](02g-agent-security.md#trace-context-on-the-wire) (trace context),
+  [02i](02i-delivery-and-sequencing.md) (counters, clocks)
+
+The product's job is to run unattended on someone's own machines. Its own
+health therefore has to be visible without installing anything else, and
+visible with a collector for the owner who has one. Three rules:
+
+1. **Works with nothing.** Logs go to stderr, metrics are served on `/metrics`,
+   the System section and the triage feed show the hub's own state. No
+   collector, Prometheus or Grafana is required, and none is assumed.
+2. **Collector optional.** OTLP export of traces and metrics is off by
+   default and is configured on the hub or agent host only.
+3. **Telemetry never costs correctness.** Metrics, spans and logs use bounded
+   queues and drop when full (counted); they never block the single writer,
+   the scheduler or a command. An exporter failure is a counter and a log
+   line, never an outage.
+
+## 1. Signals
+
+| Signal | Library (ADR 0020) | Where it goes by default | Optional |
+|---|---|---|---|
+| Logs | stdlib `log/slog`, JSON | stderr (the supervisor, launchd or systemd, keeps it) | OTLP logs through the OTel slog bridge (v0, off) |
+| Metrics | OpenTelemetry Go SDK, Prometheus exporter | the hub's `/metrics` | OTLP metrics to a collector |
+| Traces | OpenTelemetry Go SDK | trace ids in logs and on the wire; no exporter | OTLP traces to a collector |
+
+**Resource attributes** on every signal: `service.name` (`fleetd` or
+`fleet-agent`), `service.version`, `service.instance.id` (the hub's
+`hub_instance_id`, the agent's `boot_id`), and for agents `machine_id`. The
+hub's `fleet_id` is not an attribute (it is pseudonymous but not needed).
+
+**Never in telemetry** (fleet-telemetry-coverage, fleet-security): credentials,
+tokens, harness auth data, raw pane or screen text, goal text, issue bodies,
+prompt text, file paths from the owner's machine, emails. Attributes and labels
+are ids, enums, counts and result classes. Redaction happens before the signal
+is created, never in an exporter.
+
+## 2. Logs
+
+One JSON object per line. `msg` is the event name `<area>.<event>` (03:
+`enroll.completed`, `snapshot.applied`, `dispatch.planned`); the fixed fields
+are:
+
+| Field | Meaning |
+|---|---|
+| `time`, `level` | RFC 3339 UTC; `debug`, `info`, `warn`, `error` |
+| `msg` | the event name |
+| `component` | `scheduler`, `writer`, `verifier`, `syncer`, `logwriter`, `watch`, `api`, `agent.conn`, ... |
+| `machine_id`, `goal_id`, `command_id`, `epoch`, `seq` | wherever they apply |
+| `trace_id`, `span_id` | when a span is active, so a log line finds its trace without a collector |
+| `err_kind` | a closed class (`timeout`, `refused`, `constraint`, `io`, `parse`); never an error string that could echo user text |
+
+Levels: `error` is a fault the owner or developer must look at; `warn` is a
+degraded but handled state; `info` is a state change worth keeping; `debug`
+(off by default, runtime switch on the local admin socket) is per-message.
+Per-heartbeat and per-summary events are never logged above `debug`. The hub
+does not rotate logs; the agent, which launchd leaves with a bare stderr,
+writes `agent.log` in its state directory, size-rotated (10 MiB, 3 files).
+A line that would need user text (a prompt, a screen, a goal line) is a line
+that carries only the id and the length instead.
+
+## 3. Metrics
+
+**Naming** is the existing rule (03, conventions): `fleet_hub_*` and
+`fleet_agent_*`, Prometheus style, unit suffix (`_total`, `_seconds`,
+`_bytes`), counters end in `_total`, durations are histograms in seconds,
+gauges name what they hold. Runtime and process metrics from the OTel runtime
+instrumentation keep their library names (`go_*`, `process_*`). **Labels are
+closed and bounded**: enums, kinds, result classes, and ids that grow with the
+fleet, not with data (`machine`, `account`, `integration`, `routine`); never
+`goal_id`, a path, a title or a session name. At A50 the largest label set is
+50 machines.
+
+The per-workflow metrics are listed in each workflow's Telemetry section (03
+to 03j) and in [05-insights.md](05-insights.md#9-telemetry). The platform
+metrics below fill the gaps between them.
+
+| Metric | Type, labels | Answers |
+|---|---|---|
+| `fleet_hub_writer_batch_messages`, `fleet_hub_writer_batch_seconds` | histograms | how big are the batches, how long does the commit take |
+| `fleet_hub_writer_queue_age_seconds` | histogram | how long a message waited for the writer (the lag the System signal reads) |
+| `fleet_hub_ingest_queue_depth{machine}`, `fleet_hub_ingest_blocked_seconds_total{machine}` | gauge, counter | is one agent's stream backed up; are never-dropped readers blocked |
+| `fleet_hub_ingest_shed_total{kind}` | counter | which droppable kinds the hub shed |
+| `fleet_hub_outbox_pending{machine}`, `fleet_hub_outbox_oldest_age_seconds{machine}` | gauges | are commands piling up for an online machine |
+| `fleet_hub_watch_subscribers`, `fleet_hub_watch_queue_depth` | gauges | how many streams, the deepest queue |
+| `fleet_hub_watch_messages_total{topic}`, `fleet_hub_watch_dropped_total{topic}`, `fleet_hub_watch_resync_total{reason}` | counters | fan-out volume, summaries dropped for slow browsers, streams ended `RESYNC_REQUIRED` |
+| `fleet_hub_rpc_total{rpc, code}`, `fleet_hub_rpc_seconds{rpc}` | counter, histogram | API errors and latency per RPC |
+| `fleet_hub_auth_failures_total{reason}` | counter | sign-in, token, device, Host and Origin refusals |
+| `fleet_hub_store_bytes{db}`, `fleet_hub_store_wal_bytes{db}`, `fleet_hub_store_disk_free_bytes`, `fleet_hub_store_checkpoint_seconds`, `fleet_hub_read_pool_wait_seconds`, `fleet_hub_backup_age_seconds` | gauges, histograms | store size, WAL growth, free disk, reader pool pressure, last backup |
+| `fleet_hub_system_signal_state{signal, subject}`, `fleet_hub_system_signal_value{signal, subject}` | gauges (0 ok, 1 warning, 2 critical, 3 unknown) | the System section as a metric |
+| `fleet_hub_agent_ring_events{machine}`, `_ring_bytes`, `_unacked_results`, `_rss_bytes`, `_reconnects_since_start`, `_tmux_control_down`, `_probes_failing`, `_commands_refused_since_start`, `_events_evicted` | gauges per machine | the latest `AgentHealth`, so one scrape of the hub shows every agent |
+| `fleet_hub_telemetry_export_failures_total{signal}`, `fleet_hub_log_lines_total{level}` | counters | the telemetry pipeline's own health |
+| `fleet_agent_rss_bytes`, `fleet_agent_goroutines`, `fleet_agent_commands_refused_total{reason}`, `fleet_agent_tmux_control_up{server_kind}`, `fleet_agent_probe_failing{harness}` | gauges, counter | the same facts on the agent's own endpoint, for a collector that scrapes agents |
+
+## 4. Prometheus endpoint (`/metrics`)
+
+Served by the hub on its main listener, or on `--metrics-addr` when the owner
+wants a separate one. It exposes numbers only, with the labels above: no names
+(machine display names are not labels), no text, no secrets.
+
+**Who may read it.** Exactly one of:
+
+- the TCP peer is **loopback** (`127.0.0.1` or `::1`, the connection itself;
+  `X-Forwarded-For` and similar headers are ignored, the hub trusts no proxy
+  header), or
+- the request carries an **API token** (`Authorization: Bearer fbt_...`,
+  [02f](02f-hub-authentication.md)) whose effective scopes include `ADMIN`.
+
+A cookie, a device signature or a tokenless remote request is refused (401, or
+403 for a wrong Host), so a web page cannot scrape the hub even with a
+logged-in browser. The Host allow-list of 02f applies, and no CORS header is
+sent, so DNS rebinding does not work either. `local_trusted` mode is loopback
+only, so every local process may read it, the same trust as the local owner.
+A scrape is rate limited per peer (60 per minute) and counted
+(`fleet_hub_rpc_total{rpc="metrics"}`). The agent has no listener and so no
+`/metrics` by default; an owner who scrapes agents sets a loopback
+`metrics_listen` in the agent's **local** policy file (the hub cannot push it,
+there is no config-push RPC), and most owners will not need it, because the hub
+exports each agent's `AgentHealth` (section 6).
+
+## 5. Optional OTLP export
+
+Off by default. Enabled in the hub's or the agent's local configuration, never
+by an RPC or a hub setting:
+
+| Key | Meaning |
+|---|---|
+| `telemetry.otlp.endpoint` | collector URL; the standard `OTEL_EXPORTER_OTLP_ENDPOINT` is honoured |
+| `telemetry.otlp.protocol` | `grpc` (default) or `http/protobuf` |
+| `telemetry.otlp.headers_env` | the **name** of an environment variable that holds the headers (a token for a hosted collector); the secret is never in the file or the logs |
+| `telemetry.otlp.insecure` | plaintext, accepted only for a loopback endpoint |
+| `telemetry.signals` | any of `traces`, `metrics`, `logs` (default `traces`, `metrics` once an endpoint is set) |
+
+**Sampling.** Spans rooted at a command, an API call or the scheduler are always
+recorded (about 0.5 per second at A50, 03g row 10). High-rate roots are
+sampled 1 in 100 and still counted in metrics: `hub.log.batch`,
+`agent.log.flush`, `hub.ingest.batch`. Heartbeats and pane summaries have no
+span at all. The SDK queue holds 2,048 spans; beyond that spans are dropped and
+`fleet_hub_telemetry_export_failures_total` rises. The OTLP trace and metric
+exporters (`otlptracegrpc`, `otlpmetricgrpc` and their HTTP twins, stable v1)
+are added to the ADR 0020 table by ADR 0021; the Prometheus exporter and the
+slog bridge stay v0 and pinned.
+
+## 6. Agent health reaches the hub without a collector
+
+An agent has one outbound stream and no listener, so the hub is the one place
+to look. What already arrives, and what was missing:
+
+| Arrives today | Where |
+|---|---|
+| liveness and uptime, load, pane counts, draining, open attaches, spool state | `Heartbeat` every 15 s (`sent_time`, `uptime`, `load1`, `counts`, `draining`, `spool`, `open_attaches`) |
+| event delivery: shed, coalesced, evicted (loss) | `Heartbeat.events` and `Hello.event_counters` (`EventCounters`, 02i) |
+| agent version, boot id, capabilities, install id, certificate expiry | `Hello`, `MachineFacts`, `Machine.status` |
+| clock skew | measured by the hub from `sent_time` (`MachineTelemetry.clock_skew`) |
+| resources: memory pressure, disk, battery | `ResourceSample` (SHED), `MachineTelemetry` |
+| usage probe health | `ProbeHealth` per account, `AccountProbe` |
+| command outcomes and refusals | `CommandResult` (`status`, `reason`, `message` up to 1 KiB) |
+
+**Added** (`AgentHealth`, `Heartbeat.health`): event ring events and bytes,
+unacknowledged results, reconnects since start, resident memory, tmux control
+connections down, accounts whose probe failed three times in a row, and
+commands refused since start. The hub keeps the latest in
+`MachineTelemetry.agent_health` (a volatile field: at most one Watch message
+per 30 s), shows it in the System section, and exports it as
+`fleet_hub_agent_*{machine}`. Not added: goroutine counts and GC data (the
+agent's own `/metrics` or OTLP, for the developer who wants them), and agent log
+lines (paths and text: they stay on the machine; `fleet-agent doctor` reads
+them locally).
+
+## 7. Spans and trace context
+
+The hub sets `Command.trace` from its issuing span; the agent's spans are its
+children; the agent echoes its own span in `CommandResult.trace` and `Event.trace` when an
+event is the consequence of a traced command; `Settings.trace` does the same for
+settings (02g). The streams that carry bytes (`SessionLog`, `Terminal`) have no
+per-message context, so their spans are separate roots linked by attributes.
+`Operation.trace_id` lets a UI link a command to its trace; without a
+collector, the same id is on every log line of the flow.
+
+| Flow | Span tree (hub, then agent) | Notes |
+|---|---|---|
+| Dispatch | `hub.scheduler.pass` > `hub.scheduler.plan{goal_id}` > `hub.command.send{command_id}` > `agent.start_goal{goal_id}` > one child per step (`preflight`, `ensure_window`, `register_goal`, `wait_ready`, `type_goal`, `confirm_goal_file`, 02h) > `hub.goal.apply_state` | the planning transaction is inside `plan`; the agent echoes its span in `CommandResult.trace` |
+| Prompt answer | `hub.api.DecideApproval` > `hub.prompt.answer{prompt_id}` > `hub.command.send` > `agent.send_keys` > `hub.prompt.result` | an `APPROVALS` decision, one answer in flight per prompt |
+| Attach | `hub.api.AttachTerminal` > `hub.attach.open{attach_id}` > `hub.command.send` > `agent.attach.open` | the byte stream is not spans: `fleet_hub_attach_bytes_total{direction}`; a long-lived `hub.attach.bridge` span records open to close with the close reason |
+| Log chunk | `agent.log.flush{session}` (root, sampled 1 in 100) and `hub.log.batch{chunks, bytes}` (root, sampled) | linked by the `session` attribute, no parent across the stream |
+| Probe | `hub.probe.assign` > `hub.command.send` > `agent.probe.run{account}` > event with `Event.trace` > `hub.usage.apply` | a periodic probe has no hub parent: `agent.probe.run` is a root and `hub.usage.apply` a linked span |
+| Snapshot and replay | `agent.connect.hello` > `hub.connect.hello` > `hub.snapshot.apply`; `agent.ring.replay` > `hub.replay.ingest` | one trace per connect |
+| Settings | `hub.settings.publish` > `agent.settings.merge` | |
+| Insights | `hub.insights.rollup{day}`, `hub.insights.export_bundle` > `hub.command.send` (`EnsureScratch`) > `agent.scratch.ensure`; `hub.insights.collect_report` > `agent.scratch.collect` | 05 |
+| System | `hub.system.evaluate` (every 15 s, root, sampled 1 in 20) | |
+
+## 8. The System health model
+
+Ten signals, evaluated by the hub every 15 s from numbers it already has
+(`hub.system.evaluate`). Each has a value, a unit, a WARNING and a CRITICAL
+threshold (the hub's defaults, not owner settings in v1) and a state. The
+signals and their latest values are `GetSystemStatus` ([READ]); the System
+section of the Machines view draws them; `FleetSummary.system_warnings` and
+`system_critical` drive the strip's dot.
+
+| Signal | Subject | Value | WARNING | CRITICAL | Item raised at |
+|---|---|---|---|---|---|
+| `AGENT_CONNECTED` | machine | seconds since the last heartbeat. Only machines labelled `always-on` or with a live goal count: a laptop that sleeps is not a fault | offline 10 min | offline 1 h | WARNING |
+| `USAGE_PROBE_FRESHNESS` | account | age of the last good reading, FLEET-mode accounts | 3 probe intervals (30 min by default) | 2 h (the account goes STALE and stops dispatching) | WARNING |
+| `INTEGRATION_SYNC_LAG` | integration | `IntegrationStatus.sync_lag` | half of `max_sync_lag` (5 min) | `max_sync_lag` (10 min, dispatch pauses) | CRITICAL |
+| `WRITER_BATCH_LAG` | hub | p95 over one minute of the oldest message's wait, and of the commit time | wait over 1 s, or commit over 250 ms | wait over 5 s, or the ingest channel full for 30 s | CRITICAL |
+| `OUTBOX_BACKLOG` | machine | age of the oldest pending command for a machine that has been online 2 min | 2 min | 10 min | CRITICAL |
+| `WATCH_DROPS` | hub | streams ended `RESYNC_REQUIRED / FELL_BEHIND` in 10 min | 3 | 20 | CRITICAL |
+| `LOG_STORE_USAGE` | hub | `logs.db` size over `log_size_cap_bytes`, percent | 80 | 95 (oldest sessions are being pruned) | CRITICAL |
+| `DISK_FREE` | hub | free bytes on the volume of `state.db` | under 10 GiB | under 2 GiB, back to WARNING above 3 GiB | WARNING |
+| `CLOCK_SKEW` | machine | absolute `MachineTelemetry.clock_skew` | 5 min | 15 min (`clock_untrusted`) | CRITICAL |
+| `BACKUP_AGE` | hub | age of the last backup | 36 h | 7 days | WARNING |
+
+**What a signal raises.** One triage item of the new kind
+`TRIAGE_KIND_SYSTEM`, with `SystemDetail{signal, state, value, unit,
+threshold}`. It is **deduplicated** by fingerprint
+`system:<signal>:<subject>`, so a flapping signal is one item whose severity
+changes in place, never a new one (03f: unique open fingerprint). Severity
+follows the state: WARNING raises `SEVERITY_WARNING`, CRITICAL raises
+`SEVERITY_ACTION`, except `DISK_FREE` and `WRITER_BATCH_LAG` at CRITICAL, which
+can lose work and raise `SEVERITY_CRITICAL`. UNKNOWN (no reading yet, a source
+not enabled) is shown as unknown and raises nothing.
+
+**Hysteresis.** A signal needs two consecutive evaluations (30 s) in a worse
+state to leave OK, and 5 minutes in OK to return, when the item retires. An
+owner may snooze a SYSTEM item like any other.
+
+**Overlaps stay single.** `USAGE_PROBE_FRESHNESS` does not raise while
+`USAGE_PARSE_FAILED`, `PARSER_UNSUPPORTED` or `PARSER_DEGRADED` is open for the
+account (those say why). `DISK_FREE` at CRITICAL coexists with `log_disk_low`:
+the first says the hub may stop writing, the second that log shipping is
+paused (03d W9). `AGENT_CONNECTED` does not duplicate the goal items a
+vanished pane raises (`PANE_LOST`, 03h); it explains the machine.
+
+**Where it shows.** The Machines view's **System** section: a hub row (version,
+uptime, which exporters are on, overall state) and the signal table, with the
+machine signals repeated in each machine card next to the agent's own health
+(ring, unacknowledged results, reconnects, memory). A SYSTEM item in Triage
+links to the same row. There is no Watch topic: the view re-reads
+`GetSystemStatus` every 30 s and on any `TRIAGE` change of kind SYSTEM.
+
+## 9. pprof
+
+Off by default. `--pprof-addr` enables `/debug/pprof` on a **separate loopback
+listener**; the hub refuses to start with any non-loopback value. A request
+must also hold `ADMIN`: in `local_trusted` mode the local owner has it, in
+`authenticated` mode it needs an ADMIN API token, so loopback alone is not
+enough. `cmdline` is disabled (flags may name secret environment variables),
+CPU profiles are capped at 60 s, and enabling it is a log line at start and
+`SystemExporters.pprof` in `GetSystemStatus`. The agent exposes pprof only
+through a loopback flag in its local policy file. A heap profile is not secret
+text but can hint at structure, hence the double guard.
+
+## 10. Failure modes
+
+| Failure | What happens |
+|---|---|
+| Collector down or slow | exports retry with backoff, queues are bounded, spans are dropped and counted; the hub is unaffected; `/metrics` and logs still work |
+| `/metrics` scraped without a credential from a remote address | 401; counted in `fleet_hub_auth_failures_total{reason="metrics"}`; no body |
+| An agent too old to send `AgentHealth` | the fields stay unset (unknown, not 0); the System section says "not reported" and raises nothing |
+| The evaluator itself stalls | `hub.system.evaluate` stops, `observed_time` goes stale; the UI shows "System status is old" above 60 s; `fleet doctor` reads the same status |
+| Hub restart | metrics reset (counters restart at 0; Prometheus handles it), `hub_instance_id` changes, SYSTEM items persist in the store and re-evaluate within 30 s |
+| Too many labels | a new label value space is a review block; the bounded sets above are the contract |
+
+## 11. Verifying it
+
+Per fleet-telemetry-coverage: drive the production path with an OTel
+in-memory exporter or manual reader and assert metric names, labels and
+values, including each failure branch; a test that calls an instrument
+directly proves nothing. The System model has a table test per signal with
+seeded inputs just below, at and above each threshold, and a hysteresis test
+(two evaluations to leave OK, five minutes to return). A scrape test asserts
+the loopback and ADMIN-token rules and the refusal of a cookie, and that no
+label value contains a goal title or session name. What a static check cannot
+prove (that the signal fires in a real `fleetd`) is reported as observed or
+`NOT_CHECKED`.
+
+## 12. Questions for the owner
+
+1. `/metrics` with an `ADMIN` token is broad for a Prometheus job; a
+   narrower read scope for metrics can be added later without breaking
+   anything. Accept `ADMIN` or loopback for now?
+2. Thresholds in section 8 are the hub's defaults, not settings in v1. Accept?
+3. Agent `agent.log` rotation (10 MiB, 3 files) and an optional loopback
+   `metrics_listen` on agents: accept?

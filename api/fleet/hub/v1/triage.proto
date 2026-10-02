@@ -7,6 +7,8 @@ syntax = "proto3";
 package fleet.hub.v1;
 
 import "fleet/hub/v1/common.proto";
+import "fleet/hub/v1/suggestion.proto";
+import "fleet/hub/v1/system.proto";
 import "fleet/type/v1/harness.proto";
 import "fleet/type/v1/ids.proto";
 import "fleet/type/v1/status.proto";
@@ -55,6 +57,16 @@ enum TriageKind {
   // A machine runs an agent that does not know a safety setting the hub sent;
   // it is out of auto-dispatch until upgraded (03e W10).
   TRIAGE_KIND_SETTINGS_UNENFORCED = 26;
+  // A signal about fleetd or a fleet-agent itself left OK (system.proto,
+  // 05b-observability.md): the writer is lagging, a disk is nearly full, an
+  // always-on machine is offline. Deduplicated per (signal, subject), its
+  // severity follows the signal's state and retires 5 minutes after it
+  // returns to OK.
+  TRIAGE_KIND_SYSTEM = 27;
+  // A rule-based suggestion from the insights (suggestion.proto), raised only
+  // when HubSettings.suggestions_in_triage is on. SEVERITY_INFO, never
+  // notified; dismissing the item dismisses the suggestion.
+  TRIAGE_KIND_SUGGESTION = 28;
   // A person interrupted or paused the goal at the machine, or an operator
   // paused it, and it waits for a decision to resume (01d, 03c). Never
   // resolved by a nudge.
@@ -97,6 +109,7 @@ message PromptDetail {
   fleet.type.v1.PromptSource source = 6;
   uint32 confidence = 7;
   bool answerable = 8;
+  fleet.type.v1.PromptClass prompt_class = 9;
 }
 
 // ConditionDetail is the harness-condition card. Untrusted text.
@@ -146,6 +159,10 @@ message TriageItem {
     PromptDetail prompt = 21;
     ConditionDetail condition = 22;
     NoteDetail note = 23;
+    // TRIAGE_KIND_SYSTEM.
+    SystemDetail system = 30;
+    // TRIAGE_KIND_SUGGESTION.
+    SuggestionDetail suggestion = 31;
   }
   // The approval that acts on this item, if any.
   ApprovalId approval = 24;

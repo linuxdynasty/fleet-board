@@ -1,0 +1,62 @@
+// fleet.agent.v1 scratch workspaces (docs/specs/05-insights.md): a directory
+// the agent owns for one goal, outside every repo, so a goal that has no
+// repository (the weekly insights report) can be given an input file and the
+// hub can read back the one file it wrote. Two typed commands, capability
+// "scratch". The hub never sends a path: the directory is
+// <agent state dir>/scratch/<goal id>, and a file is a bare name from a closed
+// pattern, so the hub cannot make the agent read or write anywhere else.
+syntax = "proto3";
+
+package fleet.agent.v1;
+
+import "fleet/type/v1/ids.proto";
+
+// ScratchFile is one input file, written mode 0600. The name matches
+// [a-z0-9][a-z0-9._-]{0,63} and ends in .json or .md: no separators, no "..".
+message ScratchFile {
+  string name = 1;
+  // At most 512 KiB per file and 768 KiB for all files of one command, so the
+  // command stays under the 1 MiB message cap (02e). Text the hub generated:
+  // numbers and enums, never terminal text, secrets or issue bodies.
+  bytes content = 2;
+}
+
+// EnsureScratch (capability "scratch"): create the goal's scratch directory
+// and write these files into it, replacing a file of the same name.
+// Declarative: the same files again is OK. Files not named are left alone (a
+// goal may already have written its output there). Over the limits is
+// INVALID_ARGUMENT; at most 8 files. The agent removes the directory with
+// ReleaseGoal, and in any case 7 days after creation.
+message EnsureScratch {
+  fleet.type.v1.GoalId goal = 1;
+  repeated ScratchFile files = 2;
+}
+
+// EnsureScratchResult.
+message EnsureScratchResult {
+  // True when the directory did not exist. The path is not returned: it is
+  // the agent's business, and the hub has no use for it.
+  bool created = 1;
+}
+
+// CollectScratch (capability "scratch"): read one regular file the goal wrote
+// into its scratch directory. A link is never followed (SCRATCH_MISSING), the
+// text is UTF-8 with control characters stripped (except newline and tab), and
+// it is cut at max_bytes. The result text is UNTRUSTED: a harness wrote it.
+message CollectScratch {
+  fleet.type.v1.GoalId goal = 1;
+  // Same pattern as ScratchFile.name.
+  string name = 2;
+  // At most 65536; 0 means 65536.
+  uint32 max_bytes = 3;
+}
+
+// CollectScratchResult.
+message CollectScratchResult {
+  // Untrusted text, at most max_bytes.
+  string text = 1;
+  // The file was longer than max_bytes and was cut.
+  bool truncated = 2;
+  // The size of the file on disk, before the cut.
+  uint64 size_bytes = 3;
+}

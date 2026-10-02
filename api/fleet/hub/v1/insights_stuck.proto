@@ -1,0 +1,112 @@
+// fleet.hub.v1 insights, part 2: where work gets stuck (docs/specs/05-
+// insights.md, "Where work gets stuck"). Every row is a count or a duration
+// over a closed vocabulary: enums, ids and open names the hub itself
+// validated (harness, provider, version strings). No prompt text, no screen
+// text, no goal text. Rows are rolled up daily by the hub from triage items,
+// goals and usage readings; nothing here is read from an event stream.
+syntax = "proto3";
+
+package fleet.hub.v1;
+
+import "fleet/hub/v1/goal.proto";
+import "fleet/type/v1/harness.proto";
+import "fleet/type/v1/ids.proto";
+import "fleet/type/v1/status.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+
+// PromptBlockRow counts the prompts of one class that held goals up.
+message PromptBlockRow {
+  fleet.type.v1.Harness harness = 1;
+  fleet.type.v1.PromptClass prompt_class = 2;
+  // Prompts the adapter flagged destructive are counted apart: they are never
+  // answered automatically, so they always wait for a person.
+  bool destructive = 3;
+  uint32 prompts = 4;
+  uint32 goals_affected = 5;
+  // Time from the prompt's triage item being raised to it being acted on or
+  // retired, summed and the longest one.
+  google.protobuf.Duration waited_total = 6;
+  google.protobuf.Duration waited_max = 7;
+}
+
+// ConditionRow counts the harness conditions (provider errors, rate limits,
+// usage limits, sign-in required, network) one harness showed.
+message ConditionRow {
+  fleet.type.v1.Harness harness = 1;
+  fleet.type.v1.HarnessConditionKind kind = 2;
+  // The provider behind the account the goal used, as an open name
+  // ("anthropic", "openai"); empty when unknown.
+  string provider = 3;
+  uint32 occurrences = 4;
+  uint32 goals_affected = 5;
+  // Time the condition was open, summed over occurrences.
+  google.protobuf.Duration duration_total = 6;
+}
+
+// ProviderIncident is a cluster of conditions: at least three goals on the
+// same provider showed a RATE_LIMITED, PROVIDER_ERROR or NETWORK condition
+// within ten minutes of each other. Deterministic, so two hubs agree.
+message ProviderIncident {
+  fleet.type.v1.Harness harness = 1;
+  string provider = 2;
+  // The kind that most conditions in the cluster had.
+  fleet.type.v1.HarnessConditionKind kind = 3;
+  google.protobuf.Timestamp start_time = 4;
+  // Unset while the last condition of the cluster is still open.
+  google.protobuf.Timestamp end_time = 5;
+  uint32 goals_affected = 6;
+  uint32 machines_affected = 7;
+}
+
+// ParserFailureRow groups usage parse failures by the versions involved, so a
+// harness update that broke the parser shows as one row.
+message ParserFailureRow {
+  fleet.type.v1.Harness harness = 1;
+  // Strings the hub validated against a version pattern; open names.
+  string harness_version = 2;
+  string parser_version = 3;
+  uint32 failures = 4;
+  // Readings (good and bad) taken on this version pair, so the rate is
+  // failures over readings.
+  uint32 readings = 5;
+  google.protobuf.Timestamp first_failure_time = 6;
+  // The harness version this machine reported before it changed to
+  // harness_version; empty when none was seen.
+  string previous_harness_version = 7;
+  // The first failure came within 24 hours of the hub first seeing
+  // harness_version: the update is the likely cause.
+  bool after_update = 8;
+}
+
+// StartFailureRow counts attempts that failed to start, by reason and machine
+// (GoalStatus.start_error of the failed attempts).
+message StartFailureRow {
+  fleet.type.v1.MachineId machine = 1;
+  fleet.type.v1.Harness harness = 2;
+  fleet.type.v1.ReasonCode reason = 3;
+  uint32 attempts = 4;
+  uint32 goals = 5;
+  // Of those goals, how many ended START_EXHAUSTED (three machines failed).
+  uint32 exhausted = 6;
+}
+
+// StuckReasonRow counts goals that entered STUCK, by the recorded reason.
+message StuckReasonRow {
+  GoalPhaseReason reason = 1;
+  fleet.type.v1.Harness harness = 2;
+  uint32 goals = 3;
+  // Time in STUCK, summed.
+  google.protobuf.Duration stuck_total = 4;
+}
+
+// StuckInsights is the whole "where work gets stuck" section. Each list is
+// ordered by its impact (goals affected, then time) and capped at 50 rows.
+message StuckInsights {
+  repeated PromptBlockRow prompts = 1;
+  repeated ConditionRow conditions = 2;
+  repeated ProviderIncident incidents = 3;
+  repeated ParserFailureRow parser_failures = 4;
+  repeated StartFailureRow start_failures = 5;
+  repeated StuckReasonRow stuck_reasons = 6;
+}

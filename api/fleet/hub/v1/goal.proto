@@ -304,6 +304,11 @@ message GoalStatus {
   // Increments each time the goal line enters a BLOCKED state, so leaving and
   // re-entering Blocked notifies the owner again.
   uint32 block_epoch = 61;
+  // The model and effort the harness reported at start (StartGoalResult), as
+  // it names them; empty when it did not say. Insights group by these, not by
+  // what was requested (GoalDefinition.model may be empty).
+  string effective_model = 62;
+  string effective_effort = 63;
 }
 
 // GoalUsage is the quota one goal used from one account bucket.

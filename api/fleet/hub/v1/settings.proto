@@ -74,6 +74,11 @@ message HubSettings {
   // agent's spool cap is a different thing (SettingValues.spool_cap_bytes).
   optional uint64 log_size_cap_bytes = 14;
   optional google.protobuf.Duration log_retention = 15;
+  // Also raise each rule-based suggestion (insights, docs/specs/05-insights.md)
+  // as a low-severity triage item (TRIAGE_KIND_SUGGESTION, SEVERITY_INFO, never
+  // notified). Suggestions are always listed in the Usage and Insights views;
+  // default false.
+  optional bool suggestions_in_triage = 16;
 }
 
 // SettingsSpec is what the owner set for one layer. Covered by

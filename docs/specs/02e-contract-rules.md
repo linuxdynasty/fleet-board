@@ -110,6 +110,7 @@ rises only when its behaviour changes in a way a command could notice.
 | `OpenAttach`, `CloseAttach` | `attach.pty` |
 | `SetLogCapture`, `SetLogShipping` | `logs.terminal` |
 | `Drain`, `Undrain` | `drain` |
+| `EnsureScratch`, `CollectScratch` | `scratch` (also `StartGoal` with `WORKTREE_MODE_SCRATCH`, 05) |
 
 Other names in use: `usage.passive.<harness>`, `prompt.detect.<harness>`, `pane.input` (E13), `goal.pause_signals` (interrupt and pause conditions),
 `logs.transcript`, `confirm.local`, `power`, `settings` (they gate events and

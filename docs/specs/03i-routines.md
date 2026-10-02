@@ -24,6 +24,18 @@ nothing, so a `WARN` or `CONFIRM` check means "do not start" and the reason land
 **Actors.** Scheduler, writer, verifier, the code host adapter, `fleet-agent`
 (unchanged `StartGoal`).
 
+**Built-in routines and spare quota.** `RoutineSpec.builtin` marks a routine the
+hub owns (v1: the weekly insights report, `ROUTINE_BUILTIN_INSIGHTS_WEEKLY`,
+05): its goal text and done rule are fixed, the owner changes only the
+trigger, harness, account, machine, model, effort and `enabled`, and it cannot
+be deleted. `RoutineSpec.only_spare_quota` (any routine may set it) makes the
+scheduler start a run only on a dispatchable subscription account that is behind
+pace, idle while behind, or projected to leave quota unused, and never when the
+expected cost would cross the reserve; otherwise the fire stays due, the reason
+is `RoutineStatus.dispatch_block` = `ROUTINE_NEEDS_SPARE_QUOTA`, and the next
+fire replaces it (counted in `skipped_fires`). A routine with no `repo` runs its
+goal in a scratch directory the agent owns.
+
 ### Trigger evaluation
 
 For each enabled routine, in the same pass that plans issue work, and before
@@ -91,6 +103,7 @@ All three first need the goal line `DONE` (the goal says it is finished).
 |---|---|---|
 | `GOAL_DONE_ONLY` | nothing: `DONE` → `MERGED` at once (the phase means "verified done" for a routine) | for sweeps that leave nothing on a code host |
 | `CHANGE_REQUEST_MERGED` | the change request whose source branch is the goal's branch (`GoalStatus.branch`, reported for `AGENT_ENSURES` at start and for a `REPO_DRIVER` goal from its goal file) in the routine's repo; merged → `MERGED`. A run has no linked work item, so the `linked_work_items` fallback does not apply | no change request found after `verify_grace` → `DISAGREE` and the usual triage item |
+| `REPORT_COLLECTED` | `CollectScratch{goal, report_path}` on the machine that ran the goal: the file is in the run's **scratch directory** (`WORKTREE_MODE_SCRATCH`, no repo), and the hub reads it back, checks it (non-empty, UTF-8, at most 64 KiB, the bundle marker line first), scrubs and stores it; then `MERGED` | for a routine with no repo (the built-in insights report, [05](05-insights.md#7-the-weekly-written-report)); a missing or invalid file ends `DISAGREE` with `REPORT_INVALID` or `SCRATCH_MISSING` |
 | `REPORT_WRITTEN` | `IntegrationProviderService.PathExists{repo, ref = the branch head the goal reports, path = report_path}` on the repo's code host; exists → `MERGED` | the rule can be saved only for a repo whose code host advertises `path_exists`; the file must be on the pushed branch, not just in the worktree |
 
 `MERGED` then frees the worker exactly as in W6: pane available, `ReleaseGoal`,
@@ -115,11 +128,12 @@ transitions are the usual ones.
 | No account or machine fits | nothing starts; the reason is on the routine's repo and the idle account (`DispatchBlock`, 03h); a `queue_empty` routine waits |
 | `DST` ambiguity | as above, once |
 | The routine's repo is paused (`Repo.spec.enabled` false) | no runs; `RunRoutine` fails `REPO_NOT_WATCHED` |
+| `only_spare_quota` and no account has spare quota | the fire stays due and is retried every pass; `ROUTINE_NEEDS_SPARE_QUOTA` on the routine; replaced by the next fire |
 
 ### Telemetry
 
 `fleet_hub_routine_runs_total{routine, result}`, `fleet_hub_routine_skipped_fires_total{routine}`,
-`fleet_hub_routine_live_age_seconds{routine}`; log `routine.run{routine, run,
+`fleet_hub_routine_live_age_seconds{routine}`, `fleet_hub_routine_guard_waits_total{routine}`; log `routine.run{routine, run,
 goal_id, harness, account}`. At 3 AM: "the nightly sweep did not run" →
 `Routine.status.next_run_time`, `skipped_fires`, and whether its last goal is
 still live (`ROUTINE_BLOCKED`).

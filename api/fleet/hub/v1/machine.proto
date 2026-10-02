@@ -169,6 +169,30 @@ message MachineTelemetry {
   uint64 spool_pending_bytes = 11;
   uint64 spool_gap_bytes = 12;
   bool log_shipping_paused = 13;
+  // The agent's own health from the heartbeat (AgentHealth plus the event
+  // counters), so the Machines view and the System signals need no collector.
+  MachineAgentHealth agent_health = 14;
+}
+
+// MachineAgentHealth is the latest agent-reported health: AgentHealth and
+// EventCounters from the heartbeat, in the hub's own types. Numbers only.
+// Volatile, like the rest of MachineTelemetry (at most one Watch message per
+// 30 s). docs/specs/05b-observability.md ("Agent health without a collector").
+message MachineAgentHealth {
+  uint64 ring_events = 1;
+  uint64 ring_bytes = 2;
+  uint32 unacked_results = 3;
+  uint64 reconnects_total = 4;
+  uint64 rss_bytes = 5;
+  uint32 tmux_control_down = 6;
+  uint32 probes_failing = 7;
+  uint64 commands_refused_total = 8;
+  // EventCounters, cumulative over the install: only evicted is loss.
+  uint64 events_shed_total = 9;
+  uint64 events_coalesced_total = 10;
+  uint64 events_evicted_total = 11;
+  // Monotonic uptime of the agent process.
+  google.protobuf.Duration uptime = 12;
 }
 
 // MachineDisk is free space under one path the agent watches.
