@@ -410,7 +410,10 @@ Checked on 2026-09-28. Re-verify before relying on them.
   Dispatch must trust the worktree base once, or answer the prompt.
 - **Probe placement.** Where the one-per-account usage probe runs, and what
   happens when that machine is asleep.
-- **Muse hook events.** Plugin hooks exist; event names are not confirmed.
+- **Muse hook events.** Answered 2026-10-02 in
+  [01d](specs/01d-goal-hooks.md#muse-hooks-are-a-plugin-package): user-level
+  hooks are a plugin package; 19 events including `Stop`. The `Stop` payload
+  still needs a live probe.
 - **Codex and Muse waiting detection.** Needed before Send-to-pane is enabled
   for them.
 - **Collector PATH strategy.** Record absolute tool paths at install time
