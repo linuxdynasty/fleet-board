@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-10-02
-- Deciders: linuxdynasty (drafted with Claude Opus 5.5)
+- Deciders: linuxdynasty
 - Resolves: the open library question in [0003](0003-transport-grpc.md) and
   "server stream or SSE" in [0007](0007-web-ui-react.md)
 

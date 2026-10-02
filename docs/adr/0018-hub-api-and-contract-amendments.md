@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-10-02
-- Deciders: linuxdynasty (drafted with Claude Opus 5.5)
+- Deciders: linuxdynasty
 - Amends: [0003](0003-transport-grpc.md) ("UI and CLI ↔ hub: the same
   `fleet.v1` services"), [0004](0004-agent-connectivity.md) ("People on the
   hub"), [0011](0011-contract-amendments.md), [0017](0017-contract-packages.md)

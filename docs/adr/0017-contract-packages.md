@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-10-02
-- Deciders: linuxdynasty (drafted with Claude Opus 5.5)
+- Deciders: linuxdynasty
 - Supersedes, in part: [0003](0003-transport-grpc.md) ("the schema lives in
   `api/fleet/v1/*.proto`, package `fleet.v1`")
 

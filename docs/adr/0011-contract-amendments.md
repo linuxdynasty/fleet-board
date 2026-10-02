@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-10-01
-- Deciders: linuxdynasty (drafted with Claude Fable 5.1)
+- Deciders: linuxdynasty
 - Supersedes, in part: [0004](0004-agent-connectivity.md),
   [0006](0006-tmux-sessions.md), [0009](0009-machine-groups-and-layered-settings.md),
   [0010](0010-session-logs.md)
