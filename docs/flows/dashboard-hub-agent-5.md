@@ -122,7 +122,7 @@ sequenceDiagram
 | A rollup input is missing (no reading, parse failure) | the value is unknown, the window is low confidence |
 | No account has spare quota | the weekly fire waits with `ROUTINE_NEEDS_SPARE_QUOTA`; nothing is spent on a model |
 | The agent is old (no capability `scratch`) | `NO_FIT_MACHINE`; nothing starts |
-| The report goal never finishes | `ROUTINE_BLOCKED` after `blocked_after` (4 hours for the built-in), no second run |
+| The report goal never finishes | `TRIAGE_KIND_ROUTINE_BLOCKED` after `blocked_after` (4 hours for the built-in), no second run |
 | The report is empty, too long or lacks the marker | `DISAGREE`, no row stored, triage item |
 | The harness text contains a secret or markup | the hub scrubs secrets before storing; clients render sanitized markdown |
 | The hub is restored from a backup | rollups come back with it; `fleetd insights rebuild --from` recomputes the gap |
