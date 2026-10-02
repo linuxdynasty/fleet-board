@@ -462,7 +462,7 @@ itself adds is kept safe by construction, with no setup:
   length caps, control characters stripped, no HTML.
 - **Fleet scope:** goal files, pane content, logs and transcripts are read only
   for fleet panes unless the developer opts in.
-- **Secrets on screen** stay on the hub, `owner` only ([0010](../adr/0010-session-logs.md)).
+- **Secrets on screen** stay on the hub, behind the `LOGS` scope (owner by default; [0010](../adr/0010-session-logs.md)).
 - **Emails** hidden by default; account keys are pseudonymous.
 
 **Known limit, stated plainly.** The harness and the agent run as the same

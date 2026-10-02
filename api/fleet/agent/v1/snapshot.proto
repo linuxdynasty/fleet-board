@@ -204,7 +204,10 @@ message TmuxServer {
 // ---------------------------------------------------------------------------
 
 // GoalState (G2): goal line plus HEAD plus dirty, in one message because the
-// hub fingerprints them as one state. Fleet panes only.
+// hub fingerprints them as one state. Fleet panes only. The agent emits a new
+// event whenever any fingerprinted field changes, watch_alive included: that
+// flip is what moves a goal from WAITING to STUCK (03c), so it must not wait
+// for the next snapshot.
 message GoalState {
   fleet.type.v1.GoalId goal_id = 1;
   fleet.type.v1.PaneKey pane = 2;
@@ -214,7 +217,8 @@ message GoalState {
   // The CONSENT: line as written, same treatment. Untrusted.
   string consent_line = 5;
   fleet.type.v1.GoalLineState state = 6;
-  // For BLOCKED_WATCH: the pid and whether it is alive.
+  // For BLOCKED_WATCH: the pid and whether it is alive. A flip of
+  // watch_alive is a state change and emits a GoalState event.
   uint32 watch_pid = 7;
   bool watch_alive = 8;
   // For BLOCKED_OWNER. Untrusted text, each capped at 256 bytes.
@@ -423,8 +427,9 @@ message Snapshot {
   DrainState drain = 18;
   // Attaches the agent still holds open (J1).
   repeated fleet.type.v1.AttachId open_attaches = 19;
-  // Last hub command seq (per epoch) the agent applied; HelloAck epoch tells
-  // the hub which epoch it belongs to.
+  // Last hub command seq the agent applied, in the epoch Hello.last_epoch
+  // named: at snapshot time the agent still holds the previous connection's
+  // values, and the new HelloAck.epoch has not applied any command yet.
   uint64 last_applied_command_seq = 20;
   // Command ids whose results the hub never acknowledged; the results
   // themselves follow as CommandResult messages right after the snapshot.

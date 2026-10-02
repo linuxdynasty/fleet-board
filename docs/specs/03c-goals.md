@@ -250,9 +250,11 @@ sequenceDiagram
   participant C as code host (via W4)
   participant S as scheduler
   A->>W: Event{goal_state{goal_id, state=WORKING, first_line, head_commit, dirty}}
-  W->>W: tx: goals.line_state, head, fingerprint=h(state, first_line, head, cr_state, cr_head_sha) · transition history
+  W->>W: tx: goals.line_state, head, fingerprint=h(state, first_line, watch_alive, head, cr_state, cr_head_sha) · transition history
   A->>W: Event{goal_state{state=BLOCKED_WATCH, watch_pid, watch_alive=true}}
   W->>W: tx: WAITING (no triage)
+  A->>W: Event{goal_state{state=BLOCKED_WATCH, watch_pid, watch_alive=false}}
+  W->>W: tx: STUCK (a watch_alive flip is a GoalState event of its own and is in the fingerprint)
   A->>W: Event{goal_state{state=BLOCKED_OWNER, owner, action}}
   W->>W: tx: triage blocked_owner (once per block_epoch)
   A->>W: Event{goal_state{state=DONE}}
@@ -481,21 +483,16 @@ Sub-flags held with the phase (on `GoalStatus`): `provider_condition`,
 
 ### Telemetry
 
-- `fleet_hub_goal_transitions_total{from, to, reason}`, `fleet_hub_goals{state}`,
-  `fleet_hub_goal_age_seconds{state}` (histogram), `fleet_hub_goal_nudges_total{kind=corrective|cooldown, result}`,
-  `fleet_hub_goals_in_cooldown`, `fleet_hub_verify_latency_seconds` (DONE → MERGED),
-  `fleet_hub_verify_disagreements_total`, `fleet_hub_review_loop_pauses_total`,
-  `fleet_hub_goal_control_total{subcommand, harness, result}`,
+- `fleet_hub_goal_transitions_total{from, to, reason}`, `fleet_hub_goals{state}`, `fleet_hub_goal_age_seconds{state}`
+  (histogram), `fleet_hub_goal_nudges_total{kind=corrective|cooldown, result}`, `fleet_hub_goals_in_cooldown`,
+  `fleet_hub_verify_latency_seconds` (DONE → MERGED), `fleet_hub_verify_disagreements_total`,
+  `fleet_hub_review_loop_pauses_total`, `fleet_hub_goal_control_total{subcommand, harness, result}`,
   `fleet_hub_workers_freed_total`, `fleet_hub_goal_stop_without_done_total{harness}`.
 - `fleet_agent_goal_state_events_total{state}`, `fleet_agent_goal_file_watch_errors_total`.
-- Spans: `hub.goal.apply_state{goal_id}`, `hub.verifier.check{goal_id}`,
-  `hub.goal.nudge{goal_id}` → `agent.respawn_pane`, `agent.send_keys`;
-  `hub.goal.control{goal_id, subcommand}` → `agent.run_harness_command`.
-- Logs: `goal.transition{goal_id, from, to, reason, fingerprint}`,
-  `goal.nudge{goal_id, nudges, no_progress_runs, cooldown}`,
-  `goal.verify{goal_id, cr_ref, cr_state, outcome}`, `goal.freed{goal_id,
-  session, reused}`.
+- Spans: `hub.goal.apply_state{goal_id}`, `hub.verifier.check{goal_id}`, `hub.goal.nudge{goal_id}` →
+  `agent.respawn_pane`, `agent.send_keys`; `hub.goal.control{goal_id, subcommand}` → `agent.run_harness_command`.
+- Logs: `goal.transition{goal_id, from, to, reason, fingerprint}`, `goal.nudge{goal_id, nudges, no_progress_runs,
+  cooldown}`, `goal.verify{goal_id, cr_ref, cr_state, outcome}`, `goal.freed{goal_id, session, reused}`.
 
-At 3 AM: "why is this goal stuck / why was the worker not freed?" →
-`goal.transition` history for the `goal_id` and `hub.verifier.check` spans;
-"is the fleet nudging in a loop?" → `fleet_hub_goal_nudges_total` rate.
+At 3 AM: "why is this goal stuck / why was the worker not freed?" → `goal.transition` history for the
+`goal_id` and `hub.verifier.check` spans; "is the fleet nudging in a loop?" → `fleet_hub_goal_nudges_total` rate.

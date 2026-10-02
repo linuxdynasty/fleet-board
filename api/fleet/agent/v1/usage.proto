@@ -105,4 +105,10 @@ message ProbeHealth {
   google.protobuf.Duration interval = 11;
   // Next scheduled run (UTC); unset when stopped.
   google.protobuf.Timestamp next_run_time = 12;
+  // Why the last scheduled run did not happen or failed, for the UI (for
+  // example "skipped: a developer is attached to the probe session"). Capped
+  // at 256 bytes, untrusted. A skip is not a failure: it leaves
+  // consecutive_failures and last_failure unchanged, because those feed the
+  // hub's three-failure failover (03b).
+  string message = 13;
 }

@@ -50,8 +50,8 @@ needs beyond those is listed in
 [03g](03g-load-and-handoff.md#required-contract-changes).
 
 **Persistence vocabulary.** *Hub store* = the hub's embedded database (ADR
-0002, provisional until step 4). *Hub files* = session-log files on the hub
-disk (ADR 0010). *Agent state dir* = `~/.local/state/fleet-agent/` (cert, key,
+0002, provisional until step 4). *Log store* = `logs.db`, the second SQLite file
+with its own writer that holds session-log chunks (ADR 0015). *Agent state dir* = `~/.local/state/fleet-agent/` (cert, key,
 pinned CA, command log, event ring, spool, settings, probe assignments, goal
 registry, availability marks).
 *Work tracker / code host* = the provider's own truth, never copied beyond a
@@ -131,7 +131,9 @@ attempts back off with full jitter 1–60 s. On success the address is cached.
 replace the machine's sessions/windows/panes/goals/repos/harness rows, store
 `Snapshot.seq` as `last_event_seq`, then diff desired state: probe assignments
 whose machine is this one but which the snapshot's `probes[]` does not show →
-`EnsureProbe`; live goal rows (03c phase classes) with a pane that is absent from the
+`EnsureProbe`, and the reverse, a probe the snapshot shows that the hub does not
+assign to this machine (failed over while it was away, or an account removed) →
+`StopProbe`; live goal rows (03c phase classes) with a pane that is absent from the
 snapshot → goal `PANE_LOST` (W6); `goal_registry[]` entries the hub does not
 know → triage `orphan_goal_pane` (W7), and goals the hub expects in `STARTING`
 to `STOPPED` that the registry lacks → `RegisterGoal` (02h); availability marks
@@ -183,10 +185,10 @@ re-enroll rule are in [02g](02g-agent-security.md#machine-lifecycle-revoke-and-d
 
 | What | Where | Transaction |
 |---|---|---|
-| Enrollment token secret hash, expected hostname, TTL, `used_at`, `previous_machine` | hub store | one tx at `enroll-token`; burned in the Enroll tx |
+| Enrollment token secret hash, expected hostname, TTL, `used_time`, `previous_machine` | hub store | one tx at `enroll-token`; burned in the Enroll tx |
 | Machine row (id, name, facts, labels), cert serial + `not_after_time`, the stored Enroll response (kept until the token's TTL + 24 h, keyed by token, `install_id` and CSR key, for replay) | hub store | the Enroll tx (token burn + machine + serial + response together; signing is local CPU, not a network call) |
 | Key (kept until Enroll succeeds, so a retry sends the same CSR), cert, CA chain + pinned fingerprint, `machine_id`, salt, `fleet_id`, cached hub address | agent state dir, mode 0600 | written before `Enroll` returns to the shell; salt never logged |
-| `machine_connections{epoch, boot_id, peer_addr, reason, connected_at}` | hub store | the Hello tx (also marks ONLINE) |
+| `machine_connections{epoch, boot_id, peer_addr, reason, connect_time}` | hub store | the Hello tx (also marks ONLINE) |
 | Inventory from the snapshot | hub store | the snapshot tx (replace per machine) |
 | Outbox transitions (`pending → delivered`, `→ expired`) | hub store | the snapshot tx; messages sent after commit |
 
@@ -218,7 +220,7 @@ re-enroll rule are in [02g](02g-agent-security.md#machine-lifecycle-revoke-and-d
 | Certificate expired (machine offline longer than lifetime) | Hello refused at TLS; agent logs `cert_expired` and `doctor` says "re-enroll" |
 | Duplicate identity (same cert from two hosts) | W2 |
 | Clock skew > 5 min (`Hello.sent_time` or `Heartbeat.sent_time` vs hub receive time) | HelloAck still sent; machine warning; commands still evaluated in hub time; above 15 min `clock_untrusted` (02i, "Clocks") |
-| Snapshot would exceed 1 MiB | Agent drops `PaneSummary`-like detail first, never panes; logs `snapshot.trimmed` |
+| Snapshot would exceed 960 KiB | Sent as parts (`snapshot_id`, `part_index`, `part_count`, same `seq`) that split whole servers, sessions or list entries, never a pane; the hub applies it once every part arrived (02, "Snapshot parts"). The agent never drops a pane or a goal to fit. A hub that does not list `snapshot.parts` gets one snapshot (`raw_screen` is always omitted); if that is still over the cap the agent logs `snapshot.oversize` and `doctor` says the hub must be upgraded |
 | Hub writer backlog while 50 agents reconnect | HTTP/2 flow control holds the stream; snapshot apply is one tx per machine, batched by the writer ([03g](03g-load-and-handoff.md)) |
 | Harness crash during the identity/catalog probe | `HarnessInfo` reported with `version_support` as detected and `AccountIdentity.signed_in=false`; probe retried in 1 min, max 3, then only on version change |
 | Developer typing in a pane | Not relevant here; the identity probe runs on the hidden `fleet-probe` server |
@@ -365,7 +367,7 @@ waiting for keepalive timeouts.
 | Agent offline for hours | Goals run on; ring fills (latest per key); on reconnect snapshot gives truth, ring gives timeline; ring overflow shows as a rise of `evicted_total` and a `gap` on the timeline |
 | Agent crashed, or its state directory was wiped or a VM image reverted | `seq` resumes above `seq_hwm` after a crash; after a wipe `Hello.last_event_seq` is below the hub's, the hub records an agent rollback (new `event_generation`, timeline marker, audit row) and the agent floors `seq` above `hub_last_event_seq`, so nothing is dropped as a duplicate |
 | Hub restart mid-snapshot apply | Stream drops; the partial tx rolls back; the agent reconnects and sends a fresh snapshot |
-| Hub store restored from backup | Epoch rises above the agent's `last_epoch` (no `SEQ_REPLAYED`); `hub_last_event_seq` is lower, so the agent replays its ring and the snapshot covers the rest; registry entries for unknown goals → `orphan_goal_pane` triage; unknown results → audit only; settings generation on the agent may be newer than the hub's → hub re-sends its current generation and the agent applies it (generation compare is "different", not "greater", after a restore flag in `HelloAck`; see 03g required changes) |
+| Hub store restored from backup | Epoch rises above the agent's `last_epoch` (no `SEQ_REPLAYED`); `hub_last_event_seq` is lower, so the agent replays its ring and the snapshot covers the rest; registry entries for unknown goals → `orphan_goal_pane` triage; unknown results → audit only; settings generation on the agent may be newer than the hub's → hub re-sends its current generation and the agent applies it (settings are ordered by `(settings_epoch, generation)`, and a different epoch is accepted whatever its generation; 02, "Settings order") |
 | Duplicate `command_id` re-issued | Logged result returned, nothing re-executed |
 | Deadline expired while offline | Hub marks `EXPIRED` without sending; UI shows "not delivered, machine was offline"; dispatch re-plans (W5), prompt answers are dropped (W7) |
 | Harness crashed while offline | `PaneExited{goal_id}` is in the ring (never dropped); replayed as history only; the snapshot already shows the pane dead, and W6 evaluates the one-nudge rule once from the snapshot, keyed on its fingerprint |

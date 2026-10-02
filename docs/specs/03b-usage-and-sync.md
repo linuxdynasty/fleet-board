@@ -50,8 +50,11 @@ is `SUPPORTED` (or `UNVERIFIED_PARSING` with `ParserSupport{USAGE}` verified or 
 
 **Failover.** Machine `OFFLINE` (not `STALE`: a sleeping laptop flaps through
 STALE and a 45 s blip must not move probes) or `ProbeHealth.consecutive_failures ≥ 3`
-→ probe `FAILED_OVER`, `StopProbe` queued to the old machine (delivered when it
-returns; harmless if the session is already gone), new probe assigned. Two
+→ probe `FAILED_OVER`, `StopProbe` queued to the old machine (24 h `not_after_time`;
+harmless if the session is already gone), new probe assigned. A machine that
+returns after the deadline has an expired `StopProbe`, so the snapshot
+reconcile is the safety net: a probe in `Snapshot.probes[]` that the hub no longer
+assigns to that machine gets a fresh `StopProbe` (W1, "Snapshot reconcile"). Two
 probes briefly alive for one account during failover is harmless: status
 commands cost no quota and both are idle sessions; the hub keeps readings from
 either, newest hub-adjusted `read_time` wins (agent time minus the machine's
@@ -128,7 +131,7 @@ interactive-only, ADR 0008), active goal count per account (from goals ×
    account until its reset; running goals continue (the harness throttles).
 5. Reserve line: any needed bucket ≥ `100 − reserve` → `RESERVE`: no new
    dispatch; a triage pacing alert (W7) fingerprinted on `(account, bucket,
-   reset_at)`. Running goals continue. Automatically pausing `WORKING` goals
+   resets_time)`. Running goals continue. Automatically pausing `WORKING` goals
    with `/goal pause` at the reserve is an **owner setting, default off**
    (decided 2026-10-02); `BLOCKED_WATCH` goals are never paused for pacing.
 6. Excluded from auto-dispatch regardless of numbers: `mode=interactive-only`;
@@ -170,7 +173,7 @@ stateDiagram-v2
 |---|---|---|
 | `probes{probe_id, account_id, machine, interval, state, last_health}` | hub store | assignment tx (with outbox row); health tx per event |
 | `usage_readings` (append; buckets 1 year, `raw_screen` 7 days) and `accounts.latest_reading_id` | hub store | one tx per reading event (writer batch) |
-| `account_pacing{state, allowed_active, target, ahead, computed_at}` | hub store (derived; rewritten per evaluation for the UI and CLI) | scheduler job tx |
+| `account_pacing{state, allowed_active, target, ahead, computed_time}` | hub store (derived; rewritten per evaluation for the UI and CLI) | scheduler job tx |
 | Probe assignment + schedule, last reading (for `Snapshot.usage`) | agent state dir | with the command log |
 | Fixtures and parser version | agent binary / fixtures dir | n/a |
 
@@ -200,11 +203,11 @@ stateDiagram-v2
 | Duplicate `EnsureProbe` / `StopProbe` | Declarative; logged result returned |
 | `EnsureProbe` deadline (10 min) expires while offline | `EXPIRED` on the hub; next scheduler pass re-assigns (same or another machine) |
 | Provider error during the probe | Status commands do not call the model; if the harness fails to start because the provider is down, `HarnessCondition` from the probe pane and `PROBE_START_FAILED` |
-| Developer attached to the probe session (`tmux -L fleet-probe attach`) | Agent sees `attached_clients > 0`, skips the run, reports health with `last_failure=INTERNAL` and a message; never types into a watched probe |
+| Developer attached to the probe session (`tmux -L fleet-probe attach`) | Agent sees `attached_clients > 0`, skips the run and reports `ProbeHealth.message` ("skipped: attached"); a skip is not a failure, so `consecutive_failures` and `last_failure` stay as they were and it never feeds failover; never types into a watched probe |
 | Passive readings disagree with probe | Passive only triggers a probe; the probe wins |
 | Two readings arrive out of order after a reconnect | hub-adjusted `read_time` ordering; latest by time, not by arrival |
 | A machine's clock is minutes fast or slow | Its readings are adjusted by the measured skew; above 15 minutes the machine is `clock_untrusted` (readings ordered by `received_time`, reset text shown instead of a resolved `resets_time`, probe moved to a trusted machine) |
-| Reset text unresolvable ("Resets Sep 30 at 10pm" with no year around New Year) | `ResetTime.at` unset, `original_text` kept; bucket treated as `UNKNOWN` for the line, shown as text |
+| Reset text unresolvable ("Resets Sep 30 at 10pm" with no year around New Year) | `ResetTime.resolved_time` unset, `original_text` kept; bucket treated as `UNKNOWN` for the line, shown as text |
 
 ### Telemetry
 
@@ -397,9 +400,9 @@ Provider failures arrive as a `ProviderError` kind (03j has the mapping to RPC c
 - Spans: `hub.sync.work_items{integration, repo}`, `hub.sync.claims`,
   `hub.sync.change_requests` (attribute `batch_size`, `cost`),
   `hub.sync.verify_one{goal_id}`.
-- Logs: `sync.rate_limited{integration, remaining, reset_at}`,
+- Logs: `sync.rate_limited{integration, remaining, resets_time}`,
   `sync.access_lost{integration, repo, status}`, `sync.double_claim{work_item,
-  ours_at, theirs_at, theirs_author}`, `sync.cursor_reset{resource}`.
+  ours_time, theirs_time, theirs_author}`, `sync.cursor_reset{resource}`.
 
 At 3 AM: "why is the queue empty / dispatch paused?" → `fleet_hub_sync_lag_seconds`
 and `fleet_hub_integration_state`; "why is this goal stuck in verifying?" →

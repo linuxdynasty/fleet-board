@@ -116,5 +116,5 @@ Severity: I important, M minor. Risk: refactor risk if deferred (h/m/l).
 | F | `integration-service-operational-vocabulary` | I | h | IntegrationProviderService cannot carry rate limits, conditional requests or typed provider errors that the sync design depends on | fixed |
 | F | `integration-cannot-express-verification` | I | m | IntegrationProviderService cannot express the queries W4/W6 rely on, and ChangeRequest lacks the fields W6 reads | fixed |
 | F | `trusted-gate-not-computable` | I | m | The trusted-issues gate cannot be evaluated from the integration contract: label actor is not carried, and the allow-list is a flat string list | fixed |
-| G | `workflow-text-drift` | M | l | Stale or inconsistent workflow text that will mislead implementers (small, mostly doc-only) | open |
-| G | `stale-docs-contradict-adr-0015-and-0018` | I | l | Specs still describe superseded designs (log files, owner strings, SUPPORTED-only dispatch, goal.stop) | open |
+| G | `workflow-text-drift` | M | l | Stale or inconsistent workflow text that will mislead implementers (small, mostly doc-only) | fixed |
+| G | `stale-docs-contradict-adr-0015-and-0018` | I | l | Specs still describe superseded designs (log files, owner strings, SUPPORTED-only dispatch, goal.stop) | fixed |

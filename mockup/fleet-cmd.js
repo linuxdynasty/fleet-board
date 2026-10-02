@@ -49,7 +49,7 @@ const respawnCmd = s => fmtCmd("RespawnPane", { pane: paneKey(s), harness: s.har
 const killCmd = s => fmtCmd("KillWindow", { window: `{server: default, window_id: @${s.idx}}` });
 const availCmd = (s, on) => fmtCmd("SetPaneAvailability", { pane: paneKey(s), available_for_work: on, reason: on ? "MARKED_ON_BOARD" : "CLEARED_ON_BOARD" });
 const attachCmd = (s, ro) => fmtCmd("OpenAttach", { attach_id: `att-${s.id}`, session: sessTarget(s), cols: 160, rows: 44, read_only: ro });
-const ensureSessionCmd = o => fmtCmd("EnsureSession", { session_id: o.id, server: "DEFAULT", name: o.name, workdir: o.repo ? `{repo: ${o.repo}}` : undefined, harness: o.harness || undefined, reuse: o.reuse, owner: "you" });
+const ensureSessionCmd = o => fmtCmd("EnsureSession", { session_id: o.id, server: "DEFAULT", name: o.name, workdir: o.repo ? `{repo: ${o.repo}}` : undefined, harness: o.harness || undefined, reuse: o.reuse, owner_principal: "you" });
 const drainCmd = (m, on) => on ? fmtCmd("Drain", { reason: "owner" }) : "Undrain{}";
 
 // Move = stop here, dispatch there (v2 has no move command).

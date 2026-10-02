@@ -333,3 +333,33 @@ on the body fetch itself. Incompatible renames: `IntegrationCapabilities.batch_q
 became `max_batch_size`, `WorkItem.labels` became `Label` messages, `ChangeRequest.mergeable`
 became `merge_state`, `WorkItem.trusted` became `trust`, `HubSettings.trusted_label` and
 `trusted_users` became `trusted_gate`.
+
+## Addendum: doc drift and ADR 0018 names (review theme G)
+
+Taken while bringing the specs in line with themes A to F. No product decision
+changes; these are the small behaviour rules the drift fixes needed, and the
+corrections to accepted ADRs that this ADR owns.
+
+**33. Small rules the drift fixes settled.** `HelloAck.settings_generation` is
+the generation of that machine's resolved settings, not the fleet counter, so
+one machine's change does not resend settings to the rest (03e). A probe skipped
+because a developer is attached is not a failure: `ProbeHealth.message` says why
+and `consecutive_failures` stays put, so it never feeds the three-failure
+failover (03b). `StopProbe` has a 24 h deadline, and the snapshot reconcile
+sends one for any probe a machine reports that the hub no longer assigns to it
+(W1). A change in `GoalState.watch_alive` is a state change: it emits its own
+event and is part of the goal fingerprint, because it moves `WAITING` to
+`STUCK` (03c). `Snapshot.last_applied_command_seq` belongs to
+`Hello.last_epoch`, the epoch the agent still held when it built the snapshot.
+An oversize snapshot is sent in parts and never trims a pane or a goal.
+
+**34. Names in ADR 0018 that no longer exist.** Read `Approval.expires_at` as
+`expire_time`, `HarnessCondition.resets_at` as `resets_time`,
+`limit_wait_until` as `limit_wait_until_time`, and
+`Settings.probe_interval_seconds_by_account` as `probe_interval_by_account`
+(a `Duration` map). The "intended reservations" list in its Consequences is
+void: decision 9 dropped reservations while the contracts are unfrozen, so
+`EnsureSession.owner` is simply `owner_principal` and `DrainState.requested_by`
+is `requested_by_principal`. Its two open questions are answered: API tokens and
+user management are RPCs (02f), and a device signs requests with an Ed25519 key
+(02f). Session logs live in `logs.db` (ADR 0015); no spec describes log files.

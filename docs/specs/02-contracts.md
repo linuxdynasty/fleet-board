@@ -204,8 +204,8 @@ local approval if required (a `CommandProgress` in state
 
 **Deadlines.** `not_after_time` defaults: 2 min for `SendKeys`, `Interrupt`,
 `RunHarnessCommand`, `CapturePane`, `OpenAttach`; 30 min for `StartGoal`,
-`EnsureWorktree`, `PruneWorktree`, `EnsureGoalHooks`; 10 min for
-everything else. The agent evaluates deadlines in hub time
+`EnsureWorktree`, `PruneWorktree`, `EnsureGoalHooks`; 24 h for `StopProbe`
+(its machine may be asleep; the snapshot reconcile covers longer); 10 min else. The agent evaluates deadlines in hub time
 (`HelloAck.hub_time` plus local monotonic elapsed). The hub is the time
 authority: it measures skew from `Hello.sent_time` and `Heartbeat.sent_time`,
 warns over 5 minutes, orders cross-machine data by hub-adjusted time and

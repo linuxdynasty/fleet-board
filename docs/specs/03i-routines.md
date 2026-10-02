@@ -61,7 +61,7 @@ One planning transaction, like W5:
 1. Allocate the run number: `run_count + 1` (never reused; a run whose start
    fails keeps its number, so no `WorkItemKey` repeats).
 2. Create the hub-made work item `WorkItemKey{kind ROUTINE, provider_name
-   "fleet", key "<routine id>/<run>"}`, stage `DISPATCHED`, `trusted` true (the
+   "fleet", key "<routine id>/<run>"}`, stage `DISPATCHED`, `trust.trusted` true (the
    owner configured the routine), `display` "<routine name>#<run>".
 3. Insert the goal (`attempt 1`) with a **snapshot of the routine** on it:
    `done_rule` and `report_path` (`GoalDefinition`), plus model, effort, goal text

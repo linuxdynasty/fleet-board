@@ -272,13 +272,13 @@ Whole messages stay under the 1 MiB Connect cap (02e).
 | `SearchSessionLogsRequest.query` | 256 bytes; 256 MiB of raw text scanned per call; `snippet` 512 bytes |
 | `RepoSpec.branch_pattern` | 128 bytes; `trusted_gate.users` 64 entries of 64 bytes; `tracker_projects` 64 |
 | `FleetConfig` | the 1 MiB message cap; `ImportConfig` plan lines 2000 |
-| `StartGoalRequest.dispatch_reason` | 512 bytes |
+| `GoalSpecInput.dispatch_reason` (in `StartGoalRequest.input`) | 512 bytes |
 | `SendKeysRequest.keys` | 64 entries; literal text 4 KiB in total |
 | `RunHarnessCommandRequest.args` | 4 KiB |
 | `AttachTerminalRequest.input` | 4 KiB per message |
-| `Device.public_key` | 32 bytes (raw Ed25519) |
+| `DeviceSpec.public_key` | 32 bytes (raw Ed25519) |
 | `options_json`, `credential_json` (WebAuthn) | 16 KiB each |
-| `User.display_name`, `ApiToken.name`, `PasskeyInfo.name` | 128 bytes; `github_login` 39 bytes |
+| `UserSpec.display_name`, `ApiTokenSpec.name`, `PasskeyInfo.name` | 128 bytes; `github_login` 39 bytes |
 | `CreateApiTokenRequest.scopes` | 6 entries; `ttl` at most 365 days |
 | `AttachTerminalRequest` frame (WebSocket) | 8 KiB; response frame 66 KiB |
 | `NotificationTarget.push_handle` | 4 KiB |

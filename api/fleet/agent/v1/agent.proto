@@ -228,9 +228,11 @@ message HelloAck {
   // Hard cap for any single Connect message; larger is rejected.
   uint32 max_message_bytes = 7;
   google.protobuf.Duration heartbeat_interval = 8;
-  // Current settings generation; a Settings message follows if newer than
-  // Hello.settings_generation, or if settings_epoch differs from
-  // Hello.settings_epoch.
+  // Generation of THIS machine's resolved settings (the fleet counter value
+  // at which they last changed, 03e), not the fleet-wide counter, so one
+  // machine's change does not resend settings to the others. A Settings
+  // message follows if it is newer than Hello.settings_generation, or if
+  // settings_epoch differs from Hello.settings_epoch.
   uint64 settings_generation = 9;
   // Random id per hub process start. A change tells the agent the hub
   // restarted (its in-memory queues are gone), even on the same address.

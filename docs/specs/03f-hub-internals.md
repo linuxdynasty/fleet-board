@@ -14,11 +14,11 @@ flowchart LR
   subgraph per agent
     CR[connReader<br/>decode, size + machine_id checks,<br/>droppable kinds shed when queue full]
     CW[connWriter<br/>per-machine outbox queue → ConnectResponse]
-    LR[logReceiver<br/>SessionLog stream → files, index batch, LogAck]
+    LR[logReceiver<br/>SessionLog stream → chunk rows, LogAck]
     AB[attachBridge × N<br/>Terminal ⇄ WebSocket, bytes only]
   end
   CR -->|ingest channel, bounded| WR[(storeWriter<br/>single goroutine,<br/>batches ≤100 msgs / 50 ms → one tx,<br/>derives goal/triage/availability in-tx)]
-  LR -->|index rows| WR
+  LR -->|chunk batches, own transaction| LW[(logWriter<br/>single goroutine, logs.db,<br/>one tx per ≤ 1 s batch)]
   SY[integration syncers<br/>one per work tracker / code host,<br/>network outside tx] -->|mirror upserts| WR
   SC["scheduler<br/>single goroutine, tick 30 s + coalesced wakeups,<br/>probe assignment, pacing, dispatch plan"] -->|write jobs| WR
   VF[verifier<br/>DONE + change-request wakeups] -->|write jobs| WR
@@ -40,11 +40,11 @@ flowchart LR
 | Owner | Decides | Reads | Writes through |
 |---|---|---|---|
 | `connReader` (per agent) | Accept or drop a message: size cap, `machine_id` = certificate, order (Hello first, Snapshot before events), droppable kinds when the ingest queue is full (`Heartbeat`, `PaneSummary`, `ResourceSample`, `SpoolStatus` shed first) | nothing from the store | ingest channel |
-| `storeWriter` | Everything that changes the store: snapshot apply, event apply, outbox transitions, derived goal state (W6 rules are pure functions over the row + the event), triage raise/retire, availability, settings acks, sync mirror upserts, log index, audit | its own tx | one tx per batch |
+| `storeWriter` | Everything that changes `state.db`: snapshot apply, event apply, outbox transitions, derived goal state (W6 rules are pure functions over the row + the event), triage raise/retire, availability, settings acks, sync mirror upserts, audit | its own tx | one tx per batch |
 | `scheduler` | Probe assignment, pacing state, dispatch plan, nudges and cooldown actions, machine unfit markers | consistent read | write jobs to `storeWriter`; commands are enqueued inside the resulting tx and handed to `connWriter` after commit |
 | `verifier` | `VERIFYING → MERGED / DISAGREE`, review-loop cap, free worker | consistent read + targeted sync request | write jobs |
 | `integration syncer` | When to poll what; rate-limit backoff | cursors, rate state | write jobs (mirror upserts per page) |
-| `logReceiver` (per agent) | Accept chunk at stored end, append file, ack after index commit, pause on disk threshold | per-stream end offset (memory, loaded from index at stream open) | file append directly; index rows via `storeWriter` |
+| `logReceiver` (per agent) | Accept a chunk at the stored end, ack after the batch commit, pause on disk threshold | per-stream end offset (memory, loaded from `logs.db` at stream open) | chunk rows through `logWriter` (the one writer of `logs.db`, ADR 0015); the delete audit row through `storeWriter` |
 | `attachBridge` | None; forwards bytes; drops input for viewers | registry | audit rows at open/close only |
 | `housekeeping` | STALE/OFFLINE marking, timer expiry, retention, outbox expiry, cert renewal reminders | consistent read | write jobs |
 | `fan-out bus` | Which browser gets which change; coalescing; dropping summaries for slow consumers | nothing | nothing |
@@ -60,7 +60,7 @@ flowchart LR
 | Snapshot apply while live events from the same stream are queued | `connReader` tags each message with its epoch and position; the writer applies in arrival order per machine; events with `seq ≤ Snapshot.seq` become history only |
 | Duplicate `Hello` (duplicate identity) | `machine_connections` unique `(machine_id) WHERE live`; the Hello tx displaces the old row and the old stream gets `Bye` after commit |
 | Verifier and the goal-state apply both move a goal | Both are jobs on the single writer; transitions are computed from the current row inside the tx; an impossible transition is rejected and logged |
-| Log chunk arrives twice from two reconnects | Per-stream end offset in memory, loaded from the index; `log_segments` unique `(session, pane, stream, raw_offset)`; every chunk is answered with the stored end (03d) |
+| Log chunk arrives twice from two reconnects | Per-stream end offset in memory, loaded from `logs.db`; `log_chunks` unique `(session, pane, stream, raw_offset)`; every chunk is answered with the stored end (03d) |
 | Triage raised twice for one state | `triage_items` unique `(fingerprint) WHERE state IN (OPEN, SNOOZED, IN_FLIGHT)` |
 | Outbox command delivered on two epochs | `commands` unique `(command_id)`; the agent's own command log makes the second delivery return the logged result |
 | Settings change while a `SettingsAck` is in flight | Latest ack per machine wins only if `ack.generation ≥ stored.generation` |
@@ -93,13 +93,13 @@ at **4 machines** / **50 machines × 10 panes** from the load table in
 | `ceremonies`, `attach_tickets`, `device_nonces` | ceremony id; ticket hash; `(device, nonce)` | sign-in, attach, device calls | per sign-in / attach / device call | one lookup per use | minutes (in memory is enough; losing them only makes a client retry) |
 | `accounts` (with `origin`, `provider`), `account_machines` (Codex mapping; placeholders per `(machine, profile)`) | `account_id`; `(account_id, machine_id)` | W3, owner (`CreateAccount`, `DeleteAccount`) | rare | by id; per machine | permanent until deleted |
 | `probes` | `probe_id`; unique active per `account_id` | W3 | ≈ 0 | per account | history 30 days |
-| `usage_readings` | `(account_id, read_at)` | W3 | 0.005 / 0.005 (+ passive ≤ 0.07 / 0.8 worst) | latest per account; time series for burn-down | buckets 1 year; `raw_screen` 7 days |
+| `usage_readings` | `(account_id, read_time)` | W3 | 0.005 / 0.005 (+ passive ≤ 0.07 / 0.8 worst) | latest per account; time series for burn-down | buckets 1 year; `raw_screen` 7 days |
 | `account_pacing` | `account_id` | scheduler | per evaluation (≤ 1/30 s) | per account | current only |
 | `sessions` | `session_id`; unique `(machine_id, name)` | W5, W8 | rare | per machine; available set | permanent (fleet-created) |
 | `panes` (latest state per pane) | `(machine_id, server, server_start_id, pane_id)` | snapshots, pane events | activity 0.33 / 5 (peak 20); summaries 4 / 100 **if persisted** | per machine; per session | current only |
 | `pane_summaries` | pane key | E5 | 4 / 100 | per visible pane | **latest only** (see 03g question Q2) |
 | `events` (history, never-dropped kinds + replays) | `(machine_id, seq)` | all | ≈ 0.4 / 7 steady; bursts 2,500/s at hub restart (rate-limited) | timeline by machine/goal/time | 1 week |
-| `resource_samples` | `(machine_id, at)` | B2 | 0.13 / 1.7 | last 24 h per machine (chart) | 1 week |
+| `resource_samples` | `(machine_id, observed_time)` | B2 | 0.13 / 1.7 | last 24 h per machine (chart) | 1 week |
 | `harness_installs`, `catalog_entries` | `(machine_id, harness)`; `(…, catalog_hash, name)` | W11 | rare (bursts of ≤ 100 rows per catalog) | per machine | current + 30-day history |
 | `work_items` (mirror) | `WorkItemKey` (`integration_id, kind, project, key`; `provider_name` when no integration); `manual_reason`; `trust` verdict; `dispatch_block` | W4, W5 | ≤ 2 / ≤ 10 (page upserts, bursty) | by stage; by repo; READY in `dispatch_order` | while open + 30 days |
 | `change_requests` (mirror) | `WorkItemKey` (`integration_id, kind = CHANGE_REQUEST, project = repo path, key`); `repo RepoRef` is a column for lookups | W4 | ≤ 1 / ≤ 5 | by source_branch (head ref); by goal | while linked goal exists + 30 days |
@@ -114,9 +114,9 @@ at **4 machines** / **50 machines × 10 panes** from the load table in
 | `triage_items` | id; unique open `fingerprint` | W7 sources | 0.01 / 0.2 | open ranked; per goal/machine | 7 days after close |
 | `prompt_answers_in_flight` | `prompt_id` | W7 | rare | by prompt | until result |
 | `settings_*`, `machine_effective_settings`, `machine_labels` | scope ids; `machine_id` | W10 | rare | resolve per machine | permanent + audit |
-| `log_sessions`, `log_segments`, `archived_pane_summaries` | `session_id`; `(session_id, pane, stream, raw_offset)`; pane key | W9 | 1 / 30 (chunk index, batched) | by session + offset/time; `ListStoredSessions`; `SearchSessionLogs` scans frames | until pruned by the size cap or `log_retention`, or `DeleteSessionLogs` |
+| `log_sessions`, `log_chunks` (the zstd data and its index in one row), `archived_pane_summaries` (all in `logs.db`, ADR 0015) | `session_id`; `(session_id, pane, stream, raw_offset)`; pane key | W9 | 1 / 30 (chunk rows, batched per second) | by session + offset/time; `ListStoredSessions`; `SearchSessionLogs` scans frames | until pruned by the size cap or `log_retention`, or `DeleteSessionLogs` |
 | `attaches` (audit only) | `attach_id` | W8 | rare | per session | permanent audit |
-| `audit_log` | `(at, id)` | everything mutating | ≈ 0.05 / 0.5 | filter/export | permanent (ADR 0005/design) |
+| `audit_log` | `(time, id)` | everything mutating | ≈ 0.05 / 0.5 | filter/export | permanent (ADR 0005/design) |
 
 Derived, not stored: free slots per machine (from `goals` + limits),
 `allowed_active` per account (stored only as a cache row for the UI), triage
@@ -124,9 +124,9 @@ ranking, the summary strip counts.
 
 **Index needs implied by the read patterns:** `goals(state)`,
 `goals(machine_id, state)`, `goals(account_id, state)`, `commands(machine_id,
-state)`, `triage_items(state, kind, raised_at)`, `events(machine_id, seq)`,
-`events(goal_id, at)`, `log_segments(session_id, pane, stream, raw_offset)` and
-`(session_id, pane, stream, first_at)`, `change_requests(integration_id, source_branch)`,
+state)`, `triage_items(state, kind, raise_time)`, `events(machine_id, seq)`,
+`events(goal_id, observed_time)`, `log_chunks(session_id, pane, stream, raw_offset)` and
+`(session_id, pane, stream, first_time)`, `change_requests(integration_id, source_branch)`,
 `work_items(stage, integration_id)`.
 
 ## Hub identity, backup and restore

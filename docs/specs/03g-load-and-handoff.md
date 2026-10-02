@@ -94,7 +94,10 @@ superseding ADR.
   GB/month before the size cap, 30 index rows/s, random access by `(session,
   stream, raw_offset)` and by time, retention by total size with oldest-first
   pruning and per-session delete, truncate-on-restart of a partial trailing
-  frame. Files-plus-index per ADR 0010, or something else?
+  frame. Files-plus-index per ADR 0010, or something else? **Answered by step 4
+  and [ADR 0015](../adr/0015-session-logs-in-sqlite.md):** chunks as rows in a
+  second SQLite file, `logs.db`, with its own writer; no files, no truncation
+  step.
 - **Q7 Replay budget.** Confirm per-agent (200 ev/s) and hub-wide (2,500
   ev/s) replay caps against the writer's measured batch throughput from Q1.
 - **Q8 Provider limits and ingress.** Confirm current GitHub installation

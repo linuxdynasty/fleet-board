@@ -25,7 +25,7 @@ sequenceDiagram
   G-->>A: Settings{settings_epoch, generation=13, labels[], values SettingValues{…}, probe_interval_by_account}
   A->>A: validate · merge tighten-only under local ceiling (rules below) · persist {gen, effective} · apply
   A->>G: SettingsAck{settings_epoch, generation=13, effective EffectiveSettings{values, sources[], labels, probe_interval_by_account}, capped_fields[], rejected[], unrecognized_value_fields[]}
-  G->>W: tx: machine_effective_settings{machine, gen=13, effective, capped_fields, rejected, unenforced, acked_at}
+  G->>W: tx: machine_effective_settings{machine, gen=13, effective, capped_fields, rejected, unenforced, ack_time}
   Note over A: later: policy.yaml edited on the machine
   A->>G: Event{policy_changed{policy PolicyInfo{hash, changed_since_load=true}, previous_hash}}
   G->>W: tx: machines.policy_hash_on_disk · triage info "policy changed on <machine>, restart pending"
@@ -76,11 +76,14 @@ and a `settings_unenforced` triage item says to upgrade the agent; the owner can
 override that per machine.
 
 **Generation.** One fleet-wide monotonic counter; a machine's `Settings`
-carries the counter value at which its resolved values were last computed. The
-agent persists the last applied generation and reports it in `Hello`; the hub
-sends `Settings` when its value for that machine is newer. The agent ignores a
-generation ≤ the one it holds except after a hub restore (03g: `HelloAck`
-flag) and re-acks the held one. Applying is immediate for rate limits,
+carries the counter value at which that machine's resolved values last
+changed, and `HelloAck.settings_generation` is that same per-machine value (not
+the fleet counter), so a change to one group does not resend settings to every
+machine. The agent persists the last applied `(settings_epoch, generation)` and
+reports it in `Hello`; the hub sends `Settings` when its value for that machine
+is newer or its epoch differs. The agent ignores a generation ≤ the one it holds
+under the same epoch and re-acks the held one; a different epoch (a restore) is
+accepted whatever its generation (02, "Settings order"). Applying is immediate for rate limits,
 approval rules, idle threshold, spool cap, window template, probe intervals;
 `cert_lifetime` at the next renewal; `max_active`/`max_total` are hub-side
 limits the agent only echoes.
@@ -120,8 +123,8 @@ Machine drain state: `ACTIVE` → `DRAINING{hub}` → `ACTIVE` (Undrain);
 | What | Where | Transaction |
 |---|---|---|
 | `settings_fleet`, `settings_groups{label, priority, values}`, `settings_machines{machine, values}`, `machine_labels{machine, label, source=hub}` | hub store | the owner's change tx (with the generation bump) |
-| `settings_generation` (one row), `machine_settings_sent{machine, gen, sent_at}` | hub store | change tx; send tx |
-| `machine_effective_settings{machine, gen, effective, capped_fields, rejected, unenforced, acked_at}` | hub store | ack tx |
+| `settings_generation` (one row), `machine_settings_sent{machine, gen, sent_time}` | hub store | change tx; send tx |
+| `machine_effective_settings{machine, gen, effective, capped_fields, rejected, unenforced, ack_time}` | hub store | ack tx |
 | `machines.policy_hash`, `policy_schema_version`, `policy_hash_on_disk`, `policy_safe_mode`, `policy_error` | hub store | snapshot tx; `policy_changed` tx |
 | Audit: who changed what (old → new) | hub store (permanent) | change tx |
 | `settings.json{generation, values, effective}`, local policy file and its loaded hash | agent state dir / config dir | before `SettingsAck` is sent |
@@ -142,7 +145,7 @@ Machine drain state: `ACTIVE` → `DRAINING{hub}` → `ACTIVE` (Undrain);
 
 | Failure | What happens |
 |---|---|
-| Agent offline | `PENDING`; delivered after the next `Hello` (`HelloAck.settings_generation` > `Hello.settings_generation`) |
+| Agent offline | `PENDING`; delivered after the next `Hello` (`HelloAck.settings_generation` > `Hello.settings_generation`, or a different `settings_epoch`) |
 | Hub restart | Generation and values durable; resend on each Hello as needed |
 | Duplicate `Settings` (same generation) | Agent re-acks; no re-apply |
 | Out-of-order generations (two gateways; cannot happen with one hub) | Agent ignores the lower; counted |
@@ -264,7 +267,7 @@ stateDiagram-v2
 
 | What | Where | Transaction |
 |---|---|---|
-| `harness_installs{machine, harness, version, path, parser_version, supported, catalog_hash, prompt_detection_verified, hooks, state, since}` + history rows for the timeline | hub store | `harness_changed` tx; snapshot tx |
+| `harness_installs{machine, harness, version, path, parser_version, supported, catalog_hash, prompt_detection_verified, hooks, state, since_time}` + history rows for the timeline | hub store | `harness_changed` tx; snapshot tx |
 | `catalog_entries{machine, harness, catalog_hash, name, class, tightened_by_policy}` | hub store | same tx |
 | Triage `parser_unsupported`, `parser_degraded` | hub store | same tx |
 | Machine unfit markers `(machine, harness, reason)` | hub store (derived, used by W5) | same tx |
