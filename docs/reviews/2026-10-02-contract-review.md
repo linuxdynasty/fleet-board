@@ -10,7 +10,7 @@ verification and the critic added 13: **86 in total**. None was rated a
 blocker on its own; about 20 carry a high refactor risk if deferred.
 
 Full detail (evidence with file:line, problem, proposed fix, verifier note)
-is in [2026-10-02-contract-review-findings.json](2026-10-02-contract-review-findings.json).
+is in [2026-10-02-contract-review-findings/](2026-10-02-contract-review-findings/), one JSON file per theme.
 Owner decisions taken from this review are in
 [ADR 0019](../adr/0019-pre-implementation-contract-decisions.md).
 

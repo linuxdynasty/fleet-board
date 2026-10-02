@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-10-02
-- Deciders: linuxdynasty (drafted with Claude Opus 5.5)
+- Deciders: linuxdynasty
 - Amends: [0003](0003-transport-grpc.md) (additive-only rule),
   [0004](0004-agent-connectivity.md), [0010](0010-session-logs.md),
   [0016](0016-browser-transport.md) (attach messages, see 13),
