@@ -159,7 +159,7 @@ lists every window on every machine; the Details drawer holds the controls.
 | "hooks installed, trust pending — open Codex /hooks to approve" | `MachineHarness.goal_hooks.trust_pending` | Codex trusts per hook hash; `/hooks` is deny-class, the agent never approves (G1, 01d) |
 | "hooks installed; eshu ships its own, so fleet's stay off there" | `Machine.repos[].goal_hooks[].state.repo_ships_own` | `RepoCheckout.goal_hooks[]` (G1, 03g #7) |
 | "hooks not installed: …" / "self-check failed" | `MachineHarness.goal_hooks{installed, verified}` | `REASON_CODE_HOOKS_INSTALL_FAILED` (G1, 01d) |
-| "no fleet hooks yet (Muse: plugin package, Stop probe pending)" | no `goal_hooks` for Muse | 01d "Muse hooks are a plugin package" |
+| "no fleet hooks yet (Muse: plugin package)" | no `goal_hooks` for Muse | 01d "Muse hooks are a plugin package" |
 | Window chips | `ListSessions{filter: machine}` | E1 |
 | "Drain…" / "Undrain" | calls `DrainMachine{reason}` / `UndrainMachine`; local drain ends `REJECTED_BY_POLICY` / `DRAINING`; `Machine.drained_by` | `Drain`, `Undrain`, `DrainState.requested_by_principal` (M4) |
 | "Attach from your terminal…" | built in the browser from `Machine.username` | ADR 0006 |

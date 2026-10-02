@@ -18,7 +18,7 @@ function renderMachinesView() {
 // GoalHooksState (01d) in plain words, with a tone for the line.
 function hookPlain(h, st) {
   if (h === "opencode") return ["", "no /goal, so no goal hooks"];
-  if (!st) return h === "muse" ? ["", "no fleet hooks yet (Muse takes them as a plugin; Stop probe pending); goals run on Muse's own /goal"] : ["", "no fleet hooks"];
+  if (!st) return h === "muse" ? ["", "no fleet hooks yet (Muse takes them as a plugin); goals run on Muse's own /goal"] : ["", "no fleet hooks"];
   if (!st.installed) return ["warn", `hooks not installed${st.why ? ": " + st.why : ""}`];
   if (!st.verified) return ["warn", "hooks installed, self-check failed: reinstall on the machine"];
   if (st.trust_pending) return ["warn", `hooks installed, trust pending — open ${h === "codex" ? "Codex" : h} /hooks to approve`];

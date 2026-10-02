@@ -32,14 +32,21 @@ harness config), not into each repo.
 |---|---|---|
 | Claude Code | `~/.claude/settings.json` | `SessionStart`, `UserPromptSubmit`, `Stop` |
 | Codex | `~/.codex/hooks.json` | `SessionStart`, `Stop`, `Interrupt` (notify only) |
-| Muse | a plugin installed at user scope: `muse plugins install <bundle> --scope user` (see [Muse](#muse-hooks-are-a-plugin-package)) | `SessionStart`, `Stop`, `Interrupt` (to confirm in the Stop probe) |
+| Muse | a plugin installed at user scope: `muse plugins install <bundle> --scope user` (see [Muse](#muse-hooks-are-a-plugin-package)) | `SessionStart`, `Stop` (probed), `Interrupt` |
 
-- Every fleet hook exits 0 with no output unless `FLEET_GOAL_ID` is set in its
-  environment. `StartGoal` sets it in the goal window's pane environment
-  ([03c](03c-goals.md)), so the developer's own sessions, including ones on the
-  same machine, see no change.
-- Pane environment reaches hook commands: in the probe the hooks wrote to
-  `$HOOK_LOG`, which was set only in the tmux pane (Claude and Codex both).
+- Every fleet hook exits 0 with no output unless it is running for a fleet
+  goal, so the developer's own sessions, including ones on the same machine,
+  see no change. How a hook knows differs by harness:
+  - **Claude Code and Codex:** `FLEET_GOAL_ID` is set in the goal window's
+    pane environment by `StartGoal` ([03c](03c-goals.md)), and the pane
+    environment reaches hook commands (in the probe the hooks wrote to
+    `$HOOK_LOG`, set only in the tmux pane).
+  - **Muse:** the pane environment does **not** reach plugin hooks (probe
+    below); Muse sets only its own `MUSE_PLUGIN_*` and `CLAUDE_PLUGIN_*`
+    variables. The hook reads `cwd` and `session_id` from its stdin payload
+    and asks the agent's goal registry: `StartGoal` records the goal's
+    worktree path in the agent state dir, and a `cwd` at or under a
+    registered worktree is a fleet goal. Anything else exits 0 silently.
 - The hook scripts live under the agent's data directory
   (`~/.local/share/fleet-agent/hooks/<harness>/`); the settings entries only
   point at them. The command string stays fixed across upgrades and the script
@@ -70,7 +77,11 @@ harness config), not into each repo.
    `HOOKS_INSTALL_FAILED` and leave it untouched.
 3. **Verify.** Run each script with a synthetic payload and no
    `FLEET_GOAL_ID` (must print nothing, exit 0), then with one (must emit the
-   expected event). Report `hook_version`, `hook_hash` (sha256 of scripts plus
+   expected event). For Muse the two cases are a `cwd` outside and inside a
+   registered worktree, run through `muse plugins hook test <plugin>:<hook>
+   --fixture <file>`; the fixture is `{"event": "Stop", "stdin": {…payload…}}`
+   and `hook test` passes neither the caller's environment nor an `env` field
+   to the hook. Report `hook_version`, `hook_hash` (sha256 of scripts plus
    entries), `verified`.
 4. **Codex trust.** Codex runs a new or changed hook only after the user
    approves it in `/hooks` (trust is recorded per hook hash). `/hooks` is on
@@ -144,6 +155,48 @@ Side finding for eshu: its `.codex/hooks.json` routes `/goal consent …` throug
 `UserPromptSubmit`, which Codex 0.160.0 does not fire for `/goal` lines. That
 router probably never runs under Codex. eshu's problem to confirm, not fleet's.
 
+## Muse Stop probe (2026-10-02)
+
+Muse Code 1.4.2 on the hub MacBook. A Claude-compatible plugin
+(`.claude-plugin/plugin.json` plus `hooks/hooks.json` with one `Stop` entry,
+the format fleet would ship) was installed with `muse plugins install --scope
+user` and approved with `muse plugins approve`. Muse ran in a throwaway tmux
+server (`-L museprobe`) in an empty scratch folder with `PROBE_TOKEN` set in
+the pane. The hook logged its stdin and, on the first stop of a turn,
+answered `{"decision": "block", "reason": "…"}`. Every screen was read before
+a key was sent.
+
+| Step | Result |
+|---|---|
+| hook gated on `PROBE_TOKEN`, first prompt | hook ran (`hook_run_terminal` `completed`, exit 0) but logged nothing: the pane variable did not reach it |
+| hook logs unconditionally, second prompt | two `Stop` runs in one `turn_id` |
+| first `Stop`, hook answers `block` | Muse records `status: blocked`, adds the reason to the model's context as a `hook:stop` block, and runs another model turn |
+| second `Stop` | `stop_hook_active: true`; hook allows; turn ends |
+| script edited while approved | still `trusted_enabled`, same `source_digest`, no new prompt |
+
+**Payload** (`Stop`): `hook_event_name`, `stop_hook_active`,
+`last_assistant_message`, `session_id`, `turn_id`, `cwd`, `transcript_path`
+(`null` in this build), `model`, `permission_mode`, `model_provider`. Because
+`transcript_path` is null, K3 finds Muse transcripts by `session_id` under
+`~/.local/share/muse/sessions/<date>/<session_id>/session.jsonl`.
+
+**Environment seen by the hook:** `MUSE_PLUGIN_ROOT`, `MUSE_PLUGIN_ID`,
+`MUSE_PLUGIN_DATA_DIR`, `CLAUDE_PLUGIN_ROOT`, `CLAUDE_PLUGIN_DATA` (both roots
+point at Muse's cached copy of the package). No pane variables.
+
+**Continuation works like Claude's:** `decision: block` plus `reason` keeps
+the turn going, and `stop_hook_active` tells the hook a block already
+happened, so the fleet Stop guard must allow the stop when it is `true` to
+avoid a loop. The model in the probe still answered "OK" because the prompt
+demanded exactly that word; the reason reached its context as a separate
+block.
+
+**Cleanup:** tmux server killed, plugin removed (`muse plugins list` empty),
+`~/.config/muse/trust.json` restored byte for byte (trusting the scratch
+folder had added one entry), `settings.json` unchanged, `auth.json` never
+opened. Two small prompts were spent; their session log stays in the owner's
+Muse history.
+
 ## Muse hooks are a plugin package
 
 Read from Muse Code 1.4.2's own CLI (`muse plugins --help`) and the text
@@ -194,16 +247,26 @@ upgrading fleet changes no hook definition and the user approves once per
 machine. The scripts directory above then holds nothing; the version check in
 step 3 runs `fleet-agent hook --version`.
 
+Evidence for Muse ([Stop probe](#muse-stop-probe-2026-10-02)): with the hook approved, the script it pointed
+to was edited in place; Muse kept the hook `trusted_enabled` with the same
+`source_digest` and ran the edited script without asking. Muse's trust covers
+the hook entry in `hooks/hooks.json`, not a script the entry points to by
+path. Codex is still unprobed on this point; the proposal does not depend on
+it, because the entry never changes either way.
+
 ## Open questions
 
 - Generic goal file location that every harness sandbox can write (Codex
   `workspace-write` limits writes to the workspace) without dirtying the
   checkout: candidates are a path under `.git/` or a git-ignored path the
   agent adds to `.git/info/exclude`. Needs a probe per harness.
-- Muse `Stop` payload and continuation output (the input fields and how to
-  say "keep going"). One live probe: install the test plugin at user scope,
-  approve it, run `muse plugins hook test fleet-goal-hooks:<hook> --fixture`,
-  remove it. Needs the owner present because it changes the user's Muse setup.
+- Muse goal registry by `cwd`: a goal that `cd`s outside its worktree (for
+  example to `/tmp`) would read as not-a-fleet-goal and lose the Stop guard.
+  Matching on `session_id`, recorded by the `SessionStart` hook while `cwd`
+  is still the worktree, covers that; confirm `SessionStart` fires for the
+  first turn of a plugin-hooked session.
+- ~~Muse `Stop` payload and continuation output~~ Answered by the Muse Stop
+  probe above.
 - Whether a Claude-compatible plugin package also installs as a Claude Code
   plugin (would replace editing `~/.claude/settings.json`). Not tested.
 - ~~Muse hook support~~ Answered above: user-level hooks are a plugin package.
