@@ -1,6 +1,6 @@
 # UI ↔ contract map
 
-- Status: Draft, with the mockup under `mockup/`
+- Status: Accepted, with the mockup under `mockup/`; contracts unfrozen until v0.1 (ADR 0019)
 - Date: 2026-10-02
 - Inputs: [02-contracts.md](02-contracts.md), [02b-hub-api.md](02b-hub-api.md),
   `api/fleet/*/v1/*.proto`,
@@ -11,7 +11,7 @@
   [0010](../adr/0010-session-logs.md), [0011](../adr/0011-contract-amendments.md),
   [0012](../adr/0012-integration-model.md), [0018](../adr/0018-hub-api-and-contract-amendments.md)
 
-Each row names a UI element in the mockup, the hub API (`fleet.hub.v1`) it
+Each row names a UI element, the hub API (`fleet.hub.v1`) it
 reads or calls, and the agent-wire message or field behind it with the
 capability or ADR it stands for. The UI talks only to the hub API (ADR
 0018); "calls" means a `FleetService` RPC, which returns an `Operation` when
@@ -19,6 +19,12 @@ it sends the agent command named in the third column. "Shows" means the
 element renders a hub resource built from agent-reported state. The hub
 never sends ssh or a shell string; the one `ssh` line in the UI is the
 copyable attach fallback and runs on the developer's own machine.
+
+A row marked `[planned]` is UI the mockup does not draw yet (routine cards,
+"why isn't anything starting?", requeue, log store size, "not taking new work",
+add, revoke and forget machine, hub choices, export and import, storage, sign-in,
+people, passkeys, API tokens, devices): its contract exists and the mockup gets
+the element when that view is built (02e, freeze item 3).
 
 Default views use plain words. The contract names in this table (typed
 commands, proto fields, reason codes, hashes, ADR refs) are what each
@@ -81,12 +87,12 @@ observed), so paths below read `Account.status.pacing` or `Machine.spec.labels`
 | "claimed by …" | `WorkItem.item.claims[]`, `stage = CLAIMED_ELSEWHERE` | `Claim{mechanism, by_fleet}` |
 | CI marks on change requests | `ChangeRequest.change_request.checks`, `merged_time`, `review_rounds` | `CheckSummary` (ADR 0012) |
 | Goal line on a card in plain words ("waiting on CI (watcher running)"); raw `BLOCKED: … WATCH=48213` under details | `Goal.status{line_state, first_line}` | `GoalState{state: GOAL_LINE_STATE_BLOCKED_WATCH, first_line, watch_pid, watch_alive}` (G2) |
-| Routine cards | `ListRoutines`; runs as `WorkItem` with `kind = ROUTINE` (and `ListGoals{filter: routine = "<id>"}`); "run now" calls `RunRoutine{id, acknowledged_warnings}` (a `CONFIRM` check returns `approval`, as `StartGoal` does); "blocked" from `TriageItem.kind = ROUTINE_BLOCKED` | ADR 0018, [03i](03i-routines.md) |
+| [planned] Routine cards | `ListRoutines`; runs as `WorkItem` with `kind = ROUTINE` (and `ListGoals{filter: routine = "<id>"}`); "run now" calls `RunRoutine{id, acknowledged_warnings}` (a `CONFIRM` check returns `approval`, as `StartGoal` does); "blocked" from `TriageItem.kind = ROUTINE_BLOCKED` | ADR 0018, [03i](03i-routines.md) |
 | "Next up … will use available session X" / "new window …" | the first item of `ListWorkItems{filter: stage = READY, order_by: dispatch_order}`, then `PreflightGoal{input}` with an empty placement → `placement` (`reuse_pane` / `in_session`), `hub_checks`; candidates are panes whose `Pane.workdir.repo` is the goal's repo and not dirty | `StartGoal.reuse_pane` / `in_session`, `PreflightResult.would_reuse`, `SESSION_WORKDIR_MISMATCH`, `CHECKOUT_DIRTY` (G3, E11, 02h) |
 | Dispatch panel reasons: red blocks, amber warnings, "needs your confirm" | `PreflightGoalResponse.hub_checks[]{check.reason, severity}` (`BLOCK`, `WARN`, `CONFIRM`, `INFO`) plus `Operation.failed_checks` (agent, all BLOCK); the preview reflects consent, text, model and effort because `PreflightGoal` takes the same `GoalSpecInput` | hub rules, 03h; `PreflightResult.failed_checks` (I1) |
 | Dispatch past a warning; dispatch needing a confirm | `StartGoal{input, acknowledged_warnings: [reason…]}`; a `CONFIRM` check returns `approval` (`DISPATCH_CONFIRM`) and no goal, `DecideApproval` then creates the goal | 03h, [02b](02b-hub-api.md#actions-that-need-an-approval) |
-| "Why isn't anything starting?" on an idle account, machine, repo or item | `Account.status.pacing.idle_causes[]`, `Machine.status.unfit[]`, `Repo.status.dispatch_block`, `WorkItem.dispatch_block`, `FleetSummary.dispatch_blocks[]` (each `DispatchBlock{detail.reason, metadata, since_time}`) | scheduler pass, 03h |
-| "Put it back in the queue" on a cleared or exhausted card | calls `RequeueWorkItem{id, expected_version}` (not for an untrusted item); `WorkItem.manual_reason` | 03h |
+| [planned] "Why isn't anything starting?" on an idle account, machine, repo or item | `Account.status.pacing.idle_causes[]`, `Machine.status.unfit[]`, `Repo.status.dispatch_block`, `WorkItem.dispatch_block`, `FleetSummary.dispatch_blocks[]` (each `DispatchBlock{detail.reason, metadata, since_time}`) | scheduler pass, 03h |
+| [planned] "Put it back in the queue" on a cleared or exhausted card | calls `RequeueWorkItem{id, expected_version}` (not for an untrusted item); `WorkItem.manual_reason` | 03h |
 | Dispatch panel account list incl. "via OpenCode (manual only)" | `ListAccounts` → `spec.mode`, `spec.budget_kind`, `status.pacing.state = EXCLUDED` | `AccountIdentity.budget_kind` (01 §C, ADR 0008) |
 | "OpenCode has no /goal yet" reason | `Machine.status.harnesses[].catalog` has no `/goal` | `CommandCatalog`; `GOAL_SUBCOMMAND_UNSUPPORTED` (01b) |
 | HARNESS_VERSION_UNSUPPORTED reason (codex 0.157.1 on .124) | `MachineHarness.version_support`, `parser_support[]`, `health` | `HarnessInfo.version_support`; preflight `ReasonCode` 2 (C1, I1) |
@@ -139,7 +145,7 @@ lists every window on every machine; the Details drawer holds the controls.
 | Details drawer: "Harness command…" palette, grouped by class, deny never shown | `Machine.status.harnesses[].catalog`; calls `RunHarnessCommand{command, expected_class, catalog_hash}` | `CommandCatalog`, `RunHarnessCommand` (C4, F8) |
 | Destructive commands need confirm | `RunHarnessCommandResponse.approval` → `DecideApproval` | `COMMAND_CLASS_DESTRUCTIVE` (01b) |
 | Observe result note | `Operation.output_text` | `RunHarnessCommandResult.screen` (F8) |
-| Details drawer: "Mark available for work" (on a harness pane) | calls `SetPaneAvailability{session, pane, available_for_work}` | `SetPaneAvailability{reason: MARKED_ON_BOARD}` (E11) |
+| Details drawer: "Mark available for work" (on a harness pane) | calls `SetPaneAvailability{session, pane, available_for_work, fresh_context_on_reuse}` (the option "Start each goal with /clear", off unless ticked) | `SetPaneAvailability{reason: MARKED_ON_BOARD, fresh_context_on_reuse}` (E11) |
 | "Becomes available after a verified merge" | `Pane.availability` after `Goal.status.phase = MERGED` | set by the agent (E11) |
 | Details drawer: "Restart harness in place…" | calls `RespawnPane{resume: true}`; `Operation.state = RUNNING` while local approval waits | `RespawnPane` (F5, L3) |
 | Details drawer: "Kill window…" | calls `KillWindow`; a developer's window returns an `approval` | `KillWindow` (F6, ADR 0011) |
@@ -150,7 +156,7 @@ lists every window on every machine; the Details drawer holds the controls.
 | Details drawer: Timeline | `ListAuditEntries{filter: target = "sessions/<id>"}` (or `machine`); each action's `target` is listed in [02b](02b-hub-api.md#audit-actions) | M1 (hub side) |
 | Ended sessions, "find the logs of a finished goal" | `ListSessions{filter: state = ENDED}` (`Session.status.state`, `end_time`) and `ListStoredSessions{filter: goal, machine, harness, time}` → `StoredSession{logs[] (stream keys), pane_summaries[] (archived last summary), sizes, times}`; replay calls `ReadSessionLog{key}` | `LogChunk` store, ADR 0010, 0015 (all `LOGS`) |
 | Search across sessions; delete one session's logs | `SearchSessionLogs{query, filter}` → `SessionLogMatch{key, raw_offset, match_time, snippet}` (open the replay at the offset); `DeleteSessionLogs{session}` (audited; refused while capturing) | 03d W9 |
-| "N GB of 50 GB, oldest 12 days old" and the retention setting | `GetLogStoreStatus` → `LogStoreStatus{used_bytes, cap_bytes, oldest_time, retention, shipping_paused}`; edit `HubSettings.log_size_cap_bytes`, `log_retention` with `UpdateSettings` | 03d W9 |
+| [planned] "N GB of 50 GB, oldest 12 days old" and the retention setting | `GetLogStoreStatus` → `LogStoreStatus{used_bytes, cap_bytes, oldest_time, retention, shipping_paused}`; edit `HubSettings.log_size_cap_bytes`, `log_retention` with `UpdateSettings` | 03d W9 |
 | Settings: tmux prefix (`C-b` / `C-a`) | mock only; raw keys are forwarded | J1 |
 
 ## Usage
@@ -189,7 +195,7 @@ view reads on open and every few minutes.
 | Size estimate versus actual | `GetInsights{sections: SIZE_ACCURACY}` → `SizeAccuracyRow` | 05 section 5 |
 | Routine outcomes | `GetInsights{sections: ROUTINES}` → `RoutineOutcomeRow` | 05 section 5 |
 | Latest written report (sanitized markdown, excerpt, "full report", legend, cost in quota points) | `ListInsightReports` (newest) → `InsightReport{excerpt, usage_consumed, aliases}`; `GetInsightReport{id, include_bundle}` | 05 section 7; text is untrusted |
-| "Run the report now" | calls `RunRoutine{id}` on the built-in routine (`SESSIONS_WRITE`); a spare-quota wait shows `Routine.status.dispatch_block` | 03i |
+| "Run the report now" | calls `RunRoutine{id}` on the built-in routine (`SESSIONS_WRITE`); a spare-quota wait shows `Routine.status.dispatch_block`; a manual run with no spare account is a `WARN` (`ROUTINE_NEEDS_SPARE_QUOTA`) the owner accepts in `acknowledged_warnings` | 03i |
 | Suggestions | `ListSuggestions`, `DismissSuggestion` | 05 section 8 |
 
 ## Machines
@@ -203,7 +209,7 @@ view reads on open and every few minutes.
 | "policy <hash> · unchanged/changed" | `Machine.status{policy_hash, policy_changed_since_load}` | `PolicyInfo`, `PolicyChanged` (L1) |
 | Harness chips with versions | `Machine.status.harnesses[]{harness, profile, version, version_support, health}` | `HarnessInfo` (C1) |
 | Goal hooks per harness: "hooks installed and checked" | shows `Machine.status.harnesses[].goal_hooks{installed, verified}`; "Reinstall on the machine" / "Re-verify" calls `EnsureMachineHooks{machine, harness, repo}` → `Operation`s | `HarnessInfo.goal_hooks` `GoalHooksState`; `EnsureGoalHooks` (G1, 01d, [03](03-workflows.md) "Hook reconcile") |
-| "Not taking new work: signed out of gh, folder not trusted, …" | `Machine.status.unfit[]{harness, repo, reason, since_time, next_check_time}` | durable start-failure markers (03h) |
+| [planned] "Not taking new work: signed out of gh, folder not trusted, …" | `Machine.status.unfit[]{harness, repo, reason, since_time, next_check_time}` | durable start-failure markers (03h) |
 | **System** section: hub row (version, uptime, exporters on or off, overall state) and the signal table with value, thresholds and state | `GetSystemStatus` → `SystemStatus{overall, signals[] SystemSignal, exporters, watch_subscribers}`; re-read every 30 s and on a `TRIAGE` change of kind SYSTEM | 05b section 8 |
 | Agent health in each machine card (ring, unacknowledged results, reconnects, memory, tmux control, probes failing) | shows `Machine.status.telemetry.agent_health MachineAgentHealth` | `Heartbeat.health AgentHealth`, `Heartbeat.events` (05b section 6) |
 | Disk, load, memory pressure, log spool and shipping state | `Machine.status.telemetry{disk[], load5, memory_pressure_level, spool_pending_bytes, spool_gap_bytes, log_shipping_paused}`; no 24 h chart in the contract | `ResourceSample` (B2), `SpoolStatus` |
@@ -214,8 +220,8 @@ view reads on open and every few minutes.
 | Window chips | `ListSessions{filter: machine = "m-12"}` | E1 |
 | "Drain…" / "Undrain" | calls `DrainMachine{reason}` / `UndrainMachine`; local drain ends `REJECTED_BY_POLICY` / `DRAINING`; `Machine.spec.drain.by` | `Drain`, `Undrain`, `DrainState.requested_by_principal` (M4) |
 | "Attach from your terminal…" | built in the browser from `Machine.status.username` | ADR 0006 |
-| Add machine | calls `CreateEnrollmentToken{machine_name, expected_hostname, labels, start_drained}` → `enroll_command` (the token embeds the CA fingerprint the agent checks), `ca_fingerprint` for an out-of-band check | A1, [02g](02g-agent-security.md) |
-| "Revoke…" (stolen or retired machine), then "Forget" | calls `RevokeMachine{reason}`; `Machine.status.state = REVOKED`, `Machine.spec.revocation`; `DeleteMachine` only once revoked (`MACHINE_NOT_REVOKED`); "Re-enroll" calls `CreateEnrollmentToken{previous_machine}` | `Bye{REVOKED}`, `MACHINE_STATE_REVOKED` (02g) |
+| [planned] Add machine | calls `CreateEnrollmentToken{machine_name, expected_hostname, labels, start_drained}` → `enroll_command` (the token embeds the CA fingerprint the agent checks), `ca_fingerprint` for an out-of-band check | A1, [02g](02g-agent-security.md) |
+| [planned] "Revoke…" (stolen or retired machine), then "Forget" | calls `RevokeMachine{reason}`; `Machine.status.state = REVOKED`, `Machine.spec.revocation`; `DeleteMachine` only once revoked (`MACHINE_NOT_REVOKED`); "Re-enroll" calls `CreateEnrollmentToken{previous_machine}` | `Bye{REVOKED}`, `MACHINE_STATE_REVOKED` (02g) |
 | Audit log | `ListAuditEntries` (CSV export pages through it) | ADR 0004; agent `M1` local audit |
 | Timeline of which goal ran where (7 days) | `ListGoals{filter: start_time < "<now>" AND (end_time > "<7 days ago>" OR live = true)}`, drawn from `Goal.status{start_time, end_time, phase}` and `spec.machine` | 03c run history |
 
@@ -225,16 +231,16 @@ view reads on open and every few minutes.
 |---|---|---|
 | Settings: effective values with layer chips, refused and not-enforced fields, safe mode | `Machine.status.effective_settings.sources[]`, `capped_settings`, `rejected_settings[]`, `unenforced_settings[]`, `policy_safe_mode`, `policy_error` | `EffectiveSettings`, `SettingsAck.{capped_fields, rejected[], unrecognized_value_fields[]}`, `PolicyInfo.{safe_mode, error}` (A8, L2, ADR 0009) |
 | Settings: limits, idle threshold, window template, show emails | `GetSettings` / `UpdateSettings{settings{spec{scope, values}}, update_mask: "spec.values.<field>"}` | `SettingValues` (A8, ADR 0011) |
-| Settings: hub choices (auto-pause at reserve, trusted gate label and allow-list per integration, auto-dispatch, default consent and parallel cap, log cap and retention) | `Settings.spec.hub HubSettings` (fleet scope; `trusted_gate`); a work item card shows `WorkItem.trust{trusted, basis, granted_by, denial}` for "why is this not auto-dispatched" | hub only (ADR 0018) |
-| Settings: watched repos with host and provider, `hooks: eshu \| generic`, consent, parallel cap, worktree mode, branch pattern, trusted gate (`trusted_gate{label, users[]{integration, login}}`), tracker mapping | `ListRepos`; `CreateRepo`, `UpdateRepo{spec.*}`, `DeleteRepo`; `Repo.status.checkouts[].goal_hooks` shows what each machine has (the label "eshu hook convention" is `repo_ships_own`, read-only) | `RepoRef`, `HarnessGoalHooks` (ADR 0012, G1), [repo.proto](../../api/fleet/hub/v1/repo.proto) |
+| [planned] Settings: hub choices (auto-pause at reserve, trusted gate label and allow-list per integration, auto-dispatch, default consent and parallel cap, log cap and retention) | `Settings.spec.hub HubSettings` (fleet scope; `trusted_gate`); a work item card shows `WorkItem.trust{trusted, basis, granted_by, denial}` for "why is this not auto-dispatched" | hub only (ADR 0018) |
+| Settings: watched repos with host and provider, enabled (pause), per-repo auto-dispatch, `hooks: eshu \| generic`, consent, parallel cap, worktree mode, branch pattern, base branch, trusted gate (`trusted_gate{label, users[]{integration, login}}`), tracker mapping | `ListRepos`; `CreateRepo`, `UpdateRepo{spec.*}`, `DeleteRepo`; `Repo.status.checkouts[].goal_hooks` shows what each machine has (the label "eshu hook convention" is `repo_ships_own`, read-only) | `RepoRef`, `HarnessGoalHooks` (ADR 0012, G1), [repo.proto](../../api/fleet/hub/v1/repo.proto) |
 | Settings: tracker projects (Jira, Linear) | `Integration.spec.tracker_projects[]` (`UpdateIntegration`); the repo each project feeds is `Repo.spec.tracker_projects` | ADR 0012 |
-| Settings: export and import `fleet.yaml`, "Preview changes" | `ExportConfig` → `FleetConfig`; `ImportConfig{config, dry_run}` → `changes[]` and `plan_hash`, then `ImportConfig{expected_plan_hash}` | [02b](02b-hub-api.md#config-export-and-import) |
-| Settings: storage (database sizes, last backup, free disk) | `GetStoreStatus` (backup itself is `fleetd backup` on the hub host) | 03f, ADR 0002 |
+| [planned] Settings: export and import `fleet.yaml`, "Preview changes" | `ExportConfig` → `FleetConfig`; `ImportConfig{config, dry_run}` → `changes[]` and `plan_hash`, then `ImportConfig{expected_plan_hash}` | [02b](02b-hub-api.md#config-export-and-import) |
+| [planned] Settings: storage (database sizes, last backup, free disk) | `GetStoreStatus` (backup itself is `fleetd backup` on the hub host) | 03f, ADR 0002 |
 | Settings: Integrations (GitHub connected; GitLab, Jira, Bitbucket, Linear planned) | `ListIntegrations` → `Integration{spec, status{health, health_reason, health_message, rate_limits, backoff_until_time, sync_lag}}`; "access lost" and "rate limited, resumes at 14:02" read `health_reason` and `backoff_until_time` | `IntegrationCapabilities` (ADR 0012), `ProviderError` ([03j](03j-provider-sync-and-trust.md)) |
 | Settings: routines, including the built-in weekly insights report (on or off, day and time, harness, model) | `ListRoutines{filter: builtin = INSIGHTS_WEEKLY}`, `UpdateRoutine{spec.enabled, spec.trigger, spec.harness, spec.model, spec.effort}`; a built-in cannot be deleted or have its text edited | ADR 0018, 03i, 05 section 7 |
 | Settings: "also show suggestions in Triage" | `Settings.spec.hub.suggestions_in_triage` (`UpdateSettings`) | 05 section 8 |
-| Sign-in page (passkey, "Sign in with GitHub") and "claim this hub" | `GetServerInfo{auth_mode, sign_in_methods, claim_pending}`; `BeginPasskeyLogin` / `FinishPasskeyLogin`; `GET /auth/github/start`; the claim page calls `RedeemInvite`, then `BeginPasskeyRegistration` / `FinishPasskeyRegistration` | none on the agent wire ([02f](02f-hub-authentication.md)) |
-| Settings: people (invite, role, GitHub allow-list, disable) | `ListUsers`, `CreateUserInvite` (shows the invite URL once), `UpdateUser{spec.role, spec.github_login, spec.disabled, spec.extra_scopes}` (`extra_scopes` = `LOGS` on top of the role); `HubSettings.passkey_sign_in`, `github_sign_in` (`ADMIN`) | hub only |
-| Settings: passkeys and signed-in browsers | `User.status.passkeys[]`, `DeletePasskey`; `ListLoginSessions`, `RevokeLoginSession`; "Sign out" calls `SignOut` | hub only |
-| Settings: API tokens (for the CLI) | `CreateApiToken{name, scopes, ttl}` (secret shown once), `ListApiTokens`, `RevokeApiToken`; `LOGS` is a separate tick | hub only; `FLEET_TOKEN` (design.md) |
-| Settings: devices and notifications (phone, later) | `ListDevices`, `ApprovePairing{scopes}` (`LOGS` only when the owner ticks it), `RevokeDevice`, `*NotificationTarget` (own rows) | ADR 0018, 0019, [02d](02d-hub-authz.md) |
+| [planned] Sign-in page (passkey, "Sign in with GitHub") and "claim this hub" | `GetServerInfo{auth_mode, sign_in_methods, claim_pending}`; `BeginPasskeyLogin` / `FinishPasskeyLogin`; `GET /auth/github/start`; the claim page calls `RedeemInvite`, then `BeginPasskeyRegistration` / `FinishPasskeyRegistration` | none on the agent wire ([02f](02f-hub-authentication.md)) |
+| [planned] Settings: people (invite, role, GitHub allow-list, disable) | `ListUsers`, `CreateUserInvite` (shows the invite URL once), `UpdateUser{spec.role, spec.github_login, spec.disabled, spec.extra_scopes}` (`extra_scopes` = `LOGS` on top of the role); `HubSettings.passkey_sign_in`, `github_sign_in` (`ADMIN`) | hub only |
+| [planned] Settings: passkeys and signed-in browsers | `User.status.passkeys[]`, `DeletePasskey`; `ListLoginSessions`, `RevokeLoginSession`; "Sign out" calls `SignOut` | hub only |
+| [planned] Settings: API tokens (for the CLI) | `CreateApiToken{name, scopes, ttl}` (secret shown once), `ListApiTokens`, `RevokeApiToken`; `LOGS` is a separate tick | hub only; `FLEET_TOKEN` (design.md) |
+| [planned] Settings: devices and notifications (phone, later) | `ListDevices`, `ApprovePairing{scopes}` (`LOGS` only when the owner ticks it), `RevokeDevice`, `*NotificationTarget` (own rows) | ADR 0018, 0019, [02d](02d-hub-authz.md) |

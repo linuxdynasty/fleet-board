@@ -6,8 +6,8 @@ const fmtCmd = (name, fields) => `${name}{${Object.entries(fields).filter(([, v]
 const paneKey = s => `{server: default, pane_id: ${s.paneId}}`;
 const sessTarget = s => s.yours ? `{server: DEFAULT, tmux_id: $${s.idx + 1} (${s.sess})}` : `{server: DEFAULT, name: ${s.sess}}`;
 const repoRef = (host, path) => `${host}/${path}`;
-const attachLine = (m, s) => `ssh -t ${m.user}@${m.ip} tmux attach -t ${s.sess} \\; select-window -t ${s.target}`;
-const attachMachine = m => `ssh -t ${m.user}@${m.ip} tmux attach`;
+const attachLine = (m, s) => `ssh -t ${m.user}@${m.name} tmux attach -t ${s.sess} \\; select-window -t ${s.target}`;
+const attachMachine = m => `ssh -t ${m.user}@${m.name} tmux attach`;
 const repoCfg = repo => settings.repos.find(r => r.repo === repo);
 const PROVIDER = { github: "GitHub", gitlab: "GitLab", jira: "Jira", bitbucket: "Bitbucket", linear: "Linear" };
 
@@ -47,7 +47,7 @@ const answerCmd = (s, p, key) => fmtCmd("SendKeys", { pane: paneKey(s), keys: [`
 const harnessCmd = (s, command, cls, args) => fmtCmd("RunHarnessCommand", { pane: paneKey(s), command, args, expected_class: cls.toUpperCase(), catalog_hash: CATALOG[s.harness]?.hash });
 const respawnCmd = s => fmtCmd("RespawnPane", { pane: paneKey(s), harness: s.harness, resume: true });
 const killCmd = s => fmtCmd("KillWindow", { window: `{server: default, window_id: @${s.idx}}` });
-const availCmd = (s, on) => fmtCmd("SetPaneAvailability", { pane: paneKey(s), available_for_work: on, reason: on ? "MARKED_ON_BOARD" : "CLEARED_ON_BOARD" });
+const availCmd = (s, on) => fmtCmd("SetPaneAvailability", { pane: paneKey(s), available_for_work: on, reason: on ? "MARKED_ON_BOARD" : "CLEARED_ON_BOARD", fresh_context_on_reuse: on ? "false unless ticked" : undefined });
 const attachCmd = (s, ro) => fmtCmd("OpenAttach", { attach_id: `att-${s.id}`, session: sessTarget(s), cols: 160, rows: 44, read_only: ro });
 const ensureSessionCmd = o => fmtCmd("EnsureSession", { session_id: o.id, server: "DEFAULT", name: o.name, workdir: o.repo ? `{repo: ${o.repo}}` : undefined, harness: o.harness || undefined, reuse: o.reuse, owner_principal: "you" });
 const drainCmd = (m, on) => on ? fmtCmd("Drain", { reason: "owner" }) : "Undrain{}";

@@ -140,27 +140,31 @@ what is in the protos now.
    self-resume, `/goal resume` works (01b). Original question: **Codex interrupt.** Does an interrupt pause a Codex goal the way Muse's
    does, and must `/goal pause` be typed only at an idle prompt?
 3. ~~Reserve line~~ **Decided 2026-10-02:** stop dispatching and alert;
-   auto-pause is an opt-in setting, off by default (design.md rule 5).
-4. **`max_parallel_goals_per_repo`** default (proposed 3) for merge churn; settable per repo (`Repo.spec.max_parallel_goals`), so only the fleet default is open.
+   auto-pause is an opt-in setting, off by default (03b, "Pacing decision", step 5).
+4. ~~`max_parallel_goals_per_repo`~~ **Decided:** default 3, settable per repo
+   (`Repo.spec.max_parallel_goals`; `HubSettings.max_parallel_goals_per_repo`, 03c rule 1).
 5. ~~Pane summary retention~~ **Decided 2026-10-02:** latest only
    ([ADR 0013](../adr/0013-live-state-retention.md)).
-6. **Claims.** Default claim-comment pattern (eshu's exact text), stale-claim
-   age before an owner is asked, and the claim mechanism for Jira (assignee?
-   transition?) and GitLab.
-7. **Log cadence and ack.** 10 s / 256 KiB chunks; ack after file write and
-   index commit (≤ 1 s batches). Acceptable loss on agent crash ≤ 10 s.
-8. **Probe placement.** Prefer `always-on` labelled machines, then the hub
-   machine; is the hub machine acceptable as a prober by default?
+6. ~~Claims.~~ **Answered:** the claim pattern and the mechanism per provider
+   are in 03b; a foreign claim has no age limit: it holds until it is withdrawn
+   or the owner resolves it (`CLAIMED_ELSEWHERE`, 03b).
+7. ~~Log cadence and ack.~~ **Decided (ADR 0014, 0015, 04 Q6):** 10 s chunks of
+   up to 256 KiB, acked after the `logs.db` commit (batches of 1 s at most);
+   acceptable loss on an agent crash is 10 s.
+8. ~~Probe placement.~~ **Decided:** `always-on` machines first, then the hub
+   machine (03b, probe preference order).
 9. **"Approved and green"** (no merge consent): `review_decision = APPROVED`
    and `checks.rollup = SUCCESS` → `ready_for_human_merge`. Correct? (Both
    fields now exist and are adapter-computed, 03j; the question is only
    whether the rule is right.)
-10. **Heartbeat `last_seen`** persisted per heartbeat (3.3 rows/s at A50) or
-    memory only with a periodic write?
+10. ~~Heartbeat `last_seen`~~ **Decided:** held in memory per heartbeat and
+    written at most once a minute per machine and on connect and disconnect
+    ([defaults](defaults.md)).
 11. **Transcripts (K3).** Measure compression of Claude/Codex/Muse transcript
     files before v3; at A50 the raw rate (1.08 MB/s) exceeds terminal logs.
-12. **Unsupported harness version, manual dispatch.** Allowed with a warning
-    and counted as 1 active against `allowed_active` (proposed).
-13. **Webhook ingress** for GitLab/Jira Cloud: offer a tunnel-based public
-    endpoint, or polling only in v1?
-14. **Replay budgets** (200 ev/s per agent, 2,500 ev/s per hub) as proposed?
+12. ~~Unsupported harness version, manual dispatch.~~ **Decided (ADR 0019 #27,
+    03h):** a `CONFIRM` check, not a warning.
+13. ~~Webhook ingress~~ **Decided (04 Q8):** polling only in v1; webhooks later
+    and optional.
+14. ~~Replay budgets~~ **Decided (04 Q7):** 200 ev/s per agent and 2,500 ev/s per
+    hub, as proposed.

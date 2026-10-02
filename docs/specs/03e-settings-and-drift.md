@@ -128,8 +128,8 @@ Machine drain state: `ACTIVE` → `DRAINING{hub}` → `ACTIVE` (Undrain);
 | `machine_effective_settings{machine, gen, effective, capped_fields, rejected, unenforced, ack_time}` | hub store | ack tx |
 | `machines.policy_hash`, `policy_schema_version`, `policy_hash_on_disk`, `policy_safe_mode`, `policy_error` | hub store | snapshot tx; `policy_changed` tx |
 | Audit: who changed what (old → new) | hub store (permanent) | change tx |
-| `settings.json{generation, values, effective}`, local policy file and its loaded hash | agent state dir / config dir | before `SettingsAck` is sent |
-| Drain state and reason | agent state dir (survives restart) and hub `machines.drain` | per change |
+| Settings `{generation, values, effective}` and the loaded policy hash; the policy file itself stays the owner's | `agent.db` / config dir | before `SettingsAck` is sent |
+| Drain state and reason | `agent.db` (survives restart) and hub `machines.drain` | per change |
 
 ### Ordering and consistency
 

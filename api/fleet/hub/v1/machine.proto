@@ -1,4 +1,4 @@
-// fleet.hub.v1 machines: the Fleet view's machine cards, drain, enrollment
+// fleet.hub.v1 machines: the Machines view's machine cards, drain, enrollment
 // and removal. Built by the hub from snapshots and events; never the agent's
 // Snapshot itself.
 syntax = "proto3";
@@ -101,7 +101,7 @@ message MachineRepo {
   bool dirty = 7;
 }
 
-// MachineSlots are the two per-machine limits (design.md dispatch rules).
+// MachineSlots are the two per-machine limits (03c planning rule 3).
 message MachineSlots {
   uint32 active_used = 1;
   uint32 active_max = 2;

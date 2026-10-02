@@ -313,7 +313,7 @@ message Heartbeat {
 // labelled by machine; the agent's own fleet_agent_* metrics carry the same
 // values for a collector.
 message AgentHealth {
-  // Event ring: events and bytes held (cap: size or one week).
+  // Event ring: events and bytes held (cap: 64 MiB or one week).
   uint64 ring_events = 1;
   uint64 ring_bytes = 2;
   // Command results sent and not yet acknowledged (ResultAck).

@@ -1,6 +1,6 @@
 # 02g. Agent wire: trust, identity, lifecycle and permissions
 
-- Status: Draft for review
+- Status: Accepted; contracts unfrozen until v0.1 (ADR 0019)
 - Date: 2026-10-02
 - Part of: [02-contracts.md](02-contracts.md)
 - Output: `agent/v1/agent.proto` (`EnrollRequest`, `EnrollResponse`, `HelloAck`,
@@ -218,7 +218,8 @@ make a cell stricter, never looser. A refusal is `REJECTED_BY_POLICY` /
 `A` allowed. `L` allowed, and waits for local approval (a `CommandProgress` in
 state `AWAITING_LOCAL_CONFIRM`, then the one result or `LOCAL_CONFIRM_TIMEOUT`) when the machine's local rule
 covers that kind; the default rule is off. `L!` always waits for local approval.
-`F` only in a session or window the fleet started. `—` refused.
+`F` only in a session or window the fleet started. `F*` as `F`, or a pane the
+developer marked available with `fresh_context_on_reuse` (below). `—` refused.
 
 | Command (class or variant) | VIEWER | OPERATOR | OWNER | SCHEDULER | ARBITER |
 |---|---|---|---|---|---|
@@ -226,7 +227,7 @@ covers that kind; the default rule is off. `L!` always waits for local approval.
 | `StopProbe` | — | — | A | A | — |
 | `Preflight`, `EnsureSession`, `EnsureWindow`, `EnsureWorktree` | — | A | A | A | — |
 | `StartGoal` (incl. `model`, `effort` steps; class SESSION) | — | A | A | A | — |
-| `StartGoal` with `fresh_context` (types `/clear`) | — | A, F | A, F | A, F | — |
+| `StartGoal` with `fresh_context` (types `/clear`) | — | A, F* | A, F* | A, F* | — |
 | `SendKeys` purpose `OPERATOR_TEXT` | — | L | L | — | — |
 | `SendKeys` purpose `GOAL_NUDGE`, `GOAL_RESUME` (ready prompt, empty input line, goal-bound pane) | — | L | L | L, F | — |
 | `SendKeys` purpose `PROMPT_ANSWER` (`answering_prompt`) | — | L | L | — | — |
@@ -262,10 +263,14 @@ Notes:
   `PruneWorktree` and `KillWindow` after `merged_grace`. It never answers a
   prompt, never types a REVIEW, SESSION-only or DESTRUCTIVE command on its own,
   never drains, and never touches a developer's window or session.
+  In a developer-marked pane the scheduler therefore cannot nudge, type
+  `continue` or respawn: a stop there is `STUCK` with a triage item (03c).
 - **`fresh_context`** is judged as part of `StartGoal`, not as a separate
   DESTRUCTIVE command: the owner or operator chose it in the goal (or the
-  routine), and the agent refuses it with `FRESH_CONTEXT_NOT_ALLOWED` in a
-  session the fleet did not start, whatever the role. A local approval rule for
+  routine), and the agent refuses it with `FRESH_CONTEXT_NOT_ALLOWED` unless
+  the session was started by fleet or the developer marked that pane available
+  with `fresh_context_on_reuse` (off by default; `SetPaneAvailability`), whatever
+  the role. A local approval rule for
   `StartGoal` is asked once, before step 1, never between `clear_context` and
   `type_goal`; a timeout is `LOCAL_CONFIRM_TIMEOUT`, nobody is at the keyboard,
   and the hub skips that machine for 30 minutes and plans elsewhere

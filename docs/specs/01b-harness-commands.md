@@ -1,6 +1,6 @@
 # 01b. Harness command catalog
 
-- Status: Draft for review
+- Status: Accepted
 - Date: 2026-09-30
 - Part of: [01-agent-capabilities.md](01-agent-capabilities.md), capabilities C4 and F8
 

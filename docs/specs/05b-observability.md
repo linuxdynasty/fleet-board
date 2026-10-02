@@ -1,6 +1,6 @@
 # 05b. Observability: fleetd and fleet-agent watching themselves
 
-- Status: Draft for review
+- Status: Accepted; contracts unfrozen until v0.1 (ADR 0019)
 - Date: 2026-10-02
 - Part of: [README](README.md), step 5; companion of [05-insights.md](05-insights.md)
 - Output: `api/fleet/hub/v1/system.proto` (`GetSystemStatus`,
@@ -105,7 +105,7 @@ metrics below fill the gaps between them.
 
 ## 4. Prometheus endpoint (`/metrics`)
 
-Served by the hub on its main listener, or on `--metrics-addr` when the owner
+Served by the hub on its API listener ([02j](02j-hub-runtime.md)), or on `--metrics-addr` when the owner
 wants a separate one. It exposes numbers only, with the labels above: no names
 (machine display names are not labels), no text, no secrets.
 
@@ -212,7 +212,7 @@ section of the Machines view draws them; `FleetSummary.system_warnings` and
 | Signal | Subject | Value | WARNING | CRITICAL | Item raised at |
 |---|---|---|---|---|---|
 | `AGENT_CONNECTED` | machine | seconds since the last heartbeat. Only machines labelled `always-on` or with a live goal count: a laptop that sleeps is not a fault | offline 10 min | offline 1 h | WARNING |
-| `USAGE_PROBE_FRESHNESS` | account | age of the last good reading, FLEET-mode accounts | 3 probe intervals (30 min by default) | 2 h (the account goes STALE and stops dispatching) | WARNING |
+| `USAGE_PROBE_FRESHNESS` | account | age of the last good reading, FLEET-mode accounts | 3 probe intervals (30 min by default): the reading is STALE and the account stops dispatching (03b `stale_after`) | 2 h stale | WARNING |
 | `INTEGRATION_SYNC_LAG` | integration | `IntegrationStatus.sync_lag` | half of `max_sync_lag` (5 min) | `max_sync_lag` (10 min, dispatch pauses) | CRITICAL |
 | `WRITER_BATCH_LAG` | hub | p95 over one minute of the oldest message's wait, and of the commit time | wait over 1 s, or commit over 250 ms | wait over 5 s, or the ingest channel full for 30 s | CRITICAL |
 | `OUTBOX_BACKLOG` | machine | age of the oldest pending command for a machine that has been online 2 min | 2 min | 10 min | CRITICAL |
@@ -288,9 +288,8 @@ prove (that the signal fires in a real `fleetd`) is reported as observed or
 
 ## 12. Questions for the owner
 
-1. `/metrics` with an `ADMIN` token is broad for a Prometheus job; a
-   narrower read scope for metrics can be added later without breaking
-   anything. Accept `ADMIN` or loopback for now?
-2. Thresholds in section 8 are the hub's defaults, not settings in v1. Accept?
-3. Agent `agent.log` rotation (10 MiB, 3 files) and an optional loopback
-   `metrics_listen` on agents: accept?
+1. ~~`/metrics` by `ADMIN` token or loopback~~ **Answered (ADR 0022):** accepted
+   for v1; a narrower metrics scope can be added later without breaking anything.
+2. ~~Thresholds~~ **Answered (ADR 0022):** the hub's defaults, not settings in v1.
+3. ~~Agent `agent.log` rotation (10 MiB, 3 files) and optional `metrics_listen`~~
+   **Answered (ADR 0022):** accepted as written.

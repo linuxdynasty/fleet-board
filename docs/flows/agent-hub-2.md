@@ -1,7 +1,8 @@
 # Agent and hub flows, part 2: commands, events, usage (A4 to A6)
 
 - Parts: [1](agent-hub.md) (A1 to A3) | **2** (this file, A4 to A6) |
-  [3](agent-hub-3.md) (A7) | [4](agent-hub-4.md) (A8 to A10) | [5](agent-hub-5.md) (A11 to A13)
+  [3](agent-hub-3.md) (A7) | [4](agent-hub-4.md) (A8 to A10) | [5](agent-hub-5.md) (A11 to A13) |
+  [6](agent-hub-6.md) (A14)
 - Read [part 1](agent-hub.md) first for the wiring, the counters and the
   storage names (hub store `state.db`, log store `logs.db`, agent state dir).
 - Protos named in this part: [`command.proto`][command] (`Command`, `CommandAck`,
@@ -252,7 +253,7 @@ flowchart LR
 6. On the hub the `connReader` checks size and `machine_id` and drops SHED kinds
    first when the ingest queue is full; it blocks (never drops) on NEVER_DROP kinds,
    which blocks only that agent's stream. The `storeWriter` batches up to 100
-   messages or 50 ms into one transaction and applies each event in `seq` order:
+   messages or 250 ms into one transaction and applies each event in `seq` order:
    only if `seq` is above the machine's stored `hub_last_event_seq` and, for state,
    above `Snapshot.seq`.
 7. Inventory events (`tmux_server`, `session`, `window`, `pane_created`,

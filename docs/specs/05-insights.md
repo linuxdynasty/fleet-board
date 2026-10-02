@@ -1,6 +1,6 @@
 # 05. Insights: what the fleet's own data says
 
-- Status: Draft for review
+- Status: Accepted; contracts unfrozen until v0.1 (ADR 0019)
 - Date: 2026-10-02
 - Part of: [README](README.md), step 5 (after the workflows, 03)
 - Output: `api/fleet/hub/v1/insights.proto`, `insights_stuck.proto`,
@@ -193,7 +193,7 @@ sequenceDiagram
   participant A as fleet-agent
   participant H as harness (subscription)
   participant V as verifier (hub)
-  S->>S: cron fire due; spare-quota guard picks (harness, account)
+  S->>S: cron fire due, spare-quota guard picks (harness, account)
   S->>S: export stats bundle from the rollups (read pool)
   S->>W: plan job: run number, work item, goal (done rule REPORT_COLLECTED)
   W->>A: EnsureScratch{goal, files[stats.json]}
@@ -347,11 +347,12 @@ At 3 AM: "why is there no report this week?" is `Routine.status.next_run_time`,
 
 ## 11. Questions for the owner
 
-1. Report default: on from first start (proposed; the guard keeps it to spare
-   quota), or off until the owner enables it?
-2. `READ` for report text (proposed, because it is built from `READ` data and
-   scrubbed) or `LOGS`?
-3. Send real repo names to the model (proposed, since the harness already sees
-   them) or alias those too?
-4. Cron default Monday 07:00 hub time.
-5. Suggestions in Triage default off (proposed).
+1. **Open:** report default. Proposed and built as on from first start (the
+   built-in routine's `enabled` is true; the guard keeps it to spare quota);
+   the owner may answer off.
+2. ~~`READ` or `LOGS` for report text~~ **Answered (ADR 0022):** `READ`, as
+   proposed (02d).
+3. ~~Real repo names to the model~~ **Answered (ADR 0022):** real names, others
+   aliased via `InsightReport.aliases`.
+4. ~~Cron default~~ **Answered (ADR 0022):** Monday 07:00 hub time.
+5. ~~Suggestions in Triage~~ **Answered (ADR 0022):** default off.

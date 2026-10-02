@@ -211,6 +211,12 @@ message Availability {
   // marked it on the board. Idle alone never makes a session take work.
   bool available_for_work = 2;
   google.protobuf.Timestamp since_time = 3;
+  // The developer chose, when marking the pane, that a goal sent to it
+  // starts with /clear (SetPaneAvailability.fresh_context_on_reuse). Off by
+  // default: the goal is typed into the existing context. Meaningful only
+  // while available_for_work is true; a pane in a fleet-started session may
+  // be cleared whatever this says.
+  bool fresh_context_on_reuse = 4;
 }
 
 // AvailabilityReason says why a pane's availability changed (E11) or why the

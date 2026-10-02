@@ -1,6 +1,6 @@
 # 02i. Delivery, sequencing, gaps and clocks
 
-- Status: Draft for review
+- Status: Accepted; contracts unfrozen until v0.1 (ADR 0019)
 - Date: 2026-10-02
 - Part of: [02-contracts.md](02-contracts.md). Written for review theme D (the
   second contract review, [findings](../reviews/2026-10-02-contract-review.md)).

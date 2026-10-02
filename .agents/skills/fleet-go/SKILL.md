@@ -9,15 +9,20 @@ fleet-board is Go only for `fleetd` (hub), `fleet-agent` and `fleet` (CLI).
 Read the owning ADR and spec before changing a contract; a small edit does not
 need a tour of the whole tree.
 
-## Layout (ADR 0001)
+## Layout (ADR 0001, refined by ADR 0022 and the v1 plan, section 4)
 
 ```text
 cmd/fleetd  cmd/fleet-agent  cmd/fleet     # thin main packages, wiring only
-internal/hub/{gateway,store,scheduler,githubsync,verifier,triage,web}
-internal/agent/{tmux,goalfile,probe,preflight,cmdlog}
+internal/store  internal/telemetry         # sqlite open, single writer; OTEL, slog
+internal/hub/{gateway,ca,ingest,pacing,integration/github,syncer,api,system,insights}
+internal/agent/{conn,ring,tmux,probe,goals,policy,doctor}
 internal/harness/{claude,codex,muse,opencode}   # adapters, parsers, fixtures
 hooks/  web/  api/  docs/
 ```
+
+The dispatch-era packages `internal/hub/{scheduler,verifier,triage}` arrive
+with v2 (the v1 plan is read-only); until then triage items come from `ingest`
+and `system`.
 
 - Business logic lives in `internal/`; `cmd/` only parses flags, builds
   dependencies and calls into `internal/`.

@@ -76,9 +76,11 @@ message GoalSpec {
   // Clear the harness context (/clear, step clear_context) before typing the
   // goal in a reused session. /clear is DESTRUCTIVE (01b), so the agent
   // allows it only in a session the fleet started
-  // (TmuxSession.started_by_fleet) and refuses otherwise with
-  // FRESH_CONTEXT_NOT_ALLOWED. The scheduler sets it for every auto-dispatch
-  // into a reused session. Ignored for a new window.
+  // (TmuxSession.started_by_fleet) or a pane whose availability mark has
+  // fresh_context_on_reuse, and refuses otherwise with
+  // FRESH_CONTEXT_NOT_ALLOWED. The scheduler sets it only for such panes;
+  // in any other reused pane it leaves it false and the goal is typed into
+  // the existing context. Ignored for a new window.
   bool fresh_context = 17;
   // Why the hub dispatched this goal ("next ready item for eshu", "routine
   // nightly-deps run 3", "operator: retry after CI fix"). The adapter renders

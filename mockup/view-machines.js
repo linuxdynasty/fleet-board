@@ -57,7 +57,7 @@ function machineCard(m) {
     `agent cert expires in ${certDays}d (renews at ⅔ lifetime)`, agentHealthLine(m), `policy ${m.policyHash} · ${m.policyChanged ? "changed on disk (PolicyChanged)" : "unchanged"}`,
     ...m.harnesses.filter(h => h !== "opencode").map(h => `${h}: ${hookRaw((goalHooks[m.id] ?? {})[h])}`)];
   return `<article class="fm${ui.fleetFocus === m.id ? " focus" : ""}" id="fm-${m.id}">
-    <div class="top"><span class="dot ${stale ? "bad" : m.drained ? "warn" : "ok"}"></span><span class="name">${esc(m.name)}</span><span class="ip">${esc(m.ip)}</span></div>
+    <div class="top"><span class="dot ${stale ? "bad" : m.drained ? "warn" : "ok"}"></span><span class="name">${esc(m.name)}</span></div>
     <div class="fm-stats">${m.drained ? `<span class="pill waiting">draining</span>` : `<span class="pill working">taking goals</span>`}<span><b class="num">${activeOn(m)}/${m.maxActive}</b> active</span><span><b class="num">${totalOn(m)}/${m.maxTotal}</b> total</span><span><b class="num">${avail}</b> available</span>
       <span>seen <b data-t="${+m.beat}">${rel(m.beat)}</b></span></div>
     ${warns.map(w => `<div class="warn-t small-t">${esc(w)}</div>`).join("")}

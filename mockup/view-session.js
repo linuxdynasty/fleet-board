@@ -49,7 +49,7 @@ function drawerHtml(s, m) {
       <span>started ${hhmm(s.started)} · last output <span data-t="${+s.last}">${rel(s.last)}</span></span>${s.yours ? `<span>${s.idle ? `idle · ` : ""}${s.available ? "available for work" : s.harness === "shell" ? "" : "not available for work"}</span>` : ""}
       ${s.model ? `<span>model line: <span class="mono">${esc(s.model)}</span> → spending from <b>${esc(acct?.label ?? "?")}</b>${acct?.capUsd ? ` ($${acct.spentUsd.toFixed(2)} of $${acct.capUsd} cap · manual only)` : ""}</span>` : ""}</div>
       ${s.line ? `<div class="goalfile"><span class="why">goal file, first line</span><code>${esc(s.line)}</code><span class="why">CONSENT: ${esc(consentFor(acct).join(", "))}</span><span class="why">${esc(GOAL_SYNTAX[s.harness])}</span></div>` : ""}</section>
-    ${isGoal(s) ? `<section><h2>Goal progress <span class="num why">${done}/${s.tasks.length}</span></h2>
+    ${isGoal(s) ? `<section><h2>Goal progress <span class="num why">${done}/${s.tasks.length}</span> <span class="samp">sample, not in the contract</span></h2>
       ${s.tasks.length ? `<ol class="tasks">${s.tasks.map((t, i) => `<li class="${t[1] ? "done" : i === done ? "cur" : ""}">${esc(t[0])}</li>`).join("")}</ol>` : `<p class="why">No task list reported.</p>`}</section>` : ""}
     ${pr ? `<section><h2>Change request</h2><div class="mono ref">${esc(pr.display)} ${provChip(pr.provider)} · ${esc(pr.state)}</div><div class="card-t">${esc(pr.t)}</div>
       <div>${pr.ci.fail ? `<span class="ci bad">✗ ${pr.ci.fail} failing</span>` : ""} <span class="ci ok">✓ ${pr.ci.pass}</span> ${pr.ci.pend ? `<span class="ci warn">● ${pr.ci.pend}</span>` : ""}</div></section>` : ""}
@@ -72,6 +72,7 @@ function drawerHtml(s, m) {
 
 const confirmBoxS = () => `<div class="confirm"><div>${esc(ui.confirm.label)}</div>${ui.confirm.note ? `<div class="why">${esc(ui.confirm.note)}</div>` : ""}${cmdBlock(ui.confirm, "cfs")}
   ${ui.confirm.input !== undefined ? `<input id="cfIn" class="field mono" value="${esc(ui.confirm.input)}" aria-label="Text">` : ""}
+  ${ui.confirm.freshOpt ? `<label class="chk"><input type="checkbox" id="cfFresh"> Start each goal here with /clear <span class="why">(off: the goal is typed into your existing context)</span></label>` : ""}
   <div class="actions">${ui.confirm.copy ? `<button class="btn primary" data-act="copy">Copy line</button>` : `<button class="btn primary ${ui.confirm.danger ? "danger" : ""}" data-act="do">${esc(ui.confirm.go)}</button>`}
   <button class="btn" data-act="cancel">Cancel</button></div></div>`;
 
@@ -137,7 +138,7 @@ function sessionAct(s, m, act) {
   if (act === "attachline") ui.confirm = { sid: s.id, label: "Attach from your own terminal. This line runs on your machine; the hub never runs ssh.", cmd: attachLine(m, s), copy: true };
   if (act === "palette") { ui.paletteOpen = !ui.paletteOpen; ui.confirm = null; }
   if (act === "history") { ui.histOpen = !ui.histOpen; }
-  if (act === "avail") ui.confirm = { sid: s.id, label: s.available ? "Withdraw the mark; the dispatcher stops treating this session as free capacity:" : "Let the dispatcher start the next goal in this idle session instead of opening a new window:", cmd: availCmd(s, !s.available), go: s.available ? "Withdraw" : "Mark available", what: s.available ? "withdrew availability" : "marked available for work", avail: !s.available, note: "Any keystroke of yours clears idle at once; a goal is never typed into a non-empty input line." };
+  if (act === "avail") ui.confirm = { sid: s.id, label: s.available ? "Withdraw the mark; the dispatcher stops treating this session as free capacity:" : "Let the dispatcher start the next goal in this idle session instead of opening a new window:", cmd: availCmd(s, !s.available), go: s.available ? "Withdraw" : "Mark available", what: s.available ? "withdrew availability" : "marked available for work", avail: !s.available, freshOpt: !s.available, note: "Any keystroke of yours clears idle at once; a goal is never typed into a non-empty input line." };
   if (act === "restart") ui.confirm = { sid: s.id, label: `Restart the harness in the same window (${RESUME[s.harness]}); the goal stays set.`, cmd: respawnCmd(s), go: "Restart", danger: true, what: "restarted harness in place", note: "The machine may ask you to approve it there first (fleet-agent approve).", raw: "AWAITING_LOCAL_CONFIRM until approved on the machine" };
   if (act === "kill") ui.confirm = { sid: s.id, label: "Close this fleet-started window. The branch, worktree and claim stay. Clear the goal first if it is still set.", cmd: killCmd(s), go: "Kill window", danger: true, what: "killed window", kill: true };
   if (act === "move") { ui.moveOpen = true; ui.confirm = null; }
@@ -150,7 +151,7 @@ function sessionAct(s, m, act) {
     log(`${c.what}${typed ? `: ${typed}` : ""} (mock, not sent)`, s);
     if (c.sub === "clear" || c.kill) { s.line = null; s.stopped = true; }
     else if (c.sub === "edit" && typed) { s.line = typed[0].toUpperCase() + typed.slice(1); }
-    else if (c.avail !== undefined) { s.available = c.avail; }
+    else if (c.avail !== undefined) { s.available = c.avail; s.freshOnReuse = c.avail && !!$("cfFresh")?.checked; }
     else s.last = new Date();
     ui.confirm = null;
   }

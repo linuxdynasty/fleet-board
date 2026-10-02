@@ -15,7 +15,7 @@ skill and enforces it; it never restates the rule.
 
 Scripts live in `.claude/hooks/` and are shared by all three harnesses; the
 harness configs only point at them. The tier is set by the exit code: only the
-two marked **blocking** can stop anything.
+three marked **blocking** can stop anything.
 
 | Hook | Does | Tier |
 |---|---|---|
@@ -79,7 +79,7 @@ governed; nothing else needs to change.
 ```
 
 - Rules are a **union**: every rule whose globs match adds its skills, so a
-  file under `internal/hub/store/` needs `fleet-go` and `fleet-sqlite-store`.
+  file under `internal/store/` needs `fleet-go` and `fleet-sqlite-store`.
   Order does not matter.
 - A glob with a `/` is anchored to the repo-relative path (`**/` is zero or
   more directories). A glob without `/` matches any one path component, like
@@ -89,11 +89,12 @@ governed; nothing else needs to change.
 - `scripts/verify-agent-canon.sh` fails if a rule names a missing skill, a
   skill is neither mapped nor exempt, or the JSON is invalid.
 
-Current map: `api/**/*.proto`, `buf*.yaml` to `fleet-contract-rigor`; `*.go`,
-`go.mod` to `fleet-go`; `internal/**/store/**`, `*sqlite*`, `migrations`,
+Current map (the exact globs are in `.agents/skill-paths.json`):
+`api/**/*.proto`, `buf*.yaml` to `fleet-contract-rigor`; `*.go`, `go.mod`,
+`go.sum`, `go.work` to `fleet-go`; `internal/**/store/**`, `*sqlite*`, `migrations`,
 `*.sql` to `fleet-sqlite-store`; `internal/harness/**` and harness fixtures to
 `fleet-harness-adapter`; `internal/**/tmux/**` to `fleet-tmux`; `web/**`,
-`mockup/**` to `fleet-frontend`; `**/telemetry/**` to
+`mockup/**` to `fleet-frontend`; `**/telemetry/**` and `**/observability/**` to
 `fleet-telemetry-coverage`; auth, scope and credential paths to
 `fleet-security`.
 
@@ -114,7 +115,7 @@ same path for all three harnesses) when a prompt starts with `/goal ` or
 | goal text | refuses the stop | working |
 | `DONE` | allows | goal met |
 | `BLOCKED: <reason> WATCH=<pid>` | allows while the pid is alive; a dead pid refuses | waiting on outside work |
-| `BLOCKED: <reason> OWNER=<who> ACTION=<what>` | allows | a named person must act; the collector turns it into one Triage item ([design](../design.md)) |
+| `BLOCKED: <reason> OWNER=<who> ACTION=<what>` | allows | a named person must act; the hub turns it into one Triage item ([design](../design.md)) |
 | `BLOCKED: <reason>` | refuses, tells the agent to escalate to `arbiter-fleet` | stuck |
 
 `stop_hook_active: true` always allows the stop: that is the loop breaker, in

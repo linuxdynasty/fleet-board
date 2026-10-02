@@ -31,7 +31,7 @@ message SettingsScope {
 
 // HubSettings are fleet-wide owner choices the hub applies itself.
 message HubSettings {
-  // Pause WORKING goals at an account's reserve line (design.md rule 5).
+  // Pause WORKING goals at an account's reserve line (03b "Pacing decision", step 5).
   optional bool auto_pause_at_reserve = 1;
   // The default cap on live goals per repo; Repo.spec.max_parallel_goals
   // overrides it (default 3).
@@ -44,10 +44,14 @@ message HubSettings {
   // and set its own label.
   TrustedGate trusted_gate = 4;
   optional bool prefer_non_hub = 6;
-  // Master switch for auto-dispatch (manual dispatch always works).
+  // Master switch for auto-dispatch (manual dispatch always works). Default
+  // false (docs/specs/defaults.md).
   optional bool auto_dispatch = 7;
+  // TriageItem.expire_time after creation; default 7 days. Not the approval
+  // clock.
   optional google.protobuf.Duration triage_expiry = 8;
-  // How long an approval waits before its fallback applies.
+  // How long an approval waits before its fallback applies
+  // (Approval.expire_time); default 30 minutes.
   optional google.protobuf.Duration approval_timeout = 9;
   // Sign-in (authenticated mode, ADR 0019). Both default to on once the
   // owner has registered the credential type; turning off the last method

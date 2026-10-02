@@ -13,8 +13,10 @@ a procedure.
   serializes work is a failure.
 - Account for invalid input, empty and stale state, partial failure, duplicates,
   retries, ordering, idempotency and restart in the middle of a command.
-- Treat design documents as the contract. In the design phase the deliverable is
-  a spec or ADR; do not write product code ahead of the step it belongs to.
+- Treat design documents as the contract. Design steps 1 to 5b are merged;
+  implementation follows [the v1 plan](../plan/v1-implementation-plan.md) once
+  the owner approves it. Until then `docs/` and `api/` are the product, and
+  product code is not written ahead of its plan row.
 
 ## Worktrees and git hygiene
 
@@ -116,7 +118,7 @@ invented or widened.
 - Every Go package directory gets `doc.go` (godoc contract), `README.md` (human
   architecture) and a scoped `AGENTS.md` (instructions for that tree). Every
   exported identifier has a real doc comment.
-- Keep files under 500 lines; split specs into lettered parts as `03b`-`03g`
+- Keep files under 500 lines; split specs into lettered parts as `03b`-`03j`
   do.
 - Run `git diff --check` and `scripts/verify-agent-canon.sh` for changes to
   agent files or skills.

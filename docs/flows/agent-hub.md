@@ -1,10 +1,10 @@
 # Agent and hub flows, part 1: enrollment, connect, reconnect (A1 to A3)
 
-- Status: Draft for implementers and the owner
+- Status: Accepted
 - Date: 2026-10-02
-- Parts: **1** (this file: orientation, A1 to A3) |
-  [2](agent-hub-2.md) (A4 to A6) | [3](agent-hub-3.md) (A7) |
-  [4](agent-hub-4.md) (A8 to A10) | [5](agent-hub-5.md) (A11 to A13)
+- Parts: **1** (this file: orientation, A1 to A3) | [2](agent-hub-2.md) (A4 to A6) |
+  [3](agent-hub-3.md) (A7) | [4](agent-hub-4.md) (A8 to A10) |
+  [5](agent-hub-5.md) (A11 to A13) | [6](agent-hub-6.md) (A14)
 - Contracts: [`api/fleet/agent/v1/`](../../api/fleet/agent/v1/) and
   [`api/fleet/type/v1/`](../../api/fleet/type/v1/); the `.proto` files are the source
   of truth and every message, RPC and field name below is copied from them. Specs
@@ -46,6 +46,7 @@ only as the thing that causes a command.
 | A11 | Session logs | [5](agent-hub-5.md) |
 | A12 | Settings and the local policy ceiling | [5](agent-hub-5.md) |
 | A13 | Harness upgrade drift and parser support | [5](agent-hub-5.md) |
+| A14 | System health: `AgentHealth`, ten signals, the SYSTEM triage item | [6](agent-hub-6.md) |
 
 These ids belong to this document set. They are **not** the capability ids
 (A1, A3, D1, G3 and so on) that appear in comments inside the `.proto` files and in
@@ -469,8 +470,8 @@ newer `Hello` for the same `machine_id` makes the old connection `DISPLACED` (it
 
 | What | Where |
 |---|---|
-| Event ring (`seq`, body, one week, size cap); `seq_hwm` (reserved in blocks of 1024), `EventCounters`, `install_id` | agent state dir, fsync batched to 1 s, one fsync per `seq_hwm` block |
-| Command log (status, result, step reached), probe assignments, goal registry, availability marks | agent state dir, per state change and before `CommandAck` is sent |
+| Event ring (`seq`, body, one week, size cap); `seq_hwm` (reserved in blocks of 1024), `EventCounters`, `install_id` | `agent.db`, fsync batched to 1 s, one fsync per `seq_hwm` block |
+| Command log (status, result, step reached), probe assignments, goal registry, availability marks | `agent.db`, per state change and before `CommandAck` is sent |
 | `machine_connections`, per machine `hub_last_event_seq`, `event_generation`, last `EventCounters`, `install_id`, `epoch` | hub store, Hello transaction and writer batches |
 | Event history (live and replayed, one week) | hub store |
 

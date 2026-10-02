@@ -181,7 +181,9 @@ re-send `RegisterGoal` or `ReleaseGoal` to repair a registry; cleanup is
 `KillWindow` then `PruneWorktree`. The scheduler may run the `/model`,
 `/effort` and `/clear` steps inside `StartGoal` (fleet-started sessions for
 `/clear`), with any local approval asked once before step 1. Auto-dispatch
-into a reused pane sets `fresh_context`.
+into a reused pane sets `fresh_context` (amended by
+[0022](0022-drift-audit-decisions.md): only for a fleet-started session or a
+pane marked with the option).
 
 **18. A person's interrupt is the owner's decision.** The agent reports
 developer input (`PaneInput`, `TmuxPane.last_input_time`), the ready pattern as

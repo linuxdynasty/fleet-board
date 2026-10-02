@@ -1,6 +1,6 @@
 # 02. Agent ↔ hub contracts
 
-- Status: Draft for review
+- Status: Accepted; contracts unfrozen until v0.1 (ADR 0019)
 - Date: 2026-10-01
 - Inputs: [01-agent-capabilities.md](01-agent-capabilities.md),
   [01b-harness-commands.md](01b-harness-commands.md),
@@ -144,7 +144,7 @@ sequence; `none` means unordered. Droppable: `yes` is SHED; `coalesce` keeps the
 | E8 | `Event.harness_hook HarnessHookEvent` | A→H | — | seq | no |
 | E9 | `TmuxPane.harness_session_id`, `Event.pane_harness_session{goal, binding}` | A→H | — | seq | no |
 | E10 | `CapturePane{pane, last_lines, keep_ansi, max_bytes}` → `CapturePaneResult` | H→A | yes | cmd | no |
-| E11 | `TmuxPane.availability`, `Event.availability AvailabilityChanged{reason AvailabilityReason}`; `SetPaneAvailability{pane, available_for_work, reason}` (board mark, per pane) | A→H; H→A | yes | seq; cmd | never |
+| E11 | `TmuxPane.availability`, `Event.availability AvailabilityChanged{reason AvailabilityReason}`; `SetPaneAvailability{pane, available_for_work, reason, fresh_context_on_reuse}` (board mark, per pane) | A→H; H→A | yes | seq; cmd | never |
 | E12 | `Event.harness_condition HarnessCondition{…, resets_time, pause_cause}` (provider error, rate limit, usage limit, sign-in required, network, goal interrupted or paused), reported again with `cleared`; open ones in `Snapshot.conditions` | A→H | yes | seq | never |
 | E13 | `TmuxPane.last_input_time`, `Event.pane_input PaneInput` (a person typed; ≤ 1 per pane per 10 s) | A→H | — | seq | coalesce |
 | F1 | `EnsureSession{…, owner_principal, profile}` → `EnsureSessionResult{session, created, pane}` | H→A | yes | cmd | no |
@@ -337,7 +337,7 @@ passing ones (`DISK_LOW`, `AGENT_GOAL_CAP_REACHED`, `CHECKOUT_DIRTY`) are. Valid
 The hub API codes (500–532: version, request id, scope, approval, pairing,
 page, resume, filter, order, mask, not found, exists, machine offline,
 credentials, goal phase, secret, size, sign-in, Host and Origin, attach ticket,
-machine revoke; 540–562: the hub's dispatch rules and a few action refusals,
+machine revoke; 540–564: the hub's dispatch rules and a few action refusals,
 03h) never appear in a `CommandResult`; they are `ErrorDetail.reason` on an RPC
 error, or the reason of a `PreflightCheck`, with `FieldViolation`s for
 field-level detail ([02b](02b-hub-api.md#errors)). The 600–605 codes are the typed `Enroll`
@@ -371,8 +371,8 @@ and no buckets; the hub never schedules on it.
   condition parsing is verified (replaces the bool `version_supported`).
 - **Goal fields.** `GoalSpec.model` and `effort` are set with the harness's
   own `/model` and `/effort` (steps `set_model`, `set_effort`); `fresh_context`
-  types `/clear` first, only in a session the fleet started, else
-  `FRESH_CONTEXT_NOT_ALLOWED` (02h). `dispatch_reason` is rendered into the goal text. Routine runs use
+  types `/clear` first, only in a session the fleet started or a pane marked
+  with `fresh_context_on_reuse`, else `FRESH_CONTEXT_NOT_ALLOWED` (02h). `dispatch_reason` is rendered into the goal text. Routine runs use
   a `WorkItemKey` with `kind: ROUTINE` and `provider_name: "fleet"`
   ([02b](02b-hub-api.md)). `GoalSpec.consent` is `repeated ConsentAct`, an
   enum the adapter renders itself, never hub text.

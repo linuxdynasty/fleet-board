@@ -92,7 +92,9 @@ An `Account` row comes from one of two origins (`Account.status.origin`):
   carries it, so there is always a record for the owner's mapping to attach to.
   OpenCode accounts are discovered from `opencode providers list` (01b), one per
   provider signed in (`provider` "anthropic", "deepseek", "moonshot"), with
-  `BUDGET_KIND_DOLLAR_CAP` for the API-key ones and `EXCLUDED` pacing.
+  `BUDGET_KIND_DOLLAR_CAP` for the API-key ones and `EXCLUDED` pacing. A new
+  account starts with `reserve_percent` 10 and `mode` fleet
+  ([defaults](defaults.md)); the owner changes them with `UpdateAccount`.
 - **Owner-created.** An API-key account no agent can list (a key set in an
   environment variable) is added with `CreateAccount{harness, provider, spec}`
   (`DOLLAR_CAP` only; subscriptions are never created by hand). Discovery never
@@ -293,16 +295,17 @@ Change requests: GraphQL `repository.pullRequests(headRefName:)` using the
 branch the agent reports in `BranchState.branch`, so the link needs no naming
 convention; `closingIssuesReferences` and "Fixes #n" in the body add
 `linked_work_items[]`. Merge detection: `merged`/`mergedAt`. Review rounds:
-count of `CHANGES_REQUESTED` reviews or failed `statusCheckRollup` each
-followed by a new commit, reset when the rollup is `SUCCESS` and
-`reviewDecision = APPROVED` (surfaced as `checks.rollup` and
-`review_decision`). Rate limits: the adapter reads `x-ratelimit-*` and
+count of `CHANGES_REQUESTED` reviews each followed by a new commit; it never
+resets, and failed CI is not a round (the review-loop cap compares it with a
+stored baseline, 03c). The rollup and `reviewDecision` surface as
+`checks.rollup` and `review_decision`. Rate limits: the adapter reads `x-ratelimit-*` and
 GraphQL `rateLimit` into `meta.rate_limits`; the hub applies the rules in
 [03j](03j-provider-sync-and-trust.md#rate-limits) (remaining < 10 % →
 intervals × 4; 0 → sleep to `reset_time`; 403/429 with `Retry-After` is a
 `RATE_LIMITED` error with `retry_after`). ADR 0005's note stands: confirm
-the current installation-token limits and whether 304s are free before fixing
-intervals (step 4 input, not a decision here).
+the current installation-token limits and whether 304s are free: 04 Q8 found
+5,000 requests an hour per installation and free 304s, so conditional requests
+are the rule.
 
 **What differs for other providers.**
 

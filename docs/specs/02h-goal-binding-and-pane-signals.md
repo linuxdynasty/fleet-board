@@ -1,6 +1,6 @@
 # 02h. Goal binding, session reuse and pane signals
 
-- Status: Draft for review
+- Status: Accepted; contracts unfrozen until v0.1 (ADR 0019)
 - Date: 2026-10-02
 - Part of: [02-contracts.md](02-contracts.md)
 - Output: `command_goal.proto`, `command_tmux.proto`, `snapshot.proto`,
@@ -32,7 +32,7 @@ Claude Code, Codex, Muse and OpenCode.
 | Written | `StartGoal` step `register_goal`, after the pane exists and before the goal is typed; or `RegisterGoal` from the hub |
 | Updated | `harness_session_id` is learned from the first `UserPromptSubmit` (or `PreToolUse` where a harness fires no prompt hook for `/goal`, Codex) after registration: the hook asks the agent, which matches by pane and records the id. `SessionStart` has already fired in a reused pane, so E9 cannot rely on it |
 | Removed | `ReleaseGoal`; `PaneExited` only when the pane is gone (`remains` false; with remain-on-exit the entry stays, so `RespawnPane` (same `PaneKey`) and the one nudge still match it); `PruneWorktree` for entries pointing into the worktree; another goal registering in the same pane |
-| Kept | `state.db` in the agent state directory, with the command log; one entry per pane |
+| Kept | `agent.db` in the agent state directory, with the command log; one entry per pane |
 | Reported | `Snapshot.goal_registry` (complete), `Event.goal_registry` (`GoalRegistryChanged`, never dropped), `TmuxPane.goal`, `PaneHarnessSession.goal` |
 
 How a hook finds its goal (the hook command is `fleet-agent hook <event>
@@ -142,7 +142,7 @@ reported).
 | 8 | `wait_ready` | both | ready pattern, or a startup screen | read-only | `READY_TIMEOUT`, `TRUST_PROMPT_SEEN`, `STARTUP_PROMPT_SEEN` |
 | 9 | `set_model` | when `spec.model` | the harness's `/model` (SESSION class), picker handled | verify: read the shown model first, type only when it differs | `MODEL_NOT_AVAILABLE`, `PANE_BUSY` |
 | 10 | `set_effort` | when `spec.effort` | the harness's `/effort` | verify, as above | `EFFORT_NOT_SUPPORTED`, `PANE_BUSY` |
-| 11 | `clear_context` | `fresh_context`, reuse | `/clear` (DESTRUCTIVE class) | **not idempotent**: started without done is `UNKNOWN_OUTCOME` | `FRESH_CONTEXT_NOT_ALLOWED` |
+| 11 | `clear_context` | `fresh_context`, reuse | `/clear` (DESTRUCTIVE class), fleet-started session or a mark with `fresh_context_on_reuse` | **not idempotent**: started without done is `UNKNOWN_OUTCOME` | `FRESH_CONTEXT_NOT_ALLOWED` |
 | 12 | `write_goal_file` | both; skipped when the checkout's hooks are repo-owned (`repo_ships_own`, `REPO_DRIVER`) | the agent writes the initial goal file; for a repo-owned file it writes nothing and step 14 reads the repo's own | declarative: same content again is OK | `GOAL_FILE_WRITE_FAILED` |
 | 13 | `type_goal` | both | the adapter's `GoalCommand` plus Enter | **not idempotent**: `UNKNOWN_OUTCOME` unless step 14 proves it | `PANE_BUSY` |
 | 14 | `confirm_goal_file` | both | goal file appears within `goal_file_timeout` | read-only | `GOAL_FILE_NOT_SEEN` |
@@ -179,15 +179,17 @@ like a `REPO_DRIVER` goal, and `ReleaseGoal` removes the directory.
 **Roles and approval.** The scheduler may run `StartGoal` including steps 9
 to 11: they are part of the composite the owner or routine chose (02g). The
 `/clear` is judged once, up front, with the rest of `StartGoal`, and only in a
-session the fleet started (`FRESH_CONTEXT_NOT_ALLOWED` otherwise). If a local
+session the fleet started or a pane whose availability mark carries
+`fresh_context_on_reuse` (`FRESH_CONTEXT_NOT_ALLOWED` otherwise). If a local
 rule needs approval for `StartGoal`, the wait happens before step 1, never
 between steps, and is reported as `CommandProgress{step "awaiting_local_confirm",
 step_index 0}`, not as one of the 14 steps and never as a `CommandResult`; a timeout ends the start with `LOCAL_CONFIRM_TIMEOUT`:
 nobody is at the keyboard, so the hub skips the machine for 30 minutes and plans
-elsewhere (03h). Auto-dispatch into a reused session sets
-`fresh_context = true` (a session after `MERGED` still carries the previous
-goal's context); model and effort come from the repo, routine or dispatch
-settings.
+elsewhere (03h). Auto-dispatch into a reused pane sets `fresh_context = true`
+only for a fleet-started session (after `MERGED` it still carries the previous
+goal's context) or a pane marked with `fresh_context_on_reuse`; in any other
+developer-marked pane it sets nothing and the goal is typed into the existing
+context. Model and effort come from the repo, routine or dispatch settings.
 
 **Startup screens.** The agent never answers one (01b). `TRUST_PROMPT_SEEN` is
 the trust case; `STARTUP_PROMPT_SEEN` carries `kind` in `metadata`: `trust`,
@@ -306,7 +308,10 @@ because availability is a fact about one harness pane and a developer's
 session often holds several. The agent keeps each mark in its state directory
 keyed by pane key (which includes `server_start_id`), drops it when the pane
 dies or the tmux server restarts, and reports it in `TmuxPane.availability`
-on every snapshot; the hub compares and re-sends a missing mark, since
+on every snapshot. A mark by the developer also carries `fresh_context_on_reuse`
+(default off): they choose when marking whether a goal sent to that pane starts
+with `/clear`. Without it the goal is typed into their existing context. The
+flag lives and dies with the mark; the hub compares and re-sends a missing mark, since
 principle 1 puts desired state on the hub. `AvailabilityChanged.reason` is
 the enum `AvailabilityReason`.
 

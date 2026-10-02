@@ -1,6 +1,6 @@
 # Flows: how the parts of fleet-board talk to each other
 
-- Status: Draft for implementers and for the owner
+- Status: Accepted
 - Date: 2026-10-02
 - Contracts: [`api/fleet/`](../../api/fleet/) (`.proto` files, the source of truth)
 - Rules and reasons: [docs/specs](../specs/README.md) and [docs/adr](../adr/README.md)
@@ -27,8 +27,8 @@ It is written for two readers:
 | Files | Covers | Protocol |
 |---|---|---|
 | [README.md](README.md) (this file) | The whole system on one page, the protocol packages, the glossary, the index of flows | none |
-| `agent-hub*.md`, flows A1 to A13 | `fleetd` and `fleet-agent`: joining the fleet, staying connected, commands, events, usage probing, goals, prompts, terminal bytes, logs, settings, upgrade drift | [`fleet.agent.v1`](../../api/fleet/agent/v1/) |
-| `dashboard*.md`, flows D1 to D12 | The web dashboard (and the CLI and a phone, which use the same calls) talking to `fleetd`: sign-in, live data, dispatching and controlling goals, prompts, terminal, machines, routines, settings, logs, pairing a phone | [`fleet.hub.v1`](../../api/fleet/hub/v1/) |
+| `agent-hub*.md`, flows A1 to A14 | `fleetd` and `fleet-agent`: joining the fleet, staying connected, commands, events, usage probing, goals, prompts, terminal bytes, logs, settings, upgrade drift, system health | [`fleet.agent.v1`](../../api/fleet/agent/v1/) |
+| `dashboard*.md`, flows D1 to D13 | The web dashboard (and the CLI and a phone, which use the same calls) talking to `fleetd`: sign-in, live data, dispatching and controlling goals, prompts, terminal, machines, routines, settings, logs, pairing a phone, insights and the weekly report | [`fleet.hub.v1`](../../api/fleet/hub/v1/) |
 
 The flow ids belong to this folder. They are **not** the capability ids (`A1`,
 `A3`, `D1`, `G3` and so on) that appear in comments inside the `.proto` files and
@@ -54,9 +54,10 @@ Every flow has the same five parts:
 | [type/v1/harness.proto](../../api/fleet/type/v1/harness.proto) | `GoalLineState` |
 | [type/v1/ids.proto](../../api/fleet/type/v1/ids.proto) | `AccountId`, `AccountKey`, `CommandId`, `GoalId`, `MachineId`, `PaneKey`, `SessionId` |
 | [type/v1/status.proto](../../api/fleet/type/v1/status.proto) | `ErrorDetail`, `Principal`, `ReasonCode`, `Role`, `Status` |
-| [agent/v1/agent.proto](../../api/fleet/agent/v1/agent.proto) | `AgentService`, `Connect`, `Enroll`, `Heartbeat`, `Hello`, `HelloAck`, `RenewCert`, `ResultAck`, `SessionLog`, `Settings`, `Terminal` |
+| [agent/v1/agent.proto](../../api/fleet/agent/v1/agent.proto) | `AgentHealth`, `AgentService`, `Connect`, `Enroll`, `Heartbeat`, `Hello`, `HelloAck`, `RenewCert`, `ResultAck`, `SessionLog`, `Settings`, `Terminal` |
 | [agent/v1/command.proto](../../api/fleet/agent/v1/command.proto) | `Command`, `CommandAck`, `CommandProgress`, `CommandResult` |
-| [agent/v1/command_goal.proto](../../api/fleet/agent/v1/command_goal.proto) | `Drain`, `EnsureWorktree`, `Preflight`, `StartGoal` |
+| [agent/v1/command_goal.proto](../../api/fleet/agent/v1/command_goal.proto) | `Drain`, `EnsureWorktree`, `Preflight`, `ReleaseGoal`, `StartGoal` |
+| [agent/v1/command_scratch.proto](../../api/fleet/agent/v1/command_scratch.proto) | `CollectScratch`, `EnsureScratch` |
 | [agent/v1/command_tmux.proto](../../api/fleet/agent/v1/command_tmux.proto) | `EnsureProbe` |
 | [agent/v1/events.proto](../../api/fleet/agent/v1/events.proto) | `DeliveryClass`, `Event` |
 | [agent/v1/snapshot.proto](../../api/fleet/agent/v1/snapshot.proto) | `GoalRegistration`, `GoalState`, `Snapshot` |
@@ -68,10 +69,14 @@ Every flow has the same five parts:
 | [hub/v1/account.proto](../../api/fleet/hub/v1/account.proto) | `Account`, `AccountPacing`, `AccountSpec`, `PacingState`, `UsageReading` |
 | [hub/v1/common.proto](../../api/fleet/hub/v1/common.proto) | `Operation`, `OperationKind`, `Scope` |
 | [hub/v1/goal.proto](../../api/fleet/hub/v1/goal.proto) | `Goal`, `GoalDefinition`, `GoalPhase`, `GoalStatus` |
-| [hub/v1/routine.proto](../../api/fleet/hub/v1/routine.proto) | `Routine` |
+| [hub/v1/insight_report.proto](../../api/fleet/hub/v1/insight_report.proto) | `InsightReport` |
+| [hub/v1/insights.proto](../../api/fleet/hub/v1/insights.proto) | `GetInsights` |
+| [hub/v1/routine.proto](../../api/fleet/hub/v1/routine.proto) | `ROUTINE_BUILTIN_INSIGHTS_WEEKLY`, `Routine` |
 | [hub/v1/service.proto](../../api/fleet/hub/v1/service.proto) | `ApprovePairing`, `AttachTerminal`, `ControlGoal`, `CreateApiToken`, `CreateAttachTicket`, `CreateEnrollmentToken`, `DecideApproval`, `DrainMachine`, `FleetService`, `GetOperation`, `PreflightGoal`, `ReadSessionLog`, `RequestPairing`, `RunRoutine`, `StartGoal`, `UpdateSettings`, `Watch` |
 | [hub/v1/session.proto](../../api/fleet/hub/v1/session.proto) | `Session` |
 | [hub/v1/settings.proto](../../api/fleet/hub/v1/settings.proto) | `HubSettings`, `Settings` |
+| [hub/v1/suggestion.proto](../../api/fleet/hub/v1/suggestion.proto) | `Suggestion`, `SuggestionEvidence` |
+| [hub/v1/system.proto](../../api/fleet/hub/v1/system.proto) | `GetSystemStatus`, `SystemSignalKind`, `SystemState` |
 | [hub/v1/terminal.proto](../../api/fleet/hub/v1/terminal.proto) | `AttachOpen`, `AttachTerminalRequest`, `AttachTerminalResponse` |
 | [hub/v1/triage.proto](../../api/fleet/hub/v1/triage.proto) | `Approval`, `TriageItem`, `TriageKind`, `TriageState` |
 | [hub/v1/watch.proto](../../api/fleet/hub/v1/watch.proto) | `TopicSubscription`, `WatchRequest`, `WatchResponse` |
@@ -96,6 +101,7 @@ Read this file first. Then:
 | Session logs | A11 | D11 |
 | Settings, policy, drain | A12, A13 | D10, D8 |
 | Joining the fleet, signing in | A1 | D1, D12 |
+| System health, insights, the weekly report | A14 | D13 (the System section is read as in A14) |
 
 If you have a question rather than a topic:
 
@@ -112,6 +118,8 @@ If you have a question rather than a topic:
 | How does a browser tab show a live terminal? | A10, D7 |
 | Why can my phone read the fleet and answer approvals, but not type into a pane or read logs? | D12 |
 | Why is nothing starting, and where does the dashboard say so? | A6 (pacing), A7 (what the planner checks), D4 |
+| How does the fleet tell me it is itself unhealthy, and what raises a SYSTEM item? | A14 |
+| How is the weekly report written, on what quota, and what may the model see? | D13 |
 
 ## The whole system
 
@@ -127,6 +135,8 @@ flowchart TB
     API["Hub API: FleetService<br/>Connect, gRPC, gRPC-Web"]
     FO["Fan-out bus<br/>feeds Watch streams"]
     SCH["Scheduler<br/>pacing, dispatch, probes, routines, nudges"]
+    INS["Insights engine<br/>hourly rollups, suggestions, report export"]
+    SYS["System evaluator<br/>ten signals every 15 s, SYSTEM triage items"]
     VER["Verifier<br/>goal DONE against the code host"]
     SYN["Integration syncers<br/>one per provider"]
     WR["Store writer<br/>single goroutine, one tx per batch"]
@@ -154,6 +164,10 @@ flowchart TB
   API -->|"writes with request_id"| WR
   API -.->|"consistent reads"| SDB
   SCH -->|"write jobs"| WR
+  INS -->|"rollup upserts, report row"| WR
+  INS -.->|"reads"| SDB
+  SYS -->|"triage jobs"| WR
+  SYS -.->|"reads state, heartbeats"| GW
   VER -->|"write jobs"| WR
   SYN -->|"mirror upserts"| WR
   SYN <-->|"poll, conditional requests"| GH
@@ -188,14 +202,16 @@ Where each box appears in the flows:
 
 | Box | Flows |
 |---|---|
-| Agent gateway (`AgentService`) | A1 to A13 |
+| Agent gateway (`AgentService`) | A1 to A14 |
 | Store writer and `state.db` | every flow; the transaction named in each step list |
 | Scheduler | A6 (probe assignment, pacing), A7 (dispatch plan), D4, D9 |
-| Verifier | A8 |
+| Verifier | A8, D13 (collects the report) |
+| Insights engine | D13 |
+| System evaluator | A14 |
 | Fan-out bus and Watch | D2, D3, and the "how the client finds out" step of every dashboard flow |
 | Attach bridge | A10, D7 |
 | Log receiver, `logs.db` | A11, D11 |
-| Hub API and sign-in | D1 to D12 |
+| Hub API and sign-in | D1 to D13 |
 | Hooks | A8 |
 | tmux, harnesses | A7 to A11 |
 
@@ -207,8 +223,8 @@ fixed before any code existed ([ADR 0017](../adr/0017-contract-packages.md)).
 
 | Package | Service | Client | Server | What it carries | Flows |
 |---|---|---|---|---|---|
-| [`fleet.agent.v1`](../../api/fleet/agent/v1/) | `AgentService`: `Enroll`, `Connect`, `Terminal`, `SessionLog`, `RenewCert` | `fleet-agent` (always the client) | `fleetd` | The agent wire: enrollment, the `Connect` stream (`Hello`, `Snapshot`, `Heartbeat`, `Event`, `Command`, results, `Settings`), terminal bytes, log chunks | A1 to A13 |
-| [`fleet.hub.v1`](../../api/fleet/hub/v1/) | `FleetService`: about 100 RPCs, `Watch`, `AttachTerminal` and `ReadSessionLog` are streams | web dashboard, `fleet` CLI, phone | `fleetd` | The API for people and scripts: resources with `spec` and `status`, actions that return an `Operation`, sign-in, devices, logs | D1 to D12 |
+| [`fleet.agent.v1`](../../api/fleet/agent/v1/) | `AgentService`: `Enroll`, `Connect`, `Terminal`, `SessionLog`, `RenewCert` | `fleet-agent` (always the client) | `fleetd` | The agent wire: enrollment, the `Connect` stream (`Hello`, `Snapshot`, `Heartbeat`, `Event`, `Command`, results, `Settings`), terminal bytes, log chunks | A1 to A14 |
+| [`fleet.hub.v1`](../../api/fleet/hub/v1/) | `FleetService`: about 100 RPCs, `Watch`, `AttachTerminal` and `ReadSessionLog` are streams | web dashboard, `fleet` CLI, phone | `fleetd` | The API for people and scripts: resources with `spec` and `status`, actions that return an `Operation`, sign-in, devices, logs, insights, system health | D1 to D13 |
 | [`fleet.integration.v1`](../../api/fleet/integration/v1/) | `IntegrationProviderService` (read-only) | `fleetd` | provider adapters, in-process in v1 | The provider-neutral work model: `WorkItem`, `ChangeRequest`, cursors, validators, rate limits, typed `ProviderError` | the sync loop (03b, 03j) |
 | [`fleet.type.v1`](../../api/fleet/type/v1/) | none | imported by the other three | | Ids (`MachineId`, `GoalId`, `PaneKey`), `Status`, `ReasonCode`, `ErrorDetail`, `Principal`, `Role`, settings values, harness and usage values | all |
 
@@ -264,6 +280,7 @@ What is **not** a protocol in the protos:
 | **goal registry** | The agent's table that binds a goal to a pane (`GoalRegistration`: goal, pane, harness, worktree path, harness session id). It is the one goal identity for every harness; `FLEET_GOAL_ID` in the pane environment is only a fast path for a window the fleet just created |
 | **harness** | An unmodified interactive coding agent in a tmux pane: Claude Code, Codex, Muse, OpenCode. fleet-board never runs one headless and never reads its credentials |
 | **heartbeat** | `Heartbeat`, every 15 s, droppable, no seq. 45 s without one is `STALE`, 3 minutes `OFFLINE` |
+| **insight** | A number the hub computes from its own rows with no model: subscription efficiency (quota left unused at each reset), goal outcomes, where work gets stuck, size versus actual. Daily rollups, read with `GetInsights` |
 | **LIMIT_WAIT** | `GOAL_PHASE_LIMIT_WAIT`: a held phase of up to a week for a goal whose harness hit a usage or rate limit. The hub resumes it at `limit_wait_until_time` with the harness's own resume action; no nudges meanwhile |
 | **local policy ceiling** | The machine's own policy file (`~/.config/fleet-agent/policy.yaml`). Hub settings can only tighten it, never loosen it, and the agent re-checks every command against it. An invalid file puts the agent in safe mode (observe only) |
 | **operation** | `Operation`: the handle every hub action that makes an agent do something returns at once, in state `PENDING`. Its id is the agent command's `CommandId`. The final state arrives through `Watch` or `GetOperation` |
@@ -273,7 +290,7 @@ What is **not** a protocol in the protos:
 | **phase** | `GoalPhase`: the hub's conclusion about a goal (`STARTING`, `RUNNING`, `WAITING`, `PAUSED`, `LIMIT_WAIT`, `VERIFYING`, `MERGED` and so on). Not the same as `GoalLineState`, which is only what the goal file says |
 | **phase class** | The three classes of `GoalPhase` that decide what a goal occupies. `ACTIVE` uses quota (an active slot and a total slot); `HELD` keeps its worker (a total slot only); `ENDED` holds nothing. A goal is live when it is `ACTIVE` or `HELD`; the unique indexes, the slot counts and the repo cap read this one table |
 | **preflight** | `Preflight`: the agent's read-only check of whether a goal can start here (harness signed in, push access, checkout, disk, and more). The hub adds its own checks with a severity (`BLOCK`, `CONFIRM`, `WARN`, `INFO`) |
-| **principal, role, scope** | `Principal` is who asked (a user, an API token, a paired device, the scheduler, the arbiter, or the local OS user at a machine). A `Role` (`VIEWER`, `OPERATOR`, `OWNER`) maps to `Scope`s (`READ`, `SESSIONS_WRITE`, `APPROVALS`, `SETTINGS`, `ADMIN`, `LOGS`); the hub checks scopes and the agent checks the role |
+| **principal, role, scope** | `Principal` is who asked (a user, an API token, a paired device, the scheduler, the arbiter, or the local OS user at a machine). A `Role` (`VIEWER`, `OPERATOR`, `OWNER` for people; `SCHEDULER` for the hub's own scheduler) maps to `Scope`s (`READ`, `SESSIONS_WRITE`, `APPROVALS`, `SETTINGS`, `ADMIN`, `LOGS`); the hub checks scopes and the agent checks the role |
 | **probe** | An idle harness session on the hidden `fleet-probe` tmux server that runs the harness's usage command on a schedule (`EnsureProbe`, health in `ProbeHealth`) and yields `UsageReading`s. One probe per account |
 | **request_id** | A client-generated idempotency key on every mutating hub RPC. The same key and body returns the stored response; nothing reaches an agent twice |
 | **reserve** | `AccountSpec.reserve_percent`: the share of the weekly quota the fleet never spends, so the owner can still use the harness interactively. At the reserve line no new goal is dispatched (`PACING_STATE_RESERVE`) and the owner is alerted; pausing running goals there is an opt-in setting (`HubSettings.auto_pause_at_reserve`) |
@@ -282,9 +299,13 @@ What is **not** a protocol in the protos:
 | **seq** | Three unrelated counters. `Event.seq`: agent-wide, never reused, persisted by the agent. `Command.seq`: hub-issued, increasing within one epoch. `WatchResponse.hub_seq`: hub-wide order of committed changes, for clients. Gaps are normal in all three |
 | **session, window, pane** | tmux's own words. `Session` in the hub API is a tmux session on any machine, the developer's own or fleet-started, with a hub-assigned `SessionId` |
 | **settings generation, epoch** | Hub settings reach an agent ordered by `(settings_epoch, generation)`. A new epoch (after a hub restore) is accepted whatever its generation |
+| **suggestion** | `Suggestion`: a fixed rule over the insights that fired, with its evidence numbers (`SuggestionEvidence`). It advises and never changes a setting; dismissing it hides it for 30 days. Shown in Usage, and in Triage only if the owner turns that on |
 | **snapshot** | `Snapshot`: the agent's full, level-triggered picture of its machine, sent after every `Hello`. It supersedes every event with a lower `seq`; events are only an optimisation over it |
+| **scratch directory** | `<agent state dir>/scratch/<goal id>/`, a directory the agent owns for a goal with no repository (the weekly report). `EnsureScratch` writes its input file, `CollectScratch` reads back the one file the goal wrote, `ReleaseGoal` removes it. The hub never sends a path |
 | **spec and status** | Every editable hub resource splits in two. `spec` is what the owner or the hub decided (covered by `version` and `expected_version`); `status` is what was observed or computed (never versioned, so a heartbeat can never make an open form stale) |
+| **System signal** | One of ten health checks the hub judges every 15 s (`SystemSignalKind`: agent connected, usage freshness, sync lag, writer lag, outbox backlog, Watch drops, log store usage, disk free, clock skew, backup age) with a state `OK`, `WARNING`, `CRITICAL` or `UNKNOWN`. A signal that leaves OK raises one `TRIAGE_KIND_SYSTEM` item; `UNKNOWN` raises nothing |
 | **triage item** | `TriageItem`: something a person should look at (a prompt, a stuck goal, a pacing alert). Kinds in `TriageKind`, states in `TriageState`; items expire after 7 days. A prompt raises both an item (explains) and an approval (acts) |
+| **weekly report** | The built-in routine `ROUTINE_BUILTIN_INSIGHTS_WEEKLY`: a subscription harness writes a markdown summary of the hub's numbers, on spare quota only, in a scratch directory. Stored as an `InsightReport`; its text is untrusted and rendered sanitized |
 | **trusted-issues gate** | The hub's rule that only a work item opened or labelled by an allow-listed person is auto-dispatched, evaluated from provider evidence (`WorkItem.trust`). It fails closed |
 | **view session** | The grouped tmux session (`new-session -t <session>`) the agent creates for one browser attach, so switching windows in the browser never moves the developer's own client. Marked `internal` and never listed |
 | **Watch** | `FleetService.Watch`: one server stream per client view, with a filter per topic (`TopicSubscription`), an initial state, live changes, and checkpoints. Changing the subscription opens a new stream with the last resume token |
@@ -310,6 +331,7 @@ Agent and hub (`fleet.agent.v1`, between `fleetd` and `fleet-agent`):
 | A11 | Session logs | Compressed chunks by byte offset, acknowledged by the hub, gaps declared | [agent-hub-5.md](agent-hub-5.md#a11-session-logs) |
 | A12 | Settings and policy | Layered settings merged under the local ceiling; drain | [agent-hub-5.md](agent-hub-5.md#a12-settings-and-the-local-policy-ceiling) |
 | A13 | Harness upgrade drift | A harness update changes parsing support, the catalog and scheduling | [agent-hub-5.md](agent-hub-5.md#a13-harness-upgrade-drift-and-parser-support) |
+| A14 | System health | `AgentHealth` rides the heartbeat; the hub judges ten signals every 15 s and raises one deduplicated SYSTEM item | [agent-hub-6.md](agent-hub-6.md#a14-system-health-how-fleetd-and-the-agents-report-on-themselves) |
 
 Dashboard, CLI and phone (`fleet.hub.v1`, between the clients and `fleetd`):
 
@@ -327,6 +349,7 @@ Dashboard, CLI and phone (`fleet.hub.v1`, between the clients and `fleetd`):
 | D10 | Change a setting | `UpdateSettings` with `expected_version`, delivery to agents, what the machine says back | [dashboard-hub-agent-4.md](dashboard-hub-agent-4.md#d10-change-a-setting-settingsack-and-tighten-only-capping) |
 | D11 | Replay a session log | Find the stored session, `ReadSessionLog`, search and delete; scope `LOGS` | [dashboard-hub-agent-4.md](dashboard-hub-agent-4.md#d11-replay-a-session-log-from-logsdb) |
 | D12 | Pair a phone and approve from it | `RequestPairing`, the six-digit code, `ApprovePairing`, signed requests, `DecideApproval` | [dashboard-hub-agent-4.md](dashboard-hub-agent-4.md#d12-pair-a-phone-and-approve-from-it-with-scopes) |
+| D13 | Insights, suggestions and the weekly report | Hourly rollups read with `GetInsights`, suggestion rules, and a routine that has a subscription harness write a report in a scratch directory | [dashboard-hub-agent-5.md](dashboard-hub-agent-5.md#d13-insights-suggestions-and-the-weekly-report) |
 
 ## Keeping the flows true
 
