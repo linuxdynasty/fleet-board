@@ -412,8 +412,10 @@ Checked on 2026-09-28. Re-verify before relying on them.
   happens when that machine is asleep.
 - **Muse hook events.** Answered 2026-10-02 in
   [01d](specs/01d-goal-hooks.md#muse-hooks-are-a-plugin-package): user-level
-  hooks are a plugin package; 19 events including `Stop`. The `Stop` payload
-  still needs a live probe.
+  hooks are a plugin package; 19 events including `Stop`. The `Stop` probe
+  (same day) confirmed `decision: block` continues the turn, and found that
+  Muse hooks do not see the pane environment, so they recognise fleet goals
+  by `cwd`/`session_id` instead of `FLEET_GOAL_ID`.
 - **Codex and Muse waiting detection.** Needed before Send-to-pane is enabled
   for them.
 - **Collector PATH strategy.** Record absolute tool paths at install time
