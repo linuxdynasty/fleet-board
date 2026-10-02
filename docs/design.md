@@ -229,8 +229,10 @@ expiring inventory:
 4. **Never start work the budget can't cover.** Each issue gets a size
    estimate (S/M/L from triage); actual cost per size is learned from history.
    An issue running at 2–3× its estimate is paused and flagged.
-5. **At the reserve line:** finish the current step, push work in progress to
-   the branch, pause, resume after the reset.
+5. **At the reserve line:** stop dispatching new work to that account and raise
+   a pacing alert in Triage; running goals continue. Automatically pausing
+   running goals there (with the harness's own `/goal pause`, or an interrupt
+   where a harness has none) is an opt-in setting, off by default.
 6. **Cap concurrency per account.** Weekly budget left does not mean ten
    sessions can run at once; the short window and per-account limits still
    apply. The cap is learned from observed short-window behavior.
