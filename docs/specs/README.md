@@ -29,6 +29,9 @@ situation (enrollment, reconnect, starting a goal, answering a prompt, signing i
 dispatching from the dashboard, and more), each with the exact message names from
 the protos, numbered steps, what is stored where and what happens on failure.
 
+The design steps are complete; implementation follows
+[the v1 plan](../plan/v1-implementation-plan.md).
+
 ## How the steps connect
 
 - **Capabilities → contracts.** Every capability becomes a command, a query, an
