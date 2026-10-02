@@ -1,0 +1,84 @@
+{
+  "version": 1,
+  "models": {
+    "codex": {
+      "fast": {"model": "gpt-6-luna", "effort": "high"},
+      "workhorse": {"model": "gpt-6-sol", "effort": "medium"},
+      "deep": {"model": "gpt-6-sol", "effort": "high"},
+      "arbiter": {"model": "gpt-6-astra", "effort": "high"}
+    },
+    "claude": {
+      "fast": {"model": "haiku", "effort": "high"},
+      "workhorse": {"model": "sonnet", "effort": "high"},
+      "deep": {"model": "opus", "effort": "high"},
+      "arbiter": {"model": "fable", "effort": "high"}
+    },
+    "muse": {
+      "fast": {"model": "muse-spark-1.3", "effort": "low"},
+      "workhorse": {"model": "muse-spark-1.3", "effort": "high"},
+      "deep": {"model": "muse-spark-1.3", "effort": "xhigh"},
+      "arbiter": {"model": "muse-spark-1.3", "effort": "xhigh"}
+    }
+  },
+  "roles": {
+    "scan-fleet": {
+      "description": "Use for a bounded read-only evidence scan before diagnosis or implementation; return cited facts, not a verdict or fix.",
+      "tier": "fast",
+      "access": "read",
+      "instructions": "Gather only the requested evidence, each item with a file and line reference. Return a compact handoff. Do not edit files, give verdicts or fixes, run the promotion gates, or decide merge readiness."
+    },
+    "develop-fleet": {
+      "description": "Use for a scoped implementation handoff, test first, including work using fleet-go; leave push and PR to the coordinator.",
+      "tier": "workhorse",
+      "access": "write",
+      "instructions": "Implement only the supplied bounded handoff, starting from its failing acceptance test. Load fleet-go, then the project skills matching the touched surfaces (fleet-contract-rigor, fleet-harness-adapter, fleet-tmux, fleet-sqlite-store, fleet-telemetry-coverage, fleet-frontend, fleet-security). Work only inside the worktree you were given. Run the focused gates from AGENTS.md for what you changed and report each command with its exit code as PASS, FAIL, or NOT_CHECKED. Before committing, verify `git symbolic-ref -q HEAD` succeeds, then commit. Leave push, PR creation, and PR updates to the coordinator."
+    },
+    "develop-fleet-deep": {
+      "base": "develop-fleet",
+      "description": "Use for a difficult implementation handoff that needs deeper reasoning: concurrency, the single-writer store, the agent wire protocol, tmux control mode, or a fix the workhorse attempt got wrong.",
+      "tier": "deep"
+    },
+    "debug-fleet": {
+      "description": "Use for a root-cause diagnosis phase with fleet-diagnostic-rigor; diagnose without editing.",
+      "tier": "workhorse",
+      "access": "read",
+      "skill": "fleet-diagnostic-rigor",
+      "instructions": "Establish the cause from a reproduction and observations. Return the cause, rejected hypotheses, remaining uncertainty, and an implementation handoff. Add fleet-sqlite-store, fleet-tmux, or fleet-harness-adapter only for the surface the failure touches."
+    },
+    "debug-fleet-deep": {
+      "base": "debug-fleet",
+      "description": "Use for a difficult cross-system or intermittent diagnosis that needs deeper reasoning with fleet-diagnostic-rigor.",
+      "tier": "deep"
+    },
+    "perf-fleet": {
+      "description": "Use for a measurement or bottleneck phase with fleet-performance-rigor; hand off a proved change without editing.",
+      "tier": "workhorse",
+      "access": "read",
+      "skill": "fleet-performance-rigor",
+      "instructions": "Measure comparable baseline and candidate evidence against the budgets in docs/specs/03g-load-and-handoff.md and docs/specs/04-technology-review.md, then return the bottleneck, proof limits, and an implementation handoff. Load fleet-diagnostic-rigor when the cause is unknown. Do not edit or run promotion gates."
+    },
+    "perf-fleet-deep": {
+      "base": "perf-fleet",
+      "description": "Use for a difficult performance cause or architecture decision that needs deeper reasoning with fleet-performance-rigor.",
+      "tier": "deep"
+    },
+    "review-fleet": {
+      "description": "Use for an independent diff or PR-readiness review with fleet-code-review; read-only.",
+      "tier": "workhorse",
+      "access": "read",
+      "skill": "fleet-code-review",
+      "instructions": "Judge the final diff and current evidence independently of its author. Load only the additional project skills matching the changed surfaces. Deliver the fleet-code-review verdict without editing or running promotion gates."
+    },
+    "review-fleet-deep": {
+      "base": "review-fleet",
+      "description": "Use for the independent review of a difficult diff (concurrency, the single-writer store, the agent wire protocol, tmux control mode, or security) with fleet-code-review; read-only.",
+      "tier": "deep"
+    },
+    "arbiter-fleet": {
+      "description": "Use to decide a design fork, a disputed finding, a waiver, or an irreversible act (merge, release, data change) that evidence alone cannot settle; returns a binding ruling, read-only.",
+      "tier": "arbiter",
+      "access": "read",
+      "instructions": "You are the deciding arbiter, not an advisor. Load the project skills that match the question before ruling. Verify each claim in the brief yourself from source, docs, and ADRs, or from a bounded read-only experiment where your harness allows commands, and cite file:line or the command you ran. Never trade away correctness, durability, or the pass-through and credential rules in AGENTS.md. Deliver the ruling as your final message, and send it to the coordinator with native messaging when available. Start it with a line `RULING: <one line>`, then give numbered decisions, the required proof, what you will not do and why, and what stays unverified. The coordinator records it; you do not edit files, push, merge, release, or change shared data."
+    }
+  }
+}
