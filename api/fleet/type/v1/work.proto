@@ -44,6 +44,12 @@ enum WorkItemKind {
   WORK_ITEM_KIND_TICKET = 2;
   // A pull request or merge request.
   WORK_ITEM_KIND_CHANGE_REQUEST = 3;
+  // Fleet-internal: one run of a hub routine (ADR 0018). integration is
+  // empty, provider_name is "fleet", key is "<routine id>/<run number>".
+  WORK_ITEM_KIND_ROUTINE = 4;
+  // Anything a provider has that is none of the above (Linear project
+  // update, Jira epic). Shown, never auto-dispatched.
+  WORK_ITEM_KIND_OTHER = 15;
 }
 
 // WorkItemRef names an issue, ticket or change request in any integration.
@@ -62,6 +68,10 @@ message WorkItemRef {
   // Short display form used in UI and window names: "eshu#7398",
   // "eshu!12", "PROJ-123". Untrusted text.
   string display = 7;
+  // Open provider name ("github", "gitlab", "jira", "gitea", "fleet"); the
+  // authority when set. provider stays as a hint for known products, so a
+  // new adapter needs no enum change.
+  string provider_name = 8;
 }
 
 // Workdir is how the hub names a working directory. The hub never sends an

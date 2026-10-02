@@ -5,6 +5,9 @@ syntax = "proto3";
 
 package fleet.type.v1;
 
+import "fleet/type/v1/ids.proto";
+import "google/protobuf/duration.proto";
+
 option go_package = "github.com/linuxdynasty/fleet-board/api/fleet/type/v1;typev1";
 
 // ---------------------------------------------------------------------------
@@ -85,6 +88,9 @@ enum ReasonCode {
   REASON_CODE_POLICY_DENIED = 13;
   REASON_CODE_DRAINING = 14;
   REASON_CODE_SLOTS_FULL = 15;
+  // GoalSpec.profile (or EnsureProbe.profile) names a harness profile the
+  // machine does not have. Empty profile always means the harness default.
+  REASON_CODE_HARNESS_PROFILE_MISSING = 16;
 
   // Command execution.
   REASON_CODE_SESSION_NOT_FOUND = 100;
@@ -137,11 +143,45 @@ enum ReasonCode {
   // The harness's /goal has no such subcommand (for example pause on
   // Claude Code 2.1.286, which offers only set and clear).
   REASON_CODE_GOAL_SUBCOMMAND_UNSUPPORTED = 305;
+  // GoalSpec.fresh_context on a session the fleet did not start; /clear is
+  // destructive (01b) and is never typed into the developer's own session.
+  REASON_CODE_FRESH_CONTEXT_NOT_ALLOWED = 306;
 
   // Probes and parsing (D1, D2).
   REASON_CODE_PROBE_START_FAILED = 400;
   REASON_CODE_PROBE_COMMAND_TIMEOUT = 401;
   REASON_CODE_PARSE_FAILED = 402;
+
+  // Hub API (fleet.hub.v1), carried in ErrorDetail.reason of an RPC error.
+  // expected_version did not match the resource's current version.
+  REASON_CODE_VERSION_MISMATCH = 500;
+  // request_id was already used with a different request body.
+  REASON_CODE_REQUEST_ID_CONFLICT = 501;
+  // The caller's role or device scopes do not cover this RPC.
+  REASON_CODE_SCOPE_MISSING = 502;
+  // The approval expired (fallback applied) or was already decided.
+  REASON_CODE_APPROVAL_CLOSED = 503;
+  // The pairing code shown on the device does not match.
+  REASON_CODE_PAIRING_CODE_MISMATCH = 504;
+  // The device is revoked or not yet approved.
+  REASON_CODE_DEVICE_NOT_ACTIVE = 505;
+}
+
+// ErrorDetail is the machine-readable half of an error, shared by command
+// results and progress (agent wire) and hub API errors (as a Connect/gRPC
+// error detail). The coarse outcome stays in Status or the RPC code.
+message ErrorDetail {
+  ReasonCode reason = 1;
+  // True when the same request may succeed if sent again unchanged (with a
+  // new command_id for agent commands). SendKeys-like effects are never
+  // retryable after UNKNOWN_OUTCOME, whatever this says.
+  bool retryable = 2;
+  // Earliest sensible retry, when the cause knows it (rate limit, reset).
+  google.protobuf.Duration retry_after = 3;
+  // Small structured facts, e.g. {"step": "wait_ready"}, {"capability":
+  // "goal.start"}, {"current_version": "7"}. No screen text, no secrets;
+  // keys and values capped at 256 bytes, at most 16 entries.
+  map<string, string> metadata = 4;
 }
 
 // ---------------------------------------------------------------------------
@@ -158,6 +198,8 @@ message Capability {
 
 // Role of the principal that requested a command (ADR 0004 "People on the
 // hub"). The agent re-checks role against harness command class (01b).
+// Each value names a permission set (02b-hub-api.md); values are never
+// compared numerically, and ROLE_SCHEDULER is not "above" ROLE_OWNER.
 enum Role {
   ROLE_UNSPECIFIED = 0;
   ROLE_VIEWER = 1;
@@ -167,9 +209,39 @@ enum Role {
   ROLE_SCHEDULER = 4;
 }
 
-// Principal names who asked for a command.
+// PrincipalKind says what sort of actor a Principal is (ADR 0018).
+enum PrincipalKind {
+  PRINCIPAL_KIND_UNSPECIFIED = 0;
+  // A person signed in to the hub (browser, CLI).
+  PRINCIPAL_KIND_USER = 1;
+  // The hub's own scheduler (dispatch, nudges, probes, routines).
+  PRINCIPAL_KIND_SCHEDULER = 2;
+  // The arbiter model that settles questions goals cannot (design.md).
+  PRINCIPAL_KIND_ARBITER = 3;
+  // A script using an API token (FLEET_TOKEN); acts for its creator.
+  PRINCIPAL_KIND_API_TOKEN = 4;
+  // A paired device (phone); acts for on_behalf_of within its scopes.
+  PRINCIPAL_KIND_DEVICE = 5;
+  // The OS user at the machine, through `fleet-agent` (local drain, local
+  // approval). Never a hub account; reported by the agent.
+  PRINCIPAL_KIND_LOCAL_USER = 6;
+}
+
+// Principal names who asked for something: a command, an approval, a drain.
 message Principal {
-  // Display name or login on the hub; "scheduler" for ROLE_SCHEDULER.
+  // Display name or login on the hub; "scheduler" for the scheduler.
+  // Display only; never used as a key.
   string name = 1;
   Role role = 2;
+  // Stable hub-assigned id; survives renames. The key for audit, ownership
+  // (FLEET_OWNER holds it) and idempotency scoping. For LOCAL_USER the agent
+  // sends "local:<os user>".
+  string id = 3;
+  PrincipalKind kind = 4;
+  // Set when kind is DEVICE: the paired device that acted.
+  DeviceId device_id = 5;
+  // Set for DEVICE and API_TOKEN (the user they act for) and for SCHEDULER
+  // or ARBITER when acting for a routine's or goal's owner. One level deep:
+  // on_behalf_of never has its own on_behalf_of.
+  Principal on_behalf_of = 6;
 }

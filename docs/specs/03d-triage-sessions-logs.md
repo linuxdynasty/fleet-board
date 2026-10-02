@@ -163,7 +163,7 @@ sequenceDiagram
     H-->>A: TermDown{input ≤ 4 KiB | resize}
   end
   U->>H: click window "2: claude w2" on the strip
-  H-->>A: TermDown{select{window_id}} (03g required change)
+  H-->>A: TermDown{select TermSelect{window WindowKey}} (03g change #2, applied)
   U->>H: close / idle timeout
   H-->>A: TermDown{close} or Command{CloseAttach}
   A->>T: kill PTY client → view session destroyed (destroy-unattached)
@@ -258,17 +258,17 @@ sequenceDiagram
   participant W as writer
   T->>A: pipe-pane -o output (raw bytes)
   A->>A: append to spool segment · every 10 s or 256 KiB raw: zstd-3 frame → chunk{offset, raw_length}
-  A->>H: SessionLog: LogChunk{session_id, pane, stream=TERMINAL, offset, zstd, raw_length, gap_before, first_byte_at, last_byte_at, goal_id}
+  A->>H: SessionLog: LogChunk{key LogStreamKey{session_id, pane, stream=TERMINAL}, offset, zstd, raw_length, gap_before, first_byte_at, last_byte_at, goal_id}
   H->>H: offset ≤ stored end? → duplicate (re-ack) · offset = stored end → append · > end → refuse (ack stays)
   H->>F: append frame to <session>/<stream>/<day>.zst
   H->>W: tx (batched 1 s): log_segments{session, stream, file, file_offset, raw_offset, raw_length, first_at, last_at, gap_before}
   W-->>H: committed
-  H-->>A: LogAck{session_id, stream, acked_offset = raw_offset + raw_length}
+  H-->>A: LogAck{key, acked_offset = raw_offset + raw_length}
   A->>A: drop spool ≤ acked_offset · persist acked offset
   opt hub disk low
-    H-->>A: LogAck{pause=true} (or Command{SetLogShipping{paused=true, reason}})
+    H-->>A: LogAck{all_streams=true, pause=true} (or Command{SetLogShipping{paused=true, reason}})
     Note over A: capture continues into the spool · cap hit → keep newest, gap_before on next chunk
-    H-->>A: LogAck{pause=false} unsolicited, or SetLogShipping{paused=false}
+    H-->>A: LogAck{all_streams=true, pause=false} unsolicited, or SetLogShipping{paused=false}
   end
   T->>A: pane exited
   A->>H: LogChunk{final=true}
@@ -283,7 +283,7 @@ indexes each chunk. Ack after the file write and the index commit (batched
 ≤ 1 s); durability of the file is fsync per batch. Offsets are the ordering
 key; a chunk is accepted only at the stored end. `LogAck.pause` is a stream
 level backpressure signal and `SetLogShipping` the command form; resuming
-needs an unsolicited `LogAck{pause=false}` or `SetLogShipping{paused=false}`
+needs an unsolicited `LogAck{all_streams=true, pause=false}` or `SetLogShipping{paused=false}`
 because a paused agent sends no chunks to ack (semantic note, 03g). Retention:
 total size cap (setting), oldest sessions pruned first; per-session delete is
 one audited action. Replay: the UI asks for `(session, from_raw_offset | from
@@ -335,7 +335,7 @@ stateDiagram-v2
 | Hub restart | Index durable; truncate partial frame; agent resends from last ack |
 | Chunk arrives twice | Offset ≤ stored end → re-ack, not stored |
 | Chunk arrives with a hole (offset > end, no `gap_before`) | Refused; ack stays at stored end; the agent resends from there (its spool still has it); counted |
-| Hub disk below threshold | `LogAck{pause=true}` to every agent; capture continues; triage `log_disk_low`; resume above a higher threshold (hysteresis) |
+| Hub disk below threshold | `LogAck{all_streams=true, pause=true}` to every agent; capture continues; triage `log_disk_low`; resume above a higher threshold (hysteresis) |
 | Spool cap hit on the agent | Newest kept, `gap_marks++`, `gap_before` on the next chunk; `SpoolStatus` in heartbeat shows it |
 | Agent crash mid-chunk | Up to one chunk interval (10 s) of raw output lost before compression; the pipe-pane process keeps writing to the spool file, so loss is bounded by what was not yet durable |
 | Harness crash | `final=true` after the pane exits; a respawned pane is a new pane key and a new stream under the same `session_id` |

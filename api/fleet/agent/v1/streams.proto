@@ -70,6 +70,19 @@ message TermDown {
     bytes input = 2;
     TermResize resize = 3;
     TermClose close = 4;
+    // Switch the view session's current window or pane (03g change #2),
+    // because the window strip cannot type the developer's prefix key.
+    // Allowed on read-only attaches; never affects the developer's client.
+    TermSelect select = 5;
+  }
+}
+
+// TermSelect: the agent runs select-window or select-pane in this attach's
+// grouped view session only. The key must belong to the attached session.
+message TermSelect {
+  oneof target {
+    fleet.type.v1.WindowKey window = 1;
+    fleet.type.v1.PaneKey pane = 2;
   }
 }
 
@@ -88,13 +101,24 @@ message TermClose {}
 
 // LogChunk: one compressed chunk at a byte offset in the raw stream. The
 // agent keeps it in the spool until acked. At most 1 MiB compressed.
+//
+// Framing (spike S2, 2026-10-02, 60 min Codex goal): the agent keeps ONE
+// zstd frame per stream open for up to 5 minutes or 4 MiB raw and flushes
+// it at every 10 s chunk, so a chunk is a run of zstd blocks, not a whole
+// frame. Independent 10 s frames compressed Codex output 8x; one 5-minute
+// frame flushed every 10 s gave 14x (whole-hour baseline 15x). A frame left
+// unterminated by an agent crash still decodes block by block, and the next
+// chunk starts a new frame. Seek granularity is therefore one frame
+// (<= 5 min): replay decodes from the chunk at frame_raw_offset.
 message LogChunk {
-  fleet.type.v1.SessionId session_id = 1;
-  fleet.type.v1.PaneKey pane = 2;
-  fleet.type.v1.LogStream stream = 3;
+  // Were session_id, pane and stream; now one LogStreamKey shared with
+  // LogAck, so an ack names exactly the stream a chunk came from.
+  reserved 1, 2, 3;
+  reserved "session_id", "pane", "stream";
   // Offset of the first raw byte in this chunk.
   uint64 offset = 4;
-  // zstd frame of raw_length bytes.
+  // zstd blocks (part of the frame that starts at frame_raw_offset) that
+  // decode to raw_length bytes; begins with a frame header iff frame_start.
   bytes zstd = 5;
   uint32 raw_length = 6;
   // Bytes lost before this chunk because the spool cap was hit.
@@ -104,13 +128,28 @@ message LogChunk {
   // True when the stream ended (pane exited, capture turned off).
   bool final = 10;
   fleet.type.v1.GoalId goal_id = 11;
+  fleet.type.v1.LogStreamKey key = 12;
+  // Raw offset where the current zstd frame started; a reader decodes from
+  // the chunk with that offset to reach any byte in this chunk.
+  uint64 frame_raw_offset = 13;
+  // This chunk begins a new frame: the first chunk of a stream, after 5 min
+  // or 4 MiB raw, after an agent restart, or after a gap.
+  bool frame_start = 14;
 }
 
-// LogAck: the hub stored everything up to acked_offset for this stream.
+// LogAck: the hub stored everything up to acked_offset for this stream. The
+// hub may also send it unsolicited: with pause to stop shipping, and with
+// all_streams and pause=false to resume every stream of the machine.
 message LogAck {
-  fleet.type.v1.SessionId session_id = 1;
-  fleet.type.v1.LogStream stream = 2;
+  // Were session_id and stream (no pane, so two panes of one session were
+  // ambiguous); replaced by key.
+  reserved 1, 2;
+  reserved "session_id", "stream";
   uint64 acked_offset = 3;
   // Hub asks the agent to pause shipping (disk low); same as SetLogShipping.
   bool pause = 4;
+  fleet.type.v1.LogStreamKey key = 5;
+  // Applies to every stream of this machine; key and acked_offset are then
+  // unset. Replaces the old "empty session_id means all streams" rule.
+  bool all_streams = 6;
 }

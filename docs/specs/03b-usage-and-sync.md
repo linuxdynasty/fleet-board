@@ -42,8 +42,8 @@ sequenceDiagram
 
 **Probe assignment.** Candidates for an account: machines `ONLINE`, not
 draining, whose `Snapshot.accounts[]` carries that `account_key` with
-`signed_in=true` (or the owner's Codex mapping), whose `HarnessInfo.version_supported`
-is true, and that advertise `usage.probe.<harness>`. Preference: label
+`signed_in=true` (or the owner's Codex mapping), whose `HarnessInfo.version_support`
+is `SUPPORTED` (or `UNVERIFIED_PARSING` with `ParserSupport{USAGE}` verified), and that advertise `usage.probe.<harness>`. Preference: label
 `always-on` > not `laptop` > the hub machine > most recently successful. The
 `probes` table has a unique constraint on `(account_id) WHERE state IN
 (REQUESTED, ALIVE, FAILING)`, so two scheduler passes cannot assign twice.

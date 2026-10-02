@@ -70,6 +70,14 @@ message IntegrationCapabilities {
   bool labels = 10;
   // Adapter version, for compatibility checks.
   string adapter_version = 11;
+  // Many items or change requests can be read in one request (GitHub
+  // GraphQL nodes, GitLab batch), so verification of N goals is not N calls.
+  bool batch_query = 12;
+  // Open provider name ("github", "gitea"); the authority when set,
+  // provider is a hint (03g change #8 reconciled: webhooks and conditional
+  // requests are sync_modes, claims are claim_mechanisms, merge_state is
+  // merge_detection).
+  string provider_name = 13;
 }
 
 // Integration: one configured instance on the hub.
@@ -83,6 +91,8 @@ message Integration {
   IntegrationCapabilities capabilities = 5;
   // Repos (code host) or projects (tracker) the owner chose to watch.
   repeated string watched = 6;
+  // Open provider name; see IntegrationCapabilities.provider_name.
+  string provider_name = 7;
 }
 
 // Person is a provider account, never a fleet user. Untrusted text.
@@ -100,6 +110,10 @@ enum WorkItemState {
   // Change requests only.
   WORK_ITEM_STATE_MERGED = 4;
   WORK_ITEM_STATE_DRAFT = 5;
+  // Closed without being done (GitHub "not planned", Jira "Won't Do",
+  // GitLab MR closed unmerged). Verification treats it like CLOSED for
+  // freeing the worker but never as success.
+  WORK_ITEM_STATE_CANCELLED = 6;
 }
 
 // Claim: evidence that someone is working on an item.
@@ -181,6 +195,11 @@ message ChangeRequest {
   Person author = 13;
   google.protobuf.Timestamp updated_at = 14;
   google.protobuf.Timestamp merged_at = 15;
+  // Review rounds so far: changes-requested reviews each followed by new
+  // commits. Feeds the review-loop cap (design.md: 3 rounds, no merge).
+  // source_branch is the head ref and head_commit the head sha that
+  // verification matches (03g change #8).
+  uint32 review_rounds = 16;
 }
 
 // --- Provider service ------------------------------------------------------

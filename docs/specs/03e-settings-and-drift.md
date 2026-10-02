@@ -22,9 +22,9 @@ sequenceDiagram
   O->>W: set group "laptop".block_on_battery = true
   W->>W: tx: settings_groups upsert · settings_generation += 1 → 13 ·<br/>for each affected machine: resolve machine → groups (priority) → fleet default · machine_settings_sent{machine, gen=13}
   W->>G: publish Settings for affected connected machines
-  G-->>A: Settings{generation=13, labels[], values SettingValues{…}, probe_interval_seconds_by_account}
+  G-->>A: Settings{settings_epoch, generation=13, labels[], values SettingValues{…}, probe_interval_by_account}
   A->>A: validate · merge tighten-only under local ceiling (rules below) · persist {gen, effective} · apply
-  A->>G: SettingsAck{generation=13, effective EffectiveSettings{values, sources[], labels}, capped_fields[]}
+  A->>G: SettingsAck{settings_epoch, generation=13, effective EffectiveSettings{values, sources[], labels}, capped_fields[]}
   G->>W: tx: machine_effective_settings{machine, gen=13, effective, capped_fields, acked_at}
   Note over A: later: policy.yaml edited on the machine
   A->>G: Event{policy_changed{policy PolicyInfo{hash, changed_since_load=true}, previous_hash}}
@@ -57,7 +57,7 @@ approval rules, idle threshold, spool cap, window template, probe intervals;
 `cert_lifetime` at the next renewal; `max_active`/`max_total` are hub-side
 limits the agent only echoes.
 
-**Drain.** `Drain{reason}` → agent `DrainState{draining, requested_by="hub"}`
+**Drain.** `Drain{reason}` → agent `DrainState{draining, requested_by_principal}` (the hub principal; kind `LOCAL_USER` for a local drain)
 → `Event.drain_state` + `Heartbeat.draining=true`; the scheduler excludes the
 machine; running goals continue (drain never kills). `Undrain` clears a hub
 drain; a local `fleet-agent drain` can only be undone locally (`Undrain` →
@@ -116,7 +116,7 @@ Machine drain state: `ACTIVE` → `DRAINING{hub}` → `ACTIVE` (Undrain);
 | Invalid value (e.g. `max_windows=0`, bad duration) | Agent rejects that field, keeps the previous effective value, names it in `capped_fields` with `SettingSource.layer=LOCAL_CEILING` and a message; the UI shows the rejection |
 | Policy file invalid on restart | Agent starts in **safe mode**: observe only, every control command `REJECTED_BY_POLICY`, `PolicyInfo.schema_version=""` + message in the snapshot; triage `policy_invalid` |
 | Policy file deleted | Agent uses built-in safe defaults; reported as hash of defaults; `doctor` warns |
-| Hub store restored from an older backup (generation goes backwards) | `HelloAck.settings_restored=true` (03g) makes the agent accept a lower generation once |
+| Hub store restored from an older backup (generation goes backwards) | The restored store has a new `settings_epoch`; the agent orders settings by `(settings_epoch, generation)` and accepts any generation under a new epoch (02-contracts.md, replaces 03g's `settings_restored`) |
 | `Drain` while `StartGoal` in flight | In flight past preflight → completes; not yet started → `DRAINING` at preflight |
 | `Undrain` against a local drain | `REJECTED_BY_POLICY/DRAINING`; UI explains |
 | Harness crash, prompts, provider errors, developer typing | Not affected by this workflow |
@@ -166,7 +166,7 @@ sequenceDiagram
   participant O as Owner
   A->>A: Detect(): muse 1.4.2 → 1.5.0 · not in SupportedVersions
   A->>P: identity probe (C2) + CommandCatalog() walk (C4)
-  A->>W: Event{harness_changed HarnessInfo{harness, version="1.5.0", parser_version, version_supported=false, supported_versions[], catalog{hash=new, entries[]}, prompt_detection_verified=false, goal_hooks}}
+  A->>W: Event{harness_changed HarnessInfo{harness, version="1.5.0", parser_version, version_support=UNSUPPORTED, parser_support[], supported_versions[], catalog{hash=new, entries[]}, prompt_detection_verified=false, goal_hooks}}
   W->>W: tx: harness_installs upsert (+history) · machine unfit for (muse) with HARNESS_VERSION_UNSUPPORTED ·<br/>triage parser_unsupported fingerprint=(harness, version) · probes on this machine for muse accounts → readings UNKNOWN
   W->>S: wakeup: re-assign muse probe to a machine with a supported version if any (W3)
   A->>P: scheduled /usage still runs
@@ -174,13 +174,13 @@ sequenceDiagram
   Note over W: board shows the raw screen "as shown" with "unknown" · no auto-dispatch on that account from this machine
   O->>A: fleet-agent capture-fixtures --harness muse (scrubbed screens committed · parser updated · agent released)
   O->>A: upgrade fleet-agent on the machine · restart (Bye{UPGRADE})
-  A->>W: Hello … Snapshot{harnesses[muse{version_supported=true, parser_version=new}]}
+  A->>W: Hello … Snapshot{harnesses[muse{version_support=SUPPORTED, parser_version=new}]}
   W->>W: tx: machine fit again · retire triage item · probe readings known again
 ```
 
 **Rules.**
 
-- `version_supported=false` ⇒ usage readings from that harness on that machine
+- `version_support=UNSUPPORTED` ⇒ usage readings from that harness on that machine
   are `UNKNOWN{HARNESS_VERSION_UNSUPPORTED}` (still shown raw), preflight
   refuses `HARNESS_VERSION_UNSUPPORTED`, auto-dispatch excludes `(machine,
   harness)`, prompts from that harness are `answerable=false` until
@@ -207,12 +207,14 @@ sequenceDiagram
 
 ```mermaid
 stateDiagram-v2
-  [*] --> SUPPORTED: HarnessInfo.version_supported
-  SUPPORTED --> UNSUPPORTED: harness_changed with version_supported=false
+  [*] --> SUPPORTED: HarnessInfo.version_support = SUPPORTED
+  [*] --> UNVERIFIED_PARSING: version_support = UNVERIFIED_PARSING (ParserSupport says which reads)
+  UNVERIFIED_PARSING --> SUPPORTED: new parser_version verifies every feature
+  SUPPORTED --> UNSUPPORTED: harness_changed with version_support=UNSUPPORTED
   SUPPORTED --> PARSER_DEGRADED: 3 consecutive PARSE_FAILED on a supported version
   PARSER_DEGRADED --> SUPPORTED: a PARSE_OUTCOME_OK reading
   PARSER_DEGRADED --> UNSUPPORTED: version changed
-  UNSUPPORTED --> SUPPORTED: snapshot/harness_changed with version_supported=true (agent upgraded)
+  UNSUPPORTED --> SUPPORTED: snapshot/harness_changed with version_support=SUPPORTED (agent upgraded)
   SUPPORTED --> MISSING: Detect() fails twice in a row (binary gone)
   MISSING --> SUPPORTED: detected again
   MISSING --> UNSUPPORTED: detected, unsupported

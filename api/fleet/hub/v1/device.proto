@@ -1,0 +1,200 @@
+// fleet.hub.v1 devices and notification targets (ADR 0018). Modelled now so
+// a phone app is additive later; push delivery itself is not built in v1.
+// A device holds its own key pair; the hub stores only the public key and
+// the scopes the owner granted. A device acts as Principal{kind DEVICE,
+// device_id, on_behalf_of: the owner who approved it}.
+syntax = "proto3";
+
+package fleet.hub.v1;
+
+import "fleet/hub/v1/common.proto";
+import "fleet/hub/v1/triage.proto";
+import "fleet/type/v1/ids.proto";
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/linuxdynasty/fleet-board/api/fleet/hub/v1;hubv1";
+
+// Device is one paired (or pairing) client device.
+message Device {
+  fleet.type.v1.DeviceId id = 1;
+  uint64 version = 2;
+  google.protobuf.Timestamp create_time = 3;
+  google.protobuf.Timestamp update_time = 4;
+
+  string display_name = 10;
+  // "ios", "android", "desktop". Display only.
+  string platform = 11;
+  // Raw Ed25519 public key; the device signs its requests (or its client
+  // certificate is issued from it). Never a password or token.
+  bytes public_key = 12;
+  // The owner principal the device acts for (Principal.id).
+  string principal_id = 13;
+  // Granted scopes; a subset of the owner's.
+  repeated Scope scopes = 14;
+  // Unset while pairing is pending.
+  google.protobuf.Timestamp approved_time = 15;
+  // Set once revoked; a revoked device is refused on every call.
+  google.protobuf.Timestamp revoked_time = 16;
+  google.protobuf.Timestamp last_seen_time = 17;
+  // Scopes the device asked for when pairing.
+  repeated Scope requested_scopes = 18;
+}
+
+// RequestPairingRequest is sent by the new device, unauthenticated, over
+// the hub's TLS port. It creates a pending Device and shows a short code on
+// both the device and the owner's UI.
+message RequestPairingRequest {
+  string request_id = 1;
+  string display_name = 2;
+  string platform = 3;
+  bytes public_key = 4;
+  repeated Scope requested_scopes = 5;
+}
+
+// RequestPairingResponse.
+message RequestPairingResponse {
+  Device device = 1;
+  // Six digits derived from the public key and a hub nonce; the owner
+  // compares it before approving.
+  string pairing_code = 2;
+  google.protobuf.Timestamp expire_time = 3;
+}
+
+// ApprovePairingRequest is sent by an owner (SCOPE_ADMIN).
+message ApprovePairingRequest {
+  string request_id = 1;
+  fleet.type.v1.DeviceId id = 2;
+  uint64 expected_version = 3;
+  // Must match the code the device shows.
+  string pairing_code = 4;
+  // Scopes granted; may be fewer than requested.
+  repeated Scope scopes = 5;
+}
+
+// ApprovePairingResponse.
+message ApprovePairingResponse {
+  Device device = 1;
+}
+
+// RevokeDeviceRequest. Takes effect at once, including open Watch streams.
+message RevokeDeviceRequest {
+  string request_id = 1;
+  fleet.type.v1.DeviceId id = 2;
+  uint64 expected_version = 3;
+}
+
+// RevokeDeviceResponse.
+message RevokeDeviceResponse {
+  Device device = 1;
+}
+
+// ListDevicesRequest. Filter fields: principal_id, revoked.
+message ListDevicesRequest {
+  int32 page_size = 1;
+  string page_token = 2;
+  string filter = 3;
+  string order_by = 4;
+}
+
+// ListDevicesResponse.
+message ListDevicesResponse {
+  repeated Device devices = 1;
+  string next_page_token = 2;
+}
+
+// GetDeviceRequest.
+message GetDeviceRequest {
+  fleet.type.v1.DeviceId id = 1;
+}
+
+// GetDeviceResponse.
+message GetDeviceResponse {
+  Device device = 1;
+}
+
+// NotificationChannel is how a target is reached.
+enum NotificationChannel {
+  NOTIFICATION_CHANNEL_UNSPECIFIED = 0;
+  // Push to a paired device (APNs/FCM handle held opaque).
+  NOTIFICATION_CHANNEL_PUSH = 1;
+  // A chat binding (placeholder; no chat integration in v1).
+  NOTIFICATION_CHANNEL_CHAT = 2;
+}
+
+// ChatBinding is a placeholder for a later chat integration.
+message ChatBinding {
+  // e.g. "slack", "matrix".
+  string provider = 1;
+  // Provider's channel or user id. Never a token.
+  string destination = 2;
+}
+
+// NotificationTarget is where one principal's notifications go.
+message NotificationTarget {
+  NotificationTargetId id = 1;
+  uint64 version = 2;
+  google.protobuf.Timestamp create_time = 3;
+  google.protobuf.Timestamp update_time = 4;
+
+  // Principal.id of the owner of this target.
+  string principal_id = 10;
+  NotificationChannel channel = 11;
+  fleet.type.v1.DeviceId device = 12;
+  // Push service handle as the device registered it; opaque to the hub,
+  // never logged, write-only through the API (always empty when read).
+  bytes push_handle = 13;
+  ChatBinding chat = 14;
+  bool enabled = 15;
+  // Notify for items at or above this severity (default ACTION).
+  Severity min_severity = 16;
+}
+
+// ListNotificationTargetsRequest. Filter fields: principal_id, channel.
+message ListNotificationTargetsRequest {
+  int32 page_size = 1;
+  string page_token = 2;
+  string filter = 3;
+  string order_by = 4;
+}
+
+// ListNotificationTargetsResponse.
+message ListNotificationTargetsResponse {
+  repeated NotificationTarget notification_targets = 1;
+  string next_page_token = 2;
+}
+
+// CreateNotificationTargetRequest.
+message CreateNotificationTargetRequest {
+  string request_id = 1;
+  NotificationTarget notification_target = 2;
+}
+
+// CreateNotificationTargetResponse.
+message CreateNotificationTargetResponse {
+  NotificationTarget notification_target = 1;
+}
+
+// UpdateNotificationTargetRequest. Updatable: enabled, min_severity,
+// push_handle, chat.
+message UpdateNotificationTargetRequest {
+  string request_id = 1;
+  NotificationTarget notification_target = 2;
+  google.protobuf.FieldMask update_mask = 3;
+  uint64 expected_version = 4;
+}
+
+// UpdateNotificationTargetResponse.
+message UpdateNotificationTargetResponse {
+  NotificationTarget notification_target = 1;
+}
+
+// DeleteNotificationTargetRequest.
+message DeleteNotificationTargetRequest {
+  string request_id = 1;
+  NotificationTargetId id = 2;
+  uint64 expected_version = 3;
+}
+
+// DeleteNotificationTargetResponse.
+message DeleteNotificationTargetResponse {}

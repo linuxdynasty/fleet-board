@@ -1,0 +1,143 @@
+// fleet.hub.v1 settings and audit. Settings are layered fleet -> group ->
+// machine (ADR 0009) and delivered to agents as fleet.type.v1.SettingValues,
+// the same message edited here. HubSettings are hub-only owner choices that
+// never reach an agent. The audit log is append-only.
+syntax = "proto3";
+
+package fleet.hub.v1;
+
+import "fleet/hub/v1/common.proto";
+import "fleet/type/v1/ids.proto";
+import "fleet/type/v1/settings.proto";
+import "fleet/type/v1/status.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/linuxdynasty/fleet-board/api/fleet/hub/v1;hubv1";
+
+// SettingsScope names one settings layer.
+message SettingsScope {
+  oneof kind {
+    // The fleet default layer.
+    bool fleet = 1;
+    // A machine group, named by label.
+    string group_label = 2;
+    fleet.type.v1.MachineId machine = 3;
+  }
+}
+
+// HubSettings are fleet-wide owner choices the hub applies itself.
+message HubSettings {
+  // Pause WORKING goals at an account's reserve line (design.md rule 5).
+  optional bool auto_pause_at_reserve = 1;
+  optional uint32 max_parallel_goals_per_repo = 2;
+  repeated string default_consent = 3;
+  // Trusted-issues gate: label and allow-listed provider logins.
+  optional string trusted_label = 4;
+  repeated string trusted_users = 5;
+  optional bool prefer_non_hub = 6;
+  // Master switch for auto-dispatch (manual dispatch always works).
+  optional bool auto_dispatch = 7;
+  optional google.protobuf.Duration triage_expiry = 8;
+  // How long an approval waits before its fallback applies.
+  optional google.protobuf.Duration approval_timeout = 9;
+}
+
+// Settings is one layer. Only the fleet layer has hub settings.
+message Settings {
+  // Resource id: "fleet", "group/<label>" or "machine/<machine id>".
+  string id = 1;
+  uint64 version = 2;
+  google.protobuf.Timestamp create_time = 3;
+  google.protobuf.Timestamp update_time = 4;
+
+  SettingsScope scope = 10;
+  fleet.type.v1.SettingValues values = 11;
+  // Groups only: higher wins when a machine is in several groups.
+  int32 priority = 12;
+  HubSettings hub = 13;
+  // Generation and epoch this layer was last delivered under.
+  uint64 generation = 14;
+  string settings_epoch = 15;
+}
+
+// GetSettingsRequest.
+message GetSettingsRequest {
+  SettingsScope scope = 1;
+}
+
+// GetSettingsResponse.
+message GetSettingsResponse {
+  Settings settings = 1;
+}
+
+// ListSettingsRequest lists every layer (fleet, groups, machines).
+message ListSettingsRequest {
+  int32 page_size = 1;
+  string page_token = 2;
+  string filter = 3;
+  string order_by = 4;
+}
+
+// ListSettingsResponse.
+message ListSettingsResponse {
+  repeated Settings settings = 1;
+  string next_page_token = 2;
+}
+
+// UpdateSettingsRequest creates the layer if it does not exist. Masks name
+// fields of Settings, e.g. "values.max_active", "hub.auto_dispatch".
+message UpdateSettingsRequest {
+  string request_id = 1;
+  Settings settings = 2;
+  google.protobuf.FieldMask update_mask = 3;
+  uint64 expected_version = 4;
+}
+
+// UpdateSettingsResponse. Delivery to agents shows in each Machine's
+// effective_settings and capped_settings.
+message UpdateSettingsResponse {
+  Settings settings = 1;
+}
+
+// AuditEntry is one row of the permanent audit log. Immutable: version is
+// always 1 and update_time equals create_time.
+message AuditEntry {
+  AuditEntryId id = 1;
+  uint64 version = 2;
+  google.protobuf.Timestamp create_time = 3;
+  google.protobuf.Timestamp update_time = 4;
+
+  fleet.type.v1.Principal actor = 10;
+  // Dotted action name, e.g. "goal.start", "approval.decide",
+  // "settings.update", "device.revoke".
+  string action = 11;
+  // Resource the action touched, as "<collection>/<id>".
+  string target = 12;
+  fleet.type.v1.MachineId machine = 13;
+  fleet.type.v1.GoalId goal = 14;
+  fleet.type.v1.CommandId command = 15;
+  string request_id = 16;
+  // Final outcome when known (commands), else OK.
+  fleet.type.v1.Status outcome = 17;
+  fleet.type.v1.ReasonCode reason = 18;
+  // Short detail (the typed goal line, the decided option). No secrets.
+  string detail = 19;
+}
+
+// ListAuditEntriesRequest. Filter fields: actor.id, action, machine, goal,
+// create_time. Default order: newest first. CSV export is the CLI paging
+// through this.
+message ListAuditEntriesRequest {
+  int32 page_size = 1;
+  string page_token = 2;
+  string filter = 3;
+  string order_by = 4;
+}
+
+// ListAuditEntriesResponse.
+message ListAuditEntriesResponse {
+  repeated AuditEntry audit_entries = 1;
+  string next_page_token = 2;
+}

@@ -1,0 +1,229 @@
+// fleet.hub.v1 goals: the hub's goal lifecycle (03c W5, W6), dispatch,
+// preflight and goal control. Goal control is translated per harness into
+// the harness's own /goal subcommands, Interrupt, or a typed "continue"
+// (01b); the API names the intent, not the keys.
+syntax = "proto3";
+
+package fleet.hub.v1;
+
+import "fleet/hub/v1/common.proto";
+import "fleet/type/v1/harness.proto";
+import "fleet/type/v1/ids.proto";
+import "fleet/type/v1/status.proto";
+import "fleet/type/v1/work.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/linuxdynasty/fleet-board/api/fleet/hub/v1;hubv1";
+
+// GoalPhase is the hub-owned goal state (03c state machines, start and
+// run, in one enum). GoalLineState is what the goal file says; the phase is
+// what the hub concluded from it and everything else.
+enum GoalPhase {
+  GOAL_PHASE_UNSPECIFIED = 0;
+  // Planned, StartGoal sent, not yet confirmed.
+  GOAL_PHASE_STARTING = 1;
+  GOAL_PHASE_START_FAILED = 2;
+  // The start ended UNKNOWN_OUTCOME; waiting for a GoalState or a person.
+  GOAL_PHASE_START_UNKNOWN = 3;
+  GOAL_PHASE_RUNNING = 4;
+  // BLOCKED with a live watcher (CI, review).
+  GOAL_PHASE_WAITING = 5;
+  GOAL_PHASE_BLOCKED_OWNER = 6;
+  GOAL_PHASE_STUCK = 7;
+  // Stopped without DONE; one corrective nudge pending or sent.
+  GOAL_PHASE_STOPPED = 8;
+  GOAL_PHASE_COOLDOWN = 9;
+  // Paused by an operator, the review-loop cap or the opt-in reserve rule.
+  GOAL_PHASE_PAUSED = 10;
+  // A usage or rate limit stopped the harness (HarnessCondition with
+  // resets_at). The hub resumes it at limit_wait_until with the harness's
+  // resume action (02-contracts.md, "Limit wait"); no nudges meanwhile.
+  GOAL_PHASE_LIMIT_WAIT = 11;
+  GOAL_PHASE_VERIFYING = 12;
+  // DONE, but the code host disagrees after verify_grace.
+  GOAL_PHASE_DISAGREE = 13;
+  GOAL_PHASE_MERGED = 14;
+  // merged_grace elapsed; worktree pruned, window closed or reused.
+  GOAL_PHASE_CLOSED = 15;
+  // Cleared by an operator (/goal clear).
+  GOAL_PHASE_CLEARED = 16;
+  // The pane is missing from the latest snapshot.
+  GOAL_PHASE_PANE_LOST = 17;
+  // Failed to start on three machines; manual dispatch only.
+  GOAL_PHASE_MANUAL_ONLY = 18;
+}
+
+// Goal is one dispatched goal and its run history head.
+message Goal {
+  fleet.type.v1.GoalId id = 1;
+  uint64 version = 2;
+  google.protobuf.Timestamp create_time = 3;
+  google.protobuf.Timestamp update_time = 4;
+
+  // What it works on; kind ROUTINE for routine runs.
+  fleet.type.v1.WorkItemRef work_item = 10;
+  fleet.type.v1.RepoRef repo = 11;
+  fleet.type.v1.WorkItemRef change_request = 12;
+  // Set when a routine started it.
+  RoutineId routine = 13;
+  fleet.type.v1.MachineId machine = 14;
+  fleet.type.v1.SessionId session = 15;
+  fleet.type.v1.PaneKey pane = 16;
+  fleet.type.v1.Harness harness = 17;
+  string profile = 18;
+  fleet.type.v1.AccountId account = 19;
+  string model = 20;
+  string effort = 21;
+  repeated string consent = 22;
+  // Untrusted when it echoes a work item title.
+  string goal_text = 23;
+  string dispatch_reason = 24;
+  // Exactly what was typed (StartGoalResult.typed_goal_line).
+  string typed_goal_line = 25;
+  GoalPhase phase = 26;
+  google.protobuf.Timestamp phase_time = 27;
+  // From the goal file (G2). Untrusted text.
+  fleet.type.v1.GoalLineState line_state = 28;
+  string first_line = 29;
+  string consent_line = 30;
+  string head_commit = 31;
+  bool dirty = 32;
+  string branch = 33;
+  // Set in LIMIT_WAIT: when the hub resumes the goal.
+  google.protobuf.Timestamp limit_wait_until = 34;
+  google.protobuf.Timestamp cooldown_until = 35;
+  uint32 nudges = 36;
+  uint32 no_progress_runs = 37;
+  uint32 review_rounds = 38;
+  // A HarnessCondition is open on the pane.
+  bool provider_condition = 39;
+  // Last start failure, for START_FAILED and MANUAL_ONLY.
+  fleet.type.v1.ErrorDetail start_error = 40;
+  fleet.type.v1.Principal started_by = 41;
+  // Latest operation for this goal (start, control, nudge).
+  fleet.type.v1.CommandId last_operation = 42;
+  // Session was cleared (/clear) before typing (GoalSpec.fresh_context).
+  bool fresh_context = 43;
+}
+
+// ListGoalsRequest. Filter fields: phase, machine, account, repo, routine,
+// work_item, create_time (the Fleet view timeline uses the last 7 days).
+message ListGoalsRequest {
+  int32 page_size = 1;
+  string page_token = 2;
+  string filter = 3;
+  string order_by = 4;
+}
+
+// ListGoalsResponse.
+message ListGoalsResponse {
+  repeated Goal goals = 1;
+  string next_page_token = 2;
+}
+
+// GetGoalRequest.
+message GetGoalRequest {
+  fleet.type.v1.GoalId id = 1;
+}
+
+// GetGoalResponse.
+message GetGoalResponse {
+  Goal goal = 1;
+}
+
+// GoalPlacement says where a dispatch runs; unset fields are chosen by the
+// scheduler with the same rules as auto-dispatch (03c planning rules).
+message GoalPlacement {
+  fleet.type.v1.MachineId machine = 1;
+  fleet.type.v1.Harness harness = 2;
+  string profile = 3;
+  fleet.type.v1.AccountId account = 4;
+  // Prefer this available session (E11).
+  fleet.type.v1.SessionId reuse_session = 5;
+  fleet.type.v1.PaneKey reuse_pane = 6;
+  // New window in this session instead of a new session.
+  fleet.type.v1.SessionId in_session = 7;
+  string window_name = 8;
+}
+
+// StartGoalRequest dispatches a goal (manual dispatch). The hub fills the
+// GoalSpec, preflights unless skip_preflight, and sends StartGoal.
+message StartGoalRequest {
+  string request_id = 1;
+  fleet.type.v1.WorkItemRef work_item = 2;
+  fleet.type.v1.RepoRef repo = 3;
+  fleet.type.v1.WorkItemRef change_request = 4;
+  GoalPlacement placement = 5;
+  // Empty = repo consent ∩ account consent (ADR 0008).
+  repeated string consent = 6;
+  // Empty = the hub's template for the work item.
+  string goal_text = 7;
+  string model = 8;
+  string effort = 9;
+  bool fresh_context = 10;
+  // Free text from the operator; the hub prefixes "manual dispatch by …".
+  string dispatch_reason = 11;
+  bool skip_preflight = 12;
+}
+
+// StartGoalResponse. The goal id is assigned before StartGoal is sent.
+message StartGoalResponse {
+  fleet.type.v1.GoalId goal = 1;
+  Operation operation = 2;
+}
+
+// PreflightGoalRequest runs Preflight (I1) without starting anything.
+message PreflightGoalRequest {
+  string request_id = 1;
+  fleet.type.v1.WorkItemRef work_item = 2;
+  fleet.type.v1.RepoRef repo = 3;
+  GoalPlacement placement = 4;
+}
+
+// PreflightGoalResponse. When the operation is DONE, Operation.failed_checks
+// lists what failed and Operation.output_text holds the goal line the agent
+// would type (PreflightResult.goal_line_preview). The hub's own checks
+// (slots, pacing) are here, before anything is sent.
+message PreflightGoalResponse {
+  Operation operation = 1;
+  // Hub-side refusals found before asking the agent (SLOTS_FULL, pacing).
+  repeated fleet.type.v1.ErrorDetail hub_checks = 2;
+  // The placement the scheduler would use.
+  GoalPlacement placement = 3;
+}
+
+// GoalAction is an operator's intent on a running goal.
+enum GoalAction {
+  GOAL_ACTION_UNSPECIFIED = 0;
+  // Claude: Interrupt; Codex, Muse: /goal pause.
+  GOAL_ACTION_PAUSE = 1;
+  // Claude: type "continue"; Codex, Muse: /goal resume.
+  GOAL_ACTION_RESUME = 2;
+  // /goal edit <text> where the harness has it.
+  GOAL_ACTION_EDIT = 3;
+  // /goal clear.
+  GOAL_ACTION_CLEAR = 4;
+  // Hub only: re-run verification against the code host now.
+  GOAL_ACTION_RECHECK = 5;
+  // Hub only: DONE was wrong; send the "not done" nudge.
+  GOAL_ACTION_NOT_DONE = 6;
+  // START_UNKNOWN: the operator says it never started; back to ready.
+  GOAL_ACTION_MARK_NOT_STARTED = 7;
+}
+
+// ControlGoalRequest.
+message ControlGoalRequest {
+  string request_id = 1;
+  fleet.type.v1.GoalId goal = 2;
+  uint64 expected_version = 3;
+  GoalAction action = 4;
+  // For EDIT: the new objective text (4 KiB).
+  string text = 5;
+}
+
+// ControlGoalResponse. operation is unset for hub-only actions; an
+// unsupported action fails with GOAL_SUBCOMMAND_UNSUPPORTED before sending.
+message ControlGoalResponse {
+  Goal goal = 1;
+  Operation operation = 2;
+}

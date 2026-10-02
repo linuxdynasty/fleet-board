@@ -7,6 +7,7 @@ package fleet.agent.v1;
 import "fleet/agent/v1/snapshot.proto";
 import "fleet/type/v1/harness.proto";
 import "fleet/type/v1/ids.proto";
+import "fleet/type/v1/status.proto";
 import "fleet/type/v1/work.proto";
 import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
@@ -46,7 +47,10 @@ message EnsureProbe {
   fleet.type.v1.Harness harness = 4;
   google.protobuf.Duration interval = 5;
   // Run once now in addition to the schedule (goal start/finish, D3 jump).
+  // Runs once per distinct command_id: a re-sent command never runs twice.
   bool run_now = 6;
+  // Harness profile whose account is probed; empty = the harness default.
+  string profile = 7;
 }
 
 // StopProbe tears the probe session down. Declarative.
@@ -69,11 +73,17 @@ message EnsureSession {
   bool resume = 6;
   // Attach to an existing session of that name instead of failing.
   bool reuse = 7;
-  // FLEET_OWNER value.
-  string owner = 8;
+  // Was the FLEET_OWNER display name; replaced by owner_principal.
+  reserved 8;
+  reserved "owner";
   // Name for the first window; empty = settings template.
   string window_name = 9;
   fleet.type.v1.GoalId goal_id = 10;
+  // Who the session is for; the agent writes owner_principal.id into
+  // FLEET_OWNER.
+  fleet.type.v1.Principal owner_principal = 11;
+  // Harness profile to start under; empty = the harness default.
+  string profile = 12;
 }
 
 // EnsureSessionResult.
@@ -95,6 +105,8 @@ message EnsureWindow {
   // Reuse a window of that name if it exists.
   bool reuse = 6;
   fleet.type.v1.GoalId goal_id = 7;
+  // Harness profile to start under; empty = the harness default.
+  string profile = 8;
 }
 
 // EnsureWindowResult.
@@ -126,6 +138,8 @@ message RespawnPane {
   fleet.type.v1.PaneKey pane = 1;
   fleet.type.v1.Harness harness = 2;
   bool resume = 3;
+  // Harness profile to restart under; empty = the harness default.
+  string profile = 4;
 }
 
 // KillWindow (F6). Dangerous kind; may need local approval. Never used on
@@ -180,4 +194,7 @@ message RunHarnessCommandResult {
 message SetSessionAvailability {
   SessionTarget session = 1;
   bool available_for_work = 2;
+  // Echoed in AvailabilityChanged.reason (03g change #6): "marked_on_board",
+  // "goal_merged", "cleared_on_board".
+  string reason = 3;
 }

@@ -2,16 +2,20 @@
 // optimization over snapshots, never the source of truth. Every Event
 // carries the agent-wide monotonic seq that survives reconnects; the offline
 // ring replays them in order. Which kinds may be dropped under backpressure
-// is fixed per kind in docs/specs/02-contracts.md, not negotiated.
+// is fixed per kind in docs/specs/02-contracts.md and stamped on every event
+// as Event.delivery, so a hub that does not know a newer body kind still
+// queues, sheds or coalesces it correctly and still advances seq past it.
 // Screen, goal-file and git text in here is UNTRUSTED TEXT.
 syntax = "proto3";
 
 package fleet.agent.v1;
 
+import "fleet/agent/v1/screen.proto";
 import "fleet/agent/v1/snapshot.proto";
 import "fleet/agent/v1/usage.proto";
 import "fleet/type/v1/harness.proto";
 import "fleet/type/v1/ids.proto";
+import "fleet/type/v1/status.proto";
 import "google/protobuf/timestamp.proto";
 
 option go_package = "github.com/linuxdynasty/fleet-board/api/fleet/agent/v1;agentv1";
@@ -26,6 +30,12 @@ message Event {
   google.protobuf.Timestamp at = 2;
   // True when replayed from the offline ring after a reconnect.
   bool replayed = 3;
+  // Backpressure class of this body kind (02-contracts.md table), set by the
+  // agent from the same table it sheds by.
+  DeliveryClass delivery = 4;
+  // For COALESCE: events with equal non-empty keys replace each other
+  // (latest wins), e.g. "usage:<account_key>", "branch:<path>".
+  string coalesce_key = 5;
 
   oneof body {
     // B2, droppable.
@@ -92,6 +102,18 @@ message Event {
   }
 }
 
+// DeliveryClass is how an event may be treated under backpressure, on the
+// agent's send queue and on the hub's side.
+enum DeliveryClass {
+  DELIVERY_CLASS_UNSPECIFIED = 0;
+  // May be dropped (pane summaries, resource samples, spool status).
+  DELIVERY_CLASS_SHED = 1;
+  // Only the latest per coalesce_key is kept.
+  DELIVERY_CLASS_COALESCE = 2;
+  // Never dropped; the ring and replay guarantee delivery.
+  DELIVERY_CLASS_NEVER_DROP = 3;
+}
+
 // ChangeKind for inventory events.
 enum ChangeKind {
   CHANGE_KIND_UNSPECIFIED = 0;
@@ -153,54 +175,6 @@ message PaneSummary {
   string last_lines = 2;
   google.protobuf.Timestamp last_output_at = 3;
   fleet.type.v1.Activity activity = 4;
-}
-
-// PromptDetected (E6). A SendKeys answering it must carry prompt_id.
-message PromptDetected {
-  fleet.type.v1.PromptId prompt_id = 1;
-  fleet.type.v1.PaneKey pane = 2;
-  fleet.type.v1.Harness harness = 3;
-  // Prompt text, capped at 16 KiB. Untrusted text.
-  string text = 4;
-  repeated fleet.type.v1.PromptOption options = 5;
-  // Destructive prompts default to Deny in the UI and are never
-  // auto-answered. Set for `rm -rf`, `docker compose down -v`, and for any
-  // command line that embeds a credential (01c, measured goal).
-  bool destructive = 6;
-  // Why it was flagged destructive, for the triage card. Untrusted text.
-  string destructive_reason = 7;
-  fleet.type.v1.PromptSource source = 8;
-  // 0..100: how sure the adapter is this is a prompt.
-  uint32 confidence = 9;
-  // True when the adapter's detection is verified for this harness and
-  // send-to-pane is therefore enabled.
-  bool answerable = 10;
-  fleet.type.v1.GoalId goal_id = 11;
-}
-
-// HarnessCondition (E12): a state the harness shows that is neither a prompt
-// nor normal work, such as "Meta Model API server error (HTTP 500) · retrying
-// in 7s · attempt 6/10" (observed 2026-10-01). Never dropped under
-// backpressure. A condition is reported when it appears and again with
-// `cleared` when it leaves the screen.
-message HarnessCondition {
-  fleet.type.v1.PaneKey pane = 1;
-  fleet.type.v1.Harness harness = 2;
-  fleet.type.v1.HarnessConditionKind kind = 3;
-  // True while the harness says it is retrying on its own.
-  bool retrying = 4;
-  // Retry attempt and limit as shown, 0 when not shown.
-  uint32 attempt = 5;
-  uint32 max_attempts = 6;
-  // When the harness says it will retry next, if shown.
-  google.protobuf.Timestamp next_retry_at = 7;
-  // HTTP status if the harness shows one (500, 429, 529…), 0 otherwise.
-  uint32 http_status = 8;
-  // The line as shown, capped at 4 KiB. Untrusted text.
-  string text = 9;
-  google.protobuf.Timestamp since = 10;
-  bool cleared = 11;
-  fleet.type.v1.GoalId goal_id = 12;
 }
 
 // PromptGone (E6): the prompt left the screen (answered locally, timed out,
@@ -279,7 +253,9 @@ message PolicyChanged {
 message LocalApprovalDecision {
   fleet.type.v1.CommandId command_id = 1;
   bool approved = 2;
-  // "cli" or "notification".
+  // Channel, not identity: "cli" or "notification".
   string via = 3;
   google.protobuf.Timestamp decided_at = 4;
+  // Who decided: kind LOCAL_USER, id "local:<os user>".
+  fleet.type.v1.Principal decided_by = 5;
 }

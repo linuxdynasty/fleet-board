@@ -1,0 +1,198 @@
+// fleet.hub.v1 common messages: hub-only ids, the Operation handle that
+// every agent-command action returns, server info and the summary strip.
+//
+// Conventions for every hub resource (02b-hub-api.md):
+//   - field 1 is the id, 2 the version (the ETag: bumped on every change),
+//     3 create_time, 4 update_time; resource fields start at 10.
+//   - List requests: page_size 1, page_token 2, filter 3 (AIP-160), order_by
+//     4. Responses: items 1, next_page_token 2 (empty on the last page).
+//   - Mutating requests: request_id 1 (client-generated idempotency key).
+//     Updates add update_mask and expected_version (0 = do not check).
+//   - Actions that make an agent do something return an Operation, never
+//     the final state; the final state arrives through Watch or
+//     GetOperation.
+// UI, CLI and phone speak only this package (ADR 0018). It imports
+// fleet.type.v1 and fleet.integration.v1, never fleet.agent.v1.
+syntax = "proto3";
+
+package fleet.hub.v1;
+
+import "fleet/type/v1/ids.proto";
+import "fleet/type/v1/status.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/linuxdynasty/fleet-board/api/fleet/hub/v1;hubv1";
+
+// ---------------------------------------------------------------------------
+// Hub-only identifiers
+// ---------------------------------------------------------------------------
+
+// TriageItemId is hub-assigned per raised item.
+message TriageItemId {
+  string value = 1;
+}
+
+// ApprovalId is hub-assigned per approval request.
+message ApprovalId {
+  string value = 1;
+}
+
+// RoutineId is hub-assigned per routine; also the prefix of the routine's
+// WorkItemRef.key ("<routine id>/<run number>").
+message RoutineId {
+  string value = 1;
+}
+
+// NotificationTargetId is hub-assigned per notification target.
+message NotificationTargetId {
+  string value = 1;
+}
+
+// AuditEntryId is hub-assigned per audit row; increasing.
+message AuditEntryId {
+  string value = 1;
+}
+
+// ---------------------------------------------------------------------------
+// Scopes
+// ---------------------------------------------------------------------------
+
+// Scope is one permission set an RPC requires (02b-hub-api.md table). Roles
+// map to scopes (VIEWER: READ; OPERATOR: + SESSIONS_WRITE, APPROVALS; OWNER:
+// all). A device or API token holds a subset of its owner's scopes. Scopes
+// are sets, never ordered.
+enum Scope {
+  SCOPE_UNSPECIFIED = 0;
+  // Read every resource, Watch, read logs, read-only attach.
+  SCOPE_READ = 1;
+  // Type into sessions: keys, attach input, harness commands, goal control,
+  // dispatch, create sessions.
+  SCOPE_SESSIONS_WRITE = 2;
+  // Decide approvals (prompt answers, confirmations) and act on triage.
+  SCOPE_APPROVALS = 3;
+  // Change settings, accounts, routines, integrations' watched lists.
+  SCOPE_SETTINGS = 4;
+  // Machines (enroll, delete, drain), devices, notification targets.
+  SCOPE_ADMIN = 5;
+}
+
+// ---------------------------------------------------------------------------
+// Operations
+// ---------------------------------------------------------------------------
+
+// OperationState follows the hub outbox row (02-contracts.md delivery).
+enum OperationState {
+  OPERATION_STATE_UNSPECIFIED = 0;
+  // In the outbox; the machine may be offline. not_after still applies.
+  OPERATION_STATE_PENDING = 1;
+  // Sent and acknowledged (CommandAck) by the agent.
+  OPERATION_STATE_DELIVERED = 2;
+  // A composite reported progress, or the agent waits for local approval.
+  OPERATION_STATE_RUNNING = 3;
+  // A final CommandResult arrived (or the hub expired it); see status.
+  OPERATION_STATE_DONE = 4;
+}
+
+// Operation is the handle for one agent command caused by an API action.
+// Its id is the command's CommandId, so the UI, the audit log and the
+// agent's local log all name the same thing.
+message Operation {
+  fleet.type.v1.CommandId id = 1;
+  uint64 version = 2;
+  google.protobuf.Timestamp create_time = 3;
+  google.protobuf.Timestamp update_time = 4;
+
+  fleet.type.v1.MachineId machine = 10;
+  // Command kind as in fleet.agent.v1, e.g. "SendKeys", "StartGoal".
+  string kind = 11;
+  OperationState state = 12;
+  // Set when state is DONE: the agent's Status, or EXPIRED from the hub.
+  fleet.type.v1.Status status = 13;
+  // Set for anything but OK: reason, retryable, retry_after, metadata.
+  fleet.type.v1.ErrorDetail error = 14;
+  // Last composite step reached (G3), e.g. "wait_ready", with its position.
+  string step = 15;
+  uint32 step_index = 16;
+  uint32 step_count = 17;
+  // Short diagnostic from the agent, no screen text. 1 KiB.
+  string message = 18;
+  fleet.type.v1.Principal requested_by = 19;
+  // The request_id of the API call that created it.
+  string request_id = 20;
+  google.protobuf.Timestamp not_after = 21;
+  // Text output for CapturePane and OBSERVE-class harness commands.
+  // Untrusted text, capped as on the agent wire.
+  string output_text = 22;
+  bool output_truncated = 23;
+  // Goal the operation belongs to, if any.
+  fleet.type.v1.GoalId goal = 24;
+  // Preflight: every failed check (PreflightResult.failed_checks), with the
+  // detail line in metadata["detail"].
+  repeated fleet.type.v1.ErrorDetail failed_checks = 25;
+}
+
+// GetOperationRequest.
+message GetOperationRequest {
+  fleet.type.v1.CommandId id = 1;
+}
+
+// GetOperationResponse.
+message GetOperationResponse {
+  Operation operation = 1;
+}
+
+// ---------------------------------------------------------------------------
+// Server info and summary strip
+// ---------------------------------------------------------------------------
+
+// GetServerInfoRequest. Allowed without scopes so a client can check the
+// API before pairing or signing in.
+message GetServerInfoRequest {}
+
+// GetServerInfoResponse.
+message GetServerInfoResponse {
+  // Highest fleet.hub.v1 minor revision served, e.g. 1.
+  uint32 api_version = 1;
+  string hub_version = 2;
+  // fleet_id and hub_instance_id as on the agent wire (EnrollResponse,
+  // HelloAck); a new hub_instance_id invalidates every resume token.
+  string fleet_id = 3;
+  string hub_instance_id = 4;
+  google.protobuf.Timestamp server_time = 5;
+  // Optional features, e.g. {"watch.pane_summaries", 1}, {"attach", 1},
+  // {"routines", 1}, {"devices", 1}. Clients hide what is not listed.
+  repeated fleet.type.v1.Capability features = 6;
+  // "local_trusted" or "authenticated" (design.md deployment modes).
+  string auth_mode = 7;
+  // The caller as the hub sees it; unset when not signed in.
+  fleet.type.v1.Principal caller = 8;
+  // Scopes in effect for the caller: a user gets the scopes of its role, a
+  // device or API token at most those, narrowed to what was granted.
+  repeated Scope caller_scopes = 9;
+}
+
+// FleetSummary is the summary strip on every view: hub-derived counts.
+message FleetSummary {
+  uint64 version = 2;
+  google.protobuf.Timestamp update_time = 4;
+
+  uint32 goals_working = 10;
+  uint32 goals_waiting = 11;
+  uint32 goals_stuck = 12;
+  // Open triage items at or above the notify severity.
+  uint32 needs_you = 13;
+  uint32 active_slots_free = 14;
+  uint32 total_slots_free = 15;
+  uint32 available_sessions = 16;
+  uint32 machines_online = 17;
+  uint32 machines_total = 18;
+  uint32 goals_limit_wait = 19;
+}
+
+// GetFleetSummaryRequest.
+message GetFleetSummaryRequest {}
+
+// GetFleetSummaryResponse.
+message GetFleetSummaryResponse {
+  FleetSummary summary = 1;
+}

@@ -88,6 +88,10 @@ message ShownUsage {
   string raw_screen = 2;
   // True if raw_screen was cut at the cap.
   bool raw_truncated = 3;
+  // True when raw_screen was left out on purpose: always in Snapshot.usage
+  // (the hub already has it from the event) and in hub list views. Empty
+  // raw_screen with this false means the harness showed nothing.
+  bool raw_screen_omitted = 4;
 }
 
 // LimitBucket is the standardized half: one limit the scheduler tracks.

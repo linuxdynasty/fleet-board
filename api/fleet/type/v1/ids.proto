@@ -80,6 +80,11 @@ message IntegrationId {
   string value = 1;
 }
 
+// DeviceId is hub-assigned when a device asks to pair (ADR 0018).
+message DeviceId {
+  string value = 1;
+}
+
 // PaneKey identifies a tmux pane across server restarts. tmux pane ids
 // restart from zero with a new server, so the server start id is part of
 // the key. Also stored in the pane environment as FLEET_PANE_KEY.

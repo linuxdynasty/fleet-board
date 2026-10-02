@@ -1,0 +1,269 @@
+// fleet.hub.v1 sessions: every tmux session on every machine (fleet-started
+// and the developer's own), their windows and panes, the latest pane
+// summary, and the pane actions of the Session view. Each action that
+// reaches a machine returns an Operation.
+syntax = "proto3";
+
+package fleet.hub.v1;
+
+import "fleet/hub/v1/common.proto";
+import "fleet/type/v1/harness.proto";
+import "fleet/type/v1/ids.proto";
+import "fleet/type/v1/status.proto";
+import "fleet/type/v1/work.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/linuxdynasty/fleet-board/api/fleet/hub/v1;hubv1";
+
+// Pane is one tmux pane as the hub knows it.
+message Pane {
+  fleet.type.v1.PaneKey key = 1;
+  uint32 index = 2;
+  bool active = 3;
+  // tmux pane_current_command. Untrusted text.
+  string current_command = 4;
+  // Detected from the process, never from the window name.
+  fleet.type.v1.Harness harness = 5;
+  fleet.type.v1.Activity activity = 6;
+  google.protobuf.Timestamp last_output_time = 7;
+  bool dead = 8;
+  int32 exit_status = 9;
+  fleet.type.v1.Availability availability = 10;
+  bool log_capture = 11;
+  uint32 cols = 12;
+  uint32 rows = 13;
+  // Goal running in this pane, if any.
+  fleet.type.v1.GoalId goal = 14;
+  // Account the pane spends from (SessionAccountLink), and the provider and
+  // model shown on screen (OpenCode). Untrusted text.
+  fleet.type.v1.AccountId account = 15;
+  string provider = 16;
+  string model = 17;
+  // Open triage items for this pane, so the session view can draw strips.
+  repeated TriageItemId open_triage = 18;
+}
+
+// SessionWindow is one window as the status bar shows it.
+message SessionWindow {
+  fleet.type.v1.WindowKey key = 1;
+  uint32 index = 2;
+  // Untrusted text, 256 bytes.
+  string name = 3;
+  bool active = 4;
+  bool automatic_rename = 5;
+  repeated Pane panes = 6;
+}
+
+// SessionLogInfo describes one stored log stream of a session (K1, K3).
+message SessionLogInfo {
+  fleet.type.v1.LogStreamKey key = 1;
+  uint64 raw_bytes = 2;
+  uint64 stored_bytes = 3;
+  google.protobuf.Timestamp first_time = 4;
+  google.protobuf.Timestamp last_time = 5;
+  // Bytes lost to the agent's spool cap.
+  uint64 gap_bytes = 6;
+}
+
+// Session is one tmux session. The hub assigns a SessionId to every session
+// it observes: fleet-started ones carry it in FLEET_SESSION_ID; the
+// developer's own get one bound to (machine, server_start_id, tmux_id), so
+// a tmux server restart yields new ids.
+message Session {
+  fleet.type.v1.SessionId id = 1;
+  uint64 version = 2;
+  google.protobuf.Timestamp create_time = 3;
+  google.protobuf.Timestamp update_time = 4;
+
+  fleet.type.v1.MachineId machine = 10;
+  fleet.type.v1.TmuxServerKind server = 11;
+  string server_start_id = 12;
+  // tmux id like "$2".
+  string tmux_id = 13;
+  // As shown. Untrusted text, 256 bytes.
+  string name = 14;
+  bool started_by_fleet = 15;
+  fleet.type.v1.Principal owner = 16;
+  uint32 attached_clients = 17;
+  repeated SessionWindow windows = 18;
+  repeated SessionLogInfo logs = 19;
+  // Terminal capture turned on for a developer session (goal panes always).
+  bool log_capture = 20;
+}
+
+// PaneSummary is the latest screen summary of one pane (E5; ADR 0013:
+// latest only). Watch delivers it latest-wins and may skip versions.
+message PaneSummary {
+  fleet.type.v1.PaneKey pane = 1;
+  uint64 version = 2;
+  google.protobuf.Timestamp update_time = 4;
+
+  fleet.type.v1.SessionId session = 10;
+  fleet.type.v1.MachineId machine = 11;
+  // Last lines, ANSI stripped, 4 KiB. Untrusted text.
+  string last_lines = 12;
+  google.protobuf.Timestamp last_output_time = 13;
+  fleet.type.v1.Activity activity = 14;
+}
+
+// ListSessionsRequest. Filter fields: machine, started_by_fleet, harness,
+// available_for_work, goal.
+message ListSessionsRequest {
+  int32 page_size = 1;
+  string page_token = 2;
+  string filter = 3;
+  string order_by = 4;
+}
+
+// ListSessionsResponse.
+message ListSessionsResponse {
+  repeated Session sessions = 1;
+  string next_page_token = 2;
+}
+
+// GetSessionRequest.
+message GetSessionRequest {
+  fleet.type.v1.SessionId id = 1;
+}
+
+// GetSessionResponse.
+message GetSessionResponse {
+  Session session = 1;
+}
+
+// CreateSessionRequest sends EnsureSession (F1).
+message CreateSessionRequest {
+  string request_id = 1;
+  fleet.type.v1.MachineId machine = 2;
+  // [a-z0-9][a-z0-9-]{0,31}, unique per machine.
+  string name = 3;
+  fleet.type.v1.TmuxServerKind server = 4;
+  fleet.type.v1.Workdir workdir = 5;
+  // Empty = login shell.
+  fleet.type.v1.Harness harness = 6;
+  string profile = 7;
+  bool reuse = 8;
+  string window_name = 9;
+}
+
+// CreateSessionResponse. The session id is assigned before the command is
+// sent, so the UI can watch it appear.
+message CreateSessionResponse {
+  fleet.type.v1.SessionId session = 1;
+  Operation operation = 2;
+}
+
+// SendKeysRequest sends SendKeys (F3). Not for prompt answers: those go
+// through DecideApproval, so every answer is bound to its prompt_id and
+// audited once.
+message SendKeysRequest {
+  string request_id = 1;
+  fleet.type.v1.SessionId session = 2;
+  fleet.type.v1.PaneKey pane = 3;
+  repeated fleet.type.v1.KeyInput keys = 4;
+  bool require_empty_input_line = 5;
+}
+
+// SendKeysResponse.
+message SendKeysResponse {
+  Operation operation = 1;
+}
+
+// InterruptPaneRequest sends Interrupt (F4).
+message InterruptPaneRequest {
+  string request_id = 1;
+  fleet.type.v1.SessionId session = 2;
+  fleet.type.v1.PaneKey pane = 3;
+}
+
+// InterruptPaneResponse.
+message InterruptPaneResponse {
+  Operation operation = 1;
+}
+
+// RunHarnessCommandRequest sends RunHarnessCommand (F8). DESTRUCTIVE-class
+// commands create an Approval first; the operation starts once approved.
+message RunHarnessCommandRequest {
+  string request_id = 1;
+  fleet.type.v1.SessionId session = 2;
+  fleet.type.v1.PaneKey pane = 3;
+  // Including the leading slash.
+  string command = 4;
+  string args = 5;
+  fleet.type.v1.CommandClass expected_class = 6;
+  string catalog_hash = 7;
+}
+
+// RunHarnessCommandResponse. For OBSERVE commands the screen arrives as
+// Operation.output_text.
+message RunHarnessCommandResponse {
+  Operation operation = 1;
+  // Set when the command waits for an approval.
+  ApprovalId approval = 2;
+}
+
+// CapturePaneRequest sends CapturePane (E10).
+message CapturePaneRequest {
+  string request_id = 1;
+  fleet.type.v1.SessionId session = 2;
+  fleet.type.v1.PaneKey pane = 3;
+  uint32 last_lines = 4;
+  bool keep_ansi = 5;
+  uint32 max_bytes = 6;
+}
+
+// CapturePaneResponse. Text arrives as Operation.output_text.
+message CapturePaneResponse {
+  Operation operation = 1;
+}
+
+// SetSessionAvailabilityRequest sends SetSessionAvailability (E11).
+message SetSessionAvailabilityRequest {
+  string request_id = 1;
+  fleet.type.v1.SessionId session = 2;
+  bool available_for_work = 3;
+}
+
+// SetSessionAvailabilityResponse.
+message SetSessionAvailabilityResponse {
+  Operation operation = 1;
+}
+
+// RespawnPaneRequest sends RespawnPane (F5); may wait for local approval.
+message RespawnPaneRequest {
+  string request_id = 1;
+  fleet.type.v1.SessionId session = 2;
+  fleet.type.v1.PaneKey pane = 3;
+  bool resume = 4;
+}
+
+// RespawnPaneResponse.
+message RespawnPaneResponse {
+  Operation operation = 1;
+}
+
+// KillWindowRequest sends KillWindow (F6). A developer's window needs
+// ROLE_OWNER and an approval.
+message KillWindowRequest {
+  string request_id = 1;
+  fleet.type.v1.SessionId session = 2;
+  fleet.type.v1.WindowKey window = 3;
+}
+
+// KillWindowResponse.
+message KillWindowResponse {
+  Operation operation = 1;
+  ApprovalId approval = 2;
+}
+
+// SetLogCaptureRequest sends SetLogCapture (K1) for a developer session.
+message SetLogCaptureRequest {
+  string request_id = 1;
+  fleet.type.v1.SessionId session = 2;
+  bool enabled = 3;
+}
+
+// SetLogCaptureResponse.
+message SetLogCaptureResponse {
+  Operation operation = 1;
+}

@@ -1,0 +1,197 @@
+// fleet.hub.v1 accounts: harness accounts, their latest usage "as shown"
+// plus standardized buckets, pacing (03b W3) and the probe that reads them.
+// Usage belongs to accounts, not machines. One account per harness per
+// machine for now; the profile key on AccountBinding makes more additive.
+syntax = "proto3";
+
+package fleet.hub.v1;
+
+import "fleet/hub/v1/common.proto";
+import "fleet/type/v1/ids.proto";
+import "fleet/type/v1/status.proto";
+import "fleet/type/v1/usage.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/linuxdynasty/fleet-board/api/fleet/hub/v1;hubv1";
+
+// AccountMode (ADR 0008).
+enum AccountMode {
+  ACCOUNT_MODE_UNSPECIFIED = 0;
+  // The scheduler may dispatch goals on it.
+  ACCOUNT_MODE_FLEET = 1;
+  // Observed and shown only; never dispatched to.
+  ACCOUNT_MODE_INTERACTIVE_ONLY = 2;
+}
+
+// PacingState is the scheduler's verdict per account (03b).
+enum PacingState {
+  PACING_STATE_UNSPECIFIED = 0;
+  PACING_STATE_OK = 1;
+  PACING_STATE_AHEAD = 2;
+  PACING_STATE_BEHIND = 3;
+  PACING_STATE_SHORT_LIMIT = 4;
+  PACING_STATE_RESERVE = 5;
+  PACING_STATE_UNKNOWN = 6;
+  PACING_STATE_STALE = 7;
+  PACING_STATE_EXCLUDED = 8;
+}
+
+// AccountBinding is one machine where the account is signed in, and the
+// harness profile it is signed in under (empty = the harness default).
+message AccountBinding {
+  fleet.type.v1.MachineId machine = 1;
+  string profile = 2;
+  bool signed_in = 3;
+  google.protobuf.Timestamp observed_time = 4;
+}
+
+// AccountUsage is the latest reading the scheduler uses.
+message AccountUsage {
+  google.protobuf.Timestamp read_time = 1;
+  fleet.type.v1.UsageSource source = 2;
+  fleet.type.v1.ParseOutcome parse = 3;
+  repeated fleet.type.v1.LimitBucket buckets = 4;
+  // raw_screen only through GetAccount with include_raw_screen.
+  fleet.type.v1.ShownUsage shown = 5;
+  fleet.type.v1.SpendReading spend = 6;
+  // Untrusted text.
+  string credits_text = 7;
+  string harness_version = 8;
+  string parser_version = 9;
+  fleet.type.v1.MachineId read_on = 10;
+}
+
+// AccountPacing is the scheduler's output for the strip and Work view.
+message AccountPacing {
+  PacingState state = 1;
+  uint32 allowed_active = 2;
+  uint32 active_goals = 3;
+  // 1 = most unused quota relative to time left.
+  uint32 rank = 4;
+  // Used percent minus the burn-down target on the deciding bucket.
+  int32 ahead_points = 5;
+  // Bucket that decided the state, e.g. "weekly_all".
+  string deciding_bucket = 6;
+}
+
+// AccountProbe is the probe the hub assigned for this account (D1).
+message AccountProbe {
+  fleet.type.v1.ProbeId id = 1;
+  fleet.type.v1.MachineId machine = 2;
+  bool alive = 3;
+  google.protobuf.Timestamp last_success_time = 4;
+  google.protobuf.Timestamp next_run_time = 5;
+  uint32 consecutive_failures = 6;
+  fleet.type.v1.ReasonCode last_failure = 7;
+  google.protobuf.Duration interval = 8;
+}
+
+// Account is one harness account (subscription or API key).
+message Account {
+  fleet.type.v1.AccountId id = 1;
+  uint64 version = 2;
+  google.protobuf.Timestamp create_time = 3;
+  google.protobuf.Timestamp update_time = 4;
+
+  fleet.type.v1.Harness harness = 10;
+  string display_name = 11;
+  fleet.type.v1.AccountKey account_key = 12;
+  AccountMode mode = 13;
+  fleet.type.v1.BudgetKind budget_kind = 14;
+  // Never used by the fleet; kept for the owner (design.md rule 3).
+  uint32 reserve_percent = 15;
+  // Consent acts this account allows (ADR 0008).
+  repeated string consent = 16;
+  // As the harness shows them. Untrusted text. email is empty unless the
+  // owner turned on share_identity_email.
+  string label = 17;
+  string plan = 18;
+  string login_method = 19;
+  string organization = 20;
+  string email = 21;
+  bool identity_not_shown = 22;
+  repeated AccountBinding bindings = 23;
+  AccountUsage usage = 24;
+  AccountPacing pacing = 25;
+  AccountProbe probe = 26;
+  // For BUDGET_KIND_DOLLAR_CAP: the owner's cap for display, micro-units.
+  int64 spend_cap_micros = 27;
+}
+
+// ListAccountsRequest. Filter fields: harness, mode, pacing.state.
+message ListAccountsRequest {
+  int32 page_size = 1;
+  string page_token = 2;
+  string filter = 3;
+  string order_by = 4;
+}
+
+// ListAccountsResponse.
+message ListAccountsResponse {
+  repeated Account accounts = 1;
+  string next_page_token = 2;
+}
+
+// GetAccountRequest.
+message GetAccountRequest {
+  fleet.type.v1.AccountId id = 1;
+  bool include_raw_screen = 2;
+}
+
+// GetAccountResponse.
+message GetAccountResponse {
+  Account account = 1;
+}
+
+// UpdateAccountRequest. Updatable: display_name, mode, reserve_percent,
+// consent, budget_kind, spend_cap_micros, and bindings (to map a Codex
+// account that shows no identity to a machine).
+message UpdateAccountRequest {
+  string request_id = 1;
+  Account account = 2;
+  google.protobuf.FieldMask update_mask = 3;
+  uint64 expected_version = 4;
+}
+
+// UpdateAccountResponse.
+message UpdateAccountResponse {
+  Account account = 1;
+}
+
+// ProbeAccountRequest runs the account's probe now (EnsureProbe run_now).
+message ProbeAccountRequest {
+  string request_id = 1;
+  fleet.type.v1.AccountId id = 2;
+}
+
+// ProbeAccountResponse.
+message ProbeAccountResponse {
+  Operation operation = 1;
+}
+
+// UsageReading is one stored reading, for the burn-down chart.
+message UsageReading {
+  fleet.type.v1.AccountId account = 1;
+  google.protobuf.Timestamp read_time = 2;
+  fleet.type.v1.UsageSource source = 3;
+  fleet.type.v1.ParseOutcome parse = 4;
+  repeated fleet.type.v1.LimitBucket buckets = 5;
+  fleet.type.v1.SpendReading spend = 6;
+}
+
+// ListUsageReadingsRequest. Filter fields: read_time, source.
+message ListUsageReadingsRequest {
+  int32 page_size = 1;
+  string page_token = 2;
+  string filter = 3;
+  string order_by = 4;
+  fleet.type.v1.AccountId account = 5;
+}
+
+// ListUsageReadingsResponse.
+message ListUsageReadingsResponse {
+  repeated UsageReading readings = 1;
+  string next_page_token = 2;
+}

@@ -1,11 +1,13 @@
 // fleet.type.v1 harness and pane values: command classes and catalogs,
 // goal-hook state, pane activity and availability, goal-line states, keys,
-// prompt options, harness condition kinds and log streams. The agent reports
-// them; the hub API shows them and sends keys and harness commands with them.
+// prompt options, harness condition kinds, version support and log streams.
+// The agent reports them; the hub API shows them and sends keys and harness
+// commands with them.
 syntax = "proto3";
 
 package fleet.type.v1;
 
+import "fleet/type/v1/ids.proto";
 import "google/protobuf/timestamp.proto";
 
 option go_package = "github.com/linuxdynasty/fleet-board/api/fleet/type/v1;typev1";
@@ -57,6 +59,55 @@ message GoalHooksState {
   // User-level config file the entries were merged into, e.g.
   // ~/.claude/settings.json. Hooks are user level, inert unless FLEET_GOAL_ID.
   string config_path = 7;
+}
+
+// HarnessGoalHooks is the goal-hook state of one harness in one checkout
+// (03g change #7): whether the repo ships its own hooks decides the consent
+// form typed into the goal.
+message HarnessGoalHooks {
+  Harness harness = 1;
+  GoalHooksState state = 2;
+}
+
+// ---------------------------------------------------------------------------
+// Harness version support (C1)
+// ---------------------------------------------------------------------------
+
+// VersionSupport replaces the old bool version_supported: a version can run
+// fine while fleet-board's screen parsers are not yet verified for it.
+enum VersionSupport {
+  VERSION_SUPPORT_UNSPECIFIED = 0;
+  // Fixtures exist for this version; every parser feature is verified.
+  VERSION_SUPPORT_SUPPORTED = 1;
+  // The harness runs, but at least one parser feature is not verified for
+  // this version (see ParserSupport). Manual dispatch only, with a warning;
+  // unverified readings are unknown, never guessed.
+  VERSION_SUPPORT_UNVERIFIED_PARSING = 2;
+  // Known not to work with the adapter (for example /goal missing).
+  VERSION_SUPPORT_UNSUPPORTED = 3;
+}
+
+// ParserFeature is one thing the adapter reads from the harness screen.
+enum ParserFeature {
+  PARSER_FEATURE_UNSPECIFIED = 0;
+  // The usage screen (D2).
+  PARSER_FEATURE_USAGE = 1;
+  // The account identity on the status screen (C2).
+  PARSER_FEATURE_IDENTITY = 2;
+  // Permission-prompt detection (E6).
+  PARSER_FEATURE_PROMPT = 3;
+  // The ready pattern (E7, G3 wait_ready).
+  PARSER_FEATURE_READY = 4;
+  // Harness conditions: provider errors, limits, sign-in (E12).
+  PARSER_FEATURE_CONDITION = 5;
+}
+
+// ParserSupport says whether one parser feature is verified for the
+// installed harness version.
+message ParserSupport {
+  ParserFeature feature = 1;
+  string parser_version = 2;
+  bool supported = 3;
 }
 
 // ---------------------------------------------------------------------------
@@ -163,4 +214,13 @@ enum LogStream {
   LOG_STREAM_TERMINAL = 1;
   // The harness's own transcript file, shipped by offset (K3, v3).
   LOG_STREAM_HARNESS_TRANSCRIPT = 2;
+}
+
+// LogStreamKey names one log stream: a pane's terminal output or its
+// harness transcript, inside a session. Used by LogChunk and LogAck on the
+// agent wire and by the hub API's log reads.
+message LogStreamKey {
+  SessionId session_id = 1;
+  PaneKey pane = 2;
+  LogStream stream = 3;
 }

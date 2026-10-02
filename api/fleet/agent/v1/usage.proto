@@ -69,6 +69,8 @@ message AccountIdentity {
   // Budget kind the agent can infer from the login type (OAuth -> weekly
   // percent, API key -> dollar cap). The hub may override.
   fleet.type.v1.BudgetKind budget_kind = 12;
+  // Harness profile the identity was read under; empty = the default.
+  string profile = 13;
 }
 
 // SessionAccountLink says which account a harness session is currently

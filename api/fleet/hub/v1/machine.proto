@@ -1,0 +1,249 @@
+// fleet.hub.v1 machines: the Fleet view's machine cards, drain, enrollment
+// and removal. Built by the hub from snapshots and events; never the agent's
+// Snapshot itself.
+syntax = "proto3";
+
+package fleet.hub.v1;
+
+import "fleet/hub/v1/common.proto";
+import "fleet/type/v1/harness.proto";
+import "fleet/type/v1/ids.proto";
+import "fleet/type/v1/settings.proto";
+import "fleet/type/v1/status.proto";
+import "fleet/type/v1/work.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/linuxdynasty/fleet-board/api/fleet/hub/v1;hubv1";
+
+// MachineState is the hub-side connection state (03-workflows W1, W2).
+enum MachineState {
+  MACHINE_STATE_UNSPECIFIED = 0;
+  // Enrolled, never connected.
+  MACHINE_STATE_ENROLLED = 1;
+  MACHINE_STATE_ONLINE = 2;
+  // No heartbeat for 45 s.
+  MACHINE_STATE_STALE = 3;
+  // 3 min without heartbeat, or Bye.
+  MACHINE_STATE_OFFLINE = 4;
+}
+
+// HarnessHealth is the hub's state per (machine, harness) (03e W11).
+enum HarnessHealth {
+  HARNESS_HEALTH_UNSPECIFIED = 0;
+  HARNESS_HEALTH_SUPPORTED = 1;
+  // Runs, some parsers unverified (VERSION_SUPPORT_UNVERIFIED_PARSING).
+  HARNESS_HEALTH_UNVERIFIED_PARSING = 2;
+  // 3 consecutive parse failures on a supported version.
+  HARNESS_HEALTH_PARSER_DEGRADED = 3;
+  HARNESS_HEALTH_UNSUPPORTED = 4;
+  // Detection failed twice; binary gone.
+  HARNESS_HEALTH_MISSING = 5;
+}
+
+// MachineHarness is one harness (and profile) installed on a machine.
+message MachineHarness {
+  fleet.type.v1.Harness harness = 1;
+  // Empty = the harness default; one profile per harness for now.
+  string profile = 2;
+  // As the binary reports it. Untrusted text.
+  string version = 3;
+  fleet.type.v1.VersionSupport version_support = 4;
+  repeated fleet.type.v1.ParserSupport parser_support = 5;
+  HarnessHealth health = 6;
+  fleet.type.v1.CommandCatalog catalog = 7;
+  fleet.type.v1.GoalHooksState goal_hooks = 8;
+  bool prompt_detection_verified = 9;
+  bool launch_allowed = 10;
+  // Account this harness/profile is signed in to, once the hub mapped it.
+  fleet.type.v1.AccountId account = 11;
+  bool signed_in = 12;
+}
+
+// MachineForgeCli is a code-host CLI's sign-in state (gh, glab).
+message MachineForgeCli {
+  string tool = 1;
+  fleet.type.v1.ProviderKind provider = 2;
+  string provider_name = 3;
+  string host = 4;
+  bool signed_in = 5;
+  // Untrusted text.
+  string user = 6;
+  repeated MachineRepoAccess access = 7;
+  google.protobuf.Timestamp checked_at = 8;
+}
+
+// MachineRepoAccess is push access to one repo as the forge CLI sees it.
+message MachineRepoAccess {
+  fleet.type.v1.RepoRef repo = 1;
+  bool push_access = 2;
+  // GitHub READ..ADMIN, GitLab Guest..Owner. Untrusted text.
+  string provider_permission = 3;
+}
+
+// MachineRepo is one checkout or worktree on the machine.
+message MachineRepo {
+  fleet.type.v1.RepoRef repo = 1;
+  string path = 2;
+  bool is_worktree = 3;
+  fleet.type.v1.GoalId goal = 4;
+  repeated fleet.type.v1.HarnessGoalHooks goal_hooks = 5;
+  // Untrusted text.
+  string branch = 6;
+  bool dirty = 7;
+}
+
+// MachineSlots are the two per-machine limits (design.md dispatch rules).
+message MachineSlots {
+  uint32 active_used = 1;
+  uint32 active_max = 2;
+  uint32 total_used = 3;
+  uint32 total_max = 4;
+}
+
+// Machine is one enrolled worker.
+message Machine {
+  fleet.type.v1.MachineId id = 1;
+  uint64 version = 2;
+  google.protobuf.Timestamp create_time = 3;
+  google.protobuf.Timestamp update_time = 4;
+
+  // Owner-chosen name (hostname by default).
+  string display_name = 10;
+  MachineState state = 11;
+  google.protobuf.Timestamp last_seen_time = 12;
+  // Facts (B1). Untrusted text where noted on the agent wire.
+  string hostname = 13;
+  string os = 14;
+  string os_version = 15;
+  string arch = 16;
+  uint32 cpu_count = 17;
+  uint64 ram_bytes = 18;
+  string timezone = 19;
+  // Login user, for the copyable ssh line.
+  string username = 20;
+  string agent_version = 21;
+  string tmux_version = 22;
+  bool container = 23;
+  bool is_hub = 24;
+  // Effective labels: hub-assigned plus local additions.
+  repeated string labels = 25;
+  bool draining = 26;
+  string drain_reason = 27;
+  fleet.type.v1.Principal drained_by = 28;
+  MachineSlots slots = 29;
+  uint32 available_sessions = 30;
+  repeated MachineHarness harnesses = 31;
+  repeated MachineForgeCli forge_cli = 32;
+  repeated MachineRepo repos = 33;
+  string policy_hash = 34;
+  bool policy_changed_since_load = 35;
+  fleet.type.v1.EffectiveSettings effective_settings = 36;
+  // Settings fields the local policy capped.
+  repeated string capped_settings = 37;
+  google.protobuf.Timestamp cert_not_after = 38;
+  repeated fleet.type.v1.Capability capabilities = 39;
+  bool on_battery = 40;
+  fleet.type.v1.Percent battery = 41;
+  double load1 = 42;
+  uint64 mem_available_bytes = 43;
+  // Agent clock minus hub clock; a warning above 5 minutes.
+  google.protobuf.Duration clock_skew = 44;
+  string install_id = 45;
+}
+
+// ListMachinesRequest. Filter fields: state, label, harness, draining.
+message ListMachinesRequest {
+  int32 page_size = 1;
+  string page_token = 2;
+  string filter = 3;
+  string order_by = 4;
+}
+
+// ListMachinesResponse.
+message ListMachinesResponse {
+  repeated Machine machines = 1;
+  string next_page_token = 2;
+}
+
+// GetMachineRequest.
+message GetMachineRequest {
+  fleet.type.v1.MachineId id = 1;
+}
+
+// GetMachineResponse.
+message GetMachineResponse {
+  Machine machine = 1;
+}
+
+// UpdateMachineRequest. Updatable: display_name, labels (hub-assigned only).
+message UpdateMachineRequest {
+  string request_id = 1;
+  Machine machine = 2;
+  google.protobuf.FieldMask update_mask = 3;
+  uint64 expected_version = 4;
+}
+
+// UpdateMachineResponse.
+message UpdateMachineResponse {
+  Machine machine = 1;
+}
+
+// DrainMachineRequest sends Drain (M4).
+message DrainMachineRequest {
+  string request_id = 1;
+  fleet.type.v1.MachineId id = 2;
+  string reason = 3;
+}
+
+// DrainMachineResponse.
+message DrainMachineResponse {
+  Operation operation = 1;
+}
+
+// UndrainMachineRequest sends Undrain; a local drain answers
+// REJECTED_BY_POLICY / DRAINING in the operation.
+message UndrainMachineRequest {
+  string request_id = 1;
+  fleet.type.v1.MachineId id = 2;
+}
+
+// UndrainMachineResponse.
+message UndrainMachineResponse {
+  Operation operation = 1;
+}
+
+// DeleteMachineRequest revokes the certificate serials; the next Hello is
+// refused. History stays in the audit log.
+message DeleteMachineRequest {
+  string request_id = 1;
+  fleet.type.v1.MachineId id = 2;
+  uint64 expected_version = 3;
+}
+
+// DeleteMachineResponse.
+message DeleteMachineResponse {}
+
+// CreateEnrollmentTokenRequest: the API form of `fleetd enroll-token`.
+message CreateEnrollmentTokenRequest {
+  string request_id = 1;
+  // Name the machine will get; also the expected hostname for the warning.
+  string machine_name = 2;
+  // At most 24 h; default 15 min.
+  google.protobuf.Duration ttl = 3;
+  // Set to re-enroll a known machine (EnrollRequest.previous_machine_id).
+  fleet.type.v1.MachineId previous_machine = 4;
+}
+
+// CreateEnrollmentTokenResponse. The token is shown once and stored only as
+// a hash; a retry with the same request_id inside the idempotency window
+// gets the same token from memory, after that a new request is needed.
+message CreateEnrollmentTokenResponse {
+  string token = 1;
+  google.protobuf.Timestamp expire_time = 2;
+  // CA fingerprint the agent pins, for the owner to compare.
+  string ca_fingerprint = 3;
+  // Ready-to-copy `fleet-agent enroll --hub … --token …` line.
+  string enroll_command = 4;
+}

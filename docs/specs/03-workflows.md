@@ -192,7 +192,7 @@ Snapshot applied) → `STALE` (no heartbeat 45 s) → `OFFLINE` (3 min, or agent
 | Clock skew > 5 min (`Hello.sent_at` vs hub time) | HelloAck still sent; machine warning; commands still evaluated in hub time |
 | Snapshot would exceed 1 MiB | Agent drops `PaneSummary`-like detail first, never panes; logs `snapshot.trimmed` |
 | Hub writer backlog while 50 agents reconnect | HTTP/2 flow control holds the stream; snapshot apply is one tx per machine, batched by the writer ([03g](03g-load-and-handoff.md)) |
-| Harness crash during the identity/catalog probe | `HarnessInfo` reported with `version_supported` as detected and `AccountIdentity.signed_in=false`; probe retried in 1 min, max 3, then only on version change |
+| Harness crash during the identity/catalog probe | `HarnessInfo` reported with `version_support` as detected and `AccountIdentity.signed_in=false`; probe retried in 1 min, max 3, then only on version change |
 | Developer typing in a pane | Not relevant here; the identity probe runs on the hidden `fleet-probe` server |
 | Work tracker / code host down | Not involved in W1 |
 

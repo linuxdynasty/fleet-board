@@ -10,9 +10,9 @@ package fleet.agent.v1;
 
 import "fleet/agent/v1/command_goal.proto";
 import "fleet/agent/v1/command_tmux.proto";
-import "fleet/type/v1/harness.proto";
 import "fleet/type/v1/ids.proto";
 import "fleet/type/v1/status.proto";
+import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
 
 option go_package = "github.com/linuxdynasty/fleet-board/api/fleet/agent/v1;agentv1";
@@ -103,6 +103,10 @@ message CommandProgress {
   google.protobuf.Timestamp at = 7;
   // Short diagnostic, no screen text. Capped at 1 KiB.
   string message = 8;
+  // For a FAILED step: the same error fields as CommandResult.
+  bool retryable = 9;
+  google.protobuf.Duration retry_after = 10;
+  map<string, string> metadata = 11;
 }
 
 // CommandResult is the final outcome. Kept in the agent's local log and
@@ -117,9 +121,23 @@ message CommandResult {
   google.protobuf.Timestamp finished_at = 6;
   // Capability the agent lacks, for STATUS_UNSUPPORTED.
   fleet.type.v1.Capability missing_capability = 7;
+  // True when the hub may send the same kind again (new command_id) and
+  // expect it to work: EPOCH_MISMATCH, PANE_BUSY, RATE_LIMITED,
+  // READY_TIMEOUT. Never true for UNKNOWN_OUTCOME.
+  bool retryable = 8;
+  // Earliest sensible retry when the agent knows it (rate limit window).
+  google.protobuf.Duration retry_after = 9;
+  // Small structured facts ({"step": "wait_ready"}); no screen text, no
+  // secrets; at most 16 entries of 256 bytes. Same shape as
+  // fleet.type.v1.ErrorDetail, which the hub API builds from these fields.
+  map<string, string> metadata = 10;
 
   reserved 42;
   reserved "stop_goal";
+  // 45 carried a bare GoalHooksState; results are always wrapped so they
+  // can grow. Detail numbers otherwise equal the kind's number.
+  reserved 45;
+  reserved "ensure_goal_hooks";
 
   oneof detail {
     EnsureSessionResult ensure_session = 20;
@@ -129,7 +147,7 @@ message CommandResult {
     PreflightResult preflight = 40;
     StartGoalResult start_goal = 41;
     EnsureWorktreeResult ensure_worktree = 43;
-    fleet.type.v1.GoalHooksState ensure_goal_hooks = 45;
+    EnsureGoalHooksResult ensure_goal_hooks_result = 46;
     OpenAttachResult open_attach = 50;
   }
 }

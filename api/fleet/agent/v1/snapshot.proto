@@ -6,6 +6,7 @@ syntax = "proto3";
 
 package fleet.agent.v1;
 
+import "fleet/agent/v1/screen.proto";
 import "fleet/agent/v1/usage.proto";
 import "fleet/type/v1/harness.proto";
 import "fleet/type/v1/ids.proto";
@@ -43,6 +44,9 @@ message MachineFacts {
   string boot_id = 13;
   // True if the machine is a container (FLEET_ENROLL_TOKEN boot path).
   bool container = 14;
+  // Login user the agent runs as, for the copyable `ssh -t <user>@<host>
+  // tmux attach` line (03g change #3); the hub never connects itself.
+  string username = 15;
 }
 
 // ResourceSample (B2), every 30 s.
@@ -82,7 +86,10 @@ message HarnessInfo {
   // Absolute path resolved through the login shell.
   string path = 3;
   string parser_version = 4;
-  bool version_supported = 5;
+  // Was a bool; replaced by version_support and parser_support, because a
+  // harness can run while some screen parsers are unverified.
+  reserved 5;
+  reserved "version_supported";
   // Versions the parsers have fixtures for.
   repeated string supported_versions = 6;
   fleet.type.v1.CommandCatalog catalog = 7;
@@ -91,6 +98,13 @@ message HarnessInfo {
   bool prompt_detection_verified = 9;
   // True when local policy allows launching this harness.
   bool launch_allowed = 10;
+  // Harness profile this entry describes; empty = the harness default.
+  // One profile per harness for now (ADR 0018); a second profile is a
+  // second HarnessInfo with the same harness.
+  string profile = 11;
+  fleet.type.v1.VersionSupport version_support = 12;
+  // Per parser feature, for UNVERIFIED_PARSING: which reads are trusted.
+  repeated fleet.type.v1.ParserSupport parser_support = 13;
 }
 
 // ---------------------------------------------------------------------------
@@ -145,13 +159,18 @@ message TmuxSession {
   // Hub-assigned id from FLEET_SESSION_ID; empty for the developer's own.
   fleet.type.v1.SessionId session_id = 3;
   bool started_by_fleet = 4;
-  // FLEET_OWNER principal name when started by fleet.
-  string owner = 5;
+  // Was the FLEET_OWNER display name; replaced by owner_principal.
+  reserved 5;
+  reserved "owner";
   google.protobuf.Timestamp created_at = 6;
   uint32 attached_clients = 7;
   // True for a grouped view session created for a browser attach (J1).
   bool attach_view = 8;
   repeated TmuxWindow windows = 9;
+  // Who started it when started by fleet. The agent knows only what
+  // FLEET_OWNER holds (Principal.id) and fills id alone; the hub resolves
+  // name, role and kind.
+  fleet.type.v1.Principal owner_principal = 10;
 }
 
 // TmuxServer is one tmux server the agent observes.
@@ -221,6 +240,9 @@ message RepoCheckout {
   // Set when the worktree was created by fleet for a goal.
   fleet.type.v1.GoalId goal_id = 6;
   BranchState branch = 7;
+  // Goal-hook state per harness for this checkout (03g change #7), so the
+  // consent form is known before EnsureGoalHooks runs.
+  repeated fleet.type.v1.HarnessGoalHooks goal_hooks = 8;
 }
 
 // RepoAccess (H4): the forge CLI's view of the signed-in user's access to a
@@ -251,6 +273,8 @@ message ForgeCliStatus {
   string user = 5;
   repeated RepoAccess access = 6;
   google.protobuf.Timestamp checked_at = 7;
+  // Open provider name ("github", "gitlab", "gitea"); provider is a hint.
+  string provider_name = 8;
 }
 
 // ---------------------------------------------------------------------------
@@ -281,10 +305,14 @@ message PolicyInfo {
 // DrainState (M4).
 message DrainState {
   bool draining = 1;
-  // "hub" or "local".
-  string requested_by = 2;
+  // Was "hub" or "local"; replaced by requested_by_principal.
+  reserved 2;
+  reserved "requested_by";
   string reason = 3;
   google.protobuf.Timestamp since = 4;
+  // The hub principal that drained it, or kind LOCAL_USER for a local
+  // `fleet-agent drain` (which the hub cannot undo).
+  fleet.type.v1.Principal requested_by_principal = 5;
 }
 
 // ---------------------------------------------------------------------------
@@ -293,7 +321,11 @@ message DrainState {
 
 // Snapshot (A3) is the full level-triggered state of the machine. Sent after
 // Hello on every connect and on SnapshotRequest. It supersedes every event
-// with seq <= Snapshot.seq. Size: typically 10-100 KiB; hard cap 1 MiB.
+// with seq <= Snapshot.seq. Size: typically 10-100 KiB; one message is capped
+// at 1 MiB. A larger snapshot is sent in parts that share snapshot_id and
+// seq (hub capability "snapshot.parts"); the hub applies it only when every
+// part arrived. Parts split whole tmux servers, sessions or list entries,
+// never a pane. ShownUsage.raw_screen is always omitted here.
 message Snapshot {
   // Agent event sequence at the moment of the snapshot.
   uint64 seq = 1;
@@ -327,4 +359,13 @@ message Snapshot {
   repeated fleet.type.v1.CommandId unacked_results = 21;
   // One per code-host CLI found on the machine (H4): gh, glab, ...
   repeated ForgeCliStatus forge_cli = 22;
+  // Prompts and harness conditions on screen now (03g change #1), so Triage
+  // is rebuilt at once after a reconnect even when the ring was trimmed.
+  repeated PromptDetected prompts = 23;
+  repeated HarnessCondition conditions = 24;
+  // Agent-minted id shared by every part of one snapshot.
+  string snapshot_id = 25;
+  // 0-based part number and the total; part_count 0 or 1 = not split.
+  uint32 part_index = 26;
+  uint32 part_count = 27;
 }

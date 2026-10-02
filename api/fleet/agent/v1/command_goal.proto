@@ -6,6 +6,7 @@ package fleet.agent.v1;
 
 import "fleet/agent/v1/command_tmux.proto";
 import "fleet/agent/v1/snapshot.proto";
+import "fleet/type/v1/harness.proto";
 import "fleet/type/v1/ids.proto";
 import "fleet/type/v1/status.proto";
 import "fleet/type/v1/work.proto";
@@ -52,6 +53,24 @@ message GoalSpec {
   fleet.type.v1.RepoRef repo = 13;
   // Existing change request (PR/MR) the goal continues, if any.
   fleet.type.v1.WorkItemRef change_request = 14;
+  // Model and effort to select before typing the goal, as the harness names
+  // them ("opus", "gpt-5.5-codex"; "high"). Empty = leave as is. The adapter
+  // uses the harness's own /model and /effort (SESSION class, 01b).
+  string model = 15;
+  string effort = 16;
+  // Clear the harness context (/clear) before typing the goal in a reused
+  // session. /clear is DESTRUCTIVE (01b), so the agent allows it only in a
+  // session the fleet started (TmuxSession.started_by_fleet) and refuses
+  // otherwise with FRESH_CONTEXT_NOT_ALLOWED. Ignored for a new window.
+  bool fresh_context = 17;
+  // Why the hub dispatched this goal ("next ready item for eshu", "routine
+  // nightly-deps run 3", "operator: retry after CI fix"). The adapter renders
+  // it into the goal text so the harness knows why it is working. 512 bytes.
+  string dispatch_reason = 18;
+  // Harness profile to run under; empty = the harness default. One profile
+  // per harness per machine for now (ADR 0018); HARNESS_PROFILE_MISSING when
+  // the machine has no such profile.
+  string profile = 19;
 }
 
 // Preflight (I1): check without acting.
@@ -59,14 +78,30 @@ message Preflight {
   GoalSpec spec = 1;
 }
 
-// PreflightResult: ok, or every reason that failed.
+// PreflightResult: ok, or every check that failed.
 message PreflightResult {
   bool ok = 1;
-  repeated fleet.type.v1.ReasonCode failures = 2;
-  // One line per failure, no secrets. Untrusted where it echoes git/gh.
-  repeated string details = 3;
+  // Were parallel lists of reasons and detail lines; replaced by
+  // failed_checks so each reason carries its own detail and retry flag.
+  reserved 2, 3;
+  reserved "failures", "details";
   // Session the agent would reuse (E11), if any.
   fleet.type.v1.PaneKey would_reuse = 4;
+  repeated PreflightFailure failed_checks = 5;
+  // The exact line StartGoal would type with this spec (consent form,
+  // dispatch reason), for the dispatch preview. 4 KiB cap.
+  string goal_line_preview = 6;
+}
+
+// PreflightFailure is one failed preflight check.
+message PreflightFailure {
+  fleet.type.v1.ReasonCode reason = 1;
+  // One line, no secrets. Untrusted where it echoes git/gh.
+  string detail = 2;
+  // True when the fact can change without the owner (DISK_LOW, SLOTS_FULL,
+  // TMUX_SERVER_DOWN); false for durable facts (HARNESS_NOT_SIGNED_IN,
+  // PUSH_ACCESS_MISSING), which mark the machine unfit until a new snapshot.
+  bool retryable = 3;
 }
 
 // StartGoal (G3): agent-side composite under one command_id so it survives
@@ -96,6 +131,10 @@ message StartGoalResult {
   string worktree_path = 4;
   // First GoalState observed after typing the goal command.
   GoalState goal = 5;
+  // The exact line typed into the harness, consent included (03g change
+  // #5), for the audit log. GoalState.first_line is what the hook wrote,
+  // not what was typed. 4 KiB cap.
+  string typed_goal_line = 6;
 }
 
 // EnsureWorktree (H2). Declarative: existing worktree on the same branch is
@@ -135,6 +174,13 @@ message EnsureGoalHooks {
   fleet.type.v1.Workdir workdir = 2;
   // Hook version the hub expects; the agent reports what it has.
   string expected_version = 3;
+  // Harness profile whose user-level config gets the hooks; empty = default.
+  string profile = 4;
+}
+
+// EnsureGoalHooksResult wraps the hook state so the result can grow.
+message EnsureGoalHooksResult {
+  fleet.type.v1.GoalHooksState state = 1;
 }
 
 // ===== J. Attach, K. logs, M. drain =====
