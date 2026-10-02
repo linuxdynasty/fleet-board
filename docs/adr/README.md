@@ -24,6 +24,7 @@ accepted; a later ADR supersedes an earlier one and says so.
 | [0016](0016-browser-transport.md) | Browser transport: Connect, and WebSocket for terminal attach | Accepted |
 | [0017](0017-contract-packages.md) | Contract packages and names | Accepted |
 | [0018](0018-hub-api-and-contract-amendments.md) | Hub API, principals and devices, routines, profiles | Accepted |
+| [0019](0019-pre-implementation-contract-decisions.md) | Pre-implementation contract decisions: reuse, sign-in, freeze, log access | Accepted |
 
 ## Template
 

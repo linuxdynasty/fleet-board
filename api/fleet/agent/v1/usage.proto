@@ -13,8 +13,6 @@ import "fleet/type/v1/usage.proto";
 import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
 
-option go_package = "github.com/linuxdynasty/fleet-board/api/fleet/agent/v1;agentv1";
-
 // UsageReading is one observation of an account's usage (D2, D3).
 message UsageReading {
   // Set for USAGE_SOURCE_PROBE; empty for passive signals.
@@ -26,7 +24,7 @@ message UsageReading {
   // Parser version (fixtures) used; unknown values cite this.
   string parser_version = 5;
   // When the screen was captured (UTC, agent clock).
-  google.protobuf.Timestamp read_at = 6;
+  google.protobuf.Timestamp read_time = 6;
   fleet.type.v1.UsageSource source = 7;
   // Pane the text came from (the probe pane, or the observed pane for D3).
   fleet.type.v1.PaneKey pane = 8;
@@ -63,7 +61,7 @@ message AccountIdentity {
   // True when the harness shows no unique identity (Codex) and the owner
   // picks the account on the hub; account_key then hashes "<harness>:<machine>".
   bool identity_not_shown = 9;
-  google.protobuf.Timestamp observed_at = 10;
+  google.protobuf.Timestamp observed_time = 10;
   // Parser version used for the status screen.
   string parser_version = 11;
   // Budget kind the agent can infer from the login type (OAuth -> weekly
@@ -85,7 +83,7 @@ message SessionAccountLink {
   // Provider and model as shown on screen. Untrusted text.
   string provider = 5;
   string model = 6;
-  google.protobuf.Timestamp observed_at = 7;
+  google.protobuf.Timestamp observed_time = 7;
   fleet.type.v1.UsageSource source = 8;
 }
 
@@ -98,13 +96,19 @@ message ProbeHealth {
   // Probe pane on the fleet-probe server.
   fleet.type.v1.PaneKey pane = 5;
   bool alive = 6;
-  google.protobuf.Timestamp last_success_at = 7;
-  google.protobuf.Timestamp last_attempt_at = 8;
+  google.protobuf.Timestamp last_success_time = 7;
+  google.protobuf.Timestamp last_attempt_time = 8;
   uint32 consecutive_failures = 9;
   // Reason of the last failure, if any.
   fleet.type.v1.ReasonCode last_failure = 10;
   // Effective interval the agent is running (settings may have tightened it).
   google.protobuf.Duration interval = 11;
   // Next scheduled run (UTC); unset when stopped.
-  google.protobuf.Timestamp next_run_at = 12;
+  google.protobuf.Timestamp next_run_time = 12;
+  // Why the last scheduled run did not happen or failed, for the UI (for
+  // example "skipped: a developer is attached to the probe session"). Capped
+  // at 256 bytes, untrusted. A skip is not a failure: it leaves
+  // consecutive_failures and last_failure unchanged, because those feed the
+  // hub's three-failure failover (03b).
+  string message = 13;
 }

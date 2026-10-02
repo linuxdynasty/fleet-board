@@ -26,7 +26,7 @@ sequenceDiagram
   A->>P: type /usage (or /status), wait settled, capture-pane
   A->>A: ParseUsage(version-pinned) → shown fields + buckets, or PARSE_FAILED with redacted raw
   A->>W: Event{usage_reading UsageReading{probe_id, account_key, source=PROBE, shown, buckets[], parse}}
-  A->>W: Event{probe_health ProbeHealth{alive, last_success_at, consecutive_failures, next_run_at}}
+  A->>W: Event{probe_health ProbeHealth{alive, last_success_time, consecutive_failures, next_run_time}}
   A->>W: CommandResult{OK}
   W->>W: tx: usage_readings append · accounts.latest_reading · probes.state=ALIVE
   W->>S: wakeup(account)
@@ -50,15 +50,20 @@ is `SUPPORTED` (or `UNVERIFIED_PARSING` with `ParserSupport{USAGE}` verified or 
 
 **Failover.** Machine `OFFLINE` (not `STALE`: a sleeping laptop flaps through
 STALE and a 45 s blip must not move probes) or `ProbeHealth.consecutive_failures ≥ 3`
-→ probe `FAILED_OVER`, `StopProbe` queued to the old machine (delivered when it
-returns; harmless if the session is already gone), new probe assigned. Two
+→ probe `FAILED_OVER`, `StopProbe` queued to the old machine (24 h `not_after_time`;
+harmless if the session is already gone), new probe assigned. A machine that
+returns after the deadline has an expired `StopProbe`, so the snapshot
+reconcile is the safety net: a probe in `Snapshot.probes[]` that the hub no longer
+assigns to that machine gets a fresh `StopProbe` (W1, "Snapshot reconcile"). Two
 probes briefly alive for one account during failover is harmless: status
 commands cost no quota and both are idle sessions; the hub keeps readings from
-either, newest `read_at` wins.
+either, newest hub-adjusted `read_time` wins (agent time minus the machine's
+measured skew, clamped to the hub's `received_time`; ties by `received_time`; a
+`clock_untrusted` machine never overrides a trusted one; 02i, "Clocks").
 
 **Readings (D2).** Every reading is stored with both halves: `shown.fields[]`
 + `shown.raw_screen` (redacted; 7-day retention) for display in the harness's
-own terms, and `buckets[]` (`key`, `percent_used`, `resets_at`, `window`,
+own terms, and `buckets[]` (`key`, `percent_used`, `resets_time`, `window`,
 `kind`) for the scheduler. `Percent` is never 0-as-unknown; a `PARSE_FAILED`
 reading has no buckets and the account becomes `UNKNOWN` for pacing until a
 good reading arrives. Readings from an unsupported harness version carry
@@ -66,7 +71,7 @@ good reading arrives. Readings from an unsupported harness version carry
 
 **Passive signals (D3).** The adapter parses banners and status lines in panes
 it already observes and emits `UsageReading{source=PASSIVE}` only when a
-bucket's `percent_used` or `resets_at` differs from the last passive value it
+bucket's `percent_used` or `resets_time` differs from the last passive value it
 emitted for that account (so a status line that repaints every second costs
 nothing). The scheduler never paces on a passive reading alone; it uses it to
 trigger a probe.
@@ -76,6 +81,33 @@ for an account → `EnsureProbe{run_now=true}` (the command is declarative; the
 agent runs once and keeps the schedule). Rate-limited to one `run_now` per
 account per minute.
 
+### Accounts: discovered, mapped, created, removed
+
+An `Account` row comes from one of two origins (`Account.status.origin`):
+
+- **Discovered.** A subscription from an identity probe (`AccountKey` is the salted
+  hash of the identity). A harness that shows no identity (Codex) yields one
+  **placeholder per `(machine, profile)`**, keyed by the hash of `<harness>:<machine
+  id>` with `identity_not_shown`; the hub creates it at the first snapshot that
+  carries it, so there is always a record for the owner's mapping to attach to.
+  OpenCode accounts are discovered from `opencode providers list` (01b), one per
+  provider signed in (`provider` "anthropic", "deepseek", "moonshot"), with
+  `BUDGET_KIND_DOLLAR_CAP` for the API-key ones and `EXCLUDED` pacing.
+- **Owner-created.** An API-key account no agent can list (a key set in an
+  environment variable) is added with `CreateAccount{harness, provider, spec}`
+  (`DOLLAR_CAP` only; subscriptions are never created by hand). Discovery never
+  overwrites it.
+
+**Codex mapping.** The owner says "this Codex account is that one" by adding a
+binding for a machine and profile to the real account (`UpdateAccount`, `spec.bindings`).
+The hub then folds that machine's placeholder into it (the machine's
+observations follow the binding) and deletes the placeholder once nothing uses
+it. **Removal.** `DeleteAccount` works when no live goal or session spends from the
+account and, for a discovered one, no machine shows it signed in
+(`ACCOUNT_IN_USE`), which is also how a stale duplicate (re-keyed by a salt
+change) goes away; there is no merge. `Account.status.provider` is what the rule
+"OpenCode on an Anthropic subscription is never auto-dispatched" reads.
+
 ### Pacing decision (scheduler, per account, per bucket)
 
 Inputs: latest `PROBE` reading per account (age ≤ `stale_after`, default 3 ×
@@ -83,7 +115,7 @@ interval), account `reserve_percent`, `BudgetKind`, `mode` (fleet /
 interactive-only, ADR 0008), active goal count per account (from goals ×
 `SessionAccountLink`).
 
-1. For each bucket with a known window: `elapsed = now − (resets_at − window)`,
+1. For each bucket with a known window: `elapsed = now − (resets_time − window)`,
    `target = elapsed / window × (100 − reserve)`. Weekly buckets without a
    `window` assume 7 days; a short bucket without a window is used only as a
    speed limit (step 4 below).
@@ -99,7 +131,7 @@ interactive-only, ADR 0008), active goal count per account (from goals ×
    account until its reset; running goals continue (the harness throttles).
 5. Reserve line: any needed bucket ≥ `100 − reserve` → `RESERVE`: no new
    dispatch; a triage pacing alert (W7) fingerprinted on `(account, bucket,
-   reset_at)`. Running goals continue. Automatically pausing `WORKING` goals
+   resets_time)`. Running goals continue. Automatically pausing `WORKING` goals
    with `/goal pause` at the reserve is an **owner setting, default off**
    (decided 2026-10-02); `BLOCKED_WATCH` goals are never paused for pacing.
 6. Excluded from auto-dispatch regardless of numbers: `mode=interactive-only`;
@@ -109,9 +141,16 @@ interactive-only, ADR 0008), active goal count per account (from goals ×
    still **count** toward that account's active goals and its readings, since
    they spend the same pool.
 
+7. **Conditions.** An open `USAGE_LIMIT` `HarnessCondition` on a goal pane of the
+   account marks it `SHORT_LIMIT` until the condition's `resets_time` (or the
+   deciding bucket's), so no new goal starts into a limit the harness already hit
+   (03h, "Limit wait"). It never edits a reading and ends with the condition.
+
 Output per account: `pacing_state ∈ {OK, AHEAD, BEHIND, SHORT_LIMIT, RESERVE,
 UNKNOWN, STALE, EXCLUDED}`, `allowed_active`, `rank` (most unused quota
-relative to time left first). W5 consumes it.
+relative to time left first), `projected_unused_percent`, and `idle_causes`: why
+the fleet is not using it while it is dispatchable (03h, "Scheduler
+explanations"). W5 consumes it.
 
 ### State machine (probe, owned by the hub)
 
@@ -134,14 +173,16 @@ stateDiagram-v2
 |---|---|---|
 | `probes{probe_id, account_id, machine, interval, state, last_health}` | hub store | assignment tx (with outbox row); health tx per event |
 | `usage_readings` (append; buckets 1 year, `raw_screen` 7 days) and `accounts.latest_reading_id` | hub store | one tx per reading event (writer batch) |
-| `account_pacing{state, allowed_active, target, ahead, computed_at}` | hub store (derived; rewritten per evaluation for the UI and CLI) | scheduler job tx |
+| `account_pacing{state, allowed_active, target, ahead, computed_time}` | hub store (derived; rewritten per evaluation for the UI and CLI) | scheduler job tx |
 | Probe assignment + schedule, last reading (for `Snapshot.usage`) | agent state dir | with the command log |
 | Fixtures and parser version | agent binary / fixtures dir | n/a |
 
 ### Ordering and consistency
 
-- Readings are ordered by `read_at` per account; a replayed reading older than
-  `latest_reading.read_at` is stored but does not become latest.
+- Readings are ordered by hub-adjusted `read_time` per account (`received_time`
+  breaks ties and orders a `clock_untrusted` machine's readings); a replayed
+  reading older than `latest_reading.read_time` is stored but does not become
+  latest. `reading_stale` compares the adjusted time with the previous reset.
 - Pacing is evaluated by the single scheduler goroutine from a consistent read;
   dispatch (W5) re-reads `account_pacing` in the same pass, so the decision and
   the dispatch use one view.
@@ -162,10 +203,11 @@ stateDiagram-v2
 | Duplicate `EnsureProbe` / `StopProbe` | Declarative; logged result returned |
 | `EnsureProbe` deadline (10 min) expires while offline | `EXPIRED` on the hub; next scheduler pass re-assigns (same or another machine) |
 | Provider error during the probe | Status commands do not call the model; if the harness fails to start because the provider is down, `HarnessCondition` from the probe pane and `PROBE_START_FAILED` |
-| Developer attached to the probe session (`tmux -L fleet-probe attach`) | Agent sees `attached_clients > 0`, skips the run, reports health with `last_failure=INTERNAL` and a message; never types into a watched probe |
+| Developer attached to the probe session (`tmux -L fleet-probe attach`) | Agent sees `attached_clients > 0`, skips the run and reports `ProbeHealth.message` ("skipped: attached"); a skip is not a failure, so `consecutive_failures` and `last_failure` stay as they were and it never feeds failover; never types into a watched probe |
 | Passive readings disagree with probe | Passive only triggers a probe; the probe wins |
-| Two readings arrive out of order after a reconnect | `read_at` ordering; latest by time, not by arrival |
-| Reset text unresolvable ("Resets Sep 30 at 10pm" with no year around New Year) | `ResetTime.at` unset, `original_text` kept; bucket treated as `UNKNOWN` for the line, shown as text |
+| Two readings arrive out of order after a reconnect | hub-adjusted `read_time` ordering; latest by time, not by arrival |
+| A machine's clock is minutes fast or slow | Its readings are adjusted by the measured skew; above 15 minutes the machine is `clock_untrusted` (readings ordered by `received_time`, reset text shown instead of a resolved `resets_time`, probe moved to a trusted machine) |
+| Reset text unresolvable ("Resets Sep 30 at 10pm" with no year around New Year) | `ResetTime.resolved_time` unset, `original_text` kept; bucket treated as `UNKNOWN` for the line, shown as text |
 
 ### Telemetry
 
@@ -200,12 +242,17 @@ tracker adapter, the code host adapter, writer, scheduler, verifier.
 
 **Two roles, one mirror.** An *integration* is configured as a work tracker,
 a code host, or both. The hub stores mirrors in the shapes of
-`integration/v1/integration.proto`: `WorkItem{ref WorkItemRef, state, title, author, labels[],
-trusted, claim Claim, updated_at}`, `ChangeRequest{ref, repo RepoRef, head_ref,
-head_sha, state, merged_at, mergeable, review_decision, checks CheckSummary,
-reviews[] Review, linked_work_items[] WorkItemRef, review_rounds}`, and
-`IntegrationCapabilities{webhooks, conditional_requests, batch_query, claims,
-labels, merge_state}` which tells the syncer which loop to run.
+`integration/v1/model.proto`: `WorkItem{ref WorkItemRef, state, title, author,
+labels[] Label{name, applied_by, applied_time}, claims[] Claim, last_editor,
+last_edit_time, create_time, update_time}` plus the hub's own `trust`
+(`TrustVerdict`), and `ChangeRequest{ref, repo RepoRef, source_branch (the head
+ref), head_commit (the head sha), head_repo, state, merged_time, merged_by,
+merge_state, review_decision, checks CheckSummary{counts, rollup}, reviews[]
+Review, linked_work_items[] WorkItemRef, review_rounds}`. `IntegrationCapabilities{sync_modes,
+claim_mechanisms, labels, labels_with_actor, edit_evidence, merge_detection,
+max_batch_size, path_exists, ...}` tells the syncer which loop to run. The
+calls, cursors, rate limits, typed errors and the trusted-issues gate are in
+[03j](03j-provider-sync-and-trust.md); the hub owns all polling state.
 
 ```mermaid
 sequenceDiagram
@@ -215,17 +262,17 @@ sequenceDiagram
   participant W as writer
   participant V as verifier / scheduler
   loop every 60 s per watched repo
-    G->>T: list open work items (If-None-Match: etag, since=cursor)
-    T-->>G: 304 (no change) | 200 + items + ETag + x-ratelimit-*
-    G->>W: tx: upsert WorkItem rows (updated_at guard), cursors{etag, since}
+    G->>T: ListWorkItems{since, validators}
+    T-->>G: not_modified | items + validators + next_since + meta{rate_limits}
+    G->>W: tx: upsert WorkItem rows (update_time guard, trust verdict), cursors{validators, since}
   end
   loop every 5 min per candidate work item (queued/running)
     G->>T: list comments since cursor (ETag)
-    G->>W: tx: WorkItem.claim = first matching Claim{author, at, by_this_fleet}
+    G->>W: tx: WorkItem.claims = matching Claim{by, claim_time, by_fleet}
   end
   loop every 60 s
-    G->>C: GraphQL batch: change requests by head_ref for running/verifying goals (≤ 50 per query) + rateLimit{cost remaining resetAt}
-    G->>W: tx: upsert ChangeRequest rows (state, merged_at, checks, reviews, review_rounds)
+    G->>C: ListChangeRequests{source_branches[] of running/verifying goals, ≤ max_batch_size} + meta{rate_limits, cost}
+    G->>W: tx: upsert ChangeRequest rows (state, merged_time, checks, reviews, review_rounds)
     W->>V: wakeup(goal_ids whose change request changed)
   end
   V->>G: verify now (goal DONE)
@@ -238,17 +285,22 @@ sequenceDiagram
 `GET /repos/{owner}/{repo}/issues?state=open&since=…&per_page=100` with
 `If-None-Match`. Claims: issue comments matching a configurable pattern
 (default: the eshu-issue-driver claim comment), with `by_this_fleet = author ∈
-{ForgeCliStatus.user of every machine}`. Trusted gate: `author ∈ allowlist` or
-label `agent-ready` whose `LABELED_EVENT.actor ∈ allowlist` (timeline query).
+{ForgeCliStatus.user of every machine}`. Trusted gate: the adapter
+returns evidence (`author`, `Label.applied_by` from the `LABELED_EVENT` timeline
+for the trusted label, `last_editor`); the hub applies the allow-list
+([03j](03j-provider-sync-and-trust.md#the-trusted-issues-gate)).
 Change requests: GraphQL `repository.pullRequests(headRefName:)` using the
 branch the agent reports in `BranchState.branch`, so the link needs no naming
 convention; `closingIssuesReferences` and "Fixes #n" in the body add
 `linked_work_items[]`. Merge detection: `merged`/`mergedAt`. Review rounds:
 count of `CHANGES_REQUESTED` reviews or failed `statusCheckRollup` each
 followed by a new commit, reset when the rollup is `SUCCESS` and
-`reviewDecision = APPROVED`. Rate limits: read `x-ratelimit-remaining/reset`
-and GraphQL `rateLimit`; remaining < 10 % → intervals × 4; 0 → sleep to reset;
-HTTP 403/429 with `Retry-After` → honour it. ADR 0005's note stands: confirm
+`reviewDecision = APPROVED` (surfaced as `checks.rollup` and
+`review_decision`). Rate limits: the adapter reads `x-ratelimit-*` and
+GraphQL `rateLimit` into `meta.rate_limits`; the hub applies the rules in
+[03j](03j-provider-sync-and-trust.md#rate-limits) (remaining < 10 % →
+intervals × 4; 0 → sleep to `reset_time`; 403/429 with `Retry-After` is a
+`RATE_LIMITED` error with `retry_after`). ADR 0005's note stands: confirm
 the current installation-token limits and whether 304s are free before fixing
 intervals (step 4 input, not a decision here).
 
@@ -257,14 +309,14 @@ intervals (step 4 input, not a decision here).
 | Concern | GitHub | GitLab | Jira (tracker only) |
 |---|---|---|---|
 | Push vs poll | Poll (webhooks need a public URL; optional via tunnel) | Webhooks per project/group are common on self-hosted; poll fallback | Jira Cloud webhooks; Server/DC poll |
-| Conditional requests | ETag / 304 | ETag on some endpoints; `updated_after` filter | `updated >= …` JQL; no ETag |
-| Batch query | GraphQL, one call for 50 change requests | GraphQL (less coverage; REST per MR for pipelines) | REST search, 50–100 per page |
+| Conditional requests | ETag / 304 | ETag on some endpoints; `updated_after_time` filter | `updated >= …` JQL; no ETag |
+| Batch query (`max_batch_size`) | GraphQL, one call for 50 change requests | GraphQL (less coverage; REST per MR for pipelines) | REST search, 50–100 per page |
 | Repo identity | `RepoRef{host="github.com", path="owner/repo"}` | nested: `RepoRef{host, path="group/sub/repo"}` | none; code lives on a separate code host |
 | Change request ref | `WorkItemRef{kind=CHANGE_REQUEST, key="7412"}` | `key="!12"` (iid), project path | n/a |
 | Claim mechanism | comment pattern | comment pattern or assignee | assignee or a transition to "In Progress" by the fleet's user |
-| Trusted gate | author allowlist, `agent-ready` label actor | same with labels / "ready" label events | label or status set by allow-listed user |
+| Trusted gate | author allow-list, `agent-ready` label `applied_by` | same with labels / "ready" label events | label or status transition by an allow-listed user (`Label.applied_by`) |
 | Linked ticket | `closingIssuesReferences`, "Fixes #n" | "Closes #n" in MR description, branch `n-…` | ticket key in branch or MR/PR title (`PROJ-123`); the code host adapter extracts it |
-| Merge detection | `merged`, `mergedAt` | MR `state=merged`, `merged_at` | from the paired code host |
+| Merge detection | `merged`, `mergedAt` | MR `state=merged`, `merged_time` | from the paired code host |
 
 A tracker-only integration (Jira) must be paired with a code host; a goal's
 `GoalSpec.work_item` and `GoalSpec.repo` are separate fields for that reason.
@@ -274,30 +326,42 @@ A tracker-only integration (Jira) must be paired with a code host; a goal's
 ```mermaid
 stateDiagram-v2
   [*] --> SEEN: mirrored, open
-  SEEN --> READY: trusted, unclaimed, repo watched
-  SEEN --> MANUAL_ONLY: untrusted
+  SEEN --> READY: trusted, unclaimed, repo watched and enabled
+  SEEN --> MANUAL_ONLY: untrusted (reason UNTRUSTED)
+  MANUAL_ONLY --> READY: becomes trusted (allow-listed label seen at sync), or operator requeue (not UNTRUSTED / EDITED_AFTER_TRUST)
+  READY --> MANUAL_ONLY: edited by a non-allow-listed user after trust (EDITED_AFTER_TRUST)
   READY --> CLAIMED_ELSEWHERE: foreign claim seen
   READY --> DISPATCHED: goal planned (W5)
   DISPATCHED --> RUNNING: goal RUNNING
+  DISPATCHED --> READY: goal START_FAILED, EXPIRED or ABANDONED
+  DISPATCHED --> MANUAL_ONLY: goal START_EXHAUSTED
   RUNNING --> DONE_CLAIMED: goal DONE
+  RUNNING --> MANUAL_ONLY: goal CLEARED (reason GOAL_CLEARED)
+  RUNNING --> CLOSED: goal CANCELLED, or merged by a person
   DONE_CLAIMED --> CLOSED: merged or closed on provider
   DONE_CLAIMED --> DISAGREE: provider still open (W6)
+  DISAGREE --> RUNNING: goal re-armed
   CLAIMED_ELSEWHERE --> READY: claim withdrawn / stale claim resolved by owner
   SEEN --> CLOSED: closed on provider
 ```
+
+What each goal end does to the stage, with the reasons, is the table in
+[03h](03h-goal-phases-in-depth.md#work-item-stage-after-a-goal-ends); a cleared
+item is not redispatched behind a person's back. A repo that is not `enabled`
+(`Repo.spec`) keeps its items `SEEN`.
 
 ### Persistence
 
 | What | Where | Transaction |
 |---|---|---|
 | `work_items` mirror (per `WorkItemRef`), `change_requests` mirror, `claims` | hub store | one tx per API response page, outside any network wait |
-| `sync_cursors{integration, resource, etag, since, last_ok_at}` | hub store | same tx as the page it covers |
-| `rate_limit_state{integration, kind, remaining, reset_at}` | hub store (also in memory) | per response |
+| `sync_cursors{integration, resource, page, etag, last_modified_time, since, last_ok_time}` | hub store | same tx as the page it covers |
+| `rate_limit_state{integration, kind, limit, remaining, reset_time}`, `backoff_until_time` | hub store (also in memory) | per response |
 | Nothing on agents; nothing written to the provider (ADR 0005: read-only) | — | — |
 
 ### Ordering and consistency
 
-- Per resource, pages apply in order; an `updated_at` older than the stored
+- Per resource, pages apply in order; an `update_time` older than the stored
   row is ignored (late poll result after a targeted verify).
 - The scheduler reads mirrors only; freshness is bounded by the interval and
   shown as `fleet_hub_sync_lag_seconds`. Auto-dispatch pauses when the lag for
@@ -310,16 +374,18 @@ stateDiagram-v2
 
 ### Failure modes
 
+Provider failures arrive as a `ProviderError` kind (03j has the mapping to RPC codes, `retryable` and health).
+
 | Failure | What happens |
 |---|---|
-| Provider 5xx / network down | Exponential backoff per integration (max 5 min); lag rises; dispatch pauses at `max_sync_lag`; verification waits (W6) |
-| Primary rate limit exhausted | Sleep until `reset_at`; `fleet_hub_rate_limited_total`; lag rises; nothing else |
-| Secondary / abuse limit (403 + Retry-After) | Honour `Retry-After`, then halve request concurrency for 1 h |
-| Token refresh fails / App uninstalled / repo removed (401, 404) | Triage `integration_access_lost{integration, repo}` fingerprinted; integration `DEGRADED`; dispatch for its repos stops |
+| Provider 5xx / network down (`UNAVAILABLE`) | Exponential backoff per integration (max 5 min); `BACKING_OFF`; lag rises; dispatch pauses at `max_sync_lag`; verification waits (W6) |
+| Primary rate limit exhausted (`RATE_LIMITED`) | Sleep until `reset_time`; `fleet_hub_rate_limited_total`; lag rises; nothing else |
+| Secondary / abuse limit (`RATE_LIMITED`, kind `SECONDARY`, `retry_after`) | Honour `retry_after`, then halve request concurrency for 1 h |
+| Token refresh fails (`UNAUTHENTICATED`) / App uninstalled / repo removed (`NOT_FOUND`, `FORBIDDEN`) | Triage `integration_access_lost{integration, project}` fingerprinted; integration `DEGRADED` with `health_reason` `CREDENTIALS_INVALID` or `ACCESS_LOST`; dispatch for its repos stops |
 | Hub restart | Cursors and ETags are durable; first pass after start is a normal poll |
-| ETag reused after provider change (false 304) | Not observed; a periodic full poll (every 30 min) without `If-None-Match` bounds it |
+| Validators reused after provider change (false `not_modified`) | Not observed; a periodic full poll (every 30 min) without validators bounds it |
 | Claim comment pattern changes | Claims stop parsing → everything looks unclaimed → the pre-dispatch targeted re-check still fails to see it; mitigation: `claims_seen_total` drops to 0 for a repo with running goals → warning |
-| Change request not found by head ref (driver used another branch) | Goal `VERIFYING` cannot resolve; falls back to `linked_work_items` on any change request in the repo updated since dispatch; else `DONE` disagreement (W6) |
+| Change request not found by head ref (driver used another branch) | Goal `VERIFYING` cannot resolve; falls back to `ListChangeRequests{linked_work_item}` (change requests that close or reference the goal's item); else `DONE` disagreement (W6) |
 | Webhook delivery lost (providers with webhooks) | Webhooks only shorten latency; the poll loop stays on at a longer interval as the backstop |
 | Provider clock skew on claim timestamps | Only ordering between claims matters; treated as untrusted; `double_claim` goes to a person |
 
@@ -334,9 +400,9 @@ stateDiagram-v2
 - Spans: `hub.sync.work_items{integration, repo}`, `hub.sync.claims`,
   `hub.sync.change_requests` (attribute `batch_size`, `cost`),
   `hub.sync.verify_one{goal_id}`.
-- Logs: `sync.rate_limited{integration, remaining, reset_at}`,
+- Logs: `sync.rate_limited{integration, remaining, resets_time}`,
   `sync.access_lost{integration, repo, status}`, `sync.double_claim{work_item,
-  ours_at, theirs_at, theirs_author}`, `sync.cursor_reset{resource}`.
+  ours_time, theirs_time, theirs_author}`, `sync.cursor_reset{resource}`.
 
 At 3 AM: "why is the queue empty / dispatch paused?" → `fleet_hub_sync_lag_seconds`
 and `fleet_hub_integration_state`; "why is this goal stuck in verifying?" →

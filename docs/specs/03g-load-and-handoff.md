@@ -33,10 +33,10 @@ KB, snapshot 100 KB, log chunk every 10 s per stream.
 | 6 | E4 activity transitions | 10 × 2 ÷ 60 = 0.33/s × 0.3 KB = 0.1 KB/s | 150 × 2 ÷ 60 = **5/s**, 1.5 KB/s | provider incident: 150 in 10 s = 15/s; replay bursts (row 2) | must-persist, never dropped | per agent `seq` | Session view, per visible pane |
 | 7 | G2/H3 goal + branch state | 10 × 12 ÷ 3600 = 0.03/s, 0.07 KB/s | 300 × 12 ÷ 3600 = **1/s**, 2 KB/s | dispatch wave: 50 goals × 2 in 1 min = 1.7/s | must-persist, never dropped | per agent `seq` | all browsers: 10 × 1/s = 10 msg/s, 20 KB/s |
 | 8 | E6/E12 prompts + conditions | 10 × 2 ÷ 3600 = 0.006/s | 150 × 2 ÷ 3600 = **0.08/s** | provider incident: 150 conditions in 10 s = 15/s, then 150 `cleared` | must-persist, never dropped | per agent `seq` | all browsers (Triage) |
-| 9 | W3 usage readings + probe health | 3 × 6 ÷ 3600 = 0.005/s × 3 KB = 15 B/s; event probes ≤ 0.05/s; passive ≤ 4 ÷ 60 = 0.07/s | probes same 0.005/s (accounts do not scale); passive ≤ 50 ÷ 60 = **0.8/s**, 0.8 KB/s | goal start/finish wave: ≤ 1 per account per minute | must-persist (latest + history) | by `read_at` per account | all browsers (strip), coalesced |
+| 9 | W3 usage readings + probe health | 3 × 6 ÷ 3600 = 0.005/s × 3 KB = 15 B/s; event probes ≤ 0.05/s; passive ≤ 4 ÷ 60 = 0.07/s | probes same 0.005/s (accounts do not scale); passive ≤ 50 ÷ 60 = **0.8/s**, 0.8 KB/s | goal start/finish wave: ≤ 1 per account per minute | must-persist (latest + history) | by `read_time` per account | all browsers (strip), coalesced |
 | 10 | Commands, acks, progress, results | ≈ 0.05/s, 50 B/s | ≈ 0.5/s (dispatch ≤ 2/min + prompt answers 0.08/s + nudges + probes), **0.5 KB/s** | reconnect re-issue: pending outbox per machine (tens) | must-persist (outbox, results) | per epoch `seq`; results idempotent by id | Triage/Session (status) |
-| 11 | W4 sync, GitHub polling | issues 60/h + claims 10 items × 12/h = 120/h + CR batch 60/h + full poll 2/h ≈ **250 req/h = 0.07 req/s**; ≈ 30 % non-304 × 20 KB = 1.5 MB/h | issues 5 × 60 = 300/h + claims 50 × 12 = 600/h + CR 300 CRs ÷ 50 per batch × 60 = 360/h + full 10/h ≈ **1,300 req/h = 0.36 req/s**, ≈ 8 MB/h | verify-now bursts ≤ 6/min | mirrors re-fetchable; cursors must-persist | per resource `updated_at` | Work view on change |
-| 11b | W4 with webhooks (GitLab, Jira Cloud) | inbound ≈ 60 events/h | inbound ≈ **300 events/h = 0.08/s**; backstop poll every 10 min: 5 repos × 3 resources × 6/h = 90 req/h | provider burst (bulk label change): 100 events/s for seconds | inbound events can-lose (backstop poll repairs) | by `updated_at` | same |
+| 11 | W4 sync, GitHub polling | issues 60/h + claims 10 items × 12/h = 120/h + CR batch 60/h + full poll 2/h ≈ **250 req/h = 0.07 req/s**; ≈ 30 % non-304 × 20 KB = 1.5 MB/h | issues 5 × 60 = 300/h + claims 50 × 12 = 600/h + CR 300 CRs ÷ 50 per batch × 60 = 360/h + full 10/h ≈ **1,300 req/h = 0.36 req/s**, ≈ 8 MB/h | verify-now bursts ≤ 6/min | mirrors re-fetchable; cursors must-persist | per resource `update_time` | Work view on change |
+| 11b | W4 with webhooks (GitLab, Jira Cloud) | inbound ≈ 60 events/h | inbound ≈ **300 events/h = 0.08/s**; backstop poll every 10 min: 5 repos × 3 resources × 6/h = 90 req/h | provider burst (bulk label change): 100 events/s for seconds | inbound events can-lose (backstop poll repairs) | by `update_time` | same |
 | 12 | W9 terminal logs, shipped | 10 × 65 B/s = **0.65 KB/s** = 2.3 MB/h = 56 MB/day = 1.7 GB/month; 1 chunk/s | 300 × 65 = **19.5 KB/s** = 70 MB/h = 1.7 GB/day = **50 GB/month**; 30 chunks/s (30 index rows/s batched); all 500 captured: 32.5 KB/s = 117 MB/h = 84 GB/month | reconnect after 8 h offline: spool per machine ≤ 6 panes × 65 B/s × 28,800 s = 11 MB, shipped at line rate | must-persist (file + index), tolerates re-send | per stream byte offset | live tail only to viewers of that session; replay on demand |
 | 12a | W9 raw into agent spools (not shipped) | 10 × 7.47 = 75 KB/s across agents | 300 × 7.47 = **2.24 MB/s** across agents (≤ 75 KB/s per machine); compressed in spool: 65 B/s per pane | — | agent-local | — | — |
 | 13 | K3 transcripts (v3, opt-in) | 10 × 3.6 = 36 KB/s raw | 300 × 3.6 = **1.08 MB/s raw**; compression unmeasured | — | must-persist if enabled | by offset | replay only |
@@ -94,7 +94,10 @@ superseding ADR.
   GB/month before the size cap, 30 index rows/s, random access by `(session,
   stream, raw_offset)` and by time, retention by total size with oldest-first
   pruning and per-session delete, truncate-on-restart of a partial trailing
-  frame. Files-plus-index per ADR 0010, or something else?
+  frame. Files-plus-index per ADR 0010, or something else? **Answered by step 4
+  and [ADR 0015](../adr/0015-session-logs-in-sqlite.md):** chunks as rows in a
+  second SQLite file, `logs.db`, with its own writer; no files, no truncation
+  step.
 - **Q7 Replay budget.** Confirm per-agent (200 ev/s) and hub-wide (2,500
   ev/s) replay caps against the writer's measured batch throughput from Q1.
 - **Q8 Provider limits and ingress.** Confirm current GitHub installation
@@ -120,9 +123,9 @@ what is in the protos now.
 | 3 | `MachineFacts.username` (login user on the machine) | W8: the `ssh -t <user>@<host> tmux attach -t …` line; the hub never connects, so it must be rendered from facts | as proposed |
 | 4 | `HelloAck.settings_restored` (bool) | W2, W10: after a hub restore from backup the generation goes backwards; the agent must accept a lower generation once | replaced by `settings_epoch` on `Hello`, `HelloAck`, `Settings`, `SettingsAck`; settings are ordered by `(settings_epoch, generation)` (02-contracts.md) |
 | 5 | `StartGoalResult.typed_goal_line` (string, 4 KiB cap) | W5, ADR 0008: the consent actually written into each goal is recorded in the audit log; `GoalState.first_line` is what the hook wrote, not what was typed | as proposed; also `PreflightResult.goal_line_preview` for the dispatch preview |
-| 6 | `SetSessionAvailability.reason` (string) | W6, W8: so `AvailabilityChanged.reason` can echo `goal_merged` vs `marked_on_board` | as proposed |
+| 6 | `SetSessionAvailability.reason` (string) | W6, W8: so `AvailabilityChanged.reason` can echo `goal_merged` vs `marked_on_board` | as proposed; now `SetPaneAvailability.reason`, the enum `AvailabilityReason` (02h) |
 | 7 | `RepoCheckout.goal_hooks[] {harness, GoalHooksState}` | W5: the consent form (eshu `CONSENT:` line vs consent in the objective text) depends on whether that checkout ships its own hooks; today this is only learnable through `EnsureGoalHooks` | `RepoCheckout.goal_hooks[] HarnessGoalHooks{harness, state}` (`HarnessGoalHooks` in `fleet.type.v1`) |
-| 8 | In the integrations PR: `ChangeRequest.review_rounds`, `ChangeRequest.linked_work_items[]`, `ChangeRequest.head_ref`/`head_sha`, `IntegrationCapabilities{webhooks, conditional_requests, batch_query, claims, labels, merge_state}`, `WorkItemRef.kind` including `CHANGE_REQUEST` | W4, W6: review-loop cap, verification by head ref, tracker/code-host pairing, "take over a change request no goal owns" | reconciled with what #7 (ADR 0012) already merged: `linked_work_items` (field 12), `head_ref` = `source_branch`, `head_sha` = `head_commit`, `webhooks`/`conditional_requests` = `sync_modes`, `claims` = `claim_mechanisms`, `labels`, `merge_state` = `merge_detection` and `WORK_ITEM_KIND_CHANGE_REQUEST` exist and were not duplicated; only `ChangeRequest.review_rounds` and `IntegrationCapabilities.batch_query` were added |
+| 8 | In the integrations PR: `ChangeRequest.review_rounds`, `ChangeRequest.linked_work_items[]`, `ChangeRequest.head_ref`/`head_sha`, `IntegrationCapabilities{webhooks, conditional_requests, batch_query, claims, labels, merge_state}`, `WorkItemRef.kind` including `CHANGE_REQUEST` | W4, W6: review-loop cap, verification by head ref, tracker/code-host pairing, "take over a change request no goal owns" | reconciled with what #7 (ADR 0012) already merged: `linked_work_items` (field 12), `head_ref` = `source_branch`, `head_sha` = `head_commit`, `webhooks`/`conditional_requests` = `sync_modes`, `claims` = `claim_mechanisms`, `labels`, `merge_state` = `merge_detection` and `WORK_ITEM_KIND_CHANGE_REQUEST` exist and were not duplicated; only `ChangeRequest.review_rounds` and `IntegrationCapabilities.batch_query` were added; the contract review (theme F) then added `review_decision`, `CheckSummary.rollup`, `merge_state`, `merged_by`, `head_repo`, `Label` evidence, `last_editor`, cursors, validators, rate limits and `ProviderError`, and replaced `batch_query` by `max_batch_size` (03j) |
 | 9 | Semantic clarifications, no fields: `LogAck` may be sent unsolicited (resume after pause) and with an empty `session_id` meaning all streams of the machine; `EnsureProbe.run_now` runs once per distinct `command_id`; the hub applies replayed events with `seq ≤ Snapshot.seq` to history only | W9, W3, W2 | written into 02-contracts.md (delivery semantics); "empty `session_id` = all streams" became an explicit `LogAck.all_streams` with `LogAck.key LogStreamKey` |
 
 ## Open questions for the owner
@@ -138,7 +141,7 @@ what is in the protos now.
    does, and must `/goal pause` be typed only at an idle prompt?
 3. ~~Reserve line~~ **Decided 2026-10-02:** stop dispatching and alert;
    auto-pause is an opt-in setting, off by default (design.md rule 5).
-4. **`max_parallel_goals_per_repo`** default (proposed 3) for merge churn.
+4. **`max_parallel_goals_per_repo`** default (proposed 3) for merge churn; settable per repo (`Repo.spec.max_parallel_goals`), so only the fleet default is open.
 5. ~~Pane summary retention~~ **Decided 2026-10-02:** latest only
    ([ADR 0013](../adr/0013-live-state-retention.md)).
 6. **Claims.** Default claim-comment pattern (eshu's exact text), stale-claim
@@ -149,7 +152,9 @@ what is in the protos now.
 8. **Probe placement.** Prefer `always-on` labelled machines, then the hub
    machine; is the hub machine acceptable as a prober by default?
 9. **"Approved and green"** (no merge consent): `review_decision = APPROVED`
-   and `checks.rollup = SUCCESS` → `ready_for_human_merge`. Correct?
+   and `checks.rollup = SUCCESS` → `ready_for_human_merge`. Correct? (Both
+   fields now exist and are adapter-computed, 03j; the question is only
+   whether the rule is right.)
 10. **Heartbeat `last_seen`** persisted per heartbeat (3.3 rows/s at A50) or
     memory only with a periodic write?
 11. **Transcripts (K3).** Measure compression of Claude/Codex/Muse transcript

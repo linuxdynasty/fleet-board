@@ -1,7 +1,10 @@
 // fleet.hub.v1 Watch: one server stream of resource changes for a client.
-// The subscription (topics, filter) lives in the request; to change it the
-// client reopens the stream with its last resume_token. Semantics in
-// docs/specs/02b-hub-api.md ("Watch").
+// The subscription is a list of topics, each with its own filter, and lives
+// in the request. To change it the client opens a new stream with the last
+// resume_token and the new list: subscriptions that did not change resume,
+// new or changed ones start with their initial state, and RESYNC_REQUIRED is
+// only for a token the hub cannot honour. Semantics, the filter grammar and
+// the field catalogue per topic: docs/specs/02c-hub-watch-and-filters.md.
 syntax = "proto3";
 
 package fleet.hub.v1;
@@ -11,20 +14,20 @@ import "fleet/hub/v1/common.proto";
 import "fleet/hub/v1/device.proto";
 import "fleet/hub/v1/goal.proto";
 import "fleet/hub/v1/machine.proto";
+import "fleet/hub/v1/repo.proto";
 import "fleet/hub/v1/routine.proto";
 import "fleet/hub/v1/session.proto";
 import "fleet/hub/v1/settings.proto";
 import "fleet/hub/v1/triage.proto";
 import "fleet/hub/v1/work.proto";
 
-option go_package = "github.com/linuxdynasty/fleet-board/api/fleet/hub/v1;hubv1";
-
 // WatchTopic is one resource collection to follow.
 enum WatchTopic {
   WATCH_TOPIC_UNSPECIFIED = 0;
   WATCH_TOPIC_MACHINES = 1;
   WATCH_TOPIC_SESSIONS = 2;
-  // Latest-wins and droppable per pane; filter to the visible panes.
+  // Latest-wins, droppable per pane, never replayed from the change log:
+  // filter to the visible panes (`session in (...)`, `machine = ...`).
   WATCH_TOPIC_PANE_SUMMARIES = 3;
   WATCH_TOPIC_GOALS = 4;
   WATCH_TOPIC_WORK_ITEMS = 5;
@@ -41,6 +44,7 @@ enum WatchTopic {
   WATCH_TOPIC_FLEET_SUMMARY = 15;
   WATCH_TOPIC_AUDIT = 16;
   WATCH_TOPIC_NOTIFICATION_TARGETS = 17;
+  WATCH_TOPIC_REPOS = 18;
 }
 
 // ChangeType says what a WatchResponse means.
@@ -52,35 +56,68 @@ enum ChangeType {
   CHANGE_TYPE_DELETED = 3;
   // Part of the initial state (send_initial): one per existing resource.
   CHANGE_TYPE_INITIAL = 4;
-  // The initial state is complete; live changes follow.
+  // The initial state of one subscription is complete (topic is set); live
+  // changes for it follow.
   CHANGE_TYPE_INITIAL_DONE = 5;
-  // The hub cannot continue from the token, or this client fell behind on
-  // a never-dropped topic. No resource; the stream then closes. The client
-  // reopens with send_initial (or re-lists) and no resume_token.
+  // The hub cannot honour the token, or this client fell behind on a
+  // never-dropped topic (see resync_reason). A changed subscription is NOT a
+  // reason. No resource; the stream then closes. The client reopens with
+  // send_initial on every subscription and no resume_token.
   CHANGE_TYPE_RESYNC_REQUIRED = 6;
   // No change; a fresh resume_token so idle clients can resume cheaply.
   CHANGE_TYPE_CHECKPOINT = 7;
+  // The resource no longer matches the subscription's filter (or the caller
+  // can no longer see it). It carries its current state; it was not deleted.
+  CHANGE_TYPE_UNMATCHED = 8;
+}
+
+// TopicSubscription follows one topic with its own filter, so a sidebar can
+// ask for every session but only the visible panes' summaries.
+message TopicSubscription {
+  WatchTopic topic = 1;
+  // AIP-160 subset over this topic's filter fields (02c). Empty = all.
+  // A field the topic does not have is FILTER_INVALID, never "ignored".
+  string filter = 2;
+  // Send every matching resource first (INITIAL ... INITIAL_DONE for this
+  // topic). A subscription the resume_token does not cover (new topic, new
+  // filter) without this flag starts live, from the moment the stream opens.
+  bool send_initial = 3;
 }
 
 // WatchRequest opens the stream.
 message WatchRequest {
-  // Empty = every topic the caller's scopes allow except pane summaries.
-  repeated WatchTopic topics = 1;
-  // AIP-160 filter applied to every topic, e.g. `machine = "m-12"` or
-  // `session in ("s-1", "s-2")`. Fields a topic lacks do not filter it.
-  string filter = 2;
-  // From the last message seen; empty = start from now.
-  string resume_token = 3;
-  // Send every matching resource first (INITIAL ... INITIAL_DONE).
-  bool send_initial = 4;
+  // At most one per topic. Empty = every topic the caller's scopes allow
+  // except pane summaries, unfiltered, with send_initial.
+  repeated TopicSubscription subscriptions = 1;
+  // From the last message seen; empty = start from now (plus the initial
+  // state of subscriptions that ask for it).
+  string resume_token = 2;
+}
+
+// ResyncReason says why a stream ended with RESYNC_REQUIRED.
+enum ResyncReason {
+  RESYNC_REASON_UNSPECIFIED = 0;
+  // The token is older than the hub's change log.
+  RESYNC_REASON_TOKEN_TOO_OLD = 1;
+  // hub_instance_id changed (hub restart or restore).
+  RESYNC_REASON_HUB_RESTARTED = 2;
+  // The client fell behind on a never-dropped topic.
+  RESYNC_REASON_FELL_BEHIND = 3;
+  // The caller's scopes changed; reopen to get the topics still allowed.
+  RESYNC_REASON_SCOPES_CHANGED = 4;
 }
 
 // WatchResponse is one change.
 message WatchResponse {
   // Hub-wide sequence of committed changes, increasing within one
-  // hub_instance_id. Gaps are normal (other topics, filtered out).
+  // hub_instance_id. Gaps are normal (other topics, filtered out). A
+  // resource's status.hub_seq (when it has one) is the hub_seq of the change
+  // that last touched its status.
   uint64 hub_seq = 1;
   ChangeType change_type = 2;
+  // The topic of the resource, and of INITIAL_DONE. Unset for CHECKPOINT and
+  // RESYNC_REQUIRED, which concern the whole stream.
+  WatchTopic topic = 3;
   oneof resource {
     Machine machine = 10;
     Session session = 11;
@@ -99,7 +136,11 @@ message WatchResponse {
     FleetSummary fleet_summary = 24;
     AuditEntry audit_entry = 25;
     NotificationTarget notification_target = 26;
+    Repo repo = 27;
   }
-  // Opaque; pass to the next WatchRequest to continue after this message.
-  string resume_token = 3;
+  // Opaque; pass to the next WatchRequest to continue after this message. It
+  // names the position and the subscriptions (topic and filter) it covers.
+  string resume_token = 4;
+  // Set with RESYNC_REQUIRED.
+  ResyncReason resync_reason = 5;
 }

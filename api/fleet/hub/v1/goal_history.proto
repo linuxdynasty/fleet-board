@@ -1,0 +1,105 @@
+// fleet.hub.v1 goal history (03c W6, 03f data model): the runs a goal went
+// through and the phase changes between them. The hub stores both
+// (goal_runs, goal_transitions) with the goal, permanently; these read-only
+// resources are how the Session view shows "run history per goal" and the
+// Machines view draws the 7-day timeline (ListGoals filtered on
+// start_time and end_time, not create_time).
+syntax = "proto3";
+
+package fleet.hub.v1;
+
+import "fleet/hub/v1/goal.proto";
+import "fleet/type/v1/harness.proto";
+import "fleet/type/v1/ids.proto";
+import "fleet/type/v1/status.proto";
+import "google/protobuf/timestamp.proto";
+
+// GoalRunCause is what began a run.
+enum GoalRunCause {
+  GOAL_RUN_CAUSE_UNSPECIFIED = 0;
+  // StartGoal (the first run).
+  GOAL_RUN_CAUSE_START = 1;
+  // The harness was respawned after a crash (RespawnPane{resume}).
+  GOAL_RUN_CAUSE_RESPAWN = 2;
+  // A re-arm after DONE (ControlGoal NOT_DONE or EDIT).
+  GOAL_RUN_CAUSE_REARM = 3;
+  // The pane came back after PANE_LOST under a new harness process.
+  GOAL_RUN_CAUSE_PANE_RETURNED = 4;
+}
+
+// GoalRun is one stretch of a goal in one harness process. A restart (respawn,
+// re-arm, a pane that came back) begins the next run; Goal.status.restarts is
+// the number of runs beyond the first. The nudges, no-progress count and
+// usage here are per run; the goal's own counters are the totals.
+message GoalRun {
+  fleet.type.v1.GoalId goal = 1;
+  // From 1, in order.
+  uint32 number = 2;
+  GoalRunCause cause = 3;
+  google.protobuf.Timestamp start_time = 4;
+  // Unset while the run is current.
+  google.protobuf.Timestamp end_time = 5;
+  // How the run ended: the phase the goal moved to and why. Unset while
+  // current.
+  GoalPhase end_phase = 6;
+  GoalPhaseReason end_reason = 7;
+  fleet.type.v1.MachineId machine = 8;
+  fleet.type.v1.SessionId session = 9;
+  fleet.type.v1.PaneKey pane = 10;
+  // The harness's own session id for this process (E9), when learned.
+  // Untrusted text.
+  string harness_session_id = 11;
+  uint32 nudges = 12;
+  uint32 no_progress_runs = 13;
+  repeated GoalUsage usage_consumed = 14;
+  // The terminal streams of the run's pane (one per stream kind); reading
+  // them is ReadSessionLog, which needs SCOPE_LOGS. Listing the keys does not.
+  repeated fleet.type.v1.LogStreamKey logs = 15;
+  // The harness transcript stream (v3), when captured.
+  fleet.type.v1.LogStreamKey transcript = 16;
+}
+
+// GoalTransition is one change of phase, recorded in the same transaction as
+// the change.
+message GoalTransition {
+  fleet.type.v1.GoalId goal = 1;
+  // From 1 per goal, no gaps.
+  uint64 seq = 2;
+  google.protobuf.Timestamp transition_time = 3;
+  GoalPhase from = 4;
+  GoalPhase to = 5;
+  GoalPhaseReason reason = 6;
+  // Set when to is PAUSED.
+  GoalPauseReason pause_reason = 7;
+  // The operator, or the scheduler or the verifier for hub decisions.
+  fleet.type.v1.Principal actor = 8;
+  // The command the transition came with (a control action, a nudge), if any.
+  fleet.type.v1.CommandId command = 9;
+}
+
+// ListGoalRunsRequest. Oldest run first.
+message ListGoalRunsRequest {
+  fleet.type.v1.GoalId goal = 1;
+  int32 page_size = 2;
+  string page_token = 3;
+}
+
+// ListGoalRunsResponse.
+message ListGoalRunsResponse {
+  repeated GoalRun runs = 1;
+  string next_page_token = 2;
+}
+
+// ListGoalTransitionsRequest. Oldest first; `descending` flips it.
+message ListGoalTransitionsRequest {
+  fleet.type.v1.GoalId goal = 1;
+  int32 page_size = 2;
+  string page_token = 3;
+  bool descending = 4;
+}
+
+// ListGoalTransitionsResponse.
+message ListGoalTransitionsResponse {
+  repeated GoalTransition transitions = 1;
+  string next_page_token = 2;
+}

@@ -7,14 +7,14 @@ syntax = "proto3";
 package fleet.hub.v1;
 
 import "fleet/hub/v1/common.proto";
+import "fleet/hub/v1/dispatch_block.proto";
+import "fleet/type/v1/consent.proto";
 import "fleet/type/v1/ids.proto";
 import "fleet/type/v1/status.proto";
 import "fleet/type/v1/usage.proto";
 import "google/protobuf/duration.proto";
 import "google/protobuf/field_mask.proto";
 import "google/protobuf/timestamp.proto";
-
-option go_package = "github.com/linuxdynasty/fleet-board/api/fleet/hub/v1;hubv1";
 
 // AccountMode (ADR 0008).
 enum AccountMode {
@@ -38,8 +38,16 @@ enum PacingState {
   PACING_STATE_EXCLUDED = 8;
 }
 
+// AccountBindingSpec maps the account to one machine and harness profile
+// (empty = the harness default). The owner sets it for an account the harness
+// shows no identity for (Codex); the agent's observation is AccountBinding.
+message AccountBindingSpec {
+  fleet.type.v1.MachineId machine = 1;
+  string profile = 2;
+}
+
 // AccountBinding is one machine where the account is signed in, and the
-// harness profile it is signed in under (empty = the harness default).
+// harness profile it is signed in under, as observed.
 message AccountBinding {
   fleet.type.v1.MachineId machine = 1;
   string profile = 2;
@@ -82,6 +90,13 @@ message AccountPacing {
   bool idle_while_behind = 8;
   // The reading predates the last reset; a re-probe is pending.
   bool reading_stale = 9;
+  // Why the fleet is not using the account (or not using more of it): the
+  // reasons the last scheduler passes skipped it, most specific first
+  // (NO_READY_ITEMS, NO_FIT_MACHINE, REPO_PARALLEL_LIMIT, INTEGRATION_LAG,
+  // AUTO_DISPATCH_OFF, ACCOUNT_*, a machine's MACHINE_UNFIT). Filled whenever
+  // the account is dispatchable and below its allowed_active; empty while a
+  // goal is running there. This is the cause behind idle_while_behind.
+  repeated DispatchBlock idle_causes = 10;
 }
 
 // AccountProbe is the probe the hub assigned for this account (D1).
@@ -96,6 +111,77 @@ message AccountProbe {
   google.protobuf.Duration interval = 8;
 }
 
+// AccountOrigin says how the account came to exist (03b, "Accounts").
+enum AccountOrigin {
+  ACCOUNT_ORIGIN_UNSPECIFIED = 0;
+  // Reported by an agent: a subscription's identity probe, one placeholder per
+  // (machine, profile) for a harness that shows no identity (Codex), or an
+  // OpenCode provider from `opencode providers list`. Deleted only when no
+  // machine still shows it signed in (ACCOUNT_IN_USE otherwise), and it comes
+  // back when one does.
+  ACCOUNT_ORIGIN_DISCOVERED = 1;
+  // Created by the owner with CreateAccount: an API-key account the agents
+  // cannot discover (a provider key set in the environment). Never
+  // overwritten by discovery.
+  ACCOUNT_ORIGIN_OWNER_CREATED = 2;
+}
+
+// AccountSpec is what the owner decided about an account. Covered by
+// Account.version and expected_version.
+message AccountSpec {
+  string display_name = 1;
+  AccountMode mode = 2;
+  fleet.type.v1.BudgetKind budget_kind = 3;
+  // Quota the owner keeps for interactive use (design.md rule 3). The
+  // scheduler stops new dispatch at 100 - reserve (PACING_STATE_RESERVE, 03b
+  // step 5) and the burn-down target scales by it (target = elapsed / window
+  // x (100 - reserve)); projected_unused_percent and
+  // HubSettings.auto_pause_at_reserve depend on it too.
+  uint32 reserve_percent = 4;
+  // Consent acts this account allows (ADR 0008).
+  repeated fleet.type.v1.ConsentAct consent = 5;
+  // For BUDGET_KIND_DOLLAR_CAP: the owner's cap for display, micro-units.
+  int64 spend_cap_micros = 6;
+  // Owner-mapped machines (a Codex account that shows no identity). Adding a
+  // binding for a (machine, profile) that another placeholder account holds
+  // moves that machine's observations to this account; the placeholder is then
+  // deleted if nothing uses it (03b, "Accounts").
+  repeated AccountBindingSpec bindings = 7;
+}
+
+// AccountStatus is everything observed or computed about an account: the
+// identity as the harness shows it, where it is signed in, the latest
+// reading, the scheduler's pacing and the probe. Not versioned.
+message AccountStatus {
+  google.protobuf.Timestamp observed_time = 1;
+  // Watch hub_seq of the change that last touched this status.
+  uint64 hub_seq = 2;
+
+  fleet.type.v1.Harness harness = 10;
+  fleet.type.v1.AccountKey account_key = 11;
+  // As the harness shows them. Untrusted text. email is empty unless the
+  // owner turned on share_identity_email.
+  string label = 12;
+  string plan = 13;
+  string login_method = 14;
+  string organization = 15;
+  string email = 16;
+  bool identity_not_shown = 17;
+  repeated AccountBinding bindings = 18;
+  AccountUsage usage = 19;
+  // Rewritten at every scheduler evaluation; ahead_points, rank and
+  // projected_unused_percent are volatile (02c, "Volatile fields").
+  AccountPacing pacing = 20;
+  AccountProbe probe = 21;
+  // The provider behind the credentials, as an open name: "anthropic",
+  // "openai", "deepseek", "moonshot". For a subscription it is the harness's
+  // own provider; for OpenCode it is the provider key it signs in with. The
+  // hub's rule "never auto-dispatch OpenCode on an Anthropic subscription"
+  // reads it. Untrusted text for a discovered account.
+  string provider = 22;
+  AccountOrigin origin = 23;
+}
+
 // Account is one harness account (subscription or API key).
 message Account {
   fleet.type.v1.AccountId id = 1;
@@ -103,32 +189,11 @@ message Account {
   google.protobuf.Timestamp create_time = 3;
   google.protobuf.Timestamp update_time = 4;
 
-  fleet.type.v1.Harness harness = 10;
-  string display_name = 11;
-  fleet.type.v1.AccountKey account_key = 12;
-  AccountMode mode = 13;
-  fleet.type.v1.BudgetKind budget_kind = 14;
-  // Never used by the fleet; kept for the owner (design.md rule 3).
-  uint32 reserve_percent = 15;
-  // Consent acts this account allows (ADR 0008).
-  repeated string consent = 16;
-  // As the harness shows them. Untrusted text. email is empty unless the
-  // owner turned on share_identity_email.
-  string label = 17;
-  string plan = 18;
-  string login_method = 19;
-  string organization = 20;
-  string email = 21;
-  bool identity_not_shown = 22;
-  repeated AccountBinding bindings = 23;
-  AccountUsage usage = 24;
-  AccountPacing pacing = 25;
-  AccountProbe probe = 26;
-  // For BUDGET_KIND_DOLLAR_CAP: the owner's cap for display, micro-units.
-  int64 spend_cap_micros = 27;
+  AccountSpec spec = 10;
+  AccountStatus status = 11;
 }
 
-// ListAccountsRequest. Filter fields: harness, mode, pacing.state.
+// ListAccountsRequest. Filter and order_by names: 02c-hub-watch-and-filters.md.
 message ListAccountsRequest {
   int32 page_size = 1;
   string page_token = 2;
@@ -145,6 +210,7 @@ message ListAccountsResponse {
 // GetAccountRequest.
 message GetAccountRequest {
   fleet.type.v1.AccountId id = 1;
+  // Needs SCOPE_LOGS: the redacted raw usage screen is terminal text.
   bool include_raw_screen = 2;
 }
 
@@ -153,9 +219,44 @@ message GetAccountResponse {
   Account account = 1;
 }
 
-// UpdateAccountRequest. Updatable: display_name, mode, reserve_percent,
-// consent, budget_kind, spend_cap_micros, and bindings (to map a Codex
-// account that shows no identity to a machine).
+// CreateAccountRequest adds an owner-defined API-key account (origin
+// OWNER_CREATED). Subscriptions and Codex's per-machine placeholders are
+// discovered, never created, so this is only for a harness and provider that
+// bill by the dollar: spec.budget_kind must be DOLLAR_CAP. The account is
+// never auto-dispatched (EXCLUDED); spec.bindings say which machines may use
+// it. harness and provider are immutable.
+message CreateAccountRequest {
+  string request_id = 1;
+  fleet.type.v1.Harness harness = 2;
+  // Open provider name, 1 to 64 bytes of [a-z0-9-].
+  string provider = 3;
+  AccountSpec spec = 4;
+}
+
+// CreateAccountResponse.
+message CreateAccountResponse {
+  Account account = 1;
+}
+
+// DeleteAccountRequest removes an account that nothing uses: no live goal and
+// no session spends from it, and, for a discovered account, no machine shows
+// it signed in (otherwise FAILED_PRECONDITION / ACCOUNT_IN_USE). Its readings
+// are kept for the burn-down chart for the usual retention. Merging a stale
+// duplicate (an account re-keyed by a salt change) is deleting it once its
+// bindings are signed out; there is no MergeAccounts call.
+message DeleteAccountRequest {
+  string request_id = 1;
+  fleet.type.v1.AccountId id = 2;
+  uint64 expected_version = 3;
+}
+
+// DeleteAccountResponse.
+message DeleteAccountResponse {}
+
+// UpdateAccountRequest. Updatable: spec.display_name, spec.mode,
+// spec.reserve_percent, spec.consent, spec.budget_kind,
+// spec.spend_cap_micros and spec.bindings (to map a Codex account that shows
+// no identity to a machine). status is output-only.
 message UpdateAccountRequest {
   string request_id = 1;
   Account account = 2;
@@ -182,14 +283,23 @@ message ProbeAccountResponse {
 // UsageReading is one stored reading, for the burn-down chart.
 message UsageReading {
   fleet.type.v1.AccountId account = 1;
+  // When the screen was read, in hub time: the agent's read_time minus the
+  // machine's measured clock skew, clamped to received_time. This is the time
+  // readings are ordered by across machines (02i, "Clocks").
   google.protobuf.Timestamp read_time = 2;
   fleet.type.v1.UsageSource source = 3;
   fleet.type.v1.ParseOutcome parse = 4;
   repeated fleet.type.v1.LimitBucket buckets = 5;
   fleet.type.v1.SpendReading spend = 6;
+  // When the hub received the reading (hub clock). The tie-break for equal
+  // read_time, and the only time trusted when the machine's clock is
+  // untrusted.
+  google.protobuf.Timestamp received_time = 7;
+  // The agent's own read_time, unadjusted, for display and debugging.
+  google.protobuf.Timestamp agent_read_time = 8;
 }
 
-// ListUsageReadingsRequest. Filter fields: read_time, source.
+// ListUsageReadingsRequest. Filter and order_by names: 02c-hub-watch-and-filters.md.
 message ListUsageReadingsRequest {
   int32 page_size = 1;
   string page_token = 2;

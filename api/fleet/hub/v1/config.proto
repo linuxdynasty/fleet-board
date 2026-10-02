@@ -1,0 +1,167 @@
+// fleet.hub.v1 config export and import (design.md: `fleet export`, `fleet
+// import --dry-run`). The hub database is the source of truth; fleet.yaml is
+// only an exchange format for it, rendered by the CLI from FleetConfig (the
+// canonical JSON of this message, as YAML). Import is one server-side plan:
+// it validates the whole document, diffs it against the hub, and applies it in
+// one transaction or not at all, so --dry-run is the plan the real run
+// executes and a failure never leaves a half-applied fleet. Secrets are never
+// part of it: no credentials, tokens, keys, CA or salt (those travel in a
+// backup, 02g), and a document carries ids nowhere, only names, so it moves
+// between hubs.
+syntax = "proto3";
+
+package fleet.hub.v1;
+
+import "fleet/hub/v1/account.proto";
+import "fleet/hub/v1/repo.proto";
+import "fleet/hub/v1/routine.proto";
+import "fleet/hub/v1/settings.proto";
+import "fleet/hub/v1/work.proto";
+import "fleet/type/v1/ids.proto";
+import "fleet/type/v1/settings.proto";
+import "fleet/type/v1/status.proto";
+import "google/protobuf/timestamp.proto";
+
+// GroupConfig is one machine-group settings layer.
+message GroupConfig {
+  string label = 1;
+  int32 priority = 2;
+  fleet.type.v1.SettingValues values = 3;
+}
+
+// MachineConfig is one machine, by name. For an enrolled machine with this
+// display name the labels and settings layer are applied to it. For a name no
+// machine has, the entry is kept as a pending machine: the hub applies it when
+// a machine enrolls under that name (an enrollment token for the name picks it
+// up), and that machine starts DRAINED, so an imported fleet takes no goal
+// until the owner undrains each machine. Import never drains a machine that is
+// already enrolled.
+message MachineConfig {
+  string name = 1;
+  repeated string labels = 2;
+  // The machine/<id> settings layer's values (max_active, max_total, ...).
+  fleet.type.v1.SettingValues values = 3;
+}
+
+// IntegrationConfig names an existing integration (matched by provider_name
+// and base_url) and sets its owner-chosen fields. Credentials are not part of
+// the format, so an integration the hub does not have is not created: the
+// plan lists it as SKIPPED with a problem, and the owner connects it first.
+message IntegrationConfig {
+  string provider_name = 1;
+  string base_url = 2;
+  string label = 3;
+  repeated WatchedProject tracker_projects = 4;
+}
+
+// AccountConfig sets the owner-chosen spec of an account, matched by harness
+// and spec.display_name. An unmatched OpenCode or other API-key entry is
+// created as an owner-created account; an unmatched subscription is SKIPPED
+// (subscriptions are discovered, never created).
+message AccountConfig {
+  fleet.type.v1.Harness harness = 1;
+  string provider = 2;
+  AccountSpec spec = 3;
+}
+
+// FleetConfig is the whole exportable configuration. format_version is 1.
+message FleetConfig {
+  uint32 format_version = 1;
+  // Only the hub settings that are not secrets or per-user (sign-in methods
+  // and session lifetimes are included; users, passkeys, tokens and devices
+  // are not).
+  HubSettings hub = 2;
+  // The fleet default settings layer.
+  fleet.type.v1.SettingValues fleet_values = 3;
+  repeated GroupConfig groups = 4;
+  repeated MachineConfig machines = 5;
+  // Repos by spec.repo (host and path).
+  repeated RepoSpec repos = 6;
+  repeated IntegrationConfig integrations = 7;
+  // Routines matched by spec.display_name.
+  repeated RoutineSpec routines = 8;
+  repeated AccountConfig accounts = 9;
+}
+
+// ExportConfigRequest.
+message ExportConfigRequest {}
+
+// ExportConfigResponse. Needs SCOPE_READ: it is what GetSettings, ListRepos and
+// the other reads already show, in one document.
+message ExportConfigResponse {
+  FleetConfig config = 1;
+  google.protobuf.Timestamp export_time = 2;
+}
+
+// ConfigEntity is the kind of thing a plan line is about.
+enum ConfigEntity {
+  CONFIG_ENTITY_UNSPECIFIED = 0;
+  CONFIG_ENTITY_HUB_SETTINGS = 1;
+  CONFIG_ENTITY_FLEET_VALUES = 2;
+  CONFIG_ENTITY_GROUP = 3;
+  CONFIG_ENTITY_MACHINE = 4;
+  // A machine entry kept until a machine enrolls under its name.
+  CONFIG_ENTITY_PENDING_MACHINE = 5;
+  CONFIG_ENTITY_REPO = 6;
+  CONFIG_ENTITY_INTEGRATION = 7;
+  CONFIG_ENTITY_ROUTINE = 8;
+  CONFIG_ENTITY_ACCOUNT = 9;
+}
+
+// ConfigChangeKind is what the plan does to one entity.
+enum ConfigChangeKind {
+  CONFIG_CHANGE_KIND_UNSPECIFIED = 0;
+  CONFIG_CHANGE_KIND_CREATE = 1;
+  CONFIG_CHANGE_KIND_UPDATE = 2;
+  CONFIG_CHANGE_KIND_UNCHANGED = 3;
+  // Not applied because it cannot be (a missing integration, a subscription
+  // account that does not exist); problem says why. Any SKIPPED makes a real
+  // import apply nothing unless allow_skipped is set.
+  CONFIG_CHANGE_KIND_SKIPPED = 4;
+}
+
+// ConfigChange is one line of the plan. Import only creates and updates; it
+// never deletes anything the document does not name.
+message ConfigChange {
+  ConfigEntity entity = 1;
+  // The entity's key in the document: group label, machine name, "host/path",
+  // routine or account name, provider_name.
+  string name = 2;
+  ConfigChangeKind kind = 3;
+  // Dotted spec paths that change, for UPDATE ("spec.consent", ...).
+  repeated string changed_fields = 4;
+  // For SKIPPED, and for a line that failed validation (CONFIG_INVALID).
+  fleet.type.v1.ErrorDetail problem = 5;
+}
+
+// ImportConfigRequest applies a document. Needs SCOPE_SETTINGS; a document
+// with machine entries also needs SCOPE_ADMIN (they set labels and settings on
+// machines and create pending machines).
+message ImportConfigRequest {
+  string request_id = 1;
+  FleetConfig config = 2;
+  // Compute and return the plan, change nothing. Always run this first.
+  bool dry_run = 3;
+  // The plan_hash of a dry run: the import applies only if the plan is still
+  // the same, so what runs is what was shown (else FAILED_PRECONDITION /
+  // VERSION_MISMATCH).
+  string expected_plan_hash = 4;
+  // Apply the lines that can apply even though some are SKIPPED. Off by
+  // default: the whole document or nothing.
+  bool allow_skipped = 5;
+}
+
+// ImportConfigResponse is the plan, always returned, even when nothing was
+// applied: a line that failed validation or is SKIPPED carries its problem
+// (reason CONFIG_INVALID, or the specific one) and the response has applied
+// false, so a client shows what to fix rather than an error. Only a malformed
+// request (a format_version the hub does not know, a missing request_id) is an
+// RPC error.
+message ImportConfigResponse {
+  repeated ConfigChange changes = 1;
+  // True when the plan was applied in one transaction; always false for a
+  // dry run.
+  bool applied = 2;
+  // SHA-256 (hex) of the canonical plan, for expected_plan_hash.
+  string plan_hash = 3;
+}

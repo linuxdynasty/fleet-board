@@ -1,39 +1,83 @@
 // fleet.hub.v1 work: the hub's mirrors of work items and change requests
 // (03b W4) with the hub's own stage and goal links, and the configured
 // integrations. The provider data is the provider-neutral model of
-// fleet.integration.v1, embedded unchanged.
+// fleet.integration.v1, embedded unchanged. The hub adds its own verdicts on
+// top: stage, the trusted-issues gate (trusted_gate.proto) and integration
+// health from the typed provider errors and rate limits the syncer sees.
 syntax = "proto3";
 
 package fleet.hub.v1;
 
+import "fleet/hub/v1/dispatch_block.proto";
+import "fleet/hub/v1/trusted_gate.proto";
 import "fleet/integration/v1/integration.proto";
+import "fleet/integration/v1/model.proto";
+import "fleet/integration/v1/sync.proto";
 import "fleet/type/v1/ids.proto";
 import "fleet/type/v1/work.proto";
+import "google/protobuf/duration.proto";
 import "google/protobuf/field_mask.proto";
 import "google/protobuf/timestamp.proto";
-
-option go_package = "github.com/linuxdynasty/fleet-board/api/fleet/hub/v1;hubv1";
 
 // WorkStage is the hub-owned stage of a work item (03b state machine).
 enum WorkStage {
   WORK_STAGE_UNSPECIFIED = 0;
   // Mirrored and open, not yet evaluated.
   WORK_STAGE_SEEN = 1;
-  // Trusted, unclaimed, repo watched: auto-dispatch may take it.
+  // Trusted, unclaimed, repo watched and enabled: auto-dispatch may take it.
   WORK_STAGE_READY = 2;
-  // Untrusted or not dispatchable automatically.
+  // Not dispatchable automatically; WorkItem.manual_reason says why. Leaves
+  // this stage when the item becomes trusted (a label change seen at sync) or
+  // an operator requeues it (RequeueWorkItem), never by itself.
   WORK_STAGE_MANUAL_ONLY = 3;
   WORK_STAGE_CLAIMED_ELSEWHERE = 4;
+  // A goal is planned or starting for it.
   WORK_STAGE_DISPATCHED = 5;
   WORK_STAGE_RUNNING = 6;
   WORK_STAGE_DONE_CLAIMED = 7;
   WORK_STAGE_DISAGREE = 8;
+  // Done or no longer wanted: merged, or closed (also closed without being
+  // done) on the provider.
   WORK_STAGE_CLOSED = 9;
 }
 
-// WorkItem is the hub's record of one issue, ticket or routine run.
+// WorkManualReason says why a work item is MANUAL_ONLY (03h, "Work item stage
+// after a goal ends").
+enum WorkManualReason {
+  WORK_MANUAL_REASON_UNSPECIFIED = 0;
+  // Failed the trusted-issues gate (TrustVerdict.denial NOT_ALLOW_LISTED or
+  // EVIDENCE_MISSING). Needs the label from an allow-listed person;
+  // RequeueWorkItem refuses (REQUEUE_NOT_ALLOWED).
+  WORK_MANUAL_REASON_UNTRUSTED = 1;
+  // An operator cleared the goal (CLEARED); the fleet does not redispatch
+  // what a person just stopped.
+  WORK_MANUAL_REASON_GOAL_CLEARED = 2;
+  // Three attempts failed to start on three machines (START_EXHAUSTED).
+  WORK_MANUAL_REASON_START_EXHAUSTED = 3;
+  // Was trusted, then someone outside the allow-list edited the title or
+  // body (TrustVerdict.denial EDITED_AFTER_TRUST). An allow-listed person
+  // labels it again after reading the edit; RequeueWorkItem refuses, like
+  // UNTRUSTED. A goal already running is not stopped: the agent has the
+  // text, and the dispatch audit records what was sent.
+  WORK_MANUAL_REASON_EDITED_AFTER_TRUST = 4;
+}
+
+// WorkSize is the size estimate triage gives a work item.
+enum WorkSize {
+  WORK_SIZE_UNSPECIFIED = 0;
+  WORK_SIZE_SMALL = 1;
+  WORK_SIZE_MEDIUM = 2;
+  WORK_SIZE_LARGE = 3;
+}
+
+// WorkItem is the hub's record of one issue, ticket or routine run. A mirror
+// with no owner-editable fields, so no spec/status split: id is the
+// WorkItemKey, version bumps when the provider data, stage, trust or goal link
+// changes. A sync that finds nothing new does not bump version and is never
+// the only reason for a Watch message; last_sync_time is refreshed in storage
+// and arrives with the next real change or a Get.
 message WorkItem {
-  fleet.type.v1.WorkItemRef id = 1;
+  fleet.type.v1.WorkItemKey id = 1;
   uint64 version = 2;
   google.protobuf.Timestamp create_time = 3;
   google.protobuf.Timestamp update_time = 4;
@@ -41,18 +85,29 @@ message WorkItem {
   // The provider's data as last synced; for ROUTINE runs, hub-made.
   fleet.integration.v1.WorkItem item = 10;
   WorkStage stage = 11;
-  // Passed the trusted-issues gate (design.md safety rails).
-  bool trusted = 12;
+  // The trusted-issues gate's verdict and why (design.md safety rails): who
+  // made the item trusted, or what is missing. Computed by the hub from the
+  // mirror, never taken from the provider.
+  TrustVerdict trust = 12;
   // Active goal for this item, if any; past goals via ListGoals.
   fleet.type.v1.GoalId goal = 13;
-  // Size estimate (S/M/L) from triage, when set.
-  string size = 14;
+  // Size estimate from triage, when set.
+  WorkSize size = 14;
   google.protobuf.Timestamp last_sync_time = 15;
+  // Set while stage is MANUAL_ONLY.
+  WorkManualReason manual_reason = 16;
+  // Why the scheduler is not dispatching this item now, when it is READY (or
+  // SEEN) and not taken: INTEGRATION_LAG, REPO_PARALLEL_LIMIT,
+  // ACCOUNT_PACING_BLOCKED, NO_FIT_MACHINE, ... Unset when nothing holds it
+  // back, or when it is not a candidate. Recomputed each scheduler pass; at
+  // most one Watch message per 30 s when only it changes.
+  DispatchBlock dispatch_block = 17;
 }
 
-// ChangeRequest is the hub's record of one pull or merge request.
+// ChangeRequest is the hub's record of one pull or merge request; versioned
+// like WorkItem.
 message ChangeRequest {
-  fleet.type.v1.WorkItemRef id = 1;
+  fleet.type.v1.WorkItemKey id = 1;
   uint64 version = 2;
   google.protobuf.Timestamp create_time = 3;
   google.protobuf.Timestamp update_time = 4;
@@ -67,9 +122,94 @@ message ChangeRequest {
 enum IntegrationHealth {
   INTEGRATION_HEALTH_UNSPECIFIED = 0;
   INTEGRATION_HEALTH_OK = 1;
-  // Access lost, rate limited or failing; dispatch for its repos stops.
+  // Access lost or failing; dispatch for its repos stops. Why: health_reason.
   INTEGRATION_HEALTH_DEGRADED = 2;
   INTEGRATION_HEALTH_DISABLED = 3;
+  // Waiting out a rate limit or an outage back-off: the data is only
+  // late. Dispatch pauses only past max_sync_lag. Why: health_reason.
+  INTEGRATION_HEALTH_BACKING_OFF = 4;
+}
+
+// IntegrationHealthReason says why the health is not OK. The hub maps the
+// adapter's ProviderErrorKind (integration sync.proto) to these; the same
+// reason is the label on `fleet_hub_integration_state`.
+enum IntegrationHealthReason {
+  INTEGRATION_HEALTH_REASON_UNSPECIFIED = 0;
+  // NOT_FOUND or FORBIDDEN on a watched repo or project (App uninstalled,
+  // repo removed, permission lost). DEGRADED; raises triage
+  // integration_access_lost for that project.
+  INTEGRATION_HEALTH_REASON_ACCESS_LOST = 1;
+  // UNAUTHENTICATED: the credential is invalid and could not be refreshed.
+  // DEGRADED; the owner must act.
+  INTEGRATION_HEALTH_REASON_CREDENTIALS_INVALID = 2;
+  // RATE_LIMITED: BACKING_OFF until backoff_until_time.
+  INTEGRATION_HEALTH_REASON_RATE_LIMITED = 3;
+  // UNAVAILABLE: BACKING_OFF with exponential back-off, at most 5 min.
+  INTEGRATION_HEALTH_REASON_PROVIDER_UNAVAILABLE = 4;
+  // The mirror is older than max_sync_lag for another cause (a stuck
+  // syncer). DEGRADED.
+  INTEGRATION_HEALTH_REASON_SYNC_LAG_EXCEEDED = 5;
+  // The adapter's declared capabilities no longer cover what the integration
+  // is configured for (an upgrade removed one). DEGRADED.
+  INTEGRATION_HEALTH_REASON_CAPABILITY_MISSING = 6;
+}
+
+// WatchedProject is one project of a work tracker the owner chose to sync
+// (a Jira project, a Linear team). Repos are not listed here: a repo the fleet
+// may work on is a Repo (repo.proto), and which repo a tracker project's items
+// are worked on in is Repo.spec.tracker_projects.
+message WatchedProject {
+  // The provider's project key ("PROJ").
+  string project = 1;
+  // False stops syncing it without forgetting it.
+  bool enabled = 2;
+}
+
+// IntegrationSpec is what the owner edits. Credentials are never part of the
+// API. Covered by Integration.version.
+message IntegrationSpec {
+  // Display name chosen by the owner.
+  string label = 1;
+  // Projects to sync, for an integration with the work-tracker role that is
+  // not also the repos' own issue tracker. The repos of a code host are Repo
+  // resources whose repo.code_host is this integration.
+  repeated WatchedProject tracker_projects = 2;
+}
+
+// IntegrationStatus is the configured provider and the sync's health. Not
+// versioned: every sync round rewrites sync_lag and last_sync_time.
+message IntegrationStatus {
+  google.protobuf.Timestamp observed_time = 1;
+  // Watch hub_seq of the change that last touched this status.
+  uint64 hub_seq = 2;
+
+  fleet.type.v1.ProviderKind provider = 10;
+  // Open provider name ("github", "gitea"); see IntegrationCapabilities.
+  string provider_name = 11;
+  // Base URL or host ("https://github.com", "https://acme.atlassian.net").
+  string base_url = 12;
+  fleet.integration.v1.IntegrationCapabilities capabilities = 13;
+  IntegrationHealth health = 14;
+  // Why, when health is not OK.
+  IntegrationHealthReason health_reason = 15;
+  // One line for a person. Untrusted where it echoes the provider.
+  string health_message = 18;
+  // The provider error behind health_reason, as the adapter returned it
+  // (retryable, retry_after, the exhausted budget). Unset when OK.
+  fleet.integration.v1.ProviderError last_error = 19;
+  // The budgets as last reported, one per kind. The syncer slows its
+  // intervals when remaining is under 10 % and sleeps to reset_time at 0.
+  repeated fleet.integration.v1.RateLimitState rate_limits = 20;
+  // No provider call before this time (rate limit reset, Retry-After or
+  // back-off). Unset when polling normally.
+  google.protobuf.Timestamp backoff_until_time = 21;
+  // Volatile: sync_lag, last_sync_time and rate_limits reach Watch at most
+  // once per 30 s; a change of health, health_reason or backoff_until_time
+  // is sent at once.
+  google.protobuf.Timestamp last_sync_time = 16;
+  // How far behind the provider the mirror is, the planner's max_sync_lag
+  // input.
+  google.protobuf.Duration sync_lag = 17;
 }
 
 // Integration is one configured integration instance.
@@ -79,17 +219,14 @@ message Integration {
   google.protobuf.Timestamp create_time = 3;
   google.protobuf.Timestamp update_time = 4;
 
-  fleet.integration.v1.Integration integration = 10;
-  IntegrationHealth health = 11;
-  // Short reason when DEGRADED. Untrusted where it echoes the provider.
-  string health_reason = 12;
-  google.protobuf.Timestamp last_sync_time = 13;
-  // Seconds behind the provider, the planner's max_sync_lag input.
-  uint32 sync_lag_seconds = 14;
+  IntegrationSpec spec = 10;
+  IntegrationStatus status = 11;
 }
 
-// ListWorkItemsRequest. Filter fields: stage, integration, repo, kind,
-// trusted, label.
+// ListWorkItemsRequest. Filter and order_by names: 02c-hub-watch-and-filters.md.
+// order_by "dispatch_order" is the scheduler's own order for READY items
+// (03c planning rule 1), so "next up" is the first item of
+// `filter = "stage = READY", order_by = "dispatch_order"`.
 message ListWorkItemsRequest {
   int32 page_size = 1;
   string page_token = 2;
@@ -105,7 +242,7 @@ message ListWorkItemsResponse {
 
 // GetWorkItemRequest.
 message GetWorkItemRequest {
-  fleet.type.v1.WorkItemRef id = 1;
+  fleet.type.v1.WorkItemKey id = 1;
   // Fetch the body from the provider (64 KiB cap). Untrusted text.
   bool include_body = 2;
 }
@@ -116,7 +253,7 @@ message GetWorkItemResponse {
   string body = 2;
 }
 
-// ListChangeRequestsRequest. Filter fields: repo, state, goal, owned.
+// ListChangeRequestsRequest. Filter and order_by names: 02c-hub-watch-and-filters.md.
 message ListChangeRequestsRequest {
   int32 page_size = 1;
   string page_token = 2;
@@ -132,7 +269,7 @@ message ListChangeRequestsResponse {
 
 // GetChangeRequestRequest.
 message GetChangeRequestRequest {
-  fleet.type.v1.WorkItemRef id = 1;
+  fleet.type.v1.WorkItemKey id = 1;
 }
 
 // GetChangeRequestResponse.
@@ -154,8 +291,8 @@ message ListIntegrationsResponse {
   string next_page_token = 2;
 }
 
-// UpdateIntegrationRequest. Updatable: integration.label,
-// integration.watched. Credentials are never set through this API.
+// UpdateIntegrationRequest. Updatable: spec.label, spec.tracker_projects.
+// Credentials are never set through this API.
 message UpdateIntegrationRequest {
   string request_id = 1;
   Integration integration = 2;
@@ -166,4 +303,21 @@ message UpdateIntegrationRequest {
 // UpdateIntegrationResponse.
 message UpdateIntegrationResponse {
   Integration integration = 1;
+}
+
+// RequeueWorkItemRequest puts a MANUAL_ONLY work item back to READY, so the
+// scheduler may take it again after a person stopped it or it failed to
+// start. Refused (FAILED_PRECONDITION / REQUEUE_NOT_ALLOWED) for an item that
+// is not MANUAL_ONLY or whose manual_reason is UNTRUSTED or
+// EDITED_AFTER_TRUST: a gate is not
+// bypassed by a click; dispatch it manually instead (a CONFIRM check).
+message RequeueWorkItemRequest {
+  string request_id = 1;
+  fleet.type.v1.WorkItemKey id = 2;
+  uint64 expected_version = 3;
+}
+
+// RequeueWorkItemResponse.
+message RequeueWorkItemResponse {
+  WorkItem work_item = 1;
 }

@@ -1,0 +1,170 @@
+// fleet.hub.v1 stored logs (03d W9, ADR 0010, 0015): finding, searching,
+// deleting and measuring what the hub keeps after a session is gone. A
+// ReadSessionLog call needs a LogStreamKey; these RPCs are how a client learns
+// the keys of ended sessions and goals, reads the archived last pane summary,
+// and manages the store. Every RPC here needs SCOPE_LOGS (owner by default,
+// ADR 0019): terminal output can hold secrets, and so can what a search
+// returns. Export is the client paging ReadSessionLog; there is no export RPC.
+syntax = "proto3";
+
+package fleet.hub.v1;
+
+import "fleet/hub/v1/session.proto";
+import "fleet/type/v1/harness.proto";
+import "fleet/type/v1/ids.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+
+// ArchivedPaneSummary is the last pane summary of one pane, moved to the log
+// store when its session ended (ADR 0015) so "what was it doing at the end"
+// survives the live PaneSummary. Untrusted text, 4 KiB.
+message ArchivedPaneSummary {
+  fleet.type.v1.PaneKey pane = 1;
+  // Last lines, ANSI stripped.
+  string last_lines = 2;
+  google.protobuf.Timestamp last_output_time = 3;
+  fleet.type.v1.Activity activity = 4;
+  google.protobuf.Timestamp archived_time = 5;
+}
+
+// StoredSession is everything the hub keeps for one session's logs, live or
+// ended. Observed-only: no version, nothing edits it.
+message StoredSession {
+  // The session id; also the key of GetStoredSession.
+  fleet.type.v1.SessionId id = 1;
+
+  fleet.type.v1.MachineId machine = 10;
+  // The tmux name as it was when last seen. Untrusted text.
+  string session_name = 11;
+  bool started_by_fleet = 12;
+  SessionState state = 13;
+  // Goals that ran in the session, and the harnesses that ran in it.
+  repeated fleet.type.v1.GoalId goals = 14;
+  repeated fleet.type.v1.Harness harnesses = 15;
+  google.protobuf.Timestamp first_time = 16;
+  google.protobuf.Timestamp last_time = 17;
+  // When the session ended; unset while LIVE.
+  google.protobuf.Timestamp end_time = 18;
+  // Totals over every stream; the streams are in logs.
+  uint64 raw_bytes = 19;
+  uint64 stored_bytes = 20;
+  uint64 gap_bytes = 21;
+  // Every stream, with its key: pass one to ReadSessionLog.
+  repeated SessionLogInfo logs = 22;
+  // The archived last summary per pane (empty while a pane is live: that is
+  // PaneSummary).
+  repeated ArchivedPaneSummary pane_summaries = 23;
+}
+
+// ListStoredSessionsRequest. Filter and order_by names:
+// 02c-hub-watch-and-filters.md (machine, goal, harness, state, first_time,
+// last_time). Default order: last_time, newest first.
+message ListStoredSessionsRequest {
+  int32 page_size = 1;
+  string page_token = 2;
+  string filter = 3;
+  string order_by = 4;
+}
+
+// ListStoredSessionsResponse.
+message ListStoredSessionsResponse {
+  repeated StoredSession stored_sessions = 1;
+  string next_page_token = 2;
+}
+
+// GetStoredSessionRequest.
+message GetStoredSessionRequest {
+  fleet.type.v1.SessionId id = 1;
+}
+
+// GetStoredSessionResponse.
+message GetStoredSessionResponse {
+  StoredSession stored_session = 1;
+}
+
+// DeleteSessionLogsRequest removes one session's stored logs, index rows and
+// archived summaries in one transaction (ADR 0010: per-session delete, one
+// audited action "logs.delete" with the byte count, never the content). An
+// ENDED session's row is kept only while its logs exist (Session.status), so
+// after the delete it leaves ListSessions(state = ENDED); a LIVE session's row
+// stays. Goals, goal runs and the audit trail stay. A session whose streams
+// are still capturing is FAILED_PRECONDITION / LOG_STREAM_OPEN: end capture
+// first.
+message DeleteSessionLogsRequest {
+  string request_id = 1;
+  fleet.type.v1.SessionId session = 2;
+}
+
+// DeleteSessionLogsResponse.
+message DeleteSessionLogsResponse {
+  uint64 freed_bytes = 1;
+}
+
+// SessionLogMatch is one hit of a search.
+message SessionLogMatch {
+  fleet.type.v1.LogStreamKey key = 1;
+  // Raw offset of the match in the stream; ReadSessionLog{start_offset}
+  // opens the replay there.
+  uint64 raw_offset = 2;
+  google.protobuf.Timestamp match_time = 3;
+  // The matching line with ANSI stripped, at most 512 bytes. Untrusted text;
+  // may contain secrets, which is why search needs SCOPE_LOGS.
+  string snippet = 4;
+}
+
+// SearchSessionLogsRequest finds text across stored sessions (ADR 0010). The
+// hub decompresses the zstd frames of the streams the filter selects, strips
+// ANSI and looks for `query` as a case-insensitive literal substring; there
+// is no index and no regular expression in v1 (a full-text index can be added
+// later without changing this call). One call scans at most 256 MiB of raw
+// text and says where it stopped, so a wide search is a loop on
+// next_page_token.
+message SearchSessionLogsRequest {
+  // 1 to 256 bytes.
+  string query = 1;
+  // Which sessions to search; same fields as ListStoredSessions. Empty = all.
+  string filter = 2;
+  int32 page_size = 3;
+  string page_token = 4;
+}
+
+// SearchSessionLogsResponse.
+message SearchSessionLogsResponse {
+  repeated SessionLogMatch matches = 1;
+  // Empty when the whole selection has been scanned.
+  string next_page_token = 2;
+  // Raw bytes scanned by this call.
+  uint64 scanned_raw_bytes = 3;
+}
+
+// LogStoreStatus is the log store against its limits, for the Settings view
+// and `fleet doctor`. The caps are HubSettings.log_size_cap_bytes and
+// log_retention.
+message LogStoreStatus {
+  // Compressed bytes on disk (logs.db: chunk rows and their index).
+  uint64 used_bytes = 1;
+  // The cap in force (setting or the 50 GiB default).
+  uint64 cap_bytes = 2;
+  // Free bytes on the volume holding the store.
+  uint64 free_disk_bytes = 3;
+  uint32 session_count = 4;
+  uint32 stream_count = 5;
+  // Start of the oldest stored data; "days retained" is now minus this.
+  google.protobuf.Timestamp oldest_time = 6;
+  // Retention in force; unset = until the size cap prunes.
+  google.protobuf.Duration retention = 7;
+  // Shipping is paused fleet-wide because the hub disk is low (triage
+  // LOG_DISK_LOW).
+  bool shipping_paused = 8;
+  // Machines whose shipping is paused for any reason.
+  repeated fleet.type.v1.MachineId paused_machines = 9;
+  google.protobuf.Timestamp last_prune_time = 10;
+}
+
+// GetLogStoreStatusRequest.
+message GetLogStoreStatusRequest {}
+
+// GetLogStoreStatusResponse.
+message GetLogStoreStatusResponse {
+  LogStoreStatus status = 1;
+}

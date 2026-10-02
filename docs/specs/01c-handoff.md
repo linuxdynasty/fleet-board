@@ -12,13 +12,14 @@
 - **Time:** UTC `Timestamp` everywhere, plus the machine timezone in B1.
 - **Numbers:** percentages as integers 0–100 with an explicit `unknown` case,
   never 0 for unknown; sizes in bytes.
-- **Ordering:** one monotonic `seq` per agent that survives reconnects (the
-  offline ring replays in order); a snapshot supersedes earlier events.
+- **Ordering:** one monotonic `seq` per agent that survives reconnects, crashes
+  and hub restores (persisted high-water mark, floor from the hub; the offline
+  ring replays in order); a snapshot supersedes earlier events (02i).
 - **Idempotency:** `command_id` on every command; composite steps as
   `command_id+step`; F3 explicitly not idempotent.
 - **Errors:** one status enum (`OK`, `FAILED`, `EXPIRED`, `REJECTED_BY_POLICY`,
-  `UNSUPPORTED`, `UNKNOWN_OUTCOME`, `AWAITING_LOCAL_CONFIRM`) plus a structured
-  reason code shared with preflight.
+  `UNSUPPORTED`, `UNKNOWN_OUTCOME`) plus a structured reason code shared with
+  preflight; `AWAITING_LOCAL_CONFIRM` is a progress state, never a result.
 - **Versioning:** capability strings with versions; parser version and
   supported harness versions (C1); hook version (G1); policy schema version
   (B1); settings generation (A8); a maximum message size for captures.

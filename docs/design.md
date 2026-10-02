@@ -5,6 +5,8 @@ Implementation decisions: [docs/adr/](adr/README.md). Where this document or the
 mockup shows the hub running `ssh … tmux …`, [ADR 0004](adr/0004-agent-connectivity.md)
 supersedes it: agents dial out and receive typed commands.
 Mockup: [`mockup/`](../mockup/) (see [mockup/README.md](../mockup/README.md)).
+How the parts talk to each other, flow by flow, with diagrams and a glossary:
+[docs/flows](flows/README.md).
 
 ## Goal
 
@@ -315,19 +317,28 @@ screen that no longer parses is reported as "unknown", never guessed.
 - The audit log is permanent, filterable and exportable (CSV).
 - Moving a session only carries pushed work. The collector should warn about
   uncommitted changes in the worktree before a move.
-- The hub listens only on the Tailscale interface. Browser terminal attach
-  requires login.
+- In `authenticated` mode the hub listens on the Tailscale or LAN interface
+  with TLS, and browser terminal attach needs a sign-in and a one-time ticket.
+  In `local_trusted` mode it binds loopback only and checks Host and Origin
+  ([02f](specs/02f-hub-authentication.md)).
 
 ## Deployment and CLI
 
 - Two modes (from Paperclip): `local_trusted` (hub on localhost, no login) and
   `authenticated` (login required; private over Tailscale/LAN, or public). The
-  first login uses a one-time claim URL printed by the hub.
+  first login uses a one-time claim URL printed by the hub; people sign in
+  with a passkey or GitHub, scripts use API tokens, a phone is a paired device
+  ([02f](specs/02f-hub-authentication.md), ADR 0019).
 - `fleet` CLI: `--json` output is the stable interface, exit codes 0/1,
   `FLEET_URL` and `FLEET_TOKEN` env vars for scripts, `--yes` required for
   destructive commands (stop, drain, delete).
-- `fleet export` / `fleet import`: `fleet.yaml` plus goal-protocol hooks, no
-  secrets, `--dry-run` first; imported machines start drained.
+- `fleet export` / `fleet import`: `fleet.yaml` (settings, groups, machines by
+  name, repos, tracker projects, routines, account specs; no secrets, no ids),
+  `--dry-run` first; imported machines start drained, as pending entries until
+  they enroll. The hub database is the source of truth; the file is only a
+  rendering of `ExportConfig` and the input of `ImportConfig`, applied in one
+  transaction ([02b](specs/02b-hub-api.md#config-export-and-import)). `fleet
+  backup` is `fleetd backup` on the hub host, because a backup holds secrets.
 
 ## Configuration
 
@@ -414,8 +425,9 @@ Checked on 2026-09-28. Re-verify before relying on them.
   [01d](specs/01d-goal-hooks.md#muse-hooks-are-a-plugin-package): user-level
   hooks are a plugin package; 19 events including `Stop`. The `Stop` probe
   (same day) confirmed `decision: block` continues the turn, and found that
-  Muse hooks do not see the pane environment, so they recognise fleet goals
-  by `cwd`/`session_id` instead of `FLEET_GOAL_ID`.
+  Muse hooks do not see the pane environment. Since a running harness cannot
+  gain an environment variable at all, every harness now recognises fleet goals
+  through the agent's goal registry (ADR 0019, [02h](specs/02h-goal-binding-and-pane-signals.md)).
 - **Codex and Muse waiting detection.** Needed before Send-to-pane is enabled
   for them.
 - **Collector PATH strategy.** Record absolute tool paths at install time

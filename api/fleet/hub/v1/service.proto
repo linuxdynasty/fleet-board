@@ -2,38 +2,56 @@
 // later a phone (ADR 0018). Served by fleetd over gRPC, gRPC-Web and
 // Connect JSON from the same handlers (ADR 0003). Conventions (resources,
 // paging, request_id idempotency, versions as ETags, Operations, Watch,
-// scopes, errors) are in docs/specs/02b-hub-api.md. Scope per RPC is noted
-// as [READ], [SESSIONS_WRITE], [APPROVALS], [SETTINGS], [ADMIN].
+// scopes, errors) are in docs/specs/02b-hub-api.md; the Watch grammar and
+// filter fields in 02c-hub-watch-and-filters.md; the scope of every RPC and
+// every Watch topic in 02d-hub-authz.md, which is authoritative. Scope per
+// RPC is noted as [READ], [SESSIONS_WRITE], [APPROVALS], [SETTINGS], [ADMIN],
+// [LOGS]; [A|B] means either scope is enough; [self] means any signed-in
+// principal on its own rows (ADMIN on everyone's); [none] is unauthenticated.
+// How callers authenticate (session cookie, API token, signed device request,
+// the local owner) and the WebSocket rules for AttachTerminal are in
+// docs/specs/02f-hub-authentication.md.
 syntax = "proto3";
 
 package fleet.hub.v1;
 
 import "fleet/hub/v1/account.proto";
+import "fleet/hub/v1/admin.proto";
+import "fleet/hub/v1/auth.proto";
 import "fleet/hub/v1/common.proto";
+import "fleet/hub/v1/config.proto";
 import "fleet/hub/v1/device.proto";
 import "fleet/hub/v1/goal.proto";
+import "fleet/hub/v1/goal_dispatch.proto";
+import "fleet/hub/v1/goal_history.proto";
+import "fleet/hub/v1/log_store.proto";
 import "fleet/hub/v1/machine.proto";
+import "fleet/hub/v1/repo.proto";
 import "fleet/hub/v1/routine.proto";
 import "fleet/hub/v1/session.proto";
 import "fleet/hub/v1/settings.proto";
 import "fleet/hub/v1/terminal.proto";
+import "fleet/hub/v1/token.proto";
 import "fleet/hub/v1/triage.proto";
 import "fleet/hub/v1/watch.proto";
 import "fleet/hub/v1/work.proto";
-
-option go_package = "github.com/linuxdynasty/fleet-board/api/fleet/hub/v1;hubv1";
 
 // FleetService is everything a person-facing client can do.
 service FleetService {
   // --- Server, summary, changes ---------------------------------------------
 
-  // [none] API version, features, the caller. Works before sign-in.
+  // [none] API version, features, auth mode, sign-in methods, whether the hub
+  // is waiting to be claimed, the caller. Works before sign-in.
   rpc GetServerInfo(GetServerInfoRequest) returns (GetServerInfoResponse);
-  // [READ] The summary strip.
+  // [READ|APPROVALS] The summary strip.
   rpc GetFleetSummary(GetFleetSummaryRequest) returns (GetFleetSummaryResponse);
-  // [READ] Resource changes, filtered by topic; resumable.
+  // [per topic] Resource changes, one filter per topic; resumable. The scope
+  // each topic needs is in 02d-hub-authz.md; a topic the caller cannot read
+  // is refused when the stream opens.
   rpc Watch(WatchRequest) returns (stream WatchResponse);
-  // [READ] One operation (an agent command and its outcome).
+  // [READ], or the caller that requested it. One operation (an agent command
+  // and its outcome). output_text is returned only to the requester and to
+  // [LOGS] holders (02d).
   rpc GetOperation(GetOperationRequest) returns (GetOperationResponse);
 
   // --- Machines (Fleet view) ------------------------------------------------
@@ -44,14 +62,21 @@ service FleetService {
   rpc GetMachine(GetMachineRequest) returns (GetMachineResponse);
   // [SETTINGS] Display name and hub-assigned labels.
   rpc UpdateMachine(UpdateMachineRequest) returns (UpdateMachineResponse);
-  // [ADMIN] Drain (M4).
+  // [ADMIN] Drain (M4). The agent's Drain is owner-level, so the hub refuses
+  // a caller whose mapped role is not OWNER up front (ROLE_INSUFFICIENT; see
+  // 02d "Role sent to the agent").
   rpc DrainMachine(DrainMachineRequest) returns (DrainMachineResponse);
-  // [ADMIN] Undrain (M4).
+  // [ADMIN] Undrain (M4); same owner-level rule as DrainMachine.
   rpc UndrainMachine(UndrainMachineRequest) returns (UndrainMachineResponse);
-  // [ADMIN] Revoke and forget a machine.
+  // [ADMIN] Cut a machine off now and keep its row; closes its live streams.
+  rpc RevokeMachine(RevokeMachineRequest) returns (RevokeMachineResponse);
+  // [ADMIN] Forget a machine that is already revoked.
   rpc DeleteMachine(DeleteMachineRequest) returns (DeleteMachineResponse);
   // [ADMIN] A single-use enrollment token (A1).
   rpc CreateEnrollmentToken(CreateEnrollmentTokenRequest) returns (CreateEnrollmentTokenResponse);
+  // [SETTINGS] Install and verify the fleet's goal hooks now (EnsureGoalHooks,
+  // G1); the agent still requires an owner-level principal (02g).
+  rpc EnsureMachineHooks(EnsureMachineHooksRequest) returns (EnsureMachineHooksResponse);
 
   // --- Sessions and panes (Session view) ------------------------------------
 
@@ -67,20 +92,39 @@ service FleetService {
   rpc InterruptPane(InterruptPaneRequest) returns (InterruptPaneResponse);
   // [SESSIONS_WRITE] RunHarnessCommand (F8); DESTRUCTIVE needs an approval.
   rpc RunHarnessCommand(RunHarnessCommandRequest) returns (RunHarnessCommandResponse);
-  // [READ] CapturePane (E10).
+  // [READ] CapturePane (E10) of the visible screen; [LOGS] when last_lines is
+  // above 0 (scrollback is terminal history, 02d).
   rpc CapturePane(CapturePaneRequest) returns (CapturePaneResponse);
-  // [SESSIONS_WRITE] SetSessionAvailability (E11).
-  rpc SetSessionAvailability(SetSessionAvailabilityRequest) returns (SetSessionAvailabilityResponse);
+  // [SESSIONS_WRITE] SetPaneAvailability (E11): availability is per pane.
+  rpc SetPaneAvailability(SetPaneAvailabilityRequest) returns (SetPaneAvailabilityResponse);
   // [SESSIONS_WRITE] RespawnPane (F5).
   rpc RespawnPane(RespawnPaneRequest) returns (RespawnPaneResponse);
   // [SESSIONS_WRITE] KillWindow (F6); a developer's window needs an approval.
   rpc KillWindow(KillWindowRequest) returns (KillWindowResponse);
   // [SESSIONS_WRITE] SetLogCapture (K1).
   rpc SetLogCapture(SetLogCaptureRequest) returns (SetLogCaptureResponse);
-  // [READ] read-only, [SESSIONS_WRITE] with input. Browser attach (J1).
+  // [READ] read-only, [SESSIONS_WRITE] for input. A single-use ticket for one
+  // WebSocket attach (J1), needed in both auth modes; not needed over HTTP/2.
+  rpc CreateAttachTicket(CreateAttachTicketRequest) returns (CreateAttachTicketResponse);
+  // [READ] read-only, [SESSIONS_WRITE] with input. Browser attach (J1); the
+  // browser carries the same messages over a WebSocket.
   rpc AttachTerminal(stream AttachTerminalRequest) returns (stream AttachTerminalResponse);
-  // [READ] Stored session log, optionally following new data (K1, K3).
+  // [LOGS] Stored session log, optionally following new data (K1, K3).
   rpc ReadSessionLog(ReadSessionLogRequest) returns (stream ReadSessionLogResponse);
+
+  // --- Stored logs (all [LOGS], owner by default; 03d W9) ---------------------
+
+  // [LOGS] Sessions with stored logs, live and ended, with the stream keys and
+  // the archived last pane summaries.
+  rpc ListStoredSessions(ListStoredSessionsRequest) returns (ListStoredSessionsResponse);
+  // [LOGS]
+  rpc GetStoredSession(GetStoredSessionRequest) returns (GetStoredSessionResponse);
+  // [LOGS] Delete one session's logs, audited.
+  rpc DeleteSessionLogs(DeleteSessionLogsRequest) returns (DeleteSessionLogsResponse);
+  // [LOGS] Case-insensitive text search across stored sessions.
+  rpc SearchSessionLogs(SearchSessionLogsRequest) returns (SearchSessionLogsResponse);
+  // [LOGS] Store size against its cap, days retained, shipping paused.
+  rpc GetLogStoreStatus(GetLogStoreStatusRequest) returns (GetLogStoreStatusResponse);
 
   // --- Goals ----------------------------------------------------------------
 
@@ -92,8 +136,12 @@ service FleetService {
   rpc StartGoal(StartGoalRequest) returns (StartGoalResponse);
   // [SESSIONS_WRITE] Preflight (I1) only.
   rpc PreflightGoal(PreflightGoalRequest) returns (PreflightGoalResponse);
-  // [SESSIONS_WRITE] Pause, resume, edit, clear, re-check (G4).
+  // [SESSIONS_WRITE] Pause, resume, edit, clear, re-check, re-arm (G4).
   rpc ControlGoal(ControlGoalRequest) returns (ControlGoalResponse);
+  // [READ] The runs of one goal (restarts, nudges, usage, log keys).
+  rpc ListGoalRuns(ListGoalRunsRequest) returns (ListGoalRunsResponse);
+  // [READ] Every phase change of one goal, with its reason.
+  rpc ListGoalTransitions(ListGoalTransitionsRequest) returns (ListGoalTransitionsResponse);
 
   // --- Work items, change requests, integrations (Work view) ----------------
 
@@ -107,17 +155,37 @@ service FleetService {
   rpc GetChangeRequest(GetChangeRequestRequest) returns (GetChangeRequestResponse);
   // [READ]
   rpc ListIntegrations(ListIntegrationsRequest) returns (ListIntegrationsResponse);
-  // [SETTINGS] Label and watched repos/projects.
+  // [SETTINGS] Label and watched tracker projects (repos are Repo resources).
   rpc UpdateIntegration(UpdateIntegrationRequest) returns (UpdateIntegrationResponse);
+  // [SESSIONS_WRITE] MANUAL_ONLY back to READY (not for an untrusted item).
+  rpc RequeueWorkItem(RequeueWorkItemRequest) returns (RequeueWorkItemResponse);
+
+  // --- Repos (per-repository settings, repo.proto) --------------------------
+
+  // [READ]
+  rpc ListRepos(ListReposRequest) returns (ListReposResponse);
+  // [READ]
+  rpc GetRepo(GetRepoRequest) returns (GetRepoResponse);
+  // [SETTINGS] Start watching a repo.
+  rpc CreateRepo(CreateRepoRequest) returns (CreateRepoResponse);
+  // [SETTINGS] Consent, parallel cap, worktree mode, branch, hooks mode,
+  // tracker mapping, trusted gate.
+  rpc UpdateRepo(UpdateRepoRequest) returns (UpdateRepoResponse);
+  // [SETTINGS] Stop watching a repo.
+  rpc DeleteRepo(DeleteRepoRequest) returns (DeleteRepoResponse);
 
   // --- Accounts and usage ---------------------------------------------------
 
   // [READ]
   rpc ListAccounts(ListAccountsRequest) returns (ListAccountsResponse);
-  // [READ]
+  // [READ]; include_raw_screen also needs [LOGS].
   rpc GetAccount(GetAccountRequest) returns (GetAccountResponse);
   // [SETTINGS]
   rpc UpdateAccount(UpdateAccountRequest) returns (UpdateAccountResponse);
+  // [SETTINGS] An owner-defined API-key account (subscriptions are discovered).
+  rpc CreateAccount(CreateAccountRequest) returns (CreateAccountResponse);
+  // [SETTINGS] Remove an account nothing uses.
+  rpc DeleteAccount(DeleteAccountRequest) returns (DeleteAccountResponse);
   // [SESSIONS_WRITE] EnsureProbe run_now (D1).
   rpc ProbeAccount(ProbeAccountRequest) returns (ProbeAccountResponse);
   // [READ] Reading history for the burn-down chart.
@@ -125,17 +193,17 @@ service FleetService {
 
   // --- Triage and approvals -------------------------------------------------
 
-  // [READ]
+  // [READ|APPROVALS]
   rpc ListTriageItems(ListTriageItemsRequest) returns (ListTriageItemsResponse);
-  // [READ]
+  // [READ|APPROVALS]
   rpc GetTriageItem(GetTriageItemRequest) returns (GetTriageItemResponse);
   // [APPROVALS]
   rpc SnoozeTriageItem(SnoozeTriageItemRequest) returns (SnoozeTriageItemResponse);
   // [APPROVALS]
   rpc DismissTriageItem(DismissTriageItemRequest) returns (DismissTriageItemResponse);
-  // [READ]
+  // [READ|APPROVALS]
   rpc ListApprovals(ListApprovalsRequest) returns (ListApprovalsResponse);
-  // [READ]
+  // [READ|APPROVALS]
   rpc GetApproval(GetApprovalRequest) returns (GetApprovalResponse);
   // [APPROVALS] Answer a prompt, confirm or deny a command.
   rpc DecideApproval(DecideApprovalRequest) returns (DecideApprovalResponse);
@@ -161,29 +229,75 @@ service FleetService {
   rpc GetSettings(GetSettingsRequest) returns (GetSettingsResponse);
   // [READ]
   rpc ListSettings(ListSettingsRequest) returns (ListSettingsResponse);
-  // [SETTINGS]
+  // [SETTINGS], plus [ADMIN] for the HubSettings fields for sign-in, session
+  // lifetime and log retention (02d, "Field-level scopes").
   rpc UpdateSettings(UpdateSettingsRequest) returns (UpdateSettingsResponse);
   // [READ]
   rpc ListAuditEntries(ListAuditEntriesRequest) returns (ListAuditEntriesResponse);
+  // [READ] The whole configuration as one document (`fleet export`).
+  rpc ExportConfig(ExportConfigRequest) returns (ExportConfigResponse);
+  // [SETTINGS], plus [ADMIN] for machine entries and the field-level ADMIN
+  // fields of HubSettings (see UpdateSettings). Validate and apply a
+  // document in one transaction; dry_run returns the plan (`fleet import`).
+  rpc ImportConfig(ImportConfigRequest) returns (ImportConfigResponse);
+  // [ADMIN] Database sizes, schema version, last backup, free disk.
+  rpc GetStoreStatus(GetStoreStatusRequest) returns (GetStoreStatusResponse);
+
+  // --- Sign-in, users, sessions and API tokens (authenticated mode) ----------
+
+  // [none] Burn an invite or claim token and start registering a credential.
+  rpc RedeemInvite(RedeemInviteRequest) returns (RedeemInviteResponse);
+  // [self] or a registration session. Start adding a passkey.
+  rpc BeginPasskeyRegistration(BeginPasskeyRegistrationRequest) returns (BeginPasskeyRegistrationResponse);
+  // [self] or a registration session.
+  rpc FinishPasskeyRegistration(FinishPasskeyRegistrationRequest) returns (FinishPasskeyRegistrationResponse);
+  // [none] Rate limited per peer address.
+  rpc BeginPasskeyLogin(BeginPasskeyLoginRequest) returns (BeginPasskeyLoginResponse);
+  // [none] Sets the session cookie.
+  rpc FinishPasskeyLogin(FinishPasskeyLoginRequest) returns (FinishPasskeyLoginResponse);
+  // [self] own passkeys; [ADMIN] anyone's (USER principal only).
+  rpc DeletePasskey(DeletePasskeyRequest) returns (DeletePasskeyResponse);
+  // [self] End this browser session (login-session callers only).
+  rpc SignOut(SignOutRequest) returns (SignOutResponse);
+  // [self] own sessions; [ADMIN] all.
+  rpc ListLoginSessions(ListLoginSessionsRequest) returns (ListLoginSessionsResponse);
+  // [self] own sessions; [ADMIN] any (USER principal only).
+  rpc RevokeLoginSession(RevokeLoginSessionRequest) returns (RevokeLoginSessionResponse);
+  // [ADMIN]
+  rpc ListUsers(ListUsersRequest) returns (ListUsersResponse);
+  // [ADMIN] Create a user and a one-time invite. USER principal only; the
+  // role is at most the caller's own (02d, "No escalation").
+  rpc CreateUserInvite(CreateUserInviteRequest) returns (CreateUserInviteResponse);
+  // [ADMIN] Role, name, GitHub allow-list entry, disabled, extra_scopes. USER
+  // principal only; never grants above the caller's own scopes.
+  rpc UpdateUser(UpdateUserRequest) returns (UpdateUserResponse);
+  // [self] A signed-in user (or the local owner) only; shows the secret once.
+  rpc CreateApiToken(CreateApiTokenRequest) returns (CreateApiTokenResponse);
+  // [self] own tokens; [ADMIN] all.
+  rpc ListApiTokens(ListApiTokensRequest) returns (ListApiTokensResponse);
+  // [self] own tokens; [ADMIN] any.
+  rpc RevokeApiToken(RevokeApiTokenRequest) returns (RevokeApiTokenResponse);
 
   // --- Devices and notifications --------------------------------------------
 
-  // [none] Sent by a new device; creates a pending Device.
+  // [none] Sent by a new device; creates a pending Device. Rate limited per
+  // peer address; idempotency is keyed by (peer address, public key). An empty
+  // requested_scopes means READ and APPROVALS, never LOGS.
   rpc RequestPairing(RequestPairingRequest) returns (RequestPairingResponse);
-  // [ADMIN]
+  // [ADMIN] USER principal only; scopes a subset of the approver's own.
   rpc ApprovePairing(ApprovePairingRequest) returns (ApprovePairingResponse);
-  // [ADMIN], or the device itself.
+  // [ADMIN], or [self] for the device itself.
   rpc RevokeDevice(RevokeDeviceRequest) returns (RevokeDeviceResponse);
   // [ADMIN]
   rpc ListDevices(ListDevicesRequest) returns (ListDevicesResponse);
-  // [ADMIN], or the device itself.
+  // [ADMIN], or [self] for the device itself.
   rpc GetDevice(GetDeviceRequest) returns (GetDeviceResponse);
-  // [READ] own targets; [ADMIN] all.
+  // [self] own targets; [ADMIN] all.
   rpc ListNotificationTargets(ListNotificationTargetsRequest) returns (ListNotificationTargetsResponse);
-  // [READ] for own targets.
+  // [self]
   rpc CreateNotificationTarget(CreateNotificationTargetRequest) returns (CreateNotificationTargetResponse);
-  // [READ] for own targets.
+  // [self]
   rpc UpdateNotificationTarget(UpdateNotificationTargetRequest) returns (UpdateNotificationTargetResponse);
-  // [READ] for own targets.
+  // [self]
   rpc DeleteNotificationTarget(DeleteNotificationTargetRequest) returns (DeleteNotificationTargetResponse);
 }

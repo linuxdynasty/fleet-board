@@ -8,8 +8,6 @@ package fleet.type.v1;
 import "fleet/type/v1/ids.proto";
 import "google/protobuf/duration.proto";
 
-option go_package = "github.com/linuxdynasty/fleet-board/api/fleet/type/v1;typev1";
-
 // ---------------------------------------------------------------------------
 // Percent with an explicit unknown. Never 0-as-unknown.
 // ---------------------------------------------------------------------------
@@ -52,7 +50,7 @@ enum Status {
   STATUS_OK = 1;
   // Attempted and failed; reason says why.
   STATUS_FAILED = 2;
-  // Arrived after not_after (hub time); nothing was done.
+  // Arrived after not_after_time (hub time); nothing was done.
   STATUS_EXPIRED = 3;
   // Local policy or the effective settings refused it; nothing was done.
   STATUS_REJECTED_BY_POLICY = 4;
@@ -61,14 +59,19 @@ enum Status {
   // The agent cannot tell whether the effect happened (SendKeys after a
   // crash, UI must ask a person). Never retried automatically.
   STATUS_UNKNOWN_OUTCOME = 6;
-  // Waiting for `fleet-agent approve <command_id>` before not_after.
+  // Waiting for `fleet-agent approve <command_id>` before not_after_time.
+  // Progress only: it appears in CommandProgress{step "awaiting_local_confirm"}
+  // and never in a CommandResult, which is always final and sent exactly
+  // once (an approval then ends OK or FAILED, a denial or timeout
+  // REJECTED_BY_POLICY with LOCAL_DENIED or LOCAL_CONFIRM_TIMEOUT).
   STATUS_AWAITING_LOCAL_CONFIRM = 7;
 }
 
 // ReasonCode is the shared structured reason for preflight refusals,
 // command failures and policy rejections. Values 1..99 are preflight (I1);
 // 100..199 command execution; 200..299 envelope and policy; 300..399 goal
-// composite steps; 400..499 probes and parsing.
+// composite steps; 400..499 probes and parsing; 500..599 hub API; 600..699
+// Enroll (agent wire, carried in an RPC error's ErrorDetail).
 enum ReasonCode {
   REASON_CODE_UNSPECIFIED = 0;
 
@@ -87,10 +90,18 @@ enum ReasonCode {
   REASON_CODE_ON_BATTERY_BLOCKED = 12;
   REASON_CODE_POLICY_DENIED = 13;
   REASON_CODE_DRAINING = 14;
+  // The hub's own refusal: the machine is at max_active or max_total by the
+  // hub's goal table (PreflightGoalResponse.hub_checks). The agent never
+  // emits it; its own limit is AGENT_GOAL_CAP_REACHED.
   REASON_CODE_SLOTS_FULL = 15;
   // GoalSpec.profile (or EnsureProbe.profile) names a harness profile the
   // machine does not have. Empty profile always means the harness default.
   REASON_CODE_HARNESS_PROFILE_MISSING = 16;
+  // The agent's local safety cap: starting this goal would take the
+  // machine past its effective max_active or max_total, counted from the
+  // agent's own goal registry (defence in depth; the hub schedules from its
+  // table and normally never trips it). REJECTED_BY_POLICY, retryable.
+  REASON_CODE_AGENT_GOAL_CAP_REACHED = 17;
 
   // Command execution.
   REASON_CODE_SESSION_NOT_FOUND = 100;
@@ -121,6 +132,16 @@ enum ReasonCode {
   REASON_CODE_HOOKS_INSTALL_FAILED = 117;
   REASON_CODE_ATTACH_NOT_FOUND = 118;
   REASON_CODE_INTERNAL = 119;
+  // Reuse of a pane: its working directory is not a checkout of the goal's
+  // repo (or is outside the allowed roots). Also a Preflight failure when
+  // Preflight.reuse_pane names such a pane.
+  REASON_CODE_SESSION_WORKDIR_MISMATCH = 130;
+  // Reuse of a pane: the checkout it works in has uncommitted changes, so a
+  // new branch cannot be started there. The hub opens a new window instead.
+  REASON_CODE_CHECKOUT_DIRTY = 131;
+  // PruneWorktree: a live pane's working directory is inside the worktree.
+  // Close the window (KillWindow) first.
+  REASON_CODE_WORKTREE_IN_USE = 132;
 
   // Envelope and policy.
   REASON_CODE_EXPIRED = 200;
@@ -132,13 +153,16 @@ enum ReasonCode {
   REASON_CODE_LOCAL_DENIED = 206;
   // The requester's role is below what this kind or class needs.
   REASON_CODE_ROLE_INSUFFICIENT = 207;
+  // The agent is in policy safe mode (its policy file is invalid, see
+  // PolicyInfo.safe_mode): it observes only and refuses every control command
+  // and every hub setting. REJECTED_BY_POLICY.
+  REASON_CODE_POLICY_SAFE_MODE = 208;
 
   // Goal composite steps (G3) and goal control (G4).
   REASON_CODE_READY_TIMEOUT = 300;
   REASON_CODE_GOAL_FILE_NOT_SEEN = 301;
   REASON_CODE_GOAL_NOT_RUNNING = 302;
-  // 303 was STOP_TIMEOUT for the removed StopGoal composite.
-  reserved 303;
+  // 303 was STOP_TIMEOUT for the removed StopGoal composite; unused.
   REASON_CODE_TRUST_PROMPT_SEEN = 304;
   // The harness's /goal has no such subcommand (for example pause on
   // Claude Code 2.1.286, which offers only set and clear).
@@ -146,6 +170,17 @@ enum ReasonCode {
   // GoalSpec.fresh_context on a session the fleet did not start; /clear is
   // destructive (01b) and is never typed into the developer's own session.
   REASON_CODE_FRESH_CONTEXT_NOT_ALLOWED = 306;
+  // A startup screen the agent never answers: metadata kind is trust,
+  // update, login or release_notes (01b). TRUST_PROMPT_SEEN stays as the
+  // trust case; update and login are durable per (machine, harness) and go
+  // to Triage instead of a retry.
+  REASON_CODE_STARTUP_PROMPT_SEEN = 307;
+  // The harness's /model picker has no such model for this account.
+  REASON_CODE_MODEL_NOT_AVAILABLE = 308;
+  // The harness's /effort has no such level for this model.
+  REASON_CODE_EFFORT_NOT_SUPPORTED = 309;
+  // The agent could not write the goal file (disk, sandbox, path).
+  REASON_CODE_GOAL_FILE_WRITE_FAILED = 310;
 
   // Probes and parsing (D1, D2).
   REASON_CODE_PROBE_START_FAILED = 400;
@@ -165,11 +200,206 @@ enum ReasonCode {
   REASON_CODE_PAIRING_CODE_MISMATCH = 504;
   // The device is revoked or not yet approved.
   REASON_CODE_DEVICE_NOT_ACTIVE = 505;
+  // page_token is malformed, from another query, or older than 10 minutes.
+  // The client reloads the list from the first page.
+  REASON_CODE_PAGE_TOKEN_INVALID = 506;
+  // resume_token is malformed or from another fleet. (A well-formed token
+  // the hub cannot honour is not an error: it is RESYNC_REQUIRED.)
+  REASON_CODE_RESUME_TOKEN_INVALID = 507;
+  // filter does not parse or names a field outside the resource's filter
+  // catalogue (02c-hub-watch-and-filters.md); the violations say which.
+  REASON_CODE_FILTER_INVALID = 508;
+  // order_by names a field the resource does not sort by.
+  REASON_CODE_ORDER_BY_INVALID = 509;
+  // update_mask is empty, names a field that does not exist, an output-only
+  // field (status.*, id, version) or a field not updatable on this resource.
+  REASON_CODE_UPDATE_MASK_INVALID = 510;
+  // A mutating request without request_id.
+  REASON_CODE_REQUEST_ID_MISSING = 511;
+  // The id names no resource the caller may see (also for resources the
+  // caller's scopes hide, so ids cannot be probed).
+  REASON_CODE_RESOURCE_NOT_FOUND = 512;
+  // Create with an id or unique name that already exists.
+  REASON_CODE_RESOURCE_ALREADY_EXISTS = 513;
+  // The action needs a live agent connection (attach, capture) and the
+  // machine is OFFLINE or STALE. retryable; actions that queue (SendKeys)
+  // return an Operation instead.
+  REASON_CODE_MACHINE_OFFLINE = 514;
+  // No credentials, or credentials the hub does not know.
+  REASON_CODE_CREDENTIALS_INVALID = 515;
+  // The credentials were valid and have expired: the client signs in again.
+  REASON_CODE_CREDENTIALS_EXPIRED = 516;
+  // ControlGoalRequest.expected_phase does not match the goal's phase.
+  REASON_CODE_GOAL_PHASE_CHANGED = 517;
+  // A one-time secret (enrollment token) was already delivered for this
+  // request_id and is not stored; create a new one.
+  REASON_CODE_SECRET_ALREADY_DELIVERED = 518;
+  // A field is over its limit (02b-hub-api.md, "Size limits").
+  REASON_CODE_FIELD_TOO_LARGE = 519;
+  // The pairing request expired before the owner approved it.
+  REASON_CODE_PAIRING_EXPIRED = 520;
+  // The sign-in method (passkey or GitHub) is turned off in HubSettings, or
+  // GitHub sign-in is not configured on the hub's GitHub App.
+  REASON_CODE_SIGN_IN_METHOD_DISABLED = 521;
+  // The invite or claim token is unknown, already redeemed or expired.
+  REASON_CODE_INVITE_INVALID = 522;
+  // The WebAuthn ceremony id is unknown, expired (5 min) or already used;
+  // the client begins again. A failed assertion is CREDENTIALS_INVALID.
+  REASON_CODE_PASSKEY_CEREMONY_INVALID = 523;
+  // The GitHub account signed in correctly but is not on the allow-list (no
+  // INVITED or ACTIVE user has its login), or a link names a login other than
+  // the user's spec.github_login.
+  REASON_CODE_GITHUB_NOT_ALLOWED = 524;
+  // The change would leave a user with no way to sign in, or the hub with
+  // no active owner.
+  REASON_CODE_LAST_CREDENTIAL = 525;
+  // A grant above the grantor's own scopes (a token, device, role or extra
+  // scope its creator does not hold, or LOGS without an explicit tick), or a
+  // credential-minting RPC (ApprovePairing, CreateUserInvite, UpdateUser,
+  // CreateApiToken) called by a token or device instead of a user.
+  REASON_CODE_SCOPE_NOT_GRANTABLE = 526;
+  // The attach ticket is unknown, expired (60 s), already used, or was
+  // issued for another session, principal or Origin.
+  REASON_CODE_ATTACH_TICKET_INVALID = 527;
+  // The request's Origin is not the hub's own origin (HTTP 403, and in the
+  // Connect error body).
+  REASON_CODE_ORIGIN_NOT_ALLOWED = 528;
+  // The request's Host is not on the hub's allow-list (DNS rebinding guard;
+  // HTTP 403).
+  REASON_CODE_HOST_NOT_ALLOWED = 529;
+  // DeleteMachine on a machine that is not REVOKED; revoke it first.
+  REASON_CODE_MACHINE_NOT_REVOKED = 530;
+  // An enrollment token's previous_machine names a machine that is neither
+  // REVOKED nor past its certificate lifetime.
+  REASON_CODE_MACHINE_NOT_REENROLLABLE = 531;
+  // A command-issuing action on a REVOKED machine.
+  REASON_CODE_MACHINE_REVOKED = 532;
+
+  // Hub dispatch rules (03c planning rules, 03h). Each is a reason the hub
+  // refuses, delays or warns about a dispatch: PreflightCheck.check,
+  // StartGoal errors, Goal.status.start_error and the "why is nothing
+  // starting" fields (DispatchBlock). Which severity each has in a manual
+  // dispatch is the table in 03h.
+  // The work item failed the trusted-issues gate (or lost it after an edit).
+  REASON_CODE_WORK_ITEM_UNTRUSTED = 540;
+  // Someone else's claim is on the work item (claim comment, assignee).
+  REASON_CODE_WORK_ITEM_CLAIMED = 541;
+  // The work item already has a live goal (the unique-active rule).
+  REASON_CODE_WORK_ITEM_BUSY = 542;
+  // Another live goal works on the same branch, or owns the change request
+  // (one agent per branch).
+  REASON_CODE_BRANCH_BUSY = 543;
+  // The integration the item comes from is DEGRADED (access lost, failing).
+  REASON_CODE_INTEGRATION_DEGRADED = 544;
+  // The mirror is further behind than max_sync_lag; claims may be stale.
+  REASON_CODE_INTEGRATION_LAG = 545;
+  // The repo has no enabled Repo resource (not watched, or paused).
+  REASON_CODE_REPO_NOT_WATCHED = 546;
+  // The repo is at its parallel-goal cap (Repo.spec.max_parallel_goals or the
+  // fleet default).
+  REASON_CODE_REPO_PARALLEL_LIMIT = 547;
+  // No machine is online, undrained, fit, signed in with push access, holding
+  // a checkout and below its slots. metadata names what the best machine
+  // lacked.
+  REASON_CODE_NO_FIT_MACHINE = 548;
+  // repo consent intersected with account consent is empty, so the goal could
+  // do nothing but edit files.
+  REASON_CODE_CONSENT_EMPTY = 549;
+  // The account's pacing state keeps new goals off it (RESERVE, SHORT_LIMIT,
+  // AHEAD past the line); metadata["pacing_state"] and ["bucket"].
+  REASON_CODE_ACCOUNT_PACING_BLOCKED = 550;
+  // The account's reading is UNKNOWN or STALE (parse failed, probe failing,
+  // older than stale_after).
+  REASON_CODE_ACCOUNT_USAGE_UNKNOWN = 551;
+  // The account is never auto-dispatched: interactive-only, a dollar cap, or
+  // an OpenCode session on an Anthropic subscription; metadata["cause"].
+  REASON_CODE_ACCOUNT_NOT_DISPATCHABLE = 552;
+  // The machine carries a durable unfit marker for this harness or repo;
+  // metadata["agent_reason"] is the agent's reason.
+  REASON_CODE_MACHINE_UNFIT = 553;
+  // HubSettings.auto_dispatch (or the repo's) is off: only manual dispatch.
+  REASON_CODE_AUTO_DISPATCH_OFF = 554;
+  // Explanation only: no work item is READY for the repo or fleet.
+  REASON_CODE_NO_READY_ITEMS = 555;
+  // Explanation only: the one-dispatch-per-account-and-machine-per-pass
+  // guard held this item back until the next pass.
+  REASON_CODE_FLOOD_GUARD = 556;
+  // StartGoal found WARN checks the request did not acknowledge
+  // (acknowledged_warnings); FAILED_PRECONDITION with the codes in
+  // violations.
+  REASON_CODE_PREFLIGHT_WARNINGS_UNACKNOWLEDGED = 557;
+  // ControlGoal action that the goal's phase does not allow (NOT_DONE on a
+  // RUNNING goal, RESUME on a MERGED one), or any action while a person is
+  // typing in the goal pane: then metadata {"held": "person_typing"} tells
+  // the two apart and the action is refused, never queued. Not a stale phase:
+  // see GOAL_PHASE_CHANGED.
+  REASON_CODE_GOAL_ACTION_NOT_ALLOWED = 558;
+  // DeleteAccount while a live goal or session still spends from it, or
+  // while the harness still shows it signed in somewhere.
+  REASON_CODE_ACCOUNT_IN_USE = 559;
+  // DeleteSessionLogs on a session whose log streams are still capturing.
+  REASON_CODE_LOG_STREAM_OPEN = 560;
+  // RequeueWorkItem on an item that is not MANUAL_ONLY, or is MANUAL_ONLY
+  // because it is untrusted (relabel it, or dispatch it manually).
+  REASON_CODE_REQUEUE_NOT_ALLOWED = 561;
+  // ImportConfig could not apply the document: the plan names every entry
+  // that failed; nothing was applied.
+  REASON_CODE_CONFIG_INVALID = 562;
+
+  // Enroll (A1), carried in the ErrorDetail of the Enroll RPC error.
+  // The token is not one the hub issued (or its secret part is wrong).
+  REASON_CODE_ENROLL_TOKEN_UNKNOWN = 600;
+  REASON_CODE_ENROLL_TOKEN_EXPIRED = 601;
+  // Burned by an earlier Enroll with another install_id or CSR key. The
+  // same install_id and CSR key replays the stored response instead.
+  REASON_CODE_ENROLL_TOKEN_USED = 602;
+  // The CSR does not parse, is not Ed25519, or asks for another subject.
+  REASON_CODE_ENROLL_CSR_INVALID = 603;
+  // No common proto version (proto_min/proto_max).
+  REASON_CODE_ENROLL_PROTO_UNSUPPORTED = 604;
+  // EnrollRequest.previous_machine_id names a machine and the token names a
+  // different one. A request id with a token that names none is ignored.
+  REASON_CODE_ENROLL_PREVIOUS_MACHINE_MISMATCH = 605;
+}
+
+// AttachCloseReason says why a terminal attach ended (J1). Used by the
+// agent's Terminal stream and the hub's AttachTerminal, so a browser can tell
+// "idle, reconnect" from "session gone" without parsing text.
+enum AttachCloseReason {
+  ATTACH_CLOSE_REASON_UNSPECIFIED = 0;
+  // No input or output for attach_idle_timeout.
+  ATTACH_CLOSE_REASON_IDLE_TIMEOUT = 1;
+  // The tmux session or window the attach viewed ended.
+  ATTACH_CLOSE_REASON_SESSION_ENDED = 2;
+  // The hub closed it (revoked device or token, hub shutdown).
+  ATTACH_CLOSE_REASON_HUB_CLOSED = 3;
+  // The agent is shutting down.
+  ATTACH_CLOSE_REASON_AGENT_SHUTDOWN = 4;
+  // The agent's connection dropped (hub to client only).
+  ATTACH_CLOSE_REASON_AGENT_OFFLINE = 5;
+  // The client detached (AttachClose).
+  ATTACH_CLOSE_REASON_DETACHED = 6;
+  // The attach failed or was refused; the error field says why.
+  ATTACH_CLOSE_REASON_ERROR = 7;
+}
+
+// FieldViolation says what is wrong with one field of a request, so a form
+// can mark the field. Carried in ErrorDetail.violations on INVALID_ARGUMENT.
+message FieldViolation {
+  // Path from the request message, in proto field names with indexes:
+  // "update_mask.paths[0]", "spec.display_name", "filter" (a parse error
+  // has the offset in metadata["offset"] of the enclosing ErrorDetail).
+  string field = 1;
+  // INVALID_ARGUMENT, INVALID_NAME, FIELD_TOO_LARGE, FILTER_INVALID, ...
+  ReasonCode reason = 2;
+  // One line for a person. Never echoes untrusted text. 256 bytes.
+  string description = 3;
 }
 
 // ErrorDetail is the machine-readable half of an error, shared by command
-// results and progress (agent wire) and hub API errors (as a Connect/gRPC
-// error detail). The coarse outcome stays in Status or the RPC code.
+// results and progress (agent wire), hub API errors and Enroll errors (as a
+// Connect/gRPC error detail). The coarse outcome stays in Status or the RPC
+// code.
 message ErrorDetail {
   ReasonCode reason = 1;
   // True when the same request may succeed if sent again unchanged (with a
@@ -182,6 +412,8 @@ message ErrorDetail {
   // "goal.start"}, {"current_version": "7"}. No screen text, no secrets;
   // keys and values capped at 256 bytes, at most 16 entries.
   map<string, string> metadata = 4;
+  // Field-level detail for hub API INVALID_ARGUMENT errors; at most 16.
+  repeated FieldViolation violations = 5;
 }
 
 // ---------------------------------------------------------------------------
@@ -190,6 +422,8 @@ message ErrorDetail {
 
 // Capability is one advertised feature, for example {"usage.probe.codex", 1}.
 // The hub never sends a command whose capability the agent did not advertise.
+// In Command.requires, version is the minimum version the command needs; an
+// advertised version equal or higher satisfies it (02e-contract-rules.md).
 // "exec.raw" is reserved and never advertised or accepted in v1.
 message Capability {
   string name = 1;
@@ -197,9 +431,13 @@ message Capability {
 }
 
 // Role of the principal that requested a command (ADR 0004 "People on the
-// hub"). The agent re-checks role against harness command class (01b).
-// Each value names a permission set (02b-hub-api.md); values are never
-// compared numerically, and ROLE_SCHEDULER is not "above" ROLE_OWNER.
+// hub"). The agent re-checks role against command kind and harness command
+// class (the matrix is in 02g-agent-security.md). Each value names a
+// permission set (02d-hub-authz.md maps roles to scopes); values are never
+// compared numerically, and ROLE_SCHEDULER is not "above" ROLE_OWNER. "Role A
+// covers role B" means A's scope set includes B's. A device or API token
+// never has a role of its own: the hub sends the narrowest role that covers
+// its effective scopes (02d, "Role sent to the agent").
 enum Role {
   ROLE_UNSPECIFIED = 0;
   ROLE_VIEWER = 1;
@@ -222,8 +460,9 @@ enum PrincipalKind {
   PRINCIPAL_KIND_API_TOKEN = 4;
   // A paired device (phone); acts for on_behalf_of within its scopes.
   PRINCIPAL_KIND_DEVICE = 5;
-  // The OS user at the machine, through `fleet-agent` (local drain, local
-  // approval). Never a hub account; reported by the agent.
+  // An OS user acting locally, never a hub account: at a machine through
+  // `fleet-agent` (local drain, local approval), or on the hub host through
+  // `fleetd` admin commands (`on_behalf_of` names the owner it acts for).
   PRINCIPAL_KIND_LOCAL_USER = 6;
 }
 
@@ -232,14 +471,19 @@ message Principal {
   // Display name or login on the hub; "scheduler" for the scheduler.
   // Display only; never used as a key.
   string name = 1;
+  // For a USER, its role. For a DEVICE or API_TOKEN, the role the hub maps
+  // from the principal's effective scopes (never above what its user holds).
+  // This is the only authority the agent sees.
   Role role = 2;
-  // Stable hub-assigned id; survives renames. The key for audit, ownership
-  // (FLEET_OWNER holds it) and idempotency scoping. For LOCAL_USER the agent
-  // sends "local:<os user>".
-  string id = 3;
+  // The key for audit, ownership (FLEET_OWNER holds it) and idempotency
+  // scoping. A user's is hub-assigned; the others are fixed or derived:
+  // "local-owner" in local_trusted mode, "scheduler", "arbiter",
+  // "device/<device id>", "token/<token id>", "local:<os user>" for
+  // LOCAL_USER.
+  PrincipalId id = 3;
   PrincipalKind kind = 4;
   // Set when kind is DEVICE: the paired device that acted.
-  DeviceId device_id = 5;
+  DeviceId device = 5;
   // Set for DEVICE and API_TOKEN (the user they act for) and for SCHEDULER
   // or ARBITER when acting for a routine's or goal's owner. One level deep:
   // on_behalf_of never has its own on_behalf_of.

@@ -1,27 +1,36 @@
 // fleet.hub.v1 routines (ADR 0018): recurring fleet work that is not an
 // issue, such as dependency bumps, flaky-test sweeps or a weekly report. A
 // routine run is a normal goal whose work item has kind ROUTINE, so pacing,
-// consent, triage and verification apply unchanged.
+// consent, triage and verification apply unchanged. How runs are triggered,
+// numbered and verified: docs/specs/03i-routines.md.
 syntax = "proto3";
 
 package fleet.hub.v1;
 
 import "fleet/hub/v1/common.proto";
+import "fleet/type/v1/consent.proto";
 import "fleet/type/v1/ids.proto";
 import "fleet/type/v1/status.proto";
 import "fleet/type/v1/work.proto";
+import "google/protobuf/duration.proto";
 import "google/protobuf/field_mask.proto";
 import "google/protobuf/timestamp.proto";
 
-option go_package = "github.com/linuxdynasty/fleet-board/api/fleet/hub/v1;hubv1";
-
 // QueueEmptyTrigger runs the routine when the repo has no READY work item
-// and a slot and account are free, at most once per min_interval_hours.
+// and a slot and account are free, at most once per min_interval counted from
+// the previous run's start (not its end), so a long run does not stretch the
+// interval.
 message QueueEmptyTrigger {
-  uint32 min_interval_hours = 1;
+  // At least 1 minute; default 1 hour when unset.
+  google.protobuf.Duration min_interval = 1;
 }
 
-// CronTrigger runs the routine on a schedule (5-field cron).
+// CronTrigger runs the routine on a schedule (5-field cron). A fire time that
+// does not exist in the timezone (the spring-forward gap) runs at the first
+// instant after the gap; one that exists twice (fall back) runs once, at the
+// first. If the hub was down or the pass late, at most one missed fire runs
+// when it is back (the latest); older ones are skipped and counted in
+// RoutineStatus.skipped_fires.
 message CronTrigger {
   string expression = 1;
   // IANA timezone the expression is read in.
@@ -29,7 +38,9 @@ message CronTrigger {
 }
 
 // RoutineTrigger says when a run starts. A run never starts while the
-// previous run's goal is still active.
+// previous run's goal is live (03c phase classes); a run that stays live
+// longer than RoutineSpec.blocked_after raises a triage item instead of
+// waiting silently.
 message RoutineTrigger {
   oneof kind {
     QueueEmptyTrigger queue_empty = 1;
@@ -45,8 +56,65 @@ enum DoneRule {
   DONE_RULE_CHANGE_REQUEST_MERGED = 1;
   // The goal line says DONE; nothing to verify on a code host.
   DONE_RULE_GOAL_DONE_ONLY = 2;
-  // DONE and report_path exists on the run's pushed branch.
+  // DONE and report_path exists on the run's pushed branch: the verifier
+  // asks the code host for the path at the branch head
+  // (IntegrationProviderService.PathExists), so it needs a code-host
+  // integration with IntegrationCapabilities.path_exists. Without one the rule
+  // cannot be saved (INVALID_ARGUMENT on the routine).
   DONE_RULE_REPORT_WRITTEN = 3;
+}
+
+// RoutineSpec is what the owner configured. Covered by Routine.version, so a
+// run starting between loading and saving the form is not a conflict.
+message RoutineSpec {
+  string display_name = 1;
+  bool enabled = 2;
+  fleet.type.v1.RepoRef repo = 3;
+  // Unset = any harness the scheduler picks.
+  fleet.type.v1.Harness harness = 4;
+  string profile = 5;
+  RoutineTrigger trigger = 6;
+  // Goal text with placeholders {repo}, {run}, {date}; 4 KiB.
+  string goal_text_template = 7;
+  // Consent acts for its goals, further limited by repo ∩ account.
+  repeated fleet.type.v1.ConsentAct consent = 8;
+  DoneRule done_rule = 9;
+  // For DONE_RULE_REPORT_WRITTEN: path relative to the checkout.
+  string report_path = 10;
+  fleet.type.v1.Principal owner = 11;
+  // What the run's goals ask of the harness, as GoalSpecInput does for a
+  // manual dispatch. Empty = leave as is, so a sweep can ask for a cheap
+  // model and low effort.
+  string model = 12;
+  string effort = 13;
+  bool fresh_context = 14;
+  // Pin the account or machine; unset = the scheduler chooses. With harness
+  // unset too, the scheduler picks the (harness, account) with the highest
+  // projected_unused_percent, which is how routines spend leftover quota.
+  fleet.type.v1.AccountId account = 15;
+  fleet.type.v1.MachineId machine = 16;
+  // How long a run may stay live before the routine is flagged blocked
+  // (TRIAGE_KIND_ROUTINE_BLOCKED); a stuck or limit-waiting run would
+  // otherwise stop the routine for days without a word. Default 12 hours.
+  google.protobuf.Duration blocked_after = 17;
+}
+
+// RoutineStatus is the run bookkeeping. Not versioned.
+message RoutineStatus {
+  google.protobuf.Timestamp observed_time = 1;
+  // Watch hub_seq of the change that last touched this status.
+  uint64 hub_seq = 2;
+  // When the latest run was planned.
+  google.protobuf.Timestamp last_run_time = 10;
+  // Next cron fire; unset for queue_empty (evaluated every pass) and while
+  // disabled.
+  google.protobuf.Timestamp next_run_time = 11;
+  fleet.type.v1.GoalId last_goal = 12;
+  // The highest run number allocated. A run that fails to start keeps its
+  // number, so a WorkItemKey is never reused.
+  uint32 run_count = 13;
+  // Cron fires skipped because the hub could not run them in time.
+  uint32 skipped_fires = 14;
 }
 
 // Routine is one configured routine.
@@ -56,28 +124,11 @@ message Routine {
   google.protobuf.Timestamp create_time = 3;
   google.protobuf.Timestamp update_time = 4;
 
-  string display_name = 10;
-  bool enabled = 11;
-  fleet.type.v1.RepoRef repo = 12;
-  // Unset = any harness the scheduler picks.
-  fleet.type.v1.Harness harness = 13;
-  string profile = 14;
-  RoutineTrigger trigger = 15;
-  // Goal text with placeholders {repo}, {run}, {date}; 4 KiB.
-  string goal_text_template = 16;
-  // Consent acts for its goals, further limited by repo ∩ account.
-  repeated string consent = 17;
-  DoneRule done_rule = 18;
-  // For DONE_RULE_REPORT_WRITTEN: path relative to the checkout.
-  string report_path = 19;
-  fleet.type.v1.Principal owner = 20;
-  google.protobuf.Timestamp last_run_time = 21;
-  google.protobuf.Timestamp next_run_time = 22;
-  fleet.type.v1.GoalId last_goal = 23;
-  uint32 run_count = 24;
+  RoutineSpec spec = 10;
+  RoutineStatus status = 11;
 }
 
-// ListRoutinesRequest. Filter fields: enabled, repo.
+// ListRoutinesRequest. Filter and order_by names: 02c-hub-watch-and-filters.md.
 message ListRoutinesRequest {
   int32 page_size = 1;
   string page_token = 2;
@@ -101,7 +152,7 @@ message GetRoutineResponse {
   Routine routine = 1;
 }
 
-// CreateRoutineRequest. id, version and times are assigned by the hub.
+// CreateRoutineRequest. id, version, times and status are assigned by the hub.
 message CreateRoutineRequest {
   string request_id = 1;
   Routine routine = 2;
@@ -112,7 +163,7 @@ message CreateRoutineResponse {
   Routine routine = 1;
 }
 
-// UpdateRoutineRequest.
+// UpdateRoutineRequest. Masks name spec fields, e.g. "spec.enabled".
 message UpdateRoutineRequest {
   string request_id = 1;
   Routine routine = 2;
@@ -125,7 +176,8 @@ message UpdateRoutineResponse {
   Routine routine = 1;
 }
 
-// DeleteRoutineRequest. Running goals continue; no new runs.
+// DeleteRoutineRequest. Running goals continue (each carries a snapshot of its
+// done rule and report path, GoalDefinition.done_rule); no new runs.
 message DeleteRoutineRequest {
   string request_id = 1;
   RoutineId id = 2;
@@ -135,14 +187,24 @@ message DeleteRoutineRequest {
 // DeleteRoutineResponse.
 message DeleteRoutineResponse {}
 
-// RunRoutineRequest starts a run now, outside the trigger.
+// RunRoutineRequest starts a run now, outside the trigger. Refused while the
+// previous run is live (FAILED_PRECONDITION / WORK_ITEM_BUSY); otherwise it
+// plans like any run, through the same checks as a manual dispatch.
 message RunRoutineRequest {
   string request_id = 1;
   RoutineId id = 2;
+  // WARN reasons the caller saw and accepts, as in StartGoalRequest. A run
+  // started by a trigger acknowledges none, so a WARN or CONFIRM check there
+  // means "do not start" and the reason is recorded as a DispatchBlock.
+  repeated fleet.type.v1.ReasonCode acknowledged_warnings = 3;
 }
 
-// RunRoutineResponse.
+// RunRoutineResponse. As in StartGoalResponse: with a CONFIRM check the hub
+// creates an Approval and nothing else; the goal and the operation arrive in
+// DecideApprovalResponse once an owner approves it.
 message RunRoutineResponse {
   fleet.type.v1.GoalId goal = 1;
   Operation operation = 2;
+  // Set when a CONFIRM check holds the run.
+  ApprovalId approval = 3;
 }

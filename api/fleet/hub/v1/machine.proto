@@ -6,6 +6,7 @@ syntax = "proto3";
 package fleet.hub.v1;
 
 import "fleet/hub/v1/common.proto";
+import "fleet/hub/v1/dispatch_block.proto";
 import "fleet/type/v1/harness.proto";
 import "fleet/type/v1/ids.proto";
 import "fleet/type/v1/settings.proto";
@@ -14,8 +15,6 @@ import "fleet/type/v1/work.proto";
 import "google/protobuf/duration.proto";
 import "google/protobuf/field_mask.proto";
 import "google/protobuf/timestamp.proto";
-
-option go_package = "github.com/linuxdynasty/fleet-board/api/fleet/hub/v1;hubv1";
 
 // MachineState is the hub-side connection state (03-workflows W1, W2).
 enum MachineState {
@@ -27,6 +26,12 @@ enum MachineState {
   MACHINE_STATE_STALE = 3;
   // 3 min without heartbeat, or Bye.
   MACHINE_STATE_OFFLINE = 4;
+  // Revoked by the owner (RevokeMachine): its certificate serials are on the
+  // revocation list and every Hello gets Bye{REVOKED}. The row, its history
+  // and its audit trail stay until DeleteMachine. The machine comes back only
+  // by re-enrolling with a new token that names it as previous_machine, which
+  // returns the same machine id to ENROLLED with fresh certificate serials.
+  MACHINE_STATE_REVOKED = 5;
 }
 
 // HarnessHealth is the hub's state per (machine, harness) (03e W11).
@@ -54,6 +59,8 @@ message MachineHarness {
   HarnessHealth health = 6;
   fleet.type.v1.CommandCatalog catalog = 7;
   fleet.type.v1.GoalHooksState goal_hooks = 8;
+  // /goal subcommands and pause and resume modes for this version.
+  fleet.type.v1.GoalControl goal_control = 13;
   bool prompt_detection_verified = 9;
   bool launch_allowed = 10;
   // Account this harness/profile is signed in to, once the hub mapped it.
@@ -71,7 +78,7 @@ message MachineForgeCli {
   // Untrusted text.
   string user = 6;
   repeated MachineRepoAccess access = 7;
-  google.protobuf.Timestamp checked_at = 8;
+  google.protobuf.Timestamp checked_time = 8;
 }
 
 // MachineRepoAccess is push access to one repo as the forge CLI sees it.
@@ -102,6 +109,134 @@ message MachineSlots {
   uint32 total_max = 4;
 }
 
+// MachineDrain is the owner's drain request (M4). The hub sets it when
+// DrainMachine or UndrainMachine is accepted; MachineStatus.draining is what
+// the agent reports back, which also covers a local `fleet-agent drain`.
+message MachineDrain {
+  bool draining = 1;
+  string reason = 2;
+  fleet.type.v1.Principal by = 3;
+  google.protobuf.Timestamp drain_time = 4;
+}
+
+// MachineRevocation records RevokeMachine. Set once and never cleared.
+message MachineRevocation {
+  google.protobuf.Timestamp revoke_time = 1;
+  fleet.type.v1.Principal by = 2;
+  // Up to 512 bytes.
+  string reason = 3;
+}
+
+// MachineSpec is what the owner and hub decided about a machine. Covered by
+// Machine.version and expected_version.
+message MachineSpec {
+  // Owner-chosen name (hostname by default).
+  string display_name = 1;
+  // Hub-assigned labels; local additions show in MachineStatus.labels.
+  repeated string labels = 2;
+  MachineDrain drain = 3;
+  // Set once the machine is revoked (status.state is then REVOKED).
+  MachineRevocation revocation = 4;
+}
+
+// MachineTelemetry is the heartbeat-fed part of the status: it changes every
+// few seconds and is never worth a Watch message on its own. A change that
+// only touches telemetry reaches Watch at most once per 30 s per machine
+// (02c-hub-watch-and-filters.md, "Volatile fields").
+message MachineTelemetry {
+  google.protobuf.Timestamp last_seen_time = 1;
+  bool on_battery = 2;
+  fleet.type.v1.Percent battery = 3;
+  double load1 = 4;
+  uint64 mem_available_bytes = 5;
+  // Agent clock minus hub clock: the median of the last five samples
+  // (Hello.sent_time at connect, then Heartbeat.sent_time), each taken
+  // against the hub's receive time. A warning above 5 minutes.
+  google.protobuf.Duration clock_skew = 6;
+  // True above 15 minutes: the hub orders this machine's data by its own
+  // receive time and ignores its readings when choosing the newest reading of
+  // an account (02i, "Clocks").
+  bool clock_untrusted = 7;
+  // Resource samples (B2), latest only: the 24 h chart is not in the contract.
+  double load5 = 8;
+  // macOS memory pressure level: 1 normal, 2 warn, 4 critical; 0 unknown.
+  uint32 memory_pressure_level = 9;
+  // Free space under each path the agent watches (repo roots, its state
+  // directory); the smallest drives DISK_LOW.
+  repeated MachineDisk disk = 10;
+  // Log shipping (heartbeat SpoolStatus): bytes waiting in the agent's spool,
+  // bytes lost to its cap, and whether shipping is paused by the hub.
+  uint64 spool_pending_bytes = 11;
+  uint64 spool_gap_bytes = 12;
+  bool log_shipping_paused = 13;
+}
+
+// MachineDisk is free space under one path the agent watches.
+message MachineDisk {
+  // Repo root or the agent state directory. Untrusted text.
+  string path = 1;
+  uint64 free_bytes = 2;
+  uint64 total_bytes = 3;
+}
+
+// MachineStatus is everything observed about a machine: connection state,
+// facts, inventories, effective settings. Not versioned; observed_time and
+// hub_seq order it (02b-hub-api.md, "Versions and ETags").
+message MachineStatus {
+  google.protobuf.Timestamp observed_time = 1;
+  // Watch hub_seq of the change that last touched this status.
+  uint64 hub_seq = 2;
+
+  MachineState state = 10;
+  // Facts (B1). Untrusted text where noted on the agent wire.
+  string hostname = 11;
+  string os = 12;
+  string os_version = 13;
+  string arch = 14;
+  uint32 cpu_count = 15;
+  uint64 ram_bytes = 16;
+  string timezone = 17;
+  // Login user, for the copyable ssh line.
+  string username = 18;
+  string agent_version = 19;
+  string tmux_version = 20;
+  bool container = 21;
+  bool is_hub = 22;
+  // Effective labels: hub-assigned (spec.labels) plus local additions.
+  repeated string labels = 23;
+  // Effective drain: the hub's request or a local drain, as reported.
+  bool draining = 24;
+  MachineSlots slots = 25;
+  uint32 available_sessions = 26;
+  repeated MachineHarness harnesses = 27;
+  repeated MachineForgeCli forge_cli = 28;
+  repeated MachineRepo repos = 29;
+  string policy_hash = 30;
+  bool policy_changed_since_load = 31;
+  fleet.type.v1.EffectiveSettings effective_settings = 32;
+  // Settings fields the local policy capped.
+  repeated string capped_settings = 33;
+  // Settings fields the agent refused (invalid value, or safe mode), from
+  // the last SettingsAck. The previous effective value stands.
+  repeated fleet.type.v1.SettingRejection rejected_settings = 38;
+  // Names of settings the hub sent that this agent's version does not know,
+  // so they are NOT enforced there. Derived from
+  // SettingsAck.unrecognized_value_fields; empty when the agent is current.
+  repeated string unenforced_settings = 39;
+  // The agent runs in policy safe mode (observe only); policy_error is the
+  // one-line reason from the agent.
+  bool policy_safe_mode = 40;
+  string policy_error = 41;
+  google.protobuf.Timestamp cert_not_after_time = 34;
+  repeated fleet.type.v1.Capability capabilities = 35;
+  string install_id = 36;
+  MachineTelemetry telemetry = 37;
+  // Durable unfit markers the scheduler honours for this machine: why it
+  // takes no new goals for a harness or repo, and when it is next re-checked.
+  // Empty = fit. Cleared by the fact changing, or by the hub's re-check.
+  repeated MachineUnfit unfit = 42;
+}
+
 // Machine is one enrolled worker.
 message Machine {
   fleet.type.v1.MachineId id = 1;
@@ -109,51 +244,11 @@ message Machine {
   google.protobuf.Timestamp create_time = 3;
   google.protobuf.Timestamp update_time = 4;
 
-  // Owner-chosen name (hostname by default).
-  string display_name = 10;
-  MachineState state = 11;
-  google.protobuf.Timestamp last_seen_time = 12;
-  // Facts (B1). Untrusted text where noted on the agent wire.
-  string hostname = 13;
-  string os = 14;
-  string os_version = 15;
-  string arch = 16;
-  uint32 cpu_count = 17;
-  uint64 ram_bytes = 18;
-  string timezone = 19;
-  // Login user, for the copyable ssh line.
-  string username = 20;
-  string agent_version = 21;
-  string tmux_version = 22;
-  bool container = 23;
-  bool is_hub = 24;
-  // Effective labels: hub-assigned plus local additions.
-  repeated string labels = 25;
-  bool draining = 26;
-  string drain_reason = 27;
-  fleet.type.v1.Principal drained_by = 28;
-  MachineSlots slots = 29;
-  uint32 available_sessions = 30;
-  repeated MachineHarness harnesses = 31;
-  repeated MachineForgeCli forge_cli = 32;
-  repeated MachineRepo repos = 33;
-  string policy_hash = 34;
-  bool policy_changed_since_load = 35;
-  fleet.type.v1.EffectiveSettings effective_settings = 36;
-  // Settings fields the local policy capped.
-  repeated string capped_settings = 37;
-  google.protobuf.Timestamp cert_not_after = 38;
-  repeated fleet.type.v1.Capability capabilities = 39;
-  bool on_battery = 40;
-  fleet.type.v1.Percent battery = 41;
-  double load1 = 42;
-  uint64 mem_available_bytes = 43;
-  // Agent clock minus hub clock; a warning above 5 minutes.
-  google.protobuf.Duration clock_skew = 44;
-  string install_id = 45;
+  MachineSpec spec = 10;
+  MachineStatus status = 11;
 }
 
-// ListMachinesRequest. Filter fields: state, label, harness, draining.
+// ListMachinesRequest. Filter and order_by names: 02c-hub-watch-and-filters.md.
 message ListMachinesRequest {
   int32 page_size = 1;
   string page_token = 2;
@@ -177,7 +272,8 @@ message GetMachineResponse {
   Machine machine = 1;
 }
 
-// UpdateMachineRequest. Updatable: display_name, labels (hub-assigned only).
+// UpdateMachineRequest. Updatable: spec.display_name, spec.labels. spec.drain
+// changes only through DrainMachine and UndrainMachine; status is output-only.
 message UpdateMachineRequest {
   string request_id = 1;
   Machine machine = 2;
@@ -194,12 +290,15 @@ message UpdateMachineResponse {
 message DrainMachineRequest {
   string request_id = 1;
   fleet.type.v1.MachineId id = 2;
+  // Up to 512 bytes.
   string reason = 3;
 }
 
 // DrainMachineResponse.
 message DrainMachineResponse {
   Operation operation = 1;
+  // The machine with spec.drain already set (version bumped).
+  Machine machine = 2;
 }
 
 // UndrainMachineRequest sends Undrain; a local drain answers
@@ -212,10 +311,40 @@ message UndrainMachineRequest {
 // UndrainMachineResponse.
 message UndrainMachineResponse {
   Operation operation = 1;
+  Machine machine = 2;
 }
 
-// DeleteMachineRequest revokes the certificate serials; the next Hello is
-// refused. History stays in the audit log.
+// RevokeMachineRequest cuts a machine off and keeps its row (02g, "Machine
+// lifecycle: revoke and delete"). In one transaction the hub adds every
+// certificate serial of the machine to the revocation list, marks it REVOKED,
+// abandons its goals that never confirmed running (ABANDONED, MACHINE_REVOKED)
+// and sets the rest STUCK with phase_reason MACHINE_REVOKED (their work items
+// stay held until an operator clears them); after commit it sends Bye{REVOKED} on the live Connect stream and
+// closes that agent's Terminal, SessionLog and attach streams, so a stolen
+// laptop stops receiving commands at once instead of at its next reconnect.
+// Idempotent: a revoked machine returns itself.
+message RevokeMachineRequest {
+  string request_id = 1;
+  fleet.type.v1.MachineId id = 2;
+  uint64 expected_version = 3;
+  // Up to 512 bytes; shown in the audit log.
+  string reason = 4;
+}
+
+// RevokeMachineResponse.
+message RevokeMachineResponse {
+  Machine machine = 1;
+}
+
+// DeleteMachineRequest forgets a machine that is already REVOKED (a machine
+// in any other state is FAILED_PRECONDITION / MACHINE_NOT_REVOKED). The row
+// and the rows that only make sense with it (connections, outbox, probes,
+// inventory, attaches) are removed; sessions, goals and logs it ran keep
+// their history under the machine id, and the audit log keeps everything.
+// After delete, `previous_machine` of an enrollment token can no longer name it.
+// The machine's revoked certificate serials stay on the revocation list until
+// each certificate's not_after, and RenewCert, Terminal and SessionLog are
+// refused for an id with no live row.
 message DeleteMachineRequest {
   string request_id = 1;
   fleet.type.v1.MachineId id = 2;
@@ -228,22 +357,69 @@ message DeleteMachineResponse {}
 // CreateEnrollmentTokenRequest: the API form of `fleetd enroll-token`.
 message CreateEnrollmentTokenRequest {
   string request_id = 1;
-  // Name the machine will get; also the expected hostname for the warning.
+  // Name the machine will get (its display name). An import of a fleet.yaml
+  // machine entry with this name supplies its labels and settings layer
+  // (ImportConfig, 02b "Config export and import").
   string machine_name = 2;
   // At most 24 h; default 15 min.
   google.protobuf.Duration ttl = 3;
-  // Set to re-enroll a known machine (EnrollRequest.previous_machine_id).
+  // Set to re-enroll a known machine (EnrollRequest.previous_machine_id). The
+  // machine must be REVOKED or past its certificate lifetime
+  // (FAILED_PRECONDITION / MACHINE_NOT_REENROLLABLE otherwise), and its row
+  // must still exist (not deleted).
   fleet.type.v1.MachineId previous_machine = 4;
+  // The hostname the machine is expected to report; a different one raises
+  // the hostname_mismatch item. Empty = machine_name (the old rule), so a
+  // renamed machine does not warn once this is set.
+  string expected_hostname = 5;
+  // Hub-assigned labels the machine starts with (same rules as
+  // MachineSpec.labels); merged with a matching imported entry's.
+  repeated string labels = 6;
+  // The machine enrolls drained (spec.drain set by the hub at Enroll): it
+  // takes no goal until the owner undrains it. Always true for a machine
+  // that came from an imported config.
+  bool start_drained = 7;
 }
 
 // CreateEnrollmentTokenResponse. The token is shown once and stored only as
-// a hash; a retry with the same request_id inside the idempotency window
-// gets the same token from memory, after that a new request is needed.
+// a hash, and it is excluded from the stored idempotent response: a retry
+// with the same request_id inside the idempotency window fails with
+// ALREADY_EXISTS / SECRET_ALREADY_DELIVERED and the owner creates a new one.
 message CreateEnrollmentTokenResponse {
+  // Self-describing: `fbe1_<base64url of: version byte, SHA-256 of the fleet
+  // CA certificate, 32 random secret bytes>`. The agent checks the server
+  // chain against the embedded fingerprint before it sends the token or a
+  // CSR (the trust anchor, 02g-agent-security.md), so nothing needs comparing
+  // by eye. Only the hash of the secret part is stored.
   string token = 1;
   google.protobuf.Timestamp expire_time = 2;
-  // CA fingerprint the agent pins, for the owner to compare.
+  // SHA-256 of the CA certificate (hex), the one inside the token, for an
+  // owner who wants to check it out of band.
   string ca_fingerprint = 3;
-  // Ready-to-copy `fleet-agent enroll --hub … --token …` line.
+  // Ready-to-copy `fleet-agent enroll --token …` line (plus `--hub <address>`
+  // when the hub has more than one).
   string enroll_command = 4;
+}
+
+// EnsureMachineHooksRequest asks the agent to install and verify the fleet's
+// generic goal hooks (EnsureGoalHooks, G1), now. The hub also does it by
+// itself (03-workflows.md, "Hook reconcile"); this is the owner's "reinstall
+// on the machine" and "re-verify" button. Needs SCOPE_SETTINGS, and the
+// agent's role matrix still requires an owner-level principal (02g).
+message EnsureMachineHooksRequest {
+  string request_id = 1;
+  fleet.type.v1.MachineId machine = 2;
+  // Unset = every harness on the machine with launch_allowed.
+  fleet.type.v1.Harness harness = 3;
+  string profile = 4;
+  // The checkout whose project config is read to see whether the repo ships
+  // its own hooks. Unset = each enabled Repo's checkout on the machine.
+  fleet.type.v1.RepoRef repo = 5;
+}
+
+// EnsureMachineHooksResponse. One Operation per (harness, checkout) the call
+// expanded to; the resulting GoalHooksState arrives in
+// Machine.status.harnesses[].goal_hooks and repos[].goal_hooks.
+message EnsureMachineHooksResponse {
+  repeated Operation operations = 1;
 }

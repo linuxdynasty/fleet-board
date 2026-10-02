@@ -1,0 +1,131 @@
+// fleet.hub.v1 goal dispatch (03c W5, 03h): manual dispatch and preflight.
+// StartGoalRequest and PreflightGoalRequest share one input message, so the
+// preview ("keys the agent will type", the checks) is computed from exactly
+// what StartGoal would send. The checks carry a severity, so the UI and the
+// CLI apply one rule for "blocked" versus "allowed with a warning" instead of
+// each inventing one. The reasons are ReasonCodes (hub dispatch block 540..562
+// and the agent's preflight codes), never strings.
+syntax = "proto3";
+
+package fleet.hub.v1;
+
+import "fleet/hub/v1/common.proto";
+import "fleet/type/v1/consent.proto";
+import "fleet/type/v1/ids.proto";
+import "fleet/type/v1/status.proto";
+import "fleet/type/v1/work.proto";
+
+// GoalPlacement says where a dispatch runs; unset fields are chosen by the
+// scheduler with the same rules as auto-dispatch (03c planning rules).
+message GoalPlacement {
+  fleet.type.v1.MachineId machine = 1;
+  fleet.type.v1.Harness harness = 2;
+  string profile = 3;
+  fleet.type.v1.AccountId account = 4;
+  // Prefer this available pane (E11). Reuse is by pane, never by session: a
+  // session can hold several harness panes (ADR 0019, 17).
+  fleet.type.v1.PaneKey reuse_pane = 5;
+  // New window in this session instead of a new session.
+  fleet.type.v1.SessionId in_session = 6;
+  string window_name = 7;
+}
+
+// GoalSpecInput is everything an operator can choose about a dispatch. Both
+// StartGoalRequest and PreflightGoalRequest carry it, so a preflight with the
+// operator's edits answers for the goal that would start.
+message GoalSpecInput {
+  fleet.type.v1.WorkItemKey work_item = 1;
+  fleet.type.v1.RepoRef repo = 2;
+  // Existing change request the goal continues ("drive to merge" for a PR no
+  // goal owns); preflight needs it to check BRANCH_BUSY.
+  fleet.type.v1.WorkItemKey change_request = 3;
+  GoalPlacement placement = 4;
+  // Empty = repo consent ∩ account consent (ADR 0008, repo.proto).
+  repeated fleet.type.v1.ConsentAct consent = 5;
+  // Empty = the hub's template for the work item.
+  string goal_text = 6;
+  string model = 7;
+  string effort = 8;
+  bool fresh_context = 9;
+  // Free text from the operator; the hub prefixes "manual dispatch by …".
+  string dispatch_reason = 10;
+}
+
+// PreflightSeverity says what a failed check means for a manual dispatch.
+// The table of which reason has which severity is in 03h.
+enum PreflightSeverity {
+  PREFLIGHT_SEVERITY_UNSPECIFIED = 0;
+  // Cannot start: SLOTS_FULL, NO_FIT_MACHINE, WORK_ITEM_BUSY, a durable
+  // agent refusal. StartGoal fails FAILED_PRECONDITION with this reason.
+  PREFLIGHT_SEVERITY_BLOCK = 1;
+  // Allowed only after a person confirms in an Approval
+  // (APPROVAL_KIND_DISPATCH_CONFIRM, required role OWNER): bypassing a safety
+  // gate or spending money. StartGoal returns the approval and starts nothing
+  // until it is approved.
+  PREFLIGHT_SEVERITY_CONFIRM = 2;
+  // Allowed once the request lists the reason in acknowledged_warnings: the
+  // scheduler would not pick this, but it is safe to do on purpose (pacing
+  // ahead, usage stale, integration lag).
+  PREFLIGHT_SEVERITY_WARN = 3;
+  // Shown, needs nothing (the reused session, the model the harness shows).
+  PREFLIGHT_SEVERITY_INFO = 4;
+}
+
+// PreflightCheck is one finding of the hub's own checks.
+message PreflightCheck {
+  // reason is the ReasonCode, metadata the subject (DispatchBlock lists the
+  // keys).
+  fleet.type.v1.ErrorDetail check = 1;
+  PreflightSeverity severity = 2;
+}
+
+// StartGoalRequest dispatches a goal (manual dispatch). The hub fills the
+// GoalSpec, runs its own checks, preflights unless skip_preflight, and sends
+// StartGoal. Any BLOCK check fails the call with FAILED_PRECONDITION and that
+// check's reason (every BLOCK is in ErrorDetail.violations); an
+// unacknowledged WARN fails with PREFLIGHT_WARNINGS_UNACKNOWLEDGED.
+message StartGoalRequest {
+  string request_id = 1;
+  GoalSpecInput input = 2;
+  // The preflight response of the agent is advisory; StartGoal re-runs it
+  // unless this is set and the hub's own result is under a minute old.
+  bool skip_preflight = 3;
+  // WARN reasons the caller saw and accepts. A WARN that is not listed fails
+  // the call, so a client cannot dispatch past a warning it never showed.
+  repeated fleet.type.v1.ReasonCode acknowledged_warnings = 4;
+}
+
+// StartGoalResponse. Without a CONFIRM check the goal id is assigned before
+// StartGoal is sent and operation is set. With one, the hub creates an
+// Approval and nothing else: goal and operation are unset until it is
+// approved (the goal and the operation then arrive in
+// DecideApprovalResponse, and Approval.goal names the goal). A denied or
+// expired approval creates no goal.
+message StartGoalResponse {
+  fleet.type.v1.GoalId goal = 1;
+  Operation operation = 2;
+  // Set when a CONFIRM check holds the dispatch.
+  ApprovalId approval = 3;
+}
+
+// PreflightGoalRequest runs the hub's checks and the agent's Preflight (I1)
+// without starting anything, for the same input StartGoal would take. An empty
+// placement asks the scheduler where it would run it: "next up" is this call
+// on the first READY item with an empty placement.
+message PreflightGoalRequest {
+  string request_id = 1;
+  GoalSpecInput input = 2;
+}
+
+// PreflightGoalResponse. When the operation is DONE, Operation.failed_checks
+// lists what failed on the agent (all BLOCK) and Operation.output_text holds
+// the goal line the agent would type (PreflightResult.goal_line_preview).
+// The hub's own checks are here at once, before anything is sent.
+message PreflightGoalResponse {
+  Operation operation = 1;
+  // Findings of the hub's checks (slots, pacing, claims, trust, repo cap,
+  // integration lag, consent), with severity.
+  repeated PreflightCheck hub_checks = 2;
+  // The placement the scheduler would use.
+  GoalPlacement placement = 3;
+}

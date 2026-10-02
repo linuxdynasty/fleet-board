@@ -12,8 +12,6 @@ import "fleet/type/v1/status.proto";
 import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
 
-option go_package = "github.com/linuxdynasty/fleet-board/api/fleet/type/v1;typev1";
-
 // UsageSource says how a reading was obtained.
 enum UsageSource {
   USAGE_SOURCE_UNSPECIFIED = 0;
@@ -60,7 +58,7 @@ enum ParseOutcome {
 message ResetTime {
   // UTC instant, resolved by the agent with the machine timezone (B1).
   // Unset when resolution failed; original_text is still present.
-  google.protobuf.Timestamp at = 1;
+  google.protobuf.Timestamp resolved_time = 1;
   // Exactly as shown on screen. Untrusted text, capped at 256 bytes.
   string original_text = 2;
   // IANA timezone used to resolve the text, e.g. "America/New_York".
@@ -103,7 +101,7 @@ message LimitBucket {
   string label = 2;
   // Percent USED (Codex "% left" is converted; display keeps "% left").
   Percent percent_used = 3;
-  ResetTime resets_at = 4;
+  ResetTime resets_time = 4;
   // Window length when known (Codex rate_limits has 10080 minutes).
   google.protobuf.Duration window = 5;
   WindowKind kind = 6;
@@ -123,5 +121,5 @@ message SpendReading {
   // What the amount covers as the tool labels it ("all-time", "today").
   string period_label = 3;
   // Period start when the tool states it; otherwise unset.
-  google.protobuf.Timestamp period_start = 4;
+  google.protobuf.Timestamp period_start_time = 4;
 }

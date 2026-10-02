@@ -2,7 +2,16 @@
 // a phone app is additive later; push delivery itself is not built in v1.
 // A device holds its own key pair; the hub stores only the public key and
 // the scopes the owner granted. A device acts as Principal{kind DEVICE,
-// device_id, on_behalf_of: the owner who approved it}.
+// device, on_behalf_of: the owner who approved it}.
+//
+// How a device authenticates (02f-hub-authentication.md): every request
+// carries `Authorization: Fleet-Device <device id>.<unix seconds>.<nonce>.
+// <signature>`, an Ed25519 signature with the device key over the method, path,
+// SHA-256 of the body, the timestamp and the nonce; the hub refuses a
+// timestamp more than 60 s off or a nonce it saw in that window. A stream
+// (Watch) is signed once at open and ends the moment the device is revoked.
+// Never a cookie, so a web page cannot ride it. The role the agent sees for a
+// device is derived from its scopes (02d, "Role sent to the agent").
 syntax = "proto3";
 
 package fleet.hub.v1;
@@ -13,7 +22,50 @@ import "fleet/type/v1/ids.proto";
 import "google/protobuf/field_mask.proto";
 import "google/protobuf/timestamp.proto";
 
-option go_package = "github.com/linuxdynasty/fleet-board/api/fleet/hub/v1;hubv1";
+// DevicePlatform is what kind of client a device is. Display only.
+enum DevicePlatform {
+  DEVICE_PLATFORM_UNSPECIFIED = 0;
+  DEVICE_PLATFORM_IOS = 1;
+  DEVICE_PLATFORM_ANDROID = 2;
+  DEVICE_PLATFORM_DESKTOP = 3;
+  DEVICE_PLATFORM_OTHER = 15;
+}
+
+// DeviceSpec is what the device asked for and the owner decided. Covered by
+// Device.version, so approving or revoking a device that keeps pinging is
+// never a version conflict.
+message DeviceSpec {
+  string display_name = 1;
+  DevicePlatform platform = 2;
+  // Raw Ed25519 public key (32 bytes); the device signs its requests with the
+  // private key, which never leaves it. Never a password or token.
+  bytes public_key = 3;
+  // The user the device acts for (Principal.id); set at approval.
+  fleet.type.v1.PrincipalId principal = 4;
+  // Scopes the device asked for when pairing. An empty request means the
+  // phone default, SCOPE_READ and SCOPE_APPROVALS; SCOPE_LOGS is never in the
+  // default, and neither is SCOPE_ADMIN or SCOPE_SETTINGS.
+  repeated Scope requested_scopes = 5;
+  // Granted scopes; a subset of the approving user's effective scopes (role
+  // plus UserSpec.extra_scopes), and of what the owner ticked. May include
+  // SCOPE_LOGS only when the owner ticked it and holds it (ADR 0019).
+  // Narrowed again to the user's effective scopes on every call. A later
+  // change to these follows the same rule (02d, "No escalation").
+  repeated Scope scopes = 6;
+  // Unset while pairing is pending.
+  google.protobuf.Timestamp approved_time = 7;
+  // Set once revoked; a revoked device is refused on every call.
+  google.protobuf.Timestamp revoked_time = 8;
+}
+
+// DeviceStatus is what the hub observed of the device. Not versioned.
+message DeviceStatus {
+  google.protobuf.Timestamp observed_time = 1;
+  // Watch hub_seq of the change that last touched this status.
+  uint64 hub_seq = 2;
+  // Volatile: at most one Watch message per 30 s (02c).
+  google.protobuf.Timestamp last_seen_time = 10;
+}
 
 // Device is one paired (or pairing) client device.
 message Device {
@@ -22,53 +74,46 @@ message Device {
   google.protobuf.Timestamp create_time = 3;
   google.protobuf.Timestamp update_time = 4;
 
-  string display_name = 10;
-  // "ios", "android", "desktop". Display only.
-  string platform = 11;
-  // Raw Ed25519 public key; the device signs its requests (or its client
-  // certificate is issued from it). Never a password or token.
-  bytes public_key = 12;
-  // The owner principal the device acts for (Principal.id).
-  string principal_id = 13;
-  // Granted scopes; a subset of the owner's.
-  repeated Scope scopes = 14;
-  // Unset while pairing is pending.
-  google.protobuf.Timestamp approved_time = 15;
-  // Set once revoked; a revoked device is refused on every call.
-  google.protobuf.Timestamp revoked_time = 16;
-  google.protobuf.Timestamp last_seen_time = 17;
-  // Scopes the device asked for when pairing.
-  repeated Scope requested_scopes = 18;
+  DeviceSpec spec = 10;
+  DeviceStatus status = 11;
 }
 
 // RequestPairingRequest is sent by the new device, unauthenticated, over
-// the hub's TLS port. It creates a pending Device and shows a short code on
-// both the device and the owner's UI.
+// the hub's TLS port. It creates a pending Device and returns a short code
+// that only the device shows; the owner types it to approve. The call has no
+// request_id: it is idempotent by (peer address, public key) because there is
+// no principal yet (02b, "Idempotency"), and so is exempt from
+// REQUEST_ID_MISSING.
 message RequestPairingRequest {
-  string request_id = 1;
-  string display_name = 2;
-  string platform = 3;
-  bytes public_key = 4;
-  repeated Scope requested_scopes = 5;
+  string display_name = 1;
+  DevicePlatform platform = 2;
+  bytes public_key = 3;
+  repeated Scope requested_scopes = 4;
 }
 
 // RequestPairingResponse.
 message RequestPairingResponse {
   Device device = 1;
   // Six digits derived from the public key and a hub nonce; the owner
-  // compares it before approving.
+  // compares it before approving. Recomputed on a replay, never stored.
   string pairing_code = 2;
   google.protobuf.Timestamp expire_time = 3;
 }
 
-// ApprovePairingRequest is sent by an owner (SCOPE_ADMIN).
+// ApprovePairingRequest is sent by an owner (SCOPE_ADMIN, USER principal only:
+// a token or device is SCOPE_NOT_GRANTABLE even with ADMIN).
 message ApprovePairingRequest {
   string request_id = 1;
   fleet.type.v1.DeviceId id = 2;
+  // spec.version the owner saw; last_seen_time updates never change it.
   uint64 expected_version = 3;
-  // Must match the code the device shows.
+  // The code the owner read off the device and typed (never stored or shown
+  // by the hub); must match.
   string pairing_code = 4;
-  // Scopes granted; may be fewer than requested.
+  // Scopes granted; may be fewer than requested, never more, and a subset of
+  // the approver's own effective scopes (02d, "No escalation"). SCOPE_LOGS is
+  // granted only when listed here by an owner who holds it, even if the device
+  // asked for it (anything else not covered is SCOPE_NOT_GRANTABLE).
   repeated Scope scopes = 5;
 }
 
@@ -89,7 +134,7 @@ message RevokeDeviceResponse {
   Device device = 1;
 }
 
-// ListDevicesRequest. Filter fields: principal_id, revoked.
+// ListDevicesRequest. Filter and order_by names: 02c-hub-watch-and-filters.md.
 message ListDevicesRequest {
   int32 page_size = 1;
   string page_token = 2;
@@ -130,19 +175,23 @@ message ChatBinding {
   string destination = 2;
 }
 
-// NotificationTarget is where one principal's notifications go.
+// NotificationTarget is where one principal's notifications go. It has no
+// observed state, so it has no spec/status split: every field is an owner
+// choice and version covers all of it.
 message NotificationTarget {
   NotificationTargetId id = 1;
   uint64 version = 2;
   google.protobuf.Timestamp create_time = 3;
   google.protobuf.Timestamp update_time = 4;
 
-  // Principal.id of the owner of this target.
-  string principal_id = 10;
+  // Output-only: the caller's own Principal.id, set by the hub on create and
+  // ignored in requests. ADMIN lists every principal's targets.
+  fleet.type.v1.PrincipalId principal = 10;
   NotificationChannel channel = 11;
   fleet.type.v1.DeviceId device = 12;
   // Push service handle as the device registered it; opaque to the hub,
-  // never logged, write-only through the API (always empty when read).
+  // never logged, write-only through the API (always empty when read) and
+  // excluded from the stored idempotent response. 4 KiB.
   bytes push_handle = 13;
   ChatBinding chat = 14;
   bool enabled = 15;
@@ -150,7 +199,7 @@ message NotificationTarget {
   Severity min_severity = 16;
 }
 
-// ListNotificationTargetsRequest. Filter fields: principal_id, channel.
+// ListNotificationTargetsRequest. Filter and order_by names: 02c-hub-watch-and-filters.md.
 message ListNotificationTargetsRequest {
   int32 page_size = 1;
   string page_token = 2;
@@ -167,6 +216,7 @@ message ListNotificationTargetsResponse {
 // CreateNotificationTargetRequest.
 message CreateNotificationTargetRequest {
   string request_id = 1;
+  // principal is ignored: the hub sets it from the caller.
   NotificationTarget notification_target = 2;
 }
 

@@ -2,12 +2,20 @@
 // every agent-command action returns, server info and the summary strip.
 //
 // Conventions for every hub resource (02b-hub-api.md):
-//   - field 1 is the id, 2 the version (the ETag: bumped on every change),
-//     3 create_time, 4 update_time; resource fields start at 10.
-//   - List requests: page_size 1, page_token 2, filter 3 (AIP-160), order_by
-//     4. Responses: items 1, next_page_token 2 (empty on the last page).
+//   - field 1 is the id, 2 the version, 3 create_time, 4 update_time;
+//     resource fields start at 10. A resource a person can edit splits into
+//     `spec = 10` (what the owner or hub decided; covered by version, the
+//     ETag, and by expected_version; update_time is its last change) and
+//     `status = 11` (what was observed; not versioned, never checked by
+//     expected_version, carries observed_time and hub_seq). Observed-only
+//     resources have neither and put their fields at 10.
+//   - List requests: page_size 1, page_token 2, filter 3 (AIP-160 subset,
+//     02c-hub-watch-and-filters.md), order_by 4. Responses: items 1,
+//     next_page_token 2 (empty on the last page).
 //   - Mutating requests: request_id 1 (client-generated idempotency key).
 //     Updates add update_mask and expected_version (0 = do not check).
+//   - 64-bit integers (version, hub_seq, byte counts) are decimal strings in
+//     JSON and bigint in TypeScript (02b-hub-api.md, "64-bit integers").
 //   - Actions that make an agent do something return an Operation, never
 //     the final state; the final state arrives through Watch or
 //     GetOperation.
@@ -19,9 +27,8 @@ package fleet.hub.v1;
 
 import "fleet/type/v1/ids.proto";
 import "fleet/type/v1/status.proto";
+import "fleet/hub/v1/dispatch_block.proto";
 import "google/protobuf/timestamp.proto";
-
-option go_package = "github.com/linuxdynasty/fleet-board/api/fleet/hub/v1;hubv1";
 
 // ---------------------------------------------------------------------------
 // Hub-only identifiers
@@ -38,8 +45,16 @@ message ApprovalId {
 }
 
 // RoutineId is hub-assigned per routine; also the prefix of the routine's
-// WorkItemRef.key ("<routine id>/<run number>").
+// WorkItemKey.key ("<routine id>/<run number>").
 message RoutineId {
+  string value = 1;
+}
+
+// RepoId names one repository the hub keeps settings for: "<host>/<path>" of
+// the RepoRef, lowercase, no ".git" (for example "github.com/eshu-hq/eshu").
+// Derived from the repo, never chosen by a client; the host never contains a
+// slash, so the first slash splits it from the nested path.
+message RepoId {
   string value = 1;
 }
 
@@ -53,27 +68,96 @@ message AuditEntryId {
   string value = 1;
 }
 
+// SettingsId names one settings layer: "fleet", "group/<label>" or
+// "machine/<machine id>". Derived from the scope, never chosen by a client.
+message SettingsId {
+  string value = 1;
+}
+
+// PasskeyId is hub-assigned per registered passkey (not the WebAuthn
+// credential id, which the hub keeps internally).
+message PasskeyId {
+  string value = 1;
+}
+
+// ApiTokenId is hub-assigned per API token. It is public (shown in lists and
+// the audit log); the secret is separate and shown once.
+message ApiTokenId {
+  string value = 1;
+}
+
+// LoginSessionId is hub-assigned per browser sign-in. Not the cookie value.
+message LoginSessionId {
+  string value = 1;
+}
+
 // ---------------------------------------------------------------------------
 // Scopes
 // ---------------------------------------------------------------------------
 
-// Scope is one permission set an RPC requires (02b-hub-api.md table). Roles
-// map to scopes (VIEWER: READ; OPERATOR: + SESSIONS_WRITE, APPROVALS; OWNER:
-// all). A device or API token holds a subset of its owner's scopes. Scopes
-// are sets, never ordered.
+// Scope is one permission set an RPC requires (02d-hub-authz.md has the table
+// for every RPC and every Watch topic). Roles map to scopes (VIEWER: READ;
+// OPERATOR: READ, SESSIONS_WRITE, APPROVALS; OWNER: all six); a user may hold
+// SCOPE_LOGS on top of its role (UserSpec.extra_scopes). A device or API
+// token holds a subset of its user's effective scopes. Scopes are sets, never
+// ordered. Granting never exceeds the grantor's own scopes, and only a user
+// principal grants (02d, "No escalation").
 enum Scope {
   SCOPE_UNSPECIFIED = 0;
-  // Read every resource, Watch, read logs, read-only attach.
+  // Read every resource and Watch, and view live: read-only attach and
+  // CapturePane of the visible screen. Not stored or scrolled-back terminal
+  // history (SCOPE_LOGS).
   SCOPE_READ = 1;
   // Type into sessions: keys, attach input, harness commands, goal control,
   // dispatch, create sessions.
   SCOPE_SESSIONS_WRITE = 2;
   // Decide approvals (prompt answers, confirmations) and act on triage.
   SCOPE_APPROVALS = 3;
-  // Change settings, accounts, routines, integrations' watched lists.
+  // Change settings, accounts, repos, routines, integrations' watched
+  // projects, hook installs, and import a config document.
   SCOPE_SETTINGS = 4;
-  // Machines (enroll, delete, drain), devices, notification targets.
+  // Machines (enroll, revoke, delete, drain), devices, users (list, invite,
+  // update), other users' passkeys, login sessions and tokens, all
+  // notification targets, the store status, and the HubSettings fields for
+  // sign-in, session lifetime and log retention.
   SCOPE_ADMIN = 5;
+  // Stored or scrolled-back terminal history: stored session logs and their
+  // management (list, search, delete, store status), transcripts, archived
+  // pane summaries, the raw usage screen, CapturePane history lines
+  // (last_lines above 0) and any Operation.output_text that is not the
+  // caller's own. Owner only by default (ADR 0010, 0019): a user gets it
+  // through UserSpec.extra_scopes, a token or paired device only when ticked
+  // at creation or approval, and a phone pairing never requests it by
+  // default.
+  SCOPE_LOGS = 6;
+}
+
+// AuthMode is how the hub authenticates callers (design.md deployment modes).
+enum AuthMode {
+  AUTH_MODE_UNSPECIFIED = 0;
+  // The hub binds loopback addresses only and refuses to start on any other
+  // (ADR 0019). No sign-in: every call that passes the Host and Origin checks
+  // runs as Principal{id "local-owner", kind USER, role OWNER}. Passkey,
+  // GitHub and device RPCs answer FAILED_PRECONDITION; the local owner may
+  // still mint and revoke API tokens (a script on the hub host can use one;
+  // a valid Bearer token only narrows the call, an invalid one is
+  // CREDENTIALS_INVALID); a WebSocket attach still needs a ticket, an HTTP/2
+  // attach does not (02f-hub-authentication.md). Plain HTTP on loopback is
+  // allowed only in this mode.
+  AUTH_MODE_LOCAL_TRUSTED = 1;
+  // Passkey or GitHub sign-in (cookie), API tokens (bearer), paired devices
+  // (signed requests). HTTPS only: an owner-supplied or Tailscale certificate;
+  // the hub refuses to start without one.
+  AUTH_MODE_AUTHENTICATED = 2;
+}
+
+// SignInMethod is one way a person proves who they are in authenticated mode.
+enum SignInMethod {
+  SIGN_IN_METHOD_UNSPECIFIED = 0;
+  // WebAuthn passkey. The hub stores public keys only, never a password.
+  SIGN_IN_METHOD_PASSKEY = 1;
+  // GitHub account, through the hub's GitHub App, limited to the allow-list.
+  SIGN_IN_METHOD_GITHUB = 2;
 }
 
 // ---------------------------------------------------------------------------
@@ -83,7 +167,7 @@ enum Scope {
 // OperationState follows the hub outbox row (02-contracts.md delivery).
 enum OperationState {
   OPERATION_STATE_UNSPECIFIED = 0;
-  // In the outbox; the machine may be offline. not_after still applies.
+  // In the outbox; the machine may be offline. not_after_time still applies.
   OPERATION_STATE_PENDING = 1;
   // Sent and acknowledged (CommandAck) by the agent.
   OPERATION_STATE_DELIVERED = 2;
@@ -93,7 +177,39 @@ enum OperationState {
   OPERATION_STATE_DONE = 4;
 }
 
+// OperationKind is the agent command an Operation runs. Values equal the
+// field numbers of fleet.agent.v1.Command.kind (the hub API never imports the
+// agent package, so the numbers are repeated and kept in step by review).
+enum OperationKind {
+  OPERATION_KIND_UNSPECIFIED = 0;
+  OPERATION_KIND_ENSURE_PROBE = 10;
+  OPERATION_KIND_STOP_PROBE = 11;
+  OPERATION_KIND_ENSURE_SESSION = 20;
+  OPERATION_KIND_ENSURE_WINDOW = 21;
+  OPERATION_KIND_SEND_KEYS = 22;
+  OPERATION_KIND_INTERRUPT = 23;
+  OPERATION_KIND_RESPAWN_PANE = 24;
+  OPERATION_KIND_KILL_WINDOW = 25;
+  OPERATION_KIND_CAPTURE_PANE = 26;
+  OPERATION_KIND_RUN_HARNESS_COMMAND = 27;
+  OPERATION_KIND_SET_PANE_AVAILABILITY = 28;
+  OPERATION_KIND_PREFLIGHT = 40;
+  OPERATION_KIND_START_GOAL = 41;
+  OPERATION_KIND_ENSURE_WORKTREE = 43;
+  OPERATION_KIND_PRUNE_WORKTREE = 44;
+  OPERATION_KIND_ENSURE_GOAL_HOOKS = 45;
+  OPERATION_KIND_REGISTER_GOAL = 47;
+  OPERATION_KIND_RELEASE_GOAL = 48;
+  OPERATION_KIND_OPEN_ATTACH = 50;
+  OPERATION_KIND_CLOSE_ATTACH = 51;
+  OPERATION_KIND_SET_LOG_CAPTURE = 60;
+  OPERATION_KIND_SET_LOG_SHIPPING = 61;
+  OPERATION_KIND_DRAIN = 70;
+  OPERATION_KIND_UNDRAIN = 71;
+}
+
 // Operation is the handle for one agent command caused by an API action.
+// Observed-only: version bumps on every state change, nothing edits it.
 // Its id is the command's CommandId, so the UI, the audit log and the
 // agent's local log all name the same thing.
 message Operation {
@@ -103,8 +219,7 @@ message Operation {
   google.protobuf.Timestamp update_time = 4;
 
   fleet.type.v1.MachineId machine = 10;
-  // Command kind as in fleet.agent.v1, e.g. "SendKeys", "StartGoal".
-  string kind = 11;
+  OperationKind kind = 11;
   OperationState state = 12;
   // Set when state is DONE: the agent's Status, or EXPIRED from the hub.
   fleet.type.v1.Status status = 13;
@@ -119,9 +234,11 @@ message Operation {
   fleet.type.v1.Principal requested_by = 19;
   // The request_id of the API call that created it.
   string request_id = 20;
-  google.protobuf.Timestamp not_after = 21;
+  google.protobuf.Timestamp not_after_time = 21;
   // Text output for CapturePane and OBSERVE-class harness commands.
-  // Untrusted text, capped as on the agent wire.
+  // Untrusted text, capped as on the agent wire. Terminal text can hold
+  // secrets and scrollback, so GetOperation and the OPERATIONS topic return
+  // it only to the requester and to SCOPE_LOGS holders (02d).
   string output_text = 22;
   bool output_truncated = 23;
   // Goal the operation belongs to, if any.
@@ -129,6 +246,9 @@ message Operation {
   // Preflight: every failed check (PreflightResult.failed_checks), with the
   // detail line in metadata["detail"].
   repeated fleet.type.v1.ErrorDetail failed_checks = 25;
+  // Trace id (32 hex) of the hub span that issued the command, so a UI or
+  // CLI can link to the trace. Empty when tracing is off.
+  string trace_id = 26;
 }
 
 // GetOperationRequest.
@@ -162,16 +282,24 @@ message GetServerInfoResponse {
   // Optional features, e.g. {"watch.pane_summaries", 1}, {"attach", 1},
   // {"routines", 1}, {"devices", 1}. Clients hide what is not listed.
   repeated fleet.type.v1.Capability features = 6;
-  // "local_trusted" or "authenticated" (design.md deployment modes).
-  string auth_mode = 7;
-  // The caller as the hub sees it; unset when not signed in.
+  AuthMode auth_mode = 7;
+  // The caller as the hub sees it; unset when not signed in. In
+  // local_trusted mode it is the fixed local owner.
   fleet.type.v1.Principal caller = 8;
-  // Scopes in effect for the caller: a user gets the scopes of its role, a
+  // Scopes in effect for the caller: a user gets the scopes of its role plus
+  // its extra_scopes, a
   // device or API token at most those, narrowed to what was granted.
   repeated Scope caller_scopes = 9;
+  // Sign-in methods the owner turned on (authenticated mode; empty in
+  // local_trusted). The sign-in page shows only these.
+  repeated SignInMethod sign_in_methods = 10;
+  // True while the hub has no owner: a claim URL was printed by `fleetd` and
+  // whoever opens it becomes the owner (02f). Never true in local_trusted.
+  bool claim_pending = 11;
 }
 
-// FleetSummary is the summary strip on every view: hub-derived counts.
+// FleetSummary is the summary strip on every view: hub-derived counts. A
+// singleton, observed-only; Watch coalesces it to one change per second.
 message FleetSummary {
   uint64 version = 2;
   google.protobuf.Timestamp update_time = 4;
@@ -190,6 +318,10 @@ message FleetSummary {
   // Subscription accounts projected to leave >= 5 points unused, or idle
   // while behind pace (AccountPacing).
   uint32 accounts_wasting = 20;
+  // Fleet-wide reasons nothing is starting: AUTO_DISPATCH_OFF, NO_READY_ITEMS,
+  // INTEGRATION_LAG, INTEGRATION_DEGRADED. Per-account, per-machine and
+  // per-item reasons are on those resources.
+  repeated DispatchBlock dispatch_blocks = 21;
 }
 
 // GetFleetSummaryRequest.

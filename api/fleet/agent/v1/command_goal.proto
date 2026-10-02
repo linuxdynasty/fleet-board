@@ -6,30 +6,32 @@ package fleet.agent.v1;
 
 import "fleet/agent/v1/command_tmux.proto";
 import "fleet/agent/v1/snapshot.proto";
+import "fleet/type/v1/consent.proto";
 import "fleet/type/v1/harness.proto";
 import "fleet/type/v1/ids.proto";
 import "fleet/type/v1/status.proto";
 import "fleet/type/v1/work.proto";
 import "google/protobuf/duration.proto";
 
-option go_package = "github.com/linuxdynasty/fleet-board/api/fleet/agent/v1;agentv1";
-
 // ===== G, H, I. Goals, worktrees, preflight =====
 
-// WorktreeMode says who creates the goal's worktree.
+// WorktreeMode says who creates the goal's worktree. When StartGoal reuses a
+// pane, no worktree is made in either mode: the harness cannot change its
+// directory, so the goal works in the pane's own checkout (02h, "Reuse").
 enum WorktreeMode {
   WORKTREE_MODE_UNSPECIFIED = 0;
-  // The agent runs EnsureWorktree before starting the harness.
+  // The agent runs EnsureWorktree before starting the harness in a new
+  // window; in a reused pane it starts GoalSpec.branch in place.
   WORKTREE_MODE_AGENT_ENSURES = 1;
   // The repo's own goal driver creates worktrees; start in the main checkout.
+  // The agent registers the goal by pane and harness session id, never by
+  // the shared checkout path, and learns the driver's worktree and branch
+  // from the goal file (GoalState.worktree_path, branch).
   WORKTREE_MODE_REPO_DRIVER = 2;
 }
 
 // GoalSpec is everything the agent needs to preflight or start a goal.
 message GoalSpec {
-  // 3 was a GitHub-only IssueRef; replaced by work_item and repo below.
-  reserved 3;
-  reserved "issue";
   fleet.type.v1.GoalId goal_id = 1;
   fleet.type.v1.SessionId session_id = 2;
   fleet.type.v1.Workdir workdir = 4;
@@ -37,31 +39,38 @@ message GoalSpec {
   fleet.type.v1.AccountId account_id = 6;
   // Expected identity; ACCOUNT_MISMATCH if the harness shows another.
   fleet.type.v1.AccountKey account_key = 7;
-  // Consent acts written into the goal (ADR 0008): "push", "pr-open",
-  // "merge". "pr-open" means opening a change request on any code host; the
-  // adapter renders it in the harness and provider's terms.
-  repeated string consent = 8;
+  // Consent acts written into the goal (ADR 0008). PR_OPEN means opening a
+  // change request on any code host; the adapter renders each act as its
+  // lowercase hyphenated word in the harness and provider's terms, so the
+  // hub never supplies text that is typed. UNSPECIFIED is INVALID_ARGUMENT.
+  repeated fleet.type.v1.ConsentAct consent = 8;
   // Goal text after "--". Capped at 4 KiB.
   string goal_text = 9;
   WorktreeMode worktree_mode = 10;
-  // Branch for the worktree when the agent ensures it.
+  // Branch for the worktree when the agent ensures it, or the branch started
+  // in place in a reused pane's checkout.
   string branch = 11;
   // What the goal works on: an issue, a ticket (Jira) or a change request.
   fleet.type.v1.WorkItemRef work_item = 12;
   // Where the code lives. Separate from work_item because a ticket in one
-  // system (Jira) drives code on another (GitHub, GitLab).
+  // system (Jira) drives code on another (GitHub, GitLab). A reused pane
+  // must work in a checkout of exactly this repo.
   fleet.type.v1.RepoRef repo = 13;
   // Existing change request (PR/MR) the goal continues, if any.
   fleet.type.v1.WorkItemRef change_request = 14;
   // Model and effort to select before typing the goal, as the harness names
-  // them ("opus", "gpt-5.5-codex"; "high"). Empty = leave as is. The adapter
-  // uses the harness's own /model and /effort (SESSION class, 01b).
+  // them ("opus", "gpt-5.5-codex"; "high"). Empty = leave as is, and the
+  // effective ones come back in StartGoalResult. The adapter uses the
+  // harness's own /model and /effort (SESSION class, 01b); steps set_model
+  // and set_effort, failures MODEL_NOT_AVAILABLE and EFFORT_NOT_SUPPORTED.
   string model = 15;
   string effort = 16;
-  // Clear the harness context (/clear) before typing the goal in a reused
-  // session. /clear is DESTRUCTIVE (01b), so the agent allows it only in a
-  // session the fleet started (TmuxSession.started_by_fleet) and refuses
-  // otherwise with FRESH_CONTEXT_NOT_ALLOWED. Ignored for a new window.
+  // Clear the harness context (/clear, step clear_context) before typing the
+  // goal in a reused session. /clear is DESTRUCTIVE (01b), so the agent
+  // allows it only in a session the fleet started
+  // (TmuxSession.started_by_fleet) and refuses otherwise with
+  // FRESH_CONTEXT_NOT_ALLOWED. The scheduler sets it for every auto-dispatch
+  // into a reused session. Ignored for a new window.
   bool fresh_context = 17;
   // Why the hub dispatched this goal ("next ready item for eshu", "routine
   // nightly-deps run 3", "operator: retry after CI fix"). The adapter renders
@@ -76,16 +85,18 @@ message GoalSpec {
 // Preflight (I1): check without acting.
 message Preflight {
   GoalSpec spec = 1;
+  // The pane the hub means to reuse, so its checks (SESSION_NOT_AVAILABLE,
+  // SESSION_WORKDIR_MISMATCH, CHECKOUT_DIRTY) are in failed_checks. Empty =
+  // check a new window only; the agent may still name a candidate in
+  // would_reuse.
+  fleet.type.v1.PaneKey reuse_pane = 2;
 }
 
 // PreflightResult: ok, or every check that failed.
 message PreflightResult {
   bool ok = 1;
-  // Were parallel lists of reasons and detail lines; replaced by
-  // failed_checks so each reason carries its own detail and retry flag.
-  reserved 2, 3;
-  reserved "failures", "details";
-  // Session the agent would reuse (E11), if any.
+  // Pane the agent would reuse (E11): available, ready, empty input line,
+  // working in a clean checkout of spec.repo. Unset = a new window.
   fleet.type.v1.PaneKey would_reuse = 4;
   repeated PreflightFailure failed_checks = 5;
   // The exact line StartGoal would type with this spec (consent form,
@@ -98,20 +109,39 @@ message PreflightFailure {
   fleet.type.v1.ReasonCode reason = 1;
   // One line, no secrets. Untrusted where it echoes git/gh.
   string detail = 2;
-  // True when the fact can change without the owner (DISK_LOW, SLOTS_FULL,
-  // TMUX_SERVER_DOWN); false for durable facts (HARNESS_NOT_SIGNED_IN,
-  // PUSH_ACCESS_MISSING), which mark the machine unfit until a new snapshot.
+  // True when the fact can change without the owner (DISK_LOW,
+  // AGENT_GOAL_CAP_REACHED, TMUX_SERVER_DOWN, CHECKOUT_DIRTY); false for
+  // durable facts (HARNESS_NOT_SIGNED_IN, PUSH_ACCESS_MISSING). A durable
+  // fact marks the machine unfit until a fact it depends on changes (a
+  // snapshot, an event, or a refreshed forge CLI status).
   bool retryable = 3;
 }
 
 // StartGoal (G3): agent-side composite under one command_id so it survives
-// a hub outage. Steps are reported as CommandProgress. Dispatch deadline.
+// a hub outage. Steps are reported as CommandProgress in this fixed
+// set of names (a string, so a newer agent can add steps) and order (a skipped step is not reported; step_index is the
+// position in the full list and step_count is always 14); the restart class
+// of each is in 02h, "StartGoal steps":
+//   1 preflight  2 pick_session  3 prepare_branch  4 ensure_worktree
+//   5 ensure_window  6 register_goal  7 start_log_capture  8 wait_ready
+//   9 set_model  10 set_effort  11 clear_context  12 write_goal_file
+//   13 type_goal  14 confirm_goal_file
+// Step 12 is skipped (not reported) for a checkout whose goal hooks are the
+// repo's own (GoalHooksState.repo_ships_own, a REPO_DRIVER goal): the repo's
+// file is the goal file and step 14 reads it.
+// pick_session and prepare_branch belong to the reuse path, ensure_worktree
+// and ensure_window to the new-window path. Dispatch deadline.
 message StartGoal {
   GoalSpec spec = 1;
-  // Prefer this available idle session (E11); re-checked just before typing.
+  // Reuse this pane (E11). Re-checked just before typing: available, ready,
+  // empty input line, working in a checkout of spec.repo (else
+  // SESSION_WORKDIR_MISMATCH) that is clean (else CHECKOUT_DIRTY), and not
+  // bound to a live goal (else SESSION_NOT_AVAILABLE). The agent never
+  // falls back to a new window silently: the hub's reservation stays true.
   fleet.type.v1.PaneKey reuse_pane = 2;
-  // Create a new window in this session when not reusing; empty = new
-  // session named by the hub in spec.session_id.
+  // Create a new window in this session when not reusing. Empty = a new
+  // session whose tmux name is spec.session_id.value (valid by the id rule in
+  // ids.proto) with one window named by window_name.
   SessionTarget in_session = 3;
   // Empty = settings template "{harness} {work}", where {work} is
   // WorkItemRef.display ("eshu#7398", "eshu!12", "PROJ-123").
@@ -120,6 +150,22 @@ message StartGoal {
   google.protobuf.Duration goal_file_timeout = 6;
   // Skip preflight (already run and passed within the last minute).
   bool skip_preflight = 7;
+  // Non-empty = re-arm: the goal in spec.goal_id finished (the harness
+  // achieved and cleared it) but a person says it is not done, so the hub asks
+  // the same pane to take it up again (03h, "Re-arm after DONE"). reuse_pane
+  // must be the pane the goal's registry entry names; the agent checks it
+  // before step 1, even with skip_preflight, and anything else is
+  // SESSION_NOT_AVAILABLE. The entry is kept, not replaced, and the checks
+  // that a pane is free of a live goal pass for its own goal. Steps
+  // pick_session, prepare_branch, ensure_worktree, ensure_window,
+  // register_goal, start_log_capture, set_model, set_effort and clear_context
+  // are skipped (not reported). preflight (unless skipped), wait_ready,
+  // write_goal_file (the first line rewritten as the objective plus
+  // "reopened: <rearm_reason>", truncated to the 4 KiB first-line cap),
+  // type_goal and confirm_goal_file run as in StartGoal, with spec.goal_text
+  // carrying the objective. Step write_goal_file is skipped for a repo-owned
+  // goal file (see step 12). Up to 4 KiB (ControlGoalRequest.text's cap).
+  string rearm_reason = 8;
 }
 
 // StartGoalResult.
@@ -135,6 +181,17 @@ message StartGoalResult {
   // #5), for the audit log. GoalState.first_line is what the hook wrote,
   // not what was typed. 4 KiB cap.
   string typed_goal_line = 6;
+  // The branch the goal works on (started in place in a reused pane, or the
+  // new worktree's) with its worktree path. Unset for a REPO_DRIVER goal
+  // until the driver creates it (GoalState.branch follows).
+  BranchState branch = 7;
+  // The model and effort the harness shows after steps set_model and
+  // set_effort, or as it was when GoalSpec left them empty. The hub paces by
+  // the model's own bucket from this.
+  string model = 8;
+  string effort = 9;
+  // The registry entry written by step register_goal.
+  GoalRegistration registration = 10;
 }
 
 // EnsureWorktree (H2). Declarative: existing worktree on the same branch is
@@ -157,7 +214,11 @@ message EnsureWorktreeResult {
 }
 
 // PruneWorktree (H2): remove a goal worktree after merge and grace.
-// WORKTREE_DIRTY unless allow_dirty, which needs ROLE_OWNER.
+// WORKTREE_DIRTY unless allow_dirty, which needs ROLE_OWNER. Only a worktree
+// the agent created (EnsureWorktree) is ever removed: a REPO_DRIVER goal's
+// worktree is the driver's, and a worktree some live pane works in is
+// WORKTREE_IN_USE (KillWindow first). Removes the registry entries that
+// point into it.
 message PruneWorktree {
   fleet.type.v1.RepoRef repo = 1;
   fleet.type.v1.GoalId goal_id = 2;
@@ -165,6 +226,30 @@ message PruneWorktree {
   bool allow_dirty = 4;
   // Also delete the local branch.
   bool delete_branch = 5;
+}
+
+// RegisterGoal (G5): bind a goal to a pane in the agent's registry
+// (GoalRegistration). StartGoal does this itself in step register_goal; the
+// command exists for the hub's reconciliation, when Snapshot.goal_registry
+// lacks an entry the hub expects (agent state lost, a reused pane that the
+// environment cannot rebuild). Declarative: the same goal and pane again is
+// OK; another live goal in the pane is SESSION_NOT_AVAILABLE. The agent
+// derives the worktree from the pane's checkout; the hub sends no path.
+message RegisterGoal {
+  fleet.type.v1.GoalId goal = 1;
+  fleet.type.v1.PaneKey pane = 2;
+  // True for a REPO_DRIVER goal (register by pane and harness session id).
+  bool repo_driver = 3;
+}
+
+// ReleaseGoal (G5): remove a goal's registry entry, for a goal the hub has
+// ended (MERGED, CLEARED, CLOSED) or one it finds registered that it does
+// not know. Declarative: releasing an absent entry is OK. The agent also
+// releases on pane exit, PruneWorktree and when another goal registers in the
+// same pane.
+message ReleaseGoal {
+  fleet.type.v1.GoalId goal = 1;
+  fleet.type.v1.PaneKey pane = 2;
 }
 
 // EnsureGoalHooks (G1): install and verify the generic goal-protocol hooks
@@ -208,7 +293,8 @@ message CloseAttach {
 }
 
 // SetLogCapture (K1): turn pipe-pane capture on or off for a developer's
-// own session (goal panes are always captured).
+// own session (goal panes are always captured). The agent names each stream
+// by pane (LogStreamKey.pane) and never needs the hub's SessionId for it.
 message SetLogCapture {
   SessionTarget session = 1;
   bool enabled = 2;

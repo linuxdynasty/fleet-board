@@ -24,8 +24,8 @@ sequenceDiagram
   W->>G: publish Settings for affected connected machines
   G-->>A: Settings{settings_epoch, generation=13, labels[], values SettingValues{…}, probe_interval_by_account}
   A->>A: validate · merge tighten-only under local ceiling (rules below) · persist {gen, effective} · apply
-  A->>G: SettingsAck{settings_epoch, generation=13, effective EffectiveSettings{values, sources[], labels}, capped_fields[]}
-  G->>W: tx: machine_effective_settings{machine, gen=13, effective, capped_fields, acked_at}
+  A->>G: SettingsAck{settings_epoch, generation=13, effective EffectiveSettings{values, sources[], labels, probe_interval_by_account}, capped_fields[], rejected[], unrecognized_value_fields[]}
+  G->>W: tx: machine_effective_settings{machine, gen=13, effective, capped_fields, rejected, unenforced, ack_time}
   Note over A: later: policy.yaml edited on the machine
   A->>G: Event{policy_changed{policy PolicyInfo{hash, changed_since_load=true}, previous_hash}}
   G->>W: tx: machines.policy_hash_on_disk · triage info "policy changed on <machine>, restart pending"
@@ -45,17 +45,49 @@ in the order `NONE < OBSERVE < CONTROL`. `share_identity_email`: hub wins (it is
 an owner privacy choice, not a machine safety ceiling). Labels: hub-assigned ∪
 local additions; a local file cannot remove a hub label. Each field records its
 `SettingSource.layer`; fields where the local value won are listed in
-`capped_fields` so the UI says "capped by local policy on omarchy".
+`capped_fields` so the UI says "capped by local policy on omarchy". A value the
+agent cannot apply at all is a different thing and is **not** a cap: it goes in
+`SettingsAck.rejected[]` as `{field, reason, message}` (see the failure table).
+
+**Probe interval.** A machine's probe interval for an account has three
+carriers, and one rule picks among them: the first set of
+`Settings.probe_interval_by_account[account]`, then `SettingValues.probe_interval`
+(the layered default), then `EnsureProbe.interval` (which therefore only
+matters before any settings arrived; `run_now` ignores it) is the hub's value.
+The local policy holds a **minimum interval**, a floor on how often the agent
+probes, so the effective interval is `max(hub value, local minimum)`: a local
+value can only make probing rarer. The result is reported per account in
+`EffectiveSettings.probe_interval_by_account`, and `capped_fields` names
+`probe_interval` when the local minimum won. `merged_grace` is a hub-only
+setting: the agent receives it so the owner sees one list of settings, never
+acts on it and echoes it unchanged.
+
+**Skew with an older agent.** The hub may be a minor version ahead of an agent
+(02, versioning), so it can send a `SettingValues` field the agent does not
+know; protobuf drops it silently and the agent's `effective` simply omits it.
+The agent therefore lists the field numbers its schema did not recognize in
+`SettingsAck.unrecognized_value_fields` (and `unrecognized_settings_fields` for
+`Settings` itself). The hub maps them to names and shows each as **not enforced
+on this machine** (`Machine.status.unenforced_settings`), never as "no
+opinion". When an unenforced field is one of the safety limits (`max_*`,
+`rate_limits`, `local_approval`, `block_on_battery`, `allowed_*`,
+`default_server`, `spool_cap_bytes`) the machine is left out of auto-dispatch
+and a `settings_unenforced` triage item says to upgrade the agent; the owner can
+override that per machine.
 
 **Generation.** One fleet-wide monotonic counter; a machine's `Settings`
-carries the counter value at which its resolved values were last computed. The
-agent persists the last applied generation and reports it in `Hello`; the hub
-sends `Settings` when its value for that machine is newer. The agent ignores a
-generation ≤ the one it holds except after a hub restore (03g: `HelloAck`
-flag) and re-acks the held one. Applying is immediate for rate limits,
+carries the counter value at which that machine's resolved values last
+changed, and `HelloAck.settings_generation` is that same per-machine value (not
+the fleet counter), so a change to one group does not resend settings to every
+machine. The agent persists the last applied `(settings_epoch, generation)` and
+reports it in `Hello`; the hub sends `Settings` when its value for that machine
+is newer or its epoch differs. The agent ignores a generation ≤ the one it holds
+under the same epoch and re-acks the held one; a different epoch (a restore) is
+accepted whatever its generation (02, "Settings order"). Applying is immediate for rate limits,
 approval rules, idle threshold, spool cap, window template, probe intervals;
-`cert_lifetime` at the next renewal; `max_active`/`max_total` are hub-side
-limits the agent only echoes.
+`cert_lifetime` at the next renewal; the hub enforces `max_active`/`max_total`
+slots and the agent applies the effective values only as a local safety cap at
+`StartGoal` preflight (`AGENT_GOAL_CAP_REACHED`).
 
 **Drain.** `Drain{reason}` → agent `DrainState{draining, requested_by_principal}` (the hub principal; kind `LOCAL_USER` for a local drain)
 → `Event.drain_state` + `Heartbeat.draining=true`; the scheduler excludes the
@@ -63,7 +95,12 @@ machine; running goals continue (drain never kills). `Undrain` clears a hub
 drain; a local `fleet-agent drain` can only be undone locally (`Undrain` →
 `REJECTED_BY_POLICY/DRAINING`), and the UI shows "drained on the machine".
 While draining, `StartGoal` and harness-starting `EnsureSession`/`EnsureWindow`
-are refused with `DRAINING`; a composite already past `preflight` finishes.
+are refused with `DRAINING`, and so is `RespawnPane` except for a pane with a
+registered live goal (it restarts work already taken); a composite already past
+`preflight` finishes. The hub also cancels `StartGoal` rows still `PENDING` in the
+outbox when it accepts `DrainMachine` (the goal is `ABANDONED`, the item `READY`
+elsewhere); the whole interplay is in
+[03h](03h-goal-phases-in-depth.md#drain-the-outbox-and-respawn).
 
 ### State machine (settings delivery per machine, owned by the hub)
 
@@ -87,9 +124,9 @@ Machine drain state: `ACTIVE` → `DRAINING{hub}` → `ACTIVE` (Undrain);
 | What | Where | Transaction |
 |---|---|---|
 | `settings_fleet`, `settings_groups{label, priority, values}`, `settings_machines{machine, values}`, `machine_labels{machine, label, source=hub}` | hub store | the owner's change tx (with the generation bump) |
-| `settings_generation` (one row), `machine_settings_sent{machine, gen, sent_at}` | hub store | change tx; send tx |
-| `machine_effective_settings{machine, gen, effective, capped_fields, acked_at}` | hub store | ack tx |
-| `machines.policy_hash`, `policy_schema_version`, `policy_hash_on_disk` | hub store | snapshot tx; `policy_changed` tx |
+| `settings_generation` (one row), `machine_settings_sent{machine, gen, sent_time}` | hub store | change tx; send tx |
+| `machine_effective_settings{machine, gen, effective, capped_fields, rejected, unenforced, ack_time}` | hub store | ack tx |
+| `machines.policy_hash`, `policy_schema_version`, `policy_hash_on_disk`, `policy_safe_mode`, `policy_error` | hub store | snapshot tx; `policy_changed` tx |
 | Audit: who changed what (old → new) | hub store (permanent) | change tx |
 | `settings.json{generation, values, effective}`, local policy file and its loaded hash | agent state dir / config dir | before `SettingsAck` is sent |
 | Drain state and reason | agent state dir (survives restart) and hub `machines.drain` | per change |
@@ -109,15 +146,16 @@ Machine drain state: `ACTIVE` → `DRAINING{hub}` → `ACTIVE` (Undrain);
 
 | Failure | What happens |
 |---|---|
-| Agent offline | `PENDING`; delivered after the next `Hello` (`HelloAck.settings_generation` > `Hello.settings_generation`) |
+| Agent offline | `PENDING`; delivered after the next `Hello` (`HelloAck.settings_generation` > `Hello.settings_generation`, or a different `settings_epoch`) |
 | Hub restart | Generation and values durable; resend on each Hello as needed |
 | Duplicate `Settings` (same generation) | Agent re-acks; no re-apply |
 | Out-of-order generations (two gateways; cannot happen with one hub) | Agent ignores the lower; counted |
-| Invalid value (e.g. `max_windows=0`, bad duration) | Agent rejects that field, keeps the previous effective value, names it in `capped_fields` with `SettingSource.layer=LOCAL_CEILING` and a message; the UI shows the rejection |
-| Policy file invalid on restart | Agent starts in **safe mode**: observe only, every control command `REJECTED_BY_POLICY`, `PolicyInfo.schema_version=""` + message in the snapshot; triage `policy_invalid` |
+| Invalid value (e.g. `max_windows=0`, bad duration) | Agent rejects that field, keeps the previous effective value and lists it in `SettingsAck.rejected[]` as `{field, INVALID_ARGUMENT, message}` (not in `capped_fields`); `Machine.status.rejected_settings` shows it and `fleet_hub_settings_rejected_fields_total` counts it |
+| Hub sends a setting the agent's version does not know | The agent lists the field number in `unrecognized_value_fields`; the hub shows "not enforced on this machine" and, for a safety limit, leaves the machine out of auto-dispatch |
+| Policy file invalid on restart | Agent starts in **safe mode**: observe only, every control command `REJECTED_BY_POLICY` / `POLICY_SAFE_MODE`, every hub setting rejected with the same reason; `PolicyInfo.safe_mode = true` with a one-line `PolicyInfo.error` (no file contents) in the snapshot; the hub raises triage `policy_invalid` and the `policy.safe_mode` audit row |
 | Policy file deleted | Agent uses built-in safe defaults; reported as hash of defaults; `doctor` warns |
-| Hub store restored from an older backup (generation goes backwards) | The restored store has a new `settings_epoch`; the agent orders settings by `(settings_epoch, generation)` and accepts any generation under a new epoch (02-contracts.md, replaces 03g's `settings_restored`) |
-| `Drain` while `StartGoal` in flight | In flight past preflight → completes; not yet started → `DRAINING` at preflight |
+| Hub store restored from an older backup (generation goes backwards) | `fleetd restore` mints a new `settings_epoch` (03f, 02g); the agent orders settings by `(settings_epoch, generation)` and accepts any generation under a new epoch (02-contracts.md, replaces 03g's `settings_restored`) |
+| `Drain` while `StartGoal` in flight | Still in the outbox → cancelled, goal `ABANDONED` (03h); in flight past preflight → completes; delivered but not past preflight → `DRAINING` at preflight, goal `ABANDONED` |
 | `Undrain` against a local drain | `REJECTED_BY_POLICY/DRAINING`; UI explains |
 | Harness crash, prompts, provider errors, developer typing | Not affected by this workflow |
 | Work tracker / code host | Not involved |
@@ -132,7 +170,8 @@ Machine drain state: `ACTIVE` → `DRAINING{hub}` → `ACTIVE` (Undrain);
   `fleet_agent_policy_changed_total`, `fleet_agent_policy_safe_mode` (gauge),
   `fleet_agent_draining{requested_by}`.
 - Spans: `hub.settings.publish{generation}`, `agent.settings.merge{generation}`,
-  `hub.drain{machine}` → `agent.drain`.
+  `hub.drain{machine}` → `agent.drain`; linked across processes by
+  `Settings.trace` and `Command.trace` (02g, "Trace context").
 - Logs: `settings.changed{by, scope, field, old, new, generation}`,
   `settings.capped{machine, field, hub_value, local_ceiling}`,
   `settings.rejected{machine, field, reason}`, `policy.changed{machine, old_hash,
@@ -185,7 +224,8 @@ sequenceDiagram
   refuses `HARNESS_VERSION_UNSUPPORTED`, auto-dispatch excludes `(machine,
   harness)`, prompts from that harness are `answerable=false` until
   `prompt_detection_verified` for the new version (notice-only, W7), and
-  goal hooks are re-verified on the next `EnsureGoalHooks`.
+  goal hooks are re-verified by the hook reconcile (`EnsureGoalHooks`, 03-workflows
+  "Hook reconcile"; `harness_changed` triggers it).
 - **Parser degraded** on a supported version: 3 consecutive `PARSE_FAILED`
   readings from one probe → treated like unsupported for scheduling
   (`PARSER_DEGRADED`), fingerprinted triage; a good reading clears it.
@@ -196,9 +236,12 @@ sequenceDiagram
   new to the catalog are classified by the adapter table for that version;
   unknown ones are `DENY`; a command that moved to a stricter class is
   stricter immediately; local policy can only tighten further.
-- Manual dispatch to an unsupported version is allowed with a warning (the
-  harness runs fine; only fleet-board's parsing is behind), but the goal shows
-  "usage unknown" and counts against the account's `allowed_active` as 1.
+- Manual dispatch to a version whose parsing is unverified
+  (`UNVERIFIED_PARSING`, or `PARSER_DEGRADED`) is allowed after a confirm
+  (`CONFIRM`, 03h): the harness runs fine, only fleet-board's parsing is behind, but
+  the goal shows "usage unknown" and counts against the account's `allowed_active`
+  as 1. For `UNSUPPORTED` the agent refuses `HARNESS_VERSION_UNSUPPORTED` and it is
+  a `BLOCK`; there is no override.
 - Fixture capture is a scripted local job (`fleet-agent capture-fixtures`),
   scrubbed of emails, names and installed skill names before commit (01c).
   Nothing in it crosses the agent ↔ hub contract.
@@ -225,7 +268,7 @@ stateDiagram-v2
 
 | What | Where | Transaction |
 |---|---|---|
-| `harness_installs{machine, harness, version, path, parser_version, supported, catalog_hash, prompt_detection_verified, hooks, state, since}` + history rows for the timeline | hub store | `harness_changed` tx; snapshot tx |
+| `harness_installs{machine, harness, version, path, parser_version, supported, catalog_hash, prompt_detection_verified, hooks, state, since_time}` + history rows for the timeline | hub store | `harness_changed` tx; snapshot tx |
 | `catalog_entries{machine, harness, catalog_hash, name, class, tightened_by_policy}` | hub store | same tx |
 | Triage `parser_unsupported`, `parser_degraded` | hub store | same tx |
 | Machine unfit markers `(machine, harness, reason)` | hub store (derived, used by W5) | same tx |

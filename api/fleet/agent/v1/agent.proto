@@ -12,20 +12,24 @@ import "fleet/agent/v1/command.proto";
 import "fleet/agent/v1/events.proto";
 import "fleet/agent/v1/snapshot.proto";
 import "fleet/agent/v1/streams.proto";
+import "fleet/type/v1/harness.proto";
 import "fleet/type/v1/ids.proto";
 import "fleet/type/v1/settings.proto";
 import "fleet/type/v1/status.proto";
+import "fleet/type/v1/trace.proto";
 import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
-
-option go_package = "github.com/linuxdynasty/fleet-board/api/fleet/agent/v1;agentv1";
 
 // AgentService is served by fleetd. Enroll runs over server-authenticated TLS
 // with a single-use token; every other RPC needs the machine's client cert.
 // Request is always agent -> hub and response hub -> agent, because the agent
 // is the client of every RPC.
 service AgentService {
-  // A1. Exchange a single-use token and CSR for a client certificate.
+  // A1. Exchange a single-use token and CSR for a client certificate. The
+  // agent first verifies the server's chain against the CA fingerprint inside
+  // the token (the trust anchor, 02g-agent-security.md), and only then sends
+  // the token and CSR. Retry-safe: see EnrollRequest.token. Failures are gRPC
+  // errors whose ErrorDetail.reason is an ENROLL_* code.
   rpc Enroll(EnrollRequest) returns (EnrollResponse);
   // A3. One per agent. Agent sends Hello then Snapshot; hub sends HelloAck,
   // then commands and settings.
@@ -44,9 +48,21 @@ service AgentService {
 
 // EnrollRequest (A1).
 message EnrollRequest {
-  // The single-use token printed by `fleetd enroll-token`.
+  // The single-use token printed by `fleetd enroll-token`. Self-describing:
+  // it embeds the SHA-256 of the fleet CA certificate, which the agent
+  // checks against the server chain before sending anything, so a LAN
+  // impostor never receives the token or the CSR. The hub stores only a
+  // hash of the secret part.
+  //
+  // Replay: the same token secret with the same install_id and the same CSR
+  // public key inside the token's lifetime returns the stored response
+  // (same machine_id and certificate, replayed = true), so a lost response
+  // is recovered by running enroll again (checked before expiry; not once the
+  // machine is REVOKED or deleted). Any other combination after the first
+  // success is ENROLL_TOKEN_USED.
   string token = 1;
-  // PEM CSR for an Ed25519 key generated on the machine.
+  // PEM CSR for an Ed25519 key generated on the machine. The key is kept in
+  // the state directory until Enroll succeeds, so a retry sends the same one.
   bytes csr_pem = 2;
   MachineFacts facts = 3;
   repeated fleet.type.v1.Capability capabilities = 4;
@@ -54,7 +70,14 @@ message EnrollRequest {
   uint32 proto_max = 6;
   // Set when re-enrolling a machine the hub already knows (new token after
   // a long offline period, BYE_REASON_RE_ENROLL), so its history, labels and
-  // settings carry over instead of a second machine appearing.
+  // settings carry over instead of a second machine appearing. The owner
+  // names the machine when creating the token (it must be REVOKED or past its
+  // certificate lifetime): the token alone decides which machine id returns.
+  // This value is a hint: it is ENROLL_PREVIOUS_MACHINE_MISMATCH only when the
+  // token names a machine and this names a different one. With a token that
+  // names none (or a deleted machine) it is ignored and a new machine is
+  // enrolled, so an agent that kept its old id after Bye{UNKNOWN_MACHINE}
+  // recovers by enrolling fresh.
   fleet.type.v1.MachineId previous_machine_id = 7;
   // Random id minted once when the agent is installed and kept in the state
   // directory; survives restarts and re-enrollment, unlike boot_id. A copied
@@ -69,9 +92,10 @@ message EnrollResponse {
   // PEM client certificate with URI SAN fleet://machine/<machine_id>.
   bytes cert_pem = 2;
   bytes ca_chain_pem = 3;
-  // Fingerprint the agent pins; fleetd prints it and the UI shows it.
+  // SHA-256 of the CA certificate (hex). Equals the fingerprint inside the
+  // token; the agent compares them as a self-check and pins it.
   string ca_fingerprint = 4;
-  google.protobuf.Timestamp cert_not_after = 5;
+  google.protobuf.Timestamp cert_not_after_time = 5;
   // Fleet-wide salt for AccountKey (C2); never logged by the agent.
   bytes account_salt = 6;
   // Which hash construction the salt is for; bump on change.
@@ -85,6 +109,9 @@ message EnrollResponse {
   // Stable id of the fleet (minted once per hub data store). An agent that
   // is enrolled in one fleet refuses a hub with another fleet_id.
   string fleet_id = 11;
+  // True when this is the stored response of an earlier Enroll with the same
+  // token, install_id and CSR key (a retry after a lost response).
+  bool replayed = 12;
 }
 
 // RenewCertRequest (A4), over the existing mTLS connection.
@@ -96,7 +123,7 @@ message RenewCertRequest {
 message RenewCertResponse {
   bytes cert_pem = 1;
   bytes ca_chain_pem = 2;
-  google.protobuf.Timestamp cert_not_after = 3;
+  google.protobuf.Timestamp cert_not_after_time = 3;
 }
 
 // ---------------------------------------------------------------------------
@@ -138,7 +165,6 @@ enum ConnectReason {
   CONNECT_REASON_RECONNECT = 2;
   CONNECT_REASON_WAKE = 3;
   CONNECT_REASON_NETWORK_CHANGE = 4;
-  CONNECT_REASON_HUB_REQUESTED = 5;
 }
 
 // Hello is the first message on Connect (A3).
@@ -151,38 +177,67 @@ message Hello {
   // Random id per agent process; a new value means the agent restarted.
   string boot_id = 6;
   // Epoch and per-epoch command seq last applied, so the hub can re-issue.
+  // The hub issues the next epoch above this one even when its own stored
+  // value is lower (a restore), so an epoch never goes backwards (02i).
   uint64 last_epoch = 7;
   uint64 last_applied_command_seq = 8;
-  // Agent-wide event seq last sent; the hub replies with what it holds.
+  // Highest agent-wide event seq handed out so far (the persisted high-water
+  // mark, not only what was sent). A value below the hub's stored
+  // hub_last_event_seq means the agent lost state (02i, "Sequence numbers").
   uint64 last_event_seq = 9;
   ConnectReason reason = 10;
-  // Agent wall clock at send, for skew detection against hub_time.
-  google.protobuf.Timestamp sent_at = 11;
+  // Agent wall clock at send. The hub's skew sample at connect (later
+  // samples come from Heartbeat.sent_time); never used to order data.
+  google.protobuf.Timestamp sent_time = 11;
   // Settings generation the agent currently holds (0 = none).
   uint64 settings_generation = 12;
   // EnrollRequest.install_id, repeated on every connect.
   string install_id = 13;
   // Settings epoch the held generation belongs to (empty = none).
   string settings_epoch = 14;
+  // What the agent could not deliver, cumulative over this install (02i,
+  // "Gaps"), so the hub learns of ring overflow that happened offline.
+  EventCounters event_counters = 15;
+}
+
+// EventCounters say what became of event seq numbers that were never
+// delivered, cumulative over the install and persisted with the seq
+// high-water mark (a decrease means the agent lost its state directory). Only
+// evicted_total is loss; the other two are by design (02i, "Gaps").
+message EventCounters {
+  // SHED events dropped from the send queue or while offline.
+  uint64 shed_total = 1;
+  // COALESCE events replaced by a later one with the same key.
+  uint64 coalesced_total = 2;
+  // NEVER_DROP or COALESCE events lost: ring overflow (size cap or one week).
+  uint64 evicted_total = 3;
 }
 
 // HelloAck (A3).
 message HelloAck {
   string hub_version = 1;
-  // Hub time; the agent evaluates not_after in hub time.
+  // Hub time, the authority for deadlines and for ordering data across
+  // machines; the agent evaluates not_after_time in hub time (hub_time plus
+  // local monotonic elapsed).
   google.protobuf.Timestamp hub_time = 2;
-  // Connection epoch; bumped on every new stream for this machine.
+  // Connection epoch: max(the hub's stored epoch, Hello.last_epoch) + 1 on
+  // every new stream for this machine, so it only ever increases, restore
+  // included. An agent that gets an epoch not above its own last_epoch
+  // drops the connection and reconnects with backoff (02i).
   uint64 epoch = 3;
   uint32 proto_version = 4;
   repeated fleet.type.v1.Capability capabilities_accepted = 5;
-  // Last event seq the hub has durably stored; the agent replays after it.
+  // Last event seq the hub has durably stored; the agent replays after it
+  // and raises its next seq above it, whatever its own counter says (02i).
   uint64 hub_last_event_seq = 6;
   // Hard cap for any single Connect message; larger is rejected.
   uint32 max_message_bytes = 7;
   google.protobuf.Duration heartbeat_interval = 8;
-  // Current settings generation; a Settings message follows if newer than
-  // Hello.settings_generation, or if settings_epoch differs from
-  // Hello.settings_epoch.
+  // Generation of THIS machine's resolved settings (the fleet counter value
+  // at which they last changed, 03e), not the fleet-wide counter, so one
+  // machine's change does not resend settings to the others. A Settings
+  // message follows if it is newer than Hello.settings_generation, or if
+  // settings_epoch differs from Hello.settings_epoch.
   uint64 settings_generation = 9;
   // Random id per hub process start. A change tells the agent the hub
   // restarted (its in-memory queues are gone), even on the same address.
@@ -195,21 +250,44 @@ message HelloAck {
   // Hub features the agent may rely on, e.g. {"snapshot.parts", 1},
   // {"event.delivery", 1}. The agent never uses a feature not listed.
   repeated fleet.type.v1.Capability hub_capabilities = 12;
+  // Current addresses of the hub, replacing the list the agent holds
+  // (EnrollResponse.hub_addresses). A hub restored on another host updates
+  // its agents through the old address; the server certificate's SAN list
+  // must cover them (03f, "Hub identity").
+  repeated string hub_addresses = 13;
+  // Fleet id again, so the check does not only run at enrollment. An agent
+  // that sees another fleet_id sends Bye{FLEET_MISMATCH} and does not
+  // reconnect until the owner re-enrolls it.
+  string fleet_id = 14;
 }
 
-// PaneCounts are the raw counts in a heartbeat; the hub computes slots.
+// GoalPaneCount is the number of panes whose goal file is in one state. A
+// repeated message, not a map, because proto map keys cannot be enums.
+message GoalPaneCount {
+  fleet.type.v1.GoalLineState state = 1;
+  uint32 count = 2;
+}
+
+// PaneCounts are the raw counts in a heartbeat. The hub owns slot
+// enforcement and computes slots from its goal table; the agent computes only
+// the two aggregates below from its registry, for its own safety cap
+// (AGENT_GOAL_CAP_REACHED) and so the hub can compare exactly these two
+// numbers, not the per-state counts, to detect a mismatch (02h, "Slots").
 message PaneCounts {
   uint32 fleet_panes = 1;
   map<string, uint32> panes_by_harness = 2;
-  // Keyed by GoalLineState name, e.g. "WORKING", "BLOCKED_WATCH".
-  map<string, uint32> goal_panes_by_state = 3;
+  repeated GoalPaneCount goal_panes_by_state = 3;
   uint32 available_sessions = 4;
+  // Registered goals in a live pane that count against max_active (line state
+  // WORKING) and against max_total (any registered goal with a live pane).
+  uint32 goals_active = 5;
+  uint32 goals_total = 6;
 }
 
 // Heartbeat (A5), every 15 s. Droppable under backpressure; the hub marks
 // stale at 45 s and offline at 3 min. Carries no seq.
 message Heartbeat {
-  google.protobuf.Timestamp sent_at = 1;
+  google.protobuf.Timestamp sent_time = 1;
   // Monotonic uptime of the agent process.
   google.protobuf.Duration uptime = 2;
   double load1 = 3;
@@ -217,13 +295,20 @@ message Heartbeat {
   bool draining = 5;
   SpoolStatus spool = 6;
   uint32 open_attaches = 7;
-  // Highest event seq sent so far, so the hub notices dropped events.
+  // Highest event seq handed out so far. The hub compares it with its
+  // highest stored seq only to learn that events are still in flight; it
+  // never infers loss from missing numbers (02i, "Gaps").
   uint64 event_seq = 8;
+  // Drop counters, so the hub tells deliberate shedding from loss: an
+  // increase of events.evicted_total is loss and gets a SnapshotRequest.
+  EventCounters events = 9;
 }
 
 // SnapshotRequest: the hub wants a full Snapshot now.
 message SnapshotRequest {
-  // "reconcile", "ui_refresh", "after_settings", etc.
+  // Open vocabulary, so the agent logs it: "reconcile", "ui_refresh",
+  // "after_settings", "event_lost" (EventCounters.evicted_total rose),
+  // "seq_rollback" (the agent's seq space went backwards), "slot_mismatch".
   string reason = 1;
 }
 
@@ -234,25 +319,37 @@ message Settings {
   // Labels assigned on the hub; local config can add, never remove.
   repeated string labels = 2;
   fleet.type.v1.SettingValues values = 3;
-  // Was probe intervals per account id as integer seconds; replaced by
-  // probe_interval_by_account so every duration on the wire is a Duration.
-  reserved 4;
-  reserved "probe_interval_seconds_by_account";
   // Store incarnation this generation belongs to (HelloAck.settings_epoch).
   string settings_epoch = 5;
-  // Probe intervals keyed by AccountId.value (map keys cannot be messages);
-  // tighten-only against SettingValues.probe_interval.
+  // Probe intervals keyed by AccountId.value (map keys cannot be messages).
+  // Beats SettingValues.probe_interval for that account, and both are
+  // lengthened, never shortened, to the local minimum interval; EnsureProbe
+  // .interval only applies while neither is set (03e, "Probe interval").
   map<string, google.protobuf.Duration> probe_interval_by_account = 6;
+  // Trace of the hub's settings publish; the agent's merge is its child.
+  fleet.type.v1.TraceContext trace = 7;
 }
 
 // SettingsAck (A8): the generation applied and the effective values.
 message SettingsAck {
   uint64 generation = 1;
   fleet.type.v1.EffectiveSettings effective = 2;
-  // Fields the local ceiling capped, for the UI's "capped by local policy".
+  // Fields whose hub value the local ceiling lowered, for the UI's "capped by
+  // local policy" (SettingSource.layer is LOCAL_CEILING for each). A field
+  // the agent could not apply at all is in rejected, not here.
   repeated string capped_fields = 3;
   // Epoch of the applied generation.
   string settings_epoch = 4;
+  // Fields the agent refused: an invalid value (REASON_CODE_INVALID_ARGUMENT),
+  // or every field while the policy file is invalid and the agent is in safe
+  // mode (REASON_CODE_POLICY_SAFE_MODE). The previous effective value stands.
+  repeated fleet.type.v1.SettingRejection rejected = 5;
+  // Field numbers of SettingValues that this agent's schema does not know
+  // (an older agent behind a newer hub). Absent from `effective`, so without
+  // this the hub could not tell "not enforced here" from "no opinion".
+  repeated uint32 unrecognized_value_fields = 6;
+  // Same for the fields of Settings itself.
+  repeated uint32 unrecognized_settings_fields = 7;
 }
 
 // ResultAck: the hub stored these results; the agent may forget them.
@@ -271,12 +368,22 @@ enum ByeReason {
   BYE_REASON_RE_ENROLL = 3;
   // Hub: a newer connection for this machine_id won.
   BYE_REASON_DUPLICATE_IDENTITY = 4;
-  // Hub: certificate revoked; the agent must re-enroll.
+  // Hub: the machine was revoked (RevokeMachine). Sent at once on the live
+  // Connect stream, which then closes together with Terminal and SessionLog;
+  // every later Hello gets it too. The agent stops, reports in `doctor` and
+  // re-enrolls only with a new token.
   BYE_REASON_REVOKED = 5;
   // Hub: no common proto version.
   BYE_REASON_PROTO_UNSUPPORTED = 6;
   // Hub: hub restarting; reconnect with backoff.
   BYE_REASON_HUB_RESTART = 7;
+  // Hub: the certificate is valid but the hub has no such machine (store
+  // recreated with the CA kept, or a restore that predates the enrollment).
+  // The agent goes Unenrolled and the owner issues a new token; after a
+  // restore the hub may instead adopt the machine (03f, "Restore").
+  BYE_REASON_UNKNOWN_MACHINE = 8;
+  // Agent: HelloAck.fleet_id is not the fleet this agent enrolled in.
+  BYE_REASON_FLEET_MISMATCH = 9;
 }
 
 // Bye (A7 from the agent; duplicate identity and revocation from the hub).

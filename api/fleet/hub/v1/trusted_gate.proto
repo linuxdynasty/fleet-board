@@ -1,0 +1,92 @@
+// fleet.hub.v1 trusted-issues gate (design.md safety rails): who may make a
+// work item dispatchable. Issue text reaches an agent with push and merge
+// rights, so the gate is the hub's rule, evaluated from provider evidence
+// (fleet.integration.v1 Label, WorkItem.author, last_editor) at sync time and
+// again at plan time and when the body is fetched (03b). The adapter is
+// read-only and never sees the allow-list.
+//
+// The rule, per path; an item is trusted when either path holds:
+//   author path: the author is allow-listed, and nobody outside the
+//                allow-list edited the title or body after it was opened;
+//   label path:  the trusted label is on the item, its latest apply was by an
+//                allow-listed person, and nobody outside the allow-list
+//                edited the title or body after that apply.
+// A label whose actor is unknown, or an adapter that cannot report actors or
+// edits, never passes (fail closed). An outsider's edit after the trust event
+// demotes the item to MANUAL_ONLY (EDITED_AFTER_TRUST); an allow-listed
+// person labelling it again after the edit restores it.
+syntax = "proto3";
+
+package fleet.hub.v1;
+
+import "fleet/integration/v1/model.proto";
+import "fleet/type/v1/ids.proto";
+import "google/protobuf/timestamp.proto";
+
+// TrustedUser is one allow-listed provider account. Logins are
+// provider-local, so the entry names its integration: "alice" on GitHub is
+// not "alice" on Jira.
+message TrustedUser {
+  fleet.type.v1.IntegrationId integration = 1;
+  // Compared case-insensitively. 64 bytes.
+  string login = 2;
+  // Pins the account: when set the id is compared and the login is only a
+  // label, so a renamed or recycled login does not inherit trust. Empty =
+  // login only.
+  string provider_user_id = 3;
+}
+
+// TrustedLabel is the label that marks an item dispatchable.
+message TrustedLabel {
+  // Empty = the default for every integration without its own entry.
+  fleet.type.v1.IntegrationId integration = 1;
+  // 64 bytes. Where a tracker's signal is a status (Jira), the status name.
+  string name = 2;
+}
+
+// TrustedGate is the gate configuration at the fleet level. A Repo may set
+// its own label and add users (RepoTrustedGate). With no entry anywhere the
+// label is "agent-ready" and the allow-list is empty, so nothing
+// auto-dispatches until the owner lists someone.
+message TrustedGate {
+  repeated TrustedLabel labels = 1;
+  repeated TrustedUser users = 2;
+}
+
+// TrustBasis is the path that made an item trusted.
+enum TrustBasis {
+  TRUST_BASIS_UNSPECIFIED = 0;
+  TRUST_BASIS_AUTHOR = 1;
+  TRUST_BASIS_LABEL = 2;
+}
+
+// TrustDenial says why an item is not trusted.
+enum TrustDenial {
+  TRUST_DENIAL_UNSPECIFIED = 0;
+  // Neither the author nor the label's applier is on the allow-list, or the
+  // label is absent.
+  TRUST_DENIAL_NOT_ALLOW_LISTED = 1;
+  // The provider data lacks what the gate needs: the adapter does not
+  // declare labels_with_actor or edit_evidence, or the actor is unknown.
+  TRUST_DENIAL_EVIDENCE_MISSING = 2;
+  // A person outside the allow-list edited the item after the trust event.
+  TRUST_DENIAL_EDITED_AFTER_TRUST = 3;
+}
+
+// TrustVerdict is the hub's computation, kept on the WorkItem so the UI can
+// say why. Recomputed on every sync of the item and at plan time from the
+// mirror, guarded by the item's update_time; a manual dispatch that fetches
+// the body recomputes it from that same response.
+message TrustVerdict {
+  bool trusted = 1;
+  // Set when trusted.
+  TrustBasis basis = 2;
+  // Who opened the item or applied the label, when trusted. Untrusted text.
+  fleet.integration.v1.Person granted_by = 3;
+  // When the trust event happened: the item's creation (author path) or the
+  // label apply.
+  google.protobuf.Timestamp trust_time = 4;
+  // Set when not trusted.
+  TrustDenial denial = 5;
+  google.protobuf.Timestamp evaluated_time = 6;
+}

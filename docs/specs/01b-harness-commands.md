@@ -35,7 +35,7 @@ adapter (unknown commands fall into **deny**):
 | Class | Examples | From the hub |
 |---|---|---|
 | observe | `/status`, `/usage`, `/context`, `/diff`, `/ps`, `/tasks`, `/recap`, `/hud` | allowed, any idle prompt |
-| session | `/compact`, `/model`, `/effort`, `/fast`, `/plan`, `/rename`, `/resume`, `/stop`, `/fork` | allowed with `operator` role |
+| session | `/compact`, `/model`, `/effort`, `/fast`, `/plan`, `/rename`, `/resume`, `/stop`, `/fork` | allowed with `operator` role (matrix: [02g](02g-agent-security.md)) |
 | goal | `/goal <text>`, `/goal consent …`, `/goal done` | allowed; the goal command itself (G3) |
 | review | `/review`, `/code-review`, `/security-review` | allowed with `operator` role |
 | destructive | `/clear`, `/rewind`, `/delete`, `/archive`, `/exit`, `/quit` | local approval or explicit owner action |
@@ -113,8 +113,17 @@ Probed 2026-10-01 by typing `/goal` and `/goal ` without Enter, then bare
   adapter writes consent into the objective text.
 - After an interrupt, Muse printed "goal paused by interrupt — resume with
   /goal resume", and `/goal clear` printed "Goal cleared" (2026-10-01).
-- The adapter records which subcommands each harness version supports; the
-  hub never sends one that isn't listed.
+- The adapter records which subcommands each harness version supports and
+  how pause and resume are done, and the agent reports it as
+  `HarnessInfo.goal_control` ([02h](02h-goal-binding-and-pane-signals.md#goal-control-support));
+  the hub sends only what is listed and keeps no per-harness table. Resume
+  after a usage limit is not probed yet on any harness (an open question to
+  probe), so `limit_resume_verified` stays false until it is.
+- **Re-arm after completion** (03h): after "Goal achieved" Claude Code has
+  cleared its goal, so the hub re-arms a goal the owner says is not done with
+  `/goal <text>` in the same pane. That `/goal <text>` works after a completed goal
+  is **not probed on Codex or Muse** (an open question to probe); until it is, a
+  re-arm there is marked unverified.
 - Hooks see `/goal` differently per harness (Claude fires `UserPromptSubmit`
   for it, Codex does not). Claude's hooks do not see an interrupt at all and
   Codex's `Interrupt` hook is notify-only; see

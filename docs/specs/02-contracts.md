@@ -14,12 +14,24 @@
   0009, 0010), [ADR 0017](../adr/0017-contract-packages.md) (package
   layout and names) and [ADR 0018](../adr/0018-hub-api-and-contract-amendments.md)
   (hub API, principals, devices, routines, profiles)
-- Hub API conventions (`fleet.hub.v1`): [02b-hub-api.md](02b-hub-api.md)
+- Hub API conventions (`fleet.hub.v1`): [02b-hub-api.md](02b-hub-api.md),
+  [02c-hub-watch-and-filters.md](02c-hub-watch-and-filters.md),
+  [02d-hub-authz.md](02d-hub-authz.md),
+  [02f-hub-authentication.md](02f-hub-authentication.md)
+- Agent trust, hub identity, machine revoke, the role x command matrix, local
+  audit and trace context: [02g-agent-security.md](02g-agent-security.md)
+- Rules for every package (naming, codegen, freeze, capability map, agent size
+  limits, compile check): [02e-contract-rules.md](02e-contract-rules.md)
+- Goal registry, reuse, StartGoal steps, pane signals, repo identity, slots,
+  ids: [02h-goal-binding-and-pane-signals.md](02h-goal-binding-and-pane-signals.md)
+- Event delivery classes, seq and epoch monotonicity, gaps, replay apply rule,
+  clocks: [02i-delivery-and-sequencing.md](02i-delivery-and-sequencing.md)
 
 This spec says what crosses the wire for every capability in step 1. The
 `.proto` files are the source of truth; this document explains the mapping,
-delivery semantics, versioning, errors, limits and security rules. Built and
-linted with `buf` (commands at the end).
+delivery semantics, versioning, errors and security rules. Built and linted
+with `buf` (commands in [02e](02e-contract-rules.md#compile-check)). The
+contracts are unfrozen until the `v0.1` tag (ADR 0019, 02e).
 
 ## Package layout
 
@@ -45,24 +57,26 @@ packages; `fleet.hub.v1` never imports `fleet.agent.v1`.
 
 | File | Holds |
 |---|---|
-| `type/v1/ids.proto` | `MachineId`, `AccountKey` vs `AccountId`, `SessionId`, `GoalId`, `PromptId`, `ProbeId`, `CommandId`, `AttachId`, `IntegrationId`, `PaneKey`, `WindowKey`, `TmuxServerKind`, `Harness` |
-| `type/v1/work.proto` | `RepoRef`, `ProviderKind`, `WorkItemKind`, `WorkItemRef`, `Workdir` |
-| `type/v1/status.proto` | `Percent` with explicit unknown, `Status`, `ReasonCode`, `Capability`, `Role`, `Principal` |
-| `type/v1/harness.proto` | `CommandClass`, `CatalogEntry`, `CommandCatalog`, `GoalHooksState`, `Activity`, `Availability`, `GoalLineState`, `NamedKey`, `KeyInput`, `PromptSource`, `PromptOption`, `HarnessConditionKind`, `LogStream` |
+| `type/v1/ids.proto` | `MachineId`, `AccountKey` vs `AccountId`, `SessionId`, `GoalId`, `PromptId`, `ProbeId`, `CommandId`, `AttachId`, `IntegrationId`, `DeviceId`, `PrincipalId`, `PaneKey`, `WindowKey`, `TmuxServerKind`, `Harness`; the rules header |
+| `type/v1/work.proto` | `RepoRef`, `ProviderKind`, `WorkItemKind`, `WorkItemKey` (identity), `WorkItemRef` (key plus display fields), `Workdir`, `PaneWorkdir` |
+| `type/v1/consent.proto` | `ConsentAct` |
+| `type/v1/status.proto` | `Percent` with explicit unknown, `Status`, `ReasonCode`, `ErrorDetail`, `FieldViolation`, `AttachCloseReason`, `Capability`, `Role`, `PrincipalKind`, `Principal` |
+| `type/v1/trace.proto` | `TraceContext` (W3C `traceparent`, `tracestate`) on `Command`, `CommandResult`, `Event`, `Settings` |
+| `type/v1/harness.proto` | `CommandClass`, `CatalogEntry`, `CommandCatalog`, `GoalHooksState`, `HookTrustState`, `GoalControl`, `Activity`, `Availability`, `AvailabilityReason`, `GoalLineState`, `SendKeysPurpose`, `NamedKey`, `KeyInput`, `PromptSource`, `PromptOption`, `HarnessConditionKind`, `GoalPauseCause`, `LogStream` |
 | `type/v1/usage.proto` | `LimitBucket`, `ResetTime`, `ShownField`, `ShownUsage`, `SpendReading`, `UsageSource`, `WindowKind`, `BudgetKind`, `ParseOutcome` |
-| `type/v1/settings.proto` | `SettingValues`, `SettingSource`, `EffectiveSettings`, `SettingLayer`, `DefaultServerMode`, `LocalApprovalRule`, `RateLimit` |
-| `type/v1` additions (ADR 0018) | `DeviceId`, `PrincipalKind`, `ErrorDetail`, `VersionSupport`, `ParserFeature`, `ParserSupport`, `HarnessGoalHooks`, `LogStreamKey` |
-| `agent/v1/agent.proto` | `service AgentService`, `ConnectRequest`/`ConnectResponse`, `Hello`/`HelloAck`, `Heartbeat`, `Settings`/`SettingsAck`, `ResultAck`, `Bye`, `Enroll`, `RenewCert` |
-| `agent/v1/streams.proto` | `TerminalRequest{up TermUp}` / `TerminalResponse{down TermDown}`, `SessionLogRequest{chunk LogChunk}` / `SessionLogResponse{ack LogAck}` |
+| `type/v1/settings.proto` | `SettingValues`, `SettingSource`, `SettingRejection`, `EffectiveSettings`, `SettingLayer`, `DefaultServerMode`, `LocalApprovalRule`, `RateLimit` |
+| `type/v1` additions (ADR 0018) | `VersionSupport`, `ParserFeature`, `ParserSupport`, `HarnessGoalHooks`, `LogStreamKey` |
+| `agent/v1/agent.proto` | `service AgentService`, `ConnectRequest`/`ConnectResponse`, `Hello`/`HelloAck`, `Heartbeat`, `EventCounters`, `Settings`/`SettingsAck`, `ResultAck`, `Bye`, `Enroll`, `RenewCert` |
+| `agent/v1/streams.proto` | `TerminalRequest{up TermUp}` / `TerminalResponse{down TermDown}`, `SessionLogRequest{chunk LogChunk}` / `SessionLogResponse{ack LogAck}`, `LogAckStatus` |
 | `agent/v1/command.proto` | `Command` envelope, `CommandAck`, `CommandProgress`, `CommandResult` |
-| `agent/v1/command_tmux.proto` | `SessionTarget`, probe kinds (D1), tmux control kinds (F, E10, E11) |
-| `agent/v1/command_goal.proto` | `GoalSpec`, `Preflight`, `StartGoal`, worktree, goal-hook, attach, log and drain kinds |
-| `agent/v1/events.proto` | `Event{seq, at, delivery, coalesce_key, body}`, `DeliveryClass` and every event body except the screen ones |
+| `agent/v1/command_tmux.proto` | `SessionTarget`, probe kinds (D1), tmux control kinds (F, E10, E11 `SetPaneAvailability`) |
+| `agent/v1/command_goal.proto` | `GoalSpec`, `Preflight`, `StartGoal`, worktree, goal-hook, `RegisterGoal`/`ReleaseGoal`, attach, log and drain kinds |
+| `agent/v1/events.proto` | `Event{seq, observed_time, delivery, coalesce_key, body}`, `DeliveryClass` and every event body except the screen ones |
 | `agent/v1/screen.proto` | `PromptDetected`, `HarnessCondition` (events and `Snapshot.prompts` / `conditions`) |
-| `agent/v1/snapshot.proto` | facts and inventories (`MachineFacts`, `HarnessInfo`, tmux `TmuxServer/Session/Window/Pane`, `GoalState`, `RepoCheckout`, `BranchState`, `ForgeCliStatus`, `SpoolStatus`, `PolicyInfo`, `DrainState`) and the `Snapshot` |
+| `agent/v1/snapshot.proto` | facts and inventories (`MachineFacts`, `HarnessInfo`, tmux `TmuxServer/Session/Window/Pane`, `GoalState`, `GoalRegistration`, `RepoCheckout`, `BranchState`, `ForgeCliStatus`, `SpoolStatus`, `PolicyInfo`, `DrainState`) and the `Snapshot` |
 | `agent/v1/usage.proto` | `UsageReading` (as shown + standardized buckets), `AccountIdentity`, `SessionAccountLink`, `ProbeHealth` |
-| `integration/v1/integration.proto` | `IntegrationCapabilities`, `WorkItem`, `ChangeRequest`, `CheckSummary`, `Review`, `Claim`, and the read-only `IntegrationProviderService` that GitHub implements first |
-| `hub/v1/*.proto` | `FleetService` and its resources; see [02b](02b-hub-api.md) |
+| `integration/v1/{integration,model,sync,service}.proto` | `IntegrationCapabilities`; `WorkItem`, `Label`, `ChangeRequest`, `CheckSummary` (with `CheckRollup`), `Review`, `ReviewDecision`, `MergeState`, `Claim`; `ChangeCursor`, `Validators`, `RateLimitState`, `ResponseMeta`, `ProviderError`; and the read-only `IntegrationProviderService` that GitHub implements first ([03j](03j-provider-sync-and-trust.md)) |
+| `hub/v1/*.proto` | `FleetService` and its resources; see [02b](02b-hub-api.md), [02c](02c-hub-watch-and-filters.md), [02d](02d-hub-authz.md), [02f](02f-hub-authentication.md) (`auth.proto` users, passkeys, sessions; `token.proto` API tokens) |
 
 **Naming (buf STANDARD).** Services end in `Service`; every RPC has its own
 `<Rpc>Request`/`<Rpc>Response`. Where a stream body already had a name the
@@ -71,7 +85,7 @@ specs use (`TermUp`, `TermDown`, `LogChunk`, `LogAck`, `ChangeNotice`,
 single field. The `Connect` bodies were renamed instead (`AgentMessage` →
 `ConnectRequest`, `HubMessage` → `ConnectResponse`). Paged lists use
 `page_size`, `page_token` and `next_page_token`. On `AgentService` the agent
-is the client, so "request" is always agent → hub and "response" hub → agent.
+is the client: "request" is agent → hub, "response" hub → agent.
 
 Field numbers are grouped with gaps (commands 10–19 probes, 20–39 tmux, 40–49
 goals, 50–59 attach, 60–69 logs, 70–79 self-management; events likewise) so
@@ -97,71 +111,71 @@ epoch. The hub machine's own agent uses the same path over loopback.
 
 Direction: A→H agent to hub, H→A hub to agent. Idem.: idempotent. Ordering:
 `seq` means the agent-wide event sequence; `cmd` means per-epoch command
-sequence; `none` means unordered. Droppable: may be shed under backpressure.
+sequence; `none` means unordered. Droppable: `yes` is SHED; `coalesce` keeps the latest per key; `no`/`never` is NEVER_DROP (classes per body in [02i](02i-delivery-and-sequencing.md)).
 
 | ID | Message(s) | Dir | Idem. | Ordering | Droppable |
 |---|---|---|---|---|---|
-| A1 | `Enroll` RPC: `EnrollRequest{token, csr, facts, capabilities, previous_machine_id, install_id}` → `EnrollResponse{machine_id, cert, ca, account_salt, fleet_id}` | A→H | token single-use | n/a | no |
+| A1 | `Enroll` RPC: `EnrollRequest{token (embeds the CA fingerprint), csr_pem, facts, capabilities, proto_min, proto_max, previous_machine_id, install_id}` → `EnrollResponse{machine_id, cert_pem, ca_chain_pem, account_salt, fleet_id, replayed}`; typed failures `ENROLL_*` ([02g](02g-agent-security.md)) | A→H | same token + install_id + CSR key replays | n/a | no |
 | A2 | local only; `EnrollResponse.hub_addresses` seeds discovery | — | — | — | — |
-| A3 | `Hello{install_id, settings_epoch, …}`/`HelloAck{hub_instance_id, settings_epoch, hub_capabilities, …}`, `Snapshot{…, prompts[], conditions[], snapshot_id, part_index, part_count}`, `SnapshotRequest{reason}` | both | snapshot replaces | first on stream | no |
+| A3 | `Hello{install_id, settings_epoch, event_counters, …}`/`HelloAck{hub_instance_id, settings_epoch, hub_capabilities, hub_addresses, fleet_id, …}`, `Snapshot{…, prompts[], conditions[], snapshot_id, part_index, part_count}`, `SnapshotRequest{reason}` | both | snapshot replaces | first on stream | no |
 | A4 | `RenewCert` RPC | A→H | yes | n/a | no |
-| A5 | `Heartbeat{counts, load1, uptime, draining, spool, event_seq}` | A→H | yes | none | **yes** |
+| A5 | `Heartbeat{counts, load1, uptime, draining, spool, event_seq, events EventCounters}` | A→H | yes | none | **yes** |
 | A6 | local; `Hello.reason = WAKE / NETWORK_CHANGE` | A→H | — | — | — |
-| A7 | `Bye{reason}` (agent); `Bye` from hub for duplicate identity, revoked, restart | both | yes | last on stream | no |
-| A8 | `Settings{settings_epoch, generation, labels, values, probe_interval_by_account}` → `SettingsAck{settings_epoch, generation, effective, capped_fields}` | H→A, A→H | by (epoch, generation) | (epoch, generation) | no |
+| A7 | `Bye{reason}` (agent); `Bye` from hub for duplicate identity, revoked, unknown machine, restart; `FLEET_MISMATCH` from the agent | both | yes | last on stream | no |
+| A8 | `Settings{settings_epoch, generation, labels, values, probe_interval_by_account}` → `SettingsAck{settings_epoch, generation, effective, capped_fields, rejected[], unrecognized_value_fields[]}` | H→A, A→H | by (epoch, generation) | (epoch, generation) | no |
 | B1 | `MachineFacts` in `EnrollRequest` and `Snapshot` | A→H | — | snapshot | — |
 | B2 | `Event.resource_sample` | A→H | — | seq | **yes** |
 | B3 | `Snapshot.power`, `Event.power_state` | A→H | — | seq | no |
-| C1 | `Snapshot.harnesses[] HarnessInfo{profile, version_support, parser_support[], …}`, `Event.harness_changed` | A→H | — | seq | no |
-| C2 | `AccountIdentity` in snapshot and `Event.account_identity` | A→H | — | seq | no |
+| C1 | `Snapshot.harnesses[] HarnessInfo{profile, version_support, parser_support[], …}`, `Event.harness_changed` | A→H | — | seq | coalesce |
+| C2 | `AccountIdentity` in snapshot and `Event.account_identity` | A→H | — | seq | coalesce |
 | C3 | local only | — | — | — | — |
 | C4 | `HarnessInfo.catalog CommandCatalog{hash, entries[]}` | A→H | — | snapshot/seq | no |
-| D1 | `EnsureProbe{probe_id, account_id, account_key, harness, interval, run_now}`, `StopProbe`; `ProbeHealth` in snapshot and `Event.probe_health` | H→A; A→H | yes | cmd; seq | no |
-| D2 | `Event.usage_reading UsageReading{shown, buckets[], parse}`; latest per account in `Snapshot.usage` | A→H | — | seq | no |
-| D3 | same message with `source = PASSIVE` | A→H | — | seq | no |
-| — | `SessionAccountLink` (session → account, OpenCode) in snapshot and event | A→H | — | seq | no |
-| E1 | `Snapshot.tmux_servers[]`; `Event.tmux_server / session / window` | A→H | — | seq | no |
+| D1 | `EnsureProbe{probe_id, account_id, account_key, harness, interval, run_now}`, `StopProbe`; `ProbeHealth` in snapshot and `Event.probe_health` | H→A; A→H | yes | cmd; seq | coalesce (event) |
+| D2 | `Event.usage_reading UsageReading{shown, buckets[], parse}`; latest per account in `Snapshot.usage` | A→H | — | seq | coalesce |
+| D3 | same message with `source = PASSIVE` | A→H | — | seq | coalesce |
+| — | `SessionAccountLink` (session → account, OpenCode) in snapshot and event | A→H | — | seq | coalesce |
+| E1 | `Snapshot.tmux_servers[]` (`TmuxPane.workdir`, `internal` sessions); `Event.tmux_server / session / window`, `Event.pane_changed` (attribute changes, `CHANGE_KIND_UPDATED`) | A→H | — | seq | no (pane_changed coalesces) |
 | E2 | local (`TmuxServer.observed`) | — | — | — | — |
 | E3 | `Event.pane_created`, `Event.pane_exited{exit_status, goal_id}` | A→H | — | seq | no |
 | E4 | `Event.activity ActivityTransition` | A→H | — | seq | **never** |
 | E5 | `Event.pane_summary` (≤ 1 per pane per 5 s) | A→H | — | seq | **yes** |
 | E6 | `Event.prompt_detected{prompt_id, destructive, answerable}`, `Event.prompt_gone` | A→H | — | seq | never |
-| E7 | `Event.harness_ready` | A→H | — | seq | no |
+| E7 | `TmuxPane.ready_pattern_showing`, `Event.harness_ready{showing}` | A→H | — | seq | coalesce |
 | E8 | `Event.harness_hook HarnessHookEvent` | A→H | — | seq | no |
-| E9 | `TmuxPane.harness_session_id`, `Event.pane_harness_session` | A→H | — | seq | no |
+| E9 | `TmuxPane.harness_session_id`, `Event.pane_harness_session{goal, binding}` | A→H | — | seq | no |
 | E10 | `CapturePane{pane, last_lines, keep_ansi, max_bytes}` → `CapturePaneResult` | H→A | yes | cmd | no |
-| E11 | `TmuxPane.availability`, `Event.availability AvailabilityChanged`; `SetSessionAvailability` (board mark) | A→H; H→A | yes | seq; cmd | never |
-| E12 | `Event.harness_condition HarnessCondition{…, resets_at}` (provider error, rate limit, usage limit, sign-in required, network), reported again with `cleared`; open ones in `Snapshot.conditions` | A→H | yes | seq | never |
+| E11 | `TmuxPane.availability`, `Event.availability AvailabilityChanged{reason AvailabilityReason}`; `SetPaneAvailability{pane, available_for_work, reason}` (board mark, per pane) | A→H; H→A | yes | seq; cmd | never |
+| E12 | `Event.harness_condition HarnessCondition{…, resets_time, pause_cause}` (provider error, rate limit, usage limit, sign-in required, network, goal interrupted or paused), reported again with `cleared`; open ones in `Snapshot.conditions` | A→H | yes | seq | never |
+| E13 | `TmuxPane.last_input_time`, `Event.pane_input PaneInput` (a person typed; ≤ 1 per pane per 10 s) | A→H | — | seq | coalesce |
 | F1 | `EnsureSession{…, owner_principal, profile}` → `EnsureSessionResult{session, created, pane}` | H→A | yes | cmd | no |
 | F2 | `EnsureWindow` → `EnsureWindowResult` | H→A | yes | cmd | no |
-| F3 | `SendKeys{pane, keys[], answering_prompt, require_empty_input_line}` | H→A | **no** | cmd | no |
+| F3 | `SendKeys{pane, keys[], answering_prompt, purpose SendKeysPurpose}` (gate per purpose, 02h) | H→A | **no** | cmd | no |
 | F4 | `Interrupt{pane}` | H→A | effectively | cmd | no |
-| F5 | `RespawnPane{pane, harness, resume}` | H→A | yes | cmd | no |
+| F5 | `RespawnPane{pane, harness, resume, profile, harness_session_id}` | H→A | yes | cmd | no |
 | F6 | `KillWindow{window}` | H→A | yes | cmd | no |
 | F8 | `RunHarnessCommand{pane, command, args, expected_class, catalog_hash}` → `RunHarnessCommandResult` | H→A | observe: yes; others: no | cmd | no |
-| G1 | `EnsureGoalHooks{harness, workdir, expected_version, profile}` → `EnsureGoalHooksResult{state GoalHooksState}`; per checkout in `RepoCheckout.goal_hooks[]` (`trust_pending`, `config_path`, [01d](01d-goal-hooks.md)); also in `HarnessInfo.goal_hooks` | H→A; A→H | yes | cmd | no |
-| G2 | `GoalState` in `Snapshot.goals` and `Event.goal_state` | A→H | — | seq | never |
-| G3 | `StartGoal{spec GoalSpec{…, model, effort, fresh_context, dispatch_reason, profile}, reuse_pane, in_session, timeouts}`; `CommandProgress{command_id, step}` per step; `StartGoalResult{…, typed_goal_line}` | H→A; A→H | composite: yes per step | cmd | never |
-| G4 | `RunHarnessCommand{command: "/goal", args: pause\|resume\|edit …\|clear}` (class GOAL), or `Interrupt` where the harness has no pause; `GOAL_SUBCOMMAND_UNSUPPORTED` otherwise | H→A | no (typed input) | cmd | never |
-| H1 | `Snapshot.repos[] RepoCheckout`, `Event.repo` | A→H | — | seq | no |
+| G1 | `EnsureGoalHooks{harness, workdir, expected_version, profile}` → `EnsureGoalHooksResult{state GoalHooksState}`; per checkout in `RepoCheckout.goal_hooks[]` (`trust` `HookTrustState`, `trust_approve_command`, `config_path`, [01d](01d-goal-hooks.md)); also in `HarnessInfo.goal_hooks`; `HarnessInfo.goal_control` (G4) | H→A; A→H | yes | cmd | no |
+| G2 | `GoalState{…, worktree_path, branch}` in `Snapshot.goals` and `Event.goal_state` | A→H | — | seq | never |
+| G3 | `StartGoal{spec GoalSpec{…, model, effort, fresh_context, dispatch_reason, profile}, reuse_pane, in_session, ready_timeout, goal_file_timeout, rearm_reason}`; `CommandProgress{command_id, step}` per step (14 named steps, 02h); `StartGoalResult{…, typed_goal_line, branch, model, effort, registration}` | H→A; A→H | composite: per step class (02h) | cmd | never |
+| G4 | `RunHarnessCommand{command: "/goal", args: pause\|resume\|edit …\|clear}` (class GOAL), `Interrupt`, or `SendKeys{GOAL_RESUME}`, as `HarnessInfo.goal_control` says; `GOAL_SUBCOMMAND_UNSUPPORTED` otherwise | H→A | no (typed input) | cmd | never |
+| G5 | goal registry: `Snapshot.goal_registry[] GoalRegistration`, `Event.goal_registry`, `RegisterGoal{goal, pane, repo_driver}`, `ReleaseGoal{goal, pane}` | both | yes | seq; cmd | never |
+| H1 | `Snapshot.repos[] RepoCheckout{…, remote_name, remotes[]}`, `Event.repo` | A→H | — | seq | no |
 | H2 | `EnsureWorktree` → `EnsureWorktreeResult`; `PruneWorktree{allow_dirty, delete_branch}` | H→A | yes | cmd | no |
-| H3 | `BranchState` in `RepoCheckout` and `Event.branch_state` | A→H | — | seq | no |
-| H4 | `Snapshot.forge_cli ForgeCliStatus{tool, provider, host, signed_in, user, access[]}` per code-host CLI (`gh`, `glab`) | A→H | — | snapshot | no |
-| I1 | `Preflight{spec}` → `PreflightResult{ok, failed_checks[] PreflightFailure{reason, detail, retryable}, would_reuse, goal_line_preview}` | H→A | yes | cmd | no |
+| H3 | `BranchState` in `RepoCheckout` and `Event.branch_state` | A→H | — | seq | coalesce |
+| H4 | `Snapshot.forge_cli ForgeCliStatus{tool, provider, host, signed_in, user, access[]}` per code-host CLI (`gh`, `glab`); `Event.forge_cli_status` when the hourly re-check changes it | A→H | — | snapshot; seq | coalesce |
+| I1 | `Preflight{spec, reuse_pane}` → `PreflightResult{ok, failed_checks[] PreflightFailure{reason, detail, retryable}, would_reuse, goal_line_preview}` | H→A | yes | cmd | no |
 | J1 | `OpenAttach{attach_id, session, cols, rows, read_only}` / `CloseAttach`; `Terminal` stream `TermUp{ready, output, closed}` / `TermDown{input, resize, close, select TermSelect{window \| pane}}` | H→A; stream | yes | per attach | output never; input never |
-| K1 | `SessionLog` stream `LogChunk{key LogStreamKey{session_id, pane, stream}, offset, zstd, frame_raw_offset, frame_start, gap_before, final}` / `LogAck{key, acked_offset, pause, all_streams}`; `SetLogCapture{session, enabled}` | A→H; H→A | by offset | offset | no (spool) |
+| K1 | `SessionLog` stream `LogChunk{key LogStreamKey{pane, stream; session_id optional}, offset, zstd, frame_raw_offset, frame_start, gap_before, final}` / `LogAck{key, acked_offset, status, pause, all_streams}`; `SetLogCapture{session, enabled}` | A→H; H→A | by offset | offset | no (spool) |
 | K2 | `SpoolStatus` in snapshot, heartbeat and `Event.spool_status`; `SetLogShipping{paused, reason}`; `LogAck.pause` | both | yes | seq; cmd | event yes |
 | K3 | `LogChunk.key.stream = HARNESS_TRANSCRIPT` (v3) | A→H | by offset | offset | no |
-| L1 | `Snapshot.policy PolicyInfo{schema_version, hash}`, `Event.policy_changed` | A→H | — | seq | no |
+| L1 | `Snapshot.policy PolicyInfo{schema_version, hash, safe_mode, error}`, `Event.policy_changed` | A→H | — | seq | no |
 | L2 | `Snapshot.settings EffectiveSettings{values, sources[], labels}`; also in `SettingsAck` | A→H | — | snapshot | no |
-| L3 | `Status.AWAITING_LOCAL_CONFIRM` in `CommandResult`; `Event.local_approval` | A→H | — | seq | no |
+| L3 | `CommandProgress{step "awaiting_local_confirm", status AWAITING_LOCAL_CONFIRM}` (never a `CommandResult`); `Event.local_approval` | A→H | — | seq | no |
 | M1–M3 | local only; `MachineFacts.agent_binary_hash`, `PolicyInfo.hash`, `GoalHooksState.hook_hash` surface for display | — | — | — | — |
 | M4 | `Drain{reason}`, `Undrain`; `DrainState{draining, reason, requested_by_principal}` in snapshot, `Heartbeat.draining`, `Event.drain_state` | H→A; A→H | yes | cmd; seq | no |
 | — | raw exec | reserved: `Command` field 99 / name `run_exec`, capability `exec.raw`; not defined in v1 | — | — | — | — |
 
-Every capability in the step 1 map has a message. Messages with no
-capability behind them: none (`ResultAck`, `CommandAck`, `CommandProgress`
-and `PromptGone` are delivery mechanics for A3, G3 and E6).
+Every step 1 capability has a message; `ResultAck`, `CommandAck`, `CommandProgress` and `PromptGone` are delivery mechanics.
 
 ## Delivery semantics
 
@@ -176,7 +190,7 @@ ids and the results are re-sent right after the snapshot. A duplicate
 
 **Envelope checks, in order.** First, a `command_id` already in the local
 log returns the logged result without re-checking or re-executing (so a
-re-send after reconnect never trips the `seq` check). Then `not_after` in hub
+re-send after reconnect never trips the `seq` check). Then `not_after_time` in hub
 time (else `EXPIRED`);
 `epoch` equals the current `HelloAck.epoch` (else `FAILED` /
 `EPOCH_MISMATCH`, `retryable = true`: the hub re-issues it under the new
@@ -185,16 +199,17 @@ epoch); `seq` greater than the last applied for that epoch (else
 `missing_capability`); local policy and effective settings (else
 `REJECTED_BY_POLICY`); `requested_by.role` sufficient for the kind or
 harness command class (else `REJECTED_BY_POLICY` / `ROLE_INSUFFICIENT`);
-local approval if required (`AWAITING_LOCAL_CONFIRM`, then the final
-result or `LOCAL_CONFIRM_TIMEOUT`).
+local approval if required (a `CommandProgress` in state
+`AWAITING_LOCAL_CONFIRM`, then the one final result, or `LOCAL_CONFIRM_TIMEOUT`).
 
-**Deadlines.** `not_after` defaults: 2 min for `SendKeys`, `Interrupt`,
+**Deadlines.** `not_after_time` defaults: 2 min for `SendKeys`, `Interrupt`,
 `RunHarnessCommand`, `CapturePane`, `OpenAttach`; 30 min for `StartGoal`,
-`EnsureWorktree`, `PruneWorktree`, `EnsureGoalHooks`; 10 min for
-everything else. The agent evaluates deadlines in hub time
-(`HelloAck.hub_time` plus local monotonic elapsed). The hub measures skew from
-`Heartbeat.sent_at` against its own clock and raises a machine warning over
-5 minutes (ADR 0004).
+`EnsureWorktree`, `PruneWorktree`, `EnsureGoalHooks`; 24 h for `StopProbe`
+(its machine may be asleep; the snapshot reconcile covers longer); 10 min else. The agent evaluates deadlines in hub time
+(`HelloAck.hub_time` plus local monotonic elapsed). The hub is the time
+authority: it measures skew from `Hello.sent_time` and `Heartbeat.sent_time`,
+warns over 5 minutes, orders cross-machine data by hub-adjusted time and
+distrusts a machine's clock over 15 minutes (02i, "Clocks"; ADR 0004).
 
 **Not idempotent: `SendKeys`.** After an agent restart mid-command the
 result is `UNKNOWN_OUTCOME`; the hub never retries it and asks a person.
@@ -202,22 +217,28 @@ result is `UNKNOWN_OUTCOME`; the hub never retries it and asks a person.
 `REVIEW` or `DESTRUCTIVE` command that ends `UNKNOWN_OUTCOME` is treated like
 `SendKeys`.
 
-**Composite (`StartGoal`).** One `command_id`, steps named in
-`CommandProgress.step`. The agent persists the step it reached; after a
-restart it resumes from the last declarative step (preflight, worktree,
-window) and treats `type_goal` as `UNKNOWN_OUTCOME` unless
-`confirm_goal_file` can prove the goal file appeared. A failed step names
-itself (`ready_timeout`, `goal_file_not_seen`, `prompt_gone`, …).
+**Composite (`StartGoal`).** One `command_id`, 14 steps named in
+`CommandProgress.step`, each with a restart class (declarative, read-only,
+verify, not idempotent): the table is in
+[02h](02h-goal-binding-and-pane-signals.md#startgoal-steps). The agent persists
+`started` and `done` per step and resumes after a restart; `clear_context` and
+`type_goal` are never typed twice and end `UNKNOWN_OUTCOME` unless the goal
+file proves the goal was typed.
 
 **Events: agent-wide `seq`, persisted, surviving reconnects.** The agent's
-offline ring (latest state per pane wins; 1 week; size-capped) replays with
-`replayed = true` after `HelloAck.hub_last_event_seq`. A `Snapshot`
-supersedes every event with `seq ≤ Snapshot.seq`; the hub applies the
-snapshot first, then only events with higher seq to live state. Replayed
-events with `seq ≤ Snapshot.seq` go to history only (03g #9).
+offline ring (NEVER_DROP and COALESCE kinds only; 1 week; size-capped) replays
+with `replayed = true` after `HelloAck.hub_last_event_seq`. `seq` is monotonic
+across agent crashes and hub restores (persisted high-water mark, floor from
+`HelloAck`), and so is the connection epoch (`max(stored, Hello.last_epoch)+1`).
+A `Snapshot` supersedes every event with `seq ≤ Snapshot.seq`: the hub applies
+the snapshot first, then replayed events with `seq ≤ Snapshot.seq` as history
+only (no rule runs) and higher ones to live state too. Gaps in `seq` are normal;
+loss is read from `EventCounters`, never from missing numbers. All of it in
+[02i](02i-delivery-and-sequencing.md).
 
 **Unknown event kinds.** Every `Event` carries `delivery` (its row in the
-table below) and, for `COALESCE`, a `coalesce_key`. A hub that does not know
+[02i table](02i-delivery-and-sequencing.md#delivery-class-per-event-body)) and,
+for `COALESCE`, a `coalesce_key`. A hub that does not know
 a body kind (a newer agent) still queues, sheds or coalesces it by
 `delivery`, advances its stored seq past it and keeps it in history as
 opaque bytes; it never stalls on it or asks for a snapshot because of it.
@@ -237,66 +258,51 @@ the epoch differs from the one it holds (any generation) or the generation
 is higher under the same epoch; it ignores the rest. This replaces 03g's
 `settings_restored` flag.
 
-**Identity.** `EnrollResponse.fleet_id` names the fleet; an agent refuses a
-hub with another fleet id. `HelloAck.hub_instance_id` changes on every hub
-process start. `install_id` is minted once per agent install and sent in
-`EnrollRequest` and `Hello`; two live connections with one `install_id`
-mean a copied state directory. `EnrollRequest.previous_machine_id`
-re-enrolls a known machine instead of creating a second one.
+**Identity.** `EnrollResponse.fleet_id` and `HelloAck.fleet_id` name the
+fleet; an agent refuses a hub with another fleet id. `HelloAck.hub_instance_id`
+changes on every hub process start. `install_id` is minted once per agent
+install and sent in `EnrollRequest` and `Hello`; a copied state directory shows
+as two hosts displacing each other ([02g](02g-agent-security.md#machine-lifecycle-revoke-and-delete)).
+An enroll token naming `previous_machine` re-enrolls that machine;
+`EnrollRequest.previous_machine_id` is only checked for a mismatch. Where the CA key, `fleet_id`, salt and `settings_epoch`
+live and how restore treats them: 02g, "Hub identity and restore".
 
-**Backpressure classes.** The agent's bounded send queue sheds in this
-order and never beyond it:
-
-| Class | Messages |
-|---|---|
-| Shed first | `Heartbeat`, `Event.pane_summary`, `Event.resource_sample`, `Event.spool_status` |
-| Coalesce (keep latest per key) | `Event.usage_reading` per account, `Event.branch_state` per worktree, `Event.probe_health` per probe |
-| Never dropped | `Event.activity`, `Event.prompt_detected` / `prompt_gone`, `Event.harness_condition`, `Event.local_approval`, `Event.availability`, `Event.goal_state`, `Event.pane_exited`, `Event.power_state`, `Event.drain_state`, `CommandAck` / `CommandProgress` / `CommandResult`, `SettingsAck`, `Bye` |
-
-`Heartbeat.event_seq` tells the hub the highest seq sent, so a gap caused by
-shedding is visible and a `SnapshotRequest` repairs it. The hub's single
-writer sheds pane summaries first on its side too (ADR 0004).
+**Backpressure classes.** The agent's bounded send queue sheds SHED events
+first and never drops NEVER_DROP ones; COALESCE keeps the latest per key. The
+class and `coalesce_key` of every event body, the ring rule per class and what
+the counters in `Heartbeat.events` mean are in
+[02i](02i-delivery-and-sequencing.md). The hub's single writer sheds pane
+summaries first on its side too (ADR 0004).
 
 **Terminal and logs.** `Terminal` relies on HTTP/2 flow control; output is
 never dropped (the PTY blocks). `TermDown.select` switches the view
 session's window or pane only. `SessionLog` chunks and acks name their
-stream with one `LogStreamKey{session_id, pane, stream}` and are acked by
-offset; `LogAck.pause` or `SetLogShipping` pauses shipping while capture
-continues into the spool. The hub may send `LogAck` unsolicited: with
+stream with one `LogStreamKey{pane, stream}` (`session_id` is optional on the
+agent wire and filled in by the hub) and every chunk is answered with a
+`LogAck{acked_offset = stored end, status}`, accepted or refused (03d, W9);
+`LogAck.pause` or `SetLogShipping` pauses shipping while capture continues
+into the spool. The hub may send `LogAck` unsolicited: with
 `all_streams = true` it applies to every stream of the machine (pause, or
 resume with `pause = false`); `key` and `acked_offset` are then unset. When
 the spool cap is hit the agent keeps the newest data and sets `gap_before`
 on the next chunk. `EnsureProbe.run_now` runs once per distinct
-`command_id` (03g #9).
-
-**Log framing** (spike S2, 2026-10-02). The agent keeps one zstd frame per
-stream open for up to 5 min or 4 MiB raw and flushes it at every 10 s chunk,
-so a chunk is a run of zstd blocks: `frame_start` marks a chunk that opens a
-frame (first chunk, 5 min / 4 MiB, agent restart, after a gap) and
-`frame_raw_offset` names where the open frame began. On Codex output this
-compressed 14x against 8x for independent 10 s frames (15x for one frame per
-hour). Seek granularity is one frame (≤ 5 min): replay decodes from the
-chunk at `frame_raw_offset`. A frame left open by an agent crash still
-decodes block by block; the next chunk starts a new frame.
+`command_id` (03g #9). Framing: [02e](02e-contract-rules.md#log-framing).
 
 ## Versioning and capability negotiation
 
 - **Proto version.** `Hello.proto_min/max` and `HelloAck.proto_version`.
-  Within each `v1` package changes are additive only (checked by
-  `buf breaking`, WIRE_JSON); the hub supports agents one minor version
-  behind (ADR 0003). No common version → `Bye{PROTO_UNSUPPORTED}`.
+  Within each `v1` package, changes are free until the `v0.1` tag and
+  additive only after it (`buf breaking` against the tag, WIRE_JSON; ADR 0019,
+  02e); the hub supports agents one minor version behind (ADR 0003). No
+  common version → `Bye{PROTO_UNSUPPORTED}`.
 - **Capabilities** are `Capability{name, version}` in `Hello`; the hub echoes
   `capabilities_accepted` and lists its own in `HelloAck.hub_capabilities`
   (`snapshot.parts`, `event.delivery`); neither side uses a feature the
-  other did not list. Every `Command` names the capability it needs in
-  `requires`, so an agent that lacks it answers `UNSUPPORTED` without
-  decoding the kind. Names used in v1:
-  `tmux.observe`, `tmux.control`, `tmux.default_server.control`,
-  `tmux.fleet_server`, `attach.pty`, `harness.<name>` (launch),
-  `harness.catalog`, `usage.probe.<harness>`, `usage.passive.<harness>`,
-  `prompt.detect.<harness>`, `goal.start`, `goal.stop`, `goal.hooks.<harness>`,
-  `worktree`, `preflight`, `logs.terminal`, `logs.transcript`, `confirm.local`,
-  `drain`, `power`, `settings`. Reserved, never advertised: `exec.raw`.
+  other did not list. Every `Command` names the one capability it needs in
+  `requires` (a minimum version), so an agent that lacks it answers
+  `UNSUPPORTED` without decoding the kind. The command-kind to capability
+  table, the names in use and the version rule are in
+  [02e](02e-contract-rules.md#command-kinds-and-capabilities).
 - **Other versions on the wire:** `HarnessInfo.parser_version` and
   `supported_versions` (C1), `GoalHooksState.hook_version` (G1),
   `HarnessInfo.version_support` and `parser_support[]` (C1),
@@ -312,20 +318,30 @@ cause shared with preflight. `retryable`, `retry_after` and `metadata` (on
 kind may be sent again with a new `command_id`, when, and small structured
 facts (`{"step": "wait_ready"}`; ≤ 16 entries of 256 bytes, no screen text).
 `UNKNOWN_OUTCOME` is never retryable. The hub API exposes the same four
-fields as `fleet.type.v1.ErrorDetail` ([02b](02b-hub-api.md#errors)).
+fields, plus `violations`, as `fleet.type.v1.ErrorDetail`
+([02b](02b-hub-api.md#errors)).
 Preflight reports every failed check as `PreflightFailure{reason, detail,
 retryable}`; durable facts (`HARNESS_NOT_SIGNED_IN`) are not retryable,
-passing ones (`DISK_LOW`, `SLOTS_FULL`) are. Valid pairs:
+passing ones (`DISK_LOW`, `AGENT_GOAL_CAP_REACHED`, `CHECKOUT_DIRTY`) are. Valid pairs:
 
 | Status | Reasons |
 |---|---|
 | `OK` | none |
-| `FAILED` | any execution (100–119), goal (300–306) or probe (400–402) code; `EPOCH_MISMATCH` (retryable); `PreflightResult.failed_checks[]` for `Preflight` |
+| `FAILED` | any execution (100–132, except 107, 113 and 114), goal (300–310) or probe (400–402) code; `EPOCH_MISMATCH` (retryable); for `Preflight`, `PreflightResult.failed_checks[]` carries the preflight codes 1–12 and 16 (`HARNESS_NOT_INSTALLED` … `ON_BATTERY_BLOCKED`, `HARNESS_PROFILE_MISSING`) and, for `reuse_pane`, `SESSION_NOT_AVAILABLE`, `SESSION_WORKDIR_MISMATCH`, `CHECKOUT_DIRTY` |
 | `EXPIRED` | `EXPIRED` |
-| `REJECTED_BY_POLICY` | preflight 13–15, `COMMAND_CLASS_DENIED`, `HARNESS_NOT_ALLOWED`, `REPO_ROOT_NOT_ALLOWED`, `SEQ_REPLAYED`, `SIGNATURE_INVALID`, `ROLE_INSUFFICIENT`, `LOCAL_DENIED`, `LOCAL_CONFIRM_TIMEOUT`, `DRAINING` |
+| `REJECTED_BY_POLICY` | preflight 13, 14 and 17 (`POLICY_DENIED`, `DRAINING`, `AGENT_GOAL_CAP_REACHED`; `SLOTS_FULL` is the hub's own), `COMMAND_CLASS_DENIED`, `HARNESS_NOT_ALLOWED`, `REPO_ROOT_NOT_ALLOWED`, `SEQ_REPLAYED`, `SIGNATURE_INVALID`, `ROLE_INSUFFICIENT`, `LOCAL_DENIED`, `LOCAL_CONFIRM_TIMEOUT`, `POLICY_SAFE_MODE`, `DRAINING` |
 | `UNSUPPORTED` | `CAPABILITY_MISSING` plus `missing_capability` |
 | `UNKNOWN_OUTCOME` | `INTERNAL` or the step reached |
-| `AWAITING_LOCAL_CONFIRM` | none (interim; a final result follows) |
+| `AWAITING_LOCAL_CONFIRM` | none; progress only, never a `CommandResult` (`CommandProgress`) |
+
+The hub API codes (500–532: version, request id, scope, approval, pairing,
+page, resume, filter, order, mask, not found, exists, machine offline,
+credentials, goal phase, secret, size, sign-in, Host and Origin, attach ticket,
+machine revoke; 540–562: the hub's dispatch rules and a few action refusals,
+03h) never appear in a `CommandResult`; they are `ErrorDetail.reason` on an RPC
+error, or the reason of a `PreflightCheck`, with `FieldViolation`s for
+field-level detail ([02b](02b-hub-api.md#errors)). The 600–605 codes are the typed `Enroll`
+failures, carried the same way ([02g](02g-agent-security.md)).
 
 `Percent` is never 0-as-unknown: `PercentUnknown.reason` says why. A
 reading with `parse = FAILED` still ships `ShownUsage.raw_screen` (redacted)
@@ -333,15 +349,16 @@ and no buckets; the hub never schedules on it.
 
 ## Principals, profiles, goals (ADR 0018)
 
-- **Principal** = `{id, name, role, kind, device_id, on_behalf_of}`. `id` is
-  the stable key (audit, `FLEET_OWNER`); `name` is display only. Kinds:
-  `USER`, `SCHEDULER`, `ARBITER`, `API_TOKEN`, `DEVICE` (with `device_id` and
-  `on_behalf_of` the approving user), `LOCAL_USER` (the OS user at the
-  machine, `id = "local:<user>"`). Owners are Principals everywhere:
+- **Principal** = `{id, name, role, kind, device, on_behalf_of}`. `id` is a
+  `PrincipalId`, the stable key (audit, `FLEET_OWNER`); `name` is display
+  only. Kinds: `USER`, `SCHEDULER`, `ARBITER`, `API_TOKEN`, `DEVICE` (with
+  `device` and `on_behalf_of` the approving user), `LOCAL_USER` (the OS user at
+  the machine, `id = "local:<user>"`). Owners are Principals everywhere:
   `EnsureSession.owner_principal`, `TmuxSession.owner_principal` (the agent
   fills only `id` from `FLEET_OWNER`), `DrainState.requested_by_principal`,
-  `LocalApprovalDecision.decided_by` (`via` stays: it is the channel). `Role`
-  values are permission sets; they are never compared numerically.
+  `LocalApprovalDecision.decided_by`. `Role` values are permission sets, never
+  compared numerically; a device or token's role is derived from its scopes
+  (02d).
 - **Profiles.** `profile` (empty = the harness default) on `HarnessInfo`,
   `AccountIdentity`, `EnsureProbe`, `GoalSpec`, `EnsureSession`,
   `EnsureWindow`, `RespawnPane` and `EnsureGoalHooks`. One profile per harness
@@ -353,38 +370,27 @@ and no buckets; the hub never schedules on it.
   `parser_support[]` says which of usage, identity, prompt, ready and
   condition parsing is verified (replaces the bool `version_supported`).
 - **Goal fields.** `GoalSpec.model` and `effort` are set with the harness's
-  own `/model` and `/effort` before the goal is typed. `fresh_context` types
-  `/clear` first, only in a session the fleet started (`/clear` is
-  destructive, 01b); otherwise `FRESH_CONTEXT_NOT_ALLOWED`.
-  `dispatch_reason` is rendered into the goal text. Routine runs use
-  `WorkItemRef{kind: ROUTINE, provider_name: "fleet"}` ([02b](02b-hub-api.md)).
+  own `/model` and `/effort` (steps `set_model`, `set_effort`); `fresh_context`
+  types `/clear` first, only in a session the fleet started, else
+  `FRESH_CONTEXT_NOT_ALLOWED` (02h). `dispatch_reason` is rendered into the goal text. Routine runs use
+  a `WorkItemKey` with `kind: ROUTINE` and `provider_name: "fleet"`
+  ([02b](02b-hub-api.md)). `GoalSpec.consent` is `repeated ConsentAct`, an
+  enum the adapter renders itself, never hub text.
 - **Limit wait.** `HarnessCondition{kind: USAGE_LIMIT | RATE_LIMITED,
-  resets_at}` moves the goal to `LIMIT_WAIT` until `resets_at` (no nudges, no
-  no-progress counting). At `resets_at` + 1 min, once the condition cleared or
-  the account's reading shows room, the hub resumes per harness: Claude Code
-  `SendKeys{"continue", ENTER, require_empty_input_line}`; Codex and Muse
-  `RunHarnessCommand{"/goal", "resume"}` (01b probes, 2026-10-02). If the
-  condition is still showing, the wait extends to the next `resets_at`.
+  resets_time}` moves the goal to `LIMIT_WAIT` (no nudges, no no-progress
+  counting). At `resets_time` + 1 min, once the condition cleared or the reading
+  shows room, the hub resumes as `HarnessInfo.goal_control` says: Claude Code
+  `SendKeys{GOAL_RESUME, "continue"}`; Codex and Muse `RunHarnessCommand{"/goal",
+  "resume"}` (01b probes, 2026-10-02; resume after a limit itself is unprobed,
+  `limit_resume_verified`). Entry, the fallback without `resets_time`, failures
+  and the slot class are in [03h](03h-goal-phases-in-depth.md#limit-wait).
 
 ## Size limits
 
-| Item | Cap | Where enforced |
-|---|---|---|
-| Any `Connect` message | 1 MiB (`HelloAck.max_message_bytes`) | both sides; gRPC max receive size |
-| `Snapshot` | 1 MiB per part; typical 10–100 KiB in one part | agent: larger snapshots go in parts (`snapshot_id`, `part_index`, `part_count`) that split whole servers, sessions or list entries, never a pane; `raw_screen` always omitted |
-| `CapturePaneResult.text` | 256 KiB (`CapturePane.max_bytes` clamps) | agent |
-| `RunHarnessCommandResult.screen`, `ShownUsage.raw_screen` | 64 KiB | agent |
-| `PromptDetected.text` | 16 KiB | agent |
-| `PaneSummary.last_lines`, `GoalState.first_line`, `KeyInput.literal`, `RunHarnessCommand.args`, `GoalSpec.goal_text` | 4 KiB | agent (hub validates before sending) |
-| Labels, names, window names, `ShownField` strings, `ResetTime.original_text` | 256 bytes | agent |
-| `CommandResult.message`, `CommandProgress.message`, `parse_message` | 1 KiB | agent |
-| `TermUp.output` | 64 KiB per message | agent |
-| `TermDown.input` | 4 KiB per message | hub |
-| `LogChunk.zstd` | 1 MiB per chunk | agent |
-| Per-agent rate | hub-side per-kind limits; agent-side `SettingValues.rate_limits` | both |
-
-All strings are UTF-8 with control characters stripped (except `\n` and
-`\t` in multi-line screen text); the hub rejects anything else.
+Agent-wire caps (message 1 MiB, snapshot parts and log chunks 960 KiB,
+captures, prompts, names) are in
+[02e](02e-contract-rules.md#size-limits-agent-wire); the hub API's are in
+[02b](02b-hub-api.md#size-limits).
 
 ## Security notes
 
@@ -415,7 +421,8 @@ What the hub can never ask for, by construction of the contract:
   checked against it.
 - **Hub-asserted role is defense in depth only.** A compromised hub can
   claim `ROLE_OWNER`; the real ceiling is the local policy's command classes
-  and approval rules.
+  and approval rules. The role x command matrix the agent applies, and the
+  role the hub derives for a narrowed device or token, are in 02g and 02d.
 
 ## Changes to accepted ADRs
 
@@ -442,8 +449,8 @@ What the hub can never ask for, by construction of the contract:
    refuse stale answers without waiting for a failed `SendKeys`.
 4. **`ResultAck`** is a new hub message; ADR 0004 implied acknowledgement
    but had no message for it.
-5. **`SetSessionAvailability`** is a new command; E11's "marked on the
-   board" had no way to reach the agent.
+5. **`SetPaneAvailability`** is a new command; E11's "marked on the
+   board" had no way to reach the agent. Per pane, not per session (02h).
 6. **Settings are typed fields** (`SettingValues` with `optional`), not a
    string map, so the tighten-only merge is checkable per field. Adding a
    setting is a proto change.
@@ -468,11 +475,14 @@ What the hub can never ask for, by construction of the contract:
     measurement run).
 14. **No `StopGoal`.** Goals are paused, resumed, edited and cleared with
     each harness's own `/goal` subcommands (probed 2026-10-01; see 01b), sent
-    through `RunHarnessCommand`. Field 42 and `REASON_CODE` 303 are reserved.
+    through `RunHarnessCommand`. Field 42 and `REASON_CODE` 303 are unused.
     A goal still starting is cancelled the same way (`/goal clear`, or
     `Interrupt`), so no `CancelCommand` is needed.
 15. **Max message 1 MiB** rather than gRPC's 4 MiB default; captures and
-    log chunks are capped below it.
+    log chunks are capped below it (960 KiB).
+16. **Unfrozen until `v0.1`** (ADR 0019): free renames, then additive only.
+17. **Goal identity is the agent's registry** (ADR 0019, 02h), not the environment.
+18. **Seq, epoch and time are monotonic and the hub's** (ADR 0019, 02i).
 
 ## Resolved questions (2026-10-02)
 
@@ -486,14 +496,4 @@ What the hub can never ask for, by construction of the contract:
 
 ## Compile check
 
-Run from the repository root (`buf.yaml`: module `api`, lint `STANDARD`,
-breaking `WIRE_JSON`):
-
-```
-go run github.com/bufbuild/buf/cmd/buf@latest build
-go run github.com/bufbuild/buf/cmd/buf@latest lint
-go run github.com/bufbuild/buf/cmd/buf@latest breaking --against '.git#ref=HEAD~1'
-```
-
-All exit 0 with buf 1.73.0 on 2026-10-02, no lint exceptions; `breaking`
-against the ADR 0017 commit shows only the reservations ADR 0018 lists.
+`buf build` and `buf lint` exit 0 (commands in [02e](02e-contract-rules.md#compile-check)).

@@ -5,6 +5,17 @@
 // service can later be served by an out-of-process plugin without changing
 // the hub. The hub API (fleet.hub.v1) mirrors these messages to the UI.
 //
+// Files: this one holds what an adapter declares (capabilities); model.proto
+// the work item and change request shapes; sync.proto the vocabulary every
+// call shares (cursors, validators, rate limits, typed errors); service.proto
+// the RPCs.
+//
+// The hub owns the polling loop: cursors, ETags, rate-limit state, back-off
+// and health live in the hub's store (03b W4). An adapter keeps no sync
+// state of its own, so it can be replaced by a plugin and restarted at will;
+// each call carries what the adapter needs and each response carries what the
+// hub must remember (ADR 0019, 31).
+//
 // Everything a provider returns (titles, bodies, names, labels, URLs) is
 // untrusted text.
 syntax = "proto3";
@@ -13,9 +24,6 @@ package fleet.integration.v1;
 
 import "fleet/type/v1/ids.proto";
 import "fleet/type/v1/work.proto";
-import "google/protobuf/timestamp.proto";
-
-option go_package = "github.com/linuxdynasty/fleet-board/api/fleet/integration/v1;integrationv1";
 
 // IntegrationRole: what an integration is used for. One integration can
 // have both roles (GitHub, GitLab) or one (Jira is a work tracker only).
@@ -70,14 +78,26 @@ message IntegrationCapabilities {
   bool labels = 10;
   // Adapter version, for compatibility checks.
   string adapter_version = 11;
-  // Many items or change requests can be read in one request (GitHub
-  // GraphQL nodes, GitLab batch), so verification of N goals is not N calls.
-  bool batch_query = 12;
+  // How many source branches plus head commits one ListChangeRequests may
+  // look up together (GitHub GraphQL: 50), so verification of N goals is not
+  // N calls. 0 = no batching: the hub sends one value per request.
+  uint32 max_batch_size = 12;
   // Open provider name ("github", "gitea"); the authority when set,
   // provider is a hint (03g change #8 reconciled: webhooks and conditional
   // requests are sync_modes, claims are claim_mechanisms, merge_state is
   // merge_detection).
   string provider_name = 13;
+  // Code host: PathExists is supported (the routine done rule
+  // REPORT_WRITTEN needs it).
+  bool path_exists = 14;
+  // Labels come with who applied them and when (Label.applied_by), for the
+  // labels the hub asks evidence for. Without it the label path of the
+  // trusted-issues gate cannot pass: an unknown actor is never trusted.
+  bool labels_with_actor = 15;
+  // WorkItem.last_editor and last_edit_time are reported, so an edit by
+  // someone outside the allow-list after the trust event is seen. Without it
+  // no item of this integration passes the gate for auto-dispatch.
+  bool edit_evidence = 16;
 }
 
 // Integration: one configured instance on the hub.
@@ -93,207 +113,4 @@ message Integration {
   repeated string watched = 6;
   // Open provider name; see IntegrationCapabilities.provider_name.
   string provider_name = 7;
-}
-
-// Person is a provider account, never a fleet user. Untrusted text.
-message Person {
-  string login = 1;
-  string display_name = 2;
-}
-
-// WorkItemState is the normalized state; provider_state keeps the original.
-enum WorkItemState {
-  WORK_ITEM_STATE_UNSPECIFIED = 0;
-  WORK_ITEM_STATE_OPEN = 1;
-  WORK_ITEM_STATE_IN_PROGRESS = 2;
-  WORK_ITEM_STATE_CLOSED = 3;
-  // Change requests only.
-  WORK_ITEM_STATE_MERGED = 4;
-  WORK_ITEM_STATE_DRAFT = 5;
-  // Closed without being done (GitHub "not planned", Jira "Won't Do",
-  // GitLab MR closed unmerged). Verification treats it like CLOSED for
-  // freeing the worker but never as success.
-  WORK_ITEM_STATE_CANCELLED = 6;
-}
-
-// Claim: evidence that someone is working on an item.
-message Claim {
-  ClaimMechanism mechanism = 1;
-  Person by = 2;
-  google.protobuf.Timestamp at = 3;
-  // Comment text or label name, capped at 4 KiB. Untrusted text.
-  string text = 4;
-  // True when the claim was made by this fleet (matched by its marker).
-  bool by_fleet = 5;
-}
-
-// WorkItem: an issue or ticket that can drive a goal.
-message WorkItem {
-  fleet.type.v1.WorkItemRef ref = 1;
-  // Untrusted text.
-  string title = 2;
-  WorkItemState state = 3;
-  // The provider's own state name ("open", "In Review"). Untrusted text.
-  string provider_state = 4;
-  Person author = 5;
-  repeated string labels = 6;
-  repeated Person assignees = 7;
-  repeated Claim claims = 8;
-  // Change requests linked to this item (closing keywords, ticket keys).
-  repeated fleet.type.v1.WorkItemRef linked_change_requests = 9;
-  // For trackers: the repo(s) the work is expected to touch, when known.
-  repeated fleet.type.v1.RepoRef repos = 10;
-  google.protobuf.Timestamp updated_at = 11;
-  // Body is fetched on demand only; this is its size in bytes.
-  uint64 body_bytes = 12;
-}
-
-// CheckSummary: CI state of a change request, normalized.
-message CheckSummary {
-  uint32 passing = 1;
-  uint32 failing = 2;
-  uint32 pending = 3;
-  uint32 skipped = 4;
-  // Names of failing checks, capped at 32. Untrusted text.
-  repeated string failing_names = 5;
-}
-
-// ReviewState is normalized across providers.
-enum ReviewState {
-  REVIEW_STATE_UNSPECIFIED = 0;
-  REVIEW_STATE_APPROVED = 1;
-  REVIEW_STATE_CHANGES_REQUESTED = 2;
-  REVIEW_STATE_COMMENTED = 3;
-}
-
-message Review {
-  Person by = 1;
-  ReviewState state = 2;
-  google.protobuf.Timestamp at = 3;
-  // Unresolved review threads at the time of the review.
-  uint32 open_threads = 4;
-}
-
-// ChangeRequest: a pull request (GitHub) or merge request (GitLab).
-message ChangeRequest {
-  fleet.type.v1.WorkItemRef ref = 1;
-  fleet.type.v1.RepoRef repo = 2;
-  // Untrusted text.
-  string title = 3;
-  WorkItemState state = 4;
-  string provider_state = 5;
-  // Untrusted text.
-  string source_branch = 6;
-  string target_branch = 7;
-  string head_commit = 8;
-  CheckSummary checks = 9;
-  repeated Review reviews = 10;
-  // Provider says it can merge now (no conflicts, required checks met).
-  bool mergeable = 11;
-  // Work items this change request closes or references.
-  repeated fleet.type.v1.WorkItemRef linked_work_items = 12;
-  Person author = 13;
-  google.protobuf.Timestamp updated_at = 14;
-  google.protobuf.Timestamp merged_at = 15;
-  // Review rounds so far: changes-requested reviews each followed by new
-  // commits. Feeds the review-loop cap (design.md: 3 rounds, no merge).
-  // source_branch is the head ref and head_commit the head sha that
-  // verification matches (03g change #8).
-  uint32 review_rounds = 16;
-}
-
-// --- Provider service ------------------------------------------------------
-
-// DescribeRequest asks an adapter what it supports.
-message DescribeRequest {}
-
-// DescribeResponse carries the adapter's capability declaration.
-message DescribeResponse {
-  IntegrationCapabilities capabilities = 1;
-}
-
-// ListWorkItemsRequest pages through a project's work items.
-message ListWorkItemsRequest {
-  // Project or repo path to list.
-  string project = 1;
-  // Only items updated after this time.
-  google.protobuf.Timestamp updated_after = 2;
-  // Opaque token from the previous page's next_page_token (AIP-158 names).
-  string page_token = 3;
-  uint32 page_size = 4;
-}
-
-// ListWorkItemsResponse is one page.
-message ListWorkItemsResponse {
-  repeated WorkItem items = 1;
-  // Empty on the last page.
-  string next_page_token = 2;
-}
-
-// GetWorkItemRequest fetches one item, optionally with its body.
-message GetWorkItemRequest {
-  fleet.type.v1.WorkItemRef ref = 1;
-  // Fetch the body (capped at 64 KiB).
-  bool include_body = 2;
-}
-
-// GetWorkItemResponse.
-message GetWorkItemResponse {
-  WorkItem item = 1;
-  // Untrusted text: it reaches agents with push rights only through the
-  // trusted-issues gate.
-  string body = 2;
-}
-
-// ListChangeRequestsRequest pages through a repo's change requests.
-message ListChangeRequestsRequest {
-  fleet.type.v1.RepoRef repo = 1;
-  google.protobuf.Timestamp updated_after = 2;
-  string page_token = 3;
-  uint32 page_size = 4;
-}
-
-// ListChangeRequestsResponse is one page.
-message ListChangeRequestsResponse {
-  repeated ChangeRequest change_requests = 1;
-  string next_page_token = 2;
-}
-
-// GetChangeRequestRequest fetches one change request.
-message GetChangeRequestRequest {
-  fleet.type.v1.WorkItemRef ref = 1;
-}
-
-// GetChangeRequestResponse.
-message GetChangeRequestResponse {
-  ChangeRequest change_request = 1;
-}
-
-// WatchRequest names the projects to watch.
-message WatchRequest {
-  repeated string projects = 1;
-}
-
-// WatchResponse is one change notice on the stream.
-message WatchResponse {
-  ChangeNotice notice = 1;
-}
-
-// ChangeNotice says something changed; the hub then fetches the details.
-message ChangeNotice {
-  fleet.type.v1.WorkItemRef ref = 1;
-  google.protobuf.Timestamp at = 2;
-}
-
-// IntegrationProviderService is implemented once per provider. Read-only by
-// design: the hub never writes to a provider (ADR 0005); claims, pushes and
-// merges happen inside goals on workers with the developer's own tools.
-service IntegrationProviderService {
-  rpc Describe(DescribeRequest) returns (DescribeResponse);
-  rpc ListWorkItems(ListWorkItemsRequest) returns (ListWorkItemsResponse);
-  rpc GetWorkItem(GetWorkItemRequest) returns (GetWorkItemResponse);
-  rpc ListChangeRequests(ListChangeRequestsRequest) returns (ListChangeRequestsResponse);
-  rpc GetChangeRequest(GetChangeRequestRequest) returns (GetChangeRequestResponse);
-  // Change notices from webhooks or polling; optional (SYNC_MODE).
-  rpc Watch(WatchRequest) returns (stream WatchResponse);
 }

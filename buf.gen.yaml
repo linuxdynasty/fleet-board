@@ -1,0 +1,34 @@
+# buf code generation for the fleet-board contracts (docs/specs/02e-contract-rules.md,
+# "Codegen"). Run from the repository root:
+#   go run github.com/bufbuild/buf/cmd/buf@v1.73.0 generate
+# Output goes to gen/ (ignored by git until v0.1; CI regenerates it).
+#
+# Managed mode owns go_package, so the .proto files carry no language options
+# and the Go import path of every package is
+# github.com/linuxdynasty/fleet-board/gen/go/fleet/<pkg>/v1 (package <pkg>v1).
+#
+# Plugins are pinned and run locally through `go run` and `npx`, so a clean
+# checkout needs only Go and Node, no buf.build remote plugin account.
+version: v2
+managed:
+  enabled: true
+  override:
+    - file_option: go_package_prefix
+      value: github.com/linuxdynasty/fleet-board/gen/go
+plugins:
+  # Go messages (protoc-gen-go) and Connect handlers/clients (connect-go).
+  - local: [go, run, google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.12]
+    out: gen/go
+    opt: paths=source_relative
+  - local: [go, run, connectrpc.com/connect/cmd/protoc-gen-connect-go@v1.21.0]
+    out: gen/go
+    opt: paths=source_relative
+  # TypeScript. protoc-gen-es v2 emits messages AND the service descriptors
+  # that @connectrpc/connect and @connectrpc/connect-web (connect-es v2) call;
+  # there is no separate protoc-gen-connect-es. 64-bit integers are bigint (no
+  # jstype option): see 02b-hub-api.md, "64-bit integers".
+  - local: [npx, --yes, "@bufbuild/protoc-gen-es@2.16.0"]
+    out: gen/ts
+    opt:
+      - target=ts
+      - import_extension=js

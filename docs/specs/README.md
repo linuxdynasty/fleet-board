@@ -11,8 +11,21 @@ the next starts, and no implementation code is written until step 4 is done.
 | 1d | [01d-goal-hooks.md](01d-goal-hooks.md) | Which harness hooks do goals need, where are they installed, what do they see? | Draft |
 | 2 | [02-contracts.md](02-contracts.md) + [`api/fleet/*/v1/*.proto`](../../api/fleet/) | What exactly crosses the wire for each capability? | Draft |
 | 2b | [02b-hub-api.md](02b-hub-api.md) + [`api/fleet/hub/v1/`](../../api/fleet/hub/v1/) | What API do the UI, the CLI and a phone use? | Draft |
-| 3 | [03-workflows.md](03-workflows.md) (+ [03b](03b-usage-and-sync.md)–[03g](03g-load-and-handoff.md)) | How do agent and hub cooperate for each flow (sequence, state machines, volumes, consistency)? | Draft |
+| 2c | [02c-hub-watch-and-filters.md](02c-hub-watch-and-filters.md) | How does Watch subscribe, resume and filter, and which fields does each resource filter on? | Draft |
+| 2d | [02d-hub-authz.md](02d-hub-authz.md) | Which scope does each RPC and Watch topic need, and how do roles map to scopes? | Draft |
+| 2e | [02e-contract-rules.md](02e-contract-rules.md) | Naming rules, codegen, the v0.1 freeze, the command-to-capability map and agent size limits | Draft |
+| 2f | [02f-hub-authentication.md](02f-hub-authentication.md) | How do people, scripts and a phone sign in, what carries the credential, how is the terminal attach opened? | Draft |
+| 2g | [02g-agent-security.md](02g-agent-security.md) | Who does the agent trust at enrollment, what is hub identity, what happens on revoke and restore, what may each role ask an agent? | Draft |
+| 2h | [02h-goal-binding-and-pane-signals.md](02h-goal-binding-and-pane-signals.md) | How is a goal tied to a pane, when may a pane be reused, what does StartGoal do step by step, how does the hub learn about typing, readiness and interrupts? | Draft |
+| 2i | [02i-delivery-and-sequencing.md](02i-delivery-and-sequencing.md) | Which events may be dropped, how do seq and epoch stay monotonic, how does the hub tell shedding from loss, what is the replay rule, whose clock counts? | Draft |
+| 3 | [03-workflows.md](03-workflows.md) (+ [03b](03b-usage-and-sync.md)–[03j](03j-provider-sync-and-trust.md)) | How do agent and hub cooperate for each flow (sequence, state machines, volumes, consistency)? | Draft |
 | 4 | [04-technology-review.md](04-technology-review.md) + [`spikes/`](../../spikes/README.md) | Given the workflows, which storage, queueing and other technologies do we need? | Draft |
+
+Once the contracts and workflows are written, [docs/flows](../flows/README.md)
+shows them in motion: the whole system on one page, a glossary, and one flow per
+situation (enrollment, reconnect, starting a goal, answering a prompt, signing in,
+dispatching from the dashboard, and more), each with the exact message names from
+the protos, numbered steps, what is stored where and what happens on failure.
 
 ## How the steps connect
 

@@ -133,7 +133,7 @@ function sessionAct(s, m, act) {
   if (act === "side") T.side = !T.side;
   if (act === "ro") return setReadOnly(s, !T.ro);
   if (act === "reattach") { T.detached = null; T.focused = true; log(`re-attached the browser terminal to ${s.sess} on ${m.short} (mock)`, s); }
-  if (act === "keys") { const k = $("keysIn").value; if (!k) return $("keysIn").focus(); ui.confirm = { sid: s.id, label: "Send these keys to the pane (literal text plus Enter; never a tmux command string):", cmd: sendKeysCmd(s, k, isGoal(s) ? { require_empty_input_line: true } : {}), go: "Send", what: `sent keys “${k}”`, note: isGoal(s) ? "Typing into a running goal asks first; your own windows go straight through." : "" }; }
+  if (act === "keys") { const k = $("keysIn").value; if (!k) return $("keysIn").focus(); ui.confirm = { sid: s.id, label: "Send these keys to the pane (literal text plus Enter; never a tmux command string):", cmd: sendKeysCmd(s, k, {}), go: "Send", what: `sent keys “${k}”`, note: isGoal(s) ? "Typing into a running goal asks first; your own windows go straight through." : "" }; }
   if (act === "attachline") ui.confirm = { sid: s.id, label: "Attach from your own terminal. This line runs on your machine; the hub never runs ssh.", cmd: attachLine(m, s), copy: true };
   if (act === "palette") { ui.paletteOpen = !ui.paletteOpen; ui.confirm = null; }
   if (act === "history") { ui.histOpen = !ui.histOpen; }

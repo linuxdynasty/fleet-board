@@ -1,0 +1,132 @@
+// fleet.integration.v1 sync vocabulary: what every provider call carries so
+// the hub can poll cheaply, back off correctly and tell an access problem
+// from an outage (03b W4). The hub owns all of this state; the adapter only
+// reads it from requests and reports it in responses.
+syntax = "proto3";
+
+package fleet.integration.v1;
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+
+// Validators identify one version of a response so the next request can ask
+// "only if changed". The adapter maps them to If-None-Match and
+// If-Modified-Since (GitHub, GitLab) or leaves them unset when the provider
+// has none (Jira, Linear: they filter by update time instead). They belong to
+// one query and one page: the hub stores them per (integration, resource,
+// page_token) and sends them back only with the same query.
+message Validators {
+  // Opaque; weak validators are fine. 256 bytes.
+  string etag = 1;
+  google.protobuf.Timestamp last_modified_time = 2;
+}
+
+// ChangeCursor is "everything changed since here" for a list call. The hub
+// stores what the last complete round returned in next_since and sends it
+// back; it never computes one from its own clock (clock skew would lose
+// changes). A provider with a real cursor (keyset, sync token) uses opaque;
+// one that only filters by time uses updated_after_time, which the adapter
+// widens by a small overlap itself and the hub's update_time guard
+// deduplicates. A provider that no longer honours it answers CURSOR_EXPIRED
+// and the hub runs a full poll.
+message ChangeCursor {
+  google.protobuf.Timestamp updated_after_time = 1;
+  // Issued by the adapter, meaningless to the hub. 1 KiB.
+  string opaque = 2;
+}
+
+// RateLimitKind names the provider's separate budgets.
+enum RateLimitKind {
+  RATE_LIMIT_KIND_UNSPECIFIED = 0;
+  // The primary REST budget (GitHub x-ratelimit-*).
+  RATE_LIMIT_KIND_CORE = 1;
+  // The GraphQL point budget (GitHub rateLimit{cost remaining resetAt}).
+  RATE_LIMIT_KIND_GRAPHQL = 2;
+  RATE_LIMIT_KIND_SEARCH = 3;
+  // Secondary or abuse limits: concurrency and burst rules that answer with
+  // Retry-After instead of a budget.
+  RATE_LIMIT_KIND_SECONDARY = 4;
+}
+
+// RateLimitState is one budget as the provider last reported it. The hub
+// stores it (03b `rate_limit_state{integration, kind, remaining, reset_time}`)
+// and slows or stops polling from it; adapters never sleep on their own.
+message RateLimitState {
+  RateLimitKind kind = 1;
+  // The budget per window; 0 when not reported.
+  uint32 limit = 2;
+  uint32 remaining = 3;
+  // When the budget refills.
+  google.protobuf.Timestamp reset_time = 4;
+}
+
+// ResponseMeta rides on every provider response, success or not modified.
+message ResponseMeta {
+  // The budgets this request touched, as the provider reported them after
+  // it. Empty when the provider reports none.
+  repeated RateLimitState rate_limits = 1;
+  // Units this request charged (GraphQL cost); 0 when not reported. A 304 is
+  // free on some providers and counted on others: the hub learns which from
+  // the before and after of rate_limits.
+  uint32 cost = 2;
+  // The provider's own clock (the Date header), so the hub can see skew
+  // between a provider's timestamps and its own.
+  google.protobuf.Timestamp provider_time = 3;
+}
+
+// ProviderErrorKind is why a provider call failed, in the adapter's terms.
+// Each kind carries a default for ProviderError.retryable, and a fixed RPC
+// code the adapter returns with the ProviderError as the error detail.
+enum ProviderErrorKind {
+  PROVIDER_ERROR_KIND_UNSPECIFIED = 0;
+  // The project, repo, item or ref does not exist or is not visible to the
+  // credential. For a project it is how a removed repo or an uninstalled App
+  // looks (GitHub answers 404, not 403); for an item it may just be deleted.
+  // NOT_FOUND. Not retryable.
+  PROVIDER_ERROR_KIND_NOT_FOUND = 1;
+  // The credential is missing, expired or revoked and the adapter could not
+  // refresh it. UNAUTHENTICATED. Not retryable until the owner fixes it.
+  PROVIDER_ERROR_KIND_UNAUTHENTICATED = 2;
+  // The credential is valid and lacks the permission (App not installed on
+  // the repo, missing scope, SSO not authorized). A primary or secondary rate
+  // limit is RATE_LIMITED, not this. PERMISSION_DENIED. Not retryable.
+  PROVIDER_ERROR_KIND_FORBIDDEN = 3;
+  // A budget is exhausted or a secondary limit was hit. RESOURCE_EXHAUSTED.
+  // Retryable after retry_after or the rate_limit's reset_time.
+  PROVIDER_ERROR_KIND_RATE_LIMITED = 4;
+  // 5xx, timeout, connection failure, maintenance. UNAVAILABLE. Retryable
+  // with the hub's back-off.
+  PROVIDER_ERROR_KIND_UNAVAILABLE = 5;
+  // The ChangeCursor or page_token is no longer honoured. ABORTED. Not
+  // retryable as sent: the hub drops the cursor and runs a full poll.
+  PROVIDER_ERROR_KIND_CURSOR_EXPIRED = 6;
+  // The request asks for something the adapter did not declare (a lookup
+  // beyond max_batch_size, PathExists without path_exists). INVALID_ARGUMENT.
+  // Not retryable; a hub bug.
+  PROVIDER_ERROR_KIND_UNSUPPORTED = 7;
+}
+
+// ProviderError is the error detail of every failed IntegrationProviderService
+// call, so the hub's syncer can set Integration health, schedule the next
+// poll and raise integration_access_lost without parsing text. It stands
+// alone from fleet.type.v1.ErrorDetail because an out-of-process adapter must
+// not need the hub's reason codes; the hub maps kinds to its own health
+// reasons (hub work.proto).
+message ProviderError {
+  ProviderErrorKind kind = 1;
+  // The same request, unchanged, may succeed later. Set by the adapter from
+  // the kind's default and what the provider said.
+  bool retryable = 2;
+  // Earliest sensible retry (Retry-After, or reset_time minus now).
+  google.protobuf.Duration retry_after = 3;
+  // The exhausted budget, for RATE_LIMITED. The hub stores it like any
+  // other RateLimitState.
+  RateLimitState rate_limit = 4;
+  // The project or repo the failure concerns, when the call named one, so
+  // access lost is per repo.
+  string project = 5;
+  // The provider's own status (HTTP status, GraphQL error type), for logs.
+  string provider_status = 6;
+  // Untrusted text, 512 bytes; may echo the provider.
+  string message = 7;
+}

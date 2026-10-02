@@ -10,8 +10,8 @@ The loop itself is each harness's native `/goal` ([01b](01b-harness-commands.md#
 Claude, Codex and Muse keep working toward the objective without any fleet hook.
 Fleet's hooks do three narrower jobs:
 
-1. **Session mapping (E9).** Record the harness session id against
-   `FLEET_PANE_KEY`, so G2 and K3 can find goal files and transcripts.
+1. **Session mapping (E9).** Record the harness session id against the
+   pane's registry entry, so G2 and K3 can find goal files and transcripts.
 2. **Turn-end events (E8).** Tell the agent a goal turn ended, with the
    harness's last message, so stuck and done detection does not depend on the
    screen alone.
@@ -36,17 +36,25 @@ harness config), not into each repo.
 
 - Every fleet hook exits 0 with no output unless it is running for a fleet
   goal, so the developer's own sessions, including ones on the same machine,
-  see no change. How a hook knows differs by harness:
-  - **Claude Code and Codex:** `FLEET_GOAL_ID` is set in the goal window's
-    pane environment by `StartGoal` ([03c](03c-goals.md)), and the pane
-    environment reaches hook commands (in the probe the hooks wrote to
-    `$HOOK_LOG`, set only in the tmux pane).
+  see no change. **All three harnesses use one mechanism, the agent's goal
+  registry** ([02h](02h-goal-binding-and-pane-signals.md#goal-registry), ADR
+  0019): `StartGoal` writes `(pane, worktree path, harness session id)` before
+  the goal is typed, and the hook asks the agent. A running harness cannot gain
+  an environment variable, so in a reused pane `FLEET_GOAL_ID` is absent or the
+  previous goal's, and is only a fast path for a window the fleet just created.
+  How the hook finds its entry differs by harness:
+  - **Claude Code and Codex:** the pane environment reaches hook commands (in
+    the probe the hooks wrote to `$HOOK_LOG`, set only in the tmux pane), so
+    `TMUX_PANE` identifies the pane and the pane's registry entry is the goal.
   - **Muse:** the pane environment does **not** reach plugin hooks (probe
     below); Muse sets only its own `MUSE_PLUGIN_*` and `CLAUDE_PLUGIN_*`
-    variables. The hook reads `cwd` and `session_id` from its stdin payload
-    and asks the agent's goal registry: `StartGoal` records the goal's
-    worktree path in the agent state dir, and a `cwd` at or under a
-    registered worktree is a fleet goal. Anything else exits 0 silently.
+    variables. The hook reads `cwd` and `session_id` from its stdin payload:
+    `session_id` matches an entry once learned; until then a `cwd` at or under
+    an entry's worktree matches only when exactly one Muse pane is registered
+    for that checkout. In `REPO_DRIVER` mode the registered path is the main
+    checkout and is never the match key. Anything else exits 0 silently.
+  - The first `UserPromptSubmit` or `PreToolUse` after registration records the
+    harness session id (E9), since `SessionStart` fired before the goal existed.
 - The hook scripts live under the agent's data directory
   (`~/.local/share/fleet-agent/hooks/<harness>/`); the settings entries only
   point at them. The command string stays fixed across upgrades and the script
@@ -75,8 +83,8 @@ harness config), not into each repo.
    points into the fleet hooks directory, keep every other entry and its order,
    write atomically (temp file + rename). Unparseable file → stop with
    `HOOKS_INSTALL_FAILED` and leave it untouched.
-3. **Verify.** Run each script with a synthetic payload and no
-   `FLEET_GOAL_ID` (must print nothing, exit 0), then with one (must emit the
+3. **Verify.** Run each script with a synthetic payload and no registry entry
+   (must print nothing, exit 0), then with a throwaway one (must emit the
    expected event). For Muse the two cases are a `cwd` outside and inside a
    registered worktree, run through `muse plugins hook test <plugin>:<hook>
    --fixture <file>`; the fixture is `{"event": "Stop", "stdin": {…payload…}}`
@@ -86,14 +94,16 @@ harness config), not into each repo.
 4. **Codex trust.** Codex runs a new or changed hook only after the user
    approves it in `/hooks` (trust is recorded per hook hash). `/hooks` is on
    the deny list ([01b](01b-harness-commands.md)) and the agent never passes
-   `--dangerously-bypass-hook-trust`, so `GoalHooksState.trust_pending=true`
-   goes to Triage: "approve fleet hooks once in Codex `/hooks` on <machine>".
+   `--dangerously-bypass-hook-trust`, so `GoalHooksState.trust = PENDING`
+   goes to Triage: "approve fleet hooks once in Codex `/hooks` on <machine>"
+   (`trust_approve_command` names the command; `UNKNOWN` is never read as
+   trusted).
    Goals still run without trust; only E8 and the Stop guard are missing.
    **Muse** works the same way: an installed plugin's hooks run only after
    the user runs `muse plugins approve fleet-goal-hooks`, and trust is
    recorded per definition hash (`trusted_definition_hash`), so a changed hook
-   prompts again. The agent never runs `approve`; the same `trust_pending`
-   Triage item names the command.
+   prompts again. The agent never runs `approve`; the same `trust` Triage item
+   names the command.
 
 `fleet-agent hooks uninstall [--harness]` removes only fleet entries (same
 match rule), keeps the backup, and deletes the scripts. Upgrades of the agent
@@ -109,7 +119,8 @@ for every harness, just before `type_goal`, from what it already knows
 `BLOCKED …`) as the objective text instructs; hooks only read it.
 
 - eshu repos keep their own file (`.claude/active-goal.<session_id>`) and
-  their own `CONSENT:` handling; the agent reads it (G2) and writes nothing.
+  their own `CONSENT:` handling; the agent reads it (G2) and writes nothing
+  (`StartGoal` skips its `write_goal_file` step when `repo_ships_own` is true).
 - Generic file location: open question (below). It must be writable from
   inside the harness sandbox and must not show up as a repo change.
 
@@ -121,10 +132,14 @@ for every harness, just before `type_goal`, from what it already knows
 | Codex 0.160.0 | `Interrupt` fires; output is ignored ("invalid interrupt hook JSON output" when it tried to block) | `Interrupt` hook event plus screen "Goal paused" |
 | Muse 1.4.2 | an `Interrupt` hook event exists (binary, not yet probed live) | screen: "goal paused by interrupt" |
 
-An interrupt is the developer's decision. The agent reports
-`HarnessCondition` (E12) and the hub opens a Triage item "goal interrupted —
-resume?"; resuming sends the harness's own command (`continue` for Claude,
-`/goal resume` for Codex and Muse). Nothing resumes automatically.
+An interrupt is the developer's decision. The agent reports a
+`HarnessCondition` (E12) of kind `GOAL_INTERRUPTED` (or `GOAL_PAUSED`) with
+`pause_cause` (`DEVELOPER_INPUT` when pane input just preceded it) and, for
+Codex and Muse, a `HOOK_EVENT_KIND_INTERRUPT` event. The hub moves the goal to
+`PAUSED{OWNER_AT_MACHINE}`, opens a Triage item "goal interrupted — resume?" and
+never sends the corrective nudge. Resuming is the owner's: the harness's own
+command from `goal_control` (`continue` for Claude, `/goal resume` for Codex
+and Muse). Nothing resumes automatically.
 
 ## Probe record (2026-10-02)
 
@@ -260,11 +275,10 @@ it, because the entry never changes either way.
   `workspace-write` limits writes to the workspace) without dirtying the
   checkout: candidates are a path under `.git/` or a git-ignored path the
   agent adds to `.git/info/exclude`. Needs a probe per harness.
-- Muse goal registry by `cwd`: a goal that `cd`s outside its worktree (for
-  example to `/tmp`) would read as not-a-fleet-goal and lose the Stop guard.
-  Matching on `session_id`, recorded by the `SessionStart` hook while `cwd`
-  is still the worktree, covers that; confirm `SessionStart` fires for the
-  first turn of a plugin-hooked session.
+- ~~Muse goal registry by `cwd`~~ Answered by the registry design: entries
+  match by pane and `harness_session_id`; `cwd` is only the bootstrap until the
+  first hook after registration records the session id. Still to confirm:
+  `UserPromptSubmit` fires for the first turn of a plugin-hooked Muse session.
 - ~~Muse `Stop` payload and continuation output~~ Answered by the Muse Stop
   probe above.
 - Whether a Claude-compatible plugin package also installs as a Claude Code
