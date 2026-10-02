@@ -31,13 +31,15 @@ type. The hub API imports `fleet.type.v1` (ids, values) and
 
 | Resource | Id | RPCs | Watch topic | Views |
 |---|---|---|---|---|
-| `Machine` | `MachineId` | List, Get, Update, Drain, Undrain, Revoke, Delete, CreateEnrollmentToken | `MACHINES` | Fleet |
+| `Machine` | `MachineId` | List, Get, Update, Drain, Undrain, Revoke, Delete, CreateEnrollmentToken, EnsureMachineHooks | `MACHINES` | Fleet |
 | `Session` (windows, panes) | `SessionId` (hub-assigned to every observed session) | List, Get, Create, SendKeys, InterruptPane, RunHarnessCommand, CapturePane, SetPaneAvailability, RespawnPane, KillWindow, SetLogCapture, CreateAttachTicket, AttachTerminal, ReadSessionLog | `SESSIONS` | Session, ⌘K |
-| `PaneSummary` | `PaneKey` | Watch only | `PANE_SUMMARIES` (latest-wins) | Session sidebar |
-| `Goal` | `GoalId` | List, Get, StartGoal, PreflightGoal, ControlGoal | `GOALS` | Work, Session, Triage, Fleet timeline |
-| `WorkItem`, `ChangeRequest` (mirrors) | `WorkItemKey` | List, Get | `WORK_ITEMS`, `CHANGE_REQUESTS` | Work |
+| `PaneSummary` | `PaneKey` | Watch only (live panes) | `PANE_SUMMARIES` (latest-wins) | Session sidebar |
+| `StoredSession` (logs and archived pane summaries, live or ended) | `SessionId` | ListStoredSessions, GetStoredSession, DeleteSessionLogs, SearchSessionLogs, GetLogStoreStatus (all `LOGS`) | none | Session History, Settings |
+| `Goal` | `GoalId` | List, Get, StartGoal, PreflightGoal, ControlGoal, ListGoalRuns, ListGoalTransitions | `GOALS` | Work, Session, Triage, Fleet timeline |
+| `WorkItem`, `ChangeRequest` (mirrors) | `WorkItemKey` | List, Get, RequeueWorkItem | `WORK_ITEMS`, `CHANGE_REQUESTS` | Work |
+| `Repo` (per-repository settings) | `RepoId` (`host/path`) | List, Get, Create, Update, Delete | `REPOS` | Settings, Work |
 | `Integration` | `IntegrationId` | List, Update | `INTEGRATIONS` | Settings |
-| `Account` (usage, pacing, probe) | `AccountId` | List, Get, Update, ProbeAccount, ListUsageReadings | `ACCOUNTS` | strip, Fleet, Work dispatch |
+| `Account` (usage, pacing, probe) | `AccountId` | List, Get, Create (API-key only), Update, Delete, ProbeAccount, ListUsageReadings | `ACCOUNTS` | strip, Fleet, Work dispatch |
 | `TriageItem` | `TriageItemId` | List, Get, Snooze, Dismiss | `TRIAGE` | Triage |
 | `Approval` | `ApprovalId` | List, Get, DecideApproval | `APPROVALS` | Triage, phone |
 | `Routine` | `RoutineId` | List, Get, Create, Update, Delete, RunRoutine | `ROUTINES` | Work, Settings |
@@ -52,7 +54,8 @@ type. The hub API imports `fleet.type.v1` (ids, values) and
 | `FleetSummary` | singleton | GetFleetSummary | `FLEET_SUMMARY` (≤ 1/s) | summary strip |
 
 Plus `GetServerInfo` (API version, `fleet_id`, `hub_instance_id`, features,
-`auth_mode`, `sign_in_methods`, `claim_pending`, the caller and its scopes).
+`auth_mode`, `sign_in_methods`, `claim_pending`, the caller and its scopes),
+`ExportConfig` and `ImportConfig` (below) and `GetStoreStatus`.
 
 **Authentication** (how a browser, the CLI and a phone prove who they are, the
 claim URL, the credential carriers, Host and Origin checks) is
@@ -96,12 +99,13 @@ the repo path), which 03f now says too.
 
 | Resource | `spec` | `status` |
 |---|---|---|
-| `Machine` | `display_name`, hub `labels`, `drain` request | state, facts, inventories, effective settings, `telemetry` |
-| `Account` | name, mode, budget, reserve, consent, owner-mapped bindings | identity as shown, usage, pacing, probe, observed bindings |
-| `Goal` | `GoalDefinition`: what, where, consent, text | `GoalStatus`: phase and timers, goal-file line, git state, counters |
-| `Session` | `log_capture` | tmux identity, windows, panes, attach count, log counters |
+| `Machine` | `display_name`, hub `labels`, `drain` request | state, facts, inventories, effective settings, `telemetry`, `unfit` markers |
+| `Account` | name, mode, budget, reserve, consent, owner-mapped bindings | identity as shown, provider, origin, usage, pacing and `idle_causes`, probe, observed bindings |
+| `Goal` | `GoalDefinition`: what, where, consent, text, attempt, routine snapshot | `GoalStatus`: phase and reason, timers, goal-file line, git state, counters, start and end time, usage |
+| `Repo` | consent, parallel cap, worktree mode, branch pattern, hooks mode, tracker mapping, trusted gate | integration health, live goals, checkouts and their hooks, why it takes no work |
+| `Session` | `log_capture` | tmux identity, windows, panes, attach count, log counters, `state` (live or ended) and `end_time` |
 | `Routine` | trigger, goal template, consent, done rule | last and next run, run count |
-| `Integration` | label, watched list | provider, capabilities, health, sync lag |
+| `Integration` | label, watched tracker projects | provider, capabilities, health, sync lag |
 | `Settings` | scope, values, priority, hub settings | generation and epoch delivered |
 | `Device` | name, platform, key, requested and granted scopes, approval, revocation | `last_seen_time` |
 | `User` | name, role, GitHub allow-list entry, disabled | state, passkeys, GitHub link, last sign-in |
@@ -216,10 +220,12 @@ on their own resources (a new window on the `Session`, the goal's `phase`).
 | `RevokeMachine` | none to the agent but `Bye{REVOKED}` on its live stream ([02g](02g-agent-security.md#machine-lifecycle-revoke-and-delete)) |
 | `StartGoal`, `RunRoutine` | `StartGoal` (after hub checks; `Preflight` inside the composite) |
 | `PreflightGoal` | `Preflight` |
-| `ControlGoal` | as `MachineHarness.goal_control` says: `RunHarnessCommand{/goal …}`, `Interrupt`, or `SendKeys{GOAL_RESUME}`; `RECHECK`, `NOT_DONE` text nudge, `MARK_NOT_STARTED` are hub-side or `SendKeys{GOAL_NUDGE}` |
+| `ControlGoal` | as `MachineHarness.goal_control` says: `RunHarnessCommand{/goal …}`, `Interrupt`, or `SendKeys{GOAL_RESUME}`; `NOT_DONE` and `EDIT` on a finished goal re-arm it (below); `RECHECK` and `MARK_NOT_STARTED` are hub-only |
 | none (hub-internal) | `RegisterGoal`, `ReleaseGoal` (registry reconciliation, [02h](02h-goal-binding-and-pane-signals.md#goal-registry)) |
 | `DecideApproval` | `SendKeys{purpose PROMPT_ANSWER, answering_prompt}` for prompts; the confirmed command otherwise; nothing for deny |
 | `DrainMachine`, `UndrainMachine` | `Drain`, `Undrain` |
+| `EnsureMachineHooks` | `EnsureGoalHooks`, one per `(harness, checkout)` it expands to |
+| `ControlGoal` `NOT_DONE`, `EDIT` on a finished goal | `StartGoal` with `rearm_reason` for the same goal id (03h) |
 | sign-in, user, token and login-session RPCs | none (hub only) |
 | `ProbeAccount` | `EnsureProbe{run_now}` |
 
@@ -259,10 +265,13 @@ Whole messages stay under the 1 MiB Connect cap (02e).
 | `filter` | 4 KiB, 32 terms, depth 4, 200 values per `in` |
 | `order_by` | 256 bytes, 3 fields |
 | `update_mask` | 32 paths |
-| `Watch` subscriptions | 17, one per topic |
+| `Watch` subscriptions | 18, one per topic |
 | `display_name`, `window_name`, session `name`, labels | 128 bytes (`CreateSession.name` also 32 by its pattern); 32 labels of 64 bytes |
 | `DrainMachineRequest.reason`, `DismissTriageItemRequest.note` | 512 bytes |
 | `GoalDefinition.goal_text`, `ControlGoalRequest.text`, `RoutineSpec.goal_text_template` | 4 KiB |
+| `SearchSessionLogsRequest.query` | 256 bytes; 256 MiB of raw text scanned per call; `snippet` 512 bytes |
+| `RepoSpec.branch_pattern` | 128 bytes; `trusted_gate.users` 64 entries of 64 bytes; `tracker_projects` 64 |
+| `FleetConfig` | the 1 MiB message cap; `ImportConfig` plan lines 2000 |
 | `StartGoalRequest.dispatch_reason` | 512 bytes |
 | `SendKeysRequest.keys` | 64 entries; literal text 4 KiB in total |
 | `RunHarnessCommandRequest.args` | 4 KiB |
@@ -324,16 +333,116 @@ also has the endpoint, subprotocol, ticket, framing and ack rules.
 ## Routines
 
 A `Routine` is recurring fleet work that is not an issue (dependency bumps,
-flaky-test sweeps, a weekly report). Its trigger is `queue_empty` (run when
-the repo has no `READY` work item and a slot and account are free, at most
-once per `min_interval`, a `Duration`) or `cron` (expression and timezone). A
-run never starts while the previous run's goal is active. Each run is a normal
-goal: `WorkItemRef{key: WorkItemKey{kind: ROUTINE, provider_name: "fleet",
-key: "<routine id>/<run>"}, display: "<routine name>#<run>"}`, the goal text from
-`goal_text_template`, consent `routine ∩ repo ∩ account`, pacing and triage
-unchanged. The verifier uses the routine's `done_rule` instead of the
-work-item check: `CHANGE_REQUEST_MERGED`, `GOAL_DONE_ONLY`, or
-`REPORT_WRITTEN` (DONE and `report_path` on the pushed branch).
+flaky-test sweeps, a weekly report). Its trigger is `queue_empty` or `cron`; each
+run is a normal goal whose work item is `WorkItemKey{kind: ROUTINE, provider_name:
+"fleet", key: "<routine id>/<run>"}`, with the goal text from `goal_text_template`,
+consent `routine ∩ repo ∩ account`, pacing and triage unchanged, and a snapshot of
+its `done_rule` and `report_path` on the goal. Trigger evaluation, run numbering,
+missed fires, harness selection and the three done rules are the workflow in
+[03i](03i-routines.md).
+
+## Goals: dispatch, control and history
+
+**Dispatch.** `StartGoal` and `PreflightGoal` take the same `GoalSpecInput`
+(work item, repo, change request, placement, consent, text, model, effort,
+fresh context, reason), so the preview is computed from what would be sent.
+`PreflightGoal` returns the hub's checks as `PreflightCheck{ErrorDetail,
+severity}` (`BLOCK`, `CONFIRM`, `WARN`, `INFO`) beside the agent's
+`Operation.failed_checks`; the reasons are `ReasonCode`s and the severity of each is the table in
+[03h](03h-goal-phases-in-depth.md#dispatch-checks-and-their-severity). `StartGoal`
+re-runs the checks: a `BLOCK` fails with its reason, a `WARN` the request did
+not list in `acknowledged_warnings` fails `PREFLIGHT_WARNINGS_UNACKNOWLEDGED`, and
+a `CONFIRM` returns an `Approval` of kind `DISPATCH_CONFIRM` (required role
+`OWNER`) instead of a goal. "Next up" is `PreflightGoal` on the first item of
+`ListWorkItems{filter: stage = READY, order_by: dispatch_order}` with an empty
+placement.
+
+### Actions that need an approval
+
+One rule covers `StartGoal` with a `CONFIRM` check, `RunHarnessCommand` with a
+DESTRUCTIVE command and `KillWindow` on a developer's window: the response
+carries the `approval` and **no operation**, nothing is sent, and no `Operation`
+exists until the approval is approved. `DecideApproval` then returns the
+`operation` (and, for a dispatch, the `goal`); `Approval.operation` names it. A
+denied or expired approval creates neither. A client therefore polls the approval,
+not an operation that does not exist yet.
+
+**Control.** `ControlGoal` guards on `expected_phase`; which action is allowed in
+which phase is the table in [03c](03c-goals.md#control-actions-by-phase), and a
+refusal is `GOAL_ACTION_NOT_ALLOWED`. `NOT_DONE` and `EDIT` on a goal whose
+harness already finished (`VERIFYING`, `DISAGREE`) **re-arm** it: the agent
+rewrites the goal file's first line and the hub types the harness's set-goal
+form in the same pane, same goal id ([03h](03h-goal-phases-in-depth.md#re-arm-after-done)).
+
+**History.** `ListGoalRuns` (one run per harness process: start and end, cause,
+end phase, nudges, usage consumed, log keys) and `ListGoalTransitions` (phase
+changes with reason and actor) read what the hub stores with the goal. The
+Machines timeline is `ListGoals` over `start_time` and `end_time`, not
+`create_time`. The "Goal progress" task list of the mockup is **not** in the
+contract: the goal file's first line and the run list answer "what is it doing".
+
+## Stored logs
+
+All under `SCOPE_LOGS` (owner by default): `ListStoredSessions` (the sessions
+whose logs are stored, live or ended, with their stream keys, sizes, times and
+the archived last pane summary of each pane), `GetStoredSession`,
+`DeleteSessionLogs` (one transaction, audited as `logs.delete`, refused while a
+stream is still capturing), `SearchSessionLogs` and `GetLogStoreStatus` (bytes
+against the cap, free disk, oldest data, retention, shipping paused). The cap and
+retention are `HubSettings.log_size_cap_bytes` and `log_retention` (a settings
+change, `SETTINGS`). **Search** is a case-insensitive literal substring over the
+ANSI-stripped, decompressed frames of the sessions the filter selects, at most
+256 MiB of raw text per call, continued with `page_token`; there is no index and
+no regular expression in v1, and a full-text index can be added without changing
+the call. **Export** is the client paging `ReadSessionLog`; there is no export
+RPC. An ended session stays in `ListSessions` (filter `state = ENDED`) while its
+logs exist.
+
+## Accounts: created, discovered, removed
+
+Accounts are **discovered**: a subscription's identity probe, one placeholder per
+`(machine, profile)` for a harness that shows no identity (Codex, whose key is
+the hash of `<harness>:<machine id>`), and each OpenCode provider from `opencode
+providers list` (03b, "Accounts"). The owner maps a Codex placeholder to the
+account it really is with `UpdateAccount` bindings. `CreateAccount` exists only
+for an **owner-defined API-key account** the agents cannot discover
+(`BUDGET_KIND_DOLLAR_CAP`, never auto-dispatched). `DeleteAccount` removes an
+account nothing uses (`ACCOUNT_IN_USE` otherwise: a live goal, or a machine that
+still shows it signed in). There is no `MergeAccounts`: a stale duplicate is
+deleted once signed out. `Account.status.provider` is the machine-readable
+provider ("anthropic", "deepseek") the "never auto-dispatch OpenCode on an
+Anthropic subscription" rule reads.
+
+## Config export and import
+
+`ExportConfig` returns the configuration as one `FleetConfig` (hub and fleet
+settings, groups, machine entries by name, repos, tracker projects, routines,
+account specs). The **hub database is the source of truth**; `fleet.yaml` is only
+the CLI's YAML rendering of that message, never read by the hub, and it holds no
+secrets and no ids. `ImportConfig` validates the whole document, diffs it, and
+applies it in **one transaction or not at all**; `dry_run` returns the plan
+(`ConfigChange` lines: create, update, unchanged, skipped) and its `plan_hash`,
+and a real import passes that hash as `expected_plan_hash`, so what runs is what
+was shown. Import only creates and updates. A machine entry that matches an
+enrolled machine's display name sets its labels and settings; one that matches
+none is kept as a **pending machine**, applied when a machine enrolls under that
+name (the token's `machine_name`), and that machine **starts drained**. Import
+never drains an enrolled machine. An integration is never created by import
+(credentials are not in the document): it is skipped with a problem. The
+enrollment token carries `expected_hostname`, `labels` and `start_drained` for the
+same purpose by hand.
+
+## Local commands
+
+Not RPCs, on purpose: **`fleetd backup`, `fleetd restore`, `fleetd enroll-token`
+(also an RPC), the claim URL and `fleetd debug agent-stream`**. A backup holds the
+CA private key and the account salt (03f), so it is written on the hub host and
+never returned through an API; the claim URL is printed where the owner is; the
+agent-wire tap reads the hub's in-process bus and needs the host. `fleet backup`
+in the older ADRs means `fleetd backup`. The store's own numbers (sizes, schema
+version, last backup, free disk) are `GetStoreStatus` ([ADMIN]) and the log
+store's are `GetLogStoreStatus` ([LOGS]). `fleet debug stream` decodes a **Watch**
+tap only. Tokens, users and sign-in are RPCs ([02f](02f-hub-authentication.md)).
 
 ## Contract status and codegen
 
@@ -354,13 +463,23 @@ actor is the requester (a `Principal`); decisions made at the machine have actor
 kind `LOCAL_USER` ([02g](02g-agent-security.md#audit-of-decisions-made-at-the-machine)).
 Filter on `action` with `=` or `in` ([02c](02c-hub-watch-and-filters.md)).
 
+`AuditEntry.target` is `<collection>/<id>`, so the Session timeline filters
+`target = "sessions/<id>"` and the machine view `machine = "<id>"`. Each action
+writes: session actions (`session.*`, `attach.*`) `sessions/<id>`; goal actions
+`goals/<id>`; machine actions `machines/<id>`; `repo.*` `repos/<host/path>`;
+`account.*` `accounts/<id>`; `work_item.requeue` `work_items/<canonical key>`;
+`logs.*` `sessions/<id>` (or `logs` for a search); `config.import` `config`;
+settings `settings/<id>`; the others the collection of their resource. A
+read-only attach toggle is a re-attach (a new `attach.open`).
+
 | Area | Actions |
 |---|---|
 | Sign-in and credentials | `auth.claim`, `auth.sign_in`, `auth.sign_in_failed`, `auth.sign_out`, `passkey.add`, `passkey.delete`, `user.invite`, `user.update`, `auth.session_revoke`, `token.create`, `token.revoke`, `device.pair_request`, `device.approve`, `device.revoke` |
 | Machines | `machine.enroll`, `machine.enroll_failed`, `machine.update`, `machine.drain`, `machine.undrain`, `machine.revoke`, `machine.delete`, `machine.connect_refused`, `machine.local_drain`, `machine.local_undrain`, `machine.install_changed` |
 | Commands | `session.create`, `session.keys`, `session.interrupt`, `session.harness_command`, `session.respawn`, `session.kill_window`, `session.availability`, `session.log_capture`, `attach.open`, `attach.close`, `command.refused`, `command.local_approval` |
-| Goals and work | `goal.start`, `goal.control`, `routine.run`, `approval.decide`, `triage.snooze`, `triage.dismiss` |
-| Configuration | `settings.update`, `account.update`, `integration.update`, `routine.create`, `routine.update`, `routine.delete`, `notification_target.create`, `notification_target.update`, `notification_target.delete`, `policy.changed`, `policy.safe_mode` |
+| Goals and work | `goal.start`, `goal.control`, `goal.rearm`, `goal.state_change` (hub decisions: expiry, abandon, external merge), `work_item.requeue`, `routine.run`, `approval.decide`, `triage.snooze`, `triage.dismiss` |
+| Configuration | `settings.update`, `account.create`, `account.update`, `account.delete`, `integration.update`, `repo.create`, `repo.update`, `repo.delete`, `config.import`, `machine.hooks`, `routine.create`, `routine.update`, `routine.delete`, `notification_target.create`, `notification_target.update`, `notification_target.delete`, `policy.changed`, `policy.safe_mode` |
+| Logs | `logs.delete`, `logs.search` |
 | Hub | `hub.restore` |
 
 ## Open questions

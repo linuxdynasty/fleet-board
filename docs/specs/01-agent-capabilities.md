@@ -439,7 +439,7 @@ All pass local policy, carry a `command_id`, and are idempotent except F3.
   mDNS, policy, cert expiry, hub reachability, clock skew).
 - **M4 Drain and undrain** (v2): from the hub or locally (`fleet-agent
   drain|undrain`); reported in snapshot and heartbeat. While draining, the agent
-  refuses G3 and harness-starting F1/F2 with `draining`.
+  refuses G3, harness-starting F1/F2 and F5 (except a pane with a registered live goal) with `draining`.
 - **Upgrades are never a hub command** (a compromised hub could run new code
   everywhere); they run on the machine, through the package manager or script.
 

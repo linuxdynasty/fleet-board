@@ -92,27 +92,27 @@ Severity: I important, M minor. Risk: refactor risk if deferred (h/m/l).
 | D | `local-confirm-interim-vs-single-result` | M | l | AWAITING_LOCAL_CONFIRM is an 'interim CommandResult', contradicting 'exactly one CommandResult' and ResultAck | fixed |
 | D | `settings-policy-failure-wire` | M | l | Settings rejection and policy safe mode have no wire fields although W10 says the UI shows them | fixed |
 | D | `agent-clock-time-authority` | M | l | Agent-clock timestamps drive ordering and waits with only a 5-minute warning for skew | fixed |
-| E | `per-repo-config` | I | h | Per-repo settings (consent, parallel cap, tracker-to-repo mapping, hooks mode) have no home: Integration.watched is a list of strings | open |
-| E | `goal-active-set-undefined` | I | h | GoalPhase has no queued/expired/abandoned phase and 'active' is never defined, so the uniqueness constraints and slot accounting cannot be implemented | open |
-| E | `external-provider-transitions` | I | h | Provider-side changes while a goal runs (issue closed or cancelled, change request merged by a human or closed unmerged) have no transition; CANCELLED has no phase; goal end states have no work-item stage mapping | open |
-| E | `repo-level-config-missing` | I | h | Per-repo settings referenced by dispatch (consent, parallel cap, worktree mode, branch) have no home in the contract | open |
-| E | `goal-history-api` | I | m | Goal run history and timeline are stored by the hub but exposed nowhere: no start/end time, restarts, usage consumed, transcript or transitions | open |
-| E | `logs-api-gap` | I | m | Session-log management API missing: no list of stored logs, delete, search, store usage or retention setting, and no read path for archived pane summaries | open |
-| E | `dispatch-contract` | I | m | Dispatch panel: PreflightGoal request is incomplete and the 'manual allowed with a warning' path (DISPATCH_CONFIRM) is unwired | open |
-| E | `account-lifecycle` | M | m | Accounts can only be updated, never created or removed; Codex mapping and API-key (OpenCode) accounts have no creation path and Account has no provider field | open |
-| E | `config-export-import` | M | m | `fleet export` / `fleet import --dry-run` and 'imported machines start drained' have no API; machine records cannot be pre-provisioned | open |
-| E | `admin-cli-rpcs` | M | m | CLI commands that must go through the hub (backup, API tokens and login bootstrap, store status, debug stream) have no RPC | open |
-| E | `goal-hooks-trigger` | I | m | Nothing triggers or exposes EnsureGoalHooks: no reconcile step and no hub RPC, yet generic-hook repos depend on them | open |
-| E | `rearm-after-done` | I | m | DISAGREE -> RUNNING ('not done') has no working mechanism: the harness goal is already achieved/cleared and the goal file still says DONE | open |
-| E | `limit-wait-missing-from-state-machine` | I | m | LIMIT_WAIT exists in the proto and ADR 0018 but not in the 03c state machine; entry, exit, slot class and missing-reset cases are undefined | open |
-| E | `routines-not-in-workflows` | I | m | Routines have a contract but no workflow: run creation, numbering, trigger evaluation, done-rule inputs and snapshotting are unspecified and some done rules are unverifiable | open |
-| E | `goal-resource-lacks-what-w6-persists` | M | m | Goal cannot render several states and histories W6 persists or the UI requires | open |
-| E | `start-failure-reaction-table-incomplete` | I | m | Start-failure handling table is incomplete and contradicts the agent contract on DISK_LOW and version support; drain interplay with outbox and respawn is unspecified | open |
-| E | `ended-sessions-logs-and-summary-archive-unreachable` | I | m | No hub API to find ended sessions, read the archived last pane summary, or delete a session's logs | open |
-| E | `hub-dispatch-refusal-reasons-missing` | M | m | Hub-side dispatch refusals have no ReasonCode, so PreflightGoalResponse.hub_checks cannot say why | open |
-| E | `workflow-state-names-missing-from-enums` | M | m | Triage kinds and goal state named in 03c/03d/03e do not exist in the hub enums | open |
-| E | `scheduler-explanation-state-unexposed` | I | m | Why the fleet is not using an account or machine is stored or logged but has no API field | open |
-| E | `small-hub-api-gaps` | M | l | Smaller mismatches: audit filter lacks target/session, read-only toggle has no wire message, machine labels ambiguity, next-up ordering | open |
+| E | `per-repo-config` | I | h | Per-repo settings (consent, parallel cap, tracker-to-repo mapping, hooks mode) have no home: Integration.watched is a list of strings | fixed |
+| E | `goal-active-set-undefined` | I | h | GoalPhase has no queued/expired/abandoned phase and 'active' is never defined, so the uniqueness constraints and slot accounting cannot be implemented | fixed |
+| E | `external-provider-transitions` | I | h | Provider-side changes while a goal runs (issue closed or cancelled, change request merged by a human or closed unmerged) have no transition; CANCELLED has no phase; goal end states have no work-item stage mapping | fixed |
+| E | `repo-level-config-missing` | I | h | Per-repo settings referenced by dispatch (consent, parallel cap, worktree mode, branch) have no home in the contract | fixed |
+| E | `goal-history-api` | I | m | Goal run history and timeline are stored by the hub but exposed nowhere: no start/end time, restarts, usage consumed, transcript or transitions | fixed |
+| E | `logs-api-gap` | I | m | Session-log management API missing: no list of stored logs, delete, search, store usage or retention setting, and no read path for archived pane summaries | fixed |
+| E | `dispatch-contract` | I | m | Dispatch panel: PreflightGoal request is incomplete and the 'manual allowed with a warning' path (DISPATCH_CONFIRM) is unwired | fixed |
+| E | `account-lifecycle` | M | m | Accounts can only be updated, never created or removed; Codex mapping and API-key (OpenCode) accounts have no creation path and Account has no provider field | fixed |
+| E | `config-export-import` | M | m | `fleet export` / `fleet import --dry-run` and 'imported machines start drained' have no API; machine records cannot be pre-provisioned | fixed |
+| E | `admin-cli-rpcs` | M | m | CLI commands that must go through the hub (backup, API tokens and login bootstrap, store status, debug stream) have no RPC | fixed |
+| E | `goal-hooks-trigger` | I | m | Nothing triggers or exposes EnsureGoalHooks: no reconcile step and no hub RPC, yet generic-hook repos depend on them | fixed |
+| E | `rearm-after-done` | I | m | DISAGREE -> RUNNING ('not done') has no working mechanism: the harness goal is already achieved/cleared and the goal file still says DONE | fixed |
+| E | `limit-wait-missing-from-state-machine` | I | m | LIMIT_WAIT exists in the proto and ADR 0018 but not in the 03c state machine; entry, exit, slot class and missing-reset cases are undefined | fixed |
+| E | `routines-not-in-workflows` | I | m | Routines have a contract but no workflow: run creation, numbering, trigger evaluation, done-rule inputs and snapshotting are unspecified and some done rules are unverifiable | fixed |
+| E | `goal-resource-lacks-what-w6-persists` | M | m | Goal cannot render several states and histories W6 persists or the UI requires | fixed |
+| E | `start-failure-reaction-table-incomplete` | I | m | Start-failure handling table is incomplete and contradicts the agent contract on DISK_LOW and version support; drain interplay with outbox and respawn is unspecified | fixed |
+| E | `ended-sessions-logs-and-summary-archive-unreachable` | I | m | No hub API to find ended sessions, read the archived last pane summary, or delete a session's logs | fixed |
+| E | `hub-dispatch-refusal-reasons-missing` | M | m | Hub-side dispatch refusals have no ReasonCode, so PreflightGoalResponse.hub_checks cannot say why | fixed |
+| E | `workflow-state-names-missing-from-enums` | M | m | Triage kinds and goal state named in 03c/03d/03e do not exist in the hub enums | fixed |
+| E | `scheduler-explanation-state-unexposed` | I | m | Why the fleet is not using an account or machine is stored or logged but has no API field | fixed |
+| E | `small-hub-api-gaps` | M | l | Smaller mismatches: audit filter lacks target/session, read-only toggle has no wire message, machine labels ambiguity, next-up ordering | fixed |
 | F | `integration-service-operational-vocabulary` | I | h | IntegrationProviderService cannot carry rate limits, conditional requests or typed provider errors that the sync design depends on | open |
 | F | `integration-cannot-express-verification` | I | m | IntegrationProviderService cannot express the queries W4/W6 rely on, and ChangeRequest lacks the fields W6 reads | open |
 | F | `trusted-gate-not-computable` | I | m | The trusted-issues gate cannot be evaluated from the integration contract: label actor is not carried, and the allow-list is a flat string list | open |

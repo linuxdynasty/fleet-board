@@ -330,8 +330,13 @@ screen that no longer parses is reported as "unknown", never guessed.
 - `fleet` CLI: `--json` output is the stable interface, exit codes 0/1,
   `FLEET_URL` and `FLEET_TOKEN` env vars for scripts, `--yes` required for
   destructive commands (stop, drain, delete).
-- `fleet export` / `fleet import`: `fleet.yaml` plus goal-protocol hooks, no
-  secrets, `--dry-run` first; imported machines start drained.
+- `fleet export` / `fleet import`: `fleet.yaml` (settings, groups, machines by
+  name, repos, tracker projects, routines, account specs; no secrets, no ids),
+  `--dry-run` first; imported machines start drained, as pending entries until
+  they enroll. The hub database is the source of truth; the file is only a
+  rendering of `ExportConfig` and the input of `ImportConfig`, applied in one
+  transaction ([02b](specs/02b-hub-api.md#config-export-and-import)). `fleet
+  backup` is `fleetd backup` on the hub host, because a backup holds secrets.
 
 ## Configuration
 

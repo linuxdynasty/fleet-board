@@ -11,12 +11,24 @@ snoozes or dismisses; items expire after 7 days.
 |---|---|---|---|
 | `prompt` | `PromptDetected` | `prompt_id` | `PromptGone`, `PaneExited`, answer `OK` |
 | `condition` | `HarnessCondition` (provider error, rate limit, usage limit, sign-in, network) | `(pane, kind)` | same event with `cleared=true`, `PaneExited` |
-| `stuck` / `recovery_required` | W6 `STUCK` | goal fingerprint | goal leaves `STUCK` |
+| `stuck` | W6 `STUCK`; the UI chip "recovery required" is `Goal.status.phase_reason` `SESSION_CLOSED` or `LOCAL_CONFIRM_TIMEOUT`, not a separate kind | goal fingerprint | goal leaves `STUCK` |
+| `goal_paused` | W6 `PAUSED` at the machine or by an operator (01d) | `(goal_id, pause_reason, block_epoch)` | goal runs again, or resumed |
+| `limit_wait` | W6 `LIMIT_WAIT` expected over 30 min, or a resume that did not take (03h) | `(goal_id, phase_time)` | goal leaves `LIMIT_WAIT` |
+| `start_failed` | a start needing a person: update or login screen, model or effort missing, three attempts failed, a leftover worktree (03h) | `(work_item, reason)` | the fact clears, or the item is requeued |
+| `work_item_changed` | the provider closed, cancelled or reopened the item under a live goal (03h) | `(goal_id, provider state)` | goal resumed, cleared or ended |
+| `routine_blocked` | a routine run live longer than `blocked_after` (03i) | `(routine, run)` | the run ends |
+| `log_disk_low` | W9 hub disk below the threshold | `hub` | disk above the higher threshold |
+| `policy_invalid` | W10 agent policy file invalid (safe mode) | `machine` | snapshot shows safe mode off |
+| `parser_degraded` | W11 three parse failures on a supported version | `(machine, harness, version)` | a good reading |
+| `settings_unenforced` | W10 a safety setting the agent does not know | `(machine, field)` | agent upgraded |
 | `blocked_owner` | W6 `BLOCKED_OWNER` | `(goal_id, block_epoch)` | goal line changes |
 | `done_disagreement`, `ready_for_human_merge` | W6 verifier | goal fingerprint | `MERGED`, or goal line changes |
 | `review_loop` | W6 | `(goal_id, cr_head_sha)` | merge, or operator resume |
 | `pacing` | W3 `RESERVE` / `UNKNOWN` > 1 h / `STALE` > 1 h | `(account, bucket, reset_at, kind)` | state leaves that kind |
 | `start_unknown`, `orphan_goal_pane`, `double_claim`, `integration_access_lost`, `usage_parse_failed`, `parser_unsupported`, `duplicate_identity`, `policy_changed`, `hostname_mismatch`, `dirty_worktree` | W2, W4, W5, W10, W11 | stated in each workflow | stated in each workflow |
+
+Every kind in this table is a `TriageKind` value (`TRIAGE_KIND_<NAME>`); `other`
+is for nothing the hub raises today.
 
 **Actors.** Writer (raises and retires inside the event's transaction), UI /
 CLI (operator), `fleet-agent` (`SendKeys` bound to `prompt_id`,
@@ -98,7 +110,7 @@ stateDiagram-v2
 | Hub restart | Items and in-flight markers durable; an in-flight answer whose result never arrives is closed by the outbox expiry pass |
 | Duplicate `SendKeys` | Not idempotent; the agent refuses a re-send after `UNKNOWN_OUTCOME` by `command_id` (logged result); a new `command_id` for the same `prompt_id` is refused by the hub's in-flight unique until cleared |
 | Deadline expiry | As above; never typed late |
-| Harness crash | `PaneExited` retires prompt and condition items for the pane; W6 raises `stuck`/`recovery_required` instead |
+| Harness crash | `PaneExited` retires prompt and condition items for the pane; W6 raises `stuck` instead |
 | Provider error while a prompt is open | Both items exist; the condition item explains why the answer may not be processed yet |
 | Prompt already answered at the keyboard | `PromptGone` retires; a late answer gets `PROMPT_GONE`, nothing typed |
 | Developer typing in the pane while the operator answers | A `PROMPT_ANSWER` `SendKeys` needs no empty input line or ready pattern (menus have neither), but the prompt check still runs; if the prompt moved, `PROMPT_GONE` |
@@ -327,12 +339,30 @@ most every 60 s. `LogAck.pause` is a stream
 level backpressure signal and `SetLogShipping` the command form; resuming
 needs an unsolicited `LogAck{all_streams=true, pause=false}` or `SetLogShipping{paused=false}`
 because a paused agent sends no chunks to ack (semantic note, 03g). Retention:
-total size cap (setting), oldest sessions pruned first; per-session delete is
-one audited action. Replay: the UI asks for `(session, from_raw_offset | from
+the size cap and the optional age limit are hub settings
+(`HubSettings.log_size_cap_bytes`, `log_retention`; default 50 GiB, no age
+limit), the oldest ended sessions are pruned first and a session with an open
+stream never is. Replay: the UI asks for `(session, from_raw_offset | from
 time)`; the hub maps through the index, decompresses frames, streams to
 xterm.js; chunk `first_byte_time/last_byte_time` give time navigation. Harness
 transcripts (K3, v3) reuse the path with `stream=HARNESS_TRANSCRIPT` from
 `PaneHarnessSession.transcript_path`, opt-in per repo or machine.
+
+**Management and ended sessions.** When a session ends, the last pane summary of
+each of its panes moves to the log store (ADR 0015) and the session row becomes
+`ENDED` (`Session.status.state`, `end_time`), kept while its logs exist. A client
+finds ended sessions with `ListStoredSessions` (filter machine, goal, harness,
+state, time), which returns each stream's `LogStreamKey`, the sizes and times,
+and the archived summaries, so `ReadSessionLog` and `fleet logs export <session>`
+have an entry point after the window is gone. `DeleteSessionLogs` removes one
+session's files, index rows and summaries in one transaction and one audit row
+(`logs.delete`: bytes, never content) and is refused while a stream still
+captures (`LOG_STREAM_OPEN`). `SearchSessionLogs` is a literal, case-insensitive
+scan of the decompressed frames the filter selects, bounded per call and
+continued by `page_token` (no index in v1). `GetLogStoreStatus` reports bytes
+against the cap, free disk, the oldest data (days retained) and whether shipping
+is paused. All five need `SCOPE_LOGS`; export is the client paging
+`ReadSessionLog`.
 
 ### State machine (one log stream, owned by the agent; mirrored on the hub)
 
@@ -354,7 +384,7 @@ stateDiagram-v2
 |---|---|---|
 | Spool: compressed chunks + `acked_offset` per stream | agent state dir (`spool/<server>/<server_start_id>/<pane>/<stream>/`), fsync per chunk batch | per chunk |
 | Log files: one per `(session, pane, stream, day)`, append-only zstd blocks; rotated only at a `frame_start` chunk | hub files | append + fsync per batch |
-| `log_segments` index (file, file_offset, raw_offset, raw_length, `frame_start`, `frame_raw_offset`, times, gap) keyed `(session, pane, stream, raw_offset)`, and `log_sessions{session, machine, goal, bytes, first_at, last_at}` | hub store | one tx per ≤ 1 s batch across all streams |
+| `log_segments` index (file, file_offset, raw_offset, raw_length, `frame_start`, `frame_raw_offset`, times, gap) keyed `(session, pane, stream, raw_offset)`, and `log_sessions{session, machine, goals, bytes, first_at, last_at, ended_at}`, `archived_pane_summaries{pane, last_lines, last_output_at, archived_at}` | hub store | one tx per ≤ 1 s batch across all streams |
 | Retention state (total bytes, prune cursor) | hub store | prune tx per session removed |
 | `SpoolStatus` (pending, cap, gaps, paused) | heartbeat / snapshot, latest only | not persisted beyond last heartbeat |
 

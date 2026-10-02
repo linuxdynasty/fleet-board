@@ -156,7 +156,7 @@ sequence; `none` means unordered. Droppable: `yes` is SHED; `coalesce` keeps the
 | F8 | `RunHarnessCommand{pane, command, args, expected_class, catalog_hash}` → `RunHarnessCommandResult` | H→A | observe: yes; others: no | cmd | no |
 | G1 | `EnsureGoalHooks{harness, workdir, expected_version, profile}` → `EnsureGoalHooksResult{state GoalHooksState}`; per checkout in `RepoCheckout.goal_hooks[]` (`trust` `HookTrustState`, `trust_approve_command`, `config_path`, [01d](01d-goal-hooks.md)); also in `HarnessInfo.goal_hooks`; `HarnessInfo.goal_control` (G4) | H→A; A→H | yes | cmd | no |
 | G2 | `GoalState{…, worktree_path, branch}` in `Snapshot.goals` and `Event.goal_state` | A→H | — | seq | never |
-| G3 | `StartGoal{spec GoalSpec{…, model, effort, fresh_context, dispatch_reason, profile}, reuse_pane, in_session, timeouts}`; `CommandProgress{command_id, step}` per step (14 named steps, 02h); `StartGoalResult{…, typed_goal_line, branch, model, effort, registration}` | H→A; A→H | composite: per step class (02h) | cmd | never |
+| G3 | `StartGoal{spec GoalSpec{…, model, effort, fresh_context, dispatch_reason, profile}, reuse_pane, in_session, timeouts, rearm_reason}`; `CommandProgress{command_id, step}` per step (14 named steps, 02h); `StartGoalResult{…, typed_goal_line, branch, model, effort, registration}` | H→A; A→H | composite: per step class (02h) | cmd | never |
 | G4 | `RunHarnessCommand{command: "/goal", args: pause\|resume\|edit …\|clear}` (class GOAL), `Interrupt`, or `SendKeys{GOAL_RESUME}`, as `HarnessInfo.goal_control` says; `GOAL_SUBCOMMAND_UNSUPPORTED` otherwise | H→A | no (typed input) | cmd | never |
 | G5 | goal registry: `Snapshot.goal_registry[] GoalRegistration`, `Event.goal_registry`, `RegisterGoal{goal, pane, repo_driver}`, `ReleaseGoal{goal, pane}` | both | yes | seq; cmd | never |
 | H1 | `Snapshot.repos[] RepoCheckout{…, remote_name, remotes[]}`, `Event.repo` | A→H | — | seq | no |
@@ -337,9 +337,10 @@ passing ones (`DISK_LOW`, `AGENT_GOAL_CAP_REACHED`, `CHECKOUT_DIRTY`) are. Valid
 The hub API codes (500–532: version, request id, scope, approval, pairing,
 page, resume, filter, order, mask, not found, exists, machine offline,
 credentials, goal phase, secret, size, sign-in, Host and Origin, attach ticket,
-machine revoke) never appear in a `CommandResult`; they are `ErrorDetail.reason`
-on an RPC error, with `FieldViolation`s for field-level detail
-([02b](02b-hub-api.md#errors)). The 600–605 codes are the typed `Enroll`
+machine revoke; 540–562: the hub's dispatch rules and a few action refusals,
+03h) never appear in a `CommandResult`; they are `ErrorDetail.reason` on an RPC
+error, or the reason of a `PreflightCheck`, with `FieldViolation`s for
+field-level detail ([02b](02b-hub-api.md#errors)). The 600–605 codes are the typed `Enroll`
 failures, carried the same way ([02g](02g-agent-security.md)).
 
 `Percent` is never 0-as-unknown: `PercentUnknown.reason` says why. A
@@ -376,14 +377,13 @@ and no buckets; the hub never schedules on it.
   ([02b](02b-hub-api.md)). `GoalSpec.consent` is `repeated ConsentAct`, an
   enum the adapter renders itself, never hub text.
 - **Limit wait.** `HarnessCondition{kind: USAGE_LIMIT | RATE_LIMITED,
-  resets_time}` moves the goal to `LIMIT_WAIT` until `resets_time` (no nudges, no
-  no-progress counting). At `resets_time` + 1 min, once the condition cleared or
-  the account's reading shows room, the hub resumes as `HarnessInfo.goal_control`
-  says: Claude Code `SendKeys{GOAL_RESUME, "continue"}`; Codex and Muse
-  `RunHarnessCommand{"/goal", "resume"}` (01b probes, 2026-10-02; resume after
-  a limit itself is unprobed, `limit_resume_verified`). If the condition is
-  still showing, the wait extends to the next `resets_time`; without one the
-  hub re-checks every 10 min (02h).
+  resets_time}` moves the goal to `LIMIT_WAIT` (no nudges, no no-progress
+  counting). At `resets_time` + 1 min, once the condition cleared or the reading
+  shows room, the hub resumes as `HarnessInfo.goal_control` says: Claude Code
+  `SendKeys{GOAL_RESUME, "continue"}`; Codex and Muse `RunHarnessCommand{"/goal",
+  "resume"}` (01b probes, 2026-10-02; resume after a limit itself is unprobed,
+  `limit_resume_verified`). Entry, the fallback without `resets_time`, failures
+  and the slot class are in [03h](03h-goal-phases-in-depth.md#limit-wait).
 
 ## Size limits
 

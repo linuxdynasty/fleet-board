@@ -62,7 +62,9 @@ observed), so paths below read `Account.status.pacing` or `Machine.spec.labels`
 | Stuck goal card, title in plain words ("… (nothing is watching it)"); raw line under details | `TriageItem.kind = STUCK`, `Goal.status.phase = STUCK`, `Goal.status.first_line` | `GoalState.state = BLOCKED_STUCK` (G2) |
 | "Send a hint…" preview | calls `SendKeys{session, pane, keys}` (purpose `OPERATOR_TEXT`, implied) | `SendKeys{purpose}`; `PANE_BUSY` unless the ready prompt shows and the input line is empty (F3, 02h) |
 | "done? code host disagrees" card | `TriageItem.kind = DONE_DISAGREEMENT`, `Goal.status.phase = DISAGREE`, `ChangeRequest` | `GoalState.state = DONE` vs `ChangeRequest.state` (G2, ADR 0012) |
-| "Reopen goal…" preview | calls `ControlGoal{action: NOT_DONE}` or `EDIT` | `SendKeys` nudge or `RunHarnessCommand{"/goal", …}` (G4, F8) |
+| "Reopen goal…" preview | calls `ControlGoal{action: NOT_DONE \| EDIT, text, expected_phase}`; valid in `VERIFYING` and `DISAGREE`, else `GOAL_ACTION_NOT_ALLOWED` | a re-arm: `StartGoal{rearm_reason}` for the same goal in its pane, which types `/goal <text>` (G3, 03h) |
+| "Work item closed under a running goal" card ("keep going" / "cancel") | `TriageItem.kind = WORK_ITEM_CHANGED`, `Goal.status{phase = PAUSED, pause_reason = WORK_ITEM_CLOSED}`; "Keep going" calls `ControlGoal{RESUME}`, "Cancel" `ControlGoal{CLEAR}` (ends `CANCELLED`) | provider mirror (W4), 03h |
+| "Could not start" card (login or update screen, model missing, 3 attempts failed) | `TriageItem.kind = START_FAILED`, `Goal.status.start_error`; the item's `GoalDefinition.attempt` chain | `CommandProgress` failure `reason` (03h) |
 | Reserve-reached card; "reading is from before the last reset" | `TriageItem.kind = PACING`, `Account.status.pacing{state = RESERVE, reading_stale}` | hub pacing over `LimitBucket` (design.md) |
 | Snooze / dismiss | calls `SnoozeTriageItem`, `DismissTriageItem` | hub only (03d) |
 
@@ -76,15 +78,19 @@ observed), so paths below read `Account.status.pacing` or `Machine.spec.labels`
 | "claimed by …" | `WorkItem.item.claims[]`, `stage = CLAIMED_ELSEWHERE` | `Claim{mechanism, by_fleet}` |
 | CI marks on change requests | `ChangeRequest.change_request.checks`, `merged_time`, `review_rounds` | `CheckSummary` (ADR 0012) |
 | Goal line on a card in plain words ("waiting on CI (watcher running)"); raw `BLOCKED: … WATCH=48213` under details | `Goal.status{line_state, first_line}` | `GoalState{state: GOAL_LINE_STATE_BLOCKED_WATCH, first_line, watch_pid, watch_alive}` (G2) |
-| Routine cards | `ListRoutines`; runs as `WorkItem` with `kind = ROUTINE`; "run now" calls `RunRoutine` | ADR 0018 |
-| "Next up … will use available session X" / "new window …" | calls `PreflightGoal` → `placement` (`reuse_session` / `in_session`), `hub_checks`; candidates are panes whose `Pane.workdir.repo` is the goal's repo and not dirty | `StartGoal.reuse_pane` / `in_session`, `PreflightResult.would_reuse`, `SESSION_WORKDIR_MISMATCH`, `CHECKOUT_DIRTY` (G3, E11, 02h) |
+| Routine cards | `ListRoutines`; runs as `WorkItem` with `kind = ROUTINE` (and `ListGoals{filter: routine = "<id>"}`); "run now" calls `RunRoutine`; "blocked" from `TriageItem.kind = ROUTINE_BLOCKED` | ADR 0018, [03i](03i-routines.md) |
+| "Next up … will use available session X" / "new window …" | the first item of `ListWorkItems{filter: stage = READY, order_by: dispatch_order}`, then `PreflightGoal{input}` with an empty placement → `placement` (`reuse_session` / `in_session`), `hub_checks`; candidates are panes whose `Pane.workdir.repo` is the goal's repo and not dirty |
+| Dispatch panel reasons: red blocks, amber warnings, "needs your confirm" | `PreflightGoalResponse.hub_checks[]{check.reason, severity}` (`BLOCK`, `WARN`, `CONFIRM`, `INFO`) plus `Operation.failed_checks` (agent, all BLOCK); the preview reflects consent, text, model and effort because `PreflightGoal` takes the same `GoalSpecInput` | hub rules, 03h; `PreflightResult.failed_checks` (I1) |
+| Dispatch past a warning; dispatch needing a confirm | `StartGoal{input, acknowledged_warnings: [reason…]}`; a `CONFIRM` check returns `approval` (`DISPATCH_CONFIRM`) and no goal, `DecideApproval` then creates the goal | 03h, [02b](02b-hub-api.md#actions-that-need-an-approval) |
+| "Why isn't anything starting?" on an idle account, machine, repo or item | `Account.status.pacing.idle_causes[]`, `Machine.status.unfit[]`, `Repo.status.dispatch_block`, `WorkItem.dispatch_block`, `FleetSummary.dispatch_blocks[]` (each `DispatchBlock{detail.reason, metadata, since_time}`) | scheduler pass, 03h |
+| "Put it back in the queue" on a cleared or exhausted card | calls `RequeueWorkItem{id, expected_version}` (not for an untrusted item); `WorkItem.manual_reason` | 03h | `StartGoal.reuse_pane` / `in_session`, `PreflightResult.would_reuse`, `SESSION_WORKDIR_MISMATCH`, `CHECKOUT_DIRTY` (G3, E11, 02h) |
 | Dispatch panel account list incl. "via OpenCode (manual only)" | `ListAccounts` → `spec.mode`, `spec.budget_kind`, `status.pacing.state = EXCLUDED` | `AccountIdentity.budget_kind` (01 §C, ADR 0008) |
 | "OpenCode has no /goal yet" reason | `Machine.status.harnesses[].catalog` has no `/goal` | `CommandCatalog`; `GOAL_SUBCOMMAND_UNSUPPORTED` (01b) |
 | HARNESS_VERSION_UNSUPPORTED reason (codex 0.157.1 on .124) | `MachineHarness.version_support`, `parser_support[]`, `health` | `HarnessInfo.version_support`; preflight `ReasonCode` 2 (C1, I1) |
-| StartGoal preview | calls `StartGoal{work_item, repo, placement, consent[], goal_text, model, effort, fresh_context, dispatch_reason}` → `goal`, `Operation` (steps in `Operation.step`) | `StartGoal{spec GoalSpec}`, `CommandProgress.step` (G3) |
+| StartGoal preview | calls `StartGoal{input{work_item, repo, change_request, placement, consent[], goal_text, model, effort, fresh_context, dispatch_reason}, acknowledged_warnings}` → `goal`, `Operation` (steps in `Operation.step`) | `StartGoal{spec GoalSpec}`, `CommandProgress.step` (G3) |
 | "keys the agent will type: /goal …" | `PreflightGoal` → `Operation.output_text` | `PreflightResult.goal_line_preview`; adapter `GoalCommand` (01b) |
 | "eshu hook convention" label on `/goal consent <acts> -- <text>` | `Machine.status.repos[].goal_hooks[].state.repo_ships_own` | `RepoCheckout.goal_hooks[]` (G1, 03g #7) |
-| Consent list (`push, pr-open, merge`) | `StartGoalRequest.consent` (`ConsentAct` enum; default repo ∩ account); `Account.spec.consent` | `GoalSpec.consent[]` (ADR 0008) |
+| Consent list (`push, pr-open, merge`) | `StartGoalRequest.input.consent` (`ConsentAct` enum; default `Repo.spec.consent`, else `HubSettings.default_consent`, ∩ account); `Account.spec.consent` | `GoalSpec.consent[]` (ADR 0008) |
 | Window name `{harness} {work}` | `Settings.spec.values.window_name_template`, `GoalPlacement.window_name` | `StartGoal.window_name` (ADR 0011, F1) |
 
 ## Session
@@ -112,14 +118,15 @@ lists every window on every machine; the Details drawer holds the controls.
 | "You're typing into a running goal (…)" banner | `Pane.goal` set and `Goal.status.phase` not `MERGED`/`CLOSED`/`CLEARED` | the goal registry (`TmuxPane.goal`), `GoalState` (G2, 02h) |
 | "Someone is typing in this pane" | `Pane.last_input_time` within the last 10 min | `PaneInput`, `TmuxPane.last_input_time` (E13) |
 | "Paused at the machine — resume?" card | `TriageItem.kind = GOAL_PAUSED`, `Goal.status{phase = PAUSED, pause_reason = OWNER_AT_MACHINE}`; "Resume" calls `ControlGoal{RESUME}` | `HarnessCondition{GOAL_INTERRUPTED \| GOAL_PAUSED, pause_cause}` (E12) |
-| Read-only toggle | `AttachOpen.read_only` (forced for callers without `SESSIONS_WRITE`); `select` still allowed | `OpenAttach.read_only` (J1) |
+| Read-only toggle | re-attach: closes the stream and opens a new `AttachTerminal` with `read_only` changed (`CreateAttachTicket{read_only}` on a WebSocket); forced for callers without `SESSIONS_WRITE`; `select` still allowed while attached | `OpenAttach.read_only` (J1) |
 | "Destructive prompt … → Triage" in the banner | `Pane.open_triage[]` → `TriageItem`, `Approval` | `PromptDetected.destructive` (E6, F3) |
 | Condition and permission strips above the terminal | `Pane.open_triage[]` → `TriageItem.condition` / `.prompt` | `HarnessCondition`, `PromptDetected` (E12, E6) |
 | Caption: `OpenAttach{…}` and last `TermDown{…}` | `AttachOpen{session, cols, rows, read_only}`, `AttachTerminalRequest` | `OpenAttach`, `Terminal` stream (J1) |
 | Details drawer: window meta (`session:index`, pane id, branch, started, last output) | `Session.status`, `Pane.key`, `PaneSummary.last_output_time`, `Goal.status.branch` | E1 |
 | Details drawer: model line → account (OpenCode) | `Pane{account, provider, model}` | `SessionAccountLink` (01 §C, D2) |
 | Details drawer: goal file line + CONSENT | `Goal.status{first_line, consent_line, line_state, typed_goal_line}` | `GoalState`, `StartGoalResult.typed_goal_line` (G2) |
-| Details drawer: goal progress | not in the contract (mock only) | — |
+| Details drawer: goal progress task list | dropped: not in the contract. The goal file's first line (`Goal.status.first_line`) and the run list below say what it is doing | — |
+| Details drawer: run history per goal (restarts, nudges, usage consumed, transcript) | `ListGoalRuns{goal}` → `GoalRun{number, cause, start_time, end_time, end_phase, nudges, usage_consumed[], logs[], transcript}`; phase changes `ListGoalTransitions{goal}`; totals `Goal.status{start_time, end_time, restarts, usage_consumed, phase_reason}` | 03c goal runs and transitions |
 | Details drawer: change request | `GetChangeRequest(Goal.spec.change_request.key)` | `ChangeRequest{state, checks}` (ADR 0012) |
 | Details drawer: Goal controls Pause / Resume / Edit / Clear | calls `ControlGoal{action: PAUSE \| RESUME \| EDIT \| CLEAR, expected_phase}` (a changed phase fails `GOAL_PHASE_CHANGED`) | `RunHarnessCommand{"/goal", …}`, `Interrupt` or `SendKeys{"continue"}` per harness (G4, 01b) |
 | Pause on Claude Code | `ControlGoal{PAUSE}` | `Interrupt{pane}` (no `/goal pause` on Claude) (G4, F4) |
@@ -137,7 +144,10 @@ lists every window on every machine; the Details drawer holds the controls.
 | Details drawer: "Attach from your terminal…" / `ssh -t … tmux attach …` | built in the browser from `Machine.status{username, hostname}` and `Session.status.name` | `MachineFacts.username` (ADR 0006, 03g #3) |
 | Details drawer: History timeline, replay, sizes | `Session.status.logs[] SessionLogInfo`; replay calls `ReadSessionLog{key, start_time}` (needs scope `LOGS`, owner only by default; seeks to the frame start, ≤ 5 min); `SetLogCapture` for own sessions | `LogChunk{key, frame_raw_offset}` / `LogAck{status}`; key by pane, the hub fills in the session (K1, K2, ADR 0010, 03d) |
 | "New session…" (sidebar and drawer) | calls `CreateSession{machine, name, server, workdir, harness, profile, reuse}` | `EnsureSession{…, owner_principal}`; `INVALID_NAME` (F1, ADR 0006) |
-| Details drawer: Timeline | `ListAuditEntries{filter: target or machine}` | M1 (hub side) |
+| Details drawer: Timeline | `ListAuditEntries{filter: target = "sessions/<id>"}` (or `machine`); each action's `target` is listed in [02b](02b-hub-api.md#audit-actions) | M1 (hub side) |
+| Ended sessions, "find the logs of a finished goal" | `ListSessions{filter: state = ENDED}` (`Session.status.state`, `end_time`) and `ListStoredSessions{filter: goal, machine, harness, time}` → `StoredSession{logs[] (stream keys), pane_summaries[] (archived last summary), sizes, times}`; replay calls `ReadSessionLog{key}` | `LogChunk` store, ADR 0010, 0015 (all `LOGS`) |
+| Search across sessions; delete one session's logs | `SearchSessionLogs{query, filter}` → `SessionLogMatch{key, raw_offset, time, snippet}` (open the replay at the offset); `DeleteSessionLogs{session}` (audited; refused while capturing) | 03d W9 |
+| "N GB of 50 GB, oldest 12 days old" and the retention setting | `GetLogStoreStatus` → `LogStoreStatus{used_bytes, cap_bytes, oldest_time, retention, shipping_paused}`; edit `HubSettings.log_size_cap_bytes`, `log_retention` with `UpdateSettings` | 03d W9 |
 | Settings: tmux prefix (`C-b` / `C-a`) | mock only; raw keys are forwarded | J1 |
 
 ## Usage
@@ -152,20 +162,25 @@ lists every window on every machine; the Details drawer holds the controls.
 | "source: probe /usage 10 min ago" / "passive (banner)" | `Account.status.usage{source, read_time}` (hub-adjusted; `received_time` beside it), `Account.status.probe`, `Machine.status.telemetry{clock_skew, clock_untrusted}` | `UsageSource`, `ProbeHealth` (D1, D3) |
 | Plan, email hidden/shown | `Account.status{plan, login_method, email}`; email empty unless `share_identity_email` | `AccountIdentity` (C2, A8) |
 | Consent and mode per account | `Account.spec{consent, mode}`; edit calls `UpdateAccount` with `spec.*` mask paths | ADR 0008 |
-| API-key cards with "$ of cap", "manual only" | `Account.spec{budget_kind, spend_cap_micros}`, `Account.status{usage.spend, pacing.state = EXCLUDED}` | `SpendReading` (01 §C) |
+| API-key cards with "$ of cap", "manual only" | `Account.spec{budget_kind, spend_cap_micros}`, `Account.status{usage.spend, pacing.state = EXCLUDED, provider, origin}` | `SpendReading` (01 §C) |
+| "Add an API-key account" / "Remove this account" | `CreateAccount{harness, provider, spec}` (owner-defined, `DOLLAR_CAP` only); `DeleteAccount` (`ACCOUNT_IN_USE` while a goal or a signed-in machine uses it) | [03b](03b-usage-and-sync.md) "Accounts" |
+| "This Codex account is the one on machine X" | `UpdateAccount{spec.bindings}` folds the machine's placeholder account into this one | `AccountIdentity.identity_not_shown` (01 §C) |
 | OpenCode card | `Account`, `Pane{provider, model}` | `SessionAccountLink`; no `/usage`, no `/goal` (01b) |
+| "Why is nothing using this account?" next to the waste line | `Account.status.pacing.idle_causes[]` | 03h |
 
 ## Machines
 
 | UI element | Hub API | Agent wire / source |
 |---|---|---|
 | Machine card: OS, RAM, agent and tmux version, timezone | `Machine.status{os, ram_bytes, agent_version, tmux_version, timezone, state, telemetry.last_seen_time}` | `MachineFacts` (B1) |
-| Labels | `Machine.spec.labels` (hub-assigned) and `Machine.status.labels` (effective); edit calls `UpdateMachine` | `EffectiveSettings.labels` (ADR 0009, 0011) |
+| Labels | `Machine.spec.labels` (hub-assigned, the only ones saved) and `Machine.status.labels` (effective, read-only; local labels show there and are never written back); edit calls `UpdateMachine` with a `spec.labels` mask | `EffectiveSettings.labels` (ADR 0009, 0011) |
 | "gh signed in as … · push: eshu ADMIN" | `Machine.status.forge_cli[]{tool, host, signed_in, user, access[]}` | `ForgeCliStatus` (H4, ADR 0012) |
 | "agent cert expires in Nd" | `Machine.status.cert_not_after_time` | `EnrollResponse.cert_not_after_time`, `RenewCert` (A4) |
 | "policy <hash> · unchanged/changed" | `Machine.status{policy_hash, policy_changed_since_load}` | `PolicyInfo`, `PolicyChanged` (L1) |
 | Harness chips with versions | `Machine.status.harnesses[]{harness, profile, version, version_support, health}` | `HarnessInfo` (C1) |
-| Goal hooks per harness: "hooks installed and checked" | shows `Machine.status.harnesses[].goal_hooks{installed, verified}` | `HarnessInfo.goal_hooks` `GoalHooksState` (G1, 01d) |
+| Goal hooks per harness: "hooks installed and checked" | shows `Machine.status.harnesses[].goal_hooks{installed, verified}`; "Reinstall on the machine" / "Re-verify" calls `EnsureMachineHooks{machine, harness, repo}` → `Operation`s | `HarnessInfo.goal_hooks` `GoalHooksState`; `EnsureGoalHooks` (G1, 01d, [03](03-workflows.md) "Hook reconcile") |
+| "Not taking new work: signed out of gh, folder not trusted, …" | `Machine.status.unfit[]{harness, repo, reason, since_time, next_check_time}` | durable start-failure markers (03h) |
+| Disk, load, memory pressure, log spool and shipping state | `Machine.status.telemetry{disk[], load5, memory_pressure_level, spool_pending_bytes, spool_gap_bytes, log_shipping_paused}`; no 24 h chart in the contract | `ResourceSample` (B2), `SpoolStatus` |
 | "hooks installed, trust pending — open Codex /hooks to approve" | `MachineHarness.goal_hooks{trust = PENDING, trust_approve_command}`; `UNKNOWN` shows "trust not known" | Codex and Muse trust per hook hash; `/hooks` is deny-class, the agent never approves (G1, 01d) |
 | "hooks installed; eshu ships its own, so fleet's stay off there" | `Machine.status.repos[].goal_hooks[].state.repo_ships_own` | `RepoCheckout.goal_hooks[]` (G1, 03g #7) |
 | "hooks not installed: …" / "self-check failed" | `MachineHarness.goal_hooks{installed, verified}` | `REASON_CODE_HOOKS_INSTALL_FAILED` (G1, 01d) |
@@ -173,10 +188,10 @@ lists every window on every machine; the Details drawer holds the controls.
 | Window chips | `ListSessions{filter: machine = "m-12"}` | E1 |
 | "Drain…" / "Undrain" | calls `DrainMachine{reason}` / `UndrainMachine`; local drain ends `REJECTED_BY_POLICY` / `DRAINING`; `Machine.spec.drain.by` | `Drain`, `Undrain`, `DrainState.requested_by_principal` (M4) |
 | "Attach from your terminal…" | built in the browser from `Machine.status.username` | ADR 0006 |
-| Add machine | calls `CreateEnrollmentToken` → `enroll_command` (the token embeds the CA fingerprint the agent checks), `ca_fingerprint` for an out-of-band check | A1, [02g](02g-agent-security.md) |
+| Add machine | calls `CreateEnrollmentToken{machine_name, expected_hostname, labels, start_drained}` → `enroll_command` (the token embeds the CA fingerprint the agent checks), `ca_fingerprint` for an out-of-band check | A1, [02g](02g-agent-security.md) |
 | "Revoke…" (stolen or retired machine), then "Forget" | calls `RevokeMachine{reason}`; `Machine.status.state = REVOKED`, `Machine.spec.revocation`; `DeleteMachine` only once revoked (`MACHINE_NOT_REVOKED`); "Re-enroll" calls `CreateEnrollmentToken{previous_machine}` | `Bye{REVOKED}`, `MACHINE_STATE_REVOKED` (02g) |
 | Audit log | `ListAuditEntries` (CSV export pages through it) | ADR 0004; agent `M1` local audit |
-| Timeline of which goal ran where (7 days) | `ListGoals{filter: create_time > "<7 days ago>"}` | 03c run history |
+| Timeline of which goal ran where (7 days) | `ListGoals{filter: start_time < "<now>" AND (end_time > "<7 days ago>" OR live = true)}`, drawn from `Goal.status{start_time, end_time, phase}` and `spec.machine` | 03c run history |
 
 ## Settings
 
@@ -184,8 +199,11 @@ lists every window on every machine; the Details drawer holds the controls.
 |---|---|---|
 | Settings: effective values with layer chips, refused and not-enforced fields, safe mode | `Machine.status.effective_settings.sources[]`, `capped_settings`, `rejected_settings[]`, `unenforced_settings[]`, `policy_safe_mode`, `policy_error` | `EffectiveSettings`, `SettingsAck.{capped_fields, rejected[], unrecognized_value_fields[]}`, `PolicyInfo.{safe_mode, error}` (A8, L2, ADR 0009) |
 | Settings: limits, idle threshold, window template, show emails | `GetSettings` / `UpdateSettings{settings{spec{scope, values}}, update_mask: "spec.values.<field>"}` | `SettingValues` (A8, ADR 0011) |
-| Settings: hub choices (auto-pause at reserve, trusted label, auto-dispatch) | `Settings.spec.hub HubSettings` (fleet scope) | hub only (ADR 0018) |
-| Settings: watched repos with host and provider, `hooks: eshu \| generic` | `Integration.spec.watched[]` (edit calls `UpdateIntegration`); `Machine.status.repos[].goal_hooks[]` | `RepoRef`, `HarnessGoalHooks` (ADR 0012, G1) |
+| Settings: hub choices (auto-pause at reserve, trusted label, auto-dispatch, default consent and parallel cap, log cap and retention) | `Settings.spec.hub HubSettings` (fleet scope) | hub only (ADR 0018) |
+| Settings: watched repos with host and provider, `hooks: eshu \| generic`, consent, parallel cap, worktree mode, branch pattern, trusted gate, tracker mapping | `ListRepos`; `CreateRepo`, `UpdateRepo{spec.*}`, `DeleteRepo`; `Repo.status.checkouts[].goal_hooks` shows what each machine has (the label "eshu hook convention" is `repo_ships_own`, read-only) | `RepoRef`, `HarnessGoalHooks` (ADR 0012, G1), [repo.proto](../../api/fleet/hub/v1/repo.proto) |
+| Settings: tracker projects (Jira, Linear) | `Integration.spec.tracker_projects[]` (`UpdateIntegration`); the repo each project feeds is `Repo.spec.tracker_projects` | ADR 0012 |
+| Settings: export and import `fleet.yaml`, "Preview changes" | `ExportConfig` → `FleetConfig`; `ImportConfig{config, dry_run}` → `changes[]` and `plan_hash`, then `ImportConfig{expected_plan_hash}` | [02b](02b-hub-api.md#config-export-and-import) |
+| Settings: storage (database sizes, last backup, free disk) | `GetStoreStatus` (backup itself is `fleetd backup` on the hub host) | 03f, ADR 0002 |
 | Settings: Integrations (GitHub connected; GitLab, Jira, Bitbucket, Linear planned) | `ListIntegrations` → `Integration{spec, status{health, sync_lag}}` | `IntegrationCapabilities` (ADR 0012) |
 | Settings: routines | `ListRoutines`, `CreateRoutine`, `UpdateRoutine`, `DeleteRoutine` | ADR 0018 |
 | Sign-in page (passkey, "Sign in with GitHub") and "claim this hub" | `GetServerInfo{auth_mode, sign_in_methods, claim_pending}`; `BeginPasskeyLogin` / `FinishPasskeyLogin`; `GET /auth/github/start`; the claim page calls `RedeemInvite`, then `BeginPasskeyRegistration` / `FinishPasskeyRegistration` | none on the agent wire ([02f](02f-hub-authentication.md)) |

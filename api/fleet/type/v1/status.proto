@@ -272,6 +272,75 @@ enum ReasonCode {
   // A command-issuing action on a REVOKED machine.
   REASON_CODE_MACHINE_REVOKED = 532;
 
+  // Hub dispatch rules (03c planning rules, 03h). Each is a reason the hub
+  // refuses, delays or warns about a dispatch: PreflightCheck.check,
+  // StartGoal errors, Goal.status.start_error and the "why is nothing
+  // starting" fields (DispatchBlock). Which severity each has in a manual
+  // dispatch is the table in 03h.
+  // The work item failed the trusted-issues gate (or lost it after an edit).
+  REASON_CODE_WORK_ITEM_UNTRUSTED = 540;
+  // Someone else's claim is on the work item (claim comment, assignee).
+  REASON_CODE_WORK_ITEM_CLAIMED = 541;
+  // The work item already has a live goal (the unique-active rule).
+  REASON_CODE_WORK_ITEM_BUSY = 542;
+  // Another live goal works on the same branch, or owns the change request
+  // (one agent per branch).
+  REASON_CODE_BRANCH_BUSY = 543;
+  // The integration the item comes from is DEGRADED (access lost, failing).
+  REASON_CODE_INTEGRATION_DEGRADED = 544;
+  // The mirror is further behind than max_sync_lag; claims may be stale.
+  REASON_CODE_INTEGRATION_LAG = 545;
+  // The repo has no enabled Repo resource (not watched, or paused).
+  REASON_CODE_REPO_NOT_WATCHED = 546;
+  // The repo is at its parallel-goal cap (Repo.spec.max_parallel_goals or the
+  // fleet default).
+  REASON_CODE_REPO_PARALLEL_LIMIT = 547;
+  // No machine is online, undrained, fit, signed in with push access, holding
+  // a checkout and below its slots. metadata names what the best machine
+  // lacked.
+  REASON_CODE_NO_FIT_MACHINE = 548;
+  // repo consent intersected with account consent is empty, so the goal could
+  // do nothing but edit files.
+  REASON_CODE_CONSENT_EMPTY = 549;
+  // The account's pacing state keeps new goals off it (RESERVE, SHORT_LIMIT,
+  // AHEAD past the line); metadata["pacing_state"] and ["bucket"].
+  REASON_CODE_ACCOUNT_PACING_BLOCKED = 550;
+  // The account's reading is UNKNOWN or STALE (parse failed, probe failing,
+  // older than stale_after).
+  REASON_CODE_ACCOUNT_USAGE_UNKNOWN = 551;
+  // The account is never auto-dispatched: interactive-only, a dollar cap, or
+  // an OpenCode session on an Anthropic subscription; metadata["cause"].
+  REASON_CODE_ACCOUNT_NOT_DISPATCHABLE = 552;
+  // The machine carries a durable unfit marker for this harness or repo;
+  // metadata["agent_reason"] is the agent's reason.
+  REASON_CODE_MACHINE_UNFIT = 553;
+  // HubSettings.auto_dispatch (or the repo's) is off: only manual dispatch.
+  REASON_CODE_AUTO_DISPATCH_OFF = 554;
+  // Explanation only: no work item is READY for the repo or fleet.
+  REASON_CODE_NO_READY_ITEMS = 555;
+  // Explanation only: the one-dispatch-per-account-and-machine-per-pass
+  // guard held this item back until the next pass.
+  REASON_CODE_FLOOD_GUARD = 556;
+  // StartGoal found WARN checks the request did not acknowledge
+  // (acknowledged_warnings); FAILED_PRECONDITION with the codes in
+  // violations.
+  REASON_CODE_PREFLIGHT_WARNINGS_UNACKNOWLEDGED = 557;
+  // ControlGoal action that the goal's phase does not allow (NOT_DONE on a
+  // RUNNING goal, RESUME on a MERGED one). Not a stale phase: see
+  // GOAL_PHASE_CHANGED.
+  REASON_CODE_GOAL_ACTION_NOT_ALLOWED = 558;
+  // DeleteAccount while a live goal or session still spends from it, or
+  // while the harness still shows it signed in somewhere.
+  REASON_CODE_ACCOUNT_IN_USE = 559;
+  // DeleteSessionLogs on a session whose log streams are still capturing.
+  REASON_CODE_LOG_STREAM_OPEN = 560;
+  // RequeueWorkItem on an item that is not MANUAL_ONLY, or is MANUAL_ONLY
+  // because it is untrusted (relabel it, or dispatch it manually).
+  REASON_CODE_REQUEUE_NOT_ALLOWED = 561;
+  // ImportConfig could not apply the document: the plan names every entry
+  // that failed; nothing was applied.
+  REASON_CODE_CONFIG_INVALID = 562;
+
   // Enroll (A1), carried in the ErrorDetail of the Enroll RPC error.
   // The token is not one the hub issued (or its secret part is wrong).
   REASON_CODE_ENROLL_TOKEN_UNKNOWN = 600;

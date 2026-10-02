@@ -6,6 +6,7 @@ syntax = "proto3";
 
 package fleet.hub.v1;
 
+import "fleet/hub/v1/dispatch_block.proto";
 import "fleet/integration/v1/integration.proto";
 import "fleet/type/v1/ids.proto";
 import "fleet/type/v1/work.proto";
@@ -18,16 +19,35 @@ enum WorkStage {
   WORK_STAGE_UNSPECIFIED = 0;
   // Mirrored and open, not yet evaluated.
   WORK_STAGE_SEEN = 1;
-  // Trusted, unclaimed, repo watched: auto-dispatch may take it.
+  // Trusted, unclaimed, repo watched and enabled: auto-dispatch may take it.
   WORK_STAGE_READY = 2;
-  // Untrusted or not dispatchable automatically.
+  // Not dispatchable automatically; WorkItem.manual_reason says why. Leaves
+  // this stage when the item becomes trusted (a label change seen at sync) or
+  // an operator requeues it (RequeueWorkItem), never by itself.
   WORK_STAGE_MANUAL_ONLY = 3;
   WORK_STAGE_CLAIMED_ELSEWHERE = 4;
+  // A goal is planned or starting for it.
   WORK_STAGE_DISPATCHED = 5;
   WORK_STAGE_RUNNING = 6;
   WORK_STAGE_DONE_CLAIMED = 7;
   WORK_STAGE_DISAGREE = 8;
+  // Done or no longer wanted: merged, or closed (also closed without being
+  // done) on the provider.
   WORK_STAGE_CLOSED = 9;
+}
+
+// WorkManualReason says why a work item is MANUAL_ONLY (03h, "Work item stage
+// after a goal ends").
+enum WorkManualReason {
+  WORK_MANUAL_REASON_UNSPECIFIED = 0;
+  // Failed the trusted-issues gate. Needs the label from an allow-listed
+  // person; RequeueWorkItem refuses (REQUEUE_NOT_ALLOWED).
+  WORK_MANUAL_REASON_UNTRUSTED = 1;
+  // An operator cleared the goal (CLEARED); the fleet does not redispatch
+  // what a person just stopped.
+  WORK_MANUAL_REASON_GOAL_CLEARED = 2;
+  // Three attempts failed to start on three machines (START_EXHAUSTED).
+  WORK_MANUAL_REASON_START_EXHAUSTED = 3;
 }
 
 // WorkSize is the size estimate triage gives a work item.
@@ -60,6 +80,14 @@ message WorkItem {
   // Size estimate from triage, when set.
   WorkSize size = 14;
   google.protobuf.Timestamp last_sync_time = 15;
+  // Set while stage is MANUAL_ONLY.
+  WorkManualReason manual_reason = 16;
+  // Why the scheduler is not dispatching this item now, when it is READY (or
+  // SEEN) and not taken: INTEGRATION_LAG, REPO_PARALLEL_LIMIT,
+  // ACCOUNT_PACING_BLOCKED, NO_FIT_MACHINE, ... Unset when nothing holds it
+  // back, or when it is not a candidate. Recomputed each scheduler pass; at
+  // most one Watch message per 30 s when only it changes.
+  DispatchBlock dispatch_block = 17;
 }
 
 // ChangeRequest is the hub's record of one pull or merge request; versioned
@@ -85,13 +113,26 @@ enum IntegrationHealth {
   INTEGRATION_HEALTH_DISABLED = 3;
 }
 
+// WatchedProject is one project of a work tracker the owner chose to sync
+// (a Jira project, a Linear team). Repos are not listed here: a repo the fleet
+// may work on is a Repo (repo.proto), and which repo a tracker project's items
+// are worked on in is Repo.spec.tracker_projects.
+message WatchedProject {
+  // The provider's project key ("PROJ").
+  string project = 1;
+  // False stops syncing it without forgetting it.
+  bool enabled = 2;
+}
+
 // IntegrationSpec is what the owner edits. Credentials are never part of the
 // API. Covered by Integration.version.
 message IntegrationSpec {
   // Display name chosen by the owner.
   string label = 1;
-  // Repos (code host) or projects (tracker) the owner chose to watch.
-  repeated string watched = 2;
+  // Projects to sync, for an integration with the work-tracker role that is
+  // not also the repos' own issue tracker. The repos of a code host are Repo
+  // resources whose repo.code_host is this integration.
+  repeated WatchedProject tracker_projects = 2;
 }
 
 // IntegrationStatus is the configured provider and the sync's health. Not
@@ -129,6 +170,9 @@ message Integration {
 }
 
 // ListWorkItemsRequest. Filter and order_by names: 02c-hub-watch-and-filters.md.
+// order_by "dispatch_order" is the scheduler's own order for READY items
+// (03c planning rule 1), so "next up" is the first item of
+// `filter = "stage = READY", order_by = "dispatch_order"`.
 message ListWorkItemsRequest {
   int32 page_size = 1;
   string page_token = 2;
@@ -193,8 +237,8 @@ message ListIntegrationsResponse {
   string next_page_token = 2;
 }
 
-// UpdateIntegrationRequest. Updatable: spec.label, spec.watched. Credentials
-// are never set through this API.
+// UpdateIntegrationRequest. Updatable: spec.label, spec.tracker_projects.
+// Credentials are never set through this API.
 message UpdateIntegrationRequest {
   string request_id = 1;
   Integration integration = 2;
@@ -205,4 +249,20 @@ message UpdateIntegrationRequest {
 // UpdateIntegrationResponse.
 message UpdateIntegrationResponse {
   Integration integration = 1;
+}
+
+// RequeueWorkItemRequest puts a MANUAL_ONLY work item back to READY, so the
+// scheduler may take it again after a person stopped it or it failed to
+// start. Refused (FAILED_PRECONDITION / REQUEUE_NOT_ALLOWED) for an item that
+// is not MANUAL_ONLY or whose manual_reason is UNTRUSTED: a gate is not
+// bypassed by a click; dispatch it manually instead (a CONFIRM check).
+message RequeueWorkItemRequest {
+  string request_id = 1;
+  fleet.type.v1.WorkItemKey id = 2;
+  uint64 expected_version = 3;
+}
+
+// RequeueWorkItemResponse.
+message RequeueWorkItemResponse {
+  WorkItem work_item = 1;
 }

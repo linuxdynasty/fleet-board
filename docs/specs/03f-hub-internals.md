@@ -53,7 +53,7 @@ flowchart LR
 
 | Race | Backstop |
 |---|---|
-| Scheduler plans a goal for a work item while an event marks it claimed elsewhere | `goals` unique `(work_item) WHERE state IN (STARTING, RUNNING, …)`; and the planning tx re-checks the mirror row's claim inside the tx (same writer, no network); loser re-plans next pass |
+| Scheduler plans a goal for a work item while an event marks it claimed elsewhere | `goals` unique `(work_item) WHERE phase IN live` (the ACTIVE and HELD phases of 03c, "Phase classes"); and the planning tx re-checks the mirror row's claim inside the tx (same writer, no network); loser re-plans next pass |
 | Two scheduler passes assign a probe for one account (should not happen: one goroutine; guards a future second scheduler) | `probes` unique `(account_id) WHERE state IN (REQUESTED, ALIVE, FAILING)` |
 | Reuse a pane that a `PaneInput` just cleared | `panes.reserved_for_goal` set in the planning tx; the agent re-checks at `pick_session` and fails `SESSION_NOT_AVAILABLE`; the reservation is released in the result tx |
 | Two browsers answer one prompt | `prompt_answers_in_flight` unique `(prompt_id)`; second insert fails, UI shows "already answered" |
@@ -91,7 +91,7 @@ at **4 machines** / **50 machines × 10 panes** from the load table in
 | `users`, `passkeys`, `invites` | `principal_id`; credential id; invite token hash | sign-in, owner | rare | at sign-in | permanent; invites until used / expired |
 | `login_sessions`, `api_tokens`, `devices` | cookie hash; token id (secret hash); `device_id` | sign-in, owner | per sign-in; `last_used_time` at most 1/min | every authenticated request (cached in memory by hash) | sessions until expiry + 30 days; tokens and devices permanent (revoked rows kept for audit) |
 | `ceremonies`, `attach_tickets`, `device_nonces` | ceremony id; ticket hash; `(device, nonce)` | sign-in, attach, device calls | per sign-in / attach / device call | one lookup per use | minutes (in memory is enough; losing them only makes a client retry) |
-| `accounts`, `account_machines` (Codex mapping) | `account_id`; `(account_id, machine_id)` | W3, owner | rare | by id; per machine | permanent |
+| `accounts` (with `origin`, `provider`), `account_machines` (Codex mapping; placeholders per `(machine, profile)`) | `account_id`; `(account_id, machine_id)` | W3, owner (`CreateAccount`, `DeleteAccount`) | rare | by id; per machine | permanent until deleted |
 | `probes` | `probe_id`; unique active per `account_id` | W3 | ≈ 0 | per account | history 30 days |
 | `usage_readings` | `(account_id, read_at)` | W3 | 0.005 / 0.005 (+ passive ≤ 0.07 / 0.8 worst) | latest per account; time series for burn-down | buckets 1 year; `raw_screen` 7 days |
 | `account_pacing` | `account_id` | scheduler | per evaluation (≤ 1/30 s) | per account | current only |
@@ -101,17 +101,20 @@ at **4 machines** / **50 machines × 10 panes** from the load table in
 | `events` (history, never-dropped kinds + replays) | `(machine_id, seq)` | all | ≈ 0.4 / 7 steady; bursts 2,500/s at hub restart (rate-limited) | timeline by machine/goal/time | 1 week |
 | `resource_samples` | `(machine_id, at)` | B2 | 0.13 / 1.7 | last 24 h per machine (chart) | 1 week |
 | `harness_installs`, `catalog_entries` | `(machine_id, harness)`; `(…, catalog_hash, name)` | W11 | rare (bursts of ≤ 100 rows per catalog) | per machine | current + 30-day history |
-| `work_items` (mirror) | `WorkItemKey` (`integration_id, kind, project, key`; `provider_name` when no integration) | W4 | ≤ 2 / ≤ 10 (page upserts, bursty) | by stage; by repo | while open + 30 days |
+| `work_items` (mirror) | `WorkItemKey` (`integration_id, kind, project, key`; `provider_name` when no integration); `manual_reason`; `dispatch_block` | W4, W5 | ≤ 2 / ≤ 10 (page upserts, bursty) | by stage; by repo; READY in `dispatch_order` | while open + 30 days |
 | `change_requests` (mirror) | `WorkItemKey` (`integration_id, kind = CHANGE_REQUEST, project = repo path, key`); `repo RepoRef` is a column for lookups | W4 | ≤ 1 / ≤ 5 | by head_ref; by goal | while linked goal exists + 30 days |
 | `claims` | `(work_item, author)` | W4 | rare | per work item | with the work item |
 | `sync_cursors`, `rate_limit_state` | `(integration, resource)` | W4 | per poll (≈ 0.05 / 0.3) | per syncer | current |
-| `goals` | `goal_id`; unique active per `work_item`; unique `(repo, branch)` active | W5, W6 | 0.02 / 1 (goal + branch state) | by state; per machine; per account | permanent (run history) |
-| `goal_transitions`, `goal_runs` | `(goal_id, at)` | W6 | same | per goal timeline | transitions 7 days; runs permanent |
+| `goals` | `goal_id`; `attempt` and `previous_goal`; unique live per `work_item`; unique live `(repo, branch)`; unique live `(routine)` | W5, W6 | 0.02 / 1 (goal + branch state) | by phase; per machine; per account; timeline by `start_time` / `end_time` | permanent (run history) |
+| `goal_transitions`, `goal_runs` | `(goal_id, seq)`; `(goal_id, number)` | W6 | same | per goal timeline and run list (`ListGoalTransitions`, `ListGoalRuns`) | permanent with the goal (a few rows per goal; the 7-day timeline filters goals, not rows) |
+| `repos` | `repo_id` (`host/path`) | owner (`CreateRepo`, `UpdateRepo`, `ImportConfig`) | rare | by id; list; per planning pass (cached) | permanent until deleted |
+| `machine_unfit` | `(machine_id, harness, repo?)` | W5 start failures, W11 | rare | per planning pass | until the fact clears |
+| `pending_machines` | `name` | `ImportConfig` | rare | at Enroll | until a machine enrolls under the name |
 | `commands` (outbox) + `command_results` | `command_id`; `(machine_id, epoch, seq)` | all command-issuing flows | 0.05 / 0.5 (+ progress steps) | pending per machine; by id | 30 days |
 | `triage_items` | id; unique open `fingerprint` | W7 sources | 0.01 / 0.2 | open ranked; per goal/machine | 7 days after close |
 | `prompt_answers_in_flight` | `prompt_id` | W7 | rare | by prompt | until result |
 | `settings_*`, `machine_effective_settings`, `machine_labels` | scope ids; `machine_id` | W10 | rare | resolve per machine | permanent + audit |
-| `log_sessions`, `log_segments` | `session_id`; `(session_id, pane, stream, raw_offset)` | W9 | 1 / 30 (chunk index, batched) | by session + offset/time | until pruned by size cap |
+| `log_sessions`, `log_segments`, `archived_pane_summaries` | `session_id`; `(session_id, pane, stream, raw_offset)`; pane key | W9 | 1 / 30 (chunk index, batched) | by session + offset/time; `ListStoredSessions`; `SearchSessionLogs` scans frames | until pruned by the size cap or `log_retention`, or `DeleteSessionLogs` |
 | `attaches` (audit only) | `attach_id` | W8 | rare | per session | permanent audit |
 | `audit_log` | `(at, id)` | everything mutating | ≈ 0.05 / 0.5 | filter/export | permanent (ADR 0005/design) |
 

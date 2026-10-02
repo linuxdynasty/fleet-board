@@ -51,9 +51,9 @@ the principal's `Role`, never scopes, as the next section says.
 | `READ` | every Get and List, Watch, live read-only attach, `CapturePane` |
 | `SESSIONS_WRITE` | keys, attach input, harness commands, sessions, dispatch, goal control, routine runs, probes |
 | `APPROVALS` | `DecideApproval`, snooze, dismiss, and reading what is needed to decide (below) |
-| `SETTINGS` | settings, accounts, routines, integrations' watched lists, machine labels |
-| `ADMIN` | enrollment, machine delete, drain, devices, all notification targets |
-| `LOGS` | stored session logs, transcripts, archived pane summaries, the raw usage screen |
+| `SETTINGS` | settings, accounts (create, delete), repos, routines, integrations' watched projects, machine labels, hook installs, config import |
+| `ADMIN` | enrollment, machine delete, drain, devices, all notification targets, the store status, config import of machine entries |
+| `LOGS` | stored session logs and their management (list, search, delete, status), transcripts, archived pane summaries, the raw usage screen |
 
 Scopes never imply each other: an owner holds all six because the role lists
 them. `LOGS` is the one scope a `VIEWER` never has: terminal output can hold
@@ -125,11 +125,14 @@ every row. `none` = no authentication.
 | `ListSessions`, `GetSession`, `CapturePane` | `READ` |
 | `CreateSession`, `SendKeys`, `InterruptPane`, `RunHarnessCommand`, `SetPaneAvailability`, `RespawnPane`, `KillWindow`, `SetLogCapture` | `SESSIONS_WRITE` |
 | `AttachTerminal` | `READ` read-only; `SESSIONS_WRITE` when `read_only` is false; over WebSocket also a valid ticket |
-| `ReadSessionLog` | `LOGS` |
-| `ListGoals`, `GetGoal` | `READ` |
-| `StartGoal`, `PreflightGoal`, `ControlGoal`, `RunRoutine`, `ProbeAccount` | `SESSIONS_WRITE` |
-| `ListWorkItems`, `GetWorkItem`, `ListChangeRequests`, `GetChangeRequest`, `ListIntegrations` | `READ` |
-| `UpdateIntegration`, `UpdateAccount`, `UpdateSettings`, `CreateRoutine`, `UpdateRoutine`, `DeleteRoutine` | `SETTINGS` |
+| `ReadSessionLog`, `ListStoredSessions`, `GetStoredSession`, `DeleteSessionLogs`, `SearchSessionLogs`, `GetLogStoreStatus` | `LOGS` |
+| `ListGoals`, `GetGoal`, `ListGoalRuns`, `ListGoalTransitions` | `READ` |
+| `StartGoal`, `PreflightGoal`, `ControlGoal`, `RequeueWorkItem`, `RunRoutine`, `ProbeAccount` | `SESSIONS_WRITE` (a `CONFIRM` dispatch also needs the `OWNER` role to approve it) |
+| `ListWorkItems`, `GetWorkItem`, `ListChangeRequests`, `GetChangeRequest`, `ListIntegrations`, `ListRepos`, `GetRepo` | `READ` |
+| `UpdateIntegration`, `UpdateAccount`, `CreateAccount`, `DeleteAccount`, `UpdateSettings`, `CreateRepo`, `UpdateRepo`, `DeleteRepo`, `EnsureMachineHooks`, `CreateRoutine`, `UpdateRoutine`, `DeleteRoutine` | `SETTINGS` (`EnsureMachineHooks` also needs an owner-level principal at the agent, 02g) |
+| `ExportConfig` | `READ` |
+| `ImportConfig` | `SETTINGS`, and `ADMIN` when the document has machine entries |
+| `GetStoreStatus` | `ADMIN` |
 | `ListAccounts`, `GetAccount`, `ListUsageReadings` | `READ`; `GetAccount{include_raw_screen}` also `LOGS` |
 | `ListTriageItems`, `GetTriageItem`, `ListApprovals`, `GetApproval` | `READ\|APPROVALS` |
 | `SnoozeTriageItem`, `DismissTriageItem`, `DecideApproval` | `APPROVALS` (`DecideApproval` also checks `Approval.required_role`) |
@@ -153,8 +156,8 @@ RPC. Row rules apply on top.
 
 | Topic | Scope | Row rule |
 |---|---|---|
-| `MACHINES`, `SESSIONS`, `GOALS`, `WORK_ITEMS`, `CHANGE_REQUESTS`, `ACCOUNTS`, `ROUTINES`, `INTEGRATIONS` | `READ` | all rows; `ACCOUNTS` never carries `raw_screen` |
-| `PANE_SUMMARIES` | `READ` | live panes; the archived summary of an ended session needs `LOGS` |
+| `MACHINES`, `SESSIONS`, `GOALS`, `WORK_ITEMS`, `CHANGE_REQUESTS`, `ACCOUNTS`, `ROUTINES`, `INTEGRATIONS`, `REPOS` | `READ` | all rows; `ACCOUNTS` never carries `raw_screen` |
+| `PANE_SUMMARIES` | `READ` | live panes only; the archived summary of an ended session is `ListStoredSessions` (`LOGS`) |
 | `TRIAGE`, `APPROVALS`, `FLEET_SUMMARY` | `READ\|APPROVALS` | all rows |
 | `OPERATIONS` | `READ\|APPROVALS` | `READ`: all; otherwise only operations the caller requested |
 | `SETTINGS`, `AUDIT` | `READ` | all rows |

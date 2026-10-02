@@ -290,8 +290,8 @@
   "fix": "Additive. Goal: start_time (first RUNNING), end_time, restarts, usage_consumed (bucket key and percent points), transcript LogStreamKey. Add ListGoalTransitions{goal, page} returning {time, from, to, reason}. Let ListGoals filter on end_time or an active-between predicate. Add Session state/end_time only if the UI needs ended sessions. State in ui-contract-map whether 'Goal progress' is dropped. Medium priority: fits v2, but the Session view promise is in design.md.",
   "verify": "Confirmed. 03c-goals.md:339 and 03f-hub-internals.md:105 persist goal_transitions and goal_runs (nudges, restarts, usage consumed, transcript path). design.md:200 promises 'run history per goal (restarts, nudges, usage consumed, transcript path)' in the Session view. goal.proto Goal (lines 57-107) has only phase/phase_time, nudges, no_progress_runs and review_rounds; a grep for start_time, end_time, transcript, usage_consumed and restarts in goal.proto and session.proto finds nothing. ui-contract-map.md:168 builds the Machines timeline from ListGoals{filter: create_time}, which is plan time and misses goals created before the window that ran inside it. No RPC lists transitions (service.proto:88-96).",
   "theme": "E",
-  "status": "open",
-  "resolution": ""
+  "status": "fixed",
+  "resolution": "New goal_history.proto: GoalRun and GoalTransition with ListGoalRuns and ListGoalTransitions; Goal.status gains start_time, end_time, restarts, usage_consumed (GoalUsage) and transcript; ListGoals filters on start_time, end_time and live (02c) so the timeline is not create_time; Session gains state and end_time. The mockup's goal progress list is dropped from the contract (ui-contract-map)."
  },
  {
   "dim": "hub-api-dashboard",
@@ -304,8 +304,8 @@
   "fix": "Additive RPCs: ListLogSessions (filter machine, goal, harness, time; returns key(s), bytes, first/last time, final), DeleteSessionLogs{session, request_id} (audited), GetLogStoreStatus (used, cap, oldest, paused). Add TRIAGE_KIND_LOG_DISK_LOW. Add log_size_cap_bytes to HubSettings. For search, either specify it (FTS or scan of zstd frames) or amend ADR 0010 to mark it a later non-goal. Archived pane summaries can ride in ListLogSessions as last_summary. Not v1; do it before v3 logs work, but decide search-or-defer in the docs now.",
   "verify": "Confirmed. service.proto:83 has only ReadSessionLog; ReadSessionLogRequest (terminal.proto:97) takes a key, which a client can only learn from live Session.logs[]. ADR 0010:38-45 requires search across sessions, per-session audited delete and 'UI show usage'; ADR 0015:42-45 adds the 50 GB cap and archives pane summaries to logs.db; 03d-triage-sessions-logs.md:338 raises triage `log_disk_low`, but triage.proto TriageKind (lines 18-40) has no such kind (only OTHER=63); HubSettings (settings.proto:30-45) has no log cap or retention; PaneSummary is Watch-only. ADR 0015:59 makes `fleet logs export <session>` the only way out, which needs a way to find the stream keys of ended sessions.",
   "theme": "E",
-  "status": "open",
-  "resolution": ""
+  "status": "fixed",
+  "resolution": "New log_store.proto, all SCOPE_LOGS: ListStoredSessions and GetStoredSession (stream keys, sizes, archived pane summaries), DeleteSessionLogs (audited, LOG_STREAM_OPEN while capturing), SearchSessionLogs (bounded literal scan of decompressed frames, no index in v1) and GetLogStoreStatus; HubSettings.log_size_cap_bytes and log_retention; TRIAGE_KIND_LOG_DISK_LOW. Export is client paging of ReadSessionLog. Docs: 02b, 03d W9, 02d, 02c."
  },
  {
   "dim": "hub-api-dashboard",
@@ -332,8 +332,8 @@
   "fix": "Additive. Share one GoalSpecInput message between StartGoalRequest and PreflightGoalRequest (add change_request, consent, goal_text, model, effort, fresh_context to preflight). Add a PreflightCheck{ErrorDetail, severity BLOCK|WARN|INFO} list (deprecate hub_checks or keep it as the BLOCK subset). Add hub-rule ReasonCodes (pacing reserve, ahead of pace, usage unknown, account not dispatchable, work item claimed or busy, integration degraded, repo not watched). Add acknowledged_warnings to StartGoalRequest and an approval field to StartGoalResponse for DISPATCH_CONFIRM, and state that Operation is unset until it is decided. The Operation-versus-approval ordering for RunHarnessCommand/KillWindow is the same question; settle it in one rule in 02b.",
   "verify": "Confirmed. PreflightGoalRequest (goal.proto:176-181) has only work_item, repo, placement, while StartGoalRequest (151-167) also has change_request, consent, goal_text, model, effort, fresh_context. ui-contract-map.md:79 shows the 'keys the agent will type' preview from PreflightGoal, which cannot depend on edits it never receives. APPROVAL_KIND_DISPATCH_CONFIRM (triage.proto:135-138) is referenced nowhere else in api or docs (grep finds only its definition), and StartGoalResponse (goal.proto:170-173) carries no approval. hub_checks (goal.proto:189-191) are plain ErrorDetail with no severity, yet 03e-settings-and-drift.md:199 says manual dispatch is 'allowed with a warning'. ReasonCode (status.proto) has DRAINING and SLOTS_FULL but no pacing, usage-unknown, claimed or work-item-busy codes.",
   "theme": "E",
-  "status": "open",
-  "resolution": ""
+  "status": "fixed",
+  "resolution": "New goal_dispatch.proto: GoalSpecInput shared by StartGoalRequest and PreflightGoalRequest; PreflightCheck{ErrorDetail, severity BLOCK|CONFIRM|WARN|INFO}; StartGoalRequest.acknowledged_warnings; StartGoalResponse.approval for DISPATCH_CONFIRM (goal and operation unset until approved; DecideApprovalResponse.goal). One approval-versus-operation rule in 02b; severity table in 03h."
  },
  {
   "dim": "hub-api-dashboard",
@@ -346,8 +346,8 @@
   "fix": "Add `repeated WatchedSource watched_sources` to Integration with {path_or_project, enabled, consent, optional max_parallel_goals, target_repos, optional trusted_label}, keep `watched` as a deprecated mirror, point UpdateIntegration and ui-contract-map.md:81/177 at it, and write effective consent = source consent (else HubSettings.default_consent) intersect account consent. Alternatively add a repo settings layer in SettingsScope. Decide which before codegen; keep repo_ships_own read-only and derived.",
   "verify": "Confirmed. integration.proto:92-93 `repeated string watched`; UpdateIntegration masks only integration.watched (work.proto:157-158). ADR 0008:18-33 states consent is 'configurable per repo and per account', effective = intersection, with YAML `repos[].consent`, but HubSettings (settings.proto:34-36) has only fleet-wide default_consent and max_parallel_goals_per_repo, and SettingsScope (settings.proto:21-29) has only fleet, group and machine layers. design.md:401 and ADR 0012's open question leave the per-repo cap and tracker-to-repo mapping unplaced. Refactor risk is overstated: the fix is an additive field plus a deprecated `watched`, not a breaking change, but v2 needs per-repo consent (ADR 0008) and the proto gives it no place.",
   "theme": "E",
-  "status": "open",
-  "resolution": ""
+  "status": "fixed",
+  "resolution": "New hub/v1/repo.proto: Repo resource (RepoSpec: enabled, auto_dispatch, consent, max_parallel_goals, worktree_mode, branch_pattern, base_branch, hooks_mode, tracker_projects, trusted_gate; RepoStatus: checkouts and their hooks, live goals, dispatch_block) with List/Get/Create/Update/Delete and the REPOS Watch topic. IntegrationSpec.watched is replaced by tracker_projects; effective consent is repo (else HubSettings.default_consent) intersected with the account's (03c rule 5, ADR 0019 item 23)."
  },
  {
   "dim": "hub-api-dashboard",
@@ -360,8 +360,8 @@
   "fix": "Document in 03b the auto-created placeholder accounts (Codex per machine and profile) and discovery of API-key accounts. Add `provider` to Account and defer Create/Delete/Merge to a later additive change. Do not add CreateAccount for subscriptions.",
   "verify": "Partly refuted. The Codex mapping does have a record: 02-contracts.md:439 says the agent hashes \"<harness>:<machine_id>\" into an AccountKey with identity_not_shown, so the hub gets an Account per machine and the owner maps it via UpdateAccount bindings (account.proto:156-164). OpenCode providers are discovered from `opencode providers list` (01b-harness-commands.md:62). What is confirmed: no CreateAccount/DeleteAccount/MergeAccounts RPC (service.proto:116-124), no `provider` field on Account (account.proto:99-129; provider exists on Pane), and 03b does not write down the auto-create rule for Codex placeholders or API-key accounts. Merge/delete is polish for stale or re-keyed accounts, and the OpenCode-on-Anthropic rule can be enforced from the session-account link, so this does not block v1/v2.",
   "theme": "E",
-  "status": "open",
-  "resolution": ""
+  "status": "fixed",
+  "resolution": "account.proto: Account.status.provider and origin (AccountOrigin), CreateAccount (owner-defined API-key accounts only, DOLLAR_CAP) and DeleteAccount (ACCOUNT_IN_USE while used). 03b 'Accounts' documents the discovered placeholders (Codex per machine and profile), OpenCode providers from `opencode providers list`, and the Codex mapping folding a placeholder into the owner's account. MergeAccounts is not added: a stale duplicate is deleted once signed out."
  },
  {
   "dim": "hub-api-dashboard",
@@ -374,8 +374,8 @@
   "fix": "Decide in docs now: either mark export/import as post-v2 and remove it from the v2 'fleet CLI contract', or specify server-side ExportConfig/ImportConfig(dry_run) returning a plan. State that the database is authoritative and fleet.yaml is an export/import format only. Token-carried labels/start_drained are optional and can wait.",
   "verify": "Confirmed that design.md:329-330 names `fleet export`/`fleet import --dry-run` and 'imported machines start drained', and service.proto has no export/import RPC, nothing in 02b or ADR 0018 mentions them, and CreateEnrollmentTokenRequest (machine.proto:229-237) has only machine_name, ttl and previous_machine. ADR 0009:29 does not say whether the database or fleet.yaml is authoritative. Still, export can be composed from List/Get, the gap is additive to fix, and `import` is a CLI convenience rather than a v2 blocker; the 'imported machines start drained' line is an inconsistency to resolve in the docs (machines exist only after Enroll).",
   "theme": "E",
-  "status": "open",
-  "resolution": ""
+  "status": "fixed",
+  "resolution": "New config.proto: FleetConfig, ExportConfig, and ImportConfig with dry_run, plan_hash and expected_plan_hash, applied in one transaction. The hub database is the source of truth; machine entries are pending until a machine enrolls under the name and then start drained; CreateEnrollmentTokenRequest gains expected_hostname, labels and start_drained. 02b, design.md."
  },
  {
   "dim": "hub-api-dashboard",
@@ -388,8 +388,8 @@
   "fix": "Record in 02b that `fleet backup`, token/user administration and the claim URL are local `fleetd` subcommands for v1/v2 (or add StartBackup/GetStoreStatus later), and that `fleet debug stream` decodes a Watch tap only. Leave tokens as the existing open question until v3.",
   "verify": "Partly an explicit open question: 02b-hub-api.md:222-225 lists API tokens and user management as RPCs versus fleetd commands as open question 1, and auth, login and claim flows are v3 (design.md:436-437), with v2 running local_trusted. Confirmed leftovers: ADR 0002:38 and 04-technology-review.md:151,271 name `fleet backup` (and --include-logs) while ADR 0018:45-46 says the CLI talks only to fleet.hub.v1 and service.proto has no backup or store-status RPC; ADR 0003:45 names `fleet debug stream` with no decoded-stream interface. These are small decisions, not v2 blockers.",
   "theme": "E",
-  "status": "open",
-  "resolution": ""
+  "status": "fixed",
+  "resolution": "admin.proto adds GetStoreStatus [ADMIN] (database sizes, schema version, last backup, free disk). Backup, restore, the claim URL and the agent-wire tap are documented in 02b 'Local commands' as fleetd commands on the hub host (a backup holds the CA key); `fleet debug stream` decodes a Watch tap only; 04 and design.md say `fleetd backup`; tokens and sign-in were already RPCs (theme B)."
  },
  {
   "dim": "hub-api-dashboard",
@@ -402,8 +402,8 @@
   "fix": "Add a reconcile rule in 03-workflows (W1/W11) that enqueues EnsureGoalHooks per (harness, profile, watched checkout) when GoalHooksState is missing, unverified or version-behind, never over a running goal. Add an owner-triggered RPC such as EnsureMachineHooks{machine, harness, profile} returning an Operation (SCOPE_SETTINGS) and list it in 02b. Add the Muse registry write to the 03c StartGoal step list.",
   "verify": "Confirmed. EnsureGoalHooks exists on the agent wire (command_goal.proto:170-179, 02-contracts.md:142) and 01d-goal-hooks.md:65 defines it, but the snapshot reconcile (03-workflows.md:125-132) enqueues only EnsureProbe, goal and orphan handling, and 03c-goals.md:126 only says 'EnsureGoalHooks suggested' on GOAL_FILE_NOT_SEEN. 03e-settings-and-drift.md:188 re-verifies hooks 'on the next EnsureGoalHooks' with no sender specified. 02b-hub-api.md:90-111 has no hub RPC mapping to it and service.proto has none, while mockup/view-machines.js shows 'reinstall on the machine'. The Muse goal registry write is described only in 01d:47, not in the 03c StartGoal steps. Hooks are optional per design.md:76 ('A worker without hooks still shows up'), which keeps this from being a blocker.",
   "theme": "E",
-  "status": "open",
-  "resolution": ""
+  "status": "fixed",
+  "resolution": "03-workflows 'Hook reconcile' enqueues EnsureGoalHooks per (harness, profile, enabled repo checkout) when state is missing, unverified or behind, driven by Repo.spec.hooks_mode, on harness_changed, repo changes and GOAL_FILE_NOT_SEEN, never over a live goal. New RPC EnsureMachineHooks [SETTINGS] returns Operations; the Muse registry write is already StartGoal's register_goal step (02h)."
  },
  {
   "dim": "hub-api-dashboard",
@@ -430,8 +430,8 @@
   "fix": "Add `target` to the audit filter fields and document which target each action writes (for example sessions/<id>). State that toggling read-only reattaches. Clarify that UpdateMachine ignores local labels or split hub_labels/local_labels. Document that 'next up' is PreflightGoal with an empty placement; skip queue_rank and total_size until a view needs them.",
   "verify": "Confirmed in part. ListAuditEntriesRequest filter fields (settings.proto:129-131) are actor.id, action, machine, goal, create_time, while ui-contract-map.md:130 says `filter: target or machine`; AuditEntry.target is '<collection>/<id>' (settings.proto:112) so it is easy to add to the filter list. The AttachOpen read_only flag (terminal.proto:24) is fixed at open and the mockup has a toggle, so a re-attach rule is needed. Machine.labels is 'effective' (machine.proto:130) while UpdateMachine edits 'hub-assigned only' (line 180). The 'next up' order has no field in ListWorkItems (work.proto:91-98). The total_size and queue_rank asks are speculative.",
   "theme": "E",
-  "status": "open",
-  "resolution": ""
+  "status": "fixed",
+  "resolution": "AuditEntry target is documented per action in 02b (sessions/<id>, goals/<id>, ...) and the audit filter has target; the read-only attach toggle is a re-attach (ui-contract-map); Machine labels: UpdateMachine writes spec.labels only, status.labels is read-only; 'next up' is ListWorkItems order_by dispatch_order plus PreflightGoal with an empty placement. total_size and queue_rank are not added (speculative)."
  },
  {
   "dim": "agent-workflows",
@@ -640,8 +640,8 @@
   "fix": "Add a normative table in 03c/03f mapping every GoalPhase to ACTIVE_QUOTA / HOLDS_SLOT_ONLY / TERMINAL, used for the unique-active indexes, MachineSlots, AccountPacing.active_goals, repo cap and the heartbeat check (compare only ACTIVE_QUOTA phases to line_state=WORKING). Add GOAL_PHASE_ABANDONED (expired start, operator not-started, superseded). Decide one id rule (each dispatch attempt = new goal_id, add Goal.attempt and Goal.previous_goal) and state that EXPIRED/START_FAILED/CLEARED rows are terminal while the WorkItem stage returns to READY. Rename Goal-side MANUAL_ONLY to START_EXHAUSTED or document it as work-item-only.",
   "verify": "Confirmed. 03f-hub-internals.md:56 defines the unique index as `WHERE state IN (STARTING, RUNNING, …)` and 03f:104 / 03c:32,170 say only 'active', so the set is never listed. 03c:105-114 'goal start' diagram sends EXPIRED/START_FAILED/START_UNKNOWN back to `READY`, which is a WorkStage (work.proto:21), not a GoalPhase (goal.proto:21-54, no ABANDONED/CANCELLED/EXPIRED). design.md:277-283 defines active vs total slots with no phase mapping. 03c:67-68 compares agent `goal_panes_by_state` (keyed by GoalLineState names, agent.proto:203-205) to hub phase counts; LIMIT_WAIT/PAUSED goals keep line_state WORKING so the mismatch check is ill-defined. GOAL_PHASE_MANUAL_ONLY (goal.proto:52-53) duplicates WORK_STAGE_MANUAL_ONLY with different meaning. Goal.start_error (goal.proto:~78) is single-valued and there is no attempt/previous_goal, so '3 failures on different machines' (03c:114) has no data. Severity downgraded from blocker: it is a missing spec table plus additive enum values/fields, not a wire-contract break.",
   "theme": "E",
-  "status": "open",
-  "resolution": ""
+  "status": "fixed",
+  "resolution": "goal.proto GoalPhase is complete: EXPIRED, ABANDONED, CANCELLED added, GOAL_PHASE_MANUAL_ONLY renamed START_EXHAUSTED, no QUEUED (STARTING with a PENDING operation). 03c has the normative Phase classes table (ACTIVE, HELD, ENDED; live = ACTIVE plus HELD) used by the unique indexes, slots, AccountPacing.active_goals, the repo cap and the heartbeat check; every attempt is a new goal (GoalDefinition.attempt, previous_goal), 03h."
  },
  {
   "dim": "goal-lifecycle",
@@ -668,8 +668,8 @@
   "fix": "Define NOT_DONE/EDIT on a finished harness goal as a re-arm: the agent rewrites the goal file first line (objective plus 'reopened: <reason>') and the hub types the harness's set-goal form via RunHarnessCommand (/goal <text>) in the existing pane, same goal_id; no StartGoal change needed unless the pane is gone. Add 'goal line returns to WORKING' as the exit trigger for DISAGREE and VERIFYING in 03c, reconcile 02b:112 and ui-contract-map:59, and add a Codex/Muse probe of /goal after completion.",
   "verify": "Confirmed as a spec hole. 03c:261 has DISAGREE --> RUNNING 'operator nudges not done'; goal.proto:208-209 NOT_DONE is 'send the not done nudge'; 02b-hub-api.md:112 calls it a 'text nudge'. 03c:327-328 says Claude clears its goal once achieved, so a typed nudge is just an ordinary prompt with no goal loop. 01d:101-107 says the agent writes the goal file only before type_goal and the model edits the first line, so the file stays DONE and GoalState cannot return to WORKING by the stated rules. ui-contract-map.md:59 and mockup/view-triage.js:108-115 treat 'Reopen goal' as typing a full /goal command, so the docs disagree on the mechanism. Codex/Muse completion behaviour is unprobed. Severity kept at important rather than higher: additive, no wire break.",
   "theme": "E",
-  "status": "open",
-  "resolution": ""
+  "status": "fixed",
+  "resolution": "ControlGoal NOT_DONE and EDIT on VERIFYING or DISAGREE re-arm the goal: StartGoal gains rearm_reason (same goal id, same pane, goal file first line rewritten, set-goal form typed), the goal returns RUNNING when the line is WORKING again, the same exit applies to hand re-arms. 03h 're-arm after DONE', 02h, 03c control table, 01b records the Codex and Muse probe still to do."
  },
  {
   "dim": "goal-lifecycle",
@@ -682,8 +682,8 @@
   "fix": "Add LIMIT_WAIT to the 03c diagram (from RUNNING/STOPPED/COOLDOWN on USAGE_LIMIT|RATE_LIMITED; WAITING keeps provider_condition), with fallback when resets_at is unset (use the account's deciding bucket resets_at, else re-check every 10 min and raise TRIAGE_KIND_LIMIT_WAIT), slot class from the phase-class table, RESUME/CLEAR/PAUSE semantics, and either remove the 03c:365 pacing claim or add a W3 rule consuming conditions.",
   "verify": "Confirmed: grep finds no LIMIT_WAIT in 03c-goals.md; the state diagram (03c:241-268) has no such node. It exists in goal.proto:38-41,92-93, triage.proto:39, 02-contracts.md:361-366 and ADR 0018:85-89. Note 02-contracts.md:361-366 does specify entry on USAGE_LIMIT/RATE_LIMITED, no nudges, resume at resets_at+1min per harness and extension if still showing, so part of claim (1) and (4 resume mechanics) is overstated. Still missing: fallback when resets_at is absent (screen.proto:61-64 'if shown'), slot class for up-to-7-day waits, allowed ControlGoal actions and failure handling during LIMIT_WAIT, and 03c:365 says USAGE_LIMIT marks the account SHORT_LIMIT/RESERVE but 03b-usage-and-sync.md:60-112 pacing rules read only probe readings, never HarnessCondition.",
   "theme": "E",
-  "status": "open",
-  "resolution": ""
+  "status": "fixed",
+  "resolution": "03c state machine and 03h 'Limit wait': entry from RUNNING, STOPPED, COOLDOWN on USAGE_LIMIT or a non-retrying RATE_LIMITED, PAUSED wins, end time with fallbacks (condition reset, deciding bucket, 10 minute re-check), HELD slot class, resume failure table, control actions in the phase, and a W3 pacing rule (03b) that marks the account SHORT_LIMIT while a usage limit is open."
  },
  {
   "dim": "goal-lifecycle",
@@ -696,8 +696,8 @@
   "fix": "Add GOAL_PHASE_CANCELLED (terminal, frees worker, no success metric) and an external-change rule: on mirror updates for non-terminal goals, external merge -> VERIFYING, external close/cancel -> triage 'work item closed under a running goal' and PAUSED. Add a goal-phase -> WorkItem.stage table (CLEARED/ABANDONED/START_EXHAUSTED -> MANUAL_ONLY until operator requeue, CANCELLED/MERGED -> CLOSED) and MANUAL_ONLY --> READY on trusted-label change or operator requeue.",
   "verify": "Confirmed. 03c:228,258,305 evaluate provider state only after DONE, and map 'work item closed' to MERGED (which frees the worker and prunes). integration.proto:110-116 says CANCELLED frees the worker but is 'never as success', yet goal.proto:21-54 has no phase to express it. 03b-usage-and-sync.md:275-287 stage diagram has no RUNNING/DISPATCHED --> CLOSED or READY, and MANUAL_ONLY has no exit edge; nothing maps CLEARED/STUCK+clear/PANE_LOST timeout to a WorkStage, while 03c:8 wakes the scheduler on CLEARED and 03c:263 sends the item back to READY (auto-redispatch of an item the operator just cleared). Nothing reacts to an issue closed or CR merged/closed by a human while the goal is RUNNING/WAITING.",
   "theme": "E",
-  "status": "open",
-  "resolution": ""
+  "status": "fixed",
+  "resolution": "03h 'Provider-side changes under a live goal' and the 03c diagram: external merge goes VERIFYING (EXTERNAL_MERGE) then MERGED after the hub clears the harness goal; a close or cancel pauses the goal (GOAL_PAUSE_REASON_WORK_ITEM_CLOSED) with TRIAGE_KIND_WORK_ITEM_CHANGED and ends CANCELLED on clear. 03h also has the goal-end to WorkItem.stage table; MANUAL_ONLY has WorkManualReason and exits by trust or RequeueWorkItem; 03b stage diagram updated."
  },
  {
   "dim": "goal-lifecycle",
@@ -710,8 +710,8 @@
   "fix": "Add a W5b 'Routine run' section to 03c (trigger evaluation in the scheduler pass, run-number allocation inside the planning tx, hub-made WorkItem created at DISPATCHED, at most one missed cron fire, blocked-run triage after N hours). Snapshot done_rule and report_path onto the Goal at plan time. Decide REPORT_WRITTEN verification: either an integration PathExists RPC or agent-side git state reported as an event. Add Routine.model, effort, fresh_context, optional account pin; harness-unset routines pick by highest projected_unused_percent.",
   "verify": "Confirmed. grep of docs/specs/03*.md and design.md finds no routine workflow (only unrelated 'routine' substrings); the sole behavioural text is 02b-hub-api.md:208-220 and routine.proto:18-77. integration.proto:288-299 has no file/path-exists RPC, so DONE_RULE_REPORT_WRITTEN (routine.proto:48-49) cannot be verified through the provider interface; CHANGE_REQUEST_MERGED for a run has no linked work item and CR lookup keys on BranchState.branch (03b:244), which REPO_DRIVER goals lack (see repo-driver-branch-visibility). Goal (goal.proto:63-69) carries only the routine id, so UpdateRoutine/DeleteRoutine (routine.proto:~128) mid-run changes the done rule. Routine has no model/effort/fresh_context/account fields though GoalSpec does (command_goal.proto:56-65). Run numbering, missed-cron catch-up, blocked-run triage and harness-unset selection are unspecified. Some sub-points (7, DST) are minor.",
   "theme": "E",
-  "status": "open",
-  "resolution": ""
+  "status": "fixed",
+  "resolution": "New 03i-routines.md (W5b): trigger evaluation, run numbering and the hub-made item, cron DST and one missed fire, one live run per routine with ROUTINE_BLOCKED triage, harness and account selection by projected_unused_percent, done rules and their inputs. Goal carries a done_rule and report_path snapshot; RoutineSpec gains model, effort, fresh_context, account, machine, blocked_after; REPORT_WRITTEN is verified with a new IntegrationProviderService.PathExists."
  },
  {
   "dim": "goal-lifecycle",
@@ -752,8 +752,8 @@
   "fix": "Minimum for v2: document that fleet-level default_consent stands in for repo.consent, and specify GoalSpec.worktree_mode (derive REPO_DRIVER when RepoCheckout.goal_hooks[].repo_ships_own on the chosen machine, else AGENT_ENSURES) and a branch template (fleet/{work}). If per-repo overrides are wanted, replace Integration.watched with repeated WatchedRepo{repo, consent, max_parallel_goals, worktree_mode, branch_template, base_branch} before generating clients.",
   "verify": "Confirmed. 03c:76 `GoalSpec.consent = repo.consent ∩ account.consent`, ADR 0008:18-33 shows per-repo consent, design.md:130 and :203 say consent is configurable per repo, but Integration.watched is `repeated string` (integration.proto:93; UpdateIntegration edits only label/watched, work.proto:~156-160) and HubSettings has only fleet-wide default_consent/max_parallel_goals_per_repo (settings.proto:33-35). WorktreeMode (command_goal.proto:20-25), GoalSpec.worktree_mode and branch (:46-47) have no stated hub-side source: WORKTREE_MODE appears only in 03c:36,84. Branch naming and base branch are undefined. Mitigation: mockup/view-settings.js and ui-contract-map.md:81 use one fleet-wide consent list, so per-repo consent can be deferred, but the worktree-mode and branch sources cannot.",
   "theme": "E",
-  "status": "open",
-  "resolution": ""
+  "status": "fixed",
+  "resolution": "Same Repo resource: worktree_mode (AUTO derives REPO_DRIVER from repo_ships_own), branch_pattern and base_branch feed GoalSpec (03c rule 6); consent and max_parallel_goals override the fleet defaults. Merge method and required approvals stay the provider's branch protection, documented in repo.proto."
  },
  {
   "dim": "goal-lifecycle",
@@ -808,8 +808,8 @@
   "fix": "Add Goal.phase_reason (enum or ErrorDetail) now; defer usage_consumed, transcript_path and a transitions RPC to the version that ships run history, and update ui-contract-map.md:112 to say so.",
   "verify": "Absence confirmed (goal.proto:57-107 has no phase_reason, blocked owner/action, verify_deadline, restarts, usage, transcript path; no ListGoalTransitions RPC), but largely deliberate: ui-contract-map.md:112 records 'goal progress: not in the contract (mock only)', transcripts are v3 (03g/design), and the timeline row (ui-contract-map.md:168) uses ListGoals. Block owner/action reach the UI via TriageItem notes. The one piece that matters for v2 is a structured reason for STUCK/PAUSED (session_closed, LOCAL_CONFIRM_TIMEOUT, review_loop per 03c:365-372), which overlaps owner-interrupt-and-pause-reason.",
   "theme": "E",
-  "status": "open",
-  "resolution": ""
+  "status": "fixed",
+  "resolution": "GoalStatus gains phase_reason (GoalPhaseReason), blocked_owner, blocked_action, verify_deadline_time, start_time, end_time, restarts, usage_consumed, transcript, prompt_pending, human_at_keyboard_until_time and block_epoch; GoalPauseReason gains WORK_ITEM_CLOSED; transitions have ListGoalTransitions; ui-contract-map updated."
  },
  {
   "dim": "goal-lifecycle",
@@ -822,8 +822,8 @@
   "fix": "Add a normative ReasonCode -> hub reaction table to 03c covering every code StartGoal can return (mark machine unfit with clear condition, retry same machine, retry elsewhere, fail item to MANUAL_ONLY, ignore). Align DISK_LOW to retryable, change 03c:64 to 'SUPPORTED, or UNVERIFIED_PARSING with usage and ready parsing live'. State that DRAINING refusal moves the goal to ABANDONED/READY on another machine and that RespawnPane for an existing goal pane is allowed (or refused) while draining.",
   "verify": "Confirmed contradictions: 03c:117-119 lists DISK_LOW as a durable reason (machine unfit until next snapshot) while command_goal.proto:97-105 PreflightFailure.retryable and 02-contracts.md:317-318 treat DISK_LOW as retryable; 03c:63-64 requires version_support = SUPPORTED while harness.proto:76-92, 02-contracts.md:350-354 and ADR 0018:96-100 allow UNVERIFIED_PARSING to auto-dispatch. 03c:117-124 covers only some reasons; ACCOUNT_MISMATCH, HARNESS_PROFILE_MISSING, ON_BATTERY_BLOCKED, POLICY_DENIED, DRAINING, SLOTS_FULL, HARNESS_NOT_ALLOWED, REPO_ROOT_NOT_ALLOWED, WORKTREE_EXISTS, GIT_FAILED have no hub reaction. 03e:65-66,120 covers a StartGoal refused with DRAINING at preflight but not the goal row/outbox effect, and RespawnPane (03c:290-296, F5 starts a harness) is not covered by 01-agent-capabilities.md:435-438 or 03e:65. Drain/outbox part is smaller than claimed since 03e:120 gives the in-flight rule.",
   "theme": "E",
-  "status": "open",
-  "resolution": ""
+  "status": "fixed",
+  "resolution": "03h has the normative ReasonCode to hub reaction table (UNFIT, SKIP, NEW_WINDOW, ELSEWHERE, TRIAGE; which count toward START_EXHAUSTED); DISK_LOW is transient and UNVERIFIED_PARSING eligible (03c rule 3 aligned with 02-contracts and ADR 0018); drain cancels PENDING StartGoal rows and allows RespawnPane only for a pane with a live goal (03e, 01 M4)."
  },
  {
   "dim": "hygiene-consistency",
@@ -864,8 +864,8 @@
   "fix": "Additive. Add SessionState{LIVE, ENDED} and end_time to Session (ended rows retained while logs exist, filterable in ListSessions). Add ListSessionLogs or let an ended Session carry logs[] plus last_summary per pane. Add DeleteSessionLog [ADMIN] with expected_version, audited. State in 02b that export is client-side paging of ReadSessionLog. Update the 02b resource table and ui-contract-map.md:128.",
   "verify": "Confirmed. session.proto:72-92 Session has no state or end_time. service.proto:56-83 has only ListSessions/GetSession and ReadSessionLog, which needs a LogStreamKey, with no RPC to list log streams of an ended session. ADR 0015:46-48 archives the last pane summary at session end with no read path (02b:29 lists PaneSummary as Watch only). ADR 0010:42,45 and ADR 0015:49 require 'fleet logs export' and per-session audited delete, but no DeleteSessionLog or export RPC exists. 03f:94 keeps only fleet-created sessions permanent, while logs outlive them (03f:110).",
   "theme": "E",
-  "status": "open",
-  "resolution": ""
+  "status": "fixed",
+  "resolution": "Session.status.state (LIVE or ENDED) and end_time with the ListSessions default; StoredSession lists logs and the archived last pane summary per pane; DeleteSessionLogs; PaneSummary stays live-only and the archive is read with ListStoredSessions under LOGS (02d); 03d W9 and ui-contract-map updated."
  },
  {
   "dim": "hygiene-consistency",
@@ -892,8 +892,8 @@
   "fix": "Add a 510-549 hub block to ReasonCode when the hub scheduler is written: WORK_ITEM_UNTRUSTED, WORK_ITEM_CLAIMED, INTEGRATION_DEGRADED, REPO_PARALLEL_LIMIT, NO_FIT_MACHINE, CONSENT_EMPTY, ACCOUNT_PACING_BLOCKED (metadata carries the PacingState). List which codes can appear in hub_checks and START_FAILED. Extend the status/reason table in 02-contracts.md:320-328.",
   "verify": "The gap is confirmed but narrower than reported. goal.proto:187-193 hub_checks is repeated ErrorDetail for 'SLOTS_FULL, pacing', and status.proto:155-167 holds only 500-505 for the hub. There is no ReasonCode for untrusted or claimed work item, repo cap, no fit machine, sync lag or empty consent (03c:62-78 refuses on these; 03c:177 only names metric labels). However, account-level refusals are already machine-readable through Account.pacing.state (PacingState incl. RESERVE, SHORT_LIMIT, UNKNOWN, STALE, EXCLUDED, account.proto:28-38), and ui-contract-map.md:75,145 renders 'manual only' from pacing.state = EXCLUDED, not from a ReasonCode. Adding enum values is additive, so deferral risk is low, not medium.",
   "theme": "E",
-  "status": "open",
-  "resolution": ""
+  "status": "fixed",
+  "resolution": "status.proto ReasonCode 540 to 562: WORK_ITEM_UNTRUSTED, WORK_ITEM_CLAIMED, WORK_ITEM_BUSY, BRANCH_BUSY, INTEGRATION_DEGRADED, INTEGRATION_LAG, REPO_NOT_WATCHED, REPO_PARALLEL_LIMIT, NO_FIT_MACHINE, CONSENT_EMPTY, ACCOUNT_PACING_BLOCKED, ACCOUNT_USAGE_UNKNOWN, ACCOUNT_NOT_DISPATCHABLE, MACHINE_UNFIT, AUTO_DISPATCH_OFF, NO_READY_ITEMS, FLOOD_GUARD and action refusals; 03h lists which severity each has in PreflightCheck and START_FAILED."
  },
  {
   "dim": "hygiene-consistency",
@@ -948,8 +948,8 @@
   "fix": "Add TRIAGE_KIND_LOG_DISK_LOW and TRIAGE_KIND_POLICY_INVALID, or document that they use OTHER. Drop recovery_required from the fix. Add GOAL_PHASE_ABANDONED (or EXPIRED) as the terminal phase for a goal that never started, and state in 03c that START_FAILED and EXPIRED goals stay as history and a retry creates a new GoalId.",
   "verify": "Partly confirmed. recovery_required is not missing: 03d:14 lists 'stuck / recovery_required' as one row, so it is a variant of TRIAGE_KIND_STUCK. log_disk_low (03d:338) and policy_invalid (03e:117) are raised as triage items but are not in the table at 03d:10-20 or in triage.proto:19-41, so they would fall to TRIAGE_KIND_OTHER (:41). The goal gap is real. 03c:110,157 send STARTING to READY on EXPIRED and 'goal READY', but GoalPhase (goal.proto:21-54) has no READY or expired phase (READY is a work-item stage in the diagram). The Goal row already exists (StartGoalResponse.goal), and 'unique active per work_item' (03f:104, 03c:32) needs a defined non-active end state.",
   "theme": "E",
-  "status": "open",
-  "resolution": ""
+  "status": "fixed",
+  "resolution": "TriageKind gains LOG_DISK_LOW, POLICY_INVALID, PARSER_DEGRADED, START_FAILED, WORK_ITEM_CHANGED, ROUTINE_BLOCKED and SETTINGS_UNENFORCED; recovery_required is TRIAGE_KIND_STUCK with a GoalPhaseReason (03d table lists every kind); GoalPhase gains EXPIRED, ABANDONED, CANCELLED, START_EXHAUSTED so a goal that never started has a representable end."
  },
  {
   "dim": "hygiene-consistency",
@@ -1102,8 +1102,8 @@
   "fix": "Define a `DispatchBlockReason` enum from the 03c skip-reason list plus the preflight reasons. Add `repeated DispatchBlock idle_causes` to AccountPacing, `repeated Unfit unfit` {harness, repo, reason, since} to MachineHarness or Machine, and an optional `blocked_reason` on WorkItem. Add disk, load5, mem_pressure and spool/log-shipping state to Machine (or a ListResourceSamples RPC, or drop the 24 h chart). All additive.",
   "verify": "critic (verified in files by the critic)",
   "theme": "E",
-  "status": "open",
-  "resolution": ""
+  "status": "fixed",
+  "resolution": "New dispatch_block.proto: DispatchBlock and MachineUnfit; AccountPacing.idle_causes, MachineStatus.unfit, WorkItem.dispatch_block, Repo.status.dispatch_block and FleetSummary.dispatch_blocks, all with the 540-range reasons (03h 'Scheduler explanations'); MachineTelemetry gains load5, memory pressure, disk, spool and shipping state. The 24 h resource chart stays out of the contract (resource_samples kept for operations only)."
  },
  {
   "dim": "critic",

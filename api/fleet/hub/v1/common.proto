@@ -27,6 +27,7 @@ package fleet.hub.v1;
 
 import "fleet/type/v1/ids.proto";
 import "fleet/type/v1/status.proto";
+import "fleet/hub/v1/dispatch_block.proto";
 import "google/protobuf/timestamp.proto";
 
 // ---------------------------------------------------------------------------
@@ -46,6 +47,14 @@ message ApprovalId {
 // RoutineId is hub-assigned per routine; also the prefix of the routine's
 // WorkItemKey.key ("<routine id>/<run number>").
 message RoutineId {
+  string value = 1;
+}
+
+// RepoId names one repository the hub keeps settings for: "<host>/<path>" of
+// the RepoRef, lowercase, no ".git" (for example "github.com/eshu-hq/eshu").
+// Derived from the repo, never chosen by a client; the host never contains a
+// slash, so the first slash splits it from the nested path.
+message RepoId {
   string value = 1;
 }
 
@@ -100,12 +109,15 @@ enum Scope {
   SCOPE_SESSIONS_WRITE = 2;
   // Decide approvals (prompt answers, confirmations) and act on triage.
   SCOPE_APPROVALS = 3;
-  // Change settings, accounts, routines, integrations' watched lists.
+  // Change settings, accounts, repos, routines, integrations' watched
+  // projects, hook installs, and import a config document.
   SCOPE_SETTINGS = 4;
-  // Machines (enroll, delete, drain), devices, all notification targets.
+  // Machines (enroll, delete, drain), devices, all notification targets, the
+  // store status.
   SCOPE_ADMIN = 5;
-  // Stored session logs, transcripts, archived pane summaries and the raw
-  // usage screen. Owner only by default (ADR 0010, 0019): a viewer, API token
+  // Stored session logs and their management (list, search, delete, store
+  // status), transcripts, archived pane summaries and the raw usage screen.
+  // Owner only by default (ADR 0010, 0019): a viewer, API token
   // or paired device has it only when the owner grants it explicitly, and a
   // phone pairing never requests it by default.
   SCOPE_LOGS = 6;
@@ -289,6 +301,10 @@ message FleetSummary {
   // Subscription accounts projected to leave >= 5 points unused, or idle
   // while behind pace (AccountPacing).
   uint32 accounts_wasting = 20;
+  // Fleet-wide reasons nothing is starting: AUTO_DISPATCH_OFF, NO_READY_ITEMS,
+  // INTEGRATION_LAG, INTEGRATION_DEGRADED. Per-account, per-machine and
+  // per-item reasons are on those resources.
+  repeated DispatchBlock dispatch_blocks = 21;
 }
 
 // GetFleetSummaryRequest.

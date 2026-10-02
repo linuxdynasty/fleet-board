@@ -1,0 +1,47 @@
+// fleet.hub.v1 scheduler explanations: why the fleet is not using an account,
+// a machine or a work item. A leaf file (it imports only fleet.type.v1) so
+// accounts, machines, work items and the summary strip can all carry the same
+// message. The reasons are the hub-dispatch ReasonCodes (540..562) plus the
+// agent reasons a machine was marked unfit for; the vocabulary is the skip
+// list of 03c, so the Prometheus label and the API field say the same word.
+syntax = "proto3";
+
+package fleet.hub.v1;
+
+import "fleet/type/v1/ids.proto";
+import "fleet/type/v1/status.proto";
+import "fleet/type/v1/work.proto";
+import "google/protobuf/timestamp.proto";
+
+// DispatchBlock is one reason something is not being dispatched, computed in
+// the scheduler pass and stored with the row it explains. It answers "why is
+// nothing starting?" without a metrics query: the owner and the phone see the
+// cause next to the account that is idle while behind pace.
+message DispatchBlock {
+  // reason is one of the dispatch ReasonCodes (WORK_ITEM_UNTRUSTED,
+  // NO_FIT_MACHINE, ACCOUNT_PACING_BLOCKED, ...), DRAINING, SLOTS_FULL or
+  // MACHINE_OFFLINE. metadata names the subject and the detail with fixed
+  // keys: "machine", "account", "repo", "work_item", "harness", "bucket",
+  // "pacing_state", "agent_reason", "cause". No free text.
+  fleet.type.v1.ErrorDetail detail = 1;
+  // When the hub first saw this cause in an unbroken run of passes.
+  google.protobuf.Timestamp since_time = 2;
+}
+
+// MachineUnfit is a durable unfit marker the scheduler honours (03h, "Start
+// failures"): the machine cannot take new goals for this harness (and
+// optionally repo) until a fact it depends on changes. It drives scheduling,
+// so it is shown, not hidden in a store row.
+message MachineUnfit {
+  fleet.type.v1.Harness harness = 1;
+  // Unset = every repo on this machine.
+  fleet.type.v1.RepoRef repo = 2;
+  // The agent's reason: HARNESS_NOT_SIGNED_IN, PUSH_ACCESS_MISSING,
+  // CHECKOUT_MISSING, FOLDER_UNTRUSTED, TMUX_TOO_OLD,
+  // HARNESS_VERSION_UNSUPPORTED, POLICY_DENIED, POLICY_SAFE_MODE, ...
+  fleet.type.v1.ErrorDetail reason = 3;
+  google.protobuf.Timestamp since_time = 4;
+  // When the hub re-runs Preflight for this marker (10 minutes, doubling to
+  // one hour while the reason holds); unset when only an event clears it.
+  google.protobuf.Timestamp next_check_time = 5;
+}

@@ -72,8 +72,8 @@ on this machine** (`Machine.status.unenforced_settings`), never as "no
 opinion". When an unenforced field is one of the safety limits (`max_*`,
 `rate_limits`, `local_approval`, `block_on_battery`, `allowed_*`,
 `default_server`, `spool_cap_bytes`) the machine is left out of auto-dispatch
-and an info triage item says to upgrade the agent; the owner can override that
-per machine.
+and a `settings_unenforced` triage item says to upgrade the agent; the owner can
+override that per machine.
 
 **Generation.** One fleet-wide monotonic counter; a machine's `Settings`
 carries the counter value at which its resolved values were last computed. The
@@ -91,7 +91,12 @@ machine; running goals continue (drain never kills). `Undrain` clears a hub
 drain; a local `fleet-agent drain` can only be undone locally (`Undrain` →
 `REJECTED_BY_POLICY/DRAINING`), and the UI shows "drained on the machine".
 While draining, `StartGoal` and harness-starting `EnsureSession`/`EnsureWindow`
-are refused with `DRAINING`; a composite already past `preflight` finishes.
+are refused with `DRAINING`, and so is `RespawnPane` except for a pane with a
+registered live goal (it restarts work already taken); a composite already past
+`preflight` finishes. The hub also cancels `StartGoal` rows still `PENDING` in the
+outbox when it accepts `DrainMachine` (the goal is `ABANDONED`, the item `READY`
+elsewhere); the whole interplay is in
+[03h](03h-goal-phases-in-depth.md#drain-the-outbox-and-respawn).
 
 ### State machine (settings delivery per machine, owned by the hub)
 
@@ -146,7 +151,7 @@ Machine drain state: `ACTIVE` → `DRAINING{hub}` → `ACTIVE` (Undrain);
 | Policy file invalid on restart | Agent starts in **safe mode**: observe only, every control command `REJECTED_BY_POLICY` / `POLICY_SAFE_MODE`, every hub setting rejected with the same reason; `PolicyInfo.safe_mode = true` with a one-line `PolicyInfo.error` (no file contents) in the snapshot; the hub raises triage `policy_invalid` and the `policy.safe_mode` audit row |
 | Policy file deleted | Agent uses built-in safe defaults; reported as hash of defaults; `doctor` warns |
 | Hub store restored from an older backup (generation goes backwards) | `fleetd restore` mints a new `settings_epoch` (03f, 02g); the agent orders settings by `(settings_epoch, generation)` and accepts any generation under a new epoch (02-contracts.md, replaces 03g's `settings_restored`) |
-| `Drain` while `StartGoal` in flight | In flight past preflight → completes; not yet started → `DRAINING` at preflight |
+| `Drain` while `StartGoal` in flight | Still in the outbox → cancelled, goal `ABANDONED` (03h); in flight past preflight → completes; delivered but not past preflight → `DRAINING` at preflight, goal `ABANDONED` |
 | `Undrain` against a local drain | `REJECTED_BY_POLICY/DRAINING`; UI explains |
 | Harness crash, prompts, provider errors, developer typing | Not affected by this workflow |
 | Work tracker / code host | Not involved |
@@ -215,7 +220,8 @@ sequenceDiagram
   refuses `HARNESS_VERSION_UNSUPPORTED`, auto-dispatch excludes `(machine,
   harness)`, prompts from that harness are `answerable=false` until
   `prompt_detection_verified` for the new version (notice-only, W7), and
-  goal hooks are re-verified on the next `EnsureGoalHooks`.
+  goal hooks are re-verified by the hook reconcile (`EnsureGoalHooks`, 03-workflows
+  "Hook reconcile"; `harness_changed` triggers it).
 - **Parser degraded** on a supported version: 3 consecutive `PARSE_FAILED`
   readings from one probe → treated like unsupported for scheduling
   (`PARSER_DEGRADED`), fingerprinted triage; a good reading clears it.
@@ -226,9 +232,12 @@ sequenceDiagram
   new to the catalog are classified by the adapter table for that version;
   unknown ones are `DENY`; a command that moved to a stricter class is
   stricter immediately; local policy can only tighten further.
-- Manual dispatch to an unsupported version is allowed with a warning (the
-  harness runs fine; only fleet-board's parsing is behind), but the goal shows
-  "usage unknown" and counts against the account's `allowed_active` as 1.
+- Manual dispatch to a version whose parsing is unverified
+  (`UNVERIFIED_PARSING`, or `PARSER_DEGRADED`) is allowed after a confirm
+  (`CONFIRM`, 03h): the harness runs fine, only fleet-board's parsing is behind, but
+  the goal shows "usage unknown" and counts against the account's `allowed_active`
+  as 1. For `UNSUPPORTED` the agent refuses `HARNESS_VERSION_UNSUPPORTED` and it is
+  a `BLOCK`; there is no override.
 - Fixture capture is a scripted local job (`fleet-agent capture-fixtures`),
   scrubbed of emails, names and installed skill names before commit (01c).
   Nothing in it crosses the agent ↔ hub contract.

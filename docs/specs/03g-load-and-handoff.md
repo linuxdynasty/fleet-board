@@ -138,7 +138,7 @@ what is in the protos now.
    does, and must `/goal pause` be typed only at an idle prompt?
 3. ~~Reserve line~~ **Decided 2026-10-02:** stop dispatching and alert;
    auto-pause is an opt-in setting, off by default (design.md rule 5).
-4. **`max_parallel_goals_per_repo`** default (proposed 3) for merge churn.
+4. **`max_parallel_goals_per_repo`** default (proposed 3) for merge churn; settable per repo (`Repo.spec.max_parallel_goals`), so only the fleet default is open.
 5. ~~Pane summary retention~~ **Decided 2026-10-02:** latest only
    ([ADR 0013](../adr/0013-live-state-retention.md)).
 6. **Claims.** Default claim-comment pattern (eshu's exact text), stale-claim

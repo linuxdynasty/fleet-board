@@ -32,9 +32,14 @@ message SettingsScope {
 message HubSettings {
   // Pause WORKING goals at an account's reserve line (design.md rule 5).
   optional bool auto_pause_at_reserve = 1;
+  // The default cap on live goals per repo; Repo.spec.max_parallel_goals
+  // overrides it (default 3).
   optional uint32 max_parallel_goals_per_repo = 2;
+  // The consent a repo gets when it sets none; the goal's consent is this (or
+  // the repo's) intersected with the account's.
   repeated fleet.type.v1.ConsentAct default_consent = 3;
-  // Trusted-issues gate: label and allow-listed provider logins.
+  // Trusted-issues gate: label and allow-listed provider logins. A Repo
+  // (repo.proto) may add users and set its own label.
   optional string trusted_label = 4;
   repeated string trusted_users = 5;
   optional bool prefer_non_hub = 6;
@@ -54,6 +59,13 @@ message HubSettings {
   // days) and after this long in all (default 30 days).
   optional google.protobuf.Duration session_idle_timeout = 12;
   optional google.protobuf.Duration session_max_age = 13;
+  // Stored session logs (ADR 0010, 0015): total compressed size on disk, and
+  // how long to keep a session's logs. The oldest ended sessions are pruned
+  // first when either limit is hit; a session with an open stream never is.
+  // Defaults: 50 GiB, no age limit. The agent's spool cap is a different
+  // thing (SettingValues.spool_cap_bytes).
+  optional uint64 log_size_cap_bytes = 14;
+  optional google.protobuf.Duration log_retention = 15;
 }
 
 // SettingsSpec is what the owner set for one layer. Covered by
@@ -149,7 +161,9 @@ message AuditEntry {
   // docs/specs/02b-hub-api.md ("Audit actions"); a new action is added there
   // in the same change.
   string action = 11;
-  // Resource the action touched, as "<collection>/<id>".
+  // Resource the action touched, as "<collection>/<id>": the table of which
+  // target each action writes is in 02b ("Audit actions"), so the Session
+  // timeline can filter `target = "sessions/<id>"`.
   string target = 12;
   fleet.type.v1.MachineId machine = 13;
   fleet.type.v1.GoalId goal = 14;

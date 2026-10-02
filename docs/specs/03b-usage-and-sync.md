@@ -78,6 +78,33 @@ for an account → `EnsureProbe{run_now=true}` (the command is declarative; the
 agent runs once and keeps the schedule). Rate-limited to one `run_now` per
 account per minute.
 
+### Accounts: discovered, mapped, created, removed
+
+An `Account` row comes from one of two origins (`Account.status.origin`):
+
+- **Discovered.** A subscription from an identity probe (`AccountKey` is the salted
+  hash of the identity). A harness that shows no identity (Codex) yields one
+  **placeholder per `(machine, profile)`**, keyed by the hash of `<harness>:<machine
+  id>` with `identity_not_shown`; the hub creates it at the first snapshot that
+  carries it, so there is always a record for the owner's mapping to attach to.
+  OpenCode accounts are discovered from `opencode providers list` (01b), one per
+  provider signed in (`provider` "anthropic", "deepseek", "moonshot"), with
+  `BUDGET_KIND_DOLLAR_CAP` for the API-key ones and `EXCLUDED` pacing.
+- **Owner-created.** An API-key account no agent can list (a key set in an
+  environment variable) is added with `CreateAccount{harness, provider, spec}`
+  (`DOLLAR_CAP` only; subscriptions are never created by hand). Discovery never
+  overwrites it.
+
+**Codex mapping.** The owner says "this Codex account is that one" by adding a
+binding for a machine and profile to the real account (`UpdateAccount`, `spec.bindings`).
+The hub then folds that machine's placeholder into it (the machine's
+observations follow the binding) and deletes the placeholder once nothing uses
+it. **Removal.** `DeleteAccount` works when no live goal or session spends from the
+account and, for a discovered one, no machine shows it signed in
+(`ACCOUNT_IN_USE`), which is also how a stale duplicate (re-keyed by a salt
+change) goes away; there is no merge. `Account.status.provider` is what the rule
+"OpenCode on an Anthropic subscription is never auto-dispatched" reads.
+
 ### Pacing decision (scheduler, per account, per bucket)
 
 Inputs: latest `PROBE` reading per account (age ≤ `stale_after`, default 3 ×
@@ -111,9 +138,16 @@ interactive-only, ADR 0008), active goal count per account (from goals ×
    still **count** toward that account's active goals and its readings, since
    they spend the same pool.
 
+7. **Conditions.** An open `USAGE_LIMIT` `HarnessCondition` on a goal pane of the
+   account marks it `SHORT_LIMIT` until the condition's `resets_time` (or the
+   deciding bucket's), so no new goal starts into a limit the harness already hit
+   (03h, "Limit wait"). It never edits a reading and ends with the condition.
+
 Output per account: `pacing_state ∈ {OK, AHEAD, BEHIND, SHORT_LIMIT, RESERVE,
 UNKNOWN, STALE, EXCLUDED}`, `allowed_active`, `rank` (most unused quota
-relative to time left first). W5 consumes it.
+relative to time left first), `projected_unused_percent`, and `idle_causes`: why
+the fleet is not using it while it is dispatchable (03h, "Scheduler
+explanations"). W5 consumes it.
 
 ### State machine (probe, owned by the hub)
 
@@ -279,17 +313,28 @@ A tracker-only integration (Jira) must be paired with a code host; a goal's
 ```mermaid
 stateDiagram-v2
   [*] --> SEEN: mirrored, open
-  SEEN --> READY: trusted, unclaimed, repo watched
-  SEEN --> MANUAL_ONLY: untrusted
+  SEEN --> READY: trusted, unclaimed, repo watched and enabled
+  SEEN --> MANUAL_ONLY: untrusted (reason UNTRUSTED)
+  MANUAL_ONLY --> READY: becomes trusted (label seen at sync), or operator requeue
   READY --> CLAIMED_ELSEWHERE: foreign claim seen
   READY --> DISPATCHED: goal planned (W5)
   DISPATCHED --> RUNNING: goal RUNNING
+  DISPATCHED --> READY: goal START_FAILED, EXPIRED or ABANDONED
+  DISPATCHED --> MANUAL_ONLY: goal START_EXHAUSTED
   RUNNING --> DONE_CLAIMED: goal DONE
+  RUNNING --> MANUAL_ONLY: goal CLEARED (reason GOAL_CLEARED)
+  RUNNING --> CLOSED: goal CANCELLED, or merged by a person
   DONE_CLAIMED --> CLOSED: merged or closed on provider
   DONE_CLAIMED --> DISAGREE: provider still open (W6)
+  DISAGREE --> RUNNING: goal re-armed
   CLAIMED_ELSEWHERE --> READY: claim withdrawn / stale claim resolved by owner
   SEEN --> CLOSED: closed on provider
 ```
+
+What each goal end does to the stage, with the reasons, is the table in
+[03h](03h-goal-phases-in-depth.md#work-item-stage-after-a-goal-ends); a cleared
+item is not redispatched behind a person's back. A repo that is not `enabled`
+(`Repo.spec`) keeps its items `SEEN`.
 
 ### Persistence
 

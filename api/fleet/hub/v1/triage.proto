@@ -35,6 +35,26 @@ enum TriageKind {
   TRIAGE_KIND_HOSTNAME_MISMATCH = 17;
   TRIAGE_KIND_DIRTY_WORKTREE = 18;
   TRIAGE_KIND_LIMIT_WAIT = 19;
+  // Hub log store low on disk; shipping is paused fleet-wide (03d W9).
+  TRIAGE_KIND_LOG_DISK_LOW = 20;
+  // An agent's policy file is invalid; it runs in safe mode (03e W10).
+  TRIAGE_KIND_POLICY_INVALID = 21;
+  // 3 consecutive parse failures on a supported harness version (03e W11).
+  TRIAGE_KIND_PARSER_DEGRADED = 22;
+  // A start ended in a durable or unexplained failure that needs a person
+  // (update or login screen, model or effort not available, three attempts
+  // failed); the note names the reason (03h).
+  TRIAGE_KIND_START_FAILED = 23;
+  // The provider changed the work item or change request under a live goal
+  // in a way the goal cannot absorb: closed unmerged, cancelled, reopened
+  // after cancel (03h, "Provider-side changes").
+  TRIAGE_KIND_WORK_ITEM_CHANGED = 24;
+  // A routine run has been live longer than the routine's blocked_after, so
+  // no further run starts (03i).
+  TRIAGE_KIND_ROUTINE_BLOCKED = 25;
+  // A machine runs an agent that does not know a safety setting the hub sent;
+  // it is out of auto-dispatch until upgraded (03e W10).
+  TRIAGE_KIND_SETTINGS_UNENFORCED = 26;
   // A person interrupted or paused the goal at the machine, or an operator
   // paused it, and it waits for a decision to resume (01d, 03c). Never
   // resolved by a nudge.
@@ -144,8 +164,12 @@ enum ApprovalKind {
   // Confirm a DESTRUCTIVE harness command or KillWindow on a developer's
   // window before it is sent.
   APPROVAL_KIND_COMMAND_CONFIRM = 2;
-  // Confirm a manual dispatch the scheduler would refuse (unsupported
-  // harness version, API-key account).
+  // Confirm a manual dispatch that has a CONFIRM check (PreflightSeverity):
+  // bypassing the trusted-issues gate or a claim, an API-key account that
+  // spends money, an unverified harness version. Raised by StartGoal, which
+  // starts nothing until it is approved; deciding it creates the goal and
+  // sends StartGoal (DecideApprovalResponse carries both). required_role is
+  // OWNER. The preview is the goal line and the checks.
   APPROVAL_KIND_DISPATCH_CONFIRM = 3;
 }
 
@@ -194,6 +218,8 @@ message Approval {
   fleet.type.v1.MachineId machine = 14;
   fleet.type.v1.SessionId session = 15;
   fleet.type.v1.PaneKey pane = 16;
+  // The goal this concerns. For DISPATCH_CONFIRM it is unset until the
+  // approval is approved and the goal created.
   fleet.type.v1.GoalId goal = 17;
   TriageItemId triage_item = 18;
   repeated ApprovalChoice allowed_decisions = 19;
@@ -300,8 +326,13 @@ message DecideApprovalRequest {
 }
 
 // DecideApprovalResponse. operation is set when the decision sends a
-// command (an answer typed, a confirmed command); unset for deny.
+// command (an answer typed, a confirmed command, a confirmed dispatch); unset
+// for deny. goal is set when approving a DISPATCH_CONFIRM created it. The
+// rule for every action that needs an approval is in 02b ("Actions that need
+// an approval"): the action returns the approval and no Operation; the
+// Operation exists only once the approval is approved.
 message DecideApprovalResponse {
   Approval approval = 1;
   Operation operation = 2;
+  fleet.type.v1.GoalId goal = 3;
 }

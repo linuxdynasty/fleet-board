@@ -153,6 +153,14 @@ effective `model` and `effort` (the hub paces by that model's bucket; when
 `GoalSpec.model` was empty, until the result arrives the hub evaluates only
 `weekly_all` and the harness default's bucket), and the registration.
 
+**Re-arm.** `StartGoal.rearm_reason` (non-empty) re-arms a goal whose harness
+already finished it ([03h](03h-goal-phases-in-depth.md#re-arm-after-done)): the
+same goal id, `reuse_pane` the pane its registry entry names. Step 2 passes for
+that pane (it is its own goal's, so it counts as free); steps 3 to 7 and 9 to 11
+are skipped; 1, 8, 12 (the first line rewritten as the objective plus `reopened:
+<reason>`), 13 and 14 run as above, with the same restart classes. The registry
+entry is kept, not replaced.
+
 **Roles and approval.** The scheduler may run `StartGoal` including steps 9
 to 11: they are part of the composite the owner or routine chose (02g). The
 `/clear` is judged once, up front, with the rest of `StartGoal`, and only in a
@@ -169,7 +177,7 @@ settings.
 the trust case; `STARTUP_PROMPT_SEEN` carries `kind` in `metadata`: `trust`,
 `update`, `login` or `release_notes`. Update and login are durable per
 `(machine, harness)`: the hub marks the pair unfit and raises a triage item
-instead of retrying (03c, retry policy).
+instead of retrying (03h, reaction table).
 
 ## Pane signals
 
@@ -342,7 +350,7 @@ How the agent turns a checkout into a `RepoRef`:
 ## Slots
 
 The hub owns `max_active` and `max_total` enforcement: the planner counts
-from its goal table and `SLOTS_FULL` is a hub reason
+from its goal table by phase class (ACTIVE, HELD: 03c, "Phase classes") and `SLOTS_FULL` is a hub reason
 (`PreflightGoalResponse.hub_checks`); the agent never emits it. The agent
 keeps a **local safety cap** from its effective settings: at `preflight` of
 `StartGoal` it counts its registry and refuses with
@@ -350,7 +358,9 @@ keeps a **local safety cap** from its effective settings: at `preflight` of
 pass either limit. It computes exactly two aggregates for the heartbeat:
 `PaneCounts.goals_active` (registered goals in a live pane with line state
 `WORKING`) and `goals_total` (registered goals in a live pane). The hub
-compares only these with its own counts for the machine; a difference above one
+compares only these with its own counts for the machine (live goals with a pane
+for `goals_total`; live goals whose goal line is `WORKING` for `goals_active`, 03c);
+a difference above one
 on two consecutive heartbeats sends `SnapshotRequest{"slot_mismatch"}` and
 skips the machine for that pass. `goal_panes_by_state` stays raw and unused
 for slots.

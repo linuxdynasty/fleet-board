@@ -1,0 +1,55 @@
+// fleet.hub.v1 store status (design.md, ADR 0002, 0014, 0015). What the Settings
+// view and `fleet doctor` show about the hub's own storage. Backup, restore,
+// the claim URL and the agent-wire tap are `fleetd` commands on the hub host,
+// not RPCs: a backup holds the CA private key and the account salt (03f), so
+// it is written to the host's disk and never returned through an API, and the
+// claim URL is printed only where the owner is. 02b ("Local commands") lists
+// them.
+syntax = "proto3";
+
+package fleet.hub.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// DatabaseStatus is one SQLite file.
+message DatabaseStatus {
+  // "state.db" or "logs.db".
+  string name = 1;
+  uint64 size_bytes = 2;
+  // Schema version the file is migrated to (ADR 0014).
+  uint32 schema_version = 3;
+  google.protobuf.Timestamp last_checkpoint_time = 4;
+}
+
+// BackupStatus is the latest backup the hub wrote on its own host.
+message BackupStatus {
+  google.protobuf.Timestamp last_backup_time = 1;
+  uint64 last_backup_bytes = 2;
+  // True when it holds secrets in the clear (a backup is a secret, 03f);
+  // false when it was written with --encrypt.
+  bool last_backup_unencrypted = 3;
+  // Whether the backup includes logs.db (`--include-logs`).
+  bool last_backup_includes_logs = 4;
+  // Absolute path on the hub host. Untrusted text.
+  string last_backup_path = 5;
+}
+
+// StoreStatus is the hub's storage in one message.
+message StoreStatus {
+  repeated DatabaseStatus databases = 1;
+  BackupStatus backup = 2;
+  // Free bytes on the volume holding state.db.
+  uint64 state_free_disk_bytes = 3;
+  google.protobuf.Timestamp hub_start_time = 4;
+  // Hub build and schema, for `fleet doctor`.
+  string hub_version = 5;
+}
+
+// GetStoreStatusRequest.
+message GetStoreStatusRequest {}
+
+// GetStoreStatusResponse. The log store's own numbers (size against its cap,
+// days retained) are GetLogStoreStatus, because they need SCOPE_LOGS.
+message GetStoreStatusResponse {
+  StoreStatus status = 1;
+}

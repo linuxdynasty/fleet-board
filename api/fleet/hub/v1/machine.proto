@@ -6,6 +6,7 @@ syntax = "proto3";
 package fleet.hub.v1;
 
 import "fleet/hub/v1/common.proto";
+import "fleet/hub/v1/dispatch_block.proto";
 import "fleet/type/v1/harness.proto";
 import "fleet/type/v1/ids.proto";
 import "fleet/type/v1/settings.proto";
@@ -156,6 +157,26 @@ message MachineTelemetry {
   // receive time and ignores its readings when choosing the newest reading of
   // an account (02i, "Clocks").
   bool clock_untrusted = 7;
+  // Resource samples (B2), latest only: the 24 h chart is not in the contract.
+  double load5 = 8;
+  // macOS memory pressure level: 1 normal, 2 warn, 4 critical; 0 unknown.
+  uint32 memory_pressure_level = 9;
+  // Free space under each path the agent watches (repo roots, its state
+  // directory); the smallest drives DISK_LOW.
+  repeated MachineDisk disk = 10;
+  // Log shipping (heartbeat SpoolStatus): bytes waiting in the agent's spool,
+  // bytes lost to its cap, and whether shipping is paused by the hub.
+  uint64 spool_pending_bytes = 11;
+  uint64 spool_gap_bytes = 12;
+  bool log_shipping_paused = 13;
+}
+
+// MachineDisk is free space under one path the agent watches.
+message MachineDisk {
+  // Repo root or the agent state directory. Untrusted text.
+  string path = 1;
+  uint64 free_bytes = 2;
+  uint64 total_bytes = 3;
 }
 
 // MachineStatus is everything observed about a machine: connection state,
@@ -210,6 +231,10 @@ message MachineStatus {
   repeated fleet.type.v1.Capability capabilities = 35;
   string install_id = 36;
   MachineTelemetry telemetry = 37;
+  // Durable unfit markers the scheduler honours for this machine: why it
+  // takes no new goals for a harness or repo, and when it is next re-checked.
+  // Empty = fit. Cleared by the fact changing, or by the hub's re-check.
+  repeated MachineUnfit unfit = 42;
 }
 
 // Machine is one enrolled worker.
@@ -327,7 +352,9 @@ message DeleteMachineResponse {}
 // CreateEnrollmentTokenRequest: the API form of `fleetd enroll-token`.
 message CreateEnrollmentTokenRequest {
   string request_id = 1;
-  // Name the machine will get; also the expected hostname for the warning.
+  // Name the machine will get (its display name). An import of a fleet.yaml
+  // machine entry with this name supplies its labels and settings layer
+  // (ImportConfig, 02b "Config export and import").
   string machine_name = 2;
   // At most 24 h; default 15 min.
   google.protobuf.Duration ttl = 3;
@@ -336,6 +363,17 @@ message CreateEnrollmentTokenRequest {
   // (FAILED_PRECONDITION / MACHINE_NOT_REENROLLABLE otherwise), and its row
   // must still exist (not deleted).
   fleet.type.v1.MachineId previous_machine = 4;
+  // The hostname the machine is expected to report; a different one raises
+  // the hostname_mismatch item. Empty = machine_name (the old rule), so a
+  // renamed machine does not warn once this is set.
+  string expected_hostname = 5;
+  // Hub-assigned labels the machine starts with (same rules as
+  // MachineSpec.labels); merged with a matching imported entry's.
+  repeated string labels = 6;
+  // The machine enrolls drained (spec.drain set by the hub at Enroll): it
+  // takes no goal until the owner undrains it. Always true for a machine
+  // that came from an imported config.
+  bool start_drained = 7;
 }
 
 // CreateEnrollmentTokenResponse. The token is shown once and stored only as
@@ -356,4 +394,27 @@ message CreateEnrollmentTokenResponse {
   // Ready-to-copy `fleet-agent enroll --token …` line (plus `--hub <address>`
   // when the hub has more than one).
   string enroll_command = 4;
+}
+
+// EnsureMachineHooksRequest asks the agent to install and verify the fleet's
+// generic goal hooks (EnsureGoalHooks, G1), now. The hub also does it by
+// itself (03-workflows.md, "Hook reconcile"); this is the owner's "reinstall
+// on the machine" and "re-verify" button. Needs SCOPE_SETTINGS, and the
+// agent's role matrix still requires an owner-level principal (02g).
+message EnsureMachineHooksRequest {
+  string request_id = 1;
+  fleet.type.v1.MachineId machine = 2;
+  // Unset = every harness on the machine with launch_allowed.
+  fleet.type.v1.Harness harness = 3;
+  string profile = 4;
+  // The checkout whose project config is read to see whether the repo ships
+  // its own hooks. Unset = each enabled Repo's checkout on the machine.
+  fleet.type.v1.RepoRef repo = 5;
+}
+
+// EnsureMachineHooksResponse. One Operation per (harness, checkout) the call
+// expanded to; the resulting GoalHooksState arrives in
+// Machine.status.harnesses[].goal_hooks and repos[].goal_hooks.
+message EnsureMachineHooksResponse {
+  repeated Operation operations = 1;
 }

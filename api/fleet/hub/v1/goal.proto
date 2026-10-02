@@ -1,12 +1,15 @@
-// fleet.hub.v1 goals: the hub's goal lifecycle (03c W5, W6), dispatch,
-// preflight and goal control. Goal control is translated per harness into
-// the harness's own /goal subcommands, Interrupt, or a typed "continue"
-// (01b); the API names the intent, not the keys.
+// fleet.hub.v1 goals: the hub's goal lifecycle (03c W5, W6, 03h), the goal
+// resource and goal control. Dispatch, preflight and the shared dispatch
+// input are in goal_dispatch.proto; run history and the transition list are
+// in goal_history.proto. Goal control is translated per harness into the
+// harness's own /goal subcommands, Interrupt, or a typed "continue" (01b);
+// the API names the intent, not the keys.
 syntax = "proto3";
 
 package fleet.hub.v1;
 
 import "fleet/hub/v1/common.proto";
+import "fleet/hub/v1/routine.proto";
 import "fleet/type/v1/consent.proto";
 import "fleet/type/v1/harness.proto";
 import "fleet/type/v1/ids.proto";
@@ -17,46 +20,93 @@ import "google/protobuf/timestamp.proto";
 // GoalPhase is the hub-owned goal state (03c state machines, start and
 // run, in one enum). GoalLineState is what the goal file says; the phase is
 // what the hub concluded from it and everything else.
+//
+// Every phase belongs to one of three classes (03c, "Phase classes"), which
+// decide what a goal holds:
+//   ACTIVE   uses quota: holds an active slot and a total slot, counts toward
+//            AccountPacing.active_goals and the repo cap.
+//   HELD     keeps its worker but spends almost no quota: holds a total slot
+//            only, and counts toward the repo cap.
+//   ENDED    holds nothing. Terminal phases never leave ENDED, except MERGED,
+//            which still moves to CLOSED when cleanup is done.
+// The LIVE set (ACTIVE and HELD) is what the unique indexes use: one live
+// goal per work item, one per (repo, branch). A retry is a new goal, never a
+// revived row (GoalDefinition.attempt).
 enum GoalPhase {
   GOAL_PHASE_UNSPECIFIED = 0;
-  // Planned, StartGoal sent, not yet confirmed.
+  // ACTIVE. Planned and StartGoal queued or sent, not yet confirmed. There is
+  // no separate QUEUED phase: the goal row and its outbox row commit in one
+  // transaction, so "waiting for the machine" is this phase with
+  // Operation.state PENDING.
   GOAL_PHASE_STARTING = 1;
+  // ENDED. This attempt failed on the agent (start_error says why). The work
+  // item goes back to READY for another machine; the retry is a new goal
+  // with attempt + 1 and previous_goal set.
   GOAL_PHASE_START_FAILED = 2;
-  // The start ended UNKNOWN_OUTCOME; waiting for a GoalState or a person.
+  // ACTIVE. The start ended UNKNOWN_OUTCOME; waiting for a GoalState or a
+  // person (ControlGoal MARK_NOT_STARTED).
   GOAL_PHASE_START_UNKNOWN = 3;
+  // ACTIVE.
   GOAL_PHASE_RUNNING = 4;
-  // BLOCKED with a live watcher (CI, review).
+  // HELD. BLOCKED with a live watcher (CI, review).
   GOAL_PHASE_WAITING = 5;
+  // HELD.
   GOAL_PHASE_BLOCKED_OWNER = 6;
+  // HELD. Nothing is watching it or it cannot be recovered without a person;
+  // GoalStatus.phase_reason says which.
   GOAL_PHASE_STUCK = 7;
-  // Stopped without DONE; one corrective nudge pending or sent.
+  // ACTIVE. Stopped without DONE; one corrective nudge pending or sent.
   GOAL_PHASE_STOPPED = 8;
+  // HELD.
   GOAL_PHASE_COOLDOWN = 9;
-  // Paused by an operator, a person at the machine (interrupt), the
-  // review-loop cap or the opt-in reserve rule; GoalStatus.pause_reason says
-  // which. No nudge and no no-progress counting while paused.
+  // HELD. Paused by an operator, a person at the machine (interrupt), the
+  // review-loop cap, the opt-in reserve rule or a provider-side close;
+  // GoalStatus.pause_reason says which. No nudge and no no-progress counting
+  // while paused.
   GOAL_PHASE_PAUSED = 10;
-  // A usage or rate limit stopped the harness (HarnessCondition with
-  // resets_time). The hub resumes it at limit_wait_until_time with the harness's
-  // resume action (02-contracts.md, "Limit wait"); no nudges meanwhile.
+  // HELD, for up to a week. A usage or rate limit stopped the harness
+  // (HarnessCondition). The hub resumes it at limit_wait_until_time with the
+  // harness's resume action; no nudges meanwhile (03c, "Limit wait").
   GOAL_PHASE_LIMIT_WAIT = 11;
+  // HELD. DONE claimed, or the change request was merged under the goal
+  // (phase_reason says which); the verifier is checking the code host.
   GOAL_PHASE_VERIFYING = 12;
-  // DONE, but the code host disagrees after verify_grace.
+  // HELD. DONE, but the code host disagrees after verify_grace.
   GOAL_PHASE_DISAGREE = 13;
+  // ENDED, pending cleanup. The change request merged (or the work item
+  // closed as done). The worker is freed here: the pane becomes available
+  // for reuse, so the goal no longer holds a slot.
   GOAL_PHASE_MERGED = 14;
-  // merged_grace elapsed; worktree pruned, window closed or reused.
+  // ENDED. merged_grace elapsed; worktree pruned, window closed or reused.
   GOAL_PHASE_CLOSED = 15;
-  // Cleared by an operator (/goal clear).
+  // ENDED. Cleared by an operator (/goal clear). The work item becomes
+  // MANUAL_ONLY until an operator requeues it.
   GOAL_PHASE_CLEARED = 16;
-  // The pane is missing from the latest snapshot.
+  // HELD. The pane is missing from the latest snapshot; STUCK after 10
+  // minutes (PANE_LOST_TIMEOUT).
   GOAL_PHASE_PANE_LOST = 17;
-  // Failed to start on three machines; manual dispatch only.
-  GOAL_PHASE_MANUAL_ONLY = 18;
+  // ENDED. Three attempts failed to start on three different machines (this
+  // is the third). Renamed from MANUAL_ONLY, which is a work stage with a
+  // different meaning: the work item becomes MANUAL_ONLY with reason
+  // START_EXHAUSTED.
+  GOAL_PHASE_START_EXHAUSTED = 18;
+  // ENDED. StartGoal was not delivered in time (machine offline 30 minutes).
+  // Nothing ran; the work item goes back to READY.
+  GOAL_PHASE_EXPIRED = 19;
+  // ENDED. The hub gave up on a goal that never confirmed running: the
+  // operator said it never started, the machine drained before it began, or
+  // the machine was revoked. Nothing ran (or nothing can be known); the work
+  // item goes back to READY.
+  GOAL_PHASE_ABANDONED = 20;
+  // ENDED. The provider says the work is no longer wanted: the work item
+  // was closed without being done ("not planned", "Won't Do") or the change
+  // request was closed unmerged. Frees the worker; no success metric.
+  GOAL_PHASE_CANCELLED = 21;
 }
 
 // GoalPauseReason says why a goal is PAUSED, and with it whether the hub may
-// resume it. Only RESERVE resumes by itself (at auto_resume_time); the other
-// three wait for a person. A usage or rate limit is not a pause: it is the
+// resume it. Only RESERVE resumes by itself (at auto_resume_time); the others
+// wait for a person. A usage or rate limit is not a pause: it is the
 // LIMIT_WAIT phase.
 enum GoalPauseReason {
   GOAL_PAUSE_REASON_UNSPECIFIED = 0;
@@ -70,6 +120,63 @@ enum GoalPauseReason {
   GOAL_PAUSE_REASON_REVIEW_LOOP = 3;
   // The opt-in reserve rule paused it; resumes when the bucket resets.
   GOAL_PAUSE_REASON_RESERVE = 4;
+  // The provider closed the work item or the change request without merging
+  // it while the goal ran (03h, "Provider-side changes"). The hub paused the
+  // harness so it stops spending quota; the owner decides: resume (keep
+  // going) or clear (CANCELLED).
+  GOAL_PAUSE_REASON_WORK_ITEM_CLOSED = 5;
+}
+
+// GoalPhaseReason says why a goal is in its phase when the phase alone is
+// ambiguous, and is the reason on each recorded transition. The unpaused
+// causes of PAUSED stay in GoalPauseReason. "recovery required" is not a
+// separate kind: it is TRIAGE_KIND_STUCK on a goal whose reason below needs a
+// person to restore the pane (SESSION_CLOSED, LOCAL_CONFIRM_TIMEOUT).
+enum GoalPhaseReason {
+  GOAL_PHASE_REASON_UNSPECIFIED = 0;
+  // STUCK: the goal line says BLOCKED with neither a watcher nor an owner.
+  GOAL_PHASE_REASON_BLOCKED_NO_WATCHER = 1;
+  // STUCK: the watched process died.
+  GOAL_PHASE_REASON_WATCH_DEAD = 2;
+  // STUCK: stopped twice without DONE (the corrective nudge did not help).
+  GOAL_PHASE_REASON_STOPPED_TWICE = 3;
+  // STUCK: the developer or the harness closed the session; nothing to nudge.
+  GOAL_PHASE_REASON_SESSION_CLOSED = 4;
+  // STUCK: a respawn needed approval at the machine and nobody gave it.
+  GOAL_PHASE_REASON_LOCAL_CONFIRM_TIMEOUT = 5;
+  // STUCK: PANE_LOST for 10 minutes.
+  GOAL_PHASE_REASON_PANE_LOST_TIMEOUT = 6;
+  // COOLDOWN: two evaluations without progress.
+  GOAL_PHASE_REASON_NO_PROGRESS = 7;
+  // LIMIT_WAIT: a usage limit (short window or weekly).
+  GOAL_PHASE_REASON_USAGE_LIMIT = 8;
+  // LIMIT_WAIT: a rate limit the harness gave up retrying.
+  GOAL_PHASE_REASON_RATE_LIMITED = 9;
+  // VERIFYING: the goal line says DONE.
+  GOAL_PHASE_REASON_DONE_CLAIMED = 10;
+  // VERIFYING: the change request merged while the goal line was not DONE
+  // (a person merged it, or the goal did moments before writing DONE). The
+  // hub clears the harness goal, then the goal becomes MERGED.
+  GOAL_PHASE_REASON_EXTERNAL_MERGE = 11;
+  // RUNNING after a re-arm (ControlGoal NOT_DONE or EDIT on a finished goal).
+  GOAL_PHASE_REASON_REARMED = 12;
+  // RUNNING after a resume (limit wait over, operator resume).
+  GOAL_PHASE_REASON_RESUMED = 13;
+  // EXPIRED: StartGoal not delivered in 30 minutes.
+  GOAL_PHASE_REASON_START_NOT_DELIVERED = 20;
+  // ABANDONED: the operator said the start never happened.
+  GOAL_PHASE_REASON_OPERATOR_NOT_STARTED = 21;
+  // ABANDONED: the machine started draining before the composite passed
+  // preflight (the goal moves to another machine).
+  GOAL_PHASE_REASON_DRAINING = 22;
+  // ABANDONED: the machine was revoked.
+  GOAL_PHASE_REASON_MACHINE_REVOKED = 23;
+  // CANCELLED: the work item was closed without being done.
+  GOAL_PHASE_REASON_WORK_ITEM_CLOSED = 30;
+  // CANCELLED: the change request was closed unmerged.
+  GOAL_PHASE_REASON_CHANGE_REQUEST_CLOSED = 31;
+  // CLEARED (and the harness goal cleared) by an operator.
+  GOAL_PHASE_REASON_OPERATOR_CLEAR = 32;
 }
 
 // GoalDefinition is what was dispatched: what the goal works on, where and
@@ -96,6 +203,18 @@ message GoalDefinition {
   // Session was cleared (/clear) before typing (GoalSpec.fresh_context).
   bool fresh_context = 14;
   fleet.type.v1.Principal started_by = 15;
+  // Dispatch attempt for this work item, from 1. Every attempt is a new goal
+  // (a failed or expired start is never revived), so per-attempt history is
+  // the chain of previous_goal. "Three failures on different machines" counts
+  // attempts.
+  uint32 attempt = 16;
+  // The goal this one retries; unset for attempt 1.
+  fleet.type.v1.GoalId previous_goal = 17;
+  // Snapshot of the routine's rule and path at plan time, so UpdateRoutine or
+  // DeleteRoutine mid-run cannot change what "done" means for this run (03i).
+  // UNSPECIFIED for a goal that is not a routine run.
+  DoneRule done_rule = 18;
+  string report_path = 19;
 }
 
 // GoalStatus is everything the hub concluded or observed about a goal's run:
@@ -128,7 +247,8 @@ message GoalStatus {
   uint32 review_rounds = 24;
   // A HarnessCondition is open on the pane.
   bool provider_condition = 25;
-  // Last start failure, for START_FAILED and MANUAL_ONLY.
+  // The failure that ended this attempt, for START_FAILED, START_EXHAUSTED,
+  // ABANDONED and EXPIRED.
   fleet.type.v1.ErrorDetail start_error = 26;
   // Latest operation for this goal (start, control, nudge).
   fleet.type.v1.CommandId last_operation = 27;
@@ -147,6 +267,48 @@ message GoalStatus {
   // For RESERVE: when the hub resumes the goal (the deciding bucket's
   // resets_time). Unset for the reasons that wait for a person.
   google.protobuf.Timestamp auto_resume_time = 43;
+
+  // Why the goal is in this phase when the phase alone is ambiguous (the
+  // causes of STUCK, VERIFYING, CANCELLED, ...). Set with every transition.
+  GoalPhaseReason phase_reason = 50;
+  // For BLOCKED_OWNER: who and what the goal is waiting on, from the goal
+  // line (OWNER=, ACTION=). Untrusted text.
+  string blocked_owner = 51;
+  string blocked_action = 52;
+  // For VERIFYING: when the verifier stops waiting for the provider and
+  // raises DISAGREE.
+  google.protobuf.Timestamp verify_deadline_time = 53;
+  // First RUNNING, and the end of the goal (first ENDED phase). The timeline
+  // draws these, not create_time (plan time) or phase_time (overwritten when
+  // MERGED becomes CLOSED). Unset until they happen; end_time stays set on
+  // MERGED and CLOSED.
+  google.protobuf.Timestamp start_time = 54;
+  google.protobuf.Timestamp end_time = 55;
+  // Harness restarts: runs beyond the first (goal_history.proto GoalRun).
+  uint32 restarts = 56;
+  // Quota the goal used, per bucket, from the account's readings across its
+  // runs (approximate: other sessions spend from the same pool).
+  repeated GoalUsage usage_consumed = 57;
+  // The transcript stream of the goal's latest run (v3), when captured. The
+  // terminal streams of every run are on GoalRun.logs.
+  fleet.type.v1.LogStreamKey transcript = 58;
+  // A prompt item is open for the pane (nudges suppressed).
+  bool prompt_pending = 59;
+  // A person typed in the pane recently: nudges and goal control are held
+  // until this time (10 minutes after the last input).
+  google.protobuf.Timestamp human_at_keyboard_until_time = 60;
+  // Increments each time the goal line enters a BLOCKED state, so leaving and
+  // re-entering Blocked notifies the owner again.
+  uint32 block_epoch = 61;
+}
+
+// GoalUsage is the quota one goal used from one account bucket.
+message GoalUsage {
+  // The bucket key as on LimitBucket ("weekly_all", "weekly_opus", ...).
+  string bucket_key = 1;
+  // Percentage points of the bucket the account's reading moved while the
+  // goal was RUNNING or STOPPED. Can be 0 when readings did not change.
+  int32 percent_points = 2;
 }
 
 // Goal is one dispatched goal and its run history head.
@@ -185,67 +347,6 @@ message GetGoalResponse {
   Goal goal = 1;
 }
 
-// GoalPlacement says where a dispatch runs; unset fields are chosen by the
-// scheduler with the same rules as auto-dispatch (03c planning rules).
-message GoalPlacement {
-  fleet.type.v1.MachineId machine = 1;
-  fleet.type.v1.Harness harness = 2;
-  string profile = 3;
-  fleet.type.v1.AccountId account = 4;
-  // Prefer this available session (E11).
-  fleet.type.v1.SessionId reuse_session = 5;
-  fleet.type.v1.PaneKey reuse_pane = 6;
-  // New window in this session instead of a new session.
-  fleet.type.v1.SessionId in_session = 7;
-  string window_name = 8;
-}
-
-// StartGoalRequest dispatches a goal (manual dispatch). The hub fills the
-// GoalSpec, preflights unless skip_preflight, and sends StartGoal.
-message StartGoalRequest {
-  string request_id = 1;
-  fleet.type.v1.WorkItemKey work_item = 2;
-  fleet.type.v1.RepoRef repo = 3;
-  fleet.type.v1.WorkItemKey change_request = 4;
-  GoalPlacement placement = 5;
-  // Empty = repo consent ∩ account consent (ADR 0008).
-  repeated fleet.type.v1.ConsentAct consent = 6;
-  // Empty = the hub's template for the work item.
-  string goal_text = 7;
-  string model = 8;
-  string effort = 9;
-  bool fresh_context = 10;
-  // Free text from the operator; the hub prefixes "manual dispatch by …".
-  string dispatch_reason = 11;
-  bool skip_preflight = 12;
-}
-
-// StartGoalResponse. The goal id is assigned before StartGoal is sent.
-message StartGoalResponse {
-  fleet.type.v1.GoalId goal = 1;
-  Operation operation = 2;
-}
-
-// PreflightGoalRequest runs Preflight (I1) without starting anything.
-message PreflightGoalRequest {
-  string request_id = 1;
-  fleet.type.v1.WorkItemKey work_item = 2;
-  fleet.type.v1.RepoRef repo = 3;
-  GoalPlacement placement = 4;
-}
-
-// PreflightGoalResponse. When the operation is DONE, Operation.failed_checks
-// lists what failed and Operation.output_text holds the goal line the agent
-// would type (PreflightResult.goal_line_preview). The hub's own checks
-// (slots, pacing) are here, before anything is sent.
-message PreflightGoalResponse {
-  Operation operation = 1;
-  // Hub-side refusals found before asking the agent (SLOTS_FULL, pacing).
-  repeated fleet.type.v1.ErrorDetail hub_checks = 2;
-  // The placement the scheduler would use.
-  GoalPlacement placement = 3;
-}
-
 // GoalAction is an operator's intent on a running goal. The hub translates
 // it with the machine's MachineHarness.goal_control (the adapter's own
 // account of the installed version), not a table of harness names.
@@ -256,15 +357,26 @@ enum GoalAction {
   // resume_mode SUBCOMMAND: /goal resume; TYPE_TEXT: SendKeys
   // GOAL_RESUME with resume_text.
   GOAL_ACTION_RESUME = 2;
-  // /goal edit <text> where the harness has it.
+  // /goal edit <text> where the harness has it. On a goal whose harness goal
+  // already finished (VERIFYING, DISAGREE) it is a re-arm with the new text.
   GOAL_ACTION_EDIT = 3;
-  // /goal clear.
+  // /goal clear. The goal ends CLEARED (the work item becomes MANUAL_ONLY),
+  // or CANCELLED when it was PAUSED because the provider closed the work
+  // item (pause_reason WORK_ITEM_CLOSED).
   GOAL_ACTION_CLEAR = 4;
   // Hub only: re-run verification against the code host now.
   GOAL_ACTION_RECHECK = 5;
-  // Hub only: DONE was wrong; send the "not done" nudge.
+  // DONE was wrong: re-arm. Valid in VERIFYING and DISAGREE, where the
+  // harness has already achieved and cleared its goal, so a typed "not done"
+  // would be an ordinary prompt with no goal loop. The agent rewrites the goal
+  // file's first line ("reopened: <text>") and types the harness's set-goal
+  // form in the same pane under the same goal id (StartGoal.rearm_reason,
+  // 03c, "Re-arm"); the goal returns to RUNNING when the goal line is
+  // WORKING again. `text` is the reason (4 KiB). Refused in any other phase
+  // with GOAL_ACTION_NOT_ALLOWED.
   GOAL_ACTION_NOT_DONE = 6;
-  // START_UNKNOWN: the operator says it never started; back to ready.
+  // START_UNKNOWN: the operator says it never started; the goal becomes
+  // ABANDONED and the work item READY.
   GOAL_ACTION_MARK_NOT_STARTED = 7;
 }
 
@@ -276,7 +388,8 @@ message ControlGoalRequest {
   // the spec. 0 = do not check.
   uint64 expected_version = 3;
   GoalAction action = 4;
-  // For EDIT: the new objective text (4 KiB).
+  // For EDIT: the new objective text; for NOT_DONE: why it is not done
+  // (4 KiB).
   string text = 5;
   // The phase the caller saw when it chose the action; 0 = do not check. A
   // different phase fails with FAILED_PRECONDITION / GOAL_PHASE_CHANGED, so
@@ -285,7 +398,9 @@ message ControlGoalRequest {
 }
 
 // ControlGoalResponse. operation is unset for hub-only actions; an
-// unsupported action fails with GOAL_SUBCOMMAND_UNSUPPORTED before sending.
+// unsupported action fails with GOAL_SUBCOMMAND_UNSUPPORTED before sending, and
+// an action the goal's phase does not allow fails with FAILED_PRECONDITION /
+// GOAL_ACTION_NOT_ALLOWED (the table is in 03c, "Control actions by phase").
 message ControlGoalResponse {
   Goal goal = 1;
   Operation operation = 2;

@@ -82,6 +82,18 @@ message SessionSpec {
   bool log_capture = 1;
 }
 
+// SessionState says whether the session still exists in tmux.
+enum SessionState {
+  SESSION_STATE_UNSPECIFIED = 0;
+  // Present in the latest snapshot or events.
+  SESSION_STATE_LIVE = 1;
+  // Closed (SessionEvent CLOSED, or gone after a tmux server restart). The
+  // row stays while its stored logs do (StoredSession), so a finished goal's
+  // session can still be found and its logs read. Windows and panes are the
+  // last known ones, marked dead.
+  SESSION_STATE_ENDED = 2;
+}
+
 // SessionStatus is everything observed about a session: identity in tmux,
 // windows and panes, attach count, stored logs. Not versioned.
 message SessionStatus {
@@ -103,6 +115,11 @@ message SessionStatus {
   repeated SessionWindow windows = 18;
   // Counters are volatile: at most one Watch message per 5 s.
   repeated SessionLogInfo logs = 19;
+  // LIVE or ENDED. ListSessions and Watch return LIVE rows unless the filter
+  // asks for `state = ENDED` or `state in (LIVE, ENDED)`.
+  SessionState state = 20;
+  // When it ended; unset while LIVE.
+  google.protobuf.Timestamp end_time = 21;
 }
 
 // Session is one tmux session. The hub assigns a SessionId to every session
@@ -212,7 +229,7 @@ message InterruptPaneResponse {
 }
 
 // RunHarnessCommandRequest sends RunHarnessCommand (F8). DESTRUCTIVE-class
-// commands create an Approval first; the operation starts once approved.
+// commands create an Approval first; the operation is created once approved.
 message RunHarnessCommandRequest {
   string request_id = 1;
   fleet.type.v1.SessionId session = 2;
@@ -225,7 +242,9 @@ message RunHarnessCommandRequest {
 }
 
 // RunHarnessCommandResponse. For OBSERVE commands the screen arrives as
-// Operation.output_text.
+// Operation.output_text. A command that needs an approval returns the approval
+// and no operation: nothing is sent, and no Operation exists, until the
+// approval is approved (02b, "Actions that need an approval").
 message RunHarnessCommandResponse {
   Operation operation = 1;
   // Set when the command waits for an approval.
@@ -285,7 +304,8 @@ message KillWindowRequest {
   fleet.type.v1.WindowKey window = 3;
 }
 
-// KillWindowResponse.
+// KillWindowResponse. Operation or approval, never both: a developer's window
+// returns the approval and no operation until it is approved (02b).
 message KillWindowResponse {
   Operation operation = 1;
   ApprovalId approval = 2;

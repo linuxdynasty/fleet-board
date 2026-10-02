@@ -16,11 +16,17 @@ syntax = "proto3";
 package fleet.hub.v1;
 
 import "fleet/hub/v1/account.proto";
+import "fleet/hub/v1/admin.proto";
 import "fleet/hub/v1/auth.proto";
 import "fleet/hub/v1/common.proto";
+import "fleet/hub/v1/config.proto";
 import "fleet/hub/v1/device.proto";
 import "fleet/hub/v1/goal.proto";
+import "fleet/hub/v1/goal_dispatch.proto";
+import "fleet/hub/v1/goal_history.proto";
+import "fleet/hub/v1/log_store.proto";
 import "fleet/hub/v1/machine.proto";
+import "fleet/hub/v1/repo.proto";
 import "fleet/hub/v1/routine.proto";
 import "fleet/hub/v1/session.proto";
 import "fleet/hub/v1/settings.proto";
@@ -65,6 +71,9 @@ service FleetService {
   rpc DeleteMachine(DeleteMachineRequest) returns (DeleteMachineResponse);
   // [ADMIN] A single-use enrollment token (A1).
   rpc CreateEnrollmentToken(CreateEnrollmentTokenRequest) returns (CreateEnrollmentTokenResponse);
+  // [SETTINGS] Install and verify the fleet's goal hooks now (EnsureGoalHooks,
+  // G1); the agent still requires an owner-level principal (02g).
+  rpc EnsureMachineHooks(EnsureMachineHooksRequest) returns (EnsureMachineHooksResponse);
 
   // --- Sessions and panes (Session view) ------------------------------------
 
@@ -99,6 +108,20 @@ service FleetService {
   // [LOGS] Stored session log, optionally following new data (K1, K3).
   rpc ReadSessionLog(ReadSessionLogRequest) returns (stream ReadSessionLogResponse);
 
+  // --- Stored logs (all [LOGS], owner by default; 03d W9) ---------------------
+
+  // [LOGS] Sessions with stored logs, live and ended, with the stream keys and
+  // the archived last pane summaries.
+  rpc ListStoredSessions(ListStoredSessionsRequest) returns (ListStoredSessionsResponse);
+  // [LOGS]
+  rpc GetStoredSession(GetStoredSessionRequest) returns (GetStoredSessionResponse);
+  // [LOGS] Delete one session's logs, audited.
+  rpc DeleteSessionLogs(DeleteSessionLogsRequest) returns (DeleteSessionLogsResponse);
+  // [LOGS] Case-insensitive text search across stored sessions.
+  rpc SearchSessionLogs(SearchSessionLogsRequest) returns (SearchSessionLogsResponse);
+  // [LOGS] Store size against its cap, days retained, shipping paused.
+  rpc GetLogStoreStatus(GetLogStoreStatusRequest) returns (GetLogStoreStatusResponse);
+
   // --- Goals ----------------------------------------------------------------
 
   // [READ]
@@ -109,8 +132,12 @@ service FleetService {
   rpc StartGoal(StartGoalRequest) returns (StartGoalResponse);
   // [SESSIONS_WRITE] Preflight (I1) only.
   rpc PreflightGoal(PreflightGoalRequest) returns (PreflightGoalResponse);
-  // [SESSIONS_WRITE] Pause, resume, edit, clear, re-check (G4).
+  // [SESSIONS_WRITE] Pause, resume, edit, clear, re-check, re-arm (G4).
   rpc ControlGoal(ControlGoalRequest) returns (ControlGoalResponse);
+  // [READ] The runs of one goal (restarts, nudges, usage, log keys).
+  rpc ListGoalRuns(ListGoalRunsRequest) returns (ListGoalRunsResponse);
+  // [READ] Every phase change of one goal, with its reason.
+  rpc ListGoalTransitions(ListGoalTransitionsRequest) returns (ListGoalTransitionsResponse);
 
   // --- Work items, change requests, integrations (Work view) ----------------
 
@@ -124,8 +151,24 @@ service FleetService {
   rpc GetChangeRequest(GetChangeRequestRequest) returns (GetChangeRequestResponse);
   // [READ]
   rpc ListIntegrations(ListIntegrationsRequest) returns (ListIntegrationsResponse);
-  // [SETTINGS] Label and watched repos/projects.
+  // [SETTINGS] Label and watched tracker projects (repos are Repo resources).
   rpc UpdateIntegration(UpdateIntegrationRequest) returns (UpdateIntegrationResponse);
+  // [SESSIONS_WRITE] MANUAL_ONLY back to READY (not for an untrusted item).
+  rpc RequeueWorkItem(RequeueWorkItemRequest) returns (RequeueWorkItemResponse);
+
+  // --- Repos (per-repository settings, repo.proto) --------------------------
+
+  // [READ]
+  rpc ListRepos(ListReposRequest) returns (ListReposResponse);
+  // [READ]
+  rpc GetRepo(GetRepoRequest) returns (GetRepoResponse);
+  // [SETTINGS] Start watching a repo.
+  rpc CreateRepo(CreateRepoRequest) returns (CreateRepoResponse);
+  // [SETTINGS] Consent, parallel cap, worktree mode, branch, hooks mode,
+  // tracker mapping, trusted gate.
+  rpc UpdateRepo(UpdateRepoRequest) returns (UpdateRepoResponse);
+  // [SETTINGS] Stop watching a repo.
+  rpc DeleteRepo(DeleteRepoRequest) returns (DeleteRepoResponse);
 
   // --- Accounts and usage ---------------------------------------------------
 
@@ -135,6 +178,10 @@ service FleetService {
   rpc GetAccount(GetAccountRequest) returns (GetAccountResponse);
   // [SETTINGS]
   rpc UpdateAccount(UpdateAccountRequest) returns (UpdateAccountResponse);
+  // [SETTINGS] An owner-defined API-key account (subscriptions are discovered).
+  rpc CreateAccount(CreateAccountRequest) returns (CreateAccountResponse);
+  // [SETTINGS] Remove an account nothing uses.
+  rpc DeleteAccount(DeleteAccountRequest) returns (DeleteAccountResponse);
   // [SESSIONS_WRITE] EnsureProbe run_now (D1).
   rpc ProbeAccount(ProbeAccountRequest) returns (ProbeAccountResponse);
   // [READ] Reading history for the burn-down chart.
@@ -182,6 +229,13 @@ service FleetService {
   rpc UpdateSettings(UpdateSettingsRequest) returns (UpdateSettingsResponse);
   // [READ]
   rpc ListAuditEntries(ListAuditEntriesRequest) returns (ListAuditEntriesResponse);
+  // [READ] The whole configuration as one document (`fleet export`).
+  rpc ExportConfig(ExportConfigRequest) returns (ExportConfigResponse);
+  // [SETTINGS], plus [ADMIN] for machine entries. Validate and apply a
+  // document in one transaction; dry_run returns the plan (`fleet import`).
+  rpc ImportConfig(ImportConfigRequest) returns (ImportConfigResponse);
+  // [ADMIN] Database sizes, schema version, last backup, free disk.
+  rpc GetStoreStatus(GetStoreStatusRequest) returns (GetStoreStatusResponse);
 
   // --- Sign-in, users, sessions and API tokens (authenticated mode) ----------
 

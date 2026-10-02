@@ -25,6 +25,8 @@ operator uses at 3 AM. Split across files to stay under 500 lines each:
 | [03e-settings-and-drift.md](03e-settings-and-drift.md) | **W10** settings and policy, **W11** harness upgrade drift |
 | [03f-hub-internals.md](03f-hub-internals.md) | hub concurrency model, data model sketch |
 | [03g-load-and-handoff.md](03g-load-and-handoff.md) | load table, questions for step 4, required contract changes, open questions |
+| [03h-goal-phases-in-depth.md](03h-goal-phases-in-depth.md) | start-failure reactions, dispatch checks, drain and the outbox, provider-side changes, limit wait, re-arm, scheduler explanations |
+| [03i-routines.md](03i-routines.md) | **W5b** routine runs: triggers, numbering, done rules |
 
 ## Conventions
 
@@ -92,13 +94,13 @@ sequenceDiagram
   participant A as fleet-agent
   participant T as tmux / harnesses
   O->>H: enroll-token --machine omarchy
-  H->>H: tx: enroll_tokens{secret hash, name, expected_hostname, not_after_time}
+  H->>H: tx: enroll_tokens{secret hash, name, expected_hostname, labels, start_drained, not_after_time}
   H-->>O: token (once; embeds the CA SHA-256)
   O->>A: fleet-agent enroll --token T
   A->>A: Ed25519 key, CSR · MachineFacts (B1)
   A->>H: TLS: verify server chain against the token's CA SHA-256 (abort here on mismatch)
   A->>H: Enroll(EnrollRequest{token, csr_pem, facts, capabilities, proto_min/max, install_id})
-  H->>H: tx: burn token, insert machine, cert serial, store response keyed by (token, install_id, CSR key) · warn if hostname ≠ expected
+  H->>H: tx: burn token, insert machine (labels, settings layer and spec.drain from the token or a pending imported entry of that name; start_drained → drained), cert serial, store response keyed by (token, install_id, CSR key) · warn if hostname ≠ expected
   H-->>A: EnrollResponse{machine_id, cert_pem, ca_chain_pem, ca_fingerprint, account_salt, salt_version, hub_addresses, machine_name, fleet_id, replayed}
   A->>A: persist cert/key/CA/salt (0600), cache hub address
   A->>T: identity + catalog probe per harness (C2, C4) on fleet-probe
@@ -128,7 +130,7 @@ attempts back off with full jitter 1–60 s. On success the address is cached.
 replace the machine's sessions/windows/panes/goals/repos/harness rows, store
 `Snapshot.seq` as `last_event_seq`, then diff desired state: probe assignments
 whose machine is this one but which the snapshot's `probes[]` does not show →
-`EnsureProbe`; goal rows the hub has in `RUNNING` whose pane is absent from the
+`EnsureProbe`; live goal rows (03c phase classes) with a pane that is absent from the
 snapshot → goal `PANE_LOST` (W6); `goal_registry[]` entries the hub does not
 know → triage `orphan_goal_pane` (W7), and goals the hub expects in `STARTING`
 to `STOPPED` that the registry lacks → `RegisterGoal` (02h); availability marks
@@ -136,6 +138,18 @@ the hub holds that `TmuxPane.availability` lacks → `SetPaneAvailability`;
 outbox rows `pending`/`delivered` for
 this machine → re-sent after commit unless past `not_after_time`, which become
 `EXPIRED`.
+
+**Hook reconcile.** The same diff enqueues `EnsureGoalHooks{harness, workdir,
+expected_version, profile}` for each `(harness, profile, enabled Repo checkout)`
+on the machine whose `GoalHooksState` is missing, unverified, or behind the hub's
+`expected_version`, when `Repo.spec.hooks_mode` is `GENERIC` (or `AUTO` and the
+checkout does not ship its own hooks); `ESHU` only reports. Other triggers: a
+`harness_changed` event (W11), a repo turned on or its mode changed, one
+`GOAL_FILE_NOT_SEEN` per `(machine, harness)` per day, and the owner's
+`EnsureMachineHooks`. It never runs while a goal is live in a pane of that harness
+on the machine, and a machine whose local policy needs approval for it waits for
+someone there (the scheduler principal may send it, 02g). The Muse goal registry
+needs no hooks step: `register_goal` writes it inside `StartGoal` (02h).
 
 ### State machine (agent connection, owned by the agent)
 

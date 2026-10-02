@@ -14,6 +14,7 @@ import "fleet/hub/v1/common.proto";
 import "fleet/hub/v1/device.proto";
 import "fleet/hub/v1/goal.proto";
 import "fleet/hub/v1/machine.proto";
+import "fleet/hub/v1/repo.proto";
 import "fleet/hub/v1/routine.proto";
 import "fleet/hub/v1/session.proto";
 import "fleet/hub/v1/settings.proto";
@@ -43,6 +44,7 @@ enum WatchTopic {
   WATCH_TOPIC_FLEET_SUMMARY = 15;
   WATCH_TOPIC_AUDIT = 16;
   WATCH_TOPIC_NOTIFICATION_TARGETS = 17;
+  WATCH_TOPIC_REPOS = 18;
 }
 
 // ChangeType says what a WatchResponse means.
@@ -134,6 +136,7 @@ message WatchResponse {
     FleetSummary fleet_summary = 24;
     AuditEntry audit_entry = 25;
     NotificationTarget notification_target = 26;
+    Repo repo = 27;
   }
   // Opaque; pass to the next WatchRequest to continue after this message. It
   // names the position and the subscriptions (topic and filter) it covers.

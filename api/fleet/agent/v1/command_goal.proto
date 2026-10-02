@@ -147,6 +147,19 @@ message StartGoal {
   google.protobuf.Duration goal_file_timeout = 6;
   // Skip preflight (already run and passed within the last minute).
   bool skip_preflight = 7;
+  // Non-empty = re-arm: the goal in spec.goal_id finished (the harness
+  // achieved and cleared it) but a person says it is not done, so the hub asks
+  // the same pane to take it up again (03c, "Re-arm"). reuse_pane must be the
+  // pane the goal's registry entry names (anything else is
+  // SESSION_NOT_AVAILABLE); the entry is kept, not replaced, and the checks
+  // that a pane is free of a live goal pass for its own goal. Steps
+  // pick_session, prepare_branch, ensure_worktree, ensure_window,
+  // register_goal, start_log_capture, set_model, set_effort and clear_context
+  // are skipped (not reported). preflight (unless skipped), wait_ready,
+  // write_goal_file (the first line rewritten as the objective plus
+  // "reopened: <rearm_reason>"), type_goal and confirm_goal_file run as in
+  // StartGoal, with spec.goal_text carrying the objective. Up to 1 KiB.
+  string rearm_reason = 8;
 }
 
 // StartGoalResult.

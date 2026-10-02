@@ -230,3 +230,70 @@ the agent refuses or does not know are reported back (`rejected`,
 `unrecognized_value_fields`, `PolicyInfo.safe_mode`) so the UI never shows a
 setting as enforced when it is not; a safety limit that an older agent cannot
 enforce keeps that machine out of auto-dispatch.
+
+## Addendum: hub domain resources and goal lifecycle (review theme E)
+
+Taken while applying theme E, because they set what the owner can configure and
+what the fleet does on its own. Detail is in [03c](../specs/03c-goals.md),
+[03h](../specs/03h-goal-phases-in-depth.md), [03i](../specs/03i-routines.md) and
+[02b](../specs/02b-hub-api.md).
+
+**23. Per-repo settings are a `Repo` resource.** Consent, the parallel-goal cap,
+worktree mode, branch pattern, base branch, hooks mode (`AUTO`, `ESHU`,
+`GENERIC`), the tracker projects that feed the repo and the trusted-issues gate
+live on `Repo`, with `HubSettings` as the fleet default. A goal's consent is the
+repo's (else the fleet default) intersected with the account's. An integration
+now lists only the tracker projects it syncs. Merge method and required
+approvals stay the provider's own branch protection.
+
+**24. Every dispatch attempt is a new goal, and "active" is a table.** A failed,
+expired or abandoned start ends that goal (`START_FAILED`, `EXPIRED`,
+`ABANDONED`) and the retry is a new goal with `attempt + 1` and `previous_goal`.
+Phases fall in three classes: ACTIVE (uses quota), HELD (keeps its worker, total
+slot only, including `LIMIT_WAIT` for up to a week and `PAUSED`) and ENDED
+(`MERGED` already frees the worker). Live = ACTIVE plus HELD drives the unique
+indexes, slots, pacing and the repo cap. New phases `EXPIRED`, `ABANDONED`,
+`CANCELLED`; `MANUAL_ONLY` on a goal is renamed `START_EXHAUSTED`; there is no
+`QUEUED`. A goal that never ran sends its work item back to `READY` (three counted
+failures on three machines make it `MANUAL_ONLY`); a goal an operator cleared
+does not, so the fleet never redispatches what a person stopped.
+
+**25. The provider closing the work under a goal pauses it; the owner decides.**
+A change request merged by a person makes the goal verify and then clear the
+harness goal; an item or change request closed without a merge pauses the goal
+(`PAUSED` with reason `WORK_ITEM_CLOSED`) and raises a triage item. Nothing
+resumes or cancels by itself. A review asking for changes after `DONE` raises a
+triage item; **no automatic re-arm in v1**.
+
+**26. "Not done" re-arms; it is not a nudge.** After `DONE` the harness has
+cleared its goal, so `NOT_DONE` and `EDIT` on a goal in `VERIFYING` or
+`DISAGREE` run `StartGoal` with `rearm_reason` for the same goal in the same
+pane: the agent rewrites the goal file's first line and types the harness's
+set-goal form. Claude Code works this way today; Codex and Muse are unprobed
+and a re-arm there is marked unverified.
+
+**27. Manual dispatch has four check severities.** `BLOCK` cannot start; `CONFIRM`
+(bypassing the trusted gate or a claim, an API-key account that spends money, a
+version whose parsing is unverified) returns an approval that an owner decides,
+and only then is the goal created; `WARN` needs the caller to list the reason in
+`acknowledged_warnings`; `INFO` is shown. Any action that needs an approval
+returns the approval and no operation until it is approved.
+
+**28. Accounts are discovered; the owner may add API-key accounts.** Subscriptions
+and Codex's per-machine placeholders are never created by hand. `CreateAccount`
+is for an API-key account no agent can list; `DeleteAccount` removes one that
+nothing uses; there is no merge (a Codex mapping folds a placeholder into the
+account the owner names).
+
+**29. The hub database is the source of truth; config moves as one plan.**
+`ExportConfig` and `ImportConfig` (dry run, then the same plan applied in one
+transaction) carry a name-keyed `FleetConfig` with no secrets or ids. Machines
+that do not exist yet are pending entries and enroll **drained**. Backup, restore,
+the claim URL and the agent-wire tap are `fleetd` commands on the hub host, not
+RPCs, because a backup holds the CA key.
+
+**30. Stored logs have a management API under `LOGS`.** Listing stored sessions
+(live and ended, with stream keys and the archived last pane summary), audited
+delete, search and store status. Search in v1 is a bounded literal scan of the
+decompressed frames, with no index; the log size cap and retention are hub
+settings.

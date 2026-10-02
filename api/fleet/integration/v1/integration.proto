@@ -76,6 +76,9 @@ message IntegrationCapabilities {
   // requests are sync_modes, claims are claim_mechanisms, merge_state is
   // merge_detection).
   string provider_name = 13;
+  // Code host: PathExists is supported (the routine done rule
+  // REPORT_WRITTEN needs it).
+  bool path_exists = 14;
 }
 
 // Integration: one configured instance on the hub.
@@ -267,6 +270,24 @@ message GetChangeRequestResponse {
   ChangeRequest change_request = 1;
 }
 
+// PathExistsRequest asks whether a path exists at a ref of a repo, without
+// cloning: the verifier's check for a routine run's report file on the run's
+// pushed branch (hub DoneRule REPORT_WRITTEN, 03i).
+message PathExistsRequest {
+  fleet.type.v1.RepoRef repo = 1;
+  // Branch name or commit sha.
+  string ref = 2;
+  // Relative to the repo root; no "..", at most 512 bytes.
+  string path = 3;
+}
+
+// PathExistsResponse.
+message PathExistsResponse {
+  bool exists = 1;
+  // The commit the ref resolved to, so the answer is about one commit.
+  string resolved_commit = 2;
+}
+
 // WatchRequest names the projects to watch.
 message WatchRequest {
   repeated string projects = 1;
@@ -292,6 +313,8 @@ service IntegrationProviderService {
   rpc GetWorkItem(GetWorkItemRequest) returns (GetWorkItemResponse);
   rpc ListChangeRequests(ListChangeRequestsRequest) returns (ListChangeRequestsResponse);
   rpc GetChangeRequest(GetChangeRequestRequest) returns (GetChangeRequestResponse);
+  // Does a path exist at a ref; code hosts with IntegrationCapabilities.path_exists.
+  rpc PathExists(PathExistsRequest) returns (PathExistsResponse);
   // Change notices from webhooks or polling; optional (SYNC_MODE).
   rpc Watch(WatchRequest) returns (stream WatchResponse);
 }

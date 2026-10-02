@@ -104,10 +104,11 @@ values are held in memory and the change log stores the coalesced message.
 
 | Resource | Volatile fields | Interval |
 |---|---|---|
-| `Machine` | `status.telemetry.*` (last seen, load, memory, battery, clock skew) | 30 s |
-| `Account` | `status.pacing.ahead_points`, `rank`, `projected_unused_percent` (rewritten at every scheduler evaluation) | 30 s |
+| `Machine` | `status.telemetry.*` (last seen, load, memory, disk, spool, battery, clock skew), `status.unfit[].next_check_time` | 30 s |
+| `Account` | `status.pacing.ahead_points`, `rank`, `projected_unused_percent`, `idle_causes` (rewritten at every scheduler evaluation) | 30 s |
+| `WorkItem`, `Repo` | `dispatch_block`, `status.dispatch_block` (recomputed each scheduler pass) | 30 s |
 | `Session` | `status.attached_clients`, `status.windows[].panes[].activity`, `last_input_time`, `ready_pattern_showing`, `status.logs[]` counters | 5 s |
-| `Goal` | `status.first_line`, `status.head_commit` | 5 s |
+| `Goal` | `status.first_line`, `status.head_commit`, `status.usage_consumed` | 5 s |
 | `Device` | `status.last_seen_time` | 30 s |
 | `Integration` | `status.last_sync_time`, `status.sync_lag` | 30 s |
 
@@ -176,6 +177,10 @@ also filters on `id` (the `.value` string; `in` allowed) and `create_time` and
 | `harness` (D) | any pane's `harness.name` | repeated string | `:` |
 | `goal` (D) | any pane's `goal` | repeated string | `:` |
 | `available_for_work` (D) | any pane's `availability.available_for_work` | bool | `=` |
+| `state` | `status.state` | `SessionState` | `=` `in` |
+
+Unless the filter names `state`, `ListSessions` and the initial state of a
+`SESSIONS` subscription return `LIVE` sessions only (`state = LIVE`).
 
 `order_by`: `name`, `ct`.
 
@@ -193,8 +198,17 @@ also filters on `id` (the `.value` string; `in` allowed) and `create_time` and
 | `routine` | `spec.routine` | string | `=` |
 | `work_item` | `spec.work_item.key`, canonical string | string | `=` `in` |
 | `session` | `status.session` | string | `=` |
+| `phase_reason` | `status.phase_reason` | `GoalPhaseReason` | `=` `in` |
+| `start_time` | `status.start_time` | timestamp | `<` `<=` `>` `>=` |
+| `end_time` | `status.end_time` | timestamp | `<` `<=` `>` `>=` |
+| `live` (D) | `status.phase` is ACTIVE or HELD (03c, "Phase classes") | bool | `=` |
+| `attempt` | `spec.attempt` | number | `=` `>=` |
 
-`order_by`: `ct`, `ut`, `phase_time` (`status.phase_time`).
+`order_by`: `ct`, `ut`, `phase_time` (`status.phase_time`), `start_time`. The
+Machines timeline is `start_time < "<window end>" AND (end_time > "<window
+start>" OR live = true)`: goals that ran in the window, including ones created
+before it and ones still running. `create_time` is plan time and is not the
+timeline.
 
 | WorkItem (`WORK_ITEMS`, `ListWorkItems`) | Path | Type | Operators |
 |---|---|---|---|
@@ -206,8 +220,11 @@ also filters on `id` (the `.value` string; `in` allowed) and `create_time` and
 | `trusted` | `trusted` | bool | `=` |
 | `label` (D) | `item.labels` | repeated string | `:` |
 | `goal` | `goal` | string | `=` |
+| `manual_reason` | `manual_reason` | `WorkManualReason` | `=` `in` |
 
-`order_by`: `ct`, `ut`, `provider_update_time` (`item.update_time`).
+`order_by`: `ct`, `ut`, `provider_update_time` (`item.update_time`),
+`dispatch_order` (the scheduler's order for READY items: oldest `create_time`
+first, ties by canonical key; `desc` is not allowed).
 
 | ChangeRequest (`CHANGE_REQUESTS`, `ListChangeRequests`) | Path | Type | Operators |
 |---|---|---|---|
@@ -225,6 +242,8 @@ also filters on `id` (the `.value` string; `in` allowed) and `create_time` and
 | `mode` | `spec.mode` | `AccountMode` | `=` `in` |
 | `budget_kind` | `spec.budget_kind` | `BudgetKind` | `=` |
 | `pacing_state` | `status.pacing.state` | `PacingState` | `=` `in` |
+| `provider` | `status.provider` | string | `=` `in` |
+| `origin` | `status.origin` | `AccountOrigin` | `=` |
 
 `order_by`: `name` (`spec.display_name`), `rank` (`status.pacing.rank`).
 
@@ -253,6 +272,26 @@ also filters on `id` (the `.value` string; `in` allowed) and `create_time` and
 | `machine` `goal` | same | string | `=` `in` |
 
 `order_by`: `ct`, `expire_time`.
+
+| Repo (`REPOS`, `ListRepos`) | Path | Type | Operators |
+|---|---|---|---|
+| `enabled` | `spec.enabled` | bool | `=` |
+| `host` (D) | `spec.repo.host` | string | `=` `in` |
+| `hooks_mode` | `spec.hooks_mode` | `RepoHooksMode` | `=` `in` |
+| `integration` | `spec.repo.code_host` | string | `=` `in` |
+
+`order_by`: `name` (`id`), `ct`. The id is `host/path`.
+
+| StoredSession (`ListStoredSessions`; no Watch topic) | Path | Type | Operators |
+|---|---|---|---|
+| `machine` | `machine` | string | `=` `in` |
+| `goal` (D) | `goals` | repeated string | `:` |
+| `harness` (D) | `harnesses[].name` | repeated string | `:` |
+| `state` | `state` | `SessionState` | `=` `in` |
+| `first_time` `last_time` | same | timestamp | `<` `<=` `>` `>=` |
+
+`order_by`: `last_time` (default `last_time desc`), `first_time`. No `id`,
+`create_time` or `update_time`. `SearchSessionLogs` takes the same filter.
 
 | Routine (`ROUTINES`, `ListRoutines`) | Path | Type | Operators |
 |---|---|---|---|

@@ -148,7 +148,7 @@ row size; compressing summaries saves nothing.
 - **Readers:** pool of ≤ 10 `query_only` connections; read transactions stay
   short so checkpoints are never starved; no read transaction spans a network
   call or a stream to a browser.
-- **Backup:** nightly `VACUUM INTO` of `state.db` and on `fleet backup`.
+- **Backup:** nightly `VACUUM INTO` of `state.db` and on `fleetd backup` (a local command: a backup holds the CA key).
 - **Sustained capacity:** at the decided settings the A50 steady write is
   ≈ 4 commits/s × ≈ 7 ms = 3 % of the writer's time, and the restart burst
   ≈ 25 commits/s × ≤ 28 ms p99 ≤ 70 %; rows themselves are cheap (pure-Go
@@ -270,7 +270,7 @@ streams; `LogAck` after commit. Retention deletes the oldest `FINAL`
 sessions until under the size cap, then runs `incremental_vacuum` in
 2,000-page steps. Per-session delete is one transaction and is audited in
 `state.db`. Log I/O never queues behind state writes, and `state.db` backups
-stay small (`logs.db` is backed up only with `fleet backup --include-logs`).
+stay small (`logs.db` is backed up only with `fleetd backup --include-logs`).
 The startup truncation of partial frames in 03d is no longer needed.
 
 ### Chunk framing and volume (S2)

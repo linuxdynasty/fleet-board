@@ -1,0 +1,220 @@
+// fleet.hub.v1 repos: the per-repository settings the dispatch rules read
+// (03c planning rules). One Repo per repository the owner lets the fleet work
+// on: consent, the parallel-goal cap, where worktrees come from, the branch
+// name, the hooks convention, which tracker projects feed it and the
+// trusted-issues gate. The integration only says how to reach a provider
+// (work.proto); what the fleet may DO in a repo lives here.
+//
+// Effective values for a goal, resolved by the hub at plan time:
+//   consent        = (Repo.consent, else HubSettings.default_consent)
+//                    ∩ Account.consent  [∩ Routine.consent for a routine run]
+//   parallel cap   = Repo.max_parallel_goals, else
+//                    HubSettings.max_parallel_goals_per_repo
+//   auto-dispatch  = Repo.auto_dispatch, else HubSettings.auto_dispatch
+//   trusted gate   = Repo label, else HubSettings.trusted_label; allow-list =
+//                    HubSettings.trusted_users plus Repo users
+syntax = "proto3";
+
+package fleet.hub.v1;
+
+import "fleet/hub/v1/common.proto";
+import "fleet/hub/v1/dispatch_block.proto";
+import "fleet/hub/v1/work.proto";
+import "fleet/type/v1/consent.proto";
+import "fleet/type/v1/harness.proto";
+import "fleet/type/v1/ids.proto";
+import "fleet/type/v1/work.proto";
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/timestamp.proto";
+
+// RepoWorktreeMode says where a goal's checkout comes from. The hub turns it
+// into the agent's WorktreeMode when it builds the GoalSpec.
+enum RepoWorktreeMode {
+  REPO_WORKTREE_MODE_UNSPECIFIED = 0;
+  // REPO_DRIVER where the chosen machine's checkout ships its own goal hooks
+  // (GoalHooksState.repo_ships_own, the eshu convention), else AGENT_ENSURES.
+  // The default.
+  REPO_WORKTREE_MODE_AUTO = 1;
+  // The agent creates a worktree per goal (or a branch in a reused pane).
+  REPO_WORKTREE_MODE_AGENT_ENSURES = 2;
+  // The repo's own driver creates worktrees; the goal starts in the main
+  // checkout and the agent learns the branch from the goal file.
+  REPO_WORKTREE_MODE_REPO_DRIVER = 3;
+}
+
+// RepoHooksMode is the goal-hook convention the owner expects in this repo.
+// It is a choice; what each machine actually has is
+// RepoCheckoutState.goal_hooks.
+enum RepoHooksMode {
+  REPO_HOOKS_MODE_UNSPECIFIED = 0;
+  // Follow what the checkout reports (repo_ships_own). The default.
+  REPO_HOOKS_MODE_AUTO = 1;
+  // The repo ships its own hooks (eshu): the fleet's stay off there, and the
+  // consent form is `/goal consent <acts> -- <text>`. A checkout that does
+  // not ship them raises a warning, never an install.
+  REPO_HOOKS_MODE_ESHU = 2;
+  // The fleet's generic hooks: the hub keeps them installed with
+  // EnsureGoalHooks (03-workflows.md, "Hook reconcile") and the consent goes
+  // into the objective text.
+  REPO_HOOKS_MODE_GENERIC = 3;
+}
+
+// RepoConsent is a consent list that can be unset. A bare repeated field
+// cannot say "inherit" apart from "nothing allowed", so the list is wrapped:
+// unset RepoSpec.consent inherits the fleet default; a set one with no acts
+// means goals here may edit files and nothing more.
+message RepoConsent {
+  repeated fleet.type.v1.ConsentAct acts = 1;
+}
+
+// TrackerProject names a project of a work-tracker integration whose items
+// are worked on in this repo (a Jira project, a Linear team). The mapping
+// lives on the repo, so a ticket gets its target repo without any naming
+// convention, and WorkItem.item.repos is only a hint.
+message TrackerProject {
+  fleet.type.v1.IntegrationId integration = 1;
+  // The provider's project key ("PROJ").
+  string project = 2;
+}
+
+// RepoTrustedGate overrides the trusted-issues gate for one repo
+// (design.md safety rails). Only a work item that passes is READY; anything
+// else is MANUAL_ONLY with reason UNTRUSTED.
+message RepoTrustedGate {
+  // Label that, applied by an allow-listed person, marks an item
+  // dispatchable. Unset = HubSettings.trusted_label.
+  optional string label = 1;
+  // Provider logins allowed in addition to HubSettings.trusted_users. To be
+  // stricter than the fleet, set the repo's auto_dispatch off instead.
+  repeated string users = 2;
+}
+
+// RepoSpec is what the owner decided about a repo. Covered by Repo.version.
+// Merge method and required approvals are the repo's own branch protection:
+// the fleet never merges unless the goal's consent includes MERGE, and the
+// provider decides whether the merge is allowed.
+message RepoSpec {
+  // The identity: host and path (code_host is filled by the hub). Immutable;
+  // a different repo is a different Repo.
+  fleet.type.v1.RepoRef repo = 1;
+  // False pauses the repo: no auto-dispatch, no preflight success for a
+  // manual one (REPO_NOT_WATCHED), mirrors keep syncing. Running goals
+  // continue.
+  bool enabled = 2;
+  // Unset = HubSettings.auto_dispatch.
+  optional bool auto_dispatch = 3;
+  // Unset = HubSettings.default_consent.
+  RepoConsent consent = 4;
+  // Unset = HubSettings.max_parallel_goals_per_repo. Counts live goals
+  // (03c, "Phase classes").
+  optional uint32 max_parallel_goals = 5;
+  RepoWorktreeMode worktree_mode = 6;
+  // Template for the goal's branch: `{work}` (WorkItemRef.display slug,
+  // "eshu-7398"), `{goal}` (the goal id), `{harness}`, `{run}`. Must contain
+  // `{work}` or `{goal}`; the rendered name is lowercase [a-z0-9/._-]. Empty =
+  // "fleet/{work}". Ignored for REPO_DRIVER, where the driver names it.
+  string branch_pattern = 7;
+  // Base for new branches and the target of change requests. Empty = the
+  // default branch the agent reports for the checkout.
+  string base_branch = 8;
+  RepoHooksMode hooks_mode = 9;
+  repeated TrackerProject tracker_projects = 10;
+  RepoTrustedGate trusted_gate = 11;
+}
+
+// RepoCheckoutState is what one machine reports about its checkout of the
+// repo, so the owner sees where the hooks convention holds.
+message RepoCheckoutState {
+  fleet.type.v1.MachineId machine = 1;
+  repeated fleet.type.v1.HarnessGoalHooks goal_hooks = 2;
+}
+
+// RepoStatus is observed or computed. Not versioned.
+message RepoStatus {
+  google.protobuf.Timestamp observed_time = 1;
+  // Watch hub_seq of the change that last touched this status.
+  uint64 hub_seq = 2;
+
+  IntegrationHealth integration_health = 10;
+  // Live goals on this repo (counted against the cap) and READY items.
+  uint32 live_goals = 11;
+  uint32 ready_items = 12;
+  // The cap in force: spec or fleet default.
+  uint32 effective_max_parallel_goals = 13;
+  repeated RepoCheckoutState checkouts = 14;
+  // Why this repo is not taking work now (REPO_PARALLEL_LIMIT,
+  // INTEGRATION_LAG, AUTO_DISPATCH_OFF, ...), when it is not.
+  DispatchBlock dispatch_block = 15;
+}
+
+// Repo is one repository the fleet may work on.
+message Repo {
+  RepoId id = 1;
+  uint64 version = 2;
+  google.protobuf.Timestamp create_time = 3;
+  google.protobuf.Timestamp update_time = 4;
+
+  RepoSpec spec = 10;
+  RepoStatus status = 11;
+}
+
+// ListReposRequest. Filter and order_by names: 02c-hub-watch-and-filters.md.
+message ListReposRequest {
+  int32 page_size = 1;
+  string page_token = 2;
+  string filter = 3;
+  string order_by = 4;
+}
+
+// ListReposResponse.
+message ListReposResponse {
+  repeated Repo repos = 1;
+  string next_page_token = 2;
+}
+
+// GetRepoRequest.
+message GetRepoRequest {
+  RepoId id = 1;
+}
+
+// GetRepoResponse.
+message GetRepoResponse {
+  Repo repo = 1;
+}
+
+// CreateRepoRequest starts watching a repo. Only repo.spec is read; the id
+// is derived from spec.repo and an existing one is ALREADY_EXISTS. A repo
+// with no code-host integration to reach it is INVALID_ARGUMENT.
+message CreateRepoRequest {
+  string request_id = 1;
+  Repo repo = 2;
+}
+
+// CreateRepoResponse.
+message CreateRepoResponse {
+  Repo repo = 1;
+}
+
+// UpdateRepoRequest. Updatable: every spec field except spec.repo.
+message UpdateRepoRequest {
+  string request_id = 1;
+  Repo repo = 2;
+  google.protobuf.FieldMask update_mask = 3;
+  uint64 expected_version = 4;
+}
+
+// UpdateRepoResponse.
+message UpdateRepoResponse {
+  Repo repo = 1;
+}
+
+// DeleteRepoRequest stops watching a repo. Running goals continue; its work
+// items leave READY; mirrors age out like any unwatched item (30 days).
+message DeleteRepoRequest {
+  string request_id = 1;
+  RepoId id = 2;
+  uint64 expected_version = 3;
+}
+
+// DeleteRepoResponse.
+message DeleteRepoResponse {}
