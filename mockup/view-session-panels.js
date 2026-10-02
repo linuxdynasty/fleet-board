@@ -1,22 +1,14 @@
-// Session view panels: browser attach (J1), harness command palette (C4/F8), history (ADR 0010, v2),
-// new session (F1). All rendered by view-session.js; actions wired there.
+// Session view panels: browser attach notes (J1), harness command palette (C4/F8), history (ADR 0010, v2),
+// new session (F1). All rendered inside the Details drawer by view-session.js; actions wired there.
 
-// J1: a real tmux client in a PTY on the developer's own server, through a grouped view session so the
-// browser's current window never moves the developer's terminal.
-function attachPanel(s, m) {
-  const wins = sessions.filter(x => x.m === s.m && x.sess === s.sess).sort((a, b) => a.idx - b.idx);
-  const view = `${s.sess}-view-${s.id}`;
-  return `<div class="attach"><div class="strip" role="tablist" aria-label="Windows in ${esc(s.sess)}">
-      <span class="strip-s mono">[${esc(s.sess)}]</span>${wins.map(w => `<button class="strip-w ${w.id === s.id ? "cur" : ""}" role="tab" aria-selected="${w.id === s.id}" data-win="${w.id}"><span class="num">${w.idx}</span>:${esc(w.win)}${w.id === s.id ? "*" : ""}</button>`).join("")}
-      <span class="strip-s mono">${esc(view)} · ${ui.attachRO ? "read-only" : "read-write"}</span></div>
-    <pre class="term attach-term">${s.pane.map(([c, t]) => c ? `<span class="${c}">${esc(t)}</span>` : esc(t)).join("\n")}\n<span class="dim">${isGoal(s) ? "── goal running: keystrokes go to the harness ──" : ""}</span><span class="cursor">█</span></pre>
-    <div class="attach-foot">
-      <span>Your tmux prefix and bindings work unchanged (prefix n/p/1–9, o, splits, zoom); the strip covers shortcuts the browser reserves (Ctrl+W).</span>
-      <span>Grouped session <span class="mono">${esc(view)}</span>: same windows, its own current window, destroy-unattached on. OSC 52 and hyperlinks stripped.</span>
-      <label class="chk"><input type="checkbox" id="roToggle" ${ui.attachRO ? "checked" : ""}> Read-only (input dropped on the hub and the agent)</label>
-      <span class="mono small">${esc(attachCmd(s, ui.attachRO))}</span>
-      <span>From your own terminal: <code class="inline">${esc(attachLine(m, s))}</code> <button class="btn sm" data-act="attachline">Copy</button></span>
-    </div></div>`;
+// J1: the terminal in the main area is a real tmux client in a PTY on the developer's own server, attached through a
+// grouped view session so the browser's current window never moves the developer's own terminal.
+function attachSection(s, m) {
+  return `<section><h2>Browser attach</h2>
+    <div class="why">Grouped session <span class="mono">${esc(viewSess(s))}</span>: same windows as <span class="mono">${esc(s.sess)}</span>, its own current window, destroy-unattached on. OSC 52 and hyperlinks stripped. Your prefix and bindings work unchanged (the mock emulates <span class="mono">${esc(settings.tmuxPrefix)}</span>); the window tabs cover shortcuts the browser reserves (Ctrl+W).</div>
+    <label class="chk"><input type="checkbox" id="roToggle" ${T.ro ? "checked" : ""}> Read-only (input dropped on the hub and the agent)</label>
+    <span class="mono small">${esc(attachCmd(s, T.ro))}</span>
+    <div class="why">From your own terminal: <code class="inline">${esc(attachLine(m, s))}</code> <button class="btn sm" data-act="attachline">Copy</button></div></section>`;
 }
 
 // C4/F8: the catalogued commands for this harness install, grouped by class. DENY is never shown.

@@ -65,37 +65,53 @@ is the copyable attach fallback and runs on the developer's own machine.
 
 ## Session
 
+The main area is the live tmux session: a PTY-backed `tmux attach` through a
+grouped view session (J1), drawn like the developer's own client. The sidebar
+lists every window on every machine; the Details drawer holds the controls.
+
 | UI element | Contract | Source |
 |---|---|---|
-| Sidebar: machine → tmux session → windows, names as tmux shows them | `TmuxServer.sessions[]` → `TmuxSession.name` → `TmuxWindow{index, name}` | E1 |
+| Sidebar: machine → tmux session → windows, names as tmux shows them; collapse button | `TmuxServer.sessions[]` → `TmuxSession.name` → `TmuxWindow{index, name}` | E1 |
 | "yours" / "started by fleet" tag | `TmuxSession.started_by_fleet`, `TmuxPane.fleet_tags` (`FLEET_*`) | E1, ADR 0011 |
 | "idle" / "available" tag | `TmuxPane.availability{idle, available_for_work}` | E11 |
-| "Mark available for work" | sends `SetSessionAvailability{session, available_for_work}`; `AvailabilityChanged.reason = marked_on_board` | E11 |
-| "Becomes available after a verified merge" | `available_for_work` set by the agent when the goal is verified merged | E11 |
-| Header: window name, pane id, `session:index` | `TmuxWindow.name`, `PaneKey.pane_id`, `SessionTarget` | E1 |
-| Model line → account (OpenCode) | `SessionAccountLink{provider, model, account_key}` | 01 §C, D2 |
-| Goal file line + CONSENT | `GoalState.first_line`, `GoalState.consent_line` | G2 |
-| Condition banner | `HarnessCondition` for this pane | E12 |
-| Terminal area | `PaneSummary.last_lines` / `CapturePaneResult.text` | E5, E10 |
-| "Send…" preview | sends `SendKeys{pane, keys: [literal, ENTER]}` (`NamedKey`), confirmation only when risky | F3, ADR 0004 |
-| Goal controls Pause / Resume / Edit / Clear | sends `RunHarnessCommand{command: "/goal", args: pause\|resume\|edit …\|clear, expected_class: GOAL}` | G4, 01b |
+| Status line: `[session]`, numbered window tabs `1 btop  2 opencode …`, current highlighted, `Z` when zoomed, `"host"` and clock on the right | `TmuxSession.name`, `TmuxWindow{index, name, active}`; zoom is pane state the client shows (`window_zoomed_flag`) | E1, J1 |
+| Click on a window tab | sends `TermDown.select{window_id}` on the attach's Terminal stream (contract addition: a `select` body next to `input`, `resize`, `close`; the agent runs `select-window` in the view session only) | J1, ADR 0011 |
+| View session name in the status line (`main-view-1`) | `OpenAttachResult.view_session_name`; `TmuxSession.attach_view = true` | J1 |
+| Pane layout with splits, borders, active pane in green, title line `index: command` | `TmuxWindow.panes[]` → `TmuxPane{index, active, current_command, key.pane_id}`; the real client draws the layout from `TermUp.output` | E1, J1 |
+| Pane screen text | live: `TermUp.output` (OSC 52 and hyperlinks stripped); snapshot: `CapturePaneResult.text` / `PaneSummary.last_lines` | J1, E5, E10 |
+| Click on a pane | makes it the active pane (`select-pane` in the view session; mouse mode in the real client) | J1 |
+| Terminal focus ring, plain typing, Ctrl keys, arrows | sends `TermDown.input` bytes on the Terminal stream; nothing is interpreted by the hub | J1 |
+| Prefix keys (`C-b` then `n p 0-9 o ←↑→↓ z w s d ?`), PREFIX indicator | forwarded as `TermDown.input` (`\x02` + key); tmux applies the developer's own bindings; the mock emulates the defaults behind Settings → tmux prefix | J1, ADR 0011 |
+| "[detached (from session …)]" after prefix `d`; Enter / Attach re-attaches | sends `CloseAttach{attach_id}`; view session destroyed (`destroy-unattached`); re-attach is a new `OpenAttach` | J1 |
+| "You're typing into a running goal (…)" banner | `TmuxPane.fleet_tags.FLEET_GOAL_ID` set and `GoalState.state` not DONE; input still goes to the harness (ADR 0004 "People on the hub") | G2, ADR 0004 |
+| Read-only toggle (banner and Details drawer) | `OpenAttach.read_only`; hub drops `TermDown.input`, agent enforces; `TermDown.select` still allowed | J1 |
+| "Destructive prompt … → Triage" in the banner | `PromptDetected{destructive}` answered only through `SendKeys{answering_prompt}` from Triage | E6, F3 |
+| Condition and permission strips above the terminal | `HarnessCondition`, `PromptDetected` for this pane | E12, E6 |
+| Caption: `OpenAttach{…} → view session · last sent: TermDown{…}` | sends `OpenAttach{attach_id, session, cols, rows, read_only}`; `Terminal` stream `TermUp/TermDown` | J1 |
+| Details drawer: window meta (`session:index`, pane id, branch, started, last output) | `TmuxWindow.name`, `PaneKey.pane_id`, `SessionTarget`, `TmuxPane.last_output_at` | E1 |
+| Details drawer: model line → account (OpenCode) | `SessionAccountLink{provider, model, account_key}` | 01 §C, D2 |
+| Details drawer: goal file line + CONSENT | `GoalState.first_line`, `GoalState.consent_line` | G2 |
+| Details drawer: goal progress | `GoalState.tasks[]` | G2 |
+| Details drawer: change request | `ChangeRequest{display, state, checks}` | ADR 0012 |
+| Details drawer: Goal controls Pause / Resume / Edit / Clear | sends `RunHarnessCommand{command: "/goal", args: pause\|resume\|edit …\|clear, expected_class: GOAL}` | G4, 01b |
 | Pause on Claude Code | sends `Interrupt{pane}` (no `/goal pause` on Claude) | G4, F4 |
 | Disabled subcommand with tooltip | `ReasonCode.GOAL_SUBCOMMAND_UNSUPPORTED`; `/goal` syntax per harness | 01b goal subcommands |
 | No "Stop goal" | `Command` field 42 `stop_goal` reserved; a goal ends with `/goal clear` | ADR 0011 |
-| "Restart harness in place…" | sends `RespawnPane{pane, harness, resume: true}` (adapter `ResumeArgs`); may return `AWAITING_LOCAL_CONFIRM` | F5, L3 |
-| "Kill window…" (fleet windows only) | sends `KillWindow{window}`; developer windows need `ROLE_OWNER` | F6, ADR 0011 |
-| "Move to another machine…" | `/goal clear` (or `Interrupt`) here, `StartGoal` there; no move command in v2 | 01 "not in v2" |
-| "Attach in browser" panel | sends `OpenAttach{attach_id, session, cols, rows, read_only}`; `Terminal` stream `TermUp/TermDown`; `OpenAttachResult.view_session_name` | J1 |
-| Window strip in the attach panel | `TmuxWindow{index, name, active}` of the attached session; click = switch in the grouped view session | J1 |
-| "your prefix and bindings work" / grouped session note | PTY-backed `tmux attach` through `new-session -t <session>` with `destroy-unattached` | J1, ADR 0011 |
-| Read-only toggle | `OpenAttach.read_only`; hub drops `TermDown.input`, agent enforces | J1 |
-| "From your own terminal: ssh -t … tmux attach …" | copyable fallback generated in the browser; the hub never runs it | ADR 0006 v1 attach |
-| "Harness command…" palette, grouped by class, deny never shown | `HarnessInfo.catalog` (`CommandCatalog{hash, entries[]{name, class}}`); sends `RunHarnessCommand{pane, command, expected_class, catalog_hash}` | C4, F8 |
+| Details drawer: "Send…" keys | sends `SendKeys{pane, keys: [literal, ENTER]}` (`NamedKey`), confirmation for goal panes; distinct from the unconfirmed `TermDown.input` path | F3, ADR 0004 |
+| Details drawer: "Harness command…" palette, grouped by class, deny never shown | `HarnessInfo.catalog` (`CommandCatalog{hash, entries[]{name, class}}`); sends `RunHarnessCommand{pane, command, expected_class, catalog_hash}` | C4, F8 |
 | Destructive commands need confirm | `COMMAND_CLASS_DESTRUCTIVE`: local approval or explicit owner action | 01b class table |
 | Observe result note | `RunHarnessCommandResult.screen` (64 KiB cap) | F8 |
-| History panel timeline, replay placeholder, sizes | `LogChunk{stream, offset, zstd}` / `LogAck`; `SetLogCapture` for own sessions; measured 26.9 MB/h raw, 0.23 MB/h stored | K1, K2, ADR 0010, 01c |
-| "New session…" | sends `EnsureSession{session_id, server: DEFAULT, name, workdir{repo}, harness, reuse, owner}`; name rule `[a-z0-9][a-z0-9-]{0,31}` → `INVALID_NAME` | F1, ADR 0006 |
-| Timeline | hub audit log entries for this session | M1 (hub side) |
+| Details drawer: "Mark available for work" | sends `SetSessionAvailability{session, available_for_work}`; `AvailabilityChanged.reason = marked_on_board` | E11 |
+| "Becomes available after a verified merge" | `available_for_work` set by the agent when the goal is verified merged | E11 |
+| Details drawer: "Restart harness in place…" | sends `RespawnPane{pane, harness, resume: true}` (adapter `ResumeArgs`); may return `AWAITING_LOCAL_CONFIRM` | F5, L3 |
+| Details drawer: "Kill window…" (fleet windows only) | sends `KillWindow{window}`; developer windows need `ROLE_OWNER` | F6, ADR 0011 |
+| Details drawer: "Move to another machine…" | `/goal clear` (or `Interrupt`) here, `StartGoal` there; no move command in v2 | 01 "not in v2" |
+| Details drawer: "Attach from your terminal…" / `ssh -t … tmux attach …` | copyable fallback generated in the browser; the hub never runs it | ADR 0006 v1 attach |
+| Details drawer: Browser attach note (grouped session, own current window, destroy-unattached) | PTY-backed `tmux attach` through `new-session -t <session>` with `destroy-unattached` | J1, ADR 0011 |
+| Details drawer: History timeline, replay placeholder, sizes | `LogChunk{stream, offset, zstd}` / `LogAck`; `SetLogCapture` for own sessions; measured 26.9 MB/h raw, 0.23 MB/h stored | K1, K2, ADR 0010, 01c |
+| "New session…" (sidebar and drawer) | sends `EnsureSession{session_id, server: DEFAULT, name, workdir{repo}, harness, reuse, owner}`; name rule `[a-z0-9][a-z0-9-]{0,31}` → `INVALID_NAME` | F1, ADR 0006 |
+| Details drawer: Timeline | hub audit log entries for this session | M1 (hub side) |
+| Settings: tmux prefix (`C-b` / `C-a`) | mock-only emulation switch; the real build forwards raw keys, so no contract field | J1 |
 
 ## Fleet
 

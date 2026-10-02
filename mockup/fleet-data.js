@@ -82,6 +82,8 @@ const settings = {
   showEmails: false,
   windowTemplate: "{harness} {work}",
   idleMinutes: 2,
+  // Prefix the browser terminal emulates in the mock; the real build forwards raw keys, so the developer's own prefix applies.
+  tmuxPrefix: "C-b",
 };
 
 // C4 harness command catalogs (01b, observed 2026-09-30/10-01), classified by the adapter.

@@ -49,6 +49,10 @@ function renderSettings() {
         <label class="slot"><span>Window name template</span><input class="field mono" id="winTpl" value="${esc(settings.windowTemplate)}" aria-label="Window name template"></label>
         <label class="slot"><span>Idle threshold (min)</span><input type="number" min="1" max="60" id="idleMin" value="${settings.idleMinutes}" aria-label="Idle threshold"></label>
       </fieldset>
+      <fieldset><legend>Browser terminal</legend>
+        <label class="slot"><span>tmux prefix <span class="why">emulated in this mock</span></span><select id="tmuxPrefix" aria-label="tmux prefix">${["C-b", "C-a"].map(p => `<option ${settings.tmuxPrefix === p ? "selected" : ""}>${p}</option>`).join("")}</select></label>
+        <div class="why">The real build forwards raw keys over the Terminal stream (TermDown.input), so your own tmux prefix and bindings apply unchanged; this setting only tells the mock which key to treat as the prefix.</div>
+      </fieldset>
       <fieldset><legend>Reserve per account</legend>
         ${accounts.map(a => `<label class="slot"><span>${esc(a.label)} <span class="why">kept for you · ${esc(a.mode)}</span></span><input type="number" min="0" max="90" step="5" id="res-${a.id}" data-res="${a.id}" value="${a.reserve}"></label>`).join("")}
         ${apiAccounts.map(a => `<label class="slot"><span>${esc(a.label)} <span class="why">cap · manual only</span></span><span class="mono">$${a.capUsd}/${esc(a.period)}</span></label>`).join("")}
@@ -80,6 +84,7 @@ function renderSettings() {
   $("showEmails").onchange = e => { settings.showEmails = e.target.checked; log(`share_identity_email ${e.target.checked ? "on" : "off"}`); rerender(); };
   $("winTpl").onchange = e => { settings.windowTemplate = e.target.value.trim() || "{harness} {work}"; rerender(); };
   $("idleMin").onchange = e => { settings.idleMinutes = num(e.target.value, 1, 60); rerender(); };
+  $("tmuxPrefix").onchange = e => { settings.tmuxPrefix = e.target.value === "C-a" ? "C-a" : "C-b"; log(`browser terminal emulates prefix ${settings.tmuxPrefix} (mock only)`); rerender(); };
   document.querySelectorAll("[data-cons]").forEach(c => c.onchange = () => {
     settings.consent = CONSENT_OPTS.filter(o => o === c.dataset.cons ? c.checked : settings.consent.includes(o));
     log(`goal consent is now: ${settings.consent.join(", ") || "none"}`); rerender();

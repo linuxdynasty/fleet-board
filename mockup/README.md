@@ -50,15 +50,27 @@ agent types into a harness, the keys it will type. Nothing is sent. The only
 | `fleet-settings.js` | Settings panel: repos, consent, reserves, limits with their layer, integrations, privacy, `fleet.yaml` preview |
 | `view-triage.js` | Triage: prompts bound to `prompt_id`, stuck goals, harness conditions, DONE disagreements, reserve |
 | `view-work.js` | Work board by stage with provider chips; "Next up" with session reuse |
-| `view-session.js` | Session view: tmux sidebar, goal controls, session controls, send keys, move |
-| `view-session-panels.js` | Browser attach panel, harness command palette, history, new session |
+| `view-session.js` | Session view: tmux sidebar (collapsible), the live terminal in the middle, Details drawer with goal and session controls, send keys, move |
+| `view-session-panels.js` | Details drawer panels: browser attach note, harness command palette, history, new session |
+| `view-session-tmux.js` | The terminal: tmux-style status line with window tabs, pane layout with splits, choosers, help, detached state |
+| `view-session-keys.js` | Terminal keyboard: prefix emulation (tmux defaults), plain typing into the active pane, `TermDown` preview |
 | `view-fleet.js` | Fleet: usage as each harness shows it plus burn-down, API-key accounts, machine facts, drain, audit |
 
 Load order in `index.html` is the dependency order: data → `fleet-cmd` →
-`fleet-dispatch` → `fleet-settings` → `fleet-core` → views (panels before
-`view-session.js`). Every dynamic string goes through `esc()`.
+`fleet-dispatch` → `fleet-settings` → `fleet-core` → views (panels, tmux and
+keys before `view-session.js`). Every dynamic string goes through `esc()`.
 
 ## Keys
 
 `1`–`4` views · `⌘K` or `/` jump to · `n` next session that needs you ·
-Triage: `j`/`k`, `a`, `s`, `o` · Session: `[` / `]`
+Triage: `j`/`k`, `a`, `s`, `o` · Session (terminal unfocused): `[` / `]`
+step windows, `i` Details drawer.
+
+Session, terminal focused (click it; Esc leaves): every key goes to the
+active pane, previewed as `TermDown.input`. The prefix (Settings → tmux
+prefix, `C-b` by default, `C-a` allowed) arms tmux defaults: `n`/`p` next and
+previous window, `0`–`9` window by index, `o` next pane, arrows pane by
+direction, `z` zoom, `w` window chooser, `s` session chooser, `d` detach,
+`?` key help, Esc cancels the prefix. In the real build the keys go straight
+to tmux over the Terminal stream, so the developer's own bindings apply;
+clicking a window tab sends `TermDown.select{window_id}`.
