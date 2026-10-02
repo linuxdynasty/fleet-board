@@ -1,0 +1,271 @@
+# 03e. Settings and policy; harness upgrade drift
+
+- Part of: [03-workflows.md](03-workflows.md) (conventions apply)
+
+## W10. Settings and policy
+
+**Trigger.** Owner edits fleet, group or machine settings or labels (UI/CLI);
+an agent connects with an older `Hello.settings_generation`; the local policy
+file changes on a machine; `Drain`/`Undrain` from the hub or `fleet-agent
+drain|undrain` locally.
+
+**Actors.** Owner, writer (generation counter, resolution), gateway,
+`fleet-agent` (tighten-only merge, file watcher), the local policy file
+(`~/.config/fleet-agent/policy.yaml`, the ceiling, ADR 0009).
+
+```mermaid
+sequenceDiagram
+  participant O as Owner
+  participant W as writer
+  participant G as gateway
+  participant A as fleet-agent
+  O->>W: set group "laptop".block_on_battery = true
+  W->>W: tx: settings_groups upsert · settings_generation += 1 → 13 ·<br/>for each affected machine: resolve machine → groups (priority) → fleet default · machine_settings_sent{machine, gen=13}
+  W->>G: publish Settings for affected connected machines
+  G-->>A: Settings{generation=13, labels[], values SettingValues{…}, probe_interval_seconds_by_account}
+  A->>A: validate · merge tighten-only under local ceiling (rules below) · persist {gen, effective} · apply
+  A->>G: SettingsAck{generation=13, effective EffectiveSettings{values, sources[], labels}, capped_fields[]}
+  G->>W: tx: machine_effective_settings{machine, gen=13, effective, capped_fields, acked_at}
+  Note over A: later: policy.yaml edited on the machine
+  A->>G: Event{policy_changed{policy PolicyInfo{hash, changed_since_load=true}, previous_hash}}
+  G->>W: tx: machines.policy_hash_on_disk · triage info "policy changed on <machine>, restart pending"
+  Note over A: owner restarts fleet-agent on the machine (never the hub)
+  A->>G: Hello{settings_generation=13} … Snapshot{policy{hash=new}, settings{effective recomputed}}
+  G->>W: tx: compare effective vs last ack → update capped_fields display
+```
+
+**Tighten-only merge (per field, on the agent).** Numeric limits
+(`max_active`, `max_total`, `max_windows`, `rate_limits`, `cert_lifetime`,
+`spool_cap_bytes`): `min(hub, local)`. Durations where shorter is stricter
+(`idle_threshold` is not a safety field: hub wins; `attach_idle_timeout`:
+`min`). Booleans that require something (`local_approval[].required`,
+`block_on_battery`): `hub OR local`. Sets (`allowed_harnesses`,
+`allowed_repo_roots`): `hub ∩ local`. Enum `default_server`: `min(hub, local)`
+in the order `NONE < OBSERVE < CONTROL`. `share_identity_email`: hub wins (it is
+an owner privacy choice, not a machine safety ceiling). Labels: hub-assigned ∪
+local additions; a local file cannot remove a hub label. Each field records its
+`SettingSource.layer`; fields where the local value won are listed in
+`capped_fields` so the UI says "capped by local policy on omarchy".
+
+**Generation.** One fleet-wide monotonic counter; a machine's `Settings`
+carries the counter value at which its resolved values were last computed. The
+agent persists the last applied generation and reports it in `Hello`; the hub
+sends `Settings` when its value for that machine is newer. The agent ignores a
+generation ≤ the one it holds except after a hub restore (03g: `HelloAck`
+flag) and re-acks the held one. Applying is immediate for rate limits,
+approval rules, idle threshold, spool cap, window template, probe intervals;
+`cert_lifetime` at the next renewal; `max_active`/`max_total` are hub-side
+limits the agent only echoes.
+
+**Drain.** `Drain{reason}` → agent `DrainState{draining, requested_by="hub"}`
+→ `Event.drain_state` + `Heartbeat.draining=true`; the scheduler excludes the
+machine; running goals continue (drain never kills). `Undrain` clears a hub
+drain; a local `fleet-agent drain` can only be undone locally (`Undrain` →
+`REJECTED_BY_POLICY/DRAINING`), and the UI shows "drained on the machine".
+While draining, `StartGoal` and harness-starting `EnsureSession`/`EnsureWindow`
+are refused with `DRAINING`; a composite already past `preflight` finishes.
+
+### State machine (settings delivery per machine, owned by the hub)
+
+```mermaid
+stateDiagram-v2
+  [*] --> CURRENT: acked generation == machine's generation
+  CURRENT --> PENDING: owner change bumps generation for this machine
+  PENDING --> SENT: machine ONLINE, Settings sent
+  PENDING --> PENDING: machine OFFLINE (sent at next Hello)
+  SENT --> CURRENT: SettingsAck with that generation
+  SENT --> PENDING: no ack in 60 s (resend once per reconnect)
+  CURRENT --> CEILING_CHANGED: Snapshot.policy.hash differs from last known
+  CEILING_CHANGED --> CURRENT: effective re-read from the snapshot
+```
+
+Machine drain state: `ACTIVE` → `DRAINING{hub}` → `ACTIVE` (Undrain);
+`ACTIVE` → `DRAINING{local}` → `ACTIVE` (local undrain only).
+
+### Persistence
+
+| What | Where | Transaction |
+|---|---|---|
+| `settings_fleet`, `settings_groups{label, priority, values}`, `settings_machines{machine, values}`, `machine_labels{machine, label, source=hub}` | hub store | the owner's change tx (with the generation bump) |
+| `settings_generation` (one row), `machine_settings_sent{machine, gen, sent_at}` | hub store | change tx; send tx |
+| `machine_effective_settings{machine, gen, effective, capped_fields, acked_at}` | hub store | ack tx |
+| `machines.policy_hash`, `policy_schema_version`, `policy_hash_on_disk` | hub store | snapshot tx; `policy_changed` tx |
+| Audit: who changed what (old → new) | hub store (permanent) | change tx |
+| `settings.json{generation, values, effective}`, local policy file and its loaded hash | agent state dir / config dir | before `SettingsAck` is sent |
+| Drain state and reason | agent state dir (survives restart) and hub `machines.drain` | per change |
+
+### Ordering and consistency
+
+- The generation bump and the stored values commit together; a send that
+  races with the next change simply gets superseded by a newer generation.
+- The agent applies settings in generation order; acks are per generation; the
+  hub keeps only the latest ack per machine.
+- The local ceiling takes effect only after an agent restart (L1), so the hub
+  can show a precise "restart pending" state instead of guessing.
+- `Settings` may precede `Snapshot` on connect (W1); the snapshot's
+  `settings.generation` tells the hub which generation it reflects.
+
+### Failure modes
+
+| Failure | What happens |
+|---|---|
+| Agent offline | `PENDING`; delivered after the next `Hello` (`HelloAck.settings_generation` > `Hello.settings_generation`) |
+| Hub restart | Generation and values durable; resend on each Hello as needed |
+| Duplicate `Settings` (same generation) | Agent re-acks; no re-apply |
+| Out-of-order generations (two gateways; cannot happen with one hub) | Agent ignores the lower; counted |
+| Invalid value (e.g. `max_windows=0`, bad duration) | Agent rejects that field, keeps the previous effective value, names it in `capped_fields` with `SettingSource.layer=LOCAL_CEILING` and a message; the UI shows the rejection |
+| Policy file invalid on restart | Agent starts in **safe mode**: observe only, every control command `REJECTED_BY_POLICY`, `PolicyInfo.schema_version=""` + message in the snapshot; triage `policy_invalid` |
+| Policy file deleted | Agent uses built-in safe defaults; reported as hash of defaults; `doctor` warns |
+| Hub store restored from an older backup (generation goes backwards) | `HelloAck.settings_restored=true` (03g) makes the agent accept a lower generation once |
+| `Drain` while `StartGoal` in flight | In flight past preflight → completes; not yet started → `DRAINING` at preflight |
+| `Undrain` against a local drain | `REJECTED_BY_POLICY/DRAINING`; UI explains |
+| Harness crash, prompts, provider errors, developer typing | Not affected by this workflow |
+| Work tracker / code host | Not involved |
+
+### Telemetry
+
+- `fleet_hub_settings_generation`, `fleet_hub_settings_pending_machines`,
+  `fleet_hub_settings_ack_lag_seconds{machine}` (sent → acked),
+  `fleet_hub_settings_capped_fields{machine}` (count), `fleet_hub_settings_rejected_fields_total{field}`,
+  `fleet_hub_machines_draining{requested_by}`, `fleet_hub_policy_restart_pending{machine}`.
+- `fleet_agent_settings_applied_generation`, `fleet_agent_settings_capped_total{field}`,
+  `fleet_agent_policy_changed_total`, `fleet_agent_policy_safe_mode` (gauge),
+  `fleet_agent_draining{requested_by}`.
+- Spans: `hub.settings.publish{generation}`, `agent.settings.merge{generation}`,
+  `hub.drain{machine}` → `agent.drain`.
+- Logs: `settings.changed{by, scope, field, old, new, generation}`,
+  `settings.capped{machine, field, hub_value, local_ceiling}`,
+  `settings.rejected{machine, field, reason}`, `policy.changed{machine, old_hash,
+  new_hash}`, `policy.safe_mode{machine, error}`, `drain.changed{machine,
+  draining, requested_by, reason}`.
+
+At 3 AM: "why does this machine ignore the group setting?" →
+`settings.capped` for the machine, or `fleet_hub_settings_ack_lag_seconds`
+(never acked) and `fleet_hub_policy_restart_pending`.
+
+---
+
+## W11. Harness upgrade drift
+
+**Trigger.** The agent's periodic `Detect()` (every 5 min, and before each
+probe run) reports a different version or path for a harness; a probe or
+passive parse fails on a supported version repeatedly; a
+`RunHarnessCommand` is refused `CATALOG_STALE`; a new agent release with new
+fixtures is installed on the machine (by the developer, never by the hub).
+
+**Actors.** `fleet-agent` (adapter `Detect()`, `CommandCatalog()`, parsers
+with `SupportedVersions`, `capture-fixtures` job), writer, scheduler, triage,
+the owner (commits fixtures, upgrades the agent).
+
+```mermaid
+sequenceDiagram
+  participant A as fleet-agent
+  participant P as harness (fleet-probe)
+  participant W as writer
+  participant S as scheduler
+  participant O as Owner
+  A->>A: Detect(): muse 1.4.2 → 1.5.0 · not in SupportedVersions
+  A->>P: identity probe (C2) + CommandCatalog() walk (C4)
+  A->>W: Event{harness_changed HarnessInfo{harness, version="1.5.0", parser_version, version_supported=false, supported_versions[], catalog{hash=new, entries[]}, prompt_detection_verified=false, goal_hooks}}
+  W->>W: tx: harness_installs upsert (+history) · machine unfit for (muse) with HARNESS_VERSION_UNSUPPORTED ·<br/>triage parser_unsupported fingerprint=(harness, version) · probes on this machine for muse accounts → readings UNKNOWN
+  W->>S: wakeup: re-assign muse probe to a machine with a supported version if any (W3)
+  A->>P: scheduled /usage still runs
+  A->>W: Event{usage_reading{parse=FAILED or buckets with PercentUnknown{HARNESS_VERSION_UNSUPPORTED}, shown.raw_screen}}
+  Note over W: board shows the raw screen "as shown" with "unknown" · no auto-dispatch on that account from this machine
+  O->>A: fleet-agent capture-fixtures --harness muse (scrubbed screens committed · parser updated · agent released)
+  O->>A: upgrade fleet-agent on the machine · restart (Bye{UPGRADE})
+  A->>W: Hello … Snapshot{harnesses[muse{version_supported=true, parser_version=new}]}
+  W->>W: tx: machine fit again · retire triage item · probe readings known again
+```
+
+**Rules.**
+
+- `version_supported=false` ⇒ usage readings from that harness on that machine
+  are `UNKNOWN{HARNESS_VERSION_UNSUPPORTED}` (still shown raw), preflight
+  refuses `HARNESS_VERSION_UNSUPPORTED`, auto-dispatch excludes `(machine,
+  harness)`, prompts from that harness are `answerable=false` until
+  `prompt_detection_verified` for the new version (notice-only, W7), and
+  goal hooks are re-verified on the next `EnsureGoalHooks`.
+- **Parser degraded** on a supported version: 3 consecutive `PARSE_FAILED`
+  readings from one probe → treated like unsupported for scheduling
+  (`PARSER_DEGRADED`), fingerprinted triage; a good reading clears it.
+- **Catalog hash.** Any `RunHarnessCommand` carrying an old `catalog_hash` is
+  refused `CATALOG_STALE`; the hub refreshes from `harness_changed` and
+  retries **once, automatically, only for `OBSERVE` class**; other classes
+  go back to the operator with "catalog changed, confirm again". Commands
+  new to the catalog are classified by the adapter table for that version;
+  unknown ones are `DENY`; a command that moved to a stricter class is
+  stricter immediately; local policy can only tighten further.
+- Manual dispatch to an unsupported version is allowed with a warning (the
+  harness runs fine; only fleet-board's parsing is behind), but the goal shows
+  "usage unknown" and counts against the account's `allowed_active` as 1.
+- Fixture capture is a scripted local job (`fleet-agent capture-fixtures`),
+  scrubbed of emails, names and installed skill names before commit (01c).
+  Nothing in it crosses the agent ↔ hub contract.
+
+### State machine (per `(machine, harness)`, owned by the hub)
+
+```mermaid
+stateDiagram-v2
+  [*] --> SUPPORTED: HarnessInfo.version_supported
+  SUPPORTED --> UNSUPPORTED: harness_changed with version_supported=false
+  SUPPORTED --> PARSER_DEGRADED: 3 consecutive PARSE_FAILED on a supported version
+  PARSER_DEGRADED --> SUPPORTED: a PARSE_OUTCOME_OK reading
+  PARSER_DEGRADED --> UNSUPPORTED: version changed
+  UNSUPPORTED --> SUPPORTED: snapshot/harness_changed with version_supported=true (agent upgraded)
+  SUPPORTED --> MISSING: Detect() fails twice in a row (binary gone)
+  MISSING --> SUPPORTED: detected again
+  MISSING --> UNSUPPORTED: detected, unsupported
+```
+
+### Persistence
+
+| What | Where | Transaction |
+|---|---|---|
+| `harness_installs{machine, harness, version, path, parser_version, supported, catalog_hash, prompt_detection_verified, hooks, state, since}` + history rows for the timeline | hub store | `harness_changed` tx; snapshot tx |
+| `catalog_entries{machine, harness, catalog_hash, name, class, tightened_by_policy}` | hub store | same tx |
+| Triage `parser_unsupported`, `parser_degraded` | hub store | same tx |
+| Machine unfit markers `(machine, harness, reason)` | hub store (derived, used by W5) | same tx |
+| Detected versions, catalog cache, fixtures | agent state dir / binary | local |
+
+### Ordering and consistency
+
+- `harness_changed` carries the full `HarnessInfo`, so the hub never merges
+  partial catalogs; the catalog hash in the latest event is the only one the
+  hub will send.
+- A `RunHarnessCommand` issued before the event but delivered after it is
+  refused by the agent (`CATALOG_STALE`), never typed.
+- The snapshot after an agent upgrade is authoritative; `harness_installs`
+  rows for harnesses absent from the snapshot become `MISSING`.
+
+### Failure modes
+
+| Failure | What happens |
+|---|---|
+| Detect fails during an upgrade in progress (binary missing for seconds) | Two consecutive failures required before `MISSING`; a probe run in that window reports `PROBE_START_FAILED` once |
+| Agent offline | Drift learned from the next snapshot |
+| Hub restart | State in `harness_installs`; snapshot re-confirms |
+| Duplicate `harness_changed` | Same content, idempotent upsert |
+| Probe crashes on the new version (TUI changed) | `ProbeHealth` failures → failover to another machine (W3); if all machines run the new version, the account is `UNKNOWN` until fixtures land |
+| Prompt detection silently wrong on the new version | `answerable=false` by default for an unverified version, so nothing is typed into a misdetected prompt |
+| Goal hooks incompatible with the new version | `GoalHooksState.verified=false` after re-verification; preflight refuses `HOOKS_INSTALL_FAILED`-class failures only when hooks are fleet's; repos shipping their own are left alone |
+| Deny-class command appears under a new name | Unknown ⇒ `DENY`; never sendable |
+| Developer typing / provider error | Not specific to this workflow |
+| Work tracker / code host | Not involved |
+
+### Telemetry
+
+- `fleet_hub_harness_state{machine, harness, state}`, `fleet_hub_harness_versions{harness, version}`
+  (count of machines), `fleet_hub_catalog_stale_total{harness}`,
+  `fleet_hub_harness_drift_total{harness, to_state}`,
+  `fleet_hub_usage_parse_total{harness, harness_version, outcome}` (shared with W3).
+- `fleet_agent_harness_detect_total{harness, result}`, `fleet_agent_catalog_changes_total{harness}`,
+  `fleet_agent_parser_version{harness}` (info gauge), `fleet_agent_fixture_capture_total{harness, result}`.
+- Spans: `agent.harness.detect{harness}`, `agent.harness.catalog{harness}`,
+  `hub.harness.apply_change{machine, harness}`.
+- Logs: `harness.drift{machine, harness, from_version, to_version, supported,
+  catalog_hash}`, `harness.parser_degraded{machine, harness, version,
+  failures}`, `harness.catalog_stale{machine, harness, command}`.
+
+At 3 AM: "usage shows unknown for Muse" → `fleet_hub_harness_state{state=
+UNSUPPORTED|PARSER_DEGRADED}` and the `harness.drift` log naming the version.

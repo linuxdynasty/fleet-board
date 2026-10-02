@@ -9,7 +9,7 @@ the next starts, and no implementation code is written until step 4 is done.
 | 1b | [01b-harness-commands.md](01b-harness-commands.md) | Which harness commands exist and which may the hub send? | Draft |
 | 1c | [01c-handoff.md](01c-handoff.md) | What must step 2 pin down, which ADRs change, what volumes to expect? | Draft |
 | 2 | [02-contracts.md](02-contracts.md) + [`api/fleet/v1/*.proto`](../../api/fleet/v1/) | What exactly crosses the wire for each capability? | Draft |
-| 3 | 03-workflows.md | How do agent and hub cooperate for each flow (sequence, state machines, volumes, consistency)? | Not started |
+| 3 | [03-workflows.md](03-workflows.md) (+ [03b](03b-usage-and-sync.md)–[03g](03g-load-and-handoff.md)) | How do agent and hub cooperate for each flow (sequence, state machines, volumes, consistency)? | Draft |
 | 4 | 04-technology-review.md | Given the workflows, which storage, queueing and other technologies do we need? | Not started |
 
 ## How the steps connect
