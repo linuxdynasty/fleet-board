@@ -88,7 +88,23 @@ Probed 2026-10-01 by typing `/goal` and `/goal ` without Enter, then bare
 | Muse 1.4.2 | `/goal [<objective>\|edit <objective>\|clear\|pause\|resume]` | "No goal is set." |
 
 - Claude Code has only set and clear; pausing a Claude goal means
-  interrupting it (F4).
+  interrupting it (F4). Probed 2026-10-02:
+
+  | Harness | After interrupt | Resumes on its own (30 s)? | Resume with |
+  |---|---|---|---|
+  | Claude Code 2.1.286 | goal stays active ("Goal active") | no | typing `continue` |
+  | Codex 0.160.0 | "Goal paused" | no | `/goal resume` (checks where it stopped first) |
+  | Muse 1.4.2 | "goal paused by interrupt" | no | `/goal resume` |
+
+  Claude prints "✔ Goal achieved (…)" when done and clears the goal itself.
+  Its empty input line can show placeholder text ("I have no suggestion for the
+  next step."), so the empty-input check must ignore placeholders.
+- **Startup prompts must be read before any key is pressed.** Codex sometimes
+  opens with an "update available" prompt instead of folder trust; in the probe
+  a blind `1` + Enter chose "update now" and ran `brew upgrade --cask codex`
+  (0.159.2 → 0.160.0). Adapters classify every startup prompt (trust, update,
+  login, release notes); update and login prompts are never answered by the
+  fleet and go to Triage.
 - None of the three has a native `consent` subcommand. The
   `/goal consent <acts> -- <text>` form is eshu's hook convention (its
   `UserPromptSubmit` router writes the `CONSENT:` line); a harness without

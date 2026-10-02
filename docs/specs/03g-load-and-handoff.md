@@ -124,11 +124,14 @@ Found while writing the workflows. Each is additive within `fleet.v1`.
 
 ## Open questions for the owner
 
-1. **Claude resume.** Claude Code's `/goal` has set and clear only; pause is
+1. ~~Claude resume~~ **Answered by probe 2026-10-02:** the goal stays active
+   after an interrupt and resumes when `continue` is typed (01b).
+   Original question: **Claude resume.** Claude Code's `/goal` has set and clear only; pause is
    `Interrupt`. What resumes a Claude goal after an interrupt: a plain prompt
    ("continue"), re-typing `/goal <condition>`, or nothing needed because the
    Stop hook re-engages? Needs a probe like the 2026-10-01 Muse one.
-2. **Codex interrupt.** Does an interrupt pause a Codex goal the way Muse's
+2. ~~Codex interrupt~~ **Answered by probe 2026-10-02:** "Goal paused", no
+   self-resume, `/goal resume` works (01b). Original question: **Codex interrupt.** Does an interrupt pause a Codex goal the way Muse's
    does, and must `/goal pause` be typed only at an idle prompt?
 3. ~~Reserve line~~ **Decided 2026-10-02:** stop dispatching and alert;
    auto-pause is an opt-in setting, off by default (design.md rule 5).
