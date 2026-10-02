@@ -251,7 +251,7 @@ message GoalState {
 
 // BranchState (H3) for one goal worktree.
 message BranchState {
-  RepoKey repo = 1;
+  RepoRef repo = 1;
   string path = 2;
   GoalId goal_id = 3;
   // Untrusted text.
@@ -267,7 +267,7 @@ message BranchState {
 
 // RepoCheckout (H1): one checkout or worktree under an allowed root.
 message RepoCheckout {
-  RepoKey repo = 1;
+  RepoRef repo = 1;
   string path = 2;
   string default_branch = 3;
   bool is_worktree = 4;
@@ -278,23 +278,34 @@ message RepoCheckout {
   BranchState branch = 7;
 }
 
-// RepoAccess (H4) from `gh repo view --json viewerPermission`.
+// RepoAccess (H4): the forge CLI's view of the signed-in user's access to a
+// repo (`gh repo view --json viewerPermission`, `glab` equivalent).
 message RepoAccess {
-  RepoKey repo = 1;
-  // As gh prints it: READ, TRIAGE, WRITE, MAINTAIN, ADMIN.
-  string viewer_permission = 2;
-  // WRITE, MAINTAIN or ADMIN.
+  RepoRef repo = 1;
+  // Was viewer_permission (GitHub's term).
+  reserved 2;
+  reserved "viewer_permission";
+  // Normalized: can the signed-in user push to this repo.
   bool push_access = 3;
   google.protobuf.Timestamp checked_at = 4;
+  // The permission as the provider names it (GitHub READ..ADMIN, GitLab
+  // Guest..Owner). Untrusted text.
+  string provider_permission = 5;
 }
 
-// GhStatus (H4) from `gh auth status`; the token line is dropped.
-message GhStatus {
-  bool signed_in = 1;
-  string user = 2;
+// ForgeCliStatus (H4): sign-in state of a code host's CLI on this machine
+// (`gh auth status`, `glab auth status`). Token lines are dropped and never
+// logged.
+message ForgeCliStatus {
+  // "gh", "glab", ...
+  string tool = 1;
+  ProviderKind provider = 2;
+  // Code host this status is for ("github.com", "gitlab.acme.dev").
   string host = 3;
-  google.protobuf.Timestamp checked_at = 4;
-  repeated RepoAccess access = 5;
+  bool signed_in = 4;
+  string user = 5;
+  repeated RepoAccess access = 6;
+  google.protobuf.Timestamp checked_at = 7;
 }
 
 // ---------------------------------------------------------------------------
@@ -368,7 +379,8 @@ message SettingValues {
   repeated string allowed_harnesses = 7;
   repeated string allowed_repo_roots = 8;
   optional DefaultServerMode default_server = 9;
-  // Window name template, default "{harness} {repo}#{issue}".
+  // Window name template, default "{harness} {work}" ({work} =
+  // WorkItemRef.display, e.g. "muse eshu#7398", "claude PROJ-123").
   optional string window_name_template = 10;
   optional google.protobuf.Duration idle_threshold = 11;
   optional google.protobuf.Duration attach_idle_timeout = 12;
@@ -428,7 +440,9 @@ message Snapshot {
   repeated TmuxServer tmux_servers = 8;
   repeated GoalState goals = 9;
   repeated RepoCheckout repos = 10;
-  GhStatus gh = 11;
+  // 11 was GitHub-only `gh`; replaced by forge_cli.
+  reserved 11;
+  reserved "gh";
   // Latest reading per account key.
   repeated UsageReading usage = 12;
   repeated ProbeHealth probes = 13;
@@ -445,4 +459,6 @@ message Snapshot {
   // Command ids whose results the hub never acknowledged; the results
   // themselves follow as CommandResult messages right after the snapshot.
   repeated CommandId unacked_results = 21;
+  // One per code-host CLI found on the machine (H4): gh, glab, ...
+  repeated ForgeCliStatus forge_cli = 22;
 }

@@ -319,9 +319,9 @@ All pass local policy, carry a `command_id`, and are idempotent except F3.
   `FLEET_SESSION_ID`, `FLEET_OWNER`, `FLEET_PANE_KEY` so they show as "started
   by fleet" while appearing in the developer's normal `tmux ls`.
 - **Window naming.** Fleet-created windows are named after the harness and the
-  work: default template `{harness} {repo}#{issue}` (`muse eshu#7398`,
-  `claude eshu#7380`); for sessions without an issue, the name the developer
-  typed. The template is configurable per machine or group. Fleet turns off
+  work: default template `{harness} {work}`, where `{work}` is the work item's
+  short form (`muse eshu#7398`, `codex eshu!12`, `claude PROJ-123`); for
+  sessions without a work item, the name the developer typed. The template is configurable per machine or group. Fleet turns off
   `automatic-rename` for its own windows only, so the harness process doesn't
   overwrite the name; the developer's windows are untouched.
 - **F2 Ensure window:** same, for a window in a session.
@@ -365,17 +365,17 @@ All pass local policy, carry a `command_id`, and are idempotent except F3.
 
 ## H. Repositories
 
-- **H1 Repository inventory:** checkouts under allowed roots: path, normalized
-  repo key (`owner/repo`, lowercase, no `.git`, same for SSH and HTTPS), default
+- **H1 Repository inventory:** checkouts under allowed roots: path, repo
+  reference (`RepoRef{host, path}`, path possibly nested like
+  `group/subgroup/repo`, lowercase, no `.git`, same for SSH and HTTPS), default
   branch.
 - **H2 Worktree ensure and prune** (v2): create a worktree for a goal when the
   repo's own goal driver doesn't; prune it after the goal is verified merged
   and the grace period passes.
 - **H3 Branch state:** per goal worktree, branch, HEAD, ahead/behind, dirty.
-- **H4 GitHub CLI:** `gh auth status` (signed in, which user; the token line is
-  dropped and never logged) and `gh repo view <repo> --json viewerPermission`
-  (checked: returns `ADMIN` for eshu-hq/eshu), cached for an hour. Push access
-  means `WRITE`, `MAINTAIN` or `ADMIN`.
+- **H4 Forge CLI status** (`gh` first, `glab` later; ADR 0012): signed in,
+  user (token lines never logged), push access per repo normalized from the
+  provider's permission (`gh` returned `ADMIN` for eshu-hq/eshu), cached 1 h.
 
 ## I. Preflight
 

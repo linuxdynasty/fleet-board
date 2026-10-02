@@ -315,21 +315,32 @@ enum WorktreeMode {
 
 // GoalSpec is everything the agent needs to preflight or start a goal.
 message GoalSpec {
+  // 3 was a GitHub-only IssueRef; replaced by work_item and repo below.
+  reserved 3;
+  reserved "issue";
   GoalId goal_id = 1;
   SessionId session_id = 2;
-  IssueRef issue = 3;
   Workdir workdir = 4;
   Harness harness = 5;
   AccountId account_id = 6;
   // Expected identity; ACCOUNT_MISMATCH if the harness shows another.
   AccountKey account_key = 7;
-  // Consent acts written into the goal (ADR 0008), e.g. "push", "pr-open".
+  // Consent acts written into the goal (ADR 0008): "push", "pr-open",
+  // "merge". "pr-open" means opening a change request on any code host; the
+  // adapter renders it in the harness and provider's terms.
   repeated string consent = 8;
   // Goal text after "--". Capped at 4 KiB.
   string goal_text = 9;
   WorktreeMode worktree_mode = 10;
   // Branch for the worktree when the agent ensures it.
   string branch = 11;
+  // What the goal works on: an issue, a ticket (Jira) or a change request.
+  WorkItemRef work_item = 12;
+  // Where the code lives. Separate from work_item because a ticket in one
+  // system (Jira) drives code on another (GitHub, GitLab).
+  RepoRef repo = 13;
+  // Existing change request (PR/MR) the goal continues, if any.
+  WorkItemRef change_request = 14;
 }
 
 // Preflight (I1): check without acting.
@@ -356,7 +367,8 @@ message StartGoal {
   // Create a new window in this session when not reusing; empty = new
   // session named by the hub in spec.session_id.
   SessionTarget in_session = 3;
-  // Empty = settings template "{harness} {repo}#{issue}".
+  // Empty = settings template "{harness} {work}", where {work} is
+  // WorkItemRef.display ("eshu#7398", "eshu!12", "PROJ-123").
   string window_name = 4;
   google.protobuf.Duration ready_timeout = 5;
   google.protobuf.Duration goal_file_timeout = 6;
@@ -378,7 +390,7 @@ message StartGoalResult {
 // EnsureWorktree (H2). Declarative: existing worktree on the same branch is
 // OK; a different branch at that path is WORKTREE_EXISTS.
 message EnsureWorktree {
-  RepoKey repo = 1;
+  RepoRef repo = 1;
   GoalId goal_id = 2;
   string branch = 3;
   // Base ref for a new branch; empty = default branch.
@@ -397,7 +409,7 @@ message EnsureWorktreeResult {
 // PruneWorktree (H2): remove a goal worktree after merge and grace.
 // WORKTREE_DIRTY unless allow_dirty, which needs ROLE_OWNER.
 message PruneWorktree {
-  RepoKey repo = 1;
+  RepoRef repo = 1;
   GoalId goal_id = 2;
   string path = 3;
   bool allow_dirty = 4;

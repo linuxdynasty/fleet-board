@@ -22,12 +22,13 @@ with `protoc 36.2` (command at the end).
 
 | File | Holds |
 |---|---|
-| `common.proto` | Identifiers (`MachineId`, `AccountKey` vs `AccountId`, `SessionId`, `GoalId`, `PromptId`, `ProbeId`, `CommandId`, `AttachId`, `PaneKey`, `WindowKey`, `RepoKey`, `IssueRef`, `Workdir`), `Percent` with explicit unknown, `Status`, `ReasonCode`, `Capability`, `Role`, `Principal`, `CommandClass`, `TmuxServerKind`, `Harness` |
+| `common.proto` | Identifiers (`MachineId`, `AccountKey` vs `AccountId`, `SessionId`, `GoalId`, `PromptId`, `ProbeId`, `CommandId`, `AttachId`, `PaneKey`, `WindowKey`, `RepoRef`, `WorkItemRef`, `Workdir`), `Percent` with explicit unknown, `Status`, `ReasonCode`, `Capability`, `Role`, `Principal`, `CommandClass`, `TmuxServerKind`, `Harness` |
 | `usage.proto` | `UsageReading` (as shown + standardized buckets), `LimitBucket`, `ResetTime`, `SpendReading`, `AccountIdentity`, `SessionAccountLink`, `ProbeHealth`, `BudgetKind`, `WindowKind`, `UsageSource` |
-| `snapshot.proto` | Facts and inventories (`MachineFacts`, `HarnessInfo` + `CommandCatalog` + `GoalHooksState`, tmux `TmuxServer/Session/Window/Pane`, `Availability`, `GoalState`, `RepoCheckout`, `BranchState`, `GhStatus`, `SpoolStatus`, `PolicyInfo`, `SettingValues`, `EffectiveSettings`, `DrainState`) and the `Snapshot` |
+| `snapshot.proto` | Facts and inventories (`MachineFacts`, `HarnessInfo` + `CommandCatalog` + `GoalHooksState`, tmux `TmuxServer/Session/Window/Pane`, `Availability`, `GoalState`, `RepoCheckout`, `BranchState`, `ForgeCliStatus`, `SpoolStatus`, `PolicyInfo`, `SettingValues`, `EffectiveSettings`, `DrainState`) and the `Snapshot` |
 | `events.proto` | `Event{seq, at, body}` and every event body |
 | `commands.proto` | `Command` envelope, every command kind, `CommandAck`, `CommandProgress`, `CommandResult` |
 | `agent.proto` | `service FleetAgent`, `AgentMessage`/`HubMessage`, `Hello`/`HelloAck`, `Heartbeat`, `Settings`/`SettingsAck`, `ResultAck`, `Bye`, `Enroll`/`RenewCert`, `TermUp`/`TermDown`, `LogChunk`/`LogAck` |
+| `integrations.proto` | Provider-neutral work model for the hub (ADR 0012): `IntegrationCapabilities`, `WorkItem`, `ChangeRequest`, `CheckSummary`, `Review`, `Claim`, and the read-only `IntegrationProvider` service that GitHub implements first and GitLab, Jira and others can implement later |
 
 Package `fleet.v1`, Go package `fleetv1`. Field numbers are grouped with gaps
 (commands 10–19 probes, 20–39 tmux, 40–49 goals, 50–59 attach, 60–69 logs,
@@ -102,7 +103,7 @@ sequence; `none` means unordered. Droppable: may be shed under backpressure.
 | H1 | `Snapshot.repos[] RepoCheckout`, `Event.repo` | A→H | — | seq | no |
 | H2 | `EnsureWorktree` → `EnsureWorktreeResult`; `PruneWorktree{allow_dirty, delete_branch}` | H→A | yes | cmd | no |
 | H3 | `BranchState` in `RepoCheckout` and `Event.branch_state` | A→H | — | seq | no |
-| H4 | `Snapshot.gh GhStatus{signed_in, user, access[]}` | A→H | — | snapshot | no |
+| H4 | `Snapshot.forge_cli ForgeCliStatus{tool, provider, host, signed_in, user, access[]}` per code-host CLI (`gh`, `glab`) | A→H | — | snapshot | no |
 | I1 | `Preflight{spec}` → `PreflightResult{ok, failures[], would_reuse}` | H→A | yes | cmd | no |
 | J1 | `OpenAttach{attach_id, session, cols, rows, read_only}` / `CloseAttach`; `Terminal` stream `TermUp{ready, output, closed}` / `TermDown{input, resize, close}` | H→A; stream | yes | per attach | output never; input never |
 | K1 | `SessionLog` stream `LogChunk{session_id, stream, offset, zstd, gap_before, final}` / `LogAck{acked_offset, pause}`; `SetLogCapture{session, enabled}` | A→H; H→A | by offset | offset | no (spool) |
