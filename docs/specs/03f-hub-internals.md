@@ -60,7 +60,7 @@ flowchart LR
 | Snapshot apply while live events from the same stream are queued | `connReader` tags each message with its epoch and position; the writer applies in arrival order per machine; events with `seq ≤ Snapshot.seq` become history only |
 | Duplicate `Hello` (duplicate identity) | `machine_connections` unique `(machine_id) WHERE live`; the Hello tx displaces the old row and the old stream gets `Bye` after commit |
 | Verifier and the goal-state apply both move a goal | Both are jobs on the single writer; transitions are computed from the current row inside the tx; an impossible transition is rejected and logged |
-| Log chunk arrives twice from two reconnects | Per-stream end offset in memory, loaded from the index; `log_segments` unique `(session, stream, raw_offset)` |
+| Log chunk arrives twice from two reconnects | Per-stream end offset in memory, loaded from the index; `log_segments` unique `(session, pane, stream, raw_offset)`; every chunk is answered with the stored end (03d) |
 | Triage raised twice for one state | `triage_items` unique `(fingerprint) WHERE state IN (OPEN, SNOOZED, IN_FLIGHT)` |
 | Outbox command delivered on two epochs | `commands` unique `(command_id)`; the agent's own command log makes the second delivery return the logged result |
 | Settings change while a `SettingsAck` is in flight | Latest ack per machine wins only if `ack.generation ≥ stored.generation` |
@@ -111,7 +111,7 @@ at **4 machines** / **50 machines × 10 panes** from the load table in
 | `triage_items` | id; unique open `fingerprint` | W7 sources | 0.01 / 0.2 | open ranked; per goal/machine | 7 days after close |
 | `prompt_answers_in_flight` | `prompt_id` | W7 | rare | by prompt | until result |
 | `settings_*`, `machine_effective_settings`, `machine_labels` | scope ids; `machine_id` | W10 | rare | resolve per machine | permanent + audit |
-| `log_sessions`, `log_segments` | `session_id`; `(session_id, stream, raw_offset)` | W9 | 1 / 30 (chunk index, batched) | by session + offset/time | until pruned by size cap |
+| `log_sessions`, `log_segments` | `session_id`; `(session_id, pane, stream, raw_offset)` | W9 | 1 / 30 (chunk index, batched) | by session + offset/time | until pruned by size cap |
 | `attaches` (audit only) | `attach_id` | W8 | rare | per session | permanent audit |
 | `audit_log` | `(at, id)` | everything mutating | ≈ 0.05 / 0.5 | filter/export | permanent (ADR 0005/design) |
 
@@ -122,8 +122,8 @@ ranking, the summary strip counts.
 **Index needs implied by the read patterns:** `goals(state)`,
 `goals(machine_id, state)`, `goals(account_id, state)`, `commands(machine_id,
 state)`, `triage_items(state, kind, raised_at)`, `events(machine_id, seq)`,
-`events(goal_id, at)`, `log_segments(session_id, stream, raw_offset)` and
-`(session_id, stream, first_at)`, `change_requests(integration_id, head_ref)`,
+`events(goal_id, at)`, `log_segments(session_id, pane, stream, raw_offset)` and
+`(session_id, pane, stream, first_at)`, `change_requests(integration_id, head_ref)`,
 `work_items(stage, integration_id)`.
 
 ## Hub identity, backup and restore
@@ -148,7 +148,9 @@ start instead of minting a new identity.
 
 `fleetd restore` is offline. It checks the backup, mints a new `settings_epoch`
 (so agents holding a higher generation under the old epoch accept the restored
-settings), can add an address and re-issue the server certificate, and sets a
+settings), needs no step for the connection epoch or event seq (the hub issues
+`max(stored, Hello.last_epoch) + 1` and agents floor `seq` above
+`hub_last_event_seq`, 02i), can add an address and re-issue the server certificate, and sets a
 24 h reconcile flag. While it is set the first `Hello` of each machine is
 answered with a `SnapshotRequest{reason: "reconcile"}` and the hub adopts what
 agents know and it does not: machines enrolled after the backup, probes,

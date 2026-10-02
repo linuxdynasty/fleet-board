@@ -274,7 +274,8 @@ message CloseAttach {
 }
 
 // SetLogCapture (K1): turn pipe-pane capture on or off for a developer's
-// own session (goal panes are always captured).
+// own session (goal panes are always captured). The agent names each stream
+// by pane (LogStreamKey.pane) and never needs the hub's SessionId for it.
 message SetLogCapture {
   SessionTarget session = 1;
   bool enabled = 2;

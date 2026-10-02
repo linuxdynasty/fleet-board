@@ -180,7 +180,8 @@ re-enroll rule are in [02g](02g-agent-security.md#machine-lifecycle-revoke-and-d
 - Nothing but `Hello` is accepted before `HelloAck`; events before the
   `Snapshot` of this epoch are discarded with a counter.
 - `Snapshot.seq` supersedes every event with lower `seq`; later events apply
-  only if `seq > last_event_seq` (strictly increasing per machine).
+  only if `seq > last_event_seq` (strictly increasing per machine and
+  `event_generation`; the agent keeps it so across crashes, 02i).
 - The snapshot replaces inventory wholesale; derived hub state (goals, triage)
   is diffed, never replaced.
 - Settings may arrive before the snapshot; the agent applies them and the
@@ -201,7 +202,7 @@ re-enroll rule are in [02g](02g-agent-security.md#machine-lifecycle-revoke-and-d
 | Agent restart before the state dir is fully written | Enroll is atomic on disk (write temp + rename); a half-written dir is detected and the user re-runs enroll with a new token |
 | Certificate expired (machine offline longer than lifetime) | Hello refused at TLS; agent logs `cert_expired` and `doctor` says "re-enroll" |
 | Duplicate identity (same cert from two hosts) | W2 |
-| Clock skew > 5 min (`Hello.sent_time` vs hub time) | HelloAck still sent; machine warning; commands still evaluated in hub time |
+| Clock skew > 5 min (`Hello.sent_time` or `Heartbeat.sent_time` vs hub receive time) | HelloAck still sent; machine warning; commands still evaluated in hub time; above 15 min `clock_untrusted` (02i, "Clocks") |
 | Snapshot would exceed 1 MiB | Agent drops `PaneSummary`-like detail first, never panes; logs `snapshot.trimmed` |
 | Hub writer backlog while 50 agents reconnect | HTTP/2 flow control holds the stream; snapshot apply is one tx per machine, batched by the writer ([03g](03g-load-and-handoff.md)) |
 | Harness crash during the identity/catalog probe | `HarnessInfo` reported with `version_support` as detected and `AccountIdentity.signed_in=false`; probe retried in 1 min, max 3, then only on version change |
@@ -244,7 +245,7 @@ sequenceDiagram
   H-xA: stream closed (Bye{HUB_RESTART} or transport)
   Note over A: goals run on · observer runs on · probes run on last schedule ·<br/>never-dropped events → persisted ring (latest per key for coalesced kinds) ·<br/>results → local command log
   A->>H: Connect, Hello{last_epoch=7, last_applied_command_seq=41, last_event_seq=90210, boot_id, reason=RECONNECT, settings_generation=12}
-  H->>H: tx: epoch=8 · machine ONLINE · load outbox for machine
+  H->>H: tx: epoch = max(stored, last_epoch=7) + 1 = 8 · machine ONLINE · load outbox for machine
   H-->>A: HelloAck{epoch=8, hub_last_event_seq=89950, settings_generation=12}
   A->>H: Snapshot{seq=90210, … , unacked_results=[c17, c19], probes[], goals[]}
   H->>H: tx: apply snapshot (state) · expire outbox rows past not_after_time
@@ -257,21 +258,28 @@ sequenceDiagram
   A->>H: CommandAck / CommandResult (logged result if c20 already ran)
 ```
 
-**Epoch bump.** Every new stream gets `epoch+1`. Commands from the old epoch
+**Epoch bump.** Every new stream gets `max(stored epoch, Hello.last_epoch) + 1`,
+so a hub restored from a backup never reissues an epoch the agent already used
+(02i, "Connection epoch"). Commands from the old epoch
 still in flight on the agent are finished normally (the agent already
 persisted them); any that arrive late are refused `EPOCH_MISMATCH`, but the
 known-`command_id` check comes first, so a re-issued command with the same id
 returns the logged result rather than tripping the seq check.
 
-**Replay rules.** The ring holds only never-dropped and coalesced kinds (02
-backpressure table), persisted, 1 week, size-capped (latest state per key
-wins). The agent replays everything with `seq > HelloAck.hub_last_event_seq` at
-a bounded rate (proposal: 200 events/s per agent; step 4 sets the hub-side
-ingest limit). The hub writes replayed events with `seq ≤ Snapshot.seq` to the
-event history only (timeline, run history) and applies those with
-`seq > Snapshot.seq` to live state as well. `Heartbeat.event_seq` after
-reconnect lets the hub detect a gap caused by ring overflow and request a
-`SnapshotRequest{reason="event_gap"}`.
+**Replay rules.** The ring holds only never-dropped and coalesced kinds (02i),
+persisted, 1 week, size-capped (latest state per key wins). The agent replays
+everything with `seq > HelloAck.hub_last_event_seq` at a bounded rate (proposal:
+200 events/s per agent; step 4 sets the hub-side ingest limit). The hub writes
+replayed events with `seq ≤ Snapshot.seq` to the event history only (timeline,
+run history) and runs **no rule** on them: the snapshot already holds their
+effect, which is why it carries prompts, conditions, input time and the goal
+registry. Events with `seq > Snapshot.seq` apply to live state as well. The
+agent keeps `seq` monotonic: a persisted high-water mark across crashes, and a
+floor of `HelloAck.hub_last_event_seq + 1` after a wipe or a restore. Gaps in
+`seq` are normal (shed and coalesced events consume numbers); the hub reads
+loss from `Hello.event_counters` and `Heartbeat.events` (`evicted_total`), not
+from missing numbers, and answers a rise with `SnapshotRequest{reason="event_lost"}`
+and a gap marker on the timeline (02i, "Gaps").
 
 **Duplicate identity.** A second `Hello` for a `machine_id` with a live stream:
 newest wins, silently. The hub sends `Bye{DUPLICATE_IDENTITY}` on the old stream
@@ -313,12 +321,14 @@ waiting for keepalive timeouts.
 | What | Where | Transaction |
 |---|---|---|
 | Event ring (`seq`, body, 1 week, size cap) | agent state dir (append file + index) | per event, fsync batched ≤ 1 s |
+| `seq_hwm` (reserved in blocks of 1024), `EventCounters`, `install_id` | agent state dir | one fsync per block; counters with it |
 | Command log (last 10,000 or 7 days; status, result, step reached) | agent state dir | per state change, before `CommandAck` is sent |
 | Probe assignments (`EnsureProbe` as received) | agent state dir | with the command log |
 | Goal registry (`GoalRegistration` per pane) and availability marks (per pane key) | agent state dir | `register_goal`, `RegisterGoal`, `ReleaseGoal`, mark commands; both reported in every snapshot (02h) |
 | Outbox rows (`pending/delivered/done/expired/failed`, epoch, seq) | hub store | Hello tx (expiry), result tx (close) |
 | Event history (replayed and live, 1 week) | hub store | per writer batch |
 | `machine_connections` (epoch, boot_id, reason, peer, displaced_by) | hub store | Hello tx |
+| Per machine: `hub_last_event_seq`, `event_generation`, last `EventCounters`, `install_id` | hub store | writer batch (seq); Hello tx (the rest) |
 
 ### Ordering and consistency
 
@@ -337,15 +347,16 @@ waiting for keepalive timeouts.
 
 | Failure | What happens |
 |---|---|
-| Agent offline for hours | Goals run on; ring fills (latest per key); on reconnect snapshot gives truth, ring gives timeline; dropped ring entries counted and `gap` shown on the timeline |
+| Agent offline for hours | Goals run on; ring fills (latest per key); on reconnect snapshot gives truth, ring gives timeline; ring overflow shows as a rise of `evicted_total` and a `gap` on the timeline |
+| Agent crashed, or its state directory was wiped or a VM image reverted | `seq` resumes above `seq_hwm` after a crash; after a wipe `Hello.last_event_seq` is below the hub's, the hub records an agent rollback (new `event_generation`, timeline marker, audit row) and the agent floors `seq` above `hub_last_event_seq`, so nothing is dropped as a duplicate |
 | Hub restart mid-snapshot apply | Stream drops; the partial tx rolls back; the agent reconnects and sends a fresh snapshot |
-| Hub store restored from backup | Registry entries for unknown goals → `orphan_goal_pane` triage; unknown results → audit only; settings generation on the agent may be newer than the hub's → hub re-sends its current generation and the agent applies it (generation compare is "different", not "greater", after a restore flag in `HelloAck`; see 03g required changes) |
+| Hub store restored from backup | Epoch rises above the agent's `last_epoch` (no `SEQ_REPLAYED`); `hub_last_event_seq` is lower, so the agent replays its ring and the snapshot covers the rest; registry entries for unknown goals → `orphan_goal_pane` triage; unknown results → audit only; settings generation on the agent may be newer than the hub's → hub re-sends its current generation and the agent applies it (generation compare is "different", not "greater", after a restore flag in `HelloAck`; see 03g required changes) |
 | Duplicate `command_id` re-issued | Logged result returned, nothing re-executed |
 | Deadline expired while offline | Hub marks `EXPIRED` without sending; UI shows "not delivered, machine was offline"; dispatch re-plans (W5), prompt answers are dropped (W7) |
-| Harness crashed while offline | `PaneExited{goal_id}` is in the ring (never dropped); replayed after the snapshot, which already shows the pane dead; W6 evaluates the one-nudge rule once, keyed on the snapshot's fingerprint |
+| Harness crashed while offline | `PaneExited{goal_id}` is in the ring (never dropped); replayed as history only; the snapshot already shows the pane dead, and W6 evaluates the one-nudge rule once from the snapshot, keyed on its fingerprint |
 | Provider error while offline | `HarnessCondition` with `cleared` pairs replay into history; current conditions come from the snapshot (requires `Snapshot.conditions[]`, 03g) |
-| Prompt appeared and vanished while offline | `PromptDetected` + `PromptGone` replay; the hub raises and retires in one batch; a prompt still showing must come from `Snapshot.prompts[]` (03g) |
-| Developer typed in a goal pane while offline | `PaneInput` in the ring (coalesced, latest time) and `TmuxPane.last_input_time` in the snapshot; W6's "human at keyboard" suppression applies from that time |
+| Prompt appeared and vanished while offline | `PromptDetected` + `PromptGone` replay into history only (nobody can still answer it, so no triage item); a prompt still showing comes from `Snapshot.prompts[]` (03g) |
+| Developer typed in a goal pane while offline | `PaneInput` in the ring (coalesced, latest time) and `TmuxPane.last_input_time` in the snapshot; W6's "human at keyboard" suppression is derived from the snapshot's `last_input_time` (the replayed `PaneInput` is history only) |
 | Work tracker / code host unavailable at reconnect | W4 lag rises; verification waits; dispatch stays paused while lag exceeds its threshold |
 | Flapping network (reconnect every few seconds) | Each reconnect costs a snapshot; the agent rate-limits reconnects to one per 5 s and the hub to one Hello per machine per 5 s; `fleet_hub_reconnects_total` shows it |
 | Ring replay floods the hub after a long outage | Replay is rate-limited per agent; the writer batches; HTTP/2 flow control blocks the agent, never the hub's other machines (per-stream windows) |
@@ -354,10 +365,11 @@ waiting for keepalive timeouts.
 
 - `fleet_agent_ring_events`, `fleet_agent_ring_bytes`, `fleet_agent_ring_dropped_total`,
   `fleet_agent_replayed_events_total`, `fleet_agent_unacked_results`,
+  `fleet_agent_events_shed_total`, `fleet_agent_events_coalesced_total`, `fleet_agent_events_evicted_total`,
   `fleet_agent_reconnects_total{reason}`.
 - `fleet_hub_reconnects_total{machine, reason}`, `fleet_hub_epoch{machine}`,
   `fleet_hub_commands_expired_total{kind}`, `fleet_hub_duplicate_identity_total{machine}`,
-  `fleet_hub_event_gap_total{machine}`, `fleet_hub_replay_backlog_events{machine}`,
+  `fleet_hub_event_gap_total{machine}` (rises of `evicted_total`), `fleet_hub_agent_rollback_total{machine}`, `fleet_hub_replay_backlog_events{machine}`,
   `fleet_hub_results_unknown_command_total`.
 - Spans: `hub.reconnect` (children `hub.snapshot.apply`, `hub.outbox.reconcile`,
   `hub.replay.ingest`), `agent.reconnect` (children `agent.ring.replay`).

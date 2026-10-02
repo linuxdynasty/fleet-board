@@ -172,12 +172,17 @@ message Hello {
   // Random id per agent process; a new value means the agent restarted.
   string boot_id = 6;
   // Epoch and per-epoch command seq last applied, so the hub can re-issue.
+  // The hub issues the next epoch above this one even when its own stored
+  // value is lower (a restore), so an epoch never goes backwards (02i).
   uint64 last_epoch = 7;
   uint64 last_applied_command_seq = 8;
-  // Agent-wide event seq last sent; the hub replies with what it holds.
+  // Highest agent-wide event seq handed out so far (the persisted high-water
+  // mark, not only what was sent). A value below the hub's stored
+  // hub_last_event_seq means the agent lost state (02i, "Sequence numbers").
   uint64 last_event_seq = 9;
   ConnectReason reason = 10;
-  // Agent wall clock at send, for skew detection against hub_time.
+  // Agent wall clock at send. The hub's skew sample at connect (later
+  // samples come from Heartbeat.sent_time); never used to order data.
   google.protobuf.Timestamp sent_time = 11;
   // Settings generation the agent currently holds (0 = none).
   uint64 settings_generation = 12;
@@ -185,18 +190,40 @@ message Hello {
   string install_id = 13;
   // Settings epoch the held generation belongs to (empty = none).
   string settings_epoch = 14;
+  // What the agent could not deliver, cumulative over this install (02i,
+  // "Gaps"), so the hub learns of ring overflow that happened offline.
+  EventCounters event_counters = 15;
+}
+
+// EventCounters say what became of event seq numbers that were never
+// delivered, cumulative over the install and persisted with the seq
+// high-water mark (a decrease means the agent lost its state directory). Only
+// evicted_total is loss; the other two are by design (02i, "Gaps").
+message EventCounters {
+  // SHED events dropped from the send queue or while offline.
+  uint64 shed_total = 1;
+  // COALESCE events replaced by a later one with the same key.
+  uint64 coalesced_total = 2;
+  // NEVER_DROP or COALESCE events lost: ring overflow (size cap or one week).
+  uint64 evicted_total = 3;
 }
 
 // HelloAck (A3).
 message HelloAck {
   string hub_version = 1;
-  // Hub time; the agent evaluates not_after_time in hub time.
+  // Hub time, the authority for deadlines and for ordering data across
+  // machines; the agent evaluates not_after_time in hub time (hub_time plus
+  // local monotonic elapsed).
   google.protobuf.Timestamp hub_time = 2;
-  // Connection epoch; bumped on every new stream for this machine.
+  // Connection epoch: max(the hub's stored epoch, Hello.last_epoch) + 1 on
+  // every new stream for this machine, so it only ever increases, restore
+  // included. An agent that gets an epoch not above its own last_epoch
+  // drops the connection and reconnects with backoff (02i).
   uint64 epoch = 3;
   uint32 proto_version = 4;
   repeated fleet.type.v1.Capability capabilities_accepted = 5;
-  // Last event seq the hub has durably stored; the agent replays after it.
+  // Last event seq the hub has durably stored; the agent replays after it
+  // and raises its next seq above it, whatever its own counter says (02i).
   uint64 hub_last_event_seq = 6;
   // Hard cap for any single Connect message; larger is rejected.
   uint32 max_message_bytes = 7;
@@ -261,13 +288,20 @@ message Heartbeat {
   bool draining = 5;
   SpoolStatus spool = 6;
   uint32 open_attaches = 7;
-  // Highest event seq sent so far, so the hub notices dropped events.
+  // Highest event seq handed out so far. The hub compares it with its
+  // highest stored seq only to learn that events are still in flight; it
+  // never infers loss from missing numbers (02i, "Gaps").
   uint64 event_seq = 8;
+  // Drop counters, so the hub tells deliberate shedding from loss: an
+  // increase of events.evicted_total is loss and gets a SnapshotRequest.
+  EventCounters events = 9;
 }
 
 // SnapshotRequest: the hub wants a full Snapshot now.
 message SnapshotRequest {
-  // "reconcile", "ui_refresh", "after_settings", etc.
+  // Open vocabulary, so the agent logs it: "reconcile", "ui_refresh",
+  // "after_settings", "event_lost" (EventCounters.evicted_total rose),
+  // "seq_rollback" (the agent's seq space went backwards), "slot_mismatch".
   string reason = 1;
 }
 
@@ -280,8 +314,10 @@ message Settings {
   fleet.type.v1.SettingValues values = 3;
   // Store incarnation this generation belongs to (HelloAck.settings_epoch).
   string settings_epoch = 5;
-  // Probe intervals keyed by AccountId.value (map keys cannot be messages);
-  // tighten-only against SettingValues.probe_interval.
+  // Probe intervals keyed by AccountId.value (map keys cannot be messages).
+  // Beats SettingValues.probe_interval for that account, and both are
+  // lengthened, never shortened, to the local minimum interval; EnsureProbe
+  // .interval only applies while neither is set (03e, "Probe interval").
   map<string, google.protobuf.Duration> probe_interval_by_account = 6;
   // Trace of the hub's settings publish; the agent's merge is its child.
   fleet.type.v1.TraceContext trace = 7;
@@ -291,10 +327,22 @@ message Settings {
 message SettingsAck {
   uint64 generation = 1;
   fleet.type.v1.EffectiveSettings effective = 2;
-  // Fields the local ceiling capped, for the UI's "capped by local policy".
+  // Fields whose hub value the local ceiling lowered, for the UI's "capped by
+  // local policy" (SettingSource.layer is LOCAL_CEILING for each). A field
+  // the agent could not apply at all is in rejected, not here.
   repeated string capped_fields = 3;
   // Epoch of the applied generation.
   string settings_epoch = 4;
+  // Fields the agent refused: an invalid value (REASON_CODE_INVALID_ARGUMENT),
+  // or every field while the policy file is invalid and the agent is in safe
+  // mode (REASON_CODE_POLICY_SAFE_MODE). The previous effective value stands.
+  repeated fleet.type.v1.SettingRejection rejected = 5;
+  // Field numbers of SettingValues that this agent's schema does not know
+  // (an older agent behind a newer hub). Absent from `effective`, so without
+  // this the hub could not tell "not enforced here" from "no opinion".
+  repeated uint32 unrecognized_value_fields = 6;
+  // Same for the fields of Settings itself.
+  repeated uint32 unrecognized_settings_fields = 7;
 }
 
 // ResultAck: the hub stored these results; the agent may forget them.

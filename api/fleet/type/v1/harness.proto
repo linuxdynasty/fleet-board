@@ -360,8 +360,18 @@ enum LogStream {
 }
 
 // LogStreamKey names one log stream: a pane's terminal output or its
-// harness transcript, inside a session. Used by LogChunk and LogAck on the
-// agent wire and by the hub API's log reads.
+// harness transcript. Used by LogChunk and LogAck on the agent wire and by
+// the hub API's log reads.
+//
+// On the agent wire the identity is (pane, stream): PaneKey is unique per
+// machine and the hub knows the machine from the certificate. session_id is
+// then optional: the agent sets it only when it knows one (a fleet session,
+// from FLEET_SESSION_ID or its registry) and leaves it empty for a
+// developer's own session, whose hub SessionId the agent never sees. The hub
+// resolves the pane to a session on ingest (it binds every observed session
+// to machine, server_start_id and tmux id), and LogAck echoes the key as
+// sent. Offsets are per (pane, stream), and the agent's spool is keyed the
+// same way. In the hub API the hub always fills session_id in.
 message LogStreamKey {
   SessionId session_id = 1;
   PaneKey pane = 2;

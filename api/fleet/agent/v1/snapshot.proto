@@ -363,11 +363,21 @@ message SpoolStatus {
 
 // PolicyInfo (L1): the local policy file. Hash only, never contents.
 message PolicyInfo {
+  // Empty only when the file could not be read (safe_mode, or built-in
+  // defaults after the file was deleted); never a way to signal safe mode.
   string schema_version = 1;
   string hash = 2;
   google.protobuf.Timestamp loaded_time = 3;
   // True when the file changed on disk since load; takes effect on restart.
   bool changed_since_load = 4;
+  // The file is invalid, so the agent started in safe mode: observe only,
+  // every control command REJECTED_BY_POLICY / POLICY_SAFE_MODE, every hub
+  // setting rejected. The hub raises the policy_invalid triage item and the
+  // policy.safe_mode audit row from this.
+  bool safe_mode = 5;
+  // Why the file was refused, one line (the parse error and its line number),
+  // never file contents. Capped at 256 bytes; set only with safe_mode.
+  string error = 6;
 }
 
 // DrainState (M4).

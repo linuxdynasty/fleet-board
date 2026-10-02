@@ -81,17 +81,17 @@ Severity: I important, M minor. Risk: refactor risk if deferred (h/m/l).
 | C | `hook-trust-and-stale-names` | M | l | Hook trust is a Codex-only bool with no unknown state, and several contract names have no capability behind them | fixed |
 | C | `slots-full-ownership` | M | l | SLOTS_FULL and max_active enforcement have no owner: agent 'does not compute slots' but a preflight code and a local ceiling assume it does | fixed |
 | C | `id-format-and-new-session-name` | M | l | Opaque ids are used as tmux names, env values, file paths and resource keys with no format rule; StartGoal's new-session name is ambiguous | fixed |
-| D | `logstreamkey-session-id-for-developer-sessions` | I | h | LogStreamKey requires a hub-assigned SessionId the agent cannot know for developer sessions | open |
-| D | `forge-status-snapshot-only-unfit-never-clears` | I | m | Durable preflight reasons clear 'on the next snapshot or event', but forge CLI status and folder trust have neither | open |
-| D | `seq-epoch-monotonic-counters` | I | m | Agent event seq and hub connection epoch can regress after a crash or restore, silently discarding events or commands | open |
-| D | `event-gap-and-replay-apply-rules` | M | m | Seq-gap detection cannot tell shedding from loss, and 'replayed seq <= Snapshot.seq is history only' contradicts the W2 failure rows | open |
-| D | `session-log-ack-gap-semantics` | I | m | SessionLog hole/duplicate handling has no negative ack, gap_before offset semantics are undefined, and a restored hub wedges streams | open |
-| D | `dev-session-log-key` | M | m | SetLogCapture cannot give the agent a SessionId, so LogStreamKey.session_id is empty for developer sessions | open |
-| D | `settings-skew-and-probe-interval-merge` | I | m | An older agent silently ignores new tighten-only settings, and probe-interval merge and precedence are undefined | open |
-| D | `delivery-class-table-incomplete` | M | l | The event delivery table covers 16 of 28 body kinds, and sequence gaps are ambiguous | open |
-| D | `local-confirm-interim-vs-single-result` | M | l | AWAITING_LOCAL_CONFIRM is an 'interim CommandResult', contradicting 'exactly one CommandResult' and ResultAck | open |
-| D | `settings-policy-failure-wire` | M | l | Settings rejection and policy safe mode have no wire fields although W10 says the UI shows them | open |
-| D | `agent-clock-time-authority` | M | l | Agent-clock timestamps drive ordering and waits with only a 5-minute warning for skew | open |
+| D | `logstreamkey-session-id-for-developer-sessions` | I | h | LogStreamKey requires a hub-assigned SessionId the agent cannot know for developer sessions | fixed |
+| D | `forge-status-snapshot-only-unfit-never-clears` | I | m | Durable preflight reasons clear 'on the next snapshot or event', but forge CLI status and folder trust have neither | fixed |
+| D | `seq-epoch-monotonic-counters` | I | m | Agent event seq and hub connection epoch can regress after a crash or restore, silently discarding events or commands | fixed |
+| D | `event-gap-and-replay-apply-rules` | M | m | Seq-gap detection cannot tell shedding from loss, and 'replayed seq <= Snapshot.seq is history only' contradicts the W2 failure rows | fixed |
+| D | `session-log-ack-gap-semantics` | I | m | SessionLog hole/duplicate handling has no negative ack, gap_before offset semantics are undefined, and a restored hub wedges streams | fixed |
+| D | `dev-session-log-key` | M | m | SetLogCapture cannot give the agent a SessionId, so LogStreamKey.session_id is empty for developer sessions | fixed |
+| D | `settings-skew-and-probe-interval-merge` | I | m | An older agent silently ignores new tighten-only settings, and probe-interval merge and precedence are undefined | fixed |
+| D | `delivery-class-table-incomplete` | M | l | The event delivery table covers 16 of 28 body kinds, and sequence gaps are ambiguous | fixed |
+| D | `local-confirm-interim-vs-single-result` | M | l | AWAITING_LOCAL_CONFIRM is an 'interim CommandResult', contradicting 'exactly one CommandResult' and ResultAck | fixed |
+| D | `settings-policy-failure-wire` | M | l | Settings rejection and policy safe mode have no wire fields although W10 says the UI shows them | fixed |
+| D | `agent-clock-time-authority` | M | l | Agent-clock timestamps drive ordering and waits with only a 5-minute warning for skew | fixed |
 | E | `per-repo-config` | I | h | Per-repo settings (consent, parallel cap, tracker-to-repo mapping, hooks mode) have no home: Integration.watched is a list of strings | open |
 | E | `goal-active-set-undefined` | I | h | GoalPhase has no queued/expired/abandoned phase and 'active' is never defined, so the uniqueness constraints and slot accounting cannot be implemented | open |
 | E | `external-provider-transitions` | I | h | Provider-side changes while a goal runs (issue closed or cancelled, change request merged by a human or closed unmerged) have no transition; CANCELLED has no phase; goal end states have no work-item stage mapping | open |

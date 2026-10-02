@@ -135,7 +135,7 @@ lists every window on every machine; the Details drawer holds the controls.
 | Details drawer: "Kill window…" | calls `KillWindow`; a developer's window returns an `approval` | `KillWindow` (F6, ADR 0011) |
 | Details drawer: "Move to another machine…" | `ControlGoal{CLEAR}` here, `StartGoal` there | 01 "not in v2" |
 | Details drawer: "Attach from your terminal…" / `ssh -t … tmux attach …` | built in the browser from `Machine.status{username, hostname}` and `Session.status.name` | `MachineFacts.username` (ADR 0006, 03g #3) |
-| Details drawer: History timeline, replay, sizes | `Session.status.logs[] SessionLogInfo`; replay calls `ReadSessionLog{key, start_time}` (needs scope `LOGS`, owner only by default; seeks to the frame start, ≤ 5 min); `SetLogCapture` for own sessions | `LogChunk{key, frame_raw_offset}` / `LogAck` (K1, K2, ADR 0010) |
+| Details drawer: History timeline, replay, sizes | `Session.status.logs[] SessionLogInfo`; replay calls `ReadSessionLog{key, start_time}` (needs scope `LOGS`, owner only by default; seeks to the frame start, ≤ 5 min); `SetLogCapture` for own sessions | `LogChunk{key, frame_raw_offset}` / `LogAck{status}`; key by pane, the hub fills in the session (K1, K2, ADR 0010, 03d) |
 | "New session…" (sidebar and drawer) | calls `CreateSession{machine, name, server, workdir, harness, profile, reuse}` | `EnsureSession{…, owner_principal}`; `INVALID_NAME` (F1, ADR 0006) |
 | Details drawer: Timeline | `ListAuditEntries{filter: target or machine}` | M1 (hub side) |
 | Settings: tmux prefix (`C-b` / `C-a`) | mock only; raw keys are forwarded | J1 |
@@ -146,10 +146,10 @@ lists every window on every machine; the Details drawer holds the controls.
 |---|---|---|
 | "Will any subscription go to waste?" line per subscription ("Codex · 58% left · resets in 2d 10h · 1 goal running · on pace to leave ~25% unused") | shows `Account.status.pacing{projected_unused_percent, active_goals, state}`, `Account.status.usage.buckets[].resets_time` | hub projection from `LimitBucket.percent_used` and the burn rate so far; the reserve is never counted (03b) |
 | Highlight: will waste ≥ 5 points, or no goal running while behind pace | `Account.status.pacing.projected_unused_percent ≥ 5` or `idle_while_behind` | hub pacing (03b, ADR 0008) |
-| "stale — reset passed, re-probe pending" | `Account.status.pacing.reading_stale`; `Account.status.probe.next_run_time` | `UsageReading.read_time` older than the bucket's previous `resets_time` (D1, D2) |
+| "stale — reset passed, re-probe pending" | `Account.status.pacing.reading_stale`; `Account.status.probe.next_run_time` | hub-adjusted `UsageReading.read_time` older than the bucket's previous `resets_time` (D1, D2; 02i, "Clocks") |
 | Account card "as shown" table | `GetAccount{include_raw_screen}` (the raw screen needs scope `LOGS`) → `Account.status.usage.shown`, `buckets[].shown_as_remaining` | `ShownUsage.fields[]` (D2) |
 | Burn-down chart | `ListUsageReadings{account}` → `buckets[]{percent_used, resets_time}` | `LimitBucket` (D2) |
-| "source: probe /usage 10 min ago" / "passive (banner)" | `Account.status.usage{source, read_time}`, `Account.status.probe` | `UsageSource`, `ProbeHealth` (D1, D3) |
+| "source: probe /usage 10 min ago" / "passive (banner)" | `Account.status.usage{source, read_time}` (hub-adjusted; `received_time` beside it), `Account.status.probe`, `Machine.status.telemetry{clock_skew, clock_untrusted}` | `UsageSource`, `ProbeHealth` (D1, D3) |
 | Plan, email hidden/shown | `Account.status{plan, login_method, email}`; email empty unless `share_identity_email` | `AccountIdentity` (C2, A8) |
 | Consent and mode per account | `Account.spec{consent, mode}`; edit calls `UpdateAccount` with `spec.*` mask paths | ADR 0008 |
 | API-key cards with "$ of cap", "manual only" | `Account.spec{budget_kind, spend_cap_micros}`, `Account.status{usage.spend, pacing.state = EXCLUDED}` | `SpendReading` (01 §C) |
@@ -182,7 +182,7 @@ lists every window on every machine; the Details drawer holds the controls.
 
 | UI element | Hub API | Agent wire / source |
 |---|---|---|
-| Settings: effective values with layer chips | `Machine.status.effective_settings.sources[]`, `capped_settings` | `EffectiveSettings`, `SettingsAck.capped_fields` (A8, L2, ADR 0009) |
+| Settings: effective values with layer chips, refused and not-enforced fields, safe mode | `Machine.status.effective_settings.sources[]`, `capped_settings`, `rejected_settings[]`, `unenforced_settings[]`, `policy_safe_mode`, `policy_error` | `EffectiveSettings`, `SettingsAck.{capped_fields, rejected[], unrecognized_value_fields[]}`, `PolicyInfo.{safe_mode, error}` (A8, L2, ADR 0009) |
 | Settings: limits, idle threshold, window template, show emails | `GetSettings` / `UpdateSettings{settings{spec{scope, values}}, update_mask: "spec.values.<field>"}` | `SettingValues` (A8, ADR 0011) |
 | Settings: hub choices (auto-pause at reserve, trusted label, auto-dispatch) | `Settings.spec.hub HubSettings` (fleet scope) | hub only (ADR 0018) |
 | Settings: watched repos with host and provider, `hooks: eshu \| generic` | `Integration.spec.watched[]` (edit calls `UpdateIntegration`); `Machine.status.repos[].goal_hooks[]` | `RepoRef`, `HarnessGoalHooks` (ADR 0012, G1) |

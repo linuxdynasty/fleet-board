@@ -95,7 +95,7 @@ Phase: **v1** read-only, **v2** actions, **v3** later.
 | H1 | Repository inventory | S | v1 |
 | H2 | Worktree ensure and prune | C | v2 |
 | H3 | Branch state per goal worktree | S, E | v1 |
-| H4 | GitHub CLI sign-in and push access | S | v1 |
+| H4 | GitHub CLI sign-in and push access | S, E | v1 |
 | I1 | Preflight | C | v2 |
 | J1 | Terminal attach to any session, existing or new (incl. resize) | T | v2 |
 | K1 | Terminal log capture and shipping | T | v2 |
@@ -382,7 +382,7 @@ All pass local policy, carry a `command_id`, and are idempotent except F3.
 - **H3 Branch state:** per goal worktree, branch, HEAD, ahead/behind, dirty.
 - **H4 Forge CLI status** (`gh` first, `glab` later; ADR 0012): signed in,
   user (token lines never logged), push access per repo normalized from the
-  provider's permission (`gh` returned `ADMIN` for eshu-hq/eshu), cached 1 h.
+  provider's permission (`gh` returned `ADMIN` for eshu-hq/eshu), cached 1 h; a change is `Event.forge_cli_status` (02i).
 
 ## I. Preflight
 
@@ -429,7 +429,7 @@ All pass local policy, carry a `command_id`, and are idempotent except F3.
   hash in the snapshot; emit an event if the file's hash changes while running.
   A changed policy takes effect only after an agent restart.
 - **L2 Effective settings:** tighten-only merge of A8 under the local ceiling;
-  report effective values and which layer set each.
+  report effective values, layers, refused and unknown fields (03e).
 - **L3 Local approval** (v2): desktop notification plus
   `fleet-agent approve|deny <command_id>` before the deadline.
 

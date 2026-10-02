@@ -96,6 +96,13 @@ message CommandAck {
 
 // CommandProgress reports one step of a composite command (G3, G4) as
 // command_id+step. Never dropped. A FAILED step ends the composite.
+//
+// It also carries the one interim state of any command, a wait for local
+// approval: step "awaiting_local_confirm" (step_index and step_count 0, so it
+// is not one of a composite's steps), status AWAITING_LOCAL_CONFIRM, and
+// metadata {"deadline": <RFC 3339, hub time>, "approver": "local_user"}. The
+// command's CommandResult stays single and final; ResultAck, the outbox row
+// and the agent's result log only ever see that one.
 message CommandProgress {
   fleet.type.v1.CommandId command_id = 1;
   // Step name from the closed vocabulary of the composite (for StartGoal the
@@ -116,8 +123,10 @@ message CommandProgress {
   map<string, string> metadata = 11;
 }
 
-// CommandResult is the final outcome. Kept in the agent's local log and
-// replayed until the hub acknowledges it (Snapshot.unacked_results).
+// CommandResult is the final outcome, sent exactly once per command_id and
+// never with STATUS_AWAITING_LOCAL_CONFIRM (that is CommandProgress). Kept in
+// the agent's local log and replayed until the hub acknowledges it
+// (Snapshot.unacked_results).
 message CommandResult {
   fleet.type.v1.CommandId command_id = 1;
   fleet.type.v1.Status status = 2;

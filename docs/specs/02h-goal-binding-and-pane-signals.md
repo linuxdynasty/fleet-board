@@ -158,7 +158,8 @@ to 11: they are part of the composite the owner or routine chose (02g). The
 `/clear` is judged once, up front, with the rest of `StartGoal`, and only in a
 session the fleet started (`FRESH_CONTEXT_NOT_ALLOWED` otherwise). If a local
 rule needs approval for `StartGoal`, the wait happens before step 1, never
-between steps; a timeout ends the start with `LOCAL_CONFIRM_TIMEOUT` and the
+between steps, and is reported as `CommandProgress{step "awaiting_local_confirm",
+step_index 0}`, not as one of the 14 steps and never as a `CommandResult`; a timeout ends the start with `LOCAL_CONFIRM_TIMEOUT` and the
 hub opens a new window instead. Auto-dispatch into a reused session sets
 `fresh_context = true` (a session after `MERGED` still carries the previous
 goal's context); model and effort come from the repo, routine or dispatch

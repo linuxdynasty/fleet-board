@@ -196,8 +196,8 @@ confused or compromised hub, and the local policy is the real ceiling: it can
 make a cell stricter, never looser. A refusal is `REJECTED_BY_POLICY` /
 `ROLE_INSUFFICIENT`.
 
-`A` allowed. `L` allowed, and waits for local approval (`AWAITING_LOCAL_CONFIRM`,
-then the result or `LOCAL_CONFIRM_TIMEOUT`) when the machine's local rule
+`A` allowed. `L` allowed, and waits for local approval (a `CommandProgress` in
+state `AWAITING_LOCAL_CONFIRM`, then the one result or `LOCAL_CONFIRM_TIMEOUT`) when the machine's local rule
 covers that kind; the default rule is off. `L!` always waits for local approval.
 `F` only in a session or window the fleet started. `—` refused.
 
@@ -271,12 +271,16 @@ transaction that applies the event or result:
 | `CommandResult` `REJECTED_BY_POLICY` (any reason), `LOCAL_DENIED`, `LOCAL_CONFIRM_TIMEOUT` | `command.refused` | the original requester (a person, token, device or the scheduler) | `command`, `machine`, `reason`, `outcome` |
 | `Event.drain_state` with a `LOCAL_USER` principal | `machine.local_drain` / `machine.local_undrain` | `LOCAL_USER` | `machine`, `detail` = the reason |
 | `Event.policy_changed` | `policy.changed` | the agent's OS user | `machine`, `detail` = old and new hash |
-| Snapshot `PolicyInfo` with an empty `schema_version` (safe mode) | `policy.safe_mode` | the agent's OS user | `machine`, `detail` = the message |
+| Snapshot `PolicyInfo` with `safe_mode` | `policy.safe_mode` | the agent's OS user | `machine`, `detail` = `PolicyInfo.error` |
 | `Bye` from the hub, `Hello` refused | `machine.revoke`, `machine.connect_refused` | the requester, or none | `machine`, `reason` |
 
 The full catalogue of audit actions is in
 [02b](02b-hub-api.md#audit-actions); events keep their short retention, the
-audit rows are permanent.
+audit rows are permanent. A row is written once per event, even for a replayed
+event that is history-only for state: it is idempotent on `(machine,
+event_generation, seq)` ([02i](02i-delivery-and-sequencing.md#replay-apply-rule)).
+`machine.install_changed` (an agent rollback or a new `install_id` on a valid
+certificate) is a further `machine.*` action.
 
 ## Trace context on the wire
 

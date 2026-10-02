@@ -264,14 +264,14 @@ sequenceDiagram
   participant F as hub files
   participant W as writer
   T->>A: pipe-pane -o output (raw bytes)
-  A->>A: append to spool segment · every 10 s or 256 KiB raw: zstd-3 frame → chunk{offset, raw_length}
-  A->>H: SessionLog: LogChunk{key LogStreamKey{session_id, pane, stream=TERMINAL}, offset, zstd, raw_length, gap_before, first_byte_time, last_byte_time, goal_id}
-  H->>H: offset ≤ stored end? → duplicate (re-ack) · offset = stored end → append · > end → refuse (ack stays)
-  H->>F: append frame to <session>/<stream>/<day>.zst
-  H->>W: tx (batched 1 s): log_segments{session, stream, file, file_offset, raw_offset, raw_length, first_at, last_at, gap_before}
+  A->>A: append to spool segment · flush the open zstd frame every 10 s (or 256 KiB raw) → one chunk{offset, raw_length}; a frame closes after 5 min or 4 MiB raw
+  A->>H: SessionLog: LogChunk{key LogStreamKey{pane, stream=TERMINAL (session_id if known)}, offset, zstd, raw_length, frame_start, frame_raw_offset, gap_before, first_byte_time, last_byte_time, goal_id}
+  H->>H: resolve key.pane to a session (UNKNOWN_STREAM if not yet) · offset + raw_length ≤ end → DUPLICATE · offset = stored end + gap_before → append · else HOLE
+  H->>F: append the zstd blocks to <session>/<pane>/<stream>/<day>.zst (a new day file only at a frame_start chunk)
+  H->>W: tx (batched 1 s): log_segments{session, pane, stream, file, file_offset, raw_offset, raw_length, frame_start, frame_raw_offset, first_at, last_at, gap_before}
   W-->>H: committed
-  H-->>A: LogAck{key, acked_offset = raw_offset + raw_length}
-  A->>A: drop spool ≤ acked_offset · persist acked offset
+  H-->>A: LogAck{key, acked_offset = stored end, status STORED | DUPLICATE | HOLE | UNKNOWN_STREAM} (every chunk, accepted or refused)
+  A->>A: STORED/DUPLICATE: drop spool ≤ acked_offset · HOLE: resend from acked_offset, or from the spool floor with gap_before (rules below)
   opt hub disk low
     H-->>A: LogAck{all_streams=true, pause=true} (or Command{SetLogShipping{paused=true, reason}})
     Note over A: capture continues into the spool · cap hit → keep newest, gap_before on next chunk
@@ -282,13 +282,48 @@ sequenceDiagram
 ```
 
 **Rules.** The spool stores **compressed** chunks (65 B/s per busy pane
-measured, 01c), so hours offline cost megabytes, not gigabytes. Chunk cadence
-10 s / 256 KiB raw is a proposal: shorter means less loss on an agent crash,
-longer means better ratio; step 4 may tune it. The hub appends frames as
-received (no recompression) to one file per `(session, stream, day)` and
-indexes each chunk. Ack after the file write and the index commit (batched
-≤ 1 s); durability of the file is fsync per batch. Offsets are the ordering
-key; a chunk is accepted only at the stored end. `LogAck.pause` is a stream
+measured, 01c), so hours offline cost megabytes, not gigabytes. **Framing**
+(spike S2, [02e](02e-contract-rules.md#log-framing)): the agent keeps one zstd
+frame per stream open for up to 5 minutes or 4 MiB raw and flushes it every
+10 s (or 256 KiB raw, a proposal: shorter means less loss on an agent crash,
+longer a better ratio; step 4 may tune it), so a chunk is a run of zstd
+blocks; `frame_start` marks the chunk that opens a frame and `frame_raw_offset`
+where the open frame began. The hub appends the blocks as received (no
+recompression) to one file per `(session, pane, stream, day)` and indexes each
+chunk with `frame_start` and `frame_raw_offset`, since replay decodes from the
+chunk at `frame_raw_offset`. A **day file rotates only at a `frame_start`
+chunk**, so a frame is never split across files. Ack after the file write and
+the index commit (batched ≤ 1 s); durability of the file is fsync per batch.
+
+**Stream identity.** The agent names a stream `(pane, stream)`: `PaneKey` is
+unique on the machine, and a developer's own session has no hub `SessionId`
+the agent could know. The agent leaves `LogStreamKey.session_id` empty (or
+sets it, for a fleet session, from its registry); the hub resolves the pane to
+the `SessionId` it assigned to `(machine, server_start_id, tmux id)`, stores
+and indexes under it, and `LogAck` echoes the key as sent. The agent's spool is
+`spool/<server>/<server_start_id>/<pane>/<stream>/`. `SetLogCapture` addresses
+the session by tmux id, and the agent starts the stream for each pane in it.
+
+**Offsets, acks and gaps.** Offset is the raw byte count of the stream from the
+start of capture; lost bytes still take up offsets. The hub answers **every**
+chunk with `LogAck{key, acked_offset = its stored end, status}`:
+
+| Chunk | Hub action | `status` |
+|---|---|---|
+| `offset == stored_end + gap_before` | append, index, ack the new end (the index records `gap_before` as lost bytes) | `STORED` |
+| `offset + raw_length ≤ stored_end` | ignore | `DUPLICATE` (re-ack) |
+| anything else (a hole, or the hub is ahead) | store nothing, count `log.hole_refused` | `HOLE` with the hub's end |
+| the pane maps to no session yet | store nothing | `UNKNOWN_STREAM` |
+
+On `HOLE` the agent resumes from `acked_offset`: if its spool still holds those
+bytes it resends from there; if the hub's end is **below its spool floor** (it
+dropped everything up to an earlier ack, or the hub was restored from an older
+backup or truncated a partial frame), it sends its oldest chunk with
+`gap_before = floor - acked_offset`, `offset = floor` and `frame_start = true`,
+which the accept rule takes at once. The agent follows the hub's `acked_offset`
+even when lower than one it saw before; it never treats it as monotonic. On
+`UNKNOWN_STREAM` it keeps the spool and retries after the next snapshot, at
+most every 60 s. `LogAck.pause` is a stream
 level backpressure signal and `SetLogShipping` the command form; resuming
 needs an unsolicited `LogAck{all_streams=true, pause=false}` or `SetLogShipping{paused=false}`
 because a paused agent sends no chunks to ack (semantic note, 03g). Retention:
@@ -317,17 +352,19 @@ stateDiagram-v2
 
 | What | Where | Transaction |
 |---|---|---|
-| Spool: compressed chunks + `acked_offset` per stream | agent state dir (`spool/<session>/<stream>/`), fsync per chunk batch | per chunk |
-| Log files: one per `(session, stream, day)`, append-only zstd frames | hub files | append + fsync per batch |
-| `log_segments` index (file, file_offset, raw_offset, raw_length, times, gap) and `log_sessions{session, machine, goal, bytes, first_at, last_at}` | hub store | one tx per ≤ 1 s batch across all streams |
+| Spool: compressed chunks + `acked_offset` per stream | agent state dir (`spool/<server>/<server_start_id>/<pane>/<stream>/`), fsync per chunk batch | per chunk |
+| Log files: one per `(session, pane, stream, day)`, append-only zstd blocks; rotated only at a `frame_start` chunk | hub files | append + fsync per batch |
+| `log_segments` index (file, file_offset, raw_offset, raw_length, `frame_start`, `frame_raw_offset`, times, gap) keyed `(session, pane, stream, raw_offset)`, and `log_sessions{session, machine, goal, bytes, first_at, last_at}` | hub store | one tx per ≤ 1 s batch across all streams |
 | Retention state (total bytes, prune cursor) | hub store | prune tx per session removed |
 | `SpoolStatus` (pending, cap, gaps, paused) | heartbeat / snapshot, latest only | not persisted beyond last heartbeat |
 
 ### Ordering and consistency
 
-- Per stream, offsets are contiguous except across an explicit `gap_before`;
-  the hub records the gap in the index and the UI shows it.
-- Duplicate chunks after an ack was lost are detected by offset and re-acked.
+- Per stream, a chunk lands at `stored_end + gap_before`; a nonzero
+  `gap_before` is recorded in the index as lost bytes and the UI shows it.
+- Duplicate chunks after an ack was lost are detected by offset and re-acked
+  (`DUPLICATE`); a refused chunk is answered `HOLE` with the hub's end, so the
+  agent always learns where the hub is.
 - Index and file are written in that order (file append first); on a hub
   crash between them the chunk is re-sent (unacked) and the file's trailing
   partial frame is truncated at startup to the last indexed `file_offset`.
@@ -339,9 +376,11 @@ stateDiagram-v2
 | Failure | What happens |
 |---|---|
 | Agent offline for hours | Spool grows at ~65 B/s per busy pane (compressed); cap (setting, e.g. 256 MiB) far away; resends from `acked_offset` on reconnect |
-| Hub restart | Index durable; truncate partial frame; agent resends from last ack |
-| Chunk arrives twice | Offset ≤ stored end → re-ack, not stored |
-| Chunk arrives with a hole (offset > end, no `gap_before`) | Refused; ack stays at stored end; the agent resends from there (its spool still has it); counted |
+| Hub restart | Index durable; truncate partial frame; agent resends from the hub's end (the next `LogAck`) |
+| Hub restored from an older backup, or its end truncated below what the agent already dropped from its spool | The first chunk gets `HOLE` with the hub's lower end; the agent sees it is below its spool floor and sends its oldest chunk with `gap_before = floor - end`, `frame_start = true`; the stream continues and the index shows the gap (`log.gap`), nothing wedges |
+| Chunk arrives twice | `offset + raw_length ≤ stored end` → `DUPLICATE`, not stored |
+| Chunk arrives with a hole (offset ≠ end + `gap_before`) | Refused with `HOLE` and the hub's end; the agent resends from there (its spool still has it) or declares a gap; counted |
+| Chunk for a pane the hub has no session for yet | `UNKNOWN_STREAM`; the agent keeps the spool and retries after the next snapshot |
 | Hub disk below threshold | `LogAck{all_streams=true, pause=true}` to every agent; capture continues; triage `log_disk_low`; resume above a higher threshold (hysteresis) |
 | Spool cap hit on the agent | Newest kept, `gap_marks++`, `gap_before` on the next chunk; `SpoolStatus` in heartbeat shows it |
 | Agent crash mid-chunk | Up to one chunk interval (10 s) of raw output lost before compression; the pipe-pane process keeps writing to the spool file, so loss is bounded by what was not yet durable |

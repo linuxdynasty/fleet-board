@@ -206,8 +206,8 @@
   "fix": "Either add an additive Event.forge_cli_status (COALESCE per host) sent when the agent's hourly H4 re-check changes, or add a hub rule that re-runs Preflight or SnapshotRequest for durable-unfit machines at a fixed interval. The re-check rule also covers FOLDER_UNTRUSTED, which has no event. Fix the 03c:120 wording to match whichever is chosen.",
   "verify": "Confirmed. ForgeCliStatus/RepoAccess exist only in Snapshot.forge_cli (snapshot.proto:263-278, :361); the Event body oneof (events.proto:40-102) has no forge-status or folder-trust event, and H4 is kind S only (01-agent-capabilities.md:97). 03c-goals.md:117-121 (and command_goal.proto:102-103) mark a machine unfit for durable reasons 'until the next snapshot or event changes the fact', but snapshots are sent only on connect or SnapshotRequest, and nothing in the docs triggers a re-check for a durable-unfit machine (grep of SnapshotRequest reasons shows only event_gap and slot_mismatch). FOLDER_UNTRUSTED has no observable fact anywhere on the wire. Recovery after `gh auth login` therefore depends on a reconnect or an operator retry, which undercuts the 'minimal owner attention' goal.",
   "theme": "D",
-  "status": "open",
-  "resolution": ""
+  "status": "fixed",
+  "resolution": "events.proto: new Event.forge_cli_status (54, COALESCE \"forge:<tool>:<host>\") sent when the hourly H4 re-check changes; hub re-runs Preflight for durably unfit (machine, harness, repo) after 10 min doubling to 1 h (this is how FOLDER_UNTRUSTED clears) and treats a ForgeCliStatus older than 2 h as unknown. 02i \"Durable facts\", 03c:138-145, 01 H4."
  },
  {
   "dim": "agent-capabilities",
@@ -234,8 +234,8 @@
   "fix": "Complete the table with a class and coalesce_key for every body kind. State the ring collapse rule per class and whether shed or coalesced events consume a seq. State that only a gap in NEVER_DROP kinds, or ring overflow, triggers SnapshotRequest.",
   "verify": "Confirmed. The table at 02-contracts.md:247-258 omits account_identity, harness_changed, session_account_link, tmux_server, session, window, pane_created, harness_ready, harness_hook, pane_harness_session, repo and policy_changed, although events.proto:4-8 and :33-35 say the class is fixed per kind there and the agent stamps Event.delivery and coalesce_key from it. 02-contracts.md:256-257 also says a shedding gap in Heartbeat.event_seq is visible and a SnapshotRequest repairs it, which conflicts with 03-workflows.md:255-262 (gap from ring overflow), leaving it unstated whether shed events consume seq numbers. Doc-only fix, low risk.",
   "theme": "D",
-  "status": "open",
-  "resolution": ""
+  "status": "fixed",
+  "resolution": "New docs/specs/02i-delivery-and-sequencing.md holds the class and coalesce_key of every Event body (31 kinds) plus the queue/ring rule per class and states that every event consumes a seq; events.proto body comments name each class, and 02-contracts.md points to 02i instead of its short table."
  },
  {
   "dim": "agent-capabilities",
@@ -248,8 +248,8 @@
   "fix": "Carry the interim state as CommandProgress{step:'awaiting_local_confirm', status: AWAITING_LOCAL_CONFIRM} with the deadline in metadata. Keep CommandResult single and terminal, and mark AWAITING_LOCAL_CONFIRM as progress-only in the status pairing table and in 02-contracts.md:157.",
   "verify": "Confirmed contradiction. 02-contracts.md:171 says the agent sends exactly one CommandResult, and 02-contracts.md:157 (L3) and :328 carry AWAITING_LOCAL_CONFIRM as an interim Status 'in CommandResult' with a final result to follow. status.proto:64-65 defines it as a Status value. ResultAck (agent.proto:258-261) lets the agent forget results, so treating the interim as a result is ambiguous. CommandProgress (command.proto:92-110) already carries status, reason, message and metadata and is the natural carrier. The fix is small and additive.",
   "theme": "D",
-  "status": "open",
-  "resolution": ""
+  "status": "fixed",
+  "resolution": "AWAITING_LOCAL_CONFIRM is now progress only: CommandProgress{step \"awaiting_local_confirm\", step_index 0, deadline in metadata}; CommandResult stays single and final. Fixed in status.proto, command.proto, 02-contracts (L3 row, error table, envelope checks), 02g, 02h and 01c."
  },
  {
   "dim": "agent-capabilities",
@@ -486,8 +486,8 @@
   "fix": "Specify: the agent persists a seq high-water mark in reserved blocks and sets its floor to max(local, HelloAck.hub_last_event_seq) after each HelloAck. The hub sets epoch = max(stored, Hello.last_epoch) + 1 and treats Hello.last_event_seq < hub_last_event_seq as agent rollback (keep history, SnapshotRequest{reason='seq_rollback'}). Add seq high-water mark and install_id to the agent state-dir lists and a row to the W2 failure table.",
   "verify": "Confirmed no rule keeps either counter monotonic. events.proto:27 says seq is 'persisted, never reused', but the persisted ring (03-workflows.md:299, 254-255) holds only never-dropped and coalesced kinds. Shed events (02-contracts.md:256-258 table: pane_summary, resource_sample, spool_status) consume seq numbers and are never persisted, so after an agent crash the counter restarts from the last ring seq. The hub applies later events 'only if seq > last_event_seq' (03-workflows.md:173-175) and would drop a restarted agent's events as duplicates until it passes the old number; state-dir wipe or VM revert is the same. A repo-wide grep finds no high-water mark, floor or rollback rule. Epoch is 'epoch+1' (03-workflows.md:248) with no max against Hello.last_epoch (agent.proto:154-155), so a restored hub store can reissue an epoch and trip SEQ_REPLAYED (02-contracts.md:183-184). This is a rules gap with no required proto change.",
   "theme": "D",
-  "status": "open",
-  "resolution": ""
+  "status": "fixed",
+  "resolution": "02i \"Sequence numbers\" and \"Connection epoch\": agent persists seq_hwm in blocks of 1024, floors seq above HelloAck.hub_last_event_seq, hub treats Hello.last_event_seq below its stored value, a counter decrease or a new install_id as agent rollback (event_generation, marker, audit machine.install_changed), epoch = max(stored, Hello.last_epoch)+1 and the agent refuses a regressed epoch. agent.proto comments; W1/W2 persistence and failure rows; 03f restore."
  },
  {
   "dim": "agent-workflows",
@@ -500,8 +500,8 @@
   "fix": "Doc fix: state that gap detection compares Heartbeat.event_seq with the hub's highest stored seq, never contiguity. Fix the :331 row once last_input_at exists on TmuxPane (snapshot-derived rather than replay-derived). Optionally add a persisted ring_evicted_never_drop_total to Hello/Heartbeat so the timeline gap marker has a wire source.",
   "verify": "Partly confirmed, overstated. Real: 03-workflows.md:331 says a replayed AvailabilityChanged{keystroke} drives human_at_keyboard_until 'from the replayed timestamp', while 03-workflows.md:243/:258-260, 02-contracts.md:217 and 03f-hub-internals.md:60 say replayed events with seq <= Snapshot.seq go to history only; the snapshot carries no input timestamp (see goal-pane-input finding), so that row cannot work as written. Also 02-contracts.md:256-258 says Heartbeat.event_seq makes a gap 'caused by shedding' visible and repairable by SnapshotRequest, without saying whether the hub compares highest-seq (stable) or contiguity (would false-trigger). Overstated: the hub compares Heartbeat.event_seq with its highest stored seq, not hole-by-hole, so shed events do not by themselves force a snapshot per hole. The PaneExited row (:328) is consistent with history-only because the snapshot already shows the pane dead. 03-workflows.md failure table already says 'dropped ring entries counted and gap shown on the timeline', though no wire field carries that count.",
   "theme": "D",
-  "status": "open",
-  "resolution": ""
+  "status": "fixed",
+  "resolution": "New EventCounters{shed_total, coalesced_total, evicted_total} in Hello.event_counters and Heartbeat.events: only a rise of evicted_total is loss (SnapshotRequest event_lost plus a timeline gap marker); contiguity and Heartbeat.event_seq are never used to infer loss. Replay rule rewritten in 02i, 02-contracts and W2: seq <= Snapshot.seq is history only and runs no rule, with a table of the snapshot field that carries each effect; audit rows stay idempotent."
  },
  {
   "dim": "agent-workflows",
@@ -514,8 +514,8 @@
   "fix": "Hub answers every chunk with LogAck{key, acked_offset = stored_end}, accepted or refused. On acked_offset below its spool floor the agent sends the next chunk with gap_before = floor - acked_offset, offset = floor, frame_start = true. Accept rule becomes offset == stored_end + gap_before. Hub rotates day files only at a frame_start chunk. Rewrite the W9 sequence and rules to the frame model and add frame_start/frame_raw_offset to the log_segments index columns.",
   "verify": "Confirmed. 03d-triage-sessions-logs.md:262 accepts a chunk only at the stored end and for a hole 'refuse (ack stays)' (:337 'the agent resends from there'), but LogAck (streams.proto:143-155) is only specified as a success reply, so a refused chunk gives the agent no way to learn the hub's stored end. gap_before (streams.proto:124) does not say whether offset skips the lost bytes, and the 03d accept rule 'offset = stored end' (:262, :321) conflicts with 'contiguous except across an explicit gap_before'. If the hub is restored from backup or truncates (:326) below an agent that already dropped spool <= acked_offset (:313), every later chunk is a hole and the agent cannot resend or declare a gap. 03d:260 and :277-283 still describe zstd frames per 10 s or 256 KiB, contradicting the frame model in streams.proto:105-112 (one frame up to 5 min or 4 MiB, frame_start, frame_raw_offset); the sequence diagram omits both fields. Day-file rotation (:263) is not tied to frame_start, which replay from frame_raw_offset needs.",
   "theme": "D",
-  "status": "open",
-  "resolution": ""
+  "status": "fixed",
+  "resolution": "streams.proto: LogAck now answers every chunk with acked_offset = stored end and a new LogAckStatus (STORED, DUPLICATE, HOLE, UNKNOWN_STREAM); gap_before semantics defined (offset = acked end + gap_before, accept rule offset == stored_end + gap_before); an agent whose spool floor is above the hub's end sends gap_before = floor - end with frame_start. 03d W9 rewritten to the frame model (day files rotate only at frame_start; frame_start and frame_raw_offset in log_segments), 03f keys."
  },
  {
   "dim": "agent-workflows",
@@ -528,8 +528,8 @@
   "fix": "Either document that for developer sessions the agent leaves key.session_id empty, keys its spool by PaneKey, and the hub fills in the SessionId from key.pane, or add an optional SetLogCapture.session_id so the agent echoes it in every LogChunk.key. Pick one and state it in 02-contracts.md K1 and 03d.",
   "verify": "Gap confirmed but severity overstated. SetLogCapture (command_goal.proto:212-215) carries a SessionTarget, whose oneof (command_tmux.proto:22-33) holds session_id, name or tmux_id; for a developer session the agent only knows tmux_id (TmuxSession.session_id is empty for developer sessions, snapshot.proto:159-160), so it has no hub SessionId for LogStreamKey.session_id (streams.proto:113-131) or the spool path (03d:313). However PaneKey (ids.proto:91-101) plus the hub's (machine, server_start_id, tmux_id) binding (session.proto:71-76) lets the hub resolve the SessionId from key.pane deterministically, so this is an unstated convention, not an unsolvable problem. The claimed collision with LogAck.all_streams is unfounded (that uses an explicit bool, streams.proto:153-155).",
   "theme": "D",
-  "status": "open",
-  "resolution": ""
+  "status": "fixed",
+  "resolution": "harness.proto LogStreamKey: on the agent wire the identity is (pane, stream) and session_id is optional, filled in by the hub from (machine, server_start_id, tmux id); LogAck echoes the key as sent; the spool is keyed by pane. SetLogCapture comment, 02-contracts K1 and 03d W9 \"Stream identity\"."
  },
  {
   "dim": "agent-workflows",
@@ -584,8 +584,8 @@
   "fix": "Additive: PolicyInfo.safe_mode and PolicyInfo.error (short, no file contents); SettingsAck.rejected_fields[] {field, reason, message} kept apart from capped_fields; an envelope-range reason code for safe-mode rejections. Update 03e:116-117.",
   "verify": "Confirmed. 03e-settings-and-drift.md:116 says an invalid setting is named in capped_fields 'with SettingSource.layer=LOCAL_CEILING and a message', but SettingsAck (agent.proto:249-256) has only repeated string capped_fields and SettingSource (settings.proto:76-80) has only field and layer, so nothing carries the message or distinguishes 'capped' from 'rejected as invalid'. 03e:117 says safe mode reports 'PolicyInfo.schema_version=\"\" + message', but PolicyInfo (snapshot.proto:297-303) has no message or safe_mode field and the empty-string sentinel is implicit; a repo-wide grep for safe_mode/policy_invalid finds only 03e. The telemetry in 03e:129-133 has no wire source. Low risk, additive.",
   "theme": "D",
-  "status": "open",
-  "resolution": ""
+  "status": "fixed",
+  "resolution": "agent.proto SettingsAck.rejected[] of the new type/v1 SettingRejection{field, reason, message}, kept apart from capped_fields; snapshot.proto PolicyInfo.safe_mode and error; status.proto REASON_CODE_POLICY_SAFE_MODE (208, REJECTED_BY_POLICY); hub machine.proto rejected_settings, policy_safe_mode, policy_error. 03e rows, 02g audit row, 02-contracts error table."
  },
  {
   "dim": "agent-workflows",
@@ -850,8 +850,8 @@
   "fix": "Simplest option is A. PaneKey (server, server_start_id, pane_id) is already unique per machine, and the hub knows the machine from the certificate. So the agent-wire stream identity is (pane, stream), and LogStreamKey.session_id is optional on agent->hub (agent sets it only when it has FLEET_SESSION_ID). The hub resolves the pane to a SessionId on ingest, and LogAck echoes the key as sent. Document this in the LogStreamKey comment and in 02-contracts.md K1.",
   "verify": "Confirmed. harness.proto:231-235 LogStreamKey{session_id, pane, stream}. snapshot.proto:159-160 TmuxSession.session_id is empty for the developer's own. session.proto:68-72 has the hub assign a SessionId bound to (machine, server_start_id, tmux_id). command_goal.proto:212-215 SetLogCapture carries a SessionTarget oneof (session_id OR tmux_id), so the hub cannot hand the agent its assigned id there. No other hub-to-agent message carries the assignment. 03d:261 and 02-contracts.md:152 still show session_id in the key.",
   "theme": "D",
-  "status": "open",
-  "resolution": ""
+  "status": "fixed",
+  "resolution": "Same change as dev-session-log-key (option A): LogStreamKey.session_id is optional on the agent wire, the hub resolves the pane to its SessionId on ingest; documented in harness.proto, 02-contracts K1 and 03d."
  },
  {
   "dim": "hygiene-consistency",
@@ -1130,8 +1130,8 @@
   "fix": "Add `SettingsAck.unrecognized_fields` (or a `settings_schema` integer in Hello/SettingsAck) so the hub can mark 'not enforced on this agent'. Alternatively advertise `settings.<field>` capabilities. Write the probe-interval merge rule (local value is a minimum interval) and a precedence order (Settings.probe_interval_by_account, then SettingValues.probe_interval, with EnsureProbe.interval only run_now or initial). Remove hub-only fields from agent delivery or mark them echo-only. Additive.",
   "verify": "critic (verified in files by the critic)",
   "theme": "D",
-  "status": "open",
-  "resolution": ""
+  "status": "fixed",
+  "resolution": "SettingsAck.unrecognized_value_fields and unrecognized_settings_fields (field numbers) let the hub show \"not enforced on this machine\" (hub Machine.status.unenforced_settings) and keep the machine out of auto-dispatch for a safety limit. Probe interval: precedence by-account > SettingValues.probe_interval > EnsureProbe.interval (initial only), effective = max(hub, local minimum), reported in EffectiveSettings.probe_interval_by_account; merged_grace marked hub-only echo. 03e, settings protos."
  },
  {
   "dim": "critic",
@@ -1158,8 +1158,8 @@
   "fix": "State in 02-contracts: the hub stores `received_at` for every event and reading, orders cross-machine data by hub-adjusted time (`at - machine.clock_skew`) or received_at, clamps `at` beyond now plus skew to received_at, and uses one skew source (Hello.sent_at at connect, Heartbeat.sent_at thereafter). Add `received_time` to the hub UsageReading. Additive.",
   "verify": "critic (verified in files by the critic)",
   "theme": "D",
-  "status": "open",
-  "resolution": ""
+  "status": "fixed",
+  "resolution": "Hub is the time authority (02i \"Clocks\"): received_time on everything, one skew source (Hello.sent_time then Heartbeat.sent_time, median of 5), hub-adjusted time clamped to received_time for future stamps, cross-machine ordering by adjusted read_time with received_time tie-break, clock_untrusted above 15 min. hub UsageReading gains received_time and agent_read_time; MachineTelemetry.clock_untrusted; 02-contracts, W1 and 03b aligned."
  },
  {
   "dim": "critic",

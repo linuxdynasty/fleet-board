@@ -200,3 +200,33 @@ reason (`AGENT_GOAL_CAP_REACHED`). Hub-assigned ids are 1 to 32 characters of
 `[a-z0-9-]`, so a `SessionId` is a valid tmux session name. A `RepoRef` is
 identified by host and path only; the agent derives it from the `origin` remote
 unless local policy names another, and reports every remote.
+
+## Addendum: delivery, sequencing, logs and settings (review theme D)
+
+Taken while applying theme D, because they change what an agent must persist and
+what a hub may conclude. Detail is in
+[02i](../specs/02i-delivery-and-sequencing.md), 03d and 03e.
+
+**20. Counters never go backwards, and loss is counted.** The agent persists an
+event `seq` high-water mark in reserved blocks and raises its floor above the
+hub's `hub_last_event_seq` after every `HelloAck`; the hub issues the connection
+epoch as `max(stored, Hello.last_epoch) + 1`. Gaps in `seq` are normal (every
+event consumes a number), so the hub never reads loss from them: `EventCounters`
+in `Hello` and `Heartbeat` separate shed and coalesced events from `evicted_total`,
+the one real loss. A replayed event at or below `Snapshot.seq` is history only and
+runs no rule; every state a rule needs is in the snapshot. `AWAITING_LOCAL_CONFIRM`
+is progress, never a second result.
+
+**21. Logs are keyed by pane; the hub answers every chunk.** A log stream is
+`(pane, stream)` on the agent wire and the hub fills in the `SessionId`, since a
+developer's own session has none the agent could know. Every chunk gets a
+`LogAck` with the hub's stored end and a status, so a hole or a restored hub is
+repaired by the agent declaring a gap instead of wedging the stream.
+
+**22. Hub time and honest settings.** The hub is the clock authority: skew is
+measured at every Hello and Heartbeat, cross-machine data is ordered by
+hub-adjusted time, and a machine over 15 minutes off is not trusted. Settings
+the agent refuses or does not know are reported back (`rejected`,
+`unrecognized_value_fields`, `PolicyInfo.safe_mode`) so the UI never shows a
+setting as enforced when it is not; a safety limit that an older agent cannot
+enforce keeps that machine out of auto-dispatch.

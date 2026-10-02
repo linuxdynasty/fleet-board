@@ -212,11 +212,20 @@ message ProbeAccountResponse {
 // UsageReading is one stored reading, for the burn-down chart.
 message UsageReading {
   fleet.type.v1.AccountId account = 1;
+  // When the screen was read, in hub time: the agent's read_time minus the
+  // machine's measured clock skew, clamped to received_time. This is the time
+  // readings are ordered by across machines (02i, "Clocks").
   google.protobuf.Timestamp read_time = 2;
   fleet.type.v1.UsageSource source = 3;
   fleet.type.v1.ParseOutcome parse = 4;
   repeated fleet.type.v1.LimitBucket buckets = 5;
   fleet.type.v1.SpendReading spend = 6;
+  // When the hub received the reading (hub clock). The tie-break for equal
+  // read_time, and the only time trusted when the machine's clock is
+  // untrusted.
+  google.protobuf.Timestamp received_time = 7;
+  // The agent's own read_time, unadjusted, for display and debugging.
+  google.protobuf.Timestamp agent_read_time = 8;
 }
 
 // ListUsageReadingsRequest. Filter and order_by names: 02c-hub-watch-and-filters.md.

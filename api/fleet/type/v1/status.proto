@@ -60,6 +60,10 @@ enum Status {
   // crash, UI must ask a person). Never retried automatically.
   STATUS_UNKNOWN_OUTCOME = 6;
   // Waiting for `fleet-agent approve <command_id>` before not_after_time.
+  // Progress only: it appears in CommandProgress{step "awaiting_local_confirm"}
+  // and never in a CommandResult, which is always final and sent exactly
+  // once (an approval then ends OK or FAILED, a denial or timeout
+  // REJECTED_BY_POLICY with LOCAL_DENIED or LOCAL_CONFIRM_TIMEOUT).
   STATUS_AWAITING_LOCAL_CONFIRM = 7;
 }
 
@@ -149,6 +153,10 @@ enum ReasonCode {
   REASON_CODE_LOCAL_DENIED = 206;
   // The requester's role is below what this kind or class needs.
   REASON_CODE_ROLE_INSUFFICIENT = 207;
+  // The agent is in policy safe mode (its policy file is invalid, see
+  // PolicyInfo.safe_mode): it observes only and refuses every control command
+  // and every hub setting. REJECTED_BY_POLICY.
+  REASON_CODE_POLICY_SAFE_MODE = 208;
 
   // Goal composite steps (G3) and goal control (G4).
   REASON_CODE_READY_TIMEOUT = 300;

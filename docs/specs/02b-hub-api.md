@@ -357,7 +357,7 @@ Filter on `action` with `=` or `in` ([02c](02c-hub-watch-and-filters.md)).
 | Area | Actions |
 |---|---|
 | Sign-in and credentials | `auth.claim`, `auth.sign_in`, `auth.sign_in_failed`, `auth.sign_out`, `passkey.add`, `passkey.delete`, `user.invite`, `user.update`, `auth.session_revoke`, `token.create`, `token.revoke`, `device.pair_request`, `device.approve`, `device.revoke` |
-| Machines | `machine.enroll`, `machine.enroll_failed`, `machine.update`, `machine.drain`, `machine.undrain`, `machine.revoke`, `machine.delete`, `machine.connect_refused`, `machine.local_drain`, `machine.local_undrain` |
+| Machines | `machine.enroll`, `machine.enroll_failed`, `machine.update`, `machine.drain`, `machine.undrain`, `machine.revoke`, `machine.delete`, `machine.connect_refused`, `machine.local_drain`, `machine.local_undrain`, `machine.install_changed` |
 | Commands | `session.create`, `session.keys`, `session.interrupt`, `session.harness_command`, `session.respawn`, `session.kill_window`, `session.availability`, `session.log_capture`, `attach.open`, `attach.close`, `command.refused`, `command.local_approval` |
 | Goals and work | `goal.start`, `goal.control`, `routine.run`, `approval.decide`, `triage.snooze`, `triage.dismiss` |
 | Configuration | `settings.update`, `account.update`, `integration.update`, `routine.create`, `routine.update`, `routine.delete`, `notification_target.create`, `notification_target.update`, `notification_target.delete`, `policy.changed`, `policy.safe_mode` |

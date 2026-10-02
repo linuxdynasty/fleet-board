@@ -54,7 +54,9 @@ STALE and a 45 s blip must not move probes) or `ProbeHealth.consecutive_failures
 returns; harmless if the session is already gone), new probe assigned. Two
 probes briefly alive for one account during failover is harmless: status
 commands cost no quota and both are idle sessions; the hub keeps readings from
-either, newest `read_time` wins.
+either, newest hub-adjusted `read_time` wins (agent time minus the machine's
+measured skew, clamped to the hub's `received_time`; ties by `received_time`; a
+`clock_untrusted` machine never overrides a trusted one; 02i, "Clocks").
 
 **Readings (D2).** Every reading is stored with both halves: `shown.fields[]`
 + `shown.raw_screen` (redacted; 7-day retention) for display in the harness's
@@ -140,8 +142,10 @@ stateDiagram-v2
 
 ### Ordering and consistency
 
-- Readings are ordered by `read_time` per account; a replayed reading older than
-  `latest_reading.read_time` is stored but does not become latest.
+- Readings are ordered by hub-adjusted `read_time` per account (`received_time`
+  breaks ties and orders a `clock_untrusted` machine's readings); a replayed
+  reading older than `latest_reading.read_time` is stored but does not become
+  latest. `reading_stale` compares the adjusted time with the previous reset.
 - Pacing is evaluated by the single scheduler goroutine from a consistent read;
   dispatch (W5) re-reads `account_pacing` in the same pass, so the decision and
   the dispatch use one view.
@@ -164,7 +168,8 @@ stateDiagram-v2
 | Provider error during the probe | Status commands do not call the model; if the harness fails to start because the provider is down, `HarnessCondition` from the probe pane and `PROBE_START_FAILED` |
 | Developer attached to the probe session (`tmux -L fleet-probe attach`) | Agent sees `attached_clients > 0`, skips the run, reports health with `last_failure=INTERNAL` and a message; never types into a watched probe |
 | Passive readings disagree with probe | Passive only triggers a probe; the probe wins |
-| Two readings arrive out of order after a reconnect | `read_time` ordering; latest by time, not by arrival |
+| Two readings arrive out of order after a reconnect | hub-adjusted `read_time` ordering; latest by time, not by arrival |
+| A machine's clock is minutes fast or slow | Its readings are adjusted by the measured skew; above 15 minutes the machine is `clock_untrusted` (readings ordered by `received_time`, reset text shown instead of a resolved `resets_time`, probe moved to a trusted machine) |
 | Reset text unresolvable ("Resets Sep 30 at 10pm" with no year around New Year) | `ResetTime.at` unset, `original_text` kept; bucket treated as `UNKNOWN` for the line, shown as text |
 
 ### Telemetry

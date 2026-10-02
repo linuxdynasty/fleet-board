@@ -24,8 +24,8 @@ sequenceDiagram
   W->>G: publish Settings for affected connected machines
   G-->>A: Settings{settings_epoch, generation=13, labels[], values SettingValues{…}, probe_interval_by_account}
   A->>A: validate · merge tighten-only under local ceiling (rules below) · persist {gen, effective} · apply
-  A->>G: SettingsAck{settings_epoch, generation=13, effective EffectiveSettings{values, sources[], labels}, capped_fields[]}
-  G->>W: tx: machine_effective_settings{machine, gen=13, effective, capped_fields, acked_at}
+  A->>G: SettingsAck{settings_epoch, generation=13, effective EffectiveSettings{values, sources[], labels, probe_interval_by_account}, capped_fields[], rejected[], unrecognized_value_fields[]}
+  G->>W: tx: machine_effective_settings{machine, gen=13, effective, capped_fields, rejected, unenforced, acked_at}
   Note over A: later: policy.yaml edited on the machine
   A->>G: Event{policy_changed{policy PolicyInfo{hash, changed_since_load=true}, previous_hash}}
   G->>W: tx: machines.policy_hash_on_disk · triage info "policy changed on <machine>, restart pending"
@@ -45,7 +45,35 @@ in the order `NONE < OBSERVE < CONTROL`. `share_identity_email`: hub wins (it is
 an owner privacy choice, not a machine safety ceiling). Labels: hub-assigned ∪
 local additions; a local file cannot remove a hub label. Each field records its
 `SettingSource.layer`; fields where the local value won are listed in
-`capped_fields` so the UI says "capped by local policy on omarchy".
+`capped_fields` so the UI says "capped by local policy on omarchy". A value the
+agent cannot apply at all is a different thing and is **not** a cap: it goes in
+`SettingsAck.rejected[]` as `{field, reason, message}` (see the failure table).
+
+**Probe interval.** A machine's probe interval for an account has three
+carriers, and one rule picks among them: the first set of
+`Settings.probe_interval_by_account[account]`, then `SettingValues.probe_interval`
+(the layered default), then `EnsureProbe.interval` (which therefore only
+matters before any settings arrived; `run_now` ignores it) is the hub's value.
+The local policy holds a **minimum interval**, a floor on how often the agent
+probes, so the effective interval is `max(hub value, local minimum)`: a local
+value can only make probing rarer. The result is reported per account in
+`EffectiveSettings.probe_interval_by_account`, and `capped_fields` names
+`probe_interval` when the local minimum won. `merged_grace` is a hub-only
+setting: the agent receives it so the owner sees one list of settings, never
+acts on it and echoes it unchanged.
+
+**Skew with an older agent.** The hub may be a minor version ahead of an agent
+(02, versioning), so it can send a `SettingValues` field the agent does not
+know; protobuf drops it silently and the agent's `effective` simply omits it.
+The agent therefore lists the field numbers its schema did not recognize in
+`SettingsAck.unrecognized_value_fields` (and `unrecognized_settings_fields` for
+`Settings` itself). The hub maps them to names and shows each as **not enforced
+on this machine** (`Machine.status.unenforced_settings`), never as "no
+opinion". When an unenforced field is one of the safety limits (`max_*`,
+`rate_limits`, `local_approval`, `block_on_battery`, `allowed_*`,
+`default_server`, `spool_cap_bytes`) the machine is left out of auto-dispatch
+and an info triage item says to upgrade the agent; the owner can override that
+per machine.
 
 **Generation.** One fleet-wide monotonic counter; a machine's `Settings`
 carries the counter value at which its resolved values were last computed. The
@@ -88,8 +116,8 @@ Machine drain state: `ACTIVE` → `DRAINING{hub}` → `ACTIVE` (Undrain);
 |---|---|---|
 | `settings_fleet`, `settings_groups{label, priority, values}`, `settings_machines{machine, values}`, `machine_labels{machine, label, source=hub}` | hub store | the owner's change tx (with the generation bump) |
 | `settings_generation` (one row), `machine_settings_sent{machine, gen, sent_at}` | hub store | change tx; send tx |
-| `machine_effective_settings{machine, gen, effective, capped_fields, acked_at}` | hub store | ack tx |
-| `machines.policy_hash`, `policy_schema_version`, `policy_hash_on_disk` | hub store | snapshot tx; `policy_changed` tx |
+| `machine_effective_settings{machine, gen, effective, capped_fields, rejected, unenforced, acked_at}` | hub store | ack tx |
+| `machines.policy_hash`, `policy_schema_version`, `policy_hash_on_disk`, `policy_safe_mode`, `policy_error` | hub store | snapshot tx; `policy_changed` tx |
 | Audit: who changed what (old → new) | hub store (permanent) | change tx |
 | `settings.json{generation, values, effective}`, local policy file and its loaded hash | agent state dir / config dir | before `SettingsAck` is sent |
 | Drain state and reason | agent state dir (survives restart) and hub `machines.drain` | per change |
@@ -113,8 +141,9 @@ Machine drain state: `ACTIVE` → `DRAINING{hub}` → `ACTIVE` (Undrain);
 | Hub restart | Generation and values durable; resend on each Hello as needed |
 | Duplicate `Settings` (same generation) | Agent re-acks; no re-apply |
 | Out-of-order generations (two gateways; cannot happen with one hub) | Agent ignores the lower; counted |
-| Invalid value (e.g. `max_windows=0`, bad duration) | Agent rejects that field, keeps the previous effective value, names it in `capped_fields` with `SettingSource.layer=LOCAL_CEILING` and a message; the UI shows the rejection |
-| Policy file invalid on restart | Agent starts in **safe mode**: observe only, every control command `REJECTED_BY_POLICY`, `PolicyInfo.schema_version=""` + message in the snapshot; triage `policy_invalid` |
+| Invalid value (e.g. `max_windows=0`, bad duration) | Agent rejects that field, keeps the previous effective value and lists it in `SettingsAck.rejected[]` as `{field, INVALID_ARGUMENT, message}` (not in `capped_fields`); `Machine.status.rejected_settings` shows it and `fleet_hub_settings_rejected_fields_total` counts it |
+| Hub sends a setting the agent's version does not know | The agent lists the field number in `unrecognized_value_fields`; the hub shows "not enforced on this machine" and, for a safety limit, leaves the machine out of auto-dispatch |
+| Policy file invalid on restart | Agent starts in **safe mode**: observe only, every control command `REJECTED_BY_POLICY` / `POLICY_SAFE_MODE`, every hub setting rejected with the same reason; `PolicyInfo.safe_mode = true` with a one-line `PolicyInfo.error` (no file contents) in the snapshot; the hub raises triage `policy_invalid` and the `policy.safe_mode` audit row |
 | Policy file deleted | Agent uses built-in safe defaults; reported as hash of defaults; `doctor` warns |
 | Hub store restored from an older backup (generation goes backwards) | `fleetd restore` mints a new `settings_epoch` (03f, 02g); the agent orders settings by `(settings_epoch, generation)` and accepts any generation under a new epoch (02-contracts.md, replaces 03g's `settings_restored`) |
 | `Drain` while `StartGoal` in flight | In flight past preflight → completes; not yet started → `DRAINING` at preflight |

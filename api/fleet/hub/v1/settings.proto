@@ -124,7 +124,8 @@ message UpdateSettingsRequest {
 }
 
 // UpdateSettingsResponse. Delivery to agents shows in each Machine's
-// effective_settings and capped_settings.
+// effective_settings, capped_settings, rejected_settings and
+// unenforced_settings.
 message UpdateSettingsResponse {
   Settings settings = 1;
 }

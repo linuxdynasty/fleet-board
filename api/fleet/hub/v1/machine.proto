@@ -148,8 +148,14 @@ message MachineTelemetry {
   fleet.type.v1.Percent battery = 3;
   double load1 = 4;
   uint64 mem_available_bytes = 5;
-  // Agent clock minus hub clock; a warning above 5 minutes.
+  // Agent clock minus hub clock: the median of the last five samples
+  // (Hello.sent_time at connect, then Heartbeat.sent_time), each taken
+  // against the hub's receive time. A warning above 5 minutes.
   google.protobuf.Duration clock_skew = 6;
+  // True above 15 minutes: the hub orders this machine's data by its own
+  // receive time and ignores its readings when choosing the newest reading of
+  // an account (02i, "Clocks").
+  bool clock_untrusted = 7;
 }
 
 // MachineStatus is everything observed about a machine: connection state,
@@ -189,6 +195,17 @@ message MachineStatus {
   fleet.type.v1.EffectiveSettings effective_settings = 32;
   // Settings fields the local policy capped.
   repeated string capped_settings = 33;
+  // Settings fields the agent refused (invalid value, or safe mode), from
+  // the last SettingsAck. The previous effective value stands.
+  repeated fleet.type.v1.SettingRejection rejected_settings = 38;
+  // Names of settings the hub sent that this agent's version does not know,
+  // so they are NOT enforced there. Derived from
+  // SettingsAck.unrecognized_value_fields; empty when the agent is current.
+  repeated string unenforced_settings = 39;
+  // The agent runs in policy safe mode (observe only); policy_error is the
+  // one-line reason from the agent.
+  bool policy_safe_mode = 40;
+  string policy_error = 41;
   google.protobuf.Timestamp cert_not_after_time = 34;
   repeated fleet.type.v1.Capability capabilities = 35;
   string install_id = 36;

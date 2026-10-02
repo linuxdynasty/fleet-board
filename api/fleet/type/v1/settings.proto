@@ -6,6 +6,7 @@ syntax = "proto3";
 
 package fleet.type.v1;
 
+import "fleet/type/v1/status.proto";
 import "google/protobuf/duration.proto";
 
 // DefaultServerMode is the local ceiling for the developer's own tmux
@@ -64,9 +65,13 @@ message SettingValues {
   optional uint64 spool_cap_bytes = 14;
   // Block goal starts while on battery (B3).
   optional bool block_on_battery = 15;
-  // Default probe interval; EnsureProbe can set a per-account value.
+  // Default probe interval for accounts without their own
+  // (Settings.probe_interval_by_account). Merge and precedence: 03e, "Probe
+  // interval". The local policy can only lengthen it.
   optional google.protobuf.Duration probe_interval = 16;
-  // Grace before pruning a merged goal's worktree and window.
+  // Hub-only: the hub prunes a merged goal's worktree and window after this
+  // grace. Delivered so the owner sees one list of settings, but an agent
+  // never acts on it and echoes it unchanged in EffectiveSettings.
   optional google.protobuf.Duration merged_grace = 17;
 }
 
@@ -85,4 +90,23 @@ message EffectiveSettings {
   repeated SettingSource sources = 3;
   // Labels: hub-assigned plus local additions. Local can only add.
   repeated string labels = 4;
+  // Effective probe interval per account (key AccountId.value) after the
+  // local minimum was applied; only accounts the hub sent a value for.
+  map<string, google.protobuf.Duration> probe_interval_by_account = 5;
+}
+
+// SettingRejection says why the agent did not apply one field of a Settings
+// message (SettingsAck.rejected). Used by the agent wire and by the hub API's
+// machine status, so it lives here.
+message SettingRejection {
+  // Field name in SettingValues (or "probe_interval_by_account.<account id>"),
+  // as the hub knows it.
+  string field = 1;
+  // REASON_CODE_INVALID_ARGUMENT (value out of range, bad duration) or
+  // REASON_CODE_POLICY_SAFE_MODE (the agent ignores hub settings until its
+  // policy file is fixed).
+  ReasonCode reason = 2;
+  // One line for the owner. No file contents, no secrets. Capped at 256
+  // bytes.
+  string message = 3;
 }

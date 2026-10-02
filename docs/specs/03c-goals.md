@@ -66,7 +66,8 @@ sequenceDiagram
    dollar cap, OpenCode on Anthropic).
 3. **Machines:** `ONLINE`, not draining, `HarnessInfo{launch_allowed,
    version_support = SUPPORTED}` for the harness, the account's `AccountIdentity` present
-   and `signed_in`, `ForgeCliStatus.signed_in` with `push_access` for the repo,
+   and `signed_in`, `ForgeCliStatus.signed_in` with `push_access` for the repo
+   (`checked_time` under 2 h old, else the hub asks for a snapshot first),
    a checkout of the repo, `active < max_active` and `total < max_total`
    (the hub owns this and counts from its goal table; if the heartbeat's
    `goals_active` or `goals_total` differs from the hub's by more than one on
@@ -141,9 +142,13 @@ harness)`** (`HARNESS_NOT_SIGNED_IN`, `PUSH_ACCESS_MISSING`, `CHECKOUT_MISSING`,
 `STARTUP_PROMPT_SEEN` of kind `update` or `login`, which also opens a triage
 item instead of retrying)
 → the machine is marked unfit for that harness/repo with the reason until a
-fact it depends on changes (a snapshot or event; a forge CLI status or folder
-trust is refreshed by the next 1 h check or `SnapshotRequest`); the work item is
-re-planned on another machine next pass. `DISK_LOW`, `AGENT_GOAL_CAP_REACHED`
+fact it depends on changes: a snapshot or an event (`Event.forge_cli_status`
+from the agent's hourly `gh`/`glab` re-check, `harness_changed`,
+`policy_changed`), or the hub's own re-check, which re-runs `Preflight` for
+each durably unfit `(machine, harness, repo)` after 10 minutes, doubling to one
+hour while the reason holds (folder trust and other agent-local facts have no
+event, so this is how `FOLDER_UNTRUSTED` clears; 02i, "Durable facts"). The
+work item is re-planned on another machine next pass. `DISK_LOW`, `AGENT_GOAL_CAP_REACHED`
 and `CHECKOUT_DIRTY` are transient. `READY_TIMEOUT`, `TRUST_PROMPT_SEEN`,
 `PANE_BUSY`, `SESSION_NOT_AVAILABLE`, `CHECKOUT_DIRTY` → one retry on the same
 machine with a new window (not a reuse); then another machine.

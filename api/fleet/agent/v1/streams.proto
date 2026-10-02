@@ -101,6 +101,12 @@ message TermClose {}
 // agent keeps it in the spool until acked. At most 960 KiB compressed, so
 // the framed message stays under the 1 MiB message cap.
 //
+// Offsets and gaps: offset counts raw bytes of the stream (key), starting at
+// 0 when capture starts, and a lost span still takes up offsets. The hub
+// accepts a chunk only when offset == stored_end + gap_before, where
+// stored_end is the end it holds for that stream; gap_before is 0 unless the
+// agent has to skip bytes it no longer has (03d, W9).
+//
 // Framing (spike S2, 2026-10-02, 60 min Codex goal): the agent keeps ONE
 // zstd frame per stream open for up to 5 minutes or 4 MiB raw and flushes
 // it at every 10 s chunk, so a chunk is a run of zstd blocks, not a whole
@@ -116,7 +122,11 @@ message LogChunk {
   // decode to raw_length bytes; begins with a frame header iff frame_start.
   bytes zstd = 5;
   uint32 raw_length = 6;
-  // Bytes lost before this chunk because the spool cap was hit.
+  // Raw bytes skipped between the end the hub last acknowledged and this
+  // chunk's offset: the spool cap dropped them, or a restored hub is behind
+  // the agent's spool floor. offset already includes them (offset = acked
+  // end + gap_before), so offsets never repeat; the hub records the gap in
+  // its index and a reader sees it as ReadSessionLogResponse.gap_before.
   uint64 gap_before = 7;
   google.protobuf.Timestamp first_byte_time = 8;
   google.protobuf.Timestamp last_byte_time = 9;
@@ -132,10 +142,32 @@ message LogChunk {
   bool frame_start = 14;
 }
 
-// LogAck: the hub stored everything up to acked_offset for this stream. The
-// hub may also send it unsolicited: with pause to stop shipping, and with
-// all_streams and pause=false to resume every stream of the machine.
+// LogAckStatus is the hub's verdict on the chunk a LogAck answers.
+enum LogAckStatus {
+  LOG_ACK_STATUS_UNSPECIFIED = 0;
+  // Stored; acked_offset is the new end.
+  LOG_ACK_STATUS_STORED = 1;
+  // Already stored (a resend after a lost ack); acked_offset is the end.
+  LOG_ACK_STATUS_DUPLICATE = 2;
+  // offset != stored_end + gap_before and not a duplicate: the hub is behind
+  // or ahead of what the agent assumed. acked_offset is the hub's end; the
+  // agent resends from there, or from its spool floor with gap_before set
+  // when it no longer has those bytes.
+  LOG_ACK_STATUS_HOLE = 3;
+  // The hub cannot map key.pane to a session yet (the snapshot that creates
+  // the session is not applied). Nothing stored; the agent keeps the spool
+  // and retries after the next snapshot, at most every 60 s.
+  LOG_ACK_STATUS_UNKNOWN_STREAM = 4;
+}
+
+// LogAck: the hub's answer to every chunk, accepted or refused, and the
+// stored end of the stream. The hub may also send it unsolicited: with pause
+// to stop shipping, and with all_streams and pause=false to resume every
+// stream of the machine (status is then unset).
 message LogAck {
+  // The hub's stored end for the stream after this chunk. It is the hub's
+  // truth: the agent follows it even when it is lower than an offset the
+  // agent acked before (a restored hub), and never treats it as monotonic.
   uint64 acked_offset = 3;
   // Hub asks the agent to pause shipping (disk low); same as SetLogShipping.
   bool pause = 4;
@@ -143,4 +175,6 @@ message LogAck {
   // Applies to every stream of this machine; key and acked_offset are then
   // unset. Replaces the old "empty session_id means all streams" rule.
   bool all_streams = 6;
+  // Verdict on the chunk this ack answers.
+  LogAckStatus status = 7;
 }
