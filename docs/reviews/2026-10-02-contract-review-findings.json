@@ -10,8 +10,8 @@
   "fix": "Add a short 'Authentication' section to 02b. It should say where the claim is handled (a fleetd command or plain HTTP, not FleetService) and how credentials are carried: browser = HttpOnly SameSite session cookie, which also covers the same-origin WebSocket upgrade; CLI/scripts = Authorization bearer token from FLEET_TOKEN. Keep token and user RPCs deferred under open question 1 (v3). Do not add an AuthService or new reason codes now.",
   "verify": "The gap is real but the severity is overstated. Confirmed: service.proto has no claim/login/logout/token RPC; design.md:323-327 promises the claim URL and FLEET_TOKEN; 02b has no auth section and never says how credentials ride Connect, Watch or the attach WebSocket (grep for cookie, bearer, ticket and Origin finds nothing in docs or api). However 02b:224-225 and ADR 0018:128 already list 'API tokens and user management as RPCs, or fleetd commands only' as an open question. design.md:425-439 puts login and browser attach in v3, and v1/v2 run on local_trusted. The first-admin claim can be a plain HTTP endpoint or fleetd command outside FleetService, so no proto change blocks v1/v2. Any RPCs are additive. The part that does matter now (principal and Origin rules in local_trusted) is covered under local-trusted-attack-surface.",
   "theme": "B",
-  "status": "open",
-  "resolution": ""
+  "status": "fixed",
+  "resolution": "New 02f-hub-authentication.md and hub/v1/auth.proto, token.proto: claim URL (first owner invite, fragment token, RedeemInvite), passkey Begin/Finish registration and login (WebAuthn JSON), GitHub sign-in as two redirect endpoints with a users-based allow-list, login sessions with an HttpOnly SameSite=Strict cookie, SignOut, Users and invites, API tokens (create once-shown, list, revoke); credential carriers per transport; GetServerInfo gains sign_in_methods and claim_pending; 17 RPCs added to service.proto; ADR 0019 addendum 10 to 12."
  },
  {
   "dim": "hub-api-semantics",
@@ -66,8 +66,8 @@
   "fix": "Document in 02b that the hub sets requested_by.role to the highest role whose scope set is a subset of the caller's effective scopes. OWNER requires ADMIN, SETTINGS, APPROVALS and SESSIONS_WRITE, so a narrowed device or token is never OWNER. Reconcile KillWindow's label with its message comment (for example 'SESSIONS_WRITE, and a developer's window also needs an owner-level principal and an approval'). Fix the required_role comment to name roles only, or add `required_scope` as a new field and reserve nothing. Changing the field is unnecessary because it is additive.",
   "verify": "Confirmed. The agent re-checks requested_by.role against command class and kind (02-contracts.md:186-187, 409; command_goal.proto:160,189), and 02-contracts.md:454 requires ROLE_OWNER for KillWindow on a developer window and for allow_dirty. 02-contracts.md:336-343 and 02b:166 say a device or token acts on_behalf_of the owner with 'at most its user's scopes' but never say what Principal.role the hub sends for a narrowed DEVICE or API_TOKEN. If it copies the owner's role, narrowed scopes do not narrow the agent's checks. service.proto:76 labels KillWindow [SESSIONS_WRITE] while session.proto:245-246 says it needs ROLE_OWNER and an approval. triage.proto:192-193 says 'Lowest role or scope' but the field is a Role. The agent's role check is only 'defense in depth' (02-contracts.md:416-418), so the main enforcement is hub-side scopes, which makes this a doc and consistency gap rather than a wire blocker.",
   "theme": "B",
-  "status": "open",
-  "resolution": ""
+  "status": "fixed",
+  "resolution": "02d \"Role sent to the agent\": the hub sends the narrowest role covering the effective scopes, OWNER only with SESSIONS_WRITE, APPROVALS, SETTINGS and ADMIN, so a narrowed device or token is never OWNER; hub scope check and agent role check both apply, stricter wins. Principal.role, KillWindowRequest and Approval.required_role comments reconciled (required_role is a role covered by the decider's mapped role)."
  },
  {
   "dim": "hub-api-semantics",
@@ -80,8 +80,8 @@
   "fix": "Document in 02b: local_trusted binds loopback only and refuses non-loopback addresses; every request and WebSocket upgrade passes a Host allow-list and same-origin Origin check; the fixed local principal is {id: \"local-owner\", kind USER, role OWNER}; attach in local_trusted follows the same Origin rule and design.md:318 is reconciled to 'login required in authenticated mode'. Change `auth_mode` to an enum (LOCAL_TRUSTED, AUTHENTICATED) before codegen. A CreateAttachTicket RPC is optional and can wait for v3.",
   "verify": "Confirmed. design.md:318-319 says the hub listens only on the Tailscale interface and browser attach requires login, while design.md:323-325 defines local_trusted as localhost with no login. 04-technology-review.md:214 contemplates plain-HTTP localhost and the attach WebSocket (ADR 0016:31-33) is specified without any authentication, Origin or Host check. common.proto:165-166 types auth_mode as a free `string`. The Principal used in local_trusted (audit, requested_by, FLEET_OWNER, idempotency scope at 02b:69-70) is never defined. Cross-site WebSocket hijacking and DNS rebinding are the standard attacks on a no-login localhost control plane that can type into tmux and answer approvals. In v2 the same applies to unary Connect calls that dispatch goals. Attach itself is v3 (design.md:439), but the Origin/Host rules and principal are needed for any v1 server. The string-to-enum change is wire-incompatible, so it is cheapest before codegen.",
   "theme": "B",
-  "status": "open",
-  "resolution": ""
+  "status": "fixed",
+  "resolution": "local_trusted binds loopback only and refuses other addresses; fixed principal local-owner (kind USER, role OWNER); Host allow-list, Origin check and no-CORS rules on every transport (02f); new HOST_NOT_ALLOWED and ORIGIN_NOT_ALLOWED reasons; CreateAttachTicket makes attach a second lock; AuthMode comments in common.proto; design.md reconciled to authenticated mode. (auth_mode was already an enum from theme A.)"
  },
  {
   "dim": "hub-api-semantics",
@@ -542,8 +542,8 @@
   "fix": "Add a Role x command kind/class table (VIEWER, OPERATOR, OWNER, SCHEDULER, ARBITER, with default AWAITING_LOCAL_CONFIRM) to 02-contracts.md and the policy defaults. Recommend SCHEDULER may issue StartGoal (incl. model/effort), nudge SendKeys, GOAL and OBSERVE harness commands, Interrupt, SetSessionAvailability, probe commands, PruneWorktree and fleet-window KillWindow, with fresh_context and RespawnPane allowed only in fleet-started sessions. No proto change.",
   "verify": "Confirmed. The agent re-checks role against command class (02-contracts.md:186-188, status.proto:199-210), but 01b-harness-commands.md:35-42 phrases the classes in terms of 'operator role' and 'local approval or explicit owner action', and a repo-wide grep finds no matrix covering ROLE_SCHEDULER on the agent. The only scope table (02b-hub-api.md:~150-160) is for hub API callers and says SCHEDULER/ARBITER never call that API. SCHEDULER-issued paths include GoalSpec.model/effort (SESSION class), fresh_context (/clear, DESTRUCTIVE, command_goal.proto:56-65), nudge SendKeys and RespawnPane (03c:290-296, 'may need local approval'), and PruneWorktree/KillWindow (03c:311-316). ADR 0004:121 and :385 make local approval for dangerous kinds configurable, but they do not say what the scheduler may do unattended. Without it the agent role check and the scheduler's auto-recovery cannot be implemented consistently.",
   "theme": "B",
-  "status": "open",
-  "resolution": ""
+  "status": "fixed",
+  "resolution": "02g-agent-security.md has the Role x command kind/class matrix (VIEWER, OPERATOR, OWNER, SCHEDULER, ARBITER; A, L, L!, F, -), with the scheduler allowed unattended StartGoal (incl. model and effort), nudges, Interrupt, probes, PruneWorktree and fleet-window KillWindow, fresh_context and RespawnPane only in fleet-started sessions; command.proto requested_by comment points to it. No wire change."
  },
  {
   "dim": "agent-workflows",
@@ -598,8 +598,8 @@
   "fix": "Specify the unknown-machine path (Bye with a new UNKNOWN_MACHINE reason, agent re-enrolls with previous_machine_id). Define duplicate identity as an old stream with a Heartbeat within 45 s when the new Hello arrives; otherwise silent takeover with no triage. Typed Enroll error codes and HelloAck.fleet_id are optional.",
   "verify": "Mostly speculative; one real piece. Enroll errors as a gRPC status naming the reason (03-workflows.md:184) are adequate for the CLI that prints and exits, so typed ReasonCodes are optional, and fleet mismatch at connect is largely covered by mTLS against the pinned CA. Real and unspecified: (a) a Hello from a machine_id the hub does not know (store recreated with the CA kept) has no defined behavior or ByeReason (grep for unknown machine finds nothing; 03-workflows.md:149 only has REVOKED); (b) 03-workflows.md:264-269 raises a triage warning on every duplicate-identity displacement, though a sleeping laptop or restarted agent routinely reconnects while the hub still holds the old half-open stream (STALE at 45 s, OFFLINE at 3 min), so benign reconnects would page the owner; only repeated displacement should.",
   "theme": "B",
-  "status": "open",
-  "resolution": ""
+  "status": "fixed",
+  "resolution": "ReasonCode 600 to 605 (ENROLL_TOKEN_UNKNOWN, _EXPIRED, _USED, CSR_INVALID, PROTO_UNSUPPORTED, PREVIOUS_MACHINE_MISMATCH) carried in the Enroll error's ErrorDetail; HelloAck.fleet_id; ByeReason UNKNOWN_MACHINE and FLEET_MISMATCH; duplicate identity redefined in 03-workflows W2 and 02g (silent takeover; triage only on ping-pong within 10 min with a heartbeat in the last 45 s)."
  },
  {
   "dim": "agent-workflows",
@@ -934,8 +934,8 @@
   "fix": "Add an ErrorDetail error field and an AttachCloseReason enum to AttachClosed (keep the string message). Write a short 'Terminal over WebSocket' section in 02b: path, subprotocol, how a browser authenticates (cookie or first-frame token), binary protobuf frames, first frame must be AttachOpen, close-code mapping, and the ack high-water mark. Fix ADR 0016:34 to AttachTerminalRequest/AttachTerminalResponse.",
   "verify": "Confirmed. terminal.proto:79-83 AttachClosed has only a free-text reason ('idle_timeout', 'session_ended', 'agent_offline', 'detached') and no ErrorDetail. terminal.proto:1-6 and 02b:226-229 say the browser sends the same messages over a WebSocket. 02b has no WebSocket section: no URL, subprotocol, auth, first-frame rule or close-code mapping, and open question 3 only covers device auth. ADR 0016:34 says the WebSocket carries TermUp/TermDown, which are agent.v1 types (streams.proto:40), contradicting 02b:17-21. The 256 KiB high-water mark is still 'proposed' (terminal.proto:64).",
   "theme": "B",
-  "status": "open",
-  "resolution": ""
+  "status": "fixed",
+  "resolution": "AttachClosed already carried reason and ErrorDetail (theme A); 02f now specifies endpoint, subprotocol fleet.attach.v1, ticket as first-frame field (AttachOpen.ticket), Host and Origin checks, binary framing and size limits, ack cadence (32 KiB or 200 ms, 256 KiB high-water), close-code mapping per reason. ADR 0016's TermUp/TermDown wording is corrected in ADR 0019 addendum 13 (accepted ADRs are not rewritten)."
  },
  {
   "dim": "hygiene-consistency",
@@ -1046,8 +1046,8 @@
   "fix": "Put the CA fingerprint into the token or the `enroll_command` (`--ca-sha256 …`). The agent must verify the server chain against it before sending the token or CSR. `EnrollResponse.ca_fingerprint` then becomes a self-check. Define Enroll replay: the same (token hash, install_id, CSR public key) within the TTL returns the same certificate and machine_id. Document both in 02-contracts A1. No proto field is strictly required (`enroll_command` string content and CLI flags); additive.",
   "verify": "critic (verified in files by the critic)",
   "theme": "B",
-  "status": "open",
-  "resolution": ""
+  "status": "fixed",
+  "resolution": "The enrollment token embeds the SHA-256 of the CA and the agent verifies the server chain against it before sending token or CSR (no TOFU); Enroll replay by (token secret hash, install_id, CSR key) returns the stored response with EnrollResponse.replayed. agent.proto, machine.proto (token and enroll_command comments), 02g, 03-workflows W1, 01-agent-capabilities A1."
  },
  {
   "dim": "critic",
@@ -1060,8 +1060,8 @@
   "fix": "Add a `hub_identity` entity to 03f (fleet_id, CA cert and key, server cert and SAN list, account_salt and salt_version, settings_epoch, store_incarnation). State that backups include it and are secret. Define `fleetd restore` as minting a fresh settings_epoch and hub_instance_id and setting a reconcile flag. Specify the snapshot diff for agent-known but hub-unknown probes and sessions (adopt or StopProbe). Add `repeated string hub_addresses` to HelloAck. All additive.",
   "verify": "critic (verified in files by the critic)",
   "theme": "B",
-  "status": "open",
-  "resolution": ""
+  "status": "fixed",
+  "resolution": "New hub_identity entity in 03f (fleet_id, CA cert and key, server cert and SANs, account_salt, settings_epoch, hub_addresses) stored inside state.db; backups are secret; fleetd restore mints a new settings_epoch, can re-issue the server cert for a new address and sets a 24 h reconcile flag with a diff table (adopt machines, probes, fleet sessions); HelloAck.hub_addresses added. 02g, 03e restore row."
  },
  {
   "dim": "critic",
@@ -1074,8 +1074,8 @@
   "fix": "Add MACHINE_STATE_REVOKED and a revoke action that keeps the row. Make delete the second step, allowed only when revoked. On revoke the hub sends Bye{REVOKED} and closes Connect, Terminal and SessionLog at once. Define the cascade: goals go to a terminal phase, probes fail over, log streams are finalised, outbox rows expire, attaches close. Allow `previous_machine` only for revoked or expired rows. Additive (new enum value, RPC or field).",
   "verify": "critic (verified in files by the critic)",
   "theme": "B",
-  "status": "open",
-  "resolution": ""
+  "status": "fixed",
+  "resolution": "MACHINE_STATE_REVOKED, MachineSpec.revocation, RevokeMachine RPC (row kept, Bye{REVOKED} on the live Connect and closing Terminal, SessionLog and attaches); DeleteMachine only for a revoked machine (MACHINE_NOT_REVOKED); previous_machine only for revoked or expired rows (MACHINE_NOT_REENROLLABLE). Cascade table and re-enroll rule in 02g; 03-workflows state text."
  },
  {
   "dim": "critic",
@@ -1172,8 +1172,8 @@
   "fix": "Define an audit action catalog (enum or documented list) in 02b. Map LocalApprovalDecision, local drain, PolicyChanged and safe-mode entry to AuditEntry rows with actor Principal kind LOCAL_USER. Additive.",
   "verify": "critic (verified in files by the critic)",
   "theme": "B",
-  "status": "open",
-  "resolution": ""
+  "status": "fixed",
+  "resolution": "02b \"Audit actions\" catalogue of every action name; 02g maps LocalApprovalDecision, command refusals (REJECTED_BY_POLICY, LOCAL_DENIED, LOCAL_CONFIRM_TIMEOUT), local drain, PolicyChanged and safe mode to permanent AuditEntry rows with actor kind LOCAL_USER; AuditEntry.occurred_time added for agent-clock decisions. Safe mode is read from PolicyInfo.schema_version being empty until an explicit field is added."
  },
  {
   "dim": "critic",
@@ -1186,8 +1186,8 @@
   "fix": "Add `string traceparent` (W3C) to Command, and to Event or CommandResult for the reverse direction. Document it as optional and capped at 55 bytes. Additive.",
   "verify": "critic (verified in files by the critic)",
   "theme": "B",
-  "status": "open",
-  "resolution": ""
+  "status": "fixed",
+  "resolution": "New type/v1/trace.proto TraceContext{traceparent, tracestate}; field added to Command.trace, CommandResult.trace, Event.trace and agent Settings.trace (optional, validated and dropped if malformed, 55 and 256 bytes); Operation.trace_id for UI links. Spans in 03c and 03e now name the carrier; 02g."
  },
  {
   "dim": "critic",

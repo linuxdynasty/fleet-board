@@ -105,6 +105,8 @@ lists every window on every machine; the Details drawer holds the controls.
 | Pane layout, borders, active pane, title line | `SessionWindow.panes[] Pane{index, active, current_command, key}`; drawn by tmux in the output | E1, J1 |
 | Pane screen text | live: `AttachTerminalResponse.output`; snapshot: `PaneSummary.last_lines` or `CapturePane` → `Operation.output_text` | `TermUp.output`, `CapturePaneResult.text` (J1, E5, E10) |
 | Click on a pane | `AttachTerminalRequest.select{pane}` (or mouse mode in the stream) | `TermSelect{pane}` (J1) |
+| Opening a terminal in the browser | calls `CreateAttachTicket{session, read_only}`, then opens the WebSocket and sends `AttachOpen{ticket, …}` first; a refused attach arrives as `AttachClosed{ERROR, error}` | `OpenAttach` (J1); rules in [02f](02f-hub-authentication.md#terminal-attach-over-websocket) |
+| "Session ended / machine offline / reconnect" notice over the terminal | `AttachClosed.reason` (`SESSION_ENDED`, `AGENT_OFFLINE`, `IDLE_TIMEOUT`, `HUB_CLOSED`) and `error.reason` | `TermClosed.reason` (J1) |
 | Terminal focus, typing, Ctrl keys, arrows, prefix keys | `AttachTerminalRequest.input` bytes; nothing is interpreted by the hub | `TermDown.input` (J1) |
 | "[detached …]" after prefix `d`; re-attach | `AttachTerminalRequest.close`; re-attach opens a new `AttachTerminal` | `CloseAttach`, `OpenAttach` (J1) |
 | "You're typing into a running goal (…)" banner | `Pane.goal` set and `Goal.status.phase` not `MERGED`/`CLOSED`/`CLEARED` | `FLEET_GOAL_ID`, `GoalState` (G2, ADR 0004) |
@@ -169,7 +171,8 @@ lists every window on every machine; the Details drawer holds the controls.
 | Window chips | `ListSessions{filter: machine = "m-12"}` | E1 |
 | "Drain…" / "Undrain" | calls `DrainMachine{reason}` / `UndrainMachine`; local drain ends `REJECTED_BY_POLICY` / `DRAINING`; `Machine.spec.drain.by` | `Drain`, `Undrain`, `DrainState.requested_by_principal` (M4) |
 | "Attach from your terminal…" | built in the browser from `Machine.status.username` | ADR 0006 |
-| Add machine | calls `CreateEnrollmentToken` → `enroll_command`, `ca_fingerprint` | A1 |
+| Add machine | calls `CreateEnrollmentToken` → `enroll_command` (the token embeds the CA fingerprint the agent checks), `ca_fingerprint` for an out-of-band check | A1, [02g](02g-agent-security.md) |
+| "Revoke…" (stolen or retired machine), then "Forget" | calls `RevokeMachine{reason}`; `Machine.status.state = REVOKED`, `Machine.spec.revocation`; `DeleteMachine` only once revoked (`MACHINE_NOT_REVOKED`); "Re-enroll" calls `CreateEnrollmentToken{previous_machine}` | `Bye{REVOKED}`, `MACHINE_STATE_REVOKED` (02g) |
 | Audit log | `ListAuditEntries` (CSV export pages through it) | ADR 0004; agent `M1` local audit |
 | Timeline of which goal ran where (7 days) | `ListGoals{filter: create_time > "<7 days ago>"}` | 03c run history |
 
@@ -183,4 +186,8 @@ lists every window on every machine; the Details drawer holds the controls.
 | Settings: watched repos with host and provider, `hooks: eshu \| generic` | `Integration.spec.watched[]` (edit calls `UpdateIntegration`); `Machine.status.repos[].goal_hooks[]` | `RepoRef`, `HarnessGoalHooks` (ADR 0012, G1) |
 | Settings: Integrations (GitHub connected; GitLab, Jira, Bitbucket, Linear planned) | `ListIntegrations` → `Integration{spec, status{health, sync_lag}}` | `IntegrationCapabilities` (ADR 0012) |
 | Settings: routines | `ListRoutines`, `CreateRoutine`, `UpdateRoutine`, `DeleteRoutine` | ADR 0018 |
+| Sign-in page (passkey, "Sign in with GitHub") and "claim this hub" | `GetServerInfo{auth_mode, sign_in_methods, claim_pending}`; `BeginPasskeyLogin` / `FinishPasskeyLogin`; `GET /auth/github/start`; the claim page calls `RedeemInvite`, then `BeginPasskeyRegistration` / `FinishPasskeyRegistration` | none on the agent wire ([02f](02f-hub-authentication.md)) |
+| Settings: people (invite, role, GitHub allow-list, disable) | `ListUsers`, `CreateUserInvite` (shows the invite URL once), `UpdateUser{spec.role, spec.github_login, spec.disabled}`; `HubSettings.passkey_sign_in`, `github_sign_in` | hub only |
+| Settings: passkeys and signed-in browsers | `User.status.passkeys[]`, `DeletePasskey`; `ListLoginSessions`, `RevokeLoginSession`; "Sign out" calls `SignOut` | hub only |
+| Settings: API tokens (for the CLI) | `CreateApiToken{name, scopes, ttl}` (secret shown once), `ListApiTokens`, `RevokeApiToken`; `LOGS` is a separate tick | hub only; `FLEET_TOKEN` (design.md) |
 | Settings: devices and notifications (phone, later) | `ListDevices`, `ApprovePairing{scopes}` (`LOGS` only when the owner ticks it), `RevokeDevice`, `*NotificationTarget` (own rows) | ADR 0018, 0019, [02d](02d-hub-authz.md) |

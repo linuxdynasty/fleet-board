@@ -1,0 +1,21 @@
+// fleet.type.v1 trace context: the W3C Trace Context headers, carried in the
+// message envelopes of the agent wire so a trace can follow a command from
+// the hub to the agent and back.
+//
+// Why a field and not gRPC metadata: every command, event and settings
+// update rides one long-lived Connect stream, so per-RPC metadata cannot
+// carry a trace per message.
+syntax = "proto3";
+
+package fleet.type.v1;
+
+// TraceContext is optional everywhere it appears; an absent or malformed
+// value only breaks the link between spans, never the message. The receiver
+// validates the format and drops (does not reject) a bad value.
+message TraceContext {
+  // W3C `traceparent`: "00-<32 hex trace id>-<16 hex parent span id>-<2 hex
+  // flags>", exactly 55 bytes.
+  string traceparent = 1;
+  // W3C `tracestate`, opaque, at most 256 bytes. Usually empty.
+  string tracestate = 2;
+}

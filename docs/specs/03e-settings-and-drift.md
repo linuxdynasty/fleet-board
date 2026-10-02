@@ -116,7 +116,7 @@ Machine drain state: `ACTIVE` → `DRAINING{hub}` → `ACTIVE` (Undrain);
 | Invalid value (e.g. `max_windows=0`, bad duration) | Agent rejects that field, keeps the previous effective value, names it in `capped_fields` with `SettingSource.layer=LOCAL_CEILING` and a message; the UI shows the rejection |
 | Policy file invalid on restart | Agent starts in **safe mode**: observe only, every control command `REJECTED_BY_POLICY`, `PolicyInfo.schema_version=""` + message in the snapshot; triage `policy_invalid` |
 | Policy file deleted | Agent uses built-in safe defaults; reported as hash of defaults; `doctor` warns |
-| Hub store restored from an older backup (generation goes backwards) | The restored store has a new `settings_epoch`; the agent orders settings by `(settings_epoch, generation)` and accepts any generation under a new epoch (02-contracts.md, replaces 03g's `settings_restored`) |
+| Hub store restored from an older backup (generation goes backwards) | `fleetd restore` mints a new `settings_epoch` (03f, 02g); the agent orders settings by `(settings_epoch, generation)` and accepts any generation under a new epoch (02-contracts.md, replaces 03g's `settings_restored`) |
 | `Drain` while `StartGoal` in flight | In flight past preflight → completes; not yet started → `DRAINING` at preflight |
 | `Undrain` against a local drain | `REJECTED_BY_POLICY/DRAINING`; UI explains |
 | Harness crash, prompts, provider errors, developer typing | Not affected by this workflow |
@@ -132,7 +132,8 @@ Machine drain state: `ACTIVE` → `DRAINING{hub}` → `ACTIVE` (Undrain);
   `fleet_agent_policy_changed_total`, `fleet_agent_policy_safe_mode` (gauge),
   `fleet_agent_draining{requested_by}`.
 - Spans: `hub.settings.publish{generation}`, `agent.settings.merge{generation}`,
-  `hub.drain{machine}` → `agent.drain`.
+  `hub.drain{machine}` → `agent.drain`; linked across processes by
+  `Settings.trace` and `Command.trace` (02g, "Trace context").
 - Logs: `settings.changed{by, scope, field, old, new, generation}`,
   `settings.capped{machine, field, hub_value, local_ceiling}`,
   `settings.rejected{machine, field, reason}`, `policy.changed{machine, old_hash,

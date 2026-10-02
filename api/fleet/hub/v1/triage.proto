@@ -197,7 +197,8 @@ message Approval {
   string default_choice = 20;
   ApprovalFallback fallback = 21;
   google.protobuf.Timestamp expire_time = 22;
-  // Lowest role or scope that may decide.
+  // Lowest role that may decide: the decider's mapped role must cover it
+  // (its scope set includes this role's, 02d). A role only, never a scope.
   fleet.type.v1.Role required_role = 23;
   // Who decided and from which device (Principal.device), and what.
   fleet.type.v1.Principal decided_by = 24;

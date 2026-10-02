@@ -16,6 +16,7 @@ import "fleet/type/v1/harness.proto";
 import "fleet/type/v1/ids.proto";
 import "fleet/type/v1/settings.proto";
 import "fleet/type/v1/status.proto";
+import "fleet/type/v1/trace.proto";
 import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
 
@@ -24,7 +25,11 @@ import "google/protobuf/timestamp.proto";
 // Request is always agent -> hub and response hub -> agent, because the agent
 // is the client of every RPC.
 service AgentService {
-  // A1. Exchange a single-use token and CSR for a client certificate.
+  // A1. Exchange a single-use token and CSR for a client certificate. The
+  // agent first verifies the server's chain against the CA fingerprint inside
+  // the token (the trust anchor, 02g-agent-security.md), and only then sends
+  // the token and CSR. Retry-safe: see EnrollRequest.token. Failures are gRPC
+  // errors whose ErrorDetail.reason is an ENROLL_* code.
   rpc Enroll(EnrollRequest) returns (EnrollResponse);
   // A3. One per agent. Agent sends Hello then Snapshot; hub sends HelloAck,
   // then commands and settings.
@@ -43,9 +48,20 @@ service AgentService {
 
 // EnrollRequest (A1).
 message EnrollRequest {
-  // The single-use token printed by `fleetd enroll-token`.
+  // The single-use token printed by `fleetd enroll-token`. Self-describing:
+  // it embeds the SHA-256 of the fleet CA certificate, which the agent
+  // checks against the server chain before sending anything, so a LAN
+  // impostor never receives the token or the CSR. The hub stores only a
+  // hash of the secret part.
+  //
+  // Replay: the same token secret with the same install_id and the same CSR
+  // public key inside the token's lifetime returns the stored response
+  // (same machine_id and certificate, replayed = true), so a lost response
+  // is recovered by running enroll again. Any other combination after the
+  // first success is ENROLL_TOKEN_USED.
   string token = 1;
-  // PEM CSR for an Ed25519 key generated on the machine.
+  // PEM CSR for an Ed25519 key generated on the machine. The key is kept in
+  // the state directory until Enroll succeeds, so a retry sends the same one.
   bytes csr_pem = 2;
   MachineFacts facts = 3;
   repeated fleet.type.v1.Capability capabilities = 4;
@@ -53,7 +69,10 @@ message EnrollRequest {
   uint32 proto_max = 6;
   // Set when re-enrolling a machine the hub already knows (new token after
   // a long offline period, BYE_REASON_RE_ENROLL), so its history, labels and
-  // settings carry over instead of a second machine appearing.
+  // settings carry over instead of a second machine appearing. The owner
+  // names the machine when creating the token (it must be REVOKED or past its
+  // certificate lifetime); a value here that differs from the token's is
+  // ENROLL_PREVIOUS_MACHINE_MISMATCH, and an unknown id is ignored.
   fleet.type.v1.MachineId previous_machine_id = 7;
   // Random id minted once when the agent is installed and kept in the state
   // directory; survives restarts and re-enrollment, unlike boot_id. A copied
@@ -68,7 +87,8 @@ message EnrollResponse {
   // PEM client certificate with URI SAN fleet://machine/<machine_id>.
   bytes cert_pem = 2;
   bytes ca_chain_pem = 3;
-  // Fingerprint the agent pins; fleetd prints it and the UI shows it.
+  // SHA-256 of the CA certificate (hex). Equals the fingerprint inside the
+  // token; the agent compares them as a self-check and pins it.
   string ca_fingerprint = 4;
   google.protobuf.Timestamp cert_not_after_time = 5;
   // Fleet-wide salt for AccountKey (C2); never logged by the agent.
@@ -84,6 +104,9 @@ message EnrollResponse {
   // Stable id of the fleet (minted once per hub data store). An agent that
   // is enrolled in one fleet refuses a hub with another fleet_id.
   string fleet_id = 11;
+  // True when this is the stored response of an earlier Enroll with the same
+  // token, install_id and CSR key (a retry after a lost response).
+  bool replayed = 12;
 }
 
 // RenewCertRequest (A4), over the existing mTLS connection.
@@ -194,6 +217,15 @@ message HelloAck {
   // Hub features the agent may rely on, e.g. {"snapshot.parts", 1},
   // {"event.delivery", 1}. The agent never uses a feature not listed.
   repeated fleet.type.v1.Capability hub_capabilities = 12;
+  // Current addresses of the hub, replacing the list the agent holds
+  // (EnrollResponse.hub_addresses). A hub restored on another host updates
+  // its agents through the old address; the server certificate's SAN list
+  // must cover them (03f, "Hub identity").
+  repeated string hub_addresses = 13;
+  // Fleet id again, so the check does not only run at enrollment. An agent
+  // that sees another fleet_id sends Bye{FLEET_MISMATCH} and does not
+  // reconnect until the owner re-enrolls it.
+  string fleet_id = 14;
 }
 
 // GoalPaneCount is the number of panes whose goal file is in one state. A
@@ -244,6 +276,8 @@ message Settings {
   // Probe intervals keyed by AccountId.value (map keys cannot be messages);
   // tighten-only against SettingValues.probe_interval.
   map<string, google.protobuf.Duration> probe_interval_by_account = 6;
+  // Trace of the hub's settings publish; the agent's merge is its child.
+  fleet.type.v1.TraceContext trace = 7;
 }
 
 // SettingsAck (A8): the generation applied and the effective values.
@@ -272,12 +306,22 @@ enum ByeReason {
   BYE_REASON_RE_ENROLL = 3;
   // Hub: a newer connection for this machine_id won.
   BYE_REASON_DUPLICATE_IDENTITY = 4;
-  // Hub: certificate revoked; the agent must re-enroll.
+  // Hub: the machine was revoked (RevokeMachine). Sent at once on the live
+  // Connect stream, which then closes together with Terminal and SessionLog;
+  // every later Hello gets it too. The agent stops, reports in `doctor` and
+  // re-enrolls only with a new token.
   BYE_REASON_REVOKED = 5;
   // Hub: no common proto version.
   BYE_REASON_PROTO_UNSUPPORTED = 6;
   // Hub: hub restarting; reconnect with backoff.
   BYE_REASON_HUB_RESTART = 7;
+  // Hub: the certificate is valid but the hub has no such machine (store
+  // recreated with the CA kept, or a restore that predates the enrollment).
+  // The agent goes Unenrolled and the owner issues a new token; after a
+  // restore the hub may instead adopt the machine (03f, "Restore").
+  BYE_REASON_UNKNOWN_MACHINE = 8;
+  // Agent: HelloAck.fleet_id is not the fleet this agent enrolled in.
+  BYE_REASON_FLEET_MISMATCH = 9;
 }
 
 // Bye (A7 from the agent; duplicate identity and revocation from the hub).

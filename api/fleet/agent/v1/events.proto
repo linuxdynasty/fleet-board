@@ -16,6 +16,7 @@ import "fleet/agent/v1/usage.proto";
 import "fleet/type/v1/harness.proto";
 import "fleet/type/v1/ids.proto";
 import "fleet/type/v1/status.proto";
+import "fleet/type/v1/trace.proto";
 import "google/protobuf/timestamp.proto";
 
 // Event is one timestamped fact. body kinds are numbered by capability
@@ -34,6 +35,10 @@ message Event {
   // For COALESCE: events with equal non-empty keys replace each other
   // (latest wins), e.g. "usage:<account_key>", "branch:<path>".
   string coalesce_key = 5;
+  // Set only when the event is the consequence of a traced command (a goal
+  // state after StartGoal, a local approval of a command), so the hub can
+  // continue that trace. Never set on periodic facts.
+  fleet.type.v1.TraceContext trace = 6;
 
   oneof body {
     // B2, droppable.

@@ -260,8 +260,10 @@ message RespawnPaneResponse {
   Operation operation = 1;
 }
 
-// KillWindowRequest sends KillWindow (F6). A developer's window needs
-// ROLE_OWNER and an approval.
+// KillWindowRequest sends KillWindow (F6). SCOPE_SESSIONS_WRITE covers the
+// fleet's own windows. A developer's window also needs a principal whose role
+// covers ROLE_OWNER (a narrowed device or token never does, 02d) and an
+// approval.
 message KillWindowRequest {
   string request_id = 1;
   fleet.type.v1.SessionId session = 2;

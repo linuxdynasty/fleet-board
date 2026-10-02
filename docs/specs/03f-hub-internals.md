@@ -84,9 +84,13 @@ at **4 machines** / **50 machines × 10 panes** from the load table in
 
 | Entity | Key | Written by | Writes/s (4 / 50) | Read pattern | Retention |
 |---|---|---|---|---|---|
-| `machines` | `machine_id` | W1, W2, W10, W11 | ≈ 0 (state changes) + last_seen every heartbeat if persisted: 0.27 / 3.3 | by id; list for Machines view | permanent until deleted |
+| `hub_identity` | singleton | store creation, `fleetd restore` | ≈ 0 | at start; at Enroll and Hello | permanent; **secret** (CA key, salt); see below |
+| `machines` | `machine_id` | W1, W2, W10, W11, revoke | ≈ 0 (state changes) + last_seen every heartbeat if persisted: 0.27 / 3.3 | by id; list for Machines view | permanent until deleted (revoke keeps the row) |
 | `machine_connections` | `(machine_id, epoch)` | W1, W2 | per connect | latest per machine | 30 days |
-| `enroll_tokens`, `cert_serials` | token hash; serial | W1 | rare | lookup at Enroll/Hello | until used / expired + 30 days |
+| `enroll_tokens`, `enroll_responses`, `cert_serials` | token secret hash; `(token hash, install_id, CSR key hash)`; serial (with a `revoked_time`) | W1, revoke | rare | lookup at Enroll/Hello; revocation list at TLS and Hello | token until used / expired + 30 days; stored response until TTL + 24 h; serials while the machine exists |
+| `users`, `passkeys`, `invites` | `principal_id`; credential id; invite token hash | sign-in, owner | rare | at sign-in | permanent; invites until used / expired |
+| `login_sessions`, `api_tokens`, `devices` | cookie hash; token id (secret hash); `device_id` | sign-in, owner | per sign-in; `last_used_time` at most 1/min | every authenticated request (cached in memory by hash) | sessions until expiry + 30 days; tokens and devices permanent (revoked rows kept for audit) |
+| `ceremonies`, `attach_tickets`, `device_nonces` | ceremony id; ticket hash; `(device, nonce)` | sign-in, attach, device calls | per sign-in / attach / device call | one lookup per use | minutes (in memory is enough; losing them only makes a client retry) |
 | `accounts`, `account_machines` (Codex mapping) | `account_id`; `(account_id, machine_id)` | W3, owner | rare | by id; per machine | permanent |
 | `probes` | `probe_id`; unique active per `account_id` | W3 | ≈ 0 | per account | history 30 days |
 | `usage_readings` | `(account_id, read_at)` | W3 | 0.005 / 0.005 (+ passive ≤ 0.07 / 0.8 worst) | latest per account; time series for burn-down | buckets 1 year; `raw_screen` 7 days |
@@ -121,3 +125,32 @@ state)`, `triage_items(state, kind, raised_at)`, `events(machine_id, seq)`,
 `events(goal_id, at)`, `log_segments(session_id, stream, raw_offset)` and
 `(session_id, stream, first_at)`, `change_requests(integration_id, head_ref)`,
 `work_items(stage, integration_id)`.
+
+## Hub identity, backup and restore
+
+The data above is rebuildable from agents and providers except what makes this
+hub *this* fleet's hub. That lives in the one `hub_identity` row (details in
+[02g](02g-agent-security.md#hub-identity-and-restore)):
+
+| Field | Why it cannot be regenerated |
+|---|---|
+| `fleet_id` | An agent refuses a hub with another one |
+| CA certificate and private key; server certificate and SAN list | Every agent pins the CA; the key signs agent certificates |
+| `account_salt`, `salt_version` | `AccountKey` is a hash over it; a new salt splits accounts silently |
+| `settings_epoch` | Orders settings across restores; **is** regenerated on restore |
+| `hub_addresses` | Where agents find the hub; sent in `HelloAck` |
+
+It is stored **inside `state.db`**, so the nightly `VACUUM INTO` backup (ADR
+0014) carries it, and therefore **a backup is a secret**: it holds the CA
+private key and the salt. Backups are written mode 0600 and `fleetd backup
+--encrypt` wraps one with a passphrase. A store without the row refuses to
+start instead of minting a new identity.
+
+`fleetd restore` is offline. It checks the backup, mints a new `settings_epoch`
+(so agents holding a higher generation under the old epoch accept the restored
+settings), can add an address and re-issue the server certificate, and sets a
+24 h reconcile flag. While it is set the first `Hello` of each machine is
+answered with a `SnapshotRequest{reason: "reconcile"}` and the hub adopts what
+agents know and it does not: machines enrolled after the backup, probes,
+fleet sessions (02g has the table). `fleet_id`, the CA and the salt are never
+touched.

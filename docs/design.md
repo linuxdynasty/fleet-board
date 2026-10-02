@@ -315,14 +315,18 @@ screen that no longer parses is reported as "unknown", never guessed.
 - The audit log is permanent, filterable and exportable (CSV).
 - Moving a session only carries pushed work. The collector should warn about
   uncommitted changes in the worktree before a move.
-- The hub listens only on the Tailscale interface. Browser terminal attach
-  requires login.
+- In `authenticated` mode the hub listens on the Tailscale or LAN interface
+  with TLS, and browser terminal attach needs a sign-in and a one-time ticket.
+  In `local_trusted` mode it binds loopback only and checks Host and Origin
+  ([02f](specs/02f-hub-authentication.md)).
 
 ## Deployment and CLI
 
 - Two modes (from Paperclip): `local_trusted` (hub on localhost, no login) and
   `authenticated` (login required; private over Tailscale/LAN, or public). The
-  first login uses a one-time claim URL printed by the hub.
+  first login uses a one-time claim URL printed by the hub; people sign in
+  with a passkey or GitHub, scripts use API tokens, a phone is a paired device
+  ([02f](specs/02f-hub-authentication.md), ADR 0019).
 - `fleet` CLI: `--json` output is the stable interface, exit codes 0/1,
   `FLEET_URL` and `FLEET_TOKEN` env vars for scripts, `--yes` required for
   destructive commands (stop, drain, delete).

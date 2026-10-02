@@ -3,7 +3,10 @@
 // agent's Terminal stream; it never interprets the bytes. Transport (step 4,
 // ADR 0016): the CLI uses Connect or gRPC bidirectional streaming over
 // HTTP/2; a browser cannot stream a request body, so it sends these same
-// messages, protobuf-encoded, one per frame over a WebSocket.
+// messages (AttachTerminalRequest and AttachTerminalResponse, not the agent
+// wire's TermUp and TermDown), protobuf-encoded, one per binary frame over a
+// WebSocket. The WebSocket rules (path, subprotocol, ticket, Origin and Host
+// checks, framing, close codes) are in docs/specs/02f-hub-authentication.md.
 syntax = "proto3";
 
 package fleet.hub.v1;
@@ -13,15 +16,49 @@ import "fleet/type/v1/ids.proto";
 import "fleet/type/v1/status.proto";
 import "google/protobuf/timestamp.proto";
 
+// CreateAttachTicketRequest asks for a short-lived, single-use ticket that
+// opens one attach over a WebSocket. The ticket exists because a WebSocket
+// upgrade carries ambient authority (the cookie, or none at all in
+// local_trusted mode) and a page on another site can open one; it cannot
+// call this RPC, because the Host and Origin checks refuse it. Needs the scope
+// the attach needs: SCOPE_READ, or SCOPE_SESSIONS_WRITE when read_only is
+// false.
+message CreateAttachTicketRequest {
+  string request_id = 1;
+  fleet.type.v1.SessionId session = 2;
+  // False asks for input; the hub clamps it to true for a caller without
+  // SCOPE_SESSIONS_WRITE and the attach opens read-only.
+  bool read_only = 3;
+}
+
+// CreateAttachTicketResponse. The ticket is a secret: 256-bit random, bound
+// to the caller's principal, the session, the read_only flag and the Origin of
+// the request that created it; valid for 60 s; burned by the first AttachOpen
+// that presents it, whether or not the attach then succeeds. It is excluded
+// from the stored idempotent response (a replay is ALREADY_EXISTS /
+// SECRET_ALREADY_DELIVERED) and never appears in a URL.
+message CreateAttachTicketResponse {
+  string ticket = 1;
+  google.protobuf.Timestamp expire_time = 2;
+  // True when the hub clamped the request to read-only.
+  bool read_only = 3;
+}
+
 // AttachOpen is the first message: which session, size and mode. The hub
 // sends OpenAttach to the agent; read_only is forced for callers without
 // SCOPE_SESSIONS_WRITE.
 message AttachOpen {
   string request_id = 1;
+  // Must equal the ticket's session (or be empty) when a ticket is used.
   fleet.type.v1.SessionId session = 2;
   uint32 cols = 3;
   uint32 rows = 4;
+  // May only tighten the ticket's mode.
   bool read_only = 5;
+  // From CreateAttachTicket. Required on the WebSocket transport (the first
+  // frame must be an AttachOpen carrying it); not used over HTTP/2, where
+  // the request headers authenticate the stream.
+  string ticket = 6;
 }
 
 // AttachResize changes the PTY size.
@@ -55,11 +92,12 @@ message AttachTerminalRequest {
 }
 
 // AttachAck is the browser's flow control (ADR 0016): sent after the
-// terminal has written output. The hub stops reading the agent's Terminal
-// stream while output_bytes_sent - bytes_written exceeds its high-water
-// mark (256 KiB), so HTTP/2 flow control blocks the agent's PTY
-// read and no output is dropped. Neither WebSocket nor xterm.js has
-// backpressure of its own.
+// terminal has written output, at least every 32 KiB written or 200 ms while
+// output flows. The hub stops reading the agent's Terminal stream while
+// output_bytes_sent - bytes_written exceeds its high-water mark (256 KiB), so
+// HTTP/2 flow control blocks the agent's PTY read and no output is dropped.
+// Neither WebSocket nor xterm.js has backpressure of its own. A client that
+// sends no ack for 30 s while output waits is closed (HUB_CLOSED).
 message AttachAck {
   // Total output bytes the client has written to its terminal so far.
   uint64 bytes_written = 1;
@@ -78,12 +116,14 @@ message AttachReady {
 
 // AttachClosed ends the stream. It is also the error channel: a WebSocket has
 // no Connect error trailer, so a refused or failed attach is sent as
-// AttachClosed{reason: ERROR, error} before the socket closes. Failures before
-// the upgrade (no credentials, bad Origin) are plain HTTP 401/403 responses.
+// AttachClosed{reason: ERROR, error} before the socket closes, with the same
+// ErrorDetail an RPC error would carry. Failures before the upgrade (no
+// credentials, bad Host or Origin) are plain HTTP 401/403 responses whose
+// JSON body carries the ErrorDetail. 02f maps reasons to WebSocket close codes.
 message AttachClosed {
   fleet.type.v1.AttachCloseReason reason = 1;
-  // Set when reason is ERROR: SCOPE_MISSING, MACHINE_OFFLINE,
-  // RESOURCE_NOT_FOUND, DEVICE_NOT_ACTIVE, RATE_LIMITED, ...
+  // Set when reason is ERROR: ATTACH_TICKET_INVALID, SCOPE_MISSING,
+  // MACHINE_OFFLINE, RESOURCE_NOT_FOUND, DEVICE_NOT_ACTIVE, RATE_LIMITED, ...
   fleet.type.v1.ErrorDetail error = 2;
 }
 

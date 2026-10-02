@@ -13,7 +13,11 @@
   [ADR 0018](../adr/0018-hub-api-and-contract-amendments.md)
 - Companions: [02c](02c-hub-watch-and-filters.md) (Watch, filter grammar and
   fields), [02d](02d-hub-authz.md) (principals, scopes per RPC and topic,
-  approvals), [02e](02e-contract-rules.md) (naming rules, codegen, freeze)
+  approvals, the role the agent sees), [02e](02e-contract-rules.md) (naming
+  rules, codegen, freeze), [02f](02f-hub-authentication.md) (sign-in, tokens,
+  devices, Host and Origin checks, terminal over WebSocket),
+  [02g](02g-agent-security.md) (enrollment trust, hub identity, machine revoke,
+  agent role matrix)
 
 `FleetService` is the only API the web UI, the `fleet` CLI and a later phone
 app use. It is served by `fleetd` over gRPC, gRPC-Web and Connect JSON from
@@ -27,8 +31,8 @@ type. The hub API imports `fleet.type.v1` (ids, values) and
 
 | Resource | Id | RPCs | Watch topic | Views |
 |---|---|---|---|---|
-| `Machine` | `MachineId` | List, Get, Update, Drain, Undrain, Delete, CreateEnrollmentToken | `MACHINES` | Fleet |
-| `Session` (windows, panes) | `SessionId` (hub-assigned to every observed session) | List, Get, Create, SendKeys, InterruptPane, RunHarnessCommand, CapturePane, SetSessionAvailability, RespawnPane, KillWindow, SetLogCapture, AttachTerminal, ReadSessionLog | `SESSIONS` | Session, ⌘K |
+| `Machine` | `MachineId` | List, Get, Update, Drain, Undrain, Revoke, Delete, CreateEnrollmentToken | `MACHINES` | Fleet |
+| `Session` (windows, panes) | `SessionId` (hub-assigned to every observed session) | List, Get, Create, SendKeys, InterruptPane, RunHarnessCommand, CapturePane, SetSessionAvailability, RespawnPane, KillWindow, SetLogCapture, CreateAttachTicket, AttachTerminal, ReadSessionLog | `SESSIONS` | Session, ⌘K |
 | `PaneSummary` | `PaneKey` | Watch only | `PANE_SUMMARIES` (latest-wins) | Session sidebar |
 | `Goal` | `GoalId` | List, Get, StartGoal, PreflightGoal, ControlGoal | `GOALS` | Work, Session, Triage, Fleet timeline |
 | `WorkItem`, `ChangeRequest` (mirrors) | `WorkItemKey` | List, Get | `WORK_ITEMS`, `CHANGE_REQUESTS` | Work |
@@ -40,12 +44,20 @@ type. The hub API imports `fleet.type.v1` (ids, values) and
 | `Settings` (fleet, group, machine layers) | `SettingsId`: `"fleet"`, `"group/<label>"`, `"machine/<id>"` | Get, List, Update | `SETTINGS` | Settings |
 | `AuditEntry` | `AuditEntryId` | List | `AUDIT` | Fleet, Session timeline |
 | `Device` | `DeviceId` | RequestPairing, ApprovePairing, RevokeDevice, List, Get | `DEVICES` | Settings |
+| `User` | `PrincipalId` | List, CreateUserInvite, Update, RedeemInvite, Begin/FinishPasskeyRegistration, DeletePasskey | none (List only) | Settings |
+| `LoginSession` | `LoginSessionId` | SignOut, List, Revoke, Begin/FinishPasskeyLogin | none (List only) | Settings |
+| `ApiToken` | `ApiTokenId` | Create, List, Revoke | none (List only) | Settings |
 | `NotificationTarget` | `NotificationTargetId` | List, Create, Update, Delete | `NOTIFICATION_TARGETS` | Settings |
 | `Operation` | `CommandId` | GetOperation | `OPERATIONS` | every action |
 | `FleetSummary` | singleton | GetFleetSummary | `FLEET_SUMMARY` (≤ 1/s) | summary strip |
 
 Plus `GetServerInfo` (API version, `fleet_id`, `hub_instance_id`, features,
-`auth_mode`, the caller and its scopes).
+`auth_mode`, `sign_in_methods`, `claim_pending`, the caller and its scopes).
+
+**Authentication** (how a browser, the CLI and a phone prove who they are, the
+claim URL, the credential carriers, Host and Origin checks) is
+[02f](02f-hub-authentication.md); the hub API only says who may call what
+([02d](02d-hub-authz.md)).
 
 **Identity of a work item.** `WorkItemKey{integration, kind, project, key,
 provider_name}` is the identity: two keys name the same item exactly when all
@@ -92,6 +104,8 @@ the repo path), which 03f now says too.
 | `Integration` | label, watched list | provider, capabilities, health, sync lag |
 | `Settings` | scope, values, priority, hub settings | generation and epoch delivered |
 | `Device` | name, platform, key, requested and granted scopes, approval, revocation | `last_seen_time` |
+| `User` | name, role, GitHub allow-list entry, disabled | state, passkeys, GitHub link, last sign-in |
+| `LoginSession`, `ApiToken` | owner, method or scopes, expiry, revocation | `last_used_time` (and address) |
 
 - **Update.** `update_mask` (`google.protobuf.FieldMask`, field names of the
   resource, e.g. `spec.display_name`) is required; an empty mask is
@@ -116,8 +130,11 @@ the repo path), which 03f now says too.
 
 Every mutating RPC takes `request_id`, a client-generated key (UUIDv4 or
 ULID, at most 64 bytes). The hub stores `(principal id, request_id) →
-response` for 24 h (the unauthenticated `RequestPairing` is keyed by
-`(peer address, public key)` instead):
+response` for 24 h. The unauthenticated `RequestPairing` is keyed by
+`(peer address, public key)` and `RedeemInvite` by `(peer address, SHA-256 of
+the invite token)`; the passkey ceremonies take no `request_id` (a `Begin` only
+mints a 5-minute ceremony, and the single-use `ceremony_id` of a `Finish` is its
+key):
 
 - same key, same request body → the stored response, including the same
   `Operation` and `command_id`; nothing is sent to an agent twice;
@@ -125,9 +142,11 @@ response` for 24 h (the unauthenticated `RequestPairing` is keyed by
 - missing key → `INVALID_ARGUMENT` / `REQUEST_ID_MISSING`.
 
 **Secrets are never stored in the idempotency record.** The enrollment token,
-the pairing code and a push handle are left out of the stored response. A
-replay of `CreateEnrollmentToken` therefore fails with `ALREADY_EXISTS` /
-`SECRET_ALREADY_DELIVERED` and the owner creates a new token; a replay of
+an invite token, an API token secret, an attach ticket, the pairing code and a
+push handle are left out of the stored response. A replay of
+`CreateEnrollmentToken`, `CreateUserInvite`, `CreateApiToken` or
+`CreateAttachTicket` therefore fails with `ALREADY_EXISTS` /
+`SECRET_ALREADY_DELIVERED` and the caller creates a new one; a replay of
 `RequestPairing` returns the pending device and a recomputed code.
 
 Clients retry network failures with the same `request_id`. A new user
@@ -192,12 +211,15 @@ on their own resources (a new window on the `Session`, the goal's `phase`).
 |---|---|
 | `CreateSession` | `EnsureSession` |
 | `SendKeys`, `InterruptPane`, `RespawnPane`, `KillWindow`, `CapturePane`, `RunHarnessCommand`, `SetSessionAvailability`, `SetLogCapture` | the kind of the same name |
+| `CreateAttachTicket` | none (hub only) |
 | `AttachTerminal` | `OpenAttach` / `CloseAttach` + the `Terminal` stream |
+| `RevokeMachine` | none to the agent but `Bye{REVOKED}` on its live stream ([02g](02g-agent-security.md#machine-lifecycle-revoke-and-delete)) |
 | `StartGoal`, `RunRoutine` | `StartGoal` (after hub checks; `Preflight` inside the composite) |
 | `PreflightGoal` | `Preflight` |
 | `ControlGoal` | per harness: `RunHarnessCommand{/goal …}`, `Interrupt`, or `SendKeys{"continue"}` (Claude resume); `RECHECK`, `NOT_DONE` text nudge, `MARK_NOT_STARTED` are hub-side or `SendKeys` |
 | `DecideApproval` | `SendKeys{answering_prompt}` for prompts; the confirmed command otherwise; nothing for deny |
 | `DrainMachine`, `UndrainMachine` | `Drain`, `Undrain` |
+| sign-in, user, token and login-session RPCs | none (hub only) |
 | `ProbeAccount` | `EnsureProbe{run_now}` |
 
 ## Watch
@@ -218,7 +240,8 @@ Every call runs as a `Principal`; roles map to six scopes (`READ`,
 Watch topic names its scope. `LOGS` (stored logs, transcripts, archived pane
 summaries, the raw usage screen) is owner-only unless the owner grants it
 (ADR 0019). Pairing, approvals and the self-service rules are in
-[02d](02d-hub-authz.md).
+[02d](02d-hub-authz.md); the sign-in flows are in
+[02f](02f-hub-authentication.md).
 
 ## Size limits
 
@@ -244,6 +267,10 @@ Whole messages stay under the 1 MiB Connect cap (02e).
 | `RunHarnessCommandRequest.args` | 4 KiB |
 | `AttachTerminalRequest.input` | 4 KiB per message |
 | `Device.public_key` | 32 bytes (raw Ed25519) |
+| `options_json`, `credential_json` (WebAuthn) | 16 KiB each |
+| `User.display_name`, `ApiToken.name`, `PasskeyInfo.name` | 128 bytes; `github_login` 39 bytes |
+| `CreateApiTokenRequest.scopes` | 6 entries; `ttl` at most 365 days |
+| `AttachTerminalRequest` frame (WebSocket) | 8 KiB; response frame 66 KiB |
 | `NotificationTarget.push_handle` | 4 KiB |
 | `ChatBinding.provider`, `ChatBinding.destination` | 64 and 256 bytes |
 | `ConsentAct` list | 3 distinct values |
@@ -267,12 +294,12 @@ Agent command failures are not RPC errors: the RPC succeeds with an
 
 | Code | When | `reason` |
 |---|---|---|
-| `INVALID_ARGUMENT` | bad field, name rule, over a size limit, bad mask, filter or order | `INVALID_ARGUMENT`, `INVALID_NAME`, `FIELD_TOO_LARGE`, `REQUEST_ID_MISSING`, `UPDATE_MASK_INVALID`, `FILTER_INVALID`, `ORDER_BY_INVALID`, `PAGE_TOKEN_INVALID`, `RESUME_TOKEN_INVALID` |
+| `INVALID_ARGUMENT` | bad field, name rule, over a size limit, bad mask, filter or order; unknown, used or expired invite; expired WebAuthn ceremony | `INVALID_ARGUMENT`, `INVALID_NAME`, `FIELD_TOO_LARGE`, `REQUEST_ID_MISSING`, `UPDATE_MASK_INVALID`, `FILTER_INVALID`, `ORDER_BY_INVALID`, `PAGE_TOKEN_INVALID`, `RESUME_TOKEN_INVALID`, `INVITE_INVALID`, `PASSKEY_CEREMONY_INVALID` |
 | `NOT_FOUND` | unknown id, or one the caller's scopes hide | `RESOURCE_NOT_FOUND` |
 | `ALREADY_EXISTS` | `request_id` reused with another body; create of an existing name; a one-time secret already handed out | `REQUEST_ID_CONFLICT`, `RESOURCE_ALREADY_EXISTS`, `SECRET_ALREADY_DELIVERED` |
-| `FAILED_PRECONDITION` | `expected_version` or `expected_phase` mismatch; approval already decided or expired; goal action the harness lacks; machine offline for an attach or capture; pairing code wrong or expired | `VERSION_MISMATCH`, `GOAL_PHASE_CHANGED`, `APPROVAL_CLOSED`, `GOAL_SUBCOMMAND_UNSUPPORTED`, `MACHINE_OFFLINE`, `PAIRING_CODE_MISMATCH`, `PAIRING_EXPIRED` |
-| `PERMISSION_DENIED` | scope or role missing; device not active | `SCOPE_MISSING` (`metadata["scope"]`), `ROLE_INSUFFICIENT`, `DEVICE_NOT_ACTIVE` |
-| `UNAUTHENTICATED` | no, bad or expired credentials | `CREDENTIALS_INVALID`, `CREDENTIALS_EXPIRED` ("sign in again") |
+| `FAILED_PRECONDITION` | `expected_version` or `expected_phase` mismatch; approval already decided or expired; goal action the harness lacks; machine offline for an attach or capture; pairing code wrong or expired; delete of a machine not revoked, or a command for a revoked one; sign-in RPC in `local_trusted` mode; a change that removes the last sign-in method or owner | `VERSION_MISMATCH`, `GOAL_PHASE_CHANGED`, `APPROVAL_CLOSED`, `GOAL_SUBCOMMAND_UNSUPPORTED`, `MACHINE_OFFLINE`, `PAIRING_CODE_MISMATCH`, `PAIRING_EXPIRED`, `MACHINE_NOT_REVOKED`, `MACHINE_NOT_REENROLLABLE`, `MACHINE_REVOKED`, `SIGN_IN_METHOD_DISABLED`, `LAST_CREDENTIAL` |
+| `PERMISSION_DENIED` | scope or role missing; device not active; token or device asks for a scope its creator lacks; Host or Origin not allowed (HTTP 403); attach ticket bad; GitHub account not on the allow-list | `SCOPE_MISSING` (`metadata["scope"]`), `ROLE_INSUFFICIENT`, `DEVICE_NOT_ACTIVE`, `SCOPE_NOT_GRANTABLE`, `HOST_NOT_ALLOWED`, `ORIGIN_NOT_ALLOWED`, `ATTACH_TICKET_INVALID`, `GITHUB_NOT_ALLOWED` |
+| `UNAUTHENTICATED` | no, bad or expired credentials; a failed passkey assertion | `CREDENTIALS_INVALID`, `CREDENTIALS_EXPIRED` ("sign in again") |
 | `RESOURCE_EXHAUSTED` | per-principal rate limit | `RATE_LIMITED` with `retry_after` |
 | `UNAVAILABLE` | hub starting or store busy | `retryable = true` |
 
@@ -286,10 +313,12 @@ probed. A page, resume or filter token the hub no longer accepts is
 simply cannot continue from is `RESYNC_REQUIRED` on the stream, not an error.
 
 **WebSocket attach.** A browser attach cannot read a Connect error trailer.
-Before the upgrade, missing or bad credentials and a disallowed `Origin` are
-plain HTTP 401 and 403 responses. After it, a refused or failed attach is sent
-as `AttachClosed{reason: ERROR, error}`, with the same `ErrorDetail` as an RPC
-error, and then the socket closes normally.
+Before the upgrade, missing or bad credentials and a disallowed `Host` or
+`Origin` are plain HTTP 401 and 403 responses with a Connect error body. After
+it, a refused or failed attach is sent as `AttachClosed{reason: ERROR, error}`,
+with the same `ErrorDetail` as an RPC error, and then the socket closes with the
+code in [02f](02f-hub-authentication.md#terminal-attach-over-websocket), which
+also has the endpoint, subprotocol, ticket, framing and ack rules.
 
 ## Routines
 
@@ -316,13 +345,32 @@ rule applies again and CI runs `buf breaking` against that tag, not against
 (`buf.gen.yaml`: Go with `protoc-gen-go` and `connect-go`, TypeScript with
 `protoc-gen-es` and connect-es v2) are in [02e](02e-contract-rules.md).
 
+## Audit actions
+
+`AuditEntry.action` is a dotted name. The vocabulary is open for display, but
+every name in use is listed here and a new one is added in the same change. The
+actor is the requester (a `Principal`); decisions made at the machine have actor
+kind `LOCAL_USER` ([02g](02g-agent-security.md#audit-of-decisions-made-at-the-machine)).
+Filter on `action` with `=` or `in` ([02c](02c-hub-watch-and-filters.md)).
+
+| Area | Actions |
+|---|---|
+| Sign-in and credentials | `auth.claim`, `auth.sign_in`, `auth.sign_in_failed`, `auth.sign_out`, `passkey.add`, `passkey.delete`, `user.invite`, `user.update`, `auth.session_revoke`, `token.create`, `token.revoke`, `device.pair_request`, `device.approve`, `device.revoke` |
+| Machines | `machine.enroll`, `machine.enroll_failed`, `machine.update`, `machine.drain`, `machine.undrain`, `machine.revoke`, `machine.delete`, `machine.connect_refused`, `machine.local_drain`, `machine.local_undrain` |
+| Commands | `session.create`, `session.keys`, `session.interrupt`, `session.harness_command`, `session.respawn`, `session.kill_window`, `session.availability`, `session.log_capture`, `attach.open`, `attach.close`, `command.refused`, `command.local_approval` |
+| Goals and work | `goal.start`, `goal.control`, `routine.run`, `approval.decide`, `triage.snooze`, `triage.dismiss` |
+| Configuration | `settings.update`, `account.update`, `integration.update`, `routine.create`, `routine.update`, `routine.delete`, `notification_target.create`, `notification_target.update`, `notification_target.delete`, `policy.changed`, `policy.safe_mode` |
+| Hub | `hub.restore` |
+
 ## Open questions
 
-1. API tokens and user management (invite, roles) as RPCs, or `fleetd`
-   commands only for v1.
+1. ~~API tokens and user management~~ Decided (ADR 0019 and its addendum):
+   RPCs for users, invites, passkeys, login sessions and API tokens
+   ([02f](02f-hub-authentication.md)), plus `fleetd` commands for the claim
+   URL, backup and restore.
 2. ~~Browser transport for `AttachTerminal`~~ Decided in step 4
    ([04](04-technology-review.md), ADR 0016): the CLI streams over HTTP/2;
    a browser sends the same messages over a WebSocket and acks written
-   bytes with `AttachAck`.
-3. Device authentication mechanism (signed requests vs per-device client
-   certificate) and push providers, when the phone app is built.
+   bytes with `AttachAck`. The WebSocket rules are in 02f.
+3. ~~Device authentication mechanism~~ Decided in outline: Ed25519-signed
+   requests (02f). Push providers stay open until the phone app is built.

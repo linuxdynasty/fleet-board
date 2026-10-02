@@ -1,0 +1,103 @@
+// fleet.hub.v1 API tokens: how the `fleet` CLI and scripts authenticate in
+// authenticated mode (FLEET_TOKEN; ADR 0019, 02f-hub-authentication.md). A
+// token acts as Principal{kind API_TOKEN, id "token/<id>", on_behalf_of: the
+// user who created it}; its scopes are at most that user's, checked again on
+// every call, so demoting the user narrows the token at once.
+//
+// The secret has the form `fbt_<token id>.<32 random bytes, base64url>`: the
+// prefix lets secret scanners find a leaked token, and the id lets the hub
+// look up one row and compare a SHA-256 hash in constant time. The hub never
+// stores the secret and shows it once, at creation.
+syntax = "proto3";
+
+package fleet.hub.v1;
+
+import "fleet/hub/v1/common.proto";
+import "fleet/type/v1/ids.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+
+// ApiTokenSpec is what the creator decided.
+message ApiTokenSpec {
+  // What the token is for ("ci", "laptop cli"). 128 bytes.
+  string name = 1;
+  // The user it acts for (its creator).
+  fleet.type.v1.PrincipalId principal = 2;
+  // Granted scopes, never empty. SCOPE_LOGS only when the creator holds it
+  // and ticks it (ADR 0019); anything the creator lacks is SCOPE_NOT_GRANTABLE.
+  repeated Scope scopes = 3;
+  // Always set; default 90 days, at most 365.
+  google.protobuf.Timestamp expire_time = 4;
+  // Set once revoked; refused on every call from then on, including open
+  // streams.
+  google.protobuf.Timestamp revoked_time = 5;
+}
+
+// ApiTokenStatus is observed use.
+message ApiTokenStatus {
+  google.protobuf.Timestamp observed_time = 1;
+  uint64 hub_seq = 2;
+  // Volatile: written at most once a minute.
+  google.protobuf.Timestamp last_used_time = 10;
+  string last_used_address = 11;
+}
+
+// ApiToken is one token, without its secret.
+message ApiToken {
+  ApiTokenId id = 1;
+  uint64 version = 2;
+  google.protobuf.Timestamp create_time = 3;
+  google.protobuf.Timestamp update_time = 4;
+
+  ApiTokenSpec spec = 10;
+  ApiTokenStatus status = 11;
+}
+
+// CreateApiTokenRequest. Only a signed-in user (or the local owner) can
+// create a token: a token or device cannot mint another. SCOPE self.
+message CreateApiTokenRequest {
+  string request_id = 1;
+  string name = 2;
+  // Required, non-empty; a subset of the caller's own scopes.
+  repeated Scope scopes = 3;
+  // Optional lifetime; zero means 90 days; over 365 days is INVALID_ARGUMENT.
+  google.protobuf.Duration ttl = 4;
+}
+
+// CreateApiTokenResponse. The secret is shown once, never stored, and is
+// excluded from the stored idempotent response: a retry with the same
+// request_id is ALREADY_EXISTS / SECRET_ALREADY_DELIVERED and the user creates
+// a new token.
+message CreateApiTokenResponse {
+  ApiToken api_token = 1;
+  string secret = 2;
+}
+
+// ListApiTokensRequest lists the caller's own tokens; ADMIN lists everyone's.
+// Filter and order_by names: 02c-hub-watch-and-filters.md. API tokens have no
+// Watch topic.
+message ListApiTokensRequest {
+  int32 page_size = 1;
+  string page_token = 2;
+  string filter = 3;
+  string order_by = 4;
+}
+
+// ListApiTokensResponse.
+message ListApiTokensResponse {
+  repeated ApiToken api_tokens = 1;
+  string next_page_token = 2;
+}
+
+// RevokeApiTokenRequest takes effect at once (the caller's own token; ADMIN
+// any). Revoked tokens stay listed for the audit trail.
+message RevokeApiTokenRequest {
+  string request_id = 1;
+  ApiTokenId id = 2;
+  uint64 expected_version = 3;
+}
+
+// RevokeApiTokenResponse.
+message RevokeApiTokenResponse {
+  ApiToken api_token = 1;
+}

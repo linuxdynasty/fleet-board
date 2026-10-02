@@ -5,6 +5,7 @@
 - Deciders: linuxdynasty (drafted with Claude Opus 5.5)
 - Amends: [0003](0003-transport-grpc.md) (additive-only rule),
   [0004](0004-agent-connectivity.md), [0010](0010-session-logs.md),
+  [0016](0016-browser-transport.md) (attach messages, see 13),
   [0017](0017-contract-packages.md), [0018](0018-hub-api-and-contract-amendments.md)
 
 ## Context
@@ -106,3 +107,58 @@ code comes from `buf.gen.yaml` (Go: protoc-gen-go, connect-go; TypeScript:
 protoc-gen-es v2 with connect-es v2) in managed mode, so `.proto` files carry
 no `go_package`. 64-bit integers are strings in JSON and `bigint` in
 TypeScript.
+
+## Addendum: auth, identity and security (review theme B)
+
+Taken while applying theme B, because they decide how people and machines
+trust the hub. They apply decision 2 and follow from 3; detail is in
+[02f](../specs/02f-hub-authentication.md) and
+[02g](../specs/02g-agent-security.md).
+
+**10. One credential per transport.** A browser carries an HttpOnly,
+`SameSite=Strict` session cookie; the CLI an API token in `Authorization:
+Bearer`; a phone Ed25519-signed requests; `local_trusted` nothing. A request
+with two kinds is refused. Every request on every transport passes a Host
+allow-list and an Origin check (no CORS headers), in `local_trusted` mode too:
+that, and the loopback-only bind, is what stops a web page or DNS rebinding
+from driving a hub that has no login.
+
+**11. People are users, invited once.** The claim URL is the first owner
+invite, printed by `fleetd` with its token in the URL fragment; whoever redeems
+it registers a passkey or links GitHub within 15 minutes. Other people come in
+through `CreateUserInvite`. The GitHub allow-list is the `github_login` of the
+users, pinned to the numeric GitHub id at first sign-in. GitHub sign-in is two
+HTTP redirect endpoints, not RPCs; passkeys carry WebAuthn JSON in RPCs.
+Users, tokens and login sessions have no Watch topic.
+
+**12. API tokens.** `fbt_<id>.<secret>`, shown once, stored as a hash, scopes
+required and a subset of the creator's, 90 days by default and 365 at most.
+Only a user can mint one.
+
+**13. Attach over WebSocket needs a ticket.** `CreateAttachTicket` returns a
+60 s, single-use ticket bound to principal, session, mode and Origin; the first
+frame of the socket carries it. This corrects ADR 0016: the WebSocket carries
+`AttachTerminalRequest` and `AttachTerminalResponse`, never the agent wire's
+`TermUp` and `TermDown`.
+
+**14. The role the agent sees.** For a device or token the hub sends the
+narrowest role covering its effective scopes, and `OWNER` only when it holds
+`SESSIONS_WRITE`, `APPROVALS`, `SETTINGS` and `ADMIN`. The hub checks scopes,
+the agent checks the role against a Role x command matrix (02g), and the local
+policy stays the ceiling; the stricter result stands. The scheduler may do
+unattended dispatch, nudges, recovery and cleanup in fleet-started sessions,
+nothing on a developer's window or prompts.
+
+**15. Enrollment trust and hub identity.** The enrollment token embeds the
+SHA-256 of the fleet CA and the agent verifies the hub against it before
+sending anything (no trust on first use); Enroll is retry-safe. `fleet_id`, the
+CA key, the account salt and `settings_epoch` live in one `hub_identity` row in
+`state.db`, so backups are secrets, and `fleetd restore` mints a new
+`settings_epoch` and reconciles agents.
+
+**16. Revoke is not delete.** `RevokeMachine` keeps the row, closes the live
+streams with `Bye{REVOKED}` and ends the machine's goals; `DeleteMachine` only
+follows it, and a revoked machine re-enrolls under its old id. Decisions made at
+the machine (local approvals, local drain, policy refusals and changes) are
+appended to the permanent audit log. Commands, events, results and settings
+carry an optional W3C trace context. Enroll failures have typed reason codes.

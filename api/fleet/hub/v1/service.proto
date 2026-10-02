@@ -8,11 +8,15 @@
 // RPC is noted as [READ], [SESSIONS_WRITE], [APPROVALS], [SETTINGS], [ADMIN],
 // [LOGS]; [A|B] means either scope is enough; [self] means any signed-in
 // principal on its own rows (ADMIN on everyone's); [none] is unauthenticated.
+// How callers authenticate (session cookie, API token, signed device request,
+// the local owner) and the WebSocket rules for AttachTerminal are in
+// docs/specs/02f-hub-authentication.md.
 syntax = "proto3";
 
 package fleet.hub.v1;
 
 import "fleet/hub/v1/account.proto";
+import "fleet/hub/v1/auth.proto";
 import "fleet/hub/v1/common.proto";
 import "fleet/hub/v1/device.proto";
 import "fleet/hub/v1/goal.proto";
@@ -21,6 +25,7 @@ import "fleet/hub/v1/routine.proto";
 import "fleet/hub/v1/session.proto";
 import "fleet/hub/v1/settings.proto";
 import "fleet/hub/v1/terminal.proto";
+import "fleet/hub/v1/token.proto";
 import "fleet/hub/v1/triage.proto";
 import "fleet/hub/v1/watch.proto";
 import "fleet/hub/v1/work.proto";
@@ -29,7 +34,8 @@ import "fleet/hub/v1/work.proto";
 service FleetService {
   // --- Server, summary, changes ---------------------------------------------
 
-  // [none] API version, features, the caller. Works before sign-in.
+  // [none] API version, features, auth mode, sign-in methods, whether the hub
+  // is waiting to be claimed, the caller. Works before sign-in.
   rpc GetServerInfo(GetServerInfoRequest) returns (GetServerInfoResponse);
   // [READ|APPROVALS] The summary strip.
   rpc GetFleetSummary(GetFleetSummaryRequest) returns (GetFleetSummaryResponse);
@@ -53,7 +59,9 @@ service FleetService {
   rpc DrainMachine(DrainMachineRequest) returns (DrainMachineResponse);
   // [ADMIN] Undrain (M4).
   rpc UndrainMachine(UndrainMachineRequest) returns (UndrainMachineResponse);
-  // [ADMIN] Revoke and forget a machine.
+  // [ADMIN] Cut a machine off now and keep its row; closes its live streams.
+  rpc RevokeMachine(RevokeMachineRequest) returns (RevokeMachineResponse);
+  // [ADMIN] Forget a machine that is already revoked.
   rpc DeleteMachine(DeleteMachineRequest) returns (DeleteMachineResponse);
   // [ADMIN] A single-use enrollment token (A1).
   rpc CreateEnrollmentToken(CreateEnrollmentTokenRequest) returns (CreateEnrollmentTokenResponse);
@@ -82,7 +90,11 @@ service FleetService {
   rpc KillWindow(KillWindowRequest) returns (KillWindowResponse);
   // [SESSIONS_WRITE] SetLogCapture (K1).
   rpc SetLogCapture(SetLogCaptureRequest) returns (SetLogCaptureResponse);
-  // [READ] read-only, [SESSIONS_WRITE] with input. Browser attach (J1).
+  // [READ] read-only, [SESSIONS_WRITE] for input. A single-use ticket for one
+  // WebSocket attach (J1); not needed over HTTP/2.
+  rpc CreateAttachTicket(CreateAttachTicketRequest) returns (CreateAttachTicketResponse);
+  // [READ] read-only, [SESSIONS_WRITE] with input. Browser attach (J1); the
+  // browser carries the same messages over a WebSocket.
   rpc AttachTerminal(stream AttachTerminalRequest) returns (stream AttachTerminalResponse);
   // [LOGS] Stored session log, optionally following new data (K1, K3).
   rpc ReadSessionLog(ReadSessionLogRequest) returns (stream ReadSessionLogResponse);
@@ -171,10 +183,44 @@ service FleetService {
   // [READ]
   rpc ListAuditEntries(ListAuditEntriesRequest) returns (ListAuditEntriesResponse);
 
+  // --- Sign-in, users, sessions and API tokens (authenticated mode) ----------
+
+  // [none] Burn an invite or claim token and start registering a credential.
+  rpc RedeemInvite(RedeemInviteRequest) returns (RedeemInviteResponse);
+  // [self] or a registration session. Start adding a passkey.
+  rpc BeginPasskeyRegistration(BeginPasskeyRegistrationRequest) returns (BeginPasskeyRegistrationResponse);
+  // [self] or a registration session.
+  rpc FinishPasskeyRegistration(FinishPasskeyRegistrationRequest) returns (FinishPasskeyRegistrationResponse);
+  // [none] Rate limited per peer address.
+  rpc BeginPasskeyLogin(BeginPasskeyLoginRequest) returns (BeginPasskeyLoginResponse);
+  // [none] Sets the session cookie.
+  rpc FinishPasskeyLogin(FinishPasskeyLoginRequest) returns (FinishPasskeyLoginResponse);
+  // [self] own passkeys; [ADMIN] anyone's.
+  rpc DeletePasskey(DeletePasskeyRequest) returns (DeletePasskeyResponse);
+  // [self] End this browser session (login-session callers only).
+  rpc SignOut(SignOutRequest) returns (SignOutResponse);
+  // [self] own sessions; [ADMIN] all.
+  rpc ListLoginSessions(ListLoginSessionsRequest) returns (ListLoginSessionsResponse);
+  // [self] own sessions; [ADMIN] any.
+  rpc RevokeLoginSession(RevokeLoginSessionRequest) returns (RevokeLoginSessionResponse);
+  // [ADMIN]
+  rpc ListUsers(ListUsersRequest) returns (ListUsersResponse);
+  // [ADMIN] Create a user and a one-time invite.
+  rpc CreateUserInvite(CreateUserInviteRequest) returns (CreateUserInviteResponse);
+  // [ADMIN] Role, name, GitHub allow-list entry, disabled.
+  rpc UpdateUser(UpdateUserRequest) returns (UpdateUserResponse);
+  // [self] A signed-in user (or the local owner) only; shows the secret once.
+  rpc CreateApiToken(CreateApiTokenRequest) returns (CreateApiTokenResponse);
+  // [self] own tokens; [ADMIN] all.
+  rpc ListApiTokens(ListApiTokensRequest) returns (ListApiTokensResponse);
+  // [self] own tokens; [ADMIN] any.
+  rpc RevokeApiToken(RevokeApiTokenRequest) returns (RevokeApiTokenResponse);
+
   // --- Devices and notifications --------------------------------------------
 
   // [none] Sent by a new device; creates a pending Device. Rate limited per
-  // peer address; idempotency is keyed by (peer address, public key).
+  // peer address; idempotency is keyed by (peer address, public key). An empty
+  // requested_scopes means READ and APPROVALS, never LOGS.
   rpc RequestPairing(RequestPairingRequest) returns (RequestPairingResponse);
   // [ADMIN]
   rpc ApprovePairing(ApprovePairingRequest) returns (ApprovePairingResponse);

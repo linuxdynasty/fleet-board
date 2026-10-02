@@ -91,13 +91,14 @@ sequenceDiagram
   participant A as fleet-agent
   participant T as tmux / harnesses
   O->>H: enroll-token --machine omarchy
-  H->>H: tx: enroll_tokens{hash, name, expected_hostname, not_after_time}
-  H-->>O: token (once), CA fingerprint
+  H->>H: tx: enroll_tokens{secret hash, name, expected_hostname, not_after_time}
+  H-->>O: token (once; embeds the CA SHA-256)
   O->>A: fleet-agent enroll --token T
   A->>A: Ed25519 key, CSR · MachineFacts (B1)
-  A->>H: Enroll(EnrollRequest{token, csr_pem, facts, capabilities, proto_min/max})
-  H->>H: tx: burn token, insert machine, cert serial · warn if hostname ≠ expected
-  H-->>A: EnrollResponse{machine_id, cert_pem, ca_chain_pem, ca_fingerprint, account_salt, salt_version, hub_addresses, machine_name}
+  A->>H: TLS: verify server chain against the token's CA SHA-256 (abort here on mismatch)
+  A->>H: Enroll(EnrollRequest{token, csr_pem, facts, capabilities, proto_min/max, install_id})
+  H->>H: tx: burn token, insert machine, cert serial, store response keyed by (token, install_id, CSR key) · warn if hostname ≠ expected
+  H-->>A: EnrollResponse{machine_id, cert_pem, ca_chain_pem, ca_fingerprint, account_salt, salt_version, hub_addresses, machine_name, fleet_id, replayed}
   A->>A: persist cert/key/CA/salt (0600), cache hub address
   A->>T: identity + catalog probe per harness (C2, C4) on fleet-probe
   A->>H: Connect [mTLS] Hello{machine_id, capabilities, boot_id, last_epoch=0, last_event_seq=0, reason=START, sent_time, settings_generation=0}
@@ -146,22 +147,26 @@ stateDiagram-v2
   HelloSent --> Backoff: Bye{PROTO_UNSUPPORTED} / stream error
   Snapshotting --> Connected: Snapshot + unacked results sent
   Connected --> Backoff: stream closed / Bye{HUB_RESTART, DUPLICATE_IDENTITY}
-  Connected --> Unenrolled: Bye{REVOKED}
+  Connected --> Unenrolled: Bye{REVOKED | UNKNOWN_MACHINE}
+  Connected --> Unenrolled: HelloAck.fleet_id differs (Bye{FLEET_MISMATCH})
   Backoff --> Discovering: timer (1–60 s, jitter), wake, network change
   Enrolled --> Unenrolled: certificate expired past lifetime (re-enroll)
 ```
 
 Hub-side machine state: `ENROLLED` (never connected) → `ONLINE` (Hello +
 Snapshot applied) → `STALE` (no heartbeat 45 s) → `OFFLINE` (3 min, or agent
-`Bye`) → `ONLINE`; `DELETED` revokes serials and refuses the next Hello.
+`Bye`) → `ONLINE`; from any of them `RevokeMachine` → `REVOKED` (serials on the
+revocation list, `Bye{REVOKED}` on the live stream, goals to `PANE_LOST`, row
+kept), and `DeleteMachine` forgets a revoked machine. The cascade and the
+re-enroll rule are in [02g](02g-agent-security.md#machine-lifecycle-revoke-and-delete).
 
 ### Persistence
 
 | What | Where | Transaction |
 |---|---|---|
-| Enrollment token hash, expected hostname, TTL, `used_at` | hub store | one tx at `enroll-token`; burned in the Enroll tx |
-| Machine row (id, name, facts, labels), cert serial + `not_after_time` | hub store | the Enroll tx (token burn + machine + serial together; signing is local CPU, not a network call) |
-| Key, cert, CA chain + pinned fingerprint, `machine_id`, salt, cached hub address | agent state dir, mode 0600 | written before `Enroll` returns to the shell; salt never logged |
+| Enrollment token secret hash, expected hostname, TTL, `used_at`, `previous_machine` | hub store | one tx at `enroll-token`; burned in the Enroll tx |
+| Machine row (id, name, facts, labels), cert serial + `not_after_time`, the stored Enroll response (kept until the token's TTL + 24 h, keyed by token, `install_id` and CSR key, for replay) | hub store | the Enroll tx (token burn + machine + serial + response together; signing is local CPU, not a network call) |
+| Key (kept until Enroll succeeds, so a retry sends the same CSR), cert, CA chain + pinned fingerprint, `machine_id`, salt, `fleet_id`, cached hub address | agent state dir, mode 0600 | written before `Enroll` returns to the shell; salt never logged |
 | `machine_connections{epoch, boot_id, peer_addr, reason, connected_at}` | hub store | the Hello tx (also marks ONLINE) |
 | Inventory from the snapshot | hub store | the snapshot tx (replace per machine) |
 | Outbox transitions (`pending → delivered`, `→ expired`) | hub store | the snapshot tx; messages sent after commit |
@@ -181,10 +186,13 @@ Snapshot applied) → `STALE` (no heartbeat 45 s) → `OFFLINE` (3 min, or agent
 
 | Failure | What happens |
 |---|---|
-| Token expired or already used | `Enroll` fails with a gRPC error naming the reason; nothing persisted on the hub except an audit row; the agent prints the reason and exits 1 |
+| Token unknown, expired or already used | `Enroll` fails with a gRPC error whose `ErrorDetail.reason` is `ENROLL_TOKEN_UNKNOWN`, `_EXPIRED` or `_USED` (02g); nothing persisted on the hub except an audit row (`machine.enroll_failed`); the agent prints the reason and exits 1 |
+| Enroll response lost after the token burned | Run `enroll` again: the same token, `install_id` and CSR key return the stored response (`replayed = true`), same `machine_id` and certificate, no second machine row |
+| Impostor at the address the owner typed or mDNS found | The agent verifies the server chain against the CA SHA-256 inside the token before sending the token or CSR; the impostor learns nothing and the agent aborts (no TOFU) |
 | A different machine enrolls with a token tied to `expected_hostname` | Enroll succeeds; machine row flagged `hostname_mismatch`; triage info item (W7); owner deletes it if wrong |
 | Hub unreachable / all candidates fail | Backoff loop; `doctor` shows the last error per candidate; nothing else blocks |
 | Impostor at a discovered address | TLS verification fails; counted, next candidate |
+| Hello from a valid certificate the hub does not know (store recreated, or a backup that predates the enrollment) | `Bye{UNKNOWN_MACHINE}`; the agent goes Unenrolled and the owner issues a token. During a restore reconcile window the hub adopts the machine instead (02g) |
 | Hub restart between `Enroll` and first `Connect` | Enroll is durable; Connect retries |
 | Agent restart before the state dir is fully written | Enroll is atomic on disk (write temp + rename); a half-written dir is detected and the user re-runs enroll with a new token |
 | Certificate expired (machine offline longer than lifetime) | Hello refused at TLS; agent logs `cert_expired` and `doctor` says "re-enroll" |
@@ -262,11 +270,15 @@ reconnect lets the hub detect a gap caused by ring overflow and request a
 `SnapshotRequest{reason="event_gap"}`.
 
 **Duplicate identity.** A second `Hello` for a `machine_id` with a live stream:
-newest wins. The hub sends `Bye{DUPLICATE_IDENTITY}` on the old stream, bumps
-the epoch, and raises a triage warning fingerprinted on the pair of `boot_id`s.
-If the two keep displacing each other (two hosts with one copied state dir),
-the warning is re-raised at most once per hour and auto-dispatch to that
-machine is suspended until the owner resolves it.
+newest wins, silently. The hub sends `Bye{DUPLICATE_IDENTITY}` on the old stream
+(if it can still be written to) and bumps the epoch. A sleeping laptop or a
+restarted agent leaves a half-open, silent old stream, so a benign reconnect
+raises nothing. A triage warning, fingerprinted on the pair of `boot_id`s, is
+raised only when the displaced stream had a heartbeat within 45 s and the two
+`boot_id`s then displace each other again within 10 minutes (two hosts with one
+copied state dir ping-pong; a restart does not). It is re-raised at most once
+per hour and auto-dispatch to that machine is suspended until the owner
+resolves it.
 
 ### State machine (hub-side connection for one machine)
 

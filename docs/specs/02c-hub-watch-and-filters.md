@@ -288,6 +288,27 @@ also filters on `id` (the `.value` string; `in` allowed) and `create_time` and
 | `revoked` (D) | `spec.revoked_time` is set | bool | `=` |
 | `approved` (D) | `spec.approved_time` is set | bool | `=` |
 
+| User (`ListUsers`; no Watch topic) | Path | Type | Operators |
+|---|---|---|---|
+| `role` | `spec.role` | `Role` | `=` `in` |
+| `state` | `status.state` | `UserState` | `=` `in` |
+| `github_login` | `spec.github_login` | string | `=` |
+
+| LoginSession (`ListLoginSessions`; no Watch topic) | Path | Type | Operators |
+|---|---|---|---|
+| `user` | `spec.user` | string | `=` `in` |
+| `method` | `spec.method` | `SignInMethod` | `=` `in` |
+| `revoked` (D) | `spec.revoked_time` is set | bool | `=` |
+
+| ApiToken (`ListApiTokens`; no Watch topic) | Path | Type | Operators |
+|---|---|---|---|
+| `principal` | `spec.principal` | string | `=` `in` |
+| `revoked` (D) | `spec.revoked_time` is set | bool | `=` |
+| `expired` (D) | `spec.expire_time` is past | bool | `=` |
+
+`order_by` for the three: `ct`; users also `name` (`spec.display_name`), tokens
+also `last_used_time` (`status.last_used_time`).
+
 | NotificationTarget (`NOTIFICATION_TARGETS`) | Path | Type | Operators |
 |---|---|---|---|
 | `principal` | `principal` | string | `=` `in` |

@@ -12,6 +12,7 @@ import "fleet/agent/v1/command_goal.proto";
 import "fleet/agent/v1/command_tmux.proto";
 import "fleet/type/v1/ids.proto";
 import "fleet/type/v1/status.proto";
+import "fleet/type/v1/trace.proto";
 import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
 
@@ -30,6 +31,9 @@ message Command {
   google.protobuf.Timestamp issued_time = 4;
   // Hub time. Default 2 min for interactive kinds, 30 min for dispatch.
   google.protobuf.Timestamp not_after_time = 5;
+  // For a device or API token, role is the one the hub maps from the
+  // principal's scopes (02d). The agent checks it against the role x command
+  // matrix in docs/specs/02g-agent-security.md; local policy can only tighten.
   fleet.type.v1.Principal requested_by = 6;
   // Optional detached Ed25519 signature over the canonical envelope and kind
   // bytes, for deployments with a hardware signing key. Unused in v1.
@@ -37,6 +41,9 @@ message Command {
   // Capability this kind needs, so an unknown kind can still be answered
   // with STATUS_UNSUPPORTED and the capability name.
   fleet.type.v1.Capability requires = 8;
+  // Trace context of the hub span that issued the command (W3C Trace
+  // Context); the agent's spans for this command are its children.
+  fleet.type.v1.TraceContext trace = 9;
 
   // Kinds are numbered by group: 10-19 probes, 20-39 tmux control, 40-49
   // goals and worktrees, 50-59 attach, 60-69 logs, 70-79 self-management.
@@ -127,6 +134,9 @@ message CommandResult {
   // secrets; at most 16 entries of 256 bytes. Same shape as
   // fleet.type.v1.ErrorDetail, which the hub API builds from these fields.
   map<string, string> metadata = 10;
+  // The agent's span for this command, so the hub can link the result back
+  // to the trace. Unset when the command carried none.
+  fleet.type.v1.TraceContext trace = 11;
 
   // Results are always wrapped in a message so they can grow. Detail numbers
   // equal the kind's number, except ensure_goal_hooks_result.

@@ -188,7 +188,7 @@ suggested.
   `fleet_agent_start_goal_total{result, reason}`.
 - Spans: `hub.scheduler.pass` → `hub.scheduler.plan{goal_id}` →
   `hub.command.send{command_id}`; `agent.start_goal{goal_id}` with one child
-  span per step.
+  span per step; the link is `Command.trace` and `CommandResult.trace` (02g).
 - Logs: `dispatch.planned{goal_id, work_item, repo, machine, account, harness,
   reuse_pane, consent}`, `dispatch.step{goal_id, step, status, reason}`,
   `dispatch.skipped{reason, detail}` (one per pass, summarised).

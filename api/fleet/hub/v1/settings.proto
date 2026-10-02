@@ -43,6 +43,17 @@ message HubSettings {
   optional google.protobuf.Duration triage_expiry = 8;
   // How long an approval waits before its fallback applies.
   optional google.protobuf.Duration approval_timeout = 9;
+  // Sign-in (authenticated mode, ADR 0019). Both default to on once the
+  // owner has registered the credential type; turning off the last method
+  // any active user can still use is refused (LAST_CREDENTIAL).
+  optional bool passkey_sign_in = 10;
+  // Needs the GitHub App's user-authorization settings (client id and
+  // secret) in the hub's configuration; otherwise SIGN_IN_METHOD_DISABLED.
+  optional bool github_sign_in = 11;
+  // Browser session limits: sign out after this long without use (default 7
+  // days) and after this long in all (default 30 days).
+  optional google.protobuf.Duration session_idle_timeout = 12;
+  optional google.protobuf.Duration session_max_age = 13;
 }
 
 // SettingsSpec is what the owner set for one layer. Covered by
@@ -126,10 +137,16 @@ message AuditEntry {
   google.protobuf.Timestamp create_time = 3;
   google.protobuf.Timestamp update_time = 4;
 
+  // Who did it. For a decision at the machine (local approval, local drain,
+  // policy change) the actor is Principal{kind LOCAL_USER, id "local:<os
+  // user>"}; for a policy file change nobody is named, so the agent's own OS
+  // user stands in.
   fleet.type.v1.Principal actor = 10;
   // Dotted action name, e.g. "goal.start", "approval.decide",
-  // "settings.update", "device.revoke". An open vocabulary: new actions
-  // appear with new features, so clients show it as text.
+  // "settings.update", "device.revoke". An open vocabulary, so clients show
+  // it as text, but every name in use is listed in the catalogue in
+  // docs/specs/02b-hub-api.md ("Audit actions"); a new action is added there
+  // in the same change.
   string action = 11;
   // Resource the action touched, as "<collection>/<id>".
   string target = 12;
@@ -142,6 +159,10 @@ message AuditEntry {
   fleet.type.v1.ReasonCode reason = 18;
   // Short detail (the typed goal line, the decided option). No secrets.
   string detail = 19;
+  // When the thing happened, if not when the hub recorded it: for a decision
+  // made at the machine (actor kind LOCAL_USER) it is the agent's own
+  // decided_time (agent clock). Unset otherwise; create_time is then it.
+  google.protobuf.Timestamp occurred_time = 20;
 }
 
 // ListAuditEntriesRequest. Filter and order_by names:

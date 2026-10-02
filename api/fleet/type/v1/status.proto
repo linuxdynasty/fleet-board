@@ -66,7 +66,8 @@ enum Status {
 // ReasonCode is the shared structured reason for preflight refusals,
 // command failures and policy rejections. Values 1..99 are preflight (I1);
 // 100..199 command execution; 200..299 envelope and policy; 300..399 goal
-// composite steps; 400..499 probes and parsing.
+// composite steps; 400..499 probes and parsing; 500..599 hub API; 600..699
+// Enroll (agent wire, carried in an RPC error's ErrorDetail).
 enum ReasonCode {
   REASON_CODE_UNSPECIFIED = 0;
 
@@ -200,6 +201,54 @@ enum ReasonCode {
   REASON_CODE_FIELD_TOO_LARGE = 519;
   // The pairing request expired before the owner approved it.
   REASON_CODE_PAIRING_EXPIRED = 520;
+  // The sign-in method (passkey or GitHub) is turned off in HubSettings, or
+  // GitHub sign-in is not configured on the hub's GitHub App.
+  REASON_CODE_SIGN_IN_METHOD_DISABLED = 521;
+  // The invite or claim token is unknown, already redeemed or expired.
+  REASON_CODE_INVITE_INVALID = 522;
+  // The WebAuthn ceremony id is unknown, expired (5 min) or already used;
+  // the client begins again. A failed assertion is CREDENTIALS_INVALID.
+  REASON_CODE_PASSKEY_CEREMONY_INVALID = 523;
+  // The GitHub account signed in correctly but is not on the allow-list (no
+  // active user has its login).
+  REASON_CODE_GITHUB_NOT_ALLOWED = 524;
+  // The change would leave a user with no way to sign in, or the hub with
+  // no active owner.
+  REASON_CODE_LAST_CREDENTIAL = 525;
+  // A token or device asks for a scope its creator does not hold (or LOGS
+  // without the owner's explicit grant).
+  REASON_CODE_SCOPE_NOT_GRANTABLE = 526;
+  // The attach ticket is unknown, expired (60 s), already used, or was
+  // issued for another session, principal or Origin.
+  REASON_CODE_ATTACH_TICKET_INVALID = 527;
+  // The request's Origin is not the hub's own origin (HTTP 403, and in the
+  // Connect error body).
+  REASON_CODE_ORIGIN_NOT_ALLOWED = 528;
+  // The request's Host is not on the hub's allow-list (DNS rebinding guard;
+  // HTTP 403).
+  REASON_CODE_HOST_NOT_ALLOWED = 529;
+  // DeleteMachine on a machine that is not REVOKED; revoke it first.
+  REASON_CODE_MACHINE_NOT_REVOKED = 530;
+  // An enrollment token's previous_machine names a machine that is neither
+  // REVOKED nor past its certificate lifetime.
+  REASON_CODE_MACHINE_NOT_REENROLLABLE = 531;
+  // A command-issuing action on a REVOKED machine.
+  REASON_CODE_MACHINE_REVOKED = 532;
+
+  // Enroll (A1), carried in the ErrorDetail of the Enroll RPC error.
+  // The token is not one the hub issued (or its secret part is wrong).
+  REASON_CODE_ENROLL_TOKEN_UNKNOWN = 600;
+  REASON_CODE_ENROLL_TOKEN_EXPIRED = 601;
+  // Burned by an earlier Enroll with another install_id or CSR key. The
+  // same install_id and CSR key replays the stored response instead.
+  REASON_CODE_ENROLL_TOKEN_USED = 602;
+  // The CSR does not parse, is not Ed25519, or asks for another subject.
+  REASON_CODE_ENROLL_CSR_INVALID = 603;
+  // No common proto version (proto_min/proto_max).
+  REASON_CODE_ENROLL_PROTO_UNSUPPORTED = 604;
+  // EnrollRequest.previous_machine_id differs from the one the owner put in
+  // the token.
+  REASON_CODE_ENROLL_PREVIOUS_MACHINE_MISMATCH = 605;
 }
 
 // AttachCloseReason says why a terminal attach ended (J1). Used by the
@@ -237,8 +286,9 @@ message FieldViolation {
 }
 
 // ErrorDetail is the machine-readable half of an error, shared by command
-// results and progress (agent wire) and hub API errors (as a Connect/gRPC
-// error detail). The coarse outcome stays in Status or the RPC code.
+// results and progress (agent wire), hub API errors and Enroll errors (as a
+// Connect/gRPC error detail). The coarse outcome stays in Status or the RPC
+// code.
 message ErrorDetail {
   ReasonCode reason = 1;
   // True when the same request may succeed if sent again unchanged (with a
@@ -270,10 +320,13 @@ message Capability {
 }
 
 // Role of the principal that requested a command (ADR 0004 "People on the
-// hub"). The agent re-checks role against harness command class (01b).
-// Each value names a permission set (02d-hub-authz.md maps roles to scopes);
-// values are never compared numerically, and ROLE_SCHEDULER is not "above"
-// ROLE_OWNER.
+// hub"). The agent re-checks role against command kind and harness command
+// class (the matrix is in 02g-agent-security.md). Each value names a
+// permission set (02d-hub-authz.md maps roles to scopes); values are never
+// compared numerically, and ROLE_SCHEDULER is not "above" ROLE_OWNER. "Role A
+// covers role B" means A's scope set includes B's. A device or API token
+// never has a role of its own: the hub sends the narrowest role that covers
+// its effective scopes (02d, "Role sent to the agent").
 enum Role {
   ROLE_UNSPECIFIED = 0;
   ROLE_VIEWER = 1;
@@ -306,9 +359,15 @@ message Principal {
   // Display name or login on the hub; "scheduler" for the scheduler.
   // Display only; never used as a key.
   string name = 1;
+  // For a USER, its role. For a DEVICE or API_TOKEN, the role the hub maps
+  // from the principal's effective scopes (never above what its user holds).
+  // This is the only authority the agent sees.
   Role role = 2;
   // The key for audit, ownership (FLEET_OWNER holds it) and idempotency
-  // scoping. For LOCAL_USER the value is "local:<os user>".
+  // scoping. A user's is hub-assigned; the others are fixed or derived:
+  // "local-owner" in local_trusted mode, "scheduler", "arbiter",
+  // "device/<device id>", "token/<token id>", "local:<os user>" for
+  // LOCAL_USER.
   PrincipalId id = 3;
   PrincipalKind kind = 4;
   // Set when kind is DEVICE: the paired device that acted.

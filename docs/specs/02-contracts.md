@@ -16,7 +16,10 @@
   (hub API, principals, devices, routines, profiles)
 - Hub API conventions (`fleet.hub.v1`): [02b-hub-api.md](02b-hub-api.md),
   [02c-hub-watch-and-filters.md](02c-hub-watch-and-filters.md),
-  [02d-hub-authz.md](02d-hub-authz.md)
+  [02d-hub-authz.md](02d-hub-authz.md),
+  [02f-hub-authentication.md](02f-hub-authentication.md)
+- Agent trust, hub identity, machine revoke, the role x command matrix, local
+  audit and trace context: [02g-agent-security.md](02g-agent-security.md)
 - Rules for every package (naming, codegen, freeze, capability map, agent size
   limits, compile check): [02e-contract-rules.md](02e-contract-rules.md)
 
@@ -54,6 +57,7 @@ packages; `fleet.hub.v1` never imports `fleet.agent.v1`.
 | `type/v1/work.proto` | `RepoRef`, `ProviderKind`, `WorkItemKind`, `WorkItemKey` (identity), `WorkItemRef` (key plus display fields), `Workdir` |
 | `type/v1/consent.proto` | `ConsentAct` |
 | `type/v1/status.proto` | `Percent` with explicit unknown, `Status`, `ReasonCode`, `ErrorDetail`, `FieldViolation`, `AttachCloseReason`, `Capability`, `Role`, `PrincipalKind`, `Principal` |
+| `type/v1/trace.proto` | `TraceContext` (W3C `traceparent`, `tracestate`) on `Command`, `CommandResult`, `Event`, `Settings` |
 | `type/v1/harness.proto` | `CommandClass`, `CatalogEntry`, `CommandCatalog`, `GoalHooksState`, `Activity`, `Availability`, `GoalLineState`, `NamedKey`, `KeyInput`, `PromptSource`, `PromptOption`, `HarnessConditionKind`, `LogStream` |
 | `type/v1/usage.proto` | `LimitBucket`, `ResetTime`, `ShownField`, `ShownUsage`, `SpendReading`, `UsageSource`, `WindowKind`, `BudgetKind`, `ParseOutcome` |
 | `type/v1/settings.proto` | `SettingValues`, `SettingSource`, `EffectiveSettings`, `SettingLayer`, `DefaultServerMode`, `LocalApprovalRule`, `RateLimit` |
@@ -68,7 +72,7 @@ packages; `fleet.hub.v1` never imports `fleet.agent.v1`.
 | `agent/v1/snapshot.proto` | facts and inventories (`MachineFacts`, `HarnessInfo`, tmux `TmuxServer/Session/Window/Pane`, `GoalState`, `RepoCheckout`, `BranchState`, `ForgeCliStatus`, `SpoolStatus`, `PolicyInfo`, `DrainState`) and the `Snapshot` |
 | `agent/v1/usage.proto` | `UsageReading` (as shown + standardized buckets), `AccountIdentity`, `SessionAccountLink`, `ProbeHealth` |
 | `integration/v1/integration.proto` | `IntegrationCapabilities`, `WorkItem`, `ChangeRequest`, `CheckSummary`, `Review`, `Claim`, and the read-only `IntegrationProviderService` that GitHub implements first |
-| `hub/v1/*.proto` | `FleetService` and its resources; see [02b](02b-hub-api.md), [02c](02c-hub-watch-and-filters.md), [02d](02d-hub-authz.md) |
+| `hub/v1/*.proto` | `FleetService` and its resources; see [02b](02b-hub-api.md), [02c](02c-hub-watch-and-filters.md), [02d](02d-hub-authz.md), [02f](02f-hub-authentication.md) (`auth.proto` users, passkeys, sessions; `token.proto` API tokens) |
 
 **Naming (buf STANDARD).** Services end in `Service`; every RPC has its own
 `<Rpc>Request`/`<Rpc>Response`. Where a stream body already had a name the
@@ -77,7 +81,7 @@ specs use (`TermUp`, `TermDown`, `LogChunk`, `LogAck`, `ChangeNotice`,
 single field. The `Connect` bodies were renamed instead (`AgentMessage` →
 `ConnectRequest`, `HubMessage` → `ConnectResponse`). Paged lists use
 `page_size`, `page_token` and `next_page_token`. On `AgentService` the agent
-is the client, so "request" is always agent → hub and "response" hub → agent.
+is the client: "request" is agent → hub, "response" hub → agent.
 
 Field numbers are grouped with gaps (commands 10–19 probes, 20–39 tmux, 40–49
 goals, 50–59 attach, 60–69 logs, 70–79 self-management; events likewise) so
@@ -107,13 +111,13 @@ sequence; `none` means unordered. Droppable: may be shed under backpressure.
 
 | ID | Message(s) | Dir | Idem. | Ordering | Droppable |
 |---|---|---|---|---|---|
-| A1 | `Enroll` RPC: `EnrollRequest{token, csr, facts, capabilities, previous_machine_id, install_id}` → `EnrollResponse{machine_id, cert, ca, account_salt, fleet_id}` | A→H | token single-use | n/a | no |
+| A1 | `Enroll` RPC: `EnrollRequest{token (embeds the CA fingerprint), csr, facts, capabilities, previous_machine_id, install_id}` → `EnrollResponse{machine_id, cert, ca, account_salt, fleet_id, replayed}`; typed failures `ENROLL_*` ([02g](02g-agent-security.md)) | A→H | same token + install_id + CSR key replays | n/a | no |
 | A2 | local only; `EnrollResponse.hub_addresses` seeds discovery | — | — | — | — |
-| A3 | `Hello{install_id, settings_epoch, …}`/`HelloAck{hub_instance_id, settings_epoch, hub_capabilities, …}`, `Snapshot{…, prompts[], conditions[], snapshot_id, part_index, part_count}`, `SnapshotRequest{reason}` | both | snapshot replaces | first on stream | no |
+| A3 | `Hello{install_id, settings_epoch, …}`/`HelloAck{hub_instance_id, settings_epoch, hub_capabilities, hub_addresses, fleet_id, …}`, `Snapshot{…, prompts[], conditions[], snapshot_id, part_index, part_count}`, `SnapshotRequest{reason}` | both | snapshot replaces | first on stream | no |
 | A4 | `RenewCert` RPC | A→H | yes | n/a | no |
 | A5 | `Heartbeat{counts, load1, uptime, draining, spool, event_seq}` | A→H | yes | none | **yes** |
 | A6 | local; `Hello.reason = WAKE / NETWORK_CHANGE` | A→H | — | — | — |
-| A7 | `Bye{reason}` (agent); `Bye` from hub for duplicate identity, revoked, restart | both | yes | last on stream | no |
+| A7 | `Bye{reason}` (agent); `Bye` from hub for duplicate identity, revoked, unknown machine, restart; `FLEET_MISMATCH` from the agent | both | yes | last on stream | no |
 | A8 | `Settings{settings_epoch, generation, labels, values, probe_interval_by_account}` → `SettingsAck{settings_epoch, generation, effective, capped_fields}` | H→A, A→H | by (epoch, generation) | (epoch, generation) | no |
 | B1 | `MachineFacts` in `EnrollRequest` and `Snapshot` | A→H | — | snapshot | — |
 | B2 | `Event.resource_sample` | A→H | — | seq | **yes** |
@@ -165,9 +169,8 @@ sequence; `none` means unordered. Droppable: may be shed under backpressure.
 | M4 | `Drain{reason}`, `Undrain`; `DrainState{draining, reason, requested_by_principal}` in snapshot, `Heartbeat.draining`, `Event.drain_state` | H→A; A→H | yes | cmd; seq | no |
 | — | raw exec | reserved: `Command` field 99 / name `run_exec`, capability `exec.raw`; not defined in v1 | — | — | — | — |
 
-Every capability in the step 1 map has a message. Messages with no
-capability behind them: none (`ResultAck`, `CommandAck`, `CommandProgress`
-and `PromptGone` are delivery mechanics for A3, G3 and E6).
+Every capability in the step 1 map has a message; `ResultAck`, `CommandAck`,
+`CommandProgress` and `PromptGone` are delivery mechanics for A3, G3 and E6.
 
 ## Delivery semantics
 
@@ -243,12 +246,14 @@ the epoch differs from the one it holds (any generation) or the generation
 is higher under the same epoch; it ignores the rest. This replaces 03g's
 `settings_restored` flag.
 
-**Identity.** `EnrollResponse.fleet_id` names the fleet; an agent refuses a
-hub with another fleet id. `HelloAck.hub_instance_id` changes on every hub
-process start. `install_id` is minted once per agent install and sent in
-`EnrollRequest` and `Hello`; two live connections with one `install_id`
-mean a copied state directory. `EnrollRequest.previous_machine_id`
-re-enrolls a known machine instead of creating a second one.
+**Identity.** `EnrollResponse.fleet_id` and `HelloAck.fleet_id` name the
+fleet; an agent refuses a hub with another fleet id. `HelloAck.hub_instance_id`
+changes on every hub process start. `install_id` is minted once per agent
+install and sent in `EnrollRequest` and `Hello`; a copied state directory shows
+as two hosts displacing each other ([02g](02g-agent-security.md#machine-lifecycle-revoke-and-delete)).
+`EnrollRequest.previous_machine_id` re-enrolls a revoked machine instead of
+creating a second one. Where the CA key, `fleet_id`, salt and `settings_epoch`
+live and how restore treats them: 02g, "Hub identity and restore".
 
 **Backpressure classes.** The agent's bounded send queue sheds in this
 order and never beyond it:
@@ -275,15 +280,8 @@ the spool cap is hit the agent keeps the newest data and sets `gap_before`
 on the next chunk. `EnsureProbe.run_now` runs once per distinct
 `command_id` (03g #9).
 
-**Log framing** (spike S2, 2026-10-02). The agent keeps one zstd frame per
-stream open for up to 5 min or 4 MiB raw and flushes it at every 10 s chunk,
-so a chunk is a run of zstd blocks: `frame_start` marks a chunk that opens a
-frame (first chunk, 5 min / 4 MiB, agent restart, after a gap) and
-`frame_raw_offset` names where the open frame began. On Codex output this
-compressed 14x against 8x for independent 10 s frames (15x for one frame per
-hour). Seek granularity is one frame (≤ 5 min): replay decodes from the
-chunk at `frame_raw_offset`. A frame left open by an agent crash still
-decodes block by block; the next chunk starts a new frame.
+**Log framing** (spike S2): one zstd frame per stream, flushed per 10 s chunk;
+the rules are in [02e](02e-contract-rules.md#log-framing).
 
 ## Versioning and capability negotiation
 
@@ -331,11 +329,13 @@ passing ones (`DISK_LOW`, `SLOTS_FULL`) are. Valid pairs:
 | `UNKNOWN_OUTCOME` | `INTERNAL` or the step reached |
 | `AWAITING_LOCAL_CONFIRM` | none (interim; a final result follows) |
 
-The hub API codes (500–520: version, request id, scope, approval, pairing,
+The hub API codes (500–532: version, request id, scope, approval, pairing,
 page, resume, filter, order, mask, not found, exists, machine offline,
-credentials, goal phase, secret, size) never appear in a `CommandResult`;
-they are `ErrorDetail.reason` on an RPC error, with `FieldViolation`s for
-field-level detail ([02b](02b-hub-api.md#errors)).
+credentials, goal phase, secret, size, sign-in, Host and Origin, attach ticket,
+machine revoke) never appear in a `CommandResult`; they are `ErrorDetail.reason`
+on an RPC error, with `FieldViolation`s for field-level detail
+([02b](02b-hub-api.md#errors)). The 600–605 codes are the typed `Enroll`
+failures, carried the same way ([02g](02g-agent-security.md)).
 
 `Percent` is never 0-as-unknown: `PercentUnknown.reason` says why. A
 reading with `parse = FAILED` still ships `ShownUsage.raw_screen` (redacted)
@@ -345,14 +345,14 @@ and no buckets; the hub never schedules on it.
 
 - **Principal** = `{id, name, role, kind, device, on_behalf_of}`. `id` is a
   `PrincipalId`, the stable key (audit, `FLEET_OWNER`); `name` is display
-  only. Kinds:
-  `USER`, `SCHEDULER`, `ARBITER`, `API_TOKEN`, `DEVICE` (with `device` and
-  `on_behalf_of` the approving user), `LOCAL_USER` (the OS user at the
-  machine, `id = "local:<user>"`). Owners are Principals everywhere:
+  only. Kinds: `USER`, `SCHEDULER`, `ARBITER`, `API_TOKEN`, `DEVICE` (with
+  `device` and `on_behalf_of` the approving user), `LOCAL_USER` (the OS user at
+  the machine, `id = "local:<user>"`). Owners are Principals everywhere:
   `EnsureSession.owner_principal`, `TmuxSession.owner_principal` (the agent
   fills only `id` from `FLEET_OWNER`), `DrainState.requested_by_principal`,
-  `LocalApprovalDecision.decided_by` (`via` stays: it is the channel). `Role`
-  values are permission sets; they are never compared numerically.
+  `LocalApprovalDecision.decided_by`. `Role` values are permission sets, never
+  compared numerically; a device or token's role is derived from its scopes
+  (02d).
 - **Profiles.** `profile` (empty = the harness default) on `HarnessInfo`,
   `AccountIdentity`, `EnsureProbe`, `GoalSpec`, `EnsureSession`,
   `EnsureWindow`, `RespawnPane` and `EnsureGoalHooks`. One profile per harness
@@ -415,7 +415,8 @@ What the hub can never ask for, by construction of the contract:
   checked against it.
 - **Hub-asserted role is defense in depth only.** A compromised hub can
   claim `ROLE_OWNER`; the real ceiling is the local policy's command classes
-  and approval rules.
+  and approval rules. The role x command matrix the agent applies, and the
+  role the hub derives for a narrowed device or token, are in 02g and 02d.
 
 ## Changes to accepted ADRs
 
@@ -472,9 +473,8 @@ What the hub can never ask for, by construction of the contract:
     A goal still starting is cancelled the same way (`/goal clear`, or
     `Interrupt`), so no `CancelCommand` is needed.
 15. **Max message 1 MiB** rather than gRPC's 4 MiB default; captures and
-    log chunks are capped below it (960 KiB for chunks and snapshot parts).
-16. **Unfrozen until `v0.1`** (ADR 0019): free renames until the tag, then
-    additive only, `buf breaking` against the tag.
+    log chunks are capped below it (960 KiB).
+16. **Unfrozen until `v0.1`** (ADR 0019): free renames, then additive only.
 
 ## Resolved questions (2026-10-02)
 
@@ -488,6 +488,5 @@ What the hub can never ask for, by construction of the contract:
 
 ## Compile check
 
-`buf build`, `buf lint` and `buf generate`: see
-[02e](02e-contract-rules.md#compile-check). All exit 0 with buf 1.73.0 on
-2026-10-02, no lint exceptions.
+`buf build` and `buf lint` exit 0 with buf 1.73.0 (commands in
+[02e](02e-contract-rules.md#compile-check)).

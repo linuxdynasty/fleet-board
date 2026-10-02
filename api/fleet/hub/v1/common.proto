@@ -65,6 +65,23 @@ message SettingsId {
   string value = 1;
 }
 
+// PasskeyId is hub-assigned per registered passkey (not the WebAuthn
+// credential id, which the hub keeps internally).
+message PasskeyId {
+  string value = 1;
+}
+
+// ApiTokenId is hub-assigned per API token. It is public (shown in lists and
+// the audit log); the secret is separate and shown once.
+message ApiTokenId {
+  string value = 1;
+}
+
+// LoginSessionId is hub-assigned per browser sign-in. Not the cookie value.
+message LoginSessionId {
+  string value = 1;
+}
+
 // ---------------------------------------------------------------------------
 // Scopes
 // ---------------------------------------------------------------------------
@@ -97,10 +114,24 @@ enum Scope {
 // AuthMode is how the hub authenticates callers (design.md deployment modes).
 enum AuthMode {
   AUTH_MODE_UNSPECIFIED = 0;
-  // Loopback only, no sign-in; the caller is the owner (ADR 0019).
+  // The hub binds loopback addresses only and refuses to start on any other
+  // (ADR 0019). No sign-in: every call that passes the Host and Origin checks
+  // runs as Principal{id "local-owner", kind USER, role OWNER}. Passkey,
+  // GitHub, API-token and device RPCs answer FAILED_PRECONDITION; attach
+  // still needs a ticket (02f-hub-authentication.md).
   AUTH_MODE_LOCAL_TRUSTED = 1;
-  // Passkey or GitHub sign-in, API tokens, paired devices.
+  // Passkey or GitHub sign-in (cookie), API tokens (bearer), paired devices
+  // (signed requests).
   AUTH_MODE_AUTHENTICATED = 2;
+}
+
+// SignInMethod is one way a person proves who they are in authenticated mode.
+enum SignInMethod {
+  SIGN_IN_METHOD_UNSPECIFIED = 0;
+  // WebAuthn passkey. The hub stores public keys only, never a password.
+  SIGN_IN_METHOD_PASSKEY = 1;
+  // GitHub account, through the hub's GitHub App, limited to the allow-list.
+  SIGN_IN_METHOD_GITHUB = 2;
 }
 
 // ---------------------------------------------------------------------------
@@ -185,6 +216,9 @@ message Operation {
   // Preflight: every failed check (PreflightResult.failed_checks), with the
   // detail line in metadata["detail"].
   repeated fleet.type.v1.ErrorDetail failed_checks = 25;
+  // Trace id (32 hex) of the hub span that issued the command, so a UI or
+  // CLI can link to the trace. Empty when tracing is off.
+  string trace_id = 26;
 }
 
 // GetOperationRequest.
@@ -219,11 +253,18 @@ message GetServerInfoResponse {
   // {"routines", 1}, {"devices", 1}. Clients hide what is not listed.
   repeated fleet.type.v1.Capability features = 6;
   AuthMode auth_mode = 7;
-  // The caller as the hub sees it; unset when not signed in.
+  // The caller as the hub sees it; unset when not signed in. In
+  // local_trusted mode it is the fixed local owner.
   fleet.type.v1.Principal caller = 8;
   // Scopes in effect for the caller: a user gets the scopes of its role, a
   // device or API token at most those, narrowed to what was granted.
   repeated Scope caller_scopes = 9;
+  // Sign-in methods the owner turned on (authenticated mode; empty in
+  // local_trusted). The sign-in page shows only these.
+  repeated SignInMethod sign_in_methods = 10;
+  // True while the hub has no owner: a claim URL was printed by `fleetd` and
+  // whoever opens it becomes the owner (02f). Never true in local_trusted.
+  bool claim_pending = 11;
 }
 
 // FleetSummary is the summary strip on every view: hub-derived counts. A

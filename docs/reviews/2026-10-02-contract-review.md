@@ -48,17 +48,17 @@ Severity: I important, M minor. Risk: refactor risk if deferred (h/m/l).
 | A | `error-model-gaps` | M | l | Error model leaves common failures without reason codes; field-level validation and WebSocket errors unspecified | fixed |
 | A | `capability-map-and-size-limits-incomplete` | M | l | Command-to-capability map and hub API size limits are not specified; payload caps equal the message cap | fixed |
 | A | `small-doc-proto-contradictions` | M | l | Minor scope and idempotency contradictions between 02b and the protos | fixed |
-| B | `no-signin-flow` | M | h | No sign-in, claim, session or API-token flow for authenticated mode; credential carriage is undefined | open |
-| B | `local-trusted-attack-surface` | I | h | local_trusted mode and WebSocket attach: no Origin/Host rules, no attach ticket, principal and auth_mode type undefined | open |
-| B | `hub-identity-and-restore` | I | h | Hub identity material (CA key, fleet_id, account salt, settings_epoch) is absent from the data model and backup, and nothing mints a new settings_epoch on restore | open |
-| B | `device-role-vs-scope` | I | m | Roles and scopes are mixed: what Role does a narrowed device or token send to the agent, and which check wins? | open |
-| B | `scheduler-role-permissions` | I | m | No Role x CommandClass x kind matrix, so what the hub's own SCHEDULER principal may do on the agent is undefined | open |
-| B | `attach-websocket-contract-gaps` | I | m | Browser terminal attach has no error channel, auth or framing spec, and ADR 0016 names the wrong messages | open |
-| B | `enroll-trust-anchor-and-retry` | I | m | Enrollment trusts whatever CA the server presents (TOFU), and a lost Enroll response strands the agent | open |
-| B | `machine-revoke-lifecycle` | I | m | Machine deletion and revocation have no state, cascade or live-connection behaviour | open |
-| B | `connect-enroll-failure-wire` | M | l | Enroll/Connect-level failures (token reasons, fleet mismatch, unknown machine) have no typed representation | open |
-| B | `local-actions-not-audited` | M | l | Security-relevant agent-side decisions have no permanent audit mapping | open |
-| B | `no-trace-context-on-wire` | M | l | Docs promise hub-to-agent traces, but Command, Event and Settings carry no trace context | open |
+| B | `no-signin-flow` | M | h | No sign-in, claim, session or API-token flow for authenticated mode; credential carriage is undefined | fixed |
+| B | `local-trusted-attack-surface` | I | h | local_trusted mode and WebSocket attach: no Origin/Host rules, no attach ticket, principal and auth_mode type undefined | fixed |
+| B | `hub-identity-and-restore` | I | h | Hub identity material (CA key, fleet_id, account salt, settings_epoch) is absent from the data model and backup, and nothing mints a new settings_epoch on restore | fixed |
+| B | `device-role-vs-scope` | I | m | Roles and scopes are mixed: what Role does a narrowed device or token send to the agent, and which check wins? | fixed |
+| B | `scheduler-role-permissions` | I | m | No Role x CommandClass x kind matrix, so what the hub's own SCHEDULER principal may do on the agent is undefined | fixed |
+| B | `attach-websocket-contract-gaps` | I | m | Browser terminal attach has no error channel, auth or framing spec, and ADR 0016 names the wrong messages | fixed |
+| B | `enroll-trust-anchor-and-retry` | I | m | Enrollment trusts whatever CA the server presents (TOFU), and a lost Enroll response strands the agent | fixed |
+| B | `machine-revoke-lifecycle` | I | m | Machine deletion and revocation have no state, cascade or live-connection behaviour | fixed |
+| B | `connect-enroll-failure-wire` | M | l | Enroll/Connect-level failures (token reasons, fleet mismatch, unknown machine) have no typed representation | fixed |
+| B | `local-actions-not-audited` | M | l | Security-relevant agent-side decisions have no permanent audit mapping | fixed |
+| B | `no-trace-context-on-wire` | M | l | Docs promise hub-to-agent traces, but Command, Event and Settings carry no trace context | fixed |
 | C | `goal-binding-reused-pane` | I | h | Goal identity for hooks is bound by pane env or by cwd, and neither works for a reused session | open |
 | C | `reuse-workdir-mismatch` | I | h | Session reuse has no check that the pane is in the goal's repo or worktree | open |
 | C | `keystroke-signal-goal-panes` | I | h | The developer-keystroke signal that suppresses nudges and drives the typing banner has no wire carrier for goal panes | open |

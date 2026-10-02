@@ -3,6 +3,15 @@
 // A device holds its own key pair; the hub stores only the public key and
 // the scopes the owner granted. A device acts as Principal{kind DEVICE,
 // device, on_behalf_of: the owner who approved it}.
+//
+// How a device authenticates (02f-hub-authentication.md): every request
+// carries `Authorization: Fleet-Device <device id>.<unix seconds>.<nonce>.
+// <signature>`, an Ed25519 signature with the device key over the method, path,
+// SHA-256 of the body, the timestamp and the nonce; the hub refuses a
+// timestamp more than 60 s off or a nonce it saw in that window. A stream
+// (Watch) is signed once at open and ends the moment the device is revoked.
+// Never a cookie, so a web page cannot ride it. The role the agent sees for a
+// device is derived from its scopes (02d, "Role sent to the agent").
 syntax = "proto3";
 
 package fleet.hub.v1;
@@ -33,10 +42,13 @@ message DeviceSpec {
   bytes public_key = 3;
   // The user the device acts for (Principal.id); set at approval.
   fleet.type.v1.PrincipalId principal = 4;
-  // Scopes the device asked for when pairing.
+  // Scopes the device asked for when pairing. An empty request means the
+  // phone default, SCOPE_READ and SCOPE_APPROVALS; SCOPE_LOGS is never in the
+  // default, and neither is SCOPE_ADMIN or SCOPE_SETTINGS.
   repeated Scope requested_scopes = 5;
-  // Granted scopes; a subset of the user's. May include SCOPE_LOGS only when
-  // the owner ticked it (ADR 0019).
+  // Granted scopes; a subset of the user's, and of what the owner ticked.
+  // May include SCOPE_LOGS only when the owner ticked it (ADR 0019). Narrowed
+  // again to the user's role on every call.
   repeated Scope scopes = 6;
   // Unset while pairing is pending.
   google.protobuf.Timestamp approved_time = 7;
@@ -94,7 +106,9 @@ message ApprovePairingRequest {
   uint64 expected_version = 3;
   // Must match the code the device shows.
   string pairing_code = 4;
-  // Scopes granted; may be fewer than requested.
+  // Scopes granted; may be fewer than requested, never more. SCOPE_LOGS is
+  // granted only when listed here by the owner, even if the device asked for
+  // it (anything else not covered is SCOPE_NOT_GRANTABLE).
   repeated Scope scopes = 5;
 }
 

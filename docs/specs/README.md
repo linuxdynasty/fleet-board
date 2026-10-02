@@ -14,6 +14,8 @@ the next starts, and no implementation code is written until step 4 is done.
 | 2c | [02c-hub-watch-and-filters.md](02c-hub-watch-and-filters.md) | How does Watch subscribe, resume and filter, and which fields does each resource filter on? | Draft |
 | 2d | [02d-hub-authz.md](02d-hub-authz.md) | Which scope does each RPC and Watch topic need, and how do roles map to scopes? | Draft |
 | 2e | [02e-contract-rules.md](02e-contract-rules.md) | Naming rules, codegen, the v0.1 freeze, the command-to-capability map and agent size limits | Draft |
+| 2f | [02f-hub-authentication.md](02f-hub-authentication.md) | How do people, scripts and a phone sign in, what carries the credential, how is the terminal attach opened? | Draft |
+| 2g | [02g-agent-security.md](02g-agent-security.md) | Who does the agent trust at enrollment, what is hub identity, what happens on revoke and restore, what may each role ask an agent? | Draft |
 | 3 | [03-workflows.md](03-workflows.md) (+ [03b](03b-usage-and-sync.md)–[03g](03g-load-and-handoff.md)) | How do agent and hub cooperate for each flow (sequence, state machines, volumes, consistency)? | Draft |
 | 4 | [04-technology-review.md](04-technology-review.md) + [`spikes/`](../../spikes/README.md) | Given the workflows, which storage, queueing and other technologies do we need? | Draft |
 

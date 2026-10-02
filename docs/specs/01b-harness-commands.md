@@ -35,7 +35,7 @@ adapter (unknown commands fall into **deny**):
 | Class | Examples | From the hub |
 |---|---|---|
 | observe | `/status`, `/usage`, `/context`, `/diff`, `/ps`, `/tasks`, `/recap`, `/hud` | allowed, any idle prompt |
-| session | `/compact`, `/model`, `/effort`, `/fast`, `/plan`, `/rename`, `/resume`, `/stop`, `/fork` | allowed with `operator` role |
+| session | `/compact`, `/model`, `/effort`, `/fast`, `/plan`, `/rename`, `/resume`, `/stop`, `/fork` | allowed with `operator` role (matrix: [02g](02g-agent-security.md)) |
 | goal | `/goal <text>`, `/goal consent …`, `/goal done` | allowed; the goal command itself (G3) |
 | review | `/review`, `/code-review`, `/security-review` | allowed with `operator` role |
 | destructive | `/clear`, `/rewind`, `/delete`, `/archive`, `/exit`, `/quit` | local approval or explicit owner action |

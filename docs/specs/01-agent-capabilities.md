@@ -114,9 +114,9 @@ dispatch there").
 
 ## A. Identity, connection, settings
 
-- **A1 Enroll.** `fleet-agent enroll --token T [--hub addr]`: Ed25519 key,
-  CSR, B1 facts; stores certificate and pinned hub CA. Single-use token. The
-  hub returns the fleet-wide **account salt** used by C2.
+- **A1 Enroll.** `fleet-agent enroll --token T [--hub addr]`: verifies the hub
+  against the CA fingerprint in the token (02g), sends CSR and B1 facts, pins
+  the CA. Single-use, retry-safe. Hub returns the **account salt** (C2).
 - **A2 Find the hub.** Cached last-good address, then mDNS (`_fleetd._tcp`),
   then configured addresses. Accept a candidate only if TLS verifies against
   the pinned CA. Linux without `avahi` skips mDNS; `doctor` says so.

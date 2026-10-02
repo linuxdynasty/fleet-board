@@ -115,6 +115,18 @@ settings, not commands). Hub features the agent may rely on are in
 `HelloAck.hub_capabilities` (`snapshot.parts`, `event.delivery`). Reserved,
 never advertised: `exec.raw`.
 
+## Log framing
+
+**Log framing** (spike S2, 2026-10-02). The agent keeps one zstd frame per
+stream open for up to 5 min or 4 MiB raw and flushes it at every 10 s chunk,
+so a chunk is a run of zstd blocks: `frame_start` marks a chunk that opens a
+frame (first chunk, 5 min / 4 MiB, agent restart, after a gap) and
+`frame_raw_offset` names where the open frame began. On Codex output this
+compressed 14x against 8x for independent 10 s frames (15x for one frame per
+hour). Seek granularity is one frame (≤ 5 min): replay decodes from the
+chunk at `frame_raw_offset`. A frame left open by an agent crash still
+decodes block by block; the next chunk starts a new frame.
+
 ## Size limits (agent wire)
 
 The hub API's limits are in [02b](02b-hub-api.md#size-limits). The agent wire:

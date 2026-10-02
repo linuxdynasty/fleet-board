@@ -25,6 +25,12 @@ enum MachineState {
   MACHINE_STATE_STALE = 3;
   // 3 min without heartbeat, or Bye.
   MACHINE_STATE_OFFLINE = 4;
+  // Revoked by the owner (RevokeMachine): its certificate serials are on the
+  // revocation list and every Hello gets Bye{REVOKED}. The row, its history
+  // and its audit trail stay until DeleteMachine. The machine comes back only
+  // by re-enrolling with a new token that names it as previous_machine, which
+  // returns the same machine id to ENROLLED with fresh certificate serials.
+  MACHINE_STATE_REVOKED = 5;
 }
 
 // HarnessHealth is the hub's state per (machine, harness) (03e W11).
@@ -110,6 +116,14 @@ message MachineDrain {
   google.protobuf.Timestamp drain_time = 4;
 }
 
+// MachineRevocation records RevokeMachine. Set once and never cleared.
+message MachineRevocation {
+  google.protobuf.Timestamp revoke_time = 1;
+  fleet.type.v1.Principal by = 2;
+  // Up to 512 bytes.
+  string reason = 3;
+}
+
 // MachineSpec is what the owner and hub decided about a machine. Covered by
 // Machine.version and expected_version.
 message MachineSpec {
@@ -118,6 +132,8 @@ message MachineSpec {
   // Hub-assigned labels; local additions show in MachineStatus.labels.
   repeated string labels = 2;
   MachineDrain drain = 3;
+  // Set once the machine is revoked (status.state is then REVOKED).
+  MachineRevocation revocation = 4;
 }
 
 // MachineTelemetry is the heartbeat-fed part of the status: it changes every
@@ -254,8 +270,32 @@ message UndrainMachineResponse {
   Machine machine = 2;
 }
 
-// DeleteMachineRequest revokes the certificate serials; the next Hello is
-// refused. History stays in the audit log.
+// RevokeMachineRequest cuts a machine off and keeps its row (03-workflows.md,
+// "Revoke and delete"). In one transaction the hub adds every certificate
+// serial of the machine to the revocation list, marks it REVOKED and ends its
+// goals; after commit it sends Bye{REVOKED} on the live Connect stream and
+// closes that agent's Terminal, SessionLog and attach streams, so a stolen
+// laptop stops receiving commands at once instead of at its next reconnect.
+// Idempotent: a revoked machine returns itself.
+message RevokeMachineRequest {
+  string request_id = 1;
+  fleet.type.v1.MachineId id = 2;
+  uint64 expected_version = 3;
+  // Up to 512 bytes; shown in the audit log.
+  string reason = 4;
+}
+
+// RevokeMachineResponse.
+message RevokeMachineResponse {
+  Machine machine = 1;
+}
+
+// DeleteMachineRequest forgets a machine that is already REVOKED (a machine
+// in any other state is FAILED_PRECONDITION / MACHINE_NOT_REVOKED). The row
+// and the rows that only make sense with it (connections, outbox, probes,
+// inventory, attaches) are removed; sessions, goals and logs it ran keep
+// their history under the machine id, and the audit log keeps everything.
+// After delete, `previous_machine` of an enrollment token can no longer name it.
 message DeleteMachineRequest {
   string request_id = 1;
   fleet.type.v1.MachineId id = 2;
@@ -272,7 +312,10 @@ message CreateEnrollmentTokenRequest {
   string machine_name = 2;
   // At most 24 h; default 15 min.
   google.protobuf.Duration ttl = 3;
-  // Set to re-enroll a known machine (EnrollRequest.previous_machine_id).
+  // Set to re-enroll a known machine (EnrollRequest.previous_machine_id). The
+  // machine must be REVOKED or past its certificate lifetime
+  // (FAILED_PRECONDITION / MACHINE_NOT_REENROLLABLE otherwise), and its row
+  // must still exist (not deleted).
   fleet.type.v1.MachineId previous_machine = 4;
 }
 
@@ -281,10 +324,17 @@ message CreateEnrollmentTokenRequest {
 // with the same request_id inside the idempotency window fails with
 // ALREADY_EXISTS / SECRET_ALREADY_DELIVERED and the owner creates a new one.
 message CreateEnrollmentTokenResponse {
+  // Self-describing: `fbe1_<base64url of: version byte, SHA-256 of the fleet
+  // CA certificate, 32 random secret bytes>`. The agent checks the server
+  // chain against the embedded fingerprint before it sends the token or a
+  // CSR (the trust anchor, 02g-agent-security.md), so nothing needs comparing
+  // by eye. Only the hash of the secret part is stored.
   string token = 1;
   google.protobuf.Timestamp expire_time = 2;
-  // CA fingerprint the agent pins, for the owner to compare.
+  // SHA-256 of the CA certificate (hex), the one inside the token, for an
+  // owner who wants to check it out of band.
   string ca_fingerprint = 3;
-  // Ready-to-copy `fleet-agent enroll --hub … --token …` line.
+  // Ready-to-copy `fleet-agent enroll --token …` line (plus `--hub <address>`
+  // when the hub has more than one).
   string enroll_command = 4;
 }

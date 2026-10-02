@@ -1,0 +1,337 @@
+// fleet.hub.v1 sign-in, users and login sessions (ADR 0019, 02f-hub-
+// authentication.md). Only authenticated mode uses these; in local_trusted
+// mode every RPC here except GetServerInfo answers FAILED_PRECONDITION
+// (nobody signs in, the caller is the fixed local owner).
+//
+// How a browser proves who it is: an HttpOnly, SameSite=Strict session cookie
+// set by the hub in the response of RedeemInvite, FinishPasskeyLogin or the
+// GitHub callback; the cookie never appears in a message body. The hub stores
+// only a hash of it. The same cookie covers unary calls, Watch and the
+// same-origin WebSocket attach. The CLI and scripts use an API token
+// (token.proto), a phone a paired device (device.proto).
+//
+// The hub stores no passwords: a user signs in with a WebAuthn passkey or a
+// GitHub account on the allow-list. GitHub sign-in is a browser redirect
+// flow served as plain HTTP (GET /auth/github/start and /auth/github/
+// callback, 02f), not an RPC; its result is the same cookie.
+syntax = "proto3";
+
+package fleet.hub.v1;
+
+import "fleet/hub/v1/common.proto";
+import "fleet/type/v1/ids.proto";
+import "fleet/type/v1/status.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/timestamp.proto";
+
+// ---------------------------------------------------------------------------
+// Users
+// ---------------------------------------------------------------------------
+
+// UserState is derived from the spec and the credentials the user holds.
+enum UserState {
+  USER_STATE_UNSPECIFIED = 0;
+  // Created by an invite (or the claim URL) and not yet signed in once.
+  USER_STATE_INVITED = 1;
+  USER_STATE_ACTIVE = 2;
+  // spec.disabled: sessions end at once; tokens and devices are refused until
+  // the owner enables the user again.
+  USER_STATE_DISABLED = 3;
+}
+
+// PasskeyInfo is one registered WebAuthn credential, without key material.
+message PasskeyInfo {
+  PasskeyId id = 1;
+  // Name the user gave it ("MacBook Touch ID"). Untrusted text, 128 bytes.
+  string name = 2;
+  google.protobuf.Timestamp create_time = 3;
+  google.protobuf.Timestamp last_used_time = 4;
+}
+
+// GitHubLink is the GitHub account a user signed in with. The stable key is
+// the numeric id, so a renamed or recycled login cannot take over a user.
+message GitHubLink {
+  uint64 user_id = 1;
+  // As GitHub shows it. Untrusted text.
+  string login = 2;
+  google.protobuf.Timestamp link_time = 3;
+}
+
+// UserSpec is what the owner decided about a person.
+message UserSpec {
+  // Untrusted text, 128 bytes.
+  string display_name = 1;
+  // ROLE_VIEWER, ROLE_OPERATOR or ROLE_OWNER; the other roles are
+  // INVALID_ARGUMENT. Roles map to scopes in 02d-hub-authz.md.
+  fleet.type.v1.Role role = 2;
+  // The GitHub login allowed to sign in as this user (lower case, 39 bytes);
+  // empty = no GitHub sign-in for this user. This field is the allow-list.
+  // The first successful sign-in pins the numeric id in status.github.
+  string github_login = 3;
+  bool disabled = 4;
+}
+
+// UserStatus is what the hub observed.
+message UserStatus {
+  google.protobuf.Timestamp observed_time = 1;
+  // Watch hub_seq of the change that last touched this status.
+  uint64 hub_seq = 2;
+  UserState state = 10;
+  repeated PasskeyInfo passkeys = 11;
+  GitHubLink github = 12;
+  // Volatile.
+  google.protobuf.Timestamp last_sign_in_time = 13;
+  // Set while an invite is outstanding.
+  google.protobuf.Timestamp invite_expire_time = 14;
+}
+
+// User is a person who can sign in. There is no User in local_trusted mode.
+message User {
+  // The user's Principal.id.
+  fleet.type.v1.PrincipalId id = 1;
+  uint64 version = 2;
+  google.protobuf.Timestamp create_time = 3;
+  google.protobuf.Timestamp update_time = 4;
+
+  UserSpec spec = 10;
+  UserStatus status = 11;
+}
+
+// ListUsersRequest. Filter and order_by names: 02c-hub-watch-and-filters.md.
+// Users have no Watch topic: they change by owner action only.
+message ListUsersRequest {
+  int32 page_size = 1;
+  string page_token = 2;
+  string filter = 3;
+  string order_by = 4;
+}
+
+// ListUsersResponse.
+message ListUsersResponse {
+  repeated User users = 1;
+  string next_page_token = 2;
+}
+
+// UpdateUserRequest. Updatable: spec.display_name, spec.role,
+// spec.github_login, spec.disabled. Demoting or disabling a user narrows its
+// tokens and devices on their next call. A change that leaves the hub with no
+// active owner, or the user with no sign-in method, is FAILED_PRECONDITION /
+// LAST_CREDENTIAL.
+message UpdateUserRequest {
+  string request_id = 1;
+  User user = 2;
+  google.protobuf.FieldMask update_mask = 3;
+  uint64 expected_version = 4;
+}
+
+// UpdateUserResponse.
+message UpdateUserResponse {
+  User user = 1;
+}
+
+// CreateUserInviteRequest invites a person (SCOPE_ADMIN). It creates the User
+// in state INVITED and a one-time invite. The first owner is created the same
+// way by `fleetd`, which prints the invite as the claim URL.
+message CreateUserInviteRequest {
+  string request_id = 1;
+  string display_name = 2;
+  fleet.type.v1.Role role = 3;
+  // Optional: also allow this GitHub login to sign in (spec.github_login).
+  string github_login = 4;
+  // At most 7 days; default 24 h.
+  google.protobuf.Duration ttl = 5;
+}
+
+// CreateUserInviteResponse. The token is shown once and stored only as a hash,
+// and it is excluded from the stored idempotent response (a replay is
+// ALREADY_EXISTS / SECRET_ALREADY_DELIVERED).
+message CreateUserInviteResponse {
+  User user = 1;
+  // 256-bit random, base64url. Goes in the URL fragment, never the query, so
+  // it reaches no server log or Referer.
+  string invite_token = 2;
+  // "/invite#<token>" relative to the hub's public origin.
+  string invite_path = 3;
+  google.protobuf.Timestamp expire_time = 4;
+}
+
+// RedeemInviteRequest is sent by the invited person's browser, unauthenticated
+// (SCOPE none), from the page behind the invite or claim URL.
+message RedeemInviteRequest {
+  // Idempotency key, scoped by (peer address, SHA-256 of invite_token)
+  // because there is no principal yet.
+  string request_id = 1;
+  string invite_token = 2;
+  // The name the person wants shown; replaces the invited name when set.
+  string display_name = 3;
+}
+
+// RedeemInviteResponse. The hub burns the invite and sets a registration
+// session cookie: it allows only passkey registration (or the GitHub link
+// flow) for this user, for 15 minutes. If the person registers nothing in
+// that time the invite is reissued (claim URL: reprinted by `fleetd`).
+message RedeemInviteResponse {
+  User user = 1;
+  google.protobuf.Timestamp registration_expire_time = 2;
+}
+
+// ---------------------------------------------------------------------------
+// Passkeys (WebAuthn)
+// ---------------------------------------------------------------------------
+//
+// The options and the credential travel as the W3C WebAuthn JSON forms
+// (PublicKeyCredentialCreationOptionsJSON, RegistrationResponseJSON, and the
+// request/authentication pair), exactly as navigator.credentials and the
+// parse...FromJSON helpers use them. The hub validates them with its WebAuthn
+// library; no client code interprets them. At most 16 KiB each. The ceremony
+// id is single use and expires in 5 minutes (PASSKEY_CEREMONY_INVALID), and it
+// plays the role of request_id: a replay of Finish with the same ceremony id
+// and body returns the stored response.
+
+// BeginPasskeyRegistrationRequest starts adding a passkey to the caller's own
+// user. Allowed for a signed-in user and for a registration session
+// (RedeemInvite); SCOPE self.
+message BeginPasskeyRegistrationRequest {
+  // Name for the passkey; 128 bytes.
+  string name = 1;
+}
+
+// BeginPasskeyRegistrationResponse.
+message BeginPasskeyRegistrationResponse {
+  string ceremony_id = 1;
+  // PublicKeyCredentialCreationOptions as JSON.
+  string options_json = 2;
+  google.protobuf.Timestamp expire_time = 3;
+}
+
+// FinishPasskeyRegistrationRequest.
+message FinishPasskeyRegistrationRequest {
+  string ceremony_id = 1;
+  // RegistrationResponseJSON from the browser.
+  string credential_json = 2;
+}
+
+// FinishPasskeyRegistrationResponse. For a registration session this also
+// upgrades it to a full session (cookie rotated) and marks the user ACTIVE.
+message FinishPasskeyRegistrationResponse {
+  User user = 1;
+  PasskeyInfo passkey = 2;
+}
+
+// BeginPasskeyLoginRequest starts a sign-in with a discoverable credential,
+// so no username is asked for (SCOPE none, rate limited per peer address).
+message BeginPasskeyLoginRequest {}
+
+// BeginPasskeyLoginResponse.
+message BeginPasskeyLoginResponse {
+  string ceremony_id = 1;
+  // PublicKeyCredentialRequestOptions as JSON.
+  string options_json = 2;
+  google.protobuf.Timestamp expire_time = 3;
+}
+
+// FinishPasskeyLoginRequest (SCOPE none).
+message FinishPasskeyLoginRequest {
+  string ceremony_id = 1;
+  // AuthenticationResponseJSON from the browser.
+  string credential_json = 2;
+}
+
+// FinishPasskeyLoginResponse. The session cookie is set on the HTTP response.
+// A bad assertion, an unknown credential and a disabled user all answer
+// UNAUTHENTICATED / CREDENTIALS_INVALID, so the response does not say which.
+message FinishPasskeyLoginResponse {
+  User user = 1;
+  google.protobuf.Timestamp session_expire_time = 2;
+}
+
+// DeletePasskeyRequest removes one passkey of the caller's own user (ADMIN may
+// remove anyone's). Removing the last sign-in method is LAST_CREDENTIAL.
+message DeletePasskeyRequest {
+  string request_id = 1;
+  PasskeyId id = 2;
+}
+
+// DeletePasskeyResponse.
+message DeletePasskeyResponse {
+  User user = 1;
+}
+
+// ---------------------------------------------------------------------------
+// Login sessions
+// ---------------------------------------------------------------------------
+
+// LoginSessionSpec is what makes a session valid.
+message LoginSessionSpec {
+  fleet.type.v1.PrincipalId user = 1;
+  SignInMethod method = 2;
+  // Untrusted text, 256 bytes.
+  string user_agent = 3;
+  string peer_address = 4;
+  // True for the 15-minute session RedeemInvite sets.
+  bool registration_only = 5;
+  // Absolute lifetime (HubSettings.session_max_age); the idle limit
+  // (session_idle_timeout) shortens it.
+  google.protobuf.Timestamp expire_time = 6;
+  // Set once signed out or revoked; the cookie is refused at once, including
+  // on open Watch streams and attaches.
+  google.protobuf.Timestamp revoked_time = 7;
+}
+
+// LoginSessionStatus is observed use.
+message LoginSessionStatus {
+  google.protobuf.Timestamp observed_time = 1;
+  uint64 hub_seq = 2;
+  // Volatile: written at most once a minute.
+  google.protobuf.Timestamp last_used_time = 10;
+}
+
+// LoginSession is one browser sign-in. Has no Watch topic.
+message LoginSession {
+  LoginSessionId id = 1;
+  uint64 version = 2;
+  google.protobuf.Timestamp create_time = 3;
+  google.protobuf.Timestamp update_time = 4;
+
+  LoginSessionSpec spec = 10;
+  LoginSessionStatus status = 11;
+  // Output-only: true for the session making this call.
+  bool current = 12;
+}
+
+// SignOutRequest ends the caller's own login session and clears the cookie.
+// An API token or device uses RevokeApiToken or RevokeDevice instead.
+message SignOutRequest {
+  string request_id = 1;
+}
+
+// SignOutResponse.
+message SignOutResponse {}
+
+// ListLoginSessionsRequest lists the caller's own sessions; ADMIN lists
+// everyone's. Filter and order_by names: 02c-hub-watch-and-filters.md.
+message ListLoginSessionsRequest {
+  int32 page_size = 1;
+  string page_token = 2;
+  string filter = 3;
+  string order_by = 4;
+}
+
+// ListLoginSessionsResponse.
+message ListLoginSessionsResponse {
+  repeated LoginSession login_sessions = 1;
+  string next_page_token = 2;
+}
+
+// RevokeLoginSessionRequest ends one session (the caller's own; ADMIN any).
+message RevokeLoginSessionRequest {
+  string request_id = 1;
+  LoginSessionId id = 2;
+  uint64 expected_version = 3;
+}
+
+// RevokeLoginSessionResponse.
+message RevokeLoginSessionResponse {
+  LoginSession login_session = 1;
+}
