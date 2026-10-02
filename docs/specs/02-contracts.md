@@ -342,16 +342,15 @@ the affected parts of 0004, 0006, 0009 and 0010:
 15. **Max message 1 MiB** rather than gRPC's 4 MiB default; captures and
     log chunks are capped below it.
 
-## Open questions
+## Resolved questions (2026-10-02)
 
-1. Exact `AccountKey` construction (proposed HMAC-SHA256(salt, identity
-   string), `salt_version = 1`) and what counts as the identity string per
-   harness.
-2. Whether `Snapshot` should be chunked above 1 MiB on machines with very
-   many panes, or whether the cap is simply never reached at 10 panes × 50
-   machines.
-3. Whether `Event.harness_hook` payload fields are enough once Codex and
-   Muse hook payloads are probed (E8 is v2).
+1. `AccountKey` = HMAC-SHA256(fleet salt from enrollment, the identity string
+   the harness's status screen shows), `salt_version = 1`; for harnesses with no
+   identity on screen (Codex), the owner maps the account on the hub.
+2. No snapshot chunking for now; 1 MiB covers 50 machines × 10 panes. Revisit
+   if a snapshot nears the cap.
+3. Codex and Muse hook payloads are probed in v2 (E8); `HarnessHookEvent`
+   is extended then if needed.
 
 ## Compile check
 

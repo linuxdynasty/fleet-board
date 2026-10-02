@@ -1,6 +1,6 @@
 # 0011. Contract amendments to 0004, 0006, 0009 and 0010
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-10-01
 - Deciders: linuxdynasty (drafted with Claude Fable 5.1)
 - Supersedes, in part: [0004](0004-agent-connectivity.md),
