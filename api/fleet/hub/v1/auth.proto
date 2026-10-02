@@ -188,7 +188,7 @@ message RedeemInviteRequest {
   string display_name = 3;
 }
 
-// RedeemInviteResponse. The hub burns the invite, activates the User the
+// RedeemInviteResponse. The hub burns the invite (the User stays INVITED until its first credential), binds the User the
 // invite already created (a restart of an unclaimed hub reuses that row) and
 // sets a registration session cookie: it allows only passkey registration (or
 // the GitHub link flow) for this user, for 15 minutes. If the person

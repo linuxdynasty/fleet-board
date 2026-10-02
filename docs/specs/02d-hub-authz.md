@@ -213,6 +213,7 @@ one is refused as a whole):
 A token or device with `SETTINGS` but not `ADMIN` therefore cannot turn off a
 sign-in method, stretch a session, or set a tiny `log_retention` that would
 prune every stored log (which would bypass the `LOGS`-only delete).
+
 ## Scope per Watch topic
 
 A topic the caller cannot read is refused when the stream opens

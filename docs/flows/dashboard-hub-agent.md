@@ -228,7 +228,7 @@ sequenceDiagram
   D->>H: 2. GetServerInfo{}
   H-->>D: 3. GetServerInfoResponse{auth_mode AUTHENTICATED, sign_in_methods, claim_pending true}
   D->>H: 4. RedeemInvite{request_id, invite_token, display_name}
-  H->>H: 5. tx: burn invite, activate the pre-created INVITED User, registration session
+  H->>H: 5. tx: burn invite, registration session for the pre-created User (still INVITED)
   H-->>D: 6. RedeemInviteResponse{user, registration_expire_time} + Set-Cookie registration session
   D->>H: 7. BeginPasskeyRegistration{name}
   H-->>D: 8. BeginPasskeyRegistrationResponse{ceremony_id, options_json, expire_time}
@@ -247,7 +247,7 @@ sequenceDiagram
 4. [`RedeemInvite`](../../api/fleet/hub/v1/auth.proto) is unauthenticated. Its
    idempotency key is `(peer address, SHA-256 of invite_token)`; redemptions are
    limited to 10 a minute per peer address.
-5. The invite is burned and the user (created with the invite, so a restart reuses the row) activated in one transaction. A wrong, used or
+5. The invite is burned and a registration session is opened for the user (created with the invite, so a restart reuses the row) in one transaction; the user stays `INVITED` until the first credential. A wrong, used or
    expired token is `INVALID_ARGUMENT` / `INVITE_INVALID` with no hint.
 6. The cookie is a **registration session**: it may register a credential and do
    nothing else, for 15 minutes. If nothing is registered the invite is reissued

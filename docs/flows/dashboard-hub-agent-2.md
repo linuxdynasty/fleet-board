@@ -105,7 +105,7 @@ with the latest values; any other change goes at once and includes the current v
 | [`Machine`](../../api/fleet/hub/v1/machine.proto) | `status.telemetry.*`, `status.unfit[].next_check_time` | 30 s |
 | [`Account`](../../api/fleet/hub/v1/account.proto) | `status.pacing.ahead_points`, `rank`, `projected_unused_percent`, `idle_causes` | 30 s |
 | [`Session`](../../api/fleet/hub/v1/session.proto), [`Goal`](../../api/fleet/hub/v1/goal.proto) | pane `activity`, `last_input_time`, `ready_pattern_showing`, log counters; `status.attached_clients`; `status.first_line`, `head_commit`, `usage_consumed` | 5 s |
-| [`WorkItem`](../../api/fleet/hub/v1/work.proto), [`Repo`](../../api/fleet/hub/v1/repo.proto) | `status.dispatch_block` | 30 s |
+| [`WorkItem`](../../api/fleet/hub/v1/work.proto), [`Repo`](../../api/fleet/hub/v1/repo.proto) | `WorkItem.dispatch_block`, `Repo.status.dispatch_block` | 30 s |
 | [`Device`](../../api/fleet/hub/v1/device.proto), [`Integration`](../../api/fleet/hub/v1/work.proto) | `status.last_seen_time`; `last_sync_time`, `sync_lag`, `rate_limits` | 30 s |
 
 State changes are never volatile: a machine going `STALE`, a goal changing `phase` or a pacing
@@ -320,7 +320,7 @@ stateDiagram-v2
 | `READY_TIMEOUT`, harness crash in `wait_ready` | one retry in a new window, then another machine; counts toward giving up |
 | Three counted failures on three machines | goal `START_EXHAUSTED`, work item `MANUAL_ONLY`, triage `START_FAILED` naming the three reasons |
 | `GOAL_FILE_NOT_SEEN` after typing | goal `START_UNKNOWN`; hooks are re-checked once a day per `(machine, harness)` |
-| Local approval needed and nobody there | `LOCAL_CONFIRM_TIMEOUT`; the machine is skipped for 30 minutes and the item is planned elsewhere (a reuse that needed approval opens a new window instead) |
+| Local approval needed and nobody there | `LOCAL_CONFIRM_TIMEOUT`; the machine is skipped for 30 minutes and the item is planned elsewhere |
 | `not_after_time` passes mid-composite | the step in flight finishes, the rest is `EXPIRED`; a window already created is left tagged for a triage decision |
 | Same `StartGoal` sent twice (client retry) | same `request_id` returns the same goal and operation; nothing is sent twice |
 | Developer types into the reused pane | [`PaneInput`](../../api/fleet/agent/v1/events.proto) clears availability; the next check fails `SESSION_NOT_AVAILABLE`; new window |

@@ -263,8 +263,8 @@ fleet; an agent refuses a hub with another fleet id. `HelloAck.hub_instance_id`
 changes on every hub process start. `install_id` is minted once per agent
 install and sent in `EnrollRequest` and `Hello`; a copied state directory shows
 as two hosts displacing each other ([02g](02g-agent-security.md#machine-lifecycle-revoke-and-delete)).
-`EnrollRequest.previous_machine_id` re-enrolls a revoked machine instead of
-creating a second one. Where the CA key, `fleet_id`, salt and `settings_epoch`
+An enroll token naming `previous_machine` re-enrolls that machine;
+`EnrollRequest.previous_machine_id` is only checked for a mismatch. Where the CA key, `fleet_id`, salt and `settings_epoch`
 live and how restore treats them: 02g, "Hub identity and restore".
 
 **Backpressure classes.** The agent's bounded send queue sheds SHED events

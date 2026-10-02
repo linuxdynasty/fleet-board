@@ -347,4 +347,3 @@ What happens to a `StartGoal` that is in flight when the drain is accepted:
 | A goal's harness crashes on a drained machine | the goal recovers there (respawn, one nudge) or goes `STUCK` for a person; drain never turns it into a failed start |
 | `UndrainMachine` after a local drain | `REJECTED_BY_POLICY` / `DRAINING` in the operation |
 | Duplicate `DrainMachine` | same `request_id`: the stored response; a repeat with a new id is harmless because `Drain` is declarative |
-

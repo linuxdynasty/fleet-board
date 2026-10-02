@@ -314,7 +314,7 @@ stateDiagram-v2
 **What happens and why.** A phone is a client that holds its own **Ed25519 key
 pair** and signs every request; it carries no cookie and no password, so a web page
 cannot ride its credential. Pairing is a handshake with a human in the middle: the phone
-asks to pair, both screens show the same **six-digit code**, and the owner compares them
+asks to pair, the phone shows a **six-digit code** and the owner types it on the dashboard
 and approves with the scopes to grant. The default for a phone is `READ` and `APPROVALS`, and
 **never** `LOGS`, `ADMIN` or `SETTINGS`. From then on the phone sees the
 fleet, gets the triage feed and can answer a permission prompt (D5) from anywhere. What it can do is
@@ -401,4 +401,3 @@ sequenceDiagram
 | Phone is offline when a prompt appears | no push in v1; the card is waiting when the app opens, until `expire_time` (then fallback `DENY`) |
 | User demoted | the phone narrows on its next call; open streams get `RESYNC_REQUIRED` / `SCOPES_CHANGED` |
 | Phone lost | [`RevokeDevice`](../../api/fleet/hub/v1/service.proto) (`ADMIN`, or the device itself): effective at once, including open streams |
-

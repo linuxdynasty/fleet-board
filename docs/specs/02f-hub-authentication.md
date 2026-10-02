@@ -106,8 +106,8 @@ below is shown only by `fleetd claim`, never re-printed or logged.
 1. The page reads the fragment and calls `RedeemInvite{invite_token,
    display_name}`. The invite already created the user (state `INVITED`; a
    restart reuses that same row, so restarts never leave orphan owners).
-   `RedeemInvite` burns the invite, activates that pre-created user and sets a
-   **registration session** cookie: it can register a passkey or link GitHub
+   `RedeemInvite` burns the invite and sets a **registration session** cookie
+   for that user, which stays `INVITED` until step 2: it can register a passkey or link GitHub
    for that user and do nothing else, for 15 minutes.
 2. The owner registers a passkey (`BeginPasskeyRegistration`,
    `FinishPasskeyRegistration`), or links a GitHub account (below). The first
@@ -156,7 +156,7 @@ endpoints, because it is a browser redirect:
 
 | Endpoint | What it does |
 |---|---|
-| `GET /auth/github/start?purpose=signin\|link` | Sets the `__Host-fleet_oauth` **state cookie** and redirects to GitHub's authorize URL. The cookie is `Secure`, `HttpOnly`, **`SameSite=Lax`**, `Path=/auth/github`, valid 10 minutes, and holds the random OAuth `state` and a PKCE verifier. `link` needs a full or registration session: this request is same-site, so the Strict session cookie arrives, and the hub records `state -> {purpose, user, session}` server-side (hashed, single use, 10 minutes) |
+| `GET /auth/github/start?purpose=signin\|link` | Sets the `__Host-fleet_oauth` **state cookie** and redirects to GitHub's authorize URL. The cookie is `Secure`, `HttpOnly`, **`SameSite=Lax`**, `Path=/` (the `__Host-` prefix requires it), no `Domain`, valid 10 minutes, and holds the random OAuth `state` and a PKCE verifier. `link` needs a full or registration session: this request is same-site, so the Strict session cookie arrives, and the hub records `state -> {purpose, user, session}` server-side (hashed, single use, 10 minutes) |
 | `GET /auth/github/callback?code&state` | Arrives as a cross-site top-level redirect from github.com, so the Strict session cookie is not sent but the Lax state cookie is. Checks `state` against the cookie and the server-side record (either missing or different: `/signin?error=CREDENTIALS_INVALID`), burns it, exchanges the code, reads the user, then: `signin` finds the user whose `spec.github_login` equals the login (case-insensitive; pins the numeric id on first use) and sets the session cookie; `link` takes its user from the server-side record, never from a cookie. Redirects to `/` on success or `/signin?error=<REASON>` on failure; the page then re-reads the session with a same-site fetch |
 
 The two endpoints are exempt from the Origin-required rule (above): they are

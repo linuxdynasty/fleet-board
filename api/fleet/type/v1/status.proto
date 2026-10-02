@@ -460,8 +460,9 @@ enum PrincipalKind {
   PRINCIPAL_KIND_API_TOKEN = 4;
   // A paired device (phone); acts for on_behalf_of within its scopes.
   PRINCIPAL_KIND_DEVICE = 5;
-  // The OS user at the machine, through `fleet-agent` (local drain, local
-  // approval). Never a hub account; reported by the agent.
+  // An OS user acting locally, never a hub account: at a machine through
+  // `fleet-agent` (local drain, local approval), or on the hub host through
+  // `fleetd` admin commands (`on_behalf_of` names the owner it acts for).
   PRINCIPAL_KIND_LOCAL_USER = 6;
 }
 

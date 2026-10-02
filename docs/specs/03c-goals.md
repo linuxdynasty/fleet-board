@@ -147,7 +147,7 @@ stateDiagram-v2
   STARTING --> EXPIRED: not delivered in 30 min (machine offline) · reservation released
   STARTING --> ABANDONED: machine drained before preflight, or revoked
   START_UNKNOWN --> RUNNING: GoalState{goal_id} arrives (adopted)
-  START_UNKNOWN --> ABANDONED: operator "not started" (triage)
+  START_UNKNOWN --> ABANDONED: operator "not started" (triage), or machine revoked
 ```
 
 `START_FAILED`, `START_EXHAUSTED`, `EXPIRED` and `ABANDONED` are terminal
@@ -283,7 +283,7 @@ stateDiagram-v2
   WAITING --> RUNNING: goal line back to working
   RUNNING --> BLOCKED_OWNER: BLOCKED with OWNER + ACTION (triage once)
   BLOCKED_OWNER --> RUNNING: goal line changes
-  RUNNING --> STUCK: BLOCKED_STUCK, or watch pid dead, or stopped twice without DONE
+  RUNNING --> STUCK: BLOCKED_STUCK, watch pid dead, stopped twice without DONE, or machine revoked (any live phase)
   WAITING --> STUCK: watch pid dead
   RUNNING --> STOPPED: PaneExited, or idle at ready prompt with WORKING line
   STOPPED --> RUNNING: corrective nudge (once), progress seen
@@ -309,7 +309,7 @@ stateDiagram-v2
   RUNNING --> CLEARED: /goal clear (operator)
   RUNNING --> PANE_LOST: pane missing from snapshot (W2)
   PANE_LOST --> RUNNING: pane reappears with same FLEET_GOAL_ID
-  PANE_LOST --> STUCK: 10 min
+  PANE_LOST --> STUCK: 10 min, or machine revoked
   STUCK --> RUNNING: operator action (nudge, restart, clear + redispatch)
 ```
 

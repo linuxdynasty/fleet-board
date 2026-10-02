@@ -243,7 +243,7 @@ stateDiagram-v2
   WAITING --> RUNNING: line back to WORKING
   RUNNING --> BLOCKED_OWNER: BLOCKED with OWNER and ACTION
   BLOCKED_OWNER --> RUNNING: goal line changes
-  RUNNING --> STUCK: BLOCKED_STUCK, dead watcher, or stopped twice
+  RUNNING --> STUCK: BLOCKED_STUCK, dead watcher, stopped twice, or machine revoked (any live phase)
   WAITING --> STUCK: watch pid dead
   RUNNING --> STOPPED: PaneExited, or idle at ready with a WORKING line
   STOPPED --> RUNNING: one corrective nudge, progress seen
@@ -268,7 +268,7 @@ stateDiagram-v2
   RUNNING --> CLEARED: operator clears with /goal clear
   RUNNING --> PANE_LOST: pane missing from the snapshot
   PANE_LOST --> RUNNING: pane reappears
-  PANE_LOST --> STUCK: 10 minutes
+  PANE_LOST --> STUCK: 10 minutes, or machine revoked
   STUCK --> RUNNING: operator nudge, restart, or clear and redispatch
 ```
 
