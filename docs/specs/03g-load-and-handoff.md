@@ -69,11 +69,10 @@ superseding ADR.
   goals and audit (permanent, small). Single process, zero-dependency install
   (ADR 0001) is the standing constraint. Does the ADR 0002 default meet this,
   and at what batch size and sync mode?
-- **Q2 Pane summary history.** ADR 0010 keeps live state 1 week; at A50 that
-  is 8.6 M rows and 17 GB per day for summaries alone. Requirement: the board
-  needs only the **latest summary per pane** (500 rows) plus session logs for
-  history. Step 4 must either confirm latest-only (superseding that line of
-  0010) or name a store that absorbs 100 rows/s × 2 KB for a week.
+- **Q2 Pane summary history.** Decided 2026-10-02 in
+  [ADR 0013](../adr/0013-live-state-retention.md): latest summary per pane only
+  (about 500 rows at A50); history comes from session logs. Step 4 sizes the
+  store for overwrite-in-place at up to 100 updates/s, not a growing table.
 - **Q3 Queue or broker.** Hub-internal flow is ≈ 110 messages/s steady and
   ≈ 10,000/s worst-case burst (replay before the per-hub budget) at A50; every
   never-dropped kind is already at-least-once from the agent's ring and every
@@ -125,18 +124,20 @@ Found while writing the workflows. Each is additive within `fleet.v1`.
 
 ## Open questions for the owner
 
-1. **Claude resume.** Claude Code's `/goal` has set and clear only; pause is
+1. ~~Claude resume~~ **Answered by probe 2026-10-02:** the goal stays active
+   after an interrupt and resumes when `continue` is typed (01b).
+   Original question: **Claude resume.** Claude Code's `/goal` has set and clear only; pause is
    `Interrupt`. What resumes a Claude goal after an interrupt: a plain prompt
    ("continue"), re-typing `/goal <condition>`, or nothing needed because the
    Stop hook re-engages? Needs a probe like the 2026-10-01 Muse one.
-2. **Codex interrupt.** Does an interrupt pause a Codex goal the way Muse's
+2. ~~Codex interrupt~~ **Answered by probe 2026-10-02:** "Goal paused", no
+   self-resume, `/goal resume` works (01b). Original question: **Codex interrupt.** Does an interrupt pause a Codex goal the way Muse's
    does, and must `/goal pause` be typed only at an idle prompt?
-3. **Reserve line.** Automatically `/goal pause` `WORKING` goals at the
-   reserve (design.md rule 5), or only stop dispatching and alert? Proposed
-   default: alert only, auto-pause as an opt-in setting.
+3. ~~Reserve line~~ **Decided 2026-10-02:** stop dispatching and alert;
+   auto-pause is an opt-in setting, off by default (design.md rule 5).
 4. **`max_parallel_goals_per_repo`** default (proposed 3) for merge churn.
-5. **Pane summary retention** (Q2): confirm latest-only, superseding ADR
-   0010's "1 week" for summaries.
+5. ~~Pane summary retention~~ **Decided 2026-10-02:** latest only
+   ([ADR 0013](../adr/0013-live-state-retention.md)).
 6. **Claims.** Default claim-comment pattern (eshu's exact text), stale-claim
    age before an owner is asked, and the claim mechanism for Jira (assignee?
    transition?) and GitLab.

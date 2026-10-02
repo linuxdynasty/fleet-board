@@ -99,9 +99,9 @@ interactive-only, ADR 0008), active goal count per account (from goals ×
    account until its reset; running goals continue (the harness throttles).
 5. Reserve line: any needed bucket ≥ `100 − reserve` → `RESERVE`: no new
    dispatch; a triage pacing alert (W7) fingerprinted on `(account, bucket,
-   reset_at)`. Automatically pausing `WORKING` goals with `/goal pause` at the
-   reserve (design.md rule 5) is an **owner setting, default off** (open
-   question in 03g); `BLOCKED_WATCH` goals are never paused for pacing.
+   reset_at)`. Running goals continue. Automatically pausing `WORKING` goals
+   with `/goal pause` at the reserve is an **owner setting, default off**
+   (decided 2026-10-02); `BLOCKED_WATCH` goals are never paused for pacing.
 6. Excluded from auto-dispatch regardless of numbers: `mode=interactive-only`;
    `BUDGET_KIND_DOLLAR_CAP` (spend is shown, manual dispatch only); readings
    `UNKNOWN` or older than `stale_after`; OpenCode sessions on an Anthropic

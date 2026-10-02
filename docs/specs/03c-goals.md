@@ -317,10 +317,14 @@ on the pane), `nudges`, `no_progress_runs`, `cooldown_until`, `review_rounds`,
   developer would (01b): `RunHarnessCommand{pane, "/goal", args, expected_class
   = GOAL, catalog_hash}` at an idle prompt. If the harness is mid-turn the hub
   first sends `Interrupt`, waits for ready (`HarnessReady` or ready pattern),
-  then types the subcommand. Muse pauses on interrupt by itself ("goal paused
-  by interrupt"); Codex behaviour after interrupt is an open question (03g).
-  Claude Code has only set and clear: pause = `Interrupt`; resume on Claude is
-  an open question for the owner (03g). `/goal clear` → `CLEARED`: the session
+  then types the subcommand. After an interrupt (probed 2026-10-02): Muse shows
+  "goal paused by interrupt — resume with /goal resume"; Codex 0.160.0 shows
+  "Goal paused" and resumes with `/goal resume`, checking where it stopped;
+  Claude Code 2.1.286 keeps the goal active (bare `/goal` shows "Goal active")
+  and resumes when `continue` is typed, so resume on Claude is
+  `SendKeys{"continue", Enter}`. None of the three resumed on its own during 30
+  idle seconds. Completion shows on screen ("✔ Goal achieved" on Claude), and
+  Claude clears its goal once achieved. `/goal clear` → `CLEARED`: the session
   is idle but **not** available for work (fleet started it, nothing merged);
   the operator marks it available or closes it.
 - **Pacing reserve** (opt-in): `RESERVE` → `/goal pause` on `WORKING` goals
