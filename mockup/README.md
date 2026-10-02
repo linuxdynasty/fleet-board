@@ -3,7 +3,7 @@
 Clickable mockup of the fleet board. Plain HTML and JavaScript, no build step,
 no libraries. It matches the merged design: pass-through over the developer's
 own tmux and harnesses (01-agent-capabilities.md), the typed command model
-(`api/fleet/v1`, ADR 0004/0011) and provider-neutral work items (ADR 0012).
+(`api/fleet/agent/v1`, ADR 0004/0011/0017) and provider-neutral work items (ADR 0012).
 
 ```bash
 python3 -m http.server 8765 --bind 127.0.0.1 --directory mockup
@@ -91,4 +91,4 @@ previous window, `0`–`9` window by index, `o` next pane, arrows pane by
 direction, `z` zoom, `w` window chooser, `s` session chooser, `d` detach,
 `?` key help, Esc cancels the prefix. In the real build the keys go straight
 to tmux over the Terminal stream, so the developer's own bindings apply;
-clicking a window tab sends `TermDown.select{window_id}`.
+clicking a window tab sends `TermDown.select{window}` (hub API: `AttachTerminalRequest.select`).

@@ -1,0 +1,65 @@
+// fleet.agent.v1 screen state: prompts (E6) and harness conditions (E12)
+// currently on a pane. Sent as events when they appear and listed in the
+// Snapshot while they are still showing, so Triage survives a reconnect.
+// Screen text in here is UNTRUSTED TEXT.
+syntax = "proto3";
+
+package fleet.agent.v1;
+
+import "fleet/type/v1/harness.proto";
+import "fleet/type/v1/ids.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/linuxdynasty/fleet-board/api/fleet/agent/v1;agentv1";
+
+// PromptDetected (E6). A SendKeys answering it must carry prompt_id.
+message PromptDetected {
+  fleet.type.v1.PromptId prompt_id = 1;
+  fleet.type.v1.PaneKey pane = 2;
+  fleet.type.v1.Harness harness = 3;
+  // Prompt text, capped at 16 KiB. Untrusted text.
+  string text = 4;
+  repeated fleet.type.v1.PromptOption options = 5;
+  // Destructive prompts default to Deny in the UI and are never
+  // auto-answered. Set for `rm -rf`, `docker compose down -v`, and for any
+  // command line that embeds a credential (01c, measured goal).
+  bool destructive = 6;
+  // Why it was flagged destructive, for the triage card. Untrusted text.
+  string destructive_reason = 7;
+  fleet.type.v1.PromptSource source = 8;
+  // 0..100: how sure the adapter is this is a prompt.
+  uint32 confidence = 9;
+  // True when the adapter's detection is verified for this harness and
+  // send-to-pane is therefore enabled.
+  bool answerable = 10;
+  fleet.type.v1.GoalId goal_id = 11;
+}
+
+// HarnessCondition (E12): a state the harness shows that is neither a prompt
+// nor normal work, such as "Meta Model API server error (HTTP 500) · retrying
+// in 7s · attempt 6/10" (observed 2026-10-01). Never dropped under
+// backpressure. A condition is reported when it appears and again with
+// `cleared` when it leaves the screen.
+message HarnessCondition {
+  fleet.type.v1.PaneKey pane = 1;
+  fleet.type.v1.Harness harness = 2;
+  fleet.type.v1.HarnessConditionKind kind = 3;
+  // True while the harness says it is retrying on its own.
+  bool retrying = 4;
+  // Retry attempt and limit as shown, 0 when not shown.
+  uint32 attempt = 5;
+  uint32 max_attempts = 6;
+  // When the harness says it will retry next, if shown.
+  google.protobuf.Timestamp next_retry_at = 7;
+  // HTTP status if the harness shows one (500, 429, 529…), 0 otherwise.
+  uint32 http_status = 8;
+  // The line as shown, capped at 4 KiB. Untrusted text.
+  string text = 9;
+  google.protobuf.Timestamp since = 10;
+  bool cleared = 11;
+  fleet.type.v1.GoalId goal_id = 12;
+  // For RATE_LIMITED and USAGE_LIMIT: when the limit resets, as the harness
+  // shows it ("resets 9:29 PM"), resolved to UTC. The hub holds the goal in
+  // LIMIT_WAIT until then and resumes it (02-contracts.md).
+  google.protobuf.Timestamp resets_at = 13;
+}

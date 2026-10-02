@@ -1,19 +1,24 @@
-// fleet.v1 events: agent -> hub facts between snapshots (A3). Events are an
+// fleet.agent.v1 events: agent -> hub facts between snapshots (A3). Events are an
 // optimization over snapshots, never the source of truth. Every Event
 // carries the agent-wide monotonic seq that survives reconnects; the offline
 // ring replays them in order. Which kinds may be dropped under backpressure
-// is fixed per kind in docs/specs/02-contracts.md, not negotiated.
+// is fixed per kind in docs/specs/02-contracts.md and stamped on every event
+// as Event.delivery, so a hub that does not know a newer body kind still
+// queues, sheds or coalesces it correctly and still advances seq past it.
 // Screen, goal-file and git text in here is UNTRUSTED TEXT.
 syntax = "proto3";
 
-package fleet.v1;
+package fleet.agent.v1;
 
-import "fleet/v1/common.proto";
-import "fleet/v1/snapshot.proto";
-import "fleet/v1/usage.proto";
+import "fleet/agent/v1/screen.proto";
+import "fleet/agent/v1/snapshot.proto";
+import "fleet/agent/v1/usage.proto";
+import "fleet/type/v1/harness.proto";
+import "fleet/type/v1/ids.proto";
+import "fleet/type/v1/status.proto";
 import "google/protobuf/timestamp.proto";
 
-option go_package = "github.com/linuxdynasty/fleet-board/api/fleet/v1;fleetv1";
+option go_package = "github.com/linuxdynasty/fleet-board/api/fleet/agent/v1;agentv1";
 
 // Event is one timestamped fact. body kinds are numbered by capability
 // group: 10-19 machine, 20-29 harness/usage, 30-49 tmux, 50-59 goals and
@@ -25,6 +30,12 @@ message Event {
   google.protobuf.Timestamp at = 2;
   // True when replayed from the offline ring after a reconnect.
   bool replayed = 3;
+  // Backpressure class of this body kind (02-contracts.md table), set by the
+  // agent from the same table it sheds by.
+  DeliveryClass delivery = 4;
+  // For COALESCE: events with equal non-empty keys replace each other
+  // (latest wins), e.g. "usage:<account_key>", "branch:<path>".
+  string coalesce_key = 5;
 
   oneof body {
     // B2, droppable.
@@ -91,6 +102,18 @@ message Event {
   }
 }
 
+// DeliveryClass is how an event may be treated under backpressure, on the
+// agent's send queue and on the hub's side.
+enum DeliveryClass {
+  DELIVERY_CLASS_UNSPECIFIED = 0;
+  // May be dropped (pane summaries, resource samples, spool status).
+  DELIVERY_CLASS_SHED = 1;
+  // Only the latest per coalesce_key is kept.
+  DELIVERY_CLASS_COALESCE = 2;
+  // Never dropped; the ring and replay guarantee delivery.
+  DELIVERY_CLASS_NEVER_DROP = 3;
+}
+
 // ChangeKind for inventory events.
 enum ChangeKind {
   CHANGE_KIND_UNSPECIFIED = 0;
@@ -109,7 +132,7 @@ message TmuxServerEvent {
 // SessionEvent carries the session after the change (closed: ids only).
 message SessionEvent {
   ChangeKind kind = 1;
-  TmuxServerKind server_kind = 2;
+  fleet.type.v1.TmuxServerKind server_kind = 2;
   string server_start_id = 3;
   TmuxSession session = 4;
 }
@@ -129,121 +152,43 @@ message PaneCreated {
 
 // PaneExited (E3).
 message PaneExited {
-  PaneKey pane = 1;
+  fleet.type.v1.PaneKey pane = 1;
   int32 exit_status = 2;
   // Goal that was running there, if any, so "stopped without DONE" is cheap.
-  GoalId goal_id = 3;
+  fleet.type.v1.GoalId goal_id = 3;
   // tmux remain-on-exit kept the pane; false means the pane is gone.
   bool remains = 4;
 }
 
 // ActivityTransition (E4), never dropped.
 message ActivityTransition {
-  PaneKey pane = 1;
-  Activity from = 2;
-  Activity to = 3;
+  fleet.type.v1.PaneKey pane = 1;
+  fleet.type.v1.Activity from = 2;
+  fleet.type.v1.Activity to = 3;
   google.protobuf.Timestamp last_output_at = 4;
 }
 
 // PaneSummary (E5), droppable.
 message PaneSummary {
-  PaneKey pane = 1;
+  fleet.type.v1.PaneKey pane = 1;
   // Last lines, ANSI stripped, capped at 4 KiB. Untrusted text.
   string last_lines = 2;
   google.protobuf.Timestamp last_output_at = 3;
-  Activity activity = 4;
-}
-
-// PromptSource says how a prompt was detected.
-enum PromptSource {
-  PROMPT_SOURCE_UNSPECIFIED = 0;
-  PROMPT_SOURCE_SCREEN_PATTERN = 1;
-  PROMPT_SOURCE_HOOK = 2;
-}
-
-// PromptOption is one menu choice as shown. Untrusted text.
-message PromptOption {
-  // The key or number to type, e.g. "1", "y".
-  string key = 1;
-  string label = 2;
-}
-
-// PromptDetected (E6). A SendKeys answering it must carry prompt_id.
-message PromptDetected {
-  PromptId prompt_id = 1;
-  PaneKey pane = 2;
-  Harness harness = 3;
-  // Prompt text, capped at 16 KiB. Untrusted text.
-  string text = 4;
-  repeated PromptOption options = 5;
-  // Destructive prompts default to Deny in the UI and are never
-  // auto-answered. Set for `rm -rf`, `docker compose down -v`, and for any
-  // command line that embeds a credential (01c, measured goal).
-  bool destructive = 6;
-  // Why it was flagged destructive, for the triage card. Untrusted text.
-  string destructive_reason = 7;
-  PromptSource source = 8;
-  // 0..100: how sure the adapter is this is a prompt.
-  uint32 confidence = 9;
-  // True when the adapter's detection is verified for this harness and
-  // send-to-pane is therefore enabled.
-  bool answerable = 10;
-  GoalId goal_id = 11;
-}
-
-// HarnessCondition (E12): a state the harness shows that is neither a prompt
-// nor normal work, such as "Meta Model API server error (HTTP 500) · retrying
-// in 7s · attempt 6/10" (observed 2026-10-01). Never dropped under
-// backpressure. A condition is reported when it appears and again with
-// `cleared` when it leaves the screen.
-message HarnessCondition {
-  PaneKey pane = 1;
-  Harness harness = 2;
-  HarnessConditionKind kind = 3;
-  // True while the harness says it is retrying on its own.
-  bool retrying = 4;
-  // Retry attempt and limit as shown, 0 when not shown.
-  uint32 attempt = 5;
-  uint32 max_attempts = 6;
-  // When the harness says it will retry next, if shown.
-  google.protobuf.Timestamp next_retry_at = 7;
-  // HTTP status if the harness shows one (500, 429, 529…), 0 otherwise.
-  uint32 http_status = 8;
-  // The line as shown, capped at 4 KiB. Untrusted text.
-  string text = 9;
-  google.protobuf.Timestamp since = 10;
-  bool cleared = 11;
-  GoalId goal_id = 12;
-}
-
-enum HarnessConditionKind {
-  HARNESS_CONDITION_KIND_UNSPECIFIED = 0;
-  // Provider returned a server error (5xx).
-  HARNESS_CONDITION_KIND_PROVIDER_ERROR = 1;
-  // Provider rate limit or overload (429, 529).
-  HARNESS_CONDITION_KIND_RATE_LIMITED = 2;
-  // A usage limit was reached (short window or weekly).
-  HARNESS_CONDITION_KIND_USAGE_LIMIT = 3;
-  // The harness wants the developer to sign in again.
-  HARNESS_CONDITION_KIND_SIGN_IN_REQUIRED = 4;
-  // Network unreachable from the harness.
-  HARNESS_CONDITION_KIND_NETWORK = 5;
-  // Recognised as an error by the adapter but not classified.
-  HARNESS_CONDITION_KIND_OTHER = 15;
+  fleet.type.v1.Activity activity = 4;
 }
 
 // PromptGone (E6): the prompt left the screen (answered locally, timed out,
 // or the pane moved on). After this a SendKeys with that prompt_id gets
 // REASON_CODE_PROMPT_GONE.
 message PromptGone {
-  PromptId prompt_id = 1;
-  PaneKey pane = 2;
+  fleet.type.v1.PromptId prompt_id = 1;
+  fleet.type.v1.PaneKey pane = 2;
 }
 
 // HarnessReady (E7, v2): the adapter's ready pattern matched.
 message HarnessReady {
-  PaneKey pane = 1;
-  Harness harness = 2;
+  fleet.type.v1.PaneKey pane = 1;
+  fleet.type.v1.Harness harness = 2;
   // True after a resume rather than a fresh start.
   bool resumed = 3;
 }
@@ -260,20 +205,20 @@ enum HookEventKind {
 
 // HarnessHookEvent (E8, v2): what the harness hooks report.
 message HarnessHookEvent {
-  PaneKey pane = 1;
-  Harness harness = 2;
+  fleet.type.v1.PaneKey pane = 1;
+  fleet.type.v1.Harness harness = 2;
   HookEventKind kind = 3;
   // Harness session id from the hook payload. Untrusted text.
   string harness_session_id = 4;
   // Harness's own event name, for unmapped kinds. Untrusted text.
   string raw_event_name = 5;
-  GoalId goal_id = 6;
+  fleet.type.v1.GoalId goal_id = 6;
 }
 
 // PaneHarnessSession (E9).
 message PaneHarnessSession {
-  PaneKey pane = 1;
-  Harness harness = 2;
+  fleet.type.v1.PaneKey pane = 1;
+  fleet.type.v1.Harness harness = 2;
   // Untrusted text.
   string harness_session_id = 3;
   // Where the harness keeps its transcript, for K3; path only, never read
@@ -283,10 +228,10 @@ message PaneHarnessSession {
 
 // AvailabilityChanged (E11), never dropped.
 message AvailabilityChanged {
-  PaneKey pane = 1;
-  SessionId session_id = 2;
-  Availability from = 3;
-  Availability to = 4;
+  fleet.type.v1.PaneKey pane = 1;
+  fleet.type.v1.SessionId session_id = 2;
+  fleet.type.v1.Availability from = 3;
+  fleet.type.v1.Availability to = 4;
   // Short machine reason: "keystroke", "goal_merged", "marked_on_board",
   // "output", "idle_threshold".
   string reason = 5;
@@ -306,9 +251,11 @@ message PolicyChanged {
 
 // LocalApprovalDecision (L3).
 message LocalApprovalDecision {
-  CommandId command_id = 1;
+  fleet.type.v1.CommandId command_id = 1;
   bool approved = 2;
-  // "cli" or "notification".
+  // Channel, not identity: "cli" or "notification".
   string via = 3;
   google.protobuf.Timestamp decided_at = 4;
+  // Who decided: kind LOCAL_USER, id "local:<os user>".
+  fleet.type.v1.Principal decided_by = 5;
 }

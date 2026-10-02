@@ -1,0 +1,148 @@
+// fleet.hub.v1 routines (ADR 0018): recurring fleet work that is not an
+// issue, such as dependency bumps, flaky-test sweeps or a weekly report. A
+// routine run is a normal goal whose work item has kind ROUTINE, so pacing,
+// consent, triage and verification apply unchanged.
+syntax = "proto3";
+
+package fleet.hub.v1;
+
+import "fleet/hub/v1/common.proto";
+import "fleet/type/v1/ids.proto";
+import "fleet/type/v1/status.proto";
+import "fleet/type/v1/work.proto";
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/linuxdynasty/fleet-board/api/fleet/hub/v1;hubv1";
+
+// QueueEmptyTrigger runs the routine when the repo has no READY work item
+// and a slot and account are free, at most once per min_interval_hours.
+message QueueEmptyTrigger {
+  uint32 min_interval_hours = 1;
+}
+
+// CronTrigger runs the routine on a schedule (5-field cron).
+message CronTrigger {
+  string expression = 1;
+  // IANA timezone the expression is read in.
+  string timezone = 2;
+}
+
+// RoutineTrigger says when a run starts. A run never starts while the
+// previous run's goal is still active.
+message RoutineTrigger {
+  oneof kind {
+    QueueEmptyTrigger queue_empty = 1;
+    CronTrigger cron = 2;
+  }
+}
+
+// DoneRule says when a routine run counts as done; the verifier applies it
+// instead of the work-item check.
+enum DoneRule {
+  DONE_RULE_UNSPECIFIED = 0;
+  // DONE and the run's change request merged (dependency bumps).
+  DONE_RULE_CHANGE_REQUEST_MERGED = 1;
+  // The goal line says DONE; nothing to verify on a code host.
+  DONE_RULE_GOAL_DONE_ONLY = 2;
+  // DONE and report_path exists on the run's pushed branch.
+  DONE_RULE_REPORT_WRITTEN = 3;
+}
+
+// Routine is one configured routine.
+message Routine {
+  RoutineId id = 1;
+  uint64 version = 2;
+  google.protobuf.Timestamp create_time = 3;
+  google.protobuf.Timestamp update_time = 4;
+
+  string display_name = 10;
+  bool enabled = 11;
+  fleet.type.v1.RepoRef repo = 12;
+  // Unset = any harness the scheduler picks.
+  fleet.type.v1.Harness harness = 13;
+  string profile = 14;
+  RoutineTrigger trigger = 15;
+  // Goal text with placeholders {repo}, {run}, {date}; 4 KiB.
+  string goal_text_template = 16;
+  // Consent acts for its goals, further limited by repo ∩ account.
+  repeated string consent = 17;
+  DoneRule done_rule = 18;
+  // For DONE_RULE_REPORT_WRITTEN: path relative to the checkout.
+  string report_path = 19;
+  fleet.type.v1.Principal owner = 20;
+  google.protobuf.Timestamp last_run_time = 21;
+  google.protobuf.Timestamp next_run_time = 22;
+  fleet.type.v1.GoalId last_goal = 23;
+  uint32 run_count = 24;
+}
+
+// ListRoutinesRequest. Filter fields: enabled, repo.
+message ListRoutinesRequest {
+  int32 page_size = 1;
+  string page_token = 2;
+  string filter = 3;
+  string order_by = 4;
+}
+
+// ListRoutinesResponse.
+message ListRoutinesResponse {
+  repeated Routine routines = 1;
+  string next_page_token = 2;
+}
+
+// GetRoutineRequest.
+message GetRoutineRequest {
+  RoutineId id = 1;
+}
+
+// GetRoutineResponse.
+message GetRoutineResponse {
+  Routine routine = 1;
+}
+
+// CreateRoutineRequest. id, version and times are assigned by the hub.
+message CreateRoutineRequest {
+  string request_id = 1;
+  Routine routine = 2;
+}
+
+// CreateRoutineResponse.
+message CreateRoutineResponse {
+  Routine routine = 1;
+}
+
+// UpdateRoutineRequest.
+message UpdateRoutineRequest {
+  string request_id = 1;
+  Routine routine = 2;
+  google.protobuf.FieldMask update_mask = 3;
+  uint64 expected_version = 4;
+}
+
+// UpdateRoutineResponse.
+message UpdateRoutineResponse {
+  Routine routine = 1;
+}
+
+// DeleteRoutineRequest. Running goals continue; no new runs.
+message DeleteRoutineRequest {
+  string request_id = 1;
+  RoutineId id = 2;
+  uint64 expected_version = 3;
+}
+
+// DeleteRoutineResponse.
+message DeleteRoutineResponse {}
+
+// RunRoutineRequest starts a run now, outside the trigger.
+message RunRoutineRequest {
+  string request_id = 1;
+  RoutineId id = 2;
+}
+
+// RunRoutineResponse.
+message RunRoutineResponse {
+  fleet.type.v1.GoalId goal = 1;
+  Operation operation = 2;
+}

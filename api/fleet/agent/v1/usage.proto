@@ -1,0 +1,110 @@
+// fleet.agent.v1 usage: readings from harness usage screens (D2), passive signals
+// (D3), probe health (D1), account identity (C2) and session->account links.
+//
+// Usage belongs to accounts, not harnesses (01-agent-capabilities.md, C).
+// Everything the agent read from a screen is UNTRUSTED TEXT.
+syntax = "proto3";
+
+package fleet.agent.v1;
+
+import "fleet/type/v1/ids.proto";
+import "fleet/type/v1/status.proto";
+import "fleet/type/v1/usage.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/linuxdynasty/fleet-board/api/fleet/agent/v1;agentv1";
+
+// UsageReading is one observation of an account's usage (D2, D3).
+message UsageReading {
+  // Set for USAGE_SOURCE_PROBE; empty for passive signals.
+  fleet.type.v1.ProbeId probe_id = 1;
+  fleet.type.v1.AccountKey account_key = 2;
+  fleet.type.v1.Harness harness = 3;
+  // Harness version the screen came from.
+  string harness_version = 4;
+  // Parser version (fixtures) used; unknown values cite this.
+  string parser_version = 5;
+  // When the screen was captured (UTC, agent clock).
+  google.protobuf.Timestamp read_at = 6;
+  fleet.type.v1.UsageSource source = 7;
+  // Pane the text came from (the probe pane, or the observed pane for D3).
+  fleet.type.v1.PaneKey pane = 8;
+  fleet.type.v1.ShownUsage shown = 9;
+  repeated fleet.type.v1.LimitBucket buckets = 10;
+  fleet.type.v1.ParseOutcome parse = 11;
+  // Parser diagnostic, no screen text. Capped at 1 KiB.
+  string parse_message = 12;
+  // Dollar spend when the account is BUDGET_KIND_DOLLAR_CAP.
+  fleet.type.v1.SpendReading spend = 13;
+  // Harness-reported credit balance when shown (Codex "credits").
+  // Untrusted text; empty when not shown.
+  string credits_text = 14;
+}
+
+// AccountIdentity is what the harness's own status screen says about the
+// signed-in account (C2). Never read from credential files.
+message AccountIdentity {
+  fleet.type.v1.AccountKey account_key = 1;
+  fleet.type.v1.Harness harness = 2;
+  // Display label, e.g. "Claude Max" or "Account: Pro". Untrusted text.
+  string label = 3;
+  // Login method as shown ("Claude Max account", "Logged in using ChatGPT").
+  string login_method = 4;
+  // Plan as shown ("Pro", "Muse Code Power Usage"). Untrusted text.
+  string plan = 5;
+  // Organization as shown, when the harness displays one. Untrusted text.
+  string organization = 6;
+  // Email exactly as the harness shows it. EMPTY unless the owner setting
+  // `share_identity_email` is on (A8 settings). Untrusted text.
+  string email = 7;
+  // True when the status screen shows a signed-in state.
+  bool signed_in = 8;
+  // True when the harness shows no unique identity (Codex) and the owner
+  // picks the account on the hub; account_key then hashes "<harness>:<machine>".
+  bool identity_not_shown = 9;
+  google.protobuf.Timestamp observed_at = 10;
+  // Parser version used for the status screen.
+  string parser_version = 11;
+  // Budget kind the agent can infer from the login type (OAuth -> weekly
+  // percent, API key -> dollar cap). The hub may override.
+  fleet.type.v1.BudgetKind budget_kind = 12;
+  // Harness profile the identity was read under; empty = the default.
+  string profile = 13;
+}
+
+// SessionAccountLink says which account a harness session is currently
+// spending from. OpenCode can switch providers per session (model line
+// "Build · Kimi K3 Moonshot AI"); other harnesses have one account.
+message SessionAccountLink {
+  fleet.type.v1.PaneKey pane = 1;
+  // Hub-assigned session id when the pane belongs to a fleet session.
+  fleet.type.v1.SessionId session_id = 2;
+  fleet.type.v1.Harness harness = 3;
+  fleet.type.v1.AccountKey account_key = 4;
+  // Provider and model as shown on screen. Untrusted text.
+  string provider = 5;
+  string model = 6;
+  google.protobuf.Timestamp observed_at = 7;
+  fleet.type.v1.UsageSource source = 8;
+}
+
+// ProbeHealth reports one probe session's state (D1).
+message ProbeHealth {
+  fleet.type.v1.ProbeId probe_id = 1;
+  fleet.type.v1.AccountId account_id = 2;
+  fleet.type.v1.AccountKey account_key = 3;
+  fleet.type.v1.Harness harness = 4;
+  // Probe pane on the fleet-probe server.
+  fleet.type.v1.PaneKey pane = 5;
+  bool alive = 6;
+  google.protobuf.Timestamp last_success_at = 7;
+  google.protobuf.Timestamp last_attempt_at = 8;
+  uint32 consecutive_failures = 9;
+  // Reason of the last failure, if any.
+  fleet.type.v1.ReasonCode last_failure = 10;
+  // Effective interval the agent is running (settings may have tightened it).
+  google.protobuf.Duration interval = 11;
+  // Next scheduled run (UTC); unset when stopped.
+  google.protobuf.Timestamp next_run_at = 12;
+}

@@ -42,8 +42,8 @@ sequenceDiagram
 
 **Probe assignment.** Candidates for an account: machines `ONLINE`, not
 draining, whose `Snapshot.accounts[]` carries that `account_key` with
-`signed_in=true` (or the owner's Codex mapping), whose `HarnessInfo.version_supported`
-is true, and that advertise `usage.probe.<harness>`. Preference: label
+`signed_in=true` (or the owner's Codex mapping), whose `HarnessInfo.version_support`
+is `SUPPORTED` (or `UNVERIFIED_PARSING` with `ParserSupport{USAGE}` verified or `parsing_live`), and that advertise `usage.probe.<harness>`. Preference: label
 `always-on` > not `laptop` > the hub machine > most recently successful. The
 `probes` table has a unique constraint on `(account_id) WHERE state IN
 (REQUESTED, ALIVE, FAILING)`, so two scheduler passes cannot assign twice.
@@ -200,7 +200,7 @@ tracker adapter, the code host adapter, writer, scheduler, verifier.
 
 **Two roles, one mirror.** An *integration* is configured as a work tracker,
 a code host, or both. The hub stores mirrors in the shapes of
-`integrations.proto`: `WorkItem{ref WorkItemRef, state, title, author, labels[],
+`integration/v1/integration.proto`: `WorkItem{ref WorkItemRef, state, title, author, labels[],
 trusted, claim Claim, updated_at}`, `ChangeRequest{ref, repo RepoRef, head_ref,
 head_sha, state, merged_at, mergeable, review_decision, checks CheckSummary,
 reviews[] Review, linked_work_items[] WorkItemRef, review_rounds}`, and

@@ -1,0 +1,90 @@
+// fleet.type.v1 settings values (ADR 0009, 0011). One definition of the
+// setting set: the hub API edits these values per fleet, group and machine,
+// the agent wire delivers them (Settings) and reports the effective merge
+// (EffectiveSettings). Adding a setting is one change here.
+syntax = "proto3";
+
+package fleet.type.v1;
+
+import "google/protobuf/duration.proto";
+
+option go_package = "github.com/linuxdynasty/fleet-board/api/fleet/type/v1;typev1";
+
+// DefaultServerMode is the local ceiling for the developer's own tmux
+// server. ADR 0011 makes CONTROL the default.
+enum DefaultServerMode {
+  DEFAULT_SERVER_MODE_UNSPECIFIED = 0;
+  DEFAULT_SERVER_MODE_NONE = 1;
+  DEFAULT_SERVER_MODE_OBSERVE = 2;
+  DEFAULT_SERVER_MODE_CONTROL = 3;
+}
+
+// SettingLayer says which layer produced an effective value (ADR 0009).
+enum SettingLayer {
+  SETTING_LAYER_UNSPECIFIED = 0;
+  SETTING_LAYER_AGENT_DEFAULT = 1;
+  SETTING_LAYER_FLEET_DEFAULT = 2;
+  SETTING_LAYER_GROUP = 3;
+  SETTING_LAYER_MACHINE = 4;
+  // The local policy file capped the hub's value.
+  SETTING_LAYER_LOCAL_CEILING = 5;
+}
+
+// LocalApprovalRule requires `fleet-agent approve` for a command kind.
+message LocalApprovalRule {
+  // Command kind name as in fleet.agent.v1 commands, e.g. "KillWindow".
+  string command_kind = 1;
+  bool required = 2;
+}
+
+// RateLimit caps one command kind.
+message RateLimit {
+  string command_kind = 1;
+  uint32 per_minute = 2;
+}
+
+// SettingValues are the settings the hub can deliver (A8) and the agent
+// reports as effective (L2). Unset optional fields mean "no opinion".
+message SettingValues {
+  optional uint32 max_active = 1;
+  optional uint32 max_total = 2;
+  optional uint32 max_windows = 3;
+  repeated LocalApprovalRule local_approval = 4;
+  repeated RateLimit rate_limits = 5;
+  optional google.protobuf.Duration cert_lifetime = 6;
+  // Tighten-only: the effective set is the intersection with local policy.
+  repeated string allowed_harnesses = 7;
+  repeated string allowed_repo_roots = 8;
+  optional DefaultServerMode default_server = 9;
+  // Window name template, default "{harness} {work}" ({work} =
+  // WorkItemRef.display, e.g. "muse eshu#7398", "claude PROJ-123").
+  optional string window_name_template = 10;
+  optional google.protobuf.Duration idle_threshold = 11;
+  optional google.protobuf.Duration attach_idle_timeout = 12;
+  // Owner setting: send the email exactly as the harness shows it (C2).
+  optional bool share_identity_email = 13;
+  optional uint64 spool_cap_bytes = 14;
+  // Block goal starts while on battery (B3).
+  optional bool block_on_battery = 15;
+  // Default probe interval; EnsureProbe can set a per-account value.
+  optional google.protobuf.Duration probe_interval = 16;
+  // Grace before pruning a merged goal's worktree and window.
+  optional google.protobuf.Duration merged_grace = 17;
+}
+
+// SettingSource records which layer set one field of SettingValues.
+message SettingSource {
+  // Field name in SettingValues, e.g. "max_active".
+  string field = 1;
+  SettingLayer layer = 2;
+}
+
+// EffectiveSettings (L2): the tighten-only merge under the local ceiling.
+message EffectiveSettings {
+  // Generation of the hub settings that were merged; 0 before any delivery.
+  uint64 generation = 1;
+  SettingValues values = 2;
+  repeated SettingSource sources = 3;
+  // Labels: hub-assigned plus local additions. Local can only add.
+  repeated string labels = 4;
+}

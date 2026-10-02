@@ -1,0 +1,155 @@
+// fleet.agent.v1 byte streams: the Terminal stream for browser attach (J1)
+// and the SessionLog stream for session logs (K1, K3; ADR 0010). Each RPC
+// message wraps the original TermUp/TermDown and LogChunk/LogAck so the
+// stream bodies keep their names in the specs (ADR 0017).
+syntax = "proto3";
+
+package fleet.agent.v1;
+
+import "fleet/type/v1/harness.proto";
+import "fleet/type/v1/ids.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/linuxdynasty/fleet-board/api/fleet/agent/v1;agentv1";
+
+// TerminalRequest: one agent -> hub message on the Terminal stream.
+message TerminalRequest {
+  TermUp up = 1;
+}
+
+// TerminalResponse: one hub -> agent message on the Terminal stream.
+message TerminalResponse {
+  TermDown down = 1;
+}
+
+// SessionLogRequest: one agent -> hub chunk on the SessionLog stream.
+message SessionLogRequest {
+  LogChunk chunk = 1;
+}
+
+// SessionLogResponse: one hub -> agent ack on the SessionLog stream.
+message SessionLogResponse {
+  LogAck ack = 1;
+}
+
+// ---------------------------------------------------------------------------
+// Terminal stream (J1)
+// ---------------------------------------------------------------------------
+
+// TermUp: agent -> hub bytes from the PTY-backed tmux client.
+message TermUp {
+  fleet.type.v1.AttachId attach_id = 1;
+  oneof body {
+    // The PTY is open at this size; output follows.
+    TermReady ready = 2;
+    // Raw terminal bytes, at most 64 KiB per message. Escape sequences
+    // that act on the viewer's machine (OSC 52, hyperlinks) are stripped.
+    bytes output = 3;
+    TermClosed closed = 4;
+  }
+}
+
+// TermReady.
+message TermReady {
+  uint32 cols = 1;
+  uint32 rows = 2;
+  string view_session_name = 3;
+}
+
+// TermClosed.
+message TermClosed {
+  // "idle_timeout", "session_ended", "hub_closed", "agent_shutdown".
+  string reason = 1;
+}
+
+// TermDown: hub -> agent input and control.
+message TermDown {
+  fleet.type.v1.AttachId attach_id = 1;
+  oneof body {
+    // Keystrokes, at most 4 KiB per message; dropped for read-only attaches.
+    bytes input = 2;
+    TermResize resize = 3;
+    TermClose close = 4;
+    // Switch the view session's current window or pane (03g change #2),
+    // because the window strip cannot type the developer's prefix key.
+    // Allowed on read-only attaches; never affects the developer's client.
+    TermSelect select = 5;
+  }
+}
+
+// TermSelect: the agent runs select-window or select-pane in this attach's
+// grouped view session only. The key must belong to the attached session.
+message TermSelect {
+  oneof target {
+    fleet.type.v1.WindowKey window = 1;
+    fleet.type.v1.PaneKey pane = 2;
+  }
+}
+
+// TermResize.
+message TermResize {
+  uint32 cols = 1;
+  uint32 rows = 2;
+}
+
+// TermClose.
+message TermClose {}
+
+// ---------------------------------------------------------------------------
+// Session log stream (K1, K3; ADR 0010)
+// ---------------------------------------------------------------------------
+
+// LogChunk: one compressed chunk at a byte offset in the raw stream. The
+// agent keeps it in the spool until acked. At most 1 MiB compressed.
+//
+// Framing (spike S2, 2026-10-02, 60 min Codex goal): the agent keeps ONE
+// zstd frame per stream open for up to 5 minutes or 4 MiB raw and flushes
+// it at every 10 s chunk, so a chunk is a run of zstd blocks, not a whole
+// frame. Independent 10 s frames compressed Codex output 8x; one 5-minute
+// frame flushed every 10 s gave 14x (whole-hour baseline 15x). A frame left
+// unterminated by an agent crash still decodes block by block, and the next
+// chunk starts a new frame. Seek granularity is therefore one frame
+// (<= 5 min): replay decodes from the chunk at frame_raw_offset.
+message LogChunk {
+  // Were session_id, pane and stream; now one LogStreamKey shared with
+  // LogAck, so an ack names exactly the stream a chunk came from.
+  reserved 1, 2, 3;
+  reserved "session_id", "pane", "stream";
+  // Offset of the first raw byte in this chunk.
+  uint64 offset = 4;
+  // zstd blocks (part of the frame that starts at frame_raw_offset) that
+  // decode to raw_length bytes; begins with a frame header iff frame_start.
+  bytes zstd = 5;
+  uint32 raw_length = 6;
+  // Bytes lost before this chunk because the spool cap was hit.
+  uint64 gap_before = 7;
+  google.protobuf.Timestamp first_byte_at = 8;
+  google.protobuf.Timestamp last_byte_at = 9;
+  // True when the stream ended (pane exited, capture turned off).
+  bool final = 10;
+  fleet.type.v1.GoalId goal_id = 11;
+  fleet.type.v1.LogStreamKey key = 12;
+  // Raw offset where the current zstd frame started; a reader decodes from
+  // the chunk with that offset to reach any byte in this chunk.
+  uint64 frame_raw_offset = 13;
+  // This chunk begins a new frame: the first chunk of a stream, after 5 min
+  // or 4 MiB raw, after an agent restart, or after a gap.
+  bool frame_start = 14;
+}
+
+// LogAck: the hub stored everything up to acked_offset for this stream. The
+// hub may also send it unsolicited: with pause to stop shipping, and with
+// all_streams and pause=false to resume every stream of the machine.
+message LogAck {
+  // Were session_id and stream (no pane, so two panes of one session were
+  // ambiguous); replaced by key.
+  reserved 1, 2;
+  reserved "session_id", "stream";
+  uint64 acked_offset = 3;
+  // Hub asks the agent to pause shipping (disk low); same as SetLogShipping.
+  bool pause = 4;
+  fleet.type.v1.LogStreamKey key = 5;
+  // Applies to every stream of this machine; key and acked_offset are then
+  // unset. Replaces the old "empty session_id means all streams" rule.
+  bool all_streams = 6;
+}

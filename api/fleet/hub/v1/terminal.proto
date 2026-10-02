@@ -1,0 +1,121 @@
+// fleet.hub.v1 terminal and logs: browser attach to a live session (J1) and
+// reading stored session logs (K1, K3). The hub bridges AttachTerminal to the
+// agent's Terminal stream; it never interprets the bytes. Transport (step 4,
+// ADR 0016): the CLI uses Connect or gRPC bidirectional streaming over
+// HTTP/2; a browser cannot stream a request body, so it sends these same
+// messages, protobuf-encoded, one per frame over a WebSocket.
+syntax = "proto3";
+
+package fleet.hub.v1;
+
+import "fleet/type/v1/harness.proto";
+import "fleet/type/v1/ids.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/linuxdynasty/fleet-board/api/fleet/hub/v1;hubv1";
+
+// AttachOpen is the first message: which session, size and mode. The hub
+// sends OpenAttach to the agent; read_only is forced for READ-scope callers.
+message AttachOpen {
+  string request_id = 1;
+  fleet.type.v1.SessionId session = 2;
+  uint32 cols = 3;
+  uint32 rows = 4;
+  bool read_only = 5;
+}
+
+// AttachResize changes the PTY size.
+message AttachResize {
+  uint32 cols = 1;
+  uint32 rows = 2;
+}
+
+// AttachSelect switches the view session's window or pane (TermSelect).
+message AttachSelect {
+  oneof target {
+    fleet.type.v1.WindowKey window = 1;
+    fleet.type.v1.PaneKey pane = 2;
+  }
+}
+
+// AttachClose detaches; the view session is destroyed.
+message AttachClose {}
+
+// AttachTerminalRequest: client -> hub.
+message AttachTerminalRequest {
+  oneof body {
+    AttachOpen open = 1;
+    // Keystrokes, at most 4 KiB per message; dropped for read-only.
+    bytes input = 2;
+    AttachResize resize = 3;
+    AttachSelect select = 4;
+    AttachClose close = 5;
+    AttachAck ack = 6;
+  }
+}
+
+// AttachAck is the browser's flow control (ADR 0016): sent after the
+// terminal has written output. The hub stops reading the agent's Terminal
+// stream while output_bytes_sent - bytes_written exceeds its high-water
+// mark (256 KiB proposed), so HTTP/2 flow control blocks the agent's PTY
+// read and no output is dropped. Neither WebSocket nor xterm.js has
+// backpressure of its own.
+message AttachAck {
+  // Total output bytes the client has written to its terminal so far.
+  uint64 bytes_written = 1;
+}
+
+// AttachReady: the PTY is open; output follows.
+message AttachReady {
+  fleet.type.v1.AttachId attach_id = 1;
+  string view_session_name = 2;
+  uint32 cols = 3;
+  uint32 rows = 4;
+  bool read_only = 5;
+  // The command id of OpenAttach, for the audit trail.
+  fleet.type.v1.CommandId command_id = 6;
+}
+
+// AttachClosed ends the stream.
+message AttachClosed {
+  // "idle_timeout", "session_ended", "agent_offline", "detached".
+  string reason = 1;
+}
+
+// AttachTerminalResponse: hub -> client.
+message AttachTerminalResponse {
+  oneof body {
+    AttachReady ready = 1;
+    // Raw terminal bytes, at most 64 KiB per message; OSC 52 and
+    // hyperlinks already stripped by the agent.
+    bytes output = 2;
+    AttachClosed closed = 3;
+  }
+}
+
+// ReadSessionLogRequest reads one stored stream, from an offset or a time.
+message ReadSessionLogRequest {
+  fleet.type.v1.LogStreamKey key = 1;
+  oneof start {
+    uint64 start_offset = 2;
+    google.protobuf.Timestamp start_time = 3;
+  }
+  // Stop after this many raw bytes; 0 = to the end (or follow).
+  uint64 max_bytes = 4;
+  // Keep the stream open and send new data as it is stored.
+  bool follow = 5;
+}
+
+// ReadSessionLogResponse is one decompressed span of the raw stream.
+message ReadSessionLogResponse {
+  uint64 offset = 1;
+  // Raw bytes (terminal output with escape sequences, or transcript text).
+  // Untrusted. At most 256 KiB per message.
+  bytes data = 2;
+  // Bytes missing before this span (agent spool cap).
+  uint64 gap_before = 3;
+  google.protobuf.Timestamp first_byte_time = 4;
+  google.protobuf.Timestamp last_byte_time = 5;
+  // The stream ended (pane exited, capture off).
+  bool final = 6;
+}

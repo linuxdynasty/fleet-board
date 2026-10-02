@@ -1,0 +1,189 @@
+// fleet.hub.v1 FleetService: the hub API for the web UI, the `fleet` CLI and
+// later a phone (ADR 0018). Served by fleetd over gRPC, gRPC-Web and
+// Connect JSON from the same handlers (ADR 0003). Conventions (resources,
+// paging, request_id idempotency, versions as ETags, Operations, Watch,
+// scopes, errors) are in docs/specs/02b-hub-api.md. Scope per RPC is noted
+// as [READ], [SESSIONS_WRITE], [APPROVALS], [SETTINGS], [ADMIN].
+syntax = "proto3";
+
+package fleet.hub.v1;
+
+import "fleet/hub/v1/account.proto";
+import "fleet/hub/v1/common.proto";
+import "fleet/hub/v1/device.proto";
+import "fleet/hub/v1/goal.proto";
+import "fleet/hub/v1/machine.proto";
+import "fleet/hub/v1/routine.proto";
+import "fleet/hub/v1/session.proto";
+import "fleet/hub/v1/settings.proto";
+import "fleet/hub/v1/terminal.proto";
+import "fleet/hub/v1/triage.proto";
+import "fleet/hub/v1/watch.proto";
+import "fleet/hub/v1/work.proto";
+
+option go_package = "github.com/linuxdynasty/fleet-board/api/fleet/hub/v1;hubv1";
+
+// FleetService is everything a person-facing client can do.
+service FleetService {
+  // --- Server, summary, changes ---------------------------------------------
+
+  // [none] API version, features, the caller. Works before sign-in.
+  rpc GetServerInfo(GetServerInfoRequest) returns (GetServerInfoResponse);
+  // [READ] The summary strip.
+  rpc GetFleetSummary(GetFleetSummaryRequest) returns (GetFleetSummaryResponse);
+  // [READ] Resource changes, filtered by topic; resumable.
+  rpc Watch(WatchRequest) returns (stream WatchResponse);
+  // [READ] One operation (an agent command and its outcome).
+  rpc GetOperation(GetOperationRequest) returns (GetOperationResponse);
+
+  // --- Machines (Fleet view) ------------------------------------------------
+
+  // [READ]
+  rpc ListMachines(ListMachinesRequest) returns (ListMachinesResponse);
+  // [READ]
+  rpc GetMachine(GetMachineRequest) returns (GetMachineResponse);
+  // [SETTINGS] Display name and hub-assigned labels.
+  rpc UpdateMachine(UpdateMachineRequest) returns (UpdateMachineResponse);
+  // [ADMIN] Drain (M4).
+  rpc DrainMachine(DrainMachineRequest) returns (DrainMachineResponse);
+  // [ADMIN] Undrain (M4).
+  rpc UndrainMachine(UndrainMachineRequest) returns (UndrainMachineResponse);
+  // [ADMIN] Revoke and forget a machine.
+  rpc DeleteMachine(DeleteMachineRequest) returns (DeleteMachineResponse);
+  // [ADMIN] A single-use enrollment token (A1).
+  rpc CreateEnrollmentToken(CreateEnrollmentTokenRequest) returns (CreateEnrollmentTokenResponse);
+
+  // --- Sessions and panes (Session view) ------------------------------------
+
+  // [READ]
+  rpc ListSessions(ListSessionsRequest) returns (ListSessionsResponse);
+  // [READ]
+  rpc GetSession(GetSessionRequest) returns (GetSessionResponse);
+  // [SESSIONS_WRITE] EnsureSession (F1).
+  rpc CreateSession(CreateSessionRequest) returns (CreateSessionResponse);
+  // [SESSIONS_WRITE] SendKeys (F3); not for prompt answers.
+  rpc SendKeys(SendKeysRequest) returns (SendKeysResponse);
+  // [SESSIONS_WRITE] Interrupt (F4).
+  rpc InterruptPane(InterruptPaneRequest) returns (InterruptPaneResponse);
+  // [SESSIONS_WRITE] RunHarnessCommand (F8); DESTRUCTIVE needs an approval.
+  rpc RunHarnessCommand(RunHarnessCommandRequest) returns (RunHarnessCommandResponse);
+  // [READ] CapturePane (E10).
+  rpc CapturePane(CapturePaneRequest) returns (CapturePaneResponse);
+  // [SESSIONS_WRITE] SetSessionAvailability (E11).
+  rpc SetSessionAvailability(SetSessionAvailabilityRequest) returns (SetSessionAvailabilityResponse);
+  // [SESSIONS_WRITE] RespawnPane (F5).
+  rpc RespawnPane(RespawnPaneRequest) returns (RespawnPaneResponse);
+  // [SESSIONS_WRITE] KillWindow (F6); a developer's window needs an approval.
+  rpc KillWindow(KillWindowRequest) returns (KillWindowResponse);
+  // [SESSIONS_WRITE] SetLogCapture (K1).
+  rpc SetLogCapture(SetLogCaptureRequest) returns (SetLogCaptureResponse);
+  // [READ] read-only, [SESSIONS_WRITE] with input. Browser attach (J1).
+  rpc AttachTerminal(stream AttachTerminalRequest) returns (stream AttachTerminalResponse);
+  // [READ] Stored session log, optionally following new data (K1, K3).
+  rpc ReadSessionLog(ReadSessionLogRequest) returns (stream ReadSessionLogResponse);
+
+  // --- Goals ----------------------------------------------------------------
+
+  // [READ]
+  rpc ListGoals(ListGoalsRequest) returns (ListGoalsResponse);
+  // [READ]
+  rpc GetGoal(GetGoalRequest) returns (GetGoalResponse);
+  // [SESSIONS_WRITE] Manual dispatch: StartGoal (G3).
+  rpc StartGoal(StartGoalRequest) returns (StartGoalResponse);
+  // [SESSIONS_WRITE] Preflight (I1) only.
+  rpc PreflightGoal(PreflightGoalRequest) returns (PreflightGoalResponse);
+  // [SESSIONS_WRITE] Pause, resume, edit, clear, re-check (G4).
+  rpc ControlGoal(ControlGoalRequest) returns (ControlGoalResponse);
+
+  // --- Work items, change requests, integrations (Work view) ----------------
+
+  // [READ]
+  rpc ListWorkItems(ListWorkItemsRequest) returns (ListWorkItemsResponse);
+  // [READ]
+  rpc GetWorkItem(GetWorkItemRequest) returns (GetWorkItemResponse);
+  // [READ]
+  rpc ListChangeRequests(ListChangeRequestsRequest) returns (ListChangeRequestsResponse);
+  // [READ]
+  rpc GetChangeRequest(GetChangeRequestRequest) returns (GetChangeRequestResponse);
+  // [READ]
+  rpc ListIntegrations(ListIntegrationsRequest) returns (ListIntegrationsResponse);
+  // [SETTINGS] Label and watched repos/projects.
+  rpc UpdateIntegration(UpdateIntegrationRequest) returns (UpdateIntegrationResponse);
+
+  // --- Accounts and usage ---------------------------------------------------
+
+  // [READ]
+  rpc ListAccounts(ListAccountsRequest) returns (ListAccountsResponse);
+  // [READ]
+  rpc GetAccount(GetAccountRequest) returns (GetAccountResponse);
+  // [SETTINGS]
+  rpc UpdateAccount(UpdateAccountRequest) returns (UpdateAccountResponse);
+  // [SESSIONS_WRITE] EnsureProbe run_now (D1).
+  rpc ProbeAccount(ProbeAccountRequest) returns (ProbeAccountResponse);
+  // [READ] Reading history for the burn-down chart.
+  rpc ListUsageReadings(ListUsageReadingsRequest) returns (ListUsageReadingsResponse);
+
+  // --- Triage and approvals -------------------------------------------------
+
+  // [READ]
+  rpc ListTriageItems(ListTriageItemsRequest) returns (ListTriageItemsResponse);
+  // [READ]
+  rpc GetTriageItem(GetTriageItemRequest) returns (GetTriageItemResponse);
+  // [APPROVALS]
+  rpc SnoozeTriageItem(SnoozeTriageItemRequest) returns (SnoozeTriageItemResponse);
+  // [APPROVALS]
+  rpc DismissTriageItem(DismissTriageItemRequest) returns (DismissTriageItemResponse);
+  // [READ]
+  rpc ListApprovals(ListApprovalsRequest) returns (ListApprovalsResponse);
+  // [READ]
+  rpc GetApproval(GetApprovalRequest) returns (GetApprovalResponse);
+  // [APPROVALS] Answer a prompt, confirm or deny a command.
+  rpc DecideApproval(DecideApprovalRequest) returns (DecideApprovalResponse);
+
+  // --- Routines -------------------------------------------------------------
+
+  // [READ]
+  rpc ListRoutines(ListRoutinesRequest) returns (ListRoutinesResponse);
+  // [READ]
+  rpc GetRoutine(GetRoutineRequest) returns (GetRoutineResponse);
+  // [SETTINGS]
+  rpc CreateRoutine(CreateRoutineRequest) returns (CreateRoutineResponse);
+  // [SETTINGS]
+  rpc UpdateRoutine(UpdateRoutineRequest) returns (UpdateRoutineResponse);
+  // [SETTINGS]
+  rpc DeleteRoutine(DeleteRoutineRequest) returns (DeleteRoutineResponse);
+  // [SESSIONS_WRITE] Start a run now.
+  rpc RunRoutine(RunRoutineRequest) returns (RunRoutineResponse);
+
+  // --- Settings and audit ---------------------------------------------------
+
+  // [READ]
+  rpc GetSettings(GetSettingsRequest) returns (GetSettingsResponse);
+  // [READ]
+  rpc ListSettings(ListSettingsRequest) returns (ListSettingsResponse);
+  // [SETTINGS]
+  rpc UpdateSettings(UpdateSettingsRequest) returns (UpdateSettingsResponse);
+  // [READ]
+  rpc ListAuditEntries(ListAuditEntriesRequest) returns (ListAuditEntriesResponse);
+
+  // --- Devices and notifications --------------------------------------------
+
+  // [none] Sent by a new device; creates a pending Device.
+  rpc RequestPairing(RequestPairingRequest) returns (RequestPairingResponse);
+  // [ADMIN]
+  rpc ApprovePairing(ApprovePairingRequest) returns (ApprovePairingResponse);
+  // [ADMIN], or the device itself.
+  rpc RevokeDevice(RevokeDeviceRequest) returns (RevokeDeviceResponse);
+  // [ADMIN]
+  rpc ListDevices(ListDevicesRequest) returns (ListDevicesResponse);
+  // [ADMIN], or the device itself.
+  rpc GetDevice(GetDeviceRequest) returns (GetDeviceResponse);
+  // [READ] own targets; [ADMIN] all.
+  rpc ListNotificationTargets(ListNotificationTargetsRequest) returns (ListNotificationTargetsResponse);
+  // [READ] for own targets.
+  rpc CreateNotificationTarget(CreateNotificationTargetRequest) returns (CreateNotificationTargetResponse);
+  // [READ] for own targets.
+  rpc UpdateNotificationTarget(UpdateNotificationTargetRequest) returns (UpdateNotificationTargetResponse);
+  // [READ] for own targets.
+  rpc DeleteNotificationTarget(DeleteNotificationTargetRequest) returns (DeleteNotificationTargetResponse);
+}

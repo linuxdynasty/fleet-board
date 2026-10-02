@@ -1,0 +1,169 @@
+// fleet.hub.v1 work: the hub's mirrors of work items and change requests
+// (03b W4) with the hub's own stage and goal links, and the configured
+// integrations. The provider data is the provider-neutral model of
+// fleet.integration.v1, embedded unchanged.
+syntax = "proto3";
+
+package fleet.hub.v1;
+
+import "fleet/integration/v1/integration.proto";
+import "fleet/type/v1/ids.proto";
+import "fleet/type/v1/work.proto";
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/linuxdynasty/fleet-board/api/fleet/hub/v1;hubv1";
+
+// WorkStage is the hub-owned stage of a work item (03b state machine).
+enum WorkStage {
+  WORK_STAGE_UNSPECIFIED = 0;
+  // Mirrored and open, not yet evaluated.
+  WORK_STAGE_SEEN = 1;
+  // Trusted, unclaimed, repo watched: auto-dispatch may take it.
+  WORK_STAGE_READY = 2;
+  // Untrusted or not dispatchable automatically.
+  WORK_STAGE_MANUAL_ONLY = 3;
+  WORK_STAGE_CLAIMED_ELSEWHERE = 4;
+  WORK_STAGE_DISPATCHED = 5;
+  WORK_STAGE_RUNNING = 6;
+  WORK_STAGE_DONE_CLAIMED = 7;
+  WORK_STAGE_DISAGREE = 8;
+  WORK_STAGE_CLOSED = 9;
+}
+
+// WorkItem is the hub's record of one issue, ticket or routine run.
+message WorkItem {
+  fleet.type.v1.WorkItemRef id = 1;
+  uint64 version = 2;
+  google.protobuf.Timestamp create_time = 3;
+  google.protobuf.Timestamp update_time = 4;
+
+  // The provider's data as last synced; for ROUTINE runs, hub-made.
+  fleet.integration.v1.WorkItem item = 10;
+  WorkStage stage = 11;
+  // Passed the trusted-issues gate (design.md safety rails).
+  bool trusted = 12;
+  // Active goal for this item, if any; past goals via ListGoals.
+  fleet.type.v1.GoalId goal = 13;
+  // Size estimate (S/M/L) from triage, when set.
+  string size = 14;
+  google.protobuf.Timestamp last_sync_time = 15;
+}
+
+// ChangeRequest is the hub's record of one pull or merge request.
+message ChangeRequest {
+  fleet.type.v1.WorkItemRef id = 1;
+  uint64 version = 2;
+  google.protobuf.Timestamp create_time = 3;
+  google.protobuf.Timestamp update_time = 4;
+
+  fleet.integration.v1.ChangeRequest change_request = 10;
+  // Goal that owns it; empty = no goal owns it ("take over").
+  fleet.type.v1.GoalId goal = 11;
+  google.protobuf.Timestamp last_sync_time = 12;
+}
+
+// IntegrationHealth is the hub's view of an integration's sync.
+enum IntegrationHealth {
+  INTEGRATION_HEALTH_UNSPECIFIED = 0;
+  INTEGRATION_HEALTH_OK = 1;
+  // Access lost, rate limited or failing; dispatch for its repos stops.
+  INTEGRATION_HEALTH_DEGRADED = 2;
+  INTEGRATION_HEALTH_DISABLED = 3;
+}
+
+// Integration is one configured integration instance.
+message Integration {
+  fleet.type.v1.IntegrationId id = 1;
+  uint64 version = 2;
+  google.protobuf.Timestamp create_time = 3;
+  google.protobuf.Timestamp update_time = 4;
+
+  fleet.integration.v1.Integration integration = 10;
+  IntegrationHealth health = 11;
+  // Short reason when DEGRADED. Untrusted where it echoes the provider.
+  string health_reason = 12;
+  google.protobuf.Timestamp last_sync_time = 13;
+  // Seconds behind the provider, the planner's max_sync_lag input.
+  uint32 sync_lag_seconds = 14;
+}
+
+// ListWorkItemsRequest. Filter fields: stage, integration, repo, kind,
+// trusted, label.
+message ListWorkItemsRequest {
+  int32 page_size = 1;
+  string page_token = 2;
+  string filter = 3;
+  string order_by = 4;
+}
+
+// ListWorkItemsResponse.
+message ListWorkItemsResponse {
+  repeated WorkItem work_items = 1;
+  string next_page_token = 2;
+}
+
+// GetWorkItemRequest.
+message GetWorkItemRequest {
+  fleet.type.v1.WorkItemRef id = 1;
+  // Fetch the body from the provider (64 KiB cap). Untrusted text.
+  bool include_body = 2;
+}
+
+// GetWorkItemResponse.
+message GetWorkItemResponse {
+  WorkItem work_item = 1;
+  string body = 2;
+}
+
+// ListChangeRequestsRequest. Filter fields: repo, state, goal, owned.
+message ListChangeRequestsRequest {
+  int32 page_size = 1;
+  string page_token = 2;
+  string filter = 3;
+  string order_by = 4;
+}
+
+// ListChangeRequestsResponse.
+message ListChangeRequestsResponse {
+  repeated ChangeRequest change_requests = 1;
+  string next_page_token = 2;
+}
+
+// GetChangeRequestRequest.
+message GetChangeRequestRequest {
+  fleet.type.v1.WorkItemRef id = 1;
+}
+
+// GetChangeRequestResponse.
+message GetChangeRequestResponse {
+  ChangeRequest change_request = 1;
+}
+
+// ListIntegrationsRequest.
+message ListIntegrationsRequest {
+  int32 page_size = 1;
+  string page_token = 2;
+  string filter = 3;
+  string order_by = 4;
+}
+
+// ListIntegrationsResponse.
+message ListIntegrationsResponse {
+  repeated Integration integrations = 1;
+  string next_page_token = 2;
+}
+
+// UpdateIntegrationRequest. Updatable: integration.label,
+// integration.watched. Credentials are never set through this API.
+message UpdateIntegrationRequest {
+  string request_id = 1;
+  Integration integration = 2;
+  google.protobuf.FieldMask update_mask = 3;
+  uint64 expected_version = 4;
+}
+
+// UpdateIntegrationResponse.
+message UpdateIntegrationResponse {
+  Integration integration = 1;
+}

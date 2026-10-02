@@ -34,7 +34,7 @@ function renderTmux(s, m) {
     <div id="tmuxTerm" class="tmux ${T.focused ? "focused" : ""}" tabindex="0" role="application" aria-label="tmux session ${esc(s.sess)} on ${esc(m.short)}; click to focus, ${esc(settings.tmuxPrefix)} is the prefix">
       ${status}<div class="tm-panes ${z ? "single" : layoutOf(s)}">${shown.map(([p, i]) => paneHtml(p, i, i === ai)).join("")}</div>${T.overlay ? overlayHtml(s) : ""}</div>
     <div class="tm-caption"><span>Click the terminal to type into it. <span class="mono">${esc(settings.tmuxPrefix)}</span> is the tmux prefix (<span class="mono">${esc(settings.tmuxPrefix)} ?</span> lists the keys); your own bindings apply in the real board. Esc leaves the terminal.</span>
-      ${dt("tm", `<span>keys: TermDown.input on the Terminal stream · window tab click: TermDown.select{window_id} (contract addition)</span><span>${esc(attachCmd(s, T.ro))} → ${esc(viewSess(s))}${T.lastDown ? ` · last sent: ${esc(T.lastDown)}` : ""}</span>`)}</div></div>`;
+      ${dt("tm", `<span>keys: TermDown.input on the Terminal stream · window tab click: TermDown.select{window} (TermSelect)</span><span>${esc(attachCmd(s, T.ro))} → ${esc(viewSess(s))}${T.lastDown ? ` · last sent: ${esc(T.lastDown)}` : ""}</span>`)}</div></div>`;
 }
 
 const promptIdx = lines => { for (let i = lines.length - 1; i >= 0; i--) if (/(^>\s?$)|([%$#]\s?$)/.test(lines[i][1])) return i; return lines.length - 1; };

@@ -1,0 +1,292 @@
+// fleet.hub.v1 triage and approvals (03d W7). A triage item is something a
+// person should look at; an approval is a decision only a person may make
+// (answer a prompt, confirm a destructive command), small enough for a phone
+// notification. A prompt raises both: the item explains, the approval acts.
+syntax = "proto3";
+
+package fleet.hub.v1;
+
+import "fleet/hub/v1/common.proto";
+import "fleet/type/v1/harness.proto";
+import "fleet/type/v1/ids.proto";
+import "fleet/type/v1/status.proto";
+import "fleet/type/v1/work.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/linuxdynasty/fleet-board/api/fleet/hub/v1;hubv1";
+
+// TriageKind (03d W7 table).
+enum TriageKind {
+  TRIAGE_KIND_UNSPECIFIED = 0;
+  TRIAGE_KIND_PROMPT = 1;
+  TRIAGE_KIND_CONDITION = 2;
+  TRIAGE_KIND_STUCK = 3;
+  TRIAGE_KIND_BLOCKED_OWNER = 4;
+  TRIAGE_KIND_DONE_DISAGREEMENT = 5;
+  TRIAGE_KIND_READY_FOR_HUMAN_MERGE = 6;
+  TRIAGE_KIND_REVIEW_LOOP = 7;
+  TRIAGE_KIND_PACING = 8;
+  TRIAGE_KIND_START_UNKNOWN = 9;
+  TRIAGE_KIND_ORPHAN_GOAL_PANE = 10;
+  TRIAGE_KIND_DOUBLE_CLAIM = 11;
+  TRIAGE_KIND_INTEGRATION_ACCESS_LOST = 12;
+  TRIAGE_KIND_USAGE_PARSE_FAILED = 13;
+  TRIAGE_KIND_PARSER_UNSUPPORTED = 14;
+  TRIAGE_KIND_DUPLICATE_IDENTITY = 15;
+  TRIAGE_KIND_POLICY_CHANGED = 16;
+  TRIAGE_KIND_HOSTNAME_MISMATCH = 17;
+  TRIAGE_KIND_DIRTY_WORKTREE = 18;
+  TRIAGE_KIND_LIMIT_WAIT = 19;
+  TRIAGE_KIND_OTHER = 63;
+}
+
+// Severity ranks items and gates notifications (NotificationTarget).
+enum Severity {
+  SEVERITY_UNSPECIFIED = 0;
+  // Informational; never notified.
+  SEVERITY_INFO = 1;
+  // Should be looked at today (pacing, parse failures).
+  SEVERITY_WARNING = 2;
+  // Work is blocked until a person acts (prompt, stuck, blocked owner).
+  SEVERITY_ACTION = 3;
+  // A destructive prompt, or something that can lose work.
+  SEVERITY_CRITICAL = 4;
+}
+
+// TriageState (03d item state machine).
+enum TriageState {
+  TRIAGE_STATE_UNSPECIFIED = 0;
+  TRIAGE_STATE_OPEN = 1;
+  TRIAGE_STATE_SNOOZED = 2;
+  TRIAGE_STATE_IN_FLIGHT = 3;
+  TRIAGE_STATE_ACTED = 4;
+  TRIAGE_STATE_RETIRED = 5;
+  TRIAGE_STATE_EXPIRED = 6;
+  TRIAGE_STATE_DISMISSED = 7;
+}
+
+// PromptDetail is the prompt card. Untrusted text.
+message PromptDetail {
+  fleet.type.v1.PromptId prompt_id = 1;
+  string text = 2;
+  repeated fleet.type.v1.PromptOption options = 3;
+  bool destructive = 4;
+  string destructive_reason = 5;
+  fleet.type.v1.PromptSource source = 6;
+  uint32 confidence = 7;
+  bool answerable = 8;
+}
+
+// ConditionDetail is the harness-condition card. Untrusted text.
+message ConditionDetail {
+  fleet.type.v1.HarnessConditionKind kind = 1;
+  bool retrying = 2;
+  uint32 attempt = 3;
+  uint32 max_attempts = 4;
+  google.protobuf.Timestamp next_retry_time = 5;
+  google.protobuf.Timestamp resets_time = 6;
+  uint32 http_status = 7;
+  string text = 8;
+  google.protobuf.Timestamp since_time = 9;
+}
+
+// TriageItem is one entry in the Triage feed.
+message TriageItem {
+  TriageItemId id = 1;
+  uint64 version = 2;
+  google.protobuf.Timestamp create_time = 3;
+  google.protobuf.Timestamp update_time = 4;
+
+  TriageKind kind = 10;
+  Severity severity = 11;
+  TriageState state = 12;
+  // Unique while open; includes the machine id.
+  string fingerprint = 13;
+  // One line for lists and notifications. Untrusted where it echoes text.
+  string title = 14;
+  fleet.type.v1.MachineId machine = 15;
+  fleet.type.v1.SessionId session = 16;
+  fleet.type.v1.PaneKey pane = 17;
+  fleet.type.v1.GoalId goal = 18;
+  fleet.type.v1.AccountId account = 19;
+  fleet.type.v1.WorkItemRef work_item = 20;
+  oneof detail {
+    PromptDetail prompt = 21;
+    ConditionDetail condition = 22;
+    // Free text for the other kinds (goal line, verifier finding).
+    string note = 23;
+  }
+  // The approval that acts on this item, if any.
+  ApprovalId approval = 24;
+  google.protobuf.Timestamp snoozed_until = 25;
+  google.protobuf.Timestamp expire_time = 26;
+  fleet.type.v1.Principal acted_by = 27;
+  google.protobuf.Timestamp acted_time = 28;
+  fleet.type.v1.CommandId last_operation = 29;
+}
+
+// ApprovalKind is what is being decided.
+enum ApprovalKind {
+  APPROVAL_KIND_UNSPECIFIED = 0;
+  // Answer a harness permission prompt (SendKeys bound to prompt_id).
+  APPROVAL_KIND_PROMPT_ANSWER = 1;
+  // Confirm a DESTRUCTIVE harness command or KillWindow on a developer's
+  // window before it is sent.
+  APPROVAL_KIND_COMMAND_CONFIRM = 2;
+  // Confirm a manual dispatch the scheduler would refuse (unsupported
+  // harness version, API-key account).
+  APPROVAL_KIND_DISPATCH_CONFIRM = 3;
+}
+
+// ApprovalFallback is what happens when nobody decides before expiry.
+enum ApprovalFallback {
+  APPROVAL_FALLBACK_UNSPECIFIED = 0;
+  // Nothing is sent; a prompt stays on screen for someone at the machine.
+  // The only fallback in v1: silence never approves.
+  APPROVAL_FALLBACK_DENY = 1;
+}
+
+// ApprovalChoice is one allowed decision.
+message ApprovalChoice {
+  // For prompts the key to type ("1", "y"); otherwise "approve" / "deny".
+  string key = 1;
+  // Untrusted text for prompts.
+  string label = 2;
+  bool destructive = 3;
+}
+
+// ApprovalState.
+enum ApprovalState {
+  APPROVAL_STATE_UNSPECIFIED = 0;
+  APPROVAL_STATE_PENDING = 1;
+  APPROVAL_STATE_DECIDED = 2;
+  // Expired; the fallback applied.
+  APPROVAL_STATE_EXPIRED = 3;
+  // The cause went away (prompt gone) before a decision.
+  APPROVAL_STATE_WITHDRAWN = 4;
+}
+
+// Approval is one pending or past decision.
+message Approval {
+  ApprovalId id = 1;
+  uint64 version = 2;
+  google.protobuf.Timestamp create_time = 3;
+  google.protobuf.Timestamp update_time = 4;
+
+  ApprovalKind kind = 10;
+  ApprovalState state = 11;
+  Severity severity = 12;
+  // What will happen, rendered for a small screen: the prompt text or the
+  // exact command. Untrusted where it echoes screen text. 2 KiB.
+  string preview = 13;
+  fleet.type.v1.MachineId machine = 14;
+  fleet.type.v1.SessionId session = 15;
+  fleet.type.v1.PaneKey pane = 16;
+  fleet.type.v1.GoalId goal = 17;
+  TriageItemId triage_item = 18;
+  repeated ApprovalChoice allowed_decisions = 19;
+  // Preselected choice; "deny" (or the deny option) for destructive ones.
+  string default_choice = 20;
+  ApprovalFallback fallback = 21;
+  google.protobuf.Timestamp expire_time = 22;
+  // Lowest role or scope that may decide.
+  fleet.type.v1.Role required_role = 23;
+  // Who decided and from which device (Principal.device_id), and what.
+  fleet.type.v1.Principal decided_by = 24;
+  string decision = 25;
+  google.protobuf.Timestamp decided_time = 26;
+  // The command the decision sent, if any.
+  fleet.type.v1.CommandId operation = 27;
+}
+
+// ListTriageItemsRequest. Filter fields: state, kind, severity, machine,
+// goal. Default order: severity, then age.
+message ListTriageItemsRequest {
+  int32 page_size = 1;
+  string page_token = 2;
+  string filter = 3;
+  string order_by = 4;
+}
+
+// ListTriageItemsResponse.
+message ListTriageItemsResponse {
+  repeated TriageItem triage_items = 1;
+  string next_page_token = 2;
+}
+
+// GetTriageItemRequest.
+message GetTriageItemRequest {
+  TriageItemId id = 1;
+}
+
+// GetTriageItemResponse.
+message GetTriageItemResponse {
+  TriageItem triage_item = 1;
+}
+
+// SnoozeTriageItemRequest.
+message SnoozeTriageItemRequest {
+  string request_id = 1;
+  TriageItemId id = 2;
+  uint64 expected_version = 3;
+  google.protobuf.Timestamp until = 4;
+}
+
+// SnoozeTriageItemResponse.
+message SnoozeTriageItemResponse {
+  TriageItem triage_item = 1;
+}
+
+// DismissTriageItemRequest closes an item without acting (audited).
+message DismissTriageItemRequest {
+  string request_id = 1;
+  TriageItemId id = 2;
+  uint64 expected_version = 3;
+  string note = 4;
+}
+
+// DismissTriageItemResponse.
+message DismissTriageItemResponse {
+  TriageItem triage_item = 1;
+}
+
+// ListApprovalsRequest. Filter fields: state, kind, machine.
+message ListApprovalsRequest {
+  int32 page_size = 1;
+  string page_token = 2;
+  string filter = 3;
+  string order_by = 4;
+}
+
+// ListApprovalsResponse.
+message ListApprovalsResponse {
+  repeated Approval approvals = 1;
+  string next_page_token = 2;
+}
+
+// GetApprovalRequest.
+message GetApprovalRequest {
+  ApprovalId id = 1;
+}
+
+// GetApprovalResponse.
+message GetApprovalResponse {
+  Approval approval = 1;
+}
+
+// DecideApprovalRequest. expected_version is required (non-zero): a
+// decision always names the exact approval state it saw.
+message DecideApprovalRequest {
+  string request_id = 1;
+  ApprovalId id = 2;
+  uint64 expected_version = 3;
+  // One of allowed_decisions[].key.
+  string decision = 4;
+}
+
+// DecideApprovalResponse. operation is set when the decision sends a
+// command (an answer typed, a confirmed command); unset for deny.
+message DecideApprovalResponse {
+  Approval approval = 1;
+  Operation operation = 2;
+}

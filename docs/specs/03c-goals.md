@@ -25,7 +25,7 @@ sequenceDiagram
     U->>S: dispatch work_item → (machine, harness, account)
     S->>W: tx: outbox Preflight{spec GoalSpec}
     W-->>A: Command{Preflight}
-    A-->>W: CommandResult{preflight PreflightResult{ok, failures[], details[], would_reuse}}
+    A-->>W: CommandResult{preflight PreflightResult{ok, failed_checks[] PreflightFailure{reason, detail, retryable}, would_reuse, goal_line_preview}}
     W-->>U: show reasons / "will reuse session X" · operator confirms
   end
   S->>S: plan: READY work item × ranked account × fit machine × reuse-or-new (rules below)
@@ -61,7 +61,7 @@ sequenceDiagram
    `RESERVE`, `SHORT_LIMIT`, `UNKNOWN`, `STALE`, `EXCLUDED` (interactive-only,
    dollar cap, OpenCode on Anthropic).
 3. **Machines:** `ONLINE`, not draining, `HarnessInfo{launch_allowed,
-   version_supported}` for the harness, the account's `AccountIdentity` present
+   version_support = SUPPORTED}` for the harness, the account's `AccountIdentity` present
    and `signed_in`, `ForgeCliStatus.signed_in` with `push_access` for the repo,
    a checkout of the repo, `active < max_active` and `total < max_total`
    (counts from the hub's goal table; if `Heartbeat.counts.goal_panes_by_state`
