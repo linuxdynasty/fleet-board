@@ -9,25 +9,25 @@ const inDays = d => new Date(T0 + d * 86400e3);
 // B1 MachineFacts + H4 ForgeCliStatus + L1 PolicyInfo + L2 EffectiveSettings.sources (sample where noted).
 // `sess` lists the developer's own tmux sessions (E1); fleet-started windows live in `sessions` (fleet-data-work.js).
 const machines = [
-  { id: "mbp", name: "Linuxdynasty-MacBook-Pro-14", short: "mbp", ip: "192.168.1.118", user: "asanabria", os: "macOS 27 · arm64", ram: 64, hub: true,
+  { id: "mbp", name: "Linuxdynasty-MacBook-Pro-14", short: "mbp", user: "asanabria", os: "macOS 27 · arm64", ram: 64, hub: true,
     harnesses: ["claude", "codex", "muse", "opencode"], versions: { claude: "2.1.286", codex: "0.159.2", muse: "1.4.2", opencode: "1.18.34" },
     maxActive: 2, maxTotal: 4, repoRoot: "~/repos", tmuxVersion: "tmux 3.5a", defaultServer: "control", labels: ["laptop", "hub"],
     forge: [{ tool: "gh", host: "github.com", user: "linuxdynasty", access: [["eshu-hq/eshu", "ADMIN"], ["CigarsOnly/virtual-humidor", "WRITE"]] }],
     certExpires: inDays(61), policyHash: "a91f3c", policyChanged: false, agentVersion: "0.3.1", beat: ago(2), drained: false,
     sources: { max_active: "machine", max_total: "group laptop", default_server: "fleet default", cert_lifetime: "fleet default", local_approval: "local ceiling", idle_threshold: "fleet default" } },
-  { id: "omarchy", name: "omarchy", short: "omarchy", ip: "192.168.1.150", user: "linuxdynasty", os: "Linux 7.2 · x86_64", ram: 62,
+  { id: "omarchy", name: "omarchy", short: "omarchy", user: "linuxdynasty", os: "Linux 7.2 · x86_64", ram: 62,
     harnesses: ["claude", "codex", "muse", "opencode"], versions: { claude: "2.1.285", codex: "0.159.2", muse: "1.4.1", opencode: "1.18.30" },
     maxActive: 2, maxTotal: 4, repoRoot: "~/repos", tmuxVersion: "tmux 3.4", defaultServer: "control", labels: ["always-on", "linux"],
     forge: [{ tool: "gh", host: "github.com", user: "linuxdynasty", access: [["eshu-hq/eshu", "ADMIN"]] }, { tool: "glab", host: "gitlab.com", user: "linuxdynasty", access: [["acme/infra", "Maintainer"]] }],
     certExpires: inDays(12), policyHash: "7be210", policyChanged: true, agentVersion: "0.3.1", beat: ago(4), drained: false,
     sources: { max_active: "group always-on", max_total: "group always-on", default_server: "local ceiling", cert_lifetime: "machine", local_approval: "fleet default", idle_threshold: "machine" } },
-  { id: "allen", name: "allens-Apple-MacBook-Pro", short: "allen", ip: "192.168.1.232", user: "allen", os: "macOS 25.6 · arm64", ram: 128,
+  { id: "allen", name: "allens-Apple-MacBook-Pro", short: "allen", user: "allen", os: "macOS 25.6 · arm64", ram: 128,
     harnesses: ["claude", "codex", "muse", "opencode"], versions: { claude: "2.1.286", codex: "0.159.2", muse: "1.4.2", opencode: "1.18.34" },
     maxActive: 4, maxTotal: 8, repoRoot: "~/repos", tmuxVersion: "tmux 3.5a", defaultServer: "control", labels: ["always-on", "big"],
     forge: [{ tool: "gh", host: "github.com", user: "linuxdynasty", access: [["eshu-hq/eshu", "ADMIN"], ["CigarsOnly/virtual-humidor", "WRITE"]] }],
     certExpires: inDays(88), policyHash: "a91f3c", policyChanged: false, agentVersion: "0.3.1", beat: ago(3), drained: false,
     sources: { max_active: "machine", max_total: "machine", default_server: "fleet default", cert_lifetime: "fleet default", local_approval: "fleet default", idle_threshold: "fleet default" } },
-  { id: "m124", name: "ip-192-168-1-124", short: ".124", ip: "192.168.1.124", user: "linuxdynasty", os: "macOS 27 · arm64", ram: 64,
+  { id: "m124", name: "ip-192-168-1-124", short: ".124", user: "linuxdynasty", os: "macOS 27 · arm64", ram: 64,
     harnesses: ["claude", "codex", "muse", "opencode"], versions: { claude: "2.1.286", codex: "0.157.1", muse: "1.4.2", opencode: "1.18.32" },
     maxActive: 2, maxTotal: 4, repoRoot: "~/repos", tmuxVersion: "tmux 3.2a", defaultServer: "observe", labels: ["laptop"],
     forge: [{ tool: "gh", host: "github.com", user: "linuxdynasty", access: [["eshu-hq/eshu", "ADMIN"]] }],
@@ -69,8 +69,8 @@ const accounts = [
 
 // API-key accounts reached through OpenCode (BUDGET_KIND_DOLLAR_CAP). Manual dispatch only, never auto. Sample.
 const apiAccounts = [
-  { id: "deepseek-api", harness: "opencode", provider: "DeepSeek", label: "DeepSeek (API key)", capUsd: 20, spentUsd: 6.4, period: "month", source: "opencode stats", read: ago(25 * 60), mode: "manual-only", sample: true },
-  { id: "moonshot-api", harness: "opencode", provider: "Moonshot AI", label: "Moonshot (API key)", capUsd: 15, spentUsd: 11.2, period: "month", source: "opencode stats", read: ago(25 * 60), mode: "manual-only", sample: true },
+  { id: "deepseek-api", harness: "opencode", provider: "DeepSeek", label: "DeepSeek (API key)", capUsd: 20, spentUsd: 6.4, period: "month", source: "opencode stats", read: ago(25 * 60), mode: "fleet", budgetKind: "dollar_cap", sample: true },
+  { id: "moonshot-api", harness: "opencode", provider: "Moonshot AI", label: "Moonshot (API key)", capUsd: 15, spentUsd: 11.2, period: "month", source: "opencode stats", read: ago(25 * 60), mode: "fleet", budgetKind: "dollar_cap", sample: true },
 ];
 
 // ADR 0012 integrations. GitHub is connected (ADR 0005); the rest are planned adapters with their declared capabilities.

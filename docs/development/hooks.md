@@ -79,7 +79,7 @@ governed; nothing else needs to change.
 ```
 
 - Rules are a **union**: every rule whose globs match adds its skills, so a
-  file under `internal/hub/store/` needs `fleet-go` and `fleet-sqlite-store`.
+  file under `internal/store/` needs `fleet-go` and `fleet-sqlite-store`.
   Order does not matter.
 - A glob with a `/` is anchored to the repo-relative path (`**/` is zero or
   more directories). A glob without `/` matches any one path component, like
@@ -114,7 +114,7 @@ same path for all three harnesses) when a prompt starts with `/goal ` or
 | goal text | refuses the stop | working |
 | `DONE` | allows | goal met |
 | `BLOCKED: <reason> WATCH=<pid>` | allows while the pid is alive; a dead pid refuses | waiting on outside work |
-| `BLOCKED: <reason> OWNER=<who> ACTION=<what>` | allows | a named person must act; the collector turns it into one Triage item ([design](../design.md)) |
+| `BLOCKED: <reason> OWNER=<who> ACTION=<what>` | allows | a named person must act; the hub turns it into one Triage item ([design](../design.md)) |
 | `BLOCKED: <reason>` | refuses, tells the agent to escalate to `arbiter-fleet` | stuck |
 
 `stop_hook_active: true` always allows the stop: that is the loop breaker, in

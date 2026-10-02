@@ -126,3 +126,7 @@ existing messages) are free to change; `buf build` and `buf lint` pass.
 3. Real repo names to the model, or aliased?
 4. `/metrics` by `ADMIN` token: accept, or add a narrower metrics scope later?
 5. Thresholds fixed in v1, or owner settings?
+
+Questions 2 to 5 are answered as proposed in
+[0022](0022-drift-audit-decisions.md); question 1 stays open there with its
+proposed default.

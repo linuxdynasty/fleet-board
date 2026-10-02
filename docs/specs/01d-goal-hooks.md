@@ -18,7 +18,8 @@ Fleet's hooks do three narrower jobs:
 3. **Stop guard.** Refuse a stop while the goal file says the goal is
    unfinished and nothing is watching it (the same rule as eshu's
    `goal-continue.sh`: `DONE` → allow; `BLOCKED … WATCH=<live pid>` → allow;
-   `BLOCKED` without a live watcher → refuse and escalate).
+   `BLOCKED … OWNER=<who> ACTION=<what>` → allow; `BLOCKED` with neither (or a
+   dead pid) → refuse and escalate).
 
 They never type into the pane, never answer prompts and never resume a goal
 the developer interrupted.

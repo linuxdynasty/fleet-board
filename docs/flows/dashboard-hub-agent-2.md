@@ -34,7 +34,7 @@ sequenceDiagram
   T->>A: 1. goal file changes (the harness hook wrote BLOCKED or DONE)
   A->>H: 2. ConnectRequest{event Event{seq, observed_time, delivery NEVER_DROP, goal_state GoalState}}
   H->>H: 3. reader checks size, machine id = certificate, order, then the ingest queue
-  H->>H: 4. store writer tx (batch of 100 messages or 50 ms): goal fingerprint, phase, transition, triage, history
+  H->>H: 4. store writer tx (batch of 100 messages or 250 ms): goal fingerprint, phase, transition, triage, history
   H->>H: 5. after commit: hub_seq assigned, change log appended, fan-out bus publishes
   H-->>D: 6. WatchResponse{hub_seq, change_type UPDATED, topic GOALS, goal, resume_token}
   H-->>D: 7. WatchResponse{change_type CREATED, topic TRIAGE, triage_item, resume_token} (a new item in the same tx)
@@ -259,7 +259,7 @@ sequenceDiagram
    `type_goal`, `confirm_goal_file`. `step_count` is always 14 and a skipped step is not reported, so a
    progress bar is stable (the dashboard reads `Operation.step`, `step_index`, `step_count`).
    Steps 10 and 11 are the two paths (reuse versus new window). `clear_context` types `/clear` and only
-   runs for `fresh_context` in a session the fleet started (`FRESH_CONTEXT_NOT_ALLOWED` otherwise).
+   runs for `fresh_context` in a session the fleet started or a pane marked with `fresh_context_on_reuse` (`FRESH_CONTEXT_NOT_ALLOWED` otherwise).
    The agent never answers a trust, update or login screen (`TRUST_PROMPT_SEEN`, `STARTUP_PROMPT_SEEN`).
 12. to 13. The registry is the only goal identity for every harness (Claude Code, Codex, Muse, OpenCode).
     `FLEET_GOAL_ID` in the environment is only a fast path for a window the fleet just created.
@@ -305,7 +305,7 @@ stateDiagram-v2
 | `Goal` ([`GoalDefinition`](../../api/fleet/hub/v1/goal.proto) spec, [`GoalStatus`](../../api/fleet/hub/v1/goal.proto)), `goal_transitions`, `goal_runs` | hub `state.db`, permanent | planning tx; result tx |
 | Pane reservation, outbox row (`pending, delivered, done, expired, failed`), audit (consent, text, who) | hub `state.db` | planning tx; delivery and result txs |
 | Composite step reached, worktree path, pane key | agent command log | before each `CommandProgress` is sent |
-| Goal registry (`goal`, `pane`, `worktree_path`, `harness_session_id`) | agent `state.db`, reported in every `Snapshot.goal_registry` | `register_goal`; removed on [`ReleaseGoal`](../../api/fleet/agent/v1/command_goal.proto), pane exit, [`PruneWorktree`](../../api/fleet/agent/v1/command_goal.proto) |
+| Goal registry (`goal`, `pane`, `worktree_path`, `harness_session_id`) | agent `agent.db`, reported in every `Snapshot.goal_registry` | `register_goal`; removed on [`ReleaseGoal`](../../api/fleet/agent/v1/command_goal.proto), pane exit, [`PruneWorktree`](../../api/fleet/agent/v1/command_goal.proto) |
 | Goal file, worktree or branch, `FLEET_*` tags, log spool | the machine (git, tmux, agent spool) | n/a |
 
 **Failures.** The full reason-to-reaction table is in [03h](../specs/03h-goal-phases-in-depth.md#start-failures-reason-to-reaction); the common ones:

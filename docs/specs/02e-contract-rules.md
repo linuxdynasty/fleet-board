@@ -41,7 +41,8 @@ checklist, to be ticked when cutting `v0.1`:
 2. `buf generate` runs clean (below) and the first generated Go and
    TypeScript clients compile in CI.
 3. The mockup's data is checked against the protos (names, enums, 64-bit
-   strings), or the mockup is marked display-only.
+   strings), or the mockup is marked display-only. The `[planned]` rows of the
+   UI map have no mockup element yet and are checked when their view is built.
 4. `go.mod`, the generated-code location and the CI job exist.
 
 ## Naming rules

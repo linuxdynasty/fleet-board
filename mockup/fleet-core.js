@@ -110,7 +110,7 @@ window.addEventListener("hashchange", () => { const v = viewOf(location.hash.sli
 function switcherEntries() {
   const e = [];
   sessionOrder().forEach(s => e.push({ label: `${s.win} · ${where(s)}`, sub: `${s.harness} · ${s.line ?? (s.yours ? "yours" : s.repo)}`, tag: STATE_PILL[liveState(s)], run: () => go("session", s.id) }));
-  machines.forEach(m => e.push({ label: `${m.name} · ${m.ip}`, sub: `${activeOn(m)}/${m.maxActive} active · ${totalOn(m)}/${m.maxTotal} total · ${m.ram} GB · ${m.labels.join(", ")}`, tag: "machine", run: () => { ui.fleetFocus = m.id; go("machines"); } }));
+  machines.forEach(m => e.push({ label: `${m.name}`, sub: `${activeOn(m)}/${m.maxActive} active · ${totalOn(m)}/${m.maxTotal} total · ${m.ram} GB · ${m.labels.join(", ")}`, tag: "machine", run: () => { ui.fleetFocus = m.id; go("machines"); } }));
   accounts.forEach(a => e.push({ label: `${a.label} account`, sub: wasteLine(a), tag: "account", run: () => go("usage") }));
   apiAccounts.forEach(a => e.push({ label: `${a.label} account`, sub: spendLine(a), tag: "account", run: () => go("usage") }));
   e.push({ label: "Audit log", sub: `${audit.length} entries · every action, yours and the fleet's`, tag: "view", run: () => { ui.dt.audit = true; ui.auditFocus = true; go("machines"); } });

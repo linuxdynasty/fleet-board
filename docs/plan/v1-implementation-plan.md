@@ -67,7 +67,9 @@ machines for seven consecutive days:
 4. Work items and change requests for the watched repos match GitHub, with
    sync lag under 5 minutes, inside the installation's rate limit.
 5. The System section shows all ten signals (05b) and raised a SYSTEM triage
-   item when a machine was taken offline on purpose.
+   item when an `always-on` machine was taken offline on purpose for over 10
+   minutes (05b `AGENT_CONNECTED` counts only such machines and machines with a
+   live goal).
 6. `fleet --json` returns machines, accounts, goals and work items.
 7. The 02e freeze checklist is ticked (generated Go and TypeScript clients
    compile in CI; mockup data checked against the protos or marked
@@ -80,7 +82,7 @@ These are cheap and unblock everything; each is its own PR.
 | # | Item | Why |
 |---|---|---|
 | 0.1 | Fixtures of the usage and status screens for the installed versions of Claude Code, Codex and Muse, captured with the `fleet-live-probe` protocol | D2 parsers are fixture-tested (01, `fleet-harness-adapter`); harnesses auto-update (Muse moved to 1.4.2 on 2026-10-02) |
-| 0.2 | Owner creates the GitHub App (read-only permissions per ADR 0005) and installs it on the watched repos | W4 sync needs an installation; only the owner can do it |
+| 0.2 | Owner creates the GitHub App (the read-only permission set of ADR 0022, which adds Contents: read) and installs it on the watched repos | W4 sync needs an installation; only the owner can do it |
 | 0.3 | Decide the release mechanism (plain `go build` matrix in CI vs GoReleaser) and the service manager units (launchd LaunchAgent, systemd `--user`; no root) | Packaging PR 12 depends on it; not covered by ADR 0020 |
 | 0.4 | Owner sets `MUSE_NO_AUTO_UPDATE=1` on fleet machines, or accepts parser drift handled by `parsing_live` (ADR 0018) | Muse's launcher updates itself in the background (01d) |
 
@@ -88,7 +90,9 @@ Decisions needed from the owner are 0.2, 0.3 and 0.4; 0.1 is agent work.
 
 ## 4. Repository layout
 
-One Go module (ADR 0001, 0020), generated code under `gen/` (02e):
+One Go module (ADR 0001, 0020), generated code under `gen/` (02e). This tree
+refines ADR 0001's package list (ADR 0022): the hub and agent packages below
+replace it, and harness adapters stay at the top level as `internal/harness/`:
 
 ```
 cmd/fleetd  cmd/fleet-agent  cmd/fleet
@@ -109,11 +113,11 @@ internal/
     conn/               discovery, connect, backoff, epoch, outbox reader
     ring/               event ring, command log, seq persistence (agent.db, 02i)
     tmux/               control-mode observer, inventory, capture
-    harness/{claude,codex,muse,opencode}/  detect, catalog, parsers + testdata
     probe/              probe sessions on the fleet-probe server
     goals/              goal files, registry observation, repo and branch state
     policy/             local policy, settings merge, local audit
     doctor/
+  harness/{claude,codex,muse,opencode}/  detect, catalog, parsers + testdata
 web/                    React + TS + Vite (ADR 0007, 0020); dist embedded in fleetd
 ```
 
@@ -133,9 +137,9 @@ new code, `fleet-code-review` before push, the full local gate once.
 | 1 | **Scaffolding:** `go.mod`, `Makefile` targets (`gen`, `test`, `lint`, `gates`), `buf generate` into `gen/`, CI workflow (buf build/lint, go vet/test/race on changed packages, golangci-lint, file cap, agent canon, docs-stale), empty `cmd/` binaries that print versions | — | CI green on an empty build; generated Go and TS compile | develop | fleet-go, fleet-contract-rigor |
 | 2 | **Telemetry and store foundations:** `internal/telemetry` (slog JSON, OTEL providers, no exporter by default, `/metrics` handler); `internal/store` (open with the ADR 0014 pragmas, single writer goroutine, 250 ms / 100-message batches, forward-only migrations, read pool) | 1 | writer batching and durability tests; a fullfsync check on darwin like spike S1 | develop-deep | fleet-sqlite-store, fleet-telemetry-coverage |
 | 3 | **Fleet CA and enrollment (hub):** CA and `hub_identity` row, enroll tokens with CA hash, `Enroll` (retry-safe), cert serials, revocation lookup | 2 | enroll, replayed enroll, expired token, wrong CA hash refused | develop | fleet-security, fleet-go |
-| 4 | **Agent connection:** `fleet-agent enroll` and `run`, discovery (cached, mDNS, configured), mTLS connect, `Hello`/`HelloAck`, epoch, backoff with jitter, wake and network-change detection, `Bye`, `RenewCert`; `agent.db` with seq high-water mark and command log | 3 | in-memory hub fake: connect, reconnect after hub restart, seq never goes backwards, duplicate identity displaced | develop-deep | fleet-go, fleet-sqlite-store |
-| 5 | **Hub gateway and ingest:** `Connect` server, snapshot apply in one tx, event apply with delivery classes, heartbeat and `last_seen` cadence, `EventCounters`, machine state ONLINE/STALE/OFFLINE, settings send and `SettingsAck` | 2, 4 | agent fake against real hub: snapshot then replayed events, shed counted not lost, STALE at 45 s | develop-deep | fleet-sqlite-store, fleet-telemetry-coverage |
-| 6 | **Machine facts, policy, doctor:** B1, B2, L1 local policy file with change detection, L2 tighten-only merge, M1 local audit, M3 `fleet-agent doctor` | 4 | policy refusals audited; doctor lists every check with a reason | develop | fleet-go, fleet-security |
+| 4 | **Agent connection:** `fleet-agent enroll` and `run`, discovery (cached, mDNS through `dns-sd` or `avahi`, configured: ADR 0022), mTLS connect, `Hello`/`HelloAck`, epoch, backoff with jitter, wake and network-change detection, `Bye`, `RenewCert`; `agent.db` with seq high-water mark and command log | 3 | in-memory hub fake: connect, reconnect after hub restart, seq never goes backwards, duplicate identity displaced | develop-deep | fleet-go, fleet-sqlite-store |
+| 5 | **Hub gateway and ingest:** `Connect` server, snapshot apply in one tx, event apply with delivery classes, heartbeat and `last_seen` cadence (written at most once a minute: defaults.md), `EventCounters`, machine state ONLINE/STALE/OFFLINE, settings send and `SettingsAck` | 2, 4 | agent fake against real hub: snapshot then replayed events, shed counted not lost, STALE at 45 s | develop-deep | fleet-sqlite-store, fleet-telemetry-coverage |
+| 6 | **Machine facts, policy, doctor:** B1, B2 (sampling per OS: ADR 0022), L1 local policy file with change detection, L2 tighten-only merge, M1 local audit, M3 `fleet-agent doctor` | 4 | policy refusals audited; doctor lists every check with a reason | develop | fleet-go, fleet-security |
 | 7 | **tmux observer (epic, 2-3 PRs):** E1 inventory, E2 control mode, E3 lifecycle, E4 activity, E5 summaries (latest per pane, persisted), E10 capture (visible screen), E11 availability, E13 developer input; internal sessions marked | 5 | against real tmux 3.2 and the latest release in CI; fakes for unit tests | develop-deep | fleet-tmux, fleet-go |
 | 8 | **Harness adapters and usage probes (epic):** C1-C4, D1 probe sessions on the `fleet-probe` server, D2 parsers for Claude `/usage`, Codex `/status`, Muse `/usage` with fixtures from 0.1, D3 passive signals, `VersionSupport`/`ParserSupport`/`parsing_live`, E6 prompt detection (notice-only), E12 conditions | 7, 0.1 | every fixture parses or returns `UNKNOWN`; never a guessed number; probe types only the status command | develop (parsers), develop-deep (probe session control) | fleet-harness-adapter, fleet-tmux, fleet-live-probe |
 | 9 | **Goals and repos (observe only):** G2 goal state from goal files (eshu files and the generic file), E9 registry observation, H1 repo inventory and `RepoRef` derivation, H3 branch state, H4 `gh` status | 7 | eshu goal-file fixtures; a dirty checkout and a detached HEAD reported correctly | develop | fleet-go |
@@ -158,7 +162,7 @@ the mockup while 12 is in review.
   network, power, file watching. Hub and agent are tested against an
   in-memory fake of each other over a real gRPC connection, so no `sshd`, keys
   or machines are needed for CI.
-- **Parser fixtures per harness version** under `internal/agent/harness/*/testdata/`;
+- **Parser fixtures per harness version** under `internal/harness/*/testdata/`;
   a new harness version without fixtures is `UNVERIFIED_PARSING`, never assumed.
 - **Store tests** run the real SQLite driver on disk, including a durability
   check like spike S1 on the CI runner's filesystem.

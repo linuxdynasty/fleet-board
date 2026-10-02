@@ -58,7 +58,7 @@ service FleetService {
   // [LOGS] holders (02d).
   rpc GetOperation(GetOperationRequest) returns (GetOperationResponse);
 
-  // --- Machines (Fleet view) ------------------------------------------------
+  // --- Machines (Machines view) ----------------------------------------------
 
   // [READ]
   rpc ListMachines(ListMachinesRequest) returns (ListMachinesResponse);

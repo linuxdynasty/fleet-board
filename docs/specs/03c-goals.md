@@ -89,7 +89,9 @@ sequenceDiagram
    `workdir.dirty` false → reuse (the goal starts a new branch in that checkout,
    no new window); else a new window and worktree, preferring non-hub, then
    most free active slots. Auto-dispatch into a reused pane sets
-   `fresh_context = true`.
+   `fresh_context = true` only when fleet started its session or the developer
+   marked the pane with `fresh_context_on_reuse`; otherwise the goal is typed
+   into the existing context.
 4. **No catch-up floods:** at most one dispatch per account and per machine
    per pass, and at most one pass every 30 s; after a hub restart the first
    pass waits for the first sync lap to finish.
@@ -112,12 +114,11 @@ sequenceDiagram
 each in [02h](02h-goal-binding-and-pane-signals.md#startgoal-steps):
 `preflight` (skipped when `skip_preflight` and the hub's preflight is < 1 min
 old) → reuse path `pick_session` (`reuse_pane` re-checked just before typing;
-fails with its own reason rather than silently opening a window, so the hub's
-reservation stays truthful) and `prepare_branch`, or new-window path
-`ensure_worktree` (only `AGENT_ENSURES`; eshu's driver creates its own, so
-`REPO_DRIVER` starts in the main checkout) and `ensure_window` (template
-`{harness} {work}`, e.g. `muse eshu#7398`; `automatic-rename off` on this
-window only; `FLEET_*` in the pane environment as a fast path) →
+fails with its own reason rather than silently opening a window) and
+`prepare_branch`, or new-window path `ensure_worktree` (only `AGENT_ENSURES`;
+eshu's driver makes its own, so `REPO_DRIVER` starts in the main checkout) and
+`ensure_window` (template `{harness} {work}`, e.g. `muse eshu#7398`; `FLEET_*`
+env as a fast path) →
 `register_goal` (the agent's registry, the goal's identity for every harness) →
 `start_log_capture` → `wait_ready` → `set_model` → `set_effort` →
 `clear_context` → `write_goal_file` → `type_goal` → `confirm_goal_file`. A
@@ -170,7 +171,7 @@ window, elsewhere, triage; which count toward `START_EXHAUSTED`) is the table in
 | Outbox `StartGoal` (`pending → delivered → done/expired/failed`) | hub store | planning tx; delivery and result txs |
 | Audit: who dispatched, consent written, machine, account | hub store (permanent) | planning tx |
 | Composite step reached (`started`/`done`), worktree path, pane key | agent command log | before each `CommandProgress` is sent |
-| Goal registry: `(goal, pane, worktree_path, harness_session_id)` per pane; availability marks per pane key | agent state dir (`state.db`) | `register_goal`; released on `ReleaseGoal`, pane exit, prune; reported in every snapshot (02h) |
+| Goal registry: `(goal, pane, worktree_path, harness_session_id)` per pane; availability marks per pane key | agent state dir (`agent.db`) | `register_goal`; released on `ReleaseGoal`, pane exit, prune; reported in every snapshot (02h) |
 | Window/pane tags (`FLEET_*`) | tmux environment on the machine | n/a (tmux) |
 | Worktree (agent-ensured) | machine disk | git |
 
@@ -191,15 +192,14 @@ window, elsewhere, triage; which count toward `START_EXHAUSTED`) is the table in
 | Failure | What happens |
 |---|---|
 | Agent offline between plan and send | Outbox `pending`; delivered on reconnect if within 30 min; else the operation is `EXPIRED` → goal `EXPIRED`, work item `READY`, reservation released; no re-plan while the machine is `OFFLINE` |
-| Hub restart after send | Outbox re-sends the same `command_id`; the agent answers from its log or continues the composite (W2) |
-| Duplicate `StartGoal` | Logged result; a composite in progress is not restarted |
+| Hub restart after send, or a duplicate `StartGoal` | Outbox re-sends the same `command_id`; the agent answers from its log or continues the composite, never restarting one in progress (W2) |
 | Agent restart mid-composite | Re-runs declarative, read-only and verify steps; `clear_context` or `type_goal` started without `done` → `UNKNOWN_OUTCOME` unless the goal file is now present → `OK` (02h) |
 | `not_after_time` (30 min) passes mid-composite | The agent finishes the step in flight, then reports `EXPIRED` for the remainder; a window already created is left (tagged) and the hub kills it only after a triage decision |
 | Harness crashes during `wait_ready` | `PaneExited` + `READY_TIMEOUT`; one retry with a new window; then another machine |
 | Provider error at start (sign-in, 5xx) | `HarnessCondition` from the new pane; the composite waits up to `ready_timeout`, then `READY_TIMEOUT`; the condition item (W7) explains why |
 | Trust prompt appears | `TRUST_PROMPT_SEEN`; preflight should have refused `FOLDER_UNTRUSTED`; the agent never answers trust prompts (C3); machine marked unfit for that repo |
-| Developer typing in the reused session | Input clears idle (`PaneInput`) → `pick_session` fails `SESSION_NOT_AVAILABLE`; new window on the same machine next pass |
-| Reused pane in another repo, or its checkout has changes | `SESSION_WORKDIR_MISMATCH` / `CHECKOUT_DIRTY` at `pick_session`; nothing was changed; new window |
+| Goal typed into a developer-marked pane | No `/clear` unless marked with `fresh_context_on_reuse`; the scheduler may not nudge, type `continue` or respawn there (02g, `F`), so a stop is `STUCK` with triage |
+| Developer typing in the reused session, or it is in another repo or has changes | Input clears idle (`PaneInput`); `pick_session` fails `SESSION_NOT_AVAILABLE`, `SESSION_WORKDIR_MISMATCH` or `CHECKOUT_DIRTY`; nothing was changed; new window on the same machine |
 | Developer typing in the new window during `wait_ready` | `type_goal` refuses `PANE_BUSY` (input line not empty); retry once after 30 s; then fail the step |
 | Agent state directory lost | Registry rebuilt for new windows from `FLEET_GOAL_ID`; a missing entry for a reused pane shows in `Snapshot.goal_registry` and the hub sends `RegisterGoal` |
 | Integration lag > `max_sync_lag` | Auto-dispatch paused for that integration; manual allowed with a warning (`WARN`, 03h) |
@@ -363,8 +363,8 @@ Sub-flags held with the phase (on `GoalStatus`): `provider_condition`,
 
 ### Rules
 
-- **Fingerprint.** `h(line_state, first_line, head_commit, cr_state,
-  cr_head_sha)`. Triage items and nudges are keyed on it, so one stopped or
+- **Fingerprint.** `h(line_state, first_line, watch_alive, head_commit,
+  cr_state, cr_head_sha)`. Triage items and nudges are keyed on it, so one stopped or
   disagreeing state is reviewed once; a change in any component is a new
   state. `block_epoch` increments each time the line enters `BLOCKED_*` from
   another state, so leaving and re-entering Blocked notifies the owner again.

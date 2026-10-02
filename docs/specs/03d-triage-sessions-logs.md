@@ -26,7 +26,7 @@ snoozes or dismisses; items expire after 7 days.
 | `blocked_owner` | W6 `BLOCKED_OWNER` | `(goal_id, block_epoch)` | goal line changes |
 | `done_disagreement`, `ready_for_human_merge` | W6 verifier | goal fingerprint | `MERGED`, or goal line changes |
 | `review_loop` | W6 | `(goal_id, cr_head_sha)` | merge, or operator resume |
-| `pacing` | W3 `RESERVE` / `UNKNOWN` > 1 h / `STALE` > 1 h | `(account, bucket, resets_time, kind)` | state leaves that kind |
+| `pacing` | W3 `RESERVE` / `UNKNOWN` > 1 h / `STALE` > 1 h (STALE itself starts at `stale_after`, 30 min; 05b raises its signal then and goes CRITICAL at 2 h) | `(account, bucket, resets_time, kind)` | state leaves that kind |
 | `start_unknown`, `orphan_goal_pane`, `double_claim`, `integration_access_lost`, `usage_parse_failed`, `parser_unsupported`, `duplicate_identity`, `policy_changed`, `hostname_mismatch`, `dirty_worktree` | W2, W4, W5, W10, W11 | stated in each workflow | stated in each workflow |
 
 Every kind in this table is a `TriageKind` value (`TRIAGE_KIND_<NAME>`); `other`
@@ -65,8 +65,10 @@ result lands. `UNKNOWN_OUTCOME` keeps the item open with a `CapturePane`
 button; the hub never retries typing. When an item returns to `OPEN` after a failed
 answer its `Approval` is already `DECIDED`, so the hub raises a new `Approval` for the
 same `prompt_id` and points `TriageItem.approval` at it: that is the second try. Snooze sets `snoozed_until_time`; the item
-reappears unless retired meanwhile. Expiry at 7 days moves it to `EXPIRED`
-and audits it; a prompt that is still on screen after 7 days is re-raised by
+reappears unless retired meanwhile. Expiry at 7 days (`HubSettings.triage_expiry`) moves it to `EXPIRED`
+and audits it; that is a different clock from `Approval.expire_time`
+(`HubSettings.approval_timeout`, 30 minutes: on expiry the fallback `DENY` applies and the
+item stays open) ([defaults](defaults.md)); a prompt that is still on screen after 7 days is re-raised by
 the next `Snapshot.prompts[]` (03g) because the fingerprint is new only if the
 `prompt_id` changed, so the UI shows "expired, still showing".
 
@@ -164,7 +166,7 @@ sequenceDiagram
   A->>T: new-session -s scratch -c <root/eshu> · set-environment FLEET_SESSION_ID/FLEET_OWNER (= owner_principal.id)/FLEET_PANE_KEY · launch harness
   A->>H: CommandResult{OK, ensure_session EnsureSessionResult{session, created, pane}}
   U->>H: mark the claude pane "available for work"
-  H-->>A: Command{SetPaneAvailability{pane, available_for_work=true, reason=MARKED_ON_BOARD}}
+  H-->>A: Command{SetPaneAvailability{pane, available_for_work=true, reason=MARKED_ON_BOARD, fresh_context_on_reuse=false}}
   A->>H: Event{availability{reason=MARKED_ON_BOARD}}
   U->>H: attach (WebSocket)
   H->>H: attach_id · audit open
@@ -225,8 +227,9 @@ peer address; the hub never runs it.
   stream, so it cannot delay commands.
 - `SetPaneAvailability` is declarative; the agent's `AvailabilityChanged`
   is the truth the scheduler uses, not the command result. The agent keeps
-  each mark per pane key and reports it in `TmuxPane.availability` on every
-  snapshot, so the hub re-sends one that is missing.
+  each mark per pane key, with its `fresh_context_on_reuse` choice, and reports
+  it in `TmuxPane.availability` on every snapshot, so the hub re-sends one that
+  is missing.
 
 ### Failure modes
 

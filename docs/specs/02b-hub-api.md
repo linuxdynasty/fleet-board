@@ -31,20 +31,20 @@ type. The hub API imports `fleet.type.v1` (ids, values) and
 
 | Resource | Id | RPCs | Watch topic | Views |
 |---|---|---|---|---|
-| `Machine` | `MachineId` | List, Get, Update, Drain, Undrain, Revoke, Delete, CreateEnrollmentToken, EnsureMachineHooks | `MACHINES` | Fleet |
+| `Machine` | `MachineId` | List, Get, Update, Drain, Undrain, Revoke, Delete, CreateEnrollmentToken, EnsureMachineHooks | `MACHINES` | Machines |
 | `Session` (windows, panes) | `SessionId` (hub-assigned to every observed session) | List, Get, Create, SendKeys, InterruptPane, RunHarnessCommand, CapturePane, SetPaneAvailability, RespawnPane, KillWindow, SetLogCapture, CreateAttachTicket, AttachTerminal, ReadSessionLog | `SESSIONS` | Session, ⌘K |
 | `PaneSummary` | `PaneKey` | Watch only (live panes) | `PANE_SUMMARIES` (latest-wins) | Session sidebar |
 | `StoredSession` (logs and archived pane summaries, live or ended) | `SessionId` | ListStoredSessions, GetStoredSession, DeleteSessionLogs, SearchSessionLogs, GetLogStoreStatus (all `LOGS`) | none | Session History, Settings |
-| `Goal` | `GoalId` | List, Get, StartGoal, PreflightGoal, ControlGoal, ListGoalRuns, ListGoalTransitions | `GOALS` | Work, Session, Triage, Fleet timeline |
+| `Goal` | `GoalId` | List, Get, StartGoal, PreflightGoal, ControlGoal, ListGoalRuns, ListGoalTransitions | `GOALS` | Work, Session, Triage |
 | `WorkItem`, `ChangeRequest` (mirrors) | `WorkItemKey` | List, Get, RequeueWorkItem | `WORK_ITEMS`, `CHANGE_REQUESTS` | Work |
 | `Repo` (per-repository settings) | `RepoId` (`host/path`) | List, Get, Create, Update, Delete | `REPOS` | Settings, Work |
 | `Integration` | `IntegrationId` | List, Update | `INTEGRATIONS` | Settings |
-| `Account` (usage, pacing, probe) | `AccountId` | List, Get, Create (API-key only), Update, Delete, ProbeAccount, ListUsageReadings | `ACCOUNTS` | strip, Fleet, Work dispatch |
+| `Account` (usage, pacing, probe) | `AccountId` | List, Get, Create (API-key only), Update, Delete, ProbeAccount, ListUsageReadings | `ACCOUNTS` | strip, Usage, Machines, Work dispatch |
 | `TriageItem` | `TriageItemId` | List, Get, Snooze, Dismiss | `TRIAGE` | Triage |
 | `Approval` | `ApprovalId` | List, Get, DecideApproval | `APPROVALS` | Triage, phone |
 | `Routine` | `RoutineId` | List, Get, Create, Update, Delete, RunRoutine | `ROUTINES` | Work, Settings |
 | `Settings` (fleet, group, machine layers) | `SettingsId`: `"fleet"`, `"group/<label>"`, `"machine/<id>"` | Get, List, Update | `SETTINGS` | Settings |
-| `AuditEntry` | `AuditEntryId` | List | `AUDIT` | Fleet, Session timeline |
+| `AuditEntry` | `AuditEntryId` | List | `AUDIT` | Machines, Session timeline |
 | `Device` | `DeviceId` | RequestPairing, ApprovePairing, RevokeDevice, List, Get | `DEVICES` | Settings |
 | `User` | `PrincipalId` | List, CreateUserInvite, Update, RedeemInvite, Begin/FinishPasskeyRegistration, DeletePasskey | none (List only) | Settings |
 | `LoginSession` | `LoginSessionId` | SignOut, List, Revoke, Begin/FinishPasskeyLogin | none (List only) | Settings |
@@ -103,7 +103,7 @@ the repo path), which 03f now says too.
 | `Machine` | `display_name`, hub `labels`, `drain` request | state, facts, inventories, effective settings, `telemetry`, `unfit` markers |
 | `Account` | name, mode, budget, reserve, consent, owner-mapped bindings | identity as shown, provider, origin, usage, pacing and `idle_causes`, probe, observed bindings |
 | `Goal` | `GoalDefinition`: what, where, consent, text, attempt, routine snapshot | `GoalStatus`: phase and reason, timers, goal-file line, git state, counters, start and end time, usage |
-| `Repo` | consent, parallel cap, worktree mode, branch pattern, hooks mode, tracker mapping, trusted gate (label, `TrustedUser{integration, login}` entries) | integration health, live goals, checkouts and their hooks, why it takes no work |
+| `Repo` | `enabled`, per-repo `auto_dispatch` (overrides `HubSettings`), consent, parallel cap, worktree mode, branch pattern, base branch, hooks mode, tracker mapping, trusted gate (label, `TrustedUser{integration, login}` entries) | integration health, live goals, checkouts and their hooks, why it takes no work |
 | `Session` | `log_capture` | tmux identity, windows, panes, attach count, log counters, `state` (live or ended) and `end_time` |
 | `Routine` | trigger, goal template, consent, done rule | last and next run, run count |
 | `Integration` | label, watched tracker projects | provider, capabilities, health and `health_reason`, last provider error, rate limits, back-off time, sync lag |
@@ -290,7 +290,7 @@ Whole messages stay under the 1 MiB Connect cap (02e).
 | `PaneSummary.last_lines` | 4 KiB |
 | `AttachTerminalResponse.output` | 64 KiB per message; `ReadSessionLogResponse.data` 256 KiB |
 | `ListXxxRequest.page_size` | 500 |
-| Rate limits | per principal and RPC class, values in the hub configuration, never in the contract; `RATE_LIMITED` carries `retry_after` |
+| Rate limits | per principal and RPC class, values in the hub configuration ([02j](02j-hub-runtime.md)), never in the contract; `RATE_LIMITED` carries `retry_after` |
 
 ## Errors
 

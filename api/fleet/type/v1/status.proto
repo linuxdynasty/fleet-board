@@ -27,7 +27,7 @@ message PercentUnknown {
 }
 
 // UnknownReason explains an unknown reading. The hub never schedules on an
-// unknown value (design.md dispatch rules).
+// unknown value (03b "Pacing decision", step 6).
 enum UnknownReason {
   UNKNOWN_REASON_UNSPECIFIED = 0;
   // The screen did not parse with the fixtures for this harness version.
@@ -169,8 +169,9 @@ enum ReasonCode {
   // The harness's /goal has no such subcommand (for example pause on
   // Claude Code 2.1.286, which offers only set and clear).
   REASON_CODE_GOAL_SUBCOMMAND_UNSUPPORTED = 305;
-  // GoalSpec.fresh_context on a session the fleet did not start; /clear is
-  // destructive (01b) and is never typed into the developer's own session.
+  // GoalSpec.fresh_context on a pane the fleet did not start whose mark has
+  // no fresh_context_on_reuse; /clear is destructive (01b) and is never
+  // typed into the developer's own context unless they chose it.
   REASON_CODE_FRESH_CONTEXT_NOT_ALLOWED = 306;
   // A startup screen the agent never answers: metadata kind is trust,
   // update, login or release_notes (01b). TRUST_PROMPT_SEEN stays as the
@@ -347,7 +348,8 @@ enum ReasonCode {
   // ImportConfig could not apply the document: the plan names every entry
   // that failed; nothing was applied.
   REASON_CODE_CONFIG_INVALID = 562;
-  // A spare-quota routine found no account to run on (a DispatchBlock reason).
+  // A spare-quota routine found no account to run on (DispatchBlock reason;
+  // a WARN check for RunRoutine, never acknowledged by a trigger).
   REASON_CODE_ROUTINE_NEEDS_SPARE_QUOTA = 563;
   // Collected report empty, not UTF-8, too large or without the bundle marker.
   REASON_CODE_REPORT_INVALID = 564;

@@ -347,11 +347,12 @@ At 3 AM: "why is there no report this week?" is `Routine.status.next_run_time`,
 
 ## 11. Questions for the owner
 
-1. Report default: on from first start (proposed; the guard keeps it to spare
-   quota), or off until the owner enables it?
-2. `READ` for report text (proposed, because it is built from `READ` data and
-   scrubbed) or `LOGS`?
-3. Send real repo names to the model (proposed, since the harness already sees
-   them) or alias those too?
-4. Cron default Monday 07:00 hub time.
-5. Suggestions in Triage default off (proposed).
+1. **Open:** report default. Proposed and built as on from first start (the
+   built-in routine's `enabled` is true; the guard keeps it to spare quota);
+   the owner may answer off.
+2. ~~`READ` or `LOGS` for report text~~ **Answered (ADR 0022):** `READ`, as
+   proposed (02d).
+3. ~~Real repo names to the model~~ **Answered (ADR 0022):** real names, others
+   aliased via `InsightReport.aliases`.
+4. ~~Cron default~~ **Answered (ADR 0022):** Monday 07:00 hub time.
+5. ~~Suggestions in Triage~~ **Answered (ADR 0022):** default off.

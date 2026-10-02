@@ -6,14 +6,17 @@ const LAYER_CLASS = l => l.startsWith("local") ? "capped" : l.startsWith("machin
 const FIELD_LABEL = { max_active: "goals using quota at once", max_total: "goals in total", default_server: "tmux server", cert_lifetime: "agent certificate lifetime",
   local_approval: "ask on the machine before kill or restart", idle_threshold: "idle after", window_name_template: "window name" };
 
+// Display only, built from the FleetConfig names (api/fleet/hub/v1/config.proto): hub, fleet_values, groups,
+// machines, repos, accounts. The real file is the CLI's rendering of ExportConfig; this is not its format.
 function fleetYaml() {
-  const l = ["repos:"];
-  settings.repos.filter(r => r.on).forEach(r => l.push(`  - repo: ${r.host}/${r.repo}`, `    provider: ${r.provider}`, `    hooks: ${r.hooks}`));
-  l.push("dispatch:", `  auto: ${settings.autoDispatch}`, `  consent: [${settings.consent.join(", ")}]`, "  pacing: even", "  prefer_available_sessions: true", `  window_name_template: "${settings.windowTemplate}"`, `  idle_threshold: ${settings.idleMinutes}m`, `  share_identity_email: ${settings.showEmails}`, "accounts:");
-  accounts.forEach(a => l.push(`  - name: ${a.id}`, `    harness: ${a.harness}`, `    mode: ${a.mode}`, `    reserve_percent: ${a.reserve}`, `    consent: [${a.consent.join(", ")}]`, `    usage_command: ${a.source}`));
-  apiAccounts.forEach(a => l.push(`  - name: ${a.id}`, `    harness: opencode`, `    mode: manual-only`, `    budget: {cap_usd: ${a.capUsd}, period: ${a.period}}`));
-  l.push("groups:", "  - label: laptop", "    max_active: 2", "    max_total: 4", "  - label: always-on", "    max_active: 2", "    cert_lifetime: 90d", "machines:");
-  machines.forEach(m => l.push(`  - name: ${m.name}`, `    labels: [${m.labels.join(", ")}]`, `    max_active: ${m.maxActive}`, `    max_total: ${m.maxTotal}`, `    harnesses: [${m.harnesses.join(", ")}]`));
+  const l = ["format_version: 1", "hub:", `  auto_dispatch: ${settings.autoDispatch}`, `  default_consent: [${settings.consent.join(", ").toUpperCase()}]`,
+    "fleet_values:", `  window_name_template: "${settings.windowTemplate}"`, `  idle_threshold: ${settings.idleMinutes * 60}s`, `  share_identity_email: ${settings.showEmails}`, "repos:"];
+  settings.repos.forEach(r => l.push(`  - repo: {host: ${r.host}, path: ${r.repo}}`, `    enabled: ${!!r.on}`, `    hooks_mode: ${r.hooks === "eshu" ? "REPO_SHIPS_OWN" : "FLEET_GENERIC"}`));
+  l.push("accounts:");
+  accounts.forEach(a => l.push(`  - harness: ${a.harness}`, `    spec: {display_name: ${a.id}, mode: FLEET, reserve_percent: ${a.reserve}}`));
+  apiAccounts.forEach(a => l.push(`  - harness: opencode`, `    spec: {display_name: ${a.id}, mode: FLEET, budget_kind: DOLLAR_CAP, spend_cap_micros: ${a.capUsd * 1e6}}`));
+  l.push("groups:", "  - {label: laptop, values: {max_active: 2, max_total: 4}}", "  - {label: always-on, values: {max_active: 2, cert_lifetime: 7776000s}}", "machines:");
+  machines.forEach(m => l.push(`  - name: ${m.name}`, `    labels: [${m.labels.join(", ")}]`, `    values: {max_active: ${m.maxActive}, max_total: ${m.maxTotal}}`));
   return l.join("\n");
 }
 
@@ -80,7 +83,7 @@ function renderSettingsView() {
     <details class="fold" data-dk="layers" ${ui.dt.layers ? "open" : ""}><summary>Effective values per machine <span class="hint">machine → group → fleet default; local policy is the ceiling</span></summary>
       <div class="layer-grid">${machines.map(m => `<table class="layers" aria-label="${esc(m.short)} settings"><caption>${esc(m.name)} · ${esc(m.labels.join(", "))}</caption>${layeredRows(m)}</table>`).join("")}</div>
       <div class="why">"capped by local policy" = the machine's own policy file lowered the value. ${dt("s-layers", "<span>~/.config/fleet-agent/policy.yaml · SettingsAck.capped_fields · SettingSource.layer = SETTING_LAYER_LOCAL_CEILING</span>")}</div></details>
-    <details class="fold yaml" data-dk="yaml" ${ui.dt.yaml ? "open" : ""}><summary>fleet.yaml <span class="hint">what these settings write</span></summary><pre class="cmd">${esc(fleetYaml())}</pre></details>`;
+    <details class="fold yaml" data-dk="yaml" ${ui.dt.yaml ? "open" : ""}><summary>fleet.yaml <span class="hint">display only: FleetConfig names, not the file format</span></summary><pre class="cmd">${esc(fleetYaml())}</pre></details>`;
 
   const num = (v, lo, hi) => Math.max(lo, Math.min(hi, parseInt(v, 10) || 0));
   document.querySelectorAll("[data-repo]").forEach(c => c.onchange = () => { settings.repos[+c.dataset.repo].on = c.checked; rerender(); });

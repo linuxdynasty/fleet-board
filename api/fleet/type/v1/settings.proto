@@ -45,6 +45,7 @@ message RateLimit {
 // SettingValues are the settings the hub can deliver (A8) and the agent
 // reports as effective (L2). Unset optional fields mean "no opinion".
 message SettingValues {
+  // Effective when no layer sets them: 2, 4 and 12 (docs/specs/defaults.md).
   optional uint32 max_active = 1;
   optional uint32 max_total = 2;
   optional uint32 max_windows = 3;
@@ -59,9 +60,11 @@ message SettingValues {
   // WorkItemRef.display, e.g. "muse eshu#7398", "claude PROJ-123").
   optional string window_name_template = 10;
   optional google.protobuf.Duration idle_threshold = 11;
+  // Default 30 minutes.
   optional google.protobuf.Duration attach_idle_timeout = 12;
   // Owner setting: send the email exactly as the harness shows it (C2).
   optional bool share_identity_email = 13;
+  // Default 2 GiB.
   optional uint64 spool_cap_bytes = 14;
   // Block goal starts while on battery (B3).
   optional bool block_on_battery = 15;
@@ -72,6 +75,7 @@ message SettingValues {
   // Hub-only: the hub prunes a merged goal's worktree and window after this
   // grace. Delivered so the owner sees one list of settings, but an agent
   // never acts on it and echoes it unchanged in EffectiveSettings.
+  // Default 1 hour.
   optional google.protobuf.Duration merged_grace = 17;
 }
 

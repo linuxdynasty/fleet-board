@@ -27,6 +27,7 @@ accepted; a later ADR supersedes an earlier one and says so.
 | [0019](0019-pre-implementation-contract-decisions.md) | Pre-implementation contract decisions: reuse, sign-in, freeze, log access | Accepted |
 | [0020](0020-dependencies.md) | Languages, frameworks and libraries | Accepted |
 | [0021](0021-insights-and-observability.md) | Insights from the fleet's own data, and observability of the fleet itself | Accepted |
+| [0022](0022-drift-audit-decisions.md) | Drift audit decisions: pane context, hub runtime, dependencies, GitHub App | Accepted |
 
 ## Template
 

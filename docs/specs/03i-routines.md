@@ -19,7 +19,10 @@ checks as a manual dispatch: a `BLOCK` fails the call, a `WARN` must be listed i
 `acknowledged_warnings`, and a `CONFIRM` returns an approval (`RunRoutineResponse.approval`)
 and starts nothing until an owner approves it. A run started by a trigger acknowledges
 nothing, so a `WARN` or `CONFIRM` check means "do not start" and the reason lands in
-`DispatchBlock`.
+`DispatchBlock`. For an `only_spare_quota` routine with no account to spare,
+`ROUTINE_NEEDS_SPARE_QUOTA` is a `WARN` check on `RunRoutine`: the owner who asks
+for a run now may accept it in `acknowledged_warnings` and spend quota that is
+not spare; without that, the call fails `FAILED_PRECONDITION` with the reason.
 
 **Actors.** Scheduler, writer, verifier, the code host adapter, `fleet-agent`
 (unchanged `StartGoal`).

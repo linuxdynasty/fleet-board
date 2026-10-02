@@ -132,11 +132,11 @@ message AccountSpec {
   string display_name = 1;
   AccountMode mode = 2;
   fleet.type.v1.BudgetKind budget_kind = 3;
-  // Quota the owner keeps for interactive use (design.md rule 3). The
+  // Quota the owner keeps for interactive use (03b "Pacing decision", step 5). The
   // scheduler stops new dispatch at 100 - reserve (PACING_STATE_RESERVE, 03b
   // step 5) and the burn-down target scales by it (target = elapsed / window
   // x (100 - reserve)); projected_unused_percent and
-  // HubSettings.auto_pause_at_reserve depend on it too.
+  // HubSettings.auto_pause_at_reserve depend on it too. A new account gets 10.
   uint32 reserve_percent = 4;
   // Consent acts this account allows (ADR 0008).
   repeated fleet.type.v1.ConsentAct consent = 5;

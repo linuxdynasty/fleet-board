@@ -228,7 +228,10 @@ message DeleteRoutineResponse {}
 
 // RunRoutineRequest starts a run now, outside the trigger. Refused while the
 // previous run is live (FAILED_PRECONDITION / WORK_ITEM_BUSY); otherwise it
-// plans like any run, through the same checks as a manual dispatch.
+// plans like any run, through the same checks as a manual dispatch. For an
+// only_spare_quota routine with no account to spare, ROUTINE_NEEDS_SPARE_QUOTA
+// is a WARN check: listed in acknowledged_warnings the run starts (the owner
+// chose to spend non-spare quota), otherwise FAILED_PRECONDITION.
 message RunRoutineRequest {
   string request_id = 1;
   RoutineId id = 2;

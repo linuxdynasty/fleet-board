@@ -197,7 +197,8 @@ message ChangeRequest {
   google.protobuf.Timestamp update_time = 14;
   google.protobuf.Timestamp merged_time = 15;
   // Review rounds so far: changes-requested reviews each followed by new
-  // commits. Feeds the review-loop cap (design.md: 3 rounds, no merge).
+  // commits. Never resets; failed CI is not a round. Feeds the review-loop
+  // cap (03c "Review-loop cap": 3 rounds beyond a baseline, no merge).
   uint32 review_rounds = 16;
   ReviewDecision review_decision = 17;
   // Who merged it, so a merge by a person is told from one by the goal's

@@ -17,7 +17,7 @@ flowchart LR
     LR[logReceiver<br/>SessionLog stream → chunk rows, LogAck]
     AB[attachBridge × N<br/>Terminal ⇄ WebSocket, bytes only]
   end
-  CR -->|ingest channel, bounded| WR[(storeWriter<br/>single goroutine,<br/>batches ≤100 msgs / 50 ms → one tx,<br/>derives goal/triage/availability in-tx)]
+  CR -->|ingest channel, bounded| WR[(storeWriter<br/>single goroutine,<br/>batches ≤100 msgs / 250 ms → one tx,<br/>derives goal/triage/availability in-tx)]
   LR -->|chunk batches, own transaction| LW[(logWriter<br/>single goroutine, logs.db,<br/>one tx per ≤ 1 s batch)]
   SY[integration syncers<br/>one per work tracker / code host,<br/>network outside tx] -->|mirror upserts| WR
   SC["scheduler<br/>single goroutine, tick 30 s + coalesced wakeups,<br/>probe assignment, pacing, dispatch plan"] -->|write jobs| WR

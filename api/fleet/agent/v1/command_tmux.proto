@@ -210,4 +210,11 @@ message SetPaneAvailability {
   // Echoed in AvailabilityChanged.reason: MARKED_ON_BOARD,
   // CLEARED_ON_BOARD or GOAL_MERGED.
   fleet.type.v1.AvailabilityReason reason = 3;
+  // Owner choice for a pane the developer marks (MARKED_ON_BOARD): a goal
+  // sent here may start with /clear (step clear_context). Default false, so
+  // the goal is typed into the developer's existing context. Kept with the
+  // mark and reported in TmuxPane.availability.fresh_context_on_reuse;
+  // ignored when available_for_work is false or for GOAL_MERGED (a
+  // fleet-started session may always be cleared).
+  bool fresh_context_on_reuse = 4;
 }

@@ -22,7 +22,7 @@ function pace(a) {
   return { target, cap, used: u, frac, state, lastDay, waste };
 }
 const PACE_LABEL = { reserve: "reserve reached", ahead: "ahead of pace", on: "on pace", behind: "behind pace" };
-const dispatchable = a => a.mode === "fleet" && ["on", "behind"].includes(pace(a).state);
+const dispatchable = a => a.mode === "fleet" && !a.budgetKind && ["on", "behind"].includes(pace(a).state);
 
 // A reset that already passed (relative to the mock clock) rolls forward by whole windows. The reading was taken
 // before that reset, so it is marked stale until the next probe; it never shows "resets in now".

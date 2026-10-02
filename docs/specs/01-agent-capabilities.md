@@ -1,6 +1,6 @@
 # 01. Agent capabilities
 
-- Status: Draft for review (revised after a Claude Fable 5.1 review)
+- Status: Draft for review (revised after an independent review)
 - Date: 2026-09-29
 - Inputs: [design.md](../design.md), ADRs [0004](../adr/0004-agent-connectivity.md),
   [0006](../adr/0006-tmux-sessions.md), [0009](../adr/0009-machine-groups-and-layered-settings.md),
@@ -303,7 +303,8 @@ period for API-key providers.
   work** when:
   - fleet started it for a goal and that goal is verified merged, or
   - the developer marked it "available for work" on the board (their own
-    sessions are never taken over without that mark).
+    sessions are never taken over without that mark; the mark has an option,
+    off by default, to start each goal with `/clear`).
 
   The agent reports changes as events and keeps the mark per pane (02h); the
   hub's dispatcher treats an available pane as free capacity, subject to pacing
@@ -315,8 +316,7 @@ period for API-key providers.
   at the machine, reported until cleared.
 - **E13 Developer input:** when a person last typed into a pane (snapshot field
   plus a rate-limited event); goal panes are never idle, so this is the signal.
-- **E10 Capture pane:** visible screen or last N lines, ANSI stripped by
-  default.
+- **E10 Capture pane:** visible screen or last N lines, ANSI stripped by default.
 
 ## F. tmux control (v2)
 

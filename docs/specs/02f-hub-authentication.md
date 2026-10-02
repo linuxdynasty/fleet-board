@@ -30,6 +30,9 @@ transport, and how a terminal attach over WebSocket is opened and closed.
 needs login; both statements are now scoped to `authenticated` mode.
 `local_trusted` is a convenience for one person on one machine, and the Host and
 Origin checks below are what keep a web page the owner visits from using it.
+The loopback rule applies to the API listener only: agents reach the hub on a
+separate mTLS listener (default port 7443), which supersedes ADR 0004's "one
+TLS port" ([02j](02j-hub-runtime.md#listeners)).
 
 ## Who sends which credential
 
@@ -181,8 +184,8 @@ numeric id, are unique across users (`ALREADY_EXISTS`). After the first sign-in
 the numeric id is what matches, so a renamed or recycled login cannot take over
 a user. Setup adds the
 App's client id and secret and the callback URL
-`<public origin>/auth/github/callback` to the hub configuration (secret file
-mode 0600, like the private key); until then `github_sign_in` is
+`<public origin>/auth/github/callback` to the hub configuration file ([02j](02j-hub-runtime.md#configuration-file); secret
+file mode 0600, like the private key); until then `github_sign_in` is
 `SIGN_IN_METHOD_DISABLED`.
 
 ## Sessions and sign-out

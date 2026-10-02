@@ -210,7 +210,7 @@ Adopted from Paperclip (see [research/paperclip.md](research/paperclip.md)):
 - **No catch-up floods.** After a hub outage or a reset, dispatch resumes at
   the normal pace; it never starts every backlog item at once.
 - **Review each stopped state once.** Stuck and verifying states are
-  fingerprinted (goal line + head commit + PR state) so the same state is
+  fingerprinted (goal line, whether its watcher is alive, head commit, PR state and head) so the same state is
   never raised twice.
 
 ## Views

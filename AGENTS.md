@@ -40,9 +40,11 @@ stopping point. Report actual state; anything not checked is `NOT_CHECKED`.
    writer per database, unique constraints behind every ownership rule.
 3. **Never waste or overspend quota.** Pacing and the reserve line decide
    dispatch; an unknown usage reading stays unknown, it is never guessed.
-4. **Never type into a pane without the checks:** a confirmed waiting prompt
-   bound to its `prompt_id`, an empty input line, local policy, and (in any
-   probe) every screen read before any key is pressed.
+4. **Never type into a pane without the checks for that purpose:** a prompt
+   answer needs the prompt still showing, bound to its `prompt_id`; a nudge,
+   resume or operator text needs the ready prompt and an empty input line;
+   every command passes local policy; in any probe every screen is read before
+   any key is pressed.
 
 ## Non-Negotiable Rules
 

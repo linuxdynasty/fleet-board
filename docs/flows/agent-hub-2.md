@@ -252,7 +252,7 @@ flowchart LR
 6. On the hub the `connReader` checks size and `machine_id` and drops SHED kinds
    first when the ingest queue is full; it blocks (never drops) on NEVER_DROP kinds,
    which blocks only that agent's stream. The `storeWriter` batches up to 100
-   messages or 50 ms into one transaction and applies each event in `seq` order:
+   messages or 250 ms into one transaction and applies each event in `seq` order:
    only if `seq` is above the machine's stored `hub_last_event_seq` and, for state,
    above `Snapshot.seq`.
 7. Inventory events (`tmux_server`, `session`, `window`, `pane_created`,

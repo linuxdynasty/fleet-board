@@ -81,7 +81,7 @@ says otherwise.
 | `MAX_WINDOWS_REACHED` | SKIP(machine, 5 min) | no |
 | `PANE_BUSY`, `SESSION_NOT_AVAILABLE` | NEW_WINDOW; the second one ELSEWHERE | first no, second yes |
 | `SESSION_WORKDIR_MISMATCH`, `CHECKOUT_DIRTY` | NEW_WINDOW at once; the pane is not offered again for that repo until `PaneChanged` says its directory changed | no |
-| `FRESH_CONTEXT_NOT_ALLOWED` | NEW_WINDOW without `fresh_context` (the planner sets it only for fleet sessions, so this means stale state) | no |
+| `FRESH_CONTEXT_NOT_ALLOWED` | NEW_WINDOW without `fresh_context` (the planner sets it only for a fleet-started session or a mark with `fresh_context_on_reuse`, so this means the session or mark changed since the plan) | no |
 | `READY_TIMEOUT` | NEW_WINDOW once, then ELSEWHERE | yes |
 | `STARTUP_PROMPT_SEEN` | `update`, `login`: UNFIT(machine, harness) until `harness_changed` or the re-check, TRIAGE; `trust`: as `TRUST_PROMPT_SEEN`; `release_notes`: NEW_WINDOW once | no |
 | `MODEL_NOT_AVAILABLE`, `EFFORT_NOT_SUPPORTED` | UNFIT(machine, harness, account) with the model or effort in the reason; TRIAGE; no retry with the same value | yes |
@@ -126,14 +126,15 @@ interplay with commands:
 The hub's own checks run in `PreflightGoal` and again in `StartGoal`, before
 anything is sent. Each finding is a `PreflightCheck{ErrorDetail, severity}`;
 the agent's `failed_checks` come back in `Operation.failed_checks` and are all
-`BLOCK`. The reasons are hub `ReasonCode`s (540 to 562; 540 to 556 are dispatch
-rules, 557 to 562 other hub refusals), so a client branches on codes, never on strings.
+`BLOCK`. The reasons are hub `ReasonCode`s (540 to 564; 540 to 556 are dispatch
+rules, 557 to 564 other hub refusals; `SLOTS_FULL`, `DRAINING` and `MACHINE_OFFLINE`
+keep their agent and hub-API codes), so a client branches on codes, never on strings.
 
 | Severity | Meaning | Reasons |
 |---|---|---|
 | `BLOCK` | `StartGoal` fails `FAILED_PRECONDITION` with the first one's reason, every BLOCK listed in `violations` | `SLOTS_FULL`, `NO_FIT_MACHINE`, `WORK_ITEM_BUSY`, `BRANCH_BUSY`, `REPO_NOT_WATCHED`, `CONSENT_EMPTY`, `MACHINE_UNFIT` (for a pinned machine), `DRAINING`, `MACHINE_OFFLINE`, `ACCOUNT_NOT_DISPATCHABLE` with `cause` `interactive_only` or `opencode_on_anthropic`, and every agent failure |
 | `CONFIRM` | `StartGoal` returns `approval` (`DISPATCH_CONFIRM`, required role `OWNER`) and starts nothing; approving creates the goal and sends `StartGoal` | `WORK_ITEM_UNTRUSTED` (also an item edited after it was trusted; the card shows `TrustVerdict.denial`), `WORK_ITEM_CLAIMED` (bypassing a safety gate), `ACCOUNT_NOT_DISPATCHABLE` with `cause` `dollar_cap` (spends money), `HARNESS_VERSION_UNSUPPORTED` with `parsing = unverified` (a version whose usage or ready parse is not live) |
-| `WARN` | allowed once the request lists the reason in `acknowledged_warnings` | `ACCOUNT_PACING_BLOCKED`, `ACCOUNT_USAGE_UNKNOWN`, `INTEGRATION_LAG`, `INTEGRATION_DEGRADED`, `REPO_PARALLEL_LIMIT` |
+| `WARN` | allowed once the request lists the reason in `acknowledged_warnings` | `ACCOUNT_PACING_BLOCKED`, `ACCOUNT_USAGE_UNKNOWN`, `INTEGRATION_LAG`, `INTEGRATION_DEGRADED`, `REPO_PARALLEL_LIMIT`, `ROUTINE_NEEDS_SPARE_QUOTA` (`RunRoutine` of a spare-quota routine with no spare account; a trigger fire never acknowledges it) |
 | `INFO` | shown | the session that would be reused, the model the harness shows |
 
 `AUTO_DISPATCH_OFF`, `NO_READY_ITEMS` and `FLOOD_GUARD` are explanations only

@@ -302,7 +302,7 @@ sequenceDiagram
    GitHub-only invitee can sign in; after the first sign-in the numeric
    GitHub id is what matches, so a renamed or recycled login cannot take over a user.
    A GitHub account that is not on the list ends at `GITHUB_NOT_ALLOWED`; GitHub sign-in
-   without the App's client id and secret in hub config is `SIGN_IN_METHOD_DISABLED`.
+   without the App's client id and secret in the hub configuration file ([02j](../specs/02j-hub-runtime.md)) is `SIGN_IN_METHOD_DISABLED`.
    The `link` purpose (same endpoints) attaches GitHub to the signed-in user, or to the claim
    owner's registration session: the hub records the user server-side at `/start` (where the
    Strict session cookie does arrive) keyed by `state`, because the cross-site callback carries

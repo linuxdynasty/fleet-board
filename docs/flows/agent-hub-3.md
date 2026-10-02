@@ -137,9 +137,11 @@ sequenceDiagram
    own `/model` and `/effort` (class SESSION), reading what is shown first and typing
    only when it differs (`MODEL_NOT_AVAILABLE`, `EFFORT_NOT_SUPPORTED`).
    `fresh_context` types `/clear`, which is destructive, so the agent allows it only
-   in a session the fleet started (`TmuxSession.started_by_fleet`), otherwise
-   `FRESH_CONTEXT_NOT_ALLOWED`. The scheduler sets it for every auto-dispatch into a
-   reused pane, because a pane after `MERGED` still carries the last goal's context.
+   in a session the fleet started (`TmuxSession.started_by_fleet`) or a pane the
+   developer marked with `fresh_context_on_reuse` (off by default), otherwise
+   `FRESH_CONTEXT_NOT_ALLOWED`. The scheduler sets it for an auto-dispatch into such a
+   pane (a pane after `MERGED` still carries the last goal's context); in any other
+   developer-marked pane the goal is typed into the existing context.
    The result returns the effective `model` and `effort`, which the hub paces by (A6).
 8. **The goal file and the line (steps 12 and 13).** The agent writes the initial goal
    file itself, because Codex hooks never see `/goal` lines, except where the checkout
@@ -228,7 +230,7 @@ The normative table is in [03h](../specs/03h-goal-phases-in-depth.md#start-failu
 | `goals` (id, `attempt`, `previous_goal`, `work_item`, `repo`, machine, account, harness, consent, text, phase, pane, session), unique live per work item and per `(repo, branch)` | hub store, planning transaction, then the result transaction |
 | `panes.reserved_for_goal`, the outbox row, the audit row (who, consent, machine, account) | hub store, planning transaction |
 | Step reached (`started` and `done` per step), worktree path, pane key | agent command log, before each `CommandProgress` |
-| Goal registry (one entry per pane), availability marks | agent state dir (`state.db`), reported in every snapshot |
+| Goal registry (one entry per pane), availability marks | agent state dir (`agent.db`), reported in every snapshot |
 | `FLEET_*` tags, the window | tmux on the machine |
 | Worktree (agent made) | machine disk |
 

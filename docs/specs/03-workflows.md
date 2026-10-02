@@ -50,7 +50,7 @@ needs beyond those is listed in
 [03g](03g-load-and-handoff.md#required-contract-changes).
 
 **Persistence vocabulary.** *Hub store* = the hub's embedded database (ADR
-0002, provisional until step 4). *Log store* = `logs.db`, the second SQLite file
+0002, confirmed by ADR 0014). *Log store* = `logs.db`, the second SQLite file
 with its own writer that holds session-log chunks (ADR 0015). *Agent state dir* = `~/.local/state/fleet-agent/` (cert, key,
 pinned CA, command log, event ring, spool, settings, probe assignments, goal
 registry, availability marks).
@@ -287,8 +287,8 @@ returns the logged result rather than tripping the seq check.
 
 **Replay rules.** The ring holds only never-dropped and coalesced kinds (02i),
 persisted, 1 week, size-capped (latest state per key wins). The agent replays
-everything with `seq > HelloAck.hub_last_event_seq` at a bounded rate (proposal:
-200 events/s per agent; step 4 sets the hub-side ingest limit). The hub writes
+everything with `seq > HelloAck.hub_last_event_seq` at a bounded rate (200 events/s per
+agent, 2,500 events/s per hub: 04 Q7). The hub writes
 replayed events with `seq ≤ Snapshot.seq` to the event history only (timeline,
 run history) and runs **no rule** on them: the snapshot already holds their
 effect, which is why it carries prompts, conditions, input time and the goal
@@ -339,11 +339,11 @@ waiting for keepalive timeouts.
 
 | What | Where | Transaction |
 |---|---|---|
-| Event ring (`seq`, body, 1 week, size cap) | agent state dir (append file + index) | per event, fsync batched ≤ 1 s |
-| `seq_hwm` (reserved in blocks of 1024), `EventCounters`, `install_id` | agent state dir | one fsync per block; counters with it |
-| Command log (last 10,000 or 7 days; status, result, step reached) | agent state dir | per state change, before `CommandAck` is sent |
-| Probe assignments (`EnsureProbe` as received) | agent state dir | with the command log |
-| Goal registry (`GoalRegistration` per pane) and availability marks (per pane key) | agent state dir | `register_goal`, `RegisterGoal`, `ReleaseGoal`, mark commands; both reported in every snapshot (02h) |
+| Event ring (`seq`, body, 1 week or 64 MiB, [defaults](defaults.md)) | `agent.db` | per event, fsync batched ≤ 1 s |
+| `seq_hwm` (reserved in blocks of 1024), `EventCounters`, `install_id` | `agent.db` | one fsync per block; counters with it |
+| Command log (last 10,000 or 7 days; status, result, step reached) | `agent.db` | per state change, before `CommandAck` is sent |
+| Probe assignments (`EnsureProbe` as received) | `agent.db` | with the command log |
+| Goal registry (`GoalRegistration` per pane) and availability marks (per pane key) | `agent.db` | `register_goal`, `RegisterGoal`, `ReleaseGoal`, mark commands; both reported in every snapshot (02h) |
 | Outbox rows (`pending/delivered/done/expired/failed`, epoch, seq) | hub store | Hello tx (expiry), result tx (close) |
 | Event history (replayed and live, 1 week) | hub store | per writer batch |
 | `machine_connections` (epoch, boot_id, reason, peer, displaced_by) | hub store | Hello tx |
