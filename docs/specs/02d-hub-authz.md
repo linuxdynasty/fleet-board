@@ -146,6 +146,8 @@ user with no sign-in method, is `LAST_CREDENTIAL`.
 
 ## Scope per RPC
 
+*To be generated* from the protos by plan row 1b ([ADR 0026](../adr/0026-one-home-per-fact.md)): the scope tables per RPC and per Watch topic (from the `[SCOPE]` comments in `service.proto`). Until it lands it is kept by hand.
+
 `self` = any signed-in principal, on its own rows only; `ADMIN` widens it to
 every row (for mint or lockout-capable changes a user principal, see above).
 `none` = no authentication. In `local_trusted` mode the sign-in RPCs and the

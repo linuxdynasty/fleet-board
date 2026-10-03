@@ -113,6 +113,8 @@ epoch. The hub machine's own agent uses the same path over loopback.
 
 ## Capability → message map
 
+*To be generated* from the protos by plan row 1b ([ADR 0026](../adr/0026-one-home-per-fact.md)): the capability-to-message map (from the capability ids in the proto comments). Until it lands it is kept by hand.
+
 Direction: A→H agent to hub, H→A hub to agent. Idem.: idempotent. Ordering:
 `seq` means the agent-wide event sequence; `cmd` means per-epoch command
 sequence; `none` means unordered. Droppable: `yes` is SHED; `coalesce` keeps the latest per key; `no`/`never` is NEVER_DROP (classes per body in [02i](02i-delivery-and-sequencing.md)).

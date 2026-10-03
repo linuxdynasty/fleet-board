@@ -13,6 +13,8 @@ something did not. The rules here replace the shorter "backpressure classes" and
 
 ## Delivery class per event body
 
+*To be generated* from the protos by plan row 1b ([ADR 0026](../adr/0026-one-home-per-fact.md)): the delivery class table (from the comments in `events.proto`). Until it lands it is kept by hand.
+
 The agent stamps `Event.delivery` and `Event.coalesce_key` from this table, so a
 hub that does not know a newer kind still queues, sheds or coalesces it
 correctly. A key names the thing the event is about; `<pane>` is
