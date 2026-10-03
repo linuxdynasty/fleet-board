@@ -11,7 +11,8 @@ newest wins), then the specs, the flows and design.md. The owner's decisions of
 2026-09-28 to 2026-10-03 are recorded in
 [0022](0022-drift-audit-decisions.md), [0024](0024-pre-build-owner-decisions.md)
 (which answers the addendum's open questions) and, newest,
-[0025](0025-v1-includes-dispatch.md) (v1 includes dispatch).
+[0025](0025-v1-includes-dispatch.md) (v1 includes dispatch) and
+[0026](0026-one-home-per-fact.md) (one home per fact).
 [ADR 0019's 42 decisions](0019-decision-index.md) have a one-page index.
 
 | ADR | Title | Status | Relations |
@@ -41,6 +42,7 @@ newest wins), then the specs, the flows and design.md. The owner's decisions of
 | [0023](0023-additional-libraries.md) | Additional libraries: mDNS and system sampling | Accepted | Builds on 0020; supersedes in part 0022 |
 | [0024](0024-pre-build-owner-decisions.md) | Pre-build owner decisions: observed goals, who merges, harness config, machine admin, size dropped, freeze scope, install, backups | Accepted | Amends 0004, 0005, 0006, 0019, 0022; answers 0022's questions; three decisions deferred; amended by 0025 (decisions 8, 20, 21, 23) |
 | [0025](0025-v1-includes-dispatch.md) | v1 includes dispatch: v2 merged into v1, no v2 label, watch first then dispatch, `v0.1` freezes all of v1 | Accepted | Supersedes the release split in design milestones and 0022's v2 placements; amends 0024 decisions 8, 20, 21, 23 |
+| [0026](0026-one-home-per-fact.md) | One home per fact: each kind of fact lives once, flows retired, review files dropped, tables and issue bodies generated | Accepted | Supersedes the flows' place in the order of authority (0022 addendum) |
 
 ## Template
 
