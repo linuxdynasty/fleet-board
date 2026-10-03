@@ -1,6 +1,6 @@
 # v1 implementation plan (read-only fleet)
 
-- Status: Accepted (approved and merged; tracked as GitHub issues #25 to #48 in the milestone "v1 - read-only fleet")
+- Status: Accepted (approved and merged; tracked as GitHub issues #25 to #46, #48 and #50 to #56 in the milestone "v1 - read-only fleet")
 - Date: 2026-10-02
 - Inputs: [design.md](../design.md) and its [milestones](../design-deployment-and-milestones.md#milestones), the capability map in
   [01](../specs/01-agent-capabilities.md) (v1/v2/v3 tags),
@@ -280,9 +280,11 @@ Owner decisions deferred, recorded as open and not decided
 ## 10. Tracking
 
 Each row of section 5 is a GitHub issue (epics for 7, 8 and 14) with its
-acceptance test copied in, in the milestone "v1 - read-only fleet" (#25 to #48;
-#46 is the usage push probe, 0.11; #48 is PR 13a). Section 3 items are issues
-assigned to the owner where they need a decision. Work follows
+acceptance test copied in, in the milestone "v1 - read-only fleet" (#25 to #46,
+#48 and #50 to #56: PR 1 to PR 17 are #29 to #45 in order (not counting 2b and 13a), PR 13a is #48
+and PR 2b is #56; items 0.1 to 0.4 are #25 to #28, 0.5 to 0.10 are #50 to #55 and the usage push
+probe, 0.11, is #46). Section 3 items are issues assigned to the owner where they need
+a decision. Work follows
 `fleet-issue-driver`: a worktree per issue, one PR per change, self-review of
 the full diff, CI read twice before claiming done.
 
@@ -298,4 +300,7 @@ plan edits that row's issue (scope, dependencies, acceptance, title) in the
 same PR, and the PR description says so; `fleet-issue-driver` checks it before
 declaring a PR ready. Each bullet of section 9 gets one v2 issue, or one
 checklist issue linked here, and v2 and v3 get a milestone with an epic issue
-each.
+each. The milestones "v2 - dispatch" and "v3 - remote" exist. The five bullets of
+"Work owed to v2" are #57 to #61 in the order listed, and the deferred owner decisions
+are #62 (decision 20) and #63 (decision 21) in v2 and #64 (decision 22) in v3. The two
+epic issues are not written yet.
