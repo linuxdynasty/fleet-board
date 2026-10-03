@@ -15,13 +15,14 @@ short and rule-shaped.
 
 ## Mandatory Startup
 
-Read this file and any scoped `AGENTS.md` in the directories you touch. Use
-[Read These First](#read-these-first) and [Skill Routing](#skill-routing) to
-load only what the task needs. Design steps 1 to 5b are merged. Implementation
-starts when the owner approves
-[the v1 plan](docs/plan/v1-implementation-plan.md); until then `docs/` and
-`api/` are the product. See [docs/specs/README.md](docs/specs/README.md) for the
-order and status.
+Read this file and any scoped `AGENTS.md` in the directories you touch, then
+load only what the task needs ([Read These First](#read-these-first),
+[Skill Routing](#skill-routing)). The design is complete; build in the order of
+[the v1 plan](docs/plan/v1-implementation-plan.md).
+
+**Talk to the owner in plain language** an 8th grader could follow: short
+sentences, everyday words, and a few-word explanation for any technical term.
+This covers chat replies, PR and issue text and summaries; use `fleet-humanizer`.
 
 Resolve uncertainty from source, docs, ADRs, or a bounded experiment. When those
 cannot settle it (ownership, design intent, acceptance criteria, an irreversible
@@ -110,6 +111,7 @@ once. State which skills are active.
 | `fleet-performance-rigor` | any speed, load or size claim |
 | `fleet-code-review` | the review before push, PR update or merge |
 | `fleet-issue-driver` | driving an issue or epic to merged and closed |
+| `fleet-humanizer` | anything the owner reads: replies, PR and issue text, summaries |
 
 ## Roles And Cost Tiers
 

@@ -1,52 +1,111 @@
 {
-  "version": 1,
-  "rules": [
-    {
-      "skills": ["fleet-contract-rigor"],
-      "globs": ["api/**/*.proto", "buf.yaml", "buf.gen.yaml", "buf.work.yaml"],
-      "note": "contracts are unfrozen until v0.1 (ADR 0019); buf build and lint must pass, and docs/specs change in the same PR"
-    },
-    {
-      "skills": ["fleet-go"],
-      "globs": ["*.go", "go.mod", "go.sum", "go.work"]
-    },
-    {
-      "skills": ["fleet-sqlite-store"],
-      "globs": ["internal/**/store/**", "*sqlite*", "migrations", "*.sql"],
-      "exclude": ["docs/**", "*.md"],
-      "note": "one writer per database; no transaction across a network call"
-    },
-    {
-      "skills": ["fleet-harness-adapter"],
-      "globs": ["internal/harness/**", "**/testdata/harness/**", "**/fixtures/harness/**", "**/harness-fixtures/**"]
-    },
-    {
-      "skills": ["fleet-tmux"],
-      "globs": ["internal/**/tmux/**"]
-    },
-    {
-      "skills": ["fleet-frontend"],
-      "globs": ["web/**", "mockup/**"]
-    },
-    {
-      "skills": ["fleet-telemetry-coverage"],
-      "globs": ["**/telemetry/**", "**/observability/**"]
-    },
-    {
-      "skills": ["fleet-security"],
-      "globs": [
-        "auth", "authn", "authz", "scope", "scopes", "credential", "credentials",
-        "*auth*.go", "*scope*.go", "*credential*.go"
-      ],
-      "exclude": ["docs/**", "*.md"],
-      "note": "never read, store or proxy harness credentials"
-    }
-  ],
-  "exempt": {
-    "fleet-code-review": "runs against a final diff, not a path",
-    "fleet-diagnostic-rigor": "invoked when a failure's cause is unknown",
-    "fleet-performance-rigor": "invoked for any speed, load or size claim",
-    "fleet-issue-driver": "invoked with an issue or epic number",
-    "fleet-live-probe": "invoked to probe a real harness; fixtures it produces fall under fleet-harness-adapter"
+ "version": 1,
+ "rules": [
+  {
+   "skills": [
+    "fleet-contract-rigor"
+   ],
+   "globs": [
+    "api/**/*.proto",
+    "buf.yaml",
+    "buf.gen.yaml",
+    "buf.work.yaml"
+   ],
+   "note": "contracts are unfrozen until v0.1 (ADR 0019); buf build and lint must pass, and docs/specs change in the same PR"
+  },
+  {
+   "skills": [
+    "fleet-go"
+   ],
+   "globs": [
+    "*.go",
+    "go.mod",
+    "go.sum",
+    "go.work"
+   ]
+  },
+  {
+   "skills": [
+    "fleet-sqlite-store"
+   ],
+   "globs": [
+    "internal/**/store/**",
+    "*sqlite*",
+    "migrations",
+    "*.sql"
+   ],
+   "exclude": [
+    "docs/**",
+    "*.md"
+   ],
+   "note": "one writer per database; no transaction across a network call"
+  },
+  {
+   "skills": [
+    "fleet-harness-adapter"
+   ],
+   "globs": [
+    "internal/harness/**",
+    "**/testdata/harness/**",
+    "**/fixtures/harness/**",
+    "**/harness-fixtures/**"
+   ]
+  },
+  {
+   "skills": [
+    "fleet-tmux"
+   ],
+   "globs": [
+    "internal/**/tmux/**"
+   ]
+  },
+  {
+   "skills": [
+    "fleet-frontend"
+   ],
+   "globs": [
+    "web/**",
+    "mockup/**"
+   ]
+  },
+  {
+   "skills": [
+    "fleet-telemetry-coverage"
+   ],
+   "globs": [
+    "**/telemetry/**",
+    "**/observability/**"
+   ]
+  },
+  {
+   "skills": [
+    "fleet-security"
+   ],
+   "globs": [
+    "auth",
+    "authn",
+    "authz",
+    "scope",
+    "scopes",
+    "credential",
+    "credentials",
+    "*auth*.go",
+    "*scope*.go",
+    "*credential*.go"
+   ],
+   "exclude": [
+    "docs/**",
+    "*.md"
+   ],
+   "note": "never read, store or proxy harness credentials"
   }
+ ],
+ "exempt": {
+  "fleet-code-review": "runs against a final diff, not a path",
+  "fleet-diagnostic-rigor": "invoked when a failure's cause is unknown",
+  "fleet-performance-rigor": "invoked for any speed, load or size claim",
+  "fleet-issue-driver": "invoked with an issue or epic number",
+  "fleet-live-probe": "invoked to probe a real harness; fixtures it produces fall under fleet-harness-adapter",
+  "fleet-humanizer": "applies to prose the owner reads (chat, PRs, issues, summaries), not a path"
+ }
 }
