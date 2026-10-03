@@ -10,11 +10,19 @@ throughput or resource claim. A routine passing test run needs no diagnosis.
 
 ## Establish the cause
 
-1. **Reproduce or capture first.** Start from the failing run's evidence: the
-   hub and agent logs (`<area>.<event>` entries with `machine_id`, `goal_id`,
-   `command_id`, `epoch`, `seq`), the command log on the agent
-   (`agent.db`), the outbox and event rows in `state.db`, and the pane capture.
-   Preserve it before touching anything.
+1. **Capture, then build a red loop.** Preserve the failing run's evidence
+   first: the hub and agent logs (`<area>.<event>` entries with `machine_id`,
+   `goal_id`, `command_id`, `epoch`, `seq`), the command log in `agent.db`, the
+   outbox and event rows in `state.db`, and the pane capture. Then build one
+   command that goes **red** on this exact symptom: a failing test at the seam
+   that reaches the bug, a recorded agent stream or screen fixture replayed, or
+   a throwaway test rig against fixtures or a `-L` throwaway tmux server (never
+   the developer's sessions; see "Probing a real harness" below). Make it
+   **tight** (seconds, same verdict every run, runnable by an agent unattended).
+   For an intermittent failure, raise the reproduction rate (loop it, add
+   stress) until it is debuggable. Done when you have run the command and shown
+   it red; reading code for a theory comes after. Then shrink the scenario until
+   every remaining part is needed to stay red.
 2. **Read the contract before the code.** The owning workflow in
    [03-workflows.md](../../../docs/specs/03-workflows.md) (state machine,
    ordering, failure modes) and the ADR say what *should* happen; the diagnosis
@@ -22,9 +30,11 @@ throughput or resource claim. A routine passing test run needs no diagnosis.
 3. **Tag every claim** with the observation behind it; label the rest
    *hypothesis*, every time it is repeated. One passing run proves nothing about
    an intermittent failure: report an occurrence rate over N runs.
-4. **Narrow, then test.** State one hypothesis, name the observation that would
-   falsify it, add a log line or counter if existing signals cannot tell, run it.
-   Record rejected hypotheses so they are not retried.
+4. **Rank, then test.** Write 3 to 5 ranked hypotheses before testing any; each
+   states the prediction that would falsify it ("if X, then changing Y makes the
+   loop go green"). Test one at a time, changing one variable per run. Tag every
+   temporary log line `[DEBUG-<4 hex>]` so cleanup is one `rg`. Record rejected
+   hypotheses so they are not retried.
 5. **Give an independent investigator the symptom and raw evidence, not your
    cause.**
 
@@ -55,13 +65,14 @@ keys in the developer's own sessions.
 
 ## Record the result
 
-State: the established cause, the evidence (file:line, command, log line),
-rejected hypotheses, remaining uncertainty, and the next action as an
-implementation handoff (failing regression test to write first, files, risks).
-Distinguish a visibility fix (a new signal) from a correctness fix.
-Never claim a cause that was inferred only; say "most likely" and what would
-confirm it. Report commands with their exit codes, captured directly (not after
-a pipe, and note zsh has no `PIPESTATUS`).
+State: the established cause, the evidence (file:line, command, log line), the
+red loop command (it becomes the regression test), rejected hypotheses,
+remaining uncertainty, and the next action as an implementation handoff (failing
+regression test to write first, files, risks). Distinguish a visibility fix (a
+new signal) from a correctness fix. Before handing off, `rg '\[DEBUG-'` returns
+nothing. Never claim a cause that was inferred only; say "most likely" and what
+would confirm it. Report commands with their exit codes, captured directly (not
+after a pipe, and note zsh has no `PIPESTATUS`).
 
 ## Do not
 

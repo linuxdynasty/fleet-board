@@ -192,12 +192,12 @@ PY
 [ -z "$problems" ] || fail "hook config problems:
 $problems"
 hook_scripts=0
-for script in "$root"/.claude/hooks/*.sh "$root"/.claude/hooks/lib/*.sh "$root"/scripts/test-dev-hooks.sh; do
+for script in "$root"/.claude/hooks/*.sh "$root"/.claude/hooks/lib/*.sh "$root"/scripts/test-dev-hooks.sh "$root"/scripts/owner-setup.sh "$root"/scripts/test-owner-setup.sh; do
   [ -f "$script" ] || continue
   hook_scripts=$((hook_scripts + 1))
   bash -n "$script" || fail "$script does not parse (bash -n)"
 done
-for script in "$root"/.claude/hooks/*.sh "$root"/scripts/test-dev-hooks.sh; do
+for script in "$root"/.claude/hooks/*.sh "$root"/scripts/test-dev-hooks.sh "$root"/scripts/owner-setup.sh "$root"/scripts/test-owner-setup.sh; do
   [ -x "$script" ] || fail "$script is not executable"
 done
 for script in "$root"/.claude/hooks/lib/*.py "$root"/scripts/*.py; do

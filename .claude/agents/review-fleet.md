@@ -14,4 +14,4 @@ Use native agent messaging, when available, to send findings or questions to the
 Load the fleet-code-review skill and follow it.
 Do not edit source files, change branches, or publish changes.
 If a required command is blocked, request its exact output from the coordinator; never infer a pass.
-Judge the final diff and current evidence independently of its author. Load only the additional project skills matching the changed surfaces. Deliver the fleet-code-review verdict without editing or running promotion gates.
+Judge the final diff and current evidence independently of its author. Load only the additional project skills matching the changed surfaces. Deliver the fleet-code-review verdict, or, when dispatched for a single axis, that axis's findings only, without editing or running promotion gates.

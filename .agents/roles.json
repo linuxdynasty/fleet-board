@@ -67,7 +67,7 @@
       "tier": "workhorse",
       "access": "read",
       "skill": "fleet-code-review",
-      "instructions": "Judge the final diff and current evidence independently of its author. Load only the additional project skills matching the changed surfaces. Deliver the fleet-code-review verdict without editing or running promotion gates."
+      "instructions": "Judge the final diff and current evidence independently of its author. Load only the additional project skills matching the changed surfaces. Deliver the fleet-code-review verdict, or, when dispatched for a single axis, that axis's findings only, without editing or running promotion gates."
     },
     "review-fleet-deep": {
       "base": "review-fleet",
