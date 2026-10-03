@@ -8,9 +8,10 @@ what changed it; read the later ADR before relying on the old text.
 
 **Order of authority when documents disagree:** the protos, then the ADRs (the
 newest wins), then the specs, the flows and design.md. The owner's decisions of
-2026-09-28 to 2026-10-02 are recorded in
-[0022](0022-drift-audit-decisions.md) and, newest, [0024](0024-pre-build-owner-decisions.md)
-(which answers the addendum's open questions).
+2026-09-28 to 2026-10-03 are recorded in
+[0022](0022-drift-audit-decisions.md), [0024](0024-pre-build-owner-decisions.md)
+(which answers the addendum's open questions) and, newest,
+[0025](0025-v1-includes-dispatch.md) (v1 includes dispatch).
 [ADR 0019's 42 decisions](0019-decision-index.md) have a one-page index.
 
 | ADR | Title | Status | Relations |
@@ -39,6 +40,7 @@ newest wins), then the specs, the flows and design.md. The owner's decisions of
 | [0022](0022-drift-audit-decisions.md) | Drift audit decisions: pane context, hub runtime, dependencies, GitHub App | Accepted | Answers 0021; superseded in part by 0023 (decision 3); addendum of 2026-10-02: owner decisions, the v1 command path (changes decision 5), open questions; its questions 1 to 11 answered by 0024 |
 | [0023](0023-additional-libraries.md) | Additional libraries: mDNS and system sampling | Accepted | Builds on 0020; supersedes in part 0022 |
 | [0024](0024-pre-build-owner-decisions.md) | Pre-build owner decisions: observed goals, who merges, harness config, machine admin, size dropped, freeze scope, install, backups | Accepted | Amends 0004, 0005, 0006, 0019, 0022; answers 0022's questions; three decisions deferred to v2 and v3 |
+| [0025](0025-v1-includes-dispatch.md) | v1 includes dispatch: v2 merged into v1, no v2 label, watch first then dispatch, `v0.1` freezes all of v1 | Accepted | Supersedes the release split in design milestones and 0022's v2 placements; amends 0024 decisions 8, 20, 21, 23 |
 
 ## Template
 
