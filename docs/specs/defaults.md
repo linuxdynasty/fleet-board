@@ -28,9 +28,10 @@ spec change. "Decided here" marks a value no earlier document gave.
 | Machine `OFFLINE` | 3 | min | 03 | fixed |
 | Reconnect backoff | 1 to 60, full jitter; at least 5 s between connects (agent), one `Hello` per machine per 5 s (hub) | s | 03 A2, [03](03-workflows.md) failure table | fixed |
 | mDNS re-query interval (agent, while it has no connection); mDNS browse timeout (one query) | **not set yet: set in spike 0.7**, which records both here and in ADR 0023's open questions; PR 4 reads them from this table | s | ADR 0023, plan 0.7 | fixed |
-| `last_seen` written to the store | at most 1 per machine per minute, and on connect and disconnect; held in memory per heartbeat | min | 03g Q10, decided here | fixed |
+| `last_seen` written to the store | at most 1 per machine per minute, and on connect and disconnect; held in memory per heartbeat | min | 04, decided here | fixed |
 | Agent event ring cap | 1 week or 64 MiB, whichever first; the oldest entry is evicted first, whatever its class, and every eviction is counted (`EventCounters.evicted_total`) | week, MiB | [02i](02i-delivery-and-sequencing.md), decided here | fixed |
 | Agent command log | last 10,000 or 7 days | count, days | 03 | fixed |
+| Agent command rate limit per command kind (`rate_limits`) | 60 | per min | 03e, decided here | `agent` |
 | Certificate lifetime | 90 (max 365), renewed at two thirds | days | ADR 0004 | `cert_lifetime` setting |
 | Enrollment token lifetime | 15 (max 24 h) | min | machine.proto | per token |
 | `default_server` (local policy; hub settings can only tighten) | `control`; the local policy can lower it to `observe` or `none` | | ADR 0011, settings.proto | `agent`; also a `SettingValues` field |
@@ -39,8 +40,14 @@ spec change. "Decided here" marks a value no earlier document gave.
 | `max_windows` when no layer sets it | 12 | windows | 03e, decided here | `max_windows` setting |
 | Allowed range of `max_active`; of `max_total` (a value outside it is refused; in `policy.yaml` it is safe mode) | 1 to 16; 1 to 32 | goals | ADR 0024 | `agent`, `setting` |
 | `allowed_repo_roots` of a fresh agent; `allowed_harnesses` of a fresh agent | empty until the owner sets it (`fleet-agent enroll` asks); every installed harness | | ADR 0024, 03e | `agent` |
+| `schema_version` (`policy.yaml`) | `"1"`; an unknown value is safe mode | | [03e](03e-settings-and-drift.md) | `agent` |
+| `local_approval` (`policy.yaml`) | empty: off for every command kind | | 03e, [02g](02g-agent-security.md) | `agent`; also a `SettingValues` field |
+| `min_probe_interval` (`policy.yaml`; a floor the hub's probe interval cannot go below) | none; at least 1 min when set | min | 03e, [03b](03b-usage-and-sync.md) | `agent` |
+| `labels` (`policy.yaml`) | empty | | 03e | `agent`; also a `SettingValues` field |
+| `metrics_listen`; `pprof_listen` | none: the agent has no listener | | 03e, [05b](05b-observability.md) | `agent`, local only |
+| `telemetry` (`policy.yaml`) | off | | 03e, 05b | `agent`, local only |
 | Typing detection: `tmux list-clients` poll | 2 | s | [02h](02h-goal-binding-and-pane-signals.md), ADR 0024 (an allowed exception to "poll only usage and GitHub") | fixed |
-| Goal-file rescan for missed file events | 60 | s | [design.md](../design.md), ADR 0024 (the other allowed exception) | fixed |
+| Goal-file rescan for missed file events | 60 | s | [02h](02h-goal-binding-and-pane-signals.md), ADR 0024 (the other allowed exception) | fixed |
 | Agent low-disk point (`DISK_LOW` under any repo root) | 5 | GiB free | ADR 0024 | fixed |
 | `idle_threshold` | 2 | min | [01](01-agent-capabilities.md) E11 | setting |
 | `window_name_template` | `{harness} {work}` | | settings.proto | setting |
@@ -119,6 +126,12 @@ spec change. "Decided here" marks a value no earlier document gave.
 | `log_size_cap_bytes`; `log_retention` | 50 GiB; none | | ADR 0010, 0015 | `HubSettings` (ADMIN) |
 | Writer batch | at most 100 messages or 250 ms | | ADR 0014 | fixed |
 | Read pool | 10 connections | | ADR 0014 | fixed |
+| Watch `CHECKPOINT` interval on an idle stream (the checkpoint interval) | 30 | s | [02c](02c-hub-watch-and-filters.md) | fixed |
+| `FLEET_SUMMARY` Watch message (the summary interval) | at most 1 | per s | 02c | fixed |
+| System evaluation interval (the hub judges the signals) | 15 | s | [05b](05b-observability.md) | fixed |
+| System status poll (the dashboard calls `GetSystemStatus`) | 30 | s | 05b | fixed |
+| OAuth state cookie lifetime (`__Host-fleet_oauth`, and its server-side record) | 10 | min | [02f](02f-hub-authentication.md) | fixed |
+| Attach output limit (one `AttachTerminalResponse`) | 64 | KiB | 02f, ADR 0016 | fixed |
 | Idempotency record | 24 | h | [02b](02b-hub-api.md) | fixed |
 | Watch change log | at least 10 min or 100,000 changes | | [02c](02c-hub-watch-and-filters.md) | fixed |
 | `page_size` | 50 (max 500) | rows | 02b | per call |
@@ -130,15 +143,12 @@ spec change. "Decided here" marks a value no earlier document gave.
 
 ## Runtime, install and access in v1
 
-Rules rather than numbers, kept here so every decision of
-[ADR 0024](../adr/0024-pre-build-owner-decisions.md) has one place to look.
+The rules (staying awake, logout, install, upgrade, API-key spend) live in
+[02j](02j-hub-runtime.md) and [03b](03b-usage-and-sync.md). GitHub access is the
+GitHub App only: [ADR 0024](../adr/0024-pre-build-owner-decisions.md) decision
+15. The numbers:
 
 | Name | Value | Owner | Kind |
 |---|---|---|---|
-| Hub stays awake while `fleetd` runs | the launchd unit runs it under `caffeinate -s` (or the equivalent); `-s` holds only on power | [02j](02j-hub-runtime.md#staying-awake-and-surviving-logout) | fixed |
-| Linux worker survives logout | the owner runs `sudo loginctl enable-linger <user>` once per machine; `fleet-agent doctor` checks it | 02j | fixed |
-| macOS worker | a LaunchAgent that starts at the owner's login | 02j | fixed |
-| Install and upgrade | GitHub Releases with `SHA256SUMS`, an install script, `fleet-agent upgrade` and `fleetd upgrade`; no Apple signing or notarization (the owner clears the quarantine flag once) | [02j](02j-hub-runtime.md#install-and-upgrade) | fixed |
-| GitHub access | the GitHub App only; no fine-grained token fallback | [ADR 0005](../adr/0005-github-app.md), ADR 0024 | fixed |
-| Dashboard and `fleet` in v1 | on the hub machine; from another machine `ssh -L 7080:127.0.0.1:7080 <hub>` (same port both sides); sign-in is v3 | 02j | fixed |
-| API-key spend | "spent so far" as the tool reports it, all-time, no period; one optional owner limit | [03b](03b-usage-and-sync.md) | fixed |
+| Dashboard and API port in `local_trusted` mode (same port on both sides of the `ssh -L` tunnel) | 7080 | [02j](02j-hub-runtime.md#listeners) | `config` |
+| Agent listener port | 7443 | 02j | `config` |

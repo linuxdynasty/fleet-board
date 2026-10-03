@@ -12,18 +12,12 @@ is unknown.
 
 ## Know the budget
 
-The load model is [03g](../../../docs/specs/03g-load-and-handoff.md) (A4 and A50
-fleets) and the measured answers are in
-[04-technology-review.md](../../../docs/specs/04-technology-review.md) with raw
-output under [`spikes/`](../../../spikes/README.md). Anchors to compare against:
-
-- Store: about 52 durable rows/s steady and 2,500 rows/s for 60 s at 50
-  machines; commit p99 up to 28 ms; a durable commit costs about 4 ms
-  (`F_FULLFSYNC`); readers are never blocked by the writer.
-- Reads: the 500-row sidebar p99 about 21 ms under burst.
-- Logs: 30 chunks/s committed with p99 up to 19 ms; compression 14x on Codex
-  output; default size cap 50 GB.
-- Fan-out: about 140 KB/s to 10 browsers with per-pane subscriptions.
+The load model, its budgets and the measured answers are in
+[04-technology-review.md](../../../docs/specs/04-technology-review.md#load-model-a4-and-a50);
+raw output is under [`spikes/`](../../../spikes/README.md). Compare store write
+rate and commit latency, sidebar read latency, log chunk rate and size, and
+browser fan-out against the numbers there; do not copy them into a claim or a
+doc.
 
 A claim is "better than budget", "within budget" or "outside budget"; say which.
 

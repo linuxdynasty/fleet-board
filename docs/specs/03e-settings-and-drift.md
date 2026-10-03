@@ -34,6 +34,28 @@ sequenceDiagram
   G->>W: tx: compare effective vs last ack → update capped_fields display
 ```
 
+The same flow as the dashboard's `UpdateSettings` call and the messages it causes:
+
+```mermaid
+sequenceDiagram
+  participant D as Dashboard (owner)
+  participant H as fleetd
+  participant A as fleet-agent
+  participant P as local policy file (the ceiling)
+  D->>H: UpdateSettings{request_id, settings Settings{spec SettingsSpec{scope SettingsScope{machine}, values SettingValues{max_active 4}}}, update_mask spec.values.max_active, expected_version}
+  H->>H: scope SETTINGS, mask and version checked, one tx: layer stored, version + 1, generation + 1, per-machine resolve, audit settings.update
+  H-->>D: UpdateSettingsResponse{settings}
+  H-->>D: Watch SETTINGS UPDATED (status.generation, settings_epoch)
+  H-->>A: ConnectResponse{settings Settings{generation, labels, values, settings_epoch, probe_interval_by_account, trace}}
+  A->>P: validate, merge tighten-only under the ceiling, persist {generation, effective}, apply
+  A-->>H: ConnectRequest{settings_ack SettingsAck{generation, effective EffectiveSettings, capped_fields, settings_epoch, rejected, unrecognized_value_fields}}
+  H->>H: tx: store the latest ack per machine (only if generation is not lower)
+  H-->>D: Watch MACHINES UPDATED: effective_settings, capped_settings, rejected_settings, unenforced_settings
+  Note over A,P: later, policy.yaml is edited on the machine
+  A-->>H: Event{policy_changed PolicyChanged{policy PolicyInfo{hash, changed_since_load true}, previous_hash}}
+  H-->>D: triage info "policy changed, restart pending", the ceiling takes effect after an agent restart
+```
+
 **Tighten-only merge (per field, on the agent).** Numeric limits
 (`max_active`, `max_total`, `max_windows`, `rate_limits`, `cert_lifetime`,
 `spool_cap_bytes`): `min(hub, local)`. Durations where shorter is stricter
@@ -102,6 +124,36 @@ outbox when it accepts `DrainMachine` (the goal is `ABANDONED`, the item `READY`
 elsewhere); the whole interplay is in
 [03h](03h-goal-phases-in-depth.md#drain-the-outbox-and-respawn).
 
+**Drain, as messages.** The hub marks the machine drained in the same transaction that cancels
+the `StartGoal` rows still waiting, so the scheduler stops choosing it at once, online or not.
+The dashboard then shows what the agent itself confirms (`drain_state`). Goals already
+running keep running, and everything that serves them stays allowed.
+
+```mermaid
+sequenceDiagram
+  participant D as Dashboard
+  participant H as fleetd
+  participant A as fleet-agent
+  participant T as tmux and harness
+  D->>H: DrainMachine{request_id, id, reason}
+  H->>H: scope ADMIN and mapped role OWNER (else ROLE_INSUFFICIENT, nothing changes). One tx: spec.drain set, StartGoal rows still PENDING cancelled, their goals ABANDONED, outbox row for Drain, audit machine.drain
+  H-->>D: DrainMachineResponse{operation PENDING, machine with spec.drain set}
+  H-->>D: Watch: MACHINES UPDATED, GOALS UPDATED (ABANDONED, reason DRAINING), OPERATIONS
+  H-->>A: ConnectResponse{command Command{drain Drain{reason}}}
+  A->>A: envelope, role must be OWNER, persist the drain in the state dir
+  A-->>H: CommandAck, then CommandResult{status OK}
+  A-->>H: Event{drain_state DrainState{draining true, reason, since_time, requested_by_principal}} and Heartbeat{draining true}
+  H->>H: tx: MachineStatus.draining true, scheduler excludes the machine
+  H-->>D: Watch: MACHINES UPDATED (status.draining), OPERATIONS DONE
+  Note over A,T: goals already running continue untouched: GoalState events, nudges, ControlGoal, limit-wait resume, RespawnPane of a goal pane, KillWindow and PruneWorktree after merge
+  H-->>A: a later StartGoal, or EnsureSession or EnsureWindow that starts a harness
+  A-->>H: CommandResult{status REJECTED_BY_POLICY, reason DRAINING}
+  D->>H: UndrainMachine{request_id, id}
+  H-->>A: ConnectResponse{command Command{undrain Undrain}}
+  A-->>H: CommandResult{status OK}, Event{drain_state DrainState{draining false}}, Heartbeat{draining false}
+  H-->>D: Watch: MACHINES UPDATED, spec.drain cleared
+```
+
 ### The local policy file (L1): `policy.yaml`
 
 `~/.config/fleet-agent/policy.yaml` is the machine's ceiling (ADR 0009). The
@@ -130,32 +182,33 @@ built-in default in the table is what the agent uses. Decision 4 of
   line showing its default. It never overwrites an existing file, and with no
   answer it writes the file with an empty `allowed_repo_roots` and says so.
 
-Every key (the merge column is the tighten-only rule above, applied per key):
+Every key (the merge column is the tighten-only rule above, applied per key). Default values are in [defaults.md](defaults.md); the empty-by-default and every-installed-harness rules are in the bullets above:
 
-| Key | Type | Default when absent | Range | Merge with the hub |
-|---|---|---|---|---|
-| `schema_version` | string | `"1"` | `"1"` | reported in `PolicyInfo`; an unknown value is safe mode |
-| `default_server` | `none`, `observe` or `control` | `control` (ADR 0011) | | `min(hub, local)` in that order |
-| `max_active` | uint | none locally (the hub's layers: 2) | 1 to 16 | `min` |
-| `max_total` | uint | none locally (the hub's layers: 4) | 1 to 32 | `min` |
-| `max_windows` | uint | none locally (the hub's layers: 12) | at least 1 | `min` |
-| `allowed_harnesses` | list of harness names | every installed harness | names C1 knows | `hub ∩ local` |
-| `allowed_repo_roots` | list of absolute paths | empty | existing directories | `hub ∩ local` |
-| `local_approval` | list of `{command_kind, required}` | empty (off for every kind, 02g) | known command kinds | `hub OR local` per kind |
-| `rate_limits` | list of `{command_kind, per_minute}` | 60 per minute per kind | at least 1 | `min` per kind |
-| `cert_lifetime` | duration | 90 days | up to 365 days | `min` |
-| `attach_idle_timeout` | duration | 30 minutes | | `min` |
-| `spool_cap_bytes` | uint | 2 GiB | | `min` |
-| `block_on_battery` | bool | false | | `hub OR local` |
-| `window_name_template`, `idle_threshold`, `share_identity_email` | string, duration, bool | `{harness} {work}`, 2 minutes, false | | the hub wins (not a safety field) |
-| `min_probe_interval` | duration | none | at least 1 minute | `max(hub, local)` (a floor, see "Probe interval") |
-| `labels` | list of strings | empty | `[a-z0-9][a-z0-9-]{0,31}` | `hub ∪ local`; local cannot remove a hub label |
-| `metrics_listen`, `pprof_listen` | loopback `host:port` | none (the agent has no listener) | loopback only | local only, never delivered ([05b](05b-observability.md)) |
-| `telemetry` | the keys of 05b section 5 | off | | local only |
-| `exec.raw` | bool | reserved: never honoured, never advertised | | none |
+| Key | Type | Range | Merge with the hub |
+|---|---|---|---|
+| `schema_version` | string | `"1"` | reported in `PolicyInfo`; an unknown value is safe mode |
+| `default_server` | `none`, `observe` or `control` | | `min(hub, local)` in that order |
+| `max_active` | uint | 1 to 16 | `min` |
+| `max_total` | uint | 1 to 32 | `min` |
+| `max_windows` | uint | at least 1 | `min` |
+| `allowed_harnesses` | list of harness names | names C1 knows | `hub ∩ local` |
+| `allowed_repo_roots` | list of absolute paths | existing directories | `hub ∩ local` |
+| `local_approval` | list of `{command_kind, required}` | known command kinds | `hub OR local` per kind |
+| `rate_limits` | list of `{command_kind, per_minute}` | at least 1 | `min` per kind |
+| `cert_lifetime` | duration | up to 365 days | `min` |
+| `attach_idle_timeout` | duration | | `min` |
+| `spool_cap_bytes` | uint | | `min` |
+| `block_on_battery` | bool | | `hub OR local` |
+| `window_name_template`, `idle_threshold`, `share_identity_email` | string, duration, bool | | the hub wins (not a safety field) |
+| `min_probe_interval` | duration | at least 1 minute | `max(hub, local)` (a floor, see "Probe interval") |
+| `labels` | list of strings | `[a-z0-9][a-z0-9-]{0,31}` | `hub ∪ local`; local cannot remove a hub label |
+| `metrics_listen`, `pprof_listen` | loopback `host:port` | loopback only | local only, never delivered ([05b](05b-observability.md)) |
+| `telemetry` | the keys of 05b section 5 | | local only |
+| `exec.raw` | bool | | none |
 
 `min_probe_interval`, `metrics_listen` and `pprof_listen` are local-only names
-carried by no proto. `merged_grace` is a hub setting and not a policy key. The
+carried by no proto. `exec.raw` is reserved: never honoured, never advertised.
+`merged_grace` is a hub setting and not a policy key. The
 ranges for `max_active`, `max_total` and `reserve_percent` (0 to 50) are the same
 ones the hub validates (decision 18 of ADR 0024, [defaults](defaults.md)); a value
 outside its range is invalid and puts the agent in safe mode. The hub shows the
@@ -216,6 +269,7 @@ Machine drain state: `ACTIVE` → `DRAINING{hub}` → `ACTIVE` (Undrain);
 | Hub store restored from an older backup (generation goes backwards) | `fleetd restore` mints a new `settings_epoch` (03f, 02g); the agent orders settings by `(settings_epoch, generation)` and accepts any generation under a new epoch (02-contracts.md, replaces 03g's `settings_restored`) |
 | `Drain` while `StartGoal` in flight | Still in the outbox → cancelled, goal `ABANDONED` (03h); in flight past preflight → completes; delivered but not past preflight → `DRAINING` at preflight, goal `ABANDONED` |
 | `Undrain` against a local drain | `REJECTED_BY_POLICY/DRAINING`; UI explains |
+| Machine offline when `DrainMachine` is accepted | `spec.drain` is set at once, so the scheduler already skips it; the `Drain` command waits in the outbox, and if it expires the reconnect diff sends it again ([03](03-workflows.md#w1-enrollment-and-first-connect)) |
 | Harness crash, prompts, provider errors, developer typing | Not affected by this workflow |
 | Work tracker / code host | Not involved |
 
@@ -302,7 +356,7 @@ sequenceDiagram
   as 1. For `UNSUPPORTED` the agent refuses `HARNESS_VERSION_UNSUPPORTED` and it is
   a `BLOCK`; there is no override.
 - Fixture capture is a scripted local job (`fleet-agent capture-fixtures`),
-  scrubbed of emails, names and installed skill names before commit (01c).
+  scrubbed of emails, names and installed skill names before commit ([plan](../plan/v1-implementation-plan.md#6-how-it-is-tested), section 6).
   Nothing in it crosses the agent ↔ hub contract.
 
 ### State machine (per `(machine, harness)`, owned by the hub)

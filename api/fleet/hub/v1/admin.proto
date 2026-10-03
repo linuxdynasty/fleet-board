@@ -1,4 +1,4 @@
-// fleet.hub.v1 store status (design.md, ADR 0002, 0014, 0015). What the Settings
+// fleet.hub.v1 store status (ADR 0002, 0014, 0015). What the Settings
 // view and `fleet doctor` show about the hub's own storage. Backup, restore,
 // the claim URL and the agent-wire tap are `fleetd` commands on the hub host,
 // not RPCs: a backup holds the CA private key and the account salt (03f), so

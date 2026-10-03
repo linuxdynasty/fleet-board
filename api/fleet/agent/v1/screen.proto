@@ -20,7 +20,7 @@ message PromptDetected {
   repeated fleet.type.v1.PromptOption options = 5;
   // Destructive prompts default to Deny in the UI and are never
   // auto-answered. Set for `rm -rf`, `docker compose down -v`, and for any
-  // command line that embeds a credential (01c, measured goal).
+  // command line that embeds a credential (docs/research/verified-facts.md, measured goal).
   bool destructive = 6;
   // Why it was flagged destructive, for the triage card. Untrusted text.
   string destructive_reason = 7;

@@ -149,18 +149,6 @@ Moved to [01e-security-and-privacy.md](01e-security-and-privacy.md): what the hu
 can make an agent do, credentials, untrusted text, the fleet scope, the known
 limit.
 
-## Hand-off to step 2
-
-Contract-readiness rules, ADR changes, volumes and testing: [01c-handoff.md](01c-handoff.md).
-
-## Resolved (2026-10-01)
-
-- Codex account chosen per machine; machine names from hostname, renameable;
-  usage display mirrors each harness; probes every 10 min plus on events.
-- Emails hidden by default; log volume measured before step 3. Security:
-  pass-through, no root, no sandbox. Auto-dispatch: subscriptions only; never
-  OpenCode on Anthropic.
-
 ## Open questions
 
 None for this step (terminal log volume: measured on eshu-hq/eshu#7398, step 3).

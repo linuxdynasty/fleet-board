@@ -240,7 +240,7 @@ enum AvailabilityReason {
   AVAILABILITY_REASON_PANE_CHANGED = 7;
 }
 
-// GoalLineState is the parsed first line of a goal file (design.md).
+// GoalLineState is the parsed first line of a goal file (01d, 03l).
 enum GoalLineState {
   GOAL_LINE_STATE_UNSPECIFIED = 0;
   GOAL_LINE_STATE_WORKING = 1;

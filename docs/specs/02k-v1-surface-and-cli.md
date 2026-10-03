@@ -31,6 +31,9 @@ it belongs and a reader can tell "not built yet" from "forgotten".
 `PR` is the plan row that builds the handler. Reads of a resource need its store
 and sync to exist first (PR 5, 10, 11); the handler itself is the PR named.
 
+*To be generated* from the protos by plan row 1b ([ADR 0026](../adr/0026-one-home-per-fact.md)):
+the tables of calls and topics by release below. Until it lands they are kept by hand.
+
 | RPCs | Release | PR |
 |---|---|---|
 | `GetServerInfo`, `GetFleetSummary`, `Watch`, `GetOperation` | v1 | 12 |
@@ -63,13 +66,14 @@ v3: `DEVICES`, `NOTIFICATION_TARGETS`.
 
 ## Commands of the three programs
 
-Exit codes are 0 for success and 1 for any failure (design.md). `--json` prints
+Exit codes are 0 for success and 1 for any failure. `--json` prints
 the Connect JSON of the response message unchanged: field names as protobuf
 writes them in JSON, enum names in full, 64-bit integers as decimal strings
 ([02b](02b-hub-api.md#64-bit-integers)). `fleet status` prints one object,
 `{"summary": <GetFleetSummary>, "system": <GetSystemStatus>}`. The golden files
 of plan PR 15 fix these shapes. `FLEET_URL` names the hub; `FLEET_TOKEN` is
 optional in `local_trusted` (a valid token only narrows the owner's scopes, 02f).
+Destructive commands need `--yes`.
 
 | Command | Does | RPC or local action | Release (PR) |
 |---|---|---|---|

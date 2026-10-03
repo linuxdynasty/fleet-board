@@ -13,7 +13,7 @@ item has kind `ROUTINE`, so pacing, consent, triage, slots and verification
 apply unchanged. This file says what is different: how a run is triggered,
 numbered and verified.
 
-**Trigger.** The scheduler pass (every 30 s, plus the usual wakeups) evaluates
+**Trigger.** The scheduler pass (every scheduler tick, [defaults](defaults.md), plus the usual wakeups) evaluates
 every enabled routine; `RunRoutine` plans one now. `RunRoutine` takes the same
 checks as a manual dispatch: a `BLOCK` fails the call, a `WARN` must be listed in
 `acknowledged_warnings`, and a `CONFIRM` returns an approval (`RunRoutineResponse.approval`)
@@ -40,6 +40,21 @@ fire replaces it (counted in `skipped_fires`). A routine with no `repo` runs its
 goal in a scratch directory the agent owns.
 
 ### Trigger evaluation
+
+The checks in order, as a chart:
+
+```mermaid
+flowchart TD
+  P["Scheduler pass (every scheduler tick) or RunRoutine"] --> E{"Routine enabled and repo enabled?"}
+  E -- "no" --> X1["no run, RunRoutine fails REPO_NOT_WATCHED"]
+  E -- "yes" --> L{"Previous run live?<br/>(unique index on routine where live)"}
+  L -- "yes" --> X2["skip, cron fire counted in skipped_fires, ROUTINE_BLOCKED after blocked_after"]
+  L -- "no" --> DUE{"Due?<br/>queue_empty or cron or RunRoutine"}
+  DUE -- "no" --> X3["wait"]
+  DUE -- "yes" --> FIT{"Account and machine fit?"}
+  FIT -- "no" --> X4["wait, reason recorded as DispatchBlock"]
+  FIT -- "yes" --> PLAN["plan: one transaction (see Run creation)"]
+```
 
 For each enabled routine, in the same pass that plans issue work, and before
 issue work for the same repo when both are due:
@@ -90,6 +105,35 @@ One planning transaction, like W5:
    for a run in flight.
 4. Reserve the pane if reusing, insert the outbox `StartGoal`, audit; set
    `last_run_time`, `last_goal`, `run_count`.
+
+**A run, as messages.** `RunRoutine` and a scheduler trigger take the same path from the
+planning transaction on. Edits to the routine after that point never change what "done"
+means for this run, because the rule was copied onto the goal.
+
+```mermaid
+sequenceDiagram
+  participant D as Dashboard
+  participant H as fleetd
+  participant A as fleet-agent
+  participant T as tmux and harness
+  participant C as code host (integration adapter)
+  D->>H: CreateRoutine{request_id, routine Routine{spec RoutineSpec{display_name, repo, trigger, goal_text_template, consent, done_rule, report_path}}}
+  H-->>D: CreateRoutineResponse{routine} and Watch ROUTINES CREATED
+  D->>H: RunRoutine{request_id, id, acknowledged_warnings} (or the trigger fires in a scheduler pass)
+  H->>H: one tx: run number run_count + 1, work item WorkItemKey{kind ROUTINE, provider_name fleet, key routine-id/run}, Goal with done_rule and report_path snapshot, outbox StartGoal, audit routine.run
+  H-->>D: RunRoutineResponse{goal, operation PENDING} (or approval, when a CONFIRM check holds the run)
+  H-->>A: ConnectResponse{command Command{start_goal StartGoal{spec GoalSpec}}}
+  A->>T: the 14-step StartGoal composite of 03c (register_goal, type_goal, confirm_goal_file)
+  A-->>H: CommandResult{status OK, start_goal StartGoalResult}
+  H-->>D: Watch: GOALS UPDATED (RUNNING), ROUTINES UPDATED (RoutineStatus last_goal, run_count)
+  A-->>H: Event{goal_state GoalState{state DONE}}
+  H->>H: tx: phase VERIFYING, verify_deadline_time
+  H->>C: by done_rule: ListChangeRequests{repo, source_branches}, or PathExists{repo, ref, path}, or nothing
+  C-->>H: ChangeRequest{state MERGED}, or PathExistsResponse{exists true}
+  H->>H: tx: phase MERGED, outbox SetPaneAvailability (reason GOAL_MERGED) and ReleaseGoal
+  H-->>A: Command{set_pane_availability SetPaneAvailability{pane, available_for_work true, reason GOAL_MERGED}}, Command{release_goal ReleaseGoal{goal, pane}}
+  H-->>D: Watch: GOALS UPDATED (MERGED), later CLOSED after merged_grace
+```
 
 A run that cannot start follows 03h: transient refusals plan again on another
 machine (a new goal with the same work item and `attempt + 1`); three counted

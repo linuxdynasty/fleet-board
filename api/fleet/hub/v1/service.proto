@@ -4,8 +4,9 @@
 // paging, request_id idempotency, versions as ETags, Operations, Watch,
 // scopes, errors) are in docs/specs/02b-hub-api.md; the Watch grammar and
 // filter fields in 02c-hub-watch-and-filters.md; the scope of every RPC and
-// every Watch topic in 02d-hub-authz.md, which is authoritative. Scope per
-// RPC is noted as [READ], [SESSIONS_WRITE], [APPROVALS], [SETTINGS], [ADMIN],
+// every Watch topic in 02d-hub-authz.md. The scope noted on each RPC below is
+// authoritative; 02d tables it and is to be generated from this file (ADR 0026).
+// Scope per RPC is noted as [READ], [SESSIONS_WRITE], [APPROVALS], [SETTINGS], [ADMIN],
 // [LOGS]; [A|B] means either scope is enough; [self] means any signed-in
 // principal on its own rows (ADMIN on everyone's); [none] is unauthenticated.
 // How callers authenticate (session cookie, API token, signed device request,

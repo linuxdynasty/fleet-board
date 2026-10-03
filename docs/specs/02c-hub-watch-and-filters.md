@@ -38,8 +38,37 @@ ignored, so a sidebar filter cannot leak into the goal or triage topics.
   status compare `version` only). Equal or older messages (a replay after
   resume) are dropped.
 - **Checkpoints.** Every message carries a `resume_token`. An idle stream
-  gets `CHECKPOINT` (new token, no resource) every 30 s, which doubles as a
+  gets `CHECKPOINT` (new token, no resource) every checkpoint interval ([defaults](defaults.md)), which doubles as a
   keepalive.
+
+### A dashboard load, as messages
+
+The dashboard never talks to an agent. Everything the hub returns here was stored earlier from
+agent snapshots and events. The hub subscribes to its fan-out bus **before** it reads the
+initial state at one `hub_seq`, then replays live changes after that number, so nothing
+falls in the gap. Reads with no Watch topic (run history, usage readings, stored logs,
+users, tokens) are plain `List` and `Get` calls; a `List` page is consistent per resource
+version but is not a snapshot of the whole store, so use `Watch` with `send_initial` when a
+consistent view matters.
+
+```mermaid
+sequenceDiagram
+  participant D as Dashboard
+  participant H as fleetd
+  participant A as fleet-agent
+  A-->>H: earlier, at any time: ConnectRequest{snapshot Snapshot{seq, facts, tmux_servers, goals, goal_registry, ...}} then ConnectRequest{event Event{seq, ...}}
+  H->>H: store writer tx: machine, sessions, goals, triage derived, hub_seq assigned to each change
+  D->>H: GET / (index.html, JS, CSS from go:embed)
+  D->>H: GetServerInfo{}
+  H-->>D: GetServerInfoResponse{api_version, features, auth_mode, caller, caller_scopes, sign_in_methods, claim_pending, hub_instance_id, fleet_id}
+  D->>H: Watch{subscriptions: FLEET_SUMMARY, MACHINES, GOALS live, TRIAGE, APPROVALS, SESSIONS, PANE_SUMMARIES visible, each send_initial}
+  H->>H: authenticate, scope check per topic, subscribe to the fan-out bus, read initial state at a consistent hub_seq
+  H-->>D: WatchResponse{hub_seq, change_type INITIAL, topic, resource} (repeated per resource)
+  H-->>D: WatchResponse{change_type INITIAL_DONE, topic} (once per topic)
+  H-->>D: WatchResponse{change_type CREATED or UPDATED or DELETED or UNMATCHED, resource, resume_token} (live)
+  H-->>D: WatchResponse{change_type CHECKPOINT, resume_token} every checkpoint interval when idle
+  D->>H: ListGoalRuns, ListGoalTransitions, ListUsageReadings, ListStoredSessions, ... (reads with no topic)
+```
 
 ### Changing the subscription
 
@@ -80,6 +109,35 @@ parse is `INVALID_ARGUMENT` / `RESUME_TOKEN_INVALID` at open. After
 `RESYNC_REQUIRED` the client reopens with `send_initial` on every
 subscription and no token.
 
+### One change, from the harness to the screen
+
+A goal file changes, the agent sends an `Event`, the store writer commits it (deriving goal
+and triage state in the same transaction), and the fan-out bus delivers it to each matching
+`Watch`. One transaction can produce several changes (a goal and its triage item); per
+resource they arrive in order. After a drop the client reopens with the last `resume_token`;
+`RESYNC_REQUIRED` comes only when the hub cannot honour that token.
+
+```mermaid
+sequenceDiagram
+  participant D as Dashboard
+  participant H as fleetd
+  participant A as fleet-agent
+  participant T as tmux and harness
+  T->>A: goal file changes (the harness hook wrote BLOCKED or DONE)
+  A->>H: ConnectRequest{event Event{seq, observed_time, delivery NEVER_DROP, goal_state GoalState}}
+  H->>H: reader checks size, machine id = certificate, order, then the ingest queue
+  H->>H: store writer tx (one batch): goal fingerprint, phase, transition, triage, history
+  H->>H: after commit: hub_seq assigned, change log appended, fan-out bus publishes
+  H-->>D: WatchResponse{hub_seq, change_type UPDATED, topic GOALS, goal, resume_token}
+  H-->>D: WatchResponse{change_type CREATED, topic TRIAGE, triage_item, resume_token} (a new item in the same tx)
+  H-->>D: WatchResponse{change_type UPDATED, topic FLEET_SUMMARY} at most once per summary interval
+  D--xH: network drops, the stream ends
+  D->>H: Watch{subscriptions (same), resume_token = last seen}
+  H-->>D: changes after the token replayed from the change log, then live
+  H-->>D: WatchResponse{change_type RESYNC_REQUIRED, resync_reason} then the stream closes (only when the token cannot be honoured)
+  D->>H: Watch{subscriptions with send_initial, no resume_token}
+```
+
 ### Delivery classes
 
 | Class | Topics | Rule |
@@ -90,7 +148,7 @@ subscription and no token.
 
 This matches 03f's fan-out rule (summaries shed first, goal, triage and
 command notices re-read). Filtering `PANE_SUMMARIES` to the visible panes
-keeps browser fan-out near 140 KB/s at A50 instead of 2 MB/s (03g row 5).
+keeps browser fan-out near 140 KB/s at A50 instead of 2 MB/s (04's load model).
 Revoking a device or token closes its streams.
 
 ### Volatile fields

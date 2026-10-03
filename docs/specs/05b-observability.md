@@ -143,7 +143,7 @@ by an RPC or a hub setting:
 | `telemetry.signals` | any of `traces`, `metrics`, `logs` (default `traces`, `metrics` once an endpoint is set) |
 
 **Sampling.** Spans rooted at a command, an API call or the scheduler are always
-recorded (about 0.5 per second at A50, 03g row 10). High-rate roots are
+recorded (about 0.5 per second at A50, 04's load model). High-rate roots are
 sampled 1 in 100 and still counted in metrics: `hub.log.batch`,
 `agent.log.flush`, `hub.ingest.batch`. Heartbeats and pane summaries have no
 span at all. The SDK queue holds 2,048 spans; beyond that spans are dropped and
@@ -198,16 +198,42 @@ collector, the same id is on every log line of the flow.
 | Snapshot and replay | `agent.connect.hello` > `hub.connect.hello` > `hub.snapshot.apply`; `agent.ring.replay` > `hub.replay.ingest` | one trace per connect |
 | Settings | `hub.settings.publish` > `agent.settings.merge` | |
 | Insights | `hub.insights.rollup{day}`, `hub.insights.export_bundle` > `hub.command.send` (`EnsureScratch`) > `agent.scratch.ensure`; `hub.insights.collect_report` > `agent.scratch.collect` | 05 |
-| System | `hub.system.evaluate` (every 15 s, root, sampled 1 in 20) | |
+| System | `hub.system.evaluate` (every system evaluation interval, root, sampled 1 in 20) | |
 
 ## 8. The System health model
 
-Ten signals, evaluated by the hub every 15 s from numbers it already has
+Ten signals, evaluated by the hub every system evaluation interval ([defaults](defaults.md)) from numbers it already has
 (`hub.system.evaluate`). Each has a value, a unit, a WARNING and a CRITICAL
 threshold (the hub's defaults, not owner settings in v1) and a state. The
 signals and their latest values are `GetSystemStatus` ([READ]); the System
 section of the Machines view draws them; `FleetSummary.system_warnings` and
 `system_critical` drive the strip's dot.
+
+**The path of a health reading, as messages.** The agent's heartbeat carries `AgentHealth`.
+The hub keeps the latest per machine in memory, judges the signals every system evaluation interval ([defaults](defaults.md)), and a signal that
+leaves OK raises one deduplicated `TRIAGE_KIND_SYSTEM` item. The dashboard reads the whole list
+with `GetSystemStatus`.
+
+```mermaid
+sequenceDiagram
+  participant A as fleet-agent
+  participant G as hub gateway (connReader)
+  participant W as hub writer
+  participant E as System evaluator (hub.system.evaluate)
+  participant F as Fan-out and Watch
+  participant D as Dashboard, CLI
+  A->>G: Heartbeat{sent_time, uptime, load1, counts, events EventCounters, health AgentHealth}
+  G->>G: latest per machine in memory: MachineTelemetry.agent_health, clock_skew from sent_time
+  G->>W: last_seen write, at most once a minute (defaults)
+  loop every system evaluation interval
+    E->>E: read agent health, outbox ages, usage reading ages, sync lag, writer queue age, watch drops, disk, backup age
+    E->>E: SystemSignal{kind, subject, state, value, unit, thresholds}, hysteresis
+  end
+  E->>W: job: raise or update TriageItem{kind SYSTEM, fingerprint system:signal:subject, SystemDetail}
+  W->>F: after commit: Watch TRIAGE and FLEET_SUMMARY changes, MACHINES for the volatile telemetry
+  D->>G: GetSystemStatus{} (READ), every system status poll interval and on a SYSTEM triage change
+  G-->>D: GetSystemStatusResponse{status SystemStatus{overall, signals[], hub_version, exporters, watch_subscribers}}
+```
 
 | Signal | Subject | Value | WARNING | CRITICAL | Item raised at |
 |---|---|---|---|---|---|
@@ -232,7 +258,7 @@ follows the state: WARNING raises `SEVERITY_WARNING`, CRITICAL raises
 can lose work and raise `SEVERITY_CRITICAL`. UNKNOWN (no reading yet, a source
 not enabled) is shown as unknown and raises nothing.
 
-**Hysteresis.** A signal needs two consecutive evaluations (30 s) in a worse
+**Hysteresis.** A signal needs two consecutive evaluations in a worse
 state to leave OK, and 5 minutes in OK to return, when the item retires. An
 owner may snooze a SYSTEM item like any other.
 
@@ -248,7 +274,7 @@ uptime, which exporters are on, overall state) and the signal table, with the
 machine signals repeated in each machine card next to the agent's own health
 (ring, unacknowledged results, reconnects, memory). A SYSTEM item in Triage
 links to the same row. There is no Watch topic: the view re-reads
-`GetSystemStatus` every 30 s and on any `TRIAGE` change of kind SYSTEM.
+`GetSystemStatus` every system status poll interval ([defaults](defaults.md)) and on any `TRIAGE` change of kind SYSTEM.
 
 ## 9. pprof
 
@@ -271,6 +297,7 @@ text but can hint at structure, hence the double guard.
 | An agent too old to send `AgentHealth` | the fields stay unset (unknown, not 0); the System section says "not reported" and raises nothing |
 | The evaluator itself stalls | `hub.system.evaluate` stops, `observed_time` goes stale; the UI shows "System status is old" above 60 s; `fleet doctor` reads the same status |
 | Hub restart | metrics reset (counters restart at 0; Prometheus handles it), `hub_instance_id` changes, SYSTEM items persist in the store and re-evaluate within 30 s |
+| The same heartbeat arrives twice | the latest wins; the second changes nothing |
 | Too many labels | a new label value space is a review block; the bounded sets above are the contract |
 
 ## 11. Verifying it
@@ -285,11 +312,3 @@ the loopback and ADMIN-token rules and the refusal of a cookie, and that no
 label value contains a goal title or session name. What a static check cannot
 prove (that the signal fires in a real `fleetd`) is reported as observed or
 `NOT_CHECKED`.
-
-## 12. Questions for the owner
-
-1. ~~`/metrics` by `ADMIN` token or loopback~~ **Answered (ADR 0022):** accepted
-   for v1; a narrower metrics scope can be added later without breaking anything.
-2. ~~Thresholds~~ **Answered (ADR 0022):** the hub's defaults, not settings in v1.
-3. ~~Agent `agent.log` rotation (10 MiB, 3 files) and optional `metrics_listen`~~
-   **Answered (ADR 0022):** accepted as written.

@@ -168,6 +168,20 @@ or an operator calls `RequeueWorkItem`, which is refused for an `UNTRUSTED` or
 `EDITED_AFTER_TRUST` item, so a click cannot bypass the gate. A routine run's item (03i) is hub-made: it goes `CLOSED` in
 every ended case, and the next trigger starts a new run.
 
+**Requeue, as messages.** A requeue starts nothing: it only puts the item back to `READY`.
+The next scheduler pass (or a manual dispatch) starts the work. The refusal for an untrusted
+item is `REQUEUE_NOT_ALLOWED`, and a stale `expected_version` is `VERSION_MISMATCH`: read again.
+
+```mermaid
+sequenceDiagram
+  participant D as Dashboard or CLI
+  participant H as fleetd
+  D->>H: RequeueWorkItem{request_id, id, expected_version}
+  H->>H: refuse when manual_reason is UNTRUSTED or EDITED_AFTER_TRUST
+  H->>H: stage MANUAL_ONLY back to READY, clear manual_reason, audit row
+  H-->>D: the WorkItem, the WORK_ITEMS topic carries the change
+```
+
 ## Provider-side changes under a live goal
 
 Mirror updates (W4) are applied in the same transaction as the mirror upsert, so

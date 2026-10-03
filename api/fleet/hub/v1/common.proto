@@ -145,7 +145,7 @@ enum Scope {
   SCOPE_LOGS = 6;
 }
 
-// AuthMode is how the hub authenticates callers (design.md deployment modes).
+// AuthMode is how the hub authenticates callers (the two modes: 02f).
 enum AuthMode {
   AUTH_MODE_UNSPECIFIED = 0;
   // The hub binds loopback addresses only and refuses to start on any other

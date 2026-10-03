@@ -14,4 +14,4 @@ Use native agent messaging, when available, to send findings or questions to the
 Load the fleet-performance-rigor skill and follow it.
 Do not edit source files, change branches, or publish changes.
 If a required command is blocked, request its exact output from the coordinator; never infer a pass.
-Measure comparable baseline and candidate evidence against the budgets in docs/specs/03g-load-and-handoff.md and docs/specs/04-technology-review.md, then return the bottleneck, proof limits, and an implementation handoff. Load fleet-diagnostic-rigor when the cause is unknown. Do not edit or run promotion gates.
+Measure comparable baseline and candidate evidence against the budgets in docs/specs/04-technology-review.md (load model and budgets), then return the bottleneck, proof limits, and an implementation handoff. Load fleet-diagnostic-rigor when the cause is unknown. Do not edit or run promotion gates.

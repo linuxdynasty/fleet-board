@@ -4,7 +4,7 @@
 - Date: 2026-10-01
 - Inputs: [01-agent-capabilities.md](01-agent-capabilities.md),
   [01b-harness-commands.md](01b-harness-commands.md),
-  [01c-handoff.md](01c-handoff.md), ADRs [0003](../adr/0003-transport-grpc.md),
+  ADRs [0003](../adr/0003-transport-grpc.md),
   [0004](../adr/0004-agent-connectivity.md), [0006](../adr/0006-tmux-sessions.md),
   [0008](../adr/0008-goal-consent-and-account-modes.md),
   [0009](../adr/0009-machine-groups-and-layered-settings.md),
@@ -112,6 +112,8 @@ The order on connect is fixed: nothing but `Hello` is accepted before
 epoch. The hub machine's own agent uses the same path over loopback.
 
 ## Capability → message map
+
+*To be generated* from the protos by plan row 1b ([ADR 0026](../adr/0026-one-home-per-fact.md)): the capability-to-message map (from the capability ids in the proto comments). Until it lands it is kept by hand.
 
 Direction: A→H agent to hub, H→A hub to agent. Idem.: idempotent. Ordering:
 `seq` means the agent-wide event sequence; `cmd` means per-epoch command

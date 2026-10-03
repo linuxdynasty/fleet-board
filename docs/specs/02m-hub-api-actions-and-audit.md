@@ -113,6 +113,25 @@ never drains an enrolled machine. An integration is never created by import
 enrollment token carries `expected_hostname`, `labels` and `start_drained` for the
 same purpose by hand.
 
+**Import with a machine that has not enrolled yet, as messages.** Import applies what it can
+now and keeps the rest for when the machine joins. The mark "drained" is recorded at once and
+the Machines view shows it, so the new machine takes no goal until the owner calls
+`UndrainMachine`.
+
+```mermaid
+sequenceDiagram
+  participant C as CLI or dashboard
+  participant H as fleetd
+  participant A as new fleet-agent
+  C->>H: ImportConfig{config, dry_run = true}
+  H-->>C: changes[] (create, update, unchanged, skipped) and plan_hash
+  C->>H: ImportConfig{config, expected_plan_hash}
+  H->>H: one transaction: apply, a machine with no match becomes a pending machine
+  H-->>C: applied = true
+  A->>H: later: Enroll with a token whose machine_name matches
+  H->>H: apply the pending machine's labels and settings, mark the machine drained
+```
+
 ## Local commands
 
 Not RPCs, on purpose: **`fleetd backup`, `fleetd restore`, `fleetd enroll-token`
@@ -163,16 +182,3 @@ read-only attach toggle is a re-attach (a new `attach.open`).
 | Logs | `logs.delete`, `logs.search` |
 | Insights | `suggestion.dismiss` (`suggestions/<id>`), `insights.report_stored` (`insight_reports/<id>`, actor the verifier) |
 | Hub | `hub.restore`, `hub.pprof_enable` |
-
-## Open questions
-
-1. ~~API tokens and user management~~ Decided (ADR 0019 and its addendum):
-   RPCs for users, invites, passkeys, login sessions and API tokens
-   ([02f](02f-hub-authentication.md)), plus `fleetd` commands for the claim
-   URL, backup and restore.
-2. ~~Browser transport for `AttachTerminal`~~ Decided in step 4
-   ([04](04-technology-review.md), ADR 0016): the CLI streams over HTTP/2;
-   a browser sends the same messages over a WebSocket and acks written
-   bytes with `AttachAck`. The WebSocket rules are in 02f.
-3. ~~Device authentication mechanism~~ Decided in outline: Ed25519-signed
-   requests (02f). Push providers stay open until the phone app is built.

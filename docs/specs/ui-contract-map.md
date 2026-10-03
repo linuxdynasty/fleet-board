@@ -59,6 +59,15 @@ observed), so paths below read `Account.status.pacing` or `Machine.spec.labels`
 | ⌘K entries for accounts (waste line) and "Audit log" | `ListAccounts` → `Account.status.pacing`; audit opens on Machines (`ListAuditEntries`) | D2, M1 | v1 |
 | ⌘K entries for work items | `ListWorkItems` → `WorkItem.item.ref{display, provider}` | `WorkItemRef` (ADR 0012) | v1 |
 
+### View keys
+
+`1` Triage, `2` Work, `3` Session, `4` Usage, `5` Machines, `6` Settings, `7`
+Insights. `⌘K` or `/` opens jump-to (machines, accounts, work items, windows,
+the audit log). `n` goes to the next session that needs you. In Triage: `j`/`k`
+move, `a`, `s` and `o` act on the selected item. In Session with the terminal
+unfocused: `[` and `]` step windows, `i` opens the Details drawer. These keys
+are the web UI's planned keys; the mockup implements the same set.
+
 ### Strip counts
 
 `FleetSummary` is hub-derived; these are the definitions (proposed here, with the
@@ -82,7 +91,7 @@ fields of `FleetSummary` as named.
 |---|---|---|---|
 | Feed order and chips | `ListTriageItems` (topic `TRIAGE`), ordered by `severity`, then age | 03d W7 | v1 |
 | Permission prompt card | shows `TriageItem.prompt PromptDetail{text, options[], destructive, destructive_reason, source, confidence, answerable}` | `PromptDetected` (E6); also `Snapshot.prompts[]` after a reconnect | v1 |
-| "destructive" flag on a prompt whose command line embeds a credential | `PromptDetail.destructive`, `Approval.severity = CRITICAL` | `PromptDetected.destructive = true` (01c, E6) | v1 |
+| "destructive" flag on a prompt whose command line embeds a credential | `PromptDetail.destructive`, `Approval.severity = CRITICAL` | `PromptDetected.destructive = true` (E6, [verified-facts](../research/verified-facts.md#measured-one-real-goal)) | v1 |
 | Default answer = Deny on destructive prompts | `Approval.default_choice`, `fallback = DENY` | hub rule; never auto-answered (ADR 0004) | v1 |
 | "Send choice…" preview | calls `DecideApproval{id, expected_version, decision: "<n>"}` → `Operation` | `SendKeys{pane, keys: [literal "<n>"], answering_prompt}` (F3) | v1 |
 | "prompt gone" text in the confirm box | `Approval.state = WITHDRAWN`, or the operation ends `FAILED` / `PROMPT_GONE` | `PromptGone` event (F3, ADR 0011) | v1 |
@@ -96,7 +105,7 @@ fields of `FleetSummary` as named.
 | "Reopen goal…" preview | calls `ControlGoal{action: NOT_DONE \| EDIT, text, expected_phase}`; valid in `VERIFYING` and `DISAGREE`, else `GOAL_ACTION_NOT_ALLOWED` | a re-arm: `StartGoal{rearm_reason}` for the same goal in its pane, which types `/goal <text>` (G3, 03h) | v1 |
 | "Work item closed under a running goal" card ("keep going" / "cancel") | `TriageItem.kind = WORK_ITEM_CHANGED`, `Goal.status{phase = PAUSED, pause_reason = WORK_ITEM_CLOSED}`; "Keep going" calls `ControlGoal{RESUME}`, "Cancel" `ControlGoal{CLEAR}` (ends `CANCELLED`) | provider mirror (W4), 03h | v1 |
 | "Could not start" card (login or update screen, model missing, 3 attempts failed) | `TriageItem.kind = START_FAILED`, `Goal.status.start_error`; the item's `GoalDefinition.attempt` chain | `CommandProgress` failure `reason` (03h) | v1 |
-| Reserve-reached card; "reading is from before the last reset" | `TriageItem.kind = PACING`, `Account.status.pacing{state = RESERVE, reading_stale}` | hub pacing over `LimitBucket` (design.md) | v1 |
+| Reserve-reached card; "reading is from before the last reset" | `TriageItem.kind = PACING`, `Account.status.pacing{state = RESERVE, reading_stale}` | hub pacing over `LimitBucket` (03b) | v1 |
 | "Hub or machine health" card (writer lagging, disk low, always-on machine offline) | `TriageItem.kind = SYSTEM`, `system SystemDetail{signal, state, value, unit, threshold}`; severity follows the signal's state | `GetSystemStatus` signals; 05b section 8 | v1 |
 | "Suggestion" card with its numbers (INFO, only when the setting is on) | `TriageItem.kind = SUGGESTION`, `suggestion SuggestionDetail{suggestion, kind}` → `ListSuggestions` evidence; dismissing it calls `DismissTriageItem` and dismisses the suggestion | 05 section 8 | v1 |
 | Snooze / dismiss | calls `SnoozeTriageItem`, `DismissTriageItem` | hub only (03d) | v1 |
@@ -316,5 +325,5 @@ view reads on open and every few minutes.
 | [planned] Sign-in page (passkey, "Sign in with GitHub") and "claim this hub" | `GetServerInfo{auth_mode, sign_in_methods, claim_pending}`; `BeginPasskeyLogin` / `FinishPasskeyLogin`; `GET /auth/github/start`; the claim page calls `RedeemInvite`, then `BeginPasskeyRegistration` / `FinishPasskeyRegistration` | none on the agent wire ([02f](02f-hub-authentication.md)) | v3 |
 | [planned] Settings: people (invite, role, GitHub allow-list, disable) | `ListUsers`, `CreateUserInvite` (shows the invite URL once), `UpdateUser{spec.role, spec.github_login, spec.disabled, spec.extra_scopes}` (`extra_scopes` = `LOGS` on top of the role); `HubSettings.passkey_sign_in`, `github_sign_in` (`ADMIN`) | hub only | v3 |
 | [planned] Settings: passkeys and signed-in browsers | `User.status.passkeys[]`, `DeletePasskey`; `ListLoginSessions`, `RevokeLoginSession`; "Sign out" calls `SignOut` | hub only | v3 |
-| [planned] Settings: API tokens (for the CLI) | `CreateApiToken{name, scopes, ttl}` (secret shown once), `ListApiTokens`, `RevokeApiToken`; `LOGS` is a separate tick | hub only; `FLEET_TOKEN` (design.md) | v3 |
+| [planned] Settings: API tokens (for the CLI) | `CreateApiToken{name, scopes, ttl}` (secret shown once), `ListApiTokens`, `RevokeApiToken`; `LOGS` is a separate tick | hub only; `FLEET_TOKEN` ([02f](02f-hub-authentication.md)) | v3 |
 | [planned] Settings: devices and notifications (phone, later) | `ListDevices`, `ApprovePairing{scopes}` (`LOGS` only when the owner ticks it), `RevokeDevice`, `*NotificationTarget` (own rows) | ADR 0018, 0019, [02d](02d-hub-authz.md) | v3 |

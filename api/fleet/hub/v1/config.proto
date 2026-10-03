@@ -1,5 +1,5 @@
-// fleet.hub.v1 config export and import (design.md: `fleet export`, `fleet
-// import --dry-run`). The hub database is the source of truth; fleet.yaml is
+// fleet.hub.v1 config export and import (`fleet export`, `fleet
+// import --dry-run`; 02m). The hub database is the source of truth; fleet.yaml is
 // only an exchange format for it, rendered by the CLI from FleetConfig (the
 // canonical JSON of this message, as YAML). Import is one server-side plan:
 // it validates the whole document, diffs it against the hub, and applies it in

@@ -80,7 +80,7 @@ message TrackerProject {
 }
 
 // RepoTrustedGate overrides the trusted-issues gate for one repo
-// (design.md safety rails). Only a work item that passes is READY; anything
+// (03j). Only a work item that passes is READY; anything
 // else is MANUAL_ONLY (UNTRUSTED or EDITED_AFTER_TRUST). The rule itself is
 // in trusted_gate.proto.
 message RepoTrustedGate {

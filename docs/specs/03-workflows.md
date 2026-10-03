@@ -4,10 +4,10 @@
 - Date: 2026-10-02
 - Inputs: [01-agent-capabilities.md](01-agent-capabilities.md),
   [01b-harness-commands.md](01b-harness-commands.md),
-  [01c-handoff.md](01c-handoff.md) (measured volumes),
+  [verified-facts.md](../research/verified-facts.md) (measured volumes),
   [02-contracts.md](02-contracts.md), `api/fleet/*/v1/*.proto`,
   ADRs [0001](../adr/0001-system-architecture.md)–[0011](../adr/0011-contract-amendments.md),
-  [design.md](../design.md), [research/paperclip.md](../research/paperclip.md)
+  [research/paperclip.md](../research/paperclip.md)
 - Output: the numbers and requirements step 4 (technology review) decides on.
   This step decides no technology.
 
@@ -24,7 +24,7 @@ operator uses at 3 AM. Split across files to stay under 500 lines each:
 | [03d-triage-sessions-logs.md](03d-triage-sessions-logs.md) | **W7** triage items, **W8** developer sessions, **W9** session logs |
 | [03e-settings-and-drift.md](03e-settings-and-drift.md) | **W10** settings and policy, **W11** harness upgrade drift |
 | [03f-hub-internals.md](03f-hub-internals.md) | hub concurrency model, data model sketch |
-| [03g-load-and-handoff.md](03g-load-and-handoff.md) | load table, questions for step 4, required contract changes, open questions |
+| [03g-load-and-handoff.md](03g-load-and-handoff.md) | a stub: the load table moved to [04](04-technology-review.md#load-model-a4-and-a50) |
 | [03h-goal-phases-in-depth.md](03h-goal-phases-in-depth.md) | start-failure reactions, dispatch checks, drain and the outbox, provider-side changes, limit wait, re-arm, scheduler explanations |
 | [03i-routines.md](03i-routines.md) | **W5b** routine runs: triggers, numbering, done rules |
 | [03j-provider-sync-and-trust.md](03j-provider-sync-and-trust.md) | the provider interface in use: queries, cursors and validators, rate limits, typed errors, the trusted-issues gate |
@@ -47,9 +47,9 @@ including the provider-neutral types merged in #7 (ADR 0012):
 provider_name}` (identity) and `WorkItemRef{key, provider, url, display}`, `ForgeCliStatus{tool, host, signed_in, user, access[]}`,
 `GoalSpec.work_item` + `GoalSpec.repo` as separate fields, and
 `integration/v1/` (`model.proto`: `WorkItem`, `ChangeRequest`, `CheckSummary`, `Review`,
-`Claim`, `Label`; `integration.proto`: `IntegrationCapabilities`; `sync.proto`, `service.proto`) for hub-side mirrors. Anything a workflow
-needs beyond those is listed in
-[03g](03g-load-and-handoff.md#required-contract-changes).
+`Claim`, `Label`; `integration.proto`: `IntegrationCapabilities`; `sync.proto`, `service.proto`) for hub-side mirrors. The contract changes
+the workflows needed were applied in
+[ADR 0018](../adr/0018-hub-api-and-contract-amendments.md); the protos are the record.
 
 **Persistence vocabulary.** *Hub store* = the hub's embedded database (ADR
 0002, confirmed by ADR 0014). *Log store* = `logs.db`, the second SQLite file
@@ -225,7 +225,7 @@ re-enroll rule are in [02g](02g-agent-security.md#machine-lifecycle-revoke-and-d
 | Duplicate identity (same cert from two hosts) | W2 |
 | Clock skew > 5 min (`Hello.sent_time` or `Heartbeat.sent_time` vs hub receive time) | HelloAck still sent; machine warning; commands still evaluated in hub time; above 15 min `clock_untrusted` (02i, "Clocks") |
 | Snapshot would exceed 960 KiB | Sent as parts (`snapshot_id`, `part_index`, `part_count`, same `seq`) that split whole servers, sessions or list entries, never a pane; the hub applies it once every part arrived (02, "Snapshot parts"). The agent never drops a pane or a goal to fit. A hub that does not list `snapshot.parts` gets one snapshot (`raw_screen` is always omitted); if that is still over the cap the agent logs `snapshot.oversize` and `doctor` says the hub must be upgraded |
-| Hub writer backlog while 50 agents reconnect | HTTP/2 flow control holds the stream; snapshot apply is one tx per machine, batched by the writer ([03g](03g-load-and-handoff.md)) |
+| Hub writer backlog while 50 agents reconnect | HTTP/2 flow control holds the stream; snapshot apply is one tx per machine, batched by the writer ([load model](04-technology-review.md#load-model-a4-and-a50)) |
 | Harness crash during the identity/catalog probe | `HarnessInfo` reported with `version_support` as detected and `AccountIdentity.signed_in=false`; probe retried in 1 min, max 3, then only on version change |
 | Developer typing in a pane | Not relevant here; the identity probe runs on the hidden `fleet-probe` server |
 | Work tracker / code host down | Not involved in W1 |

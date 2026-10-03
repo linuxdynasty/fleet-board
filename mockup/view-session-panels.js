@@ -30,7 +30,7 @@ function paletteAct(s, command, cls) {
   rerender();
 }
 
-// ADR 0010 / K1: terminal log timeline and replay placeholder, sized with the measured numbers (01c).
+// ADR 0010 / K1: terminal log timeline and replay placeholder, sized with the measured numbers (docs/research/verified-facts.md).
 function historyPanel(s) {
   const hrs = Math.max(0.05, (Date.now() - s.started) / 3600e3), raw = (hrs * RAW_MB_PER_H).toFixed(1), stored = (hrs * STORED_MB_PER_H).toFixed(2);
   const ev = history[s.id] ?? [["window created", s.yours ? "your own session: capture is off until you turn it on (SetLogCapture)" : "goal pane: terminal log captured by default"]];

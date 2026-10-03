@@ -2,7 +2,7 @@
 
 - Status: Accepted (revised after an independent review)
 - Date: 2026-09-29
-- Inputs: [design.md](../design.md), ADRs [0004](../adr/0004-agent-connectivity.md),
+- Inputs: ADRs [0004](../adr/0004-agent-connectivity.md),
   [0006](../adr/0006-tmux-sessions.md), [0009](../adr/0009-machine-groups-and-layered-settings.md),
   [0010](../adr/0010-session-logs.md)
 
@@ -49,7 +49,7 @@ event, a snapshot field or a stream.
 
 Kind: **S** snapshot field, **E** event, **C** command (hub → agent),
 **H** hub → agent message that is not a command, **T** stream, **L** local only.
-Phase: **v1** the whole local product (watching, dispatch, sessions, logs), **v3** remote. "Later" items are not scheduled ([design milestones](../design-deployment-and-milestones.md#milestones)). ADR 0025 retired the middle release.
+Phase: **v1** the whole local product (watching, dispatch, sessions, logs), **v3** remote. "Later" items are not scheduled (the rows marked `later` in [features.md](../features.md)). ADR 0025 retired the middle release.
 
 | ID | Capability | Kind | Phase |
 |---|---|---|---|

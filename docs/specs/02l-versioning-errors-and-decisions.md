@@ -115,49 +115,7 @@ captures, prompts, names) are in
 
 ## Security notes
 
-What the hub can never ask for, by construction of the contract:
-
-- **No shell strings, no raw exec.** `Command` has no string that is run.
-  `run_exec` is a reserved field number and name; `exec.raw` is a reserved
-  capability. `SendKeys` carries literal text and `NamedKey`, never a tmux
-  command string. `EnsureSession`/`EnsureWindow` name a harness; the agent
-  resolves the path and launch args locally.
-- **No paths from the hub.** `Workdir{repo, relative_path}`; the agent joins
-  to an allowed root and rejects `..` (`REPO_ROOT_NOT_ALLOWED`).
-- **No file reads.** There is no file RPC. The only text that leaves a
-  machine is pane content (`CapturePane`, summaries, prompts, usage screens),
-  goal-file lines, git/gh status lines and terminal logs, all caps applied.
-- **No credentials.** `AccountIdentity` is read from status screens; `gh`
-  token lines are dropped; `EnrollResponse.account_salt` is the only secret
-  the hub sends, and it is never logged. Emails are empty unless
-  `share_identity_email` is on.
-- **Deny-class harness commands are never typed.** `RunHarnessCommand` is
-  refused when the command is not in the catalog, the catalog hash is stale,
-  the class is `DENY`, or the class exceeds the requester's role or local
-  policy. Unknown commands are `DENY`.
-- **No config push, no upgrade.** Hub `Settings` can only tighten; the agent
-  reports what the local ceiling capped. There is no upgrade command.
-- **No cross-machine addressing.** Every message is bound to the
-  certificate's `machine_id`; `Terminal` and `SessionLog` streams are
-  checked against it.
-- **Hub-asserted role is defense in depth only.** A compromised hub can
-  claim `ROLE_OWNER`; the real ceiling is the local policy's command classes
-  and approval rules. The role x command matrix the agent applies, and the
-  role the hub derives for a narrowed device or token, are in 02g and 02d.
-
-## Changes to accepted ADRs
-
-- [ADR 0011](../adr/0011-contract-amendments.md) amends 0004, 0006, 0009 and
-  0010: the developer's tmux server is the default (`control`), `tmux -L
-  fleet` optional, browser attach v1 (ADR 0025); the step 2 command kinds and messages
-  (`Settings`, `Bye`, `StartGoal`, `EnsureProbe`, `RunHarnessCommand`,
-  `ResultAck`, …), no `RunExec`, two sequences; hub-assigned labels;
-  transcripts shipped by offset.
-- [ADR 0017](../adr/0017-contract-packages.md) replaces 0003's single
-  `fleet.v1` package with the layout above.
-- [ADR 0018](../adr/0018-hub-api-and-contract-amendments.md) adds the hub
-  API, principals and devices, routines, profiles, `LIMIT_WAIT` and version
-  support.
+Moved to [01e, "What the contract rules out"](01e-security-and-privacy.md#what-the-contract-rules-out).
 
 ## Decisions made here that the specs did not settle
 
@@ -175,7 +133,7 @@ What the hub can never ask for, by construction of the contract:
 6. **Settings are typed fields** (`SettingValues` with `optional`), not a
    string map, so the tighten-only merge is checkable per field. Adding a
    setting is a proto change.
-7. **Two sequences.** 01c's agent-wide `seq` applies to events; ADR 0004's
+7. **Two sequences.** The agent-wide `seq` of [02](02-contracts.md) applies to events; ADR 0004's
    per-epoch `seq` applies to commands. Both kept, named apart.
 8. **`Heartbeat` carries no seq and is droppable**, as ADR 0004 says;
    liveness comes from transport keepalive plus the hub's 45 s / 3 min rule.
@@ -204,16 +162,6 @@ What the hub can never ask for, by construction of the contract:
 16. **Unfrozen until `v0.1`** (ADR 0019): free renames, then additive only.
 17. **Goal identity is the agent's registry** (ADR 0019, 02h), not the environment.
 18. **Seq, epoch and time are monotonic and the hub's** (ADR 0019, 02i).
-
-## Resolved questions (2026-10-02)
-
-1. `AccountKey` = HMAC-SHA256(fleet salt from enrollment, the identity string
-   the harness's status screen shows), `salt_version = 1`; for harnesses with no
-   identity on screen (Codex), the owner maps the account on the hub.
-2. One part covers 50 machines × 10 panes; snapshot parts exist in the
-   contract (ADR 0018) so a bigger machine needs no protocol change.
-3. Codex and Muse hook payloads are probed with the goal hooks (E8); `HarnessHookEvent`
-   is extended then if needed.
 
 ## Compile check
 

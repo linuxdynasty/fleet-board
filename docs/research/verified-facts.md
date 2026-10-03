@@ -33,7 +33,7 @@ The harness behavior the specs rely on today is in
 | Muse sessions live in `~/.local/share/muse/sessions/` | `ls` | Not used by the design |
 | Claude, Codex and Muse all have a native `/goal`; syntax differs (Claude has no pause) | Typed `/goal` without Enter on each, 2026-10-01 (01b) | In use. Supersedes "owner said so, not yet probed" |
 | After an interrupt Claude keeps the goal active (resume by typing `continue`); Codex and Muse show it paused (`/goal resume`); none resumes by itself in 30 s | Probed 2026-10-02 (01b) | In use (02h interrupt handling) |
-| Eshu goal file states (`DONE`, `BLOCKED: ... WATCH=<pid>`, `CONSENT:`) and the Stop hook that keeps a goal running | `eshu-hq/eshu` `.claude/hooks/goal-continue.sh`, `docs/internal/agent-hooks.md` | In use as the model for the goal file (design.md, Goal protocol) |
+| Eshu goal file states (`DONE`, `BLOCKED: ... WATCH=<pid>`, `CONSENT:`) and the Stop hook that keeps a goal running | `eshu-hq/eshu` `.claude/hooks/goal-continue.sh`, `docs/internal/agent-hooks.md` | In use as the model for the goal file ([01d](../specs/01d-goal-hooks.md), [02h](../specs/02h-goal-binding-and-pane-signals.md)) |
 | Eshu issue driver posts a claim comment and drives an issue to merged or closed | `eshu-hq/eshu` `.agents/skills/eshu-issue-driver/SKILL.md` | In use (claims, 03b) |
 
 ## Hooks
@@ -51,3 +51,31 @@ The harness behavior the specs rely on today is in
 |---|---|---|
 | On the macOS remotes the tools are only on the login-shell PATH | `ssh allen@192.168.1.232 'zsh -lic "command -v tmux claude codex muse"'` | In use: the agent resolves absolute harness paths through a login shell at install and on a version change; the hub never sends a path (ADR 0006) |
 | RAM per machine | `sysctl hw.memsize` (macOS), `/proc/meminfo` (Linux) | In use: the agent reports it as a machine fact; the hub never asks over ssh |
+
+## Measured: one real goal
+
+Checked 2026-10-01 (moved here from 01c, still the basis of the load table in [04](../specs/04-technology-review.md)). Muse 1.4.2 working eshu-hq/eshu#7398 for 60 minutes on macOS, recorded with
+`tmux pipe-pane`, sampled every minute. Only sizes were kept.
+
+| Measure | Result |
+|---|---|
+| Raw terminal output | 26.9 MB in 60 min (26.9 MB/hour) |
+| Per minute | median 288 KB, p90 974 KB, max 1,734 KB, **min 274 KB** |
+| gzip | 581 KB (46×) |
+| zstd level 3 | 234 KB (115×) |
+| zstd level 19 | 68 KB (400×) |
+| Muse's own transcript for the session | 13 MB after 60 min |
+
+Findings:
+- **Most of the raw volume is screen redraw.** Even quiet minutes produced
+  about 274 KB (the TUI repaints its timer, spinner and status line), which is
+  why it compresses so well.
+- **The agent compresses before shipping** (zstd, streaming). At about 0.23 MB
+  per busy pane per hour, 30 busy panes are about 7 MB/hour, roughly 5 GB a
+  month before retention. Network cost is negligible.
+- **Harness transcripts are larger than compressed terminal logs** (13 MB/hour
+  raw for Muse), so K3 stays opt-in and compressed.
+- **Real prompt observed:** after an hour the goal stopped at a Muse approval
+  prompt for `git fetch https://x-access-token:$(gh auth token)@github.com/…`,
+  which embeds a token in a URL. E6 must flag prompts that put credentials on a
+  command line as destructive, defaulting to Deny.

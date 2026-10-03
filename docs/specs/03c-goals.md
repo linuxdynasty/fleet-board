@@ -58,6 +58,66 @@ sequenceDiagram
   W->>S: wakeup · S queues EnsureProbe{run_now} for the account (W3)
 ```
 
+### The same dispatch through the API
+
+The dashboard asks first with `PreflightGoal` (it reads, and writes no goal),
+then starts with `StartGoal` and the same `GoalSpecInput`.
+
+Preflight, what would happen without doing it:
+
+```mermaid
+sequenceDiagram
+  participant D as Dashboard
+  participant H as fleetd
+  participant A as fleet-agent
+  participant T as tmux and harness
+  D->>H: PreflightGoal{request_id, input GoalSpecInput{work_item, repo, placement, consent, goal_text, model, effort, fresh_context}}
+  H->>H: hub checks (slots, pacing, trust, claims, repo cap, sync lag, consent), scheduler picks the placement if empty
+  H->>H: tx: outbox row for Preflight{spec GoalSpec, reuse_pane} + audit
+  H-->>D: PreflightGoalResponse{operation PENDING, hub_checks PreflightCheck{check, severity}, placement}
+  H-->>A: ConnectResponse{command Command{preflight Preflight{spec, reuse_pane}}}
+  A->>T: read-only: harness version and sign-in, checkout, disk, tmux, candidate pane (available, ready, empty input, clean checkout of the repo)
+  A-->>H: CommandResult{status OK, preflight PreflightResult{ok, would_reuse, failed_checks PreflightFailure{reason, detail, retryable}, goal_line_preview}}
+  H-->>D: Watch OPERATIONS: Operation DONE with failed_checks and output_text = goal_line_preview
+```
+
+Start, accept then send then run then confirm:
+
+```mermaid
+sequenceDiagram
+  participant D as Dashboard
+  participant H as fleetd
+  participant A as fleet-agent
+  participant T as tmux and harness
+  D->>H: StartGoal{request_id, input GoalSpecInput, skip_preflight, acknowledged_warnings}
+  H->>H: scope SESSIONS_WRITE, re-run hub checks (BLOCK fails, unlisted WARN fails, CONFIRM returns an approval)
+  H->>H: one tx: Goal phase STARTING (attempt, GoalDefinition), pane reservation, outbox StartGoal, audit goal.start
+  H-->>D: StartGoalResponse{goal, operation PENDING}
+  H-->>D: Watch: GOALS CREATED (STARTING), OPERATIONS CREATED (PENDING)
+  H-->>A: ConnectResponse{command Command{epoch, seq, not_after_time, requested_by, start_goal StartGoal{spec GoalSpec, reuse_pane, in_session, window_name, ready_timeout, goal_file_timeout}}}
+  A->>A: envelope checks, persist in the command log
+  A-->>H: CommandAck{command_id}, Operation DELIVERED
+  A-->>H: CommandProgress{step preflight, step_index 1, step_count 14}
+  alt reuse_pane set
+    A->>T: pick_session, then prepare_branch (git switch -c in the pane's own checkout)
+  else new window
+    A->>T: ensure_worktree (git worktree add), ensure_window (tmux new-window, FLEET_* env, launch the harness)
+  end
+  A->>A: register_goal: GoalRegistration{goal, pane, harness, worktree_path} written BEFORE typing
+  A-->>H: Event{goal_registry GoalRegistryChanged{kind CREATED, registration}}
+  A->>T: start_log_capture (pipe-pane), wait_ready, then set_model, set_effort, clear_context when asked
+  A->>A: write_goal_file (the agent writes the initial goal file)
+  A->>T: type_goal: the adapter's GoalCommand plus Enter, then confirm_goal_file waits for the file
+  A-->>H: CommandProgress{step type_goal} then CommandProgress{step confirm_goal_file}
+  A-->>H: CommandResult{status OK, start_goal StartGoalResult{pane, session, reused_session, worktree_path, goal, typed_goal_line, branch, model, effort, registration}}
+  H->>H: one tx: phase RUNNING, start_time, GoalRun 1, session and pane, branch, outbox closed
+  H-->>A: ConnectResponse{result_ack ResultAck{command_ids}}
+  H-->>D: Watch: GOALS UPDATED (RUNNING), SESSIONS, OPERATIONS DONE
+  T->>A: the harness hook updates the goal file, the agent sees it
+  A-->>H: Event{goal_state GoalState{goal_id, state WORKING, first_line, head_commit, dirty}}
+  H-->>D: Watch: GOALS UPDATED (volatile fields at the 02c interval)
+```
+
 ### Planning rules (auto-dispatch, one scheduler pass)
 
 1. **Work items:** stage `READY` (open, trusted, unclaimed, repo watched; the

@@ -47,7 +47,7 @@ exposure the developer already accepts when running a harness unattended.
 Developers who want more can use harness sandbox modes, rootless containers on
 Linux, a root-owned install or a separate worker account with tmux
 `server-access` (3.3+); none of it is required or assumed, and no hardening
-guide is written yet (design.md, "Later, not scheduled"). One open case is decided by the owner before v1 dispatch is switched on
+guide is written yet ([features.md](../features.md), the "later" rows). One open case is decided by the owner before v1 dispatch is switched on
 (ADR 0024, decision 20): in `local_trusted` mode a goal on the hub machine is
 the owner to the loopback API ([02f](02f-hub-authentication.md#modes)).
 
@@ -56,3 +56,35 @@ the owner to the loopback API ([02f](02f-hub-authentication.md#modes)).
 network blocked by default, `~/.ssh` readable; forcing goals into it would
 break `git push` and `gh`. Muse's Auto-review mode allowed a network request to
 `api.github.com` on its own during a goal. tmux `server-access` is 3.3+.
+
+## What the contract rules out
+
+What the hub can never ask for, by construction of the contract:
+
+- **No shell strings, no raw exec.** `Command` has no string that is run.
+  `run_exec` is a reserved field number and name; `exec.raw` is a reserved
+  capability. `SendKeys` carries literal text and `NamedKey`, never a tmux
+  command string. `EnsureSession`/`EnsureWindow` name a harness; the agent
+  resolves the path and launch args locally.
+- **No paths from the hub.** `Workdir{repo, relative_path}`; the agent joins
+  to an allowed root and rejects `..` (`REPO_ROOT_NOT_ALLOWED`).
+- **No file reads.** There is no file RPC. The only text that leaves a
+  machine is pane content (`CapturePane`, summaries, prompts, usage screens),
+  goal-file lines, git/gh status lines and terminal logs, all caps applied.
+- **No credentials.** `AccountIdentity` is read from status screens; `gh`
+  token lines are dropped; `EnrollResponse.account_salt` is the only secret
+  the hub sends, and it is never logged. Emails are empty unless
+  `share_identity_email` is on.
+- **Deny-class harness commands are never typed.** `RunHarnessCommand` is
+  refused when the command is not in the catalog, the catalog hash is stale,
+  the class is `DENY`, or the class exceeds the requester's role or local
+  policy. Unknown commands are `DENY`.
+- **No config push, no upgrade.** Hub `Settings` can only tighten; the agent
+  reports what the local ceiling capped. There is no upgrade command.
+- **No cross-machine addressing.** Every message is bound to the
+  certificate's `machine_id`; `Terminal` and `SessionLog` streams are
+  checked against it.
+- **Hub-asserted role is defense in depth only.** A compromised hub can
+  claim `ROLE_OWNER`; the real ceiling is the local policy's command classes
+  and approval rules. The role x command matrix the agent applies, and the
+  role the hub derives for a narrowed device or token, are in 02g and 02d.

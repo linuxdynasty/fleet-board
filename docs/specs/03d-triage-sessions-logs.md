@@ -56,8 +56,8 @@ sequenceDiagram
   W->>W: tx: retire if still open · ResultAck
 ```
 
-**Rules.** Prompts are never auto-answered, destructive or not (design.md
-safety rails); a destructive prompt (`rm -rf`, `docker compose down -v`, a
+**Rules.** Prompts are never auto-answered, destructive or not
+([02h](02h-goal-binding-and-pane-signals.md#sendkeys-purposes), ADR 0004); a destructive prompt (`rm -rf`, `docker compose down -v`, a
 credential on a command line) shows Deny preselected and `destructive_reason`.
 `answerable=false` (detection not verified for that harness version) → the
 item has no answer buttons and shows the `ssh -t … tmux attach` line (W8). One answer in
@@ -72,6 +72,35 @@ and audits it; that is a different clock from `Approval.expire_time`
 item stays open) ([defaults](defaults.md)); a prompt that is still on screen after 7 days is re-raised by
 the next `Snapshot.prompts[]` (03g) because the fingerprint is new only if the
 `prompt_id` changed, so the UI shows "expired, still showing".
+
+**Answering through an approval, as messages.** The writer raises the triage item and its
+`Approval` in the same transaction as the event. The person decides with `DecideApproval`
+naming the exact version they saw (`APPROVAL_CLOSED` wins over `VERSION_MISMATCH`, so a phone
+says "already decided", not "reload"). The agent re-checks that the prompt is still showing
+before it types. A deny sends nothing and returns no operation.
+
+```mermaid
+sequenceDiagram
+  participant D as Dashboard or phone
+  participant H as fleetd
+  participant A as fleet-agent
+  participant T as tmux and harness
+  T->>A: the harness shows a permission prompt (screen pattern, or a PERMISSION_REQUEST hook)
+  A-->>H: Event{prompt_detected PromptDetected{prompt_id, pane, harness, text, options, destructive, destructive_reason, source, confidence, answerable, goal_id}}
+  H->>H: one tx: TriageItem{kind PROMPT, fingerprint prompt_id, state OPEN} + Approval{kind PROMPT_ANSWER, state PENDING, allowed_decisions, default_choice, fallback DENY, expire_time}, goal prompt_pending
+  H-->>D: Watch: TRIAGE CREATED, APPROVALS CREATED, FLEET_SUMMARY needs_you
+  D->>H: DecideApproval{request_id, id, expected_version, decision "2"}
+  H->>H: scope APPROVALS, required_role covered, state PENDING, decision in allowed_decisions, one answer in flight per prompt_id
+  H->>H: one tx: Approval DECIDED, TriageItem IN_FLIGHT, outbox SendKeys, audit approval.decide
+  H-->>D: DecideApprovalResponse{approval, operation}
+  H-->>A: ConnectResponse{command Command{send_keys SendKeys{pane, keys, answering_prompt, purpose PROMPT_ANSWER}}}
+  A->>A: envelope and role checks, PROMPT parser verified, is prompt_id still on screen?
+  A->>T: tmux send-keys: literal 2, then Enter
+  A-->>H: CommandResult{status OK}
+  H->>H: one tx: TriageItem state ACTED with acted_by and acted_time, in-flight cleared, Operation DONE, prompt_pending false
+  A-->>H: Event{prompt_gone PromptGone{prompt_id, pane}}, a no-op for an ACTED item
+  H-->>D: Watch: OPERATIONS DONE, TRIAGE UPDATED, APPROVALS UPDATED
+```
 
 ### State machine (item, owned by the hub)
 
@@ -236,10 +265,12 @@ peer address; the hub never runs it.
 
 | Failure | What happens |
 |---|---|
-| Agent offline | Attach closes (`hub_closed`); UI offers reconnect; session list shows last known with "offline" |
+| Agent offline | Attach closes (`AGENT_OFFLINE`); UI offers reconnect; session list shows last known with "offline" |
 | Hub restart | All attaches drop; the agent's PTY clients see the stream end and exit; view sessions self-destroy; sessions table durable |
 | Duplicate `EnsureSession` / `OpenAttach` | Declarative / logged result; a second `OpenAttach` with the same `attach_id` returns the existing view |
 | Deadline (2 min for `OpenAttach`) | `EXPIRED`; UI shows "not delivered" |
+| Session created on a machine that is offline (`CreateSession`) | `EnsureSession` ends `EXPIRED` after its deadline; nothing is created |
+| Repo outside the machine's allowed roots, or local policy refuses the kind | `REPO_ROOT_NOT_ALLOWED`, or `REJECTED_BY_POLICY`; nothing is created |
 | Harness crash in the session | Pane `dead=true` with `exit_status`; UI offers `RespawnPane{resume=true}` (dangerous kind) |
 | Provider error | `HarnessCondition` shown inline on the session card |
 | Prompt appears | W7 item; the session card shows it; answering from the attach is just typing |
@@ -276,6 +307,9 @@ retention pass; a UI replay request.
 hub log receiver (per agent `SessionLog` stream), the log writer (its own
 goroutine and `logs.db`, ADR 0015), UI replay.
 
+The replay read (`ListStoredSessions`, `ReadSessionLog`) as messages is in
+[02b](02b-hub-api.md#reading-a-stored-session-log).
+
 ```mermaid
 sequenceDiagram
   participant T as tmux
@@ -300,7 +334,7 @@ sequenceDiagram
 ```
 
 **Rules.** The spool stores **compressed** chunks (65 B/s per busy pane
-measured, 01c), so hours offline cost megabytes, not gigabytes. **Framing**
+measured, [verified-facts](../research/verified-facts.md#measured-one-real-goal)), so hours offline cost megabytes, not gigabytes. **Framing**
 (spike S2, [02e](02e-contract-rules.md#log-framing)): the agent keeps one zstd
 frame per stream open for up to 5 minutes or 4 MiB raw and flushes it every
 10 s (or 256 KiB raw, a proposal: shorter means less loss on an agent crash,
@@ -413,7 +447,7 @@ stateDiagram-v2
 
 | Failure | What happens |
 |---|---|
-| Agent offline for hours | Spool grows at ~65 B/s per busy pane (compressed); cap (setting, e.g. 256 MiB) far away; resends from `acked_offset` on reconnect |
+| Agent offline for hours | Spool grows at ~65 B/s per busy pane (compressed); cap (`spool_cap_bytes`, [defaults](defaults.md)) far away; resends from `acked_offset` on reconnect |
 | Hub restart | `logs.db` is durable and consistent; the agent resends from the hub's end (the next `LogAck`) |
 | Hub restored from an older backup, or its end lost below what the agent already dropped from its spool | The first chunk gets `HOLE` with the hub's lower end; the agent sees it is below its spool floor and sends its oldest chunk with `gap_before = floor - end`, `frame_start = true`; the stream continues and the rows show the gap (`log.gap`), nothing wedges |
 | Chunk arrives twice | `offset + raw_length ≤ stored end` → `DUPLICATE`, not stored |

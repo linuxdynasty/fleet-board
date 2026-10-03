@@ -45,7 +45,7 @@ enum PrincipalKind {
   PRINCIPAL_KIND_USER = 1;
   // The hub's own scheduler (dispatch, nudges, probes, routines).
   PRINCIPAL_KIND_SCHEDULER = 2;
-  // The arbiter model that settles questions goals cannot (design.md).
+  // The arbiter model that settles questions goals cannot (ADR 0018).
   PRINCIPAL_KIND_ARBITER = 3;
   // A script using an API token (FLEET_TOKEN); acts for its creator.
   PRINCIPAL_KIND_API_TOKEN = 4;

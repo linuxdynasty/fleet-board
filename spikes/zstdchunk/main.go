@@ -1,6 +1,6 @@
 // Spike S2 for docs/specs/04-technology-review.md: how well does zstd
 // compress terminal output when the agent ships it in 10 s chunks instead of
-// one stream (01c measured 115x on a whole hour)? Throwaway code.
+// one stream (docs/research/verified-facts.md measured 115x on a whole hour)? Throwaway code.
 //
 //	tmux pipe-pane -o -t <pane> 'zstdchunk rec /path/run'   # writes run.raw + run.idx
 //	zstdchunk analyze /path/run

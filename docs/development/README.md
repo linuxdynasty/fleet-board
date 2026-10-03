@@ -7,15 +7,14 @@ detail behind the short root [AGENTS.md](../../AGENTS.md).
 
 | Doc | What it covers |
 |---|---|
-| [agent-orchestration.md](agent-orchestration.md) | Roles, cost tiers and model bindings per harness, task-to-skill map, handoff contract, how to run a role in each harness |
 | [hooks.md](hooks.md) | Development hooks for Claude, Codex and Muse: skill nudge and its path map, goal protocol and Stop guard, doc staleness, role router, spawn guard, how to turn each off, tests |
-| [agent-guide.md](agent-guide.md) | Working rules in detail: worktrees and git hygiene, evidence capture, prove the theory first, escalation, macOS and zsh notes, documentation workflow |
+| [agent-guide.md](agent-guide.md) | Recipes and traps AGENTS.md does not carry: worktree and git recipes, prove the theory first, macOS and zsh notes, roles and models per harness, the task-to-skill map, the handoff contract, dispatch and consent rules, how to run a role |
 
 ## The setup in one screen
 
 ```text
 .agents/roles.json            single source: model tiers per harness + roles
-.agents/skills/<name>/        14 project skills (SKILL.md, "Use when ...")
+.agents/skills/<name>/        project skills (SKILL.md, "Use when ...")
 scripts/agent-roles.py        renders the role files below; --check detects drift
 scripts/verify-agent-canon.sh checks the rendered files, skill links, frontmatter,
                               the skill path map and the hook configs
@@ -25,6 +24,9 @@ scripts/verify-agent-canon.sh checks the rendered files, skill links, frontmatte
 scripts/test-dev-hooks.sh     self-test for the hooks (hooks.md)
 scripts/owner-setup.sh        walks the owner through owner-only setup steps (plan section 3)
 scripts/test-owner-setup.sh   self-test for owner-setup.sh, run with each bash on the machine
+scripts/plan-issues.py        writes each plan row's GitHub issue body from the plan
+                              (--print, --check, --apply; ADR 0026)
+scripts/test-plan-issues.py   self-test for plan-issues.py, no network; test-dev-hooks.sh runs it
 .claude/agents/*.md           generated (Claude Code subagents)
 .codex/agents/*.toml          generated (Codex custom agents)
 .opencode/agent/*.md          generated (OpenCode agents)

@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-10-02
-- Inputs: [03g](03g-load-and-handoff.md) (load table, questions Q1–Q9),
+- Inputs: the [load model](#load-model-a4-and-a50) below (questions Q1 to Q9),
   [03f](03f-hub-internals.md) (concurrency model, data model),
   ADRs [0001](../adr/0001-system-architecture.md),
   [0002](../adr/0002-storage-sqlite.md), [0003](../adr/0003-transport-grpc.md),
@@ -23,7 +23,7 @@ pages were read on 2026-10-02.
 
 ## Summary
 
-| Question (03g) | Decision | Proven by |
+| Question | Decision | Proven by |
 |---|---|---|
 | Q1 durable store | **SQLite stays.** `modernc.org/sqlite`, WAL, `synchronous=FULL`, `fullfsync=ON`, one writer, 250 ms / 100-message batches | S1: 2,543 rows/s for 60 s, commit p99 ≤ 28 ms, readers never blocked |
 | Q2 pane summaries | Every update persisted, latest per pane (ADR 0013); the final summary of each pane moves to `logs.db` when its session ends | S1: 100 updates/s costs 0.79 MB/s of disk writes at A50 |
@@ -32,18 +32,73 @@ pages were read on 2026-10-02.
 | Q5 browser fan-out | **Connect** (unary + server streaming, one stream per tab); terminal attach over **WebSocket** with byte acks | Vendor docs (browsers cannot stream requests) |
 | Q6 log storage | **`logs.db`**: zstd chunks as rows in a second SQLite file with its own writer; replaces "files on disk" in ADR 0010 | S1: 30 chunks/s commit p99 ≤ 19 ms; delete one session 6 ms; prune and vacuum in ≈ 55 ms steps |
 | Q6 chunk framing | One zstd frame per stream for ≤ 5 min or 4 MiB raw, flushed into a chunk every 10 s; replay seeks by frame | S2: 14× vs 8× for independent 10 s frames (Codex, 60 min) |
-| Q6 log volume | 03g was low: Codex output compresses 15×, not 115× (Muse); A50 is **50–270 GB/month** depending on the harness mix; default size cap 50 GiB | S2 |
+| Q6 log volume | The first estimate was low: Codex output compresses 15×, not 115× (Muse); A50 is **50–270 GB/month** depending on the harness mix; default size cap 50 GiB | S2 |
 | Q7 replay budget | 200 ev/s per agent, 2,500 ev/s per hub, as proposed | S1 burst |
 | Q8 provider limits | Polling only in v1; webhook ingress later and optional | GitHub docs: 5,000 req/h per installation; 304s free |
 | Q9 agent persistence | `agent.db` (same driver) for command log, event ring and spool chunks; raw `pipe-pane` output in plain append files | Same engine as S1; agent rates ≤ 1 tx/s |
 | UI build and serve | Vite → `web/dist` → `go:embed` → `http.FileServerFS`; Node only at build time | Go docs |
 | Redis, Postgres, NATS | **Not used** | See [Rejected](#rejected-options) |
 
+## Load model (A4 and A50)
+
+**Fleet assumptions.** *A4* (the author's fleet, design.md): 4 machines, 3
+accounts, 1 repo on 1 integration, 20 observed panes, 10 goal panes capturing
+logs (the sum of `max_active` is 2+2+4+2 = 10), 2 browsers. *A50*: 50
+machines × 10 panes = 500 observed panes, 3 accounts (accounts scale
+with people, not machines), 5 repos, 300 goal panes capturing (`max_total` ≈ 6
+per machine), 150 active goals (`max_active` ≈ 3), 10 browsers.
+
+**Measured inputs ([verified-facts](../research/verified-facts.md#measured-one-real-goal), 2026-10-01, Muse on a real goal).** Raw terminal
+output 26.9 MB/h per busy pane = 26.9 × 10⁶ ÷ 3600 = **7.47 KB/s**; redraw
+floor 274 KB/min = **4.57 KB/s** even when quiet; zstd-3 0.23 MB/h = 234 KB ÷
+3600 = **65 B/s** per pane; Muse transcript 13 MB/h = **3.6 KB/s** raw.
+**Contract rates (02).** Heartbeat every 15 s; summaries ≤ 1 per pane per
+5 s; resource sample every 30 s; probes every 10 min per account.
+**Modelling assumptions** (stated so a later measurement can change them): heartbeat 0.5
+KB, summary 2 KB, activity transition 0.3 KB at 2 per minute per active goal
+pane, goal state and branch state 2 KB at 6 per hour per goal each, prompt or
+condition 2 per hour per active goal, usage reading 3 KB, command or result 1
+KB, snapshot 100 KB, log chunk every 10 s per stream.
+
+| # | Workflow / stream | A4 steady | A50 steady | Peak | Durability | Ordering | Browser fan-out |
+|---|---|---|---|---|---|---|---|
+| 1 | W1/W2 snapshots | ≈ 0 (reconnects rare) | ≈ 0 | hub restart: 4 × 100 KB in ≤ 60 s = 6.7 KB/s; 50 × 100 KB = 5 MB in 60 s = **83 KB/s**, 50 apply-txs | must-persist | Hello → Snapshot → results → events, per agent | none (UI re-reads) |
+| 2 | W2 ring replay | ≈ 0 | ≈ 0 | per agent ≤ 200 ev/s × 0.5 KB = 100 KB/s; 50 agents uncapped = 10,000 ev/s = 5 MB/s → **hub-wide budget 2,500 ev/s (1.25 MB/s) for ~1 min** | must-persist (history) | per agent `seq` | none |
+| 3 | A5 heartbeats | 4 ÷ 15 = 0.27/s × 0.5 KB = 0.13 KB/s | 50 ÷ 15 = 3.3/s = **1.7 KB/s** | same | can-lose (latest in memory; `last_seen` written at most once a minute per machine: 0.07 rows/s at A4, 0.83 at A50) | none | coalesced to the summary strip, 1/s per browser |
+| 4 | B2 resource samples | 4 ÷ 30 = 0.13/s = 0.07 KB/s | 50 ÷ 30 = 1.7/s = **0.8 KB/s** | same | can-lose; only the latest sample is kept, in memory (the contract has no 24 h chart), so no durable rows | none | Machines view only |
+| 5 | E5 pane summaries | 20 × 0.2 = 4/s × 2 KB = **8 KB/s** | 500 × 0.2 = 100/s × 2 KB = **200 KB/s** (720 MB/h) | same | can-lose; **latest per pane only** (persisting 1 week = 100 × 86,400 = 8.6 M rows/day, 17 GB/day; see Q2) | per pane, latest wins | unfiltered: 2 browsers × 8 = 16 KB/s; 10 × 200 = **2 MB/s**; filtered to ~30 visible panes per browser: 10 × 6/s × 2 KB = 120 KB/s |
+| 6 | E4 activity transitions | 10 × 2 ÷ 60 = 0.33/s × 0.3 KB = 0.1 KB/s | 150 × 2 ÷ 60 = **5/s**, 1.5 KB/s | provider incident: 150 in 10 s = 15/s; replay bursts (row 2) | must-persist, never dropped | per agent `seq` | Session view, per visible pane |
+| 7 | G2/H3 goal + branch state | 10 × 12 ÷ 3600 = 0.03/s, 0.07 KB/s | 300 × 12 ÷ 3600 = **1/s**, 2 KB/s | dispatch wave: 50 goals × 2 in 1 min = 1.7/s | must-persist, never dropped | per agent `seq` | all browsers: 10 × 1/s = 10 msg/s, 20 KB/s |
+| 8 | E6/E12 prompts + conditions | 10 × 2 ÷ 3600 = 0.006/s | 150 × 2 ÷ 3600 = **0.08/s** | provider incident: 150 conditions in 10 s = 15/s, then 150 `cleared` | must-persist, never dropped | per agent `seq` | all browsers (Triage) |
+| 9 | W3 usage readings + probe health | 3 × 6 ÷ 3600 = 0.005/s × 3 KB = 15 B/s; event probes ≤ 0.05/s; passive ≤ 4 ÷ 60 = 0.07/s | probes same 0.005/s (accounts do not scale); passive ≤ 50 ÷ 60 = **0.8/s**, 0.8 KB/s | goal start/finish wave: ≤ 1 per account per minute | must-persist (latest + history) | by `read_time` per account | all browsers (strip), coalesced |
+| 10 | Commands, acks, progress, results | ≈ 0.05/s, 50 B/s | ≈ 0.5/s (dispatch ≤ 2/min + prompt answers 0.08/s + nudges + probes), **0.5 KB/s** | reconnect re-issue: pending outbox per machine (tens) | must-persist (outbox, results) | per epoch `seq`; results idempotent by id | Triage/Session (status) |
+| 11 | W4 sync, GitHub polling | issues 60/h + claims 10 items × 12/h = 120/h + CR batch 60/h + full poll 2/h ≈ **250 req/h = 0.07 req/s**; ≈ 30 % non-304 × 20 KB = 1.5 MB/h | issues 5 × 60 = 300/h + claims 50 × 12 = 600/h + CR 300 CRs ÷ 50 per batch × 60 = 360/h + full 10/h ≈ **1,300 req/h = 0.36 req/s**, ≈ 8 MB/h | verify-now bursts ≤ 6/min | mirrors re-fetchable; cursors must-persist | per resource `update_time` | Work view on change |
+| 11b | W4 with webhooks (GitLab, Jira Cloud) | inbound ≈ 60 events/h | inbound ≈ **300 events/h = 0.08/s**; backstop poll every 10 min: 5 repos × 3 resources × 6/h = 90 req/h | provider burst (bulk label change): 100 events/s for seconds | inbound events can-lose (backstop poll repairs) | by `update_time` | same |
+| 12 | W9 terminal logs, shipped | 10 × 65 B/s = **0.65 KB/s** = 2.3 MB/h = 56 MB/day = 1.7 GB/month; 1 chunk/s | 300 × 65 = **19.5 KB/s** = 70 MB/h = 1.7 GB/day = **50 GB/month**; 30 chunks/s (30 index rows/s batched); all 500 captured: 32.5 KB/s = 117 MB/h = 84 GB/month | reconnect after 8 h offline: spool per machine ≤ 6 panes × 65 B/s × 28,800 s = 11 MB, shipped at line rate | must-persist (file + index), tolerates re-send | per stream byte offset | live tail only to viewers of that session; replay on demand |
+| 12a | W9 raw into agent spools (not shipped) | 10 × 7.47 = 75 KB/s across agents | 300 × 7.47 = **2.24 MB/s** across agents (≤ 75 KB/s per machine); compressed in spool: 65 B/s per pane | — | agent-local | — | — |
+| 13 | K3 transcripts (v3, opt-in) | 10 × 3.6 = 36 KB/s raw | 300 × 3.6 = **1.08 MB/s raw**; compression unmeasured | — | must-persist if enabled | by offset | replay only |
+| 14 | J1 attach | 2 attaches × ≤ 7.5 KB/s = 15 KB/s | 10 × 7.5 = **75 KB/s** | redraw on resize | never dropped (PTY blocks) | per attach | 1:1 |
+| 15 | W10/W11 settings, drift | rare | rare (≤ 100 catalog rows per change) | fleet-wide setting change: 50 Settings + 50 acks | must-persist | by generation | Machines and Settings views |
+
+**Totals.**
+
+| | A4 | A50 |
+|---|---|---|
+| Inbound to hub, steady | ≈ **9 KB/s** (8 summaries + 0.65 logs + 0.35 everything else) | ≈ **227 KB/s** (200 summaries + 19.5 logs + 7.5 everything else) ≈ 0.8 GB/h, of which 90 % is can-lose summaries |
+| Durable bytes, steady | ≈ **0.8 KB/s** | ≈ **25 KB/s** (19.5 logs to `logs.db` + ~5 events/state to the store) |
+| Durable rows, steady | ≈ **2.1 rows/s** (log index 1, activity 0.33, heartbeat `last_seen` 0.07, sync ≤ 0.5, rest ≈ 0.2) | ≈ **48 rows/s** (log index 30, sync ≤ 10, activity 5, heartbeat `last_seen` 0.83, goal/branch 1, usage 0.8, commands 0.5) |
+| Durable rows, peak | hub restart: 4 snapshots + replay ≤ 800 ev/s for seconds | hub restart: **2,500 ev/s for ~60 s** (budgeted), 50 snapshot txs; provider incident: 30 never-dropped events/s for 10 s |
+| Store growth (retained) | events 0.4/s × 0.5 KB × 604,800 = **120 MB rolling week**; logs 1.7 GB/month | events 7/s × 0.5 KB × 604,800 = **2.1 GB rolling week**; logs **50–84 GB/month** until the size cap |
+| Browser fan-out | ≤ 20 KB/s | 2 MB/s unfiltered summaries; **≈ 140 KB/s** with per-pane subscriptions (120 summaries + 20 state) |
+| Provider requests | 250 req/h | 1,300 req/h polling; ≈ 90 req/h + 300 events/h with webhooks |
+
 ## Q1. Durable store
 
-**Requirement (03g).** One writer, ≈ 52 rows/s steady and ≈ 2,500 rows/s for
-60 s at A50; ≤ 10 browsers reading without blocking the writer; zero-dependency
-install; a laptop hub that can lose power.
+**Requirement (load model).** One writer, the A50 steady rate in the load model's
+"Durable rows, steady" row (≈ 48 rows/s, the sum of its parts) and ≈ 2,500 rows/s for
+60 s at A50 (the older ≈ 52 in [ADR 0014](../adr/0014-storage-confirmed.md) has no
+breakdown, so 48 is the number to use); ≤ 10 browsers reading without blocking the
+writer; zero-dependency install; a laptop hub that can lose power.
 
 **Vendor facts.**
 
@@ -194,7 +249,7 @@ token bucket per agent and one for the hub for replayed events.
 
 ## Q4. Hot state
 
-03g asks for ≤ 10 reads/s of ≈ 500 rows under 100 ms. S1 measured the
+The load model needs ≤ 10 reads/s of ≈ 500 rows under 100 ms. S1 measured the
 500-row sidebar at 14–21 ms p99 and 30 visible summaries at ≤ 2.5 ms p99,
 including during the 2,500 rows/s burst. **Decision:** the UI and the
 scheduler read the store; there is no cache process and no in-memory copy of
@@ -275,14 +330,14 @@ The startup truncation of partial frames in 03d is no longer needed.
 
 ### Chunk framing and volume (S2)
 
-01c measured 115× on one hour of Muse output compressed as a single stream.
+[verified-facts](../research/verified-facts.md#measured-one-real-goal) measured 115× on one hour of Muse output compressed as a single stream.
 S2 recorded one hour of a busy Codex goal on omarchy (2026-10-02 09:49–10:49
 EDT, `tmux pipe-pane -o`, no keys sent; 17.8 MB raw) and compressed it the way
 the agent would ship it (klauspost/compress `SpeedDefault` ≈ zstd level 3):
 
 | Method | MB/h | Ratio | B/s per pane | Chunk p50 |
 |---|---|---|---|---|
-| whole hour, one frame (01c's method) | 1.17 | 15× | 326 | — |
+| whole hour, one frame (the verified-facts method) | 1.17 | 15× | 326 | — |
 | independent frame per 10 s chunk | 2.18 | 8× | 605 | 5,459 B |
 | independent frame per 60 s chunk | 1.47 | 12× | 408 | 23,654 B |
 | 10 s chunks + dictionary trained on the first 20 % | 1.96 | 9× | 544 | 7,341 B |
@@ -304,7 +359,7 @@ or the limit starts a new frame. Each chunk carries `frame_start` and
 the chunk that starts the frame, so seeking costs at most 5 minutes of
 output (≈ 1.5 MB raw for Codex). This is within 7 % of the whole-hour ratio.
 
-**Volume, corrected.** Busy panes write 65 B/s (Muse, 01c) to 348 B/s (Codex,
+**Volume, corrected.** Busy panes write 65 B/s (Muse, verified-facts) to 348 B/s (Codex,
 S2) after compression. At A50 with 300 capturing panes that is 19.5–104 KB/s,
 **50–270 GB/month**; at A4 (10 panes) 2–9 GB/month. The size cap therefore
 matters: **default 50 GiB**, oldest `FINAL` sessions pruned first, and the
@@ -316,7 +371,7 @@ which S1 measured above.
 At 100 messages per batch the writer committed 2,543–2,626 rows/s for 60 s
 with commit p99 ≤ 28 ms and enqueue → commit p99 ≤ 59 ms, at most ≈ 70 % of
 writer time. **Decision:** keep 200 ev/s per agent and 2,500 ev/s per hub
-(03g open question 14).
+(decided here).
 
 ## Q8. Provider limits and webhook ingress
 
@@ -334,7 +389,7 @@ writer time. **Decision:** keep 200 ev/s per agent and 2,500 ev/s per hub
   GitHub must be able to reach the URL (inferred from the docs' advice to use
   a forwarding proxy for local testing).
 
-**Decision:** polling only in v1 (03g open question 13). Webhook ingress is a
+**Decision:** polling only in v1 (decided here). Webhook ingress is a
 later, opt-in integration that still keeps the backstop poll.
 
 ## Q9. Agent-side persistence
@@ -390,4 +445,4 @@ second engine to learn.
 |---|---|
 | `logs.db` at the 50 GiB default cap (S1 used 2 GB) | B-tree depth grows by about one level; re-run S1 `logs` with a larger prefill before the first logs PR; this measurement (issue #60) gates the v1 logs work, plan section 9 |
 | Muse and Claude Code under the framing above (S2 measured Codex) | Re-run `zstdchunk` on one goal hour of each before the first logs PR; this measurement (issue #60) gates the v1 logs work, plan section 9 |
-| Harness transcripts (K3) compression | Measured in v3 before K3 ships (03g open question 11) |
+| Harness transcripts (K3) compression | Measured in v3 before K3 ships. At A50 the raw transcript rate (1.08 MB/s) is higher than the terminal logs, so K3 stays opt-in and compressed |
