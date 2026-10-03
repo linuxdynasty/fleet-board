@@ -25,10 +25,10 @@ hooks/  web/  api/  docs/                       # hooks/: goal-hook definition a
 
 The dispatch packages (the lines marked "dispatch rows") are v1 too (ADR 0025):
 they arrive with plan rows 18 to 29, after the watching rows. There is no
-separate triage package: triage items are raised and retired by `ingest` (in
-the event transaction), `system`, and the dispatch packages that own each source. The command path (`outbox`) and
-probe assignment (`pacing/probe`) come with the watching rows: ADR 0022
-addendum.
+separate triage package: triage items are raised and retired by `ingest` (in the
+event transaction), `system`, and the dispatch packages that own each source.
+The command path (`outbox`) and probe assignment (`pacing/probe`) come with the
+watching rows: ADR 0022 addendum.
 
 - Business logic lives in `internal/`; `cmd/` only parses flags, builds
   dependencies and calls into `internal/`.
@@ -61,11 +61,12 @@ such as reading rows a store's interface should return); test through the
 interface instead. An assertion that recomputes the expected value the way the
 code does proves nothing; assert a value worked out by hand or from the spec.
 Tests of the schema, pragmas, constraints and migrations assert on the database
-file itself (`fleet-sqlite-store`). Prefer table-driven tests with named cases (`t.Run(tc.name, ...)`) and `t.Parallel()` where the
-case has no shared state. Use real tmux in a throwaway server (`-L`) for tmux
-tests and captured fixtures for screen parsing; never mock the thing under test.
-Cover every dispatch variant of a shared helper. Confirm filtered tests ran
-(`go test -list '.*' ./pkg/...`).
+file itself (`fleet-sqlite-store`). Prefer table-driven tests with named cases
+(`t.Run(tc.name, ...)`) and `t.Parallel()` where the case has no shared state.
+Use real tmux in a throwaway server (`-L`) for tmux tests and captured fixtures
+for screen parsing; never mock the thing under test. Cover every dispatch
+variant of a shared helper. Confirm filtered tests ran (`go test -list '.*'
+./pkg/...`).
 
 ## Hard rules
 

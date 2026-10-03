@@ -73,10 +73,10 @@ code, so review it as carefully. Load the project skills matching the diff
 
 ## Findings
 
-Every finding has: pass (`spec` for the spec axis), class (`correctness`, `performance`, `concurrency`,
-`security`, `contract`, `docs`, `workflow`), severity, confidence, disposition,
-`file:line` evidence, the violated rule, and the fix plus the check that closes
-it.
+Every finding has: pass (`spec` for the spec axis), class (`correctness`,
+`performance`, `concurrency`, `security`, `contract`, `docs`, `workflow`),
+severity, confidence, disposition, `file:line` evidence, the violated rule, and
+the fix plus the check that closes it.
 
 | Severity | Meaning | Effect |
 |---|---|---|
@@ -86,11 +86,11 @@ it.
 | P3 | Cosmetic | never blocks; fix a line inline, do not open an issue |
 
 A spec finding of missing or wrong is at least P1; scope creep is P2 unless it
-changes behavior nobody reviewed. Severity follows consequence, not file type: prose that an agent follows
-(AGENTS.md, a skill, a runbook) or a spec that contradicts the code is not P3.
-Disposition is `fixed`, `not-a-bug-with-evidence`, `deferred-to-linked-follow-up`
-or `blocked`. A finding restated in a later round is the same finding; cite the
-earlier round.
+changes behavior nobody reviewed. Severity follows consequence, not file type:
+prose that an agent follows (AGENTS.md, a skill, a runbook) or a spec that
+contradicts the code is not P3. Disposition is `fixed`,
+`not-a-bug-with-evidence`, `deferred-to-linked-follow-up` or `blocked`. A
+finding restated in a later round is the same finding; cite the earlier round.
 
 ## Verdict
 

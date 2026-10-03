@@ -17,11 +17,12 @@ throughput or resource claim. A routine passing test run needs no diagnosis.
    command that goes **red** on this exact symptom: a failing test at the seam
    that reaches the bug, a recorded agent stream or screen fixture replayed, or
    a throwaway test rig against fixtures or a `-L` throwaway tmux server (never
-   the developer's sessions; see "Probing a real harness" below). Make it **tight** (seconds, same verdict every run,
-   runnable by an agent unattended). For an intermittent failure, raise the
-   reproduction rate (loop it, add stress) until it is debuggable. Done when you
-   have run the command and shown it red; reading code for a theory comes after.
-   Then shrink the scenario until every remaining part is needed to stay red.
+   the developer's sessions; see "Probing a real harness" below). Make it
+   **tight** (seconds, same verdict every run, runnable by an agent unattended).
+   For an intermittent failure, raise the reproduction rate (loop it, add
+   stress) until it is debuggable. Done when you have run the command and shown
+   it red; reading code for a theory comes after. Then shrink the scenario until
+   every remaining part is needed to stay red.
 2. **Read the contract before the code.** The owning workflow in
    [03-workflows.md](../../../docs/specs/03-workflows.md) (state machine,
    ordering, failure modes) and the ADR say what *should* happen; the diagnosis
@@ -64,14 +65,14 @@ keys in the developer's own sessions.
 
 ## Record the result
 
-State: the established cause, the evidence (file:line, command, log line),
-the red loop command (it becomes the regression test), rejected hypotheses,
-remaining uncertainty, and the next action as an implementation handoff (failing regression test to write first, files, risks).
-Distinguish a visibility fix (a new signal) from a correctness fix. Before
-handing off, `rg '\[DEBUG-'` returns nothing.
-Never claim a cause that was inferred only; say "most likely" and what would
-confirm it. Report commands with their exit codes, captured directly (not after
-a pipe, and note zsh has no `PIPESTATUS`).
+State: the established cause, the evidence (file:line, command, log line), the
+red loop command (it becomes the regression test), rejected hypotheses,
+remaining uncertainty, and the next action as an implementation handoff (failing
+regression test to write first, files, risks). Distinguish a visibility fix (a
+new signal) from a correctness fix. Before handing off, `rg '\[DEBUG-'` returns
+nothing. Never claim a cause that was inferred only; say "most likely" and what
+would confirm it. Report commands with their exit codes, captured directly (not
+after a pipe, and note zsh has no `PIPESTATUS`).
 
 ## Do not
 

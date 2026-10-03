@@ -47,15 +47,27 @@ run_suite() {
   drive "$sh" "$home" 'y\ny\n'
   [ "$(wc -l <"$home/.zshrc" | tr -d ' ')" = 4 ] && ok || bad "$sh" "a second run appends nothing"
 
+  # An unsupported shell gets the line printed and no file written.
+  rm -f "$home/.zshrc"
+  drive "$sh" "$home" 'y\ny\n' /usr/bin/fish
+  [ -z "$(ls -A "$home")" ] && ok || bad "$sh" "unsupported shell writes nothing"
+  # bash on macOS writes ~/.bash_profile only when it exists.
+  if [ "$(uname -s)" = Darwin ]; then
+    printf 'keep\n' >"$home/.bash_profile"
+    drive "$sh" "$home" 'y\ny\n' /bin/bash
+    tail -n 1 "$home/.bash_profile" | grep -qx 'export MUSE_NO_AUTO_UPDATE=1' && ok || bad "$sh" "bash on macOS uses .bash_profile"
+    [ ! -e "$home/.bashrc" ] && ok || bad "$sh" "bash on macOS leaves .bashrc alone"
+  fi
+
   rm -rf "$home"
 }
 
-drive() { # drive SHELL HOME ANSWERS: run stage 2 on a pseudo-terminal
-  python3 - "$1" "$script" "$2" "$3" <<'PY'
+drive() { # drive SHELL HOME ANSWERS [LOGIN_SHELL]: run stage 2 on a pseudo-terminal
+  python3 - "$1" "$script" "$2" "$3" "${4:-/bin/zsh}" <<'PY'
 import os, subprocess, sys
-sh, script, home, answers = sys.argv[1:5]
+sh, script, home, answers, login_shell = sys.argv[1:6]
 master, slave = os.openpty()
-env = {"HOME": home, "SHELL": "/bin/zsh", "PATH": os.environ["PATH"], "MUSE_NO_AUTO_UPDATE": ""}
+env = {"HOME": home, "SHELL": login_shell, "PATH": os.environ["PATH"], "MUSE_NO_AUTO_UPDATE": ""}
 p = subprocess.Popen([sh, script, "--stage", "2"], stdin=slave, stdout=slave, stderr=slave, env=env)
 os.close(slave)
 os.write(master, answers.encode().decode("unicode_escape").encode())
