@@ -26,6 +26,7 @@ ruling in the PR.
 git fetch origin
 git worktree add ~/personal-repos/fleet-board-worktrees/<name> -b <branch> origin/main
 cd ~/personal-repos/fleet-board-worktrees/<name> && pwd && git symbolic-ref -q HEAD
+go run github.com/bufbuild/buf/cmd/buf@v1.73.0 generate   # gen/ is not committed; `make gen` once the Makefile exists
 ```
 
 Verify `pwd` is that worktree before every edit. The main checkout stays a
@@ -64,7 +65,9 @@ before acting on it.
    reworked title) and carry before and after evidence: the failing test, the
    benchmark, the screenshot, the command output.
    Write it, and every status update, with `fleet-humanizer`: plain words the
-   owner can follow, jargon explained.
+   owner can follow, jargon explained. No AI attribution line or trailer.
+   If the PR changes a row of the v1 plan, it also edits that row's GitHub
+   issue (scope, dependencies, acceptance, title) and says so in the body.
 7. **CI**: complete only after two consecutive stable reads of the full check
    set (`pending == 0` and the total unchanged) -
    `gh pr checks <n> --json name,state,bucket`, state the exact query. Large

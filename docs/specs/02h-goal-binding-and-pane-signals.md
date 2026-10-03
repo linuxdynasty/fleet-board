@@ -210,8 +210,9 @@ is explicit: `TmuxPane.last_input_time` (level) and `Event.pane_input`
 (`PaneInput`, COALESCE key `input:<pane>`, at most one per pane per 10 s;
 replayed from the ring after an outage with its original time).
 
-Detection (to be confirmed in the tmux spike, since control mode does not
-expose client input): every 2 s while any client is attached to a session
+Detection (the tmux spike, plan 0.5, checks whether control mode can push client
+activity instead; until it reports, this poll is the one polled pane input and
+its exception to "poll only usage and GitHub" is an open owner question, ADR 0022 addendum): every 2 s while any client is attached to a session
 holding a goal pane, the agent reads `tmux list-clients -F
 '#{client_activity} #{client_flags} #{client_session} #{pane_id}'`, ignores
 control-mode clients (its own observer), and credits the input to the active
@@ -222,7 +223,7 @@ is a second, weaker evidence the agent may use where `client_activity` is
 unavailable.
 
 The hub holds off nudges and goal control for 10 minutes after the latest
-input (`human_at_keyboard_until`) and shows the typing banner from
+input (`human_at_keyboard_until_time`) and shows the typing banner from
 `Pane.last_input_time`. `AvailabilityChanged` no longer carries a keystroke
 reason: availability and input are separate facts.
 

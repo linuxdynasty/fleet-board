@@ -27,8 +27,8 @@ KB, snapshot 100 KB, log chunk every 10 s per stream.
 |---|---|---|---|---|---|---|---|
 | 1 | W1/W2 snapshots | ≈ 0 (reconnects rare) | ≈ 0 | hub restart: 4 × 100 KB in ≤ 60 s = 6.7 KB/s; 50 × 100 KB = 5 MB in 60 s = **83 KB/s**, 50 apply-txs | must-persist | Hello → Snapshot → results → events, per agent | none (UI re-reads) |
 | 2 | W2 ring replay | ≈ 0 | ≈ 0 | per agent ≤ 200 ev/s × 0.5 KB = 100 KB/s; 50 agents uncapped = 10,000 ev/s = 5 MB/s → **hub-wide budget 2,500 ev/s (1.25 MB/s) for ~1 min** | must-persist (history) | per agent `seq` | none |
-| 3 | A5 heartbeats | 4 ÷ 15 = 0.27/s × 0.5 KB = 0.13 KB/s | 50 ÷ 15 = 3.3/s = **1.7 KB/s** | same | can-lose (latest in memory; `last_seen` write optional, 3.3 rows/s at A50) | none | coalesced to the summary strip, 1/s per browser |
-| 4 | B2 resource samples | 4 ÷ 30 = 0.13/s = 0.07 KB/s | 50 ÷ 30 = 1.7/s = **0.8 KB/s** | same | can-lose; 1 week = 1.7 × 604,800 = **1.0 M rows/week** | none | Machines view only |
+| 3 | A5 heartbeats | 4 ÷ 15 = 0.27/s × 0.5 KB = 0.13 KB/s | 50 ÷ 15 = 3.3/s = **1.7 KB/s** | same | can-lose (latest in memory; `last_seen` written at most once a minute per machine: 0.07 rows/s at A4, 0.83 at A50) | none | coalesced to the summary strip, 1/s per browser |
+| 4 | B2 resource samples | 4 ÷ 30 = 0.13/s = 0.07 KB/s | 50 ÷ 30 = 1.7/s = **0.8 KB/s** | same | can-lose; only the latest sample is kept, in memory (the contract has no 24 h chart), so no durable rows | none | Machines view only |
 | 5 | E5 pane summaries | 20 × 0.2 = 4/s × 2 KB = **8 KB/s** | 500 × 0.2 = 100/s × 2 KB = **200 KB/s** (720 MB/h) | same | can-lose; **latest per pane only** (persisting 1 week = 100 × 86,400 = 8.6 M rows/day, 17 GB/day; see Q2) | per pane, latest wins | unfiltered: 2 browsers × 8 = 16 KB/s; 10 × 200 = **2 MB/s**; filtered to ~30 visible panes per browser: 10 × 6/s × 2 KB = 120 KB/s |
 | 6 | E4 activity transitions | 10 × 2 ÷ 60 = 0.33/s × 0.3 KB = 0.1 KB/s | 150 × 2 ÷ 60 = **5/s**, 1.5 KB/s | provider incident: 150 in 10 s = 15/s; replay bursts (row 2) | must-persist, never dropped | per agent `seq` | Session view, per visible pane |
 | 7 | G2/H3 goal + branch state | 10 × 12 ÷ 3600 = 0.03/s, 0.07 KB/s | 300 × 12 ÷ 3600 = **1/s**, 2 KB/s | dispatch wave: 50 goals × 2 in 1 min = 1.7/s | must-persist, never dropped | per agent `seq` | all browsers: 10 × 1/s = 10 msg/s, 20 KB/s |
@@ -48,10 +48,10 @@ KB, snapshot 100 KB, log chunk every 10 s per stream.
 | | A4 | A50 |
 |---|---|---|
 | Inbound to hub, steady | ≈ **9 KB/s** (8 summaries + 0.65 logs + 0.35 everything else) | ≈ **227 KB/s** (200 summaries + 19.5 logs + 7.5 everything else) ≈ 0.8 GB/h, of which 90 % is can-lose summaries |
-| Durable bytes, steady | ≈ **0.8 KB/s** | ≈ **25 KB/s** (19.5 logs to files + ~5 events/state to the store) |
-| Durable rows, steady | ≈ **2.4 rows/s** (log index 1, activity 0.33, heartbeat `last_seen` 0.27, resource 0.13, sync ≤ 0.5, rest ≈ 0.2) | ≈ **52 rows/s** (log index 30, sync ≤ 10, activity 5, heartbeat 3.3, resource 1.7, goal/branch 1, usage 0.8, commands 0.5) |
+| Durable bytes, steady | ≈ **0.8 KB/s** | ≈ **25 KB/s** (19.5 logs to `logs.db` + ~5 events/state to the store) |
+| Durable rows, steady | ≈ **2.1 rows/s** (log index 1, activity 0.33, heartbeat `last_seen` 0.07, sync ≤ 0.5, rest ≈ 0.2) | ≈ **48 rows/s** (log index 30, sync ≤ 10, activity 5, heartbeat `last_seen` 0.83, goal/branch 1, usage 0.8, commands 0.5) |
 | Durable rows, peak | hub restart: 4 snapshots + replay ≤ 800 ev/s for seconds | hub restart: **2,500 ev/s for ~60 s** (budgeted), 50 snapshot txs; provider incident: 30 never-dropped events/s for 10 s |
-| Store growth (retained) | events 0.4/s × 0.5 KB × 604,800 = **120 MB rolling week**; logs 1.7 GB/month | events 7/s × 0.5 KB × 604,800 = **2.1 GB rolling week** + 1 M resource rows; logs **50–84 GB/month** until the size cap |
+| Store growth (retained) | events 0.4/s × 0.5 KB × 604,800 = **120 MB rolling week**; logs 1.7 GB/month | events 7/s × 0.5 KB × 604,800 = **2.1 GB rolling week**; logs **50–84 GB/month** until the size cap |
 | Browser fan-out | ≤ 20 KB/s | 2 MB/s unfiltered summaries; **≈ 140 KB/s** with per-pane subscriptions (120 summaries + 20 state) |
 | Provider requests | 250 req/h | 1,300 req/h polling; ≈ 90 req/h + 300 events/h with webhooks |
 
@@ -153,15 +153,16 @@ what is in the protos now.
    acceptable loss on an agent crash is 10 s.
 8. ~~Probe placement.~~ **Decided:** `always-on` machines first, then the hub
    machine (03b, probe preference order).
-9. **"Approved and green"** (no merge consent): `review_decision = APPROVED`
-   and `checks.rollup = SUCCESS` → `ready_for_human_merge`. Correct? (Both
-   fields now exist and are adapter-computed, 03j; the question is only
-   whether the rule is right.)
+9. ~~"Approved and green"~~ **Decided (ADR 0008):** without `merge` consent a
+   goal's done state is "PR approved and green": `review_decision = APPROVED`
+   and `checks.rollup = SUCCESS` → `ready_for_human_merge` (both fields are
+   adapter-computed, 03j).
 10. ~~Heartbeat `last_seen`~~ **Decided:** held in memory per heartbeat and
     written at most once a minute per machine and on connect and disconnect
     ([defaults](defaults.md)).
-11. **Transcripts (K3).** Measure compression of Claude/Codex/Muse transcript
-    files before v3; at A50 the raw rate (1.08 MB/s) exceeds terminal logs.
+11. **Transcripts (K3), scheduled:** compression of Claude/Codex/Muse transcript
+    files is measured in v3 before K3 ships (04, "Not proven"); at A50 the raw
+    rate (1.08 MB/s) exceeds terminal logs.
 12. ~~Unsupported harness version, manual dispatch.~~ **Decided (ADR 0019 #27,
     03h):** a `CONFIRM` check, not a warning.
 13. ~~Webhook ingress~~ **Decided (04 Q8):** polling only in v1; webhooks later

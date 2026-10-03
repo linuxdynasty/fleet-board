@@ -472,7 +472,7 @@ stateDiagram-v2
 | The harness shows another identity | `CommandResult{FAILED, ACCOUNT_MISMATCH}`; the hub re-maps from `Snapshot.accounts[]` and assigns elsewhere |
 | The machine sleeps or goes offline | readings stop; after `stale_after` the account is `STALE` (no new dispatch); after `OFFLINE` the probe fails over. A `STALE` machine alone does not move a probe, because a laptop flaps through it |
 | The old machine returns after `StopProbe` expired (24 h) | the next snapshot lists the probe and the hub sends a fresh `StopProbe` |
-| Two machines briefly probe one account | harmless, status commands cost no quota; the newest hub-adjusted `read_time` wins |
+| Two machines briefly probe one account | harmless, status commands are expected to cost no quota; the newest hub-adjusted `read_time` wins |
 | A machine's clock is off | readings are adjusted by the measured skew; over 15 minutes the machine is `clock_untrusted` and its readings never override a trusted machine's |
 | Passive and probe readings disagree | the probe wins; passive only triggers a probe |
 | A reading arrives late after a reconnect | stored, but it becomes the latest only if its adjusted `read_time` is newer |

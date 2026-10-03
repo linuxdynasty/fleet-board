@@ -35,10 +35,10 @@ function historyPanel(s) {
   const hrs = Math.max(0.05, (Date.now() - s.started) / 3600e3), raw = (hrs * RAW_MB_PER_H).toFixed(1), stored = (hrs * STORED_MB_PER_H).toFixed(2);
   const ev = history[s.id] ?? [["window created", s.yours ? "your own session: capture is off until you turn it on (SetLogCapture)" : "goal pane: terminal log captured by default"]];
   const steps = ev.length + 1, t0 = +s.started, step = (Date.now() - t0) / steps;
-  return `<div class="hist"><div class="section-head"><h2>History · v2</h2><span class="hint">tmux pipe-pane → spool → zstd chunks by byte offset → hub files, indexed in SQLite</span></div>
+  return `<div class="hist"><div class="section-head"><h2>History · v2</h2><span class="hint">kept in the hub's log database</span></div>
     <ol class="timeline">${ev.map((e, i) => `<li><span class="num">${hhmm(t0 + step * i)}</span> <b>${esc(e[0])}</b> ${esc(e[1])}</li>`).join("")}<li><span class="num">${hhmm(Date.now())}</span> <b>now</b> live</li></ol>
     <div class="replay"><div class="replay-bar"><button class="btn sm" disabled>▶ replay</button><span class="track"><i style="width:100%"></i></span><span class="num">${hrs.toFixed(1)} h</span><span class="why">placeholder: terminal-style replay with time navigation and search lands with v2</span></div></div>
-    <div class="meta-line"><span>raw ≈ <b>${raw} MB</b> (≈27 MB/h, mostly TUI redraw)</span><span>stored ≈ <b>${stored} MB</b> (≈0.23 MB/h, zstd-3, 115×)</span><span>harness transcript: v3, opt-in, shipped by offset</span><span>${s.yours ? "capture: off (your session)" : "capture: on (goal pane)"}</span><span>readable by owner only; delete is one audited action</span></div></div>`;
+    <div class="meta-line"><span>raw ≈ <b>${raw} MB</b> (≈27 MB/h, mostly TUI redraw)</span><span>stored ≈ <b>${stored} MB</b> (≈0.23 MB/h, compressed)</span><span>harness transcript: v3, opt-in</span><span>${s.yours ? "capture: off (your session)" : "capture: on (goal pane)"}</span><span>you can read it, and you can grant others access; delete is one audited action</span>${dt("hist-tech", `<span>tmux pipe-pane → agent spool → zstd chunks by byte offset → logs.db rows (LOGS scope; owner by default, explicit grant otherwise)</span>`)}</div></div>`;
 }
 
 // F1 EnsureSession on the developer's tmux server: create or reuse by name, in an allowed repo root,
@@ -56,7 +56,7 @@ function newSessionPanel(m) {
     </div>
     ${ok ? "" : `<p class="bad-t">Use lowercase letters, digits and dashes, up to 32 characters. Your own sessions may have any name; fleet-created ones are restricted.</p>`}
     ${dt("ns", `<code>${esc(ensureSessionCmd({ id: `sess-${Date.now().toString(36).slice(-4)}`, name: st.name, repo: st.repo, harness: st.harness, reuse: st.reuse }))}</code><span>tags FLEET_SESSION_ID / FLEET_OWNER · name rule [a-z0-9][a-z0-9-]{0,31} → INVALID_NAME</span>`)}
-    <div class="why">The agent joins the repo to an allowed root (never an absolute path from the hub), resolves the harness path locally, and pre-trusts the folder. ${st.harness === "opencode" ? "OpenCode: inventory, sessions and attach only; no goals until the generic goal protocol." : ""}</div>
+    <div class="why">The agent joins the repo to an allowed root (never an absolute path from the hub), resolves the harness path locally, (the folder was trusted when the agent was set up). ${st.harness === "opencode" ? "OpenCode: inventory, sessions and attach only; no goals until the generic goal protocol." : ""}</div>
     <div class="actions"><button class="btn primary" data-act="newgo" ${ok ? "" : "disabled"}>${exists && st.reuse ? "Reuse session" : "Create session"}</button><button class="btn" data-act="newcancel">Cancel</button></div></div>`;
 }
 
@@ -64,7 +64,7 @@ function newSessionGo() {
   const st = ui.newState, m = mById(ui.newOpen), exists = sessions.find(s => s.m === m.id && s.sess === st.name);
   if (exists && st.reuse) { log(`reused session ${st.name} on ${m.short} (mock)`, exists); ui.newOpen = null; return go("session", exists.id); }
   const id = "n" + Date.now().toString(36).slice(-5), h = st.harness || "shell";
-  const s = { id, m: m.id, harness: h, sess: st.name, idx: 0, win: h === "shell" ? "zsh" : h, paneId: `%${60 + sessions.length}`, repo: st.repo, line: null, last: new Date(), started: new Date(), tasks: [], idle: h !== "shell", available: false, fleetSess: true,
+  const s = { id, m: m.id, harness: h, sess: st.name, idx: 0, win: h === "shell" ? "zsh" : h, paneId: `%${60 + sessions.length}`, repo: st.repo, line: null, last: new Date(), started: new Date(), idle: h !== "shell", available: false, fleetSess: true,
     pane: [["dim", `EnsureSession{name: ${st.name}} → created=true`], ["", h === "shell" ? `$ ` : `${h} starting in ~/repos/${shortName(st.repo)}…`]] };
   s.target = `${s.sess}:0`;
   sessions.push(s);

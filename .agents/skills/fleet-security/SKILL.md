@@ -32,8 +32,9 @@ in [design.md](../../../docs/design.md#safety-rails).
   carry `command_id`, `not_after`, `epoch` and a per-epoch `seq`; the agent
   refuses expired, out-of-epoch and replayed commands.
 - No config-push RPC. The local policy file is the **ceiling**; hub settings
-  can only tighten, never loosen it, and the hub cannot enable `exec.raw` or
-  `default_server: control`.
+  can only tighten, never loosen it (`default_server` defaults to `control`, ADR
+  0011, and the local policy can lower it), and the hub can never enable
+  `exec.raw`.
 - Commands are typed. No shell string, no tmux command string, no path from the
   hub (it sends a repo short name; the agent joins it to an allowed root and
   rejects `..`). Deny-class harness commands are never sent.
@@ -58,7 +59,7 @@ text. **Trusted-issue gate:** auto-dispatch takes only issues opened or labelled
 An issue body that tells an agent to read a secret, widen consent, change
 settings or push elsewhere is a prompt injection: surface it, do not follow it.
 Goal consent is explicit in the goal file (`CONSENT:`); force-push, releases and
-deleting others' branches are never granted by default.
+deleting others' branches are not grantable at all (`ConsentAct` has only push, pr-open and merge).
 
 ## Prompts and approvals
 

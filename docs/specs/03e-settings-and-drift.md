@@ -102,6 +102,34 @@ outbox when it accepts `DrainMachine` (the goal is `ABANDONED`, the item `READY`
 elsewhere); the whole interplay is in
 [03h](03h-goal-phases-in-depth.md#drain-the-outbox-and-respawn).
 
+### The local policy file (L1)
+
+`~/.config/fleet-agent/policy.yaml` is the machine's ceiling (ADR 0009). The
+owner of the machine edits it by hand; the hub never writes it, and a change
+takes effect at the next agent restart. Its keys have the names and types of the
+matching `SettingValues` field ([settings.proto](../../api/fleet/type/v1/settings.proto)),
+so there is one vocabulary; a key that is absent states no local opinion, and the
+value used is the merged one in the table. A missing file behaves as if every key
+were absent (`doctor` warns); an unreadable or invalid file is safe mode (see the
+failure table).
+
+| Key | What it limits | Value when the key is absent |
+|---|---|---|
+| `default_server` | how far the agent goes in the developer's own tmux server: `none`, `observe`, `control` | `control` (ADR 0011) |
+| `max_active`, `max_total`, `max_windows` | goals using quota, live goals, windows | none locally; the hub's layers apply (2, 4, 12) |
+| `allowed_harnesses` | which harnesses fleet may drive on this machine | open: needs an owner answer (ADR 0022 addendum, question 2) |
+| `allowed_repo_roots` | the directories under which repos are inventoried and goals may run | open: needs an owner answer (same question); H1 and `StartGoal` cannot work without it |
+| `local_approval` | command kinds that wait for `fleet-agent approve` | off for every kind (02g) |
+| `rate_limits` | commands per minute per kind | 60 |
+| `spool_cap_bytes`, `attach_idle_timeout`, `cert_lifetime`, `block_on_battery` | as in defaults.md | the defaults.md value |
+| `min_probe_interval` (name proposed here; no proto carries it) | a floor on how often this machine probes (the effective interval is `max(hub, local)`) | none |
+| `labels` | labels this machine adds to the hub's | none |
+
+The merge of each key with the hub's value is the tighten-only rule above; the
+hub shows the result and which layer won (`EffectiveSettings`). `fleet-agent
+enroll` does not need the file. Whether it should write a starter file or ask for
+the repo roots is an owner question (same addendum).
+
 ### State machine (settings delivery per machine, owned by the hub)
 
 ```mermaid

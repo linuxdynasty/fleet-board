@@ -109,7 +109,7 @@ message TermClose {}
 //
 // Framing (spike S2, 2026-10-02, 60 min Codex goal): the agent keeps ONE
 // zstd frame per stream open for up to 5 minutes or 4 MiB raw and flushes
-// it at every 10 s chunk, so a chunk is a run of zstd blocks, not a whole
+// it at every chunk (every 10 s, or at 256 KiB raw, whichever comes first), so a chunk is a run of zstd blocks, not a whole
 // frame. Independent 10 s frames compressed Codex output 8x; one 5-minute
 // frame flushed every 10 s gave 14x (whole-hour baseline 15x). A frame left
 // unterminated by an agent crash still decodes block by block, and the next

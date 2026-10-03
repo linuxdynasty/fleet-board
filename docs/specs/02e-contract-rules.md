@@ -68,7 +68,9 @@ The JSON name of a field is its camelCase proto name, so an `_at` and a
 ## Codegen
 
 `buf.gen.yaml` at the repository root (buf v2, managed mode) generates into
-`gen/`, which is not committed until `v0.1`:
+`gen/`, which is never committed: every worktree and every CI job runs
+`buf generate` first (`make gen` from plan PR 1), so a clean checkout compiles
+only after it:
 
 | Output | Plugin (pinned in `buf.gen.yaml`) | Notes |
 |---|---|---|
@@ -84,7 +86,7 @@ The JSON name of a field is its camelCase proto name, so an `_at` and a
   Connect JSON; the UI rules are in
   [02b](02b-hub-api.md#64-bit-integers). No `jstype` annotation is used.
 - CI runs `buf build`, `buf lint` and `buf generate` and compiles the output
-  (needs the `go.mod` of implementation step 0).
+  (needs the `go.mod` of plan PR 1).
 
 ## Command kinds and capabilities
 

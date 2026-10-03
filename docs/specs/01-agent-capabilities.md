@@ -78,7 +78,7 @@ Phase: **v1** read-only, **v2** actions, **v3** later.
 | E8 | Harness hook events | E | v2 |
 | E9 | Pane ↔ harness session mapping, goal registry | S, E | v1 |
 | E10 | Capture pane | C | v1 |
-| E11 | Pane availability (idle and available for work) | S, E | v1 |
+| E11 | Pane availability (idle: v1; the developer's mark is the v2 command `SetPaneAvailability`) | S, E, C | v1, v2 |
 | E12 | Harness condition (provider error, rate limit, sign-in, goal interrupted) | E | v1 |
 | E13 | Developer input on a pane | S, E | v1 |
 | F1 | Ensure session (create or reuse, optional harness) | C | v2 |
@@ -87,6 +87,7 @@ Phase: **v1** read-only, **v2** actions, **v3** later.
 | F4 | Interrupt | C | v2 |
 | F5 | Respawn pane (resume harness) | C | v2 |
 | F6 | Kill window | C | v2 |
+| F7 | Scratch directory for a goal with no repo: ensure, collect (`scratch`, ADR 0021) | C | v2 |
 | F8 | Run harness command (allow-listed slash command) | C | v2 |
 | G1 | Goal hooks: install and verify (Claude first) | C, S | v2 |
 | G2 | Goal state (line + HEAD + dirty, one event) | E | v1 |
@@ -109,9 +110,8 @@ Phase: **v1** read-only, **v2** actions, **v3** later.
 | M3 | Doctor | L | v1 |
 | M4 | Drain and undrain | C, L, S | v2 |
 
-Not in v1 or v2: Tailscale lookup (v3), raw exec (capability string reserved,
-not in the v1 contract), moving a goal between machines (v2 ships "stop here,
-dispatch there").
+Not in v1 or v2: Tailscale lookup (v3), raw exec (string reserved, not in the
+contract), moving a goal between machines (v2: "stop here, dispatch there").
 
 ## A. Identity, connection, settings
 
@@ -128,9 +128,9 @@ dispatch there").
   goal panes by goal state), wall clock and monotonic uptime for skew
   detection. The hub computes slots; the agent computes two aggregate goal counts
   for its own safety cap (02h).
-- **A6 Wake and network change** triggers an immediate reconnect. Exact macOS
-  and Linux APIs to be confirmed in a spike; fallback is a wall-clock jump
-  check.
+- **A6 Wake and network change** triggers an immediate reconnect. The macOS
+  and Linux APIs are settled by spike 0.6 of the v1 plan; the fallback is a
+  wall-clock jump check.
 - **A7 Shutdown notice.** On SIGTERM (container stop, logout) the agent sends
   `Bye{reason}` so the hub marks it offline at once instead of after 3 minutes.
 - **A8 Hub settings.** The hub sends machine and group settings with a
@@ -200,15 +200,17 @@ period for API-key providers.
   hub (for example "Codex: ChatGPT Pro (personal)").
 - **Machine naming.** Machines are named automatically from the hostname the
   agent reports at enrollment (B1); the owner can rename them. "Add machine" on
-  the hub creates the enrollment token and a one-line install command. The owner
+  the hub creates the enrollment token and its `fleet-agent enroll --token …`
+  command (an install script is plan PR 16). The owner
   may enter the expected hostname or IP first; the hub then warns if a
   different machine enrolls with that token. The hub still never connects to the
   machine ([0004](../adr/0004-agent-connectivity.md)). Identity is read by a short transient probe at agent
   start and when the harness version changes, so machines don't keep idle
   harness processes just for identity.
-- **C3 Folder pre-trust.** At setup, the agent pre-trusts allowed repo roots so
-  goals never stall on the trust prompt. It does not answer trust prompts at
-  run time.
+- **C3 Folder pre-trust.** The agent never answers a trust prompt at run time.
+  How trust is granted at setup, also for the report's scratch directory, is
+  settled by spike 0.9 of the v1 plan; until then the agent edits no harness
+  configuration.
 
 - **C4 Harness command catalog.** Each install offers many slash commands,
   and the set changes with the harness version and with the skills and plugins
@@ -276,8 +278,8 @@ period for API-key providers.
 - **E2 Control-mode observer:** one `tmux -C` client per server, attached with
   the `ignore-size` client flag (added in tmux 3.2) so it never changes the
   size of the developer's windows, and with `refresh-client -f pause-after=<s>` (`%pause`, `%continue`,
-  `%extended-output`; confirmed in tmux 3.7c's man page, confirm the release
-  that introduced it is ≤ 3.2).
+  `%extended-output`; confirmed in tmux 3.7c's man page; spike 0.5 confirms the
+  release that introduced it is ≤ 3.2).
 - **E3 Pane lifecycle:** created and exited with exit status. "Stopped without
   DONE" (the one-nudge rule) depends on this.
 - **E4 Activity transitions:** active ↔ idle, with the time of last output.
@@ -350,7 +352,7 @@ All pass local policy, carry a `command_id`, and are idempotent except F3.
 
 - **G1 Goal hooks** (v2): user-level hooks, inert unless the agent's goal
   registry names the pane; merge-installed with backup, verified, version and hash reported; Codex
-  needs one-time `/hooks` trust; Muse not probed. Repos that ship their own
+  needs one-time `/hooks` trust; Muse takes them as a plugin package (probed). Repos that ship their own
   (eshu) are left alone. Design and probe record: [01d](01d-goal-hooks.md).
 - **G2 Goal state** (v1): for fleet panes only, one event carrying the goal
   file's first line and `CONSENT:` line, the parsed state (working, `BLOCKED`
@@ -469,17 +471,16 @@ itself adds is kept safe by construction, with no setup:
 user, as the harness does today, so a goal that goes wrong can do whatever that
 user can do, including editing fleet-board's own files. That is the same
 exposure the developer already accepts when running a harness unattended.
-Developers who want more can follow an optional hardening guide (harness
-sandbox modes, rootless containers on Linux, root-owned install, separate
-worker account with tmux `server-access` on 3.3+); none of it is required or
-assumed.
+Developers who want more can use harness sandbox modes, rootless containers on
+Linux, a root-owned install or a separate worker account with tmux
+`server-access` (3.3+); none of it is required or assumed, and no hardening
+guide is written yet (design.md, "Later, not scheduled").
 
-**Checked 2026-10-01 (for the hardening guide, not as requirements):**
-`codex sandbox -- <cmd>` on macOS runs under Seatbelt with a default that
-blocks all writes (even in the working directory) and all network, but allows
-reading `~/.ssh`; forcing goals into it would break `git push` and `gh`. Muse's
-Auto-review mode reviewed and allowed a network request to `api.github.com`
-on its own during a goal. tmux `server-access` was added in 3.3.
+**Checked 2026-10-01 (for a future hardening guide, not requirements):**
+`codex sandbox -- <cmd>` on macOS runs under Seatbelt: all writes and all
+network blocked by default, `~/.ssh` readable; forcing goals into it would
+break `git push` and `gh`. Muse's Auto-review mode allowed a network request to
+`api.github.com` on its own during a goal. tmux `server-access` is 3.3+.
 
 ## Hand-off to step 2
 
@@ -487,13 +488,12 @@ Contract-readiness rules, ADR changes, volumes and testing: [01c-handoff.md](01c
 
 ## Resolved (2026-10-01)
 
-- Codex account chosen per machine; machine names from hostname, renameable.
-- Usage display mirrors each harness; probes every 10 min plus on events.
-- Emails hidden by default; log volume measured before step 3.
-- Security: pass-through, no root, no sandbox requirement, optional hardening guide.
-- Auto-dispatch: subscriptions only (API keys manual); never OpenCode on Anthropic.
+- Codex account chosen per machine; machine names from hostname, renameable;
+  usage display mirrors each harness; probes every 10 min plus on events.
+- Emails hidden by default; log volume measured before step 3. Security:
+  pass-through, no root, no sandbox. Auto-dispatch: subscriptions only; never
+  OpenCode on Anthropic.
 
 ## Open questions
 
-None for this step. Terminal log volume is being measured on a real Muse goal
-(eshu-hq/eshu#7398, started 2026-10-01); results go into step 3.
+None for this step (terminal log volume: measured on eshu-hq/eshu#7398, step 3).

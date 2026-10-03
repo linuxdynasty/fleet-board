@@ -22,6 +22,11 @@
 #      .muse/hooks.json) are valid JSON and reference only scripts that exist;
 #      hook scripts parse (bash -n, python ast) and the shell ones are
 #      executable.
+#  10. No skill repeats a claim ADR 0011 superseded (the developer's tmux
+#      server defaulting to none, browser attach through `tmux -L fleet`).
+#   9. No AI attribution in the commits of this branch (check-attribution.py;
+#      older history keeps its trailers) and Claude Code's own attribution
+#      lines are turned off in .claude/settings.json.
 #
 # Portable to the macOS system bash 3.2 (no associative arrays, no mapfile), so
 # `#!/usr/bin/env bash` works with either /bin/bash or Homebrew bash. Needs
@@ -87,7 +92,7 @@ for skill_file in "$skills_root"/*/SKILL.md; do
   esac
 
   lines="$(wc -l < "$skill_file" | tr -d ' ')"
-  [ "$lines" -le "$max_file_lines" ] || fail "$skill_file has $lines lines (cap $max_file_lines)"
+  [ "$lines" -lt "$max_file_lines" ] || fail "$skill_file has $lines lines (cap $max_file_lines)"
 
   if ! grep -q -F "$skill_name" "$agents"; then
     fail "AGENTS.md does not index skill $skill_name"
@@ -133,12 +138,12 @@ for f in "$agents" "$root"/docs/development/*.md "$root"/.agents/roles.json "$ro
   "$root"/.muse/hooks.json "$root"/.claude/hooks/*.sh "$root"/.claude/hooks/lib/*; do
   [ -f "$f" ] || continue
   n="$(wc -l < "$f" | tr -d ' ')"
-  if [ "$n" -gt "$max_file_lines" ]; then
+  if [ "$n" -ge "$max_file_lines" ]; then
     over="$over $f($n)"
   fi
 done
-[ -z "$over" ] || fail "files over the $max_file_lines-line cap:$over"
-printf 'verify-agent-canon: agent-facing files are within the %s-line cap.\n' "$max_file_lines"
+[ -z "$over" ] || fail "files at or over the $max_file_lines-line cap:$over"
+printf 'verify-agent-canon: agent-facing files are under the %s-line cap.\n' "$max_file_lines"
 
 # 7. The path-to-skill map. skill_paths.py check validates the JSON, every skill
 # it names (and every exemption) exists, and no skill is unrouted.
@@ -201,3 +206,21 @@ for script in "$root"/.claude/hooks/lib/*.py "$root"/scripts/*.py; do
   python3 -c 'import ast, sys; ast.parse(open(sys.argv[1]).read())' "$script" || fail "$script does not parse (python)"
 done
 printf 'verify-agent-canon: three hook configs are valid JSON and reference existing scripts; %s hook and test scripts parse.\n' "$hook_scripts"
+
+# 9. No AI attribution: the owner's rule (AGENTS.md). Commits already in
+# origin/main keep their trailers; the checker looks at this branch only.
+[ -f "$root/scripts/check-attribution.py" ] || fail "missing scripts/check-attribution.py"
+python3 "$root/scripts/check-attribution.py" --root "$root" || fail "AI attribution in a commit of this branch"
+python3 - "$root/.claude/settings.json" <<'PY' || fail ".claude/settings.json must set attribution.commit and attribution.pr to empty strings"
+import json, sys
+a = json.load(open(sys.argv[1])).get("attribution", {})
+sys.exit(0 if a.get("commit") == "" and a.get("pr") == "" else 1)
+PY
+printf 'verify-agent-canon: no AI attribution in this branch; Claude Code attribution is off.\n'
+
+# 10. Superseded claims that skills once carried (ADR 0011: the default_server
+# default is control, and attach is a grouped session on the developer's server).
+stale="$(grep -rEn 'default is .none.|can(not|.t) enable .*default_server|tmux -L fleet attach' "$root/.agents/skills" 2>/dev/null || true)"
+[ -z "$stale" ] || fail "a skill repeats a claim ADR 0011 superseded:
+$stale"
+printf 'verify-agent-canon: no skill repeats a superseded tmux claim.\n'

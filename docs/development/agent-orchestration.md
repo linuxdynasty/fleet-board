@@ -75,6 +75,7 @@ its own model, and OpenCode's model stays a session choice.
 | Speed, load, disk, memory | `fleet-performance-rigor` |
 | Before push or merge | `fleet-code-review` |
 | Issue to merged PR | `fleet-issue-driver` |
+| Anything the owner reads (replies, PR and issue text, summaries) | `fleet-humanizer` |
 
 ## The handoff contract
 

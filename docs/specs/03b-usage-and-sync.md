@@ -56,7 +56,7 @@ returns after the deadline has an expired `StopProbe`, so the snapshot
 reconcile is the safety net: a probe in `Snapshot.probes[]` that the hub no longer
 assigns to that machine gets a fresh `StopProbe` (W1, "Snapshot reconcile"). Two
 probes briefly alive for one account during failover is harmless: status
-commands cost no quota and both are idle sessions; the hub keeps readings from
+commands are expected to cost no quota (plan 0.8 measures it) and both are idle sessions; the hub keeps readings from
 either, newest hub-adjusted `read_time` wins (agent time minus the machine's
 measured skew, clamped to the hub's `received_time`; ties by `received_time`; a
 `clock_untrusted` machine never overrides a trusted one; 02i, "Clocks").
@@ -93,8 +93,9 @@ An `Account` row comes from one of two origins (`Account.status.origin`):
   OpenCode accounts are discovered from `opencode providers list` (01b), one per
   provider signed in (`provider` "anthropic", "deepseek", "moonshot"), with
   `BUDGET_KIND_DOLLAR_CAP` for the API-key ones and `EXCLUDED` pacing. A new
-  account starts with `reserve_percent` 10 and `mode` fleet
-  ([defaults](defaults.md)); the owner changes them with `UpdateAccount`.
+  account starts with `reserve_percent` 10, `mode` fleet and `consent` push,
+  pr-open, merge (ADR 0008; [defaults](defaults.md)); the owner changes them
+  with `UpdateAccount`.
 - **Owner-created.** An API-key account no agent can list (a key set in an
   environment variable) is added with `CreateAccount{harness, provider, spec}`
   (`DOLLAR_CAP` only; subscriptions are never created by hand). Discovery never
@@ -124,8 +125,8 @@ interactive-only, ADR 0008), active goal count per account (from goals ×
 2. `ahead = percent_used − target` on the weekly bucket the work needs (Claude:
    `weekly_all` and the per-model bucket of the goal's model; an account is
    exhausted when **any** needed bucket is).
-3. `allowed_active`: `base_cap` (learned from short-window behaviour; default
-   per harness) adjusted: `ahead > +5` → `base_cap − 1`; `ahead > +10` → 0 new
+3. `allowed_active`: `base_cap` (a fixed 2 per account, the same for every
+   harness: [defaults](defaults.md)) adjusted: `ahead > +5` → `base_cap − 1`; `ahead > +10` → 0 new
    dispatches; `ahead < −5` → `base_cap + 1`. In the last 24 h before the
    weekly reset the line is ignored (`allowed_active = base_cap`) until the
    reserve.
@@ -147,6 +148,29 @@ interactive-only, ADR 0008), active goal count per account (from goals ×
    account marks it `SHORT_LIMIT` until the condition's `resets_time` (or the
    deciding bucket's), so no new goal starts into a limit the harness already hit
    (03h, "Limit wait"). It never edits a reading and ends with the condition.
+
+**Projection.** With `f = elapsed / window` (so `0 < f <= 1`) and the same
+`reserve`: `projected_used = percent_used / f`, `projected_unused_percent =
+max(0, (100 − reserve) − projected_used)`, computed on the weekly bucket the work
+needs (step 2). It is unset (shown as unknown, never
+guessed) when `elapsed <= 0`, when the reading is `UNKNOWN` or stale, or when the
+bucket has no reading. A `percent_used` lower than the previous reading's in the
+same window is taken as the new truth, not smoothed; a new `resets_time` starts
+a new window. A very small `f` makes the projection noisy; the minimum elapsed
+time before it is shown is an owner question (ADR 0022 addendum, question 3).
+
+**Worked examples** (7-day window, reserve 10, base cap 2; these are the first
+rows of the PR 10 table tests):
+
+| Elapsed | `percent_used` | target | ahead | `allowed_active` | `projected_unused_percent` | Note |
+|---|---|---|---|---|---|---|
+| 84 h (f 0.50) | 30 | 45.0 | −15.0 | 3 (BEHIND) | 30.0 | one more worker |
+| 84 h | 47 | 45.0 | +2.0 | 2 (OK) | 0 | projected 94, above 90 |
+| 84 h | 52 | 45.0 | +7.0 | 1 (AHEAD) | 0 | one fewer |
+| 84 h | 56 | 45.0 | +11.0 | 0 (AHEAD) | 0 | no new dispatch |
+| 150 h (f 0.893) | 60 | 80.4 | −20.4 | 2 | 22.8 | last 24 h: the line is ignored |
+| any | 90 | | | 0 (RESERVE) | 0 | at `100 − reserve`: reserve alert |
+| any, short bucket at 95 | | | | 0 (SHORT_LIMIT) | | speed limit, running goals continue |
 
 Output per account: `pacing_state ∈ {OK, AHEAD, BEHIND, SHORT_LIMIT, RESERVE,
 UNKNOWN, STALE, EXCLUDED}`, `allowed_active`, `rank` (most unused quota
@@ -198,13 +222,14 @@ stateDiagram-v2
 | Probe harness crashes or exits | Agent respawns the probe session (3 attempts, 30 s apart), then reports `alive=false`, `last_failure=PROBE_START_FAILED`; hub fails over at 3 failures |
 | Parse fails (new screen layout) | Reading `PARSE_FAILED` with redacted raw; account `UNKNOWN`; no auto-dispatch; triage `usage_parse_failed` fingerprinted on `(harness, harness_version, parser_version)`; W11 |
 | Harness version unsupported | Reading `UNKNOWN{HARNESS_VERSION_UNSUPPORTED}`, raw still shown; the hub prefers another machine with a supported version for the probe; W11 |
+| Probe pane stuck on a startup screen (trust, update, release notes, login) | `alive=false`, `last_failure=STARTUP_PROMPT_SEEN` with the screen kind in metadata; the agent types nothing (an update screen answered blind once ran `brew upgrade`, 01b); failover is tried first; a `CONDITION` triage item says "answer the screen on <machine>: `tmux -L fleet-probe attach`"; the account is `UNKNOWN` meanwhile |
 | Sign-in required in the probe pane | `HarnessCondition{SIGN_IN_REQUIRED}` from the probe pane; triage "sign in to <harness> on <machine>"; account `UNKNOWN`; failover tried on another machine first |
 | Account mismatch (harness shows another identity) | `CommandResult{FAILED, ACCOUNT_MISMATCH}`; the hub re-maps from the snapshot's `accounts[]` and assigns elsewhere |
 | Agent offline (laptop asleep) | Readings stop; after `stale_after` the account is `STALE` → no new dispatch; after `OFFLINE` the probe fails over |
 | Hub restart | Agent keeps probing on its persisted schedule; the snapshot carries `probes[]` and latest `usage[]`; the hub reconciles assignments (W1) |
 | Duplicate `EnsureProbe` / `StopProbe` | Declarative; logged result returned |
 | `EnsureProbe` deadline (10 min) expires while offline | `EXPIRED` on the hub; next scheduler pass re-assigns (same or another machine) |
-| Provider error during the probe | Status commands do not call the model; if the harness fails to start because the provider is down, `HarnessCondition` from the probe pane and `PROBE_START_FAILED` |
+| Provider error during the probe | Status commands are not expected to call the model; if the harness fails to start because the provider is down, `HarnessCondition` from the probe pane and `PROBE_START_FAILED` |
 | Developer attached to the probe session (`tmux -L fleet-probe attach`) | Agent sees `attached_clients > 0`, skips the run and reports `ProbeHealth.message` ("skipped: attached"); a skip is not a failure, so `consecutive_failures` and `last_failure` stay as they were and it never feeds failover; never types into a watched probe |
 | Passive readings disagree with probe | Passive only triggers a probe; the probe wins |
 | Two readings arrive out of order after a reconnect | hub-adjusted `read_time` ordering; latest by time, not by arrival |

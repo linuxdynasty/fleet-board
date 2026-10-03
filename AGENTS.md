@@ -7,11 +7,10 @@ stuck work, and hand issues to machines with free subscription quota. Parts:
 a React/TypeScript dashboard, and protobuf contracts under
 `api/fleet/{type,agent,integration,hub}/v1`, checked with buf.
 
-This file is the shared rule set. Claude Code, Codex and OpenCode read it
-natively. Do not add a `CLAUDE.md`: it would make Claude read that file instead
-of every `AGENTS.md` in scope, and `scripts/verify-agent-canon.sh` refuses one.
-Detail lives in [docs/development/](docs/development/README.md); this file stays
-short and rule-shaped.
+This file is the shared rule set; Claude Code, Codex and OpenCode read it
+natively. Do not add a `CLAUDE.md` (it hides every scoped `AGENTS.md`;
+`scripts/verify-agent-canon.sh` refuses one). Detail lives in
+[docs/development/](docs/development/README.md).
 
 ## Mandatory Startup
 
@@ -27,7 +26,8 @@ This covers chat replies, PR and issue text and summaries; use `fleet-humanizer`
 Resolve uncertainty from source, docs, ADRs, or a bounded experiment. When those
 cannot settle it (ownership, design intent, acceptance criteria, an irreversible
 act), escalate to `arbiter-fleet` with the raw observations, act on its ruling,
-and record it in the goal file or PR. Do not stop to ask the owner.
+and record it in the goal file or PR. Ask the owner only for authorization,
+money, or an open owner question a spec lists.
 
 End a turn only when the whole job is verified complete, when waiting on outside
 work behind a live watcher (`BLOCKED: <reason> WATCH=<pid>`), or when the owner
@@ -56,13 +56,14 @@ stopping point. Report actual state; anything not checked is `NOT_CHECKED`.
 - Work in a git worktree under `~/personal-repos/fleet-board-worktrees/` and
   verify `pwd` is that worktree before any edit. The main checkout stays a clean
   fast-forward of `origin/main`; run formatters and generators in a worktree.
-- Never `git stash` while several worktrees exist (the stash stack is shared).
 - Verify HEAD is on a named branch before every commit
   (`git symbolic-ref -q HEAD`); confirm the pushed SHA equals local HEAD before
   opening or updating a PR. One PR per change.
-- Never push to `main`. Never `--no-verify`.
+- Never push to `main`, never `--no-verify`, never `git stash` while several
+  worktrees exist (the stash stack is shared).
 - No AI attribution in commits, PRs or docs (no `Co-Authored-By` trailer for a
-  model, no "Generated with" line, no "drafted with" in ADRs).
+  model, no "Generated with" line, no "drafted with" in ADRs). Older history keeps
+  its trailers; `verify-agent-canon.sh` and CI reject new ones.
 - No issue-closing keywords (`Fixes`, `Closes`, `Resolves`) in a commit or PR
   unless that issue should close on merge; otherwise write `#NNN`.
 - Files stay under 500 lines, source and docs alike; split before the limit.
@@ -79,7 +80,7 @@ stopping point. Report actual state; anything not checked is `NOT_CHECKED`.
 
 | Change | Read |
 |---|---|
-| Anything | [docs/design.md](docs/design.md), [ADR index](docs/adr/README.md) |
+| Anything | [docs/design.md](docs/design.md), [ADR index](docs/adr/README.md) (newest ADR wins; the owner's latest decisions: ADR 0022) |
 | What to build next | [docs/plan/v1-implementation-plan.md](docs/plan/v1-implementation-plan.md) |
 | Agent capabilities, harness behavior | [01](docs/specs/01-agent-capabilities.md), [01b](docs/specs/01b-harness-commands.md), [01d](docs/specs/01d-goal-hooks.md) |
 | Wire contracts | [02](docs/specs/02-contracts.md), [02b](docs/specs/02b-hub-api.md) to [02j](docs/specs/02j-hub-runtime.md), ADR 0011, 0012, 0017, 0018, 0019 |
@@ -131,21 +132,19 @@ difficulty, cheapest first:
 **development work on this repo only** (Muse has no project agent files). The
 product never runs a harness headless (principle 1).
 
-A subagent never changes its own model. Leaf agents do not dispatch others. Only
-the orchestrator runs the full local gate, once, right before push; subagents run
-focused checks. Task-to-skill map and handoff contract:
-[agent-orchestration](docs/development/agent-orchestration.md).
+A subagent never changes its own model; leaf agents dispatch no others. Only the
+orchestrator runs the full local gate, once, before push. Task-to-skill map and
+handoff contract: [agent-orchestration](docs/development/agent-orchestration.md).
 
 ## Evidence Rules
 
 - Prove the theory first: before building on a performance or behavior theory,
   prove it with the cheapest shim (a benchmark, a spike like `spikes/`, a
   throwaway probe). Do not land code on an unmeasured theory.
-- Capture exit codes directly: `cmd; echo $?`, never `$?` after a pipe. zsh has
-  no `PIPESTATUS`; capture `rc=$?` on its own line.
-- Cite verification that postdates the final edit. A new or tightened gate needs
-  a seeded-violation RED/GREEN pair; a guard satisfied by a comment is not proof.
-- Never say work is ready without listing the commands actually run.
+- Capture exit codes directly: `cmd; echo $?`, never `$?` after a pipe (zsh has
+  no `PIPESTATUS`; use `rc=$?` on its own line). Never say work is ready
+  without listing the commands run; cite verification that postdates the final
+  edit. A new gate needs a seeded-violation RED/GREEN pair.
 - Performance claims need before/after numbers on the same machine and data.
 
 ## Local Gates
@@ -153,19 +152,19 @@ focused checks. Task-to-skill map and handoff contract:
 Run what the change touches; CI is never the first test of an unproven change.
 
 ```bash
+go run github.com/bufbuild/buf/cmd/buf@v1.73.0 generate   # gen/ is never committed: first in a new worktree
 ~/go/bin/gofumpt -l -w <changed .go files>      # arrays in zsh: "${files[@]}"
 go vet ./... && CGO_ENABLED=0 go test <changed pkgs>   # -race for concurrency
 golangci-lint run <changed pkgs>
 go run github.com/bufbuild/buf/cmd/buf@v1.73.0 build   # and: lint
 python3 scripts/agent-roles.py --check
 scripts/verify-agent-canon.sh
-git ls-files -z | xargs -0 wc -l | awk '$1>500 && $2!="total"'   # file cap
+scripts/check-file-cap.sh   # skips symlinks, go.sum, package-lock.json, gen/, testdata/
 git diff --check
 ```
 
 Web: `npm run typecheck && npm run lint && npm test && npm run build` in `web/`.
-Order before a push: focused proof, a clean `fleet-code-review`, the full local
-gate once, then push.
+Before a push: focused proof, a clean `fleet-code-review`, the full gate once.
 
 ## Orchestration, PR And CI Discipline
 
@@ -173,9 +172,8 @@ gate once, then push.
 - The PR **title and description** must match the final diff and carry the
   before and after evidence; a reworked approach needs a reworked title.
 - CI is complete only after two consecutive stable reads of the full check set
-  (`pending == 0`, total count unchanged), because large sets register in waves.
-  State the query used. Reconcile the review-thread API against displayed
-  unresolved comments and report exact counts.
+  (`pending == 0`, count unchanged); state the query; reconcile review threads
+  and report exact counts ([agent-guide](docs/development/agent-guide.md)).
 - Irreversible acts (merge, release, destructive deletion, data change) get an
   `arbiter-fleet` ruling first, then are named in the report.
 
@@ -183,6 +181,8 @@ gate once, then push.
 
 A contract change updates `docs/specs` (and the ADR index if a decision changed)
 in the same PR. ADRs are not edited after acceptance; a later ADR supersedes.
+When documents disagree: protos, then ADRs (newest wins), then specs, flows,
+`docs/design.md`. This file governs how to work, not what the product does.
 Every Go package directory carries `doc.go`, `README.md` and a scoped
 `AGENTS.md` (no packages exist yet; the rule applies from the first one). Do not
 remove a scoped `AGENTS.md` unless its replacement is proven to load.
@@ -196,5 +196,5 @@ remove a scoped `AGENTS.md` unless its replacement is proven to load.
 - Telemetry added or `No-Observability-Change:` named.
 - No credential read, no headless `-p`, no keys typed without the checks.
 - Specs and docs updated; files under 500 lines; `git diff --check` clean.
-- Focused and full gates run after the last edit, with exit codes listed.
+- Focused and full gates run after the last edit, exit codes listed.
 - Branch named, pushed SHA equals HEAD, PR title and body match the diff.

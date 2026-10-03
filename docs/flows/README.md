@@ -28,7 +28,7 @@ It is written for two readers:
 |---|---|---|
 | [README.md](README.md) (this file) | The whole system on one page, the protocol packages, the glossary, the index of flows | none |
 | `agent-hub*.md`, flows A1 to A14 | `fleetd` and `fleet-agent`: joining the fleet, staying connected, commands, events, usage probing, goals, prompts, terminal bytes, logs, settings, upgrade drift, system health | [`fleet.agent.v1`](../../api/fleet/agent/v1/) |
-| `dashboard*.md`, flows D1 to D13 | The web dashboard (and the CLI and a phone, which use the same calls) talking to `fleetd`: sign-in, live data, dispatching and controlling goals, prompts, terminal, machines, routines, settings, logs, pairing a phone, insights and the weekly report | [`fleet.hub.v1`](../../api/fleet/hub/v1/) |
+| `dashboard*.md`, flows D1 to D16 | The web dashboard (and the CLI and a phone, which use the same calls) talking to `fleetd`: sign-in, live data, dispatching and controlling goals, prompts, terminal, machines, routines, settings, logs, pairing a phone, insights and the weekly report, a new session, requeue, importing a configuration | [`fleet.hub.v1`](../../api/fleet/hub/v1/) |
 
 The flow ids belong to this folder. They are **not** the capability ids (`A1`,
 `A3`, `D1`, `G3` and so on) that appear in comments inside the `.proto` files and
@@ -211,7 +211,7 @@ Where each box appears in the flows:
 | Fan-out bus and Watch | D2, D3, and the "how the client finds out" step of every dashboard flow |
 | Attach bridge | A10, D7 |
 | Log receiver, `logs.db` | A11, D11 |
-| Hub API and sign-in | D1 to D13 |
+| Hub API and sign-in | D1 to D16 |
 | Hooks | A8 |
 | tmux, harnesses | A7 to A11 |
 
@@ -224,7 +224,7 @@ fixed before any code existed ([ADR 0017](../adr/0017-contract-packages.md)).
 | Package | Service | Client | Server | What it carries | Flows |
 |---|---|---|---|---|---|
 | [`fleet.agent.v1`](../../api/fleet/agent/v1/) | `AgentService`: `Enroll`, `Connect`, `Terminal`, `SessionLog`, `RenewCert` | `fleet-agent` (always the client) | `fleetd` | The agent wire: enrollment, the `Connect` stream (`Hello`, `Snapshot`, `Heartbeat`, `Event`, `Command`, results, `Settings`), terminal bytes, log chunks | A1 to A14 |
-| [`fleet.hub.v1`](../../api/fleet/hub/v1/) | `FleetService`: about 100 RPCs, `Watch`, `AttachTerminal` and `ReadSessionLog` are streams | web dashboard, `fleet` CLI, phone | `fleetd` | The API for people and scripts: resources with `spec` and `status`, actions that return an `Operation`, sign-in, devices, logs, insights, system health | D1 to D13 |
+| [`fleet.hub.v1`](../../api/fleet/hub/v1/) | `FleetService`: about 100 RPCs, `Watch`, `AttachTerminal` and `ReadSessionLog` are streams | web dashboard, `fleet` CLI, phone | `fleetd` | The API for people and scripts: resources with `spec` and `status`, actions that return an `Operation`, sign-in, devices, logs, insights, system health | D1 to D16 |
 | [`fleet.integration.v1`](../../api/fleet/integration/v1/) | `IntegrationProviderService` (read-only) | `fleetd` | provider adapters, in-process in v1 | The provider-neutral work model: `WorkItem`, `ChangeRequest`, cursors, validators, rate limits, typed `ProviderError` | the sync loop (03b, 03j) |
 | [`fleet.type.v1`](../../api/fleet/type/v1/) | none | imported by the other three | | Ids (`MachineId`, `GoalId`, `PaneKey`), `Status`, `ReasonCode`, `ErrorDetail`, `Principal`, `Role`, settings values, harness and usage values | all |
 
@@ -350,9 +350,12 @@ Dashboard, CLI and phone (`fleet.hub.v1`, between the clients and `fleetd`):
 | D11 | Replay a session log | Find the stored session, `ReadSessionLog`, search and delete; scope `LOGS` | [dashboard-hub-agent-4.md](dashboard-hub-agent-4.md#d11-replay-a-session-log-from-logsdb) |
 | D12 | Pair a phone and approve from it | `RequestPairing`, the six-digit code, `ApprovePairing`, signed requests, `DecideApproval` | [dashboard-hub-agent-4.md](dashboard-hub-agent-4.md#d12-pair-a-phone-and-approve-from-it-with-scopes) |
 | D13 | Insights, suggestions and the weekly report | Hourly rollups read with `GetInsights`, suggestion rules, and a routine that has a subscription harness write a report in a scratch directory | [dashboard-hub-agent-5.md](dashboard-hub-agent-5.md#d13-insights-suggestions-and-the-weekly-report) |
+| D14 | A new developer session | `CreateSession` to `EnsureSession` on the developer's tmux server | [dashboard-hub-agent-6.md](dashboard-hub-agent-6.md#d14-a-new-developer-session-on-a-machine-v2) |
+| D15 | Put a work item back in the queue | `RequeueWorkItem`, refused for an untrusted item | [dashboard-hub-agent-6.md](dashboard-hub-agent-6.md#d15-put-a-work-item-back-in-the-queue-v2) |
+| D16 | Import a configuration with a machine not enrolled yet | `ImportConfig` dry run and apply, pending machines that start drained | [dashboard-hub-agent-6.md](dashboard-hub-agent-6.md#d16-import-a-configuration-that-names-a-machine-not-enrolled-yet-v1) |
 
 ## Keeping the flows true
 
-- The `.proto` files are the contract. If a flow and a proto disagree, the proto is right and the flow is a bug. Until the first implementation release is tagged `v0.1` the contracts are unfrozen (ADR 0019), so names can change; `buf build` and `buf lint` do not check these documents, so a rename must update the flows that use the name.
+- The `.proto` files are the contract. If a flow and a proto disagree, the proto is right and the flow is a bug. The full order of authority: protos, ADRs (newest wins), specs, flows, design.md. Until the first implementation release is tagged `v0.1` the contracts are unfrozen (ADR 0019), so names can change; `buf build` and `buf lint` do not check these documents, so a rename must update the flows that use the name.
 - The specs ([02](../specs/02-contracts.md) to [03j](../specs/03j-provider-sync-and-trust.md)) own the rules and the numbers; the flows link to them instead of repeating every table.
 - The step list under a diagram follows its arrows in order, so a reviewer can check a diagram against its text and an implementer can turn each step into a test.

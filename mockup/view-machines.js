@@ -28,10 +28,10 @@ function systemSection() {
 // GoalHooksState (01d) in plain words, with a tone for the line.
 function hookPlain(h, st) {
   if (h === "opencode") return ["", "no /goal, so no goal hooks"];
-  if (!st) return h === "muse" ? ["", "no fleet hooks yet (Muse takes them as a plugin); goals run on Muse's own /goal"] : ["", "no fleet hooks"];
+  if (!st) return ["", "hook state not reported"];
   if (!st.installed) return ["warn", `hooks not installed${st.why ? ": " + st.why : ""}`];
   if (!st.verified) return ["warn", "hooks installed, self-check failed: reinstall on the machine"];
-  if (st.trust === "PENDING") return ["warn", `hooks installed, trust pending — open ${h === "codex" ? "Codex" : h} /hooks to approve`];
+  if (st.trust === "PENDING") return ["warn", `hooks installed, trust pending: run ${TRUST_APPROVE[h]} on the machine to approve${h === "muse" ? " (Muse takes the hooks as a plugin)" : ""}`];
   if (st.repo_ships_own) return ["ok", "hooks installed; eshu ships its own, so fleet's stay off there"];
   return ["ok", "hooks installed and checked"];
 }
@@ -48,7 +48,8 @@ const agentHealthLine = m => { const h = agentHealth[m.id]; return h ? `agent he
 
 function machineCard(m) {
   const ss = sessions.filter(s => s.m === m.id), goals = ss.filter(s => !s.yours), own = ss.filter(s => s.yours);
-  const stale = Date.now() - m.beat > 30e3, certDays = Math.round((m.certExpires - Date.now()) / 86400e3);
+  // STALE after 45 s without a heartbeat, OFFLINE after 3 minutes (defaults.md).
+  const age = Date.now() - m.beat, stale = age > 45e3, offline = age > 180e3, certDays = Math.round((m.certExpires - Date.now()) / 86400e3);
   const avail = ss.filter(s => liveState(s) === "available").length;
   const warns = [certDays <= 14 && `agent certificate expires in ${certDays} days; it renews itself while the machine is online`,
     m.policyChanged && "the machine's local policy file changed; it applies after the agent restarts"].filter(Boolean);
@@ -57,7 +58,7 @@ function machineCard(m) {
     `agent cert expires in ${certDays}d (renews at ⅔ lifetime)`, agentHealthLine(m), `policy ${m.policyHash} · ${m.policyChanged ? "changed on disk (PolicyChanged)" : "unchanged"}`,
     ...m.harnesses.filter(h => h !== "opencode").map(h => `${h}: ${hookRaw((goalHooks[m.id] ?? {})[h])}`)];
   return `<article class="fm${ui.fleetFocus === m.id ? " focus" : ""}" id="fm-${m.id}">
-    <div class="top"><span class="dot ${stale ? "bad" : m.drained ? "warn" : "ok"}"></span><span class="name">${esc(m.name)}</span></div>
+    <div class="top"><span class="dot ${offline ? "bad" : stale ? "warn" : m.drained ? "warn" : "ok"}"></span><span class="name">${esc(m.name)}</span>${offline ? `<span class="pill waiting">offline</span>` : stale ? `<span class="pill waiting">stale</span>` : ""}</div>
     <div class="fm-stats">${m.drained ? `<span class="pill waiting">draining</span>` : `<span class="pill working">taking goals</span>`}<span><b class="num">${activeOn(m)}/${m.maxActive}</b> active</span><span><b class="num">${totalOn(m)}/${m.maxTotal}</b> total</span><span><b class="num">${avail}</b> available</span>
       <span>seen <b data-t="${+m.beat}">${rel(m.beat)}</b></span></div>
     ${warns.map(w => `<div class="warn-t small-t">${esc(w)}</div>`).join("")}

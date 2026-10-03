@@ -11,7 +11,7 @@ const FIELD_LABEL = { max_active: "goals using quota at once", max_total: "goals
 function fleetYaml() {
   const l = ["format_version: 1", "hub:", `  auto_dispatch: ${settings.autoDispatch}`, `  default_consent: [${settings.consent.join(", ").toUpperCase()}]`,
     "fleet_values:", `  window_name_template: "${settings.windowTemplate}"`, `  idle_threshold: ${settings.idleMinutes * 60}s`, `  share_identity_email: ${settings.showEmails}`, "repos:"];
-  settings.repos.forEach(r => l.push(`  - repo: {host: ${r.host}, path: ${r.repo}}`, `    enabled: ${!!r.on}`, `    hooks_mode: ${r.hooks === "eshu" ? "ESHU" : "GENERIC"}`));
+  settings.repos.forEach(r => l.push(`  - repo: {host: ${r.host}, path: ${r.repo}}`, `    enabled: ${!!r.on}`, `    hooks_mode: ${r.hooks === "eshu" ? "ESHU" : r.hooks === "generic" ? "GENERIC" : "AUTO"}`));
   l.push("accounts:");
   accounts.forEach(a => l.push(`  - harness: ${a.harness}`, `    spec: {display_name: ${a.id}, mode: FLEET, reserve_percent: ${a.reserve}}`));
   apiAccounts.forEach(a => l.push(`  - harness: opencode`, `    spec: {display_name: ${a.id}, mode: FLEET, budget_kind: DOLLAR_CAP, spend_cap_micros: ${a.capUsd * 1e6}}`));
@@ -24,7 +24,7 @@ function layeredRows(m) {
   const rows = [["max_active", m.maxActive, m.sources.max_active], ["max_total", m.maxTotal, m.sources.max_total], ["default_server", m.defaultServer, m.sources.default_server],
     ["cert_lifetime", "90 days", m.sources.cert_lifetime], ["local_approval", m.sources.local_approval === "local ceiling" ? "required" : "off", m.sources.local_approval],
     ["idle_threshold", `${settings.idleMinutes} min`, m.sources.idle_threshold], ["window_name_template", settings.windowTemplate, "fleet default"]];
-  return rows.map(([f, v, src]) => `<tr><td title="${esc(f)}">${esc(FIELD_LABEL[f])}</td><td class="mono">${esc(v)}</td><td><span class="layer ${LAYER_CLASS(src)}">${esc(src === "local ceiling" ? "capped by local policy" : src)}</span></td></tr>`).join("");
+  return rows.map(([f, v, src]) => `<tr><td>${esc(FIELD_LABEL[f])}</td><td class="mono">${esc(v)}</td><td><span class="layer ${LAYER_CLASS(src)}">${esc(src === "local ceiling" ? "capped by local policy" : src)}</span></td></tr>`).join("");
 }
 
 function integrationCard(i) {
@@ -41,15 +41,16 @@ function renderSettingsView() {
     <div class="section-head"><h2>Settings</h2><span class="hint">${settings.repos.filter(r => r.on).length} repos watched · auto-dispatch ${settings.autoDispatch ? "on" : "off"} · consent ${esc(settings.consent.join(", "))} · emails ${settings.showEmails ? "shown" : "hidden"}. A machine's own policy can only tighten these.</span></div>
     <div class="set-grid">
       <fieldset><legend>Watched repos</legend>
-        ${settings.repos.map((r, i) => `<label class="chk"><input type="checkbox" id="repo-${i}" data-repo="${i}" ${r.on ? "checked" : ""}> <span class="mono">${esc(r.host)}/${esc(r.repo)}</span> ${provChip(r.provider)} <span class="why">hooks: ${esc(r.hooks)}</span>${r.sample ? `<span class="samp">sample</span>` : ""}</label>`).join("")}
+        ${settings.repos.map((r, i) => `<label class="chk"><input type="checkbox" id="repo-${i}" data-repo="${i}" ${r.on ? "checked" : ""}> <span class="mono">${esc(r.host)}/${esc(r.repo)}</span> ${provChip(r.provider)} <span class="why">hooks: ${esc(r.hooks)}</span>${r.sample ? `<span class="samp">sample</span>` : ""}</label>
+        <label class="slot"><span class="why">goals here may</span><select data-rcons="${i}" aria-label="Consent for ${esc(r.repo)}"><option value="">the fleet default</option>${["push, pr-open", "push, pr-open, merge"].map(o => `<option ${r.consent && r.consent.join(", ") === o ? "selected" : ""}>${o}</option>`).join("")}</select></label>`).join("")}
         <div class="add-row"><input id="newRepo" placeholder="host/owner/repo" aria-label="Add repo"><button class="btn" id="addRepo">Add</button></div>
         <div class="why" id="repoErr"></div>
-        <div class="why">hooks: <span class="mono">eshu</span> = the repo ships its own goal hooks; <span class="mono">generic</span> = fleet's user-level hooks run the goal.</div>
+        <div class="why">hooks: <span class="mono">auto</span> (the default) = follow what each machine's checkout reports; <span class="mono">eshu</span> = the repo ships its own goal hooks; <span class="mono">generic</span> = fleet's user-level hooks run the goal. A repo's consent narrows or replaces the fleet default; the account's consent still narrows it.</div>
         ${dt("s-hooks", `<span>eshu: /goal consent &lt;acts&gt; -- &lt;text&gt; form (eshu hook convention), GoalHooksState.repo_ships_own = true</span><span>generic: EnsureGoalHooks installs the fleet hooks; consent is written into the objective text</span>`)}
       </fieldset>
       <fieldset><legend>Goals</legend>
         <label class="chk"><input type="checkbox" id="autoD" ${settings.autoDispatch ? "checked" : ""}> Start the next goal when a worker or an available session frees up</label>
-        <div class="why">Every goal may (repo default; each account can narrow it):</div>
+        <div class="why">Fleet default: every goal may (a repo can set its own; each account can narrow it):</div>
         ${CONSENT_OPTS.map(c => `<label class="chk"><input type="checkbox" id="cons-${c}" data-cons="${c}" ${settings.consent.includes(c) ? "checked" : ""}> <span class="mono">${c}</span></label>`).join("")}
         <div class="why">Turning off merge adds a human gate: goals stop at an approved, green change request. <span class="mono">pr-open</span> means a change request on any code host.</div>
         <label class="slot"><span>Window name template</span><input class="field mono" id="winTpl" value="${esc(settings.windowTemplate)}" aria-label="Window name template"></label>
@@ -92,6 +93,7 @@ function renderSettingsView() {
   $("winTpl").onchange = e => { settings.windowTemplate = e.target.value.trim() || "{harness} {work}"; rerender(); };
   $("idleMin").onchange = e => { settings.idleMinutes = num(e.target.value, 1, 60); rerender(); };
   $("tmuxPrefix").onchange = e => { settings.tmuxPrefix = e.target.value === "C-a" ? "C-a" : "C-b"; log(`browser terminal emulates prefix ${settings.tmuxPrefix} (mock only)`); rerender(); };
+  document.querySelectorAll("[data-rcons]").forEach(sel => sel.onchange = () => { settings.repos[+sel.dataset.rcons].consent = sel.value ? sel.value.split(", ") : null; log(`repo consent set (mock)`); rerender(); });
   document.querySelectorAll("[data-cons]").forEach(c => c.onchange = () => {
     settings.consent = CONSENT_OPTS.filter(o => o === c.dataset.cons ? c.checked : settings.consent.includes(o));
     log(`goal consent is now: ${settings.consent.join(", ") || "none"}`); rerender();
@@ -103,7 +105,7 @@ function renderSettingsView() {
     const v = $("newRepo").value.trim(), mt = /^([\w.-]+)\/((?:[\w.-]+\/)+[\w.-]+)$/.exec(v);
     if (!mt) { $("repoErr").textContent = "Use host/owner/repo, for example github.com/eshu-hq/embedded-postgres or gitlab.acme.dev/group/subgroup/repo."; return; }
     const host = mt[1], repo = mt[2].toLowerCase(), provider = host.includes("gitlab") ? "gitlab" : host.includes("bitbucket") ? "bitbucket" : "github";
-    if (!settings.repos.some(r => r.repo === repo && r.host === host)) settings.repos.push({ repo, host, provider, on: true, hooks: "generic" });
+    if (!settings.repos.some(r => r.repo === repo && r.host === host)) settings.repos.push({ repo, host, provider, on: true, hooks: "auto", consent: null });
     rerender();
   };
 }

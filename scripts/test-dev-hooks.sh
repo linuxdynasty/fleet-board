@@ -90,6 +90,16 @@ run "$hooks/skill-nudge.sh" "$(printf '{"session_id":"%s","cwd":"%s","tool_input
 expect_rc "Muse-shaped payload (relative tool_input.path) is governed" 2
 expect_contains "web path maps to fleet-frontend" "$err" "fleet-frontend"
 
+s2="$(sid planpaths)"
+run "$hooks/skill-nudge.sh" "$(edit_payload "$s2" "$root/internal/hub/ca/ca.go")"
+expect_contains "hub CA code needs fleet-security" "$err" "fleet-security"
+run "$hooks/skill-nudge.sh" "$(edit_payload "$s2" "$root/internal/hub/ingest/writer.go")"
+expect_contains "ingest writer needs fleet-sqlite-store" "$err" "fleet-sqlite-store"
+run "$hooks/skill-nudge.sh" "$(edit_payload "$s2" "$root/internal/agent/probe/session.go")"
+expect_contains "probe sessions need fleet-tmux" "$err" "fleet-tmux"
+run "$hooks/skill-nudge.sh" "$(edit_payload "$s2" "$root/internal/hub/ingest/README.md")"
+expect_rc "docs inside those packages are not governed" 0
+
 run "$hooks/skill-nudge.sh" "$(edit_payload "$s" "$root/docs/design.md")"
 expect_rc "unmapped doc path is allowed" 0
 run "$hooks/skill-nudge.sh" "$(edit_payload "$s" "$root/docs/specs/04-sqlite-notes.md")"
@@ -285,6 +295,8 @@ expect_rc "codex doc-staleness exits 0 outside a fleet tree" 0
 # ---------------------------------------------------------------- python suites
 if python3 "$root/scripts/test-goal-role-router.py" >"$work/py1" 2>&1; then ok; else bad "test-goal-role-router.py"; cat "$work/py1" >&2; fi
 if python3 "$root/scripts/test-codex-spawn-guard.py" >"$work/py2" 2>&1; then ok; else bad "test-codex-spawn-guard.py"; cat "$work/py2" >&2; fi
+if python3 "$root/scripts/test-check-attribution.py" >"$work/py3" 2>&1; then ok; else bad "test-check-attribution.py"; cat "$work/py3" >&2; fi
+if python3 "$root/scripts/test-check-file-cap.py" >"$work/py4" 2>&1; then ok; else bad "test-check-file-cap.py"; cat "$work/py4" >&2; fi
 
 printf 'test-dev-hooks: %s passed, %s failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

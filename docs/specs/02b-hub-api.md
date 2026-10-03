@@ -56,7 +56,8 @@ type. The hub API imports `fleet.type.v1` (ids, values) and
 
 Plus `GetServerInfo` (API version, `fleet_id`, `hub_instance_id`, features,
 `auth_mode`, `sign_in_methods`, `claim_pending`, the caller and its scopes),
-`ExportConfig` and `ImportConfig` (below) and `GetStoreStatus`.
+`ExportConfig` and `ImportConfig` (below) and `GetStoreStatus`. Which release
+serves each RPC and Watch topic: [02k](02k-v1-surface-and-cli.md).
 
 **Authentication** (how a browser, the CLI and a phone prove who they are, the
 claim URL, the credential carriers, Host and Origin checks) is

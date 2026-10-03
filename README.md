@@ -25,5 +25,5 @@ unstick stuck work, and assign issues and PRs to machines with free capacity.
   Session, Usage, Machines, Settings, Insights)
 
 Status: design phase complete (contracts, specs, ADRs 0001-0023, flows, v1
-plan) and mockup. No hub or agent code yet; implementation starts when the
-owner approves the plan.
+plan) and mockup. The owner approved the plan; implementation follows it. No
+hub or agent code is merged yet.

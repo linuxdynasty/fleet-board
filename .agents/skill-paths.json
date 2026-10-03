@@ -32,7 +32,11 @@
     "internal/**/store/**",
     "*sqlite*",
     "migrations",
-    "*.sql"
+    "*.sql",
+    "internal/hub/ingest/**",
+    "internal/hub/outbox/**",
+    "internal/hub/syncer/**",
+    "internal/agent/ring/**"
    ],
    "exclude": [
     "docs/**",
@@ -48,7 +52,8 @@
     "internal/harness/**",
     "**/testdata/harness/**",
     "**/fixtures/harness/**",
-    "**/harness-fixtures/**"
+    "**/harness-fixtures/**",
+    "internal/agent/probe/**"
    ]
   },
   {
@@ -56,7 +61,8 @@
     "fleet-tmux"
    ],
    "globs": [
-    "internal/**/tmux/**"
+    "internal/**/tmux/**",
+    "internal/agent/probe/**"
    ]
   },
   {
@@ -91,7 +97,17 @@
     "credentials",
     "*auth*.go",
     "*scope*.go",
-    "*credential*.go"
+    "*credential*.go",
+    "internal/hub/ca/**",
+    "internal/hub/gateway/**",
+    "internal/hub/api/**",
+    "internal/hub/integration/**",
+    "internal/hub/config/**",
+    "internal/agent/conn/**",
+    "internal/agent/policy/**",
+    "internal/agent/exec/**",
+    "cmd/fleetd/**",
+    "cmd/fleet-agent/**"
    ],
    "exclude": [
     "docs/**",

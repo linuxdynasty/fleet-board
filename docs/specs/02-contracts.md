@@ -165,7 +165,7 @@ sequence; `none` means unordered. Droppable: `yes` is SHED; `coalesce` keeps the
 | H4 | `Snapshot.forge_cli ForgeCliStatus{tool, provider, host, signed_in, user, access[]}` per code-host CLI (`gh`, `glab`); `Event.forge_cli_status` when the hourly re-check changes it | A→H | — | snapshot; seq | coalesce |
 | I1 | `Preflight{spec, reuse_pane}` → `PreflightResult{ok, failed_checks[] PreflightFailure{reason, detail, retryable}, would_reuse, goal_line_preview}` | H→A | yes | cmd | no |
 | J1 | `OpenAttach{attach_id, session, cols, rows, read_only}` / `CloseAttach`; `Terminal` stream `TermUp{ready, output, closed}` / `TermDown{input, resize, close, select TermSelect{window \| pane}}` | H→A; stream | yes | per attach | output never; input never |
-| K1 | `SessionLog` stream `LogChunk{key LogStreamKey{pane, stream; session_id optional}, offset, zstd, frame_raw_offset, frame_start, gap_before, final}` / `LogAck{key, acked_offset, status, pause, all_streams}`; `SetLogCapture{session, enabled}` | A→H; H→A | by offset | offset | no (spool) |
+| K1 | `SessionLog` stream `LogChunk{key LogStreamKey{pane, stream; session_id optional}, offset, zstd, frame_raw_offset, frame_start, gap_before, final}` / `LogAck{key, acked_offset, status, pause, all_streams}`; `SetLogCapture{session, enabled}`; a chunk is flushed every 10 s or at 256 KiB raw | A→H; H→A | by offset | offset | no (spool) |
 | K2 | `SpoolStatus` in snapshot, heartbeat and `Event.spool_status`; `SetLogShipping{paused, reason}`; `LogAck.pause` | both | yes | seq; cmd | event yes |
 | K3 | `LogChunk.key.stream = HARNESS_TRANSCRIPT` (v3) | A→H | by offset | offset | no |
 | L1 | `Snapshot.policy PolicyInfo{schema_version, hash, safe_mode, error}`, `Event.policy_changed` | A→H | — | seq | no |

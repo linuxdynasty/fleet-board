@@ -1,8 +1,14 @@
 # Design specs
 
-The design phase runs in this order. Each step is reviewed and merged before
-the next starts, and no implementation code is written until the design steps
-are done and the owner approves the plan.
+The design phase ran in this order. Each step was reviewed and merged before
+the next started; the owner has approved the plan and implementation follows it.
+
+**When two documents disagree,** the order of authority is: the protos
+([`api/fleet/`](../../api/fleet/)), then the ADRs (the newest wins), then these
+specs, then the flows, then [design.md](../design.md). The owner's decisions are
+recorded in the ADRs (the latest are in
+[ADR 0022](../adr/0022-drift-audit-decisions.md)). [AGENTS.md](../../AGENTS.md)
+says how to work, not what the product does.
 
 | Step | Spec | Question it answers | Status |
 |---|---|---|---|
@@ -20,6 +26,7 @@ are done and the owner approves the plan.
 | 2h | [02h-goal-binding-and-pane-signals.md](02h-goal-binding-and-pane-signals.md) | How is a goal tied to a pane, when may a pane be reused, what does StartGoal do step by step, how does the hub learn about typing, readiness and interrupts? | Accepted |
 | 2i | [02i-delivery-and-sequencing.md](02i-delivery-and-sequencing.md) | Which events may be dropped, how do seq and epoch stay monotonic, how does the hub tell shedding from loss, what is the replay rule, whose clock counts? | Accepted |
 | 2j | [02j-hub-runtime.md](02j-hub-runtime.md) | Which listeners and ports does fleetd open, where do its configuration and state live, and how does an owner set up a fresh hub? | Accepted |
+| 2k | [02k-v1-surface-and-cli.md](02k-v1-surface-and-cli.md) | Which release serves each RPC and Watch topic, which PR builds it, and what each program's commands are? | Accepted |
 | 3 | [03-workflows.md](03-workflows.md) (+ [03b](03b-usage-and-sync.md)–[03j](03j-provider-sync-and-trust.md)) | How do agent and hub cooperate for each flow (sequence, state machines, volumes, consistency)? | Accepted |
 | 4 | [04-technology-review.md](04-technology-review.md) + [`spikes/`](../../spikes/README.md) | Given the workflows, which storage, queueing and other technologies do we need? | Accepted |
 | 5 | [05-insights.md](05-insights.md) + [`api/fleet/hub/v1/insights*.proto`](../../api/fleet/hub/v1/) | What does the data fleet-board already keeps say: subscription efficiency, goal outcomes, where work gets stuck, a weekly written report, suggestions? | Accepted |
@@ -39,7 +46,7 @@ dispatching from the dashboard, and more), each with the exact message names fro
 the protos, numbered steps, what is stored where and what happens on failure.
 
 The design steps are complete; implementation follows
-[the v1 plan](../plan/v1-implementation-plan.md).
+[the v1 plan](../plan/v1-implementation-plan.md) (approved).
 
 ## How the steps connect
 

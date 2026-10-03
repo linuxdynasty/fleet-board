@@ -138,7 +138,8 @@ message AccountSpec {
   // x (100 - reserve)); projected_unused_percent and
   // HubSettings.auto_pause_at_reserve depend on it too. A new account gets 10.
   uint32 reserve_percent = 4;
-  // Consent acts this account allows (ADR 0008).
+  // Consent acts this account allows (ADR 0008). A new account starts with
+  // push, pr-open and merge; an empty set blocks every dispatch (CONSENT_EMPTY).
   repeated fleet.type.v1.ConsentAct consent = 5;
   // For BUDGET_KIND_DOLLAR_CAP: the owner's cap for display, micro-units.
   int64 spend_cap_micros = 6;

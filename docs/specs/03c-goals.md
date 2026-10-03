@@ -367,12 +367,12 @@ Sub-flags held with the phase (on `GoalStatus`): `provider_condition`,
   cr_state, cr_head_sha)`. Triage items and nudges are keyed on it, so one stopped or
   disagreeing state is reviewed once; a change in any component is a new
   state. `block_epoch` increments each time the line enters `BLOCKED_*` from
-  another state, so leaving and re-entering Blocked notifies the owner again.
+  another state, so leaving and re-entering Blocked raises a new Triage item.
 - **Stopped without DONE.** Detected by `PaneExited{goal_id}` or by
   `ActivityTransition{to=IDLE}` on a goal pane whose `line_state=WORKING`
   with `ready_pattern_showing` for longer than `idle_threshold` (the Stop hook
   should prevent this; its absence is itself a finding). Suppressed while
-  `provider_condition`, `prompt_pending`, `human_at_keyboard_until` or an open
+  `provider_condition`, `prompt_pending`, `human_at_keyboard_until_time` or an open
   `GOAL_INTERRUPTED` / `GOAL_PAUSED` condition hold.
 - **Interrupted or paused at the machine.** An open `GOAL_INTERRUPTED`, or a
   `GOAL_PAUSED` with cause `DEVELOPER_INPUT` or `HARNESS`, on a goal pane is the
@@ -473,7 +473,7 @@ Sub-flags held with the phase (on `GoalStatus`): `provider_condition`,
 | Harness crash (`PaneExited`) | `STOPPED`; respawn + nudge once; second crash → `STUCK` |
 | Provider error / rate limit / usage limit (`HarnessCondition`) | `provider_condition` set; no stop or no-progress counting; a usage limit moves the goal to `LIMIT_WAIT` and marks the account `SHORT_LIMIT` until its reset (the W3 rule in 03h); cleared → counting resumes |
 | Prompt appears | `prompt_pending`; nudges suppressed; W7 handles the answer |
-| Developer typing in the goal pane | `PaneInput` sets `human_at_keyboard_until`; nudges suppressed and `ControlGoal` refused (never queued) for 10 min: `FAILED_PRECONDITION` / `GOAL_ACTION_NOT_ALLOWED` with `metadata{"held": "person_typing"}`; the board shows "someone is typing" from `Pane.last_input_time` |
+| Developer typing in the goal pane | `PaneInput` sets `human_at_keyboard_until_time`; nudges suppressed and `ControlGoal` refused (never queued) for 10 min: `FAILED_PRECONDITION` / `GOAL_ACTION_NOT_ALLOWED` with `metadata{"held": "person_typing"}`; the board shows "someone is typing" from `Pane.last_input_time` |
 | Developer interrupts or pauses the goal | `GOAL_INTERRUPTED` / `GOAL_PAUSED`: phase `PAUSED{OWNER_AT_MACHINE}`, triage `goal_paused`, no nudge, no automatic resume |
 | Code host unavailable | `VERIFYING` holds past `verify_grace` without raising `DISAGREE` while the integration is `DEGRADED` (the disagreement is unknowable); shows "verification waiting on <integration>" |
 | Change request found but head differs from the agent's HEAD | Not a disagreement by itself (driver may have rebased); verification uses provider merge state only |

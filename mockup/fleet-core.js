@@ -45,11 +45,18 @@ const activeCond = s => s.cond && !ui.snoozed[s.cond] ? cById(s.cond) : null;
 
 // Work items: watched change requests and issues/tickets, with a lifecycle stage.
 const goalFor = it => sessions.find(s => isGoal(s) && s.repo === it.repo && (it.kind === "pr" ? s.pr === it.n : s.issue === it.n) && goalState(s) !== "merged");
+// WorkItem.stage (work.proto): ready, manual_only (with manual_reason), claimed_elsewhere, dispatched, running, verifying
+// (done_claimed / disagree), closed. A change request with no goal is listed apart ("unowned", ListChangeRequests).
+function manualReason(it, s) {
+  if (s && s.stopped && !s.requeued) return "you cleared the goal";
+  if (it.untrusted) return "not trusted: it needs the agent-ready label from someone on the allow-list";
+  return null;
+}
 function stageOf(it) {
-  if (it.kind === "pr" && it.state === "merged") return "merged";
+  if (it.kind === "pr" && it.state === "merged") return "closed";
   const s = goalFor(it) ?? (it.kind === "issue" ? sessions.find(x => isGoal(x) && x.repo === it.repo && x.issue === it.n) : null);
-  if (s) { const st = goalState(s); return st === "merged" ? "merged" : st; }
-  if (it.kind === "issue") return "queued";
+  if (s && !s.stopped) { const st = goalState(s); return st === "merged" ? "closed" : st === "verifying" ? "verifying" : "running"; }
+  if (it.kind === "issue") return manualReason(it, s) ? "manual" : it.claim ? "claimed" : "ready";
   return "unowned";
 }
 function workItems() {
@@ -59,20 +66,29 @@ function workItems() {
 }
 
 // Triage: only things that need a person. Conditions (E12) are listed apart from stuck goals.
+// Severity (triage.proto): 4 critical, 3 action, 2 warning, 1 info. The feed is ordered by severity, then age (oldest first).
+const SEV_ACTION = 3, VERIFY_GRACE = 10 * 60e3;
 function triageItems() {
   const out = [];
-  permissions.forEach(p => { if (!ui.answered[p.id] && !ui.snoozed[p.id]) out.push({ type: "perm", id: p.id, p, s: sById(p.s), rank: 0 }); });
-  sessions.filter(s => isGoal(s) && goalState(s) === "stuck" && !ui.snoozed[s.id]).forEach(s => out.push({ type: "stuck", id: s.id, s, rank: 1 }));
-  conditions.filter(c => !ui.snoozed[c.id] && sById(c.s)).forEach(c => out.push({ type: "cond", id: c.id, c, s: sById(c.s), rank: c.retrying ? 2 : 1 }));
-  sessions.filter(s => isGoal(s) && goalState(s) === "verifying" && !ui.snoozed[s.id]).forEach(s => out.push({ type: "verify", id: s.id, s, rank: 3 }));
-  accounts.filter(a => pace(a).state === "reserve" && !ui.dismissed[a.id]).forEach(a => out.push({ type: "pace", id: a.id, a, rank: 4 }));
-  return out.sort((x, y) => x.rank - y.rank);
+  permissions.forEach(p => { if (!ui.answered[p.id] && !ui.snoozed[p.id]) out.push({ type: "perm", id: p.id, p, s: sById(p.s), sev: p.destructive ? 4 : 3, t: +sById(p.s).last }); });
+  sessions.filter(s => isGoal(s) && goalState(s) === "stuck" && !ui.snoozed[s.id]).forEach(s => out.push({ type: "stuck", id: s.id, s, sev: 3, t: +s.last }));
+  conditions.filter(c => !ui.snoozed[c.id] && sById(c.s)).forEach(c => out.push({ type: "cond", id: c.id, c, s: sById(c.s), sev: c.retrying ? 2 : 3, t: +c.since }));
+  // DONE_DISAGREEMENT is raised only after verify_grace (10 min): the code host may just be slow.
+  sessions.filter(s => isGoal(s) && goalState(s) === "verifying" && Date.now() - s.last > VERIFY_GRACE && !ui.snoozed[s.id]).forEach(s => out.push({ type: "verify", id: s.id, s, sev: 3, t: +s.last }));
+  accounts.filter(a => pace(a).state === "reserve" && !ui.dismissed[a.id]).forEach(a => out.push({ type: "pace", id: a.id, a, sev: 2, t: +a.read }));
+  // Kinds with no special card render as a note: a title, one line of text, Open, Snooze, Dismiss.
+  machines.filter(m => m.policyChanged && !ui.dismissed["pol-" + m.id] && !ui.snoozed["pol-" + m.id]).forEach(m => out.push({ type: "note", id: "pol-" + m.id, kind: "policy changed", m, sev: 2, t: +m.beat,
+    title: `${m.short}'s local policy file changed`, text: `It applies after the agent restarts on ${m.name}. Nothing else changes until then.`, go: "machines" }));
+  systemSignals.filter(x => x.state !== "ok" && !ui.dismissed["sys-" + x.kind] && !ui.snoozed["sys-" + x.kind]).forEach(x => out.push({ type: "note", id: "sys-" + x.kind, kind: "hub health", sys: x, sev: x.state === "critical" ? 4 : 2, t: T0,
+    title: `${x.plain}: ${x.value}`, text: x.note ?? x.limits, go: "machines" }));
+  return out.sort((x, y) => (y.sev - x.sev) || (x.t - y.t));
 }
 
 function counts() {
   const st = sessions.filter(isGoal).map(goalState);
   const c = k => st.filter(x => x === k).length;
-  return { working: c("working"), waiting: c("waiting"), stuck: c("stuck"), needs: triageItems().length,
+  // working = ACTIVE phases; waiting = WAITING + VERIFYING; stuck = STUCK; need you = open items at severity ACTION or above.
+  return { working: c("working"), waiting: c("waiting") + c("verifying"), stuck: c("stuck"), limit: conditions.filter(x => x.kind === "usage limit" && sById(x.s)).length, needs: triageItems().filter(i => i.sev >= SEV_ACTION).length,
     avail: sessions.filter(s => liveState(s) === "available" || (!s.yours && goalState(s) === "merged" && !s.stopped)).length,
     freeA: machines.reduce((n, m) => n + freeActive(m), 0), slotsA: machines.reduce((n, m) => n + (m.drained ? 0 : m.maxActive), 0) };
 }
@@ -83,7 +99,7 @@ function renderStrip() {
     <span class="k">${i + 1}</span>${v === "triage" ? `Triage <b class="badge">${c.needs}</b>` : v[0].toUpperCase() + v.slice(1)}</a>`).join("");
   // Per subscription: the waste headline in short form (full line on Usage). API-key accounts: spend vs cap only.
   $("summary").innerHTML = `<span><b>${c.working}</b> working</span><span><b>${c.waiting}</b> waiting on CI/review</span>
-    <span class="bad"><b>${c.stuck}</b> stuck</span><span class="warn"><b>${c.needs}</b> need you</span><span><b>${c.freeA}/${c.slotsA}</b> active slots free</span><span><b>${c.avail}</b> available session${c.avail === 1 ? "" : "s"}</span>
+    <span class="bad"><b>${c.stuck}</b> stuck</span>${c.limit ? `<span><b>${c.limit}</b> waiting for a limit</span>` : ""}<span class="warn"><b>${c.needs}</b> need you</span><span><b>${c.freeA}/${c.slotsA}</b> active slots free</span><span><b>${c.avail}</b> available session${c.avail === 1 ? "" : "s"}</span>
     <span class="auto ${settings.autoDispatch ? "on" : ""}">auto-dispatch ${settings.autoDispatch ? "on" : "off"}</span>
     ${(() => { const w = systemSignals.filter(x => x.state === "warning").length, c = systemSignals.filter(x => x.state === "critical").length;
       return w + c ? `<a href="#machines" class="use ${c ? "alert" : ""}" title="System: ${w} warning${w === 1 ? "" : "s"}, ${c} critical (Machines → System)"><span class="dot ${c ? "bad" : "warn"}"></span><span class="num">system ${w + c}</span></a>` : ""; })()}

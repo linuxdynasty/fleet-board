@@ -1,6 +1,6 @@
 // Session: the sidebar lists every tmux window on every machine (names exactly as tmux shows them); the main area IS
 // the selected tmux session (view-session-tmux.js, keys in view-session-keys.js); the Details drawer on the right holds
-// goal controls, tasks, change request, harness palette, history, session controls (view-session-panels.js).
+// goal controls, change request, harness palette, history, session controls (view-session-panels.js).
 const sideTag = s => s.yours ? (s.available ? `<span class="tag ok">available</span>` : s.idle ? `<span class="tag">idle</span>` : "") : "";
 
 function renderSessionView() {
@@ -39,7 +39,7 @@ function sidebar(order, s) {
 
 // Everything that used to sit in the right rail, plus what the attach panel explained.
 function drawerHtml(s, m) {
-  const pr = prs.find(p => p.n === s.pr && p.repo === s.repo), done = s.tasks.filter(t => t[1]).length, acct = s.acct ? apiAccounts.find(a => a.id === s.acct) : acctFor(s.harness);
+  const pr = prs.find(p => p.n === s.pr && p.repo === s.repo), acct = s.acct ? apiAccounts.find(a => a.id === s.acct) : acctFor(s.harness);
   return `<aside class="sess-rail" aria-label="Details">
     <div class="rail-top"><h2>Details</h2><button class="btn sm" data-act="drawer" aria-label="Close details">×</button></div>
     ${ui.newOpen ? newSessionPanel(mById(ui.newOpen)) : ""}
@@ -48,9 +48,7 @@ function drawerHtml(s, m) {
     <section><h2>Window</h2><div class="sess-meta"><span>${esc(m.name)} → <span class="mono">${esc(s.target)}</span> · pane <span class="mono">${esc(s.paneId)}</span>${s.panes?.length ? ` + ${s.panes.length} more` : ""}</span>${s.branch ? `<span class="mono">${esc(s.branch)}</span>` : ""}
       <span>started ${hhmm(s.started)} · last output <span data-t="${+s.last}">${rel(s.last)}</span></span>${s.yours ? `<span>${s.idle ? `idle · ` : ""}${s.available ? "available for work" : s.harness === "shell" ? "" : "not available for work"}</span>` : ""}
       ${s.model ? `<span>model line: <span class="mono">${esc(s.model)}</span> → spending from <b>${esc(acct?.label ?? "?")}</b>${acct?.capUsd ? ` ($${acct.spentUsd.toFixed(2)} of $${acct.capUsd} cap · manual only)` : ""}</span>` : ""}</div>
-      ${s.line ? `<div class="goalfile"><span class="why">goal file, first line</span><code>${esc(s.line)}</code><span class="why">CONSENT: ${esc(consentFor(acct).join(", "))}</span><span class="why">${esc(GOAL_SYNTAX[s.harness])}</span></div>` : ""}</section>
-    ${isGoal(s) ? `<section><h2>Goal progress <span class="num why">${done}/${s.tasks.length}</span> <span class="samp">sample, not in the contract</span></h2>
-      ${s.tasks.length ? `<ol class="tasks">${s.tasks.map((t, i) => `<li class="${t[1] ? "done" : i === done ? "cur" : ""}">${esc(t[0])}</li>`).join("")}</ol>` : `<p class="why">No task list reported.</p>`}</section>` : ""}
+      ${s.line ? `<div class="goalfile"><span class="why">goal file, first line</span><code>${esc(s.line)}</code><span class="why">CONSENT: ${esc(consentFor(acct, s.repo).join(", "))}</span><span class="why">${esc(GOAL_SYNTAX[s.harness])}</span></div>` : ""}</section>
     ${pr ? `<section><h2>Change request</h2><div class="mono ref">${esc(pr.display)} ${provChip(pr.provider)} · ${esc(pr.state)}</div><div class="card-t">${esc(pr.t)}</div>
       <div>${pr.ci.fail ? `<span class="ci bad">✗ ${pr.ci.fail} failing</span>` : ""} <span class="ci ok">✓ ${pr.ci.pass}</span> ${pr.ci.pend ? `<span class="ci warn">● ${pr.ci.pend}</span>` : ""}</div></section>` : ""}
     ${s.harness !== "shell" ? goalControls(s) : ""}
@@ -62,7 +60,7 @@ function drawerHtml(s, m) {
       ${!s.yours && isGoal(s) ? `<span class="why">Becomes available for work after a verified merge${goalState(s) === "merged" ? ": available now" : ""}.</span>` : ""}
       ${isGoal(s) ? `<button class="btn" data-act="move">Move to another machine…</button>` : ""}
       ${s.harness !== "shell" ? `<button class="btn" data-act="restart">Restart harness in place…</button>` : ""}
-      ${!s.yours ? `<button class="btn danger" data-act="kill">Kill window…</button>` : `<span class="why">Your own windows are never killed from the board.</span>`}
+      <button class="btn danger" data-act="kill">Kill window…</button>${s.yours ? `<span class="why">Your own window: owner only, and the machine may ask for approval first.</span>` : ""}
       <button class="btn" data-act="attachline">Attach from your terminal…</button><button class="btn" data-new="${m.id}">New session on ${esc(m.short)}…</button></div></section>
     ${attachSection(s, m)}
     <section><h2>History</h2><button class="btn ${ui.histOpen ? "on" : ""}" data-act="history">${ui.histOpen ? "Hide history" : "History…"}</button>${ui.histOpen ? historyPanel(s) : ""}</section>
@@ -77,14 +75,15 @@ const confirmBoxS = () => `<div class="confirm"><div>${esc(ui.confirm.label)}</d
   <button class="btn" data-act="cancel">Cancel</button></div></div>`;
 
 function goalControls(s) {
-  const subs = GOAL_SUBS[s.harness] ?? [], has = k => subs.includes(k);
+  const c = GOAL_CONTROL[s.harness] ?? { subs: [], pause: "none", resume: "none" };
   const btn = (k, label, ok, title) => `<button class="btn sm" data-goal="${k}" ${ok ? "" : "disabled"} title="${esc(title)}">${label}</button>`;
+  const no = "this harness does not support that on /goal";
   return `<section><h2>Goal controls</h2><div class="why">${esc(s.harness)}: <span class="mono">${esc(GOAL_SYNTAX[s.harness])}</span></div>
-    <div class="actions">${btn("pause", "Pause", has("pause") || s.harness === "claude", has("pause") ? "RunHarnessCommand /goal pause" : s.harness === "claude" ? "No /goal pause: sends Interrupt" : "GOAL_SUBCOMMAND_UNSUPPORTED")}
-      ${btn("resume", "Resume", has("resume"), has("resume") ? "RunHarnessCommand /goal resume" : "GOAL_SUBCOMMAND_UNSUPPORTED")}
-      ${btn("edit", "Edit…", has("edit") || s.harness === "claude", has("edit") ? "RunHarnessCommand /goal edit" : s.harness === "claude" ? "No /goal edit: sets /goal again" : "GOAL_SUBCOMMAND_UNSUPPORTED")}
-      ${btn("clear", "Clear…", has("clear"), has("clear") ? "RunHarnessCommand /goal clear" : "GOAL_SUBCOMMAND_UNSUPPORTED")}</div>
-    <div class="why">Each button types the harness's own /goal command at an idle prompt. ${s.harness === "claude" ? "Claude Code has no pause or resume: Pause presses Esc instead." : s.harness === "opencode" ? "OpenCode has no /goal; goals need the generic goal protocol first." : "A goal ends with /goal clear."}</div>${dt("gc", "<span>RunHarnessCommand{command: /goal, args, expected_class: GOAL} · Interrupt where there is no pause · GOAL_SUBCOMMAND_UNSUPPORTED otherwise</span>")}</section>`;
+    <div class="actions">${btn("pause", "Pause", c.pause !== "none", c.pause === "subcommand" ? "types /goal pause" : c.pause === "interrupt" ? "no /goal pause here: presses Esc" : no)}
+      ${btn("resume", "Resume", c.resume !== "none", c.resume === "subcommand" ? "types /goal resume" : c.resume === "type_text" ? `no /goal resume here: types "${c.resumeText}"` : no)}
+      ${btn("edit", "Edit…", c.subs.includes("edit"), c.subs.includes("edit") ? "types /goal edit" : no)}
+      ${btn("clear", "Clear…", c.subs.includes("clear"), c.subs.includes("clear") ? "types /goal clear" : no)}</div>
+    <div class="why">Each button is offered only where this machine's harness supports it. ${s.harness === "claude" ? "Claude Code has no pause, resume or edit: Pause presses Esc and Resume types \"continue\"." : s.harness === "opencode" ? "OpenCode has no /goal; goals need the generic goal protocol first." : "A goal ends with /goal clear."}</div>${dt("gc", "<span>MachineHarness.goal_control{subcommands, pause_mode, resume_mode, resume_text} · RunHarnessCommand{command: /goal, args, expected_class: GOAL} · Interrupt or SendKeys{GOAL_RESUME} where there is no subcommand · GOAL_SUBCOMMAND_UNSUPPORTED otherwise</span>")}</section>`;
 }
 
 function movePanel(s) {
@@ -140,7 +139,7 @@ function sessionAct(s, m, act) {
   if (act === "history") { ui.histOpen = !ui.histOpen; }
   if (act === "avail") ui.confirm = { sid: s.id, label: s.available ? "Withdraw the mark; the dispatcher stops treating this session as free capacity:" : "Let the dispatcher start the next goal in this idle session instead of opening a new window:", cmd: availCmd(s, !s.available), go: s.available ? "Withdraw" : "Mark available", what: s.available ? "withdrew availability" : "marked available for work", avail: !s.available, freshOpt: !s.available, note: "Any keystroke of yours clears idle at once; a goal is never typed into a non-empty input line." };
   if (act === "restart") ui.confirm = { sid: s.id, label: `Restart the harness in the same window (${RESUME[s.harness]}); the goal stays set.`, cmd: respawnCmd(s), go: "Restart", danger: true, what: "restarted harness in place", note: "The machine may ask you to approve it there first (fleet-agent approve).", raw: "AWAITING_LOCAL_CONFIRM until approved on the machine" };
-  if (act === "kill") ui.confirm = { sid: s.id, label: "Close this fleet-started window. The branch, worktree and claim stay. Clear the goal first if it is still set.", cmd: killCmd(s), go: "Kill window", danger: true, what: "killed window", kill: true };
+  if (act === "kill") ui.confirm = { sid: s.id, label: s.yours ? "Close your own window. Only an owner can; the machine may ask you to approve it there first. Anything running in it ends." : "Close this fleet-started window. The branch, worktree and claim stay. Clear the goal first if it is still set.", cmd: killCmd(s), go: "Kill window", danger: true, what: "killed window", kill: true };
   if (act === "move") { ui.moveOpen = true; ui.confirm = null; }
   if (act === "closemove") ui.moveOpen = false;
   if (act === "copy") { navigator.clipboard?.writeText(ui.confirm.cmd).then(() => {}, () => {}); log("copied attach line for your terminal", s); ui.confirm = null; }

@@ -15,7 +15,7 @@ detail behind the short root [AGENTS.md](../../AGENTS.md).
 
 ```text
 .agents/roles.json            single source: model tiers per harness + roles
-.agents/skills/<name>/        13 project skills (SKILL.md, "Use when ...")
+.agents/skills/<name>/        14 project skills (SKILL.md, "Use when ...")
 scripts/agent-roles.py        renders the role files below; --check detects drift
 scripts/verify-agent-canon.sh checks the rendered files, skill links, frontmatter,
                               the skill path map and the hook configs

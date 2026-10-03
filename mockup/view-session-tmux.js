@@ -50,7 +50,7 @@ function goalBanner(s) {
   return `<div class="tm-goal ${T.ro ? "ro" : ""}"><b>${T.ro ? "Read-only" : "You're typing into a running goal"} (${esc(s.display ?? s.win)})</b>
     <span class="why">${T.ro ? "your typing is dropped; switching windows and panes still works" : "keystrokes go to the harness, not the board; the goal stays set"}</span>
     <button class="btn sm ${T.ro ? "on" : ""}" data-act="ro">${T.ro ? "Read-write" : "Read-only"}</button>
-    ${perm ? `<button class="btn sm" data-tri="${perm.id}">Destructive prompt ${esc(perm.promptId)} → Triage</button>` : `<span class="why">destructive prompts in this pane are answered in Triage, never by typing</span>`}</div>`;
+    ${perm ? `<button class="btn sm" data-tri="${perm.id}">Destructive prompt ${esc(perm.promptId)} → Triage</button>` : `<span class="why">answer a destructive prompt in Triage so it is recorded; typing here also works but is not checked or logged as an answer</span>`}</div>`;
 }
 
 function overlayItems(s) {

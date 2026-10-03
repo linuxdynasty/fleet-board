@@ -347,9 +347,10 @@ At 3 AM: "why is there no report this week?" is `Routine.status.next_run_time`,
 
 ## 11. Questions for the owner
 
-1. **Open:** report default. Proposed and built as on from first start (the
-   built-in routine's `enabled` is true; the guard keeps it to spare quota);
-   the owner may answer off.
+1. ~~Report default~~ **Answered (ADR 0022, addendum):** on from first start. The
+   built-in routine's `enabled` is true and it runs only on spare subscription
+   quota, never into the reserve and never on an API-key account; no API money
+   is spent. The owner can switch it off in Settings.
 2. ~~`READ` or `LOGS` for report text~~ **Answered (ADR 0022):** `READ`, as
    proposed (02d).
 3. ~~Real repo names to the model~~ **Answered (ADR 0022):** real names, others

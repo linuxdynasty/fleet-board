@@ -1,12 +1,17 @@
-// Triage: only what needs a person. Permission prompts (E6, bound to a prompt_id), stuck goals, harness
+// Triage: only what needs a person, ordered by severity, then age. Permission prompts (E6, bound to a prompt_id), stuck goals, harness
 // conditions (E12: provider error, rate limit, sign-in required; distinct from stuck), DONE claims the code host
 // disagrees with, and accounts that reached the owner's reserve.
-const KIND = { perm: ["permission", "bad"], stuck: ["stuck goal", "bad"], cond: ["harness condition", "warn"], verify: ["done? code host disagrees", "warn"], pace: ["reserve reached", "accent"] };
+const KIND = { perm: ["permission", "bad"], stuck: ["stuck goal", "bad"], cond: ["harness condition", "warn"], verify: ["done? code host disagrees", "warn"], pace: ["reserve reached", "accent"], note: ["note", "warn"] };
+// GoalPhaseReason (goal.proto): why a goal is STUCK, in plain words. The mock only has the first.
+const STUCK_WHY = { BLOCKED_NO_WATCHER: "It is blocked and nothing is watching for the thing it waits on, so nothing will wake it.", WATCH_DEAD: "The watcher it armed has died.", STOPPED_TWICE: "It stopped twice without saying done or blocked.",
+  SESSION_CLOSED: "Its window was closed.", LOCAL_CONFIRM_TIMEOUT: "The machine's owner did not approve the step in time.", PANE_LOST_TIMEOUT: "Its pane has been gone for 10 minutes.", NO_PROGRESS: "Two runs in a row made no progress." };
+const stuckReason = s => s.watchDead ? "WATCH_DEAD" : "BLOCKED_NO_WATCHER";
 
 function triageTitle(it) {
   if (it.type === "perm") return it.p.text;
   if (it.type === "stuck") return plainLine(it.s);
   if (it.type === "cond") return `${it.c.kind}${it.c.retrying ? ", retrying" : ""} — ${it.c.text}`;
+  if (it.type === "note") return it.title;
   if (it.type === "verify") return `${ref(it.s)} says DONE, change request ${crName(it.s)} is still open`;
   return `${it.a.label} is at ${used(it.a)}%; the fleet stopped giving it new work`;
 }
@@ -20,8 +25,8 @@ function renderTriage() {
     <section class="tq" aria-label="Triage queue">
       <div class="section-head"><h2>Needs you</h2><span class="hint">j/k move · a act · s snooze · o open</span></div>
       <ol class="tq-list">${items.length ? items.map((it, i) => {
-        const [label, tone] = KIND[it.type], t = it.type === "cond" && !it.c.retrying ? "bad" : tone;
-        const src = it.s ? `${it.s.harness} · ${where(it.s)} · ${it.s.win}` : `${it.a.harness} account`;
+        const [kind, tone] = KIND[it.type], label = it.kind ?? kind, t = it.type === "cond" && !it.c.retrying ? "bad" : tone;
+        const src = it.s ? `${it.s.harness} · ${where(it.s)} · ${it.s.win}` : it.a ? `${it.a.harness} account` : it.m ? it.m.name : "the hub";
         return `<li><button class="tq-item ${t}" data-ti="${i}" aria-current="${i === ui.triageIdx}">
           <span class="tq-top"><span class="tq-kind">${label}</span><span class="tq-src">${esc(src)}</span>${it.type === "perm" && it.p.destructive ? `<span class="timer">destructive</span>` : ""}</span>
           <span class="tq-title">${esc(triageTitle(it))}</span></button></li>`;
@@ -60,7 +65,7 @@ function triageDetail(it) {
   if (it.type === "stuck") {
     const s = it.s;
     return `${head(s)}<h3>${esc(triageTitle(it))}</h3>
-      <p class="dflt">Goal file: <code class="inline">${esc(s.line)}</code>. No watcher is armed, so nothing will wake it. Last output <b data-t="${+s.last}">${rel(s.last)}</b>.</p>
+      <p class="dflt">${esc(STUCK_WHY[stuckReason(s)])} ${dt("st-" + s.id, `<span>Goal.status.phase_reason ${esc(stuckReason(s))} · goal file: ${esc(s.line)}</span>`)} Last output <b data-t="${+s.last}">${rel(s.last)}</b>.</p>
       ${term(s.pane)}
       ${ui.confirm?.id === s.id ? confirmBox() : `<div class="actions"><button class="btn primary" data-act="open">Open session <kbd>a</kbd></button>
         <button class="btn" data-act="hint">Send a hint…</button><button class="btn" data-act="move">Move to another machine…</button>
@@ -84,6 +89,8 @@ function triageDetail(it) {
       ${ui.confirm?.id === s.id ? confirmBox() : `<div class="actions"><button class="btn primary" data-act="reopen">Reopen goal… <kbd>a</kbd></button>
         <button class="btn" data-act="open">Open session <kbd>o</kbd></button><button class="btn" data-act="snooze">Snooze 15m <kbd>s</kbd></button></div>`}`;
   }
+  if (it.type === "note") return `<div class="tf-head"><span>${esc(it.kind)}</span></div><h3>${esc(it.title)}</h3><p class="dflt">${esc(it.text)}</p>
+    <div class="actions"><button class="btn primary" data-act="open">Open <kbd>o</kbd></button><button class="btn" data-act="snooze">Snooze 15m <kbd>s</kbd></button><button class="btn" data-act="ack">Dismiss <kbd>a</kbd></button></div>`;
   const a = it.a, p = pace(a), running = sessions.filter(s => isGoal(s) && s.harness === a.harness && ["working", "waiting", "stuck"].includes(goalState(s))).length;
   return `<div class="tf-head">${agentChip(a.harness)}<span>${esc(a.label)} account</span></div><h3>${esc(triageTitle(it))}</h3>${a.stale ? `<p class="dflt warn-t">This reading is from before the last reset; a re-probe is pending.</p>` : ""}
     <p class="dflt">${p.used}% of the ${esc(bindingBucket(a).label)} weekly limit is used; your reserve starts at ${p.cap}%. Resets in <b data-until="${a.resets}">${until(a.resets)}</b>. ${running} running ${a.harness} goal${running === 1 ? "" : "s"} keep going; new work goes to other accounts.</p>
@@ -93,7 +100,7 @@ function triageDetail(it) {
 function triageAct(it, act) {
   const s = it.s, m = s && mById(s.m);
   if (act === "cancel") { ui.confirm = null; return rerender(); }
-  if (act === "open") return go("session", s.id);
+  if (act === "open") return it.type === "note" ? go(it.go) : go("session", s.id);
   if (act === "fleet") return go("settings");
   if (act === "snooze") { ui.snoozed[it.id] = true; log(`snoozed ${it.type} for 15m`, s); return rerender(); }
   if (act === "ack") { ui.dismissed[it.id] = true; return rerender(); }
@@ -124,7 +131,7 @@ function triageKey(e) {
   if (k === "j" || k === "ArrowDown") { ui.triageIdx = Math.min(ui.triageIdx + 1, items.length - 1); ui.confirm = null; rerender(); }
   else if (k === "k" || k === "ArrowUp") { ui.triageIdx = Math.max(ui.triageIdx - 1, 0); ui.confirm = null; rerender(); }
   else if (!cur) return;
-  else if (k === "o" && cur.s) triageAct(cur, "open");
-  else if (k === "s" && cur.s) triageAct(cur, "snooze");
-  else if (k === "a") triageAct(cur, { perm: "review", stuck: "open", cond: "open", verify: "reopen", pace: "ack" }[cur.type]);
+  else if (k === "o" && (cur.s || cur.type === "note")) triageAct(cur, "open");
+  else if (k === "s" && (cur.s || cur.type === "note")) triageAct(cur, "snooze");
+  else if (k === "a") triageAct(cur, { perm: "review", stuck: "open", cond: "open", verify: "reopen", pace: "ack", note: "ack" }[cur.type]);
 }

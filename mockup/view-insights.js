@@ -14,7 +14,7 @@ function effCard(e) {
   const mean = arr => Math.round(arr.reduce((s, v) => s + v, 0) / arr.length), tr = slope(unused);
   const bars = e.used.map((u, i) => `<div class="win"><div class="win-top"><span>window ${i + 1}${i === e.used.length - 1 ? " (latest)" : ""}</span><span class="num">${usedShare[i]}% of usable · ${unused[i]} pts unused</span></div>
     <div class="track"><div class="fill" style="width:${usedShare[i]}%;background:${unused[i] >= 20 ? "var(--warn)" : "var(--ok)"}"></div></div></div>`).join("");
-  return `<div class="cap"><div class="cap-top">${agentChip(a.harness)}<span class="cap-name">${esc(a.label)}</span><span class="pill ${mean(unused) >= 20 ? "waiting" : "working"}">${mean(unused) >= 20 ? "wasting" : "well used"}</span></div>
+  return `<div class="cap"><div class="cap-top">${agentChip(a.harness)}<span class="cap-name">${esc(a.label)}</span><span class="pill ${mean(unused) >= WASTE_MIN ? "waiting" : "working"}">${mean(unused) >= WASTE_MIN ? "wasting" : "well used"}</span></div>
     <div class="why">usable quota = 100 − your ${a.reserve}% reserve = ${usable}. The reserve is never counted as waste.</div>${bars}
     <div class="why">average ${mean(usedShare)}% of usable used before reset · ${mean(unused)} points unused at reset · waste ${tr === 0 ? "steady" : tr < 0 ? `shrinking ${-tr} pts per window` : `growing ${tr} pts per window`} · ${e.idleBehindH} h idle while behind pace · the fleet spent ${e.fleetUsed} of the used points</div>
     ${dt("ie-" + a.id, `<span>QuotaWindow{bucket_key ${esc(a.buckets[0].key)}, used_at_end, usable_used, unused, fleet_used, behind, idle_behind} · EfficiencySummary.waste_trend_points ${tr}</span><span>GetInsights{sections: EFFICIENCY}</span>`)}</div>`;
@@ -39,15 +39,15 @@ function reportHtml(text) {
 function renderInsightsView() {
   const open = suggestions.filter(s => !dismissedSug[s.id]), r = latestReport;
   $("view").innerHTML = `
-    <div class="section-head"><h2>Insights</h2>${sample}<span class="hint">${esc(insightRange.label)} · computed ${rel(insightRange.computed)} · history begins ${esc(insightRange.since)} · numbers only, no model involved</span></div>
+    <div class="section-head"><h2>Insights</h2>${sample}<label class="slot"><span>Range</span><select id="insRange" aria-label="Range"><option>7 days</option><option>30 days</option><option>90 days</option></select></label><span class="hint">${esc(insightRange.label)} (the sample always covers 28 days) · computed ${rel(insightRange.computed)} · history begins ${esc(insightRange.since)} · numbers only, no model involved</span></div>
     ${open.length ? `<section aria-label="Suggestions"><div class="section-head"><h3>Suggestions</h3><span class="hint">rules over the numbers below; they advise, they never change a setting</span></div>
       <ul class="waste-list">${open.map(s => `<li class="alert"><b>${esc(s.title)}</b><span class="why">${esc(s.ev)}</span><button class="btn" data-sug="${s.id}">Dismiss</button>${dt("sg-" + s.id, `<span>Suggestion{kind SUGGESTION_KIND_${esc(s.kind)}, evidence[]} · DismissSuggestion{id, expected_version}</span>`)}</li>`).join("")}</ul></section>` : ""}
     <div class="section-head"><h3>Are the subscriptions used before they reset?</h3><span class="hint">last 4 weekly windows per account</span></div>
     <div class="caps">${efficiency.map(effCard).join("")}</div>
     <div class="section-head"><h3>What finished, by harness</h3><span class="hint">goals that ended in the range · a goal that never ran or was cancelled is not in the rates</span></div>
-    <div class="cap"><table class="shown ins-table" aria-label="Goal outcomes by harness"><thead><tr><th>harness</th><th>ran</th><th>merged</th><th>time to merge (p50 / p90)</th><th>nudges / goal</th><th>stuck</th><th>review rounds / goal</th><th>restarts / goal</th><th>quota pts / merged</th></tr></thead>
+    <div class="cap"><label class="slot"><span>Group by</span><select id="insGroup" aria-label="Group outcomes by"><option>harness</option><option>model</option><option>repo</option><option>account</option><option>machine</option><option>size</option></select></label><table class="shown ins-table" aria-label="Goal outcomes by harness"><thead><tr><th>harness</th><th>ran</th><th>merged</th><th>time to merge (typical / slowest 1 in 10)</th><th>hints sent per goal</th><th>stuck</th><th>review rounds per goal</th><th>restarts per goal</th><th>quota used per merged change</th></tr></thead>
       <tbody>${outcomes.map(outcomeRow).join("")}</tbody></table>
-      <div class="why">quota points are percentage points of each account's weekly quota: compare them inside one account. Group by model, repo, account, machine or size in the real build.</div>
+      <div class="why">quota used is in percentage points of each account's weekly quota: compare it inside one account.</div>
       ${dt("io", `<span>GetInsights{sections: OUTCOMES, group_by: HARNESS} → OutcomeRow{ran, merged, merge_rate_percent, time_to_merge_p50, p90, nudges_total, ever_stuck, review_rounds_total, restarts_total, quota_points_per_merged, low_confidence}</span>`)}</div>
     <div class="section-head"><h3>Where work gets stuck</h3><span class="hint">counts and times; never prompt or screen text</span></div>
     <div class="caps"><div class="cap"><div class="cap-name">Waiting on a person</div>${stuckList(stuck.prompts.map(p => ({ html: `${agentChip(p[0])} ${esc(p[1])} prompts: ${p[2]} on ${p[3]} goals, waited ${esc(p[4])}` })))}</div>
@@ -60,9 +60,10 @@ function renderInsightsView() {
     <div class="cap"><div class="why">Model-written text, shown sanitized: no HTML, no images, links as plain text. The numbers it was written from are one click away.</div>
       <div class="report">${reportHtml(r.text)}</div>
       <div class="actions"><button class="btn" data-ins="full">Full report</button><button class="btn" data-ins="numbers">Show the numbers</button><button class="btn" data-ins="run">Run the report now…</button></div>
-      <div class="why" id="insNote">Weekly, Monday 07:00 · runs only when an account is behind pace or would waste quota, never into your reserve · switch it off in Settings → Routines.</div>
+      <div class="why" id="insNote">Weekly, Monday 07:00 · runs only when an account is behind pace or would waste quota, never into your reserve · switch it off in Settings (the Routines block there is planned; the mock does not draw it yet).</div>
       ${dt("ir", `<span>InsightReport{excerpt, text, usage_consumed, bundle_digest ${esc(r.digest)}, aliases[]} · ListInsightReports, GetInsightReport{include_bundle}</span><span>routine ROUTINE_BUILTIN_INSIGHTS_WEEKLY · done_rule REPORT_COLLECTED · only_spare_quota · worktree_mode SCRATCH</span>`)}</div>`;
   const v = $("view");
+  v.querySelectorAll("#insRange, #insGroup").forEach(s => s.onchange = () => { $("insNote").textContent = "Mock: the real build recomputes from the hub's rollups; this sample always shows 28 days grouped by harness."; });
   v.querySelectorAll("[data-sug]").forEach(b => b.onclick = () => { dismissedSug[b.dataset.sug] = true; log(`dismissed suggestion (mock)`); rerender(); });
   v.querySelectorAll("[data-ins]").forEach(b => b.onclick = () => { $("insNote").textContent = b.dataset.ins === "run" ? "Mock: RunRoutine would start a run now; a spare-quota wait shows as ROUTINE_NEEDS_SPARE_QUOTA." : "Mock: opens GetInsightReport in the real build."; });
 }

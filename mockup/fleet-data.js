@@ -38,12 +38,14 @@ const machines = [
 // G1 GoalHooksState per machine and harness (01d: user-level hooks, inert outside fleet goals). Sample.
 // Fields use the proto names so the "details" toggle can show them as they are; `why` is mock-only explanation.
 const hk = o => ({ installed: true, verified: true, trust: "TRUSTED", repo_ships_own: false, hook_version: "0.3.1", hook_hash: "5d2e9a", ...o });
-const CLAUDE_HOOKS = "~/.claude/settings.json", CODEX_HOOKS = "~/.codex/hooks.json";
+const CLAUDE_HOOKS = "~/.claude/settings.json", CODEX_HOOKS = "~/.codex/hooks.json", MUSE_HOOKS = "muse plugin fleet-goal-hooks";
+// GoalHooksState.trust_approve_command (harness.proto): what the owner types to approve a pending hook definition.
+const TRUST_APPROVE = { codex: "/hooks", muse: "muse plugins approve fleet-goal-hooks" };
 const goalHooks = {
-  mbp: { claude: hk({ config_path: CLAUDE_HOOKS }), codex: hk({ config_path: CODEX_HOOKS, hook_hash: "b41c07", trust: "PENDING" }) },
-  omarchy: { claude: hk({ config_path: CLAUDE_HOOKS, repo_ships_own: true }), codex: hk({ config_path: CODEX_HOOKS, hook_hash: "b41c07" }) },
-  allen: { claude: hk({ config_path: CLAUDE_HOOKS }), codex: hk({ config_path: CODEX_HOOKS, hook_hash: "b41c07", trust: "PENDING" }) },
-  m124: { claude: hk({ config_path: CLAUDE_HOOKS }), codex: hk({ installed: false, verified: false, hook_version: "", hook_hash: "", config_path: CODEX_HOOKS, why: "codex 0.157.1 is older than the supported versions; update Codex" }) },
+  mbp: { claude: hk({ trust: "NOT_REQUIRED", config_path: CLAUDE_HOOKS }), codex: hk({ config_path: CODEX_HOOKS, hook_hash: "b41c07", trust: "PENDING" }), muse: hk({ config_path: MUSE_HOOKS, hook_hash: "b41c07", trust: "PENDING" }) },
+  omarchy: { claude: hk({ trust: "NOT_REQUIRED", config_path: CLAUDE_HOOKS, repo_ships_own: true }), codex: hk({ config_path: CODEX_HOOKS, hook_hash: "b41c07" }), muse: hk({ config_path: MUSE_HOOKS, hook_hash: "b41c07" }) },
+  allen: { claude: hk({ trust: "NOT_REQUIRED", config_path: CLAUDE_HOOKS }), codex: hk({ config_path: CODEX_HOOKS, hook_hash: "b41c07", trust: "PENDING" }), muse: hk({ config_path: MUSE_HOOKS, hook_hash: "b41c07", trust: "PENDING" }) },
+  m124: { claude: hk({ trust: "NOT_REQUIRED", config_path: CLAUDE_HOOKS }), codex: hk({ installed: false, verified: false, hook_version: "", hook_hash: "", config_path: CODEX_HOOKS, why: "codex 0.157.1 is older than the supported versions; update Codex" }), muse: hk({ config_path: MUSE_HOOKS, hook_hash: "b41c07" }) },
 };
 
 // Subscription accounts (BUDGET_KIND_WEEKLY_PERCENT). `shown` mirrors the harness's own screen (D2 "as shown");
@@ -85,11 +87,11 @@ const integrations = [
 const settings = {
   repos: [
     { repo: "eshu-hq/eshu", host: "github.com", provider: "github", on: true, hooks: "eshu" },
-    { repo: "CigarsOnly/virtual-humidor", host: "github.com", provider: "github", on: false, hooks: "generic" },
+    { repo: "CigarsOnly/virtual-humidor", host: "github.com", provider: "github", on: false, hooks: "auto" },
     { repo: "acme/infra", host: "gitlab.com", provider: "gitlab", on: true, hooks: "generic", sample: true },
   ],
   consent: ["push", "pr-open", "merge"],
-  autoDispatch: true,
+  autoDispatch: false,   // the approved default (defaults.md); the owner turns it on
   showEmails: false,
   windowTemplate: "{harness} {work}",
   idleMinutes: 2,
@@ -111,6 +113,15 @@ const CATALOG = {
 const CLASSES = ["observe", "session", "goal", "review", "destructive"];
 
 // 01b goal subcommands per harness (probed 2026-10-01). Claude has no pause/resume/edit.
-const GOAL_SUBS = { claude: ["clear"], codex: ["clear", "edit", "pause", "resume"], muse: ["edit", "clear", "pause", "resume"], opencode: [] };
+// The hub keeps no per-harness table: it reads MachineHarness.goal_control (harness.proto GoalControl: subcommands,
+// pause_mode, resume_mode, resume_text). This is a sample of what each machine reports. Claude: SET and CLEAR only;
+// pause is Interrupt, resume types "continue".
+const GOAL_CONTROL = {
+  claude: { subs: ["set", "clear"], pause: "interrupt", resume: "type_text", resumeText: "continue" },
+  codex: { subs: ["set", "clear", "edit", "pause", "resume"], pause: "subcommand", resume: "subcommand" },
+  muse: { subs: ["set", "edit", "clear", "pause", "resume"], pause: "subcommand", resume: "subcommand" },
+  opencode: { subs: [], pause: "none", resume: "none" },
+};
+const GOAL_SUBS = Object.fromEntries(Object.entries(GOAL_CONTROL).map(([h, c]) => [h, c.subs.filter(x => x !== "set")]));
 const GOAL_SYNTAX = { claude: "/goal [<condition> | clear]", codex: "/goal [<objective>|clear|edit|pause|resume]", muse: "/goal [<objective>|edit <objective>|clear|pause|resume]", opencode: "no /goal (needs the generic goal protocol)" };
 const RESUME = { claude: "claude --continue", codex: "codex resume --last", muse: "muse resume --last", opencode: "opencode" };

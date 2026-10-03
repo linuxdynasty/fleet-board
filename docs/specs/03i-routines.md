@@ -28,7 +28,7 @@ not spare; without that, the call fails `FAILED_PRECONDITION` with the reason.
 (unchanged `StartGoal`).
 
 **Built-in routines and spare quota.** `RoutineSpec.builtin` marks a routine the
-hub owns (v1: the weekly insights report, `ROUTINE_BUILTIN_INSIGHTS_WEEKLY`,
+hub owns (contract v1, built in milestone v2: the weekly insights report, `ROUTINE_BUILTIN_INSIGHTS_WEEKLY`,
 05): its goal text and done rule are fixed, the owner changes only the
 trigger, harness, account, machine, model, effort and `enabled`, and it cannot
 be deleted. `RoutineSpec.only_spare_quota` (any routine may set it) makes the

@@ -13,7 +13,7 @@
   [ADR 0019](../adr/0019-pre-implementation-contract-decisions.md)
 
 This is the dashboard to hub to agent half of the flow catalogue. It walks
-thirteen flows, **D1 to D13**, from the dashboard's click down to tmux and back
+sixteen flows, **D1 to D16**, from the dashboard's click down to tmux and back
 up to the screen. Each flow has a plain-language summary, a diagram that uses
 the exact message, RPC and field names from the protos, numbered steps (one
 per arrow), what is persisted where, and what happens when it goes wrong.
