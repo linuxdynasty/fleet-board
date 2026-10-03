@@ -2,7 +2,7 @@
 
 - Status: Accepted (rows 1 to 17 approved and merged 2026-10-02; rows 1b and 18 to 29 added by [ADR 0025](../adr/0025-v1-includes-dispatch.md) on 2026-10-03, for the owner to approve in its PR; tracked in the milestone "v1 — fleet": section 10)
 - Date: 2026-10-02; dispatch added 2026-10-03 ([ADR 0025](../adr/0025-v1-includes-dispatch.md))
-- Inputs: [design.md](../design.md) and its [milestones](../design-deployment-and-milestones.md#milestones), the capability map in
+- Inputs: [design.md](../design.md), the capability map in
   [01](../specs/01-agent-capabilities.md) (v1 and v3 tags),
   [02e](../specs/02e-contract-rules.md) (freeze checklist),
   [02k](../specs/02k-v1-surface-and-cli.md) (which release serves what),
@@ -43,7 +43,7 @@ when the owner turns it on; manual dispatch works whenever the rows exist.
 
 **Not in v1** (v3): sign-in and `authenticated` mode, API tokens, phone pairing
 and push, remote access, the optional Tailscale lookup, and harness transcripts
-(K3). "Later" items stay unscheduled ([design milestones](../design-deployment-and-milestones.md#milestones)).
+(K3). "Later" items stay unscheduled (the rows marked `later` in [features.md](../features.md)).
 
 **Security posture of v1:** [01e](../specs/01e-security-and-privacy.md) and [02g](../specs/02g-agent-security.md). The owner merges every PR of fleet-board itself (section 10).
 

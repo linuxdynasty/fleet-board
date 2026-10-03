@@ -49,7 +49,7 @@ event, a snapshot field or a stream.
 
 Kind: **S** snapshot field, **E** event, **C** command (hub → agent),
 **H** hub → agent message that is not a command, **T** stream, **L** local only.
-Phase: **v1** the whole local product (watching, dispatch, sessions, logs), **v3** remote. "Later" items are not scheduled ([design milestones](../design-deployment-and-milestones.md#milestones)). ADR 0025 retired the middle release.
+Phase: **v1** the whole local product (watching, dispatch, sessions, logs), **v3** remote. "Later" items are not scheduled (the rows marked `later` in [features.md](../features.md)). ADR 0025 retired the middle release.
 
 | ID | Capability | Kind | Phase |
 |---|---|---|---|
