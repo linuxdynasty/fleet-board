@@ -12,6 +12,12 @@ python3 -m http.server 8765 --bind 127.0.0.1 --directory mockup
 Then open <http://127.0.0.1:8765/>. Which UI element stands for which contract
 message is tabulated in [docs/specs/ui-contract-map.md](../docs/specs/ui-contract-map.md).
 
+**The mockup is display-only.** It checks nothing against the protos (ids such as
+`g1` are not ULIDs, data is sample). It also draws the v2 and v3 controls (send
+keys, dispatch, goal control, kill, respawn, attach, approvals) as if they were
+live; the **Ships** column of the map says which release serves each element, and
+the v1 views show only the rows tagged v1.
+
 ## What is real and what is sample
 
 Real (collected 2026-09-28 unless noted): machine names, IPs, OS, RAM and
@@ -23,16 +29,19 @@ the harness command catalogs and `/goal` syntax (probed 2026-09-30 and
 sizes (≈27 MB/h raw, ≈0.23 MB/h zstd-3) measured on a real goal on 2026-10-01.
 
 Sample (marked `sample` in the data or on the card): goals and their goal-file
-lines, task lists, pane contents, the developer's own tmux windows, harness
+lines, pane contents, the developer's own tmux windows, harness
 conditions, the Jira ticket `OPS-142`, the GitLab MR `infra!12`, the DeepSeek
 and Moonshot API-key accounts, forge CLI status, certificate expiry, policy
 hashes, labels, setting layers, goal-hook states per machine, session history,
-audit entries, account emails, and everything on the Insights view and in the System section
+audit entries, account emails, the **observed goal** (`omarchy` window "codex prompt 2": a goal the owner started by hand, shown as "started by you · observed", with no goal controls and no slot; 03k), and everything on the Insights view and in the System section
 (insights, the weekly report, suggestions, health signals, agent health).
 
-The pacing, goal-state, availability and dispatch rules are real logic in
-`fleet-dispatch.js`: with the 2026-09-28 numbers, Claude is past its reserve,
-Codex is ahead of pace, and Muse (behind pace) gets the next goal. The same
+The pacing, goal-state, availability and dispatch rules follow
+[03b](../docs/specs/03b-usage-and-sync.md) and [03h](../docs/specs/03h-goal-phases-in-depth.md)
+as written, in `fleet-dispatch.js` (allowed goals per account, the 95 % short window, stale readings
+excluded, the same repo and a clean checkout for a reused session, Block / Confirm / Warn checks);
+auto-dispatch starts off, as approved. Which account is next depends on the numbers and the
+mock clock (an account past its reserve, stale, or at its allowed goals is skipped). The same
 file projects waste: at the burn rate so far, how much of each subscription's
 usable share (100 − reserve) would still be unused at reset. That line leads
 the Usage view and the summary strip; accounts that will waste quota, or run
@@ -59,7 +68,7 @@ Session sidebar starts collapsed.
 | `index.html` | Shell and styles (design tokens, dark-first with light theme) |
 | `fleet-data.js` | Machines, goal-hook states per machine (`GoalHooksState`, sample), accounts (subscription and API-key), integrations, settings, harness command catalogs, `/goal` subcommands |
 | `fleet-data-work.js` | tmux windows (goal panes and the developer's own), prompts, harness conditions, change requests, backlog, audit, history |
-| `fleet-data-insights.js` | Sample insights (efficiency windows, outcomes per harness, stuck sections, size accuracy, the latest weekly report, suggestions) and sample System signals and agent health (05, 05b) |
+| `fleet-data-insights.js` | Sample insights (efficiency windows, outcomes per harness, stuck sections, the latest weekly report, suggestions) and sample System signals and agent health (05, 05b) |
 | `fleet-cmd.js` | Typed-command previews (`fmtCmd`), the `/goal` line per repo convention, the attach line |
 | `fleet-core.js` | Routing, derived state, summary strip with the waste line per account, jump-to switcher, keyboard, the `details` toggle, plain goal-file lines |
 | `fleet-dispatch.js` | Weekly pacing, reset rollover, waste outlook, goal states, slot limits, available sessions, `StartGoal` dispatch |
@@ -70,7 +79,7 @@ Session sidebar starts collapsed.
 | `view-session-tmux.js` | The terminal: tmux-style status line with window tabs, pane layout with splits, choosers, help, detached state |
 | `view-session-keys.js` | Terminal keyboard: prefix emulation (tmux defaults), plain typing into the active pane, `TermDown` preview |
 | `view-usage.js` | Usage: "will any subscription go to waste?" line per account, usage as each harness shows it plus burn-down, API-key accounts, OpenCode |
-| `view-insights.js` | Insights (key 7): efficiency per subscription, outcomes per harness, where work gets stuck, size accuracy, the latest written report (sanitized), suggestions; all `sample` |
+| `view-insights.js` | Insights (key 7): efficiency per subscription, outcomes per harness, where work gets stuck, the latest written report (sanitized), suggestions; all `sample` |
 | `view-machines.js` | Machines: the System section (health signals, sample), state and slots, harnesses with goal-hook status, goal windows, drain, attach line, facts under details, audit log |
 | `view-settings.js` | Settings: repos, consent, reserves, limits, browser terminal, privacy, integrations, effective values with their layer, `fleet.yaml` preview |
 

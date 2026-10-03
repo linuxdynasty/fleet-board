@@ -4,6 +4,8 @@ Hub and agents for managing Claude Code, Codex, Muse and OpenCode sessions runni
 in tmux across several machines: see every session, answer agent questions,
 unstick stuck work, and assign issues and PRs to machines with free capacity.
 
+- [docs/features.md](docs/features.md): every feature fleet-board will support, by
+  release (v1, v2, v3, later), with where it is specified and its issue; start here
 - [docs/design.md](docs/design.md): architecture, views, dispatch rules,
   safety rails, open questions, milestones
 - [docs/specs/](docs/specs/README.md): capabilities, contracts, workflows,
@@ -25,5 +27,5 @@ unstick stuck work, and assign issues and PRs to machines with free capacity.
   Session, Usage, Machines, Settings, Insights)
 
 Status: design phase complete (contracts, specs, ADRs 0001-0023, flows, v1
-plan) and mockup. No hub or agent code yet; implementation starts when the
-owner approves the plan.
+plan) and mockup. The owner approved the plan; implementation follows it. No
+hub or agent code is merged yet.

@@ -17,7 +17,7 @@ snoozes or dismisses; items expire after 7 days.
 | `start_failed` | a start needing a person: update or login screen, model or effort missing, three attempts failed, a leftover worktree (03h) | `(work_item, reason)` | the fact clears, or the item is requeued |
 | `work_item_changed` | the provider closed, cancelled or reopened the item under a live goal (03h) | `(goal_id, provider state)` | goal resumed, cleared or ended |
 | `routine_blocked` | a routine run live longer than `blocked_after` (03i) | `(routine, run)` | the run ends |
-| `log_disk_low` | W9 hub disk below the threshold | `hub` | disk above the higher threshold |
+| `log_disk_low` | W9 hub disk below 5 GiB free (resumes above 8 GiB, [defaults](defaults.md)) | `hub` | disk above the higher threshold |
 | `system` | a signal about fleetd or an agent itself left OK ([05b](05b-observability.md#8-the-system-health-model)): writer lag, disk, clock skew, an always-on machine offline | `system:<signal>:<subject>` | the signal stays OK for 5 minutes |
 | `suggestion` | a rule-based insight, only with `HubSettings.suggestions_in_triage` ([05](05-insights.md#8-suggestions)), `SEVERITY_INFO`, never notified | `SuggestionId` | the rule stops firing, or dismissed |
 | `policy_invalid` | W10 agent policy file invalid (safe mode) | `machine` | snapshot shows safe mode off |
@@ -35,7 +35,8 @@ is for nothing the hub raises today.
 **Actors.** Writer (raises and retires inside the event's transaction), UI /
 CLI (operator), `fleet-agent` (`SendKeys` bound to `prompt_id`,
 `CapturePane`), notifier (v3, once per item for `blocked_owner` and
-destructive prompts).
+destructive prompts; in v1 and v2 "notified" means the Triage item and the
+browser's indicator, nothing is pushed).
 
 ```mermaid
 sequenceDiagram
@@ -105,8 +106,8 @@ stateDiagram-v2
 - A `PromptGone` that arrives before the hub processed the `PromptDetected`
   (reordered replay cannot happen: same stream, `seq` order) is impossible;
   a `PromptGone` for an unknown `prompt_id` is logged and ignored.
-- Items are ranked for the feed on read (kind weight, age, goal state), not
-  stored ranked.
+- Items are ranked for the feed on read (severity, then age, as the API
+  orders them), not stored ranked.
 
 ### Failure modes
 
@@ -353,7 +354,8 @@ xterm.js; chunk `first_byte_time/last_byte_time` give time navigation. Harness
 transcripts (K3, v3) reuse the path with `stream=HARNESS_TRANSCRIPT` from
 `PaneHarnessSession.transcript_path`, opt-in per repo or machine.
 
-**Management and ended sessions.** When a session ends, the last pane summary of
+**Management and ended sessions.** (v2; in v1 there is no `logs.db`, so a pane's latest summary row is
+deleted with its pane, and the last screen of an ended session is not kept until v2: ADR 0024 decision 23.) When a session ends, the last pane summary of
 each of its panes moves from `state.db` to `logs.db` (ADR 0015, amending 0013) and the session row becomes
 `ENDED` (`Session.status.state`, `end_time`), kept while its logs exist. A client
 finds ended sessions with `ListStoredSessions` (filter machine, goal, harness,

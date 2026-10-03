@@ -84,7 +84,9 @@ message AccountPacing {
   string deciding_bucket = 6;
   // Usable quota (100 - reserve) projected to be left unused at reset at the
   // burn rate so far; the Usage view's "will it go to waste?" line. The
-  // reserve is never counted as waste. Unset while the reading is stale.
+  // reserve is never counted as waste. Unset while the reading is stale, and
+  // unset during the first 24 hours of each usage window (a tiny slice of the
+  // week makes the projection jumpy; 03b, decision 17 of ADR 0024).
   optional int32 projected_unused_percent = 7;
   // No goal is running on the account while it is behind pace.
   bool idle_while_behind = 8;
@@ -138,9 +140,13 @@ message AccountSpec {
   // x (100 - reserve)); projected_unused_percent and
   // HubSettings.auto_pause_at_reserve depend on it too. A new account gets 10.
   uint32 reserve_percent = 4;
-  // Consent acts this account allows (ADR 0008).
+  // Consent acts this account allows (ADR 0008). A new account starts with
+  // push, pr-open and merge; an empty set blocks every dispatch (CONSENT_EMPTY).
   repeated fleet.type.v1.ConsentAct consent = 5;
-  // For BUDGET_KIND_DOLLAR_CAP: the owner's cap for display, micro-units.
+  // For BUDGET_KIND_DOLLAR_CAP: the owner's own limit, one amount in
+  // micro-units with no period, shown next to the spent-so-far figure. The hub
+  // never resets it and never compares it with anything but that figure; 0 =
+  // no limit set.
   int64 spend_cap_micros = 6;
   // Owner-mapped machines (a Codex account that shows no identity). Adding a
   // binding for a (machine, profile) that another placeholder account holds

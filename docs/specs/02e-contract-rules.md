@@ -7,7 +7,8 @@
   `buf.gen.yaml`
 - Decisions: [ADR 0003](../adr/0003-transport-grpc.md),
   [ADR 0017](../adr/0017-contract-packages.md),
-  [ADR 0019](../adr/0019-pre-implementation-contract-decisions.md)
+  [ADR 0019](../adr/0019-pre-implementation-contract-decisions.md),
+  [ADR 0024](../adr/0024-pre-build-owner-decisions.md) (decision 8: what `v0.1` freezes)
 
 Rules that apply to every `.proto` file in every package, collected so they
 can be checked in review. Moved here from 02-contracts.md: capability
@@ -43,7 +44,34 @@ checklist, to be ticked when cutting `v0.1`:
 3. The mockup's data is checked against the protos (names, enums, 64-bit
    strings), or the mockup is marked display-only. The `[planned]` rows of the
    UI map have no mockup element yet and are checked when their view is built.
-4. `go.mod`, the generated-code location and the CI job exist.
+4. `go.mod`, the generated-code location and the CI job exist, and `buf.yaml`
+   carries the per-path ignores for the v2 and v3-only files (below).
+
+## What `v0.1` freezes
+
+`v0.1` freezes **only what v1 implements** (decision 8 of ADR 0024, which amends
+decision 9 of ADR 0019). A message no code has run is not worth a promise: two
+review rounds already changed 86 and then 107 things in contracts nobody had run.
+Messages that only v2 or v3 use stay changeable until the release that ships them
+is tagged (`v0.2`, then `v1.0`).
+
+- **How.** `buf breaking` works per file, not per message. When `v0.1` is cut,
+  `buf.yaml` gets per-path ignores under `breaking.ignore_only` for the files
+  below, and CI keeps running `buf breaking --against '.git#tag=v0.1'` for the rest.
+  The ignore list shrinks to nothing as each release is tagged.
+- **Which files.** A file is ignored only if it holds v2 or v3 messages exclusively
+  and no v1-served RPC, Watch topic or v1 agent message reaches it. Proposed
+  (PR 17 checks each against the generated code and the 02k list):
+  `agent/v1/command_goal.proto`, `command_scratch.proto`, `streams.proto`;
+  `hub/v1/auth.proto`, `device.proto`, `token.proto` (v3);
+  `hub/v1/terminal.proto`, `log_store.proto`, `routine.proto`, `goal_dispatch.proto`,
+  `insight_report.proto`, `suggestion.proto` (v2).
+- **Mixed files.** A file that holds both (`service.proto`, `command_tmux.proto`,
+  `goal.proto`, `snapshot.proto`) is frozen whole, so a v2 message in it can only
+  grow additively after `v0.1`. A v2 message that may still need a breaking change
+  is moved into a v2-only file before the tag; PR 17 does that check.
+- **Observed goals are v1.** The messages that carry them (`GoalState`,
+  `GoalBindingSource.OBSERVED`, `Goal`, `GoalOrigin`) are frozen at `v0.1`.
 
 ## Naming rules
 
@@ -54,7 +82,7 @@ checklist, to be ticked when cutting `v0.1`:
 | Every id is a wrapper message with `value`; the field that holds it is named for the entity | `MachineId machine`, `PrincipalId id`, `SettingsId id` |
 | A hub-assigned id is 1 to 32 characters of `[a-z0-9-]` (lowercase ULID); user-chosen names used as tmux names, env values, paths or `group/<label>` keys are `[a-z0-9][a-z0-9-]{0,31}` | `SessionId` is the tmux session name; `INVALID_NAME` otherwise ([02h](02h-goal-binding-and-pane-signals.md#ids)) |
 | `_id` stays only on protocol correlation keys that are the identity of their own message | `command_id`, `prompt_id`, `attach_id`, `probe_id` |
-| A closed set is an enum, never a string | `ConsentAct`, `AuthMode`, `OperationKind`, `DevicePlatform`, `AttachCloseReason`, `WorkSize` |
+| A closed set is an enum, never a string | `ConsentAct`, `AuthMode`, `OperationKind`, `DevicePlatform`, `AttachCloseReason` |
 | A string is untrusted text, a user-chosen name, or a documented open vocabulary (a fixed set of names a newer sender may extend; a receiver treats an unknown one as display-only) | `Harness.name`, `AuditEntry.action`, `Operation.step`, `CommandProgress.step` |
 | A oneof arm is a message, not a bare scalar, so it can grow | `SettingsScope.Fleet`, `NoteDetail` |
 | Map keys are strings or integers; a count by enum is a repeated message | `GoalPaneCount{state, count}` |
@@ -68,7 +96,9 @@ The JSON name of a field is its camelCase proto name, so an `_at` and a
 ## Codegen
 
 `buf.gen.yaml` at the repository root (buf v2, managed mode) generates into
-`gen/`, which is not committed until `v0.1`:
+`gen/`, which is never committed: every worktree and every CI job runs
+`buf generate` first (`make gen` from plan PR 1), so a clean checkout compiles
+only after it:
 
 | Output | Plugin (pinned in `buf.gen.yaml`) | Notes |
 |---|---|---|
@@ -84,7 +114,7 @@ The JSON name of a field is its camelCase proto name, so an `_at` and a
   Connect JSON; the UI rules are in
   [02b](02b-hub-api.md#64-bit-integers). No `jstype` annotation is used.
 - CI runs `buf build`, `buf lint` and `buf generate` and compiles the output
-  (needs the `go.mod` of implementation step 0).
+  (needs the `go.mod` of plan PR 1).
 
 ## Command kinds and capabilities
 

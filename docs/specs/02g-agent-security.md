@@ -286,6 +286,20 @@ Notes:
 - **A developer's window or `allow_dirty`** needs a role that covers OWNER,
   which a narrowed device or token never has ([02d](02d-hub-authz.md#role-sent-to-the-agent)).
 
+## What the agent reads and writes in harness configuration
+
+The rule of [ADR 0004](../adr/0004-agent-connectivity.md), amended by
+[ADR 0024](../adr/0024-pre-build-owner-decisions.md) (decision 3):
+
+| | v1 | v2 (goal hooks, [01d](01d-goal-hooks.md)) |
+|---|---|---|
+| Auth files, keychain items, `gh` tokens | never opened | never opened |
+| Harness settings and trust lists | never opened. The probe runs in one fleet-owned folder the owner trusted by hand; an untrusted folder is read from the harness's own screen (`FOLDER_UNTRUSTED`), and `fleet-agent doctor` explains it ([01](01-agent-capabilities.md) C3) | opened only to add, update or remove the agent's own named hook entries in the user-level settings files. Other keys are never read, file contents are never logged, a backup is made first |
+| Repo project config (`.claude/settings.json` and the like) | not read (there are no hooks in v1) | read by `EnsureGoalHooks` only to see whether the repo ships its own goal hooks; never written |
+
+`GoalHooksState` and the audit row carry the path, the backup name, the
+`hook_hash` and the verdict, never file text.
+
 ## Audit of decisions made at the machine
 
 A decision at the machine reaches the hub as an event (retained a week in
@@ -304,7 +318,7 @@ transaction that applies the event or result:
 | `Bye` from the hub, `Hello` refused | `machine.revoke`, `machine.connect_refused` | the requester, or none | `machine`, `reason` |
 
 The full catalogue of audit actions is in
-[02b](02b-hub-api.md#audit-actions); events keep their short retention, the
+[02m](02m-hub-api-actions-and-audit.md#audit-actions); events keep their short retention, the
 audit rows are permanent. A row is written once per event, even for a replayed
 event that is history-only for state: it is idempotent on `(machine,
 event_generation, seq)` ([02i](02i-delivery-and-sequencing.md#replay-apply-rule)).

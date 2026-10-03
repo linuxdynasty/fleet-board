@@ -217,7 +217,7 @@ section of the Machines view draws them; `FleetSummary.system_warnings` and
 | `WRITER_BATCH_LAG` | hub | p95 over one minute of the oldest message's wait, and of the commit time | wait over 1 s, or commit over 250 ms | wait over 5 s, or the ingest channel full for 30 s | CRITICAL |
 | `OUTBOX_BACKLOG` | machine | age of the oldest pending command for a machine that has been online 2 min | 2 min | 10 min | CRITICAL |
 | `WATCH_DROPS` | hub | streams ended `RESYNC_REQUIRED / FELL_BEHIND` in 10 min | 3 | 20 | CRITICAL |
-| `LOG_STORE_USAGE` | hub | `logs.db` size over `log_size_cap_bytes`, percent | 80 | 95 (oldest sessions are being pruned) | CRITICAL |
+| `LOG_STORE_USAGE` | hub | `logs.db` size over `log_size_cap_bytes`, percent. **In v1 it reads UNKNOWN**: `logs.db` does not exist until v2, so it shows as unknown and raises nothing | 80 | 95 (oldest sessions are being pruned) | CRITICAL |
 | `DISK_FREE` | hub | free bytes on the volume of `state.db` | under 10 GiB | under 2 GiB, back to WARNING above 3 GiB | WARNING |
 | `CLOCK_SKEW` | machine | absolute `MachineTelemetry.clock_skew` | 5 min | 15 min (`clock_untrusted`) | CRITICAL |
 | `BACKUP_AGE` | hub | age of the last backup | 36 h | 7 days | WARNING |

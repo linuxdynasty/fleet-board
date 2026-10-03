@@ -11,6 +11,7 @@ import "fleet/hub/v1/trusted_gate.proto";
 import "fleet/type/v1/consent.proto";
 import "fleet/type/v1/ids.proto";
 import "fleet/type/v1/settings.proto";
+import "fleet/type/v1/principal.proto";
 import "fleet/type/v1/status.proto";
 import "google/protobuf/duration.proto";
 import "google/protobuf/field_mask.proto";
@@ -43,6 +44,8 @@ message HubSettings {
   // provider accounts (trusted_gate.proto). A Repo (repo.proto) may add users
   // and set its own label.
   TrustedGate trusted_gate = 4;
+  // Dispatch prefers a machine other than the hub's before the hub machine
+  // (03c). Default true (docs/specs/defaults.md); acts from v2.
   optional bool prefer_non_hub = 6;
   // Master switch for auto-dispatch (manual dispatch always works). Default
   // false (docs/specs/defaults.md).
@@ -175,11 +178,11 @@ message AuditEntry {
   // Dotted action name, e.g. "goal.start", "approval.decide",
   // "settings.update", "device.revoke". An open vocabulary, so clients show
   // it as text, but every name in use is listed in the catalogue in
-  // docs/specs/02b-hub-api.md ("Audit actions"); a new action is added there
+  // docs/specs/02m-hub-api-actions-and-audit.md ("Audit actions"); a new action is added there
   // in the same change.
   string action = 11;
   // Resource the action touched, as "<collection>/<id>": the table of which
-  // target each action writes is in 02b ("Audit actions"), so the Session
+  // target each action writes is in 02m ("Audit actions"), so the Session
   // timeline can filter `target = "sessions/<id>"`.
   string target = 12;
   fleet.type.v1.MachineId machine = 13;

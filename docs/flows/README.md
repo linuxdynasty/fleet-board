@@ -28,7 +28,7 @@ It is written for two readers:
 |---|---|---|
 | [README.md](README.md) (this file) | The whole system on one page, the protocol packages, the glossary, the index of flows | none |
 | `agent-hub*.md`, flows A1 to A14 | `fleetd` and `fleet-agent`: joining the fleet, staying connected, commands, events, usage probing, goals, prompts, terminal bytes, logs, settings, upgrade drift, system health | [`fleet.agent.v1`](../../api/fleet/agent/v1/) |
-| `dashboard*.md`, flows D1 to D13 | The web dashboard (and the CLI and a phone, which use the same calls) talking to `fleetd`: sign-in, live data, dispatching and controlling goals, prompts, terminal, machines, routines, settings, logs, pairing a phone, insights and the weekly report | [`fleet.hub.v1`](../../api/fleet/hub/v1/) |
+| `dashboard*.md`, flows D1 to D16 | The web dashboard (and the CLI and a phone, which use the same calls) talking to `fleetd`: sign-in, live data, dispatching and controlling goals, prompts, terminal, machines, routines, settings, logs, pairing a phone, insights and the weekly report, a new session, requeue, importing a configuration | [`fleet.hub.v1`](../../api/fleet/hub/v1/) |
 
 The flow ids belong to this folder. They are **not** the capability ids (`A1`,
 `A3`, `D1`, `G3` and so on) that appear in comments inside the `.proto` files and
@@ -53,7 +53,8 @@ Every flow has the same five parts:
 | [type/v1/consent.proto](../../api/fleet/type/v1/consent.proto) | `ConsentAct` |
 | [type/v1/harness.proto](../../api/fleet/type/v1/harness.proto) | `GoalLineState` |
 | [type/v1/ids.proto](../../api/fleet/type/v1/ids.proto) | `AccountId`, `AccountKey`, `CommandId`, `GoalId`, `MachineId`, `PaneKey`, `SessionId` |
-| [type/v1/status.proto](../../api/fleet/type/v1/status.proto) | `ErrorDetail`, `Principal`, `ReasonCode`, `Role`, `Status` |
+| [type/v1/status.proto](../../api/fleet/type/v1/status.proto) | `ErrorDetail`, `ReasonCode`, `Status` |
+| [type/v1/principal.proto](../../api/fleet/type/v1/principal.proto) | `Capability`, `Principal`, `Role` |
 | [agent/v1/agent.proto](../../api/fleet/agent/v1/agent.proto) | `AgentHealth`, `AgentService`, `Connect`, `Enroll`, `Heartbeat`, `Hello`, `HelloAck`, `RenewCert`, `ResultAck`, `SessionLog`, `Settings`, `Terminal` |
 | [agent/v1/command.proto](../../api/fleet/agent/v1/command.proto) | `Command`, `CommandAck`, `CommandProgress`, `CommandResult` |
 | [agent/v1/command_goal.proto](../../api/fleet/agent/v1/command_goal.proto) | `Drain`, `EnsureWorktree`, `Preflight`, `ReleaseGoal`, `StartGoal` |
@@ -191,6 +192,7 @@ flowchart TB
 
 Reading the picture:
 
+- **In v1 the dashboard and CLI run on the hub machine.** From another machine, forward the port: `ssh -L 7080:127.0.0.1:7080 <hub>` (same port on both sides); sign-in arrives in v3 ([02j](../specs/02j-hub-runtime.md)).
 - **Clients never talk to a machine.** The dashboard, the CLI and a phone call `FleetService` on `fleetd` and nothing else. Anything that must reach a machine becomes a typed command that `fleetd` queues for the agent and answers with an `Operation` handle (flows A4 and D4 in the [index](#flow-index)).
 - **Machines never accept a connection.** The agent dials out and holds one long-lived stream, so a sleeping laptop, a container and a machine behind NAT work the same way. The hub machine runs its own agent over loopback, so there is one code path.
 - **One writer.** Every change to `state.db` goes through the store writer, in one transaction per batch, and commands are handed to the gateway only after the transaction commits. A hub transaction never spans a network call.
@@ -211,7 +213,7 @@ Where each box appears in the flows:
 | Fan-out bus and Watch | D2, D3, and the "how the client finds out" step of every dashboard flow |
 | Attach bridge | A10, D7 |
 | Log receiver, `logs.db` | A11, D11 |
-| Hub API and sign-in | D1 to D13 |
+| Hub API and sign-in | D1 to D16 |
 | Hooks | A8 |
 | tmux, harnesses | A7 to A11 |
 
@@ -224,7 +226,7 @@ fixed before any code existed ([ADR 0017](../adr/0017-contract-packages.md)).
 | Package | Service | Client | Server | What it carries | Flows |
 |---|---|---|---|---|---|
 | [`fleet.agent.v1`](../../api/fleet/agent/v1/) | `AgentService`: `Enroll`, `Connect`, `Terminal`, `SessionLog`, `RenewCert` | `fleet-agent` (always the client) | `fleetd` | The agent wire: enrollment, the `Connect` stream (`Hello`, `Snapshot`, `Heartbeat`, `Event`, `Command`, results, `Settings`), terminal bytes, log chunks | A1 to A14 |
-| [`fleet.hub.v1`](../../api/fleet/hub/v1/) | `FleetService`: about 100 RPCs, `Watch`, `AttachTerminal` and `ReadSessionLog` are streams | web dashboard, `fleet` CLI, phone | `fleetd` | The API for people and scripts: resources with `spec` and `status`, actions that return an `Operation`, sign-in, devices, logs, insights, system health | D1 to D13 |
+| [`fleet.hub.v1`](../../api/fleet/hub/v1/) | `FleetService`: about 100 RPCs, `Watch`, `AttachTerminal` and `ReadSessionLog` are streams | web dashboard, `fleet` CLI, phone | `fleetd` | The API for people and scripts: resources with `spec` and `status`, actions that return an `Operation`, sign-in, devices, logs, insights, system health | D1 to D16 |
 | [`fleet.integration.v1`](../../api/fleet/integration/v1/) | `IntegrationProviderService` (read-only) | `fleetd` | provider adapters, in-process in v1 | The provider-neutral work model: `WorkItem`, `ChangeRequest`, cursors, validators, rate limits, typed `ProviderError` | the sync loop (03b, 03j) |
 | [`fleet.type.v1`](../../api/fleet/type/v1/) | none | imported by the other three | | Ids (`MachineId`, `GoalId`, `PaneKey`), `Status`, `ReasonCode`, `ErrorDetail`, `Principal`, `Role`, settings values, harness and usage values | all |
 
@@ -277,10 +279,11 @@ What is **not** a protocol in the protos:
 | **epoch** | `HelloAck.epoch`: the connection epoch, `max(stored, Hello.last_epoch) + 1`, so it only ever increases. Every `Command` carries it and the agent refuses one from another epoch |
 | **goal** | One unit of work handed to a harness session through the harness's own `/goal`. The hub's `Goal` has a `spec` (`GoalDefinition`) and a `status` (`GoalStatus`, with a `GoalPhase`). Every dispatch attempt is a new goal (`attempt`, `previous_goal`) |
 | **goal file** | The file in the worktree whose first line is the goal's state: the objective while working, `BLOCKED: ...`, or `DONE`. The agent writes the first version; the model updates it; hooks and the agent only read it (a repo that ships its own goal hooks, such as eshu, keeps its own file: `StartGoal` skips `write_goal_file` there and the agent writes nothing). Parsed into `GoalState` (`GoalLineState`) |
+| **observed goal** | A goal the owner started by hand in their own tmux pane (v1). The agent finds its goal file from the pane's folder, mints an `obs-` id and reports it with binding `OBSERVED`. The hub shows it and never dispatches, nudges or controls it; it ends on `DONE` or when the pane exits ([03k](../specs/03k-observed-goals.md)) |
 | **goal registry** | The agent's table that binds a goal to a pane (`GoalRegistration`: goal, pane, harness, worktree path, harness session id). It is the one goal identity for every harness; `FLEET_GOAL_ID` in the pane environment is only a fast path for a window the fleet just created |
 | **harness** | An unmodified interactive coding agent in a tmux pane: Claude Code, Codex, Muse, OpenCode. fleet-board never runs one headless and never reads its credentials |
 | **heartbeat** | `Heartbeat`, every 15 s, droppable, no seq. 45 s without one is `STALE`, 3 minutes `OFFLINE` |
-| **insight** | A number the hub computes from its own rows with no model: subscription efficiency (quota left unused at each reset), goal outcomes, where work gets stuck, size versus actual. Daily rollups, read with `GetInsights` |
+| **insight** | A number the hub computes from its own rows with no model: subscription efficiency (quota left unused at each reset), goal outcomes, where work gets stuck. Daily rollups, read with `GetInsights` |
 | **LIMIT_WAIT** | `GOAL_PHASE_LIMIT_WAIT`: a held phase of up to a week for a goal whose harness hit a usage or rate limit. The hub resumes it at `limit_wait_until_time` with the harness's own resume action; no nudges meanwhile |
 | **local policy ceiling** | The machine's own policy file (`~/.config/fleet-agent/policy.yaml`). Hub settings can only tighten it, never loosen it, and the agent re-checks every command against it. An invalid file puts the agent in safe mode (observe only) |
 | **operation** | `Operation`: the handle every hub action that makes an agent do something returns at once, in state `PENDING`. Its id is the agent command's `CommandId`. The final state arrives through `Watch` or `GetOperation` |
@@ -320,14 +323,14 @@ Agent and hub (`fleet.agent.v1`, between `fleetd` and `fleet-agent`):
 |---|---|---|---|
 | A1 | Enrollment | A one-time token carries the CA fingerprint; the agent checks the hub before sending anything, then exchanges a CSR for a client certificate | [agent-hub.md](agent-hub.md#a1-enrollment-and-certificates) |
 | A2 | Connect, Hello and Snapshot | The agent dials out, says who it is, gets an epoch, and sends the full state of its machine | [agent-hub.md](agent-hub.md#a2-connect-hello-helloack-snapshot) |
-| A3 | Reconnect and replay | After a sleep or a restart both sides reconcile their counters; the snapshot is the truth, the ring is history | [agent-hub.md](agent-hub.md#a3-reconnect-and-replay) |
+| A3 | Reconnect and replay | After a sleep or a restart both sides reconcile their counters; the snapshot is the truth, the ring is history | [agent-hub-7.md](agent-hub-7.md#a3-reconnect-and-replay) |
 | A4 | Command lifecycle | Outbox, `CommandAck`, `CommandProgress`, `CommandResult`, `ResultAck`, deadlines and idempotency | [agent-hub-2.md](agent-hub-2.md#a4-command-lifecycle) |
 | A5 | Events and delivery classes | What may be dropped, what is replayed, and how the hub tells shedding from loss | [agent-hub-2.md](agent-hub-2.md#a5-events-delivery-classes-and-seq) |
 | A6 | Usage probing | Probes read each account's usage; the readings feed pacing | [agent-hub-2.md](agent-hub-2.md#a6-usage-probing-and-the-inputs-to-pacing) |
 | A7 | Starting a goal | The 14 steps of `StartGoal`, a reused pane or a new window, the registry written first | [agent-hub-3.md](agent-hub-3.md#a7-starting-a-goal) |
 | A8 | A goal running | Goal file, hooks, `LIMIT_WAIT`, interrupts, nudges, verification, freeing the worker | [agent-hub-4.md](agent-hub-4.md#a8-a-goal-running) |
-| A9 | Prompts and answers | A permission prompt becomes a triage item and an approval; the answer is typed once | [agent-hub-4.md](agent-hub-4.md#a9-prompts-detected-and-answered) |
-| A10 | Terminal attach | A grouped view session and a PTY, bridged as bytes | [agent-hub-4.md](agent-hub-4.md#a10-terminal-attach) |
+| A9 | Prompts and answers | A permission prompt becomes a triage item and an approval; the answer is typed once | [agent-hub-8.md](agent-hub-8.md#a9-prompts-detected-and-answered) |
+| A10 | Terminal attach | A grouped view session and a PTY, bridged as bytes | [agent-hub-8.md](agent-hub-8.md#a10-terminal-attach) |
 | A11 | Session logs | Compressed chunks by byte offset, acknowledged by the hub, gaps declared | [agent-hub-5.md](agent-hub-5.md#a11-session-logs) |
 | A12 | Settings and policy | Layered settings merged under the local ceiling; drain | [agent-hub-5.md](agent-hub-5.md#a12-settings-and-the-local-policy-ceiling) |
 | A13 | Harness upgrade drift | A harness update changes parsing support, the catalog and scheduling | [agent-hub-5.md](agent-hub-5.md#a13-harness-upgrade-drift-and-parser-support) |
@@ -350,9 +353,12 @@ Dashboard, CLI and phone (`fleet.hub.v1`, between the clients and `fleetd`):
 | D11 | Replay a session log | Find the stored session, `ReadSessionLog`, search and delete; scope `LOGS` | [dashboard-hub-agent-4.md](dashboard-hub-agent-4.md#d11-replay-a-session-log-from-logsdb) |
 | D12 | Pair a phone and approve from it | `RequestPairing`, the six-digit code, `ApprovePairing`, signed requests, `DecideApproval` | [dashboard-hub-agent-4.md](dashboard-hub-agent-4.md#d12-pair-a-phone-and-approve-from-it-with-scopes) |
 | D13 | Insights, suggestions and the weekly report | Hourly rollups read with `GetInsights`, suggestion rules, and a routine that has a subscription harness write a report in a scratch directory | [dashboard-hub-agent-5.md](dashboard-hub-agent-5.md#d13-insights-suggestions-and-the-weekly-report) |
+| D14 | A new developer session | `CreateSession` to `EnsureSession` on the developer's tmux server | [dashboard-hub-agent-6.md](dashboard-hub-agent-6.md#d14-a-new-developer-session-on-a-machine-v2) |
+| D15 | Put a work item back in the queue | `RequeueWorkItem`, refused for an untrusted item | [dashboard-hub-agent-6.md](dashboard-hub-agent-6.md#d15-put-a-work-item-back-in-the-queue-v2) |
+| D16 | Import a configuration with a machine not enrolled yet | `ImportConfig` dry run and apply, pending machines that are recorded as drained (it takes effect in v2) | [dashboard-hub-agent-6.md](dashboard-hub-agent-6.md#d16-import-a-configuration-that-names-a-machine-not-enrolled-yet-v1) |
 
 ## Keeping the flows true
 
-- The `.proto` files are the contract. If a flow and a proto disagree, the proto is right and the flow is a bug. Until the first implementation release is tagged `v0.1` the contracts are unfrozen (ADR 0019), so names can change; `buf build` and `buf lint` do not check these documents, so a rename must update the flows that use the name.
+- The `.proto` files are the contract. If a flow and a proto disagree, the proto is right and the flow is a bug. The full order of authority: protos, ADRs (newest wins), specs, flows, design.md. Until the first implementation release is tagged `v0.1` the contracts are unfrozen (ADR 0019), so names can change; `buf build` and `buf lint` do not check these documents, so a rename must update the flows that use the name.
 - The specs ([02](../specs/02-contracts.md) to [03j](../specs/03j-provider-sync-and-trust.md)) own the rules and the numbers; the flows link to them instead of repeating every table.
 - The step list under a diagram follows its arrows in order, so a reviewer can check a diagram against its text and an implementer can turn each step into a test.

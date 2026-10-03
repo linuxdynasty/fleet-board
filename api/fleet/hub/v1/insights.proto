@@ -13,7 +13,6 @@ package fleet.hub.v1;
 
 import "fleet/hub/v1/common.proto";
 import "fleet/hub/v1/insights_stuck.proto";
-import "fleet/hub/v1/work.proto";
 import "fleet/type/v1/ids.proto";
 import "fleet/type/v1/status.proto";
 import "google/protobuf/duration.proto";
@@ -28,12 +27,11 @@ enum InsightSection {
   // Goal outcomes grouped by InsightDimension.
   INSIGHT_SECTION_OUTCOMES = 2;
   INSIGHT_SECTION_STUCK = 3;
-  INSIGHT_SECTION_SIZE_ACCURACY = 4;
   INSIGHT_SECTION_ROUTINES = 5;
   INSIGHT_SECTION_SERIES = 6;
 }
 
-// InsightDimension is what outcome and size rows are grouped by.
+// InsightDimension is what outcome rows are grouped by.
 enum InsightDimension {
   INSIGHT_DIMENSION_UNSPECIFIED = 0;
   INSIGHT_DIMENSION_HARNESS = 1;
@@ -43,7 +41,6 @@ enum InsightDimension {
   INSIGHT_DIMENSION_REPO = 3;
   INSIGHT_DIMENSION_ACCOUNT = 4;
   INSIGHT_DIMENSION_MACHINE = 5;
-  INSIGHT_DIMENSION_WORK_SIZE = 6;
   // A work item label ("perf", "bug"). Rolled up only for labels that match
   // [a-z0-9][a-z0-9 :/_-]{0,31} after lower-casing and that are on at least 5
   // merged goals in the range, at most 16 labels; a goal with several labels
@@ -106,7 +103,6 @@ message InsightGroupKey {
   RepoId repo = 3;
   fleet.type.v1.AccountId account = 4;
   fleet.type.v1.MachineId machine = 5;
-  WorkSize work_size = 6;
   string label = 7;
 }
 
@@ -118,7 +114,6 @@ message InsightFilter {
   repeated RepoId repos = 3;
   repeated fleet.type.v1.AccountId accounts = 4;
   repeated fleet.type.v1.MachineId machines = 5;
-  repeated WorkSize sizes = 6;
 }
 
 // QuotaWindow is one reset cycle of one quota bucket of one account. Only
@@ -216,20 +211,6 @@ message OutcomeRow {
   bool low_confidence = 18;
 }
 
-// SizeAccuracyRow compares the size estimate of work items with what the goals
-// that merged took.
-message SizeAccuracyRow {
-  WorkSize size = 1;
-  uint32 merged = 2;
-  google.protobuf.Duration time_to_merge_p50 = 3;
-  google.protobuf.Duration time_to_merge_p90 = 4;
-  optional double quota_points_per_merged = 5;
-  // Share of this size's merged goals that took longer than the p50 of the
-  // next larger size: items that were sized too small. Unset for LARGE and
-  // below 5 merged goals.
-  optional uint32 slower_than_next_size_percent = 6;
-}
-
 // RoutineOutcomeRow is one routine's runs that ended in the range.
 message RoutineOutcomeRow {
   RoutineId routine = 1;
@@ -289,7 +270,6 @@ message GetInsightsResponse {
   repeated AccountEfficiency efficiency = 4;
   repeated OutcomeRow outcomes = 5;
   StuckInsights stuck = 6;
-  repeated SizeAccuracyRow size_accuracy = 7;
   repeated RoutineOutcomeRow routines = 8;
   repeated InsightSeries series = 9;
   // Goals started in the range that are still live, so a rate over a short

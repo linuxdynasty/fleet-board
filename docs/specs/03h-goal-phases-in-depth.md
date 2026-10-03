@@ -1,7 +1,7 @@
 # 03h. Goal phases in depth: start failures, dispatch checks, provider changes, limit wait, re-arm
 
 - Part of: [03-workflows.md](03-workflows.md) (conventions apply)
-- Extends: [03c-goals.md](03c-goals.md) (W5 dispatch, W6 lifecycle), which holds
+- Extends: [03c-goals.md](03c-goals.md) (W5 dispatch) and [03l](03l-goal-lifecycle-and-verification.md) (W6 lifecycle), which hold
   the phase classes and both state machines; this file holds the rules that did
   not fit there
 - Review: `start-failure-reaction-table-incomplete`,
@@ -66,7 +66,7 @@ says otherwise.
 | `ACCOUNT_MISMATCH` | UNFIT(machine, harness, account) until the binding changes or the harness shows that account; TRIAGE once | yes |
 | `PUSH_ACCESS_MISSING` | UNFIT(machine, repo), clears on `forge_cli_status` | no |
 | `CHECKOUT_MISSING` | UNFIT(machine, repo), clears when a snapshot lists the checkout | no |
-| `FOLDER_UNTRUSTED`, `TRUST_PROMPT_SEEN` | UNFIT(machine, repo), re-check; TRIAGE once ("trust the folder on the machine"). The agent never answers a trust prompt | no |
+| `FOLDER_UNTRUSTED`, `TRUST_PROMPT_SEEN` | UNFIT(machine, repo), re-check; TRIAGE once ("trust the folder on the machine"). The agent never answers a trust prompt, and learns the fact only from the harness's own screen, never from a trust file (01 C3, ADR 0024) | no |
 | `WORKTREE_DIRTY` | SKIP(machine and repo, 10 min), then ELSEWHERE | no |
 | `DISK_LOW` | SKIP(machine, 10 min). Retryable, as `PreflightFailure.retryable` says; the agent's disk samples in the telemetry show it. Not a marker (03c used to list it as durable; it is not) | no |
 | `TMUX_TOO_OLD` | UNFIT(machine, every harness) until facts change | no |
@@ -146,7 +146,7 @@ the `WARN` and `CONFIRM` rows.
 
 **Operation versus approval.** `StartGoal` with a CONFIRM check, `RunHarnessCommand`
 with a DESTRUCTIVE command and `KillWindow` on a developer's window are one
-case with one rule, in [02b](02b-hub-api.md#actions-that-need-an-approval): the
+case with one rule, in [02m](02m-hub-api-actions-and-audit.md#actions-that-need-an-approval): the
 response carries the approval and no operation; the operation exists only after
 an approval is approved.
 

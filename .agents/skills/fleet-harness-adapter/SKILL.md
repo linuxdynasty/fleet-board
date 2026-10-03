@@ -17,8 +17,10 @@ A harness adapter is the extension point for one tool
 ## Pass-through rules (never traded away)
 
 - Run the harness exactly as the developer does: interactive, same user, same
-  logins, same permission and sandbox settings. **Never run a harness headless
-  with `-p` or an SDK**, never add a sandbox, never require root
+  logins, same permission and sandbox settings. **The product never runs a harness
+  headless with `-p` or an SDK** (the development helpers `agent-roles.py
+  codex-exec|muse-exec` may, for work on this repo only: ADR 0024), never add a
+  sandbox, never require root
   ([01 principle 0](../../../docs/specs/01-agent-capabilities.md#principles),
   [terms-of-service.md](../../../docs/research/terms-of-service.md)).
 - **Never read credentials**: no `auth.json`, keychain item, `gh` token or
@@ -75,7 +77,7 @@ A harness adapter is the extension point for one tool
 ## Checklist
 
 - [ ] Fixtures for each supported version and a failure fixture per feature.
-- [ ] No credential file is opened, no `-p` or headless invocation anywhere.
+- [ ] No credential file is opened, no `-p` or headless invocation in product code.
 - [ ] Command catalog classification covers every discovered command; unknown
       is `deny`.
 - [ ] Capability strings (`harness.<name>`, `usage.probe.<harness>`,

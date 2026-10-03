@@ -26,6 +26,7 @@ ruling in the PR.
 git fetch origin
 git worktree add ~/personal-repos/fleet-board-worktrees/<name> -b <branch> origin/main
 cd ~/personal-repos/fleet-board-worktrees/<name> && pwd && git symbolic-ref -q HEAD
+go run github.com/bufbuild/buf/cmd/buf@v1.73.0 generate   # gen/ is not committed; `make gen` once the Makefile exists
 ```
 
 Verify `pwd` is that worktree before every edit. The main checkout stays a
@@ -64,7 +65,9 @@ before acting on it.
    reworked title) and carry before and after evidence: the failing test, the
    benchmark, the screenshot, the command output.
    Write it, and every status update, with `fleet-humanizer`: plain words the
-   owner can follow, jargon explained.
+   owner can follow, jargon explained. No AI attribution line or trailer.
+   If the PR changes a row of the v1 plan, it also edits that row's GitHub
+   issue (scope, dependencies, acceptance, title) and says so in the body.
 7. **CI**: complete only after two consecutive stable reads of the full check
    set (`pending == 0` and the total unchanged) -
    `gh pr checks <n> --json name,state,bucket`, state the exact query. Large
@@ -72,10 +75,10 @@ before acting on it.
    check: reproduce that gate locally, fix, push again.
 8. **Review threads**: reconcile the thread API against the displayed
    unresolved comments and report exact counts before saying threads are clear.
-9. **Merge** only when that act is authorized, checks are stably green, findings
-   are dispositioned and local HEAD equals the PR head; an irreversible act gets
-   an `arbiter-fleet` ruling first. Confirm the state with
-   `gh pr view <n> --json state`.
+9. **Hand off for merge.** The owner merges every v1 PR (ADR 0024 O2); no agent
+   merges. Report the PR ready only when checks are stably green, findings are
+   dispositioned and local HEAD equals the PR head. After the owner merges,
+   confirm with `gh pr view <n> --json state`.
 
 ## Defects found on the way
 
@@ -86,7 +89,7 @@ nit.
 
 ## Completion
 
-Done means GitHub reports each leaf issue `CLOSED` and PR `MERGED`
+Done means GitHub reports each leaf issue `CLOSED` and PR `MERGED` by the owner
 (`gh issue view <n> --json state`), follow-ups are closed or explicitly
 deferred, no unresolved review threads remain, and the final review had no open
 P0, P1 or blocking P2. If the request ends at PR creation, report the PR URL

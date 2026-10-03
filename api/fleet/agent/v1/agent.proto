@@ -15,7 +15,7 @@ import "fleet/agent/v1/streams.proto";
 import "fleet/type/v1/harness.proto";
 import "fleet/type/v1/ids.proto";
 import "fleet/type/v1/settings.proto";
-import "fleet/type/v1/status.proto";
+import "fleet/type/v1/principal.proto";
 import "fleet/type/v1/trace.proto";
 import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
@@ -280,6 +280,8 @@ message PaneCounts {
   uint32 available_sessions = 4;
   // Registered goals in a live pane that count against max_active (line state
   // WORKING) and against max_total (any registered goal with a live pane).
+  // Observed goals (GoalBindingSource OBSERVED) are not registered and are
+  // never counted here; they appear only in goal_panes_by_state.
   uint32 goals_active = 5;
   uint32 goals_total = 6;
 }

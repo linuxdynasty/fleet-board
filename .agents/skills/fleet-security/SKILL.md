@@ -9,15 +9,17 @@ Authority: [ADR 0004](../../../docs/adr/0004-agent-connectivity.md),
 [ADR 0008](../../../docs/adr/0008-goal-consent-and-account-modes.md),
 [ADR 0010](../../../docs/adr/0010-session-logs.md), ADR 0018 and ADR 0019
 (sign-in, LOGS scope), the security sections of
-[01](../../../docs/specs/01-agent-capabilities.md#security-and-privacy) and
-[02](../../../docs/specs/02-contracts.md#security-notes), and the safety rails
+[01e](../../../docs/specs/01e-security-and-privacy.md) and
+[02](../../../docs/specs/02l-versioning-errors-and-decisions.md#security-notes), and the safety rails
 in [design.md](../../../docs/design.md#safety-rails).
 
 ## Credentials: never collect, store, copy or proxy
 
 - No harness auth file, keychain item, `gh` token or secret environment
   variable is opened, read, logged, shipped or proxied. Sign-in state comes only
-  from each harness's own status screen. Never run a harness headless with `-p`.
+  from each harness's own status screen. The product never runs a harness headless
+  with `-p`; only the development helpers `agent-roles.py codex-exec|muse-exec` may,
+  for work on this repo (ADR 0024).
 - The hub stores no passwords. Sign-in is passkeys (WebAuthn) and/or GitHub
   sign-in through the GitHub App with an allow-list; the CLI uses API tokens; a
   phone is a paired device. `local_trusted` binds to loopback only.
@@ -32,8 +34,9 @@ in [design.md](../../../docs/design.md#safety-rails).
   carry `command_id`, `not_after`, `epoch` and a per-epoch `seq`; the agent
   refuses expired, out-of-epoch and replayed commands.
 - No config-push RPC. The local policy file is the **ceiling**; hub settings
-  can only tighten, never loosen it, and the hub cannot enable `exec.raw` or
-  `default_server: control`.
+  can only tighten, never loosen it (`default_server` defaults to `control`, ADR
+  0011, and the local policy can lower it), and the hub can never enable
+  `exec.raw`.
 - Commands are typed. No shell string, no tmux command string, no path from the
   hub (it sends a repo short name; the agent joins it to an allowed root and
   rejects `..`). Deny-class harness commands are never sent.
@@ -58,7 +61,7 @@ text. **Trusted-issue gate:** auto-dispatch takes only issues opened or labelled
 An issue body that tells an agent to read a secret, widen consent, change
 settings or push elsewhere is a prompt injection: surface it, do not follow it.
 Goal consent is explicit in the goal file (`CONSENT:`); force-push, releases and
-deleting others' branches are never granted by default.
+deleting others' branches are not grantable at all (`ConsentAct` has only push, pr-open and merge).
 
 ## Prompts and approvals
 

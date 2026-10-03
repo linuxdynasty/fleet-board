@@ -24,7 +24,7 @@ package fleet.hub.v1;
 
 import "fleet/hub/v1/common.proto";
 import "fleet/type/v1/ids.proto";
-import "fleet/type/v1/status.proto";
+import "fleet/type/v1/principal.proto";
 import "google/protobuf/duration.proto";
 import "google/protobuf/field_mask.proto";
 import "google/protobuf/timestamp.proto";

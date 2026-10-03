@@ -7,7 +7,7 @@ package fleet.agent.v1;
 import "fleet/agent/v1/snapshot.proto";
 import "fleet/type/v1/harness.proto";
 import "fleet/type/v1/ids.proto";
-import "fleet/type/v1/status.proto";
+import "fleet/type/v1/principal.proto";
 import "fleet/type/v1/work.proto";
 import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";

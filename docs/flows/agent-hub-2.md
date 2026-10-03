@@ -1,8 +1,8 @@
 # Agent and hub flows, part 2: commands, events, usage (A4 to A6)
 
-- Parts: [1](agent-hub.md) (A1 to A3) | **2** (this file, A4 to A6) |
-  [3](agent-hub-3.md) (A7) | [4](agent-hub-4.md) (A8 to A10) | [5](agent-hub-5.md) (A11 to A13) |
-  [6](agent-hub-6.md) (A14)
+- Parts: [1](agent-hub.md) (A1, A2) | **2** (this file, A4 to A6) | [3](agent-hub-3.md) (A7) |
+  [4](agent-hub-4.md) (A8) | [5](agent-hub-5.md) (A11 to A13) | [6](agent-hub-6.md) (A14) |
+  [7](agent-hub-7.md) (A3) | [8](agent-hub-8.md) (A9, A10)
 - Read [part 1](agent-hub.md) first for the wiring, the counters and the
   storage names (hub store `state.db`, log store `logs.db`, agent state dir).
 - Protos named in this part: [`command.proto`][command] (`Command`, `CommandAck`,
@@ -355,7 +355,7 @@ sequenceDiagram
   S->>H: tx: probe row REQUESTED (unique active per account) plus outbox EnsureProbe
   H-->>A: Command{EnsureProbe{probe_id, account_id, account_key, harness, interval, run_now, profile}}
   A->>A: persist the assignment, CommandAck
-  A->>P: ensure session on the probe server in a trusted dir, launch the harness, wait for ready
+  A->>P: ensure session on the probe server in the probe folder (trusted once by the owner), launch the harness, wait for ready
   A->>P: read the identity, must equal account_key or the result is FAILED ACCOUNT_MISMATCH
   A->>P: type the usage command, wait until settled, capture the pane
   A->>A: version-pinned parser: shown fields plus buckets, or PARSE_FAILED with the redacted screen
@@ -472,7 +472,7 @@ stateDiagram-v2
 | The harness shows another identity | `CommandResult{FAILED, ACCOUNT_MISMATCH}`; the hub re-maps from `Snapshot.accounts[]` and assigns elsewhere |
 | The machine sleeps or goes offline | readings stop; after `stale_after` the account is `STALE` (no new dispatch); after `OFFLINE` the probe fails over. A `STALE` machine alone does not move a probe, because a laptop flaps through it |
 | The old machine returns after `StopProbe` expired (24 h) | the next snapshot lists the probe and the hub sends a fresh `StopProbe` |
-| Two machines briefly probe one account | harmless, status commands cost no quota; the newest hub-adjusted `read_time` wins |
+| Two machines briefly probe one account | harmless, status commands are expected to cost no quota; the newest hub-adjusted `read_time` wins |
 | A machine's clock is off | readings are adjusted by the measured skew; over 15 minutes the machine is `clock_untrusted` and its readings never override a trusted machine's |
 | Passive and probe readings disagree | the probe wins; passive only triggers a probe |
 | A reading arrives late after a reconnect | stored, but it becomes the latest only if its adjusted `read_time` is newer |

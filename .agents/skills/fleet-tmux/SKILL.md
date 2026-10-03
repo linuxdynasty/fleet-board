@@ -15,9 +15,9 @@ sections E, F, J.
 
 | Server | Holds | Rule |
 |---|---|---|
-| `tmux -L fleet` | goal windows and sessions made from the hub | agent may create, drive, close after the merged grace period |
-| `tmux -L fleet-probe` | one hidden idle session per account for usage probes | internal only |
-| default server | the developer's own sessions | untouched unless that machine's local policy sets `default_server: observe` or `control`; default is `none`. Never close a session the owner created |
+| default server | the developer's own sessions, and the goal windows the hub starts there | the local policy's `default_server` says how far the agent goes: `none`, `observe` or `control`; **the default is `control`** (ADR 0011), the local policy can lower it, hub settings can only tighten it. Never close a session the owner created |
+| `tmux -L fleet` | optional fleet server (`TmuxServerKind.FLEET`, capability `tmux.fleet_server`) | agent may create, drive, close after the merged grace period |
+| `tmux -L fleet-probe` | one hidden idle session per account for usage probes | internal only, usage probes only |
 
 Tests and live probes use a throwaway `-L <unique-name>` server and kill it
 afterwards. Minimum tmux is 3.2; CI covers 3.2 and the latest.
@@ -61,10 +61,10 @@ afterwards. Minimum tmux is 3.2; CI covers 3.2 and the latest.
 
 ## Attach
 
-Browser attach is a PTY-backed `tmux -L fleet attach -t <target>` per attach,
-bridged to a WebSocket, with HTTP/2 flow control on the `Terminal` stream:
-output is never dropped, the PTY blocks. `viewer` attaches are read-only (the
-hub drops input).
+Browser attach (v2) is a PTY-backed `tmux attach` through a **grouped view
+session** on the developer's own server (01 J1), bridged to a WebSocket, with
+HTTP/2 flow control on the `Terminal` stream: output is never dropped, the PTY
+blocks. `viewer` attaches are read-only (the hub drops input).
 
 ## Tests
 

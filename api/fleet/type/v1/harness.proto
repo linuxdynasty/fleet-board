@@ -137,7 +137,7 @@ message GoalControl {
   string resume_text = 4;
   // True when resuming after a usage limit has been probed on this version.
   // False means the hub's limit wait uses the same resume but marks the
-  // result unverified (02-contracts.md, "Limit wait").
+  // result unverified (02l-versioning-errors-and-decisions.md, "Limit wait").
   bool limit_resume_verified = 5;
 }
 
@@ -375,7 +375,7 @@ enum GoalPauseCause {
   // An Interrupt or /goal pause the agent executed for the hub.
   GOAL_PAUSE_CAUSE_FLEET_COMMAND = 3;
   // A usage or rate limit; a USAGE_LIMIT or RATE_LIMITED condition is open
-  // too and owns the resume (02-contracts.md, "Limit wait").
+  // too and owns the resume (02l-versioning-errors-and-decisions.md, "Limit wait").
   GOAL_PAUSE_CAUSE_LIMIT = 4;
 }
 

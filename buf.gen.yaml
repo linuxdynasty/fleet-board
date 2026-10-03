@@ -1,7 +1,7 @@
 # buf code generation for the fleet-board contracts (docs/specs/02e-contract-rules.md,
 # "Codegen"). Run from the repository root:
 #   go run github.com/bufbuild/buf/cmd/buf@v1.73.0 generate
-# Output goes to gen/ (ignored by git until v0.1; CI regenerates it).
+# Output goes to gen/ (never committed: run this first in every worktree; CI regenerates it).
 #
 # Managed mode owns go_package, so the .proto files carry no language options
 # and the Go import path of every package is

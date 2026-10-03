@@ -18,7 +18,7 @@ import "google/protobuf/timestamp.proto";
 // thresholds in 05-insights.md.
 enum SuggestionKind {
   SUGGESTION_KIND_UNSPECIFIED = 0;
-  // One harness merges a kind of work (a label, a size, a repo) clearly faster
+  // One harness merges a kind of work (a label or a repo) clearly faster
   // than another: "Codex merges perf issues faster than Muse". subject is the
   // faster group, versus the slower.
   SUGGESTION_KIND_HARNESS_FASTER = 1;
@@ -39,9 +39,6 @@ enum SuggestionKind {
   SUGGESTION_KIND_PARSER_BROKEN_AFTER_UPDATE = 6;
   // A repo's goals average at least 2 review rounds more than the fleet's.
   SUGGESTION_KIND_REVIEW_LOOPS_HEAVY = 7;
-  // Work sized SMALL takes longer than MEDIUM at the median, or at least 40%
-  // of one size is slower than the next larger size's median.
-  SUGGESTION_KIND_WORK_UNDERSIZED = 8;
   // One prompt class held goals for at least 10 hours in total in the range.
   // subject.harness and prompt_class are set.
   SUGGESTION_KIND_PROMPT_HOTSPOT = 9;

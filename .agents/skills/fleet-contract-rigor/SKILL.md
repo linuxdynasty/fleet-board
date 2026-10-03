@@ -46,7 +46,7 @@ results depend on the day.
   land in their group.
 - A percent that can be unknown uses the explicit-unknown `Percent`, never 0.
 - Untrusted text fields are marked in the proto comment and capped (see the
-  size limits table in 02-contracts.md).
+  size limits table in 02l-versioning-errors-and-decisions.md).
 
 ## Frozen or not
 
@@ -69,12 +69,12 @@ results depend on the day.
 - Commands stay typed. No kind carries a shell string, a tmux command string
   or a credential (`fleet-security`). `exec.raw` is reserved and never
   advertised.
-- Error reasons use the tables in 02-contracts.md and 02b; add a reason, do not
+- Error reasons use the tables in 02l-versioning-errors-and-decisions.md and 02b; add a reason, do not
   reuse one with a new meaning.
 
 ## Spec and generated code
 
-Update the spec table that lists the message (02-contracts.md, 02b, or
+Update the spec table that lists the message (02-contracts.md, 02l, 02b, or
 `ui-contract-map.md` for UI-visible changes) in the same commit; a message with
 no capability behind it is removed. Generated Go and TypeScript are
 regenerated, never edited. A UI change that needs a new field starts here, not

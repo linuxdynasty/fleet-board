@@ -9,7 +9,7 @@ package fleet.hub.v1;
 import "fleet/hub/v1/common.proto";
 import "fleet/type/v1/harness.proto";
 import "fleet/type/v1/ids.proto";
-import "fleet/type/v1/status.proto";
+import "fleet/type/v1/principal.proto";
 import "fleet/type/v1/work.proto";
 import "google/protobuf/timestamp.proto";
 
@@ -244,7 +244,7 @@ message RunHarnessCommandRequest {
 // RunHarnessCommandResponse. For OBSERVE commands the screen arrives as
 // Operation.output_text. A command that needs an approval returns the approval
 // and no operation: nothing is sent, and no Operation exists, until the
-// approval is approved (02b, "Actions that need an approval").
+// approval is approved (02m, "Actions that need an approval").
 message RunHarnessCommandResponse {
   Operation operation = 1;
   // Set when the command waits for an approval.

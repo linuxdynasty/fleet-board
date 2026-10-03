@@ -1,8 +1,17 @@
 # Design specs
 
-The design phase runs in this order. Each step is reviewed and merged before
-the next starts, and no implementation code is written until the design steps
-are done and the owner approves the plan.
+The design phase ran in this order. Each step was reviewed and merged before
+the next started; the owner has approved the plan and implementation follows it.
+
+The list of every feature, by release, with the spec that holds it and its
+issue, is [docs/features.md](../features.md).
+
+**When two documents disagree,** the order of authority is: the protos
+([`api/fleet/`](../../api/fleet/)), then the ADRs (the newest wins), then these
+specs, then the flows, then [design.md](../design.md). The owner's decisions are
+recorded in the ADRs (the latest are in
+[ADR 0024](../adr/0024-pre-build-owner-decisions.md)). [AGENTS.md](../../AGENTS.md)
+says how to work, not what the product does.
 
 | Step | Spec | Question it answers | Status |
 |---|---|---|---|
@@ -10,7 +19,9 @@ are done and the owner approves the plan.
 | 1b | [01b-harness-commands.md](01b-harness-commands.md) | Which harness commands exist and which may the hub send? | Accepted |
 | 1c | [01c-handoff.md](01c-handoff.md) | What must step 2 pin down, which ADRs change, what volumes to expect? | Accepted |
 | 1d | [01d-goal-hooks.md](01d-goal-hooks.md) | Which harness hooks do goals need, where are they installed, what do they see? | Accepted |
-| 2 | [02-contracts.md](02-contracts.md) + [`api/fleet/*/v1/*.proto`](../../api/fleet/) | What exactly crosses the wire for each capability? | Accepted |
+| 1e | [01e-security-and-privacy.md](01e-security-and-privacy.md) | What can the hub make an agent do, what is never touched (credentials, harness config), what is the fleet scope? | Accepted |
+| 1f | [01f-agent-control-goals-and-policy.md](01f-agent-control-goals-and-policy.md) | Sections F to M of the capability list: what can the agent control, how are goals, repos, preflight, attach, logs and policy handled? | Accepted |
+| 2 | [02-contracts.md](02-contracts.md) and [02l](02l-versioning-errors-and-decisions.md) + [`api/fleet/*/v1/*.proto`](../../api/fleet/) | What exactly crosses the wire for each capability, and how are versions, errors and size limits handled? | Accepted |
 | 2b | [02b-hub-api.md](02b-hub-api.md) + [`api/fleet/hub/v1/`](../../api/fleet/hub/v1/) | What API do the UI, the CLI and a phone use? | Accepted |
 | 2c | [02c-hub-watch-and-filters.md](02c-hub-watch-and-filters.md) | How does Watch subscribe, resume and filter, and which fields does each resource filter on? | Accepted |
 | 2d | [02d-hub-authz.md](02d-hub-authz.md) | Which scope does each RPC and Watch topic need, and how do roles map to scopes? | Accepted |
@@ -20,7 +31,9 @@ are done and the owner approves the plan.
 | 2h | [02h-goal-binding-and-pane-signals.md](02h-goal-binding-and-pane-signals.md) | How is a goal tied to a pane, when may a pane be reused, what does StartGoal do step by step, how does the hub learn about typing, readiness and interrupts? | Accepted |
 | 2i | [02i-delivery-and-sequencing.md](02i-delivery-and-sequencing.md) | Which events may be dropped, how do seq and epoch stay monotonic, how does the hub tell shedding from loss, what is the replay rule, whose clock counts? | Accepted |
 | 2j | [02j-hub-runtime.md](02j-hub-runtime.md) | Which listeners and ports does fleetd open, where do its configuration and state live, and how does an owner set up a fresh hub? | Accepted |
-| 3 | [03-workflows.md](03-workflows.md) (+ [03b](03b-usage-and-sync.md)–[03j](03j-provider-sync-and-trust.md)) | How do agent and hub cooperate for each flow (sequence, state machines, volumes, consistency)? | Accepted |
+| 2k | [02k-v1-surface-and-cli.md](02k-v1-surface-and-cli.md) | Which release serves each RPC and Watch topic, which PR builds it, and what each program's commands are? | Accepted |
+| 2m | [02m-hub-api-actions-and-audit.md](02m-hub-api-actions-and-audit.md) | Part 2 of the hub API: routines, goal dispatch and control, stored logs, accounts, config export and import, audit actions | Accepted |
+| 3 | [03-workflows.md](03-workflows.md) (+ [03b](03b-usage-and-sync.md)–[03l](03l-goal-lifecycle-and-verification.md)) | How do agent and hub cooperate for each flow (sequence, state machines, volumes, consistency)? | Accepted |
 | 4 | [04-technology-review.md](04-technology-review.md) + [`spikes/`](../../spikes/README.md) | Given the workflows, which storage, queueing and other technologies do we need? | Accepted |
 | 5 | [05-insights.md](05-insights.md) + [`api/fleet/hub/v1/insights*.proto`](../../api/fleet/hub/v1/) | What does the data fleet-board already keeps say: subscription efficiency, goal outcomes, where work gets stuck, a weekly written report, suggestions? | Accepted |
 | 5b | [05b-observability.md](05b-observability.md) + [`system.proto`](../../api/fleet/hub/v1/system.proto) | How do fleetd and fleet-agent show their own health: logs, metrics, traces, the System signals and their triage item? | Accepted |
@@ -39,7 +52,7 @@ dispatching from the dashboard, and more), each with the exact message names fro
 the protos, numbered steps, what is stored where and what happens on failure.
 
 The design steps are complete; implementation follows
-[the v1 plan](../plan/v1-implementation-plan.md).
+[the v1 plan](../plan/v1-implementation-plan.md) (approved).
 
 ## How the steps connect
 

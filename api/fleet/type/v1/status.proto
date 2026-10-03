@@ -1,11 +1,11 @@
-// fleet.type.v1 status: Percent with an explicit unknown, the shared result
-// Status and ReasonCode, capabilities, roles and principals. The agent
-// returns these in command results; the hub API shows them unchanged.
+// fleet.type.v1 status: Percent with an explicit unknown and the shared result
+// Status and ReasonCode. The agent returns these in command results; the hub
+// API shows them unchanged. Capabilities, roles and principals are in
+// principal.proto.
 syntax = "proto3";
 
 package fleet.type.v1;
 
-import "fleet/type/v1/ids.proto";
 import "google/protobuf/duration.proto";
 
 // ---------------------------------------------------------------------------
@@ -173,10 +173,10 @@ enum ReasonCode {
   // no fresh_context_on_reuse; /clear is destructive (01b) and is never
   // typed into the developer's own context unless they chose it.
   REASON_CODE_FRESH_CONTEXT_NOT_ALLOWED = 306;
-  // A startup screen the agent never answers: metadata kind is trust,
-  // update, login or release_notes (01b). TRUST_PROMPT_SEEN stays as the
-  // trust case; update and login are durable per (machine, harness) and go
-  // to Triage instead of a retry.
+  // A startup screen the agent never answers, in a goal's wait_ready or a
+  // probe pane: metadata kind is trust, update, login or release_notes (01b).
+  // TRUST_PROMPT_SEEN stays as the trust case; update and login are durable
+  // per (machine, harness) and go to Triage instead of a retry.
   REASON_CODE_STARTUP_PROMPT_SEEN = 307;
   // The harness's /model picker has no such model for this account.
   REASON_CODE_MODEL_NOT_AVAILABLE = 308;
@@ -422,78 +422,4 @@ message ErrorDetail {
   map<string, string> metadata = 4;
   // Field-level detail for hub API INVALID_ARGUMENT errors; at most 16.
   repeated FieldViolation violations = 5;
-}
-
-// ---------------------------------------------------------------------------
-// Capabilities, roles, principals.
-// ---------------------------------------------------------------------------
-
-// Capability is one advertised feature, for example {"usage.probe.codex", 1}.
-// The hub never sends a command whose capability the agent did not advertise.
-// In Command.requires, version is the minimum version the command needs; an
-// advertised version equal or higher satisfies it (02e-contract-rules.md).
-// "exec.raw" is reserved and never advertised or accepted in v1.
-message Capability {
-  string name = 1;
-  uint32 version = 2;
-}
-
-// Role of the principal that requested a command (ADR 0004 "People on the
-// hub"). The agent re-checks role against command kind and harness command
-// class (the matrix is in 02g-agent-security.md). Each value names a
-// permission set (02d-hub-authz.md maps roles to scopes); values are never
-// compared numerically, and ROLE_SCHEDULER is not "above" ROLE_OWNER. "Role A
-// covers role B" means A's scope set includes B's. A device or API token
-// never has a role of its own: the hub sends the narrowest role that covers
-// its effective scopes (02d, "Role sent to the agent").
-enum Role {
-  ROLE_UNSPECIFIED = 0;
-  ROLE_VIEWER = 1;
-  ROLE_OPERATOR = 2;
-  ROLE_OWNER = 3;
-  // The hub's own scheduler, not a person.
-  ROLE_SCHEDULER = 4;
-}
-
-// PrincipalKind says what sort of actor a Principal is (ADR 0018).
-enum PrincipalKind {
-  PRINCIPAL_KIND_UNSPECIFIED = 0;
-  // A person signed in to the hub (browser, CLI).
-  PRINCIPAL_KIND_USER = 1;
-  // The hub's own scheduler (dispatch, nudges, probes, routines).
-  PRINCIPAL_KIND_SCHEDULER = 2;
-  // The arbiter model that settles questions goals cannot (design.md).
-  PRINCIPAL_KIND_ARBITER = 3;
-  // A script using an API token (FLEET_TOKEN); acts for its creator.
-  PRINCIPAL_KIND_API_TOKEN = 4;
-  // A paired device (phone); acts for on_behalf_of within its scopes.
-  PRINCIPAL_KIND_DEVICE = 5;
-  // An OS user acting locally, never a hub account: at a machine through
-  // `fleet-agent` (local drain, local approval), or on the hub host through
-  // `fleetd` admin commands (`on_behalf_of` names the owner it acts for).
-  PRINCIPAL_KIND_LOCAL_USER = 6;
-}
-
-// Principal names who asked for something: a command, an approval, a drain.
-message Principal {
-  // Display name or login on the hub; "scheduler" for the scheduler.
-  // Display only; never used as a key.
-  string name = 1;
-  // For a USER, its role. For a DEVICE or API_TOKEN, the role the hub maps
-  // from the principal's effective scopes (never above what its user holds).
-  // This is the only authority the agent sees.
-  Role role = 2;
-  // The key for audit, ownership (FLEET_OWNER holds it) and idempotency
-  // scoping. A user's is hub-assigned; the others are fixed or derived:
-  // "local-owner" in local_trusted mode, "scheduler", "arbiter",
-  // "device/<device id>", "token/<token id>", "local:<os user>" for
-  // LOCAL_USER.
-  PrincipalId id = 3;
-  PrincipalKind kind = 4;
-  // Set when kind is DEVICE: the paired device that acted.
-  DeviceId device = 5;
-  // Set for DEVICE and API_TOKEN (the user they act for) and for SCHEDULER
-  // or ARBITER when acting for a routine's or goal's owner. One level deep:
-  // on_behalf_of never has its own on_behalf_of.
-  Principal on_behalf_of = 6;
 }

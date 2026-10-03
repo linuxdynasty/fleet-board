@@ -26,6 +26,7 @@ syntax = "proto3";
 package fleet.hub.v1;
 
 import "fleet/type/v1/ids.proto";
+import "fleet/type/v1/principal.proto";
 import "fleet/type/v1/status.proto";
 import "fleet/hub/v1/dispatch_block.proto";
 import "google/protobuf/timestamp.proto";

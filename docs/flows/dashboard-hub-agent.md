@@ -1,4 +1,4 @@
-# Dashboard, hub and agent flows (part 1 of 5)
+# Dashboard, hub and agent flows (part 1 of 6)
 
 - Status: Accepted
 - Date: 2026-10-02
@@ -13,7 +13,7 @@
   [ADR 0019](../adr/0019-pre-implementation-contract-decisions.md)
 
 This is the dashboard to hub to agent half of the flow catalogue. It walks
-thirteen flows, **D1 to D13**, from the dashboard's click down to tmux and back
+sixteen flows, **D1 to D16**, from the dashboard's click down to tmux and back
 up to the screen. Each flow has a plain-language summary, a diagram that uses
 the exact message, RPC and field names from the protos, numbered steps (one
 per arrow), what is persisted where, and what happens when it goes wrong.
@@ -141,7 +141,7 @@ sequenceDiagram
    never the final state. `Operation.id` is the [`CommandId`](../../api/fleet/type/v1/ids.proto), so the UI, the
    audit log and the agent's local log name the same thing.
 4. After commit the hub writes the [`Command`](../../api/fleet/agent/v1/command.proto)
-   on the agent's `Connect` stream. `requested_by` is the [`Principal`](../../api/fleet/type/v1/status.proto); for a
+   on the agent's `Connect` stream. `requested_by` is the [`Principal`](../../api/fleet/type/v1/principal.proto); for a
    device or API token its `role` is the narrowest role covering the effective
    scopes (02d, "Role sent to the agent").
 5. The agent checks, in order: known `command_id` (returns the logged result),

@@ -40,9 +40,11 @@ reference in [`mockup/`](../../../mockup/README.md).
 
 ## Terminal attach (xterm.js)
 
-- One WebSocket per attach carrying `TermUp` and `TermDown`. **Ack bytes to the
-  hub only after xterm.js has written them** (`AttachAck`); never ack on
-  receipt. Never buffer unboundedly in the browser: the hub stops reading the
+- One WebSocket per attach carrying `AttachTerminalRequest` and
+  `AttachTerminalResponse` (hub `terminal.proto`; the first frame is `AttachOpen`
+  with the single-use ticket, 02f); never the agent wire's `TermUp`/`TermDown`.
+  **Ack bytes to the hub only after xterm.js has written them** (`AttachAck`);
+  never ack on receipt. Never buffer unboundedly in the browser: the hub stops reading the
   agent past the high-water mark and the PTY blocks, which is the intent.
 - Viewer attaches are read-only: do not send input. Attaching to a goal window
   shows a banner because keystrokes reach a running harness.

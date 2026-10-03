@@ -9,7 +9,7 @@
 - Companion: [05b-observability.md](05b-observability.md) (fleetd and
   fleet-agent observing themselves)
 - Builds on: [03b](03b-usage-and-sync.md) (usage, pacing),
-  [03c](03c-goals.md) and [03h](03h-goal-phases-in-depth.md) (goals),
+  [03c](03c-goals.md), [03l](03l-goal-lifecycle-and-verification.md) and [03h](03h-goal-phases-in-depth.md) (goals),
   [03i](03i-routines.md) (routines), [03f](03f-hub-internals.md) (store),
   [03g](03g-load-and-handoff.md) (load)
 
@@ -43,9 +43,9 @@ what a prompt asks, so prompts can be counted without grouping by text) and
 | Input | Source rows | Kept |
 |---|---|---|
 | Quota over time | `usage_readings` (`buckets[]`, `read_time`, `harness_version`, `parser_version`, `parse`) | buckets 1 year |
-| Pace history | `insight_pacing_interval`: one row per change of `(PacingState, idle_while_behind)` per account, written by the scheduler when it changes (a few per account per day) | 1 year |
+| Pace history | `insight_pacing_interval`: one row per change of `(PacingState, idle_while_behind)` per account, written when it changes (a few per account per day) by the `pacing` package in v1 and by the scheduler from v2 | 1 year |
 | Goal outcomes | `goals` (spec, `GoalStatus` counters, `usage_consumed`, `start_error`, start and end time), `goal_runs`, `goal_transitions` | permanent |
-| Size and labels | `work_items.size` and labels, captured when the goal ends (the mirror is pruned 30 days after close) | in the rollup |
+| Labels | work item labels, captured when the goal ends (the mirror is pruned 30 days after close) | in the rollup |
 | Stuck sources | `triage_items` (prompt and condition items with `prompt_class`, `kind`, raise and close time), `goal_transitions` (STUCK and its reason) | triage 7 days after close |
 | Routine runs | `goals` with `routine` set, `routines.skipped_fires` (counted daily) | permanent |
 
@@ -59,7 +59,7 @@ writer (03f). No SQL here; keys and contents are what matter.
 
 | Table | Key | Holds | Rows per day |
 |---|---|---|---|
-| `insight_goal_daily` | `(day, harness, model, repo, account, machine, work_size)`, `day` = UTC day of the goal's `end_time` | counts: ended, ran, merged, cleared, cancelled, never_ran, ever_stuck; sums: nudges, restarts, review_rounds, quota points (total, unmerged) per account's weekly bucket; 16 time-to-merge histogram counters | at most one per distinct combination: below the goals ended that day |
+| `insight_goal_daily` | `(day, harness, model, repo, account, machine)`, `day` = UTC day of the goal's `end_time` | counts: ended, ran, merged, cleared, cancelled, never_ran, ever_stuck; sums: nudges, restarts, review_rounds, quota points (total, unmerged) per account's weekly bucket; 16 time-to-merge histogram counters | at most one per distinct combination: below the goals ended that day |
 | `insight_label_daily` | `(day, label, harness)` | ran, merged, histogram, quota points. Only labels matching `[a-z0-9][a-z0-9:/_-]{0,31}` after lower-casing; a goal counts under each of its labels | tens |
 | `insight_quota_window` | `(account, bucket_key, window_end_time)` | the `QuotaWindow` of `insights.proto`; written when the window closes, rewritten hourly while open | 0 to 1 per account and weekly bucket |
 | `insight_stuck_daily` | `(day, source, harness, subkey)`; `source` is prompt, condition, start failure, stuck reason, parser | the rows of `StuckInsights` as daily counts and durations | tens |
@@ -139,11 +139,12 @@ here carries prompt text, screen text or goal text.
 
 Lists are ordered by goals affected, then time, capped at 50 rows.
 
-## 5. Goal outcomes, size accuracy, routines
+## 5. Goal outcomes, routines
 
 **Outcomes** (`OutcomeRow`), grouped by one dimension (`harness`, effective
-`model`, `repo`, `account`, `machine`, `work_size`, or a safe `label`), over
-goals whose `end_time` falls in the range.
+`model`, `repo`, `account`, `machine`, or a safe `label`), over
+goals whose `end_time` falls in the range. Only dispatched goals are counted:
+an observed goal (03k) was not sent by the fleet, so it has no outcome here.
 
 | Number | Definition |
 |---|---|
@@ -158,11 +159,6 @@ goals whose `end_time` falls in the range.
 
 Goals still live are not counted; `goals_live` says how many there are.
 
-**Size versus actual** (`SizeAccuracyRow`): per `WorkSize`, p50 and p90 time
-to merge and points per merged goal, and the share of a size's merged goals
-slower than the p50 of the next larger size ("sized too small"), unset for
-LARGE and below 5 merged.
-
 **Routine outcomes** (`RoutineOutcomeRow`): per routine runs, done, failed,
 skipped fires, median run time and points spent. For the built-in report
 routine the points are the report's cost.
@@ -171,12 +167,12 @@ routine the points are the report's cost.
 
 `GetInsights` ([READ]) takes a range (at most 366 days, default 30), a
 granularity for series, the sections wanted, one `group_by` and a typed filter
-(lists of harness, model, repo, account, machine and size; AND across lists).
+(lists of harness, model, repo, account and machine; AND across lists).
 `ListSuggestions` and `DismissSuggestion`, `ListInsightReports` and
 `GetInsightReport` complete the set; the System section is `GetSystemStatus`
 (05b). Scopes are in [02d](02d-hub-authz.md). The Usage view carries the
 efficiency block and the suggestions; the **Insights** view (key 7) carries
-outcomes, stuck reasons, size accuracy and the latest report
+outcomes, stuck reasons and the latest report
 ([ui-contract-map](ui-contract-map.md#insights)). There is no Watch topic:
 rollups change hourly, so a view reads them on open and every few minutes.
 
@@ -188,7 +184,7 @@ only writes it up.
 
 ```mermaid
 sequenceDiagram
-  participant S as scheduler (hub)
+  participant S as scheduler (hub, v1: the pacing package)
   participant W as storeWriter
   participant A as fleet-agent
   participant H as harness (subscription)
@@ -223,7 +219,7 @@ sequenceDiagram
    skipped, not run on thin data.
 2. **The bundle.** `stats.json`, schema version 1, built from the same
    rollups `GetInsights` serves for the previous 28 days: efficiency windows,
-   outcomes by harness, model, repo and size, stuck sections, size accuracy,
+   outcomes by harness, model and repo, stuck sections,
    routine outcomes, open suggestions with their evidence. Numbers, enums and
    ids only. **Machines and accounts are aliases** (`machine-2`, `acct-1`), so
    a provider's model never sees a hostname or an account label; repos,
@@ -289,14 +285,13 @@ becomes RESOLVED.
 
 | Kind | Fires when | Evidence | Example title |
 |---|---|---|---|
-| `HARNESS_FASTER` | within one label, size or repo, a harness has p50 time to merge at most 70 % of another's, both with at least 5 merged | the two p50s and counts | "Codex merges perf issues faster than Muse (median 1.9 h vs 3.4 h)" |
+| `HARNESS_FASTER` | within one label or repo, a harness has p50 time to merge at most 70 % of another's, both with at least 5 merged | the two p50s and counts | "Codex merges perf issues faster than Muse (median 1.9 h vs 3.4 h)" |
 | `NEAR_RESERVE_WEEKDAY` | an account is within 5 points of its reserve on the same weekday in at least 3 of the last 4 windows | the weekday, the used points per window | "Claude is near its reserve most Thursdays" |
 | `WASTE_GROWING` | `unused` rose in each of the last 3 windows and the latest is at least 10 points | the three values | "Codex left 14 points unused at the last reset, up from 6" |
 | `IDLE_BEHIND_NO_WORK` | `idle_behind` of at least 12 hours in the last two windows, mostly with `NO_READY_ITEMS` as the cause | hours, cause | "Muse sat idle behind pace for 19 hours: no ready work" |
 | `MACHINE_START_FAILURES` | a machine failed at least 3 of its last 5 starts for the same reason | reason, counts | "m-124 failed 4 of 5 starts: harness version unsupported" |
 | `PARSER_BROKEN_AFTER_UPDATE` | usage parsing fails on a harness version first seen within 24 hours before the first failure | versions, failure share | "Usage parsing broke after Codex 0.159.2" |
 | `REVIEW_LOOPS_HEAVY` | a repo's mean review rounds exceed the fleet's by at least 2 | the means | "eshu goals average 3.4 review rounds, fleet 1.1" |
-| `WORK_UNDERSIZED` | SMALL's p50 time to merge exceeds MEDIUM's, or at least 40 % of a size is slower than the next size's p50 | p50s | "Items sized small are taking longer than medium" |
 | `PROMPT_HOTSPOT` | one prompt class held goals at least 10 hours in total in the range | class, hours | "Run-command prompts held goals 14 hours this week" |
 | `QUOTA_ON_UNMERGED` | at least 30 % of a group's points went to goals that did not merge | the share | "A third of Muse's quota went to goals that did not merge" |
 
@@ -347,9 +342,10 @@ At 3 AM: "why is there no report this week?" is `Routine.status.next_run_time`,
 
 ## 11. Questions for the owner
 
-1. **Open:** report default. Proposed and built as on from first start (the
-   built-in routine's `enabled` is true; the guard keeps it to spare quota);
-   the owner may answer off.
+1. ~~Report default~~ **Answered (ADR 0022, addendum):** on from first start. The
+   built-in routine's `enabled` is true and it runs only on spare subscription
+   quota, never into the reserve and never on an API-key account; no API money
+   is spent. The owner can switch it off in Settings.
 2. ~~`READ` or `LOGS` for report text~~ **Answered (ADR 0022):** `READ`, as
    proposed (02d).
 3. ~~Real repo names to the model~~ **Answered (ADR 0022):** real names, others

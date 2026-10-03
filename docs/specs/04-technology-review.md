@@ -32,7 +32,7 @@ pages were read on 2026-10-02.
 | Q5 browser fan-out | **Connect** (unary + server streaming, one stream per tab); terminal attach over **WebSocket** with byte acks | Vendor docs (browsers cannot stream requests) |
 | Q6 log storage | **`logs.db`**: zstd chunks as rows in a second SQLite file with its own writer; replaces "files on disk" in ADR 0010 | S1: 30 chunks/s commit p99 ≤ 19 ms; delete one session 6 ms; prune and vacuum in ≈ 55 ms steps |
 | Q6 chunk framing | One zstd frame per stream for ≤ 5 min or 4 MiB raw, flushed into a chunk every 10 s; replay seeks by frame | S2: 14× vs 8× for independent 10 s frames (Codex, 60 min) |
-| Q6 log volume | 03g was low: Codex output compresses 15×, not 115× (Muse); A50 is **50–270 GB/month** depending on the harness mix; default size cap 50 GB | S2 |
+| Q6 log volume | 03g was low: Codex output compresses 15×, not 115× (Muse); A50 is **50–270 GB/month** depending on the harness mix; default size cap 50 GiB | S2 |
 | Q7 replay budget | 200 ev/s per agent, 2,500 ev/s per hub, as proposed | S1 burst |
 | Q8 provider limits | Polling only in v1; webhook ingress later and optional | GitHub docs: 5,000 req/h per installation; 304s free |
 | Q9 agent persistence | `agent.db` (same driver) for command log, event ring and spool chunks; raw `pipe-pane` output in plain append files | Same engine as S1; agent rates ≤ 1 tx/s |
@@ -307,7 +307,7 @@ output (≈ 1.5 MB raw for Codex). This is within 7 % of the whole-hour ratio.
 **Volume, corrected.** Busy panes write 65 B/s (Muse, 01c) to 348 B/s (Codex,
 S2) after compression. At A50 with 300 capturing panes that is 19.5–104 KB/s,
 **50–270 GB/month**; at A4 (10 panes) 2–9 GB/month. The size cap therefore
-matters: **default 50 GB**, oldest `FINAL` sessions pruned first, and the
+matters: **default 50 GiB**, oldest `FINAL` sessions pruned first, and the
 Usage view shows how many days the cap currently holds. Chunks are ≈ 3.3 KB,
 which S1 measured above.
 
@@ -388,6 +388,6 @@ second engine to learn.
 
 | Gap | Cover |
 |---|---|
-| `logs.db` at the 50 GB default cap (S1 used 2 GB) | B-tree depth grows by about one level; re-run S1 `logs` with a larger prefill before v1 ships, gated in the v1 milestone |
-| Muse and Claude Code under the framing above (S2 measured Codex) | Re-run `zstdchunk` on one goal hour of each before v1 ships |
+| `logs.db` at the 50 GiB default cap (S1 used 2 GB) | B-tree depth grows by about one level; re-run S1 `logs` with a larger prefill before the first logs PR (logs are v2: the v1 plan, section 9) |
+| Muse and Claude Code under the framing above (S2 measured Codex) | Re-run `zstdchunk` on one goal hour of each before the first logs PR (v2, plan section 9) |
 | Harness transcripts (K3) compression | Measured in v3 before K3 ships (03g open question 11) |

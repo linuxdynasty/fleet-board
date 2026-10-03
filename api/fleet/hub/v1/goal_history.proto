@@ -1,4 +1,4 @@
-// fleet.hub.v1 goal history (03c W6, 03f data model): the runs a goal went
+// fleet.hub.v1 goal history (03l W6, 03f data model): the runs a goal went
 // through and the phase changes between them. The hub stores both
 // (goal_runs, goal_transitions) with the goal, permanently; these read-only
 // resources are how the Session view shows "run history per goal" and the
@@ -11,7 +11,7 @@ package fleet.hub.v1;
 import "fleet/hub/v1/goal.proto";
 import "fleet/type/v1/harness.proto";
 import "fleet/type/v1/ids.proto";
-import "fleet/type/v1/status.proto";
+import "fleet/type/v1/principal.proto";
 import "google/protobuf/timestamp.proto";
 
 // GoalRunCause is what began a run.

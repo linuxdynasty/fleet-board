@@ -1,4 +1,4 @@
-# Dashboard, hub and agent flows (part 5 of 5): insights and the weekly report
+# Dashboard, hub and agent flows (part 5 of 6): insights and the weekly report
 
 - Status: Accepted
 - Date: 2026-10-02
@@ -8,7 +8,7 @@
 - Flows in this part: **D13** insights, suggestions and the weekly written report
 - Other parts: [1](dashboard-hub-agent.md) (D1, D2), [2](dashboard-hub-agent-2.md) (D3, D4, D5),
   [3](dashboard-hub-agent-3.md) (D6, D7, D8), [4](dashboard-hub-agent-4.md) (D9 to D12),
-  [5](dashboard-hub-agent-5.md) (D13)
+  [5](dashboard-hub-agent-5.md) (D13), [6](dashboard-hub-agent-6.md) (D14 to D16)
 - Specs: [05-insights.md](../specs/05-insights.md) owns the numbers, rules and thresholds;
   [ADR 0021](../adr/0021-insights-and-observability.md) is the decision. The System section
   that sits beside it is [A14](agent-hub-6.md#a14-system-health-how-fleetd-and-the-agents-report-on-themselves).
@@ -22,7 +22,7 @@
 each subscription was left at every reset. Insights turn that into answers, in three
 layers, cheapest first. **Rollups**: the hub adds up its own rows into daily tables, with no
 model, and the dashboard reads them with `GetInsights` (subscription efficiency, goal
-outcomes, where work gets stuck, size versus actual). **Suggestions**: fixed rules over the
+outcomes, where work gets stuck). **Suggestions**: fixed rules over the
 rollups, each with its evidence numbers, never changing a setting. **The weekly report**:
 a built-in routine hands the numbers to a subscription harness, which writes a short
 markdown summary, in a normal goal, only on quota that would otherwise go unused. In v1
@@ -36,7 +36,7 @@ sequenceDiagram
   participant T as harness in tmux (subscription)
   H->>H: 1. hourly job: recompute today and yesterday into insight_* rollups, then rules into suggestions
   D->>H: 2. GetInsights{range, granularity, sections, group_by, filter}
-  H-->>D: 3. GetInsightsResponse{efficiency, outcomes, stuck, size_accuracy, routines, series, computed_time, goals_live}
+  H-->>D: 3. GetInsightsResponse{efficiency, outcomes, stuck, routines, series, computed_time, goals_live}
   D->>H: 4. ListSuggestions{}, DismissSuggestion{request_id, id, expected_version}
   Note over H: cron fires (default Monday 07:00) or the owner calls RunRoutine
   H->>H: 5. spare-quota guard picks (harness, account), export stats bundle from the rollups

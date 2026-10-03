@@ -11,6 +11,7 @@ import "fleet/hub/v1/common.proto";
 import "fleet/hub/v1/dispatch_block.proto";
 import "fleet/type/v1/consent.proto";
 import "fleet/type/v1/ids.proto";
+import "fleet/type/v1/principal.proto";
 import "fleet/type/v1/status.proto";
 import "fleet/type/v1/work.proto";
 import "google/protobuf/duration.proto";
@@ -39,7 +40,7 @@ message CronTrigger {
 }
 
 // RoutineTrigger says when a run starts. A run never starts while the
-// previous run's goal is live (03c phase classes); a run that stays live
+// previous run's goal is live (03l phase classes); a run that stays live
 // longer than RoutineSpec.blocked_after raises a triage item instead of
 // waiting silently.
 message RoutineTrigger {

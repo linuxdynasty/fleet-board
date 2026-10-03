@@ -65,6 +65,18 @@ harness config), not into each repo.
   share one JSON shape (`{"hooks": {"<Event>": [{"matcher", "hooks": [{"type":
   "command", "command"}]}]}}`). The agent generates the three files from one
   definition; only the location differs.
+- **The one place the agent writes harness settings** (v2; v1 writes none).
+  [ADR 0004](../adr/0004-agent-connectivity.md) says the agent never opens
+  harness config. [ADR 0024](../adr/0024-pre-build-owner-decisions.md)
+  (decision 3) allows exactly this exception: the agent may **add, update and
+  remove only its own named hook entries** (the ones whose command points into
+  the fleet hooks directory) in the user-level settings files of the table above.
+  It never reads any other key (it parses the file only to find its own entries
+  and keeps every other entry and its order), never writes
+  file contents to a log, a snapshot, an event or the audit trail (only the
+  path, the backup name, `hook_hash` and the verdict), and always backs the file
+  up first. It never edits trust lists, auth or credential files, and it never
+  answers the `/hooks` or `muse plugins approve` step.
 - Pass-through ([ADR 0011](../adr/0011-contract-amendments.md)): no root, no repo files, no new
   accounts. The only new steps for the developer are approving the hooks once:
   Codex in `/hooks`, Muse with `muse plugins approve` (below).
@@ -79,7 +91,7 @@ harness config), not into each repo.
    `UserPromptSubmit` means the repo owns goals (eshu): report
    `repo_ships_own=true`, and the fleet hooks treat that workdir as inert so
    two Stop guards never fight. Nothing in the repo is changed.
-2. **Merge, don't replace.** Read the user file, back it up to
+2. **Merge, don't replace** (the ADR 0024 rule above). Read the user file, back it up to
    `<file>.fleet-backup.<timestamp>`, add or update only entries whose command
    points into the fleet hooks directory, keep every other entry and its order,
    write atomically (temp file + rename). Unparseable file → stop with

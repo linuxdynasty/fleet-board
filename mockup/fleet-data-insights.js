@@ -27,9 +27,6 @@ const stuck = {
   starts: [[".124", "codex", "HARNESS_VERSION_UNSUPPORTED", 4, 2], ["omarchy", "claude", "FOLDER_UNTRUSTED", 1, 1]],
 };
 
-// SizeAccuracyRow: WorkSize estimate against what merged goals took.
-const sizeAccuracy = [["small", 12, 0.9, 17], ["medium", 14, 2.1, 29], ["large", 5, 6.5, null]];
-
 // The latest weekly report as stored (InsightReport.text). UNTRUSTED text: the view shows it sanitized. Its last line is a
 // hostile link on purpose: it must render as plain text, never as a link.
 const latestReport = { harness: "codex", model: "gpt-5.3-codex", when: ago(2 * 86400), pts: 3, bucket: "weekly", digest: "9f3a1c07d2be",

@@ -14,15 +14,17 @@ need a tour of the whole tree.
 ```text
 cmd/fleetd  cmd/fleet-agent  cmd/fleet     # thin main packages, wiring only
 internal/store  internal/telemetry         # sqlite open, single writer; OTEL, slog
-internal/hub/{gateway,ca,ingest,pacing,integration/github,syncer,api,system,insights}
-internal/agent/{conn,ring,tmux,probe,goals,policy,doctor}
+internal/hub/{config,gateway,ca,ingest,outbox,pacing,integration/github,syncer,api,system,insights}
+internal/agent/{conn,ring,tmux,probe,goals,policy,exec,doctor}
 internal/harness/{claude,codex,muse,opencode}   # adapters, parsers, fixtures
-hooks/  web/  api/  docs/
+internal/seed                                   # test seed: recorded agent stream into a hub store
+hooks/  web/  api/  docs/                       # hooks/: v2 goal-hook definition and Muse plugin
 ```
 
 The dispatch-era packages `internal/hub/{scheduler,verifier,triage}` arrive
 with v2 (the v1 plan is read-only); until then triage items come from `ingest`
-and `system`.
+(raise and retire in the event transaction) and `system`. v1 does include the
+command path (`outbox`) and probe assignment (`pacing/probe`): ADR 0022 addendum.
 
 - Business logic lives in `internal/`; `cmd/` only parses flags, builds
   dependencies and calls into `internal/`.

@@ -15,7 +15,7 @@ detail behind the short root [AGENTS.md](../../AGENTS.md).
 
 ```text
 .agents/roles.json            single source: model tiers per harness + roles
-.agents/skills/<name>/        13 project skills (SKILL.md, "Use when ...")
+.agents/skills/<name>/        14 project skills (SKILL.md, "Use when ...")
 scripts/agent-roles.py        renders the role files below; --check detects drift
 scripts/verify-agent-canon.sh checks the rendered files, skill links, frontmatter,
                               the skill path map and the hook configs
@@ -31,7 +31,9 @@ AGENTS.md                     the rules every harness reads (no CLAUDE.md)
 ```
 
 Muse has no project agent files; `scripts/agent-roles.py muse-exec <role>
-"<task>"` runs a role there with the tier's model and the role's access.
+"<task>"` runs a role there with the tier's model and the role's access. The
+`codex-exec` and `muse-exec` helpers run headless, for developing this repo only;
+the product never runs a harness headless (ADR 0024).
 
 ## Change the setup
 

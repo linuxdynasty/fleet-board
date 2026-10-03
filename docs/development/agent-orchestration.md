@@ -75,6 +75,7 @@ its own model, and OpenCode's model stays a session choice.
 | Speed, load, disk, memory | `fleet-performance-rigor` |
 | Before push or merge | `fleet-code-review` |
 | Issue to merged PR | `fleet-issue-driver` |
+| Anything the owner reads (replies, PR and issue text, summaries) | `fleet-humanizer` |
 
 ## The handoff contract
 
@@ -94,8 +95,8 @@ verified. Commit before dispatching a reviewer so a stray edit is recoverable.
 - Executors work in one worktree on one surface at a time; two executors never
   share a worktree.
 - Only the orchestrator runs the full local gate (once, before push), pushes,
-  opens and updates PRs, and merges. Stop leaf agents when their handoff is
-  consumed.
+  and opens and updates PRs. The owner merges every v1 PR (ADR 0024 O2); no
+  agent merges. Stop leaf agents when their handoff is consumed.
 
 ## Running a role in each harness
 
@@ -105,6 +106,10 @@ verified. Commit before dispatching a reviewer so a stray edit is recoverable.
   `python3 scripts/agent-roles.py codex-exec <role> "<task>"`.
 - **Muse:** `python3 scripts/agent-roles.py muse-exec <role> "<task>"`.
 - **OpenCode:** `.opencode/agent/<role>.md`; pick its model in the session.
+
+`codex-exec` and `muse-exec` run a role headless. That is allowed for developing
+this repo only; the product never runs a harness headless (ADR 0024, AGENTS.md
+principle 1).
 
 Use `--dry-run` on the exec commands to print the command and prompt first.
 
