@@ -175,7 +175,7 @@ Everything here changes a pane, so it is v2. v1 builds no command that types.
 
 | What you get | Release | Where specified | Issue |
 |---|---|---|---|
-| Start the hub: `fleetd init` makes the config and state folders, `fleetd run` starts it, `fleetd enroll-token` prints a join token | v1 | [02j](specs/02j-hub-runtime.md), [ADR 0022](adr/0022-drift-audit-decisions.md) | issue to be created (plan PR 2b) |
+| Start the hub: `fleetd init` makes the config and state folders, `fleetd run` starts it, `fleetd enroll-token` prints a join token | v1 | [02j](specs/02j-hub-runtime.md), [ADR 0022](adr/0022-drift-audit-decisions.md) | #56 |
 | Join a machine: `fleet-agent enroll` checks the hub's identity first (no trust on first use) and is safe to retry | v1 | [02g](specs/02g-agent-security.md), [03](specs/03-workflows.md) W1 | #31, #32 |
 | The agent finds the hub on its own: a saved address, then mDNS (the local-network name lookup), then a configured address | v1 | [01](specs/01-agent-capabilities.md) A2, [ADR 0023](adr/0023-additional-libraries.md) | #32, #52 |
 | Connect, send a snapshot, reconnect after a sleep or hub restart with no events lost; the certificate renews on its own; a clean goodbye on shutdown | v1 | [03](specs/03-workflows.md) W2, [02i](specs/02i-delivery-and-sequencing.md), [02g](specs/02g-agent-security.md) | #32, #33 |

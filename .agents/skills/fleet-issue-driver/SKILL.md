@@ -75,10 +75,10 @@ before acting on it.
    check: reproduce that gate locally, fix, push again.
 8. **Review threads**: reconcile the thread API against the displayed
    unresolved comments and report exact counts before saying threads are clear.
-9. **Merge** only when that act is authorized, checks are stably green, findings
-   are dispositioned and local HEAD equals the PR head; an irreversible act gets
-   an `arbiter-fleet` ruling first. Confirm the state with
-   `gh pr view <n> --json state`.
+9. **Hand off for merge.** The owner merges every v1 PR (ADR 0024 O2); no agent
+   merges. Report the PR ready only when checks are stably green, findings are
+   dispositioned and local HEAD equals the PR head. After the owner merges,
+   confirm with `gh pr view <n> --json state`.
 
 ## Defects found on the way
 
@@ -89,7 +89,7 @@ nit.
 
 ## Completion
 
-Done means GitHub reports each leaf issue `CLOSED` and PR `MERGED`
+Done means GitHub reports each leaf issue `CLOSED` and PR `MERGED` by the owner
 (`gh issue view <n> --json state`), follow-ups are closed or explicitly
 deferred, no unresolved review threads remain, and the final review had no open
 P0, P1 or blocking P2. If the request ends at PR creation, report the PR URL

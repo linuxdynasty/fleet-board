@@ -95,8 +95,8 @@ verified. Commit before dispatching a reviewer so a stray edit is recoverable.
 - Executors work in one worktree on one surface at a time; two executors never
   share a worktree.
 - Only the orchestrator runs the full local gate (once, before push), pushes,
-  opens and updates PRs, and merges. Stop leaf agents when their handoff is
-  consumed.
+  and opens and updates PRs. The owner merges every v1 PR (ADR 0024 O2); no
+  agent merges. Stop leaf agents when their handoff is consumed.
 
 ## Running a role in each harness
 
