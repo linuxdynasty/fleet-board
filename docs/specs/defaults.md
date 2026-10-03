@@ -4,7 +4,8 @@
 - Date: 2026-10-02
 - Decisions: [ADR 0022](../adr/0022-drift-audit-decisions.md) (the rows marked
   "decided here"), [ADR 0024](../adr/0024-pre-build-owner-decisions.md)
-  (the rows marked "ADR 0024")
+  (the rows marked "ADR 0024"), [ADR 0025](../adr/0025-v1-includes-dispatch.md)
+  (dispatch is part of v1)
 
 Every tunable value the specs rely on, in one place. A spec states a rule; this
 file states the number. When a spec and this table disagree, fix the spec.
@@ -79,8 +80,8 @@ spec change. "Decided here" marks a value no earlier document gave.
 
 | Name | Value | Unit | Owner | Kind |
 |---|---|---|---|---|
-| `HubSettings.prefer_non_hub` | true (a new window goes to a machine other than the hub's first, then the hub machine; v2) | | 03c, decided here | `HubSettings` |
-| `HubSettings.auto_dispatch` | false (the owner turns it on; manual dispatch always works) | | 03c, decided here | `HubSettings`, per-repo override |
+| `HubSettings.prefer_non_hub` | true (a new window goes to a machine other than the hub's first, then the hub machine) | | 03c, decided here | `HubSettings` |
+| `HubSettings.auto_dispatch` | false (the owner turns it on, only after owner decisions 20 and 21 of ADR 0024 are made, ADR 0025; manual dispatch always works) | | 03c, decided here | `HubSettings`, per-repo override |
 | Scheduler pass | 30 s tick plus wakeups; at most 1 dispatch per account and per machine per pass | s | [03f](03f-hub-internals.md), 03c | fixed |
 | `max_parallel_goals_per_repo` | 3 | goals | 03c | `HubSettings`, per-repo override |
 | `max_sync_lag` | 10 | min | 03b | `timing.max_sync_lag` config |

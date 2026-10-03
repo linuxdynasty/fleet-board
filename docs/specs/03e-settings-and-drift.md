@@ -282,7 +282,7 @@ sequenceDiagram
   are `UNKNOWN{HARNESS_VERSION_UNSUPPORTED}` (still shown raw), preflight
   refuses `HARNESS_VERSION_UNSUPPORTED`, auto-dispatch excludes `(machine,
   harness)`, prompts from that harness are `answerable=false` until
-  `prompt_detection_verified` for the new version (notice-only, W7), and
+  `prompt_detection_verified` for the new version (no answer buttons, only the attach line, W7), and
   goal hooks are re-verified by the hook reconcile (`EnsureGoalHooks`, 03-workflows
   "Hook reconcile"; `harness_changed` triggers it).
 - **Parser degraded** on a supported version: 3 consecutive `PARSE_FAILED`

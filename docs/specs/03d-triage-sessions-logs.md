@@ -35,7 +35,7 @@ is for nothing the hub raises today.
 **Actors.** Writer (raises and retires inside the event's transaction), UI /
 CLI (operator), `fleet-agent` (`SendKeys` bound to `prompt_id`,
 `CapturePane`), notifier (v3, once per item for `blocked_owner` and
-destructive prompts; in v1 and v2 "notified" means the Triage item and the
+destructive prompts; until v3 "notified" means the Triage item and the
 browser's indicator, nothing is pushed).
 
 ```mermaid
@@ -60,7 +60,7 @@ sequenceDiagram
 safety rails); a destructive prompt (`rm -rf`, `docker compose down -v`, a
 credential on a command line) shows Deny preselected and `destructive_reason`.
 `answerable=false` (detection not verified for that harness version) → the
-item is notice-only with the `ssh -t … tmux attach` line (W8). One answer in
+item has no answer buttons and shows the `ssh -t … tmux attach` line (W8). One answer in
 flight per `prompt_id` (DB unique); a second click is refused until the
 result lands. `UNKNOWN_OUTCOME` keeps the item open with a `CapturePane`
 button; the hub never retries typing. When an item returns to `OPEN` after a failed
@@ -354,8 +354,8 @@ xterm.js; chunk `first_byte_time/last_byte_time` give time navigation. Harness
 transcripts (K3, v3) reuse the path with `stream=HARNESS_TRANSCRIPT` from
 `PaneHarnessSession.transcript_path`, opt-in per repo or machine.
 
-**Management and ended sessions.** (v2; in v1 there is no `logs.db`, so a pane's latest summary row is
-deleted with its pane, and the last screen of an ended session is not kept until v2: ADR 0024 decision 23.) When a session ends, the last pane summary of
+**Management and ended sessions.** (Until the logs row of the plan lands, a pane's latest summary row is
+deleted with its pane and the last screen of an ended session is not kept: ADR 0025 decision 6, which replaces ADR 0024 decision 23.) When a session ends, the last pane summary of
 each of its panes moves from `state.db` to `logs.db` (ADR 0015, amending 0013) and the session row becomes
 `ENDED` (`Session.status.state`, `end_time`), kept while its logs exist. A client
 finds ended sessions with `ListStoredSessions` (filter machine, goal, harness,

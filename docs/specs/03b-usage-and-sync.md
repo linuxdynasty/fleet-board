@@ -15,7 +15,7 @@ adapter's versioned parser.
 
 ```mermaid
 sequenceDiagram
-  participant S as fleetd scheduler (v1: the pacing package)
+  participant S as fleetd scheduler
   participant W as fleetd writer
   participant A as fleet-agent
   participant P as harness (fleet-probe server)
@@ -121,9 +121,9 @@ change) goes away; there is no merge. `Account.status.provider` is what the rule
 
 ### Pacing decision (scheduler, per account, per bucket)
 
-In v1 the `pacing` package (`internal/hub/pacing`) makes this decision and assigns the probes; it plays the
-scheduler's part here and writes `account_pacing` and `insight_pacing_interval`. The dispatching scheduler
-that also acts on it is v2 ([03f](03f-hub-internals.md#who-owns-which-decision)).
+The `pacing` package (`internal/hub/pacing`) makes this decision and assigns the probes; it writes
+`account_pacing` and `insight_pacing_interval`. The scheduler that also acts on it (dispatch) is a second
+package that reads the same decision ([03f](03f-hub-internals.md#who-owns-which-decision)).
 
 Inputs: latest `PROBE` reading per account (age ≤ `stale_after`, default 3 ×
 interval), account `reserve_percent`, `BudgetKind`, `mode` (fleet /
@@ -402,7 +402,7 @@ item is not redispatched behind a person's back. A repo that is not `enabled`
 | `work_items` mirror (per `WorkItemRef`), `change_requests` mirror, `claims` | hub store | one tx per API response page, outside any network wait |
 | `sync_cursors{integration, resource, page, etag, last_modified_time, since, last_ok_time}` | hub store | same tx as the page it covers |
 | `rate_limit_state{integration, kind, limit, remaining, reset_time}`, `backoff_until_time` | hub store (also in memory) | per response |
-| Nothing on agents; nothing written to the provider (ADR 0005: read-only) | — | — |
+| Nothing on agents; nothing written to the provider (ADR 0005: read-only; a claim comment is posted by the harness through `gh`, as part of the goal text) | — | — |
 
 ### Ordering and consistency
 

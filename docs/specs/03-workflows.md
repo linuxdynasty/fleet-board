@@ -28,7 +28,7 @@ operator uses at 3 AM. Split across files to stay under 500 lines each:
 | [03h-goal-phases-in-depth.md](03h-goal-phases-in-depth.md) | start-failure reactions, dispatch checks, drain and the outbox, provider-side changes, limit wait, re-arm, scheduler explanations |
 | [03i-routines.md](03i-routines.md) | **W5b** routine runs: triggers, numbering, done rules |
 | [03j-provider-sync-and-trust.md](03j-provider-sync-and-trust.md) | the provider interface in use: queries, cursors and validators, rate limits, typed errors, the trusted-issues gate |
-| [03k-observed-goals.md](03k-observed-goals.md) | goals the owner starts by hand (v1): what the hub stores and shows, and what it never does |
+| [03k-observed-goals.md](03k-observed-goals.md) | goals the owner starts by hand (observed goals): what the hub stores and shows, and what it never does |
 | [03l-goal-lifecycle-and-verification.md](03l-goal-lifecycle-and-verification.md) | **W6** goal lifecycle and verification |
 
 ## Conventions
