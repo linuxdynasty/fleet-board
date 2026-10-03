@@ -339,8 +339,8 @@ Each row of section 5 is a GitHub issue (epics for 7, 8, 14 and 28) with its
 acceptance test copied in, in the milestone "v1 — fleet":
 
 - PR 1 to PR 17 are #29 to #45 in order (not counting 2b and 13a), PR 2b is #56,
-  PR 13a is #48, PR 1b is ISSUE-1B, and the dispatch rows 18 to 29 are ISSUE-18 to
-  ISSUE-29.
+  PR 13a is #48, PR 1b is #66, and the dispatch rows 18 to 29 are #67 to
+  #78.
 - Items 0.1 to 0.4 are #25 to #28, 0.5 to 0.10 are #50 to #55, the usage push
   probe (0.11) is #46, and 0.12 to 0.18 are #57 to #63 in order.
 
