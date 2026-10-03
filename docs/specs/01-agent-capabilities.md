@@ -63,7 +63,7 @@ Phase: **v1** read-only, **v2** actions, **v3** later.
 | B3 | Power state | E | v2 |
 | C1 | Harness inventory (+ parser and fixture versions) | S | v1 |
 | C2 | Account identity and sign-in | S, E | v1 |
-| C3 | Folder pre-trust at setup | L | v1 |
+| C3 | Probe folder: one fleet-owned folder the owner trusts once by hand; doctor explains an untrusted one | L | v1 |
 | C4 | Harness command catalog (discovered per machine) | S | v1 |
 | D1 | Probe session: ensure, run, tear down, report health | C, E | v1 |
 | D2 | Usage reading | E | v1 |
@@ -176,8 +176,9 @@ accounts (OpenCode: Anthropic, OpenAI, Google and Copilot by OAuth, DeepSeek
 and Moonshot by API key), and several harnesses can share one account
 (OpenCode on Anthropic OAuth spends the same Claude weekly limit as Claude
 Code). Each session is linked to the account it is currently spending from,
-and budgets are per account: a weekly % for subscriptions, a dollar cap per
-period for API-key providers.
+and budgets are per account: a weekly % for subscriptions, and for API-key
+providers the money spent so far as the tool reports it (all-time, no period),
+optionally against one limit the owner sets.
 
 - **C1 Harness inventory:** name, version, path, parser version, and whether
   the version is within `SupportedVersions`. Outside it, usage readings are
@@ -200,17 +201,33 @@ period for API-key providers.
   hub (for example "Codex: ChatGPT Pro (personal)").
 - **Machine naming.** Machines are named automatically from the hostname the
   agent reports at enrollment (B1); the owner can rename them. "Add machine" on
-  the hub creates the enrollment token and its `fleet-agent enroll --token …`
-  command (an install script is plan PR 16). The owner
+  the hub creates the enrollment token and its one-line install and
+  `fleet-agent enroll --token …` command (the install script is plan PR 16).
+  Machine admin is v1 (decision 5 of
+  [ADR 0024](../adr/0024-pre-build-owner-decisions.md)): add with a token,
+  rename, labels, revoke and forget. The owner
   may enter the expected hostname or IP first; the hub then warns if a
   different machine enrolls with that token. The hub still never connects to the
   machine ([0004](../adr/0004-agent-connectivity.md)). Identity is read by a short transient probe at agent
   start and when the harness version changes, so machines don't keep idle
   harness processes just for identity.
-- **C3 Folder pre-trust.** The agent never answers a trust prompt at run time.
-  How trust is granted at setup, also for the report's scratch directory, is
-  settled by spike 0.9 of the v1 plan; until then the agent edits no harness
-  configuration.
+- **C3 Probe folder and folder trust.** In v1 the agent never edits harness
+  configuration (decision 3 of [ADR 0024](../adr/0024-pre-build-owner-decisions.md)).
+  The usage probe (D1) always runs in one folder the agent owns and keeps empty,
+  `~/.local/share/fleet-agent/probe/`. Each harness asks about trusting a new
+  folder once. The owner answers that question by hand, once per harness, in the
+  probe session: `fleet-agent doctor` says which harness is waiting and the one
+  command that attaches to the probe session. The agent never answers a trust
+  prompt (01b) and never reads a harness's trust list. It learns that a folder is
+  untrusted only from the harness's own screen: a probe or a start that ended on
+  the trust screen is reported as `FOLDER_UNTRUSTED` (`TRUST_PROMPT_SEEN` is the
+  screen itself), one Triage item names the machine, the harness and the folder,
+  and nothing is typed. `fleet-agent doctor` makes the same read-only look: it
+  starts the harness in the probe folder, reads the first screen, sends no key and
+  tears the session down. The weekly report's scratch folder (v2) follows the same
+  rule: the owner trusts that one folder by hand. v2 goal hooks are the only case
+  where the agent writes harness settings, under the narrower rule of
+  [ADR 0024](../adr/0024-pre-build-owner-decisions.md) (see [01d](01d-goal-hooks.md)).
 
 - **C4 Harness command catalog.** Each install offers many slash commands,
   and the set changes with the harness version and with the skills and plugins
@@ -236,6 +253,7 @@ period for API-key providers.
   | Claude Code `/usage` | current session % used and reset; current week (all models) % used and reset; current week per model (for example Fable) % used and reset; the "what's contributing" breakdown, which Claude labels approximate and local to that machine |
   | Codex `/status` | weekly limit % left and reset; plan ("Account: Pro"); model and server; credits when shown (session logs carry `credits.has_credits` and `balance`) |
   | Muse `/usage` | current % used and reset; weekly % used and reset; the "as of" time; session tokens (input, cached, output, total), turns, subagents; plan ("Muse Code Power Usage") |
+  | OpenCode `opencode stats` (CLI, no probe session) | all-time total cost, as the tool counts it, with no window and no reset (`SpendReading`, no period); a total for all providers together if the tool prints no per-provider figure (issue #46 records what it prints) |
 
   Each reading has two parts:
   - **as shown:** every field the parser recognized, with the harness's labels,
@@ -297,7 +315,13 @@ period for API-key providers.
   registry binds a goal to a pane (and its worktree and harness session id) for
   every harness; goal hooks record the session id against that entry (02h). This
   lets G2 attribute `.claude/active-goal.<session_id>` files to panes, and K3
-  find transcripts.
+  find transcripts. In v1 nothing writes the registry (no `StartGoal`, no
+  hooks), so E9 in v1 has two jobs: report the registry it rebuilds from
+  `FLEET_GOAL_ID` (empty at first), and attribute a goal file to a pane that has
+  no registry entry by the **observed goal** rule (pane working folder and the
+  newest goal file, [02h](02h-goal-binding-and-pane-signals.md#observed-goals-v1)).
+  The result is a goal with binding source `OBSERVED`, never an entry in the
+  registry.
 - **E11 Pane availability.** Each harness pane reports whether it is **idle**:
   the adapter's ready pattern is showing, no goal is active in it (G2), and
   there has been no output or keyboard input for a configurable time (default 2
@@ -354,13 +378,17 @@ All pass local policy, carry a `command_id`, and are idempotent except F3.
   registry names the pane; merge-installed with backup, verified, version and hash reported; Codex
   needs one-time `/hooks` trust; Muse takes them as a plugin package (probed). Repos that ship their own
   (eshu) are left alone. Design and probe record: [01d](01d-goal-hooks.md).
-- **G2 Goal state** (v1): for fleet panes only, one event carrying the goal
+- **G2 Goal state** (v1): for fleet panes, and for panes where the agent finds
+  an **observed goal** (a goal the owner started by hand; the rule is in
+  [02h](02h-goal-binding-and-pane-signals.md#observed-goals-v1)). One event
+  carrying the goal
   file's first line and `CONSENT:` line, the parsed state (working, `BLOCKED`
   with watcher and whether its pid is alive, `BLOCKED` with owner and action,
   `BLOCKED` with neither, `DONE`), and the worktree's HEAD commit and dirty
   flag. They travel together because the hub fingerprints them as one state.
   Goal text is agent-written and untrusted: length-capped, control characters
-  stripped, rendered as data.
+  stripped, rendered as data. v1 reads eshu's `.claude/active-goal.<session_id>`
+  files; the generic goal file arrives with v2 (01d, open question).
 - **G3 Start goal** (v2), agent-side composite under one `command_id`, so it
   survives a hub outage: preflight → reuse an available clean pane working in a
   checkout of the goal's repo (new branch in place), or ensure a worktree (H2)
@@ -438,49 +466,21 @@ All pass local policy, carry a `command_id`, and are idempotent except F3.
 ## M. Self-management
 
 - **M1** local audit log, **M2** OTEL, **M3** `doctor` (tmux, harness paths,
-  mDNS, policy, cert expiry, hub reachability, clock skew).
+  mDNS, policy, cert expiry, hub reachability, clock skew, the probe folder's
+  trust per harness (C3), and on Linux whether `loginctl enable-linger` is on).
 - **M4 Drain and undrain** (v2): from the hub or locally (`fleet-agent
   drain|undrain`); reported in snapshot and heartbeat. While draining, the agent
   refuses G3, harness-starting F1/F2 and F5 (except a pane with a registered live goal) with `draining`.
 - **Upgrades are never a hub command** (a compromised hub could run new code
-  everywhere); they run on the machine, through the package manager or script.
+  everywhere). They run on the machine: `fleet-agent upgrade` fetches the next
+  GitHub release, checks its checksum and swaps the binary (`fleetd upgrade`
+  does the same for the hub); [02j](02j-hub-runtime.md#install-and-upgrade).
 
 ## Security and privacy
 
-fleet-board does not change how a machine is secured. The harness's own
-settings (approval mode, sandbox, Auto-review, permission prompts) govern what
-a goal may do, exactly as when the developer runs it by hand. What fleet-board
-itself adds is kept safe by construction, with no setup:
-
-- **What the hub can make an agent do** is limited to the typed commands in
-  this spec (no shell strings, no raw exec), and never includes deny-class
-  harness commands (C4) such as `/login`, `/logout`, `/permissions`, `/hooks`
-  or buying usage.
-- **Credentials are never touched** (principle 3).
-- **Local policy** is a plain file in the developer's config directory with
-  safe defaults. Its hash, and the hashes of the agent binary and goal hooks,
-  are reported so the hub can show when they change; nothing blocks on this.
-- **Untrusted text** (goal lines, pane summaries, prompts) is treated as data:
-  length caps, control characters stripped, no HTML.
-- **Fleet scope:** goal files, pane content, logs and transcripts are read only
-  for fleet panes unless the developer opts in.
-- **Secrets on screen** stay on the hub, behind the `LOGS` scope (owner by default; [0010](../adr/0010-session-logs.md)).
-- **Emails** hidden by default; account keys are pseudonymous.
-
-**Known limit, stated plainly.** The harness and the agent run as the same
-user, as the harness does today, so a goal that goes wrong can do whatever that
-user can do, including editing fleet-board's own files. That is the same
-exposure the developer already accepts when running a harness unattended.
-Developers who want more can use harness sandbox modes, rootless containers on
-Linux, a root-owned install or a separate worker account with tmux
-`server-access` (3.3+); none of it is required or assumed, and no hardening
-guide is written yet (design.md, "Later, not scheduled").
-
-**Checked 2026-10-01 (for a future hardening guide, not requirements):**
-`codex sandbox -- <cmd>` on macOS runs under Seatbelt: all writes and all
-network blocked by default, `~/.ssh` readable; forcing goals into it would
-break `git push` and `gh`. Muse's Auto-review mode allowed a network request to
-`api.github.com` on its own during a goal. tmux `server-access` is 3.3+.
+Moved to [01e-security-and-privacy.md](01e-security-and-privacy.md): what the hub
+can make an agent do, credentials, untrusted text, the fleet scope, the known
+limit.
 
 ## Hand-off to step 2
 

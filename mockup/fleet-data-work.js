@@ -23,7 +23,7 @@ const sessions = [
   { id: "s1", m: "omarchy", harness: "codex", yours: true, sess: "main", idx: 3, win: "codex prompt 1", paneId: "%1", repo: "eshu-hq/eshu", line: null, last: ago(26 * 60), started: ago(7 * 3600), idle: true, available: false,
     pane: [["dim", "› Codex 0.159.2 · gpt-5.3-codex · ~/repos/eshu"], ["", ""], ["", "> "], ["dim", "  idle 26m · no goal · not marked available"]],
     layout: "cols", panes: [{ cmd: "go", paneId: "%8", pane: [["", "linuxdynasty@omarchy ~/repos/eshu % go test ./go/internal/query/... -run Anchor"], ["ok", "ok      eshu/go/internal/query   4.218s"], ["", "linuxdynasty@omarchy ~/repos/eshu % go test -bench Anchor -run xxx ./go/internal/query/"], ["", "BenchmarkAnchorPlan-16    1203    948211 ns/op"], ["dim", "PASS · running…"]] }] },
-  { id: "s8", m: "omarchy", harness: "codex", yours: true, sess: "main", idx: 4, win: "codex prompt 2", paneId: "%9", repo: "eshu-hq/eshu", line: null, last: ago(8), started: ago(2 * 3600),
+  { id: "s8", m: "omarchy", harness: "codex", yours: true, observed: true, sess: "main", idx: 4, win: "codex prompt 2", paneId: "%9", repo: "eshu-hq/eshu", line: "Keep the projector failure details under 4 KiB", last: ago(8), started: ago(2 * 3600),
     pane: [["dim", "› Codex 0.159.2 · gpt-5.3-codex · ~/repos/eshu"], ["", "• Reading go/internal/projector/supersede.go"], ["", "• Running go test ./go/internal/projector/..."], ["hl", "• Working (3m 02s · esc to interrupt)"]] },
   { id: "s9", m: "omarchy", harness: "codex", yours: true, sess: "main", idx: 5, win: "codex prompt 3", paneId: "%10", repo: "eshu-hq/eshu", line: null, last: ago(2 * 3600), started: ago(5 * 3600), idle: true, available: false,
     pane: [["dim", "› Codex 0.159.2 · gpt-5.3-codex · ~/repos/eshu"], ["", ""], ["", "> "], ["dim", "  idle 2h · no goal · not marked available"]] },
@@ -97,16 +97,16 @@ const prs = [
   { repo: "acme/infra", host: "gitlab.com", provider: "gitlab", n: 12, display: "infra!12", t: "ci: pin runner image digests and drop the nightly rebuild", branch: "ci/pin-runner-digests", issues: [], ci: { pass: 12, fail: 0, pend: 1 }, state: "open", sample: true },
 ];
 
-// Work items. Real open GitHub issues (gh, 2026-09-28); `claim` and `size` are sample. One sample Jira ticket whose
+// Work items. Real open GitHub issues (gh, 2026-09-28); `claim` is sample. One sample Jira ticket whose
 // code lives on GitHub (ADR 0012: a ticket in one system drives code on another).
 const backlog = [
-  { repo: "eshu-hq/eshu", n: 7408, t: "perf(projector): claim supersede sweep costs about 0.84 ms per superseded row", size: "M" },
-  { repo: "eshu-hq/eshu", n: 7401, t: "changed-since: built cmd/reducer link-against-prune race and full-size rebase timing before PR-3c and default-on", size: "L", claim: "another agent" },
-  { repo: "eshu-hq/eshu", n: 7398, t: "retention: the runner sleeps a full poll interval after a pass that found candidates and pruned none", size: "S" },
-  { repo: "eshu-hq/eshu", n: 7397, t: "retention: the general path keeps up to 100 scope rows locked while it prunes a few; generalise PR-3d's savepoint give-back", size: "M" },
-  { repo: "eshu-hq/eshu", n: 7396, t: "retention: BatchRowLimit and the retention events do not count fifteen cascade children of scope_generations", size: "S", untrusted: true, sample: true },
-  { repo: "CigarsOnly/virtual-humidor", n: 785, t: "Uniform 404 for GET /public/v1/shares/{slug} on non-viewable states (share enumeration)", size: "S" },
-  { repo: "eshu-hq/eshu", provider: "jira", project: "OPS", n: "OPS-142", display: "OPS-142", kindLabel: "ticket", targetRepo: "github.com/eshu-hq/eshu", t: "Alert when the retention runner idles a full poll interval with candidates pending", size: "S", sample: true },
+  { repo: "eshu-hq/eshu", n: 7408, t: "perf(projector): claim supersede sweep costs about 0.84 ms per superseded row" },
+  { repo: "eshu-hq/eshu", n: 7401, t: "changed-since: built cmd/reducer link-against-prune race and full-size rebase timing before PR-3c and default-on", claim: "another agent" },
+  { repo: "eshu-hq/eshu", n: 7398, t: "retention: the runner sleeps a full poll interval after a pass that found candidates and pruned none" },
+  { repo: "eshu-hq/eshu", n: 7397, t: "retention: the general path keeps up to 100 scope rows locked while it prunes a few; generalise PR-3d's savepoint give-back" },
+  { repo: "eshu-hq/eshu", n: 7396, t: "retention: BatchRowLimit and the retention events do not count fifteen cascade children of scope_generations", untrusted: true, sample: true },
+  { repo: "CigarsOnly/virtual-humidor", n: 785, t: "Uniform 404 for GET /public/v1/shares/{slug} on non-viewable states (share enumeration)" },
+  { repo: "eshu-hq/eshu", provider: "jira", project: "OPS", n: "OPS-142", display: "OPS-142", kindLabel: "ticket", targetRepo: "github.com/eshu-hq/eshu", t: "Alert when the retention runner idles a full poll interval with candidates pending", sample: true },
 ];
 
 const audit = [

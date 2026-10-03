@@ -52,7 +52,7 @@ observed), so paths below read `Account.status.pacing` or `Machine.spec.labels`
 | Summary strip counts (working, waiting, stuck, limit wait, need you, slots, available sessions; defined in "Strip counts" below) | shows `FleetSummary` (`GetFleetSummary`, topic `FLEET_SUMMARY`) | hub-derived from `GoalState`, `Heartbeat.counts`, `TmuxPane.availability` (A5, G2, E11) | v1 |
 | System dot in the summary strip (amber or red, links to Machines → System) | shows `FleetSummary.system_warnings`, `system_critical` (`FLEET_SUMMARY`) | hub evaluation of the System signals (05b) | v1 |
 | Per-account mini bar and short waste line ("58% left · ~25% unused", "stale reading") | shows `Account.status.usage.buckets[]`, `Account.status.pacing{projected_unused_percent, idle_while_behind, reading_stale}`; `FleetSummary.accounts_wasting` | `LimitBucket.percent_used`, `resets_time` (D2) | v1 |
-| API-key account "$6 of $20" | shows `Account.status.usage.spend`, `Account.spec.spend_cap_micros` | `SpendReading`, `BUDGET_KIND_DOLLAR_CAP` (D2, 01 §C) | v1 |
+| API-key account "spent so far $6 of your $20 limit" (no period) | shows `Account.status.usage.spend`, `Account.spec.spend_cap_micros` | `SpendReading`, `BUDGET_KIND_DOLLAR_CAP` (D2, 01 §C) | v1 |
 | "auto-dispatch on/off" chip and the Work view's switch | shows `HubSettings.auto_dispatch` (`GetSettings`); the switch calls `UpdateSettings{spec.hub.auto_dispatch}` | hub only; off until the owner turns it on (defaults.md) | v1 (stored); v2 (acts) |
 | ⌘K entries for windows | `ListSessions` → `Session.status.windows[].name`, `Session.status.name`, `started_by_fleet` | `TmuxWindow.name`, `TmuxSession.name` (E1) | v1 |
 | ⌘K entries for accounts (waste line) and "Audit log" | `ListAccounts` → `Account.status.pacing`; audit opens on Machines (`ListAuditEntries`) | D2, M1 | v1 |
@@ -185,6 +185,7 @@ lists every window on every machine; the Details drawer holds the controls.
 |---|---|---|---|
 | Sidebar: machine → tmux session → windows; collapse button | `ListSessions` (topic `SESSIONS`) → `Session.status{machine, name, windows[]{index, name}}` | `TmuxServer.sessions[]` (E1) | v1 |
 | "yours" / "started by fleet" tag | `Session.status.started_by_fleet`, `Session.status.owner` | `TmuxSession.started_by_fleet`, `owner_principal` (E1, ADR 0018) | v1 |
+| "started by you · observed" tag on a goal you started by hand; no goal controls, no slot | `Goal.spec.origin = OBSERVED` (`ListGoals{filter: origin = OBSERVED}`), `Pane.goal` | `GoalState.binding = OBSERVED` (G2, [02h](02h-goal-binding-and-pane-signals.md#observed-goals-v1), [03k](03k-observed-goals.md)) | v1 |
 | "idle" / "available" tag | `Pane.availability{idle, available_for_work}` | `TmuxPane.availability` (E11) | v1 |
 | Sidebar previews | `PaneSummary.last_lines` (topic `PANE_SUMMARIES`, subscription filter `session in (…)` for the visible panes) | `Event.pane_summary` (E5, ADR 0013) | v1 |
 | Status line: `[session]`, window tabs, current highlighted, `Z`, host and clock | `Session.status.name`, `SessionWindow{index, name, active}`; the rest is drawn by tmux in `AttachTerminalResponse.output` | E1, J1 | v2 |
@@ -244,7 +245,7 @@ lists every window on every machine; the Details drawer holds the controls.
 | "source: probe /usage 10 min ago" / "passive (banner)" | `Account.status.usage{source, read_time}` (hub-adjusted; `received_time` beside it), `Account.status.probe`, `Machine.status.telemetry{clock_skew, clock_untrusted}` | `UsageSource`, `ProbeHealth` (D1, D3) | v1 |
 | Plan, email hidden/shown | `Account.status{plan, login_method, email}`; email empty unless `share_identity_email` | `AccountIdentity` (C2, A8) | v1 |
 | [planned] Consent and mode per account | `Account.spec{consent, mode}`; edit calls `UpdateAccount` with `spec.*` mask paths | ADR 0008 | v1 |
-| API-key cards with "$ of cap", "manual only" | `Account.spec{budget_kind, spend_cap_micros}`, `Account.status{usage.spend, pacing.state = EXCLUDED, provider, origin}` | `SpendReading` (01 §C) | v1 |
+| API-key cards with "spent so far of your limit", "manual only" | `Account.spec{budget_kind, spend_cap_micros}`, `Account.status{usage.spend, pacing.state = EXCLUDED, provider, origin}` | `SpendReading` (01 §C) | v1 |
 | [planned] "Add an API-key account" / "Remove this account" | `CreateAccount{harness, provider, spec}` (owner-defined, `DOLLAR_CAP` only); `DeleteAccount` (`ACCOUNT_IN_USE` while a goal or a signed-in machine uses it) | [03b](03b-usage-and-sync.md) "Accounts" | v1 |
 | [planned] "This Codex account is the one on machine X" | `UpdateAccount{spec.bindings}` folds the machine's placeholder account into this one | `AccountIdentity.identity_not_shown` (01 §C) | v1 |
 | OpenCode card | `Account`, `Pane{provider, model}` | `SessionAccountLink`; no `/usage`, no `/goal` (01b) | v1 |
@@ -263,9 +264,8 @@ view reads on open and every few minutes.
 |---|---|---|---|
 | Range picker (7, 30, 90 days) and "history begins" note | `GetInsightsRequest.range`; `GetInsightsResponse.data_start_time`, `computed_time` | rollups (05 section 2) | v1 |
 | Efficiency per account: bar of usable quota used per window, waste, trend | `GetInsights{sections: EFFICIENCY, SERIES}` → `QuotaWindow`, `EfficiencySummary`, `InsightSeries{QUOTA_UNUSED_PERCENT}` | 05 section 3 | v1 |
-| Outcomes per harness (switch to model, repo, account, machine, size): merge rate, time to merge, nudges, stuck rate, review rounds, restarts, quota per merged change request | `GetInsights{sections: OUTCOMES, group_by}` → `OutcomeRow{group, ran, merged, merge_rate_percent, time_to_merge_p50, p90, quota_points_per_merged, low_confidence}` | 05 section 5 | v2 |
+| Outcomes per harness (switch to model, repo, account, machine): merge rate, time to merge, nudges, stuck rate, review rounds, restarts, quota per merged change request | `GetInsights{sections: OUTCOMES, group_by}` → `OutcomeRow{group, ran, merged, merge_rate_percent, time_to_merge_p50, p90, quota_points_per_merged, low_confidence}` | 05 section 5 | v2 |
 | Where work gets stuck: blocking prompts by class, conditions, provider incidents, parser failures after updates, start failures per machine | `GetInsights{sections: STUCK}` → `StuckInsights` | 05 section 4 | v2 |
-| Size estimate versus actual | `GetInsights{sections: SIZE_ACCURACY}` → `SizeAccuracyRow` | 05 section 5 | v2 |
 | Routine outcomes | `GetInsights{sections: ROUTINES}` → `RoutineOutcomeRow` | 05 section 5 | v2 |
 | Latest written report (sanitized markdown, excerpt, "full report", legend, cost in quota points) | `ListInsightReports` (newest) → `InsightReport{excerpt, usage_consumed, aliases}`; `GetInsightReport{id, include_bundle}` | 05 section 7; text is untrusted | v2 |
 | "Run the report now" | calls `RunRoutine{id}` on the built-in routine (`SESSIONS_WRITE`); a spare-quota wait shows `Routine.status.dispatch_block`; a manual run with no spare account is a `WARN` (`ROUTINE_NEEDS_SPARE_QUOTA`) the owner accepts in `acknowledged_warnings` | 03i | v2 |

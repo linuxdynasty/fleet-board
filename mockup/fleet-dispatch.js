@@ -43,26 +43,28 @@ rollResets();
 //   unused        = usable share (100 − reserve) − projected use, floored at 0
 // The reserve is left out on purpose: it is kept for you, so leaving it unused is not waste.
 // An account "wastes" when ≥ WASTE_MIN points would go unused; it is "idle" when no goal runs on it while it is
-// behind pace. Stale readings get no projection.
+// behind pace. Stale readings get no projection, and neither does the first 24 hours of a window (03b, ADR 0024).
 const WASTE_MIN = 5;
 const runningOn = h => sessions.filter(s => isGoal(s) && s.harness === h && goalState(s) === "working").length;
 function outlook(a) {
   const p = pace(a), elapsedH = Math.max(1, p.frac * a.windowDays * 24), rate = p.used / elapsedH;
   const projected = Math.min(100, p.used + rate * hoursLeft(a)), unused = Math.max(0, Math.round(p.cap - projected));
-  const running = runningOn(a.harness), wastes = !a.stale && p.state !== "reserve" && unused >= WASTE_MIN;
+  const early = p.frac * a.windowDays * 24 < 24;   // the waste projection waits for the first day of each window
+  const running = runningOn(a.harness), wastes = !a.stale && !early && p.state !== "reserve" && unused >= WASTE_MIN;
   const idle = !a.stale && running === 0 && p.state === "behind";
-  return { p, left: 100 - p.used, unused, running, wastes, idle, alert: wastes || idle };
+  return { p, left: 100 - p.used, unused: early ? 0 : unused, early, running, wastes, idle, alert: wastes || idle };
 }
 const goalsTxt = n => `${n} goal${n === 1 ? "" : "s"} running`;
 // One plain line per subscription account (Usage headline); `short` is the summary-strip version.
 function wasteLine(a, short) {
   const o = outlook(a), p = o.p;
   if (a.stale) return short ? "stale reading" : `stale — reset passed, re-probe pending · last read ${o.left}% left · next reset in ${until(a.resets)} · ${goalsTxt(o.running)}`;
+  if (o.early && !a.stale) return short ? `${o.left}% left · waste line starts after day 1` : `${o.left}% left · resets in ${until(a.resets)} · ${goalsTxt(o.running)} · the waste line starts after the first day of the window`;
   const fate = p.state === "reserve" ? "reserve reached, new work goes to other accounts" : o.unused ? `on pace to leave ~${o.unused}% unused` : "on pace to use it all";
   if (short) return `${o.left}% left${p.state === "reserve" ? " · reserve reached" : o.unused ? ` · ~${o.unused}% unused` : ""}${o.idle ? " · no goals" : ""}`;
   return `${o.left}% left · resets in ${until(a.resets)} · ${goalsTxt(o.running)} · ${fate}${o.idle ? " · nothing running while behind pace" : ""}`;
 }
-const spendLine = a => `$${a.spentUsd.toFixed(2)} of $${a.capUsd} this ${a.period} · manual only`;
+const spendLine = a => `spent so far $${a.spentUsd.toFixed(2)} of your $${a.capUsd} limit · manual only`;
 
 // Goal states come from the first line of the goal file (G2).
 function goalState(s) {
@@ -114,7 +116,7 @@ function reasons(it, st) {
   const m = mById(st.m), a = anyAcct(st.a), out = [];
   if (it.claim) out.push(["confirm", `Claimed by ${it.claim}. Starting anyway needs your approval; the fleet never takes it by itself.`]);
   if (a.harness === "opencode") out.push(["bad", `OpenCode has no /goal yet: it needs fleet-board's generic goal protocol. Until then: inventory, sessions, attach.`]);
-  if (a.capUsd !== undefined) out.push(["confirm", `${a.label}: API key, $${a.spentUsd.toFixed(2)} of $${a.capUsd} cap this ${a.period}. This spends money, so it needs your approval; never auto.`]);
+  if (a.capUsd !== undefined) out.push(["confirm", `${a.label}: API key, spent so far $${a.spentUsd.toFixed(2)} of your $${a.capUsd} limit. This spends money, so it needs your approval; never auto.`]);
   if (m.drained) out.push(["bad", `${m.name} is draining.`]);
   else if (!m.harnesses.includes(a.harness)) out.push(["bad", `${a.harness} is not installed on ${m.name}.`]);
   else if (freeActive(m) === 0) out.push(["bad", `${m.name} has no free active slot (${activeOn(m)}/${m.maxActive}).`]);

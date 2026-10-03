@@ -32,12 +32,12 @@ sequenceDiagram
   participant H as fleetd
   participant A as fleet-agent
   D->>H: 1. CreateSession{request_id, machine, name, server, workdir, harness, profile, reuse}
-  H->>H: 2. check SESSIONS_WRITE and the name rule; assign the SessionId
+  H->>H: 2. check SESSIONS_WRITE and the name rule, assign the SessionId
   H-->>D: 3. CreateSessionResponse{session, operation}
   H->>A: 4. EnsureSession{session_id, name, workdir (a repo short name), harness, reuse, owner_principal}
   A->>A: 5. policy check, join the repo to an allowed root, create or reuse the session, tag FLEET_SESSION_ID and FLEET_OWNER
   A-->>H: 6. CommandResult{OK, created}
-  H-->>D: 7. Operation DONE; the Session appears on the SESSIONS topic
+  H-->>D: 7. Operation DONE, the Session appears on the SESSIONS topic
 ```
 
 Steps 2 and 5. The name must match `[a-z0-9][a-z0-9-]{0,31}` (`INVALID_NAME` otherwise). The hub never
@@ -62,7 +62,7 @@ sequenceDiagram
   D->>H: 1. RequeueWorkItem{request_id, id, expected_version}
   H->>H: 2. refuse when manual_reason is UNTRUSTED or EDITED_AFTER_TRUST
   H->>H: 3. stage MANUAL_ONLY back to READY, clear manual_reason, audit row
-  H-->>D: 4. the WorkItem; the WORK_ITEMS topic carries the change
+  H-->>D: 4. the WorkItem, the WORK_ITEMS topic carries the change
 ```
 
 An untrusted item needs the trusted label from an allow-listed person instead; a click must not bypass
@@ -83,10 +83,10 @@ sequenceDiagram
   C->>H: 1. ImportConfig{config, dry_run = true}
   H-->>C: 2. changes[] (create, update, unchanged, skipped) and plan_hash
   C->>H: 3. ImportConfig{config, expected_plan_hash}
-  H->>H: 4. one transaction: apply; a machine with no match becomes a pending machine
+  H->>H: 4. one transaction: apply, a machine with no match becomes a pending machine
   H-->>C: 5. applied = true
   A->>H: 6. later: Enroll with a token whose machine_name matches
-  H->>H: 7. apply the pending machine's labels and settings; the machine starts drained
+  H->>H: 7. apply the pending machine's labels and settings, the machine starts drained
 ```
 
 A plan with any `SKIPPED` line (for example an integration, which import never creates) applies nothing

@@ -3,7 +3,8 @@
 - Status: Accepted
 - Date: 2026-10-02
 - Decisions: [ADR 0022](../adr/0022-drift-audit-decisions.md) (the rows marked
-  "decided here")
+  "decided here"), [ADR 0024](../adr/0024-pre-build-owner-decisions.md)
+  (the rows marked "ADR 0024")
 
 Every tunable value the specs rely on, in one place. A spec states a rule; this
 file states the number. When a spec and this table disagree, fix the spec.
@@ -34,6 +35,11 @@ spec change. "Decided here" marks a value no earlier document gave.
 | `max_active` when no layer sets it | 2 | goals | 03e, decided here | `max_active` setting |
 | `max_total` when no layer sets it | 4 | goals | 03e, decided here | `max_total` setting |
 | `max_windows` when no layer sets it | 12 | windows | 03e, decided here | `max_windows` setting |
+| Allowed range of `max_active`; of `max_total` (a value outside it is refused; in `policy.yaml` it is safe mode) | 1 to 16; 1 to 32 | goals | ADR 0024 | `agent`, `setting` |
+| `allowed_repo_roots` of a fresh agent; `allowed_harnesses` of a fresh agent | empty until the owner sets it (`fleet-agent enroll` asks); every installed harness | | ADR 0024, 03e | `agent` |
+| Typing detection: `tmux list-clients` poll | 2 | s | [02h](02h-goal-binding-and-pane-signals.md), ADR 0024 (an allowed exception to "poll only usage and GitHub") | fixed |
+| Goal-file rescan for missed file events | 60 | s | [design.md](../design.md), ADR 0024 (the other allowed exception) | fixed |
+| Agent low-disk point (`DISK_LOW` under any repo root) | 5 | GiB free | ADR 0024 | fixed |
 | `idle_threshold` | 2 | min | [01](01-agent-capabilities.md) E11 | setting |
 | `window_name_template` | `{harness} {work}` | | settings.proto | setting |
 | `attach_idle_timeout` | 30 | min | [03d](03d-triage-sessions-logs.md), decided here | setting |
@@ -58,7 +64,8 @@ spec change. "Decided here" marks a value no earlier document gave.
 | `stale_after` (a reading older is `STALE` and the account stops dispatching) | 3 intervals, 30 min | | 03b | fixed |
 | Passive reading differs from the last probe by | 5 points triggers `run_now` (at most 1 per account per minute) | points | 03b | fixed |
 | Probe failover | machine `OFFLINE` 3 min, or 3 consecutive failures | | 03b | fixed |
-| `Account.spec.reserve_percent` for a new account | 10 | percent | [03b](03b-usage-and-sync.md), decided here | `UpdateAccount` |
+| `Account.spec.reserve_percent` for a new account; its allowed range | 10; 0 to 50 | percent | [03b](03b-usage-and-sync.md), decided here; range ADR 0024 | `UpdateAccount` |
+| Waste projection (`projected_unused_percent`) is shown only after | the first 24 hours of each usage window | h | 03b, ADR 0024 | fixed |
 | Account `consent` (a new account starts with it) and `HubSettings.default_consent` | push, pr-open, merge | | ADR 0008 | setting |
 | Pacing line adjustment | ahead over 5 points: one fewer; over 10: none; behind by over 5: one more | points | 03b | fixed |
 | `base_cap` (concurrent goals per account) | 2, the same for every harness; nothing is learned | goals | 03b, decided here | fixed |
@@ -113,6 +120,22 @@ spec change. "Decided here" marks a value no earlier document gave.
 | Watch change log | at least 10 min or 100,000 changes | | [02c](02c-hub-watch-and-filters.md) | fixed |
 | `page_size` | 50 (max 500) | rows | 02b | per call |
 | Rate limits (hub, per principal) | read 600, write 120, per peer without credentials 30, `/metrics` 60 | per min | 02b, decided here | `rate_limits.*` config |
-| Backup | nightly `VACUUM INTO` | | ADR 0014 | fixed |
+| Backup | nightly `VACUUM INTO` at 03:00 hub local time; keep the last 7 | | ADR 0014; hour and count ADR 0024 | fixed |
+| Log shipping pauses below; resumes above (free disk on the hub's `logs.db` volume) | 5; 8 | GiB | [03d](03d-triage-sessions-logs.md), ADR 0024 | fixed |
 | System signal thresholds | the table in [05b](05b-observability.md) section 8 | | 05b | fixed |
 | Telemetry OTLP | off; `grpc` when on | | 05b | `telemetry.*` config |
+
+## Runtime, install and access in v1
+
+Rules rather than numbers, kept here so every decision of
+[ADR 0024](../adr/0024-pre-build-owner-decisions.md) has one place to look.
+
+| Name | Value | Owner | Kind |
+|---|---|---|---|
+| Hub stays awake while `fleetd` runs | the launchd unit runs it under `caffeinate -s` (or the equivalent); `-s` holds only on power | [02j](02j-hub-runtime.md#staying-awake-and-surviving-logout) | fixed |
+| Linux worker survives logout | the owner runs `sudo loginctl enable-linger <user>` once per machine; `fleet-agent doctor` checks it | 02j | fixed |
+| macOS worker | a LaunchAgent that starts at the owner's login | 02j | fixed |
+| Install and upgrade | GitHub Releases with `SHA256SUMS`, an install script, `fleet-agent upgrade` and `fleetd upgrade`; no Apple signing or notarization (the owner clears the quarantine flag once) | [02j](02j-hub-runtime.md#install-and-upgrade) | fixed |
+| GitHub access | the GitHub App only; no fine-grained token fallback | [ADR 0005](../adr/0005-github-app.md), ADR 0024 | fixed |
+| Dashboard and `fleet` in v1 | on the hub machine; from another machine `ssh -L 7080:127.0.0.1:7080 <hub>` (same port both sides); sign-in is v3 | 02j | fixed |
+| API-key spend | "spent so far" as the tool reports it, all-time, no period; one optional owner limit | [03b](03b-usage-and-sync.md) | fixed |

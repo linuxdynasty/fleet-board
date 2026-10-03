@@ -36,7 +36,7 @@ PR 1 #29, PR 2 #30, PR 3 #31, PR 4 #32, PR 5 #33, PR 6 #34, PR 7 #35, PR 8 #36,
 PR 9 #37, PR 10 #38, PR 11 #39, PR 12 #40, PR 13 #41, PR 14 #42, PR 15 #43,
 PR 16 #44, PR 17 #45, PR 13a #48; prep items 0.1 to 0.4 are #25 to #28 and the
 usage push probe is #46. PR 2b (the `fleetd` shell) has no issue yet; see
-[Still to decide](#still-to-decide).
+"Gaps found while writing this page" at the end.
 
 **Capability ids** (A1, E6, G3 and so on) come from
 [01](specs/01-agent-capabilities.md), where every agent feature has an id.
@@ -52,7 +52,7 @@ usage push probe is #46. PR 2b (the `fleetd` shell) has no issue yet; see
 | The last few lines of each pane, and the full visible screen on request (E5, E10) | v1 | [01](specs/01-agent-capabilities.md) E, [ADR 0013](adr/0013-live-state-retention.md) | #35, #40 |
 | Which harnesses and versions each machine has, which account each is signed in to, and the command list of each harness (C1, C2, C4) | v1 | [01](specs/01-agent-capabilities.md) C, [01b](specs/01b-harness-commands.md) | #36 |
 | A notice when a harness asks a question or hits a problem (a permission prompt, a provider error, a sign-in needed). Notice only in v1: nothing is typed (E6, E12) | v1 | [02h](specs/02h-goal-binding-and-pane-signals.md), [03d](specs/03d-triage-sessions-logs.md) | #36 |
-| Goal state read from the goal file: working, waiting, blocked, done (G2). In v1 fleet-board watches goals; it does not start them | v1 | [01](specs/01-agent-capabilities.md) G, [02h](specs/02h-goal-binding-and-pane-signals.md), [design.md](design.md#goal-protocol) | #37 |
+| Goal state read from the goal file: working, waiting, blocked, done (G2). In v1 fleet-board watches goals; it does not start them. A goal you start by hand in your own tmux pane shows as an **observed goal** ("started by you"): found from the pane's folder and its newest goal file, never dispatched, nudged or controlled, and it ends when the file says done or the pane closes | v1 | [01](specs/01-agent-capabilities.md) G, [02h](specs/02h-goal-binding-and-pane-signals.md#observed-goals-v1), [03k](specs/03k-observed-goals.md), [ADR 0024](adr/0024-pre-build-owner-decisions.md) | #37 |
 | Which repos are checked out where, which branch, and whether the checkout is dirty or detached (H1, H3). Whether `gh` is signed in and can push (H4) | v1 | [01](specs/01-agent-capabilities.md) H | #37 |
 | Your GitHub issues and pull requests for the repos you chose, read-only, kept within five minutes of GitHub. Each item shows its stage and whether it is trusted | v1 | [03b](specs/03b-usage-and-sync.md), [03j](specs/03j-provider-sync-and-trust.md), [ADR 0005](adr/0005-github-app.md), [ADR 0012](adr/0012-integration-model.md) | #39 |
 | The dashboard with seven views: Triage, Work, Session, Usage, Machines, Settings, Insights. v1 shows only the read-only parts; the buttons for later releases are hidden | v1 | [design.md](design.md#views), [ui-contract-map](specs/ui-contract-map.md), [mockup](../mockup/README.md), [ADR 0007](adr/0007-web-ui-react.md) | #42 |
@@ -74,8 +74,8 @@ reads it, shows it, and (in v2) spends it.
 | Weekly usage of every subscription account, read by typing the harness's own status command (`/usage` or `/status`) into a hidden fleet-owned session. A screen it cannot parse shows `UNKNOWN`, never a guess (D1, D2) | v1 | [01](specs/01-agent-capabilities.md) D, [03b](specs/03b-usage-and-sync.md) | #36, #38 |
 | The hub picks which machine reads each account, prefers an always-on machine, and moves the job to another if that machine goes offline or fails three times | v1 | [03b](specs/03b-usage-and-sync.md), [03f](specs/03f-hub-internals.md) | #38 |
 | Extra readings from banners and status lines (D3), and a check whether any harness can push usage to us so polling is not needed | v1 | [01](specs/01-agent-capabilities.md) D3, [design.md](design.md#reading-usage) | #36, #46 |
-| Accounts found on their own as machines sign in, Codex accounts mapped to machines, API-key accounts (dollar cap, never auto-dispatched, such as OpenCode providers) added by hand | v1 | [03b](specs/03b-usage-and-sync.md), [02j](specs/02j-hub-runtime.md) | #38, #48 |
-| A burn-down line, a waste line ("what will be unused at reset"), and your reserve per account (default 10%, the part the fleet never uses) | v1 | [03b](specs/03b-usage-and-sync.md), [05](specs/05-insights.md), [defaults](specs/defaults.md) | #38 |
+| Accounts found on their own as machines sign in, Codex accounts mapped to machines, API-key accounts (spent so far as the tool reports it, with an optional limit and no monthly period, never auto-dispatched, such as OpenCode providers) added by hand | v1 | [03b](specs/03b-usage-and-sync.md), [02j](specs/02j-hub-runtime.md) | #38, #48 |
+| A burn-down line, a waste line ("what will be unused at reset", shown after the first 24 hours of each weekly window), and your reserve per account (default 10%, range 0 to 50, the part the fleet never uses) | v1 | [03b](specs/03b-usage-and-sync.md), [05](specs/05-insights.md), [defaults](specs/defaults.md) | #38 |
 | A pacing alert when an account reaches its reserve line. Dispatch stops; running goals keep going. Auto-pausing them is an option, off by default | v1 | [03b](specs/03b-usage-and-sync.md), [ADR 0022](adr/0022-drift-audit-decisions.md) | #38 |
 | A reading older than three probe intervals is marked stale and the account gets no new work | v1 | [03b](specs/03b-usage-and-sync.md), [defaults](specs/defaults.md) | #38 |
 | The planner (every 30 seconds) hands the next trusted, unclaimed issue to a machine and account with room: most waste first, paced against the burn-down line, base cap of 2 active goals per account, a cap per repo (default 3), two slot limits per machine. Off until you turn it on | v2 | [03c](specs/03c-goals.md), [design.md](design.md#dispatch-rules) | none yet |
@@ -142,7 +142,6 @@ Everything here changes a pane, so it is v2. v1 builds no command that types.
 | Doctor: `fleet-agent doctor` lists every local check with a reason; `fleet doctor` reads the hub's health | v1 | [01](specs/01-agent-capabilities.md) M3, [02k](specs/02k-v1-surface-and-cli.md) | #34, #43 |
 | Outcomes: merge rate, time to merge, nudges, quota per merged PR, by harness, model, repo, account, machine | v2 | [05](specs/05-insights.md) | none yet |
 | Where work gets stuck, by reason | v2 | [05](specs/05-insights.md) | none yet |
-| Size against actual time to merge | v2 | [05](specs/05-insights.md); see [Still to decide](#still-to-decide) | none yet |
 | Routine results | v2 | [05](specs/05-insights.md), [03i](specs/03i-routines.md) | none yet |
 | Suggestions with their evidence (for example "Codex merges these faster"). Shown on Insights; they go to Triage only if you turn that on | v2 | [05](specs/05-insights.md), [ADR 0021](adr/0021-insights-and-observability.md) | none yet |
 | A weekly written report, on by default, Monday 07:00. It runs only on spare subscription quota, never in the reserve, never on an API-key account; it spends no API money | v2 | [05](specs/05-insights.md), [03i](specs/03i-routines.md), [ADR 0022](adr/0022-drift-audit-decisions.md) | none yet |
@@ -156,35 +155,36 @@ Everything here changes a pane, so it is v2. v1 builds no command that types.
 | The agent finds the hub on its own: a saved address, then mDNS (the local-network name lookup), then a configured address | v1 | [01](specs/01-agent-capabilities.md) A2, [ADR 0023](adr/0023-additional-libraries.md) | #32 |
 | Connect, send a snapshot, reconnect after a sleep or hub restart with no events lost; the certificate renews on its own; a clean goodbye on shutdown | v1 | [03](specs/03-workflows.md) W2, [02i](specs/02i-delivery-and-sequencing.md), [02g](specs/02g-agent-security.md) | #32, #33 |
 | Wake and network change noticed, so a laptop reconnects fast (A6). Proven by a spike first | v1 | [01](specs/01-agent-capabilities.md) A6, [plan](plan/v1-implementation-plan.md#3-before-the-first-line-of-product-code) 0.6 | #32 |
-| Folder pre-trust at setup (C3). Its mechanism is not known; a probe decides if it is v1 or v2 | v1, to confirm | [01](specs/01-agent-capabilities.md) C3, [plan](plan/v1-implementation-plan.md#3-before-the-first-line-of-product-code) 0.9 | #36 |
-| Local policy: a file on each machine that says what the fleet may do there. It is the ceiling; hub settings can only tighten it (L1, L2) | v1 | [03e](specs/03e-settings-and-drift.md), [ADR 0009](adr/0009-machine-groups-and-layered-settings.md), [ADR 0011](adr/0011-contract-amendments.md) | #34 |
+| The probe folder (C3): usage probes run in one empty folder the agent owns, which you trust once by hand in each harness. The agent edits no harness config in v1; `fleet-agent doctor` says when a folder is untrusted | v1 | [01](specs/01-agent-capabilities.md) C3, [02g](specs/02g-agent-security.md), [ADR 0024](adr/0024-pre-build-owner-decisions.md) | #25, #36 |
+| Local policy: a file on each machine that says what the fleet may do there. It is the ceiling; hub settings can only tighten it (L1, L2). A fresh agent has an empty repos list until you set it; `fleet-agent enroll` asks for the repos folder and writes a starter `policy.yaml`; a missing file is a normal first run | v1 | [03e](specs/03e-settings-and-drift.md), [ADR 0009](adr/0009-machine-groups-and-layered-settings.md), [ADR 0011](adr/0011-contract-amendments.md) | #34 |
 | Settings in layers (fleet, group, machine) with the layer shown for each value, and drift detected when a machine does not follow | v1 | [03e](specs/03e-settings-and-drift.md), [ADR 0009](adr/0009-machine-groups-and-layered-settings.md) | #33, #34 |
-| Set up GitHub: `fleetd setup github` writes the read-only App manifest and keys. You create and install the App (prep 0.2) | v1 | [02j](specs/02j-hub-runtime.md), [ADR 0005](adr/0005-github-app.md), [ADR 0022](adr/0022-drift-audit-decisions.md) | #26, #48 |
+| Set up GitHub: `fleetd setup github` writes the read-only App manifest and keys. You create and install the App (prep 0.2). The App is the only GitHub access in v1; there is no token fallback | v1 | [02j](specs/02j-hub-runtime.md), [ADR 0005](adr/0005-github-app.md), [ADR 0022](adr/0022-drift-audit-decisions.md) | #26, #48 |
 | Configure the hub: which repos to watch, caps, consent, reserves, Codex mapping, GitHub label. Through the dashboard Settings forms and `fleet repo`, `fleet account`, `fleet settings` | v1 | [02j](specs/02j-hub-runtime.md), [02b](specs/02b-hub-api.md) | #48, #42, #43 |
 | Export and import the whole setup as `fleet.yaml`, with a dry run that shows the plan first | v1 | [02b](specs/02b-hub-api.md), [design.md](design.md#configuration) | #48, #43 |
-| Backups: a nightly backup of the hub (it holds the fleet's key, so treat it as a secret), `fleetd backup [--encrypt]`, and `fleetd restore` | v1 | [03f](specs/03f-hub-internals.md), [02g](specs/02g-agent-security.md) | #31, #33 |
-| Machine admin: add (token), rename, labels, revoke a lost laptop, forget. Recommended for v1, **waiting for the owner's yes** | v1, to confirm | [02k](specs/02k-v1-surface-and-cli.md), [02g](specs/02g-agent-security.md), [ADR 0022](adr/0022-drift-audit-decisions.md) | #48 |
+| Backups: a nightly backup of the hub at 03:00, the last 7 kept (it holds the fleet's key, so treat it as a secret), `fleetd backup [--encrypt]`, and `fleetd restore` | v1 | [03f](specs/03f-hub-internals.md), [02g](specs/02g-agent-security.md) | #31, #33 |
+| Machine admin: add (token), rename, labels, revoke a lost laptop, forget. In the dashboard and as `fleet machine add\|rename\|label\|revoke\|forget` | v1 | [02k](specs/02k-v1-surface-and-cli.md), [02g](specs/02g-agent-security.md), [ADR 0024](adr/0024-pre-build-owner-decisions.md) | #48, #43 |
 | The `fleet` command, read side: `status`, `machines`, `accounts`, `goals`, `work`, `doctor`, all with `--json` | v1 | [02k](specs/02k-v1-surface-and-cli.md), [design.md](design.md#deployment-and-cli) | #43 |
 | The `fleet` command, write side: dispatch, goal control, `requeue`, routines | v2 | [02k](specs/02k-v1-surface-and-cli.md) | none yet |
-| Install and upgrade: release builds for macOS and Linux (Intel and ARM), launchd and systemd user units (no root), a runbook | v1 | [plan](plan/v1-implementation-plan.md) PR 16, prep 0.3 | #44, #27 |
-| `local_trusted` mode: plain HTTP on loopback, no sign-in, for the machine that runs the hub. Agents always use mTLS (encrypted, both sides prove who they are) | v1 | [02f](specs/02f-hub-authentication.md), [02j](specs/02j-hub-runtime.md), [ADR 0004](adr/0004-agent-connectivity.md) | #40 |
+| Install and upgrade: release builds for macOS and Linux (Intel and ARM) on GitHub Releases with checksums, an install script, `fleet-agent upgrade` and `fleetd upgrade` (they fetch and verify the next release), launchd and systemd user units (no root), a runbook. No Apple signing: you clear the quarantine flag once per Mac. A Linux worker needs `loginctl enable-linger` once so it survives logout; the hub laptop stays awake under `caffeinate -s` | v1 | [plan](plan/v1-implementation-plan.md) PR 16, prep 0.3, [02j](specs/02j-hub-runtime.md#install-and-upgrade) | #44, #27 |
+| `local_trusted` mode: plain HTTP on loopback, no sign-in, for the machine that runs the hub. The dashboard and `fleet` run on that machine in v1; from another machine use `ssh -L 7080:127.0.0.1:7080 <hub>`. Agents always use mTLS (encrypted, both sides prove who they are) | v1 | [02f](specs/02f-hub-authentication.md), [02j](specs/02j-hub-runtime.md), [ADR 0004](adr/0004-agent-connectivity.md) | #40 |
 | Goal hooks and the hook approval step for Codex and Muse, shown on Machines | v2 | [01d](specs/01d-goal-hooks.md) | none yet |
 | Muse auto-update: you choose whether to switch it off on fleet machines (prep 0.4) | v1 | [01d](specs/01d-goal-hooks.md), [plan](plan/v1-implementation-plan.md#3-before-the-first-line-of-product-code) | #28 |
 
 ## 8. Phone and remote
 
-All of this is v3. Until then the hub binds loopback; reach it with an `ssh`
-forward (see [Still to decide](#still-to-decide), question 9).
+All of this is v3. Until then the hub binds loopback and the dashboard and `fleet`
+run on the hub machine; from another machine use an `ssh` forward,
+`ssh -L 7080:127.0.0.1:7080 <hub>` ([02j](specs/02j-hub-runtime.md), [ADR 0024](adr/0024-pre-build-owner-decisions.md)).
 
 | What you get | Release | Where specified | Issue |
 |---|---|---|---|
 | `authenticated` mode: HTTPS only, sign-in with a passkey (a login stored on your device) or GitHub, a one-time claim URL, users, roles and invites | v3 | [02f](specs/02f-hub-authentication.md), [02d](specs/02d-hub-authz.md), [ADR 0019](adr/0019-pre-implementation-contract-decisions.md) | none yet |
 | API tokens for scripts (the calls also work for the local owner in `local_trusted`, but no v1 PR builds them) | v3 | [02f](specs/02f-hub-authentication.md), [02d](specs/02d-hub-authz.md) | none yet |
 | A paired phone: pairing, approval, scopes. A phone defaults to read plus approvals, never logs | v3 | [02f](specs/02f-hub-authentication.md), [02d](specs/02d-hub-authz.md) | none yet |
-| Push notifications on the phone. The delivery design (web push or a native app) is not written | v3 | [02f](specs/02f-hub-authentication.md); see [Still to decide](#still-to-decide), question 8 | none yet |
+| Push notifications on the phone. The lean is an installable web app with web push and no app store; not decided, and the delivery design is not written | v3 | [02f](specs/02f-hub-authentication.md); see [Still to decide](#still-to-decide), question 3 | none yet |
 | Remote access over HTTPS, including a Tailscale certificate | v3 | [02f](specs/02f-hub-authentication.md), [02j](specs/02j-hub-runtime.md), [ADR 0004](adr/0004-agent-connectivity.md) | none yet |
 | Optional Tailscale lookup so agents and phones on a tailnet find the hub. Never required | v3 | [01](specs/01-agent-capabilities.md), [ADR 0004](adr/0004-agent-connectivity.md) | none yet |
-| `fleet` from any machine that can reach the API (v1 and v2: the hub's machine only) | v3 | [02k](specs/02k-v1-surface-and-cli.md), [02f](specs/02f-hub-authentication.md) | none yet |
+| `fleet` and the dashboard from any machine that can reach the API (v1 and v2: the hub's machine only, or an `ssh` forward) | v3 | [02k](specs/02k-v1-surface-and-cli.md), [02f](specs/02f-hub-authentication.md) | none yet |
 | Sign-in admin commands: `fleetd claim`, `token create`, `user invite` | v3 | [02k](specs/02k-v1-surface-and-cli.md) | none yet |
 
 ## 9. Developing fleet-board itself
@@ -198,9 +198,11 @@ These are for the people and agents who build it, not for using it.
 | Development hooks: skill nudge, goal protocol, doc staleness check, role router; each can be switched off | v1 (done) | [hooks](development/hooks.md) | none |
 | Local gates: buf build and lint, `gofumpt`, `go vet`, tests, lint, file cap of 500 lines, no AI attribution check | v1 | [AGENTS.md](../AGENTS.md), [plan](plan/v1-implementation-plan.md) PR 1 | #29 |
 | CI that runs the same gates, plus an advisory docs-stale step | v1 | [plan](plan/v1-implementation-plan.md) PR 1 | #29 |
+| You merge every v1 PR. A pre-push hook on each checkout (`.githooks/pre-push`, via `core.hooksPath`) refuses a push to `main` and runs the local gate | v1 | [plan](plan/v1-implementation-plan.md#10-tracking), [AGENTS.md](../AGENTS.md), [ADR 0024](adr/0024-pre-build-owner-decisions.md) | #29 |
+| Headless helpers for development only: `agent-roles.py codex-exec` and `muse-exec` may run a role headless to build this repo; the product never does | v1 (done) | [AGENTS.md](../AGENTS.md), [agent guide](development/agent-guide.md) | none |
 | Prove-first spikes and live probes of real harnesses before code depends on them | v1 | [plan](plan/v1-implementation-plan.md#3-before-the-first-line-of-product-code), [spikes](../spikes/README.md) | #25, #46 |
 | A test seed: a recorded agent stream replayed into a real hub store, used by UI smoke tests, golden CLI output and contract tests | v1 | [02k](specs/02k-v1-surface-and-cli.md#the-test-seed) | #40 |
-| The seven-day acceptance run on the four machines, then the `v0.1` tag, which freezes the contracts | v1 | [plan](plan/v1-implementation-plan.md#2-definition-of-done), [02e](specs/02e-contract-rules.md) | #45 |
+| The seven-day acceptance run on the four machines, then the `v0.1` tag, which freezes only what v1 implements (v2 and v3 messages stay changeable until they ship) | v1 | [plan](plan/v1-implementation-plan.md#2-definition-of-done), [02e](specs/02e-contract-rules.md) | #45 |
 | fleet-board drives its own issues as goals on spare quota, once dispatch exists | v2 | [plan](plan/v1-implementation-plan.md#7-keeping-development-cost-low) | none yet |
 | The tmux popup switcher (`prefix + F`) | later | [design.md](design.md#views) | none |
 | An optional hardening guide for hub hosts | later | [01](specs/01-agent-capabilities.md) | none |
@@ -212,12 +214,18 @@ These are for the people and agents who build it, not for using it.
 
 These are dropped or out of scope on purpose. They are not forgotten.
 
-- **A size estimate rule.** No S, M or L guess per issue, no learned cost per size,
-  no pause at two to three times the estimate ([ADR 0022](adr/0022-drift-audit-decisions.md)
-  decision 7). Pacing, the reserve and the short-window limit bound spend instead.
+- **A size estimate rule, and any "size against actual" report.** No S, M or L guess
+  per issue, no learned cost per size, no pause at two to three times the estimate
+  ([ADR 0022](adr/0022-drift-audit-decisions.md) decision 7, finished by
+  [ADR 0024](adr/0024-pre-build-owner-decisions.md) decision 6). Pacing, the reserve
+  and the short-window limit bound spend instead.
 - **Headless harness runs.** The product never runs a harness with `-p`
-  ([AGENTS.md](../AGENTS.md) principle 1).
-  Running a role headless to develop this repo is a separate question (question 10).
+  ([AGENTS.md](../AGENTS.md) principle 1). Only the helpers `agent-roles.py
+  codex-exec` and `muse-exec` run a role headless, to develop this repo
+  (ADR 0024 decision 10).
+- **A monthly cap period for API-key accounts, and a GitHub token fallback.** An
+  API-key account shows "spent so far" as the tool reports it; GitHub access is the
+  App only (ADR 0024 decisions 7 and 15).
 - **Storing or reading credentials.** No auth files, no keychains, no `gh` tokens,
   no proxying a login ([AGENTS.md](../AGENTS.md), [02g](specs/02g-agent-security.md)).
 - **Running as root, or needing a sandbox.**
@@ -236,60 +244,41 @@ These are dropped or out of scope on purpose. They are not forgotten.
 
 ## Still to decide
 
-Nothing below blocks starting v1 except where it says so. The numbered questions
-come from [ADR 0022](adr/0022-drift-audit-decisions.md) (addendum, part C); the
-options and the recommendation are there.
+Nothing below blocks starting v1. The owner answered the other questions on
+2026-10-02; they are recorded in
+[ADR 0024](adr/0024-pre-build-owner-decisions.md). What is left was deferred on
+purpose:
 
-**Owner questions**
+**Open owner decisions (deferred)**
 
-1. **Machine admin in v1.** Add, rename, labels, revoke and forget: v1 or later?
-   Recommended: v1, because a stolen laptop must be revocable before `v0.1`.
-   Plan PR 13a (#48) holds the work until you answer.
-2. **What a fresh agent allows.** Starting folders (`allowed_repo_roots`) and
-   harnesses, and whether `fleet-agent enroll` writes a starter policy file or
-   asks you.
-3. **How long before the waste line shows.** A tiny slice of the week makes the
-   projection jumpy.
-4. **Typing detection.** If tmux has no push signal for "someone is typing", may
-   the 2-second poll stay? The same for the goal-file rescan. The tmux probe (0.5)
-   reports first.
-5. **Backups.** How many to keep and when. Proposed: the last 7, at 03:00.
-6. **Numbers with a name but no value.** Log shipping pause and resume points,
-   the agent low-disk point, the goal-file rescan interval, allowed ranges for
-   reserve and slot limits. Proposed values are in the ADR.
-7. **The default goal text** for repos that do not ship eshu's hooks. It sets the
-   rules a goal runs under, so you approve the words before they go into
-   [03c](specs/03c-goals.md).
-8. **Phone push.** An installable web app with web push, or a native app. This
-   blocks the v3 push design.
-9. **Remote use before v3.** Is an `ssh` forward enough, or do you want sign-in earlier?
-10. **Headless for development.** `agent-roles.py codex-exec` and `muse-exec` run
-    a role headless to build this repo. Is that exception intended? If yes, the
-    skills get the same sentence.
-11. **GitHub token fallback.** Build a fine-grained token option in v1, or only the App?
+1. **Approvals on the hub machine (v2).** In `local_trusted` mode any program on the
+   hub machine counts as the owner, so a goal running there could approve its own
+   request. Approvals and settings changes may need a local secret. To be decided
+   before v2 dispatch is switched on (ADR 0024 decision 20).
+2. **The default goal text (v2).** The words a goal runs under in repos without
+   eshu's hooks (the claim step, the `BLOCKED` convention, the review-loop cap) are
+   drafted in v2, and you approve them before they go into
+   [03c](specs/03c-goals.md) (decision 21).
+3. **Phone push (v3).** An installable web app with web push and no app store is the
+   lean. Not decided; it blocks only the v3 push design (decision 22).
 
 **Owner actions and results the plan waits for**
 
-- Create and install the read-only GitHub App (prep 0.2, #26), pick the release
-  mechanism (0.3, #27) and decide Muse auto-update (0.4, #28).
+- Create and install the read-only GitHub App (prep 0.2, #26) and decide Muse
+  auto-update (0.4, #28). The release mechanism (0.3, #27) is decided.
 - The probes 0.5 to 0.9 (tmux typing signal, wake detection, mDNS, probe cost,
-  folder trust) write their result into the spec they name before the PR that
-  depends on them starts.
+  trust screens of the probe folder) write their result into the spec they name
+  before the PR that depends on them starts.
 
 **Gaps found while writing this page**
 
-- **Size against actual time (v2).** Insights compares an item's size (S, M, L) with
-  its real cost, but nothing in the design sets the size now that the estimate rule
-  is dropped. Keep the section and name who or what sets the size (a label?), or
-  remove it from [05](specs/05-insights.md).
-- **Goals you start by hand.** The goal registry is written by `StartGoal`, which is v2.
-  In v1, a goal you typed yourself is visible only through its goal file, and it is
-  not settled how that file is tied to its pane ([02h](specs/02h-goal-binding-and-pane-signals.md)).
 - **Issue text lags the plan.** The plan rows were updated by the second drift audit
-  (command path, probe assignment, triage, backup, restore, owner configuration), but
-  the v1 issues #31, #33, #34, #36, #38, #40 and #43 still carry the older scope text.
-  Plan section 10 says a plan change edits its issue in the same PR. Refresh the issues
-  before work starts.
+  (command path, probe assignment, triage, backup, restore, owner configuration) and
+  by [ADR 0024](adr/0024-pre-build-owner-decisions.md) (observed goals, the pre-push
+  guard, the probe folder, machine admin, install and upgrade), but the v1 issues #25,
+  #27, #29, #31, #33, #34, #36, #37, #38, #40, #43, #44 and #48 still carry the older
+  scope text. Plan section 10 says a plan change edits its issue in the same PR.
+  Refresh the issues before work starts.
 - **PR 2b has no issue.** The `fleetd` shell (config load, `fleetd init`, `run`,
   `enroll-token`, the agent listener) is plan row 2b and has no GitHub issue.
 - **Weekly report cost** is not measured yet ([05](specs/05-insights.md)); its first

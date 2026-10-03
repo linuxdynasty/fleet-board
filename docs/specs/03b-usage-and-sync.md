@@ -96,6 +96,14 @@ An `Account` row comes from one of two origins (`Account.status.origin`):
   account starts with `reserve_percent` 10, `mode` fleet and `consent` push,
   pr-open, merge (ADR 0008; [defaults](defaults.md)); the owner changes them
   with `UpdateAccount`.
+- **API-key spend (decision 7 of [ADR 0024](../adr/0024-pre-build-owner-decisions.md)).**
+  An API-key account shows **spent so far**, the all-time cost `opencode stats`
+  reports, in the tool's own counting, with no monthly period and no reset. The
+  owner may set one limit (`spend_cap_micros`, one amount, no period); the card
+  reads "spent so far $6.40 of your $20 limit". The hub never sums readings into
+  a month, never resets the figure and never blocks on the limit (these accounts
+  are manual-dispatch only). If the tool prints one total for all providers, the
+  card says "all providers together" and the hub does not split it.
 - **Owner-created.** An API-key account no agent can list (a key set in an
   environment variable) is added with `CreateAccount{harness, provider, spec}`
   (`DOLLAR_CAP` only; subscriptions are never created by hand). Discovery never
@@ -153,17 +161,21 @@ interactive-only, ADR 0008), active goal count per account (from goals ×
 `reserve`: `projected_used = percent_used / f`, `projected_unused_percent =
 max(0, (100 − reserve) − projected_used)`, computed on the weekly bucket the work
 needs (step 2). It is unset (shown as unknown, never
-guessed) when `elapsed <= 0`, when the reading is `UNKNOWN` or stale, or when the
-bucket has no reading. A `percent_used` lower than the previous reading's in the
+guessed) during the **first 24 hours of each usage window** (`elapsed < 24 h`; the
+Usage view says "waste line starts after the first day"), when the reading is
+`UNKNOWN` or stale, or when the bucket has no reading. Only the projection waits:
+pacing (`ahead`, `allowed_active`) runs from the first reading, and a routine that
+needs `projected_unused_percent` (03i) simply does not start in those hours. A `percent_used` lower than the previous reading's in the
 same window is taken as the new truth, not smoothed; a new `resets_time` starts
-a new window. A very small `f` makes the projection noisy; the minimum elapsed
-time before it is shown is an owner question (ADR 0022 addendum, question 3).
+a new window. A very small `f` makes the projection noisy, which is why it
+waits 24 hours (decision 17 of [ADR 0024](../adr/0024-pre-build-owner-decisions.md)).
 
 **Worked examples** (7-day window, reserve 10, base cap 2; these are the first
 rows of the PR 10 table tests):
 
 | Elapsed | `percent_used` | target | ahead | `allowed_active` | `projected_unused_percent` | Note |
 |---|---|---|---|---|---|---|
+| 12 h (f 0.071) | 10 | 6.4 | +3.6 | 2 (OK) | unset | first 24 h: no projection yet |
 | 84 h (f 0.50) | 30 | 45.0 | −15.0 | 3 (BEHIND) | 30.0 | one more worker |
 | 84 h | 47 | 45.0 | +2.0 | 2 (OK) | 0 | projected 94, above 90 |
 | 84 h | 52 | 45.0 | +7.0 | 1 (AHEAD) | 0 | one fewer |
@@ -308,7 +320,8 @@ sequenceDiagram
 ```
 
 **GitHub adapter (first).** Credential: a GitHub App installation token (ADR
-0005), refreshed before expiry; fine-grained PAT fallback. Work items: REST
+0005), refreshed before expiry; the App is the only access in v1, with no
+fine-grained token fallback (decision 15 of ADR 0024). Work items: REST
 `GET /repos/{owner}/{repo}/issues?state=open&since=…&per_page=100` with
 `If-None-Match`. Claims: issue comments matching a configurable pattern
 (default: the eshu-issue-driver claim comment), with `by_this_fleet = author ∈

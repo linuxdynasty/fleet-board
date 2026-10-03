@@ -31,7 +31,9 @@ AGENTS.md                     the rules every harness reads (no CLAUDE.md)
 ```
 
 Muse has no project agent files; `scripts/agent-roles.py muse-exec <role>
-"<task>"` runs a role there with the tier's model and the role's access.
+"<task>"` runs a role there with the tier's model and the role's access. The
+`codex-exec` and `muse-exec` helpers run headless, for developing this repo only;
+the product never runs a harness headless (ADR 0024).
 
 ## Change the setup
 

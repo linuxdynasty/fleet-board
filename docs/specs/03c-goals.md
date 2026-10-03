@@ -2,8 +2,8 @@
 
 - Part of: [03-workflows.md](03-workflows.md) (conventions apply)
 - Continued in [03h](03h-goal-phases-in-depth.md) (start-failure reactions,
-  dispatch checks, provider-side changes, limit wait, re-arm) and
-  [03i](03i-routines.md) (routine runs)
+  dispatch checks, provider-side changes, limit wait, re-arm),
+  [03i](03i-routines.md) (routine runs), [03k](03k-observed-goals.md) (observed goals)
 
 ## W5. Dispatch a goal
 
@@ -213,7 +213,7 @@ window, elsewhere, triage; which count toward `START_EXHAUSTED`) is the table in
   (plan → `RUNNING`), `fleet_hub_scheduler_pass_seconds`, `fleet_hub_scheduler_skips_total{reason}`
   (the lower-cased short names of the 540-range `ReasonCode`s: `no_ready_items`,
   `account_pacing_blocked`, `account_usage_unknown`, `account_not_dispatchable`,
-  `no_fit_machine`, `integration_lag`, `flood_guard`, `repo_parallel_limit`), `fleet_hub_goals{state}`,
+  `no_fit_machine`, `integration_lag`, `flood_guard`, `repo_parallel_limit`), `fleet_hub_goals{state, origin}`,
   `fleet_hub_machine_slots_used{machine, kind=active|total}` and `_limit`,
   `fleet_hub_machine_unfit{machine, harness, reason}`, `fleet_hub_plan_conflicts_total`.
 - `fleet_agent_start_goal_step_seconds{step, result}`, `fleet_agent_start_goal_total{result, reason}`.
@@ -329,7 +329,7 @@ so "active" means one thing.
 | **HELD** (keeps its worker, spends almost no quota) | `WAITING`, `BLOCKED_OWNER`, `STUCK`, `COOLDOWN`, `PAUSED`, `LIMIT_WAIT`, `VERIFYING`, `DISAGREE`, `PANE_LOST` | a total slot and the repo cap only |
 | **ENDED** | `MERGED` (until `CLOSED`), `CLOSED`, `START_FAILED`, `START_EXHAUSTED`, `EXPIRED`, `ABANDONED`, `CLEARED`, `CANCELLED` | nothing: `MERGED` frees the worker, so the pane is reusable at once |
 
-**Live** = ACTIVE ∪ HELD. The DB unique indexes are `(work_item) WHERE live`,
+**Live** = ACTIVE ∪ HELD (an observed goal, 03k, holds nothing). The DB unique indexes are `(work_item) WHERE live`,
 `(repo, branch) WHERE live` (one agent per branch) and, for routines, `(routine)
 WHERE live`. A `LIMIT_WAIT` goal therefore holds a total slot and its branch for
 up to a week, by design; an operator can clear it. The heartbeat check compares
@@ -410,7 +410,7 @@ Sub-flags held with the phase (on `GoalStatus`): `provider_condition`,
   uses its snapshotted done rule ([03i](03i-routines.md)). Open
   after `verify_grace` (default 10 min, covers sync lag) → `DISAGREE` with a
   triage item; the worker stays held. Without `merge` consent (ADR 0008) the
-  done state is "approved and green": `review_decision=APPROVED` and
+  done state is "approved and green" (owner-confirmed, ADR 0024 decision 19): `review_decision=APPROVED` and
   `checks.rollup=SUCCESS` (both computed by the adapter for `head_commit`, 03j;
   `UNSPECIFIED` is "not known", never green) → triage `ready_for_human_merge`; still `VERIFYING`
   until the merge is seen.
@@ -484,7 +484,7 @@ Sub-flags held with the phase (on `GoalStatus`): `provider_condition`,
 
 ### Telemetry
 
-- `fleet_hub_goal_transitions_total{from, to, reason}`, `fleet_hub_goals{state}`, `fleet_hub_goal_age_seconds{state}`
+- `fleet_hub_goal_transitions_total{from, to, reason}`, `fleet_hub_goals{state, origin}`, `fleet_hub_goal_age_seconds{state}`
   (histogram), `fleet_hub_goal_nudges_total{kind=corrective|cooldown, result}`, `fleet_hub_goals_in_cooldown`,
   `fleet_hub_verify_latency_seconds` (DONE → MERGED), `fleet_hub_verify_disagreements_total`,
   `fleet_hub_review_loop_pauses_total`, `fleet_hub_goal_control_total{subcommand, harness, result}`,

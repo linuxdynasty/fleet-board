@@ -39,8 +39,9 @@ function plainLine(s) {
 
 function log(what, s, who = "you") { audit.unshift({ at: new Date(), who, what, where: s ? where(s) : "", s: s?.id }); }
 const sessionOrder = () => machines.flatMap(m => sessions.filter(s => s.m === m.id).sort((a, b) => (a.sess === "fleet") - (b.sess === "fleet") || a.sess.localeCompare(b.sess) || a.idx - b.idx));
-// Live state: goal state for fleet panes; idle/available for the developer's own harness windows (E11).
-const liveState = s => s.harness === "shell" ? "none" : s.yours ? (s.available ? "available" : s.idle ? "idle" : "none") : goalState(s);
+// Live state: goal state for fleet panes and for an observed goal (a goal you started by hand: shown, never controlled, 03k);
+// idle/available for the developer's own harness windows (E11).
+const liveState = s => s.harness === "shell" ? "none" : s.observed ? goalState(s) : s.yours ? (s.available ? "available" : s.idle ? "idle" : "none") : goalState(s);
 const activeCond = s => s.cond && !ui.snoozed[s.cond] ? cById(s.cond) : null;
 
 // Work items: watched change requests and issues/tickets, with a lifecycle stage.
@@ -106,7 +107,7 @@ function renderStrip() {
     <span class="acct-row">${accounts.map(a => { const o = outlook(a), p = o.p, tone = a.stale ? "idle" : p.state === "reserve" ? "bad" : o.alert ? "warn" : "ok";
       return `<a href="#usage" class="use ${o.alert ? "alert" : ""} ${a.stale ? "stale" : ""}" title="${esc(`${a.label}: ${wasteLine(a)}`)}">${agentChip(a.harness)}
         <span class="mini"><i class="${tone}" style="width:${p.used}%"></i><s style="left:${p.target}%"></s></span><span class="num">${esc(wasteLine(a, true))}</span></a>`; }).join("")}
-    ${apiAccounts.map(a => `<a href="#usage" class="use" title="${esc(`${a.label}: ${spendLine(a)}`)}">${agentChip(a.provider.split(" ")[0].toLowerCase())}<span class="num">$${a.spentUsd.toFixed(0)} of $${a.capUsd}</span></a>`).join("")}</span>`;
+    ${apiAccounts.map(a => `<a href="#usage" class="use" title="${esc(`${a.label}: ${spendLine(a)}`)}">${agentChip(a.provider.split(" ")[0].toLowerCase())}<span class="num">spent $${a.spentUsd.toFixed(0)} of $${a.capUsd}</span></a>`).join("")}</span>`;
 }
 
 function rerender() {

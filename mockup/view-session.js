@@ -13,7 +13,7 @@ function renderSessionView() {
   $("view").innerHTML = `<div class="sess ${T.side ? "" : "side-off"} ${drawer ? "drawer-on" : ""}">
     ${T.side ? sidebar(order, s) : `<nav class="sess-side mini" aria-label="All tmux windows (collapsed)"><button class="btn sm" data-act="side" aria-label="Show the session list" title="Show sessions">»</button></nav>`}
     <div class="sess-main">
-      <div class="sess-head">${agentChip(s.harness)}<h3>${esc(s.win)}</h3>${provChip(s.provider)}<span class="pill ${STATE_PILL[st]}">${st === "none" ? (s.yours ? "yours" : "not a goal") : st}</span>${s.sample ? `<span class="samp">sample</span>` : ""}
+      <div class="sess-head">${agentChip(s.harness)}<h3>${esc(s.win)}</h3>${provChip(s.provider)}<span class="pill ${STATE_PILL[st]}">${st === "none" ? (s.yours ? "yours" : "not a goal") : st}</span>${s.observed ? `<span class="pill idle" title="You started this goal by hand. fleet-board shows it and never starts, nudges or controls it.">started by you · observed</span>` : ""}${s.sample ? `<span class="samp">sample</span>` : ""}
         <span class="why">${esc(m.short)} · <span class="mono">${esc(s.target)}</span></span>
         <span class="spacer"></span><button class="btn sm" data-step="-1" aria-label="Previous window">[</button><span class="num why">${pos} of ${order.length}</span><button class="btn sm" data-step="1" aria-label="Next window">]</button>
         <button class="btn sm ${drawer ? "on" : ""}" data-act="drawer" aria-expanded="${drawer}">Details <kbd>i</kbd></button></div>
@@ -47,11 +47,11 @@ function drawerHtml(s, m) {
     ${ui.moveOpen ? movePanel(s) : ""}
     <section><h2>Window</h2><div class="sess-meta"><span>${esc(m.name)} → <span class="mono">${esc(s.target)}</span> · pane <span class="mono">${esc(s.paneId)}</span>${s.panes?.length ? ` + ${s.panes.length} more` : ""}</span>${s.branch ? `<span class="mono">${esc(s.branch)}</span>` : ""}
       <span>started ${hhmm(s.started)} · last output <span data-t="${+s.last}">${rel(s.last)}</span></span>${s.yours ? `<span>${s.idle ? `idle · ` : ""}${s.available ? "available for work" : s.harness === "shell" ? "" : "not available for work"}</span>` : ""}
-      ${s.model ? `<span>model line: <span class="mono">${esc(s.model)}</span> → spending from <b>${esc(acct?.label ?? "?")}</b>${acct?.capUsd ? ` ($${acct.spentUsd.toFixed(2)} of $${acct.capUsd} cap · manual only)` : ""}</span>` : ""}</div>
+      ${s.model ? `<span>model line: <span class="mono">${esc(s.model)}</span> → spending from <b>${esc(acct?.label ?? "?")}</b>${acct?.capUsd ? ` (spent so far $${acct.spentUsd.toFixed(2)} of your $${acct.capUsd} limit · manual only)` : ""}</span>` : ""}</div>
       ${s.line ? `<div class="goalfile"><span class="why">goal file, first line</span><code>${esc(s.line)}</code><span class="why">CONSENT: ${esc(consentFor(acct, s.repo).join(", "))}</span><span class="why">${esc(GOAL_SYNTAX[s.harness])}</span></div>` : ""}</section>
     ${pr ? `<section><h2>Change request</h2><div class="mono ref">${esc(pr.display)} ${provChip(pr.provider)} · ${esc(pr.state)}</div><div class="card-t">${esc(pr.t)}</div>
       <div>${pr.ci.fail ? `<span class="ci bad">✗ ${pr.ci.fail} failing</span>` : ""} <span class="ci ok">✓ ${pr.ci.pass}</span> ${pr.ci.pend ? `<span class="ci warn">● ${pr.ci.pend}</span>` : ""}</div></section>` : ""}
-    ${s.harness !== "shell" ? goalControls(s) : ""}
+    ${s.observed ? observedNote() : s.harness !== "shell" ? goalControls(s) : ""}
     <section><h2>Send keys</h2><div class="keys"><input id="keysIn" class="field" placeholder="Keys for the main pane" aria-label="Keys to send"><button class="btn" data-act="keys">Send…</button></div>
       <div class="why">Typing in the terminal sends at once; this box asks first when the window runs a goal.</div>${dt("sk", "<span>terminal: TermDown.input, unconfirmed · this box: SendKeys, confirmed for goal panes (ADR 0004)</span>")}</section>
     ${s.harness !== "shell" ? `<section><h2>Harness command</h2><button class="btn ${ui.paletteOpen ? "on" : ""}" data-act="palette">${ui.paletteOpen ? "Hide the palette" : "Harness command…"}</button>${ui.paletteOpen ? palettePanel(s) : ""}</section>` : ""}
@@ -73,6 +73,10 @@ const confirmBoxS = () => `<div class="confirm"><div>${esc(ui.confirm.label)}</d
   ${ui.confirm.freshOpt ? `<label class="chk"><input type="checkbox" id="cfFresh"> Start each goal here with /clear <span class="why">(off: the goal is typed into your existing context)</span></label>` : ""}
   <div class="actions">${ui.confirm.copy ? `<button class="btn primary" data-act="copy">Copy line</button>` : `<button class="btn primary ${ui.confirm.danger ? "danger" : ""}" data-act="do">${esc(ui.confirm.go)}</button>`}
   <button class="btn" data-act="cancel">Cancel</button></div></div>`;
+
+function observedNote() {
+  return `<section><h2>Observed goal</h2><div class="why">You started this goal yourself, so fleet-board only shows it: no pause, resume, edit or clear here, no nudges, and it holds no slot. It ends when its goal file says DONE or the window closes.</div>${dt("ob", "<span>Goal{spec.origin OBSERVED} · GoalState{binding OBSERVED, goal_id obs-…} · 03k</span>")}</section>`;
+}
 
 function goalControls(s) {
   const c = GOAL_CONTROL[s.harness] ?? { subs: [], pause: "none", resume: "none" };

@@ -153,10 +153,8 @@ what is in the protos now.
    acceptable loss on an agent crash is 10 s.
 8. ~~Probe placement.~~ **Decided:** `always-on` machines first, then the hub
    machine (03b, probe preference order).
-9. ~~"Approved and green"~~ **Decided (ADR 0008):** without `merge` consent a
-   goal's done state is "PR approved and green": `review_decision = APPROVED`
-   and `checks.rollup = SUCCESS` → `ready_for_human_merge` (both fields are
-   adapter-computed, 03j).
+9. ~~"Approved and green"~~ **Decided (ADR 0008), confirmed by the owner
+   (ADR 0024, decision 19):** the rule is stated in 03c (W6 rules, Verification).
 10. ~~Heartbeat `last_seen`~~ **Decided:** held in memory per heartbeat and
     written at most once a minute per machine and on connect and disconnect
     ([defaults](defaults.md)).

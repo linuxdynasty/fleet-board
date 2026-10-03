@@ -71,8 +71,8 @@ const accounts = [
 
 // API-key accounts reached through OpenCode (BUDGET_KIND_DOLLAR_CAP). Manual dispatch only, never auto. Sample.
 const apiAccounts = [
-  { id: "deepseek-api", harness: "opencode", provider: "DeepSeek", label: "DeepSeek (API key)", capUsd: 20, spentUsd: 6.4, period: "month", source: "opencode stats", read: ago(25 * 60), mode: "fleet", budgetKind: "dollar_cap", sample: true },
-  { id: "moonshot-api", harness: "opencode", provider: "Moonshot AI", label: "Moonshot (API key)", capUsd: 15, spentUsd: 11.2, period: "month", source: "opencode stats", read: ago(25 * 60), mode: "fleet", budgetKind: "dollar_cap", sample: true },
+  { id: "deepseek-api", harness: "opencode", provider: "DeepSeek", label: "DeepSeek (API key)", capUsd: 20, spentUsd: 6.4, source: "opencode stats", read: ago(25 * 60), mode: "fleet", budgetKind: "dollar_cap", sample: true },
+  { id: "moonshot-api", harness: "opencode", provider: "Moonshot AI", label: "Moonshot (API key)", capUsd: 15, spentUsd: 11.2, source: "opencode stats", read: ago(25 * 60), mode: "fleet", budgetKind: "dollar_cap", sample: true },
 ];
 
 // ADR 0012 integrations. GitHub is connected (ADR 0005); the rest are planned adapters with their declared capabilities.

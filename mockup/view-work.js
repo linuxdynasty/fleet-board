@@ -53,7 +53,7 @@ function renderWorkView() {
 function workCard(it) {
   const k = keyOf(it), s = goalFor(it) ?? (it.kind === "issue" ? sessions.find(x => isGoal(x) && x.repo === it.repo && x.issue === it.n) : null), st = stageOf(it);
   const ci = it.kind === "pr" ? (it.state === "merged" ? `<span class="ci ok">merged ${hhmm(it.mergedAt)}</span>` : it.ci.fail ? `<span class="ci bad">✗ ${it.ci.fail}</span>` : it.ci.pend ? `<span class="ci warn">● ${it.ci.pend}</span>` : `<span class="ci ok">✓ ${it.ci.pass}</span>`)
-    : `<span class="kind">${esc(it.kindLabel ?? "issue")}${it.size ? " · " + esc(it.size) : ""}</span>`;
+    : `<span class="kind">${esc(it.kindLabel ?? "issue")}</span>`;
   let act = "";
   if (s && st !== "manual") act = `<button class="link" data-open="${s.id}">${esc(s.win)} · ${esc(where(s))}</button>`;
   else if (it.claim) act = `<span class="claim">claimed by ${esc(it.claim)}</span>`;

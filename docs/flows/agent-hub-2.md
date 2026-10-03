@@ -355,7 +355,7 @@ sequenceDiagram
   S->>H: tx: probe row REQUESTED (unique active per account) plus outbox EnsureProbe
   H-->>A: Command{EnsureProbe{probe_id, account_id, account_key, harness, interval, run_now, profile}}
   A->>A: persist the assignment, CommandAck
-  A->>P: ensure session on the probe server in a trusted dir, launch the harness, wait for ready
+  A->>P: ensure session on the probe server in the probe folder (trusted once by the owner), launch the harness, wait for ready
   A->>P: read the identity, must equal account_key or the result is FAILED ACCOUNT_MISMATCH
   A->>P: type the usage command, wait until settled, capture the pane
   A->>A: version-pinned parser: shown fields plus buckets, or PARSE_FAILED with the redacted screen

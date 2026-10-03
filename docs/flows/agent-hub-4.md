@@ -95,7 +95,8 @@ sequenceDiagram
    first line, `head_commit`, `dirty`, `watch_alive` and, for a `REPO_DRIVER` goal,
    the driver's `worktree_path` and `branch` (the hub keeps them as
    `Goal.status.branch`, which is how it finds the change request by `source_branch`
-   and enforces one agent per branch). `GoalState` is NEVER_DROP and is also in
+   and enforces one agent per branch). A goal started by hand is `GoalState{binding = OBSERVED}`,
+   shown only ([03k](../specs/03k-observed-goals.md)). `GoalState` is NEVER_DROP and is also in
    every snapshot.
 
    | `GoalLineState` | Meaning | Hub reads it as |

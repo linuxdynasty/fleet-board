@@ -17,7 +17,9 @@ in [design.md](../../../docs/design.md#safety-rails).
 
 - No harness auth file, keychain item, `gh` token or secret environment
   variable is opened, read, logged, shipped or proxied. Sign-in state comes only
-  from each harness's own status screen. Never run a harness headless with `-p`.
+  from each harness's own status screen. The product never runs a harness headless
+  with `-p`; only the development helpers `agent-roles.py codex-exec|muse-exec` may,
+  for work on this repo (ADR 0024).
 - The hub stores no passwords. Sign-in is passkeys (WebAuthn) and/or GitHub
   sign-in through the GitHub App with an allow-list; the CLI uses API tokens; a
   phone is a paired device. `local_trusted` binds to loopback only.

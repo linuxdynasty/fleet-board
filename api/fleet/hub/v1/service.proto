@@ -229,8 +229,8 @@ service FleetService {
 
   // --- Insights and system health (05, 05b) ---------------------------------
 
-  // [READ] Subscription efficiency, goal outcomes, where work gets stuck, size
-  // accuracy and routine outcomes, from the hub's daily rollups. Numbers only.
+  // [READ] Subscription efficiency, goal outcomes, where work gets stuck and
+  // routine outcomes, from the hub's daily rollups. Numbers only.
   rpc GetInsights(GetInsightsRequest) returns (GetInsightsResponse);
   // [READ] The weekly written reports, newest first, without their text.
   rpc ListInsightReports(ListInsightReportsRequest) returns (ListInsightReportsResponse);

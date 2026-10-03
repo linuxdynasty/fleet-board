@@ -39,7 +39,9 @@ enum BudgetKind {
   BUDGET_KIND_UNSPECIFIED = 0;
   // Subscription: a weekly percentage that resets on the harness's schedule.
   BUDGET_KIND_WEEKLY_PERCENT = 1;
-  // API-key provider: a dollar cap per period; never auto-dispatched.
+  // API-key provider: money spent so far as the tool reports it (all-time, no
+  // period), shown against an optional limit the owner sets; never
+  // auto-dispatched.
   BUDGET_KIND_DOLLAR_CAP = 2;
 }
 
@@ -111,15 +113,13 @@ message LimitBucket {
   bool shown_as_remaining = 8;
 }
 
-// SpendReading is the dollar-cap counterpart for API-key providers
-// (OpenCode `opencode stats`). Display and manual budgeting only.
+// SpendReading is the dollar counterpart for API-key providers (OpenCode
+// `opencode stats`): the total the tool reports, all-time, as it counts it.
+// There is no period: the contract never sums readings into a month or resets
+// the figure. Display and manual budgeting only.
 message SpendReading {
   // Amount in micro-units of currency (1 USD = 1_000_000).
   int64 amount_micros = 1;
   // ISO 4217 code, e.g. "USD".
   string currency = 2;
-  // What the amount covers as the tool labels it ("all-time", "today").
-  string period_label = 3;
-  // Period start when the tool states it; otherwise unset.
-  google.protobuf.Timestamp period_start_time = 4;
 }

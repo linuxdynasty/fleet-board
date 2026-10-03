@@ -83,11 +83,14 @@ Nothing on a worker listens on the network.
 | Input | How | Why not the other way |
 |---|---|---|
 | tmux panes (output, windows, lifecycle, activity) | **Streamed**: one `tmux -C` control-mode client per server pushes changes; a snapshot only on reconnect ([01](specs/01-agent-capabilities.md) E1-E5) | Polling `list-panes`/`capture-pane` would lag and cost CPU |
-| Goal files (`DONE`, `BLOCKED …`, working) | **Watched** with file-system notifications (library: [ADR 0020](adr/0020-dependencies.md)), plus a slow rescan for missed events (interval not yet set) | |
+| Goal files (`DONE`, `BLOCKED …`, working) | **Watched** with file-system notifications (library: [ADR 0020](adr/0020-dependencies.md)), plus a rescan every 60 s for missed events. v1 also looks for a goal file in the checkout of any pane running a harness, to show goals the owner started by hand ([02h](specs/02h-goal-binding-and-pane-signals.md#observed-goals-v1)) | |
 | Harness hooks (Stop, interrupt, permission, session start) | **Pushed** by the harness ([01d](specs/01d-goal-hooks.md)) | |
-| Developer typing in a goal pane | **Polled** every 2 s from `tmux list-clients` activity ([02h](specs/02h-goal-binding-and-pane-signals.md)): the one polled pane input, kept only until the tmux probe (plan 0.5) finds a push source or the owner accepts the poll | control mode is not known to report keyboard input |
+| Developer typing in a goal pane | **Polled** every 2 s from `tmux list-clients` activity ([02h](specs/02h-goal-binding-and-pane-signals.md)): the one polled pane input; the tmux probe (plan 0.5) looks for a push source, and until it finds one the poll stays | control mode is not known to report keyboard input |
 | Weekly usage | **Probe every 10 min** per account in an idle probe session, **plus** an immediate probe when a goal starts or finishes or when a usage banner seen in a pane differs from the last reading ([03b](specs/03b-usage-and-sync.md)) | No harness offers a usage API or event today; a probe of push sources is [#46](https://github.com/linuxdynasty/fleet-board/issues/46) |
 | Heartbeat, resource samples | Periodic (15 s, 30 s) | Liveness is periodic by nature |
+
+"Poll only usage and GitHub" has two allowed exceptions ([ADR 0024](adr/0024-pre-build-owner-decisions.md),
+decision 9): typing detection from `tmux list-clients` (2 s) and the goal-file rescan (60 s).
 
 **Hub and the outside world.** GitHub is **polled** with conditional requests
 through a read-only GitHub App ([ADR 0005](adr/0005-github-app.md),
@@ -146,6 +149,9 @@ The first line of the goal file is the state the hub reads:
 | `BLOCKED: <reason> OWNER=<who> ACTION=<what>` | needs a named person to act | Triage, one item; "notified" means the Triage item and a browser indicator until the v3 phone push |
 | `BLOCKED: <reason>` (no live watcher, no owner) | stuck | Triage as stuck |
 | `DONE` | the agent says the goal is met | verify with the code host, then free the worker |
+
+v1 shows goals the owner starts by hand as **observed goals**: the agent finds the goal file in the
+pane's folder and reports it; the fleet never starts, nudges or controls it.
 
 A `BLOCKED` line must say how it gets unblocked (a rule from Paperclip,
 [research](research/paperclip.md)). Where a repo does not ship eshu's hooks, fleet installs its own
@@ -235,7 +241,7 @@ Adopted from Paperclip:
 - **Review-loop cap.** After 3 review rounds (changes requested, then new commits) with no merge the
   goal pauses and Triage is told. CI failures do not count.
 - **Preflight before dispatch.** The agent checks the harness is signed in, `gh` can push, the
-  checkout exists, the folder is trusted and disk has room, and refuses with a named reason
+  checkout exists, the folder is trusted (read from the harness's own screen) and disk has room, and refuses with a named reason
   (`HARNESS_NOT_SIGNED_IN`, `PUSH_ACCESS_MISSING`, `CHECKOUT_MISSING`, `FOLDER_UNTRUSTED`,
   `DISK_LOW`). The hub adds checks (slots, item or branch busy, empty consent); for a manual
   dispatch each is Block, Confirm (an owner approval), Warn (acknowledge) or Info
@@ -258,10 +264,10 @@ Seven views over one `Watch` stream per tab; the element-by-element map to the A
 | Triage (`1`, home) | One ranked decisions feed, by severity then age: permission prompts, stuck, owner-blocked and paused goals, `DONE` claims the host disagrees with, ready-for-human-merge, review-loop pauses, failed starts, limit waits, pacing alerts, hub and machine health, optional suggestions. A goal waiting on CI with a live watcher is not here. Items expire after 7 days | `j`/`k` move, `a` act, `s` snooze, `o` open |
 | Work (`2`) | What should run next: a board by stage, routine cards, dispatch with a preview of the keys and checks | dispatch, drive a PR no goal owns, requeue, run a routine |
 | Session (`3`) | Step into one session: every window on every machine, a live pane, run history per goal, replay and search of stored terminal logs (`logs.db`, needs the logs scope) | send keys, attach, pause / resume / edit / clear a goal, restart in place, mark a pane available for work |
-| Usage (`4`) | Is any subscription idle or going to waste? A waste line and burn-down per account, efficiency, suggestions, API-key spend | |
-| Machines (`5`) | Facts, harness versions, hook status, add (enrollment token), drain, revoke and forget, certificate and policy status, audit log, a 7-day timeline of which goal ran where, and the **System** section: the health of fleet-board itself | |
+| Usage (`4`) | Is any subscription idle or going to waste? A waste line and burn-down per account, efficiency, suggestions, API-key "spent so far" as the tool reports it, with no monthly cap | |
+| Machines (`5`) | Facts, harness versions, hook status, add (enrollment token), rename and labels, drain, revoke and forget, certificate and policy status, audit log, a 7-day timeline of which goal ran where, and the **System** section: the health of fleet-board itself | |
 | Settings (`6`) | Layered settings with the layer that set each value, repos, consent and caps, accounts, integrations, routines, people and roles, API tokens, paired devices, storage, the trusted gate, `fleet.yaml` | |
-| Insights (`7`) | Efficiency per subscription, outcomes per harness, model and repo, where work gets stuck, size against actual, the latest weekly report | run the report now, dismiss a suggestion; changes no pane |
+| Insights (`7`) | Efficiency per subscription, outcomes per harness, model and repo, where work gets stuck, the latest weekly report | run the report now, dismiss a suggestion; changes no pane |
 
 On every view: a summary strip (working, waiting, stuck, need you, free slots, a waste line per
 subscription account, a System dot), `⌘K` or `/` to jump, `n` for the next session that needs you,
@@ -305,8 +311,7 @@ only speed limits. Quota expires at each reset, so it is expiring inventory
    points unused, never into the reserve. The weekly report is one.
 
 The scheduler does not predict what one issue costs: pacing, the reserve and the short-window limit
-bound spend. A work item may carry a size (S/M/L), and Insights shows size against the quota
-actually used, nothing more.
+bound spend.
 
 ### Reading usage
 
@@ -383,13 +388,16 @@ severity: BLOCK stops it, CONFIRM needs an owner's approval, WARN must be acknow
 ## Deployment and CLI
 
 **Three programs:** `fleetd` on the hub host, `fleet-agent` on each worker as the logged-in user,
-`fleet` on any machine that can reach the API (the hub's machine until v3: `local_trusted` binds loopback). **Joining:** the owner creates an enrollment token (`fleetd enroll-token` or the
+`fleet` on the hub machine (v1: `local_trusted` binds loopback; from another machine use `ssh -L 7080:127.0.0.1:7080 <hub>`, same port on both sides; sign-in and remote access arrive in v3). **Joining:** the owner creates an enrollment token (`fleetd enroll-token` or the
 Machines view); it embeds the SHA-256 of the fleet CA, so `fleet-agent enroll` verifies the hub
 before sending anything (no trust on first use) and enrolling is retry-safe. The agent dials out; a
 worker exposes nothing. Revoking a machine keeps its history and cuts its stream; delete only
 follows a revoke. The hub's identity (CA key, account salt) is in `state.db`, so a **backup is a
 secret**: `fleetd backup` and `restore` run on the hub host, never as API calls
-([02g](specs/02g-agent-security.md)).
+([02g](specs/02g-agent-security.md)); the nightly backup keeps the last 7, made at 03:00 hub time.
+**Install and upgrade:** GitHub Releases with checksums and an install script; `fleet-agent upgrade` and
+`fleetd upgrade` fetch and verify the next release; no Apple signing for now. The hub laptop runs `fleetd`
+under `caffeinate -s`; a Linux worker needs `loginctl enable-linger` once ([02j](specs/02j-hub-runtime.md#staying-awake-and-surviving-logout)).
 
 **Listeners** ([02j](specs/02j-hub-runtime.md)): an mTLS agent port (default 7443) and a separate
 API listener for the dashboard, CLI and attach. **Two modes** (from Paperclip): `local_trusted`,
@@ -431,7 +439,7 @@ accounts:
 Effective consent is the repo's (else the hub default) intersected with the account's. RAM and
 sign-ins are observed, and the hub address is not in this file. Subscription accounts are
 discovered, so one no machine has signed in is skipped and blocks the import unless `allow_skipped`
-is set; only API-key accounts (a dollar cap, never auto-dispatched, such as OpenCode providers) are added by hand. A repo is
+is set; only API-key accounts (spent so far against an optional dollar limit, never auto-dispatched, such as OpenCode providers) are added by hand. A repo is
 watched only when the owner adds it and the GitHub App is installed on it (`eshu-hq/eshu` is the
 author's first). A machine named in an imported config that has not enrolled yet starts drained when
 it enrolls; import never drains a machine that is already enrolled.
@@ -464,17 +472,18 @@ The [v1 plan](plan/v1-implementation-plan.md) turns milestone 1 into PRs; the ca
 [01](specs/01-agent-capabilities.md) tags each capability v1, v2 or v3.
 
 1. **v1, read-only.** Agents enroll and connect over mTLS; tmux control mode, goal-file state,
-   weekly usage probes with burn-down and waste projection; issues and PRs read by the hub through
+   weekly usage probes with burn-down and waste projection (shown after the first 24 hours of a window); issues and PRs read by the hub through
    the GitHub App. Machines, Usage, Session (panes read-only, no attach), Triage (notices only),
    Work (read-only) and Insights (efficiency) views, System health, and owner configuration of the
-   hub itself: watched repos, reserves, the Codex account mapping, GitHub, Settings forms and
-   `fleet repo|account|settings|export|import`. Reads and writes through `fleet --json`, OTEL from
+   hub itself: watched repos, reserves, the Codex account mapping, GitHub, machine admin (add, rename,
+   labels, revoke, forget), Settings forms and `fleet repo|account|settings|machine|export|import`. Reads and writes through `fleet --json`, OTEL from
    the start. Nothing types into or changes a pane. Done when a seven-day run on the four machines
-   passes and `v0.1` is tagged, which freezes the contracts.
+   passes and `v0.1` is tagged, which freezes only what v1 implements; v2 and v3 messages stay
+   changeable until they ship ([02e](specs/02e-contract-rules.md)). The owner merges every v1 PR.
 2. **v2, dispatch.** `StartGoal` into panes and worktrees, goal hooks, claims, slot limits, drain,
    approvals and local approval, session control (send keys, harness commands, respawn, kill, new
    session, mark available), terminal attach (a ticketed WebSocket, also in `local_trusted`),
-   session logs, routines, the written report and suggestions, Insights outcomes, stuck and size
+   session logs, routines, the written report and suggestions, Insights outcomes and stuck
    sections, the reliability rules, the trusted gate, `fleet` write commands (dispatch, goal
    control, requeue, routines).
 3. **v3, remote.** `authenticated` mode (HTTPS, passkey and GitHub sign-in, API tokens, the claim

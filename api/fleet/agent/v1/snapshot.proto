@@ -204,11 +204,15 @@ message TmuxServer {
 // ---------------------------------------------------------------------------
 
 // GoalState (G2): goal line plus HEAD plus dirty, in one message because the
-// hub fingerprints them as one state. Fleet panes only. The agent emits a new
+// hub fingerprints them as one state. Fleet panes, and panes where the agent
+// found an observed goal (binding OBSERVED, 02h "Observed goals (v1)"). The
+// agent emits a new
 // event whenever any fingerprinted field changes, watch_alive included: that
 // flip is what moves a goal from WAITING to STUCK (03c), so it must not wait
 // for the next snapshot.
 message GoalState {
+  // Hub-assigned for a goal the fleet started. For binding OBSERVED the agent
+  // mints it ("obs-" plus a hash, 02h) and the hub adopts it as the Goal id.
   fleet.type.v1.GoalId goal_id = 1;
   fleet.type.v1.PaneKey pane = 2;
   fleet.type.v1.SessionId session_id = 3;
@@ -236,6 +240,10 @@ message GoalState {
   // change-request lookup by source_branch key on it. Untrusted text.
   string worktree_path = 15;
   string branch = 16;
+  // How the agent tied this goal file to the pane: REGISTRY or ENV for a fleet
+  // goal, OBSERVED for a goal the owner started by hand. The hub never sends a
+  // command that changes the pane for an OBSERVED goal.
+  GoalBindingSource binding = 17;
 }
 
 // GoalBindingSource says how the agent bound a goal to a pane.
@@ -247,6 +255,12 @@ enum GoalBindingSource {
   // which only a window the fleet created can have. A reused pane cannot be
   // rebuilt this way: the hub re-sends RegisterGoal (02h).
   GOAL_BINDING_SOURCE_ENV = 2;
+  // v1: the agent found a goal file in the checkout of a pane running a known
+  // harness that no registry entry names (the owner started the goal by hand).
+  // The agent mints the GoalId and keeps the goal in agent.db, never in the
+  // registry; the hub shows it and never dispatches, nudges or controls it.
+  // Ends on DONE or when the pane exits (02h "Observed goals (v1)", 03k).
+  GOAL_BINDING_SOURCE_OBSERVED = 3;
 }
 
 // GoalRegistration is one entry of the agent's goal registry, the single
@@ -367,8 +381,9 @@ message SpoolStatus {
 
 // PolicyInfo (L1): the local policy file. Hash only, never contents.
 message PolicyInfo {
-  // Empty only when the file could not be read (safe_mode, or built-in
-  // defaults after the file was deleted); never a way to signal safe mode.
+  // Empty only when there is no file to read: the normal first run of a fresh
+  // agent, built-in defaults after the file was deleted, or a file that could
+  // not be read (safe_mode); never a way to signal safe mode (use safe_mode).
   string schema_version = 1;
   string hash = 2;
   google.protobuf.Timestamp loaded_time = 3;

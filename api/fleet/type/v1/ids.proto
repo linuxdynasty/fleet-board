@@ -30,7 +30,9 @@
 //     FLEET_GOAL_ID), a file or directory name and a "group/<label>" key,
 //     and a SessionId is the tmux session name of a session the fleet
 //     creates. Agent-minted correlation ids (PromptId, PaneKey.server_start_id)
-//     use the same alphabet. A name a person chooses and that ends up in the
+//     use the same alphabet, and so does the one GoalId an agent mints, for an
+//     observed goal ("obs-" plus 26 characters; no hub-minted ULID contains
+//     "-", so the two never collide). A name a person chooses and that ends up in the
 //     same places (labels, group names, profile names, EnsureSession.name)
 //     follows [a-z0-9][a-z0-9-]{0,31} and is refused with INVALID_NAME
 //     otherwise. PrincipalId is the one exception: it is also a path-like
@@ -79,7 +81,10 @@ message SessionId {
   string value = 1;
 }
 
-// GoalId is hub-assigned. The agent's goal registry binds it to a pane
+// GoalId is hub-assigned for every goal the fleet starts. A goal the owner
+// started by hand and the agent observed (binding OBSERVED) has an id the agent
+// minted: "obs-" plus 26 lowercase base32 characters of a hash (02h, "Observed
+// goals (v1)"). The agent's goal registry binds a fleet goal's id to a pane
 // (docs/specs/02h-goal-binding-and-pane-signals.md); FLEET_GOAL_ID in the
 // pane environment is only a fast path for a window the fleet just created.
 message GoalId {

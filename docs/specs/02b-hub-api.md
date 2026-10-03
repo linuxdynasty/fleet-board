@@ -380,7 +380,7 @@ form in the same pane, same goal id ([03h](03h-goal-phases-in-depth.md#re-arm-af
 end phase, nudges, usage consumed, log keys) and `ListGoalTransitions` (phase
 changes with reason and actor) read what the hub stores with the goal. The
 Machines timeline is `ListGoals` over `start_time` and `end_time`, not
-`create_time`. The "Goal progress" task list of the mockup is **not** in the
+`create_time`; v1 holds only observed goals (`origin = OBSERVED`, [03k](03k-observed-goals.md)). The "Goal progress" task list of the mockup is **not** in the
 contract: the goal file's first line and the run list answer "what is it doing".
 
 ## Stored logs

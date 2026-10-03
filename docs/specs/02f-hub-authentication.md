@@ -28,6 +28,13 @@ transport, and how a terminal attach over WebSocket is opened and closed.
 
 `design.md` once said the hub listens only on the Tailscale interface and attach
 needs login; both statements are now scoped to `authenticated` mode.
+
+**Open v2 decision (deferred, not decided).** In `local_trusted` mode any process on
+the hub machine is the owner, and the hub machine also runs goals. A goal that reads
+an untrusted issue could call the loopback API and approve its own request. Before
+v2 dispatch is switched on, the owner decides whether approvals and settings changes
+there need a local secret ([ADR 0024](../adr/0024-pre-build-owner-decisions.md),
+decision 20). v1 starts no goal, so nothing is exposed yet.
 `local_trusted` is a convenience for one person on one machine, and the Host and
 Origin checks below are what keep a web page the owner visits from using it.
 The loopback rule applies to the API listener only: agents reach the hub on a

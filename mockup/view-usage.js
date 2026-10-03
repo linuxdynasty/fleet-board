@@ -49,13 +49,13 @@ function burnCard(a) {
     ${dt("u-" + a.id, `<span>goal consent: ${esc(a.consent.join(", "))} · mode: ${esc(a.mode)}</span><span>UsageReading.shown (as shown) · LimitBucket.percent_used, resets_time (chart) · source ${esc(a.sourceKind === "probe" ? "USAGE_SOURCE_PROBE" : "USAGE_SOURCE_PASSIVE")}${a.passive ? ` · "${esc(a.passive)}"` : ""}</span>`)}</div>`;
 }
 
-// API-key accounts: dollar cap per period, manual dispatch only.
+// API-key accounts: spent so far as the tool reports it (all-time, no period) against the owner's one limit; manual dispatch only.
 function capCard(a) {
   const pct = Math.min(100, Math.round(a.spentUsd / a.capUsd * 100)), tone = pct >= 90 ? "var(--bad)" : pct >= 70 ? "var(--warn)" : "var(--ok)";
   const link = sessions.filter(s => s.acct === a.id).map(s => `${s.win} on ${mById(s.m).short}`);
   return `<div class="cap"><div class="cap-top">${agentChip(a.harness)}<span class="cap-name">${esc(a.label)}</span><span class="pill waiting">manual only</span></div>
     <div class="why">${esc(a.provider)} through OpenCode · paid per use · never started automatically</div>
-    <div class="win"><div class="win-top"><span>$${a.spentUsd.toFixed(2)} of $${a.capUsd} this ${esc(a.period)}</span><span class="num">${pct}%</span></div><div class="track"><div class="fill" style="width:${pct}%;background:${tone}"></div></div></div>
+    <div class="win"><div class="win-top"><span>spent so far $${a.spentUsd.toFixed(2)} of your $${a.capUsd} limit</span><span class="num">${pct}%</span></div><div class="track"><div class="fill" style="width:${pct}%;background:${tone}"></div></div></div>
     <div class="why">sessions spending here: ${esc(link.join(", ") || "none")}</div>
     <div class="src"><span class="samp">sample</span> read from ${esc(a.source)} ${rel(a.read)}</div>
     ${dt("u-" + a.id, `<span>SpendReading · BUDGET_KIND_DOLLAR_CAP · SessionAccountLink</span>`)}</div>`;

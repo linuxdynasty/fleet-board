@@ -206,6 +206,7 @@ Unless the filter names `state`, `ListSessions` and the initial state of a
 | `end_time` | `status.end_time` | timestamp | `<` `<=` `>` `>=` |
 | `live` (D) | `status.phase` is ACTIVE or HELD (03c, "Phase classes") | bool | `=` |
 | `attempt` | `spec.attempt` | number | `=` `>=` |
+| `origin` | `spec.origin` | `GoalOrigin` | `=` `in` |
 
 `order_by`: `ct`, `ut`, `phase_time` (`status.phase_time`), `start_time`. The
 Machines timeline is `start_time < "<window end>" AND (end_time > "<window
@@ -310,7 +311,7 @@ first, ties by canonical key; `desc` is not allowed).
 
 `order_by`: `ct` (default `ct desc`). Reports are immutable: no `update_time`.
 `GetInsights` does not use the filter grammar: it takes the typed
-`InsightFilter` (lists of harness, model, repo, account, machine and size).
+`InsightFilter` (lists of harness, model, repo, account and machine).
 
 | Routine (`ROUTINES`, `ListRoutines`) | Path | Type | Operators |
 |---|---|---|---|

@@ -191,6 +191,7 @@ flowchart TB
 
 Reading the picture:
 
+- **In v1 the dashboard and CLI run on the hub machine.** From another machine, forward the port: `ssh -L 7080:127.0.0.1:7080 <hub>` (same port on both sides); sign-in arrives in v3 ([02j](../specs/02j-hub-runtime.md)).
 - **Clients never talk to a machine.** The dashboard, the CLI and a phone call `FleetService` on `fleetd` and nothing else. Anything that must reach a machine becomes a typed command that `fleetd` queues for the agent and answers with an `Operation` handle (flows A4 and D4 in the [index](#flow-index)).
 - **Machines never accept a connection.** The agent dials out and holds one long-lived stream, so a sleeping laptop, a container and a machine behind NAT work the same way. The hub machine runs its own agent over loopback, so there is one code path.
 - **One writer.** Every change to `state.db` goes through the store writer, in one transaction per batch, and commands are handed to the gateway only after the transaction commits. A hub transaction never spans a network call.
@@ -277,10 +278,11 @@ What is **not** a protocol in the protos:
 | **epoch** | `HelloAck.epoch`: the connection epoch, `max(stored, Hello.last_epoch) + 1`, so it only ever increases. Every `Command` carries it and the agent refuses one from another epoch |
 | **goal** | One unit of work handed to a harness session through the harness's own `/goal`. The hub's `Goal` has a `spec` (`GoalDefinition`) and a `status` (`GoalStatus`, with a `GoalPhase`). Every dispatch attempt is a new goal (`attempt`, `previous_goal`) |
 | **goal file** | The file in the worktree whose first line is the goal's state: the objective while working, `BLOCKED: ...`, or `DONE`. The agent writes the first version; the model updates it; hooks and the agent only read it (a repo that ships its own goal hooks, such as eshu, keeps its own file: `StartGoal` skips `write_goal_file` there and the agent writes nothing). Parsed into `GoalState` (`GoalLineState`) |
+| **observed goal** | A goal the owner started by hand in their own tmux pane (v1). The agent finds its goal file from the pane's folder, mints an `obs-` id and reports it with binding `OBSERVED`. The hub shows it and never dispatches, nudges or controls it; it ends on `DONE` or when the pane exits ([03k](../specs/03k-observed-goals.md)) |
 | **goal registry** | The agent's table that binds a goal to a pane (`GoalRegistration`: goal, pane, harness, worktree path, harness session id). It is the one goal identity for every harness; `FLEET_GOAL_ID` in the pane environment is only a fast path for a window the fleet just created |
 | **harness** | An unmodified interactive coding agent in a tmux pane: Claude Code, Codex, Muse, OpenCode. fleet-board never runs one headless and never reads its credentials |
 | **heartbeat** | `Heartbeat`, every 15 s, droppable, no seq. 45 s without one is `STALE`, 3 minutes `OFFLINE` |
-| **insight** | A number the hub computes from its own rows with no model: subscription efficiency (quota left unused at each reset), goal outcomes, where work gets stuck, size versus actual. Daily rollups, read with `GetInsights` |
+| **insight** | A number the hub computes from its own rows with no model: subscription efficiency (quota left unused at each reset), goal outcomes, where work gets stuck. Daily rollups, read with `GetInsights` |
 | **LIMIT_WAIT** | `GOAL_PHASE_LIMIT_WAIT`: a held phase of up to a week for a goal whose harness hit a usage or rate limit. The hub resumes it at `limit_wait_until_time` with the harness's own resume action; no nudges meanwhile |
 | **local policy ceiling** | The machine's own policy file (`~/.config/fleet-agent/policy.yaml`). Hub settings can only tighten it, never loosen it, and the agent re-checks every command against it. An invalid file puts the agent in safe mode (observe only) |
 | **operation** | `Operation`: the handle every hub action that makes an agent do something returns at once, in state `PENDING`. Its id is the agent command's `CommandId`. The final state arrives through `Watch` or `GetOperation` |

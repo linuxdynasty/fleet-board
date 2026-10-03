@@ -8,7 +8,9 @@
   `work.proto`, `status.proto`, `ids.proto` in `api/fleet/type/v1/`;
   `goal.proto`, `session.proto` in `api/fleet/hub/v1/`
 - Decisions: [ADR 0019](../adr/0019-pre-implementation-contract-decisions.md)
-  (decision 1: reuse and the goal registry; addendum items 17 to 19)
+  (decision 1: reuse and the goal registry; addendum items 17 to 19),
+  [ADR 0024](../adr/0024-pre-build-owner-decisions.md) (decision 1: observed goals),
+  [ADR 0024](../adr/0024-pre-build-owner-decisions.md) (decision 1: observed goals)
 - Workflows that use it: [03c](03c-goals.md) (W5, W6),
   [03d](03d-triage-sessions-logs.md), [01d](01d-goal-hooks.md)
 
@@ -83,6 +85,61 @@ Rules:
   declarative, so a repeat is harmless.
 - **No path from the hub.** The agent derives `worktree_path` from its own
   worktree or the pane's checkout.
+
+## Observed goals (v1)
+
+v1 has no `StartGoal` and no hooks, so nothing writes the registry. The owner
+still starts goals by hand (an eshu `/goal` in their own tmux pane) and wants to
+see them. Decision 1 of ADR 0024: the agent finds such a goal from its goal file
+and reports it as an **observed goal**. It is shown and never dispatched, nudged,
+resumed or controlled by the fleet. The hub side is in
+[03k](03k-observed-goals.md).
+
+**Attribution: the pane's folder and the newest goal file.** For each pane that
+runs a known harness and that no registry entry names:
+
+1. Take the pane's working folder (`TmuxPane.workdir`) and the git top-level
+   containing it, its **checkout** (a linked worktree is its own checkout). A pane
+   outside every allowed root (03e) or outside a git checkout has no observed goal;
+   the path never leaves the machine. (`allowed_repo_roots` is empty on a fresh
+   agent until `fleet-agent enroll` or the owner sets it.)
+2. In that checkout read `.claude/active-goal.*` (eshu's files, named by the
+   harness session id) and take the file with the **newest modification time**. It
+   must be newer than the start of the harness process in the pane (from the OS),
+   so a file left by an earlier goal is not attributed. v1 reads no other file; the
+   generic goal file arrives with v2 (01d).
+3. If exactly one pane running a known harness has that checkout as its folder,
+   the file belongs to that pane. If two or more do, nothing is attributed: the
+   agent never guesses (the harness session id that would tell them apart is
+   learned only by v2 hooks), and `fleet-agent doctor` lists the folder.
+4. The file is read as in G2 (first line and `CONSENT:` line, length-capped,
+   control characters stripped, untrusted). A goal begins when the file is first
+   seen in a state other than `DONE`; a file already `DONE` at first sight shows
+   nothing.
+
+**Identity: the agent mints it.** The id is `obs-` plus the first 26 characters
+of the lowercase base32 (RFC 4648, no padding) of SHA-256 over `machine_id`, a NUL,
+the goal file's absolute path, a NUL and the first-seen time in Unix nanoseconds.
+The agent keeps `(id, path, first_seen_time, pane, ended)` in `agent.db`, so a
+restart or a replay keeps the same id and the hub's apply is idempotent. The agent
+mints it, not the hub, because it sees the goal while the hub is offline and the
+event ring replays with the id already fixed. The path alone is not enough: a file
+reused for the next goal after `DONE` is a **new episode** with a new first-seen
+time and so a new id. The registry is not written. The goal exists as
+`GoalState{binding = OBSERVED}` events and `Snapshot.goals`, plus `TmuxPane.goal`
+and `BranchState.goal_id` for its checkout.
+
+**Ending.** The goal ends when the file says `DONE`, when its pane exits
+(`pane_exited{goal_id}`), when the pane stops running a harness (`pane_changed`),
+or when a snapshot no longer lists it. The agent then marks the episode `ended`
+and reports it no more.
+
+**What is never done for an observed goal:** no `SendKeys`, `Interrupt` or
+`RunHarnessCommand` to its pane for it; no nudge, resume, re-arm or recovery; no
+claim on a work item; no slot. The agent refuses `StartGoal` or `RegisterGoal`
+naming its pane while it lives (`SESSION_NOT_AVAILABLE`), and the hub answers
+`ControlGoal` on it with `GOAL_ACTION_NOT_ALLOWED` and metadata
+`{"why": "observed"}` (v2).
 
 ## Reuse
 
@@ -211,8 +268,9 @@ is explicit: `TmuxPane.last_input_time` (level) and `Event.pane_input`
 replayed from the ring after an outage with its original time).
 
 Detection (the tmux spike, plan 0.5, checks whether control mode can push client
-activity instead; until it reports, this poll is the one polled pane input and
-its exception to "poll only usage and GitHub" is an open owner question, ADR 0022 addendum): every 2 s while any client is attached to a session
+activity instead; until it reports, this poll is the one polled pane input, and
+the owner allowed it as an exception to "poll only usage and GitHub", with the
+60 s goal-file rescan: ADR 0024, decision 9): every 2 s while any client is attached to a session
 holding a goal pane, the agent reads `tmux list-clients -F
 '#{client_activity} #{client_flags} #{client_session} #{pane_id}'`, ignores
 control-mode clients (its own observer), and credits the input to the active

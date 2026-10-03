@@ -57,13 +57,13 @@ function renderSettingsView() {
         <label class="slot"><span>Idle threshold (min)</span><input type="number" min="1" max="60" id="idleMin" value="${settings.idleMinutes}" aria-label="Idle threshold"></label>
       </fieldset>
       <fieldset><legend>Reserve per account</legend>
-        ${accounts.map(a => `<label class="slot"><span>${esc(a.label)} <span class="why">% kept for you</span></span><input type="number" min="0" max="90" step="5" id="res-${a.id}" data-res="${a.id}" value="${a.reserve}"></label>`).join("")}
-        ${apiAccounts.map(a => `<label class="slot"><span>${esc(a.label)} <span class="why">cap · manual only</span></span><span class="mono">$${a.capUsd}/${esc(a.period)}</span></label>`).join("")}
+        ${accounts.map(a => `<label class="slot"><span>${esc(a.label)} <span class="why">% kept for you</span></span><input type="number" min="0" max="50" step="5" id="res-${a.id}" data-res="${a.id}" value="${a.reserve}"></label>`).join("")}
+        ${apiAccounts.map(a => `<label class="slot"><span>${esc(a.label)} <span class="why">limit · manual only</span></span><span class="mono">$${a.capUsd} limit</span></label>`).join("")}
       </fieldset>
       <fieldset><legend>Limits per machine (active · total)</legend>
         ${machines.map(m => `<label class="slot"><span>${esc(m.short)} <span class="why">${m.ram} GB · ${esc(m.labels.join(", "))}</span></span><span class="pair">
-          <input type="number" min="0" max="8" id="ma-${m.id}" data-ma="${m.id}" value="${m.maxActive}" aria-label="${esc(m.short)} max active">
-          <input type="number" min="0" max="16" id="mt-${m.id}" data-mt="${m.id}" value="${m.maxTotal}" aria-label="${esc(m.short)} max total"></span></label>`).join("")}
+          <input type="number" min="1" max="16" id="ma-${m.id}" data-ma="${m.id}" value="${m.maxActive}" aria-label="${esc(m.short)} max active">
+          <input type="number" min="1" max="32" id="mt-${m.id}" data-mt="${m.id}" value="${m.maxTotal}" aria-label="${esc(m.short)} max total"></span></label>`).join("")}
       </fieldset>
       <fieldset><legend>Browser terminal</legend>
         <label class="slot"><span>tmux prefix <span class="why">this mock only</span></span><select id="tmuxPrefix" aria-label="tmux prefix">${["C-b", "C-a"].map(p => `<option ${settings.tmuxPrefix === p ? "selected" : ""}>${p}</option>`).join("")}</select></label>
@@ -98,9 +98,9 @@ function renderSettingsView() {
     settings.consent = CONSENT_OPTS.filter(o => o === c.dataset.cons ? c.checked : settings.consent.includes(o));
     log(`goal consent is now: ${settings.consent.join(", ") || "none"}`); rerender();
   });
-  document.querySelectorAll("[data-res]").forEach(i => i.onchange = () => { accounts.find(a => a.id === i.dataset.res).reserve = num(i.value, 0, 90); rerender(); });
-  document.querySelectorAll("[data-ma]").forEach(i => i.onchange = () => { mById(i.dataset.ma).maxActive = num(i.value, 0, 8); rerender(); });
-  document.querySelectorAll("[data-mt]").forEach(i => i.onchange = () => { mById(i.dataset.mt).maxTotal = num(i.value, 0, 16); rerender(); });
+  document.querySelectorAll("[data-res]").forEach(i => i.onchange = () => { accounts.find(a => a.id === i.dataset.res).reserve = num(i.value, 0, 50); rerender(); });
+  document.querySelectorAll("[data-ma]").forEach(i => i.onchange = () => { mById(i.dataset.ma).maxActive = num(i.value, 1, 16); rerender(); });
+  document.querySelectorAll("[data-mt]").forEach(i => i.onchange = () => { mById(i.dataset.mt).maxTotal = num(i.value, 1, 32); rerender(); });
   $("addRepo").onclick = () => {
     const v = $("newRepo").value.trim(), mt = /^([\w.-]+)\/((?:[\w.-]+\/)+[\w.-]+)$/.exec(v);
     if (!mt) { $("repoErr").textContent = "Use host/owner/repo, for example github.com/eshu-hq/embedded-postgres or gitlab.acme.dev/group/subgroup/repo."; return; }

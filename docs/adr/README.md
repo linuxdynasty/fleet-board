@@ -9,7 +9,8 @@ what changed it; read the later ADR before relying on the old text.
 **Order of authority when documents disagree:** the protos, then the ADRs (the
 newest wins), then the specs, the flows and design.md. The owner's decisions of
 2026-09-28 to 2026-10-02 are recorded in
-[0022](0022-drift-audit-decisions.md) (the addendum lists the open questions).
+[0022](0022-drift-audit-decisions.md) and, newest, [0024](0024-pre-build-owner-decisions.md)
+(which answers the addendum's open questions).
 [ADR 0019's 42 decisions](0019-decision-index.md) have a one-page index.
 
 | ADR | Title | Status | Relations |
@@ -17,11 +18,11 @@ newest wins), then the specs, the flows and design.md. The owner's decisions of
 | [0001](0001-system-architecture.md) | System architecture and dependencies | Accepted | Confirmed by 0014; package list amended by 0022 |
 | [0002](0002-storage-sqlite.md) | Storage: embedded SQLite | Accepted | Confirmed by 0014 |
 | [0003](0003-transport-grpc.md) | Transport and contract: gRPC with protobuf | Accepted | Superseded in part by 0017; amended by 0018, 0019; library question resolved by 0016 |
-| [0004](0004-agent-connectivity.md) | Agent connectivity and command model | Accepted | Superseded in part by 0011; amended by 0018, 0019, 0022 |
-| [0005](0005-github-app.md) | GitHub integration through a GitHub App | Accepted | Amended by 0012, 0022 |
-| [0006](0006-tmux-sessions.md) | tmux: fleet-owned servers and user-created sessions | Accepted | Superseded in part by 0011 |
+| [0004](0004-agent-connectivity.md) | Agent connectivity and command model | Accepted | Superseded in part by 0011; amended by 0018, 0019, 0022, 0024 (harness config) |
+| [0005](0005-github-app.md) | GitHub integration through a GitHub App | Accepted | Amended by 0012, 0022, 0024 (App only, no token fallback) |
+| [0006](0006-tmux-sessions.md) | tmux: fleet-owned servers and user-created sessions | Accepted | Superseded in part by 0011; amended by 0024 (no folder pre-trust) |
 | [0007](0007-web-ui-react.md) | Web UI: React, TypeScript and Vite, embedded in the hub | Accepted | Open question resolved by 0016; the four views it names are seven now (design.md, Views) |
-| [0008](0008-goal-consent-and-account-modes.md) | Configurable goal consent and interactive-only accounts | Accepted | - |
+| [0008](0008-goal-consent-and-account-modes.md) | Configurable goal consent and interactive-only accounts | Accepted | The ready-for-human-merge rule confirmed by 0024 |
 | [0009](0009-machine-groups-and-layered-settings.md) | Machine groups and layered settings | Accepted | Superseded in part by 0011 |
 | [0010](0010-session-logs.md) | Session logs and retention | Accepted | Superseded in part by 0011, 0015; amended by 0013, 0019 |
 | [0011](0011-contract-amendments.md) | Contract amendments to 0004, 0006, 0009 and 0010 | Accepted | Amended by 0012, 0018 |
@@ -32,11 +33,12 @@ newest wins), then the specs, the flows and design.md. The owner's decisions of
 | [0016](0016-browser-transport.md) | Browser transport: Connect, and WebSocket for terminal attach | Accepted | Amended by 0019 |
 | [0017](0017-contract-packages.md) | Contract packages and names | Accepted | Amended by 0018, 0019 |
 | [0018](0018-hub-api-and-contract-amendments.md) | Hub API, principals and devices, routines, profiles | Accepted | Amended by 0019, 0022 |
-| [0019](0019-pre-implementation-contract-decisions.md) | Pre-implementation contract decisions: reuse, sign-in, freeze, log access (42 numbered decisions: [index](0019-decision-index.md)) | Accepted | Amended by 0022 |
+| [0019](0019-pre-implementation-contract-decisions.md) | Pre-implementation contract decisions: reuse, sign-in, freeze, log access (42 numbered decisions: [index](0019-decision-index.md)) | Accepted | Amended by 0022; decision 9 (the freeze) amended by 0024 |
 | [0020](0020-dependencies.md) | Languages, frameworks and libraries | Accepted | Amended by 0021 (OTLP exporters), 0022, 0023 |
 | [0021](0021-insights-and-observability.md) | Insights from the fleet's own data, and observability of the fleet itself | Accepted | Questions 1 to 5 answered by 0022 (question 1 in its 2026-10-02 addendum); amends 0020's table |
-| [0022](0022-drift-audit-decisions.md) | Drift audit decisions: pane context, hub runtime, dependencies, GitHub App | Accepted | Answers 0021; superseded in part by 0023 (decision 3); addendum of 2026-10-02: owner decisions, the v1 command path (changes decision 5), open questions |
+| [0022](0022-drift-audit-decisions.md) | Drift audit decisions: pane context, hub runtime, dependencies, GitHub App | Accepted | Answers 0021; superseded in part by 0023 (decision 3); addendum of 2026-10-02: owner decisions, the v1 command path (changes decision 5), open questions; its questions 1 to 11 answered by 0024 |
 | [0023](0023-additional-libraries.md) | Additional libraries: mDNS and system sampling | Accepted | Builds on 0020; supersedes in part 0022 |
+| [0024](0024-pre-build-owner-decisions.md) | Pre-build owner decisions: observed goals, who merges, harness config, machine admin, size dropped, freeze scope, install, backups | Accepted | Amends 0004, 0005, 0006, 0019, 0022; answers 0022's questions; three decisions deferred to v2 and v3 |
 
 ## Template
 

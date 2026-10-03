@@ -17,7 +17,7 @@ snoozes or dismisses; items expire after 7 days.
 | `start_failed` | a start needing a person: update or login screen, model or effort missing, three attempts failed, a leftover worktree (03h) | `(work_item, reason)` | the fact clears, or the item is requeued |
 | `work_item_changed` | the provider closed, cancelled or reopened the item under a live goal (03h) | `(goal_id, provider state)` | goal resumed, cleared or ended |
 | `routine_blocked` | a routine run live longer than `blocked_after` (03i) | `(routine, run)` | the run ends |
-| `log_disk_low` | W9 hub disk below the threshold | `hub` | disk above the higher threshold |
+| `log_disk_low` | W9 hub disk below 5 GiB free (resumes above 8 GiB, [defaults](defaults.md)) | `hub` | disk above the higher threshold |
 | `system` | a signal about fleetd or an agent itself left OK ([05b](05b-observability.md#8-the-system-health-model)): writer lag, disk, clock skew, an always-on machine offline | `system:<signal>:<subject>` | the signal stays OK for 5 minutes |
 | `suggestion` | a rule-based insight, only with `HubSettings.suggestions_in_triage` ([05](05-insights.md#8-suggestions)), `SEVERITY_INFO`, never notified | `SuggestionId` | the rule stops firing, or dismissed |
 | `policy_invalid` | W10 agent policy file invalid (safe mode) | `machine` | snapshot shows safe mode off |

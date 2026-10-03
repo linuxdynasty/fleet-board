@@ -33,14 +33,14 @@ and sync to exist first (PR 5, 10, 11); the handler itself is the PR named.
 |---|---|---|
 | `GetServerInfo`, `GetFleetSummary`, `Watch`, `GetOperation` | v1 | 12 |
 | `ListMachines`, `GetMachine`, `ListSessions`, `GetSession`, `CapturePane` | v1 | 12 |
-| `ListGoals`, `GetGoal`, `ListGoalRuns`, `ListGoalTransitions` (observed goals) | v1 | 12 |
+| `ListGoals`, `GetGoal`, `ListGoalRuns`, `ListGoalTransitions` (v1 holds observed goals only: [03k](03k-observed-goals.md)) | v1 | 12 |
 | `ListWorkItems`, `GetWorkItem`, `ListChangeRequests`, `GetChangeRequest`, `ListIntegrations` | v1 | 12 |
 | `ListRepos`, `GetRepo`, `ListAccounts`, `GetAccount`, `ListUsageReadings` | v1 | 12 |
 | `ListTriageItems`, `GetTriageItem`, `GetSettings`, `ListSettings`, `ListAuditEntries`, `GetStoreStatus` | v1 | 12 |
 | `GetSystemStatus`, `GetInsights` (sections `EFFICIENCY` and `SERIES` only) | v1 | 13 |
 | `CreateRepo`, `UpdateRepo`, `DeleteRepo`, `CreateAccount`, `UpdateAccount`, `DeleteAccount`, `UpdateIntegration`, `UpdateSettings` | v1 | 13a |
 | `ExportConfig`, `ImportConfig`, `SnoozeTriageItem`, `DismissTriageItem` | v1 | 13a |
-| `CreateEnrollmentToken`, `UpdateMachine` (rename, labels), `RevokeMachine`, `DeleteMachine` | v1, **owner to confirm** (addendum to [ADR 0022](../adr/0022-drift-audit-decisions.md), question 1) | 13a |
+| `CreateEnrollmentToken`, `UpdateMachine` (rename, labels), `RevokeMachine`, `DeleteMachine` | v1 (confirmed by decision 5 of [ADR 0024](../adr/0024-pre-build-owner-decisions.md)) | 13a |
 | `DrainMachine`, `UndrainMachine`, `EnsureMachineHooks` | v2 | none yet |
 | `CreateSession`, `SendKeys`, `InterruptPane`, `RunHarnessCommand`, `SetPaneAvailability`, `RespawnPane`, `KillWindow` | v2 | none yet |
 | `StartGoal`, `PreflightGoal`, `ControlGoal`, `RequeueWorkItem`, `ProbeAccount` | v2 | none yet |
@@ -72,6 +72,7 @@ optional in `local_trusted` (a valid token only narrows the owner's scopes, 02f)
 | `fleet status` | fleet summary and System health | `GetFleetSummary`, `GetSystemStatus` | v1 (15) |
 | `fleet machines`, `accounts`, `goals`, `work` | list and show | the `List*`/`Get*` RPCs | v1 (15) |
 | `fleet repo`, `fleet account`, `fleet settings` | the owner-configuration writes | `CreateRepo`..., `UpdateAccount`..., `UpdateSettings` | v1 (15) |
+| `fleet machine add`, `rename`, `label`, `revoke`, `forget` | machine admin: add prints the install and `enroll` command with a fresh token; the others change or end a machine's record | `CreateEnrollmentToken`, `UpdateMachine`, `RevokeMachine`, `DeleteMachine` | v1 (15) |
 | `fleet export`, `fleet import [--dry-run]` | `fleet.yaml` out and in | `ExportConfig`, `ImportConfig` | v1 (15) |
 | `fleet doctor` | reads System status, store status and server info | `GetSystemStatus`, `GetStoreStatus`, `GetServerInfo` | v1 (15) |
 | `fleet dispatch`, goal control, `requeue`, routines | the v2 write commands | the v2 RPCs above | v2 |
@@ -84,12 +85,16 @@ optional in `local_trusted` (a valid token only narrows the owner's scopes, 02f)
 | `fleetd debug agent-stream` | tap the agent bus | local | not scheduled |
 | `fleetd claim`, `token create`, `user invite` | sign-in admin | `admin.sock` | v3 |
 | `fleet-agent enroll`, `run` | join the fleet, run the agent | `Enroll`, `Connect` | v1 (4) |
-| `fleet-agent doctor` | every local check with a reason | local | v1 (6) |
+| `fleet-agent doctor` | every local check with a reason, including probe-folder trust and Linux linger | local | v1 (6) |
+| `fleet-agent upgrade`, `fleetd upgrade` | fetch the next GitHub release, check its checksum, swap the binary ([02j](02j-hub-runtime.md#install-and-upgrade)) | local | v1 (16) |
 | `fleet-agent hook`, `hooks uninstall`, `drain`, `undrain`, `approve`, `deny` | goal hooks, local drain, local approval | local | v2 |
 
-`fleet backup` in ADR 0002 means `fleetd backup`. `fleet` runs on any machine
-that can reach the API: the hub's machine until v3 (`local_trusted` binds
-loopback), then any machine (`authenticated`).
+`fleet backup` in ADR 0002 means `fleetd backup`. In v1 `fleet` and the dashboard
+run on the hub machine (`local_trusted` binds loopback). From another machine,
+forward the port over SSH with the same port number on both sides
+(`ssh -L 7080:127.0.0.1:7080 <hub>`); a different local port would send a
+`Host` header the hub refuses (`HOST_NOT_ALLOWED`, [02f](02f-hub-authentication.md)).
+From v3 `fleet` runs on any machine that can reach the API (`authenticated`).
 
 ## Labels that change behaviour
 

@@ -102,33 +102,64 @@ outbox when it accepts `DrainMachine` (the goal is `ABANDONED`, the item `READY`
 elsewhere); the whole interplay is in
 [03h](03h-goal-phases-in-depth.md#drain-the-outbox-and-respawn).
 
-### The local policy file (L1)
+### The local policy file (L1): `policy.yaml`
 
 `~/.config/fleet-agent/policy.yaml` is the machine's ceiling (ADR 0009). The
 owner of the machine edits it by hand; the hub never writes it, and a change
 takes effect at the next agent restart. Its keys have the names and types of the
 matching `SettingValues` field ([settings.proto](../../api/fleet/type/v1/settings.proto)),
 so there is one vocabulary; a key that is absent states no local opinion, and the
-value used is the merged one in the table. A missing file behaves as if every key
-were absent (`doctor` warns); an unreadable or invalid file is safe mode (see the
-failure table).
+built-in default in the table is what the agent uses. Decision 4 of
+[ADR 0024](../adr/0024-pre-build-owner-decisions.md) fixes the fresh-agent rules:
 
-| Key | What it limits | Value when the key is absent |
-|---|---|---|
-| `default_server` | how far the agent goes in the developer's own tmux server: `none`, `observe`, `control` | `control` (ADR 0011) |
-| `max_active`, `max_total`, `max_windows` | goals using quota, live goals, windows | none locally; the hub's layers apply (2, 4, 12) |
-| `allowed_harnesses` | which harnesses fleet may drive on this machine | open: needs an owner answer (ADR 0022 addendum, question 2) |
-| `allowed_repo_roots` | the directories under which repos are inventoried and goals may run | open: needs an owner answer (same question); H1 and `StartGoal` cannot work without it |
-| `local_approval` | command kinds that wait for `fleet-agent approve` | off for every kind (02g) |
-| `rate_limits` | commands per minute per kind | 60 |
-| `spool_cap_bytes`, `attach_idle_timeout`, `cert_lifetime`, `block_on_battery` | as in defaults.md | the defaults.md value |
-| `min_probe_interval` (name proposed here; no proto carries it) | a floor on how often this machine probes (the effective interval is `max(hub, local)`) | none |
-| `labels` | labels this machine adds to the hub's | none |
+- **A missing `policy.yaml` is a normal first run.** The agent runs on the built-in
+  defaults below, reports `PolicyInfo` with an empty `schema_version` and `hash`,
+  is not in safe mode and raises no triage item. Deleting the file while the agent
+  runs is a hash change (`policy_changed`) like any edit. An unreadable or invalid
+  file is safe mode (see the failure table).
+- **`allowed_repo_roots` is empty until the owner sets it.** Empty means the agent
+  inventories no repo, reports no `PaneWorkdir` and reads no goal file (H1, G2,
+  and the observed goals of [03k](03k-observed-goals.md)), and `fleet-agent doctor`
+  says so. The agent never guesses a folder.
+- **`allowed_harnesses` defaults to every installed harness** (the ones C1 found).
+- **`fleet-agent enroll` asks for the repos folder and writes a starter file.** It
+  prompts "Folder that holds your repos (for example ~/repos):" (or takes
+  `--repos <dir>` when not interactive), checks that the folder exists, and writes
+  `policy.yaml` (mode 0644, owner only writes it) with `schema_version: "1"`,
+  `allowed_repo_roots: [<that folder>]` and every other key as a commented-out
+  line showing its default. It never overwrites an existing file, and with no
+  answer it writes the file with an empty `allowed_repo_roots` and says so.
 
-The merge of each key with the hub's value is the tighten-only rule above; the
-hub shows the result and which layer won (`EffectiveSettings`). `fleet-agent
-enroll` does not need the file. Whether it should write a starter file or ask for
-the repo roots is an owner question (same addendum).
+Every key (the merge column is the tighten-only rule above, applied per key):
+
+| Key | Type | Default when absent | Range | Merge with the hub |
+|---|---|---|---|---|
+| `schema_version` | string | `"1"` | `"1"` | reported in `PolicyInfo`; an unknown value is safe mode |
+| `default_server` | `none`, `observe` or `control` | `control` (ADR 0011) | | `min(hub, local)` in that order |
+| `max_active` | uint | none locally (the hub's layers: 2) | 1 to 16 | `min` |
+| `max_total` | uint | none locally (the hub's layers: 4) | 1 to 32 | `min` |
+| `max_windows` | uint | none locally (the hub's layers: 12) | at least 1 | `min` |
+| `allowed_harnesses` | list of harness names | every installed harness | names C1 knows | `hub ∩ local` |
+| `allowed_repo_roots` | list of absolute paths | empty | existing directories | `hub ∩ local` |
+| `local_approval` | list of `{command_kind, required}` | empty (off for every kind, 02g) | known command kinds | `hub OR local` per kind |
+| `rate_limits` | list of `{command_kind, per_minute}` | 60 per minute per kind | at least 1 | `min` per kind |
+| `cert_lifetime` | duration | 90 days | up to 365 days | `min` |
+| `attach_idle_timeout` | duration | 30 minutes | | `min` |
+| `spool_cap_bytes` | uint | 2 GiB | | `min` |
+| `block_on_battery` | bool | false | | `hub OR local` |
+| `window_name_template`, `idle_threshold`, `share_identity_email` | string, duration, bool | `{harness} {work}`, 2 minutes, false | | the hub wins (not a safety field) |
+| `min_probe_interval` | duration | none | at least 1 minute | `max(hub, local)` (a floor, see "Probe interval") |
+| `labels` | list of strings | empty | `[a-z0-9][a-z0-9-]{0,31}` | `hub ∪ local`; local cannot remove a hub label |
+| `metrics_listen`, `pprof_listen` | loopback `host:port` | none (the agent has no listener) | loopback only | local only, never delivered ([05b](05b-observability.md)) |
+| `telemetry` | the keys of 05b section 5 | off | | local only |
+| `exec.raw` | bool | reserved: never honoured, never advertised | | none |
+
+`min_probe_interval`, `metrics_listen` and `pprof_listen` are local-only names
+carried by no proto. `merged_grace` is a hub setting and not a policy key. The
+ranges for `max_active`, `max_total` and `reserve_percent` (0 to 50) are the same
+ones the hub validates (decision 18 of ADR 0024, [defaults](defaults.md)); a value
+outside its range is invalid and puts the agent in safe mode. The hub shows the
+result and which layer won (`EffectiveSettings`).
 
 ### State machine (settings delivery per machine, owned by the hub)
 
@@ -181,7 +212,7 @@ Machine drain state: `ACTIVE` → `DRAINING{hub}` → `ACTIVE` (Undrain);
 | Invalid value (e.g. `max_windows=0`, bad duration) | Agent rejects that field, keeps the previous effective value and lists it in `SettingsAck.rejected[]` as `{field, INVALID_ARGUMENT, message}` (not in `capped_fields`); `Machine.status.rejected_settings` shows it and `fleet_hub_settings_rejected_fields_total` counts it |
 | Hub sends a setting the agent's version does not know | The agent lists the field number in `unrecognized_value_fields`; the hub shows "not enforced on this machine" and, for a safety limit, leaves the machine out of auto-dispatch |
 | Policy file invalid on restart | Agent starts in **safe mode**: observe only, every control command `REJECTED_BY_POLICY` / `POLICY_SAFE_MODE`, every hub setting rejected with the same reason; `PolicyInfo.safe_mode = true` with a one-line `PolicyInfo.error` (no file contents) in the snapshot; the hub raises triage `policy_invalid` and the `policy.safe_mode` audit row |
-| Policy file deleted | Agent uses built-in safe defaults; reported as hash of defaults; `doctor` warns |
+| Policy file missing at start, or deleted while running | A normal first run: the agent uses the built-in defaults (empty `allowed_repo_roots`, every installed harness), reports an empty `PolicyInfo.hash`, is not in safe mode and raises no triage item; deleting it while running is a `policy_changed` hash change; `doctor` says what the defaults are |
 | Hub store restored from an older backup (generation goes backwards) | `fleetd restore` mints a new `settings_epoch` (03f, 02g); the agent orders settings by `(settings_epoch, generation)` and accepts any generation under a new epoch (02-contracts.md, replaces 03g's `settings_restored`) |
 | `Drain` while `StartGoal` in flight | Still in the outbox → cancelled, goal `ABANDONED` (03h); in flight past preflight → completes; delivered but not past preflight → `DRAINING` at preflight, goal `ABANDONED` |
 | `Undrain` against a local drain | `REJECTED_BY_POLICY/DRAINING`; UI explains |

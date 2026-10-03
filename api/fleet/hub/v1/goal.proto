@@ -78,6 +78,8 @@ enum GoalPhase {
   // for reuse, so the goal no longer holds a slot.
   GOAL_PHASE_MERGED = 14;
   // ENDED. merged_grace elapsed; worktree pruned, window closed or reused.
+  // An observed goal also ends here, at once, with phase_reason OBSERVED_DONE
+  // or OBSERVED_GONE (03k).
   GOAL_PHASE_CLOSED = 15;
   // ENDED. Cleared by an operator (/goal clear). The work item becomes
   // MANUAL_ONLY until an operator requeues it.
@@ -180,6 +182,24 @@ enum GoalPhaseReason {
   GOAL_PHASE_REASON_CHANGE_REQUEST_CLOSED = 31;
   // CLEARED (and the harness goal cleared) by an operator.
   GOAL_PHASE_REASON_OPERATOR_CLEAR = 32;
+  // CLOSED, observed goal (origin OBSERVED): the goal file says DONE. Nothing
+  // is verified against the code host and no worker is freed (03k).
+  GOAL_PHASE_REASON_OBSERVED_DONE = 40;
+  // CLOSED, observed goal: the pane exited, its harness left the pane, the goal
+  // file went away, or the agent no longer reports the goal, all without DONE.
+  GOAL_PHASE_REASON_OBSERVED_GONE = 41;
+}
+
+// GoalOrigin says who started a goal.
+enum GoalOrigin {
+  GOAL_ORIGIN_UNSPECIFIED = 0;
+  // The fleet dispatched it (StartGoal); every goal of v2 and later.
+  GOAL_ORIGIN_DISPATCHED = 1;
+  // v1: the owner started it by hand in their own tmux pane and the agent saw
+  // its goal file (GoalState binding OBSERVED, 03k). The hub shows it and
+  // never dispatches, nudges or controls it: it holds no slot, counts toward no
+  // cap and has no outcome in Insights.
+  GOAL_ORIGIN_OBSERVED = 2;
 }
 
 // GoalDefinition is what was dispatched: what the goal works on, where and
@@ -218,6 +238,11 @@ message GoalDefinition {
   // UNSPECIFIED for a goal that is not a routine run.
   DoneRule done_rule = 18;
   string report_path = 19;
+  // Who started the goal. For OBSERVED, only machine, harness, repo (when the
+  // goal file's checkout is a watched repo) and goal_text (the goal file's first
+  // line, untrusted) are set; the rest of this message is empty and the id is
+  // the agent-minted "obs-" id (ids.proto).
+  GoalOrigin origin = 20;
 }
 
 // GoalStatus is everything the hub concluded or observed about a goal's run:

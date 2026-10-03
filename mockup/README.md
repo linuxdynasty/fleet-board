@@ -33,7 +33,7 @@ lines, pane contents, the developer's own tmux windows, harness
 conditions, the Jira ticket `OPS-142`, the GitLab MR `infra!12`, the DeepSeek
 and Moonshot API-key accounts, forge CLI status, certificate expiry, policy
 hashes, labels, setting layers, goal-hook states per machine, session history,
-audit entries, account emails, and everything on the Insights view and in the System section
+audit entries, account emails, the **observed goal** (`omarchy` window "codex prompt 2": a goal the owner started by hand, shown as "started by you · observed", with no goal controls and no slot; 03k), and everything on the Insights view and in the System section
 (insights, the weekly report, suggestions, health signals, agent health).
 
 The pacing, goal-state, availability and dispatch rules follow
@@ -68,7 +68,7 @@ Session sidebar starts collapsed.
 | `index.html` | Shell and styles (design tokens, dark-first with light theme) |
 | `fleet-data.js` | Machines, goal-hook states per machine (`GoalHooksState`, sample), accounts (subscription and API-key), integrations, settings, harness command catalogs, `/goal` subcommands |
 | `fleet-data-work.js` | tmux windows (goal panes and the developer's own), prompts, harness conditions, change requests, backlog, audit, history |
-| `fleet-data-insights.js` | Sample insights (efficiency windows, outcomes per harness, stuck sections, size accuracy, the latest weekly report, suggestions) and sample System signals and agent health (05, 05b) |
+| `fleet-data-insights.js` | Sample insights (efficiency windows, outcomes per harness, stuck sections, the latest weekly report, suggestions) and sample System signals and agent health (05, 05b) |
 | `fleet-cmd.js` | Typed-command previews (`fmtCmd`), the `/goal` line per repo convention, the attach line |
 | `fleet-core.js` | Routing, derived state, summary strip with the waste line per account, jump-to switcher, keyboard, the `details` toggle, plain goal-file lines |
 | `fleet-dispatch.js` | Weekly pacing, reset rollover, waste outlook, goal states, slot limits, available sessions, `StartGoal` dispatch |
@@ -79,7 +79,7 @@ Session sidebar starts collapsed.
 | `view-session-tmux.js` | The terminal: tmux-style status line with window tabs, pane layout with splits, choosers, help, detached state |
 | `view-session-keys.js` | Terminal keyboard: prefix emulation (tmux defaults), plain typing into the active pane, `TermDown` preview |
 | `view-usage.js` | Usage: "will any subscription go to waste?" line per account, usage as each harness shows it plus burn-down, API-key accounts, OpenCode |
-| `view-insights.js` | Insights (key 7): efficiency per subscription, outcomes per harness, where work gets stuck, size accuracy, the latest written report (sanitized), suggestions; all `sample` |
+| `view-insights.js` | Insights (key 7): efficiency per subscription, outcomes per harness, where work gets stuck, the latest written report (sanitized), suggestions; all `sample` |
 | `view-machines.js` | Machines: the System section (health signals, sample), state and slots, harnesses with goal-hook status, goal windows, drain, attach line, facts under details, audit log |
 | `view-settings.js` | Settings: repos, consent, reserves, limits, browser terminal, privacy, integrations, effective values with their layer, `fleet.yaml` preview |
 

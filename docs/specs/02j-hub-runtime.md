@@ -4,7 +4,8 @@
 - Date: 2026-10-02
 - Part of: [02-contracts.md](02-contracts.md), [02f](02f-hub-authentication.md)
 - Decisions: [ADR 0022](../adr/0022-drift-audit-decisions.md) (supersedes the
-  "one TLS port" sentence of [ADR 0004](../adr/0004-agent-connectivity.md))
+  "one TLS port" sentence of [ADR 0004](../adr/0004-agent-connectivity.md)),
+  [ADR 0024](../adr/0024-pre-build-owner-decisions.md) (decisions 11 to 14)
 - Values: [defaults.md](defaults.md)
 
 The other specs say what `fleetd` does. This one says how an owner starts it,
@@ -29,6 +30,19 @@ mode ([02f](02f-hub-authentication.md#modes)). The loopback rule is about
 `listen.api` only; the agent listener is always reachable by the machines that
 enroll. ADR 0004's "one TLS port" therefore means the agent port: 7443 stays its
 default and the API gets its own.
+
+**Using v1 from another machine.** In v1 the dashboard and `fleet` run on the hub
+machine only (decision 11 of ADR 0024); sign-in arrives in v3. From another
+machine, forward the port over SSH and use the same port number on both sides:
+
+```
+ssh -L 7080:127.0.0.1:7080 <hub>      # then open http://localhost:7080, or run fleet there
+```
+
+The hub accepts the `Host` names `localhost` and `127.0.0.1` with its listening
+port ([02f](02f-hub-authentication.md)); a forward to a different local port sends
+a `Host` it refuses (`HOST_NOT_ALLOWED`). `fleet` on the other machine sets
+`FLEET_URL=http://localhost:7080`.
 
 The agent listener's certificate is issued by the hub CA for the names in
 `tls.agent_names` (default: the machine's hostname, `<hostname>.local`,
@@ -96,11 +110,52 @@ The agent's directory is `~/.local/state/fleet-agent/` ([04](04-technology-revie
 
 | Command | Does |
 |---|---|
-| `fleetd run` | starts the hub (launchd or `systemd --user` runs this) |
+| `fleetd run` | starts the hub (launchd or `systemd --user` runs this; see [staying awake](#staying-awake-and-surviving-logout)) |
+| `fleetd upgrade` | fetches the next GitHub release, verifies its checksum and swaps the binary ([install and upgrade](#install-and-upgrade)) |
 | `fleetd init` | writes the default configuration file and the state directory |
 | `fleetd setup github` | writes the App manifest and the `github` keys ([ADR 0022](../adr/0022-drift-audit-decisions.md)) |
 | `fleetd enroll-token`, `claim`, `token create`, `user invite` | admin actions over `admin.sock` ([02f](02f-hub-authentication.md)) |
 | `fleetd backup`, `restore`, `debug agent-stream`, `insights rebuild` | local, never RPCs ([02b](02b-hub-api.md#local-commands)) |
+
+## Staying awake and surviving logout
+
+The hub is a laptop in the author's setup, and a sleeping hub stops the GitHub
+sync, the scheduler, the System signals and the nightly backup (decisions 12 and
+13 of ADR 0024).
+
+- **Hub on macOS.** The launchd unit runs `fleetd` under `caffeinate -s`
+  (`ProgramArguments`: `/usr/bin/caffeinate`, `-s`, the `fleetd` path, `run`), or
+  the equivalent on another OS (`systemd-inhibit --what=sleep`). `-s` keeps the
+  machine awake only while it is on power; on battery the laptop can still sleep,
+  and the agents reconnect when it wakes.
+- **macOS workers.** A LaunchAgent starts at the owner's login and needs the owner
+  logged in (no auto-login is set up; a locked screen is fine).
+- **Linux workers.** A `systemd --user` service stops when the owner's last session
+  ends unless lingering is on. The owner runs `sudo loginctl enable-linger <user>`
+  once per worker (one admin step, the only one fleet-board asks for);
+  `fleet-agent doctor` runs `loginctl show-user <user> --property=Linger` and says
+  how to fix it.
+
+## Install and upgrade
+
+Decision 14 of ADR 0024, built in plan PR 16.
+
+- **Where binaries live.** GitHub Releases of this repository: one archive per
+  program and platform (darwin and linux, amd64 and arm64) and one `SHA256SUMS`
+  file. Nothing else is published.
+- **Install.** A one-line install script (the "Add machine" command shows it) downloads
+  the archive for the machine, checks it against `SHA256SUMS`, installs it into the
+  owner's `~/.local/bin` and installs the service unit. A checksum mismatch installs
+  nothing.
+- **Upgrade.** `fleet-agent upgrade` and `fleetd upgrade` run on the machine, as the
+  owner. Each fetches the latest release (or the one named with `--version`), checks
+  the checksum, replaces its own binary, and restarts the service. The databases
+  migrate forward only when the new binary starts. An upgrade is never a hub command
+  (01, M). A hub and its agents are upgraded one at a time; the wire contract is
+  additive-only from `v0.1`.
+- **macOS signing.** The binaries are not signed or notarized for now. macOS marks a
+  downloaded file as quarantined, so the owner clears the flag once per machine with
+  `xattr -d com.apple.quarantine <binary>`; the install script prints the command.
 
 ## `fleetd setup github`
 

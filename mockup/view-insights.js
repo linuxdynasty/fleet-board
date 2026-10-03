@@ -1,5 +1,5 @@
 // Insights (key 7): what the hub's own data says (docs/specs/05-insights.md). Efficiency per subscription, goal outcomes
-// per harness, where work gets stuck, size estimate versus actual, the latest written report and suggestions.
+// per harness, where work gets stuck, the latest written report and suggestions.
 // All numbers are sample data (fleet-data-insights.js). Rates need 5 goals; a hidden rate shows "too few goals".
 // The report is untrusted model text: it is shown sanitized (headings, lists, links as text, no HTML), never as markup.
 const dismissedSug = {};
@@ -45,7 +45,7 @@ function renderInsightsView() {
     <div class="section-head"><h3>Are the subscriptions used before they reset?</h3><span class="hint">last 4 weekly windows per account</span></div>
     <div class="caps">${efficiency.map(effCard).join("")}</div>
     <div class="section-head"><h3>What finished, by harness</h3><span class="hint">goals that ended in the range · a goal that never ran or was cancelled is not in the rates</span></div>
-    <div class="cap"><label class="slot"><span>Group by</span><select id="insGroup" aria-label="Group outcomes by"><option>harness</option><option>model</option><option>repo</option><option>account</option><option>machine</option><option>size</option></select></label><table class="shown ins-table" aria-label="Goal outcomes by harness"><thead><tr><th>harness</th><th>ran</th><th>merged</th><th>time to merge (typical / slowest 1 in 10)</th><th>hints sent per goal</th><th>stuck</th><th>review rounds per goal</th><th>restarts per goal</th><th>quota used per merged change</th></tr></thead>
+    <div class="cap"><label class="slot"><span>Group by</span><select id="insGroup" aria-label="Group outcomes by"><option>harness</option><option>model</option><option>repo</option><option>account</option><option>machine</option></select></label><table class="shown ins-table" aria-label="Goal outcomes by harness"><thead><tr><th>harness</th><th>ran</th><th>merged</th><th>time to merge (typical / slowest 1 in 10)</th><th>hints sent per goal</th><th>stuck</th><th>review rounds per goal</th><th>restarts per goal</th><th>quota used per merged change</th></tr></thead>
       <tbody>${outcomes.map(outcomeRow).join("")}</tbody></table>
       <div class="why">quota used is in percentage points of each account's weekly quota: compare it inside one account.</div>
       ${dt("io", `<span>GetInsights{sections: OUTCOMES, group_by: HARNESS} → OutcomeRow{ran, merged, merge_rate_percent, time_to_merge_p50, p90, nudges_total, ever_stuck, review_rounds_total, restarts_total, quota_points_per_merged, low_confidence}</span>`)}</div>
@@ -54,8 +54,6 @@ function renderInsightsView() {
       <div class="cap"><div class="cap-name">Provider trouble</div>${stuckList([...stuck.conditions.map(c => ({ html: `${agentChip(c[0])} ${esc(c[1])} (${esc(c[2])}): ${c[3]} times on ${c[4]} goals, ${esc(c[5])} open` })), ...stuck.incidents.map(i => ({ cls: "bad", html: `incident on ${esc(i[0])}: ${esc(i[1])}, ${esc(i[2])}, ${i[3]} goals on ${i[4]} machines` }))])}</div>
       <div class="cap"><div class="cap-name">After updates and on start</div>${stuckList([...stuck.parser.map(p => ({ cls: "bad", html: `${agentChip(p[0])} usage parsing failed ${p[3]} of ${p[4]} times on ${esc(p[1])}, first seen soon after the update from ${esc(p[5])}` })), ...stuck.starts.map(s => ({ html: `${esc(s[0])} · ${agentChip(s[1])}: ${s[3]} start attempts failed (<span class="mono">${esc(s[2])}</span>)` }))])}</div></div>
     ${dt("is", `<span>GetInsights{sections: STUCK} → StuckInsights{prompts[] PromptBlockRow{prompt_class}, conditions[], incidents[], parser_failures[] ParserFailureRow{after_update}, start_failures[], stuck_reasons[]}</span>`)}
-    <div class="section-head"><h3>Size estimate against what happened</h3><span class="hint">median time to merge per size</span></div>
-    <div class="cap"><table class="shown ins-table" aria-label="Size accuracy"><tbody>${sizeAccuracy.map(s => `<tr><td>${esc(s[0])}</td><td class="num">${s[1]} merged</td><td class="num">median ${hrs(s[2])}</td><td class="why">${s[3] == null ? "" : `${s[3]}% took longer than the next size's median`}</td></tr>`).join("")}</tbody></table></div>
     <div class="section-head"><h3>Latest weekly report</h3><span class="hint">written by ${agentChip(r.harness)} ${esc(r.model)} ${rel(r.when)} · cost ${r.pts} points of the ${esc(r.bucket)} quota · spare quota only</span></div>
     <div class="cap"><div class="why">Model-written text, shown sanitized: no HTML, no images, links as plain text. The numbers it was written from are one click away.</div>
       <div class="report">${reportHtml(r.text)}</div>

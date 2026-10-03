@@ -128,7 +128,7 @@ sequence; `none` means unordered. Droppable: `yes` is SHED; `coalesce` keeps the
 | B3 | `Snapshot.power`, `Event.power_state` | A→H | — | seq | no |
 | C1 | `Snapshot.harnesses[] HarnessInfo{profile, version_support, parser_support[], …}`, `Event.harness_changed` | A→H | — | seq | coalesce |
 | C2 | `AccountIdentity` in snapshot and `Event.account_identity` | A→H | — | seq | coalesce |
-| C3 | local only | — | — | — | — |
+| C3 | local only (the probe folder; no contract message) | — | — | — | — |
 | C4 | `HarnessInfo.catalog CommandCatalog{hash, entries[]}` | A→H | — | snapshot/seq | no |
 | D1 | `EnsureProbe{probe_id, account_id, account_key, harness, interval, run_now}`, `StopProbe`; `ProbeHealth` in snapshot and `Event.probe_health` | H→A; A→H | yes | cmd; seq | coalesce (event) |
 | D2 | `Event.usage_reading UsageReading{shown, buckets[], parse}`; latest per account in `Snapshot.usage` | A→H | — | seq | coalesce |
@@ -155,7 +155,7 @@ sequence; `none` means unordered. Droppable: `yes` is SHED; `coalesce` keeps the
 | F6 | `KillWindow{window}` | H→A | yes | cmd | no |
 | F8 | `RunHarnessCommand{pane, command, args, expected_class, catalog_hash}` → `RunHarnessCommandResult` | H→A | observe: yes; others: no | cmd | no |
 | G1 | `EnsureGoalHooks{harness, workdir, expected_version, profile}` → `EnsureGoalHooksResult{state GoalHooksState}`; per checkout in `RepoCheckout.goal_hooks[]` (`trust` `HookTrustState`, `trust_approve_command`, `config_path`, [01d](01d-goal-hooks.md)); also in `HarnessInfo.goal_hooks`; `HarnessInfo.goal_control` (G4) | H→A; A→H | yes | cmd | no |
-| G2 | `GoalState{…, worktree_path, branch}` in `Snapshot.goals` and `Event.goal_state` | A→H | — | seq | never |
+| G2 | `GoalState{…, worktree_path, branch, binding}` in `Snapshot.goals` and `Event.goal_state`; `binding = OBSERVED` for a goal the owner started by hand (02h, 03k) | A→H | — | seq | never |
 | G3 | `StartGoal{spec GoalSpec{…, model, effort, fresh_context, dispatch_reason, profile}, reuse_pane, in_session, ready_timeout, goal_file_timeout, rearm_reason}`; `CommandProgress{command_id, step}` per step (14 named steps, 02h); `StartGoalResult{…, typed_goal_line, branch, model, effort, registration}` | H→A; A→H | composite: per step class (02h) | cmd | never |
 | G4 | `RunHarnessCommand{command: "/goal", args: pause\|resume\|edit …\|clear}` (class GOAL), `Interrupt`, or `SendKeys{GOAL_RESUME}`, as `HarnessInfo.goal_control` says; `GOAL_SUBCOMMAND_UNSUPPORTED` otherwise | H→A | no (typed input) | cmd | never |
 | G5 | goal registry: `Snapshot.goal_registry[] GoalRegistration`, `Event.goal_registry`, `RegisterGoal{goal, pane, repo_driver}`, `ReleaseGoal{goal, pane}` | both | yes | seq; cmd | never |

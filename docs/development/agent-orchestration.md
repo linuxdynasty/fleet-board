@@ -107,6 +107,10 @@ verified. Commit before dispatching a reviewer so a stray edit is recoverable.
 - **Muse:** `python3 scripts/agent-roles.py muse-exec <role> "<task>"`.
 - **OpenCode:** `.opencode/agent/<role>.md`; pick its model in the session.
 
+`codex-exec` and `muse-exec` run a role headless. That is allowed for developing
+this repo only; the product never runs a harness headless (ADR 0024, AGENTS.md
+principle 1).
+
 Use `--dry-run` on the exec commands to print the command and prompt first.
 
 ## The gate floor

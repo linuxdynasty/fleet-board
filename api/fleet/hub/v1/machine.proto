@@ -162,7 +162,8 @@ message MachineTelemetry {
   // macOS memory pressure level: 1 normal, 2 warn, 4 critical; 0 unknown.
   uint32 memory_pressure_level = 9;
   // Free space under each path the agent watches (repo roots, its state
-  // directory); the smallest drives DISK_LOW.
+  // directory); the smallest drives DISK_LOW, raised below 5 GiB free
+  // (docs/specs/defaults.md).
   repeated MachineDisk disk = 10;
   // Log shipping (heartbeat SpoolStatus): bytes waiting in the agent's spool,
   // bytes lost to its cap, and whether shipping is paused by the hub.

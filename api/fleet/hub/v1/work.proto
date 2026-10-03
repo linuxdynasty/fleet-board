@@ -62,14 +62,6 @@ enum WorkManualReason {
   WORK_MANUAL_REASON_EDITED_AFTER_TRUST = 4;
 }
 
-// WorkSize is the size estimate triage gives a work item.
-enum WorkSize {
-  WORK_SIZE_UNSPECIFIED = 0;
-  WORK_SIZE_SMALL = 1;
-  WORK_SIZE_MEDIUM = 2;
-  WORK_SIZE_LARGE = 3;
-}
-
 // WorkItem is the hub's record of one issue, ticket or routine run. A mirror
 // with no owner-editable fields, so no spec/status split: id is the
 // WorkItemKey, version bumps when the provider data, stage, trust or goal link
@@ -91,8 +83,6 @@ message WorkItem {
   TrustVerdict trust = 12;
   // Active goal for this item, if any; past goals via ListGoals.
   fleet.type.v1.GoalId goal = 13;
-  // Size estimate from triage, when set.
-  WorkSize size = 14;
   google.protobuf.Timestamp last_sync_time = 15;
   // Set while stage is MANUAL_ONLY.
   WorkManualReason manual_reason = 16;
