@@ -63,7 +63,7 @@ setting: the agent receives it so the owner sees one list of settings, never
 acts on it and echoes it unchanged.
 
 **Skew with an older agent.** The hub may be a minor version ahead of an agent
-(02, versioning), so it can send a `SettingValues` field the agent does not
+(02l, versioning), so it can send a `SettingValues` field the agent does not
 know; protobuf drops it silently and the agent's `effective` simply omits it.
 The agent therefore lists the field numbers its schema did not recognize in
 `SettingsAck.unrecognized_value_fields` (and `unrecognized_settings_fields` for

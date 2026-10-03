@@ -1,4 +1,4 @@
-# Dashboard, hub and agent flows (part 2 of 5)
+# Dashboard, hub and agent flows (part 2 of 6)
 
 - Status: Accepted
 - Date: 2026-10-02
@@ -8,7 +8,7 @@
 - Flows in this part: **D3** live updates, **D4** dispatch a goal end to end, **D5** answer a prompt via approvals
 - Other parts: [1](dashboard-hub-agent.md) (D1, D2), [2](dashboard-hub-agent-2.md) (D3, D4, D5),
   [3](dashboard-hub-agent-3.md) (D6, D7, D8), [4](dashboard-hub-agent-4.md) (D9, D10, D11, D12),
-  [5](dashboard-hub-agent-5.md) (D13)
+  [5](dashboard-hub-agent-5.md) (D13), [6](dashboard-hub-agent-6.md) (D14 to D16)
 - Conventions: arrows are numbered by hand and the numbered list under each diagram explains them. Where a
   spec and a proto disagree, the proto wins. Names are the proto names; the first mention of a message in a file links to its proto.
 

@@ -1,4 +1,4 @@
-# Dashboard, hub and agent flows (part 5 of 5): insights and the weekly report
+# Dashboard, hub and agent flows (part 5 of 6): insights and the weekly report
 
 - Status: Accepted
 - Date: 2026-10-02
@@ -8,7 +8,7 @@
 - Flows in this part: **D13** insights, suggestions and the weekly written report
 - Other parts: [1](dashboard-hub-agent.md) (D1, D2), [2](dashboard-hub-agent-2.md) (D3, D4, D5),
   [3](dashboard-hub-agent-3.md) (D6, D7, D8), [4](dashboard-hub-agent-4.md) (D9 to D12),
-  [5](dashboard-hub-agent-5.md) (D13)
+  [5](dashboard-hub-agent-5.md) (D13), [6](dashboard-hub-agent-6.md) (D14 to D16)
 - Specs: [05-insights.md](../specs/05-insights.md) owns the numbers, rules and thresholds;
   [ADR 0021](../adr/0021-insights-and-observability.md) is the decision. The System section
   that sits beside it is [A14](agent-hub-6.md#a14-system-health-how-fleetd-and-the-agents-report-on-themselves).

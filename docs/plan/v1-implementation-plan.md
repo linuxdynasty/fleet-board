@@ -2,7 +2,7 @@
 
 - Status: Accepted (approved and merged; tracked as GitHub issues #25 to #48 in the milestone "v1 - read-only fleet")
 - Date: 2026-10-02
-- Inputs: [design.md](../design.md) milestones, the capability map in
+- Inputs: [design.md](../design.md) and its [milestones](../design-deployment-and-milestones.md#milestones), the capability map in
   [01](../specs/01-agent-capabilities.md) (v1/v2/v3 tags),
   [02e](../specs/02e-contract-rules.md) (freeze checklist),
   [02k](../specs/02k-v1-surface-and-cli.md) (which release serves what),

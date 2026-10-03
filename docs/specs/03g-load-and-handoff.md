@@ -154,7 +154,7 @@ what is in the protos now.
 8. ~~Probe placement.~~ **Decided:** `always-on` machines first, then the hub
    machine (03b, probe preference order).
 9. ~~"Approved and green"~~ **Decided (ADR 0008), confirmed by the owner
-   (ADR 0024, decision 19):** the rule is stated in 03c (W6 rules, Verification).
+   (ADR 0024, decision 19):** the rule is stated in 03l (W6 rules, Verification).
 10. ~~Heartbeat `last_seen`~~ **Decided:** held in memory per heartbeat and
     written at most once a minute per machine and on connect and disconnect
     ([defaults](defaults.md)).

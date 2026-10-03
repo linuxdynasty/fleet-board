@@ -92,8 +92,8 @@ governed; nothing else needs to change.
 Current map (the exact globs are in `.agents/skill-paths.json`):
 `api/**/*.proto`, `buf*.yaml` to `fleet-contract-rigor`; `*.go`, `go.mod`,
 `go.sum`, `go.work` to `fleet-go`; `internal/**/store/**`, `*sqlite*`, `migrations`,
-`*.sql`, and the packages that write the databases (`internal/hub/{ingest,outbox,syncer}`,
-`internal/agent/ring`) to `fleet-sqlite-store`; `internal/harness/**` and harness
+`*.sql`, and the packages that write the databases (`internal/hub/{ingest,outbox,syncer,pacing,insights}`,
+`internal/agent/{ring,goals}`) to `fleet-sqlite-store`; `internal/harness/**` and harness
 fixtures (and `internal/agent/probe/**`) to `fleet-harness-adapter`;
 `internal/**/tmux/**` and `internal/agent/probe/**` to `fleet-tmux`; `web/**`,
 `mockup/**` to `fleet-frontend`; `**/telemetry/**` and `**/observability/**` to

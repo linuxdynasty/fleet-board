@@ -54,7 +54,7 @@ rule. The agent now finds a goal file in a pane's folder and reports it as an
   Observed goals are the one case where the agent also looks at a pane it did not
   create, and it reads only that pane's goal file, never its contents.
 
-Specified in [01](../specs/01-agent-capabilities.md) (E9, G2),
+Specified in [01](../specs/01-agent-capabilities.md) (E9), [01f](../specs/01f-agent-control-goals-and-policy.md) (G2),
 [01e](../specs/01e-security-and-privacy.md), [02h](../specs/02h-goal-binding-and-pane-signals.md#observed-goals-v1),
 [03k](../specs/03k-observed-goals.md), the protos (`GoalOrigin`, `GoalBindingSource`
 `OBSERVED`, `GoalState.binding`), plan PR 9 (#37) and the mockup.
@@ -162,7 +162,7 @@ and resumes above 8 GiB. The agent's low-disk point is 5 GiB. The goal-file resc
 
 **19. Ready-for-human-merge means review decision `APPROVED` and checks rollup
 `SUCCESS`.** The owner confirmed it. Item 9 of 03g is struck; the rule is stated in
-[03c](../specs/03c-goals.md).
+[03l](../specs/03l-goal-lifecycle-and-verification.md) (it was in 03c before that file was split).
 
 ### Deferred, not decided
 
@@ -176,6 +176,31 @@ the owner approves the words before they go into [03c](../specs/03c-goals.md).
 
 **22. (v3) Phone push.** The lean is an installable web app with web push and no app
 store. Not decided; it blocks only the v3 push design.
+
+### Loose ends tied off
+
+**23. Pane summaries in v1.** The owner's choice (ADR 0015, amending 0013) is that the
+last summary of each pane is archived when its session ends. The archive lives in
+`logs.db`, which arrives in v2. So in v1 the hub keeps only the latest summary of each
+live pane and deletes it with the pane; the last screen of an ended session is not
+kept. From v2 the archive works as ADR 0015 says. [03f](../specs/03f-hub-internals.md),
+[03d](../specs/03d-triage-sessions-logs.md).
+
+**24. The answer to [0021](0021-insights-and-observability.md) open question 1**
+(does the weekly report run from first start?). Yes: it is **on by default**, and it
+runs only on spare subscription quota, never into the reserve and never on an API-key
+account. The owner gave this answer in the addendum to
+[0022](0022-drift-audit-decisions.md) (part A, decision 3). ADR 0021 is accepted and is
+not edited, so this note is its pointer.
+
+**25. "50 GB" in ADRs [0014](0014-storage-confirmed.md) and
+[0015](0015-session-logs-in-sqlite.md) means 50 GiB** (the default `logs.db` size cap,
+`log_size_cap_bytes`). Those ADRs are accepted and are not edited; the specs, the protos
+and [defaults.md](../specs/defaults.md) use GiB.
+
+**26. `insight_pacing_interval` has a writer in v1.** The `pacing` package writes it
+(there is no scheduler until v2), as ADR 0022 B.1 says; [03f](../specs/03f-hub-internals.md),
+[05](../specs/05-insights.md).
 
 ## Consequences
 

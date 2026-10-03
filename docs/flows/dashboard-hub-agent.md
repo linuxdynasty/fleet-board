@@ -1,4 +1,4 @@
-# Dashboard, hub and agent flows (part 1 of 5)
+# Dashboard, hub and agent flows (part 1 of 6)
 
 - Status: Accepted
 - Date: 2026-10-02
@@ -141,7 +141,7 @@ sequenceDiagram
    never the final state. `Operation.id` is the [`CommandId`](../../api/fleet/type/v1/ids.proto), so the UI, the
    audit log and the agent's local log name the same thing.
 4. After commit the hub writes the [`Command`](../../api/fleet/agent/v1/command.proto)
-   on the agent's `Connect` stream. `requested_by` is the [`Principal`](../../api/fleet/type/v1/status.proto); for a
+   on the agent's `Connect` stream. `requested_by` is the [`Principal`](../../api/fleet/type/v1/principal.proto); for a
    device or API token its `role` is the narrowest role covering the effective
    scopes (02d, "Role sent to the agent").
 5. The agent checks, in order: known `command_id` (returns the logged result),

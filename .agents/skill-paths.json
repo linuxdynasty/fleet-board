@@ -36,7 +36,10 @@
     "internal/hub/ingest/**",
     "internal/hub/outbox/**",
     "internal/hub/syncer/**",
-    "internal/agent/ring/**"
+    "internal/hub/pacing/**",
+    "internal/hub/insights/**",
+    "internal/agent/ring/**",
+    "internal/agent/goals/**"
    ],
    "exclude": [
     "docs/**",

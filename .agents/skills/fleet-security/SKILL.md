@@ -9,8 +9,8 @@ Authority: [ADR 0004](../../../docs/adr/0004-agent-connectivity.md),
 [ADR 0008](../../../docs/adr/0008-goal-consent-and-account-modes.md),
 [ADR 0010](../../../docs/adr/0010-session-logs.md), ADR 0018 and ADR 0019
 (sign-in, LOGS scope), the security sections of
-[01](../../../docs/specs/01-agent-capabilities.md#security-and-privacy) and
-[02](../../../docs/specs/02-contracts.md#security-notes), and the safety rails
+[01e](../../../docs/specs/01e-security-and-privacy.md) and
+[02](../../../docs/specs/02l-versioning-errors-and-decisions.md#security-notes), and the safety rails
 in [design.md](../../../docs/design.md#safety-rails).
 
 ## Credentials: never collect, store, copy or proxy

@@ -49,6 +49,12 @@ flowchart LR
 | `housekeeping` | STALE/OFFLINE marking, timer expiry, retention, outbox expiry, cert renewal reminders | consistent read | write jobs |
 | `fan-out bus` | Which browser gets which change; coalescing; dropping summaries for slow consumers | nothing | nothing |
 
+**In v1 there is no `scheduler`.** Its probe assignment and pacing work is done by the `pacing` package
+(`internal/hub/pacing`, with `pacing/probe`) on the same 30 s tick, as write jobs to `storeWriter`. Every
+row in this file that says "scheduler" for probe assignment, pacing state or `insight_pacing_interval` means
+`pacing` in v1. The dispatching scheduler (dispatch plan, nudges, cooldowns, unfit markers) and the
+`verifier` arrive in v2 (ADR 0022 B.1, plan PR 10).
+
 ### What can race and what backs it up
 
 | Race | Backstop |
@@ -94,12 +100,12 @@ at **4 machines** / **50 machines × 10 panes** from the load table in
 | `accounts` (with `origin`, `provider`), `account_machines` (Codex mapping; placeholders per `(machine, profile)`) | `account_id`; `(account_id, machine_id)` | W3, owner (`CreateAccount`, `DeleteAccount`) | rare | by id; per machine | permanent until deleted |
 | `probes` | `probe_id`; unique active per `account_id` | W3 | ≈ 0 | per account | history 30 days |
 | `usage_readings` | `(account_id, read_time)` | W3 | 0.005 / 0.005 (+ passive ≤ 0.07 / 0.8 worst) | latest per account; time series for burn-down | buckets 1 year; `raw_screen` 7 days |
-| `account_pacing` | `account_id` | scheduler | per evaluation (≤ 1/30 s) | per account | current only |
-| `insight_pacing_interval` | `(account_id, start_time)` | scheduler, on a change of `(PacingState, idle_while_behind)` | a few per account per day | efficiency windows (05) | 1 year |
+| `account_pacing` | `account_id` | `pacing` (v1), scheduler (v2) | per evaluation (≤ 1/30 s) | per account | current only |
+| `insight_pacing_interval` | `(account_id, start_time)` | `pacing` in v1, the scheduler from v2, on a change of `(PacingState, idle_while_behind)` | a few per account per day | efficiency windows (05) | 1 year |
 | `insight_*` rollups (`insight_goal_daily`, `insight_label_daily`, `insight_quota_window`, `insight_stuck_daily`, `insight_incident`, `insight_routine_daily`), `suggestions`, `insight_reports` | see [05](05-insights.md#2-rollup-tables) | one hourly housekeeping job through the writer; the verifier for a report | ≤ 600 rows/day at A50 (one transaction an hour); one report a week | `GetInsights`, `ListSuggestions`, `ListInsightReports` on the read pool | rollups and reports 1 year; dismissed or resolved suggestions 30 days |
 | `sessions` | `session_id`; unique `(machine_id, name)` | W5, W8 | rare | per machine; available set | permanent (fleet-created) |
 | `panes` (latest state per pane) | `(machine_id, server, server_start_id, pane_id)` | snapshots, pane events | activity 0.33 / 5 (peak 20); summaries go to `pane_summaries` (next row) | per machine; per session | current only |
-| `pane_summaries` | pane key | E5 | 4 / 100 | per visible pane | **latest per pane, always persisted** (ADR 0013, 0015). In v1 the row is deleted with its pane; from v2 the last summary of each pane is archived to `logs.db` when its session ends (03d) |
+| `pane_summaries` | pane key | E5 | 4 / 100 | per visible pane | **latest per pane, always persisted** (ADR 0013, 0015). **v1 keeps** only the latest summary of each live pane in `state.db` and deletes the row when the pane goes away. Nothing is archived, because `logs.db` does not exist yet, so the last screen of an ended session is not kept in v1. **From v2** the last summary of each pane is archived to `logs.db` when its session ends (03d, ADR 0015 as the owner chose; deferred in ADR 0024 decision 23) |
 | `events` (history, never-dropped kinds + replays) | `(machine_id, seq)` | all | ≈ 0.4 / 7 steady; bursts 2,500/s at hub restart (rate-limited) | timeline by machine/goal/time | 1 week |
 | `harness_installs`, `catalog_entries` | `(machine_id, harness)`; `(…, catalog_hash, name)` | W11 | rare (bursts of ≤ 100 rows per catalog) | per machine | current + 30-day history |
 | `work_items` (mirror) | `WorkItemKey` (`integration_id, kind, project, key`; `provider_name` when no integration); `manual_reason`; `trust` verdict; `dispatch_block` | W4, W5 | ≤ 2 / ≤ 10 (page upserts, bursty) | by stage; by repo; READY in `dispatch_order` | while open + 30 days |

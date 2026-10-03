@@ -3,7 +3,7 @@
 - Status: Accepted; contracts unfrozen until v0.1 (ADR 0019)
 - Date: 2026-10-02
 - Part of: [03-workflows.md](03-workflows.md) (conventions apply), continues
-  [03c](03c-goals.md)
+  [03c](03c-goals.md) and [03l](03l-goal-lifecycle-and-verification.md)
 - Decision: [ADR 0024](../adr/0024-pre-build-owner-decisions.md), decision 1
 - Output: `GoalOrigin`, `GoalDefinition.origin`, `GoalPhaseReason`
   `OBSERVED_DONE` and `OBSERVED_GONE` in `api/fleet/hub/v1/goal.proto`;
@@ -67,7 +67,7 @@ Nothing else happens. There is no verification against the code host and no
 - **Slots and caps: none.** It holds no active or total slot, counts toward no repo
   cap and not in `AccountPacing.active_goals`. Pacing reads the account's real usage
   readings, which already include what the goal spends. The phase-class table of
-  [03c](03c-goals.md#phase-classes) does not apply to it, and the unique indexes
+  [03l](03l-goal-lifecycle-and-verification.md#phase-classes) does not apply to it, and the unique indexes
   `(work_item)` and `(repo, branch)` are partial on `origin = DISPATCHED`.
 - **Heartbeat check.** The agent's `goals_total` and `goals_active` count registry
   goals only, so observed goals never cause a slot mismatch; they appear in

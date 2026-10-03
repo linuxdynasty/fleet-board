@@ -9,7 +9,7 @@
 - Companion: [05b-observability.md](05b-observability.md) (fleetd and
   fleet-agent observing themselves)
 - Builds on: [03b](03b-usage-and-sync.md) (usage, pacing),
-  [03c](03c-goals.md) and [03h](03h-goal-phases-in-depth.md) (goals),
+  [03c](03c-goals.md), [03l](03l-goal-lifecycle-and-verification.md) and [03h](03h-goal-phases-in-depth.md) (goals),
   [03i](03i-routines.md) (routines), [03f](03f-hub-internals.md) (store),
   [03g](03g-load-and-handoff.md) (load)
 
@@ -43,7 +43,7 @@ what a prompt asks, so prompts can be counted without grouping by text) and
 | Input | Source rows | Kept |
 |---|---|---|
 | Quota over time | `usage_readings` (`buckets[]`, `read_time`, `harness_version`, `parser_version`, `parse`) | buckets 1 year |
-| Pace history | `insight_pacing_interval`: one row per change of `(PacingState, idle_while_behind)` per account, written by the scheduler when it changes (a few per account per day) | 1 year |
+| Pace history | `insight_pacing_interval`: one row per change of `(PacingState, idle_while_behind)` per account, written when it changes (a few per account per day) by the `pacing` package in v1 and by the scheduler from v2 | 1 year |
 | Goal outcomes | `goals` (spec, `GoalStatus` counters, `usage_consumed`, `start_error`, start and end time), `goal_runs`, `goal_transitions` | permanent |
 | Labels | work item labels, captured when the goal ends (the mirror is pruned 30 days after close) | in the rollup |
 | Stuck sources | `triage_items` (prompt and condition items with `prompt_class`, `kind`, raise and close time), `goal_transitions` (STUCK and its reason) | triage 7 days after close |
@@ -184,7 +184,7 @@ only writes it up.
 
 ```mermaid
 sequenceDiagram
-  participant S as scheduler (hub)
+  participant S as scheduler (hub, v1: the pacing package)
   participant W as storeWriter
   participant A as fleet-agent
   participant H as harness (subscription)

@@ -26,6 +26,7 @@ spec change. "Decided here" marks a value no earlier document gave.
 | Machine `STALE` (no heartbeat) | 45 | s | 03 | fixed |
 | Machine `OFFLINE` | 3 | min | 03 | fixed |
 | Reconnect backoff | 1 to 60, full jitter; at least 5 s between connects (agent), one `Hello` per machine per 5 s (hub) | s | 03 A2, [03](03-workflows.md) failure table | fixed |
+| mDNS re-query interval (agent, while it has no connection); mDNS browse timeout (one query) | **not set yet: set in spike 0.7**, which records both here and in ADR 0023's open questions; PR 4 reads them from this table | s | ADR 0023, plan 0.7 | fixed |
 | `last_seen` written to the store | at most 1 per machine per minute, and on connect and disconnect; held in memory per heartbeat | min | 03g Q10, decided here | fixed |
 | Agent event ring cap | 1 week or 64 MiB, whichever first; the oldest entry is evicted first, whatever its class, and every eviction is counted (`EventCounters.evicted_total`) | week, MiB | [02i](02i-delivery-and-sequencing.md), decided here | fixed |
 | Agent command log | last 10,000 or 7 days | count, days | 03 | fixed |
@@ -78,6 +79,7 @@ spec change. "Decided here" marks a value no earlier document gave.
 
 | Name | Value | Unit | Owner | Kind |
 |---|---|---|---|---|
+| `HubSettings.prefer_non_hub` | true (a new window goes to a machine other than the hub's first, then the hub machine; v2) | | 03c, decided here | `HubSettings` |
 | `HubSettings.auto_dispatch` | false (the owner turns it on; manual dispatch always works) | | 03c, decided here | `HubSettings`, per-repo override |
 | Scheduler pass | 30 s tick plus wakeups; at most 1 dispatch per account and per machine per pass | s | [03f](03f-hub-internals.md), 03c | fixed |
 | `max_parallel_goals_per_repo` | 3 | goals | 03c | `HubSettings`, per-repo override |

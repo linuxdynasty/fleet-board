@@ -10,6 +10,7 @@ import "fleet/hub/v1/dispatch_block.proto";
 import "fleet/type/v1/harness.proto";
 import "fleet/type/v1/ids.proto";
 import "fleet/type/v1/settings.proto";
+import "fleet/type/v1/principal.proto";
 import "fleet/type/v1/status.proto";
 import "fleet/type/v1/work.proto";
 import "google/protobuf/duration.proto";
@@ -384,7 +385,7 @@ message CreateEnrollmentTokenRequest {
   string request_id = 1;
   // Name the machine will get (its display name). An import of a fleet.yaml
   // machine entry with this name supplies its labels and settings layer
-  // (ImportConfig, 02b "Config export and import").
+  // (ImportConfig, 02m "Config export and import").
   string machine_name = 2;
   // At most 24 h; default 15 min.
   google.protobuf.Duration ttl = 3;
@@ -401,8 +402,9 @@ message CreateEnrollmentTokenRequest {
   // MachineSpec.labels); merged with a matching imported entry's.
   repeated string labels = 6;
   // The machine enrolls drained (spec.drain set by the hub at Enroll): it
-  // takes no goal until the owner undrains it. Always true for a machine
-  // that came from an imported config.
+  // takes no goal until the owner undrains it (the record only takes effect
+  // from v2: v1 starts no goals and has no UndrainMachine). Always true for a
+  // machine that came from an imported config.
   bool start_drained = 7;
 }
 

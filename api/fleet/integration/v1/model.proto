@@ -1,7 +1,7 @@
 // fleet.integration.v1 model: the provider-neutral shapes of work items and
 // change requests (ADR 0012). The hub mirrors them unchanged (hub work.proto)
 // and computes its own verdicts from them: the trusted-issues gate (03b) from
-// WorkItem, "done" and "approved and green" (03c W6) from ChangeRequest. A
+// WorkItem, "done" and "approved and green" (03l W6) from ChangeRequest. A
 // provider-specific rule (branch protection, CODEOWNERS, required checks)
 // is applied inside the adapter and reported as a normalized value here, so
 // no hub rule needs to know which provider it is talking to.
@@ -183,7 +183,7 @@ message ChangeRequest {
   WorkItemState state = 4;
   string provider_state = 5;
   // The head ref that verification matches against the branch the agent
-  // reports (03c W6). Untrusted text.
+  // reports (03l W6). Untrusted text.
   string source_branch = 6;
   string target_branch = 7;
   // The head sha. Checks and review_decision describe this commit.

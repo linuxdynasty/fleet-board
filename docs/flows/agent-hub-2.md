@@ -1,8 +1,8 @@
 # Agent and hub flows, part 2: commands, events, usage (A4 to A6)
 
-- Parts: [1](agent-hub.md) (A1 to A3) | **2** (this file, A4 to A6) |
-  [3](agent-hub-3.md) (A7) | [4](agent-hub-4.md) (A8 to A10) | [5](agent-hub-5.md) (A11 to A13) |
-  [6](agent-hub-6.md) (A14)
+- Parts: [1](agent-hub.md) (A1, A2) | **2** (this file, A4 to A6) | [3](agent-hub-3.md) (A7) |
+  [4](agent-hub-4.md) (A8) | [5](agent-hub-5.md) (A11 to A13) | [6](agent-hub-6.md) (A14) |
+  [7](agent-hub-7.md) (A3) | [8](agent-hub-8.md) (A9, A10)
 - Read [part 1](agent-hub.md) first for the wiring, the counters and the
   storage names (hub store `state.db`, log store `logs.db`, agent state dir).
 - Protos named in this part: [`command.proto`][command] (`Command`, `CommandAck`,

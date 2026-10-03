@@ -115,7 +115,7 @@ The agent's directory is `~/.local/state/fleet-agent/` ([04](04-technology-revie
 | `fleetd init` | writes the default configuration file and the state directory |
 | `fleetd setup github` | writes the App manifest and the `github` keys ([ADR 0022](../adr/0022-drift-audit-decisions.md)) |
 | `fleetd enroll-token`, `claim`, `token create`, `user invite` | admin actions over `admin.sock` ([02f](02f-hub-authentication.md)) |
-| `fleetd backup`, `restore`, `debug agent-stream`, `insights rebuild` | local, never RPCs ([02b](02b-hub-api.md#local-commands)) |
+| `fleetd backup`, `restore`, `debug agent-stream`, `insights rebuild` | local, never RPCs ([02m](02m-hub-api-actions-and-audit.md#local-commands)) |
 
 ## Staying awake and surviving logout
 
@@ -207,4 +207,4 @@ the same calls are in [02b](02b-hub-api.md), and all need `SETTINGS` or `ADMIN`
    shows no identity with `spec.bindings` ([03b](03b-usage-and-sync.md#accounts-discovered-mapped-created-removed)).
 5. Fleet and group limits: `UpdateSettings`.
 6. Or all at once: `ExportConfig` and `ImportConfig` with a `fleet.yaml`
-   ([02b](02b-hub-api.md#config-export-and-import)).
+   ([02m](02m-hub-api-actions-and-audit.md#config-export-and-import)).

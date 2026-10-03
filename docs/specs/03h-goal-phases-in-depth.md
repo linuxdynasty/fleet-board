@@ -1,7 +1,7 @@
 # 03h. Goal phases in depth: start failures, dispatch checks, provider changes, limit wait, re-arm
 
 - Part of: [03-workflows.md](03-workflows.md) (conventions apply)
-- Extends: [03c-goals.md](03c-goals.md) (W5 dispatch, W6 lifecycle), which holds
+- Extends: [03c-goals.md](03c-goals.md) (W5 dispatch) and [03l](03l-goal-lifecycle-and-verification.md) (W6 lifecycle), which hold
   the phase classes and both state machines; this file holds the rules that did
   not fit there
 - Review: `start-failure-reaction-table-incomplete`,
@@ -146,7 +146,7 @@ the `WARN` and `CONFIRM` rows.
 
 **Operation versus approval.** `StartGoal` with a CONFIRM check, `RunHarnessCommand`
 with a DESTRUCTIVE command and `KillWindow` on a developer's window are one
-case with one rule, in [02b](02b-hub-api.md#actions-that-need-an-approval): the
+case with one rule, in [02m](02m-hub-api-actions-and-audit.md#actions-that-need-an-approval): the
 response carries the approval and no operation; the operation exists only after
 an approval is approved.
 

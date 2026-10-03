@@ -1,5 +1,5 @@
 // fleet.integration.v1 service: the read-only provider interface the hub's
-// syncer and verifier call (03b W4, 03c W6). Every list call takes a
+// syncer and verifier call (03b W4, 03l W6). Every list call takes a
 // ChangeCursor and Validators and answers not_modified, next_since and
 // ResponseMeta; every failure is a ProviderError (sync.proto). The queries W4
 // and W6 need are all here: changes since a cursor, change requests by head

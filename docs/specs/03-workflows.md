@@ -20,7 +20,7 @@ operator uses at 3 AM. Split across files to stay under 500 lines each:
 |---|---|
 | this file | conventions, **W1** enrollment and first connect, **W2** reconnect |
 | [03b-usage-and-sync.md](03b-usage-and-sync.md) | **W3** usage probing and pacing, **W4** work-source and code-host sync |
-| [03c-goals.md](03c-goals.md) | **W5** dispatch a goal, **W6** goal lifecycle and verification |
+| [03c-goals.md](03c-goals.md) | **W5** dispatch a goal |
 | [03d-triage-sessions-logs.md](03d-triage-sessions-logs.md) | **W7** triage items, **W8** developer sessions, **W9** session logs |
 | [03e-settings-and-drift.md](03e-settings-and-drift.md) | **W10** settings and policy, **W11** harness upgrade drift |
 | [03f-hub-internals.md](03f-hub-internals.md) | hub concurrency model, data model sketch |
@@ -29,6 +29,7 @@ operator uses at 3 AM. Split across files to stay under 500 lines each:
 | [03i-routines.md](03i-routines.md) | **W5b** routine runs: triggers, numbering, done rules |
 | [03j-provider-sync-and-trust.md](03j-provider-sync-and-trust.md) | the provider interface in use: queries, cursors and validators, rate limits, typed errors, the trusted-issues gate |
 | [03k-observed-goals.md](03k-observed-goals.md) | goals the owner starts by hand (v1): what the hub stores and shows, and what it never does |
+| [03l-goal-lifecycle-and-verification.md](03l-goal-lifecycle-and-verification.md) | **W6** goal lifecycle and verification |
 
 ## Conventions
 
@@ -134,7 +135,7 @@ replace the machine's sessions/windows/panes/goals/repos/harness rows, store
 whose machine is this one but which the snapshot's `probes[]` does not show →
 `EnsureProbe`, and the reverse, a probe the snapshot shows that the hub does not
 assign to this machine (failed over while it was away, or an account removed) →
-`StopProbe`; live goal rows (03c phase classes) with a pane that is absent from the
+`StopProbe`; live goal rows (03l phase classes) with a pane that is absent from the
 snapshot → goal `PANE_LOST` (W6); `goal_registry[]` entries the hub does not
 know → triage `orphan_goal_pane` (W7), and goals the hub expects in `STARTING`
 to `STOPPED` that the registry lacks → `RegisterGoal` (02h); availability marks

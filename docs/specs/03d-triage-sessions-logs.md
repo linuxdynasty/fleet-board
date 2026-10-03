@@ -355,7 +355,7 @@ transcripts (K3, v3) reuse the path with `stream=HARNESS_TRANSCRIPT` from
 `PaneHarnessSession.transcript_path`, opt-in per repo or machine.
 
 **Management and ended sessions.** (v2; in v1 there is no `logs.db`, so a pane's latest summary row is
-deleted with its pane.) When a session ends, the last pane summary of
+deleted with its pane, and the last screen of an ended session is not kept until v2: ADR 0024 decision 23.) When a session ends, the last pane summary of
 each of its panes moves from `state.db` to `logs.db` (ADR 0015, amending 0013) and the session row becomes
 `ENDED` (`Session.status.state`, `end_time`), kept while its logs exist. A client
 finds ended sessions with `ListStoredSessions` (filter machine, goal, harness,

@@ -86,10 +86,15 @@ sequenceDiagram
   H->>H: 4. one transaction: apply, a machine with no match becomes a pending machine
   H-->>C: 5. applied = true
   A->>H: 6. later: Enroll with a token whose machine_name matches
-  H->>H: 7. apply the pending machine's labels and settings, the machine starts drained
+  H->>H: 7. apply the pending machine's labels and settings, mark the machine drained (v1 only records it)
 ```
 
 A plan with any `SKIPPED` line (for example an integration, which import never creates) applies nothing
 unless `allow_skipped` is set. Import only creates and updates, and never drains a machine that is
-already enrolled. A machine that starts drained takes no goals until the owner undrains it. Release: v1
-(PR 13a builds `ExportConfig` and `ImportConfig`).
+already enrolled.
+
+**What v1 does about "drained".** The hub records the new machine as drained (`spec.drain.draining = true`)
+and the Machines view shows it. v1 starts no goals, so the mark blocks nothing yet, and v1 has no way to clear
+it: `DrainMachine` and `UndrainMachine` are v2 ([02k](../specs/02k-v1-surface-and-cli.md)). When v2 ships, the
+mark takes effect: the machine takes no goals until the owner undrains it. Release: v1 (PR 13a builds
+`ExportConfig` and `ImportConfig`).

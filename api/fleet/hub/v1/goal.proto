@@ -1,4 +1,4 @@
-// fleet.hub.v1 goals: the hub's goal lifecycle (03c W5, W6, 03h), the goal
+// fleet.hub.v1 goals: the hub's goal lifecycle (03c W5, 03l W6, 03h), the goal
 // resource and goal control. Dispatch, preflight and the shared dispatch
 // input are in goal_dispatch.proto; run history and the transition list are
 // in goal_history.proto. Goal control is translated per harness into the
@@ -13,6 +13,7 @@ import "fleet/hub/v1/routine.proto";
 import "fleet/type/v1/consent.proto";
 import "fleet/type/v1/harness.proto";
 import "fleet/type/v1/ids.proto";
+import "fleet/type/v1/principal.proto";
 import "fleet/type/v1/status.proto";
 import "fleet/type/v1/work.proto";
 import "google/protobuf/timestamp.proto";
@@ -435,7 +436,7 @@ message ControlGoalRequest {
 // ControlGoalResponse. operation is unset for hub-only actions; an
 // unsupported action fails with GOAL_SUBCOMMAND_UNSUPPORTED before sending, and
 // an action the goal's phase does not allow fails with FAILED_PRECONDITION /
-// GOAL_ACTION_NOT_ALLOWED (the table is in 03c, "Control actions by phase").
+// GOAL_ACTION_NOT_ALLOWED (the table is in 03l, "Control actions by phase").
 // The same code, with metadata {"held": "person_typing"}, refuses any action
 // while a person is typing in the goal pane (human_at_keyboard_until_time):
 // it is refused, never queued (03c).

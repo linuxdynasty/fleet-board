@@ -1,7 +1,8 @@
 # Agent and hub flows, part 5: logs, settings, upgrade drift (A11 to A13)
 
-- Parts: [1](agent-hub.md) (A1 to A3) | [2](agent-hub-2.md) (A4 to A6) |
-  [3](agent-hub-3.md) (A7) | [4](agent-hub-4.md) (A8 to A10) | **5** (this file) | [6](agent-hub-6.md) (A14)
+- Parts: [1](agent-hub.md) (A1, A2) | [2](agent-hub-2.md) (A4 to A6) |
+  [3](agent-hub-3.md) (A7) | [4](agent-hub-4.md) (A8) | **5** (this file, A11 to A13) |
+  [6](agent-hub-6.md) (A14) | [7](agent-hub-7.md) (A3) | [8](agent-hub-8.md) (A9, A10)
 - Counters and storage names are in [part 1](agent-hub.md); the command envelope that
   carries `SetLogCapture`, `Drain` and the rest is in [A4](agent-hub-2.md#a4-command-lifecycle).
 - Protos named in this part: [`streams.proto`][streams] (`LogChunk`, `LogAck`,

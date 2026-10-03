@@ -318,7 +318,7 @@ transaction that applies the event or result:
 | `Bye` from the hub, `Hello` refused | `machine.revoke`, `machine.connect_refused` | the requester, or none | `machine`, `reason` |
 
 The full catalogue of audit actions is in
-[02b](02b-hub-api.md#audit-actions); events keep their short retention, the
+[02m](02m-hub-api-actions-and-audit.md#audit-actions); events keep their short retention, the
 audit rows are permanent. A row is written once per event, even for a replayed
 event that is history-only for state: it is idempotent on `(machine,
 event_generation, seq)` ([02i](02i-delivery-and-sequencing.md#replay-apply-rule)).

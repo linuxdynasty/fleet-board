@@ -1,7 +1,7 @@
 # 03i. Routines
 
 - Part of: [03-workflows.md](03-workflows.md) (conventions apply)
-- Contract: `api/fleet/hub/v1/routine.proto`, [02b](02b-hub-api.md#routines)
+- Contract: `api/fleet/hub/v1/routine.proto`, [02m](02m-hub-api-actions-and-audit.md#routines)
 - Review: `routines-not-in-workflows` in
   [the contract review](../reviews/2026-10-02-contract-review.md)
 

@@ -305,7 +305,7 @@ session); nothing resumes.
 ## Audit
 
 Sign-in and credential events are audited like any other action (catalogue in
-[02b](02b-hub-api.md#audit-actions)): `auth.claim`, `auth.sign_in`,
+[02m](02m-hub-api-actions-and-audit.md#audit-actions)): `auth.claim`, `auth.sign_in`,
 `auth.sign_in_failed`, `auth.sign_out`, `passkey.add`, `passkey.delete`,
 `user.invite`, `user.update`, `token.create`, `token.revoke`, `auth.session_revoke`,
 `attach.open`, `attach.close`. Secrets never appear in `detail`.

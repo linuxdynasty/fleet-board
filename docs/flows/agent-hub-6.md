@@ -2,9 +2,9 @@
 
 - Status: Accepted
 - Date: 2026-10-02
-- Parts: [1](agent-hub.md) (A1 to A3) | [2](agent-hub-2.md) (A4 to A6) |
-  [3](agent-hub-3.md) (A7) | [4](agent-hub-4.md) (A8 to A10) | [5](agent-hub-5.md) (A11 to A13) |
-  **6** (this file, A14)
+- Parts: [1](agent-hub.md) (A1, A2) | [2](agent-hub-2.md) (A4 to A6) |
+  [3](agent-hub-3.md) (A7) | [4](agent-hub-4.md) (A8) | [5](agent-hub-5.md) (A11 to A13) |
+  **6** (this file, A14) | [7](agent-hub-7.md) (A3) | [8](agent-hub-8.md) (A9, A10)
 - Counters and storage names are in [part 1](agent-hub.md); heartbeats and delivery classes are in
   [A5](agent-hub-2.md#a5-events-delivery-classes-and-seq). The rules and thresholds are in
   [05b](../specs/05b-observability.md) (the spec of this flow) and [ADR 0021](../adr/0021-insights-and-observability.md).

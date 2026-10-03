@@ -11,7 +11,7 @@ import "fleet/hub/v1/suggestion.proto";
 import "fleet/hub/v1/system.proto";
 import "fleet/type/v1/harness.proto";
 import "fleet/type/v1/ids.proto";
-import "fleet/type/v1/status.proto";
+import "fleet/type/v1/principal.proto";
 import "fleet/type/v1/work.proto";
 import "google/protobuf/timestamp.proto";
 

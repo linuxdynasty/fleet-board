@@ -53,7 +53,8 @@ Every flow has the same five parts:
 | [type/v1/consent.proto](../../api/fleet/type/v1/consent.proto) | `ConsentAct` |
 | [type/v1/harness.proto](../../api/fleet/type/v1/harness.proto) | `GoalLineState` |
 | [type/v1/ids.proto](../../api/fleet/type/v1/ids.proto) | `AccountId`, `AccountKey`, `CommandId`, `GoalId`, `MachineId`, `PaneKey`, `SessionId` |
-| [type/v1/status.proto](../../api/fleet/type/v1/status.proto) | `ErrorDetail`, `Principal`, `ReasonCode`, `Role`, `Status` |
+| [type/v1/status.proto](../../api/fleet/type/v1/status.proto) | `ErrorDetail`, `ReasonCode`, `Status` |
+| [type/v1/principal.proto](../../api/fleet/type/v1/principal.proto) | `Capability`, `Principal`, `Role` |
 | [agent/v1/agent.proto](../../api/fleet/agent/v1/agent.proto) | `AgentHealth`, `AgentService`, `Connect`, `Enroll`, `Heartbeat`, `Hello`, `HelloAck`, `RenewCert`, `ResultAck`, `SessionLog`, `Settings`, `Terminal` |
 | [agent/v1/command.proto](../../api/fleet/agent/v1/command.proto) | `Command`, `CommandAck`, `CommandProgress`, `CommandResult` |
 | [agent/v1/command_goal.proto](../../api/fleet/agent/v1/command_goal.proto) | `Drain`, `EnsureWorktree`, `Preflight`, `ReleaseGoal`, `StartGoal` |
@@ -322,14 +323,14 @@ Agent and hub (`fleet.agent.v1`, between `fleetd` and `fleet-agent`):
 |---|---|---|---|
 | A1 | Enrollment | A one-time token carries the CA fingerprint; the agent checks the hub before sending anything, then exchanges a CSR for a client certificate | [agent-hub.md](agent-hub.md#a1-enrollment-and-certificates) |
 | A2 | Connect, Hello and Snapshot | The agent dials out, says who it is, gets an epoch, and sends the full state of its machine | [agent-hub.md](agent-hub.md#a2-connect-hello-helloack-snapshot) |
-| A3 | Reconnect and replay | After a sleep or a restart both sides reconcile their counters; the snapshot is the truth, the ring is history | [agent-hub.md](agent-hub.md#a3-reconnect-and-replay) |
+| A3 | Reconnect and replay | After a sleep or a restart both sides reconcile their counters; the snapshot is the truth, the ring is history | [agent-hub-7.md](agent-hub-7.md#a3-reconnect-and-replay) |
 | A4 | Command lifecycle | Outbox, `CommandAck`, `CommandProgress`, `CommandResult`, `ResultAck`, deadlines and idempotency | [agent-hub-2.md](agent-hub-2.md#a4-command-lifecycle) |
 | A5 | Events and delivery classes | What may be dropped, what is replayed, and how the hub tells shedding from loss | [agent-hub-2.md](agent-hub-2.md#a5-events-delivery-classes-and-seq) |
 | A6 | Usage probing | Probes read each account's usage; the readings feed pacing | [agent-hub-2.md](agent-hub-2.md#a6-usage-probing-and-the-inputs-to-pacing) |
 | A7 | Starting a goal | The 14 steps of `StartGoal`, a reused pane or a new window, the registry written first | [agent-hub-3.md](agent-hub-3.md#a7-starting-a-goal) |
 | A8 | A goal running | Goal file, hooks, `LIMIT_WAIT`, interrupts, nudges, verification, freeing the worker | [agent-hub-4.md](agent-hub-4.md#a8-a-goal-running) |
-| A9 | Prompts and answers | A permission prompt becomes a triage item and an approval; the answer is typed once | [agent-hub-4.md](agent-hub-4.md#a9-prompts-detected-and-answered) |
-| A10 | Terminal attach | A grouped view session and a PTY, bridged as bytes | [agent-hub-4.md](agent-hub-4.md#a10-terminal-attach) |
+| A9 | Prompts and answers | A permission prompt becomes a triage item and an approval; the answer is typed once | [agent-hub-8.md](agent-hub-8.md#a9-prompts-detected-and-answered) |
+| A10 | Terminal attach | A grouped view session and a PTY, bridged as bytes | [agent-hub-8.md](agent-hub-8.md#a10-terminal-attach) |
 | A11 | Session logs | Compressed chunks by byte offset, acknowledged by the hub, gaps declared | [agent-hub-5.md](agent-hub-5.md#a11-session-logs) |
 | A12 | Settings and policy | Layered settings merged under the local ceiling; drain | [agent-hub-5.md](agent-hub-5.md#a12-settings-and-the-local-policy-ceiling) |
 | A13 | Harness upgrade drift | A harness update changes parsing support, the catalog and scheduling | [agent-hub-5.md](agent-hub-5.md#a13-harness-upgrade-drift-and-parser-support) |
@@ -354,7 +355,7 @@ Dashboard, CLI and phone (`fleet.hub.v1`, between the clients and `fleetd`):
 | D13 | Insights, suggestions and the weekly report | Hourly rollups read with `GetInsights`, suggestion rules, and a routine that has a subscription harness write a report in a scratch directory | [dashboard-hub-agent-5.md](dashboard-hub-agent-5.md#d13-insights-suggestions-and-the-weekly-report) |
 | D14 | A new developer session | `CreateSession` to `EnsureSession` on the developer's tmux server | [dashboard-hub-agent-6.md](dashboard-hub-agent-6.md#d14-a-new-developer-session-on-a-machine-v2) |
 | D15 | Put a work item back in the queue | `RequeueWorkItem`, refused for an untrusted item | [dashboard-hub-agent-6.md](dashboard-hub-agent-6.md#d15-put-a-work-item-back-in-the-queue-v2) |
-| D16 | Import a configuration with a machine not enrolled yet | `ImportConfig` dry run and apply, pending machines that start drained | [dashboard-hub-agent-6.md](dashboard-hub-agent-6.md#d16-import-a-configuration-that-names-a-machine-not-enrolled-yet-v1) |
+| D16 | Import a configuration with a machine not enrolled yet | `ImportConfig` dry run and apply, pending machines that are recorded as drained (it takes effect in v2) | [dashboard-hub-agent-6.md](dashboard-hub-agent-6.md#d16-import-a-configuration-that-names-a-machine-not-enrolled-yet-v1) |
 
 ## Keeping the flows true
 

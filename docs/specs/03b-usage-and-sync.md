@@ -15,7 +15,7 @@ adapter's versioned parser.
 
 ```mermaid
 sequenceDiagram
-  participant S as fleetd scheduler
+  participant S as fleetd scheduler (v1: the pacing package)
   participant W as fleetd writer
   participant A as fleet-agent
   participant P as harness (fleet-probe server)
@@ -120,6 +120,10 @@ change) goes away; there is no merge. `Account.status.provider` is what the rule
 "OpenCode on an Anthropic subscription is never auto-dispatched" reads.
 
 ### Pacing decision (scheduler, per account, per bucket)
+
+In v1 the `pacing` package (`internal/hub/pacing`) makes this decision and assigns the probes; it plays the
+scheduler's part here and writes `account_pacing` and `insight_pacing_interval`. The dispatching scheduler
+that also acts on it is v2 ([03f](03f-hub-internals.md#who-owns-which-decision)).
 
 Inputs: latest `PROBE` reading per account (age ≤ `stale_after`, default 3 ×
 interval), account `reserve_percent`, `BudgetKind`, `mode` (fleet /

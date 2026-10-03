@@ -11,7 +11,7 @@
   (decision 1: reuse and the goal registry; addendum items 17 to 19),
   [ADR 0024](../adr/0024-pre-build-owner-decisions.md) (decision 1: observed goals),
   [ADR 0024](../adr/0024-pre-build-owner-decisions.md) (decision 1: observed goals)
-- Workflows that use it: [03c](03c-goals.md) (W5, W6),
+- Workflows that use it: [03c](03c-goals.md) (W5), [03l](03l-goal-lifecycle-and-verification.md) (W6),
   [03d](03d-triage-sessions-logs.md), [01d](01d-goal-hooks.md)
 
 How a goal is tied to one pane on a machine, when a pane may be reused, what

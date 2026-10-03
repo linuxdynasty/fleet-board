@@ -1,7 +1,7 @@
 # 03j. Provider interface in use: queries, polling state, errors, trust
 
 - Part of: [03-workflows.md](03-workflows.md); extends W4 in
-  [03b](03b-usage-and-sync.md) and the verifier in W6 ([03c](03c-goals.md))
+  [03b](03b-usage-and-sync.md) and the verifier in W6 ([03l](03l-goal-lifecycle-and-verification.md))
 - Contract: [`api/fleet/integration/v1/`](../../api/fleet/integration/v1/)
   (`integration.proto` capabilities, `model.proto`, `sync.proto`,
   `service.proto`) and [`trusted_gate.proto`](../../api/fleet/hub/v1/trusted_gate.proto)
