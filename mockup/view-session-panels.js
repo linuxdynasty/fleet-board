@@ -1,4 +1,4 @@
-// Session view panels: browser attach notes (J1), harness command palette (C4/F8), history (ADR 0010, v2),
+// Session view panels: browser attach notes (J1), harness command palette (C4/F8), history (ADR 0010, v1),
 // new session (F1). All rendered inside the Details drawer by view-session.js; actions wired there.
 
 // J1: the terminal in the main area is a real tmux client in a PTY on the developer's own server, attached through a
@@ -35,9 +35,9 @@ function historyPanel(s) {
   const hrs = Math.max(0.05, (Date.now() - s.started) / 3600e3), raw = (hrs * RAW_MB_PER_H).toFixed(1), stored = (hrs * STORED_MB_PER_H).toFixed(2);
   const ev = history[s.id] ?? [["window created", s.yours ? "your own session: capture is off until you turn it on (SetLogCapture)" : "goal pane: terminal log captured by default"]];
   const steps = ev.length + 1, t0 = +s.started, step = (Date.now() - t0) / steps;
-  return `<div class="hist"><div class="section-head"><h2>History · v2</h2><span class="hint">kept in the hub's log database</span></div>
+  return `<div class="hist"><div class="section-head"><h2>History</h2><span class="hint">kept in the hub's log database</span></div>
     <ol class="timeline">${ev.map((e, i) => `<li><span class="num">${hhmm(t0 + step * i)}</span> <b>${esc(e[0])}</b> ${esc(e[1])}</li>`).join("")}<li><span class="num">${hhmm(Date.now())}</span> <b>now</b> live</li></ol>
-    <div class="replay"><div class="replay-bar"><button class="btn sm" disabled>▶ replay</button><span class="track"><i style="width:100%"></i></span><span class="num">${hrs.toFixed(1)} h</span><span class="why">placeholder: terminal-style replay with time navigation and search lands with v2</span></div></div>
+    <div class="replay"><div class="replay-bar"><button class="btn sm" disabled>▶ replay</button><span class="track"><i style="width:100%"></i></span><span class="num">${hrs.toFixed(1)} h</span><span class="why">placeholder: terminal-style replay with time navigation and search is part of v1 and not drawn yet</span></div></div>
     <div class="meta-line"><span>raw ≈ <b>${raw} MB</b> (≈27 MB/h, mostly TUI redraw)</span><span>stored ≈ <b>${stored} MB</b> (≈0.23 MB/h, compressed)</span><span>harness transcript: v3, opt-in</span><span>${s.yours ? "capture: off (your session)" : "capture: on (goal pane)"}</span><span>you can read it, and you can grant others access; delete is one audited action</span>${dt("hist-tech", `<span>tmux pipe-pane → agent spool → zstd chunks by byte offset → logs.db rows (LOGS scope; owner by default, explicit grant otherwise)</span>`)}</div></div>`;
 }
 
