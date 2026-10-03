@@ -6,8 +6,9 @@
   [02k release list](specs/02k-v1-surface-and-cli.md).
 - If this page and a spec disagree, the spec wins (the order of authority is on
   [design.md](design.md)). Fix this page in the same PR.
-- Written in plain language on purpose, with no numbers or mechanisms: those live in
-  [defaults](specs/defaults.md) and the specs. Rules for that: the `fleet-humanizer` skill.
+- Written in plain language on purpose: plain words first, and a link for the detail
+  (numbers are in [defaults](specs/defaults.md), how it works is in the specs). Rules for
+  that: the `fleet-humanizer` skill.
 
 ## How to read this page
 

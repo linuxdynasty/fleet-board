@@ -297,6 +297,7 @@ if python3 "$root/scripts/test-goal-role-router.py" >"$work/py1" 2>&1; then ok; 
 if python3 "$root/scripts/test-codex-spawn-guard.py" >"$work/py2" 2>&1; then ok; else bad "test-codex-spawn-guard.py"; cat "$work/py2" >&2; fi
 if python3 "$root/scripts/test-check-attribution.py" >"$work/py3" 2>&1; then ok; else bad "test-check-attribution.py"; cat "$work/py3" >&2; fi
 if python3 "$root/scripts/test-check-file-cap.py" >"$work/py4" 2>&1; then ok; else bad "test-check-file-cap.py"; cat "$work/py4" >&2; fi
+if python3 "$root/scripts/test-plan-issues.py" >"$work/py5" 2>&1; then ok; else bad "test-plan-issues.py"; cat "$work/py5" >&2; fi
 
 printf 'test-dev-hooks: %s passed, %s failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

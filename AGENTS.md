@@ -173,7 +173,7 @@ Before a push: focused proof, a clean `fleet-code-review`, the full gate once.
   before and after evidence; a reworked approach needs a reworked title.
 - CI is complete only after two consecutive stable reads of the full check set
   (`pending == 0`, count unchanged); state the query; reconcile review threads
-  and report exact counts ([agent-guide](docs/development/agent-guide.md)).
+  and report exact counts.
 - Irreversible acts other than merging (release, deletion, data change) get an
   `arbiter-fleet` ruling first and are named in the report; the owner merges.
 

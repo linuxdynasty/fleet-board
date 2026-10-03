@@ -60,6 +60,8 @@ The rules are stated once, in their specs. Read them, do not restate them here.
   [03c](../../../docs/specs/03c-goals.md) (consent),
   [ADR 0008](../../../docs/adr/0008-goal-consent-and-account-modes.md) and
   [03d](../../../docs/specs/03d-triage-sessions-logs.md).
+  Deleting others' branches is never grantable (`ConsentAct` has only push,
+  pr-open and merge).
 
 ## Review checklist
 

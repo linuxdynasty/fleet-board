@@ -1,9 +1,9 @@
 # Agent engineering guide
 
 What [AGENTS.md](../../AGENTS.md) does not say: recipes, traps, the role and
-model table and how to run a role. The rules themselves (git hygiene, PR and CI,
-evidence, escalation, security, documentation, the local gates) are only in
-AGENTS.md.
+model table, the task-to-skill map, the handoff contract and how to run a role.
+The rules themselves (git hygiene, PR and CI, evidence, escalation, security,
+documentation, the local gates) are only in AGENTS.md.
 
 ## Operating standard
 
@@ -107,6 +107,27 @@ slate. Do not run a deep role to double-check a result you can verify with a
 command. Keep handoffs small: the task, the files, the acceptance test, the
 skills. Context re-sent to every agent is the largest avoidable cost.
 
+## Task-to-skill map
+
+Load the skills for the surface you touch, in this order (the one-line "use
+when" of each skill is in AGENTS.md "Skill Routing").
+
+| Task | Skills |
+|---|---|
+| Go package, CLI, hub or agent logic | `fleet-go` |
+| New or changed RPC, message, field | `fleet-contract-rigor`, then `fleet-go` |
+| Hub storage, migrations, log persistence | `fleet-sqlite-store`, `fleet-go` |
+| Screen parser, new harness version | `fleet-harness-adapter`, plus `fleet-live-probe` when the behavior is unknown |
+| tmux observation or control | `fleet-tmux`, `fleet-security` |
+| New metric, span, event kind | `fleet-telemetry-coverage` |
+| Dashboard, Connect client, terminal attach | `fleet-frontend`, plus `fleet-contract-rigor` for API gaps |
+| Auth, scopes, dispatch gate, prompts | `fleet-security` |
+| Unknown cause | `fleet-diagnostic-rigor` |
+| Speed, load, disk, memory | `fleet-performance-rigor` |
+| Before push or merge | `fleet-code-review` |
+| Issue to merged PR | `fleet-issue-driver` |
+| Anything the owner reads (replies, PR and issue text, summaries) | `fleet-humanizer` |
+
 ## The handoff contract
 
 A dispatch to a leaf role states: the goal in one sentence; the worktree path
@@ -118,6 +139,17 @@ re-verifies a subagent's finding itself before acting on it or passing it on as
 verified. Commit before dispatching a reviewer so a stray edit is recoverable.
 Read-only roles never edit, switch branches or publish; if a command is blocked
 for them, the coordinator supplies its exact output.
+
+## Dispatch and escalation rules
+
+- Executors work in one worktree on one surface at a time; two executors never
+  share a worktree.
+- Stop leaf agents when their handoff is consumed.
+- Ask `arbiter-fleet` one question per ruling, with the raw observations in the
+  brief; record the `RULING:` in the goal file or PR.
+- The active goal authorizes the acts needed to complete it. Scope approval is
+  not permission for unrelated acts. `CONSENT:` lines record grants and are
+  never invented or widened ([hooks.md](hooks.md)).
 
 ## Running a role in each harness
 

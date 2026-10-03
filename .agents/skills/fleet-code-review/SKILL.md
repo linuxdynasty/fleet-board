@@ -52,7 +52,8 @@ code, so review it as carefully. Load the project skills matching the diff
   phase stated) and the spec is updated in the same diff. Parsers never guess.
 - **Pass 2: performance and storage.** Does it change a write rate, a batch,
   a transaction scope, a query, a buffer or a fan-out? If yes, the measurement
-  against the 03g and 04 budgets is cited (`fleet-performance-rigor`).
+  against the [load model and budgets](../../../docs/specs/04-technology-review.md#load-model-a4-and-a50)
+  is cited (`fleet-performance-rigor`).
 - **Pass 3: reliability, concurrency, security, workflow.** One goroutine owns
   each decision; the single writer is not bypassed; no transaction spans a
   network call; idempotency, duplicates, restart mid-command, never-dropped

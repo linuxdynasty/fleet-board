@@ -10,7 +10,13 @@ id-to-issue table, and renders one issue body per PR row.
   --check       fetch each row's issue with `gh` and list those that differ
                 (exit 1 if any differ); add --diff to show the differences
   --apply       edit the differing issues with `gh issue edit` (the owner
-                approves this; it writes to GitHub)
+                approves this; it writes to GitHub). A partial --apply is
+                safe to re-run: issues already updated no longer differ, so
+                the next run edits only the rest
+
+Exit codes: 0 all issues match (or --apply finished); 1 some issues differ;
+2 the script could not do its job (`gh` missing or failed, plan file missing,
+or a plan table or header it expects was renamed).
 
 Only PR rows are covered. Prep items (section 3, ids 0.x) keep their
 hand-written issue bodies; they are read only to turn "0.12" into "#57 (0.12)".
@@ -55,8 +61,11 @@ def split_row(line):
 
 
 def section(text, start, end):
-    a = text.index(start)
-    b = text.index(end, a)
+    try:
+        a = text.index(start)
+        b = text.index(end, a)
+    except ValueError:
+        raise ValueError(f"plan header not found: {start!r} (or its end marker {end!r}); was a header renamed?") from None
     return text[a:b]
 
 
@@ -101,7 +110,7 @@ def parse_mapping(sec, rows, prep):
         if " to " in issues_cell:
             nums = list(range(nums[0], nums[1] + 1))
         if len(ids) != len(nums):
-            raise SystemExit(f"plan section 10: {ids_cell!r} has {len(ids)} ids but {len(nums)} issues")
+            raise ValueError(f"plan section 10: {ids_cell!r} has {len(ids)} ids but {len(nums)} issues")
         out.update(zip(ids, nums))
     return out
 
@@ -231,6 +240,23 @@ def show_diff(d):
 
 
 def main(argv=None):
+    """Run the tool; a missing gh, a failing gh or a changed plan layout exits 2 with a plain message."""
+    try:
+        return run(argv)
+    except FileNotFoundError as e:
+        if e.filename == "gh":
+            print("plan-issues: the GitHub CLI `gh` was not found; install it and run `gh auth login`", file=sys.stderr)
+        else:
+            print(f"plan-issues: file not found: {e.filename or e}", file=sys.stderr)
+    except subprocess.CalledProcessError as e:
+        detail = (e.stderr or "").strip() or "no error text"
+        print(f"plan-issues: `{' '.join(map(str, e.cmd[:3]))}` failed (exit {e.returncode}): {detail}", file=sys.stderr)
+    except ValueError as e:
+        print(f"plan-issues: cannot read the plan: {e}", file=sys.stderr)
+    return 2
+
+
+def run(argv):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     mode = ap.add_mutually_exclusive_group(required=True)
     mode.add_argument("--print", dest="row", metavar="ROW", help="print the issue body of one row")

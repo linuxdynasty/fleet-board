@@ -57,9 +57,9 @@ The author sets 4 active goals on the 128 GB machine and 2 elsewhere; the limit 
 
 ## Architecture
 
-Three Go programs ([ADR 0001](adr/0001-system-architecture.md)): `fleetd` (the hub), `fleet-agent`
+The Go programs ([ADR 0001](adr/0001-system-architecture.md)): `fleetd` (the hub), `fleet-agent`
 (one per machine, running as the logged-in user) and `fleet` (the CLI), plus a React dashboard
-served by `fleetd`. Four proto packages carry the messages ([ADR 0017](adr/0017-contract-packages.md)).
+served by `fleetd`. The proto packages carry the messages ([ADR 0017](adr/0017-contract-packages.md)).
 
 ```mermaid
 flowchart TB
@@ -155,7 +155,7 @@ flowchart TB
 | When a worker is free: `DONE` is a claim, verified before freeing | [03l](specs/03l-goal-lifecycle-and-verification.md), [03h](specs/03h-goal-phases-in-depth.md) |
 | Work item stages, goal phases, routines | [03b](specs/03b-usage-and-sync.md), [03l](specs/03l-goal-lifecycle-and-verification.md), [03i](specs/03i-routines.md) |
 | Reliability: nudges, cooldown, review-loop cap, preflight, failed starts | [03h](specs/03h-goal-phases-in-depth.md) |
-| The seven views | [ui-contract-map](specs/ui-contract-map.md), [05](specs/05-insights.md), [05b](specs/05b-observability.md) |
+| The dashboard views | [ui-contract-map](specs/ui-contract-map.md), [05](specs/05-insights.md), [05b](specs/05b-observability.md) |
 | Scheduling by weekly usage, reading usage | [03b](specs/03b-usage-and-sync.md) |
 | Dispatch rules (who may start what, where) | [03c](specs/03c-goals.md) |
 | Safety rails: typed commands, typing gates, approvals, trust, scopes | [01e](specs/01e-security-and-privacy.md), [02d](specs/02d-hub-authz.md), [02g](specs/02g-agent-security.md), [03j](specs/03j-provider-sync-and-trust.md) |
@@ -175,14 +175,14 @@ Plain words first; the proto name is in brackets.
 | **approval** | A decision only a person may make: answer a permission prompt, confirm a destructive command or a risky dispatch. Silence never approves [`Approval`, `DecideApproval`] |
 | **attach ticket** | A short-lived, single-use secret that a browser terminal attach must carry, so a page on another site cannot open one [`CreateAttachTicket`] |
 | **claim URL** | The one-time owner invite `fleetd` prints on first run; whoever opens it becomes the owner |
-| **consent** | What a goal may do beyond editing files: push, open a PR, merge. The repo's list, narrowed by the account's [`ConsentAct`] |
+| **consent** | What a goal may do beyond editing files: push, open a PR, merge. The repo's list (else the fleet default), narrowed by the account's [`ConsentAct`] |
 | **cron** | A short way to write a schedule, such as "every Monday at 7 in the morning" |
 | **delivery class** | How hard the agent tries to deliver an event: may be dropped, latest per key wins, or never dropped [`DeliveryClass`] |
 | **drain** | Finish current work, take nothing new, never kill [`Drain`, `DrainMachine`] |
 | **epoch** | A counter that only goes up: one per hub-to-agent connection, one for settings after a restore. A command from another epoch is refused [`HelloAck.epoch`, `settings_epoch`] |
 | **`gh`** | GitHub's command-line tool. Harnesses use it to push and open PRs, so the fleet checks it is signed in |
 | **goal** | One job handed to a harness, like "get issue #12 merged". Every dispatch attempt is a new goal [`Goal`, `GoalDefinition`, `GoalStatus`] |
-| **goal file** | The file whose first line says how the goal is going: the objective while working, `BLOCKED: ...`, or `DONE`. The agent only reads it [`GoalState`, `GoalLineState`] |
+| **goal file** | The file whose first line says how the goal is going: the objective while working, `BLOCKED: ...`, or `DONE`. The agent writes the first version (not where the repo ships its own hooks), the model updates it, and hooks only read it ([02h](specs/02h-goal-binding-and-pane-signals.md) step 12, [01d](specs/01d-goal-hooks.md)) [`GoalState`, `GoalLineState`] |
 | **goal registry** | The agent's table that ties a goal to a pane, the one goal identity for every harness [`GoalRegistration`] |
 | **harness** | The AI coding tool itself, unmodified, in a tmux pane: Claude Code, Codex, Muse, OpenCode. Never run headless, never touched for credentials |
 | **heartbeat** | The agent's regular "I am alive" message; too many missed make a machine `STALE`, then `OFFLINE` [`Heartbeat`] |

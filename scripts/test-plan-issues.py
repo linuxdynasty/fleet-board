@@ -3,9 +3,11 @@
 
 import importlib.util
 import io
+import os
+import subprocess
 import tempfile
 import unittest
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest import mock
 
@@ -123,7 +125,7 @@ The [Pre-Ready Checklist]({pi.CHECKLIST_URL}) in AGENTS.md is met, and the owner
 
     def test_mapping_count_mismatch_is_an_error(self):
         bad = FIXTURE.replace("| 2b | #56 |", "| 2b | #56 to #57 |")
-        with self.assertRaises(SystemExit):
+        with self.assertRaises(ValueError):
             pi.parse_plan(bad)
 
 
@@ -178,6 +180,68 @@ class CheckTests(unittest.TestCase):
         self.assertEqual(code, 0)
         edit.assert_called_once()
         self.assertEqual(edit.call_args.args[0], 33)
+
+
+class FailureTests(unittest.TestCase):
+    """A broken environment exits 2 with a plain message, never 1 and never a traceback."""
+
+    def run_main(self, argv, **patches):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        plan = Path(tmp.name, "plan.md")
+        plan.write_text(patches.pop("plan_text", FIXTURE))
+        err = io.StringIO()
+        with redirect_stderr(err), redirect_stdout(io.StringIO()):
+            code = pi.main(argv + ["--plan", str(plan)])
+        return code, err.getvalue()
+
+    def test_missing_gh_exits_2(self):
+        with mock.patch.object(pi.subprocess, "run", side_effect=FileNotFoundError(2, "no such file", "gh")):
+            code, err = self.run_main(["--check"])
+        self.assertEqual(code, 2)
+        self.assertIn("`gh` was not found", err)
+
+    def test_gh_failure_exits_2(self):
+        boom = subprocess.CalledProcessError(1, ["gh", "issue", "view", "30"], stderr="HTTP 401: bad credentials")
+        with mock.patch.object(pi.subprocess, "run", side_effect=boom):
+            code, err = self.run_main(["--check"])
+        self.assertEqual(code, 2)
+        self.assertIn("HTTP 401", err)
+
+    def test_renamed_plan_header_exits_2(self):
+        code, err = self.run_main(["--print", "1"], plan_text=FIXTURE.replace("## 5. The PR sequence", "## 5. The sequence"))
+        self.assertEqual(code, 2)
+        self.assertIn("header not found", err)
+
+
+class GhEditTests(unittest.TestCase):
+    def test_edit_arguments_and_temp_file_cleanup(self):
+        seen = {}
+
+        def fake_run(cmd, **kw):
+            path = cmd[cmd.index("--body-file") + 1]
+            seen["cmd"], seen["path"] = cmd, path
+            seen["body"] = Path(path).read_text()
+
+        with mock.patch.object(pi.subprocess, "run", side_effect=fake_run):
+            pi.gh_edit(33, "the title", "the body")
+        self.assertEqual(seen["cmd"][:5], ["gh", "issue", "edit", "33", "-R"])
+        self.assertEqual(seen["cmd"][5], pi.REPO)
+        self.assertEqual(seen["cmd"][6:8], ["--title", "the title"])
+        self.assertEqual(seen["body"], "the body")
+        self.assertFalse(os.path.exists(seen["path"]), "the temp body file was not removed")
+
+    def test_temp_file_removed_when_gh_fails(self):
+        seen = {}
+
+        def fake_run(cmd, **kw):
+            seen["path"] = cmd[cmd.index("--body-file") + 1]
+            raise subprocess.CalledProcessError(1, cmd)
+
+        with mock.patch.object(pi.subprocess, "run", side_effect=fake_run):
+            with self.assertRaises(subprocess.CalledProcessError):
+                pi.gh_edit(33, "t", "b")
+        self.assertFalse(os.path.exists(seen["path"]))
 
 
 class RealPlanTests(unittest.TestCase):
