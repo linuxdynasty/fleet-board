@@ -63,6 +63,8 @@ before acting on it.
 6. **PR title and body describe the final diff** (a reworked approach needs a
    reworked title) and carry before and after evidence: the failing test, the
    benchmark, the screenshot, the command output.
+   Write it, and every status update, with `fleet-humanizer`: plain words the
+   owner can follow, jargon explained.
 7. **CI**: complete only after two consecutive stable reads of the full check
    set (`pending == 0` and the total unchanged) -
    `gh pr checks <n> --json name,state,bucket`, state the exact query. Large
