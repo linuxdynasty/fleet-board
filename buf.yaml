@@ -6,9 +6,9 @@
 # The contracts are unfrozen until the v0.1 tag (ADR 0019), so `breaking` is
 # not run yet. From the tag on, CI runs
 #   buf breaking --against '.git#tag=v0.1'
-# v0.1 freezes only what v1 implements (ADR 0024, decision 8): when the tag is
-# cut, `breaking.ignore_only` lists the v2 and v3-only files (02e, "What v0.1
-# freezes") and the list shrinks as each release is tagged.
+# v0.1 freezes everything v1 implements (ADR 0025, decision 4): when the tag
+# is cut, `breaking.ignore_only` lists the v3-only files (02e, "What v0.1
+# freezes") and the list is emptied when v3 is tagged.
 version: v2
 modules:
   - path: api
