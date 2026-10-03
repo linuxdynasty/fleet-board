@@ -55,7 +55,7 @@
       "tier": "workhorse",
       "access": "read",
       "skill": "fleet-performance-rigor",
-      "instructions": "Measure comparable baseline and candidate evidence against the budgets in docs/specs/03g-load-and-handoff.md and docs/specs/04-technology-review.md, then return the bottleneck, proof limits, and an implementation handoff. Load fleet-diagnostic-rigor when the cause is unknown. Do not edit or run promotion gates."
+      "instructions": "Measure comparable baseline and candidate evidence against the budgets in docs/specs/04-technology-review.md (load model and budgets), then return the bottleneck, proof limits, and an implementation handoff. Load fleet-diagnostic-rigor when the cause is unknown. Do not edit or run promotion gates."
     },
     "perf-fleet-deep": {
       "base": "perf-fleet",

@@ -3,7 +3,7 @@
 - Status: Accepted; contracts unfrozen until v0.1 (ADR 0019)
 - Date: 2026-10-02
 - Part of: [02-contracts.md](02-contracts.md)
-- Inputs: [03-workflows.md](03-workflows.md) and 03b–03g,
+- Inputs: [03-workflows.md](03-workflows.md) and 03b–03f and 03h–03l,
   [ui-contract-map.md](ui-contract-map.md), the mockup, ADRs
   [0003](../adr/0003-transport-grpc.md), [0004](../adr/0004-agent-connectivity.md),
   [0008](../adr/0008-goal-consent-and-account-modes.md),

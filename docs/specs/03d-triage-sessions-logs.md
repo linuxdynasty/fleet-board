@@ -413,7 +413,7 @@ stateDiagram-v2
 
 | Failure | What happens |
 |---|---|
-| Agent offline for hours | Spool grows at ~65 B/s per busy pane (compressed); cap (setting, e.g. 256 MiB) far away; resends from `acked_offset` on reconnect |
+| Agent offline for hours | Spool grows at ~65 B/s per busy pane (compressed); cap (`spool_cap_bytes`, [defaults](defaults.md)) far away; resends from `acked_offset` on reconnect |
 | Hub restart | `logs.db` is durable and consistent; the agent resends from the hub's end (the next `LogAck`) |
 | Hub restored from an older backup, or its end lost below what the agent already dropped from its spool | The first chunk gets `HOLE` with the hub's lower end; the agent sees it is below its spool floor and sends its oldest chunk with `gap_before = floor - end`, `frame_start = true`; the stream continues and the rows show the gap (`log.gap`), nothing wedges |
 | Chunk arrives twice | `offset + raw_length ≤ stored end` → `DUPLICATE`, not stored |

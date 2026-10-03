@@ -59,6 +59,15 @@ observed), so paths below read `Account.status.pacing` or `Machine.spec.labels`
 | ⌘K entries for accounts (waste line) and "Audit log" | `ListAccounts` → `Account.status.pacing`; audit opens on Machines (`ListAuditEntries`) | D2, M1 | v1 |
 | ⌘K entries for work items | `ListWorkItems` → `WorkItem.item.ref{display, provider}` | `WorkItemRef` (ADR 0012) | v1 |
 
+### View keys
+
+`1` Triage, `2` Work, `3` Session, `4` Usage, `5` Machines, `6` Settings, `7`
+Insights. `⌘K` or `/` opens jump-to (machines, accounts, work items, windows,
+the audit log). `n` goes to the next session that needs you. In Triage: `j`/`k`
+move, `a`, `s` and `o` act on the selected item. In Session with the terminal
+unfocused: `[` and `]` step windows, `i` opens the Details drawer. These keys
+are the web UI's planned keys; the mockup implements the same set.
+
 ### Strip counts
 
 `FleetSummary` is hub-derived; these are the definitions (proposed here, with the

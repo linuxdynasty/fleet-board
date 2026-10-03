@@ -47,35 +47,29 @@ before acting on it.
 
 ## Promote each PR
 
-1. **Local proof first**: the focused gates from AGENTS.md with exit codes
-   captured directly. CI is never the first test.
+The rules are in [AGENTS.md](../../../AGENTS.md); each step names where. Keep
+this order.
+
+1. **Local proof first:** the focused gates ([Local Gates](../../../AGENTS.md#local-gates)),
+   exit codes captured as in [Evidence Rules](../../../AGENTS.md#evidence-rules).
 2. **Rebase** on fresh `origin/main`, rerun proof the rebase affects, inspect the
    diff for unrelated reversions.
 3. **Self-review the full diff** with `fleet-code-review` (separate context when
    available) and fix P0, P1 and blocking P2 findings first.
-4. **Commit hygiene**: `git symbolic-ref -q HEAD` succeeds (a detached HEAD
-   advances no branch and a later push silently omits the commit). Reference
-   issues as `#N`; use closing keywords only when that exact issue should close
-   on merge.
-5. **Push** only when authorized, never to `main`, never `--no-verify`. Verify
-   the pushed SHA equals local HEAD
-   (`git rev-parse HEAD` vs `git ls-remote origin <branch>`) before opening or
-   updating the PR; use `--force-with-lease` for an authorized rebase.
-6. **PR title and body describe the final diff** (a reworked approach needs a
-   reworked title) and carry before and after evidence: the failing test, the
-   benchmark, the screenshot, the command output, and the merge danger line from
-   `fleet-humanizer`'s publishing reference. Write the whole body, and every
-   status update, with `fleet-humanizer`: plain words the owner can follow,
-   jargon explained. No AI attribution line or trailer. If the PR changes a row
-   of the v1 plan, it also edits that row's GitHub issue (scope, dependencies,
-   acceptance, title) and says so in the body.
-7. **CI**: complete only after two consecutive stable reads of the full check
-   set (`pending == 0` and the total unchanged) -
-   `gh pr checks <n> --json name,state,bucket`, state the exact query. Large
-   sets register in waves, so one zero-pending read is a false done. A red
-   check: reproduce that gate locally, fix, push again.
-8. **Review threads**: reconcile the thread API against the displayed
-   unresolved comments and report exact counts before saying threads are clear.
+4. **Commit hygiene:** [Non-Negotiable Rules](../../../AGENTS.md#non-negotiable-rules)
+   (named branch, issue references, no AI attribution, no `--no-verify`).
+5. **Push** only when authorized, never to `main`. Verify the pushed SHA equals
+   local HEAD before opening or updating the PR
+   ([agent-guide](../../../docs/development/agent-guide.md#worktrees-and-git-recipes)).
+6. **PR title and body** follow [PR and CI Discipline](../../../AGENTS.md#orchestration-pr-and-ci-discipline),
+   written with `fleet-humanizer` (its publishing reference has the merge danger
+   line). If the PR changes a row of the v1 plan, it also updates that row's
+   GitHub issue and says so in the body.
+7. **CI:** two stable reads of the full check set, query stated
+   (`gh pr checks <n> --json name,state,bucket`), as in PR and CI Discipline.
+   A red check: reproduce that gate locally, fix, push again.
+8. **Review threads:** reconcile the thread API against the displayed unresolved
+   comments and report exact counts.
 9. **Hand off for merge.** The owner merges every v1 PR (ADR 0024 O2); no agent
    merges. Report the PR ready only when checks are stably green, findings are
    dispositioned and local HEAD equals the PR head. After the owner merges,

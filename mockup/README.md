@@ -91,11 +91,9 @@ through `esc()`.
 
 ## Keys
 
-`1` Triage · `2` Work · `3` Session · `4` Usage · `5` Machines · `6` Settings · `7` Insights ·
-`⌘K` or `/` jump to (machines, accounts, work items, windows, the audit log) ·
-`n` next session that needs you ·
-Triage: `j`/`k`, `a`, `s`, `o` · Session (terminal unfocused): `[` / `]`
-step windows, `i` Details drawer.
+The view keys (`1` to `7`, `⌘K`, `n`, Triage and Session shortcuts) are listed in
+[ui-contract-map, "View keys"](../docs/specs/ui-contract-map.md#view-keys). Only the
+terminal keys below exist in the mockup alone.
 
 Session, terminal focused (click it; Esc leaves): every key goes to the
 active pane, previewed as `TermDown.input`. The prefix (Settings → tmux

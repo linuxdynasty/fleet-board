@@ -274,12 +274,17 @@ run before the rows they gate.
 
 ## 6. How it is tested
 
-- **Fakes at every edge** (01c testing approach): tmux, harness screens, clock,
+- **Fakes at every edge:** tmux, harness screens, clock,
   network, power, file watching. Hub and agent are tested against an
   in-memory fake of each other over a real gRPC connection, so no `sshd`, keys
   or machines are needed for CI.
 - **Parser fixtures per harness version** under `internal/harness/*/testdata/`;
   a new harness version without fixtures is `UNVERIFIED_PARSING`, never assumed.
+  The first fixtures are the real `/status` and `/usage` captures from
+  2026-09-28 and 29. Versions move fast (Codex went 0.157.1 to 0.159.2 and Muse
+  1.4.0 to 1.4.1 in two days), so fixture capture is a scripted job
+  (`fleet-agent capture-fixtures`), not a manual step. Fixtures are scrubbed of
+  emails, names and installed skill names before they are committed.
 - **Store tests** run the real SQLite driver on disk, including a durability
   check like spike S1 on the CI runner's filesystem.
 - **tmux** runs for real in CI at 3.2 and the latest release.

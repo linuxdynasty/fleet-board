@@ -285,11 +285,3 @@ the loopback and ADMIN-token rules and the refusal of a cookie, and that no
 label value contains a goal title or session name. What a static check cannot
 prove (that the signal fires in a real `fleetd`) is reported as observed or
 `NOT_CHECKED`.
-
-## 12. Questions for the owner
-
-1. ~~`/metrics` by `ADMIN` token or loopback~~ **Answered (ADR 0022):** accepted
-   for v1; a narrower metrics scope can be added later without breaking anything.
-2. ~~Thresholds~~ **Answered (ADR 0022):** the hub's defaults, not settings in v1.
-3. ~~Agent `agent.log` rotation (10 MiB, 3 files) and optional `metrics_listen`~~
-   **Answered (ADR 0022):** accepted as written.

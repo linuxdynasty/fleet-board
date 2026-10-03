@@ -454,19 +454,3 @@ file name and a `group/<label>` key. User-chosen names that land in the same
 places follow `[a-z0-9][a-z0-9-]{0,31}` (`INVALID_NAME`). `StartGoal` with no
 `in_session` and no `reuse_pane` creates a session named
 `spec.session_id.value`, with a window named by `window_name` or the template.
-
-## Contract names removed
-
-| Name | Why |
-|---|---|
-| `HOOK_EVENT_KIND_GOAL_WRITTEN` | the agent writes the goal file; hooks only read it |
-| `CONNECT_REASON_HUB_REQUESTED` | a reconnect is the agent's act; the hub asks with `SnapshotRequest` or `Bye` |
-| `SendKeys.require_empty_input_line` | replaced by `purpose` |
-| `GoalHooksState.trust_pending` | replaced by the tri-state `trust` |
-| `SetSessionAvailability`, string `reason` | replaced by `SetPaneAvailability`, enum `AvailabilityReason` |
-| `AvailabilityChanged` reason `keystroke` | input is `PaneInput` |
-
-Kept on purpose: `GOAL_LINE_STATE_*` (no `PAUSED`: a pause is a harness
-condition, the goal file still says WORKING), `TRIAGE_KIND_*` unchanged except
-`GOAL_PAUSED`, and `GoalPauseReason` without a `LIMIT` value (a limit is the
-`LIMIT_WAIT` phase).

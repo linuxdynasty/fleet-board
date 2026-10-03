@@ -130,29 +130,29 @@ built-in default in the table is what the agent uses. Decision 4 of
   line showing its default. It never overwrites an existing file, and with no
   answer it writes the file with an empty `allowed_repo_roots` and says so.
 
-Every key (the merge column is the tighten-only rule above, applied per key):
+Every key (the merge column is the tighten-only rule above, applied per key). Default values are in [defaults.md](defaults.md); the empty-by-default and every-installed-harness rules are in the bullets above:
 
-| Key | Type | Default when absent | Range | Merge with the hub |
-|---|---|---|---|---|
-| `schema_version` | string | `"1"` | `"1"` | reported in `PolicyInfo`; an unknown value is safe mode |
-| `default_server` | `none`, `observe` or `control` | `control` (ADR 0011) | | `min(hub, local)` in that order |
-| `max_active` | uint | none locally (the hub's layers: 2) | 1 to 16 | `min` |
-| `max_total` | uint | none locally (the hub's layers: 4) | 1 to 32 | `min` |
-| `max_windows` | uint | none locally (the hub's layers: 12) | at least 1 | `min` |
-| `allowed_harnesses` | list of harness names | every installed harness | names C1 knows | `hub ∩ local` |
-| `allowed_repo_roots` | list of absolute paths | empty | existing directories | `hub ∩ local` |
-| `local_approval` | list of `{command_kind, required}` | empty (off for every kind, 02g) | known command kinds | `hub OR local` per kind |
-| `rate_limits` | list of `{command_kind, per_minute}` | 60 per minute per kind | at least 1 | `min` per kind |
-| `cert_lifetime` | duration | 90 days | up to 365 days | `min` |
-| `attach_idle_timeout` | duration | 30 minutes | | `min` |
-| `spool_cap_bytes` | uint | 2 GiB | | `min` |
-| `block_on_battery` | bool | false | | `hub OR local` |
-| `window_name_template`, `idle_threshold`, `share_identity_email` | string, duration, bool | `{harness} {work}`, 2 minutes, false | | the hub wins (not a safety field) |
-| `min_probe_interval` | duration | none | at least 1 minute | `max(hub, local)` (a floor, see "Probe interval") |
-| `labels` | list of strings | empty | `[a-z0-9][a-z0-9-]{0,31}` | `hub ∪ local`; local cannot remove a hub label |
-| `metrics_listen`, `pprof_listen` | loopback `host:port` | none (the agent has no listener) | loopback only | local only, never delivered ([05b](05b-observability.md)) |
-| `telemetry` | the keys of 05b section 5 | off | | local only |
-| `exec.raw` | bool | reserved: never honoured, never advertised | | none |
+| Key | Type | Range | Merge with the hub |
+|---|---|---|---|
+| `schema_version` | string | `"1"` | reported in `PolicyInfo`; an unknown value is safe mode |
+| `default_server` | `none`, `observe` or `control` | | `min(hub, local)` in that order |
+| `max_active` | uint | 1 to 16 | `min` |
+| `max_total` | uint | 1 to 32 | `min` |
+| `max_windows` | uint | at least 1 | `min` |
+| `allowed_harnesses` | list of harness names | names C1 knows | `hub ∩ local` |
+| `allowed_repo_roots` | list of absolute paths | existing directories | `hub ∩ local` |
+| `local_approval` | list of `{command_kind, required}` | known command kinds | `hub OR local` per kind |
+| `rate_limits` | list of `{command_kind, per_minute}` | at least 1 | `min` per kind |
+| `cert_lifetime` | duration | up to 365 days | `min` |
+| `attach_idle_timeout` | duration | | `min` |
+| `spool_cap_bytes` | uint | | `min` |
+| `block_on_battery` | bool | | `hub OR local` |
+| `window_name_template`, `idle_threshold`, `share_identity_email` | string, duration, bool | | the hub wins (not a safety field) |
+| `min_probe_interval` | duration | at least 1 minute | `max(hub, local)` (a floor, see "Probe interval") |
+| `labels` | list of strings | `[a-z0-9][a-z0-9-]{0,31}` | `hub ∪ local`; local cannot remove a hub label |
+| `metrics_listen`, `pprof_listen` | loopback `host:port` | loopback only | local only, never delivered ([05b](05b-observability.md)) |
+| `telemetry` | the keys of 05b section 5 | | local only |
+| `exec.raw` | bool | | none |
 
 `min_probe_interval`, `metrics_listen` and `pprof_listen` are local-only names
 carried by no proto. `merged_grace` is a hub setting and not a policy key. The

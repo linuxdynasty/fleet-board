@@ -163,16 +163,3 @@ read-only attach toggle is a re-attach (a new `attach.open`).
 | Logs | `logs.delete`, `logs.search` |
 | Insights | `suggestion.dismiss` (`suggestions/<id>`), `insights.report_stored` (`insight_reports/<id>`, actor the verifier) |
 | Hub | `hub.restore`, `hub.pprof_enable` |
-
-## Open questions
-
-1. ~~API tokens and user management~~ Decided (ADR 0019 and its addendum):
-   RPCs for users, invites, passkeys, login sessions and API tokens
-   ([02f](02f-hub-authentication.md)), plus `fleetd` commands for the claim
-   URL, backup and restore.
-2. ~~Browser transport for `AttachTerminal`~~ Decided in step 4
-   ([04](04-technology-review.md), ADR 0016): the CLI streams over HTTP/2;
-   a browser sends the same messages over a WebSocket and acks written
-   bytes with `AttachAck`. The WebSocket rules are in 02f.
-3. ~~Device authentication mechanism~~ Decided in outline: Ed25519-signed
-   requests (02f). Push providers stay open until the phone app is built.

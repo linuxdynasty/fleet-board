@@ -87,7 +87,7 @@ notifications (those are re-read from the store on reconnect anyway).
 
 Entities and keys the workflows need; no SQL. "Writes" are steady-state rates
 at **4 machines** / **50 machines × 10 panes** from the load table in
-[03g](03g-load-and-handoff.md); "reads" is the dominant read pattern.
+[04](04-technology-review.md#load-model-a4-and-a50); "reads" is the dominant read pattern.
 
 | Entity | Key | Written by | Writes/s (4 / 50) | Read pattern | Retention |
 |---|---|---|---|---|---|

@@ -4,7 +4,7 @@
 - Date: 2026-10-01
 - Inputs: [01-agent-capabilities.md](01-agent-capabilities.md),
   [01b-harness-commands.md](01b-harness-commands.md),
-  [01c-handoff.md](01c-handoff.md), ADRs [0003](../adr/0003-transport-grpc.md),
+  ADRs [0003](../adr/0003-transport-grpc.md),
   [0004](../adr/0004-agent-connectivity.md), [0006](../adr/0006-tmux-sessions.md),
   [0008](../adr/0008-goal-consent-and-account-modes.md),
   [0009](../adr/0009-machine-groups-and-layered-settings.md),

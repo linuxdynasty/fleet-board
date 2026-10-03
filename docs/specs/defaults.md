@@ -31,6 +31,7 @@ spec change. "Decided here" marks a value no earlier document gave.
 | `last_seen` written to the store | at most 1 per machine per minute, and on connect and disconnect; held in memory per heartbeat | min | 03g Q10, decided here | fixed |
 | Agent event ring cap | 1 week or 64 MiB, whichever first; the oldest entry is evicted first, whatever its class, and every eviction is counted (`EventCounters.evicted_total`) | week, MiB | [02i](02i-delivery-and-sequencing.md), decided here | fixed |
 | Agent command log | last 10,000 or 7 days | count, days | 03 | fixed |
+| Agent command rate limit per command kind (`rate_limits`) | 60 | per min | 03e, decided here | `agent` |
 | Certificate lifetime | 90 (max 365), renewed at two thirds | days | ADR 0004 | `cert_lifetime` setting |
 | Enrollment token lifetime | 15 (max 24 h) | min | machine.proto | per token |
 | `default_server` (local policy; hub settings can only tighten) | `control`; the local policy can lower it to `observe` or `none` | | ADR 0011, settings.proto | `agent`; also a `SettingValues` field |
@@ -130,15 +131,11 @@ spec change. "Decided here" marks a value no earlier document gave.
 
 ## Runtime, install and access in v1
 
-Rules rather than numbers, kept here so every decision of
-[ADR 0024](../adr/0024-pre-build-owner-decisions.md) has one place to look.
+The rules (staying awake, logout, install, upgrade, GitHub App only, API-key
+spend) live in [02j](02j-hub-runtime.md) and [03b](03b-usage-and-sync.md). The
+numbers:
 
 | Name | Value | Owner | Kind |
 |---|---|---|---|
-| Hub stays awake while `fleetd` runs | the launchd unit runs it under `caffeinate -s` (or the equivalent); `-s` holds only on power | [02j](02j-hub-runtime.md#staying-awake-and-surviving-logout) | fixed |
-| Linux worker survives logout | the owner runs `sudo loginctl enable-linger <user>` once per machine; `fleet-agent doctor` checks it | 02j | fixed |
-| macOS worker | a LaunchAgent that starts at the owner's login | 02j | fixed |
-| Install and upgrade | GitHub Releases with `SHA256SUMS`, an install script, `fleet-agent upgrade` and `fleetd upgrade`; no Apple signing or notarization (the owner clears the quarantine flag once) | [02j](02j-hub-runtime.md#install-and-upgrade) | fixed |
-| GitHub access | the GitHub App only; no fine-grained token fallback | [ADR 0005](../adr/0005-github-app.md), ADR 0024 | fixed |
-| Dashboard and `fleet` in v1 | on the hub machine; from another machine `ssh -L 7080:127.0.0.1:7080 <hub>` (same port both sides); sign-in is v3 | 02j | fixed |
-| API-key spend | "spent so far" as the tool reports it, all-time, no period; one optional owner limit | [03b](03b-usage-and-sync.md) | fixed |
+| Dashboard and API port in `local_trusted` mode (same port on both sides of the `ssh -L` tunnel) | 7080 | [02j](02j-hub-runtime.md#listeners) | `config` |
+| Agent listener port | 7443 | 02j | `config` |
