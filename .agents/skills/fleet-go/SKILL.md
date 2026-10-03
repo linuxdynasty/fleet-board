@@ -44,11 +44,22 @@ addendum.
 
 ## Behavioral proof (TDD)
 
-1. Write the failing test first and watch it fail for the intended reason.
-2. Implement the smallest change that passes. Refactor with the test green.
+1. **Name the seams first.** A seam is the package's public interface, where a
+   test observes behavior without reaching inside. List the seams under test in
+   the handoff before writing any test; a deep package (much behavior behind a
+   small interface) needs few seams.
+2. **One slice at a time:** one failing test at a seam, watched failing for the
+   intended reason, then the smallest change that passes, then the next test.
+   Writing every test first tests imagined behavior. Refactor with the tests
+   green, in review rather than mid-loop.
 3. A bug fix needs a regression test that failed before the fix.
 
-Tests exercise the production path, not a copy of it. Prefer table-driven
+Tests exercise the production path, not a copy of it. A test that breaks when
+the code is refactored without a behavior change is coupled to the
+implementation (a private function, an internal collaborator, or a side channel
+such as reading rows a store's interface should return); test through the
+interface instead. An assertion that recomputes the expected value the way the
+code does proves nothing; assert a value worked out by hand or from the spec. Prefer table-driven
 tests with named cases (`t.Run(tc.name, ...)`) and `t.Parallel()` where the
 case has no shared state. Use real tmux in a throwaway server (`-L`) for tmux
 tests and captured fixtures for screen parsing; never mock the thing under test.

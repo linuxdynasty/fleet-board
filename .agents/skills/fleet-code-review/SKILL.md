@@ -20,8 +20,17 @@ code, so review it as carefully. Load the project skills matching the diff
    findings. Record `no PR exists yet` before first PR creation. A reviewer
    works read-only until the verdict is delivered and never edits the diff; if
    no separate reviewer is available say so and name the limitation.
-2. **Run the five passes** below. Record a result for each, grouping clean
-   passes and giving an excluded surface a one-line reason.
+2. **Run two axes in separate contexts.** The coordinator dispatches them as two
+   reviewer agents in parallel (leaf agents dispatch no one); a lone reviewer
+   runs spec first, then standards, and names that limitation. The **spec** axis
+   reads only the diff and the issue (its scope and acceptance test, and the
+   plan row it names) and reports: what the issue asked for that is missing or
+   partial; behavior the diff adds that nobody asked for (scope creep); what
+   looks done but is done wrong. The **standards** axis runs the five passes
+   below. Report each axis under its own heading and keep each axis's ranking;
+   a diff can pass one and fail the other, so one never masks the other.
+   Record a result for each pass, grouping clean passes and giving an excluded
+   surface a one-line reason.
 3. **Check proof**: the claims in the PR title and body are each backed by a
    command that ran after the last edit, with its exit code. Confirm the
    regression test fails without the fix when you can do so read-only (check the
@@ -54,6 +63,10 @@ code, so review it as carefully. Load the project skills matching the diff
   broken (a copied implementation, a mock of the thing under test)? Which
   generated file or spec table drifts unnoticed? What does an operator not see
   at 3 AM? What could a rebase or force-push change between review and merge?
+  Name any smell as a labelled judgement call with the hunk quoted, never as a
+  rule: mysterious name, duplicated code, feature envy, data clumps, primitive
+  obsession, shotgun surgery, speculative generality, middle man. A documented
+  repo rule wins over a smell; skip what `gofumpt` or `golangci-lint` enforces.
 
 ## Findings
 
@@ -80,6 +93,7 @@ earlier round.
 ```text
 VERDICT: READY | BLOCKED
 Base..Head: <sha>..<sha>   Branch: <name>   PR: <number | none yet>
+Spec: <result: missing | creep | wrong | clean>
 Passes: 0 <result> | 1 <result> | 2 <result> | 3 <result> | 4 <result>
 Findings: P0=<n> P1=<n> P2-blocking=<n> P2-deferred=<n> P3=<n>
 Proof run (command, exit code, postdates last edit?): ...
