@@ -5,6 +5,7 @@ specs on 2026-10-02. Where another document disagrees, the order of authority is
 ([`api/fleet/`](../api/fleet/)), the ADRs (newest wins), the specs, the flows, then this page.
 Detail lives in the specs; this page says what the product is and where to look.
 
+- Every feature by release, with its spec and issue: [features.md](features.md).
 - Decisions: [docs/adr/](adr/README.md). Specs: [docs/specs/](specs/README.md); every tunable
   number: [defaults](specs/defaults.md). Flows with diagrams: [docs/flows/](flows/README.md). Build
   order: [v1 plan](plan/v1-implementation-plan.md).

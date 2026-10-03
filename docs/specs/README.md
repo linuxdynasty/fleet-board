@@ -3,6 +3,9 @@
 The design phase ran in this order. Each step was reviewed and merged before
 the next started; the owner has approved the plan and implementation follows it.
 
+The list of every feature, by release, with the spec that holds it and its
+issue, is [docs/features.md](../features.md).
+
 **When two documents disagree,** the order of authority is: the protos
 ([`api/fleet/`](../../api/fleet/)), then the ADRs (the newest wins), then these
 specs, then the flows, then [design.md](../design.md). The owner's decisions are
