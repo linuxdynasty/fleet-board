@@ -258,9 +258,9 @@ sequenceDiagram
    behind it are one click away (`GetInsightReport{include_bundle}`).
 6. **Cost and off switch.** The report's `usage_consumed` is stored and shown
    on the Insights view, so the cost is measured, not assumed (`NOT_MEASURED`
-   until the first run). Issue #61 measures what one report costs, and that
-   measurement gates the routines and report work: the built-in routine is not
-   switched on before it. The owner disables the routine with
+   until the first run). Issue #61 records what one report costs from that first
+   run. The built-in routine is on by default and runs only on spare quota
+   (ADR 0022 addendum, decision 3). The owner disables the routine with
    `spec.enabled = false`; a built-in routine cannot be deleted, and the
    owner cannot edit its goal text or done rule.
 

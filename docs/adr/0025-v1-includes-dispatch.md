@@ -37,8 +37,8 @@ not change.
 **2. There is no v2.** The label "v2" is retired. The remote release keeps the name
 "v3", so that "v3" means the same thing in every document, issue and proto comment.
 Renaming v3 to v2 is a separate, mechanical change if the owner wants it. The
-milestone "v2 - dispatch" is closed and its issues move to the v1 milestone, which is
-renamed "v1 - fleet".
+milestone "v2 — dispatch" is closed and its issues move to the v1 milestone, which is
+renamed "v1 — fleet".
 
 **3. Build order: watch first, then dispatch, then acceptance.** Plan rows 1 to 16
 (watching, configuration, packaging) come first. The dispatch rows, numbered 18 and
@@ -62,8 +62,8 @@ ADR 0024.
 | When Muse `SessionStart` fires | #58 | goal hooks |
 | Re-arm after `DONE`, resume after a usage limit | #59 | goal control and limit wait |
 | Log compression and the 50 GiB `logs.db` cap | #60 | session logs |
-| The cost of the weekly report | #61 | routines and the weekly report |
-| Owner decision 20: approvals in `local_trusted` mode | #62 | approvals and prompt answers |
+| The cost of the weekly report | #61 | nothing at build time: the report's first run is the measurement |
+| Owner decision 20: approvals in `local_trusted` mode | #62 | approvals and prompt answers, and so every goal start (goal start needs approvals for its `CONFIRM` checks) |
 | Owner decision 21: the default goal text for repos without eshu's hooks | #63 | the first `StartGoal` in such a repo |
 
 Decisions 20 and 21 of ADR 0024 now say "before v1 dispatch is switched on" in place
@@ -79,8 +79,11 @@ document that says them is rewritten:
   plan section 1 and the "scope creep" risk row in plan section 8.
 - "Evidence v1, enforcement v2" (the trusted gate) and "v1 read, v2 mark" (pane
   availability). Both halves are v1.
-- The out-of-release behaviour of 02k: only v3 calls answer `UNIMPLEMENTED`.
-- The mockup hides only v3 controls.
+- The out-of-release behaviour of 02k: once v1 is complete, only v3 calls answer
+  `UNIMPLEMENTED`. While v1 is built, a call whose plan row has not landed answers
+  it too.
+- Once v1 is complete, the dashboard hides only v3 controls. The mockup draws every
+  v1 control.
 - Decision 23 of ADR 0024: `logs.db` is v1, so the last screen of an ended session is
   archived in v1 as ADR 0015 says. Until the logs row lands, the hub keeps only the
   latest summary of each live pane.
@@ -114,5 +117,5 @@ no test that names it; it starts as a report and fails CI at row 17.
   dispatch part), [features.md](../features.md), [02k](../specs/02k-v1-surface-and-cli.md),
   [02e](../specs/02e-contract-rules.md), the release tags in 01 and the other specs,
   [ui-contract-map](../specs/ui-contract-map.md), the flows, design.md and its
-  milestones, the mockup, AGENTS.md and the skills. Accepted ADRs and `docs/reviews/`
+  milestones, the mockup, the skills and the skill path map. AGENTS.md needs no change. Accepted ADRs and `docs/reviews/`
   are not edited.

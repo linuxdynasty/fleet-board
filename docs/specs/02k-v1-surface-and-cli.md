@@ -35,7 +35,7 @@ and sync to exist first (PR 5, 10, 11); the handler itself is the PR named.
 |---|---|---|
 | `GetServerInfo`, `GetFleetSummary`, `Watch`, `GetOperation` | v1 | 12 |
 | `ListMachines`, `GetMachine`, `ListSessions`, `GetSession`, `CapturePane` | v1 | 12 |
-| `ListGoals`, `GetGoal`, `ListGoalRuns`, `ListGoalTransitions` (v1 holds observed goals only: [03k](03k-observed-goals.md)) | v1 | 12 |
+| `ListGoals`, `GetGoal`, `ListGoalRuns`, `ListGoalTransitions` (observed goals from PR 12, [03k](03k-observed-goals.md); dispatched goals from row 22) | v1 | 12 |
 | `ListWorkItems`, `GetWorkItem`, `ListChangeRequests`, `GetChangeRequest`, `ListIntegrations` | v1 | 12 |
 | `ListRepos`, `GetRepo`, `ListAccounts`, `GetAccount`, `ListUsageReadings` | v1 | 12 |
 | `ListTriageItems`, `GetTriageItem`, `GetSettings`, `ListSettings`, `ListAuditEntries`, `GetStoreStatus` | v1 | 12 |

@@ -51,7 +51,7 @@ Each table row is one feature. The columns:
   "none yet": the v3 milestone holds only #64, and its build issues and epic are not
   written yet ([plan section 10](plan/v1-implementation-plan.md#10-tracking)).
 
-The v1 issues are #25 to #46, #48 and #50 to #56. Plan rows map to issues like this:
+The v1 issues are #25 to #46, #48, #50 to #63, ISSUE-1B and ISSUE-18 to ISSUE-29. Plan rows map to issues like this:
 PR 1 #29, PR 2 #30, PR 2b #56, PR 3 #31, PR 4 #32, PR 5 #33, PR 6 #34, PR 7 #35,
 PR 8 #36, PR 9 #37, PR 10 #38, PR 11 #39, PR 12 #40, PR 13 #41, PR 14 #42,
 PR 15 #43, PR 16 #44, PR 17 #45, PR 13a #48, PR 1b ISSUE-1B, and the dispatch rows
@@ -74,17 +74,17 @@ Row 17, the seven-day run, comes last.
 | The last few lines of each pane, and the full visible screen on request (E5, E10). v1 keeps only the newest lines of each live pane and drops them with the pane; saving the last screen of an ended session needs the log store, so it starts with the logs row ([ADR 0025](adr/0025-v1-includes-dispatch.md)) | v1 | [01](specs/01-agent-capabilities.md) E, [ADR 0013](adr/0013-live-state-retention.md), [03f](specs/03f-hub-internals.md) | #35, #40, ISSUE-25 |
 | Which harnesses and versions each machine has, which account each is signed in to, and the command list of each harness (C1, C2, C4) | v1 | [01](specs/01-agent-capabilities.md) C, [01b](specs/01b-harness-commands.md) | #36 |
 | A notice when a harness asks a question or hits a problem (a permission prompt, a provider error, a sign-in needed). Answering it is in section 4 (E6, E12) | v1 | [02h](specs/02h-goal-binding-and-pane-signals.md), [03d](specs/03d-triage-sessions-logs.md) | #36 |
-| Goal state read from the goal file: working, waiting, blocked, done (G2). In v1 fleet-board watches goals; it does not start them. A goal you start by hand in your own tmux pane shows as an **observed goal** ("started by you"): found from the pane's folder and its newest goal file, never dispatched, nudged or controlled, and it ends when the file says done or the pane closes | v1 | [01f](specs/01f-agent-control-goals-and-policy.md) G, [02h](specs/02h-goal-binding-and-pane-signals.md#observed-goals-v1), [03k](specs/03k-observed-goals.md), [ADR 0024](adr/0024-pre-build-owner-decisions.md) | #37 |
+| Goal state read from the goal file: working, waiting, blocked, done (G2). Goals the fleet starts are in section 3. A goal you start by hand in your own tmux pane shows as an **observed goal** ("started by you"): found from the pane's folder and its newest goal file, never dispatched, nudged or controlled, and it ends when the file says done or the pane closes | v1 | [01f](specs/01f-agent-control-goals-and-policy.md) G, [02h](specs/02h-goal-binding-and-pane-signals.md#observed-goals-v1), [03k](specs/03k-observed-goals.md), [ADR 0024](adr/0024-pre-build-owner-decisions.md) | #37 |
 | Which repos are checked out where, which branch, and whether the checkout is dirty or detached (H1, H3). Whether `gh` (GitHub's command-line tool) is signed in and can push (H4) | v1 | [01f](specs/01f-agent-control-goals-and-policy.md) H | #37 |
 | The agent's goal registry (E9): a small list of which goal is in which pane. Starting a goal writes to it; observed goals are found without it | v1 | [01](specs/01-agent-capabilities.md) E9, [02h](specs/02h-goal-binding-and-pane-signals.md) | #37, ISSUE-20 |
 | Your GitHub issues and pull requests for the repos you chose, read-only, kept within five minutes of GitHub. Each item shows its stage and whether it is trusted | v1 | [03b](specs/03b-usage-and-sync.md), [03j](specs/03j-provider-sync-and-trust.md), [ADR 0005](adr/0005-github-app.md), [ADR 0012](adr/0012-integration-model.md) | #39 |
 | The dashboard with seven views: Triage, Work, Session, Usage, Machines, Settings, Insights. Only the v3 buttons are hidden | v1 | [design.md](design.md#views), [ui-contract-map](specs/ui-contract-map.md), [mockup](../mockup/README.md), [ADR 0007](adr/0007-web-ui-react.md) | #42, ISSUE-28 |
 | A live feed so the dashboard changes the moment something changes, with no page refresh (`Watch`) | v1 | [02b](specs/02b-hub-api.md), [02c](specs/02c-hub-watch-and-filters.md), [ADR 0016](adr/0016-browser-transport.md) | #40 |
 | Keyboard: `1` to `7` switch views, `⌘K` or `/` jump to a machine, account, work item or window, `n` jumps to the next session that needs you, and `j`/`k` move through Triage. The `a` (act) key dispatches, answers or controls the selected item | v1 | [design.md](design.md#views), [mockup](../mockup/README.md) | #42, ISSUE-28 |
-| On the Machines view, a 7-day timeline of which goal ran on which machine, and a run history for each goal (restarts, nudges, usage used). In v1 it covers observed goals only, because nothing else runs yet | v1 | [ui-contract-map](specs/ui-contract-map.md), [03c](specs/03c-goals.md), [03k](specs/03k-observed-goals.md) | #42, #41 |
+| On the Machines view, a 7-day timeline of which goal ran on which machine, and a run history for each goal (restarts, nudges, usage used). It covers goals the fleet started and observed goals | v1 | [ui-contract-map](specs/ui-contract-map.md), [03c](specs/03c-goals.md), [03k](specs/03k-observed-goals.md) | #42, #41 |
 | On Settings, a storage panel: the size of each database, when the last backup ran, and free disk | v1 | [ui-contract-map](specs/ui-contract-map.md), [03f](specs/03f-hub-internals.md) | #42, #41 |
 | A summary strip on every view: working, waiting, stuck, needs you, free slots, waste per subscription, health dot | v1 | [design.md](design.md#views), [ui-contract-map](specs/ui-contract-map.md) | #40, #42 |
-| The "needs you" list (Triage), ranked by how bad and how old. v1 raises items only for things it can see: prompts, harness problems, usage that cannot be read, policy changes, a machine that changed its name or appeared twice, usage pacing alerts, GitHub access lost, and health | v1 | [03d](specs/03d-triage-sessions-logs.md), [05b](specs/05b-observability.md) | #33, #38, #39, #41 |
+| The "needs you" list (Triage), ranked by how bad and how old. Items come from prompts, harness problems, usage that cannot be read, policy changes, a machine that changed its name or appeared twice, usage pacing alerts, GitHub access lost, and health | v1 | [03d](specs/03d-triage-sessions-logs.md), [05b](specs/05b-observability.md) | #33, #38, #39, #41 |
 | Snooze or dismiss a Triage item. This changes only what the hub shows | v1 | [03d](specs/03d-triage-sessions-logs.md), [02k](specs/02k-v1-surface-and-cli.md) | #48 |
 | Triage items for dispatch work: stuck goals, a goal that says done but GitHub disagrees, a PR ready for you to merge, a review loop that paused, failed starts, waiting on a usage limit | v1 | [03d](specs/03d-triage-sessions-logs.md), [03c](specs/03c-goals.md), [03l](specs/03l-goal-lifecycle-and-verification.md), [03h](specs/03h-goal-phases-in-depth.md) | ISSUE-22, ISSUE-24 |
 | A machine's power state (asleep, on battery) | v1 | [01](specs/01-agent-capabilities.md) B3 | ISSUE-18 |
@@ -154,7 +154,7 @@ Everything here changes a pane. Each action passes the checks for its purpose ([
 | Step into a live terminal in the browser (a one-time ticket, and a WebSocket: a connection that stays open so keystrokes and output flow both ways). | v1 | [02f](specs/02f-hub-authentication.md), [03d](specs/03d-triage-sessions-logs.md), [ADR 0016](adr/0016-browser-transport.md) | ISSUE-26 |
 | Terminal logs: capture, ship to the hub, replay, search, delete, and a status view of the log store (needs the `LOGS` scope, the permission to read stored logs, which only you hold by default) | v1 | [03d](specs/03d-triage-sessions-logs.md), [ADR 0015](adr/0015-session-logs-in-sqlite.md), [02d](specs/02d-hub-authz.md) | ISSUE-25; waits on #60 |
 | Pause log shipping when the disk is low, and a local spool on each agent while the hub is away (K2) | v1 | [01f](specs/01f-agent-control-goals-and-policy.md) K, [03d](specs/03d-triage-sessions-logs.md) | ISSUE-25 |
-| `fleet logs export`: a stored session log written to a file | v1 | [02k](specs/02k-v1-surface-and-cli.md) | ISSUE-25, ISSUE-29 |
+| `fleet logs export`: a stored session log written to a file | v1 | [02k](specs/02k-v1-surface-and-cli.md) | ISSUE-25 |
 | The harness's own transcripts shipped as they grow (K3). Off unless you opt in | v3 | [01f](specs/01f-agent-control-goals-and-policy.md) K3, [03d](specs/03d-triage-sessions-logs.md) | none yet |
 
 ## 6. Insights and health
@@ -306,7 +306,7 @@ purpose:
   #56. The probes and prerequisites 0.5 to 0.10 are #50 to #55.
 - **v2 is now part of v1** ([ADR 0025](adr/0025-v1-includes-dispatch.md)). Its build
   rows are plan rows 18 to 29 (ISSUE-18 to ISSUE-29), its prerequisites are prep items
-  0.12 to 0.18 (#57 to #63), and the milestone "v2 - dispatch" is closed. The v3
+  0.12 to 0.18 (#57 to #63), and the milestone "v2 — dispatch" is closed. The v3
   milestone holds #64; its build issues and epic are not written yet.
 - **Weekly report cost** is not measured yet ([05](specs/05-insights.md)); its first
   run is the measurement.

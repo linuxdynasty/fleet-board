@@ -69,7 +69,7 @@ until the release that ships them is tagged.
   (PR 17 checks each against the generated code and the 02k list):
   `hub/v1/auth.proto`, `device.proto`, `token.proto`. Every other file is frozen.
 - **Mixed files.** A file that holds both (`service.proto`, `command_tmux.proto`,
-  `goal.proto`, `snapshot.proto`) is frozen whole, so a v3 message in it (for example the `HARNESS_TRANSCRIPT`
+  `goal.proto`, `snapshot.proto`, `type/v1/harness.proto`) is frozen whole, so a v3 message in it (for example the `HARNESS_TRANSCRIPT`
   stream key) can only grow additively after `v0.1`. A v3 message that may still
   need a breaking change is moved into a v3-only file before the tag; PR 17 does
   that check.

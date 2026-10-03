@@ -94,7 +94,7 @@ The [v1 plan](plan/v1-implementation-plan.md) turns the v1 milestone into PRs; t
 [01](specs/01-agent-capabilities.md) tags each capability v1 or v3. There is no v2
 ([ADR 0025](adr/0025-v1-includes-dispatch.md)): what was once planned as v2 is part of v1.
 
-- **v1, the fleet** (the GitHub milestone is "v1 - fleet"). It is built in two parts, watching first
+- **v1, the fleet** (the GitHub milestone is "v1 — fleet"). It is built in two parts, watching first
    and then dispatch, and `v0.1` is tagged after both pass.
    - **Watching.** Agents enroll and connect over mTLS; tmux control mode, goal-file state,
      weekly usage probes with burn-down and waste projection (shown after the first 24 hours of a window); issues and PRs read by the hub through
