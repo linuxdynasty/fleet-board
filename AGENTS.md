@@ -82,11 +82,11 @@ stopping point. Report actual state; anything not checked is `NOT_CHECKED`.
 
 | Change | Read |
 |---|---|
-| Anything | [docs/design.md](docs/design.md) and [part 2](docs/design-deployment-and-milestones.md), [ADR index](docs/adr/README.md) (newest ADR wins; the owner's latest decisions: ADR 0024) |
+| Anything | [docs/design.md](docs/design.md) (map, glossary, order of authority), [ADR index](docs/adr/README.md) (newest ADR wins) |
 | What to build next | [docs/plan/v1-implementation-plan.md](docs/plan/v1-implementation-plan.md) |
 | Agent capabilities, harness behavior | [01](docs/specs/01-agent-capabilities.md), [01f](docs/specs/01f-agent-control-goals-and-policy.md), [01b](docs/specs/01b-harness-commands.md), [01d](docs/specs/01d-goal-hooks.md) |
 | Wire contracts | [02](docs/specs/02-contracts.md), [02l](docs/specs/02l-versioning-errors-and-decisions.md), [02b](docs/specs/02b-hub-api.md) to [02j](docs/specs/02j-hub-runtime.md), ADR 0011, 0012, 0017, 0018, 0019 |
-| Workflows, hub internals | [03](docs/specs/03-workflows.md) and 03b-03k, [docs/flows/](docs/flows/README.md), [defaults](docs/specs/defaults.md) |
+| Workflows, hub internals | [03](docs/specs/03-workflows.md) and 03b-03l (each with its diagrams), [defaults](docs/specs/defaults.md) |
 | Insights, observability | [05](docs/specs/05-insights.md), [05b](docs/specs/05b-observability.md), ADR 0021 |
 | Storage, load, transport, libraries | [04](docs/specs/04-technology-review.md), ADR 0014-0016, 0020, 0023 |
 | UI | [mockup/](mockup/README.md), [ui-contract-map](docs/specs/ui-contract-map.md), ADR 0007, 0016 |
@@ -135,7 +135,7 @@ files). The product never runs a harness headless.
 
 A subagent never changes its own model; leaf agents dispatch no others. Only the
 orchestrator runs the full local gate, once, before push. Task-to-skill map and
-handoff contract: [agent-orchestration](docs/development/agent-orchestration.md).
+handoff contract: [agent guide](docs/development/agent-guide.md).
 
 ## Evidence Rules
 
@@ -181,8 +181,8 @@ Before a push: focused proof, a clean `fleet-code-review`, the full gate once.
 
 A contract change updates `docs/specs` (and the ADR index if a decision changed)
 in the same PR. ADRs are not edited after acceptance; a later ADR supersedes.
-When documents disagree: protos, then ADRs (newest wins), then specs, flows,
-`docs/design.md`. This file governs how to work, not what the product does.
+When documents disagree, the order in [design.md](docs/design.md) wins (ADR 0026).
+This file governs how to work, not what the product does.
 Every Go package directory carries `doc.go`, `README.md` and a scoped
 `AGENTS.md` (no packages exist yet). Do not remove a scoped `AGENTS.md` unless
 its replacement is proven to load.
