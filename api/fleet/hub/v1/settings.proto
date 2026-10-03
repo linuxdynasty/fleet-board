@@ -45,7 +45,7 @@ message HubSettings {
   // and set its own label.
   TrustedGate trusted_gate = 4;
   // Dispatch prefers a machine other than the hub's before the hub machine
-  // (03c). Default true (docs/specs/defaults.md); acts from v2.
+  // (03c). Default true (docs/specs/defaults.md).
   optional bool prefer_non_hub = 6;
   // Master switch for auto-dispatch (manual dispatch always works). Default
   // false (docs/specs/defaults.md).

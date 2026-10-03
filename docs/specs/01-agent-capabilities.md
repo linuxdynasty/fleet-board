@@ -49,7 +49,7 @@ event, a snapshot field or a stream.
 
 Kind: **S** snapshot field, **E** event, **C** command (hub → agent),
 **H** hub → agent message that is not a command, **T** stream, **L** local only.
-Phase: **v1** read-only, **v2** actions, **v3** later.
+Phase: **v1** the whole local product (watching, dispatch, sessions, logs), **v3** remote and later. ADR 0025 retired the middle release.
 
 | ID | Capability | Kind | Phase |
 |---|---|---|---|
@@ -63,7 +63,7 @@ Phase: **v1** read-only, **v2** actions, **v3** later.
 | A8 | Receive hub settings, acknowledge effective values | H, E | v1 |
 | B1 | Machine facts (incl. timezone) | S | v1 |
 | B2 | Resource samples | E | v1 |
-| B3 | Power state | E | v2 |
+| B3 | Power state | E | v1 |
 | C1 | Harness inventory (+ parser and fixture versions) | S | v1 |
 | C2 | Account identity and sign-in | S, E | v1 |
 | C3 | Probe folder: one fleet-owned folder the owner trusts once by hand; doctor explains an untrusted one | L | v1 |
@@ -77,44 +77,45 @@ Phase: **v1** read-only, **v2** actions, **v3** later.
 | E4 | Activity transitions (active ↔ idle), not droppable | E | v1 |
 | E5 | Pane summaries, droppable | E | v1 |
 | E6 | Prompt detected (with `prompt_id`, source, confidence) | E | v1 |
-| E7 | Harness ready (a level, with a snapshot field) | S, E | v2 |
-| E8 | Harness hook events | E | v2 |
+| E7 | Harness ready (a level, with a snapshot field) | S, E | v1 |
+| E8 | Harness hook events | E | v1 |
 | E9 | Pane ↔ harness session mapping, goal registry | S, E | v1 |
 | E10 | Capture pane | C | v1 |
-| E11 | Pane availability (idle: v1; the developer's mark is the v2 command `SetPaneAvailability`) | S, E, C | v1, v2 |
+| E11 | Pane availability (idle, and the developer's mark through the command `SetPaneAvailability`) | S, E, C | v1 |
 | E12 | Harness condition (provider error, rate limit, sign-in, goal interrupted) | E | v1 |
 | E13 | Developer input on a pane | S, E | v1 |
-| F1 | Ensure session (create or reuse, optional harness) | C | v2 |
-| F2 | Ensure window | C | v2 |
-| F3 | Send keys (bound to `prompt_id` when answering) | C | v2 |
-| F4 | Interrupt | C | v2 |
-| F5 | Respawn pane (resume harness) | C | v2 |
-| F6 | Kill window | C | v2 |
-| F7 | Scratch directory for a goal with no repo: ensure, collect (`scratch`, ADR 0021) | C | v2 |
-| F8 | Run harness command (allow-listed slash command) | C | v2 |
-| G1 | Goal hooks: install and verify (Claude first) | C, S | v2 |
+| F1 | Ensure session (create or reuse, optional harness) | C | v1 |
+| F2 | Ensure window | C | v1 |
+| F3 | Send keys (bound to `prompt_id` when answering) | C | v1 |
+| F4 | Interrupt | C | v1 |
+| F5 | Respawn pane (resume harness) | C | v1 |
+| F6 | Kill window | C | v1 |
+| F7 | Scratch directory for a goal with no repo: ensure, collect (`scratch`, ADR 0021) | C | v1 |
+| F8 | Run harness command (allow-listed slash command) | C | v1 |
+| G1 | Goal hooks: install and verify (Claude first) | C, S | v1 |
 | G2 | Goal state (line + HEAD + dirty, one event) | E | v1 |
-| G3 | Start goal (agent-side composite) | C | v2 |
-| G4 | Goal control through the harness's own `/goal` | C | v2 |
+| G3 | Start goal (agent-side composite) | C | v1 |
+| G4 | Goal control through the harness's own `/goal` | C | v1 |
 | H1 | Repository inventory | S | v1 |
-| H2 | Worktree ensure and prune | C | v2 |
+| H2 | Worktree ensure and prune | C | v1 |
 | H3 | Branch state per goal worktree | S, E | v1 |
 | H4 | GitHub CLI sign-in and push access | S, E | v1 |
-| I1 | Preflight | C | v2 |
-| J1 | Terminal attach to any session, existing or new (incl. resize) | T | v2 |
-| K1 | Terminal log capture and shipping | T | v2 |
-| K2 | Log spool status; pause and resume shipping | S, C | v2 |
+| I1 | Preflight | C | v1 |
+| J1 | Terminal attach to any session, existing or new (incl. resize) | T | v1 |
+| K1 | Terminal log capture and shipping | T | v1 |
+| K2 | Log spool status; pause and resume shipping | S, C | v1 |
 | K3 | Harness transcripts, shipped incrementally | T | v3 |
 | L1 | Local policy, with change detection | L, S, E | v1 |
 | L2 | Effective settings (tighten-only merge) | S | v1 |
-| L3 | Local approval | L, E | v2 |
+| L3 | Local approval | L, E | v1 |
 | M1 | Local audit log | L | v1 |
 | M2 | Telemetry (OTEL) | L | v1 |
 | M3 | Doctor | L | v1 |
-| M4 | Drain and undrain | C, L, S | v2 |
+| M4 | Drain and undrain | C, L, S | v1 |
 
-Not in v1 or v2: Tailscale lookup (v3), raw exec (string reserved, not in the
-contract), moving a goal between machines (v2: "stop here, dispatch there").
+Not in v1: Tailscale lookup (v3), raw exec (string reserved, not in the
+contract), moving a goal between machines (in v1 the owner stops the goal here
+and dispatches it there).
 
 ## A. Identity, connection, settings
 
@@ -150,7 +151,7 @@ contract), moving a goal between machines (v2: "stop here, dispatch there").
   schema version.
 - **B2 Resource samples** every 30 s: load, memory pressure, free bytes under
   each repo root and the state directory.
-- **B3 Power state** (v2): AC or battery, battery %. macOS: `pmset -g batt`
+- **B3 Power state**: AC or battery, battery %. macOS: `pmset -g batt`
   (checked). Linux: `/sys/class/power_supply/*`.
 
 ## C. Harnesses
@@ -214,8 +215,9 @@ optionally against one limit the owner sets.
   machine ([0004](../adr/0004-agent-connectivity.md)). Identity is read by a short transient probe at agent
   start and when the harness version changes, so machines don't keep idle
   harness processes just for identity.
-- **C3 Probe folder and folder trust.** In v1 the agent never edits harness
-  configuration (decision 3 of [ADR 0024](../adr/0024-pre-build-owner-decisions.md)).
+- **C3 Probe folder and folder trust.** The agent never edits harness
+  configuration, except the one narrow goal-hook case below (decision 3 of
+  [ADR 0024](../adr/0024-pre-build-owner-decisions.md)).
   The usage probe (D1) always runs in one folder the agent owns and keeps empty,
   `~/.local/share/fleet-agent/probe/`. Each harness asks about trusting a new
   folder once. The owner answers that question by hand, once per harness, in the
@@ -227,8 +229,8 @@ optionally against one limit the owner sets.
   screen itself), one Triage item names the machine, the harness and the folder,
   and nothing is typed. `fleet-agent doctor` makes the same read-only look: it
   starts the harness in the probe folder, reads the first screen, sends no key and
-  tears the session down. The weekly report's scratch folder (v2) follows the same
-  rule: the owner trusts that one folder by hand. v2 goal hooks are the only case
+  tears the session down. The weekly report's scratch folder follows the same
+  rule: the owner trusts that one folder by hand. Goal hooks are the only case
   where the agent writes harness settings, under the narrower rule of
   [ADR 0024](../adr/0024-pre-build-owner-decisions.md) (see [01d](01d-goal-hooks.md)).
 
@@ -310,18 +312,19 @@ optionally against one limit the owner sets.
 - **E6 Prompt detected:** `prompt_id`, text, options, destructive flag, source
   (screen pattern or hook) and confidence. Send-to-pane stays disabled for a
   harness until its detection is verified (Claude first).
-- **E7 Harness ready** (v2): whether the adapter's ready pattern is showing in
+- **E7 Harness ready**: whether the adapter's ready pattern is showing in
   a pane, as a snapshot field and an event for both edges.
-- **E8 Harness hook events** (v2): turn end, session start, Codex interrupt,
+- **E8 Harness hook events**: turn end, session start, Codex interrupt,
   with the harness session id; per-harness events in [01d](01d-goal-hooks.md).
 - **E9 Pane ↔ harness session mapping and the goal registry.** The agent's
   registry binds a goal to a pane (and its worktree and harness session id) for
   every harness; goal hooks record the session id against that entry (02h). This
   lets G2 attribute `.claude/active-goal.<session_id>` files to panes, and K3
-  find transcripts. In v1 nothing writes the registry (no `StartGoal`, no
-  hooks), so E9 in v1 has two jobs: report the registry it rebuilds from
-  `FLEET_GOAL_ID` (empty at first), and attribute a goal file to a pane that has
-  no registry entry by the **observed goal** rule (pane working folder and the
+  find transcripts. `StartGoal` and the hooks write the registry. A goal
+  that the fleet did not start has no registry entry, so E9 also has two other
+  jobs: report the registry it rebuilds from `FLEET_GOAL_ID` (empty at first), and
+  attribute a goal file to a pane that has no registry entry by the **observed
+  goal** rule (pane working folder and the
   newest goal file, [02h](02h-goal-binding-and-pane-signals.md#observed-goals-v1)).
   The result is a goal with binding source `OBSERVED`, never an entry in the
   registry.

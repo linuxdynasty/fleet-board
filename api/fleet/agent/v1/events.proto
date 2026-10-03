@@ -89,9 +89,9 @@ message Event {
     PromptDetected prompt_detected = 37;
     // E6 companion: the prompt is no longer on screen. NEVER_DROP.
     PromptGone prompt_gone = 38;
-    // E7 (v2): the ready pattern as a level, shown or gone.
+    // E7: the ready pattern as a level, shown or gone.
     HarnessReady harness_ready = 39;
-    // E8 (v2). NEVER_DROP.
+    // E8. NEVER_DROP.
     HarnessHookEvent harness_hook = 40;
     // E9: harness session id learned for a pane. NEVER_DROP.
     PaneHarnessSession pane_harness_session = 41;
@@ -252,7 +252,7 @@ message PromptGone {
   fleet.type.v1.PaneKey pane = 2;
 }
 
-// HarnessReady (E7, v2): the adapter's ready pattern appeared or went away.
+// HarnessReady (E7): the adapter's ready pattern appeared or went away.
 // A level fact, mirrored in TmuxPane.ready_pattern_showing, so a reconnect
 // snapshot rebuilds it. COALESCE, key "ready:<pane>".
 message HarnessReady {
@@ -265,7 +265,7 @@ message HarnessReady {
   bool showing = 4;
 }
 
-// HookEventKind is the normalized hook event (E8, v2).
+// HookEventKind is the normalized hook event (E8).
 enum HookEventKind {
   HOOK_EVENT_KIND_UNSPECIFIED = 0;
   HOOK_EVENT_KIND_SESSION_START = 1;
@@ -292,7 +292,7 @@ enum HookDecision {
   HOOK_DECISION_BLOCK = 2;
 }
 
-// HarnessHookEvent (E8, v2): what the harness hooks report.
+// HarnessHookEvent (E8): what the harness hooks report.
 message HarnessHookEvent {
   fleet.type.v1.PaneKey pane = 1;
   fleet.type.v1.Harness harness = 2;

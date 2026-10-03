@@ -149,7 +149,7 @@ What the hub can never ask for, by construction of the contract:
 
 - [ADR 0011](../adr/0011-contract-amendments.md) amends 0004, 0006, 0009 and
   0010: the developer's tmux server is the default (`control`), `tmux -L
-  fleet` optional, browser attach v2; the step 2 command kinds and messages
+  fleet` optional, browser attach v1 (ADR 0025); the step 2 command kinds and messages
   (`Settings`, `Bye`, `StartGoal`, `EnsureProbe`, `RunHarnessCommand`,
   `ResultAck`, …), no `RunExec`, two sequences; hub-assigned labels;
   transcripts shipped by offset.
@@ -212,7 +212,7 @@ What the hub can never ask for, by construction of the contract:
    identity on screen (Codex), the owner maps the account on the hub.
 2. One part covers 50 machines × 10 panes; snapshot parts exist in the
    contract (ADR 0018) so a bigger machine needs no protocol change.
-3. Codex and Muse hook payloads are probed in v2 (E8); `HarnessHookEvent`
+3. Codex and Muse hook payloads are probed with the goal hooks (E8); `HarnessHookEvent`
    is extended then if needed.
 
 ## Compile check

@@ -57,7 +57,7 @@ form in the same pane, same goal id ([03h](03h-goal-phases-in-depth.md#re-arm-af
 end phase, nudges, usage consumed, log keys) and `ListGoalTransitions` (phase
 changes with reason and actor) read what the hub stores with the goal. The
 Machines timeline is `ListGoals` over `start_time` and `end_time`, not
-`create_time`; v1 holds only observed goals (`origin = OBSERVED`, [03k](03k-observed-goals.md)). The "Goal progress" task list of the mockup is **not** in the
+`create_time`; a goal is either started by the fleet (`origin = DISPATCHED`) or seen in a pane the owner started by hand (`origin = OBSERVED`, [03k](03k-observed-goals.md)). The "Goal progress" task list of the mockup is **not** in the
 contract: the goal file's first line and the run list answer "what is it doing".
 
 ## Stored logs
@@ -106,8 +106,8 @@ was shown. A plan with any `SKIPPED` line applies nothing unless `allow_skipped`
 enrolled machine's display name sets its labels and settings; one that matches
 none is kept as a **pending machine**, applied when a machine enrolls under that
 name (the token's `machine_name`), and that machine is **recorded as drained**
-(`spec.drain`). In v1 that blocks nothing (no goals start) and cannot be cleared
-(`UndrainMachine` is v2); from v2 the machine takes no goal until undrained. Import
+(`spec.drain`). The machine takes no goal until the owner calls
+`UndrainMachine`. Import
 never drains an enrolled machine. An integration is never created by import
 (credentials are not in the document): it is skipped with a problem. The
 enrollment token carries `expected_hostname`, `labels` and `start_drained` for the

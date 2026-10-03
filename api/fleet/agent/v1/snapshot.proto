@@ -67,7 +67,7 @@ message DiskFree {
   uint64 total_bytes = 3;
 }
 
-// PowerState (B3, v2).
+// PowerState (B3).
 message PowerState {
   bool on_battery = 1;
   fleet.type.v1.Percent battery = 2;
