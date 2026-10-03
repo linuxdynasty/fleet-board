@@ -81,7 +81,7 @@ spec change. "Decided here" marks a value no earlier document gave.
 | Name | Value | Unit | Owner | Kind |
 |---|---|---|---|---|
 | `HubSettings.prefer_non_hub` | true (a new window goes to a machine other than the hub's first, then the hub machine) | | 03c, decided here | `HubSettings` |
-| `HubSettings.auto_dispatch` | false (the owner turns it on, only after owner decisions 20 and 21 of ADR 0024 are made, ADR 0025; manual dispatch always works) | | 03c, decided here | `HubSettings`, per-repo override |
+| `HubSettings.auto_dispatch` | false (the owner turns it on once owner decision 20 of ADR 0024 is made, and for a repo without eshu's hooks once decision 21 is made too: ADR 0025; manual dispatch works whenever the dispatch rows exist) | | 03c, decided here | `HubSettings`, per-repo override |
 | Scheduler pass | 30 s tick plus wakeups; at most 1 dispatch per account and per machine per pass | s | [03f](03f-hub-internals.md), 03c | fixed |
 | `max_parallel_goals_per_repo` | 3 | goals | 03c | `HubSettings`, per-repo override |
 | `max_sync_lag` | 10 | min | 03b | `timing.max_sync_lag` config |
