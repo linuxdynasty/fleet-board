@@ -160,6 +160,7 @@ Everything here changes a pane. Each action passes the checks for its purpose ([
 | Install and upgrade: release builds for macOS and Linux on GitHub Releases with checksums, an install script, `fleet-agent upgrade` and `fleetd upgrade`, launchd and systemd user units (no root), a runbook. No Apple signing: you clear the quarantine flag once per Mac. A Linux worker needs `loginctl enable-linger` once; the hub laptop stays awake under `caffeinate -s` | v1 | [plan](plan/v1-implementation-plan.md) PR 16, prep 0.3, [02j](specs/02j-hub-runtime.md#install-and-upgrade) | #44, #27 |
 | `local_trusted` mode: plain HTTP on loopback, no sign-in, for the machine that runs the hub. The dashboard and `fleet` run on that machine in v1; the way in from another machine is in [02j](specs/02j-hub-runtime.md). Agents always use mTLS | v1 | [02f](specs/02f-hub-authentication.md), [02j](specs/02j-hub-runtime.md), [ADR 0004](adr/0004-agent-connectivity.md) | #40 |
 | Muse auto-update: you choose whether to switch it off on fleet machines (prep 0.4) | v1 | [01d](specs/01d-goal-hooks.md), [plan](plan/v1-implementation-plan.md#3-before-the-first-line-of-product-code) | #28 |
+| See which recommended agent skills are missing on each machine, with the command to install each one. The fleet only tells you; it never installs, updates or removes a skill | later | none yet | #83 |
 
 ## 8. Phone and remote
 
