@@ -40,7 +40,7 @@ spec change. "Decided here" marks a value no earlier document gave.
 | Allowed range of `max_active`; of `max_total` (a value outside it is refused; in `policy.yaml` it is safe mode) | 1 to 16; 1 to 32 | goals | ADR 0024 | `agent`, `setting` |
 | `allowed_repo_roots` of a fresh agent; `allowed_harnesses` of a fresh agent | empty until the owner sets it (`fleet-agent enroll` asks); every installed harness | | ADR 0024, 03e | `agent` |
 | Typing detection: `tmux list-clients` poll | 2 | s | [02h](02h-goal-binding-and-pane-signals.md), ADR 0024 (an allowed exception to "poll only usage and GitHub") | fixed |
-| Goal-file rescan for missed file events | 60 | s | [design.md](../design.md), ADR 0024 (the other allowed exception) | fixed |
+| Goal-file rescan for missed file events | 60 | s | [02h](02h-goal-binding-and-pane-signals.md), ADR 0024 (the other allowed exception) | fixed |
 | Agent low-disk point (`DISK_LOW` under any repo root) | 5 | GiB free | ADR 0024 | fixed |
 | `idle_threshold` | 2 | min | [01](01-agent-capabilities.md) E11 | setting |
 | `window_name_template` | `{harness} {work}` | | settings.proto | setting |

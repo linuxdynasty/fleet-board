@@ -26,8 +26,8 @@ transport, and how a terminal attach over WebSocket is opened and closed.
 | Sign-in and device RPCs | `FAILED_PRECONDITION`: every RPC of [auth.proto](../../api/fleet/hub/v1/auth.proto) (users, invites, passkeys, login sessions, sign-out) and the device RPCs of `device.proto` (`RequestPairing`, `ApprovePairing`, `ListDevices`, `GetDevice`, `RevokeDevice`). API-token RPCs and notification targets work for the local owner | all of them |
 | Attach | a WebSocket needs a ticket in both modes; a CLI over HTTP/2 needs none. Both pass the Host and Origin checks | same |
 
-`design.md` once said the hub listens only on the Tailscale interface and attach
-needs login; both statements are now scoped to `authenticated` mode.
+Listening only on the Tailscale interface, and needing login to attach, apply to
+`authenticated` mode only.
 
 **Open decision (not decided yet).** In `local_trusted` mode any process on
 the hub machine is the owner, and the hub machine also runs goals. A goal that reads

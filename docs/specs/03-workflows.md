@@ -7,7 +7,7 @@
   [01c-handoff.md](01c-handoff.md) (measured volumes),
   [02-contracts.md](02-contracts.md), `api/fleet/*/v1/*.proto`,
   ADRs [0001](../adr/0001-system-architecture.md)–[0011](../adr/0011-contract-amendments.md),
-  [design.md](../design.md), [research/paperclip.md](../research/paperclip.md)
+  [research/paperclip.md](../research/paperclip.md)
 - Output: the numbers and requirements step 4 (technology review) decides on.
   This step decides no technology.
 

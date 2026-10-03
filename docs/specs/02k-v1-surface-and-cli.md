@@ -63,7 +63,7 @@ v3: `DEVICES`, `NOTIFICATION_TARGETS`.
 
 ## Commands of the three programs
 
-Exit codes are 0 for success and 1 for any failure (design.md). `--json` prints
+Exit codes are 0 for success and 1 for any failure. `--json` prints
 the Connect JSON of the response message unchanged: field names as protobuf
 writes them in JSON, enum names in full, 64-bit integers as decimal strings
 ([02b](02b-hub-api.md#64-bit-integers)). `fleet status` prints one object,

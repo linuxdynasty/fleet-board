@@ -47,7 +47,7 @@ exposure the developer already accepts when running a harness unattended.
 Developers who want more can use harness sandbox modes, rootless containers on
 Linux, a root-owned install or a separate worker account with tmux
 `server-access` (3.3+); none of it is required or assumed, and no hardening
-guide is written yet (design.md, "Later, not scheduled"). One open case is decided by the owner before v1 dispatch is switched on
+guide is written yet ([features.md](../features.md), the "later" rows). One open case is decided by the owner before v1 dispatch is switched on
 (ADR 0024, decision 20): in `local_trusted` mode a goal on the hub machine is
 the owner to the loopback API ([02f](02f-hub-authentication.md#modes)).
 

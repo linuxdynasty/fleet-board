@@ -56,8 +56,8 @@ sequenceDiagram
   W->>W: tx: retire if still open · ResultAck
 ```
 
-**Rules.** Prompts are never auto-answered, destructive or not (design.md
-safety rails); a destructive prompt (`rm -rf`, `docker compose down -v`, a
+**Rules.** Prompts are never auto-answered, destructive or not
+([02h](02h-goal-binding-and-pane-signals.md#sendkeys-purposes), ADR 0004); a destructive prompt (`rm -rf`, `docker compose down -v`, a
 credential on a command line) shows Deny preselected and `destructive_reason`.
 `answerable=false` (detection not verified for that harness version) → the
 item has no answer buttons and shows the `ssh -t … tmux attach` line (W8). One answer in

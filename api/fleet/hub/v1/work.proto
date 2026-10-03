@@ -77,7 +77,7 @@ message WorkItem {
   // The provider's data as last synced; for ROUTINE runs, hub-made.
   fleet.integration.v1.WorkItem item = 10;
   WorkStage stage = 11;
-  // The trusted-issues gate's verdict and why (design.md safety rails): who
+  // The trusted-issues gate's verdict and why (03j): who
   // made the item trusted, or what is missing. Computed by the hub from the
   // mirror, never taken from the provider.
   TrustVerdict trust = 12;

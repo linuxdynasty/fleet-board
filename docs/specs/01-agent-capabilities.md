@@ -2,7 +2,7 @@
 
 - Status: Accepted (revised after an independent review)
 - Date: 2026-09-29
-- Inputs: [design.md](../design.md), ADRs [0004](../adr/0004-agent-connectivity.md),
+- Inputs: ADRs [0004](../adr/0004-agent-connectivity.md),
   [0006](../adr/0006-tmux-sessions.md), [0009](../adr/0009-machine-groups-and-layered-settings.md),
   [0010](../adr/0010-session-logs.md)
 

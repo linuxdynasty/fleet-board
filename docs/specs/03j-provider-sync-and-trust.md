@@ -117,7 +117,7 @@ to `OK` only after one complete round without error.
 ## The trusted-issues gate
 
 The adapter is read-only and does not know the allow-list. It returns
-**evidence**; the hub decides (design.md safety rails; rule and messages in
+**evidence**; the hub decides (rule and messages in
 [`trusted_gate.proto`](../../api/fleet/hub/v1/trusted_gate.proto)).
 
 **Evidence** (`fleet.integration.v1`): `WorkItem.author` and `create_time`;

@@ -38,8 +38,8 @@ buf breaking --against '.git#tag=v0.1'
 against the tag, not `HEAD~1` (which only measures the last commit). Freeze
 checklist, to be ticked when cutting `v0.1`:
 
-1. Every finding of the contract review is fixed or deferred with a reason
-   (`docs/reviews/2026-10-02-contract-review-findings/theme-*.json`).
+1. Every finding of the contract review is fixed: done, 86 of 86
+   ([review stub](../reviews/2026-10-02-contract-review.md)).
 2. `buf generate` runs clean (below) and the first generated Go and
    TypeScript clients compile in CI.
 3. The mockup's data is checked against the protos (names, enums, 64-bit
