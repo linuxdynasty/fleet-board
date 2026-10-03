@@ -379,7 +379,7 @@ sequenceDiagram
    ("deny" or the deny option when destructive), `fallback = DENY`, `expire_time` (now plus
    `HubSettings.approval_timeout`) and `required_role`. Severity is `ACTION`, or `CRITICAL` for a
    destructive prompt. While the prompt is open `GoalStatus.prompt_pending` suppresses nudges. When
-   `answerable` is false the item is **notice-only** (the card shows the `ssh -t ... tmux attach` line and
+   `answerable` is false (prompt detection is not verified for this harness version) the item is **notice-only** (the card shows the `ssh -t ... tmux attach` line and
    no choices), so there is nothing to decide.
 4. `TRIAGE` and `APPROVALS` need `READ|APPROVALS`, so a phone that only holds `APPROVALS` sees exactly these.
 5. `expected_version` is **required and non-zero**: a decision names the exact state it saw.

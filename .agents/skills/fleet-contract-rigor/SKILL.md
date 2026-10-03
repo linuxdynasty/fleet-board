@@ -53,10 +53,12 @@ results depend on the day.
 - **Until v0.1** the contracts are unfrozen (ADR 0019): renames and retypes are
   allowed, and `buf build` plus `buf lint` must pass on every change. Do not
   add `reserved` lines for history; git keeps it.
-- **From the `v0.1` tag** ADR 0003's additive-only rule applies again: add
+- **From the `v0.1` tag** ADR 0003's additive-only rule applies again to
+  everything v1 implements (ADR 0025 decision 4; only the v3-only messages stay
+  changeable until they ship): add
   fields and messages, never renumber, retype, rename or remove, and run
   `buf breaking --against '.git#tag=v0.1'` (or the latest tag) in CI. A break
-  needs a new `v2` package and a superseding ADR.
+  needs a new `v2` protobuf package (a package version, not a release name) and a superseding ADR.
 - Whichever phase applies, say which one in the PR.
 
 ## Wire and behavior rules a change must keep

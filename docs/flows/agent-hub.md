@@ -159,8 +159,8 @@ sequenceDiagram
    ([`machine.proto`][machine]) or `fleetd enroll-token`. The request names the
    machine, a `ttl` (default 15 minutes, at most 24 hours), the hostname the owner
    expects (`expected_hostname`), starting labels, and `start_drained` (a machine
-   that came from an imported config always enrolls drained; in v1 the hub only records this,
-   because drain and undrain are v2). Setting
+   that came from an imported config always enrolls drained and takes no goals until the owner
+   undrains it with `UndrainMachine`). Setting
    `previous_machine` re-enrolls a known machine and is allowed only for one that
    is `REVOKED` or past its certificate lifetime
    (`MACHINE_NOT_REENROLLABLE` otherwise).

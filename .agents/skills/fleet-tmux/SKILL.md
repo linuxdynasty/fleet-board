@@ -61,7 +61,7 @@ afterwards. Minimum tmux is 3.2; CI covers 3.2 and the latest.
 
 ## Attach
 
-Browser attach (v2) is a PTY-backed `tmux attach` through a **grouped view
+Browser attach is a PTY-backed `tmux attach` through a **grouped view
 session** on the developer's own server (01 J1), bridged to a WebSocket, with
 HTTP/2 flow control on the `Terminal` stream: output is never dropped, the PTY
 blocks. `viewer` attaches are read-only (the hub drops input).
