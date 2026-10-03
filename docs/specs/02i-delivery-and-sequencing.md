@@ -78,6 +78,27 @@ Every event consumes a seq at the moment it is created, shed or coalesced ones
 included, so **seq has holes by design** and contiguity means nothing. A
 replaced COALESCE event keeps no seq of its own; the survivor keeps its own.
 
+**One event's path.** An observer creates the event, stamps its number and class, and the
+class decides what a slow or broken connection may do to it. The last two boxes are the hub
+side: the reader checks size and order, and the store writer applies an event to state only
+when its `seq` is above `Snapshot.seq` (at or below, it is history only).
+
+```mermaid
+flowchart LR
+  P["observers and probes<br/>tmux, goal files, harness screens, git"] --> S["Event created:<br/>seq = next number (all classes),<br/>delivery and coalesce_key stamped from the table"]
+  S --> Q{"delivery"}
+  Q -->|"SHED"| QS["send queue only<br/>oldest dropped first<br/>shed_total + 1"]
+  Q -->|"COALESCE"| QC["queue and ring: one per key<br/>newer replaces older<br/>coalesced_total + 1"]
+  Q -->|"NEVER_DROP"| QN["queue and ring, in seq order<br/>producer waits, never dropped"]
+  QS --> C(("Connect"))
+  QC --> C
+  QN --> C
+  QN -.->|"ring full or older than one week"| EV["evicted_total + 1 (real loss)"]
+  QC -.->|"ring full or older than one week"| EV
+  C --> H["hub connReader: size and order checks"]
+  H --> W[("storeWriter: seq above Snapshot.seq updates state and history, at or below is history only")]
+```
+
 ## Sequence numbers
 
 The event `seq` is agent-wide and must never repeat, whatever happens to the
@@ -200,6 +221,58 @@ reconnect that may be weeks away:
   `forge_cli_status`, `harness_changed` or `policy_changed` event from that
   machine or when the owner presses re-check. `Preflight` is read-only and
   idempotent.
+
+## Command lifecycle
+
+The other direction: a command goes from the hub to an agent. The hub writes the outbox row
+in the same transaction as the decision, then sends it. The agent saves the command, answers
+`CommandAck`, runs it, and sends exactly one `CommandResult`; the hub then sends `ResultAck`
+so the agent can forget it. Delivery is at least once, and `command_id` makes a repeat
+harmless. The envelope checks, deadlines and the repeat rule per kind are in
+[02](02-contracts.md#delivery-semantics).
+
+```mermaid
+sequenceDiagram
+  participant D as scheduler or API call
+  participant H as fleetd
+  participant A as fleet-agent
+  D->>H: decision (dispatch, nudge, operator action)
+  H->>H: one tx: decision rows plus outbox row {command_id, machine, kind, not_after_time, requested_by} state pending, Operation PENDING
+  H-->>A: Command{command_id, epoch, seq, issued_time, not_after_time, requested_by, requires, trace, kind}
+  A->>A: known command_id? return the logged result. Else envelope checks in order (02-contracts, Delivery semantics)
+  A->>A: persist the command in the command log
+  A->>H: CommandAck{command_id, received_time}
+  H->>H: outbox delivered, Operation DELIVERED
+  opt local approval rule covers this kind
+    A->>H: CommandProgress{step awaiting_local_confirm, status AWAITING_LOCAL_CONFIRM, metadata deadline and approver}
+    Note over A: fleet-agent approve command_id, or deny, before not_after_time
+  end
+  loop each step of a composite (StartGoal has 14)
+    A->>H: CommandProgress{step, step_index, step_count, status, reason, report_time, message, retryable, retry_after, metadata}
+    H->>H: Operation RUNNING, step shown
+  end
+  A->>H: CommandResult{command_id, status, reason, message, started_time, finished_time, missing_capability, retryable, retry_after, metadata, trace, detail}
+  H->>H: one tx: outbox done, Operation DONE, derive goal, session, probe state from the result
+  H-->>A: ResultAck{command_ids}
+  Note over A: the result stays in the command log until acked, then ages out (see defaults.md for the size and age)
+```
+
+The hub's outbox row moves like this. A `DrainMachine` or a revoke ends rows early (see
+[03h](03h-goal-phases-in-depth.md#drain-the-outbox-and-respawn) and
+[02g](02g-agent-security.md#machine-lifecycle-revoke-and-delete)). 02 also lists a state
+`failed` that nothing triggers on its own, so an implementation can start with these four.
+
+```mermaid
+stateDiagram-v2
+  [*] --> pending: decision tx commits
+  pending --> delivered: CommandAck
+  pending --> expired: not_after_time passes, or cancelled by DrainMachine
+  pending --> done: RevokeMachine (status EXPIRED)
+  delivered --> done: CommandResult, or RevokeMachine (status EXPIRED)
+  delivered --> expired: not_after_time passes with no result
+  done --> [*]: ResultAck
+  expired --> [*]
+```
 
 ## Clocks
 

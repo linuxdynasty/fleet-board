@@ -260,6 +260,42 @@ built in v1; `NotificationTarget` stores the push handle opaque (write-only
 through the API, excluded from stored idempotent responses) and a placeholder
 chat binding.
 
+**Pairing and a first approval, as messages.** The phone holds its own key and signs every
+request, so no cookie exists for a web page to ride. What it may do is always the narrowest of
+three things: the scopes the owner granted, the role of the user it acts for, and, at the
+agent, the role the hub derives from those scopes.
+
+```mermaid
+sequenceDiagram
+  participant P as Phone (paired device)
+  participant D as Dashboard (owner)
+  participant H as fleetd
+  participant A as fleet-agent
+  participant T as tmux and harness
+  P->>P: generate an Ed25519 key pair, the private key never leaves the phone
+  P->>H: RequestPairing{display_name, platform, public_key, requested_scopes}
+  H->>H: tx: pending Device, six-digit code derived from the key and a hub nonce, valid 10 minutes
+  H-->>P: RequestPairingResponse{device, pairing_code, expire_time}, the code shown on the phone only
+  H-->>D: Watch DEVICES CREATED (pending device)
+  D->>H: ApprovePairing{request_id, id, expected_version, pairing_code, scopes} (the owner types the code the phone shows)
+  H->>H: tx: caller is a user, code matches, scopes are a subset of the approver's own effective scopes and of the request, spec.principal and approved_time set, audit device.approve
+  H-->>D: ApprovePairingResponse{device}
+  P->>H: GetDevice{id}, signed with its key, polled until spec.approved_time is set (the only call a pending device may make)
+  P->>H: any RPC with Authorization: Fleet-Device ID.TIMESTAMP.NONCE.SIGNATURE
+  H->>H: verify the signature over method, path, SHA-256 of the body, timestamp, nonce, then device active, scopes intersect the user's role
+  H-->>P: GetServerInfoResponse{caller Principal{kind DEVICE}, caller_scopes}, then Watch (empty subscriptions)
+  T->>A: a harness asks a permission question
+  A-->>H: Event{prompt_detected PromptDetected{prompt_id, ...}}
+  H-->>P: Watch: TRIAGE CREATED, APPROVALS CREATED (the phone shows the card)
+  P->>H: DecideApproval{request_id, id, expected_version, decision}
+  H->>H: scope APPROVALS, Approval.required_role covered by the mapped role, one tx, audit approval.decide with Principal.device
+  H-->>A: Command{send_keys SendKeys{purpose PROMPT_ANSWER, answering_prompt}} with requested_by Principal{kind DEVICE, role OPERATOR, device, on_behalf_of owner}
+  A->>A: role matrix: OPERATOR may answer a prompt, local approval first if the machine requires it
+  A->>T: type the chosen key
+  A-->>H: CommandResult{status OK}
+  H-->>P: Watch: OPERATIONS DONE, APPROVALS UPDATED
+```
+
 ## Approvals
 
 Approvals are what a phone acts on: a small `preview`, the

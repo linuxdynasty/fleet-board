@@ -113,6 +113,25 @@ never drains an enrolled machine. An integration is never created by import
 enrollment token carries `expected_hostname`, `labels` and `start_drained` for the
 same purpose by hand.
 
+**Import with a machine that has not enrolled yet, as messages.** Import applies what it can
+now and keeps the rest for when the machine joins. The mark "drained" is recorded at once and
+the Machines view shows it, so the new machine takes no goal until the owner calls
+`UndrainMachine`.
+
+```mermaid
+sequenceDiagram
+  participant C as CLI or dashboard
+  participant H as fleetd
+  participant A as new fleet-agent
+  C->>H: ImportConfig{config, dry_run = true}
+  H-->>C: changes[] (create, update, unchanged, skipped) and plan_hash
+  C->>H: ImportConfig{config, expected_plan_hash}
+  H->>H: one transaction: apply, a machine with no match becomes a pending machine
+  H-->>C: applied = true
+  A->>H: later: Enroll with a token whose machine_name matches
+  H->>H: apply the pending machine's labels and settings, mark the machine drained
+```
+
 ## Local commands
 
 Not RPCs, on purpose: **`fleetd backup`, `fleetd restore`, `fleetd enroll-token`

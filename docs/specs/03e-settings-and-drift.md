@@ -102,6 +102,36 @@ outbox when it accepts `DrainMachine` (the goal is `ABANDONED`, the item `READY`
 elsewhere); the whole interplay is in
 [03h](03h-goal-phases-in-depth.md#drain-the-outbox-and-respawn).
 
+**Drain, as messages.** The hub marks the machine drained in the same transaction that cancels
+the `StartGoal` rows still waiting, so the scheduler stops choosing it at once, online or not.
+The dashboard then shows what the agent itself confirms (`drain_state`). Goals already
+running keep running, and everything that serves them stays allowed.
+
+```mermaid
+sequenceDiagram
+  participant D as Dashboard
+  participant H as fleetd
+  participant A as fleet-agent
+  participant T as tmux and harness
+  D->>H: DrainMachine{request_id, id, reason}
+  H->>H: scope ADMIN and mapped role OWNER (else ROLE_INSUFFICIENT, nothing changes). One tx: spec.drain set, StartGoal rows still PENDING cancelled, their goals ABANDONED, outbox row for Drain, audit machine.drain
+  H-->>D: DrainMachineResponse{operation PENDING, machine with spec.drain set}
+  H-->>D: Watch: MACHINES UPDATED, GOALS UPDATED (ABANDONED, reason DRAINING), OPERATIONS
+  H-->>A: ConnectResponse{command Command{drain Drain{reason}}}
+  A->>A: envelope, role must be OWNER, persist the drain in the state dir
+  A-->>H: CommandAck, then CommandResult{status OK}
+  A-->>H: Event{drain_state DrainState{draining true, reason, since_time, requested_by_principal}} and Heartbeat{draining true}
+  H->>H: tx: MachineStatus.draining true, scheduler excludes the machine
+  H-->>D: Watch: MACHINES UPDATED (status.draining), OPERATIONS DONE
+  Note over A,T: goals already running continue untouched: GoalState events, nudges, ControlGoal, limit-wait resume, RespawnPane of a goal pane, KillWindow and PruneWorktree after merge
+  H-->>A: a later StartGoal, or EnsureSession or EnsureWindow that starts a harness
+  A-->>H: CommandResult{status REJECTED_BY_POLICY, reason DRAINING}
+  D->>H: UndrainMachine{request_id, id}
+  H-->>A: ConnectResponse{command Command{undrain Undrain}}
+  A-->>H: CommandResult{status OK}, Event{drain_state DrainState{draining false}}, Heartbeat{draining false}
+  H-->>D: Watch: MACHINES UPDATED, spec.drain cleared
+```
+
 ### The local policy file (L1): `policy.yaml`
 
 `~/.config/fleet-agent/policy.yaml` is the machine's ceiling (ADR 0009). The
@@ -216,6 +246,7 @@ Machine drain state: `ACTIVE` → `DRAINING{hub}` → `ACTIVE` (Undrain);
 | Hub store restored from an older backup (generation goes backwards) | `fleetd restore` mints a new `settings_epoch` (03f, 02g); the agent orders settings by `(settings_epoch, generation)` and accepts any generation under a new epoch (02-contracts.md, replaces 03g's `settings_restored`) |
 | `Drain` while `StartGoal` in flight | Still in the outbox → cancelled, goal `ABANDONED` (03h); in flight past preflight → completes; delivered but not past preflight → `DRAINING` at preflight, goal `ABANDONED` |
 | `Undrain` against a local drain | `REJECTED_BY_POLICY/DRAINING`; UI explains |
+| Machine offline when `DrainMachine` is accepted | `spec.drain` is set at once, so the scheduler already skips it; the `Drain` command waits in the outbox, and if it expires the reconnect diff sends it again ([03](03-workflows.md#w1-enrollment-and-first-connect)) |
 | Harness crash, prompts, provider errors, developer typing | Not affected by this workflow |
 | Work tracker / code host | Not involved |
 

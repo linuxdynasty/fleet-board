@@ -142,6 +142,30 @@ with GitHub. An invite never grants more than the inviter holds
 ([02d, no escalation](02d-hub-authz.md#no-escalation)); the claim invite is the
 one exception, made by `fleetd` on the hub host.
 
+**The claim and first passkey, as messages.** The page is static and the token stays in the
+URL fragment, so it never reaches a server log. The registration session can register a
+credential and nothing else.
+
+```mermaid
+sequenceDiagram
+  participant D as Dashboard (owner's browser)
+  participant H as fleetd
+  Note over H: first start with no users: creates an OWNER invite (24 h) and prints the claim URL (token in the fragment) on the hub host's terminal only
+  D->>H: GET /invite (static page, the fragment never leaves the browser)
+  D->>H: GetServerInfo{}
+  H-->>D: GetServerInfoResponse{auth_mode AUTHENTICATED, sign_in_methods, claim_pending true}
+  D->>H: RedeemInvite{request_id, invite_token, display_name}
+  H->>H: tx: burn invite, registration session for the pre-created User (still INVITED)
+  H-->>D: RedeemInviteResponse{user, registration_expire_time} + Set-Cookie registration session
+  D->>H: BeginPasskeyRegistration{name}
+  H-->>D: BeginPasskeyRegistrationResponse{ceremony_id, options_json, expire_time}
+  D->>D: navigator.credentials.create(options_json), user touches the authenticator
+  D->>H: FinishPasskeyRegistration{ceremony_id, credential_json}
+  H->>H: tx: store credential id and public key, User ACTIVE, session upgraded and cookie rotated
+  H-->>D: FinishPasskeyRegistrationResponse{user, passkey} + Set-Cookie full session
+  D->>H: GetServerInfo{} then Watch (02c)
+```
+
 ## Passkeys
 
 WebAuthn through a server library; the hub stores credential ids and public
@@ -196,6 +220,34 @@ App's client id and secret and the callback URL
 file mode 0600, like the private key); until then `github_sign_in` is
 `SIGN_IN_METHOD_DISABLED`.
 
+**Returning sign-in, as messages.** A passkey sign-in is a plain RPC pair. GitHub sign-in is a
+browser redirect, so it is two HTTP endpoints, and the hub reads `GET /user` once and throws
+the GitHub token away.
+
+```mermaid
+sequenceDiagram
+  participant D as Dashboard
+  participant H as fleetd
+  participant G as GitHub (the hub's GitHub App)
+  alt passkey
+    D->>H: BeginPasskeyLogin{}
+    H-->>D: BeginPasskeyLoginResponse{ceremony_id, options_json, expire_time}
+    D->>D: navigator.credentials.get (discoverable, no username asked)
+    D->>H: FinishPasskeyLogin{ceremony_id, credential_json}
+    H->>H: tx: verify assertion and sign counter, create login session (hash of cookie)
+    H-->>D: FinishPasskeyLoginResponse{user, session_expire_time} + Set-Cookie
+  else GitHub
+    D->>H: GET /auth/github/start?purpose=signin
+    H-->>D: 302 to GitHub + __Host-fleet_oauth state cookie (SameSite=Lax, HttpOnly, 10 min: state, PKCE verifier)
+    D->>G: user authorizes the App (user authorization only)
+    G-->>D: 302 to /auth/github/callback?code&state (cross-site: only the Lax state cookie travels)
+    D->>H: GET /auth/github/callback?code&state, state checked against the cookie, no Origin required
+    H->>G: exchange code, GET /user once, discard the token
+    H->>H: tx: match UserSpec.github_login of an INVITED or ACTIVE user (pin numeric id on first use, INVITED becomes ACTIVE), create login session
+    H-->>D: 302 to / + Set-Cookie (or /signin?error=REASON)
+  end
+```
+
 ## Sessions and sign-out
 
 A session cookie lasts `HubSettings.session_max_age` (30 days) and ends after
@@ -232,6 +284,25 @@ owner), its scopes are capped to that owner's, and the audit actor is
 `fleetd user invite --owner` (same socket) creates a new one-time owner invite
 and prints it like the claim URL, audited as `auth.claim`; `fleetd claim` itself
 works only while the hub is unclaimed.
+
+**An API token, as messages.** Only a signed-in user or the local owner can mint one. The
+secret is shown once, then every call carries it as a bearer header and the hub checks the
+scopes again each time, so demoting the user narrows the token at once.
+
+```mermaid
+sequenceDiagram
+  participant D as Dashboard (signed in)
+  participant C as fleet CLI
+  participant H as fleetd
+  D->>H: CreateApiToken{request_id, name, scopes, ttl}
+  H->>H: tx: scopes must be a subset of the caller's, store token id + SHA-256 of the secret
+  H-->>D: CreateApiTokenResponse{api_token, secret}
+  D-->>C: user copies the secret once into FLEET_TOKEN or ~/.config/fleet/token (0600)
+  C->>H: any RPC with Authorization: Bearer fbt_ID.SECRET
+  H->>H: look up the id, constant-time hash compare, expiry, revoked, user enabled, scopes intersect role
+  H-->>C: response, as Principal{kind API_TOKEN, id token/ID, on_behalf_of user}
+  D->>H: RevokeApiToken{request_id, id, expected_version} (takes effect at once, open streams end)
+```
 
 ## Devices
 
@@ -277,6 +348,46 @@ attacker's page cannot read) holds one.
    in `AttachOpen` can only tighten the ticket's.
 4. The hub sends `AttachReady`, then `output`. The client sends `input`,
    `resize`, `select`, `ack` and finally `close`.
+
+**Attach, as messages.** The ticket is burned by the first frame whether or not the attach
+then succeeds. The agent opens the `Terminal` stream (the agent is the client of every RPC)
+and the hub pairs it with the WebSocket by `attach_id`. The view session is grouped
+(`new-session -t`), so the browser switching windows never moves the developer's own window.
+
+```mermaid
+sequenceDiagram
+  participant D as Dashboard (xterm.js)
+  participant H as fleetd
+  participant A as fleet-agent
+  participant T as tmux
+  D->>H: CreateAttachTicket{request_id, session, read_only}
+  H-->>D: CreateAttachTicketResponse{ticket, expire_time, read_only}
+  D->>H: GET AttachTerminal, Upgrade websocket, Sec-WebSocket-Protocol fleet.attach.v1, Origin
+  H->>H: Host, Origin and credential checked BEFORE the upgrade (plain HTTP 401 or 403 otherwise)
+  D->>H: first frame: AttachTerminalRequest{open AttachOpen{request_id, session, cols, rows, read_only, ticket}}
+  H->>H: burn the ticket, check principal, session, Origin, expiry, scope and machine, assign attach_id, audit attach.open
+  H-->>A: ConnectResponse{command Command{open_attach OpenAttach{attach_id, session SessionTarget, cols, rows, read_only}}}
+  A->>T: new-session -t SESSION -s fleet-view-ATTACH, destroy-unattached on, PTY tmux attach
+  A-->>H: Terminal stream opened by the agent: TerminalRequest{up TermUp{attach_id, ready TermReady{cols, rows, view_session_name}}}
+  A-->>H: CommandResult{status OK, open_attach OpenAttachResult{view_session_name}}
+  H-->>D: AttachTerminalResponse{ready AttachReady{attach_id, view_session_name, cols, rows, read_only, command_id}}
+  loop output
+    T->>A: PTY bytes
+    A-->>H: TerminalRequest{up TermUp{attach_id, output}} (OSC 52 and hyperlinks stripped)
+    H-->>D: AttachTerminalResponse{output} (at most 64 KiB per message)
+    D->>H: AttachTerminalRequest{ack AttachAck{bytes_written}}
+  end
+  loop input
+    D->>H: AttachTerminalRequest{input} or {resize AttachResize} or {select AttachSelect{window or pane}}
+    H-->>A: TerminalResponse{down TermDown{attach_id, input or resize TermResize or select TermSelect}}
+    A->>T: write to the PTY, or resize, or select-window and select-pane in the view session only
+  end
+  D->>H: AttachTerminalRequest{close AttachClose}
+  H-->>A: TerminalResponse{down TermDown{attach_id, close TermClose}}
+  A->>T: kill the PTY client, the view session destroys itself
+  A-->>H: TerminalRequest{up TermUp{attach_id, closed TermClosed{reason DETACHED}}}
+  H-->>D: AttachTerminalResponse{closed AttachClosed{reason DETACHED}} then WebSocket close 1000, audit attach.close
+```
 
 **Framing.** Binary frames only (a text frame closes with 1003). One frame is
 exactly one protobuf message. Client-to-hub frames are at most 8 KiB, hub-to-

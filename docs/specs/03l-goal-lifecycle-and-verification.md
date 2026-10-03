@@ -247,6 +247,7 @@ Sub-flags held with the phase (on `GoalStatus`): `provider_condition`,
 | Agent offline | Goal state frozen at last known; stuck/no-progress evaluation suspended while `OFFLINE`; timers that fire act only when `ONLINE` |
 | Hub restart | All flags and timers are in the store; re-armed at start; a nudge sent but unacked is in the outbox and may be `EXPIRED` (2 min) → nothing typed |
 | Duplicate command | Logged result |
+| Machine offline when an operator control (`ControlGoal`) is sent | the 2-minute deadline passes, the `Operation` is `DONE` / `EXPIRED`, and the goal's phase does not change |
 | Nudge `not_after_time` expires | `EXPIRED`; the next stop evaluation may nudge again only if `nudges` is still 0 (it is not incremented for an undelivered nudge) |
 | Harness crash (`PaneExited`) | `STOPPED`; respawn + nudge once; second crash → `STUCK` |
 | Provider error / rate limit / usage limit (`HarnessCondition`) | `provider_condition` set; no stop or no-progress counting; a usage limit moves the goal to `LIMIT_WAIT` and marks the account `SHORT_LIMIT` until its reset (the W3 rule in 03h); cleared → counting resumes |

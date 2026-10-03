@@ -209,6 +209,32 @@ signals and their latest values are `GetSystemStatus` ([READ]); the System
 section of the Machines view draws them; `FleetSummary.system_warnings` and
 `system_critical` drive the strip's dot.
 
+**The path of a health reading, as messages.** The agent's heartbeat carries `AgentHealth`.
+The hub keeps the latest per machine in memory, judges the signals every 15 s, and a signal that
+leaves OK raises one deduplicated `TRIAGE_KIND_SYSTEM` item. The dashboard reads the whole list
+with `GetSystemStatus`.
+
+```mermaid
+sequenceDiagram
+  participant A as fleet-agent
+  participant G as hub gateway (connReader)
+  participant W as hub writer
+  participant E as System evaluator (hub.system.evaluate)
+  participant F as Fan-out and Watch
+  participant D as Dashboard, CLI
+  A->>G: Heartbeat{sent_time, uptime, load1, counts, events EventCounters, health AgentHealth}
+  G->>G: latest per machine in memory: MachineTelemetry.agent_health, clock_skew from sent_time
+  G->>W: last_seen write, at most once a minute (defaults)
+  loop every 15 s
+    E->>E: read agent health, outbox ages, usage reading ages, sync lag, writer queue age, watch drops, disk, backup age
+    E->>E: SystemSignal{kind, subject, state, value, unit, thresholds}, hysteresis
+  end
+  E->>W: job: raise or update TriageItem{kind SYSTEM, fingerprint system:signal:subject, SystemDetail}
+  W->>F: after commit: Watch TRIAGE and FLEET_SUMMARY changes, MACHINES for the volatile telemetry
+  D->>G: GetSystemStatus{} (READ), every 30 s and on a SYSTEM triage change
+  G-->>D: GetSystemStatusResponse{status SystemStatus{overall, signals[], hub_version, exporters, watch_subscribers}}
+```
+
 | Signal | Subject | Value | WARNING | CRITICAL | Item raised at |
 |---|---|---|---|---|---|
 | `AGENT_CONNECTED` | machine | seconds since the last heartbeat. Only machines labelled `always-on` or with a live goal count: a laptop that sleeps is not a fault | offline 10 min | offline 1 h | WARNING |
@@ -271,6 +297,7 @@ text but can hint at structure, hence the double guard.
 | An agent too old to send `AgentHealth` | the fields stay unset (unknown, not 0); the System section says "not reported" and raises nothing |
 | The evaluator itself stalls | `hub.system.evaluate` stops, `observed_time` goes stale; the UI shows "System status is old" above 60 s; `fleet doctor` reads the same status |
 | Hub restart | metrics reset (counters restart at 0; Prometheus handles it), `hub_instance_id` changes, SYSTEM items persist in the store and re-evaluate within 30 s |
+| The same heartbeat arrives twice | the latest wins; the second changes nothing |
 | Too many labels | a new label value space is a review block; the bounded sets above are the contract |
 
 ## 11. Verifying it
