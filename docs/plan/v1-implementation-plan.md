@@ -160,9 +160,10 @@ measured by the report's first run and gates no build step.
 What only the owner can do is 0.2 (create and install the GitHub App, #26), 0.4
 (decide Muse auto-update, #28), 0.17 (#62) and 0.18 (#63, approve the words); 0.3 is
 decided (above). 0.1, 0.5 to 0.16 are agent work.
-`scripts/owner-setup.sh` walks the owner through 0.2 and 0.4, the one-time folder
-trust of 0.9 (C3), and two install steps (the macOS quarantine flag, Linux linger);
-`--check` shows where each stands and changes nothing.
+`scripts/owner-setup.sh` walks the owner through 0.2 and 0.4, the owner's one-time
+folder trust that 0.9 describes (C3; provisional until 0.9 records the real screens),
+and two install steps (the macOS quarantine flag, Linux linger); `--check` shows where
+each stands and changes nothing.
 
 ## 4. Repository layout
 

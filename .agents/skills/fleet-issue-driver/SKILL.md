@@ -63,11 +63,9 @@ before acting on it.
    updating the PR; use `--force-with-lease` for an authorized rebase.
 6. **PR title and body describe the final diff** (a reworked approach needs a
    reworked title) and carry before and after evidence: the failing test, the
-   benchmark, the screenshot, the command output. End the body with **Merge
-   danger**: a one-way door (hard to undo: a migration, a frozen contract, a
-   GitHub write) or a two-way door (a revert undoes it), and the blast radius in
-   one word (`docs`, `agent`, `hub`, `store`, `wire`, `fleet`).
-   Write it, and every status update, with `fleet-humanizer`: plain words the
+   benchmark, the screenshot, the command output, and the merge danger line
+   from `fleet-humanizer`'s publishing reference.
+   Write the whole body, and every status update, with `fleet-humanizer`: plain words the
    owner can follow, jargon explained. No AI attribution line or trailer.
    If the PR changes a row of the v1 plan, it also edits that row's GitHub
    issue (scope, dependencies, acceptance, title) and says so in the body.

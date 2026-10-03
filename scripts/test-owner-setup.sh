@@ -34,7 +34,39 @@ run_suite() {
   HOME="$home" "$sh" "$script" --stage 9 </dev/null >/dev/null 2>&1; rc=$?
   [ "$rc" = 2 ] && ok || bad "$sh" "unknown stage exits 2 (got $rc)"
 
+  # Stage 2 through a pseudo-terminal: every change asks first, and "yes" twice
+  # appends exactly three lines.
+  printf 'keep\n' >"$home/.zshrc"
+  drive "$sh" "$home" 'n\n'
+  [ "$(cat "$home/.zshrc")" = "keep" ] && ok || bad "$sh" "answer no leaves .zshrc unchanged"
+  drive "$sh" "$home" 'y\nn\n'
+  [ "$(cat "$home/.zshrc")" = "keep" ] && ok || bad "$sh" "yes then no leaves .zshrc unchanged"
+  drive "$sh" "$home" 'y\ny\n'
+  [ "$(wc -l <"$home/.zshrc" | tr -d ' ')" = 4 ] && ok || bad "$sh" "yes twice appends three lines"
+  tail -n 1 "$home/.zshrc" | grep -qx 'export MUSE_NO_AUTO_UPDATE=1' && ok || bad "$sh" "the appended line is the export"
+  drive "$sh" "$home" 'y\ny\n'
+  [ "$(wc -l <"$home/.zshrc" | tr -d ' ')" = 4 ] && ok || bad "$sh" "a second run appends nothing"
+
   rm -rf "$home"
+}
+
+drive() { # drive SHELL HOME ANSWERS: run stage 2 on a pseudo-terminal
+  python3 - "$1" "$script" "$2" "$3" <<'PY'
+import os, subprocess, sys
+sh, script, home, answers = sys.argv[1:5]
+master, slave = os.openpty()
+env = {"HOME": home, "SHELL": "/bin/zsh", "PATH": os.environ["PATH"], "MUSE_NO_AUTO_UPDATE": ""}
+p = subprocess.Popen([sh, script, "--stage", "2"], stdin=slave, stdout=slave, stderr=slave, env=env)
+os.close(slave)
+os.write(master, answers.encode().decode("unicode_escape").encode())
+while True:
+    try:
+        if not os.read(master, 4096):
+            break
+    except OSError:
+        break
+p.wait(timeout=20)
+PY
 }
 
 for sh in /bin/bash /opt/homebrew/bin/bash /usr/bin/bash; do

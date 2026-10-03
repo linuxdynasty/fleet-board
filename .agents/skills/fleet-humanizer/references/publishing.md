@@ -13,6 +13,10 @@ words, jargon explained, verbatim evidence.
 3. **Evidence:** the commands you ran with their exit codes, numbers with what
    they mean, and the limits of what was proven. A table when it helps compare.
 4. **What the owner must decide or know,** near the top if it blocks a merge.
+5. **Merge danger,** one line: "hard to undo" (a database change, a locked
+   contract, a write to GitHub) or "easy to undo" (a revert fixes it), and what
+   it touches in plain words: the docs, the agent on each machine, the hub, the
+   stored data, the messages between them, or every machine at once.
 
 The title says what changed, not the ticket number: "show a stale reading
 instead of 'resets now'" beats "fix #31".

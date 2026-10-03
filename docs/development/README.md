@@ -23,6 +23,8 @@ scripts/verify-agent-canon.sh checks the rendered files, skill links, frontmatte
 .claude/hooks/                development hooks shared by Claude, Codex and Muse
 .claude/settings.json, .codex/hooks.json, .muse/hooks.json   hook wiring
 scripts/test-dev-hooks.sh     self-test for the hooks (hooks.md)
+scripts/owner-setup.sh        walks the owner through owner-only setup steps (plan section 3)
+scripts/test-owner-setup.sh   self-test for owner-setup.sh, run with each bash on the machine
 .claude/agents/*.md           generated (Claude Code subagents)
 .codex/agents/*.toml          generated (Codex custom agents)
 .opencode/agent/*.md          generated (OpenCode agents)

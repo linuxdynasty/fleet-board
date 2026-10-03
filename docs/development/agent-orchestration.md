@@ -36,7 +36,7 @@ its own model, and OpenCode's model stays a session choice.
 | `debug-fleet-deep` | deep | read | same | cross-system or intermittent causes |
 | `perf-fleet` | workhorse | read | `fleet-performance-rigor` | measurement and bottleneck, no editing |
 | `perf-fleet-deep` | deep | read | same | hard performance causes and architecture decisions |
-| `review-fleet` | workhorse | read | `fleet-code-review` | independent diff review and verdict |
+| `review-fleet` | workhorse | read | `fleet-code-review` | independent diff review; the coordinator runs the spec and standards axes as two reviewers in parallel and writes one verdict |
 | `review-fleet-deep` | deep | read | same | review of a difficult diff |
 | `arbiter-fleet` | arbiter | read | - | binding ruling starting `RULING:` |
 

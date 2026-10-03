@@ -11,7 +11,7 @@
 # Stages (plan section 3, docs/plan/v1-implementation-plan.md):
 #   1 github-app      create and install the read-only GitHub App (#26, item 0.2)
 #   2 muse-update     choose whether Muse updates itself on this machine (#28, 0.4)
-#   3 probe-trust     trust the probe folder once in each harness (C3, #54)
+#   3 probe-trust     trust the probe folder once in each harness (C3; provisional until #54)
 #   4 mac-quarantine  clear the "downloaded from the internet" flag (after install)
 #   5 linux-linger    keep fleet-agent running after logout (Linux workers)
 #
@@ -19,10 +19,10 @@
 
 set -u
 
-REPO="linuxdynasty/fleet-board"
 PROBE_DIR="${HOME}/.local/share/fleet-agent/probe"
 HARNESSES="claude codex muse opencode"
 BINARIES="fleetd fleet-agent fleet"
+BIN_DIR="${HOME}/.local/bin"   # where the install script puts them (02j)
 STAGES="github-app muse-update probe-trust mac-quarantine linux-linger"
 
 say() { printf '%s\n' "$*"; }
@@ -46,13 +46,18 @@ open_url() {
   fi
 }
 
-rc_file() {
+rc_file() { # the startup file an interactive shell of this user reads, or nothing
   case "${SHELL:-}" in
     */zsh) printf '%s' "${HOME}/.zshrc" ;;
-    */bash) printf '%s' "${HOME}/.bashrc" ;;
-    *) printf '%s' "${HOME}/.profile" ;;
+    */bash)
+      if [ "$(uname -s)" = "Darwin" ]; then printf '%s' "${HOME}/.bash_profile"
+      else printf '%s' "${HOME}/.bashrc"
+      fi ;;
   esac
 }
+
+MUSE_LINE='export MUSE_NO_AUTO_UPDATE=1'
+
 
 # --- status checks: read-only, no network ---------------------------------
 
@@ -61,14 +66,14 @@ check_github_app() { say "manual: done when #26 is closed (the script cannot see
 check_muse_update() {
   local rc; rc=$(rc_file)
   if [ "${MUSE_NO_AUTO_UPDATE:-}" = "1" ]; then say "off (MUSE_NO_AUTO_UPDATE=1 in this shell)"
-  elif [ -f "$rc" ] && grep -q '^export MUSE_NO_AUTO_UPDATE=1' "$rc"; then say "off (set in $rc; open a new shell)"
+  elif [ -n "$rc" ] && [ -f "$rc" ] && grep -qx "$MUSE_LINE" "$rc"; then say "off (set in $rc; open a new shell)"
   else say "on (Muse updates itself; decide in #28)"
   fi
 }
 
 check_probe_trust() {
-  if [ -d "$PROBE_DIR" ]; then say "folder exists: $PROBE_DIR (trust is checked by fleet-agent doctor once it exists)"
-  else say "folder missing: $PROBE_DIR"
+  if [ -d "$PROBE_DIR" ]; then say "folder exists: $PROBE_DIR (fleet-agent doctor checks trust, plan row 6)"
+  else say "folder not made yet: $PROBE_DIR"
   fi
 }
 
@@ -76,7 +81,8 @@ check_mac_quarantine() {
   if [ "$(uname -s)" != "Darwin" ]; then say "not a Mac: nothing to do"; return; fi
   local b p found=0
   for b in $BINARIES; do
-    p=$(command -v "$b" 2>/dev/null) || continue
+    p="$BIN_DIR/$b"
+    [ -f "$p" ] || continue
     found=1
     if xattr -p com.apple.quarantine "$p" >/dev/null 2>&1; then say "$b: flagged ($p)"
     else say "$b: clear"
@@ -87,9 +93,10 @@ check_mac_quarantine() {
 
 check_linux_linger() {
   if [ "$(uname -s)" != "Linux" ]; then say "not Linux: nothing to do"; return; fi
-  if loginctl show-user "${USER:-$(id -un)}" -p Linger 2>/dev/null | grep -q 'Linger=yes'; then say "on"
-  else say "off"
-  fi
+  local out
+  if ! command -v loginctl >/dev/null 2>&1; then say "unknown (no loginctl: systemd is not running here)"; return; fi
+  out=$(loginctl show-user "${USER:-$(id -un)}" --property=Linger 2>/dev/null) || { say "unknown"; return; }
+  case "$out" in Linger=yes) say "on" ;; Linger=no) say "off" ;; *) say "unknown" ;; esac
 }
 
 # --- interactive stages ----------------------------------------------------
@@ -99,6 +106,7 @@ stage_github_app() {
   say "The hub reads issues and PRs through a read-only GitHub App. Only you can create it."
   say "Repository permissions, all Read-only: Metadata, Issues, Pull requests, Checks,"
   say "Commit statuses, Contents. No webhook, no write permission, no account permission."
+  say "(Contents is needed only by the weekly report's done check; you may add it later.)"
   say "Later, 'fleetd setup github' (plan PR 13a) writes this for you."
   ask_yn "Open the page that creates a GitHub App now?" || { say "  Skipped."; return; }
   open_url "https://github.com/settings/apps/new"
@@ -107,10 +115,7 @@ stage_github_app() {
   step "Install the App on the repos fleet-board should watch (the App page, Install App)."
   open_url "https://github.com/settings/apps"
   pause
-  if command -v gh >/dev/null 2>&1 && ask_yn "Comment on #26 that the App is created and installed?"; then
-    gh issue comment 26 --repo "$REPO" --body "GitHub App created and installed (read-only permissions of ADR 0022). Recorded with scripts/owner-setup.sh." \
-      && say "  Commented on #26. Close it when you are ready."
-  fi
+  say "  Done here. Close #26 when the App is installed on every watched repo."
 }
 
 stage_muse_update() {
@@ -120,28 +125,39 @@ stage_muse_update() {
   say "Current: $(check_muse_update)"
   ask_yn "Turn Muse auto-update off on this machine?" || { say "  Left as it is."; return; }
   local rc; rc=$(rc_file)
-  if [ -f "$rc" ] && grep -q '^export MUSE_NO_AUTO_UPDATE=1' "$rc"; then
+  if [ -z "$rc" ] || [ ! -f "$rc" ]; then
+    say "  Add this line to your shell's startup file by hand:"
+    say "    $MUSE_LINE"
+  elif grep -qx "$MUSE_LINE" "$rc"; then
     say "  Already in $rc."
-  elif ask_yn "Add 'export MUSE_NO_AUTO_UPDATE=1' to $rc?"; then
-    printf '\n# fleet-board: keep Muse on a known version (#28)\nexport MUSE_NO_AUTO_UPDATE=1\n' >>"$rc"
-    say "  Added. Open a new shell for it to take effect."
+  else
+    say "  These lines would be added to the end of $rc:"
+    say "    (a blank line)"
+    say "    # fleet-board: keep Muse on a known version (#28)"
+    say "    $MUSE_LINE"
+    if ask_yn "Add them?"; then
+      printf '\n# fleet-board: keep Muse on a known version (#28)\n%s\n' "$MUSE_LINE" >>"$rc"
+      say "  Added. Open a new shell for it to take effect."
+    fi
   fi
+  say "  Muse started by fleet-agent may not read this file; fleet-agent doctor (plan row 6)"
+  say "  will report whether Muse sees the setting."
 }
 
 stage_probe_trust() {
-  header 3 "Probe folder trust (C3)"
-  say "fleet-agent reads usage in one empty folder: $PROBE_DIR"
-  say "Each harness asks once whether to trust a new folder. You answer it, by hand."
-  if [ ! -d "$PROBE_DIR" ]; then
-    ask_yn "Create $PROBE_DIR now?" || { say "  Skipped."; return; }
-    mkdir -p "$PROBE_DIR" && say "  Created."
-  fi
+  header 3 "Probe folder trust (C3, provisional)"
+  say "fleet-agent reads usage in one folder it owns: $PROBE_DIR"
+  say "Each harness asks once whether to trust a new folder, and only you answer it."
+  say "These steps are provisional: plan item 0.9 (#54) records each harness's real"
+  say "trust screen, and fleet-agent doctor will then print the exact steps (01 C3)."
+  say "Trust is per folder. Keep your own files out of it; a harness may add its own."
   local h any=0
   for h in $HARNESSES; do
     command -v "$h" >/dev/null 2>&1 || continue
     any=1
-    step "$h: in another terminal, run:  cd \"$PROBE_DIR\" && $h"
-    say "     Answer the trust question with yes, then quit $h. Leave the folder empty."
+    step "$h: in another terminal, run:"
+    say "     mkdir -p \"$PROBE_DIR\" && cd \"$PROBE_DIR\" && $h"
+    say "     Answer the trust question with yes, then quit $h."
     pause
   done
   [ "$any" = 1 ] || say "  No harness found on this machine."
@@ -152,7 +168,8 @@ stage_mac_quarantine() {
   if [ "$(uname -s)" != "Darwin" ]; then say "  Not a Mac. Nothing to do."; return; fi
   local b p any=0
   for b in $BINARIES; do
-    p=$(command -v "$b" 2>/dev/null) || continue
+    p="$BIN_DIR/$b"
+    [ -f "$p" ] || continue
     xattr -p com.apple.quarantine "$p" >/dev/null 2>&1 || continue
     any=1
     if ask_yn "Clear the quarantine flag on $p?"; then
