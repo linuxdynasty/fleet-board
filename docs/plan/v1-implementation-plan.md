@@ -7,7 +7,7 @@
   [02e](../specs/02e-contract-rules.md) (freeze checklist),
   [02k](../specs/02k-v1-surface-and-cli.md) (which release serves what),
   [04](../specs/04-technology-review.md), [05](../specs/05-insights.md),
-  [05b](../specs/05b-observability.md), [docs/flows/](../flows/README.md), ADRs
+  [05b](../specs/05b-observability.md), ADRs
   [0001](../adr/0001-system-architecture.md), [0014](../adr/0014-storage-confirmed.md)
   to [0025](../adr/0025-v1-includes-dispatch.md),
   [AGENTS.md](../../AGENTS.md) and [docs/development/](../development/README.md)
@@ -39,53 +39,20 @@ started, nudged or controlled.
 order. `HubSettings.auto_dispatch` is `false` by default, so dispatch runs only
 when the owner turns it on; manual dispatch works whenever the rows exist.
 
-**Where v1 runs.** The dashboard and `fleet` run on the hub machine. To use them
-from another machine, forward the port over SSH
-(`ssh -L 7080:127.0.0.1:7080 <hub>`, the same port number on both sides, then open
-`http://localhost:7080`); sign-in arrives in v3. The hub machine stays awake while
-`fleetd` runs: its launchd unit starts it under `caffeinate -s` (or the
-equivalent).
-
-In v1 (capabilities tagged v1 in 01):
-
-| Area | Capabilities | Flows |
-|---|---|---|
-| Connection | A1 enroll, A2 find the hub, A3 connect/snapshot/reconcile, A4 renew, A5 heartbeat, A6 wake and network change, A7 `Bye`, A8 settings | A1-A3, A5, A12 |
-| Machine | B1 facts, B2 resource samples, B3 power state | A2 |
-| Harnesses | C1 inventory and parser versions, C2 identity and sign-in, C3 probe folder (the owner trusts it once by hand; doctor explains an untrusted one), C4 command catalog | A6, A13 |
-| Usage | D1 probe session, D2 usage reading, D3 passive signals | A6 |
-| tmux | E1 inventory, E2 control-mode observer, E3 pane lifecycle, E4 activity, E5 pane summaries, E6 prompt detected, E7 harness ready level, E8 harness hook events, E9 goal registry and observed-goal attribution, E10 capture pane (visible screen), E11 availability and the owner's mark, E12 harness conditions, E13 developer input | A5, A8, A9 |
-| Pane control | F1 ensure session, F2 ensure window, F3 send keys (bound to `prompt_id` when answering), F4 interrupt, F5 respawn, F6 kill window, F7 scratch folder, F8 allow-listed harness command | A4, A9, D14 |
-| Goals and repos | G1 goal hooks, G2 goal state (including observed goals), G3 start goal, G4 goal control, H1 repo inventory, H2 worktrees, H3 branch state, H4 forge CLI sign-in and push access, I1 preflight | A7, A8 |
-| Terminal and logs | J1 terminal attach, K1 log capture and shipping, K2 spool status, pause and resume | A10, A11 |
-| Local control | L1 local policy, L2 effective settings, L3 local approval, M1 local audit, M2 telemetry, M3 doctor, M4 drain | A12 |
-| Hub | GitHub sync (W4) read-only, pacing and waste projection (03b, 05), probe assignment and the hub command path to agents (03b, 03f), triage (03d), hub API and `Watch`, owner configuration writes and machine admin (02j), nightly backup (03f), System health (05b); dispatch: the planner, the trusted gate, goal start and verification, the reliability rules (03c, 03h, 03l), approvals (03d, 02m), session control, logs and attach (03d, 02f), routines and the weekly report (03i), all of Insights (05) | D2 to D11, D13 to D16, A14 |
+**Where v1 runs:** [02j](../specs/02j-hub-runtime.md#listeners) (the dashboard and `fleet` on the hub machine, the SSH forward, staying awake). Capabilities and their releases: [01](../specs/01-agent-capabilities.md) and [02k](../specs/02k-v1-surface-and-cli.md).
 
 **Not in v1** (v3): sign-in and `authenticated` mode, API tokens, phone pairing
 and push, remote access, the optional Tailscale lookup, and harness transcripts
 (K3). "Later" items stay unscheduled ([design milestones](../design-deployment-and-milestones.md#milestones)).
 
-**Security posture of v1.** The hub runs in `local_trusted` mode, bound to
-loopback for the dashboard; agents connect over mTLS on the hub's TLS port
-(ADR 0004). The agent has command kinds that change a pane, and each one passes
-the checks for its purpose (`SendKeys.purpose`,
-[02h](../specs/02h-goal-binding-and-pane-signals.md)), the role and command
-matrix of [02g](../specs/02g-agent-security.md) and the local policy, which can
-only tighten. Approvals in `local_trusted` mode wait on owner decision 20
-(item 0.17, #62) before dispatch is switched on. Pass-through holds: no root, no
-credential reads (ADR 0011), no edits to harness config (the probe runs in one
-fleet-owned folder the owner trusts once by hand; decision 3 of ADR 0024), and the
-hub's GitHub App stays read-only: a claim on an issue is posted by the harness
-through `gh`, as the developer. The owner merges every PR of fleet-board itself
-(section 10).
+**Security posture of v1:** [01e](../specs/01e-security-and-privacy.md) and [02g](../specs/02g-agent-security.md). The owner merges every PR of fleet-board itself (section 10).
 
 ## 2. Definition of done
 
 v1 is done, and `v0.1` is tagged, when all of this holds on the author's four
-machines for seven consecutive days. The hub runs on a laptop kept awake by
-`caffeinate -s` in its launchd unit, so no hub-asleep time is excluded from any
-item. The dashboard and `fleet` are checked on the hub machine; another machine
-reaches them through `ssh -L 7080:127.0.0.1:7080 <hub>`.
+machines for seven consecutive days. No hub-asleep time is excluded from any
+item (the hub stays awake: [02j](../specs/02j-hub-runtime.md#staying-awake-and-surviving-logout)).
+The dashboard and `fleet` are checked on the hub machine.
 
 1. Every machine is enrolled and `ONLINE`; a hub restart and a laptop sleep
    each reconnect without loss (`EventCounters.evicted_total` stays 0).
@@ -140,7 +107,7 @@ which is written into the spec the item names.
 | 0.5 | **tmux probe:** does `client_activity` reach a control-mode client (push) or `refresh-client -B` subscriptions, so typing needs no 2 s `list-clients` poll; the release that introduced `pause-after` and `ignore-size` (the minimum tmux is 3.2); how 3.2 is installed on a CI runner. Run on 3.2 and the latest | PR 7 (E13, E2) builds on it; 02h E13 and 01 say "to be confirmed". Result goes into 02h and 01. If there is no push source, the 2 s `list-clients` poll stays: decision 9 of ADR 0024 allows it, and the 60 s goal-file rescan, as the two timed checks outside "poll only usage and GitHub" (ADR 0022 A.6, the streaming rule) |
 | 0.6 | **Wake and network-change probe** on macOS and Linux without cgo (wall-clock jump plus interface polling, or a named library) | PR 4 (A6) builds on it; 01 says "to be confirmed in a spike" |
 | 0.7 | **mDNS check:** `hashicorp/mdns` advertising from a macOS hub next to the system responder, and browsing from the agent; record the re-query interval and browse timeout in defaults.md and ADR 0023's open questions | PR 4 and PR 5 (ADR 0023); decides whether the exec fallback is ruled out |
-| 0.8 | **Probe cost:** weekly percent before and after N `/usage` or `/status` probes and an idle harness start, per harness, recorded with the harness version in verified-facts.md | design.md, 03b and flows say "probing costs no quota"; nobody measured it. If a harness spends quota, the 10-minute default becomes a per-harness number before PR 8 |
+| 0.8 | **Probe cost:** weekly percent before and after N `/usage` or `/status` probes and an idle harness start, per harness, recorded with the harness version in verified-facts.md | design.md and 03b say "probing costs no quota"; nobody measured it. If a harness spends quota, the 10-minute default becomes a per-harness number before PR 8 |
 | 0.9 | **Probe folder trust (C3):** for each harness, capture the trust screen of a new folder (a fixture), and check what the harness shows on a trusted and an untrusted folder, whether trusting a parent covers new children (the weekly report's scratch folder), and the exact steps the owner follows once per harness. The agent edits no harness config in v1 (decision 3 of ADR 0024), so nothing is written or restored | 01 C3 now names the mechanism (one fleet-owned folder, trusted by hand, `FOLDER_UNTRUSTED` read from the harness screen); this item supplies the screens and the wording `fleet-agent doctor` prints |
 | 0.10 | **Toolchain:** `golangci-lint` v2 built with the Go 1.27 toolchain (the installed one is built with 1.26 and refuses a `go 1.27` module), pinned in the Makefile and CI; Node 24 LTS or an accepted 22 after one `npm run build` | PR 1's gate cannot pass without it (ADR 0020) |
 | 0.11 | Issue #46: probe for a usage push source. Not blocking: PR 8 ships D3 as specified; a live source lands as a follow-up PR before `v0.1` or is parked as a later item | ADR 0022 A.6 (stream where a push source exists) |
@@ -230,7 +197,7 @@ new code, `fleet-code-review` before push, the full local gate once.
 
 | PR | Scope | Depends on | Acceptance test | Role | Skills |
 |---|---|---|---|---|---|
-| 1 | **Scaffolding:** `go.mod`, `Makefile` targets (`gen`, `test`, `lint`, `gates`; `gen/` is never committed, so every gate and the worktree recipe start with `make gen`, and `make gates` prints the tool versions it used), `buf generate` into `gen/`, CI workflow (buf build/lint, go vet/test/race on changed packages, golangci-lint, `scripts/check-file-cap.sh`, agent canon with its attribution check on commits and the PR body, docs-stale as an advisory step), empty `cmd/` binaries that print versions; a client-side guard, `.githooks/pre-push` wired by `core.hooksPath`, that refuses a push to `main` and runs the local gate (decision 2 of ADR 0024: the repo is private on a plan without branch protection, and the owner merges every PR). Files at the cap (02-contracts.md, 02b, 01, 03c, status.proto, two flows files) are split in the first PR that has to add to them | 0.10 | CI green on an empty build; generated Go and TS compile; a seeded 500-line file and a model `Co-Authored-By` trailer each fail CI; with `core.hooksPath` set, a push to `main` is refused and a push of a branch runs the gate | develop-fleet | fleet-go, fleet-contract-rigor |
+| 1 | **Scaffolding:** `go.mod`, `Makefile` targets (`gen`, `test`, `lint`, `gates`; `gen/` is never committed, so every gate and the worktree recipe start with `make gen`, and `make gates` prints the tool versions it used), `buf generate` into `gen/`, CI workflow (buf build/lint, go vet/test/race on changed packages, golangci-lint, `scripts/check-file-cap.sh`, agent canon with its attribution check on commits and the PR body, docs-stale as an advisory step), empty `cmd/` binaries that print versions; a client-side guard, `.githooks/pre-push` wired by `core.hooksPath`, that refuses a push to `main` and runs the local gate (decision 2 of ADR 0024: the repo is private on a plan without branch protection, and the owner merges every PR). Files at the cap (02-contracts.md, 02b, 01, 03c, status.proto) are split in the first PR that has to add to them | 0.10 | CI green on an empty build; generated Go and TS compile; a seeded 500-line file and a model `Co-Authored-By` trailer each fail CI; with `core.hooksPath` set, a push to `main` is refused and a push of a branch runs the gate | develop-fleet | fleet-go, fleet-contract-rigor |
 | 1b | **Drift checks** ([ADR 0025](../adr/0025-v1-includes-dispatch.md) decision 7): a CI check that every backticked proto name in `docs/` exists in `api/fleet/`; the docs-stale step becomes blocking: a PR that changes a mapped code folder changes its spec (for example `internal/agent/tmux` to 02h and 01 E) or carries a `No-Doc-Change: <reason>` line, like `No-Observability-Change:`; each call in `service.proto` gets its release in a comment and the "Hub RPCs by release" table of 02k is generated from those comments; a report of each v1 capability id of 01 that no test names (a report until row 17) | 1 | a seeded unknown name in a doc fails CI and passes once removed; a seeded code change with no spec change fails, and passes with the trailer; the generated 02k table equals the committed one, and a hand edit fails | develop-fleet | fleet-contract-rigor, fleet-code-review |
 | 2 | **Telemetry and store foundations:** `internal/telemetry` (slog JSON, OTEL providers, no exporter by default, `/metrics` handler); `internal/store` (open with the ADR 0014 pragmas, single writer goroutine, 250 ms / 100-message batches, forward-only migrations, read pool) | 1 | writer batching and durability tests; a fullfsync check on darwin like spike S1 | develop-fleet-deep | fleet-sqlite-store, fleet-telemetry-coverage |
 | 2b | **`fleetd` shell:** `fleetd.yaml` load and validation with the 02j defaults, `fleetd init` (config and state directory), the agent TLS listener with the server certificate and its SANs (`tls.agent_names`), `admin.sock` (mode 0600) with `fleetd enroll-token`, `fleetd run` | 2 | a fresh `fleetd init` then `fleetd run` starts, refuses a non-loopback API address in `local_trusted`, and `fleetd enroll-token` prints a token | develop-fleet | fleet-go, fleet-security |
@@ -299,20 +266,11 @@ run before the rows they gate.
 
 ## 7. Keeping development cost low
 
-- **Tiers from `.agents/roles.json`:** `scan-fleet` (fast) for evidence
-  gathering; `develop-fleet` and `review-fleet` (workhorse) by default;
-  `-deep` only for PRs 2, 4, 5, 7, the probe-session half of 8, the Watch half of 12,
-  the agent and store rows of dispatch (18, 21 to 26), and fixes a
-  workhorse attempt got wrong; `arbiter-fleet` only for design forks, disputed
-  findings and the `v0.1` tag.
-- **Small PRs** (one row or sub-row of section 5), so reviews stay cheap and a
-  failed attempt costs one PR, not a milestone.
-- **Gates run once.** Subagents run focused tests; only the orchestrator runs
-  the full local gate, right before push (AGENTS.md).
-- **Specs are the context.** A handoff names the spec sections, flows and
-  protos a PR implements; agents do not re-read the whole design.
+- **Tiers:** the Role column is the cheapest tier that fits; escalation rules are in AGENTS.md.
+- **Small PRs** (one row or sub-row of section 5): a failed attempt costs one PR, not a milestone.
+- **Specs are the context:** a handoff names the spec sections and protos a PR implements. Gates run once, by the orchestrator (AGENTS.md).
 - **fleet-board drives itself** as soon as rows 22 and 23 land: its own issues
-  become goals on spare subscription quota (the owner still merges every PR).
+  become goals on spare quota (the owner still merges every PR).
 
 ## 8. Risks and how v1 handles them
 
@@ -330,28 +288,25 @@ run before the rows they gate.
 
 ## 9. Open owner decisions
 
-The v2 prerequisites are now prep items 0.12 to 0.18 (section 3). Two of them are
-owner decisions that [ADR 0024](../adr/0024-pre-build-owner-decisions.md) left open
-and [ADR 0025](../adr/0025-v1-includes-dispatch.md) made v1 blockers:
-
-- **Decision 20** (0.17, #62): approvals and settings changes in `local_trusted` mode
-  may need a local secret. Before row 19.
-- **Decision 21** (0.18, #63): the default goal text for repos without eshu's hooks.
-  Before the first `StartGoal` in such a repo (row 22).
-
-One stays for v3: **decision 22** (#64), phone push; the lean is an installable web
-app with web push and no app store.
+Open: items 0.17 (#62) and 0.18 (#63) in section 3 block dispatch; #64 (phone push) waits for v3.
 
 ## 10. Tracking
 
 Each row of section 5 is a GitHub issue (epics for 7, 8, 14 and 28) with its
-acceptance test copied in, in the milestone "v1 — fleet":
+acceptance test copied in, in the milestone "v1 — fleet". This table maps plan
+ids to issues; `scripts/plan-issues.py` reads it.
 
-- PR 1 to PR 17 are #29 to #45 in order (not counting 2b and 13a), PR 2b is #56,
-  PR 13a is #48, PR 1b is #66, and the dispatch rows 18 to 29 are #67 to
-  #78.
-- Items 0.1 to 0.4 are #25 to #28, 0.5 to 0.10 are #50 to #55, the usage push
-  probe (0.11) is #46, and 0.12 to 0.18 are #57 to #63 in order.
+| Plan ids | Issues |
+|---|---|
+| 1 to 17 (the numbered rows, in order) | #29 to #45 |
+| 2b | #56 |
+| 13a | #48 |
+| 1b | #66 |
+| 18 to 29 | #67 to #78 |
+| 0.1 to 0.4 | #25 to #28 |
+| 0.5 to 0.10 | #50 to #55 |
+| 0.11 | #46 |
+| 0.12 to 0.18 | #57 to #63 |
 
 Section 3 items are issues assigned to the owner where they need a decision. Work
 follows `fleet-issue-driver`: a worktree per issue, one PR per change, self-review
@@ -366,9 +321,12 @@ public repo or a paid plan), so PR 1 adds a client-side guard: `.githooks/pre-pu
 turned on by `git config core.hooksPath .githooks`, refuses a push to `main` and
 runs the local gate. Until PR 1 lands, AGENTS.md is the only guard.
 
-**The plan and its issues change together.** A PR that changes a row of this
-plan edits that row's issue (scope, dependencies, acceptance, title) in the
-same PR, and the PR description says so; `fleet-issue-driver` checks it before
-declaring a PR ready. The milestone "v2 — dispatch" is closed and its issues
+**The plan and its issues change together.** The body of each row's issue is
+generated from its row by `scripts/plan-issues.py` (ADR 0026), so the issue
+cannot drift from the plan. A PR that changes a row runs
+`scripts/plan-issues.py --check` (it lists the issues that differ), and after
+the owner approves, `--apply` writes them. The prep items of section 3 keep
+their hand-written issue bodies. The PR description says the issue changed;
+`fleet-issue-driver` checks it before declaring a PR ready. The milestone "v2 — dispatch" is closed and its issues
 moved here ([ADR 0025](../adr/0025-v1-includes-dispatch.md)). The milestone
 "v3 — remote" holds #64 (decision 22); its epic issue is not written yet.

@@ -63,8 +63,9 @@ this order.
    ([agent-guide](../../../docs/development/agent-guide.md#worktrees-and-git-recipes)).
 6. **PR title and body** follow [PR and CI Discipline](../../../AGENTS.md#orchestration-pr-and-ci-discipline),
    written with `fleet-humanizer` (its publishing reference has the merge danger
-   line). If the PR changes a row of the v1 plan, it also updates that row's
-   GitHub issue and says so in the body.
+   line). If the PR changes a row of the v1 plan, it runs
+   `scripts/plan-issues.py --check`, then (owner-approved) `--apply`, and says
+   so in the body.
 7. **CI:** two stable reads of the full check set, query stated
    (`gh pr checks <n> --json name,state,bucket`), as in PR and CI Discipline.
    A red check: reproduce that gate locally, fix, push again.
