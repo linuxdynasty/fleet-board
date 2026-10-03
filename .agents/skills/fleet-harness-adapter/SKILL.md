@@ -44,7 +44,7 @@ A harness adapter is the extension point for one tool
 - Reset times are local strings without a year; resolve with the machine's
   timezone and ship both the text and UTC.
 - A prompt is answerable only when `PROMPT` parsing is verified for that
-  version; otherwise it is notice-only (`answerable = false`).
+  version; otherwise the prompt is shown as a notice only (`answerable = false`).
 
 ## Fixtures per harness version
 

@@ -33,9 +33,9 @@ message GroupConfig {
 // display name the labels and settings layer are applied to it. For a name no
 // machine has, the entry is kept as a pending machine: the hub applies it when
 // a machine enrolls under that name (an enrollment token for the name picks it
-// up), and that machine is recorded as DRAINED. In v1 the record blocks nothing
-// (no goals start) and cannot be cleared (UndrainMachine is v2); from v2 an
-// imported fleet takes no goal until the owner undrains each machine. Import
+// up), and that machine is recorded as DRAINED. An
+// imported fleet takes no goal until the owner undrains each machine
+// (UndrainMachine). Import
 // never drains a machine that is already enrolled.
 message MachineConfig {
   string name = 1;

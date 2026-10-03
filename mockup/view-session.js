@@ -98,7 +98,7 @@ function movePanel(s) {
   return `<div class="confirm move"><div><b>Move this goal.</b> The goal is cleared here and started there from the pushed branch. Unpushed work stays behind.</div>
     <label class="slot"><span>Move to</span><select id="moveTo">${targets.map(x => `<option value="${x.id}" ${x.id === pick ? "selected" : ""}>${esc(x.name)} (${freeActive(x)}/${x.maxActive} active free${x.drained ? ", draining" : ""})</option>`).join("")}</select></label>
     ${full ? `<p class="bad-t">${esc(to.name)} has no free slot${to.drained ? " (draining)" : ""}.</p>` : ""}
-    ${dt("mv", `<code>${esc(moveCmds(s, to))}</code><span>no move command in v2: /goal clear (or Interrupt) here, StartGoal there</span>`)}
+    ${dt("mv", `<code>${esc(moveCmds(s, to))}</code><span>no move command: /goal clear (or Interrupt) here, StartGoal there</span>`)}
     <div class="actions"><button class="btn primary" data-act="domove" ${full ? "disabled" : ""}>Move goal</button><button class="btn" data-act="closemove">Cancel</button></div></div>`;
 }
 

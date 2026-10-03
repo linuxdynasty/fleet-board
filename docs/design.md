@@ -84,7 +84,7 @@ Nothing on a worker listens on the network.
 | Input | How | Why not the other way |
 |---|---|---|
 | tmux panes (output, windows, lifecycle, activity) | **Streamed**: one `tmux -C` control-mode client per server pushes changes; a snapshot only on reconnect ([01](specs/01-agent-capabilities.md) E1-E5) | Polling `list-panes`/`capture-pane` would lag and cost CPU |
-| Goal files (`DONE`, `BLOCKED …`, working) | **Watched** with file-system notifications (library: [ADR 0020](adr/0020-dependencies.md)), plus a rescan every 60 s for missed events. v1 also looks for a goal file in the checkout of any pane running a harness, to show goals the owner started by hand ([02h](specs/02h-goal-binding-and-pane-signals.md#observed-goals-v1)) | |
+| Goal files (`DONE`, `BLOCKED …`, working) | **Watched** with file-system notifications (library: [ADR 0020](adr/0020-dependencies.md)), plus a rescan every 60 s for missed events. The agent also looks for a goal file in the checkout of any pane running a harness, to show goals the owner started by hand ([02h](specs/02h-goal-binding-and-pane-signals.md#observed-goals-v1)) | |
 | Harness hooks (Stop, interrupt, permission, session start) | **Pushed** by the harness ([01d](specs/01d-goal-hooks.md)) | |
 | Developer typing in a goal pane | **Polled** every 2 s from `tmux list-clients` activity ([02h](specs/02h-goal-binding-and-pane-signals.md)): the one polled pane input; the tmux probe (plan 0.5) looks for a push source, and until it finds one the poll stays | control mode is not known to report keyboard input |
 | Weekly usage | **Probe every 10 min** per account in an idle probe session, **plus** an immediate probe when a goal starts or finishes or when a usage banner seen in a pane differs from the last reading ([03b](specs/03b-usage-and-sync.md)) | No harness offers a usage API or event today; a probe of push sources is [#46](https://github.com/linuxdynasty/fleet-board/issues/46) |
@@ -151,7 +151,7 @@ The first line of the goal file is the state the hub reads:
 | `BLOCKED: <reason>` (no live watcher, no owner) | stuck | Triage as stuck |
 | `DONE` | the agent says the goal is met | verify with the code host, then free the worker |
 
-v1 shows goals the owner starts by hand as **observed goals**: the agent finds the goal file in the
+A goal the owner starts by hand is an **observed goal**: the agent finds the goal file in the
 pane's folder and reports it; the fleet never starts, nudges or controls it.
 
 A `BLOCKED` line must say how it gets unblocked (a rule from Paperclip,
@@ -358,7 +358,7 @@ severity: BLOCK stops it, CONFIRM needs an owner's approval, WARN must be acknow
   tighten it. The agent works in the developer's own tmux server at the level the policy says: `none`,
   `observe` or `control` (default `control`, ADR 0011; the local policy can lower it, hub settings only tighten). The UI shows the exact keys first.
 - **Typing has a gate per purpose.** A prompt answer needs that prompt still showing, bound to its
-  id, with detection verified for that harness version (else it is notice-only). A nudge, resume or
+  id, with detection verified for that harness version (else the prompt is shown as a notice and cannot be answered from the dashboard). A nudge, resume or
   operator text needs the ready prompt and an empty input line. Nothing is typed into a running
   turn.
 - **Approvals.** Typed input asks for a confirm only when risky. A dispatch past a CONFIRM check (an

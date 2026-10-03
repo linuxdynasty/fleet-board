@@ -92,14 +92,14 @@ governed; nothing else needs to change.
 Current map (the exact globs are in `.agents/skill-paths.json`):
 `api/**/*.proto`, `buf*.yaml` to `fleet-contract-rigor`; `*.go`, `go.mod`,
 `go.sum`, `go.work` to `fleet-go`; `internal/**/store/**`, `*sqlite*`, `migrations`,
-`*.sql`, and the packages that write the databases (`internal/hub/{ingest,outbox,syncer,pacing,insights}`,
-`internal/agent/{ring,goals}`) to `fleet-sqlite-store`; `internal/harness/**` and harness
-fixtures (and `internal/agent/probe/**`) to `fleet-harness-adapter`;
-`internal/**/tmux/**` and `internal/agent/probe/**` to `fleet-tmux`; `web/**`,
+`*.sql`, and the packages that write the databases (`internal/hub/{ingest,outbox,syncer,pacing,insights,scheduler,goals,verifier,approvals,routines,logstore}`,
+`internal/agent/{ring,goals,logship}`) to `fleet-sqlite-store`; `internal/harness/**` and harness
+fixtures (and `internal/agent/{probe,hooks}/**`) to `fleet-harness-adapter`;
+`internal/**/tmux/**`, `internal/agent/probe/**` and `internal/agent/{control,start,attach}/**` to `fleet-tmux`; `web/**`,
 `mockup/**` to `fleet-frontend`; `**/telemetry/**` and `**/observability/**` to
 `fleet-telemetry-coverage`; auth, scope and credential paths and the
-trust-boundary packages (`internal/hub/{ca,gateway,api,integration,config}`,
-`internal/agent/{conn,policy,exec}`, `cmd/fleetd`, `cmd/fleet-agent`) to
+trust-boundary packages (`internal/hub/{ca,gateway,api,integration,config,approvals,attach}`,
+`internal/agent/{conn,policy,exec,control,start,hooks,attach}`, `cmd/fleetd`, `cmd/fleet-agent`) to
 `fleet-security`.
 
 A marker is `<state dir>/fleet-skill-loaded-<session id prefix>-<skill>`

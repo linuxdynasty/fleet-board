@@ -10,7 +10,7 @@
   [01e](01e-security-and-privacy.md), the hand-off to step 2, what was resolved and the open
   questions. Capability ids (F1, G2, M3 and so on) are unchanged.
 
-## F. tmux control (v2)
+## F. tmux control
 
 All pass local policy, carry a `command_id`, and are idempotent except F3.
 
@@ -40,7 +40,7 @@ All pass local policy, carry a `command_id`, and are idempotent except F3.
 
 ## G. Goals
 
-- **G1 Goal hooks** (v2): user-level hooks, inert unless the agent's goal
+- **G1 Goal hooks**: user-level hooks, inert unless the agent's goal
   registry names the pane; merge-installed with backup, verified, version and hash reported; Codex
   needs one-time `/hooks` trust; Muse takes them as a plugin package (probed). Repos that ship their own
   (eshu) are left alone. Design and probe record: [01d](01d-goal-hooks.md).
@@ -53,15 +53,16 @@ All pass local policy, carry a `command_id`, and are idempotent except F3.
   `BLOCKED` with neither, `DONE`), and the worktree's HEAD commit and dirty
   flag. They travel together because the hub fingerprints them as one state.
   Goal text is agent-written and untrusted: length-capped, control characters
-  stripped, rendered as data. v1 reads eshu's `.claude/active-goal.<session_id>`
-  files; the generic goal file arrives with v2 (01d, open question).
-- **G3 Start goal** (v2), agent-side composite under one `command_id`, so it
+  stripped, rendered as data. For observed goals the agent reads eshu's
+  `.claude/active-goal.<session_id>` files; the generic goal file of
+  fleet-started goals is set by 01d (open question, #57).
+- **G3 Start goal**, agent-side composite under one `command_id`, so it
   survives a hub outage: preflight → reuse an available clean pane working in a
   checkout of the goal's repo (new branch in place), or ensure a worktree (H2)
   and a new window → register the goal → wait for ready → model, effort, clear
   → write the goal file → type the `GoalCommand` → confirm the goal file. 14
   named steps, each a `command_id+step` with its own failure reason (02h).
-- **G4 Goal control** (v2): the harness's own `/goal` subcommands (pause,
+- **G4 Goal control**: the harness's own `/goal` subcommands (pause,
   resume, edit, clear) typed at an idle prompt via F8, as the developer would
   ([01b](01b-harness-commands.md#goal-subcommands)); F4 Interrupt where a
   harness has no pause. Fleet-board defines no goal protocol of its own.
@@ -72,7 +73,7 @@ All pass local policy, carry a `command_id`, and are idempotent except F3.
   reference (`RepoRef{host, path}`, path possibly nested like
   `group/subgroup/repo`, lowercase, no `.git`, same for SSH and HTTPS), default
   branch.
-- **H2 Worktree ensure and prune** (v2): create a worktree for a goal when the
+- **H2 Worktree ensure and prune**: create a worktree for a goal when the
   repo's own goal driver doesn't; prune it after the goal is verified merged
   and the grace period passes.
 - **H3 Branch state:** per goal worktree, branch, HEAD, ahead/behind, dirty.
@@ -82,12 +83,12 @@ All pass local policy, carry a `command_id`, and are idempotent except F3.
 
 ## I. Preflight
 
-- **I1 Preflight** (v2) returns ok or every failed check with a reason code from
+- **I1 Preflight** returns ok or every failed check with a reason code from
   the shared error enum (`harness_not_signed_in`, `push_access_missing`,
   `disk_low`, `agent_goal_cap_reached`, …; and for a pane the hub means to reuse,
   `session_workdir_mismatch`, `checkout_dirty`).
 
-## J. Terminal attach (v2)
+## J. Terminal attach
 
 - **J1 Attach** from the browser to any session, existing or new. The browser
   terminal is a real tmux client (a PTY running `tmux attach`) on the
@@ -109,10 +110,10 @@ All pass local policy, carry a `command_id`, and are idempotent except F3.
 
 ## K. Session logs
 
-- **K1 Terminal log** (v2): `tmux pipe-pane -o` for goal panes, and for the
+- **K1 Terminal log**: `tmux pipe-pane -o` for goal panes, and for the
   developer's own panes when turned on per session, into a local spool; shipped in compressed chunks with byte offsets; kept until
   acknowledged, up to a size cap; gaps are marked.
-- **K2 Spool status and control** (v2): pending bytes and gap marks in the
+- **K2 Spool status and control**: pending bytes and gap marks in the
   snapshot and heartbeat; the hub can pause and resume shipping (for example
   when its disk is low).
 - **K3 Harness transcripts** (v3): shipped incrementally by offset like K1,
@@ -126,7 +127,7 @@ All pass local policy, carry a `command_id`, and are idempotent except F3.
   A changed policy takes effect only after an agent restart.
 - **L2 Effective settings:** tighten-only merge of A8 under the local ceiling;
   report effective values, layers, refused and unknown fields (03e).
-- **L3 Local approval** (v2): desktop notification plus
+- **L3 Local approval**: desktop notification plus
   `fleet-agent approve|deny <command_id>` before the deadline.
 
 ## M. Self-management
@@ -134,7 +135,7 @@ All pass local policy, carry a `command_id`, and are idempotent except F3.
 - **M1** local audit log, **M2** OTEL, **M3** `doctor` (tmux, harness paths,
   mDNS, policy, cert expiry, hub reachability, clock skew, the probe folder's
   trust per harness (C3), and on Linux whether `loginctl enable-linger` is on).
-- **M4 Drain and undrain** (v2): from the hub or locally (`fleet-agent
+- **M4 Drain and undrain**: from the hub or locally (`fleet-agent
   drain|undrain`); reported in snapshot and heartbeat. While draining, the agent
   refuses G3, harness-starting F1/F2 and F5 (except a pane with a registered live goal) with `draining`.
 - **Upgrades are never a hub command** (a compromised hub could run new code

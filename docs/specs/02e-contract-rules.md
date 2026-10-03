@@ -8,7 +8,8 @@
 - Decisions: [ADR 0003](../adr/0003-transport-grpc.md),
   [ADR 0017](../adr/0017-contract-packages.md),
   [ADR 0019](../adr/0019-pre-implementation-contract-decisions.md),
-  [ADR 0024](../adr/0024-pre-build-owner-decisions.md) (decision 8: what `v0.1` freezes)
+  [ADR 0024](../adr/0024-pre-build-owner-decisions.md) (decision 8: what `v0.1` freezes),
+  [ADR 0025](../adr/0025-v1-includes-dispatch.md) (decision 4: `v0.1` freezes all of v1)
 
 Rules that apply to every `.proto` file in every package, collected so they
 can be checked in review. Moved here from 02-contracts.md: capability
@@ -45,33 +46,39 @@ checklist, to be ticked when cutting `v0.1`:
    strings), or the mockup is marked display-only. The `[planned]` rows of the
    UI map have no mockup element yet and are checked when their view is built.
 4. `go.mod`, the generated-code location and the CI job exist, and `buf.yaml`
-   carries the per-path ignores for the v2 and v3-only files (below).
+   carries the per-path ignores for the v3-only files (below).
 
 ## What `v0.1` freezes
 
-`v0.1` freezes **only what v1 implements** (decision 8 of ADR 0024, which amends
-decision 9 of ADR 0019). A message no code has run is not worth a promise: two
-review rounds already changed 86 and then 107 things in contracts nobody had run.
-Messages that only v2 or v3 use stay changeable until the release that ships them
-is tagged (`v0.2`, then `v1.0`).
+`v0.1` freezes **everything v1 implements** (decision 8 of ADR 0024, which amends
+decision 9 of ADR 0019, and decision 4 of ADR 0025, which puts dispatch, sessions,
+logs and reports into v1). That is 84 of the 108 `FleetService` calls (47 watch and
+configuration calls, 37 dispatch, session, log and report calls), every agent
+command kind v1 uses, and every `Watch` topic except the two v3 ones. A message no
+code has run is not worth a promise: two review rounds already changed 86 and then
+107 things in contracts nobody had run. That is why `v0.1` is tagged only after the
+whole of v1 passes the seven-day run. Messages that only v3 uses stay changeable
+until the release that ships them is tagged.
 
 - **How.** `buf breaking` works per file, not per message. When `v0.1` is cut,
   `buf.yaml` gets per-path ignores under `breaking.ignore_only` for the files
   below, and CI keeps running `buf breaking --against '.git#tag=v0.1'` for the rest.
-  The ignore list shrinks to nothing as each release is tagged.
-- **Which files.** A file is ignored only if it holds v2 or v3 messages exclusively
+  The ignore list is removed when v3 is tagged.
+- **Which files.** A file is ignored only if it holds v3 messages exclusively
   and no v1-served RPC, Watch topic or v1 agent message reaches it. Proposed
   (PR 17 checks each against the generated code and the 02k list):
-  `agent/v1/command_goal.proto`, `command_scratch.proto`, `streams.proto`;
-  `hub/v1/auth.proto`, `device.proto`, `token.proto` (v3);
-  `hub/v1/terminal.proto`, `log_store.proto`, `routine.proto`, `goal_dispatch.proto`,
-  `insight_report.proto`, `suggestion.proto` (v2).
+  `hub/v1/auth.proto`, `device.proto`, `token.proto`. Every other file is frozen.
 - **Mixed files.** A file that holds both (`service.proto`, `command_tmux.proto`,
-  `goal.proto`, `snapshot.proto`) is frozen whole, so a v2 message in it can only
-  grow additively after `v0.1`. A v2 message that may still need a breaking change
-  is moved into a v2-only file before the tag; PR 17 does that check.
-- **Observed goals are v1.** The messages that carry them (`GoalState`,
-  `GoalBindingSource.OBSERVED`, `Goal`, `GoalOrigin`) are frozen at `v0.1`.
+  `goal.proto`, `snapshot.proto`, `type/v1/harness.proto`) is frozen whole, so a v3 message in it (for example the `HARNESS_TRANSCRIPT`
+  stream key) can only grow additively after `v0.1`. A v3 message that may still
+  need a breaking change is moved into a v3-only file before the tag; PR 17 does
+  that check.
+- **Dispatch is v1.** The messages that carry fleet-started goals, approvals,
+  routines, logs and attach (`command_goal.proto`, `command_scratch.proto`,
+  `streams.proto`, `goal_dispatch.proto`, `terminal.proto`, `log_store.proto`,
+  `routine.proto`, `insight_report.proto`, `suggestion.proto`) are frozen at
+  `v0.1` along with the watch messages, and so are the observed-goal messages
+  (`GoalState`, `GoalBindingSource.OBSERVED`, `Goal`, `GoalOrigin`).
 
 ## Naming rules
 

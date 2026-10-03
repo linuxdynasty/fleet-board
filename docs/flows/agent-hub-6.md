@@ -108,7 +108,7 @@ sequenceDiagram
 | Heartbeats stop | `AGENT_CONNECTED` leaves OK after 10 minutes offline (WARNING) and 1 hour (CRITICAL) for always-on machines; for others the machine is only `OFFLINE` |
 | The evaluator stalls | `hub.system.evaluate` stops, `observed_time` goes stale, the UI says so above 60 s; `fleet doctor` reads the same status |
 | Hub restarts | counters reset, signal state is re-derived within 30 s, SYSTEM items persist in the store |
-| A signal's source is not enabled (no backup yet, no `logs.db` in v1) | `UNKNOWN`: shown as unknown, raises nothing |
+| A signal's source is not enabled (no backup yet, or `logs.db` not created yet) | `UNKNOWN`: shown as unknown, raises nothing |
 | A signal flaps around a threshold | hysteresis (two evaluations out, five minutes back) and one item per fingerprint |
 | A machine's agent is too old to send `AgentHealth` | the health fields are unset and nothing is raised from them |
 | The same heartbeat arrives twice | latest wins; the second changes nothing |

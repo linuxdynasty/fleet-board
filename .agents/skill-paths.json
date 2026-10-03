@@ -39,7 +39,14 @@
     "internal/hub/pacing/**",
     "internal/hub/insights/**",
     "internal/agent/ring/**",
-    "internal/agent/goals/**"
+    "internal/agent/goals/**",
+    "internal/hub/scheduler/**",
+    "internal/hub/goals/**",
+    "internal/hub/verifier/**",
+    "internal/hub/approvals/**",
+    "internal/hub/routines/**",
+    "internal/hub/logstore/**",
+    "internal/agent/logship/**"
    ],
    "exclude": [
     "docs/**",
@@ -56,7 +63,8 @@
     "**/testdata/harness/**",
     "**/fixtures/harness/**",
     "**/harness-fixtures/**",
-    "internal/agent/probe/**"
+    "internal/agent/probe/**",
+    "internal/agent/hooks/**"
    ]
   },
   {
@@ -65,7 +73,10 @@
    ],
    "globs": [
     "internal/**/tmux/**",
-    "internal/agent/probe/**"
+    "internal/agent/probe/**",
+    "internal/agent/control/**",
+    "internal/agent/start/**",
+    "internal/agent/attach/**"
    ]
   },
   {
@@ -110,7 +121,13 @@
     "internal/agent/policy/**",
     "internal/agent/exec/**",
     "cmd/fleetd/**",
-    "cmd/fleet-agent/**"
+    "cmd/fleet-agent/**",
+    "internal/hub/approvals/**",
+    "internal/hub/attach/**",
+    "internal/agent/control/**",
+    "internal/agent/start/**",
+    "internal/agent/hooks/**",
+    "internal/agent/attach/**"
    ],
    "exclude": [
     "docs/**",

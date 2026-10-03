@@ -15,16 +15,20 @@ need a tour of the whole tree.
 cmd/fleetd  cmd/fleet-agent  cmd/fleet     # thin main packages, wiring only
 internal/store  internal/telemetry         # sqlite open, single writer; OTEL, slog
 internal/hub/{config,gateway,ca,ingest,outbox,pacing,integration/github,syncer,api,system,insights}
+internal/hub/{scheduler,goals,verifier,approvals,routines,logstore,attach}   # dispatch rows
 internal/agent/{conn,ring,tmux,probe,goals,policy,exec,doctor}
+internal/agent/{control,start,worktree,hooks,logship,attach}                # dispatch rows
 internal/harness/{claude,codex,muse,opencode}   # adapters, parsers, fixtures
 internal/seed                                   # test seed: recorded agent stream into a hub store
-hooks/  web/  api/  docs/                       # hooks/: v2 goal-hook definition and Muse plugin
+hooks/  web/  api/  docs/                       # hooks/: goal-hook definition and Muse plugin (v1)
 ```
 
-The dispatch-era packages `internal/hub/{scheduler,verifier,triage}` arrive
-with v2 (the v1 plan is read-only); until then triage items come from `ingest`
-(raise and retire in the event transaction) and `system`. v1 does include the
-command path (`outbox`) and probe assignment (`pacing/probe`): ADR 0022 addendum.
+The dispatch packages (the lines marked "dispatch rows") are v1 too (ADR 0025):
+they arrive with plan rows 18 to 29, after the watching rows. There is no
+separate triage package: triage items are raised and retired by `ingest` (in
+the event transaction), `system`, and the dispatch packages that own each source. The command path (`outbox`) and
+probe assignment (`pacing/probe`) come with the watching rows: ADR 0022
+addendum.
 
 - Business logic lives in `internal/`; `cmd/` only parses flags, builds
   dependencies and calls into `internal/`.

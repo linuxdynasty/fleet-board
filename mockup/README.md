@@ -13,10 +13,11 @@ Then open <http://127.0.0.1:8765/>. Which UI element stands for which contract
 message is tabulated in [docs/specs/ui-contract-map.md](../docs/specs/ui-contract-map.md).
 
 **The mockup is display-only.** It checks nothing against the protos (ids such as
-`g1` are not ULIDs, data is sample). It also draws the v2 and v3 controls (send
+`g1` are not ULIDs, data is sample). It draws the v1 controls (send
 keys, dispatch, goal control, kill, respawn, attach, approvals) as if they were
-live; the **Ships** column of the map says which release serves each element, and
-the v1 views show only the rows tagged v1.
+live; v3 items are not drawn, or are marked v3 (the harness transcript); the **Ships** column of
+the map says which release serves each element, and the product views show only the
+rows tagged v1.
 
 ## What is real and what is sample
 

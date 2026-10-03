@@ -43,7 +43,7 @@ what a prompt asks, so prompts can be counted without grouping by text) and
 | Input | Source rows | Kept |
 |---|---|---|
 | Quota over time | `usage_readings` (`buckets[]`, `read_time`, `harness_version`, `parser_version`, `parse`) | buckets 1 year |
-| Pace history | `insight_pacing_interval`: one row per change of `(PacingState, idle_while_behind)` per account, written when it changes (a few per account per day) by the `pacing` package in v1 and by the scheduler from v2 | 1 year |
+| Pace history | `insight_pacing_interval`: one row per change of `(PacingState, idle_while_behind)` per account, written when it changes (a few per account per day) by the `pacing` package, and by the scheduler once the dispatch rows land | 1 year |
 | Goal outcomes | `goals` (spec, `GoalStatus` counters, `usage_consumed`, `start_error`, start and end time), `goal_runs`, `goal_transitions` | permanent |
 | Labels | work item labels, captured when the goal ends (the mirror is pruned 30 days after close) | in the rollup |
 | Stuck sources | `triage_items` (prompt and condition items with `prompt_class`, `kind`, raise and close time), `goal_transitions` (STUCK and its reason) | triage 7 days after close |
@@ -184,7 +184,7 @@ only writes it up.
 
 ```mermaid
 sequenceDiagram
-  participant S as scheduler (hub, v1: the pacing package)
+  participant S as scheduler (hub)
   participant W as storeWriter
   participant A as fleet-agent
   participant H as harness (subscription)
@@ -258,7 +258,9 @@ sequenceDiagram
    behind it are one click away (`GetInsightReport{include_bundle}`).
 6. **Cost and off switch.** The report's `usage_consumed` is stored and shown
    on the Insights view, so the cost is measured, not assumed (`NOT_MEASURED`
-   until the first run). The owner disables the routine with
+   until the first run). Issue #61 records what one report costs from that first
+   run. The built-in routine is on by default and runs only on spare quota
+   (ADR 0022 addendum, decision 3). The owner disables the routine with
    `spec.enabled = false`; a built-in routine cannot be deleted, and the
    owner cannot edit its goal text or done rule.
 

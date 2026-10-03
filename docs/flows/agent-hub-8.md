@@ -48,7 +48,7 @@ sequenceDiagram
    `answerable` is true only when detection is verified for this harness version.
 2. In the event's transaction the hub opens a `TRIAGE_KIND_PROMPT` item and an
    `Approval` of kind `APPROVAL_KIND_PROMPT_ANSWER`. A destructive prompt shows deny
-   preselected with `destructive_reason`. With `answerable = false` the item is
+   preselected with `destructive_reason`. With `answerable = false` (prompt detection is not verified for this harness version) the item is
    notice-only and carries the `ssh -t <user>@<host> tmux attach` line (the hub never
    connects itself).
 3. A person with the `APPROVALS` scope calls `DecideApproval` with the approval's

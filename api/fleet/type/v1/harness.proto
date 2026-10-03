@@ -155,9 +155,9 @@ enum VersionSupport {
   // this version (see ParserSupport). Auto-dispatch continues while USAGE
   // and READY are verified or parse this version's live screens
   // (ParserSupport.parsing_live) and the usage reading agrees with a passive
-  // reading where one exists; otherwise manual dispatch only. Prompts stay
-  // notice-only (answerable=false) until PROMPT is verified. Readings that
-  // do not parse are unknown, never guessed.
+  // reading where one exists; otherwise manual dispatch only. A prompt is
+  // shown but not answerable (answerable=false) until PROMPT is verified.
+  // Readings that do not parse are unknown, never guessed.
   VERSION_SUPPORT_UNVERIFIED_PARSING = 2;
   // Known not to work with the adapter (for example /goal missing).
   VERSION_SUPPORT_UNSUPPORTED = 3;

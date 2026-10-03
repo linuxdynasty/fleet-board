@@ -55,7 +55,7 @@ const attachCmd = (s, ro) => fmtCmd("OpenAttach", { attach_id: `att-${s.id}`, se
 const ensureSessionCmd = o => fmtCmd("EnsureSession", { session_id: o.id, server: "DEFAULT", name: o.name, workdir: o.repo ? `{repo: ${o.repo}}` : undefined, harness: o.harness || undefined, reuse: o.reuse, owner_principal: "you" });
 const drainCmd = (m, on) => on ? fmtCmd("Drain", { reason: "owner" }) : "Undrain{}";
 
-// Move = stop here, dispatch there (v2 has no move command).
+// Move = stop here, dispatch there (there is no move command).
 function moveCmds(s, to) {
   const a = accounts.find(x => x.harness === s.harness), line = goalLine(`continue ${s.display} on ${s.branch}; pull first`, a, s.repo);
   const stop = GOAL_SUBS[s.harness]?.includes("clear") ? fmtCmd("RunHarnessCommand", { pane: paneKey(s), command: "/goal", args: "clear", expected_class: "GOAL" }) : fmtCmd("Interrupt", { pane: paneKey(s) });

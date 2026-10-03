@@ -388,6 +388,6 @@ second engine to learn.
 
 | Gap | Cover |
 |---|---|
-| `logs.db` at the 50 GiB default cap (S1 used 2 GB) | B-tree depth grows by about one level; re-run S1 `logs` with a larger prefill before the first logs PR (logs are v2: the v1 plan, section 9) |
-| Muse and Claude Code under the framing above (S2 measured Codex) | Re-run `zstdchunk` on one goal hour of each before the first logs PR (v2, plan section 9) |
+| `logs.db` at the 50 GiB default cap (S1 used 2 GB) | B-tree depth grows by about one level; re-run S1 `logs` with a larger prefill before the first logs PR; this measurement (issue #60) gates the v1 logs work, plan section 9 |
+| Muse and Claude Code under the framing above (S2 measured Codex) | Re-run `zstdchunk` on one goal hour of each before the first logs PR; this measurement (issue #60) gates the v1 logs work, plan section 9 |
 | Harness transcripts (K3) compression | Measured in v3 before K3 ships (03g open question 11) |

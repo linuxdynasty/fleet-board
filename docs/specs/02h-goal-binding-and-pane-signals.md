@@ -88,9 +88,9 @@ Rules:
 
 ## Observed goals (v1)
 
-v1 has no `StartGoal` and no hooks, so nothing writes the registry. The owner
-still starts goals by hand (an eshu `/goal` in their own tmux pane) and wants to
-see them. Decision 1 of ADR 0024: the agent finds such a goal from its goal file
+`StartGoal` and the hooks write the registry, but only for goals the fleet
+starts. The owner still starts goals by hand (an eshu `/goal` in their own tmux
+pane) and wants to see them. Decision 1 of ADR 0024: the agent finds such a goal from its goal file
 and reports it as an **observed goal**. It is shown and never dispatched, nudged,
 resumed or controlled by the fleet. The hub side is in
 [03k](03k-observed-goals.md).
@@ -106,12 +106,12 @@ runs a known harness and that no registry entry names:
 2. In that checkout read `.claude/active-goal.*` (eshu's files, named by the
    harness session id) and take the file with the **newest modification time**. It
    must be newer than the start of the harness process in the pane (from the OS),
-   so a file left by an earlier goal is not attributed. v1 reads no other file; the
-   generic goal file arrives with v2 (01d).
+   so a file left by an earlier goal is not attributed. The agent reads no other file for an observed goal; the
+   generic goal file of fleet-started goals is set by 01d.
 3. If exactly one pane running a known harness has that checkout as its folder,
    the file belongs to that pane. If two or more do, nothing is attributed: the
    agent never guesses (the harness session id that would tell them apart is
-   learned only by v2 hooks), and `fleet-agent doctor` lists the folder.
+   learned only by the hooks, which an observed goal does not have), and `fleet-agent doctor` lists the folder.
 4. The file is read as in G2 (first line and `CONSENT:` line, length-capped,
    control characters stripped, untrusted). A goal begins when the file is first
    seen in a state other than `DONE`; a file already `DONE` at first sight shows
@@ -139,7 +139,7 @@ and reports it no more.
 claim on a work item; no slot. The agent refuses `StartGoal` or `RegisterGoal`
 naming its pane while it lives (`SESSION_NOT_AVAILABLE`), and the hub answers
 `ControlGoal` on it with `GOAL_ACTION_NOT_ALLOWED` and metadata
-`{"why": "observed"}` (v2).
+`{"why": "observed"}`.
 
 ## Reuse
 

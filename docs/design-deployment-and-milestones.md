@@ -62,8 +62,8 @@ sign-ins are observed, and the hub address is not in this file. Subscription acc
 discovered, so one no machine has signed in is skipped and blocks the import unless `allow_skipped`
 is set; only API-key accounts (spent so far against an optional dollar limit, never auto-dispatched, such as OpenCode providers) are added by hand. A repo is
 watched only when the owner adds it and the GitHub App is installed on it (`eshu-hq/eshu` is the
-author's first). A machine named in an imported config that has not enrolled yet is recorded as drained when it enrolls (from v2 it takes no goals
-until undrained; v1 starts none); import never drains an enrolled machine.
+author's first). A machine named in an imported config that has not enrolled yet is recorded as drained when it enrolls (it takes no goals
+until the owner undrains it); import never drains an enrolled machine.
 
 ## Open questions
 
@@ -82,32 +82,45 @@ Decided items moved into the sections above and the specs. Still open:
 - **Agent-ready issues.** Today a label from an allow-listed person (03j); an LLM triage pass that
   proposes it is not designed.
 - **Prompt answers for Codex and Muse** need detection verified per version
-  ([02h](specs/02h-goal-binding-and-pane-signals.md)); v1 is notice-only.
+  ([02h](specs/02h-goal-binding-and-pane-signals.md)); until it is verified, that prompt is shown
+  as a notice with the `ssh -t ... tmux attach` line and cannot be answered from the dashboard.
 - **Usage push sources:** [#46](https://github.com/linuxdynasty/fleet-board/issues/46). **Throwaway
-  containers as workers:** deferred. **Tailscale:** optional, v3 only. **Measurements owed to v2:**
+  containers as workers:** deferred. **Tailscale:** optional, v3 only. **Measurements owed to the dispatch rows of v1:**
   [plan section 9](plan/v1-implementation-plan.md).
 
 ## Milestones
 
-The [v1 plan](plan/v1-implementation-plan.md) turns milestone 1 into PRs; the capability map in
-[01](specs/01-agent-capabilities.md) tags each capability v1, v2 or v3.
+The [v1 plan](plan/v1-implementation-plan.md) turns the v1 milestone into PRs; the capability map in
+[01](specs/01-agent-capabilities.md) tags each capability v1 or v3. There is no v2
+([ADR 0025](adr/0025-v1-includes-dispatch.md)): what was once planned as v2 is part of v1.
 
-1. **v1, read-only.** Agents enroll and connect over mTLS; tmux control mode, goal-file state,
-   weekly usage probes with burn-down and waste projection (shown after the first 24 hours of a window); issues and PRs read by the hub through
-   the GitHub App. Machines, Usage, Session (panes read-only, no attach), Triage (notices only),
-   Work (read-only) and Insights (efficiency) views, System health, and owner configuration of the
-   hub itself: watched repos, reserves, the Codex account mapping, GitHub, machine admin (add, rename,
-   labels, revoke, forget), Settings forms and `fleet repo|account|settings|machine|export|import`. Reads and writes through `fleet --json`, OTEL from
-   the start. Nothing types into or changes a pane. Done when a seven-day run on the four machines
-   passes and `v0.1` is tagged, which freezes only what v1 implements; v2 and v3 messages stay
-   changeable until they ship ([02e](specs/02e-contract-rules.md)). The owner merges every v1 PR.
-2. **v2, dispatch.** `StartGoal` into panes and worktrees, goal hooks, claims, slot limits, drain,
-   approvals and local approval, session control (send keys, harness commands, respawn, kill, new
-   session, mark available), terminal attach (a ticketed WebSocket, also in `local_trusted`),
-   session logs, routines, the written report and suggestions, Insights outcomes and stuck
-   sections, the reliability rules, the trusted gate, `fleet` write commands (dispatch, goal
-   control, requeue, routines).
-3. **v3, remote.** `authenticated` mode (HTTPS, passkey and GitHub sign-in, API tokens, the claim
+- **v1, the fleet** (the GitHub milestone is "v1 — fleet"). It is built in two parts, watching first
+   and then dispatch, and `v0.1` is tagged after both pass.
+   - **Watching.** Agents enroll and connect over mTLS; tmux control mode, goal-file state,
+     weekly usage probes with burn-down and waste projection (shown after the first 24 hours of a window); issues and PRs read by the hub through
+     the GitHub App (the App stays read-only: a claim on an issue is posted by the harness through
+     `gh`, never by the hub). Machines, Usage, Session, Triage, Work and Insights (efficiency) views,
+     System health, and owner configuration of the
+     hub itself: watched repos, reserves, the Codex account mapping, GitHub, machine admin (add, rename,
+     labels, revoke, forget), Settings forms and `fleet repo|account|settings|machine|export|import`.
+     Reads and writes through `fleet --json`, OTEL from the start.
+   - **Dispatch.** `StartGoal` into panes and worktrees, goal hooks, claims, slot limits, drain,
+     approvals and local approval, session control (send keys, harness commands, respawn, kill, new
+     session, mark available), terminal attach (a ticketed WebSocket, also in `local_trusted`),
+     session logs, routines, the written report and suggestions, Insights outcomes and stuck
+     sections, the reliability rules, the trusted gate, and the `fleet` write commands (dispatch, goal
+     control, requeue, routines). Every command that changes a pane passes the checks of
+     [02h](specs/02h-goal-binding-and-pane-signals.md) (`SendKeys.purpose`) and the local policy.
+     `HubSettings.auto_dispatch` is `false` by default, so dispatch runs only when the owner turns it
+     on. Owner decisions 20 and 21 of [ADR 0024](adr/0024-pre-build-owner-decisions.md) (approvals in
+     `local_trusted` mode, and the default goal text for repos without eshu's hooks) must be made
+     before dispatch is switched on.
+
+   Done when the seven-day run on the four machines passes (goals start, finish or go to Triage with a
+   reason, no issue is taken twice, no goal runs into the reserve) and `v0.1` is tagged. `v0.1`
+   freezes everything v1 implements; only the v3-only messages stay changeable until they ship
+   ([02e](specs/02e-contract-rules.md)). The owner merges every v1 PR.
+- **v3, remote.** `authenticated` mode (HTTPS, passkey and GitHub sign-in, API tokens, the claim
    URL), a paired phone with push, remote access, harness transcripts, and the optional Tailscale
    lookup for agents and phones on a tailnet (Tailscale is never required).
 

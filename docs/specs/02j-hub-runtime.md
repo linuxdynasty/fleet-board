@@ -194,8 +194,9 @@ a wrong `state`, a used code, and the file modes.
 
 ## Configuring a fresh hub
 
-A hub starts empty and read-only in effect: with `auto_dispatch` off
-([defaults.md](defaults.md)) it changes nothing on any machine. The owner
+A hub starts empty and idle: with `auto_dispatch` off
+([defaults.md](defaults.md)) it starts no goal by itself on any machine. The owner
+can still start a goal or a session by hand. The owner
 configures it through the API, from the dashboard Settings view or the CLI;
 the same calls are in [02b](02b-hub-api.md), and all need `SETTINGS` or `ADMIN`
 (`local_trusted`: the local owner):

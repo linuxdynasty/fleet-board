@@ -65,7 +65,7 @@ harness config), not into each repo.
   share one JSON shape (`{"hooks": {"<Event>": [{"matcher", "hooks": [{"type":
   "command", "command"}]}]}}`). The agent generates the three files from one
   definition; only the location differs.
-- **The one place the agent writes harness settings** (v2; v1 writes none).
+- **The one place the agent writes harness settings** (v1).
   [ADR 0004](../adr/0004-agent-connectivity.md) says the agent never opens
   harness config. [ADR 0024](../adr/0024-pre-build-owner-decisions.md)
   (decision 3) allows exactly this exception: the agent may **add, update and

@@ -402,8 +402,7 @@ message CreateEnrollmentTokenRequest {
   // MachineSpec.labels); merged with a matching imported entry's.
   repeated string labels = 6;
   // The machine enrolls drained (spec.drain set by the hub at Enroll): it
-  // takes no goal until the owner undrains it (the record only takes effect
-  // from v2: v1 starts no goals and has no UndrainMachine). Always true for a
+  // takes no goal until the owner undrains it (UndrainMachine). Always true for a
   // machine that came from an imported config.
   bool start_drained = 7;
 }

@@ -31,7 +31,7 @@ To be made in step 2 as a superseding ADR, not by editing the originals:
 - 0004 and 0006: the developer's normal tmux server is the default for listing,
   attaching, creating sessions and running goals (`default_server` defaults to
   `control`; local policy can lower it); the separate `tmux -L fleet` server
-  becomes optional; browser attach moves to v2.
+  becomes optional; browser attach is v1 (ADR 0025).
 - 0004: add hub settings delivery (A8), agent `Bye` (A7), `SnapshotRequest`
   handling, `StartGoal` as an agent-side command (G3) and goal control through
   the harness's own `/goal` subcommands (G4),

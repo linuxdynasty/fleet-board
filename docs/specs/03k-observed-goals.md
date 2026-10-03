@@ -10,9 +10,10 @@
   `GoalBindingSource.OBSERVED` and `GoalState.binding` in
   `api/fleet/agent/v1/snapshot.proto`
 
-v1 has no `StartGoal`, so no goal is ever dispatched by the fleet. The owner
-still starts goals by hand in their own tmux panes, and the plan promises to show
-"every goal and its state". An **observed goal** is that hand-started goal: the
+v1 has `StartGoal`, so the fleet dispatches goals. The owner also still starts
+goals by hand in their own tmux panes, and the plan promises to show "every goal
+and its state", so those goals must show too. An **observed goal** is that
+hand-started goal: the
 agent sees its goal file, the hub shows it, and the fleet never dispatches,
 nudges, resumes or controls it. The agent-side rule (which pane, which file, who
 mints the id) is in
@@ -59,8 +60,9 @@ is a new goal with a new id (02h).
 Nothing else happens. There is no verification against the code host and no
 `MERGED` phase, no nudge, `STOPPED`, `COOLDOWN`, `PAUSED`, `LIMIT_WAIT`,
 `VERIFYING` or `DISAGREE`, no `GoalRun` beyond run 1, no outbox row and no
-`Operation`. `ControlGoal` is `UNIMPLEMENTED` in v1; from v2 it answers
-`GOAL_ACTION_NOT_ALLOWED` with `{"why": "observed"}` for these goals.
+`Operation`. `ControlGoal` answers `GOAL_ACTION_NOT_ALLOWED` with
+`{"why": "observed"}` for these goals: the fleet starts, nudges and controls only
+the goals it dispatched.
 
 ## What an observed goal holds and counts
 
@@ -73,9 +75,10 @@ Nothing else happens. There is no verification against the code host and no
   goals only, so observed goals never cause a slot mismatch; they appear in
   `goal_panes_by_state`.
 - **Its pane is not free.** The pane carries `goal` while the goal lives, so the
-  planner (v2) never offers it for reuse.
-- **Triage: none in v1.** No item is raised for it; the kinds that would fit
-  (`stuck`, `blocked_owner`) come from the v2 goal workflow (W6) ([03d](03d-triage-sessions-logs.md)).
+  planner never offers it for reuse.
+- **Triage: none.** No item is raised for it; the kinds that would fit
+  (`stuck`, `blocked_owner`) come from the goal workflow (W6), which runs only for
+  dispatched goals ([03d](03d-triage-sessions-logs.md)).
 - **Insights: not counted.** Outcome rows count dispatched goals only
   ([05](05-insights.md)).
 - **Work item: none.** It claims nothing and moves no stage; the change request for

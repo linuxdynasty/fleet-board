@@ -19,7 +19,7 @@
 
 ---
 
-## D14. A new developer session on a machine (v2)
+## D14. A new developer session on a machine (v1)
 
 **What happens and why.** The owner wants a tmux session on a machine from the dashboard (for example
 to attach to it later), in an allowed repo root, optionally with a harness already started. It is
@@ -49,7 +49,7 @@ login shell. A machine that is draining refuses a harness start (`DRAINING`).
 nothing is created); the repo is outside the allowed roots (`REPO_ROOT_NOT_ALLOWED`); the local policy
 refuses the kind (`REJECTED_BY_POLICY`).
 
-## D15. Put a work item back in the queue (v2)
+## D15. Put a work item back in the queue (v1)
 
 **What happens and why.** A work item is `MANUAL_ONLY` after a person cleared its goal or after three
 failed starts. The scheduler never redispatches it by itself. The owner decides it is worth another try
@@ -86,15 +86,15 @@ sequenceDiagram
   H->>H: 4. one transaction: apply, a machine with no match becomes a pending machine
   H-->>C: 5. applied = true
   A->>H: 6. later: Enroll with a token whose machine_name matches
-  H->>H: 7. apply the pending machine's labels and settings, mark the machine drained (v1 only records it)
+  H->>H: 7. apply the pending machine's labels and settings, mark the machine drained
 ```
 
 A plan with any `SKIPPED` line (for example an integration, which import never creates) applies nothing
 unless `allow_skipped` is set. Import only creates and updates, and never drains a machine that is
 already enrolled.
 
-**What v1 does about "drained".** The hub records the new machine as drained (`spec.drain.draining = true`)
-and the Machines view shows it. v1 starts no goals, so the mark blocks nothing yet, and v1 has no way to clear
-it: `DrainMachine` and `UndrainMachine` are v2 ([02k](../specs/02k-v1-surface-and-cli.md)). When v2 ships, the
-mark takes effect: the machine takes no goals until the owner undrains it. Release: v1 (PR 13a builds
-`ExportConfig` and `ImportConfig`).
+**What "drained" means here.** The hub records the new machine as drained (`spec.drain.draining = true`)
+and the Machines view shows it. The mark takes effect at once: the machine takes no goals until the owner
+undrains it with `UndrainMachine` (`DrainMachine` and `UndrainMachine` are v1 calls,
+[02k](../specs/02k-v1-surface-and-cli.md)). Release: v1 (PR 13a builds `ExportConfig` and
+`ImportConfig`, and the dispatch rows of the plan build drain and undrain).

@@ -194,9 +194,9 @@ enum GoalPhaseReason {
 // GoalOrigin says who started a goal.
 enum GoalOrigin {
   GOAL_ORIGIN_UNSPECIFIED = 0;
-  // The fleet dispatched it (StartGoal); every goal of v2 and later.
+  // The fleet dispatched it (StartGoal); every goal the fleet starts.
   GOAL_ORIGIN_DISPATCHED = 1;
-  // v1: the owner started it by hand in their own tmux pane and the agent saw
+  // The owner started it by hand in their own tmux pane and the agent saw
   // its goal file (GoalState binding OBSERVED, 03k). The hub shows it and
   // never dispatches, nudges or controls it: it holds no slot, counts toward no
   // cap and has no outcome in Insights.

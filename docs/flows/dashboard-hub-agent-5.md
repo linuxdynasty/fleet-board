@@ -25,8 +25,9 @@ model, and the dashboard reads them with `GetInsights` (subscription efficiency,
 outcomes, where work gets stuck). **Suggestions**: fixed rules over the
 rollups, each with its evidence numbers, never changing a setting. **The weekly report**:
 a built-in routine hands the numbers to a subscription harness, which writes a short
-markdown summary, in a normal goal, only on quota that would otherwise go unused. In v1
-only the efficiency rollups exist; written reports and suggestions arrive in v2.
+markdown summary, in a normal goal, only on quota that would otherwise go unused. All
+three layers are part of v1: the rollups come first, then the suggestions and the report with the
+dispatch rows of the plan.
 
 ```mermaid
 sequenceDiagram
