@@ -9,3 +9,6 @@ __pycache__/
 
 # Generated code from `buf generate` (buf.gen.yaml); never committed.
 gen/
+
+# review marker read by the global agent-config push hook (never committed)
+.claude-review-ok
