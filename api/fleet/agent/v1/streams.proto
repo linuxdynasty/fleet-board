@@ -68,7 +68,7 @@ message TermDown {
     bytes input = 2;
     TermResize resize = 3;
     TermClose close = 4;
-    // Switch the view session's current window or pane (ADR 0018),
+    // Switch the view session's current window or pane (03g change #2),
     // because the window strip cannot type the developer's prefix key.
     // Allowed on read-only attaches; never affects the developer's client.
     TermSelect select = 5;

@@ -70,7 +70,7 @@ reappears unless retired meanwhile. Expiry at 7 days (`HubSettings.triage_expiry
 and audits it; that is a different clock from `Approval.expire_time`
 (`HubSettings.approval_timeout`, 30 minutes: on expiry the fallback `DENY` applies and the
 item stays open) ([defaults](defaults.md)); a prompt that is still on screen after 7 days is re-raised by
-the next `Snapshot.prompts[]` (ADR 0018) because the fingerprint is new only if the
+the next `Snapshot.prompts[]` (03g) because the fingerprint is new only if the
 `prompt_id` changed, so the UI shows "expired, still showing".
 
 **Answering through an approval, as messages.** The writer raises the triage item and its
@@ -211,7 +211,7 @@ sequenceDiagram
     H-->>A: TermDown{input ≤ 4 KiB | resize}
   end
   U->>H: click window "2: claude w2" on the strip
-  H-->>A: TermDown{select TermSelect{window WindowKey}} (ADR 0018)
+  H-->>A: TermDown{select TermSelect{window WindowKey}} (03g change #2, applied)
   U->>H: close / idle timeout
   H-->>A: TermDown{close} or Command{CloseAttach}
   A->>T: kill PTY client → view session destroyed (destroy-unattached)
@@ -232,10 +232,10 @@ click is harmless. The browser attaches through a **grouped view session**
 the developer's own current window; the developer's prefix key and bindings
 work unchanged in the PTY. The window strip and pane switcher need a typed
 `select` on the view session because the hub does not know the developer's
-prefix key (ADR 0018). `viewer` role attaches are read-only: the hub drops input and
+prefix key (03g). `viewer` role attaches are read-only: the hub drops input and
 the agent also refuses it. Idle timeout `attach_idle_timeout` (setting). The
 ssh line `ssh -t <user>@<host> tmux attach -t '<session>'` is rendered in the
-browser from `MachineFacts.username` (ADR 0018) and the hostname or the connection's
+browser from `MachineFacts.username` (03g) and the hostname or the connection's
 peer address; the hub never runs it.
 
 ### Persistence
@@ -375,7 +375,7 @@ even when lower than one it saw before; it never treats it as monotonic. On
 most every 60 s. `LogAck.pause` is a stream
 level backpressure signal and `SetLogShipping` the command form; resuming
 needs an unsolicited `LogAck{all_streams=true, pause=false}` or `SetLogShipping{paused=false}`
-because a paused agent sends no chunks to ack (semantic note, ADR 0018). Retention:
+because a paused agent sends no chunks to ack (semantic note, 03g). Retention:
 the size cap and the optional age limit are hub settings
 (`HubSettings.log_size_cap_bytes`, `log_retention`; default 50 GiB, no age
 limit), the oldest ended sessions are pruned first and a session with an open

@@ -259,7 +259,7 @@ dropped. `ShownUsage.raw_screen` is never in a snapshot
 The epoch is the incarnation id of the hub's settings store and changes
 when the store is restored or recreated. The agent applies `Settings` when
 the epoch differs from the one it holds (any generation) or the generation
-is higher under the same epoch; it ignores the rest. This replaces an earlier draft's
+is higher under the same epoch; it ignores the rest. This replaces 03g's
 `settings_restored` flag.
 
 **Identity.** `EnrollResponse.fleet_id` and `HelloAck.fleet_id` name the
@@ -290,4 +290,4 @@ into the spool. The hub may send `LogAck` unsolicited: with
 resume with `pause = false`); `key` and `acked_offset` are then unset. When
 the spool cap is hit the agent keeps the newest data and sets `gap_before`
 on the next chunk. `EnsureProbe.run_now` runs once per distinct
-`command_id` (ADR 0018). Framing: [02e](02e-contract-rules.md#log-framing).
+`command_id` (03g #9). Framing: [02e](02e-contract-rules.md#log-framing).

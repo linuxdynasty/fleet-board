@@ -44,7 +44,7 @@ message MachineFacts {
   // True if the machine is a container (FLEET_ENROLL_TOKEN boot path).
   bool container = 14;
   // Login user the agent runs as, for the copyable `ssh -t <user>@<host>
-  // tmux attach` line (ADR 0018); the hub never connects itself.
+  // tmux attach` line (03g change #3); the hub never connects itself.
   string username = 15;
 }
 
@@ -314,7 +314,7 @@ message RepoCheckout {
   // Set when the worktree was created by fleet for a goal.
   fleet.type.v1.GoalId goal_id = 6;
   BranchState branch = 7;
-  // Goal-hook state per harness for this checkout (ADR 0018), so the
+  // Goal-hook state per harness for this checkout (03g change #7), so the
   // consent form is known before EnsureGoalHooks runs.
   repeated fleet.type.v1.HarnessGoalHooks goal_hooks = 8;
   // Remote that `repo` was derived from: `origin` unless the local policy
@@ -452,7 +452,7 @@ message Snapshot {
   repeated fleet.type.v1.CommandId unacked_results = 21;
   // One per code-host CLI found on the machine (H4): gh, glab, ...
   repeated ForgeCliStatus forge_cli = 22;
-  // Prompts and harness conditions on screen now (ADR 0018), so Triage
+  // Prompts and harness conditions on screen now (03g change #1), so Triage
   // is rebuilt at once after a reconnect even when the ring was trimmed.
   repeated PromptDetected prompts = 23;
   repeated HarnessCondition conditions = 24;
