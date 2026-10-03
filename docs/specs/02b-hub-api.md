@@ -244,6 +244,34 @@ filter grammar and the filterable fields of every resource are in
 [02c](02c-hub-watch-and-filters.md); the scope each topic needs is in
 [02d](02d-hub-authz.md).
 
+## Reading a stored session log
+
+Shipping (agent to hub) and replay (dashboard to hub) as messages. The rules are
+in [03d](03d-triage-sessions-logs.md) (W9).
+
+```mermaid
+sequenceDiagram
+  participant D as Dashboard
+  participant H as fleetd (log receiver, log writer, logs.db)
+  participant A as fleet-agent
+  participant T as tmux
+  T->>A: pipe-pane output (goal panes always, a developer's session after SetLogCapture)
+  A->>A: append to the spool, flush the open zstd frame at the log chunk flush point into one chunk
+  A-->>H: SessionLogRequest{chunk LogChunk{key LogStreamKey{pane, stream TERMINAL}, offset, zstd, raw_length, frame_start, frame_raw_offset, gap_before, first_byte_time, last_byte_time, final, goal_id}}
+  H->>H: map key.pane to the SessionId the hub assigned, accept if offset equals stored end + gap_before
+  H->>H: log writer tx (one batch): one row per chunk in log_chunks, the zstd blocks as received
+  H-->>A: SessionLogResponse{ack LogAck{key, acked_offset, status STORED}}
+  A->>A: drop the spool up to acked_offset
+  D->>H: ListStoredSessions{filter machine, goal, state, time}
+  H-->>D: ListStoredSessionsResponse{stored_sessions StoredSession{id, state, logs SessionLogInfo{key, raw_bytes, gap_bytes}, pane_summaries}}
+  D->>H: ReadSessionLog{key, start_offset or start_time, max_bytes, follow}
+  H->>H: scope LOGS, find the chunk by (session, pane, stream, raw_offset) or time, decode zstd from frame_raw_offset
+  H-->>D: stream of ReadSessionLogResponse{offset, data, gap_before, first_byte_time, last_byte_time, final}
+  D->>D: xterm.js writes the bytes as terminal output, a gap shows as a marker
+  A-->>H: later chunks (follow): stored, acknowledged, and pushed on to the open read
+  H-->>D: ReadSessionLogResponse{..., final true} when the stream ends
+```
+
 ## Principals, scopes and approvals
 
 Every call runs as a `Principal`; roles map to six scopes (`READ`,

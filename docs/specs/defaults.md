@@ -40,6 +40,12 @@ spec change. "Decided here" marks a value no earlier document gave.
 | `max_windows` when no layer sets it | 12 | windows | 03e, decided here | `max_windows` setting |
 | Allowed range of `max_active`; of `max_total` (a value outside it is refused; in `policy.yaml` it is safe mode) | 1 to 16; 1 to 32 | goals | ADR 0024 | `agent`, `setting` |
 | `allowed_repo_roots` of a fresh agent; `allowed_harnesses` of a fresh agent | empty until the owner sets it (`fleet-agent enroll` asks); every installed harness | | ADR 0024, 03e | `agent` |
+| `schema_version` (`policy.yaml`) | `"1"`; an unknown value is safe mode | | [03e](03e-settings-and-drift.md) | `agent` |
+| `local_approval` (`policy.yaml`) | empty: off for every command kind | | 03e, [02g](02g-agent-security.md) | `agent`; also a `SettingValues` field |
+| `min_probe_interval` (`policy.yaml`; a floor the hub's probe interval cannot go below) | none; at least 1 min when set | min | 03e, [03b](03b-usage-and-sync.md) | `agent` |
+| `labels` (`policy.yaml`) | empty | | 03e | `agent`; also a `SettingValues` field |
+| `metrics_listen`; `pprof_listen` | none: the agent has no listener | | 03e, [05b](05b-observability.md) | `agent`, local only |
+| `telemetry` (`policy.yaml`) | off | | 03e, 05b | `agent`, local only |
 | Typing detection: `tmux list-clients` poll | 2 | s | [02h](02h-goal-binding-and-pane-signals.md), ADR 0024 (an allowed exception to "poll only usage and GitHub") | fixed |
 | Goal-file rescan for missed file events | 60 | s | [02h](02h-goal-binding-and-pane-signals.md), ADR 0024 (the other allowed exception) | fixed |
 | Agent low-disk point (`DISK_LOW` under any repo root) | 5 | GiB free | ADR 0024 | fixed |
@@ -120,6 +126,12 @@ spec change. "Decided here" marks a value no earlier document gave.
 | `log_size_cap_bytes`; `log_retention` | 50 GiB; none | | ADR 0010, 0015 | `HubSettings` (ADMIN) |
 | Writer batch | at most 100 messages or 250 ms | | ADR 0014 | fixed |
 | Read pool | 10 connections | | ADR 0014 | fixed |
+| Watch `CHECKPOINT` interval on an idle stream (the checkpoint interval) | 30 | s | [02c](02c-hub-watch-and-filters.md) | fixed |
+| `FLEET_SUMMARY` Watch message (the summary interval) | at most 1 | per s | 02c | fixed |
+| System evaluation interval (the hub judges the signals) | 15 | s | [05b](05b-observability.md) | fixed |
+| System status poll (the dashboard calls `GetSystemStatus`) | 30 | s | 05b | fixed |
+| OAuth state cookie lifetime (`__Host-fleet_oauth`, and its server-side record) | 10 | min | [02f](02f-hub-authentication.md) | fixed |
+| Attach output limit (one `AttachTerminalResponse`) | 64 | KiB | 02f, ADR 0016 | fixed |
 | Idempotency record | 24 | h | [02b](02b-hub-api.md) | fixed |
 | Watch change log | at least 10 min or 100,000 changes | | [02c](02c-hub-watch-and-filters.md) | fixed |
 | `page_size` | 50 (max 500) | rows | 02b | per call |
@@ -131,9 +143,10 @@ spec change. "Decided here" marks a value no earlier document gave.
 
 ## Runtime, install and access in v1
 
-The rules (staying awake, logout, install, upgrade, GitHub App only, API-key
-spend) live in [02j](02j-hub-runtime.md) and [03b](03b-usage-and-sync.md). The
-numbers:
+The rules (staying awake, logout, install, upgrade, API-key spend) live in
+[02j](02j-hub-runtime.md) and [03b](03b-usage-and-sync.md). GitHub access is the
+GitHub App only: [ADR 0024](../adr/0024-pre-build-owner-decisions.md) decision
+15. The numbers:
 
 | Name | Value | Owner | Kind |
 |---|---|---|---|

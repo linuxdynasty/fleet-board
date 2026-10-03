@@ -38,7 +38,7 @@ ignored, so a sidebar filter cannot leak into the goal or triage topics.
   status compare `version` only). Equal or older messages (a replay after
   resume) are dropped.
 - **Checkpoints.** Every message carries a `resume_token`. An idle stream
-  gets `CHECKPOINT` (new token, no resource) every 30 s, which doubles as a
+  gets `CHECKPOINT` (new token, no resource) every checkpoint interval ([defaults](defaults.md)), which doubles as a
   keepalive.
 
 ### A dashboard load, as messages
@@ -66,7 +66,7 @@ sequenceDiagram
   H-->>D: WatchResponse{hub_seq, change_type INITIAL, topic, resource} (repeated per resource)
   H-->>D: WatchResponse{change_type INITIAL_DONE, topic} (once per topic)
   H-->>D: WatchResponse{change_type CREATED or UPDATED or DELETED or UNMATCHED, resource, resume_token} (live)
-  H-->>D: WatchResponse{change_type CHECKPOINT, resume_token} every 30 s when idle
+  H-->>D: WatchResponse{change_type CHECKPOINT, resume_token} every checkpoint interval when idle
   D->>H: ListGoalRuns, ListGoalTransitions, ListUsageReadings, ListStoredSessions, ... (reads with no topic)
 ```
 
@@ -130,7 +130,7 @@ sequenceDiagram
   H->>H: after commit: hub_seq assigned, change log appended, fan-out bus publishes
   H-->>D: WatchResponse{hub_seq, change_type UPDATED, topic GOALS, goal, resume_token}
   H-->>D: WatchResponse{change_type CREATED, topic TRIAGE, triage_item, resume_token} (a new item in the same tx)
-  H-->>D: WatchResponse{change_type UPDATED, topic FLEET_SUMMARY} at most once a second
+  H-->>D: WatchResponse{change_type UPDATED, topic FLEET_SUMMARY} at most once per summary interval
   D--xH: network drops, the stream ends
   D->>H: Watch{subscriptions (same), resume_token = last seen}
   H-->>D: changes after the token replayed from the change log, then live

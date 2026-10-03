@@ -118,7 +118,7 @@ const audit = [
 ];
 
 // ADR 0010 session history (v1): sample timeline for the replay placeholder. Sizes use the measured numbers from
-// 01c (26.9 MB/h raw, 0.23 MB/h zstd-3 per busy pane).
+// docs/research/verified-facts.md (26.9 MB/h raw, 0.23 MB/h zstd-3 per busy pane).
 const history = {
   g1: [["session started", "window opened in the fleet session"], ["goal typed", "goal typed; the goal file appeared 4 s later"], ["PR opened", "#7412 · 54 checks queued"], ["BLOCKED", "waiting on CI · a watcher is armed"]],
   g7: [["session started", "window opened in the fleet session"], ["goal typed", "goal typed in the repo's own convention"], ["prompt detected", "destructive: a credential is in the command line"]],

@@ -94,9 +94,11 @@ KB, snapshot 100 KB, log chunk every 10 s per stream.
 
 ## Q1. Durable store
 
-**Requirement (load model).** One writer, ≈ 52 rows/s steady and ≈ 2,500 rows/s for
-60 s at A50; ≤ 10 browsers reading without blocking the writer; zero-dependency
-install; a laptop hub that can lose power.
+**Requirement (load model).** One writer, the A50 steady rate in the load model's
+"Durable rows, steady" row (≈ 48 rows/s, the sum of its parts) and ≈ 2,500 rows/s for
+60 s at A50 (the older ≈ 52 in [ADR 0014](../adr/0014-storage-confirmed.md) has no
+breakdown, so 48 is the number to use); ≤ 10 browsers reading without blocking the
+writer; zero-dependency install; a laptop hub that can lose power.
 
 **Vendor facts.**
 
@@ -328,14 +330,14 @@ The startup truncation of partial frames in 03d is no longer needed.
 
 ### Chunk framing and volume (S2)
 
-01c measured 115× on one hour of Muse output compressed as a single stream.
+[verified-facts](../research/verified-facts.md#measured-one-real-goal) measured 115× on one hour of Muse output compressed as a single stream.
 S2 recorded one hour of a busy Codex goal on omarchy (2026-10-02 09:49–10:49
 EDT, `tmux pipe-pane -o`, no keys sent; 17.8 MB raw) and compressed it the way
 the agent would ship it (klauspost/compress `SpeedDefault` ≈ zstd level 3):
 
 | Method | MB/h | Ratio | B/s per pane | Chunk p50 |
 |---|---|---|---|---|
-| whole hour, one frame (01c's method) | 1.17 | 15× | 326 | — |
+| whole hour, one frame (the verified-facts method) | 1.17 | 15× | 326 | — |
 | independent frame per 10 s chunk | 2.18 | 8× | 605 | 5,459 B |
 | independent frame per 60 s chunk | 1.47 | 12× | 408 | 23,654 B |
 | 10 s chunks + dictionary trained on the first 20 % | 1.96 | 9× | 544 | 7,341 B |
@@ -357,7 +359,7 @@ or the limit starts a new frame. Each chunk carries `frame_start` and
 the chunk that starts the frame, so seeking costs at most 5 minutes of
 output (≈ 1.5 MB raw for Codex). This is within 7 % of the whole-hour ratio.
 
-**Volume, corrected.** Busy panes write 65 B/s (Muse, 01c) to 348 B/s (Codex,
+**Volume, corrected.** Busy panes write 65 B/s (Muse, verified-facts) to 348 B/s (Codex,
 S2) after compression. At A50 with 300 capturing panes that is 19.5–104 KB/s,
 **50–270 GB/month**; at A4 (10 panes) 2–9 GB/month. The size cap therefore
 matters: **default 50 GiB**, oldest `FINAL` sessions pruned first, and the

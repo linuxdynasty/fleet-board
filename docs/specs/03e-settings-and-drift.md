@@ -34,6 +34,28 @@ sequenceDiagram
   G->>W: tx: compare effective vs last ack → update capped_fields display
 ```
 
+The same flow as the dashboard's `UpdateSettings` call and the messages it causes:
+
+```mermaid
+sequenceDiagram
+  participant D as Dashboard (owner)
+  participant H as fleetd
+  participant A as fleet-agent
+  participant P as local policy file (the ceiling)
+  D->>H: UpdateSettings{request_id, settings Settings{spec SettingsSpec{scope SettingsScope{machine}, values SettingValues{max_active 4}}}, update_mask spec.values.max_active, expected_version}
+  H->>H: scope SETTINGS, mask and version checked, one tx: layer stored, version + 1, generation + 1, per-machine resolve, audit settings.update
+  H-->>D: UpdateSettingsResponse{settings}
+  H-->>D: Watch SETTINGS UPDATED (status.generation, settings_epoch)
+  H-->>A: ConnectResponse{settings Settings{generation, labels, values, settings_epoch, probe_interval_by_account, trace}}
+  A->>P: validate, merge tighten-only under the ceiling, persist {generation, effective}, apply
+  A-->>H: ConnectRequest{settings_ack SettingsAck{generation, effective EffectiveSettings, capped_fields, settings_epoch, rejected, unrecognized_value_fields}}
+  H->>H: tx: store the latest ack per machine (only if generation is not lower)
+  H-->>D: Watch MACHINES UPDATED: effective_settings, capped_settings, rejected_settings, unenforced_settings
+  Note over A,P: later, policy.yaml is edited on the machine
+  A-->>H: Event{policy_changed PolicyChanged{policy PolicyInfo{hash, changed_since_load true}, previous_hash}}
+  H-->>D: triage info "policy changed, restart pending", the ceiling takes effect after an agent restart
+```
+
 **Tighten-only merge (per field, on the agent).** Numeric limits
 (`max_active`, `max_total`, `max_windows`, `rate_limits`, `cert_lifetime`,
 `spool_cap_bytes`): `min(hub, local)`. Durations where shorter is stricter
@@ -185,7 +207,8 @@ Every key (the merge column is the tighten-only rule above, applied per key). De
 | `exec.raw` | bool | | none |
 
 `min_probe_interval`, `metrics_listen` and `pprof_listen` are local-only names
-carried by no proto. `merged_grace` is a hub setting and not a policy key. The
+carried by no proto. `exec.raw` is reserved: never honoured, never advertised.
+`merged_grace` is a hub setting and not a policy key. The
 ranges for `max_active`, `max_total` and `reserve_percent` (0 to 50) are the same
 ones the hub validates (decision 18 of ADR 0024, [defaults](defaults.md)); a value
 outside its range is invalid and puts the agent in safe mode. The hub shows the
@@ -333,7 +356,7 @@ sequenceDiagram
   as 1. For `UNSUPPORTED` the agent refuses `HARNESS_VERSION_UNSUPPORTED` and it is
   a `BLOCK`; there is no override.
 - Fixture capture is a scripted local job (`fleet-agent capture-fixtures`),
-  scrubbed of emails, names and installed skill names before commit (01c).
+  scrubbed of emails, names and installed skill names before commit ([plan](../plan/v1-implementation-plan.md#6-how-it-is-tested), section 6).
   Nothing in it crosses the agent ↔ hub contract.
 
 ### State machine (per `(machine, harness)`, owned by the hub)

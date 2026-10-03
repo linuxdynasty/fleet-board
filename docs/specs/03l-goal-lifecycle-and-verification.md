@@ -117,6 +117,11 @@ the agent's `goals_total` with the hub's count of live goals that have a pane
 is live, regardless of phase (a `PAUSED` or `LIMIT_WAIT` goal still shows a
 `WORKING` line), never with `goal_panes_by_state`.
 
+`GoalLineState` has no `PAUSED` value on purpose: the goal file still says
+`WORKING` while the harness is paused, because a pause is a harness condition the
+hub reads from the screen and records as the phase `PAUSED`, not a line state the
+hooks write.
+
 `GoalPhaseReason` and `pause_reason` carry the cause where a phase has several;
 the same words are on every recorded transition (`ListGoalTransitions`).
 
@@ -134,6 +139,44 @@ the same words are on every recorded transition (`ListGoalTransitions`).
 
 Anything else is `FAILED_PRECONDITION` / `GOAL_ACTION_NOT_ALLOWED`; a stale phase
 is `GOAL_PHASE_CHANGED` (02b).
+
+`ControlGoal` as messages (the dashboard sends an intent, the hub turns it into
+the harness's own command):
+
+```mermaid
+sequenceDiagram
+  participant D as Dashboard
+  participant H as fleetd
+  participant A as fleet-agent
+  participant T as tmux and harness
+  D->>H: ControlGoal{request_id, goal, action, text, expected_phase, expected_version}
+  H->>H: scope SESSIONS_WRITE, phase matches expected_phase, action allowed in this phase, goal_control supports it
+  H->>H: tx: outbox row for the control command, plus its own row (own command_id) for a precursor Interrupt when the harness is mid-turn, audit goal.control
+  H-->>D: ControlGoalResponse{goal, operation PENDING}, the operation of the control command
+  alt PAUSE, RESUME or CLEAR
+    opt harness is mid-turn
+      H-->>A: Command{interrupt Interrupt{pane}}
+      A->>T: C-c to the pane, then wait for the ready pattern
+      A-->>H: CommandResult{status OK}, Event{harness_ready HarnessReady{showing true}}
+    end
+    alt pause_mode or resume_mode or clear is a /goal subcommand
+      H-->>A: Command{run_harness_command RunHarnessCommand{pane, command /goal, args pause or resume or clear, expected_class GOAL, catalog_hash}}
+      A->>T: type the line at an idle prompt, wait for the screen to settle
+    else resume_mode TYPE_TEXT (Claude Code)
+      H-->>A: Command{send_keys SendKeys{pane, keys resume_text and Enter, purpose GOAL_RESUME}}
+      A->>T: type continue
+    end
+    A-->>H: CommandResult{status OK}
+    A-->>H: Event{harness_condition HarnessCondition{kind GOAL_INTERRUPTED (Interrupt) or GOAL_PAUSED (/goal pause), pause_cause FLEET_COMMAND}} (pause only)
+    H->>H: tx: phase PAUSED (pause_reason OPERATOR, paused_by), or RUNNING (phase_reason RESUMED), or CLEARED
+  else NOT_DONE or EDIT on a finished goal
+    H-->>A: Command{start_goal StartGoal{spec GoalSpec, reuse_pane, rearm_reason}}
+    A->>T: wait_ready, rewrite the goal file first line, type the set-goal form, confirm the goal file
+    A-->>H: CommandResult{status OK, start_goal StartGoalResult}
+    H->>H: tx: phase RUNNING (phase_reason REARMED), new GoalRun{cause REARM}
+  end
+  H-->>D: Watch: GOALS UPDATED, OPERATIONS DONE, TRIAGE (goal_paused item when applicable)
+```
 
 Sub-flags held with the phase (on `GoalStatus`): `provider_condition`,
 `prompt_pending`, `human_at_keyboard_until_time` (10 min after the latest

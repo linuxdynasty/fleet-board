@@ -112,7 +112,7 @@ and the Host check applies ([05b](05b-observability.md#4-prometheus-endpoint-met
 
 In `authenticated` mode a hub with no users has no owner. On start `fleetd`
 creates a one-time owner invite exactly as `CreateUserInvite` would (role
-`OWNER`, 24 h) and prints the **claim URL** to the terminal only (stderr of
+`OWNER`, the invite lifetime in [defaults](defaults.md)) and prints the **claim URL** to the terminal only (stderr of
 an interactive `fleetd`, or `fleetd claim`), never to the structured log or
 journald; the log records only `auth.claim` and `claim_pending`:
 `https://<public origin>/invite#<token>`. The token is in the fragment, so it
@@ -150,7 +150,7 @@ credential and nothing else.
 sequenceDiagram
   participant D as Dashboard (owner's browser)
   participant H as fleetd
-  Note over H: first start with no users: creates an OWNER invite (24 h) and prints the claim URL (token in the fragment) on the hub host's terminal only
+  Note over H: first start with no users: creates an OWNER invite (invite lifetime) and prints the claim URL (token in the fragment) on the hub host's terminal only
   D->>H: GET /invite (static page, the fragment never leaves the browser)
   D->>H: GetServerInfo{}
   H-->>D: GetServerInfoResponse{auth_mode AUTHENTICATED, sign_in_methods, claim_pending true}
@@ -198,7 +198,7 @@ endpoints, because it is a browser redirect:
 
 | Endpoint | What it does |
 |---|---|
-| `GET /auth/github/start?purpose=signin\|link` | Sets the `__Host-fleet_oauth` **state cookie** and redirects to GitHub's authorize URL. The cookie is `Secure`, `HttpOnly`, **`SameSite=Lax`**, `Path=/` (the `__Host-` prefix requires it), no `Domain`, valid 10 minutes, and holds the random OAuth `state` and a PKCE verifier. `link` needs a full or registration session: this request is same-site, so the Strict session cookie arrives, and the hub records `state -> {purpose, user, session}` server-side (hashed, single use, 10 minutes) |
+| `GET /auth/github/start?purpose=signin\|link` | Sets the `__Host-fleet_oauth` **state cookie** and redirects to GitHub's authorize URL. The cookie is `Secure`, `HttpOnly`, **`SameSite=Lax`**, `Path=/` (the `__Host-` prefix requires it), no `Domain`, valid for the OAuth state cookie lifetime ([defaults](defaults.md)), and holds the random OAuth `state` and a PKCE verifier. `link` needs a full or registration session: this request is same-site, so the Strict session cookie arrives, and the hub records `state -> {purpose, user, session}` server-side (hashed, single use, the same lifetime) |
 | `GET /auth/github/callback?code&state` | Arrives as a cross-site top-level redirect from github.com, so the Strict session cookie is not sent but the Lax state cookie is. Checks `state` against the cookie and the server-side record (either missing or different: `/signin?error=CREDENTIALS_INVALID`), burns it, exchanges the code, reads the user, then: `signin` finds the user whose `spec.github_login` equals the login (case-insensitive; pins the numeric id on first use) and sets the session cookie; `link` takes its user from the server-side record, never from a cookie. Redirects to `/` on success or `/signin?error=<REASON>` on failure; the page then re-reads the session with a same-site fetch |
 
 The two endpoints are exempt from the Origin-required rule (above): they are
@@ -238,7 +238,7 @@ sequenceDiagram
     H-->>D: FinishPasskeyLoginResponse{user, session_expire_time} + Set-Cookie
   else GitHub
     D->>H: GET /auth/github/start?purpose=signin
-    H-->>D: 302 to GitHub + __Host-fleet_oauth state cookie (SameSite=Lax, HttpOnly, 10 min: state, PKCE verifier)
+    H-->>D: 302 to GitHub + __Host-fleet_oauth state cookie (SameSite=Lax, HttpOnly, OAuth state cookie lifetime: state, PKCE verifier)
     D->>G: user authorizes the App (user authorization only)
     G-->>D: 302 to /auth/github/callback?code&state (cross-site: only the Lax state cookie travels)
     D->>H: GET /auth/github/callback?code&state, state checked against the cookie, no Origin required
@@ -374,7 +374,7 @@ sequenceDiagram
   loop output
     T->>A: PTY bytes
     A-->>H: TerminalRequest{up TermUp{attach_id, output}} (OSC 52 and hyperlinks stripped)
-    H-->>D: AttachTerminalResponse{output} (at most 64 KiB per message)
+    H-->>D: AttachTerminalResponse{output} (at most the attach output limit per message)
     D->>H: AttachTerminalRequest{ack AttachAck{bytes_written}}
   end
   loop input

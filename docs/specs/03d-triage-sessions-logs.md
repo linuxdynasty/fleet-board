@@ -307,6 +307,9 @@ retention pass; a UI replay request.
 hub log receiver (per agent `SessionLog` stream), the log writer (its own
 goroutine and `logs.db`, ADR 0015), UI replay.
 
+The replay read (`ListStoredSessions`, `ReadSessionLog`) as messages is in
+[02b](02b-hub-api.md#reading-a-stored-session-log).
+
 ```mermaid
 sequenceDiagram
   participant T as tmux
@@ -331,7 +334,7 @@ sequenceDiagram
 ```
 
 **Rules.** The spool stores **compressed** chunks (65 B/s per busy pane
-measured, 01c), so hours offline cost megabytes, not gigabytes. **Framing**
+measured, [verified-facts](../research/verified-facts.md#measured-one-real-goal)), so hours offline cost megabytes, not gigabytes. **Framing**
 (spike S2, [02e](02e-contract-rules.md#log-framing)): the agent keeps one zstd
 frame per stream open for up to 5 minutes or 4 MiB raw and flushes it every
 10 s (or 256 KiB raw, a proposal: shorter means less loss on an agent crash,

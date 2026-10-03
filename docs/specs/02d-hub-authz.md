@@ -246,7 +246,7 @@ by owner action, and the Settings view lists them with the List RPCs.
 The device generates a key pair and calls `RequestPairing` (no auth) with its
 public key, platform and requested scopes; the hub creates a pending `Device`
 and returns a six-digit `pairing_code` derived from the key and a hub nonce,
-valid for 10 minutes. The code is shown only on the device; the hub never
+valid for the pairing code lifetime ([defaults](defaults.md)). The code is shown only on the device; the hub never
 stores it and no `Device` or Watch field carries it. The call is idempotent by `(peer address, public key)`
 instead of `(principal id, request_id)`, because there is no principal yet;
 a replay returns the pending device and a recomputed code. The owner sees the
@@ -274,7 +274,7 @@ sequenceDiagram
   participant T as tmux and harness
   P->>P: generate an Ed25519 key pair, the private key never leaves the phone
   P->>H: RequestPairing{display_name, platform, public_key, requested_scopes}
-  H->>H: tx: pending Device, six-digit code derived from the key and a hub nonce, valid 10 minutes
+  H->>H: tx: pending Device, six-digit code derived from the key and a hub nonce, valid for the pairing code lifetime
   H-->>P: RequestPairingResponse{device, pairing_code, expire_time}, the code shown on the phone only
   H-->>D: Watch DEVICES CREATED (pending device)
   D->>H: ApprovePairing{request_id, id, expected_version, pairing_code, scopes} (the owner types the code the phone shows)

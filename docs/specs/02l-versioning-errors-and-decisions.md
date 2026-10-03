@@ -133,7 +133,7 @@ Moved to [01e, "What the contract rules out"](01e-security-and-privacy.md#what-t
 6. **Settings are typed fields** (`SettingValues` with `optional`), not a
    string map, so the tighten-only merge is checkable per field. Adding a
    setting is a proto change.
-7. **Two sequences.** 01c's agent-wide `seq` applies to events; ADR 0004's
+7. **Two sequences.** The agent-wide `seq` of [02](02-contracts.md) applies to events; ADR 0004's
    per-epoch `seq` applies to commands. Both kept, named apart.
 8. **`Heartbeat` carries no seq and is droppable**, as ADR 0004 says;
    liveness comes from transport keepalive plus the hub's 45 s / 3 min rule.

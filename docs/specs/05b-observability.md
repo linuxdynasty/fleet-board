@@ -198,11 +198,11 @@ collector, the same id is on every log line of the flow.
 | Snapshot and replay | `agent.connect.hello` > `hub.connect.hello` > `hub.snapshot.apply`; `agent.ring.replay` > `hub.replay.ingest` | one trace per connect |
 | Settings | `hub.settings.publish` > `agent.settings.merge` | |
 | Insights | `hub.insights.rollup{day}`, `hub.insights.export_bundle` > `hub.command.send` (`EnsureScratch`) > `agent.scratch.ensure`; `hub.insights.collect_report` > `agent.scratch.collect` | 05 |
-| System | `hub.system.evaluate` (every 15 s, root, sampled 1 in 20) | |
+| System | `hub.system.evaluate` (every system evaluation interval, root, sampled 1 in 20) | |
 
 ## 8. The System health model
 
-Ten signals, evaluated by the hub every 15 s from numbers it already has
+Ten signals, evaluated by the hub every system evaluation interval ([defaults](defaults.md)) from numbers it already has
 (`hub.system.evaluate`). Each has a value, a unit, a WARNING and a CRITICAL
 threshold (the hub's defaults, not owner settings in v1) and a state. The
 signals and their latest values are `GetSystemStatus` ([READ]); the System
@@ -210,7 +210,7 @@ section of the Machines view draws them; `FleetSummary.system_warnings` and
 `system_critical` drive the strip's dot.
 
 **The path of a health reading, as messages.** The agent's heartbeat carries `AgentHealth`.
-The hub keeps the latest per machine in memory, judges the signals every 15 s, and a signal that
+The hub keeps the latest per machine in memory, judges the signals every system evaluation interval ([defaults](defaults.md)), and a signal that
 leaves OK raises one deduplicated `TRIAGE_KIND_SYSTEM` item. The dashboard reads the whole list
 with `GetSystemStatus`.
 
@@ -225,13 +225,13 @@ sequenceDiagram
   A->>G: Heartbeat{sent_time, uptime, load1, counts, events EventCounters, health AgentHealth}
   G->>G: latest per machine in memory: MachineTelemetry.agent_health, clock_skew from sent_time
   G->>W: last_seen write, at most once a minute (defaults)
-  loop every 15 s
+  loop every system evaluation interval
     E->>E: read agent health, outbox ages, usage reading ages, sync lag, writer queue age, watch drops, disk, backup age
     E->>E: SystemSignal{kind, subject, state, value, unit, thresholds}, hysteresis
   end
   E->>W: job: raise or update TriageItem{kind SYSTEM, fingerprint system:signal:subject, SystemDetail}
   W->>F: after commit: Watch TRIAGE and FLEET_SUMMARY changes, MACHINES for the volatile telemetry
-  D->>G: GetSystemStatus{} (READ), every 30 s and on a SYSTEM triage change
+  D->>G: GetSystemStatus{} (READ), every system status poll interval and on a SYSTEM triage change
   G-->>D: GetSystemStatusResponse{status SystemStatus{overall, signals[], hub_version, exporters, watch_subscribers}}
 ```
 
@@ -258,7 +258,7 @@ follows the state: WARNING raises `SEVERITY_WARNING`, CRITICAL raises
 can lose work and raise `SEVERITY_CRITICAL`. UNKNOWN (no reading yet, a source
 not enabled) is shown as unknown and raises nothing.
 
-**Hysteresis.** A signal needs two consecutive evaluations (30 s) in a worse
+**Hysteresis.** A signal needs two consecutive evaluations in a worse
 state to leave OK, and 5 minutes in OK to return, when the item retires. An
 owner may snooze a SYSTEM item like any other.
 
@@ -274,7 +274,7 @@ uptime, which exporters are on, overall state) and the signal table, with the
 machine signals repeated in each machine card next to the agent's own health
 (ring, unacknowledged results, reconnects, memory). A SYSTEM item in Triage
 links to the same row. There is no Watch topic: the view re-reads
-`GetSystemStatus` every 30 s and on any `TRIAGE` change of kind SYSTEM.
+`GetSystemStatus` every system status poll interval ([defaults](defaults.md)) and on any `TRIAGE` change of kind SYSTEM.
 
 ## 9. pprof
 

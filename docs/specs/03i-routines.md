@@ -13,7 +13,7 @@ item has kind `ROUTINE`, so pacing, consent, triage, slots and verification
 apply unchanged. This file says what is different: how a run is triggered,
 numbered and verified.
 
-**Trigger.** The scheduler pass (every 30 s, plus the usual wakeups) evaluates
+**Trigger.** The scheduler pass (every scheduler tick, [defaults](defaults.md), plus the usual wakeups) evaluates
 every enabled routine; `RunRoutine` plans one now. `RunRoutine` takes the same
 checks as a manual dispatch: a `BLOCK` fails the call, a `WARN` must be listed in
 `acknowledged_warnings`, and a `CONFIRM` returns an approval (`RunRoutineResponse.approval`)
@@ -45,7 +45,7 @@ The checks in order, as a chart:
 
 ```mermaid
 flowchart TD
-  P["Scheduler pass (every 30 s) or RunRoutine"] --> E{"Routine enabled and repo enabled?"}
+  P["Scheduler pass (every scheduler tick) or RunRoutine"] --> E{"Routine enabled and repo enabled?"}
   E -- "no" --> X1["no run, RunRoutine fails REPO_NOT_WATCHED"]
   E -- "yes" --> L{"Previous run live?<br/>(unique index on routine where live)"}
   L -- "yes" --> X2["skip, cron fire counted in skipped_fires, ROUTINE_BLOCKED after blocked_after"]
