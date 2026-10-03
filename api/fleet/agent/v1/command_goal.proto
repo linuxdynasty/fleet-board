@@ -187,8 +187,8 @@ message StartGoalResult {
   string worktree_path = 4;
   // First GoalState observed after typing the goal command.
   GoalState goal = 5;
-  // The exact line typed into the harness, consent included (03g change
-  // #5), for the audit log. GoalState.first_line is what the hook wrote,
+  // The exact line typed into the harness, consent included (ADR 0018), for
+  // the audit log. GoalState.first_line is what the hook wrote,
   // not what was typed. 4 KiB cap.
   string typed_goal_line = 6;
   // The branch the goal works on (started in place in a reused pane, or the

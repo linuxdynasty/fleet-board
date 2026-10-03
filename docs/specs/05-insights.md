@@ -84,10 +84,10 @@ is the record, so it is never deleted early and the hourly job is why nothing
 is lost. Retention of rollup rows and reports is 1 year; a row older than that
 is deleted by the housekeeping job.
 
-**Cost at A50** (03g: 150 active goals, 3 accounts). Inputs per daily
-recompute, upper bounds from the 03g rates: goals ended at most 600, their
+**Cost at A50** (04's load model: 150 active goals, 3 accounts). Inputs per daily
+recompute, upper bounds from 04's load rates: goals ended at most 600, their
 transitions about 6,000, triage items about 7,000 (0.2 writes/s, 03f), usage
-readings about 70,000 in the worst passive case (0.8/s, 03g row 9) but 432
+readings about 70,000 in the worst passive case (0.8/s, 04's load model) but 432
 when only probes read. About 100,000 rows read from the read pool per
 recompute: a fraction of a second, twice a day's worth per hour, well under
 0.1 % of one core. Storage: at most 600 `insight_goal_daily` rows a day, about

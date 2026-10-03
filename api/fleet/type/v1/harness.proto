@@ -82,7 +82,7 @@ enum HookTrustState {
 }
 
 // HarnessGoalHooks is the goal-hook state of one harness in one checkout
-// (03g change #7): whether the repo ships its own hooks decides the consent
+// (ADR 0018): whether the repo ships its own hooks decides the consent
 // form typed into the goal.
 message HarnessGoalHooks {
   Harness harness = 1;

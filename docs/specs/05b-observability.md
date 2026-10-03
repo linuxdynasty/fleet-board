@@ -143,7 +143,7 @@ by an RPC or a hub setting:
 | `telemetry.signals` | any of `traces`, `metrics`, `logs` (default `traces`, `metrics` once an endpoint is set) |
 
 **Sampling.** Spans rooted at a command, an API call or the scheduler are always
-recorded (about 0.5 per second at A50, 03g row 10). High-rate roots are
+recorded (about 0.5 per second at A50, 04's load model). High-rate roots are
 sampled 1 in 100 and still counted in metrics: `hub.log.batch`,
 `agent.log.flush`, `hub.ingest.batch`. Heartbeats and pane summaries have no
 span at all. The SDK queue holds 2,048 spans; beyond that spans are dropped and

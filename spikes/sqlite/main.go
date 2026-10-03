@@ -1,5 +1,5 @@
 // Spike S1 for docs/specs/04-technology-review.md: does embedded SQLite with
-// one writer meet the 03g load (A50) on a pure-Go driver, and is a commit
+// one writer meet 04's load model (A50) on a pure-Go driver, and is a commit
 // durable (F_FULLFSYNC) on macOS? Throwaway code; not part of fleetd.
 package main
 

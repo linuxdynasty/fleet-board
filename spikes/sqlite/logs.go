@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// A50 log shipping (03g row 12): 300 capturing panes, one chunk per pane every
+// A50 log shipping (04's load model): 300 capturing panes, one chunk per pane every
 // 10 s = 30 chunks/s, committed once per second with the index in the same row.
 const (
 	chunksPerSec    = 30

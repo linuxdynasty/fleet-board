@@ -8,7 +8,7 @@ here becomes a dependency of the product. Raw output is kept under
 
 | Spike | Question | Run |
 |---|---|---|
-| [S1 `sqlite/`](sqlite/) | Does embedded SQLite with one writer meet the 03g A50 load on a pure-Go driver, is a commit durable on macOS, and does `logs.db` hold session logs? | `go build -o s1 . && ./s1 -driver modernc -scenario commit\|steady\|burst\|logs` |
+| [S1 `sqlite/`](sqlite/) | Does embedded SQLite with one writer meet 04's A50 load on a pure-Go driver, is a commit durable on macOS, and does `logs.db` hold session logs? | `go build -o s1 . && ./s1 -driver modernc -scenario commit\|steady\|burst\|logs` |
 | [S2 `zstdchunk/`](zstdchunk/) | How well does zstd compress real terminal output when shipped in 10 s chunks rather than one stream? | `tmux pipe-pane -o -t <pane> 'zstdchunk rec <prefix>'`, then `zstdchunk analyze <prefix>` |
 
 ## S1 setup

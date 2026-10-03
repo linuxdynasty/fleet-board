@@ -148,7 +148,7 @@ sequenceDiagram
 
 This matches 03f's fan-out rule (summaries shed first, goal, triage and
 command notices re-read). Filtering `PANE_SUMMARIES` to the visible panes
-keeps browser fan-out near 140 KB/s at A50 instead of 2 MB/s (03g row 5).
+keeps browser fan-out near 140 KB/s at A50 instead of 2 MB/s (04's load model).
 Revoking a device or token closes its streams.
 
 ### Volatile fields

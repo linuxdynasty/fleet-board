@@ -83,7 +83,7 @@ message IntegrationCapabilities {
   // N calls. 0 = no batching: the hub sends one value per request.
   uint32 max_batch_size = 12;
   // Open provider name ("github", "gitea"); the authority when set,
-  // provider is a hint (03g change #8 reconciled: webhooks and conditional
+  // provider is a hint (ADR 0018 reconciled: webhooks and conditional
   // requests are sync_modes, claims are claim_mechanisms, merge_state is
   // merge_detection).
   string provider_name = 13;

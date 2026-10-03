@@ -245,7 +245,7 @@ message HelloAck {
   // Incarnation id of the hub's settings store; changes when the store is
   // restored from backup or recreated. Settings are ordered by the pair
   // (settings_epoch, generation): a new epoch is accepted whatever its
-  // generation (replaces 03g's settings_restored bool).
+  // generation (replaces an earlier draft's settings_restored bool).
   string settings_epoch = 11;
   // Hub features the agent may rely on, e.g. {"snapshot.parts", 1},
   // {"event.delivery", 1}. The agent never uses a feature not listed.

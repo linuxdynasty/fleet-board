@@ -162,7 +162,7 @@ which kinds have more. Release = the first release whose source can raise it.
 | HARNESS_VERSION_UNSUPPORTED reason (codex 0.157.1 on .124) | `MachineHarness.version_support`, `parser_support[]`, `health` | `HarnessInfo.version_support`; preflight `ReasonCode` 2 (C1, I1) | v1 |
 | StartGoal preview | calls `StartGoal{input{work_item, repo, change_request, placement, consent[], goal_text, model, effort, fresh_context, dispatch_reason}, acknowledged_warnings}` → `goal`, `Operation` (steps in `Operation.step`) | `StartGoal{spec GoalSpec}`, `CommandProgress.step` (G3) | v1 |
 | "keys the agent will type: /goal …" | `PreflightGoal` → `Operation.output_text` | `PreflightResult.goal_line_preview`; adapter `GoalCommand` (01b) | v1 |
-| "eshu hook convention" label on `/goal consent <acts> -- <text>` | `Machine.status.repos[].goal_hooks[].state.repo_ships_own` | `RepoCheckout.goal_hooks[]` (G1, 03g #7) | v1 |
+| "eshu hook convention" label on `/goal consent <acts> -- <text>` | `Machine.status.repos[].goal_hooks[].state.repo_ships_own` | `RepoCheckout.goal_hooks[]` (G1, ADR 0018) | v1 |
 | Consent list (`push, pr-open, merge`) | `StartGoalRequest.input.consent` (`ConsentAct` enum; default `Repo.spec.consent`, else `HubSettings.default_consent`, ∩ account); `Account.spec.consent` | `GoalSpec.consent[]` (ADR 0008) | v1 |
 | Window name `{harness} {work}` | `Settings.spec.values.window_name_template`, `GoalPlacement.window_name` | `StartGoal.window_name` (ADR 0011, F1) | v1 |
 
@@ -199,7 +199,7 @@ lists every window on every machine; the Details drawer holds the controls.
 | "idle" / "available" tag | `Pane.availability{idle, available_for_work}` | `TmuxPane.availability` (E11) | v1 |
 | Sidebar previews | `PaneSummary.last_lines` (topic `PANE_SUMMARIES`, subscription filter `session in (…)` for the visible panes) | `Event.pane_summary` (E5, ADR 0013) | v1 |
 | Status line: `[session]`, window tabs, current highlighted, `Z`, host and clock | `Session.status.name`, `SessionWindow{index, name, active}`; the rest is drawn by tmux in `AttachTerminalResponse.output` | E1, J1 | v1 |
-| Click on a window tab | calls `AttachTerminalRequest.select{window}` | `TermDown.select TermSelect{window}` (J1, 03g #2) | v1 |
+| Click on a window tab | calls `AttachTerminalRequest.select{window}` | `TermDown.select TermSelect{window}` (J1, ADR 0018) | v1 |
 | View session name in the status line (`main-view-1`) | `AttachReady.view_session_name` | `OpenAttachResult.view_session_name` (J1) | v1 |
 | Pane layout, borders, active pane, title line | `SessionWindow.panes[] Pane{index, active, current_command, key}`; drawn by tmux in the output | E1, J1 | v1 |
 | Pane screen text | live: `AttachTerminalResponse.output`; snapshot: `PaneSummary.last_lines` or `CapturePane` → `Operation.output_text` (visible screen is `READ`; `last_lines` above 0 needs `LOGS`, and `output_text` goes only to the requester or `LOGS`) | `TermUp.output`, `CapturePaneResult.text` (J1, E5, E10) | v1 |
@@ -234,7 +234,7 @@ lists every window on every machine; the Details drawer holds the controls.
 | Details drawer: "Restart harness in place…" | calls `RespawnPane{resume: true}`; `Operation.state = RUNNING` while local approval waits | `RespawnPane` (F5, L3) | v1 |
 | Details drawer: "Kill window…" | calls `KillWindow`; a developer's window returns an `approval` | `KillWindow` (F6, ADR 0011) | v1 |
 | Details drawer: "Move to another machine…" | `ControlGoal{CLEAR}` here, `StartGoal` there | 01 (no move command) | v1 |
-| Details drawer: "Attach from your terminal…" / `ssh -t … tmux attach …` | built in the browser from `Machine.status{username, hostname}` and `Session.status.name` | `MachineFacts.username` (ADR 0006, 03g #3) | v1 |
+| Details drawer: "Attach from your terminal…" / `ssh -t … tmux attach …` | built in the browser from `Machine.status{username, hostname}` and `Session.status.name` | `MachineFacts.username` (ADR 0006, ADR 0018) | v1 |
 | [planned] Details drawer: History timeline, replay, sizes | `Session.status.logs[] SessionLogInfo`; replay calls `ReadSessionLog{key, start_time}` (needs scope `LOGS`, owner only by default; seeks to the frame start, ≤ 5 min); `SetLogCapture` for own sessions | `LogChunk{key, frame_raw_offset}` / `LogAck{status}`; key by pane, the hub fills in the session (K1, K2, ADR 0010, 03d) | v1 |
 | "New session…" (sidebar and drawer) | calls `CreateSession{machine, name, server, workdir, harness, profile, reuse}` | `EnsureSession{…, owner_principal}`; `INVALID_NAME` (F1, ADR 0006) | v1 |
 | Details drawer: Timeline | `ListAuditEntries{filter: target = "sessions/<id>"}` (or `machine`); each action's `target` is listed in [02m](02m-hub-api-actions-and-audit.md#audit-actions) | M1 (hub side) | v1 |
@@ -297,7 +297,7 @@ view reads on open and every few minutes.
 | Agent health in each machine card (ring, unacknowledged results, reconnects, memory, tmux control, probes failing) | shows `Machine.status.telemetry.agent_health MachineAgentHealth` | `Heartbeat.health AgentHealth`, `Heartbeat.events` (05b section 6) | v1 |
 | Disk, load, memory pressure, log spool and shipping state | `Machine.status.telemetry{disk[], load5, memory_pressure_level, spool_pending_bytes, spool_gap_bytes, log_shipping_paused}`; no 24 h chart in the contract | `ResourceSample` (B2), `SpoolStatus` | v1 |
 | "hooks installed, trust pending: run `<trust_approve_command>`" (Codex `/hooks`, Muse `muse plugins approve fleet-goal-hooks`; Claude needs none: `NOT_REQUIRED`) | `MachineHarness.goal_hooks{trust = PENDING, trust_approve_command}`; `UNKNOWN` shows "trust not known" | Codex and Muse trust per hook hash; `/hooks` is deny-class, the agent never approves (G1, 01d) | v1 |
-| "hooks installed; eshu ships its own, so fleet's stay off there" | `Machine.status.repos[].goal_hooks[].state.repo_ships_own` | `RepoCheckout.goal_hooks[]` (G1, 03g #7) | v1 |
+| "hooks installed; eshu ships its own, so fleet's stay off there" | `Machine.status.repos[].goal_hooks[].state.repo_ships_own` | `RepoCheckout.goal_hooks[]` (G1, ADR 0018) | v1 |
 | "hooks not installed: …" / "self-check failed" | `MachineHarness.goal_hooks{installed, verified}` | `REASON_CODE_HOOKS_INSTALL_FAILED` (G1, 01d) | v1 |
 | Muse hooks (plugin package): "installed, trust pending: run `muse plugins approve fleet-goal-hooks`" | `MachineHarness.goal_hooks{trust = PENDING, trust_approve_command}`; the button text is `trust_approve_command`, never a hard-coded `/hooks` | 01d "Muse hooks are a plugin package"; one Codex-format definition serves Codex, Claude and Muse | v1 |
 | Window chips | `ListSessions{filter: machine = "m-12"}` | E1 | v1 |

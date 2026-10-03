@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-// A50 steady rates for state.db (03g totals minus the log index, which moves
+// A50 steady rates for state.db (04's load totals minus the log index, which moves
 // to logs.db): pane summaries are overwritten in place (ADR 0013).
 const (
 	panes                = 500
