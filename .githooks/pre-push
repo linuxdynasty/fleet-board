@@ -14,6 +14,8 @@
 #     git does not ignore (modified, staged or untracked files): the gate checks
 #     the working tree, so it vouches for the committed HEAD only when the tree
 #     is clean;
+#   - a push of a branch is refused if the tree or HEAD changed while the gate ran
+#     (the gate has to leave behind exactly what it was given);
 #   - deleting another branch, and pushing a tag, run no gate.
 # The hook has no switch of its own, and it scrubs what is known to steer the
 # gate. Before `make` it unsets BASE_REF, every FLEET_* variable, MAKEFLAGS,
@@ -47,6 +49,15 @@ is_zero() {
     *[!0]*) return 1 ;;
     *) return 0 ;;
   esac
+}
+
+# list_paths <porcelain output>: up to ten paths, then a count of the rest.
+list_paths() {
+  printf '%s\n' "$1" | head -n 10 | cut -c4- | sed 's/^/  /' >&2
+  total="$(printf '%s\n' "$1" | wc -l | tr -d ' ')"
+  if [ "$total" -gt 10 ]; then
+    say "  ... and $((total - 10)) more"
+  fi
 }
 
 refused=""
@@ -107,11 +118,7 @@ if [ -n "$dirty" ]; then
   say "fleet-board: push refused."
   say "The gate checks the files in your working tree, and it can only vouch for"
   say "the committed HEAD when nothing else is changed. Commit or remove these first:"
-  printf '%s\n' "$dirty" | head -n 10 | cut -c4- | sed 's/^/  /' >&2
-  total="$(printf '%s\n' "$dirty" | wc -l | tr -d ' ')"
-  if [ "$total" -gt 10 ]; then
-    say "  ... and $((total - 10)) more"
-  fi
+  list_paths "$dirty"
   exit 1
 fi
 
@@ -133,6 +140,24 @@ status=$?
 if [ "$status" -ne 0 ]; then
   say "fleet-board: push refused: the gate failed (make gates exited $status)."
   say "Fix what it reported, commit, and push again."
+  exit 1
+fi
+
+# The gate has passed. It vouches only for the tree it was given, so check that
+# the gate itself (or anything else running meanwhile) left that tree and HEAD
+# alone.
+after_head="$(git rev-parse HEAD 2> /dev/null)"
+after_dirty="$(git status --porcelain --untracked-files=all)" || exit 1
+if [ "$after_head" != "$head_sha" ] || [ -n "$after_dirty" ]; then
+  say "fleet-board: push refused: the tree or HEAD changed while the gate ran."
+  if [ "$after_head" != "$head_sha" ]; then
+    say "HEAD moved from $head_sha to $after_head."
+  fi
+  if [ -n "$after_dirty" ]; then
+    say "These files are now changed:"
+    list_paths "$after_dirty"
+  fi
+  say "The gate no longer vouches for what you are pushing: run it again."
   exit 1
 fi
 exit 0

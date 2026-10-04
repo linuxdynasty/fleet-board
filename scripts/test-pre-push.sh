@@ -49,10 +49,17 @@ mkdir -p "$fakebin"
 # the real `make gates`, which is far too slow for a self-test. The hook has no
 # other way to be told what the gate is: this fake on PATH is the only switch.
 makerc="$work/make.rc"
+makeaction="$work/make.action"
 cat > "$fakebin/make" <<EOF
 #!/bin/sh
 echo "make \$* in \$(pwd -P)" >> "$log"
 echo "BASE_REF=[\${BASE_REF-}] FLEET_GOFUMPT=[\${FLEET_GOFUMPT-}] FLEET_ANY=[\${FLEET_ANY-}] MAKEFLAGS=[\${MAKEFLAGS-}] MFLAGS=[\${MFLAGS-}] MAKEOVERRIDES=[\${MAKEOVERRIDES-}] MAKELEVEL=[\${MAKELEVEL-}] GOFLAGS=[\${GOFLAGS-}] GIT_DIR=[\${GIT_DIR-}] GIT_WORK_TREE=[\${GIT_WORK_TREE-}] GIT_INDEX_FILE=[\${GIT_INDEX_FILE-}]" >> "$envlog"
+if [ -f "$makeaction" ]; then
+  case "\$(cat "$makeaction")" in
+    touch) echo changed-by-the-gate > gate-made-this.txt ;;
+    commit) git commit -q --allow-empty -m "moved by the gate" ;;
+  esac
+fi
 if [ -f "$makerc" ]; then exit "\$(cat "$makerc")"; fi
 exit 0
 EOF
@@ -65,7 +72,7 @@ gate_runs() { if [ -f "$log" ]; then wc -l < "$log" | tr -d ' '; else echo 0; fi
 # fresh: a bare remote with main, and a work repo that has the hook enabled the
 # way `make hooks` does (core.hooksPath .githooks).
 fresh() {
-  rm -rf "$remote" "$repo" "$log" "$envlog" "$makerc" "$work/wt"
+  rm -rf "$remote" "$repo" "$log" "$envlog" "$makerc" "$makeaction" "$work/wt"
   git init -q --bare -b main "$remote"
   # Let the bare repo accept deleting its current branch, so that only the hook
   # stands between a delete of main and the remote.
@@ -357,6 +364,30 @@ if expect_refused "twelve untracked files"; then
   if [ "$listed" != "10" ]; then
     bad "twelve untracked files: $listed paths listed, want 10"
   elif expect_out "twelve untracked files" "and 2 more"; then
+    ok
+  fi
+fi
+
+# RED 11: the tree and HEAD are checked again after the gate. A gate that
+# leaves a new file behind, or moves HEAD, has not vouched for what is pushed.
+fresh
+printf 'touch\n' > "$makeaction"
+push "$repo" origin HEAD:feature
+if expect_refused "tree changed while the gate ran"; then
+  if [ "$(remote_ref refs/heads/feature)" != "none" ]; then
+    bad "tree changed while the gate ran: the branch landed anyway"
+  elif expect_out "tree changed while the gate ran" "changed while the gate ran"; then
+    ok
+  fi
+fi
+
+fresh
+printf 'commit\n' > "$makeaction"
+push "$repo" origin HEAD:feature
+if expect_refused "HEAD moved while the gate ran"; then
+  if [ "$(remote_ref refs/heads/feature)" != "none" ]; then
+    bad "HEAD moved while the gate ran: the branch landed anyway"
+  elif expect_out "HEAD moved while the gate ran" "run it again"; then
     ok
   fi
 fi

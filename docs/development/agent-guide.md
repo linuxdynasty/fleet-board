@@ -111,7 +111,9 @@ commit being pushed. It refuses a push of any commit that is not the checked-out
 `HEAD` (check out the branch you push, then push again), and a push while any
 file is modified, staged or untracked and not ignored (`gen/`, `.bin/` and
 `node_modules` are ignored). It lists up to ten paths to commit or remove. That
-is the only reason the gate can vouch for the committed `HEAD`.
+is the only reason the gate can vouch for the committed `HEAD`. The hook checks
+again after the gate passes: if the tree or `HEAD` changed while it ran, the push
+is refused ("run it again").
 
 The hook has no switch of its own, and it scrubs what is known to steer the
 gate. Before `make` it unsets `BASE_REF`, every `FLEET_*` variable, `MAKEFLAGS`,
