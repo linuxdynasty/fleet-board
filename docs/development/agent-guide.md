@@ -113,10 +113,18 @@ file is modified, staged or untracked and not ignored (`gen/`, `.bin/` and
 `node_modules` are ignored). It lists up to ten paths to commit or remove. That
 is the only reason the gate can vouch for the committed `HEAD`.
 
-There is no way to skip or steer the gate other than not enabling the hook: it
-has no switch, and it unsets `BASE_REF` and every `FLEET_*` variable before it
-runs `make BASE_REF=origin/main gates` (the command line beats the environment
-inside make). Skipping hooks is against the rules.
+The hook has no switch of its own, and it scrubs what is known to steer the
+gate. Before `make` it unsets `BASE_REF`, every `FLEET_*` variable, `MAKEFLAGS`,
+`MFLAGS`, `MAKEOVERRIDES`, `MAKELEVEL` (`MAKEFLAGS=n` only prints the recipes,
+`=i` ignores failures, `=t` touches targets) and `GIT_DIR`, `GIT_WORK_TREE` and
+`GIT_INDEX_FILE`, runs make with `GOFLAGS` empty (`GOFLAGS=-run=NoSuch` turns a
+failing `go test` into "no tests to run"), and names the base itself
+(`make BASE_REF=origin/main gates`; the command line beats the environment inside
+make). It does not scrub `PATH`, and it trusts the local `origin/main` ref as the
+base: a moved local `origin/main` makes the change look empty to `make test` and
+`make lint`. CI measures against the pull request's real base and is the
+backstop. The only way not to run the hook at all is not to enable it, and
+skipping hooks is against the rules.
 `scripts/test-pre-push.sh` drives the real hook with a real `git push` to a
 throwaway bare repository, never to `origin`, with a fake `make` first on
 `PATH` that records what the gate was given (and exits 0 or 1).

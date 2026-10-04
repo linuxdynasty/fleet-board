@@ -52,7 +52,7 @@ makerc="$work/make.rc"
 cat > "$fakebin/make" <<EOF
 #!/bin/sh
 echo "make \$* in \$(pwd -P)" >> "$log"
-echo "BASE_REF=[\${BASE_REF-}] FLEET_GOFUMPT=[\${FLEET_GOFUMPT-}] FLEET_ANY=[\${FLEET_ANY-}]" >> "$envlog"
+echo "BASE_REF=[\${BASE_REF-}] FLEET_GOFUMPT=[\${FLEET_GOFUMPT-}] FLEET_ANY=[\${FLEET_ANY-}] MAKEFLAGS=[\${MAKEFLAGS-}] MFLAGS=[\${MFLAGS-}] MAKEOVERRIDES=[\${MAKEOVERRIDES-}] MAKELEVEL=[\${MAKELEVEL-}] GOFLAGS=[\${GOFLAGS-}] GIT_DIR=[\${GIT_DIR-}] GIT_WORK_TREE=[\${GIT_WORK_TREE-}] GIT_INDEX_FILE=[\${GIT_INDEX_FILE-}]" >> "$envlog"
 if [ -f "$makerc" ]; then exit "\$(cat "$makerc")"; fi
 exit 0
 EOF
@@ -292,14 +292,18 @@ fi
 
 # RED 9: the environment cannot steer the gate. BASE_REF=HEAD would make the
 # gate see "no change"; FLEET_* variables point the gate scripts at other trees
-# or binaries. The hook scrubs them and names the base itself on the command line.
+# or binaries; MAKEFLAGS=n only prints the recipes, MFLAGS/MAKEOVERRIDES/
+# MAKELEVEL change how make runs them, and GOFLAGS=-run=NoSuch turns a failing
+# go test into "no tests to run". The hook scrubs them all and names the base
+# itself on the command line.
 fresh
-BASE_REF=HEAD FLEET_GOFUMPT=true FLEET_ANY=x push "$repo" origin HEAD:feature
+empty_env="BASE_REF=[] FLEET_GOFUMPT=[] FLEET_ANY=[] MAKEFLAGS=[] MFLAGS=[] MAKEOVERRIDES=[] MAKELEVEL=[] GOFLAGS=[] GIT_DIR=[] GIT_WORK_TREE=[] GIT_INDEX_FILE=[]"
+BASE_REF=HEAD FLEET_GOFUMPT=true FLEET_ANY=x MAKEFLAGS=n MFLAGS=-n MAKEOVERRIDES=BASE_REF=HEAD MAKELEVEL=3 GOFLAGS=-run=NoSuch push "$repo" origin HEAD:feature
 if [ "$rc" -ne 0 ]; then
   bad "scrubbed environment: exit $rc"
 elif [ "$(gate_runs)" != "1" ]; then
   bad "scrubbed environment: the gate ran $(gate_runs) times, want 1"
-elif [ "$(cat "$envlog")" != "BASE_REF=[] FLEET_GOFUMPT=[] FLEET_ANY=[]" ]; then
+elif [ "$(cat "$envlog")" != "$empty_env" ]; then
   bad "scrubbed environment: the gate saw '$(cat "$envlog")', want every variable empty"
 elif [ "$(cat "$log")" != "make BASE_REF=origin/main gates in $(cd "$repo" && pwd -P)" ]; then
   bad "scrubbed environment: gate line '$(cat "$log")'"
