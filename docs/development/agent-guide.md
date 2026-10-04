@@ -115,18 +115,28 @@ is the only reason the gate can vouch for the committed `HEAD`. The hook checks
 again after the gate passes: if the tree or `HEAD` changed while it ran, the push
 is refused ("run it again").
 
-The hook has no switch of its own, and it scrubs what is known to steer the
-gate. Before `make` it unsets `BASE_REF`, every `FLEET_*` variable, `MAKEFLAGS`,
-`MFLAGS`, `MAKEOVERRIDES`, `MAKELEVEL` (`MAKEFLAGS=n` only prints the recipes,
-`=i` ignores failures, `=t` touches targets) and `GIT_DIR`, `GIT_WORK_TREE` and
-`GIT_INDEX_FILE`, runs make with `GOFLAGS` empty (`GOFLAGS=-run=NoSuch` turns a
-failing `go test` into "no tests to run"), and names the base itself
-(`make BASE_REF=origin/main gates`; the command line beats the environment inside
-make). It does not scrub `PATH`, and it trusts the local `origin/main` ref as the
-base: a moved local `origin/main` makes the change look empty to `make test` and
-`make lint`. CI measures against the pull request's real base and is the
-backstop. The only way not to run the hook at all is not to enable it, and
-skipping hooks is against the rules.
+The guard stops mistakes: an accidental push to `main`, a push that was never
+gated, a gate that an ambient variable (a parent make's `MAKEFLAGS`, a stray
+`BASE_REF` from a shell profile) quietly turned into a no-op. It does not stop a
+person or a process that controls the shell, and it is not a lock. To keep the
+gate honest, before `make` the hook unsets `BASE_REF`, every `FLEET_*` variable,
+`MAKEFLAGS`, `MFLAGS`, `MAKEOVERRIDES`, `MAKELEVEL`, `MAKEFILES`, `GNUMAKEFLAGS`,
+`GIT_DIR`, `GIT_WORK_TREE` and `GIT_INDEX_FILE` (`MAKEFLAGS=n` only prints the
+recipes, `=i` ignores failures, `=t` touches targets), runs make with
+`GOFLAGS=-count=1` (harmless, but a push runs the tests without the test cache; it
+is non-empty so it beats a `GOFLAGS` in the `go.env` config file, which an empty
+value would not), and names the base itself (`make BASE_REF=origin/main gates`;
+the command line beats the environment inside make).
+
+Trust boundary. The hook trusts the local environment and git configuration:
+`BASH_ENV`, `git update-index --assume-unchanged` and `.git/info/exclude` (they
+hide changes from the clean-tree check), `GIT_CONFIG_*` and `core.hooksPath`,
+`PATH`, the tools in `.bin`, and the local `origin/main` ref, which the gate takes
+as the base (a moved `origin/main` makes the change look empty to `make test` and
+`make lint`). Using any of these to get around the gate is a deliberate bypass,
+and the owner's rules forbid it, as they forbid skipping hooks. The backstops are
+that CI runs the same gates on every pull request against the PR's real base, and
+that the owner merges every pull request (ADR 0024).
 `scripts/test-pre-push.sh` drives the real hook with a real `git push` to a
 throwaway bare repository, never to `origin`, with a fake `make` first on
 `PATH` that records what the gate was given (and exits 0 or 1).

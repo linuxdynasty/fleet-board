@@ -17,19 +17,32 @@
 #   - a push of a branch is refused if the tree or HEAD changed while the gate ran
 #     (the gate has to leave behind exactly what it was given);
 #   - deleting another branch, and pushing a tag, run no gate.
-# The hook has no switch of its own, and it scrubs what is known to steer the
-# gate. Before `make` it unsets BASE_REF, every FLEET_* variable, MAKEFLAGS,
-# MFLAGS, MAKEOVERRIDES, MAKELEVEL (MAKEFLAGS=n only prints the recipes, =i
-# ignores failures, =t touches targets) and GIT_DIR, GIT_WORK_TREE and
-# GIT_INDEX_FILE; it runs make with GOFLAGS empty (GOFLAGS=-run=NoSuch turns a
-# failing go test into "no tests to run") and names the base itself on the make
-# command line (BASE_REF=origin/main), which beats the environment inside make.
-# Not scrubbed: PATH (the hook trusts the tools the person has), and the local
-# origin/main ref, which the gate trusts as the base. If someone moves their
-# local origin/main, the change looks empty to make test and make lint; CI
-# measures against the PR's real base and is the backstop. The only way not to
-# run the hook at all is not to enable it (it is opt-in per clone), and the
-# owner's rules forbid skipping hooks.
+# What this is for: it stops MISTAKES: an accidental push to main, a push that
+# was never gated, a gate that an ambient variable (a parent make's MAKEFLAGS, a
+# stray BASE_REF from a shell profile) quietly turned into a no-op. It does not
+# stop a person or a process that controls the shell, and it is not a lock.
+#
+# What it does to keep the gate honest. Before `make` it unsets BASE_REF, every
+# FLEET_* variable, MAKEFLAGS, MFLAGS, MAKEOVERRIDES, MAKELEVEL, MAKEFILES and
+# GNUMAKEFLAGS (MAKEFLAGS=n only prints the recipes, =i ignores failures, =t
+# touches targets; MAKEFILES can add rules that hide a failure) and GIT_DIR,
+# GIT_WORK_TREE and GIT_INDEX_FILE. It runs make with GOFLAGS=-count=1: harmless
+# (the cost is that a push runs the tests without the test cache) and non-empty,
+# so it beats a GOFLAGS set in the go.env config file, which an empty value would
+# not (GOFLAGS=-run=NoSuch turns a failing go test into "no tests to run"). It
+# names the base itself on the make command line (BASE_REF=origin/main), which
+# beats the environment inside make.
+#
+# Trust boundary. The hook trusts the local environment and git configuration:
+# BASH_ENV, `git update-index --assume-unchanged` and .git/info/exclude (they
+# hide changes from the clean-tree check), GIT_CONFIG_* and core.hooksPath, PATH,
+# the tools in .bin, and the local origin/main ref, which the gate takes as the
+# base (a moved origin/main makes the change look empty to make test and make
+# lint). Using any of these to get around the gate is a deliberate bypass, and
+# the owner's rules forbid it, as they forbid skipping hooks. The backstops are
+# that CI runs the same gates on every pull request, against the PR's real base,
+# and that the owner merges every pull request (ADR 0024). The hook is also
+# opt-in per clone: until `make hooks` is run, git does not run it.
 #
 # Turn it on once per clone with `make hooks` (git config core.hooksPath
 # .githooks). Git feeds this script one line per ref on stdin:
@@ -122,19 +135,16 @@ if [ -n "$dirty" ]; then
   exit 1
 fi
 
-# Nothing in the environment may steer the gate: BASE_REF=HEAD would make it see
-# "no change"; a FLEET_* variable points a gate script at another tree or
-# binary; MAKEFLAGS and friends change what make does with the recipes; GOFLAGS
-# changes what go test runs. Drop them all (GOFLAGS is set empty on the make
-# command below), and name the base on the command line, which beats the
-# environment inside make.
+# Drop the ambient variables that would turn the gate into a no-op by accident
+# (the list and the reasons are in the header), and name the base on the command
+# line, which beats the environment inside make.
 for name in $(env | sed -n 's/^\(FLEET_[A-Za-z0-9_]*\)=.*/\1/p'); do
   unset "$name"
 done
-unset BASE_REF MAKEFLAGS MFLAGS MAKEOVERRIDES MAKELEVEL
+unset BASE_REF MAKEFLAGS MFLAGS MAKEOVERRIDES MAKELEVEL MAKEFILES GNUMAKEFLAGS
 
 say "fleet-board: running make gates before the push (this takes a while)."
-GOFLAGS= make BASE_REF=origin/main gates
+GOFLAGS=-count=1 make BASE_REF=origin/main gates
 status=$?
 
 if [ "$status" -ne 0 ]; then

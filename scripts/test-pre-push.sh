@@ -53,7 +53,7 @@ makeaction="$work/make.action"
 cat > "$fakebin/make" <<EOF
 #!/bin/sh
 echo "make \$* in \$(pwd -P)" >> "$log"
-echo "BASE_REF=[\${BASE_REF-}] FLEET_GOFUMPT=[\${FLEET_GOFUMPT-}] FLEET_ANY=[\${FLEET_ANY-}] MAKEFLAGS=[\${MAKEFLAGS-}] MFLAGS=[\${MFLAGS-}] MAKEOVERRIDES=[\${MAKEOVERRIDES-}] MAKELEVEL=[\${MAKELEVEL-}] GOFLAGS=[\${GOFLAGS-}] GIT_DIR=[\${GIT_DIR-}] GIT_WORK_TREE=[\${GIT_WORK_TREE-}] GIT_INDEX_FILE=[\${GIT_INDEX_FILE-}]" >> "$envlog"
+echo "BASE_REF=[\${BASE_REF-}] FLEET_GOFUMPT=[\${FLEET_GOFUMPT-}] FLEET_ANY=[\${FLEET_ANY-}] MAKEFLAGS=[\${MAKEFLAGS-}] MFLAGS=[\${MFLAGS-}] MAKEOVERRIDES=[\${MAKEOVERRIDES-}] MAKELEVEL=[\${MAKELEVEL-}] MAKEFILES=[\${MAKEFILES-}] GNUMAKEFLAGS=[\${GNUMAKEFLAGS-}] GOFLAGS=[\${GOFLAGS-}] GIT_DIR=[\${GIT_DIR-}] GIT_WORK_TREE=[\${GIT_WORK_TREE-}] GIT_INDEX_FILE=[\${GIT_INDEX_FILE-}]" >> "$envlog"
 if [ -f "$makeaction" ]; then
   case "\$(cat "$makeaction")" in
     touch) echo changed-by-the-gate > gate-made-this.txt ;;
@@ -203,8 +203,8 @@ if expect_refused "failing gate"; then
   fi
 fi
 
-# RED 7: there is no way around the gate. An environment variable that the
-# first version of the hook honored (FLEET_PRE_PUSH_GATE=true) changes nothing.
+# RED 7: the gate does not read a switch from the environment. A variable that
+# the first version of the hook honored (FLEET_PRE_PUSH_GATE=true) changes nothing.
 fresh
 printf '1\n' > "$makerc"
 FLEET_PRE_PUSH_GATE=true push "$repo" origin HEAD:feature
@@ -297,21 +297,25 @@ else
   ok
 fi
 
-# RED 9: the environment cannot steer the gate. BASE_REF=HEAD would make the
-# gate see "no change"; FLEET_* variables point the gate scripts at other trees
-# or binaries; MAKEFLAGS=n only prints the recipes, MFLAGS/MAKEOVERRIDES/
-# MAKELEVEL change how make runs them, and GOFLAGS=-run=NoSuch turns a failing
-# go test into "no tests to run". The hook scrubs them all and names the base
-# itself on the command line.
+# RED 9: an ambient variable must not turn the gate into a no-op by accident.
+# The hook scrubs what is known to do that: BASE_REF=HEAD would make the gate see
+# "no change"; FLEET_* variables point the gate scripts at other trees or
+# binaries; MAKEFLAGS=n only prints the recipes, MFLAGS/MAKEOVERRIDES/MAKELEVEL/
+# MAKEFILES/GNUMAKEFLAGS change how make reads and runs them; GOFLAGS=-run=NoSuch
+# turns a failing go test into "no tests to run". It runs go with
+# GOFLAGS=-count=1 (harmless; no test cache on a push) and names the base itself
+# on the command line. This stops mistakes and stray variables from a parent
+# make or a shell profile. It does not stop a person who controls the shell (see
+# the trust boundary in the hook header).
 fresh
-empty_env="BASE_REF=[] FLEET_GOFUMPT=[] FLEET_ANY=[] MAKEFLAGS=[] MFLAGS=[] MAKEOVERRIDES=[] MAKELEVEL=[] GOFLAGS=[] GIT_DIR=[] GIT_WORK_TREE=[] GIT_INDEX_FILE=[]"
-BASE_REF=HEAD FLEET_GOFUMPT=true FLEET_ANY=x MAKEFLAGS=n MFLAGS=-n MAKEOVERRIDES=BASE_REF=HEAD MAKELEVEL=3 GOFLAGS=-run=NoSuch push "$repo" origin HEAD:feature
+scrubbed_env="BASE_REF=[] FLEET_GOFUMPT=[] FLEET_ANY=[] MAKEFLAGS=[] MFLAGS=[] MAKEOVERRIDES=[] MAKELEVEL=[] MAKEFILES=[] GNUMAKEFLAGS=[] GOFLAGS=[-count=1] GIT_DIR=[] GIT_WORK_TREE=[] GIT_INDEX_FILE=[]"
+BASE_REF=HEAD FLEET_GOFUMPT=true FLEET_ANY=x MAKEFLAGS=n MFLAGS=-n MAKEOVERRIDES=BASE_REF=HEAD MAKELEVEL=3 MAKEFILES=x GNUMAKEFLAGS=-n GOFLAGS=-run=NoSuch push "$repo" origin HEAD:feature
 if [ "$rc" -ne 0 ]; then
   bad "scrubbed environment: exit $rc"
 elif [ "$(gate_runs)" != "1" ]; then
   bad "scrubbed environment: the gate ran $(gate_runs) times, want 1"
-elif [ "$(cat "$envlog")" != "$empty_env" ]; then
-  bad "scrubbed environment: the gate saw '$(cat "$envlog")', want every variable empty"
+elif [ "$(cat "$envlog")" != "$scrubbed_env" ]; then
+  bad "scrubbed environment: the gate saw '$(cat "$envlog")', want '$scrubbed_env'"
 elif [ "$(cat "$log")" != "make BASE_REF=origin/main gates in $(cd "$repo" && pwd -P)" ]; then
   bad "scrubbed environment: gate line '$(cat "$log")'"
 else
@@ -414,6 +418,58 @@ g tag v0.0.2
 printf 'edit\n' >> "$repo/f.txt"
 push "$repo" origin v0.0.2
 if [ "$rc" -ne 0 ]; then bad "tag push with a dirty tree: exit $rc"; else ok; fi
+
+# RED 12: the real make, not the fake. A parent make or a profile can export
+# MAKEFILES; one that says .IGNORE: and SHELL := /usr/bin/true would make a
+# failing recipe pass. The hook unsets MAKEFILES, so the failing gate still
+# refuses the push and nothing lands.
+fresh
+printf 'gates:\n\tfalse\n' > "$repo/Makefile"
+g add Makefile
+g commit -q -m "a gate that fails"
+printf '.IGNORE:\nSHELL := /usr/bin/true\n' > "$work/evil.mk"
+out="$(cd "$repo" && MAKEFILES="$work/evil.mk" git push origin HEAD:feature 2>&1)"
+rc=$?
+if expect_refused "real make with a hostile MAKEFILES"; then
+  if [ "$(remote_ref refs/heads/feature)" != "none" ]; then
+    bad "real make with a hostile MAKEFILES: the branch landed anyway"
+  elif expect_out "real make with a hostile MAKEFILES" "gate failed"; then
+    ok
+  fi
+fi
+
+# GREEN 10: the same real make with a gate that passes lands the push.
+fresh
+printf 'gates:\n\ttrue\n' > "$repo/Makefile"
+g add Makefile
+g commit -q -m "a gate that passes"
+out="$(cd "$repo" && git push origin HEAD:feature 2>&1)"
+rc=$?
+if [ "$rc" -ne 0 ] || [ "$(remote_ref refs/heads/feature)" != "$(g rev-parse HEAD)" ]; then
+  bad "real make with a passing gate: exit $rc"
+else
+  ok
+fi
+
+# GOFLAGS=-count=1 instead of an empty GOFLAGS: go.env (GOENV) can set GOFLAGS,
+# and an empty environment value does not override it while a non-empty one does.
+# A module whose test fails, and a go.env that says -run=NoSuch:
+gomod="$work/gomod"
+rm -rf "$gomod"
+mkdir -p "$gomod"
+printf 'module example.com/failing\n\ngo 1.21\n' > "$gomod/go.mod"
+printf 'package failing\n\nimport "testing"\n\nfunc TestFails(t *testing.T) { t.Fatal("this must fail") }\n' > "$gomod/f_test.go"
+printf 'GOFLAGS=-run=NoSuch\n' > "$work/go.env"
+if (cd "$gomod" && GOENV="$work/go.env" GOFLAGS=-count=1 go test ./... > "$work/gotest.out" 2>&1); then
+  bad "GOFLAGS=-count=1 did not beat GOFLAGS in go.env: a failing test passed"
+else
+  ok
+fi
+if (cd "$gomod" && GOENV="$work/go.env" GOFLAGS= go test ./... > "$work/gotest.out" 2>&1); then
+  ok # the reason for the change: an empty GOFLAGS loses to the config file
+else
+  bad "an empty GOFLAGS was expected to lose to GOFLAGS in go.env, but the failing test ran"
+fi
 
 printf 'test-pre-push: %s passed, %s failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
