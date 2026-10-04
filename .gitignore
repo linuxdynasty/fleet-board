@@ -15,3 +15,4 @@ gen/
 
 # Tools that `make tools` builds with the local Go (pinned in tool-versions.env).
 .bin/
+tools/tscheck/node_modules/
