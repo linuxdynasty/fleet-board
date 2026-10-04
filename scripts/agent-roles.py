@@ -7,6 +7,9 @@ Outputs, all generated and never edited by hand:
   .claude/agents/<role>.md      Claude Code subagents
   .codex/agents/<role>.toml     Codex custom agents
   .opencode/agent/<role>.md     OpenCode agents
+  .cursor/agents/<role>.md      Cursor subagents (model: inherit, so a session
+                                on Auto keeps Auto; .cursor/ wins over the
+                                .claude/ and .codex/ copies Cursor also loads)
 
 Muse has no project agent files; use `muse-exec` to run a role there.
 
@@ -140,12 +143,27 @@ def render_opencode(spec):
     )
 
 
+def render_cursor(name, spec):
+    return (
+        "---\n"
+        + "name: " + name + "\n"
+        + "description: " + json.dumps(spec["description"], ensure_ascii=False) + "\n"
+        + "model: inherit\n"
+        + "readonly: " + ("true" if spec["access"] == "read" else "false") + "\n"
+        + "---\n"
+        + "\n<!-- " + MARKER + " -->\n\n"
+        + instructions(spec)
+        + "\n"
+    )
+
+
 def bindings(models, roles):
     for name, spec in roles.items():
         tier = spec["tier"]
         yield ROOT / ".codex" / "agents" / (name + ".toml"), render_codex(name, spec, models["codex"][tier])
         yield ROOT / ".claude" / "agents" / (name + ".md"), render_claude(name, spec, models["claude"][tier])
         yield ROOT / ".opencode" / "agent" / (name + ".md"), render_opencode(spec)
+        yield ROOT / ".cursor" / "agents" / (name + ".md"), render_cursor(name, spec)
 
 
 def orphans(expected):
@@ -156,6 +174,7 @@ def orphans(expected):
         (ROOT / ".codex" / "agents", ".toml"),
         (ROOT / ".claude" / "agents", ".md"),
         (ROOT / ".opencode" / "agent", ".md"),
+        (ROOT / ".cursor" / "agents", ".md"),
     ):
         if not directory.is_dir():
             continue

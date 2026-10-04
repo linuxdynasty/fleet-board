@@ -161,8 +161,9 @@ and from scope boxing: a weaker model gets a narrow, pre-verified task and
 limited tools. The skills hold the method; the role files only bind role,
 access and model. Roles and models are defined once in
 [.agents/roles.json](../../.agents/roles.json), the only place a tier's model
-changes. A subagent never changes its own model, and OpenCode's model stays a
-session choice.
+changes. A subagent never changes its own model. OpenCode's and Cursor's models
+stay a session choice: the tier table below does not apply to them, and a
+Cursor role runs on the session's model.
 
 | Tier | Claude | Codex | Muse | Cost posture |
 |---|---|---|---|---|
@@ -246,6 +247,12 @@ for them, the coordinator supplies its exact output.
   `python3 scripts/agent-roles.py codex-exec <role> "<task>"`.
 - **Muse:** `python3 scripts/agent-roles.py muse-exec <role> "<task>"`.
 - **OpenCode:** `.opencode/agent/<role>.md`; pick its model in the session.
+- **Cursor:** `.cursor/agents/<role>.md`. Each role uses `model: inherit`, so it
+  runs on the session's model (Auto, when the session is on Auto). Cursor also
+  loads the `.claude/` and `.codex/` copies, which pin Claude and OpenAI models;
+  the `.cursor/` copy wins because it has the same name. Read-only roles set
+  `readonly: true` (no file edits and no state-changing shell commands; such a
+  role asks the coordinator for command output it cannot produce).
 
 `codex-exec` and `muse-exec` run a role headless. That is allowed for developing
 this repo only; the product never runs a harness headless (ADR 0024, AGENTS.md
