@@ -12,3 +12,6 @@ gen/
 
 # review marker read by the global agent-config push hook (never committed)
 .claude-review-ok
+
+# Tools that `make tools` builds with the local Go (pinned in tool-versions.env).
+.bin/

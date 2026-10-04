@@ -67,6 +67,19 @@ proposed; probe results follow the shape in
 - Several agents on one host: separate `GOCACHE`, short `GOTMPDIR` outside the
   worktree, and no overlapping benchmark runs.
 
+## Pinned tool versions
+
+`tool-versions.env` is the one file that holds every pinned version: Go, Node
+major, `golangci-lint`, `buf`, `gofumpt`, `typescript` and the `protoc-gen-es`
+version. The Makefile includes it and CI sources it, so neither spells out a
+version. `make tools` builds `golangci-lint` and `gofumpt` with the local Go
+into `.bin/` (gitignored); the `golangci-lint` on `PATH` is built with an older
+Go and refuses a `go 1.27` module, so the Makefile never uses it. Four copies
+that other tools force on us (`.node-version`, the `go` line of `go.mod`,
+`buf.gen.yaml`, `tools/tscheck/package.json`) are kept equal by
+`scripts/check-versions.sh`. To upgrade a tool, change the file in a dedicated
+PR (ADR 0020), run that script, and read the release notes.
+
 ## Tiers, roles and models
 
 Quality comes from the gates, which pass or fail the same way for every author,
