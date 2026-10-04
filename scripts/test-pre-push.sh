@@ -46,8 +46,9 @@ mkdir -p "$fakebin"
 
 # A fake make: records its arguments and the directory it ran in, then exits
 # with the code in $work/make.rc (0 when the file is absent). It stands in for
-# the real `make gates`, which is far too slow for a self-test. The hook has no
-# other way to be told what the gate is: this fake on PATH is the only switch.
+# the real `make gates`, which is far too slow for a self-test. The hook reads no
+# environment variable that replaces the gate; the self-test puts a fake make
+# first on PATH, which the hook trusts like any PATH.
 makerc="$work/make.rc"
 makeaction="$work/make.action"
 cat > "$fakebin/make" <<EOF
@@ -203,8 +204,8 @@ if expect_refused "failing gate"; then
   fi
 fi
 
-# RED 7: the gate does not read a switch from the environment. A variable that
-# the first version of the hook honored (FLEET_PRE_PUSH_GATE=true) changes nothing.
+# RED 7: the hook honors no FLEET_PRE_PUSH_GATE variable (the first version did):
+# with it set to true and a failing gate, the push is still refused.
 fresh
 printf '1\n' > "$makerc"
 FLEET_PRE_PUSH_GATE=true push "$repo" origin HEAD:feature
@@ -309,7 +310,7 @@ fi
 # the trust boundary in the hook header).
 fresh
 scrubbed_env="BASE_REF=[] FLEET_GOFUMPT=[] FLEET_ANY=[] MAKEFLAGS=[] MFLAGS=[] MAKEOVERRIDES=[] MAKELEVEL=[] MAKEFILES=[] GNUMAKEFLAGS=[] GOFLAGS=[-count=1] GIT_DIR=[] GIT_WORK_TREE=[] GIT_INDEX_FILE=[]"
-BASE_REF=HEAD FLEET_GOFUMPT=true FLEET_ANY=x MAKEFLAGS=n MFLAGS=-n MAKEOVERRIDES=BASE_REF=HEAD MAKELEVEL=3 MAKEFILES=x GNUMAKEFLAGS=-n GOFLAGS=-run=NoSuch push "$repo" origin HEAD:feature
+BASE_REF=HEAD FLEET_GOFUMPT=true FLEET_ANY=x MAKEFLAGS=n MFLAGS=-n MAKEOVERRIDES=BASE_REF=HEAD MAKELEVEL=3 MAKEFILES=x GNUMAKEFLAGS=-n GOFLAGS=-run=NoSuch GIT_DIR="$repo/.git" GIT_WORK_TREE="$repo" GIT_INDEX_FILE="$repo/.git/index" push "$repo" origin HEAD:feature
 if [ "$rc" -ne 0 ]; then
   bad "scrubbed environment: exit $rc"
 elif [ "$(gate_runs)" != "1" ]; then

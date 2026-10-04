@@ -179,4 +179,4 @@ gates: tools
 # hooks turns on the pre-push guard for this clone and all its worktrees.
 hooks:
 	git config core.hooksPath .githooks
-	@echo "pre-push guard on: pushes to main are refused and other pushes run make gates"
+	@echo "pre-push guard on: pushes to main are refused and pushes of a branch run make gates"
