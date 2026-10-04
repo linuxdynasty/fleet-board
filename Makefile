@@ -36,23 +36,33 @@ RACE_CGO := $(if $(filter Darwin,$(shell uname -s)),0,1)
 .PHONY: tools versions gen build smoke proto-check ts-check mod-check fmt fmt-check
 .PHONY: vet test lint actionlint selftest diff-check docs-stale gates hooks
 
-# tools builds the pinned linters into .bin/. Each is rebuilt when
-# tool-versions.env changes.
-tools: $(GOLANGCI_LINT) $(GOFUMPT)
+# tools builds the pinned linters into .bin/. A stamp file per tool names the
+# tool version and the Go version it was built with, so a new pin, a Go upgrade
+# and a move back to an older Go each build it again, and nothing else does.
+GO_BUILT_WITH := $(shell go env GOVERSION)
+LINT_STAMP := $(BIN)/.golangci-lint.$(GOLANGCI_LINT_VERSION).$(GO_BUILT_WITH)
+FUMPT_STAMP := $(BIN)/.gofumpt.$(GOFUMPT_VERSION).$(GO_BUILT_WITH)
 
-$(GOLANGCI_LINT): tool-versions.env
+tools: $(LINT_STAMP) $(FUMPT_STAMP)
+
+$(LINT_STAMP):
 	GOBIN=$(BIN) CGO_ENABLED=0 go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
+	@rm -f $(BIN)/.golangci-lint.*
 	@touch $@
 
-$(GOFUMPT): tool-versions.env
+$(FUMPT_STAMP):
 	GOBIN=$(BIN) CGO_ENABLED=0 go install mvdan.cc/gofumpt@$(GOFUMPT_VERSION)
+	@rm -f $(BIN)/.gofumpt.*
 	@touch $@
 
 # versions prints the pins this checkout uses.
 versions:
 	@echo "pinned: go $(GO_VERSION), node $(NODE_MAJOR), golangci-lint $(GOLANGCI_LINT_VERSION), buf $(BUF_VERSION), gofumpt $(GOFUMPT_VERSION), typescript $(TYPESCRIPT_VERSION)"
 
+# gen starts from an empty gen/, so a deleted or renamed proto leaves no stale
+# generated code. (ts-check recreates its gen/ts/node_modules symlink.)
 gen:
+	rm -rf gen
 	$(BUF) generate
 
 build:
@@ -119,6 +129,7 @@ selftest: tools
 	scripts/test-verify-agent-canon.sh
 	scripts/test-smoke-binaries.sh
 	scripts/test-make-base-ref.sh
+	scripts/test-make-tools.sh
 	python3 scripts/test-check-attribution.py
 	python3 scripts/test-check-file-cap.py
 

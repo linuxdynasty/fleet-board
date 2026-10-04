@@ -77,8 +77,8 @@ The `Makefile` is the one entry point; CI runs the same targets, one per step
 
 | Target | What it does |
 |---|---|
-| `tools` | builds the pinned `golangci-lint` and `gofumpt` into `.bin/` |
-| `gen` | `buf generate` into `gen/` (Go and TypeScript), through `go run` at the pinned buf |
+| `tools` | builds the pinned `golangci-lint` and `gofumpt` into `.bin/`; rebuilt when a pin or the Go version changes |
+| `gen` | removes `gen/`, then `buf generate` into it (Go and TypeScript), through `go run` at the pinned buf |
 | `build`, `smoke` | `CGO_ENABLED=0 go build ./...`; builds each `cmd/<name>` and checks that `--version` prints its name |
 | `test` | `go vet ./...`, then `go test` and `go test -race` on the changed packages |
 | `lint` | the pinned `golangci-lint` on the same packages |
