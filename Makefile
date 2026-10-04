@@ -8,7 +8,7 @@
 # gen/ is never committed, so a fresh worktree starts with `make gen`.
 #
 #   make gen        buf generate into gen/ (Go and TypeScript)
-#   make build      CGO_ENABLED=0 go build ./...
+#   make build      CGO_ENABLED=0 go build ./...  (make smoke then runs each binary)
 #   make test       go vet ./..., then go test and go test -race on the
 #                   packages changed against BASE_REF (default origin/main)
 #   make lint       golangci-lint on the same packages
@@ -29,7 +29,7 @@ ACTIONLINT := go run github.com/rhysd/actionlint/cmd/actionlint@$(ACTIONLINT_VER
 # cgo" on Linux). Only the test binaries use it; shipped binaries stay cgo-free.
 RACE_CGO := $(if $(filter Darwin,$(shell uname -s)),0,1)
 
-.PHONY: tools versions gen build proto-check ts-check mod-check fmt-check
+.PHONY: tools versions gen build smoke proto-check ts-check mod-check fmt-check
 .PHONY: vet test lint actionlint selftest diff-check docs-stale gates hooks
 
 # tools builds the pinned linters into .bin/. Each is rebuilt when
@@ -53,6 +53,10 @@ gen:
 
 build:
 	CGO_ENABLED=0 go build ./...
+
+# smoke builds each cmd/<name> binary and runs it with --version once.
+smoke:
+	scripts/smoke-binaries.sh
 
 # proto-check is the contract compile check (docs/specs/02e-contract-rules.md).
 proto-check:
@@ -105,6 +109,7 @@ selftest: tools
 	scripts/test-check-gofumpt.sh
 	scripts/test-pre-push.sh
 	scripts/test-verify-agent-canon.sh
+	scripts/test-smoke-binaries.sh
 	python3 scripts/test-check-attribution.py
 	python3 scripts/test-check-file-cap.py
 
@@ -131,6 +136,8 @@ gates: tools
 	scripts/check-versions.sh
 	$(MAKE) gen
 	$(MAKE) proto-check
+	$(MAKE) build
+	$(MAKE) smoke
 	$(MAKE) ts-check
 	$(MAKE) mod-check
 	$(MAKE) fmt-check

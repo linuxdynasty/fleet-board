@@ -120,8 +120,8 @@ The JSON name of a field is its camelCase proto name, so an `_at` and a
   Connect JSON; the UI rules are in
   [02b](02b-hub-api.md#64-bit-integers). No `jstype` annotation is used.
 - CI runs `make proto-check` (`buf build`, `buf lint`) and `make gen`, then
-  compiles the output: `go vet` and `go build` for Go, and `make ts-check`
-  (`tools/tscheck`, `tsc --noEmit`, strict) for TypeScript.
+  compiles the output: `make test` (`go vet`) and `make build` for Go, and
+  `make ts-check` (`tools/tscheck`, `tsc --noEmit`, strict) for TypeScript.
 
 ## Command kinds and capabilities
 

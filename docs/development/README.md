@@ -29,11 +29,12 @@ Makefile, tool-versions.env   make targets and the one file of pinned tool versi
 .github/workflows/ci.yml      CI: one step per gate, the same targets as make gates
 scripts/check-versions.sh     keeps the copies of a pin (.node-version, go.mod, buf.gen.yaml,
                               tools/tscheck) equal to tool-versions.env
+scripts/smoke-binaries.sh     builds each cmd/<name> and checks that --version prints its name
 scripts/changed-go-packages.sh   the Go packages a change affects, for make test and make lint
 scripts/check-gofumpt.sh      fails on a Go file gofumpt would change
 scripts/test-check-versions.sh, test-changed-go-packages.sh, test-check-gofumpt.sh,
   test-pre-push.sh            seeded RED/GREEN self-tests for the four above; make selftest runs them
-scripts/test-verify-agent-canon.sh   seeded cases for the script checks of verify-agent-canon.sh (also in make selftest)
+scripts/test-verify-agent-canon.sh, scripts/test-smoke-binaries.sh   seeded cases for the canon script checks and the smoke (also in make selftest)
 tools/tscheck/                compiles the generated TypeScript (typescript 7, strict)
 scripts/plan-issues.py        writes each plan row's GitHub issue body from the plan
                               (--print, --check, --apply; ADR 0026)

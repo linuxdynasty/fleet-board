@@ -86,6 +86,9 @@ jobs:
       - name: Go formatting (gofumpt)
         run: make fmt-check
 
+      - name: Build every package and run each binary once (--version)
+        run: make build smoke
+
       - name: go vet, go test and go test -race on changed packages
         run: make test
 
