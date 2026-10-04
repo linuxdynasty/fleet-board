@@ -35,6 +35,7 @@ NODE_MAJOR=24
 GOLANGCI_LINT_VERSION=v2.14.0
 BUF_VERSION=v1.73.0
 GOFUMPT_VERSION=v0.12.0
+ACTIONLINT_VERSION=v1.7.12
 TYPESCRIPT_VERSION=7.0.2
 PROTOC_GEN_ES_VERSION=2.16.0
 ENV
@@ -114,6 +115,14 @@ expect "@bufbuild/protobuf differs from protoc-gen-es" 1 "@bufbuild/protobuf"
 fresh
 edit tool-versions.env '/^BUF_VERSION/d'
 expect "a missing key is named" 1 "BUF_VERSION"
+
+fresh
+edit tool-versions.env '/^ACTIONLINT_VERSION/d'
+expect "a missing ACTIONLINT_VERSION is named" 1 "ACTIONLINT_VERSION"
+
+fresh
+printf '  - run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12\n' >> "$work/t/.github/workflows/ci.yml"
+expect "actionlint pin repeated in a workflow" 1 "ci.yml"
 
 fresh
 printf 'lint:\n\tgo install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0\n' >> "$work/t/Makefile"

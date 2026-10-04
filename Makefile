@@ -23,13 +23,14 @@ BIN := $(CURDIR)/.bin
 GOLANGCI_LINT := $(BIN)/golangci-lint
 GOFUMPT := $(BIN)/gofumpt
 BUF := go run github.com/bufbuild/buf/cmd/buf@$(BUF_VERSION)
+ACTIONLINT := go run github.com/rhysd/actionlint/cmd/actionlint@$(ACTIONLINT_VERSION)
 
 # The race detector needs cgo everywhere except macOS (cmd/go: "-race requires
 # cgo" on Linux). Only the test binaries use it; shipped binaries stay cgo-free.
 RACE_CGO := $(if $(filter Darwin,$(shell uname -s)),0,1)
 
 .PHONY: tools versions gen build proto-check ts-check mod-check fmt-check
-.PHONY: vet test lint selftest diff-check docs-stale gates hooks
+.PHONY: vet test lint actionlint selftest diff-check docs-stale gates hooks
 
 # tools builds the pinned linters into .bin/. Each is rebuilt when
 # tool-versions.env changes.
@@ -93,6 +94,10 @@ lint: tools
 	echo "make lint: $$pkgs"; \
 	$(GOLANGCI_LINT) run $$pkgs
 
+# actionlint checks the workflow files in .github/workflows.
+actionlint:
+	$(ACTIONLINT)
+
 # selftest runs the seeded RED/GREEN cases of the repo's own gate scripts.
 selftest: tools
 	scripts/test-check-versions.sh
@@ -130,6 +135,7 @@ gates: tools
 	$(MAKE) fmt-check
 	$(MAKE) test
 	$(MAKE) lint
+	$(MAKE) actionlint
 	scripts/check-file-cap.sh
 	scripts/verify-agent-canon.sh
 	python3 scripts/agent-roles.py --check
