@@ -92,6 +92,50 @@ g commit -q -m "fixture"
 expect "a fixture file names its package" "./c"
 
 fresh
+mkdir "$repo/c/testdata"
+printf 'package fixture\n' > "$repo/c/testdata/f.go"
+g add -A
+g commit -q -m "Go fixture"
+expect "a Go fixture under testdata names the owning package" "./c"
+
+fresh
+mkdir -p "$repo/c/testdata/deep/er"
+printf 'package er\n' > "$repo/c/testdata/deep/er/f.go"
+g add -A
+g commit -q -m "nested Go fixture"
+expect "a Go fixture nested under testdata names the owning package" "./c"
+
+fresh
+mkdir -p "$repo/testdata/only"
+printf 'package only\n' > "$repo/testdata/only/f.go"
+g add -A
+g commit -q -m "fixture with no owning package"
+expect "a Go fixture with no owning package names nothing" ""
+
+# A module that has a package at its root: the base commit carries root.go.
+rootfresh() {
+  fresh
+  g checkout -q main
+  printf 'package m\n\nfunc Root() int { return 0 }\n' > "$repo/root.go"
+  g add -A
+  g commit -q -m "base gains root.go"
+  g update-ref refs/remotes/origin/main HEAD
+  g checkout -q work
+  g rebase -q main
+}
+
+rootfresh
+printf 'package m\n\nfunc Root() int { return 1 }\n' > "$repo/root.go"
+g commit -q -am "edit root.go"
+expect "a .go file at the module root names the root package" "."
+
+rootfresh
+printf 'more\n' > "$repo/docs/x.txt"
+g add -A
+g commit -q -m "a non-Go file elsewhere"
+expect "a non-Go file elsewhere does not name the root package" ""
+
+fresh
 printf 'readme\n' > "$repo/c/README.md"
 g add -A
 g commit -q -m "readme beside Go files"

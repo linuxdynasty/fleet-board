@@ -10,9 +10,10 @@
 # BASE_REF and HEAD (committed, staged, unstaged) plus untracked files, so the
 # same command works for a developer's working tree and for a CI checkout.
 # A changed file belongs to the nearest directory at or above it that holds
-# .go files; markdown files never name a package. Packages that import a
-# changed package, directly or through other packages (tests included), are
-# named too.
+# .go files (never one under testdata/, which go ignores: a fixture belongs to
+# the package above it); markdown files never name a package. Packages that
+# import a changed package, directly or through other packages (tests
+# included), are named too.
 #
 # Prints ./... (every package) instead when the build inputs change: go.mod,
 # go.sum, the Makefile, tool-versions.env, .golangci.yml, buf.yaml,
@@ -56,14 +57,26 @@ while IFS= read -r f; do
       ;;
     *.md) continue ;;
   esac
+  # The owning package is the nearest directory at or above the file that holds
+  # .go files. A directory at or under testdata/ is never a package (go ignores
+  # it), so a fixture belongs to the package above. Only a file directly in the
+  # module root can name the root package; a file deeper down stops below it.
   d="$(dirname "$f")"
-  while [ "$d" != "." ] && [ "$d" != "/" ]; do
-    if ls "$d"/*.go > /dev/null 2>&1; then
-      dirs="$dirs
+  while :; do
+    case "/$d/" in
+      */testdata/*) ;;
+      *)
+        if ls "$d"/*.go > /dev/null 2>&1; then
+          dirs="$dirs
 $d"
-      break
-    fi
+          break
+        fi
+        ;;
+    esac
+    [ "$d" = "." ] && break # a file in the root: the root was just checked
+    [ "$d" = "/" ] && break
     d="$(dirname "$d")"
+    [ "$d" = "." ] && break # a deeper file never names the root package
   done
 done <<EOF
 $files
@@ -87,7 +100,7 @@ printf '%s\n' "$dirs" | MODULE="$module" IMPORTS="$imports" awk '
       deps[i] = parts[2]
     }
   }
-  { set[module "/" $0] = 1 }
+  { set[($0 == ".") ? module : module "/" $0] = 1 }
   END {
     changed = 1
     while (changed) {
