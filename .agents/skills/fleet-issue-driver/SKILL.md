@@ -26,7 +26,7 @@ ruling in the PR.
 git fetch origin
 git worktree add ~/personal-repos/fleet-board-worktrees/<name> -b <branch> origin/main
 cd ~/personal-repos/fleet-board-worktrees/<name> && pwd && git symbolic-ref -q HEAD
-go run github.com/bufbuild/buf/cmd/buf@v1.73.0 generate   # gen/ is not committed; `make gen` once the Makefile exists
+make tools gen   # pinned linters into .bin/, then buf generate; gen/ is not committed
 ```
 
 Verify `pwd` is that worktree before every edit. The main checkout stays a

@@ -67,6 +67,44 @@ proposed; probe results follow the shape in
 - Several agents on one host: separate `GOCACHE`, short `GOTMPDIR` outside the
   worktree, and no overlapping benchmark runs.
 
+## Make targets and the pre-push guard
+
+The `Makefile` is the one entry point; CI runs the same targets, one per step
+(`.github/workflows/ci.yml`). Run `make tools gen` first in a new worktree
+(`gen/` is never committed).
+
+| Target | What it does |
+|---|---|
+| `tools` | builds the pinned `golangci-lint` and `gofumpt` into `.bin/` |
+| `gen` | `buf generate` into `gen/` (Go and TypeScript), through `go run` at the pinned buf |
+| `build` | `CGO_ENABLED=0 go build ./...` |
+| `test` | `go vet ./...`, then `go test` and `go test -race` on the changed packages |
+| `lint` | the pinned `golangci-lint` on the same packages |
+| `proto-check`, `ts-check` | `buf build` and `buf lint`; the generated TypeScript compiles (`tools/tscheck`) |
+| `mod-check`, `fmt-check`, `actionlint` | `go mod tidy -diff`; gofumpt on every Go file; the workflow files |
+| `selftest` | the seeded RED/GREEN cases of the gate scripts, including the pre-push hook |
+| `gates` | all of the above plus the file cap, agent canon, roles check and `git diff --check`; prints the tool versions it used first |
+| `hooks` | turns on the pre-push guard (`core.hooksPath` is `.githooks`; once per clone, and all its worktrees share it) |
+
+"Changed packages" come from `scripts/changed-go-packages.sh`: the files that
+differ from the merge base with `BASE_REF` (default `origin/main`; CI uses the
+PR's base), plus untracked files, plus every package that imports one of them.
+A change to `go.mod`, `go.sum`, the Makefile, `tool-versions.env`,
+`.golangci.yml` or a contract (`api/`, buf config) runs every package. The race
+detector needs cgo on Linux but not on macOS, so `make test` sets
+`CGO_ENABLED=1` for the `-race` run on Linux only; shipped binaries stay
+cgo-free.
+
+`.githooks/pre-push` is the guard for `main` (ADR 0024, decision 2: the repo is
+private on a plan without branch protection). After `make hooks`, a push that
+updates or deletes `main` (or `master`) on any remote is refused, and a push of
+a branch runs `make gates` first and is refused if it fails. Deleting another
+branch and pushing a tag run no gate. There is no bypass; skipping hooks is
+against the rules. The gate checks the checked-out files, so push the branch
+you have checked out (the hook warns otherwise).
+`scripts/test-pre-push.sh` pushes to a throwaway bare repository, never to
+`origin`.
+
 ## Pinned tool versions
 
 `tool-versions.env` is the one file that holds every pinned version: Go, Node

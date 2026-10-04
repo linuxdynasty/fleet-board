@@ -61,7 +61,7 @@ stopping point. Report actual state; anything not checked is `NOT_CHECKED`.
   opening or updating a PR. One PR per change.
 - Never push to `main`, never `--no-verify`, never `git stash` while several
   worktrees exist (the stash stack is shared). The owner merges every v1 PR; an
-  agent never does. PR 1 adds a `.githooks/pre-push` guard (plan section 10).
+  agent never does. `make hooks` turns on the `.githooks/pre-push` guard.
 - No AI attribution in commits, PRs or docs (no `Co-Authored-By` trailer for a
   model, no "Generated with" line, no "drafted with" in ADRs). Older history keeps
   its trailers; `verify-agent-canon.sh` and CI reject new ones.
@@ -153,18 +153,18 @@ handoff contract: [agent guide](docs/development/agent-guide.md).
 Run what the change touches; CI is never the first test of an unproven change.
 
 ```bash
-go run github.com/bufbuild/buf/cmd/buf@v1.73.0 generate   # gen/ is never committed: first in a new worktree
+make tools gen   # first in a new worktree: pinned linters into .bin/, then gen/ (never committed)
 ~/go/bin/gofumpt -l -w <changed .go files>      # arrays in zsh: "${files[@]}"
-go vet ./... && CGO_ENABLED=0 go test <changed pkgs>   # -race for concurrency
-golangci-lint run <changed pkgs>
-go run github.com/bufbuild/buf/cmd/buf@v1.73.0 build   # and: lint
+make test        # go vet, then test and -race on changed packages (BASE_REF, default origin/main)
+make lint        # the pinned golangci-lint in .bin/ (tool-versions.env), not the one on PATH
+make proto-check ts-check   # buf build and lint; the generated TypeScript compiles
 python3 scripts/agent-roles.py --check && scripts/verify-agent-canon.sh
 scripts/check-file-cap.sh   # skips symlinks, go.sum, package-lock.json, gen/, testdata/
 git diff --check
 ```
 
 Web: `npm run typecheck && npm run lint && npm test && npm run build` in `web/`.
-Before a push: focused proof, a clean `fleet-code-review`, the full gate once.
+Before a push: focused proof, a clean `fleet-code-review`, `make gates` once (pre-push runs it).
 
 ## Orchestration, PR And CI Discipline
 
@@ -184,7 +184,7 @@ in the same PR. ADRs are not edited after acceptance; a later ADR supersedes.
 When documents disagree, the order in [design.md](docs/design.md) wins (ADR 0026).
 This file governs how to work, not what the product does.
 Every Go package directory carries `doc.go`, `README.md` and a scoped
-`AGENTS.md` (no packages exist yet). Do not remove a scoped `AGENTS.md` unless
+`AGENTS.md` (`internal/buildinfo` is the model). Do not remove a scoped `AGENTS.md` unless
 its replacement is proven to load.
 
 ## Pre-Ready Checklist
