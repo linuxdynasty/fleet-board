@@ -4,7 +4,7 @@
 #
 # Everything happens in a temp dir: a bare repository stands in for the remote
 # (never origin), a work repo holds a copy of the real hook, and a fake `make`
-# on PATH records what the hook runs. RED cases: a push to main (or master),
+# on PATH records what the hook runs and says whether the gate passes. RED cases: a push to main (or master),
 # or a delete of main, is refused and nothing lands on the bare repo. GREEN
 # cases: a branch push runs the gate and lands; a failing gate blocks it.
 # Runs on the macOS system bash 3.2.
@@ -28,7 +28,7 @@ bad() {
 }
 
 # Keep git from reading the caller's repo or config, and never ask for a password.
-unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE FLEET_PRE_PUSH_GATE
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null GIT_TERMINAL_PROMPT=0
 export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@example.com GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@example.com
 
@@ -43,11 +43,16 @@ log="$work/gate.log"
 fakebin="$work/bin"
 mkdir -p "$fakebin"
 
-# A fake make: records its arguments and the directory it ran in. It stands in
-# for the real `make gates`, which is far too slow for a self-test.
+# A fake make: records its arguments and the directory it ran in, then exits
+# with the code in $work/make.rc (0 when the file is absent). It stands in for
+# the real `make gates`, which is far too slow for a self-test. The hook has no
+# other way to be told what the gate is: this fake on PATH is the only switch.
+makerc="$work/make.rc"
 cat > "$fakebin/make" <<EOF
 #!/bin/sh
 echo "make \$* in \$(pwd -P)" >> "$log"
+if [ -f "$makerc" ]; then exit "\$(cat "$makerc")"; fi
+exit 0
 EOF
 chmod +x "$fakebin/make"
 
@@ -58,7 +63,7 @@ gate_runs() { if [ -f "$log" ]; then wc -l < "$log" | tr -d ' '; else echo 0; fi
 # fresh: a bare remote with main, and a work repo that has the hook enabled the
 # way `make hooks` does (core.hooksPath .githooks).
 fresh() {
-  rm -rf "$remote" "$repo" "$log" "$work/wt"
+  rm -rf "$remote" "$repo" "$log" "$makerc" "$work/wt"
   git init -q --bare -b main "$remote"
   # Let the bare repo accept deleting its current branch, so that only the hook
   # stands between a delete of main and the remote.
@@ -175,24 +180,31 @@ else
   ok
 fi
 
-# GREEN 2: a failing gate blocks the push and the branch does not land.
+# GREEN 2: a gate that exits 1 blocks the push and the branch does not land.
 fresh
-FLEET_PRE_PUSH_GATE=false push "$repo" origin HEAD:feature
+printf '1\n' > "$makerc"
+push "$repo" origin HEAD:feature
 if expect_refused "failing gate"; then
   if [ "$(remote_ref refs/heads/feature)" != "none" ]; then
     bad "failing gate: the branch landed anyway"
+  elif [ "$(gate_runs)" != "1" ]; then
+    bad "failing gate: the gate ran $(gate_runs) times, want 1"
   elif expect_out "failing gate" "gate failed"; then
     ok
   fi
 fi
 
-# GREEN 3: FLEET_PRE_PUSH_GATE replaces the gate command (and is said out loud).
+# RED 7: there is no way around the gate. An environment variable that the
+# first version of the hook honored (FLEET_PRE_PUSH_GATE=true) changes nothing.
 fresh
-FLEET_PRE_PUSH_GATE="echo stub-gate >> $log" push "$repo" origin HEAD:feature
-if [ "$rc" -ne 0 ] || [ "$(cat "$log" 2> /dev/null)" != "stub-gate" ]; then
-  bad "gate override: rc $rc, log '$(cat "$log" 2> /dev/null)'"
-elif expect_out "gate override" "FLEET_PRE_PUSH_GATE"; then
-  ok
+printf '1\n' > "$makerc"
+FLEET_PRE_PUSH_GATE=true push "$repo" origin HEAD:feature
+if expect_refused "gate override variable"; then
+  if [ "$(remote_ref refs/heads/feature)" != "none" ]; then
+    bad "gate override variable: the branch landed with a failing gate"
+  else
+    ok
+  fi
 fi
 
 # GREEN 4: deleting a branch (not main) is allowed and runs no gate.
@@ -248,15 +260,31 @@ else
   fi
 fi
 
-# GREEN 7: pushing something other than HEAD warns that the gate checked HEAD.
+# RED 8: pushing a commit that is not HEAD is refused, because the gate checks
+# the checked-out files and could not vouch for it. Nothing lands, no gate runs.
 fresh
 g checkout -q -b scratch
 printf 'x\n' >> "$repo/f.txt"
 g commit -q -am scratch
 push "$repo" origin feature:feature
+if expect_refused "push of a non-HEAD commit"; then
+  if [ "$(remote_ref refs/heads/feature)" != "none" ]; then
+    bad "push of a non-HEAD commit: the branch landed anyway"
+  elif [ "$(gate_runs)" != "0" ]; then
+    bad "push of a non-HEAD commit: the gate ran for a refused push"
+  elif expect_out "push of a non-HEAD commit" "Check out the branch you want to push"; then
+    ok
+  fi
+fi
+
+# GREEN 7: the same push is fine once that branch is checked out.
+g checkout -q feature
+push "$repo" origin feature:feature
 if [ "$rc" -ne 0 ]; then
-  bad "push of a non-HEAD commit: exit $rc"
-elif expect_out "push of a non-HEAD commit" "not the commit you are pushing"; then
+  bad "push of the checked-out branch: exit $rc"
+elif [ "$(remote_ref refs/heads/feature)" != "$(g rev-parse feature)" ]; then
+  bad "push of the checked-out branch: the branch did not land"
+else
   ok
 fi
 

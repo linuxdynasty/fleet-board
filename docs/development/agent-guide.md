@@ -99,11 +99,16 @@ cgo-free.
 private on a plan without branch protection). After `make hooks`, a push that
 updates or deletes `main` (or `master`) on any remote is refused, and a push of
 a branch runs `make gates` first and is refused if it fails. Deleting another
-branch and pushing a tag run no gate. There is no bypass; skipping hooks is
-against the rules. The gate checks the checked-out files, so push the branch
-you have checked out (the hook warns otherwise).
-`scripts/test-pre-push.sh` pushes to a throwaway bare repository, never to
-`origin`.
+branch and pushing a tag run no gate.
+
+The guard is opt-in per clone: until you run `make hooks`, git does not run it.
+It checks the checked-out `HEAD`, so a push of any other commit is refused
+(check out the branch you push, then push again). There is no way to skip the
+gate other than not enabling the hook: it has no switch and no environment
+variable, and skipping hooks is against the rules.
+`scripts/test-pre-push.sh` drives the real hook with a real `git push` to a
+throwaway bare repository, never to `origin`, with a fake `make` first on
+`PATH` standing in for the gate (one that exits 0 and one that exits 1).
 
 ## Pinned tool versions
 
