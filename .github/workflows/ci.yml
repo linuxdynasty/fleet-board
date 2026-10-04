@@ -34,6 +34,8 @@ jobs:
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          # Nothing after checkout pushes; do not leave the token in .git/config.
+          persist-credentials: false
 
       - name: Set up Go from go.mod
         uses: actions/setup-go@v7
