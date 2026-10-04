@@ -3,11 +3,13 @@
 # check-versions.sh: fail if a pinned tool version drifts from tool-versions.env.
 #
 # tool-versions.env is the one file that holds every pinned version. The
-# Makefile includes it and CI sources it. Four things still carry a copy that
+# Makefile includes it and CI sources it. Some things still carry a copy that
 # a tool forces on us, so this script keeps each copy equal to the file:
 #   - .node-version     (actions/setup-node reads it): major equals NODE_MAJOR
 #   - go.mod            (setup-go reads it): the go line equals GO_VERSION
-#   - buf.gen.yaml      protoc-gen-es@X equals PROTOC_GEN_ES_VERSION
+#   - buf.gen.yaml      protoc-gen-es@X equals PROTOC_GEN_ES_VERSION, and
+#     protoc-gen-go / protoc-gen-connect-go equal the go.mod versions of
+#     google.golang.org/protobuf / connectrpc.com/connect
 #   - tools/tscheck/package.json: typescript equals TYPESCRIPT_VERSION and
 #     @bufbuild/protobuf equals PROTOC_GEN_ES_VERSION (ADR 0020: same version)
 # It also fails when the Makefile or a workflow spells out a pin of
@@ -64,12 +66,33 @@ if [ -f "$root/buf.gen.yaml" ] && [ -n "${PROTOC_GEN_ES_VERSION:-}" ]; then
   fi
 fi
 
+# esc escapes the dots of a version for use inside a grep -E pattern. Versions
+# hold only digits, dots, letters and hyphens, so the dot is the only special.
+esc() { printf '%s' "$1" | sed 's/\./\\./g'; }
+
+# The Go plugins run at the version of the library their output imports
+# (go.mod), or the generated code and the runtime drift apart.
+if [ -f "$root/buf.gen.yaml" ] && [ -f "$root/go.mod" ]; then
+  for pair in "protoc-gen-go google.golang.org/protobuf" "protoc-gen-connect-go connectrpc.com/connect"; do
+    plugin="${pair%% *}"
+    module="${pair#* }"
+    plugin_version="$(sed -n "s/.*${plugin}@\\(v[0-9A-Za-z.+-]*\\).*/\\1/p" "$root/buf.gen.yaml" | head -n 1)"
+    [ -n "$plugin_version" ] || continue
+    mod_version="$(awk -v mod="$module" '{ for (i = 1; i < NF; i++) if ($i == mod) { print $(i + 1); exit } }' "$root/go.mod")"
+    if [ -z "$mod_version" ]; then
+      note "buf.gen.yaml pins $plugin $plugin_version but go.mod does not require $module"
+    elif [ "$plugin_version" != "$mod_version" ]; then
+      note "buf.gen.yaml pins $plugin $plugin_version, go.mod requires $module $mod_version"
+    fi
+  done
+fi
+
 pkg="$root/tools/tscheck/package.json"
 if [ -f "$pkg" ]; then
-  if ! grep -q -E "\"typescript\": *\"${TYPESCRIPT_VERSION:-unset}\"" "$pkg"; then
+  if ! grep -q -E "\"typescript\": *\"$(esc "${TYPESCRIPT_VERSION:-unset}")\"" "$pkg"; then
     note "tools/tscheck/package.json does not pin typescript $TYPESCRIPT_VERSION"
   fi
-  if ! grep -q -E "\"@bufbuild/protobuf\": *\"${PROTOC_GEN_ES_VERSION:-unset}\"" "$pkg"; then
+  if ! grep -q -E "\"@bufbuild/protobuf\": *\"$(esc "${PROTOC_GEN_ES_VERSION:-unset}")\"" "$pkg"; then
     note "tools/tscheck/package.json does not pin @bufbuild/protobuf $PROTOC_GEN_ES_VERSION (same as protoc-gen-es)"
   fi
 fi

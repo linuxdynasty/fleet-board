@@ -40,9 +40,20 @@ TYPESCRIPT_VERSION=7.0.2
 PROTOC_GEN_ES_VERSION=2.16.0
 ENV
   printf '24\n' > "$d/.node-version"
-  printf 'module example.com/x\n\ngo 1.27\n' > "$d/go.mod"
+  cat > "$d/go.mod" <<'GOMOD'
+module example.com/x
+
+go 1.27
+
+require (
+	connectrpc.com/connect v1.21.0
+	google.golang.org/protobuf v1.36.12
+)
+GOMOD
   cat > "$d/buf.gen.yaml" <<'YAML'
 plugins:
+  - local: [go, run, google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.12]
+  - local: [go, run, connectrpc.com/connect/cmd/protoc-gen-connect-go@v1.21.0]
   - local: [npx, --yes, "@bufbuild/protoc-gen-es@2.16.0"]
 YAML
   cat > "$d/tools/tscheck/package.json" <<'JSON'
@@ -93,7 +104,7 @@ printf '22\n' > "$work/t/.node-version"
 expect "node-version major differs" 1 ".node-version"
 
 fresh
-printf 'module example.com/x\n\ngo 1.26\n' > "$work/t/go.mod"
+edit go.mod 's/^go 1.27$/go 1.26/'
 expect "go.mod go line differs" 1 "go.mod"
 
 fresh
@@ -103,6 +114,26 @@ expect "missing go.mod is allowed" 0 ""
 fresh
 edit buf.gen.yaml 's/protoc-gen-es@2.16.0/protoc-gen-es@2.15.0/'
 expect "protoc-gen-es differs from buf.gen.yaml" 1 "buf.gen.yaml"
+
+fresh
+edit buf.gen.yaml 's/protoc-gen-go@v1.36.12/protoc-gen-go@v1.36.11/'
+expect "protoc-gen-go differs from go.mod's protobuf" 1 "protoc-gen-go"
+
+fresh
+edit buf.gen.yaml 's/protoc-gen-connect-go@v1.21.0/protoc-gen-connect-go@v1.20.0/'
+expect "protoc-gen-connect-go differs from go.mod's connect" 1 "protoc-gen-connect-go"
+
+fresh
+edit go.mod 's#google.golang.org/protobuf v1.36.12#google.golang.org/protobuf v1.36.13#'
+expect "go.mod protobuf moved without buf.gen.yaml" 1 "protoc-gen-go"
+
+fresh
+edit go.mod '/google.golang.org\/protobuf/d'
+expect "go.mod without protobuf while buf.gen.yaml pins protoc-gen-go" 1 "google.golang.org/protobuf"
+
+fresh
+edit tools/tscheck/package.json 's/"7.0.2"/"7x0x2"/'
+expect "a version that only matches if dots are wildcards fails" 1 "typescript"
 
 fresh
 edit tools/tscheck/package.json 's/7.0.2/6.0.3/'
