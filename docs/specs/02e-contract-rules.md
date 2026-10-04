@@ -104,8 +104,7 @@ The JSON name of a field is its camelCase proto name, so an `_at` and a
 
 `buf.gen.yaml` at the repository root (buf v2, managed mode) generates into
 `gen/`, which is never committed: every worktree and every CI job runs
-`buf generate` first (`make gen` from plan PR 1), so a clean checkout compiles
-only after it:
+`buf generate` first (`make gen`), so a clean checkout compiles only after it:
 
 | Output | Plugin (pinned in `buf.gen.yaml`) | Notes |
 |---|---|---|
@@ -120,8 +119,9 @@ only after it:
 - `int64` and `uint64` are `bigint` in TypeScript and decimal strings in
   Connect JSON; the UI rules are in
   [02b](02b-hub-api.md#64-bit-integers). No `jstype` annotation is used.
-- CI runs `buf build`, `buf lint` and `buf generate` and compiles the output
-  (needs the `go.mod` of plan PR 1).
+- CI runs `make proto-check` (`buf build`, `buf lint`) and `make gen`, then
+  compiles the output: `make test` (`go vet`) and `make build` for Go, and
+  `make ts-check` (`tools/tscheck`, `tsc --noEmit`, strict) for TypeScript.
 
 ## Command kinds and capabilities
 
@@ -198,10 +198,11 @@ Run from the repository root (`buf.yaml`: module `api`, lint `STANDARD`;
 `buf.gen.yaml`: Go and TypeScript):
 
 ```
-go run github.com/bufbuild/buf/cmd/buf@v1.73.0 build
-go run github.com/bufbuild/buf/cmd/buf@v1.73.0 lint
-go run github.com/bufbuild/buf/cmd/buf@v1.73.0 generate --output /tmp/fleet-gen
+make proto-check   # buf build, then buf lint
+make gen           # buf generate into gen/
+make build ts-check
 ```
 
-All exit 0 with buf 1.73.0 on 2026-10-02, no lint exceptions. After `v0.1`,
+The `make` targets run buf at the version in `tool-versions.env` (v1.73.0).
+All exit 0 on 2026-10-04 (plan PR 1), no lint exceptions. After `v0.1`,
 add `buf breaking --against '.git#tag=v0.1'`.

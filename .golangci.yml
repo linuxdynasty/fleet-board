@@ -1,0 +1,24 @@
+# golangci-lint v2 (the pinned build, see tool-versions.env). A modest set: the
+# v2 defaults (errcheck, govet, ineffassign, staticcheck, unused) plus linters
+# that catch real mistakes in this code base. No per-line //nolint without a
+# reason (nolintlint); fix the code or discuss a rule change in a PR.
+version: "2"
+
+linters:
+  default: standard
+  enable:
+    - errorlint # %w and errors.Is/As, never == on errors (fleet-go: wrap errors)
+    - misspell
+    - nolintlint
+    - unconvert
+    - usestdlibvars
+  settings:
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+  exclusions:
+    # Generated code (gen/) is never linted or edited by hand.
+    generated: strict
+
+run:
+  timeout: 5m

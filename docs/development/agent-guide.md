@@ -62,10 +62,97 @@ proposed; probe results follow the shape in
   with `/opt/homebrew/bin/bash` first on `PATH`. Repo scripts here avoid them.
 - `sed` is BSD: in-place is `sed -i ''`, and a pattern with paths needs a
   non-`/` delimiter. Prefer the editor tool or a heredoc for multi-line edits.
-- `gofumpt` is at `~/go/bin/gofumpt` (not in Homebrew); `golangci-lint`,
-  `benchstat`, `gosec` and `govulncheck` are in `~/go/bin`.
+- Format and lint with `make fmt` and `make lint`: they use the pinned
+  `gofumpt` and `golangci-lint` in `.bin/` (`make tools`), the same builds CI
+  uses. The copies in `~/go/bin` may be older and disagree with the gate;
+  `benchstat`, `gosec` and `govulncheck` live there.
 - Several agents on one host: separate `GOCACHE`, short `GOTMPDIR` outside the
   worktree, and no overlapping benchmark runs.
+
+## Make targets and the pre-push guard
+
+The `Makefile` is the one entry point; CI runs the same targets, one per step
+(`.github/workflows/ci.yml`). Run `make tools gen` first in a new worktree
+(`gen/` is never committed).
+
+| Target | What it does |
+|---|---|
+| `tools` | builds the pinned `golangci-lint` and `gofumpt` into `.bin/`; rebuilt when a pin or the Go version changes |
+| `gen` | removes `gen/`, then `buf generate` into it (Go and TypeScript), through `go run` at the pinned buf |
+| `build`, `smoke` | `CGO_ENABLED=0 go build ./...`; builds each `cmd/<name>` and checks that `--version` prints its name |
+| `test` | `go vet ./...`, then `go test` and `go test -race` on the changed packages |
+| `lint` | the pinned `golangci-lint` on the same packages |
+| `proto-check`, `ts-check` | `buf build` and `buf lint`; the generated TypeScript compiles (`tools/tscheck`) |
+| `fmt`, `fmt-check` | the pinned `gofumpt` formats, or only checks, every Go file (the same file set) |
+| `mod-check`, `actionlint` | `go mod tidy -diff`; the workflow files |
+| `selftest` | the seeded RED/GREEN cases of the gate scripts, including the pre-push hook |
+| `diff-check` | `git diff --check` against the merge base, and a refusal of any file named like a git ref (`HEAD`, `main`, ...) |
+| `gates` | all of the above plus the file cap, agent canon and roles check; prints the tool versions it used first |
+| `hooks` | turns on the pre-push guard (`core.hooksPath` is `.githooks`; once per clone, and all its worktrees share it) |
+
+"Changed packages" come from `scripts/changed-go-packages.sh`: the files that
+differ from the merge base with `BASE_REF` (default `origin/main`; CI uses the
+PR's base), plus untracked files, plus every package that imports one of them.
+A change to `go.mod`, `go.sum`, the Makefile, `tool-versions.env`,
+`.golangci.yml` or a contract (`api/`, buf config) runs every package. The race
+detector needs cgo on Linux but not on macOS, so `make test` sets
+`CGO_ENABLED=1` for the `-race` run on Linux only; shipped binaries stay
+cgo-free.
+
+`.githooks/pre-push` is the guard for `main` (ADR 0024, decision 2: the repo is
+private on a plan without branch protection). After `make hooks`, a push that
+updates or deletes `main` (or `master`) on any remote is refused, and a push of
+a branch runs `make gates` first and is refused if it fails. Deleting another
+branch and pushing a tag run no gate.
+
+The guard is opt-in per clone: until you run `make hooks`, git does not run it.
+The gate checks the working tree, so the hook makes sure the tree is exactly the
+commit being pushed. It refuses a push of any commit that is not the checked-out
+`HEAD` (check out the branch you push, then push again), and a push while any
+file is modified, staged or untracked and not ignored (`gen/`, `.bin/` and
+`node_modules` are ignored). It lists up to ten paths to commit or remove. That
+is the only reason the gate can vouch for the committed `HEAD`. The hook checks
+again after the gate passes: if the tree or `HEAD` changed while it ran, the push
+is refused ("run it again").
+
+The guard stops mistakes: an accidental push to `main`, a push that was never
+gated, a gate that an ambient variable (a parent make's `MAKEFLAGS`, a stray
+`BASE_REF` from a shell profile) quietly turned into a no-op. It does not stop a
+person or a process that controls the shell, and it is not a lock. To keep the
+gate honest, before `make` the hook unsets `BASE_REF`, every `FLEET_*` variable,
+`MAKEFLAGS`, `MFLAGS`, `MAKEOVERRIDES`, `MAKELEVEL`, `MAKEFILES`, `GNUMAKEFLAGS`,
+`GIT_DIR`, `GIT_WORK_TREE` and `GIT_INDEX_FILE` (`MAKEFLAGS=n` only prints the
+recipes, `=i` ignores failures, `=t` touches targets), runs make with
+`GOFLAGS=-count=1` (harmless, but a push runs the tests without the test cache; it
+is non-empty so it beats a `GOFLAGS` in the `go.env` config file, which an empty
+value would not), and names the base itself (`make BASE_REF=origin/main gates`;
+the command line beats the environment inside make).
+
+Trust boundary. The hook trusts the local environment and git configuration:
+`BASH_ENV`, `git update-index --assume-unchanged` and `.git/info/exclude` (they
+hide changes from the clean-tree check), `GIT_CONFIG_*` and `core.hooksPath`,
+`PATH`, the tools in `.bin`, and the local `origin/main` ref, which the gate takes
+as the base (a moved `origin/main` makes the change look empty to `make test` and
+`make lint`). Using any of these to get around the gate is a deliberate bypass,
+and the owner's rules forbid it, as they forbid skipping hooks. The backstops are
+that CI runs the same gates on every pull request against the PR's real base, and
+that the owner merges every pull request (ADR 0024).
+`scripts/test-pre-push.sh` drives the real hook with a real `git push` to a
+throwaway bare repository, never to `origin`, with a fake `make` first on
+`PATH` that records what the gate was given (and exits 0 or 1).
+
+## Pinned tool versions
+
+`tool-versions.env` is the one file that holds every pinned version: Go, Node
+major, `golangci-lint`, `buf`, `gofumpt`, `typescript` and the `protoc-gen-es`
+version. The Makefile includes it and CI sources it, so neither spells out a
+version. `make tools` builds `golangci-lint` and `gofumpt` with the local Go
+into `.bin/` (gitignored); the `golangci-lint` on `PATH` is built with an older
+Go and refuses a `go 1.27` module, so the Makefile never uses it. Four copies
+that other tools force on us (`.node-version`, the `go` line of `go.mod`,
+`buf.gen.yaml`, `tools/tscheck/package.json`) are kept equal by
+`scripts/check-versions.sh`. To upgrade a tool, change the file in a dedicated
+PR (ADR 0020), run that script, and read the release notes.
 
 ## Tiers, roles and models
 

@@ -1,0 +1,17 @@
+{
+  "name": "fleet-board-tscheck",
+  "private": true,
+  "description": "Compiles the buf-generated TypeScript in gen/ts (plan row 1, ADR 0020). Not the dashboard: web/ arrives with PR 14.",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "typescript": "7.0.2"
+  },
+  "dependencies": {
+    "@bufbuild/protobuf": "2.16.0",
+    "@connectrpc/connect": "2.2.0",
+    "@connectrpc/connect-web": "2.2.0"
+  }
+}

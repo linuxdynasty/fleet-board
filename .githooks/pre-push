@@ -1,0 +1,173 @@
+#!/bin/sh
+#
+# pre-push: the client-side guard for fleet-board (ADR 0024, decision 2).
+#
+# This repository is private on a plan without branch protection, and the
+# owner merges every pull request, so nothing on GitHub stops a push to main.
+# This hook does:
+#   - a push that updates or deletes main (or master) on any remote is refused;
+#   - a push of a branch runs the local gate, `make gates`, and is refused if
+#     the gate fails;
+#   - a push of a branch whose commit is not the checked-out HEAD is refused,
+#     because the gate checks the checked-out files and could not vouch for it;
+#   - a push of a branch is refused while the working tree has any change that
+#     git does not ignore (modified, staged or untracked files): the gate checks
+#     the working tree, so it vouches for the committed HEAD only when the tree
+#     is clean;
+#   - a push of a branch is refused if the tree or HEAD changed while the gate ran
+#     (the gate has to leave behind exactly what it was given);
+#   - deleting another branch, and pushing a tag, run no gate.
+# What this is for: it stops MISTAKES: an accidental push to main, a push that
+# was never gated, a gate that an ambient variable (a parent make's MAKEFLAGS, a
+# stray BASE_REF from a shell profile) quietly turned into a no-op. It does not
+# stop a person or a process that controls the shell, and it is not a lock.
+#
+# What it does to keep the gate honest. Before `make` it unsets BASE_REF, every
+# FLEET_* variable, MAKEFLAGS, MFLAGS, MAKEOVERRIDES, MAKELEVEL, MAKEFILES and
+# GNUMAKEFLAGS (MAKEFLAGS=n only prints the recipes, =i ignores failures, =t
+# touches targets; MAKEFILES can add rules that hide a failure) and GIT_DIR,
+# GIT_WORK_TREE and GIT_INDEX_FILE. It runs make with GOFLAGS=-count=1: harmless
+# (the cost is that a push runs the tests without the test cache) and non-empty,
+# so it beats a GOFLAGS set in the go.env config file, which an empty value would
+# not (GOFLAGS=-run=NoSuch turns a failing go test into "no tests to run"). It
+# names the base itself on the make command line (BASE_REF=origin/main), which
+# beats the environment inside make.
+#
+# Trust boundary. The hook trusts the local environment and git configuration:
+# BASH_ENV, `git update-index --assume-unchanged` and .git/info/exclude (they
+# hide changes from the clean-tree check), GIT_CONFIG_* and core.hooksPath, PATH,
+# the tools in .bin, and the local origin/main ref, which the gate takes as the
+# base (a moved origin/main makes the change look empty to make test and make
+# lint). Using any of these to get around the gate is a deliberate bypass, and
+# the owner's rules forbid it, as they forbid skipping hooks. The backstops are
+# that CI runs the same gates on every pull request, against the PR's real base,
+# and that the owner merges every pull request (ADR 0024). The hook is also
+# opt-in per clone: until `make hooks` is run, git does not run it.
+#
+# Turn it on once per clone with `make hooks` (git config core.hooksPath
+# .githooks). Git feeds this script one line per ref on stdin:
+#   <local ref> <local sha> <remote ref> <remote sha>
+#
+# Plain POSIX sh: it runs on macOS and Linux. scripts/test-pre-push.sh drives
+# this file through a real git push to a throwaway bare repository, with a fake
+# `make` first on PATH that records what the gate was given.
+
+remote_name="${1:-the remote}"
+
+say() { printf '%s\n' "$*" >&2; }
+
+# A sha of all zeros means "no commit": the ref is being deleted.
+is_zero() {
+  case "$1" in
+    *[!0]*) return 1 ;;
+    *) return 0 ;;
+  esac
+}
+
+# list_paths <porcelain output>: up to ten paths, then a count of the rest.
+list_paths() {
+  printf '%s\n' "$1" | head -n 10 | cut -c4- | sed 's/^/  /' >&2
+  total="$(printf '%s\n' "$1" | wc -l | tr -d ' ')"
+  if [ "$total" -gt 10 ]; then
+    say "  ... and $((total - 10)) more"
+  fi
+}
+
+refused=""
+not_head=""
+run_gate=0
+head_sha="$(git rev-parse HEAD 2> /dev/null)"
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+  : "$local_ref" "$remote_sha"
+  case "$remote_ref" in
+    refs/heads/main | refs/heads/master)
+      refused="$refused ${remote_ref#refs/heads/}"
+      continue
+      ;;
+    refs/heads/*) ;;
+    *) continue ;; # a tag or another ref: no gate
+  esac
+  if is_zero "$local_sha"; then
+    continue # deleting a branch that is not main
+  fi
+  run_gate=1
+  if [ "$local_sha" != "$head_sha" ]; then
+    not_head="$not_head ${remote_ref#refs/heads/}"
+  fi
+done
+
+if [ -n "$refused" ]; then
+  say "fleet-board: push refused."
+  say "You tried to update or delete:$refused (on $remote_name)."
+  say "Nothing on GitHub protects main for this private repository, so this"
+  say "hook does. The owner merges every pull request; nobody pushes to main."
+  say "Push a branch and open a pull request instead, for example:"
+  say "  git push $remote_name HEAD:my-branch-name"
+  exit 1
+fi
+
+if [ -n "$not_head" ]; then
+  say "fleet-board: push refused."
+  say "The gate checks the files you have checked out (HEAD), but you are"
+  say "pushing a different commit for:$not_head."
+  say "Check out the branch you want to push, then push again."
+  exit 1
+fi
+
+if [ "$run_gate" -eq 0 ]; then
+  exit 0
+fi
+
+# git exports GIT_DIR and friends to hooks; the gate finds its own repository.
+top="$(git rev-parse --show-toplevel)" || exit 1
+cd "$top" || exit 1
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE
+
+# The gate checks the working tree, so the tree must be exactly the commit
+# being pushed: no modified, staged or untracked file that git does not ignore.
+dirty="$(git status --porcelain --untracked-files=all)" || exit 1
+if [ -n "$dirty" ]; then
+  say "fleet-board: push refused."
+  say "The gate checks the files in your working tree, and it can only vouch for"
+  say "the committed HEAD when nothing else is changed. Commit or remove these first:"
+  list_paths "$dirty"
+  exit 1
+fi
+
+# Drop the ambient variables that would turn the gate into a no-op by accident
+# (the list and the reasons are in the header), and name the base on the command
+# line, which beats the environment inside make.
+for name in $(env | sed -n 's/^\(FLEET_[A-Za-z0-9_]*\)=.*/\1/p'); do
+  unset "$name"
+done
+unset BASE_REF MAKEFLAGS MFLAGS MAKEOVERRIDES MAKELEVEL MAKEFILES GNUMAKEFLAGS
+
+say "fleet-board: running make gates before the push (this takes a while)."
+GOFLAGS=-count=1 make BASE_REF=origin/main gates
+status=$?
+
+if [ "$status" -ne 0 ]; then
+  say "fleet-board: push refused: the gate failed (make gates exited $status)."
+  say "Fix what it reported, commit, and push again."
+  exit 1
+fi
+
+# The gate has passed. It vouches only for the tree it was given, so check that
+# the gate itself (or anything else running meanwhile) left that tree and HEAD
+# alone.
+after_head="$(git rev-parse HEAD 2> /dev/null)"
+after_dirty="$(git status --porcelain --untracked-files=all)" || exit 1
+if [ "$after_head" != "$head_sha" ] || [ -n "$after_dirty" ]; then
+  say "fleet-board: push refused: the tree or HEAD changed while the gate ran."
+  if [ "$after_head" != "$head_sha" ]; then
+    say "HEAD moved from $head_sha to $after_head."
+  fi
+  if [ -n "$after_dirty" ]; then
+    say "These files are now changed:"
+    list_paths "$after_dirty"
+  fi
+  say "The gate no longer vouches for what you are pushing: run it again."
+  exit 1
+fi
+exit 0
