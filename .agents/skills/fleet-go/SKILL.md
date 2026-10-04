@@ -87,15 +87,15 @@ variant of a shared helper. Confirm filtered tests ran (`go test -list '.*'
 ## Gates (run only what the change touches, then widen)
 
 ```bash
-~/go/bin/gofumpt -l -w <changed .go files>     # gofumpt is not in Homebrew
+make fmt                                       # the pinned gofumpt on every Go file; make fmt-check only checks
 go vet ./...
-CGO_ENABLED=0 go test ./path/to/changed/...    # add -race for concurrent code
-golangci-lint run ./path/to/changed/...        # repo config once present
+CGO_ENABLED=0 go test ./path/to/changed/...    # add -race for concurrent code; make test does both
+make lint                                      # the pinned golangci-lint on changed packages, not the one on PATH
 go build ./...
 ```
 
-On macOS zsh keep file lists in an array (`files=(a.go b.go);
-gofumpt -l -w "${files[@]}"`); an unquoted `$files` is one argument.
+On macOS zsh keep any file list in an array (`files=(a.go b.go);
+cmd "${files[@]}"`); an unquoted `$files` is one argument.
 Run `go vet ./...` after any test-only change to catch compile drift.
 Report each command, its exit code and what was not checked.
 

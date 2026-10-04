@@ -62,8 +62,10 @@ proposed; probe results follow the shape in
   with `/opt/homebrew/bin/bash` first on `PATH`. Repo scripts here avoid them.
 - `sed` is BSD: in-place is `sed -i ''`, and a pattern with paths needs a
   non-`/` delimiter. Prefer the editor tool or a heredoc for multi-line edits.
-- `gofumpt` is at `~/go/bin/gofumpt` (not in Homebrew); `golangci-lint`,
-  `benchstat`, `gosec` and `govulncheck` are in `~/go/bin`.
+- Format and lint with `make fmt` and `make lint`: they use the pinned
+  `gofumpt` and `golangci-lint` in `.bin/` (`make tools`), the same builds CI
+  uses. The copies in `~/go/bin` may be older and disagree with the gate;
+  `benchstat`, `gosec` and `govulncheck` live there.
 - Several agents on one host: separate `GOCACHE`, short `GOTMPDIR` outside the
   worktree, and no overlapping benchmark runs.
 
@@ -81,7 +83,8 @@ The `Makefile` is the one entry point; CI runs the same targets, one per step
 | `test` | `go vet ./...`, then `go test` and `go test -race` on the changed packages |
 | `lint` | the pinned `golangci-lint` on the same packages |
 | `proto-check`, `ts-check` | `buf build` and `buf lint`; the generated TypeScript compiles (`tools/tscheck`) |
-| `mod-check`, `fmt-check`, `actionlint` | `go mod tidy -diff`; gofumpt on every Go file; the workflow files |
+| `fmt`, `fmt-check` | the pinned `gofumpt` formats, or only checks, every Go file (the same file set) |
+| `mod-check`, `actionlint` | `go mod tidy -diff`; the workflow files |
 | `selftest` | the seeded RED/GREEN cases of the gate scripts, including the pre-push hook |
 | `gates` | all of the above plus the file cap, agent canon, roles check and `git diff --check`; prints the tool versions it used first |
 | `hooks` | turns on the pre-push guard (`core.hooksPath` is `.githooks`; once per clone, and all its worktrees share it) |

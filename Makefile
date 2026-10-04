@@ -12,6 +12,7 @@
 #   make test       go vet ./..., then go test and go test -race on the
 #                   packages changed against BASE_REF (default origin/main)
 #   make lint       golangci-lint on the same packages
+#   make fmt        gofumpt -l -w on every Go file (fmt-check only checks)
 #   make gates      everything a push needs, one command (prints tool versions)
 #   make hooks      turn on the pre-push guard (.githooks/pre-push)
 
@@ -29,7 +30,7 @@ ACTIONLINT := go run github.com/rhysd/actionlint/cmd/actionlint@$(ACTIONLINT_VER
 # cgo" on Linux). Only the test binaries use it; shipped binaries stay cgo-free.
 RACE_CGO := $(if $(filter Darwin,$(shell uname -s)),0,1)
 
-.PHONY: tools versions gen build smoke proto-check ts-check mod-check fmt-check
+.PHONY: tools versions gen build smoke proto-check ts-check mod-check fmt fmt-check
 .PHONY: vet test lint actionlint selftest diff-check docs-stale gates hooks
 
 # tools builds the pinned linters into .bin/. Each is rebuilt when
@@ -76,6 +77,10 @@ ts-check:
 # mod-check fails when go.mod or go.sum is not what `go mod tidy` writes.
 mod-check:
 	go mod tidy -diff
+
+# fmt formats every Go file with the pinned gofumpt (same file set as fmt-check).
+fmt: tools
+	scripts/check-gofumpt.sh --write
 
 fmt-check: tools
 	scripts/check-gofumpt.sh

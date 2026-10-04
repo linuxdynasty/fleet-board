@@ -27,6 +27,7 @@ git fetch origin
 git worktree add ~/personal-repos/fleet-board-worktrees/<name> -b <branch> origin/main
 cd ~/personal-repos/fleet-board-worktrees/<name> && pwd && git symbolic-ref -q HEAD
 make tools gen   # pinned linters into .bin/, then buf generate; gen/ is not committed
+make hooks       # once per clone, opt-in: refuse a push to main, run make gates before a branch push
 ```
 
 Verify `pwd` is that worktree before every edit. The main checkout stays a
