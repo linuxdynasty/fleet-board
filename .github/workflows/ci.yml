@@ -1,8 +1,10 @@
 # CI for fleet-board (plan row 1). It runs the same targets as `make gates`, one
 # step each, so a failure names its gate. Every tool version comes from
 # tool-versions.env (never spelled out here; scripts/check-versions.sh fails if
-# one is). Text that an author controls (the PR title and body) reaches the
-# shell only through env vars, never through ${{ }} inside a script.
+# one is). Text that an author controls (the PR title and body, the base branch
+# name) reaches a script only through env vars, never through ${{ }} inside the
+# script text; the Makefile reads BASE_REF quoted from the environment
+# (scripts/test-make-base-ref.sh proves a hostile value runs nothing).
 name: ci
 
 on:

@@ -18,7 +18,10 @@
 
 include tool-versions.env
 
+# BASE_REF is data: it is exported and recipes read "$$BASE_REF" quoted, so a
+# value with a space or a `;` is an unknown ref, never shell text.
 BASE_REF ?= origin/main
+export BASE_REF
 
 BIN := $(CURDIR)/.bin
 GOLANGCI_LINT := $(BIN)/golangci-lint
@@ -92,14 +95,14 @@ vet:
 # (scripts/changed-go-packages.sh: files changed against BASE_REF plus the
 # packages that import them; every package when a build input changed).
 test: vet
-	@pkgs="$$(scripts/changed-go-packages.sh $(BASE_REF))" || exit 1; \
-	if [ -z "$$pkgs" ]; then echo "make test: no Go package changed against $(BASE_REF); no tests to run"; exit 0; fi; \
+	@pkgs="$$(scripts/changed-go-packages.sh "$$BASE_REF")" || exit 1; \
+	if [ -z "$$pkgs" ]; then echo "make test: no Go package changed against $$BASE_REF; no tests to run"; exit 0; fi; \
 	echo "make test: $$pkgs"; \
 	CGO_ENABLED=0 go test $$pkgs && CGO_ENABLED=$(RACE_CGO) go test -race $$pkgs
 
 lint: tools
-	@pkgs="$$(scripts/changed-go-packages.sh $(BASE_REF))" || exit 1; \
-	if [ -z "$$pkgs" ]; then echo "make lint: no Go package changed against $(BASE_REF); nothing to lint"; exit 0; fi; \
+	@pkgs="$$(scripts/changed-go-packages.sh "$$BASE_REF")" || exit 1; \
+	if [ -z "$$pkgs" ]; then echo "make lint: no Go package changed against $$BASE_REF; nothing to lint"; exit 0; fi; \
 	echo "make lint: $$pkgs"; \
 	$(GOLANGCI_LINT) run $$pkgs
 
@@ -115,13 +118,14 @@ selftest: tools
 	scripts/test-pre-push.sh
 	scripts/test-verify-agent-canon.sh
 	scripts/test-smoke-binaries.sh
+	scripts/test-make-base-ref.sh
 	python3 scripts/test-check-attribution.py
 	python3 scripts/test-check-file-cap.py
 
 # diff-check is `git diff --check` against the merge base, so commits already
 # made are checked as well as the working tree.
 diff-check:
-	@base="$$(git merge-base $(BASE_REF) HEAD 2>/dev/null || true)"; \
+	@base="$$(git merge-base "$$BASE_REF" HEAD 2>/dev/null || true)"; \
 	if [ -n "$$base" ]; then git diff --check "$$base"; else git diff --check; fi
 
 # docs-stale is advisory: it prints reminders and always exits 0.
@@ -137,7 +141,7 @@ gates: tools
 	@$(BUF) --version | sed 's/^/buf /'
 	@echo "node $$(node -v)"
 	@$(GOFUMPT) --version | sed 's/^/gofumpt /'
-	@echo "== gates (base $(BASE_REF)) =="
+	@echo "== gates (base $$BASE_REF) =="
 	scripts/check-versions.sh
 	$(MAKE) gen
 	$(MAKE) proto-check
