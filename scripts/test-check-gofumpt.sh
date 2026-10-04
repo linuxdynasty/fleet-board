@@ -80,5 +80,60 @@ run "gitignored generated code is not checked" 0 ""
 printf 'package p\n\nfunc K() int {\n\n\treturn 4\n}\n' > "$repo/p/strict.go"
 run "a gofumpt-only difference fails" 1 "p/strict.go"
 
+# run_args <name> <want rc> <substring> <args...>: like run, with arguments.
+run_args() {
+  local name="$1" want="$2" sub="$3" out rc
+  shift 3
+  out="$(FLEET_GOFUMPT_REPO_ROOT="$repo" FLEET_GOFUMPT="$bin" "$check" "$@" 2>&1)"
+  rc=$?
+  if [ "$rc" -ne "$want" ]; then
+    bad "$name: exit $rc, want $want ($out)"
+    return
+  fi
+  case "$out" in
+    *"$sub"*) ok ;;
+    *) bad "$name: output lacks '$sub' ($out)" ;;
+  esac
+}
+
+# --write formats the same file set the check reads (this is what make fmt runs).
+run "the gofumpt-only difference is still there before --write" 1 "p/strict.go"
+run_args "--write formats the unformatted file and names it" 0 "p/strict.go" --write
+run "the check passes after --write" 0 ""
+if [ "$(cat "$repo/p/strict.go")" != "$(printf 'package p\n\nfunc K() int {\n\treturn 4\n}')" ]; then
+  bad "--write did not leave the file as gofumpt writes it"
+else
+  ok
+fi
+printf 'package p\n\nfunc H() int {\nreturn 3\n}\n' > "$repo/gen/go/x.go"
+run_args "--write leaves gitignored generated code alone" 0 "formatted" --write
+if [ "$(cat "$repo/gen/go/x.go")" != "$(printf 'package p\n\nfunc H() int {\nreturn 3\n}')" ]; then
+  bad "--write changed gitignored generated code"
+else
+  ok
+fi
+
+# The check must not pass by seeing nothing.
+rm -rf "$repo"
+mkdir -p "$repo"
+git -C "$repo" init -q
+printf 'notes\n' > "$repo/README.md"
+run "a repo with no Go files fails instead of passing" 1 "no Go files"
+
+nogit="$work/not-a-repo"
+rm -rf "$nogit"
+mkdir -p "$nogit/p"
+printf 'package p\n\nfunc F() int { return 1 }\n' > "$nogit/p/ok.go"
+out="$(FLEET_GOFUMPT_REPO_ROOT="$nogit" FLEET_GOFUMPT="$bin" "$check" 2>&1)"
+rc=$?
+if [ "$rc" -eq 0 ]; then
+  bad "a directory that is not a git repo passed: $out"
+else
+  case "$out" in
+    *"could not list"*) ok ;;
+    *) bad "a directory that is not a git repo: output lacks 'could not list' ($out)" ;;
+  esac
+fi
+
 printf 'test-check-gofumpt: %s passed, %s failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
