@@ -33,6 +33,7 @@ scripts/changed-go-packages.sh   the Go packages a change affects, for make test
 scripts/check-gofumpt.sh      fails on a Go file gofumpt would change
 scripts/test-check-versions.sh, test-changed-go-packages.sh, test-check-gofumpt.sh,
   test-pre-push.sh            seeded RED/GREEN self-tests for the four above; make selftest runs them
+scripts/test-verify-agent-canon.sh   seeded cases for the script checks of verify-agent-canon.sh (also in make selftest)
 tools/tscheck/                compiles the generated TypeScript (typescript 7, strict)
 scripts/plan-issues.py        writes each plan row's GitHub issue body from the plan
                               (--print, --check, --apply; ADR 0026)

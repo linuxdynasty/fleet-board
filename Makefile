@@ -104,6 +104,7 @@ selftest: tools
 	scripts/test-changed-go-packages.sh
 	scripts/test-check-gofumpt.sh
 	scripts/test-pre-push.sh
+	scripts/test-verify-agent-canon.sh
 	python3 scripts/test-check-attribution.py
 	python3 scripts/test-check-file-cap.py
 

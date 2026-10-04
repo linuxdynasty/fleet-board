@@ -191,6 +191,7 @@ PY
 )" || fail "hook config check could not run"
 [ -z "$problems" ] || fail "hook config problems:
 $problems"
+[ -f "$root/.githooks/pre-push" ] || fail "missing .githooks/pre-push (the guard for main, ADR 0024)"
 hook_scripts=0
 for script in "$root"/.claude/hooks/*.sh "$root"/.claude/hooks/lib/*.sh "$root"/scripts/*.sh "$root"/.githooks/pre-push; do
   [ -f "$script" ] || continue
