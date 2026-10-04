@@ -106,13 +106,20 @@ a branch runs `make gates` first and is refused if it fails. Deleting another
 branch and pushing a tag run no gate.
 
 The guard is opt-in per clone: until you run `make hooks`, git does not run it.
-It checks the checked-out `HEAD`, so a push of any other commit is refused
-(check out the branch you push, then push again). There is no way to skip the
-gate other than not enabling the hook: it has no switch and no environment
-variable, and skipping hooks is against the rules.
+The gate checks the working tree, so the hook makes sure the tree is exactly the
+commit being pushed. It refuses a push of any commit that is not the checked-out
+`HEAD` (check out the branch you push, then push again), and a push while any
+file is modified, staged or untracked and not ignored (`gen/`, `.bin/` and
+`node_modules` are ignored). It lists up to ten paths to commit or remove. That
+is the only reason the gate can vouch for the committed `HEAD`.
+
+There is no way to skip or steer the gate other than not enabling the hook: it
+has no switch, and it unsets `BASE_REF` and every `FLEET_*` variable before it
+runs `make BASE_REF=origin/main gates` (the command line beats the environment
+inside make). Skipping hooks is against the rules.
 `scripts/test-pre-push.sh` drives the real hook with a real `git push` to a
 throwaway bare repository, never to `origin`, with a fake `make` first on
-`PATH` standing in for the gate (one that exits 0 and one that exits 1).
+`PATH` that records what the gate was given (and exits 0 or 1).
 
 ## Pinned tool versions
 

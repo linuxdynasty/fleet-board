@@ -10,10 +10,16 @@
 #     the gate fails;
 #   - a push of a branch whose commit is not the checked-out HEAD is refused,
 #     because the gate checks the checked-out files and could not vouch for it;
+#   - a push of a branch is refused while the working tree has any change that
+#     git does not ignore (modified, staged or untracked files): the gate checks
+#     the working tree, so it vouches for the committed HEAD only when the tree
+#     is clean;
 #   - deleting another branch, and pushing a tag, run no gate.
-# The hook has no switch and no environment variable that skips the gate. The
-# only way not to run it is not to enable it (it is opt-in per clone), and the
-# owner's rules forbid skipping hooks.
+# The hook has no switch and no environment variable that skips or steers the
+# gate: it unsets BASE_REF and every FLEET_* variable before it runs the gate,
+# and names the base itself on the make command line (BASE_REF=origin/main).
+# The only way not to run it is not to enable it (it is opt-in per clone), and
+# the owner's rules forbid skipping hooks.
 #
 # Turn it on once per clone with `make hooks` (git config core.hooksPath
 # .githooks). Git feeds this script one line per ref on stdin:
@@ -21,7 +27,7 @@
 #
 # Plain POSIX sh: it runs on macOS and Linux. scripts/test-pre-push.sh drives
 # this file through a real git push to a throwaway bare repository, with a fake
-# `make` first on PATH.
+# `make` first on PATH that records what the gate was given.
 
 remote_name="${1:-the remote}"
 
@@ -86,8 +92,32 @@ top="$(git rev-parse --show-toplevel)" || exit 1
 cd "$top" || exit 1
 unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE
 
+# The gate checks the working tree, so the tree must be exactly the commit
+# being pushed: no modified, staged or untracked file that git does not ignore.
+dirty="$(git status --porcelain --untracked-files=all)" || exit 1
+if [ -n "$dirty" ]; then
+  say "fleet-board: push refused."
+  say "The gate checks the files in your working tree, and it can only vouch for"
+  say "the committed HEAD when nothing else is changed. Commit or remove these first:"
+  printf '%s\n' "$dirty" | head -n 10 | cut -c4- | sed 's/^/  /' >&2
+  total="$(printf '%s\n' "$dirty" | wc -l | tr -d ' ')"
+  if [ "$total" -gt 10 ]; then
+    say "  ... and $((total - 10)) more"
+  fi
+  exit 1
+fi
+
+# Nothing in the environment may steer the gate: BASE_REF=HEAD would make it see
+# "no change", and a FLEET_* variable points a gate script at another tree or
+# binary. Drop them all, and name the base on the command line, which beats the
+# environment inside make.
+for name in $(env | sed -n 's/^\(FLEET_[A-Za-z0-9_]*\)=.*/\1/p'); do
+  unset "$name"
+done
+unset BASE_REF
+
 say "fleet-board: running make gates before the push (this takes a while)."
-make gates
+make BASE_REF=origin/main gates
 status=$?
 
 if [ "$status" -ne 0 ]; then

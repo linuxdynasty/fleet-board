@@ -40,6 +40,7 @@ fi
 remote="$work/remote.git"
 repo="$work/repo"
 log="$work/gate.log"
+envlog="$work/gate.env"
 fakebin="$work/bin"
 mkdir -p "$fakebin"
 
@@ -51,6 +52,7 @@ makerc="$work/make.rc"
 cat > "$fakebin/make" <<EOF
 #!/bin/sh
 echo "make \$* in \$(pwd -P)" >> "$log"
+echo "BASE_REF=[\${BASE_REF-}] FLEET_GOFUMPT=[\${FLEET_GOFUMPT-}] FLEET_ANY=[\${FLEET_ANY-}]" >> "$envlog"
 if [ -f "$makerc" ]; then exit "\$(cat "$makerc")"; fi
 exit 0
 EOF
@@ -63,7 +65,7 @@ gate_runs() { if [ -f "$log" ]; then wc -l < "$log" | tr -d ' '; else echo 0; fi
 # fresh: a bare remote with main, and a work repo that has the hook enabled the
 # way `make hooks` does (core.hooksPath .githooks).
 fresh() {
-  rm -rf "$remote" "$repo" "$log" "$makerc" "$work/wt"
+  rm -rf "$remote" "$repo" "$log" "$envlog" "$makerc" "$work/wt"
   git init -q --bare -b main "$remote"
   # Let the bare repo accept deleting its current branch, so that only the hook
   # stands between a delete of main and the remote.
@@ -174,8 +176,8 @@ elif [ "$(remote_ref refs/heads/feature)" != "$head" ]; then
   bad "branch push: the branch did not land"
 elif [ "$(gate_runs)" != "1" ]; then
   bad "branch push: the gate ran $(gate_runs) times, want 1"
-elif [ "$(cat "$log")" != "make gates in $expected_dir" ]; then
-  bad "branch push: gate line was '$(cat "$log")', want 'make gates in $expected_dir'"
+elif [ "$(cat "$log")" != "make BASE_REF=origin/main gates in $expected_dir" ]; then
+  bad "branch push: gate line was '$(cat "$log")', want 'make BASE_REF=origin/main gates in $expected_dir'"
 else
   ok
 fi
@@ -245,8 +247,8 @@ push "$work/wt" origin HEAD:wt-branch
 expected_dir="$(cd "$work/wt" && pwd -P)"
 if [ "$rc" -ne 0 ]; then
   bad "worktree branch push: exit $rc"
-elif [ "$(cat "$log")" != "make gates in $expected_dir" ]; then
-  bad "worktree branch push: gate line '$(cat "$log")', want 'make gates in $expected_dir'"
+elif [ "$(cat "$log")" != "make BASE_REF=origin/main gates in $expected_dir" ]; then
+  bad "worktree branch push: gate line '$(cat "$log")', want 'make BASE_REF=origin/main gates in $expected_dir'"
 else
   main_before="$(remote_ref refs/heads/main)"
   rm -f "$log"
@@ -287,6 +289,96 @@ elif [ "$(remote_ref refs/heads/feature)" != "$(g rev-parse feature)" ]; then
 else
   ok
 fi
+
+# RED 9: the environment cannot steer the gate. BASE_REF=HEAD would make the
+# gate see "no change"; FLEET_* variables point the gate scripts at other trees
+# or binaries. The hook scrubs them and names the base itself on the command line.
+fresh
+BASE_REF=HEAD FLEET_GOFUMPT=true FLEET_ANY=x push "$repo" origin HEAD:feature
+if [ "$rc" -ne 0 ]; then
+  bad "scrubbed environment: exit $rc"
+elif [ "$(gate_runs)" != "1" ]; then
+  bad "scrubbed environment: the gate ran $(gate_runs) times, want 1"
+elif [ "$(cat "$envlog")" != "BASE_REF=[] FLEET_GOFUMPT=[] FLEET_ANY=[]" ]; then
+  bad "scrubbed environment: the gate saw '$(cat "$envlog")', want every variable empty"
+elif [ "$(cat "$log")" != "make BASE_REF=origin/main gates in $(cd "$repo" && pwd -P)" ]; then
+  bad "scrubbed environment: gate line '$(cat "$log")'"
+else
+  ok
+fi
+
+# RED 10: a dirty tree is refused, because the gate checks the working tree and
+# could only vouch for the committed HEAD if nothing else is changed.
+fresh
+printf 'edit\n' >> "$repo/f.txt"
+push "$repo" origin HEAD:feature
+if expect_refused "dirty tracked file"; then
+  if [ "$(remote_ref refs/heads/feature)" != "none" ]; then
+    bad "dirty tracked file: the branch landed anyway"
+  elif [ "$(gate_runs)" != "0" ]; then
+    bad "dirty tracked file: the gate ran for a refused push"
+  elif expect_out "dirty tracked file" "Commit or remove these first" && expect_out "dirty tracked file" "f.txt"; then
+    ok
+  fi
+fi
+
+fresh
+printf 'new\n' > "$repo/new.txt"
+push "$repo" origin HEAD:feature
+if expect_refused "untracked file"; then
+  if [ "$(remote_ref refs/heads/feature)" != "none" ]; then
+    bad "untracked file: the branch landed anyway"
+  elif expect_out "untracked file" "Commit or remove these first" && expect_out "untracked file" "new.txt"; then
+    ok
+  fi
+fi
+
+fresh
+printf 'edit\n' >> "$repo/f.txt"
+g add f.txt
+push "$repo" origin HEAD:feature
+if expect_refused "staged but uncommitted change"; then
+  if [ "$(remote_ref refs/heads/feature)" != "none" ]; then bad "staged change: the branch landed anyway"; else ok; fi
+fi
+
+fresh
+i=1
+while [ "$i" -le 12 ]; do
+  printf 'x\n' > "$repo/junk$i.txt"
+  i=$((i + 1))
+done
+push "$repo" origin HEAD:feature
+if expect_refused "twelve untracked files"; then
+  listed="$(printf '%s\n' "$out" | grep -c 'junk[0-9]*\.txt')"
+  if [ "$listed" != "10" ]; then
+    bad "twelve untracked files: $listed paths listed, want 10"
+  elif expect_out "twelve untracked files" "and 2 more"; then
+    ok
+  fi
+fi
+
+# GREEN 8: an ignored file is not a change (gen/ and .bin/ are ignored in the
+# real repository).
+fresh
+printf 'ignored.out\n' > "$repo/.gitignore"
+g add .gitignore
+g commit -q -m "ignore"
+printf 'x\n' > "$repo/ignored.out"
+push "$repo" origin HEAD:feature
+if [ "$rc" -ne 0 ]; then
+  bad "ignored file: exit $rc"
+elif [ "$(remote_ref refs/heads/feature)" != "$(g rev-parse HEAD)" ]; then
+  bad "ignored file: the branch did not land"
+else
+  ok
+fi
+
+# GREEN 9: a dirty tree does not block a push that runs no gate (a tag).
+fresh
+g tag v0.0.2
+printf 'edit\n' >> "$repo/f.txt"
+push "$repo" origin v0.0.2
+if [ "$rc" -ne 0 ]; then bad "tag push with a dirty tree: exit $rc"; else ok; fi
 
 printf 'test-pre-push: %s passed, %s failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
