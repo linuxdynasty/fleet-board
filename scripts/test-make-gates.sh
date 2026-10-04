@@ -87,6 +87,23 @@ fresh
 diff_check "an untracked file named HEAD fails before it is ever added" 2 "HEAD"
 
 fresh
+mkdir -p "$repo/é"
+: > "$repo/é/HEAD"
+git -C "$repo" add -A
+diff_check "a tracked HEAD under a non-ASCII directory fails (git must not quote the path)" 2 "é/HEAD"
+
+fresh
+mkdir -p "$repo/é"
+: > "$repo/é/HEAD"
+diff_check "an untracked HEAD under a non-ASCII directory fails" 2 "é/HEAD"
+
+fresh
+mkdir -p "$repo/é"
+: > "$repo/é/notes.txt"
+git -C "$repo" add -A
+diff_check "a non-ASCII path with an ordinary name passes" 0 ""
+
+fresh
 printf 'HEAD\n' > "$repo/.gitignore"
 : > "$repo/HEAD"
 git -C "$repo" add .gitignore
@@ -102,15 +119,37 @@ diff_check "names that merely contain a ref name pass" 0 ""
 # ---- 2. make gates lists every gate -----------------------------------------
 gates="gen proto-check ts-check build smoke mod-check fmt-check test lint actionlint selftest diff-check"
 
-# missing_gates <dir with a Makefile>: prints the gates make -n gates does not run.
+# The four direct lines of the gates recipe (the others are $(MAKE) lines).
+direct="scripts/check-versions.sh
+scripts/check-file-cap.sh
+scripts/verify-agent-canon.sh
+python3 scripts/agent-roles.py --check"
+
+# missing_gates <dir with a Makefile>: prints what is wrong with `make gates`:
+# a gate that `make -n gates` does not run, a direct line that is gone
+# ("line:<text>"), and "ignore-errors" when a recipe line of `gates` starts with
+# `-` or `@-` (make -n hides that prefix, so the Makefile text is read for it).
 missing_gates() {
-  local dir="$1" out g missing=""
+  local dir="$1" out g line missing=""
   out="$(cd "$dir" && make -n gates 2>&1)"
   for g in $gates; do
     if ! printf '%s\n' "$out" | grep -E -q "(^|[ /])make ${g}\$"; then
       missing="$missing $g"
     fi
   done
+  while IFS= read -r line; do
+    if ! printf '%s\n' "$out" | grep -x -F -q "$line"; then
+      missing="$missing line:$line"
+    fi
+  done <<EOF3
+$direct
+EOF3
+  if awk '/^gates:/ { in_gates = 1; next }
+          in_gates && /^\t/ { if ($0 ~ /^\t@?-/) bad = 1; next }
+          in_gates && NF && $0 !~ /^#/ { in_gates = 0 }
+          END { exit !bad }' "$dir/Makefile"; then
+    missing="$missing ignore-errors"
+  fi
   printf '%s' "$missing"
 }
 
@@ -129,6 +168,29 @@ for g in $gates; do
   fi
   missing="$(missing_gates "$scratch")"
   if [ "$missing" = " $g" ]; then ok; else bad "deleting \$(MAKE) $g from a scratch copy was reported as missing:'$missing'"; fi
+done
+
+while IFS= read -r line; do
+  cp "$root/Makefile" "$scratch/Makefile"
+  grep -v -x -F "	$line" "$root/Makefile" > "$scratch/Makefile"
+  if cmp -s "$root/Makefile" "$scratch/Makefile"; then
+    bad "the Makefile has no '$line' recipe line to delete from the scratch copy"
+    continue
+  fi
+  missing="$(missing_gates "$scratch")"
+  if [ "$missing" = " line:$line" ]; then ok; else bad "deleting '$line' from a scratch copy was reported as:'$missing'"; fi
+done <<EOF2
+$direct
+EOF2
+
+for prefix in '-' '@-'; do
+  sed "s/^	\\\$(MAKE) lint\$/	${prefix}\\\$(MAKE) lint/" "$root/Makefile" > "$scratch/Makefile"
+  if cmp -s "$root/Makefile" "$scratch/Makefile"; then
+    bad "could not build the '${prefix}\$(MAKE) lint' variant"
+    continue
+  fi
+  missing="$(missing_gates "$scratch")"
+  if [ "$missing" = " ignore-errors" ]; then ok; else bad "'${prefix}\$(MAKE) lint' in a scratch copy was reported as:'$missing'"; fi
 done
 
 printf 'test-make-gates: %s passed, %s failed\n' "$pass" "$fail"
