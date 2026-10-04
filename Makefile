@@ -1,17 +1,35 @@
-# fleet-board build and gate entry points.
+# fleet-board build and gate entry points (plan row 1).
 #
 # Every pinned tool version comes from tool-versions.env (plan row 0.10); CI
 # reads the same file. Recipes run under /bin/sh and need only GNU make 3.81
 # (the macOS make). Tools are built with the local Go into .bin/, which is
 # gitignored; nothing here uses a copy that happens to be on PATH.
+#
+# gen/ is never committed, so a fresh worktree starts with `make gen`.
+#
+#   make gen        buf generate into gen/ (Go and TypeScript)
+#   make build      CGO_ENABLED=0 go build ./...
+#   make test       go vet ./..., then go test and go test -race on the
+#                   packages changed against BASE_REF (default origin/main)
+#   make lint       golangci-lint on the same packages
+#   make gates      everything a push needs, one command (prints tool versions)
+#   make hooks      turn on the pre-push guard (.githooks/pre-push)
 
 include tool-versions.env
+
+BASE_REF ?= origin/main
 
 BIN := $(CURDIR)/.bin
 GOLANGCI_LINT := $(BIN)/golangci-lint
 GOFUMPT := $(BIN)/gofumpt
+BUF := go run github.com/bufbuild/buf/cmd/buf@$(BUF_VERSION)
 
-.PHONY: tools versions
+# The race detector needs cgo everywhere except macOS (cmd/go: "-race requires
+# cgo" on Linux). Only the test binaries use it; shipped binaries stay cgo-free.
+RACE_CGO := $(if $(filter Darwin,$(shell uname -s)),0,1)
+
+.PHONY: tools versions gen build proto-check ts-check mod-check fmt-check
+.PHONY: vet test lint selftest diff-check docs-stale gates hooks
 
 # tools builds the pinned linters into .bin/. Each is rebuilt when
 # tool-versions.env changes.
@@ -28,3 +46,97 @@ $(GOFUMPT): tool-versions.env
 # versions prints the pins this checkout uses.
 versions:
 	@echo "pinned: go $(GO_VERSION), node $(NODE_MAJOR), golangci-lint $(GOLANGCI_LINT_VERSION), buf $(BUF_VERSION), gofumpt $(GOFUMPT_VERSION), typescript $(TYPESCRIPT_VERSION)"
+
+gen:
+	$(BUF) generate
+
+build:
+	CGO_ENABLED=0 go build ./...
+
+# proto-check is the contract compile check (docs/specs/02e-contract-rules.md).
+proto-check:
+	$(BUF) build
+	$(BUF) lint
+
+# ts-check compiles the generated TypeScript with the pinned typescript
+# (tools/tscheck). gen/ts finds its packages through a symlink to the
+# tscheck node_modules, so the check needs no copy of the generated files.
+ts-check:
+	@test -d gen/ts || { echo "make ts-check: gen/ts is missing; run make gen first" >&2; exit 1; }
+	@echo "ts-check: node $$(node -v) (CI uses $(NODE_MAJOR))"
+	cd tools/tscheck && npm ci --no-audit --no-fund
+	ln -sfn ../../tools/tscheck/node_modules gen/ts/node_modules
+	cd tools/tscheck && ./node_modules/.bin/tsc --version && ./node_modules/.bin/tsc -p tsconfig.json
+
+# mod-check fails when go.mod or go.sum is not what `go mod tidy` writes.
+mod-check:
+	go mod tidy -diff
+
+fmt-check: tools
+	scripts/check-gofumpt.sh
+
+vet:
+	CGO_ENABLED=0 go vet ./...
+
+# test runs vet on everything and the tests on the changed packages
+# (scripts/changed-go-packages.sh: files changed against BASE_REF plus the
+# packages that import them; every package when a build input changed).
+test: vet
+	@pkgs="$$(scripts/changed-go-packages.sh $(BASE_REF))" || exit 1; \
+	if [ -z "$$pkgs" ]; then echo "make test: no Go package changed against $(BASE_REF); no tests to run"; exit 0; fi; \
+	echo "make test: $$pkgs"; \
+	CGO_ENABLED=0 go test $$pkgs && CGO_ENABLED=$(RACE_CGO) go test -race $$pkgs
+
+lint: tools
+	@pkgs="$$(scripts/changed-go-packages.sh $(BASE_REF))" || exit 1; \
+	if [ -z "$$pkgs" ]; then echo "make lint: no Go package changed against $(BASE_REF); nothing to lint"; exit 0; fi; \
+	echo "make lint: $$pkgs"; \
+	$(GOLANGCI_LINT) run $$pkgs
+
+# selftest runs the seeded RED/GREEN cases of the repo's own gate scripts.
+selftest: tools
+	scripts/test-check-versions.sh
+	scripts/test-changed-go-packages.sh
+	scripts/test-check-gofumpt.sh
+	scripts/test-pre-push.sh
+	python3 scripts/test-check-attribution.py
+	python3 scripts/test-check-file-cap.py
+
+# diff-check is `git diff --check` against the merge base, so commits already
+# made are checked as well as the working tree.
+diff-check:
+	@base="$$(git merge-base $(BASE_REF) HEAD 2>/dev/null || true)"; \
+	if [ -n "$$base" ]; then git diff --check "$$base"; else git diff --check; fi
+
+# docs-stale is advisory: it prints reminders and always exits 0.
+docs-stale:
+	python3 scripts/check-docs-stale.py
+
+# gates is the whole local gate, in the order of AGENTS.md "Local Gates". It
+# prints the tool versions it used before it runs anything.
+gates: tools
+	@echo "== tool versions used =="
+	@$(GOLANGCI_LINT) version
+	@go version
+	@$(BUF) --version | sed 's/^/buf /'
+	@echo "node $$(node -v)"
+	@$(GOFUMPT) --version | sed 's/^/gofumpt /'
+	@echo "== gates (base $(BASE_REF)) =="
+	scripts/check-versions.sh
+	$(MAKE) gen
+	$(MAKE) proto-check
+	$(MAKE) ts-check
+	$(MAKE) mod-check
+	$(MAKE) fmt-check
+	$(MAKE) test
+	$(MAKE) lint
+	scripts/check-file-cap.sh
+	scripts/verify-agent-canon.sh
+	python3 scripts/agent-roles.py --check
+	$(MAKE) selftest
+	$(MAKE) diff-check
+
+# hooks turns on the pre-push guard for this clone and all its worktrees.
+hooks:
+	git config core.hooksPath .githooks
+	@echo "pre-push guard on: pushes to main are refused and other pushes run make gates"
