@@ -7,8 +7,8 @@
 # Two kinds of case, both seeded:
 #   - `make -n` prints each recipe; the raw hostile value must appear nowhere
 #     in it (test, lint, diff-check and gates all read BASE_REF);
-#   - `make diff-check` really runs with a value that would create a marker file
-#     if it were executed; the marker must not exist.
+#   - `make diff-check` really runs, in a throwaway repo, with a value that would
+#     create a marker file if it were executed; the marker must not exist.
 # Runs on the macOS system bash 3.2. Needs make and git.
 #
 # Usage: scripts/test-make-base-ref.sh        exit 0 only if every case passes
@@ -40,9 +40,16 @@ for target in test lint diff-check gates; do
   esac
 done
 
-# Real run: the hostile value is just an unknown ref, so nothing may execute.
+# Real run, in a throwaway git repo that holds a copy of the Makefile, never in
+# this checkout: a vulnerable Makefile would run `touch <marker> HEAD` and leave
+# a file named HEAD behind (it once did, in a commit). The hostile value is just
+# an unknown ref, so nothing may execute.
+tree="$work/tree"
+mkdir -p "$tree"
+git -C "$tree" init -q
+cp "$root/Makefile" "$root/tool-versions.env" "$tree/"
 rm -f "$marker"
-out="$(cd "$root" && make diff-check BASE_REF="$hostile" 2>&1)"
+out="$(cd "$tree" && unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE && make diff-check BASE_REF="$hostile" 2>&1)"
 rc=$?
 if [ -e "$marker" ]; then
   bad "make diff-check ran the code inside BASE_REF"
@@ -52,7 +59,7 @@ else
   ok
 fi
 
-out="$(cd "$root" && make diff-check BASE_REF="$spaced" 2>&1)"
+out="$(cd "$tree" && unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE && make diff-check BASE_REF="$spaced" 2>&1)"
 rc=$?
 if [ "$rc" -ne 0 ]; then
   bad "make diff-check with a spaced ref: exit $rc ($out)"

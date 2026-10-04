@@ -86,7 +86,8 @@ The `Makefile` is the one entry point; CI runs the same targets, one per step
 | `fmt`, `fmt-check` | the pinned `gofumpt` formats, or only checks, every Go file (the same file set) |
 | `mod-check`, `actionlint` | `go mod tidy -diff`; the workflow files |
 | `selftest` | the seeded RED/GREEN cases of the gate scripts, including the pre-push hook |
-| `gates` | all of the above plus the file cap, agent canon, roles check and `git diff --check`; prints the tool versions it used first |
+| `diff-check` | `git diff --check` against the merge base, and a refusal of any file named like a git ref (`HEAD`, `main`, ...) |
+| `gates` | all of the above plus the file cap, agent canon and roles check; prints the tool versions it used first |
 | `hooks` | turns on the pre-push guard (`core.hooksPath` is `.githooks`; once per clone, and all its worktrees share it) |
 
 "Changed packages" come from `scripts/changed-go-packages.sh`: the files that

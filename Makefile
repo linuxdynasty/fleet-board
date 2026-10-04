@@ -130,12 +130,18 @@ selftest: tools
 	scripts/test-smoke-binaries.sh
 	scripts/test-make-base-ref.sh
 	scripts/test-make-tools.sh
+	scripts/test-make-gates.sh
 	python3 scripts/test-check-attribution.py
 	python3 scripts/test-check-file-cap.py
 
-# diff-check is `git diff --check` against the merge base, so commits already
-# made are checked as well as the working tree.
+# diff-check fails on a file named like a git ref (HEAD, main, ...) at any path,
+# tracked or not yet added: it makes `git diff HEAD` ambiguous and one was once
+# committed by a stray `touch HEAD`. Then it is `git diff --check` against the
+# merge base, so commits already made are checked as well as the working tree.
 diff-check:
+	@files="$$(git ls-files --cached --others --exclude-standard)" || exit 1; \
+	bad="$$(printf '%s\n' "$$files" | awk -F/ '$$NF ~ /^(HEAD|FETCH_HEAD|ORIG_HEAD|MERGE_HEAD|main|master)$$/')"; \
+	if [ -n "$$bad" ]; then echo "diff-check: a file is named like a git ref (git diff HEAD would be ambiguous): $$bad" >&2; exit 1; fi
 	@base="$$(git merge-base "$$BASE_REF" HEAD 2>/dev/null || true)"; \
 	if [ -n "$$base" ]; then git diff --check "$$base"; else git diff --check; fi
 
