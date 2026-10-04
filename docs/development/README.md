@@ -41,10 +41,12 @@ scripts/test-verify-agent-canon.sh, test-smoke-binaries.sh, test-make-base-ref.s
 tools/tscheck/                compiles the generated TypeScript (typescript 7, strict)
 scripts/plan-issues.py        writes each plan row's GitHub issue body from the plan
                               (--print, --check, --apply; ADR 0026)
+scripts/test-agent-roles.py   self-test for agent-roles.py (make selftest)
 scripts/test-plan-issues.py   self-test for plan-issues.py, no network; test-dev-hooks.sh runs it
 .claude/agents/*.md           generated (Claude Code subagents)
 .codex/agents/*.toml          generated (Codex custom agents)
 .opencode/agent/*.md          generated (OpenCode agents)
+.cursor/agents/*.md           generated (Cursor subagents; model: inherit)
 .claude/skills/, .codex/skills/   symlinks to .agents/skills/<name>
 AGENTS.md                     the rules every harness reads (no CLAUDE.md)
 ```

@@ -118,9 +118,9 @@ once. State which skills are active.
 ## Roles And Cost Tiers
 
 Roles are defined once in [.agents/roles.json](.agents/roles.json) and rendered
-by `scripts/agent-roles.py` into `.claude/agents/`, `.codex/agents/` and
-`.opencode/agent/` (generated; never edit them). Match the tier to the
-difficulty, cheapest first:
+by `scripts/agent-roles.py` into `.claude/agents/`, `.codex/agents/`,
+`.opencode/agent/` and `.cursor/agents/` (generated; never edit them). Match the
+tier to the difficulty, cheapest first:
 
 | Tier | Roles | Use for |
 |---|---|---|
