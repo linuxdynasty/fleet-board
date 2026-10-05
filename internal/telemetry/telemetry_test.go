@@ -228,6 +228,39 @@ func TestMetricPrefixAndResourceFollowTheService(t *testing.T) {
 	}
 }
 
+// The arbiter's ruling on client_golang: product metrics come only from the
+// OTel SDK; client_golang adds only its Go and process collectors and serves
+// the private registry, with no promhttp_* self-instrumentation.
+func TestScrapeHoldsOTelMetricsAndTheRuntimeCollectorsOnly(t *testing.T) {
+	t.Parallel()
+	tel := newTelemetry(t, hubConfig(io.Discard))
+	tel.Logger.Info("x.y")
+	_ = scrape(t, tel)
+	body := scrape(t, tel) // a second scrape would show promhttp_metric_handler_requests_total
+	var families []string
+	sc := bufio.NewScanner(strings.NewReader(body))
+	for sc.Scan() {
+		if name, ok := strings.CutPrefix(sc.Text(), "# TYPE "); ok {
+			families = append(families, strings.Fields(name)[0])
+		}
+	}
+	allowed := []string{"fleet_hub_", "go_", "process_", "target_info"}
+	for _, f := range families {
+		ok := false
+		for _, prefix := range allowed {
+			ok = ok || strings.HasPrefix(f, prefix)
+		}
+		if !ok || strings.HasPrefix(f, "promhttp_") {
+			t.Errorf("metric family %q is neither an OTel product metric nor a Go or process collector metric", f)
+		}
+	}
+	for _, want := range []string{"fleet_hub_log_lines_total", "go_goroutines", "process_start_time_seconds"} {
+		if sample(body, want) <= 0 {
+			t.Errorf("%s missing from the scrape", want)
+		}
+	}
+}
+
 func TestMetricsHandlerAdmitsOnlyLoopbackOrAnAllowedRequest(t *testing.T) {
 	t.Parallel()
 	tel := newTelemetry(t, hubConfig(io.Discard))

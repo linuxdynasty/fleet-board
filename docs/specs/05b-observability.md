@@ -75,8 +75,12 @@ that carries only the id and the length instead.
 **Naming** is the existing rule (03, conventions): `fleet_hub_*` and
 `fleet_agent_*`, Prometheus style, unit suffix (`_total`, `_seconds`,
 `_bytes`), counters end in `_total`, durations are histograms in seconds,
-gauges name what they hold. Runtime and process metrics from the OTel runtime
-instrumentation keep their library names (`go_*`, `process_*`). **Labels are
+gauges name what they hold. Runtime and process metrics come from the Go and
+process collectors of `client_golang`, the Prometheus library the Prometheus
+exporter is built on, registered on the program's own registry; they keep
+their library names (`go_*`, `process_*`). Every product metric is made
+through the OTel SDK (the arbiter's ruling on PR 2, recorded in
+`internal/telemetry/AGENTS.md`). **Labels are
 closed and bounded**: enums, kinds, result classes, and ids that grow with the
 fleet, not with data (`machine`, `account`, `integration`, `routine`); never
 `goal_id`, a path, a title or a session name. At A50 the largest label set is

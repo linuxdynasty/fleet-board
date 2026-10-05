@@ -6,8 +6,9 @@
 //   - a JSON [log/slog] logger: one event per line, RFC 3339 UTC time,
 //     lowercase level, trace_id and span_id when the context holds a span,
 //     and every line counted in <prefix>_log_lines_total{level};
-//   - an OpenTelemetry meter provider read by a Prometheus registry (with the
-//     go_* and process_* runtime metrics), served by
+//   - an OpenTelemetry meter provider read by a private Prometheus registry
+//     (plus the go_* and process_* metrics of client_golang's Go and process
+//     collectors; no other client_golang metric), served by
 //     [Telemetry.MetricsHandler] to a loopback peer or a request the caller
 //     allows;
 //   - an OpenTelemetry tracer provider with no exporter: spans give log lines

@@ -11,6 +11,10 @@ Logs, metrics and traces for `fleetd` and `fleet-agent`, set up the way
   name (`store.opened`), plus `trace_id` and `span_id` when the context holds a
   span. `SetLogLevel` changes the level at run time. Each line counts in
   `<prefix>_log_lines_total{level}`.
+- Metrics live in a private Prometheus registry. Product metrics come only
+  from the OTel SDK; `client_golang` adds only its Go and process collectors
+  (`go_*`, `process_*`) and serves the registry (the limits are in
+  `AGENTS.md`).
 - `Meter(name)` and `Tracer(name)` hand out instruments; `MetricPrefix()` is
   `fleet_hub` or `fleet_agent`, the start of every metric name.
 - `MetricsHandler(allow)` serves `/metrics` in the Prometheus text format to a
