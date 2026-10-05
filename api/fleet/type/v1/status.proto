@@ -59,6 +59,7 @@ enum Status {
   // The agent cannot tell whether the effect happened (SendKeys after a
   // crash, UI must ask a person). Never retried automatically.
   STATUS_UNKNOWN_OUTCOME = 6;
+  // [CAP L3]
   // Waiting for `fleet-agent approve <command_id>` before not_after_time.
   // Progress only: it appears in CommandProgress{step "awaiting_local_confirm"}
   // and never in a CommandResult, which is always final and sent exactly
@@ -166,6 +167,7 @@ enum ReasonCode {
   REASON_CODE_GOAL_NOT_RUNNING = 302;
   // 303 was STOP_TIMEOUT for the removed StopGoal composite; unused.
   REASON_CODE_TRUST_PROMPT_SEEN = 304;
+  // [CAP G4]
   // The harness's /goal has no such subcommand (for example pause on
   // Claude Code 2.1.286, which offers only set and clear).
   REASON_CODE_GOAL_SUBCOMMAND_UNSUPPORTED = 305;
@@ -354,17 +356,23 @@ enum ReasonCode {
   // Collected report empty, not UTF-8, too large or without the bundle marker.
   REASON_CODE_REPORT_INVALID = 564;
 
-  // Enroll (A1), carried in the ErrorDetail of the Enroll RPC error.
+  // [CAP A1]
+  // Enroll errors, carried in the ErrorDetail of the Enroll RPC error.
   // The token is not one the hub issued (or its secret part is wrong).
   REASON_CODE_ENROLL_TOKEN_UNKNOWN = 600;
+  // [CAP A1]
   REASON_CODE_ENROLL_TOKEN_EXPIRED = 601;
+  // [CAP A1]
   // Burned by an earlier Enroll with another install_id or CSR key. The
   // same install_id and CSR key replays the stored response instead.
   REASON_CODE_ENROLL_TOKEN_USED = 602;
+  // [CAP A1]
   // The CSR does not parse, is not Ed25519, or asks for another subject.
   REASON_CODE_ENROLL_CSR_INVALID = 603;
+  // [CAP A1]
   // No common proto version (proto_min/proto_max).
   REASON_CODE_ENROLL_PROTO_UNSUPPORTED = 604;
+  // [CAP A1]
   // EnrollRequest.previous_machine_id names a machine and the token names a
   // different one. A request id with a token that names none is ignored.
   REASON_CODE_ENROLL_PREVIOUS_MACHINE_MISMATCH = 605;

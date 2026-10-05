@@ -216,7 +216,7 @@ lists every window on every machine; the Details drawer holds the controls.
 | Condition and permission strips above the terminal | `Pane.open_triage[]` → `TriageItem.condition` / `.prompt` | `HarnessCondition`, `PromptDetected` (E12, E6) | v1 |
 | Caption: `OpenAttach{…}` and last `TermDown{…}` | `AttachOpen{session, cols, rows, read_only}`, `AttachTerminalRequest` | `OpenAttach`, `Terminal` stream (J1) | v1 |
 | Details drawer: window meta (`session:index`, pane id, branch, started, last output) | `Session.status`, `Pane.key`, `PaneSummary.last_output_time`, `Goal.status.branch` | E1 | v1 |
-| Details drawer: model line → account (OpenCode) | `Pane{account, provider, model}` | `SessionAccountLink` (01 §C, D2) | v1 |
+| Details drawer: model line → account (OpenCode) | `Pane{account, provider, model}` | `SessionAccountLink` (C2) | v1 |
 | Details drawer: goal file line + CONSENT | `Goal.status{first_line, consent_line, line_state, typed_goal_line}` | `GoalState`, `StartGoalResult.typed_goal_line` (G2) | v1 |
 | Details drawer: goal progress task list | dropped: not in the contract. The goal file's first line (`Goal.status.first_line`) and the run list below say what it is doing | — | dropped |
 | [planned] Details drawer: run history per goal (restarts, nudges, usage consumed, transcript) | `ListGoalRuns{goal}` → `GoalRun{number, cause, start_time, end_time, end_phase, nudges, usage_consumed[], logs[], transcript}`; phase changes `ListGoalTransitions{goal}`; totals `Goal.status{start_time, end_time, restarts, usage_consumed, phase_reason}` | 03c goal runs and transitions | v1 |

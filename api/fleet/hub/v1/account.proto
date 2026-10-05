@@ -216,7 +216,7 @@ message ListAccountsResponse {
 // GetAccountRequest.
 message GetAccountRequest {
   fleet.type.v1.AccountId id = 1;
-  // Needs SCOPE_LOGS: the redacted raw usage screen is terminal text.
+  // The redacted raw usage screen, which is terminal text.
   bool include_raw_screen = 2;
 }
 

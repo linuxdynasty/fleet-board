@@ -252,13 +252,13 @@ message RunHarnessCommandResponse {
 }
 
 // CapturePaneRequest sends CapturePane (E10). The visible screen
-// (last_lines 0) is a live view and needs SCOPE_READ; history lines
-// (last_lines above 0) are terminal scrollback and need SCOPE_LOGS (02d).
+// (last_lines 0) is a live view; history lines (last_lines above 0) are
+// terminal scrollback.
 message CapturePaneRequest {
   string request_id = 1;
   fleet.type.v1.SessionId session = 2;
   fleet.type.v1.PaneKey pane = 3;
-  // 0 = visible screen (READ); otherwise the last N lines of history (LOGS).
+  // 0 = visible screen; otherwise the last N lines of history.
   uint32 last_lines = 4;
   bool keep_ansi = 5;
   uint32 max_bytes = 6;
@@ -302,10 +302,9 @@ message RespawnPaneResponse {
   Operation operation = 1;
 }
 
-// KillWindowRequest sends KillWindow (F6). SCOPE_SESSIONS_WRITE covers the
-// fleet's own windows. A developer's window also needs a principal whose role
-// covers ROLE_OWNER (a narrowed device or token never does, 02d) and an
-// approval.
+// KillWindowRequest sends KillWindow (F6). A developer's window, unlike the
+// fleet's own windows, also needs a principal whose role covers ROLE_OWNER (a
+// narrowed device or token never does, 02d) and an approval.
 message KillWindowRequest {
   string request_id = 1;
   fleet.type.v1.SessionId session = 2;

@@ -34,6 +34,7 @@ message SessionTarget {
 
 // ===== D1. Probes =====
 
+// [CAP D1]
 // EnsureProbe: keep one idle harness session on the fleet-probe server for
 // this account and run its usage command on schedule. Declarative.
 message EnsureProbe {
@@ -51,6 +52,7 @@ message EnsureProbe {
   string profile = 7;
 }
 
+// [CAP D1]
 // StopProbe tears the probe session down. Declarative.
 message StopProbe {
   fleet.type.v1.ProbeId probe_id = 1;
@@ -58,7 +60,8 @@ message StopProbe {
 
 // ===== F. tmux control =====
 
-// EnsureSession (F1): create or reuse a named session. Declarative.
+// [CAP F1]
+// EnsureSession: create or reuse a named session. Declarative.
 message EnsureSession {
   fleet.type.v1.SessionId session_id = 1;
   fleet.type.v1.TmuxServerKind server = 2;
@@ -81,6 +84,7 @@ message EnsureSession {
   string profile = 12;
 }
 
+// [CAP F1]
 // EnsureSessionResult.
 message EnsureSessionResult {
   TmuxSession session = 1;
@@ -89,7 +93,8 @@ message EnsureSessionResult {
   fleet.type.v1.PaneKey pane = 3;
 }
 
-// EnsureWindow (F2): same for a window in a session. Declarative.
+// [CAP F2]
+// EnsureWindow: same for a window in a session. Declarative.
 message EnsureWindow {
   SessionTarget session = 1;
   // Name as it will show in the status bar.
@@ -109,6 +114,7 @@ message EnsureWindow {
   string harness_session_id = 9;
 }
 
+// [CAP F2]
 // EnsureWindowResult.
 message EnsureWindowResult {
   TmuxWindow window = 1;
@@ -116,7 +122,8 @@ message EnsureWindowResult {
   fleet.type.v1.PaneKey pane = 3;
 }
 
-// SendKeys (F3). NOT idempotent: a retry after UNKNOWN_OUTCOME is refused;
+// [CAP F3]
+// SendKeys. NOT idempotent: a retry after UNKNOWN_OUTCOME is refused;
 // the hub asks a person. Rate-limited per settings. The purpose decides the
 // gate (02h, "SendKeys purposes"): PROMPT_ANSWER needs the E6 detection
 // verified and the prompt still on screen; every other purpose types text
@@ -131,12 +138,14 @@ message SendKeys {
   fleet.type.v1.SendKeysPurpose purpose = 4;
 }
 
-// Interrupt (F4): C-c to the pane. Idempotent in effect.
+// [CAP F4 G4]
+// Interrupt: C-c to the pane. Idempotent in effect.
 message Interrupt {
   fleet.type.v1.PaneKey pane = 1;
 }
 
-// RespawnPane (F5): restart the harness in a dead or stuck pane through the
+// [CAP F5]
+// RespawnPane: restart the harness in a dead or stuck pane through the
 // adapter's ResumeArgs. Dangerous kind; may need local approval.
 message RespawnPane {
   fleet.type.v1.PaneKey pane = 1;
@@ -148,23 +157,25 @@ message RespawnPane {
   string harness_session_id = 5;
 }
 
-// KillWindow (F6). Dangerous kind; may need local approval. Never used on
+// [CAP F6]
+// KillWindow. Dangerous kind; may need local approval. Never used on
 // windows the developer created unless requested_by is OWNER.
 message KillWindow {
   fleet.type.v1.WindowKey window = 1;
 }
 
-// CapturePane (E10).
+// [CAP E10]
 message CapturePane {
   fleet.type.v1.PaneKey pane = 1;
   // 0 = visible screen; otherwise the last N lines of history. The hub
-  // requires SCOPE_LOGS for a non-zero value; the agent does not see scopes.
+  // checks the caller's scope; the agent does not see scopes.
   uint32 last_lines = 2;
   bool keep_ansi = 3;
   // Cap for the returned text; the agent clamps to 256 KiB.
   uint32 max_bytes = 4;
 }
 
+// [CAP E10]
 // CapturePaneResult. Untrusted text.
 message CapturePaneResult {
   string text = 1;
@@ -172,7 +183,8 @@ message CapturePaneResult {
   google.protobuf.Timestamp captured_time = 3;
 }
 
-// RunHarnessCommand (F8): type an allow-listed slash command at an idle
+// [CAP F8 G4]
+// RunHarnessCommand: type an allow-listed slash command at an idle
 // prompt. Agent checks: in catalog (C4), catalog_hash current, class allowed
 // for requested_by.role and local policy, ready pattern showing, input line
 // empty. DENY-class commands are never typed.
@@ -188,6 +200,7 @@ message RunHarnessCommand {
   string catalog_hash = 5;
 }
 
+// [CAP F8]
 // RunHarnessCommandResult.
 message RunHarnessCommandResult {
   fleet.type.v1.CommandClass class = 1;
@@ -196,7 +209,8 @@ message RunHarnessCommandResult {
   string screen = 2;
 }
 
-// SetPaneAvailability (E11): the developer marked a pane "available for
+// [CAP E11]
+// SetPaneAvailability: the developer marked a pane "available for
 // work" on the board, or cleared it, or the hub frees the pane of a merged
 // goal. Availability is a fact about one harness pane, never a session: a
 // session often holds several harness panes and a mark on it could not say

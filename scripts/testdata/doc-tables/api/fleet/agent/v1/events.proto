@@ -1,0 +1,46 @@
+// Fixture events for test-gen-doc-tables.py.
+syntax = "proto3";
+
+package fleet.agent.v1;
+
+// Event is one timestamped fact.
+message Event {
+  uint64 seq = 1;
+  DeliveryClass delivery = 2;
+
+  oneof body {
+    // [DELIVERY SHED] a sample every 30 s; the next one replaces it
+    ResourceSample resource_sample = 10;
+    // [DELIVERY COALESCE ready:<pane>] a level
+    // The ready pattern as a level, shown or gone.
+    HarnessReady harness_ready = 11;
+    // [DELIVERY NEVER_DROP] the one-nudge rule depends on it
+    PaneExited pane_exited = 12;
+    // [DELIVERY NEVER_DROP]
+    PaneExited pane_gone = 13;
+  }
+}
+
+// DeliveryClass is how an event may be treated under backpressure.
+enum DeliveryClass {
+  DELIVERY_CLASS_UNSPECIFIED = 0;
+  DELIVERY_CLASS_SHED = 1;
+  DELIVERY_CLASS_COALESCE = 2;
+  DELIVERY_CLASS_NEVER_DROP = 3;
+}
+
+// [CAP B2]
+message ResourceSample {
+  double load1 = 1;
+}
+
+// [CAP E7]
+// HarnessReady: the ready pattern appeared or went away.
+message HarnessReady {
+  bool showing = 1;
+}
+
+// PaneExited: a pane exited.
+message PaneExited {
+  int32 exit_status = 1;
+}

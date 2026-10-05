@@ -4,7 +4,7 @@
 // already has, shows them in the System section of the Machines view, and
 // raises one deduplicated triage item (TRIAGE_KIND_SYSTEM) when a signal
 // leaves OK. Numbers and enums only: no names, paths, goal text or screen
-// text, so GetSystemStatus is a plain READ.
+// text.
 syntax = "proto3";
 
 package fleet.hub.v1;

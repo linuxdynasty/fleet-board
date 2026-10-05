@@ -430,8 +430,8 @@ message CreateEnrollmentTokenResponse {
 // EnsureMachineHooksRequest asks the agent to install and verify the fleet's
 // generic goal hooks (EnsureGoalHooks, G1), now. The hub also does it by
 // itself (03-workflows.md, "Hook reconcile"); this is the owner's "reinstall
-// on the machine" and "re-verify" button. Needs SCOPE_SETTINGS, and the
-// agent's role matrix still requires an owner-level principal (02g).
+// on the machine" and "re-verify" button. The agent's role matrix still
+// requires an owner-level principal (02g).
 message EnsureMachineHooksRequest {
   string request_id = 1;
   fleet.type.v1.MachineId machine = 2;

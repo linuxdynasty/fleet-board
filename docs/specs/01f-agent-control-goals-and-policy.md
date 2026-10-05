@@ -66,6 +66,12 @@ All pass local policy, carry a `command_id`, and are idempotent except F3.
   resume, edit, clear) typed at an idle prompt via F8, as the developer would
   ([01b](01b-harness-commands.md#goal-subcommands)); F4 Interrupt where a
   harness has no pause. Fleet-board defines no goal protocol of its own.
+- **G5 Goal registry**: the agent's registry binds a goal to a pane (and its
+  worktree and harness session id) for every harness. `StartGoal` and the hooks
+  write the registry. G5 also reports the registry it rebuilds from
+  `FLEET_GOAL_ID` (empty at first). A goal that the fleet did not start has no
+  registry entry; attributing its goal file to a pane is E9 in
+  [01](01-agent-capabilities.md).
 
 ## H. Repositories
 

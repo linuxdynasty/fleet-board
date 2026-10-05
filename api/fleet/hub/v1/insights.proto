@@ -3,10 +3,9 @@
 // returns typed tables and series from the daily rollups; the weekly written
 // report is insight_report.proto and the rule-based suggestions are
 // suggestion.proto. Every message here is counts, durations, percentages and
-// ids: no goal text, no screen text, no issue bodies, no secrets, so reading
-// it needs only SCOPE_READ (02d). A group key echoes ids and open names the
-// hub validated; the one text dimension (LABEL) is restricted to a safe
-// pattern before it is rolled up.
+// ids: no goal text, no screen text, no issue bodies, no secrets. A group key
+// echoes ids and open names the hub validated; the one text dimension (LABEL)
+// is restricted to a safe pattern before it is rolled up.
 syntax = "proto3";
 
 package fleet.hub.v1;
@@ -244,7 +243,7 @@ message InsightSeries {
   repeated InsightPoint points = 5;
 }
 
-// GetInsightsRequest. SCOPE_READ. Every part is computed from the daily
+// GetInsightsRequest. Every part is computed from the daily
 // rollups (docs/specs/05-insights.md); the day in progress is computed from
 // source rows on the read pool, so a response is at most one hour behind.
 message GetInsightsRequest {

@@ -19,6 +19,8 @@ scripts/agent-roles.py        renders the role files below; --check detects drif
 scripts/verify-agent-canon.sh checks the rendered files, skill links, frontmatter,
                               the skill path map and the hook configs
 .agents/skill-paths.json      path-to-skill map read by the skill-nudge hook
+.agents/doc-paths.json        folder-to-spec map read by check-docs-stale.py (hooks.md)
+.agents/doc-names-allow.json  backticked doc tokens that are not proto names on purpose
 .claude/hooks/                development hooks shared by Claude, Codex, Muse and Cursor
 .claude/settings.json, .codex/hooks.json, .muse/hooks.json, .cursor/hooks.json   hook wiring
 scripts/cursor-hook.py        adapter: runs those hook scripts from Cursor's native hooks (hooks.md)
@@ -46,6 +48,20 @@ scripts/plan-issues.py        writes each plan row's GitHub issue body from the 
                               (--print, --check, --apply; ADR 0026)
 scripts/test-agent-roles.py   self-test for agent-roles.py (make selftest)
 scripts/test-plan-issues.py   self-test for plan-issues.py, no network; test-dev-hooks.sh runs it
+scripts/check-docs-stale.py   doc-staleness reminders (hook mode) and the blocking --ci check
+                              (make docs-stale-ci); validates doc-paths.json (--check-map)
+scripts/check-doc-names.py    every backticked proto name in the docs is in api/fleet (make doc-names)
+scripts/gen-doc-tables.py     writes the spec tables (02k, 02d, 02i, 02) from the proto comment
+                              tags, between generated markers (--write; make doc-tables is --check)
+scripts/report-capability-tests.py   v1 capabilities in 01 that no product test names (gate
+                              self-tests do not count); a report until plan row 17
+                              (make capability-tests)
+scripts/proto_image.py        loads the contract from the pinned buf's compiled image, for the
+                              doc-drift scripts (names, field types, comments)
+scripts/proto_tags.py         reads and checks the comment tags (02e, "Comment tags")
+scripts/test-check-docs-stale.py, test-check-doc-names.py, test-proto-image.py,
+  test-gen-doc-tables.py, test-report-capability-tests.py,
+  proto_image_testkit.py      seeded cases for the scripts above (make selftest)
 .claude/agents/*.md           generated (Claude Code subagents)
 .codex/agents/*.toml          generated (Codex custom agents)
 .opencode/agent/*.md          generated (OpenCode agents)

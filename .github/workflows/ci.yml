@@ -84,6 +84,16 @@ jobs:
       - name: Contracts compile and lint (buf build, buf lint)
         run: make proto-check
 
+      - name: Every backticked proto name in the docs is in api/fleet
+        run: make doc-names
+
+      - name: Generated spec tables match the proto comment tags
+        run: make doc-tables
+
+      # A report until plan row 17: findings exit 0, a broken input fails.
+      - name: v1 capabilities no product test names (report)
+        run: make capability-tests
+
       - name: go.mod and go.sum are tidy
         run: make mod-check
 
@@ -140,8 +150,18 @@ jobs:
       - name: git diff --check
         run: make diff-check
 
-      # Advisory: it prints reminders and never fails the build (ADR 0025,
-      # plan row 1b makes it blocking later).
-      - name: Docs staleness (advisory)
-        continue-on-error: true
-        run: python3 scripts/check-docs-stale.py
+      # Plan row 1b: a mapped code change changes its spec or a commit says
+      # No-Doc-Change: <reason>. Same range as the attribution step; make
+      # docs-stale-ci runs the same check with BASE_REF..HEAD.
+      - name: Docs move with the code (doc-paths.json, package docs)
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            range="$PR_BASE_SHA..$PR_HEAD_SHA"
+          else
+            range="$BASE_REF..HEAD"
+          fi
+          python3 scripts/check-docs-stale.py --ci --range "$range"

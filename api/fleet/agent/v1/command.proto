@@ -101,7 +101,8 @@ message CommandAck {
   google.protobuf.Timestamp received_time = 2;
 }
 
-// CommandProgress reports one step of a composite command (G3, G4) as
+// [CAP G3 G4 L3]
+// CommandProgress reports one step of a composite command as
 // command_id+step. Never dropped. A FAILED step ends the composite.
 //
 // It also carries the one interim state of any command, a wait for local

@@ -1,0 +1,85 @@
+// Fixture agent wire for test-gen-doc-tables.py: the roots of Dir.
+syntax = "proto3";
+
+package fleet.agent.v1;
+
+import "fleet/agent/v1/events.proto";
+
+// AgentService: request is agent -> hub, response hub -> agent.
+service AgentService {
+  // [CAP A1]
+  // Exchange a token for a certificate.
+  rpc Enroll(EnrollRequest) returns (EnrollResponse);
+  rpc Connect(stream ConnectRequest) returns (stream ConnectResponse);
+}
+
+message EnrollRequest {
+  string token = 1;
+}
+
+message EnrollResponse {
+  bytes cert_pem = 1;
+}
+
+// ConnectRequest is everything the agent sends.
+message ConnectRequest {
+  oneof body {
+    Hello hello = 1;
+    Event event = 2;
+    Bye bye = 3;
+  }
+}
+
+// ConnectResponse is everything the hub sends.
+message ConnectResponse {
+  oneof body {
+    Command command = 1;
+    Bye bye = 2;
+  }
+}
+
+// ConnectReason says why the agent connects.
+enum ConnectReason {
+  CONNECT_REASON_UNSPECIFIED = 0;
+  CONNECT_REASON_START = 1;
+  // [CAP A6]
+  CONNECT_REASON_WAKE = 2;
+}
+
+// [CAP A3]
+// Hello is the first message on Connect.
+message Hello {
+  ConnectReason reason = 1;
+  TmuxPane pane = 2;
+}
+
+// TmuxPane is one pane.
+message TmuxPane {
+  string pane_id = 1;
+  // [CAP E7]
+  bool ready_pattern_showing = 2;
+}
+
+// [CAP A7]
+message Bye {
+  string reason = 1;
+}
+
+// Command is one hub order.
+message Command {
+  oneof kind {
+    EnsureProbe ensure_probe = 1;
+  }
+}
+
+// [CAP D1]
+// EnsureProbe keeps a probe running.
+message EnsureProbe {
+  string probe_id = 1;
+}
+
+// [CAP Q1]
+// Unreached is tagged but no agent message carries it.
+message Unreached {
+  string note = 1;
+}

@@ -35,6 +35,7 @@ message SessionLogResponse {
 // Terminal stream (J1)
 // ---------------------------------------------------------------------------
 
+// [CAP J1]
 // TermUp: agent -> hub bytes from the PTY-backed tmux client.
 message TermUp {
   fleet.type.v1.AttachId attach_id = 1;
@@ -60,6 +61,7 @@ message TermClosed {
   fleet.type.v1.AttachCloseReason reason = 1;
 }
 
+// [CAP J1]
 // TermDown: hub -> agent input and control.
 message TermDown {
   fleet.type.v1.AttachId attach_id = 1;
@@ -97,6 +99,7 @@ message TermClose {}
 // Session log stream (K1, K3; ADR 0010)
 // ---------------------------------------------------------------------------
 
+// [CAP K1]
 // LogChunk: one compressed chunk at a byte offset in the raw stream. The
 // agent keeps it in the spool until acked. At most 960 KiB compressed, so
 // the framed message stays under the 1 MiB message cap.
@@ -160,6 +163,7 @@ enum LogAckStatus {
   LOG_ACK_STATUS_UNKNOWN_STREAM = 4;
 }
 
+// [CAP K1]
 // LogAck: the hub's answer to every chunk, accepted or refused, and the
 // stored end of the stream. The hub may also send it unsolicited: with pause
 // to stop shipping, and with all_streams and pause=false to resume every
@@ -169,6 +173,7 @@ message LogAck {
   // truth: the agent follows it even when it is lower than an offset the
   // agent acked before (a restored hub), and never treats it as monotonic.
   uint64 acked_offset = 3;
+  // [CAP K2]
   // Hub asks the agent to pause shipping (disk low); same as SetLogShipping.
   bool pause = 4;
   fleet.type.v1.LogStreamKey key = 5;

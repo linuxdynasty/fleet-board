@@ -52,13 +52,14 @@ checklist, to be ticked when cutting `v0.1`:
 
 `v0.1` freezes **everything v1 implements** (decision 8 of ADR 0024, which amends
 decision 9 of ADR 0019, and decision 4 of ADR 0025, which puts dispatch, sessions,
-logs and reports into v1). That is 84 of the 108 `FleetService` calls (47 watch and
-configuration calls, 37 dispatch, session, log and report calls), every agent
-command kind v1 uses, and every `Watch` topic except the two v3 ones. A message no
-code has run is not worth a promise: two review rounds already changed 86 and then
-107 things in contracts nobody had run. That is why `v0.1` is tagged only after the
-whole of v1 passes the seven-day run. Messages that only v3 uses stay changeable
-until the release that ships them is tagged.
+logs and reports into v1). That is every `FleetService` call marked v1 (the count
+line under [02k's generated RPC table](02k-v1-surface-and-cli.md#hub-rpcs-by-release)
+gives the totals), every agent command kind v1 uses, and every `Watch` topic
+marked v1 in 02k. A message no code has run is not worth a promise: two review
+rounds already changed 86 and then 107 things in contracts nobody had run. That
+is why `v0.1` is tagged only after the whole of v1 passes the seven-day run.
+Messages that only v3 uses stay changeable until the release that ships them is
+tagged.
 
 - **How.** `buf breaking` works per file, not per message. When `v0.1` is cut,
   `buf.yaml` gets per-path ignores under `breaking.ignore_only` for the files
@@ -133,28 +134,67 @@ answers `CAPABILITY_MISSING` with `missing_capability` for any it lacks.
 equal or higher satisfies it. Versions start at 1 and a capability's version
 rises only when its behaviour changes in a way a command could notice.
 
-| Command kind | `requires` |
-|---|---|
-| `EnsureProbe`, `StopProbe` | `usage.probe.<harness>` |
-| `EnsureSession`, `EnsureWindow` | `tmux.control`; `tmux.default_server.control` for the developer's server; `tmux.fleet_server` for `tmux -L fleet`; launching a harness also needs `harness.<name>` |
-| `SendKeys`, `Interrupt`, `RespawnPane`, `KillWindow`, `SetPaneAvailability` | `tmux.control` (`tmux.default_server.control` on the developer's server) |
-| `CapturePane` | `tmux.observe` |
-| `RunHarnessCommand` | `harness.catalog` |
-| `Preflight` | `preflight` |
-| `StartGoal` | `goal.start` |
-| `RegisterGoal`, `ReleaseGoal` | `goal.registry` |
-| `EnsureGoalHooks` | `goal.hooks.<harness>` |
-| `EnsureWorktree`, `PruneWorktree` | `worktree` |
-| `OpenAttach`, `CloseAttach` | `attach.pty` |
-| `SetLogCapture`, `SetLogShipping` | `logs.terminal` |
-| `Drain`, `Undrain` | `drain` |
-| `EnsureScratch`, `CollectScratch` | `scratch` (also `StartGoal` with `WORKTREE_MODE_SCRATCH`, 05) |
+| Command kind | `requires` | Repeat safe |
+|---|---|---|
+| `EnsureProbe`, `StopProbe` | `usage.probe.<harness>` | yes |
+| `EnsureSession`, `EnsureWindow` | `tmux.control`; `tmux.default_server.control` for the developer's server; `tmux.fleet_server` for `tmux -L fleet`; launching a harness also needs `harness.<name>` | yes |
+| `SendKeys`, `Interrupt`, `RespawnPane`, `KillWindow`, `SetPaneAvailability` | `tmux.control` (`tmux.default_server.control` on the developer's server) | `SendKeys` no ([02](02-contracts.md#delivery-semantics)); `Interrupt` effectively; the others yes |
+| `CapturePane` | `tmux.observe` | yes |
+| `RunHarnessCommand` | `harness.catalog` | `OBSERVE` class only ([02](02-contracts.md#delivery-semantics)) |
+| `Preflight` | `preflight` | yes |
+| `StartGoal` | `goal.start` | per step ([02h](02h-goal-binding-and-pane-signals.md#startgoal-steps)) |
+| `RegisterGoal`, `ReleaseGoal` | `goal.registry` | yes |
+| `EnsureGoalHooks` | `goal.hooks.<harness>` | yes |
+| `EnsureWorktree`, `PruneWorktree` | `worktree` | yes |
+| `OpenAttach`, `CloseAttach` | `attach.pty` | yes |
+| `SetLogCapture`, `SetLogShipping` | `logs.terminal` | `SetLogShipping` yes; `SetLogCapture` — |
+| `Drain`, `Undrain` | `drain` | yes |
+| `EnsureScratch`, `CollectScratch` | `scratch` (also `StartGoal` with `WORKTREE_MODE_SCRATCH`, 05) | `EnsureScratch` yes; `CollectScratch` — |
+
+Repeat safe: whether the agent may run the same command again (a re-send
+with a new `command_id`) with no other effect; `—` is not stated yet. A repeat
+of one `command_id` never re-runs ([02](02-contracts.md#delivery-semantics)).
 
 Other names in use: `usage.passive.<harness>`, `prompt.detect.<harness>`, `pane.input` (E13), `goal.pause_signals` (interrupt and pause conditions),
 `logs.transcript`, `confirm.local`, `power`, `settings` (they gate events and
 settings, not commands). Hub features the agent may rely on are in
 `HelloAck.hub_capabilities` (`snapshot.parts`, `event.delivery`). Reserved,
 never advertised: `exec.raw`.
+
+## Comment tags
+
+A few facts about an RPC, a Watch topic, an event body or a capability live as
+tags in the proto comment of the element they describe, so each has one home
+([ADR 0026](../adr/0026-one-home-per-fact.md)). `scripts/gen-doc-tables.py`
+reads them from the buf image and writes the tables in [02k](02k-v1-surface-and-cli.md),
+[02d](02d-hub-authz.md), [02i](02i-delivery-and-sequencing.md) and the capability
+map in [02](02-contracts.md); `make gates` and CI run it with `--check`. This
+section is the only home of the tag vocabulary.
+
+| Tag | Required on | Value | Note (the rest of the line) |
+|---|---|---|---|
+| `[SCOPE <expr>]` | every `FleetService` RPC and every non-zero `WatchTopic` value | `Scope` names without `SCOPE_`, joined by `\|` (`READ\|APPROVALS`); or `self`, `none` or `per-topic`, each alone | for an RPC, a condition the hub checks that changes who may call; for a topic, the row rule |
+| `[RELEASE <v1\|v3> <row>]` | every `FleetService` RPC and every non-zero `WatchTopic` value | `v1` and a row of the PR sequence in [plan section 5](../plan/v1-implementation-plan.md#5-the-pr-sequence) (`12`, `13a`); `v3` and `none` | the part of the call that row builds; one line per row, all lines of one release |
+| `[DELIVERY SHED]`, `[DELIVERY NEVER_DROP]`, `[DELIVERY COALESCE <key>]` | every `Event.body` arm (the field) | a `DeliveryClass` name without the prefix; `COALESCE` needs the `coalesce_key` pattern, the others take none | why the event has that class |
+| `[CAP <id> ...]` | optional: a message, field, enum value or RPC | capability ids from the table in [01](01-agent-capabilities.md), space separated | none |
+
+- Tags form the element's leading tag block: one tag per line, before any
+  prose. The block ends at a blank `//` line or the first line that is not a
+  tag. The note is the rest of the tag's line, verbatim.
+- A tag key anywhere else in a comment (in prose, after a blank line, or in a
+  trailing comment, or in a comment a blank line cuts off from the element) is
+  an error. So is an unknown key, a malformed tag, a second `[SCOPE]`,
+  `[DELIVERY]` or `[CAP]`, a value outside its enum or outside 01's table, a
+  full enum name (`SCOPE_READ`) or `UNSPECIFIED` as a value, and a missing
+  required tag.
+- `[CAP]` goes on the message that defines the capability, not on the
+  `Command` oneof arm that carries it; on a field only when the capability
+  lives in a field of a shared message.
+- Changing a tag changes a generated table, so the same PR runs
+  `scripts/gen-doc-tables.py --write`. The script exits 1 on a tag problem or a
+  stale table, and 2 when it cannot read the image, when the plan or its
+  section 5 PR sequence table cannot be read, or when 01's capability table has
+  a malformed or duplicate row.
 
 ## Log framing
 

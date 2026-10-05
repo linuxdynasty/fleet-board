@@ -122,5 +122,17 @@ fresh
 printf '{not json\n' > "$copy/.cursor/hooks.json"
 expect "a .cursor/hooks.json that is not JSON fails" 1 ".cursor/hooks.json is not valid hook JSON"
 
+# .agents/doc-paths.json: the folder-to-spec map of check-docs-stale.py.
+fresh
+expect "the real .agents/doc-paths.json is accepted" 0 "doc-paths.json names only existing specs"
+
+fresh
+sed 's|docs/specs/03i-routines.md|docs/specs/03i-zz-gone.md|' "$copy/.agents/doc-paths.json" > "$copy/.agents/doc-paths.new" && mv "$copy/.agents/doc-paths.new" "$copy/.agents/doc-paths.json"
+expect "a doc-paths.json naming a missing spec fails" 1 "docs/specs/03i-zz-gone.md, which does not exist"
+
+fresh
+rm "$copy/.agents/doc-paths.json"
+expect "a missing doc-paths.json fails" 1 "doc-paths.json"
+
 printf 'test-verify-agent-canon: %s passed, %s failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

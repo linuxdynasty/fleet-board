@@ -79,7 +79,7 @@ Phase: **v1** the whole local product (watching, dispatch, sessions, logs), **v3
 | E6 | Prompt detected (with `prompt_id`, source, confidence) | E | v1 |
 | E7 | Harness ready (a level, with a snapshot field) | S, E | v1 |
 | E8 | Harness hook events | E | v1 |
-| E9 | Pane ↔ harness session mapping, goal registry | S, E | v1 |
+| E9 | Pane ↔ harness session mapping | S, E | v1 |
 | E10 | Capture pane | C | v1 |
 | E11 | Pane availability (idle, and the developer's mark through the command `SetPaneAvailability`) | S, E, C | v1 |
 | E12 | Harness condition (provider error, rate limit, sign-in, goal interrupted) | E | v1 |
@@ -96,6 +96,7 @@ Phase: **v1** the whole local product (watching, dispatch, sessions, logs), **v3
 | G2 | Goal state (line + HEAD + dirty, one event) | E | v1 |
 | G3 | Start goal (agent-side composite) | C | v1 |
 | G4 | Goal control through the harness's own `/goal` | C | v1 |
+| G5 | Goal registry: register, release, report | S, E, C | v1 |
 | H1 | Repository inventory | S | v1 |
 | H2 | Worktree ensure and prune | C | v1 |
 | H3 | Branch state per goal worktree | S, E | v1 |
@@ -188,7 +189,9 @@ optionally against one limit the owner sets.
   the version is within `SupportedVersions`. Outside it, usage readings are
   `unknown` and preflight refuses with `harness_version_unsupported`.
 - **C2 Account identity and sign-in.** Read from the harness's own status
-  screen, never from credential files. Checked 2026-09-29:
+  screen, never from credential files. C2 also reports, per session, the
+  account it is spending from (`SessionAccountLink`; OpenCode can switch per
+  session). Checked 2026-09-29:
   - Claude Code `/status`: login method ("Claude Max account"), email,
     organization.
   - Codex `/status`: plan only ("Account: Pro").
@@ -316,18 +319,13 @@ optionally against one limit the owner sets.
   a pane, as a snapshot field and an event for both edges.
 - **E8 Harness hook events**: turn end, session start, Codex interrupt,
   with the harness session id; per-harness events in [01d](01d-goal-hooks.md).
-- **E9 Pane ↔ harness session mapping and the goal registry.** The agent's
-  registry binds a goal to a pane (and its worktree and harness session id) for
-  every harness; goal hooks record the session id against that entry (02h). This
-  lets G2 attribute `.claude/active-goal.<session_id>` files to panes, and K3
-  find transcripts. `StartGoal` and the hooks write the registry. A goal
-  that the fleet did not start has no registry entry, so E9 also has two other
-  jobs: report the registry it rebuilds from `FLEET_GOAL_ID` (empty at first), and
-  attribute a goal file to a pane that has no registry entry by the **observed
-  goal** rule (pane working folder and the
-  newest goal file, [02h](02h-goal-binding-and-pane-signals.md#observed-goals-v1)).
-  The result is a goal with binding source `OBSERVED`, never an entry in the
-  registry.
+- **E9 Pane ↔ harness session mapping.** Goal hooks record the harness
+  session id against the pane's goal registry entry (G5, 02h). This lets G2
+  attribute `.claude/active-goal.<session_id>` files to panes, and K3 find
+  transcripts. E9 also attributes a goal file in a pane that has no registry
+  entry, by the **observed goal** rule (pane working folder and the newest goal
+  file, [02h](02h-goal-binding-and-pane-signals.md#observed-goals-v1)): the
+  result is a goal with binding source `OBSERVED`, never a registry entry.
 - **E11 Pane availability.** Each harness pane reports whether it is **idle**:
   the adapter's ready pattern is showing, no goal is active in it (G2), and
   there has been no output or keyboard input for a configurable time (default 2

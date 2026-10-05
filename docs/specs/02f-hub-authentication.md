@@ -179,7 +179,7 @@ interprets them. Ceremonies live 5 minutes and are single use.
 
 WebAuthn works only in a secure context, which `authenticated` mode always
 provides because it serves HTTPS only (an owner-supplied or Tailscale
-certificate). `GetServerInfo.sign_in_methods` lists what is usable: a method
+certificate). `GetServerInfoResponse.sign_in_methods` lists what is usable: a method
 the owner turned off, or GitHub without its App settings, is
 `SIGN_IN_METHOD_DISABLED`.
 

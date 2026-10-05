@@ -20,7 +20,8 @@ import "google/protobuf/timestamp.proto";
 // B. Machine facts and resources
 // ---------------------------------------------------------------------------
 
-// MachineFacts (B1). Sent at Enroll and in every Snapshot.
+// [CAP B1]
+// MachineFacts: sent at Enroll and in every Snapshot.
 message MachineFacts {
   string hostname = 1;
   // "darwin" | "linux".
@@ -48,7 +49,8 @@ message MachineFacts {
   string username = 15;
 }
 
-// ResourceSample (B2), every 30 s.
+// [CAP B2]
+// ResourceSample, every 30 s.
 message ResourceSample {
   double load1 = 1;
   double load5 = 2;
@@ -67,7 +69,7 @@ message DiskFree {
   uint64 total_bytes = 3;
 }
 
-// PowerState (B3).
+// [CAP B3]
 message PowerState {
   bool on_battery = 1;
   fleet.type.v1.Percent battery = 2;
@@ -77,7 +79,8 @@ message PowerState {
 // C. Harnesses
 // ---------------------------------------------------------------------------
 
-// HarnessInfo (C1) for one harness installed on the machine.
+// [CAP C1]
+// HarnessInfo for one harness installed on the machine.
 message HarnessInfo {
   fleet.type.v1.Harness harness = 1;
   // Version as the binary reports it. Untrusted text.
@@ -87,7 +90,9 @@ message HarnessInfo {
   string parser_version = 4;
   // Versions the parsers have fixtures for.
   repeated string supported_versions = 6;
+  // [CAP C4]
   fleet.type.v1.CommandCatalog catalog = 7;
+  // [CAP G1]
   fleet.type.v1.GoalHooksState goal_hooks = 8;
   // Send-to-pane is enabled only once prompt detection is verified (E6).
   bool prompt_detection_verified = 9;
@@ -100,8 +105,9 @@ message HarnessInfo {
   fleet.type.v1.VersionSupport version_support = 12;
   // Per parser feature, for UNVERIFIED_PARSING: which reads are trusted.
   repeated fleet.type.v1.ParserSupport parser_support = 13;
+  // [CAP G4]
   // The /goal subcommands this version offers and how pause and resume are
-  // done, so the hub never hard-codes a harness name (G4, 01b).
+  // done, so the hub never hard-codes a harness name (01b).
   fleet.type.v1.GoalControl goal_control = 14;
 }
 
@@ -119,7 +125,8 @@ message TmuxPane {
   string current_command = 5;
   // Harness detected from the process, never from the window name.
   fleet.type.v1.Harness harness = 6;
-  // Harness session id learned through hooks (E9). Untrusted text.
+  // [CAP E9]
+  // Harness session id learned through hooks. Untrusted text.
   string harness_session_id = 7;
   // FLEET_* environment tags: FLEET_SESSION_ID, FLEET_OWNER, FLEET_PANE_KEY,
   // FLEET_GOAL_ID. Empty for the developer's own panes. The environment of a
@@ -132,18 +139,22 @@ message TmuxPane {
   bool dead = 12;
   // Exit status when dead.
   int32 exit_status = 13;
+  // [CAP E11]
   fleet.type.v1.Availability availability = 14;
   // Terminal log capture (pipe-pane) is on for this pane (K1).
   bool log_capture = 15;
   uint32 cols = 16;
   uint32 rows = 17;
+  // [CAP E1]
   // Where the pane works, when under an allowed root (repo, checkout, branch,
   // dirty). Reuse of a pane for a goal depends on it (02h, "Reuse").
   fleet.type.v1.PaneWorkdir workdir = 18;
+  // [CAP E13]
   // Last time a person typed into this pane (02h, "Developer input"). Level
   // fact; PaneInput events carry the changes. Unset = never seen.
   google.protobuf.Timestamp last_input_time = 19;
-  // The adapter's ready pattern is on screen now (E7 as a level, not an
+  // [CAP E7]
+  // The adapter's ready pattern is on screen now (a level, not an
   // edge). False while a turn runs, a prompt shows or the harness is not up.
   bool ready_pattern_showing = 20;
   // The goal the agent's registry binds to this pane, empty when none.
@@ -179,6 +190,7 @@ message TmuxSession {
   // FLEET_OWNER holds (Principal.id) and fills id alone; the hub resolves
   // name, role and kind.
   fleet.type.v1.Principal owner_principal = 10;
+  // [CAP E1]
   // Created by fleet-board for its own use: a grouped attach-view session
   // (attach_view) or any session on the probe server. The hub never makes a
   // Session of it, never lists its panes (a view shares its windows, and so
@@ -188,6 +200,7 @@ message TmuxSession {
   bool internal = 11;
 }
 
+// [CAP E1]
 // TmuxServer is one tmux server the agent observes.
 message TmuxServer {
   fleet.type.v1.TmuxServerKind kind = 1;
@@ -195,7 +208,8 @@ message TmuxServer {
   string server_start_id = 3;
   string version = 4;
   bool running = 5;
-  // Control-mode observer attached (E2).
+  // [CAP E2]
+  // Control-mode observer attached.
   bool observed = 6;
   repeated TmuxSession sessions = 7;
 }
@@ -204,7 +218,8 @@ message TmuxServer {
 // G. Goals, H. repositories
 // ---------------------------------------------------------------------------
 
-// GoalState (G2): goal line plus HEAD plus dirty, in one message because the
+// [CAP G2]
+// GoalState: goal line plus HEAD plus dirty, in one message because the
 // hub fingerprints them as one state. Fleet panes, and panes where the agent
 // found an observed goal (binding OBSERVED, 02h "Observed goals (v1)"). The
 // agent emits a new
@@ -256,6 +271,7 @@ enum GoalBindingSource {
   // which only a window the fleet created can have. A reused pane cannot be
   // rebuilt this way: the hub re-sends RegisterGoal (02h).
   GOAL_BINDING_SOURCE_ENV = 2;
+  // [CAP G2]
   // v1: the agent found a goal file in the checkout of a pane running a known
   // harness that no registry entry names (the owner started the goal by hand).
   // The agent mints the GoalId and keeps the goal in agent.db, never in the
@@ -264,6 +280,7 @@ enum GoalBindingSource {
   GOAL_BINDING_SOURCE_OBSERVED = 3;
 }
 
+// [CAP G5]
 // GoalRegistration is one entry of the agent's goal registry, the single
 // way a goal is identified on a machine for every harness (ADR 0019). Hooks
 // and goal-file attribution ask the registry; FLEET_GOAL_ID is only a fast
@@ -287,7 +304,8 @@ message GoalRegistration {
   bool repo_driver = 8;
 }
 
-// BranchState (H3) for one goal worktree.
+// [CAP H3]
+// BranchState for one goal worktree.
 message BranchState {
   fleet.type.v1.RepoRef repo = 1;
   string path = 2;
@@ -303,7 +321,8 @@ message BranchState {
   google.protobuf.Timestamp observed_time = 10;
 }
 
-// RepoCheckout (H1): one checkout or worktree under an allowed root.
+// [CAP H1]
+// RepoCheckout: one checkout or worktree under an allowed root.
 message RepoCheckout {
   fleet.type.v1.RepoRef repo = 1;
   string path = 2;
@@ -314,6 +333,7 @@ message RepoCheckout {
   // Set when the worktree was created by fleet for a goal.
   fleet.type.v1.GoalId goal_id = 6;
   BranchState branch = 7;
+  // [CAP G1]
   // Goal-hook state per harness for this checkout (03g change #7), so the
   // consent form is known before EnsureGoalHooks runs.
   repeated fleet.type.v1.HarnessGoalHooks goal_hooks = 8;
@@ -335,7 +355,8 @@ message GitRemote {
   fleet.type.v1.RepoRef repo = 2;
 }
 
-// RepoAccess (H4): the forge CLI's view of the signed-in user's access to a
+// [CAP H4]
+// RepoAccess: the forge CLI's view of the signed-in user's access to a
 // repo (`gh repo view --json viewerPermission`, `glab` equivalent).
 message RepoAccess {
   fleet.type.v1.RepoRef repo = 1;
@@ -347,7 +368,8 @@ message RepoAccess {
   string provider_permission = 5;
 }
 
-// ForgeCliStatus (H4): sign-in state of a code host's CLI on this machine
+// [CAP H4]
+// ForgeCliStatus: sign-in state of a code host's CLI on this machine
 // (`gh auth status`, `glab auth status`). Token lines are dropped and never
 // logged.
 message ForgeCliStatus {
@@ -368,7 +390,8 @@ message ForgeCliStatus {
 // K, L, M. Spool, policy, drain
 // ---------------------------------------------------------------------------
 
-// SpoolStatus (K2): local session-log spool.
+// [CAP K2]
+// SpoolStatus: local session-log spool.
 message SpoolStatus {
   uint64 pending_bytes = 1;
   uint64 cap_bytes = 2;
@@ -380,7 +403,8 @@ message SpoolStatus {
   uint32 sessions_capturing = 6;
 }
 
-// PolicyInfo (L1): the local policy file. Hash only, never contents.
+// [CAP L1]
+// PolicyInfo: the local policy file. Hash only, never contents.
 message PolicyInfo {
   // Empty only when there is no file to read: the normal first run of a fresh
   // agent, built-in defaults after the file was deleted, or a file that could
@@ -400,7 +424,7 @@ message PolicyInfo {
   string error = 6;
 }
 
-// DrainState (M4).
+// [CAP M4]
 message DrainState {
   bool draining = 1;
   string reason = 3;
@@ -414,7 +438,8 @@ message DrainState {
 // The Snapshot
 // ---------------------------------------------------------------------------
 
-// Snapshot (A3) is the full level-triggered state of the machine. Sent after
+// [CAP A3]
+// Snapshot is the full level-triggered state of the machine. Sent after
 // Hello on every connect and on SnapshotRequest. It supersedes every event
 // with seq <= Snapshot.seq. Size: typically 10-100 KiB; one part is capped at
 // 960 KiB (the message cap is 1 MiB). A larger snapshot is sent in parts that

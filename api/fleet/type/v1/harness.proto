@@ -21,13 +21,15 @@ enum CommandClass {
   COMMAND_CLASS_UNSPECIFIED = 0;
   COMMAND_CLASS_OBSERVE = 1;
   COMMAND_CLASS_SESSION = 2;
+  // [CAP G4]
   COMMAND_CLASS_GOAL = 3;
   COMMAND_CLASS_REVIEW = 4;
   COMMAND_CLASS_DESTRUCTIVE = 5;
   COMMAND_CLASS_DENY = 6;
 }
 
-// CatalogEntry is one slash command the harness install offers (C4).
+// [CAP C4]
+// CatalogEntry is one slash command the harness install offers.
 message CatalogEntry {
   // As shown, including the leading slash. Untrusted text.
   string name = 1;
@@ -36,7 +38,8 @@ message CatalogEntry {
   bool tightened_by_policy = 3;
 }
 
-// CommandCatalog (C4): discovered per machine, reported with a hash.
+// [CAP C4]
+// CommandCatalog: discovered per machine, reported with a hash.
 message CommandCatalog {
   // Hex digest over the sorted entry names; RunHarnessCommand must match it.
   string hash = 1;
@@ -44,7 +47,8 @@ message CommandCatalog {
   google.protobuf.Timestamp discovered_time = 3;
 }
 
-// GoalHooksState (G1): generic goal-protocol hooks for one harness.
+// [CAP G1]
+// GoalHooksState: generic goal-protocol hooks for one harness.
 message GoalHooksState {
   bool installed = 1;
   bool verified = 2;
@@ -270,6 +274,7 @@ enum SendKeysPurpose {
   // The corrective nudge for a stopped goal (03c). Hub-authored text, typed
   // only into a pane bound to a fleet goal.
   SEND_KEYS_PURPOSE_GOAL_NUDGE = 2;
+  // [CAP G4]
   // Resume text for a paused or limit-waiting goal (GoalControl.resume_text).
   SEND_KEYS_PURPOSE_GOAL_RESUME = 3;
   // Free text from an operator ("send a hint").
@@ -388,10 +393,12 @@ enum LogStream {
   LOG_STREAM_UNSPECIFIED = 0;
   // tmux pipe-pane output (K1).
   LOG_STREAM_TERMINAL = 1;
-  // The harness's own transcript file, shipped by offset (K3, v3).
+  // [CAP K3]
+  // The harness's own transcript file, shipped by offset (v3).
   LOG_STREAM_HARNESS_TRANSCRIPT = 2;
 }
 
+// [CAP K1]
 // LogStreamKey names one log stream: a pane's terminal output or its
 // harness transcript. Used by LogChunk and LogAck on the agent wire and by
 // the hub API's log reads.
