@@ -3,10 +3,11 @@
 // carries the agent-wide monotonic seq that survives reconnects, agent
 // crashes and hub restores (docs/specs/02i-delivery-and-sequencing.md); the
 // offline ring replays them in order. Which kinds may be dropped under
-// backpressure is fixed per kind in the table in that document and stamped on
-// every event as Event.delivery, so a hub that does not know a newer body
-// kind still queues, sheds or coalesces it correctly and still advances seq
-// past it.
+// backpressure is fixed per kind by the DELIVERY tag on each Event.body arm
+// (grammar: docs/specs/02e-contract-rules.md, "Comment tags"; 02i tables the
+// tags, generated) and stamped on every event as Event.delivery, so a hub
+// that does not know a newer body kind still queues, sheds or coalesces it
+// correctly and still advances seq past it.
 // Screen, goal-file and git text in here is UNTRUSTED TEXT.
 syntax = "proto3";
 
@@ -38,12 +39,13 @@ message Event {
   google.protobuf.Timestamp observed_time = 2;
   // True when replayed from the offline ring after a reconnect.
   bool replayed = 3;
-  // Backpressure class of this body kind (table in 02i), set by the agent
-  // from the same table it sheds by.
+  // Backpressure class of this body kind (its arm's DELIVERY tag), set by the
+  // agent from the same classes it sheds by.
   DeliveryClass delivery = 4;
   // For COALESCE: events with equal non-empty keys replace each other
   // (latest wins; the survivor keeps its own seq), e.g.
-  // "usage:<account_key>", "branch:<path>". Every key is in the 02i table.
+  // "usage:<account_key>", "branch:<worktree path>". Every key is in its
+  // arm's DELIVERY tag.
   string coalesce_key = 5;
   // Set only when the event is the consequence of a traced command (a goal
   // state after StartGoal, a local approval of a command), so the hub can
@@ -51,84 +53,98 @@ message Event {
   fleet.type.v1.TraceContext trace = 6;
 
   oneof body {
-    // B2. SHED.
+    // [DELIVERY SHED] a sample every 30 s; the next one replaces it
     ResourceSample resource_sample = 10;
-    // B3. NEVER_DROP (preflight depends on it).
+    // [DELIVERY NEVER_DROP] preflight depends on it; rare
     PowerState power_state = 11;
 
-    // C2: identity re-read at start or on version change. COALESCE, key
-    // "identity:<harness>:<profile>".
+    // [DELIVERY COALESCE identity:<harness>:<profile>] a level: the latest identity is the identity
+    // Identity re-read at start or on version change.
     AccountIdentity account_identity = 20;
-    // C1: harness version or catalog changed (C4). Carries the full info.
-    // COALESCE, key "harness:<harness>:<profile>".
+    // [DELIVERY COALESCE harness:<harness>:<profile>] carries the full `HarnessInfo`, so latest wins
+    // Harness version or catalog changed.
     HarnessInfo harness_changed = 21;
-    // D1 probe health. COALESCE, key "probe:<probe_id>".
+    // [DELIVERY COALESCE probe:<probe_id>] a level per probe
     ProbeHealth probe_health = 22;
-    // D2 and D3. COALESCE, key "usage:<account_key>".
+    // [DELIVERY COALESCE usage:<account_key>] the burn-down uses the latest; the hub keeps every reading it receives
     UsageReading usage_reading = 23;
-    // Session -> account link changed (OpenCode model line). COALESCE, key
-    // "link:<pane>".
+    // [DELIVERY COALESCE link:<pane>] a level per pane
+    // Session -> account link changed (OpenCode model line).
     SessionAccountLink session_account_link = 24;
 
-    // E1: a tmux server started or stopped. NEVER_DROP.
+    // [DELIVERY NEVER_DROP] structure changes are rare and the timeline shows them
+    // A tmux server started or stopped.
     TmuxServerEvent tmux_server = 30;
-    // E1: session created, renamed or closed. NEVER_DROP.
+    // [DELIVERY NEVER_DROP] same
+    // Session created, renamed or closed.
     SessionEvent session = 31;
-    // E1: window created, renamed or closed. NEVER_DROP.
+    // [DELIVERY NEVER_DROP] same
+    // Window created, renamed or closed.
     WindowEvent window = 32;
-    // E3: pane created. NEVER_DROP.
+    // [DELIVERY NEVER_DROP] same
     PaneCreated pane_created = 33;
-    // E3: pane exited with status; the one-nudge rule depends on it.
-    // NEVER_DROP.
+    // [DELIVERY NEVER_DROP] the one-nudge rule depends on it
+    // Pane exited with status.
     PaneExited pane_exited = 34;
-    // E4. NEVER_DROP.
+    // [DELIVERY NEVER_DROP] goal and triage logic
     ActivityTransition activity = 35;
-    // E5. SHED, at most one per pane per 5 s.
+    // [DELIVERY SHED] at most one per pane per 5 s
     PaneSummary pane_summary = 36;
-    // E6. NEVER_DROP.
+    // [DELIVERY NEVER_DROP] a prompt must reach Triage and be retired
     PromptDetected prompt_detected = 37;
-    // E6 companion: the prompt is no longer on screen. NEVER_DROP.
+    // [DELIVERY NEVER_DROP] a prompt must reach Triage and be retired
+    // Companion of prompt_detected: the prompt is no longer on screen.
     PromptGone prompt_gone = 38;
-    // E7: the ready pattern as a level, shown or gone.
+    // [DELIVERY COALESCE ready:<pane>] a level
+    // The ready pattern as a level, shown or gone.
     HarnessReady harness_ready = 39;
-    // E8. NEVER_DROP.
+    // [DELIVERY NEVER_DROP] the Stop guard's answer and the session id are facts nobody can re-read
     HarnessHookEvent harness_hook = 40;
-    // E9: harness session id learned for a pane. NEVER_DROP.
+    // [DELIVERY NEVER_DROP] completes a registry entry (`binding`)
+    // Harness session id learned for a pane.
     PaneHarnessSession pane_harness_session = 41;
-    // E11. NEVER_DROP; the dispatcher depends on it.
+    // [DELIVERY NEVER_DROP] the dispatcher depends on it
     AvailabilityChanged availability = 42;
+    // [DELIVERY NEVER_DROP] provider errors, `cleared` pairs
     // Provider error, rate limit, goal interrupted or paused, or similar
-    // shown by the harness (E12). NEVER_DROP.
+    // shown by the harness.
     HarnessCondition harness_condition = 43;
-    // E13: a person typed into a pane. COALESCE, key "input:<pane>".
+    // [DELIVERY COALESCE input:<pane>] latest input time wins
+    // A person typed into a pane.
     PaneInput pane_input = 44;
-    // E1: a mutable attribute of a pane changed (harness, current command,
-    // working directory, dead, capture...). COALESCE, key "pane:<pane>".
+    // [DELIVERY COALESCE pane:<pane>] the pane after the change; an upsert
+    // A mutable attribute of a pane changed (harness, current command,
+    // working directory, dead, capture...).
     PaneChanged pane_changed = 45;
 
-    // G2. NEVER_DROP.
+    // [DELIVERY NEVER_DROP]
     GoalState goal_state = 50;
-    // H3. COALESCE, key "branch:<worktree path>".
+    // [DELIVERY COALESCE branch:<worktree path>] a level per worktree
     BranchState branch_state = 51;
-    // H1: checkout or worktree appeared or disappeared. NEVER_DROP.
+    // [DELIVERY NEVER_DROP] a checkout appearing or going is rare
+    // Checkout or worktree appeared or disappeared.
     RepoEvent repo = 52;
-    // G5: a goal registry entry was written, updated or removed. NEVER_DROP.
+    // [DELIVERY NEVER_DROP] the registry is the goal identity (02h)
+    // A goal registry entry was written, updated or removed.
     GoalRegistryChanged goal_registry = 53;
-    // H4: a code-host CLI's status changed at the agent's hourly re-check
-    // (signed in or out, user, push access). COALESCE, key
-    // "forge:<tool>:<host>". Without it a machine marked unfit for
-    // PUSH_ACCESS_MISSING or HARNESS_NOT_SIGNED_IN stays unfit until the next
-    // reconnect (03c).
+    // [DELIVERY COALESCE forge:<tool>:<host>] a level per code host
+    // A code-host CLI's status changed at the agent's hourly re-check
+    // (signed in or out, user, push access). Without it a machine marked unfit
+    // for PUSH_ACCESS_MISSING or HARNESS_NOT_SIGNED_IN stays unfit until the
+    // next reconnect (03c).
     ForgeCliStatus forge_cli_status = 54;
 
-    // K2. SHED (also summarized in Heartbeat).
+    // [DELIVERY SHED] also summarized in `Heartbeat.spool`
     SpoolStatus spool_status = 60;
 
-    // L1: the policy file hash changed on disk. NEVER_DROP.
+    // [DELIVERY NEVER_DROP] audited
+    // The policy file hash changed on disk.
     PolicyChanged policy_changed = 70;
-    // L3: a local approve/deny decision for a command. NEVER_DROP.
+    // [DELIVERY NEVER_DROP] audited
+    // A local approve/deny decision for a command.
     LocalApprovalDecision local_approval = 71;
-    // M4: drain state changed (hub or local). NEVER_DROP.
+    // [DELIVERY NEVER_DROP] audited
+    // Drain state changed (hub or local).
     DrainState drain_state = 72;
   }
 }
@@ -156,11 +172,13 @@ enum ChangeKind {
   CHANGE_KIND_CREATED = 1;
   CHANGE_KIND_RENAMED = 2;
   CHANGE_KIND_CLOSED = 3;
+  // [CAP E1]
   // An attribute other than the name changed (a window's automatic_rename,
   // a pane's harness). Carries the object after the change.
   CHANGE_KIND_UPDATED = 4;
 }
 
+// [CAP E1]
 // TmuxServerEvent: a server started (full inventory follows in sessions) or
 // stopped (all its panes are gone).
 message TmuxServerEvent {
@@ -168,6 +186,7 @@ message TmuxServerEvent {
   TmuxServer server = 2;
 }
 
+// [CAP E1]
 // SessionEvent carries the session after the change (closed: ids only). A
 // session with internal = true (attach view, probe server) is reported like
 // any other so the hub's picture of tmux is complete; the hub drops it.
@@ -178,6 +197,7 @@ message SessionEvent {
   TmuxSession session = 4;
 }
 
+// [CAP E1]
 // WindowEvent carries the window after the change (closed: key only).
 message WindowEvent {
   ChangeKind kind = 1;
@@ -186,12 +206,14 @@ message WindowEvent {
   TmuxWindow window = 3;
 }
 
-// PaneCreated (E3).
+// [CAP E3]
+// PaneCreated: a new pane.
 message PaneCreated {
   TmuxPane pane = 1;
 }
 
-// PaneChanged (E1): the pane after a change to a mutable attribute that no
+// [CAP E1]
+// PaneChanged: the pane after a change to a mutable attribute that no
 // other event carries: harness (a developer starts `claude` in a shell
 // pane), current_command, workdir, harness_session_id, goal, dead,
 // log_capture, size. Activity, output time, input time, availability and
@@ -202,7 +224,8 @@ message PaneChanged {
   TmuxPane pane = 1;
 }
 
-// PaneInput (E13): someone typed into the pane. Goal panes are never idle,
+// [CAP E13]
+// PaneInput: someone typed into the pane. Goal panes are never idle,
 // so this is the only carrier of "a person is at the keyboard": it holds
 // off nudges and goal control (03c) and drives the typing banner. Sent at
 // most once per 10 s per pane, latest wins. How the agent detects it is in
@@ -214,7 +237,8 @@ message PaneInput {
   fleet.type.v1.GoalId goal = 3;
 }
 
-// PaneExited (E3).
+// [CAP E3]
+// PaneExited: a pane's process exited.
 message PaneExited {
   fleet.type.v1.PaneKey pane = 1;
   int32 exit_status = 2;
@@ -227,7 +251,8 @@ message PaneExited {
   bool remains = 4;
 }
 
-// ActivityTransition (E4), never dropped.
+// [CAP E4]
+// ActivityTransition: a pane went active or idle.
 message ActivityTransition {
   fleet.type.v1.PaneKey pane = 1;
   fleet.type.v1.Activity from = 2;
@@ -235,7 +260,8 @@ message ActivityTransition {
   google.protobuf.Timestamp last_output_time = 4;
 }
 
-// PaneSummary (E5), droppable.
+// [CAP E5]
+// PaneSummary: the latest lines of a pane.
 message PaneSummary {
   fleet.type.v1.PaneKey pane = 1;
   // Last lines, ANSI stripped, capped at 4 KiB. Untrusted text.
@@ -244,7 +270,8 @@ message PaneSummary {
   fleet.type.v1.Activity activity = 4;
 }
 
-// PromptGone (E6): the prompt left the screen (answered locally, timed out,
+// [CAP E6]
+// PromptGone: the prompt left the screen (answered locally, timed out,
 // or the pane moved on). After this a SendKeys with that prompt_id gets
 // REASON_CODE_PROMPT_GONE.
 message PromptGone {
@@ -252,9 +279,10 @@ message PromptGone {
   fleet.type.v1.PaneKey pane = 2;
 }
 
-// HarnessReady (E7): the adapter's ready pattern appeared or went away.
-// A level fact, mirrored in TmuxPane.ready_pattern_showing, so a reconnect
-// snapshot rebuilds it. COALESCE, key "ready:<pane>".
+// [CAP E7]
+// HarnessReady: the adapter's ready pattern appeared or went away. A level
+// fact, mirrored in TmuxPane.ready_pattern_showing, so a reconnect snapshot
+// rebuilds it.
 message HarnessReady {
   fleet.type.v1.PaneKey pane = 1;
   fleet.type.v1.Harness harness = 2;
@@ -292,7 +320,8 @@ enum HookDecision {
   HOOK_DECISION_BLOCK = 2;
 }
 
-// HarnessHookEvent (E8): what the harness hooks report.
+// [CAP E8]
+// HarnessHookEvent: what the harness hooks report.
 message HarnessHookEvent {
   fleet.type.v1.PaneKey pane = 1;
   fleet.type.v1.Harness harness = 2;
@@ -308,7 +337,8 @@ message HarnessHookEvent {
   HookDecision decision = 7;
 }
 
-// PaneHarnessSession (E9).
+// [CAP E9]
+// PaneHarnessSession: the harness session id learned for a pane.
 message PaneHarnessSession {
   fleet.type.v1.PaneKey pane = 1;
   fleet.type.v1.Harness harness = 2;
@@ -323,14 +353,16 @@ message PaneHarnessSession {
   GoalBindingSource binding = 6;
 }
 
-// GoalRegistryChanged (G5): one registry entry after the change (removed:
+// [CAP G5]
+// GoalRegistryChanged: one registry entry after the change (removed:
 // the entry as it was). The snapshot carries the whole registry.
 message GoalRegistryChanged {
   ChangeKind kind = 1;
   GoalRegistration registration = 2;
 }
 
-// AvailabilityChanged (E11), never dropped.
+// [CAP E11]
+// AvailabilityChanged: a pane's availability changed.
 message AvailabilityChanged {
   fleet.type.v1.PaneKey pane = 1;
   fleet.type.v1.SessionId session_id = 2;
@@ -339,13 +371,15 @@ message AvailabilityChanged {
   fleet.type.v1.AvailabilityReason reason = 5;
 }
 
-// RepoEvent (H1).
+// [CAP H1]
+// RepoEvent: a checkout or worktree appeared or disappeared.
 message RepoEvent {
   ChangeKind kind = 1;
   RepoCheckout checkout = 2;
 }
 
-// PolicyChanged (L1). Takes effect only after an agent restart.
+// [CAP L1]
+// PolicyChanged: takes effect only after an agent restart.
 message PolicyChanged {
   PolicyInfo policy = 1;
   string previous_hash = 2;
@@ -360,7 +394,8 @@ enum LocalApprovalChannel {
   LOCAL_APPROVAL_CHANNEL_NOTIFICATION = 2;
 }
 
-// LocalApprovalDecision (L3).
+// [CAP L3]
+// LocalApprovalDecision: a local approve or deny.
 message LocalApprovalDecision {
   fleet.type.v1.CommandId command_id = 1;
   bool approved = 2;

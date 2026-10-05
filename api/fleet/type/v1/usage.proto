@@ -17,7 +17,8 @@ enum UsageSource {
   USAGE_SOURCE_UNSPECIFIED = 0;
   // The probe session ran the harness's usage command (D1/D2).
   USAGE_SOURCE_PROBE = 1;
-  // Parsed from a banner or status line in a pane already observed (D3).
+  // [CAP D3]
+  // Parsed from a banner or status line in a pane already observed.
   USAGE_SOURCE_PASSIVE = 2;
   // A transient identity probe at agent start or version change (C2).
   USAGE_SOURCE_IDENTITY_PROBE = 3;

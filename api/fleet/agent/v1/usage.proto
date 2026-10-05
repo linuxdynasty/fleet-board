@@ -13,7 +13,8 @@ import "fleet/type/v1/usage.proto";
 import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
 
-// UsageReading is one observation of an account's usage (D2, D3).
+// [CAP D2 D3]
+// UsageReading is one observation of an account's usage.
 message UsageReading {
   // Set for USAGE_SOURCE_PROBE; empty for passive signals.
   fleet.type.v1.ProbeId probe_id = 1;
@@ -40,8 +41,9 @@ message UsageReading {
   string credits_text = 14;
 }
 
+// [CAP C2]
 // AccountIdentity is what the harness's own status screen says about the
-// signed-in account (C2). Never read from credential files.
+// signed-in account. Never read from credential files.
 message AccountIdentity {
   fleet.type.v1.AccountKey account_key = 1;
   fleet.type.v1.Harness harness = 2;
@@ -71,6 +73,7 @@ message AccountIdentity {
   string profile = 13;
 }
 
+// [CAP C2]
 // SessionAccountLink says which account a harness session is currently
 // spending from. OpenCode can switch providers per session (model line
 // "Build · Kimi K3 Moonshot AI"); other harnesses have one account.
@@ -87,7 +90,8 @@ message SessionAccountLink {
   fleet.type.v1.UsageSource source = 8;
 }
 
-// ProbeHealth reports one probe session's state (D1).
+// [CAP D1]
+// ProbeHealth reports one probe session's state.
 message ProbeHealth {
   fleet.type.v1.ProbeId probe_id = 1;
   fleet.type.v1.AccountId account_id = 2;

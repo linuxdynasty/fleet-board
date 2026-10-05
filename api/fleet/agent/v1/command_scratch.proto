@@ -21,6 +21,7 @@ message ScratchFile {
   bytes content = 2;
 }
 
+// [CAP F7]
 // EnsureScratch (capability "scratch"): create the goal's scratch directory
 // and write these files into it, replacing a file of the same name.
 // Declarative: the same files again is OK. Files not named are left alone (a
@@ -32,6 +33,7 @@ message EnsureScratch {
   repeated ScratchFile files = 2;
 }
 
+// [CAP F7]
 // EnsureScratchResult.
 message EnsureScratchResult {
   // True when the directory did not exist. The path is not returned: it is
@@ -39,6 +41,7 @@ message EnsureScratchResult {
   bool created = 1;
 }
 
+// [CAP F7]
 // CollectScratch (capability "scratch"): read one regular file the goal wrote
 // into its scratch directory. A link is never followed (SCRATCH_MISSING), the
 // text is UTF-8 with control characters stripped (except newline and tab), and
@@ -51,6 +54,7 @@ message CollectScratch {
   uint32 max_bytes = 3;
 }
 
+// [CAP F7]
 // CollectScratchResult.
 message CollectScratchResult {
   // Untrusted text, at most max_bytes.

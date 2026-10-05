@@ -86,7 +86,8 @@ message SettingSource {
   SettingLayer layer = 2;
 }
 
-// EffectiveSettings (L2): the tighten-only merge under the local ceiling.
+// [CAP L2]
+// EffectiveSettings: the tighten-only merge under the local ceiling.
 message EffectiveSettings {
   // Generation of the hub settings that were merged; 0 before any delivery.
   uint64 generation = 1;

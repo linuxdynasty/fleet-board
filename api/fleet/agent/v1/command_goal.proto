@@ -38,6 +38,7 @@ enum WorktreeMode {
   WORKTREE_MODE_SCRATCH = 3;
 }
 
+// [CAP G3]
 // GoalSpec is everything the agent needs to preflight or start a goal.
 message GoalSpec {
   fleet.type.v1.GoalId goal_id = 1;
@@ -92,7 +93,8 @@ message GoalSpec {
   string profile = 19;
 }
 
-// Preflight (I1): check without acting.
+// [CAP I1]
+// Preflight: check without acting.
 message Preflight {
   GoalSpec spec = 1;
   // The pane the hub means to reuse, so its checks (SESSION_NOT_AVAILABLE,
@@ -102,6 +104,7 @@ message Preflight {
   fleet.type.v1.PaneKey reuse_pane = 2;
 }
 
+// [CAP I1]
 // PreflightResult: ok, or every check that failed.
 message PreflightResult {
   bool ok = 1;
@@ -114,6 +117,7 @@ message PreflightResult {
   string goal_line_preview = 6;
 }
 
+// [CAP I1]
 // PreflightFailure is one failed preflight check.
 message PreflightFailure {
   fleet.type.v1.ReasonCode reason = 1;
@@ -127,7 +131,8 @@ message PreflightFailure {
   bool retryable = 3;
 }
 
-// StartGoal (G3): agent-side composite under one command_id so it survives
+// [CAP G3]
+// StartGoal: agent-side composite under one command_id so it survives
 // a hub outage. Steps are reported as CommandProgress in this fixed
 // set of names (a string, so a newer agent can add steps) and order (a skipped step is not reported; step_index is the
 // position in the full list and step_count is always 14); the restart class
@@ -178,6 +183,7 @@ message StartGoal {
   string rearm_reason = 8;
 }
 
+// [CAP G3]
 // StartGoalResult.
 message StartGoalResult {
   fleet.type.v1.PaneKey pane = 1;
@@ -204,7 +210,8 @@ message StartGoalResult {
   GoalRegistration registration = 10;
 }
 
-// EnsureWorktree (H2). Declarative: existing worktree on the same branch is
+// [CAP H2]
+// EnsureWorktree. Declarative: existing worktree on the same branch is
 // OK; a different branch at that path is WORKTREE_EXISTS.
 message EnsureWorktree {
   fleet.type.v1.RepoRef repo = 1;
@@ -216,6 +223,7 @@ message EnsureWorktree {
   string relative_path = 5;
 }
 
+// [CAP H2]
 // EnsureWorktreeResult.
 message EnsureWorktreeResult {
   string path = 1;
@@ -223,7 +231,8 @@ message EnsureWorktreeResult {
   BranchState branch = 3;
 }
 
-// PruneWorktree (H2): remove a goal worktree after merge and grace.
+// [CAP H2]
+// PruneWorktree: remove a goal worktree after merge and grace.
 // WORKTREE_DIRTY unless allow_dirty, which needs ROLE_OWNER. Only a worktree
 // the agent created (EnsureWorktree) is ever removed: a REPO_DRIVER goal's
 // worktree is the driver's, and a worktree some live pane works in is
@@ -238,7 +247,8 @@ message PruneWorktree {
   bool delete_branch = 5;
 }
 
-// RegisterGoal (G5): bind a goal to a pane in the agent's registry
+// [CAP G5]
+// RegisterGoal: bind a goal to a pane in the agent's registry
 // (GoalRegistration). StartGoal does this itself in step register_goal; the
 // command exists for the hub's reconciliation, when Snapshot.goal_registry
 // lacks an entry the hub expects (agent state lost, a reused pane that the
@@ -252,7 +262,8 @@ message RegisterGoal {
   bool repo_driver = 3;
 }
 
-// ReleaseGoal (G5): remove a goal's registry entry, for a goal the hub has
+// [CAP G5]
+// ReleaseGoal: remove a goal's registry entry, for a goal the hub has
 // ended (MERGED, CLEARED, CLOSED) or one it finds registered that it does
 // not know. Declarative: releasing an absent entry is OK. The agent also
 // releases on pane exit, PruneWorktree and when another goal registers in the
@@ -262,7 +273,8 @@ message ReleaseGoal {
   fleet.type.v1.PaneKey pane = 2;
 }
 
-// EnsureGoalHooks (G1): install and verify the generic goal-protocol hooks
+// [CAP G1]
+// EnsureGoalHooks: install and verify the generic goal-protocol hooks
 // for a harness in a checkout. Leaves repos that ship their own alone.
 message EnsureGoalHooks {
   fleet.type.v1.Harness harness = 1;
@@ -273,6 +285,7 @@ message EnsureGoalHooks {
   string profile = 4;
 }
 
+// [CAP G1]
 // EnsureGoalHooksResult wraps the hook state so the result can grow.
 message EnsureGoalHooksResult {
   fleet.type.v1.GoalHooksState state = 1;
@@ -280,7 +293,8 @@ message EnsureGoalHooksResult {
 
 // ===== J. Attach, K. logs, M. drain =====
 
-// OpenAttach (J1): open a Terminal stream for a PTY client attached through
+// [CAP J1]
+// OpenAttach: open a Terminal stream for a PTY client attached through
 // a grouped view session. Needs ROLE_VIEWER (read-only) or OPERATOR.
 message OpenAttach {
   fleet.type.v1.AttachId attach_id = 1;
@@ -297,12 +311,13 @@ message OpenAttachResult {
   string view_session_name = 1;
 }
 
-// CloseAttach (J1).
+// [CAP J1]
 message CloseAttach {
   fleet.type.v1.AttachId attach_id = 1;
 }
 
-// SetLogCapture (K1): turn pipe-pane capture on or off for a developer's
+// [CAP K1]
+// SetLogCapture: turn pipe-pane capture on or off for a developer's
 // own session (goal panes are always captured). The agent names each stream
 // by pane (LogStreamKey.pane) and never needs the hub's SessionId for it.
 message SetLogCapture {
@@ -310,18 +325,21 @@ message SetLogCapture {
   bool enabled = 2;
 }
 
-// SetLogShipping (K2): pause or resume shipping (for example hub disk low).
+// [CAP K2]
+// SetLogShipping: pause or resume shipping (for example hub disk low).
 // Capture continues into the spool while paused.
 message SetLogShipping {
   bool paused = 1;
   string reason = 2;
 }
 
-// Drain (M4): finish current work, take nothing new. Never kills.
+// [CAP M4]
+// Drain: finish current work, take nothing new. Never kills.
 message Drain {
   string reason = 1;
 }
 
-// Undrain (M4). A local `fleet-agent drain` cannot be undone from the hub;
+// [CAP M4]
+// Undrain. A local `fleet-agent drain` cannot be undone from the hub;
 // the agent answers REJECTED_BY_POLICY with reason DRAINING.
 message Undrain {}

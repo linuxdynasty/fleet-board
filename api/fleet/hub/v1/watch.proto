@@ -24,26 +24,62 @@ import "fleet/hub/v1/work.proto";
 // WatchTopic is one resource collection to follow.
 enum WatchTopic {
   WATCH_TOPIC_UNSPECIFIED = 0;
+  // [SCOPE READ] all rows
+  // [RELEASE v1 12]
   WATCH_TOPIC_MACHINES = 1;
+  // [SCOPE READ] all rows
+  // [RELEASE v1 12]
   WATCH_TOPIC_SESSIONS = 2;
+  // [SCOPE READ] live panes only (a live view, `last_lines` is the visible screen); the archived summary of an ended session is `ListStoredSessions` (`LOGS`)
+  // [RELEASE v1 12]
   // Latest-wins, droppable per pane, never replayed from the change log:
   // filter to the visible panes (`session in (...)`, `machine = ...`).
   WATCH_TOPIC_PANE_SUMMARIES = 3;
+  // [SCOPE READ] all rows
+  // [RELEASE v1 12]
   WATCH_TOPIC_GOALS = 4;
+  // [SCOPE READ] all rows
+  // [RELEASE v1 12]
   WATCH_TOPIC_WORK_ITEMS = 5;
+  // [SCOPE READ] all rows
+  // [RELEASE v1 12]
   WATCH_TOPIC_CHANGE_REQUESTS = 6;
+  // [SCOPE READ] all rows; never carries `raw_screen`
+  // [RELEASE v1 12]
   WATCH_TOPIC_ACCOUNTS = 7;
+  // [SCOPE READ|APPROVALS] all rows
+  // [RELEASE v1 12]
   WATCH_TOPIC_TRIAGE = 8;
+  // [SCOPE READ|APPROVALS] all rows
+  // [RELEASE v1 19]
   WATCH_TOPIC_APPROVALS = 9;
+  // [SCOPE READ] all rows
+  // [RELEASE v1 27]
   WATCH_TOPIC_ROUTINES = 10;
+  // [SCOPE READ] all rows
+  // [RELEASE v1 12]
   WATCH_TOPIC_SETTINGS = 11;
+  // [SCOPE self] `ADMIN`: all; otherwise the caller's own device
+  // [RELEASE v3 none]
   WATCH_TOPIC_DEVICES = 12;
+  // [SCOPE READ|APPROVALS] `READ`: all, but `output_text` only for the requester or a `LOGS` holder; otherwise only operations the caller requested
+  // [RELEASE v1 12]
   WATCH_TOPIC_OPERATIONS = 13;
+  // [SCOPE READ] all rows
+  // [RELEASE v1 12]
   WATCH_TOPIC_INTEGRATIONS = 14;
+  // [SCOPE READ|APPROVALS] all rows
+  // [RELEASE v1 12]
   // Coalesced to at most one per second.
   WATCH_TOPIC_FLEET_SUMMARY = 15;
+  // [SCOPE READ] all rows
+  // [RELEASE v1 12]
   WATCH_TOPIC_AUDIT = 16;
+  // [SCOPE self] own rows; `ADMIN`: all
+  // [RELEASE v3 none]
   WATCH_TOPIC_NOTIFICATION_TARGETS = 17;
+  // [SCOPE READ] all rows
+  // [RELEASE v1 12]
   WATCH_TOPIC_REPOS = 18;
 }
 

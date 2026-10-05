@@ -25,20 +25,25 @@ import "google/protobuf/timestamp.proto";
 // Request is always agent -> hub and response hub -> agent, because the agent
 // is the client of every RPC.
 service AgentService {
-  // A1. Exchange a single-use token and CSR for a client certificate. The
+  // [CAP A1]
+  // Exchange a single-use token and CSR for a client certificate. The
   // agent first verifies the server's chain against the CA fingerprint inside
   // the token (the trust anchor, 02g-agent-security.md), and only then sends
   // the token and CSR. Retry-safe: see EnrollRequest.token. Failures are gRPC
   // errors whose ErrorDetail.reason is an ENROLL_* code.
   rpc Enroll(EnrollRequest) returns (EnrollResponse);
-  // A3. One per agent. Agent sends Hello then Snapshot; hub sends HelloAck,
+  // [CAP A3]
+  // One per agent. Agent sends Hello then Snapshot; hub sends HelloAck,
   // then commands and settings.
   rpc Connect(stream ConnectRequest) returns (stream ConnectResponse);
-  // J1. One per browser attach, opened by the agent on OpenAttach.
+  // [CAP J1]
+  // One per browser attach, opened by the agent on OpenAttach.
   rpc Terminal(stream TerminalRequest) returns (stream TerminalResponse);
-  // K1, K3. Session log chunks with byte offsets (ADR 0010).
+  // [CAP K1 K3]
+  // Session log chunks with byte offsets (ADR 0010).
   rpc SessionLog(stream SessionLogRequest) returns (stream SessionLogResponse);
-  // A4. Renew at two-thirds of the certificate lifetime.
+  // [CAP A4]
+  // Renew at two-thirds of the certificate lifetime.
   rpc RenewCert(RenewCertRequest) returns (RenewCertResponse);
 }
 
@@ -46,7 +51,8 @@ service AgentService {
 // Enrollment and certificates
 // ---------------------------------------------------------------------------
 
-// EnrollRequest (A1).
+// [CAP A1]
+// EnrollRequest: what the agent sends to enroll.
 message EnrollRequest {
   // The single-use token printed by `fleetd enroll-token`. Self-describing:
   // it embeds the SHA-256 of the fleet CA certificate, which the agent
@@ -86,7 +92,8 @@ message EnrollRequest {
   string install_id = 8;
 }
 
-// EnrollResponse (A1).
+// [CAP A1]
+// EnrollResponse: what the hub returns on enroll.
 message EnrollResponse {
   fleet.type.v1.MachineId machine_id = 1;
   // PEM client certificate with URI SAN fleet://machine/<machine_id>.
@@ -100,7 +107,8 @@ message EnrollResponse {
   bytes account_salt = 6;
   // Which hash construction the salt is for; bump on change.
   uint32 salt_version = 7;
-  // Addresses the owner configured, as a hint for A2 discovery.
+  // [CAP A2]
+  // Addresses the owner configured, as a hint for discovery.
   repeated string hub_addresses = 8;
   // Display name the hub assigned (hostname by default, renameable).
   string machine_name = 9;
@@ -114,12 +122,14 @@ message EnrollResponse {
   bool replayed = 12;
 }
 
-// RenewCertRequest (A4), over the existing mTLS connection.
+// [CAP A4]
+// RenewCertRequest, over the existing mTLS connection.
 message RenewCertRequest {
   bytes csr_pem = 1;
 }
 
-// RenewCertResponse (A4).
+// [CAP A4]
+// RenewCertResponse: the renewed certificate.
 message RenewCertResponse {
   bytes cert_pem = 1;
   bytes ca_chain_pem = 2;
@@ -158,16 +168,19 @@ message ConnectResponse {
   }
 }
 
-// ConnectReason says why the agent is (re)connecting (A6).
+// ConnectReason says why the agent is (re)connecting.
 enum ConnectReason {
   CONNECT_REASON_UNSPECIFIED = 0;
   CONNECT_REASON_START = 1;
   CONNECT_REASON_RECONNECT = 2;
+  // [CAP A6]
   CONNECT_REASON_WAKE = 3;
+  // [CAP A6]
   CONNECT_REASON_NETWORK_CHANGE = 4;
 }
 
-// Hello is the first message on Connect (A3).
+// [CAP A3]
+// Hello is the first message on Connect.
 message Hello {
   fleet.type.v1.MachineId machine_id = 1;
   string agent_version = 2;
@@ -213,7 +226,8 @@ message EventCounters {
   uint64 evicted_total = 3;
 }
 
-// HelloAck (A3).
+// [CAP A3]
+// HelloAck: the hub's answer to Hello.
 message HelloAck {
   string hub_version = 1;
   // Hub time, the authority for deadlines and for ordering data across
@@ -286,7 +300,8 @@ message PaneCounts {
   uint32 goals_total = 6;
 }
 
-// Heartbeat (A5), every 15 s. Droppable under backpressure; the hub marks
+// [CAP A5]
+// Heartbeat, every 15 s. Droppable under backpressure; the hub marks
 // stale at 45 s and offline at 3 min. Carries no seq.
 message Heartbeat {
   google.protobuf.Timestamp sent_time = 1;
@@ -294,6 +309,7 @@ message Heartbeat {
   google.protobuf.Duration uptime = 2;
   double load1 = 3;
   PaneCounts counts = 4;
+  // [CAP M4]
   bool draining = 5;
   SpoolStatus spool = 6;
   uint32 open_attaches = 7;
@@ -334,6 +350,7 @@ message AgentHealth {
   uint64 commands_refused_total = 8;
 }
 
+// [CAP A3]
 // SnapshotRequest: the hub wants a full Snapshot now.
 message SnapshotRequest {
   // Open vocabulary, so the agent logs it: "reconcile", "ui_refresh",
@@ -342,7 +359,8 @@ message SnapshotRequest {
   string reason = 1;
 }
 
-// Settings (A8): hub-side machine and group settings with a generation.
+// [CAP A8]
+// Settings: hub-side machine and group settings with a generation.
 // The agent merges under the local ceiling and answers with SettingsAck.
 message Settings {
   uint64 generation = 1;
@@ -360,7 +378,8 @@ message Settings {
   fleet.type.v1.TraceContext trace = 7;
 }
 
-// SettingsAck (A8): the generation applied and the effective values.
+// [CAP A8]
+// SettingsAck: the generation applied and the effective values.
 message SettingsAck {
   uint64 generation = 1;
   fleet.type.v1.EffectiveSettings effective = 2;
@@ -412,11 +431,13 @@ enum ByeReason {
   // The agent goes Unenrolled and the owner issues a new token; after a
   // restore the hub may instead adopt the machine (03f, "Restore").
   BYE_REASON_UNKNOWN_MACHINE = 8;
+  // [CAP A7]
   // Agent: HelloAck.fleet_id is not the fleet this agent enrolled in.
   BYE_REASON_FLEET_MISMATCH = 9;
 }
 
-// Bye (A7 from the agent; duplicate identity and revocation from the hub).
+// [CAP A7]
+// Bye: from the agent, or from the hub for duplicate identity and revocation.
 message Bye {
   ByeReason reason = 1;
   string message = 2;
