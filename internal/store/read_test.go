@@ -7,6 +7,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/linuxdynasty/fleet-board/internal/store"
 )
 
 func countItems(tx *sql.Tx) (int, error) {
@@ -55,6 +57,43 @@ func TestReadersDoNotWaitForTheWriterAndSeeOnlyCommittedRows(t *testing.T) {
 	}
 	if n != 2 {
 		t.Errorf("after the commit a reader saw %d rows, want 2", n)
+	}
+}
+
+// A read that submits a write while Close is waiting must not hang: Close
+// waits for in-flight Submits, and a Read must not hold what Submit needs.
+func TestAReadThatWritesDuringCloseFinishes(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	s, err := store.Open(context.Background(), h.options(itemsV1))
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	inRead := make(chan struct{})
+	readDone := make(chan error, 1)
+	go func() {
+		readDone <- s.Read(context.Background(), func(*sql.Tx) error {
+			close(inRead)
+			time.Sleep(100 * time.Millisecond) // Close is now waiting
+			err := s.Write(context.Background(), insert("from a read"))
+			if err != nil && !errors.Is(err, store.ErrClosed) {
+				return err
+			}
+			return nil
+		})
+	}()
+	<-inRead
+	closeDone := make(chan error, 1)
+	go func() { closeDone <- s.Close() }()
+	for name, ch := range map[string]chan error{"Read": readDone, "Close": closeDone} {
+		select {
+		case err := <-ch:
+			if err != nil {
+				t.Errorf("%s: %v", name, err)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatalf("%s did not return: a Read that writes deadlocks with Close", name)
+		}
 	}
 }
 
