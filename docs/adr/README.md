@@ -9,8 +9,9 @@ what changed it; read the later ADR before relying on the old text.
 When documents disagree, the order of authority is on [design.md](../design.md).
 The owner's decisions of 2026-09-28 to 2026-10-05 are recorded in
 [0022](0022-drift-audit-decisions.md), [0024](0024-pre-build-owner-decisions.md),
-[0025](0025-v1-includes-dispatch.md), [0026](0026-one-home-per-fact.md) and, newest,
-[0027](0027-cursor-first-class-copilot-and-messaging-later.md) (2026-10-05).
+[0025](0025-v1-includes-dispatch.md), [0026](0026-one-home-per-fact.md),
+[0027](0027-cursor-first-class-copilot-and-messaging-later.md) and, newest,
+[0028](0028-mdns-best-effort.md) (both 2026-10-05).
 
 | ADR | Title | Status | Relations |
 |---|---|---|---|
@@ -36,11 +37,12 @@ The owner's decisions of 2026-09-28 to 2026-10-05 are recorded in
 | [0020](0020-dependencies.md) | Languages, frameworks and libraries | Accepted | Amended by 0021 (OTLP exporters), 0022, 0023 |
 | [0021](0021-insights-and-observability.md) | Insights from the fleet's own data, and observability of the fleet itself | Accepted | Questions 1 to 5 answered by 0022 (question 1 in its 2026-10-02 addendum); amends 0020's table |
 | [0022](0022-drift-audit-decisions.md) | Drift audit decisions: pane context, hub runtime, dependencies, GitHub App | Accepted | Answers 0021; superseded in part by 0023 (decision 3); decision 9 (flows in the order of authority) superseded in part by 0026; addendum of 2026-10-02: owner decisions, the v1 command path (changes decision 5), open questions; its questions 1 to 11 answered by 0024 |
-| [0023](0023-additional-libraries.md) | Additional libraries: mDNS and system sampling | Accepted | Builds on 0020; supersedes in part 0022 |
+| [0023](0023-additional-libraries.md) | Additional libraries: mDNS and system sampling | Accepted | Builds on 0020; supersedes in part 0022; questions 1 and 2 answered by 0028; superseded in part by 0028 (the exec fallback) |
 | [0024](0024-pre-build-owner-decisions.md) | Pre-build owner decisions: observed goals, who merges, harness config, machine admin, size dropped, freeze scope, install, backups | Accepted | Amends 0004, 0005, 0006, 0019, 0022; answers 0022's questions; three decisions deferred; amended by 0025 (decisions 8, 20, 21, 23) |
 | [0025](0025-v1-includes-dispatch.md) | v1 includes dispatch: v2 merged into v1, no v2 label, watch first then dispatch, `v0.1` freezes all of v1 | Accepted | Supersedes the release split in design milestones and 0022's v2 placements; amends 0024 decisions 8, 20, 21, 23; amended by 0027 (Cursor joins the harnesses) |
 | [0026](0026-one-home-per-fact.md) | One home per fact: each kind of fact lives once, flows retired, review files dropped, tables and issue bodies generated | Accepted | Supersedes the flows' place in the order of authority (0022 addendum) |
 | [0027](0027-cursor-first-class-copilot-and-messaging-later.md) | Cursor is a first-class harness in v1; Copilot and sending messages into a session come later | Accepted | Amends 0025 (the harness list); builds on 0024 decision 3 |
+| [0028](0028-mdns-best-effort.md) | mDNS discovery is best effort; answers to ADR 0023's questions | Accepted | Resolves 0023's questions 1 and 2; supersedes in part 0023 (the exec fallback) |
 
 ## Template
 
