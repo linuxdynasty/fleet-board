@@ -171,7 +171,8 @@ enum TmuxServerKind {
 }
 
 // Harness names a harness adapter. Free string because adapters are an
-// extension point; known values: "claude", "codex", "muse", "opencode".
+// extension point; known values: "claude", "codex", "muse", "cursor",
+// "opencode".
 message Harness {
   string name = 1;
 }

@@ -22,13 +22,15 @@ The old flow pages are retired; each workflow is told once, in its spec.
 ## Goal
 
 A controller for a fleet of AI coding workers, for people who pay for harness subscriptions (Claude,
-ChatGPT/Codex, Muse, others later) because API pricing is too expensive, and want full value from
+ChatGPT/Codex, Muse, Cursor, others later) because API pricing is too expensive, and want full value from
 them.
 
 A **worker** is a machine (physical, VM or container, any OS) with a harness signed in to a
-subscription account. Claude Code, Codex and Muse have a native `/goal`. OpenCode is a fourth
-in-scope harness: inventoried and attachable, no `/goal` yet, and never auto-dispatched on an
-Anthropic subscription. The controller:
+subscription account. Claude Code, Codex, Muse and Cursor (its CLI, `cursor-agent`) have a native
+`/goal` and are supported in full; Cursor joined on 2026-10-05
+([ADR 0027](adr/0027-cursor-first-class-copilot-and-messaging-later.md)). OpenCode is also in
+scope: inventoried and attachable, no `/goal` yet, and never auto-dispatched on an Anthropic
+subscription. GitHub Copilot comes later. The controller:
 
 - tracks every worker, session and issue on one kanban,
 - tracks **weekly usage** of every harness account, which is the real budget,
@@ -91,7 +93,7 @@ flowchart TB
     AG["fleet-agent<br/>observer, probes, goal registry,<br/>command log, event ring, log spool"]
     HK["Hooks<br/>fleet-agent hook EVENT --harness H"]
     TM["tmux server<br/>the developer's own, plus fleet-probe"]
-    HAR["Harnesses, unmodified<br/>Claude Code, Codex, Muse, OpenCode"]
+    HAR["Harnesses, unmodified<br/>Claude Code, Codex, Muse, Cursor, OpenCode"]
   end
 
   UI -->|"unary calls, Watch"| API
@@ -184,7 +186,7 @@ Plain words first; the proto name is in brackets.
 | **goal** | One job handed to a harness, like "get issue #12 merged". Every dispatch attempt is a new goal [`Goal`, `GoalDefinition`, `GoalStatus`] |
 | **goal file** | The file whose first line says how the goal is going: the objective while working, `BLOCKED: ...`, or `DONE`. The agent writes the first version (not where the repo ships its own hooks), the model updates it, and hooks only read it ([02h](specs/02h-goal-binding-and-pane-signals.md) step 12, [01d](specs/01d-goal-hooks.md)) [`GoalState`, `GoalLineState`] |
 | **goal registry** | The agent's table that ties a goal to a pane, the one goal identity for every harness [`GoalRegistration`] |
-| **harness** | The AI coding tool itself, unmodified, in a tmux pane: Claude Code, Codex, Muse, OpenCode. Never run headless, never touched for credentials |
+| **harness** | The AI coding tool itself, unmodified, in a tmux pane: Claude Code, Codex, Muse, Cursor (`cursor-agent`), OpenCode. Never run headless, never touched for credentials |
 | **heartbeat** | The agent's regular "I am alive" message; too many missed make a machine `STALE`, then `OFFLINE` [`Heartbeat`] |
 | **hub** | The main program (`fleetd`) on one machine. It keeps track of everything |
 | **insight** | A number the hub computes from its own rows with no model: efficiency, outcomes, where work gets stuck [`GetInsights`] |

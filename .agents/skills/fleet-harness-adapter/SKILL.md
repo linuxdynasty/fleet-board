@@ -1,6 +1,6 @@
 ---
 name: fleet-harness-adapter
-description: "Use when adding or changing a harness adapter or screen parser under internal/harness (Claude Code, Codex, Muse, OpenCode): fixtures per version, VersionSupport and ParserSupport, and the never-guess and pass-through rules."
+description: "Use when adding or changing a harness adapter or screen parser under internal/harness (Claude Code, Codex, Muse, Cursor, OpenCode): fixtures per version, VersionSupport and ParserSupport, and the never-guess and pass-through rules."
 ---
 
 # Harness adapters and screen parsers

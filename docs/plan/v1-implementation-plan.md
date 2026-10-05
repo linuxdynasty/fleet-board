@@ -100,7 +100,7 @@ which is written into the spec the item names.
 
 | # | Item | Why |
 |---|---|---|
-| 0.1 | Fixtures of the screens each parser and detector reads, for the installed versions of Claude Code, Codex, Muse and OpenCode, captured with the `fleet-live-probe` protocol: usage and status screens, command catalogs, startup screens (update, release notes, trust, sign-in), prompt screens, condition screens (for example Muse "HTTP 500 retrying"), banners and status lines, and for OpenCode `providers list`, the model line and `stats` | D2 parsers, C4 catalogs, E6 and E12 detection are fixture-tested (01, `fleet-harness-adapter`); harnesses auto-update (Muse moved to 1.4.2 on 2026-10-02) |
+| 0.1 | Fixtures of the screens each parser and detector reads, for the installed versions of Claude Code, Codex, Muse, Cursor (`cursor-agent`) and OpenCode, captured with the `fleet-live-probe` protocol: usage and status screens, command catalogs, startup screens (update, release notes, trust, sign-in), prompt screens, condition screens (for example Muse "HTTP 500 retrying"), banners and status lines, and for OpenCode `providers list`, the model line and `stats` | D2 parsers, C4 catalogs, E6 and E12 detection are fixture-tested (01, `fleet-harness-adapter`); harnesses auto-update (Muse moved to 1.4.2 on 2026-10-02) |
 | 0.2 | Owner creates the GitHub App (the read-only permission set of ADR 0022, which adds Contents: read) and installs it on the watched repos; `fleetd setup github` (PR 13a) writes the manifest, until then by hand. The App is the only GitHub access in v1: there is no fine-grained token fallback (decision 15 of [ADR 0024](../adr/0024-pre-build-owner-decisions.md)) | W4 sync needs an installation; only the owner can do it |
 | 0.3 | **Decided** (decisions 12 to 14 of ADR 0024; issue #27 records it): binaries come from GitHub Releases with a checksum file, fetched by an install script; `fleet-agent upgrade` and `fleetd upgrade` fetch and verify the next release; no Apple signing or notarization for now (the owner clears the quarantine flag once per machine). Units: a launchd LaunchAgent on macOS (the owner is logged in; on the hub it runs `fleetd` under `caffeinate -s`); a `systemd --user` unit on Linux, with the owner running `sudo loginctl enable-linger <user>` once per worker so it survives logout (`fleet-agent doctor` checks it). Whether the release build is a plain `go build` matrix or GoReleaser is PR 16's call, inside these rules | Packaging PR 16 depends on it; not covered by ADR 0020 |
 | 0.4 | Owner sets `MUSE_NO_AUTO_UPDATE=1` on fleet machines, or accepts parser drift handled by `parsing_live` (ADR 0018) | Muse's launcher updates itself in the background (01d) |
@@ -118,15 +118,25 @@ which is written into the spec the item names.
 | 0.16 | Issue #61: measure the cost of the weekly insights report (05, `NOT_MEASURED`): the first run's `usage_consumed` is the measurement, recorded in 05 | gates nothing at build time; the report is on by default (ADR 0022) and its first run after row 27 lands turns `NOT_MEASURED` into a number |
 | 0.17 | **Owner decision 20** (#62): in `local_trusted` mode any process on the hub machine is the owner, so a goal there could approve its own request; approvals and settings changes may need a local secret | gates row 19 (approvals and prompt answers) |
 | 0.18 | **Owner decision 21** (#63): the default goal text for repos without eshu's hooks (the claim step, the `BLOCKED` convention, the review-loop cap), drafted and then approved by the owner before it goes into [03c](../specs/03c-goals.md) | gates the first `StartGoal` in such a repo (row 22) |
+| 0.19 | **Cursor input line** ([ADR 0027](../adr/0027-cursor-first-class-copilot-and-messaging-later.md)): after a turn the line still holds the old prompt and new typing is added to it; find a safe way to clear it, every screen read before each key | gates every typing purpose on a Cursor pane (02h); result into 01b and 02h |
+| 0.20 | **Cursor monthly budget:** which `/usage` bucket pacing reads (Included, Auto, API), how a monthly window is carried, and the contract change for it | gates Cursor usage readings and dispatch; result into 03b and the usage proto |
+| 0.21 | **Cursor goal control:** `/goal` syntax, pause, resume, the done signal, re-arm after done, and whether `beforeSubmitPrompt` sees `/goal` lines | gates Cursor goals; result into 01b and 01d |
+| 0.22 | **Cursor account identity** from its own screens or commands, never its files | gates Cursor accounts; result into 01 C2 |
+| 0.23 | **Cursor goal hooks:** which events carry G1, whether `stop` can hold a turn, how a hook finds its pane | gates Cursor goal hooks; result into 01d |
+| 0.24 | **Cursor terms of use** for this kind of automation | gates auto-dispatch on Cursor; result into research/terms-of-service.md |
 
 Items 0.1 to 0.11 come before the rows they name, most of them before PR 4.
 Items 0.12 to 0.18 were the v2 prerequisites ([ADR 0025](../adr/0025-v1-includes-dispatch.md)
 decision 5); each comes before the dispatch row it gates, not before PR 1. 0.16 is
-measured by the report's first run and gates no build step.
+measured by the report's first run and gates no build step. Items 0.19 to 0.24 are
+Cursor's ([ADR 0027](../adr/0027-cursor-first-class-copilot-and-messaging-later.md));
+each comes before the Cursor work it gates, and the other harnesses never wait for
+them. Items 0.1, 0.8 and 0.9 cover Cursor too. Cursor's adapter work gets its own
+row and issue once these items are filed.
 
 What only the owner can do is 0.2 (create and install the GitHub App, #26), 0.4
 (decide Muse auto-update, #28), 0.17 (#62) and 0.18 (#63, approve the words); 0.3 is
-decided (above). 0.1, 0.5 to 0.16 are agent work.
+decided (above). 0.1, 0.5 to 0.16 and 0.19 to 0.24 are agent work.
 `scripts/owner-setup.sh` walks the owner through 0.2 and 0.4, the owner's one-time
 folder trust that 0.9 describes (C3; provisional until 0.9 records the real screens),
 and two install steps (the macOS quarantine flag, Linux linger); `--check` shows where

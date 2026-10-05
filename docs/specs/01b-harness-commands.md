@@ -77,6 +77,85 @@ Probed 2026-10-01 on OpenCode 1.18.30.
   not auto-dispatch goals to OpenCode on an Anthropic subscription; manual
   dispatch remains the developer's choice.
 
+## Cursor
+
+First-class in v1 ([ADR 0027](../adr/0027-cursor-first-class-copilot-and-messaging-later.md)).
+Probed 2026-10-05 on cursor-agent 2026.10.01-e373342 (macOS), throwaway tmux
+server, a scratch clone of this repo, two one-word prompts. The Cursor IDE has
+no tmux pane and is out of scope.
+
+| Step | Observed |
+|---|---|
+| start in a new folder | a "Workspace Trust Required" box: "[a] Trust this workspace" / "[q] Quit" |
+| ready screen | "→ Plan, search, build anything"; footer with the model ("Auto"), the approval mode ("Auto-review") and "-- INSERT --"; a path and branch line |
+| `/` | a scrolling command menu; seen: `/model`, `/goal` ("durable goal that continues while idle"), `/run-everything`, `/auto-review`, `/plan`, `/ask`, `/usage` (partial list; the full catalog goes into fixtures) |
+| `/usage` | "Usage • Pro+", "Resets Nov 4"; Included 10% used, Auto 11%, API 0%; On-Demand Disabled; "Esc to close". A monthly plan, not a weekly one |
+| after a one-word prompt | the footer shows the context share ("Auto · 9.4%") |
+| after a turn | **the input line still holds the previous prompt** (`→ <old text>`); text typed next was added to it, and both went as one message |
+
+- **Typing.** The empty-input check of [02h](02h-goal-binding-and-pane-signals.md)
+  must treat `→ <text>` as not empty. How to clear it safely is plan item 0.19;
+  until then nothing is typed into a Cursor pane.
+- **CLI:** `cursor-agent --resume [chatId]`, `ls`, `create-chat`, `persist` (the
+  session survives a disconnect). No command sends text into a running session.
+- **Session id and transcript:** hook payloads carry `conversation_id` (equal to
+  `session_id` in the probe); transcripts are at
+  `~/.cursor/projects/<workspace>/agent-transcripts/<id>/<id>.jsonl`, a helper in
+  its own folder. Hooks: [01d](01d-goal-hooks.md#cursor-hooks-probe-2026-10-05).
+- **Not probed:** `/goal` subcommands, pause and resume (item 0.21), account
+  identity (0.22), permission prompts under each approval mode, and what probing
+  costs (0.8).
+
+## GitHub Copilot (later)
+
+Not in v1 ([ADR 0027](../adr/0027-cursor-first-class-copilot-and-messaging-later.md)).
+Probed 2026-10-05 on Copilot CLI 1.0.91 with **no prompt sent** (the plan was
+98% used). `~/.copilot` did not exist before and was removed after.
+
+- Start in a new folder: "Confirm folder trust" with "1. Yes" / "2. Yes, and
+  remember this folder for future sessions" / "3. No (Esc)".
+- Ready screen: `❯` on an empty line between rules; status line "Session: 0 AIC
+  used"; footer "Interactive · Manual Approval · / commands · ? help" and the model.
+- `/usage`: an activity graph, "AI Credits 0" for the session, and the plan as
+  "98% used", "6,888 / 7,000 AIC". Credits are counted per month.
+- Help lists hooks (`.github/hooks/*.json` in a repo, `hooks` in the user
+  `config.json`), an OpenTelemetry export that includes token use, a
+  `--max-ai-credits` soft cap, and `/usage`, `/statusline`, `/resume`, `/session`,
+  `/fleet` (parallel helpers; a name clash with this product), `/autopilot`,
+  `/delegate`, `/tasks`, `/permissions`, `/allow-all`.
+- `--remote` (control from GitHub web and mobile), `--connect` (a remote
+  session) and `--acp` (an Agent Client Protocol server) exist. No local command
+  sends text into a running session.
+
+## Sending a message into a session
+
+`later` ([ADR 0027](../adr/0027-cursor-first-class-copilot-and-messaging-later.md)
+decision 4). What each harness offers, checked 2026-10-05:
+
+| Harness | Way in | Observed |
+|---|---|---|
+| Codex 0.160.0 | `codex queue --thread <uuid or name> --message <text>`, through the shared local server ("Local background server" in `/status`) | An idle session ran the text as a user turn. Two messages sent back to back ran in order, the second after the first turn ended; the input line stayed empty. An unknown UUID is an error, an unknown name exits 1. A stored session that is not running accepts a message (delivery on resume not seen) |
+| Claude Code 2.1.289 | each session's inbox, a Unix socket at `CLAUDE_CODE_MESSAGING_SOCKET` ([docs](https://code.claude.com/docs/en/cross-session-messaging), v2.1.224 and later) | See the rules below. The message format after the first line is not in the docs |
+| Muse 1.4.2 | `muse session-message send --target <session> < body` | From outside a Muse session: `external_agent_ingress_closed`. How to open it is not documented |
+| Cursor, Copilot | none found | Cursor has a per-workspace `worker.sock`, not explored |
+
+Claude Code's rules, from its docs and confirmed once on 2026-10-04:
+
+- With no `crossSessionInbound` setting, the receiving session's permission mode
+  decides. A session that **asks** for permission (default, acceptEdits, auto,
+  dontAsk) takes each message, unless the sender skips permission prompts. A
+  session that **skips** them (bypassPermissions) holds each message for its
+  user's approval, unless the sender skips them too. On 2026-10-04 a message to a
+  bypassPermissions session from an auto-mode session was held, and dropped
+  unanswered after the 5-minute default.
+- `crossSessionInbound` set to `accept`, `hold` or `refuse` (or `/config`,
+  "Messages from your other sessions") overrides that.
+- A program that is not a Claude session asserts no class, so a bypass session
+  holds its messages. The first line may be `{"type":"auth","token":"..."}` with
+  `CLAUDE_CODE_MESSAGING_TOKEN`, which proves it belongs to that same session.
+- A message is plain text and cannot approve a prompt, change settings or run a
+  command. The receiving model still reads it, so it is untrusted input.
+
 ## Goal subcommands
 
 Probed 2026-10-01 by typing `/goal` and `/goal ` without Enter, then bare

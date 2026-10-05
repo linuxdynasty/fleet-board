@@ -49,7 +49,7 @@ Use these, or better ones, the first time a term comes up in a message.
 |---|---|
 | hub (`fleetd`) | the main program on one machine that keeps track of everything |
 | agent (`fleet-agent`) | the small program on each machine that watches tmux and does what the hub asks |
-| harness | the AI coding tool itself: Claude Code, Codex, Muse, OpenCode |
+| harness | the AI coding tool itself: Claude Code, Codex, Muse, Cursor, OpenCode |
 | goal | one job handed to a harness, like "get issue #12 merged" |
 | goal file | a small file whose first line says how the job is going (working, BLOCKED, DONE) |
 | pane, window, session | the boxes tmux shows on screen; a pane is one terminal |

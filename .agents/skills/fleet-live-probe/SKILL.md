@@ -1,6 +1,6 @@
 ---
 name: fleet-live-probe
-description: "Use when probing a real harness (Claude Code, Codex, Muse, OpenCode) to learn how it behaves: throwaway tmux server, read every screen before any key, restore touched config byte for byte, never open auth files, delete recordings, record results in the spec."
+description: "Use when probing a real harness (Claude Code, Codex, Muse, Cursor, OpenCode, Copilot) to learn how it behaves: throwaway tmux server, read every screen before any key, restore touched config byte for byte, never open auth files, delete recordings, record results in the spec."
 ---
 
 # Live probe protocol

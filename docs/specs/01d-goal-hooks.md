@@ -34,6 +34,7 @@ harness config), not into each repo.
 | Claude Code | `~/.claude/settings.json` | `SessionStart`, `UserPromptSubmit`, `Stop` |
 | Codex | `~/.codex/hooks.json` | `SessionStart`, `Stop`, `Interrupt` (notify only) |
 | Muse | a plugin installed at user scope: `muse plugins install <bundle> --scope user` (see [Muse](#muse-hooks-are-a-plugin-package)) | `SessionStart`, `Stop` (probed), `Interrupt` |
+| Cursor (`cursor-agent`) | `~/.cursor/hooks.json` | to be decided by plan item 0.23; `beforeSubmitPrompt` and `stop` fire ([probe](#cursor-hooks-probe-2026-10-05)) |
 
 - Every fleet hook exits 0 with no output unless it is running for a fleet
   goal, so the developer's own sessions, including ones on the same machine,
@@ -264,6 +265,39 @@ Claude-compatible plugin for Muse.
 (it moved this machine to 1.4.2 on 2026-10-02) unless `MUSE_NO_AUTO_UPDATE=1`
 is set. Preflight reports the setting; parser drift is handled by
 `ParserSupport.parsing_live` ([ADR 0018](../adr/0018-hub-api-and-contract-amendments.md)).
+
+## Cursor hooks probe (2026-10-05)
+
+cursor-agent 2026.10.01-e373342 on the hub MacBook, throwaway tmux server
+`-L probe-cursor`, a scratch clone of this repo at 843df01 (its project
+`.cursor/hooks.json` from #87 and #90), and `FLEET_CURSOR_HOOK_LOG` set so the
+dev adapter logged event names, key names and ids only. Two prompts: a one-word
+reply, then one asking a Task helper to read `README.md`.
+
+| Step | Events logged |
+|---|---|
+| prompt 1 | `beforeSubmitPrompt`, then `stop`; `session_id` equals `conversation_id` |
+| prompt 2, parent | `beforeSubmitPrompt`, then `stop`, same ids as prompt 1 |
+| prompt 2, the helper's file read | `postToolUse` under a **new** `conversation_id` (equal to its `session_id`), with no `subagent_id` and no `parent_conversation_id` |
+| helper start | **no `subagentStart`**, although it was wired |
+
+- The `stop` payload carries `input_tokens`, `output_tokens`,
+  `cache_read_tokens`, `cache_write_tokens`, `loop_count` and `status`.
+- A helper's events carry `conversation_id`, `cursor_version`, `duration`,
+  `generation_id`, `hook_event_name`, `model`, `session_id`, `tool_input`,
+  `tool_name`, `tool_output`, `tool_use_id`, `transcript_path`, `user_email`,
+  `workspace_roots`. `user_email` is personal data: a fleet hook drops it.
+- So in this version a helper cannot be tied to its parent from hook data, and
+  its transcript is a separate top-level folder. A fleet goal hook keys on the
+  parent's own events and ignores a helper's.
+- Not checked: `/goal` lines reaching `beforeSubmitPrompt`, whether `stop` can
+  hold a turn for a fleet goal (item 0.23), and the Cursor IDE.
+
+Cleanup: tmux server killed; `~/.cursor/hooks.json` byte-identical to its
+baseline; the two probe project folders under `~/.cursor/projects/` and the
+scratch clone removed; the log deleted once recorded here. `cli-config.json`
+differs only in two caches Cursor rewrites on every run, left as they were.
+No credential file was opened.
 
 ## Trust that survives upgrades (proposed)
 
