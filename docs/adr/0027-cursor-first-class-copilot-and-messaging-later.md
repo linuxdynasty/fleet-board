@@ -23,18 +23,15 @@ results are recorded in [01b](../specs/01b-harness-commands.md#cursor),
 [01b messaging](../specs/01b-harness-commands.md#sending-a-message-into-a-session)
 and [01d](../specs/01d-goal-hooks.md#cursor-hooks-probe-2026-10-05). In short:
 
-- **Messaging.** Codex has `codex queue`, which delivers text to a session
-  through its local server. Claude Code has an inbox for each session, but
-  whether a message arrives depends on the receiving session's permission mode
-  and its `crossSessionInbound` setting. Muse refuses messages from outside a
-  Muse session. Cursor and Copilot have no local way found.
-- **Cursor.** The `cursor-agent` CLI runs in tmux like the other harnesses. It
-  has a `/goal` command, a `/usage` screen, hooks, and a folder-trust prompt.
-  Its budget resets monthly, not weekly. After a turn, its input line still
-  holds the previous prompt.
-- **Copilot.** The CLI runs in tmux, has hooks and a `/usage` screen, and
-  counts AI credits per month. The plan was 98% used on 2026-10-05, so no
-  prompt was spent.
+- **Messaging.** Codex can queue text into a running session. Claude Code can
+  too, but whether a message arrives depends on the receiving session's
+  settings. Muse refuses messages from outside, and Cursor and Copilot have no
+  local way found.
+- **Cursor.** The `cursor-agent` CLI runs in tmux like the other harnesses, with
+  a `/goal` command, a `/usage` screen and hooks. Its budget resets monthly, and
+  its input line keeps the old prompt after a turn.
+- **Copilot.** The CLI runs in tmux, with hooks and a monthly credit count. Its
+  plan was nearly used up, so no prompt was spent.
 
 The owner then decided: messaging comes after v1 (the owner said "v2"; ADR
 0025 retired that label, so the docs tag it `later`). Cursor gets first-class
@@ -48,28 +45,21 @@ subscription renews.
 The Cursor IDE is a desktop app with no tmux pane, so the agent cannot see it;
 it is out of scope. Cursor gets what Claude Code, Codex and Muse get:
 inventory, account identity, usage readings, prompt detection, goals, and
-dispatch. Every v1 rule applies unchanged: pass-through, no credential read,
+dispatch, each once the plan items of decision 2 that gate it are answered.
+Every v1 rule applies unchanged: pass-through, no credential read,
 no headless run, no key typed without the checks of
 [02h](../specs/02h-goal-binding-and-pane-signals.md).
 
-**2. Before its rows, Cursor needs these answers.** Each item writes its
-result into the spec it names, before the row it gates starts (plan
-[section 3](../plan/v1-implementation-plan.md#3-before-the-first-line-of-product-code),
-items 0.19 to 0.24):
+**2. Before its rows, Cursor needs answers.** Plan
+[section 3](../plan/v1-implementation-plan.md#3-before-the-first-line-of-product-code)
+lists them as items 0.19 to 0.24, each with the spec it writes into and the work
+it gates: how to clear the input line safely, how pacing reads a monthly budget,
+goal control, account identity, goal hooks, and Cursor's terms of use. Items
+0.1, 0.8 and 0.9 cover Cursor too. Until 0.19 is answered, nothing is typed into
+a Cursor pane ([02h](../specs/02h-goal-binding-and-pane-signals.md)), so Cursor
+usage stays unknown until then.
 
-| Item | Question | Writes into | Gates |
-|---|---|---|---|
-| 0.19 | **The input line keeps the old prompt.** After a turn the line shows `→ <old text>` and new typing is added to it. How does the agent clear it safely, reading the screen before each key? Until this is answered, no typing purpose may run on a Cursor pane | 01b, then 02h | every typing row for Cursor (prompt answers, goals, nudges) |
-| 0.20 | **A monthly budget.** `/usage` shows Included, Auto and API percentages and a reset date a month away. The contract has no monthly kind of limit, and pacing assumes 7 days when a window is unknown. Which bucket does pacing read, and what does the reading carry? A contract change, made in its own row while the contracts are unfrozen | 03b, the usage proto | Cursor usage readings and dispatch |
-| 0.21 | **Goal control.** `/goal` syntax, pause, resume, how it says done, re-arm after done, and whether `beforeSubmitPrompt` sees `/goal` lines | 01b, 01d | goal hooks and `StartGoal` for Cursor |
-| 0.22 | **Account identity** from Cursor's own screens or commands, never from its files | 01 C2 | Cursor accounts |
-| 0.23 | **Goal hooks.** Which Cursor events carry G1, whether `stop` can hold a turn, and how the hook finds its pane | 01d | goal hooks for Cursor |
-| 0.24 | **Terms of use.** Does Cursor's subscription allow this kind of automation? | [terms-of-service.md](../research/terms-of-service.md) | auto-dispatch on Cursor |
-
-Items 0.1 (fixtures), 0.8 (probe cost) and 0.9 (folder trust) now cover
-Cursor too: its prompt screens, its approval modes, and its trust box.
-
-The budget in item 0.20 is a subscription limit with a reset. It is not the
+Cursor's budget resets monthly. It is a subscription limit with a reset, not the
 monthly cap for API-key accounts that ADR 0024 decision 7 dropped.
 
 **3. Copilot is `later`.** When the subscription renews, Copilot gets the same
@@ -85,9 +75,13 @@ types into panes.
 
 ## Consequences
 
-- v1 grows by one adapter, about six probes, and one contract question (the
-  monthly budget). Cursor's rows come after its probes; the other harnesses do
-  not wait for them.
+- v1 grows by one adapter, six probes, and one contract question (the monthly
+  budget). The other harnesses do not wait for Cursor.
+- Cursor's adapter work gets its own plan row and issue once the owner approves
+  filing the issues for items 0.19 to 0.24; rows 8 and 20, whose issue bodies are
+  generated from the plan, name Cursor in that same change.
+- Not changed yet: `scripts/owner-setup.sh` (its folder-trust walkthrough lists
+  four harnesses) and the mockup data. Both follow the Cursor adapter row.
 - The `Harness.name` comment in `ids.proto` lists `"cursor"`. The name is a
   free string, so this is not a contract break.
 - The dev tooling that already supports Cursor (#86, #87, #90) is separate.
@@ -95,11 +89,11 @@ types into panes.
 - Copilot users and the messaging idea are not lost: both are on the
   [features](../features.md) page as `later`.
 - Documents changed with this ADR: design.md (goal, picture, glossary),
-  [features.md](../features.md), the plan (item 0.1 and items 0.19 to 0.24),
+  [features.md](../features.md), the plan (items 0.1, 0.8, 0.9 and 0.19 to 0.24, the layout),
   [01](../specs/01-agent-capabilities.md), [01b](../specs/01b-harness-commands.md),
   [01d](../specs/01d-goal-hooks.md), [02h](../specs/02h-goal-binding-and-pane-signals.md),
-  verified-facts.md, AGENTS.md and the skill descriptions that list the
-  harnesses.
+  verified-facts.md, the dev hooks doc, README.md, AGENTS.md and the skill
+  descriptions that list the harnesses.
 
 ## Open questions
 

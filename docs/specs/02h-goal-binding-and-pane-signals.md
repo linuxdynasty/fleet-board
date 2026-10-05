@@ -360,10 +360,12 @@ into a running turn: in Claude the empty input line during a turn would queue
 it as the next message.
 
 Cursor's input line keeps the previous prompt after a turn (`→ <old text>`,
-[01b](01b-harness-commands.md#cursor)), and text typed next is added to it. Its
-parser reports that line as not empty. Until plan item 0.19 settles how the line
-is cleared, the Cursor adapter marks neither its READY nor its PROMPT parser
-feature verified, so every purpose above fails its gate on a Cursor pane.
+[01b](01b-harness-commands.md#cursor)), and text typed next is added to it. A
+fresh line shows a placeholder in the same shape ("→ Plan, search, build
+anything"), and a plain screen capture does not yet tell the two apart. Until
+plan item 0.19 settles both, the agent refuses every `SendKeys` purpose and
+every `RunHarnessCommand` on a Cursor pane with `PANE_BUSY`, the usage probe's
+own session included, so Cursor usage stays unknown until then.
 
 ## Availability per pane
 

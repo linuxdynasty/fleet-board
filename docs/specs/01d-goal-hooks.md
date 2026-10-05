@@ -7,7 +7,8 @@ How fleet-board installs and uses harness hooks for goals. Capability G1 in
 ## What the hooks are for
 
 The loop itself is each harness's native `/goal` ([01b](01b-harness-commands.md#goal-subcommands)):
-Claude, Codex and Muse keep working toward the objective without any fleet hook.
+Claude, Codex and Muse (and Cursor, to be confirmed by plan item 0.21) keep
+working toward the objective without any fleet hook.
 Fleet's hooks do three narrower jobs:
 
 1. **Session mapping (E9).** Record the harness session id against the
@@ -38,8 +39,8 @@ harness config), not into each repo.
 
 - Every fleet hook exits 0 with no output unless it is running for a fleet
   goal, so the developer's own sessions, including ones on the same machine,
-  see no change. **All three harnesses use one mechanism, the agent's goal
-  registry** ([02h](02h-goal-binding-and-pane-signals.md#goal-registry), ADR
+  see no change. **Claude Code, Codex and Muse use one mechanism, the agent's
+  goal registry** (Cursor's hook mapping is plan item 0.23) ([02h](02h-goal-binding-and-pane-signals.md#goal-registry), ADR
   0019): `StartGoal` writes `(pane, worktree path, harness session id)` before
   the goal is typed, and the hook asks the agent. A running harness cannot gain
   an environment variable, so in a reused pane `FLEET_GOAL_ID` is absent or the
@@ -61,7 +62,8 @@ harness config), not into each repo.
   (`~/.local/share/fleet-agent/hooks/<harness>/`); the settings entries only
   point at them. The command string stays fixed across upgrades and the script
   carries its version.
-- **One hook definition for all three.** Claude's `settings.json` hooks,
+- **One hook definition for Claude Code, Codex and Muse** (Cursor's own
+  `hooks.json` shape differs; plan item 0.23). Claude's `settings.json` hooks,
   Codex's `hooks.json` and Muse's Claude-compatible plugin `hooks/hooks.json`
   share one JSON shape (`{"hooks": {"<Event>": [{"matcher", "hooks": [{"type":
   "command", "command"}]}]}}`). The agent generates the three files from one
@@ -295,9 +297,12 @@ reply, then one asking a Task helper to read `README.md`.
 
 Cleanup: tmux server killed; `~/.cursor/hooks.json` byte-identical to its
 baseline; the two probe project folders under `~/.cursor/projects/` and the
-scratch clone removed; the log deleted once recorded here. `cli-config.json`
-differs only in two caches Cursor rewrites on every run, left as they were.
-No credential file was opened.
+scratch clone removed; the log deleted once recorded here. The probe also took a
+baseline copy of `~/.cursor/cli-config.json` and diffed it after: only two
+caches Cursor rewrites on every run had changed, left as they were. That file
+turned out to hold an authInfo section as well as settings, so the copy was
+deleted unread on 2026-10-05 and 01b now lists it as a file the agent never
+reads. No other credential file was opened.
 
 ## Trust that survives upgrades (proposed)
 

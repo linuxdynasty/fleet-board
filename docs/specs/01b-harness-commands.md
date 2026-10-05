@@ -93,9 +93,14 @@ no tmux pane and is out of scope.
 | after a one-word prompt | the footer shows the context share ("Auto · 9.4%") |
 | after a turn | **the input line still holds the previous prompt** (`→ <old text>`); text typed next was added to it, and both went as one message |
 
-- **Typing.** The empty-input check of [02h](02h-goal-binding-and-pane-signals.md)
-  must treat `→ <text>` as not empty. How to clear it safely is plan item 0.19;
-  until then nothing is typed into a Cursor pane.
+- **Typing.** The fresh input line is a placeholder ("→ Plan, search, build
+  anything") in the same shape as leftover text, so the empty-input check of
+  [02h](02h-goal-binding-and-pane-signals.md) cannot yet tell them apart. Plan
+  item 0.19 finds how to tell them apart and how to clear old text safely;
+  until then nothing is typed into a Cursor pane, probe sessions included (02h).
+- **Credentials.** `~/.cursor/cli-config.json` holds settings and also an
+  authInfo section, so the agent never reads it; it learns settings only from
+  Cursor's own screens.
 - **CLI:** `cursor-agent --resume [chatId]`, `ls`, `create-chat`, `persist` (the
   session survives a disconnect). No command sends text into a running session.
 - **Session id and transcript:** hook payloads carry `conversation_id` (equal to
@@ -149,12 +154,18 @@ Claude Code's rules, from its docs and confirmed once on 2026-10-04:
   bypassPermissions session from an auto-mode session was held, and dropped
   unanswered after the 5-minute default.
 - `crossSessionInbound` set to `accept`, `hold` or `refuse` (or `/config`,
-  "Messages from your other sessions") overrides that.
+  "Messages from your other sessions") overrides that, with precedence rules
+  across settings files: `refuse` from project settings wins over every other
+  source. Plan mode counts as skipping prompts in an interactive session where
+  bypass is available.
 - A program that is not a Claude session asserts no class, so a bypass session
   holds its messages. The first line may be `{"type":"auth","token":"..."}` with
   `CLAUDE_CODE_MESSAGING_TOKEN`, which proves it belongs to that same session.
-- A message is plain text and cannot approve a prompt, change settings or run a
-  command. The receiving model still reads it, so it is untrusted input.
+- A message is plain text. It cannot approve a prompt, and Claude is told not to
+  change settings or run commands because of it. The receiving model still reads
+  it, so it is untrusted input.
+- The socket path and token are exported to that session's own hooks and Bash
+  commands, never inherited from a parent session; `/status` shows the path in its "Peer address" row.
 
 ## Goal subcommands
 
