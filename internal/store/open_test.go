@@ -3,10 +3,14 @@ package store_test
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"modernc.org/sqlite"
+	sqlite3 "modernc.org/sqlite/lib"
 
 	"github.com/linuxdynasty/fleet-board/internal/store"
 )
@@ -85,6 +89,44 @@ func TestOnlyLogsDBUsesIncrementalAutoVacuum(t *testing.T) {
 				t.Errorf("auto_vacuum in %s.db = %s, want %s", tc.name, got, tc.want)
 			}
 		})
+	}
+}
+
+// The writer takes the write lock at BEGIN (BEGIN IMMEDIATE), so a job that
+// has not written anything yet already keeps every other writer out. With a
+// deferred BEGIN the other connection would get the lock.
+func TestTheWriterHoldsTheWriteLockFromBegin(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	s := h.open(t, h.options(itemsV1))
+	started, release := make(chan struct{}), make(chan struct{})
+	held, err := s.Submit(context.Background(), func(*sql.Tx) error { close(started); <-release; return nil })
+	if err != nil {
+		t.Fatalf("Submit: %v", err)
+	}
+	<-started
+
+	db, err := sql.Open("sqlite", h.path+"?_pragma=busy_timeout(0)")
+	if err != nil {
+		t.Fatalf("raw open: %v", err)
+	}
+	defer func() { _ = db.Close() }()
+	conn, err := db.Conn(context.Background())
+	if err != nil {
+		t.Fatalf("raw conn: %v", err)
+	}
+	defer func() { _ = conn.Close() }()
+	_, err = conn.ExecContext(context.Background(), "BEGIN IMMEDIATE")
+	var se *sqlite.Error
+	if !errors.As(err, &se) || se.Code()&0xff != sqlite3.SQLITE_BUSY {
+		if err == nil {
+			_, _ = conn.ExecContext(context.Background(), "ROLLBACK")
+		}
+		t.Errorf("another connection's BEGIN IMMEDIATE while a job is held: %v, want SQLITE_BUSY", err)
+	}
+	close(release)
+	if err := <-held; err != nil {
+		t.Fatalf("held job: %v", err)
 	}
 }
 
