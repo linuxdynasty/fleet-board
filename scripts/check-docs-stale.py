@@ -40,7 +40,8 @@ harness, including Codex whose apply_patch payload names several files):
    mtime comparison is advisory and hook-only).
 2. Mapped folders: a working-tree change whose rule has no spec changed yet in
    the working tree or the branch.
-Dirs under spikes/, vendor/ and testdata/ are skipped in both modes.
+Dirs under spikes/, vendor/ and testdata/ are skipped by the Go package docs
+check in both modes; the map rules still apply to them.
 """
 from __future__ import annotations
 

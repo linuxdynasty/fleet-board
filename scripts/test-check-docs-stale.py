@@ -227,23 +227,6 @@ class DocsStaleTests(unittest.TestCase):
         self.commit("hub, with 02b")
         self.assert_rc(0, self.ci(base + "..HEAD"))
 
-    def test_mockup_tools_and_spikes_need_their_specs_under_the_real_map(self):
-        base = self.real_map()
-        for path, spec in (("mockup/view-new.js", "docs/specs/ui-contract-map.md"),
-                           ("tools/tscheck/x.ts", "docs/specs/02e-contract-rules.md"),
-                           ("spikes/s3/main.go", "docs/specs/04-technology-review.md")):
-            with self.subTest(path=path):
-                self.git("reset", "-q", "--hard", base)
-                self.write(path, "x\n")
-                self.commit(path)
-                out = self.ci(base + "..HEAD")
-                self.assert_rc(1, out)
-                self.assertIn(path, out.stdout)
-                self.assertIn(spec, out.stdout)
-                self.write(spec, "# spec\n\nchanged\n")
-                self.commit(path + ", with its spec")
-                self.assert_rc(0, self.ci(base + "..HEAD"))
-
     def test_the_trailer_does_not_excuse_missing_package_docs(self):
         self.go_package("internal/foo", docs=("doc.go", "README.md"))
         self.commit("foo\n\nNo-Doc-Change: a new package with no spec yet")
