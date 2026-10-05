@@ -1,7 +1,9 @@
 # Cross-machine run: Mac mini advertises, omarchy browses
 
-2026-10-05, run by the coordinator over SSH (owner-authorized, no sudo). The
-hub MacBook (Wi-Fi) run is still open: its SSH host key is not confirmed yet.
+2026-10-05, run by the coordinator over SSH (owner-authorized, no sudo).
+There is no Wi-Fi hub run: the owner chose on 2026-10-05 to skip it, keep the
+proposed 2 s browse timeout, and let row 4 confirm it in real use (the hub can
+be any laptop, so no one machine is special).
 
 ## Setup
 
@@ -67,8 +69,8 @@ Oct 05 13:33:50 omarchy kernel: [UFW BLOCK] IN=enp3s0 OUT= SRC=192.168.1.124 DST
 
 ## Not checked
 
-- The hub MacBook over Wi-Fi (beacon and DTIM delays on the proposed 2 s
-  timeout).
+- A hub on Wi-Fi (beacon and DTIM delays on the proposed 2 s timeout):
+  skipped by owner decision; row 4 confirms it in real use.
 - omarchy with ufw off or with an allow rule (needs sudo; would confirm the fix
   for option 3 and give cross-machine timing).
 - Whether a query sent from 5353 really gets a multicast answer from the Go

@@ -20,7 +20,8 @@ from omarchy (Linux, `ufw` active) the browser found the Mac mini's service
 0 of 100 times. The answers were sent and then dropped by omarchy's firewall
 (`[UFW BLOCK] ... SRC=192.168.1.124 ... SPT=5353 DPT=<random>`), because the
 browser asks from a random port and gets direct replies. macOS's own responder
-was dropped the same way. The hub MacBook (Wi-Fi) run is still open.
+was dropped the same way. A Wi-Fi hub run was skipped by owner decision; row 4
+confirms the 2 s timeout in real use.
 
 ## Setup
 
