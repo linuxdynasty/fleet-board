@@ -205,10 +205,12 @@ def load_allowlist(root):
         fields = [entry.get(k) if isinstance(entry, dict) else None for k in ("token", "kind", "reason")]
         if not all(isinstance(v, str) and v.strip() for v in fields):
             raise AllowlistError("%s entry %d needs a token, a kind and a reason" % (ALLOW_FILE, n))
+        if "file" in entry:
+            raise AllowlistError("%s entry %d (%s): the old file key is gone; list the docs under files"
+                                 % (ALLOW_FILE, n, fields[0]))
         files = entry.get("files")
-        if "file" in entry or not (isinstance(files, list) and files and len(set(map(str, files))) == len(files)
-                                   and all(isinstance(f, str) and f.strip() and not set(f) & set("*?[")
-                                           for f in files)):
+        if not (isinstance(files, list) and files and len(set(map(str, files))) == len(files)
+                and all(isinstance(f, str) and f.strip() and not set(f) & set("*?[") for f in files)):
             raise AllowlistError("%s entry %d (%s): files must list the docs that use it, each once, "
                                  "with no wildcards" % (ALLOW_FILE, n, fields[0]))
         if fields[0] in allow:

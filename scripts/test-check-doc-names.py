@@ -218,12 +218,23 @@ class DocNameTests(unittest.TestCase):
         self.tree.write("docs/specs/a.md", "`PostToolUse`\n")
         for name, extra in (("missing", {}), ("a string", {"files": "docs/specs/a.md"}), ("empty", {"files": []}),
                             ("not strings", {"files": [3]}), ("a wildcard", {"files": ["docs/specs/*.md"]}),
-                            ("twice", {"files": ["docs/specs/a.md", "docs/specs/a.md"]}),
-                            ("the old file key", {"file": "docs/specs/a.md"})):
+                            ("twice", {"files": ["docs/specs/a.md", "docs/specs/a.md"]})):
             with self.subTest(files=name):
                 entry = {"token": "PostToolUse", "kind": "hook", "reason": "seeded", **extra}
                 self.tree.write_json(ALLOW, {"version": 1, "entries": [entry]})
-                self.assert_rc(2, self.run_check())
+                out = self.run_check()
+                self.assert_rc(2, out)
+                self.assertIn("entry 1 (PostToolUse): files must list the docs that use it, each once, "
+                              "with no wildcards", out.stderr)
+
+    def test_the_old_file_key_fails_closed_even_beside_a_valid_files_list(self):
+        self.tree.write("docs/specs/a.md", "`PostToolUse`\n")
+        entry = {"token": "PostToolUse", "kind": "hook", "reason": "seeded", "files": ["docs/specs/a.md"],
+                 "file": "docs/specs/a.md"}
+        self.tree.write_json(ALLOW, {"version": 1, "entries": [entry]})
+        out = self.run_check()
+        self.assert_rc(2, out)
+        self.assertIn("entry 1 (PostToolUse): the old file key is gone; list the docs under files", out.stderr)
 
     def test_an_allowlist_entry_without_a_reason_fails_closed(self):
         self.tree.write("docs/specs/a.md", "`PostToolUse`\n")
