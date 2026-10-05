@@ -63,7 +63,7 @@ Outside `Event`: `Heartbeat` is SHED (it carries no seq). `CommandAck`,
 they are not events, have no seq and are replayed from the agent's command log
 (`Snapshot.unacked_results`) or re-derived (`Settings` is re-sent on connect).
 `Hello`, `HelloAck`, `Snapshot` and `SnapshotRequest` are not events either and
-are never dropped; a connection cannot go on without them.
+are never dropped; the handshake and recovery depend on them.
 
 An inventory event (`tmux_server`, `session`, `window`, `pane_created`,
 `pane_changed`, `repo`) carries the object after the change, so the hub applies
