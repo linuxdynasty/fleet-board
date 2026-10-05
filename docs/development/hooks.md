@@ -103,9 +103,12 @@ Notes on the choices:
   only**. On `subagentStart` it writes one small file per link,
   `<state dir>/fleet-cursor-link-<child id>` holding the parent id, for the start
   payload's `subagent_id`, `conversation_id` and `session_id`, each skipped when
-  it equals the parent. A session id cannot reach an unrelated chat: cursor-agent
-  2026.10.01 keeps session ids per conversation (`activeSessionIdsByConversationId`
-  in `190.index.js`). The state dir is `FLEET_HOOK_STATE_DIR`, as for the
+  it equals the parent. In cursor-agent 2026.10.01 (read from the bundle, not
+  run live) session ids are tracked per conversation
+  (`activeSessionIdsByConversationId` in `190.index.js`), so one does not reach
+  an unrelated chat. The Cursor IDE is NOT_CHECKED: if it shared a session id
+  across chats, the link would join those chats' skill markers. The state dir
+  is `FLEET_HOOK_STATE_DIR`, as for the
   markers; files are written atomically, never through a symlink; ids must be at
   most 128 characters of `A-Za-z0-9._-`, with no `..`; a link that would close a
   loop is not written. A parent that started
@@ -173,7 +176,9 @@ Notes on the choices:
   with a helper and `FLEET_CURSOR_HOOK_LOG` set, and read the log, to confirm.
   The design also assumes a `subagent_id` is unique across chats and over time
   (a reused id would join two families); the log confirms that too. Whether
-  `subagentStart` fires at all in a real run is NOT_CHECKED as well.
+  `subagentStart` fires at all in a real run is NOT_CHECKED as well, and so is
+  whether the Cursor IDE ever shares one session id across chats (the
+  `session_id` link relies on it not doing so; the log shows it).
 - Not live-probed in a real Cursor session: whether `cursor-agent` passes `/goal`
   lines to `beforeSubmitPrompt`, and whether `postToolUse` `additional_context`
   is shown to the agent. The `tool_input` shapes come from reading the

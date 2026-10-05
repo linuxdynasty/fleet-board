@@ -162,8 +162,9 @@ def record_links(payload):
     """subagentStart: remember which conversation a helper belongs to.
 
     Links subagent_id, conversation_id and session_id (each when it differs from the parent) to
-    parent_conversation_id. A session id is safe to link: cursor-agent 2026.10.01 keeps session ids
-    per conversation (activeSessionIdsByConversationId), so one cannot belong to an unrelated chat.
+    parent_conversation_id. In cursor-agent 2026.10.01 (read from the bundle, not run live) session
+    ids are tracked per conversation (activeSessionIdsByConversationId), so one does not reach an
+    unrelated chat. The Cursor IDE is not checked; see docs/development/hooks.md.
     """
     parent = payload.get("parent_conversation_id")
     if not valid_id(parent):
