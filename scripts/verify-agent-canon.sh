@@ -18,8 +18,9 @@
 #   7. .agents/skill-paths.json (the path-to-skill map the skill-nudge hook
 #      reads) is valid, names only existing skills, and maps or exempts every
 #      skill.
-#   8. The three hook configs (.claude/settings.json, .codex/hooks.json,
-#      .muse/hooks.json) are valid JSON and reference only scripts that exist;
+#   8. The four hook configs (.claude/settings.json, .codex/hooks.json,
+#      .muse/hooks.json, .cursor/hooks.json) are valid JSON and reference only
+#      scripts that exist;
 #      hook scripts parse (bash -n, python ast) and the shell ones are
 #      executable.
 #  10. No skill repeats a claim ADR 0011 superseded (the developer's tmux
@@ -135,7 +136,7 @@ printf 'verify-agent-canon: every skill named in roles.json exists.\n'
 over=""
 for f in "$agents" "$root"/docs/development/*.md "$root"/.agents/roles.json "$root"/.agents/skill-paths.json \
   "$root"/scripts/*.py "$root"/scripts/*.sh "$root"/.claude/settings.json "$root"/.codex/hooks.json \
-  "$root"/.muse/hooks.json "$root"/.claude/hooks/*.sh "$root"/.claude/hooks/lib/*; do
+  "$root"/.muse/hooks.json "$root"/.cursor/hooks.json "$root"/.claude/hooks/*.sh "$root"/.claude/hooks/lib/*; do
   [ -f "$f" ] || continue
   n="$(wc -l < "$f" | tr -d ' ')"
   if [ "$n" -ge "$max_file_lines" ]; then
@@ -155,7 +156,7 @@ $problems"
 printf 'verify-agent-canon: .agents/skill-paths.json names only existing skills and routes every skill.\n'
 
 # 8. Hook configs reference scripts that exist, and the scripts parse.
-for config in .claude/settings.json .codex/hooks.json .muse/hooks.json; do
+for config in .claude/settings.json .codex/hooks.json .muse/hooks.json .cursor/hooks.json; do
   [ -f "$root/$config" ] || fail "missing hook config $config"
 done
 problems="$(python3 - "$root" <<'PY'
@@ -164,7 +165,7 @@ from pathlib import Path
 
 root = Path(sys.argv[1])
 ref = re.compile(r"(?:\.claude/hooks|\.codex/hooks|\.muse/hooks|scripts)/[A-Za-z0-9_./-]+\.(?:sh|py)")
-for config in (".claude/settings.json", ".codex/hooks.json", ".muse/hooks.json"):
+for config in (".claude/settings.json", ".codex/hooks.json", ".muse/hooks.json", ".cursor/hooks.json"):
     try:
         hooks = json.loads((root / config).read_text())["hooks"]
     except (ValueError, KeyError) as err:
@@ -173,10 +174,12 @@ for config in (".claude/settings.json", ".codex/hooks.json", ".muse/hooks.json")
     count = 0
     for event, rows in hooks.items():
         for row in rows:
-            for hook in row.get("hooks", []):
+            # Cursor rows are the hook itself; the others nest a hooks list.
+            nested = [row] if config == ".cursor/hooks.json" else row.get("hooks", [])
+            for hook in nested:
                 command = hook.get("command", "")
-                if hook.get("type") != "command" or not command:
-                    print("%s %s: every hook needs type command and a command" % (config, event))
+                if (hook.get("type") != "command" and config != ".cursor/hooks.json") or not command:
+                    print("%s %s: every hook needs a command (and, but for Cursor, type command)" % (config, event))
                     continue
                 count += 1
                 found = ref.findall(command)
@@ -206,7 +209,7 @@ for script in "$root"/.claude/hooks/lib/*.py "$root"/scripts/*.py; do
   hook_scripts=$((hook_scripts + 1))
   python3 -c 'import ast, sys; ast.parse(open(sys.argv[1]).read())' "$script" || fail "$script does not parse (python)"
 done
-printf 'verify-agent-canon: three hook configs are valid JSON and reference existing scripts; %s hook and test scripts parse.\n' "$hook_scripts"
+printf 'verify-agent-canon: four hook configs are valid JSON and reference existing scripts; %s hook and test scripts parse.\n' "$hook_scripts"
 
 # 9. No AI attribution: the owner's rule (AGENTS.md). Commits already in
 # origin/main keep their trailers; the checker looks at this branch only.

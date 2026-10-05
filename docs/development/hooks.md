@@ -13,8 +13,8 @@ skill and enforces it; it never restates the rule.
 
 ## The hooks
 
-Scripts live in `.claude/hooks/` and are shared by all three harnesses; the
-harness configs only point at them. The tier is set by the exit code: only the
+Scripts live in `.claude/hooks/` and are shared by all four harnesses; the
+harness configs only point at them (Cursor through the adapter, below). The tier is set by the exit code: only the
 three marked **blocking** can stop anything.
 
 | Hook | Does | Tier |
@@ -26,6 +26,7 @@ three marked **blocking** can stop anything.
 | `goal-continue.sh` | Refuses to end a turn while this session's goal is unfinished | **blocking** (`decision: block`) |
 | `goal-refresh.sh` | `/goal` producer; restates the active goal on every prompt | side effect |
 | `scripts/goal-role-router.py` | Routes `/goal` prompts naming skills to roles in `.agents/roles.json` with the tier's model binding; on Claude `Agent` calls drops an unrequested model override | advisory / rewrite |
+| `scripts/cursor-hook.py` | Cursor only: the adapter `.cursor/hooks.json` runs; maps a Cursor event to the Claude-shaped payload a script expects and the script's answer back to Cursor JSON | adapter |
 | `scripts/guard-codex-spawn.py` | Codex only: denies a spawn that is not a named role in `.agents/roles.json` | **blocking** (deny) |
 
 ### Wiring
@@ -44,6 +45,62 @@ Every command resolves the checkout with `${CLAUDE_PROJECT_DIR}` /
 main checkout and from any worktree, and exits 0 when the script is missing.
 The Codex spawn guard uses `git rev-parse` only and fails **closed** (exit 2),
 so a sibling checkout's `CODEX_PROJECT_DIR` cannot select the wrong guard.
+
+### Cursor
+
+Cursor (IDE and `cursor-agent`) runs `.cursor/hooks.json` natively, so the dev
+hooks do not depend on Cursor's "Include third-party Plugins, Skills, and other
+configs" setting, which is what loads `.claude/settings.json` into Cursor.
+Every command is `python3 "${CURSOR_PROJECT_DIR:-.}/scripts/cursor-hook.py"
+<event> <hook script>`. The adapter reads the Cursor payload, builds the
+Claude-shaped payload the script already understands (`conversation_id` is the
+session id), runs it, and prints exactly one JSON object. Fields are from
+cursor.com/docs/hooks (fetched 2026-10-04).
+
+| Claude hook | Cursor event (matcher) | Result for Cursor |
+|---|---|---|
+| `skill-nudge.sh` (PreToolUse Edit, MultiEdit, Write) | `preToolUse` (`Write`), `failClosed` | exit 2 becomes `{"permission": "deny", "user_message", "agent_message"}`, else `{"permission": "allow"}` |
+| `doc-staleness.sh` (PostToolUse) | `postToolUse` (`Write`) | the reminder becomes `additional_context` |
+| `goal-continue.sh` (Stop) | `stop` | a refusal becomes `followup_message`; `loop_count > 0` is `stop_hook_active`, so Cursor's own loop limit and ours agree |
+| `on-compact.sh` (SessionStart `compact\|resume`) | `preCompact` | clears this session's skill markers; the re-injection text goes to `user_message` (the owner sees it, the agent does not) |
+| `goal-refresh.sh` (UserPromptSubmit) | `beforeSubmitPrompt` | writes the goal file for `/goal` lines, always `{"continue": true}` |
+| `skill-loaded.sh` (PostToolUse Skill) | `postToolUse` (`Read`) | **approximation**: Cursor has no Skill tool, so reading `.../skills/<name>/SKILL.md` records the marker; any other read does nothing |
+| `goal-role-router.py claude-dispatch` (PreToolUse Agent) | none | **not portable**: it rewrites a model override on the Agent tool, and Cursor's `subagentStart` has no input to rewrite and no model field; the generated `.cursor/agents/*.md` already say `model: inherit` |
+| `goal-role-router.py claude` (UserPromptSubmit) | none | **not portable**: it only adds context, and `beforeSubmitPrompt` cannot add context |
+| goal-refresh and on-compact context injection | none | **not portable**: `additional_context` exists on `sessionStart` and `postToolUse` only; the restated goal reaches the owner as `user_message` at most |
+
+Notes on the choices:
+
+- **`postToolUse`, not `afterFileEdit`, for doc-staleness.** `afterFileEdit` has
+  no output field, so its reminder could never reach the agent, and the hook
+  prints each reminder once: running it on both events would spend the one
+  reminder on the event whose output is dropped. The adapter still maps
+  `afterFileEdit` (and `sessionStart`) so either can be wired by editing
+  `.cursor/hooks.json`; neither is wired.
+- **`sessionStart` is not wired.** `on-compact.sh` is silent for a startup
+  source, and the Cursor `sessionStart` payload names no resume or compact
+  source, so the hook would never speak.
+- **Skill loads.** Without the `Read` mapping, `skill-nudge.sh` would refuse
+  every governed edit in Cursor with no way to satisfy it. An agent that loads a
+  skill some other way still has the per-session override the refusal prints.
+- **Unknown Write field names.** Cursor does not document the names inside a
+  `Write` `tool_input`. The adapter tries `file_path`, `path`, `target_file`,
+  `filePath`, `file`, then the payload's own `file_path`. With none present it
+  allows the edit and says so on stderr rather than block on a guessed path.
+- **Failure modes.** The one guard (`preToolUse`, `failClosed: true` and the
+  adapter's own deny) refuses when the script is missing, crashes, takes more
+  than 8 seconds or the payload is unreadable. Every other hook fails open with
+  a note on stderr.
+- **Third-party loading.** While that Cursor setting is on, Cursor runs both the
+  Claude-compatible hooks and these native ones, so a hook can fire twice
+  with the same answer. Turn the setting off once `.cursor/hooks.json` is in
+  place.
+- **Trust.** Cursor runs project hooks from the workspace root with
+  `CURSOR_PROJECT_DIR` set. The off switches below apply unchanged, because the
+  scripts read them.
+- Not live-probed in a real Cursor session: whether `cursor-agent` passes `/goal`
+  lines to `beforeSubmitPrompt`, the `Read` tool's input field names, and
+  whether `postToolUse` `additional_context` is shown to the agent.
 
 Harness differences, all handled in the shared scripts:
 
@@ -147,6 +204,7 @@ workspace.
 | `CLAUDE_GOAL_FILE`, `CLAUDE_GOAL_CONSENT` | name the goal file; grant consent before the first prompt |
 | `"disableAllHooks": true` in `.claude/settings.local.json` | Claude Code, all hooks |
 | remove the entry from `.codex/hooks.json` or leave it unapproved in `/hooks` | Codex |
+| remove the entry from `.cursor/hooks.json` | Cursor |
 
 Nothing relaxes on its own: a silent fallback would hide the case worth
 knowing about.
@@ -157,6 +215,7 @@ knowing about.
 scripts/test-dev-hooks.sh              # hooks, wiring in all three configs, router, spawn guard
 python3 scripts/test-goal-role-router.py
 python3 scripts/test-codex-spawn-guard.py
+python3 scripts/test-cursor-hook.py    # Cursor adapter and .cursor/hooks.json, Cursor-shaped payloads (make selftest)
 scripts/verify-agent-canon.sh          # map names real skills; configs reference real scripts
 ```
 

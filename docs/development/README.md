@@ -7,7 +7,7 @@ detail behind the short root [AGENTS.md](../../AGENTS.md).
 
 | Doc | What it covers |
 |---|---|
-| [hooks.md](hooks.md) | Development hooks for Claude, Codex and Muse: skill nudge and its path map, goal protocol and Stop guard, doc staleness, role router, spawn guard, how to turn each off, tests |
+| [hooks.md](hooks.md) | Development hooks for Claude, Codex, Muse and Cursor: skill nudge and its path map, goal protocol and Stop guard, doc staleness, role router, spawn guard, how to turn each off, tests |
 | [agent-guide.md](agent-guide.md) | Recipes and traps AGENTS.md does not carry: worktree and git recipes, prove the theory first, macOS and zsh notes, roles and models per harness, the task-to-skill map, the handoff contract, dispatch and consent rules, how to run a role |
 
 ## The setup in one screen
@@ -19,9 +19,11 @@ scripts/agent-roles.py        renders the role files below; --check detects drif
 scripts/verify-agent-canon.sh checks the rendered files, skill links, frontmatter,
                               the skill path map and the hook configs
 .agents/skill-paths.json      path-to-skill map read by the skill-nudge hook
-.claude/hooks/                development hooks shared by Claude, Codex and Muse
-.claude/settings.json, .codex/hooks.json, .muse/hooks.json   hook wiring
+.claude/hooks/                development hooks shared by Claude, Codex, Muse and Cursor
+.claude/settings.json, .codex/hooks.json, .muse/hooks.json, .cursor/hooks.json   hook wiring
+scripts/cursor-hook.py        adapter: runs those hook scripts from Cursor's native hooks (hooks.md)
 scripts/test-dev-hooks.sh     self-test for the hooks (hooks.md)
+scripts/test-cursor-hook.py   self-test for the Cursor adapter and .cursor/hooks.json (make selftest)
 scripts/owner-setup.sh        walks the owner through owner-only setup steps (plan section 3)
 scripts/test-owner-setup.sh   self-test for owner-setup.sh, run with each bash on the machine
 Makefile, tool-versions.env   make targets and the one file of pinned tool versions (agent-guide.md)

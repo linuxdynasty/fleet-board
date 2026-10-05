@@ -98,5 +98,29 @@ fresh
 rm "$copy/.githooks/pre-push"
 expect "a missing pre-push hook fails" 1 "missing .githooks/pre-push"
 
+# .cursor/hooks.json: rows are flat ({command, matcher}), not nested like the others.
+fresh
+expect "the real .cursor/hooks.json is accepted" 0 "four hook configs"
+
+fresh
+sed 's|\.claude/hooks/skill-nudge\.sh|.claude/hooks/zz-gone.sh|' "$copy/.cursor/hooks.json" > "$copy/.cursor/hooks.new" && mv "$copy/.cursor/hooks.new" "$copy/.cursor/hooks.json"
+expect "a .cursor/hooks.json naming a missing hook script fails" 1 "zz-gone.sh, which does not exist"
+
+fresh
+sed 's|scripts/cursor-hook\.py|scripts/zz-adapter.py|' "$copy/.cursor/hooks.json" > "$copy/.cursor/hooks.new" && mv "$copy/.cursor/hooks.new" "$copy/.cursor/hooks.json"
+expect "a .cursor/hooks.json naming a missing adapter fails" 1 "scripts/zz-adapter.py, which does not exist"
+
+fresh
+rm "$copy/.cursor/hooks.json"
+expect "a missing .cursor/hooks.json fails" 1 "missing hook config .cursor/hooks.json"
+
+fresh
+printf '{"version": 1, "hooks": {"stop": [{"timeout": 10}]}}\n' > "$copy/.cursor/hooks.json"
+expect "a .cursor/hooks.json row with no command fails" 1 "every hook needs a command"
+
+fresh
+printf '{not json\n' > "$copy/.cursor/hooks.json"
+expect "a .cursor/hooks.json that is not JSON fails" 1 ".cursor/hooks.json is not valid hook JSON"
+
 printf 'test-verify-agent-canon: %s passed, %s failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
