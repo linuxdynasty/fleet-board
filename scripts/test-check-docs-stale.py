@@ -83,7 +83,8 @@ class DocsStaleTests(unittest.TestCase):
         self.assert_rc(0, self.ci())
 
     def test_a_placeholder_reason_fails(self):
-        for n, reason in enumerate(("TODO", "tbd", "n/a", "none", "-", "", "TODO: later")):
+        for n, reason in enumerate(("TODO", "tbd", "n/a", "none", "-", "", "TODO: later", "<reason>",
+                                    "<anything>", "reason", "Reason", "\u2014", "\u2013")):
             with self.subTest(reason=reason):
                 self.go_package("internal/agent/tmux/p%d" % n)
                 self.commit("tmux\n\nNo-Doc-Change: " + reason)
@@ -121,6 +122,33 @@ class DocsStaleTests(unittest.TestCase):
         out = self.ci()
         self.assert_rc(1, out)
         self.assertIn("internal/foo: missing AGENTS.md", out.stdout)
+
+    def test_a_package_with_a_non_ascii_path_is_still_checked(self):
+        self.go_package("internal/caf\u00e9", docs=("doc.go", "README.md"))
+        self.commit("cafe")
+        out = self.ci()
+        self.assert_rc(1, out)
+        self.assertIn("internal/caf\u00e9: missing AGENTS.md", out.stdout)
+
+    def test_a_new_api_package_needs_02_or_02e_under_the_real_map(self):
+        real = json.loads((ROOT / ".agents/doc-paths.json").read_text())
+        self.write(".agents/doc-paths.json", json.dumps(real))
+        for rule in real["rules"]:
+            for spec in rule["specs"]:
+                self.write(spec, "# spec\n")
+        self.commit("real map")
+        base = self.git("rev-parse", "HEAD").strip()
+        self.write("api/fleet/newpkg/v1/x.proto", "syntax = \"proto3\";\n")
+        self.commit("newpkg")
+        out = self.ci(base + "..HEAD")
+        self.assert_rc(1, out)
+        self.assertIn("api/fleet/newpkg/v1/x.proto", out.stdout)
+        self.assertIn("docs/specs/02e-contract-rules.md", out.stdout)
+        self.git("reset", "-q", "--hard", base)
+        self.write("api/fleet/hub/v1/x.proto", "syntax = \"proto3\";\n")
+        self.write("docs/specs/02b-hub-api.md", "# spec\n\nchanged\n")
+        self.commit("hub, with 02b")
+        self.assert_rc(0, self.ci(base + "..HEAD"))
 
     def test_the_trailer_does_not_excuse_missing_package_docs(self):
         self.go_package("internal/foo", docs=("doc.go", "README.md"))

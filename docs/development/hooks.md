@@ -194,8 +194,9 @@ lists the folders no doc names a spec for, with the reason.
   doc.go, README.md or AGENTS.md; exit 2 when git fails, the range does not
   resolve or the map is invalid. A commit message line
   `No-Doc-Change: <reason>` in the range covers every mapped folder (not the
-  package docs). A blank reason or a placeholder (TODO, TBD, n/a, none, -)
-  does not count, and a PR body never does.
+  package docs). A blank reason or a placeholder (TODO, TBD, n/a, none, a
+  dash, the word `reason`, or `<reason>` copied as is) does not count, and a
+  PR body never does.
 
 `scripts/check-doc-names.py` (`make doc-names`) is the other doc-drift gate:
 every backticked proto name in the checked docs must exist in `api/fleet`,

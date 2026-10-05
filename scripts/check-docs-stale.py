@@ -27,7 +27,8 @@ Blocking mode, over the files changed in A...B and the commits in A..B:
 1. Mapped folders. A rule matched by a changed file needs one of its specs
    changed in the range, or a commit message line `No-Doc-Change: <reason>`
    (it satisfies every rule). An empty or placeholder reason (TODO, TBD, n/a,
-   none, -) does not count. Only commit messages count, never a PR body.
+   none, a dash, the word "reason", or the <reason> template itself) does not
+   count. Only commit messages count, never a PR body.
 2. Go package docs. A directory with a changed non-test .go file that is
    still a package at B carries doc.go, README.md and AGENTS.md (AGENTS.md,
    Documentation Discipline). The trailer does not excuse this.
@@ -54,7 +55,7 @@ MAP_FILE = ".agents/doc-paths.json"
 GO_DOCS = ("doc.go", "README.md", "AGENTS.md")
 SKIP_PARTS = {"spikes", "vendor", "testdata"}
 TRAILER = re.compile(r"^No-Doc-Change:(.*)$", re.M)
-PLACEHOLDERS = {"", "todo", "tbd", "n/a", "na", "none", "-"}
+PLACEHOLDERS = {"", "todo", "tbd", "n/a", "na", "none", "-", "\u2014", "\u2013", "reason"}
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / ".claude/hooks/lib"))
 
 
@@ -171,7 +172,7 @@ def trailer_state(messages):
         for m in TRAILER.finditer(message):
             reason = m.group(1).strip()
             norm = reason.rstrip(".").lower()
-            if norm in PLACEHOLDERS or re.match(r"^(todo|tbd)\b", norm):
+            if norm in PLACEHOLDERS or re.match(r"^(todo|tbd)\b", norm) or re.fullmatch(r"<[^>]*>", norm):
                 bad.append(m.group(0).strip())
             else:
                 return reason, bad
@@ -195,10 +196,11 @@ def ci_findings(root, rng):
                                 "`No-Doc-Change: <reason>` to a commit message"
                                 % (short_list(paths), rng, ", ".join(rule["specs"])))
         if findings and placeholders:
-            findings.append("`%s` does not count: an empty or placeholder reason (TODO, TBD, n/a, none, -)"
+            findings.append("`%s` does not count: an empty or placeholder reason (TODO, TBD, n/a, none, a dash, "
+                            "reason, <reason>)"
                             % placeholders[0])
     for directory in go_source_dirs(changed):
-        listed = git(root, "ls-tree", "--name-only", head, directory + "/", strict=True).split("\n")
+        listed = git(root, "ls-tree", "-z", "--name-only", head, directory + "/", strict=True).split("\0")
         names = {Path(p).name for p in listed if p}
         if not any(n.endswith(".go") and not n.endswith("_test.go") for n in names):
             continue  # the package is gone at the end of the range
