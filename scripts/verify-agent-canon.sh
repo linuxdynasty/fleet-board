@@ -17,7 +17,8 @@
 #   6. Agent-facing files stay under the 500-line cap.
 #   7. .agents/skill-paths.json (the path-to-skill map the skill-nudge hook
 #      reads) is valid, names only existing skills, and maps or exempts every
-#      skill.
+#      skill; .agents/doc-paths.json (the folder-to-spec map of
+#      check-docs-stale.py) is valid and names only existing specs.
 #   8. The four hook configs (.claude/settings.json, .codex/hooks.json,
 #      .muse/hooks.json, .cursor/hooks.json) are valid JSON and reference only
 #      scripts that exist;
@@ -134,7 +135,7 @@ printf 'verify-agent-canon: every skill named in roles.json exists.\n'
 
 # 6. File cap on agent-facing files.
 over=""
-for f in "$agents" "$root"/docs/development/*.md "$root"/.agents/roles.json "$root"/.agents/skill-paths.json \
+for f in "$agents" "$root"/docs/development/*.md "$root"/.agents/*.json \
   "$root"/scripts/*.py "$root"/scripts/*.sh "$root"/.claude/settings.json "$root"/.codex/hooks.json \
   "$root"/.muse/hooks.json "$root"/.cursor/hooks.json "$root"/.claude/hooks/*.sh "$root"/.claude/hooks/lib/*; do
   [ -f "$f" ] || continue
@@ -154,6 +155,13 @@ skill_paths="$root/.claude/hooks/lib/skill_paths.py"
 problems="$(python3 "$skill_paths" check "$root")" || fail "skill path map problems:
 $problems"
 printf 'verify-agent-canon: .agents/skill-paths.json names only existing skills and routes every skill.\n'
+
+# 7b. The folder-to-spec map. check-docs-stale.py --check-map validates the JSON
+# and that every spec a rule names exists (a rule may name a folder not built yet).
+[ -f "$root/.agents/doc-paths.json" ] || fail "missing .agents/doc-paths.json"
+problems="$(python3 "$root/scripts/check-docs-stale.py" --check-map --root "$root")" || fail "doc path map problems:
+$problems"
+printf 'verify-agent-canon: .agents/doc-paths.json names only existing specs.\n'
 
 # 8. Hook configs reference scripts that exist, and the scripts parse.
 for config in .claude/settings.json .codex/hooks.json .muse/hooks.json .cursor/hooks.json; do

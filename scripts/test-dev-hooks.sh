@@ -228,7 +228,7 @@ rm -f "$gdir/.claude/active-goal"
 # --------------------------------------------------------------- doc-staleness
 repo="$work/repo"
 mkdir -p "$repo/api/fleet/hub/v1" "$repo/internal/foo" "$repo/docs/specs" "$repo/.agents"
-cp "$root/.agents/skill-paths.json" "$repo/.agents/"
+cp "$root/.agents/skill-paths.json" "$root/.agents/doc-paths.json" "$repo/.agents/"
 (cd "$repo" && git init -q && git config user.email t@example.com && git config user.name t &&
 	: >docs/specs/02-contracts.md && : >docs/specs/02b-hub-api.md && : >docs/specs/ui-contract-map.md &&
 	git add -A && git commit -q -m base)
