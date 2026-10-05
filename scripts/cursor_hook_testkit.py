@@ -36,6 +36,7 @@ WIRED = {
     "preCompact": [None],
     "stop": [None],
     "beforeSubmitPrompt": [None],
+    "subagentStart": [None],
 }
 
 
@@ -85,6 +86,14 @@ class Project:
         return [subprocess.run(["sh", "-c", row["command"]], input=data, capture_output=True, text=True,
                                env=self.env(), cwd=self.root, timeout=30) for row in self.commands(event, tool)]
 
+    def fire_as(self, event, payload, tool=None):
+        """Like fire_one, but the payload's own ids stand: no conversation_id is added."""
+        data = json.dumps(dict(payload, hook_event_name=event, workspace_roots=[str(self.root)]))
+        rows = self.commands(event, tool)
+        assert len(rows) == 1, "%s/%s wired %d times" % (event, tool, len(rows))
+        return subprocess.run(["sh", "-c", rows[0]["command"]], input=data, capture_output=True, text=True,
+                              env=self.env(), cwd=self.root, timeout=30)
+
     def fire_one(self, event, payload, tool=None):
         results = self.fire(event, payload, tool)
         assert len(results) == 1, "%s/%s wired %d times" % (event, tool, len(results))
@@ -98,7 +107,7 @@ class Project:
 
     def recording_stub(self):
         """A hook script that records stdin and CLAUDE_PROJECT_DIR, then exits 0 silently."""
-        return self.stub("record.sh", 'cat > "%s/seen.json"; printf %%s "$CLAUDE_PROJECT_DIR" > "%s/seen.env"\n'
+        return self.stub("record.sh", '/bin/cat > "%s/seen.json"; printf %%s "$CLAUDE_PROJECT_DIR" > "%s/seen.env"\n'
                          % (self.tmp, self.tmp))
 
     def seen(self):
