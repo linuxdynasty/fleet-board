@@ -131,8 +131,7 @@ decision 5); each comes before the dispatch row it gates, not before PR 1. 0.16 
 measured by the report's first run and gates no build step. Items 0.19 to 0.24 are
 Cursor's ([ADR 0027](../adr/0027-cursor-first-class-copilot-and-messaging-later.md));
 each comes before the Cursor work it gates, and the other harnesses never wait for
-them. Items 0.1, 0.8 and 0.9 cover Cursor too. Cursor's adapter work gets its own
-row and issue once these items are filed.
+them. Items 0.1, 0.8 and 0.9 cover Cursor too. Cursor's adapter work is row 30.
 
 What only the owner can do is 0.2 (create and install the GitHub App, #26), 0.4
 (decide Muse auto-update, #28), 0.17 (#62) and 0.18 (#63, approve the words); 0.3 is
@@ -200,7 +199,8 @@ Every Go package carries `doc.go`, `README.md` and a scoped `AGENTS.md`
 
 Each row is one PR (or a small epic of PRs where noted), ordered by
 dependency. Row numbers are ids, not order: 2b, 13a and 1b were added later, and
-row 17 (acceptance) runs last, after the dispatch rows 18 to 29 (ADR 0025). **Role** is the cheapest tier that fits (`.agents/roles.json`);
+row 17 (acceptance) runs last, after the dispatch rows 18 to 29 (ADR 0025) and
+row 30, the Cursor adapter (ADR 0027). **Role** is the cheapest tier that fits (`.agents/roles.json`);
 the orchestrator escalates to `-deep` only for the reasons in AGENTS.md.
 Every PR follows AGENTS.md: failing test first for bugs, contract proof for
 new code, `fleet-code-review` before push, the full local gate once.
@@ -238,6 +238,7 @@ new code, `fleet-code-review` before push, the full local gate once.
 | 27 | **Routines, the weekly report and the rest of Insights:** routines with a cron or empty-queue trigger, the spare-quota rule (behind pace or 5 points unused, never into the reserve, never on an API-key account), coalesce and skip, done rules, run history; `ListRoutines` to `RunRoutine` and the `ROUTINES` topic; the built-in weekly report (Monday 07:00, on by default, its cost measured on its first run, 0.16), `InsightReport`, suggestions with evidence, the outcomes and stuck sections of `GetInsights` | 22, 23 | a routine never starts inside a reserve or on an API-key account; catch-up after an outage is skipped; the report ends `REPORT_WRITTEN`; each suggestion carries its evidence; the outcome rollups equal a hand-computed week | develop-fleet | fleet-sqlite-store, fleet-telemetry-coverage |
 | 28 | **Web UI, dispatch (epic):** dispatch with the preflight dialog (Block, Confirm, Warn, Info), goal control, approvals and prompt answers in Triage, the `a` key, the owner's pane mark, session control, the browser terminal (xterm.js), log replay and search, routines, reports and suggestions, drain, hook approval on Machines | 14, 19, 22 to 27 | Playwright smoke per flow on the seed; phone width; a control the caller's scope does not allow is hidden | develop-fleet | fleet-frontend |
 | 29 | **CLI `fleet`, dispatch:** `fleet dispatch`, goal control, `fleet requeue`, `fleet routine` (`fleet logs export` is row 25; [02k](../specs/02k-v1-surface-and-cli.md)), with `--json` | 15, 22 to 27 | golden JSON outputs against the seed; each command refused with the API's reason when its check fails | develop-fleet | fleet-go |
+| 30 | **Cursor adapter (epic)** ([ADR 0027](../adr/0027-cursor-first-class-copilot-and-messaging-later.md)): the `cursor` adapter for `cursor-agent` in a tmux pane: C1 inventory, C2 identity as 0.22 found, C4 command catalog, the trust box reported as `FOLDER_UNTRUSTED`, E6 prompt detection under each approval mode, the input-line rule of 0.19 (until it is proven, every `SendKeys` purpose and `RunHarnessCommand` answers `PANE_BUSY` on a Cursor pane, the probe included), the D2 `/usage` parser and the monthly budget of 0.20 with its contract change (before row 17), G1 goal hooks as 0.23 found, G3 and G4 goal start and control as 0.21 found, resume with `cursor-agent --resume`; `scripts/owner-setup.sh` and the mockup data name Cursor; auto-dispatch on Cursor only once 0.24 allows it | 8, 20, 21, 0.19, 0.20, 0.21, 0.22, 0.23, 0.24 | every Cursor fixture parses or returns `UNKNOWN`; a pane showing old input text or the placeholder is never typed into except by the rule 0.19 proved, tested on fixtures of both; a `/usage` fixture yields a monthly bucket that pacing reads as 0.20 decided; Cursor hooks install, verify and uninstall against fixtures; pause, resume and re-arm against Cursor's fixtures | develop-fleet (parsers), develop-fleet-deep (typing gate, goal control) | fleet-harness-adapter, fleet-tmux, fleet-contract-rigor, fleet-live-probe |
 | 17 | **v1 acceptance and `v0.1` (runs last):** the seven-day run of section 2, watching and dispatch, fixes found there, the four items of the 02e freeze checklist (every contract-review finding fixed or deferred; generated clients compile in CI; the mockup data checked against the protos or marked display-only; `go.mod`, the generated-code location and the CI job), tag `v0.1` for everything v1 implements, with per-path `breaking` ignores in `buf.yaml` for the v3-only messages (02e, ADR 0025); the capability-to-test report of row 1b fails CI from here, `buf breaking` in CI | 16, 18 to 29 | section 2 met; review by `review-fleet-deep`; `arbiter-fleet` ruling before tagging | review-fleet-deep, arbiter-fleet | fleet-code-review |
 
 Parallel lanes: after 2b, PR 3 and PR 11 are independent; after PR 5, 6 and 7
@@ -246,7 +247,8 @@ and 11; 13a follows 10, 11 and 12; 14 can start its scaffold against the mockup
 while 12 is in review. 1b follows 1 at once. Dispatch: 18 follows 6, 7 and 8; 19,
 20 and 26 follow 18; 21 follows 20; 22 follows 21 and 19 (and 11, 12), so no goal starts before owner decision 20 (0.17); 23 and 24 follow
 22; 25 follows 21 and 12; 27 follows 23; 28 and 29 come
-last, before 17. The 0.1 to 0.11 probes run first and in parallel; 0.12 to 0.18
+last, before 17. Row 30 (Cursor) follows 8, 20 and 21 and its items 0.19 to 0.24;
+the other rows never wait for it. The 0.1 to 0.11 probes run first and in parallel; 0.12 to 0.18
 run before the rows they gate.
 
 ## 6. How it is tested
@@ -302,7 +304,7 @@ Open: items 0.17 (#62) and 0.18 (#63) in section 3 block dispatch; #64 (phone pu
 
 ## 10. Tracking
 
-Each row of section 5 is a GitHub issue (epics for 7, 8, 14 and 28) with its
+Each row of section 5 is a GitHub issue (epics for 7, 8, 14, 28 and 30) with its
 acceptance test copied in, in the milestone "v1 — fleet". This table maps plan
 ids to issues; `scripts/plan-issues.py` reads it.
 
@@ -317,6 +319,8 @@ ids to issues; `scripts/plan-issues.py` reads it.
 | 0.5 to 0.10 | #50 to #55 |
 | 0.11 | #46 |
 | 0.12 to 0.18 | #57 to #63 |
+| 30 | #95 |
+| 0.19 to 0.24 | #96 to #101 |
 
 Section 3 items are issues assigned to the owner where they need a decision. Work
 follows `fleet-issue-driver`: a worktree per issue, one PR per change, self-review

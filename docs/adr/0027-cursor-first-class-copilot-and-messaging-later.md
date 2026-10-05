@@ -77,11 +77,10 @@ types into panes.
 
 - v1 grows by one adapter, six probes, and one contract question (the monthly
   budget). The other harnesses do not wait for Cursor.
-- Cursor's adapter work gets its own plan row and issue once the owner approves
-  filing the issues for items 0.19 to 0.24; rows 8 and 20, whose issue bodies are
-  generated from the plan, name Cursor in that same change.
+- All of Cursor's adapter work is one plan row, row 30 (#95), after rows 8, 20
+  and 21 and items 0.19 to 0.24 (#96 to #101). Rows 8 and 20 keep their scope.
 - Not changed yet: `scripts/owner-setup.sh` (its folder-trust walkthrough lists
-  four harnesses) and the mockup data. Both follow the Cursor adapter row.
+  four harnesses) and the mockup data. Both are part of row 30.
 - The `Harness.name` comment in `ids.proto` lists `"cursor"`. The name is a
   free string, so this is not a contract break.
 - The dev tooling that already supports Cursor (#86, #87, #90) is separate.
@@ -89,7 +88,7 @@ types into panes.
 - Copilot users and the messaging idea are not lost: both are on the
   [features](../features.md) page as `later`.
 - Documents changed with this ADR: design.md (goal, picture, glossary),
-  [features.md](../features.md), the plan (items 0.1, 0.8, 0.9 and 0.19 to 0.24, the layout),
+  [features.md](../features.md), the plan (items 0.1, 0.8, 0.9 and 0.19 to 0.24, row 30, the layout),
   [01](../specs/01-agent-capabilities.md), [01b](../specs/01b-harness-commands.md),
   [01d](../specs/01d-goal-hooks.md), [02h](../specs/02h-goal-binding-and-pane-signals.md),
   verified-facts.md, the dev hooks doc, README.md, AGENTS.md and the skill
