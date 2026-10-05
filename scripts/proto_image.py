@@ -290,7 +290,7 @@ class Contract:
 def buf_version(root):
     env_file = Path(root) / "tool-versions.env"
     try:
-        for line in env_file.read_text().splitlines():
+        for line in env_file.read_text(encoding="utf-8").splitlines():
             if line.startswith("BUF_VERSION="):
                 return line.split("=", 1)[1].strip()
     except OSError as err:
@@ -305,7 +305,7 @@ def build(root, out):
     if go is None:
         raise ProtoImageError("go is not on PATH, so the pinned buf cannot run")
     cmd = [go, "run", "%s@%s" % (BUF_MODULE, version), "build", "-o", str(out)]
-    result = subprocess.run(cmd, cwd=str(root), capture_output=True, text=True)
+    result = subprocess.run(cmd, cwd=str(root), capture_output=True, text=True, encoding="utf-8")
     if result.returncode != 0:
         raise ProtoImageError("buf build failed (exit %d): %s" % (result.returncode, result.stderr.strip()))
     return out
@@ -313,7 +313,7 @@ def build(root, out):
 
 def read_image(path):
     try:
-        return json.loads(Path(path).read_text())
+        return json.loads(Path(path).read_text(encoding="utf-8"))
     except (OSError, ValueError) as err:
         raise ProtoImageError("cannot read the image %s: %s" % (path, err)) from err
 

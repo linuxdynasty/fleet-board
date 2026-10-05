@@ -153,7 +153,7 @@ def judge(contract, token):
 def load_allowlist(root):
     path = root / ALLOW_FILE
     try:
-        data = json.loads(path.read_text())
+        data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as err:
         raise AllowlistError("%s is unreadable or not JSON: %s" % (ALLOW_FILE, err)) from err
     if not isinstance(data, dict) or data.get("version") != 1 or not isinstance(data.get("entries"), list):
@@ -182,7 +182,7 @@ def check(root, contract, allow):
     for doc in docs:
         rel = doc.relative_to(root).as_posix()
         unclosed = []
-        for start, text in blocks(doc.read_text(), unclosed):
+        for start, text in blocks(doc.read_text(encoding="utf-8"), unclosed):
             for offset, token in span_tokens(text):
                 is_checked, why = judge(contract, token)
                 if not is_checked:

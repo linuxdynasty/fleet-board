@@ -49,7 +49,7 @@ class DocNameTests(unittest.TestCase):
         extra = {"FLEET_PROTO_IMAGE": str(self.image)} if image else {}
         extra.update(env)
         return subprocess.run([sys.executable, str(CHECK), "--root", str(self.tree.root)],
-                              env=clean_env(**extra), capture_output=True, text=True)
+                              env=clean_env(**extra), capture_output=True, text=True, encoding="utf-8")
 
     def assert_rc(self, want, out):
         self.assertEqual(want, out.returncode, "stdout:\n%s\nstderr:\n%s" % (out.stdout, out.stderr))
@@ -227,7 +227,8 @@ class DocNameTests(unittest.TestCase):
 
     def test_a_contract_that_does_not_compile_fails_closed(self):
         self.tree.write("docs/specs/a.md", "`LogChunk`\n")
-        self.tree.proto.write_text(self.tree.proto.read_text() + "\nmessage Broken {\n")
+        self.tree.proto.write_text(self.tree.proto.read_text(encoding="utf-8") + "\nmessage Broken {\n",
+                                   encoding="utf-8")
         self.assert_rc(2, self.run_check(image=False))
 
     def test_missing_go_fails_closed(self):

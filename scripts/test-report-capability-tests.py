@@ -33,12 +33,12 @@ class Tree:
     def write(self, rel, text):
         path = self.root / rel
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text)
+        path.write_text(text, encoding="utf-8")
 
     def run(self):
         return subprocess.run(
             [sys.executable, str(SCRIPT), "--root", str(self.root)],
-            capture_output=True, text=True, check=False)
+            capture_output=True, text=True, encoding="utf-8", check=False)
 
 
 def untested(out):
