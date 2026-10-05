@@ -37,9 +37,22 @@ func (s *Store) Submit(ctx context.Context, apply ApplyFunc) (<-chan error, erro
 	select {
 	case s.jobs <- j:
 		return j.done, nil
+	default:
+	}
+	select {
+	case s.jobs <- j:
+		return j.done, nil
 	case <-ctx.Done():
+		s.m.gaveUp(ctx)
 		return nil, ctx.Err()
 	}
+}
+
+func (s *Store) oldestJob() time.Time {
+	if ns := s.oldest.Load(); ns != 0 {
+		return time.Unix(0, ns)
+	}
+	return time.Time{}
 }
 
 // Write submits a job and waits for its outcome. A ctx error means the
@@ -76,6 +89,7 @@ func (s *Store) run() {
 			}
 			batch = append(batch, j)
 			if len(batch) == 1 {
+				s.oldest.Store(j.enqueued.UnixNano())
 				timer.Reset(s.window)
 				wait = timer.C
 			}
@@ -87,6 +101,7 @@ func (s *Store) run() {
 		}
 		wait = nil
 		s.flush(batch)
+		s.oldest.Store(0)
 		batch = batch[:0]
 	}
 }

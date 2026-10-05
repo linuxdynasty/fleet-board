@@ -91,6 +91,8 @@ metrics below fill the gaps between them.
 | `fleet_hub_writer_batch_messages{db}`, `fleet_hub_writer_batch_seconds{db}` | histograms | how big are the batches, how long does the transaction take (BEGIN IMMEDIATE to the end of COMMIT) |
 | `fleet_hub_writer_queue_age_seconds{db}` | histogram | how long a message waited for the writer, from submit to its commit (the lag the System signal reads) |
 | `fleet_hub_writer_jobs_total{db, result}` | counter | write jobs `committed`, `failed` (rolled back alone, such as a unique-constraint loss) or `aborted` (the batch's transaction failed) |
+| `fleet_hub_writer_oldest_job_age_seconds{db}`, `fleet_hub_writer_queue_depth{db}` | gauges, read at scrape time | the age of the oldest job not yet answered (0 when none waits) and the jobs queued behind the writer; both rise while a writer is stuck and commits nothing, when the histograms above stay silent. The age is the "oldest message waiting" that `WRITER_BATCH_LAG` reads |
+| `fleet_hub_writer_queue_full_total{db}` | counter | submits that found the writer queue full and gave up when their context ended |
 | `fleet_hub_ingest_queue_depth{machine}`, `fleet_hub_ingest_blocked_seconds_total{machine}` | gauge, counter | is one agent's stream backed up; are never-dropped readers blocked |
 | `fleet_hub_ingest_shed_total{kind}` | counter | which droppable kinds the hub shed |
 | `fleet_hub_outbox_pending{machine}`, `fleet_hub_outbox_oldest_age_seconds{machine}` | gauges | are commands piling up for an online machine |

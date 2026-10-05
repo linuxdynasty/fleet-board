@@ -24,14 +24,24 @@ type metrics struct {
 	batchSeconds  metric.Float64Histogram
 	queueAge      metric.Float64Histogram
 	jobs          metric.Int64Counter
+	queueFull     metric.Int64Counter
 	readPoolWait  metric.Float64Histogram
-	sizes         metric.Registration
+	observed      metric.Registration
 	committed     metric.MeasurementOption
 	failed        metric.MeasurementOption
 	aborted       metric.MeasurementOption
 }
 
-func newMetrics(tel *telemetry.Telemetry, name, path string) (*metrics, error) {
+// observed is what the gauges read at scrape time.
+type observed struct {
+	path string
+	// depth is the number of jobs queued and not yet taken by the writer.
+	depth func() int
+	// oldest is the Submit time of the oldest unanswered job, zero if none.
+	oldest func() time.Time
+}
+
+func newMetrics(tel *telemetry.Telemetry, name string, obs observed) (*metrics, error) {
 	m := noop.NewMeterProvider().Meter(scope)
 	prefix := "fleet_hub"
 	if tel != nil {
@@ -45,7 +55,7 @@ func newMetrics(tel *telemetry.Telemetry, name, path string) (*metrics, error) {
 		aborted:   metric.WithAttributes(db, attribute.String("result", "aborted")),
 	}
 	seconds := []float64{0.0005, 0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5}
-	var errs [7]error
+	var errs [10]error
 	out.batchMessages, errs[0] = m.Int64Histogram(prefix+"_writer_batch_messages",
 		metric.WithDescription("Jobs committed in one writer transaction."),
 		metric.WithExplicitBucketBoundaries(1, 2, 5, 10, 25, 50, 75, 100))
@@ -57,27 +67,39 @@ func newMetrics(tel *telemetry.Telemetry, name, path string) (*metrics, error) {
 		metric.WithUnit("s"), metric.WithExplicitBucketBoundaries(0.01, 0.05, 0.1, 0.25, 0.3, 0.5, 1, 2.5, 5, 10, 30))
 	out.jobs, errs[3] = m.Int64Counter(prefix+"_writer_jobs_total",
 		metric.WithDescription("Write jobs by result: committed, failed (rolled back alone), aborted (the batch failed)."))
-	out.readPoolWait, errs[4] = m.Float64Histogram(prefix+"_read_pool_wait_seconds",
+	out.queueFull, errs[4] = m.Int64Counter(prefix+"_writer_queue_full_total",
+		metric.WithDescription("Submits that found the queue full and gave up when their context ended."))
+	out.readPoolWait, errs[5] = m.Float64Histogram(prefix+"_read_pool_wait_seconds",
 		metric.WithDescription("Time a Read waited for a pool connection."),
 		metric.WithUnit("s"), metric.WithExplicitBucketBoundaries(seconds...))
-	storeBytes, err5 := m.Int64ObservableGauge(prefix+"_store_bytes",
+	storeBytes, err6 := m.Int64ObservableGauge(prefix+"_store_bytes",
 		metric.WithDescription("Size of the database file."), metric.WithUnit("By"))
-	walBytes, err6 := m.Int64ObservableGauge(prefix+"_store_wal_bytes",
+	walBytes, err7 := m.Int64ObservableGauge(prefix+"_store_wal_bytes",
 		metric.WithDescription("Size of the database's write-ahead log."), metric.WithUnit("By"))
-	errs[5], errs[6] = err5, err6
+	depth, err8 := m.Int64ObservableGauge(prefix+"_writer_queue_depth",
+		metric.WithDescription("Jobs queued and not yet taken by the writer."))
+	oldest, err9 := m.Float64ObservableGauge(prefix+"_writer_oldest_job_age_seconds",
+		metric.WithDescription("Age of the oldest job not yet answered; 0 when none waits."), metric.WithUnit("s"))
+	errs[6], errs[7], errs[8], errs[9] = err6, err7, err8, err9
 	if err := errors.Join(errs[:]...); err != nil {
 		return nil, err
 	}
 	var err error
-	out.sizes, err = m.RegisterCallback(func(_ context.Context, o metric.Observer) error {
-		if fi, err := os.Stat(path); err == nil {
+	out.observed, err = m.RegisterCallback(func(_ context.Context, o metric.Observer) error {
+		if fi, err := os.Stat(obs.path); err == nil {
 			o.ObserveInt64(storeBytes, fi.Size(), out.db)
 		}
-		if fi, err := os.Stat(path + "-wal"); err == nil {
+		if fi, err := os.Stat(obs.path + "-wal"); err == nil {
 			o.ObserveInt64(walBytes, fi.Size(), out.db)
 		}
+		o.ObserveInt64(depth, int64(obs.depth()), out.db)
+		age := 0.0
+		if t := obs.oldest(); !t.IsZero() {
+			age = time.Since(t).Seconds()
+		}
+		o.ObserveFloat64(oldest, age, out.db)
 		return nil
-	}, storeBytes, walBytes)
+	}, storeBytes, walBytes, depth, oldest)
 	if err != nil {
 		return nil, err
 	}
@@ -105,7 +127,9 @@ func (m *metrics) readWait(ctx context.Context, d time.Duration) {
 	m.readPoolWait.Record(ctx, d.Seconds(), m.db)
 }
 
-func (m *metrics) close() error { return m.sizes.Unregister() }
+func (m *metrics) gaveUp(ctx context.Context) { m.queueFull.Add(ctx, 1, m.db) }
+
+func (m *metrics) close() error { return m.observed.Unregister() }
 
 // errKind is the closed err_kind class of 05b for a log line.
 func errKind(err error) string {

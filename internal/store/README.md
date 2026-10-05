@@ -55,8 +55,10 @@ err = s.Read(ctx, func(tx *sql.Tx) error { ... }) // short read on the pool
 Metrics carry `db="state|logs|agent"` and the program's prefix (`fleet_hub`
 or `fleet_agent`): `_writer_batch_messages`, `_writer_batch_seconds`,
 `_writer_queue_age_seconds`, `_writer_jobs_total{result}` (`committed`,
-`failed`, `aborted`), `_read_pool_wait_seconds`, `_store_bytes`,
-`_store_wal_bytes`. Log events: `store.opened`, `store.migrated`,
+`failed`, `aborted`), `_writer_oldest_job_age_seconds` and
+`_writer_queue_depth` (gauges that rise while the writer is stuck),
+`_writer_queue_full_total` (submits that gave up on a full queue),
+`_read_pool_wait_seconds`, `_store_bytes`, `_store_wal_bytes`. Log events: `store.opened`, `store.migrated`,
 `store.batch_failed` (with `err_kind`), `store.closed`. No paths or SQL text
 are logged.
 

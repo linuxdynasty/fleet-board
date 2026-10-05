@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/linuxdynasty/fleet-board/internal/telemetry"
@@ -72,6 +73,10 @@ type Store struct {
 	closed  bool
 	jobs    chan job
 	stopped chan struct{}
+	// oldest is the Submit time (Unix ns) of the first job of the batch the
+	// writer holds, 0 when it holds none. Jobs are FIFO, so no queued job is
+	// older.
+	oldest atomic.Int64
 
 	closeOnce sync.Once
 	closeErr  error
@@ -179,7 +184,8 @@ func Open(ctx context.Context, opts Options) (*Store, error) {
 	r.SetMaxOpenConns(opts.Readers)
 	r.SetMaxIdleConns(opts.Readers)
 	s.readers = r
-	if s.m, err = newMetrics(opts.Telemetry, opts.Name, opts.Path); err != nil {
+	obs := observed{path: opts.Path, depth: func() int { return len(s.jobs) }, oldest: s.oldestJob}
+	if s.m, err = newMetrics(opts.Telemetry, opts.Name, obs); err != nil {
 		return nil, errors.Join(err, r.Close(), w.Close())
 	}
 	go s.run()
