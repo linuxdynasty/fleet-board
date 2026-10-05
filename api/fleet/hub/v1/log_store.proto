@@ -2,9 +2,9 @@
 // deleting and measuring what the hub keeps after a session is gone. A
 // ReadSessionLog call needs a LogStreamKey; these RPCs are how a client learns
 // the keys of ended sessions and goals, reads the archived last pane summary,
-// and manages the store. Every RPC here needs SCOPE_LOGS (owner by default,
-// ADR 0019): terminal output can hold secrets, and so can what a search
-// returns. Export is the client paging ReadSessionLog; there is no export RPC.
+// and manages the store. Terminal output can hold secrets, and so can what a
+// search returns (ADR 0019). Export is the client paging ReadSessionLog; there
+// is no export RPC.
 syntax = "proto3";
 
 package fleet.hub.v1;
@@ -108,7 +108,7 @@ message SessionLogMatch {
   uint64 raw_offset = 2;
   google.protobuf.Timestamp match_time = 3;
   // The matching line with ANSI stripped, at most 512 bytes. Untrusted text;
-  // may contain secrets, which is why search needs SCOPE_LOGS.
+  // may contain secrets.
   string snippet = 4;
 }
 

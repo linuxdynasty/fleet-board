@@ -60,7 +60,7 @@ message ApiToken {
 // CreateApiTokenRequest. Only a user principal (a signed-in user, or the local
 // owner, including `fleetd token create` on the hub host through its local
 // admin socket) can create a token: a token or device cannot mint another
-// (SCOPE_NOT_GRANTABLE). SCOPE self.
+// (SCOPE_NOT_GRANTABLE).
 message CreateApiTokenRequest {
   string request_id = 1;
   string name = 2;

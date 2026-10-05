@@ -100,7 +100,7 @@ message RequestPairingResponse {
   google.protobuf.Timestamp expire_time = 3;
 }
 
-// ApprovePairingRequest is sent by an owner (SCOPE_ADMIN, USER principal only:
+// ApprovePairingRequest is sent by an owner (USER principal only:
 // a token or device is SCOPE_NOT_GRANTABLE even with ADMIN).
 message ApprovePairingRequest {
   string request_id = 1;

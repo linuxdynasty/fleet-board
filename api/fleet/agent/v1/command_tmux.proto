@@ -168,7 +168,7 @@ message KillWindow {
 message CapturePane {
   fleet.type.v1.PaneKey pane = 1;
   // 0 = visible screen; otherwise the last N lines of history. The hub
-  // requires SCOPE_LOGS for a non-zero value; the agent does not see scopes.
+  // checks the caller's scope; the agent does not see scopes.
   uint32 last_lines = 2;
   bool keep_ansi = 3;
   // Cap for the returned text; the agent clamps to 256 KiB.

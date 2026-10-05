@@ -49,7 +49,7 @@ message StoreStatus {
 message GetStoreStatusRequest {}
 
 // GetStoreStatusResponse. The log store's own numbers (size against its cap,
-// days retained) are GetLogStoreStatus, because they need SCOPE_LOGS.
+// days retained) are GetLogStoreStatus.
 message GetStoreStatusResponse {
   StoreStatus status = 1;
 }

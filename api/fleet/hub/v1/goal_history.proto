@@ -53,7 +53,7 @@ message GoalRun {
   uint32 no_progress_runs = 13;
   repeated GoalUsage usage_consumed = 14;
   // The terminal streams of the run's pane (one per stream kind); reading
-  // them is ReadSessionLog, which needs SCOPE_LOGS. Listing the keys does not.
+  // them is ReadSessionLog.
   repeated fleet.type.v1.LogStreamKey logs = 15;
   // The harness transcript stream (v3), when captured.
   fleet.type.v1.LogStreamKey transcript = 16;
