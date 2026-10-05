@@ -26,9 +26,10 @@ Blocking mode, over the files changed in A...B and the commits in A..B:
 1. Mapped folders. A rule matched by a changed file needs one of its specs
    changed in the range, or a commit message line `No-Doc-Change: <reason>`
    (it satisfies every rule). Only the branch's own commits count (git log
-   --first-parent A..B), never a commit merged in from main. An empty or placeholder reason (TODO, TBD, n/a,
-   none, a dash, the word "reason", or the <reason> template itself) does not
-   count. Only commit messages count, never a PR body.
+   --first-parent A..B), never a commit merged in from main. An empty or
+   placeholder reason (TODO, TBD, n/a, none, a dash, the word "reason", or the
+   <reason> template itself) does not count. Only commit messages count, never
+   a PR body.
 2. Go package docs. A directory with a changed non-test .go file that is
    still a package at B carries doc.go, README.md and AGENTS.md (AGENTS.md,
    Documentation Discipline). The trailer does not excuse this.
@@ -300,7 +301,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--root", default=".")
     parser.add_argument("--ci", action="store_true", help="blocking mode; needs --range")
-    parser.add_argument("--range", dest="rng", help="A..B: files changed in A...B, commit messages in A..B")
+    parser.add_argument("--range", dest="rng", help="A..B: files changed in A...B, first-parent commit messages in A..B")
     parser.add_argument("--check-map", action="store_true", help="validate %s" % MAP_FILE)
     args = parser.parse_args()
     if args.ci or args.check_map:

@@ -124,6 +124,17 @@ class DocsStaleTests(unittest.TestCase):
             with self.subTest(rng=rng):
                 self.assert_rc(0, self.ci(rng))
 
+    def test_a_trailer_added_after_a_merge_from_main_counts(self):
+        self.merge_main_with_a_trailer_into_pr("mine")
+        for rng in (self.base + "..pr", "main..pr"):
+            with self.subTest(rng=rng, trailer="only on main's commit"):
+                self.assert_rc(1, self.ci(rng))
+        self.write("notes.txt", "x\n")
+        self.commit("after the merge\n\nNo-Doc-Change: a helper script no spec describes")
+        for rng in (self.base + "..pr", "main..pr"):
+            with self.subTest(rng=rng, trailer="on the PR's commit after the merge"):
+                self.assert_rc(0, self.ci(rng))
+
     def test_changing_any_one_mapped_spec_passes(self):
         self.go_package("internal/agent/tmux")
         self.write("docs/specs/01.md", "# spec\n\nE2 now says more.\n")
