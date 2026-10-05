@@ -303,9 +303,8 @@ message RespawnPaneResponse {
 }
 
 // KillWindowRequest sends KillWindow (F6). A developer's window, unlike the
-// fleet's own windows, also needs a principal whose role
-// covers ROLE_OWNER (a narrowed device or token never does, 02d) and an
-// approval.
+// fleet's own windows, also needs a principal whose role covers ROLE_OWNER (a
+// narrowed device or token never does, 02d) and an approval.
 message KillWindowRequest {
   string request_id = 1;
   fleet.type.v1.SessionId session = 2;

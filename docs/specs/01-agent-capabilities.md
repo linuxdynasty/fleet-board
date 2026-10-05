@@ -322,7 +322,10 @@ optionally against one limit the owner sets.
 - **E9 Pane ↔ harness session mapping.** Goal hooks record the harness
   session id against the pane's goal registry entry (G5, 02h). This lets G2
   attribute `.claude/active-goal.<session_id>` files to panes, and K3 find
-  transcripts.
+  transcripts. E9 also attributes a goal file in a pane that has no registry
+  entry, by the **observed goal** rule (pane working folder and the newest goal
+  file, [02h](02h-goal-binding-and-pane-signals.md#observed-goals-v1)): the
+  result is a goal with binding source `OBSERVED`, never a registry entry.
 - **E11 Pane availability.** Each harness pane reports whether it is **idle**:
   the adapter's ready pattern is showing, no goal is active in it (G2), and
   there has been no output or keyboard input for a configurable time (default 2

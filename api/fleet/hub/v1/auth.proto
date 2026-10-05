@@ -130,9 +130,9 @@ message ListUsersResponse {
 
 // UpdateUserRequest. Updatable: spec.display_name, spec.role,
 // spec.github_login, spec.disabled, spec.extra_scopes. Needs a USER principal
-// (a token or device is SCOPE_NOT_GRANTABLE even with ADMIN);
-// the new role's scopes and extra_scopes must be covered by the caller's own,
-// so only an owner can make an owner (02d, "No escalation"). Demoting or
+// (a token or device is SCOPE_NOT_GRANTABLE even with ADMIN); the new role's
+// scopes and extra_scopes must be covered by the caller's own, so only an
+// owner can make an owner (02d, "No escalation"). Demoting or
 // disabling a user, or removing extra_scopes, narrows its tokens and devices
 // on their next call. A change that leaves the hub with no active owner, or
 // the user with no sign-in method, is FAILED_PRECONDITION / LAST_CREDENTIAL.
@@ -269,9 +269,9 @@ message FinishPasskeyLoginResponse {
   google.protobuf.Timestamp session_expire_time = 2;
 }
 
-// DeletePasskeyRequest removes one passkey of the caller's own user (ADMIN may
-// remove anyone's, from a USER principal only). Removing the last sign-in
-// method is LAST_CREDENTIAL.
+// DeletePasskeyRequest removes one passkey of the caller's own user, or of
+// another user from a USER principal only. Removing the last sign-in method is
+// LAST_CREDENTIAL.
 message DeletePasskeyRequest {
   string request_id = 1;
   PasskeyId id = 2;
@@ -333,8 +333,8 @@ message SignOutRequest {
 // SignOutResponse.
 message SignOutResponse {}
 
-// ListLoginSessionsRequest lists the caller's own sessions; ADMIN lists
-// everyone's. Filter and order_by names: 02c-hub-watch-and-filters.md.
+// ListLoginSessionsRequest lists login sessions. Filter and order_by names:
+// 02c-hub-watch-and-filters.md.
 message ListLoginSessionsRequest {
   int32 page_size = 1;
   string page_token = 2;
@@ -348,8 +348,8 @@ message ListLoginSessionsResponse {
   string next_page_token = 2;
 }
 
-// RevokeLoginSessionRequest ends one session (the caller's own; ADMIN any, from
-// a USER principal only).
+// RevokeLoginSessionRequest ends one session (another user's from a USER
+// principal only).
 message RevokeLoginSessionRequest {
   string request_id = 1;
   LoginSessionId id = 2;

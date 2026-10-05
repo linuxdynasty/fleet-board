@@ -79,9 +79,8 @@ message CreateApiTokenResponse {
   string secret = 2;
 }
 
-// ListApiTokensRequest lists the caller's own tokens; ADMIN lists everyone's.
-// Filter and order_by names: 02c-hub-watch-and-filters.md. API tokens have no
-// Watch topic.
+// ListApiTokensRequest lists API tokens. Filter and order_by names:
+// 02c-hub-watch-and-filters.md. API tokens have no Watch topic.
 message ListApiTokensRequest {
   int32 page_size = 1;
   string page_token = 2;
@@ -95,8 +94,8 @@ message ListApiTokensResponse {
   string next_page_token = 2;
 }
 
-// RevokeApiTokenRequest takes effect at once (the caller's own token; ADMIN
-// any). Revoked tokens stay listed for the audit trail.
+// RevokeApiTokenRequest takes effect at once. Revoked tokens stay listed for
+// the audit trail.
 message RevokeApiTokenRequest {
   string request_id = 1;
   ApiTokenId id = 2;

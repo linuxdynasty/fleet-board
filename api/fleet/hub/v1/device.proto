@@ -185,7 +185,7 @@ message NotificationTarget {
   google.protobuf.Timestamp update_time = 4;
 
   // Output-only: the caller's own Principal.id, set by the hub on create and
-  // ignored in requests. ADMIN lists every principal's targets.
+  // ignored in requests.
   fleet.type.v1.PrincipalId principal = 10;
   NotificationChannel channel = 11;
   fleet.type.v1.DeviceId device = 12;

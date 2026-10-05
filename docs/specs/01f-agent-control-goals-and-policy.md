@@ -68,13 +68,10 @@ All pass local policy, carry a `command_id`, and are idempotent except F3.
   harness has no pause. Fleet-board defines no goal protocol of its own.
 - **G5 Goal registry**: the agent's registry binds a goal to a pane (and its
   worktree and harness session id) for every harness. `StartGoal` and the hooks
-  write the registry. A goal that the fleet did not start has no registry
-  entry, so G5 also has two other jobs: report the registry it rebuilds from
-  `FLEET_GOAL_ID` (empty at first), and attribute a goal file to a pane that
-  has no registry entry by the **observed goal** rule (pane working folder and
-  the newest goal file, [02h](02h-goal-binding-and-pane-signals.md#observed-goals-v1)).
-  The result is a goal with binding source `OBSERVED`, never an entry in the
-  registry.
+  write the registry. G5 also reports the registry it rebuilds from
+  `FLEET_GOAL_ID` (empty at first). A goal that the fleet did not start has no
+  registry entry; attributing its goal file to a pane is E9 in
+  [01](01-agent-capabilities.md).
 
 ## H. Repositories
 
