@@ -39,10 +39,10 @@ checked by its shape:
 lower_snake names and other lower-case-led tokens (os.Getenv) are not checked.
 A token that is not a proto name on purpose (a hook event, a Go type, an env
 var, a gRPC code) needs an entry in .agents/doc-names-allow.json: the exact
-token, a kind and a reason, and optionally a file that limits it to one doc
-(the token elsewhere is then a finding). An entry no checked doc uses fails
-(a file-limited one fails when its file does not use it), and so does an entry
-that is a real proto name.
+token, a kind, a reason and files, the list of docs that use it (exact paths,
+each once, no wildcards). The token in any other doc is a finding. A listed
+doc that does not use the token fails (drop it from files), and so does an
+entry that is a real proto name.
 """
 from __future__ import annotations
 
@@ -205,8 +205,12 @@ def load_allowlist(root):
         fields = [entry.get(k) if isinstance(entry, dict) else None for k in ("token", "kind", "reason")]
         if not all(isinstance(v, str) and v.strip() for v in fields):
             raise AllowlistError("%s entry %d needs a token, a kind and a reason" % (ALLOW_FILE, n))
-        if "file" in entry and not (isinstance(entry["file"], str) and entry["file"].strip()):
-            raise AllowlistError("%s entry %d: file must be a doc path" % (ALLOW_FILE, n))
+        files = entry.get("files")
+        if "file" in entry or not (isinstance(files, list) and files and len(set(map(str, files))) == len(files)
+                                   and all(isinstance(f, str) and f.strip() and not set(f) & set("*?[")
+                                           for f in files)):
+            raise AllowlistError("%s entry %d (%s): files must list the docs that use it, each once, "
+                                 "with no wildcards" % (ALLOW_FILE, n, fields[0]))
         if fields[0] in allow:
             raise AllowlistError("%s lists %s twice" % (ALLOW_FILE, fields[0]))
         allow[fields[0]] = entry
@@ -215,7 +219,7 @@ def load_allowlist(root):
 
 def allowed(allow, token, rel):
     entry = allow.get(token)
-    return entry is not None and entry.get("file", rel) == rel
+    return entry is not None and rel in entry["files"]
 
 
 def check(root, contract, allow):
@@ -233,7 +237,7 @@ def check(root, contract, allow):
                 if why is None:
                     continue
                 if allowed(allow, token, rel):
-                    used.add(token)
+                    used.add((token, rel))
                     continue
                 findings.append("%s:%d: `%s` (%s)" % (rel, start + text.count("\n", 0, offset), token, why))
         findings += ["%s:%d: a code fence that never closes; the rest of the file is not checked" % (rel, n)
@@ -242,11 +246,9 @@ def check(root, contract, allow):
         is_checked, why = judge(contract, token)
         if is_checked and why is None:
             findings.append("%s: `%s` is a real proto name; remove the entry" % (ALLOW_FILE, token))
-        elif token not in used and "file" in entry:
-            findings.append("%s: `%s`: %s does not use it; remove the entry or fix its file"
-                            % (ALLOW_FILE, token, entry["file"]))
-        elif token not in used:
-            findings.append("%s: `%s`: no checked doc uses it; remove the entry" % (ALLOW_FILE, token))
+        else:
+            findings += ["%s: `%s`: %s does not use it; drop it from files (or the entry, if it was the last)"
+                         % (ALLOW_FILE, token, rel) for rel in entry["files"] if (token, rel) not in used]
     return findings, len(docs), checked
 
 

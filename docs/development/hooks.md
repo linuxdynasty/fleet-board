@@ -210,8 +210,9 @@ tokens that are not names (URLs, file names, words joined to `-`, `<NAME>` or
 `<reason>` placeholders and the template pieces glued to them); `/` and `->`
 just separate names, so each name-shaped part is checked. Tokens that are not
 proto names on purpose are in `.agents/doc-names-allow.json`, one entry each
-with a reason and, when only one doc may use the token, a `file`; an entry no
-doc uses any more (or that its file no longer uses) fails.
+with a reason and `files`, the exact list of docs that use it (no wildcards).
+The token in any other doc is a finding, and a listed doc that no longer uses
+it fails until it is dropped from `files`.
 
 `scripts/gen-doc-tables.py` (`make doc-tables` runs `--check`) is the third:
 the release tables in 02k, the scope tables in 02d, the delivery table in 02i
