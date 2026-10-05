@@ -149,6 +149,40 @@ class DocNameTests(unittest.TestCase):
         self.assert_rc(1, out)
         self.assertIn("is a real proto name", out.stdout)
 
+    def test_a_file_limited_entry_passes_in_its_file_and_fails_in_another(self):
+        entry = {"token": "SelectPane", "kind": "retired", "reason": "seeded", "file": "docs/specs/03g.md"}
+        self.tree.write_json(ALLOW, {"version": 1, "entries": [entry]})
+        self.tree.write("docs/specs/03g.md", "Retired: `SelectPane`.\n")
+        self.assert_rc(0, self.run_check())
+        self.tree.write("docs/specs/02.md", "\nStill uses `SelectPane`.\n")
+        out = self.run_check()
+        self.assert_rc(1, out)
+        self.assertIn("docs/specs/02.md:2: `SelectPane`", out.stdout)
+        self.assertNotIn("03g.md:", out.stdout)
+
+    def test_a_file_limited_entry_its_file_does_not_use_fails(self):
+        entry = {"token": "SelectPane", "kind": "retired", "reason": "seeded", "file": "docs/specs/03g.md"}
+        self.tree.write_json(ALLOW, {"version": 1, "entries": [entry]})
+        self.tree.write("docs/specs/03g.md", "Nothing retired here.\n")
+        self.tree.write("docs/specs/02.md", "`SelectPane`\n")
+        out = self.run_check()
+        self.assert_rc(1, out)
+        self.assertIn("`SelectPane`: docs/specs/03g.md does not use it", out.stdout)
+        self.assertIn("docs/specs/02.md:1: `SelectPane`", out.stdout)
+
+    def test_a_file_limited_entry_that_is_a_real_proto_name_fails(self):
+        entry = {"token": "LogChunk", "kind": "retired", "reason": "seeded", "file": "docs/specs/a.md"}
+        self.tree.write_json(ALLOW, {"version": 1, "entries": [entry]})
+        self.tree.write("docs/specs/a.md", "`LogChunk`\n")
+        out = self.run_check()
+        self.assert_rc(1, out)
+        self.assertIn("is a real proto name", out.stdout)
+
+    def test_an_allowlist_file_that_is_not_a_string_fails_closed(self):
+        entry = {"token": "SelectPane", "kind": "retired", "reason": "seeded", "file": 3}
+        self.tree.write_json(ALLOW, {"version": 1, "entries": [entry]})
+        self.assert_rc(2, self.run_check())
+
     def test_an_allowlist_entry_without_a_reason_fails_closed(self):
         self.tree.write("docs/specs/a.md", "`PostToolUse`\n")
         self.tree.write_json(ALLOW, {"version": 1, "entries": [{"token": "PostToolUse", "kind": "hook", "reason": " "}]})

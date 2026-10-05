@@ -202,7 +202,8 @@ every backticked proto name in the checked docs must exist in `api/fleet`,
 read from the pinned buf's compiled image through `scripts/proto_image.py`.
 Its docstring lists the checked docs and the token rules; tokens that are not
 proto names on purpose are in `.agents/doc-names-allow.json`, one entry each
-with a reason, and an entry no doc uses any more fails.
+with a reason and, when only one doc may use the token, a `file`; an entry no
+doc uses any more (or that its file no longer uses) fails.
 
 ## Goal protocol
 
