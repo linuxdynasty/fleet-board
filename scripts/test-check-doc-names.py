@@ -133,10 +133,43 @@ class DocNameTests(unittest.TestCase):
         self.assert_rc(1, self.run_check())
 
     def test_syntactic_exclusions(self):
-        self.tree.write("docs/specs/s.md", "`api/Missing`, `Missing.md`, `events.proto`, `https://example.com/Nope`, "
-                                           "`X-Forwarded-For`, `PROJ-123`, `tmux -L fleet`, `<NAME>`, `A`, "
-                                           "`some_field`, `os.Getenv`, `create_time > \"2026-09-25T00:00:00Z\"`.\n")
+        self.tree.write("docs/specs/s.md", "`Missing.md`, `events.proto`, `docs/specs/README.md`, "
+                                           "`api/fleet/fixture/v1/fixture.proto`, `~/.config/fleet/policy.toml`, "
+                                           "`https://example.com/Nope/Path`, `www.Example.com/Nope`, "
+                                           "`X-Forwarded-For`, `PROJ-123`, `tmux -L fleet`, `<NAME>`, `<reason>`, "
+                                           "`<device id>`, `TRIAGE_KIND_<NAME>`, `<ENUM>_<NAME>`, `<Rpc>Request`, "
+                                           "`/signin?error=<REASON>`, `A`, `some_field`, `os.Getenv`, "
+                                           "`create_time > \"2026-09-25T00:00:00Z\"`.\n")
         self.assert_rc(0, self.run_check())
+
+    def test_names_around_slashes_arrows_and_angle_brackets_are_checked(self):
+        bad = ("ReadLog->FooBarTwo", "ReadLog/FooBarThree", "<FooBarFour>", "map<string, FooBarFive>",
+               "FooBarSix{/goal …}", "GET /fleet.fixture.v1.LogService/NoSuchRpc", "api/Missing",
+               "TERMINAL/SOMETIMES_DROP")
+        self.tree.write("docs/specs/s.md", "".join("`%s`\n" % span for span in bad))
+        self.tree.write_json(ALLOW, allow("GET"))
+        out = self.run_check()
+        self.assert_rc(1, out)
+        for line, token in enumerate(("FooBarTwo", "FooBarThree", "FooBarFour", "FooBarFive", "FooBarSix",
+                                      "NoSuchRpc", "Missing", "SOMETIMES_DROP"), 1):
+            with self.subTest(token=token):
+                self.assertIn("docs/specs/s.md:%d: `%s`" % (line, token), out.stdout)
+        for real in ("`ReadLog`", "`LogService`", "`fleet.fixture.v1.LogService`", "`TERMINAL`"):
+            self.assertNotIn(real, out.stdout)
+
+    def test_real_names_around_slashes_arrows_and_angle_brackets_pass(self):
+        self.tree.write("docs/specs/s.md", "`ReadLog->LogChunk`, `LogService/ReadLog`, `<LogChunk>`, "
+                                           "`map<string, Label>`, `LogChunk{/x …}`, `TERMINAL/NEVER_DROP`, "
+                                           "`GET /fleet.fixture.v1.LogService/ReadLog`.\n")
+        self.tree.write_json(ALLOW, allow("GET"))
+        self.assert_rc(0, self.run_check())
+
+    def test_a_mixed_case_name_with_an_underscore_is_checked(self):
+        self.tree.write("docs/specs/m.md", "`FooBar_Mixed` and `Log_Chunk.key`\n")
+        out = self.run_check()
+        self.assert_rc(1, out)
+        self.assertIn("`FooBar_Mixed`", out.stdout)
+        self.assertIn("`Log_Chunk.key`", out.stdout)
 
     def test_well_known_types_are_not_fleet_names(self):
         self.tree.write("docs/specs/w.md", "`Timestamp`\n")

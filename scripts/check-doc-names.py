@@ -15,11 +15,15 @@ docs/design-deployment-and-milestones.md. Not checked: the accepted ADRs
 (docs/adr/NNNN-*.md, never edited), docs/reviews/** and docs/research/**.
 
 Only inline code spans count; fenced code blocks are skipped, and a fence
-that never closes is a finding (the rest of that file is not checked). A span is
-skipped whole when it holds a `/` (paths, URLs) or ends in a file extension
-(README.md, events.proto). Inside a span, a token joined to `-`, `<` or `>`
-(X-Forwarded-For, tmux -L, <NAME>, TRIAGE_KIND_<NAME>) is not an identifier
-and is skipped. Every other token is checked by its shape:
+that never closes is a finding (the rest of that file is not checked). Inside a
+span every token is checked except the ones that are not names: a URL
+(https://..., www....), a file name (README.md, events.proto), a word joined to
+`-` (X-Forwarded-For, SHA-256, tmux -L), a placeholder in <...> that is
+SCREAMING or lower-case (<NAME>, <reason>), and the pieces of a template glued
+to one (TRIAGE_KIND_<NAME>, <Rpc>Request). `/` and `->` only separate names, so
+ListSessions/Foo, A->B, GET /fleet.hub.v1.FleetService/AttachTerminal,
+<GetFleetSummary> and map<string, Duration> are all checked. Each token is
+checked by its shape:
 
   UpperCamel             a message, enum, service, rpc or oneof name
   SCREAMING_SNAKE        an enum value, in full or as its short form (the value
@@ -28,6 +32,9 @@ and is skipped. Every other token is checked by its shape:
                          repeated field); Enum.VALUE, Service.Rpc, Message.Nested
   fleet.pkg.v1[.Type...] a fleet package, or a path that resolves under it; any
                          other fleet.* token is a finding
+
+  Upper_With_Under       starts upper-case, has a lower-case letter and a _: no
+                         proto name has that shape, so it is a finding
 
 lower_snake names and other lower-case-led tokens (os.Getenv) are not checked.
 A token that is not a proto name on purpose (a hook event, a Go type, an env
@@ -62,7 +69,9 @@ SPAN = re.compile(r"(?<!`)(`+)(?!`)(.+?)(?<!`)\1(?!`)", re.S)
 TOKEN = re.compile(r"(?<!\w)[A-Za-z_]\w*(?:\[\])?(?:\.[A-Za-z_]\w*(?:\[\])?)*")
 UPPER_CAMEL = re.compile(r"^[A-Z][A-Za-z0-9]*[a-z][A-Za-z0-9]*$")
 SCREAMING = re.compile(r"^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)*$")
-JOINED = "-<>"
+MIXED = re.compile(r"^[A-Z]\w*$")  # starts upper-case, not SCREAMING: Foo_Bar is no proto name shape
+ARROW = re.compile(r"->|=>")
+URL = re.compile(r"\b[A-Za-z][A-Za-z0-9+.-]*://\S*|\bwww\.\S*")
 
 
 class AllowlistError(Exception):
@@ -112,19 +121,50 @@ def blocks(text, unclosed=None):
         unclosed.append(fence_line)
 
 
+def angle_group(span, start, end):
+    """(index of <, index of >) when the token at start:end sits inside <...>, else None."""
+    opened = max(span.rfind("<", 0, start), span.rfind(">", 0, start))
+    if opened < 0 or span[opened] != "<":
+        return None
+    closes = [i for i in (span.find("<", end), span.find(">", end)) if i >= 0]
+    if not closes or span[min(closes)] != ">":
+        return None
+    return opened, min(closes)
+
+
+def is_name_part(span, start, end, token):
+    """False for a token that is not a name: a URL, a file name, a word joined to -, a placeholder."""
+    if FILE_NAME.search(token):
+        return False  # README.md, fleet.yaml
+    before = span[start - 1] if start else ""
+    after = span[end] if end < len(span) else ""
+    if "-" in (before, after):
+        return False  # X-Forwarded-For, SHA-256, tmux -L
+    if before == ">" or after == "<":
+        return False  # outside a placeholder: TRIAGE_KIND_<NAME>, <Rpc>Request
+    group = angle_group(span, start, end)
+    if group is None:
+        return True
+    close = group[1]
+    if close + 1 < len(span) and (span[close + 1].isalnum() or span[close + 1] == "_"):
+        return False  # <Rpc>Request: a template, not a name
+    return token[0].isupper() and not SCREAMING.match(token)  # <NAME>, <reason> are placeholders
+
+
 def span_tokens(text):
     """Yield (offset, token) for each token this check looks at."""
     for m in SPAN.finditer(text):
-        span = m.group(2)
-        stripped = span.strip()
-        if "/" in span or FILE_NAME.search(stripped) or stripped.startswith("www."):
-            continue
+        span = ARROW.sub(lambda a: " " * len(a.group(0)), m.group(2))
+        urls = [u.span() for u in URL.finditer(span)]
         for t in TOKEN.finditer(span):
-            before = span[t.start() - 1] if t.start() else ""
-            after = span[t.end()] if t.end() < len(span) else ""
-            if (before and before in JOINED) or (after and after in JOINED):
+            if any(a <= t.start() < b for a, b in urls):
                 continue
-            yield m.start(2) + t.start(), t.group(0)
+            if is_name_part(span, t.start(), t.end(), t.group(0)):
+                yield m.start(2) + t.start(), t.group(0)
+
+
+def mixed(token):
+    return bool(MIXED.match(token)) and "_" in token and any(c.islower() for c in token)
 
 
 def judge(contract, token):
@@ -135,11 +175,13 @@ def judge(contract, token):
             return True, None if contract.is_name(token) else "no message, enum, service, rpc or oneof has this name"
         if SCREAMING.match(token) and len(token) > 1:
             return True, None if contract.is_enum_value(token) else "no enum value has this name or short form"
+        if mixed(token):
+            return True, "not a proto name shape (UpperCamel names have no _)"
         return False, None
     head = segs[0].rstrip("[]")
     if token in contract.packages:
         return True, None
-    if UPPER_CAMEL.match(head) or any(token.startswith(p + ".") for p in contract.packages):
+    if UPPER_CAMEL.match(head) or mixed(head) or any(token.startswith(p + ".") for p in contract.packages):
         _, why = contract.resolve(token)
         return True, why
     if head == "fleet":
