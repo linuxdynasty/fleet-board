@@ -159,12 +159,17 @@ def write_link(child, parent):
 
 
 def record_links(payload):
-    """subagentStart: remember which conversation a helper belongs to (by subagent_id and conversation_id)."""
+    """subagentStart: remember which conversation a helper belongs to.
+
+    Links subagent_id, conversation_id and session_id (each when it differs from the parent) to
+    parent_conversation_id. A session id is safe to link: cursor-agent 2026.10.01 keeps session ids
+    per conversation (activeSessionIdsByConversationId), so one cannot belong to an unrelated chat.
+    """
     parent = payload.get("parent_conversation_id")
     if not valid_id(parent):
         note("subagentStart payload has no usable parent_conversation_id; no link recorded")
         return
-    for child in (payload.get("subagent_id"), payload.get("conversation_id")):
+    for child in (payload.get("subagent_id"), payload.get("conversation_id"), payload.get("session_id")):
         if valid_id(child):
             write_once(ROOT_PREFIX + parent, "\n")
             write_link(child, parent)

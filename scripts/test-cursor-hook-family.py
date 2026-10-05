@@ -42,6 +42,15 @@ CASES = {
 }
 CASES["session_id shared with the parent, all other ids unknown"] = (
     START_PARENT_CONVERSATION, {"conversation_id": UNLINKED, "session_id": CONVO})
+# A start that carries its own session id PS (not the parent's conversation id), and a helper whose later events
+# carry PS beside a conversation id that was never announced.
+PS, FRESH = "psess-0000000005", "fresh-0000000006"
+START_WITH_SESSION = {"subagent_id": SUB, "conversation_id": CONVO, "session_id": PS,
+                      "parent_conversation_id": CONVO}
+CASES["start session_id PS, start conversation is the parent's"] = (
+    START_WITH_SESSION, {"conversation_id": FRESH, "session_id": PS})
+CASES["start session_id PS, start conversation is the helper's"] = (
+    dict(START_WITH_SESSION, conversation_id=HELPER), {"conversation_id": FRESH, "session_id": PS})
 PARENT = {"conversation_id": CONVO, "session_id": CONVO}
 
 
@@ -115,6 +124,14 @@ class HelperSharingTests(FamilyBase):
         self.assertEqual(self.edit({"conversation_id": HELPER}), "deny")
         self.assertEqual(self.edit({"conversation_id": OTHER}), "allow")
         self.assertEqual(self.edit({"conversation_id": UNLINKED}), "deny")
+
+    def test_an_unrelated_chat_with_its_own_session_id_does_not_share(self):
+        self.start(**START_WITH_SESSION)
+        stranger = {"conversation_id": OTHER, "session_id": "psess-other-0007"}
+        self.read_skill(stranger)
+        self.assertEqual(self.edit(PARENT), "deny")
+        self.assertEqual(self.edit({"conversation_id": FRESH, "session_id": PS}), "deny")
+        self.assertEqual(self.edit(stranger), "allow")
 
     def test_a_link_to_one_parent_does_not_leak_to_siblings_chats(self):
         self.start(**START_BY_CONVERSATION)
