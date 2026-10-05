@@ -1,0 +1,118 @@
+# wakenet cost round 1, Mac mini (Apple M4 Pro, 12 cores, macOS 27.0.1), go1.27.1, 180 s per run, all runs in parallel
+# uptime start: 11:00  up 3 days,  5:39, 2 users, load averages: 2.10 2.67 2.18
+# uptime end:   11:03  up 3 days,  5:42, 2 users, load averages: 2.30 2.63 2.26
+
+## all-1s
+{"time":"2026-10-05T11:00:40.872401-04:00","event":"run_start","host":"ip-192-168-1-124.ec2.internal","goos":"darwin","goarch":"arm64","go":"go1.27.1","methods":"clock,sleepmark,ifpoll,push","interval":"1s","duration":"3m0s","jump_threshold":"2s","route_exec":false}
+{"time":"2026-10-05T11:03:40.875531-04:00","event":"summary","events":{"ifpoll":1,"push":114,"sleepmark":1},"relevant":{},"user_ms":53.096,"sys_ms":206.223,"maxrss":12484608,"vol_ctx_switches":4,"invol_ctx_switches":6216,"children_user_ms":0,"children_sys_ms":0}
+      180.00 real         0.05 user         0.20 sys
+            12648448  maximum resident set size
+                 983  page reclaims
+                 113  messages received
+                 152  signals received
+                   4  voluntary context switches
+                6242  involuntary context switches
+          1065289988  instructions retired
+           445651045  cycles elapsed
+             9781776  peak memory footprint
+rc=0
+
+## all
+{"time":"2026-10-05T11:00:40.871773-04:00","event":"run_start","host":"ip-192-168-1-124.ec2.internal","goos":"darwin","goarch":"arm64","go":"go1.27.1","methods":"clock,sleepmark,ifpoll,push","interval":"5s","duration":"3m0s","jump_threshold":"2s","route_exec":false}
+{"time":"2026-10-05T11:03:40.874492-04:00","event":"summary","events":{"ifpoll":1,"push":114,"sleepmark":1},"relevant":{},"user_ms":11.094,"sys_ms":46.289,"maxrss":9535488,"vol_ctx_switches":1,"invol_ctx_switches":1589,"children_user_ms":0,"children_sys_ms":0}
+      180.00 real         0.01 user         0.04 sys
+             9633792  maximum resident set size
+                 794  page reclaims
+                 113  messages received
+                  17  signals received
+                   1  voluntary context switches
+                1609  involuntary context switches
+           242172807  instructions retired
+           123905697  cycles elapsed
+             7078416  peak memory footprint
+rc=0
+
+## clock
+{"time":"2026-10-05T11:00:40.870032-04:00","event":"run_start","host":"ip-192-168-1-124.ec2.internal","goos":"darwin","goarch":"arm64","go":"go1.27.1","methods":"clock","interval":"5s","duration":"3m0s","jump_threshold":"2s","route_exec":false}
+{"time":"2026-10-05T11:03:40.871017-04:00","event":"summary","events":{},"relevant":{},"user_ms":2.45,"sys_ms":3.528,"maxrss":5963776,"vol_ctx_switches":1,"invol_ctx_switches":207,"children_user_ms":0,"children_sys_ms":0}
+      180.00 real         0.00 user         0.00 sys
+             6225920  maximum resident set size
+                 588  page reclaims
+                   1  voluntary context switches
+                 227  involuntary context switches
+            26185399  instructions retired
+            16915712  cycles elapsed
+             3818000  peak memory footprint
+rc=0
+
+## ifpoll-routeexec
+{"time":"2026-10-05T11:00:40.87068-04:00","event":"run_start","host":"ip-192-168-1-124.ec2.internal","goos":"darwin","goarch":"arm64","go":"go1.27.1","methods":"ifpoll","interval":"5s","duration":"3m0s","jump_threshold":"2s","route_exec":true}
+{"time":"2026-10-05T11:03:40.873081-04:00","event":"summary","events":{"ifpoll":1},"relevant":{},"user_ms":14.943,"sys_ms":71.404,"maxrss":9666560,"vol_ctx_switches":73,"invol_ctx_switches":2429,"children_user_ms":28.688,"children_sys_ms":60.655}
+      180.00 real         0.04 user         0.13 sys
+             9879552  maximum resident set size
+               14255  page reclaims
+                  36  page faults
+                  36  messages sent
+                  36  messages received
+                  61  signals received
+                  73  voluntary context switches
+                2681  involuntary context switches
+           339668177  instructions retired
+           187742924  cycles elapsed
+             7324200  peak memory footprint
+rc=0
+
+## ifpoll
+{"time":"2026-10-05T11:00:40.870681-04:00","event":"run_start","host":"ip-192-168-1-124.ec2.internal","goos":"darwin","goarch":"arm64","go":"go1.27.1","methods":"ifpoll","interval":"5s","duration":"3m0s","jump_threshold":"2s","route_exec":false}
+{"time":"2026-10-05T11:03:40.873398-04:00","event":"summary","events":{"ifpoll":1},"relevant":{},"user_ms":7.493,"sys_ms":36.551,"maxrss":8994816,"vol_ctx_switches":1,"invol_ctx_switches":838,"children_user_ms":0,"children_sys_ms":0}
+      180.00 real         0.00 user         0.03 sys
+             9224192  maximum resident set size
+                 768  page reclaims
+                  33  signals received
+                   1  voluntary context switches
+                 858  involuntary context switches
+           228287516  instructions retired
+            98888265  cycles elapsed
+             6783528  peak memory footprint
+rc=0
+
+## none
+{"time":"2026-10-05T11:00:40.87003-04:00","event":"run_start","host":"ip-192-168-1-124.ec2.internal","goos":"darwin","goarch":"arm64","go":"go1.27.1","methods":"none","interval":"5s","duration":"3m0s","jump_threshold":"2s","route_exec":false}
+{"time":"2026-10-05T11:03:40.871017-04:00","event":"summary","events":{},"relevant":{},"user_ms":1.199,"sys_ms":1.833,"maxrss":5816320,"vol_ctx_switches":1,"invol_ctx_switches":65,"children_user_ms":0,"children_sys_ms":0}
+      180.00 real         0.00 user         0.00 sys
+             6127616  maximum resident set size
+                 580  page reclaims
+                   1  voluntary context switches
+                  85  involuntary context switches
+            23510331  instructions retired
+            11907893  cycles elapsed
+             3752464  peak memory footprint
+rc=0
+
+## push
+{"time":"2026-10-05T11:00:40.87146-04:00","event":"run_start","host":"ip-192-168-1-124.ec2.internal","goos":"darwin","goarch":"arm64","go":"go1.27.1","methods":"push","interval":"5s","duration":"3m0s","jump_threshold":"2s","route_exec":false}
+{"time":"2026-10-05T11:03:40.874213-04:00","event":"summary","events":{"push":114},"relevant":{},"user_ms":4.301,"sys_ms":8.804,"maxrss":6012928,"vol_ctx_switches":1,"invol_ctx_switches":578,"children_user_ms":0,"children_sys_ms":0}
+      180.00 real         0.00 user         0.00 sys
+             6340608  maximum resident set size
+                 595  page reclaims
+                 113  messages received
+                   1  voluntary context switches
+                 597  involuntary context switches
+            33319104  instructions retired
+            29623094  cycles elapsed
+             3801616  peak memory footprint
+rc=0
+
+## sleepmark
+{"time":"2026-10-05T11:00:40.870023-04:00","event":"run_start","host":"ip-192-168-1-124.ec2.internal","goos":"darwin","goarch":"arm64","go":"go1.27.1","methods":"sleepmark","interval":"5s","duration":"3m0s","jump_threshold":"2s","route_exec":false}
+{"time":"2026-10-05T11:03:40.872413-04:00","event":"summary","events":{"sleepmark":1},"relevant":{},"user_ms":2.829,"sys_ms":4.938,"maxrss":6111232,"vol_ctx_switches":1,"invol_ctx_switches":251,"children_user_ms":0,"children_sys_ms":0}
+      180.00 real         0.00 user         0.00 sys
+             6307840  maximum resident set size
+                 591  page reclaims
+                   4  signals received
+                   1  voluntary context switches
+                 273  involuntary context switches
+            27906181  instructions retired
+            20113902  cycles elapsed
+             3850792  peak memory footprint
+rc=0

@@ -1,0 +1,63 @@
+# routing-socket delivery: 30 x '/sbin/route -n get 192.0.2.1' as trigger, push method, RTM_GET counted
+{"time":"2026-10-05T10:59:32.559355-04:00","event":"run_start","host":"ip-192-168-1-124.ec2.internal","goos":"darwin","goarch":"arm64","go":"go1.27.1","methods":"push","interval":"5s","duration":"20s","jump_threshold":"2s","route_exec":false}
+{"time":"2026-10-05T10:59:33.091015-04:00","event":"detected","method":"push","trigger":"trigger_1","first_event":"RTM_GET","latency_from_start_ms":28.37}
+{"time":"2026-10-05T10:59:33.091873-04:00","event":"trigger_ran","name":"trigger_1","cmd":"/sbin/route -n get 192.0.2.1 >/dev/null","took_ms":29.428,"output":""}
+{"time":"2026-10-05T10:59:33.623264-04:00","event":"detected","method":"push","trigger":"trigger_2","first_event":"RTM_GET","latency_from_start_ms":28.913}
+{"time":"2026-10-05T10:59:33.624315-04:00","event":"trigger_ran","name":"trigger_2","cmd":"/sbin/route -n get 192.0.2.1 >/dev/null","took_ms":30.158,"output":""}
+{"time":"2026-10-05T10:59:34.155136-04:00","event":"detected","method":"push","trigger":"trigger_3","first_event":"RTM_GET","latency_from_start_ms":30.021}
+{"time":"2026-10-05T10:59:34.156247-04:00","event":"trigger_ran","name":"trigger_3","cmd":"/sbin/route -n get 192.0.2.1 >/dev/null","took_ms":31.322,"output":""}
+{"time":"2026-10-05T10:59:34.686318-04:00","event":"detected","method":"push","trigger":"trigger_4","first_event":"RTM_GET","latency_from_start_ms":27.68}
+{"time":"2026-10-05T10:59:34.687147-04:00","event":"trigger_ran","name":"trigger_4","cmd":"/sbin/route -n get 192.0.2.1 >/dev/null","took_ms":28.586,"output":""}
+{"time":"2026-10-05T10:59:35.212349-04:00","event":"detected","method":"push","trigger":"trigger_5","first_event":"RTM_GET","latency_from_start_ms":22.803}
+{"time":"2026-10-05T10:59:35.21351-04:00","event":"trigger_ran","name":"trigger_5","cmd":"/sbin/route -n get 192.0.2.1 >/dev/null","took_ms":24.106,"output":""}
+{"time":"2026-10-05T10:59:35.744403-04:00","event":"detected","method":"push","trigger":"trigger_6","first_event":"RTM_GET","latency_from_start_ms":28.574}
+{"time":"2026-10-05T10:59:35.745064-04:00","event":"trigger_ran","name":"trigger_6","cmd":"/sbin/route -n get 192.0.2.1 >/dev/null","took_ms":29.34,"output":""}
+{"time":"2026-10-05T10:59:36.27712-04:00","event":"detected","method":"push","trigger":"trigger_7","first_event":"RTM_GET","latency_from_start_ms":29.663}
+{"time":"2026-10-05T10:59:36.278211-04:00","event":"trigger_ran","name":"trigger_7","cmd":"/sbin/route -n get 192.0.2.1 >/dev/null","took_ms":30.941,"output":""}
+{"time":"2026-10-05T10:59:36.800285-04:00","event":"detected","method":"push","trigger":"trigger_8","first_event":"RTM_GET","latency_from_start_ms":21.654}
+{"time":"2026-10-05T10:59:36.801175-04:00","event":"trigger_ran","name":"trigger_8","cmd":"/sbin/route -n get 192.0.2.1 >/dev/null","took_ms":22.685,"output":""}
+{"time":"2026-10-05T10:59:37.33174-04:00","event":"detected","method":"push","trigger":"trigger_9","first_event":"RTM_GET","latency_from_start_ms":29.306}
+{"time":"2026-10-05T10:59:37.332863-04:00","event":"trigger_ran","name":"trigger_9","cmd":"/sbin/route -n get 192.0.2.1 >/dev/null","took_ms":30.613,"output":""}
+{"time":"2026-10-05T10:59:37.854303-04:00","event":"detected","method":"push","trigger":"trigger_10","first_event":"RTM_GET","latency_from_start_ms":21.055}
+{"time":"2026-10-05T10:59:37.855316-04:00","event":"trigger_ran","name":"trigger_10","cmd":"/sbin/route -n get 192.0.2.1 >/dev/null","took_ms":22.203,"output":""}
+{"time":"2026-10-05T10:59:38.362307-04:00","event":"detected","method":"push","trigger":"trigger_11","first_event":"RTM_GET","latency_from_start_ms":4.785}
+{"time":"2026-10-05T10:59:38.362616-04:00","event":"trigger_ran","name":"trigger_11","cmd":"/sbin/route -n get 192.0.2.1 >/dev/null","took_ms":5.131,"output":""}
+{"time":"2026-10-05T10:59:38.881169-04:00","event":"detected","method":"push","trigger":"trigger_12","first_event":"RTM_GET","latency_from_start_ms":16.3}
+{"time":"2026-10-05T10:59:38.881933-04:00","event":"trigger_ran","name":"trigger_12","cmd":"/sbin/route -n get 192.0.2.1 >/dev/null","took_ms":17.184,"output":""}
+{"time":"2026-10-05T10:59:39.413704-04:00","event":"detected","method":"push","trigger":"trigger_13","first_event":"RTM_GET","latency_from_start_ms":29.499}
+{"time":"2026-10-05T10:59:39.414737-04:00","event":"trigger_ran","name":"trigger_13","cmd":"/sbin/route -n get 192.0.2.1 >/dev/null","took_ms":30.656,"output":""}
+{"time":"2026-10-05T10:59:39.933379-04:00","event":"detected","method":"push","trigger":"trigger_14","first_event":"RTM_GET","latency_from_start_ms":17.346}
+{"time":"2026-10-05T10:59:39.934247-04:00","event":"trigger_ran","name":"trigger_14","cmd":"/sbin/route -n get 192.0.2.1 >/dev/null","took_ms":18.334,"output":""}
+{"time":"2026-10-05T10:59:40.44187-04:00","event":"detected","method":"push","trigger":"trigger_15","first_event":"RTM_GET","latency_from_start_ms":5.511}
+{"time":"2026-10-05T10:59:40.442174-04:00","event":"trigger_ran","name":"trigger_15","cmd":"/sbin/route -n get 192.0.2.1 >/dev/null","took_ms":5.851,"output":""}
+{"time":"2026-10-05T10:59:40.949231-04:00","event":"detected","method":"push","trigger":"trigger_16","first_event":"RTM_GET","latency_from_start_ms":4.957}
+{"time":"2026-10-05T10:59:40.949527-04:00","event":"trigger_ran","name":"trigger_16","cmd":"/sbin/route -n get 192.0.2.1 >/dev/null","took_ms":5.294,"output":""}
+{"time":"2026-10-05T10:59:41.481097-04:00","event":"detected","method":"push","trigger":"trigger_17","first_event":"RTM_GET","latency_from_start_ms":29.371}
+{"time":"2026-10-05T10:59:41.482196-04:00","event":"trigger_ran","name":"trigger_17","cmd":"/sbin/route -n get 192.0.2.1 >/dev/null","took_ms":30.641,"output":""}
+{"time":"2026-10-05T10:59:42.013186-04:00","event":"detected","method":"push","trigger":"trigger_18","first_event":"RTM_GET","latency_from_start_ms":28.669}
+{"time":"2026-10-05T10:59:42.01411-04:00","event":"trigger_ran","name":"trigger_18","cmd":"/sbin/route -n get 192.0.2.1 >/dev/null","took_ms":29.797,"output":""}
+{"time":"2026-10-05T10:59:42.544921-04:00","event":"detected","method":"push","trigger":"trigger_19","first_event":"RTM_GET","latency_from_start_ms":28.303}
+{"time":"2026-10-05T10:59:42.545974-04:00","event":"trigger_ran","name":"trigger_19","cmd":"/sbin/route -n get 192.0.2.1 >/dev/null","took_ms":29.568,"output":""}
+{"time":"2026-10-05T10:59:43.077185-04:00","event":"detected","method":"push","trigger":"trigger_20","first_event":"RTM_GET","latency_from_start_ms":28.815}
+{"time":"2026-10-05T10:59:43.07833-04:00","event":"trigger_ran","name":"trigger_20","cmd":"/sbin/route -n get 192.0.2.1 >/dev/null","took_ms":30.137,"output":""}
+{"time":"2026-10-05T10:59:43.601332-04:00","event":"detected","method":"push","trigger":"trigger_21","first_event":"RTM_GET","latency_from_start_ms":22.627}
+{"time":"2026-10-05T10:59:43.602132-04:00","event":"trigger_ran","name":"trigger_21","cmd":"/sbin/route -n get 192.0.2.1 >/dev/null","took_ms":23.525,"output":""}
+{"time":"2026-10-05T10:59:44.117427-04:00","event":"detected","method":"push","trigger":"trigger_22","first_event":"RTM_GET","latency_from_start_ms":13.636}
+{"time":"2026-10-05T10:59:44.118069-04:00","event":"trigger_ran","name":"trigger_22","cmd":"/sbin/route -n get 192.0.2.1 >/dev/null","took_ms":14.342,"output":""}
+{"time":"2026-10-05T10:59:44.650638-04:00","event":"detected","method":"push","trigger":"trigger_23","first_event":"RTM_GET","latency_from_start_ms":30.363}
+{"time":"2026-10-05T10:59:44.651475-04:00","event":"trigger_ran","name":"trigger_23","cmd":"/sbin/route -n get 192.0.2.1 >/dev/null","took_ms":31.273,"output":""}
+{"time":"2026-10-05T10:59:45.183898-04:00","event":"detected","method":"push","trigger":"trigger_24","first_event":"RTM_GET","latency_from_start_ms":30.123}
+{"time":"2026-10-05T10:59:45.18482-04:00","event":"trigger_ran","name":"trigger_24","cmd":"/sbin/route -n get 192.0.2.1 >/dev/null","took_ms":31.148,"output":""}
+{"time":"2026-10-05T10:59:45.714232-04:00","event":"detected","method":"push","trigger":"trigger_25","first_event":"RTM_GET","latency_from_start_ms":28.891}
+{"time":"2026-10-05T10:59:45.715194-04:00","event":"trigger_ran","name":"trigger_25","cmd":"/sbin/route -n get 192.0.2.1 >/dev/null","took_ms":29.971,"output":""}
+{"time":"2026-10-05T10:59:46.234168-04:00","event":"detected","method":"push","trigger":"trigger_26","first_event":"RTM_GET","latency_from_start_ms":14.28}
+{"time":"2026-10-05T10:59:46.234878-04:00","event":"trigger_ran","name":"trigger_26","cmd":"/sbin/route -n get 192.0.2.1 >/dev/null","took_ms":15.086,"output":""}
+{"time":"2026-10-05T10:59:46.745517-04:00","event":"detected","method":"push","trigger":"trigger_27","first_event":"RTM_GET","latency_from_start_ms":8.48}
+{"time":"2026-10-05T10:59:46.746024-04:00","event":"trigger_ran","name":"trigger_27","cmd":"/sbin/route -n get 192.0.2.1 >/dev/null","took_ms":9.036,"output":""}
+{"time":"2026-10-05T10:59:47.25696-04:00","event":"detected","method":"push","trigger":"trigger_28","first_event":"RTM_GET","latency_from_start_ms":8.781}
+{"time":"2026-10-05T10:59:47.25746-04:00","event":"trigger_ran","name":"trigger_28","cmd":"/sbin/route -n get 192.0.2.1 >/dev/null","took_ms":9.325,"output":""}
+{"time":"2026-10-05T10:59:47.773494-04:00","event":"detected","method":"push","trigger":"trigger_29","first_event":"RTM_GET","latency_from_start_ms":13.849}
+{"time":"2026-10-05T10:59:47.774158-04:00","event":"trigger_ran","name":"trigger_29","cmd":"/sbin/route -n get 192.0.2.1 >/dev/null","took_ms":14.582,"output":""}
+{"time":"2026-10-05T10:59:48.300805-04:00","event":"detected","method":"push","trigger":"trigger_30","first_event":"RTM_GET","latency_from_start_ms":24.283}
+{"time":"2026-10-05T10:59:48.301777-04:00","event":"trigger_ran","name":"trigger_30","cmd":"/sbin/route -n get 192.0.2.1 >/dev/null","took_ms":25.437,"output":""}
+{"time":"2026-10-05T10:59:52.562526-04:00","event":"summary","events":{"push":37},"relevant":{"push":30},"user_ms":24.813,"sys_ms":98.822,"maxrss":7208960,"vol_ctx_switches":61,"invol_ctx_switches":2650,"children_user_ms":121.27,"children_sys_ms":392.331}
