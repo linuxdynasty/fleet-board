@@ -87,6 +87,13 @@ jobs:
       - name: Every backticked proto name in the docs is in api/fleet
         run: make doc-names
 
+      - name: Generated spec tables match the proto comment tags
+        run: make doc-tables
+
+      # A report until plan row 17: findings exit 0, a broken input fails.
+      - name: v1 capabilities no test names (report)
+        run: make capability-tests
+
       - name: go.mod and go.sum are tidy
         run: make mod-check
 

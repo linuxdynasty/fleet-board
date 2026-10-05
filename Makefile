@@ -34,7 +34,8 @@ ACTIONLINT := go run github.com/rhysd/actionlint/cmd/actionlint@$(ACTIONLINT_VER
 RACE_CGO := $(if $(filter Darwin,$(shell uname -s)),0,1)
 
 .PHONY: tools versions gen build smoke proto-check ts-check mod-check fmt fmt-check
-.PHONY: vet test lint actionlint selftest diff-check doc-names docs-stale docs-stale-ci gates hooks
+.PHONY: vet test lint actionlint selftest diff-check doc-names doc-tables capability-tests
+.PHONY: docs-stale docs-stale-ci gates hooks
 
 # tools builds the pinned linters into .bin/. A stamp file per tool names the
 # tool version and the Go version it was built with, so a new pin, a Go upgrade
@@ -139,6 +140,8 @@ selftest: tools
 	python3 scripts/test-proto-image.py
 	python3 scripts/test-check-doc-names.py
 	python3 scripts/test-check-docs-stale.py
+	python3 scripts/test-gen-doc-tables.py
+	python3 scripts/test-report-capability-tests.py
 
 # diff-check fails on a file named like a git ref (HEAD, main, ...) at any path,
 # tracked or not yet added: it makes `git diff HEAD` ambiguous and one was once
@@ -156,6 +159,17 @@ diff-check:
 # deliberate non-proto tokens are in .agents/doc-names-allow.json.
 doc-names:
 	python3 scripts/check-doc-names.py
+
+# doc-tables fails when a generated table in the specs (02k, 02d, 02i, 02) no
+# longer matches the proto comment tags, or a tag breaks the rules in 02e,
+# "Comment tags". scripts/gen-doc-tables.py --write regenerates the tables.
+doc-tables:
+	python3 scripts/gen-doc-tables.py --check
+
+# capability-tests lists the v1 capabilities in 01 that no test names. It is a
+# report until plan row 17: findings exit 0, a broken input fails.
+capability-tests:
+	python3 scripts/report-capability-tests.py
 
 # docs-stale prints the hook reminders and always exits 0. docs-stale-ci is the
 # blocking check (plan row 1b): a change in BASE_REF..HEAD to a folder mapped in
@@ -181,6 +195,8 @@ gates: tools
 	$(MAKE) gen
 	$(MAKE) proto-check
 	$(MAKE) doc-names
+	$(MAKE) doc-tables
+	$(MAKE) capability-tests
 	$(MAKE) build
 	$(MAKE) smoke
 	$(MAKE) ts-check

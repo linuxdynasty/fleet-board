@@ -205,6 +205,16 @@ proto names on purpose are in `.agents/doc-names-allow.json`, one entry each
 with a reason and, when only one doc may use the token, a `file`; an entry no
 doc uses any more (or that its file no longer uses) fails.
 
+`scripts/gen-doc-tables.py` (`make doc-tables` runs `--check`) is the third:
+the release tables in 02k, the scope tables in 02d, the delivery table in 02i
+and the capability map in 02 are generated from the proto comment tags
+(02e, "Comment tags") between the script's begin and end markers. A
+tag that breaks the rules, a hand edit inside a block, or a tag change without
+`--write` fails it. `scripts/report-capability-tests.py`
+(`make capability-tests`) lists the v1 capabilities in 01 that no test names;
+until plan row 17 it reports and exits 0, and fails only when it cannot read
+its input.
+
 ## Goal protocol
 
 `goal-refresh.sh` writes `.claude/active-goal.<session_id>` (gitignored; the
@@ -260,6 +270,8 @@ python3 scripts/test-cursor-hook-edges.py  # timeouts, bad output, deep JSON, st
 scripts/verify-agent-canon.sh          # maps name real skills and specs; configs reference real scripts
 python3 scripts/test-check-docs-stale.py   # hook mode, --ci, the trailer, --check-map (make selftest)
 python3 scripts/test-check-doc-names.py    # the doc-name gate against a fixture contract (make selftest)
+python3 scripts/test-gen-doc-tables.py     # tag rules and generated blocks against a fixture tree (make selftest)
+python3 scripts/test-report-capability-tests.py  # the capability report against a fixture tree (make selftest)
 ```
 
 `test-dev-hooks.sh` feeds synthetic payloads to the real scripts and runs each
