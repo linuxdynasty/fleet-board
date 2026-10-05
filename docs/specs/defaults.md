@@ -124,7 +124,8 @@ spec change. "Decided here" marks a value no earlier document gave.
 | Pairing code; attach ticket; sign-in ceremony; registration session | 10 min; 60 s; 5 min; 15 min | | 02d, 02f | fixed |
 | `passkey_sign_in`, `github_sign_in` | on once the owner has registered that credential type | | settings.proto | `HubSettings` (ADMIN) |
 | `log_size_cap_bytes`; `log_retention` | 50 GiB; none | | ADR 0010, 0015 | `HubSettings` (ADMIN) |
-| Writer batch | at most 100 messages or 250 ms | | ADR 0014 | fixed |
+| Writer batch | at most 100 messages or 250 ms after the batch's first message | | ADR 0014 | fixed |
+| Writer queue (jobs waiting for the writer; submitting waits when it is full) | 1,000 (ten full batches) | jobs | [03f](03f-hub-internals.md), plan row 2 | fixed |
 | Read pool | 10 connections | | ADR 0014 | fixed |
 | Watch `CHECKPOINT` interval on an idle stream (the checkpoint interval) | 30 | s | [02c](02c-hub-watch-and-filters.md) | fixed |
 | `FLEET_SUMMARY` Watch message (the summary interval) | at most 1 | per s | 02c | fixed |

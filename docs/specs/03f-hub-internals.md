@@ -83,6 +83,32 @@ Log streams have their own chain (`LogAck`, `pause`). The fan-out bus never
 blocks the writer: slow browsers lose summaries, never goal, triage or command
 notifications (those are re-read from the store on reconnect anyway).
 
+### The writer's job contract
+
+`internal/store` implements the writer the same way for `state.db`, `logs.db`
+and `agent.db` (plan row 2):
+
+- **A write is a job:** a function the writer runs inside the batch
+  transaction. It touches only that transaction: no network call, no wait on
+  another goroutine.
+- **Batches** close at 100 jobs or 250 ms after their first job, whichever
+  comes first ([defaults](defaults.md)), and commit as one BEGIN IMMEDIATE
+  transaction. A lone job therefore waits at most the window plus the commit.
+- **One job's failure stays its own.** Each job runs under its own savepoint;
+  a job that returns an error (a unique-constraint loss from the race table
+  above, for example) is rolled back alone and the rest of the batch commits.
+  If the transaction itself breaks, every job in the batch gets the error.
+- **Outcomes follow the commit.** A job's result reaches its caller only after
+  the commit is durable, so an ack sent on it (`LogAck`, `CommandAck`,
+  `ResultAck`) is never ahead of the disk.
+- **The queue is bounded** (the writer queue in [defaults](defaults.md));
+  submitting waits while it is full. This is where the ingest channel's
+  backpressure reaches the writer.
+- **Migrations** are forward-only and numbered from 1, each committed with its
+  row in `schema_migrations` (version, name, a checksum of its SQL, time). A
+  binary refuses a file with a newer version or an applied migration whose SQL
+  changed.
+
 ## Data model sketch
 
 Entities and keys the workflows need; no SQL. "Writes" are steady-state rates
