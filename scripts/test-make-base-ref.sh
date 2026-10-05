@@ -6,7 +6,7 @@
 #
 # Two kinds of case, both seeded:
 #   - `make -n` prints each recipe; the raw hostile value must appear nowhere
-#     in it (test, lint, diff-check and gates all read BASE_REF);
+#     in it (test, lint, diff-check, docs-stale-ci and gates all read BASE_REF);
 #   - `make diff-check` really runs, in a throwaway repo, with a value that would
 #     create a marker file if it were executed; the marker must not exist.
 # Runs on the macOS system bash 3.2. Needs make and git.
@@ -32,7 +32,7 @@ hostile="x; touch $marker"
 spaced="no such ref"
 
 # -n cases: the recipe text must not contain the raw value.
-for target in test lint diff-check gates; do
+for target in test lint diff-check docs-stale-ci gates; do
   out="$(cd "$root" && make -n "$target" BASE_REF="$hostile" 2>&1)"
   case "$out" in
     *"touch $marker"*) bad "make -n $target pastes BASE_REF into the recipe text" ;;

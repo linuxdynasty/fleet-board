@@ -19,6 +19,8 @@ scripts/agent-roles.py        renders the role files below; --check detects drif
 scripts/verify-agent-canon.sh checks the rendered files, skill links, frontmatter,
                               the skill path map and the hook configs
 .agents/skill-paths.json      path-to-skill map read by the skill-nudge hook
+.agents/doc-paths.json        folder-to-spec map read by check-docs-stale.py (hooks.md)
+.agents/doc-names-allow.json  backticked doc tokens that are not proto names on purpose
 .claude/hooks/                development hooks shared by Claude, Codex, Muse and Cursor
 .claude/settings.json, .codex/hooks.json, .muse/hooks.json, .cursor/hooks.json   hook wiring
 scripts/cursor-hook.py        adapter: runs those hook scripts from Cursor's native hooks (hooks.md)
@@ -46,6 +48,13 @@ scripts/plan-issues.py        writes each plan row's GitHub issue body from the 
                               (--print, --check, --apply; ADR 0026)
 scripts/test-agent-roles.py   self-test for agent-roles.py (make selftest)
 scripts/test-plan-issues.py   self-test for plan-issues.py, no network; test-dev-hooks.sh runs it
+scripts/check-docs-stale.py   doc-staleness reminders (hook mode) and the blocking --ci check
+                              (make docs-stale-ci); validates doc-paths.json (--check-map)
+scripts/check-doc-names.py    every backticked proto name in the docs is in api/fleet (make doc-names)
+scripts/proto_image.py        loads the contract from the pinned buf's compiled image, for the
+                              doc-drift scripts (names, field types, comments)
+scripts/test-check-docs-stale.py, test-check-doc-names.py, test-proto-image.py,
+  proto_image_testkit.py      seeded cases for the three above (make selftest)
 .claude/agents/*.md           generated (Claude Code subagents)
 .codex/agents/*.toml          generated (Codex custom agents)
 .opencode/agent/*.md          generated (OpenCode agents)

@@ -34,7 +34,7 @@ ACTIONLINT := go run github.com/rhysd/actionlint/cmd/actionlint@$(ACTIONLINT_VER
 RACE_CGO := $(if $(filter Darwin,$(shell uname -s)),0,1)
 
 .PHONY: tools versions gen build smoke proto-check ts-check mod-check fmt fmt-check
-.PHONY: vet test lint actionlint selftest diff-check docs-stale gates hooks
+.PHONY: vet test lint actionlint selftest diff-check doc-names docs-stale docs-stale-ci gates hooks
 
 # tools builds the pinned linters into .bin/. A stamp file per tool names the
 # tool version and the Go version it was built with, so a new pin, a Go upgrade
@@ -136,6 +136,9 @@ selftest: tools
 	python3 scripts/test-agent-roles.py
 	python3 scripts/test-cursor-hook.py
 	python3 scripts/test-cursor-hook-edges.py
+	python3 scripts/test-proto-image.py
+	python3 scripts/test-check-doc-names.py
+	python3 scripts/test-check-docs-stale.py
 
 # diff-check fails on a file named like a git ref (HEAD, main, ...) at any path,
 # tracked or not yet added: it makes `git diff HEAD` ambiguous and one was once
@@ -148,9 +151,21 @@ diff-check:
 	@base="$$(git merge-base "$$BASE_REF" HEAD 2>/dev/null || true)"; \
 	if [ -n "$$base" ]; then git diff --check "$$base"; else git diff --check; fi
 
-# docs-stale is advisory: it prints reminders and always exits 0.
+# doc-names fails when a backticked proto name in the checked docs is not in
+# api/fleet (plan row 1b). It reads the contract from the pinned buf's image;
+# deliberate non-proto tokens are in .agents/doc-names-allow.json.
+doc-names:
+	python3 scripts/check-doc-names.py
+
+# docs-stale prints the hook reminders and always exits 0. docs-stale-ci is the
+# blocking check (plan row 1b): a change in BASE_REF..HEAD to a folder mapped in
+# .agents/doc-paths.json changes one of its specs or a commit carries
+# `No-Doc-Change: <reason>`, and every changed Go package has its three docs.
 docs-stale:
 	python3 scripts/check-docs-stale.py
+
+docs-stale-ci:
+	python3 scripts/check-docs-stale.py --ci --range "$$BASE_REF"..HEAD
 
 # gates is the whole local gate, in the order of AGENTS.md "Local Gates". It
 # prints the tool versions it used before it runs anything.
@@ -165,6 +180,7 @@ gates: tools
 	scripts/check-versions.sh
 	$(MAKE) gen
 	$(MAKE) proto-check
+	$(MAKE) doc-names
 	$(MAKE) build
 	$(MAKE) smoke
 	$(MAKE) ts-check
@@ -178,6 +194,7 @@ gates: tools
 	python3 scripts/agent-roles.py --check
 	$(MAKE) selftest
 	$(MAKE) diff-check
+	$(MAKE) docs-stale-ci
 
 # hooks turns on the pre-push guard for this clone and all its worktrees.
 hooks:

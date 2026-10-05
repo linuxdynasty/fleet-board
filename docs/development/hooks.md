@@ -22,7 +22,7 @@ three marked **blocking** can stop anything.
 | `skill-nudge.sh` | Refuses an edit to a path governed by a project skill until that skill is loaded this session | **blocking** (exit 2) |
 | `skill-loaded.sh` | Records each skill load as a marker file; never blocks | side effect |
 | `on-compact.sh` | After compaction or resume: clears this session's skill markers, then re-injects the AGENTS.md pointer, the active goal and the names of the skills that had been loaded | advisory |
-| `doc-staleness.sh` | After an edit: Go package docs (doc.go, README.md, AGENTS.md) older than or missing next to changed source; a changed `.proto` whose contract specs have not changed | advisory |
+| `doc-staleness.sh` | After an edit: Go package docs (doc.go, README.md, AGENTS.md) older than or missing next to changed source; a change in a folder mapped in `.agents/doc-paths.json` (a `.proto` included) none of whose specs has changed. `make docs-stale-ci` and CI run the same script with `--ci`, which blocks ([Doc staleness and the folder map](#doc-staleness-and-the-folder-map)) | advisory |
 | `goal-continue.sh` | Refuses to end a turn while this session's goal is unfinished | **blocking** (`decision: block`) |
 | `goal-refresh.sh` | `/goal` producer; restates the active goal on every prompt | side effect |
 | `scripts/goal-role-router.py` | Routes `/goal` prompts naming skills to roles in `.agents/roles.json` with the tier's model binding; on Claude `Agent` calls drops an unrequested model override | advisory / rewrite |
@@ -174,6 +174,36 @@ requirement is per session and skill, so loading `fleet-go` once covers every
 later Go edit. Compaction clears the markers (`on-compact.sh`), because a
 resume keeps the session id but discards skill content.
 
+## Doc staleness and the folder map
+
+`.agents/doc-paths.json` maps folders to the specs that describe them; the
+globs work like `skill-paths.json` above. Each rule names its globs and its
+specs; a change under the globs (and none of the rule's `exclude` globs) is
+covered when ANY ONE of its specs changes too. A rule may name a folder that
+does not exist yet, but every spec must exist: `check-docs-stale.py
+--check-map` checks that, and `verify-agent-canon.sh` runs it. `unmapped`
+lists the folders no doc names a spec for, with the reason.
+
+`scripts/check-docs-stale.py` has two modes on that one map:
+
+- **Hook mode** (no flags): the reminder above. It reads `git status`, never
+  fails, and compares file times only here.
+- **`--ci --range A..B`** (`make docs-stale-ci` with `"$BASE_REF"..HEAD`; CI
+  with the PR's base and head): exit 1 when a mapped folder changed in the
+  range and none of its specs did, or when a changed Go package lacks
+  doc.go, README.md or AGENTS.md; exit 2 when git fails, the range does not
+  resolve or the map is invalid. A commit message line
+  `No-Doc-Change: <reason>` in the range covers every mapped folder (not the
+  package docs). A blank reason or a placeholder (TODO, TBD, n/a, none, -)
+  does not count, and a PR body never does.
+
+`scripts/check-doc-names.py` (`make doc-names`) is the other doc-drift gate:
+every backticked proto name in the checked docs must exist in `api/fleet`,
+read from the pinned buf's compiled image through `scripts/proto_image.py`.
+Its docstring lists the checked docs and the token rules; tokens that are not
+proto names on purpose are in `.agents/doc-names-allow.json`, one entry each
+with a reason, and an entry no doc uses any more fails.
+
 ## Goal protocol
 
 `goal-refresh.sh` writes `.claude/active-goal.<session_id>` (gitignored; the
@@ -226,7 +256,9 @@ python3 scripts/test-goal-role-router.py
 python3 scripts/test-codex-spawn-guard.py
 python3 scripts/test-cursor-hook.py    # Cursor adapter and .cursor/hooks.json, Cursor-shaped payloads (make selftest)
 python3 scripts/test-cursor-hook-edges.py  # timeouts, bad output, deep JSON, stop status, skill reads (make selftest)
-scripts/verify-agent-canon.sh          # map names real skills; configs reference real scripts
+scripts/verify-agent-canon.sh          # maps name real skills and specs; configs reference real scripts
+python3 scripts/test-check-docs-stale.py   # hook mode, --ci, the trailer, --check-map (make selftest)
+python3 scripts/test-check-doc-names.py    # the doc-name gate against a fixture contract (make selftest)
 ```
 
 `test-dev-hooks.sh` feeds synthetic payloads to the real scripts and runs each
