@@ -1,6 +1,6 @@
 {
  "version": 1,
- "note": "Folder-to-spec map for scripts/check-docs-stale.py (plan row 1b). A change under a rule's globs changes ANY ONE of its specs, or a commit carries `No-Doc-Change: <reason>`. Globs follow .agents/skill-paths.json. Code folders come from the spec each line of the v1 plan section 4 names; proto folders from the specs whose header names that package.",
+ "note": "Folder-to-spec map for scripts/check-docs-stale.py (plan row 1b). A change under a rule's globs changes ANY ONE of its specs, or a commit carries `No-Doc-Change: <reason>`. Globs follow .agents/skill-paths.json. A code folder maps to the specs that define its capabilities or name the folder (each rule's note cites the section); proto folders map to the specs whose header names that package. Specs only, never ADRs, which are not edited. A folder stays in unmapped only when no spec defines it.",
  "rules": [
   {"globs": ["api/fleet/agent/**"], "specs": ["docs/specs/02-contracts.md", "docs/specs/02l-versioning-errors-and-decisions.md", "docs/specs/02g-agent-security.md", "docs/specs/02h-goal-binding-and-pane-signals.md", "docs/specs/02i-delivery-and-sequencing.md", "docs/specs/03k-observed-goals.md", "docs/specs/05-insights.md", "docs/specs/05b-observability.md", "docs/specs/ui-contract-map.md"], "note": "fleet.agent.v1: 02 and 02l own every package; 02g, 02h, 02i, 03k, 05, 05b name agent/v1 files in their Output; ui-contract-map names api/fleet/*/v1"},
   {"globs": ["api/fleet/hub/**"], "specs": ["docs/specs/02-contracts.md", "docs/specs/02l-versioning-errors-and-decisions.md", "docs/specs/02b-hub-api.md", "docs/specs/02m-hub-api-actions-and-audit.md", "docs/specs/02c-hub-watch-and-filters.md", "docs/specs/02d-hub-authz.md", "docs/specs/02f-hub-authentication.md", "docs/specs/02g-agent-security.md", "docs/specs/02h-goal-binding-and-pane-signals.md", "docs/specs/02k-v1-surface-and-cli.md", "docs/specs/03i-routines.md", "docs/specs/03j-provider-sync-and-trust.md", "docs/specs/03k-observed-goals.md", "docs/specs/05-insights.md", "docs/specs/05b-observability.md", "docs/specs/ui-contract-map.md"], "note": "fleet.hub.v1: 02b and its second half 02m; the companions and specs whose header names hub/v1 files"},
@@ -33,22 +33,22 @@
   {"globs": ["internal/agent/hooks/**", "hooks/**"], "specs": ["docs/specs/01d-goal-hooks.md"], "exclude": ["*.md"]},
   {"globs": ["internal/agent/logship/**"], "specs": ["docs/specs/01f-agent-control-goals-and-policy.md", "docs/specs/01-agent-capabilities.md"], "exclude": ["*.md"], "note": "capabilities K1 and K2"},
   {"globs": ["internal/agent/attach/**"], "specs": ["docs/specs/01f-agent-control-goals-and-policy.md", "docs/specs/01-agent-capabilities.md"], "exclude": ["*.md"], "note": "capability J1"},
+  {"globs": ["internal/store/**"], "specs": ["docs/specs/03f-hub-internals.md", "docs/specs/04-technology-review.md"], "exclude": ["*.md"], "note": "03f Concurrency model (the single writer) and Data model sketch; 04 Q1 Durable store (pragmas, one writer, batches) and Q9 Agent-side persistence"},
+  {"globs": ["internal/hub/gateway/**"], "specs": ["docs/specs/02-contracts.md", "docs/specs/02i-delivery-and-sequencing.md", "docs/specs/03-workflows.md"], "exclude": ["*.md"], "note": "AgentService: 02 Package layout and Wire model; 02i delivery classes, sequence numbers, connection epoch; 03 W1 and W2 (hub side of connect and reconnect)"},
+  {"globs": ["internal/hub/ca/**"], "specs": ["docs/specs/02g-agent-security.md", "docs/specs/03f-hub-internals.md"], "exclude": ["*.md"], "note": "02g Enrollment trust anchor and retry (A1), Hub identity and restore, Machine lifecycle: revoke and delete; 03f Hub identity, backup and restore"},
+  {"globs": ["internal/hub/integration/**"], "specs": ["docs/specs/03j-provider-sync-and-trust.md"], "exclude": ["*.md"], "note": "03j Provider interface in use: the adapter's queries, cursors, rate limits and errors"},
+  {"globs": ["internal/seed/**"], "specs": ["docs/specs/02k-v1-surface-and-cli.md"], "exclude": ["*.md"], "note": "02k The test seed"},
+  {"globs": ["internal/agent/conn/**"], "specs": ["docs/specs/02g-agent-security.md", "docs/specs/03-workflows.md", "docs/specs/02i-delivery-and-sequencing.md"], "exclude": ["*.md"], "note": "02g Enrollment trust anchor and retry (A1); 03 W1 Enrollment and first connect (discovery A2, backoff) and W2 Reconnect; 02i Connection epoch"},
+  {"globs": ["internal/agent/probe/**"], "specs": ["docs/specs/01-agent-capabilities.md"], "exclude": ["*.md"], "note": "01 D1 Probe session on the fleet-probe server"},
+  {"globs": ["internal/agent/goals/**"], "specs": ["docs/specs/01f-agent-control-goals-and-policy.md", "docs/specs/01-agent-capabilities.md", "docs/specs/02h-goal-binding-and-pane-signals.md", "docs/specs/03k-observed-goals.md"], "exclude": ["*.md"], "note": "01f G2, G5, H1, H3; 01 E9 (observed-goal attribution); 02h Goal registry, Observed goals (v1), Repo identity; 03k"},
+  {"globs": ["internal/agent/policy/**"], "specs": ["docs/specs/03e-settings-and-drift.md", "docs/specs/01f-agent-control-goals-and-policy.md"], "exclude": ["*.md"], "note": "03e W10 The local policy file (L1): every key, type and default (plan row 6); 01f L1, L2 and M1"},
+  {"globs": ["internal/agent/doctor/**"], "specs": ["docs/specs/01f-agent-control-goals-and-policy.md", "docs/specs/03e-settings-and-drift.md"], "exclude": ["*.md"], "note": "01f M3 doctor; 03e W10 says what doctor reports about policy and its defaults"},
+  {"globs": ["internal/harness/**"], "specs": ["docs/specs/01-agent-capabilities.md", "docs/specs/01b-harness-commands.md"], "exclude": ["*.md"], "note": "01 C. Harnesses and D. Usage (parsers); 01b Harness command catalog"},
+  {"globs": ["cmd/**"], "specs": ["docs/specs/02k-v1-surface-and-cli.md"], "exclude": ["*.md"], "note": "02k Commands of the three programs (fleetd, fleet-agent, fleet)"},
+  {"globs": ["web/**"], "specs": ["docs/specs/ui-contract-map.md", "docs/specs/04-technology-review.md"], "exclude": ["*.md"], "note": "ui-contract-map: every view and the contract it reads; 04 UI build and serve"},
   {"globs": ["scripts/**", ".claude/hooks/**", ".githooks/**", ".github/workflows/**", "Makefile", "tool-versions.env", ".agents/roles.json", ".agents/skill-paths.json", ".agents/doc-paths.json"], "specs": ["docs/development/README.md", "docs/development/hooks.md", "docs/development/agent-guide.md"], "note": "docs/development/README.md lists each of these files; hooks.md and agent-guide.md describe the hooks, gates and make targets"}
  ],
  "unmapped": {
-  "internal/store/**": "plan section 4 names only ADR 0014, and ADRs are not edited",
-  "internal/hub/gateway/**": "plan section 4 names no spec",
-  "internal/hub/ca/**": "plan section 4 names no spec",
-  "internal/hub/integration/**": "plan section 4 names only ADR 0020",
-  "internal/seed/**": "plan section 4 names only PR 12",
-  "internal/agent/conn/**": "plan section 4 names no spec",
-  "internal/agent/probe/**": "plan section 4 names no spec",
-  "internal/agent/goals/**": "plan section 4 names no spec",
-  "internal/agent/policy/**": "plan section 4 names no spec",
-  "internal/agent/doctor/**": "plan section 4 names no spec",
-  "internal/harness/**": "plan section 4 names no spec",
-  "cmd/**": "plan section 4 names no spec",
-  "web/**": "plan section 4 names only ADRs 0007 and 0020",
   ".agents/skills/**": "skills are documents themselves",
   ".agents/doc-names-allow.json": "data of the doc-name check; it changes with the docs it covers"
  }

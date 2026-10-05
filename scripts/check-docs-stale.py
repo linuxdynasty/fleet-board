@@ -20,8 +20,7 @@ Globs follow .agents/skill-paths.json (.claude/hooks/lib/skill_paths.py): a
 glob with a "/" is anchored to the repo-relative path, "**/" is zero or more
 directories, and a glob with no "/" matches any one path component. A rule may
 name a folder that does not exist yet; every spec it names must exist.
-"unmapped" lists folders no doc names a spec for, with a reason; it is
-informational.
+"unmapped" lists folders no spec defines, with a reason; it is informational.
 
 Blocking mode, over the files changed in A...B and the commits in A..B:
 1. Mapped folders. A rule matched by a changed file needs one of its specs

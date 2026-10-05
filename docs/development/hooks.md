@@ -181,8 +181,10 @@ globs work like `skill-paths.json` above. Each rule names its globs and its
 specs; a change under the globs (and none of the rule's `exclude` globs) is
 covered when ANY ONE of its specs changes too. A rule may name a folder that
 does not exist yet, but every spec must exist: `check-docs-stale.py
---check-map` checks that, and `verify-agent-canon.sh` runs it. `unmapped`
-lists the folders no doc names a spec for, with the reason.
+--check-map` checks that, and `verify-agent-canon.sh` runs it. A code folder
+maps to the specs that define its capabilities or name the folder, never to
+ADRs; each rule's note cites the section. `unmapped` lists only the folders no
+spec defines, with the reason.
 
 `scripts/check-docs-stale.py` has two modes on that one map:
 

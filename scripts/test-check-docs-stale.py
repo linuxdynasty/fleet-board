@@ -130,14 +130,37 @@ class DocsStaleTests(unittest.TestCase):
         self.assert_rc(1, out)
         self.assertIn("internal/caf\u00e9: missing AGENTS.md", out.stdout)
 
-    def test_a_new_api_package_needs_02_or_02e_under_the_real_map(self):
-        real = json.loads((ROOT / ".agents/doc-paths.json").read_text())
+    def real_map(self):
+        """Commit the repo's own map with a stub for every spec it names; return that commit."""
+        real = json.loads((ROOT / ".agents/doc-paths.json").read_text(encoding="utf-8"))
         self.write(".agents/doc-paths.json", json.dumps(real))
         for rule in real["rules"]:
             for spec in rule["specs"]:
                 self.write(spec, "# spec\n")
         self.commit("real map")
-        base = self.git("rev-parse", "HEAD").strip()
+        return self.git("rev-parse", "HEAD").strip()
+
+    def test_a_new_package_in_a_folder_a_spec_defines_needs_that_spec(self):
+        base = self.real_map()
+        for folder, spec in (("internal/agent/policy", "docs/specs/03e-settings-and-drift.md"),
+                             ("internal/agent/goals", "docs/specs/01f-agent-control-goals-and-policy.md"),
+                             ("internal/harness/claude", "docs/specs/01b-harness-commands.md"),
+                             ("internal/hub/gateway", "docs/specs/02i-delivery-and-sequencing.md"),
+                             ("internal/store", "docs/specs/03f-hub-internals.md")):
+            with self.subTest(folder=folder):
+                self.git("reset", "-q", "--hard", base)
+                self.go_package(folder)
+                self.commit(folder)
+                out = self.ci(base + "..HEAD")
+                self.assert_rc(1, out)
+                self.assertIn(folder + "/x.go", out.stdout)
+                self.assertIn(spec, out.stdout)
+                self.write(spec, "# spec\n\nchanged\n")
+                self.commit(folder + ", with its spec")
+                self.assert_rc(0, self.ci(base + "..HEAD"))
+
+    def test_a_new_api_package_needs_02_or_02e_under_the_real_map(self):
+        base = self.real_map()
         self.write("api/fleet/newpkg/v1/x.proto", "syntax = \"proto3\";\n")
         self.commit("newpkg")
         out = self.ci(base + "..HEAD")
