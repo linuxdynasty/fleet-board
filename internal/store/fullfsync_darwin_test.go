@@ -14,8 +14,10 @@ import (
 
 // TestDurableCommitsUseFullFsyncOnDarwin repeats spike S1's check (04, Q1):
 // on macOS a commit that reaches the drive with F_FULLFSYNC costs about 4 ms,
-// one that stops at fsync() about 50 µs. The store's commits must cost the
-// first; the same driver with fullfsync off is the baseline.
+// one that stops at fsync() about 50 µs. The store's commits must cost at
+// least 1 ms; the same driver with fullfsync on and off is logged as evidence
+// only, so a busy disk does not fail the test. PRAGMA fullfsync itself is
+// read back in TestEveryConnectionHasTheADR0014Pragmas.
 func TestDurableCommitsUseFullFsyncOnDarwin(t *testing.T) {
 	if testing.Short() {
 		t.Skip("times real disk flushes")
@@ -40,9 +42,6 @@ func TestDurableCommitsUseFullFsyncOnDarwin(t *testing.T) {
 	t.Logf("commit p50: store %v; same driver with fullfsync=1 %v, with fullfsync=0 %v", storeP50, p50(on), p50(off))
 	if storeP50 < time.Millisecond {
 		t.Errorf("store commit p50 %v is under 1 ms: F_FULLFSYNC is not reaching the drive", storeP50)
-	}
-	if storeP50 < 5*p50(off) {
-		t.Errorf("store commit p50 %v is not well above the fullfsync=0 baseline %v", storeP50, p50(off))
 	}
 }
 

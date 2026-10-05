@@ -38,6 +38,9 @@ err = s.Read(ctx, func(tx *sql.Tx) error { ... }) // short read on the pool
   arrives only after its batch commits. A job that returns an error is rolled
   back to its own savepoint and the rest of the batch commits. If the
   transaction itself breaks, every job in the batch gets the error.
+- **One change, one job.** A lone job waits up to the 250 ms window for
+  company before it commits, so a loop of `Write` calls costs up to 250 ms
+  each. Put related changes in one job, or `Submit` them all and then wait.
 - **Jobs stay local.** A job runs inside the transaction: no network call, no
   waiting on other goroutines, no `Commit` or `Rollback`. Do the round trip
   first, then submit the result.
@@ -67,6 +70,7 @@ are logged.
 `CGO_ENABLED=0 go test ./internal/store/` (add `-race`). Every test uses a
 real file in `t.TempDir()`. `TestAckedWritesSurviveAKilledProcess` kills a
 child process with SIGKILL mid-write and checks every acknowledged row after
-reopening. On macOS, `TestDurableCommitsUseFullFsyncOnDarwin` repeats spike
-S1's timing check (about 4 ms per commit with `F_FULLFSYNC`, under 0.1 ms
-without); `-short` skips it.
+reopening. `TestDurableCommitsUseFullFsyncOnDarwin` repeats spike S1's timing
+check: a store commit must take at least 1 ms (about 4 ms with `F_FULLFSYNC`,
+under 0.2 ms without, both logged). It builds only on macOS, so it runs on
+macOS dev machines and not in CI (Ubuntu); `-short` skips it.

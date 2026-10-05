@@ -127,7 +127,7 @@ func (s *Store) flush(batch []job) {
 	})
 	end := time.Now()
 	if err != nil {
-		s.log.Error("store.batch_failed", "jobs", len(batch), "err_kind", errKind(err))
+		s.log.Error("store.batch_failed", "jobs", len(batch), "err_kind", errKind(err), "sqlite_code", sqliteCode(err))
 		for i := range results {
 			results[i] = err
 		}

@@ -131,6 +131,17 @@ func (m *metrics) gaveUp(ctx context.Context) { m.queueFull.Add(ctx, 1, m.db) }
 
 func (m *metrics) close() error { return m.observed.Unregister() }
 
+// sqliteCode is the extended SQLite result code (SQLITE_FULL, SQLITE_CORRUPT,
+// SQLITE_IOERR_*, ...) that err_kind folds into "io"; 0 when err is not a
+// SQLite error.
+func sqliteCode(err error) int {
+	var se *sqlite.Error
+	if errors.As(err, &se) {
+		return se.Code()
+	}
+	return 0
+}
+
 // errKind is the closed err_kind class of 05b for a log line.
 func errKind(err error) string {
 	var se *sqlite.Error

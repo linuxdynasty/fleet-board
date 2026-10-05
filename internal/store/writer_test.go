@@ -132,7 +132,7 @@ func TestWriterBatchWindowIs250ms(t *testing.T) {
 	}
 }
 
-func TestWriteReturnsOnlyAfterTheCommitIsDurable(t *testing.T) {
+func TestWriteReturnsOnlyAfterTheCommitIsVisible(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)
 	s := h.open(t, h.options(itemsV1))
@@ -226,8 +226,9 @@ func TestABrokenTransactionFailsEveryJobInTheBatchAndTheWriterRecovers(t *testin
 	}
 	failed := h.logs.events(t, "store.batch_failed")
 	if len(failed) != 1 || failed[0]["level"] != "error" || failed[0]["component"] != "store" ||
-		failed[0]["db"] != "state" || failed[0]["jobs"] != float64(3) || failed[0]["err_kind"] != "io" {
-		t.Errorf("store.batch_failed log lines = %v, want one error line for 3 jobs with err_kind io", failed)
+		failed[0]["db"] != "state" || failed[0]["jobs"] != float64(3) || failed[0]["err_kind"] != "io" ||
+		failed[0]["sqlite_code"] != float64(1) { // RELEASE of a savepoint the job rolled away: SQLITE_ERROR
+		t.Errorf("store.batch_failed log lines = %v, want one error line for 3 jobs with err_kind io and sqlite_code 1", failed)
 	}
 	if err := s.Write(ctx, insert("z")); err != nil {
 		t.Fatalf("Write after a failed batch: %v", err)
