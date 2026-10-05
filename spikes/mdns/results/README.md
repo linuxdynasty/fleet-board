@@ -15,6 +15,13 @@ cross-machine test**: both ends were on one Mac, so no packet crossed Wi-Fi or
 the wire, Linux was not involved, and no firewall was in the path (the macOS
 firewall is off on this machine). The owner run below settles that.
 
+**Cross-machine update ([cross-machine-omarchy.md](cross-machine-omarchy.md)):**
+from omarchy (Linux, `ufw` active) the browser found the Mac mini's service
+0 of 100 times. The answers were sent and then dropped by omarchy's firewall
+(`[UFW BLOCK] ... SRC=192.168.1.124 ... SPT=5353 DPT=<random>`), because the
+browser asks from a random port and gets direct replies. macOS's own responder
+was dropped the same way. The hub MacBook (Wi-Fi) run is still open.
+
 ## Setup
 
 - Machine: Mac mini, macOS 27.0.1 (26A434), Apple silicon, wired `en0`
@@ -193,6 +200,11 @@ If it fails only on Linux because of a firewall (finding 6), the fix is on
 the responder side (`brutella/dnssd`, ADR 0023's first fallback, answers by
 multicast) or a firewall rule, and the hub-side `dns-sd -R` control in step 4
 below tells which.
+
+Update: the cross-machine run hit exactly that firewall case, and the step 4
+control showed mDNSResponder's answers dropped too, so a responder swap does
+not fix it; the gap is on the browse side. The options are in
+[cross-machine-omarchy.md](cross-machine-omarchy.md#what-it-means).
 
 ## ADR 0023 status
 
