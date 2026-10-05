@@ -11,13 +11,22 @@ what Cursor expects. The scripts stay the one home of the logic; the mapping
 and the reasons some hooks do not port are in docs/development/hooks.md.
 
 Events: beforeShellExecution, preToolUse, afterFileEdit, postToolUse,
-sessionStart, preCompact, beforeSubmitPrompt, stop.
+sessionStart, preCompact, beforeSubmitPrompt, stop, subagentStart.
+
+subagentStart runs no script (so the script argument is optional there). It
+records which conversation started which helper agent, in the hook state dir, so
+a parent and its helpers share one session key, as a Claude Code subagent shares
+its parent's session_id; it always answers {"permission": "allow"}.
 
 Failure modes. A guard is a hook that can block (beforeShellExecution,
 preToolUse): when the script is missing, crashes, times out or the payload is
 unreadable, it fails CLOSED with a deny that names the cause. Every other hook
 fails open with a note on stderr. A guard always prints exactly one JSON object,
 because Cursor treats invalid JSON on a permission hook as a block.
+
+The adapter needs scripts/cursor_hook_family.py next to it. If that module is missing
+or broken it still prints one JSON object: guards deny naming it, subagentStart allows,
+every other event fails open.
 
 No network, standard library only. The payload is data: a file path from it only
 ever becomes a field of the payload handed to the script.
@@ -30,8 +39,22 @@ import re
 import subprocess
 import sys
 
+try:  # the helper-agent links live in a sibling module; without it the adapter must still answer in JSON
+    from cursor_hook_family import chat_key, log_event, note, record_links, session_key
+    FAMILY_ERROR = ""
+except Exception as err:  # noqa: BLE001 (a missing file, a syntax error, a raise at import)
+    FAMILY_ERROR = "cursor_hook_family cannot be imported (%s: %s)" % (type(err).__name__, err)
+
+    def note(message):
+        print("cursor-hook: " + message, file=sys.stderr)
+
 GUARDS = {"beforeShellExecution", "preToolUse"}
-EVENTS = GUARDS | {"afterFileEdit", "postToolUse", "sessionStart", "preCompact", "beforeSubmitPrompt", "stop"}
+# Only these events resolve a helper to its parent, so loaded skills are shared as under Claude. Claude fires
+# Stop, UserPromptSubmit and SessionStart (compact) for the main conversation only, so the goal and the
+# compaction clean-up stay per chat, and a helper's stop never reads the parent's goal.
+FAMILY_EVENTS = {"preToolUse", "postToolUse"}
+EVENTS = GUARDS | {"afterFileEdit", "postToolUse", "sessionStart", "preCompact", "beforeSubmitPrompt", "stop",
+                   "subagentStart"}
 # Cursor does not document the field names inside a Write tool_input.
 PATH_KEYS = ("file_path", "path", "target_file", "filePath", "file")
 SKILL_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
@@ -41,6 +64,11 @@ SKILL_DIRS = (".agents/skills", ".claude/skills", ".cursor/skills")
 TIMEOUT_SECONDS = 8
 TIMEOUT_ENV = "FLEET_CURSOR_HOOK_TIMEOUT"
 MESSAGE_LIMIT = 20000
+WORKTREE_GIT_TIMEOUT = 3
+# Variables that would point git at some other repository than the project's.
+GIT_REPO_VARS = ("GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY",
+                 "GIT_NAMESPACE", "GIT_CEILING_DIRECTORIES", "GIT_DISCOVERY_ACROSS_FILESYSTEM")
+WORKTREE_NOTE = "the copy in the worktree you are editing counts too"
 
 
 class Failure(Exception):
@@ -61,17 +89,52 @@ def clip(text):
     return text[:MESSAGE_LIMIT] + "\n... [truncated %d characters]" % (len(text) - MESSAGE_LIMIT)
 
 
+def skill_in(real, root, must_exist):
+    """The skill id when `real` is <root>/<skill dir>/<id>/SKILL.md; a worktree's id must exist in .agents/skills."""
+    directory = os.path.dirname(real)
+    name = os.path.basename(directory)
+    if not SKILL_NAME.fullmatch(name):
+        return ""
+    for base in SKILL_DIRS:
+        if os.path.dirname(directory) == os.path.realpath(os.path.join(root, base)):
+            if not must_exist or os.path.isfile(os.path.join(root, ".agents/skills", name, "SKILL.md")):
+                return name
+    return ""
+
+
+def worktree_roots(project):
+    """Top directories of every git worktree sharing the project's repo; none when git is missing or fails."""
+    env = {k: v for k, v in os.environ.items() if k not in GIT_REPO_VARS}
+    try:
+        done = subprocess.run(["git", "-C", project, "worktree", "list", "--porcelain"], capture_output=True,
+                              text=True, errors="replace", env=env, stdin=subprocess.DEVNULL,
+                              timeout=WORKTREE_GIT_TIMEOUT)
+    except (OSError, subprocess.SubprocessError):
+        return []
+    if done.returncode != 0:
+        return []
+    return [line[len("worktree "):] for line in done.stdout.splitlines() if line.startswith("worktree ")]
+
+
 def skill_name(path, cwd, project):
-    """The skill a Read of SKILL.md loads, or "" when the file is not a project skill."""
+    """The skill a Read of SKILL.md loads, or "" when the file is not a project skill.
+
+    Counts under the project dir or under any worktree of the same repo, so reading the
+    worktree's own copy works when Cursor was opened on the main checkout.
+    """
     full = path if os.path.isabs(path) else os.path.join(cwd, path)
     real = os.path.realpath(full)
     if os.path.basename(real) != "SKILL.md":
         return ""
-    directory = os.path.dirname(real)
-    for base in SKILL_DIRS:
-        if os.path.dirname(directory) == os.path.realpath(os.path.join(project, base)):
-            name = os.path.basename(directory)
-            return name if SKILL_NAME.fullmatch(name) else ""
+    name = skill_in(real, project, False)
+    if name or not os.path.dirname(os.path.dirname(real)).endswith(tuple("/" + base for base in SKILL_DIRS)):
+        return name
+    here = os.path.realpath(project)
+    for root in worktree_roots(project):
+        if os.path.realpath(root) != here:
+            name = skill_in(real, root, True)
+            if name:
+                return name
     return ""
 
 
@@ -81,11 +144,16 @@ def cursor_hint(message):
     if "BLOCKED (skill-nudge)" not in message or not found:
         return ""
     files = ", ".join(".agents/skills/%s/SKILL.md" % name for name in found.group(1).split())
-    return "\nIn Cursor there is no skill tool: read %s, then retry the edit." % files
+    return "\nIn Cursor there is no skill tool: read %s, then retry the edit (%s)." % (files, WORKTREE_NOTE)
 
 
-def note(message):
-    print("cursor-hook: " + message, file=sys.stderr)
+def compact_hint(context):
+    """After a compaction the loaded skills are gone: say how Cursor loads them again."""
+    found = re.search(r"to load again before editing the surfaces they govern: ([A-Za-z0-9 ._-]+?)\.(?:\s|$)", context)
+    if not found:
+        return ""
+    files = ", ".join(".agents/skills/%s/SKILL.md" % name for name in found.group(1).split())
+    return "\nIn Cursor there is no skill tool: load them by reading %s (%s)." % (files, WORKTREE_NOTE)
 
 
 def project_dir(payload):
@@ -114,9 +182,9 @@ def malformed_path_key(payload):
     return ""
 
 
-def claude_payload(event, payload, cwd, project):
+def claude_payload(event, payload, cwd, project, key):
     """The payload the existing script expects, or None when there is nothing to run."""
-    base = {"cwd": cwd, "session_id": str(payload.get("conversation_id") or payload.get("session_id") or "")}
+    base = {"cwd": cwd, "session_id": key}
     tool = payload.get("tool_name")
     path = edited_path(payload)
     if event == "beforeShellExecution":
@@ -196,6 +264,10 @@ def result(event, blocked, context):
     """The JSON object Cursor expects for this event."""
     blocked = clip(blocked) if blocked is not None else None
     context = clip(context)
+    if event == "subagentStart":
+        return {"permission": "allow"}  # advisory: the link is recorded, nothing is ever refused
+    if event in ("preCompact", "sessionStart") and context:
+        context += compact_hint(context)
     if event in GUARDS:
         if blocked is not None:
             return {"permission": "deny", "user_message": blocked, "agent_message": blocked + cursor_hint(blocked)}
@@ -217,11 +289,15 @@ def emit(value):
 
 
 def main(argv):
-    if len(argv) < 3 or argv[1] not in EVENTS:
+    if len(argv) < 2 or argv[1] not in EVENTS or (len(argv) < 3 and argv[1] != "subagentStart"):
         note("usage: cursor-hook.py <%s> <hook-script> [args...]" % "|".join(sorted(EVENTS)))
         return 2
-    event, script, args = argv[1], argv[2], argv[3:]
+    event, script, args = argv[1], (argv[2] if len(argv) > 2 else ""), argv[3:]
     guard = event in GUARDS
+    if FAMILY_ERROR:  # a guard denies, subagentStart allows, anything else fails open with its normal answer
+        note(FAMILY_ERROR)
+        emit(result(event, "cursor-hook: %s (fail closed)" % FAMILY_ERROR, "") if guard else result(event, None, ""))
+        return 0
     try:
         payload = json.load(sys.stdin)
         if not isinstance(payload, dict):
@@ -231,11 +307,22 @@ def main(argv):
         emit(result(event, "cursor-hook: unreadable %s payload (fail closed)" % event, "") if guard
              else result(event, None, ""))
         return 0
+    if event == "subagentStart":
+        try:  # advisory: whatever goes wrong while recording, the helper may start
+            record_links(payload)
+            log_event(event, payload, session_key(payload))
+        except Exception as err:  # noqa: BLE001
+            note("subagentStart bookkeeping failed (%s: %s); allowing" % (type(err).__name__, err))
+        emit(result(event, None, ""))
+        return 0
+    family = session_key(payload)
+    log_event(event, payload, family)
+    key = family if event in FAMILY_EVENTS else chat_key(payload)
     project = project_dir(payload)
     if not os.path.isabs(script):
         script = os.path.join(project, script)
     try:
-        claude = claude_payload(event, payload, str(payload.get("cwd") or project), project)
+        claude = claude_payload(event, payload, str(payload.get("cwd") or project), project, key)
         if claude is None:
             emit(result(event, None, ""))
             return 0

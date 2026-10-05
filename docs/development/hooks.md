@@ -64,7 +64,8 @@ cursor.com/docs/hooks (fetched 2026-10-04).
 | `goal-continue.sh` (Stop) | `stop` | a refusal becomes `followup_message`; `loop_count > 0` is `stop_hook_active`, so it refuses once per user turn, as in Claude (cursor-agent resets `loop_count` on each prompt, so Cursor's `loop_limit` of 5 is never reached); a turn whose `status` is not `completed` (aborted, error) is never refused, as Claude's Stop hook does not fire then |
 | `on-compact.sh` (SessionStart `compact\|resume`) | `preCompact` | clears this session's skill markers; the re-injection text goes to `user_message` (the owner sees it, the agent does not). The `resume` half is **not portable**: Cursor has no resume event, so on a resumed conversation the skill markers outlive the discarded skill content and skill-nudge can wave through an edit |
 | `goal-refresh.sh` (UserPromptSubmit) | `beforeSubmitPrompt` | writes the goal file for `/goal` lines, always plain `{"continue": true}` (Cursor shows `user_message` only when `continue` is false, so the restated goal is dropped) |
-| `skill-loaded.sh` (PostToolUse Skill) | `postToolUse` (`Read`) | **approximation**: Cursor has no Skill tool, so reading `<project>/.agents/skills`, `.claude/skills` or `.cursor/skills` `/<name>/SKILL.md` records the marker (symlinks that leave the project, and any other read, do nothing) |
+| `skill-loaded.sh` (PostToolUse Skill) | `postToolUse` (`Read`) | **approximation**: Cursor has no Skill tool, so reading `<root>/.agents/skills`, `.claude/skills` or `.cursor/skills` `/<name>/SKILL.md` records the marker, where `<root>` is the project or a worktree of the same repo (see the Worktrees note below; symlinks that leave the root, other repos, and any other read do nothing) |
+| none (Claude subagents keep the parent's `session_id`) | `subagentStart` (no matcher), not `failClosed` | the adapter records `subagent_id`, `conversation_id` and `session_id` (each when it differs from the parent) `-> parent_conversation_id` in the hook state dir, so a parent and its helpers share one marker key (see Helper agents below). It runs no script and always answers exactly `{"permission": "allow"}` |
 | `goal-role-router.py claude-dispatch` (PreToolUse Agent) | none | **not wired**: a rewrite is possible, since `preToolUse` with matcher `Task` supports a documented `updated_input` ("Modified tool input", cursor.com/docs/hooks), but the generated `.cursor/agents/*.md` already say `model: inherit`, so there is nothing to route. (`subagentStart` could not do it: its output only allows or denies.) |
 | `goal-role-router.py claude` (UserPromptSubmit) | none | **not wired**: it only adds context, and Cursor's docs list no context field for `beforeSubmitPrompt` (only `continue` and `user_message`). The cursor-agent 2026.10.01 bundle (`index.js`, `case"beforeSubmitPrompt"`) accepts `additional_context` without documenting it; we do not rely on undocumented behaviour, and that bundle behaviour is NOT_CHECKED live. |
 | goal-refresh and on-compact context injection | none | **not wired**: `additional_context` is documented on `sessionStart` and `postToolUse` only, so the restated goal is dropped (see `beforeSubmitPrompt` above; the same NOT_CHECKED bundle behaviour applies) and the compaction text reaches the owner only |
@@ -83,6 +84,58 @@ Notes on the choices:
 - **Skill loads.** Without the `Read` mapping, `skill-nudge.sh` would refuse
   every governed edit in Cursor with no way to satisfy it. An agent that loads a
   skill some other way still has the per-session override the refusal prints.
+- **Worktrees.** Cursor is often opened on the main checkout while the agent
+  works in a git worktree (the required workflow). A `SKILL.md` read counts when
+  its real path is `<root>/<skill dir>/<id>/SKILL.md` and `<root>` is the
+  project dir, or the top of any worktree listed by `git worktree list` for the
+  project's repo (the worktrees that share its `git rev-parse --git-common-dir`).
+  For a worktree other than the project dir, `<id>` must also exist as
+  `<root>/.agents/skills/<id>/SKILL.md` in that same worktree. Other repos and
+  clones, symlinks out, unknown ids and `..` escapes are still rejected. If git is
+  missing, fails or times out (3 seconds), only the project dir counts, so the
+  nudge keeps blocking. The deny note (shown to the agent) and the compaction note
+  (shown to the owner only, as `user_message`) say that the copy in the worktree
+  being edited counts too.
+- **Helper agents.** A Cursor helper (Task tool) may run its tools under its
+  own ids, so a `SKILL.md` read by a helper would never unlock its parent's
+  edit, and the reverse. Claude Code gives a subagent the parent's `session_id`,
+  so there the markers are shared; the adapter matches that, **for loaded skills
+  only**. On `subagentStart` it writes one small file per link,
+  `<state dir>/fleet-cursor-link-<child id>` holding the parent id, for the start
+  payload's `subagent_id`, `conversation_id` and `session_id`, each skipped when
+  it equals the parent. In cursor-agent 2026.10.01 (read from the bundle, not
+  run live) session ids are tracked per conversation
+  (`activeSessionIdsByConversationId` in `190.index.js`), so one does not reach
+  an unrelated chat. The Cursor IDE is NOT_CHECKED: if it shared a session id
+  across chats, the link would join those chats' skill markers. The state dir
+  is `FLEET_HOOK_STATE_DIR`, as for the
+  markers; files are written atomically, never through a symlink; ids must be at
+  most 128 characters of `A-Za-z0-9._-`, with no `..`; a link that would close a
+  loop is not written. A parent that started
+  a helper also gets `fleet-cursor-root-<id>`, so a helper whose own ids are all
+  unknown but whose `session_id` equals the parent's conversation id still lands
+  on the parent (this fallback covers only that case; a different session id is
+  covered by the `session_id` link above). The
+  skill events (`preToolUse`, `postToolUse`) follow the links from the payload's
+  `conversation_id`, `session_id` and `subagent_id` to the root and hand the
+  scripts that root as `session_id`, so skill-loaded and skill-nudge agree for a
+  parent and all its helpers (depth bound 8, cycle guard). With no link and no
+  marker a conversation keeps its own key, so unrelated chats do not share.
+  Every other event (`stop`, `beforeSubmitPrompt`, `preCompact`, `afterFileEdit`,
+  `beforeShellExecution`) keeps the per-chat key, because Claude never fires
+  Stop, UserPromptSubmit or SessionStart for a subagent: a helper's stop does
+  not read the parent's goal, its `/goal done` does not retire it, and its
+  compaction does not clear the family's markers. Caveats: the files are never
+  cleaned up except by the OS temp reaper, and losing one only makes the nudge
+  block again until the skill is read again. A helper's read puts the skill
+  text into the helper's context, not the parent's; as under Claude, the marker
+  is shared and the content is not.
+- **Payload log, for the live check.** Set `FLEET_CURSOR_HOOK_LOG` to a file
+  path and the adapter appends one JSON line per event: `event`, the sorted
+  top-level `keys`, the values of `conversation_id`, `session_id`, `subagent_id`
+  and `parent_conversation_id` (null when absent or not a string), and
+  `resolved_key` (the family key the skill events use). Nothing else: no prompts,
+  commands, file contents or paths. Off by default.
 - **Tool input field names.** Cursor's docs do not name the fields inside a
   `Write` or `Read` `tool_input`. In cursor-agent 2026.10.01 (read from its
   bundle) `Write` is `{file_path, content}` and `Read` is `{file_path}`. The
@@ -93,6 +146,14 @@ Notes on the choices:
 - **The refusal text.** The skill-nudge refusal says to load the skill "with the
   skill tool"; Cursor has none, so the adapter appends the files to read
   (`.agents/skills/<name>/SKILL.md`) to the `agent_message` only.
+- **The sibling module.** The adapter imports `scripts/cursor_hook_family.py`
+  (the helper-agent links and the payload log) from its own directory, so the
+  two files must stay together. If the module is missing, has a syntax error or
+  raises when imported, the adapter still prints one JSON object: the guards
+  (`preToolUse`, `beforeShellExecution`) deny with a message naming
+  `cursor_hook_family`, `subagentStart` answers `{"permission": "allow"}`, and
+  every other event fails open with its normal empty answer (`{"continue":
+  true}` for `beforeSubmitPrompt`), with a note on stderr.
 - **Failure modes.** The one guard (`preToolUse`, `failClosed: true` and the
   adapter's own deny) refuses when the script is missing, crashes, takes longer
   than the timeout or the payload is unreadable. Every other hook fails open with
@@ -106,6 +167,18 @@ Notes on the choices:
 - **Trust.** Cursor runs project hooks from the workspace root with
   `CURSOR_PROJECT_DIR` set. The off switches below apply unchanged, because the
   scripts read them.
+- **NOT_CHECKED live: which id a helper's own tool hooks carry** (its
+  `subagent_id`, a new `conversation_id`, or a `session_id` shared with the
+  parent). The cursor-agent 2026.10.01 bundle shows the `subagentStart` payload
+  (`conversation_id`, `subagent_id`, `parent_conversation_id`, ...) and
+  `session_id: r.session_id ?? r.conversation_id` on every payload, but not the
+  ids of a helper's tool events. The links cover all three; run a Cursor session
+  with a helper and `FLEET_CURSOR_HOOK_LOG` set, and read the log, to confirm.
+  The design also assumes a `subagent_id` is unique across chats and over time
+  (a reused id would join two families); the log confirms that too. Whether
+  `subagentStart` fires at all in a real run is NOT_CHECKED as well, and so is
+  whether the Cursor IDE ever shares one session id across chats (the
+  `session_id` link relies on it not doing so; the log shows it).
 - Not live-probed in a real Cursor session: whether `cursor-agent` passes `/goal`
   lines to `beforeSubmitPrompt`, and whether `postToolUse` `additional_context`
   is shown to the agent. The `tool_input` shapes come from reading the
@@ -278,6 +351,8 @@ python3 scripts/test-goal-role-router.py
 python3 scripts/test-codex-spawn-guard.py
 python3 scripts/test-cursor-hook.py    # Cursor adapter and .cursor/hooks.json, Cursor-shaped payloads (make selftest)
 python3 scripts/test-cursor-hook-edges.py  # timeouts, bad output, deep JSON, stop status, skill reads (make selftest)
+python3 scripts/test-cursor-hook-family.py # helper agents share markers, link safety, payload log (make selftest)
+python3 scripts/test-cursor-hook-worktrees.py  # SKILL.md reads in sibling git worktrees (make selftest)
 scripts/verify-agent-canon.sh          # maps name real skills and specs; configs reference real scripts
 python3 scripts/test-check-docs-stale.py   # hook mode, --ci, the trailer, --check-map (make selftest)
 python3 scripts/test-check-doc-names.py    # the doc-name gate against a fixture contract (make selftest)

@@ -1,4 +1,4 @@
-"""Shared fixtures for test-cursor-hook.py and test-cursor-hook-edges.py.
+"""Shared fixtures for the test-cursor-hook*.py files.
 
 Seeded RED/GREEN cases for scripts/cursor-hook.py and .cursor/hooks.json.
 
@@ -36,6 +36,7 @@ WIRED = {
     "preCompact": [None],
     "stop": [None],
     "beforeSubmitPrompt": [None],
+    "subagentStart": [None],
 }
 
 
@@ -56,6 +57,8 @@ class Project:
         shutil.copy(ROOT / "scripts/check-docs-stale.py", self.root / "scripts/")
         if ADAPTER.exists():
             shutil.copy(ADAPTER, self.root / "scripts/")
+        if (ROOT / "scripts/cursor_hook_family.py").exists():
+            shutil.copy(ROOT / "scripts/cursor_hook_family.py", self.root / "scripts/")
         (self.root / ".cursor").mkdir()
         if (ROOT / ".cursor/hooks.json").exists():
             shutil.copy(ROOT / ".cursor/hooks.json", self.root / ".cursor/")
@@ -64,6 +67,9 @@ class Project:
     def env(self, **extra):
         env = {k: v for k, v in os.environ.items() if not k.startswith(("CLAUDE_", "CURSOR_", "FLEET_"))}
         env.update(HOME=str(self.home), FLEET_HOOK_STATE_DIR=str(self.state), CURSOR_PROJECT_DIR=str(self.root))
+        # Tests snapshot every file under tmp; Python's bytecode cache lands there (scripts/__pycache__ for most
+        # Pythons, $HOME/Library/Caches for Apple's python3) and is not the adapter's write.
+        env["PYTHONDONTWRITEBYTECODE"] = "1"
         env.update(extra)
         return env
 
@@ -85,6 +91,14 @@ class Project:
         return [subprocess.run(["sh", "-c", row["command"]], input=data, capture_output=True, text=True,
                                env=self.env(), cwd=self.root, timeout=30) for row in self.commands(event, tool)]
 
+    def fire_as(self, event, payload, tool=None):
+        """Like fire_one, but the payload's own ids stand: no conversation_id is added."""
+        data = json.dumps(dict(payload, hook_event_name=event, workspace_roots=[str(self.root)]))
+        rows = self.commands(event, tool)
+        assert len(rows) == 1, "%s/%s wired %d times" % (event, tool, len(rows))
+        return subprocess.run(["sh", "-c", rows[0]["command"]], input=data, capture_output=True, text=True,
+                              env=self.env(), cwd=self.root, timeout=30)
+
     def fire_one(self, event, payload, tool=None):
         results = self.fire(event, payload, tool)
         assert len(results) == 1, "%s/%s wired %d times" % (event, tool, len(results))
@@ -98,7 +112,7 @@ class Project:
 
     def recording_stub(self):
         """A hook script that records stdin and CLAUDE_PROJECT_DIR, then exits 0 silently."""
-        return self.stub("record.sh", 'cat > "%s/seen.json"; printf %%s "$CLAUDE_PROJECT_DIR" > "%s/seen.env"\n'
+        return self.stub("record.sh", '/bin/cat > "%s/seen.json"; printf %%s "$CLAUDE_PROJECT_DIR" > "%s/seen.env"\n'
                          % (self.tmp, self.tmp))
 
     def seen(self):

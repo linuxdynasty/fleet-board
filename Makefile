@@ -137,6 +137,8 @@ selftest: tools
 	python3 scripts/test-agent-roles.py
 	python3 scripts/test-cursor-hook.py
 	python3 scripts/test-cursor-hook-edges.py
+	python3 scripts/test-cursor-hook-family.py
+	python3 scripts/test-cursor-hook-worktrees.py
 	python3 scripts/test-proto-image.py
 	python3 scripts/test-check-doc-names.py
 	python3 scripts/test-check-docs-stale.py

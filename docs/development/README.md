@@ -24,8 +24,11 @@ scripts/verify-agent-canon.sh checks the rendered files, skill links, frontmatte
 .claude/hooks/                development hooks shared by Claude, Codex, Muse and Cursor
 .claude/settings.json, .codex/hooks.json, .muse/hooks.json, .cursor/hooks.json   hook wiring
 scripts/cursor-hook.py        adapter: runs those hook scripts from Cursor's native hooks (hooks.md)
+scripts/cursor_hook_family.py helper-agent links and the opt-in payload log; the adapter needs it next to
+                              it (without it the guards deny and the rest fail open, hooks.md)
 scripts/test-dev-hooks.sh     self-test for the hooks (hooks.md)
-scripts/test-cursor-hook.py, test-cursor-hook-edges.py, cursor_hook_testkit.py
+scripts/test-cursor-hook.py, test-cursor-hook-edges.py, test-cursor-hook-family.py,
+test-cursor-hook-worktrees.py, cursor_hook_testkit.py
                               self-test for the Cursor adapter and .cursor/hooks.json (make selftest)
 scripts/owner-setup.sh        walks the owner through owner-only setup steps (plan section 3)
 scripts/test-owner-setup.sh   self-test for owner-setup.sh, run with each bash on the machine
