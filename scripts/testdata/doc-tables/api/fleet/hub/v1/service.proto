@@ -1,0 +1,43 @@
+// Fixture hub API for test-gen-doc-tables.py. Tags follow 02e, "Comment tags".
+syntax = "proto3";
+
+package fleet.hub.v1;
+
+// Scope is what a caller may do.
+enum Scope {
+  SCOPE_UNSPECIFIED = 0;
+  SCOPE_READ = 1;
+  SCOPE_APPROVALS = 2;
+  SCOPE_ADMIN = 3;
+}
+
+// Empty stands in for every request and response.
+message Empty {}
+
+// FleetService is the fixture hub API.
+service FleetService {
+  // [SCOPE none]
+  // [RELEASE v1 12]
+  // Works before sign-in.
+  rpc GetServerInfo(Empty) returns (Empty);
+  // [SCOPE READ|APPROVALS]
+  // [RELEASE v1 12]
+  rpc GetSummary(Empty) returns (Empty);
+  // [SCOPE READ|APPROVALS]
+  // [RELEASE v1 12]
+  rpc ListThings(Empty) returns (Empty);
+  // [SCOPE per-topic]
+  // [RELEASE v1 12]
+  rpc Watch(Empty) returns (stream Empty);
+  // [SCOPE READ] `ADMIN` for archived goals
+  // [RELEASE v1 12] observed goals (03k)
+  // [RELEASE v1 22] dispatched goals
+  rpc ListGoals(Empty) returns (Empty);
+  // [SCOPE ADMIN]
+  // [RELEASE v1 13a]
+  // Finish current work, take nothing new.
+  rpc DrainMachine(Empty) returns (Empty);
+  // [SCOPE self] `self` is the device itself
+  // [RELEASE v3 none]
+  rpc GetDevice(Empty) returns (Empty);
+}

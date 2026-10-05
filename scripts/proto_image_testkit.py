@@ -1,8 +1,9 @@
 """Shared setup for test-check-doc-names.py and test-proto-image.py.
 
-FixtureTree is a throwaway tree with buf.yaml, tool-versions.env and the
-fixture contract (scripts/testdata/doc-names/fixture.proto) at
-api/fleet/fixture/v1/. build_image() runs the real loader's `build`, which runs
+FixtureTree is a throwaway tree with buf.yaml, tool-versions.env and a
+fixture contract: by default scripts/testdata/doc-names/fixture.proto at
+api/fleet/fixture/v1/, or a whole testdata folder whose api/ tree is copied
+(scripts/testdata/doc-tables for gen-doc-tables.py). build_image() runs the real loader's `build`, which runs
 the pinned buf, so the tests read the same compiled image the gates do.
 """
 from __future__ import annotations
@@ -28,11 +29,14 @@ def clean_env(**extra):
 
 
 class FixtureTree:
-    def __init__(self):
+    def __init__(self, tree=None):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)
         (self.root / "buf.yaml").write_text(BUF_YAML)
         shutil.copy(ROOT / "tool-versions.env", self.root / "tool-versions.env")
+        if tree is not None:
+            shutil.copytree(Path(tree), self.root, dirs_exist_ok=True)
+            return
         self.proto = self.root / "api/fleet/fixture/v1/fixture.proto"
         self.proto.parent.mkdir(parents=True)
         shutil.copy(FIXTURE, self.proto)
@@ -53,6 +57,14 @@ class FixtureTree:
         path = self.root / rel
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text)
+        return path
+
+    def edit(self, rel, old, new):
+        path = self.root / rel
+        text = path.read_text()
+        if old not in text:
+            raise AssertionError("%s does not contain %r" % (rel, old))
+        path.write_text(text.replace(old, new, 1))
         return path
 
     def write_json(self, rel, data):

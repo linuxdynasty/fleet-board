@@ -1,0 +1,22 @@
+// Fixture Watch topics for test-gen-doc-tables.py.
+syntax = "proto3";
+
+package fleet.hub.v1;
+
+// WatchTopic is one resource collection to follow.
+enum WatchTopic {
+  WATCH_TOPIC_UNSPECIFIED = 0;
+  // [SCOPE READ] all rows
+  // [RELEASE v1 12]
+  WATCH_TOPIC_MACHINES = 1;
+  // [SCOPE READ] all rows
+  // [RELEASE v1 12]
+  WATCH_TOPIC_SESSIONS = 2;
+  // [SCOPE self] `ADMIN`: all; otherwise the caller's own device
+  // [RELEASE v3 none]
+  WATCH_TOPIC_DEVICES = 3;
+  // [SCOPE READ|APPROVALS] all rows
+  // [RELEASE v1 19]
+  // Coalesced to at most one per second.
+  WATCH_TOPIC_APPROVALS = 4;
+}

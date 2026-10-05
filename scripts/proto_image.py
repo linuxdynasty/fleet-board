@@ -15,7 +15,8 @@ types and comments are exactly what buf compiled.
 
 A Contract holds the elements of the fleet.* files only: messages (nested
 too), enums and their values, services and their rpcs, oneofs and fields, each
-with its leading and trailing comments. Field types may point into imported
+with its leading and trailing comments; Contract.elements lists them all in
+declaration order. Field types may point into imported
 files (google.protobuf.Timestamp); those resolve but are not fleet names.
 
 Fail closed: no `go`, a buf build error, an unreadable image, an image with no
@@ -130,6 +131,7 @@ class Contract:
         self.types = {}  # every message and enum by full name, imported files included
         self.messages, self.enums, self.services = {}, {}, {}
         self.packages, self.by_name, self.values, self.short_values = set(), {}, {}, {}
+        self.elements = []  # every fleet element in declaration order, fields and values too
         for f in files:
             self._index_file(f)
         if not self.packages:
@@ -155,8 +157,12 @@ class Contract:
         for i, raw in enumerate(f.get("service", [])):
             self._service(ctx, raw, pkg, (FILE_SERVICE, i))
 
-    def _add(self, ctx, element, table=None):
+    def _add(self, ctx, element, table=None, named=True):
         if not ctx[2]:
+            return
+        element.order = len(self.elements)
+        self.elements.append(element)
+        if not named:
             return
         if table is not None:
             table[element.full_name] = element
@@ -175,6 +181,7 @@ class Contract:
         for i, fr in enumerate(raw.get("field", [])):
             field = Field(fr, fr["name"], msg.full_name + "." + fr["name"], name, locs.get(path + (MSG_FIELD, i)))
             msg.fields[field.name] = field
+            self._add(ctx, field, named=False)
             idx = fr.get("oneofIndex")
             if idx is not None and not fr.get("proto3Optional") and idx < len(oneof_list):
                 oneof_list[idx].fields[field.name] = field
@@ -192,6 +199,7 @@ class Contract:
         for i, vr in enumerate(raw.get("value", [])):
             value = EnumValue(enum, vr, vr["name"], scope + "." + vr["name"], name, locs.get(path + (ENUM_VALUE, i)))
             enum.values[value.name] = value
+            self._add(ctx, value, named=False)
             if ctx[2]:
                 self.values.setdefault(value.name, []).append(value)
                 if value.short:
