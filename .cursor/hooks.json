@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "hooks": {
+    "preToolUse": [
+      {
+        "command": "python3 \"${CURSOR_PROJECT_DIR:-.}/scripts/cursor-hook.py\" preToolUse .claude/hooks/skill-nudge.sh",
+        "matcher": "Write",
+        "timeout": 10,
+        "failClosed": true
+      }
+    ],
+    "postToolUse": [
+      {
+        "command": "python3 \"${CURSOR_PROJECT_DIR:-.}/scripts/cursor-hook.py\" postToolUse .claude/hooks/doc-staleness.sh",
+        "matcher": "Write",
+        "timeout": 10
+      },
+      {
+        "command": "python3 \"${CURSOR_PROJECT_DIR:-.}/scripts/cursor-hook.py\" postToolUse .claude/hooks/skill-loaded.sh",
+        "matcher": "Read",
+        "timeout": 10
+      }
+    ],
+    "preCompact": [
+      {
+        "command": "python3 \"${CURSOR_PROJECT_DIR:-.}/scripts/cursor-hook.py\" preCompact .claude/hooks/on-compact.sh",
+        "timeout": 10
+      }
+    ],
+    "stop": [
+      {
+        "command": "python3 \"${CURSOR_PROJECT_DIR:-.}/scripts/cursor-hook.py\" stop .claude/hooks/goal-continue.sh",
+        "timeout": 10
+      }
+    ],
+    "beforeSubmitPrompt": [
+      {
+        "command": "python3 \"${CURSOR_PROJECT_DIR:-.}/scripts/cursor-hook.py\" beforeSubmitPrompt .claude/hooks/goal-refresh.sh",
+        "timeout": 10
+      }
+    ]
+  }
+}

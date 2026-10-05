@@ -4,8 +4,8 @@
 #
 # Feeds synthetic hook payloads (JSON on stdin) to the real scripts and checks
 # exit codes and output. Also runs the Python suites for the goal role router and
-# the Codex spawn guard, and drives the three harness configs the way each
-# harness would (Muse with a cleared environment). Runs on the macOS system
+# the Codex spawn guard, and drives the Claude, Codex and Muse configs the way each
+# harness would (Muse with a cleared environment; Cursor is test-cursor-hook.py). Runs on the macOS system
 # bash 3.2: no arrays, no associative arrays, no mapfile.
 #
 # Usage: scripts/test-dev-hooks.sh        exit 0 only if every case passes

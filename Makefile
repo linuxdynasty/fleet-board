@@ -134,6 +134,8 @@ selftest: tools
 	python3 scripts/test-check-attribution.py
 	python3 scripts/test-check-file-cap.py
 	python3 scripts/test-agent-roles.py
+	python3 scripts/test-cursor-hook.py
+	python3 scripts/test-cursor-hook-edges.py
 
 # diff-check fails on a file named like a git ref (HEAD, main, ...) at any path,
 # tracked or not yet added: it makes `git diff HEAD` ambiguous and one was once
