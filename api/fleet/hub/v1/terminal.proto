@@ -20,9 +20,7 @@ import "google/protobuf/timestamp.proto";
 // opens one attach over a WebSocket. The ticket exists because a WebSocket
 // upgrade carries ambient authority (the cookie, or none at all in
 // local_trusted mode) and a page on another site can open one; it cannot
-// call this RPC, because the Host and Origin checks refuse it. Needs the scope
-// the attach needs: SCOPE_READ, or SCOPE_SESSIONS_WRITE when read_only is
-// false.
+// call this RPC, because the Host and Origin checks refuse it.
 message CreateAttachTicketRequest {
   string request_id = 1;
   fleet.type.v1.SessionId session = 2;
@@ -139,7 +137,6 @@ message AttachTerminalResponse {
 }
 
 // ReadSessionLogRequest reads one stored stream, from an offset or a time.
-// Needs SCOPE_LOGS (owner only by default, ADR 0010, 0019).
 message ReadSessionLogRequest {
   fleet.type.v1.LogStreamKey key = 1;
   oneof start {

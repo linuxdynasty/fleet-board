@@ -87,8 +87,8 @@ message FleetConfig {
 // ExportConfigRequest.
 message ExportConfigRequest {}
 
-// ExportConfigResponse. Needs SCOPE_READ: it is what GetSettings, ListRepos and
-// the other reads already show, in one document.
+// ExportConfigResponse. It is what GetSettings, ListRepos and the other reads
+// already show, in one document.
 message ExportConfigResponse {
   FleetConfig config = 1;
   google.protobuf.Timestamp export_time = 2;
@@ -135,9 +135,8 @@ message ConfigChange {
   fleet.type.v1.ErrorDetail problem = 5;
 }
 
-// ImportConfigRequest applies a document. Needs SCOPE_SETTINGS; a document
-// with machine entries also needs SCOPE_ADMIN (they set labels and settings on
-// machines and create pending machines).
+// ImportConfigRequest applies a document. Machine entries set labels and
+// settings on machines and create pending machines.
 message ImportConfigRequest {
   string request_id = 1;
   FleetConfig config = 2;

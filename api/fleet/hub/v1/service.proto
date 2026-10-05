@@ -187,11 +187,11 @@ service FleetService {
   // --- Goals ----------------------------------------------------------------
 
   // [SCOPE READ]
-  // [RELEASE v1 12] observed goals (03k)
+  // [RELEASE v1 12] observed goals, 03k
   // [RELEASE v1 22] dispatched goals
   rpc ListGoals(ListGoalsRequest) returns (ListGoalsResponse);
   // [SCOPE READ]
-  // [RELEASE v1 12] observed goals (03k)
+  // [RELEASE v1 12] observed goals, 03k
   // [RELEASE v1 22] dispatched goals
   rpc GetGoal(GetGoalRequest) returns (GetGoalResponse);
   // [SCOPE SESSIONS_WRITE]
@@ -207,12 +207,12 @@ service FleetService {
   // Pause, resume, edit, clear, re-check, re-arm (G4).
   rpc ControlGoal(ControlGoalRequest) returns (ControlGoalResponse);
   // [SCOPE READ]
-  // [RELEASE v1 12] observed goals (03k)
+  // [RELEASE v1 12] observed goals, 03k
   // [RELEASE v1 22] dispatched goals
   // The runs of one goal (restarts, nudges, usage, log keys).
   rpc ListGoalRuns(ListGoalRunsRequest) returns (ListGoalRunsResponse);
   // [SCOPE READ]
-  // [RELEASE v1 12] observed goals (03k)
+  // [RELEASE v1 12] observed goals, 03k
   // [RELEASE v1 22] dispatched goals
   // Every phase change of one goal, with its reason.
   rpc ListGoalTransitions(ListGoalTransitionsRequest) returns (ListGoalTransitionsResponse);
