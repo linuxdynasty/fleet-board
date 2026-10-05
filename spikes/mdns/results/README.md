@@ -6,7 +6,7 @@ advertise `_fleetd._tcp` from a Mac that also runs the system mDNS responder
 timeout should the agent use (ADR 0023 open questions 1 and 2, defaults.md row
 "mDNS re-query interval ... browse timeout").
 
-**Short answer so far (same machine only):** yes. The advertiser opens UDP
+**Outcome:** [ADR 0028](../../../docs/adr/0028-mdns-best-effort.md) records the decisions. **Same machine:** yes. The advertiser opens UDP
 port 5353 next to mDNSResponder with no error, macOS's own `dns-sd` sees and
 resolves it, and the Go browser found it in 150 of 150 tries (median under
 1 ms). The Go browser also finds a service macOS registered (10 of 10). There
@@ -173,7 +173,11 @@ the first run (other devices on the network answered the browser too). No
 7. A `ServiceEntry` can still be written by the library after it is sent;
    copy its fields on receipt (the probe does).
 
-## Proposed values (proposed until the cross-machine run)
+## Proposed values (superseded by ADR 0028)
+
+ADR 0028 kept the 2 s browse timeout and dropped the separate 10 s timer: the
+agent sends one query per connection attempt on the reconnect backoff. The
+proposal as written before that ruling:
 
 - **Browse timeout: 2 s.** Same-machine answers arrive in 10.3 ms at worst
   for the Go advertiser and 83.6 ms for mDNSResponder. Across Wi-Fi, multicast
@@ -205,92 +209,20 @@ below tells which.
 Update: the cross-machine run hit exactly that firewall case, and the step 4
 control showed mDNSResponder's answers dropped too, so a responder swap does
 not fix it; the gap is on the browse side. The options are in
-[cross-machine-omarchy.md](cross-machine-omarchy.md#what-it-means).
+[cross-machine-omarchy.md](cross-machine-omarchy.md#what-it-means). ADR 0028
+rules the exec fallback out and makes mDNS best effort.
 
 ## ADR 0023 status
 
 ADR 0023 is **Accepted** (2026-10-02), so its open questions cannot be edited
 in place (AGENTS.md, ADR index). The repo's pattern is that a later ADR
 answers an earlier one's questions (0022 answers 0021; 0024 answers 0022) and
-the index's Relations cell says so. Suggested record after the owner run: the
-two values in defaults.md, and a short ADR "answers 0023 questions 1 and 2"
-with the 0023 index row updated.
+the index's Relations cell says so. ADR 0028 answers both, and the 0023 index row
+says so.
 
-## OWNER RUN NEEDED
+## Owner run
 
-Cross-machine check: advertise on the hub MacBook (192.168.1.118), browse from
-omarchy (Linux, 192.168.1.150) and from the Mac mini (192.168.1.124). About
-15 minutes. Do not change any firewall or network setting; if something is
-blocked, just send the output.
-
-**1. Build (on the Mac mini, in the worktree):**
-
-```bash
-cd /Volumes/Development/personal-repos/fleet-board-worktrees/prep-0.7-mdns/spikes/mdns
-mkdir -p /tmp/mdns07-bin
-CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -o /tmp/mdns07-bin/mdns-darwin-arm64 .
-CGO_ENABLED=0 GOOS=linux  GOARCH=amd64 go build -o /tmp/mdns07-bin/mdns-linux-amd64 .
-cp /tmp/mdns07-bin/mdns-darwin-arm64 /tmp/mdns
-scp /tmp/mdns07-bin/mdns-darwin-arm64 192.168.1.118:/tmp/mdns
-scp /tmp/mdns07-bin/mdns-linux-amd64  192.168.1.150:/tmp/mdns
-```
-
-(Intel Mac: `GOARCH=amd64`; ARM Linux: `GOOS=linux GOARCH=arm64`.)
-
-**2. Hub MacBook (192.168.1.118), terminal 1.** Find the interface, then
-advertise for 20 minutes:
-
-```bash
-route -n get 224.0.0.251 | grep interface     # usually en0 on Wi-Fi
-chmod +x /tmp/mdns
-/tmp/mdns advertise -instance fleet-spike-hub -iface en0 -duration 20m -stats 60s | tee /tmp/mdns-hub.jsonl
-```
-
-If macOS shows a "find devices on your local network" dialog, allow it for
-the terminal app and say so in the report (fleetd as a LaunchAgent will meet
-the same question).
-
-**3. omarchy (192.168.1.150):**
-
-```bash
-ip route get 224.0.0.251                      # note the "dev" name
-chmod +x /tmp/mdns
-/tmp/mdns browse -instance fleet-spike-hub -timeout 1s -interval 1.5s -count 50 | tee /tmp/mdns-omarchy-1s.jsonl
-/tmp/mdns browse -instance fleet-spike-hub -timeout 2s -interval 2.5s -count 50 | tee /tmp/mdns-omarchy-2s.jsonl
-/tmp/mdns summarize -table /tmp/mdns-omarchy-1s.jsonl /tmp/mdns-omarchy-2s.jsonl
-grep -ho '"msg":"[^"]*"' /tmp/mdns-omarchy-*.jsonl | sort | uniq -c
-```
-
-If every run says `"found":false`, also send (read-only):
-`sudo ufw status verbose`, `systemctl is-active avahi-daemon`, and, if avahi is
-installed, `avahi-browse -rt _fleetd._tcp`.
-
-**4. Control, only if omarchy found nothing.** On the hub, terminal 2, register
-the same kind of service through macOS itself, then browse from omarchy:
-
-```bash
-dns-sd -R fleet-spike-os _fleetd._tcp local. 47998      # hub; Ctrl-C when done
-/tmp/mdns browse -instance fleet-spike-os -timeout 2s -interval 2.5s -count 20 | tee /tmp/mdns-omarchy-os.jsonl   # omarchy
-/tmp/mdns summarize -table /tmp/mdns-omarchy-os.jsonl
-```
-
-**5. Mac mini (192.168.1.124):**
-
-```bash
-/tmp/mdns browse -instance fleet-spike-hub -iface en0 -timeout 2s -interval 2.5s -count 50 -dnssd 4s | tee /tmp/mdns-mini.jsonl
-/tmp/mdns summarize -table /tmp/mdns-mini.jsonl
-grep -h '"event":"dnssd_' /tmp/mdns-mini.jsonl | grep -oE '"instance_seen":[a-z]+|"reached":\[[^]]*\]'
-grep -ho '"msg":"[^"]*"' /tmp/mdns-mini.jsonl | sort | uniq -c
-```
-
-**6. Stop the hub** (Ctrl-C in terminal 1), then on the hub:
-
-```bash
-grep -E '"event":"(bind_check|service|server_started|stats|stopped|fatal|lib_log)"' /tmp/mdns-hub.jsonl
-grep -c '"event":"answered"' /tmp/mdns-hub.jsonl
-```
-
-**Send back:** every `summarize -table` output; the omarchy and Mac mini
-`lib_log` counts; the `dnssd_` lines from step 5; the hub lines from step 6;
-whether a dialog appeared; and, only if run, the step 3 extras and step 4
-table. Delete `/tmp/mdns*` on all three machines afterwards.
+Done in part on 2026-10-05: the Mac mini advertised and omarchy browsed, over
+SSH with the owner's permission and no `sudo`
+([cross-machine-omarchy.md](cross-machine-omarchy.md)). The owner chose to skip
+the Wi-Fi hub run; plan row 4 checks it in real use (ADR 0028 open question 2).

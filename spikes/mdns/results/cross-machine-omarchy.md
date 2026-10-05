@@ -65,7 +65,9 @@ Oct 05 13:33:50 omarchy kernel: [UFW BLOCK] IN=enp3s0 OUT= SRC=192.168.1.124 DST
      best effort.
 - **The exec fallback is therefore not ruled out**, but for a different reason
   than ADR 0023 gave: the gap is on the browse side behind a host firewall, not
-  a 5353 conflict on the macOS hub.
+  a 5353 conflict on the macOS hub. (Later decided in
+  [ADR 0028](../../../docs/adr/0028-mdns-best-effort.md): option 4, and the
+  exec fallback is ruled out.)
 
 ## Not checked
 

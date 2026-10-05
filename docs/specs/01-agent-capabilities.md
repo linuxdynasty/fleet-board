@@ -126,6 +126,12 @@ and dispatches it there).
 - **A2 Find the hub.** Cached last-good address, then mDNS (`_fleetd._tcp`),
   then configured addresses. Accept a candidate only if TLS verifies against
   the pinned CA. No multicast interface: mDNS is skipped; `doctor` says so.
+  mDNS is best effort (ADR 0028): a host firewall that drops direct UDP
+  replies, such as Linux `ufw` with "deny incoming", usually hides the hub, so
+  the configured address is the path that always works. `doctor` reports an
+  mDNS browse that found no hub and names that cause. `enroll` without
+  `--hub` that finds no hub exits non-zero, names `--hub`, and sends no token
+  or CSR.
 - **A3 Connect and reconcile.** `Hello`, then a full snapshot, plus results
   the hub never acknowledged. The hub may send `SnapshotRequest` at any time.
 - **A4 Renew certificate** at two-thirds of its lifetime.

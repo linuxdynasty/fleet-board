@@ -128,6 +128,12 @@ is accepted only when TLS verifies against the pinned CA and the server
 certificate names the hub; an impostor at a discovered address fails TLS and
 the next candidate is tried. One full cycle through candidates is one attempt;
 attempts back off with full jitter 1–60 s. On success the address is cached.
+mDNS is best effort (ADR 0028): one browse per attempt, and a browse that
+finds nothing moves on to the configured addresses in the same attempt; only
+names ending in `._fleetd._tcp.local.` are kept. Wake, network change and a
+successful connect reset the backoff to its first step; the attempt a wake or
+network change starts waits a random 20–120 ms first, so machines that see the
+same event do not query together.
 
 **Snapshot reconcile (A3).** Hub applies the snapshot in one transaction:
 replace the machine's sessions/windows/panes/goals/repos/harness rows, store
