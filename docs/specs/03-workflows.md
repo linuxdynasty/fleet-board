@@ -262,8 +262,9 @@ the agent's `connect.attempt` logs (last candidate tried, last TLS error).
 ## W2. Reconnect after hub restart or hours offline
 
 **Trigger.** Stream closes (hub restart, hub asleep, network change, agent
-wake); the agent reconnects with backoff, and at once after a short random
-delay on wake/network change (A6, A2). Also: a second connection for the same `machine_id` (duplicate identity).
+wake); the agent reconnects with backoff, and after a short random delay on
+wake/network change (A6, A2). Also: a second connection for the same
+`machine_id` (duplicate identity).
 
 **Actors.** `fleet-agent` (ring, command log, probes keep running), `fleetd`
 gateway/writer/scheduler, tmux (goals keep running untouched).

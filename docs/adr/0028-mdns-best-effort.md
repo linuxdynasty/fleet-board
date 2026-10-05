@@ -22,8 +22,9 @@ in [spikes/mdns/results/](../../spikes/mdns/results/README.md).
   of 150 times (worst first answer 10.3 ms). The browser found a service macOS
   registered 10 of 10 times (worst 83.6 ms).
 - **Mac to Linux.** From omarchy (Linux, `ufw` active, its policy inferred as
-  "deny incoming" because `ufw status` needs root, `avahi-daemon` holding 5353), the browser found the Mac's service 0 of 100
-  times, and a service macOS itself registered 1 of 20 times. The kernel log
+  "deny incoming" because `ufw status` needs root, `avahi-daemon` holding
+  5353), the browser found the Mac's service 0 of 100 times, and a service
+  macOS itself registered 1 of 20 times. The kernel log
   shows the hub's answers dropped: `[UFW BLOCK] ... SPT=5353 DPT=<random>`.
   Other devices' answers, sent to the multicast group, arrived.
 - **Why.** The library's browser asks from a random port (`client.go`). RFC 6762
@@ -84,9 +85,9 @@ connection attempt, on the reconnect backoff 03 already defines.
    returns unrelated services). Any address found is still only a candidate
    until TLS verifies it against the pinned CA (02g).
 5. **ADR 0023's exec fallback for advertising is ruled out** (asking avahi on
-   the worker is a different thing and stays open question 1). ADR 0023 kept `dns-sd` or
-   `avahi-publish-service` for a hub whose advertising clashed with macOS's
-   responder on 5353. That clash did not happen, and the fallback would not fix
+   the worker is a different thing and stays open question 1). ADR 0023 kept
+   `dns-sd` or `avahi-publish-service` for a hub whose advertising clashed
+   with macOS's responder on 5353. That clash did not happen, and the fallback would not fix
    the failure seen: a service registered through macOS's own responder was
    dropped the same way. If a Linux hub cannot bind 5353 next to avahi, that is
    a new finding for row 5 and a new decision; the fallback does not come back
@@ -99,7 +100,6 @@ connection attempt, on the reconnect backoff 03 already defines.
   the library's default host name is the machine's own, which mDNSResponder
   owns, so a distinct name (for example `fleetd-<host>.local.`) with explicit
   addresses avoids answering for the OS. Row 5 decides both and updates 02j.
-
 - When the hub moves to another laptop, a worker behind such a firewall cannot
   find it on its own; the owner gives that worker the new address.
 - No new dependency. `pion/mdns/v2` or avahi would each need a spike and, for a

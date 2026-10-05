@@ -4,7 +4,7 @@ Plan item 0.7, issue #52. Question: can `github.com/hashicorp/mdns` v1.0.7
 advertise `_fleetd._tcp` from a Mac that also runs the system mDNS responder
 (mDNSResponder), can a browser find it, and what re-query interval and browse
 timeout should the agent use (ADR 0023 open questions 1 and 2, defaults.md row
-"mDNS re-query interval ... browse timeout").
+"mDNS re-query (agent); mDNS browse timeout").
 
 **Outcome:** [ADR 0028](../../../docs/adr/0028-mdns-best-effort.md) records the decisions. **Same machine:** yes. The advertiser opens UDP
 port 5353 next to mDNSResponder with no error, macOS's own `dns-sd` sees and

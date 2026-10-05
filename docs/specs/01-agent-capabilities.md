@@ -139,10 +139,9 @@ and dispatches it there).
   goal panes by goal state), wall clock and monotonic uptime for skew
   detection. The hub computes slots; the agent computes two aggregate goal counts
   for its own safety cap (02h).
-- **A6 Wake and network change** triggers a reconnect at once, after a short
-  random delay (03 A2). The macOS
-  and Linux APIs are settled by spike 0.6 of the v1 plan; the fallback is a
-  wall-clock jump check.
+- **A6 Wake and network change** triggers a reconnect after a short random
+  delay (03 A2). The macOS and Linux APIs are settled by spike 0.6 of the v1
+  plan; the fallback is a wall-clock jump check.
 - **A7 Shutdown notice.** On SIGTERM (container stop, logout) the agent sends
   `Bye{reason}` so the hub marks it offline at once instead of after 3 minutes.
 - **A8 Hub settings.** The hub sends machine and group settings with a
