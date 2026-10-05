@@ -67,7 +67,8 @@ class MapError(Exception):
 
 
 def git(root, *args, strict=False):
-    result = subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True)
+    result = subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True,
+                            encoding="utf-8")
     if result.returncode != 0:
         if strict:
             raise GitError("git %s failed (exit %d): %s" % (" ".join(args), result.returncode, result.stderr.strip()))
@@ -84,7 +85,7 @@ def glob_match(pattern, rel):
 def map_problems(root, check_specs=True):
     """Problems with the map, one string each; [] when it is valid."""
     try:
-        data = json.loads((Path(root) / MAP_FILE).read_text())
+        data = json.loads((Path(root) / MAP_FILE).read_text(encoding="utf-8"))
     except (OSError, ValueError) as err:
         return [MAP_FILE + " is unreadable or not JSON: " + str(err)]
     if not isinstance(data, dict) or data.get("version") != 1:
@@ -118,7 +119,7 @@ def load_map(root, check_specs=True):
     problems = map_problems(root, check_specs)
     if problems:
         raise MapError("; ".join(problems))
-    return json.loads((Path(root) / MAP_FILE).read_text())["rules"]
+    return json.loads((Path(root) / MAP_FILE).read_text(encoding="utf-8"))["rules"]
 
 
 def matching_rules(rules, changed):
@@ -182,6 +183,8 @@ def ci_findings(root, rng):
     git(root, "rev-parse", "--show-toplevel", strict=True)
     base, head = resolve_range(root, rng)
     rules = load_map(root)
+    if git(root, "rev-list", "--count", base + ".." + head, strict=True).strip() == "0":
+        return None  # an empty or reversed range has nothing to check
     changed = [p for p in git(root, "diff", "--name-only", "--no-renames", "-z", base + "..." + head,
                               strict=True).split("\0") if p]
     messages = [m for m in git(root, "log", "--format=%B%x00", base + ".." + head, strict=True).split("\0") if m.strip()]
@@ -219,6 +222,9 @@ def run_ci(root, rng):
     except Exception as err:  # an internal error must fail the gate, never pass it
         print("check-docs-stale: internal error: %r" % err, file=sys.stderr)
         return 2
+    if findings is None:
+        print("check-docs-stale: no commits in %s; nothing to check" % rng)
+        return 0
     for line in findings:
         print(line)
     if findings:

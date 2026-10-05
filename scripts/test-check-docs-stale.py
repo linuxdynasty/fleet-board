@@ -40,14 +40,14 @@ class DocsStaleTests(unittest.TestCase):
         self.base = self.git("rev-parse", "HEAD").strip()
 
     def git(self, *args, cwd=None):
-        out = subprocess.run(["git", *args], cwd=cwd or self.repo, env=self.env, capture_output=True, text=True)
+        out = subprocess.run(["git", *args], cwd=cwd or self.repo, env=self.env, capture_output=True, text=True, encoding="utf-8")
         self.assertEqual(0, out.returncode, out.stderr)
         return out.stdout
 
     def write(self, rel, text):
         path = self.repo / rel
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text)
+        path.write_text(text, encoding="utf-8")
 
     def commit(self, message):
         self.git("add", "-A")
@@ -60,7 +60,7 @@ class DocsStaleTests(unittest.TestCase):
 
     def run_check(self, *args):
         return subprocess.run([sys.executable, str(CHECK), "--root", str(self.repo), *args],
-                              env=self.env, capture_output=True, text=True)
+                              env=self.env, capture_output=True, text=True, encoding="utf-8")
 
     def ci(self, rng=None):
         return self.run_check("--ci", "--range", rng or self.base + "..HEAD")
@@ -178,6 +178,42 @@ class DocsStaleTests(unittest.TestCase):
         self.commit("foo\n\nNo-Doc-Change: a new package with no spec yet")
         self.assert_rc(1, self.ci())
 
+    def test_changes_main_made_after_the_branch_point_are_not_the_branchs(self):
+        self.git("checkout", "-q", "-b", "pr")
+        self.go_package("internal/agent/tmux")
+        self.write("docs/specs/02h.md", "# spec\n\nobserver\n")
+        self.commit("tmux, with 02h")
+        self.git("checkout", "-q", "main")
+        self.write("internal/not/yet/notes.txt", "x\n")
+        self.commit("main moves on\n\nNo-Doc-Change: main's own reason, not the branch's")
+        self.assert_rc(0, self.ci("main..pr"))
+
+    def test_an_internal_error_exits_2(self):
+        self.write("tools/thing.txt", "x\n")
+        self.commit("caf\u00e9")
+        self.git("config", "i18n.logOutputEncoding", "ISO-8859-1")
+        out = self.ci()
+        self.assert_rc(2, out)
+        self.assertIn("internal error", out.stderr)
+
+    def test_a_deleted_package_needs_no_docs(self):
+        self.go_package("internal/foo")
+        self.commit("foo")
+        start = self.git("rev-parse", "HEAD").strip()
+        self.git("rm", "-q", "-r", "internal/foo")
+        self.commit("remove foo")
+        self.assert_rc(0, self.ci(start + "..HEAD"))
+
+    def test_an_empty_or_reversed_range_says_there_is_nothing_to_check(self):
+        self.write("tools/thing.txt", "x\n")
+        self.commit("tools")
+        for rng in ("HEAD..HEAD", "HEAD.." + self.base):
+            with self.subTest(rng=rng):
+                out = self.ci(rng)
+                self.assert_rc(0, out)
+                self.assertIn("no commits in %s; nothing to check" % rng, out.stdout)
+                self.assertNotIn("docs move with the code", out.stdout)
+
     def test_hook_mode_on_a_failing_tree_exits_zero_and_reminds(self):
         self.go_package("internal/agent/tmux", docs=("doc.go", "README.md"))
         out = self.run_check()
@@ -201,7 +237,7 @@ class DocsStaleTests(unittest.TestCase):
         plain = Path(self.tmp.name) / "plain"
         plain.mkdir()
         out = subprocess.run([sys.executable, str(CHECK), "--root", str(plain), "--ci", "--range", "a..b"],
-                             env=self.env, capture_output=True, text=True)
+                             env=self.env, capture_output=True, text=True, encoding="utf-8")
         self.assert_rc(2, out)
         self.assertIn("git", out.stderr)
 
