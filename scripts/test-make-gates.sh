@@ -199,7 +199,7 @@ done
 
 # Case 3: the recipes clear FLEET_PROTO_IMAGE, and a stale value does not break them.
 for target in doc-names doc-tables; do
-  recipe="$(cd "$root" && make -n "$target" 2>&1)"
+  recipe="$(cd "$root" && make --no-print-directory -n "$target" 2>&1)"
   case "$recipe" in
     "FLEET_PROTO_IMAGE= python3 "*) ok ;;
     *) bad "make $target does not clear FLEET_PROTO_IMAGE: $recipe" ;;
