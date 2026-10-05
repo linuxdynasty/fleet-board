@@ -300,8 +300,9 @@ refused), and calls `ApprovePairing` with the granted scopes: a subset of the
 owner's own effective scopes and of what the device asked for, never `LOGS`
 unless ticked (an empty request defaults to `READ` and `APPROVALS`). From then on the device signs each request with its
 Ed25519 key (`Authorization: Fleet-Device`, [02f](02f-hub-authentication.md));
-the private key never leaves the device. A **pending** device may call only
-`GetDevice`, to learn that the owner approved it; every other call is
+the private key never leaves the device. A **pending** device polls `GetDevice`
+to learn that the owner approved it (who may call it: the `GetDevice` row in
+[Scope per RPC](#scope-per-rpc)); any other call it makes is
 `DEVICE_NOT_ACTIVE`. `RevokeDevice` takes effect at once. Push delivery is not
 built in v1; `NotificationTarget` stores the push handle opaque (write-only
 through the API, excluded from stored idempotent responses) and a placeholder
@@ -327,7 +328,7 @@ sequenceDiagram
   D->>H: ApprovePairing{request_id, id, expected_version, pairing_code, scopes} (the owner types the code the phone shows)
   H->>H: tx: caller is a user, code matches, scopes are a subset of the approver's own effective scopes and of the request, spec.principal and approved_time set, audit device.approve
   H-->>D: ApprovePairingResponse{device}
-  P->>H: GetDevice{id}, signed with its key, polled until spec.approved_time is set (the only call a pending device may make)
+  P->>H: GetDevice{id}, signed with its key, polled until spec.approved_time is set
   P->>H: any RPC with Authorization: Fleet-Device ID.TIMESTAMP.NONCE.SIGNATURE
   H->>H: verify the signature over method, path, SHA-256 of the body, timestamp, nonce, then device active, scopes intersect the user's role
   H-->>P: GetServerInfoResponse{caller Principal{kind DEVICE}, caller_scopes}, then Watch (empty subscriptions)
