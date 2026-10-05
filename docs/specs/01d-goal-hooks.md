@@ -40,8 +40,8 @@ harness config), not into each repo.
 - Every fleet hook exits 0 with no output unless it is running for a fleet
   goal, so the developer's own sessions, including ones on the same machine,
   see no change. **Claude Code, Codex and Muse use one mechanism, the agent's
-  goal registry** (Cursor's hook mapping is plan item 0.23) ([02h](02h-goal-binding-and-pane-signals.md#goal-registry), ADR
-  0019): `StartGoal` writes `(pane, worktree path, harness session id)` before
+  goal registry** ([02h](02h-goal-binding-and-pane-signals.md#goal-registry), ADR
+  0019; Cursor's hook mapping is plan item 0.23): `StartGoal` writes `(pane, worktree path, harness session id)` before
   the goal is typed, and the hook asks the agent. A running harness cannot gain
   an environment variable, so in a reused pane `FLEET_GOAL_ID` is absent or the
   previous goal's, and is only a fast path for a window the fleet just created.
@@ -298,11 +298,13 @@ reply, then one asking a Task helper to read `README.md`.
 Cleanup: tmux server killed; `~/.cursor/hooks.json` byte-identical to its
 baseline; the two probe project folders under `~/.cursor/projects/` and the
 scratch clone removed; the log deleted once recorded here. The probe also took a
-baseline copy of `~/.cursor/cli-config.json` and diffed it after: only two
-caches Cursor rewrites on every run had changed, left as they were. That file
-turned out to hold an authInfo section as well as settings, so the copy was
-deleted unread on 2026-10-05 and 01b now lists it as a file the agent never
-reads. No other credential file was opened.
+baseline copy of `~/.cursor/cli-config.json` and compared the file with it
+after: only two caches Cursor rewrites on every run had changed, left as they
+were. That comparison read the file's contents. Only later was it found to hold
+an authInfo section as well as settings; whether the comparison showed any of
+its values was not recorded. The copy was deleted on 2026-10-05 without being
+opened again, and 01b now lists the file as one the agent never reads. No other
+credential file was opened.
 
 ## Trust that survives upgrades (proposed)
 

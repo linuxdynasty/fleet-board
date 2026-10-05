@@ -196,7 +196,7 @@ Probed 2026-10-01 by typing `/goal` and `/goal ` without Enter, then bare
   (0.159.2 → 0.160.0). Adapters classify every startup prompt (trust, update,
   login, release notes); update and login prompts are never answered by the
   fleet and go to Triage.
-- None of the three has a native `consent` subcommand. The
+- None of Claude Code, Codex and Muse has a native `consent` subcommand. The
   `/goal consent <acts> -- <text>` form is eshu's hook convention (its
   `UserPromptSubmit` router writes the `CONSENT:` line); a harness without
   those hooks takes the whole line as the objective. For generic goals the
