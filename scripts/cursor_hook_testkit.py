@@ -67,6 +67,9 @@ class Project:
     def env(self, **extra):
         env = {k: v for k, v in os.environ.items() if not k.startswith(("CLAUDE_", "CURSOR_", "FLEET_"))}
         env.update(HOME=str(self.home), FLEET_HOOK_STATE_DIR=str(self.state), CURSOR_PROJECT_DIR=str(self.root))
+        # Tests snapshot every file under tmp; Python's bytecode cache lands there (scripts/__pycache__ on Linux,
+        # $HOME/Library/Caches for Apple's python3) and is not the adapter's write.
+        env["PYTHONDONTWRITEBYTECODE"] = "1"
         env.update(extra)
         return env
 
