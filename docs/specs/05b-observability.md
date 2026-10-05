@@ -88,8 +88,9 @@ metrics below fill the gaps between them.
 
 | Metric | Type, labels | Answers |
 |---|---|---|
-| `fleet_hub_writer_batch_messages`, `fleet_hub_writer_batch_seconds` | histograms | how big are the batches, how long does the commit take |
-| `fleet_hub_writer_queue_age_seconds` | histogram | how long a message waited for the writer (the lag the System signal reads) |
+| `fleet_hub_writer_batch_messages{db}`, `fleet_hub_writer_batch_seconds{db}` | histograms | how big are the batches, how long does the transaction take (BEGIN IMMEDIATE to the end of COMMIT) |
+| `fleet_hub_writer_queue_age_seconds{db}` | histogram | how long a message waited for the writer, from submit to its commit (the lag the System signal reads) |
+| `fleet_hub_writer_jobs_total{db, result}` | counter | write jobs `committed`, `failed` (rolled back alone, such as a unique-constraint loss) or `aborted` (the batch's transaction failed) |
 | `fleet_hub_ingest_queue_depth{machine}`, `fleet_hub_ingest_blocked_seconds_total{machine}` | gauge, counter | is one agent's stream backed up; are never-dropped readers blocked |
 | `fleet_hub_ingest_shed_total{kind}` | counter | which droppable kinds the hub shed |
 | `fleet_hub_outbox_pending{machine}`, `fleet_hub_outbox_oldest_age_seconds{machine}` | gauges | are commands piling up for an online machine |
@@ -97,11 +98,12 @@ metrics below fill the gaps between them.
 | `fleet_hub_watch_messages_total{topic}`, `fleet_hub_watch_dropped_total{topic}`, `fleet_hub_watch_resync_total{reason}` | counters | fan-out volume, summaries dropped for slow browsers, streams ended `RESYNC_REQUIRED` |
 | `fleet_hub_rpc_total{rpc, code}`, `fleet_hub_rpc_seconds{rpc}` | counter, histogram | API errors and latency per RPC |
 | `fleet_hub_auth_failures_total{reason}` | counter | sign-in, token, device, Host and Origin refusals |
-| `fleet_hub_store_bytes{db}`, `fleet_hub_store_wal_bytes{db}`, `fleet_hub_store_disk_free_bytes`, `fleet_hub_store_checkpoint_seconds`, `fleet_hub_read_pool_wait_seconds`, `fleet_hub_backup_age_seconds` | gauges, histograms | store size, WAL growth, free disk, reader pool pressure, last backup |
+| `fleet_hub_store_bytes{db}`, `fleet_hub_store_wal_bytes{db}`, `fleet_hub_store_disk_free_bytes`, `fleet_hub_store_checkpoint_seconds`, `fleet_hub_read_pool_wait_seconds{db}`, `fleet_hub_backup_age_seconds` | gauges, histograms | store size, WAL growth, free disk, reader pool pressure, last backup |
 | `fleet_hub_system_signal_state{signal, subject}`, `fleet_hub_system_signal_value{signal, subject}` | gauges (0 ok, 1 warning, 2 critical, 3 unknown) | the System section as a metric |
 | `fleet_hub_agent_ring_events{machine}`, `_ring_bytes`, `_unacked_results`, `_rss_bytes`, `_reconnects_since_start`, `_tmux_control_down`, `_probes_failing`, `_commands_refused_since_start`, `_events_evicted` | gauges per machine | the latest `AgentHealth`, so one scrape of the hub shows every agent |
 | `fleet_hub_telemetry_export_failures_total{signal}`, `fleet_hub_log_lines_total{level}` | counters | the telemetry pipeline's own health |
 | `fleet_agent_rss_bytes`, `fleet_agent_goroutines`, `fleet_agent_commands_refused_total{reason}`, `fleet_agent_tmux_control_up{server_kind}`, `fleet_agent_probe_failing{harness}` | gauges, counter | the same facts on the agent's own endpoint, for a collector that scrapes agents |
+| `fleet_agent_writer_*`, `fleet_agent_read_pool_wait_seconds`, `fleet_agent_store_*`, `fleet_agent_log_lines_total` | as the `fleet_hub_` rows above, with `db="agent"` | the same store and log signals for `agent.db` (one `internal/store` and `internal/telemetry` for both programs) |
 
 ## 4. Prometheus endpoint (`/metrics`)
 
