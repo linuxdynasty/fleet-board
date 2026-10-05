@@ -126,6 +126,12 @@ and dispatches it there).
 - **A2 Find the hub.** Cached last-good address, then mDNS (`_fleetd._tcp`),
   then configured addresses. Accept a candidate only if TLS verifies against
   the pinned CA. No multicast interface: mDNS is skipped; `doctor` says so.
+  mDNS is best effort (ADR 0028): a host firewall that drops direct UDP
+  replies, such as Linux `ufw` with "deny incoming", usually hides the hub, so
+  the configured address is the path that does not depend on multicast.
+  `doctor` reports an mDNS browse that found no hub and names that cause.
+  `enroll` without `--hub` that finds no hub exits non-zero, names `--hub` and
+  the likely firewall cause, and sends no token or CSR.
 - **A3 Connect and reconcile.** `Hello`, then a full snapshot, plus results
   the hub never acknowledged. The hub may send `SnapshotRequest` at any time.
 - **A4 Renew certificate** at two-thirds of its lifetime.
@@ -133,9 +139,9 @@ and dispatches it there).
   goal panes by goal state), wall clock and monotonic uptime for skew
   detection. The hub computes slots; the agent computes two aggregate goal counts
   for its own safety cap (02h).
-- **A6 Wake and network change** triggers an immediate reconnect. The macOS
-  and Linux APIs are settled by spike 0.6 of the v1 plan; the fallback is a
-  wall-clock jump check.
+- **A6 Wake and network change** triggers a reconnect after a short random
+  delay (03 A2). The macOS and Linux APIs are settled by spike 0.6 of the v1
+  plan; the fallback is a wall-clock jump check.
 - **A7 Shutdown notice.** On SIGTERM (container stop, logout) the agent sends
   `Bye{reason}` so the hub marks it offline at once instead of after 3 minutes.
 - **A8 Hub settings.** The hub sends machine and group settings with a

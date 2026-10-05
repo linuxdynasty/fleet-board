@@ -128,6 +128,15 @@ is accepted only when TLS verifies against the pinned CA and the server
 certificate names the hub; an impostor at a discovered address fails TLS and
 the next candidate is tried. One full cycle through candidates is one attempt;
 attempts back off with full jitter 1–60 s. On success the address is cached.
+mDNS is best effort (ADR 0028): one browse per attempt, sent only after the
+cached address failed, and a browse that finds nothing moves on to the
+configured addresses in the same attempt. Only names ending in
+`._fleetd._tcp.local.` are kept; each kept entry is a candidate, tried as it
+arrives, and the first that passes TLS wins, so the agent does not wait out the
+browse timeout. Wake, network change and a successful connect reset the backoff
+to its first step; the attempt a wake or network change starts waits a short
+random delay first ([defaults](defaults.md)), so machines that see the same
+event do not query together.
 
 **Snapshot reconcile (A3).** Hub applies the snapshot in one transaction:
 replace the machine's sessions/windows/panes/goals/repos/harness rows, store
@@ -253,8 +262,9 @@ the agent's `connect.attempt` logs (last candidate tried, last TLS error).
 ## W2. Reconnect after hub restart or hours offline
 
 **Trigger.** Stream closes (hub restart, hub asleep, network change, agent
-wake); the agent reconnects with backoff and immediately on wake/network change
-(A6). Also: a second connection for the same `machine_id` (duplicate identity).
+wake); the agent reconnects with backoff, and after a short random delay on
+wake/network change (A6, A2). Also: a second connection for the same
+`machine_id` (duplicate identity).
 
 **Actors.** `fleet-agent` (ring, command log, probes keep running), `fleetd`
 gateway/writer/scheduler, tmux (goals keep running untouched).

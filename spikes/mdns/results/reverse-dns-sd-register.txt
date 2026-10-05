@@ -1,0 +1,4 @@
+Registering Service test._fleetd._tcp.local. port 9999
+DATE: ---Mon 05 Oct 2026---
+10:59:20.869  ...STARTING...
+10:59:21.558  Got a reply for service test._fleetd._tcp.local.: Name now registered and active
