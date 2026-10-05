@@ -137,6 +137,14 @@ Notes on the choices:
 - **The refusal text.** The skill-nudge refusal says to load the skill "with the
   skill tool"; Cursor has none, so the adapter appends the files to read
   (`.agents/skills/<name>/SKILL.md`) to the `agent_message` only.
+- **The sibling module.** The adapter imports `scripts/cursor_hook_family.py`
+  (the helper-agent links and the payload log) from its own directory, so the
+  two files must stay together. If the module is missing, has a syntax error or
+  raises when imported, the adapter still prints one JSON object: the guards
+  (`preToolUse`, `beforeShellExecution`) deny with a message naming
+  `cursor_hook_family`, `subagentStart` answers `{"permission": "allow"}`, and
+  every other event fails open with its normal empty answer (`{"continue":
+  true}` for `beforeSubmitPrompt`), with a note on stderr.
 - **Failure modes.** The one guard (`preToolUse`, `failClosed: true` and the
   adapter's own deny) refuses when the script is missing, crashes, takes longer
   than the timeout or the payload is unreadable. Every other hook fails open with

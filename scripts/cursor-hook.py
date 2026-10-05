@@ -24,6 +24,10 @@ unreadable, it fails CLOSED with a deny that names the cause. Every other hook
 fails open with a note on stderr. A guard always prints exactly one JSON object,
 because Cursor treats invalid JSON on a permission hook as a block.
 
+The adapter needs scripts/cursor_hook_family.py next to it. If that module is missing
+or broken it still prints one JSON object: guards deny naming it, subagentStart allows,
+every other event fails open.
+
 No network, standard library only. The payload is data: a file path from it only
 ever becomes a field of the payload handed to the script.
 """
@@ -35,7 +39,14 @@ import re
 import subprocess
 import sys
 
-from cursor_hook_family import (chat_key, log_event, note, record_links, session_key)
+try:  # the helper-agent links live in a sibling module; without it the adapter must still answer in JSON
+    from cursor_hook_family import chat_key, log_event, note, record_links, session_key
+    FAMILY_ERROR = ""
+except Exception as err:  # noqa: BLE001 (a missing file, a syntax error, a raise at import)
+    FAMILY_ERROR = "cursor_hook_family cannot be imported (%s: %s)" % (type(err).__name__, err)
+
+    def note(message):
+        print("cursor-hook: " + message, file=sys.stderr)
 
 GUARDS = {"beforeShellExecution", "preToolUse"}
 # Only these events resolve a helper to its parent, so loaded skills are shared as under Claude. Claude fires
@@ -283,6 +294,10 @@ def main(argv):
         return 2
     event, script, args = argv[1], (argv[2] if len(argv) > 2 else ""), argv[3:]
     guard = event in GUARDS
+    if FAMILY_ERROR:  # a guard denies, subagentStart allows, anything else fails open with its normal answer
+        note(FAMILY_ERROR)
+        emit(result(event, "cursor-hook: %s (fail closed)" % FAMILY_ERROR, "") if guard else result(event, None, ""))
+        return 0
     try:
         payload = json.load(sys.stdin)
         if not isinstance(payload, dict):

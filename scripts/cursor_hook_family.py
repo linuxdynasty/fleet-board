@@ -19,7 +19,6 @@ from __future__ import annotations
 import json
 import os
 import re
-import signal
 import stat
 import sys
 
@@ -93,7 +92,7 @@ def chat_key(payload):
 
 
 def session_key(payload):
-    """The id markers and goals are keyed by: the root of the family of the payload's own ids.
+    """The id skill markers are keyed by: the root of the family of the payload's own ids.
 
     A helper agent runs its tools under its own ids; the links written by subagentStart lead
     them to the parent, as a Claude Code subagent keeps the parent's session_id. With no link
@@ -110,6 +109,14 @@ def session_key(payload):
         if valid_id(value) and os.path.exists("%s/%s%s" % (state_dir(), ROOT_PREFIX, value)):
             return value
     return chat_key(payload)
+
+
+def regular_file(path):
+    """False only for something that exists and is not a regular file (a symlink, a directory)."""
+    try:
+        return stat.S_ISREG(os.lstat(path).st_mode)
+    except OSError:
+        return True  # gone again: nothing to report
 
 
 def write_once(name, content):
@@ -130,7 +137,7 @@ def write_once(name, content):
             handle.write(content)
         os.link(scratch, final)
     except FileExistsError:
-        if made and not stat.S_ISREG(os.lstat(final).st_mode):
+        if made and not regular_file(final):
             note("%s exists and is not a regular file; left alone" % final)
         elif not made:
             note("cannot record %s: scratch file %s already exists" % (name, scratch))

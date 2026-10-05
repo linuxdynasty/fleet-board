@@ -16,6 +16,7 @@ import os
 import subprocess
 import sys
 import unittest
+from pathlib import Path
 
 from cursor_hook_testkit import CONVO, Base, Project, out_json
 
@@ -181,7 +182,7 @@ class LinkSafetyTests(FamilyBase):
         links = [str(self.p.state / (LINK_PREFIX + n)) for n in (HELPER, SUB)]
         self.assertEqual(names, sorted(links + [str(self.p.state / (ROOT_PREFIX + CONVO))]))
         for name in links:
-            self.assertEqual(open(name).read().strip(), CONVO)
+            self.assertEqual(Path(name).read_text().strip(), CONVO)
         for name in names:
             self.assertLess(os.path.getsize(name), 200)
         self.assertEqual([n for n in os.listdir(self.p.state) if n.endswith(".tmp")], [])
@@ -227,6 +228,18 @@ class EventScopeTests(FamilyBase):
         self.p.fire_as("preCompact", {"conversation_id": HELPER})
         self.assertEqual(self.edit(PARENT), "allow")
         self.assertEqual(self.edit({"conversation_id": HELPER}), "allow")
+
+    def test_a_helper_event_with_the_parents_session_id_still_keeps_the_chat_key(self):
+        """conversation_id comes first, so a helper that carries the parent's session_id is still its own chat."""
+        self.start(**START_BY_CONVERSATION)
+        self.p.goal("Finish the migration")
+        ids = {"conversation_id": HELPER, "session_id": CONVO}
+        self.assertEqual(out_json(self, self.p.fire_as("stop", dict(ids, status="completed", loop_count=0))), {})
+        out_json(self, self.p.fire_as("beforeSubmitPrompt", dict(ids, prompt="/goal done")))
+        goal = (self.p.root / ".claude" / ("active-goal." + CONVO)).read_text()
+        self.assertFalse(goal.startswith("DONE"), goal)
+        self.assertIn("followup_message", out_json(self, self.p.fire_as("stop", dict(PARENT, status="completed",
+                                                                                      loop_count=0))))
 
     def test_the_parents_own_compaction_still_clears_the_markers(self):
         self.start(**START_BY_CONVERSATION)
@@ -295,6 +308,56 @@ class StateFileTests(FamilyBase):
                                 capture_output=True, text=True, env=self.p.env(), cwd=self.p.root)
         self.assertEqual((result.returncode, result.stdout), (0, ALLOW), result.stderr)
         self.assertIn("ZeroDivisionError", result.stderr)
+
+
+class MissingModuleTests(FamilyBase):
+    """The adapter needs scripts/cursor_hook_family.py. Without a usable one it must still print one JSON object."""
+
+    def solo(self, module=None):
+        """The adapter alone in its own scripts dir, with no module, or with `module` as the module's text."""
+        scripts = self.p.tmp / "solo" / "scripts"
+        scripts.mkdir(parents=True, exist_ok=True)
+        for old in scripts.iterdir():
+            old.unlink()
+        (scripts / "cursor-hook.py").write_text((self.p.root / "scripts/cursor-hook.py").read_text())
+        if module is not None:
+            (scripts / "cursor_hook_family.py").write_text(module)
+        return scripts / "cursor-hook.py"
+
+    def run_solo(self, adapter, event, payload):
+        script = str(self.p.root / ".claude/hooks/skill-nudge.sh")
+        return subprocess.run([sys.executable, str(adapter), event, script], input=json.dumps(payload),
+                              capture_output=True, text=True, env=self.p.env(), cwd=self.p.root)
+
+    def check(self, adapter):
+        write = {"tool_name": "Write", "tool_input": {"file_path": "a.go"}}
+        for event in ("preToolUse", "beforeShellExecution"):
+            result = self.run_solo(adapter, event, dict(write, command="ls"))
+            value = out_json(self, result)
+            self.assertEqual(value["permission"], "deny", event)
+            self.assertIn("cursor_hook_family", value["agent_message"])
+            self.assertIn("cursor_hook_family", value["user_message"])
+        result = self.run_solo(adapter, "subagentStart", START_BY_CONVERSATION)
+        self.assertEqual((result.returncode, result.stdout), (0, ALLOW), result.stderr)
+        advisory = (("postToolUse", write, {}), ("stop", {"status": "completed"}, {}), ("preCompact", {}, {}),
+                    ("beforeSubmitPrompt", {"prompt": "x"}, {"continue": True}))
+        for event, payload, want in advisory:
+            self.assertEqual(out_json(self, self.run_solo(adapter, event, payload)), want, event)
+        self.assertIn("cursor_hook_family", self.run_solo(adapter, "stop", {}).stderr)
+
+    def test_a_missing_module(self):
+        self.check(self.solo())
+
+    def test_a_module_with_a_syntax_error(self):
+        self.check(self.solo((self.p.root / "scripts/cursor_hook_family.py").read_text() + "\n)(\n"))
+
+    def test_a_module_that_raises_when_imported(self):
+        self.check(self.solo("raise RuntimeError('boom')\n"))
+
+    def test_the_adapter_with_its_module_is_not_affected(self):
+        adapter = self.solo((self.p.root / "scripts/cursor_hook_family.py").read_text())
+        result = self.run_solo(adapter, "subagentStart", START_BY_CONVERSATION)
+        self.assertEqual((result.returncode, result.stdout, result.stderr), (0, ALLOW, ""))
 
 
 class PayloadLogTests(FamilyBase):
