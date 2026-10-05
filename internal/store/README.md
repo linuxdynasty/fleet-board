@@ -74,3 +74,9 @@ reopening. `TestDurableCommitsUseFullFsyncOnDarwin` repeats spike S1's timing
 check: a store commit must take at least 1 ms (about 4 ms with `F_FULLFSYNC`,
 under 0.2 ms without, both logged). It builds only on macOS, so it runs on
 macOS dev machines and not in CI (Ubuntu); `-short` skips it.
+
+`TestWriterMeetsTheA50RestartBurst` replays spike S1's restart burst (about
+2,600 jobs a second for 10 s, one job per message) through Submit and checks
+the writer keeps up, stays under 70 % busy and commits each job within 1 s.
+It measures wall-clock time, so it runs only when asked:
+`FLEET_STORE_A50=1 CGO_ENABLED=0 go test -count=1 -run A50 -v ./internal/store/`.
