@@ -62,7 +62,8 @@ or `fleet_agent`): `_writer_batch_messages`, `_writer_batch_seconds`,
 `_writer_queue_depth` (gauges that rise while the writer is stuck),
 `_writer_queue_full_total` (submits that gave up on a full queue),
 `_read_pool_wait_seconds`, `_store_bytes`, `_store_wal_bytes`. Log events: `store.opened`, `store.migrated`,
-`store.batch_failed` (with `err_kind`), `store.closed`. No paths or SQL text
+`store.batch_failed` (with `err_kind` and `sqlite_code`, SQLite's numeric
+result code), `store.closed`. No paths or SQL text
 are logged.
 
 ## Tests

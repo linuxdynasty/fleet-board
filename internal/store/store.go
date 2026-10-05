@@ -197,7 +197,8 @@ func Open(ctx context.Context, opts Options) (*Store, error) {
 func (s *Store) SchemaVersion() int { return s.version }
 
 // Close stops accepting jobs, commits every job already queued, waits for
-// the writer to stop and closes both pools. It is safe to call twice.
+// the writer to stop and closes both pools. A Read already running keeps its
+// connection and finishes after Close returns. It is safe to call twice.
 func (s *Store) Close() error {
 	s.closeOnce.Do(func() {
 		s.mu.Lock()

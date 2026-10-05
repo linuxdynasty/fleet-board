@@ -95,7 +95,7 @@ func newMetrics(tel *telemetry.Telemetry, name string, obs observed) (*metrics, 
 		o.ObserveInt64(depth, int64(obs.depth()), out.db)
 		age := 0.0
 		if t := obs.oldest(); !t.IsZero() {
-			age = time.Since(t).Seconds()
+			age = max(time.Since(t).Seconds(), 0) // a wall-clock step back must not read negative
 		}
 		o.ObserveFloat64(oldest, age, out.db)
 		return nil

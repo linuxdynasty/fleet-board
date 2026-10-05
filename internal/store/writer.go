@@ -101,7 +101,6 @@ func (s *Store) run() {
 		}
 		wait = nil
 		s.flush(batch)
-		s.oldest.Store(0)
 		batch = batch[:0]
 	}
 }
@@ -133,6 +132,9 @@ func (s *Store) flush(batch []job) {
 		}
 	}
 	s.m.batch(ctx, len(batch), end.Sub(start))
+	// Cleared before any outcome is sent, so a caller holding its result never
+	// scrapes the age of a job that was already answered.
+	s.oldest.Store(0)
 	for i, j := range batch {
 		s.m.job(ctx, end.Sub(j.enqueued), results[i], err != nil)
 		j.done <- results[i]
