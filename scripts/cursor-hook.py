@@ -34,12 +34,54 @@ GUARDS = {"beforeShellExecution", "preToolUse"}
 EVENTS = GUARDS | {"afterFileEdit", "postToolUse", "sessionStart", "preCompact", "beforeSubmitPrompt", "stop"}
 # Cursor does not document the field names inside a Write tool_input.
 PATH_KEYS = ("file_path", "path", "target_file", "filePath", "file")
-SKILL_FILE = re.compile(r"(?:^|/)skills/([A-Za-z0-9][A-Za-z0-9._-]*)/SKILL\.md$")
+SKILL_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
+# A SKILL.md counts as a skill load only inside the project's own skill directories.
+SKILL_DIRS = (".agents/skills", ".claude/skills", ".cursor/skills")
+# The one home of the script timeout; FLEET_CURSOR_HOOK_TIMEOUT (seconds) overrides it.
 TIMEOUT_SECONDS = 8
+TIMEOUT_ENV = "FLEET_CURSOR_HOOK_TIMEOUT"
+MESSAGE_LIMIT = 20000
 
 
 class Failure(Exception):
     """The hook script could not be run, or did not finish."""
+
+
+def timeout_seconds():
+    try:
+        value = float(os.environ.get(TIMEOUT_ENV, ""))
+    except ValueError:
+        return TIMEOUT_SECONDS
+    return value if value > 0 else TIMEOUT_SECONDS
+
+
+def clip(text):
+    if len(text) <= MESSAGE_LIMIT:
+        return text
+    return text[:MESSAGE_LIMIT] + "\n... [truncated %d characters]" % (len(text) - MESSAGE_LIMIT)
+
+
+def skill_name(path, cwd, project):
+    """The skill a Read of SKILL.md loads, or "" when the file is not a project skill."""
+    full = path if os.path.isabs(path) else os.path.join(cwd, path)
+    real = os.path.realpath(full)
+    if os.path.basename(real) != "SKILL.md":
+        return ""
+    directory = os.path.dirname(real)
+    for base in SKILL_DIRS:
+        if os.path.dirname(directory) == os.path.realpath(os.path.join(project, base)):
+            name = os.path.basename(directory)
+            return name if SKILL_NAME.fullmatch(name) else ""
+    return ""
+
+
+def cursor_hint(message):
+    """Cursor has no skill tool: tell the agent which SKILL.md to read."""
+    found = re.search(r"not loaded in this context: ([A-Za-z0-9 ._-]+)", message)
+    if "BLOCKED (skill-nudge)" not in message or not found:
+        return ""
+    files = ", ".join(".agents/skills/%s/SKILL.md" % name for name in found.group(1).split())
+    return "\nIn Cursor there is no skill tool: read %s, then retry the edit." % files
 
 
 def note(message):
@@ -62,7 +104,7 @@ def edited_path(payload):
     return value if isinstance(value, str) else ""
 
 
-def claude_payload(event, payload, cwd):
+def claude_payload(event, payload, cwd, project):
     """The payload the existing script expects, or None when there is nothing to run."""
     base = {"cwd": cwd, "session_id": str(payload.get("conversation_id") or payload.get("session_id") or "")}
     tool = payload.get("tool_name")
@@ -80,9 +122,9 @@ def claude_payload(event, payload, cwd):
     if event == "afterFileEdit":
         return dict(base, tool_name="Edit", tool_input={"file_path": path}, hook_event_name="PostToolUse")
     if event == "postToolUse":
-        match = SKILL_FILE.search(path) if tool == "Read" else None
-        if match:  # an agent loads a skill by reading its SKILL.md
-            return dict(base, tool_name="Skill", tool_input={"skill": match.group(1)}, hook_event_name="PostToolUse")
+        skill = skill_name(path, cwd, project) if tool == "Read" and path else ""
+        if skill:  # an agent loads a skill by reading its SKILL.md
+            return dict(base, tool_name="Skill", tool_input={"skill": skill}, hook_event_name="PostToolUse")
         if tool == "Write":
             return dict(base, tool_name="Write", tool_input={"file_path": path}, hook_event_name="PostToolUse")
         return None
@@ -91,6 +133,8 @@ def claude_payload(event, payload, cwd):
         return dict(base, hook_event_name="SessionStart", source=source)
     if event == "beforeSubmitPrompt":
         return dict(base, hook_event_name="UserPromptSubmit", prompt=str(payload.get("prompt", "")))
+    if payload.get("status") != "completed":
+        return None  # Claude's Stop hook never fires on an interrupted turn or an error
     loops = payload.get("loop_count")
     return dict(base, hook_event_name="Stop", stop_hook_active=isinstance(loops, int) and loops > 0)
 
@@ -101,11 +145,13 @@ def run_script(script, args, claude, project):
         raise Failure("hook script %s does not exist" % script)
     env = dict(os.environ)
     env.setdefault("CLAUDE_PROJECT_DIR", project)
+    limit = timeout_seconds()
     try:
         done = subprocess.run(command + args, input=json.dumps(claude), capture_output=True, text=True,
-                              env=env, cwd=project if os.path.isdir(project) else None, timeout=TIMEOUT_SECONDS)
+                              errors="replace", env=env, cwd=project if os.path.isdir(project) else None,
+                              timeout=limit)
     except subprocess.TimeoutExpired:
-        raise Failure("hook script %s timed out after %ss" % (script, TIMEOUT_SECONDS))
+        raise Failure("hook script %s timed out after %gs" % (script, limit))
     except OSError as err:
         raise Failure("hook script %s cannot run: %s" % (script, err))
     return done.returncode, done.stdout, done.stderr.strip()
@@ -118,7 +164,7 @@ def interpret(stdout):
         return None, ""
     try:
         data = json.loads(text)
-    except ValueError:
+    except (ValueError, RecursionError):
         return None, text
     if not isinstance(data, dict):
         return None, ""
@@ -135,18 +181,19 @@ def interpret(stdout):
 
 def result(event, blocked, context):
     """The JSON object Cursor expects for this event."""
+    blocked = clip(blocked) if blocked is not None else None
+    context = clip(context)
     if event in GUARDS:
         if blocked is not None:
-            return {"permission": "deny", "user_message": blocked, "agent_message": blocked}
+            return {"permission": "deny", "user_message": blocked, "agent_message": blocked + cursor_hint(blocked)}
         return {"permission": "allow"}
     if event == "stop":
         return {"followup_message": blocked} if blocked is not None else {}
     if event == "beforeSubmitPrompt":
-        message = blocked if blocked is not None else context
-        out = {"continue": blocked is None}
-        if message:
-            out["user_message"] = message
-        return out
+        # Cursor shows user_message only when the prompt is blocked; context cannot be added.
+        if blocked is not None:
+            return {"continue": False, "user_message": blocked}
+        return {"continue": True}
     if event == "preCompact":
         return {"user_message": context} if context else {}
     return {"additional_context": context} if context else {}
@@ -166,13 +213,13 @@ def main(argv):
         payload = json.load(sys.stdin)
         if not isinstance(payload, dict):
             raise ValueError("payload is not a JSON object")
-    except ValueError as err:
+    except (ValueError, RecursionError) as err:
         note("unreadable %s payload: %s" % (event, err))
         emit(result(event, "cursor-hook: unreadable %s payload (fail closed)" % event, "") if guard
              else result(event, None, ""))
         return 0
     project = project_dir(payload)
-    claude = claude_payload(event, payload, str(payload.get("cwd") or project))
+    claude = claude_payload(event, payload, str(payload.get("cwd") or project), project)
     if claude is None:
         emit(result(event, None, ""))
         return 0
@@ -191,7 +238,7 @@ def main(argv):
         if guard:
             emit(result(event, message, ""))
             return 0
-        print(message, file=sys.stderr)
+        print(clip(message), file=sys.stderr)
         return 2
     if stderr:
         print(stderr, file=sys.stderr)

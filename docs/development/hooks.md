@@ -61,13 +61,13 @@ cursor.com/docs/hooks (fetched 2026-10-04).
 |---|---|---|
 | `skill-nudge.sh` (PreToolUse Edit, MultiEdit, Write) | `preToolUse` (`Write`), `failClosed` | exit 2 becomes `{"permission": "deny", "user_message", "agent_message"}`, else `{"permission": "allow"}` |
 | `doc-staleness.sh` (PostToolUse) | `postToolUse` (`Write`) | the reminder becomes `additional_context` |
-| `goal-continue.sh` (Stop) | `stop` | a refusal becomes `followup_message`; `loop_count > 0` is `stop_hook_active`, so Cursor's own loop limit and ours agree |
-| `on-compact.sh` (SessionStart `compact\|resume`) | `preCompact` | clears this session's skill markers; the re-injection text goes to `user_message` (the owner sees it, the agent does not) |
-| `goal-refresh.sh` (UserPromptSubmit) | `beforeSubmitPrompt` | writes the goal file for `/goal` lines, always `{"continue": true}` |
-| `skill-loaded.sh` (PostToolUse Skill) | `postToolUse` (`Read`) | **approximation**: Cursor has no Skill tool, so reading `.../skills/<name>/SKILL.md` records the marker; any other read does nothing |
-| `goal-role-router.py claude-dispatch` (PreToolUse Agent) | none | **not portable**: it rewrites a model override on the Agent tool, and Cursor's `subagentStart` has no input to rewrite and no model field; the generated `.cursor/agents/*.md` already say `model: inherit` |
+| `goal-continue.sh` (Stop) | `stop` | a refusal becomes `followup_message`; `loop_count > 0` is `stop_hook_active`, so it refuses once per user turn, as in Claude (cursor-agent resets `loop_count` on each prompt, so Cursor's `loop_limit` of 5 is never reached); a turn whose `status` is not `completed` (aborted, error) is never refused, as Claude's Stop hook does not fire then |
+| `on-compact.sh` (SessionStart `compact\|resume`) | `preCompact` | clears this session's skill markers; the re-injection text goes to `user_message` (the owner sees it, the agent does not). The `resume` half is **not portable**: Cursor has no resume event, so on a resumed conversation the skill markers outlive the discarded skill content and skill-nudge can wave through an edit |
+| `goal-refresh.sh` (UserPromptSubmit) | `beforeSubmitPrompt` | writes the goal file for `/goal` lines, always plain `{"continue": true}` (Cursor shows `user_message` only when `continue` is false, so the restated goal is dropped) |
+| `skill-loaded.sh` (PostToolUse Skill) | `postToolUse` (`Read`) | **approximation**: Cursor has no Skill tool, so reading `<project>/.agents/skills`, `.claude/skills` or `.cursor/skills` `/<name>/SKILL.md` records the marker (symlinks that leave the project, and any other read, do nothing) |
+| `goal-role-router.py claude-dispatch` (PreToolUse Agent) | none | **not portable**: it rewrites a model override on the Agent tool, and Cursor's `subagentStart` output can only allow or deny (it has `subagent_model`, but nothing to rewrite it with); the generated `.cursor/agents/*.md` already say `model: inherit` |
 | `goal-role-router.py claude` (UserPromptSubmit) | none | **not portable**: it only adds context, and `beforeSubmitPrompt` cannot add context |
-| goal-refresh and on-compact context injection | none | **not portable**: `additional_context` exists on `sessionStart` and `postToolUse` only; the restated goal reaches the owner as `user_message` at most |
+| goal-refresh and on-compact context injection | none | **not portable**: `additional_context` exists on `sessionStart` and `postToolUse` only; the restated goal is dropped (see `beforeSubmitPrompt`), and the compaction text reaches the owner only |
 
 Notes on the choices:
 
@@ -83,14 +83,22 @@ Notes on the choices:
 - **Skill loads.** Without the `Read` mapping, `skill-nudge.sh` would refuse
   every governed edit in Cursor with no way to satisfy it. An agent that loads a
   skill some other way still has the per-session override the refusal prints.
-- **Unknown Write field names.** Cursor does not document the names inside a
-  `Write` `tool_input`. The adapter tries `file_path`, `path`, `target_file`,
-  `filePath`, `file`, then the payload's own `file_path`. With none present it
-  allows the edit and says so on stderr rather than block on a guessed path.
+- **Tool input field names.** Cursor's docs do not name the fields inside a
+  `Write` or `Read` `tool_input`. In cursor-agent 2026.10.01 (read from its
+  bundle) `Write` is `{file_path, content}` and `Read` is `{file_path}`. The
+  adapter tries `file_path` first, then `path`, `target_file`, `filePath`,
+  `file` and the payload's own `file_path`, as insurance against other
+  versions. With none present it allows the edit and says so on stderr rather
+  than block on a guessed path.
+- **The refusal text.** The skill-nudge refusal says to load the skill "with the
+  skill tool"; Cursor has none, so the adapter appends the files to read
+  (`.agents/skills/<name>/SKILL.md`) to the `agent_message` only.
 - **Failure modes.** The one guard (`preToolUse`, `failClosed: true` and the
-  adapter's own deny) refuses when the script is missing, crashes, takes more
-  than 8 seconds or the payload is unreadable. Every other hook fails open with
-  a note on stderr.
+  adapter's own deny) refuses when the script is missing, crashes, takes longer
+  than the timeout or the payload is unreadable. Every other hook fails open with
+  a note on stderr. The timeout (`TIMEOUT_SECONDS`, overridable with
+  `FLEET_CURSOR_HOOK_TIMEOUT`) lives in `scripts/cursor-hook.py` and stays below
+  the 10 seconds in `.cursor/hooks.json`; messages are cut at 20000 characters.
 - **Third-party loading.** While that Cursor setting is on, Cursor runs both the
   Claude-compatible hooks and these native ones, so a hook can fire twice
   with the same answer. Turn the setting off once `.cursor/hooks.json` is in
@@ -99,8 +107,9 @@ Notes on the choices:
   `CURSOR_PROJECT_DIR` set. The off switches below apply unchanged, because the
   scripts read them.
 - Not live-probed in a real Cursor session: whether `cursor-agent` passes `/goal`
-  lines to `beforeSubmitPrompt`, the `Read` tool's input field names, and
-  whether `postToolUse` `additional_context` is shown to the agent.
+  lines to `beforeSubmitPrompt`, and whether `postToolUse` `additional_context`
+  is shown to the agent. The `tool_input` shapes come from reading the
+  cursor-agent 2026.10.01 bundle, not from a probe.
 
 Harness differences, all handled in the shared scripts:
 
@@ -168,7 +177,7 @@ resume keeps the session id but discards skill content.
 ## Goal protocol
 
 `goal-refresh.sh` writes `.claude/active-goal.<session_id>` (gitignored; the
-same path for all three harnesses) when a prompt starts with `/goal ` or
+same path for all four harnesses) when a prompt starts with `/goal ` or
 `GOAL: `. The first line after the metadata is the state:
 
 | First line | Stop hook | Meaning |
@@ -212,10 +221,11 @@ knowing about.
 ## Tests
 
 ```bash
-scripts/test-dev-hooks.sh              # hooks, wiring in all three configs, router, spawn guard
+scripts/test-dev-hooks.sh              # hooks, wiring in the Claude, Codex and Muse configs, router, spawn guard
 python3 scripts/test-goal-role-router.py
 python3 scripts/test-codex-spawn-guard.py
 python3 scripts/test-cursor-hook.py    # Cursor adapter and .cursor/hooks.json, Cursor-shaped payloads (make selftest)
+python3 scripts/test-cursor-hook-edges.py  # timeouts, bad output, deep JSON, stop status, skill reads (make selftest)
 scripts/verify-agent-canon.sh          # map names real skills; configs reference real scripts
 ```
 

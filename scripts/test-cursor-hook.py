@@ -1,136 +1,17 @@
 #!/usr/bin/env python3
 """Seeded RED/GREEN cases for scripts/cursor-hook.py and .cursor/hooks.json.
 
-Everything goes through public surfaces: the adapter's command line with
-Cursor-shaped JSON on stdin, and the exact command strings in .cursor/hooks.json
-run through `sh -c` from a seeded project root, the way Cursor runs them. The
-real hook scripts under .claude/hooks do the work; a few stub scripts stand in
-where no wired hook exercises an event or an exit code.
-
-The field names inside a Write tool_input are not documented by Cursor; the
-adapter tries several (see test_write_path_field_names) and, when none is
-present, allows the edit and says so on stderr (test_write_without_a_path).
+Fixtures and the shape of every case are in cursor_hook_testkit.py; failure
+modes (timeouts, bad output, deep JSON) are in test-cursor-hook-edges.py.
 """
 from __future__ import annotations
 
 import json
-import os
-import re
-import shutil
 import subprocess
 import sys
-import tempfile
 import unittest
-from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-ADAPTER = ROOT / "scripts/cursor-hook.py"
-CONVO = "convo-1234567890"
-
-# Event -> matcher tool names expected to be wired in .cursor/hooks.json.
-WIRED = {
-    "preToolUse": ["Write"],
-    "postToolUse": ["Write", "Read"],
-    "preCompact": [None],
-    "stop": [None],
-    "beforeSubmitPrompt": [None],
-}
-
-
-class Project:
-    """A throwaway fleet-board-like project plus an isolated hook environment."""
-
-    def __init__(self):
-        self.tmp = Path(tempfile.mkdtemp())
-        self.root = self.tmp / "proj"
-        self.state = self.tmp / "state"
-        self.home = self.tmp / "home"
-        for d in (self.root, self.state, self.home):
-            d.mkdir(parents=True)
-        (self.root / ".agents").mkdir()
-        shutil.copy(ROOT / ".agents/skill-paths.json", self.root / ".agents/")
-        shutil.copytree(ROOT / ".claude/hooks", self.root / ".claude/hooks", symlinks=True)
-        (self.root / "scripts").mkdir()
-        shutil.copy(ROOT / "scripts/check-docs-stale.py", self.root / "scripts/")
-        if ADAPTER.exists():
-            shutil.copy(ADAPTER, self.root / "scripts/")
-        (self.root / ".cursor").mkdir()
-        if (ROOT / ".cursor/hooks.json").exists():
-            shutil.copy(ROOT / ".cursor/hooks.json", self.root / ".cursor/")
-        subprocess.run(["git", "init", "-q", str(self.root)], check=True)
-
-    def env(self, **extra):
-        env = {k: v for k, v in os.environ.items() if not k.startswith(("CLAUDE_", "CURSOR_", "FLEET_"))}
-        env.update(HOME=str(self.home), FLEET_HOOK_STATE_DIR=str(self.state), CURSOR_PROJECT_DIR=str(self.root))
-        env.update(extra)
-        return env
-
-    def adapter(self, event, script, payload, **env):
-        """Runs `python3 cursor-hook.py <event> <script>` once."""
-        data = payload if isinstance(payload, str) else json.dumps(payload)
-        return subprocess.run([sys.executable, str(self.root / "scripts/cursor-hook.py"), event, str(script)],
-                              input=data, capture_output=True, text=True, env=self.env(**env), cwd=self.root)
-
-    def commands(self, event, tool=None):
-        config = json.loads((self.root / ".cursor/hooks.json").read_text())
-        rows = config["hooks"].get(event, [])
-        return [r for r in rows if tool is None or "matcher" not in r or re.search(r["matcher"], tool)]
-
-    def fire(self, event, payload, tool=None):
-        """Runs every hooks.json command Cursor would run for this event."""
-        data = json.dumps(dict(payload, hook_event_name=event, conversation_id=CONVO,
-                               workspace_roots=[str(self.root)]))
-        return [subprocess.run(["sh", "-c", row["command"]], input=data, capture_output=True, text=True,
-                               env=self.env(), cwd=self.root, timeout=30) for row in self.commands(event, tool)]
-
-    def fire_one(self, event, payload, tool=None):
-        results = self.fire(event, payload, tool)
-        assert len(results) == 1, "%s/%s wired %d times" % (event, tool, len(results))
-        return results[0]
-
-    def stub(self, name, body):
-        path = self.tmp / name
-        path.write_text("#!/bin/sh\n" + body)
-        path.chmod(0o755)
-        return path
-
-    def recording_stub(self):
-        """A hook script that records stdin and CLAUDE_PROJECT_DIR, then exits 0 silently."""
-        return self.stub("record.sh", 'cat > "%s/seen.json"; printf %%s "$CLAUDE_PROJECT_DIR" > "%s/seen.env"\n'
-                         % (self.tmp, self.tmp))
-
-    def seen(self):
-        return json.loads((self.tmp / "seen.json").read_text()), (self.tmp / "seen.env").read_text()
-
-    def goal(self, text, sid=CONVO):
-        (self.root / ".claude").mkdir(exist_ok=True)
-        (self.root / ".claude" / ("active-goal." + sid)).write_text("SESSION: %s\n%s\n" % (sid, text))
-
-    def cleanup(self):
-        shutil.rmtree(self.tmp, ignore_errors=True)
-
-
-def out_json(case, result):
-    """Cursor treats invalid JSON on a permission hook as a block: always demand one object."""
-    case.assertEqual(result.returncode, 0, result.stderr)
-    value = json.loads(result.stdout)
-    case.assertIsInstance(value, dict)
-    case.assertEqual(result.stdout.strip().count("\n"), 0, "one JSON object on one line")
-    return value
-
-
-class Base(unittest.TestCase):
-    def setUp(self):
-        self.p = Project()
-        self.addCleanup(self.p.cleanup)
-
-    def write_payload(self, path, key="file_path", **extra):
-        return dict({"tool_name": "Write", "tool_input": {key: path}, "cwd": str(self.p.root)}, **extra)
-
-    def deny_message(self, value):
-        self.assertEqual(value["permission"], "deny")
-        self.assertEqual(value["user_message"], value["agent_message"])
-        return value["agent_message"]
+from cursor_hook_testkit import ADAPTER, CONVO, ROOT, WIRED, Base, Project, out_json
 
 
 class WiringTests(Base):
@@ -240,7 +121,7 @@ class GuardFailureTests(Base):
 
     def test_exit_2_on_an_event_without_a_permission_field_stays_exit_2(self):
         refuse = self.p.stub("refuse.sh", "echo 'stop it' >&2; exit 2\n")
-        result = self.p.adapter("stop", refuse, {})
+        result = self.p.adapter("stop", refuse, {"status": "completed"})
         self.assertEqual(result.returncode, 2)
         self.assertIn("stop it", result.stderr)
 
@@ -280,7 +161,7 @@ class PayloadShapeTests(Base):
         seen, _ = self.seen_for("postToolUse", {"tool_name": "Write", "tool_input": {"file_path": "/w/a.go"}})
         self.assertEqual((seen["tool_name"], seen["tool_input"], seen["hook_event_name"]),
                          ("Write", {"file_path": "/w/a.go"}, "PostToolUse"))
-        seen, _ = self.seen_for("postToolUse", {"tool_name": "Read", "tool_input": {"path": "/w/.cursor/skills/fleet-go/SKILL.md"}})
+        seen, _ = self.seen_for("postToolUse", {"tool_name": "Read", "tool_input": {"path": str(self.p.root / ".cursor/skills/fleet-go/SKILL.md")}})
         self.assertEqual((seen["tool_name"], seen["tool_input"]), ("Skill", {"skill": "fleet-go"}))
 
     def test_session_start_and_pre_compact_sources(self):
@@ -306,7 +187,7 @@ class PayloadShapeTests(Base):
 
     def test_an_existing_claude_project_dir_is_kept(self):
         stub = self.p.recording_stub()
-        self.p.adapter("stop", stub, {"loop_count": 0}, CLAUDE_PROJECT_DIR="/elsewhere")
+        self.p.adapter("stop", stub, {"status": "completed", "loop_count": 0}, CLAUDE_PROJECT_DIR="/elsewhere")
         self.assertEqual(self.p.seen()[1], "/elsewhere")
 
     def test_workspace_root_is_used_when_the_env_is_missing(self):
@@ -314,7 +195,7 @@ class PayloadShapeTests(Base):
         env = self.p.env()
         env.pop("CURSOR_PROJECT_DIR")
         subprocess.run([sys.executable, str(ADAPTER), "stop", str(stub)], capture_output=True, text=True, env=env,
-                       input=json.dumps({"loop_count": 0, "workspace_roots": ["/ws"]}), cwd="/")
+                       input=json.dumps({"status": "completed", "loop_count": 0, "workspace_roots": ["/ws"]}), cwd="/")
         self.assertEqual(self.p.seen()[0]["cwd"], "/ws")
 
 
@@ -331,7 +212,7 @@ class OutputMappingTests(Base):
                  ("afterFileEdit", {"file_path": "a"}, {"additional_context": "remember this"}),
                  ("sessionStart", {}, {"additional_context": "remember this"}),
                  ("preCompact", {}, {"user_message": "remember this"}),
-                 ("beforeSubmitPrompt", {"prompt": "x"}, {"continue": True, "user_message": "remember this"}))
+                 ("beforeSubmitPrompt", {"prompt": "x"}, {"continue": True}))
         for event, payload, want in cases:
             self.assertEqual(out_json(self, self.p.adapter(event, ctx, payload)), want, event)
 
@@ -341,7 +222,7 @@ class OutputMappingTests(Base):
 
     def test_stop_block_becomes_a_followup_message(self):
         block = self.emitting('{"decision":"block","reason":"keep going"}')
-        self.assertEqual(out_json(self, self.p.adapter("stop", block, {"loop_count": 0})), {"followup_message": "keep going"})
+        self.assertEqual(out_json(self, self.p.adapter("stop", block, {"status": "completed", "loop_count": 0})), {"followup_message": "keep going"})
 
     def test_silence_is_an_empty_object(self):
         quiet = self.p.stub("quiet.sh", "cat >/dev/null\n")
@@ -386,17 +267,15 @@ class PromptAndCompactTests(Base):
         goal = (self.p.root / ".claude" / ("active-goal." + CONVO)).read_text()
         self.assertTrue(goal.startswith("SESSION: " + CONVO))
         self.assertIn("Ship the dev hooks", goal)
-        self.assertIn("Ship the dev hooks", out_json(self, self.p.fire_one("stop", {"loop_count": 0}))["followup_message"])
+        self.assertIn("Ship the dev hooks", out_json(self, self.p.fire_one("stop", {"status": "completed", "loop_count": 0}))["followup_message"])
 
     def test_a_plain_prompt_is_let_through_untouched(self):
         self.assertEqual(self.submit("how do I run the tests?"), {"continue": True})
         self.assertFalse((self.p.root / ".claude" / ("active-goal." + CONVO)).exists())
 
-    def test_the_restated_goal_reaches_the_owner_only(self):
+    def test_the_restated_goal_is_dropped_because_cursor_shows_user_message_only_on_a_block(self):
         self.p.goal("Finish the migration")
-        value = self.submit("status?")
-        self.assertEqual(value["continue"], True)
-        self.assertIn("Finish the migration", value["user_message"])
+        self.assertEqual(self.submit("status?"), {"continue": True})
 
     def test_pre_compact_clears_the_loaded_skill_markers(self):
         proto = str(self.p.root / "api/fleet/x.proto")
