@@ -173,7 +173,7 @@ section is the only home of the tag vocabulary.
 | Tag | Required on | Value | Note (the rest of the line) |
 |---|---|---|---|
 | `[SCOPE <expr>]` | every `FleetService` RPC and every non-zero `WatchTopic` value | `Scope` names without `SCOPE_`, joined by `\|` (`READ\|APPROVALS`); or `self`, `none` or `per-topic`, each alone | for an RPC, a condition the hub checks that changes who may call; for a topic, the row rule |
-| `[RELEASE <v1\|v3> <row>]` | every `FleetService` RPC and every non-zero `WatchTopic` value | the release, then a plan row (`12`, `13a`) or `none` | the part of the call that row builds; one line per row, all lines of one release |
+| `[RELEASE <v1\|v3> <row>]` | every `FleetService` RPC and every non-zero `WatchTopic` value | `v1` and a row of the PR sequence in [plan section 5](../plan/v1-implementation-plan.md#5-the-pr-sequence) (`12`, `13a`); `v3` and `none` | the part of the call that row builds; one line per row, all lines of one release |
 | `[DELIVERY SHED]`, `[DELIVERY NEVER_DROP]`, `[DELIVERY COALESCE <key>]` | every `Event.body` arm (the field) | a `DeliveryClass` name without the prefix; `COALESCE` needs the `coalesce_key` pattern, the others take none | why the event has that class |
 | `[CAP <id> ...]` | optional: a message, field, enum value or RPC | capability ids from the table in [01](01-agent-capabilities.md), space separated | none |
 
@@ -181,9 +181,11 @@ section is the only home of the tag vocabulary.
   prose. The block ends at a blank `//` line or the first line that is not a
   tag. The note is the rest of the tag's line, verbatim.
 - A tag key anywhere else in a comment (in prose, after a blank line, or in a
-  trailing comment) is an error. So is an unknown key, a malformed tag, a
-  second `[SCOPE]` or `[DELIVERY]`, a value outside its enum or outside 01's
-  table, and a missing required tag.
+  trailing comment, or in a comment a blank line cuts off from the element) is
+  an error. So is an unknown key, a malformed tag, a second `[SCOPE]`,
+  `[DELIVERY]` or `[CAP]`, a value outside its enum or outside 01's table, a
+  full enum name (`SCOPE_READ`) or `UNSPECIFIED` as a value, and a missing
+  required tag.
 - `[CAP]` goes on the message that defines the capability, not on the
   `Command` oneof arm that carries it; on a field only when the capability
   lives in a field of a shared message.

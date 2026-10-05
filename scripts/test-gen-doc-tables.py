@@ -200,6 +200,41 @@ class GenDocTablesTests(unittest.TestCase):
         self.seed(AGENT, "  string probe_id = 1;\n", "  string probe_id = 1; // [CAP D1]\n",
                   r"EnsureProbe.probe_id.*outside the tag block")
 
+    def test_a_tag_cut_off_by_a_blank_line_fails(self):
+        self.seed(AGENT, "// [CAP A7]\nmessage Bye {", "// [CAP A7]\n\nmessage Bye {",
+                  r"message Bye: tag key \[CAP\] in a comment a blank line cuts off")
+
+    def test_two_cap_lines_fail(self):
+        self.seed(AGENT, "// [CAP A7]\nmessage Bye {", "// [CAP A7]\n// [CAP A3]\nmessage Bye {",
+                  r"message Bye: has more than one \[CAP\] tag")
+
+    def test_full_enum_names_and_unspecified_are_not_tag_values(self):
+        cases = [
+            (SVC, "  // [SCOPE ADMIN]\n", "  // [SCOPE SCOPE_READ]\n", r"DrainMachine: SCOPE SCOPE_READ: write SCOPE_READ without SCOPE_"),
+            (SVC, "  // [SCOPE ADMIN]\n", "  // [SCOPE SCOPE_UNSPECIFIED]\n", r"DrainMachine: SCOPE SCOPE_UNSPECIFIED: write SCOPE_UNSPECIFIED without SCOPE_"),
+            (SVC, "  // [SCOPE ADMIN]\n", "  // [SCOPE UNSPECIFIED]\n", r"DrainMachine: SCOPE UNSPECIFIED: UNSPECIFIED is never a tag value"),
+            (EVENTS, "[DELIVERY SHED]", "[DELIVERY DELIVERY_CLASS_UNSPECIFIED]", r"resource_sample: DELIVERY DELIVERY_CLASS_UNSPECIFIED: write DELIVERY_CLASS_UNSPECIFIED without DELIVERY_CLASS_"),
+            (EVENTS, "[DELIVERY COALESCE ready:<pane>]", "[DELIVERY DELIVERY_CLASS_COALESCE]", r"harness_ready: DELIVERY DELIVERY_CLASS_COALESCE: write DELIVERY_CLASS_COALESCE without DELIVERY_CLASS_"),
+        ]
+        for rel, old, new, want in cases:
+            with self.subTest(tag=new.strip()):
+                original = self.read(rel)
+                self.seed(rel, old, new, want)
+                self.tree.write(rel, original)
+
+    def test_release_rows_come_from_the_plan(self):
+        for old, new, want in (("[RELEASE v1 13a]", "[RELEASE v1 99]", r"DrainMachine: RELEASE v1 99: 99 is not a row of the PR sequence"),
+                               ("[RELEASE v3 none]", "[RELEASE v3 12]", r"GetDevice: RELEASE v3 12: v3 has no plan row yet; write \[RELEASE v3 none\]"),
+                               ("[RELEASE v1 13a]", "[RELEASE v1 none]", r"DrainMachine: RELEASE v1 none: v1 names a plan row")):
+            with self.subTest(tag=new):
+                original = self.read(SVC)
+                self.seed(SVC, old, new, want)
+                self.tree.write(SVC, original)
+
+    def test_a_missing_plan_fails_closed(self):
+        (self.tree.root / "docs/plan/v1-implementation-plan.md").unlink()
+        self.assertIn("cannot read docs/plan/v1-implementation-plan.md", self.assert_rc(2, self.run_gen("--check")))
+
     def test_a_contract_without_the_anchors_fails_closed(self):
         self.tree.edit(EVENTS, "message Event {", "message Occurrence {")
         self.tree.edit(AGENT, "    Event event = 2;", "    Occurrence event = 2;")

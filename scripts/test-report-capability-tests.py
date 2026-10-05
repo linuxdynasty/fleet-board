@@ -117,6 +117,18 @@ class ReportTest(unittest.TestCase):
         self.assertEqual(res.returncode, 2, res.stdout + res.stderr)
         self.assertIn("no capability table rows", res.stderr)
 
+    def test_a_malformed_capability_row_exits_2(self):
+        self.tree.write("docs/specs/01-agent-capabilities.md", TABLE + "| E10 | Capture pane |\n")
+        res = self.tree.run()
+        self.assertEqual(res.returncode, 2, res.stdout + res.stderr)
+        self.assertIn("line 9: a capability row must read | ID | Capability | Kind | Phase |", res.stderr)
+
+    def test_a_duplicate_capability_id_exits_2(self):
+        self.tree.write("docs/specs/01-agent-capabilities.md", TABLE + "| E9 | Again | S | v1 |\n")
+        res = self.tree.run()
+        self.assertEqual(res.returncode, 2, res.stdout + res.stderr)
+        self.assertIn("line 9: E9 is listed twice", res.stderr)
+
     def test_unreadable_test_file_exits_2(self):
         self.tree.write("internal/x/x_test.go", "// E9\n")
         (self.tree.root / "internal/x/x_test.go").write_bytes(b"\xff\xfe\x00bad")

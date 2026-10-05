@@ -15,7 +15,7 @@ types and comments are exactly what buf compiled.
 
 A Contract holds the elements of the fleet.* files only: messages (nested
 too), enums and their values, services and their rpcs, oneofs and fields, each
-with its leading and trailing comments; Contract.elements lists them all in
+with its leading, trailing and detached leading comments; Contract.elements lists them all in
 declaration order. Field types may point into imported
 files (google.protobuf.Timestamp); those resolve but are not fleet names.
 
@@ -53,6 +53,7 @@ class Element:
         self.kind, self.name, self.full_name, self.file = kind, name, full_name, file
         self.comment = (loc or {}).get("leadingComments", "")
         self.trailing = (loc or {}).get("trailingComments", "")
+        self.detached = (loc or {}).get("leadingDetachedComments", [])
 
     def __repr__(self):
         return "<%s %s>" % (self.kind, self.full_name)

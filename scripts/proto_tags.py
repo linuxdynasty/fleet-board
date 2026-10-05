@@ -11,9 +11,10 @@ WatchTopic value but the zero one, DELIVERY on every Event.body arm, CAP on any
 message, field, enum value or rpc. Tags(contract, root) reads every fleet
 element's comment and collects one problem per broken rule: an unknown key, a
 malformed tag, a missing or misplaced tag, a value outside its enum or the 01
-capability table, or a tag key outside the block (trailing comments
-included). ContractError means an anchor the rules need is missing; callers
-exit 2 on it.
+capability table, a [RELEASE] row that is not in the plan's PR sequence, or a
+tag key outside the block (trailing comments and comments a blank line cuts
+off included). ContractError means an anchor the rules need is missing, or
+01's table or the plan cannot be read; callers exit 2 on it.
 """
 from __future__ import annotations
 
@@ -28,6 +29,8 @@ EVENT = "fleet.agent.v1.Event"
 EVENT_ONEOF = "body"
 DELIVERY_ENUM = "fleet.agent.v1.DeliveryClass"
 CAP_DOC = "docs/specs/01-agent-capabilities.md"
+PLAN_DOC = "docs/plan/v1-implementation-plan.md"
+PLAN_SECTION = "## 5. The PR sequence"
 SPECIAL_SCOPES = ("self", "none", "per-topic")
 
 SHAPED = re.compile(r"^\[([A-Z][A-Z_]*)(?=[ \]])")
@@ -35,6 +38,8 @@ TAG = re.compile(r"^\[(?P<key>[A-Z][A-Z_]*)(?: (?P<value>[^\]]+))?\](?: (?P<note
 IN_PROSE = re.compile(r"\[(%s)[ \]]" % "|".join(KEYS))
 RELEASE_VALUE = re.compile(r"^(v1|v3) ([0-9]+[a-z]?|none)$")
 CAP_ROW = re.compile(r"^\| ([A-Z][0-9]+) \|.*\| ([a-z0-9]+) \|\s*$")
+CAP_SHAPED = re.compile(r"^\| [A-Z][0-9]+ \|")
+PLAN_ROW = re.compile(r"^\| ([0-9]+[a-z]?) \|")
 
 
 class ContractError(Exception):
@@ -56,8 +61,8 @@ def comment_lines(text):
     return [line.rstrip() for line in lines]
 
 
-def parse(comment, trailing=""):
-    """(tags, problems) for one element's leading and trailing comments."""
+def parse(comment, trailing="", detached=()):
+    """(tags, problems) for one element's leading, trailing and detached comments."""
     tags, problems, lines = [], [], comment_lines(comment)
     i = 0
     while i < len(lines) and SHAPED.match(lines[i]):
@@ -73,20 +78,48 @@ def parse(comment, trailing=""):
     for line in lines[i:] + comment_lines(trailing):
         for m in IN_PROSE.finditer(line):
             problems.append("tag key [%s] outside the tag block" % m.group(1))
+    for text in detached:
+        for line in comment_lines(text):
+            for m in IN_PROSE.finditer(line):
+                problems.append("tag key [%s] in a comment a blank line cuts off; join it to the element's comment"
+                                % m.group(1))
     return tags, problems
 
 
 def capability_ids(root):
     """[(id, phase)] in the order of the capability table in 01."""
-    path = Path(root) / CAP_DOC
     try:
-        rows = [CAP_ROW.match(line) for line in path.read_text().splitlines()]
+        lines = (Path(root) / CAP_DOC).read_text().splitlines()
     except OSError as err:
         raise ContractError("cannot read %s: %s" % (CAP_DOC, err)) from err
-    caps = [(m.group(1), m.group(2)) for m in rows if m]
+    caps = []
+    for n, line in enumerate(lines, 1):
+        if not CAP_SHAPED.match(line):
+            continue
+        m = CAP_ROW.match(line)
+        if m is None:
+            raise ContractError("%s line %d: a capability row must read | ID | Capability | Kind | Phase |" % (CAP_DOC, n))
+        if m.group(1) in {cid for cid, _ in caps}:
+            raise ContractError("%s line %d: %s is listed twice" % (CAP_DOC, n, m.group(1)))
+        caps.append((m.group(1), m.group(2)))
     if not caps:
         raise ContractError("%s has no capability table rows" % CAP_DOC)
     return caps
+
+
+def plan_rows(root):
+    """The row ids (12, 13a) of the plan's PR sequence table."""
+    try:
+        text = (Path(root) / PLAN_DOC).read_text()
+    except OSError as err:
+        raise ContractError("cannot read %s: %s" % (PLAN_DOC, err)) from err
+    if PLAN_SECTION not in text:
+        raise ContractError("%s has no section %r" % (PLAN_DOC, PLAN_SECTION))
+    section = text.split(PLAN_SECTION, 1)[1].split("\n## ", 1)[0]
+    rows = {m.group(1) for m in map(PLAN_ROW.match, section.splitlines()) if m}
+    if not rows:
+        raise ContractError("%s section %r has no PR rows" % (PLAN_DOC, PLAN_SECTION))
+    return rows
 
 
 def local_name(contract, full):
@@ -105,6 +138,7 @@ class Tags:
         self.contract = contract
         self.capabilities = capability_ids(root)
         self.cap_ids = {cid for cid, _ in self.capabilities}
+        self.plan_rows = plan_rows(root)
         self.service = self._anchor(contract.services, FLEET_SERVICE)
         self.topics = self._anchor(contract.enums, WATCH_TOPIC)
         self.scopes = self._anchor(contract.enums, SCOPE_ENUM)
@@ -134,7 +168,7 @@ class Tags:
         return "api/%s: %s %s" % (element.file, element.kind, name)
 
     def _read(self, element, scoped, arm):
-        tags, problems = parse(element.comment, element.trailing)
+        tags, problems = parse(element.comment, element.trailing, element.detached)
         keys = [t.key for t in tags]
         allowed = {"CAP"} if element.kind in ("message", "field", "enum value", "rpc") else set()
         if scoped:
@@ -163,24 +197,43 @@ class Tags:
         if tags:
             self.by_element[id(element)] = tags
 
+    def _enum_problem(self, enum, value):
+        """Why value is not a short form of one of enum's values, or None."""
+        if value.startswith(enum.prefix):
+            return "write %s without %s" % (value, enum.prefix)
+        if value == "UNSPECIFIED":
+            return "UNSPECIFIED is never a tag value"
+        if enum.prefix + value not in enum.values:
+            return "%s is not %s %s value" % (value, article(enum.name.lower()), enum.name)
+        return None
+
     def _check_scope(self, tag):
         parts = tag.value.split("|")
         if tag.value in SPECIAL_SCOPES:
             return []
         if any(p in SPECIAL_SCOPES for p in parts):
             return ["SCOPE %s: self, none and per-topic stand alone, never joined with |" % tag.value]
-        return ["SCOPE %s: %s is not a Scope value" % (tag.value, p)
-                for p in parts if p == "UNSPECIFIED" or self.scopes.value(p) is None]
+        found = (self._enum_problem(self.scopes, p) for p in parts)
+        return ["SCOPE %s: %s" % (tag.value, why) for why in found if why]
 
     def _check_release(self, tag):
-        if RELEASE_VALUE.match(tag.value):
-            return []
-        return ["RELEASE %s: RELEASE needs v1 or v3 and a plan row (12, 13a) or none" % tag.value]
+        m = RELEASE_VALUE.match(tag.value)
+        if not m:
+            return ["RELEASE %s: RELEASE needs v1 or v3 and a plan row (12, 13a) or none" % tag.value]
+        release, row = tag.value.split()
+        if release == "v3" and row != "none":
+            return ["RELEASE %s: v3 has no plan row yet; write [RELEASE v3 none]" % tag.value]
+        if release == "v1" and row == "none":
+            return ["RELEASE %s: v1 names a plan row (12, 13a)" % tag.value]
+        if release == "v1" and row not in self.plan_rows:
+            return ["RELEASE %s: %s is not a row of the PR sequence in %s" % (tag.value, row, PLAN_DOC)]
+        return []
 
     def _check_delivery(self, tag):
         cls, _, key = tag.value.partition(" ")
-        if cls == "UNSPECIFIED" or self.classes.value(cls) is None:
-            return ["DELIVERY %s: %s is not a DeliveryClass value" % (tag.value, cls)]
+        why = self._enum_problem(self.classes, cls)
+        if why:
+            return ["DELIVERY %s: %s" % (tag.value, why)]
         if cls == "COALESCE" and not key.strip():
             return ["DELIVERY %s: COALESCE needs a key" % tag.value]
         if cls != "COALESCE" and key:
