@@ -10,8 +10,12 @@
 #   2. `make gates` lists every gate. `make -n gates` is read from a copy of the
 #      Makefile; deleting one `$(MAKE) <gate>` line from a scratch copy must be
 #      caught.
+#   3. `make doc-names` and `make doc-tables` build their own contract image: a
+#      FLEET_PROTO_IMAGE left in the shell (from a test or an old run) must not
+#      point them at a stale or missing image.
 #
-# Runs on the macOS system bash 3.2. Needs make, git and go (`go env` only).
+# Runs on the macOS system bash 3.2. Needs make, git and go (case 3 runs the
+# pinned buf through `go run`).
 #
 # Usage: scripts/test-make-gates.sh        exit 0 only if every case passes
 set -u
@@ -192,6 +196,18 @@ for prefix in '-' '@-'; do
   missing="$(missing_gates "$scratch")"
   if [ "$missing" = " ignore-errors" ]; then ok; else bad "'${prefix}\$(MAKE) lint' in a scratch copy was reported as:'$missing'"; fi
 done
+
+# Case 3: the recipes clear FLEET_PROTO_IMAGE, and a stale value does not break them.
+for target in doc-names doc-tables; do
+  recipe="$(cd "$root" && make -n "$target" 2>&1)"
+  case "$recipe" in
+    "FLEET_PROTO_IMAGE= python3 "*) ok ;;
+    *) bad "make $target does not clear FLEET_PROTO_IMAGE: $recipe" ;;
+  esac
+done
+out="$(cd "$root" && FLEET_PROTO_IMAGE="$work/no-such-image.json" make doc-names 2>&1)"
+rc=$?
+if [ "$rc" -eq 0 ]; then ok; else bad "make doc-names with a stale FLEET_PROTO_IMAGE: exit $rc ($out)"; fi
 
 printf 'test-make-gates: %s passed, %s failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

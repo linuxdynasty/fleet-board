@@ -10,13 +10,13 @@ types and comments are exactly what buf compiled.
   load(root, image=None) -> Contract
       image: a prebuilt image JSON; else $FLEET_PROTO_IMAGE; else build one
       with the pinned buf in root (the tests point it at a fixture image).
+      An empty $FLEET_PROTO_IMAGE counts as unset.
   proto_image.py build --root DIR --out FILE     write the image
-  proto_image.py summary [--root DIR] [--image FILE]
 
 A Contract holds the elements of the fleet.* files only: messages (nested
 too), enums and their values, services and their rpcs, oneofs and fields, each
-with its leading, trailing and detached leading comments; Contract.elements lists them all in
-declaration order. Field types may point into imported
+with its leading, trailing and detached leading comments; Contract.elements
+lists them all in declaration order. Field types may point into imported
 files (google.protobuf.Timestamp); those resolve but are not fleet names.
 
 Fail closed: no `go`, a buf build error, an unreadable image, an image with no
@@ -331,21 +331,12 @@ def main(argv):
     b = sub.add_parser("build")
     b.add_argument("--root", default=".")
     b.add_argument("--out", required=True)
-    s = sub.add_parser("summary")
-    s.add_argument("--root", default=".")
-    s.add_argument("--image")
     args = parser.parse_args(argv)
     try:
-        if args.cmd == "build":
-            build(Path(args.root).resolve(), Path(args.out).resolve())
-            return 0
-        c = load(Path(args.root).resolve(), args.image)
+        build(Path(args.root).resolve(), Path(args.out).resolve())
     except ProtoImageError as err:
         print("proto_image: " + str(err), file=sys.stderr)
         return 2
-    rpcs = sum(len(s.rpcs) for s in c.services.values())
-    print("packages %d, messages %d, enums %d, services %d, rpcs %d"
-          % (len(c.packages), len(c.messages), len(c.enums), len(c.services), rpcs))
     return 0
 
 

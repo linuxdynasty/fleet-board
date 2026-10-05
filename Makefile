@@ -156,15 +156,16 @@ diff-check:
 
 # doc-names fails when a backticked proto name in the checked docs is not in
 # api/fleet (plan row 1b). It reads the contract from the pinned buf's image;
-# deliberate non-proto tokens are in .agents/doc-names-allow.json.
+# deliberate non-proto tokens are in .agents/doc-names-allow.json. Both doc
+# gates build their own image: a FLEET_PROTO_IMAGE left in the shell is cleared.
 doc-names:
-	python3 scripts/check-doc-names.py
+	FLEET_PROTO_IMAGE= python3 scripts/check-doc-names.py
 
 # doc-tables fails when a generated table in the specs (02k, 02d, 02i, 02) no
 # longer matches the proto comment tags, or a tag breaks the rules in 02e,
 # "Comment tags". scripts/gen-doc-tables.py --write regenerates the tables.
 doc-tables:
-	python3 scripts/gen-doc-tables.py --check
+	FLEET_PROTO_IMAGE= python3 scripts/gen-doc-tables.py --check
 
 # capability-tests lists the v1 capabilities in 01 that no product test names
 # (a Go test outside scripts/ and testdata/, or a web test; gate self-tests do

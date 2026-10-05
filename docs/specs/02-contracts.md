@@ -204,7 +204,7 @@ result stays in the agent's local log (last 10,000 or 7 days) until the hub
 sends `ResultAck`; after a reconnect, `Snapshot.unacked_results` lists the
 ids and the results are re-sent right after the snapshot. A duplicate
 `command_id` returns the logged result without re-executing. Whether a repeat of
-each command kind is safe: the Repeat column of
+each command kind is safe: the Repeat safe column of
 [02e](02e-contract-rules.md#command-kinds-and-capabilities).
 
 **Envelope checks, in order.** First, a `command_id` already in the local

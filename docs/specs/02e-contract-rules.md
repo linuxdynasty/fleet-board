@@ -52,13 +52,14 @@ checklist, to be ticked when cutting `v0.1`:
 
 `v0.1` freezes **everything v1 implements** (decision 8 of ADR 0024, which amends
 decision 9 of ADR 0019, and decision 4 of ADR 0025, which puts dispatch, sessions,
-logs and reports into v1). That is 84 of the 108 `FleetService` calls (47 watch and
-configuration calls, 37 dispatch, session, log and report calls), every agent
-command kind v1 uses, and every `Watch` topic except the two v3 ones. A message no
-code has run is not worth a promise: two review rounds already changed 86 and then
-107 things in contracts nobody had run. That is why `v0.1` is tagged only after the
-whole of v1 passes the seven-day run. Messages that only v3 uses stay changeable
-until the release that ships them is tagged.
+logs and reports into v1). That is every `FleetService` call marked v1 (the count
+line under [02k's generated RPC table](02k-v1-surface-and-cli.md#hub-rpcs-by-release)
+gives the totals), every agent command kind v1 uses, and every `Watch` topic
+marked v1 in 02k. A message no code has run is not worth a promise: two review
+rounds already changed 86 and then 107 things in contracts nobody had run. That
+is why `v0.1` is tagged only after the whole of v1 passes the seven-day run.
+Messages that only v3 uses stay changeable until the release that ships them is
+tagged.
 
 - **How.** `buf breaking` works per file, not per message. When `v0.1` is cut,
   `buf.yaml` gets per-path ignores under `breaking.ignore_only` for the files
