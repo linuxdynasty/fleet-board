@@ -30,7 +30,7 @@ class StopStatusTests(Base):
         self.assertEqual(self.stop("completed"), ({}, True))
 
     def test_aborted_error_and_missing_status_do_not_run_it(self):
-        for status in ("aborted", "error", "other", None):
+        for status in ("aborted", "error", "other", "", None):
             self.assertEqual(self.stop(status), ({}, False), status)
             (self.p.tmp / "seen.json").unlink(missing_ok=True)
 
@@ -124,6 +124,26 @@ class BadOutputTests(Base):
         context = self.p.stub("ctx.sh", "cat >/dev/null; head -c 300000 /dev/zero | tr '\\0' y\n")
         value = out_json(self, self.p.adapter("sessionStart", context, {}))
         self.assertLess(len(value["additional_context"]), 30000)
+
+
+class MalformedPathTests(Base):
+    def write(self, tool_input, **top):
+        return self.p.fire_one("preToolUse", dict({"tool_name": "Write", "tool_input": tool_input}, **top), "Write")
+
+    def test_a_non_string_path_is_denied(self):
+        for bad in (123, None, ["a.go"], {"x": 1}, True):
+            value = out_json(self, self.write({"file_path": bad}))
+            self.assertIn("file_path", self.deny_message(value), repr(bad))
+        self.assertEqual(out_json(self, self.write({"file_path": 5, "path": "docs/design.md"}))["permission"], "deny")
+        self.assertEqual(out_json(self, self.write({}, file_path=7))["permission"], "deny")
+
+    def test_a_path_key_after_a_valid_one_is_still_checked(self):
+        self.assertEqual(out_json(self, self.write({"file_path": "docs/design.md", "path": 9}))["permission"], "deny")
+
+    def test_no_path_key_at_all_is_still_allowed_with_a_note(self):
+        result = self.write({"content": "x"})
+        self.assertEqual(out_json(self, result), {"permission": "allow"})
+        self.assertIn("no file path", result.stderr)
 
 
 class SkillReadTests(Base):

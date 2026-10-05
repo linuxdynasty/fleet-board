@@ -104,6 +104,16 @@ def edited_path(payload):
     return value if isinstance(value, str) else ""
 
 
+def malformed_path_key(payload):
+    """The first path field that is present but not a string (a guard must not guess), or ""."""
+    tool_input = payload.get("tool_input")
+    for holder, keys in ((tool_input if isinstance(tool_input, dict) else {}, PATH_KEYS), (payload, ("file_path",))):
+        for key in keys:
+            if key in holder and not isinstance(holder[key], str):
+                return key
+    return ""
+
+
 def claude_payload(event, payload, cwd, project):
     """The payload the existing script expects, or None when there is nothing to run."""
     base = {"cwd": cwd, "session_id": str(payload.get("conversation_id") or payload.get("session_id") or "")}
@@ -115,6 +125,9 @@ def claude_payload(event, payload, cwd, project):
     if event == "preToolUse":
         if tool != "Write":
             return None
+        bad = malformed_path_key(payload)
+        if bad:
+            raise Failure("preToolUse Write payload has a non-string %s" % bad)
         if not path:
             note("preToolUse Write payload names no file path (tried %s); allowing" % ", ".join(PATH_KEYS))
             return None
@@ -219,13 +232,13 @@ def main(argv):
              else result(event, None, ""))
         return 0
     project = project_dir(payload)
-    claude = claude_payload(event, payload, str(payload.get("cwd") or project), project)
-    if claude is None:
-        emit(result(event, None, ""))
-        return 0
     if not os.path.isabs(script):
         script = os.path.join(project, script)
     try:
+        claude = claude_payload(event, payload, str(payload.get("cwd") or project), project)
+        if claude is None:
+            emit(result(event, None, ""))
+            return 0
         code, stdout, stderr = run_script(script, args, claude, project)
         if code not in (0, 2):
             raise Failure("hook script %s exited %d: %s" % (script, code, stderr or "no message"))
