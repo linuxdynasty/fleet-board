@@ -110,6 +110,19 @@ class DocNameTests(unittest.TestCase):
         self.tree.write("docs/specs/f.md", "```text\n`NoSuchThing`\n```\n~~~\n`AlsoMissing`\n~~~\nafter `LogChunk`\n")
         self.assert_rc(0, self.run_check())
 
+    def test_a_code_fence_that_never_closes_fails(self):
+        self.tree.write("docs/specs/f.md", "ok `LogChunk`\n\n```text\n`NoSuchThing`\n")
+        out = self.run_check()
+        self.assert_rc(1, out)
+        self.assertIn("docs/specs/f.md:3: a code fence that never closes", out.stdout)
+
+    def test_a_fleet_token_in_no_known_package_fails(self):
+        self.tree.write("docs/specs/p.md", "`fleet.fixture.v2.LogChunk` and `fleet.nope`\n")
+        out = self.run_check()
+        self.assert_rc(1, out)
+        self.assertIn("`fleet.fixture.v2.LogChunk` (no fleet package matches)", out.stdout)
+        self.assertIn("`fleet.nope` (no fleet package matches)", out.stdout)
+
     def test_excluded_folders_are_ignored(self):
         for rel in ("docs/reviews/r.md", "docs/research/r.md", "docs/adr/0001-old.md", "README.md", "docs/other.md"):
             self.tree.write(rel, "`NoSuchThing`\n")

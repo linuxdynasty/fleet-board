@@ -14,7 +14,8 @@ docs/features.md, docs/adr/README.md, docs/flows/README.md and
 docs/design-deployment-and-milestones.md. Not checked: the accepted ADRs
 (docs/adr/NNNN-*.md, never edited), docs/reviews/** and docs/research/**.
 
-Only inline code spans count; fenced code blocks are skipped. A span is
+Only inline code spans count; fenced code blocks are skipped, and a fence
+that never closes is a finding (the rest of that file is not checked). A span is
 skipped whole when it holds a `/` (paths, URLs) or ends in a file extension
 (README.md, events.proto). Inside a span, a token joined to `-`, `<` or `>`
 (X-Forwarded-For, tmux -L, <NAME>, TRIAGE_KIND_<NAME>) is not an identifier
@@ -25,7 +26,8 @@ and is skipped. Every other token is checked by its shape:
                          minus <ENUM>_: NEVER_DROP, READ); one letter is not a token
   Type.field.sub[]       resolves hop by hop through field types ([] only on a
                          repeated field); Enum.VALUE, Service.Rpc, Message.Nested
-  fleet.pkg.v1[.Type...] a fleet package, or a path that resolves under it
+  fleet.pkg.v1[.Type...] a fleet package, or a path that resolves under it; any
+                         other fleet.* token is a finding
 
 lower_snake names and other lower-case-led tokens (os.Getenv) are not checked.
 A token that is not a proto name on purpose (a hook event, a Go type, an env
@@ -75,13 +77,14 @@ def checked_docs(root):
     return docs
 
 
-def blocks(text):
+def blocks(text, unclosed=None):
     """Yield (first line number, text) for each run of prose lines outside fences.
 
     A blank line ends a block and so does each table row, so a stray backtick
-    cannot pair with one on a later row.
+    cannot pair with one on a later row. The line of a fence that never closes
+    is appended to unclosed.
     """
-    fence, start, buf = None, 0, []
+    fence, fence_line, start, buf = None, 0, 0, []
     for n, line in enumerate(text.split("\n"), 1):
         m = FENCE.match(line)
         if fence:
@@ -91,7 +94,7 @@ def blocks(text):
         if m:
             if buf:
                 yield start, "\n".join(buf)
-            fence, buf = m.group(1), []
+            fence, fence_line, buf = m.group(1), n, []
             continue
         if not line.strip() or line.lstrip().startswith("|"):
             if buf:
@@ -105,6 +108,8 @@ def blocks(text):
         buf.append(line)
     if buf and not fence:
         yield start, "\n".join(buf)
+    if fence and unclosed is not None:
+        unclosed.append(fence_line)
 
 
 def span_tokens(text):
@@ -137,6 +142,8 @@ def judge(contract, token):
     if UPPER_CAMEL.match(head) or any(token.startswith(p + ".") for p in contract.packages):
         _, why = contract.resolve(token)
         return True, why
+    if head == "fleet":
+        return True, "no fleet package matches"
     if SCREAMING.match(head):
         bad = [s for s in segs if SCREAMING.match(s) and len(s) > 1 and not contract.is_enum_value(s)]
         return True, ("no enum value named %s" % ", ".join(bad)) if bad else None
@@ -174,7 +181,8 @@ def check(root, contract, allow):
     docs = checked_docs(root)
     for doc in docs:
         rel = doc.relative_to(root).as_posix()
-        for start, text in blocks(doc.read_text()):
+        unclosed = []
+        for start, text in blocks(doc.read_text(), unclosed):
             for offset, token in span_tokens(text):
                 is_checked, why = judge(contract, token)
                 if not is_checked:
@@ -186,6 +194,8 @@ def check(root, contract, allow):
                     used.add(token)
                     continue
                 findings.append("%s:%d: `%s` (%s)" % (rel, start + text.count("\n", 0, offset), token, why))
+        findings += ["%s:%d: a code fence that never closes; the rest of the file is not checked" % (rel, n)
+                     for n in unclosed]
     for token, entry in allow.items():
         is_checked, why = judge(contract, token)
         if is_checked and why is None:
