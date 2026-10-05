@@ -1,0 +1,58 @@
+// A tiny contract for the seeded cases in scripts/test-check-doc-names.py and
+// scripts/test-proto-image.py. The tests copy it to api/fleet/fixture/v1/ in a
+// throwaway tree and build it with the pinned buf.
+syntax = "proto3";
+
+package fleet.fixture.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// LogChunk is one piece of a session log.
+message LogChunk {
+  // Marker is a note inside the stream.
+  message Marker {
+    string note = 1;
+  }
+
+  LogStreamKey key = 1;
+  bytes data = 2;
+  repeated Label labels = 3;
+  google.protobuf.Timestamp sent_time = 4;
+  oneof body {
+    string text = 5;
+    Marker marker = 6;
+  }
+}
+
+message LogStreamKey {
+  string session_id = 1;
+  LogStream stream = 2;
+}
+
+message Label {
+  string name = 1;
+}
+
+enum LogStream {
+  LOG_STREAM_UNSPECIFIED = 0;
+  LOG_STREAM_TERMINAL = 1;
+}
+
+// DeliveryClass says whether an event may be dropped.
+enum DeliveryClass {
+  DELIVERY_CLASS_UNSPECIFIED = 0;
+  // Never dropped: the agent keeps it until the hub acks it.
+  DELIVERY_CLASS_NEVER_DROP = 1;
+}
+
+// LogService reads logs.
+service LogService {
+  // ReadLog returns one chunk. [READ]
+  rpc ReadLog(ReadLogRequest) returns (ReadLogResponse);
+}
+
+message ReadLogRequest {}
+
+message ReadLogResponse {
+  LogChunk chunk = 1;
+}

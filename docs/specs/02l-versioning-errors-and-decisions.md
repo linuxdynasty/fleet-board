@@ -154,7 +154,7 @@ Moved to [01e, "What the contract rules out"](01e-security-and-privacy.md#what-t
     measurement run).
 14. **No `StopGoal`.** Goals are paused, resumed, edited and cleared with
     each harness's own `/goal` subcommands (probed 2026-10-01; see 01b), sent
-    through `RunHarnessCommand`. Field 42 and `REASON_CODE` 303 are unused.
+    through `RunHarnessCommand`. Field 42 and `ReasonCode` 303 are unused.
     A goal still starting is cancelled the same way (`/goal clear`, or
     `Interrupt`), so no `CancelCommand` is needed.
 15. **Max message 1 MiB** rather than gRPC's 4 MiB default; captures and

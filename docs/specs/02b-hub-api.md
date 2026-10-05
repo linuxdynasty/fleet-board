@@ -297,7 +297,7 @@ Whole messages stay under the 1 MiB Connect cap (02e).
 | `order_by` | 256 bytes, 3 fields |
 | `update_mask` | 32 paths |
 | `Watch` subscriptions | 18, one per topic |
-| `display_name`, `window_name`, session `name`, labels | 128 bytes (`CreateSession.name` also 32 by its pattern); 32 labels of 64 bytes |
+| `display_name`, `window_name`, session `name`, labels | 128 bytes (`CreateSessionRequest.name` also 32 by its pattern); 32 labels of 64 bytes |
 | `DrainMachineRequest.reason`, `DismissTriageItemRequest.note` | 512 bytes |
 | `GoalDefinition.goal_text`, `ControlGoalRequest.text`, `RoutineSpec.goal_text_template` | 4 KiB |
 | `SearchSessionLogsRequest.query` | 256 bytes; 256 MiB of raw text scanned per call; `snippet` 512 bytes |

@@ -21,7 +21,7 @@ it belongs and a reader can tell "not built yet" from "forgotten".
   client built from a newer proto gets this answer, not a connection error.
 - A `Watch` topic the running build does not serve is refused as a whole subscription
   with `INVALID_ARGUMENT` and the topic named. It is never silently empty.
-- `GetServerInfo.features` lists exactly what is served (`attach`, `routines`,
+- `GetServerInfoResponse.features` lists exactly what is served (`attach`, `routines`,
   `devices`, `watch.pane_summaries`, and so on). Clients hide what is not listed.
 - Sign-in and device RPCs in `local_trusted` stay `FAILED_PRECONDITION`
   ([02f](02f-hub-authentication.md#modes)); that is a mode rule, not a release rule.

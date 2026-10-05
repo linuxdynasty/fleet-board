@@ -134,7 +134,7 @@ has:
    same applies to `DeletePasskey` and `RevokeLoginSession` on another user's
    rows: lockout-capable changes need a user.
 2. **Never above yourself.** What is granted is a subset of the caller's own
-   effective scopes: `ApprovePairing.scopes`, `CreateApiToken.scopes`, the role
+   effective scopes: `ApprovePairingRequest.scopes`, `CreateApiTokenRequest.scopes`, the role
    given by `CreateUserInvite` or `UpdateUser` (its scope set must be covered by
    the caller's, so only an `OWNER` can create an `OWNER`), and
    `UserSpec.extra_scopes`. Anything else is `SCOPE_NOT_GRANTABLE`.
