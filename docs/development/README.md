@@ -53,8 +53,9 @@ scripts/check-docs-stale.py   doc-staleness reminders (hook mode) and the blocki
 scripts/check-doc-names.py    every backticked proto name in the docs is in api/fleet (make doc-names)
 scripts/gen-doc-tables.py     writes the spec tables (02k, 02d, 02i, 02) from the proto comment
                               tags, between generated markers (--write; make doc-tables is --check)
-scripts/report-capability-tests.py   v1 capabilities in 01 that no test names; a report until
-                              plan row 17 (make capability-tests)
+scripts/report-capability-tests.py   v1 capabilities in 01 that no product test names (gate
+                              self-tests do not count); a report until plan row 17
+                              (make capability-tests)
 scripts/proto_image.py        loads the contract from the pinned buf's compiled image, for the
                               doc-drift scripts (names, field types, comments)
 scripts/proto_tags.py         reads and checks the comment tags (02e, "Comment tags")

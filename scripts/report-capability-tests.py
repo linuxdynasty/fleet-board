@@ -2,10 +2,11 @@
 """List the v1 capabilities in 01 that no test names (plan row 1b, ruling F8).
 
 A capability counts as tested when its id (A1, E9, ...) appears as a whole word
-in a test file: a Go `*_test.go`, a `scripts/test-*` self-test, or a web test
-(`*.test.*` or `*.spec.*` under web/). A whole word has no letter or digit on
-either side, so `TestEnroll_A1` names A1 and `A10` does not. Testdata,
-node_modules, gen/ and .git are skipped.
+in a product test: a Go `*_test.go` outside scripts/ and outside every testdata/
+folder, or a web test (`*.test.*` or `*.spec.*` under web/). The gate
+self-tests under scripts/ name ids only as fixture data, so they never count. A
+whole word has no letter or digit on either side, so `TestEnroll_A1` names A1
+and `A10` does not. node_modules, gen/ and .git are skipped too.
 
 This is a report, not a gate, until plan row 17: findings exit 0. A broken
 input (01's table missing or empty, a test file that cannot be read) exits 2.
@@ -22,13 +23,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from proto_tags import ContractError, capability_ids  # noqa: E402
 
 SKIP_DIRS = {".git", "gen", "node_modules", "testdata", ".bin"}
+SKIP_TOP = {"scripts"}
 
 
 def is_test(rel):
     name = rel.name
     if name.endswith("_test.go"):
-        return True
-    if rel.parts[:1] == ("scripts",) and len(rel.parts) == 2 and name.startswith("test-"):
         return True
     if rel.parts[:1] == ("web",) and (".test." in name or ".spec." in name):
         return True
@@ -43,7 +43,7 @@ def test_files(root):
             if path.is_symlink():
                 continue
             if path.is_dir():
-                if path.name not in SKIP_DIRS:
+                if path.name not in SKIP_DIRS and not (folder == root and path.name in SKIP_TOP):
                     stack.append(path)
             elif is_test(path.relative_to(root)):
                 yield path
@@ -71,7 +71,7 @@ def main(argv=None):
     except ContractError as err:
         print("report-capability-tests: %s" % err, file=sys.stderr)
         return 2
-    print("report-capability-tests: %d of %d v1 capabilities have no test naming them"
+    print("report-capability-tests: %d of %d v1 capabilities have no product test naming them"
           " (a report until plan row 17)" % (len(missing), len(ids)))
     print("untested: " + " ".join(missing))
     return 0

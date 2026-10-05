@@ -211,9 +211,11 @@ and the capability map in 02 are generated from the proto comment tags
 (02e, "Comment tags") between the script's begin and end markers. A
 tag that breaks the rules, a hand edit inside a block, or a tag change without
 `--write` fails it. `scripts/report-capability-tests.py`
-(`make capability-tests`) lists the v1 capabilities in 01 that no test names;
-until plan row 17 it reports and exits 0, and fails only when it cannot read
-its input.
+(`make capability-tests`) lists the v1 capabilities in 01 that no product
+test names: a Go `*_test.go` outside `scripts/` and every `testdata/` folder,
+or a web test under `web/`. The gate self-tests in `scripts/` name ids only as
+fixture data, so they never count. Until plan row 17 it reports and exits 0,
+and fails only when it cannot read its input.
 
 ## Goal protocol
 

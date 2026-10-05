@@ -166,8 +166,10 @@ doc-names:
 doc-tables:
 	python3 scripts/gen-doc-tables.py --check
 
-# capability-tests lists the v1 capabilities in 01 that no test names. It is a
-# report until plan row 17: findings exit 0, a broken input fails.
+# capability-tests lists the v1 capabilities in 01 that no product test names
+# (a Go test outside scripts/ and testdata/, or a web test; gate self-tests do
+# not count). It is a report until plan row 17: findings exit 0, a broken input
+# fails.
 capability-tests:
 	python3 scripts/report-capability-tests.py
 

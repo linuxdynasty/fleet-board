@@ -91,7 +91,7 @@ jobs:
         run: make doc-tables
 
       # A report until plan row 17: findings exit 0, a broken input fails.
-      - name: v1 capabilities no test names (report)
+      - name: v1 capabilities no product test names (report)
         run: make capability-tests
 
       - name: go.mod and go.sum are tidy

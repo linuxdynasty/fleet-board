@@ -65,10 +65,23 @@ class ReportTest(unittest.TestCase):
         self.tree.write("internal/x/x_test.go", "package x\n\n// Covers E9.\n")
         self.assertEqual(self.report(), ["A1", "A10"])
 
-    def test_script_and_web_tests_count(self):
-        self.tree.write("scripts/test-enroll.sh", "# A1 enroll case\n")
+    def test_web_tests_count(self):
         self.tree.write("web/src/pane.test.ts", "it('A10 shows', () => {});\n")
+        self.tree.write("web/src/enroll.spec.tsx", "// A1\n")
         self.assertEqual(self.report(), ["E9"])
+
+    def test_gate_self_tests_do_not_count(self):
+        self.tree.write("scripts/test-foo.py", "CASES = ['A1', 'E9']\n")
+        self.tree.write("scripts/test-bar.sh", "# A10\n")
+        self.assertEqual(self.report(), ["A1", "A10", "E9"])
+
+    def test_go_test_under_scripts_does_not_count(self):
+        self.tree.write("scripts/tool/tool_test.go", "// A1\n")
+        self.assertEqual(self.report(), ["A1", "A10", "E9"])
+
+    def test_go_test_in_a_testdata_dir_does_not_count(self):
+        self.tree.write("internal/x/testdata/case/case_test.go", "// E9\n")
+        self.assertEqual(self.report(), ["A1", "A10", "E9"])
 
     def test_whole_word_only(self):
         self.tree.write("internal/x/x_test.go", "// A10 and XA1 and A1b and E9x\n")
@@ -90,7 +103,7 @@ class ReportTest(unittest.TestCase):
     def test_summary_line_counts(self):
         self.tree.write("internal/x/x_test.go", "// E9\n")
         res = self.tree.run()
-        self.assertIn("2 of 3 v1 capabilities have no test naming them", res.stdout)
+        self.assertIn("2 of 3 v1 capabilities have no product test naming them", res.stdout)
 
     def test_missing_table_exits_2(self):
         (self.tree.root / "docs/specs/01-agent-capabilities.md").unlink()
