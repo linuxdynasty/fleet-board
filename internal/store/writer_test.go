@@ -103,7 +103,7 @@ func TestWriterBatchWindowIs250ms(t *testing.T) {
 					t.Fatalf("Submit: %v", err)
 				}
 				pending = append(pending, done)
-				time.Sleep(40 * time.Millisecond)
+				time.Sleep(25 * time.Millisecond)
 			}
 			for _, done := range pending {
 				if err := <-done; err != nil {
