@@ -25,7 +25,8 @@ name a folder that does not exist yet; every spec it names must exist.
 Blocking mode, over the files changed in A...B and the commits in A..B:
 1. Mapped folders. A rule matched by a changed file needs one of its specs
    changed in the range, or a commit message line `No-Doc-Change: <reason>`
-   (it satisfies every rule). An empty or placeholder reason (TODO, TBD, n/a,
+   (it satisfies every rule). Only the branch's own commits count (git log
+   --first-parent A..B), never a commit merged in from main. An empty or placeholder reason (TODO, TBD, n/a,
    none, a dash, the word "reason", or the <reason> template itself) does not
    count. Only commit messages count, never a PR body.
 2. Go package docs. A directory with a changed non-test .go file that is
@@ -187,7 +188,8 @@ def ci_findings(root, rng):
         return None  # an empty or reversed range has nothing to check
     changed = [p for p in git(root, "diff", "--name-only", "--no-renames", "-z", base + "..." + head,
                               strict=True).split("\0") if p]
-    messages = [m for m in git(root, "log", "--format=%B%x00", base + ".." + head, strict=True).split("\0") if m.strip()]
+    messages = [m for m in git(root, "log", "--first-parent", "--format=%B%x00", base + ".." + head,
+                               strict=True).split("\0") if m.strip()]  # not commits merged in from main
     findings = []
     reason, placeholders = trailer_state(messages)
     if reason is None:

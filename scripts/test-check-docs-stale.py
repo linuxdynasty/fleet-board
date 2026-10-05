@@ -100,6 +100,30 @@ class DocsStaleTests(unittest.TestCase):
         self.commit("tmux: observer")
         self.assert_rc(1, self.ci(start + "..HEAD"))
 
+    def merge_main_with_a_trailer_into_pr(self, pr_message):
+        self.git("checkout", "-q", "-b", "pr")
+        self.write("internal/agent/tmux/mine.sh", "echo mine\n")
+        self.commit(pr_message)
+        self.git("checkout", "-q", "main")
+        self.write("tools/theirs.txt", "x\n")
+        self.commit("main's change\n\nNo-Doc-Change: their own reason")
+        self.git("checkout", "-q", "pr")
+        self.git("merge", "-q", "--no-edit", "main")
+
+    def test_a_trailer_merged_in_from_main_does_not_excuse_the_pr(self):
+        self.merge_main_with_a_trailer_into_pr("mine")
+        for rng in (self.base + "..pr", "main..pr"):  # a stale base, then the current one
+            with self.subTest(rng=rng):
+                out = self.ci(rng)
+                self.assert_rc(1, out)
+                self.assertIn("internal/agent/tmux/mine.sh", out.stdout)
+
+    def test_the_prs_own_trailer_still_counts_after_a_merge_from_main(self):
+        self.merge_main_with_a_trailer_into_pr("mine\n\nNo-Doc-Change: a helper script no spec describes")
+        for rng in (self.base + "..pr", "main..pr"):
+            with self.subTest(rng=rng):
+                self.assert_rc(0, self.ci(rng))
+
     def test_changing_any_one_mapped_spec_passes(self):
         self.go_package("internal/agent/tmux")
         self.write("docs/specs/01.md", "# spec\n\nE2 now says more.\n")

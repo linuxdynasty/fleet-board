@@ -195,8 +195,10 @@ spec defines, with the reason.
   range and none of its specs did, or when a changed Go package lacks
   doc.go, README.md or AGENTS.md; exit 2 when git fails, the range does not
   resolve or the map is invalid. A commit message line
-  `No-Doc-Change: <reason>` in the range covers every mapped folder (not the
-  package docs). A blank reason or a placeholder (TODO, TBD, n/a, none, a
+  `No-Doc-Change: <reason>` covers every mapped folder (not the package
+  docs). Only the branch's own commits in the range count (`git log
+  --first-parent`): a trailer on a commit merged in from main never excuses
+  the PR. A blank reason or a placeholder (TODO, TBD, n/a, none, a
   dash, the word `reason`, or `<reason>` copied as is) does not count, and a
   PR body never does.
 
