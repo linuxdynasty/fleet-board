@@ -65,6 +65,29 @@ func TestTheDatabaseFileIsInWALMode(t *testing.T) {
 	}
 }
 
+// ADR 0015: logs.db adds auto_vacuum=INCREMENTAL (2), set before any table
+// exists; the other files keep the default NONE (0).
+func TestOnlyLogsDBUsesIncrementalAutoVacuum(t *testing.T) {
+	t.Parallel()
+	cases := []struct{ name, want string }{
+		{"state", "0"},
+		{"logs", "2"},
+		{"agent", "0"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			path := filepath.Join(t.TempDir(), tc.name+".db")
+			if err := openClose(t, store.Options{Path: path, Name: tc.name, Migrations: []store.Migration{itemsV1}}); err != nil {
+				t.Fatalf("open: %v", err)
+			}
+			if got := rawQueryString(t, path, "PRAGMA auto_vacuum"); got != tc.want {
+				t.Errorf("auto_vacuum in %s.db = %s, want %s", tc.name, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestReadersCannotWrite(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)

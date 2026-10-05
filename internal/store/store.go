@@ -111,16 +111,22 @@ func (o *Options) validate() error {
 	return validateMigrations(o.Migrations)
 }
 
-// dsn sets the ADR 0014 pragmas on every connection the pool opens.
-func dsn(path string, reader bool) string {
-	p := []string{
+// dsn sets the ADR 0014 pragmas on every connection the pool opens. The
+// writer of logs.db also sets auto_vacuum=INCREMENTAL (ADR 0015); it is first
+// because SQLite ignores it once the file has a table.
+func dsn(path, name string, reader bool) string {
+	var p []string
+	if name == "logs" && !reader {
+		p = append(p, "_pragma=auto_vacuum(2)")
+	}
+	p = append(p,
 		"_pragma=journal_mode(WAL)",
 		"_pragma=synchronous(FULL)",
 		"_pragma=fullfsync(1)",
 		"_pragma=busy_timeout(5000)",
 		"_pragma=foreign_keys(1)",
 		"_pragma=journal_size_limit(67108864)",
-	}
+	)
 	if reader {
 		p = append(p, "_pragma=query_only(1)")
 	} else {
@@ -147,7 +153,7 @@ func Open(ctx context.Context, opts Options) (*Store, error) {
 	if opts.Telemetry != nil {
 		s.log = opts.Telemetry.Logger.With("component", "store", "db", opts.Name)
 	}
-	w, err := sql.Open("sqlite", dsn(opts.Path, false))
+	w, err := sql.Open("sqlite", dsn(opts.Path, opts.Name, false))
 	if err != nil {
 		return nil, fmt.Errorf("store: open writer: %w", err)
 	}
@@ -166,7 +172,7 @@ func Open(ctx context.Context, opts Options) (*Store, error) {
 	if s.version, err = migrate(ctx, w, opts.Migrations, s.log); err != nil {
 		return nil, errors.Join(err, w.Close())
 	}
-	r, err := sql.Open("sqlite", dsn(opts.Path, true))
+	r, err := sql.Open("sqlite", dsn(opts.Path, opts.Name, true))
 	if err != nil {
 		return nil, errors.Join(fmt.Errorf("store: open readers: %w", err), w.Close())
 	}

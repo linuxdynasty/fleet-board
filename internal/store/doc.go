@@ -3,7 +3,8 @@
 //
 // [Open] sets the ADR 0014 pragmas on every connection (WAL, synchronous
 // FULL, fullfsync on, busy_timeout 5000, foreign keys, a 64 MiB journal size
-// limit; readers are also query_only), applies the forward-only [Migration]
+// limit; readers are also query_only; logs.db adds auto_vacuum=INCREMENTAL
+// before its first table, ADR 0015), applies the forward-only [Migration]
 // list, opens a read pool of at most 10 connections and starts the writer
 // goroutine.
 //

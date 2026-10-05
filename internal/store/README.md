@@ -29,6 +29,8 @@ err = s.Read(ctx, func(tx *sql.Tx) error { ... }) // short read on the pool
 - **Pragmas on every connection:** `journal_mode=WAL`, `synchronous=FULL`,
   `fullfsync=ON` (macOS: commits use `F_FULLFSYNC`), `busy_timeout=5000`,
   `foreign_keys=ON`, `journal_size_limit=64 MiB`; readers add `query_only`.
+  A `logs` store also sets `auto_vacuum=INCREMENTAL` (ADR 0015) before its
+  first table.
 - **One writer.** Only the writer goroutine writes, on one connection, with
   `BEGIN IMMEDIATE`. A batch is at most 100 jobs, or what arrived within
   250 ms of its first job, in one transaction.
