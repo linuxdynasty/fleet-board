@@ -32,7 +32,7 @@ class FixtureTree:
     def __init__(self, tree=None):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)
-        (self.root / "buf.yaml").write_text(BUF_YAML)
+        (self.root / "buf.yaml").write_text(BUF_YAML, encoding="utf-8")
         shutil.copy(ROOT / "tool-versions.env", self.root / "tool-versions.env")
         if tree is not None:
             shutil.copytree(Path(tree), self.root, dirs_exist_ok=True)
@@ -47,7 +47,7 @@ class FixtureTree:
     def build_image(self, out):
         result = subprocess.run(
             [sys.executable, str(LOADER), "build", "--root", str(self.root), "--out", str(out)],
-            env=clean_env(), capture_output=True, text=True,
+            env=clean_env(), capture_output=True, text=True, encoding="utf-8",
         )
         if result.returncode != 0:
             raise RuntimeError("fixture image build failed: " + result.stderr)
@@ -56,15 +56,15 @@ class FixtureTree:
     def write(self, rel, text):
         path = self.root / rel
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text)
+        path.write_text(text, encoding="utf-8")
         return path
 
     def edit(self, rel, old, new):
         path = self.root / rel
-        text = path.read_text()
+        text = path.read_text(encoding="utf-8")
         if old not in text:
             raise AssertionError("%s does not contain %r" % (rel, old))
-        path.write_text(text.replace(old, new, 1))
+        path.write_text(text.replace(old, new, 1), encoding="utf-8")
         return path
 
     def write_json(self, rel, data):

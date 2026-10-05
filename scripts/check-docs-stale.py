@@ -20,15 +20,16 @@ Globs follow .agents/skill-paths.json (.claude/hooks/lib/skill_paths.py): a
 glob with a "/" is anchored to the repo-relative path, "**/" is zero or more
 directories, and a glob with no "/" matches any one path component. A rule may
 name a folder that does not exist yet; every spec it names must exist.
-"unmapped" lists folders no doc names a spec for, with a reason; it is
-informational.
+"unmapped" lists folders no spec defines, with a reason; it is informational.
 
 Blocking mode, over the files changed in A...B and the commits in A..B:
 1. Mapped folders. A rule matched by a changed file needs one of its specs
    changed in the range, or a commit message line `No-Doc-Change: <reason>`
-   (it satisfies every rule). An empty or placeholder reason (TODO, TBD, n/a,
-   none, a dash, the word "reason", or the <reason> template itself) does not
-   count. Only commit messages count, never a PR body.
+   (it satisfies every rule). Only the branch's own commits count (git log
+   --first-parent A..B), never a commit merged in from main. An empty or
+   placeholder reason (TODO, TBD, n/a, none, a dash, the word "reason", or the
+   <reason> template itself) does not count. Only commit messages count, never
+   a PR body.
 2. Go package docs. A directory with a changed non-test .go file that is
    still a package at B carries doc.go, README.md and AGENTS.md (AGENTS.md,
    Documentation Discipline). The trailer does not excuse this.
@@ -39,7 +40,8 @@ harness, including Codex whose apply_patch payload names several files):
    mtime comparison is advisory and hook-only).
 2. Mapped folders: a working-tree change whose rule has no spec changed yet in
    the working tree or the branch.
-Dirs under spikes/, vendor/ and testdata/ are skipped in both modes.
+Dirs under spikes/, vendor/ and testdata/ are skipped by the Go package docs
+check in both modes; the map rules still apply to them.
 """
 from __future__ import annotations
 
@@ -68,7 +70,8 @@ class MapError(Exception):
 
 
 def git(root, *args, strict=False):
-    result = subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True)
+    result = subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True,
+                            encoding="utf-8")
     if result.returncode != 0:
         if strict:
             raise GitError("git %s failed (exit %d): %s" % (" ".join(args), result.returncode, result.stderr.strip()))
@@ -85,7 +88,7 @@ def glob_match(pattern, rel):
 def map_problems(root, check_specs=True):
     """Problems with the map, one string each; [] when it is valid."""
     try:
-        data = json.loads((Path(root) / MAP_FILE).read_text())
+        data = json.loads((Path(root) / MAP_FILE).read_text(encoding="utf-8"))
     except (OSError, ValueError) as err:
         return [MAP_FILE + " is unreadable or not JSON: " + str(err)]
     if not isinstance(data, dict) or data.get("version") != 1:
@@ -119,7 +122,7 @@ def load_map(root, check_specs=True):
     problems = map_problems(root, check_specs)
     if problems:
         raise MapError("; ".join(problems))
-    return json.loads((Path(root) / MAP_FILE).read_text())["rules"]
+    return json.loads((Path(root) / MAP_FILE).read_text(encoding="utf-8"))["rules"]
 
 
 def matching_rules(rules, changed):
@@ -183,9 +186,12 @@ def ci_findings(root, rng):
     git(root, "rev-parse", "--show-toplevel", strict=True)
     base, head = resolve_range(root, rng)
     rules = load_map(root)
+    if git(root, "rev-list", "--count", base + ".." + head, strict=True).strip() == "0":
+        return None  # an empty or reversed range has nothing to check
     changed = [p for p in git(root, "diff", "--name-only", "--no-renames", "-z", base + "..." + head,
                               strict=True).split("\0") if p]
-    messages = [m for m in git(root, "log", "--format=%B%x00", base + ".." + head, strict=True).split("\0") if m.strip()]
+    messages = [m for m in git(root, "log", "--first-parent", "--format=%B%x00", base + ".." + head,
+                               strict=True).split("\0") if m.strip()]  # not commits merged in from main
     findings = []
     reason, placeholders = trailer_state(messages)
     if reason is None:
@@ -220,6 +226,9 @@ def run_ci(root, rng):
     except Exception as err:  # an internal error must fail the gate, never pass it
         print("check-docs-stale: internal error: %r" % err, file=sys.stderr)
         return 2
+    if findings is None:
+        print("check-docs-stale: no commits in %s; nothing to check" % rng)
+        return 0
     for line in findings:
         print(line)
     if findings:
@@ -293,7 +302,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--root", default=".")
     parser.add_argument("--ci", action="store_true", help="blocking mode; needs --range")
-    parser.add_argument("--range", dest="rng", help="A..B: files changed in A...B, commit messages in A..B")
+    parser.add_argument("--range", dest="rng", help="A..B: files changed in A...B, first-parent commit messages in A..B")
     parser.add_argument("--check-map", action="store_true", help="validate %s" % MAP_FILE)
     args = parser.parse_args()
     if args.ci or args.check_map:

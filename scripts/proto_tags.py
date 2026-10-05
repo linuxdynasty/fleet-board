@@ -89,7 +89,7 @@ def parse(comment, trailing="", detached=()):
 def capability_ids(root):
     """[(id, phase)] in the order of the capability table in 01."""
     try:
-        lines = (Path(root) / CAP_DOC).read_text().splitlines()
+        lines = (Path(root) / CAP_DOC).read_text(encoding="utf-8").splitlines()
     except OSError as err:
         raise ContractError("cannot read %s: %s" % (CAP_DOC, err)) from err
     caps = []
@@ -110,7 +110,7 @@ def capability_ids(root):
 def plan_rows(root):
     """The row ids (12, 13a) of the PR sequence: the first table under section 5."""
     try:
-        text = (Path(root) / PLAN_DOC).read_text()
+        text = (Path(root) / PLAN_DOC).read_text(encoding="utf-8")
     except OSError as err:
         raise ContractError("cannot read %s: %s" % (PLAN_DOC, err)) from err
     if PLAN_SECTION not in text:

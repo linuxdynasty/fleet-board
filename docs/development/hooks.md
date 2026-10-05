@@ -181,8 +181,10 @@ globs work like `skill-paths.json` above. Each rule names its globs and its
 specs; a change under the globs (and none of the rule's `exclude` globs) is
 covered when ANY ONE of its specs changes too. A rule may name a folder that
 does not exist yet, but every spec must exist: `check-docs-stale.py
---check-map` checks that, and `verify-agent-canon.sh` runs it. `unmapped`
-lists the folders no doc names a spec for, with the reason.
+--check-map` checks that, and `verify-agent-canon.sh` runs it. A code folder
+maps to the specs that define its capabilities or name the folder, never to
+ADRs; each rule's note cites the section. `unmapped` lists only the folders no
+spec defines, with the reason.
 
 `scripts/check-docs-stale.py` has two modes on that one map:
 
@@ -193,18 +195,24 @@ lists the folders no doc names a spec for, with the reason.
   range and none of its specs did, or when a changed Go package lacks
   doc.go, README.md or AGENTS.md; exit 2 when git fails, the range does not
   resolve or the map is invalid. A commit message line
-  `No-Doc-Change: <reason>` in the range covers every mapped folder (not the
-  package docs). A blank reason or a placeholder (TODO, TBD, n/a, none, a
+  `No-Doc-Change: <reason>` covers every mapped folder (not the package
+  docs). Only the branch's own commits in the range count (`git log
+  --first-parent`): a trailer on a commit merged in from main never excuses
+  the PR. A blank reason or a placeholder (TODO, TBD, n/a, none, a
   dash, the word `reason`, or `<reason>` copied as is) does not count, and a
   PR body never does.
 
 `scripts/check-doc-names.py` (`make doc-names`) is the other doc-drift gate:
 every backticked proto name in the checked docs must exist in `api/fleet`,
 read from the pinned buf's compiled image through `scripts/proto_image.py`.
-Its docstring lists the checked docs and the token rules; tokens that are not
+Its docstring lists the checked docs and the token rules. It skips only
+tokens that are not names (URLs, file names, words joined to `-`, `<NAME>` or
+`<reason>` placeholders and the template pieces glued to them); `/` and `->`
+just separate names, so each name-shaped part is checked. Tokens that are not
 proto names on purpose are in `.agents/doc-names-allow.json`, one entry each
-with a reason and, when only one doc may use the token, a `file`; an entry no
-doc uses any more (or that its file no longer uses) fails.
+with a reason and `files`, the exact list of docs that use it (no wildcards).
+The token in any other doc is a finding, and a listed doc that no longer uses
+it fails until it is dropped from `files`.
 
 `scripts/gen-doc-tables.py` (`make doc-tables` runs `--check`) is the third:
 the release tables in 02k, the scope tables in 02d, the delivery table in 02i

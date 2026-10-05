@@ -22,8 +22,9 @@ CHECK = ROOT / "scripts/check-doc-names.py"
 ALLOW = ".agents/doc-names-allow.json"
 
 
-def allow(*entries):
-    return {"version": 1, "entries": [{"token": t, "kind": "test", "reason": "seeded"} for t in entries]}
+def allow(*tokens, files=("docs/specs/a.md",)):
+    return {"version": 1, "entries": [{"token": t, "kind": "test", "reason": "seeded", "files": list(files)}
+                                      for t in tokens]}
 
 
 class DocNameTests(unittest.TestCase):
@@ -49,7 +50,7 @@ class DocNameTests(unittest.TestCase):
         extra = {"FLEET_PROTO_IMAGE": str(self.image)} if image else {}
         extra.update(env)
         return subprocess.run([sys.executable, str(CHECK), "--root", str(self.tree.root)],
-                              env=clean_env(**extra), capture_output=True, text=True)
+                              env=clean_env(**extra), capture_output=True, text=True, encoding="utf-8")
 
     def assert_rc(self, want, out):
         self.assertEqual(want, out.returncode, "stdout:\n%s\nstderr:\n%s" % (out.stdout, out.stderr))
@@ -133,27 +134,78 @@ class DocNameTests(unittest.TestCase):
         self.assert_rc(1, self.run_check())
 
     def test_syntactic_exclusions(self):
-        self.tree.write("docs/specs/s.md", "`api/Missing`, `Missing.md`, `events.proto`, `https://example.com/Nope`, "
-                                           "`X-Forwarded-For`, `PROJ-123`, `tmux -L fleet`, `<NAME>`, `A`, "
-                                           "`some_field`, `os.Getenv`, `create_time > \"2026-09-25T00:00:00Z\"`.\n")
+        self.tree.write("docs/specs/s.md", "`Missing.md`, `events.proto`, `docs/specs/README.md`, "
+                                           "`api/fleet/fixture/v1/fixture.proto`, `~/.config/fleet/policy.toml`, "
+                                           "`https://example.com/Nope/Path`, `www.Example.com/Nope`, "
+                                           "`X-Forwarded-For`, `PROJ-123`, `tmux -L fleet`, `<NAME>`, `<reason>`, "
+                                           "`<device id>`, `TRIAGE_KIND_<NAME>`, `<ENUM>_<NAME>`, `<Rpc>Request`, "
+                                           "`/signin?error=<REASON>`, `A`, `some_field`, `os.Getenv`, "
+                                           "`create_time > \"2026-09-25T00:00:00Z\"`.\n")
         self.assert_rc(0, self.run_check())
+
+    def test_names_around_slashes_arrows_and_angle_brackets_are_checked(self):
+        bad = ("ReadLog->FooBarTwo", "ReadLog/FooBarThree", "<FooBarFour>", "map<string, FooBarFive>",
+               "FooBarSix{/goal …}", "GET /fleet.fixture.v1.LogService/NoSuchRpc", "api/Missing",
+               "TERMINAL/SOMETIMES_DROP")
+        self.tree.write("docs/specs/s.md", "".join("`%s`\n" % span for span in bad))
+        self.tree.write_json(ALLOW, allow("GET", files=["docs/specs/s.md"]))
+        out = self.run_check()
+        self.assert_rc(1, out)
+        for line, token in enumerate(("FooBarTwo", "FooBarThree", "FooBarFour", "FooBarFive", "FooBarSix",
+                                      "NoSuchRpc", "Missing", "SOMETIMES_DROP"), 1):
+            with self.subTest(token=token):
+                self.assertIn("docs/specs/s.md:%d: `%s`" % (line, token), out.stdout)
+        for real in ("`ReadLog`", "`LogService`", "`fleet.fixture.v1.LogService`", "`TERMINAL`"):
+            self.assertNotIn(real, out.stdout)
+
+    def test_real_names_around_slashes_arrows_and_angle_brackets_pass(self):
+        self.tree.write("docs/specs/s.md", "`ReadLog->LogChunk`, `LogService/ReadLog`, `<LogChunk>`, "
+                                           "`map<string, Label>`, `LogChunk{/x …}`, `TERMINAL/NEVER_DROP`, "
+                                           "`GET /fleet.fixture.v1.LogService/ReadLog`.\n")
+        self.tree.write_json(ALLOW, allow("GET", files=["docs/specs/s.md"]))
+        self.assert_rc(0, self.run_check())
+
+    def test_a_mixed_case_name_with_an_underscore_is_checked(self):
+        self.tree.write("docs/specs/m.md", "`FooBar_Mixed` and `Log_Chunk.key`\n")
+        out = self.run_check()
+        self.assert_rc(1, out)
+        self.assertIn("`FooBar_Mixed`", out.stdout)
+        self.assertIn("`Log_Chunk.key`", out.stdout)
 
     def test_well_known_types_are_not_fleet_names(self):
         self.tree.write("docs/specs/w.md", "`Timestamp`\n")
         self.assert_rc(1, self.run_check())
 
-    def test_an_allowlisted_token_passes(self):
+    def test_an_allowlisted_token_passes_in_its_files(self):
         self.tree.write("docs/development/h.md", "The hook `PostToolUse` fires.\n")
-        self.tree.write_json(ALLOW, allow("PostToolUse"))
+        self.tree.write("docs/specs/01d.md", "Then `PostToolUse` again.\n")
+        self.tree.write_json(ALLOW, allow("PostToolUse", files=["docs/development/h.md", "docs/specs/01d.md"]))
         self.assert_rc(0, self.run_check())
 
-    def test_an_allowlist_entry_no_doc_uses_fails(self):
+    def test_an_allowlisted_word_in_a_doc_it_does_not_list_fails(self):
+        self.tree.write("docs/specs/01d.md", "The hook `PostToolUse` fires.\n")
+        self.tree.write("docs/design.md", "\nAlso `PostToolUse`.\n")
+        self.tree.write_json(ALLOW, allow("PostToolUse", files=["docs/specs/01d.md"]))
+        out = self.run_check()
+        self.assert_rc(1, out)
+        self.assertIn("docs/design.md:2: `PostToolUse`", out.stdout)
+        self.assertNotIn("01d.md:", out.stdout)
+
+    def test_an_entry_no_listed_file_uses_fails(self):
         self.tree.write("docs/specs/a.md", "`LogChunk`\n")
         self.tree.write_json(ALLOW, allow("PostToolUse"))
         out = self.run_check()
         self.assert_rc(1, out)
-        self.assertIn("PostToolUse", out.stdout)
-        self.assertIn("no checked doc uses it", out.stdout)
+        self.assertIn("`PostToolUse`: docs/specs/a.md does not use it", out.stdout)
+
+    def test_a_listed_file_that_no_longer_uses_the_entry_fails(self):
+        self.tree.write("docs/specs/03g.md", "Retired: `SelectPane`.\n")
+        self.tree.write("docs/specs/02.md", "Nothing retired here.\n")
+        self.tree.write_json(ALLOW, allow("SelectPane", files=["docs/specs/03g.md", "docs/specs/02.md"]))
+        out = self.run_check()
+        self.assert_rc(1, out)
+        self.assertIn("`SelectPane`: docs/specs/02.md does not use it; drop it from files", out.stdout)
+        self.assertNotIn("03g.md does not use it", out.stdout)
 
     def test_an_allowlist_entry_that_is_a_real_proto_name_fails(self):
         self.tree.write("docs/specs/a.md", "`LogChunk` and `NEVER_DROP`\n")
@@ -162,39 +214,27 @@ class DocNameTests(unittest.TestCase):
         self.assert_rc(1, out)
         self.assertIn("is a real proto name", out.stdout)
 
-    def test_a_file_limited_entry_passes_in_its_file_and_fails_in_another(self):
-        entry = {"token": "SelectPane", "kind": "retired", "reason": "seeded", "file": "docs/specs/03g.md"}
-        self.tree.write_json(ALLOW, {"version": 1, "entries": [entry]})
-        self.tree.write("docs/specs/03g.md", "Retired: `SelectPane`.\n")
-        self.assert_rc(0, self.run_check())
-        self.tree.write("docs/specs/02.md", "\nStill uses `SelectPane`.\n")
-        out = self.run_check()
-        self.assert_rc(1, out)
-        self.assertIn("docs/specs/02.md:2: `SelectPane`", out.stdout)
-        self.assertNotIn("03g.md:", out.stdout)
+    def test_a_malformed_files_list_fails_closed(self):
+        self.tree.write("docs/specs/a.md", "`PostToolUse`\n")
+        for name, extra in (("missing", {}), ("a string", {"files": "docs/specs/a.md"}), ("empty", {"files": []}),
+                            ("not strings", {"files": [3]}), ("a wildcard", {"files": ["docs/specs/*.md"]}),
+                            ("twice", {"files": ["docs/specs/a.md", "docs/specs/a.md"]})):
+            with self.subTest(files=name):
+                entry = {"token": "PostToolUse", "kind": "hook", "reason": "seeded", **extra}
+                self.tree.write_json(ALLOW, {"version": 1, "entries": [entry]})
+                out = self.run_check()
+                self.assert_rc(2, out)
+                self.assertIn("entry 1 (PostToolUse): files must list the docs that use it, each once, "
+                              "with no wildcards", out.stderr)
 
-    def test_a_file_limited_entry_its_file_does_not_use_fails(self):
-        entry = {"token": "SelectPane", "kind": "retired", "reason": "seeded", "file": "docs/specs/03g.md"}
+    def test_the_old_file_key_fails_closed_even_beside_a_valid_files_list(self):
+        self.tree.write("docs/specs/a.md", "`PostToolUse`\n")
+        entry = {"token": "PostToolUse", "kind": "hook", "reason": "seeded", "files": ["docs/specs/a.md"],
+                 "file": "docs/specs/a.md"}
         self.tree.write_json(ALLOW, {"version": 1, "entries": [entry]})
-        self.tree.write("docs/specs/03g.md", "Nothing retired here.\n")
-        self.tree.write("docs/specs/02.md", "`SelectPane`\n")
         out = self.run_check()
-        self.assert_rc(1, out)
-        self.assertIn("`SelectPane`: docs/specs/03g.md does not use it", out.stdout)
-        self.assertIn("docs/specs/02.md:1: `SelectPane`", out.stdout)
-
-    def test_a_file_limited_entry_that_is_a_real_proto_name_fails(self):
-        entry = {"token": "LogChunk", "kind": "retired", "reason": "seeded", "file": "docs/specs/a.md"}
-        self.tree.write_json(ALLOW, {"version": 1, "entries": [entry]})
-        self.tree.write("docs/specs/a.md", "`LogChunk`\n")
-        out = self.run_check()
-        self.assert_rc(1, out)
-        self.assertIn("is a real proto name", out.stdout)
-
-    def test_an_allowlist_file_that_is_not_a_string_fails_closed(self):
-        entry = {"token": "SelectPane", "kind": "retired", "reason": "seeded", "file": 3}
-        self.tree.write_json(ALLOW, {"version": 1, "entries": [entry]})
-        self.assert_rc(2, self.run_check())
+        self.assert_rc(2, out)
+        self.assertIn("entry 1 (PostToolUse): the old file key is gone; list the docs under files", out.stderr)
 
     def test_an_allowlist_entry_without_a_reason_fails_closed(self):
         self.tree.write("docs/specs/a.md", "`PostToolUse`\n")
@@ -227,7 +267,8 @@ class DocNameTests(unittest.TestCase):
 
     def test_a_contract_that_does_not_compile_fails_closed(self):
         self.tree.write("docs/specs/a.md", "`LogChunk`\n")
-        self.tree.proto.write_text(self.tree.proto.read_text() + "\nmessage Broken {\n")
+        self.tree.proto.write_text(self.tree.proto.read_text(encoding="utf-8") + "\nmessage Broken {\n",
+                                   encoding="utf-8")
         self.assert_rc(2, self.run_check(image=False))
 
     def test_missing_go_fails_closed(self):

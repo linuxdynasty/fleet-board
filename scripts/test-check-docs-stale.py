@@ -40,14 +40,14 @@ class DocsStaleTests(unittest.TestCase):
         self.base = self.git("rev-parse", "HEAD").strip()
 
     def git(self, *args, cwd=None):
-        out = subprocess.run(["git", *args], cwd=cwd or self.repo, env=self.env, capture_output=True, text=True)
+        out = subprocess.run(["git", *args], cwd=cwd or self.repo, env=self.env, capture_output=True, text=True, encoding="utf-8")
         self.assertEqual(0, out.returncode, out.stderr)
         return out.stdout
 
     def write(self, rel, text):
         path = self.repo / rel
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text)
+        path.write_text(text, encoding="utf-8")
 
     def commit(self, message):
         self.git("add", "-A")
@@ -60,7 +60,7 @@ class DocsStaleTests(unittest.TestCase):
 
     def run_check(self, *args):
         return subprocess.run([sys.executable, str(CHECK), "--root", str(self.repo), *args],
-                              env=self.env, capture_output=True, text=True)
+                              env=self.env, capture_output=True, text=True, encoding="utf-8")
 
     def ci(self, rng=None):
         return self.run_check("--ci", "--range", rng or self.base + "..HEAD")
@@ -100,6 +100,41 @@ class DocsStaleTests(unittest.TestCase):
         self.commit("tmux: observer")
         self.assert_rc(1, self.ci(start + "..HEAD"))
 
+    def merge_main_with_a_trailer_into_pr(self, pr_message):
+        self.git("checkout", "-q", "-b", "pr")
+        self.write("internal/agent/tmux/mine.sh", "echo mine\n")
+        self.commit(pr_message)
+        self.git("checkout", "-q", "main")
+        self.write("tools/theirs.txt", "x\n")
+        self.commit("main's change\n\nNo-Doc-Change: their own reason")
+        self.git("checkout", "-q", "pr")
+        self.git("merge", "-q", "--no-edit", "main")
+
+    def test_a_trailer_merged_in_from_main_does_not_excuse_the_pr(self):
+        self.merge_main_with_a_trailer_into_pr("mine")
+        for rng in (self.base + "..pr", "main..pr"):  # a stale base, then the current one
+            with self.subTest(rng=rng):
+                out = self.ci(rng)
+                self.assert_rc(1, out)
+                self.assertIn("internal/agent/tmux/mine.sh", out.stdout)
+
+    def test_the_prs_own_trailer_still_counts_after_a_merge_from_main(self):
+        self.merge_main_with_a_trailer_into_pr("mine\n\nNo-Doc-Change: a helper script no spec describes")
+        for rng in (self.base + "..pr", "main..pr"):
+            with self.subTest(rng=rng):
+                self.assert_rc(0, self.ci(rng))
+
+    def test_a_trailer_added_after_a_merge_from_main_counts(self):
+        self.merge_main_with_a_trailer_into_pr("mine")
+        for rng in (self.base + "..pr", "main..pr"):
+            with self.subTest(rng=rng, trailer="only on main's commit"):
+                self.assert_rc(1, self.ci(rng))
+        self.write("notes.txt", "x\n")
+        self.commit("after the merge\n\nNo-Doc-Change: a helper script no spec describes")
+        for rng in (self.base + "..pr", "main..pr"):
+            with self.subTest(rng=rng, trailer="on the PR's commit after the merge"):
+                self.assert_rc(0, self.ci(rng))
+
     def test_changing_any_one_mapped_spec_passes(self):
         self.go_package("internal/agent/tmux")
         self.write("docs/specs/01.md", "# spec\n\nE2 now says more.\n")
@@ -130,14 +165,56 @@ class DocsStaleTests(unittest.TestCase):
         self.assert_rc(1, out)
         self.assertIn("internal/caf\u00e9: missing AGENTS.md", out.stdout)
 
-    def test_a_new_api_package_needs_02_or_02e_under_the_real_map(self):
-        real = json.loads((ROOT / ".agents/doc-paths.json").read_text())
+    def real_map(self):
+        """Commit the repo's own map with a stub for every spec it names; return that commit."""
+        real = json.loads((ROOT / ".agents/doc-paths.json").read_text(encoding="utf-8"))
         self.write(".agents/doc-paths.json", json.dumps(real))
         for rule in real["rules"]:
             for spec in rule["specs"]:
                 self.write(spec, "# spec\n")
         self.commit("real map")
-        base = self.git("rev-parse", "HEAD").strip()
+        return self.git("rev-parse", "HEAD").strip()
+
+    def test_a_new_package_in_a_folder_a_spec_defines_needs_that_spec(self):
+        base = self.real_map()
+        for folder, spec in (("internal/agent/policy", "docs/specs/03e-settings-and-drift.md"),
+                             ("internal/agent/goals", "docs/specs/01f-agent-control-goals-and-policy.md"),
+                             ("internal/harness/claude", "docs/specs/01b-harness-commands.md"),
+                             ("internal/hub/gateway", "docs/specs/02i-delivery-and-sequencing.md"),
+                             ("internal/store", "docs/specs/03f-hub-internals.md")):
+            with self.subTest(folder=folder):
+                self.git("reset", "-q", "--hard", base)
+                self.go_package(folder)
+                self.commit(folder)
+                out = self.ci(base + "..HEAD")
+                self.assert_rc(1, out)
+                self.assertIn(folder + "/x.go", out.stdout)
+                self.assertIn(spec, out.stdout)
+                self.write(spec, "# spec\n\nchanged\n")
+                self.commit(folder + ", with its spec")
+                self.assert_rc(0, self.ci(base + "..HEAD"))
+
+    def test_a_change_in_any_other_folder_a_doc_names_needs_that_doc(self):
+        base = self.real_map()
+        for path, doc in (("mockup/view-x.js", "docs/specs/ui-contract-map.md"),
+                          ("tools/tscheck/package.json", "docs/specs/02e-contract-rules.md"),
+                          ("spikes/sqlite/main.go", "docs/specs/04-technology-review.md"),
+                          (".cursor/hooks.json", "docs/development/hooks.md"),
+                          (".codex/agents/x.toml", "docs/development/README.md")):
+            with self.subTest(path=path):
+                self.git("reset", "-q", "--hard", base)
+                self.write(path, "x\n")
+                self.commit(path)
+                out = self.ci(base + "..HEAD")
+                self.assert_rc(1, out)
+                self.assertIn(path, out.stdout)
+                self.assertIn(doc, out.stdout)
+                self.write(doc, "# doc\n\nchanged\n")
+                self.commit(path + ", with its doc")
+                self.assert_rc(0, self.ci(base + "..HEAD"))
+
+    def test_a_new_api_package_needs_02_or_02e_under_the_real_map(self):
+        base = self.real_map()
         self.write("api/fleet/newpkg/v1/x.proto", "syntax = \"proto3\";\n")
         self.commit("newpkg")
         out = self.ci(base + "..HEAD")
@@ -154,6 +231,42 @@ class DocsStaleTests(unittest.TestCase):
         self.go_package("internal/foo", docs=("doc.go", "README.md"))
         self.commit("foo\n\nNo-Doc-Change: a new package with no spec yet")
         self.assert_rc(1, self.ci())
+
+    def test_changes_main_made_after_the_branch_point_are_not_the_branchs(self):
+        self.git("checkout", "-q", "-b", "pr")
+        self.go_package("internal/agent/tmux")
+        self.write("docs/specs/02h.md", "# spec\n\nobserver\n")
+        self.commit("tmux, with 02h")
+        self.git("checkout", "-q", "main")
+        self.write("internal/not/yet/notes.txt", "x\n")
+        self.commit("main moves on\n\nNo-Doc-Change: main's own reason, not the branch's")
+        self.assert_rc(0, self.ci("main..pr"))
+
+    def test_an_internal_error_exits_2(self):
+        self.write("tools/thing.txt", "x\n")
+        self.commit("caf\u00e9")
+        self.git("config", "i18n.logOutputEncoding", "ISO-8859-1")
+        out = self.ci()
+        self.assert_rc(2, out)
+        self.assertIn("internal error", out.stderr)
+
+    def test_a_deleted_package_needs_no_docs(self):
+        self.go_package("internal/foo")
+        self.commit("foo")
+        start = self.git("rev-parse", "HEAD").strip()
+        self.git("rm", "-q", "-r", "internal/foo")
+        self.commit("remove foo")
+        self.assert_rc(0, self.ci(start + "..HEAD"))
+
+    def test_an_empty_or_reversed_range_says_there_is_nothing_to_check(self):
+        self.write("tools/thing.txt", "x\n")
+        self.commit("tools")
+        for rng in ("HEAD..HEAD", "HEAD.." + self.base):
+            with self.subTest(rng=rng):
+                out = self.ci(rng)
+                self.assert_rc(0, out)
+                self.assertIn("no commits in %s; nothing to check" % rng, out.stdout)
+                self.assertNotIn("docs move with the code", out.stdout)
 
     def test_hook_mode_on_a_failing_tree_exits_zero_and_reminds(self):
         self.go_package("internal/agent/tmux", docs=("doc.go", "README.md"))
@@ -178,7 +291,7 @@ class DocsStaleTests(unittest.TestCase):
         plain = Path(self.tmp.name) / "plain"
         plain.mkdir()
         out = subprocess.run([sys.executable, str(CHECK), "--root", str(plain), "--ci", "--range", "a..b"],
-                             env=self.env, capture_output=True, text=True)
+                             env=self.env, capture_output=True, text=True, encoding="utf-8")
         self.assert_rc(2, out)
         self.assertIn("git", out.stderr)
 
