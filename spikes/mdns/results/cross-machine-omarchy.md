@@ -58,16 +58,17 @@ Oct 05 13:33:50 omarchy kernel: [UFW BLOCK] IN=enp3s0 OUT= SRC=192.168.1.124 DST
   1. a pure-Go querier that sends from port 5353 so answers come back by
      multicast (for example `pion/mdns/v2`, listed but not evaluated in ADR
      0023), sharing the port with avahi;
-  2. asking avahi when it runs (`avahi-browse` exec, or its D-Bus API), which
-     is the exec fallback ADR 0023 keeps;
+  2. asking avahi when it runs (`avahi-browse` exec, or its D-Bus API), an
+     exec on the browse side (ADR 0023's fallback was on the advertise side);
   3. a firewall rule the owner adds on each Linux worker;
   4. relying on the cached or configured hub address (A2) and treating mDNS as
      best effort.
-- **The exec fallback is therefore not ruled out**, but for a different reason
+- At the time (before ADR 0028): **the exec fallback is therefore not ruled out**, but for a different reason
   than ADR 0023 gave: the gap is on the browse side behind a host firewall, not
   a 5353 conflict on the macOS hub. (Later decided in
-  [ADR 0028](../../../docs/adr/0028-mdns-best-effort.md): option 4, and the
-  exec fallback is ruled out.)
+  [ADR 0028](../../../docs/adr/0028-mdns-best-effort.md): option 4; the
+  advertise-side exec fallback is ruled out, and asking avahi on the worker
+  stays its open question 1.)
 
 ## Not checked
 

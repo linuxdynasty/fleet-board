@@ -21,8 +21,8 @@ in [spikes/mdns/results/](../../spikes/mdns/results/README.md).
   error, macOS's `dns-sd` saw and resolved it, and the Go browser found it 150
   of 150 times (worst first answer 10.3 ms). The browser found a service macOS
   registered 10 of 10 times (worst 83.6 ms).
-- **Mac to Linux.** From omarchy (Linux, `ufw` on with "deny incoming",
-  `avahi-daemon` holding 5353), the browser found the Mac's service 0 of 100
+- **Mac to Linux.** From omarchy (Linux, `ufw` active, its policy inferred as
+  "deny incoming" because `ufw status` needs root, `avahi-daemon` holding 5353), the browser found the Mac's service 0 of 100
   times, and a service macOS itself registered 1 of 20 times. The kernel log
   shows the hub's answers dropped: `[UFW BLOCK] ... SPT=5353 DPT=<random>`.
   Other devices' answers, sent to the multicast group, arrived.
@@ -65,8 +65,11 @@ connection attempt, on the reconnect backoff 03 already defines.
    10 s forever. The library sends its question once and never repeats it, so
    a longer timeout cannot recover a lost packet; 2 s only has to outlast one
    slow round trip. A hub at a new address is found within one 60 s backoff
-   step plus a cycle, inside the 3 minute `OFFLINE` mark. Values in
-   [defaults](../specs/defaults.md); the reset rules in
+   step plus a cycle, inside the 3 minute `OFFLINE` mark. Wake, network change
+   and a successful connect reset the backoff to its first step, and an attempt
+   a wake or network change starts waits a short random delay first, so
+   machines that see the same event do not query together. Numbers in
+   [defaults](../specs/defaults.md); the rule in
    [03](../specs/03-workflows.md) A2.
 3. **mDNS is best effort (option 4).** A browse that finds nothing is a normal
    result: the agent moves on to its configured addresses in the same attempt
@@ -80,19 +83,22 @@ connection attempt, on the reconnect backoff 03 already defines.
 4. **Discovery keeps only names ending in `._fleetd._tcp.local.`** (the library
    returns unrelated services). Any address found is still only a candidate
    until TLS verifies it against the pinned CA (02g).
-5. **The exec fallback is ruled out.** ADR 0023 kept `dns-sd` or
+5. **ADR 0023's exec fallback for advertising is ruled out** (asking avahi on
+   the worker is a different thing and stays open question 1). ADR 0023 kept `dns-sd` or
    `avahi-publish-service` for a hub whose advertising clashed with macOS's
    responder on 5353. That clash did not happen, and the fallback would not fix
    the failure seen: a service registered through macOS's own responder was
    dropped the same way. If a Linux hub cannot bind 5353 next to avahi, that is
    a new finding for row 5 and a new decision; the fallback does not come back
    by default.
-6. **Hub side (row 5).** Pass the interface and check each address family's
-   bind itself, for `doctor` and telemetry. Advertise under a host name of its
-   own (for example `fleetd-<host>.local.`) with explicit addresses, because the
-   library's default is the machine's name, which mDNSResponder owns.
 
 ## Consequences
+
+- Findings for row 5 (the hub's advertising), not decided here: `NewServer`
+  hides a failed address family, so the hub should check each bind itself; and
+  the library's default host name is the machine's own, which mDNSResponder
+  owns, so a distinct name (for example `fleetd-<host>.local.`) with explicit
+  addresses avoids answering for the OS. Row 5 decides both and updates 02j.
 
 - When the hub moves to another laptop, a worker behind such a firewall cannot
   find it on its own; the owner gives that worker the new address.
@@ -101,8 +107,9 @@ connection attempt, on the reconnect backoff 03 already defines.
 - Plan row 4 proves the best-effort path: a fake browse that finds nothing, then
   the configured address connects (`source=configured`); `enroll` with no
   `--hub` and nothing found exits non-zero and sends no token; stray services
-  are dropped; and, live, a Linux worker with its firewall unchanged misses on
-  mDNS and connects on the configured address.
+  are dropped; one browse per attempt, on the backoff, reset by wake, network
+  change and connect; and, live, a Linux worker with its firewall unchanged
+  misses on mDNS and connects on the configured address.
 
 ## Open questions
 

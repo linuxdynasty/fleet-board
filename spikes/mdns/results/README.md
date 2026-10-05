@@ -199,7 +199,8 @@ proposal as written before that ruling:
 ADR 0023 keeps the exec fallback (`dns-sd` or `avahi-publish-service`) for
 the case where the hub's advertisement "conflicts with macOS's own mDNS
 responder on port 5353". On this Mac it did not: same-machine evidence
-supports ruling the fallback out for that reason. It is **not ruled out yet**:
+supports ruling the fallback out for that reason. At the time (before ADR
+0028) it was **not ruled out yet**:
 the cross-machine run has to show the Wi-Fi hub reaches a Linux browser.
 If it fails only on Linux because of a firewall (finding 6), the fix is on
 the responder side (`brutella/dnssd`, ADR 0023's first fallback, answers by
