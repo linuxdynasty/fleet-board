@@ -269,9 +269,9 @@ message FinishPasskeyLoginResponse {
   google.protobuf.Timestamp session_expire_time = 2;
 }
 
-// DeletePasskeyRequest removes one passkey of the caller's own user, or of
-// another user from a USER principal only. Removing the last sign-in method is
-// LAST_CREDENTIAL.
+// DeletePasskeyRequest removes one passkey of the caller's own user. On another
+// user's passkey the caller must also be a USER principal (02d, Only a user
+// mints). Removing the last sign-in method is LAST_CREDENTIAL.
 message DeletePasskeyRequest {
   string request_id = 1;
   PasskeyId id = 2;
@@ -348,8 +348,8 @@ message ListLoginSessionsResponse {
   string next_page_token = 2;
 }
 
-// RevokeLoginSessionRequest ends one session (another user's from a USER
-// principal only).
+// RevokeLoginSessionRequest ends one session. On another user's session the
+// caller must also be a USER principal (02d, Only a user mints).
 message RevokeLoginSessionRequest {
   string request_id = 1;
   LoginSessionId id = 2;
