@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
+import sys
 import unittest
 
 from cursor_hook_testkit import CONVO, Base, Project, out_json
@@ -23,6 +25,7 @@ HELPER, SUB, UNLINKED, OTHER = "helper-0000000001", "sub-00000000002", "unlinked
 LINK_PREFIX = "fleet-cursor-link-"
 ROOT_PREFIX = "fleet-cursor-root-"
 ALLOW = '{"permission": "allow"}\n'
+SCRIPTS = os.path.dirname(os.path.abspath(__file__))
 
 # (what subagentStart carries, what the helper's own tool hooks carry)
 START_BY_CONVERSATION = {"subagent_id": SUB, "conversation_id": HELPER, "parent_conversation_id": CONVO}
@@ -117,12 +120,6 @@ class HelperSharingTests(FamilyBase):
         self.read_skill({"conversation_id": HELPER})
         self.assertEqual(self.edit({"conversation_id": OTHER}), "deny")
 
-    def test_compaction_by_a_helper_clears_the_familys_markers_as_under_claude(self):
-        self.start(**START_BY_CONVERSATION)
-        self.read_skill(PARENT)
-        self.p.fire_as("preCompact", {"conversation_id": HELPER})
-        self.assertEqual(self.edit(PARENT), "deny")
-
     def test_without_any_link_a_conversation_keeps_its_own_key(self):
         self.read_skill({"conversation_id": CONVO})
         self.assertEqual(self.edit({"session_id": CONVO, "conversation_id": CONVO}), "allow")
@@ -167,7 +164,8 @@ class LinkSafetyTests(FamilyBase):
         self.assertEqual(self.edit(PARENT), "deny")  # the bound stopped short of the root
 
     def test_malformed_start_payloads_never_block_and_write_nothing(self):
-        bad_ids = ["../escape", "a/b", "..", "a..b", "", "x" * 1000, 5, ["a"], {"a": 1}, None, "a\nb", "a\x00b", " lead"]
+        bad_ids = ["../escape", "a/b", "..", "a..b", "", "x" * 1000, 5, ["a"], {"a": 1}, None, "a\nb", "a\x00b",
+                   " lead"]
         before = self.tree()
         for bad in bad_ids:
             for fields in ({"subagent_id": bad, "conversation_id": bad, "parent_conversation_id": CONVO},
@@ -198,6 +196,107 @@ class LinkSafetyTests(FamilyBase):
         return {os.path.join(d, f) for d, _, files in os.walk(self.p.tmp) for f in files}
 
 
+class EventScopeTests(FamilyBase):
+    """Only the skill events share a key. Claude never fires Stop, UserPromptSubmit or SessionStart for a subagent."""
+
+    def helper_stop(self):
+        payload = {"conversation_id": HELPER, "status": "completed", "loop_count": 0}
+        return out_json(self, self.p.fire_as("stop", payload))
+
+    def test_a_helpers_completed_stop_does_not_get_the_parents_goal(self):
+        self.start(**START_BY_CONVERSATION)
+        self.p.goal("Finish the migration")
+        self.assertEqual(self.helper_stop(), {})
+        parent = out_json(self, self.p.fire_as("stop", dict(PARENT, status="completed", loop_count=0)))
+        self.assertIn("Finish the migration", parent["followup_message"])
+
+    def test_a_helpers_goal_done_leaves_the_parents_goal_active(self):
+        self.start(**START_BY_CONVERSATION)
+        self.p.goal("Finish the migration")
+        submit = {"conversation_id": HELPER, "prompt": "/goal done"}
+        value = out_json(self, self.p.fire_as("beforeSubmitPrompt", submit))
+        self.assertEqual(value, {"continue": True})
+        goal = (self.p.root / ".claude" / ("active-goal." + CONVO)).read_text()
+        self.assertFalse(goal.startswith("DONE"), goal)
+        self.assertIn("followup_message", out_json(self, self.p.fire_as("stop", dict(PARENT, status="completed",
+                                                                                      loop_count=0))))
+
+    def test_a_helpers_compaction_leaves_the_familys_skill_markers(self):
+        self.start(**START_BY_CONVERSATION)
+        self.read_skill(PARENT)
+        self.p.fire_as("preCompact", {"conversation_id": HELPER})
+        self.assertEqual(self.edit(PARENT), "allow")
+        self.assertEqual(self.edit({"conversation_id": HELPER}), "allow")
+
+    def test_the_parents_own_compaction_still_clears_the_markers(self):
+        self.start(**START_BY_CONVERSATION)
+        self.read_skill({"conversation_id": HELPER})
+        self.p.fire_as("preCompact", PARENT)
+        self.assertEqual(self.edit(PARENT), "deny")
+        self.assertEqual(self.edit({"conversation_id": HELPER}), "deny")
+
+
+class StateFileTests(FamilyBase):
+    """Link and root files are written and read defensively: the state dir may be a shared /tmp."""
+
+    def run_start_as_pid(self, pid, fields):
+        """The adapter's subagentStart with os.getpid() fixed, so a scratch file name can be guessed."""
+        code = ("import os, runpy, sys\nos.getpid = lambda: %d\nsys.path.insert(0, %r)\n"
+                "sys.argv = ['cursor-hook.py', 'subagentStart']\n"
+                "runpy.run_path(%r, run_name='__main__')\n"
+                % (pid, SCRIPTS, str(self.p.root / "scripts/cursor-hook.py")))
+        return subprocess.run([sys.executable, "-c", code], input=json.dumps(fields), capture_output=True, text=True,
+                              env=self.p.env(), cwd=self.p.root)
+
+    def victim(self):
+        victim = self.p.tmp / "victim"
+        victim.write_text("keep me")
+        return victim
+
+    def test_a_symlink_planted_at_the_scratch_name_is_not_followed(self):
+        victim = self.victim()
+        (self.p.state / (".%s%s.4242.tmp" % (LINK_PREFIX, HELPER))).symlink_to(victim)
+        result = self.run_start_as_pid(4242, START_BY_CONVERSATION)
+        self.assertEqual((result.returncode, result.stdout), (0, ALLOW), result.stderr)
+        self.assertEqual(victim.read_text(), "keep me")
+        self.assertIn("cannot record", result.stderr)
+
+    def test_a_symlink_or_directory_at_the_destination_is_noted_and_left_alone(self):
+        victim = self.victim()
+        (self.p.state / (LINK_PREFIX + HELPER)).symlink_to(victim)
+        (self.p.state / (ROOT_PREFIX + CONVO)).mkdir()
+        result = self.p.fire_as("subagentStart", START_BY_CONVERSATION)
+        self.assertEqual((result.returncode, result.stdout), (0, ALLOW))
+        self.assertEqual(victim.read_text(), "keep me")
+        self.assertIn("not a regular file", result.stderr)
+        self.assertIn(ROOT_PREFIX + CONVO, result.stderr)
+
+    def test_a_symlinked_link_file_is_ignored(self):
+        real = self.p.tmp / "real-link"
+        real.write_text(CONVO + "\n")
+        (self.p.state / (LINK_PREFIX + HELPER)).symlink_to(real)
+        self.read_skill(PARENT)
+        self.assertEqual(self.edit({"conversation_id": HELPER}), "deny")
+        (self.p.state / (LINK_PREFIX + HELPER)).unlink()
+        self.link_file(HELPER, CONVO + "\n")  # the same content as a regular file does link
+        self.assertEqual(self.edit({"conversation_id": HELPER}), "allow")
+
+    def test_a_link_file_holding_a_bad_parent_is_ignored(self):
+        self.read_skill(PARENT)
+        for content in ("../x", CONVO + "\nextra", "x" * 300, "a/b", "", "  \n", "..", CONVO + "/.."):
+            self.link_file(HELPER, content)
+            self.assertEqual(self.edit({"conversation_id": HELPER}), "deny", repr(content))
+
+    def test_a_crash_while_recording_still_answers_allow(self):
+        code = ("import runpy, sys\nsys.path.insert(0, %r)\nimport cursor_hook_family as family\n"
+                "family.record_links = lambda payload: 1 / 0\nsys.argv = ['cursor-hook.py', 'subagentStart']\n"
+                "runpy.run_path(%r, run_name='__main__')\n" % (SCRIPTS, str(self.p.root / "scripts/cursor-hook.py")))
+        result = subprocess.run([sys.executable, "-c", code], input=json.dumps(START_BY_CONVERSATION),
+                                capture_output=True, text=True, env=self.p.env(), cwd=self.p.root)
+        self.assertEqual((result.returncode, result.stdout), (0, ALLOW), result.stderr)
+        self.assertIn("ZeroDivisionError", result.stderr)
+
+
 class PayloadLogTests(FamilyBase):
     def log(self):
         return self.p.tmp / "hook.log"
@@ -216,8 +315,8 @@ class PayloadLogTests(FamilyBase):
                    "session_id": "s-1", "subagent_id": SUB, "prompt": "SECRET-PROMPT", "command": "SECRET-CMD"}
         self.run_event("postToolUse", payload, **env)
         start, post = self.lines()
-        self.assertEqual(start, {"event": "subagentStart", "keys": ["conversation_id", "model", "parent_conversation_id",
-                                                                    "subagent_id", "task"],
+        keys = ["conversation_id", "model", "parent_conversation_id", "subagent_id", "task"]
+        self.assertEqual(start, {"event": "subagentStart", "keys": keys,
                                  "conversation_id": HELPER, "session_id": None, "subagent_id": SUB,
                                  "parent_conversation_id": CONVO, "resolved_key": CONVO})
         self.assertEqual(post["keys"], sorted(payload))
@@ -237,7 +336,8 @@ class PayloadLogTests(FamilyBase):
 
     def test_non_string_ids_are_written_as_null_and_values_are_cut(self):
         env = {"FLEET_CURSOR_HOOK_LOG": str(self.log())}
-        self.run_event("stop", {"status": "completed", "conversation_id": 12, "session_id": "s" * 5000, "subagent_id": ["x"]}, **env)
+        payload = {"status": "completed", "conversation_id": 12, "session_id": "s" * 5000, "subagent_id": ["x"]}
+        self.run_event("stop", payload, **env)
         (row,) = self.lines()
         self.assertIsNone(row["conversation_id"])
         self.assertIsNone(row["subagent_id"])

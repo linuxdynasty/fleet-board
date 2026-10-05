@@ -57,6 +57,8 @@ class Project:
         shutil.copy(ROOT / "scripts/check-docs-stale.py", self.root / "scripts/")
         if ADAPTER.exists():
             shutil.copy(ADAPTER, self.root / "scripts/")
+        if (ROOT / "scripts/cursor_hook_family.py").exists():
+            shutil.copy(ROOT / "scripts/cursor_hook_family.py", self.root / "scripts/")
         (self.root / ".cursor").mkdir()
         if (ROOT / ".cursor/hooks.json").exists():
             shutil.copy(ROOT / ".cursor/hooks.json", self.root / ".cursor/")

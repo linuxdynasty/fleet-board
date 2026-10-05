@@ -35,7 +35,13 @@ import re
 import subprocess
 import sys
 
+from cursor_hook_family import (chat_key, log_event, note, record_links, session_key)
+
 GUARDS = {"beforeShellExecution", "preToolUse"}
+# Only these events resolve a helper to its parent, so loaded skills are shared as under Claude. Claude fires
+# Stop, UserPromptSubmit and SessionStart (compact) for the main conversation only, so the goal and the
+# compaction clean-up stay per chat, and a helper's stop never reads the parent's goal.
+FAMILY_EVENTS = {"preToolUse", "postToolUse"}
 EVENTS = GUARDS | {"afterFileEdit", "postToolUse", "sessionStart", "preCompact", "beforeSubmitPrompt", "stop",
                    "subagentStart"}
 # Cursor does not document the field names inside a Write tool_input.
@@ -47,20 +53,6 @@ SKILL_DIRS = (".agents/skills", ".claude/skills", ".cursor/skills")
 TIMEOUT_SECONDS = 8
 TIMEOUT_ENV = "FLEET_CURSOR_HOOK_TIMEOUT"
 MESSAGE_LIMIT = 20000
-# Helper agents: one small file per link, <state dir>/fleet-cursor-link-<child id> holding the parent id.
-STATE_ENV = "FLEET_HOOK_STATE_DIR"  # the same variable and default as .claude/hooks/lib/common.sh
-LINK_PREFIX = "fleet-cursor-link-"
-# <state dir>/fleet-cursor-root-<id> marks a conversation that has started helpers, for a helper whose
-# own ids are all unknown but whose session_id is the parent's.
-ROOT_PREFIX = "fleet-cursor-root-"
-ID_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
-MAX_LINK_DEPTH = 8
-SESSION_FIELDS = ("conversation_id", "session_id", "subagent_id")
-# Opt-in payload log (a file path): one JSON line per event, ids only, for the live check of the links.
-LOG_ENV = "FLEET_CURSOR_HOOK_LOG"
-LOG_IDS = ("conversation_id", "session_id", "subagent_id", "parent_conversation_id")
-LOG_VALUE_LIMIT = 128
-LOG_KEY_LIMIT = 64
 WORKTREE_GIT_TIMEOUT = 3
 # Variables that would point git at some other repository than the project's.
 GIT_REPO_VARS = ("GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY",
@@ -135,127 +127,6 @@ def skill_name(path, cwd, project):
     return ""
 
 
-def state_dir():
-    d = os.environ.get(STATE_ENV) or os.environ.get("TMPDIR") or "/tmp"
-    return d[:-1] if d.endswith("/") else d
-
-
-def valid_id(value):
-    """An id that is safe as a file name: bounded, no slash, no `..`."""
-    return isinstance(value, str) and ID_PATTERN.fullmatch(value) is not None and ".." not in value
-
-
-def read_link(child):
-    """The parent id recorded for `child`, or ""."""
-    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
-    try:
-        fd = os.open("%s/%s%s" % (state_dir(), LINK_PREFIX, child), flags)
-        with os.fdopen(fd, "rb") as handle:
-            parent = handle.read(256).decode("utf-8", "replace").strip()
-    except OSError:
-        return ""
-    return parent if valid_id(parent) else ""
-
-
-def link_chain(sid):
-    """The ids from `sid` up to its root, and whether a cycle or the depth bound cut the walk short."""
-    path = []
-    cur = sid
-    while valid_id(cur):
-        if cur in path:
-            return path, path[path.index(cur):]
-        path.append(cur)
-        if len(path) > MAX_LINK_DEPTH:
-            break
-        cur = read_link(cur)
-    return path, None
-
-
-def root_session(sid):
-    path, cycle = link_chain(sid)
-    if cycle:
-        return min(cycle)  # the same answer whichever member of the loop the walk entered at
-    return path[-1] if path else sid
-
-
-def session_key(payload):
-    """The id markers and goals are keyed by: the root of the family of the payload's own ids.
-
-    A helper agent runs its tools under its own ids; the links written by subagentStart lead
-    them to the parent, as a Claude Code subagent keeps the parent's session_id. With no link
-    the key is the conversation id, as before.
-    """
-    for field in SESSION_FIELDS:
-        value = payload.get(field)
-        if valid_id(value):
-            root = root_session(value)
-            if root != value:
-                return root
-    for field in SESSION_FIELDS:  # a helper whose own ids are unknown but whose session_id is the parent's
-        value = payload.get(field)
-        if valid_id(value) and os.path.exists("%s/%s%s" % (state_dir(), ROOT_PREFIX, value)):
-            return value
-    return str(payload.get("conversation_id") or payload.get("session_id") or "")
-
-
-def write_once(name, content):
-    """Writes <state dir>/<name> atomically unless it exists. Never raises."""
-    directory = state_dir()
-    scratch = "%s/.%s.%d.tmp" % (directory, name, os.getpid())
-    try:
-        with open(scratch, "w") as handle:
-            handle.write(content)
-        os.link(scratch, "%s/%s" % (directory, name))
-    except FileExistsError:
-        pass
-    except OSError as err:
-        note("cannot record %s: %s" % (name, err))
-    finally:
-        try:
-            os.unlink(scratch)
-        except OSError:
-            pass
-
-
-def write_link(child, parent):
-    """Records child -> parent once. A link that would close a loop is not written."""
-    if child == parent or child in link_chain(parent)[0] or read_link(child):
-        return
-    write_once(LINK_PREFIX + child, parent + "\n")
-
-
-def record_links(payload):
-    """subagentStart: remember which conversation a helper belongs to (by subagent_id and conversation_id)."""
-    parent = payload.get("parent_conversation_id")
-    if not valid_id(parent):
-        note("subagentStart payload has no usable parent_conversation_id; no link recorded")
-        return
-    for child in (payload.get("subagent_id"), payload.get("conversation_id")):
-        if valid_id(child):
-            write_once(ROOT_PREFIX + parent, "\n")
-            write_link(child, parent)
-
-
-def log_value(value):
-    return value[:LOG_VALUE_LIMIT] if isinstance(value, str) else None
-
-
-def log_event(event, payload, key):
-    """Opt-in (FLEET_CURSOR_HOOK_LOG): one JSON line with the event, key names and ids, nothing else."""
-    path = os.environ.get(LOG_ENV)
-    if not path:
-        return
-    row = {"event": event, "keys": sorted(str(k)[:LOG_KEY_LIMIT] for k in payload)[:LOG_KEY_LIMIT]}
-    row.update({name: log_value(payload.get(name)) for name in LOG_IDS})
-    row["resolved_key"] = log_value(key)
-    try:
-        fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
-        with os.fdopen(fd, "w") as handle:
-            handle.write(json.dumps(row) + "\n")
-    except OSError as err:
-        note("cannot write hook log %s: %s" % (path, err))
-
-
 def cursor_hint(message):
     """Cursor has no skill tool: tell the agent which SKILL.md to read."""
     found = re.search(r"not loaded in this context: ([A-Za-z0-9 ._-]+)", message)
@@ -272,10 +143,6 @@ def compact_hint(context):
         return ""
     files = ", ".join(".agents/skills/%s/SKILL.md" % name for name in found.group(1).split())
     return "\nIn Cursor there is no skill tool: load them by reading %s (%s)." % (files, WORKTREE_NOTE)
-
-
-def note(message):
-    print("cursor-hook: " + message, file=sys.stderr)
 
 
 def project_dir(payload):
@@ -426,12 +293,16 @@ def main(argv):
              else result(event, None, ""))
         return 0
     if event == "subagentStart":
-        record_links(payload)
-    key = session_key(payload)
-    log_event(event, payload, key)
-    if event == "subagentStart":
+        try:  # advisory: whatever goes wrong while recording, the helper may start
+            record_links(payload)
+            log_event(event, payload, session_key(payload))
+        except Exception as err:  # noqa: BLE001
+            note("subagentStart bookkeeping failed (%s: %s); allowing" % (type(err).__name__, err))
         emit(result(event, None, ""))
         return 0
+    family = session_key(payload)
+    log_event(event, payload, family)
+    key = family if event in FAMILY_EVENTS else chat_key(payload)
     project = project_dir(payload)
     if not os.path.isabs(script):
         script = os.path.join(project, script)

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import time
 import unittest
 from pathlib import Path
 
@@ -179,6 +180,33 @@ class GitUnavailableTests(WorktreeBase):
         path = str(fake) + os.pathsep + os.environ.get("PATH", "")
         self.assertFalse(self.recorded(self.wt / SKILL, PATH=path))
         self.assertTrue(self.recorded(self.p.root / SKILL, PATH=path))
+
+    def fake_git(self, body):
+        fake = self.p.tmp / "fake-bin"
+        fake.mkdir()
+        (fake / "git").write_text("#!/bin/sh\n" + body)
+        (fake / "git").chmod(0o755)
+        return str(fake) + os.pathsep + os.environ.get("PATH", "")
+
+    def test_a_git_that_hangs_is_given_up_on_after_a_few_seconds(self):
+        path = self.fake_git("sleep 30\necho late\n")  # git stuck for 30 seconds
+        started = time.time()
+        self.assertFalse(self.recorded(self.wt / SKILL, PATH=path))  # recorded() also demands rc 0 and valid JSON
+        self.assertLess(time.time() - started, 8)
+        self.assertTrue(self.recorded(self.p.root / SKILL, PATH=path))
+
+    def test_git_is_not_run_for_reads_that_cannot_be_a_skill(self):
+        called = self.p.tmp / "git-called"
+        path = self.fake_git("echo called >> %s\nexit 1\n" % called)
+        loose = self.p.tmp / "loose" / "SKILL.md"
+        loose.parent.mkdir()
+        loose.write_text("x")
+        for read in (self.p.root / "docs/design.md", self.wt / "README.md", loose,
+                     self.p.root / "docs/skills" / SKILL_ID / "SKILL.md"):
+            self.assertFalse(self.recorded(read, PATH=path), str(read))
+        self.assertFalse(called.exists(), "git ran for a read that is not shaped like a skill file")
+        self.assertFalse(self.recorded(self.wt / SKILL, PATH=path))
+        self.assertTrue(called.exists(), "git is run for a skill-shaped read outside the project")
 
     def test_with_a_project_dir_that_is_not_a_repo(self):
         bare = self.p.tmp / "not-a-repo"
