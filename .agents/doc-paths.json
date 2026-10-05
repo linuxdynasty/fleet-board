@@ -46,10 +46,17 @@
   {"globs": ["internal/harness/**"], "specs": ["docs/specs/01-agent-capabilities.md", "docs/specs/01b-harness-commands.md"], "exclude": ["*.md"], "note": "01 C. Harnesses and D. Usage (parsers); 01b Harness command catalog"},
   {"globs": ["cmd/**"], "specs": ["docs/specs/02k-v1-surface-and-cli.md"], "exclude": ["*.md"], "note": "02k Commands of the three programs (fleetd, fleet-agent, fleet)"},
   {"globs": ["web/**"], "specs": ["docs/specs/ui-contract-map.md", "docs/specs/04-technology-review.md"], "exclude": ["*.md"], "note": "ui-contract-map: every view and the contract it reads; 04 UI build and serve"},
-  {"globs": ["scripts/**", ".claude/hooks/**", ".githooks/**", ".github/workflows/**", "Makefile", "tool-versions.env", ".agents/roles.json", ".agents/skill-paths.json", ".agents/doc-paths.json"], "specs": ["docs/development/README.md", "docs/development/hooks.md", "docs/development/agent-guide.md"], "note": "docs/development/README.md lists each of these files; hooks.md and agent-guide.md describe the hooks, gates and make targets"}
+  {"globs": ["mockup/**"], "specs": ["docs/specs/ui-contract-map.md"], "exclude": ["*.md"], "note": "ui-contract-map Status line: Accepted, with the mockup under mockup/; its tables map each mockup control to the contract"},
+  {"globs": ["tools/**"], "specs": ["docs/specs/02e-contract-rules.md", "docs/development/README.md"], "exclude": ["*.md"], "note": "02e Codegen names tools/tscheck (make ts-check, the generated TypeScript compiles); docs/development/README.md lists tools/tscheck/"},
+  {"globs": ["spikes/**"], "specs": ["docs/specs/04-technology-review.md"], "exclude": ["*.md"], "note": "04 Evidence line: spikes S1 and S2 in spikes/, raw output in spikes/*/results/"},
+  {"globs": ["scripts/**", ".claude/hooks/**", ".claude/settings.json", ".codex/hooks.json", ".muse/hooks.json", ".cursor/hooks.json", ".claude/agents/**", ".codex/agents/**", ".opencode/agent/**", ".cursor/agents/**", ".githooks/**", ".github/workflows/**", "Makefile", "tool-versions.env", ".agents/roles.json", ".agents/skill-paths.json", ".agents/doc-paths.json"], "specs": ["docs/development/README.md", "docs/development/hooks.md", "docs/development/agent-guide.md"], "note": "docs/development/README.md lists each of these files, including the hook wiring per harness and the agent files generated from roles.json; hooks.md and agent-guide.md describe the hooks, gates and make targets"}
  ],
  "unmapped": {
   ".agents/skills/**": "skills are documents themselves",
-  ".agents/doc-names-allow.json": "data of the doc-name check; it changes with the docs it covers"
+  ".claude/skills/**": "symlinks to .agents/skills/<name>, which are documents themselves",
+  ".codex/skills/**": "symlinks to .agents/skills/<name>, which are documents themselves",
+  ".agents/doc-names-allow.json": "data of the doc-name check; it changes with the docs it covers",
+  "docs/**": "documents themselves; check-doc-names.py checks the proto names they use",
+  "internal/buildinfo/**": "the version string and the shared Run of the three scaffold binaries (plan row 1); no spec defines it, and 02k's command list for cmd/ does not name it"
  }
 }

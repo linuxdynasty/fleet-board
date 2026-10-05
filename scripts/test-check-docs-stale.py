@@ -183,6 +183,25 @@ class DocsStaleTests(unittest.TestCase):
                 self.commit(folder + ", with its spec")
                 self.assert_rc(0, self.ci(base + "..HEAD"))
 
+    def test_a_change_in_any_other_folder_a_doc_names_needs_that_doc(self):
+        base = self.real_map()
+        for path, doc in (("mockup/view-x.js", "docs/specs/ui-contract-map.md"),
+                          ("tools/tscheck/package.json", "docs/specs/02e-contract-rules.md"),
+                          ("spikes/sqlite/main.go", "docs/specs/04-technology-review.md"),
+                          (".cursor/hooks.json", "docs/development/hooks.md"),
+                          (".codex/agents/x.toml", "docs/development/README.md")):
+            with self.subTest(path=path):
+                self.git("reset", "-q", "--hard", base)
+                self.write(path, "x\n")
+                self.commit(path)
+                out = self.ci(base + "..HEAD")
+                self.assert_rc(1, out)
+                self.assertIn(path, out.stdout)
+                self.assertIn(doc, out.stdout)
+                self.write(doc, "# doc\n\nchanged\n")
+                self.commit(path + ", with its doc")
+                self.assert_rc(0, self.ci(base + "..HEAD"))
+
     def test_a_new_api_package_needs_02_or_02e_under_the_real_map(self):
         base = self.real_map()
         self.write("api/fleet/newpkg/v1/x.proto", "syntax = \"proto3\";\n")
@@ -196,6 +215,23 @@ class DocsStaleTests(unittest.TestCase):
         self.write("docs/specs/02b-hub-api.md", "# spec\n\nchanged\n")
         self.commit("hub, with 02b")
         self.assert_rc(0, self.ci(base + "..HEAD"))
+
+    def test_mockup_tools_and_spikes_need_their_specs_under_the_real_map(self):
+        base = self.real_map()
+        for path, spec in (("mockup/view-new.js", "docs/specs/ui-contract-map.md"),
+                           ("tools/tscheck/x.ts", "docs/specs/02e-contract-rules.md"),
+                           ("spikes/s3/main.go", "docs/specs/04-technology-review.md")):
+            with self.subTest(path=path):
+                self.git("reset", "-q", "--hard", base)
+                self.write(path, "x\n")
+                self.commit(path)
+                out = self.ci(base + "..HEAD")
+                self.assert_rc(1, out)
+                self.assertIn(path, out.stdout)
+                self.assertIn(spec, out.stdout)
+                self.write(spec, "# spec\n\nchanged\n")
+                self.commit(path + ", with its spec")
+                self.assert_rc(0, self.ci(base + "..HEAD"))
 
     def test_the_trailer_does_not_excuse_missing_package_docs(self):
         self.go_package("internal/foo", docs=("doc.go", "README.md"))
