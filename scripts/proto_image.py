@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Load the fleet contract from buf's compiled image.
 
-One loader for every doc-drift script (plan row 1b): check-doc-names.py, and
-later the tables generated from proto comments and the capability report. It
-reads the JSON image that `buf build -o image.json` writes with the pinned buf
+The one loader for the doc-drift scripts that read the contract (plan row 1b):
+check-doc-names.py (the name check) and gen-doc-tables.py (the tables generated
+from proto comment tags). The capability report does not use it. It reads the
+JSON image that `buf build -o image.json` writes with the pinned buf
 (BUF_VERSION in tool-versions.env), never the .proto text, so names, field
 types and comments are exactly what buf compiled.
 

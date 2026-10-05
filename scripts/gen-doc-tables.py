@@ -19,8 +19,10 @@ from both "both" (ROOTS below is the only hand-kept list).
   gen-doc-tables.py --check   exit 1 if a tag is broken or a block is stale
   gen-doc-tables.py --write   rewrite the blocks (refuses on any problem)
 
-Exit 0 clean; 1 problems (one line each); 2 the contract, the capability table
-or the image could not be read. Fails closed: a missing marker is a problem.
+Exit 0 clean; 1 problems (one line each); 2 the contract or the image could not
+be read, the plan or its section 5 PR sequence table could not be read, or 01's
+capability table has a malformed or duplicate row. Fails closed: a missing
+marker is a problem.
 """
 from __future__ import annotations
 

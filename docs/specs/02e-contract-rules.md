@@ -192,7 +192,9 @@ section is the only home of the tag vocabulary.
   lives in a field of a shared message.
 - Changing a tag changes a generated table, so the same PR runs
   `scripts/gen-doc-tables.py --write`. The script exits 1 on a tag problem or a
-  stale table, and 2 when it cannot read the image.
+  stale table, and 2 when it cannot read the image, when the plan or its
+  section 5 PR sequence table cannot be read, or when 01's capability table has
+  a malformed or duplicate row.
 
 ## Log framing
 

@@ -24,6 +24,7 @@ SVC = "api/fleet/hub/v1/service.proto"
 WATCH = "api/fleet/hub/v1/watch.proto"
 EVENTS = "api/fleet/agent/v1/events.proto"
 AGENT = "api/fleet/agent/v1/agent.proto"
+PLAN = "docs/plan/v1-implementation-plan.md"
 D02K, D02D = "docs/specs/02k-v1-surface-and-cli.md", "docs/specs/02d-hub-authz.md"
 D02I, D02 = "docs/specs/02i-delivery-and-sequencing.md", "docs/specs/02-contracts.md"
 BLOCKS = [  # (doc, source in the marker, expected body)
@@ -232,8 +233,23 @@ class GenDocTablesTests(unittest.TestCase):
                 self.tree.write(SVC, original)
 
     def test_a_missing_plan_fails_closed(self):
-        (self.tree.root / "docs/plan/v1-implementation-plan.md").unlink()
+        (self.tree.root / PLAN).unlink()
         self.assertIn("cannot read docs/plan/v1-implementation-plan.md", self.assert_rc(2, self.run_gen("--check")))
+
+    def test_a_plan_without_its_pr_sequence_fails_closed(self):
+        for old, new, want in (("## 5. The PR sequence", "## 5. The order of work", "has no section '## 5. The PR sequence'"),
+                               ("| 12 | Hub API reads |\n| 13a | Owner configuration |\n| 19 | Approvals |\n"
+                                "| 22 | Goals |\n", "", "has no PR rows")):
+            with self.subTest(case=want):
+                original = self.read(PLAN)
+                self.tree.edit(PLAN, old, new)
+                self.assertIn(want, self.assert_rc(2, self.run_gen("--check")))
+                self.tree.write(PLAN, original)
+
+    def test_only_the_first_table_of_section_5_holds_rows(self):
+        self.tree.edit(PLAN, "| 22 | Goals |\n", "| 22 | Goals |\n\nNotes on the rows:\n\n| Row | Note |\n|---|---|\n"
+                                                 "| 99 | a note, not a PR row |\n")
+        self.seed(SVC, "[RELEASE v1 13a]", "[RELEASE v1 99]", r"DrainMachine: RELEASE v1 99: 99 is not a row of the PR sequence")
 
     def test_a_contract_without_the_anchors_fails_closed(self):
         self.tree.edit(EVENTS, "message Event {", "message Occurrence {")

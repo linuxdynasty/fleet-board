@@ -108,15 +108,21 @@ def capability_ids(root):
 
 
 def plan_rows(root):
-    """The row ids (12, 13a) of the plan's PR sequence table."""
+    """The row ids (12, 13a) of the PR sequence: the first table under section 5."""
     try:
         text = (Path(root) / PLAN_DOC).read_text()
     except OSError as err:
         raise ContractError("cannot read %s: %s" % (PLAN_DOC, err)) from err
     if PLAN_SECTION not in text:
         raise ContractError("%s has no section %r" % (PLAN_DOC, PLAN_SECTION))
-    section = text.split(PLAN_SECTION, 1)[1].split("\n## ", 1)[0]
-    rows = {m.group(1) for m in map(PLAN_ROW.match, section.splitlines()) if m}
+    section = text.split(PLAN_SECTION, 1)[1].split("\n## ", 1)[0].splitlines()
+    first = next((n for n, line in enumerate(section) if line.startswith("|")), len(section))
+    table = []
+    for line in section[first:]:
+        if not line.startswith("|"):
+            break  # only the first table is the PR sequence
+        table.append(line)
+    rows = {m.group(1) for m in map(PLAN_ROW.match, table) if m}
     if not rows:
         raise ContractError("%s section %r has no PR rows" % (PLAN_DOC, PLAN_SECTION))
     return rows
