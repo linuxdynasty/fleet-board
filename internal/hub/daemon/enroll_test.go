@@ -7,7 +7,6 @@ import (
 	"io/fs"
 	"net"
 	"os"
-	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -21,7 +20,8 @@ import (
 func snapshot(t *testing.T, dir string) map[string][32]byte {
 	t.Helper()
 	out := map[string][32]byte{}
-	err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+	root := os.DirFS(dir)
+	err := fs.WalkDir(root, ".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
 			return err
 		}
@@ -29,7 +29,7 @@ func snapshot(t *testing.T, dir string) map[string][32]byte {
 			out[path] = sha256.Sum256([]byte(d.Type().String()))
 			return nil
 		}
-		b, err := os.ReadFile(path)
+		b, err := fs.ReadFile(root, path)
 		if err != nil {
 			return err
 		}
@@ -98,7 +98,8 @@ func TestEnrollTokenFromAnotherUserSaysWhoMayUseTheSocket(t *testing.T) {
 	h := newHub(t, "")
 	h.init(t)
 	opts := h.options()
-	opts.PeerUID = func(*net.UnixConn) (uint32, error) { return uint32(os.Getuid()) + 1, nil }
+	other := selfUID(t) + 1
+	opts.PeerUID = func(*net.UnixConn) (uint32, error) { return other, nil }
 	h.start(t, opts)
 	_, err := daemon.EnrollToken(context.Background(), h.options(), daemon.EnrollRequest{Machine: "laptop"})
 	if err == nil || !strings.Contains(err.Error(), "only the OS user that runs fleetd") ||
@@ -115,6 +116,7 @@ func TestEnrollTokenWithNoHubSaysSoAndWritesNothing(t *testing.T) {
 	}{
 		{"no socket", func(*testing.T, *hub) {}},
 		{"a socket left by a killed hub", func(t *testing.T, h *hub) {
+			t.Helper()
 			ln, err := net.ListenUnix("unix", &net.UnixAddr{Name: config.AdminSocketPath(h.state), Net: "unix"})
 			if err != nil {
 				t.Fatal(err)

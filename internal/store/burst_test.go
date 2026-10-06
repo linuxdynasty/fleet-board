@@ -72,7 +72,7 @@ func TestWriterMeetsTheA50RestartBurst(t *testing.T) {
 	}
 	err := s.Write(ctx, func(tx *sql.Tx) error {
 		for i := range burstPanes {
-			if _, err := tx.Exec("INSERT INTO pane_summaries VALUES (?, ?, ?, 0)", paneKey(i), i%burstMachines, blobs[2048][0]); err != nil {
+			if _, err := tx.ExecContext(ctx, "INSERT INTO pane_summaries VALUES (?, ?, ?, 0)", paneKey(i), i%burstMachines, blobs[2048][0]); err != nil {
 				return err
 			}
 		}
@@ -112,27 +112,27 @@ func TestWriterMeetsTheA50RestartBurst(t *testing.T) {
 		}
 		for i, r := range burstRates {
 			for acc[i] += r.perS / 100; acc[i] >= 1; acc[i]-- {
-				body := blobs[r.bytes][mrand.IntN(256)]
+				body := blobs[r.bytes][mrand.IntN(256)] //nolint:gosec // G404: picks load-test rows and blobs; nothing secret depends on it
 				var apply store.ApplyFunc
 				switch r.kind {
 				case "summary":
-					key, ts := paneKey(mrand.IntN(burstPanes)), now.UnixMilli()
+					key, ts := paneKey(mrand.IntN(burstPanes)), now.UnixMilli() //nolint:gosec // G404: picks load-test rows and blobs; nothing secret depends on it
 					apply = func(tx *sql.Tx) error {
-						_, err := tx.Exec("UPDATE pane_summaries SET body = ?, updated_time = ? WHERE pane_key = ?", body, ts, key)
+						_, err := tx.ExecContext(ctx, "UPDATE pane_summaries SET body = ?, updated_time = ? WHERE pane_key = ?", body, ts, key)
 						return err
 					}
 				case "event":
-					m := mrand.IntN(burstMachines)
+					m := mrand.IntN(burstMachines) //nolint:gosec // G404: picks load-test rows and blobs; nothing secret depends on it
 					seq[m]++
 					sq, ts := seq[m], now.UnixMilli()
 					apply = func(tx *sql.Tx) error {
-						_, err := tx.Exec("INSERT INTO events VALUES (?, ?, 1, ?, ?)", m, sq, ts, body)
+						_, err := tx.ExecContext(ctx, "INSERT INTO events VALUES (?, ?, 1, ?, ?)", m, sq, ts, body)
 						return err
 					}
 				default:
 					ts := now.UnixMilli()
 					apply = func(tx *sql.Tx) error {
-						_, err := tx.Exec("INSERT INTO misc(k, observed_time, body) VALUES ('k', ?, ?)", ts, body)
+						_, err := tx.ExecContext(ctx, "INSERT INTO misc(k, observed_time, body) VALUES ('k', ?, ?)", ts, body)
 						return err
 					}
 				}

@@ -54,13 +54,13 @@ func rawCommitLatency(t *testing.T, path string, fullfsync, n int) []time.Durati
 	}
 	defer func() { _ = db.Close() }()
 	db.SetMaxOpenConns(1)
-	if _, err := db.Exec("CREATE TABLE t(id INTEGER PRIMARY KEY, v TEXT)"); err != nil {
+	if _, err := db.ExecContext(t.Context(), "CREATE TABLE t(id INTEGER PRIMARY KEY, v TEXT)"); err != nil {
 		t.Fatalf("raw create: %v", err)
 	}
 	lat := make([]time.Duration, 0, n)
 	for i := range n {
 		start := time.Now()
-		if _, err := db.Exec("INSERT INTO t(v) VALUES (?)", strconv.Itoa(i)); err != nil {
+		if _, err := db.ExecContext(t.Context(), "INSERT INTO t(v) VALUES (?)", strconv.Itoa(i)); err != nil {
 			t.Fatalf("raw insert: %v", err)
 		}
 		lat = append(lat, time.Since(start))

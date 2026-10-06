@@ -22,7 +22,7 @@ func served(t *testing.T, get func() []byte) *x509.Certificate {
 
 func scrape(t *testing.T, f *fixture) string {
 	t.Helper()
-	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/metrics", nil)
 	req.RemoteAddr = "127.0.0.1:1"
 	rec := httptest.NewRecorder()
 	f.tel.MetricsHandler(nil).ServeHTTP(rec, req)

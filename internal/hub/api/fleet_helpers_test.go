@@ -129,7 +129,7 @@ func newFleetEnv(t *testing.T, who *typev1.Principal) *fleetEnv {
 
 func (e *fleetEnv) scrape(t *testing.T) string {
 	t.Helper()
-	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/metrics", nil)
 	req.RemoteAddr = "127.0.0.1:1"
 	rec := httptest.NewRecorder()
 	e.tel.MetricsHandler(nil).ServeHTTP(rec, req)

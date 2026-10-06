@@ -97,7 +97,7 @@ func (h *harness) open(t *testing.T, opts store.Options) *store.Store {
 // scrape reads /metrics as a loopback peer.
 func (h *harness) scrape(t *testing.T) string {
 	t.Helper()
-	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/metrics", nil)
 	req.RemoteAddr = "127.0.0.1:40000"
 	rec := httptest.NewRecorder()
 	h.tel.MetricsHandler(nil).ServeHTTP(rec, req)
@@ -138,7 +138,7 @@ func sample(body, name string, want ...string) float64 {
 
 func insert(v string) store.ApplyFunc {
 	return func(tx *sql.Tx) error {
-		_, err := tx.Exec("INSERT INTO items(v) VALUES (?)", v)
+		_, err := tx.ExecContext(context.Background(), "INSERT INTO items(v) VALUES (?)", v)
 		return err
 	}
 }
@@ -152,7 +152,7 @@ func rawValues(t *testing.T, path string) []string {
 		t.Fatalf("raw open: %v", err)
 	}
 	defer func() { _ = db.Close() }()
-	rows, err := db.Query("SELECT v FROM items ORDER BY id")
+	rows, err := db.QueryContext(t.Context(), "SELECT v FROM items ORDER BY id")
 	if err != nil {
 		t.Fatalf("raw query: %v", err)
 	}
@@ -179,7 +179,7 @@ func rawQueryString(t *testing.T, path, query string) string {
 	}
 	defer func() { _ = db.Close() }()
 	var v string
-	if err := db.QueryRow(query).Scan(&v); err != nil {
+	if err := db.QueryRowContext(t.Context(), query).Scan(&v); err != nil {
 		t.Fatalf("raw %q: %v", query, err)
 	}
 	return v

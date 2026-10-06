@@ -27,7 +27,7 @@ type Lock struct {
 // The file then holds this process's pid, for a person reading it; the pid is
 // never used to decide anything.
 func Acquire(path string) (*Lock, error) {
-	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o600)
+	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o600) //nolint:gosec // G304: path is fleetd.lock in the operator's configured state folder
 	if err != nil {
 		return nil, fmt.Errorf("lock: open: %w", err)
 	}

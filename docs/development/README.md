@@ -33,7 +33,8 @@ test-cursor-hook-worktrees.py, cursor_hook_testkit.py
                               self-test for the Cursor adapter and .cursor/hooks.json (make selftest)
 scripts/owner-setup.sh        walks the owner through owner-only setup steps (plan section 3)
 scripts/test-owner-setup.sh   self-test for owner-setup.sh, run with each bash on the machine
-Makefile, tool-versions.env   make targets and the one file of pinned tool versions (agent-guide.md)
+Makefile, tool-versions.env   make targets (make lint, make vuln, make gates, ...) and the one file
+                              of pinned tool versions (agent-guide.md)
 .githooks/pre-push            refuses a push to main; before a branch push, fetches origin main
                               and runs make gates
 .github/workflows/ci.yml      CI on PRs and main pushes: one step per gate, the same targets as

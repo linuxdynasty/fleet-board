@@ -49,7 +49,7 @@ func TestAcquireCreatesTheFileMode0600(t *testing.T) {
 	if got := fi.Mode().Perm(); got != 0o600 {
 		t.Errorf("lock file mode = %o, want 600", got)
 	}
-	body, err := os.ReadFile(path)
+	body, err := os.ReadFile(path) //nolint:gosec // G304: path is fleetd.lock in this test's t.TempDir
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,7 +102,7 @@ func TestReleaseTwiceIsSafe(t *testing.T) {
 func TestAnotherProcessHoldsTheLockUntilItDies(t *testing.T) {
 	t.Parallel()
 	path := filepath.Join(t.TempDir(), "fleetd.lock")
-	child := exec.Command(os.Args[0], "-test.run=^$")
+	child := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^$") //nolint:gosec // G204: re-runs this test binary as the lock holder
 	child.Env = append(os.Environ(), holderEnv+"="+path)
 	out, err := child.StdoutPipe()
 	if err != nil {

@@ -18,7 +18,7 @@ func applied(t *testing.T, path string) []store.Migration {
 		t.Fatalf("raw open: %v", err)
 	}
 	defer func() { _ = db.Close() }()
-	rows, err := db.Query("SELECT version, name FROM schema_migrations ORDER BY version")
+	rows, err := db.QueryContext(t.Context(), "SELECT version, name FROM schema_migrations ORDER BY version")
 	if err != nil {
 		t.Fatalf("raw query: %v", err)
 	}
@@ -31,6 +31,9 @@ func applied(t *testing.T, path string) []store.Migration {
 		}
 		out = append(out, m)
 	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("raw rows: %v", err)
+	}
 	return out
 }
 
@@ -42,7 +45,7 @@ func tableExists(t *testing.T, path, name string) bool {
 	}
 	defer func() { _ = db.Close() }()
 	var n int
-	if err := db.QueryRow("SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = ?", name).Scan(&n); err != nil {
+	if err := db.QueryRowContext(t.Context(), "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = ?", name).Scan(&n); err != nil {
 		t.Fatalf("raw query: %v", err)
 	}
 	return n == 1
@@ -88,7 +91,7 @@ func TestMigrationsApplyOnlyWhatIsNewAndKeepData(t *testing.T) {
 		t.Errorf("SchemaVersion() = %d, want 2", got)
 	}
 	err := s2.Write(context.Background(), func(tx *sql.Tx) error {
-		_, err := tx.Exec("UPDATE items SET note = 'n' WHERE v = 'kept'")
+		_, err := tx.ExecContext(context.Background(), "UPDATE items SET note = 'n' WHERE v = 'kept'")
 		return err
 	})
 	if err != nil {

@@ -35,6 +35,7 @@ NODE_MAJOR=24
 GOLANGCI_LINT_VERSION=v2.14.0
 BUF_VERSION=v1.73.0
 GOFUMPT_VERSION=v0.12.0
+GOVULNCHECK_VERSION=v1.8.0
 ACTIONLINT_VERSION=v1.7.12
 TYPESCRIPT_VERSION=7.0.2
 PROTOC_GEN_ES_VERSION=2.16.0
@@ -150,6 +151,14 @@ expect "a missing key is named" 1 "BUF_VERSION"
 fresh
 edit tool-versions.env '/^ACTIONLINT_VERSION/d'
 expect "a missing ACTIONLINT_VERSION is named" 1 "ACTIONLINT_VERSION"
+
+fresh
+edit tool-versions.env '/^GOVULNCHECK_VERSION/d'
+expect "a missing GOVULNCHECK_VERSION is named" 1 "GOVULNCHECK_VERSION"
+
+fresh
+printf 'vuln:\n\tgo install golang.org/x/vuln/cmd/govulncheck@v1.8.0\n' >> "$work/t/Makefile"
+expect "govulncheck pin repeated in the Makefile" 1 "Makefile"
 
 fresh
 printf '  - run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12\n' >> "$work/t/.github/workflows/ci.yml"

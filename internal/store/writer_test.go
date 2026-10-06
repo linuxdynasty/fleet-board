@@ -87,6 +87,7 @@ func TestWriterBatchWindowIs250ms(t *testing.T) {
 		wantBatches float64
 	}{
 		{"a lone job waits the window, then commits", func(t *testing.T, s *store.Store) {
+			t.Helper()
 			start := time.Now()
 			if err := s.Write(context.Background(), insert("a")); err != nil {
 				t.Fatalf("Write: %v", err)
@@ -96,6 +97,7 @@ func TestWriterBatchWindowIs250ms(t *testing.T) {
 			}
 		}, 1},
 		{"jobs spread inside the window share one batch", func(t *testing.T, s *store.Store) {
+			t.Helper()
 			var pending []<-chan error
 			for i := range 3 {
 				done, err := s.Submit(context.Background(), insert(strconv.Itoa(i)))
@@ -112,6 +114,7 @@ func TestWriterBatchWindowIs250ms(t *testing.T) {
 			}
 		}, 1},
 		{"a job after a commit starts a new batch", func(t *testing.T, s *store.Store) {
+			t.Helper()
 			for _, v := range []string{"a", "b"} {
 				if err := s.Write(context.Background(), insert(v)); err != nil {
 					t.Fatalf("Write %s: %v", v, err)
@@ -200,7 +203,7 @@ func TestABrokenTransactionFailsEveryJobInTheBatchAndTheWriterRecovers(t *testin
 	jobs := []store.ApplyFunc{
 		insert("x"),
 		func(tx *sql.Tx) error { // misuses the transaction: ends it under the writer
-			_, err := tx.Exec("ROLLBACK")
+			_, err := tx.ExecContext(ctx, "ROLLBACK")
 			return err
 		},
 		insert("y"),

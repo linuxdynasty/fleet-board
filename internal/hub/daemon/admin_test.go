@@ -10,7 +10,6 @@ import (
 	"io/fs"
 	"net"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -46,7 +45,7 @@ func stateBytes(t *testing.T, dir string) []byte {
 		if e.Type()&fs.ModeSocket != 0 || e.IsDir() {
 			continue
 		}
-		b, err := os.ReadFile(filepath.Join(dir, e.Name()))
+		b, err := fs.ReadFile(os.DirFS(dir), e.Name())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -123,7 +122,7 @@ func TestTheAdminSocketIssuesATokenForTheStoredCA(t *testing.T) {
 	defer func() { _ = st.Close() }()
 	var stored []byte
 	if err := st.Read(context.Background(), func(tx *sql.Tx) error {
-		return tx.QueryRow(`SELECT secret_hash FROM enroll_tokens WHERE request_id = 'req-1'`).Scan(&stored)
+		return tx.QueryRowContext(t.Context(), `SELECT secret_hash FROM enroll_tokens WHERE request_id = 'req-1'`).Scan(&stored)
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -137,7 +136,8 @@ func TestAnInjectedOtherUserIsClosedUnservedByRun(t *testing.T) {
 	h := newHub(t, "")
 	h.init(t)
 	opts := h.options()
-	opts.PeerUID = func(*net.UnixConn) (uint32, error) { return uint32(os.Getuid()) + 1, nil }
+	other := selfUID(t) + 1
+	opts.PeerUID = func(*net.UnixConn) (uint32, error) { return other, nil }
 	h.start(t, opts)
 	if _, err := enroll(t, config.AdminSocketPath(h.state), "req-1"); err == nil {
 		t.Fatal("a peer of another user was served")
@@ -165,7 +165,8 @@ func TestALeftoverSocketDoesNotBlockTheNextStart(t *testing.T) {
 	if err := ln.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := net.Dial("unix", sock); err == nil {
+	var d net.Dialer
+	if _, err := d.DialContext(t.Context(), "unix", sock); err == nil {
 		t.Fatal("the leftover socket still accepts")
 	}
 	h.start(t, h.options())
@@ -186,7 +187,7 @@ func TestANonSocketAtTheAdminPathIsRefusedAndKept(t *testing.T) {
 	if got := reasonOf(t, err); got != daemon.ReasonListen {
 		t.Errorf("reason %q, want %q (%v)", got, daemon.ReasonListen, err)
 	}
-	if b, err := os.ReadFile(sock); err != nil || string(b) != "not a socket" {
+	if b, err := os.ReadFile(sock); err != nil || string(b) != "not a socket" { //nolint:gosec // G304: sock is admin.sock in this test's own temp state folder
 		t.Errorf("the file at admin.sock was changed: %q, %v", b, err)
 	}
 }

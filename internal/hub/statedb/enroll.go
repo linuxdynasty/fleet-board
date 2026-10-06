@@ -62,9 +62,10 @@ func InsertEnrollToken(ctx context.Context, s *store.Store, t EnrollToken) error
 	if err != nil {
 		return fmt.Errorf("statedb: token labels: %w", err)
 	}
+	jctx := context.WithoutCancel(ctx) // see insertIdentity
 	return s.Write(ctx, func(tx *sql.Tx) error {
 		var prior []byte
-		err := tx.QueryRow(`SELECT request_hash FROM enroll_tokens WHERE principal = ? AND request_id = ?`,
+		err := tx.QueryRowContext(jctx, `SELECT request_hash FROM enroll_tokens WHERE principal = ? AND request_id = ?`,
 			t.Principal, t.RequestID).Scan(&prior)
 		switch {
 		case err == nil && bytes.Equal(prior, t.RequestHash[:]):
@@ -77,7 +78,7 @@ func InsertEnrollToken(ctx context.Context, s *store.Store, t EnrollToken) error
 		if t.PreviousMachine != "" {
 			return ErrNotReenrollable
 		}
-		_, err = tx.Exec(`INSERT INTO enroll_tokens(secret_hash, machine_name, expected_hostname, labels,
+		_, err = tx.ExecContext(jctx, `INSERT INTO enroll_tokens(secret_hash, machine_name, expected_hostname, labels,
 			start_drained, not_after_time, created_time, principal, request_id, request_hash)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			t.SecretHash[:], t.MachineName, t.ExpectedHostname, string(list), t.StartDrained,

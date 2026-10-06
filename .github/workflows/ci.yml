@@ -107,6 +107,7 @@ jobs:
             *) echo "golangci-lint must be built with go$GO_VERSION" >&2; exit 1 ;;
           esac
           .bin/gofumpt --version
+          go version -m .bin/govulncheck | awk '$1 == "mod" { print "govulncheck " $3 }'
 
       - name: Generate Go and TypeScript (buf generate)
         run: make gen
@@ -141,6 +142,11 @@ jobs:
 
       - name: golangci-lint on changed packages
         run: make lint
+
+      # Every package, not only the changed ones: a new advisory can land on
+      # unchanged code. Exit 3 means a reachable known vulnerability.
+      - name: Known vulnerabilities (govulncheck)
+        run: make vuln
 
       - name: Generated TypeScript compiles
         run: make ts-check

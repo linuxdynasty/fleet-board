@@ -38,7 +38,7 @@ func hubConfig(out io.Writer) telemetry.Config {
 // scrape serves /metrics to a loopback peer and returns the text body.
 func scrape(t *testing.T, tel *telemetry.Telemetry) string {
 	t.Helper()
-	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/metrics", nil)
 	req.RemoteAddr = "127.0.0.1:50000"
 	rec := httptest.NewRecorder()
 	tel.MetricsHandler(nil).ServeHTTP(rec, req)
@@ -282,7 +282,7 @@ func TestMetricsHandlerAdmitsOnlyLoopbackOrAnAllowedRequest(t *testing.T) {
 	h := tel.MetricsHandler(allowBearer)
 	refused := 0
 	for _, tc := range cases {
-		req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/metrics", nil)
 		req.RemoteAddr = tc.remote
 		for k, v := range tc.header {
 			req.Header.Set(k, v)

@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -64,7 +65,7 @@ func TestCreateEnrollmentTokenIssuesATokenForTheStoredCA(t *testing.T) {
 	var stored []byte
 	var notAfter int64
 	err = e.st.Read(context.Background(), func(tx *sql.Tx) error {
-		return tx.QueryRow(`SELECT secret_hash, not_after_time FROM enroll_tokens`).Scan(&stored, &notAfter)
+		return tx.QueryRowContext(t.Context(), `SELECT secret_hash, not_after_time FROM enroll_tokens`).Scan(&stored, &notAfter)
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -117,7 +118,7 @@ func TestEnrollmentTokenLifetime(t *testing.T) {
 	e := newFleetEnv(t, localUser("alice"))
 	for i, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			req := enrollReq("ttl-"+string(rune('a'+i)), "laptop")
+			req := enrollReq("ttl-"+strconv.Itoa(i), "laptop")
 			req.Msg.Ttl = tc.ttl
 			resp, err := e.client.CreateEnrollmentToken(context.Background(), req)
 			if tc.want == 0 {
@@ -251,7 +252,7 @@ func countRows(t *testing.T, e *fleetEnv) int {
 	t.Helper()
 	var n int
 	if err := e.st.Read(context.Background(), func(tx *sql.Tx) error {
-		return tx.QueryRow(`SELECT count(*) FROM enroll_tokens`).Scan(&n)
+		return tx.QueryRowContext(t.Context(), `SELECT count(*) FROM enroll_tokens`).Scan(&n)
 	}); err != nil {
 		t.Fatal(err)
 	}

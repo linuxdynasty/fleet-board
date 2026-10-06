@@ -56,7 +56,7 @@ func TestAnEnrollTokenRowHoldsTheHashAndTheRequest(t *testing.T) {
 		used                             sql.NullInt64
 		prev                             sql.NullString
 	)
-	err = db.QueryRow(`SELECT secret_hash, machine_name, expected_hostname, labels, start_drained, not_after_time,
+	err = db.QueryRowContext(t.Context(), `SELECT secret_hash, machine_name, expected_hostname, labels, start_drained, not_after_time,
 		used_time, previous_machine, created_time, principal, request_id, request_hash FROM enroll_tokens`).
 		Scan(&hash, &name, &host, &labels, &drained, &notAfter, &used, &prev, &created, &princ, &reqID, &reqHash)
 	if err != nil {
@@ -155,7 +155,7 @@ func TestEnrollTokenConstraintsOnTheFile(t *testing.T) {
 	ins := `INSERT INTO enroll_tokens(secret_hash, machine_name, expected_hostname, labels, start_drained,
 		not_after_time, created_time, principal, request_id, request_hash) VALUES (?, 'm', '', '[]', 0, 1, 1, ?, ?, ?)`
 	h := func(b byte) []byte { return bytes.Repeat([]byte{b}, 32) }
-	if _, err := db.Exec(ins, h(1), "local:a", "r1", h(9)); err != nil {
+	if _, err := db.ExecContext(t.Context(), ins, h(1), "local:a", "r1", h(9)); err != nil {
 		t.Fatal(err)
 	}
 	for name, args := range map[string][]any{
@@ -164,7 +164,7 @@ func TestEnrollTokenConstraintsOnTheFile(t *testing.T) {
 		"short secret_hash":              {[]byte{1}, "local:a", "r3", h(9)},
 		"empty request_id":               {h(3), "local:a", "", h(9)},
 	} {
-		if _, err := db.Exec(ins, args...); err == nil || !strings.Contains(err.Error(), "constraint") {
+		if _, err := db.ExecContext(t.Context(), ins, args...); err == nil || !strings.Contains(err.Error(), "constraint") {
 			t.Errorf("%s: %v, want a constraint error", name, err)
 		}
 	}

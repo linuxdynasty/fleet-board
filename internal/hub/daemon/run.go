@@ -125,7 +125,7 @@ type listener struct {
 func serve(ctx context.Context, cfg *config.Config, opts Options, certs *gateway.Certs, st *store.Store,
 	id statedb.Identity, s *session,
 ) error {
-	ls, err := bind(cfg, certs, s)
+	ls, err := bind(ctx, cfg, certs, s)
 	if err != nil {
 		return s.fail(ReasonListen, err)
 	}
@@ -196,22 +196,32 @@ func serve(ctx context.Context, cfg *config.Config, opts Options, certs *gateway
 }
 
 // bind opens the agent, API and (when set) metrics listeners, in that order.
-func bind(cfg *config.Config, certs *gateway.Certs, s *session) ([]listener, error) {
+func bind(ctx context.Context, cfg *config.Config, certs *gateway.Certs, s *session) ([]listener, error) {
 	type want struct{ name, addr string }
 	wants := []want{{"agent", cfg.Listen.Agent}, {"api", cfg.Listen.API}}
 	if cfg.Listen.Metrics != "" {
 		wants = append(wants, want{"metrics", cfg.Listen.Metrics})
 	}
 	var ls []listener
+	closeAll := func() {
+		for _, l := range ls {
+			_ = l.ln.Close() // the bind error is the one to report
+		}
+	}
+	var lc net.ListenConfig
 	for _, w := range wants {
-		ln, err := net.Listen("tcp", w.addr)
+		ln, err := lc.Listen(ctx, "tcp", w.addr)
 		if err != nil {
-			for _, l := range ls {
-				_ = l.ln.Close() // the bind error is the one to report
-			}
+			closeAll()
 			return nil, fmt.Errorf("daemon: listen.%s %s: %w", w.name, w.addr, err)
 		}
-		port := ln.Addr().(*net.TCPAddr).Port
+		addr, ok := ln.Addr().(*net.TCPAddr)
+		if !ok {
+			_ = ln.Close()
+			closeAll()
+			return nil, fmt.Errorf("daemon: listen.%s %s: not a TCP address: %v", w.name, w.addr, ln.Addr())
+		}
+		port := addr.Port
 		l := listener{name: w.name, ln: ln, tls: w.name == "agent"}
 		if l.tls {
 			l.srv = gateway.NewServer(certs, s.tel)

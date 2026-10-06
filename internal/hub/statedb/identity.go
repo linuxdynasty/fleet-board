@@ -33,7 +33,12 @@ type Identity struct {
 	CreatedTime  time.Time
 }
 
-func insertIdentity(id Identity) store.ApplyFunc {
+// insertIdentity runs on the writer inside a shared batch transaction, so its
+// statements keep ctx's values but drop its cancellation. A cancelled caller
+// must not interrupt them: SQLite rolls back the whole transaction, and so
+// every job in the batch, when a write inside it is interrupted.
+func insertIdentity(ctx context.Context, id Identity) store.ApplyFunc {
+	jctx := context.WithoutCancel(ctx)
 	return func(tx *sql.Tx) error {
 		names, err := json.Marshal(id.ServerNames)
 		if err != nil {
@@ -47,7 +52,7 @@ func insertIdentity(id Identity) store.ApplyFunc {
 		if err != nil {
 			return fmt.Errorf("statedb: hub addresses: %w", err)
 		}
-		_, err = tx.Exec(`INSERT INTO hub_identity(id, fleet_id, ca_cert, ca_key, server_cert, server_key,
+		_, err = tx.ExecContext(jctx, `INSERT INTO hub_identity(id, fleet_id, ca_cert, ca_key, server_cert, server_key,
 			server_names, account_salt, salt_version, settings_epoch, hub_addresses, created_time)
 			VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			id.FleetID, id.CACert, id.CAKey, id.ServerCert, id.ServerKey, string(names),
@@ -100,8 +105,9 @@ func ReplaceServerCert(ctx context.Context, s *store.Store, old, cert, key []byt
 	if err != nil {
 		return fmt.Errorf("statedb: server names: %w", err)
 	}
+	jctx := context.WithoutCancel(ctx) // see insertIdentity
 	return s.Write(ctx, func(tx *sql.Tx) error {
-		res, err := tx.Exec(`UPDATE hub_identity SET server_cert = ?, server_key = ?, server_names = ?
+		res, err := tx.ExecContext(jctx, `UPDATE hub_identity SET server_cert = ?, server_key = ?, server_names = ?
 			WHERE id = 1 AND server_cert = ?`, cert, key, string(list), old)
 		if err != nil {
 			return fmt.Errorf("statedb: replace server certificate: %w", err)

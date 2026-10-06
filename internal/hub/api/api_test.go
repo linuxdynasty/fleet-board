@@ -31,8 +31,9 @@ func newTelemetry(t *testing.T) *telemetry.Telemetry {
 	return tel
 }
 
-func get(h http.Handler, path, host, origin string) *httptest.ResponseRecorder {
-	req := httptest.NewRequest(http.MethodGet, path, nil)
+func get(t *testing.T, h http.Handler, path, host, origin string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, path, nil)
 	req.Host = host
 	req.RemoteAddr = "127.0.0.1:50000"
 	if origin != "" {
@@ -106,7 +107,7 @@ func TestHostAndOriginChecksComeBeforeAnyHandler(t *testing.T) {
 	h := api.Handler(tel, port)
 	refusals := map[string]int{}
 	for _, tc := range cases {
-		rec := get(h, tc.path, tc.host, tc.origin)
+		rec := get(t, h, tc.path, tc.host, tc.origin)
 		if rec.Code != tc.status {
 			t.Errorf("%s: status %d, want %d", tc.name, rec.Code, tc.status)
 			continue
@@ -130,7 +131,7 @@ func TestHostAndOriginChecksComeBeforeAnyHandler(t *testing.T) {
 			}
 		}
 	}
-	body := get(h, "/metrics", "127.0.0.1:7080", "").Body.String()
+	body := get(t, h, "/metrics", "127.0.0.1:7080", "").Body.String()
 	for r, want := range refusals {
 		if got := sample(body, "fleet_hub_auth_failures_total", `reason="`+r+`"`); got != float64(want) {
 			t.Errorf("fleet_hub_auth_failures_total{reason=%q} = %v, want %d", r, got, want)
@@ -142,7 +143,7 @@ func TestHostAndOriginChecksComeBeforeAnyHandler(t *testing.T) {
 func TestARemotePeerWithAGoodHostIsStillRefusedMetrics(t *testing.T) {
 	t.Parallel()
 	h := api.Handler(newTelemetry(t), port)
-	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/metrics", nil)
 	req.Host = "127.0.0.1:7080"
 	req.RemoteAddr = "192.168.1.20:50000"
 	rec := httptest.NewRecorder()

@@ -1,21 +1,49 @@
-# golangci-lint v2 (the pinned build, see tool-versions.env). A modest set: the
-# v2 defaults (errcheck, govet, ineffassign, staticcheck, unused) plus linters
-# that catch real mistakes in this code base. No per-line //nolint without a
-# reason (nolintlint); fix the code or discuss a rule change in a PR.
+# golangci-lint v2 (the pinned build, see tool-versions.env). The v2 defaults
+# (errcheck, govet, ineffassign, staticcheck, unused) plus linters that catch
+# real mistakes in this code base: leaked bodies, rows and spans, calls without
+# a context, unchecked type assertions, loose slog calls, and gosec's security
+# smells. Not gocritic, unparam, prealloc or perfsprint (epic #107).
+# Fix the code first. A //nolint names one linter and says why (nolintlint).
+# gosec has no global excludes: each false positive carries its own
+# `//nolint:gosec // G304: <concrete reason>`. Known vulnerabilities in
+# dependencies and the standard library are `make vuln` (govulncheck).
 version: "2"
 
 linters:
   default: standard
   enable:
+    - bodyclose # an HTTP response body is always closed
+    - durationcheck # no time.Duration multiplied by another Duration
+    - errchkjson # json.Marshal errors are checked, or provably impossible
     - errorlint # %w and errors.Is/As, never == on errors (fleet-go: wrap errors)
+    - exhaustive # a switch on an enum names every value or has a default
+    - forcetypeassert # x.(T) always uses the two-value form
+    - gosec # security smells: file paths, permissions, integer overflow
+    - makezero # no append to a slice made with a non-zero length
     - misspell
+    - nilerr # never return nil after checking err != nil
+    - noctx # network and exec calls take a context.Context
     - nolintlint
+    - protogetter # proto fields read through getters (nil-safe)
+    - reassign # no reassignment of another package's variables
+    - rowserrcheck # sql.Rows.Err is checked after the loop
+    - sloglint # slog calls: static message, key-value pairs only
+    - spancheck # every OpenTelemetry span is ended and records its error
+    - sqlclosecheck # sql.Rows and sql.Stmt are closed
+    - thelper # test helpers call t.Helper() first
     - unconvert
     - usestdlibvars
+    - usetesting # t.Context, t.TempDir, t.Setenv in tests, not the os ones
   settings:
+    exhaustive:
+      default-signifies-exhaustive: true
     nolintlint:
       require-explanation: true
       require-specific: true
+    sloglint:
+      static-msg: true
+      no-mixed-args: true
+      kv-only: true
   exclusions:
     # Generated code (gen/) is never linted or edited by hand.
     generated: strict
