@@ -4,6 +4,8 @@
 // [Init] reads fleetd.yaml (writing the defaults when it is missing), creates
 // the state folder (0700), takes fleetd.lock and creates state.db with the
 // whole hub_identity row in one atomic step; it never replaces a store.
+// Both commands remove a crashed init's temporary files once they hold
+// fleetd.lock (hub.leftovers_removed).
 //
 // [Run] loads fleetd.yaml, checks the state folder, takes fleetd.lock before
 // it opens state.db, opens the existing store (never creating one), reads the

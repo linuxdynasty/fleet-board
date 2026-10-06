@@ -16,8 +16,14 @@ err = statedb.ReplaceServerCert(ctx, s, oldDER, certDER, keyDER, names)
   folder (created 0600 before SQLite opens it), runs the migrations and writes
   the row through the store's writer, closes it (the WAL is checkpointed and
   removed), then links it to `state.db`. The link fails if `state.db` exists
-  (`ErrExists`), so an existing store is never replaced. Any failure leaves
-  no `state.db` and no temporary file.
+  (`ErrExists`), so an existing store is never replaced; a rename would
+  silently replace it. A failure before the link leaves no `state.db` and no
+  temporary file. A failure syncing the folder after the link leaves a
+  complete `state.db` and is `ErrCreatedNotSynced`, which says so.
+- **Leftovers.** `RemoveLeftovers` deletes the `.state.db.init-*` files of a
+  `Create` that crashed, including a second link to `state.db` left between
+  the link and the cleanup. `fleetd init` and `fleetd run` call it under
+  `fleetd.lock`.
 - **Never created by a start.** `Open` uses `store.Options.MustExist`; a
   missing file is `store.ErrMissing`.
 - **Private.** The folder and `state.db` (and any `-wal`, `-shm`) must belong

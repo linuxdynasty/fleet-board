@@ -64,6 +64,7 @@ const (
 	ReasonStoreExists     Reason = "store_exists"     // init: state.db already exists
 	ReasonIdentityMissing Reason = "identity_missing" // run: state.db has no hub_identity row
 	ReasonStore           Reason = "store_failed"     // state.db could not be created or opened
+	ReasonStoreNotSynced  Reason = "store_not_synced" // init: state.db was created, but the folder sync after it failed
 	ReasonIdentity        Reason = "identity_failed"  // init: minting the CA, certificate or salt failed
 	ReasonCert            Reason = "cert_failed"      // run: the server certificate could not be loaded or re-issued
 	ReasonListen          Reason = "listen_failed"    // a listener could not bind

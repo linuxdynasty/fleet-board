@@ -57,6 +57,9 @@ func Run(ctx context.Context, opts Options) (err error) {
 		return s.fail(lockReason(err), fmt.Errorf("%s: %w", cfg.StateDir, err))
 	}
 	defer func() { err = errors.Join(err, l.Release()) }()
+	if err := s.removeLeftovers(cfg.StateDir); err != nil {
+		return s.fail(ReasonStore, err)
+	}
 
 	st, err := statedb.Open(ctx, cfg.StateDir, s.tel)
 	if err != nil {

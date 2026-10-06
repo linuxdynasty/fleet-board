@@ -47,6 +47,9 @@ func Init(ctx context.Context, opts Options) (err error) {
 		return s.fail(lockReason(err), fmt.Errorf("%s: %w", cfg.StateDir, err))
 	}
 	defer func() { err = errors.Join(err, l.Release()) }()
+	if err := s.removeLeftovers(cfg.StateDir); err != nil {
+		return s.fail(ReasonStore, err)
+	}
 
 	if _, err := os.Lstat(statedb.Path(cfg.StateDir)); err == nil {
 		return s.fail(ReasonStoreExists, fmt.Errorf("%s already exists; init never replaces a store", statedb.Path(cfg.StateDir)))
@@ -64,6 +67,8 @@ func Init(ctx context.Context, opts Options) (err error) {
 	switch {
 	case errors.Is(err, statedb.ErrExists):
 		return s.fail(ReasonStoreExists, err)
+	case errors.Is(err, statedb.ErrCreatedNotSynced):
+		return s.fail(ReasonStoreNotSynced, fmt.Errorf("%w; it is complete, so check the disk, then start the hub with fleetd run", err))
 	case err != nil:
 		return s.fail(ReasonStore, err)
 	}
@@ -117,6 +122,16 @@ func newIdentity(cfg *config.Config, opts Options) (statedb.Identity, error) {
 		HubAddresses:  []string{},
 		CreatedTime:   now,
 	}, nil
+}
+
+// removeLeftovers deletes a crashed init's temporary files; call it with
+// fleetd.lock held. It logs hub.leftovers_removed when it removed any.
+func (s *session) removeLeftovers(dir string) error {
+	n, err := statedb.RemoveLeftovers(dir)
+	if n > 0 {
+		s.tel.Logger.Info("hub.leftovers_removed", "command", s.command, "files", n)
+	}
+	return err
 }
 
 func dirReason(err error) Reason {

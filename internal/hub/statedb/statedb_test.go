@@ -193,7 +193,7 @@ func TestCreateRefusesAnExistingStateDBAndChangesNothing(t *testing.T) {
 	}
 }
 
-// The rename is the last step; a failure before it leaves no state.db and
+// The link is the last step; a failure before it leaves no state.db and
 // no temporary file.
 func TestAFailureBeforeTheLinkLeavesNoStateDB(t *testing.T) {
 	t.Parallel()

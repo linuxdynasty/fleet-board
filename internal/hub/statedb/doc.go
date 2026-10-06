@@ -6,7 +6,9 @@
 // row: a temporary file in the folder (mode 0600 before SQLite opens it) is
 // migrated and gets the row through the store's single writer, is closed
 // (checkpointing the WAL away), and is then linked to state.db, which fails
-// when state.db exists ([ErrExists]). [Open] opens an existing state.db only
+// when state.db exists ([ErrExists]); a rename would replace it. A folder
+// sync failure after the link is [ErrCreatedNotSynced], and [RemoveLeftovers]
+// clears a crashed Create's temporary files. [Open] opens an existing state.db only
 // (store.ErrMissing otherwise) after [CheckDir] and the file checks refuse a
 // folder or file open to other users ([ErrLooseMode]). [ReadIdentity] reads
 // the row ([ErrNoIdentity] when it is missing) and [ReplaceServerCert] swaps

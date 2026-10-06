@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/linuxdynasty/fleet-board/internal/store"
 	"github.com/linuxdynasty/fleet-board/internal/telemetry"
@@ -88,17 +89,33 @@ type CreateOptions struct {
 	// Link publishes the finished file under its final name and must fail
 	// when that name exists. Default os.Link.
 	Link func(oldname, newname string) error
+	// SyncDir makes the new name durable. Default: fsync of the folder.
+	SyncDir func(dir string) error
 }
+
+// ErrCreatedNotSynced means state.db was created, complete with its
+// hub_identity row, but the state folder could not be synced afterwards, so
+// the new name may not survive a power loss.
+var ErrCreatedNotSynced = errors.New("statedb: state.db was created, but syncing the state folder failed")
+
+// tempPrefix starts the name of the temporary file [Create] builds.
+const tempPrefix = ".state.db.init-"
 
 // Create builds state.db with the hub_identity row so that it never exists
 // without it: a temporary file (mode 0600 before SQLite opens it) gets the
 // migrations and the row through the store's writer, is closed (which
 // checkpoints and removes the WAL), and is then linked to state.db, which
-// fails if state.db exists ([ErrExists]). Any failure leaves no state.db and
-// no temporary file. Call it with the state folder's lock held.
+// fails if state.db exists ([ErrExists]). A link, unlike a rename, never
+// replaces an existing state.db. A failure before the link leaves no
+// state.db and no temporary file; a failure syncing the folder after it
+// leaves a complete state.db and is [ErrCreatedNotSynced]. Call it with the
+// state folder's lock held.
 func Create(ctx context.Context, dir string, id Identity, opts CreateOptions) (err error) {
 	if opts.Link == nil {
 		opts.Link = os.Link
+	}
+	if opts.SyncDir == nil {
+		opts.SyncDir = syncDir
 	}
 	final := Path(dir)
 	if _, err := os.Lstat(final); err == nil {
@@ -108,7 +125,7 @@ func Create(ctx context.Context, dir string, id Identity, opts CreateOptions) (e
 	if _, err := rand.Read(suffix); err != nil {
 		return fmt.Errorf("statedb: temp name: %w", err)
 	}
-	tmp := filepath.Join(dir, ".state.db.init-"+hex.EncodeToString(suffix))
+	tmp := filepath.Join(dir, tempPrefix+hex.EncodeToString(suffix))
 	f, err := os.OpenFile(tmp, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
 		return fmt.Errorf("statedb: create temp file: %w", err)
@@ -132,7 +149,32 @@ func Create(ctx context.Context, dir string, id Identity, opts CreateOptions) (e
 		}
 		return fmt.Errorf("statedb: publish state.db: %w", err)
 	}
-	return syncDir(dir)
+	if err := opts.SyncDir(dir); err != nil {
+		return fmt.Errorf("%w (%s): %w", ErrCreatedNotSynced, final, err)
+	}
+	return nil
+}
+
+// RemoveLeftovers deletes the temporary files of an earlier [Create] that
+// crashed (the file, its SQLite side files, or a second link to state.db
+// left between the link and the cleanup) and returns how many it removed.
+// Call it with the state folder's lock held, so no Create is running.
+func RemoveLeftovers(dir string) (int, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return 0, fmt.Errorf("statedb: list state folder: %w", err)
+	}
+	n := 0
+	for _, e := range entries {
+		if !strings.HasPrefix(e.Name(), tempPrefix) || e.IsDir() {
+			continue
+		}
+		if err := os.Remove(filepath.Join(dir, e.Name())); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return n, fmt.Errorf("statedb: remove leftover temp file: %w", err)
+		}
+		n++
+	}
+	return n, nil
 }
 
 // build migrates the file at path, writes the identity row and closes it,
