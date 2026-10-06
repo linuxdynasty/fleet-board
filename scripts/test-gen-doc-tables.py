@@ -2,7 +2,7 @@
 """Seeded RED/GREEN cases for scripts/gen-doc-tables.py.
 
 Each case copies the fixture tree (scripts/testdata/doc-tables: a small
-contract with comment tags, a 01 capability table and the four docs with
+contract with comment tags, a 01 capability table and the five docs with
 empty generated blocks) into a throwaway folder, builds its image with the
 pinned buf, and runs the real script. Exit codes: 0 clean, 1 a tag error, a
 missing marker or a stale block, 2 the contract could not be loaded.
@@ -24,18 +24,21 @@ SVC = "api/fleet/hub/v1/service.proto"
 WATCH = "api/fleet/hub/v1/watch.proto"
 EVENTS = "api/fleet/agent/v1/events.proto"
 AGENT = "api/fleet/agent/v1/agent.proto"
+STATUS = "api/fleet/type/v1/status.proto"
 PLAN = "docs/plan/v1-implementation-plan.md"
 D02K, D02D = "docs/specs/02k-v1-surface-and-cli.md", "docs/specs/02d-hub-authz.md"
 D02I, D02 = "docs/specs/02i-delivery-and-sequencing.md", "docs/specs/02-contracts.md"
+D02L = "docs/specs/02l-versioning-errors-and-decisions.md"
 BLOCKS = [  # (doc, source in the marker, expected body)
     (D02K, SVC, "02k-rpcs.md"), (D02K, WATCH, "02k-topics.md"),
     (D02D, SVC, "02d-rpcs.md"), (D02D, WATCH, "02d-topics.md"),
     (D02I, EVENTS, "02i.md"), (D02, "api/fleet/*/v1/*.proto", "02.md"),
+    (D02L, STATUS, "02l.md"),
 ]
 
 
 TABLES = ["RPCs by release", "Watch topics by release", "scope per RPC", "scope per Watch topic",
-          "delivery class per event body", "capability map"]  # same order as BLOCKS
+          "delivery class per event body", "capability map", "reason codes"]  # same order as BLOCKS
 ONE_BLOCK_SEEDS = [  # a tag edit that changes only BLOCKS[i]: (file, old, new)
     (SVC, "  // [RELEASE v1 13a]\n", "  // [RELEASE v1 12]\n"),
     (WATCH, "[RELEASE v1 19]", "[RELEASE v1 12]"),
@@ -43,6 +46,7 @@ ONE_BLOCK_SEEDS = [  # a tag edit that changes only BLOCKS[i]: (file, old, new)
     (WATCH, "`ADMIN`: all; otherwise the caller's own device", "`ADMIN`: all; otherwise its own device"),
     (EVENTS, "a sample every 30 s; the next one replaces it", "a sample every 60 s"),
     (AGENT, "  CONNECT_REASON_START = 1;\n  // [CAP A6]\n", "  // [CAP A6]\n  CONNECT_REASON_START = 1;\n"),
+    (STATUS, "by the hub's goal table.", "by the hub's own goal table."),
 ]
 
 
@@ -93,6 +97,24 @@ class GenDocTablesTests(unittest.TestCase):
         self.assert_rc(0, self.run_gen("--check"))
         self.assertIn("| hand row | kept |", self.read(D02D))
         self.assertIn("Outside `Event`: hand-kept.", self.read(D02I))
+        self.assertIn("After the codes: hand-kept.", self.read(D02L))
+
+    def test_a_new_reason_code_fails_check_until_write(self):
+        self.assert_rc(0, self.run_gen("--write"))
+        self.tree.edit(STATUS, "  REASON_CODE_ENROLL_TOKEN_UNKNOWN = 600;\n",
+                       "  REASON_CODE_ENROLL_TOKEN_UNKNOWN = 600;\n  // A token from another hub.\n"
+                       "  REASON_CODE_ENROLL_TOKEN_FOREIGN = 606;\n")
+        self.rebuild()
+        out = self.assert_rc(1, self.run_gen("--check"))
+        self.assertIn("%s: reason codes (from %s) is out of date" % (D02L, STATUS), out)
+        self.assert_rc(0, self.run_gen("--write"))
+        self.assertIn("| 606 | `ENROLL_TOKEN_FOREIGN` | A token from another hub. |\n", self.read(D02L))
+        self.assert_rc(0, self.run_gen("--check"))
+
+    def test_a_contract_without_reason_codes_fails_closed(self):
+        (self.tree.root / STATUS).unlink()
+        self.rebuild()
+        self.assertIn("fleet.type.v1.ReasonCode", self.assert_rc(2, self.run_gen("--check")))
 
     def test_a_comment_change_changes_its_table_and_check_fails_until_write(self):
         self.assert_rc(0, self.run_gen("--write"))

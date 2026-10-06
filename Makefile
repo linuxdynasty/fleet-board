@@ -165,9 +165,10 @@ diff-check:
 doc-names:
 	FLEET_PROTO_IMAGE= python3 scripts/check-doc-names.py
 
-# doc-tables fails when a generated table in the specs (02k, 02d, 02i, 02) no
-# longer matches the proto comment tags, or a tag breaks the rules in 02e,
-# "Comment tags". scripts/gen-doc-tables.py --write regenerates the tables.
+# doc-tables fails when a generated table in the specs (02k, 02d, 02i, 02, and
+# the 02l reason codes) no longer matches the proto comments, or a tag breaks
+# the rules in 02e, "Comment tags". scripts/gen-doc-tables.py --write
+# regenerates the tables.
 doc-tables:
 	FLEET_PROTO_IMAGE= python3 scripts/gen-doc-tables.py --check
 

@@ -77,6 +77,7 @@ enum ReasonCode {
   REASON_CODE_UNSPECIFIED = 0;
 
   // Preflight (I1), also used by StartGoal's preflight step.
+
   REASON_CODE_HARNESS_NOT_INSTALLED = 1;
   REASON_CODE_HARNESS_VERSION_UNSUPPORTED = 2;
   REASON_CODE_HARNESS_NOT_SIGNED_IN = 3;
@@ -105,6 +106,7 @@ enum ReasonCode {
   REASON_CODE_AGENT_GOAL_CAP_REACHED = 17;
 
   // Command execution.
+
   REASON_CODE_SESSION_NOT_FOUND = 100;
   REASON_CODE_WINDOW_NOT_FOUND = 101;
   REASON_CODE_PANE_NOT_FOUND = 102;
@@ -147,6 +149,7 @@ enum ReasonCode {
   REASON_CODE_SCRATCH_MISSING = 133;
 
   // Envelope and policy.
+
   REASON_CODE_EXPIRED = 200;
   REASON_CODE_EPOCH_MISMATCH = 201;
   REASON_CODE_SEQ_REPLAYED = 202;
@@ -162,10 +165,10 @@ enum ReasonCode {
   REASON_CODE_POLICY_SAFE_MODE = 208;
 
   // Goal composite steps (G3) and goal control (G4).
+
   REASON_CODE_READY_TIMEOUT = 300;
   REASON_CODE_GOAL_FILE_NOT_SEEN = 301;
   REASON_CODE_GOAL_NOT_RUNNING = 302;
-  // 303 was STOP_TIMEOUT for the removed StopGoal composite; unused.
   REASON_CODE_TRUST_PROMPT_SEEN = 304;
   // [CAP G4]
   // The harness's /goal has no such subcommand (for example pause on
@@ -188,11 +191,13 @@ enum ReasonCode {
   REASON_CODE_GOAL_FILE_WRITE_FAILED = 310;
 
   // Probes and parsing (D1, D2).
+
   REASON_CODE_PROBE_START_FAILED = 400;
   REASON_CODE_PROBE_COMMAND_TIMEOUT = 401;
   REASON_CODE_PARSE_FAILED = 402;
 
   // Hub API (fleet.hub.v1), carried in ErrorDetail.reason of an RPC error.
+
   // expected_version did not match the resource's current version.
   REASON_CODE_VERSION_MISMATCH = 500;
   // request_id was already used with a different request body.
@@ -285,6 +290,7 @@ enum ReasonCode {
   // StartGoal errors, Goal.status.start_error and the "why is nothing
   // starting" fields (DispatchBlock). Which severity each has in a manual
   // dispatch is the table in 03h.
+
   // The work item failed the trusted-issues gate (or lost it after an edit).
   REASON_CODE_WORK_ITEM_UNTRUSTED = 540;
   // Someone else's claim is on the work item (claim comment, assignee).
@@ -356,8 +362,9 @@ enum ReasonCode {
   // Collected report empty, not UTF-8, too large or without the bundle marker.
   REASON_CODE_REPORT_INVALID = 564;
 
-  // [CAP A1]
   // Enroll errors, carried in the ErrorDetail of the Enroll RPC error.
+
+  // [CAP A1]
   // The token is not one the hub issued (or its secret part is wrong).
   REASON_CODE_ENROLL_TOKEN_UNKNOWN = 600;
   // [CAP A1]
