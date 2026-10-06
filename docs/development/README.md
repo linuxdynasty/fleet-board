@@ -8,7 +8,7 @@ detail behind the short root [AGENTS.md](../../AGENTS.md).
 | Doc | What it covers |
 |---|---|
 | [hooks.md](hooks.md) | Development hooks for Claude, Codex, Muse and Cursor: skill nudge and its path map, goal protocol and Stop guard, doc staleness, role router, spawn guard, how to turn each off, tests |
-| [agent-guide.md](agent-guide.md) | Recipes and traps AGENTS.md does not carry: worktree and git recipes, prove the theory first, macOS and zsh notes, roles and models per harness, the task-to-skill map, the handoff contract, dispatch and consent rules, how to run a role |
+| [agent-guide.md](agent-guide.md) | Recipes and traps AGENTS.md does not carry: worktree and git recipes, prove the theory first, macOS and zsh notes, CI runs and the minutes budget, roles and models per harness, the task-to-skill map, the handoff contract, dispatch and consent rules, how to run a role |
 
 ## The setup in one screen
 
@@ -33,15 +33,22 @@ test-cursor-hook-worktrees.py, cursor_hook_testkit.py
 scripts/owner-setup.sh        walks the owner through owner-only setup steps (plan section 3)
 scripts/test-owner-setup.sh   self-test for owner-setup.sh, run with each bash on the machine
 Makefile, tool-versions.env   make targets and the one file of pinned tool versions (agent-guide.md)
-.githooks/pre-push            refuses a push to main, runs make gates before a branch push
-.github/workflows/ci.yml      CI: one step per gate, the same targets as make gates
+.githooks/pre-push            refuses a push to main; before a branch push, fetches origin main
+                              and runs make gates
+.github/workflows/ci.yml      CI on PRs and main pushes: one step per gate, the same targets as
+                              make gates (agent-guide.md, "CI runs and the minutes budget")
+.github/workflows/pr-meta.yml the quick PR checks: the base is main, no AI attribution in the
+                              title and body
+scripts/check-pr-base.sh      fails unless a PR targets main (pr-meta.yml, and first in the ci.yml gates job)
 scripts/check-versions.sh     keeps the copies of a pin (.node-version, go.mod, buf.gen.yaml,
                               tools/tscheck) equal to tool-versions.env
 scripts/smoke-binaries.sh     builds each cmd/<name> and checks that --version prints its name
 scripts/changed-go-packages.sh   the Go packages a change affects, for make test and make lint
 scripts/check-gofumpt.sh      fails on a Go file gofumpt would change
 scripts/test-check-versions.sh, test-changed-go-packages.sh, test-check-gofumpt.sh,
-  test-pre-push.sh            seeded RED/GREEN self-tests for the four above; make selftest runs them
+  test-pre-push.sh, test-pre-push-fetch.sh, test-check-pr-base.sh
+                              seeded RED/GREEN self-tests for the scripts and hook above; make
+                              selftest runs them
 scripts/test-verify-agent-canon.sh, test-smoke-binaries.sh, test-make-base-ref.sh,
   test-make-tools.sh, test-make-gates.sh   seeded cases for the canon script checks, the smoke, the
   quoting of BASE_REF, the tools/gen rebuild rules, the ref-named-file guard and the wiring of

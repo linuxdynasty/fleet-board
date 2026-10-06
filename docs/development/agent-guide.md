@@ -106,8 +106,11 @@ cgo-free.
 `.githooks/pre-push` is the guard for `main` (ADR 0024, decision 2: the repo is
 private on a plan without branch protection). After `make hooks`, a push that
 updates or deletes `main` (or `master`) on any remote is refused, and a push of
-a branch runs `make gates` first and is refused if it fails. Deleting another
-branch and pushing a tag run no gate.
+a branch runs `git fetch --quiet origin main` and then `make gates`, and is
+refused if either fails (the gate measures the change against `origin/main`, so
+a stale copy would make it look bigger or smaller than it is; `make gates` prints
+the base SHA it used). Deleting another branch and pushing a tag run no gate and
+no fetch.
 
 The guard is opt-in per clone: until you run `make hooks`, git does not run it.
 The gate checks the working tree, so the hook makes sure the tree is exactly the
@@ -135,15 +138,53 @@ the command line beats the environment inside make).
 Trust boundary. The hook trusts the local environment and git configuration:
 `BASH_ENV`, `git update-index --assume-unchanged` and `.git/info/exclude` (they
 hide changes from the clean-tree check), `GIT_CONFIG_*` and `core.hooksPath`,
-`PATH`, the tools in `.bin`, and the local `origin/main` ref, which the gate takes
-as the base (a moved `origin/main` makes the change look empty to `make test` and
-`make lint`). Using any of these to get around the gate is a deliberate bypass,
-and the owner's rules forbid it, as they forbid skipping hooks. The backstops are
-that CI runs the same gates on every pull request against the PR's real base, and
-that the owner merges every pull request (ADR 0024).
-`scripts/test-pre-push.sh` drives the real hook with a real `git push` to a
-throwaway bare repository, never to `origin`, with a fake `make` first on
-`PATH` that records what the gate was given (and exits 0 or 1).
+`PATH`, the tools in `.bin`, and the `origin` remote that `main` is fetched from,
+which the gate takes as the base (an `origin` that serves a moved `main` makes the
+change look empty to `make test` and `make lint`). Using any of these to get
+around the gate is a deliberate bypass, and the owner's rules forbid it, as they
+forbid skipping hooks. The backstops are that CI runs the same gates on every
+pull request against the PR's real base, and that the owner merges every pull
+request (ADR 0024).
+`scripts/test-pre-push.sh` and `scripts/test-pre-push-fetch.sh` drive the real
+hook with a real `git push` to a throwaway bare repository, never to `origin`,
+with a fake `make` first on `PATH` that records what the gate was given (and
+exits 0 or 1).
+
+## CI runs and the minutes budget
+
+CI runs once per change (#107). `.github/workflows/ci.yml` runs the gates on a
+pull request (opened, new commits, reopened) and on each push to `main` after a
+merge; a branch push alone runs nothing, its PR does. A PR run is measured
+against the PR's base; a `main` push against the commit `main` was at before it
+(every package when that commit is unknown). A newer push to a PR cancels its
+older run; every merge to `main` gets its own full run, never cancelled.
+`.bin/` is cached, keyed on `tool-versions.env` and the Go version.
+`.github/workflows/pr-meta.yml` is the quick check of the PR's own fields on
+every PR event, edits included: the PR targets `main` (`scripts/check-pr-base.sh`;
+every PR is based on `main`, never stacked) and its title and body carry no AI
+attribution. Editing the title or body reruns only `pr-meta`.
+
+The gates job also fails first thing on a PR whose base is not `main`. After
+you change a PR's base, push again: changing the base starts no gates run, and
+rerunning the old run reuses the old base (a rerun replays the original event).
+
+The plan includes 2000 GitHub Actions minutes a month. Estimates, in minutes
+a month (typical / worst case):
+
+| Workflow | Runs on | Typical | Worst | Status |
+|---|---|---|---|---|
+| `ci.yml` gates on PRs | PR opened, new commits, reopened | ~370 | ~564 | built |
+| `pr-meta.yml` | every PR event, edits included | ~100 | ~100 | built (#107) |
+| `ci.yml` on `main` pushes | each merge (the full suite is planned) | ~175 | ~300 | built (#107); full suite planned (#107) |
+| nightly | daily, skipped when `main` did not move | ~390 | ~520 | planned (#107) |
+| macOS weekly | Sundays, and PRs that change it | ~260 | ~344 | planned (#107) |
+| perf report | PRs whose changed packages hold a benchmark | ~48 | ~48 | planned (#107) |
+| **Total** | | **~1340** | **~1880** | |
+
+A PR that adds CI minutes (a new workflow, job, trigger or a longer step)
+updates this table in the same PR. The PR goes to the owner before it merges
+if the typical total would pass 1800 a month, or if the worst-case total would
+pass 2000 (the free allowance).
 
 ## Pinned tool versions
 
