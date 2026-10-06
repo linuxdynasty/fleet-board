@@ -244,13 +244,15 @@ re-enroll rule are in [02g](02g-agent-security.md#machine-lifecycle-revoke-and-d
 - `fleet_agent_connect_attempts_total{result, source=cached|mdns|configured|tailscale}`,
   `fleet_agent_connected` (gauge 0/1), `fleet_agent_discovery_seconds`,
   `fleet_agent_cert_expiry_seconds`.
-- `fleet_hub_enroll_total{result}`, `fleet_hub_agents_connected`,
+- `fleet_hub_enroll_tokens_total{result}` (token creation, plan row 2b),
+  `fleet_hub_enroll_total{result}`, `fleet_hub_agents_connected`,
   `fleet_hub_machine_state{machine, state}` (gauge 0/1 per state),
   `fleet_hub_snapshot_apply_seconds`, `fleet_hub_snapshot_bytes`,
   `fleet_hub_events_discarded_before_snapshot_total`, `fleet_hub_clock_skew_seconds{machine}`.
 - Spans: `agent.enroll`, `agent.discover` (one child per candidate),
   `agent.connect.hello`, `hub.connect.hello`, `hub.snapshot.apply`.
-- Logs: `enroll.issued`, `enroll.completed{hostname_mismatch}`,
+- Logs: `enroll.issued{machine, expire_time, actor}`, `enroll.issue_refused{reason}`,
+  `enroll.completed{hostname_mismatch}`,
   `connect.hello{epoch, boot_id, reason, skew_ms}`, `snapshot.applied{panes,
   goals, bytes, diff: probes_reissued, goals_pane_lost, orphan_panes}`.
 

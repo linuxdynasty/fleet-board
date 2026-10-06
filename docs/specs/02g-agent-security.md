@@ -26,8 +26,11 @@ the machine are kept.
 
 **The anchor is in the token.** `CreateEnrollmentToken` returns
 `fbe1_<base64url(version byte, SHA-256 of the fleet CA certificate, 32 secret
-bytes)>`. The hub stores only a hash of the secret part. `fleet-agent enroll
---token T` does this, in order:
+bytes)>`: the 65 bytes (version 0x01, the 32-byte CA hash, the 32 secret bytes
+from `crypto/rand`) in unpadded base64url (RFC 4648 section 5, no `=`), 87
+characters after the prefix. The hub stores only SHA-256 of the 32 secret bytes
+(`enroll_tokens.secret_hash`), never the token or the secret, and logs neither,
+nor any part of the hash. `fleet-agent enroll --token T` does this, in order:
 
 1. Decode the token; take the CA fingerprint out of it.
 2. Open TLS to the hub address (given, cached or found by mDNS: discovery only
