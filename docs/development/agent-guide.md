@@ -80,7 +80,7 @@ The `Makefile` is the one entry point; CI runs the same targets, one per step
 | `tools` | builds the pinned `golangci-lint` and `gofumpt` into `.bin/`; rebuilt when a pin or the Go version changes |
 | `gen` | removes `gen/`, then `buf generate` into it (Go and TypeScript), through `go run` at the pinned buf |
 | `build`, `smoke` | `CGO_ENABLED=0 go build ./...`; builds each `cmd/<name>` and checks that `--version` prints its name |
-| `test` | `go vet ./...`, then `go test` and `go test -race` on the changed packages |
+| `test` | `go vet ./...`, then on the changed packages `go test -shuffle=on -count=3` (`TEST_COUNT`) and `go test -race -shuffle=on -count=1` |
 | `lint` | the pinned `golangci-lint` on the same packages |
 | `proto-check`, `ts-check` | `buf build` and `buf lint`; the generated TypeScript compiles (`tools/tscheck`) |
 | `fmt`, `fmt-check` | the pinned `gofumpt` formats, or only checks, every Go file (the same file set) |
@@ -101,7 +101,12 @@ A change to `go.mod`, `go.sum`, the Makefile, `tool-versions.env`,
 `.golangci.yml` or a contract (`api/`, buf config) runs every package. The race
 detector needs cgo on Linux but not on macOS, so `make test` sets
 `CGO_ENABLED=1` for the `-race` run on Linux only; shipped binaries stay
-cgo-free.
+cgo-free. The random order and the repeats catch a test that leans on another
+test or on state from an earlier run; a failure prints `-test.shuffle <seed>`,
+and `go test -shuffle=<seed> -count=3` replays it (go shuffles once per test
+binary, and a leak shows only on a repeat). Neither pass reuses cached
+results; `make test TEST_COUNT=1` is the quick local loop. `TEST_COUNT` must
+be a positive integer; anything else fails before go runs.
 
 `.githooks/pre-push` is the guard for `main` (ADR 0024, decision 2: the repo is
 private on a plan without branch protection). After `make hooks`, a push that
@@ -126,10 +131,11 @@ The guard stops mistakes: an accidental push to `main`, a push that was never
 gated, a gate that an ambient variable (a parent make's `MAKEFLAGS`, a stray
 `BASE_REF` from a shell profile) quietly turned into a no-op. It does not stop a
 person or a process that controls the shell, and it is not a lock. To keep the
-gate honest, before `make` the hook unsets `BASE_REF`, every `FLEET_*` variable,
-`MAKEFLAGS`, `MFLAGS`, `MAKEOVERRIDES`, `MAKELEVEL`, `MAKEFILES`, `GNUMAKEFLAGS`,
-`GIT_DIR`, `GIT_WORK_TREE` and `GIT_INDEX_FILE` (`MAKEFLAGS=n` only prints the
-recipes, `=i` ignores failures, `=t` touches targets), runs make with
+gate honest, before `make` the hook unsets `BASE_REF`, `TEST_COUNT`, every
+`FLEET_*` variable, `MAKEFLAGS`, `MFLAGS`, `MAKEOVERRIDES`, `MAKELEVEL`,
+`MAKEFILES`, `GNUMAKEFLAGS`, `GIT_DIR`, `GIT_WORK_TREE` and `GIT_INDEX_FILE`
+(`TEST_COUNT=1` runs each test once, not three times; `MAKEFLAGS=n` only prints
+the recipes, `=i` ignores failures, `=t` touches targets), runs make with
 `GOFLAGS=-count=1` (harmless, but a push runs the tests without the test cache; it
 is non-empty so it beats a `GOFLAGS` in the `go.env` config file, which an empty
 value would not), and names the base itself (`make BASE_REF=origin/main gates`;

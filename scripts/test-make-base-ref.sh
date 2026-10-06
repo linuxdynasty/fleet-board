@@ -6,7 +6,8 @@
 #
 # Two kinds of case, both seeded:
 #   - `make -n` prints each recipe; the raw hostile value must appear nowhere
-#     in it (test, lint, diff-check, docs-stale-ci and gates all read BASE_REF);
+#     in it (test, lint, diff-check, docs-stale-ci and gates all read BASE_REF;
+#     test reads TEST_COUNT the same way);
 #   - `make diff-check` really runs, in a throwaway repo, with a value that would
 #     create a marker file if it were executed; the marker must not exist.
 # Runs on the macOS system bash 3.2. Needs make and git.
@@ -39,6 +40,13 @@ for target in test lint diff-check docs-stale-ci gates; do
     *) ok ;;
   esac
 done
+
+# TEST_COUNT is data the same way: exported and read as "$TEST_COUNT".
+out="$(cd "$root" && make -n test TEST_COUNT="$hostile" 2>&1)"
+case "$out" in
+  *"touch $marker"*) bad "make -n test pastes TEST_COUNT into the recipe text" ;;
+  *) ok ;;
+esac
 
 # Real run, in a throwaway git repo that holds a copy of the Makefile, never in
 # this checkout: a vulnerable Makefile would run `touch <marker> HEAD` and leave

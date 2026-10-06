@@ -24,8 +24,9 @@
 # stray BASE_REF from a shell profile) quietly turned into a no-op. It does not
 # stop a person or a process that controls the shell, and it is not a lock.
 #
-# What it does to keep the gate honest. Before `make` it unsets BASE_REF, every
-# FLEET_* variable, MAKEFLAGS, MFLAGS, MAKEOVERRIDES, MAKELEVEL, MAKEFILES and
+# What it does to keep the gate honest. Before `make` it unsets BASE_REF,
+# TEST_COUNT (TEST_COUNT=1 runs each test once, not three times), every FLEET_*
+# variable, MAKEFLAGS, MFLAGS, MAKEOVERRIDES, MAKELEVEL, MAKEFILES and
 # GNUMAKEFLAGS (MAKEFLAGS=n only prints the recipes, =i ignores failures, =t
 # touches targets; MAKEFILES can add rules that hide a failure) and GIT_DIR,
 # GIT_WORK_TREE and GIT_INDEX_FILE. It runs make with GOFLAGS=-count=1: harmless
@@ -145,7 +146,7 @@ fi
 for name in $(env | sed -n 's/^\(FLEET_[A-Za-z0-9_]*\)=.*/\1/p'); do
   unset "$name"
 done
-unset BASE_REF MAKEFLAGS MFLAGS MAKEOVERRIDES MAKELEVEL MAKEFILES GNUMAKEFLAGS
+unset BASE_REF TEST_COUNT MAKEFLAGS MFLAGS MAKEOVERRIDES MAKELEVEL MAKEFILES GNUMAKEFLAGS
 
 # The gate's base is origin/main; a stale copy makes the change look bigger or
 # smaller than it is, so bring it up to date first.
