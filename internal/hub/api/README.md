@@ -83,8 +83,9 @@ row yet (#104).
 `NewAdmin` wraps the `<state_dir>/admin.sock` listener and builds its server:
 Connect unary over HTTP/1.1 only, the `FleetService` route, the API
 listener's `ErrorLog` and idle timeout, and, since it serves no stream, a
-`ReadTimeout` and `WriteTimeout` of `AdminRequestTimeout` (30 s, the CLI's own
-limit; `AdminOptions.RequestTimeout` overrides it in tests).
+`ReadTimeout` and `WriteTimeout` of `AdminRequestTimeout` (25 s, under the
+CLI's 30 s so a slow hub shows as the CLI's own timeout;
+`AdminOptions.RequestTimeout` overrides it in tests).
 
 - **Peer check before anything is read.** The listener asks the kernel for
   the peer's user id (`KernelPeerUID`: `SO_PEERCRED` on Linux,

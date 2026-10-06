@@ -33,8 +33,9 @@ type AdminOptions struct {
 }
 
 // AdminRequestTimeout bounds one admin-socket request. The socket serves
-// only short unary calls, and the CLI gives up after the same time.
-const AdminRequestTimeout = 30 * time.Second
+// only short unary calls. It stays under the CLI's 30 s, so a slow hub
+// reaches the CLI as its own timeout, not as a closed connection.
+const AdminRequestTimeout = 25 * time.Second
 
 // NewAdmin wraps the admin socket's listener ln and builds its server
 // (02f, 02j): Connect unary over HTTP/1.1 with the FleetService handler.
