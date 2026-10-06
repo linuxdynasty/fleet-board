@@ -120,6 +120,9 @@ jobs:
       - name: Generated spec tables match the proto comment tags
         run: make doc-tables
 
+      - name: Every telemetry name in the code is in its spec (telemetry-docs.json)
+        run: make telemetry-names
+
       # A report until plan row 17: findings exit 0, a broken input fails.
       - name: v1 capabilities no product test names (report)
         run: make capability-tests

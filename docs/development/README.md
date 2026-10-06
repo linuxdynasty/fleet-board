@@ -21,6 +21,7 @@ scripts/verify-agent-canon.sh checks the rendered files, skill links, frontmatte
 .agents/skill-paths.json      path-to-skill map read by the skill-nudge hook
 .agents/doc-paths.json        folder-to-spec map read by check-docs-stale.py (hooks.md)
 .agents/doc-names-allow.json  backticked doc tokens that are not proto names on purpose
+.agents/telemetry-docs.json   log area and metric tail prefix to the one spec that lists them
 .claude/hooks/                development hooks shared by Claude, Codex, Muse and Cursor
 .claude/settings.json, .codex/hooks.json, .muse/hooks.json, .cursor/hooks.json   hook wiring
 scripts/cursor-hook.py        adapter: runs those hook scripts from Cursor's native hooks (hooks.md)
@@ -55,6 +56,8 @@ scripts/test-verify-agent-canon.sh, test-smoke-binaries.sh, test-make-base-ref.s
   ref-named-file guard, the wiring of make gates and the shuffle and repeat flags of make test
   (also in make selftest)
 tools/tscheck/                compiles the generated TypeScript (typescript 7, strict)
+tools/telemetrynames/         every log event and metric name in the Go code is in the spec
+                              telemetry-docs.json maps it to (make telemetry-names; Go tests)
 scripts/plan-issues.py        writes each plan row's GitHub issue body from the plan
                               (--print, --check, --apply; ADR 0026)
 scripts/test-agent-roles.py   self-test for agent-roles.py (make selftest)
