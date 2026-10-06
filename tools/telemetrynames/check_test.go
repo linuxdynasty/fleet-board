@@ -138,6 +138,43 @@ func TestCheckFindings(t *testing.T) {
 				"func f() {\n\thttp.Error(w, \"bad\", 500)\n\tslog.Info(\"hub.vanished\")\n\tfmt.Println(err.Error())\n}\n"},
 			want: []string{`cmd/fleetd/main.go:10: log event "hub.vanished" is not in docs/specs/obs.md, the spec its area "hub." maps to`},
 		},
+		{
+			name: "a prefix of a documented name is not documented",
+			files: map[string]string{"internal/x/x.go": body("\tlog.Info(\"hub.start\")\n" +
+				"\tm.Int64Counter(prefix+\"_writer_jobs\")")},
+			want: []string{
+				`internal/x/x.go:4: log event "hub.start" is not in docs/specs/obs.md, the spec its area "hub." maps to`,
+				`internal/x/x.go:5: metric "<prefix>_writer_jobs" is not in docs/specs/obs.md, the spec its tail prefix "writer_" maps to`,
+			},
+		},
+		{
+			name: "a name that ends a sentence is documented",
+			files: map[string]string{
+				obsSpec:           "The run logs hub.started. Then it serves.\n",
+				"internal/x/x.go": body(`	log.Info("hub.started")`),
+			},
+		},
+		{
+			name: "Log and LogAttrs read the third argument",
+			files: map[string]string{"internal/x/x.go": body("\tl.Log(ctx, slog.LevelInfo, \"hub.started\")\n" +
+				"\tl.LogAttrs(ctx, slog.LevelWarn, \"hub.attrs_missing\")")},
+			want: []string{`internal/x/x.go:5: log event "hub.attrs_missing" is not in docs/specs/obs.md, the spec its area "hub." maps to`},
+		},
+		{
+			name: "Default and With chains are scanned",
+			files: map[string]string{"internal/x/x.go": body("\tslog.Default().Info(\"hub.default_missing\")\n" +
+				"\tlog.With(\"k\", v).Warn(\"hub.with_missing\")")},
+			want: []string{
+				`internal/x/x.go:4: log event "hub.default_missing" is not in docs/specs/obs.md, the spec its area "hub." maps to`,
+				`internal/x/x.go:5: log event "hub.with_missing" is not in docs/specs/obs.md, the spec its area "hub." maps to`,
+			},
+		},
+		{
+			name: "a local logger named like an import is still scanned",
+			files: map[string]string{"internal/x/x.go": "package x\n\nimport (\n\t\"log\"\n\t\"log/slog\"\n)\n\n" +
+				"var _ = log.Println\n\nfunc f(log *slog.Logger) {\n\tlog.Info(\"hub.shadow_missing\")\n}\n"},
+			want: []string{`internal/x/x.go:11: log event "hub.shadow_missing" is not in docs/specs/obs.md, the spec its area "hub." maps to`},
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

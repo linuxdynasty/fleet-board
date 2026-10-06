@@ -7,7 +7,8 @@
 //   - log events: the message argument of a slog call, the first argument of
 //     Debug, Info, Warn and Error, the second of the *Context variants and
 //     the third of Log and LogAttrs. A call on an imported package other than
-//     log/slog (http.Error) is not a log call.
+//     log/slog (http.Error) is not a log call; a local name that shadows an
+//     import (a parameter log *slog.Logger) is still scanned.
 //   - metrics: the first argument of a metric.Meter instrument constructor
 //     (Int64Counter, Float64Histogram, Int64ObservableGauge, ...), either a
 //     literal or `prefix + "_tail"`, of which the static tail is kept.

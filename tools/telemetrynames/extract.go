@@ -87,7 +87,7 @@ func scan(root string, dirs []string) ([]name, []Finding, error) {
 			if err != nil {
 				return err
 			}
-			file, err := parser.ParseFile(fset, p, nil, parser.SkipObjectResolution)
+			file, err := parser.ParseFile(fset, p, nil, 0)
 			if err != nil {
 				return fmt.Errorf("parse %s: %w", filepath.ToSlash(rel), err)
 			}
@@ -104,7 +104,9 @@ func scan(root string, dirs []string) ([]name, []Finding, error) {
 
 // scanFile finds slog calls and meter instrument constructors in one file.
 // A call on an imported package is skipped (http.Error is not a logger)
-// unless the package is log/slog.
+// unless the package is log/slog. A local name that shadows an import (a
+// parameter log *slog.Logger in a file that imports log) resolves to its
+// declaration, so its calls are still scanned.
 func scanFile(fset *token.FileSet, rel string, file *ast.File) ([]name, []Finding) {
 	pkgs := importNames(file)
 	var names []name
@@ -119,7 +121,7 @@ func scanFile(fset *token.FileSet, rel string, file *ast.File) ([]name, []Findin
 		if !ok {
 			return true
 		}
-		if id, ok := sel.X.(*ast.Ident); ok {
+		if id, ok := sel.X.(*ast.Ident); ok && id.Obj == nil {
 			if p, imported := pkgs[id.Name]; imported && p != "log/slog" {
 				return true
 			}
