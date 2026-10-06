@@ -26,7 +26,7 @@ So in a reused pane `FLEET_GOAL_ID` is missing (a session the developer
 marked available) or is the previous goal's id, and the Muse hook never sees
 pane variables at all. Goal identity therefore does not live in the
 environment. It lives in the **agent's goal registry**, one mechanism for
-Claude Code, Codex, Muse and OpenCode.
+Claude Code, Codex, Muse, Cursor and OpenCode.
 
 | | |
 |---|---|
@@ -359,6 +359,14 @@ are not blocked while prompt detection is unverified. Text is never typed
 into a running turn: in Claude the empty input line during a turn would queue
 it as the next message.
 
+Cursor's input line keeps the previous prompt after a turn (`→ <old text>`,
+[01b](01b-harness-commands.md#cursor)), and text typed next is added to it. A
+fresh line shows a placeholder in the same shape ("→ Plan, search, build
+anything"), and a plain screen capture does not yet tell the two apart. Until
+plan item 0.19 settles both, the agent refuses every `SendKeys` purpose and
+every `RunHarnessCommand` on a Cursor pane with `PANE_BUSY`, the usage probe's
+own session included, so Cursor usage stays unknown until then.
+
 ## Availability per pane
 
 `SetPaneAvailability{pane, available_for_work, reason}` (renamed from
@@ -381,7 +389,7 @@ installed version: `subcommands`, `pause_mode` (`SUBCOMMAND`, `INTERRUPT`,
 `NONE`), `resume_mode` (`SUBCOMMAND`, `TYPE_TEXT`, `NONE`), `resume_text`
 ("continue" for Claude Code 2.1.286) and `limit_resume_verified`. The hub
 reads it from `MachineHarness.goal_control` and sends only what it lists, so a
-fourth adapter or a harness update changes no hub code. A mode of `NONE` or a
+new adapter or a harness update changes no hub code. A mode of `NONE` or a
 missing subcommand fails `ControlGoal` with `GOAL_SUBCOMMAND_UNSUPPORTED`
 before anything is sent; if the version changed since, the agent's answer is
 the same reason and the hub falls back (Interrupt) and records it.

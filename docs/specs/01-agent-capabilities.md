@@ -168,7 +168,7 @@ A **harness adapter** is the extension point for a new tool:
 | Method | Purpose |
 |---|---|
 | `Detect()` | Absolute path via login shell, version |
-| `LaunchArgs`, `ResumeArgs` | Start interactive; resume (`claude --continue`, `codex resume --last`, `muse resume --last`) |
+| `LaunchArgs`, `ResumeArgs` | Start interactive; resume (`claude --continue`, `codex resume --last`, `muse resume --last`, `cursor-agent --resume <chatId>`) |
 | `ReadyPattern`, `PromptPatterns`, `TrustPrompt` | Screen recognition |
 | `StatusCommand`, `UsageCommand`, `ParseStatus`, `ParseUsage` | Identity and usage screens; versioned parsers |
 | `GoalCommand(consent, text)` | The `/goal …` line |
@@ -177,10 +177,13 @@ A **harness adapter** is the extension point for a new tool:
 | `TranscriptLocator` | Where the harness keeps its transcript |
 | `SupportedVersions` | Harness versions the parsers have fixtures for |
 
-Harnesses in scope: Claude Code, Codex, Muse and **OpenCode** (installed on
-all four of the author's machines, 1.18.30–1.18.34). OpenCode is a router
+Harnesses in scope: Claude Code, Codex, Muse, **Cursor** (`cursor-agent`, the
+CLI; first-class from [ADR 0027](../adr/0027-cursor-first-class-copilot-and-messaging-later.md),
+its adapter facts in [01b](01b-harness-commands.md#cursor)) and **OpenCode**
+(installed on all four of the author's machines, 1.18.30–1.18.34). OpenCode is a router
 across several provider accounts with no `/usage` and no `/goal`; see
-[01b-harness-commands.md](01b-harness-commands.md#opencode).
+[01b-harness-commands.md](01b-harness-commands.md#opencode). GitHub Copilot is
+`later` ([01b](01b-harness-commands.md#github-copilot-later)).
 
 **Usage belongs to accounts, not harnesses.** A harness can draw on several
 accounts (OpenCode: Anthropic, OpenAI, Google and Copilot by OAuth, DeepSeek
@@ -267,6 +270,7 @@ optionally against one limit the owner sets.
   | Claude Code `/usage` | current session % used and reset; current week (all models) % used and reset; current week per model (for example Fable) % used and reset; the "what's contributing" breakdown, which Claude labels approximate and local to that machine |
   | Codex `/status` | weekly limit % left and reset; plan ("Account: Pro"); model and server; credits when shown (session logs carry `credits.has_credits` and `balance`) |
   | Muse `/usage` | current % used and reset; weekly % used and reset; the "as of" time; session tokens (input, cached, output, total), turns, subagents; plan ("Muse Code Power Usage") |
+  | Cursor `/usage` | plan ("Pro+"), Included, Auto and API % used, one monthly reset date ("Resets Nov 4"), On-Demand on or off. How pacing reads a monthly budget is plan item 0.20 |
   | OpenCode `opencode stats` (CLI, no probe session) | all-time total cost, as the tool counts it, with no window and no reset (`SpendReading`, no period); a total for all providers together if the tool prints no per-provider figure (issue #46 records what it prints) |
 
   Each reading has two parts:

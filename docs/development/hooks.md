@@ -167,18 +167,25 @@ Notes on the choices:
 - **Trust.** Cursor runs project hooks from the workspace root with
   `CURSOR_PROJECT_DIR` set. The off switches below apply unchanged, because the
   scripts read them.
-- **NOT_CHECKED live: which id a helper's own tool hooks carry** (its
-  `subagent_id`, a new `conversation_id`, or a `session_id` shared with the
-  parent). The cursor-agent 2026.10.01 bundle shows the `subagentStart` payload
+- **Which id a helper's own tool hooks carry** (its `subagent_id`, a new
+  `conversation_id`, or a `session_id` shared with the parent): answered for the
+  CLI by the live check below; the IDE is NOT_CHECKED. The cursor-agent 2026.10.01 bundle shows the `subagentStart` payload
   (`conversation_id`, `subagent_id`, `parent_conversation_id`, ...) and
   `session_id: r.session_id ?? r.conversation_id` on every payload, but not the
-  ids of a helper's tool events. The links cover all three; run a Cursor session
-  with a helper and `FLEET_CURSOR_HOOK_LOG` set, and read the log, to confirm.
+  ids of a helper's tool events. The links cover all three; a run with
+  `FLEET_CURSOR_HOOK_LOG` set shows which one a given version sends.
   The design also assumes a `subagent_id` is unique across chats and over time
   (a reused id would join two families); the log confirms that too. Whether
-  `subagentStart` fires at all in a real run is NOT_CHECKED as well, and so is
-  whether the Cursor IDE ever shares one session id across chats (the
+  the Cursor IDE ever shares one session id across chats is NOT_CHECKED (the
   `session_id` link relies on it not doing so; the log shows it).
+- **Checked live 2026-10-05, cursor-agent 2026.10.01:** `subagentStart` did
+  **not** fire for a Task helper, and the helper's `postToolUse` came under a
+  new `conversation_id` (equal to its `session_id`) with no `subagent_id` and
+  no `parent_conversation_id` ([01d probe](../specs/01d-goal-hooks.md#cursor-hooks-probe-2026-10-05)).
+  So in the CLI no link is ever written and a helper keeps its own key: a skill
+  read by a helper does not unlock its parent's edit (the safe direction; read
+  the skill in the parent, or use the override file). The link code stays for
+  a version or the IDE that sends `subagentStart`.
 - Not live-probed in a real Cursor session: whether `cursor-agent` passes `/goal`
   lines to `beforeSubmitPrompt`, and whether `postToolUse` `additional_context`
   is shown to the agent. The `tool_input` shapes come from reading the

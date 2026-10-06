@@ -100,15 +100,15 @@ which is written into the spec the item names.
 
 | # | Item | Why |
 |---|---|---|
-| 0.1 | Fixtures of the screens each parser and detector reads, for the installed versions of Claude Code, Codex, Muse and OpenCode, captured with the `fleet-live-probe` protocol: usage and status screens, command catalogs, startup screens (update, release notes, trust, sign-in), prompt screens, condition screens (for example Muse "HTTP 500 retrying"), banners and status lines, and for OpenCode `providers list`, the model line and `stats` | D2 parsers, C4 catalogs, E6 and E12 detection are fixture-tested (01, `fleet-harness-adapter`); harnesses auto-update (Muse moved to 1.4.2 on 2026-10-02) |
+| 0.1 | Fixtures of the screens each parser and detector reads, for the installed versions of Claude Code, Codex, Muse, Cursor (`cursor-agent`) and OpenCode, captured with the `fleet-live-probe` protocol: usage and status screens, command catalogs, startup screens (update, release notes, trust, sign-in), prompt screens, condition screens (for example Muse "HTTP 500 retrying"), banners and status lines, and for OpenCode `providers list`, the model line and `stats` | D2 parsers, C4 catalogs, E6 and E12 detection are fixture-tested (01, `fleet-harness-adapter`); harnesses auto-update (Muse moved to 1.4.2 on 2026-10-02) |
 | 0.2 | Owner creates the GitHub App (the read-only permission set of ADR 0022, which adds Contents: read) and installs it on the watched repos; `fleetd setup github` (PR 13a) writes the manifest, until then by hand. The App is the only GitHub access in v1: there is no fine-grained token fallback (decision 15 of [ADR 0024](../adr/0024-pre-build-owner-decisions.md)) | W4 sync needs an installation; only the owner can do it |
 | 0.3 | **Decided** (decisions 12 to 14 of ADR 0024; issue #27 records it): binaries come from GitHub Releases with a checksum file, fetched by an install script; `fleet-agent upgrade` and `fleetd upgrade` fetch and verify the next release; no Apple signing or notarization for now (the owner clears the quarantine flag once per machine). Units: a launchd LaunchAgent on macOS (the owner is logged in; on the hub it runs `fleetd` under `caffeinate -s`); a `systemd --user` unit on Linux, with the owner running `sudo loginctl enable-linger <user>` once per worker so it survives logout (`fleet-agent doctor` checks it). Whether the release build is a plain `go build` matrix or GoReleaser is PR 16's call, inside these rules | Packaging PR 16 depends on it; not covered by ADR 0020 |
 | 0.4 | Owner sets `MUSE_NO_AUTO_UPDATE=1` on fleet machines, or accepts parser drift handled by `parsing_live` (ADR 0018) | Muse's launcher updates itself in the background (01d) |
 | 0.5 | **tmux probe:** does `client_activity` reach a control-mode client (push) or `refresh-client -B` subscriptions, so typing needs no 2 s `list-clients` poll; the release that introduced `pause-after` and `ignore-size` (the minimum tmux is 3.2); how 3.2 is installed on a CI runner. Run on 3.2 and the latest | PR 7 (E13, E2) builds on it; 02h E13 and 01 say "to be confirmed". Result goes into 02h and 01. If there is no push source, the 2 s `list-clients` poll stays: decision 9 of ADR 0024 allows it, and the 60 s goal-file rescan, as the two timed checks outside "poll only usage and GitHub" (ADR 0022 A.6, the streaming rule) |
 | 0.6 | **Wake and network-change probe** on macOS and Linux without cgo (wall-clock jump plus interface polling, or a named library) | PR 4 (A6) builds on it; 01 says "to be confirmed in a spike" |
 | 0.7 | **Done** ([ADR 0028](../adr/0028-mdns-best-effort.md); issue #52 records it). **mDNS check:** `hashicorp/mdns` advertising from a macOS hub next to the system responder, and browsing from the agent; the browse timeout and re-query rule are recorded in defaults.md and ADR 0028 | PR 4 and PR 5 (ADR 0023); ADR 0028 rules the exec fallback out |
-| 0.8 | **Probe cost:** weekly percent before and after N `/usage` or `/status` probes and an idle harness start, per harness, recorded with the harness version in verified-facts.md | [03b](../specs/03b-usage-and-sync.md) says probing costs no quota; nobody measured it. If a harness spends quota, the 10-minute default becomes a per-harness number before PR 8 |
-| 0.9 | **Probe folder trust (C3):** for each harness, capture the trust screen of a new folder (a fixture), and check what the harness shows on a trusted and an untrusted folder, whether trusting a parent covers new children (the weekly report's scratch folder), and the exact steps the owner follows once per harness. The agent edits no harness config in v1 (decision 3 of ADR 0024), so nothing is written or restored | 01 C3 now names the mechanism (one fleet-owned folder, trusted by hand, `FOLDER_UNTRUSTED` read from the harness screen); this item supplies the screens and the wording `fleet-agent doctor` prints |
+| 0.8 | **Probe cost:** (Cursor too: [ADR 0027](../adr/0027-cursor-first-class-copilot-and-messaging-later.md)) weekly percent before and after N `/usage` or `/status` probes and an idle harness start, per harness, recorded with the harness version in verified-facts.md | [03b](../specs/03b-usage-and-sync.md) says probing costs no quota; nobody measured it. If a harness spends quota, the 10-minute default becomes a per-harness number before PR 8 |
+| 0.9 | **Probe folder trust (C3):** (Cursor too: [ADR 0027](../adr/0027-cursor-first-class-copilot-and-messaging-later.md)) for each harness, capture the trust screen of a new folder (a fixture), and check what the harness shows on a trusted and an untrusted folder, whether trusting a parent covers new children (the weekly report's scratch folder), and the exact steps the owner follows once per harness. The agent edits no harness config in v1 (decision 3 of ADR 0024), so nothing is written or restored | 01 C3 now names the mechanism (one fleet-owned folder, trusted by hand, `FOLDER_UNTRUSTED` read from the harness screen); this item supplies the screens and the wording `fleet-agent doctor` prints |
 | 0.10 | **Toolchain:** `golangci-lint` v2 built with the Go 1.27 toolchain (the installed one is built with 1.26 and refuses a `go 1.27` module), pinned in the Makefile and CI; Node 24 LTS or an accepted 22 after one `npm run build` | PR 1's gate cannot pass without it (ADR 0020) |
 | 0.11 | Issue #46: probe for a usage push source. Not blocking: PR 8 ships D3 as specified; a live source lands as a follow-up PR before `v0.1` or is parked as a later item | ADR 0022 A.6 (stream where a push source exists) |
 | 0.12 | Issue #57: a goal-file location every harness can write inside its sandbox without dirtying the checkout (01d) | gates row 20 (goal hooks) and row 21 (`StartGoal` confirms the goal file) |
@@ -118,15 +118,24 @@ which is written into the spec the item names.
 | 0.16 | Issue #61: measure the cost of the weekly insights report (05, `NOT_MEASURED`): the first run's `usage_consumed` is the measurement, recorded in 05 | gates nothing at build time; the report is on by default (ADR 0022) and its first run after row 27 lands turns `NOT_MEASURED` into a number |
 | 0.17 | **Owner decision 20** (#62): in `local_trusted` mode any process on the hub machine is the owner, so a goal there could approve its own request; approvals and settings changes may need a local secret | gates row 19 (approvals and prompt answers) |
 | 0.18 | **Owner decision 21** (#63): the default goal text for repos without eshu's hooks (the claim step, the `BLOCKED` convention, the review-loop cap), drafted and then approved by the owner before it goes into [03c](../specs/03c-goals.md) | gates the first `StartGoal` in such a repo (row 22) |
+| 0.19 | **Cursor input line** ([ADR 0027](../adr/0027-cursor-first-class-copilot-and-messaging-later.md)): after a turn the line still holds the old prompt and new typing is added to it; tell it apart from the fresh placeholder ("→ Plan, search, build anything") and find a safe way to clear it, every screen read before each key | gates every `SendKeys` purpose and `RunHarnessCommand` on a Cursor pane, the usage probe included (02h); result into 01b and 02h |
+| 0.20 | **Cursor monthly budget:** which `/usage` bucket pacing reads (Included, Auto, API), how a monthly window is carried, and the contract change for it, made with Cursor's adapter row while the contracts are unfrozen (before row 17) | gates Cursor usage readings and dispatch; result into 03b and the usage proto |
+| 0.21 | **Cursor goal control:** `/goal` syntax, pause, resume, the done signal, re-arm after done, and whether `beforeSubmitPrompt` sees `/goal` lines | gates Cursor goals; result into 01b and 01d |
+| 0.22 | **Cursor account identity** from its own screens or commands, never its files | gates Cursor accounts; result into 01 C2 |
+| 0.23 | **Cursor goal hooks:** which events carry G1, whether `stop` can hold a turn, how a hook finds its pane | gates Cursor goal hooks; result into 01d |
+| 0.24 | **Cursor terms of use** for this kind of automation | gates auto-dispatch on Cursor; result into research/terms-of-service.md |
 
 Items 0.1 to 0.11 come before the rows they name, most of them before PR 4.
 Items 0.12 to 0.18 were the v2 prerequisites ([ADR 0025](../adr/0025-v1-includes-dispatch.md)
 decision 5); each comes before the dispatch row it gates, not before PR 1. 0.16 is
-measured by the report's first run and gates no build step.
+measured by the report's first run and gates no build step. Items 0.19 to 0.24 are
+Cursor's ([ADR 0027](../adr/0027-cursor-first-class-copilot-and-messaging-later.md));
+each comes before the Cursor work it gates, and the other harnesses never wait for
+them. Items 0.1, 0.8 and 0.9 cover Cursor too. Cursor's adapter work is row 30.
 
 What only the owner can do is 0.2 (create and install the GitHub App, #26), 0.4
 (decide Muse auto-update, #28), 0.17 (#62) and 0.18 (#63, approve the words); 0.3 is
-decided (above). 0.1, 0.5 to 0.16 are agent work.
+decided (above). 0.1, 0.5 to 0.16 and 0.19 to 0.24 are agent work.
 `scripts/owner-setup.sh` walks the owner through 0.2 and 0.4, the owner's one-time
 folder trust that 0.9 describes (C3; provisional until 0.9 records the real screens),
 and two install steps (the macOS quarantine flag, Linux linger); `--check` shows where
@@ -178,7 +187,7 @@ internal/
     logship/            pipe-pane capture, zstd frames, spool, shipping (K1, K2)
     attach/             grouped view session and PTY for one attach (J1)
     doctor/
-  harness/{claude,codex,muse,opencode}/  detect, catalog, parsers + testdata
+  harness/{claude,codex,muse,cursor,opencode}/  detect, catalog, parsers + testdata
 web/                    React + TS + Vite (ADR 0007, 0020); dist embedded in fleetd
 hooks/                  the one Codex-format goal-hook definition and the Muse plugin package (ADR 0001, 01d)
 ```
@@ -190,7 +199,8 @@ Every Go package carries `doc.go`, `README.md` and a scoped `AGENTS.md`
 
 Each row is one PR (or a small epic of PRs where noted), ordered by
 dependency. Row numbers are ids, not order: 2b, 13a and 1b were added later, and
-row 17 (acceptance) runs last, after the dispatch rows 18 to 29 (ADR 0025). **Role** is the cheapest tier that fits (`.agents/roles.json`);
+row 17 (acceptance) runs last, after the dispatch rows 18 to 29 (ADR 0025) and
+row 30, the Cursor adapter (ADR 0027). **Role** is the cheapest tier that fits (`.agents/roles.json`);
 the orchestrator escalates to `-deep` only for the reasons in AGENTS.md.
 Every PR follows AGENTS.md: failing test first for bugs, contract proof for
 new code, `fleet-code-review` before push, the full local gate once.
@@ -228,7 +238,8 @@ new code, `fleet-code-review` before push, the full local gate once.
 | 27 | **Routines, the weekly report and the rest of Insights:** routines with a cron or empty-queue trigger, the spare-quota rule (behind pace or 5 points unused, never into the reserve, never on an API-key account), coalesce and skip, done rules, run history; `ListRoutines` to `RunRoutine` and the `ROUTINES` topic; the built-in weekly report (Monday 07:00, on by default, its cost measured on its first run, 0.16), `InsightReport`, suggestions with evidence, the outcomes and stuck sections of `GetInsights` | 22, 23 | a routine never starts inside a reserve or on an API-key account; catch-up after an outage is skipped; the report ends `REPORT_WRITTEN`; each suggestion carries its evidence; the outcome rollups equal a hand-computed week | develop-fleet | fleet-sqlite-store, fleet-telemetry-coverage |
 | 28 | **Web UI, dispatch (epic):** dispatch with the preflight dialog (Block, Confirm, Warn, Info), goal control, approvals and prompt answers in Triage, the `a` key, the owner's pane mark, session control, the browser terminal (xterm.js), log replay and search, routines, reports and suggestions, drain, hook approval on Machines | 14, 19, 22 to 27 | Playwright smoke per flow on the seed; phone width; a control the caller's scope does not allow is hidden | develop-fleet | fleet-frontend |
 | 29 | **CLI `fleet`, dispatch:** `fleet dispatch`, goal control, `fleet requeue`, `fleet routine` (`fleet logs export` is row 25; [02k](../specs/02k-v1-surface-and-cli.md)), with `--json` | 15, 22 to 27 | golden JSON outputs against the seed; each command refused with the API's reason when its check fails | develop-fleet | fleet-go |
-| 17 | **v1 acceptance and `v0.1` (runs last):** the seven-day run of section 2, watching and dispatch, fixes found there, the four items of the 02e freeze checklist (every contract-review finding fixed or deferred; generated clients compile in CI; the mockup data checked against the protos or marked display-only; `go.mod`, the generated-code location and the CI job), tag `v0.1` for everything v1 implements, with per-path `breaking` ignores in `buf.yaml` for the v3-only messages (02e, ADR 0025); the capability-to-test report of row 1b fails CI from here, `buf breaking` in CI | 16, 18 to 29 | section 2 met; review by `review-fleet-deep`; `arbiter-fleet` ruling before tagging | review-fleet-deep, arbiter-fleet | fleet-code-review |
+| 30 | **Cursor adapter (epic)** ([ADR 0027](../adr/0027-cursor-first-class-copilot-and-messaging-later.md)): the `cursor` adapter for `cursor-agent` in a tmux pane: C1 inventory, C2 identity as 0.22 found, C4 command catalog, the trust box reported as `FOLDER_UNTRUSTED`, E6 prompt detection under each approval mode, the input-line rule of 0.19 (until it is proven, every `SendKeys` purpose and `RunHarnessCommand` answers `PANE_BUSY` on a Cursor pane, the probe included), the D2 `/usage` parser and the monthly budget of 0.20 with its contract change (before row 17), G1 goal hooks as 0.23 found, G3 and G4 goal start and control as 0.21 found, resume with `cursor-agent --resume`; `scripts/owner-setup.sh` and the mockup data name Cursor; auto-dispatch on Cursor only once 0.24 allows it | 8, 20, 21, 0.1, 0.19, 0.20, 0.21, 0.22, 0.23, 0.24 | every Cursor fixture parses or returns `UNKNOWN`; a pane showing old input text or the placeholder is never typed into except by the rule 0.19 proved, tested on fixtures of both; a `/usage` fixture yields a monthly bucket that pacing reads as 0.20 decided; Cursor hooks install, verify and uninstall against fixtures; pause, resume and re-arm against Cursor's fixtures | develop-fleet (parsers), develop-fleet-deep (typing gate, goal control) | fleet-harness-adapter, fleet-tmux, fleet-contract-rigor, fleet-live-probe |
+| 17 | **v1 acceptance and `v0.1` (runs last):** the seven-day run of section 2, watching and dispatch, fixes found there, the four items of the 02e freeze checklist (every contract-review finding fixed or deferred; generated clients compile in CI; the mockup data checked against the protos or marked display-only; `go.mod`, the generated-code location and the CI job), tag `v0.1` for everything v1 implements, with per-path `breaking` ignores in `buf.yaml` for the v3-only messages (02e, ADR 0025); the capability-to-test report of row 1b fails CI from here, `buf breaking` in CI | 16, 18 to 30 | section 2 met; review by `review-fleet-deep`; `arbiter-fleet` ruling before tagging | review-fleet-deep, arbiter-fleet | fleet-code-review |
 
 Parallel lanes: after 2b, PR 3 and PR 11 are independent; after PR 5, 6 and 7
 are independent of each other; 8 and 9 follow 7; 10 follows 8; 12 waits for 10
@@ -236,7 +247,8 @@ and 11; 13a follows 10, 11 and 12; 14 can start its scaffold against the mockup
 while 12 is in review. 1b follows 1 at once. Dispatch: 18 follows 6, 7 and 8; 19,
 20 and 26 follow 18; 21 follows 20; 22 follows 21 and 19 (and 11, 12), so no goal starts before owner decision 20 (0.17); 23 and 24 follow
 22; 25 follows 21 and 12; 27 follows 23; 28 and 29 come
-last, before 17. The 0.1 to 0.11 probes run first and in parallel; 0.12 to 0.18
+last, before 17. Row 30 (Cursor) follows 8, 20 and 21 and its items 0.19 to 0.24;
+the other rows never wait for it. The 0.1 to 0.11 probes run first and in parallel; 0.12 to 0.18
 run before the rows they gate.
 
 ## 6. How it is tested
@@ -292,7 +304,7 @@ Open: items 0.17 (#62) and 0.18 (#63) in section 3 block dispatch; #64 (phone pu
 
 ## 10. Tracking
 
-Each row of section 5 is a GitHub issue (epics for 7, 8, 14 and 28) with its
+Each row of section 5 is a GitHub issue (epics for 7, 8, 14, 28 and 30) with its
 acceptance test copied in, in the milestone "v1 — fleet". This table maps plan
 ids to issues; `scripts/plan-issues.py` reads it.
 
@@ -307,6 +319,8 @@ ids to issues; `scripts/plan-issues.py` reads it.
 | 0.5 to 0.10 | #50 to #55 |
 | 0.11 | #46 |
 | 0.12 to 0.18 | #57 to #63 |
+| 30 | #95 |
+| 0.19 to 0.24 | #96 to #101 |
 
 Section 3 items are issues assigned to the owner where they need a decision. Work
 follows `fleet-issue-driver`: a worktree per issue, one PR per change, self-review

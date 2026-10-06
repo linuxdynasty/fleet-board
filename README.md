@@ -1,6 +1,6 @@
 # fleet-board
 
-Hub and agents for managing Claude Code, Codex, Muse and OpenCode sessions running
+Hub and agents for managing Claude Code, Codex, Muse, Cursor and OpenCode sessions running
 in tmux across several machines: see every session, answer agent questions,
 unstick stuck work, and assign issues and PRs to machines with free capacity.
 

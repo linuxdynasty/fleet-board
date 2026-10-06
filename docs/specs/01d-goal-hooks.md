@@ -7,7 +7,8 @@ How fleet-board installs and uses harness hooks for goals. Capability G1 in
 ## What the hooks are for
 
 The loop itself is each harness's native `/goal` ([01b](01b-harness-commands.md#goal-subcommands)):
-Claude, Codex and Muse keep working toward the objective without any fleet hook.
+Claude, Codex and Muse (and Cursor, to be confirmed by plan item 0.21) keep
+working toward the objective without any fleet hook.
 Fleet's hooks do three narrower jobs:
 
 1. **Session mapping (E9).** Record the harness session id against the
@@ -34,12 +35,13 @@ harness config), not into each repo.
 | Claude Code | `~/.claude/settings.json` | `SessionStart`, `UserPromptSubmit`, `Stop` |
 | Codex | `~/.codex/hooks.json` | `SessionStart`, `Stop`, `Interrupt` (notify only) |
 | Muse | a plugin installed at user scope: `muse plugins install <bundle> --scope user` (see [Muse](#muse-hooks-are-a-plugin-package)) | `SessionStart`, `Stop` (probed), `Interrupt` |
+| Cursor (`cursor-agent`) | `~/.cursor/hooks.json` | to be decided by plan item 0.23; `beforeSubmitPrompt` and `stop` fire ([probe](#cursor-hooks-probe-2026-10-05)) |
 
 - Every fleet hook exits 0 with no output unless it is running for a fleet
   goal, so the developer's own sessions, including ones on the same machine,
-  see no change. **All three harnesses use one mechanism, the agent's goal
-  registry** ([02h](02h-goal-binding-and-pane-signals.md#goal-registry), ADR
-  0019): `StartGoal` writes `(pane, worktree path, harness session id)` before
+  see no change. **Claude Code, Codex and Muse use one mechanism, the agent's
+  goal registry** ([02h](02h-goal-binding-and-pane-signals.md#goal-registry), ADR
+  0019; Cursor's hook mapping is plan item 0.23): `StartGoal` writes `(pane, worktree path, harness session id)` before
   the goal is typed, and the hook asks the agent. A running harness cannot gain
   an environment variable, so in a reused pane `FLEET_GOAL_ID` is absent or the
   previous goal's, and is only a fast path for a window the fleet just created.
@@ -60,7 +62,8 @@ harness config), not into each repo.
   (`~/.local/share/fleet-agent/hooks/<harness>/`); the settings entries only
   point at them. The command string stays fixed across upgrades and the script
   carries its version.
-- **One hook definition for all three.** Claude's `settings.json` hooks,
+- **One hook definition for Claude Code, Codex and Muse** (Cursor's own
+  `hooks.json` shape differs; plan item 0.23). Claude's `settings.json` hooks,
   Codex's `hooks.json` and Muse's Claude-compatible plugin `hooks/hooks.json`
   share one JSON shape (`{"hooks": {"<Event>": [{"matcher", "hooks": [{"type":
   "command", "command"}]}]}}`). The agent generates the three files from one
@@ -264,6 +267,44 @@ Claude-compatible plugin for Muse.
 (it moved this machine to 1.4.2 on 2026-10-02) unless `MUSE_NO_AUTO_UPDATE=1`
 is set. Preflight reports the setting; parser drift is handled by
 `ParserSupport.parsing_live` ([ADR 0018](../adr/0018-hub-api-and-contract-amendments.md)).
+
+## Cursor hooks probe (2026-10-05)
+
+cursor-agent 2026.10.01-e373342 on the hub MacBook, throwaway tmux server
+`-L probe-cursor`, a scratch clone of this repo at 843df01 (its project
+`.cursor/hooks.json` from #87 and #90), and `FLEET_CURSOR_HOOK_LOG` set so the
+dev adapter logged event names, key names and ids only. Two prompts: a one-word
+reply, then one asking a Task helper to read `README.md`.
+
+| Step | Events logged |
+|---|---|
+| prompt 1 | `beforeSubmitPrompt`, then `stop`; `session_id` equals `conversation_id` |
+| prompt 2, parent | `beforeSubmitPrompt`, then `stop`, same ids as prompt 1 |
+| prompt 2, the helper's file read | `postToolUse` under a **new** `conversation_id` (equal to its `session_id`), with no `subagent_id` and no `parent_conversation_id` |
+| helper start | **no `subagentStart`**, although it was wired |
+
+- The `stop` payload carries `input_tokens`, `output_tokens`,
+  `cache_read_tokens`, `cache_write_tokens`, `loop_count` and `status`.
+- A helper's events carry `conversation_id`, `cursor_version`, `duration`,
+  `generation_id`, `hook_event_name`, `model`, `session_id`, `tool_input`,
+  `tool_name`, `tool_output`, `tool_use_id`, `transcript_path`, `user_email`,
+  `workspace_roots`. `user_email` is personal data: a fleet hook drops it.
+- So in this version a helper cannot be tied to its parent from hook data, and
+  its transcript is a separate top-level folder. A fleet goal hook keys on the
+  parent's own events and ignores a helper's.
+- Not checked: `/goal` lines reaching `beforeSubmitPrompt`, whether `stop` can
+  hold a turn for a fleet goal (item 0.23), and the Cursor IDE.
+
+Cleanup: tmux server killed; `~/.cursor/hooks.json` byte-identical to its
+baseline; the two probe project folders under `~/.cursor/projects/` and the
+scratch clone removed; the log deleted once recorded here. The probe also took a
+baseline copy of `~/.cursor/cli-config.json` and compared the file with it
+after: only two caches Cursor rewrites on every run had changed, left as they
+were. That comparison read the file's contents. Only later was it found to hold
+an authInfo section as well as settings; whether the comparison showed any of
+its values was not recorded. The copy was deleted on 2026-10-05 without being
+opened again, and 01b now lists the file as one the agent never reads. No other
+credential file was opened.
 
 ## Trust that survives upgrades (proposed)
 

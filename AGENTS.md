@@ -1,6 +1,6 @@
 # fleet-board Agent Rules
 
-fleet-board manages Claude Code, Codex, Muse and OpenCode sessions that run in
+fleet-board manages Claude Code, Codex, Muse, Cursor and OpenCode sessions that run in
 tmux across several machines: see every session, answer agent questions, unstick
 stuck work, and hand issues to machines with free subscription quota. Parts:
 `fleetd` (hub, embedded SQLite), `fleet-agent` (one per machine), `fleet` (CLI),

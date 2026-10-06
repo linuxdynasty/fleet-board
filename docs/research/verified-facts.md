@@ -44,6 +44,17 @@ The harness behavior the specs rely on today is in
 | Muse hooks come through plugins; `muse plugins hook test <plugin-id>:<hook-id>` tests one | `muse plugins --help` (Muse Code 1.4.0) | In use: user-level hooks are a plugin package, 19 events including `Stop` (01d) |
 | A Muse `Stop` hook returning `decision: block` continues the turn; Muse hooks do not see the pane environment | Probed 2026-10-02 (01d) | In use: goal identity comes from the agent's goal registry, not an environment variable |
 | Muse schema has a detailed approval model and mentions `quota` once | `muse schema generate-json-schema --out DIR`, then `rg` | Not used |
+| Cursor (`cursor-agent` 2026.10.01) fires `beforeSubmitPrompt` and `stop`, not `subagentStart`; a helper's tool events carry a new `conversation_id` with no link to its parent | Probed 2026-10-05 (01d) | In use: ADR 0027, plan item 0.23 |
+
+## Cursor, Copilot and messaging
+
+| Fact | How it was checked | Status |
+|---|---|---|
+| Cursor `/usage` shows a monthly plan (Included, Auto, API %, one reset date); after a turn its input line keeps the old prompt | cursor-agent 2026.10.01, throwaway tmux server, 2026-10-05 (01b) | In use: plan items 0.19 and 0.20 |
+| Copilot CLI `/usage` shows AI credits used against a monthly plan; it has hooks and asks to trust a new folder | Copilot CLI 1.0.91, no prompt sent, 2026-10-05 (01b) | Not used yet (Copilot is `later`) |
+| `codex queue` delivers text into a running Codex session, in order, one turn at a time | codex-cli 0.160.0, throwaway tmux server, 2026-10-05 (01b) | Not used yet (messaging is `later`) |
+| A Claude Code session that skips permission prompts holds messages from a session that does not | code.claude.com cross-session-messaging docs, and one held message on 2026-10-04 (01b) | Not used yet (messaging is `later`) |
+| Muse refuses `session-message` from outside a Muse session (`external_agent_ingress_closed`) | Muse 1.4.2, 2026-10-05 (01b) | Not used |
 
 ## The author's machines
 
