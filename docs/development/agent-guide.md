@@ -82,6 +82,7 @@ The `Makefile` is the one entry point; CI runs the same targets, one per step
 | `build`, `smoke` | `CGO_ENABLED=0 go build ./...`; builds each `cmd/<name>` and checks that `--version` prints its name |
 | `test` | `go vet ./...`, then on the changed packages `go test -shuffle=on -count=3` (`TEST_COUNT`) and `go test -race -shuffle=on -count=1` |
 | `lint` | the pinned `golangci-lint` on the same packages |
+| `fuzz` | each Go fuzz target (`FuzzParse`, `FuzzCheckEnrollRequest`) for `FUZZTIME` (default `60s`), one `go test -fuzz` each; the seeds already run in `test`. Not part of `gates` |
 | `proto-check`, `ts-check` | `buf build` and `buf lint`; the generated TypeScript compiles (`tools/tscheck`) |
 | `fmt`, `fmt-check` | the pinned `gofumpt` formats, or only checks, every Go file (the same file set) |
 | `mod-check`, `actionlint` | `go mod tidy -diff`; the workflow files |
@@ -92,7 +93,7 @@ The `Makefile` is the one entry point; CI runs the same targets, one per step
 | `telemetry-names` | every log event and metric name in non-test Go code is a static string listed in the one spec `.agents/telemetry-docs.json` maps its area to (`tools/telemetrynames`); spec names with no code are a report until plan row 17 |
 | `capability-tests` | lists the v1 capabilities no product test (Go outside `scripts/` and `testdata/`, or web) names; a report (exit 0) until plan row 17 |
 | `docs-stale-ci`, `docs-stale` | a change in `BASE_REF..HEAD` to a mapped folder changes one of its specs or a commit carries `No-Doc-Change: <reason>`, and changed Go packages have their three docs; `docs-stale` only prints the hook reminders |
-| `gates` | all of the above (not `docs-stale`) plus the file cap, agent canon and roles check; prints the tool versions it used first |
+| `gates` | all of the above (not `docs-stale` or `fuzz`) plus the file cap, agent canon and roles check; prints the tool versions it used first |
 | `hooks` | turns on the pre-push guard (`core.hooksPath` is `.githooks`; once per clone, and all its worktrees share it) |
 
 "Changed packages" come from `scripts/changed-go-packages.sh`: the files that

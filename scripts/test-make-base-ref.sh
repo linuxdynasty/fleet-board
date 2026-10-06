@@ -7,7 +7,8 @@
 # Two kinds of case, both seeded:
 #   - `make -n` prints each recipe; the raw hostile value must appear nowhere
 #     in it (test, lint, diff-check, docs-stale-ci and gates all read BASE_REF;
-#     test reads TEST_COUNT the same way);
+#     test reads TEST_COUNT and fuzz reads FUZZTIME and FUZZMINIMIZETIME the
+#     same way);
 #   - `make diff-check` really runs, in a throwaway repo, with a value that would
 #     create a marker file if it were executed; the marker must not exist.
 # Runs on the macOS system bash 3.2. Needs make and git.
@@ -37,6 +38,13 @@ for target in test lint diff-check docs-stale-ci gates; do
   out="$(cd "$root" && make -n "$target" BASE_REF="$hostile" 2>&1)"
   case "$out" in
     *"touch $marker"*) bad "make -n $target pastes BASE_REF into the recipe text" ;;
+    *) ok ;;
+  esac
+done
+for var in FUZZTIME FUZZMINIMIZETIME; do
+  out="$(cd "$root" && make -n fuzz "$var=$hostile" 2>&1)"
+  case "$out" in
+    *"touch $marker"*) bad "make -n fuzz pastes $var into the recipe text" ;;
     *) ok ;;
   esac
 done

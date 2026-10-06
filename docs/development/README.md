@@ -54,9 +54,9 @@ scripts/test-check-versions.sh, test-changed-go-packages.sh, test-check-gofumpt.
                               selftest runs them
 scripts/test-verify-agent-canon.sh, test-smoke-binaries.sh, test-make-base-ref.sh,
   test-make-tools.sh, test-make-gates.sh, test-make-test-flags.sh   seeded cases for the canon
-  script checks, the smoke, the quoting of BASE_REF, the tools/gen rebuild rules, the
-  ref-named-file guard, the wiring of make gates and the shuffle and repeat flags of make test
-  (also in make selftest)
+  script checks, the smoke, the quoting of BASE_REF and the fuzz times, the tools/gen rebuild
+  rules, the ref-named-file guard, the wiring of make gates and the shuffle and repeat flags of
+  make test (also in make selftest)
 tools/tscheck/                compiles the generated TypeScript (typescript 7, strict)
 tools/telemetrynames/         every log event and metric name in the Go code is in the spec
                               telemetry-docs.json maps it to (make telemetry-names; Go tests)

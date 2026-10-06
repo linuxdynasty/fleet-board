@@ -104,8 +104,28 @@ CLI's 30 s so a slow hub shows as the CLI's own timeout;
 - `AdminClient(path)` and `AdminHTTPClient(path)` dial the socket, for
   `fleetd enroll-token` and tests.
 
-Tests: `CGO_ENABLED=0 go test ./internal/hub/api/`. They decode the refusal
+## Testing
+
+`CGO_ENABLED=0 go test ./internal/hub/api/`. The tests decode the refusal
 body down to the `ErrorDetail` reason and check the counter in a real scrape;
 the FleetService tests run on a real `state.db` and compare the token with
 SHA-256 values computed in the test; the admin socket tests use a real socket
 under `/tmp`, the kernel's own peer check, and an injected other uid.
+
+`FuzzCheckEnrollRequest` (package `api`, since `checkEnrollRequest` is not
+exported) builds a `CreateEnrollmentTokenRequest` from fuzzed fields: the
+strings, labels as one comma-separated string, the `ttl` seconds and nanos and
+a previous machine id, each optional message behind a presence flag. The
+limits are written out again in the test: the 02b rules, plus the 253-byte
+`expected_hostname` cap, which is this package's DNS limit (02b sets none). It
+checks that a request is accepted exactly when every field is inside them,
+with the asked-for (or 15 min) lifetime, and that a refusal is one
+`INVALID_ARGUMENT` with one `ErrorDetail` whose violations name each bad field
+once. It then moves every ASCII letter of the request's strings 13 places
+within its case (digits and other bytes stay; lengths, bad fields and repeated
+labels stay the same), checks the moved request again, and requires a
+byte-identical message and identical violations (field, reason and
+description). That shows, for each input tried, that the refusal text does not
+depend on which letters the caller sent; it says nothing about digits or other
+bytes. Its seeds run in every `go test`; `make fuzz` runs it for `FUZZTIME`
+(default 60s).
