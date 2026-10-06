@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/http"
 	"os/user"
+	"time"
 
 	"connectrpc.com/connect"
 
@@ -26,7 +27,14 @@ type AdminOptions struct {
 	PeerUID PeerUID
 	// Lookup resolves the peer's user id to a name; nil means os/user.
 	Lookup func(string) (*user.User, error)
+	// RequestTimeout bounds reading and answering one request; 0 means
+	// [AdminRequestTimeout].
+	RequestTimeout time.Duration
 }
+
+// AdminRequestTimeout bounds one admin-socket request. The socket serves
+// only short unary calls, and the CLI gives up after the same time.
+const AdminRequestTimeout = 30 * time.Second
 
 // NewAdmin wraps the admin socket's listener ln and builds its server
 // (02f, 02j): Connect unary over HTTP/1.1 with the FleetService handler.
@@ -53,11 +61,17 @@ func NewAdmin(ln *net.UnixListener, opts AdminOptions) (net.Listener, *http.Serv
 		}
 		mux.ServeHTTP(w, r)
 	})
+	timeout := opts.RequestTimeout
+	if timeout == 0 {
+		timeout = AdminRequestTimeout
+	}
 	protocols := new(http.Protocols)
 	protocols.SetHTTP1(true)
 	srv := &http.Server{
 		Handler:           h,
-		ReadHeaderTimeout: ReadHeaderTimeout,
+		ReadHeaderTimeout: min(ReadHeaderTimeout, timeout),
+		ReadTimeout:       timeout,
+		WriteTimeout:      timeout,
 		IdleTimeout:       IdleTimeout,
 		ErrorLog:          tel.HTTPErrorLog("admin"),
 		Protocols:         protocols,

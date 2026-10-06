@@ -68,8 +68,12 @@ func EnrollToken(ctx context.Context, opts Options, req EnrollRequest) (*hubv1.C
 
 // refusal turns a hub error into one line: its message, reason and the
 // fields it names. An error without the hub's ErrorDetail did not come from
-// the handler: the connection was closed unserved (the peer check) or broke.
+// the handler: the call ran out of time, or the connection was closed
+// unserved (the peer check) or broke.
 func refusal(err error) error {
+	if errors.Is(err, context.DeadlineExceeded) || connect.CodeOf(err) == connect.CodeDeadlineExceeded {
+		return fmt.Errorf("the hub did not answer in time: %w", err)
+	}
 	var ce *connect.Error
 	if !errors.As(err, &ce) {
 		return err
@@ -88,9 +92,13 @@ func refusal(err error) error {
 		}
 	}
 	if reason == "" {
-		return fmt.Errorf("the hub gave no answer; admin.sock serves only the OS user that runs fleetd: %w", err)
+		return fmt.Errorf("the hub closed the connection without an answer; admin.sock serves only the OS user that runs fleetd: %w", err)
 	}
-	msg := fmt.Sprintf("the hub refused: %s (%s)", ce.Message(), reason)
+	verb := "refused"
+	if ce.Code() == connect.CodeInternal {
+		verb = "failed"
+	}
+	msg := fmt.Sprintf("the hub %s: %s (%s)", verb, ce.Message(), reason)
 	if len(fields) > 0 {
 		msg += "; " + strings.Join(fields, "; ")
 	}

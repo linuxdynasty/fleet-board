@@ -17,6 +17,7 @@ import (
 	"connectrpc.com/connect"
 
 	hubv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/hub/v1"
+	"github.com/linuxdynasty/fleet-board/gen/go/fleet/hub/v1/hubv1connect"
 	typev1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/type/v1"
 	"github.com/linuxdynasty/fleet-board/internal/hub/api"
 )
@@ -62,6 +63,42 @@ func serveAdmin(t *testing.T, e *fleetEnv, peer api.PeerUID) string {
 		}
 	})
 	return path
+}
+
+func TestTheAdminSocketCutsOffAStalledRequest(t *testing.T) {
+	t.Parallel()
+	e := newFleetEnv(t, nil)
+	path := socketPath(t)
+	ln, err := net.ListenUnix("unix", &net.UnixAddr{Name: path, Net: "unix"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fleet, err := api.NewFleet(api.FleetOptions{Store: e.st, CACert: e.caDER, Telemetry: e.tel})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wrapped, srv := api.NewAdmin(ln, api.AdminOptions{
+		Fleet: fleet, Telemetry: e.tel, UID: uint32(os.Getuid()), RequestTimeout: 200 * time.Millisecond,
+	})
+	go func() { _ = srv.Serve(wrapped) }()
+	t.Cleanup(func() { _ = srv.Close() })
+	c, err := net.Dial("unix", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = c.Close() }()
+	if _, err := io.WriteString(c, "POST "+hubv1connect.FleetServiceCreateEnrollmentTokenProcedure+" HTTP/1.1\r\n"+
+		"Host: fleetd\r\nContent-Type: application/proto\r\nContent-Length: 100\r\n\r\nab"); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	_, err = io.ReadAll(c)
+	var ne net.Error
+	if errors.As(err, &ne) && ne.Timeout() {
+		t.Fatal("the connection was still open 5s after a request stalled with a 200ms limit")
+	}
 }
 
 func TestTheKernelReportsThePeerUserOfAUnixSocket(t *testing.T) {

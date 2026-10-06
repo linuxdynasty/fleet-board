@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"regexp"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -174,6 +175,14 @@ func TestEnrollmentTokenRequestValidation(t *testing.T) {
 			typev1.ReasonCode_REASON_CODE_INVALID_NAME, "machine_name",
 		},
 		{
+			"machine_name with a right-to-left override", func(r *hubv1.CreateEnrollmentTokenRequest) { r.MachineName = "lap\u202etop" },
+			typev1.ReasonCode_REASON_CODE_INVALID_NAME, "machine_name",
+		},
+		{
+			"machine_name with a zero-width space", func(r *hubv1.CreateEnrollmentTokenRequest) { r.MachineName = "lap\u200btop" },
+			typev1.ReasonCode_REASON_CODE_INVALID_NAME, "machine_name",
+		},
+		{
 			"expected_hostname with a space", func(r *hubv1.CreateEnrollmentTokenRequest) { r.ExpectedHostname = "my host" },
 			typev1.ReasonCode_REASON_CODE_INVALID_NAME, "expected_hostname",
 		},
@@ -203,6 +212,18 @@ func TestEnrollmentTokenRequestValidation(t *testing.T) {
 		},
 		{
 			"empty previous_machine", func(r *hubv1.CreateEnrollmentTokenRequest) { r.PreviousMachine = &typev1.MachineId{} },
+			typev1.ReasonCode_REASON_CODE_INVALID_ARGUMENT, "previous_machine.value",
+		},
+		{
+			"previous_machine with a slash", func(r *hubv1.CreateEnrollmentTokenRequest) {
+				r.PreviousMachine = &typev1.MachineId{Value: "../01jabc"}
+			},
+			typev1.ReasonCode_REASON_CODE_INVALID_ARGUMENT, "previous_machine.value",
+		},
+		{
+			"previous_machine of 33 characters", func(r *hubv1.CreateEnrollmentTokenRequest) {
+				r.PreviousMachine = &typev1.MachineId{Value: strings.Repeat("a", 33)}
+			},
 			typev1.ReasonCode_REASON_CODE_INVALID_ARGUMENT, "previous_machine.value",
 		},
 	}
@@ -260,6 +281,41 @@ func TestEnrollmentTokenRequestIDReuse(t *testing.T) {
 		if resp != nil {
 			t.Errorf("%s: a response came back with the error", tc.name)
 		}
+	}
+	if got := countRows(t, e); got != 1 {
+		t.Errorf("%d rows, want 1", got)
+	}
+}
+
+func TestConcurrentRequestIDReuseMintsOneToken(t *testing.T) {
+	t.Parallel()
+	e := newFleetEnv(t, localUser("alice"))
+	const n = 16
+	errs := make(chan error, n)
+	var wg sync.WaitGroup
+	for range n {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, err := e.client.CreateEnrollmentToken(context.Background(), enrollReq("req-race", "laptop"))
+			errs <- err
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	issued := 0
+	for err := range errs {
+		if err == nil {
+			issued++
+			continue
+		}
+		if code, reason, _ := detail(t, err); code != connect.CodeAlreadyExists ||
+			reason != typev1.ReasonCode_REASON_CODE_SECRET_ALREADY_DELIVERED {
+			t.Errorf("got %v %v, want already_exists SECRET_ALREADY_DELIVERED", code, reason)
+		}
+	}
+	if issued != 1 {
+		t.Errorf("%d tokens issued for one request_id, want 1", issued)
 	}
 	if got := countRows(t, e); got != 1 {
 		t.Errorf("%d rows, want 1", got)

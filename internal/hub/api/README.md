@@ -56,17 +56,19 @@ only a `LOCAL_USER` principal (the admin socket) holds it: no principal is
 | Check | Refusal |
 |---|---|
 | `request_id` missing; over 64 bytes; not printable ASCII | `INVALID_ARGUMENT` / `REQUEST_ID_MISSING`; `FIELD_TOO_LARGE`; `INVALID_ARGUMENT` |
-| `machine_name` empty or with a control character; over 128 bytes | `INVALID_NAME`; `FIELD_TOO_LARGE` |
+| `machine_name` empty or with a control or format (Cf) character; over 128 bytes | `INVALID_NAME`; `FIELD_TOO_LARGE` |
 | `expected_hostname` other than letters, digits, `.`, `-`, `_`; over 253 bytes | `INVALID_NAME`; `FIELD_TOO_LARGE` |
 | a label not `[a-z0-9][a-z0-9-]{0,31}`; repeated; more than 32 | `INVALID_NAME`; `INVALID_ARGUMENT`; `FIELD_TOO_LARGE` |
 | `ttl` set but not more than 0 and at most 24 h (unset: 15 min) | `INVALID_ARGUMENT` on `ttl` |
-| `previous_machine` sent with an empty id | `INVALID_ARGUMENT` on `previous_machine.value` |
+| `previous_machine` sent with an empty id, or one not `[a-z0-9][a-z0-9-]{0,31}` | `INVALID_ARGUMENT` on `previous_machine.value` |
 | same principal and `request_id` again: same body / other body | `ALREADY_EXISTS` / `SECRET_ALREADY_DELIVERED`; `REQUEST_ID_CONFLICT` |
 | any `previous_machine` (2b re-enrolls nothing) | `FAILED_PRECONDITION` / `MACHINE_NOT_REENROLLABLE` |
 
 Every field error is one `FieldViolation` in one `INVALID_ARGUMENT`, whose
 reason is the first violation's; no message echoes the request. The body hash
-is SHA-256 of the deterministic protobuf encoding. A success mints the token
+is SHA-256 of the deterministic protobuf encoding. A `request_id` row is kept
+until a later row prunes `enroll_tokens` (02b says 24 h), so until then a reuse
+stays `ALREADY_EXISTS` however old it is. A success mints the token
 with `ca.NewToken`, stores only its secret hash (`statedb.InsertEnrollToken`),
 and answers the token, `expire_time`, the CA fingerprint (hex) and
 `enroll_command` (`fleet-agent enroll --token …`). Signals:
@@ -79,8 +81,10 @@ row yet (#104).
 ## Admin socket
 
 `NewAdmin` wraps the `<state_dir>/admin.sock` listener and builds its server:
-Connect unary over HTTP/1.1 only, the `FleetService` route, the same timeouts
-and `ErrorLog` as the API listener.
+Connect unary over HTTP/1.1 only, the `FleetService` route, the API
+listener's `ErrorLog` and idle timeout, and, since it serves no stream, a
+`ReadTimeout` and `WriteTimeout` of `AdminRequestTimeout` (30 s, the CLI's own
+limit; `AdminOptions.RequestTimeout` overrides it in tests).
 
 - **Peer check before anything is read.** The listener asks the kernel for
   the peer's user id (`KernelPeerUID`: `SO_PEERCRED` on Linux,

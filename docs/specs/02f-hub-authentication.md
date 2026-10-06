@@ -285,10 +285,12 @@ logging `admin.peer_refused` and counting
 caller: `Principal{LOCAL_USER, local:<os user>}` (`local:uid-<n>` when the name
 cannot be looked up). A request that carries any `Origin` header is refused
 with 403 `ORIGIN_NOT_ALLOWED`, since a browser has no business on the socket.
-`fleetd enroll-token` uses the same socket (plan row 2b); it writes no audit
-row yet (#104). The token acts for a named owner (`--user`, default the sole active
-owner), its scopes are capped to that owner's, and the audit actor is
-`Principal{LOCAL_USER, local:<os user>}` with `on_behalf_of` the owner.
+The API token from `fleetd token create` acts for a named owner (`--user`,
+default the sole active owner), its scopes are capped to that owner's, and the
+audit actor is `Principal{LOCAL_USER, local:<os user>}` with `on_behalf_of` the
+owner. `fleetd enroll-token` uses the same socket (plan row 2b); it has no
+`--user` and no `on_behalf_of` (the caller is the local user itself), and it
+writes no audit row yet (#104).
 **Break-glass:** if the last owner loses every passkey and GitHub link,
 `fleetd user invite --owner` (same socket) creates a new one-time owner invite
 and prints it like the claim URL, audited as `auth.claim`; `fleetd claim` itself

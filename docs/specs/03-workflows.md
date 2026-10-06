@@ -252,6 +252,7 @@ re-enroll rule are in [02g](02g-agent-security.md#machine-lifecycle-revoke-and-d
 - Spans: `agent.enroll`, `agent.discover` (one child per candidate),
   `agent.connect.hello`, `hub.connect.hello`, `hub.snapshot.apply`.
 - Logs: `enroll.issued{machine, expire_time, actor}`, `enroll.issue_refused{reason}`,
+  `enroll.issue_failed{step, err_kind}`,
   `enroll.completed{hostname_mismatch}`,
   `connect.hello{epoch, boot_id, reason, skew_ms}`, `snapshot.applied{panes,
   goals, bytes, diff: probes_reissued, goals_pane_lost, orphan_panes}`.

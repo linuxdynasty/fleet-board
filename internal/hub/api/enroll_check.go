@@ -26,7 +26,9 @@ const (
 var (
 	// labelName is the name rule of ids.proto for labels.
 	labelName = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
-	hostname  = regexp.MustCompile(`^[A-Za-z0-9._-]*$`)
+	// hubID is the format of ids.proto for hub-assigned ids.
+	hubID    = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
+	hostname = regexp.MustCompile(`^[A-Za-z0-9._-]*$`)
 )
 
 type violations []*typev1.FieldViolation
@@ -59,7 +61,7 @@ func checkEnrollRequest(m *hubv1.CreateEnrollmentTokenRequest) (time.Duration, e
 		v.add("machine_name", typev1.ReasonCode_REASON_CODE_FIELD_TOO_LARGE, "machine_name is over 128 bytes")
 	case !displayText(name):
 		v.add("machine_name", typev1.ReasonCode_REASON_CODE_INVALID_NAME,
-			"machine_name must be UTF-8 without control characters")
+			"machine_name must be UTF-8 without control or invisible format characters")
 	}
 	switch host := m.GetExpectedHostname(); {
 	case len(host) > maxHostname:
@@ -68,8 +70,14 @@ func checkEnrollRequest(m *hubv1.CreateEnrollmentTokenRequest) (time.Duration, e
 		v.add("expected_hostname", typev1.ReasonCode_REASON_CODE_INVALID_NAME,
 			"expected_hostname may hold only letters, digits, '.', '-' and '_'")
 	}
-	if p := m.GetPreviousMachine(); p != nil && p.GetValue() == "" {
-		v.add("previous_machine.value", typev1.ReasonCode_REASON_CODE_INVALID_ARGUMENT, "previous_machine names no machine")
+	if p := m.GetPreviousMachine(); p != nil {
+		switch {
+		case p.GetValue() == "":
+			v.add("previous_machine.value", typev1.ReasonCode_REASON_CODE_INVALID_ARGUMENT, "previous_machine names no machine")
+		case !hubID.MatchString(p.GetValue()):
+			v.add("previous_machine.value", typev1.ReasonCode_REASON_CODE_INVALID_ARGUMENT,
+				"previous_machine is 1 to 32 characters of a-z, 0-9 and '-', starting with a letter or digit")
+		}
 	}
 	checkLabels(&v, m.GetLabels())
 	ttl := ca.DefaultTokenTTL
@@ -113,12 +121,14 @@ func printableASCII(s string) bool {
 	return true
 }
 
+// displayText refuses control and format (Cf) characters: a direction
+// override or a zero-width character can make one name look like another.
 func displayText(s string) bool {
 	if !utf8.ValidString(s) {
 		return false
 	}
 	for _, r := range s {
-		if unicode.IsControl(r) {
+		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) {
 			return false
 		}
 	}

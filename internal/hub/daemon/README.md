@@ -49,8 +49,10 @@ calls `Init`, `Run` or `EnrollToken`.
 and a 30 s timeout. It writes no file and emits no telemetry. With no socket,
 or a socket nobody listens on, it is `ErrNotRunning` ("fleetd is not
 running"); a hub refusal comes back as one line with the message, the reason
-and each bad field; a connection closed with no answer (the peer check) says
-that only the OS user that runs fleetd may use `admin.sock`.
+and each bad field ("the hub refused: …", or "the hub failed: …" for an
+`INTERNAL` error); no answer within the timeout says "the hub did not answer
+in time"; a connection closed with no answer (the peer check) says that only
+the OS user that runs fleetd may use `admin.sock`.
 
 ## Signals
 
