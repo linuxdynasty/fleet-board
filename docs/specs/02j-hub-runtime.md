@@ -117,7 +117,7 @@ ssh with a loose key; it never changes a mode itself.
 | `logs.db` | the log store (ADR 0015) |
 | `revoked-serials` | the revocation list, kept outside `state.db` so a restore re-applies it (02g) |
 | `backups/` | nightly `VACUUM INTO` copies (ADR 0014) |
-| `admin.sock` | the local admin socket, mode 0600, for `fleetd token create`, `fleetd user invite` and `fleetd claim` |
+| `admin.sock` | the local admin socket, mode 0600, for `fleetd enroll-token` (and later `fleetd token create`, `fleetd user invite` and `fleetd claim`). It speaks Connect `FleetService` (unary, HTTP/1.1); only `CreateEnrollmentToken` is built so far and every other method answers unimplemented. The kernel's peer user id must equal `fleetd`'s, or the connection is closed unserved ([02f](02f-hub-authentication.md#api-tokens)). `fleetd run` binds it after taking `fleetd.lock`, first removing a socket a killed hub left behind (anything else at that path is refused), and removes it on a clean stop |
 
 The agent's directory is `~/.local/state/fleet-agent/` ([04](04-technology-review.md) Q9).
 
@@ -129,7 +129,8 @@ The agent's directory is `~/.local/state/fleet-agent/` ([04](04-technology-revie
 | `fleetd upgrade` | fetches the next GitHub release, verifies its checksum and swaps the binary ([install and upgrade](#install-and-upgrade)) |
 | `fleetd init` | writes the default configuration file (when missing), the state directory, and `state.db` with its whole `hub_identity` row in one atomic step: the store is built in a temporary file in the folder and linked into place (a link, unlike a rename, fails rather than replace an existing `state.db`), so `state.db` never exists without the row. On an existing `state.db` it exits non-zero and changes nothing; there is no `--force`. A temporary file left by a crashed init is removed by the next `fleetd init` or `fleetd run`, under `fleetd.lock` |
 | `fleetd setup github` | writes the App manifest and the `github` keys ([ADR 0022](../adr/0022-drift-audit-decisions.md)) |
-| `fleetd enroll-token`, `claim`, `token create`, `user invite` | admin actions over `admin.sock` ([02f](02f-hub-authentication.md)) |
+| `fleetd enroll-token --machine <name>` | asks the running hub over `admin.sock` for an enroll token (`CreateEnrollmentToken`, [02g](02g-agent-security.md)); flags `--expect-host`, `--ttl` (default 15m, at most 24h), `--label` (repeatable) and `--start-drained`. Stdout holds only the token, on one line; stderr shows the expiry, the CA fingerprint and the `fleet-agent enroll --token …` line. With no hub running it exits non-zero with "fleetd is not running" and writes nothing |
+| `fleetd claim`, `token create`, `user invite` | admin actions over `admin.sock` ([02f](02f-hub-authentication.md)) |
 | `fleetd backup`, `restore`, `debug agent-stream`, `insights rebuild` | local, never RPCs ([02m](02m-hub-api-actions-and-audit.md#local-commands)) |
 
 ## Staying awake and surviving logout

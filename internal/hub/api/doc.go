@@ -1,13 +1,21 @@
 // Package api is the hub's HTTP API (docs/specs/02b-hub-api.md, 02f).
 //
-// For now [Handler] is the whole surface of the local_trusted API listener
-// (and of the optional metrics listener): the 02f Host and Origin checks
-// before any handler, then GET /metrics, and 404 for every other path. A
-// refused Host or Origin is a Connect permission_denied error (HTTP 403) whose
-// ErrorDetail reason is HOST_NOT_ALLOWED or ORIGIN_NOT_ALLOWED, counted in
+// [Handler] is the whole surface of the local_trusted API listener (and of
+// the optional metrics listener): the 02f Host and Origin checks before any
+// handler, then GET /metrics, and 404 for every other path. A refused Host or
+// Origin is a Connect permission_denied error (HTTP 403) whose ErrorDetail
+// reason is HOST_NOT_ALLOWED or ORIGIN_NOT_ALLOWED, counted in
 // fleet_hub_auth_failures_total{reason="host"|"origin"}. No CORS header is
 // ever sent. [NewServer] wraps it with header and idle timeouts and an
 // ErrorLog that turns net/http's own error lines into debug-level JSON events.
-// FleetService, Watch and the admin socket server arrive here with their plan
+//
+// [Fleet] is FleetService with only CreateEnrollmentToken built (every other
+// method is Unimplemented): it checks the caller ([PrincipalFrom], ADMIN),
+// the fields and the request_id (02b), mints the token in package ca and
+// stores only its secret hash. [NewAdmin] serves it on the admin socket over
+// HTTP/1.1, closing unserved every connection whose kernel peer user id
+// ([KernelPeerUID]) is not fleetd's and refusing any request with an Origin
+// header; the caller is [LocalUser] of the peer. [AdminClient] dials the
+// socket. Watch and FleetService on the API listener arrive with their plan
 // rows.
 package api

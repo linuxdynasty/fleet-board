@@ -81,7 +81,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 			}
 			return nil
 		},
-	})
+	}, enrollCommand(options, stdout, stderr))
 
 	err := root.ExecuteContext(ctx)
 	if err == nil {

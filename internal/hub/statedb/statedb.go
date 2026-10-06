@@ -44,6 +44,25 @@ func Migrations() []store.Migration {
 	hub_addresses TEXT NOT NULL DEFAULT '[]',
 	created_time INTEGER NOT NULL
 ) STRICT;`,
+	}, {
+		Version: 2,
+		Name:    "enroll_tokens",
+		SQL: `CREATE TABLE enroll_tokens(
+	id INTEGER PRIMARY KEY,
+	secret_hash BLOB NOT NULL UNIQUE CHECK (length(secret_hash) = 32),
+	machine_name TEXT NOT NULL CHECK (machine_name <> ''),
+	expected_hostname TEXT NOT NULL,
+	labels TEXT NOT NULL DEFAULT '[]',
+	start_drained INTEGER NOT NULL CHECK (start_drained IN (0, 1)),
+	not_after_time INTEGER NOT NULL,
+	used_time INTEGER,
+	previous_machine TEXT,
+	created_time INTEGER NOT NULL,
+	principal TEXT NOT NULL CHECK (principal <> ''),
+	request_id TEXT NOT NULL CHECK (request_id <> ''),
+	request_hash BLOB NOT NULL CHECK (length(request_hash) = 32),
+	UNIQUE (principal, request_id)
+) STRICT;`,
 	}}
 }
 
