@@ -82,6 +82,9 @@ func port(key, addr string) (string, *Error) {
 	if err != nil || n < 0 || n > 65535 {
 		return "", refuse(key, "port %q is not a number from 0 to 65535", p)
 	}
+	if strings.Contains(host, "%") {
+		return "", refuse(key, "%q has an IPv6 zone; a certificate cannot name one, so use an address without %%zone", addr)
+	}
 	return host, nil
 }
 
@@ -125,6 +128,9 @@ func (c *Config) checkListen() *Error {
 func (c *Config) checkTLS() *Error {
 	for i, name := range c.TLS.AgentNames {
 		name = strings.ToLower(name)
+		if strings.Contains(name, "%") {
+			return refuse("tls.agent_names", "%q has an IPv6 zone; a certificate cannot name one", name)
+		}
 		if !validName(name) {
 			return refuse("tls.agent_names", "%q is not an IP address or a DNS name", name)
 		}

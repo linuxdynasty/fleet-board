@@ -40,6 +40,7 @@ func TestLocalTrustedAPIAcceptsOnlyTheTwoLoopbackAddresses(t *testing.T) {
 		{"10.0.0.5:7080", false},
 		{"127.0.0.2:7080", false},
 		{"[::ffff:127.0.0.1]:7080", false},
+		{"[::1%lo0]:7080", false},
 		{":7080", false},
 	}
 	for _, tc := range cases {
@@ -83,6 +84,8 @@ func TestRefusals(t *testing.T) {
 		{"agent name wildcard", "tls: {agent_names: [\"*.example.com\"]}\n", "tls.agent_names", false},
 		{"agent name empty", "tls: {agent_names: [\"\"]}\n", "tls.agent_names", false},
 		{"agent name with a space", "tls: {agent_names: [\"a b\"]}\n", "tls.agent_names", false},
+		{"agent name zoned IPv6", "tls: {agent_names: [\"fe80::1%en0\"]}\n", "tls.agent_names", false},
+		{"agent listen zoned IPv6", "listen: {agent: \"[fe80::1%en0]:7443\"}\n", "listen.agent", false},
 		{"public_hosts", "public_hosts: [\"hub.example\"]\n", "public_hosts", true},
 		{"public_origins", "public_origins: [\"https://hub.example\"]\n", "public_origins", true},
 		{"api cert file", "tls: {api_cert_file: /x.pem}\n", "tls.api_cert_file", true},

@@ -16,6 +16,8 @@ err = config.WriteDefault(path)           // fleetd init: the defaults, mode 060
 - **Loopback only.** In `local_trusted` mode `listen.api` (and `listen.metrics`
   when set) must be exactly `127.0.0.1` or `::1`. `localhost`, `0.0.0.0`, `::`,
   another loopback address and LAN addresses are refused; there is no override.
+  An IPv6 address with a zone (`fe80::1%en0`) is refused in every `listen.*`
+  key and in `tls.agent_names`, since a certificate cannot name a zone.
 - **Not built yet.** `mode: authenticated`, `listen.pprof`, `public_hosts`,
   `public_origins`, `tls.api_cert_file`, `tls.api_key_file`, `tls.api_tailscale`
   and `telemetry.otlp.endpoint` are refused (`Error.NotBuilt`) until their plan
