@@ -67,8 +67,8 @@ Use real tmux in a throwaway server (`-L`) for tmux tests and captured fixtures
 for screen parsing; never mock the thing under test. Cover every dispatch
 variant of a shared helper. Confirm filtered tests ran (`go test -list '.*'
 ./pkg/...`). `make test` runs tests in a random order, three times, so a test
-must not depend on order or on state an earlier run left behind (rerun a
-failure with the printed `-shuffle=<seed>`).
+must not depend on order or on state an earlier run left behind (replay a
+failure with the printed seed: `-shuffle=<seed> -count=3`).
 
 ## Hard rules
 

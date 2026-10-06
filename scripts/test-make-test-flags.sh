@@ -8,10 +8,13 @@
 # tool-versions.env and scripts/changed-go-packages.sh, plus a tiny Go module:
 #   clean  a test with no shared state                      (GREEN)
 #   probe  a test that writes the test.shuffle and test.count flags it got,
-#          and whether the race detector is on, to $FLEET_TEST_FLAGS_LOG
+#          whether the race detector is on, and the GOFLAGS it saw, to
+#          $FLEET_TEST_FLAGS_LOG
 #   state  a test that counts its runs in a package-level variable: it passes
 #          at -count=1 and must fail under `make test`      (RED)
 # The packages are added on a work branch, so changed-go-packages.sh names them.
+# TEST_COUNT is data like BASE_REF: a value that is not a positive integer
+# fails before go runs, and is never shell text.
 # Runs on the macOS system bash 3.2. Needs make, git and go.
 #
 # Usage: scripts/test-make-test-flags.sh        exit 0 only if every case passes
@@ -33,8 +36,10 @@ bad() {
 }
 
 # Keep git and make from reading the caller's repo, config or flags.
-unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE BASE_REF FLEET_BASE_REF GOFLAGS
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE BASE_REF FLEET_BASE_REF GOFLAGS TEST_COUNT
 unset MAKEFLAGS MFLAGS MAKEOVERRIDES MAKELEVEL MAKEFILES GNUMAKEFLAGS
+# Nor the caller's go.work or go env file (GOFLAGS there would reach go test).
+export GOWORK=off GOENV=off
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null
 export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@example.com GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@example.com
 export FLEET_TEST_FLAGS_LOG="$flags_log"
@@ -83,8 +88,8 @@ func TestRecordFlags(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer f.Close()
-	fmt.Fprintf(f, "shuffle=%s count=%s race=%t\n",
-		flag.Lookup("test.shuffle").Value, flag.Lookup("test.count").Value, raceOn)
+	fmt.Fprintf(f, "shuffle=%s count=%s race=%t goflags=%s\n",
+		flag.Lookup("test.shuffle").Value, flag.Lookup("test.count").Value, raceOn, os.Getenv("GOFLAGS"))
 }
 EOF
   printf '//go:build !race\n\npackage probe\n\nconst raceOn = false\n' > "$repo/probe/norace_test.go"
@@ -146,18 +151,18 @@ contains() {
 # GREEN: clean tests pass, and each pass got the flags it should.
 fresh
 make_test "clean packages pass" 0
-flags_are "default flags reach go test" "shuffle=on count=3 race=false
-shuffle=on count=3 race=false
-shuffle=on count=3 race=false
-shuffle=on count=1 race=true"
+flags_are "default flags reach go test" "shuffle=on count=3 race=false goflags=
+shuffle=on count=3 race=false goflags=
+shuffle=on count=3 race=false goflags=
+shuffle=on count=1 race=true goflags="
 
 # The pre-push hook runs make with GOFLAGS=-count=1; the command line wins.
 fresh
 GOFLAGS=-count=1 make_test "clean packages pass under the pre-push GOFLAGS" 0
-flags_are "GOFLAGS=-count=1 does not lower the count" "shuffle=on count=3 race=false
-shuffle=on count=3 race=false
-shuffle=on count=3 race=false
-shuffle=on count=1 race=true"
+flags_are "GOFLAGS=-count=1 does not lower the count" "shuffle=on count=3 race=false goflags=-count=1
+shuffle=on count=3 race=false goflags=-count=1
+shuffle=on count=3 race=false goflags=-count=1
+shuffle=on count=1 race=true goflags=-count=1"
 
 # RED: package-level state passes at -count=1 but fails under make test.
 fresh
@@ -174,8 +179,21 @@ fi
 fresh
 add_state
 make_test "TEST_COUNT=1 runs each test once" 0 TEST_COUNT=1
-flags_are "TEST_COUNT=1 reaches go test" "shuffle=on count=1 race=false
-shuffle=on count=1 race=true"
+flags_are "TEST_COUNT=1 reaches go test" "shuffle=on count=1 race=false goflags=
+shuffle=on count=1 race=true goflags="
+
+# RED: a TEST_COUNT that is not a positive integer fails before go runs and is
+# never run as shell text (it would turn make test into a green no-op).
+marker="$work/marker"
+for hostile in "1; touch $marker" "1; exit 0 #" "0" "3 -run=^\$" "3 -run=NoSuch"; do
+  fresh
+  add_state
+  rm -f "$marker"
+  if make_test "TEST_COUNT='$hostile' fails" 2 TEST_COUNT="$hostile"; then
+    contains "TEST_COUNT='$hostile' is named" "TEST_COUNT must be a positive integer"
+  fi
+  if [ -e "$marker" ]; then bad "TEST_COUNT='$hostile' ran as shell text"; else ok; fi
+done
 
 printf 'test-make-test-flags: %s passed, %s failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

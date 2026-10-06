@@ -103,8 +103,10 @@ detector needs cgo on Linux but not on macOS, so `make test` sets
 `CGO_ENABLED=1` for the `-race` run on Linux only; shipped binaries stay
 cgo-free. The random order and the repeats catch a test that leans on another
 test or on state from an earlier run; a failure prints `-test.shuffle <seed>`,
-and `go test -shuffle=<seed>` replays that order. Neither pass reuses cached
-results; `make test TEST_COUNT=1` is the quick local loop.
+and `go test -shuffle=<seed> -count=3` replays it (go shuffles once per test
+binary, and a leak shows only on a repeat). Neither pass reuses cached
+results; `make test TEST_COUNT=1` is the quick local loop. `TEST_COUNT` must
+be a positive integer; anything else fails before go runs.
 
 `.githooks/pre-push` is the guard for `main` (ADR 0024, decision 2: the repo is
 private on a plan without branch protection). After `make hooks`, a push that
@@ -129,10 +131,11 @@ The guard stops mistakes: an accidental push to `main`, a push that was never
 gated, a gate that an ambient variable (a parent make's `MAKEFLAGS`, a stray
 `BASE_REF` from a shell profile) quietly turned into a no-op. It does not stop a
 person or a process that controls the shell, and it is not a lock. To keep the
-gate honest, before `make` the hook unsets `BASE_REF`, every `FLEET_*` variable,
-`MAKEFLAGS`, `MFLAGS`, `MAKEOVERRIDES`, `MAKELEVEL`, `MAKEFILES`, `GNUMAKEFLAGS`,
-`GIT_DIR`, `GIT_WORK_TREE` and `GIT_INDEX_FILE` (`MAKEFLAGS=n` only prints the
-recipes, `=i` ignores failures, `=t` touches targets), runs make with
+gate honest, before `make` the hook unsets `BASE_REF`, `TEST_COUNT`, every
+`FLEET_*` variable, `MAKEFLAGS`, `MFLAGS`, `MAKEOVERRIDES`, `MAKELEVEL`,
+`MAKEFILES`, `GNUMAKEFLAGS`, `GIT_DIR`, `GIT_WORK_TREE` and `GIT_INDEX_FILE`
+(`TEST_COUNT=1` runs each test once, not three times; `MAKEFLAGS=n` only prints
+the recipes, `=i` ignores failures, `=t` touches targets), runs make with
 `GOFLAGS=-count=1` (harmless, but a push runs the tests without the test cache; it
 is non-empty so it beats a `GOFLAGS` in the `go.env` config file, which an empty
 value would not), and names the base itself (`make BASE_REF=origin/main gates`;

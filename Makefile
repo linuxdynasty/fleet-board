@@ -106,16 +106,21 @@ vet:
 # test runs vet on everything and the tests on the changed packages
 # (scripts/changed-go-packages.sh: files changed against BASE_REF plus the
 # packages that import them; every package when a build input changed).
-# Tests run in a random order (the seed prints as -test.shuffle N; rerun one
-# with -shuffle=N) and TEST_COUNT times, so state left between tests or runs
+# Tests run in a random order (the seed prints as -test.shuffle N; replay it
+# with -shuffle=N -count=3, since go shuffles once per test binary and a leak
+# shows on a repeat) and TEST_COUNT times, so state left between tests or runs
 # fails; the race pass runs once. Neither pass uses the go test cache.
+# TEST_COUNT is data like BASE_REF: exported, read quoted, and anything but a
+# positive integer (no leading zero) fails before go runs.
 TEST_COUNT ?= 3
+export TEST_COUNT
 
 test: vet
-	@pkgs="$$(scripts/changed-go-packages.sh "$$BASE_REF")" || exit 1; \
+	@case "$$TEST_COUNT" in ''|*[!0-9]*|0*) echo "make test: TEST_COUNT must be a positive integer" >&2; exit 2;; esac; \
+	pkgs="$$(scripts/changed-go-packages.sh "$$BASE_REF")" || exit 1; \
 	if [ -z "$$pkgs" ]; then echo "make test: no Go package changed against $$BASE_REF; no tests to run"; exit 0; fi; \
 	echo "make test: $$pkgs"; \
-	CGO_ENABLED=0 go test -shuffle=on -count=$(TEST_COUNT) $$pkgs && \
+	CGO_ENABLED=0 go test -shuffle=on -count="$$TEST_COUNT" $$pkgs && \
 	CGO_ENABLED=$(RACE_CGO) go test -race -shuffle=on -count=1 $$pkgs
 
 lint: tools
