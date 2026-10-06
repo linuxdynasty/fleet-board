@@ -2,6 +2,7 @@ package api
 
 import (
 	"errors"
+	"maps"
 	"strconv"
 	"strings"
 	"testing"
@@ -10,6 +11,7 @@ import (
 	"unicode/utf8"
 
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	hubv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/hub/v1"
@@ -51,6 +53,7 @@ func enrollSeeds() []enrollSeed {
 		{id: "req-11", name: "laptop", hasPrev: true},
 		{id: "req-12", name: "laptop", hasPrev: true, prev: "../01jabc"},
 		{id: "", name: "laptop"},
+		{id: "", name: "has invalid fields"},
 		{id: strings.Repeat("a", 65), name: "laptop"},
 		{id: "a b", name: "laptop"},
 		{id: "req-13", name: ""},
@@ -69,8 +72,9 @@ func enrollSeeds() []enrollSeed {
 // FuzzCheckEnrollRequest checks checkEnrollRequest against the 02b field
 // rules: it never panics; it accepts a request exactly when every field is
 // inside the limits, and then returns the asked-for lifetime; a refusal is
-// one INVALID_ARGUMENT whose violations name the bad fields and never echo
-// the request.
+// one INVALID_ARGUMENT whose violations name the bad fields, and whose message
+// and violations stay byte for byte the same when every letter of the request
+// is rotated, so they cannot echo the request's letters.
 func FuzzCheckEnrollRequest(f *testing.F) {
 	for _, s := range enrollSeeds() {
 		f.Add(s.id, s.name, s.host, s.labels, s.hasTTL, s.ttlSeconds, s.ttlNanos, s.hasPrev, s.prev)
@@ -89,6 +93,10 @@ func FuzzCheckEnrollRequest(f *testing.F) {
 			m.PreviousMachine = &typev1.MachineId{Value: prev}
 		}
 		bad, want := outsideLimits(m)
+		rot := rotated(m)
+		if rotBad, _ := outsideLimits(rot); !maps.Equal(bad, rotBad) {
+			t.Fatalf("rotation changed which fields are bad: %v became %v", bad, rotBad)
+		}
 		ttl, err := checkEnrollRequest(m)
 		if err == nil {
 			if len(bad) > 0 {
@@ -102,9 +110,49 @@ func FuzzCheckEnrollRequest(f *testing.F) {
 		if len(bad) == 0 {
 			t.Fatalf("refused a request inside the 02b limits: %v", err)
 		}
-		raw := append([]string{id, name, host, prev}, m.GetLabels()...)
-		checkRefusal(t, err, bad, raw)
+		ed, msg := checkRefusal(t, err, bad)
+		_, rotErr := checkEnrollRequest(rot)
+		if rotErr == nil {
+			t.Fatal("the rotated request was accepted")
+		}
+		rotED, rotMsg := checkRefusal(t, rotErr, bad)
+		if msg != rotMsg || !proto.Equal(ed, rotED) {
+			t.Fatalf("the refusal depends on the request's letters:\n%q %v\nbecame\n%q %v", msg, ed, rotMsg, rotED)
+		}
 	})
+}
+
+// rotate moves each ASCII letter 13 places within its case and keeps every
+// other byte, digits included. Only ASCII bytes change, so a field keeps its
+// length, its UTF-8 validity, its 02b validity and which labels repeat, while
+// no letter stays the same.
+func rotate(s string) string {
+	b := []byte(s)
+	for i, c := range b {
+		switch {
+		case c >= 'a' && c <= 'z':
+			b[i] = 'a' + (c-'a'+13)%26
+		case c >= 'A' && c <= 'Z':
+			b[i] = 'A' + (c-'A'+13)%26
+		}
+	}
+	return string(b)
+}
+
+func rotated(m *hubv1.CreateEnrollmentTokenRequest) *hubv1.CreateEnrollmentTokenRequest {
+	r := &hubv1.CreateEnrollmentTokenRequest{
+		RequestId:        rotate(m.GetRequestId()),
+		MachineName:      rotate(m.GetMachineName()),
+		ExpectedHostname: rotate(m.GetExpectedHostname()),
+		Ttl:              m.GetTtl(),
+	}
+	for _, l := range m.GetLabels() {
+		r.Labels = append(r.Labels, rotate(l))
+	}
+	if p := m.GetPreviousMachine(); p != nil {
+		r.PreviousMachine = &typev1.MachineId{Value: rotate(p.GetValue())}
+	}
+	return r
 }
 
 // outsideLimits names each field outside the 02b rules, as the violation
@@ -152,9 +200,10 @@ func outsideLimits(m *hubv1.CreateEnrollmentTokenRequest) (map[string]bool, time
 	return bad, want
 }
 
-// checkRefusal checks the shape of a refusal. The cap of 16 violations is the
-// handler's; 02b asks for one per bad field.
-func checkRefusal(t *testing.T, err error, bad map[string]bool, raw []string) {
+// checkRefusal checks the shape of a refusal and returns its ErrorDetail and
+// message. The cap of 16 violations is the handler's; 02b asks for one per
+// bad field.
+func checkRefusal(t *testing.T, err error, bad map[string]bool) (*typev1.ErrorDetail, string) {
 	t.Helper()
 	var ce *connect.Error
 	if !errors.As(err, &ce) || ce.Code() != connect.CodeInvalidArgument {
@@ -183,16 +232,11 @@ func checkRefusal(t *testing.T, err error, bad map[string]bool, raw []string) {
 		if v.GetDescription() == "" {
 			t.Errorf("violation on %q has no description", f)
 		}
-		for _, r := range raw {
-			// A shorter value can occur in the fixed English text by chance.
-			if len(r) >= 8 && (strings.Contains(v.GetDescription(), r) || strings.Contains(ce.Message(), r)) {
-				t.Errorf("refusal echoes the request value %q", r)
-			}
-		}
 	}
 	if len(named) != min(len(bad), 16) {
 		t.Errorf("violations name %v, want every bad field %v", named, bad)
 	}
+	return ed, ce.Message()
 }
 
 func everyByte(s string, ok func(byte) bool) bool {

@@ -26,9 +26,12 @@ include tool-versions.env
 BASE_REF ?= origin/main
 export BASE_REF
 
-# FUZZTIME is data the same way: a go test -fuzztime value, read quoted.
+# FUZZTIME and FUZZMINIMIZETIME are data the same way: go test -fuzztime and
+# -fuzzminimizetime values, read quoted.
 FUZZTIME ?= 60s
 export FUZZTIME
+FUZZMINIMIZETIME ?= 10s
+export FUZZMINIMIZETIME
 
 BIN := $(CURDIR)/.bin
 GOLANGCI_LINT := $(BIN)/golangci-lint
@@ -131,11 +134,13 @@ test: vet
 
 # fuzz runs one go test per fuzz target, since -fuzz takes a single target; a
 # crash fails the run and leaves its input in the package's testdata/fuzz/.
-# Workers minimize each new input (up to 60 s) before they fuzz on, so from an
-# empty fuzz cache ($(go env GOCACHE)/fuzz) a short run fuzzes for part of it.
+# Workers minimize each new input before they fuzz on. At go's default limit
+# (60 s per input) a run from an empty fuzz cache ($(go env GOCACHE)/fuzz)
+# stalled: 303k execs in 9 s, then 0 for 20 s. FUZZMINIMIZETIME (default 10s)
+# caps that wait; with it the same run resumed after about 12 s.
 fuzz:
-	CGO_ENABLED=0 go test -run='^$$' -fuzz='^FuzzParse$$' -fuzztime="$$FUZZTIME" ./internal/hub/config/
-	CGO_ENABLED=0 go test -run='^$$' -fuzz='^FuzzCheckEnrollRequest$$' -fuzztime="$$FUZZTIME" ./internal/hub/api/
+	CGO_ENABLED=0 go test -run='^$$' -fuzz='^FuzzParse$$' -fuzztime="$$FUZZTIME" -fuzzminimizetime="$$FUZZMINIMIZETIME" ./internal/hub/config/
+	CGO_ENABLED=0 go test -run='^$$' -fuzz='^FuzzCheckEnrollRequest$$' -fuzztime="$$FUZZTIME" -fuzzminimizetime="$$FUZZMINIMIZETIME" ./internal/hub/api/
 
 lint: tools
 	@pkgs="$$(scripts/changed-go-packages.sh "$$BASE_REF")" || exit 1; \

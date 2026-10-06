@@ -115,10 +115,17 @@ under `/tmp`, the kernel's own peer check, and an injected other uid.
 `FuzzCheckEnrollRequest` (package `api`, since `checkEnrollRequest` is not
 exported) builds a `CreateEnrollmentTokenRequest` from fuzzed fields: the
 strings, labels as one comma-separated string, the `ttl` seconds and nanos and
-a previous machine id, each optional message behind a presence flag. Against
-the 02b limits, written out again in the test, it checks that a request is
-accepted exactly when every field is inside them, with the asked-for (or
-15 min) lifetime, and that a refusal is one `INVALID_ARGUMENT` with one
-`ErrorDetail` whose violations name each bad field once and never echo a
-request value. Its seeds run in every `go test`; `make fuzz` runs it for
-`FUZZTIME` (default 60s).
+a previous machine id, each optional message behind a presence flag. The
+limits are written out again in the test: the 02b rules, plus the 253-byte
+`expected_hostname` cap, which is this package's DNS limit (02b sets none). It
+checks that a request is accepted exactly when every field is inside them,
+with the asked-for (or 15 min) lifetime, and that a refusal is one
+`INVALID_ARGUMENT` with one `ErrorDetail` whose violations name each bad field
+once. It then moves every ASCII letter of the request's strings 13 places
+within its case (digits and other bytes stay; lengths, bad fields and repeated
+labels stay the same), checks the moved request again, and requires a
+byte-identical message and identical violations (field, reason and
+description). That shows, for each input tried, that the refusal text does not
+depend on which letters the caller sent; it says nothing about digits or other
+bytes. Its seeds run in every `go test`; `make fuzz` runs it for `FUZZTIME`
+(default 60s).

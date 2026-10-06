@@ -38,6 +38,13 @@ hand from 02j and defaults.md.
 `FuzzParse` feeds `Parse` arbitrary bytes, seeded with the YAML bodies of the
 other tests (its seeds run in every `go test`). It checks that `Parse` never
 panics, that a refusal is a `*config.Error` naming a key, and that an accepted
-config has an absolute, clean `state_dir` and a YAML form that `Parse`
+config keeps the rules the specs state, written out again in the test rather
+than taken from `validate.go`: `mode` is `local_trusted`, `listen.api` is
+`127.0.0.1` or `::1` (02f), the not-built keys of 02k are empty, and the
+`telemetry` protocol and signals are values 05b lists. No spec sets a rule for
+the `listen.metrics` address, the `timing.*` and `rate_limits.*` values or the
+spelling of `tls.agent_names`, so those stricter checks of `validate.go` are
+not graded here. It also checks that
+the config has an absolute, clean `state_dir` and a YAML form that `Parse`
 accepts again and that renders to the same bytes. `make fuzz` runs it for
 `FUZZTIME` (default 60s); a crash leaves its input in `testdata/fuzz/`.

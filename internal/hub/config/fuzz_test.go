@@ -3,6 +3,7 @@ package config_test
 import (
 	"bytes"
 	"errors"
+	"net"
 	"os"
 	"path/filepath"
 	"testing"
@@ -76,9 +77,9 @@ var parseSeeds = []string{
 }
 
 // FuzzParse checks what Parse promises for any input: it never panics; a
-// refusal is a *config.Error naming a key; an accepted config has an
-// absolute, clean state_dir, and its YAML form is accepted again and renders
-// to the same bytes (validation holds on the result, and Duration and the
+// refusal is a *config.Error naming a key; an accepted config keeps the rules
+// the specs state (specRules), has an absolute, clean state_dir, and its YAML
+// form is accepted again and renders to the same bytes (Duration and the
 // lower-cased agent names survive a write and a read).
 func FuzzParse(f *testing.F) {
 	for _, s := range parseSeeds {
@@ -100,6 +101,7 @@ func FuzzParse(f *testing.F) {
 		if c == nil {
 			t.Fatal("Parse accepted the input but returned no config")
 		}
+		specRules(t, c)
 		if !filepath.IsAbs(c.StateDir) || filepath.Clean(c.StateDir) != c.StateDir {
 			t.Fatalf("accepted state_dir %q is not absolute and clean", c.StateDir)
 		}
@@ -119,4 +121,44 @@ func FuzzParse(f *testing.F) {
 			t.Fatalf("a write and a read changed the config:\n%s\nbecame\n%s", first, second)
 		}
 	})
+}
+
+// specRules checks an accepted config against the rules the specs state,
+// written from 02f, 02j, 02k and 05b rather than from validate.go, so the
+// check does not grade Parse by its own code. It asserts only what a spec
+// states: the specs set no rule for the listen.metrics address (02j's loopback
+// rule is listen.api only), for timing.* or rate_limits.* values, or for the
+// spelling of tls.agent_names, so stricter checks in validate.go go unchecked.
+func specRules(t *testing.T, c *config.Config) {
+	t.Helper()
+	if c.Mode != "local_trusted" { // 02k: authenticated is not built yet
+		t.Errorf("mode %q accepted; v1 builds only local_trusted", c.Mode)
+	}
+	if host, _, err := net.SplitHostPort(c.Listen.API); err != nil || (host != "127.0.0.1" && host != "::1") {
+		t.Errorf("listen.api %q accepted; 02f allows only 127.0.0.1 or ::1 in local_trusted", c.Listen.API)
+	}
+	notBuilt := map[string]bool{ // 02k "Refused at start with not built yet"
+		"listen.pprof":            c.Listen.Pprof != "",
+		"public_hosts":            len(c.PublicHosts) > 0,
+		"public_origins":          len(c.PublicOrigins) > 0,
+		"tls.api_cert_file":       c.TLS.APICertFile != "",
+		"tls.api_key_file":        c.TLS.APIKeyFile != "",
+		"tls.api_tailscale":       c.TLS.APITailscale,
+		"telemetry.otlp.endpoint": c.Telemetry.OTLP.Endpoint != "",
+	}
+	for key, set := range notBuilt {
+		if set {
+			t.Errorf("%s accepted; 02k refuses it as not built yet", key)
+		}
+	}
+	switch p := c.Telemetry.OTLP.Protocol; p { // 05b section 5
+	case "", "grpc", "http/protobuf":
+	default:
+		t.Errorf("telemetry.otlp.protocol %q accepted; 05b allows grpc or http/protobuf", p)
+	}
+	for _, s := range c.Telemetry.Signals {
+		if s != "traces" && s != "metrics" && s != "logs" {
+			t.Errorf("telemetry.signals entry %q accepted; 05b allows traces, metrics or logs", s)
+		}
+	}
 }
