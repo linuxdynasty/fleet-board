@@ -175,6 +175,12 @@ The gates job also fails first thing on a PR whose base is not `main`. After
 you change a PR's base, push again: changing the base starts no gates run, and
 rerunning the old run reuses the old base (a rerun replays the original event).
 
+`.github/workflows/macos.yml` runs `go test -race` on every package on a macOS
+runner on Sundays, on demand (`gh workflow run macos`), and on a PR that
+changes the file; the store's F_FULLFSYNC commits and the admin socket's
+LOCAL_PEERCRED check exist only there. It fails unless those macOS-only tests
+ran and passed (a skip fails). macOS minutes count ten times.
+
 The plan includes 2000 GitHub Actions minutes a month. Estimates, in minutes
 a month (typical / worst case):
 
@@ -184,7 +190,7 @@ a month (typical / worst case):
 | `pr-meta.yml` | every PR event, edits included | ~100 | ~100 | built (#107) |
 | `ci.yml` on `main` pushes | each merge (the full suite is planned) | ~175 | ~300 | built (#107); full suite planned (#107) |
 | nightly | daily, skipped when `main` did not move | ~390 | ~520 | planned (#107) |
-| macOS weekly | Sundays, and PRs that change it | ~260 | ~344 | planned (#107) |
+| macOS weekly | Sundays, on demand, and PRs that change it | ~260 | ~344 | built (#107) |
 | perf report | PRs whose changed packages hold a benchmark | ~48 | ~48 | planned (#107) |
 | **Total** | | **~1340** | **~1880** | |
 

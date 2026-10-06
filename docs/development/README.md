@@ -40,6 +40,8 @@ Makefile, tool-versions.env   make targets and the one file of pinned tool versi
                               make gates (agent-guide.md, "CI runs and the minutes budget")
 .github/workflows/pr-meta.yml the quick PR checks: the base is main, no AI attribution in the
                               title and body
+.github/workflows/macos.yml   weekly (and on demand) go test -race on macOS; fails unless the
+                              macOS-only store and admin-socket tests ran and passed
 scripts/check-pr-base.sh      fails unless a PR targets main (pr-meta.yml, and first in the ci.yml gates job)
 scripts/check-versions.sh     keeps the copies of a pin (.node-version, go.mod, buf.gen.yaml,
                               tools/tscheck) equal to tool-versions.env

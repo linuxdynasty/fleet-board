@@ -1,0 +1,72 @@
+# Weekly macOS run (#107). The hub and agent run on Macs, and some code only
+# exists there: F_FULLFSYNC commits in the store and LOCAL_PEERCRED for the
+# admin socket. The PR gates run on Linux, so this runs the whole Go suite with
+# -race on macOS once a week, on demand, and on a PR that changes this file.
+# macOS minutes count ten times against the Actions allowance, so it never runs
+# on every PR or main push (agent-guide.md, "CI runs and the minutes budget").
+name: macos
+
+on:
+  schedule:
+    - cron: "23 6 * * 0"
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/macos.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: macos-latest
+    timeout-minutes: 8
+    # shell: bash runs with -o pipefail, so go test failing before tee fails
+    # the step (the default shell for run is bash -e only).
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Go from go.mod
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      # make gen also writes gen/ts with protoc-gen-es, which runs on Node.
+      - name: Set up Node from .node-version
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+
+      - name: Generate Go and TypeScript (buf generate)
+        run: make gen
+
+      - name: go test -race on every package (macOS)
+        run: CGO_ENABLED=0 go test -race -shuffle=on -count=1 -v ./... 2>&1 | tee go-test.log
+
+      # A darwin-only test that is skipped, renamed or filtered out would leave
+      # the run green with the macOS code untested.
+      - name: The macOS-only tests ran and passed
+        run: |
+          status=0
+          for t in TestDurableCommitsUseFullFsyncOnDarwin \
+                   TestTheKernelReportsThePeerUserOfAUnixSocket \
+                   TestAMismatchedPeerIsClosedUnserved \
+                   TestAdminSocketPathLengthIsChecked; do
+            if grep -Eq -- "^[[:space:]]*--- PASS: $t \(" go-test.log; then
+              echo "ran and passed: $t"
+            else
+              echo "::error::$t did not run and pass on macOS"
+              status=1
+            fi
+          done
+          exit "$status"
