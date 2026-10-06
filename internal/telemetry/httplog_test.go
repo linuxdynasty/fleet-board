@@ -14,6 +14,7 @@ func TestHTTPErrorLogWritesOneEventWithAClosedKindAndNoText(t *testing.T) {
 		{"handshake", "http: TLS handshake error from 192.0.2.7:51234: tls: client offered only unsupported versions: [303]", "tls_handshake", "debug"},
 		{"other", "http2: server: error reading preface from client 192.0.2.7:51234: bogus greeting \"secret-ish\"", "other", "debug"},
 		{"panic", "http: panic serving 192.0.2.7:51234: secret-ish\ngoroutine 7 [running]:\nnet/http.(*conn).serve.func1()", "panic", "error"},
+		{"http2 panic", "http2: panic serving 192.0.2.7:51234: secret-ish\ngoroutine 9 [running]:\nnet/http/internal/http2.(*serverConn).runHandler.func1()", "panic", "error"},
 		{"peer bytes name a panic", "http2: server: error reading preface from client 192.0.2.7:51234: bogus greeting \"http: panic serving x\"", "other", "debug"},
 		{"peer bytes name a handshake error", "http2: server: error reading preface from client 192.0.2.7:51234: bogus greeting \"TLS handshake error\"", "other", "debug"},
 	}

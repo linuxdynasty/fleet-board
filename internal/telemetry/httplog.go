@@ -34,7 +34,7 @@ func (w httpErrorWriter) Write(p []byte) (int, error) {
 	// Match the start only: later in a line net/http may quote bytes the peer
 	// sent, so a peer could otherwise pick the kind and the level.
 	switch {
-	case bytes.HasPrefix(p, []byte("http: panic serving ")):
+	case bytes.HasPrefix(p, []byte("http: panic serving ")), bytes.HasPrefix(p, []byte("http2: panic serving ")):
 		w.t.Logger.Error("http.server_error", "listener", w.listener, "kind", string(HTTPErrorPanic))
 	case bytes.HasPrefix(p, []byte("http: TLS handshake error ")):
 		w.t.Logger.Debug("http.server_error", "listener", w.listener, "kind", string(HTTPErrorTLSHandshake))
