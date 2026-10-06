@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -36,24 +37,77 @@ func pragma(tx *sql.Tx, name string) (string, error) {
 	return v, err
 }
 
+// Every connection gets the pragmas whichever way the file is opened: by a
+// plain path, and with MustExist (a file: URI with mode=rw), including a path
+// that needs escaping.
 func TestEveryConnectionHasTheADR0014Pragmas(t *testing.T) {
 	t.Parallel()
-	h := newHarness(t)
-	s := h.open(t, h.options(itemsV1))
+	cases := []struct {
+		name      string
+		file      string
+		mustExist bool
+	}{
+		{"plain path", "state.db", false},
+		{"MustExist", "state.db", true},
+		{"MustExist, path with # % and spaces", "a #1 100% b/state.db", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			h := newHarness(t)
+			h.path = filepath.Join(filepath.Dir(h.path), tc.file)
+			if err := os.MkdirAll(filepath.Dir(h.path), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			opts := h.options(itemsV1)
+			if tc.mustExist {
+				if err := openClose(t, opts); err != nil {
+					t.Fatalf("create: %v", err)
+				}
+				opts.MustExist = true
+			}
+			assertPragmas(t, h.open(t, opts))
+		})
+	}
+}
+
+func assertPragmas(t *testing.T, s *store.Store) {
+	t.Helper()
 	ctx := context.Background()
 	for _, p := range wantPragmas {
-		t.Run(p.name, func(t *testing.T) {
-			var w, r string
-			if err := s.Write(ctx, func(tx *sql.Tx) (err error) { w, err = pragma(tx, p.name); return err }); err != nil {
-				t.Fatalf("writer: %v", err)
-			}
-			if err := s.Read(ctx, func(tx *sql.Tx) (err error) { r, err = pragma(tx, p.name); return err }); err != nil {
-				t.Fatalf("reader: %v", err)
-			}
-			if w != p.writer || r != p.reader {
-				t.Errorf("PRAGMA %s: writer %q reader %q, want %q and %q", p.name, w, r, p.writer, p.reader)
-			}
-		})
+		var w, r string
+		if err := s.Write(ctx, func(tx *sql.Tx) (err error) { w, err = pragma(tx, p.name); return err }); err != nil {
+			t.Fatalf("writer PRAGMA %s: %v", p.name, err)
+		}
+		if err := s.Read(ctx, func(tx *sql.Tx) (err error) { r, err = pragma(tx, p.name); return err }); err != nil {
+			t.Fatalf("reader PRAGMA %s: %v", p.name, err)
+		}
+		if w != p.writer || r != p.reader {
+			t.Errorf("PRAGMA %s: writer %q reader %q, want %q and %q", p.name, w, r, p.writer, p.reader)
+		}
+	}
+}
+
+// logs.db reopened with MustExist keeps auto_vacuum=INCREMENTAL (ADR 0015).
+func TestLogsDBReopenedWithMustExistKeepsIncrementalAutoVacuum(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "logs.db")
+	opts := store.Options{Path: path, Name: "logs", Migrations: []store.Migration{itemsV1}}
+	if err := openClose(t, opts); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	opts.MustExist = true
+	s, err := store.Open(context.Background(), opts)
+	if err != nil {
+		t.Fatalf("reopen with MustExist: %v", err)
+	}
+	defer func() { _ = s.Close() }()
+	var got string
+	if err := s.Write(context.Background(), func(tx *sql.Tx) (err error) { got, err = pragma(tx, "auto_vacuum"); return err }); err != nil {
+		t.Fatal(err)
+	}
+	if got != "2" {
+		t.Errorf("auto_vacuum = %s, want 2 (INCREMENTAL)", got)
 	}
 }
 
