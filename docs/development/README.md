@@ -65,8 +65,8 @@ scripts/test-plan-issues.py   self-test for plan-issues.py, no network; test-dev
 scripts/check-docs-stale.py   doc-staleness reminders (hook mode) and the blocking --ci check
                               (make docs-stale-ci); validates doc-paths.json (--check-map)
 scripts/check-doc-names.py    every backticked proto name in the docs is in api/fleet (make doc-names)
-scripts/gen-doc-tables.py     writes the spec tables (02k, 02d, 02i, 02) from the proto comment
-                              tags, between generated markers (--write; make doc-tables is --check)
+scripts/gen-doc-tables.py     writes the spec tables (02k, 02d, 02i, 02, 02l reason codes) from the
+                              proto comments, between generated markers (--write; make doc-tables is --check)
 scripts/report-capability-tests.py   v1 capabilities in 01 that no product test names (gate
                               self-tests do not count); a report until plan row 17
                               (make capability-tests)

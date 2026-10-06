@@ -1,0 +1,28 @@
+// Fixture reason codes for test-gen-doc-tables.py: the 02l ReasonCode table.
+syntax = "proto3";
+
+package fleet.type.v1;
+
+enum ReasonCode {
+  REASON_CODE_UNSPECIFIED = 0;
+
+  // Preflight (I1).
+
+  REASON_CODE_HARNESS_NOT_INSTALLED = 1; // No harness binary on PATH.
+  // The machine is at max_active or max_total by the hub's goal table.
+  REASON_CODE_SLOTS_FULL = 15;
+
+  // Hub API, carried in ErrorDetail.reason
+  // of an RPC error.
+
+  // Codes 500 to 532.
+
+  // expected_version did not match | the current version.
+  REASON_CODE_VERSION_MISMATCH = 500;
+
+  // Enroll errors.
+
+  // [CAP A1]
+  // The token is not one the hub issued.
+  REASON_CODE_ENROLL_TOKEN_UNKNOWN = 600;
+}
