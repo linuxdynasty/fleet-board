@@ -127,6 +127,8 @@ selftest: tools
 	scripts/test-changed-go-packages.sh
 	scripts/test-check-gofumpt.sh
 	scripts/test-pre-push.sh
+	scripts/test-pre-push-fetch.sh
+	scripts/test-check-pr-base.sh
 	scripts/test-verify-agent-canon.sh
 	scripts/test-smoke-binaries.sh
 	scripts/test-make-base-ref.sh
@@ -195,7 +197,8 @@ gates: tools
 	@$(BUF) --version | sed 's/^/buf /'
 	@echo "node $$(node -v)"
 	@$(GOFUMPT) --version | sed 's/^/gofumpt /'
-	@echo "== gates (base $$BASE_REF) =="
+	@sha="$$(git rev-parse --verify -q "$$BASE_REF^{commit}")" || sha="not a commit here, so make test and make lint use every package"; \
+	echo "== gates (base $$BASE_REF at $$sha) =="
 	scripts/check-versions.sh
 	$(MAKE) gen
 	$(MAKE) proto-check

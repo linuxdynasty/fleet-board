@@ -1,34 +1,45 @@
 # CI for fleet-board (plan row 1). It runs the same targets as `make gates`, one
 # step each, so a failure names its gate. Every tool version comes from
 # tool-versions.env (never spelled out here; scripts/check-versions.sh fails if
-# one is). Text that an author controls (the PR title and body, the base branch
-# name) reaches a script only through env vars, never through ${{ }} inside the
-# script text; the Makefile reads BASE_REF quoted from the environment
+# one is). Text that an author controls (here, the base branch name) reaches a
+# script only through env vars, never through ${{ }} inside the script text; the
+# Makefile reads BASE_REF quoted from the environment
 # (scripts/test-make-base-ref.sh proves a hostile value runs nothing).
+#
+# One run per change (#107): pull requests, and pushes to main after a merge. A
+# branch push runs nothing here; its PR does. Editing a PR (title, body or base)
+# starts no run here; pr-meta.yml reruns its quick checks on every edit. The
+# gates job fails first thing on a PR whose base is not main.
 name: ci
 
 on:
   pull_request:
-    # edited: the PR title and body are checked for AI attribution too.
-    types: [opened, synchronize, reopened, edited]
+    types: [opened, synchronize, reopened]
   push:
-    branches-ignore: [main]
+    branches: [main]
 
 permissions:
   contents: read
 
+# A newer push to a PR cancels its older run. Each push to main gets a group of
+# its own (its commit SHA), so every merge gets its own full run and none is
+# cancelled or dropped from the queue.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.workflow }}-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   gates:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      # Changed packages are measured against the PR's base; a push to a branch
-      # is measured against main.
-      BASE_REF: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || 'origin/main' }}
+      # A PR is measured against its base. A push to main is measured against
+      # the commit main was at before the push (github.event.before), so make
+      # test and make lint cover what the merge changed. When that is the
+      # all-zero SHA (main was just created) or a commit this clone lacks (a
+      # force push), or it is missing, it names no commit, and
+      # changed-go-packages.sh then tests every package: the safe choice.
+      BASE_REF: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || github.event.before || '0000000000000000000000000000000000000000' }}
     steps:
       - name: Check out (full history, for the merge base)
         uses: actions/checkout@v7
@@ -37,10 +48,29 @@ jobs:
           # Nothing after checkout pushes; do not leave the token in .git/config.
           persist-credentials: false
 
+      # Before any setup, so a wrong base fails in seconds. Changing the base
+      # starts no run here, and a rerun of this job reuses the original event
+      # data (github.base_ref included): the fix is to retarget, then push.
+      - name: The pull request targets main
+        if: github.event_name == 'pull_request'
+        env:
+          PR_BASE_REF: ${{ github.base_ref }}
+        run: scripts/check-pr-base.sh
+
       - name: Set up Go from go.mod
+        id: setup-go
         uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
+
+      # The pinned linters in .bin/ take minutes to build. The key changes with
+      # any pin or the Go version; the stamp files make tools checks still
+      # rebuild a tool whose version or Go does not match.
+      - name: Restore the pinned linters (.bin/)
+        uses: actions/cache@v6
+        with:
+          path: .bin
+          key: bin-${{ runner.os }}-${{ hashFiles('tool-versions.env') }}-go${{ steps.setup-go.outputs.go-version }}
 
       - name: Set up Node from .node-version
         uses: actions/setup-node@v7
@@ -124,6 +154,10 @@ jobs:
       - name: Agent roles are rendered
         run: python3 scripts/agent-roles.py --check
 
+      # A push to main checks the commits the push added (before..HEAD). When
+      # BASE_REF names no commit here (see the job env) it checks the one
+      # commit at HEAD, never the whole history: older history keeps its
+      # trailers.
       - name: No AI attribution in this change's commits
         env:
           EVENT_NAME: ${{ github.event_name }}
@@ -132,17 +166,13 @@ jobs:
         run: |
           if [ "$EVENT_NAME" = "pull_request" ]; then
             range="$PR_BASE_SHA..$PR_HEAD_SHA"
-          else
+          elif git rev-parse --verify -q "$BASE_REF^{commit}" > /dev/null; then
             range="$BASE_REF..HEAD"
+          else
+            echo "attribution: $BASE_REF is not a commit in this clone; checking HEAD~1..HEAD only."
+            range="HEAD~1..HEAD"
           fi
           python3 scripts/check-attribution.py --range "$range"
-
-      - name: No AI attribution in the PR title and body
-        if: github.event_name == 'pull_request'
-        env:
-          PR_TITLE: ${{ github.event.pull_request.title }}
-          PR_BODY: ${{ github.event.pull_request.body }}
-        run: printf '%s\n%s\n' "$PR_TITLE" "$PR_BODY" | python3 scripts/check-attribution.py --stdin
 
       - name: Gate scripts still fail on seeded violations (self-tests)
         run: make selftest
@@ -152,16 +182,12 @@ jobs:
 
       # Plan row 1b: a mapped code change changes its spec or a commit says
       # No-Doc-Change: <reason>. Same range as the attribution step; make
-      # docs-stale-ci runs the same check with BASE_REF..HEAD.
+      # docs-stale-ci runs the same check with BASE_REF..HEAD. Pull requests
+      # only: the PR already gated it, and on a push to main a No-Doc-Change
+      # trailer can be lost when the squash-merge message is edited.
       - name: Docs move with the code (doc-paths.json, package docs)
+        if: github.event_name == 'pull_request'
         env:
-          EVENT_NAME: ${{ github.event_name }}
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: |
-          if [ "$EVENT_NAME" = "pull_request" ]; then
-            range="$PR_BASE_SHA..$PR_HEAD_SHA"
-          else
-            range="$BASE_REF..HEAD"
-          fi
-          python3 scripts/check-docs-stale.py --ci --range "$range"
+        run: python3 scripts/check-docs-stale.py --ci --range "$PR_BASE_SHA..$PR_HEAD_SHA"

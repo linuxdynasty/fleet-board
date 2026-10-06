@@ -1,0 +1,40 @@
+# pr-meta: the quick checks of a pull request's own fields (#107). It reruns on
+# every edit of the title, body or base, so it stays small: no Go, no Node, only
+# a checkout and python3 from the runner. The gates themselves are in ci.yml.
+#
+# The base branch name, title and body are author-controlled text. They reach
+# the scripts only through env vars, never through ${{ }} inside the script text.
+name: pr-meta
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-meta-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pr-meta:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out (the scripts only)
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: The pull request targets main
+        env:
+          PR_BASE_REF: ${{ github.base_ref }}
+        run: scripts/check-pr-base.sh
+
+      - name: No AI attribution in the PR title and body
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: printf '%s\n%s\n' "$PR_TITLE" "$PR_BODY" | python3 scripts/check-attribution.py --stdin
