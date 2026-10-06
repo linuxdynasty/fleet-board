@@ -16,6 +16,9 @@ defer l.Release()
   on SIGKILL, so a leftover file never blocks a start.
 - `flock` locks belong to one open of the file, so a second `Acquire` in the
   same process is refused too.
+- `Release` unlocks (`LOCK_UN`) before it closes. A child that another
+  goroutine forked shares the open file until it starts its program, so a
+  close alone could leave the lock held for that moment.
 
 Tests: `CGO_ENABLED=0 go test ./internal/hub/lock/`.
 `TestAnotherProcessHoldsTheLockUntilItDies` runs a child process that holds

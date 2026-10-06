@@ -62,9 +62,12 @@ func (l *Lock) Release() error {
 	if l.f == nil {
 		return nil
 	}
-	err := l.f.Close() // closing the only descriptor releases the flock
+	// A child forked by any goroutine shares the open file until it execs, so
+	// closing alone can leave the flock held; LOCK_UN frees it for every copy.
+	unlockErr := syscall.Flock(int(l.f.Fd()), syscall.LOCK_UN)
+	closeErr := l.f.Close()
 	l.f = nil
-	if err != nil {
+	if err := errors.Join(unlockErr, closeErr); err != nil {
 		return fmt.Errorf("lock: release: %w", err)
 	}
 	return nil
