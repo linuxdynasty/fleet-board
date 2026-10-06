@@ -20,6 +20,11 @@ import (
 
 var t0 = time.Date(2026, 10, 5, 12, 0, 0, 0, time.UTC)
 
+// wallNow is the one clock the listener tests read: the certificates' issue
+// time and both TLS peers' verification time. Nothing in them calls time.Now
+// directly, so the handshake tests hold on any date, not only near t0.
+var wallNow = time.Now
+
 var defaultNames = []string{"fleet-test-host", "fleet-test-host.local", "localhost", "127.0.0.1", "::1"}
 
 // clock is a settable fake "now".
@@ -57,18 +62,21 @@ type fixture struct {
 
 // newFixture creates a real state.db with a CA and a server certificate
 // issued at t0 for defaultNames, and opens it.
-func newFixture(t *testing.T) *fixture {
+func newFixture(t *testing.T) *fixture { t.Helper(); return newFixtureAt(t, t0) }
+
+// newFixtureAt is newFixture with the CA and server certificate issued at at.
+func newFixtureAt(t *testing.T, at time.Time) *fixture {
 	t.Helper()
 	ctx := context.Background()
 	dir := filepath.Join(t.TempDir(), "state")
 	if err := statedb.EnsureDir(dir); err != nil {
 		t.Fatal(err)
 	}
-	auth, err := ca.New(t0, rand.Reader)
+	auth, err := ca.New(at, rand.Reader)
 	if err != nil {
 		t.Fatal(err)
 	}
-	sc, err := auth.IssueServer(defaultNames, t0, rand.Reader)
+	sc, err := auth.IssueServer(defaultNames, at, rand.Reader)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,7 +87,7 @@ func newFixture(t *testing.T) *fixture {
 	id := statedb.Identity{
 		FleetID: "fleet-1", CACert: auth.Cert.Raw, CAKey: keyDER,
 		ServerCert: sc.CertDER, ServerKey: sc.KeyDER, ServerNames: sc.Names,
-		AccountSalt: bytes.Repeat([]byte{1}, 32), SaltVersion: 1, SettingsEpoch: "epoch-1", CreatedTime: t0,
+		AccountSalt: bytes.Repeat([]byte{1}, 32), SaltVersion: 1, SettingsEpoch: "epoch-1", CreatedTime: at,
 	}
 	if err := statedb.Create(ctx, dir, id, statedb.CreateOptions{}); err != nil {
 		t.Fatal(err)

@@ -26,12 +26,17 @@ import (
 	"github.com/linuxdynasty/fleet-board/internal/hub/gateway"
 )
 
-// serve starts the agent listener on 127.0.0.1 with real time and returns
-// its address.
+// listenerFixture is a fixture whose certificates are issued at wallNow, so
+// the handshake tests do not expire 90 days after t0.
+func listenerFixture(t *testing.T) *fixture { t.Helper(); return newFixtureAt(t, wallNow()) }
+
+// serve starts the agent listener on 127.0.0.1 and returns its address. The
+// server checks client certificates against wallNow too.
 func serve(t *testing.T, f *fixture) string {
 	t.Helper()
-	c := f.certs(t, defaultNames, time.Now)
+	c := f.certs(t, defaultNames, wallNow)
 	srv := gateway.NewServer(c)
+	srv.TLSConfig.Time = wallNow
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -42,12 +47,12 @@ func serve(t *testing.T, f *fixture) string {
 }
 
 func clientTLS(f *fixture, serverName string) *tls.Config {
-	return &tls.Config{RootCAs: f.auth.Pool(), ServerName: serverName, MinVersion: tls.VersionTLS12}
+	return &tls.Config{RootCAs: f.auth.Pool(), ServerName: serverName, MinVersion: tls.VersionTLS12, Time: wallNow}
 }
 
 func TestTheListenerServesTLS13WithTheStoredCertificate(t *testing.T) {
 	t.Parallel()
-	f := newFixture(t)
+	f := listenerFixture(t)
 	addr := serve(t, f)
 	conn, err := tls.Dial("tcp", addr, clientTLS(f, "127.0.0.1"))
 	if err != nil {
@@ -65,13 +70,16 @@ func TestTheListenerServesTLS13WithTheStoredCertificate(t *testing.T) {
 
 func TestATLS12OnlyClientIsRefused(t *testing.T) {
 	t.Parallel()
-	f := newFixture(t)
+	f := listenerFixture(t)
 	cfg := clientTLS(f, "127.0.0.1")
 	cfg.MaxVersion = tls.VersionTLS12
 	conn, err := tls.Dial("tcp", serve(t, f), cfg)
 	if err == nil {
 		_ = conn.Close()
 		t.Fatal("a TLS 1.2 client completed a handshake")
+	}
+	if !strings.Contains(err.Error(), "protocol version") {
+		t.Errorf("refused for %q, want the server's protocol version alert", err)
 	}
 }
 
@@ -84,7 +92,7 @@ func clientCert(t *testing.T, signer *ca.Authority) tls.Certificate {
 	}
 	tmpl := &x509.Certificate{
 		SerialNumber: big.NewInt(7), Subject: pkix.Name{CommonName: "m-1"},
-		NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(time.Hour),
+		NotBefore: wallNow().Add(-time.Hour), NotAfter: wallNow().Add(time.Hour),
 		KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
 	}
 	der, err := x509.CreateCertificate(rand.Reader, tmpl, signer.Cert, pub, signer.Key)
@@ -97,9 +105,9 @@ func clientCert(t *testing.T, signer *ca.Authority) tls.Certificate {
 // No client certificate is fine (Enroll); one must be signed by the hub CA.
 func TestClientCertificatesAreOptionalButMustBeTheHubCAs(t *testing.T) {
 	t.Parallel()
-	f := newFixture(t)
+	f := listenerFixture(t)
 	addr := serve(t, f)
-	foreign, err := ca.New(time.Now(), rand.Reader)
+	foreign, err := ca.New(wallNow(), rand.Reader)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -133,13 +141,16 @@ func TestClientCertificatesAreOptionalButMustBeTheHubCAs(t *testing.T) {
 			if !tc.ok && err == nil {
 				t.Error("a client certificate from another CA was accepted")
 			}
+			if !tc.ok && err != nil && !strings.Contains(err.Error(), "remote error") {
+				t.Errorf("refused for %q, want the server to refuse the client certificate", err)
+			}
 		})
 	}
 }
 
 func TestEveryAgentServiceMethodIsUnimplemented(t *testing.T) {
 	t.Parallel()
-	f := newFixture(t)
+	f := listenerFixture(t)
 	addr := serve(t, f)
 	httpClient := &http.Client{Transport: &http.Transport{TLSClientConfig: clientTLS(f, "localhost"), ForceAttemptHTTP2: true}}
 	defer httpClient.CloseIdleConnections()
