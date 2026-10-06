@@ -13,6 +13,8 @@
 #                   (default origin/main): go test -shuffle=on -count=TEST_COUNT
 #                   (default 3), then go test -race -shuffle=on -count=1
 #   make lint       golangci-lint on the same packages
+#   make fuzz       each fuzz target for FUZZTIME (default 60s); their seeds
+#                   already run in make test
 #   make fmt        gofumpt -l -w on every Go file (fmt-check only checks)
 #   make gates      everything a push needs, one command (prints tool versions)
 #   make hooks      turn on the pre-push guard (.githooks/pre-push)
@@ -23,6 +25,10 @@ include tool-versions.env
 # value with a space or a `;` is an unknown ref, never shell text.
 BASE_REF ?= origin/main
 export BASE_REF
+
+# FUZZTIME is data the same way: a go test -fuzztime value, read quoted.
+FUZZTIME ?= 60s
+export FUZZTIME
 
 BIN := $(CURDIR)/.bin
 GOLANGCI_LINT := $(BIN)/golangci-lint
@@ -35,7 +41,7 @@ ACTIONLINT := go run github.com/rhysd/actionlint/cmd/actionlint@$(ACTIONLINT_VER
 RACE_CGO := $(if $(filter Darwin,$(shell uname -s)),0,1)
 
 .PHONY: tools versions gen build smoke proto-check ts-check mod-check fmt fmt-check
-.PHONY: vet test lint actionlint selftest diff-check doc-names doc-tables telemetry-names capability-tests
+.PHONY: vet test fuzz lint actionlint selftest diff-check doc-names doc-tables telemetry-names capability-tests
 .PHONY: docs-stale docs-stale-ci gates hooks
 
 # tools builds the pinned linters into .bin/. A stamp file per tool names the
@@ -122,6 +128,14 @@ test: vet
 	echo "make test: $$pkgs"; \
 	CGO_ENABLED=0 go test -shuffle=on -count="$$TEST_COUNT" $$pkgs && \
 	CGO_ENABLED=$(RACE_CGO) go test -race -shuffle=on -count=1 $$pkgs
+
+# fuzz runs one go test per fuzz target, since -fuzz takes a single target; a
+# crash fails the run and leaves its input in the package's testdata/fuzz/.
+# Workers minimize each new input (up to 60 s) before they fuzz on, so from an
+# empty fuzz cache ($(go env GOCACHE)/fuzz) a short run fuzzes for part of it.
+fuzz:
+	CGO_ENABLED=0 go test -run='^$$' -fuzz='^FuzzParse$$' -fuzztime="$$FUZZTIME" ./internal/hub/config/
+	CGO_ENABLED=0 go test -run='^$$' -fuzz='^FuzzCheckEnrollRequest$$' -fuzztime="$$FUZZTIME" ./internal/hub/api/
 
 lint: tools
 	@pkgs="$$(scripts/changed-go-packages.sh "$$BASE_REF")" || exit 1; \
