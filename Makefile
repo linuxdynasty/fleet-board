@@ -34,7 +34,7 @@ ACTIONLINT := go run github.com/rhysd/actionlint/cmd/actionlint@$(ACTIONLINT_VER
 RACE_CGO := $(if $(filter Darwin,$(shell uname -s)),0,1)
 
 .PHONY: tools versions gen build smoke proto-check ts-check mod-check fmt fmt-check
-.PHONY: vet test lint actionlint selftest diff-check doc-names doc-tables capability-tests
+.PHONY: vet test lint actionlint selftest diff-check doc-names doc-tables telemetry-names capability-tests
 .PHONY: docs-stale docs-stale-ci gates hooks
 
 # tools builds the pinned linters into .bin/. A stamp file per tool names the
@@ -171,6 +171,15 @@ doc-names:
 doc-tables:
 	FLEET_PROTO_IMAGE= python3 scripts/gen-doc-tables.py --check
 
+# telemetry-names fails when a log event or metric name in the Go code is not
+# in the one spec .agents/telemetry-docs.json maps its area to, or is not a
+# static string (tools/telemetrynames). Spec names with no code are a report
+# until plan row 17. The tool is built, not `go run`, which turns its exit 2
+# (bad input) into 1.
+telemetry-names:
+	CGO_ENABLED=0 go build -o $(BIN)/telemetrynames ./tools/telemetrynames
+	$(BIN)/telemetrynames
+
 # capability-tests lists the v1 capabilities in 01 that no product test names
 # (a Go test outside scripts/ and testdata/, or a web test; gate self-tests do
 # not count). It is a report until plan row 17: findings exit 0, a broken input
@@ -204,6 +213,7 @@ gates: tools
 	$(MAKE) proto-check
 	$(MAKE) doc-names
 	$(MAKE) doc-tables
+	$(MAKE) telemetry-names
 	$(MAKE) capability-tests
 	$(MAKE) build
 	$(MAKE) smoke

@@ -70,6 +70,21 @@ writes `agent.log` in its state directory, size-rotated (10 MiB, 3 files).
 A line that would need user text (a prompt, a screen, a goal line) is a line
 that carries only the id and the length instead.
 
+The workflow events are in each workflow's Telemetry section (03 to 03j); the
+failure events are in section 10. The platform's own lifecycle events:
+
+| Event | Level, fields | When |
+|---|---|---|
+| `hub.leftovers_removed` | info; `command`, `files` | `fleetd init` or `run` removed a crashed init's temporary files |
+| `hub.initialized` | info; `server_names`, `config_written` | `fleetd init` created the store |
+| `hub.listener_opened` | info; `listener`, `port` (the admin socket has none) | `fleetd run` opened a listener |
+| `hub.started` | info; `mode`, `listeners` | `fleetd run` is serving |
+| `hub.listener_failed` | error; `err_kind` | a listener stopped with an error |
+| `hub.stopped` | info | `fleetd run` shut down |
+| `store.opened`, `store.closed` | info; `schema_version` when opened | a database (`state.db`, `logs.db`, `agent.db`) opened or closed |
+| `store.migrated` | info; `schema_version` | one migration was applied |
+| `store.batch_failed` | error; `jobs`, `err_kind`, `sqlite_code` (SQLite's numeric result code) | a writer batch's transaction failed; never a path or SQL text |
+
 ## 3. Metrics
 
 **Naming** is the existing rule (03, conventions): `fleet_hub_*` and

@@ -89,6 +89,7 @@ The `Makefile` is the one entry point; CI runs the same targets, one per step
 | `diff-check` | `git diff --check` against the merge base, and a refusal of any file named like a git ref (`HEAD`, `main`, ...) |
 | `doc-names` | every backticked proto name in the checked docs is in `api/fleet` (hooks.md, "Doc staleness and the folder map") |
 | `doc-tables` | the generated spec tables match the proto comment tags, and every tag follows 02e, "Comment tags" |
+| `telemetry-names` | every log event and metric name in non-test Go code is a static string listed in the one spec `.agents/telemetry-docs.json` maps its area to (`tools/telemetrynames`); spec names with no code are a report until plan row 17 |
 | `capability-tests` | lists the v1 capabilities no product test (Go outside `scripts/` and `testdata/`, or web) names; a report (exit 0) until plan row 17 |
 | `docs-stale-ci`, `docs-stale` | a change in `BASE_REF..HEAD` to a mapped folder changes one of its specs or a commit carries `No-Doc-Change: <reason>`, and changed Go packages have their three docs; `docs-stale` only prints the hook reminders |
 | `gates` | all of the above (not `docs-stale`) plus the file cap, agent canon and roles check; prints the tool versions it used first |

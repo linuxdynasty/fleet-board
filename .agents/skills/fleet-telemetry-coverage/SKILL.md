@@ -67,6 +67,9 @@ created, not by the exporter ([fleet-security](../fleet-security/SKILL.md)).
   the failure branch. A test that calls the instrument directly proves nothing.
 - Run the changed package tests and report the exit code.
 - Update the "Telemetry" list in the spec whenever the implemented signals
-  differ from it, in the same PR.
+  differ from it, in the same PR. `make telemetry-names` (in `make gates` and
+  CI) fails when a log event or metric name in code is not a static string or
+  is missing from the one spec `.agents/telemetry-docs.json` maps its area or
+  tail prefix to; a new area needs its line there.
 - A static check cannot prove a signal fires at runtime; say what was
   observed (test output, a local `fleetd` run) and what was not.
