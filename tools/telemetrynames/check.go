@@ -34,7 +34,7 @@ func Check(root string, cfg Config) (Report, error) {
 	}
 	specs := map[string]string{}
 	for _, s := range cfg.specs() {
-		data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(s)))
+		data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(s))) //nolint:gosec // G304: s is a spec path the config check kept under docs/specs/ in this repo
 		if err != nil {
 			return Report{}, fmt.Errorf("read spec: %w", err)
 		}
