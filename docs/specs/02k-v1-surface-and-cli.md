@@ -23,6 +23,12 @@ it belongs and a reader can tell "not built yet" from "forgotten".
   with `INVALID_ARGUMENT` and the topic named. It is never silently empty.
 - `GetServerInfoResponse.features` lists exactly what is served (`attach`, `routines`,
   `devices`, `watch.pane_summaries`, and so on). Clients hide what is not listed.
+- A `fleetd.yaml` key whose feature has not landed is refused at start with "not
+  built yet", never accepted and ignored: `mode: authenticated` (v3) and
+  `listen.pprof` until their plan rows land, and with them the authenticated-mode
+  keys `public_hosts`, `public_origins`, `tls.api_cert_file`, `tls.api_key_file`,
+  `tls.api_tailscale`, plus `telemetry.otlp.endpoint` until OTLP export lands
+  ([02j](02j-hub-runtime.md#configuration-file)).
 - Sign-in and device RPCs in `local_trusted` stay `FAILED_PRECONDITION`
   ([02f](02f-hub-authentication.md#modes)); that is a mode rule, not a release rule.
 

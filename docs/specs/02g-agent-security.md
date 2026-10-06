@@ -96,13 +96,16 @@ handshake through `Bye` (`ByeReason`), not through a missing message:
 ## Hub identity and restore
 
 Everything that makes a hub *this* fleet's hub lives in one `hub_identity` row
-inside `state.db` (03f), so one backup carries it and one restore restores it:
+inside `state.db` (03f), so one backup carries it and one restore restores it.
+`fleetd init` writes the whole row in the same step that creates `state.db`
+([02j](02j-hub-runtime.md#commands)), so a store never exists without it, and
+keys and certificates are never kept in separate files:
 
 | Item | Rule |
 |---|---|
-| `fleet_id` | Minted once when the store is created. Never regenerated, never changed by restore. A new store is a new fleet and every agent must re-enroll |
-| CA certificate and **private key** | Created with the store. The key signs agent certificates and the hub's server certificate. Rotating it cuts every agent off at once (ADR 0004) |
-| Server certificate and SAN list | Signed by the CA for the configured hub addresses, the hostname and loopback. Re-issued (CA unchanged) when the address list changes |
+| `fleet_id` | Minted once when the store is created (`fleetd init`). Never regenerated, never changed by restore. A new store is a new fleet and every agent must re-enroll |
+| CA certificate and **private key** | Created with the store; an Ed25519 key, the certificate valid 10 years (defaults.md). The key signs agent certificates and the hub's server certificate. Rotating it cuts every agent off at once (ADR 0004) |
+| Server certificate and SAN list | An Ed25519 key, signed by the CA for `tls.agent_names` (default: the hostname without `.local`, `<hostname>.local`, `localhost`, `127.0.0.1`, `::1`) and the configured hub addresses. Valid 90 days and never past the CA. Re-issued (CA unchanged, one store transaction, served from the next handshake without a restart) at two thirds of its life, checked at start and hourly, and when the name list changes |
 | `account_salt`, `salt_version` | Minted once. Losing it would make machines enrolled afterwards compute different `AccountKey`s for the same login and silently split accounts, so a store without it refuses to start rather than mint a new one |
 | `settings_epoch` | Incarnation id of the settings store; see restore |
 | `hub_addresses` | What the owner configured; sent in `EnrollResponse` and, newer, in `HelloAck.hub_addresses` |

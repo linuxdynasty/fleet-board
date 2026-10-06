@@ -86,6 +86,13 @@ rate_limits: {read: 600, write: 120, unauthenticated: 30, metrics: 60}   # per m
 telemetry: {}                  # the keys of 05b section 5
 ```
 
+The file is read strictly: an unknown key, a second YAML document or a value of
+the wrong type refuses the start, naming the key, and so does a key whose
+feature this build does not have yet ([02k](02k-v1-surface-and-cli.md)). Keys not
+written keep the defaults above. Durations are strings (`10m`, `90s`). `state_dir`
+is refused when `<state_dir>/admin.sock` would not fit in a Unix socket path (104
+bytes on darwin, 108 on Linux).
+
 Secrets are named by path, never inlined. `timing.*` are constants no proto
 carries; [defaults.md](defaults.md) lists their defaults and what else is
 tunable. The `github` section creates the `Integration` row at start (the API
@@ -94,10 +101,14 @@ projects).
 
 ## State directory
 
-`~/.local/state/fleetd/` (`state_dir`), owned by the user that runs `fleetd`:
+`~/.local/state/fleetd/` (`state_dir`), owned by the user that runs `fleetd`,
+mode 0700. `state.db` is mode 0600. `fleetd run` refuses to start when the folder
+or `state.db` is not owned by that user or is open to the group or others, like
+ssh with a loose key; it never changes a mode itself.
 
 | Path | What |
 |---|---|
+| `fleetd.lock` | an exclusive lock (`flock`) that `fleetd init` and `fleetd run` take before they open `state.db`, so a second `fleetd` on the same folder exits at once (#92). The kernel drops it when the process dies, so a killed hub never blocks the next start |
 | `state.db`, `-wal`, `-shm` | the hub store, including `hub_identity` (CA key, account salt; [02g](02g-agent-security.md)) |
 | `logs.db` | the log store (ADR 0015) |
 | `revoked-serials` | the revocation list, kept outside `state.db` so a restore re-applies it (02g) |
@@ -110,9 +121,9 @@ The agent's directory is `~/.local/state/fleet-agent/` ([04](04-technology-revie
 
 | Command | Does |
 |---|---|
-| `fleetd run` | starts the hub (launchd or `systemd --user` runs this; see [staying awake](#staying-awake-and-surviving-logout)) |
+| `fleetd run` | starts the hub (launchd or `systemd --user` runs this; see [staying awake](#staying-awake-and-surviving-logout)). It refuses to start when `state.db` is missing (it never creates one), when `state.db` has no `hub_identity` row (it never mints one), or while another `fleetd` holds `fleetd.lock`. SIGTERM stops it cleanly |
 | `fleetd upgrade` | fetches the next GitHub release, verifies its checksum and swaps the binary ([install and upgrade](#install-and-upgrade)) |
-| `fleetd init` | writes the default configuration file and the state directory |
+| `fleetd init` | writes the default configuration file (when missing), the state directory, and `state.db` with its whole `hub_identity` row in one atomic step: the store is built in a temporary file in the folder and linked into place, so `state.db` never exists without the row. On an existing `state.db` it exits non-zero and changes nothing; there is no `--force` |
 | `fleetd setup github` | writes the App manifest and the `github` keys ([ADR 0022](../adr/0022-drift-audit-decisions.md)) |
 | `fleetd enroll-token`, `claim`, `token create`, `user invite` | admin actions over `admin.sock` ([02f](02f-hub-authentication.md)) |
 | `fleetd backup`, `restore`, `debug agent-stream`, `insights rebuild` | local, never RPCs ([02m](02m-hub-api-actions-and-audit.md#local-commands)) |
