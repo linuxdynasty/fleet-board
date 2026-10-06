@@ -277,9 +277,20 @@ leaked token. The CLI keeps it in `FLEET_TOKEN` or `~/.config/fleet/token`
 token needs a session, `fleetd token create` does the same on the hub host. It
 talks to the running hub through a local admin socket (mode 0600, owned by the
 `fleetd` OS user, so nobody else can open it and it needs no network and no
-password). The token acts for a named owner (`--user`, default the sole active
-owner), its scopes are capped to that owner's, and the audit actor is
-`Principal{LOCAL_USER, local:<os user>}` with `on_behalf_of` the owner.
+password). The mode is not the only guard: on every connection the hub asks the
+kernel for the peer's user id (`SO_PEERCRED` on Linux, `LOCAL_PEERCRED` on
+macOS) and closes, unserved, any connection whose user is not `fleetd`'s,
+logging `admin.peer_refused` and counting
+`fleet_hub_auth_failures_total{reason="peer_uid"}`. That kernel user id is the
+caller: `Principal{LOCAL_USER, local:<os user>}` (`local:uid-<n>` when the name
+cannot be looked up). A request that carries any `Origin` header is refused
+with 403 `ORIGIN_NOT_ALLOWED`, since a browser has no business on the socket.
+The API token from `fleetd token create` acts for a named owner (`--user`,
+default the sole active owner), its scopes are capped to that owner's, and the
+audit actor is `Principal{LOCAL_USER, local:<os user>}` with `on_behalf_of` the
+owner. `fleetd enroll-token` uses the same socket (plan row 2b); it has no
+`--user` and no `on_behalf_of` (the caller is the local user itself), and it
+writes no audit row yet (#104).
 **Break-glass:** if the last owner loses every passkey and GitHub link,
 `fleetd user invite --owner` (same socket) creates a new one-time owner invite
 and prints it like the claim URL, audited as `auth.claim`; `fleetd claim` itself

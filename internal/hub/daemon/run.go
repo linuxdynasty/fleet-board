@@ -78,7 +78,7 @@ func Run(ctx context.Context, opts Options) (err error) {
 	if err != nil {
 		return s.fail(ReasonCert, err)
 	}
-	return serve(ctx, cfg, opts, certs, s)
+	return serve(ctx, cfg, opts, certs, st, id, s)
 }
 
 func newCerts(ctx context.Context, cfg *config.Config, opts Options, st *store.Store, id statedb.Identity, s *session) (*gateway.Certs, error) {
@@ -120,12 +120,28 @@ type listener struct {
 }
 
 // serve binds every listener, serves until ctx ends or one fails, then shuts
-// them all down and waits for every goroutine it started.
-func serve(ctx context.Context, cfg *config.Config, opts Options, certs *gateway.Certs, s *session) error {
+// them all down (which removes admin.sock) and waits for every goroutine it
+// started.
+func serve(ctx context.Context, cfg *config.Config, opts Options, certs *gateway.Certs, st *store.Store,
+	id statedb.Identity, s *session,
+) error {
 	ls, err := bind(cfg, certs, s)
 	if err != nil {
 		return s.fail(ReasonListen, err)
 	}
+	addrs := Addrs{Agent: ls[0].ln.Addr(), API: ls[1].ln.Addr()}
+	if len(ls) > 2 {
+		addrs.Metrics = ls[2].ln.Addr()
+	}
+	admin, err := bindAdmin(cfg, opts, st, id, s)
+	if err != nil {
+		for _, l := range ls {
+			_ = l.ln.Close() // the bind error is the one to report
+		}
+		return s.fail(ReasonListen, err)
+	}
+	ls = append(ls, admin)
+	addrs.Admin = admin.ln.Addr()
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	var wg sync.WaitGroup
@@ -154,10 +170,6 @@ func serve(ctx context.Context, cfg *config.Config, opts Options, certs *gateway
 	wg.Add(1)
 	go func() { defer wg.Done(); certs.Run(ctx, ticks) }()
 
-	addrs := Addrs{Agent: ls[0].ln.Addr(), API: ls[1].ln.Addr()}
-	if len(ls) > 2 {
-		addrs.Metrics = ls[2].ln.Addr()
-	}
 	s.tel.Logger.Info("hub.started", "mode", cfg.Mode, "listeners", len(ls))
 	if opts.Ready != nil {
 		opts.Ready(addrs)

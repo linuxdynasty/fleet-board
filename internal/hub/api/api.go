@@ -1,7 +1,6 @@
 package api
 
 import (
-	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -72,11 +71,11 @@ type guard struct {
 
 func (g *guard) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if !g.hosts[strings.ToLower(r.Host)] {
-		g.refuse(w, r, telemetry.ReasonHost, typev1.ReasonCode_REASON_CODE_HOST_NOT_ALLOWED, "Host not allowed")
+		refuse(w, r, g.tel, g.errors, telemetry.ReasonHost, typev1.ReasonCode_REASON_CODE_HOST_NOT_ALLOWED, "Host not allowed")
 		return
 	}
 	if values, sent := r.Header["Origin"]; sent && (len(values) != 1 || !g.origins[strings.ToLower(values[0])]) {
-		g.refuse(w, r, telemetry.ReasonOrigin, typev1.ReasonCode_REASON_CODE_ORIGIN_NOT_ALLOWED, "Origin not allowed")
+		refuse(w, r, g.tel, g.errors, telemetry.ReasonOrigin, typev1.ReasonCode_REASON_CODE_ORIGIN_NOT_ALLOWED, "Origin not allowed")
 		return
 	}
 	g.next.ServeHTTP(w, r)
@@ -84,11 +83,9 @@ func (g *guard) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // refuse writes the 02f refusal: a Connect permission_denied error (HTTP 403)
 // whose ErrorDetail names the reason, and counts it.
-func (g *guard) refuse(w http.ResponseWriter, r *http.Request, why telemetry.AuthReason, code typev1.ReasonCode, msg string) {
-	g.tel.CountAuthFailure(r.Context(), why)
-	err := connect.NewError(connect.CodePermissionDenied, errors.New(msg))
-	if detail, derr := connect.NewErrorDetail(&typev1.ErrorDetail{Reason: code}); derr == nil {
-		err.AddDetail(detail)
-	}
-	_ = g.errors.Write(w, r, err) // the client hung up; nothing more to tell it
+func refuse(w http.ResponseWriter, r *http.Request, tel *telemetry.Telemetry, errs *connect.ErrorWriter,
+	why telemetry.AuthReason, code typev1.ReasonCode, msg string,
+) {
+	tel.CountAuthFailure(r.Context(), why)
+	_ = errs.Write(w, r, apiError(connect.CodePermissionDenied, code, msg, nil, nil)) // the client hung up; nothing more to tell it
 }

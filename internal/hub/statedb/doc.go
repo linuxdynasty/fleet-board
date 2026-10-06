@@ -12,5 +12,9 @@
 // (store.ErrMissing otherwise) after [CheckDir] and the file checks refuse a
 // folder or file open to other users ([ErrLooseMode]). [ReadIdentity] reads
 // the row ([ErrNoIdentity] when it is missing) and [ReplaceServerCert] swaps
-// the server certificate in one writer transaction.
+// the server certificate in one writer transaction. [InsertEnrollToken]
+// stores an enroll_tokens row (the SHA-256 of a token's secret, never the
+// secret) after the request_id checks ([ErrSecretDelivered],
+// [ErrRequestConflict]) and the re-enroll check ([ErrNotReenrollable]), all
+// in one writer transaction.
 package statedb
