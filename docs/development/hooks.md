@@ -295,9 +295,10 @@ The token in any other doc is a finding, and a listed doc that no longer uses
 it fails until it is dropped from `files`.
 
 `scripts/gen-doc-tables.py` (`make doc-tables` runs `--check`) is the third:
-the release tables in 02k, the scope tables in 02d, the delivery table in 02i
-and the capability map in 02 are generated from the proto comment tags
-(02e, "Comment tags") between the script's begin and end markers. A
+the release tables in 02k, the scope tables in 02d, the delivery table in 02i,
+the capability map in 02 and the reason codes in 02l are generated from the
+proto comments (02e, "Comment tags") between the script's begin and end
+markers. A
 tag that breaks the rules, a hand edit inside a block, or a tag change without
 `--write` fails it. `scripts/report-capability-tests.py`
 (`make capability-tests`) lists the v1 capabilities in 01 that no product

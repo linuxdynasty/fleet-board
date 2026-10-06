@@ -168,8 +168,10 @@ tags in the proto comment of the element they describe, so each has one home
 ([ADR 0026](../adr/0026-one-home-per-fact.md)). `scripts/gen-doc-tables.py`
 reads them from the buf image and writes the tables in [02k](02k-v1-surface-and-cli.md),
 [02d](02d-hub-authz.md), [02i](02i-delivery-and-sequencing.md) and the capability
-map in [02](02-contracts.md); `make gates` and CI run it with `--check`. This
-section is the only home of the tag vocabulary.
+map in [02](02-contracts.md), plus the reason codes table in
+[02l](02l-versioning-errors-and-decisions.md) from the `ReasonCode` comments;
+`make gates` and CI run it with `--check`. This section is the only home of
+the tag vocabulary.
 
 | Tag | Required on | Value | Note (the rest of the line) |
 |---|---|---|---|
@@ -195,6 +197,12 @@ section is the only home of the tag vocabulary.
   stale table, and 2 when it cannot read the image, when the plan or its
   section 5 PR sequence table cannot be read, or when 01's capability table has
   a malformed or duplicate row.
+- In `ReasonCode`, a group heading is a comment with a blank line before and
+  after it; it becomes a bold row in the 02l table. A value's own leading
+  comment, without its tag block, is its meaning, and so is a trailing comment
+  on its line. A comment on the lines right under a value and then a blank
+  line is that value's trailing comment (protobuf's rule), not a heading, so
+  a heading always has a blank line above it.
 
 ## Log framing
 
