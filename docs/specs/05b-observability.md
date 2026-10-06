@@ -133,7 +133,10 @@ logged-in browser. The Host allow-list of 02f applies, and no CORS header is
 sent, so DNS rebinding does not work either. `local_trusted` mode is loopback
 only, so every local process may read it, the same trust as the local owner.
 A scrape is rate limited per peer (60 per minute) and counted
-(`fleet_hub_rpc_total{rpc="metrics"}`). The agent has no listener and so no
+(`fleet_hub_rpc_total{rpc="metrics"}`); both arrive with plan row 12, the API
+row that builds the rate limits and `fleet_hub_rpc_total`. Until then a scrape
+is not rate limited, and only its refusals are counted
+(`fleet_hub_auth_failures_total`). The agent has no listener and so no
 `/metrics` by default; an owner who scrapes agents sets a loopback
 `metrics_listen` in the agent's **local** policy file (the hub cannot push it,
 there is no config-push RPC), and most owners will not need it, because the hub

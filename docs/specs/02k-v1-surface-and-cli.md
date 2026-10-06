@@ -23,12 +23,19 @@ it belongs and a reader can tell "not built yet" from "forgotten".
   with `INVALID_ARGUMENT` and the topic named. It is never silently empty.
 - `GetServerInfoResponse.features` lists exactly what is served (`attach`, `routines`,
   `devices`, `watch.pane_summaries`, and so on). Clients hide what is not listed.
-- A `fleetd.yaml` key whose feature has not landed is refused at start with "not
-  built yet", never accepted and ignored: `mode: authenticated` (v3) and
-  `listen.pprof` until their plan rows land, and with them the authenticated-mode
-  keys `public_hosts`, `public_origins`, `tls.api_cert_file`, `tls.api_key_file`,
-  `tls.api_tailscale`, plus `telemetry.otlp.endpoint` until OTLP export lands
-  ([02j](02j-hub-runtime.md#configuration-file)).
+- A `fleetd.yaml` key whose feature has not landed is in one of two lists below,
+  never silently ignored ([02j](02j-hub-runtime.md#configuration-file)).
+  **Refused at start with "not built yet":** `mode: authenticated` and the
+  authenticated-mode keys `public_hosts`, `public_origins`, `tls.api_cert_file`,
+  `tls.api_key_file`, `tls.api_tailscale` (v3); `listen.pprof` (no plan row builds
+  it yet); `telemetry.otlp.endpoint` (until OTLP export lands).
+  **Loaded and checked, no effect until the row that uses it:** `discovery.mdns`
+  (row 5, mDNS advertising); `rate_limits.*` (row 12, the per-principal and
+  per-peer limits, `/metrics` included); `timing.max_sync_lag` (rows 13 and 23);
+  `timing.verify_grace` (row 22); `timing.ready_timeout` and
+  `timing.goal_file_timeout` (row 21); the `github` section (row 11; its key files
+  are never opened before then); the other `telemetry.otlp` keys (with the
+  endpoint).
 - Sign-in and device RPCs in `local_trusted` stay `FAILED_PRECONDITION`
   ([02f](02f-hub-authentication.md#modes)); that is a mode rule, not a release rule.
 
@@ -75,7 +82,9 @@ from each RPC's `[RELEASE]` tag ([02e](02e-contract-rules.md#comment-tags)).
 
 ## Commands of the three programs
 
-Exit codes are 0 for success and 1 for any failure. `--json` prints
+Exit codes are 0 for success, 1 for a command that ran and failed, and 2 for bad
+usage (an unknown command or flag, or an extra argument), the way the cobra
+commands of all three programs report it (ADR 0020). `--json` prints
 the Connect JSON of the response message unchanged: field names as protobuf
 writes them in JSON, enum names in full, 64-bit integers as decimal strings
 ([02b](02b-hub-api.md#64-bit-integers)). `fleet status` prints one object,

@@ -55,7 +55,8 @@ to start.
 **Discovery.** While `discovery.mdns` is true (default) `fleetd` advertises
 `_fleetd._tcp` on the agent port with `hashicorp/mdns` (ADR 0023). Where no
 multicast interface is usable it logs once and the agents use their cached or
-configured addresses.
+configured addresses. Advertising arrives with plan row 5; until then the key is
+loaded and has no effect.
 
 ## Configuration file
 
@@ -87,15 +88,18 @@ telemetry: {}                  # the keys of 05b section 5
 ```
 
 The file is read strictly: an unknown key, a second YAML document or a value of
-the wrong type refuses the start, naming the key, and so does a key whose
-feature this build does not have yet ([02k](02k-v1-surface-and-cli.md)). Keys not
-written keep the defaults above. Durations are strings (`10m`, `90s`). `state_dir`
+the wrong type refuses the start, naming the key. A key whose feature this build
+does not have yet is either refused as "not built yet" or loaded with no effect
+until the plan row that uses it; [02k](02k-v1-surface-and-cli.md#out-of-release-behaviour)
+lists which, and nothing is silently ignored. Keys not written keep the defaults
+above. Durations are strings (`10m`, `90s`). `state_dir`
 is refused when `<state_dir>/admin.sock` would not fit in a Unix socket path (104
 bytes on darwin, 108 on Linux).
 
 Secrets are named by path, never inlined. `timing.*` are constants no proto
 carries; [defaults.md](defaults.md) lists their defaults and what else is
-tunable. The `github` section creates the `Integration` row at start (the API
+tunable. The `github` section creates the `Integration` row at start, from plan
+row 11 (the API
 has no `CreateIntegration`; `UpdateIntegration` edits its label and tracker
 projects).
 
