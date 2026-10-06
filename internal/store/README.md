@@ -52,6 +52,9 @@ err = s.Read(ctx, func(tx *sql.Tx) error { ... }) // short read on the pool
   version is newer than the binary (`ErrSchemaTooNew`) or whose applied
   migration SQL was edited (`ErrMigrationChanged`, by checksum).
 - **Close** commits every queued job, then refuses new work (`ErrClosed`).
+- **`MustExist`** opens the file read-write without ever creating it (SQLite's
+  `mode=rw`, through an escaped `file:` URI): a missing file is `ErrMissing`
+  and nothing appears on disk. `fleetd run` opens `state.db` this way.
 
 ## Signals
 

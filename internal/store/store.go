@@ -5,7 +5,10 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
+	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -32,6 +35,8 @@ var (
 	ErrSchemaTooNew = errors.New("store: database schema is newer than this binary")
 	// ErrMigrationChanged means an applied migration's SQL was edited.
 	ErrMigrationChanged = errors.New("store: an applied migration was changed")
+	// ErrMissing means Options.MustExist was set and the file does not exist.
+	ErrMissing = errors.New("store: database file does not exist")
 )
 
 // Options configure [Open]. Zero values take the ADR 0014 defaults.
@@ -43,6 +48,9 @@ type Options struct {
 	Name string
 	// Migrations are applied in order at Open; see [Migration].
 	Migrations []Migration
+	// MustExist opens the file read-write without ever creating it (SQLite's
+	// mode=rw): a missing file is [ErrMissing] and nothing is written.
+	MustExist bool
 	// BatchMax is the most jobs in one transaction (default and limit 100).
 	BatchMax int
 	// BatchWindow is how long the first job of a batch waits for others
@@ -118,9 +126,15 @@ func (o *Options) validate() error {
 
 // dsn sets the ADR 0014 pragmas on every connection the pool opens. The
 // writer of logs.db also sets auto_vacuum=INCREMENTAL (ADR 0015); it is first
-// because SQLite ignores it once the file has a table.
-func dsn(path, name string, reader bool) string {
+// because SQLite ignores it once the file has a table. mustExist names the
+// file as an escaped file: URI with mode=rw, the only form in which the
+// driver passes SQLite's own mode parameter through.
+func dsn(path, name string, reader, mustExist bool) string {
 	var p []string
+	if mustExist {
+		path = (&url.URL{Scheme: "file", Path: path}).String()
+		p = append(p, "mode=rw")
+	}
 	if name == "logs" && !reader {
 		p = append(p, "_pragma=auto_vacuum(2)")
 	}
@@ -158,7 +172,7 @@ func Open(ctx context.Context, opts Options) (*Store, error) {
 	if opts.Telemetry != nil {
 		s.log = opts.Telemetry.Logger.With("component", "store", "db", opts.Name)
 	}
-	w, err := sql.Open("sqlite", dsn(opts.Path, opts.Name, false))
+	w, err := sql.Open("sqlite", dsn(opts.Path, opts.Name, false, opts.MustExist))
 	if err != nil {
 		return nil, fmt.Errorf("store: open writer: %w", err)
 	}
@@ -169,6 +183,9 @@ func Open(ctx context.Context, opts Options) (*Store, error) {
 	s.writer = w
 	var mode string
 	if err := w.QueryRowContext(ctx, "PRAGMA journal_mode").Scan(&mode); err != nil {
+		if _, statErr := os.Stat(opts.Path); opts.MustExist && errors.Is(statErr, fs.ErrNotExist) {
+			err = ErrMissing
+		}
 		return nil, errors.Join(fmt.Errorf("store: open %s: %w", opts.Name, err), w.Close())
 	}
 	if mode != "wal" {
@@ -177,7 +194,7 @@ func Open(ctx context.Context, opts Options) (*Store, error) {
 	if s.version, err = migrate(ctx, w, opts.Migrations, s.log); err != nil {
 		return nil, errors.Join(err, w.Close())
 	}
-	r, err := sql.Open("sqlite", dsn(opts.Path, opts.Name, true))
+	r, err := sql.Open("sqlite", dsn(opts.Path, opts.Name, true, opts.MustExist))
 	if err != nil {
 		return nil, errors.Join(fmt.Errorf("store: open readers: %w", err), w.Close())
 	}
