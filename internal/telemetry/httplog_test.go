@@ -8,11 +8,12 @@ import (
 	"testing"
 )
 
-func TestHTTPErrorLogWritesOneDebugEventWithAClosedKindAndNoText(t *testing.T) {
+func TestHTTPErrorLogWritesOneEventWithAClosedKindAndNoText(t *testing.T) {
 	t.Parallel()
-	cases := []struct{ name, line, kind string }{
-		{"handshake", "http: TLS handshake error from 192.0.2.7:51234: tls: client offered only unsupported versions: [303]", "tls_handshake"},
-		{"other", "http2: server: error reading preface from client 192.0.2.7:51234: bogus greeting \"secret-ish\"", "other"},
+	cases := []struct{ name, line, kind, level string }{
+		{"handshake", "http: TLS handshake error from 192.0.2.7:51234: tls: client offered only unsupported versions: [303]", "tls_handshake", "debug"},
+		{"other", "http2: server: error reading preface from client 192.0.2.7:51234: bogus greeting \"secret-ish\"", "other", "debug"},
+		{"panic", "http: panic serving 192.0.2.7:51234: secret-ish\ngoroutine 7 [running]:\nnet/http.(*conn).serve.func1()", "panic", "error"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -30,10 +31,10 @@ func TestHTTPErrorLogWritesOneDebugEventWithAClosedKindAndNoText(t *testing.T) {
 			if err := json.Unmarshal([]byte(lines[0]), &m); err != nil {
 				t.Fatalf("not JSON: %q", lines[0])
 			}
-			if m["msg"] != "http.server_error" || m["level"] != "debug" || m["listener"] != "agent" || m["kind"] != tc.kind {
-				t.Errorf("event %v, want http.server_error debug agent %s", m, tc.kind)
+			if m["msg"] != "http.server_error" || m["level"] != tc.level || m["listener"] != "agent" || m["kind"] != tc.kind {
+				t.Errorf("event %v, want http.server_error %s agent %s", m, tc.level, tc.kind)
 			}
-			if strings.Contains(out.String(), "192.0.2.7") || strings.Contains(out.String(), "secret-ish") {
+			if s := out.String(); strings.Contains(s, "192.0.2.7") || strings.Contains(s, "secret-ish") || strings.Contains(s, "goroutine") {
 				t.Error("the event carries net/http's text")
 			}
 		})

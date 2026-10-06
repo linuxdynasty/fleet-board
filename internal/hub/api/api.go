@@ -31,7 +31,7 @@ func Handler(tel *telemetry.Telemetry, port int) http.Handler {
 
 // NewServer is the server for an API or metrics listener named listener and
 // bound to port: [Handler], header and idle timeouts, and net/http's own
-// error lines sent to tel as debug-level http.server_error events.
+// error lines sent to tel as http.server_error events; tel must not be nil.
 func NewServer(tel *telemetry.Telemetry, listener string, port int) *http.Server {
 	return &http.Server{
 		Handler:           Handler(tel, port),

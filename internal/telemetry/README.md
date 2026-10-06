@@ -26,9 +26,9 @@ Logs, metrics and traces for `fleetd` and `fleet-agent`, set up the way
   caller made; `reason` is the closed `AuthReason` set (`metrics`, `host`,
   `origin`).
 - `HTTPErrorLog(listener)` is the `ErrorLog` for every `http.Server`: each
-  line net/http writes (a failed TLS handshake, a broken connection) becomes
-  one debug-level `http.server_error` event with `listener` and a closed
-  `kind` (`tls_handshake`, `other`). The line itself is dropped, since it names
+  line net/http writes becomes one `http.server_error` event with `listener`
+  and a closed `kind`: `panic` (a recovered handler panic) at error level,
+  `tls_handshake` and `other` (caused by a peer) at debug level. The line itself is dropped, since it names
   the peer and can echo what the peer sent; nothing reaches stderr as plain
   text.
 - Spans have no exporter: they exist so log lines carry trace ids.

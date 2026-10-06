@@ -37,7 +37,8 @@ srv := gateway.NewServer(certs, tel) // srv.ServeTLS(ln, "", "")
 `tls.server_cert_issue_failed` (`reason`, `err_kind`, `not_after` of the
 certificate still served). No key and no name list is logged. A failed
 handshake is a debug-level `http.server_error` (`listener="agent"`,
-`kind="tls_handshake"`) through `telemetry.HTTPErrorLog`, never plain text on
+`kind="tls_handshake"`), and a recovered handler panic an error-level one
+(`kind="panic"`), through `telemetry.HTTPErrorLog`, never plain text on
 stderr.
 
 Tests: `CGO_ENABLED=0 go test ./internal/hub/gateway/`. They dial the real

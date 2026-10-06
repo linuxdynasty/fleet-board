@@ -18,8 +18,9 @@ import (
 // none; checking the certificate per RPC and revocation arrive with plan rows
 // 3 and 5. It serves AgentService, and every method answers Unimplemented
 // until those rows land. Start it with ServeTLS(ln, "", ""), which also
-// offers HTTP/2 for gRPC. net/http's own error lines (a failed handshake)
-// go to tel as debug-level http.server_error events, never to stderr.
+// offers HTTP/2 for gRPC. net/http's own error lines (a failed handshake, a
+// handler panic) go to tel as http.server_error events, never to stderr; tel
+// must not be nil.
 func NewServer(certs *Certs, tel *telemetry.Telemetry) *http.Server {
 	mux := http.NewServeMux()
 	mux.Handle(agentv1connect.NewAgentServiceHandler(agentv1connect.UnimplementedAgentServiceHandler{}))

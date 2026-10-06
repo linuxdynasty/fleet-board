@@ -39,7 +39,7 @@ func Acquire(path string) (*Lock, error) {
 		return nil, fmt.Errorf("lock: flock: %w", err)
 	}
 	if err := writePID(f); err != nil {
-		return nil, errors.Join(err, f.Close())
+		return nil, errors.Join(err, syscall.Flock(int(f.Fd()), syscall.LOCK_UN), f.Close())
 	}
 	return &Lock{f: f}, nil
 }
