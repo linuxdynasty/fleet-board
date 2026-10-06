@@ -1,0 +1,23 @@
+# internal/hub/lock
+
+The guard that keeps two `fleetd` processes off one state folder (#92). It is
+an exclusive, non-blocking `flock` on `<state_dir>/fleetd.lock`.
+
+```go
+l, err := lock.Acquire(filepath.Join(stateDir, "fleetd.lock"))
+if errors.Is(err, lock.ErrHeld) { /* another fleetd runs here: refuse to start */ }
+defer l.Release()
+```
+
+- `fleetd init` and `fleetd run` take it before they touch `state.db`.
+- A held lock is `ErrHeld` at once; nothing waits.
+- The file is mode 0600 and holds the holder's pid, for a person to read. The
+  pid decides nothing: the kernel drops the lock when the process exits, even
+  on SIGKILL, so a leftover file never blocks a start.
+- `flock` locks belong to one open of the file, so a second `Acquire` in the
+  same process is refused too.
+
+Tests: `CGO_ENABLED=0 go test ./internal/hub/lock/`.
+`TestAnotherProcessHoldsTheLockUntilItDies` runs a child process that holds
+the lock, checks the parent is refused, kills the child with SIGKILL and checks
+the parent then gets the lock.
