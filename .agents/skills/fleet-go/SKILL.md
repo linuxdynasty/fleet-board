@@ -66,7 +66,9 @@ file itself (`fleet-sqlite-store`). Prefer table-driven tests with named cases
 Use real tmux in a throwaway server (`-L`) for tmux tests and captured fixtures
 for screen parsing; never mock the thing under test. Cover every dispatch
 variant of a shared helper. Confirm filtered tests ran (`go test -list '.*'
-./pkg/...`).
+./pkg/...`). `make test` runs tests in a random order, three times, so a test
+must not depend on order or on state an earlier run left behind (rerun a
+failure with the printed `-shuffle=<seed>`).
 
 ## Hard rules
 
@@ -89,7 +91,7 @@ variant of a shared helper. Confirm filtered tests ran (`go test -list '.*'
 ```bash
 make fmt                                       # the pinned gofumpt on every Go file; make fmt-check only checks
 go vet ./...
-CGO_ENABLED=0 go test ./path/to/changed/...    # add -race for concurrent code; make test does both
+CGO_ENABLED=0 go test -shuffle=on -count=3 ./path/to/changed/...   # add -race for concurrent code; make test does both
 make lint                                      # the pinned golangci-lint on changed packages, not the one on PATH
 go build ./...
 ```

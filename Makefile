@@ -9,8 +9,9 @@
 #
 #   make gen        buf generate into gen/ (Go and TypeScript)
 #   make build      CGO_ENABLED=0 go build ./...  (make smoke then runs each binary)
-#   make test       go vet ./..., then go test and go test -race on the
-#                   packages changed against BASE_REF (default origin/main)
+#   make test       go vet ./..., then on the packages changed against BASE_REF
+#                   (default origin/main): go test -shuffle=on -count=TEST_COUNT
+#                   (default 3), then go test -race -shuffle=on -count=1
 #   make lint       golangci-lint on the same packages
 #   make fmt        gofumpt -l -w on every Go file (fmt-check only checks)
 #   make gates      everything a push needs, one command (prints tool versions)
@@ -105,11 +106,17 @@ vet:
 # test runs vet on everything and the tests on the changed packages
 # (scripts/changed-go-packages.sh: files changed against BASE_REF plus the
 # packages that import them; every package when a build input changed).
+# Tests run in a random order (the seed prints as -test.shuffle N; rerun one
+# with -shuffle=N) and TEST_COUNT times, so state left between tests or runs
+# fails; the race pass runs once. Neither pass uses the go test cache.
+TEST_COUNT ?= 3
+
 test: vet
 	@pkgs="$$(scripts/changed-go-packages.sh "$$BASE_REF")" || exit 1; \
 	if [ -z "$$pkgs" ]; then echo "make test: no Go package changed against $$BASE_REF; no tests to run"; exit 0; fi; \
 	echo "make test: $$pkgs"; \
-	CGO_ENABLED=0 go test $$pkgs && CGO_ENABLED=$(RACE_CGO) go test -race $$pkgs
+	CGO_ENABLED=0 go test -shuffle=on -count=$(TEST_COUNT) $$pkgs && \
+	CGO_ENABLED=$(RACE_CGO) go test -race -shuffle=on -count=1 $$pkgs
 
 lint: tools
 	@pkgs="$$(scripts/changed-go-packages.sh "$$BASE_REF")" || exit 1; \
@@ -134,6 +141,7 @@ selftest: tools
 	scripts/test-make-base-ref.sh
 	scripts/test-make-tools.sh
 	scripts/test-make-gates.sh
+	scripts/test-make-test-flags.sh
 	python3 scripts/test-check-attribution.py
 	python3 scripts/test-check-file-cap.py
 	python3 scripts/test-agent-roles.py

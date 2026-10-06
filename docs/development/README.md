@@ -50,9 +50,10 @@ scripts/test-check-versions.sh, test-changed-go-packages.sh, test-check-gofumpt.
                               seeded RED/GREEN self-tests for the scripts and hook above; make
                               selftest runs them
 scripts/test-verify-agent-canon.sh, test-smoke-binaries.sh, test-make-base-ref.sh,
-  test-make-tools.sh, test-make-gates.sh   seeded cases for the canon script checks, the smoke, the
-  quoting of BASE_REF, the tools/gen rebuild rules, the ref-named-file guard and the wiring of
-  make gates (also in make selftest)
+  test-make-tools.sh, test-make-gates.sh, test-make-test-flags.sh   seeded cases for the canon
+  script checks, the smoke, the quoting of BASE_REF, the tools/gen rebuild rules, the
+  ref-named-file guard, the wiring of make gates and the shuffle and repeat flags of make test
+  (also in make selftest)
 tools/tscheck/                compiles the generated TypeScript (typescript 7, strict)
 scripts/plan-issues.py        writes each plan row's GitHub issue body from the plan
                               (--print, --check, --apply; ADR 0026)
