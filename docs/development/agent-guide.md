@@ -208,8 +208,9 @@ pass 2000 (the free allowance).
 major, `golangci-lint`, `buf`, `gofumpt`, `govulncheck`, `typescript` and the
 `protoc-gen-es` version. The Makefile includes it and CI sources it, so neither
 spells out a version. `make tools` builds `golangci-lint`, `gofumpt` and
-`govulncheck` with the local Go into `.bin/` (gitignored); the `golangci-lint` on `PATH` is built with an older
-Go and refuses a `go 1.27` module, so the Makefile never uses it. Four copies
+`govulncheck` with the local Go into `.bin/` (gitignored); the `golangci-lint`
+on `PATH` is built with an older Go and refuses a `go 1.27` module, so the
+Makefile never uses it. Four copies
 that other tools force on us (`.node-version`, the `go` line of `go.mod`,
 `buf.gen.yaml`, `tools/tscheck/package.json`) are kept equal by
 `scripts/check-versions.sh`. To upgrade a tool, change the file in a dedicated

@@ -213,7 +213,7 @@ func build(ctx context.Context, path string, id Identity, tel *telemetry.Telemet
 	if fi, err := os.Stat(path + "-wal"); err == nil && fi.Size() > 0 {
 		return errors.New("statedb: the new store's WAL was not checkpointed on close")
 	}
-	f, err := os.Open(path) //nolint:gosec // G304: path is state.db in the operator's configured state folder
+	f, err := os.Open(path) //nolint:gosec // G304: path is the temp state file Init made in the operator's configured state folder
 	if err != nil {
 		return fmt.Errorf("statedb: sync new store: %w", err)
 	}

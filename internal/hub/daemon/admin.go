@@ -25,7 +25,7 @@ func bindAdmin(cfg *config.Config, opts Options, st *store.Store, id statedb.Ide
 		return listener{}, err
 	}
 	uid := os.Getuid()
-	if uid < 0 || uid > math.MaxUint32 {
+	if uid < 0 || uint64(uid) > math.MaxUint32 {
 		return listener{}, fmt.Errorf("daemon: admin socket: user id %d is out of range", uid)
 	}
 	ln, err := net.ListenUnix("unix", &net.UnixAddr{Name: path, Net: "unix"})

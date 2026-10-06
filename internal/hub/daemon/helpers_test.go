@@ -45,7 +45,7 @@ func shortDir(t *testing.T) string {
 func selfUID(t *testing.T) uint32 {
 	t.Helper()
 	uid := os.Getuid()
-	if uid >= 0 && uid <= math.MaxUint32 {
+	if uid >= 0 && uint64(uid) <= math.MaxUint32 {
 		return uint32(uid)
 	}
 	t.Fatalf("user id %d is out of range", uid)

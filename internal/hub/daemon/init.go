@@ -51,7 +51,7 @@ func Init(ctx context.Context, opts Options) (err error) {
 		return s.fail(ReasonStore, err)
 	}
 
-	if _, err := os.Lstat(statedb.Path(cfg.StateDir)); err == nil { //nolint:gosec // G703: state_dir comes from the operator's own config, already checked by EnsureDir
+	if _, err := os.Lstat(statedb.Path(cfg.StateDir)); err == nil { //nolint:gosec // G703: state_dir is a value from the operator's own config
 		return s.fail(ReasonStoreExists, fmt.Errorf("%s already exists; init never replaces a store", statedb.Path(cfg.StateDir)))
 	}
 	if missing {
