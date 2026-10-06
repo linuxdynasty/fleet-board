@@ -22,6 +22,9 @@ Logs, metrics and traces for `fleetd` and `fleet-agent`, set up the way
   token check there). It ignores proxy headers. A refusal is a 401 with no body,
   counted in `<prefix>_auth_failures_total{reason="metrics"}`. The per-peer
   rate limit and the Host allow-list belong to the listener that mounts it.
+- `CountAuthFailure(ctx, reason)` adds to the same counter for a refusal the
+  caller made; `reason` is the closed `AuthReason` set (`metrics`, `host`,
+  `origin`).
 - Spans have no exporter: they exist so log lines carry trace ids.
 - `Shutdown(ctx)` stops the providers.
 

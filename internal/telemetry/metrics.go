@@ -1,6 +1,7 @@
 package telemetry
 
 import (
+	"context"
 	"net"
 	"net/http"
 	"net/netip"
@@ -19,12 +20,28 @@ func (t *Telemetry) MetricsHandler(allow func(*http.Request) bool) http.Handler 
 	serve := promhttp.HandlerFor(t.registry, promhttp.HandlerOpts{ErrorHandling: promhttp.ContinueOnError})
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !loopbackPeer(r.RemoteAddr) && (allow == nil || !allow(r)) {
-			t.refused.Add(r.Context(), 1, metric.WithAttributes(attribute.String("reason", "metrics")))
+			t.CountAuthFailure(r.Context(), ReasonMetrics)
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
 		serve.ServeHTTP(w, r)
 	})
+}
+
+// AuthReason is the closed label set of <prefix>_auth_failures_total.
+type AuthReason string
+
+// The refusals counted so far; sign-in, token and device reasons arrive with
+// their rows.
+const (
+	ReasonMetrics AuthReason = "metrics" // /metrics from a non-loopback peer without an allowed credential
+	ReasonHost    AuthReason = "host"    // Host header not allowed (02f, HOST_NOT_ALLOWED)
+	ReasonOrigin  AuthReason = "origin"  // Origin header not allowed (02f, ORIGIN_NOT_ALLOWED)
+)
+
+// CountAuthFailure adds one refused request to <prefix>_auth_failures_total.
+func (t *Telemetry) CountAuthFailure(ctx context.Context, reason AuthReason) {
+	t.refused.Add(ctx, 1, metric.WithAttributes(attribute.String("reason", string(reason))))
 }
 
 func loopbackPeer(remote string) bool {

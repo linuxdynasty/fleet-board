@@ -304,3 +304,23 @@ func TestMetricsHandlerAdmitsOnlyLoopbackOrAnAllowedRequest(t *testing.T) {
 		t.Errorf("fleet_hub_auth_failures_total{reason=metrics} = %v, want %d", got, refused)
 	}
 }
+
+// The API listener counts its Host and Origin refusals in the same counter
+// as the metrics refusals, one series per reason (05b section 3).
+func TestAuthFailuresAreCountedByReason(t *testing.T) {
+	t.Parallel()
+	tel := newTelemetry(t, hubConfig(io.Discard))
+	ctx := context.Background()
+	tel.CountAuthFailure(ctx, telemetry.ReasonHost)
+	tel.CountAuthFailure(ctx, telemetry.ReasonHost)
+	tel.CountAuthFailure(ctx, telemetry.ReasonOrigin)
+	body := scrape(t, tel)
+	for _, tc := range []struct {
+		reason string
+		want   float64
+	}{{"host", 2}, {"origin", 1}} {
+		if got := sample(body, "fleet_hub_auth_failures_total", `reason="`+tc.reason+`"`); got != tc.want {
+			t.Errorf("fleet_hub_auth_failures_total{reason=%q} = %v, want %v", tc.reason, got, tc.want)
+		}
+	}
+}
