@@ -37,6 +37,9 @@ func TestTheCAIsAnEd25519CertificateAuthorityValidTenYears(t *testing.T) {
 	if c.KeyUsage&x509.KeyUsageCertSign == 0 {
 		t.Error("the CA cannot sign certificates")
 	}
+	if c.MaxPathLen != 0 || !c.MaxPathLenZero {
+		t.Errorf("MaxPathLen %d (zero set %v), want a path length of 0: the CA signs leaves only", c.MaxPathLen, c.MaxPathLenZero)
+	}
 	if c.NotBefore.After(t0) || t0.Sub(c.NotBefore) > time.Hour {
 		t.Errorf("NotBefore %v, want at most an hour before %v", c.NotBefore, t0)
 	}
@@ -118,6 +121,12 @@ func TestTheServerCertificateVerifiesForEveryNameAndLasts90Days(t *testing.T) {
 	}
 	if leaf.IsCA {
 		t.Error("the server certificate is a CA")
+	}
+	if leaf.KeyUsage != x509.KeyUsageDigitalSignature {
+		t.Errorf("KeyUsage = %v, want digital signature only (%v)", leaf.KeyUsage, x509.KeyUsageDigitalSignature)
+	}
+	if !reflect.DeepEqual(leaf.ExtKeyUsage, []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}) {
+		t.Errorf("ExtKeyUsage = %v, want server auth only", leaf.ExtKeyUsage)
 	}
 	key, err := x509.ParsePKCS8PrivateKey(sc.KeyDER)
 	if err != nil {
@@ -209,5 +218,37 @@ func TestSameNamesIgnoresOrderAndCase(t *testing.T) {
 				t.Errorf("SameNames(%q) = %v, want %v", tc.names, got, tc.want)
 			}
 		})
+	}
+}
+
+// Serials are random, so no two certificates the fleet issues share one.
+func TestEveryCertificateGetsItsOwnPositiveSerial(t *testing.T) {
+	t.Parallel()
+	a, b := newCA(t), newCA(t)
+	s1, err := a.IssueServer([]string{"localhost"}, t0, rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s2, err := a.IssueServer([]string{"localhost"}, t0, rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]string{}
+	for _, c := range []struct {
+		name string
+		der  []byte
+	}{{"CA a", a.Cert.Raw}, {"CA b", b.Cert.Raw}, {"server 1", s1.CertDER}, {"server 2", s2.CertDER}} {
+		cert, err := x509.ParseCertificate(c.der)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cert.SerialNumber.Sign() <= 0 {
+			t.Errorf("%s serial %v is not positive", c.name, cert.SerialNumber)
+		}
+		key := cert.SerialNumber.String()
+		if prev, dup := seen[key]; dup {
+			t.Errorf("%s and %s share serial %s", prev, c.name, key)
+		}
+		seen[key] = c.name
 	}
 }
