@@ -5,8 +5,13 @@ The hub's HTTP API ([02b](../../../docs/specs/02b-hub-api.md),
 Today it serves only `/metrics`, behind the Host and Origin checks.
 
 ```go
-srv := &http.Server{Handler: api.Handler(tel, boundPort)}
+srv := api.NewServer(tel, "api", boundPort) // api.Handler plus timeouts and the JSON ErrorLog
 ```
+
+`NewServer` sets `ReadHeaderTimeout` (10 s) and `IdleTimeout` (2 min, a
+keep-alive connection with no request), no `ReadTimeout` (Watch and attach will
+be long streams), and `ErrorLog` through `telemetry.HTTPErrorLog`, so net/http's
+own error lines are debug-level `http.server_error` events, not stderr text.
 
 - **Host check first.** The `Host` header must be `localhost`, `127.0.0.1` or
   `[::1]` with the bound port (case-insensitive; the bare name too on port

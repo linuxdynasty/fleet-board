@@ -5,9 +5,9 @@ TLS 1.3 with the CA-issued server certificate, serving `AgentService`.
 
 ```go
 certs, err := gateway.NewCerts(gateway.CertsOptions{Store: st, Identity: id, Names: names, Telemetry: tel})
-err = certs.Ensure(ctx)          // at start: re-issue if the names changed or it is past two thirds
-go certs.Run(ctx, ticker.C)      // hourly in fleetd run; stops with ctx
-srv := gateway.NewServer(certs)  // srv.ServeTLS(ln, "", "")
+err = certs.Ensure(ctx)              // at start: re-issue if the names changed or it is past two thirds
+go certs.Run(ctx, ticker.C)          // hourly in fleetd run; stops with ctx
+srv := gateway.NewServer(certs, tel) // srv.ServeTLS(ln, "", "")
 ```
 
 - **TLS 1.3 only**, with the certificate from an atomic pointer, so a
@@ -19,12 +19,15 @@ srv := gateway.NewServer(certs)  // srv.ServeTLS(ln, "", "")
   `Unimplemented` for now (Enroll and RenewCert in row 3, Connect, Terminal and
   SessionLog in rows 5 and later). It speaks Connect, gRPC and gRPC-Web over
   HTTP/1.1 and HTTP/2.
+- **Timeouts**: `ReadHeaderTimeout` (10 s) and `IdleTimeout` (2 min, a
+  connection with no request or open stream). No `ReadTimeout`: the agent
+  streams are long-lived.
 - **Re-issue** (`Ensure`): reason `names_changed` when the SANs differ from
   the wanted names, `renewal` at two thirds of the lifetime. The new
   certificate is signed by the stored CA and written with
   `statedb.ReplaceServerCert` (one writer transaction) before it is served; on
   a failure the old one stays in service and the next tick retries.
-- No mDNS advertising yet (row 5); `discovery.mdns` does nothing.
+- No mDNS advertising yet (row 5); `discovery.mdns` is loaded and has no effect.
 
 ## Signals
 
@@ -32,10 +35,14 @@ srv := gateway.NewServer(certs)  // srv.ServeTLS(ln, "", "")
 `names_changed`, `renewal`; `result`: `ok`, `failed`) and the log events
 `tls.server_cert_issued` (`reason`, `names` count, `not_after`) and
 `tls.server_cert_issue_failed` (`reason`, `err_kind`, `not_after` of the
-certificate still served). No key and no name list is logged.
+certificate still served). No key and no name list is logged. A failed
+handshake is a debug-level `http.server_error` (`listener="agent"`,
+`kind="tls_handshake"`) through `telemetry.HTTPErrorLog`, never plain text on
+stderr.
 
 Tests: `CGO_ENABLED=0 go test ./internal/hub/gateway/`. They dial the real
-listener with `crypto/tls` (TLS 1.3, a TLS 1.2-capped client refused, client
-certificates from the hub CA and from another CA), call every method with the
-generated client over Connect and gRPC, and drive renewal with a fake clock and
-a tick channel.
+listener with `crypto/tls` (TLS 1.3, a TLS 1.2-capped client refused by the
+server's protocol version alert, client certificates from the hub CA and from
+another CA), call every method with the generated client over Connect and gRPC,
+and drive renewal with a fake clock and a tick channel. The listener tests read
+one clock, `wallNow`, for issuing and verifying, so they pass on any date.

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"connectrpc.com/connect"
 
@@ -27,6 +28,25 @@ func Handler(tel *telemetry.Telemetry, port int) http.Handler {
 		errors:  connect.NewErrorWriter(),
 	}
 }
+
+// NewServer is the server for an API or metrics listener named listener and
+// bound to port: [Handler], header and idle timeouts, and net/http's own
+// error lines sent to tel as debug-level http.server_error events.
+func NewServer(tel *telemetry.Telemetry, listener string, port int) *http.Server {
+	return &http.Server{
+		Handler:           Handler(tel, port),
+		ReadHeaderTimeout: ReadHeaderTimeout,
+		IdleTimeout:       IdleTimeout,
+		ErrorLog:          tel.HTTPErrorLog(listener),
+	}
+}
+
+// ReadHeaderTimeout bounds how long a client may take to send request
+// headers. There is no ReadTimeout: Watch and attach are long streams.
+const ReadHeaderTimeout = 10 * time.Second
+
+// IdleTimeout closes a keep-alive connection with no request for this long.
+const IdleTimeout = 2 * time.Minute
 
 // allowed lists the loopback names with port, behind prefix. Port 80 also
 // allows the bare name, since clients leave the default port out.

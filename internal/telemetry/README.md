@@ -25,6 +25,12 @@ Logs, metrics and traces for `fleetd` and `fleet-agent`, set up the way
 - `CountAuthFailure(ctx, reason)` adds to the same counter for a refusal the
   caller made; `reason` is the closed `AuthReason` set (`metrics`, `host`,
   `origin`).
+- `HTTPErrorLog(listener)` is the `ErrorLog` for every `http.Server`: each
+  line net/http writes (a failed TLS handshake, a broken connection) becomes
+  one debug-level `http.server_error` event with `listener` and a closed
+  `kind` (`tls_handshake`, `other`). The line itself is dropped, since it names
+  the peer and can echo what the peer sent; nothing reaches stderr as plain
+  text.
 - Spans have no exporter: they exist so log lines carry trace ids.
 - `Shutdown(ctx)` stops the providers.
 

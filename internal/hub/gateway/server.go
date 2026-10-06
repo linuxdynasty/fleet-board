@@ -18,8 +18,9 @@ import (
 // none; checking the certificate per RPC and revocation arrive with plan rows
 // 3 and 5. It serves AgentService, and every method answers Unimplemented
 // until those rows land. Start it with ServeTLS(ln, "", ""), which also
-// offers HTTP/2 for gRPC.
-func NewServer(certs *Certs) *http.Server {
+// offers HTTP/2 for gRPC. net/http's own error lines (a failed handshake)
+// go to tel as debug-level http.server_error events, never to stderr.
+func NewServer(certs *Certs, tel *telemetry.Telemetry) *http.Server {
 	mux := http.NewServeMux()
 	mux.Handle(agentv1connect.NewAgentServiceHandler(agentv1connect.UnimplementedAgentServiceHandler{}))
 	return &http.Server{
@@ -30,9 +31,20 @@ func NewServer(certs *Certs) *http.Server {
 			ClientAuth:     tls.VerifyClientCertIfGiven,
 			ClientCAs:      certs.auth.Pool(),
 		},
-		ReadHeaderTimeout: 10 * time.Second,
+		ReadHeaderTimeout: ReadHeaderTimeout,
+		IdleTimeout:       IdleTimeout,
+		ErrorLog:          tel.HTTPErrorLog("agent"),
 	}
 }
+
+// ReadHeaderTimeout bounds how long a peer may take to send request headers.
+// There is no ReadTimeout: Connect, Terminal and SessionLog are long streams.
+const ReadHeaderTimeout = 10 * time.Second
+
+// IdleTimeout closes a connection with no request (HTTP/1.1) or no open
+// stream (HTTP/2) for this long; an agent's Connect stream keeps its
+// connection busy, so only abandoned connections are closed.
+const IdleTimeout = 2 * time.Minute
 
 func noopMeter() metric.Meter { return noop.NewMeterProvider().Meter(scope) }
 

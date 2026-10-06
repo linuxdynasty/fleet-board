@@ -199,9 +199,9 @@ func bind(cfg *config.Config, certs *gateway.Certs, s *session) ([]listener, err
 		port := ln.Addr().(*net.TCPAddr).Port
 		l := listener{name: w.name, ln: ln, tls: w.name == "agent"}
 		if l.tls {
-			l.srv = gateway.NewServer(certs)
+			l.srv = gateway.NewServer(certs, s.tel)
 		} else {
-			l.srv = &http.Server{Handler: api.Handler(s.tel, port), ReadHeaderTimeout: 10 * time.Second}
+			l.srv = api.NewServer(s.tel, w.name, port)
 		}
 		ls = append(ls, l)
 		s.tel.Logger.Info("hub.listener_opened", "listener", w.name, "port", port)

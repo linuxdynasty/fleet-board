@@ -38,6 +38,7 @@
 | `hub.listener_opened` (`listener`, `port`), `hub.started` (`mode`, `listeners`) | run is serving |
 | `hub.listener_failed` (`err_kind`) | a listener stopped with an error |
 | `hub.stopped` | run shut down |
+| `http.server_error` (`listener`, `kind`), debug level | net/http's own error line on any listener (a failed TLS handshake); its text is dropped |
 
 Reasons (closed set): `config_invalid`, `lock_held`, `mode_loose`,
 `store_missing`, `store_exists`, `identity_missing`, `store_failed`,

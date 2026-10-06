@@ -35,7 +35,7 @@ func listenerFixture(t *testing.T) *fixture { t.Helper(); return newFixtureAt(t,
 func serve(t *testing.T, f *fixture) string {
 	t.Helper()
 	c := f.certs(t, defaultNames, wallNow)
-	srv := gateway.NewServer(c)
+	srv := gateway.NewServer(c, f.tel)
 	srv.TLSConfig.Time = wallNow
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
