@@ -34,9 +34,10 @@ type AuthReason string
 // The refusals counted so far; sign-in, token and device reasons arrive with
 // their rows.
 const (
-	ReasonMetrics AuthReason = "metrics" // /metrics from a non-loopback peer without an allowed credential
-	ReasonHost    AuthReason = "host"    // Host header not allowed (02f, HOST_NOT_ALLOWED)
-	ReasonOrigin  AuthReason = "origin"  // Origin header not allowed (02f, ORIGIN_NOT_ALLOWED)
+	ReasonMetrics AuthReason = "metrics"  // /metrics from a non-loopback peer without an allowed credential
+	ReasonHost    AuthReason = "host"     // Host header not allowed (02f, HOST_NOT_ALLOWED)
+	ReasonOrigin  AuthReason = "origin"   // Origin header not allowed (02f, ORIGIN_NOT_ALLOWED)
+	ReasonPeerUID AuthReason = "peer_uid" // admin socket peer is another OS user, or its credentials are unreadable (02f)
 )
 
 // CountAuthFailure adds one refused request to <prefix>_auth_failures_total.

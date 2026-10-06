@@ -5,7 +5,10 @@ Read the root `AGENTS.md` first; it applies here. Load `fleet-go`,
 for this package:
 
 - Order is the contract: config, folder check, `fleetd.lock`, then
-  `state.db`. Never open the store before the lock is held.
+  `state.db`. Never open the store before the lock is held, and never remove
+  or bind `admin.sock` before it either; remove only a socket there, never
+  another file.
+- `EnrollToken` is a client: it writes no file and emits no telemetry.
 - `Run` never creates `state.db` and never mints an identity; `Init` never
   replaces a store.
 - Every start refusal goes through `session.fail` with a closed `Reason`: one

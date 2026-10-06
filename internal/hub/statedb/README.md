@@ -37,8 +37,25 @@ err = statedb.ReplaceServerCert(ctx, s, oldDER, certDER, keyDER, names)
   time. It holds the CA key and the salt: never log a field of it.
 - `ReplaceServerCert` updates only the server fields, only while the stored
   certificate is still the one replaced (`ErrServerCertChanged` otherwise).
+- **`enroll_tokens`** (migration 2, plan row 2b) holds one row per enroll
+  token: `secret_hash` (SHA-256 of the 32 secret bytes, unique; never the
+  token or the secret), `machine_name`, `expected_hostname` (as asked; empty
+  means the machine name), `labels` (JSON), `start_drained`,
+  `not_after_time`, `used_time` and `previous_machine` (both null until row
+  3), `created_time`, and the idempotency key: `principal`, `request_id`
+  (unique together) and `request_hash`. `InsertEnrollToken` checks, in one
+  writer transaction: the same principal and `request_id` again is
+  `ErrSecretDelivered` (same `request_hash`) or `ErrRequestConflict`; then any
+  previous machine is `ErrNotReenrollable` (2b has no machines table); then it
+  inserts. Nothing prunes the table yet: the 24 h idempotency window and the
+  "expired + 30 days" retention of 03f arrive with rows 3 and 13a.
+
+```go
+err := statedb.InsertEnrollToken(ctx, s, statedb.EnrollToken{SecretHash: tok.SecretHash, ...})
+```
 
 Tests: `CGO_ENABLED=0 go test ./internal/hub/statedb/`. They use real files:
 modes, a refused second create with the file hash unchanged, an injected
 failure before the link leaving an empty folder, the one-row constraint on
-the file itself.
+the file itself, the `enroll_tokens` unique and check constraints by raw
+SQL, the request-id rules, and a store from migration 1 gaining the table.

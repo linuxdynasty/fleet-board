@@ -89,7 +89,8 @@ func setup(t *testing.T) (config, state string) {
 	return config, state
 }
 
-// startRun starts `fleetd run` and returns it with the API port it logged.
+// startRun starts `fleetd run` and returns it with the API port it logged,
+// once it logs hub.started: the API listener opens before admin.sock does.
 func startRun(t *testing.T, config string) (*exec.Cmd, string) {
 	t.Helper()
 	cmd := exec.Command(bin, "run", "--config", config)
@@ -104,14 +105,21 @@ func startRun(t *testing.T, config string) (*exec.Cmd, string) {
 	ports := make(chan string, 1)
 	go func() {
 		sc := bufio.NewScanner(stderr)
+		api := ""
 		for sc.Scan() {
 			var line struct {
 				Msg      string  `json:"msg"`
 				Listener string  `json:"listener"`
 				Port     float64 `json:"port"`
 			}
-			if json.Unmarshal(sc.Bytes(), &line) == nil && line.Msg == "hub.listener_opened" && line.Listener == "api" {
-				ports <- fmt.Sprint(int(line.Port))
+			if json.Unmarshal(sc.Bytes(), &line) != nil {
+				continue
+			}
+			switch {
+			case line.Msg == "hub.listener_opened" && line.Listener == "api":
+				api = fmt.Sprint(int(line.Port))
+			case line.Msg == "hub.started" && api != "":
+				ports <- api
 			}
 		}
 		_, _ = io.Copy(io.Discard, stderr)
@@ -120,7 +128,7 @@ func startRun(t *testing.T, config string) (*exec.Cmd, string) {
 	case p := <-ports:
 		return cmd, p
 	case <-time.After(20 * time.Second):
-		t.Fatal("fleetd run did not open the API listener within 20 s")
+		t.Fatal("fleetd run did not log hub.started within 20 s")
 		return nil, ""
 	}
 }

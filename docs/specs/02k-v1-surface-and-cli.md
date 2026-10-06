@@ -104,7 +104,7 @@ Destructive commands need `--yes`.
 | `fleet dispatch`, goal control, `requeue`, routines | the dispatch write commands | `StartGoal`, `ControlGoal`, `RequeueWorkItem`, the routine RPCs | v1 (29) |
 | `fleet logs export` | stored session log to a file | `ReadSessionLog` | v1 (25) |
 | `fleet watch`, `fleet debug stream` | tail or decode a `Watch` | `Watch` | not scheduled |
-| `fleetd run`, `init`, `enroll-token` | start, create config and state, mint a token | local, `admin.sock` | v1 (2b) |
+| `fleetd run`, `init`, `enroll-token` | start, create config and state, mint a token (only the token on stdout; the `enroll` command on stderr) | `init` and `run` local; `enroll-token` calls `CreateEnrollmentToken` over `admin.sock` | v1 (2b) |
 | `fleetd backup [--encrypt]`, `restore` | local, never RPCs | local | v1 (3, 5) |
 | `fleetd setup github` | the GitHub App manifest and keys | local | v1 (13a) |
 | `fleetd insights rebuild` | recompute rollups | local | v1 (13) |
