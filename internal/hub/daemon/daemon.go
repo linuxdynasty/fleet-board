@@ -13,6 +13,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 
+	"github.com/linuxdynasty/fleet-board/internal/hub/api"
 	"github.com/linuxdynasty/fleet-board/internal/hub/config"
 	"github.com/linuxdynasty/fleet-board/internal/hub/lock"
 	"github.com/linuxdynasty/fleet-board/internal/hub/statedb"
@@ -43,12 +44,15 @@ type Options struct {
 	LogOutput io.Writer
 	// Ready, when set, is called once every listener is serving.
 	Ready func(Addrs)
+	// PeerUID reads an admin socket peer's user id; nil means the kernel's
+	// (api.KernelPeerUID).
+	PeerUID api.PeerUID
 }
 
 // Addrs are the bound listener addresses; Metrics is nil without
-// listen.metrics.
+// listen.metrics. Admin is <state_dir>/admin.sock.
 type Addrs struct {
-	Agent, API, Metrics net.Addr
+	Agent, API, Metrics, Admin net.Addr
 }
 
 // Reason is the closed label set of start failures: the reason label of
