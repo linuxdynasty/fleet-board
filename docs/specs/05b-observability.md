@@ -103,7 +103,9 @@ metrics below fill the gaps between them.
 | `fleet_hub_watch_subscribers`, `fleet_hub_watch_queue_depth` | gauges | how many streams, the deepest queue |
 | `fleet_hub_watch_messages_total{topic}`, `fleet_hub_watch_dropped_total{topic}`, `fleet_hub_watch_resync_total{reason}` | counters | fan-out volume, summaries dropped for slow browsers, streams ended `RESYNC_REQUIRED` |
 | `fleet_hub_rpc_total{rpc, code}`, `fleet_hub_rpc_seconds{rpc}` | counter, histogram | API errors and latency per RPC |
-| `fleet_hub_auth_failures_total{reason}` | counter | sign-in, token, device, Host and Origin refusals |
+| `fleet_hub_auth_failures_total{reason}` | counter | sign-in, token, device, Host (`host`), Origin (`origin`) and `/metrics` (`metrics`) refusals |
+| `fleet_hub_start_failures_total{command, reason}` | counter | why `fleetd init` or `fleetd run` refused to start (`command`: `init`, `run`; `reason`: `config_invalid`, `lock_held`, `mode_loose`, `store_missing`, `store_exists`, `identity_missing`, `store_failed`, `store_not_synced` (state.db was created but the folder sync after it failed), `identity_failed`, `cert_failed`, `listen_failed`); each refusal also logs `hub.start_failed` with the same fields and an `err_kind` |
+| `fleet_hub_server_cert_issues_total{reason, result}` | counter | re-issues of the agent listener's certificate (`reason`: `names_changed`, `renewal`; `result`: `ok`, `failed`), with the log events `tls.server_cert_issued` and `tls.server_cert_issue_failed` |
 | `fleet_hub_store_bytes{db}`, `fleet_hub_store_wal_bytes{db}`, `fleet_hub_store_disk_free_bytes`, `fleet_hub_store_checkpoint_seconds`, `fleet_hub_read_pool_wait_seconds{db}`, `fleet_hub_backup_age_seconds` | gauges, histograms | store size, WAL growth, free disk, reader pool pressure, last backup |
 | `fleet_hub_system_signal_state{signal, subject}`, `fleet_hub_system_signal_value{signal, subject}` | gauges (0 ok, 1 warning, 2 critical, 3 unknown) | the System section as a metric |
 | `fleet_hub_agent_ring_events{machine}`, `_ring_bytes`, `_unacked_results`, `_rss_bytes`, `_reconnects_since_start`, `_tmux_control_down`, `_probes_failing`, `_commands_refused_since_start`, `_events_evicted` | gauges per machine | the latest `AgentHealth`, so one scrape of the hub shows every agent |
@@ -131,7 +133,10 @@ logged-in browser. The Host allow-list of 02f applies, and no CORS header is
 sent, so DNS rebinding does not work either. `local_trusted` mode is loopback
 only, so every local process may read it, the same trust as the local owner.
 A scrape is rate limited per peer (60 per minute) and counted
-(`fleet_hub_rpc_total{rpc="metrics"}`). The agent has no listener and so no
+(`fleet_hub_rpc_total{rpc="metrics"}`); both arrive with plan row 12, the API
+row that builds the rate limits and `fleet_hub_rpc_total`. Until then a scrape
+is not rate limited, and only its refusals are counted
+(`fleet_hub_auth_failures_total`). The agent has no listener and so no
 `/metrics` by default; an owner who scrapes agents sets a loopback
 `metrics_listen` in the agent's **local** policy file (the hub cannot push it,
 there is no config-push RPC), and most owners will not need it, because the hub
@@ -302,6 +307,10 @@ text but can hint at structure, hence the double guard.
 |---|---|
 | Collector down or slow | exports retry with backoff, queues are bounded, spans are dropped and counted; the hub is unaffected; `/metrics` and logs still work |
 | `/metrics` scraped without a credential from a remote address | 401; counted in `fleet_hub_auth_failures_total{reason="metrics"}`; no body |
+| A request to the API listener with a foreign Host or Origin header | 403 `HOST_NOT_ALLOWED` or `ORIGIN_NOT_ALLOWED` before any handler; counted in `fleet_hub_auth_failures_total{reason="host"}` or `{reason="origin"}` |
+| A peer fails the TLS handshake or breaks a connection on any listener, or a handler panics | net/http's error line becomes one `http.server_error` event (`listener`, `kind`): `panic` at error level, `tls_handshake` or `other` at debug level; its text, which names the peer and can echo what it sent, is dropped, and nothing reaches stderr as plain text |
+| `fleetd` refuses to start (bad config, lock held, loose mode, missing store or identity, port in use) | exits non-zero; one `hub.start_failed` line (`command`, `reason`, `err_kind`; no path, no key) and `fleet_hub_start_failures_total{command, reason}` |
+| The server certificate re-issue fails | the old certificate stays in service until its `not_after`; `tls.server_cert_issue_failed` and `fleet_hub_server_cert_issues_total{result="failed"}`; the hourly check retries |
 | An agent too old to send `AgentHealth` | the fields stay unset (unknown, not 0); the System section says "not reported" and raises nothing |
 | The evaluator itself stalls | `hub.system.evaluate` stops, `observed_time` goes stale; the UI shows "System status is old" above 60 s; `fleet doctor` reads the same status |
 | Hub restart | metrics reset (counters restart at 0; Prometheus handles it), `hub_instance_id` changes, SYSTEM items persist in the store and re-evaluate within 30 s |

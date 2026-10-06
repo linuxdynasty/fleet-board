@@ -6,7 +6,8 @@
 // limit; readers are also query_only; logs.db adds auto_vacuum=INCREMENTAL
 // before its first table, ADR 0015), applies the forward-only [Migration]
 // list, opens a read pool of at most 10 connections and starts the writer
-// goroutine.
+// goroutine. With Options.MustExist it opens an existing file only (SQLite's
+// mode=rw) and returns [ErrMissing] instead of creating one.
 //
 // Every write is a job ([ApplyFunc]) sent with [Store.Submit] or
 // [Store.Write]. The writer collects jobs until the batch holds 100 of them or

@@ -117,7 +117,7 @@ at **4 machines** / **50 machines × 10 panes** from the load table in
 
 | Entity | Key | Written by | Writes/s (4 / 50) | Read pattern | Retention |
 |---|---|---|---|---|---|
-| `hub_identity` | singleton | store creation, `fleetd restore` | ≈ 0 | at start; at Enroll and Hello | permanent; **secret** (CA key, salt); see below |
+| `hub_identity` | singleton | `fleetd init` (store creation), server certificate re-issue, `fleetd restore` | ≈ 0 | at start; at Enroll and Hello | permanent; **secret** (CA key, salt); see below |
 | `machines` | `machine_id` | W1, W2, W10, W11, revoke | ≈ 0 (state changes) + `last_seen` at most once a minute per machine: 0.07 / 0.83 | by id; list for Machines view | permanent until deleted (revoke keeps the row) |
 | `machine_connections` | `(machine_id, epoch)` | W1, W2 | per connect | latest per machine | 30 days |
 | `enroll_tokens`, `enroll_responses`, `cert_serials` | token secret hash; `(token hash, install_id, CSR key hash)`; serial (with a `revoked_time`) | W1, revoke | rare | lookup at Enroll/Hello; revocation list at TLS and Hello | token until used / expired + 30 days; stored response until TTL + 24 h (not replayed once the machine is revoked or deleted); serials while the machine exists, and a **revoked** serial until its certificate's `not_after` even after `DeleteMachine` (also kept in `revoked-serials` outside `state.db`, 02g) |

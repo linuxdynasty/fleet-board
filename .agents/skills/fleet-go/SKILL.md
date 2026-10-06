@@ -14,7 +14,7 @@ need a tour of the whole tree.
 ```text
 cmd/fleetd  cmd/fleet-agent  cmd/fleet     # thin main packages, wiring only
 internal/store  internal/telemetry         # sqlite open, single writer; OTEL, slog
-internal/hub/{config,gateway,ca,ingest,outbox,pacing,integration/github,syncer,api,system,insights}
+internal/hub/{config,lock,statedb,daemon,gateway,ca,ingest,outbox,pacing,integration/github,syncer,api,system,insights}
 internal/hub/{scheduler,goals,verifier,approvals,routines,logstore,attach}   # dispatch rows
 internal/agent/{conn,ring,tmux,probe,goals,policy,exec,doctor}
 internal/agent/{control,start,worktree,hooks,logship,attach}                # dispatch rows

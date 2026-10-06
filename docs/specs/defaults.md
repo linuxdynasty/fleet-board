@@ -34,6 +34,8 @@ spec change. "Decided here" marks a value no earlier document gave.
 | Agent command log | last 10,000 or 7 days | count, days | 03 | fixed |
 | Agent command rate limit per command kind (`rate_limits`) | 60 | per min | 03e, decided here | `agent` |
 | Certificate lifetime | 90 (max 365), renewed at two thirds | days | ADR 0004 | `cert_lifetime` setting |
+| Hub server certificate lifetime (agent listener) | 90, re-issued at two thirds (checked at start and hourly) or when `tls.agent_names` changes; never past the CA | days | [02g](02g-agent-security.md#hub-identity-and-restore), plan row 2b | fixed |
+| Fleet CA lifetime | 10; no rotation in v1 | years | 02g, plan row 2b | fixed |
 | Enrollment token lifetime | 15 (max 24 h) | min | machine.proto | per token |
 | `default_server` (local policy; hub settings can only tighten) | `control`; the local policy can lower it to `observe` or `none` | | ADR 0011, settings.proto | `agent`; also a `SettingValues` field |
 | `max_active` when no layer sets it | 2 | goals | 03e, decided here | `max_active` setting |
