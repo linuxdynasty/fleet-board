@@ -44,7 +44,9 @@ Makefile, tool-versions.env   make targets (make lint, make vuln, make gates, ..
 .github/workflows/macos.yml   weekly (and on demand) go test -race on macOS; fails unless the
                               macOS-only store and admin-socket tests ran and passed
 .github/workflows/nightly.yml daily make test-all (TEST_COUNT=10) and make fuzz on a cached
-                              corpus; skipped on a quiet night except Sundays
+                              corpus; skipped when main did not move, except Sundays
+scripts/nightly-should-run.sh decides that skip (the nightly check job);
+                              scripts/test-nightly-should-run.sh is its self-test (make selftest)
 scripts/ci-report-failure.sh  opens, updates or closes the ci-failure issue for a main or nightly
                               run (the report jobs); scripts/test-ci-report-failure.sh is its
                               self-test with a fake gh (make selftest)

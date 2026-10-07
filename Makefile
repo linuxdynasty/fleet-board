@@ -190,6 +190,7 @@ selftest: tools
 	scripts/test-make-gates.sh
 	scripts/test-make-test-flags.sh
 	scripts/test-ci-report-failure.sh
+	scripts/test-nightly-should-run.sh
 	python3 scripts/test-check-attribution.py
 	python3 scripts/test-check-file-cap.py
 	python3 scripts/test-agent-roles.py

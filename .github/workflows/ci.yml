@@ -214,6 +214,8 @@ jobs:
   # Pushes to main only: open, update or close this workflow's ci-failure issue
   # (scripts/ci-report-failure.sh). The only job with write access, and only to
   # issues. One report at a time, so two failing merges cannot open two issues.
+  # GitHub keeps one waiting job per group: when three reports queue at once
+  # the middle one is cancelled, and the newest run's result stands.
   report:
     needs: [gates]
     if: always() && github.event_name == 'push'

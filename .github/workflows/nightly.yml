@@ -1,8 +1,9 @@
 # Nightly run (#107). The PR gates test only the packages a change touches;
 # this tests every package with -race, TEST_COUNT times in a random order
 # (make test-all), then fuzzes each target for FUZZTIME (make fuzz) on the
-# corpus earlier nights grew. A scheduled night with no commit on main in the
-# last 24 hours skips the work, except on Sundays. A failure opens or updates
+# corpus earlier nights grew. A scheduled night skips the work when main is
+# still at the commit the last scheduled night tested, except on Sundays
+# (scripts/nightly-should-run.sh). A failure opens or updates
 # the ci-failure issue for this workflow and the next green night closes it
 # (scripts/ci-report-failure.sh). The suite job has 20 minutes; past 15, lower
 # TEST_COUNT, never the fuzz time (agent-guide.md, "CI runs and the minutes
@@ -25,31 +26,31 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # actions: read lists the earlier nightly runs.
   check:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
     outputs:
       run: ${{ steps.moved.outputs.run }}
     steps:
-      - name: Check out
+      - name: Check out the decision script
         uses: actions/checkout@v7
         with:
           persist-credentials: false
+          sparse-checkout: scripts/nightly-should-run.sh
+          sparse-checkout-cone-mode: false
 
-      # Cron runs on UTC; date +%u is 7 on a Sunday. HEAD's committer date is
-      # when it landed on main (a squash merge is committed at merge time).
-      - name: Did main move in the last 24 hours? (Sundays always run)
+      - name: Did main move since the last scheduled night? (Sundays always run)
         id: moved
         env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           EVENT_NAME: ${{ github.event_name }}
-        run: |
-          age=$(( $(date -u +%s) - $(git log -1 --format=%ct HEAD) ))
-          if [ "$EVENT_NAME" != "schedule" ] || [ "$(date -u +%u)" = 7 ] || [ "$age" -lt 86400 ]; then
-            echo "run=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "run=false" >> "$GITHUB_OUTPUT"
-            echo "Skipped: no commit on main in the last 24 hours (the last one landed $((age / 3600)) hours ago)." >> "$GITHUB_STEP_SUMMARY"
-          fi
+          HEAD_SHA: ${{ github.sha }}
+        run: scripts/nightly-should-run.sh
 
   suite:
     needs: [check]
@@ -82,12 +83,19 @@ jobs:
       - name: Generate Go and TypeScript (buf generate)
         run: make gen
 
+      # The time goes to the summary on a failure too: that is when the
+      # distance to the 20-minute limit matters most.
       - name: go test -race on every package, TEST_COUNT times (make test-all)
         run: |
           start=$(date +%s)
-          make test-all
-          echo "make test-all: TEST_COUNT=$TEST_COUNT took $(( $(date +%s) - start )) s on $(nproc) cores." >> "$GITHUB_STEP_SUMMARY"
+          rc=0
+          make test-all || rc=$?
+          echo "make test-all: TEST_COUNT=$TEST_COUNT, exit $rc, $(( $(date +%s) - start )) s on $(nproc) cores." >> "$GITHUB_STEP_SUMMARY"
+          exit "$rc"
 
+      # setup-go's own cache also holds GOCACHE, corpus included, under its
+      # go.sum key. That copy is older but harmless: corpus files are named by
+      # their content hash, so restoring both only merges them.
       - name: Where go keeps the fuzz corpus
         id: corpus
         run: echo "dir=$(go env GOCACHE)/fuzz" >> "$GITHUB_OUTPUT"
@@ -96,7 +104,7 @@ jobs:
         uses: actions/cache/restore@v6
         with:
           path: ${{ steps.corpus.outputs.dir }}
-          key: fuzz-${{ github.ref_name }}-${{ github.run_id }}
+          key: fuzz-${{ github.ref_name }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
             fuzz-${{ github.ref_name }}-
             fuzz-main-
@@ -111,7 +119,7 @@ jobs:
         uses: actions/cache/save@v6
         with:
           path: ${{ steps.corpus.outputs.dir }}
-          key: fuzz-${{ github.ref_name }}-${{ github.run_id }}
+          key: fuzz-${{ github.ref_name }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       # A crash leaves its input as a new, untracked file under the package's
       # testdata/fuzz/<FuzzTarget>/; nothing there is committed.
@@ -141,8 +149,7 @@ jobs:
           path: fuzz-crashers/
           retention-days: 14
 
-  # Scheduled and on-demand runs of main only, and not after a quiet night's
-  # skip. The only job with write access, and only to issues.
+  # Scheduled and on-demand runs of main only, and not after a skipped night. The only job with write access, and only to issues.
   report:
     needs: [check, suite]
     if: always() && github.ref == 'refs/heads/main' && (needs.check.result != 'success' || needs.suite.result != 'skipped')

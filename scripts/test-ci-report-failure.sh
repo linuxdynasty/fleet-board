@@ -48,15 +48,15 @@ for a in "$@"; do
   if [ "$prev" = "--body" ]; then printf '%s' "$a" > "$FAKE_CALLS.body"; fi
   prev="$a"
 done
-default_labels='[{"name":"ci-failure"}]'
 case "$1 ${2:-}" in
-  "${FAKE_FAIL_ON:-none}") echo "fake gh: $1 $2 failed" >&2; exit 1 ;;
+  "${FAKE_FAIL_ON:-none}"*) echo "fake gh: $1 $2 failed" >&2; exit 1 ;;
 esac
 case "$1 ${2:-}" in
-  "issue list") printf '%s\n' "${FAKE_ISSUES:-[]}" ;;
-  "label list") printf '%s\n' "${FAKE_LABELS-$default_labels}" ;;
+  "api repos/o/r/issues?"*) printf '%s\n' "${FAKE_ISSUES:-[]}" ;;
+  "api repos/o/r/commits/main") printf '{"sha":"%s"}\n' "${FAKE_MAIN_SHA:-}" ;;
   "issue create") echo "https://github.com/o/r/issues/99" ;;
-  api*) printf '{"sha":"%s"}\n' "${FAKE_MAIN_SHA:-}" ;;
+  "issue "* | "label create") ;;
+  *) echo "fake gh: unexpected call: $*" >&2; exit 1 ;;
 esac
 exit 0
 FAKE
@@ -122,11 +122,18 @@ fi
 run '{"lint":{"result":"failure"},"gates":{"result":"failure"}}'
 if [ "$rc" -eq 0 ] && grep -q -F -- "- Failed jobs: gates, lint" "$work/calls.body"; then ok; else bad "two failed jobs: not both named in order (exit $rc)"; fi
 
-# A missing label is created first; an existing one is not.
-run "$failed" FAKE_LABELS='[]'
-if [ "$rc" -eq 0 ] && called "gh | label | create | ci-failure"; then ok; else bad "label: missing label not created (exit $rc)"; fi
+# Opening an issue makes sure the label exists with --force, which succeeds
+# whether or not it does (two first reports at once cannot fail each other).
 run "$failed"
-if called "label | create"; then bad "label: created although it exists"; else ok; fi
+if [ "$rc" -eq 0 ] && called "gh | label | create | ci-failure |" && called "| --force"; then ok; else bad "label: not created with --force before opening (exit $rc)"; fi
+
+# The open issues come from the REST issue list (not search, whose index lags
+# writes), so an issue a report just opened is seen by the next report.
+if called "gh | api | repos/o/r/issues?state=open&labels=ci-failure&per_page=100" && ! called "issue | list"; then ok; else bad "lookup: not the REST issue list"; fi
+
+# A pull request with the same title is not the issue (the REST list holds PRs).
+run "$failed" FAKE_ISSUES='[{"number":5,"title":"CI failure: ci on main","pull_request":{}}]'
+if called "issue | create" && ! called "| 5 |"; then ok; else bad "pull request: treated a PR as the open issue"; fi
 
 # A failure with the issue already open comments on it and opens nothing.
 run "$failed" FAKE_ISSUES="$open_ci"
@@ -187,8 +194,10 @@ for case in "SHA=not-a-sha" "SHA=${sha_a}; touch pwned" "RUN_URL=https://evil.ex
 done
 
 # RED: a gh failure fails the script, so the reporter job goes red.
-run "$failed" FAKE_FAIL_ON="issue list"
-if [ "$rc" -ne 0 ]; then ok; else bad "gh issue list failing: exit 0"; fi
+run "$failed" FAKE_FAIL_ON="api repos/o/r/issues"
+if [ "$rc" -ne 0 ] && ! called "issue | create"; then ok; else bad "issue lookup failing: exit $rc or opened an issue"; fi
+run "$failed" FAKE_FAIL_ON="label create"
+if [ "$rc" -ne 0 ] && ! called "issue | create"; then ok; else bad "gh label create failing: exit $rc or opened an issue"; fi
 run "$failed" FAKE_FAIL_ON="issue create"
 if [ "$rc" -ne 0 ]; then ok; else bad "gh issue create failing: exit 0"; fi
 run "$green" FAKE_ISSUES="$open_ci" FAKE_FAIL_ON="issue close"
@@ -197,8 +206,12 @@ if [ "$rc" -ne 0 ]; then ok; else bad "gh issue close failing: exit 0"; fi
 # RED: an answer gh garbled is an error, not "no issue" or "no label".
 run "$failed" FAKE_ISSUES="not json"
 if [ "$rc" -ne 0 ] && ! called "issue | create"; then ok; else bad "garbled issue list: exit $rc or opened an issue"; fi
-run "$failed" FAKE_LABELS="not json"
-if [ "$rc" -ne 0 ] && ! called "label | create"; then ok; else bad "garbled label list: exit $rc or created the label"; fi
+run "$green" FAKE_ISSUES="$open_ci" FAKE_MAIN_SHA='x"'
+if [ "$rc" -ne 0 ] && ! called "issue | close"; then ok; else bad "garbled main SHA: exit $rc or closed the issue"; fi
+
+# RED: a job name with a newline cannot pass as two clean names.
+run '{"gates\nx":{"result":"failure"}}'
+if [ "$rc" -ne 0 ] && [ "$(calls_count)" -eq 0 ]; then ok; else bad "job name with a newline: exit $rc or gh was called"; fi
 
 printf 'test-ci-report-failure: %d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

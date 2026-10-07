@@ -37,7 +37,6 @@ re_workflow='^[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}$'
 re_run_url='^https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/actions/runs/[0-9]+(/attempts/[0-9]+)?$'
 re_sha='^[0-9a-f]{40}$'
 re_repo='^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$'
-re_job='^[A-Za-z0-9_-]+$'
 
 [[ "$workflow" =~ $re_workflow ]] || die "WORKFLOW is missing or not a plain name"
 [[ "$run_url" =~ $re_run_url ]] || die "RUN_URL is not a GitHub Actions run URL"
@@ -45,9 +44,8 @@ re_job='^[A-Za-z0-9_-]+$'
 [[ "$repo" =~ $re_repo ]] || die "GH_REPO is not owner/name"
 printf '%s' "$needs" | jq -e 'type == "object" and length > 0' > /dev/null 2>&1 ||
   die "NEEDS_JSON is not a non-empty JSON object"
-while IFS= read -r job; do
-  [[ "$job" =~ $re_job ]] || die "NEEDS_JSON names a job that is not a plain id"
-done < <(printf '%s' "$needs" | jq -r 'keys[]')
+printf '%s' "$needs" | jq -e 'keys | all(test("^[A-Za-z0-9_-]+$"))' > /dev/null ||
+  die "NEEDS_JSON names a job that is not a plain id"
 
 failed="$(printf '%s' "$needs" | jq -r '[to_entries[] | select(.value.result == "failure") | .key] | sort | join(", ")')"
 all_green="$(printf '%s' "$needs" | jq -r '[.[].result] | all(. == "success")')"
@@ -58,9 +56,13 @@ if [ -z "$failed" ] && [ "$all_green" != "true" ]; then
 fi
 
 title="CI failure: $workflow on main"
-# gh exits non-zero on an API error; set -e and pipefail stop here then.
-issues="$(gh issue list --label "$label" --state open --limit 100 --json number,title)"
-issue="$(printf '%s' "$issues" | jq -r --arg t "$title" 'map(select(.title == $t)) | .[0].number // empty')"
+# The REST issue list, not `gh issue list --label` (search, whose index lags
+# writes): an issue the previous report just opened must be found. It also
+# lists pull requests, which are skipped. gh exits non-zero on an API error,
+# and set -e stops here then.
+issues="$(gh api "repos/$repo/issues?state=open&labels=$label&per_page=100")"
+issue="$(printf '%s' "$issues" | jq -r --arg t "$title" \
+  'map(select(.pull_request == null and .title == $t)) | .[0].number // empty')"
 
 if [ -n "$failed" ]; then
   body="The \`$workflow\` workflow failed on main.
@@ -74,12 +76,10 @@ The run page has the logs. This issue closes on the next green \`$workflow\` run
     gh issue comment "$issue" --body "$body"
     echo "ci-report-failure: commented on #$issue"
   else
-    labels="$(gh label list --limit 200 --json name)"
-    has_label="$(printf '%s' "$labels" | jq -r --arg l "$label" 'any(.[]; .name == $l)')"
-    if [ "$has_label" != "true" ]; then
-      gh label create "$label" --color B60205 \
-        --description "A CI run on main failed (scripts/ci-report-failure.sh)"
-    fi
+    # --force succeeds whether or not the label exists, so the first reports
+    # of two workflows at once cannot fail each other.
+    gh label create "$label" --force --color B60205 \
+      --description "A CI run on main failed (scripts/ci-report-failure.sh)"
     gh issue create --title "$title" --label "$label" --body "$body"
   fi
   exit 0

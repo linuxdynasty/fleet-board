@@ -101,7 +101,8 @@ The `Makefile` is the one entry point; CI runs the same targets, one per step
 
 "Changed packages" come from `scripts/changed-go-packages.sh`: the files that
 differ from the merge base with `BASE_REF` (default `origin/main`; CI uses the
-PR's base), plus untracked files, plus every package that imports one of them.
+PR's base, and on a `main` push every package), plus untracked files, plus
+every package that imports one of them.
 A change to `go.mod`, `go.sum`, the Makefile, `tool-versions.env`,
 `.golangci.yml` or a contract (`api/`, buf config) runs every package. The race
 detector needs cgo on Linux but not on macOS, so `make test` sets
@@ -190,8 +191,10 @@ ran and passed (a skip fails). macOS minutes count ten times.
 nightly`), and on a PR that changes the file. It runs `make test-all` with
 `TEST_COUNT=10`, then `make fuzz` on the corpus earlier nights grew (cached;
 only `main` saves it). A crash uploads only the new input files (kept 14 days)
-and prints the command that replays each. A scheduled night with no commit on
-`main` in the last 24 hours skips the work, except on Sundays. The suite job
+and prints the command that replays each. A scheduled night skips the work when
+`main` is still at the commit the last finished scheduled night tested (a failed
+one counts; its issue tracks it), except on Sundays; when that is unknown, it
+runs (`scripts/nightly-should-run.sh`). The suite job
 has 20 minutes; if it passes 15, lower `TEST_COUNT`, never the fuzz time.
 
 When a `main` push or a nightly run fails, its `report` job opens an issue
@@ -209,7 +212,7 @@ a month (typical / worst case):
 | `ci.yml` gates on PRs | PR opened, new commits, reopened | ~370 | ~564 | built |
 | `pr-meta.yml` | every PR event, edits included | ~100 | ~100 | built (#107) |
 | `ci.yml` on `main` pushes | each merge: every package, plus the report job | ~175 | ~300 | built (#107) |
-| nightly | daily, skipped when `main` did not move (Sundays always run) | ~390 | ~520 | built (#107) |
+| nightly | daily, skipped when `main` did not move since the last night (Sundays always run) | ~390 | ~520 | built (#107) |
 | macOS weekly | Sundays, on demand, and PRs that change it | ~260 | ~344 | built (#107) |
 | perf report | PRs whose changed packages hold a benchmark | ~48 | ~48 | planned (#107) |
 | **Total** | | **~1340** | **~1880** | |
