@@ -43,6 +43,13 @@ Makefile, tool-versions.env   make targets (make lint, make vuln, make gates, ..
                               title and body
 .github/workflows/macos.yml   weekly (and on demand) go test -race on macOS; fails unless the
                               macOS-only store and admin-socket tests ran and passed
+.github/workflows/nightly.yml daily make test-all (TEST_COUNT=10), make fuzz on a cached
+                              corpus and make vuln; skipped when main did not move, except Sundays
+scripts/nightly-should-run.sh decides that skip (the nightly check job);
+                              scripts/test-nightly-should-run.sh is its self-test (make selftest)
+scripts/ci-report-failure.sh  opens, updates or closes the ci-failure issue for a main or nightly
+                              run (the report jobs); scripts/test-ci-report-failure.sh is its
+                              self-test with a fake gh (make selftest)
 scripts/check-pr-base.sh      fails unless a PR targets main (pr-meta.yml, and first in the ci.yml gates job)
 scripts/check-versions.sh     keeps the copies of a pin (.node-version, go.mod, buf.gen.yaml,
                               tools/tscheck) equal to tool-versions.env
@@ -57,7 +64,7 @@ scripts/test-verify-agent-canon.sh, test-smoke-binaries.sh, test-make-base-ref.s
   test-make-tools.sh, test-make-gates.sh, test-make-test-flags.sh   seeded cases for the canon
   script checks, the smoke, the quoting of BASE_REF and the fuzz times, the tools/gen rebuild
   rules, the ref-named-file guard, the wiring of make gates and the shuffle and repeat flags of
-  make test (also in make selftest)
+  make test and make test-all (also in make selftest)
 tools/tscheck/                compiles the generated TypeScript (typescript 7, strict)
 tools/telemetrynames/         every log event and metric name in the Go code is in the spec
                               telemetry-docs.json maps it to (make telemetry-names; Go tests)

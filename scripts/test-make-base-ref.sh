@@ -50,11 +50,13 @@ for var in FUZZTIME FUZZMINIMIZETIME; do
 done
 
 # TEST_COUNT is data the same way: exported and read as "$TEST_COUNT".
-out="$(cd "$root" && make -n test TEST_COUNT="$hostile" 2>&1)"
-case "$out" in
-  *"touch $marker"*) bad "make -n test pastes TEST_COUNT into the recipe text" ;;
-  *) ok ;;
-esac
+for target in test test-all; do
+  out="$(cd "$root" && make -n "$target" TEST_COUNT="$hostile" 2>&1)"
+  case "$out" in
+    *"touch $marker"*) bad "make -n $target pastes TEST_COUNT into the recipe text" ;;
+    *) ok ;;
+  esac
+done
 
 # Real run, in a throwaway git repo that holds a copy of the Makefile, never in
 # this checkout: a vulnerable Makefile would run `touch <marker> HEAD` and leave

@@ -84,6 +84,7 @@ The `Makefile` is the one entry point; CI runs the same targets, one per step
 | `test` | `go vet ./...`, then on the changed packages `go test -shuffle=on -count=3` (`TEST_COUNT`) and `go test -race -shuffle=on -count=1` |
 | `lint` | the pinned `golangci-lint` on the same packages (linters and settings in `.golangci.yml`; a `//nolint` names its linter and says why) |
 | `vuln` | the pinned `govulncheck ./...` on every package; a known vulnerability the code can reach fails it (exit 3). Needs `gen/` and network access to vuln.go.dev |
+| `test-all` | `go vet ./...`, then `go test -race -shuffle=on -count=TEST_COUNT ./...` on every package (the nightly run sets `TEST_COUNT=10`). Not part of `gates` |
 | `fuzz` | each Go fuzz target (`FuzzParse`, `FuzzCheckEnrollRequest`) for `FUZZTIME` (default `60s`), one `go test -fuzz` each; the seeds already run in `test`. Not part of `gates` |
 | `proto-check`, `ts-check` | `buf build` and `buf lint`; the generated TypeScript compiles (`tools/tscheck`) |
 | `fmt`, `fmt-check` | the pinned `gofumpt` formats, or only checks, every Go file (the same file set) |
@@ -100,7 +101,8 @@ The `Makefile` is the one entry point; CI runs the same targets, one per step
 
 "Changed packages" come from `scripts/changed-go-packages.sh`: the files that
 differ from the merge base with `BASE_REF` (default `origin/main`; CI uses the
-PR's base), plus untracked files, plus every package that imports one of them.
+PR's base, and on a `main` push every package), plus untracked files, plus
+every package that imports one of them.
 A change to `go.mod`, `go.sum`, the Makefile, `tool-versions.env`,
 `.golangci.yml` or a contract (`api/`, buf config) runs every package. The race
 detector needs cgo on Linux but not on macOS, so `make test` sets
@@ -164,10 +166,11 @@ exits 0 or 1).
 
 CI runs once per change (#107). `.github/workflows/ci.yml` runs the gates on a
 pull request (opened, new commits, reopened) and on each push to `main` after a
-merge; a branch push alone runs nothing, its PR does. A PR run is measured
-against the PR's base; a `main` push against the commit `main` was at before it
-(every package when that commit is unknown). A newer push to a PR cancels its
-older run; every merge to `main` gets its own full run, never cancelled.
+merge; a branch push alone runs nothing, its PR does. A PR run tests and lints
+the packages changed against the PR's base; a `main` push tests and lints every
+package, since two PRs that pass alone can break a package neither touched. A
+newer push to a PR cancels its older run; every merge to `main` gets its own
+full run, never cancelled.
 `.bin/` is cached, keyed on `tool-versions.env` and the Go version.
 `.github/workflows/pr-meta.yml` is the quick check of the PR's own fields on
 every PR event, edits included: the PR targets `main` (`scripts/check-pr-base.sh`;
@@ -184,6 +187,24 @@ changes the file; the store's F_FULLFSYNC commits and the admin socket's
 LOCAL_PEERCRED check exist only there. It fails unless those macOS-only tests
 ran and passed (a skip fails). macOS minutes count ten times.
 
+`.github/workflows/nightly.yml` runs at 07:17 UTC, on demand (`gh workflow run
+nightly`), and on a PR that changes the file. It runs `make test-all` with
+`TEST_COUNT=10`, then `make fuzz` on the corpus earlier nights grew (cached;
+only `main` saves it), then `make vuln`, which runs even after a test or fuzz
+failure. A crash uploads only the new input files (kept 14 days)
+and prints the command that replays each. A scheduled night skips the work when
+`main` is still at the commit the last finished scheduled night tested (a failed
+one counts; its issue tracks it), except on Sundays; when that is unknown, it
+runs (`scripts/nightly-should-run.sh`). The suite job
+has 20 minutes; if it passes 15, lower `TEST_COUNT`, never the fuzz time.
+
+When a `main` push or a nightly run fails, its `report` job opens an issue
+titled "CI failure: <workflow> on main" with the `ci-failure` label, or comments
+on the one already open; the next green run of that workflow at `main`'s tip
+closes it (`scripts/ci-report-failure.sh`). The issue holds the run link, the
+commit and the failed job names, never log text. The `report` job is the only
+one with write access, and only to issues. On a PR it shows as skipped.
+
 The plan includes 2000 GitHub Actions minutes a month. Estimates, in minutes
 a month (typical / worst case):
 
@@ -191,8 +212,8 @@ a month (typical / worst case):
 |---|---|---|---|---|
 | `ci.yml` gates on PRs | PR opened, new commits, reopened | ~370 | ~564 | built |
 | `pr-meta.yml` | every PR event, edits included | ~100 | ~100 | built (#107) |
-| `ci.yml` on `main` pushes | each merge (the full suite is planned) | ~175 | ~300 | built (#107); full suite planned (#107) |
-| nightly | daily, skipped when `main` did not move | ~390 | ~520 | planned (#107) |
+| `ci.yml` on `main` pushes | each merge: every package, plus the report job | ~175 | ~300 | built (#107) |
+| nightly | daily, skipped when `main` did not move since the last night (Sundays always run) | ~390 | ~520 | built (#107) |
 | macOS weekly | Sundays, on demand, and PRs that change it | ~260 | ~344 | built (#107) |
 | perf report | PRs whose changed packages hold a benchmark | ~48 | ~48 | planned (#107) |
 | **Total** | | **~1340** | **~1880** | |

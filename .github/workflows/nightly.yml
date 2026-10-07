@@ -1,0 +1,198 @@
+# Nightly run (#107). The PR gates test only the packages a change touches;
+# this tests every package with -race, TEST_COUNT times in a random order
+# (make test-all), then fuzzes each target for FUZZTIME (make fuzz) on the
+# corpus earlier nights grew, then checks for known vulnerabilities (make vuln). A scheduled night skips the work when main is
+# still at the commit the last scheduled night tested, except on Sundays
+# (scripts/nightly-should-run.sh). A failure opens or updates
+# the ci-failure issue for this workflow and the next green night closes it
+# (scripts/ci-report-failure.sh). The suite job has 20 minutes; past 15, lower
+# TEST_COUNT, never the fuzz time (agent-guide.md, "CI runs and the minutes
+# budget"). A PR that changes this file runs it once, with no report.
+name: nightly
+
+on:
+  schedule:
+    - cron: "17 7 * * *"
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/nightly.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # actions: read lists the earlier nightly runs.
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      run: ${{ steps.moved.outputs.run }}
+    steps:
+      - name: Check out the decision script
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts/nightly-should-run.sh
+          sparse-checkout-cone-mode: false
+
+      - name: Did main move since the last scheduled night? (Sundays always run)
+        id: moved
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          HEAD_SHA: ${{ github.sha }}
+        run: scripts/nightly-should-run.sh
+
+  suite:
+    needs: [check]
+    if: needs.check.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      TEST_COUNT: "10"
+    # shell: bash runs with -o pipefail (the default for run is bash -e only).
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Go from go.mod
+        id: setup-go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      # make gen also writes gen/ts with protoc-gen-es, which runs on Node.
+      - name: Set up Node from .node-version
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+
+      - name: Generate Go and TypeScript (buf generate)
+        id: gen
+        run: make gen
+
+      # The time goes to the summary on a failure too: that is when the
+      # distance to the 20-minute limit matters most.
+      - name: go test -race on every package, TEST_COUNT times (make test-all)
+        run: |
+          start=$(date +%s)
+          rc=0
+          make test-all || rc=$?
+          echo "make test-all: TEST_COUNT=$TEST_COUNT, exit $rc, $(( $(date +%s) - start )) s on $(nproc) cores." >> "$GITHUB_STEP_SUMMARY"
+          exit "$rc"
+
+      # setup-go's own cache also holds GOCACHE, corpus included, under its
+      # go.sum key. That copy is older but harmless: corpus files are named by
+      # their content hash, so restoring both only merges them.
+      - name: Where go keeps the fuzz corpus
+        id: corpus
+        run: echo "dir=$(go env GOCACHE)/fuzz" >> "$GITHUB_OUTPUT"
+
+      - name: Restore the fuzz corpus
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ steps.corpus.outputs.dir }}
+          key: fuzz-${{ github.ref_name }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            fuzz-${{ github.ref_name }}-
+            fuzz-main-
+
+      - name: Fuzz each target for FUZZTIME (make fuzz)
+        id: fuzz
+        run: make fuzz
+
+      # Only main saves, so a PR's or a branch's run never feeds main's corpus.
+      - name: Save the fuzz corpus (main only)
+        if: always() && github.ref == 'refs/heads/main' && steps.fuzz.outcome != 'skipped'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ steps.corpus.outputs.dir }}
+          key: fuzz-${{ github.ref_name }}-${{ github.run_id }}-${{ github.run_attempt }}
+
+      # A crash leaves its input as a new, untracked file under the package's
+      # testdata/fuzz/<FuzzTarget>/; nothing there is committed.
+      - name: Collect the failing fuzz inputs and print how to replay them
+        id: crashers
+        if: failure() && steps.fuzz.outcome == 'failure'
+        run: |
+          files="$(git ls-files --others --exclude-standard -- '*/testdata/fuzz/*')"
+          if [ -z "$files" ]; then
+            echo "No new input under testdata/fuzz/; the fuzz step's log has the failure."
+            exit 0
+          fi
+          while IFS= read -r f; do
+            mkdir -p "fuzz-crashers/$(dirname "$f")"
+            cp "$f" "fuzz-crashers/$f"
+            dir="${f%%/testdata/fuzz/*}"
+            rest="${f#*/testdata/fuzz/}"
+            echo "Replay: go test -run='^${rest%%/*}\$/${rest#*/}\$' ./$dir/"
+          done <<< "$files" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "found=true" >> "$GITHUB_OUTPUT"
+
+      - name: Upload the failing fuzz inputs
+        if: failure() && steps.crashers.outputs.found == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: fuzz-crashers
+          path: fuzz-crashers/
+          retention-days: 14
+
+      # make vuln builds the pinned tools into .bin/ first; ci.yml's runs on
+      # main save that cache (same key), so this only restores it.
+      - name: Restore the pinned tools (.bin/)
+        if: ${{ !cancelled() && steps.gen.outcome == 'success' }}
+        uses: actions/cache/restore@v6
+        with:
+          path: .bin
+          key: bin-${{ runner.os }}-${{ hashFiles('tool-versions.env') }}-go${{ steps.setup-go.outputs.go-version }}
+
+      # Last, and even after a test or fuzz failure: a new advisory can land on
+      # code that has not changed. Exit 3 means a reachable known vulnerability.
+      - name: Known vulnerabilities (govulncheck)
+        if: ${{ !cancelled() && steps.gen.outcome == 'success' }}
+        run: make vuln
+
+  # Scheduled and on-demand runs of main only, and not after a skipped night.
+  # The only job with write access, and only to issues.
+  report:
+    needs: [check, suite]
+    if: always() && github.ref == 'refs/heads/main' && (needs.check.result != 'success' || needs.suite.result != 'skipped')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    concurrency:
+      group: ci-failure-report-${{ github.workflow }}
+      cancel-in-progress: false
+    steps:
+      - name: Check out the reporter
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts/ci-report-failure.sh
+          sparse-checkout-cone-mode: false
+
+      - name: Open, update or close the ci-failure issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          WORKFLOW: ${{ github.workflow }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          SHA: ${{ github.sha }}
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: scripts/ci-report-failure.sh
