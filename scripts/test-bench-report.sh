@@ -12,7 +12,10 @@
 #   a package with no benchmark   "nothing to compare", exit 0
 #   a benchmark new in head       "new" rows and the head-only note, exit 0
 #   a base that does not build    the head-only note, exit 0
-#   a head benchmark that fails   exit 1
+#   base and head samples         alternate, first side swapped each round,
+#                                 each run from its package directory
+#   a head benchmark that fails   exit 1, its message in the log
+#   a base benchmark that fails   the head-only note, its message in the log
 #   a bad BENCH_COUNT/BENCH_TIME  exit 2, nothing run, never shell text
 # Time rows are not asserted: a tiny benchmark's time is noise on a busy host.
 # Runs on the macOS system bash 3.2. Needs git, go and python3; the first run
@@ -156,12 +159,85 @@ commit "fixed"
 report
 if [ "$rc" -eq 0 ] && printf '%s' "$out" | grep -q "did not build or run; head only"; then ok; else bad "broken base: exit $rc or no head-only note"; fi
 
+# Base and head take turns and swap who goes first each round; each binary runs
+# from its package directory. The tag comes from testdata/, so a run from the
+# wrong directory panics, and each process appends it to ORDER_LOG.
+tagged_bench() {
+  cat <<'EOF'
+package b
+
+import (
+	"os"
+	"testing"
+)
+
+func init() {
+	tag, err := os.ReadFile("testdata/tag")
+	if err != nil {
+		panic(err)
+	}
+	f, err := os.OpenFile(os.Getenv("ORDER_LOG"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		panic(err)
+	}
+	_, _ = f.Write(append(tag, ' '))
+	_ = f.Close()
+}
+
+func BenchmarkWork(b *testing.B) {
+	for b.Loop() {
+	}
+}
+EOF
+}
+fresh
+mkdir -p "$repo/b/testdata"
+tagged_bench > "$repo/b/b_test.go"
+printf base > "$repo/b/testdata/tag"
+g add -A && g commit -q -m tagged && g branch -f main HEAD
+printf head > "$repo/b/testdata/tag"
+printf '// head\n' >> "$repo/b/b.go"
+commit "head tag"
+rm -f "$work/order"
+report "BENCH_COUNT=4" "ORDER_LOG=$work/order"
+order="$(cat "$work/order" 2> /dev/null || true)"
+if [ "$rc" -ne 0 ]; then
+  bad "turns: exit $rc, want 0"
+elif [ "$order" != "base head head base base head head base " ]; then
+  bad "turns: run order '$order', want base and head alternating, first side swapped each round"
+else
+  ok
+fi
+
 # RED: a head benchmark that fails fails the script.
 fresh
 printf 'package b\n\nimport "testing"\n\nfunc BenchmarkWork(b *testing.B) { b.Fatal("boom") }\n' > "$repo/b/b_test.go"
 commit "fatal"
 report
-if [ "$rc" -eq 1 ]; then ok; else bad "failing head benchmark: exit $rc, want 1"; fi
+if [ "$rc" -ne 1 ]; then
+  bad "failing head benchmark: exit $rc, want 1"
+elif ! printf '%s' "$out" | grep -q boom; then
+  bad "failing head benchmark: the failure message is not in the log"
+else
+  ok
+fi
+
+# A base benchmark that fails: head only, and its message is in the log.
+fresh
+printf 'package b\n\nimport "testing"\n\nfunc BenchmarkWork(b *testing.B) { b.Fatal("base-boom") }\n' > "$repo/b/b_test.go"
+g add -A && g commit -q -m "fatal base" && g branch -f main HEAD
+bench_file 1 > "$repo/b/b_test.go"
+commit "fixed"
+report
+if [ "$rc" -ne 0 ]; then
+  bad "failing base benchmark: exit $rc, want 0"
+elif ! printf '%s' "$out" | grep -q "did not build or run; head only"; then
+  bad "failing base benchmark: no head-only note"
+elif ! printf '%s' "$out" | grep -q base-boom; then
+  bad "failing base benchmark: the failure message is not in the log"
+else
+  ok
+fi
 
 # RED: bad BENCH_COUNT or BENCH_TIME exits 2 before anything runs.
 marker="$work/marker"

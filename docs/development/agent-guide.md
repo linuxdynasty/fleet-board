@@ -207,14 +207,17 @@ commit and the failed job names, never log text. The `report` job is the only
 one with write access, and only to issues. On a PR it shows as skipped.
 
 On a PR, the last gates step runs `make bench-report` and adds its table to the
-job summary: the benchmarks of the changed packages, base first, then head, on
-the same runner (`scripts/bench-report.sh`). `scripts/bench-review.py` marks a
+job summary: the benchmarks of the changed packages at the base and at the
+head, on the same runner, taking turns one sample at a time
+(`scripts/bench-report.sh`). `scripts/bench-review.py` marks a
 row REVIEW when benchstat calls the change significant (p < 0.05) and time per
 op rose more than 10%, or allocations per op rose at all. It is a report, not a
 gate: the step never fails the job, and a REVIEW row asks the reviewer to look.
-A new benchmark shows as "new" (the base has none to compare). On an M4 Pro two
-runs of the same code moved the 1-job store batch by up to 8% with p < 0.05,
-so a time REVIEW near 10% may be noise; an allocation REVIEW is not.
+A new benchmark shows as "new" (the base has none to compare). On an M4 Pro,
+running all base samples before all head samples made the same code look 8%
+slower with p = 0.002; taking turns, two such runs showed no significant row.
+A shared runner is noisier, so a time REVIEW near 10% may still be noise; an
+allocation REVIEW is not.
 
 The plan includes 2000 GitHub Actions minutes a month. Estimates, in minutes
 a month (typical / worst case):
@@ -237,8 +240,9 @@ pass 2000 (the free allowance).
 ## Pinned tool versions
 
 `tool-versions.env` is the one file that holds every pinned version: Go, Node
-major, `golangci-lint`, `buf`, `gofumpt`, `govulncheck`, `typescript` and the
-`protoc-gen-es` version. The Makefile includes it and CI sources it, so neither
+major, `golangci-lint`, `buf`, `gofumpt`, `govulncheck`, `actionlint`,
+`benchstat` (a pseudo-version: `golang.org/x/perf` has no release tags),
+`typescript` and the `protoc-gen-es` version. The Makefile includes it and CI sources it, so neither
 spells out a version. `make tools` builds `golangci-lint`, `gofumpt` and
 `govulncheck` with the local Go into `.bin/` (gitignored); the `golangci-lint`
 on `PATH` is built with an older Go and refuses a `go 1.27` module, so the

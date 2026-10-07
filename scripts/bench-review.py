@@ -79,9 +79,16 @@ def human(unit: str, raw: str) -> str:
     return f"{v:.0f}" if "e" in s else s
 
 
-def verdict(unit: str, delta: str, p: str) -> str:
-    m, pm = DELTA_RE.match(delta), P_RE.search(p)
-    if not m or not pm or float(pm.group(1)) >= ALPHA:
+def verdict(unit: str, base: str, head: str, delta: str, p: str) -> str:
+    pm = P_RE.search(p)
+    if not pm or float(pm.group(1)) >= ALPHA:
+        return ""
+    # benchstat writes `?` for the change when the base is 0: no percent exists.
+    if delta == "?":
+        rose = float(head) > float(base)
+        return "REVIEW" if rose and unit in ("sec/op", "allocs/op") else ""
+    m = DELTA_RE.match(delta)
+    if not m:
         return ""
     change = float(m.group(1))
     if unit == "sec/op" and change > TIME_LIMIT_PCT:
@@ -106,7 +113,7 @@ def review(text: str) -> tuple[list[str], int, int]:
                 base, head, delta, p, mark = "", human(unit, r[1]), "", "", "new"
             elif len(r) >= 7:
                 base, head, delta, p = human(unit, r[1]), human(unit, r[3]), r[5], r[6]
-                mark = verdict(unit, delta, p)
+                mark = verdict(unit, r[1], r[3], delta, p)
                 compared += 1
             elif len(r) == 5 and r[1] == "":
                 base, head, delta, p, mark = "", human(unit, r[3]), "", "", "new"

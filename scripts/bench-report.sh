@@ -7,10 +7,11 @@
 #
 # 1. The packages scripts/changed-go-packages.sh names that hold a Benchmark
 #    function in a _test.go file. None: it says so and exits 0.
-# 2. Base first, then head, on the same machine: the merge base is checked out
-#    in a throwaway git worktree (`make gen` there when it has api/), and each
-#    of those packages that exists there with a benchmark runs with
-#    go test -run='^$' -bench=. -benchmem -count=BENCH_COUNT -benchtime=BENCH_TIME.
+# 2. The merge base is checked out in a throwaway git worktree (`make gen`
+#    there when it has api/). Each package's test binary is built once per
+#    tree, then BENCH_COUNT rounds run one sample of each side
+#    (-test.bench=. -test.benchmem -test.count=1 -test.benchtime=BENCH_TIME),
+#    base and head taking turns, on the same machine.
 # 3. The pinned benchstat (BENCHSTAT_VERSION in tool-versions.env, through
 #    go run) compares them; scripts/bench-review.py marks REVIEW rows.
 #
@@ -81,43 +82,92 @@ cleanup() {
 }
 trap cleanup EXIT
 
-bench() {
-  # shellcheck disable=SC2086 # one package per word
-  CGO_ENABLED=0 go test -run='^$' -bench=. -benchmem -count="$count" -benchtime="$benchtime" $1
+# build <tree> <pkg> <out>: the package's test binary, built once.
+build() { (cd "$1" && CGO_ENABLED=0 go test -c -o "$3" "$2"); }
+# sample <tree> <pkg> <bin>: one run of every benchmark, from the package
+# directory as go test runs it (testdata/ is relative).
+sample() {
+  (cd "$1/$2" && "$3" -test.run='^$' -test.bench=. -test.benchmem -test.count=1 -test.benchtime="$benchtime")
+}
+head_failed() {
+  echo "### Benchmarks: base vs head"
+  echo
+  echo "A head benchmark did not build or failed; see the job log."
+  echo "bench-report: a head benchmark failed:" >&2
+  cat "$work/head-err.txt" >&2 2> /dev/null || true
+  tail -n 40 "$work/head.txt" >&2 2> /dev/null || true
+  exit 1
+}
+base_broken() {
+  base_note="The base benchmarks did not build or run; head only. See the job log."
+  cat "$work/base-gen.log" "$work/base-err.txt" >&2 2> /dev/null || true
+  tail -n 40 "$work/base.txt" >&2 2> /dev/null || true
+  : > "$work/base.txt"
+  base_on=""
 }
 
-base_note=""
 : > "$work/base.txt"
+: > "$work/head.txt"
+: > "$work/head-err.txt"
+: > "$work/base-err.txt"
+base_note=""
+base_on=""
 if merge_base="$(git merge-base "$base_ref" HEAD 2> /dev/null)" &&
   git worktree add --quiet --detach "$base_tree" "$merge_base" > /dev/null 2>&1; then
-  base_pkgs=""
-  for p in $bench_pkgs; do
-    if [ -d "$base_tree/$p" ] && has_bench "$base_tree/$p"; then base_pkgs="$base_pkgs $p"; fi
-  done
-  if [ -z "$base_pkgs" ]; then
-    base_note="The base ($merge_base) has none of these benchmarks yet; head only."
-  elif ! (cd "$base_tree" && { [ ! -d api ] || make gen > "$work/base-gen.log" 2>&1; } &&
-    bench "$base_pkgs" > "$work/base.txt" 2> "$work/base-err.txt"); then
-    base_note="The base benchmarks did not build or run; head only. See the job log."
-    cat "$work/base-err.txt" "$work/base.txt" >&2 || true
-    : > "$work/base.txt"
-  fi
+  base_on=yes
+  if ! (cd "$base_tree" && { [ ! -d api ] || make gen > "$work/base-gen.log" 2>&1; }); then base_broken; fi
 else
   base_note="No merge base with $base_ref; head only."
 fi
 
-if ! bench "$bench_pkgs" > "$work/head.txt" 2> "$work/head-err.txt"; then
-  echo "bench-report: a head benchmark failed:" >&2
-  cat "$work/head-err.txt" "$work/head.txt" >&2
-  exit 1
+# One binary per package and tree; base_bin[i] is empty when the base has no
+# benchmark in package i.
+n=0
+base_any=""
+for p in $bench_pkgs; do
+  build "$root" "$p" "$work/head-$n.test" 2>> "$work/head-err.txt" || head_failed
+  base_bin[n]=""
+  if [ -n "$base_on" ] && [ -d "$base_tree/$p" ] && has_bench "$base_tree/$p"; then
+    if build "$base_tree" "$p" "$work/base-$n.test" 2>> "$work/base-err.txt"; then
+      base_bin[n]="$work/base-$n.test"
+      base_any=yes
+    else
+      base_broken
+    fi
+  fi
+  n=$((n + 1))
+done
+if [ -n "$base_on" ] && [ -z "$base_any" ]; then
+  base_note="The base ($merge_base) has none of these benchmarks yet; head only."
+  base_on=""
 fi
+
+# Base and head take turns, one sample each per round, and swap who goes first
+# every round, so a machine that drifts (heat, a neighbor's load) moves both.
+round=1
+while [ "$round" -le "$count" ]; do
+  order="head base"
+  if [ $((round % 2)) -eq 1 ]; then order="base head"; fi
+  i=0
+  for p in $bench_pkgs; do
+    for side in $order; do
+      if [ "$side" = head ]; then
+        sample "$root" "$p" "$work/head-$i.test" >> "$work/head.txt" 2>> "$work/head-err.txt" || head_failed
+      elif [ -n "$base_on" ] && [ -n "${base_bin[i]}" ]; then
+        sample "$base_tree" "$p" "${base_bin[i]}" >> "$work/base.txt" 2>> "$work/base-err.txt" || base_broken
+      fi
+    done
+    i=$((i + 1))
+  done
+  round=$((round + 1))
+done
 
 benchstat() {
   go run "golang.org/x/perf/cmd/benchstat@$BENCHSTAT_VERSION" "$@"
 }
 benchstat -format csv base="$work/base.txt" head="$work/head.txt" > "$work/stat.csv"
 benchstat base="$work/base.txt" head="$work/head.txt" > "$work/stat.txt"
-python3 scripts/bench-review.py < "$work/stat.csv"
+python3 scripts/bench-review.py < "$work/stat.csv" || exit 1
 echo
 if [ -n "$base_note" ]; then
   echo "$base_note"

@@ -87,6 +87,16 @@ class BenchReviewTests(unittest.TestCase):
         self.assertEqual(1, len(rows), out)
         self.assertIn("jobs=1-4", rows[0])
 
+    def test_alloc_rise_from_zero_is_review(self):
+        # benchstat prints `?` for the change when the base is 0.
+        out = self.check(PREAMBLE + table("allocs/op", [
+            "Work-4,0,0%,1,0%,?,p=0.002 n=6",
+            "Same-4,0,0%,0,0%,~,p=1.000 n=6",
+        ]))
+        rows = review_lines(out)
+        self.assertEqual(1, len(rows))
+        self.assertIn("Work-4", rows[0])
+
     def test_bytes_and_custom_units_are_reported_never_review(self):
         out = self.check(PREAMBLE + table("B/op", [
             "WriterBatch/jobs=1-4,976,0%,2000,0%,+104.92%,p=0.000 n=10",

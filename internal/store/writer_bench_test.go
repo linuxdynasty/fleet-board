@@ -36,7 +36,6 @@ func BenchmarkWriterBatch(b *testing.B) {
 			done := make([]<-chan error, size)
 			n := 0
 			b.ReportAllocs()
-			b.ResetTimer()
 			for b.Loop() {
 				for i := range done {
 					n++
