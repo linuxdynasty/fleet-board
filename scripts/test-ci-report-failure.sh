@@ -212,6 +212,8 @@ if [ "$rc" -ne 0 ] && ! called "issue | close"; then ok; else bad "garbled main 
 # RED: a job name with a newline cannot pass as two clean names.
 run '{"gates\nx":{"result":"failure"}}'
 if [ "$rc" -ne 0 ] && [ "$(calls_count)" -eq 0 ]; then ok; else bad "job name with a newline: exit $rc or gh was called"; fi
+run '{"gates\n":{"result":"failure"}}'
+if [ "$rc" -ne 0 ] && [ "$(calls_count)" -eq 0 ]; then ok; else bad "job name ending in a newline: exit $rc or gh was called"; fi
 
 printf 'test-ci-report-failure: %d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

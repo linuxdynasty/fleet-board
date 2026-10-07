@@ -35,8 +35,9 @@ re_sha='^[0-9a-f]{40}$'
 day="${NIGHTLY_DAY_OF_WEEK:-$(date -u +%u)}"
 [ "$day" != "7" ] || decide true "run: Sundays always run."
 
+# gh's own error, if any, goes to the job log.
 runs="$(gh run list --workflow nightly.yml --event schedule --branch main --status completed \
-  --limit 5 --json headSha,conclusion 2> /dev/null)" ||
+  --limit 5 --json headSha,conclusion)" ||
   decide true "run: could not list earlier scheduled nightly runs."
 last="$(printf '%s' "$runs" | jq -r '[.[] | select(.conclusion != "cancelled")][0].headSha // empty' 2> /dev/null)" ||
   decide true "run: the list of earlier scheduled nightly runs was not JSON."

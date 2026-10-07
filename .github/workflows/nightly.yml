@@ -149,7 +149,8 @@ jobs:
           path: fuzz-crashers/
           retention-days: 14
 
-  # Scheduled and on-demand runs of main only, and not after a skipped night. The only job with write access, and only to issues.
+  # Scheduled and on-demand runs of main only, and not after a skipped night.
+  # The only job with write access, and only to issues.
   report:
     needs: [check, suite]
     if: always() && github.ref == 'refs/heads/main' && (needs.check.result != 'success' || needs.suite.result != 'skipped')

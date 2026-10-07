@@ -44,7 +44,7 @@ re_repo='^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$'
 [[ "$repo" =~ $re_repo ]] || die "GH_REPO is not owner/name"
 printf '%s' "$needs" | jq -e 'type == "object" and length > 0' > /dev/null 2>&1 ||
   die "NEEDS_JSON is not a non-empty JSON object"
-printf '%s' "$needs" | jq -e 'keys | all(test("^[A-Za-z0-9_-]+$"))' > /dev/null ||
+printf '%s' "$needs" | jq -e 'keys | all(test("^[A-Za-z0-9_-]+\\z"))' > /dev/null ||
   die "NEEDS_JSON names a job that is not a plain id"
 
 failed="$(printf '%s' "$needs" | jq -r '[to_entries[] | select(.value.result == "failure") | .key] | sort | join(", ")')"
