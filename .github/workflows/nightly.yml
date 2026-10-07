@@ -1,11 +1,12 @@
 # Nightly run (#107). The PR gates test only the packages a change touches;
 # this tests every package with -race, TEST_COUNT times in a random order
-# (make test-all), then fuzzes each target for FUZZTIME (make fuzz) on the
-# corpus earlier nights grew, then checks for known vulnerabilities (make vuln). A scheduled night skips the work when main is
-# still at the commit the last scheduled night tested, except on Sundays
-# (scripts/nightly-should-run.sh). A failure opens or updates
-# the ci-failure issue for this workflow and the next green night closes it
-# (scripts/ci-report-failure.sh). The suite job has 20 minutes; past 15, lower
+# (make test-all, which also writes the coverage report and profile), then
+# fuzzes each target for FUZZTIME (make fuzz) on the corpus earlier nights
+# grew, then checks for known vulnerabilities (make vuln). A scheduled night
+# skips the work when main is still at the commit the last scheduled night
+# tested, except on Sundays (scripts/nightly-should-run.sh). A failure opens
+# or updates the ci-failure issue for this workflow and the next green night
+# closes it (scripts/ci-report-failure.sh). The suite job has 20 minutes; past 15, lower
 # TEST_COUNT, never the fuzz time (agent-guide.md, "CI runs and the minutes
 # budget"). A PR that changes this file runs it once, with no report.
 name: nightly
@@ -88,12 +89,30 @@ jobs:
       # The time goes to the summary on a failure too: that is when the
       # distance to the 20-minute limit matters most.
       - name: go test -race on every package, TEST_COUNT times (make test-all)
+        env:
+          COVERPROFILE: ${{ runner.temp }}/cover.out
         run: |
           start=$(date +%s)
           rc=0
           make test-all || rc=$?
           echo "make test-all: TEST_COUNT=$TEST_COUNT, exit $rc, $(( $(date +%s) - start )) s on $(nproc) cores." >> "$GITHUB_STEP_SUMMARY"
           exit "$rc"
+
+      # #107: every package's coverage from make test-all, in the summary, and
+      # the whole profile as an artifact (go tool cover -html=cover.out shows
+      # it line by line). A report: no minimum.
+      - name: Test coverage of every package (report)
+        if: ${{ !cancelled() && steps.gen.outcome == 'success' }}
+        continue-on-error: true
+        run: python3 scripts/coverage-report.py "$RUNNER_TEMP/cover.out" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the coverage profile
+        if: ${{ !cancelled() && steps.gen.outcome == 'success' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-profile
+          path: ${{ runner.temp }}/cover.out
+          retention-days: 14
 
       # setup-go's own cache also holds GOCACHE, corpus included, under its
       # go.sum key. That copy is older but harmless: corpus files are named by

@@ -11,7 +11,8 @@
 #   make build      CGO_ENABLED=0 go build ./...  (make smoke then runs each binary)
 #   make test       go vet ./..., then on the packages changed against BASE_REF
 #                   (default origin/main): go test -shuffle=on -count=TEST_COUNT
-#                   (default 3), then go test -race -shuffle=on -count=1
+#                   (default 3), then go test -race -shuffle=on -count=1;
+#                   with COVERPROFILE set, the first pass writes coverage there
 #   make lint       golangci-lint on the same packages
 #   make vuln       govulncheck ./... (fails on a reachable known vulnerability)
 #   make test-all   go vet ./..., then go test -race -shuffle=on -count=TEST_COUNT
@@ -143,12 +144,19 @@ vet:
 TEST_COUNT ?= 3
 export TEST_COUNT
 
+# COVERPROFILE, when set, is the file the non-race pass of make test (and the
+# one pass of make test-all) writes its coverage profile to; CI sets it for
+# scripts/coverage-report.py. It is a path, read quoted. Unset, no profile.
+COVERPROFILE ?=
+export COVERPROFILE
+
 test: vet
 	@case "$$TEST_COUNT" in ''|*[!0-9]*|0*) echo "make test: TEST_COUNT must be a positive integer" >&2; exit 2;; esac; \
 	pkgs="$$(scripts/changed-go-packages.sh "$$BASE_REF")" || exit 1; \
 	if [ -z "$$pkgs" ]; then echo "make test: no Go package changed against $$BASE_REF; no tests to run"; exit 0; fi; \
 	echo "make test: $$pkgs"; \
-	CGO_ENABLED=0 go test -shuffle=on -count="$$TEST_COUNT" $$pkgs && \
+	cover=""; if [ -n "$$COVERPROFILE" ]; then cover="-coverprofile=$$COVERPROFILE"; fi; \
+	CGO_ENABLED=0 go test -shuffle=on -count="$$TEST_COUNT" $${cover:+"$$cover"} $$pkgs && \
 	CGO_ENABLED=$(RACE_CGO) go test -race -shuffle=on -count=1 $$pkgs
 
 # test-all is the nightly suite (#107): every package, not only the changed
@@ -156,7 +164,8 @@ test: vet
 # checks TEST_COUNT the same way make test does.
 test-all: vet
 	@case "$$TEST_COUNT" in ''|*[!0-9]*|0*) echo "make test-all: TEST_COUNT must be a positive integer" >&2; exit 2;; esac; \
-	CGO_ENABLED=$(RACE_CGO) go test -race -shuffle=on -count="$$TEST_COUNT" ./...
+	cover=""; if [ -n "$$COVERPROFILE" ]; then cover="-coverprofile=$$COVERPROFILE"; fi; \
+	CGO_ENABLED=$(RACE_CGO) go test -race -shuffle=on -count="$$TEST_COUNT" $${cover:+"$$cover"} ./...
 
 # fuzz runs one go test per fuzz target, since -fuzz takes a single target; a
 # crash fails the run and leaves its input in the package's testdata/fuzz/.
@@ -210,6 +219,7 @@ selftest: tools
 	scripts/test-nightly-should-run.sh
 	scripts/test-bench-report.sh
 	python3 scripts/test-bench-review.py
+	python3 scripts/test-coverage-report.py
 	python3 scripts/test-check-attribution.py
 	python3 scripts/test-check-file-cap.py
 	python3 scripts/test-agent-roles.py

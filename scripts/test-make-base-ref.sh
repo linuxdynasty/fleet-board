@@ -65,6 +65,15 @@ for var in BENCH_COUNT BENCH_TIME; do
   esac
 done
 
+# COVERPROFILE is a path read the same way.
+for target in test test-all; do
+  out="$(cd "$root" && make -n "$target" COVERPROFILE="$hostile" 2>&1)"
+  case "$out" in
+    *"touch $marker"*) bad "make -n $target pastes COVERPROFILE into the recipe text" ;;
+    *) ok ;;
+  esac
+done
+
 # Real run, in a throwaway git repo that holds a copy of the Makefile, never in
 # this checkout: a vulnerable Makefile would run `touch <marker> HEAD` and leave
 # a file named HEAD behind (it once did, in a commit). The hostile value is just

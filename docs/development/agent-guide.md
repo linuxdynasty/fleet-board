@@ -81,10 +81,10 @@ The `Makefile` is the one entry point; CI runs the same targets, one per step
 | `tools` | builds the pinned `golangci-lint`, `gofumpt` and `govulncheck` into `.bin/`; rebuilt when a pin or the Go version changes |
 | `gen` | removes `gen/`, then `buf generate` into it (Go and TypeScript), through `go run` at the pinned buf |
 | `build`, `smoke` | `CGO_ENABLED=0 go build ./...`; builds each `cmd/<name>` and checks that `--version` prints its name |
-| `test` | `go vet ./...`, then on the changed packages `go test -shuffle=on -count=3` (`TEST_COUNT`) and `go test -race -shuffle=on -count=1` |
+| `test` | `go vet ./...`, then on the changed packages `go test -shuffle=on -count=3` (`TEST_COUNT`) and `go test -race -shuffle=on -count=1`; with `COVERPROFILE` set, the first pass writes its coverage profile there |
 | `lint` | the pinned `golangci-lint` on the same packages (linters and settings in `.golangci.yml`; a `//nolint` names its linter and says why) |
 | `vuln` | the pinned `govulncheck ./...` on every package; a known vulnerability the code can reach fails it (exit 3). Needs `gen/` and network access to vuln.go.dev |
-| `test-all` | `go vet ./...`, then `go test -race -shuffle=on -count=TEST_COUNT ./...` on every package (the nightly run sets `TEST_COUNT=10`). Not part of `gates` |
+| `test-all` | `go vet ./...`, then `go test -race -shuffle=on -count=TEST_COUNT ./...` on every package (the nightly run sets `TEST_COUNT=10`), with a coverage profile when `COVERPROFILE` is set. Not part of `gates` |
 | `fuzz` | each Go fuzz target (`FuzzParse`, `FuzzCheckEnrollRequest`) for `FUZZTIME` (default `60s`), one `go test -fuzz` each; the seeds already run in `test`. Not part of `gates` |
 | `bench-report` | the benchmarks of the changed packages at the merge base with `BASE_REF` and at `HEAD`, `BENCH_COUNT` times each (default 10, `-benchtime` `BENCH_TIME`, default `1s`), compared by the pinned `benchstat`; a markdown report that marks REVIEW rows and fails only when a `HEAD` benchmark fails. Not part of `gates` |
 | `proto-check`, `ts-check` | `buf build` and `buf lint`; the generated TypeScript compiles (`tools/tscheck`) |
@@ -218,6 +218,15 @@ running all base samples before all head samples made the same code look 8%
 slower with p = 0.002; taking turns, two such runs showed no significant row.
 A shared runner is noisier, so a time REVIEW near 10% may still be noise; an
 allocation REVIEW is not.
+
+Coverage is a report, not a gate (#107; no minimum and no rule against a drop
+until plan row 17). In the gates job, `make test` runs with `COVERPROFILE` set,
+and the next step adds a table to the job summary: for each package it tested
+(every package on a `main` push), the share of statements the tests ran,
+leaving out the generated code in `gen/` (`scripts/coverage-report.py`). The
+nightly run does the same for `make test-all` and uploads the whole profile as
+the `coverage-profile` artifact (kept 14 days); `go tool cover
+-html=cover.out` shows it line by line.
 
 The plan includes 2000 GitHub Actions minutes a month. Estimates, in minutes
 a month (typical / worst case):
