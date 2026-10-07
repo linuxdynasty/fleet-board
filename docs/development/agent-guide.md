@@ -138,8 +138,9 @@ The guard stops mistakes: an accidental push to `main`, a push that was never
 gated, a gate that an ambient variable (a parent make's `MAKEFLAGS`, a stray
 `BASE_REF` from a shell profile) quietly turned into a no-op. It does not stop a
 person or a process that controls the shell, and it is not a lock. To keep the
-gate honest, before `make` the hook unsets `BASE_REF`, `TEST_COUNT`, every
-`FLEET_*` variable, `MAKEFLAGS`, `MFLAGS`, `MAKEOVERRIDES`, `MAKELEVEL`,
+gate honest, before `make` the hook unsets `BASE_REF`, `TEST_COUNT`,
+`COVERPROFILE` (a relative path writes a file into the tree the gate checks),
+every `FLEET_*` variable, `MAKEFLAGS`, `MFLAGS`, `MAKEOVERRIDES`, `MAKELEVEL`,
 `MAKEFILES`, `GNUMAKEFLAGS`, `GIT_DIR`, `GIT_WORK_TREE` and `GIT_INDEX_FILE`
 (`TEST_COUNT=1` runs each test once, not three times; `MAKEFLAGS=n` only prints
 the recipes, `=i` ignores failures, `=t` touches targets), runs make with
@@ -219,8 +220,8 @@ slower with p = 0.002; taking turns, two such runs showed no significant row.
 A shared runner is noisier, so a time REVIEW near 10% may still be noise; an
 allocation REVIEW is not.
 
-Coverage is a report, not a gate (#107; no minimum and no rule against a drop
-until plan row 17). In the gates job, `make test` runs with `COVERPROFILE` set,
+Coverage is a report, not a gate (#107; no minimum and no rule against a
+drop). In the gates job, `make test` runs with `COVERPROFILE` set,
 and the next step adds a table to the job summary: for each package it tested
 (every package on a `main` push), the share of statements the tests ran,
 leaving out the generated code in `gen/` (`scripts/coverage-report.py`). The

@@ -25,7 +25,8 @@
 # stop a person or a process that controls the shell, and it is not a lock.
 #
 # What it does to keep the gate honest. Before `make` it unsets BASE_REF,
-# TEST_COUNT (TEST_COUNT=1 runs each test once, not three times), every FLEET_*
+# TEST_COUNT (TEST_COUNT=1 runs each test once, not three times), COVERPROFILE
+# (a relative path writes a file into the tree the gate checks), every FLEET_*
 # variable, MAKEFLAGS, MFLAGS, MAKEOVERRIDES, MAKELEVEL, MAKEFILES and
 # GNUMAKEFLAGS (MAKEFLAGS=n only prints the recipes, =i ignores failures, =t
 # touches targets; MAKEFILES can add rules that hide a failure) and GIT_DIR,
@@ -146,7 +147,7 @@ fi
 for name in $(env | sed -n 's/^\(FLEET_[A-Za-z0-9_]*\)=.*/\1/p'); do
   unset "$name"
 done
-unset BASE_REF TEST_COUNT MAKEFLAGS MFLAGS MAKEOVERRIDES MAKELEVEL MAKEFILES GNUMAKEFLAGS
+unset BASE_REF TEST_COUNT COVERPROFILE MAKEFLAGS MFLAGS MAKEOVERRIDES MAKELEVEL MAKEFILES GNUMAKEFLAGS
 
 # The gate's base is origin/main; a stale copy makes the change look bigger or
 # smaller than it is, so bring it up to date first.

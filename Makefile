@@ -16,7 +16,8 @@
 #   make lint       golangci-lint on the same packages
 #   make vuln       govulncheck ./... (fails on a reachable known vulnerability)
 #   make test-all   go vet ./..., then go test -race -shuffle=on -count=TEST_COUNT
-#                   on every package (the nightly run sets TEST_COUNT=10)
+#                   on every package (the nightly run sets TEST_COUNT=10, and
+#                   COVERPROFILE, which this pass then writes)
 #   make fuzz       each fuzz target for FUZZTIME (default 60s); their seeds
 #                   already run in make test
 #   make bench-report  benchmarks of the changed packages at the merge base

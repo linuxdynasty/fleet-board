@@ -1,6 +1,6 @@
 # Nightly run (#107). The PR gates test only the packages a change touches;
 # this tests every package with -race, TEST_COUNT times in a random order
-# (make test-all, which also writes the coverage report and profile), then
+# (make test-all; its coverage profile is uploaded and summed up), then
 # fuzzes each target for FUZZTIME (make fuzz) on the corpus earlier nights
 # grew, then checks for known vulnerabilities (make vuln). A scheduled night
 # skips the work when main is still at the commit the last scheduled night

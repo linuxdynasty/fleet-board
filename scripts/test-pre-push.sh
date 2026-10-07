@@ -54,7 +54,7 @@ makeaction="$work/make.action"
 cat > "$fakebin/make" <<EOF
 #!/bin/sh
 echo "make \$* in \$(pwd -P)" >> "$log"
-echo "BASE_REF=[\${BASE_REF-}] FLEET_GOFUMPT=[\${FLEET_GOFUMPT-}] FLEET_ANY=[\${FLEET_ANY-}] MAKEFLAGS=[\${MAKEFLAGS-}] MFLAGS=[\${MFLAGS-}] MAKEOVERRIDES=[\${MAKEOVERRIDES-}] MAKELEVEL=[\${MAKELEVEL-}] MAKEFILES=[\${MAKEFILES-}] GNUMAKEFLAGS=[\${GNUMAKEFLAGS-}] TEST_COUNT=[\${TEST_COUNT-}] GOFLAGS=[\${GOFLAGS-}] GIT_DIR=[\${GIT_DIR-}] GIT_WORK_TREE=[\${GIT_WORK_TREE-}] GIT_INDEX_FILE=[\${GIT_INDEX_FILE-}]" >> "$envlog"
+echo "BASE_REF=[\${BASE_REF-}] FLEET_GOFUMPT=[\${FLEET_GOFUMPT-}] FLEET_ANY=[\${FLEET_ANY-}] MAKEFLAGS=[\${MAKEFLAGS-}] MFLAGS=[\${MFLAGS-}] MAKEOVERRIDES=[\${MAKEOVERRIDES-}] MAKELEVEL=[\${MAKELEVEL-}] MAKEFILES=[\${MAKEFILES-}] GNUMAKEFLAGS=[\${GNUMAKEFLAGS-}] TEST_COUNT=[\${TEST_COUNT-}] COVERPROFILE=[\${COVERPROFILE-}] GOFLAGS=[\${GOFLAGS-}] GIT_DIR=[\${GIT_DIR-}] GIT_WORK_TREE=[\${GIT_WORK_TREE-}] GIT_INDEX_FILE=[\${GIT_INDEX_FILE-}]" >> "$envlog"
 if [ -f "$makeaction" ]; then
   case "\$(cat "$makeaction")" in
     touch) echo changed-by-the-gate > gate-made-this.txt ;;
@@ -303,15 +303,15 @@ fi
 # "no change"; FLEET_* variables point the gate scripts at other trees or
 # binaries; MAKEFLAGS=n only prints the recipes, MFLAGS/MAKEOVERRIDES/MAKELEVEL/
 # MAKEFILES/GNUMAKEFLAGS change how make reads and runs them; TEST_COUNT=1 runs
-# each test once, not three times; GOFLAGS=-run=NoSuch turns a failing go test
-# into "no tests to run". It runs go with
-# GOFLAGS=-count=1 (harmless; no test cache on a push) and names the base itself
-# on the command line. This stops mistakes and stray variables from a parent
+# each test once, not three times; COVERPROFILE=stray.out writes a file into the
+# tree; GOFLAGS=-run=NoSuch turns a failing go test into "no tests to run". It
+# runs go with GOFLAGS=-count=1 (harmless; no test cache on a push) and names the
+# base itself on the command line. This stops mistakes and stray variables from a parent
 # make or a shell profile. It does not stop a person who controls the shell (see
 # the trust boundary in the hook header).
 fresh
-scrubbed_env="BASE_REF=[] FLEET_GOFUMPT=[] FLEET_ANY=[] MAKEFLAGS=[] MFLAGS=[] MAKEOVERRIDES=[] MAKELEVEL=[] MAKEFILES=[] GNUMAKEFLAGS=[] TEST_COUNT=[] GOFLAGS=[-count=1] GIT_DIR=[] GIT_WORK_TREE=[] GIT_INDEX_FILE=[]"
-BASE_REF=HEAD FLEET_GOFUMPT=true FLEET_ANY=x MAKEFLAGS=n MFLAGS=-n MAKEOVERRIDES=BASE_REF=HEAD MAKELEVEL=3 MAKEFILES=x GNUMAKEFLAGS=-n TEST_COUNT=1 GOFLAGS=-run=NoSuch GIT_DIR="$repo/.git" GIT_WORK_TREE="$repo" GIT_INDEX_FILE="$repo/.git/index" push "$repo" origin HEAD:feature
+scrubbed_env="BASE_REF=[] FLEET_GOFUMPT=[] FLEET_ANY=[] MAKEFLAGS=[] MFLAGS=[] MAKEOVERRIDES=[] MAKELEVEL=[] MAKEFILES=[] GNUMAKEFLAGS=[] TEST_COUNT=[] COVERPROFILE=[] GOFLAGS=[-count=1] GIT_DIR=[] GIT_WORK_TREE=[] GIT_INDEX_FILE=[]"
+BASE_REF=HEAD FLEET_GOFUMPT=true FLEET_ANY=x MAKEFLAGS=n MFLAGS=-n MAKEOVERRIDES=BASE_REF=HEAD MAKELEVEL=3 MAKEFILES=x GNUMAKEFLAGS=-n TEST_COUNT=1 COVERPROFILE=stray.out GOFLAGS=-run=NoSuch GIT_DIR="$repo/.git" GIT_WORK_TREE="$repo" GIT_INDEX_FILE="$repo/.git/index" push "$repo" origin HEAD:feature
 if [ "$rc" -ne 0 ]; then
   bad "scrubbed environment: exit $rc"
 elif [ "$(gate_runs)" != "1" ]; then

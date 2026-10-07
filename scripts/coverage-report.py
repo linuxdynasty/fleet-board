@@ -9,8 +9,9 @@ minimum and no rule against a drop. Each row is the share of the package's
 statements that at least one test run executed. A block listed more than once
 (the same file and range) counts once, covered if any listing has a count
 above 0. Generated code under gen/ is left out. A missing profile prints a
-note and exits 0 (the tests did not run or did not finish; their step says
-why). Input that is not a coverage profile exits 2.
+note and exits 0 (no package was tested, or go test did not start); a run
+with failing tests still leaves a profile, so its table shows. Input that is
+not a coverage profile exits 2.
 """
 from __future__ import annotations
 
@@ -72,7 +73,7 @@ def main() -> int:
             text = f.read()
     except FileNotFoundError:
         print(HEADER)
-        print("No coverage profile: the tests did not run or did not finish.")
+        print("No coverage profile: no Go package was tested, or go test did not start.")
         return 0
     try:
         pkgs = parse(text)
