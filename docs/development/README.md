@@ -50,6 +50,10 @@ scripts/nightly-should-run.sh decides that skip (the nightly check job);
 scripts/ci-report-failure.sh  opens, updates or closes the ci-failure issue for a main or nightly
                               run (the report jobs); scripts/test-ci-report-failure.sh is its
                               self-test with a fake gh (make selftest)
+scripts/bench-report.sh       make bench-report: changed packages' benchmarks at the merge base and
+                              at HEAD, compared by benchstat (the last PR gates step; a report)
+scripts/bench-review.py       turns benchstat's CSV into the markdown table and marks REVIEW rows;
+                              test-bench-report.sh and test-bench-review.py are their self-tests
 scripts/check-pr-base.sh      fails unless a PR targets main (pr-meta.yml, and first in the ci.yml gates job)
 scripts/check-versions.sh     keeps the copies of a pin (.node-version, go.mod, buf.gen.yaml,
                               tools/tscheck) equal to tool-versions.env

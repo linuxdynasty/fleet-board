@@ -211,6 +211,17 @@ jobs:
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: python3 scripts/check-docs-stale.py --ci --range "$PR_BASE_SHA..$PR_HEAD_SHA"
 
+      # #107: the benchmarks of the changed packages at the merge base and at
+      # the head, on this one runner, compared by benchstat. A report for the
+      # reviewer in the job summary, never a gate: a shared runner is too noisy
+      # to fail a build on time, and REVIEW rows only ask a person to look.
+      - name: Benchmarks, base vs head (report)
+        if: github.event_name == 'pull_request'
+        timeout-minutes: 8
+        continue-on-error: true
+        shell: bash
+        run: make -s bench-report | tee -a "$GITHUB_STEP_SUMMARY"
+
   # Pushes to main only: open, update or close this workflow's ci-failure issue
   # (scripts/ci-report-failure.sh). The only job with write access, and only to
   # issues. One report at a time, so two failing merges cannot open two issues.

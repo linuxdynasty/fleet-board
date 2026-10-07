@@ -70,7 +70,13 @@ def human(unit: str, raw: str) -> str:
             if v >= scale:
                 return f"{v / scale:.3g} {name}"
         return f"{v / 1e-9:.3g} ns"
-    return f"{v:.4g}"
+    if unit == "B/op":
+        for scale, name in ((1 << 20, "MiB"), (1 << 10, "KiB")):
+            if v >= scale:
+                return f"{v / scale:.4g} {name}"
+        return f"{v:.4g} B"
+    s = f"{v:.4g}"
+    return f"{v:.0f}" if "e" in s else s
 
 
 def verdict(unit: str, delta: str, p: str) -> str:

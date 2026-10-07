@@ -59,7 +59,7 @@ func BenchmarkWriterBatch(b *testing.B) {
 func insertN(n int) store.ApplyFunc {
 	v := strconv.Itoa(n)
 	return func(tx *sql.Tx) error {
-		_, err := tx.Exec("INSERT INTO items(v) VALUES (?)", v)
+		_, err := tx.ExecContext(context.Background(), "INSERT INTO items(v) VALUES (?)", v)
 		return err
 	}
 }

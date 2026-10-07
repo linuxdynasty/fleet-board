@@ -86,6 +86,7 @@ The `Makefile` is the one entry point; CI runs the same targets, one per step
 | `vuln` | the pinned `govulncheck ./...` on every package; a known vulnerability the code can reach fails it (exit 3). Needs `gen/` and network access to vuln.go.dev |
 | `test-all` | `go vet ./...`, then `go test -race -shuffle=on -count=TEST_COUNT ./...` on every package (the nightly run sets `TEST_COUNT=10`). Not part of `gates` |
 | `fuzz` | each Go fuzz target (`FuzzParse`, `FuzzCheckEnrollRequest`) for `FUZZTIME` (default `60s`), one `go test -fuzz` each; the seeds already run in `test`. Not part of `gates` |
+| `bench-report` | the benchmarks of the changed packages at the merge base with `BASE_REF` and at `HEAD`, `BENCH_COUNT` times each (default 10, `-benchtime` `BENCH_TIME`, default `1s`), compared by the pinned `benchstat`; a markdown report that marks REVIEW rows and fails only when a `HEAD` benchmark fails. Not part of `gates` |
 | `proto-check`, `ts-check` | `buf build` and `buf lint`; the generated TypeScript compiles (`tools/tscheck`) |
 | `fmt`, `fmt-check` | the pinned `gofumpt` formats, or only checks, every Go file (the same file set) |
 | `mod-check`, `actionlint` | `go mod tidy -diff`; the workflow files |
@@ -96,7 +97,7 @@ The `Makefile` is the one entry point; CI runs the same targets, one per step
 | `telemetry-names` | every log event and metric name in non-test Go code is a static string listed in the one spec `.agents/telemetry-docs.json` maps its area to (`tools/telemetrynames`); spec names with no code are a report until plan row 17 |
 | `capability-tests` | lists the v1 capabilities no product test (Go outside `scripts/` and `testdata/`, or web) names; a report (exit 0) until plan row 17 |
 | `docs-stale-ci`, `docs-stale` | a change in `BASE_REF..HEAD` to a mapped folder changes one of its specs or a commit carries `No-Doc-Change: <reason>`, and changed Go packages have their three docs; `docs-stale` only prints the hook reminders |
-| `gates` | all of the above (not `docs-stale` or `fuzz`) plus the file cap, agent canon and roles check; prints the tool versions it used first |
+| `gates` | all of the above (not `docs-stale`, `test-all`, `fuzz` or `bench-report`) plus the file cap, agent canon and roles check; prints the tool versions it used first |
 | `hooks` | turns on the pre-push guard (`core.hooksPath` is `.githooks`; once per clone, and all its worktrees share it) |
 
 "Changed packages" come from `scripts/changed-go-packages.sh`: the files that
@@ -205,6 +206,16 @@ closes it (`scripts/ci-report-failure.sh`). The issue holds the run link, the
 commit and the failed job names, never log text. The `report` job is the only
 one with write access, and only to issues. On a PR it shows as skipped.
 
+On a PR, the last gates step runs `make bench-report` and adds its table to the
+job summary: the benchmarks of the changed packages, base first, then head, on
+the same runner (`scripts/bench-report.sh`). `scripts/bench-review.py` marks a
+row REVIEW when benchstat calls the change significant (p < 0.05) and time per
+op rose more than 10%, or allocations per op rose at all. It is a report, not a
+gate: the step never fails the job, and a REVIEW row asks the reviewer to look.
+A new benchmark shows as "new" (the base has none to compare). On an M4 Pro two
+runs of the same code moved the 1-job store batch by up to 8% with p < 0.05,
+so a time REVIEW near 10% may be noise; an allocation REVIEW is not.
+
 The plan includes 2000 GitHub Actions minutes a month. Estimates, in minutes
 a month (typical / worst case):
 
@@ -215,7 +226,7 @@ a month (typical / worst case):
 | `ci.yml` on `main` pushes | each merge: every package, plus the report job | ~175 | ~300 | built (#107) |
 | nightly | daily, skipped when `main` did not move since the last night (Sundays always run) | ~390 | ~520 | built (#107) |
 | macOS weekly | Sundays, on demand, and PRs that change it | ~260 | ~344 | built (#107) |
-| perf report | PRs whose changed packages hold a benchmark | ~48 | ~48 | planned (#107) |
+| perf report | PRs whose changed packages hold a benchmark | ~48 | ~48 | built (#107) |
 | **Total** | | **~1340** | **~1880** | |
 
 A PR that adds CI minutes (a new workflow, job, trigger or a longer step)

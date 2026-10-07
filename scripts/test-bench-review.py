@@ -96,6 +96,16 @@ class BenchReviewTests(unittest.TestCase):
         self.assertEqual([], review_lines(out))
         self.assertIn("+104.92%", out)
 
+    def test_bytes_print_in_binary_units(self):
+        out = self.check(PREAMBLE + table("B/op", [
+            "WriterBatch/jobs=1-4,972,0%,972,0%,~,p=1.000 n=10",
+            "WriterBatch/jobs=100-4,56300,0%,56300,0%,~,p=1.000 n=10",
+            "WriterBatch/big-4,3145728,0%,3145728,0%,~,p=1.000 n=10",
+        ]))
+        self.assertIn("| 972 B | 972 B |", out)
+        self.assertIn("| 54.98 KiB | 54.98 KiB |", out)
+        self.assertIn("| 3 MiB | 3 MiB |", out)
+
     def test_new_and_removed_benchmarks_are_named_not_review(self):
         out = self.check(PREAMBLE + table("sec/op", [
             "WriterBatch/jobs=100-4,,,0.0044,4%",
