@@ -84,3 +84,10 @@ macOS dev machines and not in CI (Ubuntu); `-short` skips it.
 the writer keeps up, stays under 70 % busy and commits each job within 1 s.
 It measures wall-clock time, so it runs only when asked:
 `FLEET_STORE_A50=1 CGO_ENABLED=0 go test -count=1 -run A50 -v ./internal/store/`.
+
+`BenchmarkWriterBatch` times one full batch through Submit at 1, 10 and 100
+jobs (`BatchMax` set to the size, so each op is one commit) and reports
+allocations. It is the input to `make bench-report`, which a pull request runs
+against its base; it is not a budget check. On an M4 Pro a commit takes about
+4 ms (ADR 0014's durable commit): `CGO_ENABLED=0 go test -run '^$' -bench
+WriterBatch -benchmem ./internal/store/`.

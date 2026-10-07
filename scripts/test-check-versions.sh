@@ -37,6 +37,7 @@ BUF_VERSION=v1.73.0
 GOFUMPT_VERSION=v0.12.0
 GOVULNCHECK_VERSION=v1.8.0
 ACTIONLINT_VERSION=v1.7.12
+BENCHSTAT_VERSION=v0.0.0-20260929162123-406019bb8b68
 TYPESCRIPT_VERSION=7.0.2
 PROTOC_GEN_ES_VERSION=2.16.0
 ENV
@@ -155,6 +156,14 @@ expect "a missing ACTIONLINT_VERSION is named" 1 "ACTIONLINT_VERSION"
 fresh
 edit tool-versions.env '/^GOVULNCHECK_VERSION/d'
 expect "a missing GOVULNCHECK_VERSION is named" 1 "GOVULNCHECK_VERSION"
+
+fresh
+edit tool-versions.env '/^BENCHSTAT_VERSION/d'
+expect "a missing BENCHSTAT_VERSION is named" 1 "BENCHSTAT_VERSION"
+
+fresh
+printf 'bench:\n\tgo run golang.org/x/perf/cmd/benchstat@v0.0.0-20260929162123-406019bb8b68 a b\n' >> "$work/t/Makefile"
+expect "benchstat pin repeated in the Makefile" 1 "Makefile"
 
 fresh
 printf 'vuln:\n\tgo install golang.org/x/vuln/cmd/govulncheck@v1.8.0\n' >> "$work/t/Makefile"
