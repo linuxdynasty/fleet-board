@@ -14,7 +14,8 @@
 #          at -count=1 and must fail under `make test`      (RED)
 # The packages are added on a work branch, so changed-go-packages.sh names them.
 # TEST_COUNT is data like BASE_REF: a value that is not a positive integer
-# fails before go runs, and is never shell text.
+# fails before go runs, and is never shell text. `make test-all` (the nightly
+# suite) is checked the same way: one -race pass over every package.
 # Runs on the macOS system bash 3.2. Needs make, git and go.
 #
 # Usage: scripts/test-make-test-flags.sh        exit 0 only if every case passes
@@ -193,6 +194,42 @@ for hostile in "1; touch $marker" "1; exit 0 #" "0" "3 -run=^\$" "3 -run=NoSuch"
     contains "TEST_COUNT='$hostile' is named" "TEST_COUNT must be a positive integer"
   fi
   if [ -e "$marker" ]; then bad "TEST_COUNT='$hostile' ran as shell text"; else ok; fi
+done
+
+# make test-all (the nightly suite): one -race pass over every package, the
+# packages main already had included, TEST_COUNT times; no non-race pass.
+make_test_all() {
+  local name="$1" want="$2" rc
+  shift 2
+  out="$(cd "$repo" && make --no-print-directory test-all "$@" 2>&1)"
+  rc=$?
+  if [ "$rc" -ne "$want" ]; then
+    bad "$name: make test-all exit $rc, want $want ($out)"
+    return 1
+  fi
+  ok
+}
+fresh
+g checkout -q main
+g merge -q --ff-only work
+make_test_all "test-all on main (nothing changed) still runs every package" 0 TEST_COUNT=2
+flags_are "test-all: race, shuffled, TEST_COUNT times" "shuffle=on count=2 race=true goflags=
+shuffle=on count=2 race=true goflags="
+
+# RED: the leaked-state test fails under test-all at its default count.
+fresh
+add_state
+if make_test_all "test-all catches package-level state" 2; then
+  contains "test-all names the leaked state" "state leaked: run 2"
+fi
+
+for hostile in "1; touch $marker" "0" "3 -run=NoSuch"; do
+  fresh
+  rm -f "$marker"
+  if make_test_all "test-all TEST_COUNT='$hostile' fails" 2 TEST_COUNT="$hostile"; then
+    contains "test-all TEST_COUNT='$hostile' is named" "TEST_COUNT must be a positive integer"
+  fi
+  if [ -e "$marker" ]; then bad "test-all TEST_COUNT='$hostile' ran as shell text"; else ok; fi
 done
 
 printf 'test-make-test-flags: %s passed, %s failed\n' "$pass" "$fail"

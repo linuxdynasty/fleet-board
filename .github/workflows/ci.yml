@@ -9,7 +9,9 @@
 # One run per change (#107): pull requests, and pushes to main after a merge. A
 # branch push runs nothing here; its PR does. Editing a PR (title, body or base)
 # starts no run here; pr-meta.yml reruns its quick checks on every edit. The
-# gates job fails first thing on a PR whose base is not main.
+# gates job fails first thing on a PR whose base is not main. On a push to main
+# the gates test and lint every package, and a failure opens or updates the
+# ci-failure issue (the report job).
 name: ci
 
 on:
@@ -137,10 +139,18 @@ jobs:
       - name: Build every package and run each binary once (--version)
         run: make build smoke
 
-      - name: go vet, go test and go test -race on changed packages
+      # A push to main tests and lints every package, not only the changed
+      # ones: two PRs that pass alone can break a package neither touched once
+      # both are on main. The all-zero SHA names no commit, and for it
+      # changed-go-packages.sh names every package.
+      - name: go vet, go test and go test -race (changed packages; every package on main)
+        env:
+          BASE_REF: ${{ github.event_name == 'push' && '0000000000000000000000000000000000000000' || env.BASE_REF }}
         run: make test
 
-      - name: golangci-lint on changed packages
+      - name: golangci-lint (changed packages; every package on main)
+        env:
+          BASE_REF: ${{ github.event_name == 'push' && '0000000000000000000000000000000000000000' || env.BASE_REF }}
         run: make lint
 
       # Every package, not only the changed ones: a new advisory can land on
@@ -200,3 +210,35 @@ jobs:
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: python3 scripts/check-docs-stale.py --ci --range "$PR_BASE_SHA..$PR_HEAD_SHA"
+
+  # Pushes to main only: open, update or close this workflow's ci-failure issue
+  # (scripts/ci-report-failure.sh). The only job with write access, and only to
+  # issues. One report at a time, so two failing merges cannot open two issues.
+  report:
+    needs: [gates]
+    if: always() && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    concurrency:
+      group: ci-failure-report-${{ github.workflow }}
+      cancel-in-progress: false
+    steps:
+      - name: Check out the reporter
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts/ci-report-failure.sh
+          sparse-checkout-cone-mode: false
+
+      - name: Open, update or close the ci-failure issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          WORKFLOW: ${{ github.workflow }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          SHA: ${{ github.sha }}
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: scripts/ci-report-failure.sh

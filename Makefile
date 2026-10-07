@@ -14,6 +14,8 @@
 #                   (default 3), then go test -race -shuffle=on -count=1
 #   make lint       golangci-lint on the same packages
 #   make vuln       govulncheck ./... (fails on a reachable known vulnerability)
+#   make test-all   go vet ./..., then go test -race -shuffle=on -count=TEST_COUNT
+#                   on every package (the nightly run sets TEST_COUNT=10)
 #   make fuzz       each fuzz target for FUZZTIME (default 60s); their seeds
 #                   already run in make test
 #   make fmt        gofumpt -l -w on every Go file (fmt-check only checks)
@@ -46,7 +48,7 @@ ACTIONLINT := go run github.com/rhysd/actionlint/cmd/actionlint@$(ACTIONLINT_VER
 RACE_CGO := $(if $(filter Darwin,$(shell uname -s)),0,1)
 
 .PHONY: tools versions gen build smoke proto-check ts-check mod-check fmt fmt-check
-.PHONY: vet test fuzz lint vuln actionlint selftest diff-check doc-names doc-tables telemetry-names capability-tests
+.PHONY: vet test test-all fuzz lint vuln actionlint selftest diff-check doc-names doc-tables telemetry-names capability-tests
 .PHONY: docs-stale docs-stale-ci gates hooks
 
 # tools builds the pinned linters into .bin/. A stamp file per tool names the
@@ -140,6 +142,13 @@ test: vet
 	CGO_ENABLED=0 go test -shuffle=on -count="$$TEST_COUNT" $$pkgs && \
 	CGO_ENABLED=$(RACE_CGO) go test -race -shuffle=on -count=1 $$pkgs
 
+# test-all is the nightly suite (#107): every package, not only the changed
+# ones, with -race and in a random order, TEST_COUNT times in one pass. It
+# checks TEST_COUNT the same way make test does.
+test-all: vet
+	@case "$$TEST_COUNT" in ''|*[!0-9]*|0*) echo "make test-all: TEST_COUNT must be a positive integer" >&2; exit 2;; esac; \
+	CGO_ENABLED=$(RACE_CGO) go test -race -shuffle=on -count="$$TEST_COUNT" ./...
+
 # fuzz runs one go test per fuzz target, since -fuzz takes a single target; a
 # crash fails the run and leaves its input in the package's testdata/fuzz/.
 # Workers minimize each new input before they fuzz on. At go's default limit
@@ -180,6 +189,7 @@ selftest: tools
 	scripts/test-make-tools.sh
 	scripts/test-make-gates.sh
 	scripts/test-make-test-flags.sh
+	scripts/test-ci-report-failure.sh
 	python3 scripts/test-check-attribution.py
 	python3 scripts/test-check-file-cap.py
 	python3 scripts/test-agent-roles.py
