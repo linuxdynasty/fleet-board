@@ -2,6 +2,7 @@ package main_test
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -25,7 +26,7 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 	bin = filepath.Join(dir, "fleetd")
-	build := exec.Command("go", "build", "-o", bin, ".")
+	build := exec.CommandContext(context.Background(), "go", "build", "-o", bin, ".") //nolint:gosec // G204: bin is a fresh temp path; every other argument is a literal
 	build.Env = append(os.Environ(), "CGO_ENABLED=0")
 	if out, err := build.CombinedOutput(); err != nil {
 		fmt.Fprintf(os.Stderr, "go build: %v\n%s", err, out)
@@ -34,6 +35,12 @@ func TestMain(m *testing.M) {
 	code := m.Run()
 	_ = os.RemoveAll(dir)
 	os.Exit(code)
+}
+
+// fleetd is a command for the binary TestMain built.
+func fleetd(t *testing.T, args ...string) *exec.Cmd {
+	t.Helper()
+	return exec.CommandContext(t.Context(), bin, args...) //nolint:gosec // G204: bin is the binary TestMain built; args come from the tests
 }
 
 func exitCode(err error) int {
@@ -62,7 +69,7 @@ func TestVersionAndUsage(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
 			t.Parallel()
-			out, err := exec.Command(bin, tc.args...).Output()
+			out, err := fleetd(t, tc.args...).Output()
 			if got := exitCode(err); got != tc.code {
 				t.Errorf("exit %d, want %d", got, tc.code)
 			}
@@ -76,7 +83,7 @@ func TestVersionAndUsage(t *testing.T) {
 // setup writes a fleetd.yaml with a short state_dir and OS-chosen ports.
 func setup(t *testing.T) (config, state string) {
 	t.Helper()
-	root, err := os.MkdirTemp("/tmp", "fbc")
+	root, err := os.MkdirTemp("/tmp", "fbc") //nolint:usetesting // t.TempDir on macOS is too long for the admin socket path config checks
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,7 +100,7 @@ func setup(t *testing.T) (config, state string) {
 // once it logs hub.started: the API listener opens before admin.sock does.
 func startRun(t *testing.T, config string) (*exec.Cmd, string) {
 	t.Helper()
-	cmd := exec.Command(bin, "run", "--config", config)
+	cmd := fleetd(t, "run", "--config", config)
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
 		t.Fatal(err)
@@ -136,16 +143,16 @@ func startRun(t *testing.T, config string) (*exec.Cmd, string) {
 func TestInitRunSecondRunAndSIGTERM(t *testing.T) {
 	t.Parallel()
 	config, state := setup(t)
-	if out, err := exec.Command(bin, "init", "--config", config).CombinedOutput(); err != nil {
+	if out, err := fleetd(t, "init", "--config", config).CombinedOutput(); err != nil {
 		t.Fatalf("fleetd init: %v\n%s", err, out)
 	}
-	if err := exec.Command(bin, "init", "--config", config).Run(); exitCode(err) != 1 {
+	if err := fleetd(t, "init", "--config", config).Run(); exitCode(err) != 1 {
 		t.Errorf("second fleetd init exit %d, want 1", exitCode(err))
 	}
 
 	first, apiPort := startRun(t, config)
 	metrics := func() int {
-		req, _ := http.NewRequest(http.MethodGet, "http://127.0.0.1:"+apiPort+"/metrics", nil)
+		req, _ := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://127.0.0.1:"+apiPort+"/metrics", nil)
 		req.Host = "127.0.0.1:" + apiPort
 		resp, err := (&http.Client{Transport: &http.Transport{DisableKeepAlives: true}}).Do(req)
 		if err != nil {
@@ -158,7 +165,7 @@ func TestInitRunSecondRunAndSIGTERM(t *testing.T) {
 		t.Fatalf("/metrics status %d, want 200", got)
 	}
 
-	second, err := exec.Command(bin, "run", "--config", config).CombinedOutput()
+	second, err := fleetd(t, "run", "--config", config).CombinedOutput()
 	if exitCode(err) != 1 {
 		t.Errorf("second fleetd run exit %d, want 1", exitCode(err))
 	}

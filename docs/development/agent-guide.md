@@ -62,10 +62,11 @@ proposed; probe results follow the shape in
   with `/opt/homebrew/bin/bash` first on `PATH`. Repo scripts here avoid them.
 - `sed` is BSD: in-place is `sed -i ''`, and a pattern with paths needs a
   non-`/` delimiter. Prefer the editor tool or a heredoc for multi-line edits.
-- Format and lint with `make fmt` and `make lint`: they use the pinned
-  `gofumpt` and `golangci-lint` in `.bin/` (`make tools`), the same builds CI
-  uses. The copies in `~/go/bin` may be older and disagree with the gate;
-  `benchstat`, `gosec` and `govulncheck` live there.
+- Format, lint and check vulnerabilities with `make fmt`, `make lint` and
+  `make vuln`: they use the pinned `gofumpt`, `golangci-lint` (gosec included)
+  and `govulncheck` in `.bin/` (`make tools`), the same builds CI uses. The
+  copies in `~/go/bin` may be older and disagree with the gate; `benchstat`
+  lives there.
 - Several agents on one host: separate `GOCACHE`, short `GOTMPDIR` outside the
   worktree, and no overlapping benchmark runs.
 
@@ -77,11 +78,12 @@ The `Makefile` is the one entry point; CI runs the same targets, one per step
 
 | Target | What it does |
 |---|---|
-| `tools` | builds the pinned `golangci-lint` and `gofumpt` into `.bin/`; rebuilt when a pin or the Go version changes |
+| `tools` | builds the pinned `golangci-lint`, `gofumpt` and `govulncheck` into `.bin/`; rebuilt when a pin or the Go version changes |
 | `gen` | removes `gen/`, then `buf generate` into it (Go and TypeScript), through `go run` at the pinned buf |
 | `build`, `smoke` | `CGO_ENABLED=0 go build ./...`; builds each `cmd/<name>` and checks that `--version` prints its name |
 | `test` | `go vet ./...`, then on the changed packages `go test -shuffle=on -count=3` (`TEST_COUNT`) and `go test -race -shuffle=on -count=1` |
-| `lint` | the pinned `golangci-lint` on the same packages |
+| `lint` | the pinned `golangci-lint` on the same packages (linters and settings in `.golangci.yml`; a `//nolint` names its linter and says why) |
+| `vuln` | the pinned `govulncheck ./...` on every package; a known vulnerability the code can reach fails it (exit 3). Needs `gen/` and network access to vuln.go.dev |
 | `fuzz` | each Go fuzz target (`FuzzParse`, `FuzzCheckEnrollRequest`) for `FUZZTIME` (default `60s`), one `go test -fuzz` each; the seeds already run in `test`. Not part of `gates` |
 | `proto-check`, `ts-check` | `buf build` and `buf lint`; the generated TypeScript compiles (`tools/tscheck`) |
 | `fmt`, `fmt-check` | the pinned `gofumpt` formats, or only checks, every Go file (the same file set) |
@@ -203,11 +205,12 @@ pass 2000 (the free allowance).
 ## Pinned tool versions
 
 `tool-versions.env` is the one file that holds every pinned version: Go, Node
-major, `golangci-lint`, `buf`, `gofumpt`, `typescript` and the `protoc-gen-es`
-version. The Makefile includes it and CI sources it, so neither spells out a
-version. `make tools` builds `golangci-lint` and `gofumpt` with the local Go
-into `.bin/` (gitignored); the `golangci-lint` on `PATH` is built with an older
-Go and refuses a `go 1.27` module, so the Makefile never uses it. Four copies
+major, `golangci-lint`, `buf`, `gofumpt`, `govulncheck`, `typescript` and the
+`protoc-gen-es` version. The Makefile includes it and CI sources it, so neither
+spells out a version. `make tools` builds `golangci-lint`, `gofumpt` and
+`govulncheck` with the local Go into `.bin/` (gitignored); the `golangci-lint`
+on `PATH` is built with an older Go and refuses a `go 1.27` module, so the
+Makefile never uses it. Four copies
 that other tools force on us (`.node-version`, the `go` line of `go.mod`,
 `buf.gen.yaml`, `tools/tscheck/package.json`) are kept equal by
 `scripts/check-versions.sh`. To upgrade a tool, change the file in a dedicated

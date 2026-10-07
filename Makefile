@@ -13,6 +13,7 @@
 #                   (default origin/main): go test -shuffle=on -count=TEST_COUNT
 #                   (default 3), then go test -race -shuffle=on -count=1
 #   make lint       golangci-lint on the same packages
+#   make vuln       govulncheck ./... (fails on a reachable known vulnerability)
 #   make fuzz       each fuzz target for FUZZTIME (default 60s); their seeds
 #                   already run in make test
 #   make fmt        gofumpt -l -w on every Go file (fmt-check only checks)
@@ -36,6 +37,7 @@ export FUZZMINIMIZETIME
 BIN := $(CURDIR)/.bin
 GOLANGCI_LINT := $(BIN)/golangci-lint
 GOFUMPT := $(BIN)/gofumpt
+GOVULNCHECK := $(BIN)/govulncheck
 BUF := go run github.com/bufbuild/buf/cmd/buf@$(BUF_VERSION)
 ACTIONLINT := go run github.com/rhysd/actionlint/cmd/actionlint@$(ACTIONLINT_VERSION)
 
@@ -44,7 +46,7 @@ ACTIONLINT := go run github.com/rhysd/actionlint/cmd/actionlint@$(ACTIONLINT_VER
 RACE_CGO := $(if $(filter Darwin,$(shell uname -s)),0,1)
 
 .PHONY: tools versions gen build smoke proto-check ts-check mod-check fmt fmt-check
-.PHONY: vet test fuzz lint actionlint selftest diff-check doc-names doc-tables telemetry-names capability-tests
+.PHONY: vet test fuzz lint vuln actionlint selftest diff-check doc-names doc-tables telemetry-names capability-tests
 .PHONY: docs-stale docs-stale-ci gates hooks
 
 # tools builds the pinned linters into .bin/. A stamp file per tool names the
@@ -53,8 +55,9 @@ RACE_CGO := $(if $(filter Darwin,$(shell uname -s)),0,1)
 GO_BUILT_WITH := $(shell go env GOVERSION)
 LINT_STAMP := $(BIN)/.golangci-lint.$(GOLANGCI_LINT_VERSION).$(GO_BUILT_WITH)
 FUMPT_STAMP := $(BIN)/.gofumpt.$(GOFUMPT_VERSION).$(GO_BUILT_WITH)
+VULN_STAMP := $(BIN)/.govulncheck.$(GOVULNCHECK_VERSION).$(GO_BUILT_WITH)
 
-tools: $(LINT_STAMP) $(FUMPT_STAMP)
+tools: $(LINT_STAMP) $(FUMPT_STAMP) $(VULN_STAMP)
 
 $(LINT_STAMP):
 	GOBIN=$(BIN) CGO_ENABLED=0 go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
@@ -66,9 +69,14 @@ $(FUMPT_STAMP):
 	@rm -f $(BIN)/.gofumpt.*
 	@touch $@
 
+$(VULN_STAMP):
+	GOBIN=$(BIN) CGO_ENABLED=0 go install golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION)
+	@rm -f $(BIN)/.govulncheck.*
+	@touch $@
+
 # versions prints the pins this checkout uses.
 versions:
-	@echo "pinned: go $(GO_VERSION), node $(NODE_MAJOR), golangci-lint $(GOLANGCI_LINT_VERSION), buf $(BUF_VERSION), gofumpt $(GOFUMPT_VERSION), typescript $(TYPESCRIPT_VERSION)"
+	@echo "pinned: go $(GO_VERSION), node $(NODE_MAJOR), golangci-lint $(GOLANGCI_LINT_VERSION), buf $(BUF_VERSION), gofumpt $(GOFUMPT_VERSION), govulncheck $(GOVULNCHECK_VERSION), typescript $(TYPESCRIPT_VERSION)"
 
 # gen starts from an empty gen/, so a deleted or renamed proto leaves no stale
 # generated code. (ts-check recreates its gen/ts/node_modules symlink.)
@@ -147,6 +155,12 @@ lint: tools
 	if [ -z "$$pkgs" ]; then echo "make lint: no Go package changed against $$BASE_REF; nothing to lint"; exit 0; fi; \
 	echo "make lint: $$pkgs"; \
 	$(GOLANGCI_LINT) run $$pkgs
+
+# vuln checks every package (not only the changed ones: a new advisory can land
+# on unchanged code) against the Go vulnerability database. It needs gen/ and
+# network access to vuln.go.dev; exit 3 means a reachable vulnerability.
+vuln: tools
+	$(GOVULNCHECK) ./...
 
 # actionlint checks the workflow files in .github/workflows.
 actionlint:
@@ -239,6 +253,7 @@ gates: tools
 	@$(BUF) --version | sed 's/^/buf /'
 	@echo "node $$(node -v)"
 	@$(GOFUMPT) --version | sed 's/^/gofumpt /'
+	@go version -m $(GOVULNCHECK) | awk '$$1 == "mod" { print "govulncheck " $$3 }'
 	@sha="$$(git rev-parse --verify -q "$$BASE_REF^{commit}")" || sha="not a commit here, so make test and make lint use every package"; \
 	echo "== gates (base $$BASE_REF at $$sha) =="
 	scripts/check-versions.sh
@@ -255,6 +270,7 @@ gates: tools
 	$(MAKE) fmt-check
 	$(MAKE) test
 	$(MAKE) lint
+	$(MAKE) vuln
 	$(MAKE) actionlint
 	scripts/check-file-cap.sh
 	scripts/verify-agent-canon.sh

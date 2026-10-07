@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"math"
 	"net"
 	"net/http"
 	"os"
@@ -26,12 +27,34 @@ import (
 // a Unix socket path.
 func socketPath(t *testing.T) string {
 	t.Helper()
-	dir, err := os.MkdirTemp("/tmp", "fba")
+	dir, err := os.MkdirTemp("/tmp", "fba") //nolint:usetesting // t.TempDir on macOS is too long for a Unix socket path
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(dir) })
 	return filepath.Join(dir, "admin.sock")
+}
+
+// selfUID is this process's user id as the uint32 the admin socket compares.
+func selfUID(t *testing.T) uint32 {
+	t.Helper()
+	uid := os.Getuid()
+	if uid >= 0 && uint64(uid) <= math.MaxUint32 {
+		return uint32(uid)
+	}
+	t.Fatalf("user id %d is out of range", uid)
+	return 0
+}
+
+// dialUnix connects to the Unix socket at path.
+func dialUnix(t *testing.T, path string) net.Conn {
+	t.Helper()
+	var d net.Dialer
+	c, err := d.DialContext(t.Context(), "unix", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return c
 }
 
 // serveAdmin serves the admin socket for e's store with peer as the
@@ -48,7 +71,7 @@ func serveAdmin(t *testing.T, e *fleetEnv, peer api.PeerUID) string {
 		t.Fatal(err)
 	}
 	wrapped, srv := api.NewAdmin(ln, api.AdminOptions{
-		Fleet: fleet, Telemetry: e.tel, UID: uint32(os.Getuid()), PeerUID: peer,
+		Fleet: fleet, Telemetry: e.tel, UID: selfUID(t), PeerUID: peer,
 	})
 	done := make(chan error, 1)
 	go func() { done <- srv.Serve(wrapped) }()
@@ -78,14 +101,11 @@ func TestTheAdminSocketCutsOffAStalledRequest(t *testing.T) {
 		t.Fatal(err)
 	}
 	wrapped, srv := api.NewAdmin(ln, api.AdminOptions{
-		Fleet: fleet, Telemetry: e.tel, UID: uint32(os.Getuid()), RequestTimeout: 200 * time.Millisecond,
+		Fleet: fleet, Telemetry: e.tel, UID: selfUID(t), RequestTimeout: 200 * time.Millisecond,
 	})
 	go func() { _ = srv.Serve(wrapped) }()
 	t.Cleanup(func() { _ = srv.Close() })
-	c, err := net.Dial("unix", path)
-	if err != nil {
-		t.Fatal(err)
-	}
+	c := dialUnix(t, path)
 	defer func() { _ = c.Close() }()
 	if _, err := io.WriteString(c, "POST "+hubv1connect.FleetServiceCreateEnrollmentTokenProcedure+" HTTP/1.1\r\n"+
 		"Host: fleetd\r\nContent-Type: application/proto\r\nContent-Length: 100\r\n\r\nab"); err != nil {
@@ -109,10 +129,7 @@ func TestTheKernelReportsThePeerUserOfAUnixSocket(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = ln.Close() }()
-	client, err := net.Dial("unix", path)
-	if err != nil {
-		t.Fatal(err)
-	}
+	client := dialUnix(t, path)
 	defer func() { _ = client.Close() }()
 	server, err := ln.AcceptUnix()
 	if err != nil {
@@ -123,7 +140,7 @@ func TestTheKernelReportsThePeerUserOfAUnixSocket(t *testing.T) {
 	if err != nil {
 		t.Fatalf("KernelPeerUID: %v", err)
 	}
-	if want := uint32(os.Getuid()); uid != want {
+	if want := selfUID(t); uid != want {
 		t.Errorf("peer uid %d, want %d (this process)", uid, want)
 	}
 }
@@ -139,7 +156,7 @@ func TestTheSameUserIsServedOnTheAdminSocket(t *testing.T) {
 	if !tokenPattern.MatchString(resp.Msg.GetToken()) {
 		t.Errorf("token %q", resp.Msg.GetToken())
 	}
-	want := api.LocalUser(uint32(os.Getuid()), nil).GetId().GetValue()
+	want := api.LocalUser(selfUID(t), nil).GetId().GetValue()
 	issued := e.logs.events(t, "enroll.issued")
 	if len(issued) != 1 || issued[0]["actor"] != want {
 		t.Errorf("enroll.issued = %v, want actor %q", issued, want)
@@ -152,11 +169,12 @@ func TestTheSameUserIsServedOnTheAdminSocket(t *testing.T) {
 
 func TestAMismatchedPeerIsClosedUnserved(t *testing.T) {
 	t.Parallel()
+	other := selfUID(t) + 1
 	for _, tc := range []struct {
 		name, cause string
 		peer        api.PeerUID
 	}{
-		{"another user", "uid_mismatch", func(*net.UnixConn) (uint32, error) { return uint32(os.Getuid()) + 1, nil }},
+		{"another user", "uid_mismatch", func(*net.UnixConn) (uint32, error) { return other, nil }},
 		{"unreadable credentials", "unreadable", func(*net.UnixConn) (uint32, error) { return 0, errors.New("no creds") }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -193,7 +211,7 @@ func TestTheAdminSocketRefusesAnyOrigin(t *testing.T) {
 	e := newFleetEnv(t, nil)
 	path := serveAdmin(t, e, nil)
 	for _, origin := range []string{"http://localhost", "null", ""} {
-		req, err := http.NewRequest(http.MethodPost, "http://fleetd"+hubv1connectCreate, strings.NewReader(`{"requestId":"r","machineName":"m"}`))
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, "http://fleetd"+hubv1connectCreate, strings.NewReader(`{"requestId":"r","machineName":"m"}`))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -203,7 +221,11 @@ func TestTheAdminSocketRefusesAnyOrigin(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		body := readAll(t, resp)
+		body, err := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
 		if resp.StatusCode != http.StatusForbidden || reason(t, body) != typev1.ReasonCode_REASON_CODE_ORIGIN_NOT_ALLOWED {
 			t.Errorf("Origin %q: status %d, reason %v; want 403 ORIGIN_NOT_ALLOWED", origin, resp.StatusCode, reason(t, body))
 		}
@@ -217,16 +239,6 @@ func TestTheAdminSocketRefusesAnyOrigin(t *testing.T) {
 }
 
 const hubv1connectCreate = "/fleet.hub.v1.FleetService/CreateEnrollmentToken"
-
-func readAll(t *testing.T, resp *http.Response) []byte {
-	t.Helper()
-	defer func() { _ = resp.Body.Close() }()
-	b, err := io.ReadAll(resp.Body)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return b
-}
 
 func TestOtherMethodsOnTheAdminSocketAreUnimplemented(t *testing.T) {
 	t.Parallel()
@@ -264,7 +276,7 @@ func TestLocalUserNamesTheOSUserOrFallsBackToTheUID(t *testing.T) {
 			t.Errorf("%s: %v %v, want %s LOCAL_USER", tc.name, p.GetId().GetValue(), p.GetKind(), tc.want)
 		}
 	}
-	real := api.LocalUser(uint32(os.Getuid()), nil).GetId().GetValue()
+	real := api.LocalUser(selfUID(t), nil).GetId().GetValue()
 	if want := "local:uid-" + strconv.Itoa(os.Getuid()); real != want {
 		if u, err := user.Current(); err != nil || real != "local:"+u.Username {
 			t.Errorf("real lookup gave %q, want local:<current user> or %q", real, want)

@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strconv"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -22,7 +21,10 @@ import (
 	"github.com/linuxdynasty/fleet-board/internal/store"
 )
 
-func port(a net.Addr) string { return strconv.Itoa(a.(*net.TCPAddr).Port) }
+func port(a net.Addr) string {
+	_, p, _ := net.SplitHostPort(a.String())
+	return p
+}
 
 // plainClient keeps no idle connection, so none is left open (and unused)
 // when the hub shuts down.
@@ -37,11 +39,13 @@ func TestRunRefusals(t *testing.T) {
 	}{
 		{"no state folder", func(*testing.T, *hub) {}, daemon.ReasonStoreMissing},
 		{"no state.db", func(t *testing.T, h *hub) {
+			t.Helper()
 			if err := statedb.EnsureDir(h.state); err != nil {
 				t.Fatal(err)
 			}
 		}, daemon.ReasonStoreMissing},
 		{"store without hub_identity", func(t *testing.T, h *hub) {
+			t.Helper()
 			if err := statedb.EnsureDir(h.state); err != nil {
 				t.Fatal(err)
 			}
@@ -58,18 +62,21 @@ func TestRunRefusals(t *testing.T) {
 			}
 		}, daemon.ReasonIdentityMissing},
 		{"loose state folder", func(t *testing.T, h *hub) {
+			t.Helper()
 			h.init(t)
-			if err := os.Chmod(h.state, 0o755); err != nil {
+			if err := os.Chmod(h.state, 0o755); err != nil { //nolint:gosec // G302: loosened on purpose; Run must refuse it
 				t.Fatal(err)
 			}
 		}, daemon.ReasonLooseMode},
 		{"loose state.db", func(t *testing.T, h *hub) {
+			t.Helper()
 			h.init(t)
-			if err := os.Chmod(filepath.Join(h.state, "state.db"), 0o644); err != nil {
+			if err := os.Chmod(filepath.Join(h.state, "state.db"), 0o644); err != nil { //nolint:gosec // G302: loosened on purpose; Run must refuse it
 				t.Fatal(err)
 			}
 		}, daemon.ReasonLooseMode},
 		{"non-loopback API address", func(t *testing.T, h *hub) {
+			t.Helper()
 			h.init(t)
 			body := "state_dir: " + h.state + "\nlisten: {api: \"0.0.0.0:7080\"}\n"
 			if err := os.WriteFile(h.config, []byte(body), 0o600); err != nil {
@@ -77,6 +84,7 @@ func TestRunRefusals(t *testing.T) {
 			}
 		}, daemon.ReasonConfig},
 		{"pprof", func(t *testing.T, h *hub) {
+			t.Helper()
 			h.init(t)
 			body := "state_dir: " + h.state + "\nlisten: {agent: \"0.0.0.0:0\", api: \"127.0.0.1:0\", pprof: \"127.0.0.1:6060\"}\n"
 			if err := os.WriteFile(h.config, []byte(body), 0o600); err != nil {
@@ -84,6 +92,7 @@ func TestRunRefusals(t *testing.T) {
 			}
 		}, daemon.ReasonConfig},
 		{"missing config file", func(t *testing.T, h *hub) {
+			t.Helper()
 			if err := os.Remove(h.config); err != nil {
 				t.Fatal(err)
 			}
@@ -134,7 +143,7 @@ func TestRunServesTheAgentListenerAndMetrics(t *testing.T) {
 			{agent, "fleet-test-host.local"},
 			{"[::1]:" + port(r.addrs.Agent), "::1"},
 		} {
-			st, err := dialAgent(pool, tc.addr, tc.serverName, 0)
+			st, err := dialAgent(t, pool, tc.addr, tc.serverName, 0)
 			if err != nil {
 				t.Errorf("%s as %s: %v", tc.addr, tc.serverName, err)
 				continue
@@ -146,7 +155,7 @@ func TestRunServesTheAgentListenerAndMetrics(t *testing.T) {
 		}
 	})
 	t.Run("a TLS 1.2 client fails", func(t *testing.T) {
-		if _, err := dialAgent(pool, agent, "127.0.0.1", tls.VersionTLS12); err == nil {
+		if _, err := dialAgent(t, pool, agent, "127.0.0.1", tls.VersionTLS12); err == nil {
 			t.Error("a TLS 1.2-capped client connected")
 		}
 	})
@@ -172,7 +181,7 @@ func TestRunServesTheAgentListenerAndMetrics(t *testing.T) {
 			{"foreign Host", "evil.example:" + port(r.addrs.API), "", 403},
 			{"foreign Origin", api, "http://evil.example", 403},
 		} {
-			req, err := http.NewRequest(http.MethodGet, "http://"+api+"/metrics", nil)
+			req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://"+api+"/metrics", nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -195,7 +204,7 @@ func TestRunServesTheAgentListenerAndMetrics(t *testing.T) {
 		if got := reasonOf(t, err); got != daemon.ReasonLockHeld {
 			t.Errorf("second Run reason %q, want %q", got, daemon.ReasonLockHeld)
 		}
-		if _, err := dialAgent(pool, agent, "127.0.0.1", 0); err != nil {
+		if _, err := dialAgent(t, pool, agent, "127.0.0.1", 0); err != nil {
 			t.Errorf("the first hub stopped serving after the refused second run: %v", err)
 		}
 	})
@@ -222,7 +231,7 @@ func TestTheOptionalMetricsListenerHasItsOwnHostCheck(t *testing.T) {
 		host string
 		want int
 	}{{m, 200}, {"127.0.0.1:" + port(r.addrs.API), 403}} {
-		req, _ := http.NewRequest(http.MethodGet, "http://"+m+"/metrics", nil)
+		req, _ := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://"+m+"/metrics", nil)
 		req.Host = tc.host
 		resp, err := plainClient.Do(req)
 		if err != nil {
@@ -244,10 +253,10 @@ func TestChangedAgentNamesAreServedAfterARestartWithTheSameCAAndFleet(t *testing
 	r := h.start(t, h.options())
 	agent := "127.0.0.1:" + port(r.addrs.Agent)
 	pool := caPool(t, before)
-	if _, err := dialAgent(pool, agent, "hub.example", 0); err != nil {
+	if _, err := dialAgent(t, pool, agent, "hub.example", 0); err != nil {
 		t.Errorf("hub.example after the names changed: %v", err)
 	}
-	if _, err := dialAgent(pool, agent, "fleet-test-host", 0); err == nil {
+	if _, err := dialAgent(t, pool, agent, "fleet-test-host", 0); err == nil {
 		t.Error("the old name is still served")
 	}
 	r.stop(t)
@@ -278,14 +287,14 @@ func TestPastTwoThirdsTheServedCertificateChangesWithoutARestart(t *testing.T) {
 	opts.RenewTicks = ticks
 	r := h.start(t, opts)
 	agent := "127.0.0.1:" + port(r.addrs.Agent)
-	first, err := dialAgent(pool, agent, "127.0.0.1", 0)
+	first, err := dialAgent(t, pool, agent, "127.0.0.1", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
 	now.set(time.Now())
 	ticks <- now.get()
 	ticks <- now.get() // the first tick has been handled once the second is taken
-	second, err := dialAgent(pool, agent, "127.0.0.1", 0)
+	second, err := dialAgent(t, pool, agent, "127.0.0.1", 0)
 	if err != nil {
 		t.Fatal(err)
 	}

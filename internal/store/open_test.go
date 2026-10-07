@@ -33,7 +33,7 @@ var wantPragmas = []struct {
 
 func pragma(tx *sql.Tx, name string) (string, error) {
 	var v string
-	err := tx.QueryRow("PRAGMA " + name).Scan(&v)
+	err := tx.QueryRowContext(context.Background(), "PRAGMA "+name).Scan(&v)
 	return v, err
 }
 

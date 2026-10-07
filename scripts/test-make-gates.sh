@@ -121,7 +121,7 @@ git -C "$repo" add -A
 diff_check "names that merely contain a ref name pass" 0 ""
 
 # ---- 2. make gates lists every gate -----------------------------------------
-gates="gen proto-check doc-names doc-tables telemetry-names capability-tests ts-check build smoke mod-check fmt-check test lint actionlint selftest diff-check docs-stale-ci"
+gates="gen proto-check doc-names doc-tables telemetry-names capability-tests ts-check build smoke mod-check fmt-check test lint vuln actionlint selftest diff-check docs-stale-ci"
 
 # The four direct lines of the gates recipe (the others are $(MAKE) lines).
 direct="scripts/check-versions.sh

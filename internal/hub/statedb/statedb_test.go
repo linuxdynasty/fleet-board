@@ -66,7 +66,7 @@ func listDir(t *testing.T, dir string) []string {
 
 func fileHash(t *testing.T, path string) [32]byte {
 	t.Helper()
-	b, err := os.ReadFile(path)
+	b, err := os.ReadFile(path) //nolint:gosec // G304: path is a file in this test's own temp state folder
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,7 +90,7 @@ func rawCount(t *testing.T, path, query string) int {
 	}
 	defer func() { _ = db.Close() }()
 	var n int
-	if err := db.QueryRow(query).Scan(&n); err != nil {
+	if err := db.QueryRowContext(t.Context(), query).Scan(&n); err != nil {
 		t.Fatalf("%s: %v", query, err)
 	}
 	return n
@@ -117,10 +117,10 @@ func TestEnsureDirCreatesA0700Folder(t *testing.T) {
 func TestEnsureDirRefusesALooseFolderAndLeavesItAlone(t *testing.T) {
 	t.Parallel()
 	dir := filepath.Join(t.TempDir(), "state")
-	if err := os.Mkdir(dir, 0o755); err != nil {
+	if err := os.Mkdir(dir, 0o755); err != nil { //nolint:gosec // G301: loose on purpose; EnsureDir must refuse it
 		t.Fatal(err)
 	}
-	if err := os.Chmod(dir, 0o755); err != nil {
+	if err := os.Chmod(dir, 0o755); err != nil { //nolint:gosec // G302: loose on purpose; EnsureDir must refuse it
 		t.Fatal(err)
 	}
 	if err := statedb.EnsureDir(dir); !errors.Is(err, statedb.ErrLooseMode) {
@@ -165,7 +165,7 @@ func TestTheSchemaAllowsOneIdentityRowOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = db.Close() }()
-	_, err = db.Exec(`INSERT INTO hub_identity(id, fleet_id, ca_cert, ca_key, server_cert, server_key,
+	_, err = db.ExecContext(t.Context(), `INSERT INTO hub_identity(id, fleet_id, ca_cert, ca_key, server_cert, server_key,
 		server_names, account_salt, salt_version, settings_epoch, created_time)
 		VALUES (2, 'x', x'00', x'00', x'00', x'00', '[]', zeroblob(32), 1, 'e', 0)`)
 	if err == nil {

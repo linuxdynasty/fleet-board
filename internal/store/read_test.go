@@ -13,7 +13,7 @@ import (
 
 func countItems(tx *sql.Tx) (int, error) {
 	var n int
-	err := tx.QueryRow("SELECT count(*) FROM items").Scan(&n)
+	err := tx.QueryRowContext(context.Background(), "SELECT count(*) FROM items").Scan(&n)
 	return n, err
 }
 

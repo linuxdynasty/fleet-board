@@ -24,7 +24,7 @@ const crashHelperEnv = "FLEET_STORE_CRASH_HELPER_PATH"
 func TestAckedWritesSurviveAKilledProcess(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)
-	cmd := exec.Command(os.Args[0], "-test.run=^TestCrashHelper$", "-test.count=1")
+	cmd := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^TestCrashHelper$", "-test.count=1") //nolint:gosec // G204: re-runs this test binary as the crash helper
 	cmd.Env = append(os.Environ(), crashHelperEnv+"="+h.path)
 	out, err := cmd.StdoutPipe()
 	if err != nil {
@@ -57,7 +57,7 @@ func TestAckedWritesSurviveAKilledProcess(t *testing.T) {
 	s := h.open(t, h.options(itemsV1))
 	stored := map[string]bool{}
 	err = s.Read(context.Background(), func(tx *sql.Tx) error {
-		rows, err := tx.Query("SELECT v FROM items")
+		rows, err := tx.QueryContext(t.Context(), "SELECT v FROM items")
 		if err != nil {
 			return err
 		}

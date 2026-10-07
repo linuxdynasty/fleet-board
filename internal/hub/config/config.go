@@ -139,7 +139,7 @@ func Default() Config {
 // key. A missing file is an error that wraps fs.ErrNotExist. Refusals are
 // *[Error].
 func Load(path string) (*Config, error) {
-	body, err := os.ReadFile(path)
+	body, err := os.ReadFile(path) //nolint:gosec // G304: path is the operator's own config path (--config, $FLEETD_CONFIG or the default); reading it is the job
 	if err != nil {
 		return nil, fmt.Errorf("config: %w", err)
 	}
@@ -209,7 +209,7 @@ func WriteDefault(path string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return fmt.Errorf("config: %w", err)
 	}
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600) //nolint:gosec // G304: path is the operator's own config path; O_EXCL never replaces a file
 	if err != nil {
 		return fmt.Errorf("config: %w", err)
 	}

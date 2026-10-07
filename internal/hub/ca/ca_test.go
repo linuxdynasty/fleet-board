@@ -132,8 +132,8 @@ func TestTheServerCertificateVerifiesForEveryNameAndLasts90Days(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pub, ok := key.(ed25519.PrivateKey)
-	if !ok || !pub.Public().(ed25519.PublicKey).Equal(leaf.PublicKey) {
+	priv, ok := key.(ed25519.PrivateKey)
+	if leafKey, isEd := leaf.PublicKey.(ed25519.PublicKey); !ok || !isEd || !leafKey.Equal(priv.Public()) {
 		t.Errorf("server key is %T and must be the Ed25519 key of the certificate", key)
 	}
 	if !reflect.DeepEqual(sc.Names, names) {

@@ -10,6 +10,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"errors"
+	"fmt"
 	"math/big"
 	"net"
 	"net/http"
@@ -37,7 +38,8 @@ func serve(t *testing.T, f *fixture) string {
 	c := f.certs(t, defaultNames, wallNow)
 	srv := gateway.NewServer(c, f.tel)
 	srv.TLSConfig.Time = wallNow
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	var lc net.ListenConfig
+	ln, err := lc.Listen(t.Context(), "tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,11 +52,27 @@ func clientTLS(f *fixture, serverName string) *tls.Config {
 	return &tls.Config{RootCAs: f.auth.Pool(), ServerName: serverName, MinVersion: tls.VersionTLS12, Time: wallNow}
 }
 
+// dialTLS opens a TLS connection to addr with cfg; the handshake is done.
+func dialTLS(t *testing.T, addr string, cfg *tls.Config) (*tls.Conn, error) {
+	t.Helper()
+	d := tls.Dialer{Config: cfg}
+	c, err := d.DialContext(t.Context(), "tcp", addr)
+	if err != nil {
+		return nil, err
+	}
+	conn, ok := c.(*tls.Conn)
+	if !ok {
+		_ = c.Close()
+		return nil, fmt.Errorf("tls.Dialer returned %T", c)
+	}
+	return conn, nil
+}
+
 func TestTheListenerServesTLS13WithTheStoredCertificate(t *testing.T) {
 	t.Parallel()
 	f := listenerFixture(t)
 	addr := serve(t, f)
-	conn, err := tls.Dial("tcp", addr, clientTLS(f, "127.0.0.1"))
+	conn, err := dialTLS(t, addr, clientTLS(f, "127.0.0.1"))
 	if err != nil {
 		t.Fatalf("TLS dial trusting only the stored CA: %v", err)
 	}
@@ -73,7 +91,7 @@ func TestATLS12OnlyClientIsRefused(t *testing.T) {
 	f := listenerFixture(t)
 	cfg := clientTLS(f, "127.0.0.1")
 	cfg.MaxVersion = tls.VersionTLS12
-	conn, err := tls.Dial("tcp", serve(t, f), cfg)
+	conn, err := dialTLS(t, serve(t, f), cfg)
 	if err == nil {
 		_ = conn.Close()
 		t.Fatal("a TLS 1.2 client completed a handshake")
@@ -124,7 +142,7 @@ func TestClientCertificatesAreOptionalButMustBeTheHubCAs(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg := clientTLS(f, "localhost")
 			cfg.Certificates = tc.certs
-			conn, err := tls.Dial("tcp", addr, cfg)
+			conn, err := dialTLS(t, addr, cfg)
 			if err == nil {
 				// TLS 1.3 reports a refused client certificate on the first read.
 				_ = conn.SetReadDeadline(time.Now().Add(500 * time.Millisecond))

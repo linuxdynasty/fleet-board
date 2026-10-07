@@ -24,7 +24,7 @@ type Config struct {
 // LoadConfig reads and validates the name map. Unknown fields are refused so
 // a misspelled key is not silently ignored.
 func LoadConfig(path string) (Config, error) {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) //nolint:gosec // G304: path is the repo's own name map (-config, default .agents/telemetry-docs.json)
 	if err != nil {
 		return Config{}, fmt.Errorf("read config: %w", err)
 	}

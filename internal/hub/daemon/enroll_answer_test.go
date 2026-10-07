@@ -37,7 +37,8 @@ func (failingFleet) CreateEnrollmentToken(context.Context, *connect.Request[hubv
 // accepted connection to serve.
 func fakeAdmin(t *testing.T, h *hub, serve func(net.Listener)) {
 	t.Helper()
-	ln, err := net.Listen("unix", config.AdminSocketPath(h.state))
+	var lc net.ListenConfig
+	ln, err := lc.Listen(t.Context(), "unix", config.AdminSocketPath(h.state))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,6 +58,7 @@ func TestEnrollTokenNamesWhyThereIsNoToken(t *testing.T) {
 		{
 			name: "the hub never answers",
 			serve: func(t *testing.T) func(net.Listener) {
+				t.Helper()
 				return func(ln net.Listener) {
 					for {
 						c, err := ln.Accept()
@@ -74,6 +76,7 @@ func TestEnrollTokenNamesWhyThereIsNoToken(t *testing.T) {
 		{
 			name: "the hub fails inside",
 			serve: func(t *testing.T) func(net.Listener) {
+				t.Helper()
 				mux := http.NewServeMux()
 				mux.Handle(hubv1connect.NewFleetServiceHandler(failingFleet{}))
 				srv := &http.Server{Handler: mux, ReadHeaderTimeout: time.Second}

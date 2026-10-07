@@ -156,7 +156,7 @@ Run what the change touches; CI is never the first test of an unproven change.
 make tools gen   # new worktree: pinned linters (.bin/), then gen/ (never committed). Once per clone, opt-in: make hooks
 make fmt         # the pinned gofumpt on every Go file (make fmt-check only checks)
 make test        # go vet, then shuffled tests x3 (TEST_COUNT) and -race on changed packages (BASE_REF, default origin/main)
-make lint        # the pinned golangci-lint in .bin/ (tool-versions.env), not the one on PATH
+make lint vuln   # the pinned golangci-lint and govulncheck in .bin/ (tool-versions.env), not PATH's
 make proto-check ts-check   # buf build and lint; the generated TypeScript compiles
 python3 scripts/agent-roles.py --check && scripts/verify-agent-canon.sh
 scripts/check-file-cap.sh   # skips symlinks, go.sum, package-lock.json, gen/, testdata/

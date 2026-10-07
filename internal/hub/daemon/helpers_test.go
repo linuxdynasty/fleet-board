@@ -8,6 +8,8 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -31,12 +33,23 @@ var defaultNames = []string{"fleet-test-host", "fleet-test-host.local", "localho
 // for the admin socket path that config validation checks.
 func shortDir(t *testing.T) string {
 	t.Helper()
-	dir, err := os.MkdirTemp("/tmp", "fbd")
+	dir, err := os.MkdirTemp("/tmp", "fbd") //nolint:usetesting // t.TempDir on macOS can be too long for the admin socket path
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(dir) })
 	return dir
+}
+
+// selfUID is this process's user id as the uint32 the admin socket compares.
+func selfUID(t *testing.T) uint32 {
+	t.Helper()
+	uid := os.Getuid()
+	if uid >= 0 && uint64(uid) <= math.MaxUint32 {
+		return uint32(uid)
+	}
+	t.Fatalf("user id %d is out of range", uid)
+	return 0
 }
 
 type lockedBuffer struct {
@@ -174,7 +187,7 @@ func reasonOf(t *testing.T, err error) daemon.Reason {
 
 func (h *hub) scrape(t *testing.T) string {
 	t.Helper()
-	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/metrics", nil)
 	req.RemoteAddr = "127.0.0.1:1"
 	rec := httptest.NewRecorder()
 	h.tel.MetricsHandler(nil).ServeHTTP(rec, req)
@@ -231,12 +244,18 @@ func caPool(t *testing.T, id statedb.Identity) *x509.CertPool {
 }
 
 // dialAgent opens TLS to addr trusting only the stored CA, checking serverName.
-func dialAgent(pool *x509.CertPool, addr, serverName string, maxVersion uint16) (*tls.ConnectionState, error) {
-	conn, err := tls.Dial("tcp", addr, &tls.Config{RootCAs: pool, ServerName: serverName, MinVersion: tls.VersionTLS12, MaxVersion: maxVersion})
+func dialAgent(t *testing.T, pool *x509.CertPool, addr, serverName string, maxVersion uint16) (*tls.ConnectionState, error) {
+	t.Helper()
+	d := tls.Dialer{Config: &tls.Config{RootCAs: pool, ServerName: serverName, MinVersion: tls.VersionTLS12, MaxVersion: maxVersion}}
+	c, err := d.DialContext(t.Context(), "tcp", addr)
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = conn.Close() }()
+	defer func() { _ = c.Close() }()
+	conn, ok := c.(*tls.Conn)
+	if !ok {
+		return nil, fmt.Errorf("tls.Dialer returned %T", c)
+	}
 	st := conn.ConnectionState()
 	return &st, nil
 }

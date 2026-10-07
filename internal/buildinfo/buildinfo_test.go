@@ -90,14 +90,14 @@ func TestLinkerSetsVersion(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			bin := t.TempDir() + "/" + name
-			build := exec.Command("go", "build",
+			build := exec.CommandContext(t.Context(), "go", "build", //nolint:gosec // G204: bin is this test's temp path and name is from the literal list above
 				"-ldflags", "-X github.com/linuxdynasty/fleet-board/internal/buildinfo.Version=v9.9.9",
 				"-o", bin, "github.com/linuxdynasty/fleet-board/cmd/"+name)
 			build.Env = append(os.Environ(), "CGO_ENABLED=0")
 			if out, err := build.CombinedOutput(); err != nil {
 				t.Fatalf("go build: %v\n%s", err, out)
 			}
-			out, err := exec.Command(bin, "--version").Output()
+			out, err := exec.CommandContext(t.Context(), bin, "--version").Output() //nolint:gosec // G204: bin is the binary this test just built
 			if err != nil {
 				t.Fatalf("run %s --version: %v", name, err)
 			}

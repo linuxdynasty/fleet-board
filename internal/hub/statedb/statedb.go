@@ -78,7 +78,8 @@ func EnsureDir(dir string) error {
 		}
 		return EnsureDir(dir)
 	case err == nil:
-		if err := os.Chmod(dir, 0o700); err != nil { // a umask cannot widen it, but may narrow it
+		// A umask cannot widen the mode, but may narrow it.
+		if err := os.Chmod(dir, 0o700); err != nil { //nolint:gosec // G302: a folder needs the x bit; 0700 is owner-only
 			return fmt.Errorf("statedb: chmod state folder: %w", err)
 		}
 	case !errors.Is(err, fs.ErrExist):
@@ -145,7 +146,7 @@ func Create(ctx context.Context, dir string, id Identity, opts CreateOptions) (e
 		return fmt.Errorf("statedb: temp name: %w", err)
 	}
 	tmp := filepath.Join(dir, tempPrefix+hex.EncodeToString(suffix))
-	f, err := os.OpenFile(tmp, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o600)
+	f, err := os.OpenFile(tmp, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o600) //nolint:gosec // G304: tmp is a fixed prefix plus random hex inside the operator's configured state folder
 	if err != nil {
 		return fmt.Errorf("statedb: create temp file: %w", err)
 	}
@@ -205,14 +206,14 @@ func build(ctx context.Context, path string, id Identity, tel *telemetry.Telemet
 	if err != nil {
 		return fmt.Errorf("statedb: open new store: %w", err)
 	}
-	werr := s.Write(ctx, insertIdentity(id))
+	werr := s.Write(ctx, insertIdentity(ctx, id))
 	if err := errors.Join(werr, s.Close()); err != nil {
 		return err
 	}
 	if fi, err := os.Stat(path + "-wal"); err == nil && fi.Size() > 0 {
 		return errors.New("statedb: the new store's WAL was not checkpointed on close")
 	}
-	f, err := os.Open(path)
+	f, err := os.Open(path) //nolint:gosec // G304: path is the temp state file Init made in the operator's configured state folder
 	if err != nil {
 		return fmt.Errorf("statedb: sync new store: %w", err)
 	}
@@ -220,7 +221,7 @@ func build(ctx context.Context, path string, id Identity, tel *telemetry.Telemet
 }
 
 func syncDir(dir string) error {
-	d, err := os.Open(dir)
+	d, err := os.Open(dir) //nolint:gosec // G304: dir is the operator's configured state folder, opened only to fsync it
 	if err != nil {
 		return fmt.Errorf("statedb: sync state folder: %w", err)
 	}

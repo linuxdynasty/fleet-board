@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -24,7 +25,7 @@ var tokenLine = regexp.MustCompile(`^fbe1_[A-Za-z0-9_-]+\n$`)
 // exit code.
 func enrollToken(t *testing.T, config string, args ...string) (string, string, int) {
 	t.Helper()
-	cmd := exec.Command(bin, append([]string{"enroll-token", "--config", config}, args...)...)
+	cmd := fleetd(t, append([]string{"enroll-token", "--config", config}, args...)...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	err := cmd.Run()
@@ -67,7 +68,7 @@ func stopWith(t *testing.T, cmd *exec.Cmd, sig syscall.Signal) {
 func TestEnrollTokenPrintsATokenForTheStoredCA(t *testing.T) {
 	t.Parallel()
 	config, state := setup(t)
-	if out, err := exec.Command(bin, "init", "--config", config).CombinedOutput(); err != nil {
+	if out, err := fleetd(t, "init", "--config", config).CombinedOutput(); err != nil {
 		t.Fatalf("fleetd init: %v\n%s", err, out)
 	}
 	caDER := storedCA(t, state)
@@ -127,7 +128,7 @@ func TestEnrollTokenPrintsATokenForTheStoredCA(t *testing.T) {
 func TestEnrollTokenWithNoHubOrAKilledHub(t *testing.T) {
 	t.Parallel()
 	config, state := setup(t)
-	if out, err := exec.Command(bin, "init", "--config", config).CombinedOutput(); err != nil {
+	if out, err := fleetd(t, "init", "--config", config).CombinedOutput(); err != nil {
 		t.Fatalf("fleetd init: %v\n%s", err, out)
 	}
 	notRunning := func(when string) {
@@ -172,7 +173,7 @@ func listing(t *testing.T, dir string) string {
 		}
 		b.WriteString(e.Name() + " " + fi.Mode().String() + " " + fi.ModTime().String())
 		if fi.Mode().IsRegular() {
-			raw, err := os.ReadFile(filepath.Join(dir, e.Name()))
+			raw, err := fs.ReadFile(os.DirFS(dir), e.Name())
 			if err != nil {
 				t.Fatal(err)
 			}

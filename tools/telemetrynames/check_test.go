@@ -39,16 +39,16 @@ func fixtureConfig() Config {
 func writeTree(t *testing.T, root string, files map[string]string) {
 	t.Helper()
 	for _, dir := range []string{"cmd", "internal"} {
-		if err := os.MkdirAll(filepath.Join(root, dir), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Join(root, dir), 0o700); err != nil {
 			t.Fatal(err)
 		}
 	}
 	for name, text := range files {
 		path := filepath.Join(root, filepath.FromSlash(name))
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(path, []byte(text), 0o644); err != nil {
+		if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}

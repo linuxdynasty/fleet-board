@@ -45,7 +45,7 @@ func TestInitCreatesThePrivateStoreWithTheWholeIdentityRow(t *testing.T) {
 		t.Fatal(err)
 	}
 	var rows int
-	if err := raw.QueryRow("SELECT count(*) FROM hub_identity").Scan(&rows); err != nil {
+	if err := raw.QueryRowContext(t.Context(), "SELECT count(*) FROM hub_identity").Scan(&rows); err != nil {
 		t.Fatal(err)
 	}
 	_ = raw.Close()
@@ -100,7 +100,7 @@ func TestInitCreatesThePrivateStoreWithTheWholeIdentityRow(t *testing.T) {
 
 func hashFile(t *testing.T, path string) [32]byte {
 	t.Helper()
-	b, err := os.ReadFile(path)
+	b, err := os.ReadFile(path) //nolint:gosec // G304: path is a file in this test's own temp folder
 	if err != nil {
 		t.Fatal(err)
 	}

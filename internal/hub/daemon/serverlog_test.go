@@ -26,7 +26,7 @@ func TestABadTLSHandshakeLogsOnlyJSON(t *testing.T) {
 	h.init(t)
 	r := h.start(t, h.options())
 	id := h.storedIdentity(t)
-	if _, err := dialAgent(caPool(t, id), "127.0.0.1:"+port(r.addrs.Agent), "127.0.0.1", tls.VersionTLS12); err == nil {
+	if _, err := dialAgent(t, caPool(t, id), "127.0.0.1:"+port(r.addrs.Agent), "127.0.0.1", tls.VersionTLS12); err == nil {
 		t.Fatal("a TLS 1.2-capped client connected")
 	}
 	deadline := time.Now().Add(5 * time.Second)
