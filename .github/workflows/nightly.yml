@@ -1,7 +1,7 @@
 # Nightly run (#107). The PR gates test only the packages a change touches;
 # this tests every package with -race, TEST_COUNT times in a random order
 # (make test-all), then fuzzes each target for FUZZTIME (make fuzz) on the
-# corpus earlier nights grew. A scheduled night skips the work when main is
+# corpus earlier nights grew, then checks for known vulnerabilities (make vuln). A scheduled night skips the work when main is
 # still at the commit the last scheduled night tested, except on Sundays
 # (scripts/nightly-should-run.sh). A failure opens or updates
 # the ci-failure issue for this workflow and the next green night closes it
@@ -70,6 +70,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up Go from go.mod
+        id: setup-go
         uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
@@ -81,6 +82,7 @@ jobs:
           node-version-file: .node-version
 
       - name: Generate Go and TypeScript (buf generate)
+        id: gen
         run: make gen
 
       # The time goes to the summary on a failure too: that is when the
@@ -148,6 +150,21 @@ jobs:
           name: fuzz-crashers
           path: fuzz-crashers/
           retention-days: 14
+
+      # make vuln builds the pinned tools into .bin/ first; ci.yml's runs on
+      # main save that cache (same key), so this only restores it.
+      - name: Restore the pinned tools (.bin/)
+        if: ${{ !cancelled() && steps.gen.outcome == 'success' }}
+        uses: actions/cache/restore@v6
+        with:
+          path: .bin
+          key: bin-${{ runner.os }}-${{ hashFiles('tool-versions.env') }}-go${{ steps.setup-go.outputs.go-version }}
+
+      # Last, and even after a test or fuzz failure: a new advisory can land on
+      # code that has not changed. Exit 3 means a reachable known vulnerability.
+      - name: Known vulnerabilities (govulncheck)
+        if: ${{ !cancelled() && steps.gen.outcome == 'success' }}
+        run: make vuln
 
   # Scheduled and on-demand runs of main only, and not after a skipped night.
   # The only job with write access, and only to issues.

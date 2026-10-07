@@ -190,7 +190,8 @@ ran and passed (a skip fails). macOS minutes count ten times.
 `.github/workflows/nightly.yml` runs at 07:17 UTC, on demand (`gh workflow run
 nightly`), and on a PR that changes the file. It runs `make test-all` with
 `TEST_COUNT=10`, then `make fuzz` on the corpus earlier nights grew (cached;
-only `main` saves it). A crash uploads only the new input files (kept 14 days)
+only `main` saves it), then `make vuln`, which runs even after a test or fuzz
+failure. A crash uploads only the new input files (kept 14 days)
 and prints the command that replays each. A scheduled night skips the work when
 `main` is still at the commit the last finished scheduled night tested (a failed
 one counts; its issue tracks it), except on Sundays; when that is unknown, it
