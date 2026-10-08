@@ -13,7 +13,9 @@ for this package:
   never through the writer, and never take `fleetd.lock`.
 - A copy is checked before it is published, and publishing never replaces a
   file (`os.Link`). Every temporary file, above all the plaintext of an
-  encrypted copy, is removed on every path, success and failure.
+  encrypted copy, is removed on every return path, success and failure; a
+  crash leaves them for `RemoveLeftovers`, which must keep its age limit
+  because `fleetd backup` takes no lock.
 - The passphrase comes only from a terminal (`Terminal`), asked twice; never
   from a flag, an environment variable, a file or a pipe. Never log it, never
   keep it past `Take`, never put file contents or paths in a log field.

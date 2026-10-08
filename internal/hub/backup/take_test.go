@@ -126,8 +126,8 @@ func TestACopyTakenWhileTheStoreIsBeingWritten(t *testing.T) {
 	}
 }
 
-// Every failure logs backup.failed with its step and a closed err_kind,
-// publishes nothing and leaves no temporary file.
+// A failure up to publish logs backup.failed with its step and a closed
+// err_kind, publishes nothing and leaves no temporary file.
 func TestFailuresLogTheStepAndPublishNothing(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {

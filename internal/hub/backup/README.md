@@ -20,7 +20,7 @@ res, err = backup.Take(ctx, backup.Options{StateDir: dir, Trigger: backup.Manual
 | `manual-<UTC stamp>.db` | `fleetd backup` |
 | `manual-<UTC stamp>.db.age` | `fleetd backup --encrypt` |
 
-The stamp is `YYYYMMDDTHHMMSSZ` in UTC, such as `nightly-20261008T030000Z.db`.
+The stamp is the UTC time to the second, such as `nightly-20261008T030000Z.db`.
 
 ## Take
 
@@ -45,7 +45,10 @@ The stamp is `YYYYMMDDTHHMMSSZ` in UTC, such as `nightly-20261008T030000Z.db`.
    file for one scrypt (passphrase) recipient, and sync it.
 7. Publish with a link to the final name, which fails rather than replace a
    file there, drop the temporary name and sync `backups/`.
-8. Remove every temporary file, on success and on failure.
+8. Remove every temporary file on every return path, success and failure.
+   A failure up to step 7 publishes nothing and returns a zero `Result`. A
+   temporary file that cannot be removed after step 7 is step `cleanup`: the
+   copy stays published and its `Result` comes back with the error.
 
 With the hub stopped, the read-only copy connection leaves SQLite's empty
 `state.db-wal` and `state.db-shm` in the state folder (SQLite gives them
@@ -66,13 +69,19 @@ local time, so tests drive `Check` with a fake clock and never sleep.
 
 - **Due at 03:00.** The first check of a local date at or after 03:00 makes a
   nightly copy unless one is already that new. It is tried once per date,
-  even when it fails.
+  even when it fails. 03:00 is read off the wall clock: on a night that
+  skips it, the first check after the jump; on a night that repeats it, the
+  first 03:00 (`slotOf`).
+- **Stamps ahead of the clock.** A copy stamped more than 10 minutes past
+  the clock (made while the clock was wrong) does not count as the newest,
+  for the schedule or the gauge; `backup.stamp_ahead` warns once each time
+  the newest such stamp changes. Pruning still counts it.
 - **Catch-up.** The first check after a start, or after a wake (a gap of more
   than three check intervals between checks), makes a copy when the newest
   nightly copy is more than 24 h old or there is none.
-- **Keep 7.** After a nightly copy, all but the newest 7 `nightly-*.db` files
-  are removed. Manual copies, plain or encrypted, and any other file are
-  never removed.
+- **Keep 7.** After a nightly copy (also one that ended at step `cleanup`),
+  all but the newest 7 `nightly-*.db` files are removed. Manual copies,
+  plain or encrypted, and any other file are never removed.
 
 Which copies exist is read from the file names each time, so a restart
 loses nothing.
@@ -82,7 +91,8 @@ loses nothing.
 | Signal | When |
 |---|---|
 | `backup.completed` (info; `trigger`, `bytes`, `encrypted`) | a copy was published |
-| `backup.failed` (error; `trigger`, `step`, `err_kind`) | a copy failed; nothing was published and no temporary file is left |
+| `backup.failed` (error; `trigger`, `step`, `err_kind`) | a copy failed. Up to `publish`, nothing was published and the temporary files were removed; `cleanup` and `prune` mean the copy was published |
+| `backup.stamp_ahead` (warn; `files`, `ahead_seconds`) | the nightly job found copies stamped more than 10 minutes past the clock |
 | `fleet_hub_backup_age_seconds` (gauge, read at scrape time) | the age of the newest backup of either kind, from the stamp in its name; no value while there is none, so `BACKUP_AGE` reads unknown rather than 0. Registered by `NewSchedule`, removed by `Close` |
 
 `trigger` is `nightly` or `manual`. `step` is `passphrase`, `source`, `dir`,
@@ -90,13 +100,18 @@ loses nothing.
 not be removed after publishing) or `prune` (the nightly copy was published,
 but older ones could not be removed). `err_kind` is `refused` (not a terminal,
 empty or mismatched passphrase, a missing or loose `state.db` or `backups/`,
-a copy with no `hub_identity` or an unknown schema, a name already taken),
-`timeout` (the context ended) or `io`. No path, passphrase or file content
-is logged.
+a copy with no `hub_identity`, an unknown schema or a failed `quick_check`, a
+name already taken), `timeout` (the context ended, including Ctrl-C at a
+prompt, which takes effect at Enter) or `io`. No path, passphrase or file
+content is logged.
 
 ## Tests
 
 `CGO_ENABLED=0 go test -race ./internal/hub/backup/`. Every test uses a real
 `state.db` in `t.TempDir()`. age's scrypt work factor is lowered in tests
 (`Options.WorkFactor`); production uses age's default. The non-terminal
-refusal drives the real `NewTerminal` with a pipe.
+refusal drives the real `NewTerminal` with a pipe, and `readLine` has its own
+table test. Failures the real system rarely produces (a corrupt copy, a
+failed encryption, a file that cannot be removed) go through unexported
+seams on `Options` and `ScheduleOptions`, set from tests by
+`export_test.go`. The DST test loads real zones (`time/tzdata`).

@@ -144,7 +144,9 @@ passphrase is read only from the terminal, with echo off and asked twice; a
 stdin that is not a terminal is refused before any prompt, and it is never
 taken from a flag, an environment variable or a file, never logged and never
 stored. The plaintext copy is built in the state folder (0700, mode 0600),
-never in `backups/`, and removed on success and on failure. `fleetd backup`
+never in `backups/`, and removed on every return path, success and failure;
+a backup killed mid-copy leaves it until the next `fleetd init` or `fleetd
+run` removes it, once it is more than an hour old. `fleetd backup`
 takes no lock: it reads `state.db` on a read-only connection of its own, so
 it runs beside `fleetd run` (#92). Backups are stored like the private key of
 the GitHub App.

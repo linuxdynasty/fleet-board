@@ -81,8 +81,12 @@ other: the copy is a `VACUUM INTO` on a read-only connection of its own, so
 it works beside a running hub (which keeps its lock) and with the hub
 stopped (#92). `--encrypt` reads the passphrase twice from
 `Options.Terminal` (stdin in the binary, refused when it is not a terminal).
-Its own telemetry logs `backup.completed` or `backup.failed` to stderr; it
-counts no start failure.
+Once `fleetd.yaml` is read, its own telemetry logs `backup.completed` or
+`backup.failed` to stderr. A missing or bad `fleetd.yaml`, or `--encrypt`
+with no `Options.Terminal`, is returned before that and logs nothing (the
+binary prints the error). It counts no start failure. When the copy was
+published but a temporary file could not be removed (step `cleanup`), the
+result carries the path along with the error.
 
 ## Signals
 
