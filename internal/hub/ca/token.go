@@ -58,6 +58,31 @@ func NewToken(caDER []byte, random io.Reader) (Token, error) {
 	}, nil
 }
 
+// ErrTokenMalformed means the text is not an `fbe1_` enroll token of this
+// format. The hub answers it like a token it never issued.
+var ErrTokenMalformed = errors.New("ca: not an enroll token")
+
+// tokenTextLen is the length of a token: the prefix and 87 base64url
+// characters for 65 bytes.
+var tokenTextLen = len(TokenPrefix) + base64.RawURLEncoding.EncodedLen(1+sha256.Size+secretLen)
+
+// ParseToken decodes an enroll token: the prefix, unpadded base64url of
+// exactly 65 bytes, and [TokenVersion]. It returns the CA fingerprint and
+// the secret's hash; the secret itself is dropped. Anything else is
+// [ErrTokenMalformed], whose text never echoes the input.
+func ParseToken(text string) (Token, error) {
+	if len(text) != tokenTextLen || text[:len(TokenPrefix)] != TokenPrefix {
+		return Token{}, ErrTokenMalformed
+	}
+	payload, err := base64.RawURLEncoding.Strict().DecodeString(text[len(TokenPrefix):])
+	if err != nil || len(payload) != 1+sha256.Size+secretLen || payload[0] != TokenVersion {
+		return Token{}, ErrTokenMalformed
+	}
+	t := Token{text: text, SecretHash: sha256.Sum256(payload[1+sha256.Size:])}
+	copy(t.CAFingerprint[:], payload[1:1+sha256.Size])
+	return t, nil
+}
+
 // Reveal is the token text, the one place the secret leaves this type.
 func (t Token) Reveal() string { return t.text }
 
