@@ -277,14 +277,16 @@ sequenceDiagram
 | `INTEGRATION_SYNC_LAG` | integration | `IntegrationStatus.sync_lag` | half of `max_sync_lag` (5 min) | `max_sync_lag` (10 min, dispatch pauses) | CRITICAL |
 | `WRITER_BATCH_LAG` | hub | three measures: `MAIN`, the oldest message's wait, and `WRITER_COMMIT_TIME`, the batch commit time (each p95 over one minute); `WRITER_QUEUE_FULL`, how long the writer queue has been full without a break (0 when it is not full) | wait over 1 s, or commit over 250 ms | wait over 5 s, or `WRITER_QUEUE_FULL` over 30 s; commit time has no CRITICAL level | CRITICAL |
 | `OUTBOX_BACKLOG` | machine | age of the oldest pending command for a machine that has been online 2 min | 2 min | 10 min | CRITICAL |
-| `WATCH_DROPS` | hub | streams ended `RESYNC_REQUIRED / FELL_BEHIND` in 10 min | 3 | 20 | CRITICAL |
+| `WATCH_DROPS` | hub | streams ended `RESYNC_REQUIRED / FELL_BEHIND` in 10 min | over 3 | over 20 | CRITICAL |
 | `LOG_STORE_USAGE` | hub | live bytes of `logs.db` (the retention measure of [04](04-technology-review.md) Q6; freed pages not yet vacuumed do not count) over the `log_size_cap_bytes` in force, percent. Sitting at the cap is the normal steady state: retention prunes the oldest ended sessions to stay under it, so up to 100 % is OK. Over 100 % means the prune is behind or blocked (only sessions with an open stream are left, or a prune fails). **It reads UNKNOWN until the logs row of the plan lands**: before then `logs.db` does not exist, so it shows as unknown and raises nothing. Both levels 100 %; `warning_hold` 10 min, `critical_hold` 1 h | over 100 % for 10 min (normal for a few minutes after the cap is lowered) | over 100 % for 1 h (the cap is not being held: raise it or turn capture off for long-running panes; `log.prune_blocked` says why) | CRITICAL |
 | `DISK_FREE` | hub | free bytes on the volume of `state.db`; direction `BELOW`; `critical_clear_threshold` 3 GiB | under 10 GiB | under 2 GiB, back to WARNING above 3 GiB | WARNING |
 | `CLOCK_SKEW` | machine | absolute `MachineTelemetry.clock_skew` | 5 min | 15 min (`clock_untrusted`) | CRITICAL |
 | `BACKUP_AGE` | hub | age of the newest backup in `backups/`, nightly or manual (`fleet_hub_backup_age_seconds`); unknown while there is none | 36 h | 7 days | WARNING |
 
 **What a signal raises.** One triage item of the new kind
-`TRIAGE_KIND_SYSTEM`, with `SystemDetail{signal, state, measure}`. It is **deduplicated** by fingerprint
+`TRIAGE_KIND_SYSTEM`, with `SystemDetail{signal, state, measure}`, where
+`measure` is the one that set the state (`MAIN` first, then enum order, when
+several reach it). It is **deduplicated** by fingerprint
 `system:<signal>:<subject>`, so a flapping signal is one item whose severity
 changes in place, never a new one (03f: unique open fingerprint). Severity
 follows the state: WARNING raises `SEVERITY_WARNING`, CRITICAL raises

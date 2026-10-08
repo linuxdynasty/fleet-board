@@ -27,8 +27,8 @@ enum SystemSignalKind {
   // Per integration: IntegrationStatus.sync_lag. Seconds.
   SYSTEM_SIGNAL_KIND_INTEGRATION_SYNC_LAG = 3;
   // Hub: whether the single writer keeps up. MAIN is the age of the oldest
-  // message waiting for the writer; WRITER_COMMIT_TIME and WRITER_QUEUE_FULL
-  // are its other measures. Seconds.
+  // message waiting for the writer, p95 over the window in 05b section 8;
+  // WRITER_COMMIT_TIME and WRITER_QUEUE_FULL are its other measures. Seconds.
   SYSTEM_SIGNAL_KIND_WRITER_BATCH_LAG = 4;
   // Per machine: age of the oldest pending command for an online machine.
   // Seconds.
@@ -117,8 +117,9 @@ message SystemMeasure {
   // Unset: at once. The signal's hysteresis (05b section 8) applies on top.
   google.protobuf.Duration warning_hold = 7;
   google.protobuf.Duration critical_hold = 8;
-  // The level the value must pass back over to leave CRITICAL, when it differs
-  // from critical_threshold. Unset: critical_threshold.
+  // The level the value must pass back past (under for ABOVE, over for BELOW)
+  // to leave CRITICAL, when it differs from critical_threshold. Unset:
+  // critical_threshold.
   optional double critical_clear_threshold = 9;
 }
 
