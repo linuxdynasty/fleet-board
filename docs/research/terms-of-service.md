@@ -70,7 +70,7 @@ their own machines; fleet-board only starts and observes that binary.
 - 5-hour and weekly limits shared across CLI, web and IDE. [E]
 - No device, concurrency or 24/7 rule found.
 
-**Risk: lowest of the three.** Multi-machine sign-in is documented. [I]
+**Risk: lowest of the four.** Multi-machine sign-in is documented. [I]
 
 ## Meta: Muse Code "Power Usage" subscription
 
@@ -164,10 +164,10 @@ machines; it never runs `-p` and never reads `~/.cursor/cli-config.json`.
   screen. The documented automation path is `-p` with an API key, which
   fleet-board never uses. The docs do show starting the interactive CLI with
   a prompt: `agent "refactor the auth module to use JWT tokens"`. `/usage` is
-  not on the docs' slash-command list, though our probe saw it (01b). [E]
+  not on the docs' slash-command list, though our probe saw it (01b). [E / I]
 
 **Risk: low to medium.** Read word for word, the AUP's script line would also
-ban the `-p` scripts Cursor documents, so it cannot mean all automation of the
+ban the `-p` scripts Cursor documents, so it likely does not mean all automation of the
 official client. Docs, pricing and staff all treat that automation on the
 user's own plan as supported, and usage is billed at API rates, so a fleet
 gets no cheaper compute than a person would. What stays open: fleet-board's
@@ -200,7 +200,7 @@ only the unmodified `cursor-agent` binary.
 |---|---|---|---|
 | Anthropic | yes, except an API key or explicit permission | headless documented; limits "assume ordinary, individual usage" | highest |
 | OpenAI | reported only ("programmatically extract"), page 403 | API keys recommended for CI, not required | lowest |
-| Meta | no human-oversight evasion (AUP) | `muse exec` documented; plan use not stated | medium, mostly unknown |
+| Meta | none found; the AUP bars evading human oversight | `muse exec` documented; plan use not stated | medium, mostly unknown |
 | Cursor | yes (AUP), no exception in the text | documented, staff call it supported, billed to the plan | low to medium |
 
 Fine: single owner, own accounts, own machines; same account on several of
