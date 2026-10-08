@@ -16,6 +16,7 @@
 // outcome is sent only after the commit is durable, so an acknowledgement
 // that follows it is never ahead of the disk. A job that fails is rolled back
 // alone; a batch whose transaction breaks fails every job in it.
+// BenchmarkWriterBatch times one such batch at 1, 10 and 100 jobs.
 //
 // Reads go through [Store.Read], a short read transaction on the pool that
 // sees the last commit and never waits for the writer.

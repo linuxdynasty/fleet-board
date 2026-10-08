@@ -18,6 +18,8 @@
 #                   on every package (the nightly run sets TEST_COUNT=10)
 #   make fuzz       each fuzz target for FUZZTIME (default 60s); their seeds
 #                   already run in make test
+#   make bench-report  benchmarks of the changed packages at the merge base
+#                   and at HEAD, compared by benchstat (a report, never a gate)
 #   make fmt        gofumpt -l -w on every Go file (fmt-check only checks)
 #   make gates      everything a push needs, one command (prints tool versions)
 #   make hooks      turn on the pre-push guard (.githooks/pre-push)
@@ -36,6 +38,13 @@ export FUZZTIME
 FUZZMINIMIZETIME ?= 10s
 export FUZZMINIMIZETIME
 
+# BENCH_COUNT and BENCH_TIME (go test -count and -benchtime for bench-report)
+# are data too; scripts/bench-report.sh refuses any other shape.
+BENCH_COUNT ?= 10
+export BENCH_COUNT
+BENCH_TIME ?= 1s
+export BENCH_TIME
+
 BIN := $(CURDIR)/.bin
 GOLANGCI_LINT := $(BIN)/golangci-lint
 GOFUMPT := $(BIN)/gofumpt
@@ -48,7 +57,7 @@ ACTIONLINT := go run github.com/rhysd/actionlint/cmd/actionlint@$(ACTIONLINT_VER
 RACE_CGO := $(if $(filter Darwin,$(shell uname -s)),0,1)
 
 .PHONY: tools versions gen build smoke proto-check ts-check mod-check fmt fmt-check
-.PHONY: vet test test-all fuzz lint vuln actionlint selftest diff-check doc-names doc-tables telemetry-names capability-tests
+.PHONY: vet test test-all fuzz bench-report lint vuln actionlint selftest diff-check doc-names doc-tables telemetry-names capability-tests
 .PHONY: docs-stale docs-stale-ci gates hooks
 
 # tools builds the pinned linters into .bin/. A stamp file per tool names the
@@ -159,6 +168,14 @@ fuzz:
 	CGO_ENABLED=0 go test -run='^$$' -fuzz='^FuzzParse$$' -fuzztime="$$FUZZTIME" -fuzzminimizetime="$$FUZZMINIMIZETIME" ./internal/hub/config/
 	CGO_ENABLED=0 go test -run='^$$' -fuzz='^FuzzCheckEnrollRequest$$' -fuzztime="$$FUZZTIME" -fuzzminimizetime="$$FUZZMINIMIZETIME" ./internal/hub/api/
 
+# bench-report runs the benchmarks of the changed packages at the merge base
+# with BASE_REF and at HEAD, BENCH_COUNT times each, and prints a markdown
+# report (scripts/bench-review.py marks a time rise over 10% or any allocation
+# rise that benchstat calls significant). It fails only when HEAD's benchmarks
+# fail; a slower result is for a reviewer to read, not a gate.
+bench-report:
+	scripts/bench-report.sh "$$BASE_REF"
+
 lint: tools
 	@pkgs="$$(scripts/changed-go-packages.sh "$$BASE_REF")" || exit 1; \
 	if [ -z "$$pkgs" ]; then echo "make lint: no Go package changed against $$BASE_REF; nothing to lint"; exit 0; fi; \
@@ -191,6 +208,8 @@ selftest: tools
 	scripts/test-make-test-flags.sh
 	scripts/test-ci-report-failure.sh
 	scripts/test-nightly-should-run.sh
+	scripts/test-bench-report.sh
+	python3 scripts/test-bench-review.py
 	python3 scripts/test-check-attribution.py
 	python3 scripts/test-check-file-cap.py
 	python3 scripts/test-agent-roles.py

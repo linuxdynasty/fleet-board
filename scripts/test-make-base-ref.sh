@@ -7,8 +7,8 @@
 # Two kinds of case, both seeded:
 #   - `make -n` prints each recipe; the raw hostile value must appear nowhere
 #     in it (test, lint, diff-check, docs-stale-ci and gates all read BASE_REF;
-#     test reads TEST_COUNT and fuzz reads FUZZTIME and FUZZMINIMIZETIME the
-#     same way);
+#     test reads TEST_COUNT, fuzz reads FUZZTIME and FUZZMINIMIZETIME, and
+#     bench-report reads BENCH_COUNT and BENCH_TIME the same way);
 #   - `make diff-check` really runs, in a throwaway repo, with a value that would
 #     create a marker file if it were executed; the marker must not exist.
 # Runs on the macOS system bash 3.2. Needs make and git.
@@ -34,7 +34,7 @@ hostile="x; touch $marker"
 spaced="no such ref"
 
 # -n cases: the recipe text must not contain the raw value.
-for target in test lint diff-check docs-stale-ci gates; do
+for target in test lint diff-check docs-stale-ci gates bench-report; do
   out="$(cd "$root" && make -n "$target" BASE_REF="$hostile" 2>&1)"
   case "$out" in
     *"touch $marker"*) bad "make -n $target pastes BASE_REF into the recipe text" ;;
@@ -54,6 +54,13 @@ for target in test test-all; do
   out="$(cd "$root" && make -n "$target" TEST_COUNT="$hostile" 2>&1)"
   case "$out" in
     *"touch $marker"*) bad "make -n $target pastes TEST_COUNT into the recipe text" ;;
+    *) ok ;;
+  esac
+done
+for var in BENCH_COUNT BENCH_TIME; do
+  out="$(cd "$root" && make -n bench-report "$var=$hostile" 2>&1)"
+  case "$out" in
+    *"touch $marker"*) bad "make -n bench-report pastes $var into the recipe text" ;;
     *) ok ;;
   esac
 done

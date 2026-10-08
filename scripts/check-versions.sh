@@ -13,8 +13,8 @@
 #   - tools/tscheck/package.json: typescript equals TYPESCRIPT_VERSION and
 #     @bufbuild/protobuf equals PROTOC_GEN_ES_VERSION (ADR 0020: same version)
 # It also fails when the Makefile or a workflow spells out a pin of
-# golangci-lint, buf, gofumpt, govulncheck or actionlint instead of reading
-# the file.
+# golangci-lint, buf, gofumpt, govulncheck, actionlint or benchstat instead of
+# reading the file.
 #
 # Portable to the macOS system bash 3.2. FLEET_VERSIONS_REPO_ROOT points the
 # script at another tree (used to test it against a seeded violation).
@@ -37,7 +37,7 @@ fi
 # shellcheck disable=SC1090
 . "$versions"
 
-for key in GO_VERSION NODE_MAJOR GOLANGCI_LINT_VERSION BUF_VERSION GOFUMPT_VERSION GOVULNCHECK_VERSION ACTIONLINT_VERSION TYPESCRIPT_VERSION PROTOC_GEN_ES_VERSION; do
+for key in GO_VERSION NODE_MAJOR GOLANGCI_LINT_VERSION BUF_VERSION GOFUMPT_VERSION GOVULNCHECK_VERSION ACTIONLINT_VERSION BENCHSTAT_VERSION TYPESCRIPT_VERSION PROTOC_GEN_ES_VERSION; do
   eval "val=\${$key:-}"
   [ -n "$val" ] || note "tool-versions.env does not set $key"
 done
@@ -101,7 +101,7 @@ fi
 # A literal pin in the Makefile or a workflow would be a second source of truth.
 for f in "$root/Makefile" "$root"/.github/workflows/*.yml; do
   [ -f "$f" ] || continue
-  hit="$(grep -n -E '(golangci-lint|cmd/buf|mvdan.cc/gofumpt|cmd/govulncheck|cmd/actionlint)(/[a-z0-9/]*)?@v[0-9]' "$f" || true)"
+  hit="$(grep -n -E '(golangci-lint|cmd/buf|mvdan.cc/gofumpt|cmd/govulncheck|cmd/actionlint|cmd/benchstat)(/[a-z0-9/]*)?@v[0-9]' "$f" || true)"
   if [ -n "$hit" ]; then
     rel="${f#"$root"/}"
     note "$rel spells out a tool version (read tool-versions.env instead): $hit"
