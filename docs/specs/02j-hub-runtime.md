@@ -117,7 +117,7 @@ ssh with a loose key; it never changes a mode itself.
 | `fleetd.lock` | an exclusive lock (`flock`) that `fleetd init` and `fleetd run` take before they open `state.db`, so a second `fleetd` on the same folder exits at once (#92). The kernel drops it when the process dies, so a killed hub never blocks the next start |
 | `state.db`, `-wal`, `-shm` | the hub store, including `hub_identity` (CA key, account salt; [02g](02g-agent-security.md)) |
 | `logs.db` | the log store (ADR 0015) |
-| `revoked-serials` | the revocation list, kept outside `state.db` so a restore re-applies it (02g) |
+| `revoked-serials` | the revocation list, mode 0600, kept outside `state.db` so a restore re-applies it; format, write order and the start check in [02g](02g-agent-security.md#hub-identity-and-restore) |
 | `backups/` | nightly `VACUUM INTO` copies (ADR 0014) |
 | `admin.sock` | the local admin socket, mode 0600, for `fleetd enroll-token` (and later `fleetd token create`, `fleetd user invite` and `fleetd claim`). It speaks Connect `FleetService` (unary, HTTP/1.1); only `CreateEnrollmentToken` is built so far and every other method answers unimplemented. The kernel's peer user id must equal `fleetd`'s, or the connection is closed unserved ([02f](02f-hub-authentication.md#api-tokens)). `fleetd run` binds it after taking `fleetd.lock`, first removing a socket a killed hub left behind (anything else at that path is refused), and removes it on a clean stop |
 

@@ -11,11 +11,16 @@
 
 ## Versioning and capability negotiation
 
-- **Proto version.** `Hello.proto_min/max` and `HelloAck.proto_version`.
+- **Proto version.** `Hello.proto_min/max`, `EnrollRequest.proto_min/max` and
+  `HelloAck.proto_version`. The v1 wire is proto version 1; 0 means unset.
+  Hub and agent share one inclusive range (`internal/protoversion`, now
+  `[1, 1]`); an unset bound, `min > max`, or a range that misses the shared
+  one has no common version.
   Within each `v1` package, changes are free until the `v0.1` tag and
   additive only after it (`buf breaking` against the tag, WIRE_JSON; ADR 0019,
   02e); the hub supports agents one minor version behind (ADR 0003). No
-  common version → `Bye{PROTO_UNSUPPORTED}`.
+  common version → `Bye{PROTO_UNSUPPORTED}` on `Connect`, and
+  `ENROLL_PROTO_UNSUPPORTED` on `Enroll`, which then burns no token.
 - **Capabilities** are `Capability{name, version}` in `Hello`; the hub echoes
   `capabilities_accepted` and lists its own in `HelloAck.hub_capabilities`
   (`snapshot.parts`, `event.delivery`); neither side uses a feature the
