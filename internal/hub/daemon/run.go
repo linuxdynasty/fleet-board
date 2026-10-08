@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/linuxdynasty/fleet-board/internal/hub/api"
+	"github.com/linuxdynasty/fleet-board/internal/hub/backup"
 	"github.com/linuxdynasty/fleet-board/internal/hub/ca"
 	"github.com/linuxdynasty/fleet-board/internal/hub/config"
 	"github.com/linuxdynasty/fleet-board/internal/hub/gateway"
@@ -84,15 +85,21 @@ func Run(ctx context.Context, opts Options) (err error) {
 	if err != nil {
 		return s.fail(ReasonCert, err)
 	}
-	return serve(ctx, cfg, opts, hubDeps{certs: certs, st: st, id: id, revoked: revoked}, s)
+	nightly, err := backup.NewSchedule(backup.ScheduleOptions{StateDir: cfg.StateDir, Now: opts.Now, Telemetry: s.tel})
+	if err != nil {
+		return s.fail(ReasonStore, err)
+	}
+	defer func() { err = errors.Join(err, nightly.Close()) }()
+	return serve(ctx, cfg, opts, hubDeps{certs: certs, st: st, id: id, revoked: revoked, nightly: nightly}, s)
 }
 
-// hubDeps is what the listeners share once the store is open.
+// hubDeps is what the listeners and jobs share once the store is open.
 type hubDeps struct {
 	certs   *gateway.Certs
 	st      *store.Store
 	id      statedb.Identity
 	revoked *revocation.List
+	nightly *backup.Schedule
 }
 
 // revocationReason: a loose revoked-serials is mode_loose like any other
@@ -191,6 +198,14 @@ func serve(ctx context.Context, cfg *config.Config, opts Options, d hubDeps, s *
 	}
 	wg.Add(1)
 	go func() { defer wg.Done(); d.certs.Run(ctx, ticks) }()
+	backupTicks := opts.BackupTicks
+	if backupTicks == nil {
+		t := time.NewTicker(backup.CheckEvery)
+		defer t.Stop()
+		backupTicks = t.C
+	}
+	wg.Add(1)
+	go func() { defer wg.Done(); d.nightly.Run(ctx, backupTicks) }()
 
 	s.tel.Logger.Info("hub.started", "mode", cfg.Mode, "listeners", len(ls))
 	if opts.Ready != nil {

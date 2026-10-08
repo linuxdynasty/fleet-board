@@ -10,6 +10,8 @@ for this package:
   another file. The revocation list loads after `state.db` and before any
   listener binds; a hub never serves the agent listener without it.
 - `EnrollToken` is a client: it writes no file and emits no telemetry.
+- `Backup` never takes `fleetd.lock` or opens the store; it only calls
+  `backup.Take`, whose copy connection is read-only (#92).
 - `Run` never creates `state.db` and never mints an identity; `Init` never
   replaces a store.
 - Every start refusal goes through `session.fail` with a closed `Reason`: one

@@ -1,8 +1,8 @@
 # internal/hub/daemon
 
-`fleetd init`, `fleetd run` and `fleetd enroll-token`
+`fleetd init`, `fleetd run`, `fleetd enroll-token` and `fleetd backup`
 ([02j](../../../docs/specs/02j-hub-runtime.md)). `cmd/fleetd` parses flags and
-calls `Init`, `Run` or `EnrollToken`.
+calls `Init`, `Run`, `EnrollToken` or `Backup`.
 
 ## `Init`
 
@@ -46,8 +46,15 @@ calls `Init`, `Run` or `EnrollToken`.
    (FleetService `CreateEnrollmentToken`, kernel peer user id check;
    `Options.PeerUID` injects the reader in tests). Then it serves until the
    context ends (SIGTERM).
-8. Stops: shuts the listeners down (10 s grace, then closes; closing the admin
-   listener removes `admin.sock`), stops the hourly certificate check, closes
+8. Runs the nightly backup in a goroutine it owns (`backup.Schedule`,
+   [internal/hub/backup](../backup/README.md)): a check at start, then every
+   minute (`Options.BackupTicks` in tests). A copy is made at the first check
+   of each local date at or after 03:00, and at start or wake when the newest
+   nightly copy is more than 24 h old; the last 7 nightly copies are kept.
+   `fleet_hub_backup_age_seconds` is served from the same schedule.
+9. Stops: shuts the listeners down (10 s grace, then closes; closing the admin
+   listener removes `admin.sock`), stops the hourly certificate check and the
+   backup job (an unfinished copy is abandoned and leaves no file), closes
    the store, releases the lock.
 
 ## `EnrollToken`
@@ -62,6 +69,18 @@ and each bad field ("the hub refused: …", or "the hub failed: …" for an
 in time"; a connection closed with no answer (the peer check) says that only
 the OS user that runs fleetd may use `admin.sock`.
 
+## `Backup`
+
+`fleetd backup [--encrypt]`: reads `fleetd.yaml` for the state folder and
+calls `backup.Take` for one `manual-<UTC stamp>.db` (or `.db.age`) in
+`<state_dir>/backups/`. It takes **no lock**, neither `fleetd.lock` nor any
+other: the copy is a `VACUUM INTO` on a read-only connection of its own, so
+it works beside a running hub (which keeps its lock) and with the hub
+stopped (#92). `--encrypt` reads the passphrase twice from
+`Options.Terminal` (stdin in the binary, refused when it is not a terminal).
+Its own telemetry logs `backup.completed` or `backup.failed` to stderr; it
+counts no start failure.
+
 ## Signals
 
 | Signal | When |
@@ -73,6 +92,7 @@ the OS user that runs fleetd may use `admin.sock`.
 | `admin.peer_refused`, `enroll.issued`, `enroll.issue_refused`, `enroll.issue_failed`, `fleet_hub_enroll_tokens_total{result}` | the admin socket and token creation ([internal/hub/api](../api/README.md)) |
 | `enroll.completed`, `enroll.refused`, `enroll.failed`, `fleet_hub_enroll_total{result}`, `tls.client_cert_revoked`, `fleet_hub_auth_failures_total{reason="revoked"}` | Enroll and revoked serials on the agent listener ([internal/hub/gateway](../gateway/README.md)) |
 | `hub.revocations_torn_line` (warn) | the revoked-serials file ended in a line with no newline (a crash mid-append); it was dropped ([internal/hub/revocation](../revocation/README.md)) |
+| `backup.completed`, `backup.failed`, `fleet_hub_backup_age_seconds` | the nightly job in run and `fleetd backup` ([internal/hub/backup](../backup/README.md)) |
 | `hub.listener_failed` (`err_kind`) | a listener stopped with an error |
 | `hub.stopped` | run shut down |
 | `http.server_error` (`listener`, `kind`), error level for `kind=panic`, else debug | net/http's own error line on any listener (a failed TLS handshake, a recovered handler panic); its text is dropped |
@@ -93,5 +113,8 @@ every file of the state folder (WAL included) and the logs for the token and
 its secret, inject another peer uid, and start past a leftover socket. The
 revocation tests start with a serial already in `revoked-serials` and check
 the first handshake refuses it, refuse a bad or loose file, and enroll a
-machine end to end with a token from the admin socket.
+machine end to end with a token from the admin socket. The backup tests
+take a copy while `Run` holds `fleetd.lock` (and check the lock is still
+held), take one with the hub stopped and then start `Run`, and watch `Run`
+make its start-up catch-up copy and serve its age.
 `cmd/fleetd` repeats the cross-process cases with the built binary.

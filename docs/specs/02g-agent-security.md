@@ -137,8 +137,16 @@ keys and certificates are never kept in separate files:
 | `hub_addresses` | What the owner configured; sent in `EnrollResponse` and, newer, in `HelloAck.hub_addresses` |
 
 **A backup contains the CA private key and the salt, so it is a secret.** The
-nightly `VACUUM INTO` (ADR 0014) writes it mode 0600; `fleetd backup --encrypt`
-wraps it with a passphrase (age). Backups are stored like the private key of
+nightly `VACUUM INTO` (ADR 0014) writes it mode 0600 in `backups/` (mode 0700,
+names in [02j](02j-hub-runtime.md#state-directory)); `fleetd backup --encrypt`
+wraps it with a passphrase (`filippo.io/age`, one scrypt recipient). The
+passphrase is read only from the terminal, with echo off and asked twice; a
+stdin that is not a terminal is refused before any prompt, and it is never
+taken from a flag, an environment variable or a file, never logged and never
+stored. The plaintext copy is built in the state folder (0700, mode 0600),
+never in `backups/`, and removed on success and on failure. `fleetd backup`
+takes no lock: it reads `state.db` on a read-only connection of its own, so
+it runs beside `fleetd run` (#92). Backups are stored like the private key of
 the GitHub App.
 
 **`fleetd restore <file> [--address <new>]`** is an offline command. It:

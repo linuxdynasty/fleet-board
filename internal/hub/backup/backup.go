@@ -194,6 +194,9 @@ const stampLayout = "20060102T150405Z"
 // (owned by this user, no group or other access), without opening the store.
 func checkSource(stateDir string) error {
 	if err := statedb.CheckDir(stateDir); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			err = fmt.Errorf("backup: no state folder %s; run fleetd init first: %w", stateDir, err)
+		}
 		return err
 	}
 	err := statedb.CheckPrivateFile(statedb.Path(stateDir))
