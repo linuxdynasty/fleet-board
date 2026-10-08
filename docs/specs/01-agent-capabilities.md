@@ -314,8 +314,13 @@ optionally against one limit the owner sets.
 - **E2 Control-mode observer:** one `tmux -C` client per server, attached with
   the `ignore-size` client flag (added in tmux 3.2) so it never changes the
   size of the developer's windows, and with `refresh-client -f pause-after=<s>` (`%pause`, `%continue`,
-  `%extended-output`; confirmed in tmux 3.7c's man page; spike 0.5 confirms the
-  release that introduced it is ≤ 3.2).
+  `%extended-output`). Spike 0.5 ran both flags on tmux 3.2a and 3.7c
+  (2026-10-08, [results](../../spikes/tmuxtyping/results/README.md)): both
+  arrived in tmux 3.2 (its CHANGES file), and 3.1c refuses `-f` but silently
+  ignores both under the old `-F`, so a version check reads `client_flags`
+  and never trusts `-F`. Set the flags at attach
+  (`attach-session -f ignore-size,pause-after=<s>`): `ignore-size` turned on
+  later does not undo a shrink until the next size change.
 - **E3 Pane lifecycle:** created and exited with exit status. "Stopped without
   DONE" (the one-nudge rule) depends on this.
 - **E4 Activity transitions:** active ↔ idle, with the time of last output.

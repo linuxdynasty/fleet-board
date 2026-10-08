@@ -267,10 +267,9 @@ is explicit: `TmuxPane.last_input_time` (level) and `Event.pane_input`
 (`PaneInput`, COALESCE key `input:<pane>`, at most one per pane per 10 s;
 replayed from the ring after an outage with its original time).
 
-Detection (the tmux spike, plan 0.5, checks whether control mode can push client
-activity instead; until it reports, this poll is the one polled pane input, and
-the owner allowed it as an exception to "poll only usage and GitHub", with the
-60 s goal-file rescan: ADR 0024, decision 9): every 2 s while any client is attached to a session
+Detection (this poll is the one polled pane input, and the owner allowed it as
+an exception to "poll only usage and GitHub", with the 60 s goal-file rescan:
+ADR 0024, decision 9): every 2 s while any client is attached to a session
 holding a goal pane, the agent reads `tmux list-clients -F
 '#{client_activity} #{client_flags} #{client_session} #{pane_id}'`, ignores
 control-mode clients (its own observer), and credits the input to the active
@@ -279,6 +278,20 @@ is typing. Keys the agent sends itself with `send-keys` are not client
 input. A pane whose input line changes while no fleet command is in flight
 is a second, weaker evidence the agent may use where `client_activity` is
 unavailable.
+
+Spike 0.5 (tmux 3.2a and 3.7c, 2026-10-08,
+[results](../../spikes/tmuxtyping/results/README.md)) found a push source.
+tmux sends no `%` notification when a person types, and `#{client_activity}`
+in a control-mode subscription is the control client's own. But a
+`refresh-client -B` subscription on `#{session_activity}` (one subscription
+covers every session with `#{S:...}`) changes when an attached client presses
+a key, and arrives as `%subscription-changed` within about 1 s: 60 of 60 keystrokes
+per version, median 0.4 to 0.6 s, max 1.0 s. The agent's own `send-keys` never
+moved it. It also moves on attach, `switch-client` and focus-in, and it names
+only the session, so the client and pane would still come from one
+`list-clients` read when it changes. tmux 3.4 and later also give every
+client's `client_activity` in one subscription (`#{L:...}`). Replacing the 2 s
+poll with this is not decided here; until it is, the poll above is the rule.
 
 The hub holds off nudges and goal control for 10 minutes after the latest
 input (`human_at_keyboard_until_time`) and shows the typing banner from
