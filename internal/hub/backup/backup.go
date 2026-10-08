@@ -80,6 +80,8 @@ type seams struct {
 	afterCopy func(path string) error // runs on the copy before its check
 	encrypt   error                   // the encrypt step's error
 	remove    func(path string) error // nil: os.Remove (temporary files and pruning)
+	// publishSync is the error of syncing backups/ after the link.
+	publishSync error
 }
 
 // Result is a published backup.
@@ -100,10 +102,11 @@ type Result struct {
 // replaces an existing file, and the folder is synced. Success logs
 // backup.completed. A failure logs backup.failed with its step; every return
 // path removes the temporary files it made (a crash cannot, and
-// [RemoveLeftovers] sweeps those). Before publishing, a failure publishes
-// nothing and the Result is zero. Step cleanup comes after publishing: a
-// temporary file could not be removed, and the published copy's Result is
-// returned with the error.
+// [RemoveLeftovers] sweeps those). Before the link, a failure publishes
+// nothing and the Result is zero. After it, the published copy's Result is
+// returned with the error: step publish when the folder sync failed (the
+// copy exists but may not survive a power loss), step cleanup when a
+// temporary file could not be removed.
 func Take(ctx context.Context, opts Options) (Result, error) {
 	if opts.Trigger != Nightly && opts.Trigger != Manual {
 		return Result{}, fmt.Errorf("backup: unknown trigger %q", opts.Trigger)
@@ -192,14 +195,26 @@ func take(ctx context.Context, o Options) (res Result, st step, err error) {
 			return res, stepEncrypt, err
 		}
 	}
-	if err := link(publish, final); err != nil {
-		return res, stepPublish, err
+	// The link publishes: from here on the copy exists under its final name,
+	// so every return carries its Result. The deferred cleanup drops the
+	// temporary name.
+	if err := os.Link(publish, final); err != nil {
+		return res, stepPublish, fmt.Errorf("backup: publish: %w", err)
 	}
+	res = Result{Path: final, Encrypted: encrypted}
 	fi, err := os.Stat(final)
 	if err != nil {
 		return res, stepPublish, fmt.Errorf("backup: stat the published copy: %w", err)
 	}
-	return Result{Path: final, Bytes: fi.Size(), Encrypted: encrypted}, "", nil
+	res.Bytes = fi.Size()
+	err = o.seams.publishSync
+	if err == nil {
+		err = syncDir(dir)
+	}
+	if err != nil {
+		return res, stepPublish, err
+	}
+	return res, "", nil
 }
 
 // fileName is <trigger>-<UTC stamp>.db, with .age when encrypted.
@@ -272,19 +287,6 @@ func copyStore(ctx context.Context, src, dst string) error {
 		return fmt.Errorf("backup: %w", err)
 	}
 	return syncFile(dst)
-}
-
-// link publishes tmp under final, failing (fs.ErrExist) rather than replace
-// a file already there, then drops the temporary name and syncs the folder
-// so both changes last.
-func link(tmp, final string) error {
-	if err := os.Link(tmp, final); err != nil {
-		return fmt.Errorf("backup: publish: %w", err)
-	}
-	if err := os.Remove(tmp); err != nil {
-		return fmt.Errorf("backup: publish: %w", err)
-	}
-	return syncDir(filepath.Dir(final))
 }
 
 // removeAll removes a temporary file and any SQLite side file next to it

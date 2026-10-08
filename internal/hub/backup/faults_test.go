@@ -49,6 +49,36 @@ func TestAFailedEncryptionPublishesNothing(t *testing.T) {
 // A temporary file that cannot be removed after the copy was published is
 // step cleanup: the copy stays published and its Result comes back with the
 // error, so fleetd backup can still print the path.
+// A folder sync that fails after the link is step publish, but the copy
+// exists under its final name, so its Result comes back with the error and
+// no temporary name is left.
+func TestAFailedSyncAfterTheLinkReturnsThePublishedCopy(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	res, err := backup.Take(context.Background(), backup.Options{
+		StateDir: f.state, Trigger: backup.Manual, Now: func() time.Time { return stamp }, Telemetry: f.tel,
+	}.WithFaults(backup.Faults{PublishSync: errors.New("sync failed")}))
+	if err == nil {
+		t.Fatal("Take succeeded although the folder sync failed")
+	}
+	want := filepath.Join(f.backups(), "manual-20261008T030000Z.db")
+	if res.Path != want || res.Bytes == 0 {
+		t.Errorf("result %+v, want the published path %s with its size", res, want)
+	}
+	assertBackupStore(t, want)
+	entries, err := os.ReadDir(f.backups())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Errorf("backups/ holds %d entries, want only the published copy", len(entries))
+	}
+	ev := f.logs.events(t, "backup.failed")
+	if len(ev) != 1 || ev[0]["step"] != "publish" {
+		t.Errorf("backup.failed lines = %v, want one with step publish", ev)
+	}
+}
+
 func TestACleanupFailureKeepsThePublishedCopy(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)

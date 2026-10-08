@@ -44,11 +44,13 @@ The stamp is the UTC time to the second, such as `nightly-20261008T030000Z.db`.
 6. Encrypted: write `backups/.partial-<random>` (`O_EXCL`, 0600) as an age
    file for one scrypt (passphrase) recipient, and sync it.
 7. Publish with a link to the final name, which fails rather than replace a
-   file there, drop the temporary name and sync `backups/`.
-8. Remove every temporary file on every return path, success and failure.
-   A failure up to step 7 publishes nothing and returns a zero `Result`. A
-   temporary file that cannot be removed after step 7 is step `cleanup`: the
-   copy stays published and its `Result` comes back with the error.
+   file there, and sync `backups/`.
+8. Remove every temporary file (the temporary name included) on every return
+   path, success and failure. A failure before the link publishes nothing and
+   returns a zero `Result`. After the link the copy exists, so its `Result`
+   comes back with any error: step `publish` when the folder sync failed (the
+   copy may not survive a power loss), step `cleanup` when a temporary file
+   cannot be removed.
 
 With the hub stopped, the read-only copy connection leaves SQLite's empty
 `state.db-wal` and `state.db-shm` in the state folder (SQLite gives them
@@ -91,7 +93,7 @@ loses nothing.
 | Signal | When |
 |---|---|
 | `backup.completed` (info; `trigger`, `bytes`, `encrypted`) | a copy was published |
-| `backup.failed` (error; `trigger`, `step`, `err_kind`) | a copy failed. Up to `publish`, nothing was published and the temporary files were removed; `cleanup` and `prune` mean the copy was published |
+| `backup.failed` (error; `trigger`, `step`, `err_kind`) | a copy failed. Before the link nothing was published and the temporary files were removed; `publish` after the link (the folder sync failed), `cleanup` and `prune` mean the copy was published |
 | `backup.stamp_ahead` (warn; `files`, `ahead_seconds`) | the nightly job found copies stamped more than 10 minutes past the clock |
 | `fleet_hub_backup_age_seconds` (gauge, read at scrape time) | the age of the newest backup of either kind, from the stamp in its name; no value while there is none, so `BACKUP_AGE` reads unknown rather than 0. Registered by `NewSchedule`, removed by `Close` |
 

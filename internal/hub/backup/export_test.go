@@ -8,10 +8,12 @@ type Faults struct {
 	Encrypt error
 	// Remove replaces os.Remove for temporary files and pruning.
 	Remove func(path string) error
+	// PublishSync, when set, is the error of syncing backups/ after the link.
+	PublishSync error
 }
 
 func (f Faults) seams() seams {
-	return seams{afterCopy: f.AfterCopy, encrypt: f.Encrypt, remove: f.Remove}
+	return seams{afterCopy: f.AfterCopy, encrypt: f.Encrypt, remove: f.Remove, publishSync: f.PublishSync}
 }
 
 // WithFaults returns o with the seams set.
