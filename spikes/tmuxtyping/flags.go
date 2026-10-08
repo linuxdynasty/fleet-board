@@ -19,13 +19,13 @@ func runFlags(lg *logger, args []string) error {
 		return err
 	}
 	lg.emit("env", map[string]any{"tmux": srv.version(), "bin": *bin, "socket": *socket})
-	if err := srv.start(120, 40, "work"); err != nil {
-		return err
-	}
 	defer func() {
 		rc, gone := srv.kill()
 		lg.emit("cleanup", map[string]any{"kill_rc": rc, "server_gone": gone})
 	}()
+	if err := srv.start(120, 40, "work"); err != nil {
+		return err
+	}
 
 	// 1. Flags given at attach time (attach-session -f).
 	lg.emit("attach_flags", attachCheck(srv, "ignore-size,pause-after=1"))
@@ -60,8 +60,12 @@ func attachCheck(srv *server, flags string) map[string]any {
 	rec := map[string]any{"args": "attach-session -t work -f " + flags}
 	ctl, r, err := startControl(srv, "attach-session", "-t", "work", "-f", flags)
 	if err != nil {
+		rec["accepted"], rec["error"] = false, err.Error()
+		if ctl == nil {
+			return rec
+		}
 		exited, stderr := ctl.exited(2 * time.Second)
-		rec["accepted"], rec["error"], rec["exited"], rec["stderr"] = false, err.Error(), exited, stderr
+		rec["exited"], rec["stderr"] = exited, stderr
 		if ctl.exitErr != nil {
 			rec["exit"] = ctl.exitErr.Error()
 		}
@@ -108,8 +112,10 @@ func sizeChecks(lg *logger, srv *server) error {
 		rec := map[string]any{"case": tc.name}
 		ctl, r, err := startControl(srv, tc.attach...)
 		if err != nil {
-			_, stderr := ctl.exited(2 * time.Second)
-			rec["attach_error"], rec["stderr"] = err.Error(), stderr
+			rec["attach_error"] = err.Error()
+			if ctl != nil {
+				_, rec["stderr"] = ctl.exited(2 * time.Second)
+			}
 			lg.emit("size_check", rec)
 			continue
 		}

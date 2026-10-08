@@ -97,7 +97,10 @@ GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o /tmp/fleetprobe-05/linux/tmuxt
 docker run --rm --platform linux/amd64 -v /tmp/fleetprobe-05/linux:/work ubuntu:22.04 bash /work/run.sh   # rc=0
 ```
 
-Inside the container ([linux-container-run.txt](linux-container-run.txt)):
+`run.sh` was a throwaway script in `/tmp/fleetprobe-05/linux` and was not
+kept. Its steps are listed next, its output is
+[linux-container-run.txt](linux-container-run.txt), and the raw logs are
+`flags-linux-*.jsonl` and `typing-linux-*.jsonl`. Inside the container:
 the apt install (rc=0), `install-tmux.sh` for 3.2a and 3.7c (rc=0, `sha256sum
 -c` OK), `install-tmux.sh` with a wrong hash (rc=1, "checksum did NOT match",
 nothing built), then `flags -stall 10s` and `typing -n 5` for apt 3.2a,
@@ -174,7 +177,8 @@ max; source 3.2a 234 / 389 / 821; source 3.7c 291 / 428 / 1009),
    `refresh-client -A '%N:continue'` answered with `%continue %N` inside its
    own `%begin`/`%end` reply, not as a separate line.
 8. **3.1c's `-F` hides the problem.** `refresh-client -F ignore-size` and
-   `-F pause-after=1` return success on 3.1c and do nothing (its code says
+   `-F pause-after=1` return success on 3.1c and, read from its source (not
+   measured: 3.1c prints no `client_flags`), do nothing (its code says
    "Unknown flags are ignored"). A version check must use `-f`, which fails on
    3.1c, or read `client_flags`.
 9. **Set `ignore-size` at attach.** With `window-size smallest`, a control

@@ -41,13 +41,13 @@ func runTyping(lg *logger, args []string) error {
 	}
 	ver := srv.version()
 	lg.emit("env", map[string]any{"tmux": ver, "bin": *bin, "socket": *socket, "n": *per, "window_ms": window.Milliseconds()})
-	if err := srv.start(120, 40, "work", "other"); err != nil {
-		return err
-	}
 	defer func() {
 		rc, gone := srv.kill()
 		lg.emit("cleanup", map[string]any{"kill_rc": rc, "server_gone": gone})
 	}()
+	if err := srv.start(120, 40, "work", "other"); err != nil {
+		return err
+	}
 
 	ctl, att, err := startControl(srv, "attach-session", "-t", "work")
 	if err != nil {

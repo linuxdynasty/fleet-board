@@ -86,7 +86,8 @@ type Reply struct {
 	Body  []string `json:"body,omitempty"`
 }
 
-// blockState groups reply lines; notifications never appear inside a block.
+// blockState groups reply lines. A notification can arrive inside a block
+// (%continue inside the refresh-client -A reply); it is kept as a body line.
 type blockState struct {
 	open bool
 	cur  Reply

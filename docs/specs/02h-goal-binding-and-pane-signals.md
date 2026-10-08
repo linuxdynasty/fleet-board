@@ -272,9 +272,11 @@ Detection (a push, per spike 0.5: tmux 3.2a and 3.7c, 2026-10-08,
 once per tmux server with `refresh-client -B
 'fleet-input::#{S:#{session_id}=#{session_activity} }'` (session ids, never
 names, which are the developer's text). tmux re-checks it about once a second
-and moves `session_activity` when an attached client presses a key, and also
-on attach, `switch-client`, focus-in and wake; the agent's own `send-keys`
-does not move it. A change only triggers one `tmux list-clients -F
+and moves `session_activity` when an attached client presses a key (mouse
+input counts). It also moves, read from the 3.2a source and not measured, on
+attach, `new-session` (the agent's own included), `switch-client`, pane
+focus-in and a client waking from suspend; the agent's own `send-keys` did
+not move it. A change only triggers one `tmux list-clients -F
 '#{client_activity} #{client_flags} #{client_session} #{pane_id}'` read: the
 agent ignores control-mode clients (its own observer) and credits input only
 to a client whose `client_activity` moved, at its active pane, so a browser
