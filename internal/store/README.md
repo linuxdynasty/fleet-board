@@ -55,6 +55,15 @@ err = s.Read(ctx, func(tx *sql.Tx) error { ... }) // short read on the pool
 - **`MustExist`** opens the file read-write without ever creating it (SQLite's
   `mode=rw`, through an escaped `file:` URI): a missing file is `ErrMissing`
   and nothing appears on disk. `fleetd run` opens `state.db` this way.
+- **Copies.** `VacuumInto(ctx, src, dst)` writes a consistent copy of a file
+  with `VACUUM INTO` on its own read-only connection (SQLite's `mode=ro`),
+  outside any transaction and outside the store's pools, so it works with or
+  without a `Store` open on `src` (committed WAL rows are copied) and never
+  writes `src`. The read pool cannot do this: `VACUUM INTO` fails on a
+  `query_only` connection. `dst` must be missing or empty, so a copy never
+  overwrites a file. `OpenReadOnly(path)` opens an existing file `mode=ro`
+  and `query_only` to check a copy; it never creates one. The hub's backups
+  use both ([internal/hub/backup](../hub/backup/README.md)).
 
 ## Signals
 

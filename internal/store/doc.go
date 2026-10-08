@@ -20,4 +20,8 @@
 //
 // Reads go through [Store.Read], a short read transaction on the pool that
 // sees the last commit and never waits for the writer.
+//
+// [VacuumInto] copies a file with VACUUM INTO on its own read-only (mode=ro)
+// connection, never the pools (VACUUM INTO fails on a query_only one), and
+// [OpenReadOnly] opens a copy to check it; backups use both.
 package store
