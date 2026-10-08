@@ -1,7 +1,8 @@
 # Subscription terms vs. fleet-board
 
-Researched 2026-09-28. Not legal advice. Re-check before relying on it; terms
-change and several pages were only partly readable.
+Researched 2026-09-28; Cursor added 2026-10-08 (plan item 0.24, #101). Not
+legal advice. Re-check before relying on it; terms change and several pages
+were only partly readable.
 
 Usage pattern checked: one owner, their own paid subscription per harness,
 signed in on several of their own machines, a self-hosted controller starting
@@ -89,14 +90,119 @@ their own machines; fleet-board only starts and observes that binary.
 
 **Risk: medium, mostly unknown.**
 
-## Across all three
+## Anysphere: Cursor Pro/Pro+/Ultra via `cursor-agent`
+
+Pages read directly on 2026-10-08: Terms of Service (last updated September 3,
+2026), Acceptable Use Policy (AUP, last updated August 11, 2026), the CLI
+overview, headless, authentication and slash-command docs, Models & Pricing,
+Usage and limits, the pricing page, and six forum threads answered by Cursor
+staff (each responder's forum profile is in the `CursorStaff` group). The docs
+now call the binary `agent`; staff and our probe
+([01b](../specs/01b-harness-commands.md#cursor)) call it `cursor-agent`.
+
+The use checked: fleet-board types prompts, goals and `/usage` into the
+interactive `cursor-agent` screen in a tmux pane, on the owner's own plan and
+machines; it never runs `-p` and never reads `~/.cursor/cli-config.json`.
+
+- The Terms pull the AUP in: "By using the Service, you agree to these Terms
+  including our Acceptable Use Policy." The AUP applies "regardless of
+  subscription tier or how the Service is accessed", and "In the event of a
+  conflict between this AUP and your Agreement, this AUP controls with respect
+  to acceptable use." [E]
+- **The AUP bars** "Accessing the Service through automated or non-human
+  means, whether through a bot, script, or otherwise". Unlike Anthropic's
+  copy of that sentence, it has no API-key or "where we otherwise explicitly
+  permit it" exception in the text. Breaking the AUP "could result in action
+  against your account, up to suspension or termination". [E]
+- Cursor's own docs offer automation of the same CLI: "print automation for
+  scripts and CI pipelines" (CLI overview), "Use Cursor CLI in scripts and
+  automation workflows" (headless), and "For automation, scripts, or CI
+  environments, use API key authentication" (authentication). [E]
+- Scripted use spends the user's plan: "User API keys bill to that user's
+  plan" (TypeScript SDK); staff: "Billing is usage based under the plan and
+  limits of the account tied to the API key" (2026-07-10). Pricing plans for
+  it: "Power users (multiple agents/automation): Often $200+/mo total usage".
+  Cursor itself sells "always-on agents" on schedules (Automations changelog,
+  page `03-05-26`). [E]
+- Staff put the line at the client, not at automation: "If you want
+  automation outside the IDE, use the CLI or SDK, that's the supported and
+  safe path" (2026-07-04); the headless CLI "is exactly what it's built for,
+  scripts, CI, automation" (2026-07-10); a tool that uses "your access token"
+  to call "our private, non-public client endpoints" breaks §1.5, and "Using
+  your subscription outside official clients can trigger abuse enforcement,
+  up to and including an account ban" (2026-08-10); "you're using the
+  official clients, you're within the ToS" (2026-08-16). [E, forum]
+- Asked whether the August 11 AUP line bars calling Cursor through the
+  official API or SDK from another program, staff linked the threads above and
+  wrote "TL;DR: It sounds like your use case is just fine." (2026-08-17). [E,
+  forum] Forum replies are not part of the contract: the Terms and what they
+  incorporate are "the entire and exclusive understanding" (§17.1). [E / I]
+- §1.5 bars (iii) "rent, lease, lend, or sell the Service", (vi) "probe, scan
+  or attempt to penetrate the Service" and (viii) "harvest, scrape, or extract
+  data from the Service". Staff read (iii) as "offering third parties access
+  to Cursor itself or Cursor-powered usage under your account" (2026-05-04).
+  [E] Our usage probe types `/usage` in the owner's own pane: not the security
+  probing of (vi), and not harvesting data. [I]
+- The AUP also bars "circumventing any rate limits" and "Manipulating,
+  circumventing, or interfering with Anysphere's subscription, billing, or
+  usage-metering systems, including through direct or automated means".
+  Reading `/usage` and staying under it does neither. [E / I]
+- "You accept responsibility for all activities that occur under your
+  account" (§3). Cursor may suspend "at any time without notice", for example
+  when "preventing abuse" (§9). [E]
+- **Devices.** Staff, 2026-09-04: one person on "two or three of your own
+  devices" at once is fine; the guard targets "when one account signs in from
+  a lot of different computers in a short time window"; "inactive devices stop
+  being counted after about a day"; "The only thing that's actually not
+  allowed under the Terms of Service is sharing your login with someone
+  else." [E, forum] No device number on any terms page.
+- **Limits.** Two monthly pools (Cursor Models, Other Models). "Usage resets
+  monthly with your billing cycle. Unused usage does not roll over." Past the
+  included amount, on-demand usage, if the user turned it on, is billed "at
+  the same API rates". [E] No concurrency or 24/7 rule found.
+- **Not found:** any page on another program typing into the interactive
+  screen. The documented automation path is `-p` with an API key, which
+  fleet-board never uses. The docs do show starting the interactive CLI with
+  a prompt: `agent "refactor the auth module to use JWT tokens"`. `/usage` is
+  not on the docs' slash-command list, though our probe saw it (01b). [E]
+
+**Risk: low to medium.** Read word for word, the AUP's script line would also
+ban the `-p` scripts Cursor documents, so it cannot mean all automation of the
+official client. Docs, pricing and staff all treat that automation on the
+user's own plan as supported, and usage is billed at API rates, so a fleet
+gets no cheaper compute than a person would. What stays open: fleet-board's
+way in (typing into the screen) is not the documented one, the AUP line has no
+written exception, and forum replies do not bind Cursor. [I]
+
+**Recommendation (for the arbiter; row 30 waits for the ruling):**
+auto-dispatch on Cursor **allowed**, behind the same guards as the other
+harnesses, plus: pacing spends only included usage, never on-demand money; one
+Cursor account stays on a few machines (staff said two or three); and the
+owner asks hi@cursor.com for written confirmation, recorded here when it comes.
+Confidence: medium. The other choice, manual only until that confirmation,
+gives up spare monthly quota (it does not roll over) to remove the risk that
+the AUP line is read literally.
+
+**Product constraint (clear):** never read `~/.cursor/cli-config.json` (it
+holds `authInfo`) or any Cursor token, and never call a Cursor endpoint; drive
+only the unmodified `cursor-agent` binary.
+
+## Across all four
+
+| Provider | Script or bot clause | Automating the CLI on the plan | Risk |
+|---|---|---|---|
+| Anthropic | yes, except an API key or explicit permission | headless documented; limits "assume ordinary, individual usage" | highest |
+| OpenAI | reported only ("programmatically extract"), page 403 | API keys recommended for CI, not required | lowest |
+| Meta | no human-oversight evasion (AUP) | `muse exec` documented; plan use not stated | medium, mostly unknown |
+| Cursor | yes (AUP), no exception in the text | documented, staff call it supported, billed to the plan | low to medium |
 
 Fine: single owner, own accounts, own machines; same account on several of
-your machines; reading `/usage` / `/status` in your own session; staying
-inside quotas.
+your machines (Cursor: a few); reading `/usage` / `/status` in your own
+session; staying inside quotas.
 
 Risky: unattended scripted use of consumer plans (Anthropic most), fully
-lights-out operation (Meta AUP), and consistently using 100% of quota.
+lights-out operation (Meta AUP), Cursor's AUP script line read literally, and
+consistently using 100% of quota.
 
 ## Design implications
 
@@ -111,6 +217,8 @@ lights-out operation (Meta AUP), and consistently using 100% of quota.
 7. Before offering fleet-board to others: get written confirmation from each
    provider's support, and read Meta's subscription and Muse supplemental
    terms.
+8. Cursor: pace on included usage only and never spend on-demand money; keep
+   one Cursor account to a few machines.
 
 ## Sources
 
@@ -132,4 +240,23 @@ lights-out operation (Meta AUP), and consistently using 100% of quota.
 - https://dev.meta.ai/legal/terms-of-service
 - https://dev.meta.ai/legal/acceptable-use-policy
 - https://www.meta.com/help/subscriptions/1021145227643680/
+- Cursor, all read 2026-10-08:
+  - https://cursor.com/terms-of-service (last updated September 3, 2026)
+  - https://cursor.com/acceptable-use-policy (last updated August 11, 2026)
+  - https://cursor.com/pricing
+  - https://cursor.com/docs/models-and-pricing
+  - https://cursor.com/help/models-and-usage/usage-limits
+  - https://cursor.com/docs/cli/overview
+  - https://cursor.com/docs/cli/headless
+  - https://cursor.com/docs/cli/reference/authentication
+  - https://cursor.com/docs/cli/reference/slash-commands
+  - https://cursor.com/docs/sdk/typescript
+  - https://cursor.com/changelog/03-05-26 (Automations)
+  - https://forum.cursor.com/t/using-cursor-frontier-models-like-composer-2-5-in-external-harnesses-e-g-codex/164676
+  - https://forum.cursor.com/t/inquiry-regarding-official-api-or-commercial-license-for-using-cursors-engine-as-a-backend-component/165063
+  - https://forum.cursor.com/t/does-using-oh-my-pi-s-cursor-provider-or-an-openai-compatible-proxy-to-the-same-endpoints-violate-cursor-s-tos/167778
+  - https://forum.cursor.com/t/is-this-use-of-cursor-cloud-agents-permitted-under-cursor-s-terms/168633
+  - https://forum.cursor.com/t/api-sdk-terms-of-use-question/159741
+  - https://forum.cursor.com/t/can-i-use-the-same-cursor-account-on-multiple-devices-at-once/170323
+  - https://cursor.com/acceptable-use (404)
 - Secondary: https://techcrunch.com/2025/07/28/anthropic-unveils-new-rate-limits-to-curb-claude-code-power-users/
