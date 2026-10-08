@@ -75,6 +75,8 @@ failure events are in section 10. The platform's own lifecycle events:
 
 | Event | Level, fields | When |
 |---|---|---|
+| `backup.completed` | info; `trigger` (`nightly`, `manual`), `bytes`, `encrypted` | the nightly job in `fleetd run` or `fleetd backup` published a copy of `state.db` in `backups/` ([02j](02j-hub-runtime.md#state-directory)) |
+| `backup.failed` | error; `trigger`, `step` (`passphrase`, `source`, `dir`, `copy`, `verify`, `encrypt`, `publish`, `cleanup`, `prune`), `err_kind` | a backup failed; nothing was published and no temporary file is left (`prune`: the copy was published, but old nightly copies could not be removed). Never a path, the passphrase or file contents |
 | `hub.leftovers_removed` | info; `command`, `files` | `fleetd init` or `run` removed a crashed init's temporary files |
 | `hub.initialized` | info; `server_names`, `config_written` | `fleetd init` created the store |
 | `hub.listener_opened` | info; `listener`, `port` (the admin socket has none) | `fleetd run` opened a listener |
@@ -332,6 +334,7 @@ text but can hint at structure, hence the double guard.
 | `fleetd` refuses to start (bad config, lock held, loose mode, missing store or identity, port in use) | exits non-zero; one `hub.start_failed` line (`command`, `reason`, `err_kind`; no path, no key) and `fleet_hub_start_failures_total{command, reason}` |
 | The server certificate re-issue fails | the old certificate stays in service until its `not_after`; `tls.server_cert_issue_failed` and `fleet_hub_server_cert_issues_total{result="failed"}`; the hourly check retries |
 | An agent presents a client certificate whose serial is revoked | the TLS handshake fails (fresh or a resumed TLS 1.3 session), before any RPC; `tls.client_cert_revoked` (warn; `serial`, `machine_id` from the certificate's CN) and `fleet_hub_auth_failures_total{reason="revoked"}` |
+| A backup fails (the nightly job, or `fleetd backup [--encrypt]`) | nothing is published under a backup name and every temporary file, including the plaintext of an encrypted copy, is removed; `backup.failed` (`trigger`, `step`, `err_kind`). `fleetd backup` prints the reason and exits non-zero; a nightly failure is tried again at the next 03:00 or the next start or wake, and `fleet_hub_backup_age_seconds` keeps rising until `BACKUP_AGE` warns at 36 h. `--encrypt` with a stdin that is not a terminal, or an empty or mismatched passphrase, is refused before anything is written (`step` = `passphrase`, `err_kind` = `refused`) |
 | `revoked-serials` ends in a line with no newline at start (a crash mid-append) | the line is dropped and the file rewritten; `hub.revocations_torn_line` (warn). Any other bad line refuses the start (`revocations_invalid`) |
 | An agent too old to send `AgentHealth` | the fields stay unset (unknown, not 0); the System section says "not reported" and raises nothing |
 | The evaluator itself stalls | `hub.system.evaluate` stops, `observed_time` goes stale; the UI shows "System status is old" above 60 s; `fleet doctor` reads the same status |

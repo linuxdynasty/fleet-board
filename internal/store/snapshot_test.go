@@ -131,6 +131,9 @@ func TestVacuumIntoReadsAStoppedStoreWithoutWritingIt(t *testing.T) {
 	if _, err := os.Stat(h.path + "-shm"); !os.IsNotExist(err) {
 		t.Fatalf("-shm exists after Close (%v); the test needs it gone", err)
 	}
+	if err := os.Chmod(h.path, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	before := fileHash(t, h.path)
 	dst := filepath.Join(t.TempDir(), "a b#c%41.db")
 	emptyTarget(t, dst)
@@ -142,6 +145,17 @@ func TestVacuumIntoReadsAStoppedStoreWithoutWritingIt(t *testing.T) {
 	}
 	if fileHash(t, h.path) != before {
 		t.Error("VacuumInto changed the source file")
+	}
+	// A read-only connection to a WAL file creates SQLite's -wal and -shm
+	// and cannot remove them; SQLite gives them the source's mode.
+	for _, side := range []string{h.path + "-wal", h.path + "-shm"} {
+		if fi, err := os.Stat(side); err == nil && fi.Mode().Perm() != 0o600 {
+			t.Errorf("%s mode %04o, want the source's 0600", filepath.Base(side), fi.Mode().Perm())
+		}
+	}
+	reopened := h.open(t, h.options(itemsV1))
+	if err := reopened.Close(); err != nil {
+		t.Fatalf("reopen after the copy: %v", err)
 	}
 }
 
