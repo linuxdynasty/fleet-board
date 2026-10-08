@@ -16,13 +16,42 @@ function renderMachinesView() {
   if (ui.auditFocus) { $("audit").scrollIntoView({ block: "start" }); ui.auditFocus = false; }
 }
 
-// System section (05b): the hub's and the agents' own health. Ten signals with fixed thresholds; sample values here.
+// System copy, keyed by SystemSignalKind, SystemMeasureKind and SystemDirection. Words only: every number, level and
+// hold shown comes from the signal's measures (SystemMeasure), never from this table or from 05b.
+const SYS_NAME = { WRITER_BATCH_LAG: "Hub writer keeping up", OUTBOX_BACKLOG: "Commands waiting for online machines", WATCH_DROPS: "Browser streams that fell behind",
+  INTEGRATION_SYNC_LAG: "GitHub sync", LOG_STORE_USAGE: "Session log store", DISK_FREE: "Disk free for the hub's database", BACKUP_AGE: "Last backup",
+  USAGE_PROBE_FRESHNESS: "Usage readings fresh", AGENT_CONNECTED: "Always-on machines connected", CLOCK_SKEW: "Machine clocks agree with the hub" };
+const SYS_WORD = { WRITER_BATCH_LAG: "wait", OUTBOX_BACKLOG: "oldest", WATCH_DROPS: "dropped", INTEGRATION_SYNC_LAG: "behind", LOG_STORE_USAGE: "used",
+  DISK_FREE: "free", BACKUP_AGE: "age", USAGE_PROBE_FRESHNESS: "oldest", AGENT_CONNECTED: "longest silence", CLOCK_SKEW: "worst",
+  WRITER_COMMIT_TIME: "commit", WRITER_QUEUE_FULL: "queue full" };
+const SYS_DIR = { ABOVE: "over", BELOW: "under" };
+const sysName = s => SYS_NAME[s.kind] ?? s.kind;
+const sysWord = (s, m) => SYS_WORD[m.kind === "MAIN" ? s.kind : m.kind] ?? m.kind;
+const sysDur = v => v > 0 && v < 1 ? Math.round(v * 1000) + " ms" : v < 60 ? +v.toFixed(2) + " s" : v < 3600 ? Math.round(v / 60) + " min" : v < 172800 ? Math.round(v / 3600) + " h" : Math.round(v / 86400) + " days";
+const sysNum = (v, unit) => v == null ? "not known" : unit === "SECONDS" ? sysDur(v) : unit === "PERCENT" ? v + " %" : unit === "BYTES" ? +(v / 2 ** 30).toFixed(1) + " GiB" : String(v);
+const sysValue = s => s.measures.map(m => `${sysWord(s, m)} ${sysNum(m.value, m.unit)}`).join(" · ");
+// One measure's levels: "warn over 1 s · critical over 5 s"; equal levels are told apart by their holds ("over 100 % for 10 min · for 1 h").
+function sysLevels(m) {
+  const hold = h => h ? `for ${sysDur(h)}` : "";
+  const lvl = (label, v, h) => [label, SYS_DIR[m.direction], sysNum(v, m.unit), hold(h)].filter(Boolean).join(" ");
+  if (m.warn != null && m.warn === m.crit) return `${lvl("", m.warn, m.warnHold)} · ${hold(m.critHold) || "critical"}`;
+  const out = [];
+  if (m.warn != null) out.push(lvl("warn", m.warn, m.warnHold));
+  if (m.crit != null) out.push(lvl("critical", m.crit, m.critHold));
+  if (m.critClear != null) out.push(`critical ends ${SYS_DIR[m.direction === "BELOW" ? "ABOVE" : "BELOW"]} ${sysNum(m.critClear, m.unit)}`);
+  return out.join(" · ");
+}
+const sysLimits = s => s.measures.map(m => (s.measures.length > 1 ? `${sysWord(s, m)}: ` : "") + sysLevels(m)).join("; ");
+const sysRaw = m => `SystemMeasure{kind ${m.kind}, value ${m.value ?? "unset"}, unit ${m.unit}, direction ${m.direction}, warning_threshold ${m.warn ?? "unset"}, critical_threshold ${m.crit ?? "unset"}`
+  + `${m.warnHold ? `, warning_hold ${m.warnHold}s` : ""}${m.critHold ? `, critical_hold ${m.critHold}s` : ""}${m.critClear != null ? `, critical_clear_threshold ${m.critClear}` : ""}}`;
+
+// System section (05b): the hub's and the agents' own health. Ten signals with fixed levels; sample readings here.
 // A signal that leaves OK raises one triage item of kind SYSTEM (deduplicated); this list is GetSystemStatus.
 function systemSection() {
   const bad = systemSignals.filter(s => s.state === "warning" || s.state === "critical").length;
   return `<section aria-label="System"><div class="section-head"><h2>System</h2><span class="samp">sample</span><span class="hint">${bad ? `${bad} thing${bad === 1 ? "" : "s"} to look at` : "everything is fine"} · fleetd v0.3.1 · up 6d 4h · metrics on, OTLP off, pprof off</span></div>
-    <ul class="sys">${systemSignals.map(s => `<li class="${s.state}"><b>${esc(s.plain)}</b><span class="why">${esc(s.value)}</span>${s.state === "ok" ? "" : `<span class="pill waiting">${esc(s.state)}</span>`}${s.note ? `<span class="warn-t small-t">${esc(s.note)}</span>` : ""}
-      ${dt("sy-" + s.kind + s.subject, `<span>SystemSignal{kind SYSTEM_SIGNAL_KIND_${esc(s.kind)}, subject ${esc(s.subject)}, state ${esc(s.state.toUpperCase())}} · ${esc(s.limits)}</span>${s.state === "ok" ? "" : `<span>raises TriageItem{kind SYSTEM, fingerprint system:${esc(s.kind.toLowerCase())}:${esc(s.subject)}}</span>`}`)}</li>`).join("")}</ul></section>`;
+    <ul class="sys">${systemSignals.map(s => `<li class="${s.state}"><b>${esc(sysName(s))}</b><span class="why">${esc(sysValue(s))}</span>${s.state === "ok" ? "" : `<span class="pill waiting">${esc(s.state)}</span>`}${s.note ? `<span class="warn-t small-t">${esc(s.note)}</span>` : ""}
+      ${dt("sy-" + s.kind + s.subject, `<span>SystemSignal{kind SYSTEM_SIGNAL_KIND_${esc(s.kind)}, subject ${esc(s.subject)}, state ${esc(s.state.toUpperCase())}} · ${esc(sysLimits(s))}</span>${s.measures.map(m => `<span>${esc(sysRaw(m))}</span>`).join("")}${s.state === "ok" ? "" : `<span>raises TriageItem{kind SYSTEM, fingerprint system:${esc(s.kind.toLowerCase())}:${esc(s.subject)}}</span>`}`)}</li>`).join("")}</ul></section>`;
 }
 
 // GoalHooksState (01d) in plain words, with a tone for the line.

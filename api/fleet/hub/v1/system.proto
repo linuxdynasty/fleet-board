@@ -1,16 +1,17 @@
 // fleet.hub.v1 system health: the short list of signals that say whether
 // fleetd and the fleet-agents are themselves working (docs/specs/05b-
-// observability.md). The hub evaluates them every 15 seconds from numbers it
-// already has, shows them in the System section of the Machines view, and
-// raises one deduplicated triage item (TRIAGE_KIND_SYSTEM) when a signal
-// leaves OK. Numbers and enums only: no names, paths, goal text or screen
-// text.
+// observability.md). The hub evaluates them every system evaluation interval
+// (docs/specs/defaults.md) from numbers it already has, shows them in the
+// System section of the Machines view, and raises one deduplicated triage item
+// (TRIAGE_KIND_SYSTEM) when a signal leaves OK. Numbers and enums only: no
+// names, paths, goal text or screen text.
 syntax = "proto3";
 
 package fleet.hub.v1;
 
 import "fleet/hub/v1/common.proto";
 import "fleet/type/v1/ids.proto";
+import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
 
 // SystemSignalKind is one signal. A closed set: adding one is a contract
@@ -25,19 +26,21 @@ enum SystemSignalKind {
   SYSTEM_SIGNAL_KIND_USAGE_PROBE_FRESHNESS = 2;
   // Per integration: IntegrationStatus.sync_lag. Seconds.
   SYSTEM_SIGNAL_KIND_INTEGRATION_SYNC_LAG = 3;
-  // Hub: age of the oldest message waiting for the single writer, and the
-  // writer's batch commit time. Seconds.
+  // Hub: whether the single writer keeps up. MAIN is the age of the oldest
+  // message waiting for the writer, p95 over the window in 05b section 8;
+  // WRITER_COMMIT_TIME and WRITER_QUEUE_FULL are its other measures. Seconds.
   SYSTEM_SIGNAL_KIND_WRITER_BATCH_LAG = 4;
   // Per machine: age of the oldest pending command for an online machine.
   // Seconds.
   SYSTEM_SIGNAL_KIND_OUTBOX_BACKLOG = 5;
-  // Hub: Watch streams ended RESYNC_REQUIRED / FELL_BEHIND per 10 minutes.
-  // Count.
+  // Hub: Watch streams ended RESYNC_REQUIRED / FELL_BEHIND in the window 05b
+  // section 8 gives. Count.
   SYSTEM_SIGNAL_KIND_WATCH_DROPS = 6;
   // Hub: live bytes of logs.db ((page_count - freelist_count) x page_size,
   // the measure retention keeps under the cap) as a share of
   // log_size_cap_bytes. Percent. At or under 100 is the normal steady state;
-  // WARNING and CRITICAL mean it has stayed over 100 for the times in 05b.
+  // WARNING and CRITICAL mean it has stayed over 100 for that level's hold
+  // (SystemMeasure).
   SYSTEM_SIGNAL_KIND_LOG_STORE_USAGE = 7;
   // Hub: free bytes on the volume holding state.db. Bytes.
   SYSTEM_SIGNAL_KIND_DISK_FREE = 8;
@@ -47,9 +50,10 @@ enum SystemSignalKind {
   SYSTEM_SIGNAL_KIND_BACKUP_AGE = 10;
 }
 
-// SystemState is one signal's verdict. Thresholds are in 05b; a state change
-// needs the new state to hold for two evaluations (30 s) to leave OK and for
-// five minutes to return to it, so one slow batch does not flap an item.
+// SystemState is one signal's verdict. Levels, holds and hysteresis are in 05b
+// section 8: a worse state must hold for a set number of evaluations to leave
+// OK and for a set time to return to it, so one slow batch does not flap an
+// item.
 enum SystemState {
   SYSTEM_STATE_UNSPECIFIED = 0;
   SYSTEM_STATE_OK = 1;
@@ -60,13 +64,63 @@ enum SystemState {
   SYSTEM_STATE_UNKNOWN = 4;
 }
 
-// SystemUnit says what SystemSignal.value and the thresholds count.
+// SystemUnit says what a SystemMeasure's value and thresholds count.
 enum SystemUnit {
   SYSTEM_UNIT_UNSPECIFIED = 0;
   SYSTEM_UNIT_SECONDS = 1;
   SYSTEM_UNIT_PERCENT = 2;
   SYSTEM_UNIT_BYTES = 3;
   SYSTEM_UNIT_COUNT = 4;
+}
+
+// SystemDirection says which way a measure gets worse.
+enum SystemDirection {
+  SYSTEM_DIRECTION_UNSPECIFIED = 0;
+  // Worse as the value rises: a level is reached when the value is over its
+  // threshold.
+  SYSTEM_DIRECTION_ABOVE = 1;
+  // Worse as the value falls: a level is reached when the value is under its
+  // threshold.
+  SYSTEM_DIRECTION_BELOW = 2;
+}
+
+// SystemMeasureKind names one input a signal judges. A closed set: adding one
+// is a contract change with its levels in 05b section 8.
+enum SystemMeasureKind {
+  SYSTEM_MEASURE_KIND_UNSPECIFIED = 0;
+  // The signal's own reading, as its SystemSignalKind comment describes. Every
+  // signal has exactly one, first in SystemSignal.measures.
+  SYSTEM_MEASURE_KIND_MAIN = 1;
+  // WRITER_BATCH_LAG: the writer's batch commit time, p95 over the window in
+  // 05b section 8. Seconds.
+  SYSTEM_MEASURE_KIND_WRITER_COMMIT_TIME = 2;
+  // WRITER_BATCH_LAG: how long the writer queue has been full without a
+  // break; 0 when it is not full. Seconds.
+  SYSTEM_MEASURE_KIND_WRITER_QUEUE_FULL = 3;
+}
+
+// SystemMeasure is one input of a signal, its reading, and the levels it is
+// judged against. Numbers and enums only: the words shown for a measure are UI
+// text chosen by kind and direction.
+message SystemMeasure {
+  SystemMeasureKind kind = 1;
+  // The reading, in unit. Unset when it is not known.
+  optional double value = 2;
+  SystemUnit unit = 3;
+  SystemDirection direction = 4;
+  // The levels in force for this subject (fixed, or derived from settings as
+  // 05b section 8 says; not owner settings in v1). Unset: this measure has no
+  // such level.
+  optional double warning_threshold = 5;
+  optional double critical_threshold = 6;
+  // How long the value must stay past that threshold before the level counts.
+  // Unset: at once. The signal's hysteresis (05b section 8) applies on top.
+  google.protobuf.Duration warning_hold = 7;
+  google.protobuf.Duration critical_hold = 8;
+  // The level the value must pass back past (under for ABOVE, over for BELOW)
+  // to leave CRITICAL, when it differs from critical_threshold. Unset:
+  // critical_threshold.
+  optional double critical_clear_threshold = 9;
 }
 
 // SystemSignal is one signal for one subject (the hub, a machine, an account
@@ -78,18 +132,15 @@ message SystemSignal {
   fleet.type.v1.AccountId account = 3;
   fleet.type.v1.IntegrationId integration = 4;
   SystemState state = 5;
-  // The reading, in unit. Unset when the state is UNKNOWN.
-  optional double value = 6;
-  SystemUnit unit = 7;
-  // The thresholds the state was judged against (the hub's defaults; they are
-  // not owner settings in v1).
-  double warning_threshold = 8;
-  double critical_threshold = 9;
+  // The inputs the state was judged on, MAIN first, present even when the
+  // state is UNKNOWN (values unset). The state is the worst measure's state,
+  // then the hysteresis of 05b section 8.
+  repeated SystemMeasure measures = 6;
   // When the state last changed.
-  google.protobuf.Timestamp since_time = 10;
-  google.protobuf.Timestamp observed_time = 11;
+  google.protobuf.Timestamp since_time = 7;
+  google.protobuf.Timestamp observed_time = 8;
   // The open triage item this signal raised, if any.
-  TriageItemId triage_item = 12;
+  TriageItemId triage_item = 9;
 }
 
 // SystemExporters says which optional outputs of the hub's telemetry are on
@@ -135,8 +186,8 @@ message GetSystemStatusResponse {
 message SystemDetail {
   SystemSignalKind signal = 1;
   SystemState state = 2;
-  double value = 3;
-  SystemUnit unit = 4;
-  double threshold = 5;
-  fleet.type.v1.IntegrationId integration = 6;
+  // The measure that set the state (MAIN first, then enum order, when several
+  // reach it).
+  SystemMeasure measure = 3;
+  fleet.type.v1.IntegrationId integration = 4;
 }
