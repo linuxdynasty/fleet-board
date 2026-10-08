@@ -97,6 +97,16 @@ func TestRunRefusals(t *testing.T) {
 				t.Fatal(err)
 			}
 		}, daemon.ReasonConfig},
+		{"bad line in revoked-serials", func(t *testing.T, h *hub) {
+			t.Helper()
+			h.init(t)
+			h.writeRevoked(t, "# fleet-board revoked-serials v1\nNOT-HEX 2030-01-01T00:00:00Z\n", 0o600)
+		}, daemon.ReasonRevocations},
+		{"loose revoked-serials", func(t *testing.T, h *hub) {
+			t.Helper()
+			h.init(t)
+			h.writeRevoked(t, "# fleet-board revoked-serials v1\n", 0o644)
+		}, daemon.ReasonLooseMode},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -159,15 +169,19 @@ func TestRunServesTheAgentListenerAndMetrics(t *testing.T) {
 			t.Error("a TLS 1.2-capped client connected")
 		}
 	})
-	t.Run("AgentService answers Unimplemented", func(t *testing.T) {
+	t.Run("AgentService serves Enroll and leaves the rest Unimplemented", func(t *testing.T) {
 		hc := &http.Client{Transport: &http.Transport{
 			TLSClientConfig: &tls.Config{RootCAs: pool, ServerName: "localhost", MinVersion: tls.VersionTLS13}, ForceAttemptHTTP2: true,
 		}}
 		defer hc.CloseIdleConnections()
-		_, err := agentv1connect.NewAgentServiceClient(hc, "https://"+agent, connect.WithGRPC()).
-			Enroll(context.Background(), connect.NewRequest(&agentv1.EnrollRequest{}))
+		client := agentv1connect.NewAgentServiceClient(hc, "https://"+agent, connect.WithGRPC())
+		_, err := client.Enroll(context.Background(), connect.NewRequest(&agentv1.EnrollRequest{}))
+		if code := connect.CodeOf(err); code != connect.CodeInvalidArgument {
+			t.Errorf("Enroll with no install_id: code %v, want invalid_argument", code)
+		}
+		_, err = client.RenewCert(context.Background(), connect.NewRequest(&agentv1.RenewCertRequest{}))
 		if code := connect.CodeOf(err); code != connect.CodeUnimplemented {
-			t.Errorf("Enroll: code %v, want unimplemented", code)
+			t.Errorf("RenewCert: code %v, want unimplemented", code)
 		}
 	})
 	t.Run("metrics behind the Host and Origin checks", func(t *testing.T) {

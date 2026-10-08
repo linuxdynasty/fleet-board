@@ -16,6 +16,7 @@ import (
 	"github.com/linuxdynasty/fleet-board/internal/hub/config"
 	"github.com/linuxdynasty/fleet-board/internal/hub/gateway"
 	"github.com/linuxdynasty/fleet-board/internal/hub/lock"
+	"github.com/linuxdynasty/fleet-board/internal/hub/revocation"
 	"github.com/linuxdynasty/fleet-board/internal/hub/statedb"
 	"github.com/linuxdynasty/fleet-board/internal/store"
 )
@@ -28,10 +29,11 @@ const shutdownGrace = 10 * time.Second
 
 // Run is `fleetd run`: it loads fleetd.yaml, checks the state folder, takes
 // fleetd.lock, opens the existing state.db (never creating one) and its
-// hub_identity row, makes sure the server certificate is current, then
-// serves the agent listener, the API listener and the optional metrics
-// listener until ctx ends (SIGTERM in the binary), and shuts down cleanly. A
-// refusal to start is a *[StartError].
+// hub_identity row, loads the revocation list (revoked-serials reconciled
+// with state.db), makes sure the server certificate is current, then serves
+// the agent listener (Enroll, refusing revoked serials), the API listener
+// and the optional metrics listener until ctx ends (SIGTERM in the binary),
+// and shuts down cleanly. A refusal to start is a *[StartError].
 func Run(ctx context.Context, opts Options) (err error) {
 	s, err := newSession("run", opts)
 	if err != nil {
@@ -74,11 +76,33 @@ func Run(ctx context.Context, opts Options) (err error) {
 	if err != nil {
 		return s.fail(ReasonStore, err)
 	}
+	revoked, err := revocation.Load(ctx, revocation.Options{Dir: cfg.StateDir, Store: st, Now: opts.Now, Logger: s.tel.Logger})
+	if err != nil {
+		return s.fail(revocationReason(err), err)
+	}
 	certs, err := newCerts(ctx, cfg, opts, st, id, s)
 	if err != nil {
 		return s.fail(ReasonCert, err)
 	}
-	return serve(ctx, cfg, opts, certs, st, id, s)
+	return serve(ctx, cfg, opts, hubDeps{certs: certs, st: st, id: id, revoked: revoked}, s)
+}
+
+// hubDeps is what the listeners share once the store is open.
+type hubDeps struct {
+	certs   *gateway.Certs
+	st      *store.Store
+	id      statedb.Identity
+	revoked *revocation.List
+}
+
+// revocationReason: a loose revoked-serials is mode_loose like any other
+// file in the state folder; any other failure to load the list refuses the
+// start as revocations_invalid, so a hub never serves without it.
+func revocationReason(err error) Reason {
+	if errors.Is(err, statedb.ErrLooseMode) {
+		return ReasonLooseMode
+	}
+	return ReasonRevocations
 }
 
 func newCerts(ctx context.Context, cfg *config.Config, opts Options, st *store.Store, id statedb.Identity, s *session) (*gateway.Certs, error) {
@@ -122,10 +146,8 @@ type listener struct {
 // serve binds every listener, serves until ctx ends or one fails, then shuts
 // them all down (which removes admin.sock) and waits for every goroutine it
 // started.
-func serve(ctx context.Context, cfg *config.Config, opts Options, certs *gateway.Certs, st *store.Store,
-	id statedb.Identity, s *session,
-) error {
-	ls, err := bind(ctx, cfg, certs, s)
+func serve(ctx context.Context, cfg *config.Config, opts Options, d hubDeps, s *session) error {
+	ls, err := bind(ctx, cfg, opts, d, s)
 	if err != nil {
 		return s.fail(ReasonListen, err)
 	}
@@ -133,7 +155,7 @@ func serve(ctx context.Context, cfg *config.Config, opts Options, certs *gateway
 	if len(ls) > 2 {
 		addrs.Metrics = ls[2].ln.Addr()
 	}
-	admin, err := bindAdmin(cfg, opts, st, id, s)
+	admin, err := bindAdmin(cfg, opts, d.st, d.id, s)
 	if err != nil {
 		for _, l := range ls {
 			_ = l.ln.Close() // the bind error is the one to report
@@ -168,7 +190,7 @@ func serve(ctx context.Context, cfg *config.Config, opts Options, certs *gateway
 		ticks = t.C
 	}
 	wg.Add(1)
-	go func() { defer wg.Done(); certs.Run(ctx, ticks) }()
+	go func() { defer wg.Done(); d.certs.Run(ctx, ticks) }()
 
 	s.tel.Logger.Info("hub.started", "mode", cfg.Mode, "listeners", len(ls))
 	if opts.Ready != nil {
@@ -196,7 +218,13 @@ func serve(ctx context.Context, cfg *config.Config, opts Options, certs *gateway
 }
 
 // bind opens the agent, API and (when set) metrics listeners, in that order.
-func bind(ctx context.Context, cfg *config.Config, certs *gateway.Certs, s *session) ([]listener, error) {
+func bind(ctx context.Context, cfg *config.Config, opts Options, d hubDeps, s *session) ([]listener, error) {
+	agent, err := gateway.NewServer(gateway.ServerOptions{
+		Certs: d.certs, Store: d.st, Identity: d.id, Revoked: d.revoked, Telemetry: s.tel, Now: opts.Now,
+	})
+	if err != nil {
+		return nil, err
+	}
 	type want struct{ name, addr string }
 	wants := []want{{"agent", cfg.Listen.Agent}, {"api", cfg.Listen.API}}
 	if cfg.Listen.Metrics != "" {
@@ -224,7 +252,7 @@ func bind(ctx context.Context, cfg *config.Config, certs *gateway.Certs, s *sess
 		port := addr.Port
 		l := listener{name: w.name, ln: ln, tls: w.name == "agent"}
 		if l.tls {
-			l.srv = gateway.NewServer(certs, s.tel)
+			l.srv = agent
 		} else {
 			l.srv = api.NewServer(s.tel, w.name, port)
 		}

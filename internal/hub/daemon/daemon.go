@@ -16,6 +16,7 @@ import (
 	"github.com/linuxdynasty/fleet-board/internal/hub/api"
 	"github.com/linuxdynasty/fleet-board/internal/hub/config"
 	"github.com/linuxdynasty/fleet-board/internal/hub/lock"
+	"github.com/linuxdynasty/fleet-board/internal/hub/revocation"
 	"github.com/linuxdynasty/fleet-board/internal/hub/statedb"
 	"github.com/linuxdynasty/fleet-board/internal/store"
 	"github.com/linuxdynasty/fleet-board/internal/telemetry"
@@ -61,17 +62,18 @@ type Reason string
 
 // Start failure reasons.
 const (
-	ReasonConfig          Reason = "config_invalid"   // fleetd.yaml missing (run), unreadable or refused
-	ReasonLockHeld        Reason = "lock_held"        // another fleetd holds <state_dir>/fleetd.lock (#92)
-	ReasonLooseMode       Reason = "mode_loose"       // state folder or state.db open to other users
-	ReasonStoreMissing    Reason = "store_missing"    // run: no state folder or no state.db; run fleetd init
-	ReasonStoreExists     Reason = "store_exists"     // init: state.db already exists
-	ReasonIdentityMissing Reason = "identity_missing" // run: state.db has no hub_identity row
-	ReasonStore           Reason = "store_failed"     // state.db could not be created or opened
-	ReasonStoreNotSynced  Reason = "store_not_synced" // init: state.db was created, but the folder sync after it failed
-	ReasonIdentity        Reason = "identity_failed"  // init: minting the CA, certificate or salt failed
-	ReasonCert            Reason = "cert_failed"      // run: the server certificate could not be loaded or re-issued
-	ReasonListen          Reason = "listen_failed"    // a listener could not bind
+	ReasonConfig          Reason = "config_invalid"      // fleetd.yaml missing (run), unreadable or refused
+	ReasonLockHeld        Reason = "lock_held"           // another fleetd holds <state_dir>/fleetd.lock (#92)
+	ReasonLooseMode       Reason = "mode_loose"          // state folder or state.db open to other users
+	ReasonStoreMissing    Reason = "store_missing"       // run: no state folder or no state.db; run fleetd init
+	ReasonStoreExists     Reason = "store_exists"        // init: state.db already exists
+	ReasonIdentityMissing Reason = "identity_missing"    // run: state.db has no hub_identity row
+	ReasonStore           Reason = "store_failed"        // state.db could not be created or opened
+	ReasonStoreNotSynced  Reason = "store_not_synced"    // init: state.db was created, but the folder sync after it failed
+	ReasonIdentity        Reason = "identity_failed"     // init: minting the CA, certificate or salt failed
+	ReasonCert            Reason = "cert_failed"         // run: the server certificate could not be loaded or re-issued
+	ReasonListen          Reason = "listen_failed"       // a listener could not bind
+	ReasonRevocations     Reason = "revocations_invalid" // run: revoked-serials has a bad line or cannot be read, or the list could not be reconciled
 )
 
 // StartError is why init or run did not start. The message may name paths;
@@ -140,7 +142,7 @@ func (s *session) close() error {
 func errKind(err error) string {
 	var ce *config.Error
 	switch {
-	case errors.As(err, &ce):
+	case errors.As(err, &ce), errors.Is(err, revocation.ErrInvalid):
 		return "parse"
 	case errors.Is(err, lock.ErrHeld), errors.Is(err, statedb.ErrLooseMode), errors.Is(err, statedb.ErrExists),
 		errors.Is(err, store.ErrMissing), errors.Is(err, statedb.ErrNoIdentity), errors.Is(err, os.ErrNotExist):

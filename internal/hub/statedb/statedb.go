@@ -63,6 +63,10 @@ func Migrations() []store.Migration {
 	request_hash BLOB NOT NULL CHECK (length(request_hash) = 32),
 	UNIQUE (principal, request_id)
 ) STRICT;`,
+	}, {
+		Version: 3,
+		Name:    "machines_serials_enroll_responses",
+		SQL:     machinesSQL,
 	}}
 }
 

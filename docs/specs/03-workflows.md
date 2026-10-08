@@ -221,10 +221,12 @@ re-enroll rule are in [02g](02g-agent-security.md#machine-lifecycle-revoke-and-d
 
 | Failure | What happens |
 |---|---|
-| Token unknown, expired or already used | `Enroll` fails with a gRPC error whose `ErrorDetail.reason` is `ENROLL_TOKEN_UNKNOWN`, `_EXPIRED` or `_USED` (02g); nothing persisted on the hub except an audit row (`machine.enroll_failed`); the agent prints the reason and exits 1 |
+| Token unknown, expired or already used | `Enroll` fails with a gRPC error whose `ErrorDetail.reason` is `ENROLL_TOKEN_UNKNOWN`, `_EXPIRED` or `_USED` (02g); nothing persisted on the hub except an audit row (`machine.enroll_failed`; not yet: plan row 5, #104, until then only `enroll.refused` with `reason` and `peer`); `fleet_hub_enroll_total{result="refused"}`; the agent prints the reason and exits 1 |
+| Bad CSR, bad `install_id` or no common proto version | `ENROLL_CSR_INVALID`, `FIELD_TOO_LARGE` / `INVALID_ARGUMENT` or `ENROLL_PROTO_UNSUPPORTED` (02g); checked before the store, so the token is not burned and a fixed request still enrolls; `enroll.refused` |
+| Hub store busy or failing during `Enroll` | `UNAVAILABLE` with `retryable = true`; `enroll.failed{step="store"}` and `fleet_hub_enroll_total{result="failed"}`. A write cancelled mid-way has an unknown outcome: the agent retries and gets the replay |
 | Enroll response lost after the token burned | Run `enroll` again: the same token, `install_id` and CSR key return the stored response (`replayed = true`), same `machine_id` and certificate, no second machine row |
 | Impostor at the address the owner typed or mDNS found | The agent verifies the server chain against the CA SHA-256 inside the token before sending the token or CSR; the impostor learns nothing and the agent aborts (no TOFU) |
-| A different machine enrolls with a token tied to `expected_hostname` | Enroll succeeds; machine row flagged `hostname_mismatch`; triage info item (W7); owner deletes it if wrong |
+| A different machine enrolls with a token tied to `expected_hostname` | Enroll succeeds; machine row flagged `hostname_mismatch` (compared lower case without a trailing `.` or `.local`; an empty reported hostname is a mismatch) and `enroll.completed{hostname_mismatch=true}`; triage info item (W7; not yet: plan row 5); owner deletes it if wrong |
 | Hub unreachable / all candidates fail | Backoff loop; `doctor` shows the last error per candidate; nothing else blocks |
 | Impostor at a discovered address | TLS verification fails; counted, next candidate |
 | Hello from a valid certificate the hub does not know (store recreated, or a backup that predates the enrollment) | `Bye{UNKNOWN_MACHINE}`; the agent goes Unenrolled and the owner issues a token. During a restore reconcile window the hub adopts the machine instead (02g) |
@@ -245,7 +247,8 @@ re-enroll rule are in [02g](02g-agent-security.md#machine-lifecycle-revoke-and-d
   `fleet_agent_connected` (gauge 0/1), `fleet_agent_discovery_seconds`,
   `fleet_agent_cert_expiry_seconds`.
 - `fleet_hub_enroll_tokens_total{result}` (token creation, plan row 2b),
-  `fleet_hub_enroll_total{result}`, `fleet_hub_agents_connected`,
+  `fleet_hub_enroll_total{result}` (`enrolled`, `replayed`, `refused`: the
+  caller's error, `failed`: the hub's; plan row 3), `fleet_hub_agents_connected`,
   `fleet_hub_machine_state{machine, state}` (gauge 0/1 per state),
   `fleet_hub_snapshot_apply_seconds`, `fleet_hub_snapshot_bytes`,
   `fleet_hub_events_discarded_before_snapshot_total`, `fleet_hub_clock_skew_seconds{machine}`.
@@ -253,11 +256,18 @@ re-enroll rule are in [02g](02g-agent-security.md#machine-lifecycle-revoke-and-d
   `agent.connect.hello`, `hub.connect.hello`, `hub.snapshot.apply`.
 - Logs: `enroll.issued{machine, expire_time, actor}`, `enroll.issue_refused{reason}`,
   `enroll.issue_failed{step, err_kind}`,
-  `enroll.completed{hostname_mismatch}`,
+  `enroll.completed{machine_id, replayed, hostname_mismatch}`,
+  `enroll.refused{reason, peer}` (`reason` is the ErrorDetail reason without
+  `REASON_CODE_`), `enroll.failed{step, err_kind}` (`step`: `store`,
+  `previous_machine`, `random`, `sign`, `encode`),
   `connect.hello{epoch, boot_id, reason, skew_ms}`, `snapshot.applied{panes,
-  goals, bytes, diff: probes_reissued, goals_pane_lost, orphan_panes}`.
+  goals, bytes, diff: probes_reissued, goals_pane_lost, orphan_panes}`. No
+  enroll line carries the token, its secret, any part of its hash, or the
+  facts. A revoked certificate at the handshake is 05b's
+  `tls.client_cert_revoked`.
 
-At 3 AM: "machine X offline since when, why?" → `fleet_hub_machine_state` plus
+At 3 AM: "why did `fleet-agent enroll` fail?" → `enroll.refused` (the reason
+the agent printed, and the peer) or `enroll.failed` (the hub's step). "machine X offline since when, why?" → `fleet_hub_machine_state` plus
 the agent's `connect.attempt` logs (last candidate tried, last TLS error).
 
 ---

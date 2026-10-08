@@ -50,30 +50,51 @@ out of band, but nobody has to compare anything by eye for the protection to
 hold. A token that reaches the wrong hub fails at step 2.
 
 **Enroll is retry-safe.** The hub keys the response by `(SHA-256 of the token
-secret, install_id, SHA-256 of the CSR public key)` for the token's lifetime
-plus 24 h. In one transaction a first call burns the token, creates the machine
-row and the certificate, and stores the response; the same triple later returns
+secret, install_id, csr_key_hash)` for the token's lifetime plus 24 h, where
+`csr_key_hash` is SHA-256 of the CSR's SubjectPublicKeyInfo DER. In one
+transaction a first call burns the token, creates the machine row and the
+certificate serial, and stores the response; the same triple later returns
 the stored response with `replayed = true` (same `machine_id`, same
-certificate). So a response lost in transit is recovered by running `enroll`
-again, and no second machine row appears. **Check order:** unknown token, then
-(for a burned token) the replay triple, then expiry, so a replay after the
-token's TTL still succeeds within the 24 h. Any other call with a used token is
-`ENROLL_TOKEN_USED`, and so is a replay once the machine is `REVOKED` or
-deleted: a stored response is never replayed for a machine that is no longer
-live.
+certificate). Only the certificate is stored; the rest of the response is
+rebuilt from `hub_identity`. So a response lost in transit is recovered by
+running `enroll` again, and no second machine row appears. **Check order:**
+the request's own fields first, none of which burns the token (`install_id`,
+the token's format and CA hash, the proto range, the CSR); then unknown
+token, then (for a burned token) the replay triple, then expiry, so a replay
+after the token's TTL still succeeds within the 24 h. Any other call with a
+used token is `ENROLL_TOKEN_USED`, and so is a replay once the machine is
+`REVOKED` or deleted: a stored response is never replayed for a machine that
+is no longer live. Enroll ignores a valid client certificate on the
+connection, but the listener checks any certificate it is given before Enroll
+runs: an expired one fails the handshake, and so does a revoked one. So the
+agent always calls Enroll without a client certificate, re-enroll included.
+
+**The CSR rule.** `csr_pem` is at most 4 KiB and holds exactly one
+PEM block of type "CERTIFICATE REQUEST" with only whitespace after it; it parses, its
+self-signature checks, its key is Ed25519, its subject is empty and it asks
+for no DNS, IP, URI or email SAN. Other requested extensions are ignored: the
+hub uses only the public key. Any break is `ENROLL_CSR_INVALID`. The signed
+certificate has common name = `machine_id`, the URI SAN `fleet://machine/<machine_id>`,
+client-auth usage only, a random 128-bit serial and the 90-day lifetime of
+[defaults](defaults.md), backdated 5 minutes and never past the CA.
+`install_id` is 1 to 64 printable ASCII characters without spaces.
+`previous_machine_id` is ignored until re-enroll exists (plan row 13a).
 
 **Typed failures.** An Enroll failure is a gRPC error whose `ErrorDetail.reason`
 is a code the CLI prints and `doctor` shows:
 
 | Case | gRPC code | `ErrorDetail.reason` |
 |---|---|---|
-| Not a token this hub issued, or the secret part is wrong | `UNAUTHENTICATED` | `ENROLL_TOKEN_UNKNOWN` |
+| Not a token this hub issued, the secret part is wrong, or the token names another CA (its CA hash is not this hub's) | `UNAUTHENTICATED` | `ENROLL_TOKEN_UNKNOWN` |
 | Unburned and past its TTL | `UNAUTHENTICATED` | `ENROLL_TOKEN_EXPIRED` |
 | Burned by another install or CSR key | `ALREADY_EXISTS` | `ENROLL_TOKEN_USED` |
-| CSR does not parse, is not Ed25519, or names another subject | `INVALID_ARGUMENT` | `ENROLL_CSR_INVALID` |
-| No common `proto_min`/`proto_max` | `FAILED_PRECONDITION` | `ENROLL_PROTO_UNSUPPORTED` |
-| `previous_machine_id` names a machine and the token names a different one | `FAILED_PRECONDITION` | `ENROLL_PREVIOUS_MACHINE_MISMATCH` |
-| Hub starting or store busy | `UNAVAILABLE` | `retryable = true` |
+| CSR breaks the CSR rule above | `INVALID_ARGUMENT` | `ENROLL_CSR_INVALID` |
+| `install_id` over 64 bytes / empty, a space or a byte outside printable ASCII | `INVALID_ARGUMENT` | `FIELD_TOO_LARGE` / `INVALID_ARGUMENT` |
+| No common `proto_min`/`proto_max` (0 is unset, `min > max`, or a range without 1); the token is not burned | `FAILED_PRECONDITION` | `ENROLL_PROTO_UNSUPPORTED` |
+| `previous_machine_id` names a machine and the token names a different one (plan row 13a) | `FAILED_PRECONDITION` | `ENROLL_PREVIOUS_MACHINE_MISMATCH` |
+| Not yet: the token names a previous machine before re-enroll exists (plan row 13a); the token is not burned | `INTERNAL` | `INTERNAL` |
+| Hub starting, store busy, or a store error (a cancelled write has an unknown outcome; the retry finds the replay) | `UNAVAILABLE` | no reason, `retryable = true` |
+| Request over the 1 MiB message cap ([02e](02e-contract-rules.md#size-limits-agent-wire)) | `RESOURCE_EXHAUSTED` | none (refused before the handler) |
 
 **One rule for re-enrollment: the token alone decides.** The token's
 `previous_machine` (an existing `REVOKED` or expired machine, set by the owner)
@@ -84,7 +105,9 @@ machine that was deleted, is ignored and Enroll creates a new machine; so an
 agent that sends its old id after `Bye{UNKNOWN_MACHINE}` just enrolls fresh.
 
 A failed Enroll writes an audit row (`machine.enroll_failed`) with the code and
-peer address, never the token.
+peer address, never the token. Not yet: plan row 5 (#104) brings the audit
+log; until then a failure is the log line `enroll.refused` (`reason`, `peer`)
+or `enroll.failed` (`step`, `err_kind`) and `fleet_hub_enroll_total` (03, W1).
 
 **Connect-level failures.** The agent finds out about problems after the TLS
 handshake through `Bye` (`ByeReason`), not through a missing message:
@@ -151,6 +174,26 @@ in the hub's state directory, outside `state.db`, and `fleetd restore`
 re-applies it, so a backup older than a revoke does not bring a revoked
 certificate back.
 
+**`revoked-serials` format.** Mode 0600. The first line is
+`# fleet-board revoked-serials v1`; each further line is
+`<serial> <not_after>`: the serial in lowercase hex without leading zeros
+(as `cert_serials.serial` keeps it), one space, and the certificate's
+`not_after` in RFC 3339 UTC. **Write order of a revoke:** append the lines and
+fsync the file (fsync the folder too when the file is new), then add them to
+the in-memory set every handshake reads, then submit the `state.db` write; a
+`state.db` failure leaves the serial revoked (fail closed) and the next start
+repairs it. **At start**, before the agent listener binds, `fleetd run` loads
+the list: a missing file is normal; a loose mode refuses the start
+(`mode_loose`); a torn last line with no newline (a crash mid-append) is
+dropped with the warning `hub.revocations_torn_line`; any other bad line or an
+unreadable file refuses the start (`revocations_invalid`). It reconciles both
+ways (a serial revoked only in `state.db` is added to the file, one only in
+the file is marked revoked in `state.db`), drops lines past their `not_after`,
+and rewrites the file atomically when it changed (temp file, fsync, rename,
+fsync the folder). The set is the union. The check runs in the TLS
+connection-verify step (Go's VerifyConnection), so it covers resumed TLS 1.3
+sessions as well.
+
 ## Machine lifecycle: revoke and delete
 
 ```mermaid
@@ -191,7 +234,9 @@ can be revoked without losing its history.
 | Settings, labels, drain | Kept on the row, so a re-enrolled machine gets them back |
 | Audit | `machine.revoke` with the requester and reason |
 
-**Re-enroll.** `CreateEnrollmentToken{previous_machine}` is allowed only for a
+**Re-enroll** (plan row 13a; until then `CreateEnrollmentToken` refuses
+`previous_machine` and Enroll never burns a token that names one).
+`CreateEnrollmentToken{previous_machine}` is allowed only for a
 `REVOKED` machine or one whose certificate lifetime has passed, and only while
 its row exists. The Enroll that uses it returns the same `machine_id` with new
 certificate serials and sets the state back to `ENROLLED`; the revoked serials

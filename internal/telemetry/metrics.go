@@ -38,6 +38,7 @@ const (
 	ReasonHost    AuthReason = "host"     // Host header not allowed (02f, HOST_NOT_ALLOWED)
 	ReasonOrigin  AuthReason = "origin"   // Origin header not allowed (02f, ORIGIN_NOT_ALLOWED)
 	ReasonPeerUID AuthReason = "peer_uid" // admin socket peer is another OS user, or its credentials are unreadable (02f)
+	ReasonRevoked AuthReason = "revoked"  // agent listener handshake with a revoked client certificate serial (02g)
 )
 
 // CountAuthFailure adds one refused request to <prefix>_auth_failures_total.

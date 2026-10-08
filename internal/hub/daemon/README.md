@@ -28,9 +28,17 @@ calls `Init`, `Run` or `EnrollToken`.
    `state.db` left between the link and the cleanup.
 4. Opens the existing `state.db` (checked 0600 or narrower; never created) and
    reads `hub_identity` (missing: refused, never minted).
-5. Re-issues the server certificate if `tls.agent_names` changed or it is past
+5. Loads the revocation list with `revocation.Load`: `<state_dir>/revoked-serials`
+   reconciled both ways with `cert_serials` in `state.db`
+   ([02g](../../../docs/specs/02g-agent-security.md#hub-identity-and-restore)).
+   A missing file is normal; a loose one is `mode_loose`; a bad line, an
+   unreadable file or a failed reconcile is `revocations_invalid`. This
+   happens before any listener binds, so no handshake ever runs without it.
+6. Re-issues the server certificate if `tls.agent_names` changed or it is past
    two thirds of its life.
-6. Binds the agent, API and optional metrics listeners (port 0 is allowed; the
+7. Binds the agent listener (`gateway.NewServer` with the store, the identity
+   and the revocation list: `Enroll`, and a revoked client certificate fails
+   its handshake), then the API and optional metrics listeners (port 0 is allowed; the
    real port is logged), then `<state_dir>/admin.sock`: a socket already
    there was left by a killed hub (the lock is ours), so it is removed; any
    other file at that path refuses the start (`listen_failed`) and is left
@@ -38,7 +46,7 @@ calls `Init`, `Run` or `EnrollToken`.
    (FleetService `CreateEnrollmentToken`, kernel peer user id check;
    `Options.PeerUID` injects the reader in tests). Then it serves until the
    context ends (SIGTERM).
-7. Stops: shuts the listeners down (10 s grace, then closes; closing the admin
+8. Stops: shuts the listeners down (10 s grace, then closes; closing the admin
    listener removes `admin.sock`), stops the hourly certificate check, closes
    the store, releases the lock.
 
@@ -63,13 +71,16 @@ the OS user that runs fleetd may use `admin.sock`.
 | `hub.initialized` (`server_names`, `config_written`) | init created the store |
 | `hub.listener_opened` (`listener`, `port`; the admin socket has no port), `hub.started` (`mode`, `listeners`) | run is serving |
 | `admin.peer_refused`, `enroll.issued`, `enroll.issue_refused`, `enroll.issue_failed`, `fleet_hub_enroll_tokens_total{result}` | the admin socket and token creation ([internal/hub/api](../api/README.md)) |
+| `enroll.completed`, `enroll.refused`, `enroll.failed`, `fleet_hub_enroll_total{result}`, `tls.client_cert_revoked`, `fleet_hub_auth_failures_total{reason="revoked"}` | Enroll and revoked serials on the agent listener ([internal/hub/gateway](../gateway/README.md)) |
+| `hub.revocations_torn_line` (warn) | the revoked-serials file ended in a line with no newline (a crash mid-append); it was dropped ([internal/hub/revocation](../revocation/README.md)) |
 | `hub.listener_failed` (`err_kind`) | a listener stopped with an error |
 | `hub.stopped` | run shut down |
 | `http.server_error` (`listener`, `kind`), error level for `kind=panic`, else debug | net/http's own error line on any listener (a failed TLS handshake, a recovered handler panic); its text is dropped |
 
 Reasons (closed set): `config_invalid`, `lock_held`, `mode_loose`,
 `store_missing`, `store_exists`, `identity_missing`, `store_failed`,
-`store_not_synced`, `identity_failed`, `cert_failed`, `listen_failed`. The
+`store_not_synced`, `identity_failed`, `cert_failed`, `listen_failed`,
+`revocations_invalid`. The
 error text, which can name paths, goes to the terminal only, never into a log
 field or label.
 
@@ -79,5 +90,8 @@ the admin socket path fits), dial the agent listener with `crypto/tls`, and
 drive renewal with a fake clock and a tick channel. The admin socket tests
 check its mode, mint a token and compare its CA hash with the stored CA, scan
 every file of the state folder (WAL included) and the logs for the token and
-its secret, inject another peer uid, and start past a leftover socket.
+its secret, inject another peer uid, and start past a leftover socket. The
+revocation tests start with a serial already in `revoked-serials` and check
+the first handshake refuses it, refuse a bad or loose file, and enroll a
+machine end to end with a token from the admin socket.
 `cmd/fleetd` repeats the cross-process cases with the built binary.

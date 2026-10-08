@@ -31,21 +31,12 @@ import (
 // the handshake tests do not expire 90 days after t0.
 func listenerFixture(t *testing.T) *fixture { t.Helper(); return newFixtureAt(t, wallNow()) }
 
-// serve starts the agent listener on 127.0.0.1 and returns its address. The
-// server checks client certificates against wallNow too.
-func serve(t *testing.T, f *fixture) string {
-	t.Helper()
-	c := f.certs(t, defaultNames, wallNow)
-	srv := gateway.NewServer(c, f.tel)
-	srv.TLSConfig.Time = wallNow
-	var lc net.ListenConfig
-	ln, err := lc.Listen(t.Context(), "tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
+func TestNewServerRefusesMissingDependencies(t *testing.T) {
+	t.Parallel()
+	f := listenerFixture(t)
+	if _, err := gateway.NewServer(gateway.ServerOptions{Certs: f.certs(t, defaultNames, wallNow), Telemetry: f.tel}); err == nil {
+		t.Error("NewServer without a store or a revoked set succeeded")
 	}
-	go func() { _ = srv.ServeTLS(ln, "", "") }()
-	t.Cleanup(func() { _ = srv.Close() })
-	return ln.Addr().String()
 }
 
 func clientTLS(f *fixture, serverName string) *tls.Config {
@@ -70,8 +61,8 @@ func dialTLS(t *testing.T, addr string, cfg *tls.Config) (*tls.Conn, error) {
 
 func TestTheListenerServesTLS13WithTheStoredCertificate(t *testing.T) {
 	t.Parallel()
-	f := listenerFixture(t)
-	addr := serve(t, f)
+	h := startHub(t)
+	f, addr := h.fixture, h.addr
 	conn, err := dialTLS(t, addr, clientTLS(f, "127.0.0.1"))
 	if err != nil {
 		t.Fatalf("TLS dial trusting only the stored CA: %v", err)
@@ -88,10 +79,10 @@ func TestTheListenerServesTLS13WithTheStoredCertificate(t *testing.T) {
 
 func TestATLS12OnlyClientIsRefused(t *testing.T) {
 	t.Parallel()
-	f := listenerFixture(t)
-	cfg := clientTLS(f, "127.0.0.1")
+	h := startHub(t)
+	cfg := clientTLS(h.fixture, "127.0.0.1")
 	cfg.MaxVersion = tls.VersionTLS12
-	conn, err := dialTLS(t, serve(t, f), cfg)
+	conn, err := dialTLS(t, h.addr, cfg)
 	if err == nil {
 		_ = conn.Close()
 		t.Fatal("a TLS 1.2 client completed a handshake")
@@ -123,8 +114,8 @@ func clientCert(t *testing.T, signer *ca.Authority) tls.Certificate {
 // No client certificate is fine (Enroll); one must be signed by the hub CA.
 func TestClientCertificatesAreOptionalButMustBeTheHubCAs(t *testing.T) {
 	t.Parallel()
-	f := listenerFixture(t)
-	addr := serve(t, f)
+	h := startHub(t)
+	f, addr := h.fixture, h.addr
 	foreign, err := ca.New(wallNow(), rand.Reader)
 	if err != nil {
 		t.Fatal(err)
@@ -166,10 +157,10 @@ func TestClientCertificatesAreOptionalButMustBeTheHubCAs(t *testing.T) {
 	}
 }
 
-func TestEveryAgentServiceMethodIsUnimplemented(t *testing.T) {
+func TestEveryAgentServiceMethodButEnrollIsUnimplemented(t *testing.T) {
 	t.Parallel()
-	f := listenerFixture(t)
-	addr := serve(t, f)
+	h := startHub(t)
+	f, addr := h.fixture, h.addr
 	httpClient := &http.Client{Transport: &http.Transport{TLSClientConfig: clientTLS(f, "localhost"), ForceAttemptHTTP2: true}}
 	defer httpClient.CloseIdleConnections()
 	protocols := []struct {
@@ -183,10 +174,6 @@ func TestEveryAgentServiceMethodIsUnimplemented(t *testing.T) {
 		client := agentv1connect.NewAgentServiceClient(httpClient, "https://"+addr, p.opts...)
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		calls := map[string]func() error{
-			"Enroll": func() error {
-				_, err := client.Enroll(ctx, connect.NewRequest(&agentv1.EnrollRequest{}))
-				return err
-			},
 			"RenewCert": func() error {
 				_, err := client.RenewCert(ctx, connect.NewRequest(&agentv1.RenewCertRequest{}))
 				return err

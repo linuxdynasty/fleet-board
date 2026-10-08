@@ -1,0 +1,271 @@
+package statedb
+
+import (
+	"context"
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/linuxdynasty/fleet-board/internal/store"
+)
+
+// machinesSQL is migration 3 (plan row 3): machines, cert_serials and
+// enroll_responses. cert_serials has no foreign key, so a revoked serial
+// outlives DeleteMachine until its not_after (02g).
+const machinesSQL = `CREATE TABLE machines(
+	machine_id TEXT PRIMARY KEY CHECK (machine_id <> ''),
+	name TEXT NOT NULL CHECK (name <> ''),
+	expected_hostname TEXT NOT NULL CHECK (expected_hostname <> ''),
+	labels TEXT NOT NULL DEFAULT '[]',
+	drained INTEGER NOT NULL CHECK (drained IN (0, 1)),
+	install_id TEXT NOT NULL CHECK (install_id <> ''),
+	state TEXT NOT NULL CHECK (state IN ('ENROLLED', 'ONLINE', 'STALE', 'OFFLINE', 'REVOKED')),
+	hostname_mismatch INTEGER NOT NULL CHECK (hostname_mismatch IN (0, 1)),
+	facts TEXT NOT NULL DEFAULT '{}',
+	created_time INTEGER NOT NULL
+) STRICT;
+CREATE TABLE cert_serials(
+	serial TEXT PRIMARY KEY CHECK (serial <> '' AND serial = lower(serial)),
+	machine_id TEXT NOT NULL,
+	not_after_time INTEGER NOT NULL,
+	revoked_time INTEGER,
+	created_time INTEGER NOT NULL
+) STRICT;
+CREATE INDEX cert_serials_revoked ON cert_serials(not_after_time) WHERE revoked_time IS NOT NULL;
+CREATE TABLE enroll_responses(
+	id INTEGER PRIMARY KEY,
+	secret_hash BLOB NOT NULL UNIQUE CHECK (length(secret_hash) = 32),
+	install_id TEXT NOT NULL,
+	csr_key_hash BLOB NOT NULL CHECK (length(csr_key_hash) = 32),
+	machine_id TEXT NOT NULL REFERENCES machines(machine_id),
+	cert BLOB NOT NULL,
+	expire_time INTEGER NOT NULL,
+	created_time INTEGER NOT NULL,
+	UNIQUE (secret_hash, install_id, csr_key_hash)
+) STRICT;`
+
+// MachineEnrolled is the state of a machine that enrolled and never
+// connected; row 3 writes no other.
+const MachineEnrolled = "ENROLLED"
+
+// ReplayWindow is how long after a token's not_after its stored Enroll
+// response is still replayed (02g).
+const ReplayWindow = 24 * time.Hour
+
+// Enroll outcomes other than success (02g "Typed failures").
+var (
+	// ErrTokenUnknown: no enroll_tokens row has this secret hash.
+	ErrTokenUnknown = errors.New("statedb: no such enroll token")
+	// ErrTokenExpired: the token is unburned and past its not_after.
+	ErrTokenExpired = errors.New("statedb: the enroll token has expired")
+	// ErrTokenUsed: the token is burned and this is not a replay of the
+	// response it gave (another install_id or CSR key, past the replay
+	// window, or the machine is no longer live).
+	ErrTokenUsed = errors.New("statedb: the enroll token was already used")
+	// ErrPreviousMachine: the token names a machine to re-enroll, which
+	// plan row 13a builds; the token is never burned here.
+	ErrPreviousMachine = errors.New("statedb: the enroll token names a previous machine; re-enroll is plan row 13a")
+)
+
+// EnrollKey is what keys an Enroll for replay: SHA-256 of the token secret,
+// the agent's install_id, and SHA-256 of the CSR's SubjectPublicKeyInfo.
+type EnrollKey struct {
+	SecretHash [32]byte
+	InstallID  string
+	CSRKeyHash [32]byte
+}
+
+// Enrolled is the hub's part of an Enroll response, new or replayed. The
+// rest of EnrollResponse comes from hub_identity.
+type Enrolled struct {
+	MachineID string
+	CertDER   []byte
+	// MachineName comes from the token; ExpectedHostname is the effective
+	// one (the token's, or the machine name when the token has none).
+	MachineName      string
+	ExpectedHostname string
+	HostnameMismatch bool
+	Replayed         bool
+}
+
+// EnrollCheck is the outcome of [CheckEnroll] that is not an error: either
+// a fresh token to enroll with (Token) or a stored response (Replay).
+type EnrollCheck struct {
+	Token  EnrollToken
+	Replay *Enrolled
+}
+
+// querier is a read transaction or the writer's batch transaction.
+type querier interface {
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
+// CheckEnroll is the read-pool pre-check (02g check order): an unknown
+// token is [ErrTokenUnknown]; a burned one replays its stored response for
+// the same key while the response is in its window and the machine is not
+// REVOKED, and is [ErrTokenUsed] otherwise; an unburned token past its TTL
+// is [ErrTokenExpired]; one naming a previous machine is
+// [ErrPreviousMachine]. These facts never change once committed, so the
+// answer holds; a fresh token is decided again by [Enroll].
+func CheckEnroll(ctx context.Context, s *store.Store, key EnrollKey, now time.Time) (EnrollCheck, error) {
+	var out EnrollCheck
+	err := s.Read(ctx, func(tx *sql.Tx) error {
+		var err error
+		out, err = classify(ctx, tx, key, now)
+		return err
+	})
+	return out, err
+}
+
+func classify(ctx context.Context, q querier, key EnrollKey, now time.Time) (EnrollCheck, error) {
+	var (
+		t              EnrollToken
+		labels         string
+		notAfter       int64
+		used           sql.NullInt64
+		previous       sql.NullString
+		secret, keyRaw = key.SecretHash[:], key.CSRKeyHash[:]
+	)
+	err := q.QueryRowContext(ctx, `SELECT machine_name, expected_hostname, labels, start_drained, not_after_time,
+		used_time, previous_machine FROM enroll_tokens WHERE secret_hash = ?`, secret).
+		Scan(&t.MachineName, &t.ExpectedHostname, &labels, &t.StartDrained, &notAfter, &used, &previous)
+	if errors.Is(err, sql.ErrNoRows) {
+		return EnrollCheck{}, ErrTokenUnknown
+	}
+	if err != nil {
+		return EnrollCheck{}, fmt.Errorf("statedb: read enroll token: %w", err)
+	}
+	if used.Valid {
+		r := &Enrolled{Replayed: true}
+		err := q.QueryRowContext(ctx, `SELECT r.machine_id, r.cert, m.name, m.expected_hostname, m.hostname_mismatch
+			FROM enroll_responses r JOIN machines m ON m.machine_id = r.machine_id
+			WHERE r.secret_hash = ? AND r.install_id = ? AND r.csr_key_hash = ? AND r.expire_time > ? AND m.state <> 'REVOKED'`,
+			secret, key.InstallID, keyRaw, now.UnixMilli()).
+			Scan(&r.MachineID, &r.CertDER, &r.MachineName, &r.ExpectedHostname, &r.HostnameMismatch)
+		if errors.Is(err, sql.ErrNoRows) {
+			return EnrollCheck{}, ErrTokenUsed
+		}
+		if err != nil {
+			return EnrollCheck{}, fmt.Errorf("statedb: read enroll response: %w", err)
+		}
+		return EnrollCheck{Replay: r}, nil
+	}
+	if notAfter <= now.UnixMilli() {
+		return EnrollCheck{}, ErrTokenExpired
+	}
+	if previous.Valid {
+		return EnrollCheck{}, ErrPreviousMachine
+	}
+	if err := json.Unmarshal([]byte(labels), &t.Labels); err != nil {
+		return EnrollCheck{}, fmt.Errorf("statedb: enroll token labels: %w", err)
+	}
+	t.SecretHash = key.SecretHash
+	t.NotAfter = time.UnixMilli(notAfter)
+	return EnrollCheck{Token: t}, nil
+}
+
+// NewMachine is one first Enroll: the key, the machine id and certificate
+// the caller minted and signed before submitting, and the agent's facts.
+type NewMachine struct {
+	Key          EnrollKey
+	MachineID    string
+	CertDER      []byte
+	Serial       string // ca.SerialHex of the certificate
+	CertNotAfter time.Time
+	// ReportedHostname is MachineFacts.hostname, compared with the token's
+	// expected hostname.
+	ReportedHostname string
+	// Facts is MachineFacts as protojson, already within the request cap.
+	Facts string
+	Now   time.Time
+}
+
+// Enroll is one writer job that decides the burn: it marks the token used
+// only while it is unburned, unexpired and names no previous machine, then
+// inserts the machine (ENROLLED), its serial and the response kept until
+// the token's not_after plus [ReplayWindow]. When the burn changes no row
+// (another Enroll won, or the token expired since the pre-check), the job
+// classifies again in the same transaction: the winner's response as a
+// replay for the same key, or the [CheckEnroll] error. A ctx error means
+// the outcome is unknown; a retry finds the replay.
+func Enroll(ctx context.Context, s *store.Store, m NewMachine) (Enrolled, error) {
+	jctx := context.WithoutCancel(ctx) // see insertIdentity
+	var out Enrolled
+	err := s.Write(ctx, func(tx *sql.Tx) error {
+		res, err := tx.ExecContext(jctx, `UPDATE enroll_tokens SET used_time = ?
+			WHERE secret_hash = ? AND used_time IS NULL AND not_after_time > ? AND previous_machine IS NULL`,
+			m.Now.UnixMilli(), m.Key.SecretHash[:], m.Now.UnixMilli())
+		if err != nil {
+			return fmt.Errorf("statedb: burn enroll token: %w", err)
+		}
+		if n, err := res.RowsAffected(); err != nil || n != 1 {
+			if err != nil {
+				return fmt.Errorf("statedb: burn enroll token: %w", err)
+			}
+			c, err := classify(jctx, tx, m.Key, m.Now)
+			if err != nil {
+				return err
+			}
+			if c.Replay == nil {
+				return errors.New("statedb: the enroll token could not be burned")
+			}
+			out = *c.Replay
+			return nil
+		}
+		out, err = insertMachine(jctx, tx, m)
+		return err
+	})
+	if err != nil {
+		return Enrolled{}, err
+	}
+	return out, nil
+}
+
+func insertMachine(ctx context.Context, tx *sql.Tx, m NewMachine) (Enrolled, error) {
+	var (
+		name, expected, labels string
+		drained                bool
+		notAfter               int64
+	)
+	err := tx.QueryRowContext(ctx, `SELECT machine_name, expected_hostname, labels, start_drained, not_after_time
+		FROM enroll_tokens WHERE secret_hash = ?`, m.Key.SecretHash[:]).Scan(&name, &expected, &labels, &drained, &notAfter)
+	if err != nil {
+		return Enrolled{}, fmt.Errorf("statedb: read burned enroll token: %w", err)
+	}
+	if expected == "" {
+		expected = name
+	}
+	mismatch := hostnameMismatch(expected, m.ReportedHostname)
+	now := m.Now.UnixMilli()
+	if _, err := tx.ExecContext(ctx, `INSERT INTO machines(machine_id, name, expected_hostname, labels, drained,
+		install_id, state, hostname_mismatch, facts, created_time) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		m.MachineID, name, expected, labels, drained, m.Key.InstallID, MachineEnrolled, mismatch, m.Facts, now); err != nil {
+		return Enrolled{}, fmt.Errorf("statedb: insert machine: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO cert_serials(serial, machine_id, not_after_time, created_time)
+		VALUES (?, ?, ?, ?)`, m.Serial, m.MachineID, m.CertNotAfter.UnixMilli(), now); err != nil {
+		return Enrolled{}, fmt.Errorf("statedb: insert cert serial: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO enroll_responses(secret_hash, install_id, csr_key_hash, machine_id,
+		cert, expire_time, created_time) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		m.Key.SecretHash[:], m.Key.InstallID, m.Key.CSRKeyHash[:], m.MachineID, m.CertDER,
+		time.UnixMilli(notAfter).Add(ReplayWindow).UnixMilli(), now); err != nil {
+		return Enrolled{}, fmt.Errorf("statedb: insert enroll response: %w", err)
+	}
+	return Enrolled{
+		MachineID: m.MachineID, CertDER: m.CertDER, MachineName: name, ExpectedHostname: expected, HostnameMismatch: mismatch,
+	}, nil
+}
+
+// hostnameMismatch compares lower-cased names without a trailing "." or
+// ".local"; an empty reported hostname is a mismatch.
+func hostnameMismatch(expected, reported string) bool {
+	norm := func(h string) string {
+		return strings.TrimSuffix(strings.TrimSuffix(strings.ToLower(h), "."), ".local")
+	}
+	r := norm(reported)
+	return r == "" || r != norm(expected)
+}
