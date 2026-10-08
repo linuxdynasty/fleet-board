@@ -1,0 +1,20 @@
+debconf: delaying package configuration, since apt-utils is not installed
+deps_rc=0
+os: Ubuntu 22.04.5 LTS x86_64
+apt: tmux 3.2a 3.2a-4ubuntu0.2
+/tmp/tmp.6Jq5RQ5QOj/tmux.tar.gz: OK
+tmux 3.2a
+src_3.2a_rc=0
+/tmp/tmp.k2yD8yqhm5/tmux.tar.gz: OK
+tmux 3.7c
+src_3.7c_rc=0
+sha256sum: /tmp/tmp.m3Naj3oWbF/tmux.tar.gz: FAILED
+WARNING: 1 computed checksum did NOT match
+bad_checksum_rc=1
+flags apt-3.2a rc=0
+typing apt-3.2a rc=0
+flags src-3.2a rc=0
+typing src-3.2a rc=0
+flags src-3.7c rc=0
+typing src-3.7c rc=0
+docker_rc=0

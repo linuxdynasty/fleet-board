@@ -10,6 +10,7 @@ here becomes a dependency of the product. Raw output is kept under
 |---|---|---|
 | [S1 `sqlite/`](sqlite/) | Does embedded SQLite with one writer meet 04's A50 load on a pure-Go driver, is a commit durable on macOS, and does `logs.db` hold session logs? | `go build -o s1 . && ./s1 -driver modernc -scenario commit\|steady\|burst\|logs` |
 | [S2 `zstdchunk/`](zstdchunk/) | How well does zstd compress real terminal output when shipped in 10 s chunks rather than one stream? | `tmux pipe-pane -o -t <pane> 'zstdchunk rec <prefix>'`, then `zstdchunk analyze <prefix>` |
+| [0.5 `tmuxtyping/`](tmuxtyping/results/README.md) | Can tmux push "a person typed" to a control-mode client, which release added `pause-after` and `ignore-size`, and how is tmux 3.2 installed on CI? (plan item 0.5, #50) | `go build -o tmuxtyping . && ./tmuxtyping typing\|flags -tmux <bin> -L fleetprobe-<name>`, then `./tmuxtyping summarize <file>...` |
 | [0.7 `mdns/`](mdns/results/README.md) | Does `hashicorp/mdns` advertise `_fleetd._tcp` next to macOS mDNSResponder, and what browse timeout and re-query interval should the agent use? (plan item 0.7, #52) | `go build -o mdns . && ./mdns advertise\|browse\|summarize` |
 
 ## S1 setup
