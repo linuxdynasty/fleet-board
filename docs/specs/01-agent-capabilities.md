@@ -270,7 +270,7 @@ optionally against one limit the owner sets.
   | Claude Code `/usage` | current session % used and reset; current week (all models) % used and reset; current week per model (for example Fable) % used and reset; the "what's contributing" breakdown, which Claude labels approximate and local to that machine |
   | Codex `/status` | weekly limit % left and reset; plan ("Account: Pro"); model and server; credits when shown (session logs carry `credits.has_credits` and `balance`) |
   | Muse `/usage` | current % used and reset; weekly % used and reset; the "as of" time; session tokens (input, cached, output, total), turns, subagents; plan ("Muse Code Power Usage") |
-  | Cursor `/usage` | plan ("Pro+"), Included, Auto and API % used, one monthly reset date ("Resets Nov 4"), On-Demand on or off. How pacing reads a monthly budget is plan item 0.20 |
+  | Cursor `/usage` | plan ("Pro+"), Included, Auto and API % used, one monthly reset date ("Resets Nov 4"), On-Demand on or off. Reported as three `WINDOW_KIND_MONTHLY` buckets and `OverageBilling` ([03b](03b-usage-and-sync.md#monthly-windows-cursor), "Monthly windows") |
   | OpenCode `opencode stats` (CLI, no probe session) | all-time total cost, as the tool counts it, with no window and no reset (`SpendReading`, no period); a total for all providers together if the tool prints no per-provider figure (issue #46 records what it prints) |
 
   Each reading has two parts:
@@ -278,12 +278,14 @@ optionally against one limit the owner sets.
     plus the raw screen text (personal data redacted per C2), for display;
   - **standardized:** a list of limit buckets (label, % used as integer 0–100
     or `unknown`, reset time in UTC, window length if known, and whether it is
-    a short window or the weekly budget), for the scheduler. Codex's "% left"
+    a short window, the weekly budget or a monthly one), for the scheduler. Codex's "% left"
     becomes "% used" here; the display keeps "% left".
 
   Also: `probe_id`, account key, `read_time`, parser version. Reset times on
   screen are local strings without a year ("Resets Sep 30 at 10pm"); the agent
-  resolves them with B1's timezone and sends both the original text and UTC. On
+  resolves them with B1's timezone and sends both the original text and UTC; a
+  date with no time (Cursor "Resets Nov 4") resolves to the end of that date
+  (03b, "Monthly windows"). On
   parse failure the reading is `unknown` and the redacted raw screen is still
   shown, never a guessed value.
 - **Probe timing.** Every 10 minutes by default, configurable per account;

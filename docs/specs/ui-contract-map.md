@@ -52,7 +52,7 @@ observed), so paths below read `Account.status.pacing` or `Machine.spec.labels`
 |---|---|---|---|
 | Summary strip counts (working, waiting, stuck, limit wait, need you, slots, available sessions; defined in "Strip counts" below) | shows `FleetSummary` (`GetFleetSummary`, topic `FLEET_SUMMARY`) | hub-derived from `GoalState`, `Heartbeat.counts`, `TmuxPane.availability` (A5, G2, E11) | v1 |
 | System dot in the summary strip (amber or red, links to Machines → System) | shows `FleetSummary.system_warnings`, `system_critical` (`FLEET_SUMMARY`) | hub evaluation of the System signals (05b) | v1 |
-| Per-account mini bar and short waste line ("58% left · ~25% unused", "stale reading") | shows `Account.status.usage.buckets[]`, `Account.status.pacing{projected_unused_percent, idle_while_behind, reading_stale}`; `FleetSummary.accounts_wasting` | `LimitBucket.percent_used`, `resets_time` (D2) | v1 |
+| Per-account mini bar and short waste line ("58% left · ~25% unused", "stale reading"); a Cursor account shows one monthly card with three bars (Included, Auto, API) and, when On-Demand is on or not shown, "On-Demand on: manual only" | shows `Account.status.usage.buckets[]` (`kind = WINDOW_KIND_MONTHLY` for Cursor), `Account.status.usage.overage_billing`, `Account.status.pacing{state = EXCLUDED, projected_unused_percent, idle_while_behind, reading_stale}`; `FleetSummary.accounts_wasting` | `LimitBucket.percent_used`, `resets_time` (D2); `UsageReading.overage_billing` (03b, "Monthly windows") | v1 |
 | API-key account "spent so far $6 of your $20 limit" (no period) | shows `Account.status.usage.spend`, `Account.spec.spend_cap_micros` | `SpendReading`, `BUDGET_KIND_DOLLAR_CAP` (D2, 01 §C) | v1 |
 | "auto-dispatch on/off" chip and the Work view's switch | shows `HubSettings.auto_dispatch` (`GetSettings`); the switch calls `UpdateSettings{spec.hub.auto_dispatch}` | hub only; off until the owner turns it on (defaults.md) | v1 |
 | ⌘K entries for windows | `ListSessions` → `Session.status.windows[].name`, `Session.status.name`, `started_by_fleet` | `TmuxWindow.name`, `TmuxSession.name` (E1) | v1 |
@@ -145,7 +145,7 @@ which kinds have more. Release = the first release whose source can raise it.
 
 | UI element | Hub API | Agent wire / source | Ships |
 |---|---|---|---|
-| Board columns | `ListWorkItems` grouped by `WorkItem.stage`; `ListChangeRequests` for change requests no goal owns (`goal` empty) | 03b stage machine | v1 |
+| Board columns | `ListWorkItems` grouped by `WorkItem.stage`; `ListChangeRequests` for change requests no goal owns (`goal` empty) | 03m stage machine | v1 |
 | Card reference (`eshu#7398`, `infra!12`, `OPS-142`) and provider chip | `WorkItem.item.ref` (`WorkItemRef.display`, `provider`) and `WorkItem.id.kind` (the identity is `WorkItemKey`) | ADR 0012 | v1 |
 | "code: github.com/eshu-hq/eshu" on a Jira card | `WorkItem.item.repos[]` | `RepoRef{host, path}` (ADR 0012) | v1 |
 | "claimed by …" | `WorkItem.item.claims[]`, `stage = CLAIMED_ELSEWHERE` | `Claim{mechanism, by_fleet}` | v1 |
@@ -247,11 +247,11 @@ lists every window on every machine; the Details drawer holds the controls.
 
 | UI element | Hub API | Agent wire / source | Ships |
 |---|---|---|---|
-| "Will any subscription go to waste?" line per subscription ("Codex · 58% left · resets in 2d 10h · 1 goal running · on pace to leave ~25% unused") | shows `Account.status.pacing{projected_unused_percent, active_goals, state}`, `Account.status.usage.buckets[].resets_time` | hub projection from `LimitBucket.percent_used` and the burn rate so far; the reserve is never counted (03b) | v1 |
+| "Will any subscription go to waste?" line per subscription ("Codex · 58% left · resets in 2d 10h · 1 goal running · on pace to leave ~25% unused"); a date-only reset shows the date ("resets Nov 4"), not a countdown | shows `Account.status.pacing{projected_unused_percent, active_goals, state}`, `Account.status.usage.buckets[].resets_time` (`original_text` when `date_only`) | hub projection from `LimitBucket.percent_used` and the burn rate so far; the reserve is never counted (03b) | v1 |
 | Highlight: will waste ≥ 5 points, or no goal running while behind pace | `Account.status.pacing.projected_unused_percent ≥ 5` or `idle_while_behind` | hub pacing (03b, ADR 0008) | v1 |
 | "stale — reset passed, re-probe pending" | `Account.status.pacing.reading_stale`; `Account.status.probe.next_run_time` | hub-adjusted `UsageReading.read_time` older than the bucket's previous `resets_time` (D1, D2; 02i, "Clocks") | v1 |
 | Account card "as shown" table | `GetAccount{include_raw_screen}` (the raw screen needs scope `LOGS`) → `Account.status.usage.shown`, `buckets[].shown_as_remaining` | `ShownUsage.fields[]` (D2) | v1 |
-| Burn-down chart | `ListUsageReadings{account}` → `buckets[]{percent_used, resets_time}` | `LimitBucket` (D2) | v1 |
+| Burn-down chart (a week, or a month for a `WINDOW_KIND_MONTHLY` bucket; no line while the month's length is unknown) | `ListUsageReadings{account}` → `buckets[]{percent_used, resets_time, window, kind}` | `LimitBucket` (D2; 03b, "Monthly windows") | v1 |
 | "source: probe /usage 10 min ago" / "passive (banner)" | `Account.status.usage{source, read_time}` (hub-adjusted; `received_time` beside it), `Account.status.probe`, `Machine.status.telemetry{clock_skew, clock_untrusted}` | `UsageSource`, `ProbeHealth` (D1, D3) | v1 |
 | Plan, email hidden/shown | `Account.status{plan, login_method, email}`; email empty unless `share_identity_email` | `AccountIdentity` (C2, A8) | v1 |
 | [planned] Consent and mode per account | `Account.spec{consent, mode}`; edit calls `UpdateAccount` with `spec.*` mask paths | ADR 0008 | v1 |

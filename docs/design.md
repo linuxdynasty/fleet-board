@@ -155,10 +155,10 @@ flowchart TB
 | Goal protocol: the goal file's first line, hooks, goal identity | [01d](specs/01d-goal-hooks.md), [02h](specs/02h-goal-binding-and-pane-signals.md), [03l](specs/03l-goal-lifecycle-and-verification.md) |
 | Dispatching a goal (`StartGoal`) | [02h](specs/02h-goal-binding-and-pane-signals.md), [03c](specs/03c-goals.md) |
 | When a worker is free: `DONE` is a claim, verified before freeing | [03l](specs/03l-goal-lifecycle-and-verification.md), [03h](specs/03h-goal-phases-in-depth.md) |
-| Work item stages, goal phases, routines | [03b](specs/03b-usage-and-sync.md), [03l](specs/03l-goal-lifecycle-and-verification.md), [03i](specs/03i-routines.md) |
+| Work item stages, goal phases, routines | [03m](specs/03m-work-source-and-code-host-sync.md), [03l](specs/03l-goal-lifecycle-and-verification.md), [03i](specs/03i-routines.md) |
 | Reliability: nudges, cooldown, review-loop cap, preflight, failed starts | [03h](specs/03h-goal-phases-in-depth.md) |
 | The dashboard views | [ui-contract-map](specs/ui-contract-map.md), [05](specs/05-insights.md), [05b](specs/05b-observability.md) |
-| Scheduling by weekly usage, reading usage | [03b](specs/03b-usage-and-sync.md) |
+| Scheduling by weekly or monthly usage, reading usage | [03b](specs/03b-usage-and-sync.md) |
 | Dispatch rules (who may start what, where) | [03c](specs/03c-goals.md) |
 | Safety rails: typed commands, typing gates, approvals, trust, scopes | [01e](specs/01e-security-and-privacy.md), [02d](specs/02d-hub-authz.md), [02g](specs/02g-agent-security.md), [03j](specs/03j-provider-sync-and-trust.md) |
 | Deployment, the `fleet` CLI, configuration | [02j](specs/02j-hub-runtime.md), [02k](specs/02k-v1-surface-and-cli.md), [02m](specs/02m-hub-api-actions-and-audit.md) |

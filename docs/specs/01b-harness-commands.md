@@ -109,7 +109,25 @@ no tmux pane and is out of scope.
   its own folder. Hooks: [01d](01d-goal-hooks.md#cursor-hooks-probe-2026-10-05).
 - **Not probed:** `/goal` subcommands, pause and resume (item 0.21), account
   identity (0.22), permission prompts under each approval mode, and what probing
-  costs (0.8).
+  costs (0.8). For the monthly budget ([03b](03b-usage-and-sync.md#monthly-windows-cursor),
+  "Monthly windows"), row 30 settles these from probes or Cursor's docs, never
+  by guessing:
+  1. Which pool (Included, Auto, API) a model draws from: `/usage` before and
+     after real Auto work and named-model work, plus Cursor's docs. Until then
+     a Cursor goal needs all three.
+  2. Whether all three percentages drop at the shown date (watch the Nov 4,
+     2026 reset).
+  3. The exact moment and timezone of the reset.
+  4. Whether Auto or API at 100 % blocks a turn, falls back to another model,
+     or bills; captured only when it happens on its own, or from Cursor's docs.
+  5. How On-Demand looks when it is on, and on other plans.
+  6. Whether running `/usage` costs quota (item 0.8).
+  7. Whether the monthly reset always falls on the same day of the month (the
+     hub's seen-window check catches it from the second month).
+
+  Never: guess what Included, Auto and API mean; use 7 days for a month;
+  auto-dispatch with On-Demand on or not shown; use up the plan to see 100 %;
+  read `~/.cursor/cli-config.json`.
 
 ## GitHub Copilot (later)
 

@@ -1,6 +1,6 @@
 // fleet.integration.v1 sync vocabulary: what every provider call carries so
 // the hub can poll cheaply, back off correctly and tell an access problem
-// from an outage (03b W4). The hub owns all of this state; the adapter only
+// from an outage (03m W4). The hub owns all of this state; the adapter only
 // reads it from requests and reports it in responses.
 syntax = "proto3";
 
@@ -49,7 +49,7 @@ enum RateLimitKind {
 }
 
 // RateLimitState is one budget as the provider last reported it. The hub
-// stores it (03b `rate_limit_state{integration, kind, remaining, reset_time}`)
+// stores it (03m `rate_limit_state{integration, kind, remaining, reset_time}`)
 // and slows or stops polling from it; adapters never sleep on their own.
 message RateLimitState {
   RateLimitKind kind = 1;

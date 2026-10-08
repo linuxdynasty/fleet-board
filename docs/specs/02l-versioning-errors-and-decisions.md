@@ -192,8 +192,8 @@ fails when it is out of date:
 | 548 | `NO_FIT_MACHINE` | No machine is online, undrained, fit, signed in with push access, holding a checkout and below its slots. metadata names what the best machine lacked. |
 | 549 | `CONSENT_EMPTY` | repo consent intersected with account consent is empty, so the goal could do nothing but edit files. |
 | 550 | `ACCOUNT_PACING_BLOCKED` | The account's pacing state keeps new goals off it (RESERVE, SHORT_LIMIT, AHEAD past the line); metadata["pacing_state"] and ["bucket"]. |
-| 551 | `ACCOUNT_USAGE_UNKNOWN` | The account's reading is UNKNOWN or STALE (parse failed, probe failing, older than stale_after). |
-| 552 | `ACCOUNT_NOT_DISPATCHABLE` | The account is never auto-dispatched: interactive-only, a dollar cap, or an OpenCode session on an Anthropic subscription; metadata["cause"]. |
+| 551 | `ACCOUNT_USAGE_UNKNOWN` | The account's reading is UNKNOWN or STALE (parse failed, probe failing, older than stale_after, a monthly bucket whose window is unknown); metadata["cause"] (window_unknown for the monthly case). |
+| 552 | `ACCOUNT_NOT_DISPATCHABLE` | The account is never auto-dispatched: interactive-only, a dollar cap, an OpenCode session on an Anthropic subscription, or billing past the plan on or not shown; metadata["cause"]. |
 | 553 | `MACHINE_UNFIT` | The machine carries a durable unfit marker for this harness or repo; metadata["agent_reason"] is the agent's reason. |
 | 554 | `AUTO_DISPATCH_OFF` | HubSettings.auto_dispatch (or the repo's) is off: only manual dispatch. |
 | 555 | `NO_READY_ITEMS` | Explanation only: no work item is READY for the repo or fleet. |

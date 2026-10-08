@@ -1,7 +1,7 @@
 # 03j. Provider interface in use: queries, polling state, errors, trust
 
 - Part of: [03-workflows.md](03-workflows.md); extends W4 in
-  [03b](03b-usage-and-sync.md) and the verifier in W6 ([03l](03l-goal-lifecycle-and-verification.md))
+  [03m](03m-work-source-and-code-host-sync.md) and the verifier in W6 ([03l](03l-goal-lifecycle-and-verification.md))
 - Contract: [`api/fleet/integration/v1/`](../../api/fleet/integration/v1/)
   (`integration.proto` capabilities, `model.proto`, `sync.proto`,
   `service.proto`) and [`trusted_gate.proto`](../../api/fleet/hub/v1/trusted_gate.proto)
@@ -63,7 +63,7 @@ GitHub mapping for the first adapter: `review_decision` from
 - `since` is what the last **complete** round returned in `next_since`; the
   hub never builds one from its own clock. A time-only provider returns a
   timestamp, widened by a small overlap inside the adapter; the hub's
-  `update_time` guard (03b, "Ordering") drops the repeats. A provider with
+  `update_time` guard (03m, "Ordering") drops the repeats. A provider with
   a real cursor returns an opaque string.
 - `validators` belong to one query and one page: the hub stores them in
   `sync_cursors{integration, resource, page, etag, last_modified_time, since}`
@@ -173,6 +173,6 @@ the text whose editor was checked. The CONFIRM check that bypasses the gate
 | Failure | What happens |
 |---|---|
 | Adapter returns `not_modified` with no validators sent | Treated as a protocol error: logged, validators dropped, full poll |
-| `meta.provider_time` differs from the hub clock by over 5 min | Logged `sync.provider_skew`; provider timestamps stay untrusted ordering evidence (03b) |
+| `meta.provider_time` differs from the hub clock by over 5 min | Logged `sync.provider_skew`; provider timestamps stay untrusted ordering evidence (03m) |
 | Adapter lacks a capability the integration is configured for (upgrade) | `DEGRADED`, `CAPABILITY_MISSING`; auto-dispatch for it stops |
 | `max_batch_size = 0` | The verifier sends one branch per call; the 60 s loop widens its interval accordingly |

@@ -1,5 +1,5 @@
 // fleet.hub.v1 work: the hub's mirrors of work items and change requests
-// (03b W4) with the hub's own stage and goal links, and the configured
+// (03m W4) with the hub's own stage and goal links, and the configured
 // integrations. The provider data is the provider-neutral model of
 // fleet.integration.v1, embedded unchanged. The hub adds its own verdicts on
 // top: stage, the trusted-issues gate (trusted_gate.proto) and integration
@@ -19,7 +19,7 @@ import "google/protobuf/duration.proto";
 import "google/protobuf/field_mask.proto";
 import "google/protobuf/timestamp.proto";
 
-// WorkStage is the hub-owned stage of a work item (03b state machine).
+// WorkStage is the hub-owned stage of a work item (03m state machine).
 enum WorkStage {
   WORK_STAGE_UNSPECIFIED = 0;
   // Mirrored and open, not yet evaluated.

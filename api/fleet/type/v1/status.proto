@@ -320,10 +320,12 @@ enum ReasonCode {
   // AHEAD past the line); metadata["pacing_state"] and ["bucket"].
   REASON_CODE_ACCOUNT_PACING_BLOCKED = 550;
   // The account's reading is UNKNOWN or STALE (parse failed, probe failing,
-  // older than stale_after).
+  // older than stale_after, a monthly bucket whose window is unknown);
+  // metadata["cause"] (window_unknown for the monthly case).
   REASON_CODE_ACCOUNT_USAGE_UNKNOWN = 551;
-  // The account is never auto-dispatched: interactive-only, a dollar cap, or
-  // an OpenCode session on an Anthropic subscription; metadata["cause"].
+  // The account is never auto-dispatched: interactive-only, a dollar cap, an
+  // OpenCode session on an Anthropic subscription, or billing past the plan
+  // on or not shown; metadata["cause"].
   REASON_CODE_ACCOUNT_NOT_DISPATCHABLE = 552;
   // The machine carries a durable unfit marker for this harness or repo;
   // metadata["agent_reason"] is the agent's reason.

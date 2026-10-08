@@ -116,12 +116,13 @@ message InsightFilter {
 }
 
 // QuotaWindow is one reset cycle of one quota bucket of one account. Only
-// buckets whose window is at least 24 hours (the weekly ones) have windows:
-// a 5-hour session bucket cannot "go to waste" in a useful sense. Quota is
-// the account's whole pool: interactive use counts as used, and `fleet_used`
-// says how much of it the fleet's goals spent.
+// buckets whose window is at least 24 hours (the weekly and monthly ones)
+// have windows: a 5-hour session bucket cannot "go to waste" in a useful
+// sense. Quota is the account's whole pool: interactive use counts as used,
+// and `fleet_used` says how much of it the fleet's goals spent.
 message QuotaWindow {
-  // The bucket key as on LimitBucket ("weekly_all", "weekly").
+  // The bucket key as on LimitBucket ("weekly_all", "weekly",
+  // "monthly_included").
   string bucket_key = 1;
   google.protobuf.Timestamp start_time = 2;
   // The reset. For the current window, the next reset.

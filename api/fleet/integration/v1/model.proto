@@ -1,6 +1,6 @@
 // fleet.integration.v1 model: the provider-neutral shapes of work items and
 // change requests (ADR 0012). The hub mirrors them unchanged (hub work.proto)
-// and computes its own verdicts from them: the trusted-issues gate (03b) from
+// and computes its own verdicts from them: the trusted-issues gate (03j) from
 // WorkItem, "done" and "approved and green" (03l W6) from ChangeRequest. A
 // provider-specific rule (branch protection, CODEOWNERS, required checks)
 // is applied inside the adapter and reported as a normalized value here, so
@@ -54,7 +54,7 @@ message Claim {
 }
 
 // Label is a tag on a work item. For the labels the hub asks evidence for
-// (the trusted label, 03b), it says who applied it and when: the provider's
+// (the trusted label, 03j), it says who applied it and when: the provider's
 // timeline, not the item's current state, is the source (GitHub
 // LABELED_EVENT, GitLab resource label events, Jira changelog; a tracker
 // whose signal is a status reports the transition into it as the label).
