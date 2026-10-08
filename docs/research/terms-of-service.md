@@ -174,14 +174,21 @@ gets no cheaper compute than a person would. What stays open: fleet-board's
 way in (typing into the screen) is not the documented one, the AUP line has no
 written exception, and forum replies do not bind Cursor. [I]
 
-**Recommendation (for the arbiter; row 30 waits for the ruling):**
-auto-dispatch on Cursor **allowed**, behind the same guards as the other
-harnesses, plus: pacing spends only included usage, never on-demand money; one
-Cursor account stays on a few machines (staff said two or three); and the
-owner asks hi@cursor.com for written confirmation, recorded here when it comes.
-Confidence: medium. The other choice, manual only until that confirmation,
-gives up spare monthly quota (it does not roll over) to remove the risk that
-the AUP line is read literally.
+**Ruling (arbiter-fleet, 2026-10-08, #101): auto-dispatch on Cursor is
+allowed**, on the same footing as Claude Code. That means the owner's own plan;
+the unmodified `cursor-agent` binary in a tmux pane the owner can see; never
+`-p`; no credential read; `auto_dispatch` off until the owner turns it on; and
+the per-account `interactive-only` mode
+([ADR 0008](../adr/0008-goal-consent-and-account-modes.md)) to keep any Cursor
+account out. One Cursor-specific limit applies: pacing spends only included
+usage, so an account whose `/usage` shows On-Demand on, or does not show it, is
+excluded from auto-dispatch (plan item 0.20, #97). Fleet-board never signs
+Cursor in anywhere, so the owner keeps each Cursor account on the few machines
+they signed it in on (staff said two or three). Written confirmation from
+Cursor (hi@cursor.com) is not needed for the owner's own use. As with every
+provider, it is needed before offering fleet-board to others (design
+implication 7). If Cursor says this use is not allowed, or its terms change to
+say so, set Cursor accounts to `interactive-only` and reopen 0.24.
 
 **Product constraint (clear):** never read `~/.cursor/cli-config.json` (it
 holds `authInfo`) or any Cursor token, and never call a Cursor endpoint; drive
@@ -217,8 +224,9 @@ consistently using 100% of quota.
 7. Before offering fleet-board to others: get written confirmation from each
    provider's support, and read Meta's subscription and Muse supplemental
    terms.
-8. Cursor: pace on included usage only and never spend on-demand money; keep
-   one Cursor account to a few machines.
+8. Cursor: pace on included usage only; an account with On-Demand on or not
+   shown is excluded from auto-dispatch (0.20). Fleet-board never signs an
+   account in, so the owner keeps each Cursor account to a few machines.
 
 ## Sources
 
