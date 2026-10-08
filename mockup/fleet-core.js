@@ -81,7 +81,7 @@ function triageItems() {
   machines.filter(m => m.policyChanged && !ui.dismissed["pol-" + m.id] && !ui.snoozed["pol-" + m.id]).forEach(m => out.push({ type: "note", id: "pol-" + m.id, kind: "policy changed", m, sev: 2, t: +m.beat,
     title: `${m.short}'s local policy file changed`, text: `It applies after the agent restarts on ${m.name}. Nothing else changes until then.`, go: "machines" }));
   systemSignals.filter(x => x.state !== "ok" && !ui.dismissed["sys-" + x.kind] && !ui.snoozed["sys-" + x.kind]).forEach(x => out.push({ type: "note", id: "sys-" + x.kind, kind: "hub health", sys: x, sev: x.state === "critical" ? 4 : 2, t: T0,
-    title: `${x.plain}: ${x.value}`, text: x.note ?? x.limits, go: "machines" }));
+    title: `${sysName(x)}: ${sysValue(x)}`, text: x.note ?? sysLimits(x), go: "machines" }));
   return out.sort((x, y) => (y.sev - x.sev) || (x.t - y.t));
 }
 

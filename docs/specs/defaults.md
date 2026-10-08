@@ -142,7 +142,7 @@ spec change. "Decided here" marks a value no earlier document gave.
 | Rate limits (hub, per principal) | read 600, write 120, per peer without credentials 30, `/metrics` 60 | per min | 02b, decided here | `rate_limits.*` config |
 | Backup | nightly `VACUUM INTO` at 03:00 hub local time; keep the last 7 nightly copies (manual copies are never pruned); checked every 1 min; catch-up at start or wake when the newest nightly copy is older than 24 h or there is none; crashed backups' temporary files removed at start once older than 1 h; a stamp more than 10 min past the clock does not count as the newest | | ADR 0014; hour and count ADR 0024; check and catch-up [02j](02j-hub-runtime.md#state-directory) | fixed |
 | Log shipping pauses below; resumes above (free disk on the hub's `logs.db` volume) | 5; 8 | GiB | [03d](03d-triage-sessions-logs.md), ADR 0024 | fixed |
-| System signal thresholds | the table in [05b](05b-observability.md) section 8 | | 05b | fixed |
+| System signal levels, holds and hysteresis | the table and the Hysteresis paragraph in [05b](05b-observability.md) section 8 | | 05b | fixed |
 | Telemetry OTLP | off; `grpc` when on | | 05b | `telemetry.*` config |
 
 ## Runtime, install and access in v1

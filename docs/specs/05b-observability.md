@@ -236,9 +236,11 @@ collector, the same id is on every log line of the flow.
 ## 8. The System health model
 
 Ten signals, evaluated by the hub every system evaluation interval ([defaults](defaults.md)) from numbers it already has
-(`hub.system.evaluate`). Each has a value, a unit, a WARNING and a CRITICAL
-threshold (the hub's defaults, not owner settings in v1) and a state. The
-signals and their latest values are `GetSystemStatus` ([READ]); the System
+(`hub.system.evaluate`). Each has one or more measures (`SystemMeasure`): a
+reading, a unit, the direction it gets worse, a WARNING and a CRITICAL level
+where it has one, and how long a level must hold (the hub's defaults, not
+owner settings in v1). Most have one (`MAIN`); `WRITER_BATCH_LAG` has three.
+Each signal also has a state. The signals and their latest values are `GetSystemStatus` ([READ]); the System
 section of the Machines view draws them; `FleetSummary.system_warnings` and
 `system_critical` drive the strip's dot.
 
@@ -260,7 +262,7 @@ sequenceDiagram
   G->>W: last_seen write, at most once a minute (defaults)
   loop every system evaluation interval
     E->>E: read agent health, outbox ages, usage reading ages, sync lag, writer queue age, watch drops, disk, backup age
-    E->>E: SystemSignal{kind, subject, state, value, unit, thresholds}, hysteresis
+    E->>E: SystemSignal{kind, subject, state, measures[]}, hysteresis
   end
   E->>W: job: raise or update TriageItem{kind SYSTEM, fingerprint system:signal:subject, SystemDetail}
   W->>F: after commit: Watch TRIAGE and FLEET_SUMMARY changes, MACHINES for the volatile telemetry
@@ -273,23 +275,30 @@ sequenceDiagram
 | `AGENT_CONNECTED` | machine | seconds since the last heartbeat. Only machines labelled `always-on` or with a live goal count: a laptop that sleeps is not a fault | offline 10 min | offline 1 h | WARNING |
 | `USAGE_PROBE_FRESHNESS` | account | age of the last good reading, FLEET-mode accounts | 3 probe intervals (30 min by default): the reading is STALE and the account stops dispatching (03b `stale_after`) | 2 h stale | WARNING |
 | `INTEGRATION_SYNC_LAG` | integration | `IntegrationStatus.sync_lag` | half of `max_sync_lag` (5 min) | `max_sync_lag` (10 min, dispatch pauses) | CRITICAL |
-| `WRITER_BATCH_LAG` | hub | p95 over one minute of the oldest message's wait, and of the commit time | wait over 1 s, or commit over 250 ms | wait over 5 s, or the ingest channel full for 30 s | CRITICAL |
+| `WRITER_BATCH_LAG` | hub | three measures: `MAIN`, the oldest message's wait, and `WRITER_COMMIT_TIME`, the batch commit time (each p95 over one minute); `WRITER_QUEUE_FULL`, how long the writer queue has been full without a break (0 when it is not full) | wait over 1 s, or commit over 250 ms | wait over 5 s, or `WRITER_QUEUE_FULL` over 30 s; commit time has no CRITICAL level | CRITICAL |
 | `OUTBOX_BACKLOG` | machine | age of the oldest pending command for a machine that has been online 2 min | 2 min | 10 min | CRITICAL |
 | `WATCH_DROPS` | hub | streams ended `RESYNC_REQUIRED / FELL_BEHIND` in 10 min | 3 | 20 | CRITICAL |
-| `LOG_STORE_USAGE` | hub | live bytes of `logs.db` (the retention measure of [04](04-technology-review.md) Q6; freed pages not yet vacuumed do not count) over the `log_size_cap_bytes` in force, percent. Sitting at the cap is the normal steady state: retention prunes the oldest ended sessions to stay under it, so up to 100 % is OK. Over 100 % means the prune is behind or blocked (only sessions with an open stream are left, or a prune fails). **It reads UNKNOWN until the logs row of the plan lands**: before then `logs.db` does not exist, so it shows as unknown and raises nothing | over 100 % for 10 min (normal for a few minutes after the cap is lowered) | over 100 % for 1 h (the cap is not being held: raise it or turn capture off for long-running panes; `log.prune_blocked` says why) | CRITICAL |
-| `DISK_FREE` | hub | free bytes on the volume of `state.db` | under 10 GiB | under 2 GiB, back to WARNING above 3 GiB | WARNING |
+| `LOG_STORE_USAGE` | hub | live bytes of `logs.db` (the retention measure of [04](04-technology-review.md) Q6; freed pages not yet vacuumed do not count) over the `log_size_cap_bytes` in force, percent. Sitting at the cap is the normal steady state: retention prunes the oldest ended sessions to stay under it, so up to 100 % is OK. Over 100 % means the prune is behind or blocked (only sessions with an open stream are left, or a prune fails). **It reads UNKNOWN until the logs row of the plan lands**: before then `logs.db` does not exist, so it shows as unknown and raises nothing. Both levels 100 %; `warning_hold` 10 min, `critical_hold` 1 h | over 100 % for 10 min (normal for a few minutes after the cap is lowered) | over 100 % for 1 h (the cap is not being held: raise it or turn capture off for long-running panes; `log.prune_blocked` says why) | CRITICAL |
+| `DISK_FREE` | hub | free bytes on the volume of `state.db`; direction `BELOW`; `critical_clear_threshold` 3 GiB | under 10 GiB | under 2 GiB, back to WARNING above 3 GiB | WARNING |
 | `CLOCK_SKEW` | machine | absolute `MachineTelemetry.clock_skew` | 5 min | 15 min (`clock_untrusted`) | CRITICAL |
 | `BACKUP_AGE` | hub | age of the newest backup in `backups/`, nightly or manual (`fleet_hub_backup_age_seconds`); unknown while there is none | 36 h | 7 days | WARNING |
 
 **What a signal raises.** One triage item of the new kind
-`TRIAGE_KIND_SYSTEM`, with `SystemDetail{signal, state, value, unit,
-threshold}`. It is **deduplicated** by fingerprint
+`TRIAGE_KIND_SYSTEM`, with `SystemDetail{signal, state, measure}`. It is **deduplicated** by fingerprint
 `system:<signal>:<subject>`, so a flapping signal is one item whose severity
 changes in place, never a new one (03f: unique open fingerprint). Severity
 follows the state: WARNING raises `SEVERITY_WARNING`, CRITICAL raises
 `SEVERITY_ACTION`, except `DISK_FREE` and `WRITER_BATCH_LAG` at CRITICAL, which
 can lose work and raise `SEVERITY_CRITICAL`. UNKNOWN (no reading yet, a source
 not enabled) is shown as unknown and raises nothing.
+
+**Judging a signal.** A measure with a value reaches a level when the value
+is past that level's threshold (over it for direction `ABOVE`, under it for
+`BELOW`) and has stayed past it for that level's hold (`warning_hold`,
+`critical_hold`; unset means at once). Leaving CRITICAL needs the value back
+past `critical_clear_threshold` when it is set. The signal takes the worst
+state of its measures, then the hysteresis below. The signal is UNKNOWN when
+`MAIN` has no value; any other measure without a value does not count.
 
 **Hysteresis.** A signal needs two consecutive evaluations in a worse
 state to leave OK, and 5 minutes in OK to return, when the item retires. An

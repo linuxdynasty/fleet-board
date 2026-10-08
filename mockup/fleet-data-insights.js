@@ -44,17 +44,25 @@ const suggestions = [
 ];
 
 // SystemSignal (05b section 8), sample values. state: ok | warning | critical | unknown.
+// measures[] is SystemMeasure: kind, value (unit; null = not known), unit, direction, warn and crit (the thresholds;
+// absent = no such level), warnHold and critHold (seconds; absent = at once), critClear. The levels and holds are the
+// real 05b ones; the readings are sample. Every word shown is built from these fields in view-machines.js.
+const GiB = 2 ** 30;
 const systemSignals = [
-  { kind: "WRITER_BATCH_LAG", subject: "hub", plain: "Hub writer keeping up", value: "wait 0.04 s · commit 18 ms", state: "ok", limits: "warn 1 s · critical 5 s" },
-  { kind: "OUTBOX_BACKLOG", subject: "hub", plain: "Commands waiting for online machines", value: "oldest 0 s", state: "ok", limits: "warn 2 min · critical 10 min" },
-  { kind: "WATCH_DROPS", subject: "hub", plain: "Browser streams that fell behind", value: "0 in 10 min · 2 open", state: "ok", limits: "warn 3 · critical 20" },
-  { kind: "INTEGRATION_SYNC_LAG", subject: "github-com", plain: "GitHub sync", value: "42 s behind", state: "ok", limits: "warn 5 min · critical 10 min" },
-  { kind: "LOG_STORE_USAGE", subject: "hub", plain: "Session log store", value: "3 % of 50 GiB", state: "ok", limits: "over 100 % for 10 min · for 1 h" },
-  { kind: "DISK_FREE", subject: "hub", plain: "Disk free for the hub's database", value: "212 GiB", state: "ok", limits: "warn 10 GiB · critical 2 GiB" },
-  { kind: "BACKUP_AGE", subject: "hub", plain: "Last backup", value: "41 h ago", state: "warning", limits: "warn 36 h · critical 7 days", note: "the nightly `fleetd backup` has not run since Wednesday" },
-  { kind: "USAGE_PROBE_FRESHNESS", subject: "all accounts", plain: "Usage readings fresh", value: "oldest 12 min", state: "ok", limits: "warn 30 min · critical 2 h" },
-  { kind: "AGENT_CONNECTED", subject: "always-on machines", plain: "Always-on machines connected", value: "omarchy 4 s · allen 3 s", state: "ok", limits: "warn 10 min · critical 1 h" },
-  { kind: "CLOCK_SKEW", subject: "machines", plain: "Machine clocks agree with the hub", value: "worst 18 s (omarchy)", state: "ok", limits: "warn 5 min · critical 15 min" },
+  { kind: "WRITER_BATCH_LAG", subject: "hub", state: "ok", measures: [
+    { kind: "MAIN", value: 0.04, unit: "SECONDS", direction: "ABOVE", warn: 1, crit: 5 },
+    { kind: "WRITER_COMMIT_TIME", value: 0.018, unit: "SECONDS", direction: "ABOVE", warn: 0.25 },
+    { kind: "WRITER_QUEUE_FULL", value: 0, unit: "SECONDS", direction: "ABOVE", crit: 30 }] },
+  { kind: "OUTBOX_BACKLOG", subject: "hub", state: "ok", measures: [{ kind: "MAIN", value: 0, unit: "SECONDS", direction: "ABOVE", warn: 120, crit: 600 }] },
+  { kind: "WATCH_DROPS", subject: "hub", state: "ok", measures: [{ kind: "MAIN", value: 0, unit: "COUNT", direction: "ABOVE", warn: 3, crit: 20 }] },
+  { kind: "INTEGRATION_SYNC_LAG", subject: "github-com", state: "ok", measures: [{ kind: "MAIN", value: 42, unit: "SECONDS", direction: "ABOVE", warn: 300, crit: 600 }] },
+  { kind: "LOG_STORE_USAGE", subject: "hub", state: "ok", measures: [{ kind: "MAIN", value: 3, unit: "PERCENT", direction: "ABOVE", warn: 100, crit: 100, warnHold: 600, critHold: 3600 }] },
+  { kind: "DISK_FREE", subject: "hub", state: "ok", measures: [{ kind: "MAIN", value: 212 * GiB, unit: "BYTES", direction: "BELOW", warn: 10 * GiB, crit: 2 * GiB, critClear: 3 * GiB }] },
+  { kind: "BACKUP_AGE", subject: "hub", state: "warning", note: "the nightly `fleetd backup` has not run since Wednesday",
+    measures: [{ kind: "MAIN", value: 41 * 3600, unit: "SECONDS", direction: "ABOVE", warn: 36 * 3600, crit: 7 * 86400 }] },
+  { kind: "USAGE_PROBE_FRESHNESS", subject: "all accounts", state: "ok", measures: [{ kind: "MAIN", value: 720, unit: "SECONDS", direction: "ABOVE", warn: 1800, crit: 7200 }] },
+  { kind: "AGENT_CONNECTED", subject: "always-on machines", state: "ok", measures: [{ kind: "MAIN", value: 4, unit: "SECONDS", direction: "ABOVE", warn: 600, crit: 3600 }] },
+  { kind: "CLOCK_SKEW", subject: "machines", state: "ok", measures: [{ kind: "MAIN", value: 18, unit: "SECONDS", direction: "ABOVE", warn: 300, crit: 900 }] },
 ];
 // MachineAgentHealth per machine (sample): ring events, ring MiB, unacked results, reconnects since start, RSS MiB.
 const agentHealth = { mbp: [1204, 0.9, 0, 1, 38], omarchy: [980, 0.7, 0, 0, 41], allen: [2210, 1.6, 0, 2, 44], m124: [310, 0.2, 1, 5, 36] };
