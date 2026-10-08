@@ -34,7 +34,10 @@ enum SystemSignalKind {
   // Hub: Watch streams ended RESYNC_REQUIRED / FELL_BEHIND per 10 minutes.
   // Count.
   SYSTEM_SIGNAL_KIND_WATCH_DROPS = 6;
-  // Hub: logs.db size as a share of log_size_cap_bytes. Percent.
+  // Hub: live bytes of logs.db ((page_count - freelist_count) x page_size,
+  // the measure retention keeps under the cap) as a share of
+  // log_size_cap_bytes. Percent. At or under 100 is the normal steady state;
+  // WARNING and CRITICAL mean it has stayed over 100 for the times in 05b.
   SYSTEM_SIGNAL_KIND_LOG_STORE_USAGE = 7;
   // Hub: free bytes on the volume holding state.db. Bytes.
   SYSTEM_SIGNAL_KIND_DISK_FREE = 8;

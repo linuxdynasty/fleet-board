@@ -276,7 +276,7 @@ sequenceDiagram
 | `WRITER_BATCH_LAG` | hub | p95 over one minute of the oldest message's wait, and of the commit time | wait over 1 s, or commit over 250 ms | wait over 5 s, or the ingest channel full for 30 s | CRITICAL |
 | `OUTBOX_BACKLOG` | machine | age of the oldest pending command for a machine that has been online 2 min | 2 min | 10 min | CRITICAL |
 | `WATCH_DROPS` | hub | streams ended `RESYNC_REQUIRED / FELL_BEHIND` in 10 min | 3 | 20 | CRITICAL |
-| `LOG_STORE_USAGE` | hub | `logs.db` size over `log_size_cap_bytes`, percent. **It reads UNKNOWN until the logs row of the plan lands**: before then `logs.db` does not exist, so it shows as unknown and raises nothing | 80 | 95 (oldest sessions are being pruned) | CRITICAL |
+| `LOG_STORE_USAGE` | hub | live bytes of `logs.db` (the retention measure of [04](04-technology-review.md) Q6; freed pages not yet vacuumed do not count) over the `log_size_cap_bytes` in force, percent. Sitting at the cap is the normal steady state: retention prunes the oldest ended sessions to stay under it, so up to 100 % is OK. Over 100 % means the prune is behind or blocked (only sessions with an open stream are left, or a prune fails). **It reads UNKNOWN until the logs row of the plan lands**: before then `logs.db` does not exist, so it shows as unknown and raises nothing | over 100 % for 10 min (normal for a few minutes after the cap is lowered) | over 100 % for 1 h (the cap is not being held: raise it or turn capture off for long-running panes; `log.prune_blocked` says why) | CRITICAL |
 | `DISK_FREE` | hub | free bytes on the volume of `state.db` | under 10 GiB | under 2 GiB, back to WARNING above 3 GiB | WARNING |
 | `CLOCK_SKEW` | machine | absolute `MachineTelemetry.clock_skew` | 5 min | 15 min (`clock_untrusted`) | CRITICAL |
 | `BACKUP_AGE` | hub | age of the newest backup in `backups/`, nightly or manual (`fleet_hub_backup_age_seconds`); unknown while there is none | 36 h | 7 days | WARNING |
@@ -299,7 +299,9 @@ owner may snooze a SYSTEM item like any other.
 `USAGE_PARSE_FAILED`, `PARSER_UNSUPPORTED` or `PARSER_DEGRADED` is open for the
 account (those say why). `DISK_FREE` at CRITICAL coexists with `log_disk_low`:
 the first says the hub may stop writing, the second that log shipping is
-paused (03d W9). `AGENT_CONNECTED` does not duplicate the goal items a
+paused (03d W9). `LOG_STORE_USAGE` is about the cap, not the disk: it
+coexists with `DISK_FREE` and `log_disk_low`, and a full disk does not raise
+it. `AGENT_CONNECTED` does not duplicate the goal items a
 vanished pane raises (`PANE_LOST`, 03h); it explains the machine.
 
 **Where it shows.** The Machines view's **System** section: a hub row (version,

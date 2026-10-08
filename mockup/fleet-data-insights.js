@@ -49,7 +49,7 @@ const systemSignals = [
   { kind: "OUTBOX_BACKLOG", subject: "hub", plain: "Commands waiting for online machines", value: "oldest 0 s", state: "ok", limits: "warn 2 min · critical 10 min" },
   { kind: "WATCH_DROPS", subject: "hub", plain: "Browser streams that fell behind", value: "0 in 10 min · 2 open", state: "ok", limits: "warn 3 · critical 20" },
   { kind: "INTEGRATION_SYNC_LAG", subject: "github-com", plain: "GitHub sync", value: "42 s behind", state: "ok", limits: "warn 5 min · critical 10 min" },
-  { kind: "LOG_STORE_USAGE", subject: "hub", plain: "Session log store", value: "3 % of 50 GiB", state: "ok", limits: "warn 80 % · critical 95 %" },
+  { kind: "LOG_STORE_USAGE", subject: "hub", plain: "Session log store", value: "3 % of 50 GiB", state: "ok", limits: "over 100 % for 10 min · for 1 h" },
   { kind: "DISK_FREE", subject: "hub", plain: "Disk free for the hub's database", value: "212 GiB", state: "ok", limits: "warn 10 GiB · critical 2 GiB" },
   { kind: "BACKUP_AGE", subject: "hub", plain: "Last backup", value: "41 h ago", state: "warning", limits: "warn 36 h · critical 7 days", note: "the nightly `fleetd backup` has not run since Wednesday" },
   { kind: "USAGE_PROBE_FRESHNESS", subject: "all accounts", plain: "Usage readings fresh", value: "oldest 12 min", state: "ok", limits: "warn 30 min · critical 2 h" },

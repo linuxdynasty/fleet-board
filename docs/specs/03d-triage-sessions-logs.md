@@ -462,6 +462,7 @@ stateDiagram-v2
 | Provider error / prompts | Captured as output; no special handling |
 | Work tracker / code host | Not involved |
 | Retention prunes a session with an open stream | Never: only `FINAL` sessions older than the cursor are pruned |
+| Over the cap with only open streams left, or a prune transaction fails | The store stays over the cap and keeps committing (output is never dropped); `log.prune_blocked{reason}` (`no_final_session` or `error` with `err_kind`) once per episode; `LOG_STORE_USAGE` (05b) warns, then raises an item if it lasts |
 
 ### Telemetry
 
@@ -475,7 +476,8 @@ stateDiagram-v2
 - Spans: `agent.log.flush{session}`, `hub.log.batch` (attributes: chunks,
   bytes, streams), `hub.log.replay{session}`.
 - Logs: `log.gap{session, machine, bytes_lost}`, `log.paused{machine, reason}`,
-  `log.resumed`, `log.pruned{session, bytes}`, `log.hole_refused{session, offset, end}`.
+  `log.resumed`, `log.pruned{session, bytes}`, `log.prune_blocked{reason}`,
+  `log.hole_refused{session, offset, end}`.
 
 At 3 AM: "are logs still arriving?" → `fleet_hub_log_ack_latency_seconds` and
 `fleet_agent_log_unacked_bytes`; "why is there a gap in this session?" →

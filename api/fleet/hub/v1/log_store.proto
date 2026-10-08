@@ -141,7 +141,9 @@ message SearchSessionLogsResponse {
 // and `fleet doctor`. The caps are HubSettings.log_size_cap_bytes and
 // log_retention.
 message LogStoreStatus {
-  // Compressed bytes on disk (logs.db: chunk rows and their index).
+  // Live bytes of logs.db, (page_count - freelist_count) x page_size: the
+  // measure retention keeps under cap_bytes. Pages freed by a prune and not
+  // yet vacuumed are not counted, so the file on disk can be larger.
   uint64 used_bytes = 1;
   // The cap in force (setting or the 50 GiB default).
   uint64 cap_bytes = 2;
