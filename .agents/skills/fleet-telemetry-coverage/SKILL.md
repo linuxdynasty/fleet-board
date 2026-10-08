@@ -9,7 +9,7 @@ OpenTelemetry traces and metrics exist from the first commit in hub and agent
 ([ADR 0001](../../../docs/adr/0001-system-architecture.md)). The naming rules
 are the conventions block of
 [03-workflows.md](../../../docs/specs/03-workflows.md#conventions); each
-workflow in 03 and 03b-03e lists the signals it needs under "Telemetry".
+workflow in 03 and 03b-03m lists the signals it needs under "Telemetry".
 Treat those lists as the minimum for the code that implements the workflow.
 
 ## Naming

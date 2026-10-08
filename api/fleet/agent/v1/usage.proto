@@ -39,6 +39,9 @@ message UsageReading {
   // Harness-reported credit balance when shown (Codex "credits").
   // Untrusted text; empty when not shown.
   string credits_text = 14;
+  // Whether use past the plan is billed, as the usage screen shows it
+  // (Cursor "On-Demand"). UNSPECIFIED for harnesses that do not show it.
+  fleet.type.v1.OverageBilling overage_billing = 15;
 }
 
 // [CAP C2]
@@ -66,8 +69,9 @@ message AccountIdentity {
   google.protobuf.Timestamp observed_time = 10;
   // Parser version used for the status screen.
   string parser_version = 11;
-  // Budget kind the agent can infer from the login type (OAuth -> weekly
-  // percent, API key -> dollar cap). The hub may override.
+  // Budget kind the agent can infer from the login type (a subscription
+  // sign-in -> subscription percent, API key -> dollar cap). The hub may
+  // override.
   fleet.type.v1.BudgetKind budget_kind = 12;
   // Harness profile the identity was read under; empty = the default.
   string profile = 13;

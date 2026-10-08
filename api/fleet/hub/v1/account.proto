@@ -69,6 +69,9 @@ message AccountUsage {
   string harness_version = 8;
   string parser_version = 9;
   fleet.type.v1.MachineId read_on = 10;
+  // Whether use past the plan is billed (Cursor "On-Demand"). ON or UNKNOWN
+  // keeps the account out of auto-dispatch (EXCLUDED, 03b step 6).
+  fleet.type.v1.OverageBilling overage_billing = 11;
 }
 
 // AccountPacing is the scheduler's output for the strip and Work view.

@@ -81,7 +81,9 @@ spec change. "Decided here" marks a value no earlier document gave.
 | Account `consent` (a new account starts with it) and `HubSettings.default_consent` | push, pr-open, merge | | ADR 0008 | setting |
 | Pacing line adjustment | ahead over 5 points: one fewer; over 10: none; behind by over 5: one more | points | 03b | fixed |
 | `base_cap` (concurrent goals per account) | 2, the same for every harness; nothing is learned | goals | 03b, decided here | fixed |
-| Last hours before the weekly reset in which the line is ignored | 24 | h | 03b | fixed |
+| Last hours before the reset of a weekly or monthly bucket in which the line is ignored | 24 | h | 03b | fixed |
+| A monthly window the hub saw between two resets is used only when it is | 28 d to 31 d 1 h | d | 03b, "Monthly windows" | fixed |
+| A reset shown as a date with no time ("Resets Nov 4") means | the end of that date (00:00 the next day), machine timezone | | 03b, "Monthly windows"; 01 D2 | fixed |
 | Short-window speed limit | 95 | percent | 03b | fixed |
 | `auto_pause_at_reserve` | false | | 03b | `HubSettings` |
 | Insights: spare quota worth a report run | 5 points unused | points | [05](05-insights.md) | fixed |
@@ -94,7 +96,7 @@ spec change. "Decided here" marks a value no earlier document gave.
 | `HubSettings.auto_dispatch` | false (the owner turns it on once owner decision 20 of ADR 0024 is made, and for a repo without eshu's hooks once decision 21 is made too: ADR 0025; manual dispatch works once the dispatch rows exist, and they wait on decision 20) | | 03c, decided here | `HubSettings`, per-repo override |
 | Scheduler pass | 30 s tick plus wakeups; at most 1 dispatch per account and per machine per pass | s | [03f](03f-hub-internals.md), 03c | fixed |
 | `max_parallel_goals_per_repo` | 3 | goals | 03c | `HubSettings`, per-repo override |
-| `max_sync_lag` | 10 | min | 03b | `timing.max_sync_lag` config |
+| `max_sync_lag` | 10 | min | 03m | `timing.max_sync_lag` config |
 | `verify_grace` | 10 | min | 03c | `timing.verify_grace` config |
 | Review-loop cap | 3 rounds beyond the baseline | rounds | 03c | fixed |
 | No-progress cooldown | after 2 runs without progress: min(30 min, 2 min x 2^(n-2)) | | 03c | fixed |
@@ -112,8 +114,8 @@ spec change. "Decided here" marks a value no earlier document gave.
 
 | Name | Value | Unit | Owner | Kind |
 |---|---|---|---|---|
-| Work item poll; change request poll | 60 s per repo; 60 s | s | 03b | fixed |
-| Claim re-check of a candidate item | 5 | min | 03b | fixed |
+| Work item poll; change request poll | 60 s per repo; 60 s | s | 03m | fixed |
+| Claim re-check of a candidate item | 5 | min | 03m | fixed |
 | Full poll without validators | 30 | min | 03b | fixed |
 | Trusted label | `agent-ready` | | [03j](03j-provider-sync-and-trust.md) | `HubSettings.trusted_gate` |
 | `triage_expiry` (`TriageItem.expire_time`) | 7 | days | 03d | `HubSettings` |

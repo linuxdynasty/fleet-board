@@ -48,7 +48,7 @@ const goalHooks = {
   m124: { claude: hk({ trust: "NOT_REQUIRED", config_path: CLAUDE_HOOKS }), codex: hk({ installed: false, verified: false, hook_version: "", hook_hash: "", config_path: CODEX_HOOKS, why: "codex 0.157.1 is older than the supported versions; update Codex" }), muse: hk({ config_path: MUSE_HOOKS, hook_hash: "b41c07" }) },
 };
 
-// Subscription accounts (BUDGET_KIND_WEEKLY_PERCENT). `shown` mirrors the harness's own screen (D2 "as shown");
+// Subscription accounts (BUDGET_KIND_SUBSCRIPTION_PERCENT). `shown` mirrors the harness's own screen (D2 "as shown");
 // `buckets` is the standardized half the scheduler uses. Emails are sample and hidden unless settings.showEmails.
 const accounts = [
   { id: "claude-max", harness: "claude", label: "Claude Code", plan: "Claude Max account", email: "owner@example.com", reserve: 25, source: "/usage", sourceKind: "probe",

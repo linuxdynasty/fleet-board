@@ -19,7 +19,7 @@ operator uses at 3 AM. Split across files to stay under 500 lines each:
 | File | Workflows |
 |---|---|
 | this file | conventions, **W1** enrollment and first connect, **W2** reconnect |
-| [03b-usage-and-sync.md](03b-usage-and-sync.md) | **W3** usage probing and pacing, **W4** work-source and code-host sync |
+| [03b-usage-and-sync.md](03b-usage-and-sync.md) | **W3** usage probing and pacing |
 | [03c-goals.md](03c-goals.md) | **W5** dispatch a goal |
 | [03d-triage-sessions-logs.md](03d-triage-sessions-logs.md) | **W7** triage items, **W8** developer sessions, **W9** session logs |
 | [03e-settings-and-drift.md](03e-settings-and-drift.md) | **W10** settings and policy, **W11** harness upgrade drift |
@@ -30,6 +30,7 @@ operator uses at 3 AM. Split across files to stay under 500 lines each:
 | [03j-provider-sync-and-trust.md](03j-provider-sync-and-trust.md) | the provider interface in use: queries, cursors and validators, rate limits, typed errors, the trusted-issues gate |
 | [03k-observed-goals.md](03k-observed-goals.md) | goals the owner starts by hand (observed goals): what the hub stores and shows, and what it never does |
 | [03l-goal-lifecycle-and-verification.md](03l-goal-lifecycle-and-verification.md) | **W6** goal lifecycle and verification |
+| [03m-work-source-and-code-host-sync.md](03m-work-source-and-code-host-sync.md) | **W4** work-source and code-host sync |
 
 ## Conventions
 

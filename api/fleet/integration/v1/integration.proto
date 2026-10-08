@@ -11,7 +11,7 @@
 // the RPCs.
 //
 // The hub owns the polling loop: cursors, ETags, rate-limit state, back-off
-// and health live in the hub's store (03b W4). An adapter keeps no sync
+// and health live in the hub's store (03m W4). An adapter keeps no sync
 // state of its own, so it can be replaced by a plugin and restarted at will;
 // each call carries what the adapter needs and each response carries what the
 // hub must remember (ADR 0019, 31).

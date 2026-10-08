@@ -59,9 +59,9 @@ writer (03f). No SQL here; keys and contents are what matter.
 
 | Table | Key | Holds | Rows per day |
 |---|---|---|---|
-| `insight_goal_daily` | `(day, harness, model, repo, account, machine)`, `day` = UTC day of the goal's `end_time` | counts: ended, ran, merged, cleared, cancelled, never_ran, ever_stuck; sums: nudges, restarts, review_rounds, quota points (total, unmerged) per account's weekly bucket; 16 time-to-merge histogram counters | at most one per distinct combination: below the goals ended that day |
+| `insight_goal_daily` | `(day, harness, model, repo, account, machine)`, `day` = UTC day of the goal's `end_time` | counts: ended, ran, merged, cleared, cancelled, never_ran, ever_stuck; sums: nudges, restarts, review_rounds, quota points (total, unmerged) per account's weekly or monthly bucket; 16 time-to-merge histogram counters | at most one per distinct combination: below the goals ended that day |
 | `insight_label_daily` | `(day, label, harness)` | ran, merged, histogram, quota points. Only labels matching `[a-z0-9][a-z0-9:/_-]{0,31}` after lower-casing; a goal counts under each of its labels | tens |
-| `insight_quota_window` | `(account, bucket_key, window_end_time)` | the `QuotaWindow` of `insights.proto`; written when the window closes, rewritten hourly while open | 0 to 1 per account and weekly bucket |
+| `insight_quota_window` | `(account, bucket_key, window_end_time)` | the `QuotaWindow` of `insights.proto`; written when the window closes, rewritten hourly while open | 0 to 1 per account and weekly or monthly bucket |
 | `insight_stuck_daily` | `(day, source, harness, subkey)`; `source` is prompt, condition, start failure, stuck reason, parser | the rows of `StuckInsights` as daily counts and durations | tens |
 | `insight_incident` | `(harness, provider, start_time)` | one row per provider incident (section 4) | 0 to a few |
 | `insight_routine_daily` | `(day, routine)` | runs, done, failed, skipped fires, run-time histogram, quota points | one per routine run that day |
@@ -101,7 +101,7 @@ claim is `NOT_MEASURED`.
 ## 3. Subscription efficiency
 
 Per account, per quota bucket whose window is at least 24 hours (the weekly
-ones; a 5-hour session bucket cannot "go to waste" in a useful sense), per
+and monthly ones; a 5-hour session bucket cannot "go to waste" in a useful sense), per
 reset cycle (`QuotaWindow`). The account's pool is shared with interactive
 use, so efficiency describes the subscription, and `fleet_used` says how much
 of it the fleet's goals spent.
@@ -155,7 +155,7 @@ an observed goal (03k) was not sent by the fleet, so it has no outcome here.
 | stuck rate | share of ran goals that were in STUCK at any time |
 | time to merge | `status.start_time` to the MERGED transition; p50 and p90 from the histogram, unset below 5 merged |
 | nudges, restarts, review rounds | totals over ran goals (`GoalStatus.nudges`, `restarts`, `review_rounds`); divide by `ran` for the mean |
-| quota per merged change request | points the ran goals spent (`GoalStatus.usage_consumed`) divided by `merged`. Each goal's points are on its own account's weekly bucket: comparable inside one account, and between plans only as a rough guide. `quota_points_unmerged` is the part spent by goals that did not merge |
+| quota per merged change request | points the ran goals spent (`GoalStatus.usage_consumed`) divided by `merged`. Each goal's points are on its own account's weekly or monthly bucket: comparable inside one account, and between plans only as a rough guide. `quota_points_unmerged` is the part spent by goals that did not merge |
 
 Goals still live are not counted; `goals_live` says how many there are.
 
@@ -206,7 +206,7 @@ sequenceDiagram
 1. **Trigger and guard.** Cron, default `0 7 * * 1` in the hub's timezone, and
    `RunRoutine` for a run now. The routine has `only_spare_quota`: a run
    starts only on a dispatchable subscription account (mode FLEET, a
-   `BUDGET_KIND_WEEKLY_PERCENT` account, never an API-key account and never
+   `BUDGET_KIND_SUBSCRIPTION_PERCENT` account, never an API-key account and never
    OpenCode) that is **behind pace, idle while behind, or projected to leave at
    least 5 points unused**, and where `used + expected_cost <= 100 - reserve`
    on every bucket: never into the reserve. The expected cost is the last
