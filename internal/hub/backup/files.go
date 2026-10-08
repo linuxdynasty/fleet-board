@@ -49,6 +49,25 @@ func list(dir string) ([]file, error) {
 	return out, nil
 }
 
+// aheadLimit is how far past the clock a stamp may be and still count: a
+// copy stamped further ahead was made while the clock was wrong, and
+// counting it would stop the nightly job until the clock caught up.
+const aheadLimit = 10 * time.Minute
+
+// current splits files, keeping their order, into those stamped at most
+// aheadLimit after now and those stamped further ahead.
+func current(files []file, now time.Time) (ok, ahead []file) {
+	limit := now.Add(aheadLimit)
+	for _, f := range files {
+		if f.at.After(limit) {
+			ahead = append(ahead, f)
+		} else {
+			ok = append(ok, f)
+		}
+	}
+	return ok, ahead
+}
+
 // newest is the stamp of the newest backup in files with the trigger, or of
 // either kind when trigger is empty; zero when there is none.
 func newest(files []file, trigger Trigger) time.Time {

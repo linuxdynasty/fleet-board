@@ -77,6 +77,7 @@ failure events are in section 10. The platform's own lifecycle events:
 |---|---|---|
 | `backup.completed` | info; `trigger` (`nightly`, `manual`), `bytes`, `encrypted` | the nightly job in `fleetd run` or `fleetd backup` published a copy of `state.db` in `backups/` ([02j](02j-hub-runtime.md#state-directory)) |
 | `backup.failed` | error; `trigger`, `step` (`passphrase`, `source`, `dir`, `copy`, `verify`, `encrypt`, `publish`, `cleanup`, `prune`), `err_kind` | a backup failed; nothing was published and no temporary file is left (`prune`: the copy was published, but old nightly copies could not be removed). Never a path, the passphrase or file contents |
+| `backup.stamp_ahead` | warn; `files`, `ahead_seconds` | the nightly job found backups stamped more than 10 minutes past the hub clock (the clock was wrong when they were made); they do not count as the newest copy for the schedule or `fleet_hub_backup_age_seconds`. Logged once each time the newest such stamp changes; `ahead_seconds` is how far ahead it is |
 | `hub.leftovers_removed` | info; `command`, `files` | `fleetd init` or `run` removed a crashed init's temporary files |
 | `hub.initialized` | info; `server_names`, `config_written` | `fleetd init` created the store |
 | `hub.listener_opened` | info; `listener`, `port` (the admin socket has none) | `fleetd run` opened a listener |

@@ -44,14 +44,15 @@ type ScheduleOptions struct {
 // Schedule is the nightly job inside fleetd run. Only the goroutine that
 // calls Check (or Run) uses it.
 type Schedule struct {
-	dir   string
-	now   func() time.Time
-	tel   *telemetry.Telemetry
-	log   *slog.Logger
-	gauge metric.Registration
-	last  time.Time // the clock at the previous Check; zero before the first
-	tried string    // the local date whose 03:00 copy was already tried
-	seams seams
+	dir    string
+	now    func() time.Time
+	tel    *telemetry.Telemetry
+	log    *slog.Logger
+	gauge  metric.Registration
+	last   time.Time // the clock at the previous Check; zero before the first
+	tried  string    // the local date whose 03:00 copy was already tried
+	warned time.Time // the stamp backup.stamp_ahead last reported
+	seams  seams
 }
 
 // NewSchedule builds the job and registers fleet_hub_backup_age_seconds: the
@@ -75,9 +76,11 @@ func NewSchedule(opts ScheduleOptions) (*Schedule, error) {
 	}
 	dir := filepath.Join(s.dir, DirName)
 	s.gauge, err = m.RegisterCallback(func(_ context.Context, o metric.Observer) error {
+		now := s.now()
 		files, err := list(dir)
+		files, _ = current(files, now)
 		if t := newest(files, ""); err == nil && !t.IsZero() {
-			o.ObserveFloat64(age, max(s.now().Sub(t).Seconds(), 0)) // a stamp ahead of the clock reads 0
+			o.ObserveFloat64(age, max(now.Sub(t).Seconds(), 0)) // up to aheadLimit ahead reads 0
 		}
 		return nil
 	}, age)
@@ -117,6 +120,8 @@ func (s *Schedule) Check(ctx context.Context) {
 	s.last = now
 	dir := filepath.Join(s.dir, DirName)
 	files, err := list(dir) // an unreadable folder counts as no copy; Take then logs why
+	files, ahead := current(files, now)
+	s.warnAhead(ahead, now)
 	last := newest(files, Nightly)
 	if err != nil {
 		last = time.Time{}
@@ -139,4 +144,18 @@ func (s *Schedule) Check(ctx context.Context) {
 	if err := prune(dir, Keep, s.seams.remove); err != nil {
 		s.log.Error("backup.failed", "trigger", string(Nightly), "step", string(stepPrune), "err_kind", errKind(err))
 	}
+}
+
+// warnAhead logs backup.stamp_ahead when the newest copy stamped past
+// aheadLimit changes, so a wrong clock is reported once, not every minute.
+func (s *Schedule) warnAhead(ahead []file, now time.Time) {
+	if len(ahead) == 0 {
+		return
+	}
+	at := ahead[len(ahead)-1].at
+	if at.Equal(s.warned) {
+		return
+	}
+	s.warned = at
+	s.log.Warn("backup.stamp_ahead", "files", len(ahead), "ahead_seconds", int64(at.Sub(now).Seconds()))
 }
