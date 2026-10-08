@@ -267,18 +267,31 @@ is explicit: `TmuxPane.last_input_time` (level) and `Event.pane_input`
 (`PaneInput`, COALESCE key `input:<pane>`, at most one per pane per 10 s;
 replayed from the ring after an outage with its original time).
 
-Detection (the tmux spike, plan 0.5, checks whether control mode can push client
-activity instead; until it reports, this poll is the one polled pane input, and
-the owner allowed it as an exception to "poll only usage and GitHub", with the
-60 s goal-file rescan: ADR 0024, decision 9): every 2 s while any client is attached to a session
-holding a goal pane, the agent reads `tmux list-clients -F
-'#{client_activity} #{client_flags} #{client_session} #{pane_id}'`, ignores
-control-mode clients (its own observer), and credits the input to the active
-pane of that client's current window. Browser attach clients count: a person
-is typing. Keys the agent sends itself with `send-keys` are not client
-input. A pane whose input line changes while no fleet command is in flight
-is a second, weaker evidence the agent may use where `client_activity` is
-unavailable.
+Detection (a push, per spike 0.5: tmux 3.2a and 3.7c, 2026-10-08,
+[results](../../spikes/tmuxtyping/results/README.md)): the agent subscribes
+once per tmux server with `refresh-client -B
+'fleet-input::#{S:#{session_id}=#{session_activity} }'` (session ids, never
+names, which are the developer's text). tmux re-checks it about once a second
+and moves `session_activity` when an attached client presses a key (mouse
+input counts). It also moves, read from the 3.2a source and not measured, on
+attach, `new-session` (the agent's own included), `switch-client`, pane
+focus-in and a client waking from suspend; the agent's own `send-keys` did
+not move it. A change only triggers one `tmux list-clients -F
+'#{client_activity} #{client_flags} #{client_session} #{pane_id}'` read: the
+agent ignores control-mode clients (its own observer) and credits input only
+to a client whose `client_activity` moved, at its active pane, so a browser
+attach through a grouped view session lands on the real pane (browser attach
+clients count: a person is typing). When unsure, it counts as input; a
+client seen for the first time counts as input. No timed
+poll runs while the subscription is live; the 2 s `list-clients` poll runs
+only from attach until the first `%subscription-changed` confirms it, and
+after `%exit` until it is confirmed again (ADR 0024, decision 9). On
+reconnect the agent compares each client's `client_activity` with the last
+value seen, so a key pressed during the gap is still reported. `#{L:...}`
+(tmux 3.4) is not used. The "developer typing" check before any `SendKeys`
+reads `list-clients` at that moment, never stored push state. A pane whose
+input line changes while no fleet command is in flight is a second, weaker
+evidence the agent may use where `client_activity` is unavailable.
 
 The hub holds off nudges and goal control for 10 minutes after the latest
 input (`human_at_keyboard_until_time`) and shows the typing banner from
