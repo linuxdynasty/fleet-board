@@ -28,7 +28,8 @@ type Identity struct {
 	AccountSalt   []byte
 	SaltVersion   int
 	SettingsEpoch string
-	// HubAddresses stays empty until plan row 3 fills it.
+	// HubAddresses is what the owner configured; Enroll sends it as stored.
+	// No command sets it yet.
 	HubAddresses []string
 	CreatedTime  time.Time
 }

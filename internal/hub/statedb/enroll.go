@@ -21,9 +21,9 @@ var (
 	// ErrRequestConflict: the principal used this request_id for a different
 	// request (REQUEST_ID_CONFLICT).
 	ErrRequestConflict = errors.New("statedb: this request_id was used for a different request")
-	// ErrNotReenrollable: the token names a previous machine. Plan row 2b
-	// has no machines table, so every previous machine is refused
-	// (MACHINE_NOT_REENROLLABLE); row 3 checks the machine's state instead.
+	// ErrNotReenrollable: the token names a previous machine. Re-enroll is
+	// plan row 13a, which checks the machine's state; until then every
+	// previous machine is refused (MACHINE_NOT_REENROLLABLE).
 	ErrNotReenrollable = errors.New("statedb: the previous machine cannot be re-enrolled")
 )
 
