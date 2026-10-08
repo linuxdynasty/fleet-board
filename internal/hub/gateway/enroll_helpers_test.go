@@ -43,7 +43,7 @@ type hub struct {
 
 // startHub serves a listenerFixture on 127.0.0.1. TLS verification on both
 // sides reads wallNow; the hub's enroll clock starts there too.
-func startHub(t *testing.T) *hub {
+func startHub(t *testing.T, adjust ...func(*gateway.ServerOptions)) *hub {
 	t.Helper()
 	f := listenerFixture(t)
 	list, err := revocation.Load(context.Background(), revocation.Options{Dir: f.dir, Store: f.store, Now: wallNow})
@@ -51,10 +51,14 @@ func startHub(t *testing.T) *hub {
 		t.Fatal(err)
 	}
 	clk := newClock(wallNow())
-	srv, err := gateway.NewServer(gateway.ServerOptions{
+	opts := gateway.ServerOptions{
 		Certs: f.certs(t, defaultNames, wallNow), Store: f.store, Identity: f.id, Revoked: list,
 		Telemetry: f.tel, Now: clk.now,
-	})
+	}
+	for _, a := range adjust {
+		a(&opts)
+	}
+	srv, err := gateway.NewServer(opts)
 	if err != nil {
 		t.Fatalf("NewServer: %v", err)
 	}
@@ -225,6 +229,24 @@ func handshake(t *testing.T, addr string, cfg *tls.Config) (tls.ConnectionState,
 		err = nil
 	}
 	return conn.ConnectionState(), err
+}
+
+// tokenUsed reports whether the token's row has a used_time.
+func (h *hub) tokenUsed(t *testing.T, tok string) bool {
+	t.Helper()
+	parsed, err := ca.ParseToken(tok)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var used sql.NullInt64
+	err = h.store.Read(context.Background(), func(tx *sql.Tx) error {
+		return tx.QueryRowContext(context.Background(), `SELECT used_time FROM enroll_tokens WHERE secret_hash = ?`,
+			parsed.SecretHash[:]).Scan(&used)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return used.Valid
 }
 
 // machineCount is the number of rows in machines.

@@ -35,7 +35,9 @@ const tempPrefix = ".revoked-serials.tmp-"
 // number, never the line.
 var ErrInvalid = errors.New("revocation: revoked-serials is not valid")
 
-var serialHex = regexp.MustCompile(`^[0-9a-f]{1,64}$`)
+// serialHex is a serial as big.Int.Text(16) writes one: at least 1, so no
+// leading zero. Any other spelling would never match a certificate.
+var serialHex = regexp.MustCompile(`^[1-9a-f][0-9a-f]{0,63}$`)
 
 // Entry is one revoked serial (lowercase hex, ca.SerialHex) and the
 // certificate's not_after.
@@ -100,8 +102,8 @@ func parse(b []byte) (parsed, error) {
 	for i, l := range lines[1:] {
 		serial, at, ok := strings.Cut(l, " ")
 		t, err := time.Parse(time.RFC3339, at)
-		if !ok || !serialHex.MatchString(serial) || err != nil {
-			return parsed{}, fmt.Errorf("%w: line %d is not `<lowercase hex> <RFC 3339 time>`", ErrInvalid, i+2)
+		if !ok || !serialHex.MatchString(serial) || err != nil || !strings.HasSuffix(at, "Z") {
+			return parsed{}, fmt.Errorf("%w: line %d is not `<lowercase hex> <RFC 3339 UTC time>`", ErrInvalid, i+2)
 		}
 		p.entries = append(p.entries, Entry{Serial: serial, NotAfter: t})
 	}

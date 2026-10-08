@@ -64,7 +64,10 @@ token, then (for a burned token) the replay triple, then expiry, so a replay
 after the token's TTL still succeeds within the 24 h. Any other call with a
 used token is `ENROLL_TOKEN_USED`, and so is a replay once the machine is
 `REVOKED` or deleted: a stored response is never replayed for a machine that
-is no longer live. Enroll ignores a client certificate on the connection.
+is no longer live. Enroll ignores a valid client certificate on the
+connection, but the listener checks any certificate it is given before Enroll
+runs: an expired one fails the handshake, and so does a revoked one. So the
+agent always calls Enroll without a client certificate, re-enroll included.
 
 **The CSR rule.** `csr_pem` is at most 4 KiB and holds exactly one
 PEM block of type "CERTIFICATE REQUEST" with only whitespace after it; it parses, its

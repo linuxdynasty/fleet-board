@@ -53,6 +53,29 @@ func TestRevokeWritesTheFileTheSetAndTheStore(t *testing.T) {
 	}
 }
 
+// A serial that is not lowercase hex without leading zeros would never match
+// a certificate, so Revoke refuses it and writes nothing.
+func TestRevokeRefusesASerialThatCannotMatch(t *testing.T) {
+	t.Parallel()
+	live := now.Add(48 * time.Hour)
+	for _, serial := range []string{"0a1", "0", "A1", ""} {
+		t.Run(serial, func(t *testing.T) {
+			t.Parallel()
+			f := newFixture(t, nil, ptr(header))
+			l, err := f.load(t, now)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := l.Revoke(context.Background(), []revocation.Entry{{Serial: serial, NotAfter: live}}, now); err == nil {
+				t.Fatalf("Revoke(%q) succeeded", serial)
+			}
+			if got := f.file(t); got != header {
+				t.Errorf("file %q, want only the header", got)
+			}
+		})
+	}
+}
+
 // A state.db write that fails leaves the serial revoked in the file and the
 // set: revocation fails closed.
 func TestRevokeFailsClosedWhenTheStoreWriteFails(t *testing.T) {

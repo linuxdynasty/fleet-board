@@ -38,7 +38,9 @@ srv, err := gateway.NewServer(gateway.ServerOptions{
 
   The response is rebuilt from `hub_identity` (CA, fingerprint, salt,
   `fleet_id`, `hub_addresses`) and the stored certificate, for a first answer
-  and a replay alike. A client certificate on the connection is ignored. A
+  and a replay alike. A valid client certificate on the connection is
+  ignored, but an expired or revoked one fails the handshake before Enroll
+  runs, so the agent calls Enroll without one. A
   store or writer error is `UNAVAILABLE` with `retryable` set; a cancelled
   write has an unknown outcome, and the agent's retry finds the replay. A token
   naming a previous machine is the hub's failure (`INTERNAL`, never burned;

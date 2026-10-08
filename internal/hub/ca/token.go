@@ -68,7 +68,8 @@ var tokenTextLen = len(TokenPrefix) + base64.RawURLEncoding.EncodedLen(1+sha256.
 
 // ParseToken decodes an enroll token: the prefix, unpadded base64url of
 // exactly 65 bytes, and [TokenVersion]. It returns the CA fingerprint and
-// the secret's hash; the secret itself is dropped. Anything else is
+// the secret's hash; the text is kept, hidden from fmt and slog as in a
+// minted [Token]. Anything else is
 // [ErrTokenMalformed], whose text never echoes the input.
 func ParseToken(text string) (Token, error) {
 	if len(text) != tokenTextLen || text[:len(TokenPrefix)] != TokenPrefix {

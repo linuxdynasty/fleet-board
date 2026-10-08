@@ -21,7 +21,7 @@ err = list.Revoke(ctx, []revocation.Entry{{Serial: s, NotAfter: end}}, now) // R
 
 The header line, then one `<serial> <not_after>` line per revoked
 certificate: the serial in lowercase hex without leading zeros
-(`ca.SerialHex`), one space, the certificate's `not_after` in RFC 3339.
+(`ca.SerialHex`), one space, the certificate's `not_after` in RFC 3339 UTC (ending in `Z`).
 Mode 0600, owned by the user running `fleetd`; the file lives outside
 `state.db` so a restore from an older backup re-applies it.
 
