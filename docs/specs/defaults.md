@@ -49,7 +49,7 @@ spec change. "Decided here" marks a value no earlier document gave.
 | `labels` (`policy.yaml`) | empty | | 03e | `agent`; also a `SettingValues` field |
 | `metrics_listen`; `pprof_listen` | none: the agent has no listener | | 03e, [05b](05b-observability.md) | `agent`, local only |
 | `telemetry` (`policy.yaml`) | off | | 03e, 05b | `agent`, local only |
-| Typing detection: `tmux list-clients` poll | 2 | s | [02h](02h-goal-binding-and-pane-signals.md), ADR 0024 (an allowed exception to "poll only usage and GitHub") | fixed |
+| Typing detection: tmux `session_activity` subscription (tmux re-checks it about once a second) plus one `list-clients` read per change; the 2 s `list-clients` poll runs only while the subscription is not confirmed | about 1 (set by tmux); backup 2 | s | [02h](02h-goal-binding-and-pane-signals.md), ADR 0022 A.6; backup: ADR 0024 decision 9 | fixed |
 | Goal-file rescan for missed file events | 60 | s | [02h](02h-goal-binding-and-pane-signals.md), ADR 0024 (the other allowed exception) | fixed |
 | Agent low-disk point (`DISK_LOW` under any repo root) | 5 | GiB free | ADR 0024 | fixed |
 | `idle_threshold` | 2 | min | [01](01-agent-capabilities.md) E11 | setting |

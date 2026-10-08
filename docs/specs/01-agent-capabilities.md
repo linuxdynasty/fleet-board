@@ -361,4 +361,6 @@ optionally against one limit the owner sets.
   at the machine, reported until cleared.
 - **E13 Developer input:** when a person last typed into a pane (snapshot field
   plus a rate-limited event); goal panes are never idle, so this is the signal.
+  Found from a tmux format subscription with a `list-clients` read on each
+  change, not a timed poll (02h E13).
 - **E10 Capture pane:** visible screen or last N lines, ANSI stripped by default.
