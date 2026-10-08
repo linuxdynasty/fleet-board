@@ -10,7 +10,11 @@ err = config.WriteDefault(path)           // fleetd init: the defaults, mode 060
 ```
 
 - **Strict.** An unknown key, a second YAML document or a value of the wrong
-  type is refused. Keys not written keep the 02j defaults (`Default()`).
+  type is refused. Keys not written keep the 02j defaults (`Default()`). A key
+  written with no value (empty, `~` or `null`, a whole section included) is
+  refused under its name: yaml.v3 skips a null, so it would otherwise keep its
+  default silently (#109). A list item or key name with no value is refused
+  too. `state_dir: ~` is no value, not the home folder.
 - **Durations** are strings (`10m`, `90s`); a bare number or a value of zero or
   less is refused under the key's name.
 - **Loopback only.** In `local_trusted` mode `listen.api` (and `listen.metrics`

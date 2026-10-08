@@ -2,8 +2,10 @@
 // "Configuration file").
 //
 // [Load] reads the file strictly: an unknown key or a second YAML document is
-// refused. Keys not written keep the 02j defaults ([Default]); a leading ~ in
-// state_dir becomes the home folder. Every refusal is a *[Error] naming the
+// refused. Keys not written keep the 02j defaults ([Default]); a key written
+// with no value (empty, ~ or null) is refused, and so is a list item or key
+// name with no value; a leading ~/ in state_dir
+// becomes the home folder. Every refusal is a *[Error] naming the
 // key. In local_trusted mode listen.api (and listen.metrics, when set) must
 // be exactly 127.0.0.1 or ::1, with no override. Keys this build does not
 // implement yet (mode authenticated, listen.pprof, the authenticated-mode TLS

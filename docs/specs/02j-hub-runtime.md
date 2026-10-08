@@ -92,7 +92,9 @@ the wrong type refuses the start, naming the key. A key whose feature this build
 does not have yet is either refused as "not built yet" or loaded with no effect
 until the plan row that uses it; [02k](02k-v1-surface-and-cli.md#out-of-release-behaviour)
 lists which, and nothing is silently ignored. Keys not written keep the defaults
-above. Durations are strings (`10m`, `90s`). `state_dir`
+above; a key written with no value (empty, `~` or `null`) is refused, naming it,
+since it is written but holds nothing (in YAML `~` is no value, not the home
+folder). A list item or a key name with no value is refused the same way. Durations are strings (`10m`, `90s`). `state_dir`
 is refused when `<state_dir>/admin.sock` would not fit in a Unix socket path (104
 bytes on darwin, 108 on Linux).
 
