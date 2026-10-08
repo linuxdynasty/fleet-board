@@ -48,6 +48,20 @@ func checkFile(path string) error {
 	return nil
 }
 
+// CheckPrivateFile checks one other file in the state folder (such as
+// revoked-serials): a regular file, not a symlink, owned by this user with no
+// group or other access ([ErrLooseMode]). A missing file is fs.ErrNotExist.
+func CheckPrivateFile(path string) error {
+	fi, err := os.Lstat(path)
+	if err != nil {
+		return fmt.Errorf("statedb: %w", err)
+	}
+	if !fi.Mode().IsRegular() {
+		return fmt.Errorf("statedb: %s is not a regular file", path)
+	}
+	return private(path, fi, "600")
+}
+
 func private(path string, fi os.FileInfo, want string) error {
 	if perm := fi.Mode().Perm(); perm&0o077 != 0 {
 		return fmt.Errorf("%w: %s is mode %04o; run chmod %s %s", ErrLooseMode, path, perm, want, path)

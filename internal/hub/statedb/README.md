@@ -29,7 +29,8 @@ err = statedb.ReplaceServerCert(ctx, s, oldDER, certDER, keyDER, names)
 - **Private.** The folder and `state.db` (and any `-wal`, `-shm`) must belong
   to the user running fleetd with no group or other access, or the call is
   `ErrLooseMode`, like ssh with a loose key. `EnsureDir` never changes an
-  existing folder's mode.
+  existing folder's mode. `CheckPrivateFile` applies the same check to one
+  other file in the folder (`revoked-serials`), refusing a symlink too.
 - **`hub_identity`** (migration 1) is a `STRICT` table with `CHECK (id = 1)`,
   so a second row is impossible: fleet id, CA certificate and key, server
   certificate, key and SAN list, a 32-byte account salt, `salt_version`,
