@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -23,9 +24,22 @@ func local(day, hour, minute int) time.Time {
 }
 
 // clock is the injected Now; tests move it between Checks.
-type clock struct{ now time.Time }
+type clock struct {
+	mu  sync.Mutex
+	now time.Time
+}
 
-func (c *clock) Now() time.Time { return c.now }
+func (c *clock) Now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.now
+}
+
+func (c *clock) set(at time.Time) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.now = at
+}
 
 func (f *fixture) schedule(t *testing.T, c *clock) *backup.Schedule {
 	t.Helper()
@@ -67,7 +81,7 @@ func (f *fixture) nightlies(t *testing.T) []string {
 
 // check moves the clock to at and runs one Check.
 func check(s *backup.Schedule, c *clock, at time.Time) {
-	c.now = at
+	c.set(at)
 	s.Check(context.Background())
 }
 
@@ -245,6 +259,12 @@ func TestRunChecksAtStartAndAtEveryTick(t *testing.T) {
 	ticks <- time.Time{} // received only after the start check finished
 	if got := f.nightlies(t); len(got) != 1 {
 		t.Errorf("after the start check the folder holds %q, want one catch-up copy", got)
+	}
+	c.set(local(8, 3, 0))
+	ticks <- time.Time{} // the 03:00 check
+	ticks <- time.Time{} // received only after that check finished
+	if got := f.nightlies(t); len(got) != 2 || got[1] != nightlyName(local(8, 3, 0)) {
+		t.Errorf("after the 03:00 tick the folder holds %q, want a second copy at 03:00", got)
 	}
 	cancel()
 	select {

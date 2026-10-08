@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -87,7 +88,8 @@ func TestACopyTakenWhileTheStoreIsBeingWritten(t *testing.T) {
 	t.Cleanup(func() { _ = st.Close() })
 	ctx, cancel := context.WithCancel(context.Background())
 	var wg sync.WaitGroup
-	writes := 0
+	var writes atomic.Int64
+	first := make(chan struct{})
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -100,18 +102,23 @@ func TestACopyTakenWhileTheStoreIsBeingWritten(t *testing.T) {
 			if err != nil {
 				return
 			}
-			writes++
+			if writes.Add(1) == 1 {
+				close(first)
+			}
 		}
 	}()
-	time.Sleep(300 * time.Millisecond) // let the writer commit at least once first
-	res, err := f.take(t, backup.Nightly, nil)
+	select {
+	case <-first:
+	case <-time.After(10 * time.Second):
+		cancel()
+		wg.Wait()
+		t.Fatal("the writer committed nothing within 10 s")
+	}
+	res, err := f.take(t, backup.Nightly, nil) // the writer keeps committing until cancel
 	cancel()
 	wg.Wait()
 	if err != nil {
 		t.Fatalf("Take while writing: %v", err)
-	}
-	if writes == 0 {
-		t.Fatal("the writer committed nothing during the test")
 	}
 	assertBackupStore(t, res.Path)
 	if m := mode(t, res.Path); m != 0o600 {
