@@ -33,13 +33,17 @@ type Terminal interface {
 }
 
 // readPassphrase refuses a non-terminal before showing any prompt, then asks
-// twice and refuses an empty or mismatched answer. The caller clears the
-// returned slice.
-func readPassphrase(t Terminal) ([]byte, error) {
+// twice and refuses an empty or mismatched answer. A read cannot be
+// interrupted, so Ctrl-C (which cancels ctx) takes effect at the next Enter:
+// ctx is checked after each answer. The caller clears the returned slice.
+func readPassphrase(ctx context.Context, t Terminal) ([]byte, error) {
 	if !t.IsTerminal() {
 		return nil, ErrNotTerminal
 	}
 	first, err := t.ReadPassword("Passphrase for the backup: ")
+	if err == nil {
+		err = ctx.Err()
+	}
 	if err != nil {
 		clear(first)
 		return nil, fmt.Errorf("backup: read the passphrase: %w", err)
@@ -49,6 +53,9 @@ func readPassphrase(t Terminal) ([]byte, error) {
 	}
 	second, err := t.ReadPassword("The same passphrase again: ")
 	defer clear(second)
+	if err == nil {
+		err = ctx.Err()
+	}
 	if err != nil {
 		clear(first)
 		return nil, fmt.Errorf("backup: read the passphrase: %w", err)

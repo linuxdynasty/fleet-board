@@ -131,7 +131,7 @@ func logger(tel *telemetry.Telemetry) *slog.Logger {
 func take(ctx context.Context, o Options) (res Result, st step, err error) {
 	var pass []byte
 	if o.Terminal != nil {
-		if pass, err = readPassphrase(o.Terminal); err != nil {
+		if pass, err = readPassphrase(ctx, o.Terminal); err != nil {
 			return res, stepPassphrase, err
 		}
 		defer clear(pass)

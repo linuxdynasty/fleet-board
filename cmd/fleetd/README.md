@@ -17,8 +17,11 @@ it works beside a running hub and with the hub stopped. A backup holds the CA
 key and the account salt: keep it like a private key. `--encrypt` writes
 `manual-<UTC stamp>.db.age` with age, asking for a passphrase twice at the
 terminal; it refuses when stdin is not a terminal, and there is no flag or
-environment variable for the passphrase. `fleetd run` makes the nightly
-copies itself.
+environment variable for the passphrase. Ctrl-C at a prompt takes effect
+only after Enter, because the read is not interrupted; the backup then stops
+without asking again. If the copy was published but a temporary file could not
+be removed, the path is still printed and the exit code is 1. `fleetd run`
+makes the nightly copies itself.
 
 `enroll-token` prints only the token on stdout, on one line, so
 `TOKEN=$(fleetd enroll-token --machine laptop)` works; stderr shows the

@@ -2,6 +2,7 @@ package backup_test
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"io"
 	"os"
@@ -140,6 +141,41 @@ func TestEncryptRefusesAnEmptyOrMismatchedPassphrase(t *testing.T) {
 				t.Errorf("backup.failed lines = %v, want one with step passphrase, err_kind refused", ev)
 			}
 		})
+	}
+}
+
+// cancelOnRead is a terminal whose first answer arrives after Ctrl-C: the
+// read cannot be interrupted, so the context is cancelled while it waits.
+type cancelOnRead struct {
+	fakeTerminal
+	cancel context.CancelFunc
+}
+
+func (c *cancelOnRead) ReadPassword(prompt string) ([]byte, error) {
+	c.cancel()
+	return c.fakeTerminal.ReadPassword(prompt)
+}
+
+// Ctrl-C at the first prompt ends the backup at the next Enter: no second
+// prompt, step passphrase, err_kind timeout.
+func TestCtrlCAtThePromptStopsBeforeTheSecondPrompt(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	term := &cancelOnRead{fakeTerminal: fakeTerminal{terminal: true, answers: []string{"pw", "pw"}}, cancel: cancel}
+	_, err := backup.Take(ctx, backup.Options{
+		StateDir: f.state, Trigger: backup.Manual, Terminal: term, Telemetry: f.tel, WorkFactor: testWorkFactor,
+	})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Take error = %v, want context.Canceled", err)
+	}
+	if len(term.prompts) != 1 {
+		t.Errorf("prompts %q, want only the first", term.prompts)
+	}
+	ev := f.logs.events(t, "backup.failed")
+	if len(ev) != 1 || ev[0]["step"] != "passphrase" || ev[0]["err_kind"] != "timeout" {
+		t.Errorf("backup.failed lines = %v, want one with step passphrase, err_kind timeout", ev)
 	}
 }
 

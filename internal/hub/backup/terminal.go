@@ -32,7 +32,8 @@ func (t ttyTerminal) IsTerminal() bool {
 }
 
 // ReadPassword turns echo off for one line and restores the old settings
-// afterwards.
+// afterwards. ISIG stays on, so Ctrl-C reaches fleetd's signal handler, but
+// the read itself only returns at Enter (or EOF).
 func (t ttyTerminal) ReadPassword(prompt string) (line []byte, err error) {
 	old, err := unix.IoctlGetTermios(t.fd(), ioctlReadTermios)
 	if err != nil {
