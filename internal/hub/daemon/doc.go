@@ -10,8 +10,11 @@
 //
 // [Run] loads fleetd.yaml, checks the state folder, takes fleetd.lock before
 // it opens state.db, opens the existing store (never creating one), reads the
-// identity row, makes sure the server certificate is current, and serves the
-// agent listener, the API listener, the optional metrics listener and the
+// identity row, loads the revocation list (revoked-serials reconciled with
+// state.db; a bad file refuses the start as revocations_invalid) before any
+// listener binds, makes sure the server certificate is current, and serves the
+// agent listener (Enroll; revoked client certificates fail the handshake),
+// the API listener, the optional metrics listener and the
 // admin socket (<state_dir>/admin.sock, mode 0600, a leftover socket removed
 // first and the socket removed on a clean stop) until its context ends. A
 // goroutine it owns checks the certificate every hour.

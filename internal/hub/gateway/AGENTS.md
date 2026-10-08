@@ -14,6 +14,12 @@ anything that touches `AgentService`. Rules for this package:
 - Every goroutine has an owner: `Run` stops with its context, and the caller
   waits for it before closing the store.
 - Never log a key, a certificate or the SAN list; counts, reasons and
-  `not_after` only.
+  `not_after` only. Never log an enroll token, its secret, any part of the
+  secret's hash, or the machine facts.
+- Enroll burns a token only in `statedb.Enroll`'s writer job; every check
+  before it (fields, token format and CA hash, proto range, CSR) leaves the
+  token unburned. Store errors answer `UNAVAILABLE` with `retryable`.
+- The revocation check runs in `VerifyConnection` (fresh and resumed
+  handshakes); the `RevokedSet` it calls must never block.
 - Tests dial the real listener; a fake clock and a tick channel drive renewal.
 - A change here updates this README and `doc.go` in the same commit.

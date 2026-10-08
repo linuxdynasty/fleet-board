@@ -7,7 +7,8 @@ for this package:
 - Order is the contract: config, folder check, `fleetd.lock`, then
   `state.db`. Never open the store before the lock is held, and never remove
   or bind `admin.sock` before it either; remove only a socket there, never
-  another file.
+  another file. The revocation list loads after `state.db` and before any
+  listener binds; a hub never serves the agent listener without it.
 - `EnrollToken` is a client: it writes no file and emits no telemetry.
 - `Run` never creates `state.db` and never mints an identity; `Init` never
   replaces a store.

@@ -24,7 +24,8 @@ Logs, metrics and traces for `fleetd` and `fleet-agent`, set up the way
   rate limit and the Host allow-list belong to the listener that mounts it.
 - `CountAuthFailure(ctx, reason)` adds to the same counter for a refusal the
   caller made; `reason` is the closed `AuthReason` set (`metrics`, `host`,
-  `origin`, `peer_uid` for an admin socket peer of another OS user).
+  `origin`, `peer_uid` for an admin socket peer of another OS user, `revoked`
+  for an agent listener handshake with a revoked client certificate).
 - `HTTPErrorLog(listener)` is the `ErrorLog` for every `http.Server`: each
   line net/http writes becomes one `http.server_error` event with `listener`
   and a closed `kind`: `panic` (a recovered handler panic) at error level,
