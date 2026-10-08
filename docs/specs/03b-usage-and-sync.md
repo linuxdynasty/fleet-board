@@ -221,7 +221,8 @@ is `PercentUnknown{NOT_SHOWN}`, and the account is `UNKNOWN`.
   `UNKNOWN` for the line (`ACCOUNT_USAGE_UNKNOWN`, cause `window_unknown`) until
   the hub sees a reset, and the reserve line still applies to every known
   percent. When (1) and (2) differ by more than an hour, (1) wins and
-  `pacing.decision` records it.
+  `pacing.decision` records it. The hub API's `AccountUsage.buckets[].window`
+  is the window pacing used, so the dashboard draws the same line.
 - **Money.** Cursor's On-Demand row says whether use past the plan is billed.
   `AccountUsage.overage_billing` `ON` or `UNKNOWN` makes the account `EXCLUDED`
   (step 6).

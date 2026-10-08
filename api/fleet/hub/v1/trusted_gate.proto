@@ -2,7 +2,7 @@
 // work item dispatchable. Issue text reaches an agent with push and merge
 // rights, so the gate is the hub's rule, evaluated from provider evidence
 // (fleet.integration.v1 Label, WorkItem.author, last_editor) at sync time and
-// again at plan time and when the body is fetched (03b). The adapter is
+// again at plan time and when the body is fetched (03m). The adapter is
 // read-only and never sees the allow-list.
 //
 // The rule, per path; an item is trusted when either path holds:

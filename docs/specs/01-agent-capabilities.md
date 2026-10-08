@@ -283,7 +283,9 @@ optionally against one limit the owner sets.
 
   Also: `probe_id`, account key, `read_time`, parser version. Reset times on
   screen are local strings without a year ("Resets Sep 30 at 10pm"); the agent
-  resolves them with B1's timezone and sends both the original text and UTC. On
+  resolves them with B1's timezone and sends both the original text and UTC; a
+  date with no time (Cursor "Resets Nov 4") resolves to the end of that date
+  (03b, "Monthly windows"). On
   parse failure the reading is `unknown` and the redacted raw screen is still
   shown, never a guessed value.
 - **Probe timing.** Every 10 minutes by default, configurable per account;

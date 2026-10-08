@@ -133,7 +133,7 @@ keep their agent and hub-API codes), so a client branches on codes, never on str
 | Severity | Meaning | Reasons |
 |---|---|---|
 | `BLOCK` | `StartGoal` fails `FAILED_PRECONDITION` with the first one's reason, every BLOCK listed in `violations` | `SLOTS_FULL`, `NO_FIT_MACHINE`, `WORK_ITEM_BUSY`, `BRANCH_BUSY`, `REPO_NOT_WATCHED`, `CONSENT_EMPTY`, `MACHINE_UNFIT` (for a pinned machine), `DRAINING`, `MACHINE_OFFLINE`, `ACCOUNT_NOT_DISPATCHABLE` with `cause` `interactive_only` or `opencode_on_anthropic`, and every agent failure |
-| `CONFIRM` | `StartGoal` returns `approval` (`DISPATCH_CONFIRM`, required role `OWNER`) and starts nothing; approving creates the goal and sends `StartGoal` | `WORK_ITEM_UNTRUSTED` (also an item edited after it was trusted; the card shows `TrustVerdict.denial`), `WORK_ITEM_CLAIMED` (bypassing a safety gate), `ACCOUNT_NOT_DISPATCHABLE` with `cause` `dollar_cap` (spends money), `HARNESS_VERSION_UNSUPPORTED` with `parsing = unverified` (a version whose usage or ready parse is not live) |
+| `CONFIRM` | `StartGoal` returns `approval` (`DISPATCH_CONFIRM`, required role `OWNER`) and starts nothing; approving creates the goal and sends `StartGoal` | `WORK_ITEM_UNTRUSTED` (also an item edited after it was trusted; the card shows `TrustVerdict.denial`), `WORK_ITEM_CLAIMED` (bypassing a safety gate), `ACCOUNT_NOT_DISPATCHABLE` with `cause` `dollar_cap` or `overage_billing` (spends or may spend money), `HARNESS_VERSION_UNSUPPORTED` with `parsing = unverified` (a version whose usage or ready parse is not live) |
 | `WARN` | allowed once the request lists the reason in `acknowledged_warnings` | `ACCOUNT_PACING_BLOCKED`, `ACCOUNT_USAGE_UNKNOWN`, `INTEGRATION_LAG`, `INTEGRATION_DEGRADED`, `REPO_PARALLEL_LIMIT`, `ROUTINE_NEEDS_SPARE_QUOTA` (`RunRoutine` of a spare-quota routine with no spare account; a trigger fire never acknowledges it) |
 | `INFO` | shown | the session that would be reused, the model the harness shows |
 
@@ -141,7 +141,7 @@ keep their agent and hub-API codes), so a client branches on codes, never on str
 and never appear in a preflight: a manual dispatch ignores them. The
 unacknowledged-warning rule means a client cannot dispatch past a warning it
 never showed: the CLI prints the warnings and needs `--yes-warnings`, the UI
-ticks them. "Manual dispatch allowed with a warning" (03b, 03c, 03e) is exactly
+ticks them. "Manual dispatch allowed with a warning" (03m, 03c, 03e) is exactly
 the `WARN` and `CONFIRM` rows.
 
 **Operation versus approval.** `StartGoal` with a CONFIRM check, `RunHarnessCommand`

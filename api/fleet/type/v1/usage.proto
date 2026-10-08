@@ -121,7 +121,9 @@ message LimitBucket {
   // Window length when known (Codex rate_limits has 10080 minutes). For
   // WINDOW_KIND_MONTHLY, set only when the start of this month's window
   // follows from the shown reset without assuming how the plan treats short
-  // months (03b, "Monthly windows"); unset otherwise.
+  // months (03b, "Monthly windows"); unset otherwise. In the hub API
+  // (AccountUsage.buckets) it is the window pacing used, which may be the one
+  // the hub saw between two resets.
   google.protobuf.Duration window = 5;
   WindowKind kind = 6;
   // Model name for WINDOW_KIND_PER_MODEL. Untrusted text.

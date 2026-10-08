@@ -116,7 +116,7 @@ spec change. "Decided here" marks a value no earlier document gave.
 |---|---|---|---|---|
 | Work item poll; change request poll | 60 s per repo; 60 s | s | 03m | fixed |
 | Claim re-check of a candidate item | 5 | min | 03m | fixed |
-| Full poll without validators | 30 | min | 03b | fixed |
+| Full poll without validators | 30 | min | 03m | fixed |
 | Trusted label | `agent-ready` | | [03j](03j-provider-sync-and-trust.md) | `HubSettings.trusted_gate` |
 | `triage_expiry` (`TriageItem.expire_time`) | 7 | days | 03d | `HubSettings` |
 | `limit_wait` triage item raised when the wait is expected over | 30 | min | 03d | fixed |
