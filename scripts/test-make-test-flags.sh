@@ -15,7 +15,10 @@
 # The packages are added on a work branch, so changed-go-packages.sh names them.
 # TEST_COUNT is data like BASE_REF: a value that is not a positive integer
 # fails before go runs, and is never shell text. `make test-all` (the nightly
-# suite) is checked the same way: one -race pass over every package.
+# suite) is checked the same way: one -race pass over every package. With
+# COVERPROFILE set, make test's non-race pass writes the profile (mode: set)
+# and make test-all's pass writes it (mode: atomic); unset, nothing measures
+# coverage.
 # Runs on the macOS system bash 3.2. Needs make, git and go.
 #
 # Usage: scripts/test-make-test-flags.sh        exit 0 only if every case passes
@@ -37,7 +40,7 @@ bad() {
 }
 
 # Keep git and make from reading the caller's repo, config or flags.
-unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE BASE_REF FLEET_BASE_REF GOFLAGS TEST_COUNT
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE BASE_REF FLEET_BASE_REF GOFLAGS TEST_COUNT COVERPROFILE
 unset MAKEFLAGS MFLAGS MAKEOVERRIDES MAKELEVEL MAKEFILES GNUMAKEFLAGS
 # Nor the caller's go.work or go env file (GOFLAGS there would reach go test).
 export GOWORK=off GOENV=off
@@ -68,11 +71,12 @@ package clean
 import "testing"
 
 func TestSum(t *testing.T) {
-	if got := 2 + 3; got != 5 {
-		t.Fatalf("2+3 = %d, want 5", got)
+	if got := Sum(2, 3); got != 5 {
+		t.Fatalf("Sum(2, 3) = %d, want 5", got)
 	}
 }
 EOF
+  printf 'package clean\n\n// Sum adds.\nfunc Sum(a, b int) int { return a + b }\n' > "$repo/clean/clean.go"
   cat > "$repo/probe/probe_test.go" <<'EOF'
 package probe
 
@@ -196,6 +200,33 @@ for hostile in "1; touch $marker" "1; exit 0 #" "0" "3 -run=^\$" "3 -run=NoSuch"
   if [ -e "$marker" ]; then bad "TEST_COUNT='$hostile' ran as shell text"; else ok; fi
 done
 
+# COVERPROFILE (CI sets it): the non-race pass writes the coverage profile, so
+# its mode is `set` (a -race pass would write `atomic`). Unset, none is written.
+# The value is a path, never shell text.
+fresh
+make_test "make test without COVERPROFILE" 0
+if ls "$repo"/*.out > /dev/null 2>&1; then
+  bad "no COVERPROFILE: a profile was written"
+elif printf '%s' "$out" | grep -q 'coverage:'; then
+  bad "no COVERPROFILE: go test still measured coverage ($out)"
+else
+  ok
+fi
+fresh
+if make_test "make test with COVERPROFILE" 0 COVERPROFILE="$work/cover.out"; then
+  if ! head -n 1 "$work/cover.out" 2> /dev/null | grep -qx 'mode: set'; then
+    bad "COVERPROFILE: want a 'mode: set' profile from the non-race pass, got '$(head -n 1 "$work/cover.out" 2> /dev/null)'"
+  elif ! grep -q '^example.com/m/clean/clean.go:' "$work/cover.out"; then
+    bad "COVERPROFILE: the profile has no block for clean/clean.go"
+  else
+    ok
+  fi
+fi
+fresh
+rm -f "$repo/pwned"
+make_test "a COVERPROFILE with shell text is a file name" 0 COVERPROFILE="c.out; touch pwned"
+if [ -e "$repo/pwned" ]; then bad "COVERPROFILE ran as shell text"; else ok; fi
+
 # make test-all (the nightly suite): one -race pass over every package, the
 # packages main already had included, TEST_COUNT times; no non-race pass.
 make_test_all() {
@@ -215,6 +246,17 @@ g merge -q --ff-only work
 make_test_all "test-all on main (nothing changed) still runs every package" 0 TEST_COUNT=2
 flags_are "test-all: race, shuffled, TEST_COUNT times" "shuffle=on count=2 race=true goflags=
 shuffle=on count=2 race=true goflags="
+
+fresh
+g checkout -q main
+g merge -q --ff-only work
+if make_test_all "test-all with COVERPROFILE" 0 TEST_COUNT=1 COVERPROFILE="$work/all.out"; then
+  if head -n 1 "$work/all.out" 2> /dev/null | grep -qx 'mode: atomic' && grep -q '^example.com/m/clean/clean.go:' "$work/all.out"; then
+    ok
+  else
+    bad "test-all COVERPROFILE: want an 'atomic' profile with clean/clean.go"
+  fi
+fi
 
 # RED: the leaked-state test fails under test-all at its default count.
 fresh

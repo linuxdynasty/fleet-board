@@ -7,8 +7,9 @@
 # Two kinds of case, both seeded:
 #   - `make -n` prints each recipe; the raw hostile value must appear nowhere
 #     in it (test, lint, diff-check, docs-stale-ci and gates all read BASE_REF;
-#     test reads TEST_COUNT, fuzz reads FUZZTIME and FUZZMINIMIZETIME, and
-#     bench-report reads BENCH_COUNT and BENCH_TIME the same way);
+#     test reads TEST_COUNT, test and test-all read COVERPROFILE, fuzz reads
+#     FUZZTIME and FUZZMINIMIZETIME, and bench-report reads BENCH_COUNT and
+#     BENCH_TIME the same way);
 #   - `make diff-check` really runs, in a throwaway repo, with a value that would
 #     create a marker file if it were executed; the marker must not exist.
 # Runs on the macOS system bash 3.2. Needs make and git.
@@ -61,6 +62,15 @@ for var in BENCH_COUNT BENCH_TIME; do
   out="$(cd "$root" && make -n bench-report "$var=$hostile" 2>&1)"
   case "$out" in
     *"touch $marker"*) bad "make -n bench-report pastes $var into the recipe text" ;;
+    *) ok ;;
+  esac
+done
+
+# COVERPROFILE is a path read the same way.
+for target in test test-all; do
+  out="$(cd "$root" && make -n "$target" COVERPROFILE="$hostile" 2>&1)"
+  case "$out" in
+    *"touch $marker"*) bad "make -n $target pastes COVERPROFILE into the recipe text" ;;
     *) ok ;;
   esac
 done

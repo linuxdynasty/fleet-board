@@ -77,6 +77,7 @@
   {"token": "BASH_ENV", "kind": "env", "reason": "shell environment variable (agent-guide.md)", "files": ["docs/development/agent-guide.md"]},
   {"token": "CGO_ENABLED", "kind": "env", "reason": "Go environment variable (agent-guide.md)", "files": ["docs/development/agent-guide.md"]},
   {"token": "TEST_COUNT", "kind": "env", "reason": "Makefile variable (agent-guide.md)", "files": ["docs/development/agent-guide.md"]},
+  {"token": "COVERPROFILE", "kind": "env", "reason": "Makefile variable of make test and make test-all (agent-guide.md)", "files": ["docs/development/agent-guide.md"]},
   {"token": "GOCACHE", "kind": "env", "reason": "Go environment variable (agent-guide.md)", "files": ["docs/development/agent-guide.md"]},
   {"token": "GOFLAGS", "kind": "env", "reason": "Go environment variable (agent-guide.md)", "files": ["docs/development/agent-guide.md"]},
   {"token": "GOTMPDIR", "kind": "env", "reason": "Go environment variable (agent-guide.md)", "files": ["docs/development/agent-guide.md"]},
