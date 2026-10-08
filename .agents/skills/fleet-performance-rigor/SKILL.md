@@ -58,7 +58,8 @@ the same. Do not land production code on an unmeasured one.
 
 Baseline and candidate numbers with units, the command used, the iteration
 count and spread, the machine, what the change does *not* prove (for example
-`logs.db` at 50 GB is unproven), and the next measured bottleneck. A change
+a cold-cache read of `logs.db` at 50 GiB is unproven), and the next measured
+bottleneck. A change
 that is only a local optimization says so rather than claiming an end-to-end
 gain. Hand off a proved change as an implementation task with its acceptance
 benchmark; this role does not edit code.
