@@ -17,7 +17,7 @@ import (
 // emptyTarget pre-creates an empty file the way a backup does (O_EXCL, 0600).
 func emptyTarget(t *testing.T, path string) {
 	t.Helper()
-	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o600)
+	f, err := os.OpenFile(filepath.Clean(path), os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -176,7 +176,7 @@ func TestVacuumIntoRefusesANonEmptyTargetAndAMissingSource(t *testing.T) {
 	if err := store.VacuumInto(context.Background(), h.path, full); err == nil {
 		t.Error("VacuumInto into a non-empty file succeeded")
 	}
-	if b, err := os.ReadFile(full); err != nil || string(b) != "keep me" {
+	if b, err := os.ReadFile(filepath.Clean(full)); err != nil || string(b) != "keep me" {
 		t.Errorf("the non-empty target now holds %q (%v)", b, err)
 	}
 	missing := filepath.Join(dir, "missing.db")
@@ -220,7 +220,7 @@ func TestOpenReadOnlyCannotWrite(t *testing.T) {
 
 func fileHash(t *testing.T, path string) [32]byte {
 	t.Helper()
-	b, err := os.ReadFile(path)
+	b, err := os.ReadFile(filepath.Clean(path))
 	if err != nil {
 		t.Fatal(err)
 	}

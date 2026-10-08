@@ -24,7 +24,7 @@ type ttyTerminal struct {
 	out io.Writer
 }
 
-func (t ttyTerminal) fd() int { return int(t.in.Fd()) } //nolint:gosec // G115: a file descriptor fits in an int
+func (t ttyTerminal) fd() int { return int(t.in.Fd()) }
 
 func (t ttyTerminal) IsTerminal() bool {
 	_, err := unix.IoctlGetTermios(t.fd(), ioctlReadTermios)

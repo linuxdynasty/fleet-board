@@ -137,26 +137,31 @@ func TestFailuresLogTheStepAndPublishNothing(t *testing.T) {
 	}{
 		{name: "missing state.db", step: "source", kind: "refused", empty: true},
 		{name: "loose state.db", step: "source", kind: "refused", setup: func(t *testing.T, f *fixture) {
+			t.Helper()
 			chmod(t, statedb.Path(f.state), 0o644)
 		}},
 		{name: "backups is a file", step: "dir", kind: "io", setup: func(t *testing.T, f *fixture) {
+			t.Helper()
 			if err := os.WriteFile(f.backups(), nil, 0o600); err != nil {
 				t.Fatal(err)
 			}
 		}},
 		{name: "loose backups folder", step: "dir", kind: "refused", setup: func(t *testing.T, f *fixture) {
+			t.Helper()
 			if err := os.Mkdir(f.backups(), 0o700); err != nil {
 				t.Fatal(err)
 			}
 			chmod(t, f.backups(), 0o755)
 		}},
 		{name: "state.db is not a database", step: "copy", kind: "io", empty: true, setup: func(t *testing.T, f *fixture) {
+			t.Helper()
 			if err := os.WriteFile(statedb.Path(f.state), []byte("not sqlite, just bytes that are long enough"), 0o600); err != nil {
 				t.Fatal(err)
 			}
 		}},
 		{name: "no hub_identity", step: "verify", kind: "refused", empty: true, setup: noIdentityStore},
 		{name: "name taken", step: "publish", kind: "refused", setup: func(t *testing.T, f *fixture) {
+			t.Helper()
 			if err := os.Mkdir(f.backups(), 0o700); err != nil {
 				t.Fatal(err)
 			}

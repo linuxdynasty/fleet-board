@@ -154,6 +154,7 @@ func TestThePlaintextIntermediateIsRemovedOnFailure(t *testing.T) {
 	}{
 		{name: "verify fails", step: "verify", empty: true, setup: noIdentityStore},
 		{name: "publish fails", step: "publish", setup: func(t *testing.T, f *fixture) {
+			t.Helper()
 			if err := os.Mkdir(f.backups(), 0o700); err != nil {
 				t.Fatal(err)
 			}
