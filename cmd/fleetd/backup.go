@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -27,15 +28,18 @@ func backupCommand(options func() (daemon.Options, error), stdin *os.File, stdou
 			}
 			opts.Terminal = backup.NewTerminal(stdin, stderr)
 			res, err := daemon.Backup(cmd.Context(), opts, req)
-			if err != nil {
+			if res.Path == "" { // a copy failing after it was published still has its path printed
 				return commandError{err}
 			}
 			if res.Encrypted {
-				if _, err := fmt.Fprintln(stderr, "fleetd: keep the passphrase: without it this backup cannot be restored"); err != nil {
-					return commandError{err}
+				if _, perr := fmt.Fprintln(stderr, "fleetd: keep the passphrase: without it this backup cannot be restored"); perr != nil {
+					return commandError{errors.Join(err, perr)}
 				}
 			}
-			if _, err := fmt.Fprintln(stdout, res.Path); err != nil {
+			if _, perr := fmt.Fprintln(stdout, res.Path); perr != nil {
+				return commandError{errors.Join(err, perr)}
+			}
+			if err != nil {
 				return commandError{err}
 			}
 			return nil

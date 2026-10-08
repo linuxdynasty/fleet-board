@@ -70,6 +70,16 @@ type Options struct {
 	// WorkFactor is age's scrypt work factor (log2); 0 is age's default.
 	// Tests lower it.
 	WorkFactor int
+
+	seams seams
+}
+
+// seams let tests fail a step the real system rarely fails; the zero value
+// is the production behavior.
+type seams struct {
+	afterCopy func(path string) error // runs on the copy before its check
+	encrypt   error                   // the encrypt step's error
+	remove    func(path string) error // nil: os.Remove (temporary files and pruning)
 }
 
 // Result is a published backup.
@@ -87,9 +97,13 @@ type Result struct {
 // with mode 0600. The copy is synced and checked (it opens, passes
 // quick_check, has a schema version this binary knows and holds
 // hub_identity) before it is published under its final name, which never
-// replaces an existing file, and the folder is synced. Every failure logs
-// backup.failed with its step and leaves no temporary file behind; success
-// logs backup.completed.
+// replaces an existing file, and the folder is synced. Success logs
+// backup.completed. A failure logs backup.failed with its step; every return
+// path removes the temporary files it made (a crash cannot, and
+// [RemoveLeftovers] sweeps those). Before publishing, a failure publishes
+// nothing and the Result is zero. Step cleanup comes after publishing: a
+// temporary file could not be removed, and the published copy's Result is
+// returned with the error.
 func Take(ctx context.Context, opts Options) (Result, error) {
 	if opts.Trigger != Nightly && opts.Trigger != Manual {
 		return Result{}, fmt.Errorf("backup: unknown trigger %q", opts.Trigger)
@@ -101,7 +115,7 @@ func Take(ctx context.Context, opts Options) (Result, error) {
 	res, st, err := take(ctx, opts)
 	if err != nil {
 		log.Error("backup.failed", "trigger", string(opts.Trigger), "step", string(st), "err_kind", errKind(err))
-		return Result{}, err
+		return res, err
 	}
 	log.Info("backup.completed", "trigger", string(opts.Trigger), "bytes", res.Bytes, "encrypted", res.Encrypted)
 	return res, nil
@@ -139,8 +153,8 @@ func take(ctx context.Context, o Options) (res Result, st step, err error) {
 	var temps []string
 	defer func() {
 		for _, p := range temps {
-			if rmErr := removeAll(p); rmErr != nil && err == nil {
-				res, st, err = Result{}, stepCleanup, rmErr
+			if rmErr := removeAll(p, o.seams.remove); rmErr != nil && err == nil {
+				st, err = stepCleanup, rmErr // res stays: the copy is published
 			}
 		}
 	}()
@@ -156,6 +170,11 @@ func take(ctx context.Context, o Options) (res Result, st step, err error) {
 	if err := copyStore(ctx, statedb.Path(o.StateDir), plain); err != nil {
 		return res, stepCopy, err
 	}
+	if o.seams.afterCopy != nil {
+		if err := o.seams.afterCopy(plain); err != nil {
+			return res, stepCopy, err
+		}
+	}
 	if err := verify(ctx, plain); err != nil {
 		return res, stepVerify, err
 	}
@@ -165,7 +184,11 @@ func take(ctx context.Context, o Options) (res Result, st step, err error) {
 			return res, stepEncrypt, err
 		}
 		temps = append(temps, publish)
-		if err := encrypt(ctx, plain, publish, pass, o.WorkFactor); err != nil {
+		err := o.seams.encrypt
+		if err == nil {
+			err = encrypt(ctx, plain, publish, pass, o.WorkFactor)
+		}
+		if err != nil {
 			return res, stepEncrypt, err
 		}
 	}
@@ -264,11 +287,15 @@ func link(tmp, final string) error {
 	return syncDir(filepath.Dir(final))
 }
 
-// removeAll removes a temporary file and any SQLite side file next to it.
-func removeAll(path string) error {
+// removeAll removes a temporary file and any SQLite side file next to it
+// with remove (nil: os.Remove).
+func removeAll(path string, remove func(string) error) error {
+	if remove == nil {
+		remove = os.Remove
+	}
 	var errs []error
 	for _, p := range []string{path, path + "-wal", path + "-shm", path + "-journal"} {
-		if err := os.Remove(p); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		if err := remove(p); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			errs = append(errs, fmt.Errorf("backup: remove temporary file: %w", err))
 		}
 	}
@@ -297,7 +324,7 @@ func errKind(err error) string {
 	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
 		return "timeout"
 	case errors.Is(err, ErrNotTerminal), errors.Is(err, ErrPassphraseEmpty), errors.Is(err, ErrPassphraseMismatch),
-		errors.Is(err, ErrNoIdentity), errors.Is(err, ErrSchema), errors.Is(err, statedb.ErrLooseMode),
+		errors.Is(err, ErrNoIdentity), errors.Is(err, ErrSchema), errors.Is(err, ErrCorrupt), errors.Is(err, statedb.ErrLooseMode),
 		errors.Is(err, fs.ErrNotExist), errors.Is(err, fs.ErrExist):
 		return "refused"
 	default:

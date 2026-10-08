@@ -37,6 +37,8 @@ type ScheduleOptions struct {
 	// Telemetry receives the backup log events and serves
 	// fleet_hub_backup_age_seconds; nil turns both off.
 	Telemetry *telemetry.Telemetry
+
+	seams seams
 }
 
 // Schedule is the nightly job inside fleetd run. Only the goroutine that
@@ -49,6 +51,7 @@ type Schedule struct {
 	gauge metric.Registration
 	last  time.Time // the clock at the previous Check; zero before the first
 	tried string    // the local date whose 03:00 copy was already tried
+	seams seams
 }
 
 // NewSchedule builds the job and registers fleet_hub_backup_age_seconds: the
@@ -56,7 +59,7 @@ type Schedule struct {
 // at scrape time, and no value at all while there is no backup (BACKUP_AGE
 // then reads unknown). Close unregisters it.
 func NewSchedule(opts ScheduleOptions) (*Schedule, error) {
-	s := &Schedule{dir: opts.StateDir, now: opts.Now, tel: opts.Telemetry, log: logger(opts.Telemetry)}
+	s := &Schedule{dir: opts.StateDir, now: opts.Now, tel: opts.Telemetry, log: logger(opts.Telemetry), seams: opts.seams}
 	if s.now == nil {
 		s.now = time.Now
 	}
@@ -129,10 +132,11 @@ func (s *Schedule) Check(ctx context.Context) {
 	if !due {
 		return
 	}
-	if _, err := Take(ctx, Options{StateDir: s.dir, Trigger: Nightly, Now: s.now, Telemetry: s.tel}); err != nil {
-		return // Take logged backup.failed
+	res, err := Take(ctx, Options{StateDir: s.dir, Trigger: Nightly, Now: s.now, Telemetry: s.tel, seams: s.seams})
+	if err != nil && res.Path == "" {
+		return // Take logged backup.failed; nothing was published
 	}
-	if err := prune(dir, Keep); err != nil {
+	if err := prune(dir, Keep, s.seams.remove); err != nil {
 		s.log.Error("backup.failed", "trigger", string(Nightly), "step", string(stepPrune), "err_kind", errKind(err))
 	}
 }

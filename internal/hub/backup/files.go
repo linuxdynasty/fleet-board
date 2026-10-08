@@ -60,9 +60,12 @@ func newest(files []file, trigger Trigger) time.Time {
 	return time.Time{}
 }
 
-// prune removes all but the newest keep nightly copies in dir. Manual
-// copies are never removed.
-func prune(dir string, keep int) error {
+// prune removes all but the newest keep nightly copies in dir with remove
+// (nil: os.Remove). Manual copies are never removed.
+func prune(dir string, keep int, remove func(string) error) error {
+	if remove == nil {
+		remove = os.Remove
+	}
 	files, err := list(dir)
 	if err != nil {
 		return err
@@ -75,7 +78,7 @@ func prune(dir string, keep int) error {
 	}
 	var errs []error
 	for i := 0; i < len(nightly)-keep; i++ {
-		if err := os.Remove(filepath.Join(dir, nightly[i].name)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		if err := remove(filepath.Join(dir, nightly[i].name)); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			errs = append(errs, fmt.Errorf("backup: prune: %w", err))
 		}
 	}
