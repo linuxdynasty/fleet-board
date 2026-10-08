@@ -7,8 +7,21 @@ fleetd init [--config PATH]   # write fleetd.yaml if missing, the state folder a
 fleetd run  [--config PATH]   # start the hub; SIGTERM or Ctrl-C stops it cleanly
 fleetd enroll-token --machine NAME [--expect-host H] [--ttl 15m] [--label L ...] [--start-drained]
                               # ask the running hub for a token that enrolls one machine
+fleetd backup [--encrypt]     # copy state.db into <state_dir>/backups/, with or without fleetd run
 fleetd --version              # "fleetd dev", or the release version set with -ldflags -X
 ```
+
+`backup` prints only the path of the copy on stdout
+(`<state_dir>/backups/manual-<UTC stamp>.db`, mode 0600). It takes no lock, so
+it works beside a running hub and with the hub stopped. A backup holds the CA
+key and the account salt: keep it like a private key. `--encrypt` writes
+`manual-<UTC stamp>.db.age` with age, asking for a passphrase twice at the
+terminal; it refuses when stdin is not a terminal, and there is no flag or
+environment variable for the passphrase. Ctrl-C at a prompt takes effect
+only after Enter, because the read is not interrupted; the backup then stops
+without asking again. If the copy was published but a temporary file could not
+be removed, the path is still printed and the exit code is 1. `fleetd run`
+makes the nightly copies itself.
 
 `enroll-token` prints only the token on stdout, on one line, so
 `TOKEN=$(fleetd enroll-token --machine laptop)` works; stderr shows the
@@ -34,11 +47,14 @@ make build
 go run ./cmd/fleetd --version
 ```
 
-`main.go` and `enroll.go` only parse flags and call `internal/hub/daemon`; what
+`main.go`, `enroll.go` and `backup.go` only parse flags and call `internal/hub/daemon`; what
 fleetd does is specified in `docs/specs/02j-hub-runtime.md`, and the build order
 is in `docs/plan/v1-implementation-plan.md` (plan rows 2 to 5). `main_test.go`
 runs the built binary: init, run, a refused second run, SIGTERM, and a start
 after a SIGKILL. `enroll_test.go` is row 2b's acceptance: init, run, and
 `enroll-token` printing a token whose CA hash equals the stored CA; refused
 lifetimes; "fleetd is not running" with no hub and after a SIGKILL; and
-`admin.sock` removed by SIGTERM.
+`admin.sock` removed by SIGTERM. `backup_test.go` runs `fleetd backup` beside
+a running hub (the copy is 0600 and holds the hub's CA; a second `run` still
+gets `lock_held`) and checks `--encrypt` refuses a piped passphrase and has
+no passphrase flag.

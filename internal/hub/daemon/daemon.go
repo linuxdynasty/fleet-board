@@ -14,6 +14,7 @@ import (
 	"go.opentelemetry.io/otel/metric"
 
 	"github.com/linuxdynasty/fleet-board/internal/hub/api"
+	"github.com/linuxdynasty/fleet-board/internal/hub/backup"
 	"github.com/linuxdynasty/fleet-board/internal/hub/config"
 	"github.com/linuxdynasty/fleet-board/internal/hub/lock"
 	"github.com/linuxdynasty/fleet-board/internal/hub/revocation"
@@ -39,6 +40,13 @@ type Options struct {
 	// RenewTicks drives the certificate check in Run; nil means an hourly
 	// ticker that Run owns.
 	RenewTicks <-chan time.Time
+	// BackupTicks drives the nightly backup check in Run (it also checks
+	// once at start); nil means a ticker every backup.CheckEvery that Run
+	// owns.
+	BackupTicks <-chan time.Time
+	// Terminal is where Backup reads an encrypted copy's passphrase
+	// (backup.NewTerminal on stdin in the binary).
+	Terminal backup.Terminal
 	// Telemetry is used as given (and not shut down) when set; otherwise
 	// Init and Run build their own, logging to LogOutput (nil: stderr).
 	Telemetry *telemetry.Telemetry

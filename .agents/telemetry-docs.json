@@ -5,6 +5,7 @@
  "metric_prefixes": ["fleet_hub", "fleet_agent"],
  "logs": {
   "admin.": "docs/specs/05b-observability.md",
+  "backup.": "docs/specs/05b-observability.md",
   "enroll.": "docs/specs/03-workflows.md",
   "http.": "docs/specs/05b-observability.md",
   "hub.": "docs/specs/05b-observability.md",
@@ -13,6 +14,7 @@
  },
  "metrics": {
   "auth_failures_": "docs/specs/05b-observability.md",
+  "backup_": "docs/specs/05b-observability.md",
   "enroll_": "docs/specs/03-workflows.md",
   "log_lines_": "docs/specs/05b-observability.md",
   "read_pool_": "docs/specs/05b-observability.md",

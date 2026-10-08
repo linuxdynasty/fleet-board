@@ -105,7 +105,8 @@ Destructive commands need `--yes`.
 | `fleet logs export` | stored session log to a file | `ReadSessionLog` | v1 (25) |
 | `fleet watch`, `fleet debug stream` | tail or decode a `Watch` | `Watch` | not scheduled |
 | `fleetd run`, `init`, `enroll-token` | start, create config and state, mint a token (only the token on stdout; the `enroll` command on stderr) | `init` and `run` local; `enroll-token` calls `CreateEnrollmentToken` over `admin.sock` | v1 (2b) |
-| `fleetd backup [--encrypt]`, `restore` | local, never RPCs | local | v1 (3, 5) |
+| `fleetd backup [--encrypt]` | one manual copy of `state.db` into `backups/`, only its path on stdout; takes no lock, so it runs beside `fleetd run`; `--encrypt` asks for the passphrase twice on the terminal ([02j](02j-hub-runtime.md)) | local | v1 (3) |
+| `fleetd restore` | local, never RPCs | local | v1 (5) |
 | `fleetd setup github` | the GitHub App manifest and keys | local | v1 (13a) |
 | `fleetd insights rebuild` | recompute rollups | local | v1 (13) |
 | `fleetd debug agent-stream` | tap the agent bus | local | not scheduled |

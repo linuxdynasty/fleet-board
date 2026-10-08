@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func leftovers(t *testing.T, dir string) []string {
@@ -65,5 +66,33 @@ func TestRunRemovesASecondLinkLeftByACrashedInit(t *testing.T) {
 		t.Errorf("leftovers after run started: %q", got)
 	}
 	r.stop(t)
+	assertLeftoversLogged(t, h, "run")
+}
+
+// A backup that crashed left its plaintext in the state folder; run removes
+// it at start once it is more than an hour old, and keeps a younger one (a
+// fleetd backup may be running beside it).
+func TestRunRemovesAnOldBackupLeftover(t *testing.T) {
+	t.Parallel()
+	h := newHub(t, "")
+	h.init(t)
+	old, fresh := filepath.Join(h.state, ".backup-plain-0011"), filepath.Join(h.state, ".backup-plain-0022")
+	for p, d := range map[string]time.Duration{old: 2 * time.Hour, fresh: time.Minute} {
+		if err := os.WriteFile(p, []byte("plain"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		at := time.Now().Add(-d)
+		if err := os.Chtimes(p, at, at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	r := h.start(t, h.options())
+	r.stop(t)
+	if _, err := os.Stat(old); !os.IsNotExist(err) {
+		t.Errorf("the old plaintext is still there: %v", err)
+	}
+	if _, err := os.Stat(fresh); err != nil {
+		t.Errorf("the fresh plaintext was removed: %v", err)
+	}
 	assertLeftoversLogged(t, h, "run")
 }

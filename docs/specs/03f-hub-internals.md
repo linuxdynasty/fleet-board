@@ -180,8 +180,17 @@ hub *this* fleet's hub. That lives in the one `hub_identity` row (details in
 It is stored **inside `state.db`**, so the nightly `VACUUM INTO` backup (ADR
 0014) carries it, and therefore **a backup is a secret**: it holds the CA
 private key and the salt. Backups are written mode 0600 and `fleetd backup
---encrypt` wraps one with a passphrase. A store without the row refuses to
-start instead of minting a new identity.
+--encrypt` wraps one with a passphrase read from the terminal only (asked
+twice; a non-terminal stdin is refused; [02g](02g-agent-security.md#hub-identity-and-restore)).
+A store without the row refuses to start instead of minting a new identity.
+
+A copy never goes through the writer or the read pool. `VACUUM INTO` fails on
+a `query_only` connection, so the nightly job inside `fleetd run` and
+`fleetd backup` each open `state.db` on a read-only (`mode=ro`) connection of
+their own, outside any transaction (`store.VacuumInto`); the copy holds every
+committed row, WAL included. Neither takes `fleetd.lock`: `fleetd backup`
+works whether or not the hub runs (#92). Names, schedule and pruning are in
+[02j](02j-hub-runtime.md#state-directory).
 
 `fleetd restore` is offline. It checks the backup, mints a new `settings_epoch`
 (so agents holding a higher generation under the old epoch accept the restored
