@@ -127,8 +127,8 @@ func (s *Schedule) Check(ctx context.Context) {
 		last = time.Time{}
 	}
 	due := false
-	slot := time.Date(now.Year(), now.Month(), now.Day(), Hour, 0, 0, 0, now.Location())
-	if day := slot.Format(time.DateOnly); !now.Before(slot) && last.Before(slot) && s.tried != day {
+	slot := slotOf(now)
+	if day := now.Format(time.DateOnly); !now.Before(slot) && last.Before(slot) && s.tried != day {
 		s.tried, due = day, true
 	}
 	if wake && (last.IsZero() || now.Sub(last) > catchUpAfter) {
@@ -144,6 +144,20 @@ func (s *Schedule) Check(ctx context.Context) {
 	if err := prune(dir, Keep, s.seams.remove); err != nil {
 		s.log.Error("backup.failed", "trigger", string(Nightly), "step", string(stepPrune), "err_kind", errKind(err))
 	}
+}
+
+// slotOf is the first instant of t's local date whose wall clock reads
+// Hour:00 or later: on a spring-forward night that skips Hour:00, the first
+// instant after the jump; on a fall-back night that repeats it, the first
+// of the two. time.Date promises neither, so this walks from local midnight
+// in 15-minute steps (every zone's offset changes are multiples of 15
+// minutes, so the walk lands on Hour:00 whenever it exists).
+func slotOf(t time.Time) time.Time {
+	s := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, t.Location())
+	for s.YearDay() != t.YearDay() || s.Hour() < Hour {
+		s = s.Add(15 * time.Minute)
+	}
+	return s
 }
 
 // warnAhead logs backup.stamp_ahead when the newest copy stamped past
