@@ -51,16 +51,38 @@ With the hub stopped, the read-only copy connection leaves SQLite's empty
 `state.db-wal` and `state.db-shm` in the state folder (SQLite gives them
 `state.db`'s mode, 0600); `fleetd run` opens them normally.
 
+## The nightly job (`Schedule`)
+
+`fleetd run` builds one `Schedule` and calls `Run(ctx, ticks)` in a goroutine
+it waits for; `Run` checks at once, then at every tick (`CheckEvery`, one
+minute). The clock is `ScheduleOptions.Now` and its location is the hub's
+local time, so tests drive `Check` with a fake clock and never sleep.
+
+- **Due at 03:00.** The first check of a local date at or after 03:00 makes a
+  nightly copy unless one is already that new. It is tried once per date,
+  even when it fails.
+- **Catch-up.** The first check after a start, or after a wake (a gap of more
+  than three check intervals between checks), makes a copy when the newest
+  nightly copy is more than 24 h old or there is none.
+- **Keep 7.** After a nightly copy, all but the newest 7 `nightly-*.db` files
+  are removed. Manual copies, plain or encrypted, and any other file are
+  never removed.
+
+Which copies exist is read from the file names each time, so a restart
+loses nothing.
+
 ## Signals
 
 | Signal | When |
 |---|---|
 | `backup.completed` (info; `trigger`, `bytes`, `encrypted`) | a copy was published |
 | `backup.failed` (error; `trigger`, `step`, `err_kind`) | a copy failed; nothing was published and no temporary file is left |
+| `fleet_hub_backup_age_seconds` (gauge, read at scrape time) | the age of the newest backup of either kind, from the stamp in its name; no value while there is none, so `BACKUP_AGE` reads unknown rather than 0. Registered by `NewSchedule`, removed by `Close` |
 
 `trigger` is `nightly` or `manual`. `step` is `passphrase`, `source`, `dir`,
-`copy`, `verify`, `encrypt`, `publish` or `cleanup` (a temporary file could
-not be removed after publishing). `err_kind` is `refused` (not a terminal,
+`copy`, `verify`, `encrypt`, `publish`, `cleanup` (a temporary file could
+not be removed after publishing) or `prune` (the nightly copy was published,
+but older ones could not be removed). `err_kind` is `refused` (not a terminal,
 empty or mismatched passphrase, a missing or loose `state.db` or `backups/`,
 a copy with no `hub_identity` or an unknown schema, a name already taken),
 `timeout` (the context ended) or `io`. No path, passphrase or file content

@@ -1,0 +1,138 @@
+package backup
+
+import (
+	"context"
+	"log/slog"
+	"path/filepath"
+	"time"
+
+	"go.opentelemetry.io/otel/metric"
+
+	"github.com/linuxdynasty/fleet-board/internal/telemetry"
+)
+
+// Schedule constants (defaults.md "Backup", ADR 0024 decision 16).
+const (
+	// Hour is when the nightly copy is due, in hub local time.
+	Hour = 3
+	// Keep is how many nightly copies are kept; manual ones are never pruned.
+	Keep = 7
+	// CheckEvery is how often fleetd run checks whether a copy is due.
+	CheckEvery = time.Minute
+	// catchUpAfter is how old the newest nightly copy may be before a start
+	// or a wake makes one at once.
+	catchUpAfter = 24 * time.Hour
+	// wakeGap is a gap between two checks that means the hub was asleep.
+	wakeGap = 3 * CheckEvery
+)
+
+const scope = "github.com/linuxdynasty/fleet-board/internal/hub/backup"
+
+// ScheduleOptions configure [NewSchedule].
+type ScheduleOptions struct {
+	StateDir string
+	// Now is the clock; its location is the hub's local time. nil means
+	// time.Now (time.Local).
+	Now func() time.Time
+	// Telemetry receives the backup log events and serves
+	// fleet_hub_backup_age_seconds; nil turns both off.
+	Telemetry *telemetry.Telemetry
+}
+
+// Schedule is the nightly job inside fleetd run. Only the goroutine that
+// calls Check (or Run) uses it.
+type Schedule struct {
+	dir   string
+	now   func() time.Time
+	tel   *telemetry.Telemetry
+	log   *slog.Logger
+	gauge metric.Registration
+	last  time.Time // the clock at the previous Check; zero before the first
+	tried string    // the local date whose 03:00 copy was already tried
+}
+
+// NewSchedule builds the job and registers fleet_hub_backup_age_seconds: the
+// age of the newest backup of either kind, read from the stamp in its name
+// at scrape time, and no value at all while there is no backup (BACKUP_AGE
+// then reads unknown). Close unregisters it.
+func NewSchedule(opts ScheduleOptions) (*Schedule, error) {
+	s := &Schedule{dir: opts.StateDir, now: opts.Now, tel: opts.Telemetry, log: logger(opts.Telemetry)}
+	if s.now == nil {
+		s.now = time.Now
+	}
+	if s.tel == nil {
+		return s, nil
+	}
+	m := s.tel.Meter(scope)
+	age, err := m.Float64ObservableGauge(s.tel.MetricPrefix()+"_backup_age_seconds",
+		metric.WithDescription("Age of the newest backup in backups/, nightly or manual; no value while there is none."),
+		metric.WithUnit("s"))
+	if err != nil {
+		return nil, err
+	}
+	dir := filepath.Join(s.dir, DirName)
+	s.gauge, err = m.RegisterCallback(func(_ context.Context, o metric.Observer) error {
+		files, err := list(dir)
+		if t := newest(files, ""); err == nil && !t.IsZero() {
+			o.ObserveFloat64(age, max(s.now().Sub(t).Seconds(), 0)) // a stamp ahead of the clock reads 0
+		}
+		return nil
+	}, age)
+	return s, err
+}
+
+// Close unregisters the gauge.
+func (s *Schedule) Close() error {
+	if s.gauge == nil {
+		return nil
+	}
+	return s.gauge.Unregister()
+}
+
+// Run checks at once, then at every tick, until ctx ends.
+func (s *Schedule) Run(ctx context.Context, ticks <-chan time.Time) {
+	s.Check(ctx)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticks:
+			s.Check(ctx)
+		}
+	}
+}
+
+// Check makes a nightly copy when one is due, then prunes to the last
+// [Keep]. One is due at the first check of a local date at or after 03:00
+// when no nightly copy is that new yet (tried once per date, even if it
+// fails), and at the first check after a start or a wake (a gap of more than
+// three check intervals) when the newest nightly copy is more than 24 h old.
+// Failures are logged (backup.failed) and wait for the next due time.
+func (s *Schedule) Check(ctx context.Context) {
+	now := s.now()
+	wake := s.last.IsZero() || now.Round(0).Sub(s.last.Round(0)) > wakeGap
+	s.last = now
+	dir := filepath.Join(s.dir, DirName)
+	files, err := list(dir) // an unreadable folder counts as no copy; Take then logs why
+	last := newest(files, Nightly)
+	if err != nil {
+		last = time.Time{}
+	}
+	due := false
+	slot := time.Date(now.Year(), now.Month(), now.Day(), Hour, 0, 0, 0, now.Location())
+	if day := slot.Format(time.DateOnly); !now.Before(slot) && last.Before(slot) && s.tried != day {
+		s.tried, due = day, true
+	}
+	if wake && (last.IsZero() || now.Sub(last) > catchUpAfter) {
+		due = true
+	}
+	if !due {
+		return
+	}
+	if _, err := Take(ctx, Options{StateDir: s.dir, Trigger: Nightly, Now: s.now, Telemetry: s.tel}); err != nil {
+		return // Take logged backup.failed
+	}
+	if err := prune(dir, Keep); err != nil {
+		s.log.Error("backup.failed", "trigger", string(Nightly), "step", string(stepPrune), "err_kind", errKind(err))
+	}
+}

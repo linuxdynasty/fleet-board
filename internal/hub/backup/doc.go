@@ -11,4 +11,10 @@
 // passphrase asked twice on the terminal (a non-terminal is refused); the
 // plaintext is built in the state folder, never in backups/, and removed
 // whatever happens.
+//
+// [Schedule] is the nightly job inside fleetd run: a copy at the first check
+// of each local date at or after 03:00, a catch-up at start or wake when the
+// newest nightly copy is more than 24 h old, and the last 7 nightly copies
+// kept (manual copies are never pruned). It also serves
+// fleet_hub_backup_age_seconds, the age of the newest backup of either kind.
 package backup

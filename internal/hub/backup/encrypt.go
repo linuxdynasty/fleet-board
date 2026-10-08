@@ -77,7 +77,7 @@ func encrypt(ctx context.Context, plain, dst string, pass []byte, workFactor int
 	if err != nil {
 		return fmt.Errorf("backup: open the plaintext copy: %w", err)
 	}
-	defer func() { _ = in.Close() }()                                      // read only
+	defer func() { _ = in.Close() }()
 	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600) //nolint:gosec // G304: a fixed prefix plus random hex in the backups folder
 	if err != nil {
 		return fmt.Errorf("backup: create the encrypted copy: %w", err)
