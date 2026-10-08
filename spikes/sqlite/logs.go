@@ -50,6 +50,7 @@ func runLogs(path string) {
 		check(tx.Commit())
 	}
 	fmt.Printf("prefill: %d chunks, %d sessions, %.0f MB, %v\n", *prefill, sess, fileMB(path), time.Since(t0).Round(time.Millisecond))
+	printDepths("after_prefill", w, path)
 
 	// Steady ingest with concurrent replay reads.
 	stop := make(chan struct{})
@@ -149,6 +150,7 @@ func runLogs(path string) {
 	mustExec(w, "PRAGMA wal_checkpoint(TRUNCATE)")
 	fmt.Printf("incremental_vacuum: %d free pages in %v, file %.0f MB -> %.0f MB\n", free, time.Since(a).Round(time.Millisecond), before, fileMB(path))
 	report("vacuum_step_2000pages", steps)
+	printDepths("after_vacuum", w, path)
 }
 
 func fileMB(path string) float64 {

@@ -73,5 +73,7 @@ previous schema. Run with `-race`.
 ## Evidence limits
 
 The numbers in 04 were measured on the hub MacBook (APFS) and a Linux btrfs
-host with spike S1 (`spikes/sqlite/`); `logs.db` at 50 GB is not proven. Do not
-claim a throughput or durability result outside that without measuring it.
+host with spike S1 (`spikes/sqlite/`); `logs.db` at the 50 GiB cap was
+measured on the Mac mini with a warm cache only (04, Q6); a cold-cache read
+is not proven. Do not claim a throughput or durability result outside that
+without measuring it.
