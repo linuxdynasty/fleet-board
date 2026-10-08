@@ -281,7 +281,8 @@ not move it. A change only triggers one `tmux list-clients -F
 agent ignores control-mode clients (its own observer) and credits input only
 to a client whose `client_activity` moved, at its active pane, so a browser
 attach through a grouped view session lands on the real pane (browser attach
-clients count: a person is typing). When unsure, it counts as input. No timed
+clients count: a person is typing). When unsure, it counts as input; a
+client seen for the first time counts as input. No timed
 poll runs while the subscription is live; the 2 s `list-clients` poll runs
 only from attach until the first `%subscription-changed` confirms it, and
 after `%exit` until it is confirmed again (ADR 0024, decision 9). On

@@ -27,7 +27,7 @@ keystroke in 120 of 120 typing trials on the Mac (60 per version; median 415 to
 `list-clients` poll: a change says which session; one `list-clients` read at
 that moment says which client and pane. On tmux 3.4 and later the `#{L:...}`
 client loop also gives each client's `client_activity` in one subscription.
-Whether to make that change is a design call; see "Decision needed" below.
+An `arbiter-fleet` ruling made that change; see "Decision" below.
 
 **2. tmux 3.2 added both flags.** tmux's CHANGES file lists both under
 "CHANGES FROM 3.1c TO 3.2" (quoted below). Run on each release: 3.1c refuses
@@ -219,15 +219,14 @@ The source builds were not timed separately; caching `$HOME/tmux-*` keyed on
 version and hash would skip them after the first run. The apt path
 ends when GitHub retires the `ubuntu-22.04` image; the source path does not.
 
-## Decision needed
+## Decision
 
-The finding changes a rule: 02h E13 and defaults.md say typing is found by a
-2 s `list-clients` poll, an exception ADR 0024 decision 9 allowed because no
-push source was known. A push source now exists (on the minimum tmux, 3.2).
-Swapping the poll for a `#{session_activity}` subscription plus a
-`list-clients` read on change is a design change for PR 7, so it needs an
-`arbiter-fleet` ruling or an ADR before PR 7 relies on it. The specs record the
-finding and keep the poll as the rule until then.
+An `arbiter-fleet` ruling (recorded in the spike PR, with PR 7's proofs on
+#35) made the `#{session_activity}` subscription plus one `list-clients` read
+per change the rule, and the 2 s `list-clients` poll only a backup while the
+subscription is not confirmed. No new ADR: ADR 0022 A.6 prefers a push source,
+and ADR 0024 decision 9 allows the poll without requiring it. 02h E13,
+defaults.md and plan rows 0.5 and 7 apply it.
 
 ## Not proved
 
