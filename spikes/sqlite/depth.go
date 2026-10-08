@@ -51,7 +51,11 @@ func btreeDepth(r io.ReaderAt, root uint32) (int, error) {
 // printDepths checkpoints the WAL into the file, then prints the depth and
 // page count of every table and index B-tree.
 func printDepths(label string, w *sql.DB, path string) {
-	mustExec(w, "PRAGMA wal_checkpoint(TRUNCATE)")
+	var busy, logFrames, done int
+	check(w.QueryRow("PRAGMA wal_checkpoint(TRUNCATE)").Scan(&busy, &logFrames, &done))
+	if busy != 0 {
+		panic("printDepths: the WAL checkpoint was blocked; the file may hold old pages")
+	}
 	var pages int
 	check(w.QueryRow("PRAGMA page_count").Scan(&pages))
 	rows := must(w.Query("SELECT name, rootpage FROM sqlite_schema WHERE type IN ('table','index') AND rootpage > 0"))

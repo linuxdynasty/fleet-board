@@ -319,8 +319,9 @@ S1 (`logs.db`, 1,389 one-hour sessions prefilled, 30 chunks/s):
 | 3,300 B, Linux btrfs | 2.1 GB | 45.9 ms | 367 KB/s | 26.7 ms | 1.2 ms | 5.4 ms | 138 sessions, 0.48 s | 50,568 pages in 1.69 s |
 
 At the 50 GiB cap (plan 0.15, 2026-10-08): S1 `logs` again, 2,048 B chunks,
-on Allen's Mac mini (M4 Pro, 64 GiB RAM, internal SSD, APFS), both sizes in
-one session; ranges over 3 runs at 2 GB and 2 at 50 GiB
+on the Mac mini (M4 Pro, 64 GiB RAM, internal SSD, APFS), a shared host
+(other agents running, load average 1.3 to 3.3), runs interleaved 2 GB /
+50 GiB in one session; ranges over 3 runs at 2 GB and 2 at 50 GiB
 ([raw](../../spikes/sqlite/results/s1-logs-50g.txt)). Depth is read from the
 file and matches SQLite's `dbstat` table.
 
@@ -329,12 +330,14 @@ file and matches SQLite's `dbstat` table.
 | 2.1 GB, 0.5 M chunks | 7–10 s | 4 / 3 | 20–34 ms | 11–20 / 24–34 ms | 1.0–2.5 ms | 4.8–9.2 ms | 138 sessions, 0.85–1.29 s | 50,568 pages in 0.86–0.91 s (36–45 ms) |
 | 53.6 GB (49.9 GiB), 12.9 M chunks | 4 m 42–45 s | 4 / 4 | 21–24 ms | 16–17 / 35–40 ms | 1.2–1.4 ms | 5.8–6.2 ms | 3,583 sessions, 21.6–22.0 s | 1,305,360 pages in 23–26 s (70–74 ms) |
 
-The indexes gain one level and the table none. Commit, lookup and delete do
-not change with size; replay p99 rises by about 9 ms and vacuum step p99
+The indexes gain one level and the table none. Commit, lookup and delete
+showed no change beyond run-to-run spread; replay p99 rises by about 9 ms and vacuum step p99
 nearly doubles. Single outliers were a 242 ms commit at 2 GB and a 344 ms vacuum step
 at 50 GiB, both inside the 1 s batch window. Prune and vacuum time grow with
-the amount removed. The whole file stayed in the page cache (no disk reads in
-any run), so a cold cache is not measured. Each 2,048 B chunk took a 4 KiB
+the amount removed. No block reads were counted in any run (`/usr/bin/time
+-l`): the file was served from memory, so a cold cache is not measured. With
+smaller chunks (Muse, about 650 B) the cap holds several times more rows, a
+shape not run at 50 GiB. Each 2,048 B chunk took a 4 KiB
 page of its own (12.9 M chunks, 26.4 GB of chunk data, in a 53.6 GB file): a
 chunk of about 2 to 4 KB costs one page, so the store on disk is larger than
 the chunk bytes and the cap holds fewer days than the monthly volumes below
@@ -470,6 +473,6 @@ second engine to learn.
 
 | Gap | Cover |
 |---|---|
-| `logs.db` at the 50 GiB cap with a cold page cache | Measured warm on 2026-10-08 (Q6, issue #60): indexes one level deeper, every operation within the 1 s batch window; the 64 GiB host held the whole file in memory. A cold run gates the merge of plan row 25, not its start: the same `logs` scenario on a file larger than the machine's RAM (the hub MacBook preferred), or after the owner runs `sudo purge` by hand, with the measuring process showing disk reads (`/usr/bin/time -l` block input operations in the thousands, not 0). Pass: commit p99 ≤ 250 ms; every commit, prune transaction and vacuum step under 1 s; replay 1 h p99 ≤ 1 s; offset lookup p99 ≤ 100 ms |
+| `logs.db` at the 50 GiB cap with a cold page cache | Measured warm on 2026-10-08 (Q6, issue #60): indexes one level deeper, every single transaction and vacuum step within the 1 s batch window; the 64 GiB host held the whole file in memory. A cold run gates the merge of plan row 25, not its start: the same `logs` scenario on a file larger than the machine's RAM (the hub MacBook preferred), or after the owner runs `sudo purge` by hand, with the measuring process showing disk reads (`/usr/bin/time -l` block input operations in the thousands, not 0). Pass: commit p99 ≤ 250 ms; every commit, prune transaction and vacuum step under 1 s; replay 1 h p99 ≤ 1 s; offset lookup p99 ≤ 100 ms |
 | Muse and Claude Code under the framing above (S2 measured Codex) | Re-run `zstdchunk` on one goal hour of each before the first logs PR; this measurement (issue #60) gates the v1 logs work, plan item 0.15 (section 3) |
 | Harness transcripts (K3) compression | Measured in v3 before K3 ships. At A50 the raw transcript rate (1.08 MB/s) is higher than the terminal logs, so K3 stays opt-in and compressed |

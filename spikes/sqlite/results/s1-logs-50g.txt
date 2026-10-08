@@ -1,10 +1,10 @@
 # S1 logs at the 50 GiB default cap (plan item 0.15, issue #60), 2026-10-08
 #
-# Machine: Allen's Mac mini, Apple M4 Pro (12 cores), 64 GiB RAM, macOS 27.0.1,
+# Machine: Mac mini, Apple M4 Pro (12 cores), 64 GiB RAM, macOS 27.0.1,
 #   internal SSD, APFS (/System/Volumes/Data). Not the hub MacBook of the
 #   2026-10-02 S1 runs, so both sizes were re-run here in one session.
 # Go 1.27.1 darwin/arm64, modernc.org/sqlite v1.60.1 (SQLite 3.53.4).
-# Code: bdf1e40 plus a844e47 (B-tree depth lines); built with cgo on, as S1
+# Code: bdf1e40 plus the tree later committed as a844e47 (B-tree depth lines); built with cgo on, as S1
 #   (cgo only reads proc_pid_rusage for disk_written).
 # Pragmas: S1 defaults (WAL, synchronous=FULL, fullfsync=1, busy_timeout=5000,
 #   journal_size_limit=64 MiB, auto_vacuum=INCREMENTAL), chunk 2048 B, dur 60 s.
@@ -18,9 +18,9 @@
 #   /tmp/s1-prep015 -driver modernc -scenario logs -prefill 12900000 -dir ~/s1-logs-run/b50g-2
 #   /tmp/s1-prep015 -driver modernc -scenario logs -prefill 500000   -dir ~/s1-logs-run/b2g-3
 #
-# Page cache: 64 GiB RAM holds most of a 50 GiB file; /usr/bin/time -l reported
+# Page cache: 64 GiB RAM can hold a 50 GiB file; /usr/bin/time -l reported
 #   0 block input operations for every run, so reads came from memory. A cold
-#   cache was not measured (purge needs root).
+#   cache was not measured (purge needs root, or a reboot before the run).
 # Other load: other agents and OrbStack were running; load average 1.3 to 3.3.
 
 ## run 1: b2g (500,000 chunks), start 06:17:05 EDT, load 3.28 3.09 2.97

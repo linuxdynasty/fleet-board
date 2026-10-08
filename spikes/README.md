@@ -35,7 +35,7 @@ here becomes a dependency of the product. Raw output is kept under
   while 10 readers replay a whole session and look up an offset every 2 s;
   then one per-session delete, pruning of the oldest 10 %, and
   `incremental_vacuum(2000)` steps until the freelist is empty.
-- `logs` at the 50 GiB cap (plan 0.15, 2026-10-08): Allen's Mac mini (M4 Pro,
+- `logs` at the 50 GiB cap (plan 0.15, 2026-10-08): the Mac mini (M4 Pro,
   64 GiB RAM, internal SSD, APFS), `-prefill 12900000` (49.9 GiB) against
   `-prefill 500000` in the same session; the run prints each B-tree's depth
   ([`results/s1-logs-50g.txt`](sqlite/results/s1-logs-50g.txt)).
