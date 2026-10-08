@@ -334,14 +334,23 @@ not change with size; replay p99 rises by about 9 ms and vacuum step p99
 nearly doubles. Single outliers were a 242 ms commit at 2 GB and a 344 ms vacuum step
 at 50 GiB, both inside the 1 s batch window. Prune and vacuum time grow with
 the amount removed. The whole file stayed in the page cache (no disk reads in
-any run), so a cold cache is not measured.
+any run), so a cold cache is not measured. Each 2,048 B chunk took a 4 KiB
+page of its own (12.9 M chunks, 26.4 GB of chunk data, in a 53.6 GB file): a
+chunk of about 2 to 4 KB costs one page, so the store on disk is larger than
+the chunk bytes and the cap holds fewer days than the monthly volumes below
+suggest.
 
 **Decision: B.** A second SQLite file, `logs.db`, with its own writer
 goroutine (the `logReceiver`'s writer), same pragmas as `state.db` plus
 `auto_vacuum=INCREMENTAL`, one transaction per ≤ 1 s batch across all
-streams; `LogAck` after commit. Retention deletes the oldest `FINAL`
-sessions until under the size cap, then runs `incremental_vacuum` in
-2,000-page steps. Per-session delete is one transaction and is audited in
+streams; `LogAck` after commit. Retention measures the store as its live
+pages, `(page_count − freelist_count) × page_size`, never the file size
+(freed pages stay in the file until vacuumed) and never the sum of chunk
+bytes. Over the cap it deletes the oldest `FINAL` sessions, one transaction
+each, until under it, then runs `incremental_vacuum` in 2,000-page steps.
+Each prune transaction and each vacuum step is one turn of the log writer,
+taken between ingest batches, so a batch waits behind at most one of them
+(at the cap: ≤ 36 ms and ≤ 344 ms). Per-session delete is one transaction and is audited in
 `state.db`. Log I/O never queues behind state writes, and `state.db` backups
 stay small (`logs.db` is backed up only with `fleetd backup --include-logs`).
 The startup truncation of partial frames in 03d is no longer needed.
@@ -461,6 +470,6 @@ second engine to learn.
 
 | Gap | Cover |
 |---|---|
-| `logs.db` at the 50 GiB cap with a cold page cache | Measured warm on 2026-10-08 (Q6, issue #60): indexes one level deeper, every operation within the 1 s batch window. The 64 GiB host kept the file in memory; a cold read needs root (`purge`) or a hub with less RAM than the file, and is not measured |
-| Muse and Claude Code under the framing above (S2 measured Codex) | Re-run `zstdchunk` on one goal hour of each before the first logs PR; this measurement (issue #60) gates the v1 logs work, plan section 9 |
+| `logs.db` at the 50 GiB cap with a cold page cache | Measured warm on 2026-10-08 (Q6, issue #60): indexes one level deeper, every operation within the 1 s batch window; the 64 GiB host held the whole file in memory. A cold run gates the merge of plan row 25, not its start: the same `logs` scenario on a file larger than the machine's RAM (the hub MacBook preferred), or after the owner runs `sudo purge` by hand, with the measuring process showing disk reads (`/usr/bin/time -l` block input operations in the thousands, not 0). Pass: commit p99 ≤ 250 ms; every commit, prune transaction and vacuum step under 1 s; replay 1 h p99 ≤ 1 s; offset lookup p99 ≤ 100 ms |
+| Muse and Claude Code under the framing above (S2 measured Codex) | Re-run `zstdchunk` on one goal hour of each before the first logs PR; this measurement (issue #60) gates the v1 logs work, plan item 0.15 (section 3) |
 | Harness transcripts (K3) compression | Measured in v3 before K3 ships. At A50 the raw transcript rate (1.08 MB/s) is higher than the terminal logs, so K3 stays opt-in and compressed |
