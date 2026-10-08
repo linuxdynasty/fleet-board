@@ -51,6 +51,12 @@ With the hub stopped, the read-only copy connection leaves SQLite's empty
 `state.db-wal` and `state.db-shm` in the state folder (SQLite gives them
 `state.db`'s mode, 0600); `fleetd run` opens them normally.
 
+A backup killed mid-copy (SIGKILL, power loss) leaves its temporary files.
+`RemoveLeftovers`, called by `fleetd init` and `fleetd run` at start under
+`fleetd.lock`, removes `<state_dir>/.backup-plain-*` and
+`backups/.partial-*` once they are more than an hour old (`LeftoverAge`):
+`fleetd backup` takes no lock, so a younger file may be a copy in progress.
+
 ## The nightly job (`Schedule`)
 
 `fleetd run` builds one `Schedule` and calls `Run(ctx, ticks)` in a goroutine

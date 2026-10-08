@@ -10,7 +10,8 @@ calls `Init`, `Run`, `EnrollToken` or `Backup`.
    file in step 5).
 2. Creates the state folder (0700), or checks an existing one.
 3. Takes `<state_dir>/fleetd.lock` (#92), then removes the temporary files a
-   crashed init left (`statedb.RemoveLeftovers`).
+   crashed init left (`statedb.RemoveLeftovers`) and those a crashed backup
+   left more than an hour ago (`backup.RemoveLeftovers`).
 4. Refuses when `state.db` exists (`store_exists`; nothing changes).
 5. Mints the identity: random fleet id (UUID), Ed25519 CA, Ed25519 server
    certificate for `tls.agent_names` or the default names, a 32-byte account
@@ -25,7 +26,9 @@ calls `Init`, `Run`, `EnrollToken` or `Backup`.
 2. Checks the state folder: it must exist, be 0700 or narrower and be ours.
 3. Takes `fleetd.lock` before touching `state.db`; a held lock refuses at once.
    Then removes a crashed init's temporary files, such as a second link to
-   `state.db` left between the link and the cleanup.
+   `state.db` left between the link and the cleanup, and a crashed backup's
+   (`.backup-plain-*`, `backups/.partial-*`) once more than an hour old,
+   since `fleetd backup` takes no lock and may be copying.
 4. Opens the existing `state.db` (checked 0600 or narrower; never created) and
    reads `hub_identity` (missing: refused, never minted).
 5. Loads the revocation list with `revocation.Load`: `<state_dir>/revoked-serials`
@@ -86,7 +89,7 @@ counts no start failure.
 | Signal | When |
 |---|---|
 | `hub.start_failed` (`command`, `reason`, `err_kind`), `fleet_hub_start_failures_total{command, reason}` | init or run refused to start |
-| `hub.leftovers_removed` (`command`, `files`) | init or run removed a crashed init's temporary files |
+| `hub.leftovers_removed` (`command`, `files`) | init or run removed a crashed init's or backup's temporary files |
 | `hub.initialized` (`server_names`, `config_written`) | init created the store |
 | `hub.listener_opened` (`listener`, `port`; the admin socket has no port), `hub.started` (`mode`, `listeners`) | run is serving |
 | `admin.peer_refused`, `enroll.issued`, `enroll.issue_refused`, `enroll.issue_failed`, `fleet_hub_enroll_tokens_total{result}` | the admin socket and token creation ([internal/hub/api](../api/README.md)) |

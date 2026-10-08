@@ -8,7 +8,9 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"time"
 
+	"github.com/linuxdynasty/fleet-board/internal/hub/backup"
 	"github.com/linuxdynasty/fleet-board/internal/hub/ca"
 	"github.com/linuxdynasty/fleet-board/internal/hub/config"
 	"github.com/linuxdynasty/fleet-board/internal/hub/lock"
@@ -124,10 +126,16 @@ func newIdentity(cfg *config.Config, opts Options) (statedb.Identity, error) {
 	}, nil
 }
 
-// removeLeftovers deletes a crashed init's temporary files; call it with
+// removeLeftovers deletes a crashed init's temporary files and a crashed
+// backup's that are more than backup.LeftoverAge old; call it with
 // fleetd.lock held. It logs hub.leftovers_removed when it removed any.
 func (s *session) removeLeftovers(dir string) error {
 	n, err := statedb.RemoveLeftovers(dir)
+	if err == nil {
+		var m int
+		m, err = backup.RemoveLeftovers(dir, time.Now()) // file times are real, whatever Options.Now says
+		n += m
+	}
 	if n > 0 {
 		s.tel.Logger.Info("hub.leftovers_removed", "command", s.command, "files", n)
 	}
