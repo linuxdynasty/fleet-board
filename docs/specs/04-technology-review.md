@@ -30,7 +30,7 @@ pages were read on 2026-10-02.
 | Q3 queue or broker | **None.** In-process bounded channels as in 03f | Load is 110 msg/s; at-least-once already comes from the agent ring and the outbox |
 | Q4 hot state | **Read from the store.** No cache process, no in-memory copy of record | S1: 500-row sidebar read p99 21 ms under burst |
 | Q5 browser fan-out | **Connect** (unary + server streaming, one stream per tab); terminal attach over **WebSocket** with byte acks | Vendor docs (browsers cannot stream requests) |
-| Q6 log storage | **`logs.db`**: zstd chunks as rows in a second SQLite file with its own writer; replaces "files on disk" in ADR 0010 | S1: 30 chunks/s commit p99 ≤ 19 ms; delete one session 6 ms; prune and vacuum in ≈ 55 ms steps |
+| Q6 log storage | **`logs.db`**: zstd chunks as rows in a second SQLite file with its own writer; replaces "files on disk" in ADR 0010 | S1: 30 chunks/s commit p99 ≤ 19 ms; delete one session 6 ms; prune and vacuum in ≈ 55 ms steps; at the 50 GiB cap commit p99 ≤ 24 ms, vacuum step p99 ≤ 74 ms (2026-10-08) |
 | Q6 chunk framing | One zstd frame per stream for ≤ 5 min or 4 MiB raw, flushed into a chunk every 10 s; replay seeks by frame | S2: 14× vs 8× for independent 10 s frames (Codex, 60 min) |
 | Q6 log volume | The first estimate was low: Codex output compresses 15×, not 115× (Muse); A50 is **50–270 GB/month** depending on the harness mix; default size cap 50 GiB | S2 |
 | Q7 replay budget | 200 ev/s per agent, 2,500 ev/s per hub, as proposed | S1 burst |
@@ -318,6 +318,24 @@ S1 (`logs.db`, 1,389 one-hour sessions prefilled, 30 chunks/s):
 | **3,300 B** (S2 measured) | 2.1 GB | 19.9 ms | 326 KB/s | 18.4 ms | 0.9 ms | 5.5 ms | 138 sessions, 0.85 s | 50,568 pages in 0.95 s |
 | 3,300 B, Linux btrfs | 2.1 GB | 45.9 ms | 367 KB/s | 26.7 ms | 1.2 ms | 5.4 ms | 138 sessions, 0.48 s | 50,568 pages in 1.69 s |
 
+At the 50 GiB cap (plan 0.15, 2026-10-08): S1 `logs` again, 2,048 B chunks,
+on Allen's Mac mini (M4 Pro, 64 GiB RAM, internal SSD, APFS), both sizes in
+one session; ranges over 3 runs at 2 GB and 2 at 50 GiB
+([raw](../../spikes/sqlite/results/s1-logs-50g.txt)). Depth is read from the
+file and matches SQLite's `dbstat` table.
+
+| File | Prefill | Depth: table / indexes | Commit p99 | Replay 1 h p50 / p99 | Offset lookup p99 | Delete 1 session | Prune 10 % | Vacuum (step p99) |
+|---|---|---|---|---|---|---|---|---|
+| 2.1 GB, 0.5 M chunks | 7–10 s | 4 / 3 | 20–34 ms | 11–20 / 24–34 ms | 1.0–2.5 ms | 4.8–9.2 ms | 138 sessions, 0.85–1.29 s | 50,568 pages in 0.86–0.91 s (36–45 ms) |
+| 53.6 GB (49.9 GiB), 12.9 M chunks | 4 m 42–45 s | 4 / 4 | 21–24 ms | 16–17 / 35–40 ms | 1.2–1.4 ms | 5.8–6.2 ms | 3,583 sessions, 21.6–22.0 s | 1,305,360 pages in 23–26 s (70–74 ms) |
+
+The indexes gain one level and the table none. Commit, lookup and delete do
+not change with size; replay p99 rises by about 9 ms and vacuum step p99
+nearly doubles. Single outliers were a 242 ms commit at 2 GB and a 344 ms vacuum step
+at 50 GiB, both inside the 1 s batch window. Prune and vacuum time grow with
+the amount removed. The whole file stayed in the page cache (no disk reads in
+any run), so a cold cache is not measured.
+
 **Decision: B.** A second SQLite file, `logs.db`, with its own writer
 goroutine (the `logReceiver`'s writer), same pragmas as `state.db` plus
 `auto_vacuum=INCREMENTAL`, one transaction per ≤ 1 s batch across all
@@ -443,6 +461,6 @@ second engine to learn.
 
 | Gap | Cover |
 |---|---|
-| `logs.db` at the 50 GiB default cap (S1 used 2 GB) | B-tree depth grows by about one level; re-run S1 `logs` with a larger prefill before the first logs PR; this measurement (issue #60) gates the v1 logs work, plan section 9 |
+| `logs.db` at the 50 GiB cap with a cold page cache | Measured warm on 2026-10-08 (Q6, issue #60): indexes one level deeper, every operation within the 1 s batch window. The 64 GiB host kept the file in memory; a cold read needs root (`purge`) or a hub with less RAM than the file, and is not measured |
 | Muse and Claude Code under the framing above (S2 measured Codex) | Re-run `zstdchunk` on one goal hour of each before the first logs PR; this measurement (issue #60) gates the v1 logs work, plan section 9 |
 | Harness transcripts (K3) compression | Measured in v3 before K3 ships. At A50 the raw transcript rate (1.08 MB/s) is higher than the terminal logs, so K3 stays opt-in and compressed |

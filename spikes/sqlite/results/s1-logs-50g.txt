@@ -1,0 +1,125 @@
+# S1 logs at the 50 GiB default cap (plan item 0.15, issue #60), 2026-10-08
+#
+# Machine: Allen's Mac mini, Apple M4 Pro (12 cores), 64 GiB RAM, macOS 27.0.1,
+#   internal SSD, APFS (/System/Volumes/Data). Not the hub MacBook of the
+#   2026-10-02 S1 runs, so both sizes were re-run here in one session.
+# Go 1.27.1 darwin/arm64, modernc.org/sqlite v1.60.1 (SQLite 3.53.4).
+# Code: bdf1e40 plus a844e47 (B-tree depth lines); built with cgo on, as S1
+#   (cgo only reads proc_pid_rusage for disk_written).
+# Pragmas: S1 defaults (WAL, synchronous=FULL, fullfsync=1, busy_timeout=5000,
+#   journal_size_limit=64 MiB, auto_vacuum=INCREMENTAL), chunk 2048 B, dur 60 s.
+# Database dir: ~/s1-logs-run/<run> on the internal SSD (47 % used before).
+#
+# Build:  cd spikes/sqlite && go build -o /tmp/s1-prep015 .        rc=0
+# Runs, in this order (each wrapped in /usr/bin/time -l):
+#   /tmp/s1-prep015 -driver modernc -scenario logs -prefill 500000   -dir ~/s1-logs-run/b2g
+#   /tmp/s1-prep015 -driver modernc -scenario logs -prefill 12900000 -dir ~/s1-logs-run/b50g
+#   /tmp/s1-prep015 -driver modernc -scenario logs -prefill 500000   -dir ~/s1-logs-run/b2g-2
+#   /tmp/s1-prep015 -driver modernc -scenario logs -prefill 12900000 -dir ~/s1-logs-run/b50g-2
+#   /tmp/s1-prep015 -driver modernc -scenario logs -prefill 500000   -dir ~/s1-logs-run/b2g-3
+#
+# Page cache: 64 GiB RAM holds most of a 50 GiB file; /usr/bin/time -l reported
+#   0 block input operations for every run, so reads came from memory. A cold
+#   cache was not measured (purge needs root).
+# Other load: other agents and OrbStack were running; load average 1.3 to 3.3.
+
+## run 1: b2g (500,000 chunks), start 06:17:05 EDT, load 3.28 3.09 2.97
+# driver=modernc fullfsync=true synchronous=FULL scenario=logs
+prefill: 500000 chunks, 1389 sessions, 2074 MB, 7.239s
+btree_depth after_prefill: page_count=506404 log_chunks=4 log_chunks_off=3 log_chunks_time=3 log_sessions=2
+ingest: 30 chunks/s x 2048 B, disk_written=325 KB/s
+logs_commit_1s_batch   n=60      p50=11.175ms   p99=29.635ms   max=37.58ms
+replay_session_1h      n=300     p50=20.39ms    p99=26.985ms   max=27.775ms
+point_lookup_offset    n=300     p50=176µs      p99=2.518ms    max=3.629ms
+delete_one_session: 9.219ms
+prune_oldest_10pct: 138 sessions in 1.286s
+prune_tx_per_session   n=138     p50=8.99ms     p99=23.07ms    max=31.091ms
+incremental_vacuum: 50568 free pages in 911ms, file 2080 MB -> 1874 MB
+vacuum_step_2000pages  n=26      p50=34.926ms   p99=44.936ms   max=57.329ms
+btree_depth after_vacuum: page_count=457597 log_chunks=4 log_chunks_off=3 log_chunks_time=3 log_sessions=2
+# rc=0, 69.51 s real, max RSS 70 MB, end load 1.74 2.67 2.82
+
+## run 2: b50g (12,900,000 chunks), start 06:18:24 EDT, load 1.68 2.64 2.81
+# driver=modernc fullfsync=true synchronous=FULL scenario=logs
+prefill: 12900000 chunks, 35834 sessions, 53559 MB, 4m44.705s
+btree_depth after_prefill: page_count=13075997 log_chunks=4 log_chunks_off=4 log_chunks_time=4 log_sessions=2
+ingest: 30 chunks/s x 2048 B, disk_written=276 KB/s
+logs_commit_1s_batch   n=60      p50=7.92ms     p99=23.686ms   max=42.428ms
+replay_session_1h      n=300     p50=16.273ms   p99=40.413ms   max=41.479ms
+point_lookup_offset    n=300     p50=116µs      p99=1.162ms    max=2.353ms
+delete_one_session: 5.791ms
+prune_oldest_10pct: 3583 sessions in 21.618s
+prune_tx_per_session   n=3583    p50=5.881ms    p99=16.996ms   max=25.86ms
+incremental_vacuum: 1305360 free pages in 25.871s, file 53565 MB -> 48213 MB
+vacuum_step_2000pages  n=653     p50=34.973ms   p99=74.091ms   max=344.449ms
+btree_depth after_vacuum: page_count=11770868 log_chunks=4 log_chunks_off=4 log_chunks_time=4 log_sessions=2
+# rc=0, 392.28 s real, max RSS 71 MB, end 06:24:56 load 1.74 2.08 2.44
+
+## run 3: b2g-2, start 06:26:12 EDT, load 1.33 1.87 2.33
+# driver=modernc fullfsync=true synchronous=FULL scenario=logs
+prefill: 500000 chunks, 1389 sessions, 2074 MB, 8.201s
+btree_depth after_prefill: page_count=506404 log_chunks=4 log_chunks_off=3 log_chunks_time=3 log_sessions=2
+ingest: 30 chunks/s x 2048 B, disk_written=325 KB/s
+logs_commit_1s_batch   n=60      p50=8.262ms    p99=34.215ms   max=242.346ms
+replay_session_1h      n=300     p50=12.676ms   p99=34.125ms   max=35.911ms
+point_lookup_offset    n=300     p50=146µs      p99=1.028ms    max=2.496ms
+delete_one_session: 4.81ms
+prune_oldest_10pct: 138 sessions in 847ms
+prune_tx_per_session   n=138     p50=5.942ms    p99=15.884ms   max=16.029ms
+incremental_vacuum: 50568 free pages in 903ms, file 2080 MB -> 1874 MB
+vacuum_step_2000pages  n=26      p50=34.024ms   p99=40.918ms   max=43.781ms
+btree_depth after_vacuum: page_count=457596 log_chunks=4 log_chunks_off=3 log_chunks_time=3 log_sessions=2
+# rc=0, 70.22 s real, max RSS 72 MB, end 06:27:22 load 2.73 2.15 2.40
+
+## run 4: b50g-2, start 06:27:22 EDT, load 2.73 2.15 2.40
+# driver=modernc fullfsync=true synchronous=FULL scenario=logs
+prefill: 12900000 chunks, 35834 sessions, 53559 MB, 4m41.664s
+btree_depth after_prefill: page_count=13075997 log_chunks=4 log_chunks_off=4 log_chunks_time=4 log_sessions=2
+ingest: 30 chunks/s x 2048 B, disk_written=315 KB/s
+logs_commit_1s_batch   n=60      p50=7.948ms    p99=20.759ms   max=29.449ms
+replay_session_1h      n=300     p50=17.168ms   p99=34.849ms   max=36.779ms
+point_lookup_offset    n=300     p50=111µs      p99=1.434ms    max=3.109ms
+delete_one_session: 6.197ms
+prune_oldest_10pct: 3583 sessions in 21.99s
+prune_tx_per_session   n=3583    p50=5.914ms    p99=16.888ms   max=35.797ms
+incremental_vacuum: 1305360 free pages in 23.303s, file 53565 MB -> 48213 MB
+vacuum_step_2000pages  n=653     p50=34.894ms   p99=69.756ms   max=85.975ms
+btree_depth after_vacuum: page_count=11770867 log_chunks=4 log_chunks_off=4 log_chunks_time=4 log_sessions=2
+# rc=0, 387.03 s real, max RSS 70 MB, end 06:33:49 load 1.98 2.06 2.25
+
+## run 5: b2g-3, start 06:33:50 EDT, load 1.98 2.06 2.25
+# driver=modernc fullfsync=true synchronous=FULL scenario=logs
+prefill: 500000 chunks, 1389 sessions, 2074 MB, 10.018s
+btree_depth after_prefill: page_count=506404 log_chunks=4 log_chunks_off=3 log_chunks_time=3 log_sessions=2
+ingest: 30 chunks/s x 2048 B, disk_written=324 KB/s
+logs_commit_1s_batch   n=60      p50=7.081ms    p99=20.269ms   max=20.404ms
+replay_session_1h      n=300     p50=10.644ms   p99=24.076ms   max=25.255ms
+point_lookup_offset    n=300     p50=161µs      p99=1.406ms    max=1.579ms
+delete_one_session: 7.968ms
+prune_oldest_10pct: 138 sessions in 861ms
+prune_tx_per_session   n=138     p50=5.944ms    p99=11.936ms   max=20.995ms
+incremental_vacuum: 50568 free pages in 860ms, file 2080 MB -> 1874 MB
+vacuum_step_2000pages  n=26      p50=33.913ms   p99=35.862ms   max=37.014ms
+btree_depth after_vacuum: page_count=457597 log_chunks=4 log_chunks_off=3 log_chunks_time=3 log_sessions=2
+# rc=0, 71.80 s real, max RSS 72 MB, end 06:35:02 load 2.08 2.07 2.24
+
+## Depth cross-check: dbstat in the system sqlite3 (3.54.0), read-only, on the
+## file left after the run (levels = count of "/" in dbstat.path)
+# query: SELECT name, max(length(path)-length(replace(path,'/',''))), count(*)
+#        FROM dbstat WHERE pagetype IN ('internal','leaf') GROUP BY name
+# run 1 file (1874 MB), rc=0:
+log_chunks|4|452900
+log_chunks_off|3|2106
+log_chunks_time|3|2022
+log_sessions|2|8
+# run 2 file (48213 MB), indexes (5.5 s) and table (44.9 s) queried apart, rc=0 each:
+log_chunks_off|4|55642
+log_chunks_time|4|56843
+log_sessions|2|166
+log_chunks|4|11643860
+
+## Cleanup
+# Each database dir was removed right after its run and dbstat check
+# (rm -rf ~/s1-logs-run/<run>, rm_rc=0 for all five). No APFS local snapshots
+# (tmutil listlocalsnapshots / lists none). Data volume Used: 204-205 GiB
+# before, 250 GiB with run 2's file present, 205 GiB after.
