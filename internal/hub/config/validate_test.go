@@ -113,6 +113,77 @@ func TestRefusals(t *testing.T) {
 	}
 }
 
+// A key written with no value (empty, ~ or null) is written, so it is refused
+// under its own name rather than keeping its default (#109). In YAML, ~ is no
+// value, not the home folder.
+func TestAKeyWithNoValueIsRefused(t *testing.T) {
+	t.Parallel()
+	cases := []struct{ name, body, key string }{
+		{"duration empty", "timing:\n  verify_grace:\n", "timing.verify_grace"},
+		{"duration tilde", "timing: {verify_grace: ~}\n", "timing.verify_grace"},
+		{"duration null", "timing: {verify_grace: null}\n", "timing.verify_grace"},
+		{"string", "mode: ~\n", "mode"},
+		{"listen address", "listen: {api: null}\n", "listen.api"},
+		{"number", "rate_limits: {read: ~}\n", "rate_limits.read"},
+		{"bool", "discovery: {mdns: ~}\n", "discovery.mdns"},
+		{"bool tls", "tls: {api_tailscale: null}\n", "tls.api_tailscale"},
+		{"whole section", "timing:\n", "timing"},
+		{"whole section tilde", "listen: ~\n", "listen"},
+		{"state_dir tilde", "state_dir: ~\n", "state_dir"},
+		{"list", "public_hosts: ~\n", "public_hosts"},
+		{"nested", "telemetry: {otlp: {protocol: ~}}\n", "telemetry.otlp.protocol"},
+		{"optional section", "github: ~\n", "github"},
+		{"flow empty", "listen: {api: }\n", "listen.api"},
+		{"capitalized Null", "mode: Null\n", "mode"},
+		{"merged", "listen: {<<: {api: ~}}\n", "listen.<<.api"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ce := refusal(t, tc.body)
+			if ce.Key != tc.key {
+				t.Errorf("refusal names %q, want %q (%v)", ce.Key, tc.key, ce)
+			}
+			if !strings.Contains(ce.Reason, "no value") {
+				t.Errorf("reason %q does not say the key has no value", ce.Reason)
+			}
+		})
+	}
+}
+
+// A list item or a key name with no value is refused too: yaml.v3 skips a
+// mapping entry whose key is null, which KnownFields never reports.
+func TestAnItemOrKeyNameWithNoValueIsRefused(t *testing.T) {
+	t.Parallel()
+	cases := []struct{ name, body, key, reason string }{
+		{"list item", "tls: {agent_names: [hub.example, ~]}\n", "tls.agent_names", "an item in the list has no value"},
+		{"top-level null key", "~: 1\n", "(file)", "a key with no name"},
+		{"nested null key", "listen: {~: x}\n", "listen", "a key with no name"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ce := refusal(t, tc.body)
+			if ce.Key != tc.key {
+				t.Errorf("refusal names %q, want %q (%v)", ce.Key, tc.key, ce)
+			}
+			if !strings.Contains(ce.Reason, tc.reason) {
+				t.Errorf("reason %q, want it to say %q", ce.Reason, tc.reason)
+			}
+		})
+	}
+}
+
+// A file of only comments, or an empty one, still means "all defaults".
+func TestAnEmptyFileKeepsTheDefaults(t *testing.T) {
+	t.Parallel()
+	for _, body := range []string{"", "# nothing set\n", "---\n"} {
+		if _, err := config.Load(writeFile(t, body)); err != nil {
+			t.Errorf("Load(%q): %v", body, err)
+		}
+	}
+}
+
 // The github section is checked for shape only: the key file is never
 // opened, so a path that does not exist loads.
 func TestGitHubKeysAreCheckedForShapeOnly(t *testing.T) {

@@ -159,6 +159,13 @@ func Parse(body []byte) (*Config, error) {
 	if err := dec.Decode(&extra); !errors.Is(err, io.EOF) {
 		return nil, &Error{Key: "(file)", Reason: "holds more than one YAML document"}
 	}
+	var doc yaml.Node
+	if err := yaml.Unmarshal(body, &doc); err != nil {
+		return nil, &Error{Key: "(file)", Reason: err.Error()}
+	}
+	if err := refuseNulls(&doc, ""); err != nil {
+		return nil, err
+	}
 	if c.StateDir, err = expandHome(c.StateDir); err != nil {
 		return nil, err
 	}
@@ -166,6 +173,57 @@ func Parse(body []byte) (*Config, error) {
 		return nil, err
 	}
 	return &c, nil
+}
+
+// refuseNulls refuses a key written with no value (empty, ~ or null), under
+// its dotted name. yaml.v3 never calls UnmarshalYAML for a null and leaves a
+// plain field as it was, so without this the default would stay silently. A
+// list item or a key name with no value is refused the same way (yaml.v3
+// skips an entry whose key is null).
+func refuseNulls(n *yaml.Node, key string) *Error {
+	switch n.Kind {
+	case yaml.DocumentNode:
+		for _, c := range n.Content {
+			if err := refuseNulls(c, key); err != nil {
+				return err
+			}
+		}
+	case yaml.MappingNode:
+		for i := 0; i+1 < len(n.Content); i += 2 {
+			k := n.Content[i]
+			if k.Kind == yaml.ScalarNode && k.Tag == "!!null" {
+				at := key
+				if at == "" {
+					at = "(file)"
+				}
+				return refuse(at, "holds a key with no name")
+			}
+			name := k.Value
+			if key != "" {
+				name = key + "." + name
+			}
+			if err := refuseNulls(n.Content[i+1], name); err != nil {
+				return err
+			}
+		}
+	case yaml.SequenceNode:
+		for _, c := range n.Content {
+			if c.Kind == yaml.ScalarNode && c.Tag == "!!null" {
+				return refuse(key, "an item in the list has no value")
+			}
+			if err := refuseNulls(c, key); err != nil {
+				return err
+			}
+		}
+	case yaml.ScalarNode:
+		if n.Tag == "!!null" && key != "" {
+			return refuse(key, "has no value; write one, or remove the key to keep its default")
+		}
+	case yaml.AliasNode:
+		// YAML defines an anchor before any alias to it, so the walk has
+		// already checked what an alias points to.
+	}
+	return nil
 }
 
 func expandHome(p string) (string, error) {
