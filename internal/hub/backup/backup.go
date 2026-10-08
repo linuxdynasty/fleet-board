@@ -104,7 +104,7 @@ type Result struct {
 // path removes the temporary files it made (a crash cannot, and
 // [RemoveLeftovers] sweeps those). Before the link, a failure publishes
 // nothing and the Result is zero. After it, the published copy's Result is
-// returned with the error: step publish when the folder sync failed (the
+// returned with the error: step publish when the stat or the folder sync failed (the
 // copy exists but may not survive a power loss), step cleanup when a
 // temporary file could not be removed.
 func Take(ctx context.Context, opts Options) (Result, error) {

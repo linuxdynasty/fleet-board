@@ -46,9 +46,6 @@ func TestAFailedEncryptionPublishesNothing(t *testing.T) {
 	}
 }
 
-// A temporary file that cannot be removed after the copy was published is
-// step cleanup: the copy stays published and its Result comes back with the
-// error, so fleetd backup can still print the path.
 // A folder sync that fails after the link is step publish, but the copy
 // exists under its final name, so its Result comes back with the error and
 // no temporary name is left.
@@ -74,11 +71,14 @@ func TestAFailedSyncAfterTheLinkReturnsThePublishedCopy(t *testing.T) {
 		t.Errorf("backups/ holds %d entries, want only the published copy", len(entries))
 	}
 	ev := f.logs.events(t, "backup.failed")
-	if len(ev) != 1 || ev[0]["step"] != "publish" {
-		t.Errorf("backup.failed lines = %v, want one with step publish", ev)
+	if len(ev) != 1 || ev[0]["step"] != "publish" || ev[0]["err_kind"] != "io" {
+		t.Errorf("backup.failed lines = %v, want one with step publish and err_kind io", ev)
 	}
 }
 
+// A temporary file that cannot be removed after the copy was published is
+// step cleanup: the copy stays published and its Result comes back with the
+// error, so fleetd backup can still print the path.
 func TestACleanupFailureKeepsThePublishedCopy(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)

@@ -48,7 +48,7 @@ The stamp is the UTC time to the second, such as `nightly-20261008T030000Z.db`.
 8. Remove every temporary file (the temporary name included) on every return
    path, success and failure. A failure before the link publishes nothing and
    returns a zero `Result`. After the link the copy exists, so its `Result`
-   comes back with any error: step `publish` when the folder sync failed (the
+   comes back with any error: step `publish` when the stat or the folder sync failed (the
    copy may not survive a power loss), step `cleanup` when a temporary file
    cannot be removed.
 
@@ -93,7 +93,7 @@ loses nothing.
 | Signal | When |
 |---|---|
 | `backup.completed` (info; `trigger`, `bytes`, `encrypted`) | a copy was published |
-| `backup.failed` (error; `trigger`, `step`, `err_kind`) | a copy failed. Before the link nothing was published and the temporary files were removed; `publish` after the link (the folder sync failed), `cleanup` and `prune` mean the copy was published |
+| `backup.failed` (error; `trigger`, `step`, `err_kind`) | a copy failed. Before the link nothing was published and the temporary files were removed; `publish` after the link (the stat or the folder sync failed), `cleanup` and `prune` mean the copy was published |
 | `backup.stamp_ahead` (warn; `files`, `ahead_seconds`) | the nightly job found copies stamped more than 10 minutes past the clock |
 | `fleet_hub_backup_age_seconds` (gauge, read at scrape time) | the age of the newest backup of either kind, from the stamp in its name; no value while there is none, so `BACKUP_AGE` reads unknown rather than 0. Registered by `NewSchedule`, removed by `Close` |
 
