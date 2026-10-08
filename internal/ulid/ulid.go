@@ -1,6 +1,7 @@
 package ulid
 
 import (
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -26,9 +27,7 @@ func New(now time.Time, random io.Reader) (string, error) {
 		return "", errors.New("ulid: time is outside 1970 to 10889")
 	}
 	var b [16]byte
-	for i := range 6 {
-		b[i] = byte(ms >> (40 - 8*i))
-	}
+	binary.BigEndian.PutUint64(b[:8], uint64(ms)<<16) // ms is in [0, 2^48)
 	if _, err := io.ReadFull(random, b[6:]); err != nil {
 		return "", fmt.Errorf("ulid: random: %w", err)
 	}
