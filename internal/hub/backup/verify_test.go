@@ -56,7 +56,7 @@ func corruptPageOf(marker string) func(path string) error {
 			return os.ErrInvalid // the marker must be past page 1
 		}
 		b[at/size*size] = 0
-		return os.WriteFile(path, b, 0o600)
+		return os.WriteFile(path, b, 0o600) //nolint:gosec // G703: the copy Take made in t.TempDir
 	}
 }
 
