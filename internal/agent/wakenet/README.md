@@ -14,16 +14,22 @@ out := make(chan wakenet.Event)
 wake, netw := wakenet.NewWake(log), wakenet.NewNet(log)
 go wake.Run(ctx, out)
 go netw.Run(ctx, out)
-for ev := range out {
-	d := wakenet.Decide(ev, wakenet.Conn{Connected: up, LocalAddr: local})
-	wakenet.LogDecision(ctx, log, ev, d)
-	// d.Reconnect: reset the backoff, close the stream if d.CloseStream,
-	// wait the short random delay, connect with Hello.reason = d.Reason.
+for {
+	select {
+	case <-ctx.Done():
+		return
+	case ev := <-out:
+		d := wakenet.Decide(ev, wakenet.Conn{Connected: up, LocalAddr: local})
+		wakenet.LogDecision(ctx, log, ev, d)
+		// d.Reconnect: reset the backoff, close the stream if d.CloseStream,
+		// wait the short random delay, connect with Hello.reason = d.Reason.
+	}
 }
 ```
 
-`Net.PushOff()` is true once the push socket could not be opened or died;
-`fleet-agent doctor` (plan row 6) reports it.
+`Net.PushOff()` is true once the push socket could not be opened or died in
+the current (or last) `Run`; `fleet-agent doctor` (plan row 6) reports it. One
+`Run` at a time per watcher.
 
 ## Wake
 
@@ -37,9 +43,11 @@ check is one wake, and both in one check are still one:
   those two reads are more than 10 ms apart, so a thread switch between reads
   cannot fake a sleep. Reading two clocks in turn can still give a tiny
   negative number (‑209 ns was seen on the Mac mini); anything above ‑1 s
-  counts as zero. A failed read, or one at ‑1 s or below, logs
-  `wake.clock_read_failed`, is never a wake, and keeps the last good reading,
-  so a sleep across a failed check is still counted on the next one.
+  counts as zero. A failed read, or one at ‑1 s or below, is never a wake and
+  keeps the last good reading, so a sleep across a failed check is still
+  counted on the next one. The first failure of a run logs
+  `wake.clock_read_failed`; the first good read after it logs
+  `wake.clock_read_recovered` with the count.
 - **Wall clock past Go's monotonic clock.** Go's monotonic clock stops during
   sleep on both systems; the wall clock does not. A wall clock stepped back
   2 s or more logs `wake.wall_clock_back` and is never a wake.
@@ -60,9 +68,14 @@ with the last reading. No difference, no event. The omarchy IPv6 refresh (the
 router re-announces the same address every few seconds to two minutes) is a
 replay test: every refresh reads, finds nothing, and sends nothing.
 
-If the push socket cannot be opened or stops working, the watcher logs
-`netchange.push_off` once and reads every 15 s instead. There is no poll while
-the push socket works.
+A read that fails is tried again 2 s later, then every 15 s, until one works
+or a new hint arrives, so the change behind the hint is not lost. The first
+failure of a run logs `netchange.read_failed`, the recovery
+`netchange.read_recovered` with the count.
+
+If the push socket cannot be opened or stops working, the watcher closes it,
+logs `netchange.push_off` once and reads every 15 s instead. There is no poll
+while the push socket works.
 
 ### Default route: how it is read
 
@@ -75,8 +88,8 @@ the push socket works.
   Chosen over keeping a default route built from push messages because the
   watcher needs a full reading at start and on every 15 s poll, when there is
   no push message to build from, and because a dropped push message would
-  leave a built route wrong until the next one. The dump costs one system call
-  and only runs after a real hint. Checked on the Mac mini on 2026-10-09: the
+  leave a built route wrong until the next one. The dump costs two system
+  calls (one for the size, one to fill the buffer) and only runs after a hint. Checked on the Mac mini on 2026-10-09: the
   parsed route (`en0` via `192.168.1.1`, no unscoped IPv6 default) matched
   `route -n get default` and `route -n get -inet6 default`.
 - **Linux: a netlink route dump**, `RTM_GETROUTE` through the standard
@@ -106,8 +119,9 @@ between connects and the 20 to 120 ms random delay are the connection loop's.
 ## Logs
 
 `wake.detected`, `wake.wall_clock_back`, `wake.clock_read_failed`,
-`netchange.detected`, `netchange.unchanged` and `netchange.baseline` (debug),
-`netchange.read_failed`, `netchange.push_off`, and from `LogDecision`
+`wake.clock_read_recovered`, `netchange.detected`, `netchange.unchanged` and
+`netchange.baseline` (debug), `netchange.read_failed`,
+`netchange.read_recovered`, `netchange.push_off`, and from `LogDecision`
 `netchange.acted` or `netchange.ignored`. Listed in spec 03, W1 Telemetry.
 Interface names and counts only, never addresses.
 

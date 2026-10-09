@@ -69,11 +69,13 @@ type wakeState struct {
 	havePrev   bool
 	asleep     time.Duration
 	haveAsleep bool
+	failures   int // time-asleep reads failed in a row
 }
 
 // observe takes one check's readings and reports whether either signal grew
-// by the threshold. A failed time-asleep read is logged and keeps the last good
-// reading, so sleep across a failed check is still counted on the next one.
+// by the threshold. A failed time-asleep read keeps the last good reading, so
+// sleep across a failed check is still counted on the next one. The first of a
+// run of failures is logged, and the recovery with the count.
 func (s *wakeState) observe(ctx context.Context, w *Wake, now Stamp) (WakeInfo, bool) {
 	var info WakeInfo
 	if s.havePrev {
@@ -91,8 +93,15 @@ func (s *wakeState) observe(ctx context.Context, w *Wake, now Stamp) (WakeInfo, 
 	s.prev, s.havePrev = now, true
 
 	if asleep, err := readAsleep(w.Asleep); err != nil {
-		w.Log.WarnContext(ctx, "wake.clock_read_failed", "err", err.Error())
+		s.failures++
+		if s.failures == 1 {
+			w.Log.WarnContext(ctx, "wake.clock_read_failed", "err", err.Error())
+		}
 	} else {
+		if s.failures > 0 {
+			w.Log.InfoContext(ctx, "wake.clock_read_recovered", "failures", s.failures)
+			s.failures = 0
+		}
 		if s.haveAsleep && asleep-s.asleep >= wakeThreshold {
 			info.AsleepGrew, info.AsleepDelta = true, asleep-s.asleep
 		}

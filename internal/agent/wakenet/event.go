@@ -30,7 +30,8 @@ type WakeInfo struct {
 type Source string
 
 const (
-	// SourcePush is a debounced routing push message.
+	// SourcePush is a debounced routing push message, or the retry of a read
+	// that failed while the push socket was on.
 	SourcePush Source = "push"
 	// SourcePoll is the 15 s fallback poll, used only while the push socket is off.
 	SourcePoll Source = "poll"

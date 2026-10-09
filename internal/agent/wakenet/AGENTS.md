@@ -9,7 +9,9 @@ messages. Rules for this package:
   `purego`. `TestForbiddenSources` enforces this.
 - A routing push message is only a hint. Nothing reconnects unless a fresh
   reading differs from the last one. There is no always-on poll; the 15 s poll
-  runs only while the push socket is off.
+  runs only while the push socket is off. A failed read with the push socket
+  on is retried (2 s, then every 15 s) until one works or a new hint arrives.
+- A failure that repeats is logged once, then once on recovery with the count.
 - Parsers are pure byte code with no build tag, so their tests run on any OS.
   Every length is checked before it is used; a malformed buffer never panics
   (`FuzzNetlink`, `FuzzRouteSocket`). A new kernel constant gets a line in

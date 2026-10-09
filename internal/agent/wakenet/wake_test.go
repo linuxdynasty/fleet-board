@@ -171,6 +171,38 @@ func TestWakeChecks(t *testing.T) {
 	}
 }
 
+// TestClockReadFailuresLogOnce: a clock that keeps failing is logged once,
+// then once on recovery with the count, not every 5 s.
+func TestClockReadFailuresLogOnce(t *testing.T) {
+	t.Parallel()
+	clock := newFakeClock()
+	asleep := &fakeAsleep{}
+	logs := newLogCapture()
+	w := &Wake{Clock: clock, Asleep: asleep.read, Log: logs.logger()}
+	out := make(chan Event, 4)
+	stop := runLoop(t, func(ctx context.Context) { w.Run(ctx, out) })
+
+	steps := []error{errClock, errClock, errClock, nil, errClock}
+	for _, err := range steps {
+		tm := clock.nextTimer(t)
+		clock.move(5*time.Second, 5*time.Second)
+		asleep.set(0, err)
+		tm.fire()
+	}
+	clock.nextTimer(t)
+	stop()
+
+	if n := logs.count("wake.clock_read_failed"); n != 2 {
+		t.Errorf("wake.clock_read_failed logged %d times, want 2 (one per run of failures)", n)
+	}
+	if n := logs.count("wake.clock_read_recovered"); n != 1 {
+		t.Fatalf("wake.clock_read_recovered logged %d times, want 1", n)
+	}
+	if v, _ := logs.attr("wake.clock_read_recovered", "failures"); v.Int64() != 3 {
+		t.Errorf("wake.clock_read_recovered failures = %v, want 3", v)
+	}
+}
+
 func TestWakeDetectedLogNamesTheSignals(t *testing.T) {
 	t.Parallel()
 	clock := newFakeClock()

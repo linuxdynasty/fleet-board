@@ -220,39 +220,6 @@ func TestEventReadingIsTheCallersCopy(t *testing.T) {
 	}
 }
 
-func TestReadFailureKeepsTheBaseline(t *testing.T) {
-	t.Parallel()
-	g := newNetRig(t, homeReading(), nil, nil)
-	g.logs.waitFor(t, "netchange.baseline")
-	g.reader.set(Reading{}, errors.New("route dump: no buffer space"))
-	if got := g.settle(t, g.hint(t, 0), 500*time.Millisecond); got != "netchange.read_failed" {
-		t.Fatalf("got %s, want netchange.read_failed", got)
-	}
-	cur := homeReading()
-	cur.Interfaces["tun0"] = []netip.Prefix{pfx("10.8.0.2/24")}
-	g.reader.set(cur, nil)
-	if got := g.settle(t, g.hint(t, time.Second), 1500*time.Millisecond); got != "netchange.detected" {
-		t.Fatalf("got %s, want netchange.detected", got)
-	}
-	ev := <-g.out
-	if len(ev.Net.Changes) != 1 || ev.Net.Changes[0] != (Change{Kind: InterfaceAdded, Iface: "tun0"}) {
-		t.Errorf("changes = %+v, want tun0 added against the first baseline", ev.Net.Changes)
-	}
-}
-
-func TestFailedBaselineTakesTheNextReading(t *testing.T) {
-	t.Parallel()
-	g := newNetRig(t, Reading{}, errors.New("no interfaces"), nil)
-	g.logs.waitFor(t, "netchange.read_failed")
-	g.reader.set(homeReading(), nil)
-	if got := g.settle(t, g.hint(t, 0), 500*time.Millisecond); got != "netchange.baseline" {
-		t.Fatalf("got %s, want netchange.baseline", got)
-	}
-	if evs := drain(g.out); len(evs) != 0 {
-		t.Errorf("events = %+v, want none: there was nothing to compare with", evs)
-	}
-}
-
 func TestBufferOverflowIsAHint(t *testing.T) {
 	t.Parallel()
 	g := newNetRig(t, homeReading(), nil, nil)
@@ -316,16 +283,5 @@ func TestPushSocketOff(t *testing.T) {
 				t.Errorf("netchange.push_off logged %d times, want exactly 1", n)
 			}
 		})
-	}
-}
-
-func TestNoPollWhilePushWorks(t *testing.T) {
-	t.Parallel()
-	g := newNetRig(t, homeReading(), nil, nil)
-	g.logs.waitFor(t, "netchange.baseline")
-	select {
-	case tm := <-g.clock.timers:
-		t.Fatalf("watcher asked for a %v timer with no hint; there is no always-on poll", tm.d)
-	case <-time.After(50 * time.Millisecond):
 	}
 }

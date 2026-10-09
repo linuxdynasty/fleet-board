@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"slices"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -45,20 +46,28 @@ func NewNet(log *slog.Logger) *Net {
 	return &Net{Clock: SystemClock(), Reader: SystemReader(), OpenPush: openPush, Hint: pushHint, Log: log}
 }
 
-// PushOff reports whether the push socket could not be opened or stopped
-// working, so the watcher is polling every 15 s (for fleet-agent doctor).
+// PushOff reports whether, in the current or last Run, the push socket could
+// not be opened or stopped working, so the watcher polls every 15 s (for
+// fleet-agent doctor).
 func (n *Net) PushOff() bool { return n.pushOff.Load() }
 
 // Run watches until ctx ends and sends one Event per confirmed change to out.
+// One Run at a time per Net.
+//
+// With the push socket on, a failed read is tried again 2 s later and then
+// every 15 s until one succeeds or a new hint arrives, so the change behind the
+// hint is not lost.
 func (n *Net) Run(ctx context.Context, out chan<- Event) {
 	p := n.startPush(ctx)
 	defer p.stop()
 
 	var w netState
-	n.compare(ctx, &w, sourceStart, out)
-	var poll, fire <-chan time.Time
+	var poll, fire, retry <-chan time.Time
 	if p.hints == nil {
+		n.compare(ctx, &w, sourceStart, out)
 		poll = n.Clock.After(pollEvery)
+	} else if !n.compare(ctx, &w, sourceStart, out) {
+		retry = n.Clock.After(hintCap)
 	}
 	for {
 		select {
@@ -66,11 +75,13 @@ func (n *Net) Run(ctx context.Context, out chan<- Event) {
 			return
 		case _, open := <-p.hints:
 			if !open {
-				p.hints = nil
+				p.hints, retry = nil, nil
+				p.stop()
 				n.turnPushOff(ctx, p.err)
 				poll = n.Clock.After(pollEvery)
 				continue
 			}
+			retry = nil
 			now := n.Clock.Now().Mono
 			w.hint(now)
 			fire = n.Clock.After(w.due() - now)
@@ -80,7 +91,14 @@ func (n *Net) Run(ctx context.Context, out chan<- Event) {
 				continue
 			}
 			fire = nil
-			n.compare(ctx, &w, SourcePush, out)
+			if !n.compare(ctx, &w, SourcePush, out) && p.hints != nil {
+				retry = n.Clock.After(hintCap)
+			}
+		case <-retry:
+			retry = nil
+			if !n.compare(ctx, &w, SourcePush, out) && p.hints != nil {
+				retry = n.Clock.After(pollEvery)
+			}
 		case <-poll:
 			n.compare(ctx, &w, SourcePoll, out)
 			poll = n.Clock.After(pollEvery)
@@ -95,6 +113,7 @@ type netState struct {
 	haveBase    bool
 	first, last time.Duration
 	hints       int
+	failures    int // reads failed in a row
 }
 
 func (w *netState) hint(now time.Duration) {
@@ -110,25 +129,33 @@ func (w *netState) hint(now time.Duration) {
 func (w *netState) due() time.Duration { return min(w.last+quietWait, w.first+hintCap) }
 
 // compare reads the network and sends an Event when it differs from the last
-// good reading. A failed read is logged and keeps the last good reading. src
-// is sourceStart for the reading taken at start.
-func (n *Net) compare(ctx context.Context, w *netState, src Source, out chan<- Event) {
+// good reading. It reports whether the read worked. A failed read keeps the
+// last good reading; the first of a run of failures is logged, and the
+// recovery with the count. src is sourceStart for the reading taken at start.
+func (n *Net) compare(ctx context.Context, w *netState, src Source, out chan<- Event) bool {
 	hints := w.hints
 	w.hints = 0
 	cur, err := n.Reader.Read()
 	if err != nil {
-		n.Log.WarnContext(ctx, "netchange.read_failed", "source", string(src), "err", err.Error())
-		return
+		w.failures++
+		if w.failures == 1 {
+			n.Log.WarnContext(ctx, "netchange.read_failed", "source", string(src), "err", err.Error())
+		}
+		return false
+	}
+	if w.failures > 0 {
+		n.Log.InfoContext(ctx, "netchange.read_recovered", "source", string(src), "failures", w.failures)
+		w.failures = 0
 	}
 	if !w.haveBase {
 		w.base, w.haveBase = cur, true
 		n.Log.DebugContext(ctx, "netchange.baseline", "source", string(src), "interfaces", len(cur.Interfaces))
-		return
+		return true
 	}
 	changes := Diff(w.base, cur)
 	if len(changes) == 0 {
 		n.Log.DebugContext(ctx, "netchange.unchanged", "source", string(src), "hints", hints)
-		return
+		return true
 	}
 	prev := w.base
 	w.base = cur
@@ -142,6 +169,7 @@ func (n *Net) compare(ctx context.Context, w *netState, src Source, out chan<- E
 	case out <- ev:
 	case <-ctx.Done():
 	}
+	return true
 }
 
 func (n *Net) turnPushOff(ctx context.Context, err error) {
@@ -156,7 +184,8 @@ func (n *Net) turnPushOff(ctx context.Context, err error) {
 }
 
 // push is the running push socket: hints gets one value per read that holds a
-// hint (coalesced) and is closed, after err is set, when the socket dies.
+// hint (coalesced) and is closed, after err is set, when the socket dies. stop
+// closes the socket and waits for its reader; it may be called more than once.
 type push struct {
 	hints chan struct{}
 	err   error
@@ -166,6 +195,7 @@ type push struct {
 // startPush opens the push socket and starts its reader. With the socket off
 // it returns a push with nil hints, which the watcher treats as "poll".
 func (n *Net) startPush(ctx context.Context) *push {
+	n.pushOff.Store(false)
 	p := &push{stop: func() {}}
 	sock, err := n.OpenPush()
 	if err != nil {
@@ -196,8 +226,9 @@ func (n *Net) startPush(ctx context.Context) *push {
 			}
 		}
 	}()
+	var once sync.Once
 	p.stop = func() {
-		_ = sock.Close()
+		once.Do(func() { _ = sock.Close() })
 		<-done
 	}
 	return p
