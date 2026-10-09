@@ -228,7 +228,7 @@ The hub API's limits are in [02b](02b-hub-api.md#size-limits). The agent wire:
 | `RunHarnessCommandResult.screen`, `ShownUsage.raw_screen` | 64 KiB | agent |
 | `PromptDetected.text` | 16 KiB | agent |
 | `PaneSummary.last_lines`, `GoalState.first_line`, `KeyInput.literal`, `RunHarnessCommand.args`, `GoalSpec.goal_text` | 4 KiB | agent (hub validates before sending) |
-| Labels, names, window names, `ShownField` strings, `ResetTime.original_text` | 256 bytes | agent |
+| Labels, names, window names, `ShownField` strings, `ResetTime.original_text`, `ProbeHealth.message` | 256 bytes | agent |
 | `CommandResult.message`, `CommandProgress.message`, `parse_message` | 1 KiB | agent |
 | `TermUp.output` | 64 KiB per message | agent |
 | `TermDown.input` | 4 KiB per message | hub |
@@ -247,10 +247,15 @@ on the hub before storage. The scrubber removes tokens, emails, URL query
 values and passwords in URLs, then cuts the text to the field's cap on a UTF-8
 boundary; a second pass changes nothing. Tokens are the fleet's own (`fbe1_`
 enroll tokens, `fbt_` API tokens), GitHub tokens, the model providers' and
-clouds' key prefixes, JSON Web Tokens, bearer and Authorization header values,
-private key blocks, and the value of a variable, flag or JSON key named like a
-secret (a name ending in password, secret, token, or api, access or private
-key); the package README lists each pattern and why.
+clouds' key prefixes, JSON Web Tokens, bearer tokens, the value of an
+Authorization, Cookie, Set-Cookie or `*-Token` header, private key blocks
+(PEM and PGP), a token used as a URL user name, and the value of a variable,
+flag, JSON or dict key named like a secret: a name ending in password, passwd,
+secret, token, salt, or api, access, private, ca or server key (`name=value`,
+`--name value`, `"name": "value"`; a bare `name: value` counts for every word
+but token, so `input_tokens: 1234` is kept). This is a summary; the package
+README lists each pattern, why, and what is left alone, and a change updates
+both.
 
 ## Compile check
 

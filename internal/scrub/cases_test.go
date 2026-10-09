@@ -1,0 +1,152 @@
+package scrub_test
+
+import "strings"
+
+// enrollToken has the length of a real fbe1_ token: 87 base64url characters.
+var enrollToken = "fbe1_" + strings.Repeat("Ab3_-", 17) + "xy"
+
+// ghToken is a classic GitHub token: ghp_ and 36 characters.
+var ghToken = "ghp_" + strings.Repeat("A1b2C3d4E5f6", 3)
+
+type textCase struct {
+	name string
+	in   string
+	want string
+}
+
+// secretCases are the four kinds 02e names (tokens, emails, URL query values,
+// passwords in URLs) and the token shapes README.md lists.
+var secretCases = []textCase{
+	{"enroll token", "enroll failed: " + enrollToken, "enroll failed: fbe1_[redacted]"},
+	{"api token", "FLEET_TOKEN is fbt_0a1b2c3d.Zm9vYmFyYmF6cXV4", "FLEET_TOKEN is fbt_[redacted]"},
+	{"github classic token", "push used " + ghToken + " and failed", "push used ghp_[redacted] and failed"},
+	{"github fine-grained token", "github_pat_11ABCDEFG0123456789_abcdefXYZ", "github_pat_[redacted]"},
+	{
+		"github app token in a git remote",
+		"fatal: unable to access 'https://x-access-token:ghs_A1b2C3d4E5f6G7h8I9j0K1l2@github.com/o/r.git/'",
+		"fatal: unable to access 'https://x-access-token:[redacted]@github.com/o/r.git/'",
+	},
+	{
+		"token as a url user name",
+		"https://" + ghToken + ":x-oauth-basic@github.com/o/r",
+		"https://ghp_[redacted]:[redacted]@github.com/o/r",
+	},
+	{"anthropic key", "key sk-ant-api03-Ab12Cd34Ef56Gh78Ij90-xyz rejected", "key sk-[redacted] rejected"},
+	{"openai key", "sk-proj-abcdefghijklmnop1234", "sk-[redacted]"},
+	{"aws key id", "AKIAIOSFODNN7EXAMPLE in use", "AKIA[redacted] in use"},
+	{"aws temporary key id", "ASIAIOSFODNN7EXAMPLE", "ASIA[redacted]"},
+	{"google key", "AIza" + strings.Repeat("x9_-Z", 7), "AIza[redacted]"},
+	{
+		"jwt",
+		"got eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U ok",
+		"got [redacted] ok",
+	},
+	{"bearer token", "curl -H 'Bearer abcdefghijklmnop1234'", "curl -H 'Bearer [redacted]'"},
+	{"authorization header", "Authorization: Basic dXNlcjpwYXNzd29yZA==", "Authorization: Basic [redacted]"},
+	{"authorization, apikey scheme", "Authorization: ApiKey abc123", "Authorization: ApiKey [redacted]"},
+	{"authorization, negotiate scheme", "authorization: Negotiate YIIabc def", "authorization: Negotiate [redacted]"},
+	{"authorization, ssws scheme", "Authorization: SSWS 00abc", "Authorization: SSWS [redacted]"},
+	{
+		"authorization, oauth parameters",
+		`Authorization: OAuth oauth_token="def", oauth_nonce="x"`,
+		`Authorization: OAuth [redacted]`,
+	},
+	// A first word that is not a known scheme may be the credential itself.
+	{"authorization, lone credential", "Authorization: abc123 failed", "Authorization: [redacted]"},
+	{"authorization, quoted header", `curl -H 'Authorization: Token abc' https://x.io`, `curl -H 'Authorization: Token [redacted]' https://x.io`},
+	{
+		"authorization in a go header dump",
+		"map[Authorization:[Bearer abcdefghijklmnopqrstu]]",
+		"map[Authorization:[Bearer [redacted]]]",
+	},
+	{"email", "signed in as al@example.com.", "signed in as [email]."},
+	{"two emails", "a@b.co and c.d+x@mail.example.io", "[email] and [email]"},
+	// A GitHub SSH remote looks like an email and goes like one.
+	{"ssh git remote", "git@github.com:o/r.git: Permission denied", "[email]:o/r.git: Permission denied"},
+	{
+		"url query values",
+		"GET https://api.example.com/v1/x?code=abc123&state=xyz#frag",
+		"GET https://api.example.com/v1/x?code=[redacted]&state=[redacted]#frag",
+	},
+	{"query value holding )", "https://x.io/?token=ab)cd", "https://x.io/?token=[redacted]"},
+	{"password in a url", "dial postgres://al:hunter2@db.local:5432/app failed", "dial postgres://al:[redacted]@db.local:5432/app failed"},
+	{"password holding @ in a url", "https://al:p@ss@host/x", "https://al:[redacted]@host/x"},
+	{"secret-named variable", "export GITHUB_TOKEN=abc123", "export GITHUB_TOKEN=[redacted]"},
+	{"secret-named flag, quoted", "run --password='p w' now", "run --password='[redacted]' now"},
+	{"secret-named value, double quotes", `TOKEN="a b"`, `TOKEN="[redacted]"`},
+	// FuzzText found it: without its quotes the placeholder joined the 0, and
+	// a second pass removed the 0.
+	{"empty quoted value then text", "pAsswd=''0", "pAsswd='[redacted]'0"},
+	{"quote never closed", "token='abc def", "token='[redacted]"},
+	{"quote never closed, next line kept", "token='abc def\nnext", "token='[redacted]\nnext"},
+	{"flag and value", "run --password hunter2 now", "run --password [redacted] now"},
+	{"token flag and value", "gh --token abc", "gh --token [redacted]"},
+	{"api key flag and value", "x --api-key k1", "x --api-key [redacted]"},
+	{"flag and quoted value", "x --token 'a b' y", "x --token '[redacted]' y"},
+	{"colon password", "db_password: hunter2", "db_password: [redacted]"},
+	{"colon secret", "secret: none", "secret: [redacted]"},
+	{"colon api key header", "X-Api-Key: abc123", "X-Api-Key: [redacted]"},
+	{"colon salt", "salt: c2FsdA", "salt: [redacted]"},
+	{"private-token header", "Private-Token: glpat-abc", "Private-Token: [redacted]"},
+	{"cookie header", "Cookie: session=abc; theme=dark", "Cookie: [redacted]"},
+	{"set-cookie header", "Set-Cookie: id=abc; Path=/; HttpOnly", "Set-Cookie: [redacted]"},
+	{"secret-named json key", `{"api_key": "abc", "n": 1}`, `{"api_key": "[redacted]", "n": 1}`},
+	{"json value with an escaped quote", `{"password": "ab\"cd", "n": 1}`, `{"password": "[redacted]", "n": 1}`},
+	{"python dict", `{'token': 'abc', 'n': 1}`, `{'token': '[redacted]', 'n': 1}`},
+	{"escaped json", `{\"token\": \"abc\", \"n\": 1}`, `{\"token\": \"[redacted]\", \"n\": 1}`},
+	{"account salt", `"account_salt": "c2FsdA"`, `"account_salt": "[redacted]"`},
+	{"ca key", "ca_key=abc", "ca_key=[redacted]"},
+	{"server key", "server-key: abc", "server-key: [redacted]"},
+	{
+		"private key block",
+		"key:\n-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXk=\n-----END OPENSSH PRIVATE KEY-----\ndone",
+		"key:\n[redacted]\ndone",
+	},
+	{"private key block cut short", "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADAN", "[redacted]"},
+	{
+		"pgp private key block",
+		"-----BEGIN PGP PRIVATE KEY BLOCK-----\nlQOYBF\n-----END PGP PRIVATE KEY BLOCK-----\nok",
+		"[redacted]\nok",
+	},
+}
+
+// plainCases hold no secret and must come out as they went in.
+var plainCases = []textCase{
+	{"token counts", "input_tokens: 1234, output_tokens: 99", "input_tokens: 1234, output_tokens: 99"},
+	{"tokens with a colon", "tokens: 12", "tokens: 12"},
+	{"token with a colon", "token: expired", "token: expired"},
+	{"max tokens", "max_tokens=4096", "max_tokens=4096"},
+	{"word ending in sk-", "task-runner-for-the-whole-fleet", "task-runner-for-the-whole-fleet"},
+	{"the word basic", "basic settings unchanged", "basic settings unchanged"},
+	{"ssh host without a domain", "ssh al@mac-mini failed", "ssh al@mac-mini failed"},
+	{"url without a query", "see https://example.com/docs/page#top", "see https://example.com/docs/page#top"},
+	{"host and port", "dial tcp db.local:5432: refused", "dial tcp db.local:5432: refused"},
+	{"a flag with no secret name", "run --verbose now", "run --verbose now"},
+	{"multi-line screen text", "line one\n\tline two\n", "line one\n\tline two\n"},
+	{"empty", "", ""},
+}
+
+// homeCase is one input scrubbed with Home set.
+type homeCase struct {
+	name, home, in, want string
+}
+
+var homeCases = []homeCase{
+	{"path under home", "/Users/al", "open /Users/al/repos/x: no such file", "open ~/repos/x: no such file"},
+	{"home with a trailing slash", "/Users/al/", "open /Users/al/repos/x", "open ~/repos/x"},
+	{"home alone", "/Users/al", "/Users/al", "~"},
+	{"after an equals sign", "/Users/al", "HOME=/Users/al", "HOME=~"},
+	{"in a quoted list", "/home/al", `roots ["/home/al/a", "/home/al/b"]`, `roots ["~/a", "~/b"]`},
+	{"in a file url", "/Users/al", "open file:///Users/al/x.md", "open file://~/x.md"},
+	{"no home given", "", "open /Users/al/repos/x", "open /Users/al/repos/x"},
+	{"a longer name", "/Users/al", "open /Users/alice/x", "open /Users/alice/x"},
+	{"a name with a dot", "/Users/al", "open /Users/al.bak/x", "open /Users/al.bak/x"},
+	{"inside another path", "/Users/al", "open /srv/Users/al/x", "open /srv/Users/al/x"},
+	{"root is not a home", "/", "open /x", "open /x"},
+	{"relative is not a home", "al", "open al/x", "open al/x"},
+	// Whether home is a whole name is judged after secrets are removed: the
+	// byte after it may be part of a secret that becomes a placeholder.
+	{"before a private key", "/Users/al", "/Users/al-----BEGIN PRIVATE KEY-----x", "~[redacted]"},
+	{"before an email, non-ascii home", "/Users/José", "/Users/Joséx@b.co", "~[email]"},
+	{"before a long email", "/Users/al", "/Users/al" + strings.Repeat("x", 64) + "@b.co", "~[email]"},
+}

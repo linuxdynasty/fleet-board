@@ -3,11 +3,17 @@ package scrub
 import "strings"
 
 // cleanHome is home without a trailing slash, or "" when home is not an
-// absolute folder below the root.
+// absolute folder below the root made of name bytes and slashes. A home with
+// a space, a quote or a ~ is left as written rather than half matched.
 func cleanHome(home string) string {
 	home = strings.TrimRight(home, "/")
-	if !strings.HasPrefix(home, "/") || strings.ContainsAny(home, " \t\n\r") {
+	if !strings.HasPrefix(home, "/") {
 		return ""
+	}
+	for i := range len(home) {
+		if c := home[i]; c != '/' && (!nameByte(c) || c == '~') {
+			return ""
+		}
 	}
 	return home
 }
@@ -21,39 +27,70 @@ func nameByte(c byte) bool {
 }
 
 // homeStartsAt reports whether a whole home folder can start at i: the byte
-// before it does not continue a path.
+// before it does not continue a path, or it follows file://.
 func homeStartsAt(s string, i int) bool {
-	return i == 0 || !nameByte(s[i-1]) && s[i-1] != '/'
+	return i == 0 || !nameByte(s[i-1]) && s[i-1] != '/' || strings.HasSuffix(s[:i], "file://")
 }
 
-// replaceHome writes each whole occurrence of home in s as "~": one that
-// starts a path and ends at a slash, the end of s, or a byte that cannot be
-// part of a name.
-func replaceHome(s, home string) string {
+// homeEndsAt reports whether a home folder ending at end is whole: a slash,
+// the end of s, or a byte that cannot be part of a name follows it.
+func homeEndsAt(s string, end int) bool {
+	return end == len(s) || s[end] == '/' || !nameByte(s[end])
+}
+
+// replaceHome writes each whole occurrence of home in s as "~", judged on s
+// as it is, and moves spans to match. A span that started or ended inside an
+// occurrence starts or ends at its "~".
+func replaceHome(s, home string, spans []span) (string, []span) {
 	if home == "" || !strings.Contains(s, home) {
-		return s
+		return s, spans
 	}
-	var b strings.Builder
-	b.Grow(len(s))
-	last, from := 0, 0
-	for {
+	var at []int
+	for from := 0; ; {
 		i := strings.Index(s[from:], home)
 		if i < 0 {
 			break
 		}
 		i += from
-		end := i + len(home)
-		if homeStartsAt(s, i) && (end == len(s) || s[end] == '/' || !nameByte(s[end])) {
-			b.WriteString(s[last:i])
-			b.WriteByte('~')
-			last = end
+		if end := i + len(home); homeStartsAt(s, i) && homeEndsAt(s, end) {
+			at = append(at, i)
 			from = end
 			continue
 		}
 		from = i + 1
 	}
+	if len(at) == 0 {
+		return s, spans
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	last := 0
+	for _, i := range at {
+		b.WriteString(s[last:i])
+		b.WriteByte('~')
+		last = i + len(home)
+	}
 	b.WriteString(s[last:])
-	return b.String()
+
+	// Span positions rise, so one walk over the occurrences moves them all.
+	shrink, n := len(home)-1, 0
+	move := func(p int, isEnd bool) int {
+		for n < len(at) && at[n]+len(home) <= p {
+			n++
+		}
+		if n < len(at) && at[n] < p {
+			if isEnd {
+				return at[n] - n*shrink + 1
+			}
+			return at[n] - n*shrink
+		}
+		return p - n*shrink
+	}
+	moved := make([]span, len(spans))
+	for k, sp := range spans {
+		moved[k] = span{move(sp.start, false), move(sp.end, true)}
+	}
+	return b.String(), moved
 }
 
 // endsInHome reports whether s ends with home where home could start, so a

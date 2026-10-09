@@ -25,8 +25,12 @@ func Text(text string, opt Options) string {
 	}
 	home := cleanHome(opt.Home)
 	s := strings.ToValidUTF8(text, "\uFFFD")
-	s = replaceHome(s, home)
-	s, spans := replace(s)
+	// Home goes before secrets, so a path inside a secret's shape is seen as
+	// "~", and again after, because a byte after home that was part of a
+	// secret is now a placeholder and home may now end there.
+	s, _ = replaceHome(s, home, nil)
+	s, spans := redact(s)
+	s, spans = replaceHome(s, home, spans)
 	return cut(s, spans, home, opt.MaxBytes)
 }
 

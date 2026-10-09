@@ -1,6 +1,7 @@
 package scrub_test
 
 import (
+	"math"
 	"testing"
 	"unicode/utf8"
 
@@ -8,11 +9,18 @@ import (
 )
 
 // FuzzText checks, for any text, home and cap: no panic, the output fits the
-// cap, it is valid UTF-8, and a second pass leaves it unchanged.
+// cap, it is valid UTF-8, a second pass with the same home leaves it
+// unchanged, and so does the hub's pass with no home.
 func FuzzText(f *testing.F) {
 	for _, tc := range append(append([]textCase{}, secretCases...), plainCases...) {
 		for _, limit := range []uint16{1, 7, 16, 64, 1024} {
 			f.Add(tc.in, "/Users/al", limit)
+		}
+	}
+	for _, tc := range homeCases {
+		f.Add(tc.in, tc.home, uint16(1024))
+		if n := len(tc.want); n <= math.MaxUint16 {
+			f.Add(tc.in, tc.home, uint16(n))
 		}
 	}
 	f.Add("open /Users/al/x?token=abc&b=c@d.io", "/Users/al", uint16(12))
@@ -29,6 +37,9 @@ func FuzzText(f *testing.F) {
 		}
 		if again := scrub.Text(out, opt); again != out {
 			t.Fatalf("Text(%q, home %q, cap %d)\n once %q\ntwice %q", text, home, limit, out, again)
+		}
+		if hub := scrub.Text(out, scrub.Options{MaxBytes: opt.MaxBytes}); hub != out {
+			t.Fatalf("Text(%q, home %q, cap %d)\nagent %q\n  hub %q", text, home, limit, out, hub)
 		}
 	})
 }
