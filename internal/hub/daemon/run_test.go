@@ -169,7 +169,7 @@ func TestRunServesTheAgentListenerAndMetrics(t *testing.T) {
 			t.Error("a TLS 1.2-capped client connected")
 		}
 	})
-	t.Run("AgentService serves Enroll and leaves the rest Unimplemented", func(t *testing.T) {
+	t.Run("AgentService serves Enroll and RenewCert and leaves the rest Unimplemented", func(t *testing.T) {
 		hc := &http.Client{Transport: &http.Transport{
 			TLSClientConfig: &tls.Config{RootCAs: pool, ServerName: "localhost", MinVersion: tls.VersionTLS13}, ForceAttemptHTTP2: true,
 		}}
@@ -180,8 +180,15 @@ func TestRunServesTheAgentListenerAndMetrics(t *testing.T) {
 			t.Errorf("Enroll with no install_id: code %v, want invalid_argument", code)
 		}
 		_, err = client.RenewCert(context.Background(), connect.NewRequest(&agentv1.RenewCertRequest{}))
+		if code := connect.CodeOf(err); code != connect.CodeUnauthenticated {
+			t.Errorf("RenewCert without a client certificate: code %v, want unauthenticated", code)
+		}
+		stream := client.SessionLog(context.Background())
+		_ = stream.CloseRequest()
+		_, err = stream.Receive()
+		_ = stream.CloseResponse()
 		if code := connect.CodeOf(err); code != connect.CodeUnimplemented {
-			t.Errorf("RenewCert: code %v, want unimplemented", code)
+			t.Errorf("SessionLog: code %v, want unimplemented", code)
 		}
 	})
 	t.Run("metrics behind the Host and Origin checks", func(t *testing.T) {

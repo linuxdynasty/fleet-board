@@ -20,16 +20,17 @@ import (
 	"github.com/linuxdynasty/fleet-board/internal/store"
 )
 
-// enrollDeps is what Enroll needs, built once by NewServer.
+// enrollDeps is what Enroll and RenewCert need, built once by NewServer.
 type enrollDeps struct {
-	store   *store.Store
-	auth    *ca.Authority
-	id      statedb.Identity
-	caHash  [32]byte
-	log     *slog.Logger
-	now     func() time.Time
-	random  io.Reader
-	enrolls metric.Int64Counter
+	store    *store.Store
+	auth     *ca.Authority
+	id       statedb.Identity
+	caHash   [32]byte
+	log      *slog.Logger
+	now      func() time.Time
+	random   io.Reader
+	enrolls  metric.Int64Counter
+	renewals metric.Int64Counter
 }
 
 func newEnrollDeps(opts ServerOptions) (*enrollDeps, error) {
@@ -48,6 +49,11 @@ func newEnrollDeps(opts ServerOptions) (*enrollDeps, error) {
 		metric.WithDescription("Enroll calls, by result: enrolled, replayed, refused (the caller's error) or failed (the hub's)."))
 	if err != nil {
 		return nil, fmt.Errorf("gateway: enroll counter: %w", err)
+	}
+	d.renewals, err = opts.Telemetry.Meter(scope).Int64Counter(opts.Telemetry.MetricPrefix()+"_agent_cert_renewals_total",
+		metric.WithDescription("RenewCert calls, by result: renewed, replayed, refused (the caller's error) or failed (the hub's)."))
+	if err != nil {
+		return nil, fmt.Errorf("gateway: renewal counter: %w", err)
 	}
 	return d, nil
 }
@@ -68,6 +74,13 @@ func withDetail(err *connect.Error, d *typev1.ErrorDetail) *connect.Error {
 // refused counts and logs the caller's error by its reason and the peer's
 // address, and returns it.
 func (d *enrollDeps) refused(ctx context.Context, peer string, err *connect.Error) error {
+	d.enrolls.Add(ctx, 1, metric.WithAttributes(attribute.String("result", "refused")))
+	d.log.InfoContext(ctx, "enroll.refused", "reason", reasonOf(err), "peer", peer)
+	return err
+}
+
+// reasonOf is the ErrorDetail reason of err without REASON_CODE_.
+func reasonOf(err *connect.Error) string {
 	reason := "UNSPECIFIED"
 	for _, det := range err.Details() {
 		if v, derr := det.Value(); derr == nil {
@@ -76,9 +89,7 @@ func (d *enrollDeps) refused(ctx context.Context, peer string, err *connect.Erro
 			}
 		}
 	}
-	d.enrolls.Add(ctx, 1, metric.WithAttributes(attribute.String("result", "refused")))
-	d.log.InfoContext(ctx, "enroll.refused", "reason", reason, "peer", peer)
-	return err
+	return reason
 }
 
 // failed counts and logs the hub's own failure at step (a closed set:

@@ -29,8 +29,8 @@ const MaxMessageBytes = 1 << 20
 // maxInstallID caps EnrollRequest.install_id (02g).
 const maxInstallID = 64
 
-// agentService is AgentService. Enroll is built; every other method
-// answers Unimplemented until its row lands.
+// agentService is AgentService. Enroll and RenewCert are built; every
+// other method answers Unimplemented until its row lands.
 type agentService struct {
 	agentv1connect.UnimplementedAgentServiceHandler
 	*enrollDeps
