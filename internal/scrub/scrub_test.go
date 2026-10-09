@@ -52,7 +52,12 @@ var secretCases = []textCase{
 	{"password in a url", "dial postgres://al:hunter2@db.local:5432/app failed", "dial postgres://al:[redacted]@db.local:5432/app failed"},
 	{"password holding @ in a url", "https://al:p@ss@host/x", "https://al:[redacted]@host/x"},
 	{"secret-named variable", "export GITHUB_TOKEN=abc123", "export GITHUB_TOKEN=[redacted]"},
-	{"secret-named flag, quoted", "run --password='p w' now", "run --password=[redacted] now"},
+	{"secret-named flag, quoted", "run --password='p w' now", "run --password='[redacted]' now"},
+	{"secret-named value, double quotes", `TOKEN="a b"`, `TOKEN="[redacted]"`},
+	// FuzzText found it: without its quotes the placeholder joined the 0, and
+	// a second pass removed the 0.
+	{"empty quoted value then text", "pAsswd=''0", "pAsswd='[redacted]'0"},
+	{"quote never closed", "token='abc def", "token='[redacted] def"},
 	{"secret-named json key", `{"api_key": "abc", "n": 1}`, `{"api_key": "[redacted]", "n": 1}`},
 	{
 		"private key block",

@@ -29,6 +29,9 @@ type rule struct {
 // removed: GITHUB_TOKEN=, --password=, "api_key": "...".
 const secretWords = `(?:password|passwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key)`
 
+// secretName is a secret-named variable or flag and its equals sign.
+const secretName = `[A-Za-z0-9_.-]{0,64}` + secretWords + `\s*=\s*`
+
 // rules are tried left to right at each position; the first that matches
 // wins, so a longer form (an Authorization header) comes before a part of it
 // (a bearer token). README.md lists each shape and why it is here.
@@ -49,7 +52,11 @@ var rules = []rule{
 	{`(\bAIza)[A-Za-z0-9_-]{35}()`, redacted},
 	{`(?i:(\bbearer\s+))[A-Za-z0-9._~+/-]{16,}=*()`, redacted},
 	{`(?i:("[A-Za-z0-9_.-]{0,64}` + secretWords + `"\s*:\s*")[^"\n]+("))`, redacted},
-	{`(?i:([A-Za-z0-9_.-]{0,64}` + secretWords + `\s*=\s*))(?:"[^"\n]*"|'[^'\n]*'|[^\s"'&;,]+)()`, redacted},
+	// A quoted value keeps its quotes, so the placeholder cannot run into
+	// the text after it and be taken for a longer value on a second pass.
+	{`(?i:(` + secretName + `"))[^"\n]*(")`, redacted},
+	{`(?i:(` + secretName + `'))[^'\n]*(')`, redacted},
+	{`(?i:(` + secretName + `["']?))[^\s"'&;,]+()`, redacted},
 	{`([?&][^=&#?\s/"'<>]+=)[^&#\s"'<>)` + "`" + `]+()`, redacted},
 	// An email's local part is at most 64 characters (RFC 5321).
 	{`()[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}()`, emailMark},

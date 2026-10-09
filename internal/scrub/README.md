@@ -51,7 +51,7 @@ and a case in `scrub_test.go`.
 | Bearer token | `Bearer <16+ chars>` → `Bearer [redacted]` | any HTTP API |
 | Authorization header | `Authorization: Basic …` → `Authorization: Basic [redacted]` | any HTTP API, any scheme |
 | Private key block | `-----BEGIN … PRIVATE KEY-----` to its END line, or to the end of the text when cut short → `[redacted]` | the hub's CA key and SSH keys (02g) |
-| Secret-named value | `GITHUB_TOKEN=…`, `--password='…'`, `"api_key": "…"` → name + `[redacted]` | a variable, flag or JSON key whose name ends in password, passwd, secret, token, api key, access key or private key |
+| Secret-named value | `GITHUB_TOKEN=…` → `GITHUB_TOKEN=[redacted]`; `--password='…'` → `--password='[redacted]'` (quotes kept); `"api_key": "…"` → `"api_key": "[redacted]"` | a variable, flag or JSON key whose name ends in password, passwd, secret, token, api key, access key or private key |
 | URL query value | `?code=abc&state=x` → `?code=[redacted]&state=[redacted]` | 02e: every value, not just ones that look secret |
 | Password in a URL | `postgres://al:hunter2@db` → `postgres://al:[redacted]@db` | 02e; up to the last `@` before the path |
 | Email | `al@example.com` → `[email]` | 02e; 01e hides emails by default |
