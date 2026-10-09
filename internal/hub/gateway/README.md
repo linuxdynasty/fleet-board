@@ -23,7 +23,10 @@ srv, err := gateway.NewServer(gateway.ServerOptions{
   `tls.Config.VerifyConnection` refuses a certificate whose serial
   (`ca.SerialHex`) is in the `RevokedSet` (the `revocation.List` in fleetd);
   it runs on resumed TLS 1.3 sessions too, so a session ticket from before a
-  revoke does not get back in. Checking the machine per RPC arrives with row 5.
+  revoke does not get back in. `RenewCert` checks the machine and serial in
+  the store on every call; the other RPCs do with row 5. A middleware puts
+  the verified client certificate (the first verified chain's leaf) in the
+  request context; handlers read it with `peerCert`, never from the request.
 - **Enroll** ([02g](../../../docs/specs/02g-agent-security.md#enrollment-trust-anchor-and-retry-a1)),
   checked in this order, nothing burning the token before the writer job:
   1. `install_id`: 1 to 64 printable ASCII characters without spaces (over 64
@@ -48,6 +51,20 @@ srv, err := gateway.NewServer(gateway.ServerOptions{
   write has an unknown outcome, and the agent's retry finds the replay. A token
   naming a previous machine is the hub's failure (`INTERNAL`, never burned;
   re-enroll is plan row 13a).
+- **RenewCert** ([02g](../../../docs/specs/02g-agent-security.md#certificate-renewal-a4)),
+  checked in this order:
+  1. A verified client certificate, else `CREDENTIALS_INVALID`. Its CN is the
+     machine id and its serial the peer serial; nothing comes from the request.
+  2. The CSR (`ca.ParseCSR`, the Enroll rule), then a key other than the
+     presented certificate's: `RENEW_CSR_INVALID` for either.
+  3. `statedb.Renew`: no machine row or an unknown or revoked serial is
+     `CREDENTIALS_INVALID`, a `REVOKED` machine `MACHINE_REVOKED`; the same
+     machine and CSR key return the stored certificate (`result="replayed"`);
+     otherwise `ca.IssueAgent` (90 days, never past the CA) runs inside the
+     writer job that inserts the serial and the `cert_renewals` row.
+
+  The old serial is not revoked. A store error is `UNAVAILABLE` with
+  `retryable`; the retry with the same CSR gets the stored certificate.
 - **Request cap**: `connect.WithReadMaxBytes(MaxMessageBytes)`, the 1 MiB of 02e.
 - **AgentService**: every other method answers `Unimplemented` until its row.
   It speaks Connect, gRPC and gRPC-Web over HTTP/1.1 and HTTP/2.
@@ -69,6 +86,9 @@ srv, err := gateway.NewServer(gateway.ServerOptions{
 | `enroll.completed` (`machine_id`, `replayed`, `hostname_mismatch`) | a new or replayed enroll |
 | `enroll.refused` (`reason`, `peer`) | a refusal; `reason` is the ErrorDetail reason without `REASON_CODE_` |
 | `enroll.failed` (`step`, `err_kind`) | the hub's failure; `step` is `store`, `previous_machine`, `random`, `sign` or `encode` |
+| `fleet_hub_agent_cert_renewals_total{result}` | every RenewCert: `renewed`, `replayed`, `refused`, `failed` |
+| `cert.renewed` (`machine_id`, `result`, `serial`, `not_after`) | a new or replayed renewal |
+| `cert.renew_refused` (`result`; refused: `reason`, `cause`, `peer`, `machine_id`; failed: `step`, `err_kind`, `machine_id`) | a refusal (warn) or the hub's failure (error); `cause` is `no_client_cert`, `csr_invalid`, `csr_same_key`, `machine_unknown`, `machine_revoked` or `serial_unknown`; `step` is `store`, `sign` or `encode` |
 | `fleet_hub_auth_failures_total{reason="revoked"}`, `tls.client_cert_revoked` (`serial`, `machine_id`) | a handshake refused for a revoked serial |
 | `fleet_hub_server_cert_issues_total{reason, result}`, `tls.server_cert_issued` (`reason`, `names` count, `not_after`), `tls.server_cert_issue_failed` (`reason`, `err_kind`, `not_after` still served) | server certificate re-issues |
 
@@ -85,6 +105,9 @@ chain, accepted as a client certificate), replay until 24 h past the TTL,
 every refusal of the 02g table, a refusal that must not burn the token,
 store failure, a token naming a previous machine, concurrent first enrolls
 (one machine row), a revoked serial refused fresh and on a resumed session,
-the server certificate refused as a client certificate, TLS 1.2 refused, and
-renewal with a fake clock and a tick channel. The listener tests read one
+the server certificate refused as a client certificate, TLS 1.2 refused,
+server certificate renewal with a fake clock and a tick channel, and
+RenewCert: a new serial for the CSR key, the stored certificate on a repeat,
+each refusal of the 02g table, store failure, concurrent identical calls
+(one serial), and a CA with less than 90 days left. The listener tests read one
 clock, `wallNow`, for issuing and verifying, so they pass on any date.

@@ -6,7 +6,7 @@
 - Output: `agent/v1/agent.proto` (`EnrollRequest`, `EnrollResponse`, `HelloAck`,
   `ByeReason`), `command.proto` and `events.proto` (`trace`),
   `type/v1/trace.proto`, `type/v1/status.proto` (`ReasonCode` 521 to 532 and
-  600 to 605), `hub/v1/machine.proto` (`RevokeMachine`, `MACHINE_STATE_REVOKED`),
+  600 to 606), `hub/v1/machine.proto` (`RevokeMachine`, `MACHINE_STATE_REVOKED`),
   `hub/v1/settings.proto` (`AuditEntry`)
 - Decisions: [ADR 0004](../adr/0004-agent-connectivity.md),
   [ADR 0019](../adr/0019-pre-implementation-contract-decisions.md) addendum
@@ -130,6 +130,34 @@ handshake through `Bye` (`ByeReason`), not through a missing message:
 | Certificate valid, machine id unknown to the hub (store recreated with the CA kept, or a backup that predates the enrollment) | Hub: `Bye{UNKNOWN_MACHINE}`, except the restore adoption below. The agent goes Unenrolled; the owner issues a token (a request `previous_machine_id` that no longer exists is ignored, so history cannot carry over) |
 | `HelloAck.fleet_id` is not the enrolled fleet | Agent: `Bye{FLEET_MISMATCH}`, does not reconnect until re-enrolled. mTLS against the pinned CA already makes this rare; the field covers a hub rebuilt with the same CA and a new id |
 | No common protocol version | Hub: `Bye{PROTO_UNSUPPORTED}` |
+
+## Certificate renewal (A4)
+
+At two thirds of the life of the certificate in use (checked after each `HelloAck` and hourly while connected), the agent makes a new Ed25519 key, saves it as `renew.key` (0600) and sends `RenewCertRequest{csr_pem}` for it. The hub takes the machine id from the peer certificate only, needs a live machine row and an unrevoked peer serial, applies the Enroll CSR rule, refuses a CSR whose key is the peer certificate's (`RENEW_CSR_INVALID`), and signs a certificate for the agent lifetime, never past the CA. The same machine and CSR key return the same stored certificate, so a retry adds no serial. The old serial is not revoked; it expires. The agent checks the answer (the pinned CA, one certificate for `renew.key`, the machine id, a later `not_after`); then writes key and certificate together to `cert.pem` (temp file, fsync, rename), serves the new pair from the next handshake without dropping the stream, and removes `renew.key`. `identity.json` is never rewritten. The agent uses whichever valid pair ends later. A failed renewal is retried at the next check and never ends the connection loop.
+
+The hub keeps each signed certificate in `cert_renewals`, keyed by the
+machine id and SHA-256 of the CSR's SubjectPublicKeyInfo (unique), next to
+its `cert_serials` row; signing and both inserts are one writer transaction
+(signing is local CPU, not a network call). A `RenewCert` failure is a gRPC
+error:
+
+| Case | gRPC code | `ErrorDetail.reason` |
+|---|---|---|
+| No client certificate on the connection | `UNAUTHENTICATED` | `CREDENTIALS_INVALID` |
+| No machine row for the certificate's machine id (never enrolled, or deleted) | `UNAUTHENTICATED` | `CREDENTIALS_INVALID` |
+| The machine is `REVOKED` | `PERMISSION_DENIED` | `MACHINE_REVOKED` |
+| The certificate's serial is not stored for that machine, or is revoked there | `UNAUTHENTICATED` | `CREDENTIALS_INVALID` |
+| CSR breaks the Enroll CSR rule, or is for the presented certificate's key | `INVALID_ARGUMENT` | `RENEW_CSR_INVALID` |
+| Hub store busy or failing (a cancelled write has an unknown outcome; the retry gets the stored certificate) | `UNAVAILABLE` | no reason, `retryable = true` |
+| The hub could not sign the certificate or read the stored one back | `INTERNAL` | `INTERNAL`; the agent retries at the next check |
+| Request over the 1 MiB message cap | `RESOURCE_EXHAUSTED` | none (refused before the handler) |
+
+A malformed CSR is refused with `RENEW_CSR_INVALID` before the machine and serial checks.
+
+A renewal writes an audit row (`machine.cert_renewed`). Not yet: plan row 5
+(#104) brings the audit log; until then a renewal is the log line
+`cert.renewed` and a refusal `cert.renew_refused`, with
+`fleet_hub_agent_cert_renewals_total` ([05b](05b-observability.md)).
 
 ## Hub identity and restore
 

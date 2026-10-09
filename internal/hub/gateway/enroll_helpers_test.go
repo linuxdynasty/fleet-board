@@ -45,14 +45,24 @@ type hub struct {
 // sides reads wallNow; the hub's enroll clock starts there too.
 func startHub(t *testing.T, adjust ...func(*gateway.ServerOptions)) *hub {
 	t.Helper()
-	f := listenerFixture(t)
+	return startHubOn(t, listenerFixture(t), adjust...)
+}
+
+// startHubOn is startHub on f; the server certificate is re-issued first
+// when f's is past two thirds of its life at wallNow.
+func startHubOn(t *testing.T, f *fixture, adjust ...func(*gateway.ServerOptions)) *hub {
+	t.Helper()
 	list, err := revocation.Load(context.Background(), revocation.Options{Dir: f.dir, Store: f.store, Now: wallNow})
 	if err != nil {
 		t.Fatal(err)
 	}
 	clk := newClock(wallNow())
+	certs := f.certs(t, defaultNames, wallNow)
+	if err := certs.Ensure(context.Background()); err != nil {
+		t.Fatal(err)
+	}
 	opts := gateway.ServerOptions{
-		Certs: f.certs(t, defaultNames, wallNow), Store: f.store, Identity: f.id, Revoked: list,
+		Certs: certs, Store: f.store, Identity: f.id, Revoked: list,
 		Telemetry: f.tel, Now: clk.now,
 	}
 	for _, a := range adjust {

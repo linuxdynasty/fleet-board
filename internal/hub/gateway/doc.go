@@ -18,7 +18,11 @@
 // checked before the store; the read-pool pre-check answers unknown, used,
 // expired and replays; one writer job burns the token and inserts the
 // machine, its serial and the replayable response. Every EnrollResponse is
-// rebuilt from hub_identity and the stored certificate. Requests are capped at
-// [MaxMessageBytes]. Every other method answers Unimplemented until its row
-// lands.
+// rebuilt from hub_identity and the stored certificate. RenewCert takes the
+// machine id and serial only from the verified client certificate, applies
+// the enroll CSR rule and refuses the presented certificate's key, then
+// statedb.Renew needs a live machine and a known, unrevoked serial, and
+// returns the stored certificate for the same machine and key or signs one
+// inside its writer job. Requests are capped at [MaxMessageBytes]. Every
+// other method answers Unimplemented until its row lands.
 package gateway

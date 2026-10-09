@@ -42,6 +42,7 @@ spec change. "Decided here" marks a value no earlier document gave.
 | One-shot child process (`internal/proc`) | time cap and output cap per named caller (`loginctl`, `tmux` one-shot, version check, `git`, `gh`), each set from a measured run of that command | s, KiB | 01 principle 8, plan row 2c | fixed |
 | Agent command rate limit per command kind (`rate_limits`) | 60 | per min | 03e, decided here | `agent` |
 | Certificate lifetime | 90 (max 365), renewed at two thirds | days | ADR 0004 | `cert_lifetime` setting |
+| Agent certificate renewal check | after each `HelloAck` and hourly while connected; a failure retried at the next check | h | 02g | fixed |
 | Hub server certificate lifetime (agent listener) | 90, re-issued at two thirds (checked at start and hourly) or when `tls.agent_names` changes; never past the CA | days | [02g](02g-agent-security.md#hub-identity-and-restore), plan row 2b | fixed |
 | Fleet CA lifetime | 10; no rotation in v1 | years | 02g, plan row 2b | fixed |
 | Enrollment token lifetime | 15 (max 24 h) | min | machine.proto | per token |

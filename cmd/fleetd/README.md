@@ -34,8 +34,8 @@ The config file is `--config`, else `$FLEETD_CONFIG`, else
 the command failed (the reason is on stderr and in the `hub.start_failed` log
 line), 2 bad usage.
 
-Today `run` serves the agent listener (TLS 1.3, every `AgentService` method
-Unimplemented), `/metrics` on the loopback API listener, and the admin socket
+Today `run` serves the agent listener (TLS 1.3; `AgentService` serves
+`Enroll` and `RenewCert`, every other method Unimplemented), `/metrics` on the loopback API listener, and the admin socket
 `<state_dir>/admin.sock` (mode 0600, only fleetd's own OS user) that
 `enroll-token` talks to. A second `run` against the same state folder is
 refused while the first holds `<state_dir>/fleetd.lock`.

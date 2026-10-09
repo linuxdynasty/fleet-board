@@ -25,4 +25,11 @@
 // serial and the replayable response, or classifies again when the burn
 // changes nothing. [RevokeSerials] and [RevokedSerials] keep the revocation
 // list in state.db; the revoked-serials file is the revocation package's.
+//
+// Plan row 4 adds cert_renewals, unique on the machine and the CSR key.
+// [Renew] refuses a missing or REVOKED machine ([ErrMachineUnknown],
+// [ErrMachineRevoked]) and an unknown or revoked peer serial
+// ([ErrPeerSerialUnknown]), returns the stored certificate for the same
+// machine and key, or signs and inserts the serial and the renewal in one
+// writer job.
 package statedb

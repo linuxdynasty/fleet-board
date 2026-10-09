@@ -281,7 +281,8 @@ enum ReasonCode {
   // An enrollment token's previous_machine names a machine that is neither
   // REVOKED nor past its certificate lifetime.
   REASON_CODE_MACHINE_NOT_REENROLLABLE = 531;
-  // A command-issuing action on a REVOKED machine.
+  // A command-issuing action on a REVOKED machine, or RenewCert with that
+  // machine's certificate.
   REASON_CODE_MACHINE_REVOKED = 532;
 
   // Hub dispatch rules (03c planning rules, 03h). Each is a reason the hub
@@ -363,7 +364,7 @@ enum ReasonCode {
   // Collected report empty, not UTF-8, too large or without the bundle marker.
   REASON_CODE_REPORT_INVALID = 564;
 
-  // Enroll errors, carried in the ErrorDetail of the Enroll RPC error.
+  // Enroll and RenewCert errors, carried in the ErrorDetail of the RPC error.
 
   // [CAP A1]
   // The token is not one the hub issued (or its secret part is wrong).
@@ -384,6 +385,11 @@ enum ReasonCode {
   // EnrollRequest.previous_machine_id names a machine and the token names a
   // different one. A request id with a token that names none is ignored.
   REASON_CODE_ENROLL_PREVIOUS_MACHINE_MISMATCH = 605;
+  // [CAP A4]
+  // The RenewCert CSR breaks the enroll CSR rule (as ENROLL_CSR_INVALID), or
+  // is for the key of the certificate the agent presents: a renewal needs a
+  // new key.
+  REASON_CODE_RENEW_CSR_INVALID = 606;
 }
 
 // AttachCloseReason says why a terminal attach ended (J1). Used by the

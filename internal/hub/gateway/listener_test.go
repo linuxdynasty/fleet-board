@@ -21,7 +21,6 @@ import (
 
 	"connectrpc.com/connect"
 
-	agentv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1"
 	"github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1/agentv1connect"
 	"github.com/linuxdynasty/fleet-board/internal/hub/ca"
 	"github.com/linuxdynasty/fleet-board/internal/hub/gateway"
@@ -162,7 +161,7 @@ func TestClientCertificatesAreOptionalButMustBeTheHubCAs(t *testing.T) {
 	}
 }
 
-func TestEveryAgentServiceMethodButEnrollIsUnimplemented(t *testing.T) {
+func TestEveryAgentServiceMethodButEnrollAndRenewCertIsUnimplemented(t *testing.T) {
 	t.Parallel()
 	h := startHub(t)
 	f, addr := h.fixture, h.addr
@@ -179,10 +178,6 @@ func TestEveryAgentServiceMethodButEnrollIsUnimplemented(t *testing.T) {
 		client := agentv1connect.NewAgentServiceClient(httpClient, "https://"+addr, p.opts...)
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		calls := map[string]func() error{
-			"RenewCert": func() error {
-				_, err := client.RenewCert(ctx, connect.NewRequest(&agentv1.RenewCertRequest{}))
-				return err
-			},
 			"Connect":    func() error { return bidi(client.Connect(ctx)) },
 			"Terminal":   func() error { return bidi(client.Terminal(ctx)) },
 			"SessionLog": func() error { return bidi(client.SessionLog(ctx)) },

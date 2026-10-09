@@ -93,6 +93,23 @@ list, err := statedb.RevokedSerials(ctx, s, now)  // revoked and not yet expired
   writer job (state.db does not know a serial only the revoked-serials file
   has; the file keeps it). **`RevokedSerials`** lists the revoked serials
   whose certificate has not expired. Machine state is not touched (13a).
+- **Certificate renewal** (migration 4, plan row 4,
+  [02g](../../../docs/specs/02g-agent-security.md#certificate-renewal-a4)):
+  `cert_renewals` keeps each certificate `RenewCert` signed: `machine_id`,
+  `csr_key_hash` (SHA-256 of the CSR's SubjectPublicKeyInfo; the pair is the
+  primary key, so one machine and key never get two certificates), `serial`
+  (unique, a `cert_serials` row), the certificate DER and `created_time`. No
+  foreign key to `machines`, like `cert_serials`. **`Renew`** pre-checks on
+  the read pool (no machine row `ErrMachineUnknown`, `REVOKED`
+  `ErrMachineRevoked`, a peer serial not stored for the machine or revoked
+  `ErrPeerSerialUnknown`, a stored certificate for the key returned with
+  `Replayed`), then one writer job checks the same again and calls
+  `Renewal.Sign` (local CPU only) and inserts the serial and the renewal
+  together. The old serial is not touched.
+
+```go
+r, err := statedb.Renew(ctx, s, statedb.Renewal{MachineID: id, PeerSerial: serial, CSRKeyHash: h, Now: now, Sign: sign})
+```
 
 Tests: `CGO_ENABLED=0 go test ./internal/hub/statedb/`. They use real files:
 modes, a refused second create with the file hash unchanged, an injected
@@ -104,4 +121,7 @@ the 02g check order (unknown, replay, expiry; a replay after the TTL inside
 the 24 h), a revoked machine's replay refused, a previous-machine token never
 burned, two concurrent first enrolls leaving one machine row, an expiry
 between the pre-check and the job, each constraint by raw SQL, and a 2b
-store gaining the tables.
+store gaining the tables. The row 4 tests cover `Renew`: a stored then
+replayed certificate (one signature, rows read from the file), each refusal
+before `Sign` runs, eight concurrent renewals with one key (one serial), the
+`cert_renewals` constraints by raw SQL, and a row 3 store gaining the table.

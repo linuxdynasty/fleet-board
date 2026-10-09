@@ -125,6 +125,8 @@ message EnrollResponse {
 // [CAP A4]
 // RenewCertRequest, over the existing mTLS connection.
 message RenewCertRequest {
+  // PEM CSR for a new Ed25519 key, never the current one; the same key
+  // returns the same certificate.
   bytes csr_pem = 1;
 }
 
