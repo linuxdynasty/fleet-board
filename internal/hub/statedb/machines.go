@@ -6,9 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
+	"github.com/linuxdynasty/fleet-board/internal/hostname"
 	"github.com/linuxdynasty/fleet-board/internal/store"
 )
 
@@ -238,7 +238,7 @@ func insertMachine(ctx context.Context, tx *sql.Tx, m NewMachine) (Enrolled, err
 	if expected == "" {
 		expected = name
 	}
-	mismatch := hostnameMismatch(expected, m.ReportedHostname)
+	mismatch := hostname.Mismatch(expected, m.ReportedHostname)
 	now := m.Now.UnixMilli()
 	if _, err := tx.ExecContext(ctx, `INSERT INTO machines(machine_id, name, expected_hostname, labels, drained,
 		install_id, state, hostname_mismatch, facts, created_time) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -258,14 +258,4 @@ func insertMachine(ctx context.Context, tx *sql.Tx, m NewMachine) (Enrolled, err
 	return Enrolled{
 		MachineID: m.MachineID, CertDER: m.CertDER, MachineName: name, ExpectedHostname: expected, HostnameMismatch: mismatch,
 	}, nil
-}
-
-// hostnameMismatch compares lower-cased names without a trailing "." or
-// ".local"; an empty reported hostname is a mismatch.
-func hostnameMismatch(expected, reported string) bool {
-	norm := func(h string) string {
-		return strings.TrimSuffix(strings.TrimSuffix(strings.ToLower(h), "."), ".local")
-	}
-	r := norm(reported)
-	return r == "" || r != norm(expected)
 }

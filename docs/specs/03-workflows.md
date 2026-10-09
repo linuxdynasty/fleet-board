@@ -86,7 +86,8 @@ result without re-executing.
 
 **Trigger.** Owner runs `fleetd enroll-token --machine <name> [--expect-host
 <h>] --ttl 15m`, then on the machine `fleet-agent enroll --token T [--hub
-addr]`; or a container boots with `FLEET_ENROLL_TOKEN`.
+addr]`; later, a container that boots with `FLEET_ENROLL_TOKEN` (not built
+yet; `fleet-agent enroll` takes `--token` only).
 
 **Actors.** Owner (CLI/UI), `fleetd` gateway + writer, `fleet-agent`, the
 developer's tmux server, the hidden `fleet-probe` server (identity probe only).
@@ -120,6 +121,10 @@ sequenceDiagram
     A->>H: Heartbeat{counts, load1, spool, event_seq}
   end
 ```
+
+**Capabilities at enroll.** The agent has no capability list yet, so it
+leaves `EnrollRequest.capabilities` empty; capabilities are first sent in
+`Hello` (later in plan row 4, PR 3).
 
 **Hub discovery (A2).** Candidate order: cached last-good address → mDNS
 `_fleetd._tcp` (`hashicorp/mdns`, ADR 0023; skipped with no usable multicast
@@ -204,7 +209,7 @@ re-enroll rule are in [02g](02g-agent-security.md#machine-lifecycle-revoke-and-d
 |---|---|---|
 | Enrollment token secret hash, expected hostname, TTL, `used_time`, `previous_machine` | hub store | one tx at `enroll-token`; burned in the Enroll tx |
 | Machine row (id, name, facts, labels), cert serial + `not_after_time`, the stored Enroll response (kept until the token's TTL + 24 h, keyed by token, `install_id` and CSR key, for replay) | hub store | the Enroll tx (token burn + machine + serial + response together; signing is local CPU, not a network call) |
-| Key (kept until Enroll succeeds, so a retry sends the same CSR), cert, CA chain + pinned fingerprint, `machine_id`, salt, `fleet_id`, cached hub address | agent state dir, mode 0600 | written before `Enroll` returns to the shell; salt never logged |
+| Key (kept until Enroll succeeds, so a retry sends the same CSR), cert, CA chain + pinned fingerprint, `machine_id`, salt, `fleet_id`, cached hub address | agent state dir, mode 0600: a pending key file until success, then `identity.json` (written once, never replaced) and `hub-address`; `install_id` is in `agent.db` | written before `Enroll` returns to the shell; salt never logged |
 | `machine_connections{epoch, boot_id, peer_addr, reason, connect_time}` | hub store | the Hello tx (also marks ONLINE) |
 | Inventory from the snapshot | hub store | the snapshot tx (replace per machine) |
 | Outbox transitions (`pending → delivered`, `→ expired`) | hub store | the snapshot tx; messages sent after commit |
@@ -227,15 +232,18 @@ re-enroll rule are in [02g](02g-agent-security.md#machine-lifecycle-revoke-and-d
 |---|---|
 | Token unknown, expired or already used | `Enroll` fails with a gRPC error whose `ErrorDetail.reason` is `ENROLL_TOKEN_UNKNOWN`, `_EXPIRED` or `_USED` (02g); nothing persisted on the hub except an audit row (`machine.enroll_failed`; not yet: plan row 5, #104, until then only `enroll.refused` with `reason` and `peer`); `fleet_hub_enroll_total{result="refused"}`; the agent prints the reason and exits 1 |
 | Bad CSR, bad `install_id` or no common proto version | `ENROLL_CSR_INVALID`, `FIELD_TOO_LARGE` / `INVALID_ARGUMENT` or `ENROLL_PROTO_UNSUPPORTED` (02g); checked before the store, so the token is not burned and a fixed request still enrolls; `enroll.refused` |
-| Hub store busy or failing during `Enroll` | `UNAVAILABLE` with `retryable = true`; `enroll.failed{step="store"}` and `fleet_hub_enroll_total{result="failed"}`. A write cancelled mid-way has an unknown outcome: the agent retries and gets the replay |
+| Hub store busy or failing during `Enroll` | `UNAVAILABLE` with `retryable = true`; `enroll.failed{step="store"}` and `fleet_hub_enroll_total{result="failed"}`. A write cancelled mid-way has an unknown outcome: the agent retries and gets the replay. The agent retries a retryable answer or a lost connection a bounded number of times ([defaults](defaults.md), "Enroll tries"), each with the same token, key and `install_id`, logging `enroll.retry{attempt, err_kind}`; when the tries run out, or the whole-enroll time cap ends a call or a wait, it logs `enroll.failed{step="call"}`, says running the same command again is safe, and exits 1 (the cap logs `err_kind="timeout"`; the caller's own cancel during a call gets no advice). A bare `INTERNAL` or `UNKNOWN` (a cut stream) is retried; an `INTERNAL` with the hub's `ErrorDetail` is not retried, and the agent does not advise a rerun, since the same request fails the same way. A request over the 1 MiB cap (refused as resource exhausted, [02g](02g-agent-security.md)) is not retried. Only a non-retryable reason is a refusal (`enroll.refused`) |
 | Enroll response lost after the token burned | Run `enroll` again: the same token, `install_id` and CSR key return the stored response (`replayed = true`), same `machine_id` and certificate, no second machine row |
-| Impostor at the address the owner typed or mDNS found | The agent verifies the server chain against the CA SHA-256 inside the token before sending the token or CSR (the hub sends its CA certificate after its own so the agent can find that root); the impostor learns nothing and the agent aborts (no TOFU) |
-| A different machine enrolls with a token tied to `expected_hostname` | Enroll succeeds; machine row flagged `hostname_mismatch` (compared lower case without a trailing `.` or `.local`; an empty reported hostname is a mismatch) and `enroll.completed{hostname_mismatch=true}`; triage info item (W7; not yet: plan row 5); owner deletes it if wrong |
+| Impostor at the address the owner typed or mDNS found | The agent verifies the server chain against the CA SHA-256 inside the token before sending the token or CSR (the hub sends its CA certificate after its own so the agent can find that root); the impostor learns nothing and the agent aborts (no TOFU). A handshake the peer fails (the pin, the name, the key proof, or a non-TLS answer) is untrusted and never retried, including one that fails after the pin passed (a copied chain without its key); `enroll.hub_untrusted{peer}`, exit 1. A connection that drops, resets or times out during the handshake is a lost connection and is retried within "Enroll tries" |
+| `enroll` with no `--hub` (until discovery lands, plan row 4) or a malformed token | Exit 1 with a line that says so; no state folder is created and nothing is sent |
+| `enroll` on a machine that is already enrolled | Until re-enroll exists (later in plan row 4, and row 13a's `previous_machine`): refused before any network call, naming the machine; the identity is never replaced. To start again the owner removes only `identity.json` (and `enroll.key` if present) and keeps `agent.db`, which holds `install_id`, so the next enroll with a new token keeps it; exit 1. A leftover `enroll.key` next to a valid identity is removed |
+| Enroll response that fails the agent's checks (another CA or fingerprint, a certificate not for this key or machine id, no fleet id or salt) | Nothing saved, the key kept for a retry; `enroll.failed{step="response"}`, exit 1 |
+| A different machine enrolls with a token tied to `expected_hostname` | Enroll succeeds; machine row flagged `hostname_mismatch` (compared lower case without a trailing `.` or `.local`; an empty reported hostname is a mismatch) and `enroll.completed{hostname_mismatch=true}`; triage info item (W7; not yet: plan row 5); owner deletes it if wrong. The agent prints one warning line on stderr naming both hostnames |
 | Hub unreachable / all candidates fail | Backoff loop; `doctor` shows the last error per candidate; nothing else blocks |
 | Impostor at a discovered address | TLS verification fails; counted, next candidate |
 | Hello from a valid certificate the hub does not know (store recreated, or a backup that predates the enrollment) | `Bye{UNKNOWN_MACHINE}`; the agent goes Unenrolled and the owner issues a token. During a restore reconcile window the hub adopts the machine instead (02g) |
 | Hub restart between `Enroll` and first `Connect` | Enroll is durable; Connect retries |
-| Agent restart before the state dir is fully written | Enroll is atomic on disk (write temp + rename); a half-written dir is detected and the user re-runs enroll with a new token |
+| Agent restart before the state dir is fully written | `identity.json` is written once (temp file, fsync, then a hard link that never replaces a file), so it is whole or absent. Until it exists `enroll.key` is kept, so running `enroll` again with the same token replays the hub's stored answer; no new token is needed |
 | Certificate expired (machine offline longer than lifetime) | Hello refused at TLS; agent logs `cert_expired` and `doctor` says "re-enroll" |
 | Duplicate identity (same cert from two hosts) | W2 |
 | Clock skew > 5 min (`Hello.sent_time` or `Heartbeat.sent_time` vs hub receive time) | HelloAck still sent; machine warning; commands still evaluated in hub time; above 15 min `clock_untrusted` (02i, "Clocks") |
@@ -263,7 +271,15 @@ re-enroll rule are in [02g](02g-agent-security.md#machine-lifecycle-revoke-and-d
   `enroll.completed{machine_id, replayed, hostname_mismatch}`,
   `enroll.refused{reason, peer}` (`reason` is the ErrorDetail reason without
   `REASON_CODE_`), `enroll.failed{step, err_kind}` (`step`: `store`,
-  `previous_machine`, `random`, `sign`, `encode`),
+  `previous_machine`, `random`, `sign`, `encode`). The agent logs the same
+  names from its side: `enroll.completed{machine_id, replayed,
+  hostname_mismatch}`, `enroll.refused{reason, peer}` (the hub's
+  non-retryable answer), `enroll.retry{attempt, err_kind}` (a retryable
+  answer or a lost connection; the next try follows),
+  `enroll.hub_untrusted{peer}` (the peer failed the handshake; nothing
+  sent) and
+  `enroll.failed{step, err_kind}` (`step`: `token`, `hub_address`, `state`,
+  `already_enrolled`, `key`, `call`, `response`, `save`, `cleanup`),
   `connect.hello{epoch, boot_id, reason, skew_ms}`, `snapshot.applied{panes,
   goals, bytes, diff: probes_reissued, goals_pane_lost, orphan_panes}`. No
   enroll line carries the token, its secret, any part of its hash, or the
@@ -369,7 +385,7 @@ waiting for keepalive timeouts.
 | What | Where | Transaction |
 |---|---|---|
 | Event ring (`seq`, body, 1 week or 64 MiB, [defaults](defaults.md)) | `agent.db` | per event, fsync batched ≤ 1 s |
-| `seq_hwm` (reserved in blocks of 1024), `EventCounters`, `install_id` | `agent.db` | one fsync per block; counters with it |
+| `seq_hwm` (reserved in blocks of 1024), `EventCounters`, `install_id`, `last_epoch`, `last_applied_command_seq` | `agent.db` | one fsync per block; counters with it; the epoch and command marks never step back |
 | Command log (last 10,000 or 7 days; status, result, step reached) | `agent.db` | per state change, before `CommandAck` is sent |
 | Probe assignments (`EnsureProbe` as received) | `agent.db` | with the command log |
 | Goal registry (`GoalRegistration` per pane) and availability marks (per pane key) | `agent.db` | `register_goal`, `RegisterGoal`, `ReleaseGoal`, mark commands; both reported in every snapshot (02h) |
