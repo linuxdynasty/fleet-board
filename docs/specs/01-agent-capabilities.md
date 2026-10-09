@@ -147,13 +147,16 @@ and dispatches it there).
   (Linux `CLOCK_BOOTTIME` minus `CLOCK_MONOTONIC`, macOS `CLOCK_MONOTONIC_RAW`
   minus `CLOCK_UPTIME_RAW`) and compares how far the wall clock moved with how far
   Go's monotonic clock moved (that clock stops while the machine sleeps); either
-  growing by 2 s or more since the last check is a wake. Network change: the
-  routing push socket (macOS `PF_ROUTE`, Linux `NETLINK_ROUTE`, no root) is only
-  a hint; the agent acts only when its list of interfaces, addresses and default
+  growing by 2 s or more since the last check is a wake; a wall clock stepped
+  back 2 s or more is logged and is not a wake. Network change: the routing
+  push socket (macOS `PF_ROUTE`, Linux `NETLINK_ROUTE`, no root) is only a
+  hint; the agent acts only when its list of interfaces, addresses and default
   route really changed, because Linux re-announces unchanged IPv6 addresses
   every few seconds to minutes. While connected, only the loss of the
-  connection's local address or a changed default route reconnects; while not
-  connected, any real change resets the backoff. No cgo, no `exec`. Values:
+  connection's local address (the previous reading held it and the new one
+  does not; an address the agent does not know never counts as lost) or a
+  changed default route reconnects; while not connected, any real change
+  resets the backoff. No cgo, no `exec`. Values:
   defaults.md; methods and evidence: ADR 0029 and spike 0.6.
 - **A7 Shutdown notice.** On SIGTERM (container stop, logout) the agent sends
   `Bye{reason}` so the hub marks it offline at once instead of after 3 minutes.
