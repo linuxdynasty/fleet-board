@@ -36,9 +36,11 @@ nor any part of the hash. `fleet-agent enroll --token T` does this, in order:
 2. Open TLS to the hub address (given, cached or found by mDNS: discovery only
    proposes candidates). Verify the server chain **against a root whose SHA-256
    equals that fingerprint**, and that the server certificate's SAN names the
-   address. A mismatch aborts before anything secret is sent: no token, no CSR,
-   no facts. An impostor on the LAN learns nothing, and a typed or discovered
-   address needs no trust.
+   address. The hub's agent listener sends its CA certificate after its own
+   certificate, so the agent finds that root in the chain by the fingerprint;
+   a chain without it fails. A mismatch aborts before anything secret is
+   sent: no token, no CSR, no facts. An impostor on the LAN learns nothing,
+   and a typed or discovered address needs no trust.
 3. Generate the Ed25519 key (kept in the state directory until Enroll
    succeeds), send `EnrollRequest{token, csr_pem, facts, install_id, ...}`.
 4. On success compare `EnrollResponse.ca_fingerprint` with the token's (a

@@ -7,6 +7,8 @@
 // list changes or two thirds of its 90 days have passed ([Certs.Ensure], at
 // start and on every tick of [Certs.Run]); each re-issue is one writer
 // transaction, and the served certificate changes only after it commits.
+// The chain sent is the server certificate, then the CA, so an enrolling
+// agent can find the root by the SHA-256 in its token.
 //
 // [NewServer] accepts TLS 1.3 only and an optional client certificate that
 // must chain to the hub CA with client-auth usage; tls.Config.VerifyConnection

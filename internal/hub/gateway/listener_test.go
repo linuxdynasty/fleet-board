@@ -75,6 +75,11 @@ func TestTheListenerServesTLS13WithTheStoredCertificate(t *testing.T) {
 	if !bytes.Equal(st.PeerCertificates[0].Raw, f.id.ServerCert) {
 		t.Error("the served certificate is not the one in state.db")
 	}
+	// An enrolling agent holds only the CA's SHA-256 from its token (02g
+	// step 2), so the chain carries the CA for it to find by that hash.
+	if len(st.PeerCertificates) != 2 || !bytes.Equal(st.PeerCertificates[1].Raw, f.id.CACert) {
+		t.Errorf("the handshake sent %d certificates; want the server certificate, then the CA", len(st.PeerCertificates))
+	}
 }
 
 func TestATLS12OnlyClientIsRefused(t *testing.T) {
