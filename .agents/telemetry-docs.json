@@ -6,6 +6,7 @@
  "logs": {
   "admin.": "docs/specs/05b-observability.md",
   "backup.": "docs/specs/05b-observability.md",
+  "cert.": "docs/specs/05b-observability.md",
   "enroll.": "docs/specs/03-workflows.md",
   "http.": "docs/specs/05b-observability.md",
   "hub.": "docs/specs/05b-observability.md",
@@ -15,6 +16,7 @@
   "wake.": "docs/specs/03-workflows.md"
  },
  "metrics": {
+  "agent_cert_": "docs/specs/05b-observability.md",
   "auth_failures_": "docs/specs/05b-observability.md",
   "backup_": "docs/specs/05b-observability.md",
   "enroll_": "docs/specs/03-workflows.md",

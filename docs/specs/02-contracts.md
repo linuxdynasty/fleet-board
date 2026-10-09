@@ -132,7 +132,7 @@ other repeat rules are under [Delivery semantics](#delivery-semantics).
 | A1 | `EnrollRequest`, `EnrollResponse`, `AgentService.Enroll`, `REASON_CODE_ENROLL_TOKEN_UNKNOWN`, `REASON_CODE_ENROLL_TOKEN_EXPIRED`, `REASON_CODE_ENROLL_TOKEN_USED`, `REASON_CODE_ENROLL_CSR_INVALID`, `REASON_CODE_ENROLL_PROTO_UNSUPPORTED`, `REASON_CODE_ENROLL_PREVIOUS_MACHINE_MISMATCH` | both | — |
 | A2 | `EnrollResponse.hub_addresses` | H→A | — |
 | A3 | `Hello`, `HelloAck`, `SnapshotRequest`, `AgentService.Connect`, `Snapshot` | both | — |
-| A4 | `RenewCertRequest`, `RenewCertResponse`, `AgentService.RenewCert` | both | — |
+| A4 | `RenewCertRequest`, `RenewCertResponse`, `AgentService.RenewCert`, `REASON_CODE_RENEW_CSR_INVALID` | both | — |
 | A5 | `Heartbeat` | A→H | — |
 | A6 | `CONNECT_REASON_WAKE`, `CONNECT_REASON_NETWORK_CHANGE` | A→H | — |
 | A7 | `Bye`, `BYE_REASON_FLEET_MISMATCH` | both | — |
