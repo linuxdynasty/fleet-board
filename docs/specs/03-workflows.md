@@ -204,7 +204,7 @@ re-enroll rule are in [02g](02g-agent-security.md#machine-lifecycle-revoke-and-d
 |---|---|---|
 | Enrollment token secret hash, expected hostname, TTL, `used_time`, `previous_machine` | hub store | one tx at `enroll-token`; burned in the Enroll tx |
 | Machine row (id, name, facts, labels), cert serial + `not_after_time`, the stored Enroll response (kept until the token's TTL + 24 h, keyed by token, `install_id` and CSR key, for replay) | hub store | the Enroll tx (token burn + machine + serial + response together; signing is local CPU, not a network call) |
-| Key (kept until Enroll succeeds, so a retry sends the same CSR), cert, CA chain + pinned fingerprint, `machine_id`, salt, `fleet_id`, cached hub address | agent state dir, mode 0600 | written before `Enroll` returns to the shell; salt never logged |
+| Key (kept until Enroll succeeds, so a retry sends the same CSR), cert, CA chain + pinned fingerprint, `machine_id`, salt, `fleet_id`, cached hub address | agent state dir, mode 0600: a pending key file until success, then `identity.json` (written once, never replaced) and `hub-address`; `install_id` is in `agent.db` | written before `Enroll` returns to the shell; salt never logged |
 | `machine_connections{epoch, boot_id, peer_addr, reason, connect_time}` | hub store | the Hello tx (also marks ONLINE) |
 | Inventory from the snapshot | hub store | the snapshot tx (replace per machine) |
 | Outbox transitions (`pending → delivered`, `→ expired`) | hub store | the snapshot tx; messages sent after commit |
@@ -229,7 +229,10 @@ re-enroll rule are in [02g](02g-agent-security.md#machine-lifecycle-revoke-and-d
 | Bad CSR, bad `install_id` or no common proto version | `ENROLL_CSR_INVALID`, `FIELD_TOO_LARGE` / `INVALID_ARGUMENT` or `ENROLL_PROTO_UNSUPPORTED` (02g); checked before the store, so the token is not burned and a fixed request still enrolls; `enroll.refused` |
 | Hub store busy or failing during `Enroll` | `UNAVAILABLE` with `retryable = true`; `enroll.failed{step="store"}` and `fleet_hub_enroll_total{result="failed"}`. A write cancelled mid-way has an unknown outcome: the agent retries and gets the replay |
 | Enroll response lost after the token burned | Run `enroll` again: the same token, `install_id` and CSR key return the stored response (`replayed = true`), same `machine_id` and certificate, no second machine row |
-| Impostor at the address the owner typed or mDNS found | The agent verifies the server chain against the CA SHA-256 inside the token before sending the token or CSR (the hub sends its CA certificate after its own so the agent can find that root); the impostor learns nothing and the agent aborts (no TOFU) |
+| Impostor at the address the owner typed or mDNS found | The agent verifies the server chain against the CA SHA-256 inside the token before sending the token or CSR (the hub sends its CA certificate after its own so the agent can find that root); the impostor learns nothing and the agent aborts (no TOFU); `enroll.hub_untrusted{peer}`, exit 1 |
+| `enroll` with no `--hub` (until discovery lands, plan row 4) or a malformed token | Exit 1 with a line that says so; no state folder is created and nothing is sent |
+| `enroll` on a machine that is already enrolled | Refused before any network call, naming the machine; the identity is never replaced (the owner removes the state folder to start again); exit 1 |
+| Enroll response that fails the agent's checks (another CA or fingerprint, a certificate not for this key or machine id, no fleet id or salt) | Nothing saved, the key kept for a retry; `enroll.failed{step="response"}`, exit 1 |
 | A different machine enrolls with a token tied to `expected_hostname` | Enroll succeeds; machine row flagged `hostname_mismatch` (compared lower case without a trailing `.` or `.local`; an empty reported hostname is a mismatch) and `enroll.completed{hostname_mismatch=true}`; triage info item (W7; not yet: plan row 5); owner deletes it if wrong |
 | Hub unreachable / all candidates fail | Backoff loop; `doctor` shows the last error per candidate; nothing else blocks |
 | Impostor at a discovered address | TLS verification fails; counted, next candidate |
@@ -263,7 +266,12 @@ re-enroll rule are in [02g](02g-agent-security.md#machine-lifecycle-revoke-and-d
   `enroll.completed{machine_id, replayed, hostname_mismatch}`,
   `enroll.refused{reason, peer}` (`reason` is the ErrorDetail reason without
   `REASON_CODE_`), `enroll.failed{step, err_kind}` (`step`: `store`,
-  `previous_machine`, `random`, `sign`, `encode`),
+  `previous_machine`, `random`, `sign`, `encode`). The agent logs the same
+  names from its side: `enroll.completed{machine_id, replayed}`,
+  `enroll.refused{reason, peer, retryable}` (the hub's answer),
+  `enroll.hub_untrusted{peer}` (the pin failed; nothing sent) and
+  `enroll.failed{step, err_kind}` (`step`: `token`, `hub_address`, `state`,
+  `already_enrolled`, `key`, `call`, `response`, `save`, `cleanup`),
   `connect.hello{epoch, boot_id, reason, skew_ms}`, `snapshot.applied{panes,
   goals, bytes, diff: probes_reissued, goals_pane_lost, orphan_panes}`. No
   enroll line carries the token, its secret, any part of its hash, or the
