@@ -37,8 +37,6 @@ enum UnknownReason {
   UNKNOWN_REASON_NOT_SHOWN = 2;
   // The harness version is outside the parser's SupportedVersions (C1).
   UNKNOWN_REASON_HARNESS_VERSION_UNSUPPORTED = 3;
-  reserved 4;
-  reserved "UNKNOWN_REASON_PROBE_FAILED";
 }
 
 // ---------------------------------------------------------------------------
