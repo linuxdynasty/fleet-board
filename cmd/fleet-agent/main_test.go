@@ -84,6 +84,44 @@ func TestVersionAndUsage(t *testing.T) {
 	}
 }
 
+// A token typed without --token is bad usage, and is never echoed back.
+func TestAStrayArgumentIsNeverEchoed(t *testing.T) {
+	t.Parallel()
+	const secret = "fbe1_SECRETSECRETSECRET" //nolint:gosec // G101: a fake token the test checks is never echoed
+	for _, args := range [][]string{{secret}, {"enroll", secret}, {"enroll", "--hub", "127.0.0.1", secret}} {
+		r := agent(t, args...)
+		if r.code != 2 || strings.Contains(r.stdout+r.stderr, "SECRETSECRET") {
+			t.Errorf("fleet-agent %d args = %d, output %q; want 2 and no echo", len(args), r.code, r.stdout+r.stderr)
+		}
+	}
+}
+
+// The hub's expected hostname is checked: a mismatch prints one warning on
+// stderr, and a match prints none.
+func TestEnrollWarnsOnAHostnameMismatch(t *testing.T) {
+	t.Parallel()
+	host, err := os.Hostname()
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := conntest.StartHub(t, conntest.Options{})
+	cases := []struct {
+		expect string
+		warn   bool
+	}{{"not-this-machine", true}, {host, false}}
+	for _, tc := range cases {
+		dir := filepath.Join(t.TempDir(), "state")
+		r := agent(t, "--state-dir", dir, "enroll", "--hub", h.Addr, "--token", h.TokenExpecting(t, tc.expect, time.Now().Add(time.Hour)))
+		if r.code != 0 {
+			t.Fatalf("enroll = %d: %s", r.code, r.stderr)
+		}
+		warned := strings.Count(r.stderr, "fleet-agent: warning:")
+		if (warned == 1) != tc.warn || warned > 1 || (tc.warn && !strings.Contains(r.stderr, tc.expect)) {
+			t.Errorf("expecting %q: stderr %q; want a warning %v", tc.expect, r.stderr, tc.warn)
+		}
+	}
+}
+
 func TestEnrollCommand(t *testing.T) {
 	t.Parallel()
 	h := conntest.StartHub(t, conntest.Options{})

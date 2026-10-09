@@ -111,7 +111,7 @@ Destructive commands need `--yes`.
 | `fleetd insights rebuild` | recompute rollups | local | v1 (13) |
 | `fleetd debug agent-stream` | tap the agent bus | local | not scheduled |
 | `fleetd claim`, `token create`, `user invite` | sign-in admin | `admin.sock` | v3 |
-| `fleet-agent enroll`, `run` | join the fleet (`enroll --token T [--hub host[:port]]`, port 7443 by default; `--hub` is required until discovery lands, and with none nothing is sent; an enrolled machine is refused, never re-enrolled over; exit 0, 1 on failure, 2 for bad usage), run the agent; `--state-dir` (default `~/.local/state/fleet-agent/`) | `Enroll`, `Connect` | v1 (4) |
+| `fleet-agent enroll`, `run` | join the fleet (`enroll --token T [--hub host[:port]]`, port 7443 by default; `--hub` is required until discovery lands, and with none nothing is sent; until re-enroll exists (later in row 4, and row 13a's `previous_machine`) an enrolled machine is refused, never re-enrolled over: remove only `identity.json` (and `enroll.key` if present) and keep `agent.db`, which holds `install_id`; a stray argument is refused without being echoed; exit 0, 1 on failure, 2 for bad usage), run the agent; `--state-dir` (default `~/.local/state/fleet-agent/`) | `Enroll`, `Connect` | v1 (4) |
 | `fleet-agent doctor` | every local check with a reason, including probe-folder trust and Linux linger | local | v1 (6) |
 | `fleet-agent upgrade`, `fleetd upgrade` | fetch the next GitHub release, check its checksum, swap the binary ([02j](02j-hub-runtime.md#install-and-upgrade)) | local | v1 (16) |
 | `fleet-agent hook`, `hooks uninstall`, `drain`, `undrain`, `approve`, `deny` | goal hooks, local drain, local approval | local | v1 (20, 24, 18) |

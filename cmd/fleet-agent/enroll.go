@@ -20,7 +20,7 @@ func enrollCommand(dir func() (string, error), version string, stdout, stderr io
 	cmd := &cobra.Command{
 		Use:   "enroll",
 		Short: "Join this machine to the fleet with a token from fleetd enroll-token",
-		Args:  cobra.NoArgs,
+		Args:  noArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			d, err := dir()
 			if err != nil {
@@ -47,6 +47,11 @@ func enrollCommand(dir func() (string, error), version string, stdout, stderr io
 				res.Identity.MachineName, res.Identity.MachineID, res.Identity.FleetID, res.HubAddress, note)
 			if err != nil {
 				return commandError{err}
+			}
+			if res.HostnameMismatch {
+				// The hub records the mismatch too (03 W1); the owner decides.
+				_, _ = fmt.Fprintf(stderr, "fleet-agent: warning: the token expected hostname %q but this machine reports %q\n",
+					res.Identity.ExpectedHostname, res.Hostname)
 			}
 			return nil
 		},

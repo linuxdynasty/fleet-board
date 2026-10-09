@@ -30,6 +30,17 @@ func (e commandError) Error() string { return e.err.Error() }
 
 func (e commandError) Unwrap() error { return e.err }
 
+// noArgs refuses positional arguments without echoing them: cobra.NoArgs
+// prints the argument, and a token typed without --token would land in the
+// terminal and its scrollback.
+func noArgs(cmd *cobra.Command, args []string) error {
+	if len(args) > 0 {
+		return fmt.Errorf("%s takes no arguments (got %d); pass values with flags, the token with --token",
+			cmd.CommandPath(), len(args))
+	}
+	return nil
+}
+
 // run returns the exit code: 0, 1 when a command fails, 2 for bad usage.
 func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	p := buildinfo.Current("fleet-agent")
@@ -39,7 +50,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		Version:       p.Version,
 		SilenceUsage:  true,
 		SilenceErrors: true,
-		Args:          cobra.NoArgs,
+		Args:          noArgs,
 		RunE:          func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
 	}
 	root.SetVersionTemplate("{{.Name}} {{.Version}}\n")
