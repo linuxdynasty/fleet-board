@@ -143,17 +143,18 @@ and dispatches it there).
   delay (03 A2). It only makes reconnecting faster: when a wake or a change is
   missed, transport keepalive (ADR 0004) and the reconnect backoff still bring
   the agent back, and the snapshot on connect (A3) puts the state right. Wake:
-  every 5 s the agent compares how far the wall clock moved with how far Go's
-  monotonic clock moved (the monotonic clock stops while the machine sleeps) and
-  reads the kernel's sleep record (Linux `CLOCK_BOOTTIME` minus
-  `CLOCK_MONOTONIC`, macOS `kern.waketime`). Network change: the routing push
-  socket (macOS `PF_ROUTE`, Linux `NETLINK_ROUTE`, no root) is only a hint; the
-  agent acts only when its list of interfaces, addresses and default route
-  really changed, because Linux re-announces unchanged IPv6 addresses every few
-  seconds to minutes. While connected, only the loss of the connection's local
-  address or a changed default route reconnects; while not connected, any real
-  change resets the backoff. No cgo, no `exec`. Values: defaults.md; methods and
-  evidence: ADR 0029 and spike 0.6.
+  every 5 s the agent reads how long the machine has been asleep since boot
+  (Linux `CLOCK_BOOTTIME` minus `CLOCK_MONOTONIC`, macOS `CLOCK_MONOTONIC_RAW`
+  minus `CLOCK_UPTIME_RAW`) and compares how far the wall clock moved with how far
+  Go's monotonic clock moved (that clock stops while the machine sleeps); either
+  growing by 2 s or more since the last check is a wake. Network change: the
+  routing push socket (macOS `PF_ROUTE`, Linux `NETLINK_ROUTE`, no root) is only
+  a hint; the agent acts only when its list of interfaces, addresses and default
+  route really changed, because Linux re-announces unchanged IPv6 addresses
+  every few seconds to minutes. While connected, only the loss of the
+  connection's local address or a changed default route reconnects; while not
+  connected, any real change resets the backoff. No cgo, no `exec`. Values:
+  defaults.md; methods and evidence: ADR 0029 and spike 0.6.
 - **A7 Shutdown notice.** On SIGTERM (container stop, logout) the agent sends
   `Bye{reason}` so the hub marks it offline at once instead of after 3 minutes.
 - **A8 Hub settings.** The hub sends machine and group settings with a

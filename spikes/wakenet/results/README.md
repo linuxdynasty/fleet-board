@@ -17,7 +17,7 @@ PR 4, and a check on the first natural laptop sleep (#132).
 | Name | What it does | macOS source | Linux source |
 |---|---|---|---|
 | `clock` (a) | Every interval, compare how far the wall clock moved with how far Go's monotonic clock moved. Go's monotonic clock stops while the machine sleeps, the wall clock does not, so a gap over the threshold (default 2 s) means the machine slept. A negative gap means the wall clock was stepped back (logged as `wall_step_back`). | `time.Now()`, `Round(0)` | same |
-| `sleepmark` (s) | Every interval, read the kernel's own record of sleep and report when it changes. Immune to wall-clock steps (NTP, manual changes). | `sysctl kern.waketime` (exact wake time; zero until the first wake since boot) | `CLOCK_BOOTTIME − CLOCK_MONOTONIC` (total time suspended; no wake timestamp) |
+| `sleepmark` (s) | Every interval, read the kernel's own record of sleep and report when it changes. Immune to wall-clock steps (NTP, manual changes). | `sysctl kern.waketime` (exact wake time; zero until the first wake since boot). The product reads `CLOCK_MONOTONIC_RAW − CLOCK_UPTIME_RAW` instead: see [Sleep record](#sleep-record-what-the-product-reads) | `CLOCK_BOOTTIME − CLOCK_MONOTONIC` (total time suspended; no wake timestamp) |
 | `ifpoll` (b) | Every interval, list interfaces (up/running) and their addresses with `net.Interfaces()`/`Addrs()` and diff against the last list; also compare the IPv4 default route. | default route only with `-route-exec` (an exec of `route -n get default`) | `/proc/net/route` (file read, always on) |
 | `push` (c) | Block on a kernel socket that pushes routing events; log link up/down, address add/remove and default-route changes as relevant, everything else only counted. | `PF_ROUTE` routing socket (`RTM_IFINFO`, `RTM_NEWADDR`, `RTM_DELADDR`, default `RTM_ADD/DELETE/CHANGE`) | `NETLINK_ROUTE` bound to `RTMGRP_LINK`, `IPV4/IPV6_IFADDR`, `IPV4/IPV6_ROUTE` |
 
@@ -52,7 +52,9 @@ hard-coded kernel constants against `x/sys/unix`.
 
 - Mac mini, Apple M4 Pro, 12 cores, macOS 27.0.1 (26A434), 192.168.1.124, wired
   `en0`, 32 interfaces (many `utun`, `bridge`, `vmenet`). Not slept since boot
-  (`kern.waketime` = 0). Go 1.27.1. Base commit 843df01.
+  (`kern.waketime` = 0 as reported at the time, not verified since; on
+  2026-10-09 `CLOCK_MONOTONIC_RAW − CLOCK_UPTIME_RAW` read 0.000 s asleep since
+  boot). Go 1.27.1. Base commit 843df01.
 - Shared host: other agents were active; load average 2.0 to 3.3 during runs.
   CPU numbers are per process (`getrusage`), so they are less sensitive to load
   than wall times.
@@ -244,10 +246,71 @@ Go 1.27.1 source, paths relative to `$(go env GOROOT)`:
 
 So after a sleep of S seconds the wall clock has moved about S seconds more than
 the monotonic clock, which is what `clock` measures (`jump.go:26-35`), and the
-kernel's sleep record changes, which is what `sleepmark` reads. Both have table
-tests with fake readings. If a wake is missed anyway, transport keepalive (ADR
-0004) finds the dead connection within about 30 s, and the snapshot on connect
-puts the state right; a false wake costs one reconnect.
+time asleep since boot grows by S seconds, which is what the product reads (next
+section). Both have table tests with fake readings. If a wake is missed anyway,
+transport keepalive (ADR 0004) finds the dead connection within about 30 s, and
+the snapshot on connect puts the state right; a false wake costs one reconnect.
+
+## Sleep record: what the product reads
+
+The spike's `sleepmark` read `kern.waketime` on macOS. That code stays as it
+is, as the record of what ran. The product reads something else on macOS: the
+time asleep since boot, `CLOCK_MONOTONIC_RAW` minus `CLOCK_UPTIME_RAW`, through
+`unix.ClockGettime`. Linux keeps `CLOCK_BOOTTIME` minus `CLOCK_MONOTONIC`, so
+both systems follow one rule: a wake is that number growing by 2 s or more since
+the last check.
+
+Why not `kern.waketime`: it gives a wake time but no duration, it is zero until
+the first wake after boot, and its behavior on a dark wake is unknown. Why not
+darwin `CLOCK_MONOTONIC`: Apple's Libc builds it from the wall clock minus the
+boot time, so NTP slews it, and it has microsecond resolution only.
+
+Sources (each line checked on 2026-10-09; the full list is in
+[ADR 0029](../../../docs/adr/0029-wake-and-network-change-detection.md)):
+
+- Apple `clock_gettime(3)`, macOS SDK `usr/share/man/man3/clock_gettime.3:67-84`:
+  `CLOCK_UPTIME_RAW` "does not increment while the system is asleep" and equals
+  `mach_absolute_time()`; `CLOCK_MONOTONIC_RAW` "is unaffected by frequency or
+  time adjustments".
+- SDK `usr/include/_time.h:159,162,166` and `golang.org/x/sys` v0.48.0
+  `unix/zerrors_darwin_{arm64,amd64}.go:230-236`: `CLOCK_MONOTONIC` 6,
+  `CLOCK_MONOTONIC_RAW` 4, `CLOCK_UPTIME_RAW` 8. x/sys's `ClockGettime`
+  (`unix/syscall_darwin.go:623`) calls libc's `clock_gettime`
+  (`unix/zsyscall_darwin_arm64.go:1065-1075`).
+- Apple Libc `gen/clock_gettime.c` (GitHub `main`): `CLOCK_MONOTONIC_RAW` is
+  `mach_continuous_time()`, `CLOCK_UPTIME_RAW` is `mach_absolute_time()`,
+  `CLOCK_MONOTONIC` is `gettimeofday()` minus `mach_boottime_usec()`.
+- XNU `osfmk/kern/clock.c` (GitHub `main`): on wake,
+  `clock_wakeup_calendar_hwclock` computes
+  `total_sleep_time = mach_continuous_time() - abstime`.
+
+Readings on 2026-10-09 (read only, nothing slept):
+
+| Machine | Time asleep since boot | Other records |
+|---|---|---|
+| Mac mini | 0.000 s | |
+| MacBook (booted 2026-10-02 05:25) | 0.000 s | `kern.waketime` and `kern.sleeptime` 0; `pmset -g log` shows a lid close on 2026-10-05 17:30:26 that entered DarkWake and returned to full wake 5 s later, with no time counted asleep |
+| omarchy | 0.0 s (`CLOCK_BOOTTIME − CLOCK_MONOTONIC`) | the probe's `sleepmark` baseline on 2026-10-08 02:15:26 showed `suspended_ms` 0 |
+
+The macOS readings came from this program, built with `CGO_ENABLED=0
+GOOS=darwin GOARCH=arm64`, copied to `/tmp`, run once and deleted:
+
+```go
+func read(id int32) int64 {
+	var ts unix.Timespec
+	if err := unix.ClockGettime(id, &ts); err != nil {
+		fmt.Fprintln(os.Stderr, "clock_gettime:", err)
+		os.Exit(1)
+	}
+	return ts.Nano()
+}
+
+func main() {
+	raw := read(unix.CLOCK_MONOTONIC_RAW)
+	up := read(unix.CLOCK_UPTIME_RAW)
+	fmt.Printf("monotonic_raw_ns=%d uptime_raw_ns=%d asleep_since_boot_s=%.3f\n", raw, up, float64(raw-up)/1e9)
+}
+```
 
 ## Not tested here, and why
 
@@ -257,8 +320,7 @@ puts the state right; a false wake costs one reconnect.
 | Network-change latency from a triggered change | Every trigger that changes an interface or address needs root: `ifconfig lo0 alias` and `route add` need sudo, and creating a `utun` as a normal user fails with "operation not permitted" (tested with a throwaway program; nothing was created). A ping to unassigned `127.0.0.2` produced no routing message. Turning Wi-Fi or Ethernet off is forbidden. Real changes were seen instead (live observations). |
 | Linux CPU cost | The omarchy run had not printed its `summary` line when these numbers were taken. |
 | Wake latency of `clock` and `sleepmark` | Theory: Go timers run on the monotonic clock, which stops during sleep, so the first tick after wake fires within one interval (≤ 5 s). Not observed. |
-| macOS dark wake (Power Nap) | Unknown whether `kern.waketime` moves on a dark wake. |
-| The MacBook's kernel sleep record | Not read: no remote access to the MacBook from the Mac mini. Its log shows no wake. |
+| macOS dark wake (Power Nap) from real sleep | Unknown how a dark wake shows in the time asleep since boot. The only DarkWake on record (MacBook, 2026-10-05) came from a lid close without real sleep and counted 0 s. |
 
 ## Opportunistic check
 
@@ -277,6 +339,7 @@ and leave it running inside tmux:
 # after a sleep and wake happened on their own:
 pmset -g log | rg " (Sleep|Wake|DarkWake) " | tail -8                    # macOS
 sysctl kern.waketime kern.sleeptime                                      # macOS
+/tmp/sleeptotal                                                          # macOS: time asleep since boot (program above)
 journalctl -k -b -o short-iso-precise | rg "PM: suspend (entry|exit)"   # Linux
 cat /sys/power/mem_sleep                                                 # Linux: the mode in [brackets]
 ```
@@ -296,13 +359,16 @@ The lines that decide it:
 [ADR 0029](../../../docs/adr/0029-wake-and-network-change-detection.md) holds
 the decision; plan row 4 builds it.
 
-- **Wake (both systems):** one check every 5 s with two signals. Clock: the
-  wall clock moved 2 s or more past the monotonic clock (`jump.go:26-35`); a
-  wall clock stepped back is logged, never a wake. Sleep record: Linux
-  `CLOCK_BOOTTIME − CLOCK_MONOTONIC` grew by 2 s or more; macOS `kern.waketime`
-  changed. Product code raises the spike's 500 ms sleep-record tolerance
-  (`methods.go:115`) to 2 s. Either signal starts one reconnect per check, even
-  while connected (close the stream, reconnect with `CONNECT_REASON_WAKE`).
+- **Wake (one rule on both systems):** one check every 5 s with two signals.
+  Time asleep since boot grew by 2 s or more: Linux `CLOCK_BOOTTIME −
+  CLOCK_MONOTONIC`, macOS `CLOCK_MONOTONIC_RAW − CLOCK_UPTIME_RAW`, both through
+  `unix.ClockGettime`; never `kern.waketime` or darwin `CLOCK_MONOTONIC`.
+  Product code raises the spike's 500 ms sleep-record tolerance
+  (`methods.go:115`) to 2 s. Clock jump: the wall clock moved 2 s or more past
+  the monotonic clock (`jump.go:26-35`); a wall clock stepped back is logged,
+  never a wake. Either signal starts one reconnect per check, even while
+  connected (close the stream, reconnect with `CONNECT_REASON_WAKE`). Command
+  deadlines read elapsed time from the same sleep-counting clocks (02i, Clocks).
 - **Network change:** the push socket (`PF_ROUTE`, `NETLINK_ROUTE`) is only a
   hint. After a hint, wait until 500 ms pass with no further hint (never more
   than 2 s after the first), then read the interfaces that are up and running,
@@ -327,8 +393,8 @@ the decision; plan row 4 builds it.
 
 ## What this does not prove
 
-Wake detection on any real machine; dark-wake behavior (`kern.waketime` on a
-macOS Power Nap); whether Linux `s2idle` stops `CLOCK_MONOTONIC`; how late Go's
+Wake detection on any real machine; dark-wake behavior after real sleep (a
+macOS Power Nap, as the time asleep since boot sees it); whether Linux `s2idle` stops `CLOCK_MONOTONIC`; how late Go's
 ticker fires after a wake; Wi-Fi roaming flaps on a laptop, where `awdl0` and
 other interfaces may come and go; Linux CPU cost, until the 48 h `summary` lines
 are recorded; and what the omarchy probe saw during its 20.6 h log gap.

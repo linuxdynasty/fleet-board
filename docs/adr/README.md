@@ -44,7 +44,7 @@ The owner's decisions of 2026-09-28 to 2026-10-05 are recorded in
 | [0026](0026-one-home-per-fact.md) | One home per fact: each kind of fact lives once, flows retired, review files dropped, tables and issue bodies generated | Accepted | Supersedes the flows' place in the order of authority (0022 addendum) |
 | [0027](0027-cursor-first-class-copilot-and-messaging-later.md) | Cursor is a first-class harness in v1; Copilot and sending messages into a session come later | Accepted | Amends 0025 (the harness list); builds on 0024 decision 3 |
 | [0028](0028-mdns-best-effort.md) | mDNS discovery is best effort; answers to ADR 0023's questions | Accepted | Resolves 0023's questions 1 and 2; supersedes in part 0023 (the exec fallback) |
-| [0029](0029-wake-and-network-change-detection.md) | Wake and network-change detection: a clock and sleep-record check, the routing push socket as a hint, `golang.org/x/sys` | Accepted | Builds on 0004, 0020, 0028; amends 0004 (which network changes reconnect) and 0020 (adds `golang.org/x/sys`) |
+| [0029](0029-wake-and-network-change-detection.md) | Wake and network-change detection: time asleep since boot plus a clock-jump check, the routing push socket as a hint, `golang.org/x/sys` | Accepted | Builds on 0004, 0020, 0028; amends 0004 (which network changes reconnect) and 0020 (adds `golang.org/x/sys`) |
 
 ## Template
 
