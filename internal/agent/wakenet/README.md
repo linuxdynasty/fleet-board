@@ -84,9 +84,9 @@ while the push socket works.
   NET_RT_DUMP, 0` through `unix.SysctlRaw` (the same data `netstat -rn`
   reads). The default route of a family is the first one that is up, has no
   `rtm_errno`, has an all-zero destination and netmask, is not a host route,
-  and is not scoped to
-  one interface (`RTF_IFSCOPE`, the `I` flag: macOS keeps one per utun and
-  bridge, and uses them only for sockets bound to that interface).
+  and is not scoped to one interface (`RTF_IFSCOPE`, the `I` flag: macOS
+  keeps one per utun and bridge, and uses them only for sockets bound to that
+  interface).
   Chosen over keeping a default route built from push messages because the
   watcher needs a full reading at start and on every 15 s poll, when there is
   no push message to build from, and because a dropped push message would

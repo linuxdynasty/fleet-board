@@ -298,10 +298,10 @@ re-enroll rule are in [02g](02g-agent-security.md#machine-lifecycle-revoke-and-d
   `netchange.push_off{err, poll_s}` once per run when the push socket cannot be
   opened or stops working, then the connection loop's decision,
   `netchange.acted{why, close_stream, changes}` or `netchange.ignored{why,
-  changes}`. `source` is `push` (a settled hint, or the retry 2 s after a
-  failed read), `poll` (the 15 s poll), or `start` (the reading taken when the
-  watcher starts, so only on `netchange.baseline` and `netchange.read_failed`).
-  No counter: these are not wire events, and the
+  changes}`. `source` is `push` (a settled hint, or a retry after a failed
+  read: 2 s, then every 15 s), `poll` (the 15 s poll), or `start` (the
+  reading taken when the watcher starts, so only on `netchange.baseline` and
+  `netchange.read_failed`). No counter: these are not wire events, and the
   attempts they start are counted by `fleet_agent_connect_attempts_total`.
 
 At 3 AM: "why did `fleet-agent enroll` fail?" → `enroll.refused` (the reason

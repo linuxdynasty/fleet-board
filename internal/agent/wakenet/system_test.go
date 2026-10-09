@@ -3,6 +3,7 @@
 package wakenet
 
 import (
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -56,7 +57,9 @@ func TestPushSocketOpens(t *testing.T) {
 }
 
 // TestPushSocketCloseUnblocksRead: the push reader stops on Close even while
-// it waits in Read, so Run returns when its context ends.
+// it waits in Read, so Run returns when its context ends. Close itself must
+// wake the parked Read: a routing message that wakes it after Close does not
+// count.
 func TestPushSocketCloseUnblocksRead(t *testing.T) {
 	t.Parallel()
 	s, err := openPush()
@@ -64,30 +67,32 @@ func TestPushSocketCloseUnblocksRead(t *testing.T) {
 		t.Fatalf("openPush: %v", err)
 	}
 	reading := make(chan struct{})
-	type result struct {
-		err   error
-		reads int
-	}
-	done := make(chan result, 1)
+	var reads atomic.Int64
+	done := make(chan error, 1)
 	go func() {
 		buf := make([]byte, 1<<16)
 		close(reading)
-		for n := 0; ; n++ {
+		for {
 			if _, err := s.Read(buf); err != nil {
-				done <- result{err, n}
+				done <- err
 				return
 			}
+			reads.Add(1)
 		}
 	}()
 	<-reading
 	// A real socket gives no signal that Read is parked; this lets it get there.
 	time.Sleep(100 * time.Millisecond)
+	atClose := reads.Load()
 	if err := s.Close(); err != nil {
 		t.Errorf("Close: %v", err)
 	}
 	select {
-	case r := <-done:
-		t.Logf("Read returned after Close (%d reads with data before): %v", r.reads, r.err)
+	case err := <-done:
+		if after := reads.Load() - atClose; after != 0 {
+			t.Fatalf("Read returned data %d time(s) after Close; Close did not wake it", after)
+		}
+		t.Logf("Read returned after Close (%d reads with data before): %v", atClose, err)
 	case <-time.After(waitLimit):
 		t.Fatalf("Read still blocked %v after Close", waitLimit)
 	}

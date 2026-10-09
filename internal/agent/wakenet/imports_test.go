@@ -7,6 +7,7 @@ import (
 	"go/token"
 	"path"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -28,8 +29,26 @@ var forbiddenCalls = map[string][]string{
 	"golang.org/x/sys/unix": {"Exec"},
 }
 
+// noDotImport are the packages whose process calls a dot import would hide
+// from the selector check.
+var noDotImport = []string{"os", "syscall", "golang.org/x/sys/unix"}
+
+// startsProcess reports whether pkg.name starts a process: a forbidden call,
+// or the raw system call number of exec, fork, vfork or posix_spawn.
+func startsProcess(pkg, name string) bool {
+	if slices.Contains(forbiddenCalls[pkg], name) {
+		return true
+	}
+	if pkg != "syscall" && pkg != "golang.org/x/sys/unix" {
+		return false
+	}
+	return strings.HasPrefix(name, "SYS_EXEC") || strings.HasPrefix(name, "SYS_POSIX_SPAWN") ||
+		name == "SYS_FORK" || name == "SYS_VFORK"
+}
+
 // TestForbiddenSources enforces ADR 0029. In every file, tests included: no
-// exec (os/exec or the lower-level calls), no cgo, none of the libraries the
+// exec (os/exec, the lower-level calls, the raw exec, fork, vfork and
+// posix_spawn call numbers, or a dot import that would hide them), no cgo, none of the libraries the
 // ADR rules out, and in any file built for darwin never CLOCK_MONOTONIC (it
 // moves with the wall clock). In product files: never kern.waketime.
 func TestForbiddenSources(t *testing.T) {
@@ -64,12 +83,9 @@ func TestForbiddenSources(t *testing.T) {
 				if forDarwin && x.Sel.Name == "CLOCK_MONOTONIC" {
 					t.Errorf("%s: darwin CLOCK_MONOTONIC (ADR 0029: never)", fset.Position(x.Pos()))
 				}
-				if pkg, ok := x.X.(*ast.Ident); ok {
-					for _, fn := range forbiddenCalls[local[pkg.Name]] {
-						if x.Sel.Name == fn {
-							t.Errorf("%s: %s.%s starts a process (ADR 0029 decision 7: no exec)", fset.Position(x.Pos()), pkg.Name, fn)
-						}
-					}
+				if pkg, ok := x.X.(*ast.Ident); ok && startsProcess(local[pkg.Name], x.Sel.Name) {
+					t.Errorf("%s: %s.%s starts a process (ADR 0029 decision 7: no exec)",
+						fset.Position(x.Pos()), pkg.Name, x.Sel.Name)
 				}
 			}
 			return true
@@ -92,6 +108,9 @@ func checkImports(t *testing.T, name string, f *ast.File) map[string]string {
 		as := path.Base(p)
 		if imp.Name != nil {
 			as = imp.Name.Name
+		}
+		if as == "." && slices.Contains(noDotImport, p) {
+			t.Errorf("%s dot-imports %q: it would hide process calls from this check", name, p)
 		}
 		local[as] = p
 	}

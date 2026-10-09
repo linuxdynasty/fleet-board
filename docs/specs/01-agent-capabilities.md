@@ -152,7 +152,8 @@ and dispatches it there).
   push socket (macOS `PF_ROUTE`, Linux `NETLINK_ROUTE`, no root) is only a
   hint; the agent acts only when its list of interfaces, addresses and default
   route really changed, because Linux re-announces unchanged IPv6 addresses
-  every few seconds to minutes. While connected, only the loss of the
+  every few seconds to minutes; a failed read is retried, so the change behind
+  a hint is not lost. While connected, only the loss of the
   connection's local address (the previous reading held it and the new one
   does not; an address the agent does not know never counts as lost) or a
   changed default route reconnects; while not connected, any real change

@@ -21,6 +21,10 @@ const (
 	hintCap = 2 * time.Second
 	// pollEvery is the fallback poll, used only while the push socket is off.
 	pollEvery = 15 * time.Second
+	// readRetry: with the push socket on, a failed read is tried again this
+	// long after it, then every readRetryEvery until one works.
+	readRetry      = 2 * time.Second
+	readRetryEvery = 15 * time.Second
 	// pushBuffer holds one read of the push socket.
 	pushBuffer = 64 << 10
 )
@@ -67,7 +71,7 @@ func (n *Net) Run(ctx context.Context, out chan<- Event) {
 		n.compare(ctx, &w, sourceStart, out)
 		poll = n.Clock.After(pollEvery)
 	} else if !n.compare(ctx, &w, sourceStart, out) {
-		retry = n.Clock.After(hintCap)
+		retry = n.Clock.After(readRetry)
 	}
 	for {
 		select {
@@ -92,12 +96,12 @@ func (n *Net) Run(ctx context.Context, out chan<- Event) {
 			}
 			fire = nil
 			if !n.compare(ctx, &w, SourcePush, out) && p.hints != nil {
-				retry = n.Clock.After(hintCap)
+				retry = n.Clock.After(readRetry)
 			}
 		case <-retry:
 			retry = nil
 			if !n.compare(ctx, &w, SourcePush, out) && p.hints != nil {
-				retry = n.Clock.After(pollEvery)
+				retry = n.Clock.After(readRetryEvery)
 			}
 		case <-poll:
 			n.compare(ctx, &w, SourcePoll, out)

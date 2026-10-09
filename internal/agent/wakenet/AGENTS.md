@@ -5,8 +5,10 @@ Read the root `AGENTS.md` first; it applies here. Load `fleet-go` and
 messages. Rules for this package:
 
 - ADR 0029 is the rule. Never `os/exec` (nor `os.StartProcess`,
-  `syscall.Exec`, `syscall.ForkExec`, `unix.Exec`), never cgo, never
-  `  kern.waketime`, never `CLOCK_MONOTONIC` in a file built for darwin, never
+  `syscall.Exec`, `syscall.ForkExec`, `unix.Exec`, the `SYS_EXEC*`,
+  `SYS_FORK`, `SYS_VFORK` or `SYS_POSIX_SPAWN` numbers, or a dot import of
+  `os`, `syscall` or `x/sys/unix`), never cgo, never
+  `kern.waketime`, never `CLOCK_MONOTONIC` in a file built for darwin, never
   `x/net/route`, `godbus/dbus` or `purego`. `TestForbiddenSources` enforces
   this.
 - A routing push message is only a hint. Nothing reconnects unless a fresh
