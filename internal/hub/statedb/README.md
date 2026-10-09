@@ -86,8 +86,9 @@ list, err := statedb.RevokedSerials(ctx, s, now)  // revoked and not yet expired
   pre-check), it classifies again in the same transaction: a replay of the
   winner for the same key, or the typed error. The certificate is signed
   before the job is submitted; the job does no network call and never waits.
-  `hostname_mismatch` compares lower-cased names without a trailing `.` or
-  `.local`; an empty reported hostname is a mismatch.
+  `hostname_mismatch` uses the rule in `internal/hostname`, which the agent
+  shares: lower-cased names without a trailing `.` or `.local`; an empty
+  reported hostname is a mismatch.
 - **`RevokeSerials`** sets `revoked_time` on known, unrevoked serials in one
   writer job (state.db does not know a serial only the revoked-serials file
   has; the file keeps it). **`RevokedSerials`** lists the revoked serials
