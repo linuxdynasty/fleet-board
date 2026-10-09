@@ -165,8 +165,8 @@ it 0.4 to 5 s later. Each burst of push messages lasted under 10 ms.
 
 **Linux push noise.** omarchy logged at least 972 `RTM_NEWADDR` "relevant"
 messages in 32.9 h (the counting script skips the cut-off line at the gap, which
-still holds one whole record), 970 on index 2 (`enp3s0`) and 2 on index 2387 (`tun0`). Gaps between
-them: p10 4.6 s, p50 38.5 s, p90 114.5 s. ifpoll saw no change for them.
+still holds one whole record), 970 on index 2 (`enp3s0`) and 2 on index 2387
+(`tun0`). Gaps between them: p10 4.6 s, p50 38.5 s, p90 114.5 s. ifpoll saw no change for them.
 `enp3s0` has a dynamic IPv6 ULA (a private IPv6 address, `fdc7:…/64`,
 `valid_lft` about 1690 s) refreshed by router advertisements, and each refresh
 re-sends `RTM_NEWADDR`. So a push message alone must never mean "reconnect".
@@ -297,7 +297,8 @@ Readings on 2026-10-09 (read only, nothing slept):
 The macOS readings came from this program (`sleeptotal`), built inside
 `spikes/wakenet` with `CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -o
 /tmp/sleeptotal ./sleeptotal.go` after saving it there as `sleeptotal.go`,
-copied to `/tmp`, run once and deleted:
+run once on the Mac mini, copied to the MacBook's `/tmp` and run once there,
+then deleted on both:
 
 ```go
 //go:build ignore
@@ -412,6 +413,6 @@ the decision; plan row 4 builds it.
 
 Wake detection on any real machine; dark-wake behavior after real sleep (a
 macOS Power Nap, as the time asleep since boot sees it); whether Linux `s2idle`
-stops `CLOCK_MONOTONIC`; how late Go's ticker fires after a wake; Wi-Fi roaming flaps on a laptop, where `awdl0` and
-other interfaces may come and go; Linux CPU cost, until the 48 h `summary` lines
+stops `CLOCK_MONOTONIC`; how late Go's ticker fires after a wake; Wi-Fi
+roaming flaps on a laptop, where `awdl0` and other interfaces may come and go; Linux CPU cost, until the 48 h `summary` lines
 are recorded; and what the omarchy probe saw during its 20.6 h log gap.

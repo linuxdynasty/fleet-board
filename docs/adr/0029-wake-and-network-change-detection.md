@@ -26,8 +26,8 @@ on the Mac mini, then for about a day on omarchy (Linux) and the MacBook
   kernel socket that sends a message when an interface, address or route
   changes) reported each one within milliseconds, and a 5 s interface poll saw
   the same change 0.4 to 5 s later.
-- **Linux sends many push messages that change nothing.** omarchy logged 972
-  "address added" messages, almost all for its wired interface, about one every
+- **Linux sends many push messages that change nothing.** omarchy logged at least
+  972 "address added" messages, almost all for its wired interface, about one every
   38 s at the median. Its router keeps refreshing an IPv6 address, and each
   refresh re-sends the message. The interface poll saw no change for any of
   them. So a push message alone cannot mean "reconnect".
