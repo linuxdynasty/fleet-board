@@ -25,8 +25,11 @@ enrolled), 2 bad usage. A stray argument (say a token typed without
   token and key (docs/specs/defaults.md, "Enroll tries").
 - If the reply is still lost, run the same command again: the hub returns
   the same machine and certificate.
-- If the token named another hostname, enroll still works and one warning
-  line on stderr names both hostnames.
+- If the hub expected another hostname (the one the token named, or else
+  the machine name), enroll still works and one warning line on stderr
+  names both hostnames.
+- If the hub failed on its own side, the error does not suggest running
+  the command again: it would fail the same way; fleetd's log says why.
 - Until re-enroll exists (later in plan row 4), an enrolled machine is never
   re-enrolled over its identity. To start again, remove only
   `identity.json` (and `enroll.key` if present) from the state folder and

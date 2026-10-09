@@ -39,10 +39,13 @@ nor any part of the hash. `fleet-agent enroll --token T` does this, in order:
    address. The hub's agent listener sends its CA certificate after its own
    certificate, so the agent finds that root in the chain by the fingerprint;
    a chain without it fails. A mismatch aborts before anything secret is
-   sent: no token, no CSR, no facts. Any failed handshake counts, including
-   a server that sends the right chain but cannot prove it holds the key. An
-   impostor on the LAN learns nothing, and a typed or discovered address
-   needs no trust.
+   sent: no token, no CSR, no facts. A handshake the peer fails (the pin,
+   the name, the key proof, or a non-TLS answer) is untrusted and never
+   retried; a server that sends the right chain but cannot prove it holds
+   the key is one. A connection that drops, resets or times out during the
+   handshake is a lost connection and is retried within "Enroll tries"
+   ([defaults](defaults.md)). An impostor on the LAN learns nothing, and a
+   typed or discovered address needs no trust.
 3. Make or reuse the pending Ed25519 key (`enroll.key`, kept in the state
    directory until Enroll succeeds). This may happen before step 2; nothing
    leaves the machine until step 2 passes. Send `EnrollRequest{token,

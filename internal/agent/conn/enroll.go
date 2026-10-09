@@ -18,6 +18,7 @@ import (
 	agentv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1"
 	typev1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/type/v1"
 	"github.com/linuxdynasty/fleet-board/internal/agent/ring"
+	"github.com/linuxdynasty/fleet-board/internal/hostname"
 	"github.com/linuxdynasty/fleet-board/internal/protoversion"
 	"github.com/linuxdynasty/fleet-board/internal/telemetry"
 )
@@ -46,10 +47,11 @@ var (
 	// ErrBadResponse means the hub's EnrollResponse failed the agent's checks;
 	// nothing was saved and the pending key is kept for a retry.
 	ErrBadResponse = errors.New("conn: the hub's enroll response is not valid")
-	// ErrHubFailed means the hub could not finish the enroll: it stayed busy
-	// or unreachable through every try, or failed on its side. Nothing was
-	// saved; running the same command again is safe (the hub replays).
-	ErrHubFailed = errors.New("conn: the hub could not finish the enroll; run the same command again")
+	// ErrHubFailed means the hub could not finish the enroll and nothing was
+	// saved. When it stayed busy or out of reach through every try, the
+	// error says to run the same command again (the hub replays); when it
+	// failed on its side with its ErrorDetail, a rerun fails the same way.
+	ErrHubFailed = errors.New("conn: the hub could not finish the enroll")
 )
 
 // Retry bounds the tries of one enroll; zero fields take the defaults.
@@ -210,18 +212,8 @@ func enroll(ctx context.Context, r *enrollRun, opts Options) (Result, string, er
 	host := facts.GetHostname()
 	return Result{
 		Identity: id, Replayed: msg.GetReplayed(), HubAddress: addr, Hostname: host,
-		HostnameMismatch: id.ExpectedHostname != "" && hostnameMismatch(id.ExpectedHostname, host),
+		HostnameMismatch: id.ExpectedHostname != "" && hostname.Mismatch(id.ExpectedHostname, host),
 	}, "", nil
-}
-
-// hostnameMismatch is the hub's rule (03 W1): lower case, without a trailing
-// "." or ".local"; an empty reported hostname is a mismatch.
-func hostnameMismatch(expected, reported string) bool {
-	norm := func(h string) string {
-		return strings.TrimSuffix(strings.TrimSuffix(strings.ToLower(h), "."), ".local")
-	}
-	r := norm(reported)
-	return r == "" || r != norm(expected)
 }
 
 // readInstallID opens agent.db, which mints install_id once (02g), and

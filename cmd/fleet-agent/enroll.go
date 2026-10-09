@@ -50,7 +50,8 @@ func enrollCommand(dir func() (string, error), version string, stdout, stderr io
 			}
 			if res.HostnameMismatch {
 				// The hub records the mismatch too (03 W1); the owner decides.
-				_, _ = fmt.Fprintf(stderr, "fleet-agent: warning: the token expected hostname %q but this machine reports %q\n",
+				// With no --expect-host the hub compares with the machine name.
+				_, _ = fmt.Fprintf(stderr, "fleet-agent: warning: the hub expected hostname %q but this machine reports %q\n",
 					res.Identity.ExpectedHostname, res.Hostname)
 			}
 			return nil

@@ -5,8 +5,11 @@ Read the root `AGENTS.md` first; it applies here. Load `fleet-go`,
 
 - Nothing goes on the network before the local checks pass, and the token
   is sent only after the TLS handshake verified the hub against the CA the
-  token pins. Never add TOFU, system roots or a skip of that check. Any
-  failed handshake is `ErrHubUntrusted`, never retried.
+  token pins. Never add TOFU, system roots or a skip of that check. A
+  handshake the peer fails (the pin, the name, the key proof, or a non-TLS
+  answer) is `ErrHubUntrusted` and never retried. A connection that drops,
+  resets or times out during the handshake is a lost connection, retried
+  within "Enroll tries"; `transportError` sorts the two by error shape.
 - A retry resends the same token, key and `install_id`, within the bounds in
   defaults.md; only a non-retryable reason is a refusal.
 - Never log or print the token, the key, the salt or the facts. `Token` and

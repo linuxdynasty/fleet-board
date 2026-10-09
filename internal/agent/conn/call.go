@@ -10,7 +10,6 @@ import (
 	"net"
 	"net/http"
 	"sync/atomic"
-	"syscall"
 	"time"
 
 	"connectrpc.com/connect"
@@ -27,6 +26,9 @@ const (
 	defaultMaxWait   = 4 * time.Second
 	callTimeout      = 20 * time.Second
 	handshakeTimeout = 10 * time.Second
+	// rerun is the advice when the tries ran out: the hub replays a stored
+	// answer, so a second run is safe.
+	rerun = "nothing was saved; run the same command again"
 )
 
 func (r Retry) withDefaults() Retry {
@@ -78,12 +80,12 @@ func call(ctx context.Context, r *enrollRun, opts Options, addr string, tok Toke
 			return nil, err
 		}
 		if try >= policy.Attempts {
-			return nil, fmt.Errorf("%w (%d tries): %w", ErrHubFailed, try, err)
+			return nil, fmt.Errorf("%w after %d tries; %s: %w", ErrHubFailed, try, rerun, err)
 		}
 		r.log.InfoContext(ctx, "enroll.retry", "attempt", try, "err_kind", errKind(err))
 		select {
 		case <-ctx.Done():
-			return nil, fmt.Errorf("%w (%d tries): %w", ErrHubFailed, try, ctx.Err())
+			return nil, fmt.Errorf("%w after %d tries; %s: %w", ErrHubFailed, try, rerun, ctx.Err())
 		case <-time.After(policy.wait(try)):
 		}
 	}
@@ -110,11 +112,15 @@ func outcome(ctx context.Context, err error, untrusted *atomic.Bool, addr string
 		case reason != typev1.ReasonCode_REASON_CODE_UNSPECIFIED && reason != typev1.ReasonCode_REASON_CODE_INTERNAL:
 			return false, &RefusedError{Code: ce.Code(), Reason: reason, Message: clean(ce.Message(), maxHubMessage)}
 		}
-		return false, fmt.Errorf("%w: %s (%s)", ErrHubFailed, clean(ce.Message(), maxHubMessage), ce.Code())
+		// The same request fails the same way again; fleetd's log says why.
+		return false, fmt.Errorf("%w: it failed on its side: %s (%s)", ErrHubFailed, clean(ce.Message(), maxHubMessage), ce.Code())
 	}
+	// A bare answer with no ErrorDetail: the stream was cut or the hub was
+	// not ready. RESOURCE_EXHAUSTED is the 1 MiB request cap (02g); a resend
+	// is refused the same way, so it is not tried again.
 	switch ce.Code() {
 	case connect.CodeUnavailable, connect.CodeUnknown, connect.CodeInternal, connect.CodeDeadlineExceeded,
-		connect.CodeAborted, connect.CodeResourceExhausted:
+		connect.CodeAborted:
 		return true, fmt.Errorf("conn: enroll call to %s: %w", addr, err)
 	default:
 		return false, fmt.Errorf("%w: %w", ErrHubFailed, err)
@@ -132,10 +138,10 @@ func errorDetail(ce *connect.Error) *typev1.ErrorDetail {
 	return nil
 }
 
-// pinnedTransport dials TLS itself, so that any failed handshake with a
-// peer that answered (the pin, a chain for another name, a certificate the
-// peer holds no key for, a non-TLS answer) marks the hub untrusted. A
-// connection that is refused, reset or times out is a transport error.
+// pinnedTransport dials TLS itself, so that a handshake the peer fails (the
+// pin, the name, the key proof, an alert or a non-TLS answer) marks the hub
+// untrusted. A connection that is refused, drops, resets or times out is a
+// lost connection, retried within the enroll tries.
 func pinnedTransport(fp [32]byte, host string, untrusted *atomic.Bool) *http.Transport {
 	cfg := pinnedTLS(fp, host)
 	d := &net.Dialer{Timeout: handshakeTimeout}
@@ -162,11 +168,23 @@ func pinnedTransport(fp [32]byte, host string, untrusted *atomic.Bool) *http.Tra
 	}
 }
 
-// transportError is a failure of the connection, not of the peer's proof.
+// transportError reports whether a failed handshake lost its connection:
+// a read or write on the socket failed, the stream ended, or a deadline or
+// cancel cut it. Anything else crypto/tls returns is the peer failing the
+// handshake: a chain or name the pin refuses, a bad key proof, the peer's
+// alert ("remote error") or a record that is not TLS.
 func transportError(err error) bool {
+	var rh tls.RecordHeaderError
+	var cv *tls.CertificateVerificationError
+	if errors.As(err, &rh) || errors.As(err, &cv) {
+		return false
+	}
+	var op *net.OpError
+	if errors.As(err, &op) {
+		return op.Op == "read" || op.Op == "write"
+	}
 	var ne net.Error
 	return errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) ||
 		errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) ||
-		errors.Is(err, syscall.ECONNRESET) || errors.Is(err, syscall.EPIPE) ||
 		(errors.As(err, &ne) && ne.Timeout())
 }

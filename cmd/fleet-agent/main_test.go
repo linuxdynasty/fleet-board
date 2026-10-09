@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -116,7 +117,10 @@ func TestEnrollWarnsOnAHostnameMismatch(t *testing.T) {
 			t.Fatalf("enroll = %d: %s", r.code, r.stderr)
 		}
 		warned := strings.Count(r.stderr, "fleet-agent: warning:")
-		if (warned == 1) != tc.warn || warned > 1 || (tc.warn && !strings.Contains(r.stderr, tc.expect)) {
+		// The hub compares with the machine name when the owner gave no
+		// hostname, so the warning names the hub, not the token.
+		named := strings.Contains(r.stderr, "the hub expected hostname "+strconv.Quote(tc.expect))
+		if (warned == 1) != tc.warn || warned > 1 || (tc.warn && !named) {
 			t.Errorf("expecting %q: stderr %q; want a warning %v", tc.expect, r.stderr, tc.warn)
 		}
 	}

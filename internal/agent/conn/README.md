@@ -29,22 +29,30 @@ addr, err := conn.LoadHubAddress(dir)
 4. **Pinned TLS, no client certificate.** The handshake passes only if the
    hub's chain holds the CA whose SHA-256 is in the token, its certificate
    chains to that CA for the address's host, and it proves it holds that
-   certificate's key. Any failed handshake is `ErrHubUntrusted`, before the
-   request is written: an impostor gets neither the token nor the CSR. No
-   system roots and no proxy are used.
-5. **Bounded retries.** A retryable hub answer or a lost connection is
-   tried again with the same request (`DefaultAttempts`, full-jitter waits,
-   defaults.md "Enroll tries"); the whole enroll is capped at
-   `DefaultTimeout`. Only a non-retryable `ErrorDetail` reason is a
-   `*RefusedError`; tries run out, or a hub-side failure, is `ErrHubFailed`.
+   certificate's key. A handshake the peer fails (the pin, the name, the key
+   proof, or a non-TLS answer) is untrusted and never retried
+   (`ErrHubUntrusted`), before the request is written: an impostor gets
+   neither the token nor the CSR. A connection that drops, resets or times
+   out during the handshake is a lost connection and is retried within
+   "Enroll tries". No system roots and no proxy are used.
+5. **Bounded retries.** A retryable hub answer, a bare `UNAVAILABLE`,
+   `UNKNOWN`, `INTERNAL`, `DEADLINE_EXCEEDED` or `ABORTED` (a cut stream), or
+   a lost connection is tried again with the same request
+   (`DefaultAttempts`, full-jitter waits, defaults.md "Enroll tries"); the
+   whole enroll is capped at `DefaultTimeout`. Only a non-retryable
+   `ErrorDetail` reason is a `*RefusedError`. Tries run out is
+   `ErrHubFailed` saying a rerun is safe; an `INTERNAL` with the hub's
+   `ErrorDetail`, or `RESOURCE_EXHAUSTED` (the 1 MiB cap), is `ErrHubFailed`
+   with no rerun advice, since a rerun fails the same way.
 6. **Check, then save.** The response must carry the pinned CA and
    fingerprint, one client certificate for this key that chains to the CA and
    names the machine id (common name and `fleet://machine/<id>`), a fleet id
    and a salt (`ErrBadResponse` otherwise; nothing saved, key kept).
 7. The hub address goes to `hub-address`, the identity to `identity.json`
    (temp file, fsync, link, folder fsync), then `enroll.key` is removed.
-   `Result.HostnameMismatch` says the token expected another hostname
-   (compared the hub's way); the command prints a warning for it.
+   `Result.HostnameMismatch` says the hub expected another hostname (the
+   rule is `internal/hostname`, shared with the hub); the command prints a
+   warning for it.
 
 **State folder** (04 Q9): `~/.local/state/fleet-agent/` unless
 `--state-dir`; created 0700, and a folder or file with any group or other
@@ -74,5 +82,8 @@ the same certificate, by a second run and within one run; re-enroll after
 removing `identity.json` keeping `install_id`; an enrolled folder left
 alone and a leftover key removed; no hub and a bad token sending nothing; a
 loose folder and symlinks; the hostname check; retries of busy answers and
-reset streams with the same request, and refusals not retried; and ten
-tampered responses against a fake hub, each saving nothing.
+reset streams with the same request, and refusals, a hub-side `INTERNAL`
+and an over-cap request not retried; listeners that close or reset during
+the handshake retried, never untrusted, with a table of handshake error
+shapes; the whole-enroll cap and a cancel during a wait; and ten tampered responses
+against a fake hub, each saving nothing.
