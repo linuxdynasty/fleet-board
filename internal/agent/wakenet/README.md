@@ -57,7 +57,8 @@ check is one wake, and both in one check are still one:
 The push socket (macOS `PF_ROUTE`, Linux `NETLINK_ROUTE` with the link, address
 and route groups; no root) is only a hint. A hint is a link message, an address
 added or removed, or a default route added, removed or changed; route lookups
-(`RTM_MISS`, `RTM_GET`) are not. A read the parser cannot make sense of counts
+(`RTM_MISS`, `RTM_GET`) are not, nor is the echo of a route request that
+failed (`rtm_errno` set). A read the parser cannot make sense of counts
 as a hint, and so does Linux `ENOBUFS` (the kernel dropped messages): a hint
 only starts a read.
 
@@ -81,16 +82,18 @@ while the push socket works.
 
 - **macOS: the routing table dump**, `sysctl` `CTL_NET, PF_ROUTE, 0, AF_UNSPEC,
   NET_RT_DUMP, 0` through `unix.SysctlRaw` (the same data `netstat -rn`
-  reads). The default route of a family is the first one that is up, has an
-  all-zero destination and netmask, is not a host route, and is not scoped to
+  reads). The default route of a family is the first one that is up, has no
+  `rtm_errno`, has an all-zero destination and netmask, is not a host route,
+  and is not scoped to
   one interface (`RTF_IFSCOPE`, the `I` flag: macOS keeps one per utun and
   bridge, and uses them only for sockets bound to that interface).
   Chosen over keeping a default route built from push messages because the
   watcher needs a full reading at start and on every 15 s poll, when there is
   no push message to build from, and because a dropped push message would
   leave a built route wrong until the next one. The dump costs two system
-  calls (one for the size, one to fill the buffer) and only runs after a hint. Checked on the Mac mini on 2026-10-09: the
-  parsed route (`en0` via `192.168.1.1`, no unscoped IPv6 default) matched
+  calls (one for the size, one to fill the buffer) and only runs after a
+  hint. Checked on the Mac mini on 2026-10-09: the parsed route (`en0` via
+  `192.168.1.1`, no unscoped IPv6 default) matched
   `route -n get default` and `route -n get -inet6 default`.
 - **Linux: a netlink route dump**, `RTM_GETROUTE` through the standard
   library's `syscall.NetlinkRIB`. The default route of a family is the

@@ -2,6 +2,7 @@ package wakenet
 
 import (
 	"testing"
+	"unsafe"
 
 	"golang.org/x/sys/unix"
 )
@@ -14,6 +15,10 @@ func TestDarwinConstants(t *testing.T) {
 		got, want int
 	}{
 		{"sizeof rt_msghdr", rtMsghdrLen, unix.SizeofRtMsghdr},
+		{"offset rtm_index", rtmOffIndex, int(unsafe.Offsetof(unix.RtMsghdr{}.Index))},
+		{"offset rtm_flags", rtmOffFlags, int(unsafe.Offsetof(unix.RtMsghdr{}.Flags))},
+		{"offset rtm_addrs", rtmOffAddrs, int(unsafe.Offsetof(unix.RtMsghdr{}.Addrs))},
+		{"offset rtm_errno", rtmOffErrno, int(unsafe.Offsetof(unix.RtMsghdr{}.Errno))},
 		{"RTM_VERSION", rtmVersion, unix.RTM_VERSION},
 		{"RTM_ADD", rtmAdd, unix.RTM_ADD},
 		{"RTM_DELETE", rtmDelete, unix.RTM_DELETE},

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"syscall"
 
 	"golang.org/x/sys/unix"
 )
@@ -40,12 +41,18 @@ func defaultRoutes(names map[int]string) (v4, v6 Route, err error) {
 }
 
 // openPush opens a PF_ROUTE socket; any user may read it, no root needed.
+// macOS has no SOCK_CLOEXEC, so ForkLock keeps a concurrent fork from
+// inheriting the descriptor before close-on-exec is set.
 func openPush() (io.ReadCloser, error) {
+	syscall.ForkLock.RLock()
 	fd, err := unix.Socket(unix.AF_ROUTE, unix.SOCK_RAW, unix.AF_UNSPEC)
+	if err == nil {
+		unix.CloseOnExec(fd)
+	}
+	syscall.ForkLock.RUnlock()
 	if err != nil {
 		return nil, fmt.Errorf("open routing socket: %w", err)
 	}
-	unix.CloseOnExec(fd)
 	if err := unix.SetNonblock(fd, true); err != nil {
 		_ = unix.Close(fd)
 		return nil, fmt.Errorf("routing socket non-blocking: %w", err)

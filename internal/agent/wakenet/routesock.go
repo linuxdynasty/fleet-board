@@ -11,6 +11,10 @@ import (
 // the numbers against x/sys/unix.
 const (
 	rtMsghdrLen    = 92 // struct rt_msghdr, the same on arm64 and amd64
+	rtmOffIndex    = 4  // rtm_index
+	rtmOffFlags    = 8  // rtm_flags
+	rtmOffAddrs    = 12 // rtm_addrs
+	rtmOffErrno    = 24 // rtm_errno
 	rtmVersion     = 5
 	rtmAdd         = 0x1
 	rtmDelete      = 0x2
@@ -42,7 +46,7 @@ func rtMessages(b []byte, fn func(typ byte, m []byte) bool) error {
 		if len(b) < 4 {
 			return fmt.Errorf("%w: %d bytes left", errMalformed, len(b))
 		}
-		n := int(binary.LittleEndian.Uint16(b))
+		n := int(binary.NativeEndian.Uint16(b))
 		if n < 4 || n > len(b) {
 			return fmt.Errorf("%w: message length %d of %d bytes", errMalformed, n, len(b))
 		}
@@ -57,7 +61,8 @@ func rtMessages(b []byte, fn func(typ byte, m []byte) bool) error {
 // routeSocketHint reports whether one push read holds a message that could
 // change the reading: interface info, an address added or removed, or a
 // default route added, removed or changed. Lookup traffic (RTM_MISS, RTM_GET)
-// is not. A read it cannot parse counts as a hint: a hint only starts a read.
+// is not, nor is the echo of a route request that failed (rtm_errno set). A
+// read it cannot parse counts as a hint: a hint only starts a read.
 func routeSocketHint(b []byte) bool {
 	hint := false
 	err := rtMessages(b, func(typ byte, m []byte) bool {
@@ -66,7 +71,7 @@ func routeSocketHint(b []byte) bool {
 			hint = true
 		case rtmAdd, rtmDelete, rtmChange:
 			r, err := parseRtMsg(m)
-			hint = err != nil || r.isDefault()
+			hint = err != nil || (r.errno == 0 && r.isDefault())
 		}
 		return !hint
 	})
@@ -74,8 +79,9 @@ func routeSocketHint(b []byte) bool {
 }
 
 // routeDumpDefaults reads a net.route NET_RT_DUMP sysctl and returns, for each
-// family, the first default route that is up and not scoped to one interface
-// (RTF_IFSCOPE): the route macOS uses when a socket names no interface.
+// family, the first default route that is up, has no rtm_errno and is not
+// scoped to one interface (RTF_IFSCOPE): the route macOS uses when a socket
+// names no interface.
 func routeDumpDefaults(b []byte, names map[int]string) (v4, v6 Route, err error) {
 	var have4, have6 bool
 	var perr error
@@ -88,7 +94,7 @@ func routeDumpDefaults(b []byte, names map[int]string) (v4, v6 Route, err error)
 			perr = err
 			return false
 		}
-		if !r.isDefault() || r.flags&rtfUp == 0 || r.flags&rtfIfscope != 0 {
+		if r.errno != 0 || !r.isDefault() || r.flags&rtfUp == 0 || r.flags&rtfIfscope != 0 {
 			return true
 		}
 		rt := Route{Iface: names[int(r.index)], Gateway: r.gateway}
@@ -111,14 +117,14 @@ func routeDumpDefaults(b []byte, names map[int]string) (v4, v6 Route, err error)
 
 // rtRoute is the part of one rt_msghdr message the reading needs.
 type rtRoute struct {
-	index      uint16
-	flags      uint32
-	family     byte // of the destination
-	dstZero    bool
-	maskZero   bool
-	hasDst     bool
-	gateway    netip.Addr
-	hasGateway bool
+	index    uint16
+	flags    uint32
+	errno    int32
+	family   byte // of the destination
+	dstZero  bool
+	maskZero bool
+	hasDst   bool
+	gateway  netip.Addr
 }
 
 func (r rtRoute) isDefault() bool {
@@ -132,11 +138,12 @@ func parseRtMsg(m []byte) (rtRoute, error) {
 		return rtRoute{}, fmt.Errorf("%w: route message %d bytes, header is %d", errMalformed, len(m), rtMsghdrLen)
 	}
 	r := rtRoute{
-		index:    binary.LittleEndian.Uint16(m[4:]),
-		flags:    binary.LittleEndian.Uint32(m[8:]),
+		index:    binary.NativeEndian.Uint16(m[rtmOffIndex:]),
+		flags:    binary.NativeEndian.Uint32(m[rtmOffFlags:]),
+		errno:    int32(binary.NativeEndian.Uint32(m[rtmOffErrno:])), //nolint:gosec // rtm_errno is a C int
 		maskZero: true,
 	}
-	addrs := binary.LittleEndian.Uint32(m[12:])
+	addrs := binary.NativeEndian.Uint32(m[rtmOffAddrs:])
 	b := m[rtMsghdrLen:]
 	for bit := range rtaxMax {
 		if addrs&(1<<bit) == 0 {
@@ -163,7 +170,7 @@ func parseRtMsg(m []byte) (rtRoute, error) {
 				r.dstZero = ip.IsValid() && ip.IsUnspecified()
 			}
 		case rtaGatewayBit:
-			r.gateway, r.hasGateway = saIP(sa), true
+			r.gateway = saIP(sa)
 		case rtaNetmaskBit:
 			r.maskZero = maskZero(sa, r.family)
 		}

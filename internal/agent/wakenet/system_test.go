@@ -4,6 +4,7 @@ package wakenet
 
 import (
 	"testing"
+	"time"
 )
 
 // The system sources only read: the clocks, the interface list, the routing
@@ -51,5 +52,43 @@ func TestPushSocketOpens(t *testing.T) {
 	}
 	if err := s.Close(); err != nil {
 		t.Errorf("Close: %v", err)
+	}
+}
+
+// TestPushSocketCloseUnblocksRead: the push reader stops on Close even while
+// it waits in Read, so Run returns when its context ends.
+func TestPushSocketCloseUnblocksRead(t *testing.T) {
+	t.Parallel()
+	s, err := openPush()
+	if err != nil {
+		t.Fatalf("openPush: %v", err)
+	}
+	reading := make(chan struct{})
+	type result struct {
+		err   error
+		reads int
+	}
+	done := make(chan result, 1)
+	go func() {
+		buf := make([]byte, 1<<16)
+		close(reading)
+		for n := 0; ; n++ {
+			if _, err := s.Read(buf); err != nil {
+				done <- result{err, n}
+				return
+			}
+		}
+	}()
+	<-reading
+	// A real socket gives no signal that Read is parked; this lets it get there.
+	time.Sleep(100 * time.Millisecond)
+	if err := s.Close(); err != nil {
+		t.Errorf("Close: %v", err)
+	}
+	select {
+	case r := <-done:
+		t.Logf("Read returned after Close (%d reads with data before): %v", r.reads, r.err)
+	case <-time.After(waitLimit):
+		t.Fatalf("Read still blocked %v after Close", waitLimit)
 	}
 }

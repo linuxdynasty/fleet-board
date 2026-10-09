@@ -34,10 +34,10 @@ func TestDecide(t *testing.T) {
 	dropOther := func(r *Reading) {
 		r.Interfaces["enp3s0"] = []netip.Prefix{pfx("192.168.1.50/24"), pfx("fe80::1/64")}
 	}
+	// The default routes stay as they were, so only the local-address rule is in play.
 	moveLocal := func(r *Reading) {
 		delete(r.Interfaces, "enp3s0")
 		r.Interfaces["wlan0"] = []netip.Prefix{pfx("192.168.1.50/24")}
-		r.DefaultV6 = Route{Iface: "enp3s0", Gateway: addr("fe80::1")}
 	}
 	reconnect := func(why Why, closeStream bool, reason agentv1.ConnectReason) Decision {
 		return Decision{Reconnect: true, CloseStream: closeStream, Reason: reason, Why: why}

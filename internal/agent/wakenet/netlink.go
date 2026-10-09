@@ -45,11 +45,11 @@ func nlMessages(b []byte, fn func(typ uint16, body []byte) bool) error {
 		if len(b) < nlHeaderLen {
 			return fmt.Errorf("%w: %d bytes left, header is %d", errMalformed, len(b), nlHeaderLen)
 		}
-		n := binary.LittleEndian.Uint32(b[0:])
+		n := binary.NativeEndian.Uint32(b[0:])
 		if n < nlHeaderLen || uint64(n) > uint64(len(b)) {
 			return fmt.Errorf("%w: message length %d of %d bytes", errMalformed, n, len(b))
 		}
-		if !fn(binary.LittleEndian.Uint16(b[4:]), b[nlHeaderLen:n]) {
+		if !fn(binary.NativeEndian.Uint16(b[4:]), b[nlHeaderLen:n]) {
 			return nil
 		}
 		next := min((uint64(n)+3)&^3, uint64(len(b)))
@@ -154,15 +154,15 @@ func parseRtmsg(body []byte) (nlRoute, error) {
 		switch typ {
 		case rtaTable:
 			if len(data) >= 4 {
-				r.table = binary.LittleEndian.Uint32(data)
+				r.table = binary.NativeEndian.Uint32(data)
 			}
 		case rtaPriority:
 			if len(data) >= 4 {
-				r.priority = binary.LittleEndian.Uint32(data)
+				r.priority = binary.NativeEndian.Uint32(data)
 			}
 		case rtaOif:
 			if len(data) >= 4 {
-				r.oif = binary.LittleEndian.Uint32(data)
+				r.oif = binary.NativeEndian.Uint32(data)
 			}
 		case rtaGateway:
 			r.gateway, _ = netip.AddrFromSlice(data)
@@ -178,11 +178,11 @@ func parseRtmsg(body []byte) (nlRoute, error) {
 
 // firstHop reads the first struct rtnexthop of a multipath attribute.
 func (r *nlRoute) firstHop(data []byte) error {
-	n := int(binary.LittleEndian.Uint16(data))
+	n := int(binary.NativeEndian.Uint16(data))
 	if n < nexthopLen || n > len(data) {
 		return fmt.Errorf("%w: next hop length %d of %d", errMalformed, n, len(data))
 	}
-	r.oif = binary.LittleEndian.Uint32(data[4:])
+	r.oif = binary.NativeEndian.Uint32(data[4:])
 	return nlAttrs(data[nexthopLen:n], func(typ uint16, d []byte) error {
 		if typ == rtaGateway {
 			r.gateway, _ = netip.AddrFromSlice(d)
@@ -194,11 +194,11 @@ func (r *nlRoute) firstHop(data []byte) error {
 // nlAttrs calls fn for each struct rtattr in b.
 func nlAttrs(b []byte, fn func(typ uint16, data []byte) error) error {
 	for len(b) >= 4 {
-		n := int(binary.LittleEndian.Uint16(b))
+		n := int(binary.NativeEndian.Uint16(b))
 		if n < 4 || n > len(b) {
 			return fmt.Errorf("%w: attribute length %d of %d", errMalformed, n, len(b))
 		}
-		if err := fn(binary.LittleEndian.Uint16(b[2:]), b[4:n]); err != nil {
+		if err := fn(binary.NativeEndian.Uint16(b[2:]), b[4:n]); err != nil {
 			return err
 		}
 		b = b[min((n+3)&^3, len(b)):]

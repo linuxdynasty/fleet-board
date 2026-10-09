@@ -17,21 +17,21 @@ func put16(b []byte, n int) {
 	if n < 0 || n > math.MaxUint16 {
 		panic("fixture length out of range")
 	}
-	binary.LittleEndian.PutUint16(b, uint16(n))
+	binary.NativeEndian.PutUint16(b, uint16(n))
 }
 
 func put32(b []byte, n int) {
 	if n < 0 || n > math.MaxUint32 {
 		panic("fixture length out of range")
 	}
-	binary.LittleEndian.PutUint32(b, uint32(n))
+	binary.NativeEndian.PutUint32(b, uint32(n))
 }
 
 func nlMsg(typ uint16, body []byte) []byte {
 	n := nlHeaderLen + len(body)
 	b := make([]byte, nlAlign(n))
 	put32(b[0:], n)
-	binary.LittleEndian.PutUint16(b[4:], typ)
+	binary.NativeEndian.PutUint16(b[4:], typ)
 	copy(b[nlHeaderLen:], body)
 	return b
 }
@@ -40,12 +40,12 @@ func nlAttr(typ uint16, data []byte) []byte {
 	n := 4 + len(data)
 	b := make([]byte, nlAlign(n))
 	put16(b[0:], n)
-	binary.LittleEndian.PutUint16(b[2:], typ)
+	binary.NativeEndian.PutUint16(b[2:], typ)
 	copy(b[4:], data)
 	return b
 }
 
-func u32(v uint32) []byte { return binary.LittleEndian.AppendUint32(nil, v) }
+func u32(v uint32) []byte { return binary.NativeEndian.AppendUint32(nil, v) }
 
 func ifaddrmsg(family, prefixLen byte, index uint32) []byte {
 	b := []byte{family, prefixLen, 0, 0}
@@ -54,8 +54,8 @@ func ifaddrmsg(family, prefixLen byte, index uint32) []byte {
 
 func ifinfomsg(index, flags uint32) []byte {
 	b := make([]byte, 16)
-	binary.LittleEndian.PutUint32(b[4:], index)
-	binary.LittleEndian.PutUint32(b[8:], flags)
+	binary.NativeEndian.PutUint32(b[4:], index)
+	binary.NativeEndian.PutUint32(b[8:], flags)
 	return b
 }
 
@@ -130,7 +130,7 @@ func TestNetlinkDefaultRoutes(t *testing.T) {
 
 	nexthop := func(index uint32, attrs ...[]byte) []byte {
 		hdr := make([]byte, nexthopLen)
-		binary.LittleEndian.PutUint32(hdr[4:], index)
+		binary.NativeEndian.PutUint32(hdr[4:], index)
 		b := cat(hdr, cat(attrs...))
 		put16(b[0:], len(b))
 		return b

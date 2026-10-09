@@ -3,6 +3,7 @@ package wakenet
 import (
 	"encoding/binary"
 	"errors"
+	"slices"
 	"testing"
 )
 
@@ -22,7 +23,7 @@ func sa6(ip string) []byte {
 func saLink(index uint16) []byte {
 	b := make([]byte, 20)
 	b[0], b[1] = 20, afLinkDarwin
-	binary.LittleEndian.PutUint16(b[2:], index)
+	binary.NativeEndian.PutUint16(b[2:], index)
 	return b
 }
 
@@ -33,11 +34,18 @@ var saMaskZero = []byte{0, 0, 0, 0}
 func rtMsg(typ byte, index uint16, flags uint32, addrs uint32, sas ...[]byte) []byte {
 	hdr := make([]byte, rtMsghdrLen)
 	hdr[2], hdr[3] = rtmVersion, typ
-	binary.LittleEndian.PutUint16(hdr[4:], index)
-	binary.LittleEndian.PutUint32(hdr[8:], flags)
-	binary.LittleEndian.PutUint32(hdr[12:], addrs)
+	binary.NativeEndian.PutUint16(hdr[rtmOffIndex:], index)
+	binary.NativeEndian.PutUint32(hdr[rtmOffFlags:], flags)
+	binary.NativeEndian.PutUint32(hdr[rtmOffAddrs:], addrs)
 	b := cat(hdr, cat(sas...))
 	put16(b[0:], len(b))
+	return b
+}
+
+// failed sets rtm_errno: the kernel's echo of a route request that failed.
+func failed(m []byte) []byte {
+	b := slices.Clone(m)
+	binary.NativeEndian.PutUint32(b[rtmOffErrno:], 17) // EEXIST
 	return b
 }
 
@@ -46,7 +54,7 @@ func ifMsg(typ byte, index uint16, size int) []byte {
 	b := make([]byte, size)
 	put16(b[0:], size)
 	b[2], b[3] = rtmVersion, typ
-	binary.LittleEndian.PutUint16(b[12:], index)
+	binary.NativeEndian.PutUint16(b[12:], index)
 	return b
 }
 
@@ -73,6 +81,7 @@ func TestRouteSocketHint(t *testing.T) {
 		{"route lookup miss (the Mac mini noise) is no hint", rtMsg(rtmMiss, 0, 0, rtaDstBit, sa4(192, 0, 2, 1)), false},
 		{"route lookup echo is no hint", rtMsg(rtmGet, 0, 0, rtaDstBit, sa4(192, 0, 2, 1)), false},
 		{"default among others in one read", cat(hostAdd, defaultAdd), true},
+		{"failed default route add is no hint", failed(defaultAdd), false},
 		{"empty read", nil, false},
 		{"short header is a hint", []byte{3, 0, 5}, true},
 		{"length past the buffer is a hint", defaultAdd[:40], true},
@@ -108,6 +117,14 @@ func TestRouteDumpDefaults(t *testing.T) {
 			),
 			v4: Route{Iface: "en0", Gateway: addr("192.168.1.1")},
 			v6: Route{Iface: "en0", Gateway: addr("fe80::1")},
+		},
+		{
+			name: "a failed route is skipped",
+			dump: cat(
+				failed(rtMsg(rtmGet, 22, upGateway, dstGwMask, sa4(0, 0, 0, 0), sa4(10, 8, 0, 1), saMaskZero)),
+				rtMsg(rtmGet, 7, upGateway, dstGwMask, sa4(0, 0, 0, 0), sa4(192, 168, 1, 1), saMaskZero),
+			),
+			v4: Route{Iface: "en0", Gateway: addr("192.168.1.1")},
 		},
 		{
 			name: "interface-scoped defaults are skipped",
