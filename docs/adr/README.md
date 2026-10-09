@@ -10,7 +10,7 @@ When documents disagree, the order of authority is on [design.md](../design.md).
 The owner's decisions of 2026-09-28 to 2026-10-05 are recorded in
 [0022](0022-drift-audit-decisions.md), [0024](0024-pre-build-owner-decisions.md),
 [0025](0025-v1-includes-dispatch.md), [0026](0026-one-home-per-fact.md),
-[0027](0027-cursor-first-class-copilot-and-messaging-later.md) and, newest,
+[0027](0027-cursor-first-class-copilot-and-messaging-later.md) and
 [0028](0028-mdns-best-effort.md) (both 2026-10-05). The newest ADR is
 [0029](0029-wake-and-network-change-detection.md) (2026-10-09).
 

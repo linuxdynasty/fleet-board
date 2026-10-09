@@ -25,7 +25,7 @@ on the Mac mini, then for about a day on omarchy (Linux) and the MacBook
   omarchy and went down and up on the MacBook. The routing push socket (a
   kernel socket that sends a message when an interface, address or route
   changes) reported each one within milliseconds, and a 5 s interface poll saw
-  the same change 1 to 5 s later.
+  the same change 0.4 to 5 s later.
 - **Linux sends many push messages that change nothing.** omarchy logged 972
   "address added" messages, almost all for its wired interface, about one every
   38 s at the median. Its router keeps refreshing an IPv6 address, and each
@@ -109,7 +109,8 @@ stops during sleep, so a command could start after its deadline passed.
    about 3.5 times the push socket on the Mac mini and still needs the same
    comparison.
 4. Read the macOS default route by running `route -n get default`. Rejected:
-   no `exec` in this code, and the exec doubled the poll's cost.
+   no `exec` in this code, and counting the `route` process it made the poll
+   cost about 4 times as much.
 5. `golang.org/x/net/route` for the macOS routing table. Rejected without
    another ADR line; `x/sys` already reaches the same sysctl.
 
@@ -156,7 +157,8 @@ stops during sleep, so a command could start after its deadline passed.
    - On Linux, a full socket buffer (`ENOBUFS`) counts as a hint.
 6. **Interface poll is only a fallback.** Every 15 s, and only when the push
    socket cannot be opened or stops working. The agent logs that once and
-   `fleet-agent doctor` reports it. There is no always-on poll loop.
+   `fleet-agent doctor` reports it once doctor exists (plan row 6). There is no
+   always-on poll loop.
 7. **No `exec` and no cgo.** The macOS default route comes either from the
    routing table read through `x/sys` or from default-route push messages; row 4
    picks one and proves it with a fixture test. The spike's `route` exec is

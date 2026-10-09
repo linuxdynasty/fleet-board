@@ -150,7 +150,7 @@ Both were still running when these numbers were taken (2026-10-09, about
 11:10), so neither has printed its `summary` line yet.
 
 **Real network changes.** The push socket saw each one at once; the 5 s poll saw
-it 1 to 5 s later. Each burst of push messages lasted under 10 ms.
+it 0.4 to 5 s later. Each burst of push messages lasted under 10 ms.
 
 - omarchy, 05:10:30 (2026-10-08): a VPN interface `tun0` came up. Push:
   `RTM_NEWLINK` down then up, index 2387, at 05:10:30 (then two `RTM_NEWADDR` on
@@ -163,8 +163,9 @@ it 1 to 5 s later. Each burst of push messages lasted under 10 ms.
   and `RTM_NEWADDR` (index 36); ifpoll `iface_added` `utun10` at 08:54:30.661
   (+4.9 s).
 
-**Linux push noise.** omarchy logged 972 `RTM_NEWADDR` "relevant" messages in
-32.9 h, 970 on index 2 (`enp3s0`) and 2 on index 2387 (`tun0`). Gaps between
+**Linux push noise.** omarchy logged at least 972 `RTM_NEWADDR` "relevant"
+messages in 32.9 h (the counting script skips the cut-off line at the gap, which
+still holds one whole record), 970 on index 2 (`enp3s0`) and 2 on index 2387 (`tun0`). Gaps between
 them: p10 4.6 s, p50 38.5 s, p90 114.5 s. ifpoll saw no change for them.
 `enp3s0` has a dynamic IPv6 ULA (a private IPv6 address, `fdc7:…/64`,
 `valid_lft` about 1690 s) refreshed by router advertisements, and each refresh
@@ -198,7 +199,8 @@ Extracts of the deciding lines (the raw logs are not committed):
 JSON). [macbook-live-extract.jsonl](macbook-live-extract.jsonl) is the whole
 12-line MacBook log, with its host name shortened to `MacBook`.
 
-Counting commands:
+Counting commands, run on a copy of the raw omarchy log
+(`/tmp/wakenet-linux-wake.jsonl` on omarchy, not committed):
 
 ```bash
 python3 - wakenet-linux-wake.jsonl <<'EOF'
@@ -292,10 +294,23 @@ Readings on 2026-10-09 (read only, nothing slept):
 | MacBook (booted 2026-10-02 05:25) | 0.000 s | `kern.waketime` and `kern.sleeptime` 0; `pmset -g log` shows a lid close on 2026-10-05 17:30:26 that entered DarkWake and returned to full wake 5 s later, with no time counted asleep |
 | omarchy | 0.0 s (`CLOCK_BOOTTIME − CLOCK_MONOTONIC`) | the probe's `sleepmark` baseline on 2026-10-08 02:15:26 showed `suspended_ms` 0 |
 
-The macOS readings came from this program, built with `CGO_ENABLED=0
-GOOS=darwin GOARCH=arm64`, copied to `/tmp`, run once and deleted:
+The macOS readings came from this program (`sleeptotal`), built inside
+`spikes/wakenet` with `CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -o
+/tmp/sleeptotal ./sleeptotal.go` after saving it there as `sleeptotal.go`,
+copied to `/tmp`, run once and deleted:
 
 ```go
+//go:build ignore
+
+package main
+
+import (
+	"fmt"
+	"os"
+
+	"golang.org/x/sys/unix"
+)
+
 func read(id int32) int64 {
 	var ts unix.Timespec
 	if err := unix.ClockGettime(id, &ts); err != nil {
@@ -365,7 +380,8 @@ the decision; plan row 4 builds it.
   `unix.ClockGettime`; never `kern.waketime` or darwin `CLOCK_MONOTONIC`.
   Product code raises the spike's 500 ms sleep-record tolerance
   (`methods.go:115`) to 2 s. Clock jump: the wall clock moved 2 s or more past
-  the monotonic clock (`jump.go:26-35`); a wall clock stepped back is logged,
+  the monotonic clock (`jump.go:26-35`, which fires only above the threshold;
+  the product fires at 2 s or more); a wall clock stepped back is logged,
   never a wake. Either signal starts one reconnect per check, even while
   connected (close the stream, reconnect with `CONNECT_REASON_WAKE`). Command
   deadlines read elapsed time from the same sleep-counting clocks (02i, Clocks).
@@ -380,7 +396,8 @@ the decision; plan row 4 builds it.
   up, or a changed default route, reconnects. A netlink `ENOBUFS` counts as a
   hint.
 - **Interface poll:** fallback only, every 15 s, only when the push socket
-  cannot be opened or stops working; logged once and reported by `doctor`. No
+  cannot be opened or stops working; logged once, and reported by `doctor` once
+  row 6 builds it. No
   always-on poll loop (polling costs about 3.5× the push socket here).
 - **No exec, no cgo.** The macOS default route must not come from running
   `route` (`sys_darwin.go:35-44` is spike-only): read the routing table through
@@ -394,7 +411,7 @@ the decision; plan row 4 builds it.
 ## What this does not prove
 
 Wake detection on any real machine; dark-wake behavior after real sleep (a
-macOS Power Nap, as the time asleep since boot sees it); whether Linux `s2idle` stops `CLOCK_MONOTONIC`; how late Go's
-ticker fires after a wake; Wi-Fi roaming flaps on a laptop, where `awdl0` and
+macOS Power Nap, as the time asleep since boot sees it); whether Linux `s2idle`
+stops `CLOCK_MONOTONIC`; how late Go's ticker fires after a wake; Wi-Fi roaming flaps on a laptop, where `awdl0` and
 other interfaces may come and go; Linux CPU cost, until the 48 h `summary` lines
 are recorded; and what the omarchy probe saw during its 20.6 h log gap.
