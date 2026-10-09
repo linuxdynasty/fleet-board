@@ -85,7 +85,11 @@ func TestTheFileRefusesAStepBack(t *testing.T) {
 		{"last_epoch", `UPDATE agent_state SET last_epoch = 1`, back},
 		{"command seq in the same epoch", `UPDATE agent_state SET last_applied_command_seq = 1`, back},
 		{"install_id", `UPDATE agent_state SET install_id = 'another'`, back},
-		{"a second row", `INSERT INTO agent_state(id, install_id, created_time) VALUES (2, 'x', 0)`, "CHECK constraint"},
+		{"a second row", `INSERT INTO agent_state(id, install_id, created_time) VALUES (2, 'x', 0)`, "one row"},
+		{"delete, so the next Open mints a new install_id", `DELETE FROM agent_state`, "never deleted"},
+		{"insert or replace", `INSERT OR REPLACE INTO agent_state(id, install_id, created_time) VALUES (1, 'another', 0)`, "one row"},
+		{"replace", `REPLACE INTO agent_state(id, install_id, created_time) VALUES (1, 'another', 0)`, "one row"},
+		{"insert or ignore", `INSERT OR IGNORE INTO agent_state(id, install_id, created_time) VALUES (1, 'another', 0)`, "one row"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

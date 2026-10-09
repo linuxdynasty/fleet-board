@@ -95,25 +95,6 @@ func createPrivate(path string) error {
 	return f.Close()
 }
 
-// checkPrivate refuses a symlink, a non-regular file or any group or other
-// permission bit. A missing file passes.
-func checkPrivate(path string) error {
-	fi, err := os.Lstat(path)
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil
-	}
-	if err != nil {
-		return fmt.Errorf("ring: %w", err)
-	}
-	if !fi.Mode().IsRegular() {
-		return fmt.Errorf("%w: %s is not a regular file", ErrLooseMode, filepath.Base(path))
-	}
-	if perm := fi.Mode().Perm(); perm&0o077 != 0 {
-		return fmt.Errorf("%w: %s is mode %04o; run chmod 600 on it", ErrLooseMode, filepath.Base(path), perm)
-	}
-	return nil
-}
-
 // mintInstallID writes the one agent_state row with a fresh install_id when
 // the file has none; an existing row (and its install_id) is kept.
 func (d *DB) mintInstallID(ctx context.Context, random io.Reader, now time.Time) error {
@@ -123,7 +104,8 @@ func (d *DB) mintInstallID(ctx context.Context, random io.Reader, now time.Time)
 	}
 	return d.s.Write(ctx, func(tx *sql.Tx) error {
 		_, err := tx.ExecContext(ctx,
-			`INSERT INTO agent_state(id, install_id, created_time) VALUES (1, ?, ?) ON CONFLICT(id) DO NOTHING`,
+			`INSERT INTO agent_state(id, install_id, created_time) SELECT 1, ?, ?
+			WHERE NOT EXISTS (SELECT 1 FROM agent_state)`,
 			hex.EncodeToString(b), now.UnixMilli())
 		return err
 	})

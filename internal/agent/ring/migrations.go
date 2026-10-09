@@ -13,8 +13,37 @@ func Migrations() []store.Migration {
 		Version: 2,
 		Name:    "command_log",
 		SQL:     commandLogSQL,
+	}, {
+		Version: 3,
+		Name:    "row_guards",
+		SQL:     rowGuardsSQL,
 	}}
 }
+
+// rowGuardsSQL closes the paths the UPDATE triggers miss: DELETE (the next
+// Open would mint a new install_id), and INSERT OR REPLACE or REPLACE, whose
+// implicit delete fires no delete trigger. agent_state is one row, written
+// once and never deleted; a command_id is inserted once and never renamed.
+// Pruning the command log by age still deletes rows.
+const rowGuardsSQL = `CREATE TRIGGER agent_state_never_deleted BEFORE DELETE ON agent_state
+BEGIN
+	SELECT RAISE(ABORT, 'agent_state is never deleted');
+END;
+CREATE TRIGGER agent_state_one_row BEFORE INSERT ON agent_state
+WHEN EXISTS (SELECT 1 FROM agent_state)
+BEGIN
+	SELECT RAISE(ABORT, 'agent_state has one row, written once');
+END;
+CREATE TRIGGER command_log_insert_once BEFORE INSERT ON command_log
+WHEN EXISTS (SELECT 1 FROM command_log WHERE command_id = NEW.command_id)
+BEGIN
+	SELECT RAISE(ABORT, 'a command_id is logged once');
+END;
+CREATE TRIGGER command_log_id_kept BEFORE UPDATE OF command_id ON command_log
+WHEN NEW.command_id IS NOT OLD.command_id
+BEGIN
+	SELECT RAISE(ABORT, 'a command_id is logged once');
+END;`
 
 // agentStateSQL is the one row of sequencing state (02i "Sequence numbers"
 // and "Connection epoch"; 03 W2 "Persistence"): install_id, seq_hwm and the

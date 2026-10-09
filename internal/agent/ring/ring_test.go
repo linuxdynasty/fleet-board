@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/linuxdynasty/fleet-board/internal/agent/ring"
+	"github.com/linuxdynasty/fleet-board/internal/store"
 	_ "modernc.org/sqlite"
 )
 
@@ -103,10 +104,48 @@ func TestMigrationsApplyOnAFreshFileAndAgainAreANoOp(t *testing.T) {
 		t.Errorf("schema_migrations holds %d rows, want %d", applied, want)
 	}
 	got := tables(t, f)
-	for _, name := range []string{"agent_state", "command_log", "agent_state_never_back", "command_log_result_kept"} {
+	for _, name := range []string{
+		"agent_state", "command_log", "agent_state_never_back", "command_log_result_kept",
+		"agent_state_never_deleted", "agent_state_one_row", "command_log_insert_once", "command_log_id_kept",
+	} {
 		if !got[name] {
 			t.Errorf("agent.db has no %s", name)
 		}
+	}
+}
+
+// A file at schema 2 (from before the row guards) migrates forward and
+// keeps its install_id and marks.
+func TestMigrationFromSchemaTwoKeepsTheState(t *testing.T) {
+	t.Parallel()
+	dir := stateDir(t)
+	ctx := context.Background()
+	if err := os.WriteFile(ring.Path(dir), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	old, err := store.Open(ctx, store.Options{Path: ring.Path(dir), Name: "agent", Migrations: ring.Migrations()[:2], MustExist: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := old.Write(ctx, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx, `INSERT INTO agent_state(id, install_id, seq_hwm, created_time) VALUES (1, 'kept', 1023, 0)`)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := old.Close(); err != nil {
+		t.Fatal(err)
+	}
+	db := open(t, dir)
+	if got := db.SchemaVersion(); got != len(ring.Migrations()) {
+		t.Errorf("schema version %d, want %d", got, len(ring.Migrations()))
+	}
+	st, err := db.State(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.InstallID != "kept" || st.Marks.SeqHWM != 1023 {
+		t.Errorf("after the migration install_id %q, seq_hwm %d; want kept and 1023", st.InstallID, st.Marks.SeqHWM)
 	}
 }
 

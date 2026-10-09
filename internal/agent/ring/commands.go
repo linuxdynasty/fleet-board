@@ -67,8 +67,9 @@ func (d *DB) LogCommand(ctx context.Context, c Command) (Entry, bool, error) {
 	var dup bool
 	err = d.s.Write(ctx, func(tx *sql.Tx) error {
 		res, err := tx.ExecContext(ctx, `INSERT INTO command_log(command_id, kind, epoch, seq, received_time,
-			not_after_time, status) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(command_id) DO NOTHING`,
-			c.ID, c.Kind, epoch, seq, c.Received.UnixMilli(), c.NotAfter.UnixMilli(), string(StatusReceived))
+			not_after_time, status) SELECT ?, ?, ?, ?, ?, ?, ?
+			WHERE NOT EXISTS (SELECT 1 FROM command_log WHERE command_id = ?)`,
+			c.ID, c.Kind, epoch, seq, c.Received.UnixMilli(), c.NotAfter.UnixMilli(), string(StatusReceived), c.ID)
 		if err != nil {
 			return fmt.Errorf("ring: log command: %w", err)
 		}

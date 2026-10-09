@@ -18,25 +18,36 @@ err = db.RecordResult(ctx, id, encodedResult, finished)       // ErrResultLogged
 
 - **Private.** `Open` creates `agent.db` with mode 0600 before SQLite opens
   it (SQLite gives `-wal` and `-shm` the same mode) and refuses a file, or
-  side file, with any group or other bit or that is not a regular file
-  (`ErrLooseMode`). The caller creates and checks the folder (0700).
+  side file, that is not a regular file, has any group or other bit, or is
+  owned by another user (`ErrLooseMode`). The caller creates and checks the
+  folder (0700).
 - **Never backwards.** `RaiseMarks` keeps the larger of each field;
   `StartEpoch` refuses an epoch at or below the stored one and resets the
   command seq; `ApplyCommandSeq` refuses another epoch's seq or one at or
   below the last. The `agent_state_never_back` trigger refuses the same
-  step back from any writer, and `install_id` never changes.
+  step back from any writer, and `install_id` never changes:
+  `agent_state_never_deleted` and `agent_state_one_row` (migration 3) refuse
+  a delete and an `INSERT OR REPLACE`, whose implicit delete fires no
+  delete trigger.
 - **One entry per `command_id`.** `LogCommand` on a known id saves nothing
   and returns the logged entry with `dup` set; a finished entry's result
-  never changes (`command_log_result_kept` trigger, `ErrResultLogged`).
+  never changes (`command_log_result_kept` trigger, `ErrResultLogged`), and
+  a second insert or a renamed id is refused (`command_log_insert_once`,
+  `command_log_id_kept`).
+- `received_time` is the agent's wall clock, kept for pruning and display;
+  row 6's executor will anchor deadlines on `HelloAck.hub_time` (02i
+  "Clocks"), not on it.
 - Not here yet: the event ring (`seq` allocation in blocks, the floor from
-  `HelloAck`), the executor's steps, `ResultAck` and pruning to 10,000
-  entries or 7 days (plan rows 4 and 6).
+  `HelloAck`) later in row 4 (PR 3); the executor's steps, `ResultAck` and
+  pruning to 10,000 entries or 7 days in row 6.
 
 Signals: none of its own. `store.opened`, `store.migrated` and the
 `fleet_agent_writer_*` and `fleet_agent_store_*` metrics (`db="agent"`, 05b)
 come from `internal/store`.
 
 Tests use a real file in `t.TempDir()`: migrations on a fresh file and a
-reopen, the file mode, a loose file refused, install_id kept, marks never
-lowered (through the API and by the file's trigger), epoch and command seq,
-one entry per `command_id` under concurrent delivery, and the kept result.
+reopen, a migration from schema 2, the file mode, a loose file refused,
+install_id kept, marks never lowered (through the API and by the file's
+triggers, including delete and replace), epoch and command seq, one entry
+per `command_id` under concurrent delivery (and against raw `REPLACE` and
+renames), and the kept result.

@@ -108,9 +108,17 @@ func TestTheFileKeepsOneEntryAndItsResult(t *testing.T) {
 	if err := db.RecordResult(ctx, "c-1", []byte("r"), t0); err != nil {
 		t.Fatal(err)
 	}
+	if _, _, err := db.LogCommand(ctx, command("c-3", 1, 3)); err != nil {
+		t.Fatal(err)
+	}
 	f := raw(t, dir)
+	const once = "logged once"
 	for _, q := range []struct{ sql, why string }{
-		{`INSERT INTO command_log(command_id, kind, epoch, seq, received_time, not_after_time, status) VALUES ('c-1', 'k', 2, 2, 0, 0, 'received')`, "UNIQUE constraint"},
+		{`INSERT INTO command_log(command_id, kind, epoch, seq, received_time, not_after_time, status) VALUES ('c-1', 'k', 2, 2, 0, 0, 'received')`, once},
+		{`INSERT OR REPLACE INTO command_log(command_id, kind, epoch, seq, received_time, not_after_time, status, result, finished_time) VALUES ('c-1', 'k', 2, 2, 0, 0, 'finished', x'00', 0)`, once},
+		{`REPLACE INTO command_log(command_id, kind, epoch, seq, received_time, not_after_time, status) VALUES ('c-3', 'k', 2, 2, 0, 0, 'received')`, once},
+		{`UPDATE command_log SET command_id = 'c-4' WHERE command_id = 'c-1'`, once},
+		{`UPDATE OR REPLACE command_log SET command_id = 'c-1' WHERE command_id = 'c-3'`, once},
 		{`UPDATE command_log SET result = x'00' WHERE command_id = 'c-1'`, "result is kept"},
 		{`UPDATE command_log SET status = 'received', result = NULL, finished_time = NULL WHERE command_id = 'c-1'`, "result is kept"},
 		{`INSERT INTO command_log(command_id, kind, epoch, seq, received_time, not_after_time, status) VALUES ('c-2', 'k', 2, 2, 0, 0, 'finished')`, "CHECK constraint"},

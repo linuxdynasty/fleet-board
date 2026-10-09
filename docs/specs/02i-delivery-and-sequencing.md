@@ -140,8 +140,9 @@ then dropped the new events as "already seen". The rules:
    it from its ring and the `Snapshot` covers what the ring does not (coalesced
    and shed kinds), so a restore needs no special step for events.
 
-Persisted by the agent: `seq_hwm`, `EventCounters`, `install_id` (state
-directory; W1, W2). Persisted by the hub: per machine `hub_last_event_seq`,
+Persisted by the agent: `seq_hwm`, `EventCounters`, `install_id`, and the
+`last_epoch` and `last_applied_command_seq` it sends in `Hello` (`agent.db`;
+W1, W2). Persisted by the hub: per machine `hub_last_event_seq`,
 `event_generation`, last `EventCounters`, `install_id`, `epoch`.
 
 ## Connection epoch
@@ -165,13 +166,15 @@ would reject the new epoch's seq 1..41.
 ## What agent.db keeps
 
 Plan row 4 settles two tables of `agent.db` ([04](04-technology-review.md)
-Q9); the event ring, probe assignments, goal registry and the rest of 03's
-W2 persistence table arrive with their rows.
+Q9). The event ring and the block allocator of rule 1 will come later in row 4
+(PR 3): until then `seq_hwm` is stored and kept from going back, but nothing
+hands out seqs. Probe assignments, the goal registry and the rest of 03's W2
+persistence table will come with their own rows.
 
 | Table | Holds | Rule |
 |---|---|---|
-| `agent_state`, one row | `install_id` (minted when the file is created), `seq_hwm`, the three `EventCounters`, and `last_epoch` and `last_applied_command_seq` (sent as `Hello.last_epoch` and `Hello.last_applied_command_seq`) | Nothing goes backwards: a lower `seq_hwm` or counter is ignored; an epoch at or below the last is refused (`epoch_regressed`) and a new epoch starts its command seq at 0; a seq of another epoch is `EPOCH_MISMATCH`, one at or below the last of the epoch `SEQ_REPLAYED`. A trigger in the file refuses any step back and a changed `install_id` |
-| `command_log` | per `command_id` (the key): kind, epoch, seq, received time, `not_after_time`, status (`received`, `running`, `finished`), step reached, the encoded `CommandResult`, finished time, and the `ResultAck` time | Written before `CommandAck`. A known `command_id` saves nothing and is answered from its entry; the first result is kept and a trigger refuses a change. Pruned to the last 10,000 or 7 days ([defaults](defaults.md)) |
+| `agent_state`, one row | `install_id` (minted when the file is created), `seq_hwm`, the three `EventCounters`, and `last_epoch` and `last_applied_command_seq` (sent as `Hello.last_epoch` and `Hello.last_applied_command_seq`) | Nothing goes backwards: a lower `seq_hwm` or counter is ignored; an epoch at or below the last is refused (`epoch_regressed`) and a new epoch starts its command seq at 0; a seq of another epoch is `EPOCH_MISMATCH`, one at or below the last of the epoch `SEQ_REPLAYED`. Triggers in the file refuse any step back, a changed `install_id`, deleting the row and replacing it (`INSERT OR REPLACE`), so the next start cannot mint a new `install_id` |
+| `command_log` | per `command_id` (the key): kind, epoch, seq, received time (the agent's wall clock; row 6's executor will take deadlines from `HelloAck.hub_time`, "Clocks"), `not_after_time`, status (`received`, `running`, `finished`), step reached, the encoded `CommandResult`, finished time, and the `ResultAck` time | Written before `CommandAck`. A known `command_id` saves nothing and is answered from its entry; the first result is kept. Triggers refuse a changed result, a second insert of a `command_id` (`REPLACE` included) and a renamed `command_id`. Pruning to the last 10,000 or 7 days ([defaults](defaults.md)) will come with the executor (row 6) |
 
 Losing `agent.db` is a re-install: a new `install_id` and `seq_hwm` from 0,
 which the hub treats as an agent rollback (rule 3 above). Enrollment is not
