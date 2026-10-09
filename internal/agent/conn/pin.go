@@ -11,7 +11,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"sync/atomic"
 	"time"
 
 	agentv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1"
@@ -28,21 +27,19 @@ const (
 
 // pinnedTLS is the client TLS config for Enroll. It has no client
 // certificate. The handshake passes only when the server's chain holds a
-// CA whose SHA-256 is fp and the server certificate chains to that CA for
-// host as a server; otherwise it fails before any request byte is sent, and
-// untrusted is set so the caller can say why.
-func pinnedTLS(fp [32]byte, host string, untrusted *atomic.Bool) *tls.Config {
+// CA whose SHA-256 is fp, the server certificate chains to that CA for host
+// as a server, and the server proves it holds that certificate's key;
+// otherwise it fails before any request byte is sent.
+func pinnedTLS(fp [32]byte, host string) *tls.Config {
 	return &tls.Config{
 		MinVersion: tls.VersionTLS13,
+		ServerName: host,
+		NextProtos: []string{"h2"},
 		// The system roots never apply: VerifyConnection checks the chain
 		// against the CA the token pins (02g A1 step 2), with no TOFU.
 		InsecureSkipVerify: true, //nolint:gosec // G402: VerifyConnection verifies the chain against the token's pinned CA
 		VerifyConnection: func(cs tls.ConnectionState) error {
-			if err := verifyPinned(cs.PeerCertificates, fp, host); err != nil {
-				untrusted.Store(true)
-				return err
-			}
-			return nil
+			return verifyPinned(cs.PeerCertificates, fp, host)
 		},
 	}
 }

@@ -46,21 +46,33 @@ func TestAWrongCAHashIsRefusedBeforeTheTokenIsSent(t *testing.T) {
 func TestAnImpostorReceivesNothing(t *testing.T) {
 	t.Parallel()
 	fleet, other := newCA(t), newCA(t)
+	_, stolenKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
 	cases := []struct {
 		name   string
 		signer *ca.Authority
 		names  []string
 		chain  [][]byte
+		// withoutKey replays the certificate with a key that is not its own,
+		// as an impostor that copied the hub's public chain would.
+		withoutKey bool
 	}{
-		{"its own CA", other, []string{"127.0.0.1"}, [][]byte{other.Cert.Raw}},
-		{"the fleet CA in its chain but its own signer", other, []string{"127.0.0.1"}, [][]byte{fleet.Cert.Raw}},
-		{"no CA in its chain", fleet, []string{"127.0.0.1"}, nil},
-		{"a fleet certificate for another name", fleet, []string{"elsewhere.example"}, [][]byte{fleet.Cert.Raw}},
+		{"its own CA", other, []string{"127.0.0.1"}, [][]byte{other.Cert.Raw}, false},
+		{"the fleet CA in its chain but its own signer", other, []string{"127.0.0.1"}, [][]byte{fleet.Cert.Raw}, false},
+		{"no CA in its chain", fleet, []string{"127.0.0.1"}, nil, false},
+		{"a fleet certificate for another name", fleet, []string{"elsewhere.example"}, [][]byte{fleet.Cert.Raw}, false},
+		{"the hub's own chain without its key", fleet, []string{"127.0.0.1"}, [][]byte{fleet.Cert.Raw}, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			imp := startImpostor(t, serverCert(t, tc.signer, tc.names, tc.chain...))
+			cert := serverCert(t, tc.signer, tc.names, tc.chain...)
+			if tc.withoutKey {
+				cert.PrivateKey = stolenKey
+			}
+			imp := startImpostor(t, cert)
 			tok, err := ca.NewToken(fleet.Cert.Raw, rand.Reader)
 			if err != nil {
 				t.Fatal(err)
@@ -76,6 +88,12 @@ func TestAnImpostorReceivesNothing(t *testing.T) {
 			if n := imp.received.Load(); n != 0 {
 				t.Errorf("the impostor received %d bytes after the handshake", n)
 			}
+			if lines := a.events(t, "enroll.hub_untrusted"); len(lines) != 1 || lines[0]["peer"] != imp.addr {
+				t.Errorf("enroll.hub_untrusted lines %v, want one naming the impostor", lines)
+			}
+			if lines := a.events(t, "enroll.failed"); len(lines) != 0 {
+				t.Errorf("enroll.failed lines %v, want none: the impostor is untrusted, not a failure", lines)
+			}
 		})
 	}
 }
@@ -84,46 +102,55 @@ func TestAnImpostorReceivesNothing(t *testing.T) {
 func TestABadResponseSavesNothing(t *testing.T) {
 	t.Parallel()
 	other := newCA(t)
-	reissue := func(res *agentv1.EnrollResponse, signer *ca.Authority) {
-		b, _ := pem.Decode(res.GetCertPem())
-		leaf, err := x509.ParseCertificate(b.Bytes)
-		if err != nil {
-			panic(err)
+	// reissue replaces the certificate with one for the same machine id,
+	// signed by signer, for key (nil: the agent's own key).
+	reissue := func(res *agentv1.EnrollResponse, signer *ca.Authority, key ed25519.PublicKey) {
+		if key == nil {
+			b, _ := pem.Decode(res.GetCertPem())
+			leaf, err := x509.ParseCertificate(b.Bytes)
+			if err != nil {
+				panic(err)
+			}
+			pub, ok := leaf.PublicKey.(ed25519.PublicKey)
+			if !ok {
+				panic("not an Ed25519 key")
+			}
+			key = pub
 		}
-		pub, ok := leaf.PublicKey.(ed25519.PublicKey)
-		if !ok {
-			panic("not an Ed25519 key")
-		}
-		c, err := signer.IssueAgent(res.GetMachineId().GetValue(), pub, time.Now(), rand.Reader)
+		c, err := signer.IssueAgent(res.GetMachineId().GetValue(), key, time.Now(), rand.Reader)
 		if err != nil {
 			panic(err)
 		}
 		res.CertPem = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: c.CertDER})
 	}
+	otherKey, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	type tamper = func(res *agentv1.EnrollResponse, auth *ca.Authority)
 	cases := []struct {
 		name   string
-		tamper func(res *agentv1.EnrollResponse)
+		tamper tamper
 	}{
-		{"certificate from another CA", func(res *agentv1.EnrollResponse) { reissue(res, other) }},
-		{"certificate for another machine", func(res *agentv1.EnrollResponse) { res.MachineId.Value = "01J0000000000000000000ELSE" }},
-		{"certificate for another key", func(res *agentv1.EnrollResponse) {
-			sc, err := other.IssueServer([]string{"x"}, time.Now(), rand.Reader)
-			if err != nil {
-				panic(err)
-			}
-			res.CertPem = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: sc.CertDER})
+		{"certificate from another CA", func(res *agentv1.EnrollResponse, _ *ca.Authority) { reissue(res, other, nil) }},
+		{"certificate for another machine", func(res *agentv1.EnrollResponse, _ *ca.Authority) {
+			res.MachineId.Value = "01J0000000000000000000ELSE"
 		}},
-		{"two certificates", func(res *agentv1.EnrollResponse) { res.CertPem = append(res.CertPem, res.GetCertPem()...) }},
-		{"fingerprint differs", func(res *agentv1.EnrollResponse) {
+		// The right CA and machine id, so only the key check can catch it.
+		{"certificate for another key", func(res *agentv1.EnrollResponse, auth *ca.Authority) { reissue(res, auth, otherKey) }},
+		{"two certificates", func(res *agentv1.EnrollResponse, _ *ca.Authority) {
+			res.CertPem = append(res.CertPem, res.GetCertPem()...)
+		}},
+		{"fingerprint differs", func(res *agentv1.EnrollResponse, _ *ca.Authority) {
 			res.CaFingerprint = "0000000000000000000000000000000000000000000000000000000000000000"
 		}},
-		{"CA chain is another CA", func(res *agentv1.EnrollResponse) {
+		{"CA chain is another CA", func(res *agentv1.EnrollResponse, _ *ca.Authority) {
 			res.CaChainPem = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: other.Cert.Raw})
 		}},
-		{"no fleet id", func(res *agentv1.EnrollResponse) { res.FleetId = "" }},
-		{"no salt", func(res *agentv1.EnrollResponse) { res.AccountSalt = nil }},
-		{"no salt version", func(res *agentv1.EnrollResponse) { res.SaltVersion = 0 }},
-		{"no machine id", func(res *agentv1.EnrollResponse) { res.MachineId = nil }},
+		{"no fleet id", func(res *agentv1.EnrollResponse, _ *ca.Authority) { res.FleetId = "" }},
+		{"no salt", func(res *agentv1.EnrollResponse, _ *ca.Authority) { res.AccountSalt = nil }},
+		{"no salt version", func(res *agentv1.EnrollResponse, _ *ca.Authority) { res.SaltVersion = 0 }},
+		{"no machine id", func(res *agentv1.EnrollResponse, _ *ca.Authority) { res.MachineId = nil }},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

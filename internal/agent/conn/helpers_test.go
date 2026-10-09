@@ -38,9 +38,23 @@ func newAgent(t *testing.T) *agent {
 
 func (a *agent) enroll(t *testing.T, hub, token string) (conn.Result, error) {
 	t.Helper()
+	return a.enrollWith(t, hub, token, nil)
+}
+
+// enrollWith runs Enroll with the default tries but millisecond waits, after
+// set adjusts the options.
+func (a *agent) enrollWith(t *testing.T, hub, token string, set func(*conn.Options)) (conn.Result, error) {
+	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	return conn.Enroll(ctx, conn.Options{Dir: a.dir, Hub: hub, Token: token, Version: "test", Telemetry: a.tel})
+	opts := conn.Options{
+		Dir: a.dir, Hub: hub, Token: token, Version: "test", Telemetry: a.tel,
+		Retry: conn.Retry{FirstWait: time.Millisecond, MaxWait: 5 * time.Millisecond},
+	}
+	if set != nil {
+		set(&opts)
+	}
+	return conn.Enroll(ctx, opts)
 }
 
 func (a *agent) events(t *testing.T, prefix string) []map[string]any {

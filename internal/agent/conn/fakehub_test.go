@@ -11,11 +11,13 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	agentv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1"
@@ -49,12 +51,24 @@ func serverCert(t *testing.T, signer *ca.Authority, names []string, chain ...[]b
 	return tls.Certificate{Certificate: append([][]byte{sc.CertDER}, chain...), PrivateKey: key}
 }
 
-// impostor is a TLS server that counts the bytes a client sends after the
-// handshake.
+// impostor is a TLS server that counts every byte a client sends after the
+// handshake, as it is read.
 type impostor struct {
 	addr     string
 	received atomic.Int64
 	accepted atomic.Int64
+}
+
+// counter counts bytes read through it.
+type counter struct {
+	r io.Reader
+	n *atomic.Int64
+}
+
+func (c counter) Read(p []byte) (int, error) {
+	n, err := c.r.Read(p)
+	c.n.Add(int64(n))
+	return n, err
 }
 
 func startImpostor(t *testing.T, cert tls.Certificate) *impostor {
@@ -77,35 +91,49 @@ func startImpostor(t *testing.T, cert tls.Certificate) *impostor {
 			go func() {
 				defer func() { _ = c.Close() }()
 				_ = c.SetDeadline(time.Now().Add(10 * time.Second))
-				n, _ := io.Copy(io.Discard, c)
-				imp.received.Add(n)
+				_, _ = io.Copy(io.Discard, counter{r: c, n: &imp.received})
 			}()
 		}
 	}()
 	return imp
 }
 
-// fakeHub answers Enroll with a correct response that tamper may change.
+// fakeHub answers Enroll with a correct response that tamper may change,
+// unless fail returns an error for that call (numbered from 1).
 type fakeHub struct {
 	agentv1connect.UnimplementedAgentServiceHandler
 	auth   *ca.Authority
-	tamper func(res *agentv1.EnrollResponse)
+	tamper func(res *agentv1.EnrollResponse, auth *ca.Authority)
+	fail   func(call int) error
+
+	mu   sync.Mutex
+	reqs []*agentv1.EnrollRequest
 }
+
+const fakeMachine = "01J0000000000000000000FAKE"
 
 func (f *fakeHub) Enroll(_ context.Context, req *connect.Request[agentv1.EnrollRequest],
 ) (*connect.Response[agentv1.EnrollResponse], error) {
+	f.mu.Lock()
+	f.reqs = append(f.reqs, proto.CloneOf(req.Msg))
+	call := len(f.reqs)
+	f.mu.Unlock()
+	if f.fail != nil {
+		if err := f.fail(call); err != nil {
+			return nil, err
+		}
+	}
 	csr, err := ca.ParseCSR(req.Msg.GetCsrPem())
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}
-	const id = "01J0000000000000000000FAKE"
-	cert, err := f.auth.IssueAgent(id, csr.Key, time.Now(), rand.Reader)
+	cert, err := f.auth.IssueAgent(fakeMachine, csr.Key, time.Now(), rand.Reader)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	sum := sha256.Sum256(f.auth.Cert.Raw)
 	res := &agentv1.EnrollResponse{
-		MachineId:        &typev1.MachineId{Value: id},
+		MachineId:        &typev1.MachineId{Value: fakeMachine},
 		CertPem:          pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: cert.CertDER}),
 		CaChainPem:       pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: f.auth.Cert.Raw}),
 		CaFingerprint:    hex.EncodeToString(sum[:]),
@@ -116,10 +144,32 @@ func (f *fakeHub) Enroll(_ context.Context, req *connect.Request[agentv1.EnrollR
 		FleetId:          "fleet-fake",
 	}
 	if f.tamper != nil {
-		f.tamper(res)
+		f.tamper(res, f.auth)
 	}
 	return connect.NewResponse(res), nil
 }
+
+// requests are the EnrollRequests received, in order.
+func (f *fakeHub) requests() []*agentv1.EnrollRequest {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]*agentv1.EnrollRequest(nil), f.reqs...)
+}
+
+// hubError is a Connect error with the hub's ErrorDetail.
+func hubError(code connect.Code, reason typev1.ReasonCode, retryable bool) error {
+	err := connect.NewError(code, errFake)
+	if d, derr := connect.NewErrorDetail(&typev1.ErrorDetail{Reason: reason, Retryable: retryable}); derr == nil {
+		err.AddDetail(d)
+	}
+	return err
+}
+
+var errFake = &fakeErr{}
+
+type fakeErr struct{}
+
+func (*fakeErr) Error() string { return "the fake hub says no" }
 
 // startFakeHub serves f over TLS with the chain [server, CA] on 127.0.0.1,
 // and returns its address and a token that pins f's CA.

@@ -139,13 +139,25 @@ func (h *Hub) Token(t *testing.T, notAfter time.Time) string {
 // a token can name another CA while its secret is stored in this hub.
 func (h *Hub) TokenForCA(t *testing.T, caDER []byte, notAfter time.Time) string {
 	t.Helper()
+	return h.token(t, caDER, "", notAfter)
+}
+
+// TokenExpecting is [Hub.Token] with the hostname the owner expects; empty
+// means the machine name, "laptop".
+func (h *Hub) TokenExpecting(t *testing.T, hostname string, notAfter time.Time) string {
+	t.Helper()
+	return h.token(t, h.CACert, hostname, notAfter)
+}
+
+func (h *Hub) token(t *testing.T, caDER []byte, expect string, notAfter time.Time) string {
+	t.Helper()
 	tok, err := ca.NewToken(caDER, rand.Reader)
 	if err != nil {
 		t.Fatal(err)
 	}
 	reqID := fmt.Sprintf("req-%d", requestSeq.Add(1))
 	err = statedb.InsertEnrollToken(context.Background(), h.store, statedb.EnrollToken{
-		SecretHash: tok.SecretHash, MachineName: "laptop", NotAfter: notAfter.Truncate(time.Millisecond),
+		SecretHash: tok.SecretHash, MachineName: "laptop", ExpectedHostname: expect, NotAfter: notAfter.Truncate(time.Millisecond),
 		Created: time.Now(), Principal: "local:test", RequestID: reqID, RequestHash: sha256.Sum256([]byte(reqID)),
 	})
 	if err != nil {
@@ -169,22 +181,34 @@ func (h *Hub) Machines(t *testing.T) int {
 }
 
 // IssuedCerts are the certificates (DER) the hub stored for replay, one per
-// first Enroll.
+// first Enroll (enroll_responses.cert).
 func (h *Hub) IssuedCerts(t *testing.T) [][]byte {
 	t.Helper()
-	var out [][]byte
+	return column[[]byte](t, h, `SELECT cert FROM enroll_responses ORDER BY id`)
+}
+
+// InstallIDs are the install_id of each first Enroll, in order
+// (enroll_responses.install_id).
+func (h *Hub) InstallIDs(t *testing.T) []string {
+	t.Helper()
+	return column[string](t, h, `SELECT install_id FROM enroll_responses ORDER BY id`)
+}
+
+func column[T any](t *testing.T, h *Hub, query string) []T {
+	t.Helper()
+	var out []T
 	h.read(t, func(tx *sql.Tx) error {
-		rows, err := tx.QueryContext(context.Background(), `SELECT cert FROM enroll_responses ORDER BY id`)
+		rows, err := tx.QueryContext(context.Background(), query)
 		if err != nil {
 			return err
 		}
 		defer func() { _ = rows.Close() }()
 		for rows.Next() {
-			var c []byte
-			if err := rows.Scan(&c); err != nil {
+			var v T
+			if err := rows.Scan(&v); err != nil {
 				return err
 			}
-			out = append(out, c)
+			out = append(out, v)
 		}
 		return rows.Err()
 	})

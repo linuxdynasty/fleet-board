@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
-	"net/http"
+	"path/filepath"
 	"strings"
-	"sync/atomic"
+	"syscall"
 	"time"
 
 	"connectrpc.com/connect"
@@ -16,7 +16,6 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	agentv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1"
-	"github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1/agentv1connect"
 	typev1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/type/v1"
 	"github.com/linuxdynasty/fleet-board/internal/agent/ring"
 	"github.com/linuxdynasty/fleet-board/internal/protoversion"
@@ -25,8 +24,10 @@ import (
 
 const (
 	scope = "github.com/linuxdynasty/fleet-board/internal/agent/conn"
-	// DefaultTimeout bounds one Enroll call, handshake included.
-	DefaultTimeout = 30 * time.Second
+	// DefaultTimeout bounds one enroll, every try included (defaults.md).
+	DefaultTimeout = 60 * time.Second
+	// DefaultAttempts is how many times one enroll calls the hub (defaults.md).
+	DefaultAttempts = 4
 	// maxMessageBytes is the 1 MiB message cap of 02e.
 	maxMessageBytes = 1 << 20
 	maxHubMessage   = 200
@@ -34,24 +35,36 @@ const (
 
 var (
 	// ErrAlreadyEnrolled means the state folder already holds an identity.
-	// Enroll never replaces it; to move a machine to a new identity the owner
-	// removes the folder first (02g machine lifecycle).
+	// Enroll never replaces it. Until re-enroll exists (later in plan row 4,
+	// and row 13a's previous_machine), the owner removes identity.json and
+	// keeps agent.db, whose install_id survives re-enrollment (agent.proto).
 	ErrAlreadyEnrolled = errors.New("conn: this machine is already enrolled")
-	// ErrHubUntrusted means the TLS check against the CA in the token failed:
-	// nothing was sent (02g A1 step 2).
+	// ErrHubUntrusted means the TLS handshake with the hub failed its proof:
+	// the pin to the CA in the token, the name, or the key. Nothing was sent
+	// (02g A1 step 2).
 	ErrHubUntrusted = errors.New("conn: the hub's certificate does not match the CA in the token; nothing was sent")
 	// ErrBadResponse means the hub's EnrollResponse failed the agent's checks;
 	// nothing was saved and the pending key is kept for a retry.
 	ErrBadResponse = errors.New("conn: the hub's enroll response is not valid")
+	// ErrHubFailed means the hub could not finish the enroll: it stayed busy
+	// or unreachable through every try, or failed on its side. Nothing was
+	// saved; running the same command again is safe (the hub replays).
+	ErrHubFailed = errors.New("conn: the hub could not finish the enroll; run the same command again")
 )
 
-// RefusedError is an Enroll error the hub answered with: its code, the
-// ErrorDetail reason and retryable flag (02g), and the hub's message.
+// Retry bounds the tries of one enroll; zero fields take the defaults.
+type Retry struct {
+	Attempts  int
+	FirstWait time.Duration
+	MaxWait   time.Duration
+}
+
+// RefusedError is the hub's refusal of the request itself: a non-retryable
+// ErrorDetail reason (02g), its code and the hub's message.
 type RefusedError struct {
-	Code      connect.Code
-	Reason    typev1.ReasonCode
-	Retryable bool
-	Message   string
+	Code    connect.Code
+	Reason  typev1.ReasonCode
+	Message string
 }
 
 func (e *RefusedError) Error() string {
@@ -72,18 +85,24 @@ type Options struct {
 	// Facts default to [BasicFacts].
 	Facts     *agentv1.MachineFacts
 	Telemetry *telemetry.Telemetry
-	// Timeout bounds the Enroll call; 0 means [DefaultTimeout].
+	// Timeout bounds the whole enroll, every try included; 0 means
+	// [DefaultTimeout].
 	Timeout time.Duration
+	Retry   Retry
 }
 
 // Result is a finished enrollment.
 type Result struct {
 	Identity Identity
 	// Replayed is true when the hub returned its stored answer to an
-	// earlier attempt with the same token, install_id and key.
+	// earlier try with the same token, install_id and key.
 	Replayed bool
 	// HubAddress is the address enrolled with, now cached.
 	HubAddress string
+	// Hostname is the one this machine reported; HostnameMismatch is true
+	// when the hub expected another (compared the hub's way).
+	Hostname         string
+	HostnameMismatch bool
 }
 
 // enrollRun carries one Enroll's logger and span.
@@ -102,6 +121,12 @@ func Enroll(ctx context.Context, opts Options) (Result, error) {
 	if opts.Telemetry == nil {
 		return Result{}, errors.New("conn: Enroll needs telemetry")
 	}
+	timeout := opts.Timeout
+	if timeout <= 0 {
+		timeout = DefaultTimeout
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
 	ctx, span := opts.Telemetry.Tracer(scope).Start(ctx, "agent.enroll")
 	defer span.End()
 	r := &enrollRun{log: opts.Telemetry.Logger.With("component", "conn"), span: span}
@@ -112,7 +137,8 @@ func Enroll(ctx context.Context, opts Options) (Result, error) {
 		r.failure(ctx, step, err, opts.Hub)
 		return Result{}, err
 	}
-	r.log.InfoContext(ctx, "enroll.completed", "machine_id", res.Identity.MachineID, "replayed", res.Replayed)
+	r.log.InfoContext(ctx, "enroll.completed", "machine_id", res.Identity.MachineID, "replayed", res.Replayed,
+		"hostname_mismatch", res.HostnameMismatch)
 	return res, nil
 }
 
@@ -131,8 +157,13 @@ func enroll(ctx context.Context, r *enrollRun, opts Options) (Result, string, er
 	}
 	switch id, err := LoadIdentity(opts.Dir); {
 	case err == nil:
-		return Result{}, "already_enrolled", fmt.Errorf("%w as machine %s in fleet %s; remove %s to enroll again",
-			ErrAlreadyEnrolled, id.MachineID, id.FleetID, opts.Dir)
+		// A crash between saving the identity and removing the key leaves it.
+		if err := removePrivate(opts.Dir, PendingKeyFile); err != nil {
+			r.log.WarnContext(ctx, "enroll.failed", "step", "cleanup", "err_kind", errKind(err))
+		}
+		return Result{}, "already_enrolled", fmt.Errorf(
+			"%w as machine %s in fleet %s; to enroll again, remove %s and keep agent.db (it holds install_id)",
+			ErrAlreadyEnrolled, id.MachineID, id.FleetID, filepath.Join(opts.Dir, IdentityFile))
 	case !errors.Is(err, ErrNotEnrolled):
 		return Result{}, "state", err
 	}
@@ -152,7 +183,9 @@ func enroll(ctx context.Context, r *enrollRun, opts Options) (Result, string, er
 	if facts == nil {
 		facts = BasicFacts(opts.Version)
 	}
-	msg, err := call(ctx, opts, addr, tok, &agentv1.EnrollRequest{
+	// Capabilities are first sent in Hello (03 W1); the agent has none to
+	// declare at enroll yet.
+	msg, err := call(ctx, r, opts, addr, tok, &agentv1.EnrollRequest{
 		Token: tok.Reveal(), CsrPem: csr, Facts: facts,
 		ProtoMin: protoversion.Min, ProtoMax: protoversion.Max, InstallId: installID,
 	})
@@ -170,10 +203,25 @@ func enroll(ctx context.Context, r *enrollRun, opts Options) (Result, string, er
 		return Result{}, "save", err
 	}
 	if err := removePrivate(opts.Dir, PendingKeyFile); err != nil {
-		// The identity is saved; the leftover holds the same key, mode 0600.
+		// The identity is saved; the leftover holds the same key, mode 0600,
+		// and the next enroll on this folder removes it.
 		r.log.WarnContext(ctx, "enroll.failed", "step", "cleanup", "err_kind", errKind(err))
 	}
-	return Result{Identity: id, Replayed: msg.GetReplayed(), HubAddress: addr}, "", nil
+	host := facts.GetHostname()
+	return Result{
+		Identity: id, Replayed: msg.GetReplayed(), HubAddress: addr, Hostname: host,
+		HostnameMismatch: id.ExpectedHostname != "" && hostnameMismatch(id.ExpectedHostname, host),
+	}, "", nil
+}
+
+// hostnameMismatch is the hub's rule (03 W1): lower case, without a trailing
+// "." or ".local"; an empty reported hostname is a mismatch.
+func hostnameMismatch(expected, reported string) bool {
+	norm := func(h string) string {
+		return strings.TrimSuffix(strings.TrimSuffix(strings.ToLower(h), "."), ".local")
+	}
+	r := norm(reported)
+	return r == "" || r != norm(expected)
 }
 
 // readInstallID opens agent.db, which mints install_id once (02g), and
@@ -190,55 +238,6 @@ func readInstallID(ctx context.Context, opts Options) (string, error) {
 	return st.InstallID, errors.Join(err, db.Close())
 }
 
-// call sends EnrollRequest over TLS pinned to the token's CA.
-func call(ctx context.Context, opts Options, addr string, tok Token, req *agentv1.EnrollRequest,
-) (*agentv1.EnrollResponse, error) {
-	host, _, err := net.SplitHostPort(addr)
-	if err != nil {
-		return nil, fmt.Errorf("%w: %q", ErrHubAddress, addr)
-	}
-	var untrusted atomic.Bool
-	tr := &http.Transport{
-		TLSClientConfig:        pinnedTLS(tok.CAFingerprint, host, &untrusted),
-		ForceAttemptHTTP2:      true,
-		TLSHandshakeTimeout:    10 * time.Second,
-		MaxResponseHeaderBytes: 64 << 10,
-	}
-	defer tr.CloseIdleConnections()
-	timeout := opts.Timeout
-	if timeout <= 0 {
-		timeout = DefaultTimeout
-	}
-	client := agentv1connect.NewAgentServiceClient(&http.Client{Transport: tr, Timeout: timeout}, "https://"+addr,
-		connect.WithGRPC(), connect.WithReadMaxBytes(maxMessageBytes), connect.WithSendMaxBytes(maxMessageBytes))
-	res, err := client.Enroll(ctx, connect.NewRequest(req))
-	switch {
-	case untrusted.Load():
-		return nil, fmt.Errorf("%w (%s)", ErrHubUntrusted, addr)
-	case err != nil:
-		var ce *connect.Error
-		if errors.As(err, &ce) && len(ce.Details()) > 0 {
-			return nil, refused(ce)
-		}
-		return nil, fmt.Errorf("conn: enroll call to %s: %w", addr, err)
-	}
-	return res.Msg, nil
-}
-
-// refused builds a RefusedError from the hub's Connect error and its
-// ErrorDetail.
-func refused(ce *connect.Error) *RefusedError {
-	e := &RefusedError{Code: ce.Code(), Message: clean(ce.Message(), maxHubMessage)}
-	for _, d := range ce.Details() {
-		if v, err := d.Value(); err == nil {
-			if ed, ok := v.(*typev1.ErrorDetail); ok {
-				e.Reason, e.Retryable = ed.GetReason(), ed.GetRetryable()
-			}
-		}
-	}
-	return e
-}
-
 // failure logs a failed Enroll: the hub's refusal with its reason, an
 // untrusted hub, or the agent's own step with an err_kind. No line carries
 // the token, the key, the salt or the facts.
@@ -246,8 +245,7 @@ func (r *enrollRun) failure(ctx context.Context, step string, err error, hub str
 	var re *RefusedError
 	switch {
 	case errors.As(err, &re):
-		r.log.InfoContext(ctx, "enroll.refused", "reason", reasonName(re.Reason), "peer", peerOf(hub),
-			"retryable", re.Retryable)
+		r.log.InfoContext(ctx, "enroll.refused", "reason", reasonName(re.Reason), "peer", peerOf(hub))
 	case errors.Is(err, ErrHubUntrusted):
 		r.log.WarnContext(ctx, "enroll.hub_untrusted", "peer", peerOf(hub))
 	default:
@@ -267,7 +265,7 @@ func errKind(err error) string {
 		return "parse"
 	case errors.Is(err, ErrAlreadyEnrolled), errors.Is(err, ErrLooseMode):
 		return "constraint"
-	case strings.Contains(err.Error(), "connection refused"):
+	case errors.Is(err, syscall.ECONNREFUSED):
 		return "refused"
 	default:
 		return "io"

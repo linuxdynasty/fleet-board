@@ -39,13 +39,20 @@ nor any part of the hash. `fleet-agent enroll --token T` does this, in order:
    address. The hub's agent listener sends its CA certificate after its own
    certificate, so the agent finds that root in the chain by the fingerprint;
    a chain without it fails. A mismatch aborts before anything secret is
-   sent: no token, no CSR, no facts. An impostor on the LAN learns nothing,
-   and a typed or discovered address needs no trust.
-3. Generate the Ed25519 key (kept in the state directory until Enroll
-   succeeds), send `EnrollRequest{token, csr_pem, facts, install_id, ...}`.
+   sent: no token, no CSR, no facts. Any failed handshake counts, including
+   a server that sends the right chain but cannot prove it holds the key. An
+   impostor on the LAN learns nothing, and a typed or discovered address
+   needs no trust.
+3. Make or reuse the pending Ed25519 key (`enroll.key`, kept in the state
+   directory until Enroll succeeds). This may happen before step 2; nothing
+   leaves the machine until step 2 passes. Send `EnrollRequest{token,
+   csr_pem, facts, install_id, ...}`. A pin failure leaves the state folder,
+   `agent.db` (with `install_id`) and `enroll.key`, and no identity.
 4. On success compare `EnrollResponse.ca_fingerprint` with the token's (a
-   self-check) and pin the CA, certificate, key, salt and `fleet_id` atomically
-   (write temp file, rename).
+   self-check), then save the CA, certificate, key, salt and `fleet_id` in
+   `identity.json`, written once: a temp file, fsync, then a hard link that
+   never replaces an existing file, so it is whole or absent. The hub
+   address is cached by temp file and rename. Then `enroll.key` is removed.
 
 `CreateEnrollmentTokenResponse.ca_fingerprint` stays so the owner can check it
 out of band, but nobody has to compare anything by eye for the protection to

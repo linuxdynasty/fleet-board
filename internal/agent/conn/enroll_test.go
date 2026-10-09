@@ -98,7 +98,8 @@ func TestALostReplyIsRecoveredByEnrollingAgain(t *testing.T) {
 	a := newAgent(t)
 	tok := h.Token(t, time.Now().Add(15*time.Minute))
 
-	if _, err := a.enroll(t, h.Addr, tok); err == nil {
+	once := func(o *conn.Options) { o.Retry.Attempts = 1 }
+	if _, err := a.enrollWith(t, h.Addr, tok, once); err == nil {
 		t.Fatal("the first Enroll succeeded although its reply was dropped")
 	}
 	if _, err := conn.LoadIdentity(a.dir); !errors.Is(err, conn.ErrNotEnrolled) {
@@ -111,7 +112,7 @@ func TestALostReplyIsRecoveredByEnrollingAgain(t *testing.T) {
 		t.Fatal("the hub did not commit the first Enroll; the test proves nothing")
 	}
 
-	res, err := a.enroll(t, h.Addr, tok)
+	res, err := a.enrollWith(t, h.Addr, tok, once)
 	if err != nil {
 		t.Fatalf("Enroll again: %v", err)
 	}

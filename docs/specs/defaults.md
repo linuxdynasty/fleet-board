@@ -27,6 +27,7 @@ spec change. "Decided here" marks a value no earlier document gave.
 | Machine `STALE` (no heartbeat) | 45 | s | 03 | fixed |
 | Machine `OFFLINE` | 3 | min | 03 | fixed |
 | Reconnect backoff | 1 to 60, full jitter; at least 5 s between connects (agent), one `Hello` per machine per 5 s (hub) | s | 03 A2, [03](03-workflows.md) failure table | fixed |
+| Enroll tries (agent) | 4 calls per `fleet-agent enroll`; between them a full-jitter wait up to 0.5, 1, 2 s (doubling, cap 4 s); 20 s per call, 60 s for the whole enroll | s | [03](03-workflows.md) W1 failure table, decided here | fixed |
 | mDNS re-query (agent); mDNS browse timeout (one query) | no interval of its own: one browse per discovery attempt, on the reconnect backoff above; 2 | s | 03 A2, [ADR 0028](../adr/0028-mdns-best-effort.md), spike 0.7 ([results](../../spikes/mdns/results/README.md)) | fixed |
 | Random delay before the attempt a wake or network change starts | 20 to 120 | ms | 03 A2, ADR 0028 | fixed |
 | Wake check | every 5 s; a wake is the time asleep since boot growing by 2 s or more since the last check (Linux `CLOCK_BOOTTIME` minus `CLOCK_MONOTONIC`, macOS `CLOCK_MONOTONIC_RAW` minus `CLOCK_UPTIME_RAW`), or the wall clock moving 2 s or more past Go's monotonic clock; a wall clock stepped back is logged, not a wake | s | 01 A6, [ADR 0029](../adr/0029-wake-and-network-change-detection.md), spike 0.6 | fixed |
