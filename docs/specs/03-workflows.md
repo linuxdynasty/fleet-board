@@ -285,10 +285,33 @@ re-enroll rule are in [02g](02g-agent-security.md#machine-lifecycle-revoke-and-d
   enroll line carries the token, its secret, any part of its hash, or the
   facts. A revoked certificate at the handshake is 05b's
   `tls.client_cert_revoked`.
+- Wake and network change (A6, ADR 0029), agent logs:
+  `wake.detected{signal, asleep_delta_ms, wall_gap_ms}` (`signal` is
+  `asleep`, `wall_clock` or `both`), `wake.wall_clock_back{wall_gap_ms}`,
+  `wake.clock_read_failed{err}` for the first of a run of failed clock reads
+  and `wake.clock_read_recovered{failures}` when a read works again;
+  `netchange.detected{source, hints, changes, kinds, interfaces}` (interface
+  names, never addresses), `netchange.unchanged{source, hints}` and
+  `netchange.baseline{source, interfaces}` at debug level,
+  `netchange.read_failed{source, err}` for the first of a run of failed reads
+  and `netchange.read_recovered{source, failures}` when one works again,
+  `netchange.push_off{err, poll_s}` once per run when the push socket cannot be
+  opened or stops working, then the connection loop's decision,
+  `netchange.acted{why, close_stream, changes}` or `netchange.ignored{why,
+  changes}`. `source` is `push` (a settled hint, or a retry after a failed
+  read: 2 s, then every 15 s), `poll` (the 15 s poll), or `start` (the
+  reading taken when the watcher starts, so only on `netchange.baseline` and
+  `netchange.read_failed`). No counter: these are not wire events, and the
+  attempts they start are counted by `fleet_agent_connect_attempts_total`.
 
 At 3 AM: "why did `fleet-agent enroll` fail?" → `enroll.refused` (the reason
 the agent printed, and the peer) or `enroll.failed` (the hub's step). "machine X offline since when, why?" → `fleet_hub_machine_state` plus
 the agent's `connect.attempt` logs (last candidate tried, last TLS error).
+"why did machine X reconnect just now?" → the agent's `wake.detected` or
+`netchange.acted` (its `why`); "why did it not reconnect after a network
+change?" → `netchange.ignored` (the change did not touch the connection),
+`netchange.push_off` if the push socket is off, or, with debug logging on,
+`netchange.unchanged` (a hint whose reading showed no change).
 
 ---
 
