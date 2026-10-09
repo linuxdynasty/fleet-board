@@ -68,9 +68,11 @@ own terms, and `buckets[]` (`key`, `percent_used`, `resets_time`, `window`,
 `kind`) for the scheduler. `Percent` is never 0-as-unknown; a `PARSE_FAILED`
 reading has no buckets and the account becomes `UNKNOWN` for pacing until a
 good reading arrives. Readings from an unsupported harness version carry
-`PercentUnknown{HARNESS_VERSION_UNSUPPORTED}` (W11). A probe that fails
-without reading a screen sends no reading, so the last good one keeps pacing
-until it is older than `stale_after`; a `PARSE_FAILED` reading makes the
+`PercentUnknown{HARNESS_VERSION_UNSUPPORTED}` (W11). A probe run that reads
+no usage screen sends no reading, only `ProbeHealth`, so the last good reading
+keeps pacing until it is older than `stale_after`. The exceptions are a probe
+stuck on a startup screen or asking to sign in, which make the account
+`UNKNOWN` at once (Failure modes, below). A `PARSE_FAILED` reading makes the
 account `UNKNOWN` at once.
 
 **Passive signals (D3).** The adapter parses banners and status lines in panes

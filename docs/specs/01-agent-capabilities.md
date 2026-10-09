@@ -47,7 +47,7 @@ event, a snapshot field or a stream.
 8. **Every short program the agent runs is bounded.** A one-shot child process
    (`git`, `gh`, `loginctl`, a version check) gets empty stdin, a time cap and
    an output cap, and is killed when the cap passes or its caller gives up;
-   plan row 7 sets the caps and records them in [defaults](defaults.md). The
+   plan row 2c sets the caps and records them in [defaults](defaults.md). The
    long-lived `tmux -C` client and the attach PTY are not one-shot.
 
 ## Capability map

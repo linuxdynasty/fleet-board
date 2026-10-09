@@ -241,10 +241,10 @@ characters stripped (except `\n` and `\t` in multi-line screen text); the hub
 rejects anything else.
 
 Agent-written free text (`CommandResult.message`, `CommandProgress.message`,
-`parse_message`, `ProbeHealth.message`) passes the shared secret scrubber on
-the agent, with the home folder written as `~`, and again on the hub before
-storage. The scrubber removes tokens, emails, URL query values and passwords in
-URLs.
+`parse_message`, `ProbeHealth.message`) passes the shared secret scrubber
+(`internal/scrub`) on the agent, with the home folder written as `~`, and again
+on the hub before storage. The scrubber removes tokens, emails, URL query
+values and passwords in URLs.
 
 ## Compile check
 

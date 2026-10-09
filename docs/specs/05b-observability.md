@@ -61,6 +61,11 @@ are:
 | `trace_id`, `span_id` | when a span is active, so a log line finds its trace without a collector |
 | `err_kind` | a closed class (`timeout`, `refused`, `constraint`, `io`, `parse`); never an error string that could echo user text |
 
+The harness version check has its own failure kinds (`not_on_path`,
+`empty_version_output`, `invalid_version_output`; 01 C1). They are local
+only: the agent logs them and counts them as a failed `Detect()` (03e W11).
+They are not `err_kind` values and add no value to the wire.
+
 Levels: `error` is a fault the owner or developer must look at; `warn` is a
 degraded but handled state; `info` is a state change worth keeping; `debug`
 (off by default, runtime switch on the local admin socket) is per-message.

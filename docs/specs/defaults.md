@@ -37,7 +37,8 @@ spec change. "Decided here" marks a value no earlier document gave.
 | `last_seen` written to the store | at most 1 per machine per minute, and on connect and disconnect; held in memory per heartbeat | min | 04, decided here | fixed |
 | Agent event ring cap | 1 week or 64 MiB, whichever first; the oldest entry is evicted first, whatever its class, and every eviction is counted (`EventCounters.evicted_total`) | week, MiB | [02i](02i-delivery-and-sequencing.md), decided here | fixed |
 | Agent command log | last 10,000 or 7 days | count, days | 03 | fixed |
-| Agent status file (`status.json`) rewrite | on each change and at least once a minute | min | [01f](01f-agent-control-goals-and-policy.md) M3, plan row 6 | fixed |
+| Agent status file (`status.json`) rewrite | at most once per second (changes in between go into the next write), at least once a minute, and once more before the agent exits | s, min | [01f](01f-agent-control-goals-and-policy.md) M3, plan row 6 | fixed |
+| One-shot child process (`internal/proc`) | time cap and output cap per named caller (`loginctl`, `tmux` one-shot, version check, `git`, `gh`), each set from a measured run of that command | s, KiB | 01 principle 8, plan row 2c | fixed |
 | Agent command rate limit per command kind (`rate_limits`) | 60 | per min | 03e, decided here | `agent` |
 | Certificate lifetime | 90 (max 365), renewed at two thirds | days | ADR 0004 | `cert_lifetime` setting |
 | Hub server certificate lifetime (agent listener) | 90, re-issued at two thirds (checked at start and hourly) or when `tls.agent_names` changes; never past the CA | days | [02g](02g-agent-security.md#hub-identity-and-restore), plan row 2b | fixed |

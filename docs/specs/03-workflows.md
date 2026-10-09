@@ -371,7 +371,7 @@ stateDiagram-v2
   STALE --> OFFLINE: 3 min, or Bye from agent
   ONLINE --> OFFLINE: Bye{SHUTDOWN|UPGRADE|RE_ENROLL} / stream closed
   ONLINE --> DISPLACED: newer Hello for same machine_id
-  DISPLACED --> OFFLINE: Bye{DUPLICATE_IDENTITY} sent, old stream closed · the machine stays ONLINE on the newer one (03f)
+  DISPLACED --> OFFLINE: old stream gets Bye{DUPLICATE_IDENTITY} and closes, the machine stays ONLINE on the new stream (03f)
 ```
 
 Hub start: every machine is set to `STALE` with `since_time = hub_start`, so the

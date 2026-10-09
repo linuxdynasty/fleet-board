@@ -245,7 +245,7 @@ sequenceDiagram
 4. **Verification.** `DONE_RULE_REPORT_COLLECTED` (03i, done rules): on `DONE`
    the verifier sends `CollectScratch{report.md}`. The text must be UTF-8,
    non-empty, at most 64 KiB, and start with the marker line. It passes the
-   hub's secret scrubber (the one used for pane text), is stored as an
+   shared secret scrubber (`internal/scrub`, 02e), is stored as an
    `InsightReport` (`goal` is unique, so a retried verify stores one row), the
    goal becomes MERGED, and `ReleaseGoal` removes the scratch directory. A
    missing or invalid file ends DISAGREE with `REASON_CODE_REPORT_INVALID` or

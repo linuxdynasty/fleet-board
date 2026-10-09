@@ -41,7 +41,7 @@ PLAN_URL = BLOB + "docs/plan/v1-implementation-plan.md#5-the-pr-sequence"
 CHECKLIST_URL = BLOB + "AGENTS.md#pre-ready-checklist"
 PLAN_DIR = "docs/plan"  # relative links in plan cells resolve from here
 
-ROW_ID = r"\d+[ab]?"
+ROW_ID = r"\d+[a-z]?"
 ROLE_RE = re.compile(r"\b((?:develop|review|debug|perf|scan|arbiter)-fleet(?:-deep)?)\b")
 
 
