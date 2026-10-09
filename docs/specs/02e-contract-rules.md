@@ -244,7 +244,13 @@ Agent-written free text (`CommandResult.message`, `CommandProgress.message`,
 `parse_message`, `ProbeHealth.message`) passes the shared secret scrubber
 (`internal/scrub`) on the agent, with the home folder written as `~`, and again
 on the hub before storage. The scrubber removes tokens, emails, URL query
-values and passwords in URLs.
+values and passwords in URLs, then cuts the text to the field's cap on a UTF-8
+boundary; a second pass changes nothing. Tokens are the fleet's own (`fbe1_`
+enroll tokens, `fbt_` API tokens), GitHub tokens, the model providers' and
+clouds' key prefixes, JSON Web Tokens, bearer and Authorization header values,
+private key blocks, and the value of a variable, flag or JSON key named like a
+secret (a name ending in password, secret, token, or api, access or private
+key); the package README lists each pattern and why.
 
 ## Compile check
 

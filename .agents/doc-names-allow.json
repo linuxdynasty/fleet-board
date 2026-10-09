@@ -136,6 +136,7 @@
   {"token": "ResumeArgs", "kind": "go", "reason": "harness adapter method (01 adapter table, 01f)", "files": ["docs/specs/01-agent-capabilities.md", "docs/specs/01f-agent-control-goals-and-policy.md"]},
   {"token": "FuzzParse", "kind": "go", "reason": "Go fuzz target in internal/hub/config (agent-guide.md, make fuzz)", "files": ["docs/development/agent-guide.md"]},
   {"token": "FuzzCheckEnrollRequest", "kind": "go", "reason": "Go fuzz target in internal/hub/api (agent-guide.md, make fuzz)", "files": ["docs/development/agent-guide.md"]},
+  {"token": "FuzzText", "kind": "go", "reason": "Go fuzz target in internal/scrub (agent-guide.md, make fuzz)", "files": ["docs/development/agent-guide.md"]},
   {"token": "PromptPatterns", "kind": "go", "reason": "harness adapter method (01 adapter table)", "files": ["docs/specs/01-agent-capabilities.md"]},
   {"token": "ReadyPattern", "kind": "go", "reason": "harness adapter method (01 adapter table)", "files": ["docs/specs/01-agent-capabilities.md"]},
   {"token": "TrustPrompt", "kind": "go", "reason": "harness adapter method (01 adapter table)", "files": ["docs/specs/01-agent-capabilities.md"]},
