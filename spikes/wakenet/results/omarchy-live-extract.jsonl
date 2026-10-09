@@ -1,0 +1,16 @@
+{"time":"2026-10-08T02:15:26.000589775-04:00","event":"run_start","host":"omarchy","goos":"linux","goarch":"amd64","go":"go1.27.1","methods":"clock,sleepmark,ifpoll,push","interval":"5s","duration":"48h0m0s","jump_threshold":"2s","route_exec":false}
+{"time":"2026-10-08T02:15:26.00084243-04:00","event":"listening","method":"push","relevant":false,"socket":"netlink"}
+{"time":"2026-10-08T02:15:26.000855804-04:00","event":"baseline","method":"sleepmark","relevant":false,"wake_time":"0001-01-01T00:00:00Z","suspended_ms":0}
+{"time":"2026-10-08T02:15:26.001361188-04:00","event":"baseline","method":"ifpoll","relevant":false,"interfaces":9,"default_iface":"enp3s0","default_gw":"192.168.1.1","route_checked":true}
+{"time":"2026-10-08T02:15:27.559758-04:00","event":"RTM_NEWADDR","method":"push","relevant":true,"index":2,"detail":""}
+{"time":"2026-10-08T02:15:38.306449201-04:00","event":"RTM_NEWADDR","method":"push","relevant":true,"index":2,"detail":""}
+{"time":"2026-10-08T02:16:17.106591881-04:00","event":"RTM_NEWADDR","method":"push","relevant":true,"index":2,"detail":""}
+{"time":"2026-10-08T05:10:30.556064452-04:00","event":"RTM_NEWLINK","method":"push","relevant":true,"index":2387,"detail":"down"}
+{"time":"2026-10-08T05:10:30.56262931-04:00","event":"RTM_NEWLINK","method":"push","relevant":true,"index":2387,"detail":"up"}
+{"time":"2026-10-08T05:10:30.562652679-04:00","event":"RTM_NEWADDR","method":"push","relevant":true,"index":2387,"detail":""}
+{"time":"2026-10-08T05:10:30.564804145-04:00","event":"RTM_NEWADDR","method":"push","relevant":true,"index":2387,"detail":""}
+{"time":"2026-10-08T05:10:31.002294474-04:00","event":"net_change","method":"ifpoll","relevant":true,"iface":"tun0","kind":"iface_added","detail":""}
+{"time":"2026-10-08T13:33:03.498896967-04:00","event":"RTM_NEWADDR","method":"push","relevant":true,"index":2,"detail":""}
+{"time":"2026-10-08T13:33:09.48025892-04:00","event":"RTM_NEWADDR","method":"push",{"time":"2026-10-09T10:05:52.561797539-04:00","event":"RTM_NEWADDR","method":"push","relevant":true,"index":2,"detail":""}
+{"time":"2026-10-09T10:06:36.909433906-04:00","event":"RTM_NEWADDR","method":"push","relevant":true,"index":2,"detail":""}
+{"time":"2026-10-09T11:09:46.975463031-04:00","event":"RTM_NEWADDR","method":"push","relevant":true,"index":2,"detail":""}

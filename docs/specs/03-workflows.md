@@ -137,7 +137,9 @@ arrives, and the first that passes TLS wins, so the agent does not wait out the
 browse timeout. Wake, network change and a successful connect reset the backoff
 to its first step; the attempt a wake or network change starts waits a short
 random delay first ([defaults](defaults.md)), so machines that see the same
-event do not query together.
+event do not query together. A network change here means a confirmed one
+(01 A6): a push message with no change in the interface, address or
+default-route list is ignored.
 
 **Snapshot reconcile (A3).** Hub applies the snapshot in one transaction:
 replace the machine's sessions/windows/panes/goals/repos/harness rows, store
@@ -182,6 +184,7 @@ stateDiagram-v2
   HelloSent --> Backoff: Bye{PROTO_UNSUPPORTED} / stream error
   Snapshotting --> Connected: Snapshot + unacked results sent
   Connected --> Backoff: stream closed / Bye{HUB_RESTART, DUPLICATE_IDENTITY}
+  Connected --> Discovering: wake, or a network change that removes the connection's local address or changes the default route
   Connected --> Unenrolled: Bye{REVOKED | UNKNOWN_MACHINE}
   Connected --> Unenrolled: HelloAck.fleet_id differs (Bye{FLEET_MISMATCH})
   Backoff --> Discovering: timer (1–60 s, jitter), wake, network change

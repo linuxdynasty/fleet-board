@@ -1,0 +1,12 @@
+{"time":"2026-10-08T14:15:50.374836-04:00","event":"run_start","host":"MacBook","goos":"darwin","goarch":"arm64","go":"go1.27.1","methods":"clock,sleepmark,ifpoll,push","interval":"5s","duration":"48h0m0s","jump_threshold":"2s","route_exec":true}
+{"time":"2026-10-08T14:15:50.375958-04:00","event":"listening","method":"push","relevant":false,"socket":"route"}
+{"time":"2026-10-08T14:15:50.375957-04:00","event":"baseline","method":"sleepmark","relevant":false,"wake_time":"0001-01-01T00:00:00Z","suspended_ms":0}
+{"time":"2026-10-08T14:15:50.386543-04:00","event":"baseline","method":"ifpoll","relevant":false,"interfaces":40,"default_iface":"en7","default_gw":"192.168.1.1","route_checked":true}
+{"time":"2026-10-08T17:03:24.0842-04:00","event":"RTM_DELADDR","method":"push","relevant":true,"index":36,"detail":""}
+{"time":"2026-10-08T17:03:24.084477-04:00","event":"RTM_IFINFO","method":"push","relevant":true,"index":36,"detail":"down"}
+{"time":"2026-10-08T17:03:25.437894-04:00","event":"net_change","method":"ifpoll","relevant":true,"iface":"utun10","kind":"iface_removed","detail":""}
+{"time":"2026-10-09T08:54:25.74908-04:00","event":"RTM_IFINFO","method":"push","relevant":true,"index":36,"detail":"down"}
+{"time":"2026-10-09T08:54:25.754939-04:00","event":"RTM_IFINFO","method":"push","relevant":true,"index":36,"detail":"down"}
+{"time":"2026-10-09T08:54:25.755035-04:00","event":"RTM_IFINFO","method":"push","relevant":true,"index":36,"detail":"up"}
+{"time":"2026-10-09T08:54:25.755163-04:00","event":"RTM_NEWADDR","method":"push","relevant":true,"index":36,"detail":""}
+{"time":"2026-10-09T08:54:30.661666-04:00","event":"net_change","method":"ifpoll","relevant":true,"iface":"utun10","kind":"iface_added","detail":""}
