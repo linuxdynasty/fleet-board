@@ -117,6 +117,39 @@ var secretCases = []textCase{
 		"-----BEGIN PGP PRIVATE KEY BLOCK-----\nlQOYBF\n-----END PGP PRIVATE KEY BLOCK-----\nok",
 		"[redacted]\nok",
 	},
+	// Each GitHub prefix on its own, so a rule that drops one fails a case.
+	{"github server token", "ghs_" + strings.Repeat("A1b2", 9), "ghs_[redacted]"},
+	{"github oauth token", "gho_" + strings.Repeat("A1b2", 9), "gho_[redacted]"},
+	{"github user token", "ghu_" + strings.Repeat("A1b2", 9), "ghu_[redacted]"},
+	{"github refresh token", "ghr_" + strings.Repeat("A1b2", 9), "ghr_[redacted]"},
+	{"bearer token with padding", "Bearer abcdefghijklmnopqr==", "Bearer [redacted]"},
+	{"short bearer token with padding", "Bearer abc==", "Bearer [redacted]"},
+	{"secret key variable", "AWS_SECRET_KEY=abc123", "AWS_SECRET_KEY=[redacted]"},
+	{"secret key json", `{"secret_key": "abc"}`, `{"secret_key": "[redacted]"}`},
+	{"pass variable", "DB_PASS=hunter2", "DB_PASS=[redacted]"},
+	{"pass flag", "mysql --pass hunter2", "mysql --pass [redacted]"},
+	{"pass json key", `{"pass": "hunter2"}`, `{"pass": "[redacted]"}`},
+	{"passwd colon", "passwd: hunter2", "passwd: [redacted]"},
+	{"passphrase variable", "GPG_PASSPHRASE=abc", "GPG_PASSPHRASE=[redacted]"},
+	{"passphrase colon", "passphrase: abc", "passphrase: [redacted]"},
+	{"pwd variable after a separator", "DB_PWD=hunter2", "DB_PWD=[redacted]"},
+	{"pwd in a connection string", "Server=db;Uid=al;Pwd=hunter2;", "Server=db;Uid=al;Pwd=[redacted];"},
+	{"pwd flag", "sqlcmd --pwd hunter2", "sqlcmd --pwd [redacted]"},
+	{"refresh token colon", "refresh_token: abc", "refresh_token: [redacted]"},
+	{"access token colon", "access_token: abc", "access_token: [redacted]"},
+	{"bracketed env, double quotes", `os.environ["TOKEN"] = "abc"`, `os.environ["TOKEN"] = "[redacted]"`},
+	{"bracketed env, no spaces", `env["PASSWORD"]="abc"`, `env["PASSWORD"]="[redacted]"`},
+	{"bracketed env, single quotes", `ENV['API_KEY'] = 'k1'`, `ENV['API_KEY'] = '[redacted]'`},
+	{"json number value", `{"password": 12345}`, `{"password": [redacted]}`},
+	{"json bare value then more", `{"token": true, "n": 1}`, `{"token": [redacted], "n": 1}`},
+	{"python dict bare value", `{'pass': 12345}`, `{'pass': [redacted]}`},
+	{
+		"url fragment values",
+		"https://x.io/cb#code=abc&state=x",
+		"https://x.io/cb#code=[redacted]&state=[redacted]",
+	},
+	{"authorization with a name prefix", "HTTP_AUTHORIZATION=Basic dXNlcjpw", "HTTP_AUTHORIZATION=Basic [redacted]"},
+	{"cookie with a name prefix", "PROXY_COOKIE=sid=abc", "PROXY_COOKIE=[redacted]"},
 }
 
 // plainCases hold no secret and must come out as they went in.
@@ -133,6 +166,18 @@ var plainCases = []textCase{
 	{"a flag with no secret name", "run --verbose now", "run --verbose now"},
 	{"multi-line screen text", "line one\n\tline two\n", "line one\n\tline two\n"},
 	{"empty", "", ""},
+	// Near misses of the pass, pwd, cookie, bearer and fragment shapes.
+	{"a word ending in pass", "bypass=true compass=n", "bypass=true compass=n"},
+	{"go test pass line", "--- PASS: TestText (0.00s)", "--- PASS: TestText (0.00s)"},
+	{"pass count", "pass: 12, fail: 0", "pass: 12, fail: 0"},
+	{"a flag ending in pass", "run --bypass now", "run --bypass now"},
+	{"a no- flag", "run --no-password now", "run --no-password now"},
+	{"shell working folder", "PWD=/srv/x OLDPWD=/tmp", "PWD=/srv/x OLDPWD=/tmp"},
+	{"pwd json key", `{"pwd": "/srv/x"}`, `{"pwd": "/srv/x"}`},
+	{"cookie count", "cookies: 3", "cookies: 3"},
+	{"bearer in prose", "the bearer token expired", "the bearer token expired"},
+	{"issue number", "see issue #12 and README.md#install", "see issue #12 and README.md#install"},
+	{"empty json secret", `{"password": ""}`, `{"password": ""}`},
 }
 
 // homeCase is one input scrubbed with Home set.

@@ -24,6 +24,7 @@ var worstUnits = []struct{ name, unit string }{
 	{"dash-joined key ids", "x-AKIAAAAAAAAAAAAAAAAA-"},
 	{"chained url user names holding @", "x://a@b.co."},
 	{"chained email passwords", "a@b.co:pw@h."},
+	{"chained fragment values", "#a=b"},
 }
 
 func repeatTo(unit string, size int) string {
@@ -69,6 +70,24 @@ func BenchmarkTextWorst(b *testing.B) {
 		b.Run(in.name, func(b *testing.B) {
 			text := repeatTo(in.unit, reportCap)
 			opt := scrub.Options{MaxBytes: reportCap, Home: "/Users/al"}
+			b.SetBytes(int64(len(text)))
+			for b.Loop() {
+				scrub.Text(text, opt)
+			}
+		})
+	}
+}
+
+// BenchmarkTextMiB is 1 MiB with a 1 KiB cap: what a caller pays when it
+// does not bound the input first (README, "Callers bound the input").
+func BenchmarkTextMiB(b *testing.B) {
+	for _, in := range []struct{ name, line string }{
+		{"plain", "the build finished and the tests ran on every machine in the fleet. "},
+		{"secrets", "open /Users/al/repos/x: push to https://github.com/o/r?ref=main failed for al@example.com; "},
+	} {
+		b.Run(in.name, func(b *testing.B) {
+			text := repeatTo(in.line, 1<<20)
+			opt := scrub.Options{MaxBytes: 1024, Home: "/Users/al"}
 			b.SetBytes(int64(len(text)))
 			for b.Loop() {
 				scrub.Text(text, opt)

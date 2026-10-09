@@ -32,25 +32,48 @@ type rule struct {
 	scrubKept bool
 }
 
-// secretWords end the name of a variable, flag or JSON key whose value is
-// removed: GITHUB_TOKEN=, --password, "api_key": "...". salt and the CA and
+// keyWords and baseWords end a secret name in every form. salt and the CA and
 // server keys are the fleet's own secrets (02g).
-const secretWords = `(?:password|passwd|secret|token|salt|api[_-]?key|access[_-]?key|private[_-]?key|(?:ca|server)[_-]?key)`
+const (
+	keyWords  = `(?:api|access|private|secret|ca|server)[_-]?key`
+	baseWords = `password|passwd|passphrase|secret|salt|` + keyWords
+)
 
-// colonWords are secretWords less token: "input_tokens: 1234" is a count, and
-// "token: expired" is prose.
-const colonWords = `(?:password|passwd|secret|salt|api[_-]?key|access[_-]?key|private[_-]?key|(?:ca|server)[_-]?key)`
+// secretWords end the name of a variable or JSON key whose value is removed:
+// GITHUB_TOKEN=, "api_key": "...". pass must start a word or follow _
+// (DB_PASS, not bypass). pwd must follow _, - or ; (DB_PWD, ;Pwd= in a
+// connection string): a bare PWD is the shell's working folder.
+const secretWords = `(?:` + baseWords + `|token|(?:\b|_)pass|[_;-]pwd)`
+
+// flagWords end a flag's name: --pwd is a password, not a folder.
+const flagWords = `(?:` + baseWords + `|token|(?:\b|_)(?:pass|pwd))`
+
+// colonWords end a name in "name: value". Not token ("input_tokens: 1234" is
+// a count, "token: expired" prose) but the OAuth token names, and not pass or
+// pwd ("--- PASS: TestX" is a test result).
+const colonWords = `(?:` + baseWords + `|(?:refresh|access)[_-]?token)`
 
 // namePrefix is the start of a name after a literal, bounded (see rule).
 const namePrefix = `[A-Za-z0-9_.-]{0,64}`
 
+// flagPrefix is namePrefix less a leading no-: --no-password takes no value.
+// Go regexp has no lookahead, so the three alternatives spell "not no-".
+const flagPrefix = `(?:[a-mo-z0-9_.-][a-z0-9_.-]{0,63}` +
+	`|n(?:[a-np-z0-9_.-][a-z0-9_.-]{0,62})?` +
+	`|no(?:[a-z0-9_.][a-z0-9_.-]{0,61})?)?`
+
 // secretName is the end of a secret-named name and what joins it to its
-// value: NAME=value, --name value, or name: value. Only a flag matches its
-// whole name (after the literal --); otherwise the match starts at the
-// secret word and the rest of the name stays outside it.
-const secretName = `(?:` + secretWords + `[ \t]*=[ \t]*` +
-	`|--` + namePrefix + secretWords + `[ \t]+` +
+// value: NAME=value, env["NAME"] = value, --name value, or name: value. Only
+// a flag matches its whole name (after the literal --); otherwise the match
+// starts at the secret word and the rest of the name stays outside it.
+const secretName = `(?:` + secretWords + `(?:["']\])?[ \t]*=[ \t]*` +
+	`|--` + flagPrefix + flagWords + `[ \t]+` +
 	`|` + colonWords + `[ \t]*:[ \t]*)`
+
+// bareValue is a JSON or dict value with no quotes: a number, true, null. It
+// takes a placeholder whole, so a second pass ends where the first did, and
+// never starts an object or array.
+const bareValue = `(\[redacted\]|[^\s,}\]"'\[{]+)`
 
 // headerValue runs to the end of the line, a closing ] (a Go header dump) or
 // a quote that does not open a quoted string ('Authorization: x' in a curl
@@ -78,9 +101,10 @@ var rules = []rule{
 	// the text.
 	{`(-----BEGIN [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----(?:[\s\S]*?-----END [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----|[\s\S]*))`, redacted, false},
 	// A [ before the value is kept only before a scheme ([Bearer x] in a Go
-	// header dump); otherwise it would take the [ of a placeholder.
-	{`(?i:\bauthorization["']?[ \t]*[:=][ \t]*["']?(?:\[?` + authSchemes + `[ \t]+)?` + headerValue + `)`, redacted, false},
-	{`(?i:\b(?:(?:set-)?cookie|[a-z0-9-]{0,64}-token)[ \t]*:[ \t]*` + headerValue + `)`, redacted, false},
+	// header dump); otherwise it would take the [ of a placeholder. The name
+	// may follow _ (HTTP_AUTHORIZATION=, PROXY_COOKIE= in an environment).
+	{`(?i:(?:\b|_)authorization["']?[ \t]*[:=][ \t]*["']?(?:\[?` + authSchemes + `[ \t]+)?` + headerValue + `)`, redacted, false},
+	{`(?i:(?:\b|_)(?:(?:set-)?cookie[ \t]*[:=]|[a-z0-9-]{0,64}-token[ \t]*:)[ \t]*` + headerValue + `)`, redacted, false},
 	// The password in scheme://user:password@host, up to the last @ before
 	// the path, so a password holding @ goes whole. The user name may hold @
 	// (an email), or the email rule would take it first and leave the
@@ -100,19 +124,23 @@ var rules = []rule{
 		`|sk-([A-Za-z0-9_-]{16,})` +
 		`|(?:AKIA|ASIA)([A-Z0-9]{16})` +
 		`|AIza([A-Za-z0-9_-]{35}))`, redacted, false},
-	{`(?i:\bbearer[ \t]+([A-Za-z0-9._~+/-]{16,}=*))`, redacted, false},
+	// A bearer token: 16 characters, or fewer with base64 padding, which
+	// prose ("the bearer token expired") does not have.
+	{`(?i:\bbearer[ \t]+([A-Za-z0-9._~+/-]{16,}=*|[A-Za-z0-9._~+/-]{1,15}=+))`, redacted, false},
 	// Escaped JSON, JSON and Python dict entries; an escaped JSON entry
-	// starts one byte before its quote, so it is found first.
+	// starts one byte before its quote, so it is found first. A JSON or dict
+	// value may be bare ({"password": 12345}).
 	{`(?i:\\"` + namePrefix + secretWords + `\\"[ \t]*:[ \t]*\\"((?:[^"\\\n]|\\[^"\n])+)\\"` +
-		`|"` + namePrefix + secretWords + `"[ \t]*:[ \t]*"(` + dq + `+)"` +
-		`|'` + namePrefix + secretWords + `'[ \t]*:[ \t]*'(` + sq + `+)')`, redacted, false},
+		`|"` + namePrefix + secretWords + `"[ \t]*:[ \t]*(?:"(` + dq + `+)"|` + bareValue + `)` +
+		`|'` + namePrefix + secretWords + `'[ \t]*:[ \t]*(?:'(` + sq + `+)'|` + bareValue + `))`, redacted, false},
 	// A quoted value keeps its quotes, so the placeholder cannot run into
 	// the text after it and be taken for a longer value on a second pass. A
 	// quote that never closes takes the rest of the line.
 	{`(?i:` + secretName + `(?:"(` + dq + `*)"|'(` + sq + `*)'|["']([^\r\n]+)|([^\s"'&;,]+)))`, redacted, false},
-	// A query value ends at a character a URL cannot hold unescaped
-	// (whitespace, quotes, <, >, backtick) or at the next & or #.
-	{`[?&][^=&#?\s/"'<>]+=([^&#\s"'<>` + "`" + `]+)`, redacted, false},
+	// A query or fragment value (#code=abc in an OAuth redirect) ends at a
+	// character a URL cannot hold unescaped (whitespace, quotes, <, >,
+	// backtick) or at the next & or #.
+	{`[?&#][^=&#?\s/"'<>]+=([^&#\s"'<>` + "`" + `]+)`, redacted, false},
 	{`(` + email + `)`, emailMark, false},
 }
 

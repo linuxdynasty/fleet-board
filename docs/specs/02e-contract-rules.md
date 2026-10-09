@@ -243,19 +243,31 @@ rejects anything else.
 Agent-written free text (`CommandResult.message`, `CommandProgress.message`,
 `parse_message`, `ProbeHealth.message`) passes the shared secret scrubber
 (`internal/scrub`) on the agent, with the home folder written as `~`, and again
-on the hub before storage. The scrubber removes tokens, emails, URL query
-values and passwords in URLs, then cuts the text to the field's cap on a UTF-8
-boundary; a second pass changes nothing. Tokens are the fleet's own (`fbe1_`
-enroll tokens, `fbt_` API tokens), GitHub tokens, the model providers' and
-clouds' key prefixes, JSON Web Tokens, bearer tokens, the value of an
-Authorization, Cookie, Set-Cookie or `*-Token` header, private key blocks
-(PEM and PGP), a token used as a URL user name, and the value of a variable,
-flag, JSON or dict key named like a secret: a name ending in password, passwd,
-secret, token, salt, or api, access, private, ca or server key (`name=value`,
-`--name value`, `"name": "value"`; a bare `name: value` counts for every word
-but token, so `input_tokens: 1234` is kept). This is a summary; the package
-README lists each pattern, why, and what is left alone, and a change updates
-both.
+on the hub before storage. The scrubber removes tokens, emails, URL query and
+fragment values and passwords in URLs (the user name may be an email; with no
+scheme, `al@example.com:pw@host` counts too). Removing one secret can expose
+another (the deleted text had stopped a rule), so it repeats its rounds until
+one changes nothing, at most 4; text that has not settled by then is replaced
+whole by `[redacted]`. It then cuts the text to the field's cap on a UTF-8
+boundary without splitting a placeholder. A second pass, with or without the
+home folder, changes nothing, for any input. Tokens are the fleet's own
+(`fbe1_` enroll tokens, `fbt_` API tokens), GitHub tokens, the model
+providers' and clouds' key prefixes, JSON Web Tokens, bearer tokens, the value
+of an Authorization, Cookie, Set-Cookie or `*-Token` header (also as an
+environment variable, `HTTP_AUTHORIZATION=`, `PROXY_COOKIE=`), private key
+blocks (PEM and PGP), a token used as a URL user name, and the value of a
+variable, flag, JSON or dict key named like a secret: a name ending in
+password, passwd, passphrase, secret, token, salt, or api, access, private,
+secret, ca or server key, or in pass (starting a word or after `_`) or pwd
+(after `_`, `-` or `;`, so the shell's `PWD` is kept). The forms are
+`name=value`, `env["NAME"] = value`, `--name value` (not a `--no-` flag),
+`"name": "value"` or a bare JSON value (`"name": 123`). A bare
+`name: value` counts for every word but token, pass and pwd, so
+`input_tokens: 1234` and `--- PASS: TestX` are kept; `refresh_token:` and
+`access_token:` count. Callers cut text of no fixed size to a bound far above
+the cap before scrubbing, since the cost follows the input's length. This is
+a summary; the package README lists each pattern, why, and what is left
+alone, and a change updates both.
 
 ## Compile check
 
