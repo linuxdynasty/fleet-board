@@ -3,6 +3,9 @@
 package wakenet
 
 import (
+	"io"
+	"runtime"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -57,43 +60,67 @@ func TestPushSocketOpens(t *testing.T) {
 }
 
 // TestPushSocketCloseUnblocksRead: the push reader stops on Close even while
-// it waits in Read, so Run returns when its context ends. Close itself must
-// wake the parked Read: a routing message that wakes it after Close does not
-// count.
+// it waits in Read, so Run returns when its context ends. A Read that Close
+// can wake waits in Go's network poller ("IO wait"); a blocking one sits in a
+// system call that only a routing message ends, so the test first waits for
+// the reader to show as parked in the poller, then closes.
 func TestPushSocketCloseUnblocksRead(t *testing.T) {
 	t.Parallel()
 	s, err := openPush()
 	if err != nil {
 		t.Fatalf("openPush: %v", err)
 	}
-	reading := make(chan struct{})
 	var reads atomic.Int64
 	done := make(chan error, 1)
-	go func() {
-		buf := make([]byte, 1<<16)
-		close(reading)
-		for {
-			if _, err := s.Read(buf); err != nil {
-				done <- err
-				return
-			}
-			reads.Add(1)
+	go func() { done <- readUntilError(s, &reads) }()
+
+	deadline := time.Now().Add(waitLimit)
+	for !parkedInPoller(".readUntilError(") {
+		if time.Now().After(deadline) {
+			_ = s.Close()
+			t.Fatalf("Read never waited in the network poller within %v: Close cannot wake it", waitLimit)
 		}
-	}()
-	<-reading
-	// A real socket gives no signal that Read is parked; this lets it get there.
-	time.Sleep(100 * time.Millisecond)
-	atClose := reads.Load()
+		time.Sleep(time.Millisecond)
+	}
 	if err := s.Close(); err != nil {
 		t.Errorf("Close: %v", err)
 	}
+	afterClose := reads.Load()
 	select {
 	case err := <-done:
-		if after := reads.Load() - atClose; after != 0 {
-			t.Fatalf("Read returned data %d time(s) after Close; Close did not wake it", after)
+		// One read may have taken a message just before Close and counted it
+		// just after.
+		if grew := reads.Load() - afterClose; grew > 1 {
+			t.Fatalf("Read returned data %d times after Close returned", grew)
 		}
-		t.Logf("Read returned after Close (%d reads with data before): %v", atClose, err)
+		t.Logf("Read returned after Close (%d reads with data): %v", reads.Load(), err)
 	case <-time.After(waitLimit):
 		t.Fatalf("Read still blocked %v after Close", waitLimit)
 	}
+}
+
+// readUntilError reads r until a read fails, counting the reads that return
+// data, and returns the error.
+func readUntilError(r io.Reader, reads *atomic.Int64) error {
+	buf := make([]byte, 1<<16)
+	for {
+		if _, err := r.Read(buf); err != nil {
+			return err
+		}
+		reads.Add(1)
+	}
+}
+
+// parkedInPoller reports whether the goroutine whose stack holds fn is waiting
+// in the network poller, where Close wakes it.
+func parkedInPoller(fn string) bool {
+	buf := make([]byte, 1<<20)
+	buf = buf[:runtime.Stack(buf, true)]
+	for g := range strings.SplitSeq(string(buf), "\n\n") {
+		if strings.Contains(g, fn) {
+			header, _, _ := strings.Cut(g, "\n")
+			return strings.Contains(header, "[IO wait")
+		}
+	}
+	return false
 }

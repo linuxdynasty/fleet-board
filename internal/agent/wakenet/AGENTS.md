@@ -23,8 +23,8 @@ messages. Rules for this package:
 - Every clock, reader and socket is a struct field; tests use the fakes in
   `fakes_test.go` and never sleep. A loop test waits on a timer request or a
   log line, never on wall time. The one exception is
-  `TestPushSocketCloseUnblocksRead`: a real socket cannot signal that Read is
-  parked.
+  `TestPushSocketCloseUnblocksRead`: a real socket gives no event when Read
+  parks, so it polls the goroutine dump until the reader shows `IO wait`.
 - Logs carry interface names and counts, never IP addresses.
 - A new log event name goes into 03's W1 Telemetry list in the same change
   (`make telemetry-names`).
