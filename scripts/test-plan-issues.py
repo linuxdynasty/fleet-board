@@ -92,6 +92,16 @@ The [Pre-Ready Checklist]({pi.CHECKLIST_URL}) in AGENTS.md is met, and the owner
         self.assertEqual(issue_of["2b"], 56)
         self.assertEqual(issue_of["0.3"], 27)
 
+    def test_any_letter_suffix_is_a_row(self):
+        text = FIXTURE.replace(
+            "| 3 | **Three:**", "| 2c | **Helpers (2 PRs):** two | 2 | ok | develop-fleet | fleet-go |\n| 3 | **Three:**"
+        ).replace("| 2b | #56 |", "| 2b | #56 |\n| 2c | #143 |")
+        rows, prep, issue_of = pi.parse_plan(text)
+        self.assertIn("2c", rows)
+        self.assertEqual(issue_of["2c"], 143)
+        self.assertEqual(pi.render_row("2c", rows, prep, issue_of)[0], "v1 PR 2c: Helpers (2 PRs)")
+        self.assertEqual(pi.render_deps("2b, 2c", rows, prep, issue_of), "#56, #143")
+
     def test_range_dependency_expands(self):
         rows, prep, issue_of = load()
         deps = pi.render_deps("1 to 2, 2b", rows, prep, issue_of)

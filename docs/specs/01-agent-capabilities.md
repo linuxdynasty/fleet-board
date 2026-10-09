@@ -44,6 +44,11 @@ event, a snapshot field or a stream.
 7. **Testable without a real fleet**: every capability behind an interface with
    a fake; tmux and screen parsing tested against real tmux and captured
    fixtures.
+8. **Every short program the agent runs is bounded.** A one-shot child process
+   (`git`, `gh`, `loginctl`, a version check) gets empty stdin, a time cap and
+   an output cap, and is killed when the cap passes or its caller gives up;
+   plan row 2c sets the caps and records them in [defaults](defaults.md). The
+   long-lived `tmux -C` client and the attach PTY are not one-shot.
 
 ## Capability map
 
@@ -213,7 +218,12 @@ optionally against one limit the owner sets.
 
 - **C1 Harness inventory:** name, version, path, parser version, and whether
   the version is within `SupportedVersions`. Outside it, usage readings are
-  `unknown` and preflight refuses with `harness_version_unsupported`.
+  `unknown` and preflight refuses with `harness_version_unsupported`. The
+  version comes from the harness's own version command, run as principle 8
+  says; its first line must hold a dotted version number such as `1.4.2`, or
+  there is no version: `not_on_path`, `empty_version_output` or
+  `invalid_version_output` (a wrapper that exits 0 and prints an install prompt
+  is not a version), counted as a failed `Detect()` (03e, W11).
 - **C2 Account identity and sign-in.** Read from the harness's own status
   screen, never from credential files. C2 also reports, per session, the
   account it is spending from (`SessionAccountLink`; OpenCode can switch per

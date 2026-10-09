@@ -68,7 +68,12 @@ own terms, and `buckets[]` (`key`, `percent_used`, `resets_time`, `window`,
 `kind`) for the scheduler. `Percent` is never 0-as-unknown; a `PARSE_FAILED`
 reading has no buckets and the account becomes `UNKNOWN` for pacing until a
 good reading arrives. Readings from an unsupported harness version carry
-`PercentUnknown{HARNESS_VERSION_UNSUPPORTED}` (W11).
+`PercentUnknown{HARNESS_VERSION_UNSUPPORTED}` (W11). A probe run that reads
+no usage screen sends no reading, only `ProbeHealth`, so the last good reading
+keeps pacing until it is older than `stale_after`. The exceptions are a probe
+stuck on a startup screen or asking to sign in, which make the account
+`UNKNOWN` at once (Failure modes, below). A `PARSE_FAILED` reading makes the
+account `UNKNOWN` at once.
 
 **Passive signals (D3).** The adapter parses banners and status lines in panes
 it already observes and emits `UsageReading{source=PASSIVE}` only when a
@@ -104,7 +109,10 @@ An `Account` row comes from one of two origins (`Account.status.origin`):
   reads "spent so far $6.40 of your $20 limit". The hub never sums readings into
   a month, never resets the figure and never blocks on the limit (these accounts
   are manual-dispatch only). If the tool prints one total for all providers, the
-  card says "all providers together" and the hub does not split it.
+  card says "all providers together" and the hub does not split it. A total
+  lower than the one before is shown as reported (the tool's own count can
+  shrink, for example when its local history is cleared); the hub keeps no
+  highest-seen value.
 - **Owner-created.** An API-key account no agent can list (a key set in an
   environment variable) is added with `CreateAccount{harness, provider, spec}`
   (`DOLLAR_CAP` only; subscriptions are never created by hand). Discovery never

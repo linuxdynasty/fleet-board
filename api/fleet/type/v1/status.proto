@@ -27,7 +27,8 @@ message PercentUnknown {
 }
 
 // UnknownReason explains an unknown reading. The hub never schedules on an
-// unknown value (03b "Pacing decision", step 6).
+// unknown value (03b "Pacing decision", step 6). A probe run that reads no
+// usage screen sends no reading; `ProbeHealth` reports it (03b).
 enum UnknownReason {
   UNKNOWN_REASON_UNSPECIFIED = 0;
   // The screen did not parse with the fixtures for this harness version.
@@ -36,8 +37,6 @@ enum UnknownReason {
   UNKNOWN_REASON_NOT_SHOWN = 2;
   // The harness version is outside the parser's SupportedVersions (C1).
   UNKNOWN_REASON_HARNESS_VERSION_UNSUPPORTED = 3;
-  // The probe session could not run the usage command (D1 health).
-  UNKNOWN_REASON_PROBE_FAILED = 4;
 }
 
 // ---------------------------------------------------------------------------
