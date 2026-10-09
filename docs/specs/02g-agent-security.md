@@ -149,7 +149,10 @@ error:
 | The certificate's serial is not stored for that machine, or is revoked there | `UNAUTHENTICATED` | `CREDENTIALS_INVALID` |
 | CSR breaks the Enroll CSR rule, or is for the presented certificate's key | `INVALID_ARGUMENT` | `RENEW_CSR_INVALID` |
 | Hub store busy or failing (a cancelled write has an unknown outcome; the retry gets the stored certificate) | `UNAVAILABLE` | no reason, `retryable = true` |
+| The hub could not sign the certificate or read the stored one back | `INTERNAL` | `INTERNAL`; the agent retries at the next check |
 | Request over the 1 MiB message cap | `RESOURCE_EXHAUSTED` | none (refused before the handler) |
+
+A malformed CSR is refused with `RENEW_CSR_INVALID` before the machine and serial checks.
 
 A renewal writes an audit row (`machine.cert_renewed`). Not yet: plan row 5
 (#104) brings the audit log; until then a renewal is the log line
