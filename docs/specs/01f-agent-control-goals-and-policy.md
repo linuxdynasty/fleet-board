@@ -140,7 +140,9 @@ All pass local policy, carry a `command_id`, and are idempotent except F3.
 
 - **M1** local audit log, **M2** OTEL, **M3** `doctor` (tmux, harness paths,
   mDNS, policy, cert expiry, hub reachability, clock skew, the probe folder's
-  trust per harness (C3), and on Linux whether `loginctl enable-linger` is on).
+  trust per harness (C3), on Linux whether `loginctl enable-linger` is on, and
+  running-agent state (last error per hub candidate, push socket off) from the
+  agent's status file).
 - **M4 Drain and undrain**: from the hub or locally (`fleet-agent
   drain|undrain`); reported in snapshot and heartbeat. While draining, the agent
   refuses G3, harness-starting F1/F2 and F5 (except a pane with a registered live goal) with `draining`.

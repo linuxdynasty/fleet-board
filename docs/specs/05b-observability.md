@@ -209,7 +209,7 @@ per 30 s), shows it in the System section, and exports it as
 `fleet_hub_agent_*{machine}`. Not added: goroutine counts and GC data (the
 agent's own `/metrics` or OTLP, for the developer who wants them), and agent log
 lines (paths and text: they stay on the machine; `fleet-agent doctor` reads
-them locally).
+the agent's status file, not the log, and names `agent.log` for detail).
 
 ## 7. Spans and trace context
 
