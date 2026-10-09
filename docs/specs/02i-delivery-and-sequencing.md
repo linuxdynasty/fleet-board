@@ -310,5 +310,12 @@ that machine and for nothing that decides between machines.
   read the account, and shows the reset text rather than a `resets_time` the
   agent resolved from a wrong date.
 - **Deadlines** remain hub time: the agent evaluates `not_after_time` as
-  `HelloAck.hub_time` plus its own monotonic elapsed time, so a wrong wall clock
-  cannot expire or extend a command.
+  `HelloAck.hub_time` plus the time elapsed since, so a wrong wall clock cannot
+  expire or extend a command. Elapsed time is read from a clock that keeps
+  counting while the machine sleeps and that setting the wall clock does not
+  move: `CLOCK_BOOTTIME` on Linux, `CLOCK_MONOTONIC_RAW` on macOS (both through
+  `golang.org/x/sys`). Go's own monotonic clock stops during sleep on both
+  systems, so it is only a lower bound: elapsed time is the larger of the two.
+  When the sleep-counting clock cannot be read, the command is treated as past
+  its deadline. A command past its deadline answers `EXPIRED` and is never
+  started.
