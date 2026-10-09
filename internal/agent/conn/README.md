@@ -40,8 +40,9 @@ addr, err := conn.LoadHubAddress(dir)
    a lost connection is tried again with the same request
    (`DefaultAttempts`, full-jitter waits, defaults.md "Enroll tries"); the
    whole enroll is capped at `DefaultTimeout`. Only a non-retryable
-   `ErrorDetail` reason is a `*RefusedError`. Tries run out is
-   `ErrHubFailed` saying a rerun is safe; an `INTERNAL` with the hub's
+   `ErrorDetail` reason is a `*RefusedError`. Tries run out, or the time
+   cap ending a call or a wait, is `ErrHubFailed` saying a rerun is safe
+   (the caller's own cancel during a call gets no advice); an `INTERNAL` with the hub's
    `ErrorDetail`, or `RESOURCE_EXHAUSTED` (the 1 MiB cap), is `ErrHubFailed`
    with no rerun advice, since a rerun fails the same way.
 6. **Check, then save.** The response must carry the pinned CA and

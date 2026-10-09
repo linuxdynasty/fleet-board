@@ -31,6 +31,10 @@ const (
 	rerun = "nothing was saved; run the same command again"
 )
 
+// errEnrollCap is the cause when Options.Timeout ends the enroll, so it is
+// told apart from the caller's own deadline or cancel.
+var errEnrollCap = errors.New("conn: the enroll ran out of time")
+
 func (r Retry) withDefaults() Retry {
 	if r.Attempts <= 0 {
 		r.Attempts = DefaultAttempts
@@ -99,6 +103,10 @@ func outcome(ctx context.Context, err error, untrusted *atomic.Bool, addr string
 		return false, fmt.Errorf("%w (%s): %w", ErrHubUntrusted, addr, err)
 	}
 	if ctx.Err() != nil {
+		if errors.Is(context.Cause(ctx), errEnrollCap) {
+			return false, fmt.Errorf("%w: the enroll ran out of time during a call; %s: %w", ErrHubFailed, rerun, err)
+		}
+		// The caller stopped the run; no advice.
 		return false, fmt.Errorf("conn: enroll call to %s: %w", addr, err)
 	}
 	var ce *connect.Error

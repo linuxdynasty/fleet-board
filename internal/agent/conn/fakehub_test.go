@@ -105,6 +105,8 @@ type fakeHub struct {
 	auth   *ca.Authority
 	tamper func(res *agentv1.EnrollResponse, auth *ca.Authority)
 	fail   func(call int) error
+	// hang holds every call until the agent gives up on it.
+	hang bool
 
 	mu   sync.Mutex
 	reqs []*agentv1.EnrollRequest
@@ -112,12 +114,16 @@ type fakeHub struct {
 
 const fakeMachine = "01J0000000000000000000FAKE"
 
-func (f *fakeHub) Enroll(_ context.Context, req *connect.Request[agentv1.EnrollRequest],
+func (f *fakeHub) Enroll(ctx context.Context, req *connect.Request[agentv1.EnrollRequest],
 ) (*connect.Response[agentv1.EnrollResponse], error) {
 	f.mu.Lock()
 	f.reqs = append(f.reqs, proto.CloneOf(req.Msg))
 	call := len(f.reqs)
 	f.mu.Unlock()
+	if f.hang {
+		<-ctx.Done()
+		return nil, connect.NewError(connect.CodeCanceled, ctx.Err())
+	}
 	if f.fail != nil {
 		if err := f.fail(call); err != nil {
 			return nil, err

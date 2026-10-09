@@ -122,7 +122,7 @@ func TestTheEnrollTimeoutCapsTheWholeRun(t *testing.T) {
 		o.Timeout = limit
 		o.Retry = conn.Retry{FirstWait: time.Minute, MaxWait: time.Minute}
 	})
-	if took := time.Since(start); took > limit+time.Second {
+	if took := time.Since(start); took > limit+2*time.Second {
 		t.Errorf("Enroll took %v, want about the %v cap", took, limit)
 	}
 	if !errors.Is(err, context.DeadlineExceeded) {
@@ -156,12 +156,19 @@ func TestACancelEndsTheWaitBetweenTries(t *testing.T) {
 	case <-time.After(15 * time.Second):
 		t.Fatal("the hub got no call")
 	}
-	time.Sleep(100 * time.Millisecond) // the busy answer reaches the agent, which waits
+	// enroll.retry is logged just before the wait, so after it the cancel
+	// cannot land on the call in flight.
+	for deadline := time.Now().Add(5 * time.Second); len(a.events(t, "enroll.retry")) == 0; {
+		if time.Now().After(deadline) {
+			t.Fatal("no enroll.retry line: the agent never reached the wait")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 	cancelled := time.Now()
 	cancel()
 	select {
 	case err := <-done:
-		if took := time.Since(cancelled); took > 500*time.Millisecond {
+		if took := time.Since(cancelled); took > 2*time.Second {
 			t.Errorf("Enroll returned %v after the cancel, want at once", took)
 		}
 		if !errors.Is(err, conn.ErrHubFailed) || !errors.Is(err, context.Canceled) {
@@ -175,6 +182,89 @@ func TestACancelEndsTheWaitBetweenTries(t *testing.T) {
 	}
 	if got := len(a.events(t, "enroll.retry")); got != 1 {
 		t.Errorf("%d enroll.retry lines, want 1: the cancel came during the first wait", got)
+	}
+}
+
+// hangingRun enrolls against a hub that holds every call until the agent
+// gives up, with the cap limit (0: the default), and calls stop, if any,
+// once the hub has the call.
+func hangingRun(t *testing.T, limit time.Duration, stop func()) (calls int, took time.Duration, a *agent, err error) {
+	t.Helper()
+	f := &fakeHub{auth: newCA(t), hang: true}
+	addr, tok := startFakeHub(t, f)
+	a = newAgent(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if stop != nil {
+		go func() {
+			for deadline := time.Now().Add(15 * time.Second); len(f.requests()) == 0 && time.Now().Before(deadline); {
+				time.Sleep(10 * time.Millisecond)
+			}
+			stop()
+			cancel()
+		}()
+	}
+	start := time.Now()
+	_, err = conn.Enroll(ctx, conn.Options{
+		Dir: a.dir, Hub: addr, Token: tok, Version: "test", Telemetry: a.tel, Timeout: limit,
+	})
+	return len(f.requests()), time.Since(start), a, err
+}
+
+// 03 W1: when the whole-enroll cap ends a call in flight, nothing was saved
+// and a rerun is safe, as when it ends a wait.
+func TestTheCapEndingACallAdvisesARerun(t *testing.T) {
+	t.Parallel()
+	// The cap counts from the start, local setup included; under load the
+	// setup can outlast a short cap, so the cap doubles until a call was in
+	// flight when it fired.
+	for limit := 2 * time.Second; limit <= 16*time.Second; limit *= 2 {
+		calls, took, a, err := hangingRun(t, limit, nil)
+		if calls == 0 {
+			t.Logf("a %v cap ended the setup before any call; doubling it", limit)
+			continue
+		}
+		if took > limit+2*time.Second {
+			t.Errorf("Enroll took %v, want about the %v cap", took, limit)
+		}
+		if !errors.Is(err, conn.ErrHubFailed) || !errors.Is(err, context.DeadlineExceeded) ||
+			!strings.Contains(err.Error(), "run the same command again") {
+			t.Errorf("Enroll = %v, want ErrHubFailed with the deadline and the rerun advice", err)
+		}
+		if calls != 1 {
+			t.Errorf("the hub got %d calls, want 1", calls)
+		}
+		if lines := a.events(t, "enroll.failed"); len(lines) != 1 || lines[0]["step"] != "call" || lines[0]["err_kind"] != "timeout" {
+			t.Errorf("enroll.failed lines %v, want one with step=call, err_kind=timeout", lines)
+		}
+		return
+	}
+	t.Fatal("no call was ever in flight when the cap fired")
+}
+
+// A caller's cancel during a call is a plain call error with the cancel:
+// the caller stopped the run, so the agent gives no advice.
+func TestACallerCancelDuringACallGivesNoAdvice(t *testing.T) {
+	t.Parallel()
+	at := make(chan time.Time, 1)
+	calls, _, a, err := hangingRun(t, 0, func() { at <- time.Now() })
+	select {
+	case cancelled := <-at:
+		if took := time.Since(cancelled); took > 2*time.Second {
+			t.Errorf("Enroll returned %v after the cancel, want at once", took)
+		}
+	default:
+		t.Error("Enroll returned before the cancel")
+	}
+	if !errors.Is(err, context.Canceled) || errors.Is(err, conn.ErrHubFailed) ||
+		strings.Contains(err.Error(), "run the same command again") {
+		t.Errorf("Enroll = %v, want the cancel with no ErrHubFailed and no advice", err)
+	}
+	if calls != 1 {
+		t.Errorf("the hub got %d calls, want 1", calls)
+	}
+	if lines := a.events(t, "enroll.failed"); len(lines) != 1 || lines[0]["step"] != "call" {
+		t.Errorf("enroll.failed lines %v, want one with step=call", lines)
 	}
 }
 

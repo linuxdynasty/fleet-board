@@ -127,7 +127,7 @@ func Enroll(ctx context.Context, opts Options) (Result, error) {
 	if timeout <= 0 {
 		timeout = DefaultTimeout
 	}
-	ctx, cancel := context.WithTimeout(ctx, timeout)
+	ctx, cancel := context.WithTimeoutCause(ctx, timeout, errEnrollCap)
 	defer cancel()
 	ctx, span := opts.Telemetry.Tracer(scope).Start(ctx, "agent.enroll")
 	defer span.End()
