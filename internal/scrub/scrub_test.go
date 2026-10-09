@@ -103,8 +103,10 @@ func TestTextCap(t *testing.T) {
 		{"negative cap", "hello", scrub.Options{MaxBytes: -1}, ""},
 		// "see https://x.io" is 16 bytes; "?a=[redacted]" would end at 29.
 		{"cut before a part-kept query value", "see https://x.io?a=secret", scrub.Options{MaxBytes: 20}, "see https://x.io"},
-		// "id ghp_[redacted]" is 17 bytes; a cut inside it drops all of it.
-		{"cut before a part-kept token", "id " + ghToken, scrub.Options{MaxBytes: 10}, "id "},
+		// "id ghp_[redacted]" is 17 bytes. A second pass does not match it,
+		// so a cut inside it backs up only to the start of the placeholder.
+		{"cut never splits a placeholder", "id " + ghToken, scrub.Options{MaxBytes: 10}, "id ghp_"},
+		{"cut never splits an email placeholder", "to al@example.com", scrub.Options{MaxBytes: 7}, "to "},
 		// A cut after "/Users/al" of "/Users/alice" must not leave a path a
 		// second pass would read as the home folder.
 		{"cut never ends on a false home", "cd /Users/alice", scrub.Options{MaxBytes: 12, Home: "/Users/al"}, "cd "},

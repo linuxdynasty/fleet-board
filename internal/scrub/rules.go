@@ -82,9 +82,13 @@ var rules = []rule{
 	{`(?i:\bauthorization["']?[ \t]*[:=][ \t]*["']?(?:\[?` + authSchemes + `[ \t]+)?` + headerValue + `)`, redacted, false},
 	{`(?i:\b(?:(?:set-)?cookie|[a-z0-9-]{0,64}-token)[ \t]*:[ \t]*` + headerValue + `)`, redacted, false},
 	// The password in scheme://user:password@host, up to the last @ before
-	// the path, so a password holding @ goes whole. The kept user name is
-	// scrubbed too: a token can be the user name.
-	{`(?i:\b[a-z][a-z0-9+.-]{0,31}://[^/?#\s:@]*:([^/?#\s]+)@)`, redacted, true},
+	// the path, so a password holding @ goes whole. The user name may hold @
+	// (an email), or the email rule would take it first and leave the
+	// password. With no scheme, only an email user name marks the shape:
+	// al@example.com:pw@host. The kept user name is scrubbed too: a token or
+	// an email can be the user name.
+	{`(?i:\b[a-z][a-z0-9+.-]{0,31}://[^/?#\s:]*:([^/?#\s]+)@` +
+		`|` + email + `:([^/?#\s]+)@)`, redacted, true},
 	// Tokens known by their prefix, which is kept: a JSON Web Token (whole),
 	// fleet enroll and API tokens, GitHub tokens, sk- keys, AWS key ids and
 	// Google API keys.
@@ -109,9 +113,11 @@ var rules = []rule{
 	// A query value ends at a character a URL cannot hold unescaped
 	// (whitespace, quotes, <, >, backtick) or at the next & or #.
 	{`[?&][^=&#?\s/"'<>]+=([^&#\s"'<>` + "`" + `]+)`, redacted, false},
-	// An email's local part is at most 64 characters (RFC 5321).
-	{`([A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,})`, emailMark, false},
+	{`(` + email + `)`, emailMark, false},
 }
+
+// email is an address. Its local part is at most 64 characters (RFC 5321).
+const email = `[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}`
 
 // compiled is the rules joined into one pattern, and for each rule its
 // wrapping group and how many groups it holds.

@@ -39,11 +39,10 @@ func homeEndsAt(s string, end int) bool {
 }
 
 // replaceHome writes each whole occurrence of home in s as "~", judged on s
-// as it is, and moves spans to match. A span that started or ended inside an
-// occurrence starts or ends at its "~".
-func replaceHome(s, home string, spans []span) (string, []span) {
+// as it is. "~" is a name byte, so the result holds no whole home again.
+func replaceHome(s, home string) string {
 	if home == "" || !strings.Contains(s, home) {
-		return s, spans
+		return s
 	}
 	var at []int
 	for from := 0; ; {
@@ -60,7 +59,7 @@ func replaceHome(s, home string, spans []span) (string, []span) {
 		from = i + 1
 	}
 	if len(at) == 0 {
-		return s, spans
+		return s
 	}
 	var b strings.Builder
 	b.Grow(len(s))
@@ -71,26 +70,7 @@ func replaceHome(s, home string, spans []span) (string, []span) {
 		last = i + len(home)
 	}
 	b.WriteString(s[last:])
-
-	// Span positions rise, so one walk over the occurrences moves them all.
-	shrink, n := len(home)-1, 0
-	move := func(p int, isEnd bool) int {
-		for n < len(at) && at[n]+len(home) <= p {
-			n++
-		}
-		if n < len(at) && at[n] < p {
-			if isEnd {
-				return at[n] - n*shrink + 1
-			}
-			return at[n] - n*shrink
-		}
-		return p - n*shrink
-	}
-	moved := make([]span, len(spans))
-	for k, sp := range spans {
-		moved[k] = span{move(sp.start, false), move(sp.end, true)}
-	}
-	return b.String(), moved
+	return b.String()
 }
 
 // endsInHome reports whether s ends with home where home could start, so a

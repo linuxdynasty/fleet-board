@@ -22,6 +22,8 @@ var worstUnits = []struct{ name, unit string }{
 	{"chained emails", "a.a@b.co."},
 	{"chained secret names", "x.password=a."},
 	{"dash-joined key ids", "x-AKIAAAAAAAAAAAAAAAAA-"},
+	{"chained url user names holding @", "x://a@b.co."},
+	{"chained email passwords", "a@b.co:pw@h."},
 }
 
 func repeatTo(unit string, size int) string {

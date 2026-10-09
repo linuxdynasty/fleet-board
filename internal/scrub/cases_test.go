@@ -71,6 +71,15 @@ var secretCases = []textCase{
 	{"query value holding )", "https://x.io/?token=ab)cd", "https://x.io/?token=[redacted]"},
 	{"password in a url", "dial postgres://al:hunter2@db.local:5432/app failed", "dial postgres://al:[redacted]@db.local:5432/app failed"},
 	{"password holding @ in a url", "https://al:p@ss@host/x", "https://al:[redacted]@host/x"},
+	// An email as the user name: the password must go on the first pass, not
+	// be left for the email rule to expose and a second pass to catch.
+	{"email user name and password in a url", "https://al@example.com:hunter2@host/x", "https://[email]:[redacted]@host/x"},
+	{"email user name, short scheme", "x://a@b.co:pw@h/", "x://[email]:[redacted]@h/"},
+	{"email user name, second host", "https://user@host.io:pass@h2/", "https://[email]:[redacted]@h2/"},
+	{"email user name, fuzz find", "A://0@0.AA:0@", "A://[email]:[redacted]@"},
+	{"email, password and host with no scheme", "user al@example.com:hunter2@host", "user [email]:[redacted]@host"},
+	{"url password up to the last @", "dial postgres://al:hunter2@db.local:5432/app", "dial postgres://al:[redacted]@db.local:5432/app"},
+	{"email user name and a port", "https://al@host.io:8080/x", "https://[email]:8080/x"},
 	{"secret-named variable", "export GITHUB_TOKEN=abc123", "export GITHUB_TOKEN=[redacted]"},
 	{"secret-named flag, quoted", "run --password='p w' now", "run --password='[redacted]' now"},
 	{"secret-named value, double quotes", `TOKEN="a b"`, `TOKEN="[redacted]"`},

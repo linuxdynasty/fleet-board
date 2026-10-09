@@ -17,7 +17,7 @@ func FuzzText(f *testing.F) {
 			f.Add(tc.in, "/Users/al", limit)
 		}
 	}
-	for _, tc := range homeCases {
+	for _, tc := range append(append([]homeCase{}, homeCases...), unsettledCases...) {
 		f.Add(tc.in, tc.home, uint16(1024))
 		if n := len(tc.want); n <= math.MaxUint16 {
 			f.Add(tc.in, tc.home, uint16(n))
