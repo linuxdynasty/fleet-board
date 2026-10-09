@@ -4,10 +4,13 @@ Issue #51, plan item 0.6, spec 01 A6. Question: how can `fleet-agent` notice,
 without cgo, that its machine just woke from sleep or changed network, so it
 reconnects at once instead of waiting for a dead connection to time out?
 
-**Status:** cost measured on the Mac mini; routing-socket delivery measured with
-a no-root trigger. **No real sleep or real network change has been observed
-yet.** Those need the owner (sudo, or putting a machine to sleep): see
-[OWNER RUN NEEDED](#owner-run-needed).
+**Status: Done (plan item 0.6, ADR 0029).** Cost measured on the Mac mini;
+routing-socket delivery measured with a no-root trigger; real network changes
+seen on omarchy (Linux) and the MacBook (macOS) by the push socket and the
+interface poll; Linux push noise measured. **No real sleep has been observed,
+and none will be forced:** the owner does not put any machine to sleep. Wake
+detection rests on the Go runtime and OS clock rules below, fake-clock tests in
+PR 4, and a check on the first natural laptop sleep (#132).
 
 ## The four methods
 
@@ -34,9 +37,11 @@ hard-coded kernel constants against `x/sys/unix`.
 ## Libraries
 
 - `golang.org/x/sys` v0.48.0 (`unix.SysctlTimeval`, `unix.ClockGettime`,
-  routing and netlink sockets). **Not listed in ADR 0020 or 0023; needs an ADR
-  line before product use.** It is already in the product's module graph:
-  `google.golang.org/grpc` v1.84.0 requires `golang.org/x/sys` v0.47.0.
+  routing and netlink sockets). It is already a direct requirement of the
+  product's `go.mod` (v0.48.0), used by the hub's peer-credential check
+  (`internal/hub/api/peercred_*.go`) and terminal code
+  (`internal/hub/backup/`), with no ADR line until
+  [ADR 0029](../../../docs/adr/0029-wake-and-network-change-detection.md).
 - Nothing else. No cgo: every target builds with `CGO_ENABLED=0`.
 - Considered, not built: Linux logind `PrepareForSleep` over D-Bus would give an
   exact suspend/resume push but needs `github.com/godbus/dbus/v5` (another ADR
@@ -130,112 +135,153 @@ and the kernel-to-listener delivery is under a millisecond. This proves delivery
 speed for a message the kernel does send; it does not prove which messages macOS
 sends on a real link or address change or on wake.
 
+## Live observations (2026-10-08 to 2026-10-09)
+
+Both probes ran `/tmp/wakenet -interval 5s -duration 48h` with all four methods;
+the MacBook run adds `-route-exec`.
+
+- omarchy: Linux, wired `enp3s0`, NVIDIA GTX 1080 Ti; started 2026-10-08
+  02:15:25.
+- MacBook: macOS 27.0.1, arm64; started 2026-10-08 14:15:50.
+
+Both were still running when these numbers were taken (2026-10-09, about
+11:10), so neither has printed its `summary` line yet.
+
+**Real network changes.** The push socket saw each one at once; the 5 s poll saw
+it 1 to 5 s later. Each burst of push messages lasted under 10 ms.
+
+- omarchy, 05:10:30 (2026-10-08): a VPN interface `tun0` came up. Push:
+  `RTM_NEWLINK` down then up, index 2387, at 05:10:30 (then two `RTM_NEWADDR` on
+  index 2387 within 9 ms); ifpoll: `net_change` `iface_added` `tun0` at
+  05:10:31.
+- MacBook, 2026-10-08 17:03:24.084: push `RTM_DELADDR` and `RTM_IFINFO` down
+  (index 36, `utun10`); ifpoll `iface_removed` `utun10` at 17:03:25.437
+  (+1.35 s).
+- MacBook, 2026-10-09 08:54:25.749/.754/.755: push `RTM_IFINFO` down, down, up
+  and `RTM_NEWADDR` (index 36); ifpoll `iface_added` `utun10` at 08:54:30.661
+  (+4.9 s).
+
+**Linux push noise.** omarchy logged 972 `RTM_NEWADDR` "relevant" messages in
+32.9 h, 970 on index 2 (`enp3s0`) and 2 on index 2387 (`tun0`). Gaps between
+them: p10 4.6 s, p50 38.5 s, p90 114.5 s. ifpoll saw no change for them.
+`enp3s0` has a dynamic IPv6 ULA (a private IPv6 address, `fdc7:…/64`,
+`valid_lft` about 1690 s) refreshed by router advertisements, and each refresh
+re-sends `RTM_NEWADDR`. So a push message alone must never mean "reconnect".
+
+**A gap in the omarchy log.** There are no lines from 2026-10-08 13:33:09 to
+2026-10-09 10:05:52 (20.6 h). The last line before the gap stops in the middle
+of a record, and the next record follows on the same line (raw line 898, kept in
+the extract). The same process wrote the same file the whole time (checked with
+`ps` and `/proc/<pid>/fd/1` on 2026-10-09), so its writes most likely failed
+during the gap. omarchy's `/tmp` is a 32 GB in-memory file system, 72 % full
+when checked; a full `/tmp` is a likely cause but was not checked. So only about
+12.4 of the 32.9 hours were logged, and the 972 messages and the gaps above come
+from those hours (the 20.6 h hole is only the largest gap).
+
+**One aborted suspend** on omarchy, 2026-10-08 15:56:02 to 15:56:03: the NVIDIA
+driver refused ("nv_pmops_suspend returns -5") and "PM: suspend exit" came
+about 1 s later. It falls inside the log gap, so the probe's log cannot show what
+the probe saw. The kernel's own record of time asleep (`CLOCK_BOOTTIME` minus
+`CLOCK_MONOTONIC`) read 0.0 s on 2026-10-09, so the kernel counted no sleep, and
+a clock gap of about 1 s is under the 2 s threshold.
+
+**No wake.** Zero `wake`, `wake_suspected` or `wall_step_back` events on either
+machine (no sleep happened; on omarchy, over the logged hours). The earlier Mac
+mini rounds also had zero false positives.
+
+Extracts of the deciding lines (the raw logs are not committed):
+[omarchy-live-extract.jsonl](omarchy-live-extract.jsonl) holds raw lines 1 to
+7, 254 to 258, 897 to 899 and 980 of 980 (start, three sample refreshes, the
+`tun0` burst, the lines around the gap, the last line; the gap line is not valid
+JSON). [macbook-live-extract.jsonl](macbook-live-extract.jsonl) is the whole
+12-line MacBook log, with its host name shortened to `MacBook`.
+
+Counting commands:
+
+```bash
+python3 - wakenet-linux-wake.jsonl <<'EOF'
+import collections, json, re, sys
+from datetime import datetime
+ts, idx = [], collections.Counter()
+for line in open(sys.argv[1]):
+    try:
+        d = json.loads(line)
+    except ValueError:
+        continue  # the cut-off line at the gap
+    if d.get("event") == "RTM_NEWADDR":
+        ts.append(datetime.fromisoformat(re.sub(r"(\.\d{6})\d+", r"\1", d["time"])))
+        idx[d["index"]] += 1
+gaps = sorted((b - a).total_seconds() for a, b in zip(ts, ts[1:]))
+n = len(gaps)
+print(len(ts), dict(idx), round((ts[-1] - ts[0]).total_seconds() / 3600, 1))
+print(round(gaps[n // 10], 1), round(gaps[n // 2], 1), round(gaps[9 * n // 10], 1), round(gaps[-1]))
+EOF
+# 972 {2: 970, 2387: 2} 32.9
+# 4.6 38.5 114.5 74013
+journalctl -k --since "2026-10-08 13:25" --until "2026-10-09 10:10" -o short-iso | rg -i "PM: |nv_pmops"
+python3 -c "import time; print(round(time.clock_gettime(time.CLOCK_BOOTTIME) - time.clock_gettime(time.CLOCK_MONOTONIC), 3))"   # -0.0
+```
+
+## Why the wake method holds without a live sleep
+
+Go 1.27.1 source, paths relative to `$(go env GOROOT)`:
+
+- On macOS, Go's monotonic clock is `mach_absolute_time` on arm64 and amd64:
+  `nanotime1` (`src/runtime/sys_darwin.go:286-304`) calls a trampoline that
+  calls `libc_mach_absolute_time` (`src/runtime/sys_darwin_arm64.s:145-147`,
+  `src/runtime/sys_darwin_amd64.s:90-92`). The wall clock is `CLOCK_REALTIME`
+  (`src/runtime/sys_darwin_arm64.s:137-140`).
+- Apple's SDK header `usr/include/mach/mach_time.h:58-62` describes
+  `mach_continuous_time` as "like mach_absolute_time, but advances during
+  sleep". So `mach_absolute_time` stops while the Mac sleeps.
+- On Linux, Go's monotonic clock is `CLOCK_MONOTONIC`
+  (`src/runtime/sys_linux_amd64.s:270`, `src/runtime/sys_linux_arm64.s:355`).
+  The `clock_gettime(2)` man page (man-pages 6.19) says `CLOCK_MONOTONIC` "does
+  not count time that the system is suspended", and `CLOCK_BOOTTIME` "also
+  includes any time that the system is suspended".
+- Go's own `time` package agrees (`src/time/time.go:54-59`): "On some systems
+  the monotonic clock will stop if the computer goes to sleep."
+
+So after a sleep of S seconds the wall clock has moved about S seconds more than
+the monotonic clock, which is what `clock` measures (`jump.go:26-35`), and the
+kernel's sleep record changes, which is what `sleepmark` reads. Both have table
+tests with fake readings. If a wake is missed anyway, transport keepalive (ADR
+0004) finds the dead connection within about 30 s, and the snapshot on connect
+puts the state right; a false wake costs one reconnect.
+
 ## Not tested here, and why
 
 | Item | Why not |
 |---|---|
-| Real sleep and wake (macOS) | Putting this machine to sleep is forbidden; the Mac mini has not slept since boot. Needs the MacBook run below. |
-| Suspend and resume (Linux) | No access to other machines; needs the omarchy run below. |
-| Network-change latency of `ifpoll` and `push` with a real interface or address change | Every trigger that changes an interface or address needs root: `ifconfig lo0 alias` and `route add` need sudo, and creating a `utun` as a normal user fails with "operation not permitted" (tested with a throwaway program; nothing was created). A ping to unassigned `127.0.0.2` produced no routing message. Turning Wi-Fi or Ethernet off is forbidden. |
-| Linux numbers of any kind | The Linux binary builds and `GOOS=linux go vet` passes; the netlink parser has table tests; nothing ran on Linux. |
+| Real sleep and wake (macOS and Linux) | No machine is put to sleep for this; the Mac mini has not slept since boot, and no laptop slept during the live runs. Checked on the first natural sleep (#132). |
+| Network-change latency from a triggered change | Every trigger that changes an interface or address needs root: `ifconfig lo0 alias` and `route add` need sudo, and creating a `utun` as a normal user fails with "operation not permitted" (tested with a throwaway program; nothing was created). A ping to unassigned `127.0.0.2` produced no routing message. Turning Wi-Fi or Ethernet off is forbidden. Real changes were seen instead (live observations). |
+| Linux CPU cost | The omarchy run had not printed its `summary` line when these numbers were taken. |
 | Wake latency of `clock` and `sleepmark` | Theory: Go timers run on the monotonic clock, which stops during sleep, so the first tick after wake fires within one interval (≤ 5 s). Not observed. |
-| macOS dark wake (Power Nap) | Unknown whether `kern.waketime` moves on a dark wake. The MacBook run shows it if `pmset -g log` lists a `DarkWake`. |
+| macOS dark wake (Power Nap) | Unknown whether `kern.waketime` moves on a dark wake. |
+| The MacBook's kernel sleep record | Not read: no remote access to the MacBook from the Mac mini. Its log shows no wake. |
 
-## OWNER RUN NEEDED
+## Opportunistic check
 
-The branch `spike/0.6-wake-netchange` is local until the coordinator pushes it.
-Build on the Mac mini from the worktree and copy the binaries (`scp` adds no
-quarantine flag; if a binary arrives another way, run
-`xattr -d com.apple.quarantine /tmp/wakenet` once):
+If a laptop running `wakenet` or `fleet-agent` sleeps on its own, keep its log
+and the OS record of that sleep (`pmset -g log` on macOS, the `PM: suspend exit`
+journal line on Linux), and post them on #132. Never put a machine to sleep for
+this.
 
-```bash
-cd /Volumes/Development/personal-repos/fleet-board-worktrees/prep-0.6-wake/spikes/wakenet
-CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -o /tmp/wakenet-darwin-arm64 .
-CGO_ENABLED=0 GOOS=linux  GOARCH=amd64 go build -o /tmp/wakenet-linux-amd64 .
-scp /tmp/wakenet-darwin-arm64 192.168.1.118:/tmp/wakenet
-scp /tmp/wakenet-linux-amd64  192.168.1.150:/tmp/wakenet
-```
-
-(Use `GOARCH=amd64` for an Intel Mac and `GOARCH=arm64` for an ARM Linux box.)
-
-### Step 0 (optional, safe on any Mac, including this Mac mini): network-change latency
-
-Adds and removes a loopback alias five times; it does not touch real
-connectivity. Needs sudo once (`sudo -v` caches it so `-n` does not prompt).
+Build `wakenet` as in [Commands run](#commands-run-all-rc0), copy it to the
+laptop as `/tmp/wakenet` (`scp` adds no quarantine flag; if a binary arrives
+another way on macOS, run `xattr -d com.apple.quarantine /tmp/wakenet` once),
+and leave it running inside tmux:
 
 ```bash
-sudo -v
-/tmp/wakenet -methods ifpoll,push -interval 5s \
-  -trigger 'sudo -n /sbin/ifconfig lo0 alias 10.254.254.1 netmask 255.255.255.255' \
-  -untrigger 'sudo -n /sbin/ifconfig lo0 -alias 10.254.254.1' \
-  -repeat 5 -duration 2m | tee /tmp/wakenet-mac-net.jsonl
-ifconfig lo0 | grep 10.254.254.1   # must print nothing (alias removed)
+/tmp/wakenet -interval 5s -duration 48h | tee /tmp/wakenet-wake.jsonl   # add -route-exec on macOS
+# after a sleep and wake happened on their own:
+pmset -g log | rg " (Sleep|Wake|DarkWake) " | tail -8                    # macOS
+sysctl kern.waketime kern.sleeptime                                      # macOS
+journalctl -k -b -o short-iso-precise | rg "PM: suspend (entry|exit)"   # Linux
+cat /sys/power/mem_sleep                                                 # Linux: the mode in [brackets]
 ```
 
-### Step 1: real sleep and wake on the hub MacBook (192.168.1.118)
-
-If `fleetd` already runs there under `caffeinate -s`, the Mac will not sleep on
-AC power: stop it or unplug first (`pgrep -fl caffeinate` shows it).
-
-```bash
-/tmp/wakenet -interval 5s -route-exec | tee /tmp/wakenet-mac-wake.jsonl
-```
-
-1. Leave it running. Apple menu > Sleep (or close the lid).
-2. Wait at least 2 minutes. Wake the Mac and unlock it.
-3. Wait 30 seconds, then press Ctrl-C (the `summary` line prints).
-4. Optional network change: run the command again, turn Wi-Fi off and on from
-   the menu bar (this drops the laptop's own network for a few seconds), wait
-   30 s, Ctrl-C, saving to `/tmp/wakenet-mac-wifi.jsonl` instead.
-5. Then run:
-
-```bash
-pmset -g log | grep -E " (Sleep|Wake|DarkWake) " | tail -8
-sysctl kern.waketime kern.sleeptime
-```
-
-### Step 2: suspend/resume and a network change on Linux (omarchy, 192.168.1.150)
-
-Suspending omarchy pauses any running Codex goal and drops its connections;
-pick a time with no goal running. Run inside tmux so an SSH drop does not kill
-the probe.
-
-```bash
-tmux new -s wakenet
-cat /sys/power/mem_sleep                 # note which mode is in [brackets]
-/tmp/wakenet -interval 5s | tee /tmp/wakenet-linux-wake.jsonl
-```
-
-In a second tmux window (Ctrl-b c):
-
-```bash
-sudo rtcwake -m mem -s 90                # suspend now; the RTC alarm wakes it after 90 s
-# if rtcwake is missing: systemctl suspend, then wake with a key press
-```
-
-After it wakes, wait 30 s, press Ctrl-C in the first window, then:
-
-```bash
-journalctl -k -b --since "-15 min" -o short-iso-precise | grep -E "PM: suspend (entry|exit)"
-```
-
-Network change on Linux (loopback address, does not touch real connectivity):
-
-```bash
-sudo -v
-/tmp/wakenet -methods ifpoll,push -interval 5s \
-  -trigger 'sudo -n ip addr add 10.254.254.1/32 dev lo' \
-  -untrigger 'sudo -n ip addr del 10.254.254.1/32 dev lo' \
-  -repeat 5 -duration 2m | tee /tmp/wakenet-linux-net.jsonl
-ip addr show dev lo | grep 10.254.254.1  # must print nothing (address removed)
-```
-
-### What to send back
-
-The whole `/tmp/wakenet-*.jsonl` files (they hold timestamps, interface names
-and local addresses only; by default push logs only relevant messages), plus the
-`pmset`, `sysctl`, `/sys/power/mem_sleep` and `journalctl` output above. The
-lines that decide the result:
+The lines that decide it:
 
 - `"event":"wake_suspected"` (clock) and `"event":"wake"` (sleepmark), with
   `latency_ms` on macOS; on Linux compare their `time` with the journal's
@@ -243,31 +289,46 @@ lines that decide the result:
 - `"event":"net_change"` / `"default_route_change"` (ifpoll) and relevant
   `RTM_*` lines (push), with `since_wake_ms` on macOS: does the push socket see
   the wake as a link or address change, and how soon?
-- `"event":"detected"` lines: per-method latency from each trigger.
 - `"event":"summary"`: CPU cost on that machine.
 
-## Recommendation (proposed, not yet observed on a real wake)
+## Decision (ADR 0029)
 
-- **macOS:** wake from `sleepmark` (`kern.waketime` read every 5 s through
-  `x/sys/unix`): exact wake time, immune to clock steps, about 0.04 ms CPU per
-  second. Keep `clock` as the zero-dependency fallback (about 0.03 ms/s).
-  Network change from the `PF_ROUTE` push socket, filtered to link, address and
-  default-route messages and debounced (bursts are expected), plus ignoring
-  noisy interfaces (`awdl`, `llw`, `utun`, `bridge`) if the owner runs show
-  them flapping. No `ifpoll` loop and no `route` exec: polling costs about 3.5×
-  the push socket here and the exec doubles that.
-- **Linux:** wake from `sleepmark` (`CLOCK_BOOTTIME − CLOCK_MONOTONIC` every
-  5 s), `clock` as fallback. Network change from `NETLINK_ROUTE` with the link,
-  address and route groups (no root needed). If 5 s after resume is too slow,
-  logind `PrepareForSleep` over D-Bus is the exact push source, at the cost of
-  `godbus/dbus` and an ADR line.
-- Both: one new direct dependency, `golang.org/x/sys`, which needs an ADR line.
-  Whatever the owner runs show, any wake or relevant network event should only
-  trigger "reconnect now"; a missed event still falls back to the normal
-  heartbeat timeout, so a false positive costs one reconnect.
+[ADR 0029](../../../docs/adr/0029-wake-and-network-change-detection.md) holds
+the decision; plan row 4 builds it.
+
+- **Wake (both systems):** one check every 5 s with two signals. Clock: the
+  wall clock moved 2 s or more past the monotonic clock (`jump.go:26-35`); a
+  wall clock stepped back is logged, never a wake. Sleep record: Linux
+  `CLOCK_BOOTTIME − CLOCK_MONOTONIC` grew by 2 s or more; macOS `kern.waketime`
+  changed. Product code raises the spike's 500 ms sleep-record tolerance
+  (`methods.go:115`) to 2 s. Either signal starts one reconnect per check, even
+  while connected (close the stream, reconnect with `CONNECT_REASON_WAKE`).
+- **Network change:** the push socket (`PF_ROUTE`, `NETLINK_ROUTE`) is only a
+  hint. After a hint, wait until 500 ms pass with no further hint (never more
+  than 2 s after the first), then read the interfaces that are up and running,
+  their addresses and the default route, and compare with the last reading
+  (`ifdiff.go:56-97`). No difference, no action. Not connected: a real
+  difference resets the backoff and starts an attempt after the 20 to 120 ms
+  random delay (the 5 s minimum between connects still applies). Connected: only
+  the loss of the connection's own local address from every interface that is
+  up, or a changed default route, reconnects. A netlink `ENOBUFS` counts as a
+  hint.
+- **Interface poll:** fallback only, every 15 s, only when the push socket
+  cannot be opened or stops working; logged once and reported by `doctor`. No
+  always-on poll loop (polling costs about 3.5× the push socket here).
+- **No exec, no cgo.** The macOS default route must not come from running
+  `route` (`sys_darwin.go:35-44` is spike-only): read the routing table through
+  `x/sys`, or use default-route push messages (`pushparse.go:68-74`). Row 4
+  picks one, with a fixture test. `x/net/route`, `godbus/dbus` and `purego` are
+  not allowed without another ADR.
+- All of this only makes reconnecting faster. A missed event still falls back
+  to transport keepalive (ADR 0004: a 10 s ping, a 20 s timeout), so a missed
+  wake costs at most about 30 s, and a false positive costs one reconnect.
 
 ## What this does not prove
 
-Wake detection on any machine; which push messages macOS and Linux send on a
-real link or address change, or on wake; dark-wake behavior; Linux cost; cost on
-a laptop with Wi-Fi roaming, where `awdl0` and other interfaces may flap.
+Wake detection on any real machine; dark-wake behavior (`kern.waketime` on a
+macOS Power Nap); whether Linux `s2idle` stops `CLOCK_MONOTONIC`; how late Go's
+ticker fires after a wake; Wi-Fi roaming flaps on a laptop, where `awdl0` and
+other interfaces may come and go; Linux CPU cost, until the 48 h `summary` lines
+are recorded; and what the omarchy probe saw during its 20.6 h log gap.
