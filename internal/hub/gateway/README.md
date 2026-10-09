@@ -13,7 +13,10 @@ srv, err := gateway.NewServer(gateway.ServerOptions{
 ```
 
 - **TLS 1.3 only**, with the certificate from an atomic pointer, so a
-  re-issue takes effect on the next handshake without a restart.
+  re-issue takes effect on the next handshake without a restart. The chain
+  sent is the server certificate, then the CA: an enrolling agent holds only
+  the CA's SHA-256 from its token and finds the root in the chain by it (02g
+  step 2).
 - **Client certificates** are optional (an enrolling agent has none) and,
   when sent, must chain to the hub CA with client-auth usage
   (`VerifyClientCertIfGiven`; the hub's own server certificate therefore fails).

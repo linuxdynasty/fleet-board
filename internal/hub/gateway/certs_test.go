@@ -72,6 +72,9 @@ func TestATickPastTwoThirdsSwapsTheServedCertificate(t *testing.T) {
 	if err := got.CheckSignatureFrom(f.auth.Cert); err != nil {
 		t.Errorf("the new certificate is not signed by the stored CA: %v", err)
 	}
+	if tc, err := c.GetCertificate(nil); err != nil || len(tc.Certificate) != 2 || !bytes.Equal(tc.Certificate[1], f.id.CACert) {
+		t.Error("the re-issued chain does not carry the CA after the server certificate")
+	}
 	if want := clk.now().Add(90*24*time.Hour - 5*time.Minute).Truncate(time.Second); !got.NotAfter.Equal(want) {
 		t.Errorf("new NotAfter %v, want %v", got.NotAfter, want)
 	}

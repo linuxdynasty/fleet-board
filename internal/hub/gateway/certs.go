@@ -77,7 +77,7 @@ func NewCerts(opts CertsOptions) (*Certs, error) {
 	if err != nil {
 		return nil, fmt.Errorf("gateway: counter: %w", err)
 	}
-	cert, err := tlsCert(opts.Identity.ServerCert, opts.Identity.ServerKey)
+	cert, err := tlsCert(opts.Identity.ServerCert, opts.Identity.ServerKey, auth.Cert.Raw)
 	if err != nil {
 		return nil, err
 	}
@@ -85,7 +85,10 @@ func NewCerts(opts CertsOptions) (*Certs, error) {
 	return c, nil
 }
 
-func tlsCert(certDER, keyDER []byte) (*tls.Certificate, error) {
+// tlsCert is the served chain: the server certificate, then the CA. An
+// enrolling agent knows only the CA's SHA-256 (02g step 2) and finds the
+// root in the chain by it.
+func tlsCert(certDER, keyDER, caDER []byte) (*tls.Certificate, error) {
 	leaf, err := x509.ParseCertificate(certDER)
 	if err != nil {
 		return nil, fmt.Errorf("gateway: parse server certificate: %w", err)
@@ -94,7 +97,7 @@ func tlsCert(certDER, keyDER []byte) (*tls.Certificate, error) {
 	if err != nil {
 		return nil, fmt.Errorf("gateway: parse server key: %w", err)
 	}
-	return &tls.Certificate{Certificate: [][]byte{certDER}, PrivateKey: key, Leaf: leaf}, nil
+	return &tls.Certificate{Certificate: [][]byte{certDER, caDER}, PrivateKey: key, Leaf: leaf}, nil
 }
 
 // GetCertificate is tls.Config.GetCertificate: the current certificate.
@@ -138,7 +141,7 @@ func (c *Certs) reissue(ctx context.Context, cur *tls.Certificate) (*tls.Certifi
 	if err != nil {
 		return nil, err
 	}
-	next, err := tlsCert(sc.CertDER, sc.KeyDER)
+	next, err := tlsCert(sc.CertDER, sc.KeyDER, c.auth.Cert.Raw)
 	if err != nil {
 		return nil, err
 	}
