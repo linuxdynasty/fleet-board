@@ -193,6 +193,8 @@
   {"token": "SHA256SUMS", "kind": "file", "reason": "release checksum file name (02j)", "files": ["docs/specs/02j-hub-runtime.md"]},
   {"token": "ProgramArguments", "kind": "os", "reason": "launchd plist key (02j)", "files": ["docs/specs/02j-hub-runtime.md"]},
   {"token": "Linger", "kind": "os", "reason": "loginctl user property (02j)", "files": ["docs/specs/02j-hub-runtime.md"]},
+  {"token": "CLOCK_BOOTTIME", "kind": "os", "reason": "Linux clock_gettime clock that counts sleep (02i Clocks)", "files": ["docs/specs/02i-delivery-and-sequencing.md"]},
+  {"token": "CLOCK_MONOTONIC", "kind": "os", "reason": "clock_gettime clock; on Linux it stops during sleep (02i Clocks)", "files": ["docs/specs/02i-delivery-and-sequencing.md"]},
   {"token": "MiB", "kind": "unit", "reason": "size unit in a pragma value (04)", "files": ["docs/specs/04-technology-review.md"]},
   {"token": "CSR", "kind": "abbreviation", "reason": "certificate signing request (03f)", "files": ["docs/specs/03f-hub-internals.md"]},
   {"token": "DST", "kind": "abbreviation", "reason": "daylight saving time (03i)", "files": ["docs/specs/03i-routines.md"]},

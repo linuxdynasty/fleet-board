@@ -232,7 +232,7 @@ message HelloAck {
   string hub_version = 1;
   // Hub time, the authority for deadlines and for ordering data across
   // machines; the agent evaluates not_after_time in hub time (hub_time plus
-  // local monotonic elapsed).
+  // the time elapsed since, sleep included: 02i, "Clocks").
   google.protobuf.Timestamp hub_time = 2;
   // Connection epoch: max(the hub's stored epoch, Hello.last_epoch) + 1 on
   // every new stream for this machine, so it only ever increases, restore
