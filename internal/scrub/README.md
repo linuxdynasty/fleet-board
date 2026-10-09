@@ -198,9 +198,10 @@ replay. Only command results, command progress and probe health carry free
 text, and the cost grows with the length (1 KiB is the cap, not the usual
 size). If every event in that burst carried a full 1 KiB message holding
 secrets, scrubbing would need about 3.5 cores of this machine (2,500 × the
-1,417 µs mean; 1.4 cores before this change). The hub's own pass is cheaper
-by construction, not by measurement: text the agent already scrubbed settles
-in its first round, so it costs one round, not two. So the hub scrubs in its ingest
+1,417 µs mean; 1.4 cores before this change). The hub's own pass is cheaper:
+text the agent already scrubbed settles in its first round, so it costs one
+round, not two. `BenchmarkTextScrubbed` measures it at 648 to 669 µs per 1 KiB
+message (5 runs), about 1.7 cores for the same all-1-KiB burst. So the hub scrubs in its ingest
 goroutines, before it hands a batch to its single writer, never inside the
 write transaction, where it would hold the writer for that long. The agent
 scrubs one message at a time as it writes it.

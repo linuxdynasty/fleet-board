@@ -106,3 +106,15 @@ func BenchmarkTextMessage(b *testing.B) {
 		scrub.Text(msg, opt)
 	}
 }
+
+// BenchmarkTextScrubbed is the hub's pass over text the agent already
+// scrubbed: it settles in the first round, so it costs one round.
+func BenchmarkTextScrubbed(b *testing.B) {
+	line := "open /Users/al/repos/x: push to https://github.com/o/r?ref=main failed for al@example.com; "
+	opt := scrub.Options{MaxBytes: 1024, Home: "/Users/al"}
+	msg := scrub.Text(strings.Repeat(line, 1024/len(line)+1)[:1024], opt)
+	b.SetBytes(int64(len(msg)))
+	for b.Loop() {
+		scrub.Text(msg, opt)
+	}
+}
