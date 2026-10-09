@@ -34,8 +34,9 @@ What `Text` does, in order:
    round 2 sees the query value run on through `;-----END`. Rounds are
    bounded at 4 (3 that change the text and 1 that confirms). Redaction can
    make text longer (`a=b` becomes `a=[redacted]`), so the bound, not the
-   length, is what ends the loop. Of 3 million random inputs joined from up
-   to 28 pieces of these shapes, none needed more than 2 changing rounds.
+   length, is what ends the loop. In a one-off probe (not kept in the tree)
+   of 3 million random inputs joined from up to 28 of the pieces in
+   `settle_test.go`, none needed more than 2 changing rounds.
    Text that has still not settled after 4 rounds becomes `[redacted]` whole,
    rather than being sent with a secret a further round might have found.
 6. Cuts the result to `MaxBytes`. The cut never splits a character or a
@@ -90,7 +91,7 @@ message. Each line is a pattern in `rules.go`. This README is the full list;
 | Private key block | `-----BEGIN … PRIVATE KEY-----` (PEM) or `… PRIVATE KEY BLOCK-----` (PGP) to its END line, or to the end of the text when cut short → `[redacted]` | the hub's CA key and SSH keys (02g); signing keys |
 | Secret-named value | see below | a variable, flag or key whose name ends in a secret word |
 | URL query value | `?code=abc&state=x` → `?code=[redacted]&state=[redacted]`; a fragment too: `#code=abc` → `#code=[redacted]` | 02e: every value, not just ones that look secret. OAuth redirects carry codes and tokens in the fragment |
-| Password in a URL | `postgres://al:hunter2@db` → `postgres://al:[redacted]@db`; `https://al@example.com:pw@host` → `https://[email]:[redacted]@host`; with no scheme, `al@example.com:pw@host` → `[email]:[redacted]@host` | 02e; up to the last `@` before the path. The user name may be an email; with no scheme, only an email user name marks the shape |
+| Password in a URL | `postgres://al:hunter2@db` → `postgres://al:[redacted]@db`; `https://al@example.com:pw@host` → `https://[email]:[redacted]@host`; with no scheme, `al@example.com:pw@host` → `[email]:[redacted]@host` | 02e; up to the last `@` before the path. The user name may hold `@` (an email, or `al@corp`); with no scheme, only an email user name marks the shape |
 | Token as a URL user name | `https://ghp_…:x-oauth-basic@github.com` → `https://ghp_[redacted]:[redacted]@github.com` | the user name is scrubbed by the rules above |
 | Email | `al@example.com` → `[email]` | 02e; 01e hides emails by default |
 
@@ -197,9 +198,9 @@ replay. Only command results, command progress and probe health carry free
 text, and the cost grows with the length (1 KiB is the cap, not the usual
 size). If every event in that burst carried a full 1 KiB message holding
 secrets, scrubbing would need about 3.5 cores of this machine (2,500 × the
-1,417 µs mean; 1.4 cores before this change). The hub's own pass is cheaper:
-text the agent already scrubbed settles in its first round, so it costs one
-round, not two. So the hub scrubs in its ingest
+1,417 µs mean; 1.4 cores before this change). The hub's own pass is cheaper
+by construction, not by measurement: text the agent already scrubbed settles
+in its first round, so it costs one round, not two. So the hub scrubs in its ingest
 goroutines, before it hands a batch to its single writer, never inside the
 write transaction, where it would hold the writer for that long. The agent
 scrubs one message at a time as it writes it.

@@ -69,7 +69,8 @@ func TestTextSettlesOnFragments(t *testing.T) {
 	for shard := range uint64(shards) {
 		t.Run(fmt.Sprintf("seed %d", shard), func(t *testing.T) {
 			t.Parallel()
-			settlesOnFragments(t, rand.New(rand.NewPCG(143, shard)), perShard)
+			r := rand.New(rand.NewPCG(143, shard)) //nolint:gosec // G404: a fixed seed makes test inputs repeatable; nothing secret depends on it
+			settlesOnFragments(t, r, perShard)
 		})
 	}
 }

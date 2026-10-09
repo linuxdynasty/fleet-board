@@ -36,7 +36,7 @@ func settle(text string, opt Options, rounds int) string {
 		return ""
 	}
 	home := cleanHome(opt.Home)
-	s := strings.ToValidUTF8(text, "�")
+	s := strings.ToValidUTF8(text, "\uFFFD")
 	// Home goes before secrets, so a path inside a secret's shape is seen as
 	// "~". A redaction can delete the byte that stopped another rule (a ],
 	// a quote, a #) or that made home part of a longer name, so the round
@@ -50,7 +50,8 @@ func settle(text string, opt Options, rounds int) string {
 		s = replaceHome(next, home)
 	}
 	// Text that has not settled may still hold a secret a further round would
-	// find. It goes whole, which also settles: no rule matches a placeholder.
+	// find. It goes whole, which also settles: no rule matches a placeholder
+	// alone.
 	return cut(redacted, nil, "", opt.MaxBytes)
 }
 
