@@ -162,6 +162,23 @@ would reject the new epoch's seq 1..41.
   `command_id` is answered from the agent's log before any `seq` check
   ([02](02-contracts.md#delivery-semantics)).
 
+## What agent.db keeps
+
+Plan row 4 settles two tables of `agent.db` ([04](04-technology-review.md)
+Q9); the event ring, probe assignments, goal registry and the rest of 03's
+W2 persistence table arrive with their rows.
+
+| Table | Holds | Rule |
+|---|---|---|
+| `agent_state`, one row | `install_id` (minted when the file is created), `seq_hwm`, the three `EventCounters`, and `last_epoch` and `last_applied_command_seq` (sent as `Hello.last_epoch` and `Hello.last_applied_command_seq`) | Nothing goes backwards: a lower `seq_hwm` or counter is ignored; an epoch at or below the last is refused (`epoch_regressed`) and a new epoch starts its command seq at 0; a seq of another epoch is `EPOCH_MISMATCH`, one at or below the last of the epoch `SEQ_REPLAYED`. A trigger in the file refuses any step back and a changed `install_id` |
+| `command_log` | per `command_id` (the key): kind, epoch, seq, received time, `not_after_time`, status (`received`, `running`, `finished`), step reached, the encoded `CommandResult`, finished time, and the `ResultAck` time | Written before `CommandAck`. A known `command_id` saves nothing and is answered from its entry; the first result is kept and a trigger refuses a change. Pruned to the last 10,000 or 7 days ([defaults](defaults.md)) |
+
+Losing `agent.db` is a re-install: a new `install_id` and `seq_hwm` from 0,
+which the hub treats as an agent rollback (rule 3 above). Enrollment is not
+in it: the key, certificate, CA, `machine_id`, salt, `fleet_id` and the
+cached hub address are plain files in the state folder (04 Q9), so they
+survive.
+
 ## Gaps: shedding is not loss
 
 The hub **never** compares seq numbers hole by hole. It learns what was lost
