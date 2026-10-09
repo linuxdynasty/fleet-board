@@ -9,8 +9,10 @@
   "enroll.": "docs/specs/03-workflows.md",
   "http.": "docs/specs/05b-observability.md",
   "hub.": "docs/specs/05b-observability.md",
+  "netchange.": "docs/specs/03-workflows.md",
   "store.": "docs/specs/05b-observability.md",
-  "tls.": "docs/specs/05b-observability.md"
+  "tls.": "docs/specs/05b-observability.md",
+  "wake.": "docs/specs/03-workflows.md"
  },
  "metrics": {
   "auth_failures_": "docs/specs/05b-observability.md",

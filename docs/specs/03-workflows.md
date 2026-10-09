@@ -285,10 +285,26 @@ re-enroll rule are in [02g](02g-agent-security.md#machine-lifecycle-revoke-and-d
   enroll line carries the token, its secret, any part of its hash, or the
   facts. A revoked certificate at the handshake is 05b's
   `tls.client_cert_revoked`.
+- Wake and network change (A6, ADR 0029), agent logs:
+  `wake.detected{signal, asleep_delta_ms, wall_gap_ms}` (`signal` is
+  `asleep`, `wall_clock` or `both`), `wake.wall_clock_back{wall_gap_ms}`,
+  `wake.clock_read_failed{err}`; `netchange.detected{source, hints, changes,
+  kinds, interfaces}` (`source` is `push` or `poll`; interface names, never
+  addresses), `netchange.unchanged{source, hints}` and
+  `netchange.baseline{source, interfaces}` at debug level,
+  `netchange.read_failed{source, err}`, `netchange.push_off{err, poll_s}` once
+  when the push socket cannot be opened or stops working, then the connection
+  loop's decision, `netchange.acted{why, close_stream, changes}` or
+  `netchange.ignored{why, changes}`. No counter: these are not wire events,
+  and the attempts they start are counted by `fleet_agent_connect_attempts_total`.
 
 At 3 AM: "why did `fleet-agent enroll` fail?" → `enroll.refused` (the reason
 the agent printed, and the peer) or `enroll.failed` (the hub's step). "machine X offline since when, why?" → `fleet_hub_machine_state` plus
 the agent's `connect.attempt` logs (last candidate tried, last TLS error).
+"why did machine X reconnect just now?" → the agent's `wake.detected` or
+`netchange.acted` (its `why`); "why did it not reconnect after a network
+change?" → `netchange.ignored` or `netchange.unchanged`, and
+`netchange.push_off` if the push socket is off.
 
 ---
 
