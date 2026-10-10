@@ -46,9 +46,19 @@ func (s *session) sendSnapshot(ctx context.Context, first bool) error {
 		}
 		s.applied = st.CommandSeq
 	}
+	l.step("unacked_read")
 	entries, err := db.Unacked(ctx)
 	if err != nil {
 		return err
+	}
+	l.step("unacked_done")
+	// A requested snapshot first sends what is queued (outbound.go flush),
+	// after the read: a progress queued before a result it lists then
+	// never follows that result.
+	if s.q != nil {
+		if err := s.flush(); err != nil {
+			return err
+		}
 	}
 	facts := BasicFacts(l.opts.Version)
 	facts.BootId = l.opts.BootID
@@ -124,14 +134,7 @@ func (s *session) send(m *agentv1.ConnectRequest) error {
 	if !errors.Is(err, io.EOF) {
 		return err
 	}
-	// The stream is gone; what the hub sent before it ended is moot.
-	for {
-		select {
-		case <-s.msgs:
-		case <-s.done:
-			return s.rerr
-		}
-	}
+	return s.drainToEnd()
 }
 
 // ackResults stamps the hub's ResultAck in agent.db. An id the log does

@@ -45,7 +45,20 @@ Read the root `AGENTS.md` first; it applies here. Load `fleet-go`,
   refuses a run for that machine before anything touches the network;
   never move that check after a dial, and never record `cert_expired`.
 - One goroutine sends on a stream (Run's); the receiver only hands
-  messages over. The heartbeat is a ticker case in `serve`'s select, never
+  messages over. Anything else that sends (acks, progress, results,
+  SettingsAck) goes through `Loop.Send` and the stream's queue, which
+  `serve` drains; never call `bs.Send` elsewhere. A hook that runs on the
+  sending goroutine (Command, Settings, OnConnected, OnDisconnected,
+  Capabilities, Snapshot, Heartbeat) must not block. Send from a hook
+  never waits: with the hook's context a full queue is `ErrQueueFull` at
+  once; check its error. Keep the receiver's read-ahead: it must keep
+  reading while the sender is busy, or a dead stream goes unseen; and
+  every stream-error exit goes through `byeOver`, so a Bye read ahead of
+  the stream's end is never lost (a revoked agent must not reconnect).
+  A result is queued only once it is logged, except the two unlogged
+  refusals (EPOCH_MISMATCH, SEQ_REPLAYED). A SnapshotRequest flushes the
+  queue before its snapshot. Deadlines use the strict `HubClock`, never `hubNow` or
+  `hubTime`. The heartbeat is a ticker case in `serve`'s select, never
   a goroutine of its own, so nothing lands between a snapshot and its
   results. A snapshot belongs to its stream and is never carried to
   the next. No agent.db write waits on the network.

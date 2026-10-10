@@ -24,6 +24,11 @@ import (
 // agent's Bye{SHUTDOWN}.
 const shutdownWait = 2 * time.Second
 
+// receiveAhead is how many of the hub's messages the receiver holds for
+// Run's goroutine, so it keeps reading, and sees the stream end, while
+// that goroutine is busy (a long send, a hook): 8 MiB at most.
+const receiveAhead = 8
+
 var (
 	errEpochRegressed = errors.New("conn: the hub's epoch is not above the last one")
 	errProtoVersion   = errors.New("conn: the hub chose a protocol version outside this agent's range")
@@ -54,6 +59,14 @@ type session struct {
 	maxBytes int
 	// beat is the heartbeat interval this stream's HelloAck chose.
 	beat time.Duration
+	// epoch is this stream's HelloAck.epoch; q its outbound queue once
+	// Connected (outbound.go).
+	epoch uint64
+	q     *outQueue
+	// hctx is the hooks' context: it ends with the stream or the run.
+	hctx context.Context
+	// lastBye is a Bye send drained after the stream ended (streamend.go).
+	lastBye *agentv1.Bye
 	// hubAt is this stream's HelloAck.hub_time (the agent's clock when it
 	// had none) and hubRecv when the HelloAck arrived, with its monotonic
 	// reading: see hubNow.
@@ -165,7 +178,7 @@ func (s *session) run(ctx context.Context) (ending, string, error) {
 		stopRenew()
 		s.renewWG.Wait()
 	}()
-	s.msgs, s.done = make(chan *agentv1.ConnectResponse), make(chan struct{})
+	s.msgs, s.done = make(chan *agentv1.ConnectResponse, receiveAhead), make(chan struct{})
 	s.bs = s.k.client.Connect(s.sctx)
 	started := false
 	defer func() {
@@ -186,7 +199,9 @@ func (s *session) run(ctx context.Context) (ending, string, error) {
 	hctx, span := s.l.tracer.Start(ctx, "agent.connect.hello")
 	sent := time.Now()
 	s.l.status.state(StateHelloSent, "")
-	serr := s.bs.Send(&agentv1.ConnectRequest{Body: &agentv1.ConnectRequest_Hello{Hello: s.hello(st, sent)}})
+	hello := s.hello(st, sent)
+	hello.Capabilities = s.l.capabilities(ctx)
+	serr := s.bs.Send(&agentv1.ConnectRequest{Body: &agentv1.ConnectRequest_Hello{Hello: hello}})
 	started = true
 	go s.receive()
 	if serr != nil && !errors.Is(serr, io.EOF) {
@@ -207,7 +222,7 @@ func (s *session) run(ctx context.Context) (ending, string, error) {
 	}
 	s.l.status.state(StateSnapshotting, "")
 	if err := s.sendSnapshot(ctx, true); err != nil {
-		return ending{}, "snapshot", err
+		return s.byeOver(ctx, ending{}, "snapshot", err)
 	}
 	return s.connected(ctx)
 }
@@ -237,6 +252,7 @@ func (s *session) receive() {
 		}
 		select {
 		case s.msgs <- m:
+			s.l.step("received")
 		case <-s.sctx.Done():
 			s.rerr = s.sctx.Err()
 			return
@@ -251,15 +267,15 @@ func (s *session) awaitAck(ctx context.Context) (*agentv1.HelloAck, ending, erro
 	defer t.Stop()
 	select {
 	case m := <-s.msgs:
-		switch b := m.GetBody().(type) {
-		case *agentv1.ConnectResponse_HelloAck:
-			return b.HelloAck, ending{}, nil
-		case *agentv1.ConnectResponse_Bye:
-			return nil, s.bye(ctx, b.Bye), nil
-		default:
-			return nil, ending{}, errNotHelloAck
-		}
+		return s.ackOrBye(ctx, m)
 	case <-s.done:
+		// The receiver reads ahead: what the hub sent before the end comes
+		// first, so a Bye is never lost to the stream's end.
+		select {
+		case m := <-s.msgs:
+			return s.ackOrBye(ctx, m)
+		default:
+		}
 		return nil, ending{}, s.rerr
 	case <-t.C:
 		return nil, ending{}, errHelloTimeout
@@ -304,13 +320,16 @@ func (s *session) accept(ctx context.Context, ack *agentv1.HelloAck, st ring.Sta
 	}
 	ht := ack.GetHubTime()
 	hubTimeOK := ht.IsValid()
-	s.l.anchor.Store(nil)
+	// One store, so the strict clock (hubclock.go) never reads a gap.
+	var anchor *hubAnchor
 	if hubTimeOK {
 		s.hubAt = ht.AsTime()
 		offset = s.hubAt.Sub(sent.Add(recv.Sub(sent) / 2))
-		s.l.anchor.Store(s.l.newAnchor(s.hubAt, s.hubRecv))
+		anchor = s.l.newAnchor(s.hubAt, s.hubRecv)
 		s.l.status.update(func(ss *Status) { ss.ClockOffset, ss.ClockOffsetTime = offset, recv })
 	}
+	s.l.anchor.Store(anchor)
+	s.epoch = ack.GetEpoch()
 	s.l.takeAddresses(ctx, s.c.addr, ack.GetHubAddresses())
 	s.beat = heartbeatInterval(ack.GetHeartbeatInterval())
 	s.maxBytes = snapshotMaxBytes
@@ -328,6 +347,8 @@ func (s *session) accept(ctx context.Context, ack *agentv1.HelloAck, st ring.Sta
 func (s *session) connected(ctx context.Context) (ending, string, error) {
 	l := s.l
 	s.serving.Store(true)
+	// The queue opens first, so a Send that sees Connected is taken.
+	defer s.serveQueue(ctx)()
 	l.status.state(StateConnected, s.c.addr)
 	l.m.connected.Store(1)
 	defer l.m.connected.Store(0)
@@ -342,15 +363,17 @@ func (s *session) connected(ctx context.Context) (ending, string, error) {
 		}
 	}
 	s.renewCheck()
+	s.onConnected()
 	out, step, err := s.serve(ctx)
+	out, step, err = s.byeOver(ctx, out, step, err)
 	out.connected = true
 	return out, step, err
 }
 
 // serve handles the hub's messages, checks the certificate for renewal
-// every RenewCheck, and sends a Heartbeat every s.beat; the
-// first comes one interval after the snapshot and its results, already
-// sent. A time.Ticker drops ticks for a slow receiver, so a tick missed
+// every RenewCheck, sends a Heartbeat every s.beat and what Loop.Send
+// queued; the first heartbeat comes one interval after the snapshot and its
+// results, already sent. A time.Ticker drops ticks for a slow receiver, so a tick missed
 // while a send waits is dropped, never queued.
 func (s *session) serve(ctx context.Context) (ending, string, error) {
 	beat := time.NewTicker(s.beat)
@@ -372,6 +395,11 @@ func (s *session) serve(ctx context.Context) (ending, string, error) {
 			if err != nil || done {
 				return out, step, err
 			}
+		case m := <-s.q.ch:
+			// Queued by Loop.Send; only this goroutine sends on the stream.
+			if err := s.send(m); err != nil {
+				return ending{}, "outbound", err
+			}
 		case <-s.done:
 			return ending{}, "stream", s.rerr
 		case ev, open := <-s.l.events:
@@ -380,9 +408,12 @@ func (s *session) serve(ctx context.Context) (ending, string, error) {
 				continue
 			}
 			if d, ok := s.l.decide(ctx, ev, wakenet.Conn{Connected: true, LocalAddr: s.k.localAddr()}); ok {
-				return ending{event: &d}, "", nil
+				return s.byeFirst(ctx, ending{event: &d}), "", nil
 			}
 		case <-ctx.Done():
+			if b := s.leftBye(); b != nil { // the hub's Bye came first: no Bye back
+				return s.bye(ctx, b), "", nil
+			}
 			s.goodbye(agentv1.ByeReason_BYE_REASON_SHUTDOWN)
 			return ending{}, "", nil
 		}
@@ -403,12 +434,8 @@ func (s *session) handle(ctx context.Context, m *agentv1.ConnectResponse) (endin
 		}
 	case *agentv1.ConnectResponse_Bye:
 		return s.bye(ctx, b.Bye), true, "", nil
-	case *agentv1.ConnectResponse_Command:
-		// The executor comes with plan row 6; until then the hub's outbox
-		// keeps the command and expires it.
-		s.l.log.InfoContext(ctx, "connect.message_ignored", "kind", "command")
-	case *agentv1.ConnectResponse_Settings:
-		s.l.log.InfoContext(ctx, "connect.message_ignored", "kind", "settings")
+	case *agentv1.ConnectResponse_Command, *agentv1.ConnectResponse_Settings:
+		s.intake(ctx, m)
 	case *agentv1.ConnectResponse_HelloAck:
 		s.l.log.InfoContext(ctx, "connect.message_ignored", "kind", "hello_ack")
 	default:

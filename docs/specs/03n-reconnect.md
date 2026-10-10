@@ -133,6 +133,71 @@ waiting for keepalive timeouts.
 - Per machine: Snapshot first, then unacked results, then replayed events in
   `seq` order, then live events. The agent enforces this order on its side;
   the hub discards anything out of order and asks for a snapshot.
+- Acks, progress and results from command goroutines go through one
+  per-stream queue drained by the stream's sending goroutine, after the
+  snapshot and its unacked results; a result is committed to the command
+  log before it is queued (the two unlogged refusals below excepted).
+
+### Commands, settings and the outbound queue
+
+The agent side of plan row 6 (ruling forks 4 i, 11 and 12), in
+`internal/agent/conn`:
+
+- **Capabilities.** `EnrollRequest.capabilities` stays empty (the agent
+  has no list yet at enroll); `Hello` carries the agent's list; `exec.raw`, an entry
+  with no name, a name outside `[a-z0-9._-]` or over 64 bytes, version 0,
+  or a repeated name is dropped (`connect.capability_dropped{reason, name}`,
+  once per entry and run; `reason`: `reserved`, `invalid`, `repeat`; `name`
+  only when valid). Row 6 advertises none: each kind's capability comes
+  with the row that builds its handler, so until then every
+  `Command.requires` is answered `UNSUPPORTED`.
+
+- **In.** While Connected the loop hands each `Command` and `Settings` to
+  its receiver (the executor, the settings merge) with the stream's epoch
+  and a context that ends with the stream or the run, without blocking: a
+  receiver whose bounded intake is full refuses it, and the message is
+  dropped unlogged and unacked (`command.intake_full`), so the hub's
+  at-least-once re-send covers it.
+- **Out.** `CommandAck`, `CommandProgress`, `CommandResult` and
+  `SettingsAck` go through one queue per stream (256), drained by the
+  stream's one sender after the snapshot and its unacked results. A send
+  with no Connected stream is refused at once; a full queue makes it wait
+  for room, the stream's or the run's end, or its own deadline
+  (`connect.outbound_blocked{kind, hook}`, once per stream;
+  `fleet_agent_outbound_blocked_total` `result="waited"`; `kind`:
+  `command_ack`, `command_progress`, `command_result`, `settings_ack`). The
+  queue dies with its stream; what was left in it is counted in
+  `fleet_agent_outbound_lost_total` (a lower bound) and comes back as 02i
+  "Event kinds" says.
+- **Results are logged first.** A `CommandResult` is queued only when
+  `agent.db` holds it as its command's finished result (proto-equal), so one
+  lost with its stream is re-sent after the next snapshot. The one
+  exception is the two refusals that are never logged or acked because
+  the hub re-issues the same `command_id` ([02](02-contracts.md), "Envelope
+  checks"): `FAILED` / `EPOCH_MISMATCH` and `REJECTED_BY_POLICY` /
+  `SEQ_REPLAYED`, for a `command_id` the log does not hold.
+- **A `SnapshotRequest` flushes first.** Before a requested snapshot is
+  built, what the queue holds is sent in order, without waiting for more,
+  so a progress or ack queued before it never reaches the hub after the
+  result that snapshot re-sends, and nothing lands between the snapshot
+  and its results.
+- **Lifecycle.** The receivers are told when a stream is Connected (after
+  its snapshot and results, with its epoch and the strict hub clock of
+  02i "Clocks") and when it stopped serving. The agent's status says
+  Connected only while the queue takes messages. Every receiver hook runs on
+  the stream's sender, so a send from a hook never waits: on a full queue
+  it fails at once (counted as `result="refused"`) and the hook checks the
+  error, logged once per stream for refusals and once for waits. A hook
+  that holds the sender over 10 s is logged (`connect.hook_blocked{hook,
+  held_ms}`; `hook`: `command`, `settings`, `on_connected`), and again with
+  the real hold time when it returns (`connect.hook_released{hook,
+  held_ms}`, info). The
+  receiver reads up to 8 messages ahead of the sender, so it sees the
+  stream end even while a hook holds it; a hook that never returns while
+  the hub sends more than 8 is released only by the run's end. A `Bye` the
+  receiver read ahead is acted on before the stream's end, a wake, a
+  network change or a stop that is ready at the same moment, so a
+  `Bye{REVOKED}` or `Bye{UNKNOWN_MACHINE}` still ends the loop.
 - Results for commands the hub already closed are ignored (idempotent by
   `command_id`); results for commands the hub never issued (DB restored from an
   older backup) go to the audit log and a triage info item.

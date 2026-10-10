@@ -87,6 +87,8 @@ type liveStream struct {
 	out       chan *agentv1.ConnectResponse
 	drop      chan struct{}
 	displaced chan struct{}
+	// last is sent, and then the stream ends without the agent's help.
+	last chan *agentv1.ConnectResponse
 }
 
 func startConnectHub(t *testing.T) *connectHub {
@@ -252,7 +254,7 @@ func (h *connectHub) Connect(ctx context.Context,
 	deaf := h.deaf
 	ls := &liveStream{
 		out: make(chan *agentv1.ConnectResponse, 16), drop: make(chan struct{}),
-		displaced: make(chan struct{}),
+		displaced: make(chan struct{}), last: make(chan *agentv1.ConnectResponse, 1),
 	}
 	old := h.live
 	h.live = ls
@@ -349,6 +351,11 @@ func (h *connectHub) serve(ctx context.Context, bs *connect.BidiStream[agentv1.C
 			return bs.Send(&agentv1.ConnectResponse{Body: &agentv1.ConnectResponse_Bye{
 				Bye: &agentv1.Bye{Reason: agentv1.ByeReason_BYE_REASON_DUPLICATE_IDENTITY},
 			}})
+		case r := <-ls.last:
+			if err := bs.Send(r); err != nil {
+				return err
+			}
+			return connect.NewError(connect.CodeUnavailable, errors.New("the fake hub ended the stream"))
 		case <-ls.drop:
 			return connect.NewError(connect.CodeUnavailable, errors.New("the fake hub dropped the stream"))
 		case <-ctx.Done():

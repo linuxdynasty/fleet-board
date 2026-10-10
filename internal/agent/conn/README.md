@@ -162,7 +162,8 @@ sent.
    `ResultAck` stamps its ids (unknown ones change nothing); a
    `SnapshotRequest` gets a new snapshot and the unacked results; a `Bye`
    other than `REVOKED` or `UNKNOWN_MACHINE` closes the stream; `Command`
-   and `Settings` are logged and ignored until rows 6 and 10. On stop the
+   and `Settings` go to their hooks (see "Commands and the outbound
+   queue"), or are logged as `connect.message_ignored` with none. On stop the
    agent sends `Bye{SHUTDOWN}` and waits up to 2 s for the hub to close;
    then the stream and its connection are cut (`connect.shutdown_cut`), so a send held by HTTP/2
    flow control (a hub that stopped reading) cannot hold up the stop. A
@@ -202,6 +203,31 @@ sent.
    removes one that names another machine (a leftover), and refuses a
    damaged one (`ErrEndedDamaged`). Enroll removes it when it saves a new
    identity.
+
+## Commands and the outbound queue
+
+Plan row 6's seam (ruling forks 4 i, 11, 12); the rules are in 03n
+"Commands, settings and the outbound queue". Files: `inbound.go` (the
+`Command` and `Settings` hooks, capabilities, `connect.hook_blocked`),
+`outbound.go` (`Loop.Send`, the per-stream queue, `ErrNoStream`,
+`ErrNotQueueable`, `ErrResultNotLogged`, `ErrQueueFull`, the unlogged
+refusals, the flush before a requested snapshot, `OnConnected` and
+`OnDisconnected`), `hubclock.go` (`Loop.HubClock`, the strict deadline
+clock of 02i "Clocks"). For code that plugs in (6e, 6f): hooks run on the
+sending goroutine and must not block; Send from a hook never waits (with
+the hook's context a full queue is `ErrQueueFull`), so check its error; a
+goroutine a hook starts uses its own context, which keeps the bounded
+wait; a result is sent only once logged (proto-equal); `Connected` in the
+status means Send takes messages. Known limit: the receiver reads 8
+messages ahead, so a hook that never returns while the hub sends more than
+8 is released only by the run's end (`connect.hook_blocked` says so). A
+Bye read ahead is acted on before the stream's end, a wake or a stop
+(`streamend.go`). A Command or Settings read ahead of a stream that then
+died can reach its hook with an ended context: hooks (6e, 6f) check
+`ctx.Err()` before they start work for that stream.
+
+Tests: `seam_test.go`, `outbound_test.go`, `outboundhooks_test.go`,
+`strictclock_test.go` (each test's comment names the rule it pins).
 
 ## Certificate renewal
 

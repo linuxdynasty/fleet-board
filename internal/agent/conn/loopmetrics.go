@@ -17,6 +17,9 @@ type loopMetrics struct {
 	attempts   metric.Int64Counter
 	reconnects metric.Int64Counter
 	renewals   metric.Int64Counter
+	intake     metric.Int64Counter
+	blocked    metric.Int64Counter
+	lost       metric.Int64Counter
 	observed   metric.Registration
 
 	connected atomic.Int64
@@ -29,7 +32,7 @@ func newLoopMetrics(tel *telemetry.Telemetry, certLeft func() time.Duration) (*l
 	m := tel.Meter(scope)
 	p := tel.MetricPrefix()
 	out := &loopMetrics{}
-	var errs [6]error
+	var errs [9]error
 	out.attempts, errs[0] = m.Int64Counter(p+"_connect_attempts_total",
 		metric.WithDescription("Connect attempts per hub address tried, by result (connected, failed, untrusted) and source (cached, mdns, configured)."))
 	out.reconnects, errs[1] = m.Int64Counter(p+"_reconnects_total",
@@ -43,6 +46,12 @@ func newLoopMetrics(tel *telemetry.Telemetry, certLeft func() time.Duration) (*l
 		metric.WithUnit("s"))
 	out.renewals, errs[5] = m.Int64Counter(p+"_cert_renewals_total",
 		metric.WithDescription("Certificate renewals, by result (renewed, refused, invalid, failed)."))
+	out.intake, errs[6] = m.Int64Counter(p+"_command_intake_dropped_total",
+		metric.WithDescription("Commands and Settings dropped unacked because the receiver's intake was full, by kind (command, settings)."))
+	out.blocked, errs[7] = m.Int64Counter(p+"_outbound_blocked_total",
+		metric.WithDescription("Sends that found the stream's outbound queue full, by kind and result (waited; refused: a hook's Send)."))
+	out.lost, errs[8] = m.Int64Counter(p+"_outbound_lost_total",
+		metric.WithDescription("Queued acks, progress, results and settings acks left in a stream's queue when it ended (a lower bound)."))
 	errs[2], errs[3], errs[4] = err2, err3, err4
 	if err := errors.Join(errs[:]...); err != nil {
 		return nil, err
@@ -71,5 +80,21 @@ func (m *loopMetrics) reconnect(ctx context.Context, reason string) {
 func (m *loopMetrics) renewal(ctx context.Context, result string) {
 	m.renewals.Add(ctx, 1, metric.WithAttributes(attribute.String("result", result)))
 }
+
+func (m *loopMetrics) intakeDrop(ctx context.Context, kind string) {
+	m.intake.Add(ctx, 1, metric.WithAttributes(attribute.String("kind", kind)))
+}
+
+// outboundBlocked counts a Send that found the queue full: result is
+// "waited", or "refused" for a hook's Send (ErrQueueFull).
+func (m *loopMetrics) outboundBlocked(ctx context.Context, kind string, hook bool) {
+	result := "waited"
+	if hook {
+		result = "refused"
+	}
+	m.blocked.Add(ctx, 1, metric.WithAttributes(attribute.String("kind", kind), attribute.String("result", result)))
+}
+
+func (m *loopMetrics) outboundLost(ctx context.Context, n int) { m.lost.Add(ctx, int64(n)) }
 
 func (m *loopMetrics) close() error { return m.observed.Unregister() }

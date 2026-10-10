@@ -133,9 +133,8 @@ tick missed while a send waits is dropped, never queued. Plan row 4 fills
 (the highest seq handed out) and `events` (agent.db's counters, as in
 `Hello`); later rows fill the rest. `connect.hello` logs the interval chosen.
 
-**Capabilities at enroll.** The agent has no capability list yet, so it
-leaves `EnrollRequest.capabilities` empty; capabilities are first sent in
-`Hello` (later in plan row 4, PR 3).
+**Capabilities, commands and settings (plan row 6)**: see
+[03n](03n-reconnect.md#commands-settings-and-the-outbound-queue).
 
 **Hub discovery (A2).** Candidate order: cached last-good address → mDNS
 `_fleetd._tcp` (`hashicorp/mdns`, ADR 0023; skipped with no usable multicast
@@ -426,7 +425,7 @@ re-enroll rule are in [02g](02g-agent-security.md#machine-lifecycle-revoke-and-d
   `epoch_out_of_range`, `seq_out_of_range`, `epoch_regressed`, and `value`,
   the hub's number) and
   `connect.closed{peer, step, err_kind}` after (`stream`, `snapshot`,
-  `result_ack`, `heartbeat`), where a peer that failed the handshake or refused the
+  `result_ack`, `heartbeat`, `outbound`: a queued message), where a peer that failed the handshake or refused the
   certificate is `err_kind="refused"`; `connect.bye{peer, reason, message}`;
   `connect.shutdown_cut{peer, wait_ms}` when the hub did not close the stream
   within the Bye wait after a stop ([defaults](defaults.md));
@@ -435,8 +434,10 @@ re-enroll rule are in [02g](02g-agent-security.md#machine-lifecycle-revoke-and-d
   before the next try (`wait_ms` is the planned backoff wait; `failures` is
   the count in a row the wait doubles from, 0 after a wake or network
   change, which resets it);
-  `connect.message_ignored{kind}` (a `Command` or `Settings` before plan rows
-  6 and 10 handle them); `connect.ended{state}` (`revoked`,
+  `connect.message_ignored{kind}` (a `Command` or `Settings` with no
+  receiver registered, until plan row 6 wires them);
+  `connect.outbound_blocked`, `connect.hook_blocked`, `connect.hook_released`,
+  `connect.capability_dropped` ([03n](03n-reconnect.md#commands-settings-and-the-outbound-queue)); `connect.ended{state}` (`revoked`,
   `unknown_machine`, `fleet_mismatch`, `cert_expired`);
   `snapshot.sent{seq, bytes, unacked_results}`, `snapshot.requested{reason}`,
   `snapshot.oversize{bytes, max_bytes}`, `snapshot.result_unreadable{command_id,

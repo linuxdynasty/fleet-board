@@ -17,6 +17,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	agentv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1"
+	typev1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/type/v1"
 	"github.com/linuxdynasty/fleet-board/internal/agent/ring"
 	"github.com/linuxdynasty/fleet-board/internal/agent/wakenet"
 	"github.com/linuxdynasty/fleet-board/internal/telemetry"
@@ -56,7 +57,27 @@ type LoopOptions struct {
 	// open_attaches); nil sends sent_time, uptime, event_seq and events
 	// only, which the loop sets after the hook. It runs on the sending
 	// goroutine, so it must only read what it already holds.
-	Heartbeat    func(ctx context.Context, hb *agentv1.Heartbeat)
+	Heartbeat func(ctx context.Context, hb *agentv1.Heartbeat)
+	// Command and Settings take each Command and Settings the hub sends,
+	// with the epoch of the stream it came on and a context that ends with
+	// that stream or the run (ruling fork 12 c; it may already have ended
+	// for a message read ahead of a dead stream: check ctx.Err()); false means the
+	// receiver's intake is full, and the message is dropped unacked
+	// (command.intake_full). nil logs the kind as ignored.
+	Command  func(ctx context.Context, epoch uint64, c *agentv1.Command) bool
+	Settings func(ctx context.Context, epoch uint64, s *agentv1.Settings) bool
+	// OnConnected runs once a stream's snapshot and unacked results are
+	// out and [Loop.Send] takes messages for it, with the same context.
+	// OnDisconnected runs once that stream stopped serving and Send
+	// refuses it.
+	OnConnected    func(ctx context.Context, epoch uint64, clock HubClock)
+	OnDisconnected func()
+	// Capabilities lists what each Hello advertises; nil advertises none.
+	// Command, Settings, OnConnected, OnDisconnected and Capabilities run
+	// on the sending goroutine and must not block. Send from a hook never
+	// waits (with the hook's context it returns ErrQueueFull); check its
+	// error, and hand longer work to a goroutine of their own.
+	Capabilities func() []*typev1.Capability
 	Backoff      Backoff
 	Keepalive    Keepalive
 	HelloTimeout time.Duration
@@ -89,6 +110,14 @@ type LoopOptions struct {
 	// sleepClock, for tests only, replaces the clock that keeps counting
 	// while the machine sleeps (wakenet.SinceBoot).
 	sleepClock func() (time.Duration, error)
+	// stepHook, for tests only, runs on Run's goroutine the moment the
+	// status says Connected ("connected"), the moment a stream's queue
+	// closes ("unpublished"), just before and just after a snapshot reads
+	// the unacked results ("unacked_read", "unacked_done"); and on the
+	// receiver's goroutine once it handed a message over ("received").
+	stepHook func(step string)
+	// hookWarn, for tests only, replaces hookHeldWarn.
+	hookWarn time.Duration
 }
 
 // Loop keeps this machine connected to its hub (03 W1 "State machine", 03n W2):
@@ -129,6 +158,12 @@ type Loop struct {
 	fp        [32]byte
 	seqs      *ring.Seqs
 	status    statusBox
+	// out is the Connected stream's outbound queue, nil when none
+	// (outbound.go); only Run's goroutine stores it.
+	out atomic.Pointer[outQueue]
+	// capsDropped is each capability entry already logged as dropped;
+	// only Run's goroutine touches it.
+	capsDropped map[string]bool
 	// discovery is fleet_agent_discovery_seconds.
 	discovery metric.Float64Histogram
 	// Only Run's goroutine touches these.
@@ -195,11 +230,17 @@ func NewLoop(ctx context.Context, opts LoopOptions) (*Loop, error) {
 		return nil, err
 	}
 	l.status.pushOff = opts.PushOff
+	l.status.changed = make(chan struct{}, 1)
+	l.status.step = opts.stepHook
 	return l, nil
 }
 
 // Status is a copy of what the loop knows now.
 func (l *Loop) Status() Status { return l.status.get() }
+
+// StatusChanged signals, coalesced, after the status changed; read
+// Status then. PushOff is read live and not signaled.
+func (l *Loop) StatusChanged() <-chan struct{} { return l.status.changed }
 
 // Run connects and stays connected until ctx ends (nil) or the loop ends
 // on its own ([EndedError]). Call it once.
@@ -230,10 +271,12 @@ func (l *Loop) Run(ctx context.Context) error {
 			l.avoidPresented(ctx)
 		}
 		switch {
+		case out.end != "":
+			// Before a stop: a revoke that came with the stop still ends
+			// the loop and is recorded.
+			return l.end(ctx, out.end, out.peer)
 		case ctx.Err() != nil:
 			return l.stopped()
-		case out.end != "":
-			return l.end(ctx, out.end, out.peer)
 		case out.connected:
 			p.onConnect()
 		}
