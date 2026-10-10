@@ -23,9 +23,9 @@
 // listeners serve and stops first at shutdown. Then every listener shuts
 // down at the same time within one 10 s grace (the agent listener's
 // gateway.Server.Shutdown also waits for its Connect handlers to close
-// their rows). On the way out the hub writes the agent listener's audit summary of the minute in progress
-// before the store closes. A goroutine it owns checks the
-// certificate every hour, and another runs the
+// their rows). On the way out the hub writes the agent listener's audit
+// summary of the minute in progress before the store closes. A goroutine it
+// owns checks the certificate every hour, and another runs the
 // nightly backup (backup.Schedule: a check at start, then every minute),
 // and another the housekeeping jobs every 5 s (machine STALE and OFFLINE
 // marking through gateway.Server.Housekeep).

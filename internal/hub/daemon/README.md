@@ -77,12 +77,13 @@ parses flags and calls `Init`, `Run`, `EnrollToken`, `Backup` or `Restore`.
    (`gateway.Server.Housekeep`: `STALE` at 45 s of silence, `OFFLINE` and
    the stream cut at 3 min, a stalled `STALE` stream cut). Later plan rows
    add their prune jobs to the same list.
-11. Stops: shuts the listeners down at the same time (one 10 s grace for all,
-   so the agent listener's handler wait does not eat the others'; then closes; closing the admin
-   listener removes `admin.sock`; the agent listener's `gateway.Server.Shutdown`
-   also waits for its running handlers, so each Connect stream's row is closed
-   as `hub_restart` before the store closes), stops the hourly certificate check and the
-   backup job and the housekeeping (an unfinished copy is abandoned and leaves no file), writes
+11. Stops: shuts the listeners down at the same time (one 10 s grace for
+   all, so the agent listener's handler wait does not eat the others'; then
+   closes; closing the admin listener removes `admin.sock`; the agent
+   listener's `gateway.Server.Shutdown` also waits for its running handlers,
+   so each Connect stream's row is closed as `hub_restart` before the store
+   closes), stops the hourly certificate check and the backup job and the
+   housekeeping (an unfinished copy is abandoned and leaves no file), writes
    the agent listener's `machine.enroll_failed` summary of the minute in
    progress (`gateway.Server.FlushAudit`), closes the store, releases the
    lock.
