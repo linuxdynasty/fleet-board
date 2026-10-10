@@ -23,6 +23,15 @@ const (
 	// PendingKeyFile holds the key until Enroll succeeds, so a retry sends
 	// the same CSR (02g A1 step 3).
 	PendingKeyFile = "enroll.key"
+	// CertFile holds a renewed client certificate and its key (one
+	// CERTIFICATE then one PRIVATE KEY PEM block), replaced whole on each
+	// renewal; identity.json is never rewritten (02g "Certificate renewal
+	// (A4)").
+	CertFile = "cert.pem"
+	// RenewKeyFile holds the key of a renewal in progress until its
+	// certificate is saved, so a retry sends the same CSR and the hub
+	// returns the certificate it stored.
+	RenewKeyFile = "renew.key"
 )
 
 // identityVersion is the layout of IdentityFile.

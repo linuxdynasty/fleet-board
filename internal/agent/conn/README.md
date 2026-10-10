@@ -27,9 +27,10 @@ st := l.Status()                    // state, peer, last failure per address, la
 2. **Never replace an identity.** Until re-enroll exists (later in plan row
    4, and row 13a's `previous_machine`), an enrolled folder is refused
    (`ErrAlreadyEnrolled`, naming the machine and saying to remove only
-   `identity.json` and keep `agent.db`) before any network call, and a
-   leftover `enroll.key` is removed. The identity file is also written with
-   a hard link, which cannot overwrite.
+   `identity.json` and keep `agent.db`, and that enroll then removes
+   `cert.pem` and `renew.key`) before any network call, and a leftover
+   `enroll.key` is removed. The identity file is also written with a hard
+   link, which cannot overwrite.
 3. **Same key on a retry.** The Ed25519 key is kept in `enroll.key` (0600)
    until Enroll succeeds, and `install_id` comes from `agent.db`, so a retry
    or a second run after a lost reply gets the hub's stored answer
@@ -57,9 +58,10 @@ st := l.Status()                    // state, peer, last failure per address, la
    fingerprint, one client certificate for this key that chains to the CA and
    names the machine id (common name and `fleet://machine/<id>`), a fleet id
    and a salt (`ErrBadResponse` otherwise; nothing saved, key kept).
-7. The hub address goes to `hub-address`, the identity to `identity.json`
-   (temp file, fsync, link, folder fsync), a leftover `ended.json` and
-   `hub-addresses` are removed, then `enroll.key`.
+7. A leftover `cert.pem` and `renew.key` (the removed identity's renewal)
+   are removed, the hub address goes to `hub-address`, the identity to
+   `identity.json` (temp file, fsync, link, folder fsync), a leftover
+   `ended.json` and `hub-addresses` are removed, then `enroll.key`.
    `Result.HostnameMismatch` says the hub expected another hostname (the
    rule is `internal/hostname`, shared with the hub); the command prints a
    warning for it.
@@ -86,7 +88,8 @@ sent.
 
 `Loop.Run` repeats one attempt until ctx ends:
 
-1. **Certificate first.** Past `CertNotAfter` the loop ends
+1. **Certificate first.** Past the end of the certificate in use (see
+   "Certificate renewal"; not `Identity.CertNotAfter`) the loop ends
    (`EndCertExpired`) without dialing.
 2. **Candidates.** The cached `hub-address`; then, after it failed, one
    mDNS browse (`LoopOptions.Discover`; answers kept as for enroll, each
@@ -103,7 +106,8 @@ sent.
    invalid entries and repeats (names in lower case), then keeps 16. One whose handshake fails (refused, timed out after
    `LoopOptions.HandshakeTimeout`, 10 s by default, or untrusted: the same
    pin as enroll) is skipped for the next, logged at `step="dial"`; the
-   first that passes is used. The client certificate is the enrolled one.
+   first that passes is used. The client certificate is chosen at each
+   handshake (see "Certificate renewal").
 3. **Hello, HelloAck.** Hello carries the marks from `agent.db`
    (`last_epoch`, `last_applied_command_seq`, `last_event_seq` = `seq_hwm`,
    counters, `install_id`, `boot_id`, the reason). No HelloAck within
@@ -187,13 +191,85 @@ sent.
    damaged one (`ErrEndedDamaged`). Enroll removes it when it saves a new
    identity.
 
+## Certificate renewal
+
+02g "Certificate renewal (A4)" (with the arbiter's amendment), 03 W1.
+The files are `certpair.go` (a pair and its checks), `pairset.go` (which
+pair to present, which to renew, hub time), `renewgate.go` (when a due
+renewal may start), `renew.go` (the steps), `renewlog.go` (their logs) and
+`renewcheck.go` (the answer).
+
+- **The pairs.** `NewLoop` takes the enrolled pair from `identity.json`
+  and the one in `cert.pem` (one CERTIFICATE block, then one PKCS#8
+  Ed25519 PRIVATE KEY block, 0600) when it is valid: it parses, the key
+  matches, it chains to the pinned CA with client-auth usage, names the
+  machine id, and ends no later than the CA. A `cert.pem` that is not
+  valid is logged (`cert.file_invalid{file, check, err_kind}`), never
+  removed or changed at start (row 6's doctor reports it), and the next
+  renewal replaces it. A `renew.key` holding the valid `cert.pem`'s key is
+  a leftover of a saved renewal and is removed (`renew.leftover_removed`);
+  any other is kept for the next try.
+- **Which pair.** Two decisions, split: each TLS handshake presents, of
+  the pairs inside their life by the agent's clock, the one that ends
+  later (the lead, below, when neither is), so a renewed pair signed by a
+  hub clock ahead of the agent's is not presented before it starts while
+  the enrolled one is good. The renewal check, the loop's expiry check and
+  `fleet_agent_cert_expiry_seconds` follow the lead, the pair that ends
+  later whether it has started or not, so a not-yet-started pair starts
+  no new renewal. Those three run on hub time (the last `HelloAck`'s
+  `hub_time` plus the time since, the larger of Go's monotonic clock and
+  `wakenet.SinceBoot`, which keeps counting while the machine sleeps,
+  kept on the loop; the agent's
+  clock before the first `HelloAck` or after one with no `hub_time`), so
+  an agent clock days off neither renews at every check nor ends the loop
+  while the hub takes the pair; only the pair to present runs on the
+  agent's clock. When an attempt that presented one pair fails before
+  Connected, the next presents the other while it is inside its life
+  (`renew.pair_switched`), until a stream connects; backoff is unchanged,
+  and nothing is read into the refusal. The set is an atomic pointer that
+  `GetClientCertificate` reads at each handshake, so a swap reaches the
+  next connection while the open stream keeps its own. There is no TLS
+  session cache, so no resumed session hides the new certificate.
+- **When.** At two thirds of the lead's life (`NotBefore` + 2/3 of its
+  span: day 60 of 90), checked once each stream is connected (after its
+  `HelloAck` and snapshot) and every `LoopOptions.RenewCheck` (1 h) while
+  connected. A renewal does not start within one check interval of the
+  last, nor for a lead that ends at the CA's end, nor for a lead already
+  due by hub time when it was saved until a later check finds it not due
+  (`renew.skipped{reason}`, once per lead; see `renewgate.go`). One renewal runs at a time, on a goroutine the session owns;
+  it is cancelled and waited for before the stream's connection closes,
+  and it never sends on the stream. `RenewCert` is a unary call on the
+  stream's own HTTP/2 connection (a test proves the reuse).
+- **Steps.** A new Ed25519 key is written to `renew.key` (0600, never over
+  another file) before anything is sent; a later try reuses it, so the
+  hub returns the certificate it stored for that key (a `renew.key` with
+  the key in use is replaced: the hub would refuse it). The answer's
+  certificate must fit in `cert.pem` (64 KiB with its key), and the
+  answer must carry exactly the pinned CA as its chain and one
+  certificate for `renew.key`'s key that chains to it, names the machine
+  id, ends no later than the CA and after the lead; the chain is checked
+  at a time inside the certificates' own lives, not the agent's clock, so
+  an agent clock behind the hub's does not refuse a fresh certificate.
+  Then `cert.pem` is replaced (temp file, fsync, rename, folder fsync),
+  the set swapped, and `renew.key` removed. `identity.json` is never
+  touched.
+- **Failure.** A failure saves nothing, keeps `renew.key` and the stream,
+  and is tried again at the next check: a refusal (`renew.refused`), a
+  failed call such as an older hub's `UNIMPLEMENTED` or a busy one's
+  `UNAVAILABLE`, an answer that fails a check, or a `cert.pem` that cannot
+  be written (`renew.failed{step}`, with `file`, `check` and, when the
+  owner must act, `fix` for a file it could not use). A stream that ends
+  or a stop during the call logs `renew.cancelled`, not a failure. A
+  `renew.key` that is damaged or open to other users is kept, never
+  replaced (the ruling keeps any other `renew.key`): each check logs
+  `renew.failed{step="key", check, file, fix}` and sends nothing, so
+  renewal waits for the owner. The loop never ends for a renewal; if
+  renewal keeps failing, a stream that is up stays up past the
+  certificate's end (the hub checks it only at a handshake), and the loop
+  ends with `EndCertExpired` at its next attempt, without dialing.
+
 Not built yet, all later in plan row 4:
 
-- The agent side of certificate renewal (the hub's `RenewCert` handler
-  is built, #147), under the ruling that a renewal makes a new key and
-  keeps the renewed pair in its own `cert.pem`, never rewriting
-  `identity.json`. Until then the loop ends with `EndCertExpired` when
-  the enrolled certificate runs out.
 - Local config for hub addresses (03 A2's "plus local config") and the
   Tailscale name (v3).
 
@@ -226,16 +302,21 @@ bit, another owner, or a symlink is refused (`ErrLooseMode`), never re-moded.
 | `identity.json` | machine id and name, fleet id, CA PEM and fingerprint, client certificate and its expiry, key, account salt and version, the hub's configured addresses |
 | `hub-address` | last good `host:port` |
 | `enroll.key` | the key, only between a first try and success |
+| `cert.pem` | a renewed certificate and its key, replaced whole by each renewal; removed by enroll |
+| `renew.key` | the key of a renewal in progress, until its certificate is saved; removed by enroll |
 | `ended.json` | the end that stopped the loop (revoked, unknown machine, fleet mismatch), its machine id, hub and time; removed by enroll |
 | `hub-addresses` | the hub's latest address list (`HelloAck.hub_addresses`), one `host:port` per line, at most 16; read at start ahead of the identity's list; removed by enroll |
 | `agent.db` | `install_id` and the rest ([ring](../ring/README.md)) |
 
 **Signals.** Spans `agent.enroll`, `agent.connect.hello`, `agent.discover`
-(children `agent.discover.browse` and `agent.discover.candidate`). Loop logs and
-metrics are listed in 03 W1 and 03n W2 "Telemetry" (`connect.*`, `snapshot.*`,
-`result.*`; `fleet_agent_connect_attempts_total`, `fleet_agent_connected`,
+(children `agent.discover.browse` and `agent.discover.candidate`),
+`agent.cert.renew`. Loop logs and metrics are listed in 03 W1 and 03n W2
+"Telemetry" (`connect.*`, `snapshot.*`, `result.*`, `renew.*`;
+`fleet_agent_connect_attempts_total`, `fleet_agent_connected`,
 `fleet_agent_reconnects_total`, `fleet_agent_unacked_results`,
-`fleet_agent_cert_expiry_seconds`, `fleet_agent_discovery_seconds`).
+`fleet_agent_cert_expiry_seconds` for the pair that ends last,
+`fleet_agent_cert_renewals_total{result}`, `fleet_agent_discovery_seconds`),
+and `cert.file_invalid` in 05b.
 Enroll logs: `enroll.completed{machine_id,
 replayed, hostname_mismatch}`, `enroll.refused{reason, peer}`,
 `enroll.retry{attempt, err_kind}`, `enroll.hub_untrusted{peer}`,
@@ -332,3 +413,40 @@ the default interface; `FLEET_MDNS_WIFI_HUB=<instance>` is the
 times the hand-over, up to one query after the reply arrived). The `fleet-agent` binary's
 tests are built with `-tags fleet_nomdns` (a finder that finds nothing) and
 never send a query.
+
+Renewal runs end to end against `conntest`'s real `RenewCert` handler
+(its Connect served by the fake): with a fake agent clock nothing is sent
+a minute before day 60 of the 90-day life, and a minute after it the next
+check renews over the stream's own connection while the stream stays up,
+`identity.json` stays byte for byte, the next handshake presents the new
+serial and the metrics follow it; the renewed pair is renewed again at
+day 60 of its own life over a connection that presents it, replacing
+`cert.pem`; a renewal stopped before the call, after the answer and after
+the rename ends whole on the next start with one stored renewal and one
+new serial; a lost answer gets the stored certificate. Against the fake:
+sixteen tampered answers (the URI SAN, the CA's end and the 64 KiB cap
+among them) and an oversize one each save nothing and keep `renew.key`
+and the stream; `UNIMPLEMENTED`, `UNAVAILABLE`, `INTERNAL` and a refusal
+are retried with the same key and never end the loop; one renewal at a
+time; a stop mid-call and a stream dropped mid-call each logged as
+`renew.cancelled` before Run or the session moves on, and no `RenewCert`
+from a connection without a stream; an unwritable `cert.pem` retried; a
+valid or broken `cert.pem` replaced by a renewal; a damaged or loose
+`renew.key` reported with its path and fix, kept, and renewal going on
+once it is removed; an agent clock an hour behind the hub; a renewed pair
+that starts two hours in the future not presented until it starts and
+starting no renewal; nine kinds of invalid `cert.pem` falling back,
+logged and untouched; the pair that ends later used; a leftover
+`renew.key` removed at start and another kept; the expiry check and gauge
+on the pair that ends last by hub time, and a failing renewal ending with
+`EndCertExpired` at the next attempt; an agent clock 75 days fast
+renewing nothing while the hub's certificate is young and only once
+against a hub that signs on another clock; an agent clock 40 days fast
+not ending the loop; a renewal waiting one interval after the last
+across a reconnect; a lead at the CA's end skipped once; a live renewal
+of a future pair keeping the enrolled one; a refused pair swapped for
+the other at the next attempt and back after Connected; an answer ending
+before the renewed lead refused; a `renew.key` that cannot be removed
+reported (macOS); hub time counting 61 and 91 days asleep on a fake sleep-counting clock; a `due_at_once` mark clearing once a correct `HelloAck` shows the pair young; a `HelloAck` with no `hub_time` falling back to the agent's clock; a stream that connected and dropped keeping its pair, and an attempt with no handshake not switching; the switch only to a pair inside its life; the pair choice in a 17-case table; the due time at day 60 to the
+second; enroll removing `cert.pem` and `renew.key`; and a link presenting
+a swapped pair at its next handshake.

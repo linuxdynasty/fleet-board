@@ -43,7 +43,7 @@ func (k Keepalive) withDefaults() Keepalive {
 
 // link is one connection to a hub candidate: TLS 1.3 pinned to the
 // enrolled CA (the same check as enroll), this machine's client
-// certificate, and the keepalive.
+// certificate (chosen at each handshake), and the keepalive.
 type link struct {
 	tr     *http.Transport
 	client agentv1connect.AgentServiceClient
@@ -58,23 +58,29 @@ type link struct {
 	conns []net.Conn
 }
 
-func newLink(addr string, fp [32]byte, cert tls.Certificate, ka Keepalive, hs time.Duration) (*link, error) {
-	return newLinkVia(addr, "", fp, cert, ka, hs, nil)
+// newLink dials with the client certificate getCert returns at each
+// handshake, so a renewed pair is used from the next connection while the
+// one open keeps its stream. There is no session cache: a resumed session
+// would not present the new certificate.
+func newLink(addr string, fp [32]byte, getCert func(*tls.CertificateRequestInfo) (*tls.Certificate, error),
+	ka Keepalive, hs time.Duration,
+) (*link, error) {
+	return newLinkVia(addr, "", fp, getCert, ka, hs, nil)
 }
 
 // newLinkVia is newLink dialing dial (an mDNS answer's address) when it is
 // set; addr still names the hub the certificate must hold, and hs then
 // bounds the dial and the handshake together. onHandshake, when set, hears
 // each handshake's outcome (nil when it passed).
-func newLinkVia(addr, dial string, fp [32]byte, cert tls.Certificate, ka Keepalive, hs time.Duration,
-	onHandshake func(err error),
+func newLinkVia(addr, dial string, fp [32]byte, getCert func(*tls.CertificateRequestInfo) (*tls.Certificate, error),
+	ka Keepalive, hs time.Duration, onHandshake func(err error),
 ) (*link, error) {
 	host, _, err := net.SplitHostPort(addr)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %q", ErrHubAddress, addr)
 	}
 	cfg := pinnedTLS(fp, host)
-	cfg.Certificates = []tls.Certificate{cert}
+	cfg.GetClientCertificate = getCert
 	k := &link{}
 	d := &net.Dialer{Timeout: hs}
 	k.tr = &http.Transport{

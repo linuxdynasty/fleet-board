@@ -102,7 +102,7 @@ func TestTheLoopEndsOnlyWhenItMust(t *testing.T) {
 		},
 		{
 			name: "certificate past its lifetime", want: conn.EndCertExpired, hellos: 0,
-			opts: func(o *conn.LoopOptions) { o.Identity.CertNotAfter = time.Now().Add(-time.Minute) },
+			opts: func(o *conn.LoopOptions) { conn.SetClock(o, pastLifetime) },
 		},
 	}
 	for _, tc := range cases {

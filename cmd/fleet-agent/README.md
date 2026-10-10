@@ -37,6 +37,8 @@ enrolled), 2 bad usage. A stray argument (say a token typed without
   re-enrolled over its identity. To start again, remove only
   `identity.json` (and `enroll.key` if present) from the state folder and
   keep `agent.db`: it holds the install id, which stays with the machine.
+  The next enroll removes `cert.pem` and `renew.key`, the old identity's
+  renewed certificate, before it saves the new one.
 
 Once enrolled, `fleet-agent run` keeps the machine connected to its hub:
 
@@ -52,6 +54,11 @@ fleet-agent run    # logs to stderr; stop with Ctrl-C or SIGTERM
   An address from mDNS is only a candidate: it must pass the same check. When the hub is down it waits and tries again (1 s growing to
   60 s, with some randomness); waking from sleep or a network change makes
   it try at once.
+- While connected it renews its certificate at two thirds of its life
+  (checked on each connect and hourly): a new key, the new pair saved in
+  `cert.pem`, used from the next connection; `identity.json` is never
+  changed. A failed renewal is tried again at the next check and never
+  stops `run`.
 - Exit codes: 0 after a signal (it says goodbye to the hub first; a
   signal while it is still starting is a clean stop too, logged as
   `run.stopped{step}`; a real startup failure at the same moment still

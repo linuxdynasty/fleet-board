@@ -107,6 +107,8 @@ type fakeHub struct {
 	fail   func(call int) error
 	// hang holds every call until the agent gives up on it.
 	hang bool
+	// issueAt is the issue time of an enrolled certificate; nil is now.
+	issueAt func() time.Time
 
 	mu   sync.Mutex
 	reqs []*agentv1.EnrollRequest
@@ -133,7 +135,11 @@ func (f *fakeHub) Enroll(ctx context.Context, req *connect.Request[agentv1.Enrol
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}
-	cert, err := f.auth.IssueAgent(fakeMachine, csr.Key, time.Now(), rand.Reader)
+	at := time.Now()
+	if f.issueAt != nil {
+		at = f.issueAt()
+	}
+	cert, err := f.auth.IssueAgent(fakeMachine, csr.Key, at, rand.Reader)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}

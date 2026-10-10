@@ -15,7 +15,9 @@ func TestAZeroKeepaliveTakesTheDefaults(t *testing.T) {
 	if want := (Keepalive{Ping: 10 * time.Second, Timeout: 20 * time.Second}); ka != want {
 		t.Errorf("Keepalive{} = %+v, want %+v", ka, want)
 	}
-	k, err := newLink("127.0.0.1:1", [32]byte{}, tls.Certificate{}, ka, time.Second)
+	k, err := newLink("127.0.0.1:1", [32]byte{}, func(*tls.CertificateRequestInfo) (*tls.Certificate, error) {
+		return &tls.Certificate{}, nil
+	}, ka, time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}

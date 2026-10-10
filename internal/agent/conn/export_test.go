@@ -26,3 +26,21 @@ func NewMDNSOn(ifi *net.Interface) Discover {
 	m.iface = ifi
 	return m
 }
+
+// SetClock replaces the loop's wall clock for the certificate's expiry and
+// renewal decisions.
+func SetClock(o *LoopOptions, now func() time.Time) { o.clock = now }
+
+// SetElapsed replaces the monotonic time since a moment (time.Since), from
+// which the loop measures hub time after a HelloAck, so a test can move hub
+// time on without a new stream.
+func SetElapsed(o *LoopOptions, since func(t time.Time) time.Duration) { o.elapsed = since }
+
+// SetSleepClock replaces the clock that keeps counting while the machine
+// sleeps, from which hub time also measures the time since a HelloAck.
+func SetSleepClock(o *LoopOptions, read func() (time.Duration, error)) { o.sleepClock = read }
+
+// SetRenewHook makes the loop report each renewal step ("before_send",
+// "after_answer", "after_rename"); returning true stops the renewal there
+// as a crash would.
+func SetRenewHook(o *LoopOptions, f func(step string) bool) { o.renewHook = f }
