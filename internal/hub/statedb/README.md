@@ -130,8 +130,13 @@ r, err := statedb.Renew(ctx, s, statedb.Renewal{MachineID: id, PeerSerial: seria
   Unlike `Renew` it accepts a serial the store does not have: TLS verified
   the certificate, and a hub restored from a backup older than the
   machine's last renewal has no row for it (02g only asks Connect for a live
-  machine row and an unrevoked serial). Only then does it set the epoch to `max(last_epoch, Hello.last_epoch) + 1` (`ErrEpochOutOfRange`
-  past `MaxEpoch`, the agent's ceiling), closes the machine's live row as
+  machine row and an unrevoked serial). This check sees only the
+  revocations state.db holds: after a restore, a serial revoked since the
+  backup is only in the `revoked-serials` file and the in-memory set, so
+  5a-ii must also check `RevokedSet` at Hello and answer a hit with
+  `Bye{REVOKED}`. Only then does it set the epoch to
+  `max(last_epoch, Hello.last_epoch) + 1` (`ErrEpochOutOfRange` past
+  `MaxEpoch`, the agent's ceiling), closes the machine's live row as
   `displaced` and returns it as `HelloOut.Displaced`, inserts the new live
   row and stores `last_epoch` and `last_seen_time`. It never changes
   `machines.state`: the Snapshot transaction marks `ONLINE` (row 5 ruling,
@@ -172,6 +177,9 @@ Notes for the rows that build on this:
 - **13a:** `RevokeMachine` closes the live row with
   `EndConnection(EndRevoked)` after sending `Bye{REVOKED}`, and
   `DeleteMachine` closes any live row; the history rows stay.
+- **5b:** do the machine state change (OFFLINE) in the same writer job as
+  the close, or make it conditional on there being no live row. A second job
+  after `EndConnection` could land after the next Snapshot has set `ONLINE`.
 - **5m:** the 30-day prune of `machine_connections` (03f) is 5m's; nothing
   prunes the table yet.
 
