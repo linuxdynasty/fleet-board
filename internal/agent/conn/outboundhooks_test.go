@@ -26,7 +26,14 @@ func TestAHookWaitingOnSendIsReleasedWhenTheStreamOrRunEnds(t *testing.T) {
 		// of a stream that does not close (shutdownWait).
 		within time.Duration
 	}{
-		{"the stream ends", func(t *testing.T, h *connectHub, _ *loopRun) { t.Helper(); h.dropLive(t) }, 10 * time.Second},
+		// The hub sends on its own (a ResultAck, Settings, a SnapshotRequest):
+		// a message after the held one must not hide the stream's end.
+		{"the stream ends after another message", func(t *testing.T, h *connectHub, _ *loopRun) {
+			t.Helper()
+			h.pushSettings(t, 9)
+			time.Sleep(50 * time.Millisecond)
+			h.dropLive(t)
+		}, 10 * time.Second},
 		{"the run stops", func(_ *testing.T, _ *connectHub, r *loopRun) { r.cancel() }, 1500 * time.Millisecond},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -163,44 +170,99 @@ func snapshotsAt(q []string) []int {
 	return out
 }
 
-// Once the status says Connected, Send takes messages: the queue opens
-// before the status changes (a Send that sees Connected is never refused
-// for want of a stream, short of the stream ending).
-func TestSendIsTakenOnceTheStatusSaysConnected(t *testing.T) {
+// Connected means Send takes messages (ruling fork 12 a): right after the
+// status says Connected a Send is queued, and a Send refused because the
+// stream's queue closed never sees Connected. The step hook runs on Run's
+// goroutine at both moments, so the check is exact, not a race.
+func TestConnectedMeansSendTakesMessages(t *testing.T) {
 	t.Parallel()
 	h := startConnectHub(t)
 	a := enrolled(t, h)
-	r := startLoop(t, a, nil)
-	ch := r.loop.StatusChanged()
-	refused := make(chan error, 16)
-	done := make(chan struct{})
-	t.Cleanup(func() { close(done) })
-	go func() {
-		for {
+	var got hookLog
+	var loop *conn.Loop
+	startLoopThen(t, a, func(o *conn.LoopOptions) {
+		conn.SetStepHook(o, func(step string) {
+			err := loop.Send(context.Background(), ackOf(step))
+			got.add("%s: %s, send %v", step, loop.Status().State, errors.Is(err, conn.ErrNoStream))
+		})
+	}, func(l *conn.Loop) { loop = l })
+	h.connected(t, 1)
+	waitFor(t, 5*time.Second, "the ack from the connected step", func() bool { return len(h.acks(1)) == 1 })
+	h.dropLive(t)
+	h.connected(t, 2)
+	waitFor(t, 5*time.Second, "three steps", func() bool { return len(got.get()) >= 3 })
+	want := []string{"connected: connected, send false", "unpublished: backoff, send true", "connected: connected, send false"}
+	if g := got.get()[:3]; !slices.Equal(g, want) {
+		t.Errorf("steps %q, want %q", g, want)
+	}
+}
+
+// F1: a Send from a hook never waits. A watcher fills the queue as soon as
+// the status says Connected, before OnConnected runs; OnConnected's own
+// sends then fail at once with ErrQueueFull instead of holding the only
+// goroutine that drains the queue, and the stream goes on.
+func TestASendFromAHookNeverWaits(t *testing.T) {
+	t.Parallel()
+	h := startConnectHub(t)
+	a := enrolled(t, h)
+	filled := make(chan struct{})
+	var res hookLog
+	var loop *conn.Loop
+	r := startLoopThen(t, a, func(o *conn.LoopOptions) {
+		o.OnConnected = func(ctx context.Context, _ uint64, _ conn.HubClock) {
 			select {
-			case <-ch:
-			case <-done:
+			case <-filled:
+			case <-time.After(5 * time.Second):
+				res.add("the watcher never filled the queue")
 				return
 			}
-			if r.loop.Status().State != conn.StateConnected {
-				continue
+			start, full := time.Now(), 0
+			for k := range conn.QueueSize {
+				if err := loop.Send(ctx, ackOf("hook-"+strconv.Itoa(k))); errors.Is(err, conn.ErrQueueFull) {
+					full++
+				} else if err != nil {
+					res.add("send %d: %v", k, err)
+				}
 			}
-			if err := r.loop.Send(context.Background(), ackOf("probe")); err != nil {
-				refused <- err
-			}
+			res.add("full %d in under a second %v", full, time.Since(start) < time.Second)
 		}
+	}, func(l *conn.Loop) { loop = l })
+	go func() {
+		for r.loop.Status().State != conn.StateConnected {
+			time.Sleep(time.Millisecond)
+		}
+		for k := range conn.QueueSize {
+			_ = r.loop.Send(context.Background(), ackOf("w-"+strconv.Itoa(k)))
+		}
+		close(filled)
 	}()
-	const streams = 5
-	for n := 1; n <= streams; n++ {
-		h.connected(t, n)
-		waitFor(t, 5*time.Second, "the probe on stream "+strconv.Itoa(n), func() bool { return len(h.acks(n)) > 0 })
-		if n < streams {
-			h.dropLive(t)
-		}
+	waitFor(t, 10*time.Second, "OnConnected to finish", func() bool { return len(res.get()) > 0 })
+	if g := res.get(); !slices.Equal(g, []string{"full 256 in under a second true"}) {
+		t.Fatalf("OnConnected: %q", g)
 	}
-	select {
-	case err := <-refused:
-		t.Errorf("a Send right after the status said Connected = %v", err)
-	default:
+	waitFor(t, 10*time.Second, "the watcher's acks", func() bool { return len(h.acks(1)) == conn.QueueSize })
+	if got := metric(scrape(t, a), "fleet_agent_outbound_blocked_total", `kind="command_ack"`, `result="refused"`); got != "256" {
+		t.Errorf("refused hook sends counted %q, want 256", got)
+	}
+	r.running(t)
+}
+
+// connect.hook_blocked says when a hook holds the sender too long.
+func TestAHookHoldingTheSenderIsLogged(t *testing.T) {
+	t.Parallel()
+	h := startConnectHub(t)
+	a := enrolled(t, h)
+	startLoop(t, a, func(o *conn.LoopOptions) {
+		conn.SetHookWarn(o, 50*time.Millisecond)
+		o.Command = func(context.Context, uint64, *agentv1.Command) bool {
+			time.Sleep(300 * time.Millisecond)
+			return true
+		}
+	})
+	h.connected(t, 1)
+	h.pushCommand(t, "slow", time.Now().Add(time.Hour))
+	waitFor(t, 5*time.Second, "connect.hook_blocked", func() bool { return len(a.events(t, "connect.hook_blocked")) == 1 })
+	if ev := a.events(t, "connect.hook_blocked")[0]; ev["hook"] != "command" || ev["held_ms"] != float64(50) {
+		t.Errorf("connect.hook_blocked = %v", ev)
 	}
 }

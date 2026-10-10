@@ -43,6 +43,14 @@ func SetElapsed(o *LoopOptions, since func(t time.Time) time.Duration) { o.elaps
 // sleeps, from which hub time also measures the time since a HelloAck.
 func SetSleepClock(o *LoopOptions, read func() (time.Duration, error)) { o.sleepClock = read }
 
+// SetStepHook makes the loop report its queue steps ("connected" right
+// after the status says Connected, "unpublished" right after a stream's
+// queue closed), on Run's goroutine.
+func SetStepHook(o *LoopOptions, f func(step string)) { o.stepHook = f }
+
+// SetHookWarn shortens the wait before connect.hook_blocked.
+func SetHookWarn(o *LoopOptions, d time.Duration) { o.hookWarn = d }
+
 // SetRenewHook makes the loop report each renewal step ("before_send",
 // "after_answer", "after_rename"), each check ("check") and the renewal
 // goroutine's report to the gate ("reported"); returning true stops the

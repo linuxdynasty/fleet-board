@@ -154,12 +154,13 @@ The agent side of plan row 6 (ruling forks 4 i, 11 and 12), in
   stream's one sender after the snapshot and its unacked results. A send
   with no Connected stream is refused at once; a full queue makes it wait
   for room, the stream's or the run's end, or its own deadline
-  (`connect.outbound_blocked`, `fleet_agent_outbound_blocked_total`). The
+  (`connect.outbound_blocked`, `fleet_agent_outbound_blocked_total`
+  `result="waited"`). The
   queue dies with its stream; what was left in it is counted in
   `fleet_agent_outbound_lost_total` (a lower bound) and comes back as 02i
   "Event kinds" says.
 - **Results are logged first.** A `CommandResult` is queued only when
-  `agent.db` holds it, unchanged, as its command's finished result, so one
+  `agent.db` holds it as its command's finished result (proto-equal), so one
   lost with its stream is re-sent after the next snapshot. The one
   exception is the two refusals that are never logged or acked because
   the hub re-issues the same `command_id` ([02](02-contracts.md), "Envelope
@@ -174,8 +175,11 @@ The agent side of plan row 6 (ruling forks 4 i, 11 and 12), in
   its snapshot and results, with its epoch and the strict hub clock of
   02i "Clocks") and when it stopped serving. The agent's status says
   Connected only while the queue takes messages. Every receiver hook runs on
-  the stream's sender and never waits on the queue; only the Connected
-  hook may queue, up to the queue's room, which is empty then.
+  the stream's sender, so a send from a hook never waits: on a full queue
+  it fails at once (counted as `result="refused"`) and the hook checks the
+  error. A hook that holds the sender over 10 s is logged
+  (`connect.hook_blocked`). The receiver reads up to 8 messages ahead of
+  the sender, so it sees the stream end even while a hook holds it.
 - Results for commands the hub already closed are ignored (idempotent by
   `command_id`); results for commands the hub never issued (DB restored from an
   older backup) go to the audit log and a triage info item.

@@ -50,6 +50,14 @@ func (s *session) sendSnapshot(ctx context.Context, first bool) error {
 	if err != nil {
 		return err
 	}
+	// A requested snapshot first sends what is queued (outbound.go flush),
+	// after the read: a progress queued before a result it lists then
+	// never follows that result.
+	if s.q != nil {
+		if err := s.flush(); err != nil {
+			return err
+		}
+	}
 	facts := BasicFacts(l.opts.Version)
 	facts.BootId = l.opts.BootID
 	snap := &agentv1.Snapshot{

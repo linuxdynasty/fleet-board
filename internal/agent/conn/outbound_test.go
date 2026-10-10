@@ -115,6 +115,34 @@ func TestSendTakesOnlyQueueableKindsAndLoggedResults(t *testing.T) {
 			t.Errorf("Send(%s %v/%v) = %v, want ok %v", c.id, c.st, c.why, err, c.wantOK)
 		}
 	}
+	// The unlogged refusal's shape: an id, a short printable message and
+	// retryable at most; anything else must be logged first.
+	for _, c := range []struct {
+		name   string
+		edit   func(r *agentv1.CommandResult)
+		wantOK bool
+	}{
+		{"retryable with a short message", func(r *agentv1.CommandResult) {
+			r.Retryable, r.Message = true, "the epoch moved on"
+		}, true},
+		{"no command id", func(r *agentv1.CommandResult) { r.CommandId = nil }, false},
+		{"an id with a control character", func(r *agentv1.CommandResult) { r.CommandId.Value = "e\x1bm" }, false},
+		{"a 4 KiB message", func(r *agentv1.CommandResult) { r.Message = strings.Repeat("m", 4096) }, false},
+		{"a 257-byte message", func(r *agentv1.CommandResult) { r.Message = strings.Repeat("m", 257) }, false},
+		{"a message with a newline", func(r *agentv1.CommandResult) { r.Message = "a\nb" }, false},
+		{"metadata", func(r *agentv1.CommandResult) { r.Metadata = map[string]string{"k": "v"} }, false},
+		{"a missing capability", func(r *agentv1.CommandResult) { r.MissingCapability = &typev1.Capability{Name: "drain", Version: 1} }, false},
+		{"a detail", func(r *agentv1.CommandResult) {
+			r.Detail = &agentv1.CommandResult_CapturePane{CapturePane: &agentv1.CapturePaneResult{}}
+		}, false},
+	} {
+		m := refusalOf("shape", failed, epochMM)
+		c.edit(m.GetCommandResult())
+		err := r.loop.Send(ctx, m)
+		if c.wantOK && err != nil || !c.wantOK && !errors.Is(err, conn.ErrResultNotLogged) {
+			t.Errorf("%s: Send = %v, want ok %v", c.name, err, c.wantOK)
+		}
+	}
 	// A logged result that cannot be read is refused and logged.
 	if _, _, err := db.LogCommand(ctx, ring.Command{
 		ID: "garbled", Kind: "capture_pane", Epoch: 1, Seq: 2, Received: time.Now(), NotAfter: time.Now().Add(time.Hour),
@@ -140,12 +168,13 @@ func TestSendTakesOnlyQueueableKindsAndLoggedResults(t *testing.T) {
 			t.Errorf("Send(%T) = %v", m.GetBody(), err)
 		}
 	}
-	waitFor(t, 5*time.Second, "the five messages", func() bool { return len(h.stream(1).msgs) >= 6 })
+	waitFor(t, 5*time.Second, "the six messages", func() bool { return len(h.stream(1).msgs) >= 7 })
 	got := h.stream(1).msgs[1:]
 	if got[0].GetCommandResult().GetCommandId().GetValue() != "done" ||
 		got[1].GetCommandResult().GetCommandId().GetValue() != "em" ||
-		got[2].GetCommandResult().GetCommandId().GetValue() != "sr" || got[3].GetCommandProgress() == nil ||
-		got[4].GetSettingsAck().GetGeneration() != 2 || len(got) != 5 {
+		got[2].GetCommandResult().GetCommandId().GetValue() != "sr" ||
+		got[3].GetCommandResult().GetCommandId().GetValue() != "shape" || got[4].GetCommandProgress() == nil ||
+		got[5].GetSettingsAck().GetGeneration() != 2 || len(got) != 6 {
 		t.Errorf("after the snapshot the hub got %v", got)
 	}
 }
@@ -246,7 +275,7 @@ func TestSendWaitsForRoomButNotPastItsContext(t *testing.T) {
 	if ev := a.events(t, "connect.outbound_blocked"); len(ev) != 1 || ev[0]["kind"] != "command_ack" {
 		t.Errorf("connect.outbound_blocked = %v, want one line per stream with kind command_ack", ev)
 	}
-	if got := metric(scrape(t, a), "fleet_agent_outbound_blocked_total", `kind="command_ack"`); got != "2" {
+	if got := metric(scrape(t, a), "fleet_agent_outbound_blocked_total", `kind="command_ack"`, `result="waited"`); got != "2" {
 		t.Errorf("fleet_agent_outbound_blocked_total = %q, want 2: every wait counts", got)
 	}
 	g.open()

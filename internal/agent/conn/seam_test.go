@@ -134,11 +134,12 @@ func TestAFullIntakeDropsTheMessageAndCountsIt(t *testing.T) {
 	}
 }
 
-// OnConnected runs once the snapshot and its unacked results are out (the
-// hub already holds them when it starts), with the stream's epoch, and a
-// result logged and sent from it is not in that snapshot and goes out once,
-// after it; OnDisconnected runs once the stream is gone, when Send is
-// already refused.
+// OnConnected runs only after the snapshot and its unacked results were
+// sent: the hook holds the stream's only sender, so they can reach the hub
+// during its wait only if they were sent before it started. A result
+// logged and sent from it is not in that snapshot and goes out once, after
+// it. OnDisconnected runs once the stream is gone, when Send is already
+// refused.
 func TestOnConnectedComesAfterTheSnapshotAndItsResults(t *testing.T) {
 	t.Parallel()
 	h := startConnectHub(t)

@@ -66,16 +66,16 @@ type LoopOptions struct {
 	Command  func(ctx context.Context, epoch uint64, c *agentv1.Command) bool
 	Settings func(ctx context.Context, epoch uint64, s *agentv1.Settings) bool
 	// OnConnected runs once a stream's snapshot and unacked results are
-	// out and [Loop.Send] takes messages for it, with the same context;
-	// it may Send up to the queue's room (256) without waiting.
+	// out and [Loop.Send] takes messages for it, with the same context.
 	// OnDisconnected runs once that stream stopped serving and Send
 	// refuses it.
 	OnConnected    func(ctx context.Context, epoch uint64, clock HubClock)
 	OnDisconnected func()
 	// Capabilities lists what each Hello advertises; nil advertises none.
 	// Command, Settings, OnConnected, OnDisconnected and Capabilities run
-	// on the sending goroutine: they must not block and must never wait on
-	// Send (hand the work to a goroutine of their own).
+	// on the sending goroutine and must not block. Send from a hook never
+	// waits (with the hook's context it returns ErrQueueFull); check its
+	// error, and hand longer work to a goroutine of their own.
 	Capabilities func() []*typev1.Capability
 	Backoff      Backoff
 	Keepalive    Keepalive
@@ -109,6 +109,12 @@ type LoopOptions struct {
 	// sleepClock, for tests only, replaces the clock that keeps counting
 	// while the machine sleeps (wakenet.SinceBoot).
 	sleepClock func() (time.Duration, error)
+	// stepHook, for tests only, runs on Run's goroutine right after the
+	// status says Connected ("connected") and right after a stream's queue
+	// is closed ("unpublished").
+	stepHook func(step string)
+	// hookWarn, for tests only, replaces hookHeldWarn.
+	hookWarn time.Duration
 }
 
 // Loop keeps this machine connected to its hub (03 W1 "State machine", 03n W2):

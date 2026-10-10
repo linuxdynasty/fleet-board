@@ -448,9 +448,11 @@ re-enroll rule are in [02g](02g-agent-security.md#machine-lifecycle-revoke-and-d
   change, which resets it);
   `connect.message_ignored{kind}` (a `Command` or `Settings` with no
   receiver registered, until plan row 6 wires them);
-  `connect.outbound_blocked{kind}` (warn, once per stream; a send found
-  the stream's queue full and waits; `kind`: `command_ack`,
-  `command_progress`, `command_result`, `settings_ack`);
+  `connect.outbound_blocked{kind, hook}` (warn, once per stream; a send
+  found the stream's queue full and waits, or with `hook` fails at once;
+  `kind`: `command_ack`, `command_progress`, `command_result`,
+  `settings_ack`); `connect.hook_blocked{hook, held_ms}` (warn; a hook
+  held the stream's sender over 10 s);
   `connect.capability_dropped{reason, name}` (warn, once per entry and
   run; `reason`: `reserved`, `invalid`, `repeat`; `name` only when it is a
   valid name); `connect.ended{state}` (`revoked`,

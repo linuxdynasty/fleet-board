@@ -3,6 +3,7 @@ package conn
 import (
 	"context"
 	"fmt"
+	"time"
 
 	agentv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1"
 	typev1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/type/v1"
@@ -30,7 +31,9 @@ func (s *session) intake(ctx context.Context, m *agentv1.ConnectResponse) {
 	case *agentv1.ConnectResponse_Command:
 		kind = "command"
 		if hook := l.opts.Command; hook != nil {
+			stop := s.watchHook("command")
 			hooked, taken = true, hook(s.hctx, s.epoch, b.Command)
+			stop()
 		}
 		if id := b.Command.GetCommandId().GetValue(); printable(id, maxIDBytes) {
 			args = append(args, "command_id", id)
@@ -38,7 +41,9 @@ func (s *session) intake(ctx context.Context, m *agentv1.ConnectResponse) {
 	case *agentv1.ConnectResponse_Settings:
 		kind = "settings"
 		if hook := l.opts.Settings; hook != nil {
+			stop := s.watchHook("settings")
 			hooked, taken = true, hook(s.hctx, s.epoch, b.Settings)
+			stop()
 		}
 	default:
 		return
@@ -50,6 +55,25 @@ func (s *session) intake(ctx context.Context, m *agentv1.ConnectResponse) {
 		l.log.WarnContext(ctx, "command.intake_full", append([]any{"kind", kind}, args...)...)
 		l.m.intakeDrop(ctx, kind)
 	}
+}
+
+// hookHeldWarn is how long a hook may hold the sending goroutine before
+// connect.hook_blocked is logged: nothing is sent, not even a heartbeat,
+// while it runs.
+const hookHeldWarn = 10 * time.Second
+
+// watchHook logs connect.hook_blocked{hook, held_ms} once if the hook
+// named runs longer than hookHeldWarn; call the returned func when it
+// returns.
+func (s *session) watchHook(hook string) func() {
+	d := hookHeldWarn
+	if s.l.opts.hookWarn > 0 {
+		d = s.l.opts.hookWarn
+	}
+	t := time.AfterFunc(d, func() {
+		s.l.log.WarnContext(s.hctx, "connect.hook_blocked", "hook", hook, "held_ms", d.Milliseconds())
+	})
+	return func() { t.Stop() }
 }
 
 // capabilities is what Hello advertises: the hook's list without the

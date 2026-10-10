@@ -24,6 +24,11 @@ import (
 // agent's Bye{SHUTDOWN}.
 const shutdownWait = 2 * time.Second
 
+// receiveAhead is how many of the hub's messages the receiver holds for
+// Run's goroutine, so it keeps reading, and sees the stream end, while
+// that goroutine is busy (a long send, a hook): 8 MiB at most.
+const receiveAhead = 8
+
 var (
 	errEpochRegressed = errors.New("conn: the hub's epoch is not above the last one")
 	errProtoVersion   = errors.New("conn: the hub chose a protocol version outside this agent's range")
@@ -171,7 +176,7 @@ func (s *session) run(ctx context.Context) (ending, string, error) {
 		stopRenew()
 		s.renewWG.Wait()
 	}()
-	s.msgs, s.done = make(chan *agentv1.ConnectResponse), make(chan struct{})
+	s.msgs, s.done = make(chan *agentv1.ConnectResponse, receiveAhead), make(chan struct{})
 	s.bs = s.k.client.Connect(s.sctx)
 	started := false
 	defer func() {
@@ -342,6 +347,7 @@ func (s *session) connected(ctx context.Context) (ending, string, error) {
 	// The queue opens first, so a Send that sees Connected is taken.
 	defer s.serveQueue(ctx)()
 	l.status.state(StateConnected, s.c.addr)
+	l.step("connected")
 	l.m.connected.Store(1)
 	defer l.m.connected.Store(0)
 	l.m.attempt(ctx, "connected", s.c.source)
@@ -417,9 +423,6 @@ func (s *session) handle(ctx context.Context, m *agentv1.ConnectResponse) (endin
 		}
 	case *agentv1.ConnectResponse_SnapshotRequest:
 		s.l.log.InfoContext(ctx, "snapshot.requested", "reason", clean(b.SnapshotRequest.GetReason(), maxReasonBytes))
-		if err := s.flush(); err != nil {
-			return ending{}, true, "outbound", err
-		}
 		if err := s.sendSnapshot(ctx, false); err != nil {
 			return ending{}, true, "snapshot", err
 		}

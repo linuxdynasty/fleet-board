@@ -28,7 +28,13 @@ var (
 	// ErrResultNotLogged means a CommandResult is not the one agent.db holds
 	// as that command's finished result, and is not an unlogged refusal.
 	ErrResultNotLogged = errors.New("conn: the result is not the one logged in agent.db")
+	// ErrQueueFull means a Send made with a hook's context found the
+	// queue full; a hook never waits, because it holds the queue's reader.
+	ErrQueueFull = errors.New("conn: the stream's outbound queue is full")
 )
+
+// hookKey marks the context the loop hands its hooks ([LoopOptions]).
+type hookKey struct{}
 
 // outQueue is one stream's outbound queue. Command goroutines put into
 // ch; the stream's sending goroutine (serve) is its only reader. dead is
@@ -68,11 +74,11 @@ func (l *Loop) unpublish(q *outQueue) {
 //
 // With no Connected stream Send returns [ErrNoStream] at once. With a full
 // queue it waits for room, the stream's or the run's end ([ErrNoStream])
-// or ctx, whichever comes first. nil means queued, not sent: a message
-// queued as its stream ends is dropped with it
-// (fleet_agent_outbound_lost_total). Never wait on Send from a hook that
-// runs on the sending goroutine: only OnConnected may Send there, up to
-// the queue's room (256), which is empty when it runs.
+// or ctx, whichever comes first; but a Send made with a hook's context (or
+// one derived from it) never waits: it returns [ErrQueueFull] at once,
+// because the hook holds the queue's only reader. Send from a hook never
+// waits; check its error. nil means queued, not sent: a message queued as
+// its stream ends is dropped with it (fleet_agent_outbound_lost_total).
 func (l *Loop) Send(ctx context.Context, m *agentv1.ConnectRequest) error {
 	kind, ok := queueKind(m)
 	if !ok {
@@ -99,11 +105,15 @@ func (l *Loop) Send(ctx context.Context, m *agentv1.ConnectRequest) error {
 		return nil
 	default:
 	}
+	hook := ctx.Value(hookKey{}) != nil
 	if l.m != nil {
-		l.m.outboundBlocked(ctx, kind)
+		l.m.outboundBlocked(ctx, kind, hook)
 	}
 	if q.blocked.CompareAndSwap(false, true) {
-		l.log.WarnContext(ctx, "connect.outbound_blocked", "kind", kind)
+		l.log.WarnContext(ctx, "connect.outbound_blocked", "kind", kind, "hook", hook)
+	}
+	if hook {
+		return ErrQueueFull
 	}
 	select {
 	case q.ch <- m:
@@ -134,13 +144,31 @@ func queueKind(m *agentv1.ConnectRequest) (string, bool) {
 	return "", false
 }
 
+// maxRefusalMessage caps the message of an unlogged refusal.
+const maxRefusalMessage = 256
+
 // unloggedRefusal is a refusal the executor answers without a log row or
 // an ack, because the hub re-issues the same command_id (02-contracts
-// "Envelope checks", ruling fork 4 i).
+// "Envelope checks", ruling fork 4 i): FAILED/EPOCH_MISMATCH or
+// REJECTED_BY_POLICY/SEQ_REPLAYED, a printable command_id, no detail,
+// metadata or missing capability, and a message of at most 256 printable
+// bytes. retryable, retry_after, the times and the trace may be set.
 func unloggedRefusal(r *agentv1.CommandResult) bool {
 	st, why := r.GetStatus(), r.GetReason()
-	return (st == typev1.Status_STATUS_FAILED && why == typev1.ReasonCode_REASON_CODE_EPOCH_MISMATCH) ||
-		(st == typev1.Status_STATUS_REJECTED_BY_POLICY && why == typev1.ReasonCode_REASON_CODE_SEQ_REPLAYED)
+	if !(st == typev1.Status_STATUS_FAILED && why == typev1.ReasonCode_REASON_CODE_EPOCH_MISMATCH) &&
+		!(st == typev1.Status_STATUS_REJECTED_BY_POLICY && why == typev1.ReasonCode_REASON_CODE_SEQ_REPLAYED) {
+		return false
+	}
+	if !printable(r.GetCommandId().GetValue(), maxIDBytes) || r.GetDetail() != nil || len(r.GetMetadata()) > 0 ||
+		r.GetMissingCapability() != nil || len(r.GetMessage()) > maxRefusalMessage {
+		return false
+	}
+	for _, c := range []byte(r.GetMessage()) {
+		if c < ' ' || c >= 0x7f {
+			return false
+		}
+	}
+	return true
 }
 
 // logged checks that r is the finished result agent.db holds for its
@@ -186,7 +214,7 @@ func (l *Loop) logged(ctx context.Context, r *agentv1.CommandResult) error {
 // sender.
 func (s *session) serveQueue(ctx context.Context) func() {
 	l := s.l
-	hctx, cancel := context.WithCancel(s.sctx)
+	hctx, cancel := context.WithCancel(context.WithValue(s.sctx, hookKey{}, true))
 	unhook := context.AfterFunc(ctx, cancel)
 	s.hctx = hctx
 	s.q = newOutQueue(hctx.Done())
@@ -196,6 +224,7 @@ func (s *session) serveQueue(ctx context.Context) func() {
 		unhook()
 		cancel()
 		l.unpublish(s.q)
+		l.step("unpublished")
 		// A lower bound: a Send racing the end may still add one.
 		if n := len(s.q.ch); n > 0 {
 			l.m.outboundLost(ctx, n)
@@ -210,15 +239,23 @@ func (s *session) serveQueue(ctx context.Context) func() {
 // open: after the snapshot and its unacked results.
 func (s *session) onConnected() {
 	if f := s.l.opts.OnConnected; f != nil {
+		defer s.watchHook("on_connected")()
 		f(s.hctx, s.epoch, s.l.HubClock())
 	}
 }
 
+// step reports a queue step to the test hook (LoopOptions.stepHook).
+func (l *Loop) step(name string) {
+	if l.opts.stepHook != nil {
+		l.opts.stepHook(name)
+	}
+}
+
 // flush sends what the queue holds now, in order, without waiting for
-// more. A SnapshotRequest flushes before its snapshot is built, so an ack
-// or progress queued before it never reaches the hub after the result
-// that snapshot re-sends, and nothing lands between the snapshot and its
-// results.
+// more. A requested snapshot flushes after it read the unacked results and
+// before it is built, so an ack or progress queued before such a result
+// never reaches the hub after the snapshot re-sends it, and nothing lands
+// between the snapshot and its results.
 func (s *session) flush() error {
 	for n := len(s.q.ch); n > 0; n-- {
 		if err := s.send(<-s.q.ch); err != nil {

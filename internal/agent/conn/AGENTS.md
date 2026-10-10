@@ -49,8 +49,10 @@ Read the root `AGENTS.md` first; it applies here. Load `fleet-go`,
   SettingsAck) goes through `Loop.Send` and the stream's queue, which
   `serve` drains; never call `bs.Send` elsewhere. A hook that runs on the
   sending goroutine (Command, Settings, OnConnected, OnDisconnected,
-  Capabilities, Snapshot, Heartbeat) must not block and must never wait
-  on `Loop.Send`; only OnConnected may Send there, up to the queue's room.
+  Capabilities, Snapshot, Heartbeat) must not block. Send from a hook
+  never waits: with the hook's context a full queue is `ErrQueueFull` at
+  once; check its error. Keep the receiver's read-ahead: it must keep
+  reading while the sender is busy, or a dead stream goes unseen.
   A result is queued only once it is logged, except the two unlogged
   refusals (EPOCH_MISMATCH, SEQ_REPLAYED). A SnapshotRequest flushes the
   queue before its snapshot. Deadlines use the strict `HubClock`, never `hubNow` or
