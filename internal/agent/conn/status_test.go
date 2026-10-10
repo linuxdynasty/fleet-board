@@ -29,6 +29,29 @@ func closedAddr(t *testing.T) string {
 	return addr
 }
 
+// closedAddrs returns n distinct loopback addresses nobody listens on. The
+// listeners stay open until all n ports are picked: one closedAddr call per
+// address can hand the same port out twice (the system reuses a port it just
+// freed), and the loop tries a repeated address once.
+func closedAddrs(t *testing.T, n int) []string {
+	t.Helper()
+	var lc net.ListenConfig
+	var held []net.Listener
+	addrs := make([]string, 0, n)
+	for range n {
+		ln, err := lc.Listen(context.Background(), "tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		held = append(held, ln)
+		addrs = append(addrs, ln.Addr().String())
+	}
+	for _, ln := range held {
+		_ = ln.Close()
+	}
+	return addrs
+}
+
 func TestStatusKeepsTheLastFailurePerHubAddress(t *testing.T) {
 	t.Parallel()
 	h := startConnectHub(t)
