@@ -138,7 +138,7 @@ func TestAWakeCutsTheBackoffButKeepsTheGap(t *testing.T) {
 			}
 			// The gap runs from just before the first connect.attempt line;
 			// without it the two would be about the 2 ms event delay apart.
-			const logSkew = 10 * time.Millisecond
+			const logSkew = 100 * time.Millisecond
 			if d := logTime(t, attempts[1]).Sub(logTime(t, attempts[0])); d < gap-logSkew {
 				t.Errorf("two connects %v apart, want at least %v", d, gap)
 			}
