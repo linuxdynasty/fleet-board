@@ -180,7 +180,7 @@ default-route list is ignored.
 
 **Snapshot reconcile (A3).** Hub applies the snapshot in one transaction:
 replace the machine's sessions/windows/panes/goals/repos/harness rows, store
-`Snapshot.seq` as `last_event_seq`, then diff desired state: probe assignments
+`Snapshot.seq` as `snapshot_seq` (not `hub_last_event_seq`: 03n), then diff desired state: probe assignments
 whose machine is this one but which the snapshot's `probes[]` does not show →
 `EnsureProbe`, and the reverse, a probe the snapshot shows that the hub does not
 assign to this machine (failed over while it was away, or an account removed) →
@@ -363,6 +363,8 @@ re-enroll rule are in [02g](02g-agent-security.md#machine-lifecycle-revoke-and-d
   key, a CSR or a certificate; serials are hex.
 - Hub logs of `Connect` (plan row 5a-ii): `connect.refused{cause, reason, peer, machine_id}`
   and `connect.failed{step, err_kind, machine_id}`, described in 03n "Telemetry".
+- Hub logs of the Snapshot (plan row 5c1): `snapshot.applied`, `snapshot.refused`,
+  `snapshot.failed` and `snapshot.rollback`, described in 03n "Telemetry".
 - Logs: `enroll.issued{machine, expire_time, actor}`, `enroll.issue_refused{reason}`,
   `enroll.issue_failed{step, err_kind}`,
   `enroll.completed{machine_id, replayed, hostname_mismatch}`,
@@ -383,8 +385,7 @@ re-enroll rule are in [02g](02g-agent-security.md#machine-lifecycle-revoke-and-d
   `connect.hello{peer, epoch, last_epoch, last_event_seq, hub_last_event_seq,
   boot_id, reason, skew_ms, hub_time_ok, heartbeat_ms}` (`hub_time_ok` is
   false when the HelloAck had no `hub_time`: then `skew_ms` is 0, not
-  measured, and hub time starts from the agent's clock), `snapshot.applied{panes,
-  goals, bytes, diff: probes_reissued, goals_pane_lost, orphan_panes}`. No
+  measured, and hub time starts from the agent's clock). No
   enroll line carries the token, its secret, any part of its hash, or the
   facts. A revoked certificate at the handshake is 05b's
   `tls.client_cert_revoked`.

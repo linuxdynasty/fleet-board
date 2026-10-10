@@ -35,6 +35,7 @@
  },
  "metrics": {
   "agent_cert_": "docs/specs/05b-observability.md",
+  "agent_rollback_": "docs/specs/03n-reconnect.md",
   "audit_": "docs/specs/05b-observability.md",
   "auth_failures_": "docs/specs/05b-observability.md",
   "backup_": "docs/specs/05b-observability.md",
@@ -59,6 +60,7 @@
   "reconnects_": "docs/specs/03n-reconnect.md",
   "sample_": "docs/specs/05b-observability.md",
   "server_cert_": "docs/specs/05b-observability.md",
+  "snapshot_": "docs/specs/03-workflows.md",
   "start_failures_": "docs/specs/05b-observability.md",
   "status_writes_": "docs/specs/03-workflows.md",
   "store_": "docs/specs/05b-observability.md",

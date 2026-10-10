@@ -44,6 +44,12 @@
 // Bye{HUB_RESTART} on every stream and returns only once every handler has
 // returned (each row closed) or its context ends.
 //
+// The Snapshot arm cleans the Snapshot's text and applies it with
+// ingest.ApplySnapshot as one writer job (the core, ServerOptions.Appliers,
+// then ONLINE); after the commit it calls ServerOptions.OnSnapshotApplied
+// and, on a seq rollback, sends SnapshotRequest. A Snapshot not applied
+// ends the stream unless a newer Hello already displaced it.
+//
 // [Server.Housekeep] is the machine-state job of fleetd's housekeeping:
 // no Heartbeat for [StaleAfter] is STALE, for [OfflineAfter] OFFLINE (and
 // the stream cut), and a STALE machine's stream whose reader has been

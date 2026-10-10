@@ -8,7 +8,7 @@ import (
 	"github.com/linuxdynasty/fleet-board/internal/hub/gateway"
 )
 
-// stalledHub is a hub whose snapshot arm blocks until release closes or its
+// stalledHub is a hub whose event arm blocks until release closes or its
 // stream's context ends, so the agent can fill the ingest queue and stall
 // the stream's reader.
 func stalledHub(t *testing.T) (*hub, chan struct{}) {
@@ -22,7 +22,7 @@ func stalledHub(t *testing.T) (*hub, chan struct{}) {
 		}
 	})
 	h := startHub(t, func(o *gateway.ServerOptions) {
-		gateway.SetArmContext(o, "snapshot", func(ctx context.Context) {
+		gateway.SetArmContext(o, "event", func(ctx context.Context) {
 			select {
 			case <-release:
 			case <-ctx.Done():
@@ -37,7 +37,7 @@ func stalledHub(t *testing.T) (*hub, chan struct{}) {
 func (h *hub) stall(t *testing.T, s *agentStream, machineID string) {
 	t.Helper()
 	for range 66 {
-		s.send(t, snapshotMsg())
+		s.send(t, eventMsg())
 	}
 	end := time.Now().Add(10 * time.Second)
 	for !gateway.Stalled(h.srv, machineID) {

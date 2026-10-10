@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"slices"
 	"strings"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 
 	agentv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1"
 	"github.com/linuxdynasty/fleet-board/internal/buildinfo"
+	"github.com/linuxdynasty/fleet-board/internal/hub/ingest"
 	"github.com/linuxdynasty/fleet-board/internal/hub/statedb"
 )
 
@@ -53,6 +55,12 @@ type connectDeps struct {
 	stopping context.Context
 	stop     context.CancelFunc
 	m        connectMetrics
+	// The Snapshot arm (snapshot.go): its metrics, the appliers, the
+	// after-commit hook, and a hook tests run before the job.
+	snap           snapshotMetrics
+	appliers       []ingest.Applier
+	onApplied      func(machineID string, epoch uint64)
+	beforeSnapshot func()
 }
 
 type connectMetrics struct {
@@ -89,6 +97,10 @@ func newConnectDeps(opts ServerOptions) (*connectDeps, error) {
 	if err != nil {
 		return nil, err
 	}
+	snap, err := newSnapshotMetrics(opts.Telemetry)
+	if err != nil {
+		return nil, err
+	}
 	now := opts.Now
 	if now == nil {
 		now = time.Now
@@ -96,6 +108,7 @@ func newConnectDeps(opts ServerOptions) (*connectDeps, error) {
 	stopping, stop := context.WithCancel(context.Background())
 	return &connectDeps{
 		afterHeartbeat: opts.afterHeartbeat, beforeRowClose: opts.beforeRowClose, started: now().UTC(), skew: newSkews(), sm: sm,
+		snap: snap, appliers: slices.Clone(opts.Appliers), onApplied: opts.OnSnapshotApplied, beforeSnapshot: opts.beforeSnapshot,
 		stopping: stopping, stop: stop,
 		streams: newRegistry(), limit: newHelloLimit(), revoked: opts.Revoked,
 		tracer: opts.Telemetry.Tracer(scope), instanceID: hex.EncodeToString(b[:]), version: buildinfo.Version,

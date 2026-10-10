@@ -285,10 +285,10 @@ Machine drain state: `ACTIVE` → `DRAINING{hub}` → `ACTIVE` (Undrain);
 | `settings_fleet`, `settings_groups{label, priority, values}`, `settings_machines{machine, values}`, `machine_labels{machine, label, source=hub}` | hub store | the owner's change tx (with the generation bump) |
 | `settings_generation` (one row), `machine_settings_sent{machine, gen, sent_time}` | hub store | change tx; send tx |
 | `machine_effective_settings{machine, gen, effective, capped_fields, rejected, unenforced, ack_time}` | hub store | ack tx |
-| `machines.policy_hash`, `policy_schema_version`, `policy_hash_on_disk`, `policy_safe_mode`, `policy_error` | hub store | snapshot tx; `policy_changed` tx |
+| `machines.policy_hash`, `policy_schema_version`, `policy_loaded_time`, `policy_changed_since_load`, `policy_safe_mode`, `policy_error` (cut to 256 bytes and scrubbed before the tx); `policy_hash_on_disk` comes with the `policy_changed` event (plan row 7) | hub store | snapshot tx; `policy_changed` tx |
 | Audit: who changed what (old → new) | hub store (permanent) | change tx |
 | Settings `{generation, values, effective}` and the loaded policy hash; the policy file itself stays the owner's | `agent.db` / config dir | before `SettingsAck` is sent |
-| Drain state and reason | `agent.db` (survives restart) and hub `machines.drain` | per change |
+| Drain state and reason | `agent.db` (survives restart) and hub `machines.drain`; the drain the agent reports is `machines.agent_draining` and `agent_drain_local` (snapshot tx) | per change |
 
 ### Ordering and consistency
 

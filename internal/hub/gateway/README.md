@@ -181,6 +181,19 @@ srv, err := gateway.NewServer(gateway.ServerOptions{
   by later rows from files of their own (`arms.add` in an `init`). An arm
   with none is counted in `fleet_hub_connect_unhandled_total{kind}`, logged
   once per kind per stream (`hub.connect.unhandled`) and ignored.
+- **Snapshot** (`snapshot.go`, plan row 5 PR 5c1; 03n, 02i, row 5 ruling
+  forks 1 and 2a): on the stream's ingest goroutine the stream must still be
+  its machine's live one and the Snapshot whole (no `snapshot.parts`);
+  `ingest.Clean` cuts and scrubs its text; then `ingest.ApplySnapshot` is
+  one writer job (the statedb core with the current-epoch check and agent
+  rollback, `ServerOptions.Appliers` in order, then ONLINE), compared with
+  the values the stream's `Hello` carried. Only its commit marks the
+  machine ONLINE; the Hello transaction never does. After the commit:
+  `ServerOptions.OnSnapshotApplied(machineID, epoch)` (plan row 5f re-sends
+  pending commands from it), and `SnapshotRequest{seq_rollback}` when
+  `Snapshot.seq` was not above the stored event seq. A Snapshot not applied
+  ends the stream (no Bye) so the agent reconnects with a fresh one, except
+  `not_current`: a newer Hello already displaced the stream.
 - **Request cap**: `connect.WithReadMaxBytes(MaxMessageBytes)`, the 1 MiB of 02e;
   on Connect the stream ends `RESOURCE_EXHAUSTED` and its row closes as
   `stream_closed`.
@@ -225,6 +238,9 @@ srv, err := gateway.NewServer(gateway.ServerOptions{
 | `connect.failed` (`step`: `validate`, `store`, `wiring`, `heartbeat`; `err_kind`, `machine_id`) | the hub's failure at a Hello, a stream's close or a Heartbeat's store job (error) |
 | `fleet_hub_connect_closed_before_hello_total{err_kind}`, `reconnect.closed` (`epoch` 0, `reason` `before_hello`, `err_kind`: `oversize`, `reset`, `timeout`, `shutdown`) | a stream with a certificate that ended before a Hello was accepted |
 | `fleet_hub_connect_unhandled_total{kind}`, `hub.connect.unhandled` (`machine_id`, `epoch`, `kind`) | a message of an arm with no handler yet |
+| `snapshot.applied` (`machine_id`, `epoch`, `seq`, `bytes`, `ms`, `event_generation`, `text_cut`, `text_scrubbed`), `fleet_hub_snapshot_apply_seconds{result="applied"}`, `fleet_hub_snapshot_bytes`, span `hub.snapshot.apply` | a Snapshot committed; the machine is ONLINE |
+| `snapshot.refused` (`reason`: `not_current`, `parts`, `revoked`, `unknown_machine`, `invalid`), `snapshot.failed` (`step`: `store`, `applier`; `err_kind`), `result="refused"` / `"failed"` | a Snapshot not applied (warn / error) |
+| `snapshot.rollback` (`machine_id`, `epoch`, `causes`, `event_generation`), `fleet_hub_agent_rollback_total{machine}` | an agent rollback (02i rule 3), with a `machine.install_changed` audit row |
 | `fleet_hub_server_cert_issues_total{reason, result}`, `tls.server_cert_issued` (`reason`, `names` count, `not_after`), `tls.server_cert_issue_failed` (`reason`, `err_kind`, `not_after` still served) | server certificate re-issues |
 
 No token, secret or part of its hash, no facts, no key, no certificate and no
@@ -262,7 +278,15 @@ stream that never said Hello and with a Hello stuck behind the writer, a
 Hello committed during Shutdown (an `export_test.go` hook), messages queued
 before the agent's Bye (one test with a slow arm handler), the limit's
 place after the earlier checks, the registry after an agent's Bye, and a
-first message that is too big or never comes. They dial the real
+first message that is too big or never comes. The Snapshot tests
+(`snapshot_test.go`, `snapshot_epoch_test.go`) prove the machine stays
+ENROLLED after HelloAck and is ONLINE with its facts and policy only after
+the Snapshot commits (text cut and scrubbed, the hook, the log and the
+histogram), a failing applier rolling everything back and ending the
+stream, a Snapshot in parts refused, a Snapshot of a displaced epoch
+refused in its transaction (an `export_test.go` hook completes the newer
+Hello first), and a seeded seq rollback answered with
+`SnapshotRequest{seq_rollback}` whose answer replaces the facts. They dial the real
 listener with `crypto/tls` and the generated gRPC client against a real
 `state.db` and a real `revocation.List`: enroll (certificate CN and URI SAN,
 chain, accepted as a client certificate), replay until 24 h past the TTL,

@@ -128,7 +128,7 @@ the stop's 10 s grace, [defaults](defaults.md) "Stop grace (hub)"), so the store
 | Outbox rows (`pending/delivered/done/expired/failed`, epoch, seq) | hub store | Hello tx (expiry), result tx (close) |
 | Event history (replayed and live, 1 week) | hub store | per writer batch |
 | `machine_connections` (epoch, boot_id, install_id, peer, connect_reason, started and ended time, end_reason, displaced_by, last_heartbeat_age_ms at displacement) and the machine's `last_epoch` | hub store | Hello tx (opens the row, closes the one it displaces); stream close or `Bye` (closes it, and marks the machine `OFFLINE` in the same tx); housekeeping's `OFFLINE` (closes it as `offline`). A row can stay open with no stream behind it after a hub crash, after a graceful shutdown that stopped waiting for a Hello whose transaction then committed, or after a stop whose handler wait ran out (`hub.shutdown_wait_timeout`); the hub-start sweep closes such rows as `hub_restart` |
-| Per machine: `hub_last_event_seq`, `event_generation`, last `EventCounters`, `install_id` | hub store | writer batch (seq); Hello tx (the rest) |
+| Per machine: `hub_last_event_seq`, `event_generation`, last `EventCounters`, `install_id`, and the last applied `Snapshot.seq` and its epoch (`snapshot_seq`, `snapshot_epoch`) | hub store | writer batch (`hub_last_event_seq`); the Snapshot tx (the rest: it compares the stream's `Hello` values with the stored ones, 02i rule 3, and marks the machine ONLINE) |
 
 ### Ordering and consistency
 
@@ -238,7 +238,7 @@ The agent side of plan row 6 (ruling forks 4 i, 11 and 12), in
   `unspecified`), `fleet_hub_epoch{machine}` (the epoch of the last accepted
   `Hello`),
   `fleet_hub_commands_expired_total{kind}`, `fleet_hub_duplicate_identity_total{machine}`,
-  `fleet_hub_event_gap_total{machine}` (rises of `evicted_total`), `fleet_hub_agent_rollback_total{machine}`, `fleet_hub_replay_backlog_events{machine}`,
+  `fleet_hub_event_gap_total{machine}` (rises of `evicted_total`), `fleet_hub_agent_rollback_total{machine}` (each agent rollback the Snapshot tx found, with 03's `snapshot.rollback` and a `machine.install_changed` audit row), `fleet_hub_replay_backlog_events{machine}`,
   `fleet_hub_results_unknown_command_total`.
 - Spans: `hub.reconnect` (children `hub.snapshot.apply`, `hub.outbox.reconcile`,
   `hub.replay.ingest`); `agent.reconnect` (children `agent.ring.replay`) comes
@@ -271,6 +271,22 @@ The agent side of plan row 6 (ruling forks 4 i, 11 and 12), in
   `Hello.sent_time` and `Heartbeat.sent_time` samples, 02i "Clocks"; the warning and
   `clock_untrusted` come with plan row 5e). A Heartbeat's store job that fails logs
   `connect.failed{step="heartbeat"}`.
+
+- The Snapshot (plan row 5c1; the names are 03 W1's): `snapshot.applied{machine_id,
+  epoch, seq, bytes, ms, event_generation, text_cut, text_scrubbed}` (committed; the
+  machine is ONLINE; the rows that diff inventory add `panes`, `goals` and the diff
+  counts), `snapshot.refused{machine_id, epoch, seq, reason}` (warn; `reason`:
+  `not_current` (a newer `Hello` displaced the stream), `parts` (this hub lists no
+  `snapshot.parts`), `revoked`, `unknown_machine`, `invalid` (a number above 2^63 - 1)),
+  `snapshot.failed{machine_id, epoch, seq, step, err_kind}` (error; `step`: `store`,
+  `applier`), `snapshot.rollback{machine_id, epoch, causes, event_generation}` (warn;
+  02i rule 3; `causes` from `last_event_seq`, `counters`, `install_id`, `snapshot_seq`;
+  `snapshot_seq` also sends `SnapshotRequest{seq_rollback}`). A Snapshot not applied,
+  except `not_current`, ends the stream, so the agent reconnects and sends a fresh one.
+  `fleet_hub_snapshot_apply_seconds{result}` (`applied`, `refused`, `failed`) and
+  `fleet_hub_snapshot_bytes`; the span `hub.snapshot.apply`. "Why is machine X
+  connected but not ONLINE?" is its `snapshot.refused` or `snapshot.failed` line.
+
 - The hub's `Connect` before `HelloAck` (plan row 5a-ii; the names are 03 W1's):
   `fleet_hub_connect_refused_total{cause}` and `connect.refused{cause, reason, peer,
   machine_id}` (warn) for a refused `Hello` (02g "Hello refusals"; `cause`:

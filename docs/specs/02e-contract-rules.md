@@ -278,7 +278,13 @@ same rule to the agent's free text: it cuts a string over its field's cap to
 the cap (on a UTF-8 boundary), or rejects the message, before it calls the
 scrubber, because the 1 MiB message cap alone would let one agent send a
 1 MiB `message` that takes the scrubber about 16 s and holds that agent's
-ingest goroutine ([04b](04b-hub-scrubber-cost.md)). This is a summary; the
+ingest goroutine ([04b](04b-hub-scrubber-cost.md)). The Snapshot's own text
+follows the same rule on the hub (plan row 5c1): each string of
+`MachineFacts`, `ResourceSample` and `PolicyInfo` loses control characters
+and is cut to 256 bytes (a disk path to 1 KiB, at most 32 disk entries),
+and the version strings and `PolicyInfo.error` are cut to 1 KiB, then
+scrubbed to 256 bytes, on the stream's ingest goroutine, never in the
+transaction. This is a summary; the
 package README lists each pattern, why, what is left alone and what is not
 covered, and a change updates both.
 

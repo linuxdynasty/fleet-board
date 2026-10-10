@@ -50,6 +50,10 @@ type (
 type stream struct {
 	machineID, bootID, peer string
 	epoch                   uint64
+	// hello is what the stream's Hello said that the Snapshot job compares
+	// with the store; set before the stream is registered, read only by its
+	// ingest goroutine.
+	hello helloMarks
 	// ctx is the stream's context, given to arm handlers; cancel ends it
 	// (a housekeeping cut), so a handler waiting on the store returns.
 	ctx    context.Context
