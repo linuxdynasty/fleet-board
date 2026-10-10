@@ -36,3 +36,12 @@ trailing space tmux writes after a `#{S:...}` value.
 
 `fuzz/FuzzParse/` holds hand-made seed inputs for `FuzzParse`; the two
 transcripts are added as seeds in the test.
+
+`flood-3.2a.txt` and `flood-3.7c.txt` (row 7 PR 7c2) are the first 30 lines
+of `TestFloodDuringACommand` run with `FLEET_TMUX_RECORD=<dir>`, on the same
+two builds through `tmuxtest` (a throwaway server, `-f /dev/null`): a
+control client attached with `ignore-size,pause-after=1`, its handshake
+reply, a window running `exec yes flood-line`, and a `list-panes -a` sent
+while the reader was stalled for 3 s. The reply arrives whole between the
+flood's `%extended-output` lines, with no `%pause` inside it. Pane text is
+only `flood-line`.

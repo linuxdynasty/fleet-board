@@ -384,6 +384,23 @@ optionally against one limit the owner sets.
   ask for; the client's tests prove this with a flood during a command. Lines and replies are
   bounded (defaults; each kept reply line also costs its overhead), and a
   line over the bound is skipped to its newline and counted (05b).
+  The client (`internal/agent/tmux`, row 7 PR 7c2) checks `tmux -V` (below
+  3.2 is `TMUX_TOO_OLD`), attaches to the lowest session id (sessions the
+  fleet marked internal are skipped on the developer's server), reads its own
+  `client_flags` and refuses a tmux that does not list both flags, and mints
+  `server_start_id` from the server's pid and start time. On `%exit` or a
+  dead stream it attaches again to the then-lowest session with backoff and
+  sends its subscriptions again before it reports up; with no server on the
+  socket it waits for the socket-folder watch, never a timer (defaults). It
+  sends only typed commands and `typing.Line`s, refusing a line built for
+  another server or an earlier start of this one. Measured in its tests on
+  tmux 3.2a and 3.7c (macOS, and Linux in a container), 2026-10-10: the
+  nested `#{S:#{W:...}}` subscription expands on 3.2a as on 3.7c, so the
+  per-window fallback of the row-7 ruling fork 5(e) is not needed; in 12
+  runs of a pane flooding while the reader stalled 3 to 8 s during a
+  command, tmux never wrote a `%pause` inside that command's reply (one bare
+  `%pause` notification on 3.2a at 8 s), and the reply came whole and in
+  order.
 - **E3 Pane lifecycle:** created and exited with exit status. "Stopped without
   DONE" (the one-nudge rule) depends on this.
 - **E4 Activity transitions:** active ↔ idle, with the time of last output.

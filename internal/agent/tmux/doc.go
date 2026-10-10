@@ -1,11 +1,21 @@
-// Package tmux reads tmux control mode (tmux -C, 01 E2) for fleet-agent.
+// Package tmux is fleet-agent's tmux control mode (tmux -C, 01 E2): the
+// protocol parser and the client.
 //
-// This first part is the protocol parser only: [Parser] turns the bytes a
-// control client prints into a closed set of [Message] values (a [Reply] per
-// command, [Output], [Pause], [Continue], [Exit], [SubscriptionChanged],
-// [WindowAdd], [WindowClose], [WindowRenamed], [SessionChanged], [Unknown]
-// and [Discarded]). It starts no process and writes nothing; the
-// client that runs tmux and sends commands comes later (plan row 7).
+// [Parser] turns the bytes a control client prints into a closed set of
+// [Message] values (a [Reply] per command, [Output], [Pause], [Continue],
+// [Exit], [SubscriptionChanged], [WindowAdd], [WindowClose],
+// [WindowRenamed], [SessionChanged], [Unknown] and [Discarded]). It starts
+// no process and writes nothing.
+//
+// [Client] attaches one `tmux -C` client to one server with ignore-size and
+// pause-after, checks both in client_flags (tmux before 3.2 is [ErrTooOld]),
+// keeps itself attached ([Client.Run]: backoff while the server is there,
+// [StateAbsent] with no timer until [Client.Wake]), and sends only typed
+// commands: [Client.Send] of a typing.Line, [Client.Capture],
+// [Client.ListPanes], [Client.Subscribe] and [Client.Continue]. Its file
+// conn.go is the only one in the agent that starts the long-lived tmux
+// process; one-shot tmux calls go through internal/proc. The README has the
+// concurrency diagram.
 //
 // The parser's rules, from tmux's man page and two recorded transcripts
 // (tmux 3.2a and 3.7c, testdata/):
@@ -31,6 +41,8 @@
 //     [ReplyLineOverhead]) keeps its first lines and counts the rest in
 //     [Reply.Dropped].
 //
-// Failures are counted and logged through [Metrics] with an error class and
-// byte counts only, never pane bytes.
+// Parse failures are counted and logged through [Metrics], and the client's
+// state through fleet_agent_tmux_control_up and the tmux.attached, tmux.exit
+// and tmux.subscription_confirmed log events: closed words, ids and byte
+// counts only, never pane bytes or names.
 package tmux
