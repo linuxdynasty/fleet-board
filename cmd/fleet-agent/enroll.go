@@ -39,6 +39,7 @@ func enrollCommand(dir func() (string, error), version string, discover conn.Dis
 			res, err := conn.Enroll(cmd.Context(), conn.Options{
 				Dir: d, Hub: hub, Token: token, Version: version, Telemetry: tel, Discover: discover,
 			})
+			recordEnroll(tel, d, err)
 			if err != nil {
 				return commandError{err}
 			}

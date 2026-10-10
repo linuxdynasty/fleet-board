@@ -112,6 +112,7 @@ func runAgent(ctx context.Context, dir, version, boot string, tel *telemetry.Tel
 	if err != nil {
 		return failed("loop", err)
 	}
+	defer startStatusFile(dir, tel, loop.Status)()
 	if err := loop.Run(ctx); err != nil {
 		return commandError{err}
 	}

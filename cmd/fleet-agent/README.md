@@ -77,6 +77,18 @@ fleet-agent run    # logs to stderr; stop with Ctrl-C or SIGTERM
   `ended.json` to try again. A file left from an earlier machine id is
   removed. A damaged `ended.json` also exits 1 before any network call
   (`run.failed{step="ended", err_kind="parse"}`), saying to remove it.
+- `run` keeps `status.json` in the state folder (mode 0600): the connection
+  state, the last failure per hub address, the last mDNS browse, whether the
+  push socket is off, the clock offset, and the end it stopped on. It is
+  written at start, at least once a minute, and once more when `run` stops,
+  so it shows the stop. A value not yet known is left out. `fleet-agent
+  doctor` (plan row 6) reads it and prints its age, so it works while the
+  agent is down. Until plan row 6 PR 6a lands, a change shows in the file
+  within a minute.
+- A failed `enroll` leaves its failure code in `enroll.json` (a closed word
+  such as `token_malformed`, `hub_untrusted` or `refused` with the hub's
+  reason name; never the token, the address or the message). A good `enroll`
+  removes the file.
 
 `fleet-agent --version` prints the name and the version; `-h` prints the
 usage. Release builds set the version with `-ldflags -X` (see
