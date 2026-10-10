@@ -340,12 +340,12 @@ Claude Code `--permission-mode default|acceptEdits` and, for the sandbox,
 setting is what removed the Bash prompts; without it Claude Code still asks), Muse's default (sandbox on, approval
 `on-request`) with `--trust-workspace`.
 
-| Place | Codex 0.160.0 `workspace-write` | Claude Code 2.1.296 sandbox on + `autoAllowBashIfSandboxed` | Claude Code, permission prompt only | Muse Code 1.4.4 sandbox on |
-|---|---|---|---|---|
-| `<worktree>/.fleet/goal` | written, no prompt | written, no prompt | `acceptEdits`: no prompt. `default`: one approval per write | written, no prompt |
-| worktree git dir (outside the worktree) | `Operation not permitted` | written | prompt, even in `acceptEdits` | written |
-| `/tmp/<file>` | written | `operation not permitted` (only `/tmp/claude` and the per-user temp folder) | prompt | written |
-| `~/.local/share/<dir>` | `Operation not permitted` | `Operation not permitted` | prompt, even in `acceptEdits` | `Operation not permitted` |
+| Place | Codex 0.160.0 `workspace-write` | Claude Code 2.1.296 sandbox on + `autoAllowBashIfSandboxed` | Claude Code, permission prompt only | Muse Code 1.4.4 sandbox on | Cursor, OpenCode |
+|---|---|---|---|---|---|
+| `<worktree>/.fleet/goal` | written, no prompt | written, no prompt | `acceptEdits`: no prompt. `default`: one approval per write | written, no prompt | not probed; hypothesis: the same cwd rule |
+| worktree git dir (outside the worktree) | `Operation not permitted` | written | prompt, even in `acceptEdits` | written | not probed; hypothesis: the same cwd rule |
+| `/tmp/<file>` | written | `operation not permitted` (only `/tmp/claude` and the per-user temp folder) | prompt | written | not probed; hypothesis: the same cwd rule |
+| `~/.local/share/<dir>` | `Operation not permitted` | `Operation not permitted` | prompt, even in `acceptEdits` | `Operation not permitted` | not probed; hypothesis: the same cwd rule |
 
 Only `.fleet/` inside the working directory was writable in Claude Code, Codex
 and Muse. In Claude Code it was the only place that needed no approval in
