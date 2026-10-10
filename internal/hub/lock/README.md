@@ -9,7 +9,8 @@ if errors.Is(err, lock.ErrHeld) { /* another fleetd runs here: refuse to start *
 defer l.Release()
 ```
 
-- `fleetd init` and `fleetd run` take it before they touch `state.db`.
+- `fleetd init`, `fleetd run` and `fleetd restore` take it before they touch
+  `state.db`.
   `fleet-agent run` takes `<state-dir>/fleet-agent.lock` the same way before
   it opens `agent.db`, and says "another fleet-agent run" instead of
   `ErrHeld`'s text, which names fleetd. With two users the package belongs

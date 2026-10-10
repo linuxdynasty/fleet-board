@@ -24,6 +24,16 @@ st := l.Status()                    // state, peer, last failure per address, la
 1. **Nothing leaves before the local checks.** The token must parse
    (`ErrTokenMalformed`), a hub address must be given or `Discover` set
    (`ErrNoHub` with neither), and the state folder must be private.
+   `HubAddress` spells an address one way (lower case, port 7443 added when
+   missing, canonical IP) and refuses an IPv6 zone or more than 261 bytes;
+   the hub's `fleetd restore --address` uses the same rules. This is a
+   change: a zoned IPv6 address (`[fe80::1%eth0]:7443`) the agent used to
+   keep is now refused, so such an entry in `hub-address`, `hub-addresses`
+   or `identity.json` is dropped like any invalid line and the agent moves
+   to its next candidate. A zone means nothing off the local link, and it
+   could carry any byte. Discovery is not affected: an mDNS answer's
+   link-local address is dialed as given; only its SRV name goes through
+   `HubAddress`.
 2. **Never replace an identity.** Until re-enroll exists (later in plan row
    4, and row 13a's `previous_machine`), an enrolled folder is refused
    (`ErrAlreadyEnrolled`, naming the machine and saying to remove only

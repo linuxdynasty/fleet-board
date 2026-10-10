@@ -101,6 +101,16 @@ func setup(t *testing.T) (config, state string) {
 // once it logs hub.started: the API listener opens before admin.sock does.
 func startRun(t *testing.T, config string) (*exec.Cmd, string) {
 	t.Helper()
+	cmd, p := startRunPorts(t, config)
+	return cmd, p.api
+}
+
+// ports are the listener ports `fleetd run` logged.
+type ports struct{ api, agent string }
+
+// startRunPorts is startRun returning the agent port too.
+func startRunPorts(t *testing.T, config string) (*exec.Cmd, ports) {
+	t.Helper()
 	cmd := fleetd(t, "run", "--config", config)
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
@@ -110,10 +120,10 @@ func startRun(t *testing.T, config string) (*exec.Cmd, string) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = cmd.Process.Kill(); _ = cmd.Wait() })
-	ports := make(chan string, 1)
+	opened := make(chan ports, 1)
 	go func() {
 		sc := bufio.NewScanner(stderr)
-		api := ""
+		var p ports
 		for sc.Scan() {
 			var line struct {
 				Msg      string  `json:"msg"`
@@ -125,19 +135,21 @@ func startRun(t *testing.T, config string) (*exec.Cmd, string) {
 			}
 			switch {
 			case line.Msg == "hub.listener_opened" && line.Listener == "api":
-				api = fmt.Sprint(int(line.Port))
-			case line.Msg == "hub.started" && api != "":
-				ports <- api
+				p.api = fmt.Sprint(int(line.Port))
+			case line.Msg == "hub.listener_opened" && line.Listener == "agent":
+				p.agent = fmt.Sprint(int(line.Port))
+			case line.Msg == "hub.started" && p.api != "":
+				opened <- p
 			}
 		}
 		_, _ = io.Copy(io.Discard, stderr)
 	}()
 	select {
-	case p := <-ports:
+	case p := <-opened:
 		return cmd, p
 	case <-time.After(20 * time.Second):
 		t.Fatal("fleetd run did not log hub.started within 20 s")
-		return nil, ""
+		return nil, ports{}
 	}
 }
 

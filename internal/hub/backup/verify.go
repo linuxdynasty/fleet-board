@@ -6,6 +6,9 @@ import (
 	"errors"
 	"fmt"
 
+	"modernc.org/sqlite"
+	sqlite3 "modernc.org/sqlite/lib"
+
 	"github.com/linuxdynasty/fleet-board/internal/hub/statedb"
 	"github.com/linuxdynasty/fleet-board/internal/store"
 )
@@ -18,22 +21,24 @@ var (
 	// ErrSchema means the copy's schema_migrations is missing, has a gap, or
 	// names a version this binary does not know.
 	ErrSchema = errors.New("backup: the copy's schema version is not one this fleetd knows")
-	// ErrCorrupt means the copy failed PRAGMA quick_check.
+	// ErrCorrupt means the copy failed PRAGMA quick_check, or SQLite found
+	// it is not a database or is malformed.
 	ErrCorrupt = errors.New("backup: the copy failed quick_check")
 )
 
-// verify opens the copy read-only and checks it: quick_check is ok, its
-// schema version is between 1 and the last migration this binary knows with
-// no gap, and it holds the hub_identity row.
-func verify(ctx context.Context, path string) error {
+// Verify opens a copy of state.db read-only and checks it: quick_check is
+// ok, its schema version is between 1 and the last migration this binary
+// knows with no gap, and it holds the hub_identity row. [Take] runs it on
+// every copy and fleetd restore on the file it is given.
+func Verify(ctx context.Context, path string) error {
 	db, err := store.OpenReadOnly(path)
 	if err != nil {
-		return fmt.Errorf("backup: open the copy: %w", err)
+		return damaged(fmt.Errorf("backup: open the copy: %w", err))
 	}
 	defer func() { _ = db.Close() }() // read-only: nothing to flush
 	var check string
 	if err := db.QueryRowContext(ctx, "PRAGMA quick_check").Scan(&check); err != nil {
-		return fmt.Errorf("backup: quick_check: %w", err)
+		return damaged(fmt.Errorf("backup: quick_check: %w", err))
 	}
 	if check != "ok" {
 		return ErrCorrupt
@@ -55,4 +60,14 @@ func verify(ctx context.Context, path string) error {
 		return fmt.Errorf("backup: read hub_identity: %w", err)
 	}
 	return nil
+}
+
+// damaged adds [ErrCorrupt] to err when SQLite says the file is not a
+// database or is malformed.
+func damaged(err error) error {
+	var se *sqlite.Error
+	if errors.As(err, &se) && (se.Code()&0xff == sqlite3.SQLITE_NOTADB || se.Code()&0xff == sqlite3.SQLITE_CORRUPT) {
+		return errors.Join(ErrCorrupt, err)
+	}
+	return err
 }

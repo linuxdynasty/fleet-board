@@ -8,6 +8,8 @@ import (
 	"io"
 	"net"
 	"os"
+	"slices"
+	"strings"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -19,6 +21,7 @@ import (
 	"github.com/linuxdynasty/fleet-board/internal/hub/config"
 	"github.com/linuxdynasty/fleet-board/internal/hub/discovery"
 	"github.com/linuxdynasty/fleet-board/internal/hub/lock"
+	"github.com/linuxdynasty/fleet-board/internal/hub/restore"
 	"github.com/linuxdynasty/fleet-board/internal/hub/revocation"
 	"github.com/linuxdynasty/fleet-board/internal/hub/statedb"
 	"github.com/linuxdynasty/fleet-board/internal/store"
@@ -213,4 +216,27 @@ func (o Options) names(cfg *config.Config) (names []string, host string, err err
 		host = ""
 	}
 	return ca.AgentNames(host, cfg.TLS.AgentNames), host, nil
+}
+
+// serverNames is the agent listener certificate's whole name list: [names]
+// (tls.agent_names or the defaults, and the SRV target) plus the host of
+// every hub address (02g "Hub identity and restore"), with the host name
+// names used. fleetd run and fleetd restore --address both use it, so a
+// certificate restore issues is the one run wants.
+func (o Options) serverNames(cfg *config.Config, hubAddresses []string) ([]string, string, error) {
+	names, host, err := o.names(cfg)
+	if err != nil {
+		return nil, "", err
+	}
+	out := slices.Clone(names)
+	for _, a := range hubAddresses {
+		h, err := restore.Host(a)
+		if err != nil {
+			return nil, "", err
+		}
+		if !slices.ContainsFunc(out, func(n string) bool { return strings.EqualFold(n, h) }) {
+			out = append(out, h)
+		}
+	}
+	return out, host, nil
 }

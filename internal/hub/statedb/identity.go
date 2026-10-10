@@ -32,6 +32,9 @@ type Identity struct {
 	// No command sets it yet.
 	HubAddresses []string
 	CreatedTime  time.Time
+	// RestoreReconcileUntil ends the reconcile window fleetd restore opens
+	// (02g); zero when no restore set one.
+	RestoreReconcileUntil time.Time
 }
 
 // insertIdentity runs on the writer inside a shared batch transaction, so its
@@ -71,11 +74,12 @@ func ReadIdentity(ctx context.Context, s *store.Store) (Identity, error) {
 	var id Identity
 	err := s.Read(ctx, func(tx *sql.Tx) error {
 		var names, hub string
-		var created int64
+		var created, reconcile int64
 		err := tx.QueryRowContext(ctx, `SELECT fleet_id, ca_cert, ca_key, server_cert, server_key, server_names,
-			account_salt, salt_version, settings_epoch, hub_addresses, created_time FROM hub_identity WHERE id = 1`).
+			account_salt, salt_version, settings_epoch, hub_addresses, created_time, restore_reconcile_until
+			FROM hub_identity WHERE id = 1`).
 			Scan(&id.FleetID, &id.CACert, &id.CAKey, &id.ServerCert, &id.ServerKey, &names,
-				&id.AccountSalt, &id.SaltVersion, &id.SettingsEpoch, &hub, &created)
+				&id.AccountSalt, &id.SaltVersion, &id.SettingsEpoch, &hub, &created, &reconcile)
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrNoIdentity
 		}
@@ -89,6 +93,9 @@ func ReadIdentity(ctx context.Context, s *store.Store) (Identity, error) {
 			return fmt.Errorf("statedb: hub_identity.hub_addresses: %w", err)
 		}
 		id.CreatedTime = time.UnixMilli(created)
+		if reconcile != 0 {
+			id.RestoreReconcileUntil = time.UnixMilli(reconcile)
+		}
 		return nil
 	})
 	return id, err

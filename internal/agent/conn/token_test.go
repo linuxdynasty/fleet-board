@@ -114,7 +114,13 @@ func TestHubAddressAddsTheAgentPort(t *testing.T) {
 	if _, err := conn.HubAddress(""); !errors.Is(err, conn.ErrNoHub) {
 		t.Errorf("HubAddress(\"\") = %v, want ErrNoHub", err)
 	}
-	for _, bad := range []string{":7443", "hub:", "a b:1", "hub/x", ".:7443"} {
+	for _, bad := range []string{
+		":7443", "hub:", "a b:1", "hub/x", ".:7443",
+		// No IPv6 zone (it can carry any byte, and it means nothing off the
+		// local link), and no address longer than a host name and a port.
+		"[fe80::1%a\x01b]:7443", "[fe80::1%eth0]:7443", "fe80::1%eth0",
+		strings.Repeat("a", 253) + ":" + strings.Repeat("0", 300) + "1",
+	} {
 		if _, err := conn.HubAddress(bad); err == nil {
 			t.Errorf("HubAddress(%q) accepted a bad address", bad)
 		}

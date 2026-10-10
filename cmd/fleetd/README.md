@@ -8,6 +8,8 @@ fleetd run  [--config PATH]   # start the hub; SIGTERM or Ctrl-C stops it cleanl
 fleetd enroll-token --machine NAME [--expect-host H] [--ttl 15m] [--label L ...] [--start-drained]
                               # ask the running hub for a token that enrolls one machine
 fleetd backup [--encrypt]     # copy state.db into <state_dir>/backups/, with or without fleetd run
+fleetd restore BACKUP [--address A]
+                              # replace state.db with a backup; refused while fleetd run is up
 fleetd --version              # "fleetd dev", or the release version set with -ldflags -X
 ```
 
@@ -22,6 +24,24 @@ only after Enter, because the read is not interrupted; the backup then stops
 without asking again. If the copy was published but a temporary file could not
 be removed, the path is still printed and the exit code is 1. `fleetd run`
 makes the nightly copies itself.
+
+`restore` is offline: it takes `fleetd.lock`, so with `fleetd run` up it
+exits 1 with `lock_held` and "stop fleetd run before restoring". It refuses
+an age-encrypted backup (decrypt it first), a corrupt one, one with a schema
+version this fleetd does not know, and one from another fleet than the
+current `state.db`, and then changes nothing. Otherwise it keeps the fleet
+id, CA and salt, mints a new `settings_epoch`, opens the 24 h reconcile
+window, and keeps the replaced store as `state.db.pre-restore-<UTC stamp>`
+(mode 0600). That copy is the only place left for the audit rows written
+since the backup, so keep it, or export its `audit_log`, before deleting
+it. `--address` (host or
+host:port; the port defaults to `listen.agent`'s, else 7443) is added to the
+addresses agents get and to the server certificate, signed by the same CA.
+With another process holding `state.db` open (a `fleetd backup`) it says to
+wait and restore again. If a step after the rename fails (the folder sync,
+the cleanup), it still prints that the new store is in place and where the
+old one is kept, then exits 1. The steps are in
+[internal/hub/restore](../../internal/hub/restore/README.md).
 
 `enroll-token` prints only the token on stdout, on one line, so
 `TOKEN=$(fleetd enroll-token --machine laptop)` works; stderr shows the
@@ -47,7 +67,7 @@ make build
 go run ./cmd/fleetd --version
 ```
 
-`main.go`, `enroll.go` and `backup.go` only parse flags and call `internal/hub/daemon`; what
+`main.go`, `enroll.go`, `backup.go` and `restore.go` only parse flags and call `internal/hub/daemon`; what
 fleetd does is specified in `docs/specs/02j-hub-runtime.md`, and the build order
 is in `docs/plan/v1-implementation-plan.md` (plan rows 2 to 5). `main_test.go`
 runs the built binary: init, run, a refused second run, SIGTERM, and a start
@@ -57,4 +77,8 @@ lifetimes; "fleetd is not running" with no hub and after a SIGKILL; and
 `admin.sock` removed by SIGTERM. `backup_test.go` runs `fleetd backup` beside
 a running hub (the copy is 0600 and holds the hub's CA; a second `run` still
 gets `lock_held`) and checks `--encrypt` refuses a piped passphrase and has
-no passphrase flag.
+no passphrase flag. `restore_test.go` is row 5's restore acceptance: refused
+beside a running hub (which keeps serving); a restore with `--address`, then
+`run` serving a certificate from the pinned CA that covers the address; a
+second restore; and bad backups refused with `state.db` and its WAL byte for
+byte unchanged.

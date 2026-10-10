@@ -7,7 +7,7 @@
 // holds hub_identity), then published under nightly-<UTC stamp>.db or
 // manual-<UTC stamp>.db without replacing any file, and the folder synced.
 // It takes no lock, so fleetd backup works whether or not fleetd run holds
-// fleetd.lock. With a [Terminal] the copy is encrypted with age under a
+// fleetd.lock. [Verify] is the check, exported for fleetd restore. With a [Terminal] the copy is encrypted with age under a
 // passphrase asked twice on the terminal (a non-terminal is refused); the
 // plaintext is built in the state folder, never in backups/. Every return
 // path removes the temporary files Take made; step cleanup means one could

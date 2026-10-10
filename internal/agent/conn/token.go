@@ -79,10 +79,14 @@ func (Token) LogValue() slog.Value { return slog.StringValue(redacted) }
 
 // HubAddress checks a hub address the owner typed, adds [DefaultPort]
 // when it has no port, and gives it one spelling (see below). An empty
-// address is [ErrNoHub].
+// address is [ErrNoHub]; an IPv6 zone, or more than 261 bytes, is
+// [ErrHubAddress].
 func HubAddress(s string) (string, error) {
 	if s == "" {
 		return "", ErrNoHub
+	}
+	if len(s) > maxHubAddressLen {
+		return "", fmt.Errorf("%w: longer than %d bytes", ErrHubAddress, maxHubAddressLen)
 	}
 	host, port, err := net.SplitHostPort(s)
 	if err != nil {
@@ -98,13 +102,17 @@ func HubAddress(s string) (string, error) {
 	// One spelling per address: lower case, no trailing dot, an IP in its
 	// canonical form, the port without leading zeros.
 	host = strings.ToLower(strings.TrimRight(host, "."))
-	if ip, err := netip.ParseAddr(host); err == nil {
+	if ip, err := netip.ParseAddr(host); err == nil && ip.Zone() == "" {
 		host = ip.Unmap().String()
-	} else if !hostName(host) {
+	} else if err == nil || !hostName(host) { // an IPv6 zone can carry any byte and means nothing off-link
 		return "", fmt.Errorf("%w: %q", ErrHubAddress, s)
 	}
 	return net.JoinHostPort(host, strconv.Itoa(n)), nil
 }
+
+// maxHubAddressLen is the longest host name (253), a colon and a port, in
+// brackets.
+const maxHubAddressLen = 253 + 2 + 1 + 5
 
 // hostName accepts letters, digits, dots and hyphens, at most 253 bytes.
 func hostName(h string) bool {

@@ -1,8 +1,8 @@
 # internal/hub/daemon
 
-`fleetd init`, `fleetd run`, `fleetd enroll-token` and `fleetd backup`
-([02j](../../../docs/specs/02j-hub-runtime.md)). `cmd/fleetd` parses flags and
-calls `Init`, `Run`, `EnrollToken` or `Backup`.
+`fleetd init`, `fleetd run`, `fleetd enroll-token`, `fleetd backup` and
+`fleetd restore` ([02j](../../../docs/specs/02j-hub-runtime.md)). `cmd/fleetd`
+parses flags and calls `Init`, `Run`, `EnrollToken`, `Backup` or `Restore`.
 
 ## `Init`
 
@@ -38,9 +38,11 @@ calls `Init`, `Run`, `EnrollToken` or `Backup`.
    A missing file is normal; a loose one is `mode_loose`; a bad line, an
    unreadable file or a failed reconcile is `revocations_invalid`. This
    happens before any listener binds, so no handshake ever runs without it.
-6. Re-issues the server certificate if `tls.agent_names` changed or it is past
-   two thirds of its life. The wanted names are `ca.AgentNames`: the SRV target
-   `fleetd-<host>.local` is always among them, even with `tls.agent_names` set.
+6. Re-issues the server certificate if its names changed or it is past two
+   thirds of its life. The wanted names are `ca.AgentNames` (the SRV target
+   `fleetd-<host>.local` is always among them, even with `tls.agent_names`
+   set) plus the host of every `hub_addresses` entry: the same list `Restore`
+   issues for `--address`, so a restored certificate is served as is.
 7. Binds the agent listener (`gateway.NewServer` with the store, the identity
    and the revocation list: `Enroll`, and a revoked client certificate fails
    its handshake), then the API and optional metrics listeners (port 0 is allowed; the
@@ -95,11 +97,25 @@ binary prints the error). It counts no start failure. When the copy was
 published but a temporary file could not be removed (step `cleanup`), the
 result carries the path along with the error.
 
+## `Restore`
+
+`fleetd restore BACKUP [--address A]`: reads `fleetd.yaml`, creates the
+state folder if it is missing (a hub moved to a new host), takes
+`fleetd.lock` and holds it to the end, so it is refused while `Run` holds it
+(`lock_held`, with "stop fleetd run before restoring"; #92). It removes a
+crashed init's or restore's temporary files, then calls `restore.Run`
+([internal/hub/restore](../restore/README.md)) with the agent port of
+`listen.agent` (7443 when it has none) for an address without a port, and
+the name list `Run` uses. A refusal before `restore.Run` is a `StartError`
+(`hub.start_failed`, `command` = `restore`); `restore.Run` logs
+`restore.completed` or `restore.failed`.
+
 ## Signals
 
 | Signal | When |
 |---|---|
-| `hub.start_failed` (`command`, `reason`, `err_kind`), `fleet_hub_start_failures_total{command, reason}` | init or run refused to start |
+| `hub.start_failed` (`command`, `reason`, `err_kind`), `fleet_hub_start_failures_total{command, reason}` | init, run or restore refused to start |
+| `restore.completed`, `restore.failed` (`step`, `err_kind`) | `fleetd restore` ([internal/hub/restore](../restore/README.md)) |
 | `hub.leftovers_removed` (`command`, `files`) | init or run removed a crashed init's or backup's temporary files |
 | `hub.initialized` (`server_names`, `config_written`) | init created the store |
 | `hub.listener_opened` (`listener`, `port`; the admin socket has no port), `hub.started` (`mode`, `listeners`) | run is serving |
@@ -130,5 +146,8 @@ the first handshake refuses it, refuse a bad or loose file, and enroll a
 machine end to end with a token from the admin socket. The backup tests
 take a copy while `Run` holds `fleetd.lock` (and check the lock is still
 held), take one with the hub stopped and then start `Run`, and watch `Run`
-make its start-up catch-up copy and serve its age.
+make its start-up catch-up copy and serve its age. The restore tests refuse
+a restore while another process holds `fleetd.lock` (`state.db` unchanged,
+the refusal counted), and restore with `--address` and then check `Run`
+serves that certificate without re-issuing it.
 `cmd/fleetd` repeats the cross-process cases with the built binary.

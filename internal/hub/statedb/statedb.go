@@ -79,6 +79,10 @@ func Migrations() []store.Migration {
 		Version: 6,
 		Name:    "audit_log_hub_seq",
 		SQL:     auditSQL,
+	}, {
+		Version: 7,
+		Name:    "restore_reconcile",
+		SQL:     restoreSQL,
 	}}
 }
 
@@ -137,6 +141,10 @@ var ErrCreatedNotSynced = errors.New("statedb: state.db was created, but syncing
 // tempPrefix starts the name of the temporary file [Create] builds.
 const tempPrefix = ".state.db.init-"
 
+// RestoreTempPrefix starts the name of the temporary file fleetd restore
+// builds next to state.db before it renames it into place.
+const RestoreTempPrefix = ".state.db.restore-"
+
 // Create builds state.db with the hub_identity row so that it never exists
 // without it: a temporary file (mode 0600 before SQLite opens it) gets the
 // migrations and the row through the store's writer, is closed (which
@@ -191,10 +199,11 @@ func Create(ctx context.Context, dir string, id Identity, opts CreateOptions) (e
 	return nil
 }
 
-// RemoveLeftovers deletes the temporary files of an earlier [Create] that
-// crashed (the file, its SQLite side files, or a second link to state.db
-// left between the link and the cleanup) and returns how many it removed.
-// Call it with the state folder's lock held, so no Create is running.
+// RemoveLeftovers deletes the temporary files of an earlier [Create] or
+// fleetd restore that crashed (the file, its SQLite side files, or a second
+// link to state.db left between the link and the cleanup) and returns how
+// many it removed. Call it with the state folder's lock held, so no Create
+// or restore is running.
 func RemoveLeftovers(dir string) (int, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -202,7 +211,8 @@ func RemoveLeftovers(dir string) (int, error) {
 	}
 	n := 0
 	for _, e := range entries {
-		if !strings.HasPrefix(e.Name(), tempPrefix) || e.IsDir() {
+		temp := strings.HasPrefix(e.Name(), tempPrefix) || strings.HasPrefix(e.Name(), RestoreTempPrefix)
+		if !temp || e.IsDir() {
 			continue
 		}
 		if err := os.Remove(filepath.Join(dir, e.Name())); err != nil && !errors.Is(err, fs.ErrNotExist) {

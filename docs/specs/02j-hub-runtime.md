@@ -46,8 +46,9 @@ a `Host` it refuses (`HOST_NOT_ALLOWED`). `fleet` on the other machine sets
 
 The agent listener's certificate is issued by the hub CA for the names in
 `tls.agent_names` (default: the machine's hostname, `<hostname>.local`,
-`localhost`, `127.0.0.1`, `::1`) and always the mDNS name
-`fleetd-<hostname>.local` (see Discovery, below), so an agent on the hub's own
+`localhost`, `127.0.0.1`, `::1`), always the mDNS name
+`fleetd-<hostname>.local` (see Discovery, below), and the host of every
+`hub_addresses` entry (`fleetd restore --address` adds one), so an agent on the hub's own
 machine connects to `127.0.0.1:7443` and verifies it like any other. In `authenticated` mode the API
 certificate is the owner's (`tls.api_cert_file`, `tls.api_key_file`) or a
 Tailscale certificate (`tls.api_tailscale: true`); without one `fleetd` refuses
@@ -141,8 +142,9 @@ ssh with a loose key; it never changes a mode itself.
 
 | Path | What |
 |---|---|
-| `fleetd.lock` | an exclusive lock (`flock`) that `fleetd init` and `fleetd run` take before they open `state.db`, so a second `fleetd` on the same folder exits at once (#92). The kernel drops it when the process dies, so a killed hub never blocks the next start. `fleetd backup` takes no lock, neither this one nor a shared one: it only reads `state.db` on a read-only connection of its own, so it works whether or not `fleetd run` holds the lock |
+| `fleetd.lock` | an exclusive lock (`flock`) that `fleetd init`, `fleetd run` and `fleetd restore` take before they open `state.db`, so a second `fleetd` on the same folder exits at once (#92). The kernel drops it when the process dies, so a killed hub never blocks the next start. `fleetd backup` takes no lock, neither this one nor a shared one: it only reads `state.db` on a read-only connection of its own, so it works whether or not `fleetd run` holds the lock |
 | `state.db`, `-wal`, `-shm` | the hub store, including `hub_identity` (CA key, account salt; [02g](02g-agent-security.md)) |
+| `state.db.pre-restore-<UTC stamp>` | the store a `fleetd restore` replaced, checkpointed (its WAL folded in) and kept as a hard link, mode 0600, with `-2`, `-3` when two restores share a second. It holds the CA key like a backup, and it is the only place left for the audit rows written since the backup (an earlier `hub.restore` row included; audit rows are permanent, 03f): keep it, or export its `audit_log` first, before deleting it. Nothing removes it. A restore killed before its rename leaves `.state.db.restore-*` (mode 0600), which `fleetd init`, `run` and `restore` remove at start under `fleetd.lock` |
 | `logs.db` | the log store (ADR 0015) |
 | `revoked-serials` | the revocation list, mode 0600, kept outside `state.db` so a restore re-applies it; format, write order and the start check in [02g](02g-agent-security.md#hub-identity-and-restore) |
 | `backups/` | mode 0700, made by the first backup. `VACUUM INTO` copies of `state.db` (ADR 0014), each mode 0600: `nightly-<UTC stamp>.db` from `fleetd run`, `manual-<UTC stamp>.db` from `fleetd backup` and `manual-<UTC stamp>.db.age` from `fleetd backup --encrypt`; the stamp is the UTC time to the second, as in `nightly-20261008T030000Z.db`. `fleetd run` checks every minute and makes a nightly copy at the first check of each local date at or after 03:00 by the wall clock (on a night that skips 03:00, the first check after the jump; on one that repeats it, the first 03:00), and at start or wake when the newest nightly copy is more than 24 h old or there is none; a copy stamped more than 10 minutes past the clock does not count as the newest (`backup.stamp_ahead`, [05b](05b-observability.md)); it keeps the last 7 nightly copies and never removes a manual one. Each copy is checked (it opens, passes `quick_check`, has a known schema version and holds `hub_identity`) before it gets its name. `BACKUP_AGE` reads the newest file of either kind ([05b](05b-observability.md)). With the hub stopped, the copy's read-only connection leaves SQLite's empty `state.db-wal` and `state.db-shm` (mode 0600), which the next `fleetd run` uses. A backup killed mid-copy leaves `backups/.partial-*` or, for an encrypted copy, `<state_dir>/.backup-plain-*` (the plaintext, mode 0600); `fleetd init` and `fleetd run` remove them at start under `fleetd.lock` once they are more than an hour old, since `fleetd backup` takes no lock and a younger one may be a copy in progress |
@@ -160,8 +162,9 @@ The agent's directory is `~/.local/state/fleet-agent/` ([04](04-technology-revie
 | `fleetd setup github` | writes the App manifest and the `github` keys ([ADR 0022](../adr/0022-drift-audit-decisions.md)) |
 | `fleetd enroll-token --machine <name>` | asks the running hub over `admin.sock` for an enroll token (`CreateEnrollmentToken`, [02g](02g-agent-security.md)); flags `--expect-host`, `--ttl` (default 15m, at most 24h), `--label` (repeatable) and `--start-drained`. Stdout holds only the token, on one line; stderr shows the expiry, the CA fingerprint and the `fleet-agent enroll --token …` line. With no hub running it exits non-zero with "fleetd is not running" and writes nothing |
 | `fleetd backup [--encrypt]` | writes one `manual-<UTC stamp>.db` into `backups/` and prints only its path on stdout. It takes no lock, so it works beside a running hub and with the hub stopped (#92). `--encrypt` writes `manual-<UTC stamp>.db.age` with age under a passphrase typed twice at the terminal ([02g](02g-agent-security.md#hub-identity-and-restore)); a stdin that is not a terminal is refused, and there is no flag, variable or file for the passphrase. Local, never an RPC |
+| `fleetd restore <backup> [--address <addr>]` | replaces `state.db` with a backup, offline. It takes `fleetd.lock` for the whole command, so while `fleetd run` holds it the restore exits non-zero with `lock_held` and changes nothing (#92). The steps, the refusals and the kept previous store are in [02g](02g-agent-security.md#hub-identity-and-restore). Local, never an RPC |
 | `fleetd claim`, `token create`, `user invite` | admin actions over `admin.sock` ([02f](02f-hub-authentication.md)) |
-| `fleetd restore`, `debug agent-stream`, `insights rebuild` | local, never RPCs ([02m](02m-hub-api-actions-and-audit.md#local-commands)) |
+| `debug agent-stream`, `insights rebuild` | local, never RPCs ([02m](02m-hub-api-actions-and-audit.md#local-commands)) |
 
 ## Staying awake and surviving logout
 

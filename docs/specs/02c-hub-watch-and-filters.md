@@ -36,7 +36,11 @@ ignored, so a sidebar filter cannot leak into the goal or triage topics.
 - **Dedupe.** A message supersedes the client's copy when `version` is
   greater, or equal and `status.hub_seq` is greater (resources without a
   status compare `version` only). Equal or older messages (a replay after
-  resume) are dropped.
+  resume) are dropped. After a `fleetd restore` both `version` and
+  `status.hub_seq` can be lower than a client's cached copy (03f), so a
+  client drops its copies on `RESYNC_REQUIRED` or `HUB_RESTARTED` before
+  the new `INITIAL` messages arrive, or keys its dedupe on
+  `hub_instance_id` as well (plan row 12).
 - **Checkpoints.** Every message carries a `resume_token`. An idle stream
   gets `CHECKPOINT` (new token, no resource) every checkpoint interval ([defaults](defaults.md)), which doubles as a
   keepalive.

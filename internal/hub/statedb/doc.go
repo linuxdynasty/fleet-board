@@ -50,4 +50,12 @@
 // rows as a job of their own. [InsertEnrollToken], [Enroll] and [Renew]
 // each append their row (machine.enroll_token, machine.enroll,
 // machine.cert_renewed); a replay writes none. Audit rows are permanent.
+//
+// Plan row 5 (PR 5j) adds hub_identity.restore_reconcile_until (the
+// restore_reconcile migration).
+// [ApplyRestore] is fleetd restore's one writer transaction on a restored
+// store: settings_epoch, hub_addresses, the server certificate when an
+// address was added, the reconcile window and the hub.restore audit row
+// ([ActionRestore]). [RemoveLeftovers] also
+// clears a crashed restore's temporary file ([RestoreTempPrefix]).
 package statedb

@@ -153,7 +153,7 @@ at **4 machines** / **50 machines × 10 panes** from the load table in
 | `log_sessions`, `log_chunks` (the zstd data and its index in one row), `archived_pane_summaries` (all in `logs.db`, ADR 0015) | `session_id`; `(session_id, pane, stream, raw_offset)`; pane key | W9 | 1 / 30 (chunk rows, batched per second) | by session + offset/time; `ListStoredSessions`; `SearchSessionLogs` scans frames | until pruned by the size cap or `log_retention`, or `DeleteSessionLogs` |
 | `attaches` (audit only) | `attach_id` | W8 | rare | per session | permanent audit |
 | `audit_log` | `(time, id)` | everything mutating | ≈ 0.05 / 0.5 | filter/export | permanent (ADR 0005/design) |
-| `hub_counters` (one row, `id = 1`) | `hub_seq`, which only rises (triggers refuse a second row, a delete or a lower value) | every writer job, once per changed resource; `observed_time` is the hub clock the job's caller read, not the commit time | one update per changed resource | none (rows carry their own stamp) | permanent |
+| `hub_counters` (one row, `id = 1`) | `hub_seq`, which only rises within one store (triggers refuse a second row, a delete or a lower value); a restore restarts it from the backup's counter (see restore, below) | every writer job, once per changed resource; `observed_time` is the hub clock the job's caller read, not the commit time | one update per changed resource | none (rows carry their own stamp) | permanent |
 
 Derived, not stored: free slots per machine (from `goals` + limits),
 `allowed_active` per account (stored only as a cache row for the UI), triage
@@ -179,6 +179,7 @@ hub *this* fleet's hub. That lives in the one `hub_identity` row (details in
 | `account_salt`, `salt_version` | `AccountKey` is a hash over it; a new salt splits accounts silently |
 | `settings_epoch` | Orders settings across restores; **is** regenerated on restore |
 | `hub_addresses` | Where agents find the hub; sent in `HelloAck` |
+| `restore_reconcile_until` | End of the 24 h reconcile window after a restore (Unix ms, 0 when none); set by `fleetd restore` |
 
 It is stored **inside `state.db`**, so the nightly `VACUUM INTO` backup (ADR
 0014) carries it, and therefore **a backup is a secret**: it holds the CA
@@ -195,7 +196,8 @@ committed row, WAL included. Neither takes `fleetd.lock`: `fleetd backup`
 works whether or not the hub runs (#92). Names, schedule and pruning are in
 [02j](02j-hub-runtime.md#state-directory).
 
-`fleetd restore` is offline. It checks the backup, mints a new `settings_epoch`
+`fleetd restore` is offline: it takes `fleetd.lock`, so it is refused while
+`fleetd run` is up (#92). It checks the backup, mints a new `settings_epoch`
 (so agents holding a higher generation under the old epoch accept the restored
 settings), needs no step for the connection epoch or event seq (the hub issues
 `max(stored, Hello.last_epoch) + 1` and agents floor `seq` above
@@ -204,4 +206,8 @@ settings), needs no step for the connection epoch or event seq (the hub issues
 answered with a `SnapshotRequest{reason: "reconcile"}` and the hub adopts what
 agents know and it does not: machines enrolled after the backup, probes,
 fleet sessions (02g has the table). `fleet_id`, the CA and the salt are never
-touched.
+touched. A restore restarts `hub_seq` from the backup's counter, lower than
+the replaced store's: `hub_seq` rises within one store and one
+`hub_instance_id`, and a restore always comes with a new `hub_instance_id`,
+since the hub must be stopped for it and the id is minted at each process
+start (`HelloAck.hub_instance_id`, 02c `HUB_RESTARTED`).
