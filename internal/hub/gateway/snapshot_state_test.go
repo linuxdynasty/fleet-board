@@ -46,7 +46,9 @@ func TestSilenceCountsFromTheSnapshot(t *testing.T) {
 	s.ack(t)
 	h.clock.set(h.clock.now().Add(40 * time.Second))
 	s.send(t, snapshotMsg(5, "laptop", "h1"))
-	h.waitState(t, m.id, "ONLINE")
+	// snapshot.applied is logged after the arm records the Snapshot time on
+	// the same goroutine; the ONLINE commit comes earlier.
+	h.waitEvents(t, "snapshot.applied", 1)
 	h.housekeep(t, 44*time.Second)
 	if st, _ := h.machineState(t, m.id); st != "ONLINE" {
 		t.Fatalf("state %s 44 s after the Snapshot (84 s after the Hello), want ONLINE", st)
