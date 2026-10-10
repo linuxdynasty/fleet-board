@@ -59,6 +59,15 @@ type link struct {
 }
 
 func newLink(addr string, fp [32]byte, cert tls.Certificate, ka Keepalive, hs time.Duration) (*link, error) {
+	return newLinkVia(addr, "", fp, cert, ka, hs, nil)
+}
+
+// newLinkVia is newLink dialing dial (an mDNS answer's address) when it is
+// set; addr still names the hub the certificate must hold. onHandshake,
+// when set, hears each handshake's outcome (nil when it passed).
+func newLinkVia(addr, dial string, fp [32]byte, cert tls.Certificate, ka Keepalive, hs time.Duration,
+	onHandshake func(err error),
+) (*link, error) {
 	host, _, err := net.SplitHostPort(addr)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %q", ErrHubAddress, addr)
@@ -72,8 +81,17 @@ func newLink(addr string, fp [32]byte, cert tls.Certificate, ka Keepalive, hs ti
 		MaxResponseHeaderBytes: 64 << 10,
 		HTTP2:                  &http.HTTP2Config{SendPingTimeout: ka.Ping, PingTimeout: ka.Timeout},
 		DialTLSContext: func(ctx context.Context, network, address string) (net.Conn, error) {
+			if dial != "" {
+				address = dial
+			}
+			heard := func(err error) {
+				if onHandshake != nil {
+					onHandshake(err)
+				}
+			}
 			raw, err := d.DialContext(ctx, network, address)
 			if err != nil {
+				heard(err)
 				return nil, err
 			}
 			c := tls.Client(raw, cfg)
@@ -84,8 +102,10 @@ func newLink(addr string, fp [32]byte, cert tls.Certificate, ka Keepalive, hs ti
 				if !transportError(err) {
 					k.untrusted.Store(true)
 				}
+				heard(err)
 				return nil, err
 			}
+			heard(nil)
 			k.mu.Lock()
 			if ap, err := netip.ParseAddrPort(raw.LocalAddr().String()); err == nil {
 				k.local = ap.Addr().Unmap()

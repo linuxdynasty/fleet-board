@@ -26,6 +26,7 @@
   "cert_expiry_": "docs/specs/03-workflows.md",
   "connect_": "docs/specs/03-workflows.md",
   "connected": "docs/specs/03-workflows.md",
+  "discovery_": "docs/specs/03-workflows.md",
   "enroll_": "docs/specs/03-workflows.md",
   "log_lines_": "docs/specs/05b-observability.md",
   "read_pool_": "docs/specs/05b-observability.md",

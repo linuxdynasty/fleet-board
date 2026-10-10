@@ -43,8 +43,10 @@ fleet-agent run    # logs to stderr; stop with Ctrl-C or SIGTERM
 
 - It takes `fleet-agent.lock` in the state folder first. A second `run` on
   the same folder exits 1 and names the lock; the first keeps running.
-- It tries the hub address it last reached, then the one it enrolled with,
-  over mTLS. When the hub is down it waits and tries again (1 s growing to
+- It tries the hub address it last reached, then the hub found by one mDNS
+  browse, then the hub's latest list of addresses (`hub-addresses`, saved
+  when the hub sends a new one), else the list it enrolled with, over mTLS.
+  An address from mDNS is only a candidate: it must pass the same check. When the hub is down it waits and tries again (1 s growing to
   60 s, with some randomness); waking from sleep or a network change makes
   it try at once.
 - Exit codes: 0 after a signal (it says goodbye to the hub first; a

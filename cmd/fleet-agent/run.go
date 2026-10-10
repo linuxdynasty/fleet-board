@@ -107,7 +107,7 @@ func runAgent(ctx context.Context, dir, version, boot string, tel *telemetry.Tel
 
 	loop, err := conn.NewLoop(ctx, conn.LoopOptions{
 		Dir: dir, Identity: id, DB: db, Version: version, BootID: boot,
-		Telemetry: tel, Events: events, PushOff: nw.PushOff,
+		Telemetry: tel, Events: events, PushOff: nw.PushOff, Discover: conn.NewMDNS(),
 	})
 	if err != nil {
 		return failed("loop", err)

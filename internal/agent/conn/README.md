@@ -12,9 +12,10 @@ id, err := conn.LoadIdentity(dir)  // ErrNotEnrolled when there is none
 addr, err := conn.LoadHubAddress(dir)
 removed, err := conn.CheckEnded(dir, id) // *EndedError: the hub ended this machine; do not dial
 l, err := conn.NewLoop(ctx, conn.LoopOptions{Dir: dir, Identity: id, DB: db, Version: v, BootID: b,
-	Telemetry: tel, Events: wakeAndNet, PushOff: watcher.PushOff, Heartbeat: fillLaterFields})
+	Telemetry: tel, Events: wakeAndNet, PushOff: watcher.PushOff, Heartbeat: fillLaterFields,
+	Discover: conn.NewMDNS()})
 err = l.Run(ctx)                    // nil after ctx ends; *EndedError when it ended on its own
-st := l.Status()                    // state, peer, last failure per address, clock offset, ...
+st := l.Status()                    // state, peer, last failure per address, last browse, clock offset, ...
 ```
 
 `Enroll`, in order, stopping at the first failure:
@@ -56,7 +57,8 @@ st := l.Status()                    // state, peer, last failure per address, cl
    names the machine id (common name and `fleet://machine/<id>`), a fleet id
    and a salt (`ErrBadResponse` otherwise; nothing saved, key kept).
 7. The hub address goes to `hub-address`, the identity to `identity.json`
-   (temp file, fsync, link, folder fsync), then `enroll.key` is removed.
+   (temp file, fsync, link, folder fsync), a leftover `ended.json` and
+   `hub-addresses` are removed, then `enroll.key`.
    `Result.HostnameMismatch` says the hub expected another hostname (the
    rule is `internal/hostname`, shared with the hub); the command prints a
    warning for it.
@@ -67,9 +69,16 @@ st := l.Status()                    // state, peer, last failure per address, cl
 
 1. **Certificate first.** Past `CertNotAfter` the loop ends
    (`EndCertExpired`) without dialing.
-2. **Candidates.** The cached `hub-address`, then the identity's addresses
-   (replaced by `HelloAck.hub_addresses` for the rest of the run), each
-   once. One whose handshake fails (refused, timed out after
+2. **Candidates.** The cached `hub-address`; then, after it failed, one
+   mDNS browse (`LoopOptions.Discover`; only answers named
+   `*._fleetd._tcp.local.` with a valid port, SRV target and unicast
+   address, at most 16, each tried as it arrives, dialed at its address and named, logged and cached
+   by its SRV target); then the configured addresses, each once. The
+   configured list is `hub-addresses` (the hub's latest) when it holds a
+   valid line, else the identity's (`connect.addresses{source}` says which);
+   a HelloAck list that is non-empty and differs from it replaces it and is
+   saved whole to `hub-addresses` (a failed save logs
+   `connect.failed{step="save"}` and the stream stays up). One whose handshake fails (refused, timed out after
    `LoopOptions.HandshakeTimeout`, 10 s by default, or untrusted: the same
    pin as enroll) is skipped for the next, logged at `step="dial"`; the
    first that passes is used. The client certificate is the enrolled one.
@@ -163,10 +172,18 @@ Not built yet, all later in plan row 4:
   keeps the renewed pair in its own `cert.pem`, never rewriting
   `identity.json`. Until then the loop ends with `EndCertExpired` when
   the enrolled certificate runs out.
-- Discovery (mDNS, PR 4), and with it the discovery signals 03 W1 lists:
-  the `agent.discover` span (one child per candidate) and
-  `fleet_agent_discovery_seconds`. Until then the candidates are the
-  cached and configured addresses only, and neither signal is emitted.
+- Local config for hub addresses (03 A2's "plus local config") and the
+  Tailscale name (v3).
+
+Known limits of mDNS (best effort, ADR 0028): a host firewall that drops
+direct UDP replies (ufw on Linux) hides the hub; a hub's certificate must
+name its SRV target (row 5 advertises it); the library returns from a
+browse only when its 2 s timeout passes, even after a stop, so a stop
+during a browse waits for it; it keeps filling an answer it already handed
+over from later packets, so `NewMDNS` copies each answer the moment it
+arrives. On a macOS host whose process may not use the local network, the
+query fails at once (`sendto: no route to host`, `connect.browse`
+`err_kind="io"`) and the configured addresses are used.
 
 **State folder** (04 Q9): `~/.local/state/fleet-agent/` unless
 `--state-dir`; created 0700, and a folder or file with any group or other
@@ -178,13 +195,15 @@ bit, another owner, or a symlink is refused (`ErrLooseMode`), never re-moded.
 | `hub-address` | last good `host:port` |
 | `enroll.key` | the key, only between a first try and success |
 | `ended.json` | the end that stopped the loop (revoked, unknown machine, fleet mismatch), its machine id, hub and time; removed by enroll |
+| `hub-addresses` | the hub's latest address list (`HelloAck.hub_addresses`), one `host:port` per line, at most 16; read at start ahead of the identity's list; removed by enroll |
 | `agent.db` | `install_id` and the rest ([ring](../ring/README.md)) |
 
-**Signals.** Spans `agent.enroll`, `agent.connect.hello`. Loop logs and
+**Signals.** Spans `agent.enroll`, `agent.connect.hello`, `agent.discover`
+(children `agent.discover.browse` and `agent.discover.candidate`). Loop logs and
 metrics are listed in 03 W1 and 03n W2 "Telemetry" (`connect.*`, `snapshot.*`,
 `result.*`; `fleet_agent_connect_attempts_total`, `fleet_agent_connected`,
 `fleet_agent_reconnects_total`, `fleet_agent_unacked_results`,
-`fleet_agent_cert_expiry_seconds`).
+`fleet_agent_cert_expiry_seconds`, `fleet_agent_discovery_seconds`).
 Enroll logs: `enroll.completed{machine_id,
 replayed, hostname_mismatch}`, `enroll.refused{reason, peer}`,
 `enroll.retry{attempt, err_kind}`, `enroll.hub_untrusted{peer}`,
@@ -249,3 +268,17 @@ certificate none; `CheckEnded` refuses it with the fix, removes another
 machine's, and refuses a damaged or loose one; a write that fails still
 ends the loop; enroll removes it; and a child process killed with SIGKILL
 at random moments while it rewrites the file leaves none or a whole one.
+Discovery runs against a fake `Discover` (no real multicast): an answer
+tried as it arrives (the browse would run a minute), ten stray answers
+dropped without a dial and an impostor with the right name that gets a
+handshake and nothing else, no browse while the cached address works, a
+browse after the cached address failed that finds nothing falling through
+to the configured address, a failed browse, one browse per attempt and a
+wake starting the next at once. `hub-addresses`: a HelloAck list saved and used after a
+restart while the old address refuses; an empty, invalid or unchanged list
+not rewritten; a damaged, loose or folder file falling back to the
+identity list; a failed save keeping the stream; enroll removing it; and a
+child killed with SIGKILL while it rewrites the file leaving none or a
+whole list. `FLEET_MDNS_LIVE=1` browses real multicast for a fake fleetd
+advertised on this machine; `FLEET_MDNS_WIFI_HUB=<instance>` is plan row
+4's 50-browse Wi-Fi measurement against a real hub.

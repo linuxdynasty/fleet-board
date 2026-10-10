@@ -209,6 +209,10 @@ func enroll(ctx context.Context, r *enrollRun, opts Options) (Result, string, er
 	if err := removePrivate(opts.Dir, EndedFile); err != nil {
 		r.log.WarnContext(ctx, "enroll.failed", "step", "cleanup", "err_kind", errKind(err))
 	}
+	// The last identity's hub list would replace the one just enrolled.
+	if err := removePrivate(opts.Dir, HubAddressesFile); err != nil {
+		r.log.WarnContext(ctx, "enroll.failed", "step", "cleanup", "err_kind", errKind(err))
+	}
 	if err := removePrivate(opts.Dir, PendingKeyFile); err != nil {
 		// The identity is saved; the leftover holds the same key, mode 0600,
 		// and the next enroll on this folder removes it.

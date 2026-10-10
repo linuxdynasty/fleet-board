@@ -88,6 +88,8 @@ type Status struct {
 	Ended End
 	// SnapshotOversize is the last time a snapshot was over the hub's cap.
 	SnapshotOversize time.Time
+	// Browse is the last mDNS browse; zero before the first.
+	Browse BrowseStatus
 }
 
 // statusBox guards the status the loop writes and Status reads.

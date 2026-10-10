@@ -17,8 +17,10 @@
 // hub replay its answer.
 //
 // [Loop] keeps an enrolled machine connected (03 W1 "State machine", 03n W2):
-// it tries the cached, then the configured hub addresses over mTLS pinned
-// to the enrolled CA, sends Hello, takes HelloAck's epoch and seq floor
+// it tries the cached address, then the answers of one mDNS browse
+// ([Discover], best effort: ADR 0028) as they arrive, then the configured
+// addresses ([HubAddressesFile], the hub's latest list, else the
+// identity's) over mTLS pinned to the enrolled CA, sends Hello, takes HelloAck's epoch and seq floor
 // (02i), sends a Snapshot built for that stream and the results the hub has
 // not acknowledged, and serves the stream until it ends. Then it backs off
 // ([Backoff]), or reconnects at once after a wake or a network change that
@@ -33,6 +35,7 @@
 // network call and refuses while the file names its machine, and Enroll
 // removes it with a new identity. [Loop.Status] is its state in memory.
 //
-// Discovery (mDNS) and the agent side of certificate renewal come with
-// plan row 4's later parts.
+// Every mDNS answer is untrusted: only a candidate until the pin passes.
+// The agent side of certificate renewal
+// comes with plan row 4's later parts.
 package conn

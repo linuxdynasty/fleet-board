@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 
 	agentv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1"
@@ -56,6 +57,11 @@ type LoopOptions struct {
 	// HandshakeTimeout bounds the TLS handshake of each candidate; zero is
 	// 10 s, as for enroll.
 	HandshakeTimeout time.Duration
+	// Discover browses for the hub (mDNS) once per attempt, after the
+	// cached address failed; nil skips it. BrowseTimeout bounds each
+	// browse; zero is [DefaultBrowseTimeout].
+	Discover      Discover
+	BrowseTimeout time.Duration
 	// anchorHook, for tests only, sees each stream's hub-time anchor.
 	anchorHook func(hubRecv time.Time)
 }
@@ -79,9 +85,13 @@ type Loop struct {
 	fp     [32]byte
 	seqs   *ring.Seqs
 	status statusBox
+	// discovery is fleet_agent_discovery_seconds.
+	discovery metric.Float64Histogram
 	// Only Run's goroutine touches these.
 	addrs  []string
 	events <-chan wakenet.Event
+	// walk is the running attempt's search for the hub.
+	walk *walk
 }
 
 // NewLoop checks the identity and prepares a loop; nothing is sent until
@@ -106,6 +116,10 @@ func NewLoop(ctx context.Context, opts LoopOptions) (*Loop, error) {
 	if err != nil {
 		return nil, err
 	}
+	disc, err := newDiscoveryHistogram(opts.Telemetry)
+	if err != nil {
+		return nil, err
+	}
 	opts.Backoff = opts.Backoff.withDefaults()
 	opts.Keepalive = opts.Keepalive.withDefaults()
 	if opts.HelloTimeout <= 0 {
@@ -117,9 +131,9 @@ func NewLoop(ctx context.Context, opts LoopOptions) (*Loop, error) {
 	l := &Loop{
 		since: time.Since,
 		opts:  opts, log: opts.Telemetry.Logger.With("component", "conn"), tracer: opts.Telemetry.Tracer(scope),
-		m: m, cert: cert, fp: [32]byte(raw), seqs: seqs, addrs: hubAddresses(opts.Identity.HubAddresses),
-		events: opts.Events,
+		m: m, cert: cert, fp: [32]byte(raw), seqs: seqs, discovery: disc, events: opts.Events,
 	}
+	l.addrs = l.configured(ctx)
 	l.status.pushOff = opts.PushOff
 	return l, nil
 }
@@ -225,40 +239,53 @@ type ending struct {
 	event *wakenet.Decision
 }
 
-type candidate struct{ addr, source string }
+// candidate is one hub address to try. dial, set for an mDNS answer, is
+// the address dialed; addr still names the hub for the TLS check, the
+// logs and the cache.
+type candidate struct{ addr, dial, source string }
 
-// candidates are the cached address, then the configured ones (from
-// identity.json, replaced by HelloAck.hub_addresses), each once.
-func (l *Loop) candidates() []candidate {
-	var out []candidate
-	seen := map[string]bool{}
-	if a, err := LoadHubAddress(l.opts.Dir); err == nil {
-		out = append(out, candidate{a, "cached"})
-		seen[a] = true
-	}
-	for _, a := range l.addrs {
-		if !seen[a] {
-			out = append(out, candidate{a, "configured"})
-			seen[a] = true
-		}
-	}
-	return out
-}
+func (c candidate) key() string { return c.addr + " " + c.dial }
 
-// attempt is one cycle through the candidates: the first one whose
-// handshake passes is used, and the attempt ends with its stream.
+// attempt is one cycle through the candidates (03 A2): the cached
+// address, then one mDNS browse whose answers are tried as they arrive,
+// then the configured addresses (hub-addresses, else identity.json), each
+// once. The first whose handshake passes is used, and the attempt ends
+// with its stream.
 func (l *Loop) attempt(ctx context.Context, reason agentv1.ConnectReason) ending {
 	l.status.state(StateDiscovering, "")
-	cands := l.candidates()
-	if len(cands) == 0 {
-		l.log.WarnContext(ctx, "connect.failed", "step", "discover", "err_kind", "constraint")
-		return ending{}
-	}
-	for _, c := range cands {
+	w := l.startWalk(ctx)
+	l.walk = w
+	defer w.none(ctx)
+	seen := map[string]bool{}
+	next := func(c candidate) (ending, bool) {
+		if seen[c.key()] {
+			return ending{}, false
+		}
+		seen[c.key()] = true
 		out, accepted := l.try(ctx, c, reason)
-		if accepted || ctx.Err() != nil {
+		return out, accepted || ctx.Err() != nil
+	}
+	if a, err := LoadHubAddress(l.opts.Dir); err == nil {
+		if out, done := next(candidate{addr: a, source: "cached"}); done {
 			return out
 		}
+	}
+	if l.opts.Discover != nil {
+		b := l.startBrowse(w)
+		defer b.stop()
+		for c := range b.cands {
+			if out, done := next(c); done {
+				return out
+			}
+		}
+	}
+	for _, a := range l.addrs {
+		if out, done := next(candidate{addr: a, source: "configured"}); done {
+			return out
+		}
+	}
+	if len(seen) == 0 {
+		l.log.WarnContext(ctx, "connect.failed", "step", "discover", "err_kind", "constraint")
 	}
 	return ending{}
 }

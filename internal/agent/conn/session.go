@@ -64,8 +64,20 @@ type session struct {
 // the attempt ends here.
 func (l *Loop) try(ctx context.Context, c candidate, reason agentv1.ConnectReason) (ending, bool) {
 	l.status.state(StateConnecting, "")
-	l.log.InfoContext(ctx, "connect.attempt", "peer", c.addr, "source", c.source, "reason", reasonLabel(reason))
-	k, err := newLink(c.addr, l.fp, l.cert, l.opts.Keepalive, l.opts.HandshakeTimeout)
+	w := l.walk
+	cctx, heard := w.candidate(c)
+	defer heard(errNotTried)
+	args := []any{"peer", c.addr, "source", c.source, "reason", reasonLabel(reason)}
+	if c.dial != "" {
+		args = append(args, "dial", c.dial)
+	}
+	l.log.InfoContext(cctx, "connect.attempt", args...)
+	k, err := newLinkVia(c.addr, c.dial, l.fp, l.cert, l.opts.Keepalive, l.opts.HandshakeTimeout, func(err error) {
+		heard(err)
+		if err == nil {
+			w.found(c.source)
+		}
+	})
 	if err != nil {
 		l.m.attempt(ctx, "failed", c.source)
 		l.fail(ctx, c, "dial", err, false, false)
@@ -283,9 +295,7 @@ func (s *session) accept(ctx context.Context, ack *agentv1.HelloAck, st ring.Sta
 		offset = s.hubAt.Sub(sent.Add(recv.Sub(sent) / 2))
 		s.l.status.update(func(ss *Status) { ss.ClockOffset, ss.ClockOffsetTime = offset, recv })
 	}
-	if addrs := hubAddresses(ack.GetHubAddresses()); len(addrs) > 0 {
-		s.l.addrs = addrs
-	}
+	s.l.takeAddresses(ctx, s.c.addr, ack.GetHubAddresses())
 	s.beat = heartbeatInterval(ack.GetHeartbeatInterval())
 	s.maxBytes = snapshotMaxBytes
 	if mb := int(ack.GetMaxMessageBytes()); mb > 0 && mb < s.maxBytes {
