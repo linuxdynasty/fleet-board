@@ -11,8 +11,10 @@
 // so one interface is chosen (the default route's, else the first real one),
 // not all of them, and the responder joins the mDNS group on it. Never the OS
 // host name, loopback or IPv6 link-local; IPv4 link-local ranks last; a
-// bridge, tunnel or VM interface only when the listener is bound to its address
-// or it alone holds the default route and has an address.
+// point-to-point interface never; a bridge-named interface only when the
+// listener is bound to its address or it holds the default route; a
+// tunnel-named one only as the last resort when it holds the route and is not
+// point-to-point.
 //
 // An [Advertiser] decides once, at start, whether to advertise: a refusal
 // (discovery.mdns off, no host name, no address, a served certificate that

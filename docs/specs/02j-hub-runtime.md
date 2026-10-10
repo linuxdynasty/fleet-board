@@ -68,15 +68,20 @@ without `.local`, the one the default certificate names use; a host name that
 makes no DNS name advertises nothing.
 
 The agent keeps one address per IP family from an answer, so the hub advertises
-the addresses of one interface, at most one IPv4 and one IPv6: the interface that
-holds the default route's source address when it is a real one (not a bridge,
-tunnel or VM interface by name or point-to-point), else the first real one, else
-the route's holder if it is up and multicast and not point-to-point (a Linux host
-that bridges its NIC); a listener bound to one address advertises that address on
-the interface that holds it. An IPv4 link-local address (169.254/16) is advertised
-only when nothing else qualifies; IPv6 link-local never. The address list is read at start; after a network change restart
-`fleetd` or give the agent the new address (re-advertising on a network change is
-later work). So a hub found "within one 60 s backoff step" of moving
+the addresses of one interface, at most one IPv4 and one IPv6. For a listener on
+the wildcard address it is, in this order: the interface that holds the default
+route's source address, when it is up, multicast, not point-to-point and not named
+like a tunnel (a Linux host that bridges its NIC holds its address and the route
+on `bridge0`, which counts); else the first interface that is not named like a
+bridge, container, VM or tunnel; else a tunnel-named route holder that is not
+point-to-point. A point-to-point interface is never used. A listener bound to one
+address advertises that address on the interface that holds it. An IPv4
+link-local address (169.254/16) is advertised only when nothing else qualifies;
+IPv6 link-local never.
+
+The address list is read at start; after a network change restart `fleetd` or
+give the agent the new address (re-advertising on a network change is later
+work). So a hub found "within one 60 s backoff step" of moving
 ([ADR 0028](../adr/0028-mdns-best-effort.md) decision 2) is true only after that
 restart.
 

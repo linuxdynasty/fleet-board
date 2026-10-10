@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	otelmetric "go.opentelemetry.io/otel/metric"
-	"go.opentelemetry.io/otel/metric/noop"
 
 	"github.com/linuxdynasty/fleet-board/internal/hub/discovery"
 )
@@ -87,29 +86,54 @@ func TestTheMachineReadersAreSane(t *testing.T) {
 	}
 }
 
-// failingMeter cannot register an instrument.
-type failingMeter struct{ noop.Meter }
+// failingMeter cannot register a counter; failingGaugeMeter cannot register
+// the up-down counter that backs the gauge.
+type failingMeter struct{ otelmetric.Meter }
 
 func (failingMeter) Int64Counter(string, ...otelmetric.Int64CounterOption) (otelmetric.Int64Counter, error) {
 	return nil, errors.New("instrument refused")
 }
 
-// If the signals cannot be registered the hub still advertises, and says once
-// that it counts nothing.
-func TestAMeterThatCannotRegisterCostsTheCountsNotTheAdvertisement(t *testing.T) {
+type failingGaugeMeter struct{ otelmetric.Meter }
+
+func (failingGaugeMeter) Int64UpDownCounter(string, ...otelmetric.Int64UpDownCounterOption) (otelmetric.Int64UpDownCounter, error) {
+	return nil, errors.New("instrument refused")
+}
+
+// If the counter cannot be registered the hub still advertises, keeps its
+// gauge, and says once that it counts nothing.
+func TestAMeterThatCannotRegisterTheCounterKeepsTheGauge(t *testing.T) {
 	t.Parallel()
 	r := newRig(t)
-	r.opts = discovery.WithMeter(r.opts, failingMeter{})
+	r.opts = discovery.WithMeter(r.opts, failingMeter{Meter: r.tel.Meter("x")})
 	a := r.start(t)
 	ev := r.logs.events(t, "discovery.advertise_failed")
 	if len(ev) != 1 || ev[0]["step"] != "telemetry" {
 		t.Errorf("discovery.advertise_failed = %v, want one with step telemetry", ev)
 	}
 	if len(r.resp.served) != 1 {
-		t.Error("did not advertise without its counters")
+		t.Error("did not advertise without its counter")
 	}
-	if v := metric(r.scrape(t), "fleet_hub_discovery_advertise_total", `result="started"`); v != -1 {
+	body := r.scrape(t)
+	if v := metric(body, "fleet_hub_discovery_advertise_total", `result="started"`); v != -1 {
 		t.Errorf("advertise_total = %v, want no series", v)
 	}
+	if v := metric(body, "fleet_hub_discovery_advertising"); v != 1 {
+		t.Errorf("fleet_hub_discovery_advertising = %v, want 1: the gauge registered", v)
+	}
 	a.Stop()
+}
+
+// If the gauge cannot be registered the counts stay.
+func TestAMeterThatCannotRegisterTheGaugeKeepsTheCounter(t *testing.T) {
+	t.Parallel()
+	r := newRig(t)
+	r.opts = discovery.WithMeter(r.opts, failingGaugeMeter{Meter: r.tel.Meter("x")})
+	r.start(t)
+	if n := len(r.logs.events(t, "discovery.advertise_failed")); n != 1 {
+		t.Errorf("discovery.advertise_failed logged %d times, want 1", n)
+	}
+	if v := metric(r.scrape(t), "fleet_hub_discovery_advertise_total", `result="started"`); v != 1 {
+		t.Errorf("advertise_total{started} = %v, want 1: the counter registered", v)
+	}
 }

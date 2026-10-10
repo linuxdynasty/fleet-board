@@ -111,8 +111,15 @@ func New(opts Options) *Advertiser {
 		metric.WithDescription("mDNS advertisements the hub tried at start, by result and, for a refusal, reason."))
 	a.running, err2 = meter.Int64UpDownCounter(prefix+"_discovery_advertising",
 		metric.WithDescription("1 while the hub advertises _fleetd._tcp over mDNS, else 0."))
+	// Keep whichever registered: a counter that fails alone costs the counts,
+	// not the gauge.
+	if err1 != nil {
+		a.total = noop.Int64Counter{}
+	}
+	if err2 != nil {
+		a.running = noop.Int64UpDownCounter{}
+	}
 	if err := errors.Join(err1, err2); err != nil {
-		a.total, a.running = noop.Int64Counter{}, noop.Int64UpDownCounter{}
 		a.log.Warn("discovery.advertise_failed", "step", "telemetry", "err_kind", errKind(err))
 	}
 	return a

@@ -35,18 +35,28 @@ defer adv.Stop()
   decision 1: it works "with the interface set"). A listener bound to one
   address uses the interface that holds it, however virtual: the owner chose
   it, but it must be up and able to multicast. A listener on the wildcard
-  address uses, in this order: the interface holding the default route's
-  source address (found by connecting an unsent UDP socket, `RouteSource`)
-  when it is a reachable one; else the first reachable interface, that is up,
-  multicast, not loopback, not point-to-point and not named like a bridge,
-  tunnel or VM (`bridge*`, `utun*`, `awdl*`, `llw*`, `docker*`, `veth*`,
-  `vmnet*`, `tun*`, `tap*`, `vboxnet*`, `tailscale*`, `br-*`, `virbr*`, `wg*`,
-  `podman*`, `cni*`, `lxcbr*`, `lxdbr*`, `incusbr*`, `zt*`, `flannel*`,
-  `cali*`, `cilium*`, `nordlynx*`); else the route holder when it is up,
-  multicast and not point-to-point, whatever its name (a Linux host that
-  bridges its NIC holds its address and the default route on `bridge0`). A
-  tunnel that holds the default route is never used. On the chosen interface
-  the route's source address (else the first one the system lists) is the IPv4
+  address uses, in this order (in a first round without IPv4 link-local
+  addresses, then a second with them):
+  1. the interface holding the default route's source address (found by
+     connecting an unsent UDP socket, `RouteSource`), when it is up,
+     multicast, not point-to-point and not named like a tunnel (`tun*`,
+     `tap*`, `wg*`, `utun*`, `tailscale*`, `zt*`, `nordlynx*`, `ppp*`). Its
+     name may look like a bridge: a Linux host that bridges its NIC holds its
+     address and the route on `bridge0`, and a management NIC beside it is
+     not the way in;
+  2. else the first reachable interface: up, multicast, not loopback, not
+     point-to-point and not named like a bridge, container, VM or tunnel
+     (`bridge*`, `utun*`, `awdl*`, `llw*`, `docker*`, `veth*`, `vmnet*`,
+     `tun*`, `tap*`, `vboxnet*`, `tailscale*`, `br-*`, `virbr*`, `wg*`,
+     `podman*`, `cni*`, `lxcbr*`, `lxdbr*`, `incusbr*`, `zt*`, `flannel*`,
+     `cali*`, `cilium*`, `nordlynx*`, `ppp*`). With no default route this is only a
+     guess;
+  3. else the route holder even when it is tunnel-named, if it is up,
+     multicast and not point-to-point (a `tap` device that is the only
+     addressed route holder is advertised).
+
+  A point-to-point interface is never used. On the chosen interface the
+  route's source address (else the first one the system lists) is the IPv4
   record, and likewise one IPv6 record. That IPv6 address can be a temporary
   privacy address that expires; the list is read once, so an IPv6-only hub
   needs a restart then (agents try IPv4 first).

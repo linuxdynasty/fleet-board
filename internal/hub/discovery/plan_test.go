@@ -153,9 +153,34 @@ func TestPlan(t *testing.T) {
 			ifaces: []discovery.Iface{nic("enp3s0", up), nic("bridge0", up, "192.168.1.20"), nic("virbr0", up, "192.168.122.1")}, reason: discovery.ReasonNoAddresses,
 		},
 		{
-			name: "a real interface wins over a filtered route holder", hostname: "hub", bound: "[::]:7443",
-			ifaces: []discovery.Iface{nic("bridge0", up, "192.168.1.20"), nic("eth1", up, "10.2.2.2")},
-			route:  discovery.Route{V4: netip.MustParseAddr("192.168.1.20")}, wantIPs: []string{"10.2.2.2"}, wantNIC: "eth1", wantDial: "10.2.2.2",
+			name: "the route holder bridge0 beats a management NIC with no route", hostname: "hub", bound: "[::]:7443",
+			ifaces: []discovery.Iface{nic("eno2", up, "10.10.0.5"), nic("bridge0", up, "192.168.1.20")},
+			route:  discovery.Route{V4: netip.MustParseAddr("192.168.1.20")}, wantIPs: []string{"192.168.1.20"}, wantNIC: "bridge0", wantDial: "192.168.1.20",
+		},
+		{
+			name: "the route holder br-lan beats a management NIC with no route", hostname: "hub", bound: "[::]:7443",
+			ifaces: []discovery.Iface{nic("eno2", up, "10.10.0.5"), nic("br-lan", up, "192.168.1.20")},
+			route:  discovery.Route{V4: netip.MustParseAddr("192.168.1.20")}, wantIPs: []string{"192.168.1.20"}, wantNIC: "br-lan", wantDial: "192.168.1.20",
+		},
+		{
+			name: "a tunnel-named route holder loses to a real interface", hostname: "hub", bound: "[::]:7443",
+			ifaces: []discovery.Iface{nic("tap0", up, "10.8.0.2"), nic("eth0", up, "192.168.1.8")},
+			route:  discovery.Route{V4: netip.MustParseAddr("10.8.0.2")}, wantIPs: []string{"192.168.1.8"}, wantNIC: "eth0", wantDial: "192.168.1.8",
+		},
+		{
+			name: "a tunnel-named route holder that is not point-to-point is the last resort", hostname: "hub", bound: "[::]:7443",
+			ifaces: []discovery.Iface{nic("tap0", up, "10.8.0.2")},
+			route:  discovery.Route{V4: netip.MustParseAddr("10.8.0.2")}, wantIPs: []string{"10.8.0.2"}, wantNIC: "tap0", wantDial: "10.8.0.2",
+		},
+		{
+			name: "IPv6-only eth1 and bridge0 with the IPv4 route: bridge0, both families", hostname: "hub", bound: "[::]:7443",
+			ifaces: []discovery.Iface{nic("eth1", up, "2001:db8::9"), nic("bridge0", up, "192.168.1.20", "2001:db8::7")},
+			route:  discovery.Route{V4: netip.MustParseAddr("192.168.1.20")}, wantIPs: []string{"192.168.1.20", "2001:db8::7"}, wantNIC: "bridge0", wantDial: "192.168.1.20",
+		},
+		{
+			name: "a bridge-named interface with no route is only a guess: the real one wins", hostname: "hub", bound: "[::]:7443",
+			ifaces:  []discovery.Iface{nic("bridge0", up, "192.168.1.20"), nic("eth1", up, "10.2.2.2")},
+			wantIPs: []string{"10.2.2.2"}, wantNIC: "eth1", wantDial: "10.2.2.2",
 		},
 		{
 			name: "a tunnel that holds the default route is not used, even with nothing else", hostname: "hub", bound: "[::]:7443",
@@ -304,5 +329,22 @@ func TestPlanInstanceUsesTheFirstLabelOnly(t *testing.T) {
 	}
 	if r.Instance != "fleetd-hub" || r.Target != "fleetd-hub.example.com.local." {
 		t.Errorf("instance %q, target %q", r.Instance, r.Target)
+	}
+}
+
+// A route holder named like a tunnel loses to a real interface, whatever its
+// flags say (a tun or ppp device is not always marked point-to-point).
+func TestTunnelNamedRouteHoldersLoseToARealInterface(t *testing.T) {
+	t.Parallel()
+	for _, name := range []string{"tun0", "tap0", "wg0", "utun4", "tailscale0", "ztabcdef", "nordlynx", "ppp0"} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			r, reason := discovery.Plan("hub", netip.MustParseAddrPort("[::]:7443"),
+				[]discovery.Iface{nic(name, up, "10.8.0.2"), nic("eth0", up, "192.168.1.8")},
+				discovery.Route{V4: netip.MustParseAddr("10.8.0.2")})
+			if reason != "" || r.Iface != "eth0" {
+				t.Errorf("interface %q, reason %q; want eth0", r.Iface, reason)
+			}
+		})
 	}
 }

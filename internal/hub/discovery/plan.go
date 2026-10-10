@@ -70,7 +70,7 @@ type Route struct{ V4, V6 netip.Addr }
 var virtualPrefixes = []string{
 	"bridge", "utun", "awdl", "llw", "docker", "veth", "vmnet", "tun", "tap",
 	"vboxnet", "tailscale", "br-", "virbr", "wg", "podman", "cni", "lxcbr", "lxdbr",
-	"incusbr", "zt", "flannel", "cali", "cilium", "nordlynx",
+	"incusbr", "zt", "flannel", "cali", "cilium", "nordlynx", "ppp",
 }
 
 // Plan builds the records for a hub on hostname whose agent listener is
@@ -133,13 +133,7 @@ func reachable(i *Iface) bool {
 	if !usable(i) || i.Flags&net.FlagPointToPoint != 0 {
 		return false
 	}
-	name := strings.ToLower(i.Name)
-	for _, p := range virtualPrefixes {
-		if strings.HasPrefix(name, p) {
-			return false
-		}
-	}
-	return true
+	return !hasPrefix(i.Name, virtualPrefixes)
 }
 
 // holder is the usable interface that holds a, however virtual: the owner
@@ -155,14 +149,37 @@ func holder(ifaces []Iface, a netip.Addr) *Iface {
 	return nil
 }
 
+// tunnelPrefixes start the names of tunnel and VPN interfaces. A tunnel holds
+// the default route only when its traffic leaves the machine for somewhere a
+// LAN agent is not.
+var tunnelPrefixes = []string{"tun", "tap", "wg", "utun", "tailscale", "zt", "nordlynx", "ppp"}
+
+func hasPrefix(name string, prefixes []string) bool {
+	name = strings.ToLower(name)
+	for _, p := range prefixes {
+		if strings.HasPrefix(name, p) {
+			return true
+		}
+	}
+	return false
+}
+
 // choose is the interface a LAN agent is expected to reach the hub on. In
 // each of two rounds, the first without IPv4 link-local addresses and the
-// second with them (they rank last): the interface holding the default
-// route's source address when it is a reachable one; else the first
-// reachable interface; else the route holder when it is up, multicast and not
-// point-to-point, however its name looks (a Linux host that bridges its NIC
-// holds its address and the route on bridge0). A tunnel that holds the route
-// is never used.
+// second with them (they rank last), the first that applies of:
+//
+//  1. the interface holding the default route's source address, when it is up,
+//     multicast, not point-to-point and not named like a tunnel. Its name may
+//     look like a bridge: a Linux host that bridges its NIC holds its address
+//     and the route on bridge0, and a management NIC beside it is not the way
+//     in;
+//  2. the first reachable interface (no bridge, container, VM or tunnel name):
+//     the guess when no route is known;
+//  3. the route holder even when it is named like a tunnel, if it is up,
+//     multicast and not point-to-point (a tap device that is the only
+//     addressed route holder is advertised).
+//
+// A point-to-point interface is never used.
 func choose(ifaces []Iface, route Route) *Iface {
 	holders := func() []*Iface {
 		var out []*Iface
@@ -177,7 +194,7 @@ func choose(ifaces []Iface, route Route) *Iface {
 	}()
 	for _, linkLocal := range []bool{false, true} {
 		for _, i := range holders {
-			if reachable(i) && len(pick(i, route, linkLocal)) > 0 {
+			if i.Flags&net.FlagPointToPoint == 0 && !hasPrefix(i.Name, tunnelPrefixes) && len(pick(i, route, linkLocal)) > 0 {
 				return i
 			}
 		}
