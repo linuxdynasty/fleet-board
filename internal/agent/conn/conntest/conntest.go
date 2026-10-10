@@ -9,7 +9,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"net"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -52,6 +51,8 @@ type Hub struct {
 	mu    sync.Mutex
 	store *store.Store
 	srv   *gateway.Server
+	held  *Held         // the socket srv serves on; it outlives a Restart
+	done  chan struct{} // closed when srv's Serve has returned
 }
 
 // Options adjust [StartHub].
@@ -108,15 +109,16 @@ func StartHub(t *testing.T, opts Options) *Hub {
 		h.mu.Lock()
 		defer h.mu.Unlock()
 		_ = h.srv.Close()
+		h.held.Close()
 		h.srv.FlushAudit(context.Background())
 		_ = h.store.Close()
 	})
-	h.serve(t, "127.0.0.1:0")
+	h.serve(t, Hold(t, BindRetry(t, "127.0.0.1:0", time.Minute)))
 	return h
 }
 
-// serve opens state.db and serves a new listener process on addr.
-func (h *Hub) serve(t *testing.T, addr string) {
+// serve opens state.db and serves a new listener process on held.
+func (h *Hub) serve(t *testing.T, held *Held) {
 	t.Helper()
 	ctx := context.Background()
 	s, err := statedb.Open(ctx, h.dir, h.tel)
@@ -148,17 +150,18 @@ func (h *Hub) serve(t *testing.T, addr string) {
 		h.reqs.Add(1)
 		inner.ServeHTTP(w, r)
 	})
-	var lc net.ListenConfig
-	ln, err := lc.Listen(ctx, "tcp", addr)
-	if err != nil {
-		_ = s.Close()
-		t.Fatal(err)
-	}
-	go func() { _ = srv.ServeTLS(ln, "", "") }()
+	done := make(chan struct{})
+	ln := held.View()
+	go func() {
+		defer close(done)
+		_ = srv.ServeTLS(ln, "", "")
+	}()
 	h.mu.Lock()
-	h.store, h.srv = s, srv
+	h.store, h.srv, h.held, h.done = s, srv, held, done
 	h.mu.Unlock()
-	h.Addr = ln.Addr().String()
+	if h.Addr == "" { // a restart keeps the address
+		h.Addr = held.Addr().String()
+	}
 }
 
 var requestSeq atomic.Int64

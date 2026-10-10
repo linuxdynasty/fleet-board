@@ -82,26 +82,11 @@ func service(t *testing.T, addr, host string) conn.Service {
 func nameHub(t *testing.T, h *connectHub, names ...string) {
 	t.Helper()
 	h.mu.Lock()
-	srv := h.srv
 	h.tlsCfg.Certificates = []tls.Certificate{
 		serverCert(t, h.auth, append([]string{"127.0.0.1"}, names...), h.auth.Cert.Raw),
 	}
 	h.mu.Unlock()
-	if err := srv.Close(); err != nil {
-		t.Fatal(err)
-	}
-	// A Close that comes before Serve took the listener leaves Serve to
-	// close it; wait until the port is free.
-	waitFor(t, 5*time.Second, "the hub's port to be free", func() bool {
-		var lc net.ListenConfig
-		ln, err := lc.Listen(context.Background(), "tcp", h.addr)
-		if err != nil {
-			return false
-		}
-		_ = ln.Close()
-		return true
-	})
-	h.listen(t, h.addr)
+	h.swap(t)
 }
 
 // mdnsAddr is the hub address an mDNS answer for host gives h.

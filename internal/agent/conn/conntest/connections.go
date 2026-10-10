@@ -31,18 +31,23 @@ func (h *Hub) current() *store.Store {
 func (h *Hub) Restart(t *testing.T) {
 	t.Helper()
 	h.mu.Lock()
-	srv, s := h.srv, h.store
+	srv, s, held, done := h.srv, h.store, h.held, h.done
 	h.mu.Unlock()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+	// The socket stays open across the restart (see [Held]): the port is
+	// never free for another process to take.
+	held.KeepOpen(true)
 	if err := srv.Shutdown(ctx); err != nil {
 		t.Fatalf("shutdown: %v", err)
 	}
+	<-done
+	held.KeepOpen(false)
 	srv.FlushAudit(ctx)
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
 	}
-	h.serve(t, h.Addr)
+	h.serve(t, held)
 }
 
 // LastEpoch is machines.last_epoch of machineID.

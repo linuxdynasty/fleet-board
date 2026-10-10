@@ -23,6 +23,7 @@ import (
 	agentv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1"
 	"github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1/agentv1connect"
 	typev1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/type/v1"
+	"github.com/linuxdynasty/fleet-board/internal/agent/conn/conntest"
 	"github.com/linuxdynasty/fleet-board/internal/hub/ca"
 	"github.com/linuxdynasty/fleet-board/internal/protoversion"
 )
@@ -41,8 +42,10 @@ type connectHub struct {
 	open        atomic.Int64 // TCP connections open now
 	calls       callLog      // every request: method, connection, client certificate
 
-	mu  sync.Mutex
-	srv *http.Server
+	mu   sync.Mutex
+	srv  *http.Server
+	held *conntest.Held // the socket srv serves on
+	done chan struct{}  // closed when srv's Serve has returned
 	// refuse may fail stream n instead of HelloAck.
 	refuse func(n int) error
 	// cutAfterAck may fail stream n right after its HelloAck.
@@ -104,6 +107,7 @@ func startConnectHubWith(t *testing.T, set func(h *connectHub)) *connectHub {
 		h.mu.Lock()
 		defer h.mu.Unlock()
 		_ = h.srv.Close()
+		h.held.Close()
 	})
 	return h
 }
@@ -139,9 +143,23 @@ func newConnectHub(t *testing.T) *connectHub {
 	return h
 }
 
-// listen serves the hub on addr and records the address.
+// bindWait is how long listen retries a port another process holds.
+const bindWait = 30 * time.Second
+
+// listen serves the hub on addr and records the address. A fixed addr (the
+// hub coming back after a stop) is bound with retries, for it may be in
+// use for a moment; a restart that keeps the port uses swap instead.
 func (h *connectHub) listen(t *testing.T, addr string) {
 	t.Helper()
+	held := conntest.Hold(t, conntest.BindRetry(t, addr, bindWait))
+	h.serveOn(held)
+	if h.addr == "" {
+		h.addr = held.Addr().String()
+	}
+}
+
+// serveOn starts a new server on a view of held.
+func (h *connectHub) serveOn(held *conntest.Held) {
 	srv := &http.Server{
 		Handler: h.calls.record(h.handler), ReadHeaderTimeout: 5 * time.Second, TLSConfig: h.tlsCfg.Clone(),
 		ConnState: func(_ net.Conn, s http.ConnState) {
@@ -154,18 +172,32 @@ func (h *connectHub) listen(t *testing.T, addr string) {
 			}
 		},
 	}
-	var lc net.ListenConfig
-	ln, err := lc.Listen(context.Background(), "tcp", addr)
-	if err != nil {
+	done := make(chan struct{})
+	ln := held.View()
+	go func() {
+		defer close(done)
+		_ = srv.ServeTLS(ln, "", "")
+	}()
+	h.mu.Lock()
+	h.srv, h.held, h.done = srv, held, done
+	h.mu.Unlock()
+}
+
+// swap replaces the server with a new one on the same socket, which never
+// closes, so no other process can take the port in between (conntest/held.go).
+// Connections that arrive meanwhile wait in the accept queue.
+func (h *connectHub) swap(t *testing.T) {
+	t.Helper()
+	h.mu.Lock()
+	srv, held, done := h.srv, h.held, h.done
+	h.mu.Unlock()
+	held.KeepOpen(true)
+	if err := srv.Close(); err != nil {
 		t.Fatal(err)
 	}
-	go func() { _ = srv.ServeTLS(ln, "", "") }()
-	h.mu.Lock()
-	h.srv = srv
-	h.mu.Unlock()
-	if h.addr == "" {
-		h.addr = ln.Addr().String()
-	}
+	<-done
+	held.KeepOpen(false)
+	h.serveOn(held)
 }
 
 // restart says Bye{HUB_RESTART} on the live stream, closes the hub and
@@ -178,13 +210,9 @@ func (h *connectHub) restart(t *testing.T) {
 	}})
 	waitFor(t, 5*time.Second, "the Bye to end the stream", func() bool { return h.stream(n).ended })
 	h.mu.Lock()
-	srv := h.srv
 	h.live = nil
 	h.mu.Unlock()
-	if err := srv.Close(); err != nil {
-		t.Fatal(err)
-	}
-	h.listen(t, h.addr)
+	h.swap(t)
 }
 
 func (h *connectHub) Connect(ctx context.Context,
