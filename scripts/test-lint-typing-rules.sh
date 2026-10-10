@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# test-lint-typing-rules.sh: seeded RED/GREEN cases for the two typing rules
+# test-lint-typing-rules.sh: seeded RED/GREEN cases for the typing rules
 # in .golangci.yml (plan row 7, #140; 01f F3):
 #
 #   depguard   only internal/agent/control, internal/agent/start,
@@ -12,6 +12,9 @@
 #              function value too; test files and typing itself excepted.
 #              The other forbidigo patterns (the process rules) still apply
 #              in those packages.
+#   depguard   no unsafe in internal/ or cmd/ outside tests: //go:linkname
+#              needs it, and a linkname to typing.NewLiteral builds a Line
+#              that no forbidigo pattern sees.
 #
 # It builds a scratch module named like the real one (the rules match the
 # typing import path) in a temporary folder, with a stub typing package (a
@@ -88,7 +91,7 @@ call='var _ = func() (typing.Line, error) { return typing.NewLiteral("%1", 1, "x
 usesline='func Send(l typing.Line) bool { return !l.IsZero() }'
 
 # ---- allowed: must lint clean ----------------------------------------------
-allowed="internal/agent/tmux/typing/typing.go internal/agent/control/c.go internal/agent/start/s.go internal/agent/probe/p.go internal/agent/control/alias.go internal/agent/control/start.go internal/agent/tmux/t.go internal/agent/tmux/zero.go internal/agent/tmux/t_test.go internal/agent/goals/g_test.go internal/agent/goals/g.go cmd/ok/ok_test.go cmd/ok/main.go"
+allowed="internal/agent/tmux/typing/typing.go internal/agent/control/c.go internal/agent/start/s.go internal/agent/probe/p.go internal/agent/control/alias.go internal/agent/control/start.go internal/agent/tmux/t.go internal/agent/tmux/zero.go internal/agent/tmux/t_test.go internal/agent/goals/g_test.go internal/agent/goals/u_test.go internal/agent/goals/g.go cmd/ok/ok_test.go cmd/ok/main.go"
 put internal/agent/control/c.go control "	\"$ty\"" "$call"
 put internal/agent/start/s.go start "	\"$ty\"" "$call
 var _ = typing.NewKeys"
@@ -103,6 +106,8 @@ var _ = Send(zero)'
 put internal/agent/tmux/t_test.go tmux "	\"$ty\"" "$call"
 put internal/agent/goals/g_test.go goals "	\"$ty\"" "$call"
 put cmd/ok/ok_test.go main "	\"$ty\"" "$call"
+# a test file may import unsafe (internal/agent/wakenet does)
+put internal/agent/goals/u_test.go goals '	"unsafe"' 'var _ = unsafe.Sizeof(0)'
 printf 'package main\n\nfunc main() {}\n' > "$probe/cmd/ok/main.go"
 mkdir -p "$probe/internal/agent/goals"
 printf 'package goals\n' > "$probe/internal/agent/goals/g.go"
@@ -121,6 +126,8 @@ internal/agent/controlx/c.go|forbidigo
 internal/agent/control/sub/c.go|depguard
 internal/agent/control/sub/c.go|forbidigo
 internal/agent/probe/proc.go|forbidigo
+internal/agent/tmux/linkname.go|depguard
+internal/agent/goals/unsafe.go|depguard
 internal/red/import.go|depguard
 cmd/red/main.go|depguard"
 
@@ -137,6 +144,24 @@ var _ = build'
   put internal/agent/control/sub/c.go sub "	\"$ty\"" "$call"
   # the process rule still holds in a package the typing rule lets through
   put internal/agent/probe/proc.go probe '	"os"' 'var _ = os.StartProcess'
+  # go:linkname needs the unsafe import; it would reach typing.NewLiteral
+  # with no call the forbidigo pattern can see
+  mkdir -p "$probe/internal/agent/tmux"
+  cat > "$probe/internal/agent/tmux/linkname.go" << LINKNAME
+package tmux
+
+import (
+	_ "unsafe"
+
+	"$ty"
+)
+
+//go:linkname newLiteral $ty.NewLiteral
+func newLiteral(pane string, p typing.Purpose, text string) (typing.Line, error)
+
+var _ = newLiteral
+LINKNAME
+  put internal/agent/goals/unsafe.go goals '	"unsafe"' 'var _ = unsafe.Sizeof(0)'
   put internal/red/import.go red "	\"$ty\"" 'var _ typing.Line'
   mkdir -p "$probe/cmd/red"
   printf 'package main\n\nimport "%s"\n\nvar _ typing.Line\n\nfunc main() {}\n' "$ty" > "$probe/cmd/red/main.go"
@@ -146,7 +171,8 @@ unseed() {
   rm -rf "$probe/internal/agent/goals/import.go" "$probe/internal/agent/tmux/call.go" \
     "$probe/internal/agent/tmux/alias.go" "$probe/internal/agent/tmux/funcvalue.go" \
     "$probe/internal/agent/tmux/dot.go" "$probe/internal/agent/tmux/sub" "$probe/internal/agent/controlx" \
-    "$probe/internal/agent/control/sub" "$probe/internal/agent/probe/proc.go" "$probe/internal/red" "$probe/cmd/red"
+    "$probe/internal/agent/control/sub" "$probe/internal/agent/probe/proc.go" "$probe/internal/red" "$probe/cmd/red" \
+    "$probe/internal/agent/tmux/linkname.go" "$probe/internal/agent/goals/unsafe.go"
 }
 
 out="$work/lint.out"

@@ -41,7 +41,9 @@ All pass local policy, carry a `command_id`, and are idempotent except F3.
   and the goal start, whose gates are not `SendKeys` gates. Lint rules (`make lint`) let only
   `internal/agent/control`, `start` and `probe` import the package and call a
   `typing.New…` constructor, and the tmux client package import it to name the
-  type; `scripts/test-lint-typing-rules.sh` seeds a violation of each.
+  type, and no non-test file in `internal/` or `cmd/` import `unsafe` (a
+  `//go:linkname` to a constructor needs it);
+  `scripts/test-lint-typing-rules.sh` seeds a violation of each.
 - **F4 Interrupt**, **F5 Respawn pane** (adapter `ResumeArgs`), **F6 Kill
   window.** Resize belongs to J1.
 - **F8 Run harness command:** `RunHarnessCommand{target, command, args}`,

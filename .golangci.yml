@@ -13,7 +13,7 @@ linters:
   default: standard
   enable:
     - bodyclose # an HTTP response body is always closed
-    - depguard # only internal/proc, the tmux client and the attach PTY import os/exec (01 principle 8); only control, start, probe and the tmux client import tmux/typing (01f F3)
+    - depguard # only internal/proc, the tmux client and the attach PTY import os/exec (01 principle 8); only control, start, probe and the tmux client import tmux/typing, and no unsafe outside tests (01f F3)
     - durationcheck # no time.Duration multiplied by another Duration
     - errchkjson # json.Marshal errors are checked, or provably impossible
     - errorlint # %w and errors.Is/As, never == on errors (fleet-go: wrap errors)
@@ -77,6 +77,19 @@ linters:
           deny:
             - pkg: github.com/linuxdynasty/fleet-board/internal/agent/tmux/typing
               desc: only internal/agent/control, start, probe and the tmux client import the typing package (01f F3)
+        # No unsafe outside tests (plan row 7, #140): //go:linkname needs it,
+        # and a linkname to a typing.New… function builds a typing.Line that
+        # no forbidigo pattern sees. Nothing in internal/ or cmd/ needs it
+        # today; a file that does is added here by path, with its reason.
+        no-unsafe:
+          list-mode: lax
+          files:
+            - "**/internal/**"
+            - "**/cmd/**"
+            - "!$test"
+          deny:
+            - pkg: unsafe
+              desc: no unsafe outside tests; a //go:linkname could build a typing.Line past the lint rules (01f F3)
     exhaustive:
       default-signifies-exhaustive: true
     nolintlint:
