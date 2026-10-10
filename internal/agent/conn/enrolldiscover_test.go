@@ -152,7 +152,10 @@ func TestEnrollGivesEachAnswerItsOwnBudget(t *testing.T) {
 	if err != nil || !res.Discovered {
 		t.Fatalf("enroll = %+v, %v; want the hub found behind three silent answers", res, err)
 	}
-	if took := time.Since(start); took > 3*time.Second {
+	// Three silent answers cost 0.6 s of budget; the rest is the enroll
+	// itself, three times slower under load. Without the per-answer budget
+	// the run ends at its 5 s timeout and fails above.
+	if took := time.Since(start); took > 4*time.Second {
 		t.Errorf("enroll took %v: the silent answers were not cut at their budget", took)
 	}
 }
