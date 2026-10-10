@@ -97,6 +97,69 @@ func TestDefaultNames(t *testing.T) {
 	}
 }
 
+// labels is n dot-separated labels of size letters.
+func labels(n, size int) string {
+	out := make([]string, n)
+	for i := range out {
+		out[i] = strings.Repeat(string(rune('a'+i)), size)
+	}
+	return strings.Join(out, ".")
+}
+
+func TestServiceTarget(t *testing.T) {
+	t.Parallel()
+	cases := []struct{ hostname, want string }{
+		{"fleet-test-host.local", "fleetd-fleet-test-host.local"},
+		{"fleet-test-host", "fleetd-fleet-test-host.local"},
+		{"Hub.LOCAL", "fleetd-hub.local"},
+		{"localhost", "fleetd-localhost.local"},
+		{"", ""},
+		{".local", ""},
+		{"my host", ""},
+		{"bad/host", ""},
+		{"lead-", ""},
+		{"x.-y", ""},
+		{".x", ""},
+		{"a_b", "fleetd-a_b.local"},
+		{"a..b", ""},
+		{strings.Repeat("a", 60), ""}, // "fleetd-" plus 60 is a 67-byte label
+		{labels(5, 50), ""},           // 267 bytes with the prefix and ".local"
+		{labels(4, 50), "fleetd-" + labels(4, 50) + ".local"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.hostname, func(t *testing.T) {
+			t.Parallel()
+			if got := ca.ServiceTarget(tc.hostname); got != tc.want {
+				t.Errorf("ServiceTarget(%q) = %q, want %q", tc.hostname, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestAgentNamesAlwaysCarryTheServiceTarget(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name       string
+		hostname   string
+		configured []string
+		want       []string
+	}{
+		{"defaults", "Hub.local", nil, []string{"hub", "hub.local", "localhost", "127.0.0.1", "::1", "fleetd-hub.local"}},
+		{"configured", "hub", []string{"hub.example", "10.0.0.7"}, []string{"hub.example", "10.0.0.7", "fleetd-hub.local"}},
+		{"configured has it", "hub", []string{"fleetd-hub.local", "x"}, []string{"fleetd-hub.local", "x"}},
+		{"configured, no host name", "", []string{"hub.example"}, []string{"hub.example"}},
+		{"defaults, no host name", "", nil, []string{"localhost", "127.0.0.1", "::1"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := ca.AgentNames(tc.hostname, tc.configured); !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("AgentNames = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestTheServerCertificateVerifiesForEveryNameAndLasts90Days(t *testing.T) {
 	t.Parallel()
 	a := newCA(t)

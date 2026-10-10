@@ -10,8 +10,10 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -21,13 +23,18 @@ import (
 	"time"
 
 	"github.com/linuxdynasty/fleet-board/internal/hub/daemon"
+	"github.com/linuxdynasty/fleet-board/internal/hub/discovery"
 	"github.com/linuxdynasty/fleet-board/internal/hub/statedb"
 	"github.com/linuxdynasty/fleet-board/internal/telemetry"
 )
 
 const testHost = "fleet-test-host.local"
 
-var defaultNames = []string{"fleet-test-host", "fleet-test-host.local", "localhost", "127.0.0.1", "::1"}
+// serviceTarget is the mDNS SRV target, in the server certificate's names
+// whatever tls.agent_names says.
+const serviceTarget = "fleetd-fleet-test-host.local"
+
+var defaultNames = []string{"fleet-test-host", "fleet-test-host.local", "localhost", "127.0.0.1", "::1", serviceTarget}
 
 // shortDir is a temp folder under /tmp: t.TempDir on macOS can be too long
 // for the admin socket path that config validation checks.
@@ -90,6 +97,8 @@ type hub struct {
 	root, config, state string
 	tel                 *telemetry.Telemetry
 	logs                *lockedBuffer
+	// resp stands in for the multicast sockets: no test sends multicast.
+	resp *fakeResponder
 }
 
 // newHub writes fleetd.yaml with a short state_dir, loopback ports chosen by
@@ -100,6 +109,7 @@ func newHub(t *testing.T, extra string) *hub {
 	h := &hub{root: root, config: filepath.Join(root, "fleetd.yaml"), state: filepath.Join(root, "state")}
 	h.writeConfig(t, extra)
 	h.logs = &lockedBuffer{}
+	h.resp = &fakeResponder{}
 	tel, err := telemetry.New(telemetry.Config{Service: telemetry.Hub, Version: "test", InstanceID: "test", LogOutput: h.logs})
 	if err != nil {
 		t.Fatal(err)
@@ -123,6 +133,13 @@ func (h *hub) options() daemon.Options {
 		Hostname:   func() (string, error) { return testHost, nil },
 		Telemetry:  h.tel,
 		Version:    "test",
+		Discovery: discovery.Env{
+			Responder: h.resp,
+			Ifaces: func() ([]discovery.Iface, error) {
+				return []discovery.Iface{{Name: "en0", Flags: net.FlagUp | net.FlagMulticast, Addrs: []netip.Addr{netip.MustParseAddr("192.168.1.5")}}}, nil
+			},
+			Route: func() discovery.Route { return discovery.Route{} },
+		},
 	}
 }
 

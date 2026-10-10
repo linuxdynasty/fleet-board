@@ -170,10 +170,9 @@ hub addresses is not built in v1 yet. `fleet-agent enroll` with no `--hub`
 runs one browse and sends its request only to the first answer whose handshake
 proves it holds the token's CA, with the same per-answer and whole-search
 limits; an answer that fails the handshake or cannot be reached gets nothing
-more and the next is tried. For row 5: the hub's certificate must name the SRV
-target it advertises, the advertisement must carry a TXT record (the library
-hands over only answers that have one), and it must never advertise a
-loopback address or name. Wake, network change and a successful connect reset the backoff
+more and the next is tried. The hub's certificate names the SRV target it advertises, the
+advertisement carries a TXT record (the library hands over only answers that
+have one), and the hub never advertises a loopback address or name. Wake, network change and a successful connect reset the backoff
 to its first step; the attempt a wake or network change starts waits a short
 random delay first ([defaults](defaults.md)), so machines that see the same
 event do not query together. A network change here means a confirmed one

@@ -7,6 +7,8 @@ The fleet CA and the certificates it signs
 auth, err := ca.New(now, rand.Reader)                    // Ed25519 CA, 10 years
 sc, err := auth.IssueServer(names, now, rand.Reader)     // Ed25519 server cert, 90 days
 names := ca.DefaultNames(hostname)                      // host, host.local, localhost, 127.0.0.1, ::1
+target := ca.ServiceTarget(hostname)                    // fleetd-host.local, the mDNS SRV target ("" if hostname is no DNS name)
+names = ca.AgentNames(hostname, configured)             // configured (or the defaults) plus target, deduplicated
 if ca.NeedsRenewal(leaf, now) || !ca.SameNames(leaf, names) { /* re-issue */ }
 tok, err := ca.NewToken(caDER, rand.Reader)              // fbe1_ enroll token; tok.SecretHash is what state.db keeps
 tok, err := ca.ParseToken(req.GetToken())                // ErrTokenMalformed, or CAFingerprint + SecretHash

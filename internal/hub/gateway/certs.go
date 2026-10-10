@@ -28,8 +28,9 @@ type CertsOptions struct {
 	Store *store.Store
 	// Identity is the hub_identity row read at start.
 	Identity statedb.Identity
-	// Names is the SAN list the certificate must carry: tls.agent_names, or
-	// ca.DefaultNames when that is empty.
+	// Names is the SAN list the certificate must carry: ca.AgentNames,
+	// which is tls.agent_names (or the default names when that is empty)
+	// plus the mDNS SRV target.
 	Names []string
 	// Now is the clock; nil means time.Now.
 	Now       func() time.Time
@@ -107,6 +108,13 @@ func (c *Certs) GetCertificate(*tls.ClientHelloInfo) (*tls.Certificate, error) {
 
 // Served is the DER of the certificate served now.
 func (c *Certs) Served() []byte { return c.served.Load().Leaf.Raw }
+
+// Serves reports whether the certificate served now names name (a DNS name or
+// an IP address). The mDNS advertiser asks it before it advertises the SRV
+// target: after a failed re-issue the old certificate still serves.
+func (c *Certs) Serves(name string) bool {
+	return c.served.Load().Leaf.VerifyHostname(name) == nil
+}
 
 // Ensure re-issues the certificate when its names differ from the wanted
 // ones or it is at two thirds of its life, stores it, then serves it. On a
