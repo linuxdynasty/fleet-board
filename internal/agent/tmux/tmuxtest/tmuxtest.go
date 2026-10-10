@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -48,6 +50,7 @@ type Binary struct {
 //
 //	func TestMain(m *testing.M) { os.Exit(tmuxtest.Main(m)) }
 func Main(m *testing.M) int {
+	Sweep()
 	dir, err := shortTempDir("fbm")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "tmuxtest:", err)
@@ -154,6 +157,10 @@ func Start(tb testing.TB, b Binary, args ...string) *Server {
 	}
 	s := &Server{Bin: b, Dir: dir, Socket: filepath.Join(dir, "s"), runner: runner, caller: caller}
 	s.env = cleanEnv(dir)
+	owner := fmt.Sprintf("%d\n%s\n", os.Getpid(), b.Path)
+	if err := os.WriteFile(filepath.Join(dir, OwnerFile), []byte(owner), 0o600); err != nil {
+		tb.Fatal(err)
+	}
 	tb.Cleanup(func() {
 		s.Kill(tb)
 		_ = os.RemoveAll(dir)
@@ -252,4 +259,60 @@ func cleanEnv(dir string) []string {
 		env = append(env, kv)
 	}
 	return append(env, "TMUX_TMPDIR="+dir, "TERM=xterm-256color")
+}
+
+// OwnerFile is the file in each server folder that records the pid of the
+// test process that started the server and the tmux program it used.
+const OwnerFile = "owner"
+
+// Sweep kills the servers a dead test process left behind (a panic or a kill
+// before its cleanup ran) and removes their folders. It looks only at
+// folders this package made (fbt* in the system temp folder and /tmp) that
+// hold an OwnerFile, and only at those whose recorded pid is no longer
+// running; it never matches a tmux process by name. Main runs it first.
+func Sweep() {
+	runner, err := proc.NewRunner(nil)
+	if err != nil {
+		return
+	}
+	caller, err := proc.For("tmux")
+	if err != nil {
+		return
+	}
+	for _, base := range []string{os.TempDir(), "/tmp"} {
+		dirs, _ := filepath.Glob(filepath.Join(base, "fbt*"))
+		for _, dir := range dirs {
+			pid, program, ok := readOwner(filepath.Join(dir, OwnerFile))
+			if !ok || processAlive(pid) {
+				continue
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			_, _ = runner.Run(ctx, proc.Spec{Caller: caller, Path: program, Args: []string{"-S", filepath.Join(dir, "s"), "kill-server"}, Env: cleanEnv(dir)})
+			cancel()
+			_ = os.RemoveAll(dir)
+		}
+	}
+}
+
+func readOwner(path string) (int, string, bool) {
+	b, err := os.ReadFile(path) //nolint:gosec // G304: a file in a folder this package made
+	if err != nil {
+		return 0, "", false
+	}
+	pidText, program, _ := strings.Cut(strings.TrimSpace(string(b)), "\n")
+	pid, err := strconv.Atoi(pidText)
+	if err != nil || pid <= 0 || !isExecutable(program) {
+		return 0, "", false
+	}
+	return pid, program, true
+}
+
+// processAlive reports whether pid names a running process (signal 0).
+func processAlive(pid int) bool {
+	p, err := os.FindProcess(pid)
+	if err != nil {
+		return false
+	}
+	err = p.Signal(syscall.Signal(0))
+	return err == nil || errors.Is(err, os.ErrPermission) || errors.Is(err, syscall.EPERM)
 }

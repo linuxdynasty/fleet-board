@@ -104,7 +104,9 @@ Each cap is set from a measured run of that command, so a caller is added by
 the row that first runs it (rows 6, 7 and 8: `git`, `gh`, `loginctl`, `tmux`
 one-shot calls, the version checks), with its entry in `limits.go` and its caps
 in the row as `name` seconds / KiB, in the same PR. The first is `tmux` (5 s,
-1 KiB), measured on `tmux -V`: 4 to 11 ms and 10 bytes over 50 runs on macOS.
+16 KiB), measured on `tmux -V` (4 to 11 ms and 10 bytes over 50 runs on macOS)
+and on the tmux client's `list-sessions` at 200 sessions (1,101 bytes, under
+8 ms). The tmux test rig (`internal/agent/tmux/tmuxtest`) runs under it too.
 A bare program name found on no PATH entry returns `ErrNotFound` (it is
 `exec.ErrNotFound`, so a caller need not import `os/exec`); a path that does
 not exist is an ordinary start error.

@@ -24,6 +24,17 @@ for _, b := range tmuxtest.Binaries() {               // "3.2" and "latest"
   then removes the folder.
 - `Kill` then `NewSession` starts a new server on the same socket (a
   restart).
+- `Run` and `Try` run under the measured `tmux` caller of `internal/proc`
+  (5 s, 16 KiB), so a reply up to 16 KiB comes back whole.
+- Each server folder holds an `owner` file: the pid of the test process that
+  started the server and the tmux program. A test binary that dies before
+  its cleanup (a panic, a kill) leaves its server running; `Sweep`, which
+  `Main` runs first, kills the servers whose recorded pid is gone and
+  removes their folders. It reads only `fbt*` folders that hold an `owner`
+  file, in the system temp folder (`$TMPDIR` on macOS) and `/tmp`, and never
+  matches a tmux process by name. By hand:
+  `<tmux> -S <folder>/s kill-server; rm -rf <folder>` for a folder whose
+  `owner` pid is not running (`kill -0 <pid>` fails).
 - `Binaries`: `FLEET_TMUX_32` is a tmux 3.2 build (CI: 3.2a);
   `FLEET_TMUX_LATEST` the latest release, else the tmux on `PATH`. A missing
   one skips its subtest with a message; `FLEET_REQUIRE_TMUX=1` (CI) fails

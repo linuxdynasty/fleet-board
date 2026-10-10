@@ -62,7 +62,10 @@ jobs:
       # builds link to them.
       - name: tmux build dependencies
         if: github.event_name == 'workflow_dispatch'
-        run: brew install libevent ncurses pkg-config
+        id: tmux-deps
+        run: |
+          brew install libevent ncurses pkg-config
+          echo "libs=$(brew list --versions libevent ncurses | tr ' \n' '-_')" >> "$GITHUB_OUTPUT"
 
       - name: Restore the tmux builds
         if: github.event_name == 'workflow_dispatch'
@@ -70,7 +73,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: ~/tmux
-          key: tmux-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tool-versions.env', 'scripts/install-tmux.sh') }}
+          key: tmux-${{ runner.os }}-${{ runner.arch }}-${{ env.ImageOS }}-${{ steps.tmux-deps.outputs.libs }}-${{ hashFiles('tool-versions.env', 'scripts/install-tmux.sh') }}
 
       - name: Build tmux 3.2a and the latest release
         if: github.event_name == 'workflow_dispatch' && steps.tmux-cache.outputs.cache-hit != 'true'

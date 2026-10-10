@@ -1,12 +1,18 @@
 package tmuxtest_test
 
 import (
+	"context"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 
 	"github.com/linuxdynasty/fleet-board/internal/agent/tmux/tmuxtest"
+	"github.com/linuxdynasty/fleet-board/internal/proc"
 )
 
 func TestMain(m *testing.M) { os.Exit(tmuxtest.Main(m)) }
@@ -66,6 +72,80 @@ func TestServerStartsInItsOwnShortFolderAndIsGoneAfterTheTest(t *testing.T) {
 			}
 		})
 	}
+}
+
+// Run returns tmux's whole stdout, also past the 1 KiB a one-shot `tmux -V`
+// needs: the rig's commands run under the measured `tmux` caller (16 KiB).
+func TestRunReturnsAReplyOverOneKiB(t *testing.T) {
+	for _, b := range tmuxtest.Binaries() {
+		t.Run(b.Name, func(t *testing.T) {
+			srv := tmuxtest.Start(t, b, "-s", "work", "exec cat")
+			big := strings.Repeat("x", 4000)
+			srv.Run(t, "set-option", "-g", "@big", big)
+			if got := srv.Run(t, "show-options", "-gv", "@big"); got != big+"\n" {
+				t.Fatalf("show-options returned %d bytes, want %d", len(got), len(big)+1)
+			}
+		})
+	}
+}
+
+// A test binary that died before its cleanup (a panic, a kill) leaves its
+// server running. Sweep, which Main runs first, kills the servers whose
+// recorded test process is gone and removes their folders; a server whose
+// test process is alive (this one, or another package's running now) stays.
+func TestSweepKillsOnlyServersWhoseTestProcessIsGone(t *testing.T) {
+	for _, b := range tmuxtest.Binaries() {
+		t.Run(b.Name, func(t *testing.T) {
+			live := tmuxtest.Start(t, b, "-s", "live", "exec cat")
+			orphan := tmuxtest.Start(t, b, "-s", "orphan", "exec cat")
+			serverPid, err := strconv.Atoi(strings.TrimSpace(orphan.Run(t, "display-message", "-p", "#{pid}")))
+			if err != nil {
+				t.Fatal(err)
+			}
+			owner := filepath.Join(orphan.Dir, tmuxtest.OwnerFile)
+			if _, err := os.Stat(owner); err != nil {
+				t.Fatalf("Start wrote no owner file: %v", err)
+			}
+			if err := os.WriteFile(owner, []byte(fmt.Sprintf("%d\n%s\n", deadPid(t, b), b.Path)), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			tmuxtest.Sweep()
+			// The folder (and so the socket) is gone, so has-session cannot
+			// tell; the server's own pid must be gone.
+			gone := time.Now().Add(10 * time.Second)
+			for syscall.Kill(serverPid, 0) == nil {
+				if time.Now().After(gone) {
+					_ = syscall.Kill(serverPid, syscall.SIGKILL)
+					t.Fatal("Sweep left the orphaned server running")
+				}
+				time.Sleep(20 * time.Millisecond)
+			}
+			if _, err := os.Stat(orphan.Dir); !os.IsNotExist(err) {
+				t.Fatalf("Sweep left the orphan's folder: %v", err)
+			}
+			if !live.Alive() {
+				t.Fatal("Sweep killed a server whose test process is alive")
+			}
+		})
+	}
+}
+
+// deadPid is the pid of a process that ran and was reaped.
+func deadPid(t *testing.T, b tmuxtest.Binary) int {
+	t.Helper()
+	r, err := proc.NewRunner(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := proc.For("tmux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := r.Run(context.Background(), proc.Spec{Caller: c, Path: b.Path, Args: []string{"-V"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return res.Pid
 }
 
 func TestKillThenNewSessionStartsANewServerOnTheSameSocket(t *testing.T) {
