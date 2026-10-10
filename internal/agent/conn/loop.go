@@ -17,6 +17,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	agentv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1"
+	typev1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/type/v1"
 	"github.com/linuxdynasty/fleet-board/internal/agent/ring"
 	"github.com/linuxdynasty/fleet-board/internal/agent/wakenet"
 	"github.com/linuxdynasty/fleet-board/internal/telemetry"
@@ -56,7 +57,22 @@ type LoopOptions struct {
 	// open_attaches); nil sends sent_time, uptime, event_seq and events
 	// only, which the loop sets after the hook. It runs on the sending
 	// goroutine, so it must only read what it already holds.
-	Heartbeat    func(ctx context.Context, hb *agentv1.Heartbeat)
+	Heartbeat func(ctx context.Context, hb *agentv1.Heartbeat)
+	// Command and Settings take each Command and Settings the hub sends,
+	// with the epoch of the stream it came on (ruling fork 12 c). They run
+	// on the sending goroutine and must not block: false means the
+	// receiver's intake is full, and the message is dropped unacked
+	// (command.intake_full). nil logs the kind as ignored.
+	Command  func(epoch uint64, c *agentv1.Command) bool
+	Settings func(epoch uint64, s *agentv1.Settings) bool
+	// OnConnected runs once a stream's snapshot and unacked results are
+	// out and [Loop.Send] takes messages for it; OnDisconnected once that
+	// stream stopped serving and Send refuses it. Both run on the sending
+	// goroutine and must not block.
+	OnConnected    func(epoch uint64, clock HubClock)
+	OnDisconnected func()
+	// Capabilities lists what each Hello advertises; nil advertises none.
+	Capabilities func() []*typev1.Capability
 	Backoff      Backoff
 	Keepalive    Keepalive
 	HelloTimeout time.Duration
@@ -129,6 +145,9 @@ type Loop struct {
 	fp        [32]byte
 	seqs      *ring.Seqs
 	status    statusBox
+	// out is the Connected stream's outbound queue, nil when none
+	// (outbound.go); only Run's goroutine stores it.
+	out atomic.Pointer[outQueue]
 	// discovery is fleet_agent_discovery_seconds.
 	discovery metric.Float64Histogram
 	// Only Run's goroutine touches these.
@@ -195,11 +214,16 @@ func NewLoop(ctx context.Context, opts LoopOptions) (*Loop, error) {
 		return nil, err
 	}
 	l.status.pushOff = opts.PushOff
+	l.status.changed = make(chan struct{}, 1)
 	return l, nil
 }
 
 // Status is a copy of what the loop knows now.
 func (l *Loop) Status() Status { return l.status.get() }
+
+// StatusChanged signals, coalesced, after the status changed; read
+// Status then. PushOff is read live and not signaled.
+func (l *Loop) StatusChanged() <-chan struct{} { return l.status.changed }
 
 // Run connects and stays connected until ctx ends (nil) or the loop ends
 // on its own ([EndedError]). Call it once.

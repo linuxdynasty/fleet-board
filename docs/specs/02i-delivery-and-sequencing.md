@@ -352,4 +352,6 @@ that machine and for nothing that decides between machines.
   systems, so it is only a lower bound: elapsed time is the larger of the two.
   When the sleep-counting clock cannot be read, the command is treated as past
   its deadline. A command past its deadline answers `EXPIRED` and is never
-  started.
+  started. The agent keeps that strict clock apart from the lenient ones it
+  uses for pruning and renewal, which may run late but never expire a
+  command.

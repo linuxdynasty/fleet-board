@@ -133,9 +133,29 @@ tick missed while a send waits is dropped, never queued. Plan row 4 fills
 (the highest seq handed out) and `events` (agent.db's counters, as in
 `Hello`); later rows fill the rest. `connect.hello` logs the interval chosen.
 
+**Commands, settings and the outbound queue (plan row 6).** While
+Connected the loop hands each `Command` and `Settings` to its receiver
+(the executor, the settings merge) with the stream's epoch, without
+blocking: a receiver whose bounded intake is full refuses it, and the
+message is dropped unlogged and unacked (`command.intake_full`), so the
+hub's at-least-once re-send covers it. `CommandAck`, `CommandProgress`,
+`CommandResult` and `SettingsAck` go back through one queue per stream
+(256), drained by the stream's one sender after the snapshot and its
+unacked results: a send with no Connected stream is refused at once, a
+full queue makes it wait for room, the stream's end or its own deadline,
+and the queue dies with its stream. A result is queued only once it is
+logged, unchanged, in `agent.db`, so one lost with its stream is re-sent
+after the next snapshot. The receivers are told when a stream is
+Connected (after its snapshot and results, with its epoch and the strict
+hub clock of 02i "Clocks") and when it stopped serving.
+
 **Capabilities at enroll.** The agent has no capability list yet, so it
 leaves `EnrollRequest.capabilities` empty; capabilities are first sent in
-`Hello` (later in plan row 4, PR 3).
+`Hello`, from the agent's list (plan row 6): `exec.raw`, an entry with no
+name, a name outside `[a-z0-9._-]` or over 64 bytes, version 0, or a
+repeated name is dropped (`connect.capability_dropped`). Row 6 advertises
+none; each command kind's capability comes with the row that builds its
+handler, so until then every `Command.requires` is answered `UNSUPPORTED`.
 
 **Hub discovery (A2).** Candidate order: cached last-good address → mDNS
 `_fleetd._tcp` (`hashicorp/mdns`, ADR 0023; skipped with no usable multicast
@@ -426,7 +446,7 @@ re-enroll rule are in [02g](02g-agent-security.md#machine-lifecycle-revoke-and-d
   `epoch_out_of_range`, `seq_out_of_range`, `epoch_regressed`, and `value`,
   the hub's number) and
   `connect.closed{peer, step, err_kind}` after (`stream`, `snapshot`,
-  `result_ack`, `heartbeat`), where a peer that failed the handshake or refused the
+  `result_ack`, `heartbeat`, `outbound`: a queued message), where a peer that failed the handshake or refused the
   certificate is `err_kind="refused"`; `connect.bye{peer, reason, message}`;
   `connect.shutdown_cut{peer, wait_ms}` when the hub did not close the stream
   within the Bye wait after a stop ([defaults](defaults.md));
@@ -435,8 +455,13 @@ re-enroll rule are in [02g](02g-agent-security.md#machine-lifecycle-revoke-and-d
   before the next try (`wait_ms` is the planned backoff wait; `failures` is
   the count in a row the wait doubles from, 0 after a wake or network
   change, which resets it);
-  `connect.message_ignored{kind}` (a `Command` or `Settings` before plan rows
-  6 and 10 handle them); `connect.ended{state}` (`revoked`,
+  `connect.message_ignored{kind}` (a `Command` or `Settings` with no
+  receiver registered, until plan row 6 wires them);
+  `connect.outbound_blocked{kind}` (warn; a send found the stream's queue
+  full and waits; `kind`: `command_ack`, `command_progress`,
+  `command_result`, `settings_ack`); `connect.capability_dropped{reason,
+  name}` (warn; `reason`: `reserved`, `invalid`, `repeat`; `name` only when
+  it is a valid name); `connect.ended{state}` (`revoked`,
   `unknown_machine`, `fleet_mismatch`, `cert_expired`);
   `snapshot.sent{seq, bytes, unacked_results}`, `snapshot.requested{reason}`,
   `snapshot.oversize{bytes, max_bytes}`, `snapshot.result_unreadable{command_id,

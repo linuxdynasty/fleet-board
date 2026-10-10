@@ -162,7 +162,8 @@ sent.
    `ResultAck` stamps its ids (unknown ones change nothing); a
    `SnapshotRequest` gets a new snapshot and the unacked results; a `Bye`
    other than `REVOKED` or `UNKNOWN_MACHINE` closes the stream; `Command`
-   and `Settings` are logged and ignored until rows 6 and 10. On stop the
+   and `Settings` go to their hooks (see "Commands and the outbound
+   queue"), or are logged as `connect.message_ignored` with none. On stop the
    agent sends `Bye{SHUTDOWN}` and waits up to 2 s for the hub to close;
    then the stream and its connection are cut (`connect.shutdown_cut`), so a send held by HTTP/2
    flow control (a hub that stopped reading) cannot hold up the stop. A
@@ -202,6 +203,42 @@ sent.
    removes one that names another machine (a leftover), and refuses a
    damaged one (`ErrEndedDamaged`). Enroll removes it when it saves a new
    identity.
+
+## Commands and the outbound queue
+
+Plan row 6's seam (ruling forks 11, 12; `inbound.go`, `outbound.go`,
+`hubclock.go`; 03 W1 "Commands, settings and the outbound queue"):
+
+- **In.** `LoopOptions.Command` and `.Settings` get each message with the
+  stream's epoch, on the sending goroutine, without blocking; `false` (a
+  full intake) drops it unacked: `command.intake_full{kind, command_id}`,
+  `fleet_agent_command_intake_dropped_total{kind}`; the hub re-sends.
+- **Out.** `Loop.Send` queues a `CommandAck`, `CommandProgress`, logged
+  `CommandResult` or `SettingsAck` (`ErrNotQueueable`,
+  `ErrResultNotLogged`) on the Connected stream's queue (256), drained as
+  one more case of `serve`'s select, so `Run`'s goroutine stays the only
+  sender. No stream: `ErrNoStream` at once; a full queue waits
+  (`connect.outbound_blocked{kind}`) for room, the stream's end or the
+  caller's context. The queue (an atomic pointer `Run` publishes at
+  Connected, then swaps out and closes when `serve` returns) dies with its
+  stream; Send's `agent.db` read runs on the caller's goroutine.
+- **Lifecycle.** `OnConnected(epoch, clock)` once the snapshot and its
+  unacked results are out; `OnDisconnected()` once Send refuses the stream.
+- **Strict clock.** `Loop.HubClock().Now()`: the latest HelloAck's
+  `hub_time` plus the larger of the monotonic and sleep-counting time
+  since; not `ok` before the first HelloAck, after one with no `hub_time`,
+  or with the sleep clock unreadable then or now (a deadline is then past).
+  The anchor is stored once per HelloAck, so it never reads a gap.
+- **Capabilities** fill `Hello` (`LoopOptions.Capabilities`, none in row
+  6), without `exec.raw`, invalid entries or repeats
+  (`connect.capability_dropped{reason, name}`). `Loop.StatusChanged()`
+  signals a status change (`PushOff` is read live).
+
+Tests (`seam_test.go`, `outbound_test.go`, `strictclock_test.go`): hooks
+and epochs, a full intake, refused kinds and results, 8 senders across 15
+snapshots under `-race`, a full queue and its deadline, the queue dying
+with its stream, the lifecycle order, and a command from before a
+two-hour sleep past its deadline after the wake.
 
 ## Certificate renewal
 

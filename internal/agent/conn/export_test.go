@@ -5,6 +5,9 @@ import (
 	"time"
 )
 
+// QueueSize is the per-stream outbound queue's room.
+const QueueSize = queueSize
+
 // SetAnchorHook makes the loop report each stream's hub-time anchor (when
 // its HelloAck arrived), for tests that check it keeps a monotonic reading.
 func SetAnchorHook(o *LoopOptions, f func(hubRecv time.Time)) { o.anchorHook = f }

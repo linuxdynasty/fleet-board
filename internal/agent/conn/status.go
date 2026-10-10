@@ -98,6 +98,9 @@ type statusBox struct {
 	mu      sync.Mutex
 	s       Status
 	pushOff func() bool
+	// changed holds one pending signal for StatusChanged; nil in tests
+	// that build a Loop by hand.
+	changed chan struct{}
 }
 
 func (b *statusBox) get() Status {
@@ -113,8 +116,12 @@ func (b *statusBox) get() Status {
 
 func (b *statusBox) update(fn func(s *Status)) {
 	b.mu.Lock()
-	defer b.mu.Unlock()
 	fn(&b.s)
+	b.mu.Unlock()
+	select {
+	case b.changed <- struct{}{}:
+	default:
+	}
 }
 
 func (b *statusBox) state(st State, peer string) {

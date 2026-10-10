@@ -54,6 +54,10 @@ type session struct {
 	maxBytes int
 	// beat is the heartbeat interval this stream's HelloAck chose.
 	beat time.Duration
+	// epoch is this stream's HelloAck.epoch; q its outbound queue once
+	// Connected (outbound.go).
+	epoch uint64
+	q     *outQueue
 	// hubAt is this stream's HelloAck.hub_time (the agent's clock when it
 	// had none) and hubRecv when the HelloAck arrived, with its monotonic
 	// reading: see hubNow.
@@ -186,7 +190,9 @@ func (s *session) run(ctx context.Context) (ending, string, error) {
 	hctx, span := s.l.tracer.Start(ctx, "agent.connect.hello")
 	sent := time.Now()
 	s.l.status.state(StateHelloSent, "")
-	serr := s.bs.Send(&agentv1.ConnectRequest{Body: &agentv1.ConnectRequest_Hello{Hello: s.hello(st, sent)}})
+	hello := s.hello(st, sent)
+	hello.Capabilities = s.l.capabilities(ctx)
+	serr := s.bs.Send(&agentv1.ConnectRequest{Body: &agentv1.ConnectRequest_Hello{Hello: hello}})
 	started = true
 	go s.receive()
 	if serr != nil && !errors.Is(serr, io.EOF) {
@@ -304,13 +310,16 @@ func (s *session) accept(ctx context.Context, ack *agentv1.HelloAck, st ring.Sta
 	}
 	ht := ack.GetHubTime()
 	hubTimeOK := ht.IsValid()
-	s.l.anchor.Store(nil)
+	// One store, so the strict clock (hubclock.go) never reads a gap.
+	var anchor *hubAnchor
 	if hubTimeOK {
 		s.hubAt = ht.AsTime()
 		offset = s.hubAt.Sub(sent.Add(recv.Sub(sent) / 2))
-		s.l.anchor.Store(s.l.newAnchor(s.hubAt, s.hubRecv))
+		anchor = s.l.newAnchor(s.hubAt, s.hubRecv)
 		s.l.status.update(func(ss *Status) { ss.ClockOffset, ss.ClockOffsetTime = offset, recv })
 	}
+	s.l.anchor.Store(anchor)
+	s.epoch = ack.GetEpoch()
 	s.l.takeAddresses(ctx, s.c.addr, ack.GetHubAddresses())
 	s.beat = heartbeatInterval(ack.GetHeartbeatInterval())
 	s.maxBytes = snapshotMaxBytes
@@ -342,15 +351,16 @@ func (s *session) connected(ctx context.Context) (ending, string, error) {
 		}
 	}
 	s.renewCheck()
+	defer s.serveQueue()()
 	out, step, err := s.serve(ctx)
 	out.connected = true
 	return out, step, err
 }
 
 // serve handles the hub's messages, checks the certificate for renewal
-// every RenewCheck, and sends a Heartbeat every s.beat; the
-// first comes one interval after the snapshot and its results, already
-// sent. A time.Ticker drops ticks for a slow receiver, so a tick missed
+// every RenewCheck, sends a Heartbeat every s.beat and what Loop.Send
+// queued; the first heartbeat comes one interval after the snapshot and its
+// results, already sent. A time.Ticker drops ticks for a slow receiver, so a tick missed
 // while a send waits is dropped, never queued.
 func (s *session) serve(ctx context.Context) (ending, string, error) {
 	beat := time.NewTicker(s.beat)
@@ -371,6 +381,11 @@ func (s *session) serve(ctx context.Context) (ending, string, error) {
 			out, done, step, err := s.handle(ctx, m)
 			if err != nil || done {
 				return out, step, err
+			}
+		case m := <-s.q.ch:
+			// Queued by Loop.Send; only this goroutine sends on the stream.
+			if err := s.send(m); err != nil {
+				return ending{}, "outbound", err
 			}
 		case <-s.done:
 			return ending{}, "stream", s.rerr
@@ -403,12 +418,8 @@ func (s *session) handle(ctx context.Context, m *agentv1.ConnectResponse) (endin
 		}
 	case *agentv1.ConnectResponse_Bye:
 		return s.bye(ctx, b.Bye), true, "", nil
-	case *agentv1.ConnectResponse_Command:
-		// The executor comes with plan row 6; until then the hub's outbox
-		// keeps the command and expires it.
-		s.l.log.InfoContext(ctx, "connect.message_ignored", "kind", "command")
-	case *agentv1.ConnectResponse_Settings:
-		s.l.log.InfoContext(ctx, "connect.message_ignored", "kind", "settings")
+	case *agentv1.ConnectResponse_Command, *agentv1.ConnectResponse_Settings:
+		s.intake(ctx, m)
 	case *agentv1.ConnectResponse_HelloAck:
 		s.l.log.InfoContext(ctx, "connect.message_ignored", "kind", "hello_ack")
 	default:

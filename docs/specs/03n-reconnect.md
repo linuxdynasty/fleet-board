@@ -133,6 +133,10 @@ waiting for keepalive timeouts.
 - Per machine: Snapshot first, then unacked results, then replayed events in
   `seq` order, then live events. The agent enforces this order on its side;
   the hub discards anything out of order and asks for a snapshot.
+- Acks, progress and results from command goroutines go through one
+  per-stream queue drained by the stream's sending goroutine, after the
+  snapshot and its unacked results; a result is committed to the command
+  log before it is queued.
 - Results for commands the hub already closed are ignored (idempotent by
   `command_id`); results for commands the hub never issued (DB restored from an
   older backup) go to the audit log and a triage info item.

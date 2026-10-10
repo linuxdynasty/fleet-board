@@ -33,7 +33,16 @@
 // expired certificate. The first three are written whole to [EndedFile]
 // before Run returns; `fleet-agent run` calls [CheckEnded] before any
 // network call and refuses while the file names its machine, and Enroll
-// removes it with a new identity. [Loop.Status] is its state in memory.
+// removes it with a new identity. [Loop.Status] is its state in memory and
+// [Loop.StatusChanged] signals a change.
+//
+// The seam for commands and settings (plan row 6): [LoopOptions].Command
+// and Settings take what the hub sends, with the stream's epoch, without
+// blocking; [Loop.Send] queues acks, progress, logged results and
+// SettingsAck for the Connected stream's one sender; OnConnected and
+// OnDisconnected bracket each Connected stream; [Loop.HubClock] is the
+// strict hub clock deadlines are checked on (02i "Clocks"); and
+// [LoopOptions].Capabilities fills Hello.
 //
 // Enroll with no hub address browses the same way and sends its request
 // only to the first answer whose handshake proves it holds the token's CA
