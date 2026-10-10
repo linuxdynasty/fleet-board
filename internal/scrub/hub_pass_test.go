@@ -27,6 +27,13 @@ const (
 	typicalSize = 192
 
 	agentHome = "/Users/al"
+
+	// peakMsgPerSec is the message rate at the peak command rate: 0.5
+	// commands a second, each with 14 StartGoal steps reported as
+	// CommandProgress (command_goal.proto) and one CommandResult.
+	peakMsgPerSec = 0.5 * 15
+	// burstMsgPerSec is the replay budget of 04 Q7, if every event carried text.
+	burstMsgPerSec = 2500
 )
 
 // fillTo repeats unit, cut to size bytes (ASCII units, so no split rune).
@@ -35,8 +42,10 @@ func fillTo(unit string, size int) string {
 }
 
 // mixUnits are the sentences of a realistic failing command: five without a
-// secret for each one with, so about two placeholders in 1 KiB once the
-// agent has scrubbed it. The secret comes second so a 256-byte cut holds it.
+// secret for each one with. The secret sentence holds three (a URL query
+// value, an email, a GitHub token), so 1 KiB holds two of them and, once the
+// agent has scrubbed it, six placeholders. The secret sentence comes second
+// so a 256-byte cut holds it.
 var mixUnits = []string{
 	"step 3 of 5 failed: go test ./... exited with status 1 in /Users/al/repos/fleet-board. ",
 	"push to https://github.com/o/r?ref=main failed for al@example.com token ghp_" + "0123456789abcdefghijABCDEFGHIJ012345. ",
@@ -115,15 +124,13 @@ func TestHubCorporaKeepTheirPremise(t *testing.T) {
 	for _, size := range []int{capShort, capMessage} {
 		for _, c := range hubCorpora(size) {
 			t.Run(sizeName(size)+"/"+c.name, func(t *testing.T) {
-				if len(c.text) == 0 || len(c.text) > size {
-					t.Fatalf("size %d, want 1 to %d", len(c.text), size)
-				}
 				// The cost depends on length, so each corpus keeps its length.
-				switch want := map[string]int{"typical": min(typicalSize, size), "unscrubbed": size, "dense": size, "hostile": size}[c.name]; {
-				case c.name != "mix" && len(c.text) < want-want/4:
-					t.Errorf("%s is %d bytes, want near %d", c.name, len(c.text), want)
-				case c.name == "typical" && len(c.text) > want:
-					t.Errorf("typical is %d bytes, want at most %d", len(c.text), want)
+				lo, hi := size-size/8, size // mix, unscrubbed, dense, hostile
+				if c.name == "typical" {
+					lo, hi = typicalSize*3/4, typicalSize
+				}
+				if n := len(c.text); n < lo || n > hi {
+					t.Fatalf("%s is %d bytes, want %d to %d", c.name, n, lo, hi)
 				}
 				r := hubPass(c.text, size)
 				switch c.name {
@@ -132,8 +139,8 @@ func TestHubCorporaKeepTheirPremise(t *testing.T) {
 					if r.Changed || r.Cut || r.Unsettled || r.Text != c.text {
 						t.Errorf("hub pass changed agent-scrubbed text: %+v", r)
 					}
-					if c.name == "mix" && (len(c.text) < size-size/8 || !strings.Contains(c.text, "[")) {
-						t.Errorf("mix is %d bytes with no placeholder, want near %d with one", len(c.text), size)
+					if c.name == "mix" && !strings.Contains(c.text, "[") {
+						t.Errorf("mix has no placeholder")
 					}
 					if strings.Contains(c.text, agentHome) {
 						t.Errorf("home folder left in agent-scrubbed text")
@@ -180,8 +187,11 @@ func sizeName(size int) string {
 // so the hub pass needs (time to scrub msgs) / window cores. Rates:
 //   - commands 0.05 / s steady and 0.5 / s peak (03f, commands row), with an
 //     assumed 5 CommandProgress messages per command (03f says "+ progress
-//     steps" and gives no number); ProbeHealth and SettingRejection are
-//     about 0 (03f, probes row) and are left out.
+//     steps" and gives no number); peak_startgoal uses the 14 steps of a
+//     StartGoal (command_goal.proto) and its result: 7.5 messages a second.
+//   - usage_worst: usage_readings at the worst passive rate, 0.8 / s (03f),
+//     each with a parse_message; ProbeHealth and SettingRejection are about
+//     0 (03f, probes row) and are left out.
 //   - the replay burst of 04 Q7: 2,500 events / s per hub. By 02i only
 //     coalesced probe and usage levels carry free text in an event, so the
 //     fraction is far below 1 %; 1 %, 10 % and 100 % bound it.
@@ -196,6 +206,10 @@ var loadScenarios = []struct {
 	{"peak/mix", "mix", 30, 10 * time.Second},
 	{"peak/unscrubbed", "unscrubbed", 30, 10 * time.Second},
 	{"peak/hostile", "hostile", 30, 10 * time.Second},
+	{"usage_worst/mix", "mix", 8, 10 * time.Second},
+	{"usage_worst/hostile", "hostile", 8, 10 * time.Second},
+	{"peak_startgoal/mix", "mix", 75, 10 * time.Second},
+	{"peak_startgoal/hostile", "hostile", 75, 10 * time.Second},
 	{"burst_1pct/mix", "mix", 25, time.Second},
 	{"burst_10pct/mix", "mix", 250, time.Second},
 	{"burst_all/mix", "mix", 2500, time.Second},
