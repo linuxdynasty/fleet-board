@@ -22,9 +22,12 @@ func TestAHookWaitingOnSendIsReleasedWhenTheStreamOrRunEnds(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		end  func(t *testing.T, h *connectHub, r *loopRun)
+		// within bounds the release; a stop must not wait for the 2 s cut
+		// of a stream that does not close (shutdownWait).
+		within time.Duration
 	}{
-		{"the stream ends", func(t *testing.T, h *connectHub, _ *loopRun) { t.Helper(); h.dropLive(t) }},
-		{"the run stops", func(_ *testing.T, _ *connectHub, r *loopRun) { r.cancel() }},
+		{"the stream ends", func(t *testing.T, h *connectHub, _ *loopRun) { t.Helper(); h.dropLive(t) }, 10 * time.Second},
+		{"the run stops", func(_ *testing.T, _ *connectHub, r *loopRun) { r.cancel() }, 1500 * time.Millisecond},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -66,8 +69,8 @@ func TestAHookWaitingOnSendIsReleasedWhenTheStreamOrRunEnds(t *testing.T) {
 				if !errors.Is(err, conn.ErrNoStream) {
 					t.Errorf("the hook's Send = %v, want ErrNoStream", err)
 				}
-			case <-time.After(10 * time.Second):
-				t.Fatal("the hook's Send was not released")
+			case <-time.After(tc.within):
+				t.Fatalf("the hook's Send was not released within %v", tc.within)
 			}
 			if tc.name == "the run stops" {
 				if err := r.result(t, 10*time.Second); err != nil {

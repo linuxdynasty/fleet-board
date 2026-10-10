@@ -17,18 +17,23 @@ import (
 )
 
 // 6a (ruling fork 12 c): a Command or Settings goes to its hook with the
-// epoch of the stream it came on; the loop sends nothing for it itself.
+// epoch of the stream it came on and a context that ends with that stream,
+// the same one OnConnected got; the loop sends nothing for it itself.
 func TestCommandsAndSettingsReachTheirHooksWithTheStreamsEpoch(t *testing.T) {
 	t.Parallel()
 	h := startConnectHub(t)
 	a := enrolled(t, h)
 	var got hookLog
+	ctxs := make(chan context.Context, 8)
 	startLoop(t, a, func(o *conn.LoopOptions) {
-		o.Command = func(_ context.Context, epoch uint64, c *agentv1.Command) bool {
+		o.OnConnected = func(ctx context.Context, _ uint64, _ conn.HubClock) { ctxs <- ctx }
+		o.Command = func(ctx context.Context, epoch uint64, c *agentv1.Command) bool {
+			ctxs <- ctx
 			got.add("command %s epoch %d", c.GetCommandId().GetValue(), epoch)
 			return true
 		}
-		o.Settings = func(_ context.Context, epoch uint64, s *agentv1.Settings) bool {
+		o.Settings = func(ctx context.Context, epoch uint64, s *agentv1.Settings) bool {
+			ctxs <- ctx
 			got.add("settings %d epoch %d", s.GetGeneration(), epoch)
 			return true
 		}
@@ -37,7 +42,20 @@ func TestCommandsAndSettingsReachTheirHooksWithTheStreamsEpoch(t *testing.T) {
 	h.pushCommand(t, "c1", time.Now().Add(time.Hour))
 	h.pushSettings(t, 3)
 	waitFor(t, 5*time.Second, "both hooks", func() bool { return len(got.get()) == 2 })
+	first := []context.Context{<-ctxs, <-ctxs, <-ctxs}
+	for i, c := range first {
+		if c.Err() != nil {
+			t.Fatalf("hook context %d ended while its stream is live", i)
+		}
+	}
 	h.dropLive(t)
+	for i, c := range first {
+		select {
+		case <-c.Done():
+		case <-time.After(5 * time.Second):
+			t.Fatalf("hook context %d did not end with its stream", i)
+		}
+	}
 	h.connected(t, 2)
 	h.pushCommand(t, "c2", time.Now().Add(time.Hour))
 	waitFor(t, 5*time.Second, "the second command", func() bool { return len(got.get()) == 3 })
@@ -131,7 +149,7 @@ func TestOnConnectedComesAfterTheSnapshotAndItsResults(t *testing.T) {
 	var loop *conn.Loop
 	startLoopThen(t, a, func(o *conn.LoopOptions) {
 		o.OnConnected = func(ctx context.Context, epoch uint64, clock conn.HubClock) {
-			n := int(epoch) // the fake hub's epochs are 1, 2, ...
+			n := int(min(epoch, 1<<16)) // the fake hub's epochs are 1, 2, ...
 			held, end := false, time.Now().Add(5*time.Second)
 			for !held && time.Now().Before(end) {
 				q := h.queued(n)
