@@ -27,6 +27,7 @@
 //
 // The package checks what a line is, not whether the pane may take it now:
 // the gate each purpose names (a prompt still showing, an empty input line)
-// is the caller's (02h). [Recorder.Sent] logs typing.sent for a line the
-// client sent.
+// is the caller's (02h). The caller also calls [Recorder.Sent] once the
+// tmux client reports that tmux took the line; the client holds no
+// Recorder.
 package typing

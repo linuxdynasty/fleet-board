@@ -11,7 +11,7 @@ that `Line` and nothing else.
 rec, err := typing.NewRecorder(tel)              // once, at wiring
 l, err := typing.NewLiteral(rec, paneKey, typing.PurposeGoalStart, goalText)
 k, err := typing.NewKeys(rec, paneKey, typing.PurposeGoalStart, typing.KeyEnter)
-rec.Sent(ctx, l)                                  // the client, once tmux took it
+rec.Sent(ctx, l)                                  // after the client reports tmux took it
 ```
 
 | Constructor | Builds |
@@ -84,7 +84,7 @@ arrives with plan row 7 PR 7c2.
 |---|---|
 | `fleet_agent_typing_refused_total{reason}` | lines refused, by reason |
 | `typing.refused` (warn; `reason`, `purpose`) | one line per refusal |
-| `typing.sent` (info; `purpose`, `server_kind`, `pane_id`, `bytes`) | one line per line the client sent (`Recorder.Sent`) |
+| `typing.sent` (info; `purpose`, `server_kind`, `pane_id`, `bytes`) | one line per line tmux took; the caller that built the line calls `Recorder.Sent` (the client holds no Recorder: `NewRecorder` is a `New…` function, so only control, start and probe can make one) |
 
 Ids and counts only: never the text, never a refused pane. 3 AM question: "why did the agent
 type nothing into that pane?" ([05b](../../../../docs/specs/05b-observability.md)).

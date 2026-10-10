@@ -13,8 +13,9 @@ import (
 
 const scope = "github.com/linuxdynasty/fleet-board/internal/agent/tmux/typing"
 
-// Recorder counts and logs refused lines. Make one with NewRecorder and pass
-// it to every constructor; a nil *Recorder counts and logs nowhere, which is
+// Recorder counts and logs refused and sent lines. Each allowed caller
+// (control, start, probe) makes its own with NewRecorder and passes it to
+// every constructor; a nil *Recorder counts and logs nowhere, which is
 // for tests of the caller.
 type Recorder struct {
 	log     *slog.Logger
@@ -37,10 +38,13 @@ func NewRecorder(tel *telemetry.Telemetry) (*Recorder, error) {
 	return &Recorder{log: log, refusal: c}, nil
 }
 
-// Sent logs typing.sent for a line the tmux client sent and tmux accepted
-// (plan row 7 PR 7c2 calls it): the purpose, the server kind, the pane id and
-// the bytes of literal text (0 for a line of named keys). Ids and counts
-// only, never the text. A nil Recorder or the zero Line logs nothing.
+// Sent logs typing.sent for a line tmux accepted. The package that built
+// the line calls it once the tmux client reports success: the lint rules
+// let only control, start and probe build a Recorder (NewRecorder is a
+// New… function), so the client never holds one. It logs the purpose, the
+// server kind, the pane id and the bytes of literal text (0 for a line of
+// named keys). Ids and counts only, never the text. A nil Recorder or the
+// zero Line logs nothing.
 func (r *Recorder) Sent(ctx context.Context, l Line) {
 	if r == nil || l.IsZero() {
 		return
