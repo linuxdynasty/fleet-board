@@ -18,8 +18,8 @@ through one open directory handle, with no path walked twice.
 1. **Open the work folder once** as a directory handle (`workdir_fd`). The
    work folder is the pane's folder, already resolved to its real path (see
    [02h](02h-goal-binding-and-pane-signals.md#startgoal-steps), steps 4 and 5).
-2. **The folder.** `mkdir(".fleet-board", 0700)` relative to `workdir_fd`. If it
-   already exists, open it with `openat(workdir_fd, ".fleet-board",
+2. **The folder.** `mkdir(".fleet-board", 0700)` relative to `workdir_fd`. Then,
+   whether `mkdir` made it or it already existed, open it with `openat(workdir_fd, ".fleet-board",
    O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC)`. A symlink, a plain file or any folder
    that cannot be opened this way is `GOAL_FILE_WRITE_FAILED` with metadata
    `{"why":"goal_dir_not_plain"}`. The agent changes nothing, and Triage names

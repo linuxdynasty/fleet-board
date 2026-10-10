@@ -347,7 +347,7 @@ setting is what removed the Bash prompts; without it Claude Code still asks), Mu
 | `/tmp/<file>` | written | `operation not permitted` (only `/tmp/claude` and the per-user temp folder) | prompt | written | not probed; hypothesis: the same cwd rule |
 | `~/.local/share/<dir>` | `Operation not permitted` | `Operation not permitted` | prompt, even in `acceptEdits` | `Operation not permitted` | not probed; hypothesis: the same cwd rule |
 
-Only `.fleet/` inside the working directory was writable in Claude Code, Codex
+`.fleet/` inside the working directory was the only place writable in all three: Claude Code, Codex
 and Muse. In Claude Code it was the only place that needed no approval in
 `acceptEdits` with no `--settings` flag (the "permission prompt only" column:
 only `--permission-mode` was set). The sandbox column did use `--settings`, for
