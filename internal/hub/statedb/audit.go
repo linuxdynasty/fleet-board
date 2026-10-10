@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/linuxdynasty/fleet-board/internal/store"
@@ -18,8 +19,11 @@ import (
 //     handed out ([NextStamp]). It only rises; a job that fails rolls its
 //     numbers back with its savepoint.
 //   - audit_log is AuditEntry (hub/v1/settings.proto) with ids from
-//     AUTOINCREMENT, so an id is never reused. Triggers refuse UPDATE and
-//     DELETE: rows are never changed or pruned (03f).
+//     AUTOINCREMENT, so an id is never reused. Triggers refuse UPDATE,
+//     DELETE and an insert over an existing id or hub_seq (INSERT OR
+//     REPLACE deletes without firing delete triggers): rows are never
+//     changed or pruned (03f). The counter's triggers refuse a second row,
+//     a delete, and hub_seq going down.
 //   - machines gains version (spec; 1 at insert), observed_time and hub_seq
 //     (status; 0 = never stamped).
 const auditSQL = `CREATE TABLE hub_counters(
@@ -52,6 +56,17 @@ CREATE TRIGGER audit_log_no_update BEFORE UPDATE ON audit_log
 BEGIN SELECT RAISE(ABORT, 'audit_log rows are permanent'); END;
 CREATE TRIGGER audit_log_no_delete BEFORE DELETE ON audit_log
 BEGIN SELECT RAISE(ABORT, 'audit_log rows are permanent'); END;
+CREATE TRIGGER audit_log_no_replace BEFORE INSERT ON audit_log
+WHEN EXISTS (SELECT 1 FROM audit_log WHERE id = NEW.id OR hub_seq = NEW.hub_seq)
+BEGIN SELECT RAISE(ABORT, 'audit_log rows are permanent'); END;
+CREATE TRIGGER hub_counters_one_row BEFORE INSERT ON hub_counters
+WHEN EXISTS (SELECT 1 FROM hub_counters)
+BEGIN SELECT RAISE(ABORT, 'hub_counters has one row'); END;
+CREATE TRIGGER hub_counters_no_delete BEFORE DELETE ON hub_counters
+BEGIN SELECT RAISE(ABORT, 'hub_counters has one row'); END;
+CREATE TRIGGER hub_counters_rise BEFORE UPDATE ON hub_counters
+WHEN NEW.hub_seq < OLD.hub_seq OR NEW.id <> OLD.id
+BEGIN SELECT RAISE(ABORT, 'hub_seq never goes down'); END;
 ALTER TABLE machines ADD COLUMN version INTEGER NOT NULL DEFAULT 1 CHECK (version >= 1);
 ALTER TABLE machines ADD COLUMN observed_time INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE machines ADD COLUMN hub_seq INTEGER NOT NULL DEFAULT 0 CHECK (hub_seq >= 0);`
@@ -66,6 +81,14 @@ const (
 
 // MaxAuditDetail caps AuditEntry.detail in bytes; the table checks it too.
 const MaxAuditDetail = 1024
+
+var (
+	// ErrAuditInvalid: an entry with no action or target, or a detail over
+	// [MaxAuditDetail]. Nothing is written and no hub_seq is taken.
+	ErrAuditInvalid = errors.New("statedb: invalid audit entry")
+	// ErrZeroTime: a stamp or an audit row without the hub's time.
+	ErrZeroTime = errors.New("statedb: a stamp needs the hub's time")
+)
 
 // Actor is AuditEntry.actor, a Principal: its id (the filter key), its kind
 // without the PRINCIPAL_KIND_ prefix, and its display name. The zero value
@@ -107,7 +130,17 @@ type Stamp struct {
 // rolls the number back with the change, so committed numbers rise in
 // commit order (02c "Order"). A version is never bumped here: version
 // covers the spec only and is 1 at insert (02b, ADR 0019).
+//
+// now becomes observed_time. The store's writer has no clock of its own,
+// so it is the hub clock the job's caller read when it built the job (the
+// same reading that decided, say, a token's expiry): hub time, never an
+// agent's, but it can trail the commit by the queue wait and is not ordered
+// by hub_seq; Watch orders by hub_seq. A zero now is [ErrZeroTime] and
+// takes no number.
 func NextStamp(ctx context.Context, tx *sql.Tx, now time.Time) (Stamp, error) {
+	if now.IsZero() {
+		return Stamp{}, ErrZeroTime
+	}
 	var seq int64
 	err := tx.QueryRowContext(ctx, `UPDATE hub_counters SET hub_seq = hub_seq + 1 WHERE id = 1 RETURNING hub_seq`).Scan(&seq)
 	if err != nil {
@@ -121,9 +154,11 @@ func NextStamp(ctx context.Context, tx *sql.Tx, now time.Time) (Stamp, error) {
 func AppendAudit(ctx context.Context, tx *sql.Tx, e AuditEntry) (int64, error) {
 	switch {
 	case e.Action == "" || e.Target == "":
-		return 0, errors.New("statedb: an audit entry needs an action and a target")
+		return 0, fmt.Errorf("%w: it needs an action and a target", ErrAuditInvalid)
 	case len(e.Detail) > MaxAuditDetail:
-		return 0, fmt.Errorf("statedb: audit detail is %d bytes, over %d", len(e.Detail), MaxAuditDetail)
+		return 0, fmt.Errorf("%w: %s detail is %d bytes, over %d", ErrAuditInvalid, e.Action, len(e.Detail), MaxAuditDetail)
+	case e.Now.IsZero():
+		return 0, ErrZeroTime
 	}
 	if e.Outcome == "" {
 		e.Outcome = "OK"
@@ -164,11 +199,19 @@ func WriteAudit(ctx context.Context, s *store.Store, entries ...AuditEntry) erro
 	})
 }
 
-// auditDetail is v as a compact JSON object for AuditEntry.detail.
+// auditDetail is v as a compact JSON object for AuditEntry.detail, without
+// HTML escaping: json.Marshal would grow each '<', '>' and '&' to 6 bytes.
+// The API refuses control characters in a machine name (the only text that
+// can reach a detail and need escaping), so the worst case is 2 bytes per
+// byte ('"' and '\'): a 128-byte name is 256 bytes, which with a 253-byte
+// hostname (letters, digits, '.', '-', '_') and the keys stays under 700 of
+// the [MaxAuditDetail] bytes, even when the expected hostname is the name.
 func auditDetail(v any) (string, error) {
-	b, err := json.Marshal(v)
-	if err != nil {
+	var b strings.Builder
+	enc := json.NewEncoder(&b)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(v); err != nil {
 		return "", fmt.Errorf("statedb: audit detail: %w", err)
 	}
-	return string(b), nil
+	return strings.TrimSuffix(b.String(), "\n"), nil
 }

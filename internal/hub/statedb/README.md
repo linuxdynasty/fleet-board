@@ -203,9 +203,19 @@ live, err := statedb.EndConnection(ctx, s, id, out.Epoch, statedb.EndStreamClose
     `create_time`, `hub_seq` (unique), `actor_id`/`actor_kind`/`actor_name`
     (empty for no actor), `action`, `target`, `machine_id`, `goal_id`,
     `command_id`, `request_id`, `outcome` (`OK` by default), `reason`, `detail`
-    (a JSON object, at most 1 KiB) and `occurred_time`. Indexed by time,
-    target and machine. Triggers refuse `UPDATE` and `DELETE`: rows are
-    permanent (03f).
+    (a JSON object without HTML escaping, at most 1 KiB) and `occurred_time`.
+    Indexed by time, target and machine. Triggers refuse `UPDATE`, `DELETE`
+    and an insert over an existing `id` or `hub_seq` (`INSERT OR REPLACE`
+    deletes without firing delete triggers): rows are permanent (03f). The
+    counter's triggers refuse a second row, a delete and a lower `hub_seq`.
+  - `AppendAudit` refuses an entry with no action or target or a detail over
+    1 KiB (`ErrAuditInvalid`) and `NextStamp` a zero time (`ErrZeroTime`),
+    before taking a number. The largest names the API accepts (a 128-byte
+    machine name, a 253-byte hostname) fit: at most 2 bytes per byte once
+    escaped.
+  - `observed_time` is the hub clock the job's caller read when building the
+    job (the writer has none of its own): hub time, never an agent's, but it
+    can trail the commit by the queue wait and is not ordered by `hub_seq`.
   - `AppendAudit(ctx, tx, e)` stamps and inserts a row in the caller's job,
     so the change and its row commit together; `WriteAudit` is a job of its
     own for a step that changes nothing else (a refused Enroll).
@@ -254,4 +264,7 @@ fields and none for a replay; an injected trigger that fails the audit insert
 leaving no token, machine or renewal and `hub_seq` unchanged; a failed job's
 numbers rolled back; bad entries refused; `UPDATE` and `DELETE` refused and
 the rows surviving a restart; racing actions with distinct rising `hub_seq`
-values; and a 5a-i store gaining the tables.
+values; a 5a-i store gaining the tables; the largest accepted names through
+`InsertEnrollToken` and `Enroll`; the Go-side refusals before a number is
+taken; and `INSERT OR REPLACE`, a counter rollback and a counter delete
+refused on the file.
