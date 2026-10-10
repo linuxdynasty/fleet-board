@@ -115,6 +115,22 @@ func TestRunEnrollsAMachineWithATokenFromTheAdminSocket(t *testing.T) {
 	h := newHub(t, "")
 	h.init(t)
 	r := h.start(t, h.options())
+	res, cert := enrollOverRun(t, h, r)
+	if res.GetMachineName() != "laptop" || res.GetFleetId() == "" {
+		t.Errorf("machine_name %q, fleet_id %q", res.GetMachineName(), res.GetFleetId())
+	}
+	if err := accepted(t, h, r.addrs.Agent, cert); err != nil {
+		t.Errorf("the listener refused the enrolled certificate: %v", err)
+	}
+	if got := sample(h.scrape(t), "fleet_hub_enroll_total", `result="enrolled"`); got != 1 {
+		t.Errorf("fleet_hub_enroll_total{result=enrolled} = %v, want 1", got)
+	}
+}
+
+// enrollOverRun enrolls machine "laptop" with a token from the admin
+// socket and returns the response and the client certificate.
+func enrollOverRun(t *testing.T, h *hub, r *running) (*agentv1.EnrollResponse, tls.Certificate) {
+	t.Helper()
 	tok, err := daemon.EnrollToken(context.Background(), h.options(), daemon.EnrollRequest{Machine: "laptop"})
 	if err != nil {
 		t.Fatalf("EnrollToken: %v", err)
@@ -127,30 +143,29 @@ func TestRunEnrollsAMachineWithATokenFromTheAdminSocket(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	hc := &http.Client{Transport: &http.Transport{
-		TLSClientConfig:   &tls.Config{RootCAs: caPool(t, h.storedIdentity(t)), ServerName: "localhost", MinVersion: tls.VersionTLS13},
-		ForceAttemptHTTP2: true,
-	}}
-	defer hc.CloseIdleConnections()
-	res, err := agentv1connect.NewAgentServiceClient(hc, "https://127.0.0.1:"+port(r.addrs.Agent), connect.WithGRPC()).
-		Enroll(context.Background(), connect.NewRequest(&agentv1.EnrollRequest{
-			Token: tok.GetToken(), CsrPem: pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE REQUEST", Bytes: csr}),
-			InstallId: "install-1", ProtoMin: 1, ProtoMax: 1, Facts: &agentv1.MachineFacts{Hostname: "laptop"},
-		}))
+	res, err := agentClient(t, h, r).Enroll(context.Background(), connect.NewRequest(&agentv1.EnrollRequest{
+		Token: tok.GetToken(), CsrPem: pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE REQUEST", Bytes: csr}),
+		InstallId: "install-1", ProtoMin: 1, ProtoMax: 1, Facts: &agentv1.MachineFacts{Hostname: "laptop"},
+	}))
 	if err != nil {
 		t.Fatalf("Enroll: %v", err)
-	}
-	if res.Msg.GetMachineName() != "laptop" || res.Msg.GetFleetId() == "" {
-		t.Errorf("machine_name %q, fleet_id %q", res.Msg.GetMachineName(), res.Msg.GetFleetId())
 	}
 	block, _ := pem.Decode(res.Msg.GetCertPem())
 	if block == nil {
 		t.Fatal("no certificate in the response")
 	}
-	if err := accepted(t, h, r.addrs.Agent, tls.Certificate{Certificate: [][]byte{block.Bytes}, PrivateKey: priv}); err != nil {
-		t.Errorf("the listener refused the enrolled certificate: %v", err)
-	}
-	if got := sample(h.scrape(t), "fleet_hub_enroll_total", `result="enrolled"`); got != 1 {
-		t.Errorf("fleet_hub_enroll_total{result=enrolled} = %v, want 1", got)
-	}
+	return res.Msg, tls.Certificate{Certificate: [][]byte{block.Bytes}, PrivateKey: priv}
+}
+
+// agentClient speaks gRPC to r's agent listener, presenting certs.
+func agentClient(t *testing.T, h *hub, r *running, certs ...tls.Certificate) agentv1connect.AgentServiceClient {
+	t.Helper()
+	hc := &http.Client{Transport: &http.Transport{
+		TLSClientConfig: &tls.Config{
+			RootCAs: caPool(t, h.storedIdentity(t)), ServerName: "localhost", MinVersion: tls.VersionTLS13, Certificates: certs,
+		},
+		ForceAttemptHTTP2: true,
+	}}
+	t.Cleanup(hc.CloseIdleConnections)
+	return agentv1connect.NewAgentServiceClient(hc, "https://127.0.0.1:"+port(r.addrs.Agent), connect.WithGRPC())
 }

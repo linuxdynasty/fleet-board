@@ -21,5 +21,13 @@ anything that touches `AgentService`. Rules for this package:
   token unburned. Store errors answer `UNAVAILABLE` with `retryable`.
 - The revocation check runs in `VerifyConnection` (fresh and resumed
   handshakes); the `RevokedSet` it calls must never block.
+- Connect: identity only from the verified certificate; nothing is sent
+  before the Hello transaction commits; every refusal goes through the one
+  table in `connect_refuse.go` (02g "Hello refusals" is its spec). Only the
+  stream's writer goroutine calls `Send` and only its reader calls
+  `Receive`; the handler stops both before it returns. Registry entries are
+  removed by stream, never by machine. Heartbeats never write the store.
+- A new `ConnectRequest` arm gets its own file that registers it with
+  `arms.add`; do not grow `arms.go`.
 - Tests dial the real listener; a fake clock and a tick channel drive renewal.
 - A change here updates this README and `doc.go` in the same commit.

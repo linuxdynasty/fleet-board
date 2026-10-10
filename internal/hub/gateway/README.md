@@ -80,8 +80,57 @@ srv, err := gateway.NewServer(gateway.ServerOptions{
 
   The old serial is not revoked. A store error is `UNAVAILABLE` with
   `retryable`; the retry with the same CSR gets the stored certificate.
-- **Request cap**: `connect.WithReadMaxBytes(MaxMessageBytes)`, the 1 MiB of 02e.
-- **AgentService**: every other method answers `Unimplemented` until its row.
+- **Connect** ([02g](../../../docs/specs/02g-agent-security.md) "Hello refusals",
+  02i, [03n](../../../docs/specs/03n-reconnect.md); plan row 5 PR 5a-ii). The
+  machine id is the verified certificate's CN, which its one URI SAN
+  `fleet://machine/<id>` must name; the serial is the certificate's. Checked in
+  order: the certificate (before anything is read), the first message within
+  `HelloWait` (30 s, `ServerOptions.HelloWait` in tests) and that it is
+  `Hello`, `machine_id`, `boot_id` and `install_id` (the Enroll install_id
+  rule), the proto range (`Bye{PROTO_UNSUPPORTED}`), the Hello rate limit (one
+  per machine per `HelloEvery`, 5 s, marked when it passes; in memory, so a
+  restart clears it), the `RevokedSet` (`Bye{REVOKED}`: after a restore the
+  file may hold serials state.db lacks), then `statedb.Hello` as one writer
+  job (`Bye{REVOKED}`, `Bye{UNKNOWN_MACHINE}`, or the error table). Every
+  answer is in one table, `connectAnswers` (`connect_refuse.go`); a refused
+  Hello writes nothing. After the commit the stream is registered and
+  `HelloAck` queued: fleet_id, the negotiated proto version, the epoch,
+  hub_time, `HeartbeatInterval` (15 s), `MaxMessageBytes`, hub_addresses,
+  settings_epoch, settings_generation, hub_last_event_seq and a
+  hub_instance_id minted per process start; no hub_capabilities (snapshots
+  arrive whole).
+- **Registry** (`registry.go`): one live stream per machine, registered only
+  after the commit; the higher epoch wins whatever order two results arrive
+  in, so a late lower one gets `Bye{DUPLICATE_IDENTITY}` itself; removal is by
+  stream, so a displaced stream's close never removes the winner. A displaced
+  stream gets `Bye{DUPLICATE_IDENTITY}`, counted and logged only when the
+  registry held it (a row a crash left live is displaced silently).
+  `cancel` ends a machine's stream with a chosen Bye (rows 5b and 13a);
+  `byeAll` runs on `http.Server.Shutdown` (`RegisterOnShutdown`): every
+  stream gets `Bye{HUB_RESTART}` and its handler returns, so `fleetd run`'s
+  stop does not wait out its 10 s grace, and a Hello that commits after it is
+  answered `Bye{HUB_RESTART}` with its row closed.
+- **Per stream** (`stream.go`): the handler goroutine runs the ingest loop
+  and the teardown; one reader (the only `Receive` caller) keeps Heartbeats
+  in memory only (the registry's last-heartbeat time, read for
+  `HelloIn.Live`; no store write), ends the stream on the agent's `Bye` or a
+  second `Hello`, and hands every other message in order to a bounded queue
+  (64); one writer (the only `Send` caller) sends queued messages (16) and
+  then, when the stream ends, its Bye within 2 s. The teardown wakes the
+  reader with the response's read deadline, cuts a send still blocked by
+  flow control after 2 s with the write deadline, handles what was queued,
+  removes the stream from the registry, then closes its row with
+  `statedb.EndConnection` (not for a displaced one) on a context that the
+  stream's end does not cancel. No goroutine touches the stream after the
+  handler returns, and no transaction spans a send.
+- **Handler table** (`arms.go`): one handler per `ConnectRequest` arm, added
+  by later rows from files of their own (`arms.add` in an `init`). An arm
+  with none is counted in `fleet_hub_connect_unhandled_total{kind}`, logged
+  once per kind per stream (`hub.connect.unhandled`) and ignored.
+- **Request cap**: `connect.WithReadMaxBytes(MaxMessageBytes)`, the 1 MiB of 02e;
+  on Connect the stream ends `RESOURCE_EXHAUSTED` and its row closes as
+  `stream_closed`.
+- **AgentService**: Terminal and SessionLog answer `Unimplemented` until their rows.
   It speaks Connect, gRPC and gRPC-Web over HTTP/1.1 and HTTP/2.
 - **Timeouts**: `ReadHeaderTimeout` (10 s) and `IdleTimeout` (2 min, a
   connection with no request or open stream). No `ReadTimeout`: the agent
@@ -112,6 +161,12 @@ srv, err := gateway.NewServer(gateway.ServerOptions{
 | `cert.renewed` (`machine_id`, `result`, `serial`, `not_after`) | a new or replayed renewal |
 | `cert.renew_refused` (`result`; refused: `reason`, `cause`, `peer`, `machine_id`; failed: `step`, `err_kind`, `machine_id`) | a refusal (warn) or the hub's failure (error); `cause` is `no_client_cert`, `csr_invalid`, `csr_same_key`, `machine_unknown`, `machine_revoked` or `serial_unknown`; `step` is `store`, `sign` or `encode` |
 | `fleet_hub_auth_failures_total{reason="revoked"}`, `tls.client_cert_revoked` (`serial`, `machine_id`) | a handshake refused for a revoked serial |
+| `fleet_hub_reconnects_total{machine, reason}`, `fleet_hub_epoch{machine}`, `reconnect.hello` (`machine_id`, `epoch`, `last_epoch`, `last_event_seq`, `hub_last_event_seq`, `reason`, `peer`), span `hub.connect.hello` | an accepted Hello |
+| `fleet_hub_duplicate_identity_total{machine}`, `identity.duplicate` (`machine_id`, `old_epoch`, `new_epoch`, `old_boot_id`, `new_boot_id`, `old_peer`, `new_peer`, `heartbeat_age_ms`) | a live stream displaced by a newer Hello |
+| `reconnect.closed` (`machine_id`, `epoch`, `reason`, `row_closed`) | a stream ended |
+| `fleet_hub_connect_refused_total{cause}`, `connect.refused` (`cause`, `reason`, `peer`, `machine_id`) | a refused Hello (warn) |
+| `connect.failed` (`step`: `validate`, `store`; `err_kind`, `machine_id`) | the hub's failure at a Hello or a stream's close (error) |
+| `fleet_hub_connect_unhandled_total{kind}`, `hub.connect.unhandled` (`machine_id`, `epoch`, `kind`) | a message of an arm with no handler yet |
 | `fleet_hub_server_cert_issues_total{reason, result}`, `tls.server_cert_issued` (`reason`, `names` count, `not_after`), `tls.server_cert_issue_failed` (`reason`, `err_kind`, `not_after` still served) | server certificate re-issues |
 
 No token, secret or part of its hash, no facts, no key, no certificate and no
@@ -120,7 +175,16 @@ SAN list is logged. A failed handshake is also a debug-level
 recovered handler panic an error-level one (`kind="panic"`), through
 `telemetry.HTTPErrorLog`, never plain text on stderr.
 
-Tests: `CGO_ENABLED=0 go test ./internal/hub/gateway/`. They dial the real
+Tests: `CGO_ENABLED=0 go test ./internal/hub/gateway/`. Connect's tests open
+real streams with an enrolled machine's certificate: HelloAck's fields and the
+stored row, the epoch rule, displacement (Bye, heartbeat age, one writer job
+between the two HelloAcks, so Heartbeats write nothing), a crash-left row
+counted as no duplicate, the agent's Bye, an unhandled arm, Shutdown with two
+live streams, every refusal of the 02g table (nothing stored, last_epoch and
+last_seen unchanged, counted and logged), the Hello wait, a second Hello, an
+unknown reason, the rate limit's boundaries, the 1 MiB cap and a closed
+store; `registry_internal_test.go` covers the out-of-order register, cancel,
+byeAll, the queue bound, the limiter and the handler table. They dial the real
 listener with `crypto/tls` and the generated gRPC client against a real
 `state.db` and a real `revocation.List`: enroll (certificate CN and URI SAN,
 chain, accepted as a client certificate), replay until 24 h past the TTL,

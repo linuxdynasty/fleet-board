@@ -27,6 +27,18 @@
 // the enroll CSR rule and refuses the presented certificate's key, then
 // statedb.Renew needs a live machine and a known, unrevoked serial, and
 // returns the stored certificate for the same machine and key or signs one
-// inside its writer job. Requests are capped at [MaxMessageBytes]. Every
-// other method answers Unimplemented until its row lands.
+// inside its writer job. Requests are capped at [MaxMessageBytes].
+//
+// Connect takes the machine id and serial from the verified certificate,
+// checks the first message (within [HelloWait]) is a Hello for that
+// machine with valid fields and a common proto range, applies the Hello
+// rate limit ([HelloEvery]) and the revoked set, then runs statedb.Hello as
+// one writer job; every refusal is in one table. After the commit a
+// registry makes the stream its machine's live one (the higher epoch wins),
+// HelloAck is sent and a displaced stream gets Bye{DUPLICATE_IDENTITY}.
+// Each stream has one reader (Heartbeats kept in memory, everything else
+// through a bounded queue to a per-arm handler table) and one writer; the
+// teardown stops both before the handler returns and closes the
+// connection row. Shutdown sends Bye{HUB_RESTART} on every stream.
+// Terminal and SessionLog answer Unimplemented until their rows land.
 package gateway

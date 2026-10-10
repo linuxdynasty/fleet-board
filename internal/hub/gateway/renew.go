@@ -78,13 +78,16 @@ type peerKey struct{}
 
 // withPeerCert hands the verified client certificate of the TLS connection,
 // if any, to the handlers through the request context. Only a certificate
-// that chained to the hub CA during the handshake is passed on.
+// that chained to the hub CA during the handshake is passed on. The
+// response's http.ResponseController goes along too, for Connect's
+// deadlines.
 func withPeerCert(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := context.WithValue(r.Context(), controllerKey{}, http.NewResponseController(w))
 		if r.TLS != nil && len(r.TLS.VerifiedChains) > 0 && len(r.TLS.VerifiedChains[0]) > 0 {
-			r = r.WithContext(context.WithValue(r.Context(), peerKey{}, r.TLS.VerifiedChains[0][0]))
+			ctx = context.WithValue(ctx, peerKey{}, r.TLS.VerifiedChains[0][0])
 		}
-		next.ServeHTTP(w, r)
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
