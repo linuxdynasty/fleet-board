@@ -177,6 +177,7 @@ test-all: vet
 fuzz:
 	CGO_ENABLED=0 go test -run='^$$' -fuzz='^FuzzParse$$' -fuzztime="$$FUZZTIME" -fuzzminimizetime="$$FUZZMINIMIZETIME" ./internal/hub/config/
 	CGO_ENABLED=0 go test -run='^$$' -fuzz='^FuzzCheckEnrollRequest$$' -fuzztime="$$FUZZTIME" -fuzzminimizetime="$$FUZZMINIMIZETIME" ./internal/hub/api/
+	CGO_ENABLED=0 go test -run='^$$' -fuzz='^FuzzText$$' -fuzztime="$$FUZZTIME" -fuzzminimizetime="$$FUZZMINIMIZETIME" ./internal/scrub/
 
 # bench-report runs the benchmarks of the changed packages at the merge base
 # with BASE_REF and at HEAD, BENCH_COUNT times each, and prints a markdown

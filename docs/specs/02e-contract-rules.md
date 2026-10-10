@@ -228,7 +228,7 @@ The hub API's limits are in [02b](02b-hub-api.md#size-limits). The agent wire:
 | `RunHarnessCommandResult.screen`, `ShownUsage.raw_screen` | 64 KiB | agent |
 | `PromptDetected.text` | 16 KiB | agent |
 | `PaneSummary.last_lines`, `GoalState.first_line`, `KeyInput.literal`, `RunHarnessCommand.args`, `GoalSpec.goal_text` | 4 KiB | agent (hub validates before sending) |
-| Labels, names, window names, `ShownField` strings, `ResetTime.original_text` | 256 bytes | agent |
+| Labels, names, window names, `ShownField` strings, `ResetTime.original_text`, `ProbeHealth.message` | 256 bytes | agent |
 | `CommandResult.message`, `CommandProgress.message`, `parse_message` | 1 KiB | agent |
 | `TermUp.output` | 64 KiB per message | agent |
 | `TermDown.input` | 4 KiB per message | hub |
@@ -243,8 +243,39 @@ rejects anything else.
 Agent-written free text (`CommandResult.message`, `CommandProgress.message`,
 `parse_message`, `ProbeHealth.message`) passes the shared secret scrubber
 (`internal/scrub`) on the agent, with the home folder written as `~`, and again
-on the hub before storage. The scrubber removes tokens, emails, URL query
-values and passwords in URLs.
+on the hub before storage. The scrubber removes private key blocks (PEM and
+PGP) first, then tokens, emails, URL query and fragment values and passwords
+in URLs (the user name may be an email; with no scheme,
+`al@example.com:pw@host` counts too) or in `curl -u user:password`. Removing
+one secret can expose another (the deleted text had stopped a rule), so it
+repeats its rounds until one changes nothing, at most 4; text that has not
+settled by then (four glued keys of different kinds do this) is replaced
+whole by `[redacted]`. It then cuts the text to the field's cap on a UTF-8
+boundary without splitting a placeholder. A second pass, with or without the
+home folder, changes nothing, for any input. `scrub.Scrub` also reports
+whether a secret or the home folder was replaced, whether the text was cut,
+and whether it failed closed; the callers count these in their own telemetry,
+since the scrubber has none.
+
+Tokens are the fleet's own (`fbe1_` enroll tokens, `fbt_` API tokens), GitHub
+tokens, the model providers' and clouds' key prefixes, JSON Web Tokens, bearer
+tokens, the value of an Authorization, Cookie, Set-Cookie or `*-Token` header
+(also as an environment variable whose name ends in authorization or cookie),
+a token used as a URL user name, and the value of a variable, flag, JSON,
+dict, Ruby or PHP key named like a secret: a name ending in password, passwd,
+passphrase, secret, token, salt, or api, access, private, secret, ca or server
+key, or in pass (starting a word or after `_`) or pwd (after `_`, `-` or `;`,
+so the shell's working-folder variable is kept). The forms are `name=value`,
+`env["name"] = value`, `--name value` (not a `--no-` flag), a connection
+string's `;password=value;`, `"name": "value"`, `"name" => "value"`, or a bare
+JSON value (`"name": 123`). A `name=value` or flag value runs to whitespace or
+a quote; a connection-string value also ends at `;`. A bare `name: value`
+counts for every word but token, pass and pwd, so `input_tokens: 1234` and a
+test runner's pass line are kept; `refresh_token:` and `access_token:` count.
+Callers cut text of no fixed size to a bound far above the cap before
+scrubbing, since the cost follows the input's length. This is a summary; the
+package README lists each pattern, why, what is left alone and what is not
+covered, and a change updates both.
 
 ## Compile check
 

@@ -85,7 +85,7 @@ The `Makefile` is the one entry point; CI runs the same targets, one per step
 | `lint` | the pinned `golangci-lint` on the same packages (linters and settings in `.golangci.yml`; a `//nolint` names its linter and says why) |
 | `vuln` | the pinned `govulncheck ./...` on every package; a known vulnerability the code can reach fails it (exit 3). Needs `gen/` and network access to vuln.go.dev |
 | `test-all` | `go vet ./...`, then `go test -race -shuffle=on -count=TEST_COUNT ./...` on every package (the nightly run sets `TEST_COUNT=10`), with a coverage profile when `COVERPROFILE` is set. Not part of `gates` |
-| `fuzz` | each Go fuzz target (`FuzzParse`, `FuzzCheckEnrollRequest`) for `FUZZTIME` (default `60s`), one `go test -fuzz` each; the seeds already run in `test`. Not part of `gates` |
+| `fuzz` | each Go fuzz target (`FuzzParse`, `FuzzCheckEnrollRequest`, `FuzzText`) for `FUZZTIME` (default `60s`), one `go test -fuzz` each; the seeds already run in `test`. Not part of `gates` |
 | `bench-report` | the benchmarks of the changed packages at the merge base with `BASE_REF` and at `HEAD`, `BENCH_COUNT` times each (default 10, `-benchtime` `BENCH_TIME`, default `1s`), compared by the pinned `benchstat`; a markdown report that marks REVIEW rows and fails only when a `HEAD` benchmark fails. Not part of `gates` |
 | `proto-check`, `ts-check` | `buf build` and `buf lint`; the generated TypeScript compiles (`tools/tscheck`) |
 | `fmt`, `fmt-check` | the pinned `gofumpt` formats, or only checks, every Go file (the same file set) |
