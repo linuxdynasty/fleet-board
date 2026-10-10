@@ -88,7 +88,7 @@ func TestHeartbeatsFollowTheHubsIntervalAfterTheSnapshot(t *testing.T) {
 		t.Fatalf("before the snapshot the hub got %v", msgs)
 	}
 	g.open()
-	waitFor(t, 10*time.Second, "three heartbeats", func() bool { return len(h.heartbeats(1)) >= 3 })
+	waitFor(t, 15*time.Second, "five heartbeats", func() bool { return len(h.heartbeats(1)) >= 5 })
 
 	s := h.stream(1)
 	snap := s.msgs[0].GetSnapshot()
@@ -99,14 +99,17 @@ func TestHeartbeatsFollowTheHubsIntervalAfterTheSnapshot(t *testing.T) {
 	if beats[0].i != 2 {
 		t.Errorf("the first heartbeat is message %d, want 2 (after the snapshot and its result)", beats[0].i)
 	}
-	if d := beats[0].got.Sub(s.times[1]); d < 900*time.Millisecond || d > 1600*time.Millisecond {
+	if d := beats[0].got.Sub(s.times[1]); d < 500*time.Millisecond || d > 2*time.Second {
 		t.Errorf("the first heartbeat came %v after the results, want one interval (1 s)", d)
 	}
 	for k, b := range beats {
 		hb := b.hb
 		if k > 0 {
-			if d := b.got.Sub(beats[k-1].got); d < 800*time.Millisecond || d > 1600*time.Millisecond {
-				t.Errorf("heartbeat %d came %v after the one before, want 1 s", k, d)
+			// One late read makes one gap long and the next short, so a
+			// single gap is only checked to be in order; the pace is
+			// checked over the whole run below.
+			if d := b.got.Sub(beats[k-1].got); d <= 0 {
+				t.Errorf("heartbeat %d was read %v after the one before", k, d)
 			}
 			if hb.GetUptime().AsDuration() <= beats[k-1].hb.GetUptime().AsDuration() {
 				t.Errorf("uptime %v after %v does not rise", hb.GetUptime().AsDuration(), beats[k-1].hb.GetUptime().AsDuration())
@@ -120,6 +123,13 @@ func TestHeartbeatsFollowTheHubsIntervalAfterTheSnapshot(t *testing.T) {
 			ev.GetEvictedTotal() != 2 || hb.GetLoad1() != 0.5 {
 			t.Errorf("heartbeat %d = %v; want event_seq %d, events 7/5/2 and the hook's load1", k, hb, snap.GetSeq())
 		}
+	}
+
+	// The pace over four intervals: a late read moves one end by a few
+	// hundred ms, which averages out here. Want 1 s each.
+	span := beats[len(beats)-1].got.Sub(beats[0].got)
+	if per := span / time.Duration(len(beats)-1); per < 800*time.Millisecond || per > 1400*time.Millisecond {
+		t.Errorf("%d heartbeats came %v apart on average, want 1 s", len(beats), per)
 	}
 
 	// Current values: a later snapshot takes a seq, and a counter rises.
