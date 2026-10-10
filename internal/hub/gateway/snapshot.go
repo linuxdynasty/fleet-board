@@ -63,7 +63,7 @@ func newSnapshotMetrics(tel *telemetry.Telemetry) (snapshotMetrics, error) {
 	return sm, nil
 }
 
-// snapshotArm applies a Snapshot on the stream's ingest goroutine: the
+// snapshotArm applies a Snapshot on the stream's handler goroutine: the
 // stream must still be its machine's live one and the snapshot whole (this
 // hub lists no snapshot.parts); its text is cleaned here, never in the
 // transaction; then ingest.SubmitSnapshot queues it as one writer job. After the
@@ -106,7 +106,7 @@ func snapshotArm(ctx context.Context, a *agentService, s *stream, m *agentv1.Con
 	// As for a Hello (connect.go), the wait ends when the agent leaves, a
 	// housekeeping cut or Shutdown begins, so the teardown closes the row
 	// before the store closes; the job itself still runs and may commit,
-	// and the teardown reads its result then (abandonedSnapshot).
+	// and the teardown reads its result then (abandonedSnapshots).
 	wctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	unwatch := context.AfterFunc(a.stopping, cancel)
@@ -124,17 +124,12 @@ func snapshotArm(ctx context.Context, a *agentService, s *stream, m *agentv1.Con
 	case err != nil && (ctx.Err() != nil || a.stopping.Err() != nil):
 		// Not a failure: the stream is ending and the outcome is unknown
 		// here; a queued job's result is read at the teardown.
-		s.abandoned = p
-		reason := "agent_left"
-		switch {
-		case ctx.Err() == nil:
-			reason = "shutdown"
-		case s.endReason() == statedb.EndIngestStalled || s.endReason() == statedb.EndOffline:
-			reason = "cut"
+		if p != nil { // nil when Submit itself gave up: no job, nothing to read
+			s.abandoned = append(s.abandoned, p)
 		}
 		done("abandoned")
 		a.log.InfoContext(ctx, "snapshot.abandoned", "machine_id", s.machineID, "epoch", s.epoch, "seq", snap.GetSeq(),
-			"reason", reason)
+			"reason", abandonReason(ctx, s))
 		return
 	case errors.Is(err, statedb.ErrSnapshotNotCurrent):
 		refuse("not_current", false) // a newer Hello displaced the stream; it is ending
@@ -202,21 +197,50 @@ func (a *agentService) rolledBack(ctx context.Context, s *stream, out statedb.Sn
 	}
 }
 
-// abandonedSnapshot logs the state change of a Snapshot job whose wait the
-// arm gave up (03n: every committed change of machines.state is logged).
-// It runs in the teardown on the handler goroutine once the row's close
-// returned, and before that close's change is logged: the one writer runs
-// jobs in order, so the Snapshot job is done by then, and its ONLINE is
-// logged before the close's OFFLINE. A job that failed, or a store too
-// slow for wctx, logs nothing here.
-func (a *agentService) abandonedSnapshot(wctx context.Context, s *stream) {
-	p := s.abandoned
-	if p == nil {
+// abandonReason names why a Snapshot's wait was given up: shutdown when
+// the stream's context is still live (only Shutdown's stop ended it), cut
+// when a housekeeping cut ended the stream (cut ends the stream before it
+// cancels the context, so its reason is visible here), agent_left
+// otherwise. It never blocks: the reader may not have ended the stream yet
+// (it can be waiting for room in the ingest queue, which only this
+// goroutine drains). A stream displaced by a newer Hello is not cancelled,
+// so displacement alone never abandons a wait; its agent hanging up does,
+// and that is agent_left.
+func abandonReason(ctx context.Context, s *stream) string {
+	if ctx.Err() == nil {
+		return "shutdown"
+	}
+	select {
+	case <-s.ended:
+		if s.reason == statedb.EndIngestStalled || s.reason == statedb.EndOffline {
+			return "cut"
+		}
+	default:
+	}
+	return "agent_left"
+}
+
+// abandonedSnapshots logs the state changes of the Snapshot jobs whose
+// waits the arm gave up (03n: every committed change of machines.state is
+// logged), in the order they were queued, which is their commit order. It
+// runs in the teardown on the handler goroutine after the row's close was
+// queued and before that close's change is logged: the one writer runs
+// jobs in order, so each Snapshot job commits before the close, and its
+// ONLINE is logged before the close's OFFLINE. It has its own bounded
+// wait: the close's may already have run out, and Pending.Wait with both
+// a result and an expired context picks either at random. A job that
+// failed, or a store too slow for endWait, logs nothing here.
+func (a *agentService) abandonedSnapshots(ctx context.Context, s *stream) {
+	if len(s.abandoned) == 0 {
 		return
 	}
-	s.abandoned = nil
-	out, err := p.Wait(wctx)
-	if err == nil && out.Change != nil {
-		a.stateChanged(wctx, *out.Change)
+	wctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), endWait)
+	defer cancel()
+	for _, p := range s.abandoned {
+		out, err := p.Wait(wctx)
+		if err == nil && out.Change != nil {
+			a.stateChanged(wctx, *out.Change)
+		}
 	}
+	s.abandoned = nil
 }

@@ -188,7 +188,7 @@ srv, err := gateway.NewServer(gateway.ServerOptions{
   with none is counted in `fleet_hub_connect_unhandled_total{kind}`, logged
   once per kind per stream (`hub.connect.unhandled`) and ignored.
 - **Snapshot** (`snapshot.go`, plan row 5 PR 5c1; 03n, 02i, row 5 ruling
-  forks 1 and 2a): on the stream's ingest goroutine the stream must still be
+  forks 1 and 2a): on the stream's handler goroutine the stream must still be
   its machine's live one and the Snapshot whole (no `snapshot.parts`);
   `ingest.Clean` cuts and scrubs its text; then the Snapshot is
   one writer job (`ingest.SubmitSnapshot`, then `Pending.Wait`; the statedb core with the current-epoch check and agent
@@ -198,10 +198,13 @@ srv, err := gateway.NewServer(gateway.ServerOptions{
   wait for the job ends when the agent leaves, a housekeeping cut or
   Shutdown begins (`snapshot.abandoned` at info, `result="abandoned"`: the
   outcome is unknown and the job may still commit), so the teardown closes
-  the row before the store closes. Once the row's close returns, the
-  teardown reads the abandoned job's result (the one writer ran it first)
-  and logs its state change before the close's, so every committed change
-  is logged in commit order. After the commit:
+  the row before the store closes. Once the row's close is queued, the
+  teardown reads every abandoned job's result in queue order (the one
+  writer runs them first; its own `endWait` bound) and logs their state
+  changes before the close's, so every committed change is logged in
+  commit order. The abandoned reason never waits for the stream's end
+  (the reader may be blocked on the full ingest queue that only this
+  goroutine drains); displacement alone never abandons a wait. After the commit:
   `ServerOptions.OnSnapshotApplied(machineID, epoch)` (plan row 5f re-sends
   pending commands from it; it must check the stream is still live, since
   it also runs for a Snapshot handled after the agent left), and

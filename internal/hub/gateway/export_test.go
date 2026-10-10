@@ -24,7 +24,7 @@ func SetArm(o *ServerOptions, kind string, f func()) {
 }
 
 // SetBeforeSnapshotJob makes the server built from o call f in the
-// Snapshot arm, on the stream's ingest goroutine, with the stream's
+// Snapshot arm, on the stream's handler goroutine, with the stream's
 // context, before its writer job.
 func SetBeforeSnapshotJob(o *ServerOptions, f func(context.Context)) { o.beforeSnapshot = f }
 
@@ -61,3 +61,13 @@ func Stalled(s *Server, machineID string) bool {
 // SetBeforeMark makes the server built from o call f in housekeeping after
 // it judged machineID and before its MarkState job.
 func SetBeforeMark(o *ServerOptions, f func(machineID string)) { o.beforeMark = f }
+
+// Queued is the number of messages waiting in machineID's live stream's
+// ingest queue, -1 when it has none.
+func Queued(s *Server, machineID string) int {
+	st := s.connect.streams.get(machineID)
+	if st == nil {
+		return -1
+	}
+	return len(st.in)
+}

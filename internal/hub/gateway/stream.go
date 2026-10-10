@@ -53,7 +53,7 @@ type stream struct {
 	epoch                   uint64
 	// hello is what the stream's Hello said that the Snapshot job compares
 	// with the store; set before the stream is registered, read only by its
-	// ingest goroutine.
+	// handler goroutine.
 	hello helloMarks
 	// ctx is the stream's context, given to arm handlers; cancel ends it
 	// (a housekeeping cut), so a handler waiting on the store returns.
@@ -81,10 +81,10 @@ type stream struct {
 	// beats wakes the handler goroutine after a Heartbeat (or a STALE
 	// mark); one pending wake is enough.
 	beats chan struct{}
-	// abandoned is a Snapshot job whose wait the arm gave up when the
-	// stream ended; the teardown reads its result. Only the handler
-	// goroutine uses it.
-	abandoned *ingest.Pending
+	// abandoned are the Snapshot jobs whose waits the arm gave up when the
+	// stream ended, in the order they were queued; the teardown reads their
+	// results. Only the handler goroutine uses it.
+	abandoned []*ingest.Pending
 	// seenWritten is the hub clock of the last last_seen_time write for
 	// this stream (the Hello's at first); only the handler goroutine uses it.
 	seenWritten time.Time
@@ -305,9 +305,12 @@ func (a *agentService) serve(ctx context.Context, bs *connectStream, rc *http.Re
 			read = true
 		}
 	}
-	// After a housekeeping cut ctx is already cancelled: drained messages
-	// reach their arm with a cancelled context, so a store job they submit
-	// fails; the agent sends again what the hub never acked.
+	// After a housekeeping cut or the agent leaving ctx is already
+	// cancelled: drained messages reach their arm with a cancelled context.
+	// A Snapshot's wait ends at once, but Submit's non-blocking path may
+	// still queue its job, whose result the teardown reads
+	// (abandonedSnapshots); a job that finds the writer queue full is not
+	// submitted, and the agent sends again what the hub never acked.
 	a.drain(ctx, s, s.in, unhandled)
 	if !a.stop(rc, wrote, byeWait+100*time.Millisecond) {
 		// The Bye's deadline must not outlive it: the row close below may
@@ -375,7 +378,7 @@ func (a *agentService) closed(ctx context.Context, s *stream) {
 	}
 	// After the close's job is queued, never before: the teardown can
 	// outlive Shutdown, and the store closes once Shutdown returns.
-	a.abandonedSnapshot(wctx, s)
+	a.abandonedSnapshots(ctx, s)
 	if reason != statedb.EndDisplaced {
 		if err != nil {
 			a.log.ErrorContext(ctx, "connect.failed", "step", "store", "err_kind", errKind(err), "machine_id", s.machineID,

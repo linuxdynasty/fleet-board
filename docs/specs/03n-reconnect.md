@@ -106,7 +106,8 @@ waiting for the agent's next message is never cut. A cut sends no `Bye`: the
 hub's handler returns and the stream ends with an OK status; the agent sees the
 stream end, backs off and reconnects. Every change is one writer
 job that holds only while the state, the live epoch and `last_seen_time` are
-what the job read (a `Snapshot` or `Hello` that committed after the read wins),
+what the job read (a `Snapshot`, a `Hello` or a Heartbeat's once-a-minute
+`last_seen_time` write that committed after the read wins),
 stamped for Watch; no audit row (02m has no state-change action). The live
 row's close by the stream or the agent's `Bye` takes an `ONLINE` or `STALE`
 machine `OFFLINE` in the same job; a displaced stream's close, the hub's own
@@ -283,11 +284,16 @@ The agent side of plan row 6 (ruling forks 4 i, 11 and 12), in
   `snapshot.parts`), `revoked`, `unknown_machine`, `invalid` (a number above 2^63 - 1)),
   `snapshot.failed{machine_id, epoch, seq, step, err_kind}` (error; `step`: `store`,
   `applier`, a panic included), `snapshot.abandoned{machine_id, epoch, seq, reason}`
-  (info; `agent_left`, `cut` (a housekeeping cut) or `shutdown`: as for a `Hello`, the
-  wait ends with the stream so the teardown closes the row before the store closes; the
-  job may still commit, and the teardown reads its result once the row's close returns
-  (the one writer runs jobs in order), so an `ONLINE` it committed is logged as `machine.state_changed{reason="snapshot"}` ahead of
-  the close's change), `snapshot.rollback{machine_id, epoch, causes, event_generation}` (warn;
+  (info; `agent_left`, `cut` (a housekeeping cut, `offline` or `ingest_stalled`) or
+  `shutdown`; a newer `Hello` alone never ends the wait (the job is refused
+  `not_current`), so a displaced agent that hangs up first logs `agent_left`: as for a
+  `Hello`, the wait ends with the stream so the teardown closes the row before the store
+  closes; the job may still commit, and the teardown reads the result of every abandoned
+  job, in queue order, once the row's close is queued (the one writer runs jobs in
+  order), so an `ONLINE` it committed is logged as `machine.state_changed{reason="snapshot"}`
+  ahead of the close's change; that read has its own `endWait` bound, so only a store
+  slower than that leaves a committed `ONLINE` unlogged, next to the close's
+  `connect.failed{step=store}`), `snapshot.rollback{machine_id, epoch, causes, event_generation}` (warn;
   02i rule 3, judged on the epoch's first Snapshot only; `causes` from `last_event_seq`,
   `counters`, `install_id`, `snapshot_seq`; `snapshot_seq` also sends
   `SnapshotRequest{seq_rollback}`), `snapshot.request_dropped{machine_id, epoch, reason}`
