@@ -80,4 +80,9 @@
 // after the later rows' appliers and reports its state change
 // ([ReasonSnapshot]); [ReadSnapshot] reads them back. [Hello]
 // returns hub_last_event_seq.
+//
+// Plan row 5 (PR 5f) adds commands (the outbox row and its Operation in
+// one, unique per command_id, a send unique per machine, epoch and seq)
+// and command_results (the first result, never changed). The queries are
+// internal/hub/outbox's.
 package statedb
