@@ -36,9 +36,19 @@
 // one writer job; every refusal is in one table. After the commit a
 // registry makes the stream its machine's live one (the higher epoch wins),
 // HelloAck is sent and a displaced stream gets Bye{DUPLICATE_IDENTITY}.
-// Each stream has one reader (Heartbeats kept in memory, everything else
-// through a bounded queue to a per-arm handler table) and one writer; the
-// teardown stops both before the handler returns and closes the
-// connection row. Shutdown sends Bye{HUB_RESTART} on every stream.
+// Each stream has one reader (Heartbeats kept in memory and handed to the
+// handler goroutine, everything else through a bounded queue to a per-arm
+// handler table) and one writer; the teardown stops both before the
+// handler returns and closes the connection row, which takes the machine
+// OFFLINE when the row was the live one. Shutdown sends Bye{HUB_RESTART} on
+// every stream.
+//
+// [Server.Housekeep] is the machine-state job of fleetd's housekeeping:
+// no Heartbeat for [StaleAfter] is STALE, for [OfflineAfter] OFFLINE (and
+// the stream cut), and a STALE machine's stream whose reader has been
+// stalled on a full ingest queue for [StaleAfter] is cut. A Heartbeat on
+// the stream that was live when silence made the machine STALE brings it
+// back to ONLINE; last_seen is written from Heartbeats at most once per
+// [LastSeenEvery]. The clock skew is the median of the last five samples.
 // Terminal and SessionLog answer Unimplemented until their rows land.
 package gateway

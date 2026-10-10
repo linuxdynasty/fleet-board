@@ -81,6 +81,35 @@ func (r *registry) isLive(s *stream) bool {
 	return r.streams[s.machineID] == s
 }
 
+// get is machineID's live stream, or nil.
+func (r *registry) get(machineID string) *stream {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.streams[machineID]
+}
+
+// cut ends machineID's live stream of epoch, if the registry holds it and
+// it has not ended already, with no Bye and the stored end reason, and
+// cancels its context (row 5 ruling, fork 4; no new ByeReason): its
+// handler returns nil, so the stream ends with an OK status and no Bye. It
+// returns the stream it cut, or nil.
+func (r *registry) cut(machineID string, epoch uint64, reason statedb.EndReason) *stream {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	s := r.streams[machineID]
+	if s == nil || s.epoch != epoch {
+		return nil
+	}
+	select {
+	case <-s.ended: // it ended on its own first: keep its reason, count no cut
+		return nil
+	default:
+	}
+	s.end(agentv1.ByeReason_BYE_REASON_UNSPECIFIED, reason)
+	s.cancel()
+	return s
+}
+
 // cancel ends machineID's live stream, if the registry holds one, with bye
 // (BYE_REASON_UNSPECIFIED sends none) and the stored end reason.
 func (r *registry) cancel(machineID string, bye agentv1.ByeReason, reason statedb.EndReason) bool {

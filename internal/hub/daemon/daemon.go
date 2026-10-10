@@ -49,6 +49,10 @@ type Options struct {
 	// once at start); nil means a ticker every backup.CheckEvery that Run
 	// owns.
 	BackupTicks <-chan time.Time
+	// HousekeepingTicks drives the housekeeping jobs in Run (machine STALE
+	// and OFFLINE marking); nil means a ticker every
+	// housekeeping.TickEvery that Run owns.
+	HousekeepingTicks <-chan time.Time
 	// Terminal is where Backup reads an encrypted copy's passphrase
 	// (backup.NewTerminal on stdin in the binary).
 	Terminal backup.Terminal

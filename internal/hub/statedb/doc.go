@@ -41,7 +41,17 @@
 // machine's live row closed as displaced and returned, the new live row,
 // and never a change of machines.state (the Snapshot transaction marks
 // ONLINE). [EndConnection]
-// closes one epoch's row if it is still live and reports whether it did.
+// closes one epoch's row if it is still live and reports whether it did;
+// in the same job the live row's close by the stream or the agent takes an
+// ONLINE or STALE machine OFFLINE (plan row 5b), so a displaced stream
+// never changes its machine.
+//
+// Plan row 5b adds the machine state changes: [MarkState] (housekeeping's
+// STALE and OFFLINE, only while the state and the live epoch are what it
+// judged), [HeartbeatSeen] (last_seen, and STALE back to ONLINE),
+// [StartSweep] (rows left live closed as hub_restart, ONLINE made STALE)
+// and [MachineStates] (the housekeeping read). Each change is stamped and
+// returned as a [StateChange]; none writes an audit row.
 //
 // Plan row 5 (PR 5d) adds hub_counters, audit_log and the Watch stamp on
 // machines. [NextStamp] takes the next hub_seq inside a writer job, rolled

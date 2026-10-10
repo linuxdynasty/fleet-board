@@ -16,6 +16,7 @@ import (
 	"github.com/linuxdynasty/fleet-board/internal/hub/config"
 	"github.com/linuxdynasty/fleet-board/internal/hub/discovery"
 	"github.com/linuxdynasty/fleet-board/internal/hub/gateway"
+	"github.com/linuxdynasty/fleet-board/internal/hub/housekeeping"
 	"github.com/linuxdynasty/fleet-board/internal/hub/lock"
 	"github.com/linuxdynasty/fleet-board/internal/hub/revocation"
 	"github.com/linuxdynasty/fleet-board/internal/hub/statedb"
@@ -90,7 +91,33 @@ func Run(ctx context.Context, opts Options) (err error) {
 		return s.fail(ReasonStore, err)
 	}
 	defer func() { err = errors.Join(err, nightly.Close()) }()
-	return serve(ctx, cfg, opts, hubDeps{certs: certs, hostname: host, st: st, id: id, revoked: revoked, nightly: nightly}, s)
+	swept, err := sweep(ctx, st, opts, s)
+	if err != nil {
+		return s.fail(ReasonStore, err)
+	}
+	return serve(ctx, cfg, opts, hubDeps{
+		certs: certs, hostname: host, st: st, id: id, revoked: revoked, nightly: nightly, swept: swept.Changes,
+	}, s)
+}
+
+// sweep is the hub-start pass (03n "Hub start"), before any listener
+// serves, so no Hello can race it: rows left live are closed as
+// hub_restart and every ONLINE machine becomes STALE.
+func sweep(ctx context.Context, st *store.Store, opts Options, s *session) (statedb.Swept, error) {
+	now := time.Now
+	if opts.Now != nil {
+		now = opts.Now
+	}
+	out, err := statedb.StartSweep(ctx, st, now().UTC())
+	if err != nil {
+		return statedb.Swept{}, fmt.Errorf("daemon: start sweep: %w", err)
+	}
+	for _, c := range out.Changes {
+		s.tel.Logger.InfoContext(ctx, "machine.state_changed", "machine_id", c.MachineID, "from", c.From, "to", c.To,
+			"reason", c.Reason)
+	}
+	s.tel.Logger.InfoContext(ctx, "hub.start_sweep", "stale", len(out.Changes), "rows_closed", out.RowsClosed)
+	return out, nil
 }
 
 // hubDeps is what the listeners and jobs share once the store is open.
@@ -103,6 +130,9 @@ type hubDeps struct {
 	id       statedb.Identity
 	revoked  *revocation.List
 	nightly  *backup.Schedule
+	// swept are the start sweep's changes, for the agent listener's
+	// fleet_hub_machine_state.
+	swept []statedb.StateChange
 }
 
 // revocationReason: a loose revoked-serials is mode_loose like any other
@@ -160,8 +190,18 @@ type listener struct {
 // them all down (which removes admin.sock) and waits for every goroutine it
 // started.
 func serve(ctx context.Context, cfg *config.Config, opts Options, d hubDeps, s *session) error {
-	ls, err := bind(ctx, cfg, opts, d, s)
+	ls, agent, err := bind(ctx, cfg, opts, d, s)
 	if err != nil {
+		return s.fail(ReasonListen, err)
+	}
+	agent.RecordStates(ctx, d.swept)
+	hk, err := housekeeping.New(housekeeping.Options{Now: opts.Now, Telemetry: s.tel}, housekeeping.Job{
+		Name: "machine_state", Every: housekeeping.TickEvery, Run: agent.Housekeep,
+	})
+	if err != nil {
+		for _, l := range ls {
+			_ = l.ln.Close() // the housekeeping error is the one to report
+		}
 		return s.fail(ReasonListen, err)
 	}
 	addrs := Addrs{Agent: ls[0].ln.Addr(), API: ls[1].ln.Addr()}
@@ -216,6 +256,14 @@ func serve(ctx context.Context, cfg *config.Config, opts Options, d hubDeps, s *
 	}
 	wg.Add(1)
 	go func() { defer wg.Done(); d.nightly.Run(ctx, backupTicks) }()
+	hkTicks := opts.HousekeepingTicks
+	if hkTicks == nil {
+		t := time.NewTicker(housekeeping.TickEvery)
+		defer t.Stop()
+		hkTicks = t.C
+	}
+	wg.Add(1)
+	go func() { defer wg.Done(); hk.Run(ctx, hkTicks) }()
 
 	// Advertise only now that the agent listener serves: an agent that
 	// follows the answer finds it. It never fails the hub (02j "Discovery").
@@ -251,13 +299,14 @@ func serve(ctx context.Context, cfg *config.Config, opts Options, d hubDeps, s *
 	return serveErr
 }
 
-// bind opens the agent, API and (when set) metrics listeners, in that order.
-func bind(ctx context.Context, cfg *config.Config, opts Options, d hubDeps, s *session) ([]listener, error) {
+// bind opens the agent, API and (when set) metrics listeners, in that
+// order, and returns the agent listener's server too.
+func bind(ctx context.Context, cfg *config.Config, opts Options, d hubDeps, s *session) ([]listener, *gateway.Server, error) {
 	agent, err := gateway.NewServer(gateway.ServerOptions{
 		Certs: d.certs, Store: d.st, Identity: d.id, Revoked: d.revoked, Telemetry: s.tel, Now: opts.Now,
 	})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	type want struct{ name, addr string }
 	wants := []want{{"agent", cfg.Listen.Agent}, {"api", cfg.Listen.API}}
@@ -275,13 +324,13 @@ func bind(ctx context.Context, cfg *config.Config, opts Options, d hubDeps, s *s
 		ln, err := lc.Listen(ctx, "tcp", w.addr)
 		if err != nil {
 			closeAll()
-			return nil, fmt.Errorf("daemon: listen.%s %s: %w", w.name, w.addr, err)
+			return nil, nil, fmt.Errorf("daemon: listen.%s %s: %w", w.name, w.addr, err)
 		}
 		addr, ok := ln.Addr().(*net.TCPAddr)
 		if !ok {
 			_ = ln.Close()
 			closeAll()
-			return nil, fmt.Errorf("daemon: listen.%s %s: not a TCP address: %v", w.name, w.addr, ln.Addr())
+			return nil, nil, fmt.Errorf("daemon: listen.%s %s: not a TCP address: %v", w.name, w.addr, ln.Addr())
 		}
 		port := addr.Port
 		l := listener{name: w.name, ln: ln, tls: w.name == "agent"}
@@ -293,5 +342,5 @@ func bind(ctx context.Context, cfg *config.Config, opts Options, d hubDeps, s *s
 		ls = append(ls, l)
 		s.tel.Logger.Info("hub.listener_opened", "listener", w.name, "port", port)
 	}
-	return ls, nil
+	return ls, agent, nil
 }

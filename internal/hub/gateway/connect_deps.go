@@ -36,7 +36,16 @@ type connectDeps struct {
 	// afterRegister, set only by tests, runs once the stream is the
 	// machine's live one, before its HelloAck is queued.
 	afterRegister func()
-	arms          armTable
+	// afterHeartbeat, set only by tests, runs after the handler goroutine
+	// finished with a Heartbeat wake.
+	afterHeartbeat func(n uint64)
+	arms           armTable
+	// started is the hub clock when this listener process was built: the
+	// silence of a machine with no live stream is counted from it (03n
+	// "Hub start").
+	started time.Time
+	skew    *skews
+	sm      stateMetrics
 	// stopping ends when Shutdown begins (beginShutdown): a stream still
 	// waiting for its Hello or for its Hello job stops waiting.
 	stopping context.Context
@@ -74,8 +83,17 @@ func newConnectDeps(opts ServerOptions) (*connectDeps, error) {
 	if err := errors.Join(errs[:]...); err != nil {
 		return nil, fmt.Errorf("gateway: connect metrics: %w", err)
 	}
+	sm, err := newStateMetrics(m, p)
+	if err != nil {
+		return nil, err
+	}
+	now := opts.Now
+	if now == nil {
+		now = time.Now
+	}
 	stopping, stop := context.WithCancel(context.Background())
 	return &connectDeps{
+		afterHeartbeat: opts.afterHeartbeat, started: now().UTC(), skew: newSkews(), sm: sm,
 		stopping: stopping, stop: stop,
 		streams: newRegistry(), limit: newHelloLimit(), revoked: opts.Revoked,
 		tracer: opts.Telemetry.Tracer(scope), instanceID: hex.EncodeToString(b[:]), version: buildinfo.Version,

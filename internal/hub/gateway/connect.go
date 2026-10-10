@@ -167,18 +167,20 @@ func (a *agentService) hello(ctx context.Context, bs *connectStream, peer, machi
 	if a.afterHello != nil {
 		a.afterHello()
 	}
-	s := newStream(machineID, h.GetBootId(), peer, out.Epoch)
+	s := newStream(ctx, machineID, h.GetBootId(), peer, out.Epoch, now)
 	switch got, old := a.streams.register(s); got {
 	case registeredClosing:
 		// The hub began to shut down while the job ran: close the new row
 		// at once and say so.
 		s.end(agentv1.ByeReason_BYE_REASON_HUB_RESTART, statedb.EndHubRestart)
+		s.cancel()
 		_ = sendBye(bs, agentv1.ByeReason_BYE_REASON_HUB_RESTART)
 		a.closed(ctx, s)
 		return nil, nil
 	case registeredLost:
 		// A Hello with a higher epoch committed first and holds the machine:
 		// this one's row is already closed as displaced.
+		s.cancel()
 		a.duplicate(ctx, s, old)
 		_ = sendBye(bs, agentv1.ByeReason_BYE_REASON_DUPLICATE_IDENTITY)
 		return nil, nil
@@ -195,6 +197,7 @@ func (a *agentService) hello(ctx context.Context, bs *connectStream, peer, machi
 	// sends its Bye and logs reconnect.closed with the reason.
 	if s.send(&agentv1.ConnectResponse{Body: &agentv1.ConnectResponse_HelloAck{HelloAck: a.helloAck(out, version, now)}}) {
 		a.accepted(ctx, s, h, out)
+		a.skewSample(ctx, machineID, h.GetSentTime(), now)
 	}
 	return s, nil
 }

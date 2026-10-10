@@ -38,8 +38,8 @@ func TestTimesNeverStepBack(t *testing.T) {
 	mustHello(t, s, hello(0, "boot-a", "192.0.2.7:51000", helloAt))
 	back := helloAt.Add(-time.Hour)
 	mustHello(t, s, hello(0, "boot-b", "192.0.2.7:51001", back)) // displaces epoch 1 an hour before it started
-	if live, err := statedb.EndConnection(context.Background(), s, renewMachineID, 2, statedb.EndStreamClosed, back.Add(-time.Hour)); err != nil || !live {
-		t.Fatalf("EndConnection = %v, %v", live, err)
+	if ended, err := statedb.EndConnection(context.Background(), s, renewMachineID, 2, statedb.EndStreamClosed, back.Add(-time.Hour)); err != nil || !ended.Live {
+		t.Fatalf("EndConnection = %+v, %v", ended, err)
 	}
 	if err := s.Close(); err != nil {
 		t.Fatal(err)

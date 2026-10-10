@@ -84,7 +84,7 @@ const (
 	EndDisplaced     EndReason = "displaced"      // a newer Hello for the machine won
 	EndStreamClosed  EndReason = "stream_closed"  // the transport closed or failed
 	EndAgentBye      EndReason = "agent_bye"      // the agent sent Bye
-	EndHubRestart    EndReason = "hub_restart"    // the hub sent Bye{HUB_RESTART} on shutdown
+	EndHubRestart    EndReason = "hub_restart"    // Bye{HUB_RESTART} on shutdown, or the start sweep closed a row left live
 	EndIngestStalled EndReason = "ingest_stalled" // housekeeping cut a stream whose ingest stalled
 	EndOffline       EndReason = "offline"        // housekeeping cut the stream of an OFFLINE machine
 	EndRevoked       EndReason = "revoked"        // the hub sent Bye{REVOKED}
@@ -327,47 +327,4 @@ func displace(ctx context.Context, tx *sql.Tx, in HelloIn, epoch uint64) (*Displ
 		return nil, fmt.Errorf("statedb: close displaced connection: %w", err)
 	}
 	return &d, nil
-}
-
-// EndConnection closes the machine's connection row of epoch with reason,
-// as one writer job, if that row is still live, and then moves the
-// machine's last_seen_time to now (defaults.md: written on disconnect). It
-// reports whether it closed the live row: false for a row already closed or
-// displaced, and for an epoch the machine never had, which changes nothing.
-// Only a true result may change the machine's state (03f race table, "The
-// displaced stream closes after the newer Hello"). EndDisplaced is Hello's
-// alone ([ErrEndReasonInvalid]).
-func EndConnection(ctx context.Context, s *store.Store, machineID string, epoch uint64, reason EndReason, now time.Time) (bool, error) {
-	if !endReasons[reason] {
-		return false, fmt.Errorf("%w: %q", ErrEndReasonInvalid, reason)
-	}
-	if epoch == 0 || epoch > MaxEpoch {
-		return false, nil
-	}
-	jctx := context.WithoutCancel(ctx) // see insertIdentity
-	var closed bool
-	err := s.Write(ctx, func(tx *sql.Tx) error {
-		res, err := tx.ExecContext(jctx, `UPDATE machine_connections SET ended_time = max(?, started_time), end_reason = ?
-			WHERE machine_id = ? AND epoch = ? AND ended_time IS NULL`, now.UnixMilli(), string(reason), machineID, int64(epoch)) //nolint:gosec // G115: epoch <= MaxEpoch
-		if err != nil {
-			return fmt.Errorf("statedb: close connection: %w", err)
-		}
-		n, err := res.RowsAffected()
-		if err != nil {
-			return fmt.Errorf("statedb: close connection: %w", err)
-		}
-		if n == 0 {
-			return nil
-		}
-		if _, err := tx.ExecContext(jctx, `UPDATE machines SET last_seen_time = max(ifnull(last_seen_time, 0), ?)
-			WHERE machine_id = ?`, now.UnixMilli(), machineID); err != nil {
-			return fmt.Errorf("statedb: store last seen: %w", err)
-		}
-		closed = true
-		return nil
-	})
-	if err != nil {
-		return false, err
-	}
-	return closed, nil
 }

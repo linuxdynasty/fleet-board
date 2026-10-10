@@ -15,6 +15,8 @@ conntest.StartHub(t, conntest.Options{Wrap: conntest.DropFirstReplyTo("RenewCert
 h.Restart(t)                                           // Shutdown (Bye{HUB_RESTART}), reopen state.db, same port
 h.LastEpoch(t, machineID); h.Connections(t, machineID) // machines.last_epoch, machine_connections
 free := h.HoldWriter(t)                                // block state.db's writer until free()
+h.SetState(t, machineID, "ONLINE"); h.State(t, machineID) // seed and read machines.state
+h.Housekeep(t, now)                                    // the hub's machine-state job once (STALE, OFFLINE, cuts)
 ```
 
 `Requests` counts every HTTP request the listener served, so a test can
@@ -34,7 +36,9 @@ first rebinds with `BindRetry`, which retries a port in use and skips the
 test, not fails it, if the port stays taken. `LastEpoch` reads
 `machines.last_epoch` and `Connections` the machine's `machine_connections`
 rows. `Options.Now` is also the hub's clock for `HelloAck.hub_time` and the
-Hello rate limit. Tests that need what a real hub cannot do (a deaf hub, a
+Hello rate limit. `SetState` seeds `machines.state` (plan row 5c's Snapshot marks `ONLINE`),
+and `Housekeep` runs the machine-state job of `fleetd run`'s housekeeping
+once at the given hub clock. Tests that need what a real hub cannot do (a deaf hub, a
 cut after HelloAck) keep the in-package fakes and route `Connect` to them
 through `Wrap`.
 
