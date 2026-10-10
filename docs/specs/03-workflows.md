@@ -299,6 +299,7 @@ re-enroll rule are in [02g](02g-agent-security.md#machine-lifecycle-revoke-and-d
 | `HelloAck.epoch` above 2^63 - 2 or `hub_last_event_seq` above 2^63 - 1 - 1024 (a broken or hostile hub) | Refused before either is saved, `connect.failed{step="hello", err_kind="constraint", check, value}`, then backoff. `agent.db` keeps signed 64-bit values that never go back, and the limits keep the hub's next epoch (the stored one plus 1) and the first seq block above the floor from overflowing them |
 | Duplicate identity (same cert from two hosts) | [03n](03n-reconnect.md) W2 |
 | Clock skew > 5 min (`Hello.sent_time` or `Heartbeat.sent_time` vs hub receive time) | HelloAck still sent; machine warning; commands still evaluated in hub time; above 15 min `clock_untrusted` (02i, "Clocks") |
+| `Hello` refused before `HelloAck` (no or wrong certificate, not `Hello` first, `machine_id` not the certificate's, a bad `boot_id` or `install_id`, a second `Hello` within 5 s, the epoch counter exhausted, no `Hello` within the hub's wait) | A gRPC error, the table in 02g "Hello refusals"; the hub writes nothing, logs `connect.refused{cause, reason, peer, machine_id}` and counts `fleet_hub_connect_refused_total{cause}`; the agent logs `connect.failed{step="hello", err_kind}` and backs off; the loop never ends on one |
 | Snapshot would exceed 960 KiB | Sent as parts (`snapshot_id`, `part_index`, `part_count`, same `seq`) that split whole servers, sessions or list entries, never a pane; the hub applies it once every part arrived (02, "Snapshot parts"). The agent never drops a pane or a goal to fit. A hub that does not list `snapshot.parts` gets one snapshot (`raw_screen` is always omitted); if that is still over the cap the agent logs `snapshot.oversize` and `doctor` says the hub must be upgraded |
 | Hub writer backlog while 50 agents reconnect | HTTP/2 flow control holds the stream; snapshot apply is one tx per machine, batched by the writer ([load model](04-technology-review.md#load-model-a4-and-a50)) |
 | Harness crash during the identity/catalog probe | `HarnessInfo` reported with `version_support` as detected and `AccountIdentity.signed_in=false`; probe retried in 1 min, max 3, then only on version change |
@@ -327,7 +328,10 @@ re-enroll rule are in [02g](02g-agent-security.md#machine-lifecycle-revoke-and-d
   `fleet_hub_agents_connected`,
   `fleet_hub_machine_state{machine, state}` (gauge 0/1 per state),
   `fleet_hub_snapshot_apply_seconds`, `fleet_hub_snapshot_bytes`,
-  `fleet_hub_events_discarded_before_snapshot_total`, `fleet_hub_clock_skew_seconds{machine}`.
+  `fleet_hub_events_discarded_before_snapshot_total`, `fleet_hub_clock_skew_seconds{machine}` (plan row 5b),
+  `fleet_hub_connect_refused_total{cause}`, `fleet_hub_connect_unhandled_total{kind}`,
+  `fleet_hub_connect_closed_before_hello_total{err_kind}` (the hub's `Connect`, plan
+  row 5a-ii; labels and meaning in [03n](03n-reconnect.md) "Telemetry").
 - Spans: `agent.enroll`, `agent.discover` (one attempt's search, ended at the
   first handshake that passes: an `agent.discover.browse` child for the mDNS
   browse and an `agent.discover.candidate` child per candidate, with `peer`,
@@ -358,6 +362,8 @@ re-enroll rule are in [02g](02g-agent-security.md#machine-lifecycle-revoke-and-d
   does not use. Every `renew.started` is followed by `renew.completed`,
   `renew.cancelled`, `renew.refused` or `renew.failed`. No line holds a
   key, a CSR or a certificate; serials are hex.
+- Hub logs of `Connect` (plan row 5a-ii): `connect.refused{cause, reason, peer, machine_id}`
+  and `connect.failed{step, err_kind, machine_id}`, described in 03n "Telemetry".
 - Logs: `enroll.issued{machine, expire_time, actor}`, `enroll.issue_refused{reason}`,
   `enroll.issue_failed{step, err_kind}`,
   `enroll.completed{machine_id, replayed, hostname_mismatch}`,

@@ -180,6 +180,10 @@ Notes for the rows that build on this:
 - **5b:** do the machine state change (OFFLINE) in the same writer job as
   the close, or make it conditional on there being no live row. A second job
   after `EndConnection` could land after the next Snapshot has set `ONLINE`.
+  The hub-start sweep must expect live rows no stream holds: a crash, or a
+  graceful shutdown (or an agent leaving) that stopped waiting for a Hello
+  whose job then committed (5a-ii). The machine's next Hello closes such a
+  row as displaced, heartbeat age unknown.
 - **5m:** the 30-day prune of `machine_connections` (03f) is 5m's; nothing
   prunes the table yet.
 

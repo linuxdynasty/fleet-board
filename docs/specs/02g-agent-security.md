@@ -142,7 +142,7 @@ no machine; detail: the machine name, the expected hostname and the expiry;
 never the token, its secret or its hash) in the transaction that stores it.
 
 **Connect-level failures.** The agent finds out about problems after the TLS
-handshake through `Bye` (`ByeReason`), not through a missing message:
+handshake through `Bye` (`ByeReason`) for the cases below, or through a Connect error (the `Hello` refusal table after it) for a `Hello` the hub refuses; never through a missing message:
 
 | Situation | What the hub or agent does |
 |---|---|
@@ -150,6 +150,23 @@ handshake through `Bye` (`ByeReason`), not through a missing message:
 | Certificate valid, machine id unknown to the hub (store recreated with the CA kept, or a backup that predates the enrollment) | Hub: `Bye{UNKNOWN_MACHINE}`, except the restore adoption below. The agent goes Unenrolled; the owner issues a token (a request `previous_machine_id` that no longer exists is ignored, so history cannot carry over) |
 | `HelloAck.fleet_id` is not the enrolled fleet | Agent: `Bye{FLEET_MISMATCH}`, does not reconnect until re-enrolled. mTLS against the pinned CA already makes this rare; the field covers a hub rebuilt with the same CA and a new id |
 | No common protocol version | Hub: `Bye{PROTO_UNSUPPORTED}` |
+
+**Hello refusals.** A `Hello` the hub refuses before `HelloAck` is a gRPC error with an `ErrorDetail`, the shape of the `RenewCert` table below. The hub checks, in order: the certificate (before it reads anything, so a stream without one holds nothing), the first message, `machine_id`, the fields, the proto range (`Bye{PROTO_UNSUPPORTED}`), the Hello rate limit, the in-memory revoked set (`Bye{REVOKED}`; after a restore `revoked-serials` may hold serials `state.db` lacks), then the Hello transaction. A refused `Hello` writes nothing and sends no `HelloAck`. A stream still waiting for its first message, or for its Hello transaction, when the hub shuts down gets `Bye{HUB_RESTART}`.
+
+| Case | gRPC code | `ErrorDetail.reason` |
+|---|---|---|
+| No client certificate, or one without common name = machine id and the URI SAN `fleet://machine/<machine_id>` | `UNAUTHENTICATED` | `CREDENTIALS_INVALID` |
+| No message within the hub's Hello wait ([defaults](defaults.md)) | `DEADLINE_EXCEEDED` | none, `retryable = true` |
+| The first message is not `Hello`, or a second `Hello` arrives on a stream that has one | `INVALID_ARGUMENT` | `INVALID_ARGUMENT` |
+| `Hello.machine_id` empty or not the certificate's machine id | `UNAUTHENTICATED` | `CREDENTIALS_INVALID` |
+| `boot_id` or `install_id` over 64 bytes / empty, a space or a byte outside printable ASCII | `INVALID_ARGUMENT` | `FIELD_TOO_LARGE` / `INVALID_ARGUMENT` |
+| A second `Hello` for the machine within 5 s of one the rate limit let through ([defaults](defaults.md), "Reconnect backoff"), counted when the limit passes it, before the transaction; a `Hello` the limit refuses does not extend the window | `RESOURCE_EXHAUSTED` | `RATE_LIMITED`, `retryable = true`, `retry_after` = the time left |
+| The certificate's serial is stored for another machine | `UNAUTHENTICATED` | `CREDENTIALS_INVALID` |
+| The next epoch would pass 2^63 - 2 ([02i](02i-delivery-and-sequencing.md), "Connection epoch"); nothing is written; the owner revokes, deletes and re-enrolls | `FAILED_PRECONDITION` | `EPOCH_MISMATCH`, not retryable |
+| Hub starting, store busy or a store error (a cancelled write has an unknown outcome; the next `Hello` finds the row it left, if any, and displaces it) | `UNAVAILABLE` | no reason, `retryable = true` |
+| Request over the 1 MiB message cap | `RESOURCE_EXHAUSTED` | none (refused before the handler) |
+
+A `ConnectReason` the hub has no name for is stored as `unspecified`, never refused. The agent treats every row as a failed attempt (`connect.failed{step="hello"}`, then backoff; the loop never ends on one: [03](03-workflows.md) W1). The hub logs `connect.refused{cause, reason, peer, machine_id}` and counts `fleet_hub_connect_refused_total{cause}` (03 W1); the audit row `machine.connect_refused` comes with plan row 5e. Clock skew never refuses a `Hello` (03 W1 failure table).
 
 ## Certificate renewal (A4)
 

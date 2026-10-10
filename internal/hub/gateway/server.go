@@ -40,6 +40,16 @@ type ServerOptions struct {
 	Now func() time.Time
 	// Random is the source of machine ids and serials; nil means crypto/rand.
 	Random io.Reader
+	// HelloWait bounds the wait for a Connect stream's first message; 0
+	// means [HelloWait]. Tests shorten it.
+	HelloWait time.Duration
+	// afterHello, set only by tests (export_test.go), runs after each Hello
+	// transaction commits, before the stream is registered.
+	afterHello func()
+	// afterRegister, set only by tests, runs after the stream is registered.
+	afterRegister func()
+	// arms, set only by tests, adds arm handlers to the product table.
+	arms armTable
 }
 
 // NewServer is the agent listener (listen.agent): TLS 1.3 only, the
@@ -47,8 +57,9 @@ type ServerOptions struct {
 // optional client certificate that must chain to the hub CA with client-auth
 // usage and whose serial is not in Revoked, checked on fresh and resumed
 // handshakes. It serves AgentService with requests capped at
-// [MaxMessageBytes]; every method but Enroll and RenewCert answers
-// Unimplemented until its row lands. Start it with ServeTLS(ln, "", ""), which also offers HTTP/2 for
+// [MaxMessageBytes]: Enroll, RenewCert and Connect; Terminal and
+// SessionLog answer Unimplemented until their rows land. Shutdown sends
+// Bye{HUB_RESTART} on every live Connect stream. Start it with ServeTLS(ln, "", ""), which also offers HTTP/2 for
 // gRPC. net/http's own error lines (a failed handshake, a handler panic) go
 // to Telemetry as http.server_error events, never to stderr. To stop it,
 // call Shutdown, then [Server.FlushAudit], then close the store.
@@ -61,10 +72,15 @@ func NewServer(opts ServerOptions) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
+	cdeps, err := newConnectDeps(opts)
+	if err != nil {
+		return nil, err
+	}
 	mux := http.NewServeMux()
-	path, h := agentv1connect.NewAgentServiceHandler(&agentService{enrollDeps: deps}, connect.WithReadMaxBytes(MaxMessageBytes))
+	path, h := agentv1connect.NewAgentServiceHandler(&agentService{enrollDeps: deps, connectDeps: cdeps},
+		connect.WithReadMaxBytes(MaxMessageBytes))
 	mux.Handle(path, withPeerCert(h))
-	srv := &Server{deps: deps, Server: &http.Server{
+	srv := &Server{deps: deps, connect: cdeps, Server: &http.Server{
 		Handler: mux,
 		TLSConfig: &tls.Config{
 			MinVersion:       tls.VersionTLS13,
@@ -77,6 +93,10 @@ func NewServer(opts ServerOptions) (*Server, error) {
 		IdleTimeout:       IdleTimeout,
 		ErrorLog:          tel.HTTPErrorLog("agent"),
 	}}
+	// Shutdown (fleetd run's stop) says Bye{HUB_RESTART} on every live
+	// Connect stream, whose handler then returns, so the stop does not wait
+	// out its grace period (03n).
+	srv.RegisterOnShutdown(cdeps.beginShutdown)
 	return srv, nil
 }
 
@@ -84,7 +104,8 @@ func NewServer(opts ServerOptions) (*Server, error) {
 // and the audit work to finish after it stops.
 type Server struct {
 	*http.Server
-	deps *enrollDeps
+	deps    *enrollDeps
+	connect *connectDeps
 }
 
 // FlushAudit writes the machine.enroll_failed summary of the minute in

@@ -84,7 +84,8 @@ func TestRunNeedsAnEnrolledMachine(t *testing.T) {
 }
 
 // One run per state folder (#92): a second exits 1 and the first runs on,
-// connected to the hub, until SIGTERM, which exits 0.
+// connected to the hub, until SIGTERM, which exits 0 (the hub closes the
+// stream after the agent's Bye).
 func TestOnlyOneRunPerStateFolder(t *testing.T) {
 	t.Parallel()
 	h := conntest.StartHub(t, conntest.Options{})
@@ -94,10 +95,9 @@ func TestOnlyOneRunPerStateFolder(t *testing.T) {
 	}
 	before := h.Requests()
 	first := startAgent(t, "--state-dir", dir, "run")
-	// The hub's listener has no Connect yet, so the agent backs off and
-	// tries again; reaching it is enough here.
-	poll(t, 10*time.Second, "the agent to reach the hub", func() bool {
-		return h.Requests() > before && strings.Contains(first.stderr.String(), `"connect.failed"`)
+	// The hub's own Connect (plan row 5) answers HelloAck.
+	poll(t, 10*time.Second, "the agent to connect to the hub", func() bool {
+		return h.Requests() > before && strings.Contains(first.stderr.String(), `"connect.hello"`)
 	})
 	if fi, err := os.Stat(filepath.Join(dir, "fleet-agent.lock")); err != nil || fi.Mode().Perm() != 0o600 {
 		t.Errorf("fleet-agent.lock: %v, %v; want mode 0600", fi, err)

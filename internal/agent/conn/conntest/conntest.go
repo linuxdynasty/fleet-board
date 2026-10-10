@@ -42,17 +42,25 @@ type Hub struct {
 	// FleetID is the hub's fleet_id.
 	FleetID string
 
+	dir  string
+	id   statedb.Identity
+	opts Options
+	tel  *telemetry.Telemetry
+	logs *Buffer
+	reqs atomic.Int64
+
+	mu    sync.Mutex
 	store *store.Store
-	logs  *Buffer
-	reqs  atomic.Int64
+	srv   *gateway.Server
 }
 
 // Options adjust [StartHub].
 type Options struct {
 	// Wrap wraps the listener's handler, for example with [DropFirstReply].
 	Wrap func(http.Handler) http.Handler
-	// Now is the hub's clock for token expiry and certificate issue
-	// (gateway.ServerOptions.Now); nil means time.Now.
+	// Now is the hub's clock (gateway.ServerOptions.Now): token expiry,
+	// certificate issue, HelloAck.hub_time and the Hello rate limit; nil
+	// means time.Now.
 	Now func() time.Time
 }
 
@@ -92,41 +100,65 @@ func StartHub(t *testing.T, opts Options) *Hub {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = tel.Shutdown(context.Background()) })
-	s, err := statedb.Open(ctx, dir, tel)
+	h := &Hub{
+		CACert: auth.Cert.Raw, CAHash: sha256.Sum256(auth.Cert.Raw), FleetID: id.FleetID,
+		dir: dir, id: id, opts: opts, tel: tel, logs: logs,
+	}
+	t.Cleanup(func() {
+		h.mu.Lock()
+		defer h.mu.Unlock()
+		_ = h.srv.Close()
+		h.srv.FlushAudit(context.Background())
+		_ = h.store.Close()
+	})
+	h.serve(t, "127.0.0.1:0")
+	return h
+}
+
+// serve opens state.db and serves a new listener process on addr.
+func (h *Hub) serve(t *testing.T, addr string) {
+	t.Helper()
+	ctx := context.Background()
+	s, err := statedb.Open(ctx, h.dir, h.tel)
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = s.Close() })
-	certs, err := gateway.NewCerts(gateway.CertsOptions{Store: s, Identity: id, Names: Names, Telemetry: tel})
+	certs, err := gateway.NewCerts(gateway.CertsOptions{Store: s, Identity: h.id, Names: Names, Telemetry: h.tel})
 	if err != nil {
+		_ = s.Close()
 		t.Fatal(err)
 	}
-	list, err := revocation.Load(ctx, revocation.Options{Dir: dir, Store: s, Now: time.Now})
+	list, err := revocation.Load(ctx, revocation.Options{Dir: h.dir, Store: s, Now: time.Now})
 	if err != nil {
+		_ = s.Close()
 		t.Fatal(err)
 	}
-	srv, err := gateway.NewServer(gateway.ServerOptions{Certs: certs, Store: s, Identity: id, Revoked: list, Telemetry: tel, Now: opts.Now})
+	srv, err := gateway.NewServer(gateway.ServerOptions{
+		Certs: certs, Store: s, Identity: h.id, Revoked: list, Telemetry: h.tel, Now: h.opts.Now,
+	})
 	if err != nil {
+		_ = s.Close()
 		t.Fatal(err)
 	}
-	h := &Hub{CACert: auth.Cert.Raw, CAHash: sha256.Sum256(auth.Cert.Raw), FleetID: id.FleetID, store: s, logs: logs}
 	inner := srv.Handler
-	if opts.Wrap != nil {
-		inner = opts.Wrap(inner)
+	if h.opts.Wrap != nil {
+		inner = h.opts.Wrap(inner)
 	}
 	srv.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h.reqs.Add(1)
 		inner.ServeHTTP(w, r)
 	})
 	var lc net.ListenConfig
-	ln, err := lc.Listen(ctx, "tcp", "127.0.0.1:0")
+	ln, err := lc.Listen(ctx, "tcp", addr)
 	if err != nil {
+		_ = s.Close()
 		t.Fatal(err)
 	}
 	go func() { _ = srv.ServeTLS(ln, "", "") }()
-	t.Cleanup(func() { _ = srv.Close() })
+	h.mu.Lock()
+	h.store, h.srv = s, srv
+	h.mu.Unlock()
 	h.Addr = ln.Addr().String()
-	return h
 }
 
 var requestSeq atomic.Int64
@@ -159,7 +191,7 @@ func (h *Hub) token(t *testing.T, caDER []byte, expect string, notAfter time.Tim
 		t.Fatal(err)
 	}
 	reqID := fmt.Sprintf("req-%d", requestSeq.Add(1))
-	err = statedb.InsertEnrollToken(context.Background(), h.store, statedb.EnrollToken{
+	err = statedb.InsertEnrollToken(context.Background(), h.current(), statedb.EnrollToken{
 		SecretHash: tok.SecretHash, MachineName: "laptop", ExpectedHostname: expect, NotAfter: notAfter.Truncate(time.Millisecond),
 		Created: time.Now(), Principal: "local:test", RequestID: reqID, RequestHash: sha256.Sum256([]byte(reqID)),
 	})
@@ -241,7 +273,7 @@ func (h *Hub) Events(t *testing.T, prefix string) []map[string]any {
 
 func (h *Hub) read(t *testing.T, fn func(*sql.Tx) error) {
 	t.Helper()
-	if err := h.store.Read(context.Background(), fn); err != nil {
+	if err := h.current().Read(context.Background(), fn); err != nil {
 		t.Fatal(err)
 	}
 }
