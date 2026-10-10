@@ -80,8 +80,8 @@ linters:
     # Generated code (gen/) is never linted or edited by hand.
     generated: strict
     rules:
-      # internal/proc is the one place that may start a process.
-      - path: ^internal/proc/
+      # internal/proc itself (its own files, not a subfolder) is the one place that may start a process.
+      - path: ^internal/proc/[^/]+$
         linters:
           - forbidigo
 

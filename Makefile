@@ -13,7 +13,8 @@
 #                   (default origin/main): go test -shuffle=on -count=TEST_COUNT
 #                   (default 3), then go test -race -shuffle=on -count=1;
 #                   with COVERPROFILE set, the first pass writes coverage there
-#   make lint       golangci-lint on the same packages
+#   make lint       golangci-lint on the same packages, once for GOOS=linux and once
+#                   for GOOS=darwin (cgo off)
 #   make vuln       govulncheck ./... (fails on a reachable known vulnerability)
 #   make test-all   go vet ./..., then go test -race -shuffle=on -count=TEST_COUNT
 #                   on every package (the nightly run sets TEST_COUNT=10, and
@@ -187,11 +188,19 @@ fuzz:
 bench-report:
 	scripts/bench-report.sh "$$BASE_REF"
 
+# lint runs the pinned golangci-lint once per target OS (linux, then darwin,
+# both with cgo off): the linter only reads the files that build for the OS it
+# runs for, so a `_darwin.go` file would pass on Linux CI (and a `_linux.go`
+# file on a Mac) without the second pass. The process rules of 01 principle 8
+# (depguard on os/exec, forbidigo on os.StartProcess and the like) need both.
 lint: tools
 	@pkgs="$$(scripts/changed-go-packages.sh "$$BASE_REF")" || exit 1; \
 	if [ -z "$$pkgs" ]; then echo "make lint: no Go package changed against $$BASE_REF; nothing to lint"; exit 0; fi; \
 	echo "make lint: $$pkgs"; \
-	$(GOLANGCI_LINT) run $$pkgs
+	for os in linux darwin; do \
+	  echo "make lint: GOOS=$$os"; \
+	  GOOS=$$os CGO_ENABLED=0 $(GOLANGCI_LINT) run $$pkgs || exit 1; \
+	done
 
 # vuln checks every package (not only the changed ones: a new advisory can land
 # on unchanged code) against the Go vulnerability database. It needs gen/ and

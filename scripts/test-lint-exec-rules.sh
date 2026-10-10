@@ -12,10 +12,15 @@
 #              and as a function value too.
 #
 # It builds a scratch module in a temporary folder (never this checkout), copies
-# the real .golangci.yml into it and runs the pinned golangci-lint three times:
+# the real .golangci.yml into it and runs the pinned golangci-lint, once per
+# target OS (GOOS=linux and GOOS=darwin, cgo off, as `make lint` does), in three
+# steps:
 #   1. only the files the rules allow: must pass;
 #   2. the same files plus one seeded violation per case: must fail, naming each
-#      violating file with the right linter, and naming no allowed file;
+#      violating file with the right linter, and naming no allowed file. A file
+#      built only for one OS (a `//go:build` line) must be named in that OS's run
+#      and not in the other's: the linter reads only the files that build for the
+#      OS it runs for, which is why `make lint` runs both;
 #   3. the violations removed again: must pass.
 # The allowed tmux, attach and proc folders do not exist in the repo yet; the
 # rules name them so they are allowed when they arrive.
@@ -60,7 +65,7 @@ put() {
 }
 
 # ---- allowed: must lint clean ----------------------------------------------
-allowed="internal/proc/p.go internal/agent/tmux/t.go internal/agent/attach/a.go internal/ok/ok_test.go internal/ok/ok.go cmd/ok/ok_test.go cmd/ok/main.go"
+allowed="internal/proc/p.go internal/agent/tmux/t.go internal/agent/tmux/t_darwin.go internal/agent/attach/a.go internal/ok/ok_test.go internal/ok/ok.go cmd/ok/ok_test.go cmd/ok/main.go"
 put internal/proc/p.go proc '	"os"
 	"os/exec"
 	"syscall"
@@ -72,6 +77,7 @@ put internal/proc/p.go proc '	"os"
 	_ = syscall.StartProcess
 	_ = unix.Exec'
 put internal/agent/tmux/t.go tmux '	"os/exec"' '	_ = exec.Command'
+put internal/agent/tmux/t_darwin.go tmux '	"os/exec"' '	_ = exec.Command'
 put internal/agent/attach/a.go attach '	"os/exec"' '	_ = exec.Command'
 put internal/ok/ok.go ok '' ''
 put internal/ok/ok_test.go ok '	"os/exec"' '	_ = exec.Command'
@@ -79,21 +85,36 @@ put cmd/ok/ok_test.go main '	"os/exec"' '	_ = exec.Command'
 printf 'package main\n\nfunc main() {}\n' > "$probe/cmd/ok/main.go"
 
 # ---- violations: "<path>|<linter>", one file each ---------------------------
-violations="internal/red/import.go|depguard
-internal/red/startprocess.go|forbidigo
-internal/red/forkexec.go|forbidigo
-internal/red/sysexec.go|forbidigo
-internal/red/syscallstart.go|forbidigo
-internal/red/unixexec.go|forbidigo
-internal/red/alias.go|forbidigo
-internal/red/funcvalue.go|forbidigo
-internal/red/test_calls_test.go|forbidigo
-internal/agent/tmux/sub/s.go|depguard
-internal/agent/attach/sub/s.go|depguard
-internal/agent/attachment/a.go|depguard
-internal/agent/tmuxish/t.go|depguard
-internal/proc/sub/s.go|depguard
-cmd/red/main.go|depguard"
+# path|linter|OSes whose run must name it (both, linux or darwin)
+violations="internal/red/import.go|depguard|both
+internal/red/startprocess.go|forbidigo|both
+internal/red/forkexec.go|forbidigo|both
+internal/red/sysexec.go|forbidigo|both
+internal/red/syscallstart.go|forbidigo|both
+internal/red/unixexec.go|forbidigo|both
+internal/red/alias.go|forbidigo|both
+internal/red/funcvalue.go|forbidigo|both
+internal/red/test_calls_test.go|forbidigo|both
+internal/red/tag_darwin.go|depguard|darwin
+internal/red/tag_linux.go|depguard|linux
+internal/red/tagged_darwin_only.go|depguard|darwin
+internal/red/tagged_linux_only.go|depguard|linux
+internal/red/tagged_darwin_exec.go|forbidigo|darwin
+internal/red/tagged_linux_exec.go|forbidigo|linux
+internal/agent/tmux/sub/s.go|depguard|both
+internal/agent/attach/sub/s.go|depguard|both
+internal/agent/attachment/a.go|depguard|both
+internal/agent/tmuxish/t.go|depguard|both
+internal/proc/sub/s.go|depguard|both
+internal/proc/sub/call.go|forbidigo|both
+cmd/red/main.go|depguard|both"
+
+# tagged <path> <package> <build line> <import lines> <var lines>
+tagged() {
+  mkdir -p "$probe/$(dirname "$1")"
+  printf '//go:build %s\n\n' "$3" > "$probe/$1"
+  printf 'package %s\n\nimport (\n%s\n)\n\nvar (\n%s\n)\n' "$2" "$4" "$5" >> "$probe/$1"
+}
 
 seed() {
   put internal/red/import.go red '	"os/exec"' '	_ = exec.Command'
@@ -108,11 +129,19 @@ seed() {
   put internal/red/funcvalue.go red '	"os"' '	start = os.StartProcess
 	_     = start'
   put internal/red/test_calls_test.go red '	"syscall"' '	_ = syscall.Exec'
+  # files built for one OS only: by file name, and by a build line
+  put internal/red/tag_darwin.go red '	"os/exec"' '	_ = exec.Command'
+  put internal/red/tag_linux.go red '	"os/exec"' '	_ = exec.Command'
+  tagged internal/red/tagged_darwin_only.go red darwin '	"os/exec"' '	_ = exec.Command'
+  tagged internal/red/tagged_linux_only.go red linux '	"os/exec"' '	_ = exec.Command'
+  tagged internal/red/tagged_darwin_exec.go red darwin '	"syscall"' '	_ = syscall.Exec'
+  tagged internal/red/tagged_linux_exec.go red linux '	"syscall"' '	_ = syscall.Exec'
   put internal/agent/tmux/sub/s.go sub '	"os/exec"' '	_ = exec.Command'
   put internal/agent/attach/sub/s.go sub '	"os/exec"' '	_ = exec.Command'
   put internal/agent/attachment/a.go attachment '	"os/exec"' '	_ = exec.Command'
   put internal/agent/tmuxish/t.go tmuxish '	"os/exec"' '	_ = exec.Command'
   put internal/proc/sub/s.go sub '	"os/exec"' '	_ = exec.Command'
+  put internal/proc/sub/call.go sub '	"os"' '	_ = os.StartProcess' # a subfolder of internal/proc is not internal/proc
   mkdir -p "$probe/cmd/red"
   printf 'package main\n\nimport "os/exec"\n\nvar _ = exec.Command\n\nfunc main() {}\n' > "$probe/cmd/red/main.go"
 }
@@ -123,51 +152,72 @@ unseed() {
 }
 
 out="$work/lint.out"
+# runlint <goos>: the pinned linter for one target OS, cgo off, every issue shown.
 runlint() {
-  (cd "$probe" && "$lint" run --config .golangci.yml --max-same-issues 0 --max-issues-per-linter 0 ./... > "$out" 2>&1)
+  (cd "$probe" && GOOS="$1" CGO_ENABLED=0 "$lint" run --config .golangci.yml --max-same-issues 0 --max-issues-per-linter 0 ./... > "$out" 2>&1)
 }
 
-# 1. allowed files only
-if runlint; then
-  ok
-else
-  bad "the allowed files fail the lint: $(cat "$out")"
-fi
+# named <path> <linter>: the output has a finding of that linter on that file.
+named() {
+  awk -v p="$1" -v l="($2)" 'index($0, p ":") == 1 && substr($0, length($0) - length(l) + 1) == l { found = 1 } END { exit !found }' "$out"
+}
+# mentioned <path>: the output names the file at all.
+mentioned() {
+  awk -v p="$1" 'index($0, p ":") == 1 { found = 1 } END { exit !found }' "$out"
+}
 
-# 2. seeded violations
-seed
-if runlint; then
-  bad "the seeded violations passed the lint"
-else
-  rc=0
-  for entry in $violations; do
-    path="${entry%%|*}"
-    linter="${entry##*|}"
-    if awk -v p="$path" -v l="($linter)" 'index($0, p ":") == 1 && substr($0, length($0) - length(l) + 1) == l { found = 1 } END { exit !found }' "$out"; then
-      ok
-    else
-      bad "$path: no $linter finding in the output"
-      rc=1
-    fi
-  done
-  for path in $allowed; do
-    if awk -v p="$path" 'index($0, p ":") == 1 { found = 1 } END { exit found ? 0 : 1 }' "$out"; then
-      bad "the allowed file $path is named in the output"
-      rc=1
-    fi
-  done
-  if [ "$rc" -ne 0 ]; then
-    sed 's/^/  | /' "$out" >&2
+for goos in linux darwin; do
+  # 1. allowed files only
+  if runlint "$goos"; then
+    ok
+  else
+    bad "GOOS=$goos: the allowed files fail the lint: $(cat "$out")"
   fi
-fi
 
-# 3. violations removed
-unseed
-if runlint; then
-  ok
-else
-  bad "the lint fails after the violations were removed: $(cat "$out")"
-fi
+  # 2. seeded violations
+  seed
+  if runlint "$goos"; then
+    bad "GOOS=$goos: the seeded violations passed the lint"
+  else
+    rc=0
+    for entry in $violations; do
+      path="${entry%%|*}"
+      rest="${entry#*|}"
+      linter="${rest%%|*}"
+      oses="${rest##*|}"
+      if [ "$oses" = both ] || [ "$oses" = "$goos" ]; then
+        if named "$path" "$linter"; then
+          ok
+        else
+          bad "GOOS=$goos: $path: no $linter finding in the output"
+          rc=1
+        fi
+      elif mentioned "$path"; then
+        bad "GOOS=$goos: $path is built for $oses only, but this run names it"
+        rc=1
+      else
+        ok
+      fi
+    done
+    for path in $allowed; do
+      if mentioned "$path"; then
+        bad "GOOS=$goos: the allowed file $path is named in the output"
+        rc=1
+      fi
+    done
+    if [ "$rc" -ne 0 ]; then
+      sed 's/^/  | /' "$out" >&2
+    fi
+  fi
+
+  # 3. violations removed
+  unseed
+  if runlint "$goos"; then
+    ok
+  else
+    bad "GOOS=$goos: the lint fails after the violations were removed: $(cat "$out")"
+  fi
+done
 
 printf 'test-lint-exec-rules: %d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
