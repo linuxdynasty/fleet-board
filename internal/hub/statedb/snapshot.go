@@ -99,6 +99,9 @@ type SnapshotOut struct {
 	// snapshot_seq); nil when none, and always nil for a later Snapshot on
 	// the same epoch. snapshot_seq also asks for SnapshotRequest{seq_rollback}.
 	Rollback []string
+	// Change is the state change [MarkOnline] made at the end of the job
+	// (ingest.ApplySnapshot fills it); nil when the machine was ONLINE.
+	Change *StateChange
 }
 
 // ApplySnapshot is the core of the Snapshot transaction, in the writer
@@ -221,19 +224,28 @@ func auditRollback(ctx context.Context, tx *sql.Tx, in SnapshotIn, oldInstall st
 // MarkOnline ends the Snapshot transaction: the machine is ONLINE and its
 // status is stamped (one hub_seq, observed_time = now). It runs after
 // [ApplySnapshot] and every applier in the same job, so a failure of any
-// of them leaves the machine as it was (row 5 ruling, fork 1).
-func MarkOnline(ctx context.Context, tx *sql.Tx, machineID string, now time.Time) (Stamp, error) {
+// of them leaves the machine as it was (row 5 ruling, fork 1). The change
+// it made (reason [ReasonSnapshot]) is nil when the machine was already
+// ONLINE (a second Snapshot on the stream).
+func MarkOnline(ctx context.Context, tx *sql.Tx, machineID string, now time.Time) (Stamp, *StateChange, error) {
+	var from string
+	err := tx.QueryRowContext(ctx, `SELECT state FROM machines WHERE machine_id = ? AND state <> 'REVOKED'`, machineID).Scan(&from)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		return Stamp{}, nil, ErrMachineUnknown
+	case err != nil:
+		return Stamp{}, nil, fmt.Errorf("statedb: mark online: %w", err)
+	}
 	st, err := NextStamp(ctx, tx, now)
 	if err != nil {
-		return Stamp{}, err
+		return Stamp{}, nil, err
 	}
-	res, err := tx.ExecContext(ctx, `UPDATE machines SET state = 'ONLINE', observed_time = ?, hub_seq = ?
-		WHERE machine_id = ? AND state <> 'REVOKED'`, st.ObservedTime.UnixMilli(), st.HubSeq, machineID)
-	if err != nil {
-		return Stamp{}, fmt.Errorf("statedb: mark online: %w", err)
+	if _, err := tx.ExecContext(ctx, `UPDATE machines SET state = 'ONLINE', observed_time = ?, hub_seq = ?
+		WHERE machine_id = ?`, st.ObservedTime.UnixMilli(), st.HubSeq, machineID); err != nil {
+		return Stamp{}, nil, fmt.Errorf("statedb: mark online: %w", err)
 	}
-	if n, err := res.RowsAffected(); err != nil || n != 1 {
-		return Stamp{}, errors.Join(ErrMachineUnknown, err)
+	if from == MachineOnline {
+		return st, nil, nil
 	}
-	return st, nil
+	return st, &StateChange{MachineID: machineID, From: from, To: MachineOnline, Reason: ReasonSnapshot, Stamp: st}, nil
 }

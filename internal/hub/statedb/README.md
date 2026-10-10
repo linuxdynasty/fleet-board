@@ -298,12 +298,13 @@ err = statedb.WriteAudit(ctx, s, entries...)              // one job of its own
   next seq above it. It then stores the facts, resources, policy, drain,
   counters, `install_id`, the seq floor and `last_seen_time`, and leaves
   `state` alone. **`MarkOnline(ctx, tx, id, now)`** ends the job after the
-  appliers: `ONLINE` and one Watch stamp. Text arrives cleaned
+  appliers: `ONLINE` and one Watch stamp, and the change it made (`reason`
+  `snapshot`; nil when the machine was already `ONLINE`). Text arrives cleaned
   (`ingest.Clean`); nothing is scrubbed in the transaction.
 
 ```go
 out, err := statedb.ApplySnapshot(ctx, tx, statedb.SnapshotIn{MachineID: id, Epoch: e, Seq: snap.GetSeq(), ...})
-st, err := statedb.MarkOnline(ctx, tx, id, now) // after every applier, same job
+st, change, err := statedb.MarkOnline(ctx, tx, id, now) // after every applier, same job
 m, err := statedb.ReadSnapshot(ctx, s, id)       // read pool: what the Snapshot stored
 ```
 

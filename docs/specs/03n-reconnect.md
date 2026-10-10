@@ -94,9 +94,9 @@ connection; a Heartbeat brings a machine back from `STALE` only on the stream
 that was live when silence made it `STALE`.
 
 How the hub judges silence (plan row 5b): a housekeeping job every 5 s
-([defaults](defaults.md)) takes the newest of the hub's start, the `Snapshot` of
-the live connection's epoch (until plan row 5c lands it, the live row's `Hello`)
-and the live stream's last `Heartbeat` (hub clock). 45 s makes an
+([defaults](defaults.md)) takes the newest of the hub's start, the live row's `Hello`,
+the `Snapshot` of the live connection's epoch (plan row 5c1) and the live
+stream's last `Heartbeat` (hub clock). 45 s makes an
 `ONLINE` machine `STALE`; 3 minutes makes it `OFFLINE`, closes its live row as
 `offline` and cuts the stream. While `STALE`, a stream whose reader has been
 blocked for 45 s handing a message to its full ingest queue is cut too
@@ -262,7 +262,8 @@ The agent side of plan row 6 (ruling forks 4 i, 11 and 12), in
 - Machine state (plan row 5b): `machine.state_changed{machine_id, from, to, reason}`
   (info; every committed change of `machines.state`: `reason` is `silence`
   (housekeeping: 45 s to `STALE`, 3 minutes to `OFFLINE`), `heartbeat` (`STALE` back to
-  `ONLINE`), `hub_start` (the start sweep), or the end reason of the live row's close:
+  `ONLINE`), `hub_start` (the start sweep), `snapshot` (the Snapshot tx marked the machine
+  `ONLINE` from `ENROLLED`, `STALE` or `OFFLINE`; plan row 5c1), or the end reason of the live row's close:
   `stream_closed`, `agent_bye`, `ingest_stalled`, `offline`); 05b's `hub.stream_closed{machine_id,
   epoch, reason, stalled_s, queue_depth}` (warn) and `fleet_hub_stream_closed_total{reason}`
   (`ingest_stalled`, `offline`) for a stream housekeeping cut; 03's

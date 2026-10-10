@@ -110,10 +110,11 @@ func snapshotArm(ctx context.Context, a *agentService, s *stream, m *agentv1.Con
 	defer cancel()
 	unwatch := context.AfterFunc(a.stopping, cancel)
 	defer unwatch()
+	at := a.now().UTC()
 	out, err := ingest.ApplySnapshot(wctx, a.store, ingest.Stream{
 		MachineID: s.machineID, Epoch: s.epoch, LastEventSeq: s.hello.lastEventSeq, Counters: s.hello.counters,
 		InstallID: s.hello.installID,
-	}, snap, a.appliers, a.now().UTC())
+	}, snap, a.appliers, at)
 	switch {
 	case err != nil && (ctx.Err() != nil || a.stopping.Err() != nil):
 		// Not a failure: the stream is ending and the outcome is unknown.
@@ -150,7 +151,14 @@ func snapshotArm(ctx context.Context, a *agentService, s *stream, m *agentv1.Con
 		s.end(agentv1.ByeReason_BYE_REASON_UNSPECIFIED, statedb.EndStreamClosed)
 		return
 	}
+	// Housekeeping counts this stream's silence from the Snapshot (03n).
+	// A pass that read the machine before this store may still mark it
+	// STALE; a Heartbeat on this stream then brings it back.
+	s.snapshotAt(at)
 	done("applied")
+	if out.Change != nil {
+		a.stateChanged(ctx, *out.Change)
+	}
 	a.log.InfoContext(ctx, "snapshot.applied", "machine_id", s.machineID, "epoch", s.epoch, "seq", snap.GetSeq(),
 		"bytes", size, "ms", time.Since(start).Milliseconds(), "event_generation", out.Generation,
 		"text_cut", cleaned.Cut, "text_scrubbed", cleaned.Scrubbed)

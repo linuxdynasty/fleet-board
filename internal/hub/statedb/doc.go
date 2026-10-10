@@ -77,6 +77,7 @@
 // agent rollback on the epoch's first Snapshot only (a new
 // event_generation and a machine.install_changed row,
 // [ActionInstallChanged]) and the stored values; [MarkOnline] ends the job
-// after the later rows' appliers; [ReadSnapshot] reads them back. [Hello]
+// after the later rows' appliers and reports its state change
+// ([ReasonSnapshot]); [ReadSnapshot] reads them back. [Hello]
 // returns hub_last_event_seq.
 package statedb

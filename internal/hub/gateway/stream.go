@@ -61,6 +61,10 @@ type stream struct {
 	// beat is the last Heartbeat's receive time (hub clock) in Unix
 	// nanoseconds, 0 when none came.
 	beat atomic.Int64
+	// snapped is when the stream's last applied Snapshot was built (hub
+	// clock, Unix nanoseconds), 0 before the first; housekeeping counts
+	// silence from it.
+	snapped atomic.Int64
 	// beatsRead counts the Heartbeats the reader took, stored after beat.
 	beatsRead atomic.Uint64
 	// stalled is when the reader blocked handing a message to the full
@@ -97,6 +101,17 @@ func newStream(ctx context.Context, machineID, bootID, peer string, epoch uint64
 		in:  make(chan *agentv1.ConnectRequest, ingestQueue),
 		out: make(chan *agentv1.ConnectResponse, outQueue), ended: make(chan struct{}),
 	}
+}
+
+// snapshotAt records the hub time of an applied Snapshot.
+func (s *stream) snapshotAt(at time.Time) { s.snapped.Store(at.UnixNano()) }
+
+// lastSnapshot is the hub time of the last applied Snapshot, zero when none.
+func (s *stream) lastSnapshot() time.Time {
+	if n := s.snapped.Load(); n != 0 {
+		return time.Unix(0, n)
+	}
+	return time.Time{}
 }
 
 // wake asks the handler goroutine to look at the stream's Heartbeat state;

@@ -53,8 +53,8 @@ func newStateMetrics(m metric.Meter, p string) (stateMetrics, error) {
 // Housekeep is the machine-state job of fleetd's housekeeping (03f, 03n): it
 // reads every machine and its live connection on the read pool and, for an
 // ONLINE or STALE one, the silence since the last thing heard (the newest
-// of this process's start, the live row's Hello and the live stream's last
-// Heartbeat, by the hub clock):
+// of this process's start, the live row's Hello, the live stream's last
+// applied Snapshot and its last Heartbeat, by the hub clock):
 //
 //   - 3 minutes or more: OFFLINE, the live row closed as offline in the
 //     same job, then the live stream cut (offline);
@@ -93,8 +93,10 @@ func (a *agentService) judge(ctx context.Context, m statedb.MachineLive, now tim
 		heard = m.Started
 	}
 	if s != nil {
-		if hb := s.lastHeartbeat(); hb.After(heard) {
-			heard = hb
+		for _, t := range []time.Time{s.lastSnapshot(), s.lastHeartbeat()} {
+			if t.After(heard) {
+				heard = t
+			}
 		}
 	}
 	silence := now.Sub(heard)

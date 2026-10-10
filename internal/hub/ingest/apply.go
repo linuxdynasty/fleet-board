@@ -43,7 +43,7 @@ type Stream struct {
 
 // ApplySnapshot applies a cleaned snap ([Clean]) as ONE writer job:
 // statedb.ApplySnapshot, then each applier in order, then
-// statedb.MarkOnline. Its result arrives after the commit; any error rolls
+// statedb.MarkOnline (its state change in the result's Change). Its result arrives after the commit; any error rolls
 // the whole job back. A ctx error means the outcome is unknown. now is the
 // hub clock: observed_time, last_seen_time and an audit row's time.
 func ApplySnapshot(ctx context.Context, st *store.Store, s Stream, snap *agentv1.Snapshot, appliers []Applier,
@@ -65,7 +65,7 @@ func ApplySnapshot(ctx context.Context, st *store.Store, s Stream, snap *agentv1
 				return fmt.Errorf("%w: applier %d: %w", ErrApplier, i, err)
 			}
 		}
-		_, err = statedb.MarkOnline(jctx, tx, s.MachineID, now)
+		_, out.Change, err = statedb.MarkOnline(jctx, tx, s.MachineID, now)
 		return err
 	})
 	if err != nil {

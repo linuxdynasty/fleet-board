@@ -151,7 +151,9 @@ srv, err := gateway.NewServer(gateway.ServerOptions{
   is the housekeeping job (`fleetd run`, every 5 s). It reads every machine
   and its live row (`statedb.MachineStates`) and, for an `ONLINE` or
   `STALE` one, takes the silence since the newest of this process's start,
-  the live row's `Hello` and the live stream's last Heartbeat (hub clock):
+  the live row's `Hello`, the live stream's last applied Snapshot (the
+  row 5 ruling starts the `STALE` clock there) and its last Heartbeat (hub
+  clock):
   `OfflineAfter` (3 min) is `OFFLINE` (`statedb.MarkState` also closes the
   live row as `offline`) and the stream is cut; `StaleAfter` (45 s) while
   `ONLINE` is `STALE`; while `STALE`, a stream stalled for `StaleAfter` or
@@ -163,11 +165,13 @@ srv, err := gateway.NewServer(gateway.ServerOptions{
   `statedb.HeartbeatSeen` job when `last_seen` is due (`LastSeenEvery`, 1
   min, the Heartbeat's receive time) or when the machine went `STALE` while
   this stream was live (then back to `ONLINE`); a `STALE` from the start
-  sweep waits for the Snapshot (plan row 5c). Note for 5c: the silence of
-  a live stream now counts from its `Hello`; the row 5 ruling starts the
-  `STALE` clock at the Snapshot apply, so 5c records a "heard" time on the
-  stream when its Snapshot commits (not `beat`, which feeds the displaced
-  stream's heartbeat age). `fleet_hub_machine_state` is
+  sweep waits for the Snapshot, whose commit brings any non-`REVOKED`
+  machine back to `ONLINE` (`machine.state_changed{reason="snapshot"}`).
+  The Snapshot arm records its hub time on the stream (`snapped`, not
+  `beat`, which feeds the displaced stream's heartbeat age) after the
+  commit; a pass that read the machine just before that store may still
+  mark it `STALE`, and a Heartbeat on the stream brings it back.
+  `fleet_hub_machine_state` is
   set at each change and each pass, and for the start sweep's changes by
   `Server.RecordStates` (fleetd run, once the listener exists); the clock skew is the median of the
   last five `sent_time` samples (`Hello` and Heartbeat), in memory.
@@ -238,7 +242,7 @@ srv, err := gateway.NewServer(gateway.ServerOptions{
 | `fleet_hub_reconnects_total{machine, reason}`, `fleet_hub_epoch{machine}`, `reconnect.hello` (`machine_id`, `epoch`, `last_epoch`, `last_event_seq`, `hub_last_event_seq`, `reason`, `peer`), span `hub.connect.hello` | an accepted Hello |
 | `fleet_hub_duplicate_identity_total{machine}`, `identity.duplicate` (`machine_id`, `old_epoch`, `new_epoch`, `old_boot_id`, `new_boot_id`, `old_peer`, `new_peer`, `heartbeat_age_ms`) | a live stream displaced by a newer Hello |
 | `reconnect.closed` (`machine_id`, `epoch`, `reason`, `row_closed`) | a stream ended |
-| `machine.state_changed` (`machine_id`, `from`, `to`, `reason`), `fleet_hub_machine_state{machine, state}` | a committed state change: `silence`, `heartbeat`, or the live row's end reason |
+| `machine.state_changed` (`machine_id`, `from`, `to`, `reason`), `fleet_hub_machine_state{machine, state}` | a committed state change: `silence`, `heartbeat`, `snapshot` (the Snapshot tx's `ONLINE`), or the live row's end reason |
 | `hub.stream_closed` (`machine_id`, `epoch`, `reason`, `stalled_s`, `queue_depth`), `fleet_hub_stream_closed_total{reason}` | housekeeping cut a stream (warn): `offline` or `ingest_stalled` |
 | `fleet_hub_clock_skew_seconds{machine}` | the median skew after each `sent_time` sample |
 | `fleet_hub_connect_refused_total{cause}`, `connect.refused` (`cause`, `reason`, `peer`, `machine_id`) | a refused Hello (warn) |
@@ -278,7 +282,9 @@ stalled reader cut only at `STALE` after 45 s (never while `ONLINE`).
 `state_return_test.go` checks that a `STALE` from the start sweep and a
 `STALE` whose stream was displaced are not brought back by Heartbeats on
 the new stream, and that silence counts from the live row's `Hello`, not
-the hub's start; `registry_internal_test.go` that a cut finds only a
+the hub's start; `snapshot_state_test.go` that the Snapshot brings a
+`STALE` machine back with one `machine.state_changed{reason="snapshot"}`
+and that silence then counts from the Snapshot; `registry_internal_test.go` that a cut finds only a
 running stream of its epoch.
 `writer_internal_test.go` drives the writer with a stub (queued messages,
 then the Bye, under one deadline; the cut after the wait) and a request

@@ -27,6 +27,7 @@ const (
 	ReasonSilence   = "silence"   // housekeeping: no Heartbeat for 45 s (STALE) or 3 min (OFFLINE)
 	ReasonHeartbeat = "heartbeat" // a Heartbeat on the live stream brought a STALE machine back
 	ReasonHubStart  = "hub_start" // the start sweep: ONLINE becomes STALE
+	ReasonSnapshot  = "snapshot"  // the Snapshot transaction marked the machine ONLINE (MarkOnline)
 )
 
 // StateChange is one committed change of machines.state, stamped for Watch

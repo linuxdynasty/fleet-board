@@ -46,14 +46,15 @@
 //
 // The Snapshot arm cleans the Snapshot's text and applies it with
 // ingest.ApplySnapshot as one writer job (the core, ServerOptions.Appliers,
-// then ONLINE), whose wait ends, as a Hello's does, when the agent leaves
+// then ONLINE, logged as machine.state_changed{reason="snapshot"}), whose wait ends, as a Hello's does, when the agent leaves
 // or Shutdown begins (snapshot.abandoned); after the commit it calls ServerOptions.OnSnapshotApplied and, on a seq
 // rollback in the epoch's first Snapshot, sends SnapshotRequest (counted
 // when the send queue drops it). A Snapshot not applied
 // ends the stream unless a newer Hello already displaced it.
 //
 // [Server.Housekeep] is the machine-state job of fleetd's housekeeping:
-// no Heartbeat for [StaleAfter] is STALE, for [OfflineAfter] OFFLINE (and
+// silence (from the Hello, the last applied Snapshot or the last
+// Heartbeat) for [StaleAfter] is STALE, for [OfflineAfter] OFFLINE (and
 // the stream cut), and a STALE machine's stream whose reader has been
 // stalled on a full ingest queue for [StaleAfter] is cut. A Heartbeat on
 // the stream that was live when silence made the machine STALE brings it

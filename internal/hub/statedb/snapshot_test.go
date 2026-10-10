@@ -43,7 +43,7 @@ func applySnapshot(t *testing.T, s *store.Store, in statedb.SnapshotIn) (statedb
 		if out, err = statedb.ApplySnapshot(context.Background(), tx, in); err != nil {
 			return err
 		}
-		_, err = statedb.MarkOnline(context.Background(), tx, in.MachineID, in.Now)
+		_, _, err = statedb.MarkOnline(context.Background(), tx, in.MachineID, in.Now)
 		return err
 	})
 	return out, err
