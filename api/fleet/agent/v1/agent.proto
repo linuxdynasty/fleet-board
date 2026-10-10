@@ -309,7 +309,8 @@ message Heartbeat {
   google.protobuf.Timestamp sent_time = 1;
   // Monotonic uptime of the agent process.
   google.protobuf.Duration uptime = 2;
-  double load1 = 3;
+  // One-minute load average; unset when it could not be read.
+  optional double load1 = 3;
   PaneCounts counts = 4;
   // [CAP M4]
   bool draining = 5;

@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	agentv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1"
@@ -77,7 +78,7 @@ func TestHeartbeatsFollowTheHubsIntervalAfterTheSnapshot(t *testing.T) {
 			return nil
 		}
 		o.Heartbeat = func(_ context.Context, hb *agentv1.Heartbeat) {
-			hb.Load1 = 0.5
+			hb.Load1 = proto.Float64(0.5)
 			hb.EventSeq = 999_999
 		}
 	})

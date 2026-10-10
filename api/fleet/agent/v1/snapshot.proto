@@ -50,14 +50,19 @@ message MachineFacts {
 }
 
 // [CAP B2]
-// ResourceSample, every 30 s.
+// ResourceSample, every 30 s. A reading the agent could not take is left
+// unset, never 0: a machine with load 0 or no free memory is a real
+// reading, a missing one is not (principle 3; ADR 0023). `disk` lists
+// only the paths that were read.
 message ResourceSample {
-  double load1 = 1;
-  double load5 = 2;
-  uint64 mem_total_bytes = 3;
-  uint64 mem_available_bytes = 4;
-  // macOS memory pressure level when available: 1 normal, 2 warn, 4 critical.
-  uint32 mem_pressure_level = 5;
+  optional double load1 = 1;
+  optional double load5 = 2;
+  optional uint64 mem_total_bytes = 3;
+  optional uint64 mem_available_bytes = 4;
+  // macOS memory pressure level when available: 1 normal, 2 warn, 4
+  // critical. Linux derives the same three values (defaults.md "Memory
+  // pressure level").
+  optional uint32 mem_pressure_level = 5;
   repeated DiskFree disk = 6;
 }
 
