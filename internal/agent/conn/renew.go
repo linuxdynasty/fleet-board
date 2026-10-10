@@ -54,6 +54,7 @@ func (s *session) renewCheck() {
 		if dueAtOnce {
 			l.logSkip(s.renewCtx, saved, skipDueAtOnce)
 		}
+		l.hookAt("reported")
 	}()
 }
 

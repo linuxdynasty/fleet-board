@@ -79,7 +79,8 @@ type LoopOptions struct {
 	// clock, for tests only, replaces time.Now for the certificate's
 	// expiry and renewal decisions.
 	clock func() time.Time
-	// renewHook, for tests only, sees each renewal check ("check") and
+	// renewHook, for tests only, sees each renewal check ("check"), the
+	// renewal goroutine's report to the gate ("reported") and each
 	// step; true at a step stops the renewal there as a crash would,
 	// leaving the files as they are.
 	renewHook func(step string) bool

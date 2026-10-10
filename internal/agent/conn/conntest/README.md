@@ -27,7 +27,11 @@ is due for renewal; the TLS listener and the CA keep the real clock).
 machine. `Connect` is the hub's own (plan row 5 PR 5a-ii): the agent's real
 loop connects to it. `Restart` stops the listener as `fleetd run` does and
 serves a new process on the same state.db and port (a new
-hub_instance_id, a fresh Hello rate limit). `LastEpoch` reads
+hub_instance_id, a fresh Hello rate limit). The listening socket is held
+open across the restart (`Held`): the port is never free, so another
+process on a busy machine cannot take it. A test that needs the hub down
+first rebinds with `BindRetry`, which retries a port in use and skips the
+test, not fails it, if the port stays taken. `LastEpoch` reads
 `machines.last_epoch` and `Connections` the machine's `machine_connections`
 rows. `Options.Now` is also the hub's clock for `HelloAck.hub_time` and the
 Hello rate limit. Tests that need what a real hub cannot do (a deaf hub, a
