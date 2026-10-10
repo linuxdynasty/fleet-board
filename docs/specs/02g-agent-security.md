@@ -230,46 +230,34 @@ takes no lock: it reads `state.db` on a read-only connection of its own, so
 it runs beside `fleetd run` (#92). Backups are stored like the private key of
 the GitHub App.
 
-**`fleetd restore <file> [--address <new>]`** is an offline command. It takes
-`fleetd.lock` for the whole command, so it is refused while `fleetd run` holds
-it (#92). It:
+**`fleetd restore <file> [--address <new>]`** is an offline command that
+holds `fleetd.lock` throughout, so it is refused while `fleetd run` runs (#92). It:
 
-1. Checks the file: a regular file, not an age file (an encrypted backup is
-   refused with how to decrypt it first), with no non-empty `<file>-wal`
-   beside it (its rows would be lost; an empty one is fine), passing `quick_check`, with
-   `hub_identity` and a schema version this `fleetd` knows (an older one is
-   migrated forward, a newer one refused). When the state folder has a
-   `state.db`, the backup's `fleet_id` must be its `fleet_id`; a backup of
-   another fleet is refused (move that `state.db` away to replace the
-   fleet on purpose). A state folder with no `state.db`, a hub moved to a
-   new host, has nothing to compare. A refused restore changes nothing.
+1. Checks the file: a regular file, not age-encrypted, no non-empty
+   `<file>-wal` beside it, `quick_check` ok, `hub_identity` present, a
+   schema version this `fleetd` knows (older ones migrate forward), and the
+   current `state.db`'s `fleet_id` when there is one (none: a hub moved to
+   a new host). A refused restore changes nothing.
 2. Mints a fresh **`settings_epoch`** (otherwise the agent still holds
    `(E, 20)` against a restored `(E, 15)` and ignores the hub's settings, the
-   exact case the epoch exists for). In-memory queues do not survive a
-   process start, and `hub_instance_id` is new on every start anyway. As
-   built (plan row 5, PR 5j) restore changes no `machine_connections` rows
-   (PR 5a-i's table): a row the backup holds as live is closed as displaced
-   by that machine's next `Hello`, and PR 5k decides what the restored live
-   and `ONLINE` rows mean.
-3. If `--address` is given (host or host:port; the port defaults to
-   `listen.agent`'s, else 7443; spelled the way the agent keeps an address),
-   adds it to `hub_addresses` and issues a server certificate from the same
-   CA for the names `fleetd run` wants: `tls.agent_names` (or the default
-   list) plus the host of every `hub_addresses` entry, so the old and the new
-   address are covered and `fleetd run` serves it as is. An agent that reaches the
-   restored hub (by name, mDNS or its old address) receives the new list in
-   `HelloAck.hub_addresses`; a hub that moves host should be reachable at its
-   old address or name until every agent has reconnected once.
+   exact case the epoch exists for). It changes no `machine_connections`
+   rows: a restored live row is displaced by that machine's next `Hello`,
+   and PR 5k decides what restored live and `ONLINE` rows mean.
+3. If `--address` is given (host[:port], port from `listen.agent`, else
+   7443, spelled as the agent keeps it), adds it to `hub_addresses` and
+   issues a server certificate from the same CA for the names `fleetd run`
+   wants (its usual names plus every `hub_addresses` host), covering the old
+   and new address. An agent that reaches the restored hub (by name, mDNS or
+   its old address) gets the new list in `HelloAck.hub_addresses`; a hub that
+   moves host should stay reachable at its old address or name until every
+   agent has reconnected once.
 4. Sets `restore_reconcile` for 24 hours (`hub_identity.restore_reconcile_until`,
-   Unix ms; 0 is no window). Steps 2 to 4 and the `hub.restore` audit row
-   ([02m](02m-hub-api-actions-and-audit.md#audit-actions)) are one
-   transaction on the new store, built in a temporary file, so a refused or
-   interrupted restore leaves no row; the `revoked-serials` file is applied
-   to it. Only then is the current `state.db` checkpointed (refused, with
-   "wait and restore again", while another process such as `fleetd backup`
-   has it open), kept as
-   `state.db.pre-restore-<UTC stamp>` ([02j](02j-hub-runtime.md#state-directory)),
-   and the new store renamed over it, so a crash leaves one whole store.
+   Unix ms). Steps 2 to 4 and the `hub.restore` audit row ([02m](02m-hub-api-actions-and-audit.md#audit-actions))
+   are one transaction on a new store built in a temporary file, with
+   `revoked-serials` applied; then the current `state.db` is checkpointed
+   (refused while another process such as `fleetd backup` has it open),
+   kept as `state.db.pre-restore-<UTC stamp>` ([02j](02j-hub-runtime.md#state-directory))
+   and replaced by one rename, so a crash leaves one whole store.
 
 While `restore_reconcile` is set, the first `Hello` of each machine is answered
 with a `SnapshotRequest{reason: "reconcile"}` and the hub diffs what the agent
