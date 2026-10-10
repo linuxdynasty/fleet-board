@@ -3,7 +3,8 @@
 // Today it has `enroll [--hub <host[:port]>] --token <token>` (with no --hub
 // it looks for the hub on the local network, mDNS) and `run`, which
 // takes fleet-agent.lock in the state folder and keeps the machine connected
-// (internal/agent/conn), refusing before any network call when ended.json
+// (internal/agent/conn) with the machine facts and resource samples
+// (internal/agent/machine), refusing before any network call when ended.json
 // records that the hub ended this machine, and prints its name and version
 // (internal/buildinfo). `run` also keeps status.json current and `enroll`
 // leaves a failure's code in enroll.json (internal/agent/statusfile).

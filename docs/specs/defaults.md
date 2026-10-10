@@ -24,6 +24,9 @@ spec change. "Decided here" marks a value no earlier document gave.
 |---|---|---|---|---|
 | Heartbeat | 15 (the agent follows `HelloAck.heartbeat_interval` from 1 to 15 s) | s | [03](03-workflows.md) A5 | fixed |
 | Resource sample (B2) | 30 | s | [02i](02i-delivery-and-sequencing.md) | fixed |
+| Resource sample freshness (agent) | a sample older than 3 intervals (90 s) is not put in a `Snapshot` or `Heartbeat`; the value is then unset, so the hub shows unknown | | [01](01-agent-capabilities.md) B2, decided here | fixed |
+| Resource sample disk reads (agent) | the state folder, then each allowed repo root, once each, at most 32 paths; each read is bounded at 10 s, and a path whose last read has not returned is skipped (a hung mount) | paths, s | [01](01-agent-capabilities.md) B2, decided here | fixed |
+| Memory pressure level on Linux (`mem_pressure_level`) | 1, 2 or 4 as macOS reports it. From `/proc/pressure/memory` (`some avg10`): under 10 is 1, 10 to under 40 is 2, 40 or more is 4. Without PSI, from the kernel's "available memory" figure over total: 15 % or more is 1, 5 % to under 15 % is 2, under 5 % is 4. With neither, unset | %, level | [ADR 0023](../adr/0023-additional-libraries.md), decided here | fixed |
 | Machine `STALE` (no heartbeat) | 45 | s | 03 | fixed |
 | Machine `OFFLINE` | 3 | min | 03 | fixed |
 | Reconnect backoff | 1 to 60, full jitter (after n failed tries in a row, uniform from 1 to 2^n s, capped at 60 s, so the first wait is 1 to 2 s; a connect, a wake or a network change resets n); at least 5 s between connects (agent), one `Hello` per machine per 5 s (hub) | s | 03 A2, [03](03-workflows.md) failure table | fixed |
