@@ -140,7 +140,8 @@ and dispatches it there).
 - **A3 Connect and reconcile.** `Hello`, then a full snapshot, plus results
   the hub never acknowledged. The hub may send `SnapshotRequest` at any time.
 - **A4 Renew certificate** at two-thirds of its lifetime.
-- **A5 Heartbeat** every 15 s: load, raw counts (fleet panes, panes by harness,
+- **A5 Heartbeat** every `HelloAck.heartbeat_interval`, 1 to 15 s, default
+  15 s: load, raw counts (fleet panes, panes by harness,
   goal panes by goal state), wall clock and monotonic uptime for skew
   detection. The hub computes slots; the agent computes two aggregate goal counts
   for its own safety cap (02h).

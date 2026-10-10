@@ -21,7 +21,7 @@ var (
 )
 
 // Marks are the event seq high-water mark and the EventCounters, persisted
-// together (02i rule 1, 03 W2). None of them ever decreases.
+// together (02i rule 1, 03n W2). None of them ever decreases.
 type Marks struct {
 	SeqHWM    uint64
 	Shed      uint64

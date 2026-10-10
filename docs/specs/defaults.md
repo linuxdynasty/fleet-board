@@ -22,11 +22,11 @@ spec change. "Decided here" marks a value no earlier document gave.
 
 | Name | Value | Unit | Owner | Kind |
 |---|---|---|---|---|
-| Heartbeat | 15 | s | [03](03-workflows.md) A5 | fixed |
+| Heartbeat | 15 (the agent follows `HelloAck.heartbeat_interval` from 1 to 15 s) | s | [03](03-workflows.md) A5 | fixed |
 | Resource sample (B2) | 30 | s | [02i](02i-delivery-and-sequencing.md) | fixed |
 | Machine `STALE` (no heartbeat) | 45 | s | 03 | fixed |
 | Machine `OFFLINE` | 3 | min | 03 | fixed |
-| Reconnect backoff | 1 to 60, full jitter; at least 5 s between connects (agent), one `Hello` per machine per 5 s (hub) | s | 03 A2, [03](03-workflows.md) failure table | fixed |
+| Reconnect backoff | 1 to 60, full jitter (after n failed tries in a row, uniform from 1 to 2^n s, capped at 60 s, so the first wait is 1 to 2 s; a connect, a wake or a network change resets n); at least 5 s between connects (agent), one `Hello` per machine per 5 s (hub) | s | 03 A2, [03](03-workflows.md) failure table | fixed |
 | Enroll tries (agent) | 4 calls per `fleet-agent enroll`; between them a full-jitter wait up to 0.5, 1, 2 s (doubling, cap 4 s); 20 s per call, 60 s for the whole enroll | s | [03](03-workflows.md) W1 failure table, decided here | fixed |
 | mDNS re-query (agent); mDNS browse timeout (one query) | no interval of its own: one browse per discovery attempt, on the reconnect backoff above; 2 | s | 03 A2, [ADR 0028](../adr/0028-mdns-best-effort.md), spike 0.7 ([results](../../spikes/mdns/results/README.md)) | fixed |
 | Random delay before the attempt a wake or network change starts | 20 to 120 | ms | 03 A2, ADR 0028 | fixed |
@@ -35,9 +35,12 @@ spec change. "Decided here" marks a value no earlier document gave.
 | Network-change poll when the push socket is unavailable | 15 | s | 01 A6, ADR 0029 | fixed |
 | Network-change read retry (push socket on) | 2 s after a failed read, then every 15 s, until a read works or a hint arrives | s | 01 A6, ADR 0029, decided here | fixed |
 | Transport keepalive (agent) | ping every 10 s, 20 s timeout; the hub's keepalive enforcement allows it | s | ADR 0004 | fixed |
+| HelloAck wait (agent) | 30; no `HelloAck` (or `Bye`) by then closes the stream and backs off. Keepalive pings do not cover a hub that answers pings but not `Hello` | s | [03](03-workflows.md) W1, decided here | fixed |
+| TLS handshake per hub address (agent) | 10; a handshake not done by then is a lost connection: retried within "Enroll tries" when enrolling, the next candidate in the connection loop | s | [03](03-workflows.md) W1, decided here | fixed |
+| Bye wait on stop (agent) | 2; after `Bye{SHUTDOWN}` the agent waits this long for the hub to close the stream, then cuts the connection (`connect.shutdown_cut`), so a hub that stopped reading cannot hold up the stop | s | 01 A7, decided here | fixed |
 | `last_seen` written to the store | at most 1 per machine per minute, and on connect and disconnect; held in memory per heartbeat | min | 04, decided here | fixed |
 | Agent event ring cap | 1 week or 64 MiB, whichever first; the oldest entry is evicted first, whatever its class, and every eviction is counted (`EventCounters.evicted_total`) | week, MiB | [02i](02i-delivery-and-sequencing.md), decided here | fixed |
-| Agent command log | last 10,000 or 7 days; the count never removes an entry that is not acked and inside its deadline (02i) | count, days | 03 | fixed |
+| Agent command log | last 10,000 or 7 days; neither limit removes an entry that is not acked and inside its deadline (02i) | count, days | 03 | fixed |
 | Agent status file (`status.json`) rewrite | at most once per second (changes in between go into the next write), at least once a minute, and once more before the agent exits | s, min | [01f](01f-agent-control-goals-and-policy.md) M3, plan row 6 | fixed |
 | One-shot child process (`internal/proc`) | time cap and output cap per named caller (`loginctl`, `tmux` one-shot, version check, `git`, `gh`), each set from a measured run of that command | s, KiB | 01 principle 8, plan row 2c | fixed |
 | Agent command rate limit per command kind (`rate_limits`) | 60 | per min | 03e, decided here | `agent` |

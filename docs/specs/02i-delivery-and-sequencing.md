@@ -122,7 +122,8 @@ then dropped the new events as "already seen". The rules:
    to `max(own, HelloAck.hub_last_event_seq + 1)`, and discards ring entries
    with `seq <= hub_last_event_seq` that it did not send (they cannot be told
    from another incarnation's). `Snapshot.seq` is the highest number handed out
-   after that floor. A state-directory wipe, a restored VM image or a re-install
+   after that floor when the snapshot starts to be built, so an event emitted
+   while it is built gets a higher seq and is not superseded by it. A state-directory wipe, a restored VM image or a re-install
    (new `install_id`) therefore resumes above what the hub holds instead of
    being discarded as duplicates.
 3. **Rollback on the hub's side.** The hub treats `Hello.last_event_seq <
@@ -173,15 +174,18 @@ Q9). Row 4 (PR 3) adds the block allocator of rule 1: the agent raises
 above 2^63 - 2 or a `hub_last_event_seq` above 2^63 - 1 - 1024 is refused
 before either is saved: the file keeps signed 64-bit values that never go
 back, and the limits keep the hub's next epoch (the stored one plus 1) and
-the first seq block above the floor from overflowing them. The event ring
+the first seq block above the floor from overflowing them. `Heartbeat.event_seq`
+is the highest seq the running agent handed out, never a reserved one or a
+floor no event has used yet; every `Snapshot` takes a seq, so it is set
+from the first heartbeat on. The event ring
 itself comes with the rows that emit events. Probe assignments, the goal
-registry and the rest of 03's W2 persistence table will come with their own
+registry and the rest of 03n's W2 persistence table will come with their own
 rows.
 
 | Table | Holds | Rule |
 |---|---|---|
 | `agent_state`, one row | `install_id` (minted when the file is created), `seq_hwm`, the three `EventCounters`, and `last_epoch` and `last_applied_command_seq` (sent as `Hello.last_epoch` and `Hello.last_applied_command_seq`) | Nothing goes backwards: a lower `seq_hwm` or counter is ignored; an epoch at or below the last is refused (`epoch_regressed`) and a new epoch starts its command seq at 0; a seq of another epoch is `EPOCH_MISMATCH`, one at or below the last of the epoch `SEQ_REPLAYED`. Triggers in the file refuse any step back, a changed `install_id`, deleting the row and replacing it (an SQL insert-or-replace), so the next start cannot mint a new `install_id` |
-| `command_log` | per `command_id` (the key): kind, epoch, seq, received time (the agent's wall clock; row 6's executor will take deadlines from `HelloAck.hub_time`, "Clocks"), `not_after_time`, status (`received`, `running`, `finished`), step reached, the encoded `CommandResult`, finished time, and the `ResultAck` time | Written before `CommandAck`. A known `command_id` saves nothing and is answered from its entry; the first result is kept. Triggers refuse a changed result, a second insert of a `command_id` (an SQL replace included) and a renamed `command_id`. A finished result with no `ResultAck` is re-sent after each `Snapshot`; a `ResultAck` sets the ack time once (a trigger refuses a change, or an ack on an unfinished entry) and one for an unknown or pruned `command_id` changes nothing. Pruning takes hub time (`HelloAck.hub_time` plus the time since, "Clocks"), never the agent's wall clock, because `not_after_time` is the hub's deadline. Entries older than 7 days are pruned, measured against the agent-clock received time; a deadline is at most 24 h, so they are past it unless the agent's clock is off by about 6 days or more. Past 10,000 entries, the oldest that are acked or past their `not_after_time` are pruned; an entry not acked and inside its deadline is never pruned for the count, because the hub may still re-send it and a forgotten `command_id` would run twice ([defaults](defaults.md)) |
+| `command_log` | per `command_id` (the key): kind, epoch, seq, received time (the agent's wall clock; row 6's executor will take deadlines from `HelloAck.hub_time`, "Clocks"), `not_after_time`, status (`received`, `running`, `finished`), step reached, the encoded `CommandResult`, finished time, and the `ResultAck` time | Written before `CommandAck`. A known `command_id` saves nothing and is answered from its entry; the first result is kept. Triggers refuse a changed result, a second insert of a `command_id` (an SQL replace included) and a renamed `command_id`. A finished result with no `ResultAck` is re-sent after each `Snapshot`; a `ResultAck` sets the ack time once (a trigger refuses a change, or an ack on an unfinished entry) and one for an unknown or pruned `command_id` changes nothing. Pruning takes hub time (`HelloAck.hub_time` plus the time since, on the monotonic clock, "Clocks"), never the agent's wall clock, because `not_after_time` is the hub's deadline; a HelloAck with no `hub_time` (a non-conforming hub) falls back to the agent's clock at its arrival and logs `hub_time_ok=false`. Entries older than 7 days, measured against the agent-clock received time, are pruned when they are acked or past their `not_after_time`; past 10,000 entries, the oldest that are acked or past their `not_after_time` are pruned. An entry not acked and inside its deadline is never pruned, for age or for the count (an agent clock far behind the hub makes every entry look old), because the hub may still re-send it and a forgotten `command_id` would run twice ([defaults](defaults.md)) |
 
 Losing `agent.db` is a re-install: a new `install_id` and `seq_hwm` from 0,
 which the hub treats as an agent rollback (rule 3 above). Enrollment is not

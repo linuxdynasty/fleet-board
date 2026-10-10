@@ -18,7 +18,7 @@ operator uses at 3 AM. Split across files to stay under 500 lines each:
 
 | File | Workflows |
 |---|---|
-| this file | conventions, **W1** enrollment and first connect, **W2** reconnect |
+| this file | conventions, **W1** enrollment and first connect |
 | [03b-usage-and-sync.md](03b-usage-and-sync.md) | **W3** usage probing and pacing |
 | [03c-goals.md](03c-goals.md) | **W5** dispatch a goal |
 | [03d-triage-sessions-logs.md](03d-triage-sessions-logs.md) | **W7** triage items, **W8** developer sessions, **W9** session logs |
@@ -31,6 +31,7 @@ operator uses at 3 AM. Split across files to stay under 500 lines each:
 | [03k-observed-goals.md](03k-observed-goals.md) | goals the owner starts by hand (observed goals): what the hub stores and shows, and what it never does |
 | [03l-goal-lifecycle-and-verification.md](03l-goal-lifecycle-and-verification.md) | **W6** goal lifecycle and verification |
 | [03m-work-source-and-code-host-sync.md](03m-work-source-and-code-host-sync.md) | **W4** work-source and code-host sync |
+| [03n-reconnect.md](03n-reconnect.md) | **W2** reconnect after a hub restart or hours offline |
 
 ## Conventions
 
@@ -117,10 +118,20 @@ sequenceDiagram
   H->>H: tx: replace inventory for machine · diff desired vs observed · enqueue EnsureProbe / SetLogCapture as needed
   H-->>A: Command{EnsureProbe …} (W3), ResultAck{}
   A->>H: SettingsAck{generation, effective, capped_fields}
-  loop every 15 s
-    A->>H: Heartbeat{counts, load1, spool, event_seq}
+  loop every heartbeat_interval (1 to 15 s, else 15 s)
+    A->>H: Heartbeat{sent_time, uptime, event_seq, events, counts, load1, spool}
   end
 ```
+
+**Heartbeat (A5).** Once Connected the agent sends a `Heartbeat` every
+`HelloAck.heartbeat_interval` when it is 1 to 15 s, else every 15 s
+([defaults](defaults.md)); the first comes one interval after the `Snapshot`
+and its unacked results. The stream's one sender sends it, so it never lands
+between a snapshot and its results; it is SHED and has no seq (02i), and a
+tick missed while a send waits is dropped, never queued. Plan row 4 fills
+`sent_time`, `uptime` (monotonic, since the process started), `event_seq`
+(the highest seq handed out) and `events` (agent.db's counters, as in
+`Hello`); later rows fill the rest. `connect.hello` logs the interval chosen.
 
 **Capabilities at enroll.** The agent has no capability list yet, so it
 leaves `EnrollRequest.capabilities` empty; capabilities are first sent in
@@ -211,6 +222,7 @@ re-enroll rule are in [02g](02g-agent-security.md#machine-lifecycle-revoke-and-d
 | Machine row (id, name, facts, labels), cert serial + `not_after_time`, the stored Enroll response (kept until the token's TTL + 24 h, keyed by token, `install_id` and CSR key, for replay) | hub store | the Enroll tx (token burn + machine + serial + response together; signing is local CPU, not a network call) |
 | Key (kept until Enroll succeeds, so a retry sends the same CSR), cert, CA chain + pinned fingerprint, `machine_id`, salt, `fleet_id`, cached hub address | agent state dir, mode 0600: a pending key file until success, then `identity.json` (written once, never replaced) and `hub-address`; `install_id` is in `agent.db` | written before `Enroll` returns to the shell; salt never logged |
 | `status.json` (the running agent's last-known state; its entries are listed in plan row 6) and `enroll.json` (the last enroll failure code) | agent state dir, mode 0600 | each written whole (temp file, sync, rename) by its one writer: `fleet-agent run` and `fleet-agent enroll` |
+| The end the connection loop stopped on (revoked, unknown machine, fleet mismatch) | agent state dir, `ended.json`, mode 0600 | written whole before `run` exits; removed by enroll |
 | `machine_connections{epoch, boot_id, peer_addr, reason, connect_time}` | hub store | the Hello tx (also marks ONLINE) |
 | Inventory from the snapshot | hub store | the snapshot tx (replace per machine) |
 | Outbox transitions (`pending → delivered`, `→ expired`) | hub store | the snapshot tx; messages sent after commit |
@@ -240,13 +252,16 @@ re-enroll rule are in [02g](02g-agent-security.md#machine-lifecycle-revoke-and-d
 | `enroll` on a machine that is already enrolled | Until re-enroll exists (later in plan row 4, and row 13a's `previous_machine`): refused before any network call, naming the machine; the identity is never replaced. To start again the owner removes only `identity.json` (and `enroll.key` if present) and keeps `agent.db`, which holds `install_id`, so the next enroll with a new token keeps it; exit 1. A leftover `enroll.key` next to a valid identity is removed |
 | Enroll response that fails the agent's checks (another CA or fingerprint, a certificate not for this key or machine id, no fleet id or salt) | Nothing saved, the key kept for a retry; `enroll.failed{step="response"}`, exit 1 |
 | A different machine enrolls with a token tied to `expected_hostname` | Enroll succeeds; machine row flagged `hostname_mismatch` (compared lower case without a trailing `.` or `.local`; an empty reported hostname is a mismatch) and `enroll.completed{hostname_mismatch=true}`; triage info item (W7; not yet: plan row 5); owner deletes it if wrong. The agent prints one warning line on stderr naming both hostnames |
-| Hub unreachable / all candidates fail | Backoff loop; `doctor` shows the last error per candidate; nothing else blocks |
+| Hub unreachable / all candidates fail | Backoff loop; `doctor` shows the last error per candidate (the loop keeps it in memory: step, `err_kind`, time); nothing else blocks |
+| Hub silent (hung, or the path died without a reset) | Transport keepalive ([defaults](defaults.md)): a ping after 10 s with nothing received, the connection closed 20 s later; `connect.closed{step="stream"}`, then backoff. Works with wake and network-change detection off |
 | Impostor at a discovered address | TLS verification fails; counted, next candidate |
 | Hello from a valid certificate the hub does not know (store recreated, or a backup that predates the enrollment) | `Bye{UNKNOWN_MACHINE}`; the agent goes Unenrolled and the owner issues a token. During a restore reconcile window the hub adopts the machine instead (02g) |
 | Hub restart between `Enroll` and first `Connect` | Enroll is durable; Connect retries |
 | Agent restart before the state dir is fully written | `identity.json` is written once (temp file, fsync, then a hard link that never replaces a file), so it is whole or absent. Until it exists `enroll.key` is kept, so running `enroll` again with the same token replays the hub's stored answer; no new token is needed |
-| Certificate expired (machine offline longer than lifetime) | Hello refused at TLS; agent logs `cert_expired` and `doctor` says "re-enroll" |
-| Duplicate identity (same cert from two hosts) | W2 |
+| Certificate expired (machine offline longer than lifetime) | Checked before every attempt: the loop ends without dialing, `connect.ended{state="cert_expired"}`, `fleet-agent run` exits 1 and `doctor` says "re-enroll". A hub refuses it at TLS anyway |
+| Agent restarted (supervisor) after `Bye{REVOKED}`, `Bye{UNKNOWN_MACHINE}` or `FLEET_MISMATCH` | `ended.json` (written before the agent stops) makes `run` refuse before any network call, naming the end and the fix; re-enroll removes it; the owner may remove it to retry |
+| `HelloAck.epoch` above 2^63 - 2 or `hub_last_event_seq` above 2^63 - 1 - 1024 (a broken or hostile hub) | Refused before either is saved, `connect.failed{step="hello", err_kind="constraint", check, value}`, then backoff. `agent.db` keeps signed 64-bit values that never go back, and the limits keep the hub's next epoch (the stored one plus 1) and the first seq block above the floor from overflowing them |
+| Duplicate identity (same cert from two hosts) | [03n](03n-reconnect.md) W2 |
 | Clock skew > 5 min (`Hello.sent_time` or `Heartbeat.sent_time` vs hub receive time) | HelloAck still sent; machine warning; commands still evaluated in hub time; above 15 min `clock_untrusted` (02i, "Clocks") |
 | Snapshot would exceed 960 KiB | Sent as parts (`snapshot_id`, `part_index`, `part_count`, same `seq`) that split whole servers, sessions or list entries, never a pane; the hub applies it once every part arrived (02, "Snapshot parts"). The agent never drops a pane or a goal to fit. A hub that does not list `snapshot.parts` gets one snapshot (`raw_screen` is always omitted); if that is still over the cap the agent logs `snapshot.oversize` and `doctor` says the hub must be upgraded |
 | Hub writer backlog while 50 agents reconnect | HTTP/2 flow control holds the stream; snapshot apply is one tx per machine, batched by the writer ([load model](04-technology-review.md#load-model-a4-and-a50)) |
@@ -256,7 +271,8 @@ re-enroll rule are in [02g](02g-agent-security.md#machine-lifecycle-revoke-and-d
 
 ### Telemetry
 
-- `fleet_agent_connect_attempts_total{result, source=cached|mdns|configured|tailscale}`,
+- `fleet_agent_connect_attempts_total{result=connected|failed|untrusted, source=cached|mdns|configured|tailscale}`
+  (one per hub address tried; a stop mid-attempt is not counted),
   `fleet_agent_connected` (gauge 0/1), `fleet_agent_discovery_seconds`,
   `fleet_agent_cert_expiry_seconds`.
 - `fleet_hub_enroll_tokens_total{result}` (token creation, plan row 2b),
@@ -281,7 +297,10 @@ re-enroll rule are in [02g](02g-agent-security.md#machine-lifecycle-revoke-and-d
   sent) and
   `enroll.failed{step, err_kind}` (`step`: `token`, `hub_address`, `state`,
   `already_enrolled`, `key`, `call`, `response`, `save`, `cleanup`),
-  `connect.hello{epoch, boot_id, reason, skew_ms}`, `snapshot.applied{panes,
+  `connect.hello{peer, epoch, last_epoch, last_event_seq, hub_last_event_seq,
+  boot_id, reason, skew_ms, hub_time_ok, heartbeat_ms}` (`hub_time_ok` is
+  false when the HelloAck had no `hub_time`: then `skew_ms` is 0, not
+  measured, and hub time starts from the agent's clock), `snapshot.applied{panes,
   goals, bytes, diff: probes_reissued, goals_pane_lost, orphan_panes}`. No
   enroll line carries the token, its secret, any part of its hash, or the
   facts. A revoked certificate at the handshake is 05b's
@@ -304,167 +323,40 @@ re-enroll rule are in [02g](02g-agent-security.md#machine-lifecycle-revoke-and-d
   reading taken when the watcher starts, so only on `netchange.baseline` and
   `netchange.read_failed`). No counter: these are not wire events, and the
   attempts they start are counted by `fleet_agent_connect_attempts_total`.
+- The connection loop (`fleet-agent run`), agent logs:
+  `connect.attempt{peer, source, reason}`; `connect.failed{peer, step,
+  err_kind}` before Connected (`step`: `discover`, `dial` when the connection
+  never got past TLS, `state`, `hello`, `snapshot`; also `save` when the
+  cached address or `ended.json` cannot be written; a stop is not a failure;
+  a HelloAck that fails a check adds `check`, one of `proto_version`,
+  `epoch_out_of_range`, `seq_out_of_range`, `epoch_regressed`, and `value`,
+  the hub's number) and
+  `connect.closed{peer, step, err_kind}` after (`stream`, `snapshot`,
+  `result_ack`, `heartbeat`), where a peer that failed the handshake or refused the
+  certificate is `err_kind="refused"`; `connect.bye{peer, reason, message}`;
+  `connect.shutdown_cut{peer, wait_ms}` when the hub did not close the stream
+  within the Bye wait after a stop ([defaults](defaults.md));
+  `connect.epoch_regressed{epoch, last_epoch}`;
+  `connect.backoff{failures, wait_ms, reason}` each time the loop waits
+  before the next try (`wait_ms` is the planned backoff wait; `failures` is
+  the count in a row the wait doubles from, 0 after a wake or network
+  change, which resets it);
+  `connect.message_ignored{kind}` (a `Command` or `Settings` before plan rows
+  6 and 10 handle them); `connect.ended{state}` (`revoked`,
+  `unknown_machine`, `fleet_mismatch`, `cert_expired`);
+  `snapshot.sent{seq, bytes, unacked_results}`, `snapshot.requested{reason}`,
+  `snapshot.oversize{bytes, max_bytes}`, `snapshot.result_unreadable{command_id,
+  err_kind}`; `result.acked{acked, ignored}` (debug) and `result.pruned{count}`.
 
 At 3 AM: "why did `fleet-agent enroll` fail?" → `enroll.refused` (the reason
 the agent printed, and the peer) or `enroll.failed` (the hub's step). "machine X offline since when, why?" → `fleet_hub_machine_state` plus
 the agent's `connect.attempt` logs (last candidate tried, last TLS error).
+"why is machine X waiting so long to reconnect?" → `connect.backoff`
+(`failures`, `wait_ms`); the real time to the next try is the longer of
+`wait_ms` and what is left of the 5 s minimum gap since the last try
+started.
 "why did machine X reconnect just now?" → the agent's `wake.detected` or
 `netchange.acted` (its `why`); "why did it not reconnect after a network
 change?" → `netchange.ignored` (the change did not touch the connection),
 `netchange.push_off` if the push socket is off, or, with debug logging on,
 `netchange.unchanged` (a hint whose reading showed no change).
-
----
-
-## W2. Reconnect after hub restart or hours offline
-
-**Trigger.** Stream closes (hub restart, hub asleep, network change, agent
-wake); the agent reconnects with backoff, and after a short random delay on
-wake/network change (A6, A2). Also: a second connection for the same
-`machine_id` (duplicate identity).
-
-**Actors.** `fleet-agent` (ring, command log, probes keep running), `fleetd`
-gateway/writer/scheduler, tmux (goals keep running untouched).
-
-```mermaid
-sequenceDiagram
-  participant A as fleet-agent
-  participant H as fleetd
-  H-xA: stream closed (Bye{HUB_RESTART} or transport)
-  Note over A: goals run on · observer runs on · probes run on last schedule ·<br/>never-dropped events → persisted ring (latest per key for coalesced kinds) ·<br/>results → local command log
-  A->>H: Connect, Hello{last_epoch=7, last_applied_command_seq=41, last_event_seq=90210, boot_id, reason=RECONNECT, settings_generation=12}
-  H->>H: tx: epoch = max(stored, last_epoch=7) + 1 = 8 · machine ONLINE · load outbox for machine
-  H-->>A: HelloAck{epoch=8, hub_last_event_seq=89950, settings_generation=12}
-  A->>H: Snapshot{seq=90210, … , unacked_results=[c17, c19], probes[], goals[]}
-  H->>H: tx: apply snapshot (state) · expire outbox rows past not_after_time
-  A->>H: CommandResult{c17}, CommandResult{c19} (from local log)
-  H->>H: tx: close outbox rows (ignore if already done)
-  H-->>A: ResultAck{[c17, c19]}
-  A->>H: Event{seq=89951..90210, replayed=true} (ring, ≤ N/s)
-  H->>H: tx per batch: seq ≤ 90210 → history only · seq > 90210 → state + history
-  H-->>A: Command{command_id=c20 (same id), epoch=8, seq=1 …} re-issued pending
-  A->>H: CommandAck / CommandResult (logged result if c20 already ran)
-```
-
-**Epoch bump.** Every new stream gets `max(stored epoch, Hello.last_epoch) + 1`,
-so a hub restored from a backup never reissues an epoch the agent already used
-(02i, "Connection epoch"). Commands from the old epoch
-still in flight on the agent are finished normally (the agent already
-persisted them); any that arrive late are refused `EPOCH_MISMATCH`, but the
-known-`command_id` check comes first, so a re-issued command with the same id
-returns the logged result rather than tripping the seq check.
-
-**Replay rules.** The ring holds only never-dropped and coalesced kinds (02i),
-persisted, 1 week, size-capped (latest state per key wins). The agent replays
-everything with `seq > HelloAck.hub_last_event_seq` at a bounded rate (200 events/s per
-agent, 2,500 events/s per hub: 04 Q7). The hub writes
-replayed events with `seq ≤ Snapshot.seq` to the event history only (timeline,
-run history) and runs **no rule** on them: the snapshot already holds their
-effect, which is why it carries prompts, conditions, input time and the goal
-registry. Events with `seq > Snapshot.seq` apply to live state as well. The
-agent keeps `seq` monotonic: a persisted high-water mark across crashes, and a
-floor of `HelloAck.hub_last_event_seq + 1` after a wipe or a restore. Gaps in
-`seq` are normal (shed and coalesced events consume numbers); the hub reads
-loss from `Hello.event_counters` and `Heartbeat.events` (`evicted_total`), not
-from missing numbers, and answers a rise with `SnapshotRequest{reason="event_lost"}`
-and a gap marker on the timeline (02i, "Gaps").
-
-**Duplicate identity.** A second `Hello` for a `machine_id` with a live stream:
-newest wins, silently. The hub sends `Bye{DUPLICATE_IDENTITY}` on the old stream
-(if it can still be written to) and bumps the epoch. A sleeping laptop or a
-restarted agent leaves a half-open, silent old stream, so a benign reconnect
-raises nothing. A triage warning, fingerprinted on the pair of `boot_id`s, is
-raised only when the displaced stream had a heartbeat within 45 s and the two
-`boot_id`s then displace each other again within 10 minutes (two hosts with one
-copied state dir ping-pong; a restart does not). It is re-raised at most once
-per hour and auto-dispatch to that machine is suspended until the owner
-resolves it.
-
-### State machine (hub-side connection for one machine)
-
-```mermaid
-stateDiagram-v2
-  [*] --> OFFLINE
-  OFFLINE --> HELLO: Hello accepted (epoch+1)
-  HELLO --> ONLINE: Snapshot applied, unacked results closed
-  HELLO --> OFFLINE: stream error before Snapshot
-  ONLINE --> REPLAYING: replayed events arriving
-  REPLAYING --> ONLINE: last replayed seq reached
-  ONLINE --> STALE: no Heartbeat for 45 s
-  STALE --> ONLINE: Heartbeat
-  STALE --> OFFLINE: 3 min, or Bye from agent
-  ONLINE --> OFFLINE: Bye{SHUTDOWN|UPGRADE|RE_ENROLL} / stream closed
-  ONLINE --> DISPLACED: newer Hello for same machine_id
-  DISPLACED --> OFFLINE: old stream gets Bye{DUPLICATE_IDENTITY} and closes, the machine stays ONLINE on the new stream (03f)
-```
-
-Hub start: every machine is set to `STALE` with `since_time = hub_start`, so the
-usual 3-minute rule turns silent ones `OFFLINE`; nothing is scheduled on a
-machine until it is `ONLINE` again. On graceful shutdown the hub sends
-`Bye{HUB_RESTART}` so agents reconnect quickly with backoff rather than
-waiting for keepalive timeouts.
-
-### Persistence
-
-| What | Where | Transaction |
-|---|---|---|
-| Event ring (`seq`, body, 1 week or 64 MiB, [defaults](defaults.md)) | `agent.db` | per event, fsync batched ≤ 1 s |
-| `seq_hwm` (reserved in blocks of 1024), `EventCounters`, `install_id`, `last_epoch`, `last_applied_command_seq` | `agent.db` | one fsync per block; counters with it; the epoch and command marks never step back |
-| Command log (last 10,000 or 7 days; status, result, step reached) | `agent.db` | per state change, before `CommandAck` is sent |
-| Probe assignments (`EnsureProbe` as received) | `agent.db` | with the command log |
-| Goal registry (`GoalRegistration` per pane) and availability marks (per pane key) | `agent.db` | `register_goal`, `RegisterGoal`, `ReleaseGoal`, mark commands; both reported in every snapshot (02h) |
-| Outbox rows (`pending/delivered/done/expired/failed`, epoch, seq) | hub store | Hello tx (expiry), result tx (close) |
-| Event history (replayed and live, 1 week) | hub store | per writer batch |
-| `machine_connections` (epoch, boot_id, reason, peer, displaced_by) | hub store | Hello tx |
-| Per machine: `hub_last_event_seq`, `event_generation`, last `EventCounters`, `install_id` | hub store | writer batch (seq); Hello tx (the rest) |
-
-### Ordering and consistency
-
-- Per machine: Snapshot first, then unacked results, then replayed events in
-  `seq` order, then live events. The agent enforces this order on its side;
-  the hub discards anything out of order and asks for a snapshot.
-- Results for commands the hub already closed are ignored (idempotent by
-  `command_id`); results for commands the hub never issued (DB restored from an
-  older backup) go to the audit log and a triage info item.
-- Re-issued commands keep their `command_id`; the agent's log answers them.
-- A `StartGoal` that expired during the outage is `EXPIRED` on the hub, but if
-  `Snapshot.goal_registry` binds that goal to a pane, the goal is adopted as
-  `RUNNING` (W5) rather than re-planned.
-
-### Failure modes
-
-| Failure | What happens |
-|---|---|
-| Agent offline for hours | Goals run on; ring fills (latest per key); on reconnect snapshot gives truth, ring gives timeline; ring overflow shows as a rise of `evicted_total` and a `gap` on the timeline |
-| Agent crashed, or its state directory was wiped or a VM image reverted | `seq` resumes above `seq_hwm` after a crash; after a wipe `Hello.last_event_seq` is below the hub's, the hub records an agent rollback (new `event_generation`, timeline marker, audit row) and the agent floors `seq` above `hub_last_event_seq`, so nothing is dropped as a duplicate |
-| Hub restart mid-snapshot apply | Stream drops; the partial tx rolls back; the agent reconnects and sends a fresh snapshot |
-| Hub store restored from backup | Epoch rises above the agent's `last_epoch` (no `SEQ_REPLAYED`); `hub_last_event_seq` is lower, so the agent replays its ring and the snapshot covers the rest; registry entries for unknown goals → `orphan_goal_pane` triage; unknown results → audit only; settings generation on the agent may be newer than the hub's → hub re-sends its current generation and the agent applies it (settings are ordered by `(settings_epoch, generation)`, and a different epoch is accepted whatever its generation; 02, "Settings order") |
-| Duplicate `command_id` re-issued | Logged result returned, nothing re-executed |
-| Deadline expired while offline | Hub marks `EXPIRED` without sending; UI shows "not delivered, machine was offline"; dispatch re-plans (W5), prompt answers are dropped (W7) |
-| Harness crashed while offline | `PaneExited{goal_id}` is in the ring (never dropped); replayed as history only; the snapshot already shows the pane dead, and W6 evaluates the one-nudge rule once from the snapshot, keyed on its fingerprint |
-| Provider error while offline | `HarnessCondition` with `cleared` pairs replay into history; current conditions come from the snapshot (requires `Snapshot.conditions[]`, 03g) |
-| Prompt appeared and vanished while offline | `PromptDetected` + `PromptGone` replay into history only (nobody can still answer it, so no triage item); a prompt still showing comes from `Snapshot.prompts[]` (03g) |
-| Developer typed in a goal pane while offline | `PaneInput` in the ring (coalesced, latest time) and `TmuxPane.last_input_time` in the snapshot; W6's "human at keyboard" suppression is derived from the snapshot's `last_input_time` (the replayed `PaneInput` is history only) |
-| Work tracker / code host unavailable at reconnect | W4 lag rises; verification waits; dispatch stays paused while lag exceeds its threshold |
-| Flapping network (reconnect every few seconds) | Each reconnect costs a snapshot; the agent rate-limits reconnects to one per 5 s and the hub to one Hello per machine per 5 s; `fleet_hub_reconnects_total` shows it |
-| Ring replay floods the hub after a long outage | Replay is rate-limited per agent; the writer batches; HTTP/2 flow control blocks the agent, never the hub's other machines (per-stream windows) |
-
-### Telemetry
-
-- `fleet_agent_ring_events`, `fleet_agent_ring_bytes`, `fleet_agent_ring_dropped_total`,
-  `fleet_agent_replayed_events_total`, `fleet_agent_unacked_results`,
-  `fleet_agent_events_shed_total`, `fleet_agent_events_coalesced_total`, `fleet_agent_events_evicted_total`,
-  `fleet_agent_reconnects_total{reason}`.
-- `fleet_hub_reconnects_total{machine, reason}`, `fleet_hub_epoch{machine}`,
-  `fleet_hub_commands_expired_total{kind}`, `fleet_hub_duplicate_identity_total{machine}`,
-  `fleet_hub_event_gap_total{machine}` (rises of `evicted_total`), `fleet_hub_agent_rollback_total{machine}`, `fleet_hub_replay_backlog_events{machine}`,
-  `fleet_hub_results_unknown_command_total`.
-- Spans: `hub.reconnect` (children `hub.snapshot.apply`, `hub.outbox.reconcile`,
-  `hub.replay.ingest`), `agent.reconnect` (children `agent.ring.replay`).
-- Logs: `reconnect.hello{epoch, last_epoch, last_event_seq, hub_last_event_seq,
-  reason}`, `outbox.expired{command_id, kind, age}`, `identity.duplicate{old_boot_id,
-  new_boot_id, old_peer, new_peer}`, `replay.gap{from_seq, to_seq}`.
-
-At 3 AM: "did the hub lose anything during the restart?" →
-`fleet_hub_event_gap_total` and `replay.gap` logs; "why is this goal shown
-twice / missing?" → `snapshot.applied{diff}` and `orphan_goal_pane` items.

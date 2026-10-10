@@ -66,7 +66,7 @@ BEGIN
 END;`
 
 // agentStateSQL is the one row of sequencing state (02i "Sequence numbers"
-// and "Connection epoch"; 03 W2 "Persistence"): install_id, seq_hwm and the
+// and "Connection epoch"; 03n W2 "Persistence"): install_id, seq_hwm and the
 // EventCounters, and the Hello.last_epoch and last_applied_command_seq the
 // agent reports. The trigger refuses any step back, whoever writes the file.
 const agentStateSQL = `CREATE TABLE agent_state(
@@ -92,12 +92,14 @@ BEGIN
 	SELECT RAISE(ABORT, 'agent_state never goes backwards');
 END;`
 
-// commandLogSQL is the command log (03 W2 "Persistence": status, result,
+// commandLogSQL is the command log (03n W2 "Persistence": status, result,
 // step reached; 02i "Command lifecycle"). command_id is the key, so a
 // re-issued command finds its entry; a finished entry's result never
 // changes, so a duplicate is answered with the result first logged.
-// acked_time is set by ResultAck; the 10,000 or 7 days cap (defaults.md)
-// prunes by received_time.
+// acked_time is set by ResultAck. Prune (defaults.md "Agent command log")
+// orders by received_time and ages out by it, but deletes only entries that
+// are acked or past not_after_time (hub time), never one the hub may still
+// re-send.
 const commandLogSQL = `CREATE TABLE command_log(
 	command_id TEXT PRIMARY KEY CHECK (command_id <> ''),
 	kind TEXT NOT NULL CHECK (kind <> ''),

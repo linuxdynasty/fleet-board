@@ -214,3 +214,52 @@ func TestTheFileKeepsTheFirstAck(t *testing.T) {
 		}
 	}
 }
+
+// The age test compares hub time with received_time, which the agent's
+// clock stamps. With that clock 8 days behind the hub, every entry looks
+// older than 7 days, so the age limit too spares an entry that is not
+// acked and inside its deadline (hub time): the hub may still re-send it,
+// and a forgotten command_id would run twice. Acked entries and ones past
+// their deadline still go.
+func TestTheAgeLimitKeepsCommandsTheHubMayResend(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	db := open(t, stateDir(t))
+	hub := t0.Add(30 * 24 * time.Hour)
+	agentNow := hub.Add(-8 * 24 * time.Hour) // the agent's clock, 8 days behind
+	for _, e := range []struct {
+		id       string
+		notAfter time.Time
+		acked    bool
+	}{
+		{"open", hub.Add(time.Hour), false},
+		{"acked", hub.Add(time.Hour), true},
+		{"expired", hub.Add(-time.Minute), false},
+	} {
+		c := command(e.id, 1, 1)
+		c.Received, c.NotAfter = agentNow, e.notAfter
+		if _, _, err := db.LogCommand(ctx, c); err != nil {
+			t.Fatal(err)
+		}
+		if err := db.RecordResult(ctx, e.id, []byte("result"), agentNow.Add(time.Second)); err != nil {
+			t.Fatal(err)
+		}
+		if e.acked {
+			if _, err := db.AckResults(ctx, []string{e.id}, hub); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	n, err := db.Prune(ctx, hub)
+	if err != nil || n != 2 {
+		t.Fatalf("Prune = %d, %v; want 2 (the acked and the expired entry)", n, err)
+	}
+	if _, err := db.Command(ctx, "open"); err != nil {
+		t.Errorf("the unacked entry inside its deadline was pruned by age: %v", err)
+	}
+	for _, id := range []string{"acked", "expired"} {
+		if _, err := db.Command(ctx, id); err == nil {
+			t.Errorf("%s: kept, want pruned (older than 7 days and forgettable)", id)
+		}
+	}
+}

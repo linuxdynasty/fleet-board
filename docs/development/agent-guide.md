@@ -8,7 +8,7 @@ documentation, the local gates) are only in AGENTS.md.
 ## Operating standard
 
 - Understand the flow before editing. Each workflow is told once, in
-  [03-workflows.md](../specs/03-workflows.md) and its parts 03b to 03m.
+  [03-workflows.md](../specs/03-workflows.md) and its parts 03b to 03n.
 - Fix root causes. A symptom fix that hides a race, swallows an error or
   serializes work is a failure.
 - Account for invalid input, empty and stale state, partial failure, duplicates,

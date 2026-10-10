@@ -14,6 +14,7 @@ import (
 
 	"github.com/linuxdynasty/fleet-board/internal/agent/conn"
 	"github.com/linuxdynasty/fleet-board/internal/agent/conn/conntest"
+	"github.com/linuxdynasty/fleet-board/internal/agent/ring"
 	"github.com/linuxdynasty/fleet-board/internal/telemetry"
 )
 
@@ -22,6 +23,7 @@ type agent struct {
 	dir  string
 	logs *conntest.Buffer
 	tel  *telemetry.Telemetry
+	db   *ring.DB
 }
 
 // newAgent names a state folder that does not exist yet; Enroll creates it.

@@ -17,7 +17,7 @@ import "google/protobuf/duration.proto";
 import "google/protobuf/field_mask.proto";
 import "google/protobuf/timestamp.proto";
 
-// MachineState is the hub-side connection state (03-workflows W1, W2).
+// MachineState is the hub-side connection state (03-workflows W1, 03n-reconnect W2).
 enum MachineState {
   MACHINE_STATE_UNSPECIFIED = 0;
   // Enrolled, never connected.

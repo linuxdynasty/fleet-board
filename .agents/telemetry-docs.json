@@ -1,16 +1,19 @@
 {
  "version": 1,
- "note": "Telemetry name map for tools/telemetrynames (make telemetry-names). Every log event (`<area>.<event>`, the first string argument of a slog call) and every metric name (the static tail after the program prefix) in non-test Go code under code_dirs must appear as a whole token in the ONE spec its log area or metric tail prefix maps to; being listed only in another spec still fails. Specs only (docs/specs/), never READMEs. An unmapped area fails: add it here, mapped to the spec that owns the workflow (03 to 03j) or to 05b for platform signals. Metric keys match the longest prefix of the name after `<metric prefix>_`. Names in a mapped spec with no code are a report only until plan row 17.",
+ "note": "Telemetry name map for tools/telemetrynames (make telemetry-names). Every log event (`<area>.<event>`, the first string argument of a slog call) and every metric name (the static tail after the program prefix) in non-test Go code under code_dirs must appear as a whole token in the ONE spec its log area or metric tail prefix maps to; being listed only in another spec still fails. Specs only (docs/specs/), never READMEs. An unmapped area fails: add it here, mapped to the spec that owns the workflow (03 to 03n) or to 05b for platform signals. Metric keys match the longest prefix of the name after `<metric prefix>_`. Names in a mapped spec with no code are a report only until plan row 17.",
  "code_dirs": ["cmd", "internal"],
  "metric_prefixes": ["fleet_hub", "fleet_agent"],
  "logs": {
   "admin.": "docs/specs/05b-observability.md",
   "backup.": "docs/specs/05b-observability.md",
   "cert.": "docs/specs/05b-observability.md",
+  "connect.": "docs/specs/03-workflows.md",
   "enroll.": "docs/specs/03-workflows.md",
   "http.": "docs/specs/05b-observability.md",
   "hub.": "docs/specs/05b-observability.md",
   "netchange.": "docs/specs/03-workflows.md",
+  "result.": "docs/specs/03-workflows.md",
+  "snapshot.": "docs/specs/03-workflows.md",
   "store.": "docs/specs/05b-observability.md",
   "tls.": "docs/specs/05b-observability.md",
   "wake.": "docs/specs/03-workflows.md"
@@ -19,12 +22,17 @@
   "agent_cert_": "docs/specs/05b-observability.md",
   "auth_failures_": "docs/specs/05b-observability.md",
   "backup_": "docs/specs/05b-observability.md",
+  "cert_expiry_": "docs/specs/03-workflows.md",
+  "connect_": "docs/specs/03-workflows.md",
+  "connected": "docs/specs/03-workflows.md",
   "enroll_": "docs/specs/03-workflows.md",
   "log_lines_": "docs/specs/05b-observability.md",
   "read_pool_": "docs/specs/05b-observability.md",
+  "reconnects_": "docs/specs/03n-reconnect.md",
   "server_cert_": "docs/specs/05b-observability.md",
   "start_failures_": "docs/specs/05b-observability.md",
   "store_": "docs/specs/05b-observability.md",
+  "unacked_results": "docs/specs/03n-reconnect.md",
   "writer_": "docs/specs/05b-observability.md"
  }
 }
