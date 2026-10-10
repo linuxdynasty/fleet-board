@@ -13,8 +13,8 @@
 #                   (default origin/main): go test -shuffle=on -count=TEST_COUNT
 #                   (default 3), then go test -race -shuffle=on -count=1;
 #                   with COVERPROFILE set, the first pass writes coverage there
-#   make lint       golangci-lint on the same packages, once for GOOS=linux and once
-#                   for GOOS=darwin (cgo off)
+#   make lint       golangci-lint on the same packages, once per platform in
+#                   LINT_PLATFORMS (linux and darwin, amd64 and arm64; cgo off)
 #   make vuln       govulncheck ./... (fails on a reachable known vulnerability)
 #   make test-all   go vet ./..., then go test -race -shuffle=on -count=TEST_COUNT
 #                   on every package (the nightly run sets TEST_COUNT=10, and
@@ -188,18 +188,23 @@ fuzz:
 bench-report:
 	scripts/bench-report.sh "$$BASE_REF"
 
-# lint runs the pinned golangci-lint once per target OS (linux, then darwin,
-# both with cgo off): the linter only reads the files that build for the OS it
-# runs for, so a `_darwin.go` file would pass on Linux CI (and a `_linux.go`
-# file on a Mac) without the second pass. The process rules of 01 principle 8
-# (depguard on os/exec, forbidigo on os.StartProcess and the like) need both.
+# lint runs the pinned golangci-lint once per target platform, cgo off. The
+# linter reads only the files that build for the GOOS and GOARCH it runs for, so
+# a `_darwin.go` or `_arm64.go` file would pass on the Linux amd64 CI runner (and
+# a `_linux.go` file on a Mac) with a single pass. The process rules of 01
+# principle 8 (depguard on os/exec, forbidigo on os.StartProcess and the like)
+# need every platform the binaries ship for. scripts/test-make-lint-platforms.sh
+# checks that each one is linted.
+LINT_PLATFORMS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64
+
 lint: tools
 	@pkgs="$$(scripts/changed-go-packages.sh "$$BASE_REF")" || exit 1; \
 	if [ -z "$$pkgs" ]; then echo "make lint: no Go package changed against $$BASE_REF; nothing to lint"; exit 0; fi; \
 	echo "make lint: $$pkgs"; \
-	for os in linux darwin; do \
-	  echo "make lint: GOOS=$$os"; \
-	  GOOS=$$os CGO_ENABLED=0 $(GOLANGCI_LINT) run $$pkgs || exit 1; \
+	for platform in $(LINT_PLATFORMS); do \
+	  goos=$${platform%/*}; goarch=$${platform#*/}; \
+	  echo "make lint: GOOS=$$goos GOARCH=$$goarch"; \
+	  GOOS=$$goos GOARCH=$$goarch CGO_ENABLED=0 $(GOLANGCI_LINT) run $$pkgs || exit 1; \
 	done
 
 # vuln checks every package (not only the changed ones: a new advisory can land
@@ -218,6 +223,7 @@ selftest: tools
 	scripts/test-changed-go-packages.sh
 	scripts/test-check-gofumpt.sh
 	scripts/test-lint-exec-rules.sh
+	scripts/test-make-lint-platforms.sh
 	scripts/test-pre-push.sh
 	scripts/test-pre-push-fetch.sh
 	scripts/test-check-pr-base.sh

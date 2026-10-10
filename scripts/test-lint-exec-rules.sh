@@ -4,8 +4,8 @@
 # .golangci.yml (plan row 2c, 01 principle 8):
 #
 #   depguard   only internal/proc, internal/agent/tmux (the package itself, not
-#              its subpackages) and internal/agent/attach may import os/exec in
-#              internal/ and cmd/; test files may too.
+#              its subpackages) and internal/agent/attach may import os/exec or
+#              golang.org/x/sys/execabs in internal/ and cmd/; test files may too.
 #   forbidigo  os.StartProcess, syscall.ForkExec, syscall.Exec,
 #              syscall.StartProcess and unix.Exec (golang.org/x/sys/unix) are
 #              forbidden everywhere but internal/proc, through an import alias
@@ -13,14 +13,15 @@
 #
 # It builds a scratch module in a temporary folder (never this checkout), copies
 # the real .golangci.yml into it and runs the pinned golangci-lint, once per
-# target OS (GOOS=linux and GOOS=darwin, cgo off, as `make lint` does), in three
-# steps:
+# target platform (linux and darwin, amd64 and arm64, cgo off, as `make lint`
+# does; scripts/test-make-lint-platforms.sh checks that list), in three steps:
 #   1. only the files the rules allow: must pass;
 #   2. the same files plus one seeded violation per case: must fail, naming each
 #      violating file with the right linter, and naming no allowed file. A file
-#      built only for one OS (a `//go:build` line) must be named in that OS's run
-#      and not in the other's: the linter reads only the files that build for the
-#      OS it runs for, which is why `make lint` runs both;
+#      built only for one OS or architecture (by file name or a `//go:build` line)
+#      must be named in the runs for that platform and in no other: the linter
+#      reads only the files that build for the platform it runs for, which is why
+#      `make lint` runs them all;
 #   3. the violations removed again: must pass.
 # The allowed tmux, attach and proc folders do not exist in the repo yet; the
 # rules name them so they are allowed when they arrive.
@@ -65,7 +66,7 @@ put() {
 }
 
 # ---- allowed: must lint clean ----------------------------------------------
-allowed="internal/proc/p.go internal/agent/tmux/t.go internal/agent/tmux/t_darwin.go internal/agent/attach/a.go internal/ok/ok_test.go internal/ok/ok.go cmd/ok/ok_test.go cmd/ok/main.go"
+allowed="internal/proc/p.go internal/agent/tmux/t.go internal/agent/tmux/t_darwin.go internal/agent/tmux/t_arm64.go internal/agent/attach/a.go internal/ok/ok_test.go internal/ok/ok.go cmd/ok/ok_test.go cmd/ok/main.go"
 put internal/proc/p.go proc '	"os"
 	"os/exec"
 	"syscall"
@@ -78,6 +79,9 @@ put internal/proc/p.go proc '	"os"
 	_ = unix.Exec'
 put internal/agent/tmux/t.go tmux '	"os/exec"' '	_ = exec.Command'
 put internal/agent/tmux/t_darwin.go tmux '	"os/exec"' '	_ = exec.Command'
+put internal/agent/tmux/t_arm64.go tmux '	"os/exec"
+	"golang.org/x/sys/execabs"' '	_ = exec.Command
+	_ = execabs.Command'
 put internal/agent/attach/a.go attach '	"os/exec"' '	_ = exec.Command'
 put internal/ok/ok.go ok '' ''
 put internal/ok/ok_test.go ok '	"os/exec"' '	_ = exec.Command'
@@ -85,29 +89,39 @@ put cmd/ok/ok_test.go main '	"os/exec"' '	_ = exec.Command'
 printf 'package main\n\nfunc main() {}\n' > "$probe/cmd/ok/main.go"
 
 # ---- violations: "<path>|<linter>", one file each ---------------------------
-# path|linter|OSes whose run must name it (both, linux or darwin)
-violations="internal/red/import.go|depguard|both
-internal/red/startprocess.go|forbidigo|both
-internal/red/forkexec.go|forbidigo|both
-internal/red/sysexec.go|forbidigo|both
-internal/red/syscallstart.go|forbidigo|both
-internal/red/unixexec.go|forbidigo|both
-internal/red/alias.go|forbidigo|both
-internal/red/funcvalue.go|forbidigo|both
-internal/red/test_calls_test.go|forbidigo|both
+# path|linter|platforms whose run must name it: all, an OS (linux, darwin) or an
+# architecture (amd64, arm64)
+violations="internal/red/import.go|depguard|all
+internal/red/startprocess.go|forbidigo|all
+internal/red/forkexec.go|forbidigo|all
+internal/red/sysexec.go|forbidigo|all
+internal/red/syscallstart.go|forbidigo|all
+internal/red/unixexec.go|forbidigo|all
+internal/red/alias.go|forbidigo|all
+internal/red/funcvalue.go|forbidigo|all
+internal/red/test_calls_test.go|forbidigo|all
 internal/red/tag_darwin.go|depguard|darwin
 internal/red/tag_linux.go|depguard|linux
 internal/red/tagged_darwin_only.go|depguard|darwin
 internal/red/tagged_linux_only.go|depguard|linux
 internal/red/tagged_darwin_exec.go|forbidigo|darwin
 internal/red/tagged_linux_exec.go|forbidigo|linux
-internal/agent/tmux/sub/s.go|depguard|both
-internal/agent/attach/sub/s.go|depguard|both
-internal/agent/attachment/a.go|depguard|both
-internal/agent/tmuxish/t.go|depguard|both
-internal/proc/sub/s.go|depguard|both
-internal/proc/sub/call.go|forbidigo|both
-cmd/red/main.go|depguard|both"
+internal/red/arch_arm64.go|depguard|arm64
+internal/red/arch_amd64.go|depguard|amd64
+internal/red/tagged_arm64_only.go|depguard|arm64
+internal/red/tagged_amd64_only.go|depguard|amd64
+internal/red/tagged_arm64_exec.go|forbidigo|arm64
+internal/red/tagged_amd64_exec.go|forbidigo|amd64
+internal/red/tagged_linux_arm64.go|depguard|linux/arm64
+internal/red/execabs.go|depguard|all
+internal/red/execabs_alias.go|depguard|all
+internal/agent/tmux/sub/s.go|depguard|all
+internal/agent/attach/sub/s.go|depguard|all
+internal/agent/attachment/a.go|depguard|all
+internal/agent/tmuxish/t.go|depguard|all
+internal/proc/sub/s.go|depguard|all
+internal/proc/sub/call.go|forbidigo|all
+cmd/red/main.go|depguard|all"
 
 # tagged <path> <package> <build line> <import lines> <var lines>
 tagged() {
@@ -136,6 +150,15 @@ seed() {
   tagged internal/red/tagged_linux_only.go red linux '	"os/exec"' '	_ = exec.Command'
   tagged internal/red/tagged_darwin_exec.go red darwin '	"syscall"' '	_ = syscall.Exec'
   tagged internal/red/tagged_linux_exec.go red linux '	"syscall"' '	_ = syscall.Exec'
+  put internal/red/arch_arm64.go red '	"os/exec"' '	_ = exec.Command'
+  put internal/red/arch_amd64.go red '	"os/exec"' '	_ = exec.Command'
+  tagged internal/red/tagged_arm64_only.go red arm64 '	"os/exec"' '	_ = exec.Command'
+  tagged internal/red/tagged_amd64_only.go red amd64 '	"os/exec"' '	_ = exec.Command'
+  tagged internal/red/tagged_arm64_exec.go red arm64 '	"syscall"' '	_ = syscall.Exec'
+  tagged internal/red/tagged_amd64_exec.go red amd64 '	"syscall"' '	_ = syscall.Exec'
+  tagged internal/red/tagged_linux_arm64.go red 'linux && arm64' '	"os/exec"' '	_ = exec.Command'
+  put internal/red/execabs.go red '	"golang.org/x/sys/execabs"' '	_ = execabs.Command'
+  put internal/red/execabs_alias.go red '	ea "golang.org/x/sys/execabs"' '	_ = ea.Command'
   put internal/agent/tmux/sub/s.go sub '	"os/exec"' '	_ = exec.Command'
   put internal/agent/attach/sub/s.go sub '	"os/exec"' '	_ = exec.Command'
   put internal/agent/attachment/a.go attachment '	"os/exec"' '	_ = exec.Command'
@@ -152,9 +175,9 @@ unseed() {
 }
 
 out="$work/lint.out"
-# runlint <goos>: the pinned linter for one target OS, cgo off, every issue shown.
+# runlint: the pinned linter for the platform of the loop, cgo off, every issue shown.
 runlint() {
-  (cd "$probe" && GOOS="$1" CGO_ENABLED=0 "$lint" run --config .golangci.yml --max-same-issues 0 --max-issues-per-linter 0 ./... > "$out" 2>&1)
+  (cd "$probe" && GOOS="$goos" GOARCH="$goarch" CGO_ENABLED=0 "$lint" run --config .golangci.yml --max-same-issues 0 --max-issues-per-linter 0 ./... > "$out" 2>&1)
 }
 
 # named <path> <linter>: the output has a finding of that linter on that file.
@@ -166,18 +189,20 @@ mentioned() {
   awk -v p="$1" 'index($0, p ":") == 1 { found = 1 } END { exit !found }' "$out"
 }
 
-for goos in linux darwin; do
+for platform in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
+  goos="${platform%/*}"
+  goarch="${platform#*/}"
   # 1. allowed files only
-  if runlint "$goos"; then
+  if runlint; then
     ok
   else
-    bad "GOOS=$goos: the allowed files fail the lint: $(cat "$out")"
+    bad "$platform: the allowed files fail the lint: $(cat "$out")"
   fi
 
   # 2. seeded violations
   seed
-  if runlint "$goos"; then
-    bad "GOOS=$goos: the seeded violations passed the lint"
+  if runlint; then
+    bad "$platform: the seeded violations passed the lint"
   else
     rc=0
     for entry in $violations; do
@@ -185,15 +210,15 @@ for goos in linux darwin; do
       rest="${entry#*|}"
       linter="${rest%%|*}"
       oses="${rest##*|}"
-      if [ "$oses" = both ] || [ "$oses" = "$goos" ]; then
+      if [ "$oses" = all ] || [ "$oses" = "$goos" ] || [ "$oses" = "$goarch" ] || [ "$oses" = "$platform" ]; then
         if named "$path" "$linter"; then
           ok
         else
-          bad "GOOS=$goos: $path: no $linter finding in the output"
+          bad "$platform: $path: no $linter finding in the output"
           rc=1
         fi
       elif mentioned "$path"; then
-        bad "GOOS=$goos: $path is built for $oses only, but this run names it"
+        bad "$platform: $path is built for $oses only, but this run names it"
         rc=1
       else
         ok
@@ -201,7 +226,7 @@ for goos in linux darwin; do
     done
     for path in $allowed; do
       if mentioned "$path"; then
-        bad "GOOS=$goos: the allowed file $path is named in the output"
+        bad "$platform: the allowed file $path is named in the output"
         rc=1
       fi
     done
@@ -212,10 +237,10 @@ for goos in linux darwin; do
 
   # 3. violations removed
   unseed
-  if runlint "$goos"; then
+  if runlint; then
     ok
   else
-    bad "GOOS=$goos: the lint fails after the violations were removed: $(cat "$out")"
+    bad "$platform: the lint fails after the violations were removed: $(cat "$out")"
   fi
 done
 

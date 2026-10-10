@@ -75,8 +75,11 @@ scripts/test-verify-agent-canon.sh, test-smoke-binaries.sh, test-make-base-ref.s
   make test and make test-all (also in make selftest)
 scripts/test-lint-exec-rules.sh   seeded RED/GREEN cases for the depguard (os/exec) and forbidigo
   (os.StartProcess, syscall.ForkExec, syscall.Exec, syscall.StartProcess, unix.Exec) rules in
-  .golangci.yml, run in a scratch module against the real config for GOOS=linux and GOOS=darwin,
-  with files built for one OS only (01 principle 8; also in make selftest)
+  .golangci.yml, run in a scratch module against the real config for linux and darwin on amd64
+  and arm64, with files built for one OS or architecture only (01 principle 8; also in make
+  selftest)
+scripts/test-make-lint-platforms.sh   checks that make lint runs the linter for all four
+  platforms (a stub in place of the linter; Makefile copies that skip one must fail)
 tools/tscheck/                compiles the generated TypeScript (typescript 7, strict)
 tools/telemetrynames/         every log event and metric name in the Go code is in the spec
                               telemetry-docs.json maps it to (make telemetry-names; Go tests)

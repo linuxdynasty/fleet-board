@@ -41,7 +41,7 @@ linters:
       rules:
         # One helper starts every one-shot child (01 principle 8, plan row 2c):
         # empty stdin, a time cap, an output cap, a process group of its own.
-        # Allowed to import os/exec in internal/ and cmd/: internal/proc, the
+        # Allowed to import os/exec (and its wrapper x/sys/execabs) in internal/ and cmd/: internal/proc, the
         # internal/agent/tmux package itself (the `tmux -C` client; not its
         # subpackages) and internal/agent/attach (the PTY, ADR 0020). Test
         # files may import it. "!" turns a pattern into an exception.
@@ -57,6 +57,8 @@ linters:
           deny:
             - pkg: os/exec
               desc: start a one-shot child with internal/proc, which bounds it (01 principle 8); only internal/proc, internal/agent/tmux and internal/agent/attach import os/exec
+            - pkg: golang.org/x/sys/execabs
+              desc: execabs starts processes the way os/exec does; the same rule applies (01 principle 8)
     exhaustive:
       default-signifies-exhaustive: true
     nolintlint:
