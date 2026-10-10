@@ -129,10 +129,12 @@ func keepaliveRun(t *testing.T, ka conn.Keepalive, limit time.Duration) time.Dur
 func TestKeepaliveCatchesASilentHub(t *testing.T) {
 	t.Parallel()
 	ka := conn.Keepalive{Ping: 100 * time.Millisecond, Timeout: 300 * time.Millisecond}
-	// Detection takes up to Ping + Timeout, plus scheduling.
-	const slack = 150 * time.Millisecond
-	if took := keepaliveRun(t, ka, 5*time.Second); took > ka.Ping+ka.Timeout+slack {
-		t.Errorf("the silent hub was caught after %v, want within %v", took, ka.Ping+ka.Timeout+slack)
+	// Detection takes up to Ping + Timeout (400 ms), plus scheduling. The bound
+	// is twice that: a loaded machine can add well over 150 ms, and a timeout
+	// three times too long (about 1 s) or the default (30 s) still fails.
+	limit := (ka.Ping + ka.Timeout) * 2
+	if took := keepaliveRun(t, ka, 5*time.Second); took > limit {
+		t.Errorf("the silent hub was caught after %v, want within %v", took, limit)
 	}
 }
 

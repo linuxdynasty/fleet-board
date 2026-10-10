@@ -105,6 +105,12 @@ func outcome(ctx context.Context, err error, untrusted *atomic.Bool, addr string
 	}
 	if ctx.Err() != nil {
 		if errors.Is(context.Cause(ctx), errEnrollCap) {
+			// A cut stream reaches us as "canceled" (the hub stopping, its
+			// timer firing first, a proxy) and carries no deadline, so the
+			// cap's own error is added to say why.
+			if !errors.Is(err, ctx.Err()) {
+				err = fmt.Errorf("%w (%w)", err, ctx.Err())
+			}
 			return false, fmt.Errorf("%w: the enroll ran out of time during a call; %s: %w", ErrHubFailed, rerun, err)
 		}
 		// The caller stopped the run; no advice.
@@ -126,10 +132,13 @@ func outcome(ctx context.Context, err error, untrusted *atomic.Bool, addr string
 	}
 	// A bare answer with no ErrorDetail: the stream was cut or the hub was
 	// not ready. RESOURCE_EXHAUSTED is the 1 MiB request cap (02g); a resend
-	// is refused the same way, so it is not tried again.
+	// is refused the same way, so it is not tried again. CANCELED while our
+	// context is alive is a cut stream: connect-go maps an HTTP/2 RST_STREAM
+	// (CANCEL) to it (the hub stopping, its own timer winning, a proxy), so
+	// it is tried again; the caller's own cancel is sorted out above.
 	switch ce.Code() {
 	case connect.CodeUnavailable, connect.CodeUnknown, connect.CodeInternal, connect.CodeDeadlineExceeded,
-		connect.CodeAborted:
+		connect.CodeAborted, connect.CodeCanceled:
 		return true, fmt.Errorf("conn: enroll call to %s: %w", addr, err)
 	default:
 		return false, fmt.Errorf("%w: %w", ErrHubFailed, err)

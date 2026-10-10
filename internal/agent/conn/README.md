@@ -45,7 +45,9 @@ st := l.Status()                    // state, peer, last failure per address, la
    out during the handshake is a lost connection and is retried within
    "Enroll tries". No system roots and no proxy are used.
 5. **Bounded retries.** A retryable hub answer, a bare `UNAVAILABLE`,
-   `UNKNOWN`, `INTERNAL`, `DEADLINE_EXCEEDED` or `ABORTED` (a cut stream), or
+   `UNKNOWN`, `INTERNAL`, `DEADLINE_EXCEEDED`, `ABORTED` or Connect "canceled" (a cut stream:
+   connect-go reports an HTTP/2 RST_STREAM with CANCEL that way, as when the
+   hub stops, its own timer wins or a proxy cuts it), or
    a lost connection is tried again with the same request
    (`DefaultAttempts`, full-jitter waits, defaults.md "Enroll tries"); the
    whole enroll is capped at `DefaultTimeout`. Only a non-retryable

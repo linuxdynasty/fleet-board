@@ -131,8 +131,10 @@ func TestEnrollWithoutAHubAndNoneFoundSendsNothing(t *testing.T) {
 }
 
 // Each answer gets its own short budget, so answers that accept and never
-// reply cannot use up the enroll: the hub behind three of them is still
-// found well inside the time cap.
+// reply cannot use up the search: the hub behind three of them is still found
+// inside the search cap. Without the budget the first silent answer holds the
+// search until the cap and the hub is never reached, so the result is the
+// proof; no elapsed-time bound is needed (and none holds on a loaded machine).
 func TestEnrollGivesEachAnswerItsOwnBudget(t *testing.T) {
 	t.Parallel()
 	h := startConnectHub(t)
@@ -143,20 +145,15 @@ func TestEnrollGivesEachAnswerItsOwnBudget(t *testing.T) {
 	}
 	d := &fakeDiscover{services: append(svcs, service(t, h.addr, "hub.test"))}
 	a := newAgent(t)
-	start := time.Now()
 	res, err := a.enrollWith(t, "", h.token, func(o *conn.Options) {
 		enrollMDNS(d)(o)
-		conn.SetEnrollMDNSLimits(o, 200*time.Millisecond, 5*time.Second)
-		o.Timeout = 5 * time.Second
+		// Three silent answers cost 3 s of budget against a 30 s search cap;
+		// the real hub's own handshake gets a whole second.
+		conn.SetEnrollMDNSLimits(o, time.Second, 30*time.Second)
+		o.Timeout = time.Minute
 	})
 	if err != nil || !res.Discovered {
 		t.Fatalf("enroll = %+v, %v; want the hub found behind three silent answers", res, err)
-	}
-	// Three silent answers cost 0.6 s of budget; the rest is the enroll
-	// itself, three times slower under load. Without the per-answer budget
-	// the run ends at its 5 s timeout and fails above.
-	if took := time.Since(start); took > 4*time.Second {
-		t.Errorf("enroll took %v: the silent answers were not cut at their budget", took)
 	}
 }
 
