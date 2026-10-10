@@ -4,12 +4,14 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	agentv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1"
 	"github.com/linuxdynasty/fleet-board/internal/agent/audit"
 	"github.com/linuxdynasty/fleet-board/internal/agent/conn/conntest"
 	"github.com/linuxdynasty/fleet-board/internal/agent/policy"
@@ -151,5 +153,35 @@ func TestAChangeFoundAtShutdownIsAuditedBeforeTheLogCloses(t *testing.T) {
 	rows := auditRows(t, s.dir)
 	if len(rows) != 1 || rows[0]["action"] != "policy.changed" {
 		t.Errorf("audit rows = %v, want one policy.changed", rows)
+	}
+}
+
+// The machine facts and the policy each fill their own part of one Snapshot,
+// in order; an error stops the chain.
+func TestChainSnapshotRunsEveryHookInOrderAndStopsAtAnError(t *testing.T) {
+	t.Parallel()
+	var order []string
+	facts := func(_ context.Context, s *agentv1.Snapshot) error {
+		order = append(order, "facts")
+		s.Facts = &agentv1.MachineFacts{OsVersion: "x"}
+		return nil
+	}
+	pol := func(_ context.Context, s *agentv1.Snapshot) error {
+		order = append(order, "policy")
+		s.Policy = &agentv1.PolicyInfo{Hash: "h"}
+		return nil
+	}
+	s := &agentv1.Snapshot{}
+	if err := chainSnapshot(facts, pol)(context.Background(), s); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(order, ",") != "facts,policy" || s.GetFacts().GetOsVersion() != "x" || s.GetPolicy().GetHash() != "h" {
+		t.Errorf("order %v, snapshot %v; want both parts filled, facts first", order, s)
+	}
+	boom := errors.New("boom")
+	order = nil
+	fail := func(context.Context, *agentv1.Snapshot) error { return boom }
+	if err := chainSnapshot(fail, pol)(context.Background(), &agentv1.Snapshot{}); !errors.Is(err, boom) || len(order) != 0 {
+		t.Errorf("err = %v, hooks run after it = %v; want boom and none", err, order)
 	}
 }

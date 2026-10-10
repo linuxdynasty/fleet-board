@@ -147,6 +147,10 @@ type fakeWatcher struct {
 	addErr  error
 	adds    int
 	removes int
+	// onAdd, when set, runs inside Add (before it returns) with the folder;
+	// removed lists the folders passed to Remove.
+	onAdd   func(dir string)
+	removed []string
 	events  chan fsnotify.Event
 	errs    chan error
 	mu      sync.Mutex
@@ -157,18 +161,34 @@ func newFake() *fakeWatcher {
 	return &fakeWatcher{events: make(chan fsnotify.Event, 16), errs: make(chan error, 16)}
 }
 
-func (f *fakeWatcher) Add(string) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.adds++
-	return f.addErr
+func (f *fakeWatcher) Add(dir string) error {
+	return f.addDir(dir)
 }
 
-func (f *fakeWatcher) Remove(string) error {
+func (f *fakeWatcher) addDir(dir string) error {
+	f.mu.Lock()
+	hook := f.onAdd
+	f.adds++
+	err := f.addErr
+	f.mu.Unlock()
+	if hook != nil {
+		hook(dir)
+	}
+	return err
+}
+
+func (f *fakeWatcher) Remove(dir string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.removes++
+	f.removed = append(f.removed, dir)
 	return nil
+}
+
+func (f *fakeWatcher) removedDirs() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.removed...)
 }
 
 func (f *fakeWatcher) counts() (adds, removes int) {

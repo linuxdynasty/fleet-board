@@ -40,7 +40,10 @@ func (f fsWatcher) Close() error                  { return f.w.Close() }
 // watches the folder, not the file, because editors replace a file by
 // renaming another over it. There is no timer that re-reads the file on its
 // own: only an event, or a Snapshot or Settings message (see [Manager.Recheck]),
-// causes a read.
+// causes a read. A symlinked policy.yaml is followed to its target's folder.
+// The watch looks at the file once when it is set (an edit between Load and
+// the watch raised no event) and once more when ctx ends (a change in the last
+// settle window); the loader reports what it finds before it closes.
 //
 // When the watch cannot be set (the inotify limit, no file handles) Watch
 // logs policy.watch_off once, sets [Manager.WatchOff] and returns nil; it
@@ -63,9 +66,9 @@ func (m *Manager) Watch(ctx context.Context) error {
 	defer func() { _ = w.Close() }()
 	defer m.watching.Store(false)
 	// An edit between Load and the watch being set raised no event.
-	m.Recheck(ctx)
 	link := &linkTarget{m: m, w: w}
-	link.sync(ctx)
+	link.sync(ctx) // the target's folder is watched before the file is read
+	m.Recheck(ctx)
 	// Only now is the watch fully in place: a reader that sees Watching true
 	// knows the first look at the file is done.
 	m.watching.Store(true)
@@ -83,8 +86,8 @@ func (m *Manager) Watch(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			// A change inside the last settle window would never be looked
-			// at: one bounded read of one local file, and the loader reports
-			// what it finds before it closes.
+			// at: one bounded read of one regular file (opened without
+			// waiting), and the loader reports what it finds before it closes.
 			m.Recheck(context.WithoutCancel(ctx))
 			return nil
 		case ev, ok := <-w.Events():
@@ -92,14 +95,18 @@ func (m *Manager) Watch(ctx context.Context) error {
 				return nil
 			}
 			if filepath.Clean(ev.Name) == filepath.Clean(m.opts.Dir) && ev.Has(fsnotify.Remove|fsnotify.Rename) {
-				// The folder itself went. Look at the file now; a folder
-				// put back in its place can be watched again, else the
-				// watch is off (and still no poll).
-				m.Recheck(ctx)
-				// The old watch is dead (kqueue holds a descriptor of the
-				// folder that went); drop it and watch the one in its place.
+				// The folder itself went. The old watch is dead (kqueue holds
+				// a descriptor of the folder that went): drop it and watch
+				// the folder in its place, then look at the file, so a write
+				// after the look raises an event. If there is no folder to
+				// watch the watch is off (and still no poll).
 				_ = w.Remove(m.opts.Dir)
-				if err := w.Add(m.opts.Dir); err != nil {
+				err := w.Add(m.opts.Dir)
+				if err == nil {
+					link.sync(ctx)
+				}
+				m.Recheck(ctx)
+				if err != nil {
 					m.setWatchOff(ctx, err)
 					return nil
 				}
@@ -121,8 +128,8 @@ func (m *Manager) Watch(ctx context.Context) error {
 			}
 			timer.Reset(settle)
 		case <-timer.C:
+			link.sync(ctx) // the link may have been replaced: watch its target first
 			m.Recheck(ctx)
-			link.sync(ctx) // the link may have been replaced
 		}
 	}
 }
