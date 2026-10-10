@@ -39,6 +39,7 @@ type connectHub struct {
 	handler     http.Handler
 	tlsCfg      *tls.Config
 	open        atomic.Int64 // TCP connections open now
+	calls       callLog      // every request: method, connection, client certificate
 
 	mu  sync.Mutex
 	srv *http.Server
@@ -59,6 +60,11 @@ type connectHub struct {
 	ackResults bool
 	// readGate, when set, holds every stream's next read until it closes.
 	readGate chan struct{}
+	// renew is how RenewCert answers (renewfake_test.go).
+	renew renewFake
+	// hubClock is the hub's clock: HelloAck.hub_time and the issue time of
+	// a renewed certificate. nil is time.Now.
+	hubClock func() time.Time
 	epoch    uint64
 	lastSeq  uint64
 	live     *liveStream
@@ -82,6 +88,30 @@ type liveStream struct {
 
 func startConnectHub(t *testing.T) *connectHub {
 	t.Helper()
+	return startConnectHubWith(t, nil)
+}
+
+// startConnectHubWith is startConnectHub after set adjusts the fake (its
+// TLS clock, its enroll issue time) before it serves.
+func startConnectHubWith(t *testing.T, set func(h *connectHub)) *connectHub {
+	t.Helper()
+	h := newConnectHub(t)
+	if set != nil {
+		set(h)
+	}
+	h.listen(t, "127.0.0.1:0")
+	t.Cleanup(func() {
+		h.mu.Lock()
+		defer h.mu.Unlock()
+		_ = h.srv.Close()
+	})
+	return h
+}
+
+// newConnectHub builds the fake without serving it, so its handler can
+// also serve another listener's Connect (see renewhub_test.go).
+func newConnectHub(t *testing.T) *connectHub {
+	t.Helper()
 	h := &connectHub{fakeHub: &fakeHub{auth: newCA(t)}, fleetID: "fleet-fake"}
 	path, handler := agentv1connect.NewAgentServiceHandler(h)
 	mux := http.NewServeMux()
@@ -101,12 +131,6 @@ func startConnectHub(t *testing.T) *connectHub {
 		ClientAuth:   tls.VerifyClientCertIfGiven,
 		ClientCAs:    pool,
 	}
-	h.listen(t, "127.0.0.1:0")
-	t.Cleanup(func() {
-		h.mu.Lock()
-		defer h.mu.Unlock()
-		_ = h.srv.Close()
-	})
 	tok, err := ca.NewToken(h.auth.Cert.Raw, rand.Reader)
 	if err != nil {
 		t.Fatal(err)
@@ -119,7 +143,7 @@ func startConnectHub(t *testing.T) *connectHub {
 func (h *connectHub) listen(t *testing.T, addr string) {
 	t.Helper()
 	srv := &http.Server{
-		Handler: h.handler, ReadHeaderTimeout: 5 * time.Second, TLSConfig: h.tlsCfg.Clone(),
+		Handler: h.calls.record(h.handler), ReadHeaderTimeout: 5 * time.Second, TLSConfig: h.tlsCfg.Clone(),
 		ConnState: func(_ net.Conn, s http.ConnState) {
 			switch s {
 			case http.StateNew:
@@ -206,7 +230,7 @@ func (h *connectHub) Connect(ctx context.Context,
 	h.live = ls
 	h.epoch = max(h.epoch, hello.GetLastEpoch()) + 1
 	ack := &agentv1.HelloAck{
-		HubVersion: "fake", HubTime: timestamppb.Now(), Epoch: h.epoch, ProtoVersion: protoversion.Max,
+		HubVersion: "fake", HubTime: timestamppb.New(h.hubNowLocked()), Epoch: h.epoch, ProtoVersion: protoversion.Max,
 		HubLastEventSeq: h.lastSeq, MaxMessageBytes: 1 << 20, HubInstanceId: "hub-fake", FleetId: h.fleetID,
 	}
 	if h.tamperAck != nil {

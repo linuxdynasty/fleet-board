@@ -2,13 +2,14 @@ package conn
 
 import (
 	"context"
-	"crypto/tls"
+	"crypto/x509"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"connectrpc.com/connect"
@@ -24,6 +25,10 @@ import (
 // DefaultHelloTimeout bounds the wait for HelloAck after Hello
 // (defaults.md "HelloAck wait (agent)").
 const DefaultHelloTimeout = 30 * time.Second
+
+// DefaultRenewCheck is how often a connected loop checks the certificate
+// for renewal (defaults.md "Agent certificate renewal check").
+const DefaultRenewCheck = time.Hour
 
 // LoopOptions are the inputs of [NewLoop].
 type LoopOptions struct {
@@ -63,10 +68,23 @@ type LoopOptions struct {
 	// browse; zero is [DefaultBrowseTimeout].
 	Discover      Discover
 	BrowseTimeout time.Duration
+	// RenewCheck is how often a connected loop checks whether the
+	// certificate in use is due for renewal (it is also checked when each
+	// stream connects); zero is [DefaultRenewCheck].
+	RenewCheck time.Duration
 	// anchorHook, for tests only, sees each stream's hub-time anchor.
 	anchorHook func(hubRecv time.Time)
 	// mdns, for tests only, shortens the discovery limits.
 	mdns mdnsLimits
+	// clock, for tests only, replaces time.Now for the certificate's
+	// expiry and renewal decisions.
+	clock func() time.Time
+	// renewHook, for tests only, sees each renewal check ("check") and
+	// step; true at a step stops the renewal there as a crash would,
+	// leaving the files as they are.
+	renewHook func(step string) bool
+	// elapsed, for tests only, replaces time.Since for hub time.
+	elapsed func(t time.Time) time.Duration
 }
 
 // Loop keeps this machine connected to its hub (03 W1 "State machine", 03n W2):
@@ -79,15 +97,31 @@ type LoopOptions struct {
 type Loop struct {
 	// since is the monotonic time elapsed since t (time.Since); a test
 	// replaces it to step the wall clock apart from it.
-	since  func(t time.Time) time.Duration
+	since func(t time.Time) time.Duration
+	// now is the wall clock of the certificate's expiry and renewal
+	// decisions; a test replaces it.
+	now    func() time.Time
 	opts   LoopOptions
 	log    *slog.Logger
 	tracer trace.Tracer
 	m      *loopMetrics
-	cert   tls.Certificate
-	fp     [32]byte
-	seqs   *ring.Seqs
-	status statusBox
+	// pairs is the enrolled pair and the renewed one from cert.pem. A
+	// renewal swaps the set whole (renew.go); every handshake reads it
+	// (pairSet.dial), and the expiry and renewal decisions follow the pair
+	// that ends last (pairSet.lead).
+	pairs atomic.Pointer[pairSet]
+	// gate decides whether a due renewal may start (renewgate.go).
+	gate renewGate
+	// anchor is the last HelloAck's hub time (nil before one, or when it
+	// had none); presented is the pair the current attempt presented, and
+	// avoid the one not to present next (pairset.go).
+	anchor    atomic.Pointer[hubAnchor]
+	presented atomic.Pointer[certPair]
+	avoid     atomic.Pointer[certPair]
+	ca        *x509.Certificate
+	fp        [32]byte
+	seqs      *ring.Seqs
+	status    statusBox
 	// discovery is fleet_agent_discovery_seconds.
 	discovery metric.Float64Histogram
 	// Only Run's goroutine touches these.
@@ -103,19 +137,15 @@ func NewLoop(ctx context.Context, opts LoopOptions) (*Loop, error) {
 	if opts.Telemetry == nil || opts.DB == nil {
 		return nil, errors.New("conn: NewLoop needs telemetry and agent.db")
 	}
-	cert, err := tls.X509KeyPair([]byte(opts.Identity.CertPEM), []byte(opts.Identity.KeyPEM))
-	if err != nil {
-		return nil, fmt.Errorf("conn: %s holds no usable certificate and key: %w", IdentityFile, err)
-	}
 	raw, err := hex.DecodeString(opts.Identity.CAFingerprint)
 	if err != nil || len(raw) != 32 {
 		return nil, fmt.Errorf("conn: %s holds no valid CA fingerprint", IdentityFile)
 	}
-	seqs, err := opts.DB.Seqs(ctx)
+	ca, err := pinnedCAOf(opts.Identity, [32]byte(raw))
 	if err != nil {
 		return nil, err
 	}
-	m, err := newLoopMetrics(opts.Telemetry, opts.Identity.CertNotAfter)
+	seqs, err := opts.DB.Seqs(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -131,12 +161,28 @@ func NewLoop(ctx context.Context, opts LoopOptions) (*Loop, error) {
 	if opts.HandshakeTimeout <= 0 {
 		opts.HandshakeTimeout = handshakeTimeout
 	}
+	if opts.RenewCheck <= 0 {
+		opts.RenewCheck = DefaultRenewCheck
+	}
 	l := &Loop{
-		since: time.Since,
-		opts:  opts, log: opts.Telemetry.Logger.With("component", "conn"), tracer: opts.Telemetry.Tracer(scope),
-		m: m, cert: cert, fp: [32]byte(raw), seqs: seqs, discovery: disc, events: opts.Events,
+		since: time.Since, now: time.Now,
+		opts: opts, log: opts.Telemetry.Logger.With("component", "conn"), tracer: opts.Telemetry.Tracer(scope),
+		ca: ca, fp: [32]byte(raw), seqs: seqs, discovery: disc, events: opts.Events,
+	}
+	if opts.clock != nil {
+		l.now = opts.clock
+	}
+	if opts.elapsed != nil {
+		l.since = opts.elapsed
 	}
 	l.addrs = l.configured(ctx)
+	if err := l.loadPair(ctx); err != nil {
+		return nil, err
+	}
+	l.m, err = newLoopMetrics(opts.Telemetry, func() time.Duration { return l.pairs.Load().lead().notAfter().Sub(l.hubTime()) })
+	if err != nil {
+		return nil, err
+	}
 	l.status.pushOff = opts.PushOff
 	return l, nil
 }
@@ -152,7 +198,9 @@ func (l *Loop) Run(ctx context.Context) error {
 	p := newPacer(b)
 	var last time.Time
 	for {
-		if !time.Now().Before(l.opts.Identity.CertNotAfter) {
+		// The pair that ends last, not identity.json's cert_not_after (a
+		// renewed pair outlives the enrolled one), by hub time.
+		if !l.hubTime().Before(l.pairs.Load().lead().notAfter()) {
 			return l.end(ctx, EndCertExpired, "")
 		}
 		if !last.IsZero() {
@@ -165,7 +213,11 @@ func (l *Loop) Run(ctx context.Context) error {
 			}
 		}
 		last = time.Now()
+		l.presented.Store(nil)
 		out := l.attempt(ctx, p.reason)
+		if !out.connected && out.end == "" && ctx.Err() == nil {
+			l.avoidPresented(ctx)
+		}
 		switch {
 		case ctx.Err() != nil:
 			return l.stopped()

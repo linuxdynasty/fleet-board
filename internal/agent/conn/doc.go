@@ -38,6 +38,17 @@
 // Enroll with no hub address browses the same way and sends its request
 // only to the first answer whose handshake proves it holds the token's CA
 // ([ErrNoHubFound] when none does). Every mDNS answer is untrusted: only a
-// candidate until the pin passes. The agent side of certificate renewal
-// comes with plan row 4's later parts.
+// candidate until the pin passes.
+//
+// While connected the loop renews its client certificate (02g "Certificate
+// renewal (A4)"): at two thirds of the life of the pair that ends last, checked
+// when a stream connects and every [LoopOptions].RenewCheck, one renewal
+// at a time makes a new key in [RenewKeyFile], calls RenewCert on the
+// stream's connection, checks the answer, writes the pair to [CertFile]
+// and swaps it in for the next handshake; identity.json is never
+// rewritten. A handshake presents the pair that ends later among those
+// inside their life by the agent's clock (the other one after an attempt
+// that presented it failed); the renewal point, the expiry check and the
+// expiry gauge follow the pair that ends last on hub time; a failed
+// renewal is retried at the next check and never ends the loop.
 package conn

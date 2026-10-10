@@ -243,7 +243,7 @@ re-enroll rule are in [02g](02g-agent-security.md#machine-lifecycle-revoke-and-d
 |---|---|---|
 | Enrollment token secret hash, expected hostname, TTL, `used_time`, `previous_machine` | hub store | one tx at `enroll-token`; burned in the Enroll tx |
 | Machine row (id, name, facts, labels), cert serial + `not_after_time`, the stored Enroll response (kept until the token's TTL + 24 h, keyed by token, `install_id` and CSR key, for replay) | hub store | the Enroll tx (token burn + machine + serial + response together; signing is local CPU, not a network call) |
-| Key (kept until Enroll succeeds, so a retry sends the same CSR), cert, CA chain + pinned fingerprint, `machine_id`, salt, `fleet_id`, cached hub address | agent state dir, mode 0600: a pending key file until success, then `identity.json` (written once, never replaced) and `hub-address`; `install_id` is in `agent.db` | written before `Enroll` returns to the shell; salt never logged |
+| Key (kept until Enroll succeeds, so a retry sends the same CSR), cert, CA chain + pinned fingerprint, `machine_id`, salt, `fleet_id`, cached hub address | agent state dir, mode 0600: a pending key file until success, then `hub-address` and `identity.json` (written once, never replaced); a renewed key and certificate in `cert.pem` (replaced by temp file, fsync, rename), with `renew.key` kept until it is saved; `install_id` is in `agent.db` | written before `Enroll` returns to the shell; salt never logged |
 | `status.json` (the running agent's last-known state; its entries are listed in plan row 6) and `enroll.json` (the last enroll failure code) | agent state dir, mode 0600 | each written whole (temp file, sync, rename) by its one writer: `fleet-agent run` and `fleet-agent enroll` |
 | The end the connection loop stopped on (revoked, unknown machine, fleet mismatch) | agent state dir, `ended.json`, mode 0600 | written whole before `run` exits; removed by enroll |
 | The hub's latest address list (`HelloAck.hub_addresses`) | agent state dir, `hub-addresses`, mode 0600 | replaced whole (temp file, fsync, rename) when a non-empty list differs from the one in use; read at start ahead of the enroll-time list |
@@ -275,7 +275,7 @@ re-enroll rule are in [02g](02g-agent-security.md#machine-lifecycle-revoke-and-d
 | A malformed token | Exit 1 with a line that says so; no state folder is created and nothing is sent |
 | `enroll` with no `--hub` and no hub found | Exit 1 naming `--hub` and what was seen, with no token, CSR or facts sent; `enroll.failed{step="discover"}`. Nothing answered: the likely cause, a host firewall that drops direct UDP replies to the mDNS query (ADR 0028), `err_kind="timeout"`; the browse could not run: `"io"`, with the same advice; answers that failed the handshake ("none proved it holds this token's CA") or could not be reached ("could not be reached": `"refused"` when every one refused the connection, else `"timeout"`), or both: no firewall advice. The whole-enroll cap or a stop during the search says so instead (`"timeout"`), with no advice |
 | `hub-addresses` damaged (no valid line), open to other users, or not a file | Ignored: the run starts with the `identity.json` list, `connect.addresses{source="identity", err_kind}`; a valid line among invalid ones is used and the rest dropped. A save that fails logs `connect.failed{step="save"}` and the stream stays up |
-| `enroll` on a machine that is already enrolled | Until re-enroll exists (later in plan row 4, and row 13a's `previous_machine`): refused before any network call, naming the machine; the identity is never replaced. To start again the owner removes only `identity.json` (and `enroll.key` if present) and keeps `agent.db`, which holds `install_id`, so the next enroll with a new token keeps it; exit 1. A leftover `enroll.key` next to a valid identity is removed |
+| `enroll` on a machine that is already enrolled | Until re-enroll exists (later in plan row 4, and row 13a's `previous_machine`): refused before any network call, naming the machine; the identity is never replaced. To start again the owner removes only `identity.json` (and `enroll.key` if present) and keeps `agent.db`, which holds `install_id`, so the next enroll with a new token keeps it; the advice also says that enroll removes `cert.pem` and `renew.key` (the old identity's renewal) before it saves the new identity; exit 1. A leftover `enroll.key` next to a valid identity is removed |
 | Enroll response that fails the agent's checks (another CA or fingerprint, a certificate not for this key or machine id, no fleet id or salt) | Nothing saved, the key kept for a retry; `enroll.failed{step="response"}`, exit 1 |
 | A different machine enrolls with a token tied to `expected_hostname` | Enroll succeeds; machine row flagged `hostname_mismatch` (compared lower case without a trailing `.` or `.local`; an empty reported hostname is a mismatch) and `enroll.completed{hostname_mismatch=true}`; triage info item (W7; not yet: plan row 5); owner deletes it if wrong. The agent prints one warning line on stderr naming both hostnames |
 | Hub unreachable / all candidates fail | Backoff loop; `doctor` shows the last error per candidate (the loop keeps it in memory: step, `err_kind`, time); nothing else blocks |
@@ -284,7 +284,14 @@ re-enroll rule are in [02g](02g-agent-security.md#machine-lifecycle-revoke-and-d
 | Hello from a valid certificate the hub does not know (store recreated, or a backup that predates the enrollment) | `Bye{UNKNOWN_MACHINE}`; the agent goes Unenrolled and the owner issues a token. During a restore reconcile window the hub adopts the machine instead (02g) |
 | Hub restart between `Enroll` and first `Connect` | Enroll is durable; Connect retries |
 | Agent restart before the state dir is fully written | `identity.json` is written once (temp file, fsync, then a hard link that never replaces a file), so it is whole or absent. Until it exists `enroll.key` is kept, so running `enroll` again with the same token replays the hub's stored answer; no new token is needed |
-| Certificate expired (machine offline longer than lifetime) | Checked before every attempt: the loop ends without dialing, `connect.ended{state="cert_expired"}`, `fleet-agent run` exits 1 and `doctor` says "re-enroll". A hub refuses it at TLS anyway |
+| Certificate expired (machine offline longer than lifetime) | Checked before every attempt, on the certificate that ends last (the enrolled one, or a valid renewed one in `cert.pem`), by hub time (the last `HelloAck.hub_time` plus the monotonic time since; the agent's clock before the first `HelloAck` or after one with no `hub_time`): the loop ends without dialing, `connect.ended{state="cert_expired"}`, `fleet-agent run` exits 1 and `doctor` says "re-enroll". A hub refuses it at TLS anyway |
+| Agent crash or lost answer during renewal | The old pair stays valid and in use; `renew.key` is kept, so the next try sends the same CSR and the hub returns the stored certificate; a `renew.key` that matches `cert.pem` is a leftover and is removed at start |
+| Renewal fails (an older hub's `UNIMPLEMENTED`, `UNAVAILABLE`, a refusal, an answer that fails the agent's checks, `cert.pem` not writable) | Nothing is saved, the stream stays up and the loop never ends for it; `renew.refused{reason, code}` or `renew.failed{step, err_kind}` and `fleet_agent_cert_renewals_total{result}`; tried again at the next check with the same `renew.key`. If it keeps failing, a stream that is up stays up past the certificate's end (the hub checks it only at the handshake), and the loop ends with `cert_expired` at its next attempt, without dialing |
+| `renew.key` damaged or open to other users | Kept, never replaced (it may be the key of a certificate the hub stored); every check logs `renew.failed{step="key", check, file, fix}` (`check`: `damaged` or `loose_mode`; `fix` says to remove it or `chmod 600` it) and sends nothing, so renewal is blocked until the owner acts; row 6's `doctor` reports it |
+| A renewed pair that starts in the future (the hub signed with a clock ahead of the agent's) | Saved, but not presented until it starts by the agent's clock: the handshake uses the enrolled pair while it is valid, and the renewal check follows the pair that ends last, so no new renewal starts. `renew.completed` logs its `not_before`. An attempt that presented one pair and failed before Connected presents the other at the next attempt when that one is inside its life by the agent's clock (`renew.pair_switched`), until a stream connects; backoff is unchanged and a refused handshake is never taken as a revoke |
+| The agent's clock days off the hub's | The two-thirds point, the expiry check and `fleet_agent_cert_expiry_seconds` run on hub time, so a fast agent clock neither renews at every check nor ends the loop while the hub takes the pair; only the choice of the pair to present runs on the agent's clock. A renewal does not start within one check interval of the last; a lead already due by hub time when it was saved (a hub that signs on another clock than its `HelloAck` reports) or that ends at the CA's end is not renewed again in this run, logged once as `renew.skipped{reason}` (`due_at_once`, `ca_end`) |
+| Residual clock windows | A hub clock that steps back more than the CA's 5-minute backdate after signing a renewal refuses the new pair at the handshake until its clock catches up; the agent presents the other pair meanwhile while that one is inside its life. An agent clock slow by D presents a renewed pair D late (the enrolled one meanwhile, while it is inside its life by the agent's clock), and one fast by D presents it up to D early, which the hub refuses until it starts, then the other is tried. Before the first `HelloAck` of a run the expiry check uses the agent's clock, so an agent clock fast past the end ends the run (`cert_expired`) |
+| `cert.pem` not a valid pair at start (damaged, another CA or machine, a key that does not match, open to other users) | Logged as `cert.file_invalid{file, check, err_kind}` and left in place for `doctor` (row 6) to report; the enrolled pair is used. The next renewal replaces it |
 | Agent restarted (supervisor) after `Bye{REVOKED}`, `Bye{UNKNOWN_MACHINE}` or `FLEET_MISMATCH` | `ended.json` (written before the agent stops) makes `run` refuse before any network call, naming the end and the fix; re-enroll removes it; the owner may remove it to retry |
 | `ended.json` damaged (not whole JSON, another layout, an end it never records, no machine id) or open to other users | `run` refuses before any network call, exit 1, `run.failed{step="ended"}` (`err_kind="parse"` for a damaged file, `"constraint"` for a loose one); for a damaged file it says to remove it to try again, for one open to other users to chmod it 600; a damaged file is not guessed at, as for `identity.json` |
 | `HelloAck.epoch` above 2^63 - 2 or `hub_last_event_seq` above 2^63 - 1 - 1024 (a broken or hostile hub) | Refused before either is saved, `connect.failed{step="hello", err_kind="constraint", check, value}`, then backoff. `agent.db` keeps signed 64-bit values that never go back, and the limits keep the hub's next epoch (the stored one plus 1) and the first seq block above the floor from overflowing them |
@@ -304,7 +311,12 @@ re-enroll rule are in [02g](02g-agent-security.md#machine-lifecycle-revoke-and-d
   `fleet_agent_discovery_seconds{result=found|none, source}` (histogram: from
   the start of an attempt until a candidate's handshake passed, with that
   candidate's `source`, or until every candidate failed; a stop is not
-  counted), `fleet_agent_cert_expiry_seconds`.
+  counted), `fleet_agent_cert_expiry_seconds` (the certificate that ends
+  last, the enrolled one or the renewed one, by hub time),
+  `fleet_agent_cert_renewals_total{result=renewed|refused|invalid|failed}`
+  (`refused`: the hub's non-retryable reason; `invalid`: an answer that
+  failed the agent's checks; `failed`: any other call failure, or a
+  `cert.pem` or `renew.key` that could not be written or read).
 - `fleet_hub_enroll_tokens_total{result}` (token creation, plan row 2b),
   `fleet_hub_enroll_total{result}` (`enrolled`, `replayed`, `refused`: the
   caller's error, `failed`: the hub's; plan row 3), `fleet_hub_agents_connected`,
@@ -317,7 +329,30 @@ re-enroll rule are in [02g](02g-agent-security.md#machine-lifecycle-revoke-and-d
   `source` and `result` (`found`, `none`, or `stopped` when the run stopped
   during the search); in enroll without `--hub`, the browse and one child per
   answer probed),
-  `agent.connect.hello`, `hub.connect.hello`, `hub.snapshot.apply`.
+  `agent.connect.hello`, `agent.cert.renew`, `hub.connect.hello`,
+  `hub.snapshot.apply`.
+- Certificate renewal (02g A4), agent logs: `renew.pair_loaded{source,
+  serial, not_after, renew_after, dial_source}` at each start (`source`:
+  `identity` or `cert_file`, the pair that ends last; `dial_source`, the
+  pair the next handshake presents), `renew.started{peer, serial,
+  not_after, key_kept}`, `renew.completed{serial, not_before, not_after,
+  previous_serial}`, `renew.cancelled{step, serial}` (the stream ended or
+  the agent stopped during the call; not a failure, the next check sends
+  the same key), `renew.refused{reason, code}` (the hub's non-retryable
+  reason), `renew.failed{step, err_kind}` (`step`: `key`, `call` with
+  `code`, `response` with `check`: `size`, `ca_chain`, `cert`, `key`,
+  `chain`, `machine_id`, `past_ca`, `not_later`; `save`, `cleanup`; a
+  file the step could not use adds `file`, its path, `check`
+  (`damaged`, `loose_mode`, `unusable`, `unwritable`, `unremovable`) and,
+  when the owner must act, `fix`), `renew.skipped{reason, serial,
+  not_after}` once per lead (`reason`: `ca_end`, `due_at_once`),
+  `renew.pair_switched{from_source, from_serial, to_source, to_serial}`
+  (an attempt that presented a pair failed before Connected; the next
+  presents the other), and `renew.leftover_removed{file}`;
+  05b's `cert.file_invalid{file, check, err_kind}` for a `cert.pem` it
+  does not use. Every `renew.started` is followed by `renew.completed`,
+  `renew.cancelled`, `renew.refused` or `renew.failed`. No line holds a
+  key, a CSR or a certificate; serials are hex.
 - Logs: `enroll.issued{machine, expire_time, actor}`, `enroll.issue_refused{reason}`,
   `enroll.issue_failed{step, err_kind}`,
   `enroll.completed{machine_id, replayed, hostname_mismatch}`,
@@ -415,6 +450,11 @@ trying?" → `connect.addresses` and the `connect.attempt` lines.
 (`failures`, `wait_ms`); the real time to the next try is the longer of
 `wait_ms` and what is left of the 5 s minimum gap since the last try
 started.
+"is machine X's certificate being renewed, and when does it run out?" →
+`fleet_agent_cert_expiry_seconds` (the pair that ends last, by hub time), `renew.pair_loaded`
+(`renew_after`), then `renew.completed`, or `renew.refused` / `renew.failed`
+and `fleet_agent_cert_renewals_total{result}` for why not; the hub's side
+is 05b's `cert.renew_refused`.
 "why does `fleet-agent run` exit at once?" → `run.refused{end}` (the end
 recorded in `ended.json`) or `run.failed{step}`; exit 0 right after start
 with `run.stopped{step}` means a stop signal arrived during startup.

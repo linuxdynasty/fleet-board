@@ -60,7 +60,7 @@ func TestTheLoopSavesAnEndThatNeedsTheOwner(t *testing.T) {
 		{name: "another fleet", hub: func(h *connectHub) { h.fleetID = "fleet-other" }, want: conn.EndFleetMismatch, fix: mismatchFix},
 		{
 			name: "certificate expired", want: conn.EndCertExpired,
-			opts: func(o *conn.LoopOptions) { o.Identity.CertNotAfter = time.Now().Add(-time.Minute) },
+			opts: func(o *conn.LoopOptions) { conn.SetClock(o, pastLifetime) },
 		},
 	}
 	for _, tc := range cases {

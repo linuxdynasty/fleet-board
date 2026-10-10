@@ -38,7 +38,8 @@ var (
 	// ErrAlreadyEnrolled means the state folder already holds an identity.
 	// Enroll never replaces it. Until re-enroll exists (later in plan row 4,
 	// and row 13a's previous_machine), the owner removes identity.json and
-	// keeps agent.db, whose install_id survives re-enrollment (agent.proto).
+	// keeps agent.db, whose install_id survives re-enrollment (agent.proto);
+	// the next enroll removes cert.pem and renew.key.
 	ErrAlreadyEnrolled = errors.New("conn: this machine is already enrolled")
 	// ErrHubUntrusted means the TLS handshake with the hub failed its proof:
 	// the pin to the CA in the token, the name, or the key. Nothing was sent
@@ -182,8 +183,9 @@ func enroll(ctx context.Context, r *enrollRun, opts Options) (Result, string, er
 			r.log.WarnContext(ctx, "enroll.failed", "step", "cleanup", "err_kind", errKind(err))
 		}
 		return Result{}, "already_enrolled", fmt.Errorf(
-			"%w as machine %s in fleet %s; to enroll again, remove %s and keep agent.db (it holds install_id)",
-			ErrAlreadyEnrolled, id.MachineID, id.FleetID, filepath.Join(opts.Dir, IdentityFile))
+			"%w as machine %s in fleet %s; to enroll again, remove %s and keep agent.db (it holds install_id); "+
+				"the new enrollment also removes %s and %s, this machine's renewed certificate",
+			ErrAlreadyEnrolled, id.MachineID, id.FleetID, filepath.Join(opts.Dir, IdentityFile), CertFile, RenewKeyFile)
 	case !errors.Is(err, ErrNotEnrolled):
 		return Result{}, "state", err
 	}
@@ -223,6 +225,13 @@ func enroll(ctx context.Context, r *enrollRun, opts Options) (Result, string, er
 	id, err := checkResponse(msg, key, tok.CAFingerprint, time.Now())
 	if err != nil {
 		return Result{}, "response", err
+	}
+	// A renewed pair or a renewal in progress belongs to the identity
+	// that was removed; neither may be used with the new one.
+	for _, name := range []string{CertFile, RenewKeyFile} {
+		if err := removePrivate(opts.Dir, name); err != nil {
+			return Result{}, "save", err
+		}
 	}
 	if err := saveHubAddress(opts.Dir, addr); err != nil {
 		return Result{}, "save", err

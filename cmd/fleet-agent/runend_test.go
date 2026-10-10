@@ -1,13 +1,14 @@
 package main_test
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/linuxdynasty/fleet-board/internal/agent/conn"
 	"github.com/linuxdynasty/fleet-board/internal/agent/conn/conntest"
+	"github.com/linuxdynasty/fleet-board/internal/hub/ca"
 )
 
 // countedRun points dir's cached hub address at a counting listener, runs
@@ -80,28 +81,23 @@ func TestARunWithALooseEndSendsNothing(t *testing.T) {
 }
 
 // The loop ending on its own exits 1: here the certificate has expired
-// (the test rewrites its own identity fixture), so the loop ends before it
+// (the hub's clock issued it almost one lifetime ago, so it ends seconds
+// after enroll, and the test waits that out), so the loop ends before it
 // dials, logs connect.ended{state=cert_expired}, and run exits 1.
 func TestARunWhoseLoopEndsExitsOne(t *testing.T) {
 	t.Parallel()
-	h := conntest.StartHub(t, conntest.Options{})
+	// IssueAgent backdates by 5 minutes and truncates to the second, so the
+	// certificate ends 9 to 10 seconds after it is issued: long enough for
+	// enroll to check it, short enough to wait out.
+	h := conntest.StartHub(t, conntest.Options{Now: func() time.Time {
+		return time.Now().Add(-ca.AgentLifetime + 5*time.Minute + 10*time.Second)
+	}})
 	dir, _ := enrolledDir(t, h)
-	path := filepath.Join(dir, "identity.json")
-	data, err := os.ReadFile(path) //nolint:gosec // G304: the test's own state folder
+	id, err := conn.LoadIdentity(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var id map[string]any
-	if err := json.Unmarshal(data, &id); err != nil {
-		t.Fatal(err)
-	}
-	id["cert_not_after"] = time.Now().Add(-time.Hour).UTC().Format(time.RFC3339)
-	if data, err = json.Marshal(id); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, data, 0o600); err != nil {
-		t.Fatal(err)
-	}
+	time.Sleep(time.Until(id.CertNotAfter) + 100*time.Millisecond)
 	r, dialed := countedRun(t, dir)
 	out := r.stderr.String()
 	ended := conntest.Lines(t, out, "connect.ended")

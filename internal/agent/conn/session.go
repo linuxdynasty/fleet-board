@@ -58,6 +58,10 @@ type session struct {
 	// had none) and hubRecv when the HelloAck arrived, with its monotonic
 	// reading: see hubNow.
 	hubAt, hubRecv time.Time
+	// renewCtx ends, and renewWG is waited for, before run returns, so a
+	// renewal never outlives the connection it uses (renew.go).
+	renewCtx context.Context
+	renewWG  sync.WaitGroup
 }
 
 // try runs one candidate. accepted is true when its handshake passed, so
@@ -76,7 +80,7 @@ func (l *Loop) try(ctx context.Context, c candidate, reason agentv1.ConnectReaso
 	if c.budget > 0 {
 		hs = c.budget
 	}
-	k, err := newLinkVia(c.addr, c.dial, l.fp, l.cert, l.opts.Keepalive, hs, func(err error) {
+	k, err := newLinkVia(c.addr, c.dial, l.fp, l.clientCert, l.opts.Keepalive, hs, func(err error) {
 		heard(err)
 		if err == nil {
 			w.found(c.source)
@@ -154,6 +158,12 @@ func (s *session) run(ctx context.Context) (ending, string, error) {
 		if late != nil {
 			late.Stop()
 		}
+	}()
+	var stopRenew context.CancelFunc
+	s.renewCtx, stopRenew = context.WithCancel(ctx)
+	defer func() {
+		stopRenew()
+		s.renewWG.Wait()
 	}()
 	s.msgs, s.done = make(chan *agentv1.ConnectResponse), make(chan struct{})
 	s.bs = s.k.client.Connect(s.sctx)
@@ -294,9 +304,11 @@ func (s *session) accept(ctx context.Context, ack *agentv1.HelloAck, st ring.Sta
 	}
 	ht := ack.GetHubTime()
 	hubTimeOK := ht.IsValid()
+	s.l.anchor.Store(nil)
 	if hubTimeOK {
 		s.hubAt = ht.AsTime()
 		offset = s.hubAt.Sub(sent.Add(recv.Sub(sent) / 2))
+		s.l.anchor.Store(&hubAnchor{at: s.hubAt, recv: s.hubRecv})
 		s.l.status.update(func(ss *Status) { ss.ClockOffset, ss.ClockOffsetTime = offset, recv })
 	}
 	s.l.takeAddresses(ctx, s.c.addr, ack.GetHubAddresses())
@@ -320,6 +332,7 @@ func (s *session) connected(ctx context.Context) (ending, string, error) {
 	l.m.connected.Store(1)
 	defer l.m.connected.Store(0)
 	l.m.attempt(ctx, "connected", s.c.source)
+	l.avoid.Store(nil)
 	if s.reason != agentv1.ConnectReason_CONNECT_REASON_START {
 		l.m.reconnect(ctx, reasonLabel(s.reason))
 	}
@@ -328,20 +341,26 @@ func (s *session) connected(ctx context.Context) (ending, string, error) {
 			l.log.WarnContext(ctx, "connect.failed", "peer", s.c.addr, "step", "save", "err_kind", errKind(err))
 		}
 	}
+	s.renewCheck()
 	out, step, err := s.serve(ctx)
 	out.connected = true
 	return out, step, err
 }
 
-// serve handles the hub's messages and sends a Heartbeat every s.beat; the
+// serve handles the hub's messages, checks the certificate for renewal
+// every RenewCheck, and sends a Heartbeat every s.beat; the
 // first comes one interval after the snapshot and its results, already
 // sent. A time.Ticker drops ticks for a slow receiver, so a tick missed
 // while a send waits is dropped, never queued.
 func (s *session) serve(ctx context.Context) (ending, string, error) {
 	beat := time.NewTicker(s.beat)
 	defer beat.Stop()
+	renew := time.NewTicker(s.l.opts.RenewCheck)
+	defer renew.Stop()
 	for {
 		select {
+		case <-renew.C:
+			s.renewCheck()
 		case <-beat.C:
 			// The stream's context: a stop during the tick still lets this
 			// heartbeat finish and the next turn say Bye{SHUTDOWN}.
