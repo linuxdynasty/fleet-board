@@ -250,7 +250,7 @@ run counts are its own assumptions, not measurements: about 21 PR runs and
 10 `main` runs a month typical, 32 and 17 worst (its minutes over the 17.6
 and 17.4 minute medians of the last 58 `ci.yml` runs). Real use has run far
 above them: 95 merges reached `main` in the 30 days to 2026-10-10, bunched
-(22 on 10-02, 20 on 10-10); at that pace every row above is low, with or
+(22 on 10-02, 22 on 10-10); at that pace every row above is low, with or
 without tmux, and the owner, who approves every change to CI minutes,
 decides. The tmux steps run on a change that reaches the tmux packages:
 16 of the last 40 merges would have (40%, by today's import graph of
