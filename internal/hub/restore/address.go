@@ -20,8 +20,9 @@ var ErrAddress = errors.New("restore: not a hub address (want host or host:port,
 // Address checks a hub address the owner typed and spells it the way the
 // agent keeps one (conn.HubAddress): lower case, no trailing dot, an IP in
 // its canonical form, and a port without leading zeros; defaultPort when it
-// has none. An IPv6 zone, or more than 261 bytes, is refused. The agent drops an entry of HelloAck.hub_addresses it cannot
-// parse, so the hub only stores ones it would keep.
+// has none. An IPv6 zone, or more than 261 bytes, is refused. The agent
+// drops an entry of HelloAck.hub_addresses it cannot parse, so the hub only
+// stores ones it would keep.
 func Address(s, defaultPort string) (string, error) {
 	if s == "" {
 		return "", fmt.Errorf("%w: empty", ErrAddress)

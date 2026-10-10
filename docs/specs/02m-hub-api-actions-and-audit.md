@@ -178,8 +178,12 @@ transaction as the restore on the restored store, and a detail of closed
 fields only: `backup` (the file's base name, letters, digits, `.`, `_` and
 `-` kept, anything else `_`, at most 128 bytes; never a folder),
 `schema_from` (the backup's schema version before migration),
-`address_added` and `settings_epoch` (the new one); the others the
-collection of their resource. A
+`address_added` and `settings_epoch` (the new one). Audit rows written
+after the backup (an earlier `hub.restore` row too) are not carried into
+the restored store; they stay in `state.db.pre-restore-<stamp>`
+([02j](02j-hub-runtime.md#state-directory)), which is kept or exported
+before it is deleted (whether restore should carry them forward is open for
+plan rows 12 and 13); the others the collection of their resource. A
 read-only attach toggle is a re-attach (a new `attach.open`).
 
 | Area | Actions |

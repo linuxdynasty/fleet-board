@@ -32,7 +32,9 @@ version this fleetd does not know, and one from another fleet than the
 current `state.db`, and then changes nothing. Otherwise it keeps the fleet
 id, CA and salt, mints a new `settings_epoch`, opens the 24 h reconcile
 window, and keeps the replaced store as `state.db.pre-restore-<UTC stamp>`
-(mode 0600; delete it once the restored hub works). `--address` (host or
+(mode 0600). That copy is the only place left for the audit rows written
+since the backup, so keep it, or export its `audit_log`, before deleting
+it. `--address` (host or
 host:port; the port defaults to `listen.agent`'s, else 7443) is added to the
 addresses agents get and to the server certificate, signed by the same CA.
 With another process holding `state.db` open (a `fleetd backup`) it says to

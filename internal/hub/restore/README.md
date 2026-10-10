@@ -50,7 +50,10 @@ addr, err := restore.Address("Hub2.Example", "7443") // "hub2.example:7443"
    It lands in the restored store, so a refused or interrupted restore
    writes none. Audit rows are permanent, but a later restore replaces the
    whole store: the rows written since the backup, an earlier `hub.restore`
-   row included, stay only in `state.db.pre-restore-<stamp>`. The `revoked-serials`
+   row included, stay only in `state.db.pre-restore-<stamp>`: keep it, or
+   export its `audit_log`, before deleting it. Whether restore should carry
+   those rows into the new store is an open question for plan rows 12
+   and 13. The `revoked-serials`
    file is applied (`revocation.Load`), so an older backup does not bring a
    revoked certificate back. The copy is closed (its WAL folded in) and
    synced.
@@ -69,9 +72,9 @@ addr, err := restore.Address("Hub2.Example", "7443") // "hub2.example:7443"
 8. **keep**: the old `state.db` is hard-linked to
    `state.db.pre-restore-<UTC stamp>` (`-2`, `-3` when two restores share a
    second), set to mode 0600 whatever the old file had, and the folder
-   synced. Delete it once the restored hub works. The restore does not
-   require the old store to be private: it is being replaced, and the new
-   one is created 0600.
+   synced. Keep it, or export its `audit_log`, before deleting it (step
+   6). The restore does not require the old store to be private: it is
+   being replaced, and the new one is created 0600.
 9. **swap**: one rename puts the new store over `state.db`
    (`Result.Replaced`), then the folder is synced. A failure after the
    rename (`sync`, `cleanup`) still returns `Replaced` and `Previous`, and
