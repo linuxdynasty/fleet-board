@@ -31,8 +31,17 @@ var (
 	// state.db it would replace.
 	ErrForeignFleet = errors.New("restore: the backup belongs to another fleet than this state.db; move state.db out of the state folder first if you mean to replace that fleet")
 	// ErrOldStore means the state.db to be replaced could not be read or
-	// checkpointed, so it cannot be kept whole.
+	// checkpointed, or a state.db-wal sits there without it, so it cannot
+	// be kept whole.
 	ErrOldStore = errors.New("restore: the current state.db could not be read or checkpointed; move state.db, state.db-wal and state.db-shm out of the state folder, then restore again")
+	// ErrStoreInUse means another process has the current state.db open
+	// (fleetd backup takes no lock): its checkpoint was blocked, or
+	// state.db-shm stayed after the checkpoint closed. Swapping the file
+	// under it would leave that process's shared memory on the new store.
+	ErrStoreInUse = errors.New("restore: another process has state.db open (a fleetd backup?); wait for it to finish and restore again")
+	// ErrBackupWAL means the backup has a non-empty <backup>-wal beside it,
+	// whose committed rows a copy of the main file would lose.
+	ErrBackupWAL = errors.New("restore: the backup has a non-empty -wal file beside it; fold it in first (sqlite3 <backup> 'PRAGMA wal_checkpoint(TRUNCATE)') or restore a copy fleetd backup made")
 )
 
 // Options configure [Run]. The caller holds fleetd.lock for the whole call.
@@ -58,6 +67,8 @@ type Options struct {
 
 	// stepHook, when set, runs after each step; tests stop the process there.
 	stepHook func(step string)
+	// syncErr, when set, is the error of the folder sync after the swap.
+	syncErr error
 }
 
 // Result is a finished restore.
@@ -65,6 +76,9 @@ type Result struct {
 	// Previous is the kept copy of the replaced state.db; empty when the
 	// state folder had none.
 	Previous string
+	// Replaced is true once the new store was renamed over state.db, even
+	// when a later step (the folder sync, the cleanup) returns an error.
+	Replaced bool
 	// ReconcileUntil ends the reconcile window.
 	ReconcileUntil time.Time
 }
@@ -174,8 +188,13 @@ func run(ctx context.Context, o Options) (res Result, st step, err error) {
 	if err := swap(tmp, statedb.Path(o.StateDir)); err != nil {
 		return res, stepSwap, err
 	}
+	res.Replaced = true
 	hook(stepSwap)
-	if err := syncDir(o.StateDir); err != nil {
+	err = o.syncErr
+	if err == nil {
+		err = syncDir(o.StateDir)
+	}
+	if err != nil {
 		return res, stepSync, err
 	}
 	return res, "", nil
@@ -259,9 +278,10 @@ func newEpoch(old string) (string, error) {
 // errKind is the closed err_kind class of 05b.
 func errKind(err error) string {
 	switch {
-	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
+	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded), errors.Is(err, ErrStoreInUse):
 		return "timeout"
-	case errors.Is(err, ErrAddress), errors.Is(err, ErrEncrypted), errors.Is(err, ErrForeignFleet), errors.Is(err, ErrOldStore),
+	case errors.Is(err, ErrAddress), errors.Is(err, ErrEncrypted), errors.Is(err, ErrBackupWAL), errors.Is(err, ErrForeignFleet),
+		errors.Is(err, ErrOldStore),
 		errors.Is(err, backup.ErrCorrupt), errors.Is(err, backup.ErrSchema), errors.Is(err, backup.ErrNoIdentity),
 		errors.Is(err, store.ErrSchemaTooNew), errors.Is(err, store.ErrMigrationChanged), errors.Is(err, revocation.ErrInvalid),
 		errors.Is(err, statedb.ErrLooseMode), errors.Is(err, fs.ErrNotExist):

@@ -30,8 +30,9 @@ const stampLayout = "20060102T150405Z"
 // ageHeaders start an age file, binary or armored.
 var ageHeaders = [][]byte{[]byte("age-encryption.org/"), []byte("-----BEGIN AGE ENCRYPTED FILE-----")}
 
-// checkSource refuses a backup that is not a regular file or is an age
-// file.
+// checkSource refuses a backup that is not a regular file, is an age file,
+// or has a non-empty <backup>-wal beside it. An empty one, which a
+// read-only open leaves, holds nothing.
 func checkSource(path string) error {
 	f, err := os.Open(path) //nolint:gosec // G304: the backup the operator named on the command line
 	if err != nil {
@@ -54,6 +55,9 @@ func checkSource(path string) error {
 		if bytes.HasPrefix(head[:n], h) {
 			return ErrEncrypted
 		}
+	}
+	if fi, err := os.Stat(path + "-wal"); err == nil && fi.Size() > 0 {
+		return ErrBackupWAL
 	}
 	return nil
 }
@@ -136,27 +140,39 @@ func fleetID(ctx context.Context, path string) (string, error) {
 	return id, nil
 }
 
+// checkpointDSN opens the current state.db read-write without creating it,
+// with the store's durability pragmas, so the checkpoint's writes reach the
+// disk as a commit's would.
+func checkpointDSN(path string) string {
+	return (&url.URL{Scheme: "file", Path: path}).String() + "?mode=rw&_pragma=busy_timeout(5000)" +
+		"&_pragma=synchronous(FULL)&_pragma=fullfsync(1)&_pragma=checkpoint_fullfsync(1)"
+}
+
 // checkpoint folds the WAL of the current state.db into its main file and
 // closes it, so the file alone is the whole old store and no old WAL is
 // left to replay onto the restored one. It reports whether state.db
 // exists. A WAL with no state.db, or one that stays after the checkpoint,
-// is [ErrOldStore].
+// is [ErrOldStore]. A blocked checkpoint (another process holds a read
+// transaction) or a state.db-shm that stays after the close (another
+// process has the file open) is [ErrStoreInUse].
 func checkpoint(ctx context.Context, path string) (bool, error) {
 	if _, err := os.Lstat(path); errors.Is(err, fs.ErrNotExist) {
 		return false, walLeft(path)
 	}
-	dsn := (&url.URL{Scheme: "file", Path: path}).String() + "?mode=rw&_pragma=busy_timeout(5000)"
-	db, err := sql.Open("sqlite", dsn)
+	db, err := sql.Open("sqlite", checkpointDSN(path))
 	if err != nil {
 		return true, errors.Join(ErrOldStore, err)
 	}
 	var busy, frames, done int
 	err = db.QueryRowContext(ctx, "PRAGMA wal_checkpoint(TRUNCATE)").Scan(&busy, &frames, &done)
-	if err == nil && busy != 0 {
-		err = errors.New("restore: the checkpoint was blocked")
-	}
 	if err := errors.Join(err, db.Close()); err != nil {
 		return true, errors.Join(ErrOldStore, err)
+	}
+	if busy != 0 {
+		return true, ErrStoreInUse
+	}
+	if _, err := os.Lstat(path + "-shm"); err == nil {
+		return true, ErrStoreInUse
 	}
 	return true, walLeft(path)
 }
@@ -169,7 +185,8 @@ func walLeft(path string) error {
 }
 
 // keep links the checkpointed state.db to state.db.pre-restore-<stamp> in
-// the same folder (same inode, mode 0600) and syncs the folder.
+// the same folder (same inode), makes it mode 0600 whatever the old file
+// had, and syncs the folder.
 func keep(dir string, at time.Time) (string, error) {
 	base := filepath.Join(dir, PreviousPrefix+at.UTC().Format(stampLayout))
 	name := base
@@ -182,6 +199,9 @@ func keep(dir string, at time.Time) (string, error) {
 			return "", fmt.Errorf("restore: keep the previous state.db: %w", err)
 		}
 		name = base + "-" + strconv.Itoa(i)
+	}
+	if err := os.Chmod(name, 0o600); err != nil {
+		return name, fmt.Errorf("restore: chmod the previous state.db: %w", err)
 	}
 	return name, syncDir(dir)
 }

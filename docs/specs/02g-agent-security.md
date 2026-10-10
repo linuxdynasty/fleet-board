@@ -235,7 +235,8 @@ the GitHub App.
 it (#92). It:
 
 1. Checks the file: a regular file, not an age file (an encrypted backup is
-   refused with how to decrypt it first), passing `quick_check`, with
+   refused with how to decrypt it first), with no non-empty `<file>-wal`
+   beside it (its rows would be lost; an empty one is fine), passing `quick_check`, with
    `hub_identity` and a schema version this `fleetd` knows (an older one is
    migrated forward, a newer one refused). When the state folder has a
    `state.db`, the backup's `fleet_id` must be its `fleet_id`; a backup of
@@ -244,8 +245,12 @@ it (#92). It:
    new host, has nothing to compare. A refused restore changes nothing.
 2. Mints a fresh **`settings_epoch`** (otherwise the agent still holds
    `(E, 20)` against a restored `(E, 15)` and ignores the hub's settings, the
-   exact case the epoch exists for) and clears the live-connection and
-   in-memory-queue state. `hub_instance_id` is new on every process start anyway.
+   exact case the epoch exists for). In-memory queues do not survive a
+   process start, and `hub_instance_id` is new on every start anyway. As
+   built (plan row 5, PR 5j) restore changes no connection rows: there is
+   no `machine_connections` table yet. PR 5a-i adds it, and with PR 5k
+   clears the restored live-connection rows and decides what the `ONLINE`
+   rows copied from the backup mean.
 3. If `--address` is given (host or host:port; the port defaults to
    `listen.agent`'s, else 7443; spelled the way the agent keeps an address),
    adds it to `hub_addresses` and issues a server certificate from the same
@@ -258,7 +263,9 @@ it (#92). It:
 4. Sets `restore_reconcile` for 24 hours (`hub_identity.restore_reconcile_until`,
    Unix ms; 0 is no window). Steps 2 to 4 are one transaction on the new
    store, built in a temporary file; the `revoked-serials` file is applied
-   to it. Only then is the current `state.db` checkpointed, kept as
+   to it. Only then is the current `state.db` checkpointed (refused, with
+   "wait and restore again", while another process such as `fleetd backup`
+   has it open), kept as
    `state.db.pre-restore-<UTC stamp>` ([02j](02j-hub-runtime.md#state-directory)),
    and the new store renamed over it, so a crash leaves one whole store.
 

@@ -89,3 +89,50 @@ func TestRunServesTheCertificateRestoreIssued(t *testing.T) {
 	}
 	r.stop(t)
 }
+
+// Restore sweeps a crashed restore's temporary file under the lock and logs
+// hub.leftovers_removed for command restore.
+func TestRestoreRemovesACrashedRestoresTemporaryFile(t *testing.T) {
+	t.Parallel()
+	h := newHub(t, "")
+	h.init(t)
+	res, err := daemon.Backup(context.Background(), h.options(), daemon.BackupRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	left := filepath.Join(h.state, statedb.RestoreTempPrefix+"x")
+	if err := os.WriteFile(left, []byte("half a store"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := daemon.Restore(context.Background(), h.options(), daemon.RestoreRequest{Backup: res.Path}); err != nil {
+		t.Fatalf("Restore: %v", err)
+	}
+	if _, err := os.Lstat(left); !os.IsNotExist(err) {
+		t.Errorf("the crashed restore's temporary file is still there (%v)", err)
+	}
+	lines := h.logs.events(t, "hub.leftovers_removed")
+	if len(lines) != 1 || lines[0]["command"] != "restore" || lines[0]["files"] != float64(1) {
+		t.Errorf("hub.leftovers_removed lines %v, want one for command restore, 1 file", lines)
+	}
+}
+
+// An --address without a port takes listen.agent's port.
+func TestRestoreAddressTakesTheAgentListenerPort(t *testing.T) {
+	t.Parallel()
+	h := newHub(t, "")
+	body := "state_dir: " + h.state + "\nlisten: {agent: \"127.0.0.1:8443\", api: \"127.0.0.1:0\"}\n"
+	if err := os.WriteFile(h.config, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	h.init(t)
+	res, err := daemon.Backup(context.Background(), h.options(), daemon.BackupRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := daemon.Restore(context.Background(), h.options(), daemon.RestoreRequest{Backup: res.Path, Address: "hub2.example"}); err != nil {
+		t.Fatalf("Restore: %v", err)
+	}
+	if got := h.storedIdentity(t).HubAddresses; !slices.Equal(got, []string{"hub2.example:8443"}) {
+		t.Errorf("hub_addresses %q, want hub2.example:8443", got)
+	}
+}

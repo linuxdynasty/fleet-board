@@ -46,8 +46,9 @@ a `Host` it refuses (`HOST_NOT_ALLOWED`). `fleet` on the other machine sets
 
 The agent listener's certificate is issued by the hub CA for the names in
 `tls.agent_names` (default: the machine's hostname, `<hostname>.local`,
-`localhost`, `127.0.0.1`, `::1`) and always the mDNS name
-`fleetd-<hostname>.local` (see Discovery, below), so an agent on the hub's own
+`localhost`, `127.0.0.1`, `::1`), always the mDNS name
+`fleetd-<hostname>.local` (see Discovery, below), and the host of every
+`hub_addresses` entry (`fleetd restore --address` adds one), so an agent on the hub's own
 machine connects to `127.0.0.1:7443` and verifies it like any other. In `authenticated` mode the API
 certificate is the owner's (`tls.api_cert_file`, `tls.api_key_file`) or a
 Tailscale certificate (`tls.api_tailscale: true`); without one `fleetd` refuses

@@ -118,3 +118,41 @@ func TestApplyRestoreIsAllOrNothing(t *testing.T) {
 		t.Errorf("a refused ApplyRestore changed the row: %+v", got)
 	}
 }
+
+// The certificate is part of the same transaction: a failure writing it (a
+// trigger here) leaves settings_epoch, hub_addresses and
+// restore_reconcile_until as they were, so a split into two transactions
+// fails this test.
+func TestApplyRestoreRollsBackWhenTheCertificateWriteFails(t *testing.T) {
+	t.Parallel()
+	dir := stateDir(t)
+	create(t, dir)
+	db, err := sql.Open("sqlite", filepath.Join(dir, statedb.FileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.ExecContext(t.Context(), `CREATE TRIGGER no_cert BEFORE UPDATE OF server_cert ON hub_identity
+		WHEN NEW.server_cert = x'6332' BEGIN SELECT RAISE(ABORT, 'refused'); END`)
+	if err := errors.Join(err, db.Close()); err != nil {
+		t.Fatal(err)
+	}
+	s := open(t, dir)
+	ctx := context.Background()
+	err = statedb.ApplyRestore(ctx, s, statedb.RestoreUpdate{
+		SettingsEpoch: "epoch-2", HubAddresses: []string{"x.example:7443"},
+		ServerCert: []byte("c2"), ServerKey: []byte("k2"), ServerNames: []string{"x.example"},
+		ReconcileUntil: time.UnixMilli(1_790_086_400_000),
+	})
+	if err == nil {
+		t.Fatal("ApplyRestore succeeded although the certificate write was refused")
+	}
+	got, err := statedb.ReadIdentity(ctx, s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := sampleIdentity()
+	want.HubAddresses = []string{}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("a failed certificate write left the row changed: %+v", got)
+	}
+}

@@ -19,6 +19,10 @@ for this package:
 - Every refusal (address, source, verify, fleet) happens before the old
   store is opened for writing, so a refused restore leaves `state.db` and
   its WAL byte for byte as they were.
+- Never rename over a `state.db` another process has open (a blocked
+  checkpoint, or `state.db-shm` left after the close): that is
+  `ErrStoreInUse`, not a broken store. The checkpoint connection uses the
+  store's durability pragmas.
 - The hub_identity changes are one writer transaction
   (`statedb.ApplyRestore`). `fleet_id`, the CA and the salt are never
   changed. The server certificate's names come from the caller's `Names`,

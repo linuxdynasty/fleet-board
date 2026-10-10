@@ -35,7 +35,11 @@ window, and keeps the replaced store as `state.db.pre-restore-<UTC stamp>`
 (mode 0600; delete it once the restored hub works). `--address` (host or
 host:port; the port defaults to `listen.agent`'s, else 7443) is added to the
 addresses agents get and to the server certificate, signed by the same CA.
-The steps are in [internal/hub/restore](../../internal/hub/restore/README.md).
+With another process holding `state.db` open (a `fleetd backup`) it says to
+wait and restore again. If a step after the rename fails (the folder sync,
+the cleanup), it still prints that the new store is in place and where the
+old one is kept, then exits 1. The steps are in
+[internal/hub/restore](../../internal/hub/restore/README.md).
 
 `enroll-token` prints only the token on stdout, on one line, so
 `TOKEN=$(fleetd enroll-token --machine laptop)` works; stderr shows the
