@@ -205,6 +205,8 @@ func keep(dir string, at time.Time) (string, error) {
 		}
 		name = base + "-" + strconv.Itoa(i)
 	}
+	// name is a second link to the live state.db, so this also sets state.db
+	// to 0600 until the swap: harmless, as fleetd run wants that mode anyway.
 	if err := os.Chmod(name, 0o600); err != nil {
 		return name, fmt.Errorf("restore: chmod the previous state.db: %w", err)
 	}

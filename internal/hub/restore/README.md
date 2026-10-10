@@ -69,6 +69,12 @@ addr, err := restore.Address("Hub2.Example", "7443") // "hub2.example:7443"
    `fleetd restore` says the new store is in place before it reports the
    error.
 
+`fleetd backup` takes no lock, so it can open `state.db` after the `-shm`
+check and before the rename. It then copies the old store (a valid backup
+of the pre-restore state), or, if its connection straddles the rename, at
+worst makes a bad copy that its own check (`backup.Verify`) refuses before
+it publishes it. Run the backup again after the restore.
+
 A crash before the swap leaves the old `state.db` whole (byte for byte
 before the checkpoint); after it, the new one. A crash between keep and
 swap leaves `state.db.pre-restore-<stamp>` as a second name of the live

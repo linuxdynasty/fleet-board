@@ -15,10 +15,6 @@ import (
 	"github.com/linuxdynasty/fleet-board/internal/hub/statedb"
 )
 
-// defaultAgentPort is the agent listener's port when listen.agent names
-// none (or port 0): the port agents add to an address without one.
-const defaultAgentPort = "7443"
-
 // RestoreRequest is what `fleetd restore` asks for.
 type RestoreRequest struct {
 	// Backup is the backup file.
@@ -73,12 +69,12 @@ func Restore(ctx context.Context, opts Options, req RestoreRequest) (res restore
 	})
 }
 
-// agentPort is listen.agent's port, or defaultAgentPort when it has none
-// or asks the OS to choose (0).
+// agentPort is listen.agent's port, or restore.DefaultAgentPort when it has
+// none or asks the OS to choose (0).
 func agentPort(listen string) string {
 	_, port, err := net.SplitHostPort(listen)
 	if n, perr := strconv.Atoi(port); err != nil || perr != nil || n < 1 || n > 65535 {
-		return defaultAgentPort
+		return restore.DefaultAgentPort
 	}
 	return port
 }

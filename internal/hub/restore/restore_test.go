@@ -321,6 +321,14 @@ func TestAddress(t *testing.T) {
 	}
 }
 
+// The hub's default agent port is the one the agent adds.
+func TestDefaultAgentPortIsTheAgents(t *testing.T) {
+	t.Parallel()
+	if restore.DefaultAgentPort != conn.DefaultPort {
+		t.Errorf("restore.DefaultAgentPort %q, conn.DefaultPort %q", restore.DefaultAgentPort, conn.DefaultPort)
+	}
+}
+
 // The hub stores only addresses the agent keeps, spelled as the agent
 // spells them (conn.HubAddress, which adds port 7443).
 func TestAddressMatchesTheAgentsSpelling(t *testing.T) {
@@ -331,7 +339,7 @@ func TestAddressMatchesTheAgentsSpelling(t *testing.T) {
 		strings.Repeat("a", 253), "[fe80::1%a\x01b]:7443", "[fe80::1%eth0]:7443", "fe80::1%eth0", "hub:", ":7443",
 		strings.Repeat("a", 253) + ":" + strings.Repeat("0", 300) + "1",
 	} {
-		hub, hubErr := restore.Address(in, conn.DefaultPort)
+		hub, hubErr := restore.Address(in, restore.DefaultAgentPort)
 		agent, agentErr := conn.HubAddress(in)
 		if hub != agent || (hubErr == nil) != (agentErr == nil) {
 			t.Errorf("%q: hub %q, %v; agent %q, %v", in, hub, hubErr, agent, agentErr)

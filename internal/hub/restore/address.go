@@ -9,6 +9,11 @@ import (
 	"strings"
 )
 
+// DefaultAgentPort is the port the agent adds to a hub address without one
+// (conn.DefaultPort; hub code does not import the agent's packages, so a
+// test keeps the two equal).
+const DefaultAgentPort = "7443"
+
 // ErrAddress means a --address the hub cannot hand to agents.
 var ErrAddress = errors.New("restore: not a hub address (want host or host:port, letters, digits, dots and hyphens, or an IP)")
 
