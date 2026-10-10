@@ -66,6 +66,9 @@ func TestConnectRefusesACertificateWithoutTheMachineURI(t *testing.T) {
 	s := h.open(t, machine{cert: tls.Certificate{Certificate: [][]byte{der}, PrivateKey: priv}})
 	_ = s.bs.Send(nil)
 	refusedWith(t, h, s, connect.CodeUnauthenticated, typev1.ReasonCode_REASON_CODE_CREDENTIALS_INVALID, "cert_no_san")
+	if lines := h.events(t, "connect.refused"); len(lines) != 1 || lines[0]["machine_id"] != "01NOSAN" {
+		t.Errorf("connect.refused lines %v, want machine_id 01NOSAN (the certificate's CN)", lines)
+	}
 }
 
 // A stream that sends nothing ends DEADLINE_EXCEEDED, retryable, after
@@ -83,6 +86,12 @@ func TestConnectEndsAStreamWithNoHelloAfterTheWait(t *testing.T) {
 	}
 	if took := time.Since(start); took < 150*time.Millisecond {
 		t.Errorf("ended after %v, before the 200 ms wait", took)
+	}
+	if lines := h.closedLines(t, "timeout"); len(lines) != 1 || lines[0]["machine_id"] != m.id {
+		t.Errorf("reconnect.closed{err_kind=timeout} lines %v, want one", lines)
+	}
+	if v := sample(scrape(t, h.fixture), "fleet_hub_connect_closed_before_hello_total", `err_kind="timeout"`); v != 1 {
+		t.Errorf("fleet_hub_connect_closed_before_hello_total{err_kind=timeout} = %v, want 1", v)
 	}
 }
 

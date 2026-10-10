@@ -33,6 +33,16 @@ const (
 // Connect is a server stream of AgentService.Connect.
 type connectStream = connect.BidiStream[agentv1.ConnectRequest, agentv1.ConnectResponse]
 
+// sender is the stream's send side (connectStream); writeDeadliner its
+// write deadline (http.ResponseController). Interfaces so the writer's
+// order and deadlines are tested with a stub.
+type (
+	sender interface {
+		Send(*agentv1.ConnectResponse) error
+	}
+	writeDeadliner interface{ SetWriteDeadline(time.Time) error }
+)
+
 // stream is one accepted Connect stream. Three goroutines serve it: the
 // handler's (the ingest loop and the teardown), one reader (the only caller
 // of Receive) and one writer (the only caller of Send).
@@ -96,8 +106,9 @@ func (s *stream) send(m *agentv1.ConnectResponse) bool {
 }
 
 // write is the stream's writer: queued messages in order, then, once the
-// stream ends, its Bye within byeWait.
-func (s *stream) write(bs *connectStream, rc *http.ResponseController, done chan<- struct{}) {
+// stream ends with a Bye, what is still queued and then the Bye, within
+// byeWait.
+func (s *stream) write(bs sender, rc writeDeadliner, done chan<- struct{}) {
 	defer close(done)
 	for {
 		select {
@@ -107,11 +118,23 @@ func (s *stream) write(bs *connectStream, rc *http.ResponseController, done chan
 				return
 			}
 		case <-s.ended:
-			if s.bye != agentv1.ByeReason_BYE_REASON_UNSPECIFIED {
-				_ = rc.SetWriteDeadline(time.Now().Add(byeWait))
-				_ = bs.Send(&agentv1.ConnectResponse{Body: &agentv1.ConnectResponse_Bye{Bye: &agentv1.Bye{Reason: s.bye}}})
+			if s.bye == agentv1.ByeReason_BYE_REASON_UNSPECIFIED {
+				return
 			}
-			return
+			// What was queued goes first, in order (a HelloAck before the Bye
+			// of a stream displaced at once), then the Bye, all within byeWait.
+			_ = rc.SetWriteDeadline(time.Now().Add(byeWait))
+			for {
+				select {
+				case m := <-s.out:
+					if bs.Send(m) != nil {
+						return
+					}
+				default:
+					_ = bs.Send(&agentv1.ConnectResponse{Body: &agentv1.ConnectResponse_Bye{Bye: &agentv1.Bye{Reason: s.bye}}})
+					return
+				}
+			}
 		}
 	}
 }
@@ -187,17 +210,13 @@ func (a *agentService) serve(ctx context.Context, bs *connectStream, rc *http.Re
 			read = true
 		}
 	}
-	// The reader has returned: what it queued before the end (results
-	// before the agent's Bye, say) is still handled, in order.
-	for drained := false; !drained; {
-		select {
-		case m := <-in:
-			a.handle(ctx, s, m, unhandled)
-		default:
-			drained = true
-		}
+	a.drain(ctx, s, in, unhandled)
+	if !a.stop(rc, wrote, byeWait+100*time.Millisecond) {
+		// The Bye's deadline must not outlive it: the row close below may
+		// take longer, and an expired deadline would reset the stream
+		// instead of ending it after the Bye.
+		_ = rc.SetWriteDeadline(time.Time{})
 	}
-	a.stop(rc, wrote)
 	a.closed(ctx, s)
 	if errors.Is(rerr, errSecondHello) {
 		return a.refuse(ctx, bs, s.peer, s.machineID, helloRefusal{cause: causeSecondHello})
@@ -205,18 +224,33 @@ func (a *agentService) serve(ctx context.Context, bs *connectStream, rc *http.Re
 	return rerr
 }
 
+// drain handles, in order, what the reader queued before it returned
+// (results before the agent's Bye, say): the end of reading never drops a
+// message the hub already took.
+func (a *agentService) drain(ctx context.Context, s *stream, in <-chan *agentv1.ConnectRequest, seen map[string]bool) {
+	for {
+		select {
+		case m := <-in:
+			a.handle(ctx, s, m, seen)
+		default:
+			return
+		}
+	}
+}
+
 // stop waits for the writer, cutting a send that is still blocked by flow
-// control after byeWait.
-func (a *agentService) stop(rc *http.ResponseController, wrote <-chan struct{}) {
-	t := time.NewTimer(byeWait + 100*time.Millisecond)
+// control after wait (just over byeWait in serve); cut reports that.
+func (a *agentService) stop(rc writeDeadliner, wrote <-chan struct{}, wait time.Duration) (cut bool) {
+	t := time.NewTimer(wait)
 	defer t.Stop()
 	select {
 	case <-wrote:
-		return
+		return false
 	case <-t.C:
 	}
 	_ = rc.SetWriteDeadline(time.Now())
 	<-wrote
+	return true
 }
 
 // closed takes the stream out of the registry, then closes its connection

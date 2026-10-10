@@ -151,7 +151,7 @@ handshake through `Bye` (`ByeReason`) for the cases below, or through a Connect 
 | `HelloAck.fleet_id` is not the enrolled fleet | Agent: `Bye{FLEET_MISMATCH}`, does not reconnect until re-enrolled. mTLS against the pinned CA already makes this rare; the field covers a hub rebuilt with the same CA and a new id |
 | No common protocol version | Hub: `Bye{PROTO_UNSUPPORTED}` |
 
-**Hello refusals.** A `Hello` the hub refuses before `HelloAck` is a gRPC error with an `ErrorDetail`, the shape of the `RenewCert` table below. The hub checks, in order: the certificate (before it reads anything, so a stream without one holds nothing), the first message, `machine_id`, the fields, the proto range (`Bye{PROTO_UNSUPPORTED}`), the Hello rate limit, then the Hello transaction. A refused `Hello` writes nothing and sends no `HelloAck`.
+**Hello refusals.** A `Hello` the hub refuses before `HelloAck` is a gRPC error with an `ErrorDetail`, the shape of the `RenewCert` table below. The hub checks, in order: the certificate (before it reads anything, so a stream without one holds nothing), the first message, `machine_id`, the fields, the proto range (`Bye{PROTO_UNSUPPORTED}`), the Hello rate limit, the in-memory revoked set (`Bye{REVOKED}`; after a restore `revoked-serials` may hold serials `state.db` lacks), then the Hello transaction. A refused `Hello` writes nothing and sends no `HelloAck`. A stream still waiting for its first message, or for its Hello transaction, when the hub shuts down gets `Bye{HUB_RESTART}`.
 
 | Case | gRPC code | `ErrorDetail.reason` |
 |---|---|---|

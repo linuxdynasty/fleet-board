@@ -43,6 +43,13 @@ type ServerOptions struct {
 	// HelloWait bounds the wait for a Connect stream's first message; 0
 	// means [HelloWait]. Tests shorten it.
 	HelloWait time.Duration
+	// afterHello, set only by tests (export_test.go), runs after each Hello
+	// transaction commits, before the stream is registered.
+	afterHello func()
+	// afterRegister, set only by tests, runs after the stream is registered.
+	afterRegister func()
+	// arms, set only by tests, adds arm handlers to the product table.
+	arms armTable
 }
 
 // NewServer is the agent listener (listen.agent): TLS 1.3 only, the
@@ -73,7 +80,7 @@ func NewServer(opts ServerOptions) (*Server, error) {
 	path, h := agentv1connect.NewAgentServiceHandler(&agentService{enrollDeps: deps, connectDeps: cdeps},
 		connect.WithReadMaxBytes(MaxMessageBytes))
 	mux.Handle(path, withPeerCert(h))
-	srv := &Server{deps: deps, Server: &http.Server{
+	srv := &Server{deps: deps, connect: cdeps, Server: &http.Server{
 		Handler: mux,
 		TLSConfig: &tls.Config{
 			MinVersion:       tls.VersionTLS13,
@@ -89,7 +96,7 @@ func NewServer(opts ServerOptions) (*Server, error) {
 	// Shutdown (fleetd run's stop) says Bye{HUB_RESTART} on every live
 	// Connect stream, whose handler then returns, so the stop does not wait
 	// out its grace period (03n).
-	srv.RegisterOnShutdown(cdeps.streams.byeAll)
+	srv.RegisterOnShutdown(cdeps.beginShutdown)
 	return srv, nil
 }
 
@@ -97,7 +104,8 @@ func NewServer(opts ServerOptions) (*Server, error) {
 // and the audit work to finish after it stops.
 type Server struct {
 	*http.Server
-	deps *enrollDeps
+	deps    *enrollDeps
+	connect *connectDeps
 }
 
 // FlushAudit writes the machine.enroll_failed summary of the minute in

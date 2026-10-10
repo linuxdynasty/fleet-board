@@ -329,13 +329,9 @@ re-enroll rule are in [02g](02g-agent-security.md#machine-lifecycle-revoke-and-d
   `fleet_hub_machine_state{machine, state}` (gauge 0/1 per state),
   `fleet_hub_snapshot_apply_seconds`, `fleet_hub_snapshot_bytes`,
   `fleet_hub_events_discarded_before_snapshot_total`, `fleet_hub_clock_skew_seconds{machine}` (plan row 5b),
-  `fleet_hub_connect_refused_total{cause}` (a `Hello` refused before `HelloAck`; `cause`:
-  `no_client_cert`, `cert_no_san`, `hello_timeout`, `not_hello`, `second_hello`,
-  `machine_id_mismatch`, `field_invalid`, `serial_other_machine`, `epoch_out_of_range`,
-  `rate_limited`, `revoked`, `unknown_machine`, `proto_unsupported`),
-  `fleet_hub_connect_unhandled_total{kind}` (a Connect message whose arm has no handler
-  yet, by oneof arm name; ignored, never fatal; `hub.connect.unhandled` once per kind
-  per stream).
+  `fleet_hub_connect_refused_total{cause}`, `fleet_hub_connect_unhandled_total{kind}`,
+  `fleet_hub_connect_closed_before_hello_total{err_kind}` (the hub's `Connect`, plan
+  row 5a-ii; labels and meaning in [03n](03n-reconnect.md) "Telemetry").
 - Spans: `agent.enroll`, `agent.discover` (one attempt's search, ended at the
   first handshake that passes: an `agent.discover.browse` child for the mDNS
   browse and an `agent.discover.candidate` child per candidate, with `peer`,
@@ -366,11 +362,8 @@ re-enroll rule are in [02g](02g-agent-security.md#machine-lifecycle-revoke-and-d
   does not use. Every `renew.started` is followed by `renew.completed`,
   `renew.cancelled`, `renew.refused` or `renew.failed`. No line holds a
   key, a CSR or a certificate; serials are hex.
-- Hub logs of `Connect` (plan row 5a-ii): `connect.refused{cause, reason, peer,
-  machine_id}` (warn; `cause` as in `fleet_hub_connect_refused_total`; `reason`
-  the ErrorDetail reason without `REASON_CODE_`, the `ByeReason`, or `none`) and
-  `connect.failed{step, err_kind, machine_id}` (error; `step`: `validate`,
-  `store`, `encode`); an accepted `Hello` is 03n's `reconnect.hello`.
+- Hub logs of `Connect` (plan row 5a-ii): `connect.refused{cause, reason, peer, machine_id}`
+  and `connect.failed{step, err_kind, machine_id}`, described in 03n "Telemetry".
 - Logs: `enroll.issued{machine, expire_time, actor}`, `enroll.issue_refused{reason}`,
   `enroll.issue_failed{step, err_kind}`,
   `enroll.completed{machine_id, replayed, hostname_mismatch}`,

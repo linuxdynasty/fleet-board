@@ -161,7 +161,21 @@ func TestArmTableRunsRegisteredHandlers(t *testing.T) {
 // or listener.
 func newTestDeps(t *testing.T) *agentService {
 	t.Helper()
-	tel, err := telemetry.New(telemetry.Config{Service: telemetry.Hub, Version: "test", InstanceID: "test", LogOutput: io.Discard})
+	a, _ := newTestDepsTo(t, io.Discard)
+	return a
+}
+
+// newTestDepsLogged is newTestDeps with its log lines kept.
+func newTestDepsLogged(t *testing.T) (*agentService, *syncBuffer) {
+	t.Helper()
+	logs := &syncBuffer{}
+	a, _ := newTestDepsTo(t, logs)
+	return a, logs
+}
+
+func newTestDepsTo(t *testing.T, out io.Writer) (*agentService, *telemetry.Telemetry) {
+	t.Helper()
+	tel, err := telemetry.New(telemetry.Config{Service: telemetry.Hub, Version: "test", InstanceID: "test", LogOutput: out})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -170,5 +184,5 @@ func newTestDeps(t *testing.T) *agentService {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &agentService{enrollDeps: &enrollDeps{log: tel.Logger, now: time.Now}, connectDeps: cd}
+	return &agentService{enrollDeps: &enrollDeps{log: tel.Logger, now: time.Now}, connectDeps: cd}, tel
 }

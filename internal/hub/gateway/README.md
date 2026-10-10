@@ -104,19 +104,33 @@ srv, err := gateway.NewServer(gateway.ServerOptions{
   in, so a late lower one gets `Bye{DUPLICATE_IDENTITY}` itself; removal is by
   stream, so a displaced stream's close never removes the winner. A displaced
   stream gets `Bye{DUPLICATE_IDENTITY}`, counted and logged only when the
-  registry held it (a row a crash left live is displaced silently).
+  registry held it (a row a crash left live is displaced silently); a late
+  lower epoch that lost is counted and logged too, gets the same Bye, and
+  logs no `reconnect.closed` (it was never registered and its row is
+  already closed).
   `cancel` ends a machine's stream with a chosen Bye (rows 5b and 13a);
-  `byeAll` runs on `http.Server.Shutdown` (`RegisterOnShutdown`): every
-  stream gets `Bye{HUB_RESTART}` and its handler returns, so `fleetd run`'s
-  stop does not wait out its 10 s grace, and a Hello that commits after it is
-  answered `Bye{HUB_RESTART}` with its row closed.
+  On `http.Server.Shutdown` (`RegisterOnShutdown`), `beginShutdown` ends a
+  context every pre-Hello wait watches, then `byeAll` ends every live
+  stream: a stream waiting for its first message or for its Hello job, and
+  every live one, gets `Bye{HUB_RESTART}` and its handler returns, so
+  `fleetd run`'s stop does not wait out its 10 s grace. The shutdown
+  cancels only the wait: a Hello job already queued still commits (the
+  store's Close finishes it), so a `machine_connections` row can stay open
+  after a shutdown with no stream behind it, as after a crash. The
+  machine's next Hello closes it as displaced (heartbeat age unknown) and
+  counts no duplicate; plan row 5b's hub-start sweep must expect such rows.
+  The same holds for an agent that leaves while its Hello waits (logged as
+  a departure, `reconnect.closed{err_kind=reset}`, at info). A Hello that
+  commits after the hook ran is answered `Bye{HUB_RESTART}` with its row
+  closed.
 - **Per stream** (`stream.go`): the handler goroutine runs the ingest loop
   and the teardown; one reader (the only `Receive` caller) keeps Heartbeats
   in memory only (the registry's last-heartbeat time, read for
   `HelloIn.Live`; no store write), ends the stream on the agent's `Bye` or a
   second `Hello`, and hands every other message in order to a bounded queue
   (64); one writer (the only `Send` caller) sends queued messages (16) and
-  then, when the stream ends, its Bye within 2 s. The teardown wakes the
+  then, when the stream ends with a Bye, what is still queued, in order,
+  and then the Bye, all within 2 s. The teardown wakes the
   reader with the response's read deadline, cuts a send still blocked by
   flow control after 2 s with the write deadline, handles what was queued,
   removes the stream from the registry, then closes its row with
@@ -165,7 +179,8 @@ srv, err := gateway.NewServer(gateway.ServerOptions{
 | `fleet_hub_duplicate_identity_total{machine}`, `identity.duplicate` (`machine_id`, `old_epoch`, `new_epoch`, `old_boot_id`, `new_boot_id`, `old_peer`, `new_peer`, `heartbeat_age_ms`) | a live stream displaced by a newer Hello |
 | `reconnect.closed` (`machine_id`, `epoch`, `reason`, `row_closed`) | a stream ended |
 | `fleet_hub_connect_refused_total{cause}`, `connect.refused` (`cause`, `reason`, `peer`, `machine_id`) | a refused Hello (warn) |
-| `connect.failed` (`step`: `validate`, `store`; `err_kind`, `machine_id`) | the hub's failure at a Hello or a stream's close (error) |
+| `connect.failed` (`step`: `validate`, `store`, `wiring`; `err_kind`, `machine_id`) | the hub's failure at a Hello or a stream's close (error) |
+| `fleet_hub_connect_closed_before_hello_total{err_kind}`, `reconnect.closed` (`epoch` 0, `reason` `before_hello`, `err_kind`: `oversize`, `reset`, `timeout`, `shutdown`) | a stream with a certificate that ended before a Hello was accepted |
 | `fleet_hub_connect_unhandled_total{kind}`, `hub.connect.unhandled` (`machine_id`, `epoch`, `kind`) | a message of an arm with no handler yet |
 | `fleet_hub_server_cert_issues_total{reason, result}`, `tls.server_cert_issued` (`reason`, `names` count, `not_after`), `tls.server_cert_issue_failed` (`reason`, `err_kind`, `not_after` still served) | server certificate re-issues |
 
@@ -184,7 +199,15 @@ live streams, every refusal of the 02g table (nothing stored, last_epoch and
 last_seen unchanged, counted and logged), the Hello wait, a second Hello, an
 unknown reason, the rate limit's boundaries, the 1 MiB cap and a closed
 store; `registry_internal_test.go` covers the out-of-order register, cancel,
-byeAll, the queue bound, the limiter and the handler table. They dial the real
+byeAll, the queue bound, the limiter and its sweep, and the handler table;
+`writer_internal_test.go` drives the writer with a stub (queued messages,
+then the Bye, under one deadline; the cut after the wait) and a request
+with no response controller. `connect_end_test.go` covers Shutdown with a
+stream that never said Hello and with a Hello stuck behind the writer, a
+Hello committed during Shutdown (an `export_test.go` hook), messages queued
+before the agent's Bye (one test with a slow arm handler), the limit's
+place after the earlier checks, the registry after an agent's Bye, and a
+first message that is too big or never comes. They dial the real
 listener with `crypto/tls` and the generated gRPC client against a real
 `state.db` and a real `revocation.List`: enroll (certificate CN and URI SAN,
 chain, accepted as a client certificate), replay until 24 h past the TTL,

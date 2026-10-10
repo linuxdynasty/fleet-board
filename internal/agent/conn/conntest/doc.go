@@ -6,6 +6,6 @@
 // tokens, certificates, hub_time and Hello rate limit, and can drop the
 // first reply of a method (Enroll, RenewCert) after the hub commits it. It
 // serves the hub's own Connect, restarts the listener on the same state.db
-// and port, and reads machines.last_epoch and machine_connections. Test
-// code only.
+// and port, holds state.db's writer on demand, and reads
+// machines.last_epoch and machine_connections. Test code only.
 package conntest

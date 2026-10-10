@@ -101,7 +101,7 @@ waiting for keepalive timeouts.
 | Goal registry (`GoalRegistration` per pane) and availability marks (per pane key) | `agent.db` | `register_goal`, `RegisterGoal`, `ReleaseGoal`, mark commands; both reported in every snapshot (02h) |
 | Outbox rows (`pending/delivered/done/expired/failed`, epoch, seq) | hub store | Hello tx (expiry), result tx (close) |
 | Event history (replayed and live, 1 week) | hub store | per writer batch |
-| `machine_connections` (epoch, boot_id, install_id, peer, connect_reason, started and ended time, end_reason, displaced_by, last_heartbeat_age_ms at displacement) and the machine's `last_epoch` | hub store | Hello tx (opens the row, closes the one it displaces); stream close or `Bye` (closes it) |
+| `machine_connections` (epoch, boot_id, install_id, peer, connect_reason, started and ended time, end_reason, displaced_by, last_heartbeat_age_ms at displacement) and the machine's `last_epoch` | hub store | Hello tx (opens the row, closes the one it displaces); stream close or `Bye` (closes it). A row can stay open with no stream behind it after a hub crash, or after a graceful shutdown that stopped waiting for a Hello whose transaction then committed; the machine's next Hello closes it as displaced (heartbeat age unknown), and the hub-start sweep (plan row 5b) must expect such rows |
 | Per machine: `hub_last_event_seq`, `event_generation`, last `EventCounters`, `install_id` | hub store | writer batch (seq); Hello tx (the rest) |
 
 ### Ordering and consistency
@@ -156,13 +156,32 @@ waiting for keepalive timeouts.
 - Logs (the hub's, plan row 5): `reconnect.hello{machine_id, epoch, last_epoch, last_event_seq,
   hub_last_event_seq, reason, peer}`, `reconnect.closed{machine_id, epoch, reason, row_closed}`
   (a stream ended; `reason` is the stored end reason: `displaced`, `stream_closed`,
-  `agent_bye`, `hub_restart`; `row_closed` false when a newer `Hello` had closed it),
+  `agent_bye`, `hub_restart`; `row_closed` false when a newer `Hello` had closed it;
+  a stream with a certificate that ended before a `Hello` was accepted has `epoch` 0,
+  `reason` `before_hello` and `err_kind`: `oversize`, `reset`, `timeout`, `shutdown`,
+  counted in 03's `fleet_hub_connect_closed_before_hello_total`),
   `outbox.expired{command_id, kind, age}`, `identity.duplicate{machine_id, old_epoch, new_epoch,
   old_boot_id, new_boot_id, old_peer, new_peer, heartbeat_age_ms}` (a live stream got
-  `Bye{DUPLICATE_IDENTITY}`; -1 when it had no Heartbeat; a row a hub crash left live is
+  `Bye{DUPLICATE_IDENTITY}`; -1 when it had no Heartbeat; a row a hub crash or a shutdown that cancelled a waiting Hello left live is
   displaced silently), `replay.gap{from_seq, to_seq}`. The span `hub.connect.hello` covers
   a `Hello` from receipt to the queued `HelloAck` or the refusal (a root span: `Hello`
   carries no trace context).
+
+- The hub's `Connect` before `HelloAck` (plan row 5a-ii; the names are 03 W1's):
+  `fleet_hub_connect_refused_total{cause}` and `connect.refused{cause, reason, peer,
+  machine_id}` (warn) for a refused `Hello` (02g "Hello refusals"; `cause`:
+  `no_client_cert`, `cert_no_san`, `hello_timeout`, `not_hello`, `second_hello`,
+  `machine_id_mismatch`, `field_invalid`, `serial_other_machine`, `epoch_out_of_range`,
+  `rate_limited`, `revoked`, `unknown_machine`, `proto_unsupported`; `reason` the
+  ErrorDetail reason without `REASON_CODE_`, the `ByeReason`, or `none`);
+  `connect.failed{step, err_kind, machine_id}` (error; `step`: `validate`, `store`,
+  `wiring`: the listener put no response controller on the request, `INTERNAL`);
+  `fleet_hub_connect_closed_before_hello_total{err_kind}` (a stream with a client
+  certificate that ended before a `Hello` was accepted: `oversize`, `reset`, `timeout`
+  (the Hello wait), `shutdown`; also `reconnect.closed` above);
+  `fleet_hub_connect_unhandled_total{kind}` (a message whose arm has no handler yet, by
+  oneof arm name; ignored, never fatal; 05b's `hub.connect.unhandled` once per kind per
+  stream).
 
 At 3 AM: "why does machine X keep reconnecting?" → `fleet_hub_reconnects_total`
 and `fleet_hub_epoch` climbing, `reconnect.closed{reason}` for how each stream

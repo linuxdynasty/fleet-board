@@ -57,7 +57,8 @@ func armKind(m *agentv1.ConnectRequest) string {
 }
 
 // handle runs m's arm handler. An arm with none (every arm until its plan
-// row lands, a Hello after the first, or an arm this hub does not know) is
+// row lands, or an arm this hub does not know; a second Hello never gets
+// here, the reader ends the stream on it) is
 // counted in fleet_hub_connect_unhandled_total{kind}, logged once per kind
 // per stream as hub.connect.unhandled, and ignored: never fatal.
 func (a *agentService) handle(ctx context.Context, s *stream, m *agentv1.ConnectRequest, seen map[string]bool) {

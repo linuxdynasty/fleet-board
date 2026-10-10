@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"sync/atomic"
 	"time"
 
+	"connectrpc.com/connect"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
@@ -37,19 +37,31 @@ const HelloWait = 30 * time.Second
 func (a *agentService) Connect(ctx context.Context, bs *connectStream) error {
 	peer := bs.Peer().Addr
 	leaf := peerCert(ctx)
-	rc := responseController(ctx)
-	if leaf == nil || rc == nil {
+	if leaf == nil {
 		return a.refuse(ctx, bs, peer, "", helloRefusal{cause: causeNoClientCert})
 	}
 	machineID, ok := certMachineID(leaf)
 	if !ok {
-		return a.refuse(ctx, bs, peer, "", helloRefusal{cause: causeCertNoSAN})
+		return a.refuse(ctx, bs, peer, leaf.Subject.CommonName, helloRefusal{cause: causeCertNoSAN})
+	}
+	rc := responseController(ctx)
+	if rc == nil {
+		return a.connectFailed(ctx, machineID, "wiring", errNoController)
 	}
 	first, err := a.firstMessage(bs, rc)
 	switch {
+	case errors.Is(err, errShuttingDown):
+		a.endedBeforeHello(ctx, machineID, "shutdown")
+		return sendBye(bs, agentv1.ByeReason_BYE_REASON_HUB_RESTART)
 	case errors.Is(err, errHelloWait):
+		a.endedBeforeHello(ctx, machineID, "timeout")
 		return a.refuse(ctx, bs, peer, machineID, helloRefusal{cause: causeHelloTimeout})
 	case err != nil:
+		kind := "reset"
+		if connect.CodeOf(err) == connect.CodeResourceExhausted {
+			kind = "oversize"
+		}
+		a.endedBeforeHello(ctx, machineID, kind)
 		return err
 	case first.GetHello() == nil:
 		return a.refuse(ctx, bs, peer, machineID, helloRefusal{cause: causeNotHello})
@@ -70,24 +82,32 @@ func (a *agentService) Connect(ctx context.Context, bs *connectStream) error {
 	return a.serve(ctx, bs, rc, s)
 }
 
-// errHelloWait marks a stream that sent nothing within the Hello wait.
-var errHelloWait = errors.New("gateway: no Hello within the wait")
+var (
+	// errHelloWait marks a stream that sent nothing within the Hello wait.
+	errHelloWait = errors.New("gateway: no Hello within the wait")
+	// errShuttingDown marks a stream the shutdown stopped waiting for.
+	errShuttingDown = errors.New("gateway: the hub is shutting down")
+	// errNoController is the listener's wiring failing: the request has no
+	// http.ResponseController (withPeerCert puts one in every request).
+	errNoController = errors.New("gateway: no response controller on the request")
+)
 
-// firstMessage reads the stream's first message within a.helloWait. The
-// wait ends the read through the stream's read deadline, which is cleared
-// for the stream's life once the message is in; a message that raced the
-// timer is still refused, since the deadline already fired.
+// firstMessage reads the stream's first message within a.helloWait, or
+// until Shutdown begins. Either ends the read through the stream's read
+// deadline, which is cleared for the stream's life once the message is
+// in; a message that raced either is still answered as that end.
 func (a *agentService) firstMessage(bs *connectStream, rc *http.ResponseController) (*agentv1.ConnectRequest, error) {
-	var fired atomic.Bool
-	t := time.AfterFunc(a.helloWait, func() {
-		fired.Store(true)
-		_ = rc.SetReadDeadline(time.Now())
-	})
+	wake := func() { _ = rc.SetReadDeadline(time.Now()) }
+	t := time.AfterFunc(a.helloWait, wake)
+	unwatch := context.AfterFunc(a.stopping, wake)
 	m, err := bs.Receive()
-	if !t.Stop() || fired.Load() {
+	timedOut, stopped := !t.Stop(), !unwatch()
+	switch {
+	case stopped:
+		return nil, errShuttingDown
+	case timedOut:
 		return nil, errHelloWait
-	}
-	if err != nil {
+	case err != nil:
 		return nil, err
 	}
 	_ = rc.SetReadDeadline(time.Time{})
@@ -118,13 +138,34 @@ func (a *agentService) hello(ctx context.Context, bs *connectStream, peer, machi
 	if a.revoked.Revoked(serial) {
 		return nil, a.refuse(ctx, bs, peer, machineID, helloRefusal{cause: causeRevoked})
 	}
-	out, err := statedb.Hello(ctx, a.store, statedb.HelloIn{
+	// The wait for the job ends when Shutdown begins or the agent leaves;
+	// the job itself may still commit, leaving a live row no stream holds
+	// (the machine's next Hello closes it as displaced, heartbeat age
+	// unknown).
+	hctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	unwatch := context.AfterFunc(a.stopping, cancel)
+	defer unwatch()
+	out, err := statedb.Hello(hctx, a.store, statedb.HelloIn{
 		MachineID: machineID, PeerSerial: serial, LastEpoch: h.GetLastEpoch(), BootID: h.GetBootId(),
 		InstallID: h.GetInstallId(), Peer: peer, Reason: connectReason(h.GetReason()),
 		Live: a.streams.live(machineID), Now: now,
 	})
+	switch {
+	case err != nil && ctx.Err() != nil:
+		// The agent left while its Hello waited: a departure, not the hub's
+		// failure. Its job may still commit, as below.
+		a.endedBeforeHello(ctx, machineID, "reset")
+		return nil, nil
+	case err != nil && a.stopping.Err() != nil:
+		a.endedBeforeHello(ctx, machineID, "shutdown")
+		return nil, sendBye(bs, agentv1.ByeReason_BYE_REASON_HUB_RESTART)
+	}
 	if err != nil {
 		return nil, a.helloRefused(ctx, bs, peer, machineID, err)
+	}
+	if a.afterHello != nil {
+		a.afterHello()
 	}
 	s := newStream(machineID, h.GetBootId(), peer, out.Epoch)
 	switch got, old := a.streams.register(s); got {
@@ -146,8 +187,15 @@ func (a *agentService) hello(ctx context.Context, bs *connectStream, peer, machi
 			a.duplicate(ctx, old, s)
 		}
 	}
-	s.send(&agentv1.ConnectResponse{Body: &agentv1.ConnectResponse_HelloAck{HelloAck: a.helloAck(out, version, now)}})
-	a.accepted(ctx, s, h, out)
+	if a.afterRegister != nil {
+		a.afterRegister()
+	}
+	// A stream that ended between register and here (displaced, or the
+	// shutdown) queues no HelloAck and is not an accepted Hello: serve
+	// sends its Bye and logs reconnect.closed with the reason.
+	if s.send(&agentv1.ConnectResponse{Body: &agentv1.ConnectResponse_HelloAck{HelloAck: a.helloAck(out, version, now)}}) {
+		a.accepted(ctx, s, h, out)
+	}
 	return s, nil
 }
 

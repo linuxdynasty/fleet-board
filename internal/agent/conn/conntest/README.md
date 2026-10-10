@@ -14,6 +14,7 @@ conntest.StartHub(t, conntest.Options{Wrap: conntest.DropFirstReply()}) // lost 
 conntest.StartHub(t, conntest.Options{Wrap: conntest.DropFirstReplyTo("RenewCert"), Now: clock})
 h.Restart(t)                                           // Shutdown (Bye{HUB_RESTART}), reopen state.db, same port
 h.LastEpoch(t, machineID); h.Connections(t, machineID) // machines.last_epoch, machine_connections
+free := h.HoldWriter(t)                                // block state.db's writer until free()
 ```
 
 `Requests` counts every HTTP request the listener served, so a test can

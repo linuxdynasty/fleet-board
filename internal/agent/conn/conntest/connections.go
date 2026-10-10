@@ -3,6 +3,7 @@ package conntest
 import (
 	"context"
 	"database/sql"
+	"sync"
 	"testing"
 	"time"
 
@@ -77,4 +78,20 @@ func (h *Hub) Connections(t *testing.T, machineID string) []Connection {
 		return rows.Err()
 	})
 	return out
+}
+
+// HoldWriter blocks state.db's writer until the returned func runs (once;
+// the test's end runs it too), so a Hello waits for its job. Restart
+// waits for it in Close.
+func (h *Hub) HoldWriter(t *testing.T) func() {
+	t.Helper()
+	release := make(chan struct{})
+	held, err := h.current().Submit(context.Background(), func(*sql.Tx) error { <-release; return nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	var once sync.Once
+	free := func() { once.Do(func() { close(release); <-held }) }
+	t.Cleanup(free)
+	return free
 }

@@ -80,6 +80,49 @@ func TestLoopReconnectsAfterTheRealHubRestarts(t *testing.T) {
 	r.running(t)
 }
 
+// A hub that shuts down while the agent's Hello waits for the store says
+// Bye{HUB_RESTART} before any HelloAck. The real loop takes it as a failed
+// attempt (connect.bye, then backoff), reconnects to the hub's next
+// process and reaches Connected. The Hello job of the first process still
+// commits during its Close, leaving a row no stream holds; the next Hello
+// closes it as displaced. With one certificate pair no pair switch is
+// possible, so renew.pair_switched is not logged.
+func TestLoopReconnectsAfterAByeBeforeHelloAck(t *testing.T) {
+	t.Parallel()
+	h := conntest.StartHub(t, conntest.Options{})
+	a := newAgent(t)
+	if _, err := a.enroll(t, h.Addr, h.Token(t, time.Now().Add(time.Hour))); err != nil {
+		t.Fatal(err)
+	}
+	id, err := conn.LoadIdentity(a.dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	free := h.HoldWriter(t)
+	before := h.Requests()
+	r := startLoop(t, a, nil)
+	waitFor(t, 10*time.Second, "the agent's Connect", func() bool { return h.Requests() > before })
+	time.Sleep(300 * time.Millisecond) // setup: the Hello reaches its job wait
+	go func() {
+		time.Sleep(500 * time.Millisecond) // Restart's Close waits for the held job
+		free()
+	}()
+	h.Restart(t)
+	r.connected(t)
+	byes := a.events(t, "connect.bye")
+	if len(byes) != 1 || byes[0]["reason"] != "HUB_RESTART" {
+		t.Errorf("connect.bye lines %v, want one HUB_RESTART", byes)
+	}
+	if n := len(a.events(t, "renew.pair_switched")); n != 0 {
+		t.Errorf("%d renew.pair_switched lines, want 0 with one pair", n)
+	}
+	got := h.Connections(t, id.MachineID)
+	if len(got) != 2 || got[0].Epoch != 1 || got[0].EndReason != "displaced" || got[1].Epoch != 2 || got[1].EndReason != "" {
+		t.Errorf("machine_connections = %+v, want epoch 1 (left open by the shutdown) displaced, epoch 2 live", got)
+	}
+	r.running(t)
+}
+
 // keepaliveSurvives connects with ka and checks the stream is still the
 // first one after hold. After HelloAck the hub sends nothing on this
 // stream but HTTP/2 ping answers (the few hundred bytes the agent sends

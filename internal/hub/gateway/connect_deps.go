@@ -32,13 +32,21 @@ type connectDeps struct {
 	instanceID string
 	version    string
 	helloWait  time.Duration
-	arms       armTable
-	m          connectMetrics
+	afterHello func()
+	// afterRegister, set only by tests, runs once the stream is the
+	// machine's live one, before its HelloAck is queued.
+	afterRegister func()
+	arms          armTable
+	// stopping ends when Shutdown begins (beginShutdown): a stream still
+	// waiting for its Hello or for its Hello job stops waiting.
+	stopping context.Context
+	stop     context.CancelFunc
+	m        connectMetrics
 }
 
 type connectMetrics struct {
-	reconnects, duplicates, unhandled, refused metric.Int64Counter
-	epoch                                      metric.Int64Gauge
+	reconnects, duplicates, unhandled, refused, beforeHello metric.Int64Counter
+	epoch                                                   metric.Int64Gauge
 }
 
 func newConnectDeps(opts ServerOptions) (*connectDeps, error) {
@@ -49,7 +57,7 @@ func newConnectDeps(opts ServerOptions) (*connectDeps, error) {
 	m := opts.Telemetry.Meter(scope)
 	p := opts.Telemetry.MetricPrefix()
 	var cm connectMetrics
-	var errs [5]error
+	var errs [6]error
 	cm.reconnects, errs[0] = m.Int64Counter(p+"_reconnects_total",
 		metric.WithDescription("Hellos the hub accepted, by machine and Hello.reason (start, reconnect, wake, network_change, unspecified)."))
 	cm.epoch, errs[1] = m.Int64Gauge(p+"_epoch",
@@ -60,14 +68,43 @@ func newConnectDeps(opts ServerOptions) (*connectDeps, error) {
 		metric.WithDescription("Connect messages of an arm the hub has no handler for yet, by kind; ignored."))
 	cm.refused, errs[4] = m.Int64Counter(p+"_connect_refused_total",
 		metric.WithDescription("Hellos the hub refused before HelloAck, by cause (02g \"Hello refusals\")."))
+	cm.beforeHello, errs[5] = m.Int64Counter(p+"_connect_closed_before_hello_total",
+		metric.WithDescription("Connect streams with a certificate that ended before a Hello was accepted, by err_kind: "+
+			"oversize, reset, timeout (the Hello wait) or shutdown."))
 	if err := errors.Join(errs[:]...); err != nil {
 		return nil, fmt.Errorf("gateway: connect metrics: %w", err)
 	}
+	stopping, stop := context.WithCancel(context.Background())
 	return &connectDeps{
+		stopping: stopping, stop: stop,
 		streams: newRegistry(), limit: newHelloLimit(), revoked: opts.Revoked,
 		tracer: opts.Telemetry.Tracer(scope), instanceID: hex.EncodeToString(b[:]), version: buildinfo.Version,
-		helloWait: cmp.Or(opts.HelloWait, HelloWait), arms: maps.Clone(arms), m: cm,
+		helloWait: cmp.Or(opts.HelloWait, HelloWait), afterHello: opts.afterHello, afterRegister: opts.afterRegister, arms: withArms(arms, opts.arms), m: cm,
 	}, nil
+}
+
+// withArms is a copy of the product table with extra (tests) added.
+func withArms(product, extra armTable) armTable {
+	t := maps.Clone(product)
+	maps.Copy(t, extra)
+	return t
+}
+
+// beginShutdown is the shutdown hook (http.Server.RegisterOnShutdown):
+// streams waiting for a Hello or a Hello job stop waiting, and every live
+// stream ends with Bye{HUB_RESTART}.
+func (d *connectDeps) beginShutdown() {
+	d.stop()
+	d.streams.byeAll()
+}
+
+// endedBeforeHello logs reconnect.closed for a stream with a certificate
+// that ended before a Hello was accepted (epoch 0, no row), with err_kind
+// oversize, reset, timeout or shutdown, and counts it.
+func (a *agentService) endedBeforeHello(ctx context.Context, machineID, kind string) {
+	a.m.beforeHello.Add(ctx, 1, metric.WithAttributes(attribute.String("err_kind", kind)))
+	a.log.InfoContext(ctx, "reconnect.closed", "machine_id", machineID, "epoch", 0, "reason", "before_hello",
+		"err_kind", kind, "row_closed", false)
 }
 
 // accepted logs reconnect.hello and records the epoch and the reconnect.
