@@ -339,6 +339,8 @@ func (s *session) accept(ctx context.Context, ack *agentv1.HelloAck, st ring.Sta
 func (s *session) connected(ctx context.Context) (ending, string, error) {
 	l := s.l
 	s.serving.Store(true)
+	// The queue opens first, so a Send that sees Connected is taken.
+	defer s.serveQueue(ctx)()
 	l.status.state(StateConnected, s.c.addr)
 	l.m.connected.Store(1)
 	defer l.m.connected.Store(0)
@@ -353,7 +355,7 @@ func (s *session) connected(ctx context.Context) (ending, string, error) {
 		}
 	}
 	s.renewCheck()
-	defer s.serveQueue(ctx)()
+	s.onConnected()
 	out, step, err := s.serve(ctx)
 	out.connected = true
 	return out, step, err

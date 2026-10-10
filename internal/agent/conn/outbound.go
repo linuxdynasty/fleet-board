@@ -176,11 +176,14 @@ func (l *Loop) logged(ctx context.Context, r *agentv1.CommandResult) error {
 	return nil
 }
 
-// serveQueue opens this stream's queue once it is Connected and runs
-// OnConnected with s.hctx, a context that ends with the stream or the run
-// (ctx); the returned func, called when the stream stops serving, ends the
-// queue, counts what was left in it and then runs OnDisconnected. The
-// hooks run on Run's goroutine, the stream's only sender.
+// serveQueue opens this stream's queue once it is Connected, before the
+// status says so, with s.hctx, the hooks' context, which ends with the
+// stream or the run (ctx). The returned func, called when the stream stops
+// serving, moves the status out of Connected (to backoff, which Run sets
+// next unless it stops or ends), ends the queue, counts what was left in
+// it and then runs OnDisconnected, so Connected always means Send takes
+// messages. The hooks run on Run's goroutine, the stream's only
+// sender.
 func (s *session) serveQueue(ctx context.Context) func() {
 	l := s.l
 	hctx, cancel := context.WithCancel(s.sctx)
@@ -188,10 +191,8 @@ func (s *session) serveQueue(ctx context.Context) func() {
 	s.hctx = hctx
 	s.q = newOutQueue(hctx.Done())
 	l.publish(s.q)
-	if f := l.opts.OnConnected; f != nil {
-		f(hctx, s.epoch, l.HubClock())
-	}
 	return func() {
+		l.status.state(StateBackoff, "")
 		unhook()
 		cancel()
 		l.unpublish(s.q)
@@ -202,6 +203,14 @@ func (s *session) serveQueue(ctx context.Context) func() {
 		if f := l.opts.OnDisconnected; f != nil {
 			f()
 		}
+	}
+}
+
+// onConnected runs OnConnected once the stream is Connected and its queue
+// open: after the snapshot and its unacked results.
+func (s *session) onConnected() {
+	if f := s.l.opts.OnConnected; f != nil {
+		f(s.hctx, s.epoch, s.l.HubClock())
 	}
 }
 

@@ -172,7 +172,8 @@ The agent side of plan row 6 (ruling forks 4 i, 11 and 12), in
   and its results.
 - **Lifecycle.** The receivers are told when a stream is Connected (after
   its snapshot and results, with its epoch and the strict hub clock of
-  02i "Clocks") and when it stopped serving. Every receiver hook runs on
+  02i "Clocks") and when it stopped serving. The agent's status says
+  Connected only while the queue takes messages. Every receiver hook runs on
   the stream's sender and never waits on the queue; only the Connected
   hook may queue, up to the queue's room, which is empty then.
 - Results for commands the hub already closed are ignored (idempotent by

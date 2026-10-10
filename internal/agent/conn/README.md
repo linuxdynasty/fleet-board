@@ -229,7 +229,9 @@ Plan row 6's seam (ruling forks 4 i, 11, 12; `inbound.go`, `outbound.go`,
   Capabilities run on the sending goroutine: never block, never wait on
   Send (hand work to a goroutine). OnConnected may Send up to 256 without
   waiting; it runs once the snapshot and its results are out, and
-  OnDisconnected once Send refuses the stream.
+  OnDisconnected once Send refuses the stream. The queue opens before
+  the status says Connected and the status leaves Connected (for backoff)
+  before it closes, so Connected means Send takes messages.
 - **Strict clock.** `Loop.HubClock().Now()`: the latest HelloAck's
   `hub_time` plus the larger of the monotonic and sleep-counting time
   since; not `ok` before the first HelloAck, after one with no `hub_time`,

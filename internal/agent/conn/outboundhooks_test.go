@@ -120,7 +120,15 @@ func TestProgressQueuedBeforeASnapshotRequestGoesBeforeIts(t *testing.T) {
 		h.pushCommand(t, fmt.Sprintf("c%02d", k), time.Now().Add(time.Hour))
 		h.push(t, &agentv1.ConnectResponse{Body: &agentv1.ConnectResponse_SnapshotRequest{SnapshotRequest: &agentv1.SnapshotRequest{}}})
 	}
-	waitFor(t, 20*time.Second, "every round's snapshot", func() bool { return len(h.snapshots(1)) == rounds+1 })
+	waitFor(t, 20*time.Second, "every round's snapshot and its results", func() bool {
+		snaps := h.snapshots(1)
+		if len(snaps) != rounds+1 {
+			return false
+		}
+		q := h.queued(1)
+		at := snapshotsAt(q)
+		return len(q)-at[len(at)-1]-1 >= len(snaps[rounds].GetUnackedResults())
+	})
 	if e := errs.get(); len(e) != 0 {
 		t.Fatalf("the hook failed: %q", e)
 	}
@@ -153,4 +161,46 @@ func snapshotsAt(q []string) []int {
 		}
 	}
 	return out
+}
+
+// Once the status says Connected, Send takes messages: the queue opens
+// before the status changes (a Send that sees Connected is never refused
+// for want of a stream, short of the stream ending).
+func TestSendIsTakenOnceTheStatusSaysConnected(t *testing.T) {
+	t.Parallel()
+	h := startConnectHub(t)
+	a := enrolled(t, h)
+	r := startLoop(t, a, nil)
+	ch := r.loop.StatusChanged()
+	refused := make(chan error, 16)
+	done := make(chan struct{})
+	t.Cleanup(func() { close(done) })
+	go func() {
+		for {
+			select {
+			case <-ch:
+			case <-done:
+				return
+			}
+			if r.loop.Status().State != conn.StateConnected {
+				continue
+			}
+			if err := r.loop.Send(context.Background(), ackOf("probe")); err != nil {
+				refused <- err
+			}
+		}
+	}()
+	const streams = 5
+	for n := 1; n <= streams; n++ {
+		h.connected(t, n)
+		waitFor(t, 5*time.Second, "the probe on stream "+strconv.Itoa(n), func() bool { return len(h.acks(n)) > 0 })
+		if n < streams {
+			h.dropLive(t)
+		}
+	}
+	select {
+	case err := <-refused:
+		t.Errorf("a Send right after the status said Connected = %v", err)
+	default:
+	}
 }

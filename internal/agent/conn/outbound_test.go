@@ -184,8 +184,10 @@ func TestQueuedMessagesNeverLandBetweenASnapshotAndItsResults(t *testing.T) {
 	for err := range errs {
 		t.Fatalf("Send: %v", err)
 	}
-	waitFor(t, 10*time.Second, "every ack and snapshot", func() bool {
-		return len(h.acks(1)) == senders*each && len(h.snapshots(1)) == requests+1
+	waitFor(t, 10*time.Second, "every ack, snapshot and result", func() bool {
+		q := h.queued(1)
+		at := snapshotsAt(q)
+		return len(h.acks(1)) == senders*each && len(at) == requests+1 && len(q)-at[len(at)-1]-1 >= 2
 	})
 	q := h.queued(1)
 	for i, m := range q {
