@@ -254,9 +254,10 @@ stateDiagram-v2
   [*] --> ENROLLED: Enroll
   ENROLLED --> ONLINE: Hello + Snapshot
   ONLINE --> STALE: no heartbeat 45 s
-  STALE --> OFFLINE: 3 min, or Bye
+  ONLINE --> OFFLINE: Bye or stream closed
+  STALE --> OFFLINE: 3 min, Bye, or stream closed
   STALE --> ONLINE: Heartbeat
-  OFFLINE --> ONLINE: Hello
+  OFFLINE --> ONLINE: Hello + Snapshot
   ENROLLED --> REVOKED: RevokeMachine
   ONLINE --> REVOKED: RevokeMachine
   STALE --> REVOKED: RevokeMachine
