@@ -32,6 +32,10 @@ func TestMain(m *testing.M) {
 		runChild(mode)
 		return
 	}
+	// A race-enabled binary sleeps up to a second at exit (GORACE atexit_sleep_ms),
+	// which would keep every fake child alive that long after it exited. The
+	// children inherit this environment.
+	_ = os.Setenv("GORACE", "atexit_sleep_ms=0")
 	// A Run that handed its child this process's stdin would give it
 	// /dev/zero, which never ends: the stdin test then sees bytes, not EOF.
 	if zero, err := os.Open("/dev/zero"); err == nil {
