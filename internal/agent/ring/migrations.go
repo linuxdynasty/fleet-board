@@ -50,17 +50,23 @@ BEGIN
 END;`
 
 // ackGuardsSQL keeps the ResultAck time (02i "Command lifecycle"): only a
-// finished entry is acked, and the first ack time never changes, so an entry
-// that was acked is never re-sent.
+// finished entry is acked, whether the ack comes by update or in the insert,
+// and the first ack time never changes, so an entry that was acked is never
+// re-sent.
 const ackGuardsSQL = `CREATE TRIGGER command_log_ack_kept BEFORE UPDATE OF acked_time ON command_log
 WHEN (OLD.acked_time IS NOT NULL AND NEW.acked_time IS NOT OLD.acked_time)
 	OR (NEW.acked_time IS NOT NULL AND NEW.status IS NOT 'finished')
 BEGIN
 	SELECT RAISE(ABORT, 'a result ack is kept and needs a finished result');
+END;
+CREATE TRIGGER command_log_ack_finished BEFORE INSERT ON command_log
+WHEN NEW.acked_time IS NOT NULL AND NEW.status IS NOT 'finished'
+BEGIN
+	SELECT RAISE(ABORT, 'a result ack needs a finished result');
 END;`
 
 // agentStateSQL is the one row of sequencing state (02i "Sequence numbers"
-// and "Connection epoch"; 03n W2 "Persistence"): install_id, seq_hwm and the
+// and "Connection epoch"; 03 W2 "Persistence"): install_id, seq_hwm and the
 // EventCounters, and the Hello.last_epoch and last_applied_command_seq the
 // agent reports. The trigger refuses any step back, whoever writes the file.
 const agentStateSQL = `CREATE TABLE agent_state(
@@ -86,7 +92,7 @@ BEGIN
 	SELECT RAISE(ABORT, 'agent_state never goes backwards');
 END;`
 
-// commandLogSQL is the command log (03n W2 "Persistence": status, result,
+// commandLogSQL is the command log (03 W2 "Persistence": status, result,
 // step reached; 02i "Command lifecycle"). command_id is the key, so a
 // re-issued command finds its entry; a finished entry's result never
 // changes, so a duplicate is answered with the result first logged.

@@ -21,7 +21,7 @@ var (
 )
 
 // Marks are the event seq high-water mark and the EventCounters, persisted
-// together (02i rule 1, 03n W2). None of them ever decreases.
+// together (02i rule 1, 03 W2). None of them ever decreases.
 type Marks struct {
 	SeqHWM    uint64
 	Shed      uint64
@@ -147,10 +147,12 @@ func (d *DB) ApplyCommandSeq(ctx context.Context, epoch, seq uint64) error {
 }
 
 // The largest HelloAck values agent.db takes (02i). It stores them as
-// SQLite's signed 64-bit integers and never lowers them, so each leaves
-// room: one more epoch above MaxEpoch, and one more block of seqs above
-// MaxHubLastSeq (Floor saves it, and the next Next reserves a block
-// past it). A larger one, saved, would stop every later epoch or seq.
+// SQLite's signed 64-bit integers and never lowers them. MaxEpoch keeps the
+// hub's next epoch (the stored one plus 1) inside a signed 64-bit integer;
+// the agent would refuse that next epoch, so it does not leave room for
+// another stream. MaxHubLastSeq keeps the first block Next reserves past
+// the floor (the floor plus 1024) inside one. A larger value, saved, would
+// overflow those sums and stop every later epoch or seq.
 const (
 	MaxEpoch      uint64 = math.MaxInt64 - 1
 	MaxHubLastSeq uint64 = math.MaxInt64 - seqBlock

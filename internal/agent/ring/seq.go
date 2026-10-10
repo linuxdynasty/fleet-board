@@ -8,9 +8,11 @@ import (
 // seqBlock is how many seqs one write of seq_hwm reserves (02i rule 1).
 const seqBlock = 1024
 
-// Seqs hands out agent-wide event seqs (02i "Sequence numbers"). Use one per
-// process: it keeps the next seq in memory and reserves blocks in agent.db
-// before handing any of them out, so a crash or restart never reissues one.
+// Seqs hands out agent-wide event seqs (02i "Sequence numbers"). Keep one
+// live allocator per agent.db file, shared by every caller: it keeps the
+// next seq in memory and reserves blocks in agent.db before handing any of
+// them out, so a crash or restart never reissues one. It is safe for
+// concurrent use.
 type Seqs struct {
 	db *DB
 

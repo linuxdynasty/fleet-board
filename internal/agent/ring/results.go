@@ -99,6 +99,13 @@ const forgettable = `(acked_time IS NOT NULL OR not_after_time < ?)`
 // forgotten command_id would run twice. Prune returns how many it deleted.
 // A pruned command_id is unknown afterwards: a ResultAck for it changes
 // nothing.
+//
+// now is hub time (HelloAck.hub_time plus the time elapsed since), never the
+// agent's wall clock: not_after_time is the hub's deadline (02i "Clocks"), so
+// a clock that runs ahead must not expire a command the hub may re-send. The
+// age test compares now with received_time, the agent's clock, and tolerates
+// that skew: a deadline is at most 24 h, so an entry 7 days old by a clock
+// off by hours, even days, is still past its deadline.
 func (d *DB) Prune(ctx context.Context, now time.Time) (int, error) {
 	old, at := now.Add(-MaxCommandAge).UnixMilli(), now.UnixMilli()
 	// A read first spares the write, and its batch wait, when nothing is due.

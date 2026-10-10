@@ -206,6 +206,8 @@ func TestTheFileKeepsTheFirstAck(t *testing.T) {
 		`UPDATE command_log SET acked_time = NULL WHERE command_id = 'c-1'`,
 		`UPDATE command_log SET acked_time = acked_time + 1 WHERE command_id = 'c-1'`,
 		`UPDATE command_log SET acked_time = 5 WHERE command_id = 'c-2'`,
+		`INSERT INTO command_log(command_id, kind, epoch, seq, received_time, not_after_time, status, acked_time)
+			VALUES ('c-3', 'capture_pane', 1, 3, 0, 0, 'received', 5)`,
 	} {
 		if _, err := f.ExecContext(ctx, q); err == nil || !strings.Contains(err.Error(), "ack") {
 			t.Errorf("%q gave %v, want a refusal naming the ack", q, err)
