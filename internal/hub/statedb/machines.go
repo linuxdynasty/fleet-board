@@ -185,8 +185,10 @@ type NewMachine struct {
 
 // Enroll is one writer job that decides the burn: it marks the token used
 // only while it is unburned, unexpired and names no previous machine, then
-// inserts the machine (ENROLLED), its serial and the response kept until
-// the token's not_after plus [ReplayWindow]. When the burn changes no row
+// inserts the machine (ENROLLED, version 1, stamped), its serial, the
+// response kept until the token's not_after plus [ReplayWindow] and the
+// machine.enroll audit row (no actor; the detail names the token row, whose
+// own row names who issued it). A replay writes nothing. When the burn changes no row
 // (another Enroll won, or the token expired since the pre-check), the job
 // classifies again in the same transaction: the winner's response as a
 // replay for the same key, or the [CheckEnroll] error. A ctx error means
@@ -228,10 +230,10 @@ func insertMachine(ctx context.Context, tx *sql.Tx, m NewMachine) (Enrolled, err
 	var (
 		name, expected, labels string
 		drained                bool
-		notAfter               int64
+		tokenID, notAfter      int64
 	)
-	err := tx.QueryRowContext(ctx, `SELECT machine_name, expected_hostname, labels, start_drained, not_after_time
-		FROM enroll_tokens WHERE secret_hash = ?`, m.Key.SecretHash[:]).Scan(&name, &expected, &labels, &drained, &notAfter)
+	err := tx.QueryRowContext(ctx, `SELECT id, machine_name, expected_hostname, labels, start_drained, not_after_time
+		FROM enroll_tokens WHERE secret_hash = ?`, m.Key.SecretHash[:]).Scan(&tokenID, &name, &expected, &labels, &drained, &notAfter)
 	if err != nil {
 		return Enrolled{}, fmt.Errorf("statedb: read burned enroll token: %w", err)
 	}
@@ -240,9 +242,15 @@ func insertMachine(ctx context.Context, tx *sql.Tx, m NewMachine) (Enrolled, err
 	}
 	mismatch := hostname.Mismatch(expected, m.ReportedHostname)
 	now := m.Now.UnixMilli()
+	st, err := NextStamp(ctx, tx, m.Now)
+	if err != nil {
+		return Enrolled{}, err
+	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO machines(machine_id, name, expected_hostname, labels, drained,
-		install_id, state, hostname_mismatch, facts, created_time) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		m.MachineID, name, expected, labels, drained, m.Key.InstallID, MachineEnrolled, mismatch, m.Facts, now); err != nil {
+		install_id, state, hostname_mismatch, facts, created_time, version, observed_time, hub_seq)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
+		m.MachineID, name, expected, labels, drained, m.Key.InstallID, MachineEnrolled, mismatch, m.Facts, now,
+		st.ObservedTime.UnixMilli(), st.HubSeq); err != nil {
 		return Enrolled{}, fmt.Errorf("statedb: insert machine: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO cert_serials(serial, machine_id, not_after_time, created_time)
@@ -254,6 +262,20 @@ func insertMachine(ctx context.Context, tx *sql.Tx, m NewMachine) (Enrolled, err
 		m.Key.SecretHash[:], m.Key.InstallID, m.Key.CSRKeyHash[:], m.MachineID, m.CertDER,
 		time.UnixMilli(notAfter).Add(ReplayWindow).UnixMilli(), now); err != nil {
 		return Enrolled{}, fmt.Errorf("statedb: insert enroll response: %w", err)
+	}
+	detail, err := auditDetail(struct {
+		MachineName      string `json:"machine_name"`
+		ExpectedHostname string `json:"expected_hostname"`
+		HostnameMismatch bool   `json:"hostname_mismatch"`
+		EnrollToken      string `json:"enroll_token"`
+	}{name, expected, mismatch, fmt.Sprintf("enroll_tokens/%d", tokenID)})
+	if err != nil {
+		return Enrolled{}, err
+	}
+	if _, err := AppendAudit(ctx, tx, AuditEntry{
+		Action: ActionEnroll, Target: "machines/" + m.MachineID, MachineID: m.MachineID, Detail: detail, Now: m.Now,
+	}); err != nil {
+		return Enrolled{}, err
 	}
 	return Enrolled{
 		MachineID: m.MachineID, CertDER: m.CertDER, MachineName: name, ExpectedHostname: expected, HostnameMismatch: mismatch,

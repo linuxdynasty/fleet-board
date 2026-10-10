@@ -15,6 +15,7 @@ import (
 	"go.opentelemetry.io/otel/metric"
 
 	typev1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/type/v1"
+	"github.com/linuxdynasty/fleet-board/internal/hub/auditcap"
 	"github.com/linuxdynasty/fleet-board/internal/hub/ca"
 	"github.com/linuxdynasty/fleet-board/internal/hub/statedb"
 	"github.com/linuxdynasty/fleet-board/internal/store"
@@ -31,12 +32,16 @@ type enrollDeps struct {
 	random   io.Reader
 	enrolls  metric.Int64Counter
 	renewals metric.Int64Counter
+	// audit caps the machine.enroll_failed rows; auditRows counts them.
+	audit     *auditcap.Cap
+	auditRows metric.Int64Counter
 }
 
 func newEnrollDeps(opts ServerOptions) (*enrollDeps, error) {
 	d := &enrollDeps{
 		store: opts.Store, auth: opts.Certs.auth, id: opts.Identity, caHash: caHash(opts.Identity.CACert),
 		log: opts.Telemetry.Logger.With("component", "gateway"), now: opts.Now, random: opts.Random,
+		audit: auditcap.New(),
 	}
 	if d.now == nil {
 		d.now = time.Now
@@ -55,6 +60,12 @@ func newEnrollDeps(opts ServerOptions) (*enrollDeps, error) {
 	if err != nil {
 		return nil, fmt.Errorf("gateway: renewal counter: %w", err)
 	}
+	d.auditRows, err = opts.Telemetry.Meter(scope).Int64Counter(opts.Telemetry.MetricPrefix()+"_enroll_audit_rows_total",
+		metric.WithDescription("Refused Enrolls by audit outcome: written (own machine.enroll_failed row), suppressed (capped), "+
+			"summary (a minute's summary row) or write_failed (rows the store did not take)."))
+	if err != nil {
+		return nil, fmt.Errorf("gateway: enroll audit counter: %w", err)
+	}
 	return d, nil
 }
 
@@ -72,10 +83,11 @@ func withDetail(err *connect.Error, d *typev1.ErrorDetail) *connect.Error {
 }
 
 // refused counts and logs the caller's error by its reason and the peer's
-// address, and returns it.
+// address, writes its audit row within the caps, and returns it.
 func (d *enrollDeps) refused(ctx context.Context, peer string, err *connect.Error) error {
 	d.enrolls.Add(ctx, 1, metric.WithAttributes(attribute.String("result", "refused")))
 	d.log.InfoContext(ctx, "enroll.refused", "reason", reasonOf(err), "peer", peer)
+	d.auditRefusal(ctx, peer, err)
 	return err
 }
 

@@ -151,6 +151,9 @@ type listener struct {
 	ln   net.Listener
 	srv  *http.Server
 	tls  bool
+	// flush, when set, finishes the server's work after Shutdown and before
+	// the store closes (the agent listener's audit summary).
+	flush func(context.Context)
 }
 
 // serve binds every listener, serves until ctx ends or one fails, then shuts
@@ -239,6 +242,11 @@ func serve(ctx context.Context, cfg *config.Config, opts Options, d hubDeps, s *
 		}
 	}
 	wg.Wait()
+	for _, l := range ls {
+		if l.flush != nil {
+			l.flush(context.WithoutCancel(ctx))
+		}
+	}
 	s.tel.Logger.Info("hub.stopped")
 	return serveErr
 }
@@ -278,7 +286,7 @@ func bind(ctx context.Context, cfg *config.Config, opts Options, d hubDeps, s *s
 		port := addr.Port
 		l := listener{name: w.name, ln: ln, tls: w.name == "agent"}
 		if l.tls {
-			l.srv = agent
+			l.srv, l.flush = agent.Server, agent.FlushAudit
 		} else {
 			l.srv = api.NewServer(s.tel, w.name, port)
 		}

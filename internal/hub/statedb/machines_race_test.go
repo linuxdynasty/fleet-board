@@ -67,7 +67,7 @@ func TestConcurrentFirstEnrollsMakeOneMachine(t *testing.T) {
 			if err := s.Close(); err != nil {
 				t.Fatal(err)
 			}
-			for _, q := range []string{"machines", "cert_serials", "enroll_responses"} {
+			for _, q := range []string{"machines", "cert_serials", "enroll_responses", "audit_log WHERE action = 'machine.enroll'"} {
 				if n := rawCount(t, statedb.Path(dir), "SELECT count(*) FROM "+q); n != 1 {
 					t.Errorf("%d rows in %s, want 1", n, q)
 				}

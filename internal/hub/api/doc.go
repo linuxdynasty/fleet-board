@@ -9,7 +9,8 @@
 // ever sent. [NewServer] wraps it with header and idle timeouts and an
 // ErrorLog that turns net/http's own error lines into debug-level JSON events.
 //
-// [Fleet] is FleetService with only CreateEnrollmentToken built (every other
+// [Fleet] is FleetService with only CreateEnrollmentToken built (it writes
+// the machine.enroll_token audit row with the token; every other
 // method is Unimplemented): it checks the caller ([PrincipalFrom], ADMIN),
 // the fields and the request_id (02b), mints the token in package ca and
 // stores only its secret hash. [NewAdmin] serves it on the admin socket over

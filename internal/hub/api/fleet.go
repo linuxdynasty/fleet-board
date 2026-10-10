@@ -88,8 +88,10 @@ func (f *Fleet) Handler() (string, http.Handler) {
 }
 
 // CreateEnrollmentToken mints an `fbe1_` token for the stored CA and stores
-// only the SHA-256 of its secret (02b, 02g). Order of checks, as 02b ranks
-// them: the caller, the fields, the request_id, then previous_machine.
+// only the SHA-256 of its secret (02b, 02g), with its machine.enroll_token
+// audit row naming the caller in the same transaction (02m; never the
+// token). Order of checks, as 02b ranks them: the caller, the fields, the
+// request_id, then previous_machine.
 func (f *Fleet) CreateEnrollmentToken(ctx context.Context, req *connect.Request[hubv1.CreateEnrollmentTokenRequest],
 ) (*connect.Response[hubv1.CreateEnrollmentTokenResponse], error) {
 	who, err := authorizeAdmin(ctx)
@@ -117,6 +119,9 @@ func (f *Fleet) CreateEnrollmentToken(ctx context.Context, req *connect.Request[
 		Labels: m.GetLabels(), StartDrained: m.GetStartDrained(), NotAfter: notAfter,
 		PreviousMachine: m.GetPreviousMachine().GetValue(), Created: now,
 		Principal: actor, RequestID: m.GetRequestId(), RequestHash: sha256.Sum256(body),
+		Actor: statedb.Actor{
+			ID: actor, Kind: strings.TrimPrefix(who.GetKind().String(), "PRINCIPAL_KIND_"), Name: who.GetName(),
+		},
 	})
 	switch {
 	case errors.Is(err, statedb.ErrSecretDelivered):

@@ -75,8 +75,11 @@ and answers the token, `expire_time`, the CA fingerprint (hex) and
 `fleet_hub_enroll_tokens_total{result="issued"|"refused"|"failed"}` and the
 log lines `enroll.issued` (`machine`, `expire_time`, `actor`),
 `enroll.issue_refused` (`reason`, `actor`) and `enroll.issue_failed` (`step`,
-`err_kind`). The token, its secret and its hash never reach a log. No audit
-row yet (#104).
+`err_kind`). The token, its secret and its hash never reach a log. The same
+writer transaction appends the `machine.enroll_token` audit row (02m): the
+caller (id, kind, name) as actor, target `enroll_tokens/<id>`, the
+`request_id`, and a detail with the machine name, expected hostname and
+expiry; never the token, its secret or its hash (#104).
 
 ## Admin socket
 

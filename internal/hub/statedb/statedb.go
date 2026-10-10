@@ -75,6 +75,10 @@ func Migrations() []store.Migration {
 		Version: 5,
 		Name:    "machine_connections",
 		SQL:     connectionsSQL,
+	}, {
+		Version: 6,
+		Name:    "audit_log_hub_seq",
+		SQL:     auditSQL,
 	}}
 }
 

@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"context"
 	"crypto/tls"
 	"errors"
 	"io"
@@ -49,8 +50,9 @@ type ServerOptions struct {
 // [MaxMessageBytes]; every method but Enroll and RenewCert answers
 // Unimplemented until its row lands. Start it with ServeTLS(ln, "", ""), which also offers HTTP/2 for
 // gRPC. net/http's own error lines (a failed handshake, a handler panic) go
-// to Telemetry as http.server_error events, never to stderr.
-func NewServer(opts ServerOptions) (*http.Server, error) {
+// to Telemetry as http.server_error events, never to stderr. To stop it,
+// call Shutdown, then [Server.FlushAudit], then close the store.
+func NewServer(opts ServerOptions) (*Server, error) {
 	if opts.Certs == nil || opts.Store == nil || opts.Revoked == nil || opts.Telemetry == nil {
 		return nil, errors.New("gateway: NewServer needs certificates, a store, the revoked set and telemetry")
 	}
@@ -62,7 +64,7 @@ func NewServer(opts ServerOptions) (*http.Server, error) {
 	mux := http.NewServeMux()
 	path, h := agentv1connect.NewAgentServiceHandler(&agentService{enrollDeps: deps}, connect.WithReadMaxBytes(MaxMessageBytes))
 	mux.Handle(path, withPeerCert(h))
-	return &http.Server{
+	srv := &Server{deps: deps, Server: &http.Server{
 		Handler: mux,
 		TLSConfig: &tls.Config{
 			MinVersion:       tls.VersionTLS13,
@@ -74,8 +76,22 @@ func NewServer(opts ServerOptions) (*http.Server, error) {
 		ReadHeaderTimeout: ReadHeaderTimeout,
 		IdleTimeout:       IdleTimeout,
 		ErrorLog:          tel.HTTPErrorLog("agent"),
-	}, nil
+	}}
+	return srv, nil
 }
+
+// Server is the agent listener: the http.Server to serve and shut down,
+// and the audit work to finish after it stops.
+type Server struct {
+	*http.Server
+	deps *enrollDeps
+}
+
+// FlushAudit writes the machine.enroll_failed summary of the minute in
+// progress, if any refusal in it was suppressed, and waits for the commit
+// (at most 5 s). Call it after Shutdown has returned, so no handler adds to
+// the minute, and before the store closes. A second call writes nothing.
+func (s *Server) FlushAudit(ctx context.Context) { s.deps.flushAudit(ctx) }
 
 // ReadHeaderTimeout bounds how long a peer may take to send request headers.
 // There is no ReadTimeout: Connect, Terminal and SessionLog are long streams.

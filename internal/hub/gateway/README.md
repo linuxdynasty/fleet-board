@@ -51,6 +51,20 @@ srv, err := gateway.NewServer(gateway.ServerOptions{
   write has an unknown outcome, and the agent's retry finds the replay. A token
   naming a previous machine is the hub's failure (`INTERNAL`, never burned;
   re-enroll is plan row 13a).
+
+  **Audit.** A first Enroll's `machine.enroll` row is written by
+  `statedb.Enroll` in its job; a replay writes none. Every refusal (the
+  caller's error) also writes `machine.enroll_failed` (target `machines`,
+  `outcome` `FAILED`, the reason, and a detail with the gRPC `code` and the
+  `peer` without its port) as a writer job of its own, waited for at most 5
+  s, within the caps of `internal/hub/auditcap`: one row per (reason, peer)
+  per minute, 10 per minute in all, then one summary row per minute
+  (`window_start`, `suppressed`, `distinct_peers`, `reasons`; `occurred_time`
+  the minute's start) written before the next refusal's row or, for the
+  minute in progress, by `Server.FlushAudit`, which `fleetd run` calls after
+  the listener's `Shutdown` and before the store closes (a crash loses it:
+  best effort). The cap is in memory and a restart empties it. The hub's own failures write no
+  row.
 - **RenewCert** ([02g](../../../docs/specs/02g-agent-security.md#certificate-renewal-a4)),
   checked in this order:
   1. A verified client certificate, else `CREDENTIALS_INVALID`. Its CN is the
@@ -61,7 +75,8 @@ srv, err := gateway.NewServer(gateway.ServerOptions{
      `CREDENTIALS_INVALID`, a `REVOKED` machine `MACHINE_REVOKED`; the same
      machine and CSR key return the stored certificate (`result="replayed"`);
      otherwise `ca.IssueAgent` (90 days, never past the CA) runs inside the
-     writer job that inserts the serial and the `cert_renewals` row.
+     writer job that inserts the serial and the `cert_renewals` row, stamps
+     the machine and appends `machine.cert_renewed`; a replay writes no row.
 
   The old serial is not revoked. A store error is `UNAVAILABLE` with
   `retryable`; the retry with the same CSR gets the stored certificate.
@@ -91,6 +106,8 @@ srv, err := gateway.NewServer(gateway.ServerOptions{
 | `enroll.completed` (`machine_id`, `replayed`, `hostname_mismatch`) | a new or replayed enroll |
 | `enroll.refused` (`reason`, `peer`) | a refusal; `reason` is the ErrorDetail reason without `REASON_CODE_` |
 | `enroll.failed` (`step`, `err_kind`) | the hub's failure; `step` is `store`, `previous_machine`, `random`, `sign` or `encode` |
+| `fleet_hub_enroll_audit_rows_total{result}` | a refusal's audit outcome: `written`, `suppressed` (capped), `summary` (a minute's summary row), `write_failed` |
+| `enroll.audit_failed` (`rows`, `err_kind`) | audit rows for a refusal the store did not take (the refusal is still answered) |
 | `fleet_hub_agent_cert_renewals_total{result}` | every RenewCert: `renewed`, `replayed`, `refused`, `failed` |
 | `cert.renewed` (`machine_id`, `result`, `serial`, `not_after`) | a new or replayed renewal |
 | `cert.renew_refused` (`result`; refused: `reason`, `cause`, `peer`, `machine_id`; failed: `step`, `err_kind`, `machine_id`) | a refusal (warn) or the hub's failure (error); `cause` is `no_client_cert`, `csr_invalid`, `csr_same_key`, `machine_unknown`, `machine_revoked` or `serial_unknown`; `step` is `store`, `sign` or `encode` |
@@ -107,7 +124,9 @@ Tests: `CGO_ENABLED=0 go test ./internal/hub/gateway/`. They dial the real
 listener with `crypto/tls` and the generated gRPC client against a real
 `state.db` and a real `revocation.List`: enroll (certificate CN and URI SAN,
 chain, accepted as a client certificate), replay until 24 h past the TTL,
-every refusal of the 02g table, a refusal that must not burn the token,
+every refusal of the 02g table (each with one `machine.enroll_failed` row
+without the token), the per-peer cap and the next minute's summary with a fake
+clock, the summary written at shutdown, a refusal that must not burn the token,
 store failure, a token naming a previous machine, concurrent first enrolls
 (one machine row), a revoked serial refused fresh and on a resumed session,
 the server certificate refused as a client certificate, TLS 1.2 refused,

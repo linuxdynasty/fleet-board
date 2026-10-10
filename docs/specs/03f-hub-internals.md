@@ -153,6 +153,7 @@ at **4 machines** / **50 machines × 10 panes** from the load table in
 | `log_sessions`, `log_chunks` (the zstd data and its index in one row), `archived_pane_summaries` (all in `logs.db`, ADR 0015) | `session_id`; `(session_id, pane, stream, raw_offset)`; pane key | W9 | 1 / 30 (chunk rows, batched per second) | by session + offset/time; `ListStoredSessions`; `SearchSessionLogs` scans frames | until pruned by the size cap or `log_retention`, or `DeleteSessionLogs` |
 | `attaches` (audit only) | `attach_id` | W8 | rare | per session | permanent audit |
 | `audit_log` | `(time, id)` | everything mutating | ≈ 0.05 / 0.5 | filter/export | permanent (ADR 0005/design) |
+| `hub_counters` (one row, `id = 1`) | `hub_seq`, which only rises (triggers refuse a second row, a delete or a lower value) | every writer job, once per changed resource; `observed_time` is the hub clock the job's caller read, not the commit time | one update per changed resource | none (rows carry their own stamp) | permanent |
 
 Derived, not stored: free slots per machine (from `goals` + limits),
 `allowed_active` per account (stored only as a cache row for the UI), triage

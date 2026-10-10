@@ -159,8 +159,9 @@ rule applies again and CI runs `buf breaking` against that tag, not against
 
 `AuditEntry.action` is a dotted name. The vocabulary is open for display, but
 every name in use is listed here and a new one is added in the same change. The
-actor is the requester (a `Principal`); decisions made at the machine have actor
-kind `LOCAL_USER` ([02g](02g-agent-security.md#audit-of-decisions-made-at-the-machine)).
+actor is the requester (a `Principal`), or none for steps the agent makes
+(`machine.enroll`, `machine.cert_renewed`, `machine.enroll_failed`); decisions
+made at the machine have actor kind `LOCAL_USER` ([02g](02g-agent-security.md#audit-of-decisions-made-at-the-machine)).
 Filter on `action` with `=` or `in` ([02c](02c-hub-watch-and-filters.md)).
 
 `AuditEntry.target` is `<collection>/<id>`, so the Session timeline filters
@@ -169,13 +170,15 @@ writes: session actions (`session.*`, `attach.*`) `sessions/<id>`; goal actions
 `goals/<id>`; machine actions `machines/<id>`; `repo.*` `repos/<host/path>`;
 `account.*` `accounts/<id>`; `work_item.requeue` `work_items/<canonical key>`;
 `logs.*` `sessions/<id>` (or `logs` for a search); `config.import` `config`;
-settings `settings/<id>`; the others the collection of their resource. A
+settings `settings/<id>`; `machine.enroll_token` writes `enroll_tokens/<id>`;
+`machine.enroll_failed` and `machine.connect_refused` write the collection
+`machines` when no row exists; the others the collection of their resource. A
 read-only attach toggle is a re-attach (a new `attach.open`).
 
 | Area | Actions |
 |---|---|
 | Sign-in and credentials | `auth.claim`, `auth.sign_in`, `auth.sign_in_failed`, `auth.sign_out`, `passkey.add`, `passkey.delete`, `user.invite`, `user.update`, `auth.session_revoke`, `token.create`, `token.revoke`, `device.pair_request`, `device.approve`, `device.revoke` |
-| Machines | `machine.enroll`, `machine.enroll_failed`, `machine.cert_renewed`, `machine.update`, `machine.drain`, `machine.undrain`, `machine.revoke`, `machine.delete`, `machine.connect_refused`, `machine.local_drain`, `machine.local_undrain`, `machine.install_changed` |
+| Machines | `machine.enroll_token`, `machine.enroll`, `machine.enroll_failed`, `machine.cert_renewed`, `machine.update`, `machine.drain`, `machine.undrain`, `machine.revoke`, `machine.delete`, `machine.connect_refused`, `machine.local_drain`, `machine.local_undrain`, `machine.install_changed` |
 | Commands | `session.create`, `session.keys`, `session.interrupt`, `session.harness_command`, `session.respawn`, `session.kill_window`, `session.availability`, `session.log_capture`, `attach.open`, `attach.close`, `command.refused`, `command.local_approval` |
 | Goals and work | `goal.start`, `goal.control`, `goal.rearm`, `goal.state_change` (hub decisions: expiry, abandon, external merge), `work_item.requeue`, `routine.run`, `approval.decide`, `triage.snooze`, `triage.dismiss` |
 | Configuration | `settings.update`, `account.create`, `account.update`, `account.delete`, `integration.update`, `repo.create`, `repo.update`, `repo.delete`, `config.import`, `machine.hooks`, `routine.create`, `routine.update`, `routine.delete`, `notification_target.create`, `notification_target.update`, `notification_target.delete`, `policy.changed`, `policy.safe_mode` |

@@ -130,7 +130,7 @@ func TestRenewRefusesWithoutALiveMachineAndAKnownSerial(t *testing.T) {
 // serial; every caller gets that certificate.
 func TestConcurrentRenewalsStoreOneSerial(t *testing.T) {
 	t.Parallel()
-	_, s := enrolledStore(t)
+	dir, s := enrolledStore(t)
 	const n = 8
 	var signs atomic.Int32
 	results := make([]statedb.Renewed, n)
@@ -156,6 +156,12 @@ func TestConcurrentRenewalsStoreOneSerial(t *testing.T) {
 	}
 	if fresh != 1 || signs.Load() != 1 {
 		t.Errorf("%d fresh answers and %d signatures, want 1 and 1", fresh, signs.Load())
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if n := rawCount(t, statedb.Path(dir), `SELECT count(*) FROM audit_log WHERE action = 'machine.cert_renewed'`); n != 1 {
+		t.Errorf("%d machine.cert_renewed rows, want 1", n)
 	}
 }
 

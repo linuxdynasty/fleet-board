@@ -119,10 +119,27 @@ request names a different one. A request id with a token that names none, or a
 machine that was deleted, is ignored and Enroll creates a new machine; so an
 agent that sends its old id after `Bye{UNKNOWN_MACHINE}` just enrolls fresh.
 
-A failed Enroll writes an audit row (`machine.enroll_failed`) with the code and
-peer address, never the token. Not yet: plan row 5 (#104) brings the audit
-log; until then a failure is the log line `enroll.refused` (`reason`, `peer`)
-or `enroll.failed` (`step`, `err_kind`) and `fleet_hub_enroll_total` (03, W1).
+A refused Enroll writes an audit row (`machine.enroll_failed`, target
+`machines`, no machine) with the reason, the gRPC code and the peer address
+without its port, never the token, within the cap in
+[defaults](defaults.md) ("`machine.enroll_failed` audit rows"): one row per
+(reason, peer) per minute, 10 per minute in all, then one summary row per
+minute (detail: the reason counts, the distinct peers, the suppressed count;
+`occurred_time` the minute's start); the pair's next row carries
+`suppressed` (for the 1,024 pairs suppressed most recently). The cap is in
+memory: a restart empties it. A clean stop writes the summary of the minute
+in progress after the listener stops and before the store closes; a crash
+loses it (best effort). Every refusal is still the log
+line `enroll.refused` (`reason`, `peer`) and `fleet_hub_enroll_total`
+(03, W1). A failure of the hub's own (`enroll.failed`: store, signing) writes
+no audit row. A successful first Enroll writes `machine.enroll` (target
+`machines/<id>`, no actor; detail: the machine name, the expected hostname,
+`hostname_mismatch` and the token row `enroll_tokens/<id>`, whose
+`machine.enroll_token` row names who issued it) in the transaction that burns
+the token; a replay writes none. Creating a token writes
+`machine.enroll_token` (target `enroll_tokens/<id>`, the caller as actor,
+no machine; detail: the machine name, the expected hostname and the expiry;
+never the token, its secret or its hash) in the transaction that stores it.
 
 **Connect-level failures.** The agent finds out about problems after the TLS
 handshake through `Bye` (`ByeReason`), not through a missing message:
@@ -157,10 +174,12 @@ error:
 
 A malformed CSR is refused with `RENEW_CSR_INVALID` before the machine and serial checks.
 
-A renewal writes an audit row (`machine.cert_renewed`). Not yet: plan row 5
-(#104) brings the audit log; until then a renewal is the log line
-`cert.renewed` and a refusal `cert.renew_refused`, with
-`fleet_hub_agent_cert_renewals_total` ([05b](05b-observability.md)).
+A renewal writes an audit row (`machine.cert_renewed`, target
+`machines/<id>`, no actor; detail: the new serial and its `not_after`) and
+stamps the machine's status in the transaction that stores the certificate;
+a replay writes none. A renewal is also the log line `cert.renewed` and a
+refusal `cert.renew_refused`, with `fleet_hub_agent_cert_renewals_total`
+([05b](05b-observability.md)).
 
 ## Hub identity and restore
 

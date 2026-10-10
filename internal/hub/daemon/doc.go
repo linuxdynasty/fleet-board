@@ -17,9 +17,11 @@
 // agent listener (Enroll; revoked client certificates fail the handshake),
 // the API listener, the optional metrics listener and the
 // admin socket (<state_dir>/admin.sock, mode 0600, a leftover socket removed
-// first and the socket removed on a clean stop) until its context ends. A
+// first and the socket removed on a clean stop) until its context ends. An
 // advertiser (internal/hub/discovery) announces the hub over mDNS once the
-// listeners serve and stops first at shutdown; a goroutine it owns checks the
+// listeners serve and stops first at shutdown. On the way out the hub
+// writes the agent listener's audit summary of the minute in progress
+// before the store closes. A goroutine it owns checks the
 // certificate every hour, and another runs the
 // nightly backup (backup.Schedule: a check at start, then every minute).
 //
