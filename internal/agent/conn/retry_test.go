@@ -147,7 +147,10 @@ func TestACancelEndsTheWaitBetweenTries(t *testing.T) {
 	go func() {
 		_, err := conn.Enroll(ctx, conn.Options{
 			Dir: a.dir, Hub: addr, Token: tok, Version: "test", Telemetry: a.tel,
-			Retry: conn.Retry{FirstWait: time.Minute, MaxWait: time.Minute},
+			// The wait is full jitter (a random time up to FirstWait), so
+			// an hour makes a draw shorter than this test's own timing
+			// (a second or less) about 1 in 5,000, not 1 in 100.
+			Retry: conn.Retry{FirstWait: time.Hour, MaxWait: time.Hour},
 		})
 		done <- err
 	}()
