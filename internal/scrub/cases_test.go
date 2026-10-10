@@ -152,7 +152,32 @@ var secretCases = []textCase{
 	},
 	{"authorization with a name prefix", "HTTP_AUTHORIZATION=Basic dXNlcjpw", "HTTP_AUTHORIZATION=Basic [redacted]"},
 	{"cookie with a name prefix", "PROXY_COOKIE=sid=abc", "PROXY_COOKIE=[redacted]"},
+	// A private key as a named value goes whole: the name rule must not end
+	// the value at the key's first space.
+	{"private key as a variable", "PRIVATE_KEY=" + pemKey, "PRIVATE_KEY=[redacted]"},
+	{"private key as a quoted variable", `GITHUB_APP_PRIVATE_KEY="` + pemKey + `"`, `GITHUB_APP_PRIVATE_KEY="[redacted]"`},
+	{"private key after a colon", "private_key: " + pemKey + "\nnext", "private_key: [redacted]\nnext"},
+	{"private key as a flag value", "--private-key " + pemKey + " x", "--private-key [redacted] x"},
+	{"private key as a query value", "?key=" + pemKey, "?key=[redacted]"},
+	// A NAME=value or flag value runs to whitespace or a quote: &, ; and ,
+	// can be part of a password.
+	{"value holding & ; and ,", "DB_PASSWORD=Xy7&k;9qLm,Zr2 ok", "DB_PASSWORD=[redacted] ok"},
+	{"flag value holding &", "mysqldump --password Xy7&k9qLmZr2 db", "mysqldump --password [redacted] db"},
+	{"value holding a comma", "GITHUB_TOKEN=abc,def123zz", "GITHUB_TOKEN=[redacted]"},
+	// In a connection string ; ends the value.
+	{"password in a connection string", "Server=db;Uid=al;Password=hunter2;Database=x", "Server=db;Uid=al;Password=[redacted];Database=x"},
+	// Glued keys of one kind go in one round.
+	{"glued google keys", strings.Repeat("AIza"+strings.Repeat("x", 35), 4), "AIza[redacted]"},
+	{"glued aws key ids", strings.Repeat("AKIA"+strings.Repeat("Z", 16), 4), "AKIA[redacted]"},
+	{"curl user and password", "curl -u al:hunter2 https://x.io", "curl -u al:[redacted] https://x.io"},
+	{"curl user flag, quoted", "curl --user 'al:pa:ss' https://x.io", "curl --user 'al:[redacted]' https://x.io"},
+	{"ruby or php string key", `{"password" => "hunter2"}`, `{"password" => "[redacted]"}`},
+	{"ruby symbol key", `{:password => "hunter2"}`, `{:password => "[redacted]"}`},
+	{"php single-quoted key", `['api_key' => 'k1']`, `['api_key' => '[redacted]']`},
 }
+
+// pemKey is a short PEM private key block with a newline inside.
+const pemKey = "-----BEGIN RSA PRIVATE KEY-----\nMIIEZq7Xk Ab\n-----END RSA PRIVATE KEY-----" //nolint:gosec // G101: a made-up key body the scrubber must remove; not a real key
 
 // plainCases hold no secret and must come out as they went in.
 var plainCases = []textCase{
@@ -180,6 +205,9 @@ var plainCases = []textCase{
 	{"bearer in prose", "the bearer token expired", "the bearer token expired"},
 	{"issue number", "see issue #12 and README.md#install", "see issue #12 and README.md#install"},
 	{"empty json secret", `{"password": ""}`, `{"password": ""}`},
+	{"docker user and group", "docker run -u 1000:1000 img", "docker run -u 1000:1000 img"},
+	// Not covered (README): a bare Pwd at the start is the shell's PWD shape.
+	{"connection string starting with pwd", "Pwd=x;Server=y", "Pwd=x;Server=y"},
 }
 
 // homeCase is one input scrubbed with Home set.

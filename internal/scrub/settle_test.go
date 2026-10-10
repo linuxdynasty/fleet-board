@@ -54,6 +54,9 @@ var fragments = []string{
 	"fbt_", "eyJ", "eyJaaaaaaaaaa.", "sk-", "ghp_", "AAAAAAAAAAAAAAAAAA",
 	"http://", "https://", "a://", "al@example.com", "a@b.co",
 	"/Users/al", "/Users/alice", "[redacted]", "[email]", `\"`,
+	"PRIVATE_KEY=", "-----BEGIN RSA PRIVATE KEY-----", "\nMIIE Ab\n",
+	"-----END RSA PRIVATE KEY-----", "API_KEY= ", "--token ", " => ", ":password",
+	"curl -u al:", "AIza" + strings.Repeat("x", 35), "AKIA" + strings.Repeat("Z", 16),
 }
 
 // The fragments joined at random: 200,000 inputs in 8 parallel shards, each

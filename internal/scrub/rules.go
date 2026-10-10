@@ -1,10 +1,5 @@
 package scrub
 
-import (
-	"regexp"
-	"strings"
-)
-
 const (
 	redacted  = "[redacted]"
 	emailMark = "[email]"
@@ -62,18 +57,41 @@ const flagPrefix = `(?:[a-mo-z0-9_.-][a-z0-9_.-]{0,63}` +
 	`|n(?:[a-np-z0-9_.-][a-z0-9_.-]{0,62})?` +
 	`|no(?:[a-z0-9_.][a-z0-9_.-]{0,61})?)?`
 
-// secretName is the end of a secret-named name and what joins it to its
-// value: NAME=value, env["NAME"] = value, --name value, or name: value. Only
-// a flag matches its whole name (after the literal --); otherwise the match
-// starts at the secret word and the rest of the name stays outside it.
-const secretName = `(?:` + secretWords + `(?:["']\])?[ \t]*=[ \t]*` +
-	`|--` + flagPrefix + flagWords + `[ \t]+` +
-	`|` + colonWords + `[ \t]*:[ \t]*)`
+// The names of a secret-named value and what joins each to its value. Only a
+// flag and a connection-string entry match their whole name; otherwise the
+// match starts at the secret word and the rest of the name stays outside it.
+const (
+	// eqName is NAME=value, env["NAME"] = value, or Ruby's :name => value.
+	eqName = secretWords + `(?:["']\])?[ \t]*=>?[ \t]*`
+	// flagName is --name value.
+	flagName = `--` + flagPrefix + flagWords + `[ \t]+`
+	// colonName is name: value.
+	colonName = colonWords + `[ \t]*:[ \t]*`
+	// connName is ;Password=value inside a connection string.
+	connName = `;[ \t]*(?:` + namePrefix + secretWords + `|pwd)[ \t]*=[ \t]*`
+)
+
+// Where an unquoted value ends. A NAME=value or flag value runs to
+// whitespace or a quote: &, ; and , can be part of a password. A
+// connection-string value also ends at ;, and a name: value at &, ; or ,
+// (prose and YAML flow lists).
+const (
+	eqBare    = `[^\s"']+`
+	connBare  = `[^\s"';]+`
+	colonBare = `[^\s"'&;,]+`
+)
+
+// value is a quoted value, which keeps its quotes so the placeholder cannot
+// run into the text after it on a second pass, a quote that never closes
+// (to the end of the line), or an unquoted value ending as bare says.
+func value(bare string) string {
+	return `(?:"(` + dq + `*)"|'(` + sq + `*)'|["']([^\r\n]+)|(` + bare + `))`
+}
 
 // bareValue is a JSON or dict value with no quotes: a number, true, null. It
-// takes a placeholder whole, so a second pass ends where the first did, and
-// never starts an object or array.
-const bareValue = `(\[redacted\]|[^\s,}\]"'\[{]+)`
+// never starts an object or array, so it never takes a placeholder, and a
+// second pass leaves "password": [redacted] alone.
+const bareValue = `([^\s,}\]"'\[{]+)`
 
 // headerValue runs to the end of the line, a closing ] (a Go header dump) or
 // a quote that does not open a quoted string ('Authorization: x' in a curl
@@ -93,13 +111,19 @@ const (
 	sq = `(?:[^'\\\n]|\\.)`
 )
 
+// email is an address. Its local part is at most 64 characters (RFC 5321).
+const email = `[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}`
+
+// pemBlock is a PEM or PGP private key, to its END line or, cut short, to the
+// end of the text. It runs as its own pass before the rules (redact): a
+// secret name before it (PRIVATE_KEY=-----BEGIN ...) would otherwise start
+// further left, win, and end its value at the key's first space.
+const pemBlock = `-----BEGIN [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----(?:[\s\S]*?-----END [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----|[\s\S]*)`
+
 // rules are tried left to right at each position; the first that matches
 // wins, so a longer form (an Authorization header) comes before a part of it
 // (a bearer token). README.md lists each shape and why it is here.
 var rules = []rule{
-	// A PEM or PGP private key, to its END line or, cut short, to the end of
-	// the text.
-	{`(-----BEGIN [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----(?:[\s\S]*?-----END [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----|[\s\S]*))`, redacted, false},
 	// A [ before the value is kept only before a scheme ([Bearer x] in a Go
 	// header dump); otherwise it would take the [ of a placeholder. The name
 	// may follow _ (HTTP_AUTHORIZATION=, PROXY_COOKIE= in an environment).
@@ -113,111 +137,44 @@ var rules = []rule{
 	// an email can be the user name.
 	{`(?i:\b[a-z][a-z0-9+.-]{0,31}://[^/?#\s:]*:([^/?#\s]+)@` +
 		`|` + email + `:([^/?#\s]+)@)`, redacted, true},
+	// The password in curl -u user:password (or --user), within 256 bytes of
+	// curl on its line. Only after curl: docker -u 1000:1000 is a user and
+	// group. The kept text is scrubbed too: it holds the rest of the command.
+	{`\bcurl\b[^\n]{0,256}?\s(?:-u|--user)[ \t=]*["']?[^\s:"']*:([^\s"']+)`, redacted, true},
 	// Tokens known by their prefix, which is kept: a JSON Web Token (whole),
 	// fleet enroll and API tokens, GitHub tokens, sk- keys, AWS key ids and
-	// Google API keys.
+	// Google API keys. Fixed-length keys glued to keys of the same kind go in
+	// one match: the \b before the second fails while the first is still
+	// there.
 	{`\b(?:(eyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]*)` +
 		`|fbe[0-9]+_([A-Za-z0-9_-]{8,})` +
 		`|fbt_([A-Za-z0-9_.-]{8,})` +
 		`|gh[pousr]_([A-Za-z0-9]{16,})` +
 		`|github_pat_([A-Za-z0-9_]{16,})` +
 		`|sk-([A-Za-z0-9_-]{16,})` +
-		`|(?:AKIA|ASIA)([A-Z0-9]{16})` +
-		`|AIza([A-Za-z0-9_-]{35}))`, redacted, false},
+		`|(?:AKIA|ASIA)([A-Z0-9]{16}(?:(?:AKIA|ASIA)[A-Z0-9]{16})*)` +
+		`|AIza([A-Za-z0-9_-]{35}(?:AIza[A-Za-z0-9_-]{35})*))`, redacted, false},
 	// A bearer token: 16 characters, or fewer with base64 padding, which
 	// prose ("the bearer token expired") does not have.
 	{`(?i:\bbearer[ \t]+([A-Za-z0-9._~+/-]{16,}=*|[A-Za-z0-9._~+/-]{1,15}=+))`, redacted, false},
-	// Escaped JSON, JSON and Python dict entries; an escaped JSON entry
-	// starts one byte before its quote, so it is found first. A JSON or dict
-	// value may be bare ({"password": 12345}).
+	// Escaped JSON, JSON and Python dict entries, and PHP or Ruby ones with
+	// =>; an escaped JSON entry starts one byte before its quote, so it is
+	// found first. A JSON or dict value may be bare ({"password": 12345}).
 	{`(?i:\\"` + namePrefix + secretWords + `\\"[ \t]*:[ \t]*\\"((?:[^"\\\n]|\\[^"\n])+)\\"` +
-		`|"` + namePrefix + secretWords + `"[ \t]*:[ \t]*(?:"(` + dq + `+)"|` + bareValue + `)` +
-		`|'` + namePrefix + secretWords + `'[ \t]*:[ \t]*(?:'(` + sq + `+)'|` + bareValue + `))`, redacted, false},
-	// A quoted value keeps its quotes, so the placeholder cannot run into
-	// the text after it and be taken for a longer value on a second pass. A
-	// quote that never closes takes the rest of the line.
-	{`(?i:` + secretName + `(?:"(` + dq + `*)"|'(` + sq + `*)'|["']([^\r\n]+)|([^\s"'&;,]+)))`, redacted, false},
+		`|"` + namePrefix + secretWords + `"[ \t]*(?::|=>)[ \t]*(?:"(` + dq + `+)"|` + bareValue + `)` +
+		`|'` + namePrefix + secretWords + `'[ \t]*(?::|=>)[ \t]*(?:'(` + sq + `+)'|` + bareValue + `))`, redacted, false},
+	// A secret-named value. A connection-string entry starts at its ;, left
+	// of the word, so it is found first. A name with no value of its own
+	// takes the next word, even another secret's name (README, "Not
+	// covered"): a pattern that skipped to the second name added 36 capture
+	// groups and made 1 MiB of plain text about 30% slower (measured).
+	{`(?i:` + connName + value(connBare) +
+		`|` + eqName + value(eqBare) +
+		`|` + flagName + value(eqBare) +
+		`|` + colonName + value(colonBare) + `)`, redacted, false},
 	// A query or fragment value (#code=abc in an OAuth redirect) ends at a
 	// character a URL cannot hold unescaped (whitespace, quotes, <, >,
 	// backtick) or at the next & or #.
 	{`[?&#][^=&#?\s/"'<>]+=([^&#\s"'<>` + "`" + `]+)`, redacted, false},
 	{`(` + email + `)`, emailMark, false},
-}
-
-// email is an address. Its local part is at most 64 characters (RFC 5321).
-const email = `[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}`
-
-// compiled is the rules joined into one pattern, and for each rule its
-// wrapping group and how many groups it holds.
-type compiled struct {
-	re     *regexp.Regexp
-	wrap   []int
-	groups []int
-}
-
-var secrets = compile(rules)
-
-func compile(rs []rule) compiled {
-	c := compiled{wrap: make([]int, len(rs)), groups: make([]int, len(rs))}
-	alts := make([]string, len(rs))
-	next := 1
-	for i, r := range rs {
-		alts[i] = "(" + r.pattern + ")"
-		c.wrap[i] = next
-		c.groups[i] = regexp.MustCompile(r.pattern).NumSubexp()
-		next += 1 + c.groups[i]
-	}
-	c.re = regexp.MustCompile(strings.Join(alts, "|"))
-	return c
-}
-
-// span is a replaced stretch of the output: [start, end) in bytes.
-type span struct{ start, end int }
-
-// redact swaps the secret in every match for its placeholder, and returns
-// where each replaced match sits in the result. Kept text of a scrubKept
-// rule is redacted too: it is shorter than the match, so this ends.
-func redact(s string) (string, []span) {
-	matches := secrets.re.FindAllStringSubmatchIndex(s, -1)
-	if matches == nil {
-		return s, nil
-	}
-	var b strings.Builder
-	b.Grow(len(s))
-	spans := make([]span, 0, len(matches))
-	last := 0
-	for _, m := range matches {
-		b.WriteString(s[last:m[0]])
-		start := b.Len()
-		i, v := secrets.which(m)
-		before, after := s[m[0]:m[2*v]], s[m[2*v+1]:m[1]]
-		if rules[i].scrubKept {
-			before, _ = redact(before)
-			after, _ = redact(after)
-		}
-		b.WriteString(before)
-		b.WriteString(rules[i].placeholder)
-		b.WriteString(after)
-		spans = append(spans, span{start, b.Len()})
-		last = m[1]
-	}
-	b.WriteString(s[last:])
-	return b.String(), spans
-}
-
-// which returns the rule that made match m and the group holding its secret:
-// the whole match when a rule names no group, so nothing is kept by mistake.
-func (c compiled) which(m []int) (ruleIndex, group int) {
-	for i, w := range c.wrap {
-		if m[2*w] < 0 {
-			continue
-		}
-		for g := w + 1; g <= w+c.groups[i]; g++ {
-			if m[2*g] >= 0 {
-				return i, g
-			}
-		}
-		return i, w
-	}
-	return 0, 0
 }
