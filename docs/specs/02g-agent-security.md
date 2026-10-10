@@ -247,10 +247,10 @@ it (#92). It:
    `(E, 20)` against a restored `(E, 15)` and ignores the hub's settings, the
    exact case the epoch exists for). In-memory queues do not survive a
    process start, and `hub_instance_id` is new on every start anyway. As
-   built (plan row 5, PR 5j) restore changes no connection rows: there is
-   no `machine_connections` table yet. PR 5a-i adds it, and with PR 5k
-   clears the restored live-connection rows and decides what the `ONLINE`
-   rows copied from the backup mean.
+   built (plan row 5, PR 5j) restore changes no `machine_connections` rows
+   (PR 5a-i's table): a row the backup holds as live is closed as displaced
+   by that machine's next `Hello`, and PR 5k decides what the restored live
+   and `ONLINE` rows mean.
 3. If `--address` is given (host or host:port; the port defaults to
    `listen.agent`'s, else 7443; spelled the way the agent keeps an address),
    adds it to `hub_addresses` and issues a server certificate from the same

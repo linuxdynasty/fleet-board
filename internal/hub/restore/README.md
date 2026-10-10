@@ -96,8 +96,9 @@ removed on every return path, and a crash leaves it for
 cover a refusal before the restore starts, such as `lock_held` while `fleetd
 run` is up.
 
-Not done here: clearing live-connection rows (no such table yet; PR 5a-i
-adds `machine_connections`), the `hub.restore` audit row (the audit log is PR
+Not done here: closing the live `machine_connections` rows the backup holds
+(each is closed as displaced by its machine's next `Hello`; PR 5k decides
+the rest), the `hub.restore` audit row (the audit log is PR
 5d), and the reconcile behavior in Hello (PR 5k).
 
 Tests: `restore_test.go` (identity, previous copy, WAL case, empty folder,
