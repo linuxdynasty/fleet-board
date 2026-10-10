@@ -77,6 +77,18 @@ linters:
           deny:
             - pkg: github.com/linuxdynasty/fleet-board/internal/agent/tmux/typing
               desc: only internal/agent/control, start, probe and the tmux client import the typing package (01f F3)
+        # The tmux test rig starts throwaway servers (plan row 7): only test
+        # files import it, so no program links it.
+        # scripts/test-lint-typing-rules.sh seeds a violation.
+        tmuxtest:
+          list-mode: lax
+          files:
+            - "**/internal/**"
+            - "**/cmd/**"
+            - "!$test"
+          deny:
+            - pkg: github.com/linuxdynasty/fleet-board/internal/agent/tmux/tmuxtest
+              desc: tmuxtest is test support; only _test.go files import it (internal/agent/tmux/tmuxtest/AGENTS.md)
         # No unsafe outside tests (plan row 7, #140): //go:linkname needs it,
         # and a linkname to a typing.New… function builds a typing.Line that
         # no forbidigo pattern sees. Nothing in internal/ or cmd/ needs it

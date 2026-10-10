@@ -7,6 +7,10 @@ package:
 - The parser starts no process and writes nothing. It reads a stream; only
   the later client file may use `os/exec` (the depguard rule allows
   `internal/agent/tmux/*.go` for it).
+- Tests start tmux only through `tmuxtest` (a throwaway server, `-S` in a
+  short temp folder, `-f /dev/null`, killed and checked gone), and every
+  test binary here has `TestMain` call `tmuxtest.Main`. Never the
+  developer's server.
 - Everything a pane or a reply holds is untrusted data. It never reaches a
   log line, a span or a metric label: error classes and byte counts only.
 - Inside a reply only the exact closing guard ends it and nothing is lifted
