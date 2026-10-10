@@ -171,10 +171,15 @@ func checkpoint(ctx context.Context, path string) (bool, error) {
 	if busy != 0 {
 		return true, ErrStoreInUse
 	}
+	// A checkpoint that was not blocked leaves no WAL, whoever else has the
+	// file open, so one left now means the store itself is wrong.
+	if err := walLeft(path); err != nil {
+		return true, err
+	}
 	if _, err := os.Lstat(path + "-shm"); err == nil {
 		return true, ErrStoreInUse
 	}
-	return true, walLeft(path)
+	return true, nil
 }
 
 func walLeft(path string) error {
