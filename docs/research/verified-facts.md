@@ -33,6 +33,7 @@ The harness behavior the specs rely on today is in
 | Muse sessions live in `~/.local/share/muse/sessions/` | `ls` | Not used by the design |
 | Claude, Codex and Muse all have a native `/goal`; syntax differs (Claude has no pause) | Typed `/goal` without Enter on each, 2026-10-01 (01b) | In use. Supersedes "owner said so, not yet probed" |
 | After an interrupt Claude keeps the goal active (resume by typing `continue`); Codex and Muse show it paused (`/goal resume`); none resumes by itself in 30 s | Probed 2026-10-02 (01b) | In use (02h interrupt handling) |
+| A goal file at `<workdir>/.fleet/goal-<goal_id>`, git-ignored through `info/exclude`, is writable in the Codex, Claude Code and Muse sandboxes; a path under `.git/` is read-only in Codex, `/tmp` is refused by Claude Code's sandbox, the home folder by all three | Codex 0.160.0 `workspace-write`, Claude Code 2.1.296 sandbox, Muse Code 1.4.4 default sandbox, one prompt each in a throwaway tmux server, 2026-10-10 (01d) | In use: plan item 0.12, rows 20 and 21 |
 | Eshu goal file states (`DONE`, `BLOCKED: ... WATCH=<pid>`, `CONSENT:`) and the Stop hook that keeps a goal running | `eshu-hq/eshu` `.claude/hooks/goal-continue.sh`, `docs/internal/agent-hooks.md` | In use as the model for the goal file ([01d](../specs/01d-goal-hooks.md), [02h](../specs/02h-goal-binding-and-pane-signals.md)) |
 | Eshu issue driver posts a claim comment and drives an issue to merged or closed | `eshu-hq/eshu` `.agents/skills/eshu-issue-driver/SKILL.md` | In use (claims, 03m) |
 

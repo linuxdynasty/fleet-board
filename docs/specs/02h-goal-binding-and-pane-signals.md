@@ -107,7 +107,8 @@ runs a known harness and that no registry entry names:
    harness session id) and take the file with the **newest modification time**. It
    must be newer than the start of the harness process in the pane (from the OS),
    so a file left by an earlier goal is not attributed. The agent reads no other file for an observed goal; the
-   generic goal file of fleet-started goals is set by 01d.
+   generic goal file of fleet-started goals is `<workdir>/.fleet/goal-<goal_id>`
+   ([01d](01d-goal-hooks.md#goal-file-location-probe-2026-10-10)).
 3. If exactly one pane running a known harness has that checkout as its folder,
    the file belongs to that pane. If two or more do, nothing is attributed: the
    agent never guesses (the harness session id that would tell them apart is
