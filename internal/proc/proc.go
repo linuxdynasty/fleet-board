@@ -6,15 +6,18 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"sync"
 	"time"
 )
 
 // DefaultWaitDelay is how long Run waits, after the child has exited or been
-// killed, for the output pipes to close before it closes them itself.
+// killed, for the output pipes to reach end-of-file before it gives up on a
+// descendant that still holds them. It is also the most a Spec may ask for.
 const DefaultWaitDelay = 2 * time.Second
 
-// Errors Run returns, for errors.Is. A cancelled caller gets its own context
-// error ([context.Canceled] or [context.DeadlineExceeded]).
+// Errors Run returns, for errors.Is. A caller whose context ended gets the
+// context's cause back ([context.Cause]: [context.Canceled] or
+// [context.DeadlineExceeded] unless the caller set another).
 var (
 	ErrNoCaller      = errors.New("proc: no caller named")
 	ErrUnknownCaller = errors.New("proc: unknown caller")
@@ -22,7 +25,7 @@ var (
 	ErrNoPath        = errors.New("proc: no program to run")
 	ErrTimeCap       = errors.New("proc: time cap passed")
 	ErrOutputCap     = errors.New("proc: output cap passed")
-	ErrHeldPipe      = errors.New("proc: a descendant held the output open after the child exited")
+	ErrHeldPipe      = errors.New("proc: a descendant still held the output open after the WaitDelay")
 )
 
 // ExitError is a child that ran and exited with a non-zero status (or was
@@ -45,7 +48,10 @@ type Spec struct {
 	// Env is the child's environment; nil is the caller's own. The helper
 	// reads no variable and adds none.
 	Env []string
-	// WaitDelay is [DefaultWaitDelay] when zero.
+	// WaitDelay is how long Run waits for the output pipes after the child
+	// is gone. Zero, or more than [DefaultWaitDelay], means DefaultWaitDelay:
+	// it can be made shorter, never longer, so a call lasts at most its time
+	// cap plus DefaultWaitDelay.
 	WaitDelay time.Duration
 }
 
@@ -63,17 +69,44 @@ type Result struct {
 	Elapsed time.Duration
 }
 
+// kills records the kills Run made, from Cancel's goroutine and from Run's.
+type kills struct {
+	mu    sync.Mutex
+	did   bool  // a group kill signalled at least one process
+	cause Cause // of the first one
+	byCtx bool  // that kill was the cap or the caller (not the WaitDelay)
+}
+
+func (k *kills) record(c Cause, byCtx bool) {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	if !k.did {
+		k.did, k.cause, k.byCtx = true, c, byCtx
+	}
+}
+
 // Run starts the child, waits for it, and returns what it wrote.
 //
 // The child reads end-of-file on stdin, runs in a process group of its own,
 // and is bounded by its caller's time cap and output cap (stdout and stderr
-// together). When a cap passes or ctx ends, Run kills the whole group with
-// SIGKILL, logs and counts the cause, and returns at once with the error
-// [ErrTimeCap], [ErrOutputCap] or the context's own. Whatever the way out, it
-// kills the group once more after Wait, so no descendant that stayed in it
-// outlives the call. A descendant that left the group (setsid) is out of
-// reach; Wait stops waiting for it after the WaitDelay, and Run returns
-// [ErrHeldPipe] if it was holding the pipes.
+// together). When a cap passes or ctx ends while the child runs, Run kills the
+// whole group with SIGKILL, logs and counts the cause, and returns with
+// [ErrTimeCap], [ErrOutputCap] or the context's own error; the output so far
+// is in the Result.
+//
+// After the child is gone, Run waits up to WaitDelay (at most
+// [DefaultWaitDelay]) for end-of-file on its stdout and stderr, so a call lasts
+// at most the time cap plus that delay. A descendant still holding them then
+// is reported as [ErrHeldPipe], whatever the child's exit status, and is
+// killed with its group if it stayed in it (cause wait_delay). One that left
+// the group (setsid) is out of reach: Run stops waiting for it and says so in
+// the log (proc.pipe_held).
+//
+// There is no kill after a clean finish. Once the child is reaped its pid, and
+// so the group id, may be free, so a group kill is safe only while some member
+// is alive: Run signals the group only before the child is reaped (a cap or a
+// cancel) or when a descendant is seen holding the pipes. A descendant that
+// holds no pipe and outlives a child that exited by itself is left running.
 func (r *Runner) Run(ctx context.Context, sp Spec) (Result, error) {
 	if err := sp.check(); err != nil {
 		return Result{}, err
@@ -91,15 +124,29 @@ func (r *Runner) Run(ctx context.Context, sp Spec) (Result, error) {
 
 	var stdout, stderr bytes.Buffer
 	b := &budget{left: lim.Output, onOver: func() { cancel(ErrOutputCap) }}
+	p, err := openPipes()
+	if err != nil {
+		return Result{}, fmt.Errorf("proc %s: pipes: %w", name, err)
+	}
+	defer p.closeAll()
+
+	k := &kills{}
 	cmd := exec.CommandContext(capCtx, sp.Path, sp.Args...) //nolint:gosec // G204: Run is the one place a child starts; its callers build typed arguments (01 principle 8).
 	cmd.Dir, cmd.Env = sp.Dir, sp.Env
-	cmd.Stdout, cmd.Stderr = b.writer(&stdout), b.writer(&stderr) // Stdin stays nil: the null device, end-of-file
+	cmd.Stdout, cmd.Stderr = p.outW, p.errW // Stdin stays nil: the null device, end-of-file
 	cmd.SysProcAttr = groupAttr()
-	cmd.Cancel = func() error { return killGroup(cmd.Process.Pid) }
-	cmd.WaitDelay = sp.WaitDelay
-	if cmd.WaitDelay <= 0 {
-		cmd.WaitDelay = DefaultWaitDelay
+	cmd.Cancel = func() error {
+		err := killGroupOf(cmd.Process)
+		if err == nil {
+			k.record(causeOf(context.Cause(capCtx)), true)
+		}
+		return err
 	}
+	wait := sp.WaitDelay
+	if wait <= 0 || wait > DefaultWaitDelay {
+		wait = DefaultWaitDelay
+	}
+	cmd.WaitDelay = wait // no pipe goroutines of os/exec's own; this bounds a child that survives its Cancel
 
 	if err := cmd.Start(); err != nil {
 		if c := context.Cause(capCtx); c != nil {
@@ -107,13 +154,30 @@ func (r *Runner) Run(ctx context.Context, sp Spec) (Result, error) {
 		}
 		return Result{Elapsed: time.Since(start)}, fmt.Errorf("proc %s: start: %w", name, err)
 	}
+	p.closeWriters()
+	p.copyTo(b, &stdout, &stderr)
 	res := Result{Pid: cmd.Process.Pid}
+
 	werr := cmd.Wait()
-	// A descendant that stayed in the group dies with the call. The group id
-	// is the child's pid, and the kernel does not give a pid out again while
-	// a process group still uses it, so this cannot reach an unrelated
-	// process; with no member left it returns os.ErrProcessDone.
-	_ = killGroup(res.Pid)
+
+	// Output ends when every holder of a pipe is gone. Wait for that, but not
+	// beyond the WaitDelay: past it a descendant is holding the pipes.
+	held := false
+	timer := time.NewTimer(wait)
+	select {
+	case <-p.done:
+	case <-timer.C:
+		held = true
+		// The leader is reaped, but a holder of the pipes is alive, and a group
+		// id is not given out again while a member uses it.
+		if killGroup(res.Pid) == nil {
+			k.record(CauseWaitDelay, false)
+		}
+		p.closeReaders()
+		<-p.done
+	}
+	timer.Stop()
+
 	res.Stdout, res.Stderr = stdout.Bytes(), stderr.Bytes()
 	res.Elapsed = time.Since(start)
 	res.ExitCode = -1
@@ -121,14 +185,48 @@ func (r *Runner) Run(ctx context.Context, sp Spec) (Result, error) {
 		res.ExitCode = ps.ExitCode()
 	}
 
-	cause, err := classify(capCtx, b, werr)
-	if cause != "" {
-		r.killed(context.WithoutCancel(ctx), sp.Caller, cause, res)
+	k.mu.Lock()
+	did, cause, byCtx := k.did, k.cause, k.byCtx
+	k.mu.Unlock()
+	switch {
+	case did:
+		r.killed(context.WithoutCancel(ctx), sp.Caller, cause, held, res)
+	case held:
+		r.pipeHeld(context.WithoutCancel(ctx), sp.Caller, res)
 	}
-	if err != nil {
-		err = fmt.Errorf("proc %s: %w", name, err)
+
+	var rerr error
+	switch {
+	case b.over.Load():
+		rerr = ErrOutputCap
+	case did && byCtx:
+		rerr = context.Cause(capCtx) // ErrTimeCap, or the caller's own error
+	case held:
+		rerr = ErrHeldPipe
+	case werr != nil:
+		var ee *exec.ExitError
+		if errors.As(werr, &ee) {
+			rerr = &ExitError{Code: ee.ExitCode()}
+		} else {
+			rerr = werr
+		}
 	}
-	return res, err
+	if rerr != nil {
+		rerr = fmt.Errorf("proc %s: %w", name, rerr)
+	}
+	return res, rerr
+}
+
+// causeOf names why the context behind a cancel ended.
+func causeOf(c error) Cause {
+	switch {
+	case errors.Is(c, ErrTimeCap):
+		return CauseTimeCap
+	case errors.Is(c, ErrOutputCap):
+		return CauseOutputCap
+	default:
+		return CauseCancelled
+	}
 }
 
 // check refuses a Spec that names no caller, no caps or no program.
@@ -142,26 +240,4 @@ func (sp Spec) check() error {
 		return ErrNoPath
 	}
 	return nil
-}
-
-// classify turns what Wait returned into the kill cause (empty when Run did
-// not kill) and the error to return.
-func classify(capCtx context.Context, b *budget, werr error) (Cause, error) {
-	switch c := context.Cause(capCtx); {
-	case b.over.Load():
-		return CauseOutputCap, ErrOutputCap
-	case werr == nil:
-		return "", nil
-	case errors.Is(c, ErrTimeCap):
-		return CauseTimeCap, ErrTimeCap
-	case c != nil:
-		return CauseCancelled, c
-	case errors.Is(werr, exec.ErrWaitDelay):
-		return CauseWaitDelay, ErrHeldPipe
-	}
-	var ee *exec.ExitError
-	if errors.As(werr, &ee) {
-		return "", &ExitError{Code: ee.ExitCode()}
-	}
-	return "", werr
 }

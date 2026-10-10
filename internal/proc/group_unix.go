@@ -13,6 +13,17 @@ import (
 // leave it.
 func groupAttr() *syscall.SysProcAttr { return &syscall.SysProcAttr{Setpgid: true} }
 
+// killGroupOf is killGroup for the child p, and does nothing once p was waited
+// for: from then on its pid, and so its group id, may be free. It is not
+// atomic with Wait (the check, then the kill), which is why a group kill is
+// only safe while some member of the group is alive.
+func killGroupOf(p *os.Process) error {
+	if err := p.Signal(syscall.Signal(0)); err != nil {
+		return os.ErrProcessDone
+	}
+	return killGroup(p.Pid)
+}
+
 // killGroup sends SIGKILL to the whole group led by pid. It returns
 // [os.ErrProcessDone] when no member is left.
 func killGroup(pid int) error {

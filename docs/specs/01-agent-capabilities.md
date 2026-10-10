@@ -48,10 +48,12 @@ event, a snapshot field or a stream.
    (`git`, `gh`, `loginctl`, a version check) gets empty stdin, a time cap and
    an output cap (stdout and stderr together), runs in a process group of its
    own, and is killed, group and all, when a cap passes or its caller gives up.
-   All of them run through one helper, `internal/proc`; plan row 2c sets the
-   caps and records them per named caller in [defaults](defaults.md) (a caller
-   with no entry there gets no default). Every kill is logged and counted with
-   its cause ([05b](05b-observability.md)). A lint rule lets only `internal/proc`,
+   All of them run through one helper, `internal/proc`. Each caller's caps are
+   set from a measured run of its command and recorded in the
+   [defaults](defaults.md) row "One-shot child process"; a caller with no entry
+   there gets no default, and none has an entry until the row that adds it
+   (plan rows 6, 7, 8) measures it. Every kill is logged and counted with its
+   cause ([05b](05b-observability.md)). A lint rule lets only `internal/proc`,
    the `internal/agent/tmux` package itself and `internal/agent/attach` import
    `os/exec`, and only `internal/proc` start a process any other way. The
    long-lived `tmux -C` client and the attach PTY are not one-shot.

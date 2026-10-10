@@ -1,8 +1,10 @@
 package proc_test
 
 import (
+	"fmt"
 	"os"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -13,13 +15,77 @@ import (
 
 const defaultsRowPrefix = "| One-shot child process (`internal/proc`) |"
 
-// entry is `name` <seconds> / <KiB> in the row's value cell.
+// entry is `name` <seconds> / <KiB>: a caller whose caps were measured and
+// written into the row.
 var entry = regexp.MustCompile("`([a-z]+)` ([0-9]+) / ([0-9]+)")
 
+// checkRow compares the caps written in a defaults row with a caller table and
+// returns one message per difference. A row with no numbers and an empty table
+// agree: no caller has been measured yet.
+func checkRow(row string, table map[string]proc.Limits) []string {
+	var problems []string
+	docs := map[string]proc.Limits{}
+	for _, m := range entry.FindAllStringSubmatch(row, -1) {
+		secs, _ := strconv.Atoi(m[2])
+		kib, _ := strconv.Atoi(m[3])
+		if _, dup := docs[m[1]]; dup {
+			problems = append(problems, fmt.Sprintf("the row names %q twice", m[1]))
+		}
+		docs[m[1]] = proc.Limits{Time: time.Duration(secs) * time.Second, Output: int64(kib) << 10}
+	}
+	for name, got := range table {
+		want, ok := docs[name]
+		switch {
+		case !ok:
+			problems = append(problems, fmt.Sprintf("caller %q is in code and has no caps in the defaults row", name))
+		case got != want:
+			problems = append(problems, fmt.Sprintf("caller %q: code has %+v, the row says %+v", name, got, want))
+		}
+		if got.Time <= 0 || got.Output <= 0 {
+			problems = append(problems, fmt.Sprintf("caller %q has a zero cap: %+v", name, got))
+		}
+	}
+	for name := range docs {
+		if _, ok := table[name]; !ok {
+			problems = append(problems, fmt.Sprintf("the row has caps for %q and code has no such caller", name))
+		}
+	}
+	slices.Sort(problems)
+	return problems
+}
+
+func TestCheckRow(t *testing.T) {
+	t.Parallel()
+	const none = "| One-shot child process (`internal/proc`) | per named caller (`git`, `gh`), set from a measured run | s / KiB |"
+	const git = "| One-shot child process (`internal/proc`) | `git` 120 / 1024 | s / KiB |"
+	l := proc.Limits{Time: 120 * time.Second, Output: 1 << 20}
+	tests := []struct {
+		name  string
+		row   string
+		table map[string]proc.Limits
+		want  int // problems
+	}{
+		{"no caller, no numbers", none, nil, 0},
+		{"a caller with caps in the row", git, map[string]proc.Limits{"git": l}, 0},
+		{"a caller the row has no caps for", none, map[string]proc.Limits{"git": l}, 1},
+		{"a different number", git, map[string]proc.Limits{"git": {Time: 60 * time.Second, Output: 1 << 20}}, 1},
+		{"caps in the row for a caller code lacks", git, nil, 1},
+		{"a zero cap in code", "| One-shot child process (`internal/proc`) | `git` 0 / 0 |", map[string]proc.Limits{"git": {}}, 1},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := checkRow(tc.row, tc.table); len(got) != tc.want {
+				t.Fatalf("problems = %q, want %d", got, tc.want)
+			}
+		})
+	}
+}
+
 // TestCallersMatchTheDefaultsRow keeps the table in limits.go and the row
-// "One-shot child process" of docs/specs/defaults.md in step: the same names,
-// the same caps (seconds and KiB). A caller with no entry in the row gets no
-// default.
+// "One-shot child process" of docs/specs/defaults.md in step. Both are empty
+// of numbers today: each cap is set from a measured run of the real call, and
+// no caller exists yet. A caller with no entry gets no default.
 func TestCallersMatchTheDefaultsRow(t *testing.T) {
 	t.Parallel()
 	b, err := os.ReadFile("../../docs/specs/defaults.md")
@@ -35,43 +101,12 @@ func TestCallersMatchTheDefaultsRow(t *testing.T) {
 	if row == "" {
 		t.Fatalf("defaults.md has no row starting %q", defaultsRowPrefix)
 	}
-	docs := map[string]proc.Limits{}
-	for _, m := range entry.FindAllStringSubmatch(row, -1) {
-		secs, _ := strconv.Atoi(m[2])
-		kib, _ := strconv.Atoi(m[3])
-		if _, dup := docs[m[1]]; dup {
-			t.Errorf("the row names %q twice", m[1])
-		}
-		docs[m[1]] = proc.Limits{Time: time.Duration(secs) * time.Second, Output: int64(kib) << 10}
+	for _, p := range checkRow(row, proc.Table()) {
+		t.Error(p)
 	}
-	if len(docs) == 0 {
-		t.Fatalf("no `name` seconds / KiB entries in %q", row)
-	}
-	names := proc.Names()
-	for _, name := range names {
-		want, ok := docs[name]
-		if !ok {
-			t.Errorf("caller %q is in code and has no entry in the defaults row", name)
-			continue
-		}
-		c, err := proc.For(name)
-		if err != nil {
-			t.Errorf("For(%q): %v", name, err)
-			continue
-		}
-		if got := c.Limits(); got != want {
-			t.Errorf("caller %q: code has %+v, the row says %+v", name, got, want)
-		}
-		if got := c.Limits(); got.Time <= 0 || got.Output <= 0 {
-			t.Errorf("caller %q has a zero cap: %+v", name, got)
-		}
-	}
-	for name := range docs {
+	for name := range proc.Table() {
 		if _, err := proc.For(name); err != nil {
-			t.Errorf("the row names %q and code has no such caller: %v", name, err)
+			t.Errorf("For(%q): %v", name, err)
 		}
-	}
-	if len(names) != len(docs) {
-		t.Errorf("code has %d callers, the row has %d", len(names), len(docs))
 	}
 }

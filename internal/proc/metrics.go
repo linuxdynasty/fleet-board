@@ -51,17 +51,30 @@ func NewRunner(tel *telemetry.Telemetry) (*Runner, error) {
 	return &Runner{log: log, kills: kills}, nil
 }
 
-// killed logs and counts one kill. It carries IDs and counts only: never the
-// program, its arguments or its output.
-func (r *Runner) killed(ctx context.Context, c Caller, cause Cause, res Result) {
+// killed logs and counts one group kill. It carries IDs and counts only: never
+// the program, its arguments or its output. held says a descendant was still
+// holding the output past the WaitDelay.
+func (r *Runner) killed(ctx context.Context, c Caller, cause Cause, held bool, res Result) {
 	r.kills.Add(ctx, 1, metric.WithAttributes(
 		attribute.String("caller", c.name), attribute.String("cause", string(cause))))
 	r.log.WarnContext(ctx, "proc.killed",
 		"caller", c.name,
 		"cause", string(cause),
+		"held_pipe", held,
 		"pid", res.Pid,
 		"elapsed_ms", res.Elapsed.Milliseconds(),
 		"output_bytes", len(res.Stdout)+len(res.Stderr),
 		"time_cap_ms", c.limits.Time.Milliseconds(),
 		"output_cap_bytes", c.limits.Output)
+}
+
+// pipeHeld logs a descendant that holds the output past the WaitDelay and could
+// not be killed: it left the process group (setsid), so no kill was made and
+// nothing is counted.
+func (r *Runner) pipeHeld(ctx context.Context, c Caller, res Result) {
+	r.log.WarnContext(ctx, "proc.pipe_held",
+		"caller", c.name,
+		"pid", res.Pid,
+		"elapsed_ms", res.Elapsed.Milliseconds(),
+		"output_bytes", len(res.Stdout)+len(res.Stderr))
 }

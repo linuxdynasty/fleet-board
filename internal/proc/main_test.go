@@ -20,12 +20,18 @@ const (
 	pidFileEnv   = "FLEET_PROC_PIDFILE"
 	exitCodeEnv  = "FLEET_PROC_EXIT"
 	grandSetsEnv = "FLEET_PROC_GRAND_SETSID"
+	splitEnv     = "FLEET_PROC_SPLIT_BYTES"
 )
 
 func TestMain(m *testing.M) {
 	if mode := os.Getenv(childEnv); mode != "" {
 		runChild(mode)
 		return
+	}
+	// A Run that handed its child this process's stdin would give it
+	// /dev/zero, which never ends: the stdin test then sees bytes, not EOF.
+	if zero, err := os.Open("/dev/zero"); err == nil {
+		os.Stdin = zero
 	}
 	os.Exit(m.Run())
 }
@@ -45,8 +51,14 @@ func runChild(mode string) {
 			}
 		}
 	case "stdin":
-		b, err := io.ReadAll(os.Stdin)
-		fmt.Printf("stdin eof bytes=%d err=%v\n", len(b), err)
+		// At most 1 MiB, so an inherited /dev/zero cannot run forever.
+		b, err := io.ReadAll(io.LimitReader(os.Stdin, 1<<20))
+		fmt.Printf("stdin bytes=%d err=%v\n", len(b), err)
+	case "split":
+		n, _ := strconv.Atoi(os.Getenv(splitEnv))
+		chunk := make([]byte, n)
+		_, _ = os.Stdout.Write(chunk)
+		_, _ = os.Stderr.Write(chunk)
 	case "echo":
 		_, _ = fmt.Fprint(os.Stdout, "to-stdout")
 		_, _ = fmt.Fprint(os.Stderr, "to-stderr")
@@ -76,6 +88,8 @@ func runChild(mode string) {
 		if mode == "parent-hangs" {
 			time.Sleep(time.Hour)
 		}
+		code, _ := strconv.Atoi(os.Getenv(exitCodeEnv))
+		os.Exit(code)
 	case "hold":
 		path := os.Getenv(pidFileEnv)
 		tmp := path + ".tmp"

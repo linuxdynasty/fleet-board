@@ -2,7 +2,6 @@ package proc
 
 import (
 	"fmt"
-	"slices"
 	"time"
 )
 
@@ -31,38 +30,21 @@ func (c Caller) Name() string { return c.name }
 // Limits are the caller's caps.
 func (c Caller) Limits() Limits { return c.limits }
 
-const kib = 1024
-
-// callers is the defaults row "One-shot child process", in code. A test
-// (TestCallersMatchTheDefaultsRow) fails when the two differ in a name or a
-// number. The numbers are starting values chosen from the size of each
-// command's job, not measured runs: no caller exists yet. The row that adds a
-// caller measures its real call and changes its numbers here and in the row,
-// in the same PR.
-var callers = map[string]Limits{
-	"git":      {Time: 120 * time.Second, Output: 1024 * kib},
-	"gh":       {Time: 30 * time.Second, Output: 1024 * kib},
-	"loginctl": {Time: 5 * time.Second, Output: 16 * kib},
-	"tmux":     {Time: 10 * time.Second, Output: 1024 * kib},
-	"version":  {Time: 10 * time.Second, Output: 16 * kib},
-}
+// callers is the defaults row "One-shot child process", in code, and it is
+// empty on purpose: the row says each cap is set from a measured run of that
+// command, and no caller exists yet to measure. The row that adds the first
+// caller (rows 6, 7 and 8 own git, gh, loginctl, tmux one-shot calls and the
+// version checks) measures its real call and adds its entry here and its
+// `name` seconds / KiB to the row in the same PR; TestCallersMatchTheDefaultsRow
+// fails when the two differ. A name with no entry gets no default.
+var callers = map[string]Limits{}
 
 // For returns the caller with that name, or [ErrUnknownCaller] when the
 // defaults row has no entry for it.
 func For(name string) (Caller, error) {
 	l, ok := callers[name]
 	if !ok {
-		return Caller{}, fmt.Errorf("%w %q: add it to the defaults row \"One-shot child process\" first", ErrUnknownCaller, name)
+		return Caller{}, fmt.Errorf("%w %q: measure its call and add it to the defaults row \"One-shot child process\" first", ErrUnknownCaller, name)
 	}
 	return Caller{name: name, limits: l}, nil
-}
-
-// Names lists every caller, sorted.
-func Names() []string {
-	names := make([]string, 0, len(callers))
-	for n := range callers {
-		names = append(names, n)
-	}
-	slices.Sort(names)
-	return names
 }

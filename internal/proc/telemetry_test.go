@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -114,11 +115,22 @@ func TestEveryKillIsLoggedAndCounted(t *testing.T) {
 	if _, err := r.Run(ctx, sp); err == nil {
 		t.Fatal("cancel: no error")
 	}
-	sp = child(t, "parent-exits", l, pidFileEnv+"="+t.TempDir()+"/pid")
+	heldFile := t.TempDir() + "/pid"
+	killLater(t, heldFile)
+	sp = child(t, "parent-exits", l, pidFileEnv+"="+heldFile)
 	sp.Caller = proc.CallerForTest("test_held", l)
 	sp.WaitDelay = 200 * time.Millisecond
-	if _, err := r.Run(t.Context(), sp); err == nil {
-		t.Fatal("held pipe: no error")
+	if _, err := r.Run(t.Context(), sp); !errors.Is(err, proc.ErrHeldPipe) {
+		t.Fatalf("held pipe: %v", err)
+	}
+	// A holder that left the group cannot be killed: logged, not counted.
+	escFile := t.TempDir() + "/pid"
+	killLater(t, escFile)
+	sp = child(t, "parent-exits", l, pidFileEnv+"="+escFile, grandSetsEnv+"=1")
+	sp.Caller = proc.CallerForTest("test_escape", l)
+	sp.WaitDelay = 200 * time.Millisecond
+	if _, err := r.Run(t.Context(), sp); !errors.Is(err, proc.ErrHeldPipe) {
+		t.Fatalf("escapee: %v", err)
 	}
 
 	body := scrape(t, tel)
@@ -133,10 +145,20 @@ func TestEveryKillIsLoggedAndCounted(t *testing.T) {
 		}
 	}
 
+	if strings.Contains(body, `caller="test_escape"`) {
+		t.Errorf("an unkillable holder was counted as a kill:\n%s", body)
+	}
 	causes := map[string]string{}
+	escapeeLogged := false
 	for _, m := range logs.lines() {
+		if m["msg"] == "proc.pipe_held" && m["caller"] == "test_escape" && m["level"] == "warn" {
+			escapeeLogged = true
+		}
 		if m["msg"] != "proc.killed" {
 			continue
+		}
+		if m["caller"] == "test_held" && m["held_pipe"] != true {
+			t.Errorf("the wait_delay kill lacks held_pipe=true: %v", m)
 		}
 		if m["level"] != "warn" {
 			t.Errorf("proc.killed at level %v, want warn", m["level"])
@@ -144,7 +166,7 @@ func TestEveryKillIsLoggedAndCounted(t *testing.T) {
 		caller, _ := m["caller"].(string)
 		cause, _ := m["cause"].(string)
 		causes[caller] = cause
-		for _, k := range []string{"pid", "elapsed_ms", "output_bytes", "time_cap_ms", "output_cap_bytes"} {
+		for _, k := range []string{"held_pipe", "pid", "elapsed_ms", "output_bytes", "time_cap_ms", "output_cap_bytes"} {
 			if _, ok := m[k]; !ok {
 				t.Errorf("proc.killed lacks %q: %v", k, m)
 			}
@@ -154,6 +176,9 @@ func TestEveryKillIsLoggedAndCounted(t *testing.T) {
 				t.Errorf("proc.killed carries %q; it may hold IDs and counts only", k)
 			}
 		}
+	}
+	if !escapeeLogged {
+		t.Error("no proc.pipe_held warn for the holder that left the group")
 	}
 	want := map[string]string{"test_time": "time_cap", "test_output": "output_cap", "test_cancel": "cancelled", "test_held": "wait_delay"}
 	if len(causes) != len(want) {

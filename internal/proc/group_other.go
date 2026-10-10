@@ -12,6 +12,8 @@ import (
 
 func groupAttr() *syscall.SysProcAttr { return nil }
 
+func killGroupOf(p *os.Process) error { return p.Kill() }
+
 func killGroup(pid int) error {
 	p, err := os.FindProcess(pid)
 	if err != nil {
