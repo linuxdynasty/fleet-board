@@ -79,7 +79,11 @@ scripts/test-lint-exec-rules.sh   seeded RED/GREEN cases for the depguard (os/ex
   and arm64, with files built for one OS or architecture only (01 principle 8; also in make
   selftest)
 scripts/test-make-lint-platforms.sh   checks that make lint runs the linter for all four
-  platforms (a stub in place of the linter; Makefile copies that skip one must fail)
+  platforms, with the package list worked out per platform (a stub linter; then the real linter
+  on single-platform new packages in a throwaway repo; Makefile copies that skip one must fail)
+scripts/check-generated-headers.sh, test-check-generated-headers.sh   fail when a Go file outside
+  gen/ carries a generated-code header (golangci-lint skips such files); run, with the seeded
+  cases, by make selftest
 tools/tscheck/                compiles the generated TypeScript (typescript 7, strict)
 tools/telemetrynames/         every log event and metric name in the Go code is in the spec
                               telemetry-docs.json maps it to (make telemetry-names; Go tests)
