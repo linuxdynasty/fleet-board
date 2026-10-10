@@ -15,13 +15,21 @@ import (
 // test can show what the client does with a release that lacks the flags or
 // with replies real tmux writes too rarely to wait for (%pause, spike 0.5
 // finding 7). It records each control-mode command line in $dir/commands.
+// FAKE_LIST_ERR makes list-sessions fail with that text on stderr;
+// FAKE_FAIL_ATTACHES=N makes the first N attaches end at once; FAKE_STALL=1
+// makes it stop reading its input after the handshake.
 const fakeTmux = `#!/bin/sh
 dir=$(dirname "$0")
 if [ "$1" = "-V" ]; then echo "tmux $FAKE_VERSION"; exit 0; fi
 shift 2
 case "$1" in
-list-sessions) printf '$0 \n'; exit 0 ;;
--C) touch "$dir/attached" ;;
+list-sessions)
+	if [ -n "$FAKE_LIST_ERR" ]; then echo "$FAKE_LIST_ERR" >&2; exit 1; fi
+	printf '$0 \n'; exit 0 ;;
+-C)
+	touch "$dir/attached"
+	echo x >> "$dir/attaches"
+	if [ "$(wc -l < "$dir/attaches")" -le "${FAKE_FAIL_ATTACHES:-0}" ]; then exit 1; fi ;;
 *) exit 1 ;;
 esac
 echo "%begin 1 1 0"
@@ -31,9 +39,15 @@ n=1
 while IFS= read -r line; do
 	n=$((n+1))
 	echo "$line" >> "$dir/commands"
+	case "$line" in
+	"capture-pane -p -t %8") exit 0 ;;
+	esac
 	echo "%begin 2 $n 1"
 	case "$line" in
-	display-message*) echo "$FAKE_FLAGS|4242|1700000000|$FAKE_VERSION" ;;
+	display-message*)
+		echo "$FAKE_FLAGS|4242|1700000000|$FAKE_VERSION"
+		if [ -n "$FAKE_STALL" ]; then echo "%end 2 $n 1"; exec sleep 600; fi ;;
+	"refresh-client -B 'bad:"*) echo "%error 2 $n 1"; continue ;;
 	"capture-pane -p -t %9") echo "%end 2 $n 1"; n=$((n+1)); echo "%begin 2 $n 1" ;;
 	capture-pane*) echo '%pause %3'; echo '%continue %4'; echo 'plain text' ;;
 	"refresh-client -A '%3:continue'") echo '%continue %4' ;;

@@ -384,7 +384,9 @@ optionally against one limit the owner sets.
   ask for; the client's tests prove this with a flood during a command. Lines and replies are
   bounded (defaults; each kept reply line also costs its overhead), and a
   line over the bound is skipped to its newline and counted (05b).
-  The client (`internal/agent/tmux`, row 7 PR 7c2) checks `tmux -V` (below
+  The client (`internal/agent/tmux`, row 7 PR 7c2) attaches with `-E`, so
+  tmux does not apply `update-environment` to the developer's session, and
+  checks `tmux -V` (below
   3.2 is `TMUX_TOO_OLD`), attaches to the lowest session id (sessions the
   fleet marked internal are skipped on the developer's server), reads its own
   `client_flags` and refuses a tmux that does not list both flags, and mints
@@ -396,11 +398,13 @@ optionally against one limit the owner sets.
   another server or an earlier start of this one. Measured in its tests on
   tmux 3.2a and 3.7c (macOS, and Linux in a container), 2026-10-10: the
   nested `#{S:#{W:...}}` subscription expands on 3.2a as on 3.7c, so the
-  per-window fallback of the row-7 ruling fork 5(e) is not needed; in 12
-  runs of a pane flooding while the reader stalled 3 to 8 s during a
-  command, tmux never wrote a `%pause` inside that command's reply (one bare
-  `%pause` notification on 3.2a at 8 s), and the reply came whole and in
-  order.
+  per-window fallback of the row-7 ruling fork 5(e) is not needed; in the
+  two recorded runs of a pane flooding while the reader stalled 3 s during a
+  command (`internal/agent/tmux/testdata/flood-*.txt`), tmux wrote no
+  `%pause` and the reply came whole and in order. Further unrecorded runs
+  (3 and 8 s stalls) showed no `%pause` inside a reply either. A default
+  server whose every session is marked internal counts as no server: the
+  client waits for the next socket-folder event (a known gap).
 - **E3 Pane lifecycle:** created and exited with exit status. "Stopped without
   DONE" (the one-nudge rule) depends on this.
 - **E4 Activity transitions:** active ↔ idle, with the time of last output.

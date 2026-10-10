@@ -39,6 +39,22 @@ func (c *Client) current() (*conn, error) {
 	return c.conn, nil
 }
 
+// currentFor returns the attached conn when it is the server and server
+// start the line was built for. The check and the pick are one hold of mu,
+// and attach sets conn and startID in one hold too, so a line for an older
+// start can never be written on a newer server's conn.
+func (c *Client) currentFor(server, start string) (*conn, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if server != c.opts.Server || start != c.startID {
+		return nil, ErrWrongServer
+	}
+	if c.conn == nil || c.state != StateUp {
+		return nil, ErrNotAttached
+	}
+	return c.conn, nil
+}
+
 // run sends one command on the attached client and returns its reply; a
 // %error reply is ErrCommandFailed.
 func (c *Client) run(ctx context.Context, line string, continuePane PaneID) (Reply, error) {
@@ -46,6 +62,12 @@ func (c *Client) run(ctx context.Context, line string, continuePane PaneID) (Rep
 	if err != nil {
 		return Reply{}, err
 	}
+	return c.on(ctx, cn, line, continuePane)
+}
+
+// on sends one command on cn and returns its reply; a %error reply is
+// ErrCommandFailed, a conn that ended is ErrNotAttached.
+func (c *Client) on(ctx context.Context, cn *conn, line string, continuePane PaneID) (Reply, error) {
 	r, err := cn.do(ctx, line, continuePane)
 	if errors.Is(err, errConnClosed) {
 		return Reply{}, ErrNotAttached
@@ -117,13 +139,11 @@ func (c *Client) Send(ctx context.Context, l typing.Line) error {
 	if err != nil {
 		return err
 	}
-	c.mu.Lock()
-	server, start := c.opts.Server, c.startID
-	c.mu.Unlock()
-	if l.Server() != server || l.ServerStartID() != start {
-		return ErrWrongServer
+	cn, err := c.currentFor(l.Server(), l.ServerStartID())
+	if err != nil {
+		return err
 	}
-	_, err = c.run(ctx, cmd, NoID)
+	_, err = c.on(ctx, cn, cmd, NoID)
 	return err
 }
 

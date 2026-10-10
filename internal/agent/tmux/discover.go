@@ -62,11 +62,11 @@ func lowestSession(ctx context.Context, r *proc.Runner, caller proc.Caller, prog
 		Env:  withoutTMUX(os.Environ()),
 	})
 	var exit *proc.ExitError
-	if errors.As(err, &exit) {
+	if errors.As(err, &exit) && noServer(res.Stderr) {
 		return 0, errAbsent
 	}
-	if err != nil {
-		return 0, fmt.Errorf("tmux list-sessions: %w", err)
+	if err != nil { // another failure (permission, protocol): retried with the backoff
+		return 0, failed("list", fmt.Errorf("tmux list-sessions: %w", err))
 	}
 	best := SessionID(NoID)
 	for line := range strings.SplitSeq(string(res.Stdout), "\n") {
@@ -76,7 +76,7 @@ func lowestSession(ctx context.Context, r *proc.Runner, caller proc.Caller, prog
 		idText, mark, ok := strings.Cut(line, " ")
 		id, idOK := parseID([]byte(idText), '$')
 		if !ok || !idOK {
-			return 0, errors.New("tmux list-sessions: a line is not \"$N mark\"")
+			return 0, failed("list", errors.New("tmux list-sessions: a line is not \"$N mark\""))
 		}
 		if skipInternal && mark != "" {
 			continue
@@ -89,4 +89,17 @@ func lowestSession(ctx context.Context, r *proc.Runner, caller proc.Caller, prog
 		return 0, errAbsent
 	}
 	return best, nil
+}
+
+// noServer reports whether tmux's stderr says no server answers on the
+// socket: no socket file ("error connecting to <path> (No such file or
+// directory)"), a stale socket ("no server running on <path>", or
+// "(Connection refused)"). Measured on tmux 3.2a and 3.7c. Any other
+// failure, such as "(Permission denied)" or a protocol mismatch, is not
+// absence. The text names the socket path: it is matched, never logged.
+func noServer(stderr []byte) bool {
+	s := strings.TrimSpace(string(stderr))
+	return strings.HasPrefix(s, "no server running on ") ||
+		strings.HasPrefix(s, "error connecting to ") &&
+			(strings.HasSuffix(s, "(No such file or directory)") || strings.HasSuffix(s, "(Connection refused)"))
 }

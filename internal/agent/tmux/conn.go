@@ -22,7 +22,8 @@ const (
 	reasonExit         = "exit"          // tmux wrote %exit (its session or the server ended)
 	reasonEOF          = "eof"           // the stream ended without %exit (the server was killed)
 	reasonDesync       = "desync"        // a reply arrived for no command: the stream lost its place
-	reasonAttachFailed = "attach_failed" // the process or its first command failed
+	reasonAttachFailed = "attach_failed" // a step before up failed (err_kind says which)
+	reasonWriteStalled = "write_stalled" // tmux stopped reading: a command write passed writeTimeout
 	reasonTooOld       = "too_old"       // tmux older than 3.2, or the flags missing from client_flags
 	reasonAbsent       = "absent"        // no server answers on the socket
 	reasonCancelled    = "cancelled"     // the agent stopped the client
@@ -38,7 +39,7 @@ type result struct {
 	err   error
 }
 
-// pending is one command written and not yet answered. kind and pane let
+// pending is one command written and not yet answered. continuePane lets
 // the reader honour a %continue only in the reply to the client's own
 // refresh-client -A for that pane.
 type pending struct {
@@ -49,10 +50,11 @@ type pending struct {
 // conn is one control client process. Lock order: wmu, then pmu; neither is
 // held while calling out (Notify, logs) or while taking Client.mu.
 type conn struct {
-	cmd    *exec.Cmd
-	cancel context.CancelFunc // kills the process (exec.CommandContext)
-	stdin  io.WriteCloser
-	parser *Parser
+	cmd          *exec.Cmd
+	writeTimeout time.Duration      // bound on one command write
+	cancel       context.CancelFunc // kills the process (exec.CommandContext)
+	stdin        io.WriteCloser
+	parser       *Parser
 
 	wmu sync.Mutex // serializes a command's queue entry and its write
 
@@ -132,11 +134,11 @@ func (c *conn) do(ctx context.Context, line string, continuePane PaneID) (Reply,
 	}
 	c.pending = append(c.pending, p)
 	c.pmu.Unlock()
-	_, err := io.WriteString(c.stdin, line+"\n")
+	err := c.write(ctx, line)
 	c.wmu.Unlock()
 	if err != nil {
 		c.kill()
-		return Reply{}, fmt.Errorf("tmux: write command: %w", err)
+		return Reply{}, err
 	}
 	select {
 	case r := <-p.ch:
@@ -145,6 +147,36 @@ func (c *conn) do(ctx context.Context, line string, continuePane PaneID) (Reply,
 		// The entry stays queued so later replies still match in order.
 		return Reply{}, ctx.Err()
 	}
+}
+
+// write writes one command line, bounded: when tmux stops reading its input
+// (or ctx ends) while the write is blocked, the conn is killed, which ends
+// the write, and the attach ends with write_stalled. Called under wmu.
+func (c *conn) write(ctx context.Context, line string) error {
+	done := make(chan error, 1)
+	go func() {
+		_, err := io.WriteString(c.stdin, line+"\n")
+		done <- err
+	}()
+	t := time.NewTimer(c.writeTimeout)
+	defer t.Stop()
+	select {
+	case err := <-done:
+		if err != nil {
+			return fmt.Errorf("tmux: write command: %w", errConnClosed)
+		}
+		return nil
+	case <-t.C:
+	case <-ctx.Done():
+	}
+	c.pmu.Lock()
+	if c.reason == "" {
+		c.reason = reasonWriteStalled
+	}
+	c.pmu.Unlock()
+	c.kill()
+	<-done // the kill closed the pipe: the write returns
+	return fmt.Errorf("tmux: write command stalled: %w", errConnClosed)
 }
 
 // read is the reader goroutine: it owns the parser and stdout, matches

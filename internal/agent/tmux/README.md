@@ -52,15 +52,28 @@ panes, err := c.ListPanes(ctx)                   // list-panes -a: ids and numbe
   lists sessions with one `tmux list-sessions` through `internal/proc` and
   attaches to the lowest session id (sessions marked `@fleet_internal` are
   skipped on the `default` server), as `tmux -S <socket> -C attach-session
-  -t $N -f ignore-size,pause-after=1`. Its first command reads
+  -E -t $N -f ignore-size,pause-after=1` (`-E`: tmux does not apply
+  `update-environment` to the developer's session). Its first command reads
   `#{client_flags}|#{pid}|#{start_time}|#{version}`: both flags missing from
   `client_flags` is `ErrTooOld` (never `-F`, spike 0.5 finding 8); the pid
   and start time make `ServerStartID`. Then every registered subscription is
-  sent, and the state is `StateUp`.
+  sent; one tmux refuses is an `attach_failed` (`err_kind` `subscribe`), not
+  up, and `Subscribe` drops one refused while up. Then the state is
+  `StateUp`.
+- `list-sessions` failing with tmux's "no server running on" or "error
+  connecting to ... (No such file or directory | Connection refused)" (3.2a
+  and 3.7c) is no server; any other failure (a permission or protocol
+  error) is an `attach_failed` (`list`) retried on the backoff. A default
+  server whose sessions are all marked internal counts as no server, so the
+  client waits for a Wake: a known gap, raised with the coordinator.
 - An attach that ends (`%exit`: its session closed; the stream ended: the
   server died; a reply for no command: `desync`) fails every waiting
-  command, and `Run` tries again with backoff (defaults row "tmux control
-  client"). When no server answers it waits in `StateAbsent` for `Wake`,
+  command, and `Run` tries again with backoff: the shape of the connection
+  loop's (after n failures, uniform from 1 to 2^n s, capped at 60 s), reset
+  after an attach that came up (defaults row "tmux control client"). A
+  `Wake` that came while it was up is dropped then, so it never cuts that
+  backoff short. 7d should debounce Wake (at most one per server a
+  second): each costs one `list-sessions` while absent. When no server answers it waits in `StateAbsent` for `Wake`,
   with no timer (row-7 ruling fork 4). The backup `list-clients` poll of
   02h is 7f's. A `Program` that cannot run at all (tmux uninstalled) is an
   `attach_failed` try like any other: retried on the backoff, one
@@ -68,7 +81,11 @@ panes, err := c.ListPanes(ctx)                   // list-panes -a: ids and numbe
   Stopping `Run` logs `tmux.exit{reason="cancelled"}` when it was up.
 - No method takes a command string. `Send` refuses the zero `typing.Line`
   (`typing.ErrZeroLine`) and a line whose server or server start id is not
-  the attached one (`ErrWrongServer`) before anything is written.
+  the attached one (`ErrWrongServer`) before anything is written; the check
+  and the choice of the attached client are one hold of the lock.
+- One command write is bounded (10 s): a tmux that stops reading its input
+  ends the attach (`write_stalled`) and every waiting caller gets
+  `ErrNotAttached`, instead of all of them waiting forever.
 - `%pause` (as a notification or inside any reply) marks a pane paused;
   only the reply to the client's own `Continue(pane)` with `%continue %N`
   for that pane resumes it. The client never resumes a pane by itself:
@@ -89,7 +106,10 @@ Run (one goroutine, owns the attach loop and the backoff timer)
      |    end of stream -> pmu: closed, reason; fail pending    |
      v
   typed methods (any goroutine): Client.mu -> conn; release;
-     conn.do: wmu { pmu { append pending }; write line }; wait chan or ctx
+     conn.do: wmu { pmu { append pending }; write line (bounded: a
+       stall or ctx end kills the process, which ends the write) };
+       wait chan or ctx
+  Send: one hold of Client.mu checks server + start id and picks conn
 Locks: Client.mu (state, conn, start id, subs) is never held with wmu or
 pmu. wmu then pmu, never the other way; nothing is called out under a lock.
 Subscribe registers and reads conn in one hold of Client.mu; attach sets
@@ -103,7 +123,7 @@ re-sent, never lost.
 |---|---|
 | `fleet_agent_tmux_control_up{server_kind}` | 1 while attached, else 0 |
 | `tmux.attached` (`server_kind`, `version`, `flags`) | an attach came up |
-| `tmux.exit` (`server_kind`, `reason`) | an attach ended or failed: `exit`, `eof`, `desync`, `attach_failed`, `too_old`, `absent` (once per absence), `cancelled` |
+| `tmux.exit` (`server_kind`, `reason`, `err_kind` for `attach_failed`) | an attach ended or failed: `exit`, `eof`, `desync`, `write_stalled`, `attach_failed` (`version`, `list`, `start`, `handshake`, `subscribe`), `too_old`, `absent` (once per absence), `cancelled` |
 | `tmux.subscription_confirmed` (`server_kind`, `name`) | the first value of a registered subscription on an attach |
 
 Never pane text, a session or window name, the `%exit` text or tmux's

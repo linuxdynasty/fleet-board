@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math/rand/v2"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -23,14 +22,6 @@ const PauseAfter = 1 * time.Second
 // changes the size of the developer's windows (set at attach: turned on
 // later it does not undo a shrink, spike 0.5 finding 9), and pause-after.
 var attachFlags = fmt.Sprintf("ignore-size,pause-after=%d", int(PauseAfter/time.Second))
-
-// Backoff between attach attempts while the server is there (defaults,
-// "tmux control client"): after n failures in a row, uniform from base*2^(n-1)
-// to base*2^n, capped at backoffMax. An attach that reaches StateUp resets n.
-const (
-	backoffBase = time.Second
-	backoffMax  = 60 * time.Second
-)
 
 // ClientOptions configure a [Client]. There is no default server: the
 // caller names the socket (the agent builds the developer's default-server
@@ -97,7 +88,9 @@ type Client struct {
 	wake   chan struct{}
 	tee    io.Writer // tests only (SetTeeForTest): a copy of the raw stream
 
-	attempts atomic.Int64 // attach tries started (AttemptsForTest)
+	attempts     atomic.Int64              // attach tries started (AttemptsForTest)
+	backoff      func(n int) time.Duration // the wait after n failed tries (SetBackoffForTest)
+	writeTimeout time.Duration             // the bound on one command write (SetWriteTimeoutForTest)
 
 	mu      sync.Mutex
 	state   State
@@ -132,6 +125,7 @@ func NewClient(opts ClientOptions) (*Client, error) {
 	return &Client{
 		opts: opts, kind: kind, caller: caller, tel: tel,
 		wake:    make(chan struct{}, 1),
+		backoff: backoff, writeTimeout: writeTimeout,
 		session: NoID,
 		changed: make(chan struct{}),
 	}, nil
@@ -141,142 +135,13 @@ func NewClient(opts ClientOptions) (*Client, error) {
 // typing.sent logs).
 var serverKinds = map[string]string{"default": "default", "fleet": "fleet", "fleet-probe": "probe"}
 
-// Run attaches and keeps the client attached until ctx ends (it returns
-// ctx's error) or tmux is too old (ErrTooOld). After an attach ends, it
-// retries with backoff while the server is there; when no server answers
-// it waits in StateAbsent for Wake, with no timer (row-7 ruling fork 4).
-// Run is called once.
-func (c *Client) Run(ctx context.Context) error {
-	failures, absent := 0, false
-	for {
-		reason, err := c.attach(ctx)
-		switch {
-		case ctx.Err() != nil:
-			if err == nil { // it was up: a shutdown, not a failure
-				c.tel.exit(context.WithoutCancel(ctx), reasonCancelled)
-			}
-			c.setState(StateStopped)
-			return ctx.Err()
-		case errors.Is(err, ErrTooOld):
-			c.tel.exit(ctx, reasonTooOld)
-			c.setState(StateTooOld)
-			return ErrTooOld
-		case errors.Is(err, errAbsent):
-			if !absent { // logged once per absence, not per wake
-				c.tel.exit(ctx, reasonAbsent)
-			}
-			c.setState(StateAbsent)
-			failures, absent = 0, true
-			select {
-			case <-c.wake:
-				continue
-			case <-ctx.Done():
-				continue
-			}
-		}
-		c.tel.exit(ctx, reason)
-		c.setState(StateConnecting)
-		if err == nil { // it was up: the next try starts the backoff afresh
-			failures, absent = 0, false
-		}
-		failures++
-		t := time.NewTimer(backoff(failures))
-		select {
-		case <-t.C:
-		case <-c.wake:
-			t.Stop()
-		case <-ctx.Done():
-			t.Stop()
-		}
-	}
-}
-
-func backoff(n int) time.Duration {
-	hi := backoffBase << min(n, 7)
-	lo := hi / 2
-	if hi > backoffMax {
-		hi = backoffMax
-		lo = backoffMax / 2
-	}
-	return lo + rand.N(hi-lo+1) //nolint:gosec // jitter, not a secret
-}
-
-// attach makes one attach and, once up, waits for it to end. It returns
-// the exit reason with a nil error when the client was up, or an error
-// (ErrTooOld, errAbsent, or why the attach failed) when it never was.
-func (c *Client) attach(ctx context.Context) (string, error) {
-	c.attempts.Add(1)
-	c.setState(StateConnecting)
-	if err := checkVersion(ctx, c.opts.Runner, c.caller, c.opts.Program); err != nil {
-		return reasonAttachFailed, err
-	}
-	session, err := lowestSession(ctx, c.opts.Runner, c.caller, c.opts.Program, c.opts.Socket, c.opts.Server == "default")
-	if err != nil {
-		return reasonAttachFailed, err
-	}
-	cn, err := startConn(ctx, c.opts.Program, c.opts.Socket, session, attachFlags, c.opts.Parser, c.tee)
-	if err != nil {
-		return reasonAttachFailed, err
-	}
-	go cn.read(c.notify(cn))
-	info, err := c.handshake(ctx, cn)
-	if err != nil {
-		cn.close(reasonAttachFailed)
-		if errors.Is(err, ErrTooOld) {
-			return reasonTooOld, err
-		}
-		return reasonAttachFailed, err
-	}
-	c.mu.Lock()
-	c.conn, c.session, c.startID = cn, session, info.startID
-	subs := append([]Subscription(nil), c.subs...)
-	c.mu.Unlock()
-	for _, s := range subs {
-		if _, err := cn.do(ctx, s.command(), NoID); err != nil {
-			c.detach(cn, reasonAttachFailed)
-			return reasonAttachFailed, fmt.Errorf("tmux: re-subscribe: %w", err)
-		}
-	}
-	c.tel.attached(ctx, info.version)
-	c.setState(StateUp)
-	select {
-	case <-cn.done:
-		reason := cn.why()
-		c.detach(cn, reason)
-		return reason, nil
-	case <-ctx.Done():
-		c.detach(cn, reasonCancelled)
-		return reasonCancelled, nil
-	}
-}
-
-// detach drops cn as the attached client and ends it.
-func (c *Client) detach(cn *conn, reason string) {
-	c.mu.Lock()
-	if c.conn == cn {
-		c.conn = nil
-	}
-	c.mu.Unlock()
-	cn.close(reason)
-}
-
-// notify wraps the caller's Notify with the client's own bookkeeping: the
-// first value of each subscription on this attach is logged as confirmed.
-func (c *Client) notify(cn *conn) func(Message) {
-	confirmed := map[string]bool{}
-	return func(m Message) {
-		if s, ok := m.(SubscriptionChanged); ok && !confirmed[s.Name] && c.registered(s.Name) {
-			confirmed[s.Name] = true
-			c.tel.subscriptionConfirmed(s.Name)
-		}
-		if c.opts.Notify != nil {
-			c.opts.Notify(m)
-		}
-	}
-}
-
 // Wake asks a client waiting in StateAbsent (or in its backoff) to try
-// now. 7d calls it when the socket folder changes. It never blocks.
+// now. 7d calls it when the socket folder changes; the folder can change
+// many times a second (every pane's socket churn on a busy machine), so 7d
+// debounces: at most one Wake per server a second. Each Wake while absent
+// costs one `tmux list-sessions`. A Wake while the client is up is dropped
+// when that attach ends, so it never cuts the next backoff short. It never
+// blocks.
 func (c *Client) Wake() {
 	select {
 	case c.wake <- struct{}{}:

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 )
 
 // Subscription is one refresh-client -B format subscription: tmux checks
@@ -75,6 +76,11 @@ func (c *Client) Subscribe(ctx context.Context, s Subscription) error {
 		return nil // the next attach sends it
 	}
 	if err == nil && r.Failed {
+		// tmux refused it: keep it out of the list, or every later attach
+		// would fail on it.
+		c.mu.Lock()
+		c.subs = slices.DeleteFunc(c.subs, func(x Subscription) bool { return x == s })
+		c.mu.Unlock()
 		err = ErrCommandFailed
 	}
 	if err != nil {

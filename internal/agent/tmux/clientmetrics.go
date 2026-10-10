@@ -53,11 +53,16 @@ func (t *clientTelemetry) attached(ctx context.Context, version string) {
 	t.log.InfoContext(ctx, "tmux.attached", "server_kind", t.word, "version", version, "flags", attachFlags)
 }
 
-// exit logs tmux.exit with a closed reason.
-func (t *clientTelemetry) exit(ctx context.Context, reason string) {
+// exit logs tmux.exit with a closed reason and, for attach_failed, the
+// closed err_kind of the step that failed.
+func (t *clientTelemetry) exit(ctx context.Context, reason, errKind string) {
 	level := slog.LevelWarn
 	if reason == reasonCancelled {
 		level = slog.LevelInfo
+	}
+	if errKind != "" {
+		t.log.Log(ctx, level, "tmux.exit", "server_kind", t.word, "reason", reason, "err_kind", errKind)
+		return
 	}
 	t.log.Log(ctx, level, "tmux.exit", "server_kind", t.word, "reason", reason)
 }
