@@ -32,6 +32,11 @@ func SetAfterRegister(o *ServerOptions, f func()) { o.afterRegister = f }
 // any, committed), with the number of Heartbeats the stream had read.
 func SetAfterHeartbeat(o *ServerOptions, f func(n uint64)) { o.afterHeartbeat = f }
 
+// SetBeforeRowClose makes the server built from o call f each time a
+// stream's handler is about to close its connection row (not a displaced
+// stream's, which closes none).
+func SetBeforeRowClose(o *ServerOptions, f func()) { o.beforeRowClose = f }
+
 // SetArmContext gives the server built from o a handler for the arm kind
 // that calls f with the stream's context.
 func SetArmContext(o *ServerOptions, kind string, f func(context.Context)) {

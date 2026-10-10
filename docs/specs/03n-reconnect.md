@@ -112,7 +112,9 @@ shutdown (`hub_restart`) and a machine that never got `ONLINE` change nothing.
 `last_seen_time` is written by the `Hello`, by each close and at most once a
 minute from Heartbeats. On graceful shutdown the hub sends
 `Bye{HUB_RESTART}` so agents reconnect quickly with backoff rather than
-waiting for keepalive timeouts.
+waiting for keepalive timeouts, and its agent listener's stop returns only
+once every stream's handler has closed its row as `hub_restart` (within
+the stop's 10 s grace), so the store never closes under a row close.
 
 ### Persistence
 
@@ -279,6 +281,8 @@ The agent side of plan row 6 (ruling forks 4 i, 11 and 12), in
   `connect.failed{step, err_kind, machine_id}` (error; `step`: `validate`, `store`,
   `wiring`: the listener put no response controller on the request, `INTERNAL`;
   `heartbeat`: a Heartbeat's last_seen or `STALE` to `ONLINE` job failed);
+  05b's `hub.shutdown_wait_timeout{handlers}` when the stop's grace ran out
+  with handlers still closing rows;
   `fleet_hub_connect_closed_before_hello_total{err_kind}` (a stream with a client
   certificate that ended before a `Hello` was accepted: `oversize`, `reset`, `timeout`
   (the Hello wait), `shutdown`; also `reconnect.closed` above);

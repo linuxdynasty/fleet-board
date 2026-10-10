@@ -175,11 +175,21 @@ func openMessage(dir string, err error) error {
 	return err
 }
 
+// server is what serve runs on a listener: an *http.Server, or the agent
+// listener's *gateway.Server, whose Shutdown also waits for its running
+// handlers (each Connect stream's row close) before the store closes.
+type server interface {
+	Serve(ln net.Listener) error
+	ServeTLS(ln net.Listener, certFile, keyFile string) error
+	Shutdown(ctx context.Context) error
+	Close() error
+}
+
 // listener is one bound address and the server for it.
 type listener struct {
 	name string
 	ln   net.Listener
-	srv  *http.Server
+	srv  server
 	tls  bool
 	// flush, when set, finishes the server's work after Shutdown and before
 	// the store closes (the agent listener's audit summary).
@@ -335,7 +345,7 @@ func bind(ctx context.Context, cfg *config.Config, opts Options, d hubDeps, s *s
 		port := addr.Port
 		l := listener{name: w.name, ln: ln, tls: w.name == "agent"}
 		if l.tls {
-			l.srv, l.flush = agent.Server, agent.FlushAudit
+			l.srv, l.flush = agent, agent.FlushAudit
 		} else {
 			l.srv = api.NewServer(s.tel, w.name, port)
 		}
