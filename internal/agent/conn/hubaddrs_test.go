@@ -29,10 +29,9 @@ func TestHelloAckAddressesAreCappedAt16(t *testing.T) {
 			t.Parallel()
 			h := startConnectHub(t)
 			a := enrolled(t, h)
-			var list, valid []string
-			for i := range tc.valid {
-				addr := closedAddr(t)
-				valid = append(valid, addr)
+			var list []string
+			valid := closedAddrs(t, tc.valid)
+			for i, addr := range valid {
 				list = append(list, addr)
 				if i < len(tc.invalid) {
 					list = append(list, tc.invalid[i])
