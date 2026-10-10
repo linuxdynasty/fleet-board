@@ -3,6 +3,9 @@
 // It mints tokens (also ones that name another CA), counts the requests the
 // listener served, reads machines, issued certificates, certificate serials
 // and renewals and token use from the store, takes a clock for the hub's
-// tokens and certificates, and can drop the first reply of a method
-// (Enroll, RenewCert) after the hub commits it. Test code only.
+// tokens, certificates, hub_time and Hello rate limit, and can drop the
+// first reply of a method (Enroll, RenewCert) after the hub commits it. It
+// serves the hub's own Connect, restarts the listener on the same state.db
+// and port, and reads machines.last_epoch and machine_connections. Test
+// code only.
 package conntest
