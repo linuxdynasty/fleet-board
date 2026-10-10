@@ -35,6 +35,7 @@ func (s *session) renewCheck() {
 	l.hookAt("check")
 	lead := l.pairs.Load().lead()
 	if !lead.due(s.renewNow()) {
+		l.gate.unstick(lead)
 		return
 	}
 	ok, skip := l.gate.claim(lead, l.ca, l.opts.RenewCheck)

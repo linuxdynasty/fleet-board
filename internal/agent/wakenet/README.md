@@ -48,6 +48,11 @@ check is one wake, and both in one check are still one:
   counted on the next one. The first failure of a run logs
   `wake.clock_read_failed`; the first good read after it logs
   `wake.clock_read_recovered` with the count.
+- **Time since boot, counting sleep.** `SinceBoot` reads the
+  sleep-counting clock alone (Linux `CLOCK_BOOTTIME`, macOS
+  `CLOCK_MONOTONIC_RAW`). The connection loop (`internal/agent/conn`)
+  takes the larger of its change and Go's monotonic clock as the time
+  since a `HelloAck`, so hub time counts the time asleep (02i "Clocks").
 - **Wall clock past Go's monotonic clock.** Go's monotonic clock stops during
   sleep on both systems; the wall clock does not. A wall clock stepped back
   2 s or more logs `wake.wall_clock_back` and is never a wake.

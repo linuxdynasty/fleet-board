@@ -217,7 +217,9 @@ renewal may start), `renew.go` (the steps), `renewlog.go` (their logs) and
   `fleet_agent_cert_expiry_seconds` follow the lead, the pair that ends
   later whether it has started or not, so a not-yet-started pair starts
   no new renewal. Those three run on hub time (the last `HelloAck`'s
-  `hub_time` plus the monotonic time since, kept on the loop; the agent's
+  `hub_time` plus the time since, the larger of Go's monotonic clock and
+  `wakenet.SinceBoot`, which keeps counting while the machine sleeps,
+  kept on the loop; the agent's
   clock before the first `HelloAck` or after one with no `hub_time`), so
   an agent clock days off neither renews at every check nor ends the loop
   while the hub takes the pair; only the pair to present runs on the
@@ -232,9 +234,9 @@ renewal may start), `renew.go` (the steps), `renewlog.go` (their logs) and
   span: day 60 of 90), checked once each stream is connected (after its
   `HelloAck` and snapshot) and every `LoopOptions.RenewCheck` (1 h) while
   connected. A renewal does not start within one check interval of the
-  last, nor for a lead already due by hub time when it was saved or that
-  ends at the CA's end (`renew.skipped{reason}`, once per lead; see
-  `renewgate.go`). One renewal runs at a time, on a goroutine the session owns;
+  last, nor for a lead that ends at the CA's end, nor for a lead already
+  due by hub time when it was saved until a later check finds it not due
+  (`renew.skipped{reason}`, once per lead; see `renewgate.go`). One renewal runs at a time, on a goroutine the session owns;
   it is cancelled and waited for before the stream's connection closes,
   and it never sends on the stream. `RenewCert` is a unary call on the
   stream's own HTTP/2 connection (a test proves the reuse).
@@ -445,6 +447,6 @@ across a reconnect; a lead at the CA's end skipped once; a live renewal
 of a future pair keeping the enrolled one; a refused pair swapped for
 the other at the next attempt and back after Connected; an answer ending
 before the renewed lead refused; a `renew.key` that cannot be removed
-reported (macOS); the pair choice in a 17-case table; the due time at day 60 to the
+reported (macOS); hub time counting 61 and 91 days asleep on a fake sleep-counting clock; a `due_at_once` mark clearing once a correct `HelloAck` shows the pair young; a `HelloAck` with no `hub_time` falling back to the agent's clock; a stream that connected and dropped keeping its pair, and an attempt with no handshake not switching; the switch only to a pair inside its life; the pair choice in a 17-case table; the due time at day 60 to the
 second; enroll removing `cert.pem` and `renew.key`; and a link presenting
 a swapped pair at its next handshake.

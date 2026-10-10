@@ -36,6 +36,10 @@ func SetClock(o *LoopOptions, now func() time.Time) { o.clock = now }
 // time on without a new stream.
 func SetElapsed(o *LoopOptions, since func(t time.Time) time.Duration) { o.elapsed = since }
 
+// SetSleepClock replaces the clock that keeps counting while the machine
+// sleeps, from which hub time also measures the time since a HelloAck.
+func SetSleepClock(o *LoopOptions, read func() (time.Duration, error)) { o.sleepClock = read }
+
 // SetRenewHook makes the loop report each renewal step ("before_send",
 // "after_answer", "after_rename"); returning true stops the renewal there
 // as a crash would.

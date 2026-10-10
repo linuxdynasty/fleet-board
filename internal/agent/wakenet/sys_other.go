@@ -16,6 +16,9 @@ var errUnsupported = errors.New("wake and network-change detection: unsupported 
 // SystemAsleep is unsupported here.
 func SystemAsleep() (time.Duration, error) { return 0, errUnsupported }
 
+// SinceBoot is unsupported here.
+func SinceBoot() (time.Duration, error) { return 0, errUnsupported }
+
 // SystemReader is unsupported here.
 func SystemReader() Reader { return otherReader{} }
 

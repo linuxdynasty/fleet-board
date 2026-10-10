@@ -308,7 +308,7 @@ func (s *session) accept(ctx context.Context, ack *agentv1.HelloAck, st ring.Sta
 	if hubTimeOK {
 		s.hubAt = ht.AsTime()
 		offset = s.hubAt.Sub(sent.Add(recv.Sub(sent) / 2))
-		s.l.anchor.Store(&hubAnchor{at: s.hubAt, recv: s.hubRecv})
+		s.l.anchor.Store(s.l.newAnchor(s.hubAt, s.hubRecv))
 		s.l.status.update(func(ss *Status) { ss.ClockOffset, ss.ClockOffsetTime = offset, recv })
 	}
 	s.l.takeAddresses(ctx, s.c.addr, ack.GetHubAddresses())

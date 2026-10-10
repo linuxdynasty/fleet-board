@@ -52,6 +52,18 @@ func (g *renewGate) claim(lead *certPair, ca *x509.Certificate, interval time.Du
 	return true, ""
 }
 
+// unstick clears a due_at_once mark on lead once it is not due: a hub
+// whose HelloAck clock was off when it signed shows it young again on a
+// later HelloAck, so its true two-thirds point counts again. A hub whose
+// clocks disagree for good keeps the lead looking due, so it stays marked.
+func (g *renewGate) unstick(lead *certPair) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.stuck == lead.serial() {
+		g.stuck, g.logged = "", ""
+	}
+}
+
 // firstSkip reports whether this lead and reason were not logged yet.
 func (g *renewGate) firstSkip(lead *certPair, reason string) bool {
 	g.mu.Lock()

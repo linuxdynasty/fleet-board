@@ -87,3 +87,59 @@ func TestARefusedPairIsSwappedForTheOtherAtTheNextAttempt(t *testing.T) {
 		t.Errorf("handshakes presented %v, want %v: Connected clears the switch", got, want)
 	}
 }
+
+// A stream that connected and then dropped is not a failed attempt: the
+// next attempt presents the same pair, not the other (amendment e).
+func TestADroppedStreamKeepsThePair(t *testing.T) {
+	t.Parallel()
+	h := startConnectHub(t)
+	a := enrolled(t, h)
+	data, lead, _ := pairFile(t, h.auth, fakeMachine, time.Now().Add(soon))
+	writeFile(t, filepath.Join(a.dir, conn.CertFile), data, 0o600)
+	startLoop(t, a, nil)
+	h.connected(t, 1)
+	h.dropLive(t)
+	h.connected(t, 2)
+	connects := h.calls.of("Connect")
+	if connects[0].serial != serialOf(lead) || connects[1].serial != serialOf(lead) {
+		t.Errorf("streams presented %s then %s, want the renewed %s twice", connects[0].serial, connects[1].serial, serialOf(lead))
+	}
+	if got := a.events(t, "renew.pair_switched"); len(got) != 0 {
+		t.Errorf("renew.pair_switched = %v after a stream that connected", got)
+	}
+}
+
+// The pair an attempt presented is forgotten when the next attempt starts:
+// an attempt that fails before any handshake (the hub is down) does not
+// switch pairs on the strength of an earlier attempt's handshake.
+func TestAnAttemptWithNoHandshakeDoesNotSwitch(t *testing.T) {
+	t.Parallel()
+	h := startConnectHub(t)
+	a := enrolled(t, h)
+	data, lead, _ := pairFile(t, h.auth, fakeMachine, time.Now().Add(soon))
+	writeFile(t, filepath.Join(a.dir, conn.CertFile), data, 0o600)
+	startLoop(t, a, nil)
+	h.connected(t, 1)
+	h.mu.Lock()
+	srv := h.srv
+	h.mu.Unlock()
+	if err := srv.Close(); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, 10*time.Second, "an attempt refused at the dial", func() bool {
+		for _, e := range a.events(t, "connect.failed") {
+			if e["step"] == "dial" {
+				return true
+			}
+		}
+		return false
+	})
+	h.listen(t, h.addr)
+	h.connected(t, 2)
+	if got := h.calls.of("Connect")[1].serial; got != serialOf(lead) {
+		t.Errorf("after the hub came back the agent presented %s, want the renewed %s", got, serialOf(lead))
+	}
+	if got := a.events(t, "renew.pair_switched"); len(got) != 0 {
+		t.Errorf("renew.pair_switched = %v for attempts that never shook hands", got)
+	}
+}

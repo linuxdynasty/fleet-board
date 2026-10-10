@@ -85,6 +85,9 @@ type LoopOptions struct {
 	renewHook func(step string) bool
 	// elapsed, for tests only, replaces time.Since for hub time.
 	elapsed func(t time.Time) time.Duration
+	// sleepClock, for tests only, replaces the clock that keeps counting
+	// while the machine sleeps (wakenet.SinceBoot).
+	sleepClock func() (time.Duration, error)
 }
 
 // Loop keeps this machine connected to its hub (03 W1 "State machine", 03n W2):
@@ -100,11 +103,14 @@ type Loop struct {
 	since func(t time.Time) time.Duration
 	// now is the wall clock of the certificate's expiry and renewal
 	// decisions; a test replaces it.
-	now    func() time.Time
-	opts   LoopOptions
-	log    *slog.Logger
-	tracer trace.Tracer
-	m      *loopMetrics
+	now func() time.Time
+	// sleepClock reads a clock that keeps counting while the machine
+	// sleeps (wakenet.SinceBoot), for hub time; a test replaces it.
+	sleepClock func() (time.Duration, error)
+	opts       LoopOptions
+	log        *slog.Logger
+	tracer     trace.Tracer
+	m          *loopMetrics
 	// pairs is the enrolled pair and the renewed one from cert.pem. A
 	// renewal swaps the set whole (renew.go); every handshake reads it
 	// (pairSet.dial), and the expiry and renewal decisions follow the pair
@@ -174,6 +180,10 @@ func NewLoop(ctx context.Context, opts LoopOptions) (*Loop, error) {
 	}
 	if opts.elapsed != nil {
 		l.since = opts.elapsed
+	}
+	l.sleepClock = wakenet.SinceBoot
+	if opts.sleepClock != nil {
+		l.sleepClock = opts.sleepClock
 	}
 	l.addrs = l.configured(ctx)
 	if err := l.loadPair(ctx); err != nil {

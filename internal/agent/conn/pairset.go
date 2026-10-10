@@ -67,20 +67,43 @@ func (s *pairSet) other(p *certPair) *certPair {
 }
 
 // hubAnchor is a HelloAck's hub_time and when it arrived, with its
-// monotonic reading.
-type hubAnchor struct{ at, recv time.Time }
+// monotonic reading and, when it could be read, the sleep-counting clock's.
+type hubAnchor struct {
+	at, recv time.Time
+	sleep    time.Duration
+	sleepOK  bool
+}
+
+// newAnchor takes the sleep-counting clock's reading with the anchor.
+func (l *Loop) newAnchor(at, recv time.Time) *hubAnchor {
+	a := &hubAnchor{at: at, recv: recv}
+	if d, err := l.sleepClock(); err == nil {
+		a.sleep, a.sleepOK = d, true
+	}
+	return a
+}
 
 // hubTime is the clock of the renewal decision, the loop's expiry check
-// and the expiry gauge: the last HelloAck's hub_time plus the monotonic
-// time since (02i "Clocks"), or the agent's clock before the first
-// HelloAck and after one with no hub_time. An agent clock days off then
-// neither renews at every check nor ends the loop while the hub would
-// take the pair. The pair presented stays on the agent's clock (dial).
+// and the expiry gauge: the last HelloAck's hub_time plus the time since,
+// or the agent's clock before the first HelloAck and after one with no
+// hub_time. An agent clock days off then neither renews at every check
+// nor ends the loop while the hub would take the pair. The time since is
+// the larger of Go's monotonic clock, which stops while the machine
+// sleeps, and the sleep-counting clock (02i "Clocks"); when that one
+// cannot be read, the monotonic clock alone, which runs late by the time
+// asleep. The pair presented stays on the agent's clock (dial).
 func (l *Loop) hubTime() time.Time {
-	if a := l.anchor.Load(); a != nil {
-		return a.at.Add(l.since(a.recv))
+	a := l.anchor.Load()
+	if a == nil {
+		return l.now()
 	}
-	return l.now()
+	elapsed := l.since(a.recv)
+	if a.sleepOK {
+		if d, err := l.sleepClock(); err == nil && d-a.sleep > elapsed {
+			elapsed = d - a.sleep
+		}
+	}
+	return a.at.Add(elapsed)
 }
 
 // avoidPresented, after an attempt that failed before Connected, marks
