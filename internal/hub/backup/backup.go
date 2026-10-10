@@ -178,7 +178,7 @@ func take(ctx context.Context, o Options) (res Result, st step, err error) {
 			return res, stepCopy, err
 		}
 	}
-	if err := verify(ctx, plain); err != nil {
+	if err := Verify(ctx, plain); err != nil {
 		return res, stepVerify, err
 	}
 	publish := plain

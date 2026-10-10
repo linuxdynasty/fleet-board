@@ -38,9 +38,11 @@ The stamp is the UTC time to the second, such as `nightly-20261008T030000Z.db`.
    plain copy is built as `backups/.partial-<random>`; the plaintext of an
    encrypted copy as `<state_dir>/.backup-plain-<random>`, so it never sits
    in `backups/`.
-5. Check the copy: it opens read-only, `PRAGMA quick_check` is `ok`, its
+5. Check the copy (`Verify`, which `fleetd restore` also runs on the file
+   it is given): it opens read-only, `PRAGMA quick_check` is `ok`, its
    `schema_migrations` is gap-free and no newer than this binary knows, and
-   it holds the `hub_identity` row.
+   it holds the `hub_identity` row. A file SQLite finds is not a database,
+   or malformed, is `ErrCorrupt` like a failed quick_check.
 6. Encrypted: write `backups/.partial-<random>` (`O_EXCL`, 0600) as an age
    file for one scrypt (passphrase) recipient, and sync it.
 7. Publish with a link to the final name, which fails rather than replace a

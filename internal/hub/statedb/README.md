@@ -22,7 +22,8 @@ err = statedb.ReplaceServerCert(ctx, s, oldDER, certDER, keyDER, names)
   complete `state.db` and is `ErrCreatedNotSynced`, which says so.
 - **Leftovers.** `RemoveLeftovers` deletes the `.state.db.init-*` files of a
   `Create` that crashed, including a second link to `state.db` left between
-  the link and the cleanup. `fleetd init` and `fleetd run` call it under
+  the link and the cleanup, and the `.state.db.restore-*` files of a crashed
+  `fleetd restore`. `fleetd init`, `run` and `restore` call it under
   `fleetd.lock`.
 - **Never created by a start.** `Open` uses `store.Options.MustExist`; a
   missing file is `store.ErrMissing`.
@@ -34,8 +35,14 @@ err = statedb.ReplaceServerCert(ctx, s, oldDER, certDER, keyDER, names)
 - **`hub_identity`** (migration 1) is a `STRICT` table with `CHECK (id = 1)`,
   so a second row is impossible: fleet id, CA certificate and key, server
   certificate, key and SAN list, a 32-byte account salt, `salt_version`,
-  `settings_epoch`, `hub_addresses` (sent by `Enroll` as stored; no command sets it yet) and the creation
-  time. It holds the CA key and the salt: never log a field of it.
+  `settings_epoch`, `hub_addresses` (sent by `Enroll` as stored; `fleetd restore --address` adds to it) and the creation
+  time; the `restore_reconcile` migration (plan row 5, PR 5j) adds `restore_reconcile_until` (Unix ms, 0
+  when no restore opened a window; `Identity.RestoreReconcileUntil` is zero
+  then). It holds the CA key and the salt: never log a field of it.
+- `ApplyRestore` is `fleetd restore`'s one writer transaction on the restored
+  store: a new `settings_epoch`, `hub_addresses`, the server certificate, key
+  and names when an address was added, and `restore_reconcile_until`. Every
+  field changes or none does; the fleet id, CA and salt are never touched.
 - `ReplaceServerCert` updates only the server fields, only while the stored
   certificate is still the one replaced (`ErrServerCertChanged` otherwise).
 - **`enroll_tokens`** (migration 2, plan row 2b) holds one row per enroll
