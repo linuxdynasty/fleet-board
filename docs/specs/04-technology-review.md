@@ -403,6 +403,16 @@ with commit p99 ≤ 28 ms and enqueue → commit p99 ≤ 59 ms, at most ≈ 70 %
 writer time. **Decision:** keep 200 ev/s per agent and 2,500 ev/s per hub
 (decided here).
 
+**Hub scrubber cost (2026-10-10, row 5l).** The hub's secret scrubbing over
+free text the agent already scrubbed is measured in
+[04b](04b-hub-scrubber-cost.md): under 1 % of one core at the real rates, and
+2.2 to 4.4 cores (19 to 37 % of 12) only if all 2,500 replayed events a second
+carried a full 1 KiB message, which they cannot. **Decision:** no faster
+first-pass scan before the first producer; the hub cuts or rejects a string
+over its cap *before* scrubbing it (a 1 MiB hostile message takes 16 s);
+row 6 pastes the real `CommandResult.message` size distribution and the hub
+scrub cost before it merges, and row 17 re-checks.
+
 ## Q8. Provider limits and webhook ingress
 
 - A GitHub App installation gets 5,000 REST requests/h, plus 50/h per repo and

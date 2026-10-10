@@ -13,6 +13,7 @@ here becomes a dependency of the product. Raw output is kept under
 | [0.5 `tmuxtyping/`](tmuxtyping/results/README.md) | Can tmux push "a person typed" to a control-mode client, which release added `pause-after` and `ignore-size`, and how is tmux 3.2 installed on CI? (plan item 0.5, #50) | `go build -o tmuxtyping . && ./tmuxtyping typing\|flags -tmux <bin> -L fleetprobe-<name>`, then `./tmuxtyping summarize <file>...` |
 | [0.6 `wakenet/`](wakenet/results/README.md) | How does the agent notice wake and network change on macOS and Linux without cgo? (plan item 0.6, #51) | `go build -o wakenet . && ./wakenet -interval 5s` |
 | [0.7 `mdns/`](mdns/results/README.md) | Does `hashicorp/mdns` advertise `_fleetd._tcp` next to macOS mDNSResponder, and what browse timeout and re-query interval should the agent use? (plan item 0.7, #52) | `go build -o mdns . && ./mdns advertise\|browse\|summarize` |
+| [5l `scrubcost/`](scrubcost/results/README.md) | What does the hub's secret scrubbing cost in CPU cores at the caps and the real rates? (plan row 5l, #33; the benchmark is `internal/scrub/hub_pass_test.go`, this keeps only the output) | `go test -run '^$' -bench BenchmarkHub -count=10 ./internal/scrub/`, then `benchstat` |
 
 ## S1 setup
 

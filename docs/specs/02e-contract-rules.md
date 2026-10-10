@@ -228,8 +228,8 @@ The hub API's limits are in [02b](02b-hub-api.md#size-limits). The agent wire:
 | `RunHarnessCommandResult.screen`, `ShownUsage.raw_screen` | 64 KiB | agent |
 | `PromptDetected.text` | 16 KiB | agent |
 | `PaneSummary.last_lines`, `GoalState.first_line`, `KeyInput.literal`, `RunHarnessCommand.args`, `GoalSpec.goal_text` | 4 KiB | agent (hub validates before sending) |
-| Labels, names, window names, `ShownField` strings, `ResetTime.original_text`, `ProbeHealth.message` | 256 bytes | agent |
-| `CommandResult.message`, `CommandProgress.message`, `parse_message` | 1 KiB | agent |
+| Labels, names, window names, `ShownField` strings, `ResetTime.original_text`, `ProbeHealth.message` | 256 bytes | agent; `ProbeHealth.message` also on the hub, as above |
+| `CommandResult.message`, `CommandProgress.message`, `parse_message` | 1 KiB | agent; the hub cuts or rejects a longer string before it scrubs it (below) |
 | `TermUp.output` | 64 KiB per message | agent |
 | `TermDown.input` | 4 KiB per message | hub |
 | `LogChunk.zstd` | 960 KiB per chunk (chunks are about 100 KiB in practice) | agent |
@@ -273,7 +273,12 @@ a quote; a connection-string value also ends at `;`. A bare `name: value`
 counts for every word but token, pass and pwd, so `input_tokens: 1234` and a
 test runner's pass line are kept; `refresh_token:` and `access_token:` count.
 Callers cut text of no fixed size to a bound far above the cap before
-scrubbing, since the cost follows the input's length. This is a summary; the
+scrubbing, since the cost follows the input's length. The hub applies the
+same rule to the agent's free text: it cuts a string over its field's cap to
+the cap (on a UTF-8 boundary), or rejects the message, before it calls the
+scrubber, because the 1 MiB message cap alone would let one agent send a
+1 MiB `message` that takes the scrubber about 16 s and holds that agent's
+ingest goroutine ([04b](04b-hub-scrubber-cost.md)). This is a summary; the
 package README lists each pattern, why, what is left alone and what is not
 covered, and a change updates both.
 
