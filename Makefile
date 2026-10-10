@@ -229,6 +229,7 @@ selftest: tools
 	scripts/test-changed-go-packages.sh
 	scripts/test-check-gofumpt.sh
 	scripts/test-lint-exec-rules.sh
+	scripts/test-lint-typing-rules.sh
 	scripts/test-make-lint-platforms.sh
 	scripts/test-check-generated-headers.sh
 	scripts/check-generated-headers.sh
