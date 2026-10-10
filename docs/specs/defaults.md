@@ -40,7 +40,7 @@ spec change. "Decided here" marks a value no earlier document gave.
 | Bye wait on stop (agent) | 2; after `Bye{SHUTDOWN}` the agent waits this long for the hub to close the stream, then cuts the connection (`connect.shutdown_cut`), so a hub that stopped reading cannot hold up the stop | s | 01 A7, decided here | fixed |
 | `last_seen` written to the store | at most 1 per machine per minute, and on connect and disconnect; held in memory per heartbeat | min | 04, decided here | fixed |
 | Agent event ring cap | 1 week or 64 MiB, whichever first; the oldest entry is evicted first, whatever its class, and every eviction is counted (`EventCounters.evicted_total`) | week, MiB | [02i](02i-delivery-and-sequencing.md), decided here | fixed |
-| Agent command log | last 10,000 or 7 days; the count never removes an entry that is not acked and inside its deadline (02i) | count, days | 03 | fixed |
+| Agent command log | last 10,000 or 7 days; neither limit removes an entry that is not acked and inside its deadline (02i) | count, days | 03 | fixed |
 | Agent status file (`status.json`) rewrite | at most once per second (changes in between go into the next write), at least once a minute, and once more before the agent exits | s, min | [01f](01f-agent-control-goals-and-policy.md) M3, plan row 6 | fixed |
 | One-shot child process (`internal/proc`) | time cap and output cap per named caller (`loginctl`, `tmux` one-shot, version check, `git`, `gh`), each set from a measured run of that command | s, KiB | 01 principle 8, plan row 2c | fixed |
 | Agent command rate limit per command kind (`rate_limits`) | 60 | per min | 03e, decided here | `agent` |

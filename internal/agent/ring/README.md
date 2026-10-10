@@ -20,7 +20,7 @@ err = seqs.Floor(ctx, helloAck.GetHubLastEventSeq())          // next seq above 
 last := seqs.Last()                                           // highest seq handed out: Heartbeat.event_seq
 res, err := db.Unacked(ctx)                                   // finished results with no ResultAck
 n, err := db.AckResults(ctx, ack.GetCommandIds(), now)        // unknown or already acked ids change nothing
-n, err = db.Prune(ctx, hubNow)                                // hub time; keeps 7 days and 10,000 entries, and any the hub may re-send
+n, err = db.Prune(ctx, hubNow)                                // hub time; 7 days and 10,000 entries, never one the hub may re-send
 ```
 
 - **Private.** `Open` creates `agent.db` with mode 0600 before SQLite opens
@@ -69,9 +69,10 @@ n, err = db.Prune(ctx, hubNow)                                // hub time; keeps
   entry, by update or insert. `Prune` takes hub time (`HelloAck.hub_time`
   plus the time since), never the agent's wall clock, because
   `not_after_time` is the hub's deadline (02i "Clocks"). It deletes
-  entries older than 7 days (against `received_time`, the agent's clock: a
-  deadline is at most 24 h, so the age test tolerates a clock that is off by
-  up to about 6 days).
+  entries older than 7 days (against `received_time`, the agent's clock)
+  that are acked or past their deadline: one not acked and inside its
+  deadline stays whatever its age, so an agent clock far behind the hub,
+  which makes every entry look old, cannot make a command run twice.
   Past 10,000 entries it deletes the oldest that are acked or past their
   deadline, never one the hub may still re-send (not acked, inside its
   deadline), so a re-sent command is a duplicate, not a second run
@@ -91,6 +92,8 @@ per `command_id` under concurrent delivery (and against raw `REPLACE` and
 renames), the kept result, seq blocks across a reopen and the floor,
 results unacked until `ResultAck` and across a reopen, the first ack kept
 in the file (update and insert), pruning by age and by count (an acked
-entry inside its deadline goes, an unacked one stays), pruning by hub time
+entry inside its deadline goes, an unacked one stays), the age limit with
+the agent clock 8 days behind (an unacked entry inside its deadline stays;
+acked and expired ones older than 7 days go), pruning by hub time
 with a skewed wall clock, and one `Seqs` shared by many goroutines under
 `-race`.

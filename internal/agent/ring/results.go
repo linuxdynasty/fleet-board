@@ -88,32 +88,34 @@ func (d *DB) AckResults(ctx context.Context, ids []string, at time.Time) (int, e
 	return int(n), nil
 }
 
-// forgettable is the SQL condition for an entry the count cap may delete:
-// acked, or past its deadline, so the hub no longer re-sends it.
+// forgettable is the SQL condition for an entry the age limit and the
+// count cap may delete: acked, or past its deadline, so the hub no longer
+// re-sends it.
 const forgettable = `(acked_time IS NOT NULL OR not_after_time < ?)`
 
-// Prune deletes the entries received more than [MaxCommandAge] before now,
-// then, while more than [MaxCommands] remain, the oldest that are acked or
-// past their not_after_time. A command still inside its deadline and not
-// acked is never deleted for the count: the hub may re-send it, and a
-// forgotten command_id would run twice. Prune returns how many it deleted.
+// Prune deletes the entries received more than [MaxCommandAge] before now
+// that are acked or past their not_after_time, then, while more than
+// [MaxCommands] remain, the oldest that are acked or past their deadline.
+// A command still inside its deadline and not acked is never deleted, for
+// age or for the count: the hub may re-send it, and a forgotten command_id
+// would run twice. Prune returns how many it deleted.
 // A pruned command_id is unknown afterwards: a ResultAck for it changes
 // nothing.
 //
 // now is hub time (HelloAck.hub_time plus the time elapsed since), never the
 // agent's wall clock: not_after_time is the hub's deadline (02i "Clocks"), so
 // a clock that runs ahead must not expire a command the hub may re-send. The
-// age test compares now with received_time, the agent's clock, and tolerates
-// that skew up to about 6 days: a deadline is at most 24 h, so an entry 7 days
-// old by a clock off by less than that is still past its deadline.
+// age test compares now with received_time, the agent's clock, so a clock
+// far behind the hub makes every entry look old; the deadline test, in hub
+// time, is what keeps a command the hub may re-send.
 func (d *DB) Prune(ctx context.Context, now time.Time) (int, error) {
 	old, at := now.Add(-MaxCommandAge).UnixMilli(), now.UnixMilli()
 	// A read first spares the write, and its batch wait, when nothing is due.
 	var due bool
 	if err := d.s.Read(ctx, func(tx *sql.Tx) error {
-		return tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM command_log WHERE received_time < ?)
+		return tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM command_log WHERE received_time < ? AND `+forgettable+`)
 			OR ((SELECT count(*) FROM command_log) > ? AND EXISTS(SELECT 1 FROM command_log WHERE `+forgettable+`))`,
-			old, MaxCommands, at).Scan(&due)
+			old, at, MaxCommands, at).Scan(&due)
 	}); err != nil {
 		return 0, fmt.Errorf("ring: prune command log: %w", err)
 	}
@@ -122,7 +124,7 @@ func (d *DB) Prune(ctx context.Context, now time.Time) (int, error) {
 	}
 	var n int64
 	err := d.s.Write(ctx, func(tx *sql.Tx) error {
-		res, err := tx.ExecContext(ctx, `DELETE FROM command_log WHERE received_time < ?`, old)
+		res, err := tx.ExecContext(ctx, `DELETE FROM command_log WHERE received_time < ? AND `+forgettable, old, at)
 		if err != nil {
 			return fmt.Errorf("ring: prune command log: %w", err)
 		}
