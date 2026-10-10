@@ -31,11 +31,12 @@ func (s *session) byeOver(ctx context.Context, out ending, step string, err erro
 	if b := s.leftBye(); b != nil {
 		// The failure the Bye stands in for is still said (a Snapshot
 		// hook's error, say), then the Bye decides what happens.
-		event := "connect.failed"
+		args := []any{"peer", s.c.addr, "step", step, "err_kind", connErrKind(err, false)}
 		if s.serving.Load() {
-			event = "connect.closed"
+			s.l.log.WarnContext(ctx, "connect.closed", args...)
+		} else {
+			s.l.log.WarnContext(ctx, "connect.failed", args...)
 		}
-		s.l.log.WarnContext(ctx, event, "peer", s.c.addr, "step", step, "err_kind", connErrKind(err, false))
 		return s.bye(ctx, b), "", nil
 	}
 	return out, step, err
