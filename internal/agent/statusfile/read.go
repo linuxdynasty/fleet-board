@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"syscall"
 )
 
 var (
@@ -39,18 +40,23 @@ func Read(dir string) (Status, error) {
 // readJSON reads a regular file of at most maxFile bytes into v.
 func readJSON(dir, name string, v any) error {
 	path := filepath.Join(dir, name)
-	fi, err := os.Lstat(path)
+	// Open first, then look at what was opened: no gap for a swap between
+	// the check and the read. O_NOFOLLOW refuses a symlink.
+	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW, 0) //nolint:gosec // G304: a fixed file name inside the agent's own state folder
+	if errors.Is(err, syscall.ELOOP) {
+		return fmt.Errorf("%w: %s is a symlink", ErrDamaged, name)
+	}
+	if err != nil {
+		return fmt.Errorf("statusfile: %w", err)
+	}
+	defer func() { _ = f.Close() }()
+	fi, err := f.Stat()
 	if err != nil {
 		return fmt.Errorf("statusfile: %w", err)
 	}
 	if !fi.Mode().IsRegular() {
 		return fmt.Errorf("%w: %s is not a regular file", ErrDamaged, name)
 	}
-	f, err := os.Open(path) //nolint:gosec // G304: a fixed file name inside the agent's own state folder
-	if err != nil {
-		return fmt.Errorf("statusfile: %w", err)
-	}
-	defer func() { _ = f.Close() }()
 	data, err := io.ReadAll(io.LimitReader(f, maxFile+1))
 	if err != nil {
 		return fmt.Errorf("statusfile: read %s: %w", name, err)

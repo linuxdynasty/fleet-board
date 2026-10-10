@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"strings"
 	"time"
@@ -18,7 +19,7 @@ const EnrollFile = "enroll.json"
 
 // The closed codes of a failed enroll.
 var enrollCodes = setOf(
-	"refused", "hub_untrusted", "bad_response", "hub_failed", "already_enrolled", "loose_mode",
+	"refused", "hub_untrusted", "bad_response", "hub_failed", "loose_mode",
 	"token_malformed", "no_hub", "hub_address", "no_hub_found", "timeout", "interrupted", "other",
 )
 
@@ -42,15 +43,13 @@ func EnrollCodeOf(err error) (code, reason string) {
 	var re *conn.RefusedError
 	switch {
 	case errors.As(err, &re):
-		return "refused", strings.TrimPrefix(re.Reason.String(), "REASON_CODE_")
+		return "refused", reasonName(strings.TrimPrefix(re.Reason.String(), "REASON_CODE_"))
 	case errors.Is(err, conn.ErrHubUntrusted):
 		return "hub_untrusted", ""
 	case errors.Is(err, conn.ErrBadResponse):
 		return "bad_response", ""
 	case errors.Is(err, conn.ErrHubFailed):
 		return "hub_failed", ""
-	case errors.Is(err, conn.ErrAlreadyEnrolled):
-		return "already_enrolled", ""
 	case errors.Is(err, conn.ErrLooseMode):
 		return "loose_mode", ""
 	case errors.Is(err, conn.ErrTokenMalformed):
@@ -70,13 +69,32 @@ func EnrollCodeOf(err error) (code, reason string) {
 	}
 }
 
+// ErrNoFolder means RecordEnroll found no state folder and made none: a
+// folder the enroll itself did not create is a mistyped --state-dir, and a
+// stray 0700 folder there would hide the typo.
+var ErrNoFolder = errors.New("statusfile: the state folder does not exist")
+
 // RecordEnroll records the outcome of an enroll in dir.
-// A failure replaces enroll.json with its code (whole or not at all); a
-// success (enrollErr nil) removes the file, so it only ever shows the last
-// failure and never one the owner has since fixed. A file that cannot be
-// written or removed is logged (status.write_failed) and counted, and
-// returned for the caller to ignore: the enroll's own result stands.
+//
+//   - A failure replaces enroll.json with its code (whole or not at all),
+//     but only in a state folder that exists. Enroll makes the folder once
+//     its local checks pass, so a failure before that (a malformed token, no
+//     hub address) leaves no file and returns [ErrNoFolder]; doctor reports
+//     the missing folder itself.
+//   - A success (enrollErr nil) removes the file, so it only ever shows the
+//     last failure and never one the owner has since fixed. `fleet-agent run`
+//     does the same once it has loaded an identity.
+//   - A refusal because the machine is already enrolled
+//     ([conn.ErrAlreadyEnrolled]) changes nothing: it is not a failure of
+//     this machine, and an older record is neither added to nor cleared.
+//
+// A file that cannot be written or removed is logged (status.write_failed)
+// and counted, and returned for the caller to ignore: the enroll's own
+// result stands.
 func RecordEnroll(tel *telemetry.Telemetry, dir string, now time.Time, enrollErr error) error {
+	if errors.Is(enrollErr, conn.ErrAlreadyEnrolled) {
+		return nil
+	}
 	m, err := newMetrics(tel)
 	if err != nil {
 		return err
@@ -89,16 +107,17 @@ func RecordEnroll(tel *telemetry.Telemetry, dir string, now time.Time, enrollErr
 		}
 		return nil
 	}
-	// A failure before the state folder exists still gets recorded; the
-	// folder is made (0700) or, when it is open to other users, refused.
-	if err := conn.EnsureDir(dir); err != nil {
+	if _, err := os.Stat(dir); errors.Is(err, fs.ErrNotExist) {
+		return ErrNoFolder
+	}
+	if err := conn.CheckDir(dir); err != nil {
 		rec.done(stepErr(stepDir, err))
 		return err
 	}
 	code, reason := EnrollCodeOf(enrollErr)
 	data, err := encode(Enroll{Version: layout, WrittenTime: now.UTC().Truncate(time.Millisecond), Code: code, Reason: reason})
 	if err == nil {
-		err = writeAtomic(dir, EnrollFile, data, os.Rename)
+		err = writeAtomic(dir, EnrollFile, data, fileOps{})
 	}
 	rec.done(err)
 	return err

@@ -38,11 +38,34 @@ func (e *stepError) Unwrap() error { return e.err }
 
 func stepErr(step string, err error) error { return &stepError{step: step, err: err} }
 
+// fileOps are the steps of a write that touch the disk's durability. A nil
+// field is the real one; tests replace them to record the order and to fail
+// a step.
+type fileOps struct {
+	rename   func(oldpath, newpath string) error
+	syncFile func(f *os.File) error
+	syncDir  func(dir string) error
+}
+
+func (o fileOps) withDefaults() fileOps {
+	if o.rename == nil {
+		o.rename = os.Rename
+	}
+	if o.syncFile == nil {
+		o.syncFile = (*os.File).Sync
+	}
+	if o.syncDir == nil {
+		o.syncDir = syncDir
+	}
+	return o
+}
+
 // writeAtomic writes data to dir/name with mode 0600, all or nothing: a
 // temp file is written and synced, renamed over the old file, and the
-// folder synced. A write that fails or is killed before the rename leaves
-// the old file whole. rename is os.Rename except in tests.
-func writeAtomic(dir, name string, data []byte, rename func(oldpath, newpath string) error) error {
+// folder synced, in that order. A write that fails or is killed before the
+// rename leaves the old file whole.
+func writeAtomic(dir, name string, data []byte, ops fileOps) error {
+	ops = ops.withDefaults()
 	sweep(dir, name)
 	f, err := os.CreateTemp(dir, "."+name+".tmp-*")
 	if err != nil {
@@ -59,14 +82,14 @@ func writeAtomic(dir, name string, data []byte, rename func(oldpath, newpath str
 		_ = f.Close()
 		return stepErr(stepWrite, err)
 	}
-	if err := errors.Join(f.Sync(), f.Close()); err != nil {
+	if err := errors.Join(ops.syncFile(f), f.Close()); err != nil {
 		return stepErr(stepSync, err)
 	}
-	if err := rename(tmp, filepath.Join(dir, name)); err != nil {
+	if err := ops.rename(tmp, filepath.Join(dir, name)); err != nil {
 		return stepErr(stepRename, err)
 	}
 	done = true
-	if err := syncDir(dir); err != nil {
+	if err := ops.syncDir(dir); err != nil {
 		return stepErr(stepDirSync, err)
 	}
 	return nil

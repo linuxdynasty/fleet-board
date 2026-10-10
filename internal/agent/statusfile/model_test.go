@@ -3,9 +3,13 @@ package statusfile
 import (
 	"encoding/json"
 	"errors"
+	"go/ast"
+	"go/parser"
+	gotoken "go/token"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -271,5 +275,58 @@ func TestAge(t *testing.T) {
 	}
 	if got := s.Age(t0.Add(-time.Hour)); got != 0 {
 		t.Errorf("age with a clock behind the file = %v, want 0", got)
+	}
+}
+
+// TestEveryLoopStateAndEndIsInTheClosedLists reads the constants of
+// conn.State and conn.End from conn/status.go, so a state added there and
+// not here fails this test instead of printing "unknown" for a good value.
+func TestEveryLoopStateAndEndIsInTheClosedLists(t *testing.T) {
+	t.Parallel()
+	f, err := parser.ParseFile(gotoken.NewFileSet(), "../conn/status.go", nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := map[string][]string{}
+	for _, d := range f.Decls {
+		g, ok := d.(*ast.GenDecl)
+		if !ok || g.Tok != gotoken.CONST {
+			continue
+		}
+		typ := ""
+		for _, sp := range g.Specs {
+			v := sp.(*ast.ValueSpec) //nolint:forcetypeassert // a const block holds only ValueSpecs
+			if id, ok := v.Type.(*ast.Ident); ok {
+				typ = id.Name
+			}
+			if (typ != "State" && typ != "End") || len(v.Values) != 1 {
+				continue
+			}
+			lit, ok := v.Values[0].(*ast.BasicLit)
+			if !ok {
+				continue
+			}
+			val, err := strconv.Unquote(lit.Value)
+			if err != nil {
+				t.Fatal(err)
+			}
+			found[typ] = append(found[typ], val)
+		}
+	}
+	if len(found["State"]) < 8 || len(found["End"]) < 4 {
+		t.Fatalf("read %v from conn/status.go, want at least 8 states and 4 ends", found)
+	}
+	for _, v := range found["State"] {
+		if !states[v] {
+			t.Errorf("conn.State %q is not in statusfile's list", v)
+		}
+	}
+	for _, v := range found["End"] {
+		if !ends[v] {
+			t.Errorf("conn.End %q is not in statusfile's list", v)
+		}
+	}
+	if len(states) != len(found["State"]) || len(ends) != len(found["End"]) {
+		t.Errorf("statusfile lists %d states and %d ends; conn has %d and %d", len(states), len(ends), len(found["State"]), len(found["End"]))
 	}
 }

@@ -80,12 +80,22 @@ func TestARunThatEndsLeavesTheEndInStatusJSON(t *testing.T) {
 }
 
 // A failed enroll leaves its code in enroll.json (never the token), and
-// the next good enroll takes it away.
+// the next good enroll takes it away. The state folder must exist: a failure
+// before enroll makes it leaves no file and no stray folder.
 func TestEnrollLeavesItsFailureCodeInEnrollJSON(t *testing.T) {
 	t.Parallel()
 	h := conntest.StartHub(t, conntest.Options{})
 	dir := filepath.Join(t.TempDir(), "state")
 	bad := "fbe1_short" + strings.Repeat("x", 12)
+	if r := agent(t, "--state-dir", dir, "enroll", "--hub", h.Addr, "--token", bad); r.code != 1 {
+		t.Fatalf("enroll = %d: %s", r.code, r.stderr)
+	}
+	if _, err := os.Stat(dir); err == nil {
+		t.Fatal("a failed enroll made a state folder that enroll had not made")
+	}
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
 	if r := agent(t, "--state-dir", dir, "enroll", "--hub", h.Addr, "--token", bad); r.code != 1 {
 		t.Fatalf("enroll = %d: %s", r.code, r.stderr)
 	}
@@ -102,5 +112,40 @@ func TestEnrollLeavesItsFailureCodeInEnrollJSON(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, statusfile.EnrollFile)); err == nil {
 		t.Error("enroll.json is still there after a good enroll")
+	}
+}
+
+// A refused enroll on a machine that is already enrolled is not a failure
+// of that machine: it writes no enroll.json.
+func TestAReEnrollRefusedOnAnEnrolledMachineWritesNoEnrollJSON(t *testing.T) {
+	t.Parallel()
+	h := conntest.StartHub(t, conntest.Options{})
+	dir, _ := enrolledDir(t, h)
+	r := agent(t, "--state-dir", dir, "enroll", "--hub", h.Addr, "--token", h.Token(t, time.Now().Add(time.Hour)))
+	if r.code != 1 || !strings.Contains(r.stderr, "already enrolled") {
+		t.Fatalf("enroll = %d %q, want 1 and already enrolled", r.code, r.stderr)
+	}
+	if _, err := os.Stat(filepath.Join(dir, statusfile.EnrollFile)); err == nil {
+		t.Error("a refused re-enroll left enroll.json on a healthy machine")
+	}
+}
+
+// A working agent has no failed enroll: run removes a stale enroll.json
+// once it has an identity.
+func TestARunRemovesAStaleEnrollJSON(t *testing.T) {
+	t.Parallel()
+	h := conntest.StartHub(t, conntest.Options{})
+	dir, _ := enrolledDir(t, h)
+	stale := []byte(`{"version":1,"written_time":"2026-10-01T00:00:00Z","code":"hub_failed"}`)
+	if err := os.WriteFile(filepath.Join(dir, statusfile.EnrollFile), stale, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	startAgent(t, "--state-dir", dir, "run")
+	poll(t, 20*time.Second, "status.json to appear", func() bool {
+		_, err := statusfile.Read(dir)
+		return err == nil
+	})
+	if _, err := os.Stat(filepath.Join(dir, statusfile.EnrollFile)); err == nil {
+		t.Error("run left a stale enroll.json")
 	}
 }

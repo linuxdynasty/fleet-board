@@ -2,7 +2,7 @@ package statusfile
 
 import (
 	"errors"
-	"os"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -16,6 +16,8 @@ import (
 const (
 	minInterval = time.Second
 	floor       = time.Minute
+	// stopWait is the longest [Writer.Stop] waits for the last write.
+	stopWait = 5 * time.Second
 )
 
 // timer is the part of time.Timer the writer uses.
@@ -45,21 +47,29 @@ func (r realTimer) Stop()               { r.t.Stop() }
 type Options struct {
 	// Dir is the agent state folder; it must exist.
 	Dir string
-	// Source returns the loop's status ([conn.Loop.Status]). It is called
-	// from the writer's goroutine only.
+	// Source returns the loop's status ([conn.Loop.Status]). [Start] calls
+	// it once from the caller's goroutine, before the writer's goroutine
+	// runs; after that only the writer's goroutine calls it.
 	Source    func() conn.Status
 	Telemetry *telemetry.Telemetry
+	// Changed, when set, says the status changed, like [Writer.Notify]:
+	// the loop's change notification (Loop.StatusChanged, plan row 6 PR
+	// 6a). A nil channel never fires. It is read until Stop.
+	Changed <-chan struct{}
 
 	// Test seams: the clock, a hook run after each write attempt, and the
-	// rename step.
+	// disk steps.
 	clock      clock
 	afterWrite func(error)
-	rename     func(oldpath, newpath string) error
+	ops        fileOps
 }
 
 // Writer keeps status.json current. One goroutine does all the file work:
 // it writes at [Start], at most once a second after a [Writer.Notify], at
-// least once a minute, and once more in [Writer.Stop].
+// least once a minute, and once more in [Writer.Stop]. The minute starts
+// when a write ends, so the real gap between two writes is a minute plus the
+// time one write takes; a reader must treat the file as stale only well past
+// a minute.
 //
 //	caller goroutines --Notify--> changed (cap 1, coalesces) --\
 //	Stop() ------------close----> stop                          >-- writer goroutine --> Source(), file
@@ -72,6 +82,7 @@ type Writer struct {
 	opts    Options
 	clk     clock
 	rec     *recorder
+	log     *slog.Logger
 	changed chan struct{}
 	stop    chan struct{}
 	done    chan struct{}
@@ -95,15 +106,12 @@ func Start(opts Options) (*Writer, error) {
 	if opts.clock == nil {
 		opts.clock = realClock{}
 	}
-	if opts.rename == nil {
-		opts.rename = os.Rename
-	}
 	m, err := newMetrics(opts.Telemetry)
 	if err != nil {
 		return nil, err
 	}
 	w := &Writer{
-		opts: opts, clk: opts.clock, rec: m.recorder(StatusFile, opts.clock.Now),
+		opts: opts, clk: opts.clock, rec: m.recorder(StatusFile, opts.clock.Now), log: m.log,
 		changed: make(chan struct{}, 1), stop: make(chan struct{}), done: make(chan struct{}),
 	}
 	w.write()
@@ -123,11 +131,21 @@ func (w *Writer) Notify() {
 // Stop writes the file once more, so it carries the loop's final state
 // (the end it stopped on), and waits for the goroutine. Call it after the
 // loop's Run returned, whether or not the run's context was cancelled: it
-// uses no context, so a stop signal cannot cut the last write. It is safe
-// to call more than once.
+// uses no context, so a stop signal cannot cut the last write. It waits at
+// most five seconds for that write, then logs status.stop_timeout and
+// returns. It is safe to call more than once.
 func (w *Writer) Stop() {
 	w.once.Do(func() { close(w.stop) })
-	<-w.done
+	wait := w.clk.NewTimer(stopWait)
+	defer wait.Stop()
+	select {
+	case <-w.done:
+	case <-wait.C():
+		// A write stuck in the disk must not hold up the agent's exit (and
+		// the store's close behind it). The goroutine ends when the disk
+		// answers, or with the process.
+		w.log.Warn("status.stop_timeout", "file", StatusFile, "wait_ms", stopWait.Milliseconds())
+	}
 }
 
 func (w *Writer) run() {
@@ -152,6 +170,21 @@ func (w *Writer) run() {
 		floorT = w.clk.NewTimer(floor)
 	}
 	var throttleC <-chan time.Time
+	// onChange writes at once when the last write was over a second ago,
+	// else arms one timer for what is left of the second.
+	onChange := func() {
+		dirty = true
+		if throttle != nil {
+			return
+		}
+		wait := minInterval - w.clk.Now().Sub(w.lastWrite)
+		if wait <= 0 {
+			flush()
+			return
+		}
+		throttle = w.clk.NewTimer(wait)
+		throttleC = throttle.C()
+	}
 	for {
 		select {
 		case <-w.stop:
@@ -159,17 +192,9 @@ func (w *Writer) run() {
 			w.write()
 			return
 		case <-w.changed:
-			dirty = true
-			if throttle != nil {
-				continue
-			}
-			wait := minInterval - w.clk.Now().Sub(w.lastWrite)
-			if wait <= 0 {
-				flush()
-				continue
-			}
-			throttle = w.clk.NewTimer(wait)
-			throttleC = throttle.C()
+			onChange()
+		case <-w.opts.Changed: // nil until the loop's notification is wired
+			onChange()
 		case <-throttleC:
 			throttle, throttleC = nil, nil
 			if dirty {
@@ -191,7 +216,7 @@ func (w *Writer) write() {
 	w.lastWrite = now
 	data, err := encode(FromConn(w.opts.Source(), now))
 	if err == nil {
-		err = writeAtomic(w.opts.Dir, StatusFile, data, w.opts.rename)
+		err = writeAtomic(w.opts.Dir, StatusFile, data, w.opts.ops)
 	}
 	w.rec.done(err)
 	if w.opts.afterWrite != nil {

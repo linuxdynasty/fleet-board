@@ -87,8 +87,10 @@ fleet-agent run    # logs to stderr; stop with Ctrl-C or SIGTERM
   within a minute.
 - A failed `enroll` leaves its failure code in `enroll.json` (a closed word
   such as `token_malformed`, `hub_untrusted` or `refused` with the hub's
-  reason name; never the token, the address or the message). A good `enroll`
-  removes the file.
+  reason name; never the token, the address or the message), only into a
+  state folder that exists. A good `enroll` removes the file, a refusal
+  because the machine is already enrolled leaves it alone, and `run`
+  removes it once it has an identity.
 
 `fleet-agent --version` prints the name and the version; `-h` prints the
 usage. Release builds set the version with `-ldflags -X` (see

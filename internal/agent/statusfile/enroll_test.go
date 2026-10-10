@@ -30,7 +30,7 @@ func TestEnrollCodeIsAClosedWord(t *testing.T) {
 		{"untrusted", fmt.Errorf("x: %w", conn.ErrHubUntrusted), "hub_untrusted", ""},
 		{"bad response", conn.ErrBadResponse, "bad_response", ""},
 		{"hub failed", conn.ErrHubFailed, "hub_failed", ""},
-		{"already", conn.ErrAlreadyEnrolled, "already_enrolled", ""},
+		{"already enrolled is not a failure code", conn.ErrAlreadyEnrolled, "other", ""},
 		{"loose", conn.ErrLooseMode, "loose_mode", ""},
 		{"token", conn.ErrTokenMalformed, "token_malformed", ""},
 		{"no hub", conn.ErrNoHub, "no_hub", ""},
@@ -129,19 +129,49 @@ func TestASuccessfulEnrollClearsTheOldFailure(t *testing.T) {
 	}
 }
 
-func TestRecordEnrollMakesTheStateFolderWhenItIsMissing(t *testing.T) {
+func TestRecordEnrollNeverMakesTheStateFolder(t *testing.T) {
 	t.Parallel()
-	dir := filepath.Join(t.TempDir(), "state")
+	dir := filepath.Join(t.TempDir(), "mistyped")
+	tel, logs := quietTel(t)
+	if err := RecordEnroll(tel, dir, t0, conn.ErrNoHub); !errors.Is(err, ErrNoFolder) {
+		t.Fatalf("err = %v, want ErrNoFolder", err)
+	}
+	if _, err := os.Stat(dir); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("the state folder was made: %v", err)
+	}
+	if strings.Contains(logs.String(), "status.write_failed") {
+		t.Errorf("a folder enroll never made is not a write failure:\n%s", logs.String())
+	}
+}
+
+func TestARefusedReEnrollLeavesEnrollJSONAlone(t *testing.T) {
+	t.Parallel()
 	tel, _ := quietTel(t)
-	if err := RecordEnroll(tel, dir, t0, conn.ErrNoHub); err != nil {
+	dir := stateDir(t)
+	if err := RecordEnroll(tel, dir, t0, conn.ErrAlreadyEnrolled); err != nil {
 		t.Fatal(err)
 	}
-	fi, err := os.Stat(dir)
-	if err != nil || fi.Mode().Perm() != 0o700 {
-		t.Errorf("state folder = %v, %v; want mode 0700", fi, err)
+	if _, err := ReadEnroll(dir); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("err = %v: a machine that is already enrolled has no enroll failure to show", err)
 	}
-	if got, err := ReadEnroll(dir); err != nil || got.Code != "no_hub" {
-		t.Errorf("got %+v, %v", got, err)
+	// An older failure stays as it was: this refusal neither adds nor clears.
+	if err := RecordEnroll(tel, dir, t0, conn.ErrHubFailed); err != nil {
+		t.Fatal(err)
+	}
+	if err := RecordEnroll(tel, dir, t0.Add(time.Hour), fmt.Errorf("x: %w", conn.ErrAlreadyEnrolled)); err != nil {
+		t.Fatal(err)
+	}
+	got, err := ReadEnroll(dir)
+	if err != nil || got.Code != "hub_failed" || !got.WrittenTime.Equal(t0) {
+		t.Errorf("got %+v, %v; want the earlier hub_failed untouched", got, err)
+	}
+}
+
+func TestTheReasonIsCheckedWhenWritten(t *testing.T) {
+	t.Parallel()
+	refused := &conn.RefusedError{Code: connect.CodeInternal, Reason: typev1.ReasonCode(-5)}
+	if _, reason := EnrollCodeOf(refused); reason != StateUnknown {
+		t.Errorf("reason = %q, want %q for a name outside A-Z, 0-9 and underscore", reason, StateUnknown)
 	}
 }
 
