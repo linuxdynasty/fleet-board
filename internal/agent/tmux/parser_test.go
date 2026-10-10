@@ -3,6 +3,7 @@ package tmux_test
 import (
 	"errors"
 	"io"
+	"runtime"
 	"strings"
 	"testing"
 	"testing/iotest"
@@ -192,6 +193,21 @@ func TestAHugeLineNeverGrowsMemory(t *testing.T) {
 	// would be thousands of allocations if any slice were kept.
 	if allocs > 20 {
 		t.Errorf("parsing one 64 MiB line made %v allocations, want a fixed few", allocs)
+	}
+	// And in bytes: one buffer that grew to hold the line would be one
+	// allocation but 64 MiB.
+	var before, after runtime.MemStats
+	r.left = huge + len("\n%exit\n")
+	runtime.ReadMemStats(&before)
+	p := tmux.NewParser(r, tmux.Options{MaxLineBytes: 4096})
+	for {
+		if _, err := p.Next(); err != nil {
+			break
+		}
+	}
+	runtime.ReadMemStats(&after)
+	if got := after.TotalAlloc - before.TotalAlloc; got > 1<<20 {
+		t.Errorf("parsing one 64 MiB line allocated %d bytes, want under 1 MiB", got)
 	}
 }
 
