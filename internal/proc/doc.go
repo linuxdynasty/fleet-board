@@ -11,7 +11,8 @@
 // it also knows when a descendant still holds them after the child is gone:
 // after at most [DefaultWaitDelay] it returns [ErrHeldPipe], whatever the exit
 // status. It does not kill that descendant: once the child is reaped its
-// process group id may be free. A call lasts at most its time cap plus that
+// process group id may be free. A caller whose context ends during that wait
+// gets its own error back at once. A call lasts at most its time cap plus that
 // delay. Every kill (and output cap) is logged (proc.killed) and counted
 // (fleet_<program>_proc_kills_total) with its cause: time_cap, output_cap or
 // cancelled; a held pipe is logged (proc.pipe_held) and counted separately.
@@ -24,7 +25,7 @@
 //
 // The long-lived `tmux -C` client and the attach PTY are not one-shot and do
 // not use this package. A lint rule in .golangci.yml lets only this package,
-// internal/agent/tmux and internal/agent/attach import os/exec in internal/
-// and cmd/ (tests excepted), and only this package start a process any other
+// internal/agent/tmux and internal/agent/attach import os/exec (or its wrapper
+// golang.org/x/sys/execabs) in internal/ and cmd/ (tests excepted), and only this package start a process any other
 // way. See README.md for what a group kill may reach, and what the rules miss.
 package proc

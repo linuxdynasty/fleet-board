@@ -25,13 +25,16 @@ func killGroupOf(p *os.Process) error {
 }
 
 // killGroup sends SIGKILL to the whole group led by pid. It returns
-// [os.ErrProcessDone] when no member is left.
+// [os.ErrProcessDone] when no member is left to signal.
 func killGroup(pid int) error {
 	if pid <= 0 {
 		return os.ErrProcessDone // never -0 or a negative group: that would signal our own
 	}
 	err := syscall.Kill(-pid, syscall.SIGKILL)
-	if errors.Is(err, syscall.ESRCH) {
+	// ESRCH: no member is left. EPERM: on macOS, a group that holds only a
+	// zombie (a child that has exited and not been waited for yet) answers
+	// EPERM, and there is nothing to kill either.
+	if errors.Is(err, syscall.ESRCH) || errors.Is(err, syscall.EPERM) {
 		return os.ErrProcessDone
 	}
 	return err

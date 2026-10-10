@@ -41,12 +41,16 @@ res, err := runner.Run(ctx, proc.Spec{Caller: git, Path: "git", Args: []string{"
   the exit status; `Result.ExitCode` has it). **It does not kill that
   descendant**: the child is reaped, so its group id may be free, and a kill by
   number could reach an unrelated group. The holder is logged
-  (`proc.pipe_held`), counted, and left running. If a cancel arrives while `Run`
-  waits like this, the result is still `ErrHeldPipe`, not the context's error.
+  (`proc.pipe_held`), counted, and left running. If the caller's context ends
+  while `Run` waits like this (the time cap too), `Run` stops waiting after a
+  grace of 100 ms, for output that was about to end by itself, and returns the
+  context's error, not `ErrHeldPipe`; the holder is still logged and counted.
 - **How long a call lasts.** At most the time cap plus the 2 s delay. A
-  cancelled caller gets its return at once while the child is running (the
-  group is killed and its pipes close), unless a descendant outside the group
-  holds them: then the return waits for the delay.
+  cancelled caller gets its return at once: while the child runs, the group is
+  killed and its pipes close; after a kill `Run` waits at most 250 ms for them,
+  so even a descendant that left the group (it survives and still holds them)
+  does not hold the return; and during the wait for a holder, the caller's
+  cancel is seen within 100 ms.
 - **The only group kill is the one for a cap or a cancel, made while the child
   is alive.** A group id is the child's pid, and the system does not hand that
   pid out again while any member of the group is alive. After the child is
@@ -62,6 +66,18 @@ res, err := runner.Run(ctx, proc.Spec{Caller: git, Path: "git", Args: []string{"
   (ids are given out in sequence, so that takes a full wrap of the id space),
   and that process would have to be a group leader. It is accepted. The check is
   tested: `TestCancelAfterTheLeaderWasReapedSignalsNothing`.
+- **A child that finished by itself as the cap or cancel fired (the zombie
+  case).** Between the child's exit and its reap it is a zombie. Signal 0 still
+  succeeds on it, and the group kill then differs by system. On Linux it
+  succeeds (the zombie is a group member), so such a child is reported as
+  `ErrTimeCap` or the context's error, with `killed` true, though it had
+  finished. On macOS a group that holds only a zombie answers `EPERM`; `Run`
+  treats that like "nothing left to kill" (`killGroup` returns
+  `os.ErrProcessDone`), so the child's real result is returned. Without that,
+  `os/exec` returned "exec: canceling Cmd: operation not permitted", unlogged
+  (17 of 300 and 18 of 400 runs on macOS in review).
+  `TestKillGroupOfAnExitedChildIsNeverEPERM` and
+  `TestCapAndCancelRacingANormalExit` pin it.
 - **No other change to the child.** It runs as the developer does: `Env` nil
   is the caller's own environment, and the helper reads and adds no variable
   (no credential is read) beyond what `os/exec` adds itself (`PWD`, when `Dir`
@@ -125,6 +141,13 @@ it reads only the files that build for the GOOS and GOARCH it runs for, so a
 name them so they are allowed when they arrive.
 
 **What the rules do not catch** (a lint cannot see these, and a reviewer must):
+a file with a custom build tag (`//go:build fleetdebug`) is built by none of
+the platform runs, so it is not linted at all; a third-party package that
+imports `os/exec` itself (the OpenTelemetry resource detectors, `modernc.org/libc`;
+none is reachable from the program today); a hand-written file with a
+`// Code generated ... DO NOT EDIT.` header, which golangci-lint skips
+(`exclusions.generated: strict`; `scripts/check-generated-headers.sh` in
+`make selftest` fails on one outside `gen/`);
 a call by `//go:linkname` to the runtime's fork and exec, a raw system call
 (`syscall.RawSyscall` or `syscall.Syscall` with the exec, fork or posix_spawn
 number), a program started through cgo (the repo builds without cgo), or an

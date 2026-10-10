@@ -1,3 +1,5 @@
+//go:build unix
+
 package proc_test
 
 import (
@@ -147,6 +149,18 @@ func TestHangingChildIsKilledAtItsTimeCap(t *testing.T) {
 	}
 }
 
+// What a killed child had written so far is in the Result.
+func TestKilledChildLeavesItsOutputSoFar(t *testing.T) {
+	t.Parallel()
+	res, err := newRunner(t).Run(deadline(t), child(t, "write-hang", proc.Limits{Time: time.Second, Output: 1 << 10}))
+	if !errors.Is(err, proc.ErrTimeCap) {
+		t.Fatalf("Run = %v, want ErrTimeCap", err)
+	}
+	if got := string(res.Stdout); got != "partial" {
+		t.Fatalf("Stdout = %q, want what the child wrote before the time cap", got)
+	}
+}
+
 func TestFloodingChildIsCutOffAtItsOutputCap(t *testing.T) {
 	t.Parallel()
 	const capBytes = 64 << 10
@@ -158,8 +172,8 @@ func TestFloodingChildIsCutOffAtItsOutputCap(t *testing.T) {
 	if took := time.Since(start); took > 5*time.Second {
 		t.Fatalf("returned after %v; the time cap (20s) must not be what ended it", took)
 	}
-	if n := len(res.Stdout) + len(res.Stderr); n > capBytes {
-		t.Fatalf("kept %d bytes, cap is %d", n, capBytes)
+	if n := len(res.Stdout) + len(res.Stderr); n == 0 || n > capBytes {
+		t.Fatalf("kept %d bytes, want some (what it wrote before the kill) and at most %d", n, capBytes)
 	}
 	if !gone(res.Pid) {
 		t.Fatalf("child %d is still running", res.Pid)

@@ -1,3 +1,5 @@
+//go:build unix
+
 package proc_test
 
 import (
@@ -22,6 +24,7 @@ const (
 	grandSetsEnv = "FLEET_PROC_GRAND_SETSID"
 	splitEnv     = "FLEET_PROC_SPLIT_BYTES"
 	grandModeEnv = "FLEET_PROC_GRAND_MODE" // hold (default) or late-flood
+	lateMsEnv    = "FLEET_PROC_LATE_MS"    // late-flood: ms to wait after the parent is gone (default 400)
 )
 
 func TestMain(m *testing.M) {
@@ -55,6 +58,9 @@ func runChild(mode string) {
 		// At most 1 MiB, so an inherited /dev/zero cannot run forever.
 		b, err := io.ReadAll(io.LimitReader(os.Stdin, 1<<20))
 		fmt.Printf("stdin bytes=%d err=%v\n", len(b), err)
+	case "write-hang":
+		_, _ = os.Stdout.WriteString("partial")
+		time.Sleep(time.Hour)
 	case "split":
 		n, _ := strconv.Atoi(os.Getenv(splitEnv))
 		chunk := make([]byte, n)
@@ -107,7 +113,11 @@ func runChild(mode string) {
 			for orig, end := os.Getppid(), time.Now().Add(10*time.Second); os.Getppid() == orig && time.Now().Before(end); {
 				time.Sleep(5 * time.Millisecond)
 			}
-			time.Sleep(400 * time.Millisecond)
+			late := 400
+			if v, err := strconv.Atoi(os.Getenv(lateMsEnv)); err == nil {
+				late = v
+			}
+			time.Sleep(time.Duration(late) * time.Millisecond)
 			n, _ := strconv.Atoi(os.Getenv(splitEnv))
 			_, _ = os.Stdout.Write(make([]byte, n))
 		}

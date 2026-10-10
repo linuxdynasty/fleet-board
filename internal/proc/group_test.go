@@ -1,3 +1,5 @@
+//go:build unix
+
 package proc_test
 
 import (
@@ -206,7 +208,7 @@ func TestCancelledCallerGetsItsReturn(t *testing.T) {
 			pidFile := t.TempDir() + "/pid"
 			killLater(t, pidFile)
 			sp := child(t, mode, proc.Limits{Time: 60 * time.Second, Output: 1 << 10}, pidFileEnv+"="+pidFile)
-			o := cancelWhenReady(t, sp, mode == "parent-hangs", pidFile)
+			o := cancelWhenReady(t, sp, mode == "parent-hangs", pidFile, 0)
 			if !errors.Is(o.err, context.Canceled) {
 				t.Fatalf("Run = %v, want context.Canceled", o.err)
 			}
@@ -223,21 +225,19 @@ func TestCancelledCallerGetsItsReturn(t *testing.T) {
 			}
 		})
 	}
-	// What is true when a descendant has left the group: the child dies, but
-	// the escapee still holds the output, so the return waits for WaitDelay
-	// and no longer.
-	t.Run("a grandchild that left the group delays it by WaitDelay", func(t *testing.T) {
+	// A descendant that has left the group survives the kill and still holds
+	// the output. Run does not wait for it: a short grace, then the return.
+	t.Run("a grandchild that left the group does not delay it", func(t *testing.T) {
 		t.Parallel()
 		pidFile := t.TempDir() + "/pid"
 		killLater(t, pidFile)
 		sp := child(t, "parent-hangs", proc.Limits{Time: 60 * time.Second, Output: 1 << 10}, pidFileEnv+"="+pidFile, grandSetsEnv+"=1")
-		sp.WaitDelay = 700 * time.Millisecond
-		o := cancelWhenReady(t, sp, true, pidFile)
+		o := cancelWhenReady(t, sp, true, pidFile, 0) // the default WaitDelay of 2 s
 		if !errors.Is(o.err, context.Canceled) {
 			t.Fatalf("Run = %v, want context.Canceled", o.err)
 		}
-		if o.took < 400*time.Millisecond || o.took > 4*time.Second {
-			t.Fatalf("returned %v after the cancel, want about WaitDelay (700ms)", o.took)
+		if o.took > time.Second {
+			t.Fatalf("returned %v after the cancel; an escapee must not hold the return for the WaitDelay", o.took)
 		}
 		if !gone(o.res.Pid) {
 			t.Fatalf("child %d is still running", o.res.Pid)
@@ -247,7 +247,7 @@ func TestCancelledCallerGetsItsReturn(t *testing.T) {
 
 // cancelWhenReady runs sp, cancels the caller (after the grandchild wrote its
 // pid, when waitPid) and returns the outcome and how long the return took.
-func cancelWhenReady(t *testing.T, sp proc.Spec, waitPid bool, pidFile string) outcome {
+func cancelWhenReady(t *testing.T, sp proc.Spec, waitPid bool, pidFile string, extra time.Duration) outcome {
 	t.Helper()
 	ctx, cancel := context.WithCancel(deadline(t))
 	defer cancel()
@@ -261,6 +261,7 @@ func cancelWhenReady(t *testing.T, sp proc.Spec, waitPid bool, pidFile string) o
 	} else {
 		time.Sleep(200 * time.Millisecond)
 	}
+	time.Sleep(extra)
 	cancelled := time.Now()
 	cancel()
 	select {
@@ -271,4 +272,37 @@ func cancelWhenReady(t *testing.T, sp proc.Spec, waitPid bool, pidFile string) o
 		t.Fatal("Run did not return after the cancel")
 	}
 	return outcome{}
+}
+
+// The child has exited and a descendant still holds the pipes, so Run is in its
+// wait for them. A caller who cancels then gets its return at once, with its own
+// error: the context's, not ErrHeldPipe.
+func TestCancelDuringTheHeldPipeWait(t *testing.T) {
+	t.Parallel()
+	pidFile := t.TempDir() + "/pid"
+	killLater(t, pidFile)
+	sp := child(t, "parent-exits", proc.Limits{Time: 60 * time.Second, Output: 1 << 10}, pidFileEnv+"="+pidFile)
+	o := cancelWhenReady(t, sp, true, pidFile, 400*time.Millisecond) // the child is gone by now
+	if !errors.Is(o.err, context.Canceled) || errors.Is(o.err, proc.ErrHeldPipe) {
+		t.Fatalf("Run = %v, want context.Canceled and not ErrHeldPipe", o.err)
+	}
+	if o.took > time.Second {
+		t.Fatalf("returned %v after the cancel; the wait for the pipes must watch the context", o.took)
+	}
+}
+
+// A kill for the time cap or a cancel is followed by a late byte past the
+// output cap (from a descendant that left the group): the cause that happened
+// first, the cancel, is the one Run returns and logs.
+func TestKillCauseWinsOverALateOutputCap(t *testing.T) {
+	t.Parallel()
+	pidFile := t.TempDir() + "/pid"
+	killLater(t, pidFile)
+	sp := child(t, "parent-hangs", proc.Limits{Time: 60 * time.Second, Output: 1 << 10},
+		pidFileEnv+"="+pidFile, grandSetsEnv+"=1", grandModeEnv+"=late-flood", splitEnv+"=4096", lateMsEnv+"=30")
+	sp.WaitDelay = 1500 * time.Millisecond
+	o := cancelWhenReady(t, sp, true, pidFile, 0)
+	if !errors.Is(o.err, context.Canceled) || errors.Is(o.err, proc.ErrOutputCap) {
+		t.Fatalf("Run = %v, want context.Canceled: the output cap came after the kill", o.err)
+	}
 }

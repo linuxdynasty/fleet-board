@@ -70,18 +70,29 @@ type Result struct {
 	Elapsed time.Duration
 }
 
-// kills records the group kill Run made, from Cancel's goroutine and Run's.
+// cancelGrace is how long Run keeps waiting for the pipes after the caller's
+// context ended while it was already waiting for them, in case the output is
+// about to end by itself (a child that finished as the context ended).
+const cancelGrace = 100 * time.Millisecond
+
+// killGrace is how long Run waits for the pipes after it killed the group: its
+// members are gone and the pipes close at once, so only a descendant that left
+// the group (setsid) can still hold them, and it is not worth waiting for.
+const killGrace = 250 * time.Millisecond
+
+// kills records the group kill Run made, from Cancel's goroutine.
 type kills struct {
 	mu    sync.Mutex
 	did   bool  // a group kill signalled at least one process
-	cause Cause // why, for the first one
+	cause Cause // why
+	err   error // the error for it: the context's cause at that moment
 }
 
-func (k *kills) record(c Cause) {
+func (k *kills) record(c Cause, err error) {
 	k.mu.Lock()
 	defer k.mu.Unlock()
 	if !k.did {
-		k.did, k.cause = true, c
+		k.did, k.cause, k.err = true, c, err
 	}
 }
 
@@ -137,7 +148,8 @@ func (r *Runner) Run(ctx context.Context, sp Spec) (Result, error) {
 	cmd.Cancel = func() error {
 		err := killGroupOf(cmd.Process)
 		if err == nil {
-			k.record(causeOf(context.Cause(capCtx)))
+			c := context.Cause(capCtx)
+			k.record(causeOf(c), c)
 		}
 		return err
 	}
@@ -159,19 +171,46 @@ func (r *Runner) Run(ctx context.Context, sp Spec) (Result, error) {
 
 	werr := cmd.Wait()
 
+	k.mu.Lock()
+	did, cause, kerr := k.did, k.cause, k.err
+	k.mu.Unlock()
+
 	// Output ends when every holder of a pipe is gone. Wait for that, but not
-	// beyond the WaitDelay: past it a descendant is holding the pipes. It is
-	// reported, not killed: the group id may be free by now.
-	held := false
+	// beyond the WaitDelay: past it a descendant is holding the pipes, and that
+	// is reported, not killed (the group id may be free by now). If the group
+	// was killed, its pipes close at once, so a short grace is enough. If not, a
+	// context that ends during the wait stops it too, after a short grace for
+	// output that is about to end.
+	held, stopped := false, false
 	timer := time.NewTimer(wait)
-	select {
-	case <-p.done:
-	case <-timer.C:
-		held = true
+	if did {
+		grace := time.NewTimer(min(killGrace, wait))
+		select {
+		case <-p.done:
+		case <-grace.C:
+			held = true
+		}
+		grace.Stop()
+	} else {
+		select {
+		case <-p.done:
+		case <-timer.C:
+			held = true
+		case <-capCtx.Done():
+			grace := time.NewTimer(min(cancelGrace, wait))
+			select {
+			case <-p.done:
+			case <-grace.C:
+				held, stopped = true, true
+			}
+			grace.Stop()
+		}
+	}
+	timer.Stop()
+	if held {
 		p.closeReaders()
 		<-p.done
 	}
-	timer.Stop()
 
 	res.Stdout, res.Stderr = stdout.Bytes(), stderr.Bytes()
 	res.Elapsed = time.Since(start)
@@ -180,9 +219,6 @@ func (r *Runner) Run(ctx context.Context, sp Spec) (Result, error) {
 		res.ExitCode = ps.ExitCode()
 	}
 
-	k.mu.Lock()
-	did, cause := k.did, k.cause
-	k.mu.Unlock()
 	over := b.over.Load()
 	switch {
 	case did:
@@ -194,12 +230,17 @@ func (r *Runner) Run(ctx context.Context, sp Spec) (Result, error) {
 		r.heldPipe(context.WithoutCancel(ctx), sp.Caller, res)
 	}
 
+	// What ended the call first wins: a kill for a cap or a cancel, then a cap
+	// passed with nothing left to kill, then a context that ended while Run
+	// waited for the pipes, then a held pipe, then the child's own status.
 	var rerr error
 	switch {
+	case did:
+		rerr = kerr // ErrTimeCap, ErrOutputCap or the context's own error
 	case over:
 		rerr = ErrOutputCap
-	case did:
-		rerr = context.Cause(capCtx) // ErrTimeCap, or the caller's own error
+	case stopped:
+		rerr = context.Cause(capCtx)
 	case held:
 		rerr = ErrHeldPipe
 	case werr != nil:
