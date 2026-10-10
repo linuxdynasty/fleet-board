@@ -66,21 +66,41 @@ func TestARenewalWaitsOneIntervalAfterTheLast(t *testing.T) {
 	dueHub(h)
 	a := enrolled(t, h)
 	hub := &skewClock{}
+	var checks atomic.Int64
+	reported := make(chan struct{}, 4)
 	startLoop(t, a, func(o *conn.LoopOptions) {
 		o.RenewCheck = 2 * time.Second
 		conn.SetElapsed(o, hub.since)
+		conn.SetRenewHook(o, func(step string) bool {
+			switch step {
+			case "check":
+				checks.Add(1)
+			case "reported":
+				reported <- struct{}{}
+			default:
+			}
+			return false
+		})
 	})
 	waitFor(t, 10*time.Second, "the renewal", func() bool { return len(a.events(t, "renew.completed")) == 1 })
 	done := time.Now()
-	// Let the renewal goroutine report back to the gate first: it checks
-	// whether the new pair is due at once just after renew.completed.
-	time.Sleep(100 * time.Millisecond)
+	// Wait for the renewal goroutine to report to the gate: it checks
+	// whether the new pair is due at once just after renew.completed, and
+	// moving hub time before it has (a sleep is only a guess on a loaded
+	// machine) would mark the pair stuck for good.
+	select {
+	case <-reported:
+	case <-time.After(10 * time.Second):
+		t.Fatal("timed out after 10s waiting for the renewal goroutine to report to the gate")
+	}
 	// Hub time moves past the new pair's two thirds, then the stream drops:
 	// the next stream's check at connect is due, but within the interval.
 	hub.set(62 * 24 * time.Hour)
+	before := checks.Load()
 	h.dropLive(t)
 	h.connected(t, 2)
-	time.Sleep(200 * time.Millisecond)
+	waitFor(t, 10*time.Second, "the check at connect", func() bool { return checks.Load() > before })
+	time.Sleep(200 * time.Millisecond) // room for a renewal the check wrongly started
 	if n := len(h.renewKeys()); n != 1 && time.Since(done) < 2*time.Second {
 		t.Fatalf("%d RenewCert calls within the interval after a renewal, want 1", n)
 	}
