@@ -44,10 +44,12 @@ func chainSnapshot(hooks ...func(context.Context, *agentv1.Snapshot) error) func
 
 // policyRun is the local policy (L1) and the audit log (M1) of one run.
 type policyRun struct {
-	mgr    *policy.Manager
-	audit  *audit.Log
-	cancel context.CancelFunc
-	watch  sync.WaitGroup
+	mgr   *policy.Manager
+	audit *audit.Log
+	watch sync.WaitGroup
+	// The three steps of close, in the order it runs them. They are fields
+	// so a test can record the order.
+	stopWatch, closeManager, closeAudit func()
 }
 
 // startPolicy makes the config folder when it is missing (so there is
@@ -71,7 +73,8 @@ func startPolicy(ctx context.Context, cfgDir, stateDir, machineID string, tel *t
 		return nil, err
 	}
 	wctx, cancel := context.WithCancel(ctx)
-	p := &policyRun{mgr: mgr, audit: al, cancel: cancel}
+	p := &policyRun{mgr: mgr, audit: al, closeManager: mgr.Close, closeAudit: func() { _ = al.Close() }}
+	p.stopWatch = func() { cancel(); p.watch.Wait() }
 	p.watch.Go(func() { _ = mgr.Watch(wctx) })
 	return p, nil
 }
@@ -79,8 +82,7 @@ func startPolicy(ctx context.Context, cfgDir, stateDir, machineID string, tel *t
 // close stops the watch, lets the manager report the changes it already
 // found (they write audit rows), and only then closes audit.log.
 func (p *policyRun) close() {
-	p.cancel()
-	p.watch.Wait()
-	p.mgr.Close()
-	_ = p.audit.Close()
+	p.stopWatch()    // the watch ends and looks at the file one last time
+	p.closeManager() // the loader reports what it found, writing audit rows
+	p.closeAudit()   // only now may audit.log close
 }

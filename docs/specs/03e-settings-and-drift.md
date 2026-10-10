@@ -226,7 +226,8 @@ result and which layer won (`EffectiveSettings`).
 **How the file is read and watched** (plan row 6, PR 6b). The agent reads at most
 64 KiB; a larger file, one that is not a regular file and one it cannot open are
 safe mode. `policy.yaml` may be a symlink to a regular file (a dotfile manager
-links it); a link to anything else, or to nothing, is unreadable like any other
+links it; the watch also covers the target's folder, and a link replaced by a
+rename is seen by the watch on Linux and at the next `Snapshot` on macOS); a link to anything else, or to nothing, is unreadable like any other
 file that is not a regular file (a FIFO is refused without waiting for a writer).
 The parse is strict and never guesses: an unknown key, a key given
 twice, a wrong type, a `local_approval` entry that leaves out `required`, a value

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -109,5 +110,46 @@ func TestRunWithAnInvalidPolicyStartsInSafeModeAndAuditsIt(t *testing.T) {
 	lines := conntest.Lines(t, s.logs.String(), "policy.safe_mode")
 	if len(lines) != 1 || lines[0]["error"] != "line 2: unknown key" || lines[0]["machine_id"] != s.machine {
 		t.Errorf("policy.safe_mode = %v", lines)
+	}
+}
+
+// close stops the watch first, then lets the loader finish (its last audit
+// rows), and only then closes audit.log.
+func TestPolicyRunClosesInOrder(t *testing.T) {
+	t.Parallel()
+	var order []string
+	rec := func(name string) func() { return func() { order = append(order, name) } }
+	p := &policyRun{stopWatch: rec("watch"), closeManager: rec("manager"), closeAudit: rec("audit")}
+	p.close()
+	if got := strings.Join(order, ","); got != "watch,manager,audit" {
+		t.Errorf("close order = %s, want watch,manager,audit", got)
+	}
+}
+
+// The real steps, end to end: a change found at shutdown still gets its audit
+// row, because the loader finishes before audit.log closes.
+func TestAChangeFoundAtShutdownIsAuditedBeforeTheLogCloses(t *testing.T) {
+	t.Parallel()
+	s := newStartup(t)
+	if err := os.MkdirAll(s.cfg, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	pol, err := startPolicy(context.Background(), s.cfg, s.dir, s.machine, s.tel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Written just before shutdown, whatever the watch has or has not seen.
+	// Replaced by a rename, so the watch cannot catch it half written.
+	tmp := filepath.Join(s.cfg, ".policy.tmp")
+	if err := os.WriteFile(tmp, []byte("schema_version: \"1\"\n"), 0o644); err != nil { //nolint:gosec // G306: the policy file is 0644 by design
+		t.Fatal(err)
+	}
+	if err := os.Rename(tmp, filepath.Join(s.cfg, policy.File)); err != nil {
+		t.Fatal(err)
+	}
+	pol.close()
+	rows := auditRows(t, s.dir)
+	if len(rows) != 1 || rows[0]["action"] != "policy.changed" {
+		t.Errorf("audit rows = %v, want one policy.changed", rows)
 	}
 }

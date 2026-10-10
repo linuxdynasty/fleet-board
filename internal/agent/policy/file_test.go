@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	agentv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1"
 	"github.com/linuxdynasty/fleet-board/internal/agent/policy"
 )
 
@@ -51,10 +52,10 @@ func TestAFifoPutInPlaceOfTheFileNeverBlocksRecheckOrSnapshot(t *testing.T) {
 	}
 	mkfifo(t, r.path)
 	within(t, "Recheck on a FIFO", func() { m.Recheck(t.Context()) })
-	within(t, "Snapshot on a FIFO", func() { _ = m.Info() })
+	within(t, "Snapshot on a FIFO", func() { _ = m.Snapshot(t.Context(), &agentv1.Snapshot{}) })
 	r.noChange(t, 50*time.Millisecond)
-	if ev := r.events(t, "policy.check_failed"); len(ev) != 1 {
-		t.Errorf("policy.check_failed = %v, want one", ev)
+	if ev := r.events(t, "policy.check_failed"); len(ev) != 2 {
+		t.Errorf("policy.check_failed = %v, want two (Recheck and Snapshot)", ev)
 	}
 }
 

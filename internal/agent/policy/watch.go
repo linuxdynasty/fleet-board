@@ -64,6 +64,8 @@ func (m *Manager) Watch(ctx context.Context) error {
 	defer m.watching.Store(false)
 	// An edit between Load and the watch being set raised no event.
 	m.Recheck(ctx)
+	link := &linkTarget{m: m, w: w}
+	link.sync(ctx)
 	// Only now is the watch fully in place: a reader that sees Watching true
 	// knows the first look at the file is done.
 	m.watching.Store(true)
@@ -80,6 +82,10 @@ func (m *Manager) Watch(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
+			// A change inside the last settle window would never be looked
+			// at: one bounded read of one local file, and the loader reports
+			// what it finds before it closes.
+			m.Recheck(context.WithoutCancel(ctx))
 			return nil
 		case ev, ok := <-w.Events():
 			if !ok {
@@ -98,7 +104,7 @@ func (m *Manager) Watch(ctx context.Context) error {
 					return nil
 				}
 			}
-			if filepath.Clean(ev.Name) == m.path {
+			if link.names(ev.Name) {
 				timer.Reset(settle)
 			}
 		case err, ok := <-w.Errors():
@@ -116,6 +122,7 @@ func (m *Manager) Watch(ctx context.Context) error {
 			timer.Reset(settle)
 		case <-timer.C:
 			m.Recheck(ctx)
+			link.sync(ctx) // the link may have been replaced
 		}
 	}
 }

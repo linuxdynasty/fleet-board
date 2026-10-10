@@ -50,8 +50,9 @@ type Options struct {
 	// OnChange is called for each hash change, in order, on a goroutine of
 	// the Manager's own with no lock held, after the change is counted, logged
 	// and audited. Recheck and Snapshot never wait for it, but later changes
-	// queue behind a slow one, so it should return quickly (enqueue, do not
-	// wait). Close waits for it to return.
+	// queue behind a slow one, so it must be a non-blocking enqueue (row 7
+	// puts the event in the send queue): never wait on the network, a lock
+	// the sender holds or a full queue. Close waits for it to return.
 	OnChange func(Change)
 	// Settle is the watcher's settle time; zero is [DefaultSettle].
 	Settle time.Duration
