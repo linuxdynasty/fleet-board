@@ -105,6 +105,12 @@ func outcome(ctx context.Context, err error, untrusted *atomic.Bool, addr string
 	}
 	if ctx.Err() != nil {
 		if errors.Is(context.Cause(ctx), errEnrollCap) {
+			// The hub may have answered "canceled" off the deadline it was
+			// sent just before ours fired; that answer does not carry the
+			// deadline, so the cap's own error is added.
+			if !errors.Is(err, ctx.Err()) {
+				err = errors.Join(err, ctx.Err())
+			}
 			return false, fmt.Errorf("%w: the enroll ran out of time during a call; %s: %w", ErrHubFailed, rerun, err)
 		}
 		// The caller stopped the run; no advice.
@@ -126,10 +132,13 @@ func outcome(ctx context.Context, err error, untrusted *atomic.Bool, addr string
 	}
 	// A bare answer with no ErrorDetail: the stream was cut or the hub was
 	// not ready. RESOURCE_EXHAUSTED is the 1 MiB request cap (02g); a resend
-	// is refused the same way, so it is not tried again.
+	// is refused the same way, so it is not tried again. CANCELED while our
+	// context is alive is the hub's: it applies the deadline it was sent and
+	// can fire it just before ours, so it is a cut call, tried again; the
+	// caller's own cancel is sorted out above.
 	switch ce.Code() {
 	case connect.CodeUnavailable, connect.CodeUnknown, connect.CodeInternal, connect.CodeDeadlineExceeded,
-		connect.CodeAborted:
+		connect.CodeAborted, connect.CodeCanceled:
 		return true, fmt.Errorf("conn: enroll call to %s: %w", addr, err)
 	default:
 		return false, fmt.Errorf("%w: %w", ErrHubFailed, err)

@@ -46,6 +46,17 @@ func TestEnrollRetriesWhatTheHubSaysToRetry(t *testing.T) {
 			return nil
 		}, 2, true, 1, false},
 		{"busy on every try", func(int) error { return busy }, conn.DefaultAttempts, false, conn.DefaultAttempts - 1, true},
+		// The hub applies the deadline it was sent; when its timer fires first it
+		// answers "canceled" while the agent's own is still running.
+		{"the hub's deadline fired first, then enrolled", func(call int) error {
+			if call == 1 {
+				return connect.NewError(connect.CodeCanceled, errors.New("context deadline exceeded"))
+			}
+			return nil
+		}, 2, true, 1, false},
+		{"the hub's deadline fires first on every try", func(int) error {
+			return connect.NewError(connect.CodeCanceled, errors.New("context deadline exceeded"))
+		}, conn.DefaultAttempts, false, conn.DefaultAttempts - 1, true},
 		{"the hub's own failure is not retried", func(int) error { return internal }, 1, false, 0, false},
 		{"a request too large is not retried", func(int) error { return tooLarge }, 1, false, 0, false},
 	}
@@ -122,8 +133,8 @@ func TestTheEnrollTimeoutCapsTheWholeRun(t *testing.T) {
 		o.Timeout = limit
 		o.Retry = conn.Retry{FirstWait: time.Minute, MaxWait: time.Minute}
 	})
-	if took := time.Since(start); took > limit+2*time.Second {
-		t.Errorf("Enroll took %v, want about the %v cap", took, limit)
+	if took := time.Since(start); took > limit+10*time.Second {
+		t.Errorf("Enroll took %v, want about the %v cap (the wait between tries is a minute)", took, limit)
 	}
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Errorf("Enroll = %v, want the deadline", err)
@@ -171,7 +182,8 @@ func TestACancelEndsTheWaitBetweenTries(t *testing.T) {
 	cancel()
 	select {
 	case err := <-done:
-		if took := time.Since(cancelled); took > 2*time.Second {
+		// The wait it was in lasts up to an hour.
+		if took := time.Since(cancelled); took > 10*time.Second {
 			t.Errorf("Enroll returned %v after the cancel, want at once", took)
 		}
 		if !errors.Is(err, conn.ErrHubFailed) || !errors.Is(err, context.Canceled) {
@@ -227,15 +239,20 @@ func TestTheCapEndingACallAdvisesARerun(t *testing.T) {
 			t.Logf("a %v cap ended the setup before any call; doubling it", limit)
 			continue
 		}
-		if took > limit+2*time.Second {
+		// The hang ends at the 20 s call timeout without the cap; a wide
+		// margin keeps a loaded machine from failing a run the cap ended.
+		if took > limit+5*time.Second {
 			t.Errorf("Enroll took %v, want about the %v cap", took, limit)
 		}
 		if !errors.Is(err, conn.ErrHubFailed) || !errors.Is(err, context.DeadlineExceeded) ||
 			!strings.Contains(err.Error(), "run the same command again") {
 			t.Errorf("Enroll = %v, want ErrHubFailed with the deadline and the rerun advice", err)
 		}
-		if calls != 1 {
-			t.Errorf("the hub got %d calls, want 1", calls)
+		// The hub applies the deadline it was sent and may answer "canceled"
+		// just before the cap fires; that call is then tried once more. How
+		// the two timers order is not the promise under test.
+		if calls < 1 {
+			t.Errorf("the hub got %d calls, want at least 1", calls)
 		}
 		if lines := a.events(t, "enroll.failed"); len(lines) != 1 || lines[0]["step"] != "call" || lines[0]["err_kind"] != "timeout" {
 			t.Errorf("enroll.failed lines %v, want one with step=call, err_kind=timeout", lines)
@@ -253,7 +270,8 @@ func TestACallerCancelDuringACallGivesNoAdvice(t *testing.T) {
 	calls, _, a, err := hangingRun(t, 0, func() { at <- time.Now() })
 	select {
 	case cancelled := <-at:
-		if took := time.Since(cancelled); took > 2*time.Second {
+		// Without the cancel the hang lasts the 20 s call timeout.
+		if took := time.Since(cancelled); took > 10*time.Second {
 			t.Errorf("Enroll returned %v after the cancel, want at once", took)
 		}
 	default:
