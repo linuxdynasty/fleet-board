@@ -90,7 +90,8 @@ func enrollOther(t *testing.T, s *store.Store) {
 	}
 }
 
-// A Hello or a close for machine A never reads or writes machine B's rows.
+// A Hello or a close for machine A never reads or writes machine B's rows,
+// even when A's epochs equal B's.
 func TestHelloForOneMachineNeverTouchesAnother(t *testing.T) {
 	t.Parallel()
 	dir, s := enrolledStore(t)
@@ -101,14 +102,16 @@ func TestHelloForOneMachineNeverTouchesAnother(t *testing.T) {
 	if out := mustHello(t, s, other); out.Epoch != 1 {
 		t.Fatalf("B's first epoch %d, want 1", out.Epoch)
 	}
-	for i := range 3 {
-		out := mustHello(t, s, hello(5, "boot-a", "192.0.2.7:51000", helloAt.Add(time.Duration(i+1)*time.Second)))
-		if out.Displaced != nil && out.Displaced.Peer == "203.0.113.9:4000" {
-			t.Fatalf("A's Hello displaced B's connection: %+v", out.Displaced)
+	// A's epoch 1, then epoch 2 displacing A's epoch 1, while B's epoch 1 is live.
+	for i := range 2 {
+		out := mustHello(t, s, hello(0, "boot-a", "192.0.2.7:51000", helloAt.Add(time.Duration(i+1)*time.Second)))
+		if out.Epoch != uint64(i+1) || (out.Displaced != nil && out.Displaced.Peer == "203.0.113.9:4000") {
+			t.Fatalf("A's Hello %d = %+v", i, out)
 		}
 	}
+	// A's epoch 1 is closed already; B's epoch 1 is live and must stay so.
 	if live, err := statedb.EndConnection(ctx, s, renewMachineID, 1, statedb.EndStreamClosed, helloAt.Add(time.Minute)); err != nil || live {
-		t.Errorf("EndConnection(A, epoch 1) = %v, %v; A has no epoch 1 row, so it must not close B's", live, err)
+		t.Errorf("EndConnection(A, epoch 1) = %v, %v; want a no-op", live, err)
 	}
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
@@ -120,8 +123,8 @@ func TestHelloForOneMachineNeverTouchesAnother(t *testing.T) {
 	if _, epoch, seen := machineMarks(t, db, otherMachineID); epoch != 1 || seen.Int64 != helloAt.UnixMilli() {
 		t.Errorf("B's marks changed: last_epoch %d, last_seen %v", epoch, seen)
 	}
-	if _, epoch, _ := machineMarks(t, db, renewMachineID); epoch != 8 {
-		t.Errorf("A's last_epoch %d, want 8 (6, 7, 8 from last_epoch 5)", epoch)
+	if _, epoch, _ := machineMarks(t, db, renewMachineID); epoch != 2 {
+		t.Errorf("A's last_epoch %d, want 2", epoch)
 	}
 }
 
@@ -159,6 +162,7 @@ func TestMachineConnectionsConstraintsOnTheFile(t *testing.T) {
 		"age without displacement": func() error { return insert(5, 7, "offline", nil, 10) },
 		"negative heartbeat age":   func() error { return insert(5, 7, "displaced", 6, -1) },
 		"epoch past the agent's":   func() error { return insert(9223372036854775807, 7, "offline", nil, nil) },
+		"ended before it started":  func() error { return insert(5, 0, "offline", nil, nil) },
 		"unknown connect reason": func() error {
 			_, err := db.ExecContext(ctx, `INSERT INTO machine_connections(machine_id, epoch, boot_id, install_id, peer,
 				connect_reason, started_time) VALUES ('m2', 1, 'b', 'i', 'p', 'boot', 1)`)

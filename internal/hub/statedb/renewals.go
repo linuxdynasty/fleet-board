@@ -123,10 +123,28 @@ func checkRenewal(ctx context.Context, q querier, r Renewal) (*Renewed, error) {
 	return stored, nil
 }
 
-// checkPeer is the check RenewCert and Connect share (02g "A revoked or
-// deleted machine stays out"): a machine row for the certificate's machine
-// id that is not REVOKED, and the presented serial stored for it unrevoked.
+// checkPeer is RenewCert's check (02g "Certificate renewal (A4)"): a
+// machine row for the certificate's machine id that is not REVOKED, and the
+// presented serial stored for it unrevoked. Connect's is checkConnectPeer.
 func checkPeer(ctx context.Context, q querier, machineID, serial string) error {
+	if err := checkMachine(ctx, q, machineID); err != nil {
+		return err
+	}
+	var one int
+	err := q.QueryRowContext(ctx, `SELECT 1 FROM cert_serials WHERE serial = ? AND machine_id = ? AND revoked_time IS NULL`,
+		serial, machineID).Scan(&one)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrPeerSerialUnknown
+	}
+	if err != nil {
+		return fmt.Errorf("statedb: read peer serial: %w", err)
+	}
+	return nil
+}
+
+// checkMachine refuses a machine id with no machine row (never enrolled,
+// or deleted) and a REVOKED machine.
+func checkMachine(ctx context.Context, q querier, machineID string) error {
 	var state string
 	err := q.QueryRowContext(ctx, `SELECT state FROM machines WHERE machine_id = ?`, machineID).Scan(&state)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -137,15 +155,6 @@ func checkPeer(ctx context.Context, q querier, machineID, serial string) error {
 	}
 	if state == "REVOKED" {
 		return ErrMachineRevoked
-	}
-	var one int
-	err = q.QueryRowContext(ctx, `SELECT 1 FROM cert_serials WHERE serial = ? AND machine_id = ? AND revoked_time IS NULL`,
-		serial, machineID).Scan(&one)
-	if errors.Is(err, sql.ErrNoRows) {
-		return ErrPeerSerialUnknown
-	}
-	if err != nil {
-		return fmt.Errorf("statedb: read peer serial: %w", err)
 	}
 	return nil
 }

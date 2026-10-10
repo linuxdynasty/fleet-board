@@ -161,15 +161,15 @@ func TestANewerHelloDisplacesTheLiveConnection(t *testing.T) {
 	second := helloAt.Add(30 * time.Second)
 	cases := []struct {
 		name    string
-		live    *statedb.LiveStream
+		live    statedb.LiveStream
 		wantAge time.Duration
 		known   bool
 	}{
-		{"heartbeat known", &statedb.LiveStream{Epoch: 1, LastHeartbeat: second.Add(-12 * time.Second)}, 12 * time.Second, true},
-		{"no live stream in the registry", nil, 0, false},
-		{"registry names another epoch", &statedb.LiveStream{Epoch: 7, LastHeartbeat: second}, 0, false},
-		{"no heartbeat yet", &statedb.LiveStream{Epoch: 1}, 0, false},
-		{"heartbeat stamped after now", &statedb.LiveStream{Epoch: 1, LastHeartbeat: second.Add(time.Second)}, 0, true},
+		{"heartbeat known", statedb.LiveStream{Epoch: 1, LastHeartbeat: second.Add(-12 * time.Second)}, 12 * time.Second, true},
+		{"no live stream in the registry", statedb.LiveStream{}, 0, false},
+		{"registry names another epoch", statedb.LiveStream{Epoch: 7, LastHeartbeat: second}, 0, false},
+		{"no heartbeat yet", statedb.LiveStream{Epoch: 1}, 0, false},
+		{"heartbeat stamped after now", statedb.LiveStream{Epoch: 1, LastHeartbeat: second.Add(time.Second)}, 0, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -202,10 +202,11 @@ func TestANewerHelloDisplacesTheLiveConnection(t *testing.T) {
 	}
 }
 
-// 02g: Connect needs a live machine row and an unrevoked serial stored for
-// it, and the next epoch must fit the agent's ceiling; a refused Hello
+// 02g: Connect needs a live machine row, a serial not revoked and not
+// stored for another machine, and room for the next epoch under the agent's
+// ceiling; the machine is checked before the epoch, and a refused Hello
 // writes nothing.
-func TestHelloRefusesWithoutALiveMachineAKnownSerialOrRoomForAnEpoch(t *testing.T) {
+func TestHelloRefusesWithoutALiveMachineAnUnrevokedSerialOrRoomForAnEpoch(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
 		name  string
@@ -216,9 +217,21 @@ func TestHelloRefusesWithoutALiveMachineAKnownSerialOrRoomForAnEpoch(t *testing.
 		{"unknown machine", "", func(in *statedb.HelloIn) { in.MachineID = "01jmachine0000000000000099" }, statedb.ErrMachineUnknown},
 		{"deleted machine", `DELETE FROM enroll_responses; DELETE FROM machines`, nil, statedb.ErrMachineUnknown},
 		{"revoked machine", `UPDATE machines SET state = 'REVOKED'`, nil, statedb.ErrMachineRevoked},
-		{"revoked serial", `UPDATE cert_serials SET revoked_time = 1`, nil, statedb.ErrPeerSerialUnknown},
-		{"serial not stored", "", func(in *statedb.HelloIn) { in.PeerSerial = "ab0002" }, statedb.ErrPeerSerialUnknown},
+		{"revoked serial", `UPDATE cert_serials SET revoked_time = 1`, nil, statedb.ErrSerialRevoked},
+		{
+			"serial stored for another machine",
+			`INSERT INTO cert_serials(serial, machine_id, not_after_time, created_time) VALUES ('ab0099', 'other', 1, 1)`,
+			func(in *statedb.HelloIn) { in.PeerSerial = "ab0099" }, statedb.ErrPeerSerialUnknown,
+		},
 		{"stored epoch at the ceiling", `UPDATE machines SET last_epoch = 9223372036854775806`, nil, statedb.ErrEpochOutOfRange},
+		{
+			"revoked machine with last_epoch past the ceiling", `UPDATE machines SET state = 'REVOKED'`,
+			func(in *statedb.HelloIn) { in.LastEpoch = math.MaxUint64 }, statedb.ErrMachineRevoked,
+		},
+		{
+			"unknown machine with last_epoch at the ceiling", "",
+			func(in *statedb.HelloIn) { in.MachineID, in.LastEpoch = "01jmachine0000000000000099", statedb.MaxEpoch }, statedb.ErrMachineUnknown,
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -314,6 +327,10 @@ func TestEndConnectionClosesTheLiveRowOnce(t *testing.T) {
 	end := helloAt.Add(time.Minute)
 	if live, err := statedb.EndConnection(ctx, s, renewMachineID, 1, statedb.EndStreamClosed, end); err != nil || !live {
 		t.Fatalf("EndConnection = %v, %v; want the live row closed", live, err)
+	}
+	// defaults.md: last_seen is written on disconnect.
+	if _, _, seen := machineMarks(t, rawDB(t, dir), renewMachineID); seen.Int64 != end.UnixMilli() {
+		t.Errorf("last_seen_time after the close %v, want %d", seen, end.UnixMilli())
 	}
 	if live, err := statedb.EndConnection(ctx, s, renewMachineID, 1, statedb.EndAgentBye, end.Add(time.Minute)); err != nil || live {
 		t.Errorf("second EndConnection = %v, %v; want a no-op", live, err)

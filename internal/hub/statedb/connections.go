@@ -35,6 +35,7 @@ CREATE TABLE machine_connections(
 	last_heartbeat_age_ms INTEGER CHECK (last_heartbeat_age_ms >= 0),
 	PRIMARY KEY (machine_id, epoch),
 	CHECK ((ended_time IS NULL) = (end_reason IS NULL)),
+	CHECK (ended_time IS NULL OR ended_time >= started_time),
 	CHECK ((displaced_by IS NOT NULL) = (end_reason IS 'displaced')),
 	CHECK (last_heartbeat_age_ms IS NULL OR displaced_by IS NOT NULL)
 ) STRICT;
@@ -46,8 +47,9 @@ CREATE UNIQUE INDEX machine_connections_live ON machine_connections(machine_id) 
 // rather than answered with an epoch the agent drops.
 const MaxEpoch uint64 = math.MaxInt64 - 1
 
-// Hello refusals other than [ErrMachineUnknown], [ErrMachineRevoked] and
-// [ErrPeerSerialUnknown], which mean what they mean for [Renew].
+// Hello refusals other than [ErrMachineUnknown] and [ErrMachineRevoked],
+// which mean what they mean for [Renew], and [ErrPeerSerialUnknown], which
+// for Hello means only a serial stored for another machine.
 var (
 	// ErrHelloInvalid: a HelloIn field is empty, too long or not printable
 	// ASCII, or its Reason is not a [ConnectReason].
@@ -55,6 +57,8 @@ var (
 	// ErrEpochOutOfRange: max(stored epoch, Hello.last_epoch) + 1 would pass
 	// [MaxEpoch]. Nothing is written.
 	ErrEpochOutOfRange = errors.New("statedb: the next connection epoch is out of range")
+	// ErrSerialRevoked: the presented serial is stored with a revoked_time.
+	ErrSerialRevoked = errors.New("statedb: the certificate serial is revoked")
 	// ErrEndReasonInvalid: EndConnection was given a reason that is not an
 	// [EndReason] it may write.
 	ErrEndReasonInvalid = errors.New("statedb: invalid connection end reason")
@@ -101,11 +105,13 @@ type HelloIn struct {
 	// Peer is the stream's remote address (host:port), at most 128 bytes.
 	Peer   string
 	Reason ConnectReason
-	// Live is what the gateway's registry knew of the machine's live stream
-	// before it submitted, or nil. Its LastHeartbeat is recorded as the
-	// displaced connection's heartbeat age only when Live.Epoch is the epoch
-	// of the row this Hello displaces; otherwise the age is unknown.
-	Live *LiveStream
+	// Live is a copy of what the gateway's registry knew of the machine's
+	// live stream before it submitted; Epoch 0 means none. It is a value so
+	// the caller takes the copy under its own lock: the job reads it on the
+	// writer goroutine. Its LastHeartbeat is recorded as the displaced
+	// connection's heartbeat age only when Live.Epoch is the epoch of the
+	// row this Hello displaces; otherwise the age is unknown.
+	Live LiveStream
 	Now  time.Time
 }
 
@@ -158,15 +164,20 @@ var endReasons = map[EndReason]bool{
 // Hello records an accepted Hello as one writer job, and its result arrives
 // only after the commit (02i "Connection epoch", 03n, 03f race table):
 //
-//   - checks, as [Renew] does, a machine row for MachineID that is not
-//     REVOKED ([ErrMachineUnknown], [ErrMachineRevoked]) and PeerSerial
-//     stored for it unrevoked ([ErrPeerSerialUnknown]);
-//   - sets the epoch to max(machines.last_epoch, LastEpoch) + 1, or refuses
-//     with [ErrEpochOutOfRange] past [MaxEpoch];
+//   - checks a machine row for MachineID that is not REVOKED
+//     ([ErrMachineUnknown], [ErrMachineRevoked]) and that PeerSerial is not
+//     revoked ([ErrSerialRevoked]) nor stored for another machine
+//     ([ErrPeerSerialUnknown]); a serial the store lacks is accepted;
+//   - then sets the epoch to max(machines.last_epoch, LastEpoch) + 1, or
+//     refuses with [ErrEpochOutOfRange] past [MaxEpoch];
 //   - closes the machine's live machine_connections row, whichever stream
 //     it belongs to, as displaced by the new epoch, and returns it in
-//     HelloOut.Displaced;
+//     HelloOut.Displaced: possibly a row a hub crash left live, which no
+//     stream holds;
 //   - inserts the new live row and stores last_epoch and last_seen_time.
+//
+// Times never step back: an end before the row's start is stored as the
+// start, and last_seen_time only moves forward.
 //
 // It never changes machines.state: the Snapshot transaction marks the
 // machine ONLINE (row 5 ruling, fork 1). A malformed HelloIn is
@@ -203,8 +214,6 @@ func (in HelloIn) validate() error {
 		return fmt.Errorf("%w: peer must be 1 to 128 printable ASCII characters without spaces", ErrHelloInvalid)
 	case !connectReasons[in.Reason]:
 		return fmt.Errorf("%w: unknown connect reason", ErrHelloInvalid)
-	case in.LastEpoch >= MaxEpoch:
-		return fmt.Errorf("%w: last_epoch %d", ErrEpochOutOfRange, in.LastEpoch)
 	}
 	return nil
 }
@@ -223,7 +232,7 @@ func printable(s string, n int) bool {
 }
 
 func applyHello(ctx context.Context, tx *sql.Tx, in HelloIn) (HelloOut, error) {
-	if err := checkPeer(ctx, tx, in.MachineID, in.PeerSerial); err != nil {
+	if err := checkConnectPeer(ctx, tx, in.MachineID, in.PeerSerial); err != nil {
 		return HelloOut{}, err
 	}
 	var out HelloOut
@@ -241,7 +250,7 @@ func applyHello(ctx context.Context, tx *sql.Tx, in HelloIn) (HelloOut, error) {
 	}
 	prev := max(uint64(stored), in.LastEpoch) //nolint:gosec // G115: last_epoch has CHECK BETWEEN 0 AND MaxEpoch
 	if prev >= MaxEpoch {
-		return HelloOut{}, fmt.Errorf("%w: stored epoch %d", ErrEpochOutOfRange, prev)
+		return HelloOut{}, fmt.Errorf("%w: max(stored, last_epoch) is %d", ErrEpochOutOfRange, prev)
 	}
 	out.Epoch = prev + 1
 	if out.Displaced, err = displace(ctx, tx, in, out.Epoch); err != nil {
@@ -260,6 +269,37 @@ func applyHello(ctx context.Context, tx *sql.Tx, in HelloIn) (HelloOut, error) {
 	return out, nil
 }
 
+// checkConnectPeer is Connect's check (02g "A revoked or deleted machine
+// stays out", 03f "Revocation"): a machine row that is not REVOKED, and a
+// presented serial that is neither revoked ([ErrSerialRevoked]) nor stored
+// for another machine ([ErrPeerSerialUnknown]). A serial the store does not
+// have is accepted: TLS verified the certificate against the CA and the
+// revocation list, and a hub restored from a backup older than the
+// machine's last renewal has no row for its serial. RenewCert is stricter
+// (checkPeer).
+func checkConnectPeer(ctx context.Context, q querier, machineID, serial string) error {
+	if err := checkMachine(ctx, q, machineID); err != nil {
+		return err
+	}
+	var (
+		owner   string
+		revoked sql.NullInt64
+	)
+	err := q.QueryRowContext(ctx, `SELECT machine_id, revoked_time FROM cert_serials WHERE serial = ?`, serial).
+		Scan(&owner, &revoked)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		return nil
+	case err != nil:
+		return fmt.Errorf("statedb: read peer serial: %w", err)
+	case owner != machineID:
+		return ErrPeerSerialUnknown
+	case revoked.Valid:
+		return ErrSerialRevoked
+	}
+	return nil
+}
+
 // displace closes the machine's live row, if any, as displaced by epoch.
 func displace(ctx context.Context, tx *sql.Tx, in HelloIn, epoch uint64) (*Displaced, error) {
 	var (
@@ -276,12 +316,12 @@ func displace(ctx context.Context, tx *sql.Tx, in HelloIn, epoch uint64) (*Displ
 	}
 	d.Epoch, d.Started = uint64(old), time.UnixMilli(started) //nolint:gosec // G115: epoch has CHECK >= 1
 	var age sql.NullInt64
-	if l := in.Live; l != nil && l.Epoch == d.Epoch && !l.LastHeartbeat.IsZero() {
+	if l := in.Live; l.Epoch == d.Epoch && !l.LastHeartbeat.IsZero() { // d.Epoch >= 1, so Epoch 0 never matches
 		d.HeartbeatAge = max(in.Now.Sub(l.LastHeartbeat), 0).Truncate(time.Millisecond)
 		d.HeartbeatKnown = true
 		age = sql.NullInt64{Int64: d.HeartbeatAge.Milliseconds(), Valid: true}
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE machine_connections SET ended_time = ?, end_reason = ?, displaced_by = ?,
+	if _, err := tx.ExecContext(ctx, `UPDATE machine_connections SET ended_time = max(?, started_time), end_reason = ?, displaced_by = ?,
 		last_heartbeat_age_ms = ? WHERE machine_id = ? AND epoch = ?`,
 		in.Now.UnixMilli(), string(EndDisplaced), int64(epoch), age, in.MachineID, old); err != nil { //nolint:gosec // G115: epoch <= MaxEpoch
 		return nil, fmt.Errorf("statedb: close displaced connection: %w", err)
@@ -307,7 +347,7 @@ func EndConnection(ctx context.Context, s *store.Store, machineID string, epoch 
 	jctx := context.WithoutCancel(ctx) // see insertIdentity
 	var closed bool
 	err := s.Write(ctx, func(tx *sql.Tx) error {
-		res, err := tx.ExecContext(jctx, `UPDATE machine_connections SET ended_time = ?, end_reason = ?
+		res, err := tx.ExecContext(jctx, `UPDATE machine_connections SET ended_time = max(?, started_time), end_reason = ?
 			WHERE machine_id = ? AND epoch = ? AND ended_time IS NULL`, now.UnixMilli(), string(reason), machineID, int64(epoch)) //nolint:gosec // G115: epoch <= MaxEpoch
 		if err != nil {
 			return fmt.Errorf("statedb: close connection: %w", err)

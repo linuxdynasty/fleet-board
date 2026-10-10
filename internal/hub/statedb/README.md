@@ -123,9 +123,14 @@ r, err := statedb.Renew(ctx, s, statedb.Renewal{MachineID: id, PeerSerial: seria
   displacement, NULL when unknown). A partial unique index allows one live
   row (`ended_time` NULL) per machine. No foreign key to `machines`, so the
   history outlives `DeleteMachine`.
-- **`Hello`** is one writer job. It runs the `Renew` check (a machine row
-  that is not `REVOKED`, the peer serial stored for it unrevoked), sets the
-  epoch to `max(last_epoch, Hello.last_epoch) + 1` (`ErrEpochOutOfRange`
+- **`Hello`** is one writer job. It checks a machine row that is not
+  `REVOKED` (`ErrMachineUnknown`, `ErrMachineRevoked`) and a peer serial that
+  is not revoked (`ErrSerialRevoked`, which 5a-ii answers with
+  `Bye{REVOKED}`) nor stored for another machine (`ErrPeerSerialUnknown`).
+  Unlike `Renew` it accepts a serial the store does not have: TLS verified
+  the certificate, and a hub restored from a backup older than the
+  machine's last renewal has no row for it (02g only asks Connect for a live
+  machine row and an unrevoked serial). Only then does it set the epoch to `max(last_epoch, Hello.last_epoch) + 1` (`ErrEpochOutOfRange`
   past `MaxEpoch`, the agent's ceiling), closes the machine's live row as
   `displaced` and returns it as `HelloOut.Displaced`, inserts the new live
   row and stores `last_epoch` and `last_seen_time`. It never changes
@@ -135,6 +140,12 @@ r, err := statedb.Renew(ctx, s, statedb.Renewal{MachineID: id, PeerSerial: seria
   without spaces and `peer` at most 128 (`ErrHelloInvalid`). The heartbeat
   age is recorded only when `HelloIn.Live` names the displaced epoch: the
   caller's registry may lag the store, and an unknown age stays unknown.
+  `Live` is a value (`Epoch` 0 is none): the caller copies its registry
+  entry under its own lock, because the job reads it on the writer
+  goroutine.
+- **Times never step back.** An end before the row's start (a hub clock
+  stepped back) is stored as the start, and the table refuses
+  `ended_time < started_time`; `last_seen_time` only moves forward.
 - **What `HelloAck` gets from the store:** `Epoch`, `SettingsEpoch`
   (`hub_identity`), and `HubLastEventSeq` and `SettingsGeneration`, both 0
   until plan rows 5c and 5h store them. `hub_instance_id` is per process
@@ -146,6 +157,23 @@ r, err := statedb.Renew(ctx, s, statedb.Renewal{MachineID: id, PeerSerial: seria
   change machine state (03f, "The displaced stream closes after the newer
   Hello"). A row left live by a crash is closed as `displaced` by the
   machine's next Hello; the hub-start sweep is plan row 5b's.
+
+Notes for the rows that build on this:
+
+- **5a-ii:** `HelloOut.Displaced` may name a row a hub crash left live
+  (heartbeat age unknown), which no stream holds: check the registry before
+  sending `Bye{DUPLICATE_IDENTITY}` or counting
+  `fleet_hub_duplicate_identity_total`. Log every refusal; one is
+  `ErrEpochOutOfRange`: an agent holding the machine's certificate that
+  sends `last_epoch = MaxEpoch - 1` takes the last epoch, and every later
+  Hello for that machine is refused for good. Only that certificate's
+  holder can do it; recovery is revoking and deleting the machine and
+  enrolling it again.
+- **13a:** `RevokeMachine` closes the live row with
+  `EndConnection(EndRevoked)` after sending `Bye{REVOKED}`, and
+  `DeleteMachine` closes any live row; the history rows stay.
+- **5m:** the 30-day prune of `machine_connections` (03f) is 5m's; nothing
+  prunes the table yet.
 
 ```go
 out, err := statedb.Hello(ctx, s, statedb.HelloIn{MachineID: id, PeerSerial: serial, LastEpoch: h.GetLastEpoch(), ...})
@@ -171,8 +199,11 @@ The row 5 tests cover `Hello` and `EndConnection` with rows read from the
 file: epoch 1 with the machine state unchanged, `max(stored, last_epoch) + 1`
 (agent behind, equal, ahead of a restored hub), the epoch kept across a
 reopen, displacement with and without a known heartbeat age, each refusal
-writing nothing, 48 concurrent Hellos for one machine leaving one live row,
-a Hello for one machine never touching another, `EndConnection` closing once
-and a displaced stream's close as a no-op, every end reason stored, the
+writing nothing (the machine checked before the epoch), a serial the store
+lacks accepted, 48 concurrent Hellos for one machine leaving one live row, a
+Hello for one machine never touching another at the same epoch,
+`EndConnection` closing once (moving `last_seen_time`) and a displaced
+stream's close as a no-op, times never stepping back, `Live` copied while
+the caller keeps writing its entry (`-race`), every end reason stored, the
 table constraints by raw SQL, a row 4 store gaining the table, and
 `MaxEpoch` equal to the agent's `ring.MaxEpoch`.

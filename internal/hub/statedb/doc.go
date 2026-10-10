@@ -34,10 +34,12 @@
 // writer job.
 //
 // Plan row 5 (PR 5a-i) adds machine_connections and the machine's
-// last_epoch and last_seen_time. [Hello] is one writer job: the [Renew]
-// machine and serial check, epoch = max(stored, Hello.last_epoch) + 1
-// ([ErrEpochOutOfRange] past [MaxEpoch]), the machine's live row closed as
-// displaced and returned, the new live row, and never a change of
-// machines.state (the Snapshot transaction marks ONLINE). [EndConnection]
+// last_epoch and last_seen_time. [Hello] is one writer job: a live machine
+// row and a serial that is not revoked ([ErrSerialRevoked]; unlike [Renew],
+// a serial the store lacks is accepted), then epoch = max(stored,
+// Hello.last_epoch) + 1 ([ErrEpochOutOfRange] past [MaxEpoch]), the
+// machine's live row closed as displaced and returned, the new live row,
+// and never a change of machines.state (the Snapshot transaction marks
+// ONLINE). [EndConnection]
 // closes one epoch's row if it is still live and reports whether it did.
 package statedb
