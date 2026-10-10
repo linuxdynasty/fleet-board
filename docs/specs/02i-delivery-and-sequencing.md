@@ -122,7 +122,8 @@ then dropped the new events as "already seen". The rules:
    to `max(own, HelloAck.hub_last_event_seq + 1)`, and discards ring entries
    with `seq <= hub_last_event_seq` that it did not send (they cannot be told
    from another incarnation's). `Snapshot.seq` is the highest number handed out
-   after that floor. A state-directory wipe, a restored VM image or a re-install
+   after that floor when the snapshot starts to be built, so an event emitted
+   while it is built gets a higher seq and is not superseded by it. A state-directory wipe, a restored VM image or a re-install
    (new `install_id`) therefore resumes above what the hub holds instead of
    being discarded as duplicates.
 3. **Rollback on the hub's side.** The hub treats `Hello.last_event_seq <
@@ -173,9 +174,12 @@ Q9). Row 4 (PR 3) adds the block allocator of rule 1: the agent raises
 above 2^63 - 2 or a `hub_last_event_seq` above 2^63 - 1 - 1024 is refused
 before either is saved: the file keeps signed 64-bit values that never go
 back, and the limits keep the hub's next epoch (the stored one plus 1) and
-the first seq block above the floor from overflowing them. The event ring
+the first seq block above the floor from overflowing them. `Heartbeat.event_seq`
+is the highest seq the running agent handed out, never a reserved one or a
+floor no event has used yet; every `Snapshot` takes a seq, so it is set
+from the first heartbeat on. The event ring
 itself comes with the rows that emit events. Probe assignments, the goal
-registry and the rest of 03's W2 persistence table will come with their own
+registry and the rest of 03n's W2 persistence table will come with their own
 rows.
 
 | Table | Holds | Rule |

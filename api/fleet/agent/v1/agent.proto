@@ -421,8 +421,9 @@ enum ByeReason {
   BYE_REASON_DUPLICATE_IDENTITY = 4;
   // Hub: the machine was revoked (RevokeMachine). Sent at once on the live
   // Connect stream, which then closes together with Terminal and SessionLog;
-  // every later Hello gets it too. The agent stops, reports in `doctor` and
-  // re-enrolls only with a new token.
+  // every later handshake fails (02g); the agent records the end in
+  // `ended.json` and does not reconnect until it is re-enrolled. The agent
+  // stops, reports in `doctor` and re-enrolls only with a new token.
   BYE_REASON_REVOKED = 5;
   // Hub: no common proto version.
   BYE_REASON_PROTO_UNSUPPORTED = 6;

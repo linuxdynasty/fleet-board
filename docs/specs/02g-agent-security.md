@@ -126,7 +126,7 @@ handshake through `Bye` (`ByeReason`), not through a missing message:
 
 | Situation | What the hub or agent does |
 |---|---|
-| Machine revoked | Hub: `Bye{REVOKED}`, then closes; the agent goes Unenrolled and `doctor` says "revoked, needs a new token" |
+| Machine revoked | Hub: `Bye{REVOKED}`, then closes; the agent records the end in `ended.json` and does not reconnect until it is re-enrolled. The agent goes Unenrolled and `doctor` says "revoked, needs a new token" |
 | Certificate valid, machine id unknown to the hub (store recreated with the CA kept, or a backup that predates the enrollment) | Hub: `Bye{UNKNOWN_MACHINE}`, except the restore adoption below. The agent goes Unenrolled; the owner issues a token (a request `previous_machine_id` that no longer exists is ignored, so history cannot carry over) |
 | `HelloAck.fleet_id` is not the enrolled fleet | Agent: `Bye{FLEET_MISMATCH}`, does not reconnect until re-enrolled. mTLS against the pinned CA already makes this rare; the field covers a hub rebuilt with the same CA and a new id |
 | No common protocol version | Hub: `Bye{PROTO_UNSUPPORTED}` |

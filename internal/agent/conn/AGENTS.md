@@ -20,8 +20,20 @@ Read the root `AGENTS.md` first; it applies here. Load `fleet-go`,
 - Never read or touch a harness's files or credentials from here.
 - Text from the hub is trusted only after the pin, and still capped and
   stripped of control characters before it is saved or printed.
-- A change here updates this README, `doc.go` and 03 W1 (and 02g if the
-  enroll steps change) in the same commit.
-- Tests use `conntest` (the real hub listener) or the fake hub in
-  `fakehub_test.go`; a new refusal needs a test that proves nothing was sent
-  or saved.
+- A change here updates this README, `doc.go` and 03 W1 and 03n W2 (and 02g if
+  the enroll steps change, 02i if seq or epoch handling does) in the same
+  commit.
+- The loop ends on its own only for the four `End` values; anything else
+  is a reconnect with backoff. Adding an end needs a spec change (03 W1).
+  Revoked, unknown machine and fleet mismatch are written to `ended.json`
+  (through `writePrivate`, replace) before `Run` returns, and `CheckEnded`
+  refuses a run for that machine before anything touches the network;
+  never move that check after a dial, and never record `cert_expired`.
+- One goroutine sends on a stream (Run's); the receiver only hands
+  messages over. The heartbeat is a ticker case in `serve`'s select, never
+  a goroutine of its own, so nothing lands between a snapshot and its
+  results. A snapshot belongs to its stream and is never carried to
+  the next. No agent.db write waits on the network.
+- Tests use `conntest` (the real hub listener), the fake hub in
+  `fakehub_test.go`, or `connecthub_test.go` for Connect; a new refusal
+  needs a test that proves nothing was sent or saved.

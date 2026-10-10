@@ -8,7 +8,7 @@ Read the root `AGENTS.md` first; it applies here. Load `fleet-go` and
 - Every write is a store job: no network call, no wait on another goroutine
   inside it. Read what a decision needs inside the same job.
 - Migrations are forward-only: never edit one that has shipped; append the
-  next. Each table cites the spec line it implements (02i, 03 W2, 04 Q9).
+  next. Each table cites the spec line it implements (02i, 03n W2, 04 Q9).
 - Nothing in `agent_state` goes backwards, and a logged result never
   changes; a rule like that gets a trigger or constraint in the file, not
   only a check in Go, and a test that writes the file directly.

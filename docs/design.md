@@ -156,6 +156,7 @@ flowchart TB
 | Dispatching a goal (`StartGoal`) | [02h](specs/02h-goal-binding-and-pane-signals.md), [03c](specs/03c-goals.md) |
 | When a worker is free: `DONE` is a claim, verified before freeing | [03l](specs/03l-goal-lifecycle-and-verification.md), [03h](specs/03h-goal-phases-in-depth.md) |
 | Work item stages, goal phases, routines | [03m](specs/03m-work-source-and-code-host-sync.md), [03l](specs/03l-goal-lifecycle-and-verification.md), [03i](specs/03i-routines.md) |
+| Agent connection: enroll, connect, reconnect, the end that stops `run` | [02g](specs/02g-agent-security.md), [03](specs/03-workflows.md) W1, [03n](specs/03n-reconnect.md) W2, [02i](specs/02i-delivery-and-sequencing.md) |
 | Reliability: nudges, cooldown, review-loop cap, preflight, failed starts | [03h](specs/03h-goal-phases-in-depth.md) |
 | The dashboard views | [ui-contract-map](specs/ui-contract-map.md), [05](specs/05-insights.md), [05b](specs/05b-observability.md) |
 | Scheduling by weekly or monthly usage, reading usage | [03b](specs/03b-usage-and-sync.md) |
