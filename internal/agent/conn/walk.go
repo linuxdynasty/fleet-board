@@ -95,12 +95,15 @@ func (w *walk) candidate(c candidate) (context.Context, func(err error)) {
 
 // startBrowse starts this attempt's one mDNS browse, inside the walk; when
 // it ends it is kept in the status and logged as connect.browse.
-func (l *Loop) startBrowse(w *walk) *browse {
+func (l *Loop) startBrowse(w *walk, lim mdnsLimits) *browse {
 	// The span outlives this call: the browse's report ends it.
-	bctx, span := l.tracer.Start(w.ctx, "agent.discover.browse")                                                 //nolint:spancheck // ended in report
-	return startBrowse(bctx, l.opts.Discover, l.opts.BrowseTimeout, func(st BrowseStatus, first time.Duration) { //nolint:spancheck // report ends the span
+	bctx, span := l.tracer.Start(w.ctx, "agent.discover.browse")                                                      //nolint:spancheck // ended in report
+	return startBrowse(bctx, l.opts.Discover, l.opts.BrowseTimeout, lim, func(st BrowseStatus, first time.Duration) { //nolint:spancheck // report ends the span
 		l.status.update(func(s *Status) { s.Browse = st })
 		args := []any{"kept", st.Kept, "dropped", st.Dropped, "elapsed_ms", st.Elapsed.Milliseconds()}
+		if st.Dropped > 0 {
+			args = append(args, "dropped_by", st.DroppedBy)
+		}
 		if first >= 0 {
 			args = append(args, "first_ms", first.Milliseconds())
 		}
@@ -113,4 +116,28 @@ func (l *Loop) startBrowse(w *walk) *browse {
 		}
 		span.End()
 	})
+}
+
+// tryMDNS is an attempt's mDNS phase: one browse, each answer tried as it
+// arrives within its own budget, and the whole phase capped, so answers
+// that never reply cannot keep the configured addresses waiting.
+func (l *Loop) tryMDNS(ctx context.Context, w *walk, next func(candidate) (ending, bool)) (ending, bool) {
+	lim := l.opts.mdns.withDefaults()
+	end := time.Now().Add(lim.phase)
+	b := l.startBrowse(w, lim)
+	defer b.stop()
+	tried := 0
+	for c := range b.cands {
+		left := time.Until(end)
+		if left <= 0 {
+			l.log.InfoContext(w.ctx, "connect.mdns_cut", "tried", tried, "phase_ms", lim.phase.Milliseconds())
+			return ending{}, false
+		}
+		c.budget = min(lim.try, left)
+		tried++
+		if out, done := next(c); done {
+			return out, true
+		}
+	}
+	return ending{}, false
 }

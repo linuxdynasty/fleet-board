@@ -72,7 +72,11 @@ func (l *Loop) try(ctx context.Context, c candidate, reason agentv1.ConnectReaso
 		args = append(args, "dial", c.dial)
 	}
 	l.log.InfoContext(cctx, "connect.attempt", args...)
-	k, err := newLinkVia(c.addr, c.dial, l.fp, l.cert, l.opts.Keepalive, l.opts.HandshakeTimeout, func(err error) {
+	hs := l.opts.HandshakeTimeout
+	if c.budget > 0 {
+		hs = c.budget
+	}
+	k, err := newLinkVia(c.addr, c.dial, l.fp, l.cert, l.opts.Keepalive, hs, func(err error) {
 		heard(err)
 		if err == nil {
 			w.found(c.source)

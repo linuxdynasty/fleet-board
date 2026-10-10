@@ -149,14 +149,30 @@ cached address failed, and a browse that finds nothing moves on to the
 configured addresses in the same attempt. Only names ending in
 `._fleetd._tcp.local.` are kept; each kept entry is a candidate, tried as it
 arrives, and the first that passes TLS wins, so the agent does not wait out the
-browse timeout. A kept entry names the hub by its SRV target (the name the
-hub's certificate must hold, checked by the pin) and is dialed at the address
-in its answer; it is logged and cached by that name. Local config for hub
-addresses is not built in v1 yet. `fleet-agent enroll` with no `--hub` runs one
-browse and sends its request only to the first answer whose handshake proves it
-holds the token's CA; an answer that fails the handshake or cannot be reached
-gets nothing more and the next is tried, and the 60 s whole-enroll cap covers
-the browse and those handshakes. Wake, network change and a successful connect reset the backoff
+browse timeout. The browse is a run of 500 ms queries within its 2 s: the
+library keeps writing an answer it already handed over until its query returns,
+so an answer is read only then, and "as it arrives" means within one query
+window (the first answer comes at most one window plus a round trip after it
+was sent). A kept entry names the hub by its SRV target (the name the hub's
+certificate must hold, checked by the pin) and is dialed at the address in its
+answer; it is logged and cached by that name. An answer is dropped, counted by
+reason, when its name is not a fleetd one (`not_hub_name`), its port is not
+1 to 65535 (`bad_port`), its target is not a host name or names this machine
+(`localhost`, `*.localhost`, a loopback or unspecified address: `bad_host`),
+its address is not another machine's unicast address (loopback, unspecified,
+multicast, broadcast, IPv4 inside IPv6 judged as IPv4, link-local IPv6 without
+its zone: `bad_addr`), or 16 were already kept (`over_cap`). Each answer gets
+3 s for its dial and handshake together, and the mDNS part of an attempt 8 s,
+after which the configured addresses are tried (`connect.mdns_cut`), so
+answers that accept and never reply cannot hold the attempt. Local config for
+hub addresses is not built in v1 yet. `fleet-agent enroll` with no `--hub`
+runs one browse and sends its request only to the first answer whose handshake
+proves it holds the token's CA, with the same per-answer and whole-search
+limits; an answer that fails the handshake or cannot be reached gets nothing
+more and the next is tried. For row 5: the hub's certificate must name the SRV
+target it advertises, the advertisement must carry a TXT record (the library
+hands over only answers that have one), and it must never advertise a
+loopback address or name. Wake, network change and a successful connect reset the backoff
 to its first step; the attempt a wake or network change starts waits a short
 random delay first ([defaults](defaults.md)), so machines that see the same
 event do not query together. A network change here means a confirmed one
@@ -256,7 +272,7 @@ re-enroll rule are in [02g](02g-agent-security.md#machine-lifecycle-revoke-and-d
 | Enroll response lost after the token burned | Run `enroll` again: the same token, `install_id` and CSR key return the stored response (`replayed = true`), same `machine_id` and certificate, no second machine row |
 | Impostor at the address the owner typed or mDNS found | The agent verifies the server chain against the CA SHA-256 inside the token before sending the token or CSR (the hub sends its CA certificate after its own so the agent can find that root); the impostor learns nothing and the agent aborts (no TOFU). A handshake the peer fails (the pin, the name, the key proof, or a non-TLS answer) is untrusted and never retried, including one that fails after the pin passed (a copied chain without its key); `enroll.hub_untrusted{peer}`, exit 1. A connection that drops, resets or times out during the handshake is a lost connection and is retried within "Enroll tries". With no `--hub`, an mDNS answer that fails the handshake is skipped instead: it got the handshake and nothing else, and the next answer is tried |
 | A malformed token | Exit 1 with a line that says so; no state folder is created and nothing is sent |
-| `enroll` with no `--hub` and no hub found (nothing answered, the browse could not run, or no answer passed the pinned handshake) | Exit 1 naming `--hub` and the likely cause, a host firewall that drops direct UDP replies to the mDNS query (ADR 0028); no token, CSR or facts sent; `enroll.failed{step="discover"}` with `err_kind` `timeout`, `io` or `refused` |
+| `enroll` with no `--hub` and no hub found | Exit 1 naming `--hub` and what was seen, with no token, CSR or facts sent; `enroll.failed{step="discover"}`. Nothing answered: the likely cause, a host firewall that drops direct UDP replies to the mDNS query (ADR 0028), `err_kind="timeout"`; the browse could not run: `"io"`, with the same advice; answers that failed the handshake ("none proved it holds this token's CA") or could not be reached ("could not be reached": `"refused"` when every one refused the connection, else `"timeout"`), or both: no firewall advice. The whole-enroll cap or a stop during the search says so instead (`"timeout"`), with no advice |
 | `hub-addresses` damaged (no valid line), open to other users, or not a file | Ignored: the run starts with the `identity.json` list, `connect.addresses{source="identity", err_kind}`; a valid line among invalid ones is used and the rest dropped. A save that fails logs `connect.failed{step="save"}` and the stream stays up |
 | `enroll` on a machine that is already enrolled | Until re-enroll exists (later in plan row 4, and row 13a's `previous_machine`): refused before any network call, naming the machine; the identity is never replaced. To start again the owner removes only `identity.json` (and `enroll.key` if present) and keeps `agent.db`, which holds `install_id`, so the next enroll with a new token keeps it; exit 1. A leftover `enroll.key` next to a valid identity is removed |
 | Enroll response that fails the agent's checks (another CA or fingerprint, a certificate not for this key or machine id, no fleet id or salt) | Nothing saved, the key kept for a retry; `enroll.failed{step="response"}`, exit 1 |
@@ -297,8 +313,9 @@ re-enroll rule are in [02g](02g-agent-security.md#machine-lifecycle-revoke-and-d
 - Spans: `agent.enroll`, `agent.discover` (one attempt's search, ended at the
   first handshake that passes: an `agent.discover.browse` child for the mDNS
   browse and an `agent.discover.candidate` child per candidate, with `peer`,
-  `source` and `result`; in enroll without `--hub`, the browse and one child
-  per answer probed),
+  `source` and `result` (`found`, `none`, or `stopped` when the run stopped
+  during the search); in enroll without `--hub`, the browse and one child per
+  answer probed),
   `agent.connect.hello`, `hub.connect.hello`, `hub.snapshot.apply`.
 - Logs: `enroll.issued{machine, expire_time, actor}`, `enroll.issue_refused{reason}`,
   `enroll.issue_failed{step, err_kind}`,
@@ -343,9 +360,11 @@ re-enroll rule are in [02g](02g-agent-security.md#machine-lifecycle-revoke-and-d
   attempts they start are counted by `fleet_agent_connect_attempts_total`.
 - The connection loop (`fleet-agent run`), agent logs:
   `connect.attempt{peer, source, reason}` (and `dial`, the answer's address,
-  for an mDNS candidate); `connect.browse{kept, dropped, elapsed_ms,
-  first_ms}` after each mDNS browse (`first_ms` when one was kept; a warning
-  with `err_kind` when the browse could not run); `connect.addresses{source,
+  for an mDNS candidate); `connect.browse{kept, dropped, dropped_by,
+  elapsed_ms, first_ms}` after each mDNS browse (`dropped_by` counts drops by
+  reason, set when any was dropped; `first_ms` when one was kept; a warning
+  with `err_kind` when the browse could not run); `connect.mdns_cut{tried,
+  phase_ms}` when the mDNS part of an attempt ran out of time; `connect.addresses{source,
   count, dropped}` at start, the list the run uses (`source`:
   `hub-addresses` or `identity`, with `err_kind` when `hub-addresses` was
   there but unusable) and `connect.addresses_saved{peer, count}` when a

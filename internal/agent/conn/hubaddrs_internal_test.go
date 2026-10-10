@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"slices"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -55,7 +56,11 @@ func TestAKillDuringTheAddressListWriteLeavesAWholeList(t *testing.T) {
 		if err := cmd.Process.Kill(); err != nil {
 			t.Fatal(err)
 		}
-		_ = cmd.Wait()
+		// A helper that ended on its own (a failed write) proves nothing.
+		var ee *exec.ExitError
+		if err := cmd.Wait(); !errors.As(err, &ee) || !killed(ee) {
+			t.Fatalf("the helper ended before the kill: %v", err)
+		}
 		got, dropped, err := loadHubAddresses(dir)
 		switch {
 		case errors.Is(err, fs.ErrNotExist):
@@ -95,4 +100,10 @@ func TestHubAddressesWriteHelper(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+}
+
+// killed reports whether the process ended by SIGKILL.
+func killed(ee *exec.ExitError) bool {
+	ws, ok := ee.Sys().(syscall.WaitStatus)
+	return ok && ws.Signaled() && ws.Signal() == syscall.SIGKILL
 }

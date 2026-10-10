@@ -63,8 +63,9 @@ func newLink(addr string, fp [32]byte, cert tls.Certificate, ka Keepalive, hs ti
 }
 
 // newLinkVia is newLink dialing dial (an mDNS answer's address) when it is
-// set; addr still names the hub the certificate must hold. onHandshake,
-// when set, hears each handshake's outcome (nil when it passed).
+// set; addr still names the hub the certificate must hold, and hs then
+// bounds the dial and the handshake together. onHandshake, when set, hears
+// each handshake's outcome (nil when it passed).
 func newLinkVia(addr, dial string, fp [32]byte, cert tls.Certificate, ka Keepalive, hs time.Duration,
 	onHandshake func(err error),
 ) (*link, error) {
@@ -83,6 +84,9 @@ func newLinkVia(addr, dial string, fp [32]byte, cert tls.Certificate, ka Keepali
 		DialTLSContext: func(ctx context.Context, network, address string) (net.Conn, error) {
 			if dial != "" {
 				address = dial
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithTimeout(ctx, hs)
+				defer cancel()
 			}
 			heard := func(err error) {
 				if onHandshake != nil {

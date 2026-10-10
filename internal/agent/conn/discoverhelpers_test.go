@@ -141,3 +141,51 @@ func attempts(t *testing.T, a *agent) [][2]string {
 	}
 	return out
 }
+
+// useMDNS has the loop browse with d, with the default budgets and the
+// test hubs' loopback answers let through.
+func useMDNS(o *conn.LoopOptions, d conn.Discover) {
+	o.Discover = d
+	conn.SetMDNSLimits(o, 0, 0)
+}
+
+// enrollMDNS is useMDNS for Enroll.
+func enrollMDNS(d conn.Discover) func(*conn.Options) {
+	return func(o *conn.Options) {
+		o.Discover = d
+		conn.SetEnrollMDNSLimits(o, 0, 0)
+	}
+}
+
+// blackhole is a TCP listener that accepts and never answers, until the
+// test ends.
+func blackhole(t *testing.T) string {
+	t.Helper()
+	var lc net.ListenConfig
+	ln, err := lc.Listen(context.Background(), "tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var mu sync.Mutex
+	var held []net.Conn
+	t.Cleanup(func() {
+		_ = ln.Close()
+		mu.Lock()
+		defer mu.Unlock()
+		for _, c := range held {
+			_ = c.Close()
+		}
+	})
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			mu.Lock()
+			held = append(held, c)
+			mu.Unlock()
+		}
+	}()
+	return ln.Addr().String()
+}

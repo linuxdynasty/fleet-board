@@ -1,6 +1,9 @@
 package conn_test
 
 import (
+	"context"
+	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
@@ -9,6 +12,7 @@ import (
 
 	agentv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1"
 	"github.com/linuxdynasty/fleet-board/internal/agent/conn"
+	"github.com/linuxdynasty/fleet-board/internal/hub/ca"
 )
 
 // The hub's latest address list outlives a restart: the list a HelloAck
@@ -21,8 +25,7 @@ func TestTheHubsAddressListSurvivesARestart(t *testing.T) {
 	h.mu.Lock()
 	old := h.srv
 	h.mu.Unlock()
-	moved := closedAddr(t)
-	h.listen(t, moved) // the same hub, also at its new address
+	moved := serveAlso(t, h) // the same hub, also at its new address
 	h.set(func(h *connectHub) {
 		h.tamperAck = func(_ int, ack *agentv1.HelloAck) { ack.HubAddresses = []string{moved, "not an address!"} }
 	})
@@ -161,7 +164,32 @@ func TestADamagedListFallsBackToTheIdentityList(t *testing.T) {
 	}
 }
 
-// A list that cannot be saved is still used, and the stream stays up.
+// A HelloAck list that differs from the saved one replaces the file whole.
+func TestAChangedListReplacesTheSavedOne(t *testing.T) {
+	t.Parallel()
+	h := startConnectHub(t)
+	a := enrolled(t, h)
+	writeState(t, a, conn.HubAddressesFile, h.addr+"\n")
+	other := "hub2.example:7443"
+	h.set(func(h *connectHub) {
+		h.tamperAck = func(_ int, ack *agentv1.HelloAck) { ack.HubAddresses = []string{h.addr, "HUB2.example:7443"} }
+	})
+	r := startLoop(t, a, nil)
+	h.connected(t, 1)
+	r.connected(t)
+	path := filepath.Join(a.dir, conn.HubAddressesFile)
+	want := h.addr + "\n" + other + "\n"
+	waitFor(t, 5*time.Second, "the new list", func() bool {
+		data, err := os.ReadFile(path) //nolint:gosec // G304: the test's own state folder
+		return err == nil && string(data) == want
+	})
+	if p := perm(t, path); p != 0o600 {
+		t.Errorf("hub-addresses mode %04o, want 0600", p)
+	}
+}
+
+// A list that cannot be saved is not taken: the stream stays up, the old
+// list stays in use, and the next HelloAck with the same list saves it.
 func TestAFailedSaveKeepsTheStream(t *testing.T) {
 	t.Parallel()
 	h := startConnectHub(t)
@@ -190,6 +218,16 @@ func TestAFailedSaveKeepsTheStream(t *testing.T) {
 	if st := r.loop.Status(); st.State != conn.StateConnected || h.count() != 1 {
 		t.Errorf("after the failed save: state %s, %d streams; want the first stream still connected", st.State, h.count())
 	}
+
+	if err := os.RemoveAll(path); err != nil {
+		t.Fatal(err)
+	}
+	h.dropLive(t)
+	h.connected(t, 2)
+	waitFor(t, 5*time.Second, "the list saved on the next HelloAck", func() bool {
+		data, err := os.ReadFile(path) //nolint:gosec // G304: the test's own state folder
+		return err == nil && string(data) == h.addr+"\n"+other+"\n"
+	})
 }
 
 // Enroll removes a leftover hub-addresses with the new identity.
@@ -216,5 +254,36 @@ func write(t *testing.T, path, data string, mode os.FileMode) {
 	}
 	if err := os.Chmod(path, mode); err != nil { // past the umask
 		t.Fatal(err)
+	}
+}
+
+// serveAlso serves h on a second, fresh loopback address as well and
+// returns it; the test closes it.
+func serveAlso(t *testing.T, h *connectHub) string {
+	t.Helper()
+	srv := &http.Server{Handler: h.handler, ReadHeaderTimeout: 5 * time.Second, TLSConfig: h.tlsCfg.Clone()}
+	var lc net.ListenConfig
+	ln, err := lc.Listen(context.Background(), "tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() { _ = srv.ServeTLS(ln, "", "") }()
+	t.Cleanup(func() { _ = srv.Close() })
+	return ln.Addr().String()
+}
+
+// A hub's list is kept without repeats, names compared in lower case.
+func TestAHubListDropsRepeats(t *testing.T) {
+	t.Parallel()
+	f := &fakeHub{auth: newCA(t), tamper: func(res *agentv1.EnrollResponse, _ *ca.Authority) {
+		res.HubAddresses = []string{"Hub.Example:7443", "hub.example", "HUB.EXAMPLE:7443", "other.example:7443"}
+	}}
+	addr, tok := startFakeHub(t, f)
+	res, err := newAgent(t).enroll(t, addr, tok)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := res.Identity.HubAddresses, []string{"hub.example:7443", "other.example:7443"}; !slices.Equal(got, want) {
+		t.Errorf("hub addresses = %v, want %v", got, want)
 	}
 }

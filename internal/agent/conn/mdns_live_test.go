@@ -6,6 +6,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -21,34 +22,65 @@ import (
 
 // FLEET_MDNS_LIVE=1: a fake fleetd advertised on this machine with the same
 // library is found by the agent's own browser, with its name, port and
-// address.
+// address: on loopback, and on the default multicast interface, where a
+// host that does not let this process send multicast fails the query.
 func TestLiveMDNSFindsALocalAdvertiser(t *testing.T) {
 	if os.Getenv("FLEET_MDNS_LIVE") == "" {
 		t.Skip("set FLEET_MDNS_LIVE=1 to browse real multicast")
 	}
-	svc, err := mdns.NewMDNSService("fleetd-livetest", "_fleetd._tcp", "", "fleetd-livetest.local.", 7443,
-		[]net.IP{net.IPv4(127, 0, 0, 1)}, []string{"livetest=1"})
+	lo, err := net.InterfaceByName(loopbackName())
 	if err != nil {
 		t.Fatal(err)
 	}
-	srv, err := mdns.NewServer(&mdns.Config{Zone: svc, Logger: log.New(io.Discard, "", 0)})
-	if err != nil {
-		t.Fatal(err)
+	for _, tc := range []struct {
+		name  string
+		iface *net.Interface
+	}{{"loopback", lo}, {"default interface", nil}} {
+		t.Run(tc.name, func(t *testing.T) {
+			instance := "fleetd-livetest-" + strings.ReplaceAll(tc.name, " ", "-")
+			svc, err := mdns.NewMDNSService(instance, "_fleetd._tcp", "", instance+".local.", 7443,
+				[]net.IP{net.IPv4(127, 0, 0, 1)}, []string{"livetest=1"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			srv, err := mdns.NewServer(&mdns.Config{Zone: svc, Iface: tc.iface, Logger: log.New(io.Discard, "", 0)})
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = srv.Shutdown() })
+			d := conn.NewMDNS()
+			if tc.iface != nil {
+				d = conn.NewMDNSOn(tc.iface)
+			}
+			var got []conn.Service
+			start := time.Now()
+			first := time.Duration(-1)
+			err = d.Browse(context.Background(), conn.DefaultBrowseTimeout, func(s conn.Service) {
+				got = append(got, s)
+				if first < 0 && strings.HasPrefix(s.Name, instance+".") {
+					first = time.Since(start)
+				}
+			})
+			if err != nil {
+				t.Fatalf("browse: %v", err)
+			}
+			i := slices.IndexFunc(got, func(s conn.Service) bool { return strings.HasPrefix(s.Name, instance+".") })
+			if i < 0 {
+				t.Fatalf("the browse found %d services, not %s: %+v", len(got), instance, got)
+			}
+			if s := got[i]; s.Host != instance+".local." || s.Port != 7443 || s.AddrV4.String() != "127.0.0.1" {
+				t.Errorf("found %+v", s)
+			}
+			t.Logf("found %s after %v", instance, first)
+		})
 	}
-	t.Cleanup(func() { _ = srv.Shutdown() })
-	var got []conn.Service
-	if err := conn.NewMDNS().Browse(context.Background(), conn.DefaultBrowseTimeout, func(s conn.Service) {
-		got = append(got, s)
-	}); err != nil {
-		t.Fatal(err)
+}
+
+func loopbackName() string {
+	if runtime.GOOS == "darwin" {
+		return "lo0"
 	}
-	i := slices.IndexFunc(got, func(s conn.Service) bool { return strings.HasPrefix(s.Name, "fleetd-livetest.") })
-	if i < 0 {
-		t.Fatalf("the browse found %d services, not fleetd-livetest: %+v", len(got), got)
-	}
-	if s := got[i]; s.Host != "fleetd-livetest.local." || s.Port != 7443 || s.AddrV4.String() != "127.0.0.1" {
-		t.Errorf("found %+v", s)
-	}
+	return "lo"
 }
 
 // FLEET_MDNS_WIFI_HUB=<instance>: plan row 4's Wi-Fi measurement, run on a

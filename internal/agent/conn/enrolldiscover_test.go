@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/linuxdynasty/fleet-board/internal/agent/conn"
 )
@@ -22,7 +23,7 @@ func TestEnrollWithoutAHubFindsItByMDNS(t *testing.T) {
 	stray.Name = "printer._ipp._tcp.local."
 	d := &fakeDiscover{services: []conn.Service{stray, service(t, imp.addr, "hub.test"), service(t, h.addr, "hub.test")}}
 	a := newAgent(t)
-	res, err := a.enrollWith(t, "", h.token, func(o *conn.Options) { o.Discover = d })
+	res, err := a.enrollWith(t, "", h.token, enrollMDNS(d))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,36 +47,71 @@ func TestEnrollWithoutAHubFindsItByMDNS(t *testing.T) {
 }
 
 // enroll with no --hub that finds no hub holding the token's CA exits with
-// an error naming --hub and the likely firewall cause, and sends nothing:
-// no request reaches any hub and nothing is saved.
+// an error naming --hub and saying what it saw, and sends nothing: no
+// request reaches any hub and nothing is saved. The firewall is named only
+// when nothing answered; the time cap or a stop names neither.
 func TestEnrollWithoutAHubAndNoneFoundSendsNothing(t *testing.T) {
 	t.Parallel()
 	h := startConnectHub(t)
 	nameHub(t, h, "hub.test")
 	other := newCA(t)
 	imp := startImpostor(t, serverCert(t, other, []string{"hub.test", "127.0.0.1"}, other.Cert.Raw))
+	hole := blackhole(t)
 	stray := service(t, h.addr, "hub.test")
 	stray.Name = "printer._ipp._tcp.local."
 	cases := []struct {
 		name     string
 		services []conn.Service
 		err      error
+		hold     bool
+		timeout  time.Duration
+		why      string
+		firewall bool
 		errKind  string
 	}{
-		{"nothing answers", nil, nil, "timeout"},
-		{"only a stray service", []conn.Service{stray}, nil, "timeout"},
-		{"only an impostor", []conn.Service{service(t, imp.addr, "hub.test")}, nil, "refused"},
-		{"only a closed port", []conn.Service{service(t, closedAddr(t), "hub.test")}, nil, "refused"},
-		{"no multicast", nil, errors.New("failed to bind to any multicast udp port"), "io"},
+		{name: "nothing answers", why: "no fleetd answered", firewall: true, errKind: "timeout"},
+		{name: "only a stray service", services: []conn.Service{stray}, why: "no fleetd answered", firewall: true, errKind: "timeout"},
+		{
+			name: "only an impostor", services: []conn.Service{service(t, imp.addr, "hub.test")},
+			why: "1 answered, none proved it holds this token's CA", errKind: "refused",
+		},
+		{
+			name: "only a closed port", services: []conn.Service{service(t, closedAddr(t), "hub.test")},
+			why: "1 answered but could not be reached", errKind: "refused",
+		},
+		{
+			name: "only an answer that never replies", services: []conn.Service{service(t, hole, "hub.test")},
+			why: "1 answered but could not be reached", errKind: "timeout",
+		},
+		{name: "an impostor and a closed port", services: []conn.Service{
+			service(t, imp.addr, "hub.test"), service(t, closedAddr(t), "hub.test"),
+		}, why: "2 answered: 1 could not be reached, 1 did not prove", errKind: "refused"},
+		{
+			name: "no multicast", err: errors.New("failed to bind to any multicast udp port"),
+			why: "the mDNS browse could not run", firewall: true, errKind: "io",
+		},
+		{name: "the time cap", hold: true, timeout: 300 * time.Millisecond, why: "ran out of time", errKind: "timeout"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			d := &fakeDiscover{services: tc.services, err: tc.err}
+			d := &fakeDiscover{services: tc.services, err: tc.err, hold: tc.hold}
 			a := newAgent(t)
-			_, err := a.enrollWith(t, "", h.token, func(o *conn.Options) { o.Discover = d })
-			if !errors.Is(err, conn.ErrNoHubFound) || !strings.Contains(err.Error(), "--hub") ||
-				!strings.Contains(err.Error(), "firewall") {
-				t.Fatalf("enroll = %v, want ErrNoHubFound naming --hub and the firewall", err)
+			_, err := a.enrollWith(t, "", h.token, func(o *conn.Options) {
+				enrollMDNS(d)(o)
+				conn.SetEnrollMDNSLimits(o, 300*time.Millisecond, 0)
+				o.BrowseTimeout = 500 * time.Millisecond
+				if tc.timeout > 0 {
+					o.Timeout, o.BrowseTimeout = tc.timeout, time.Minute
+				}
+			})
+			if err == nil || !strings.Contains(err.Error(), tc.why) || !strings.Contains(err.Error(), "nothing was sent") {
+				t.Fatalf("enroll = %v, want %q and nothing sent", err, tc.why)
+			}
+			if !tc.hold && (!errors.Is(err, conn.ErrNoHubFound) || !strings.Contains(err.Error(), "--hub")) {
+				t.Errorf("enroll = %v, want ErrNoHubFound naming --hub", err)
+			}
+			if got := strings.Contains(err.Error(), "firewall"); got != tc.firewall {
+				t.Errorf("names the firewall = %v, want %v: %v", got, tc.firewall, err)
 			}
 			if n := len(h.requests()); n != 0 {
 				t.Errorf("the hub got %d Enroll requests", n)
@@ -94,16 +130,67 @@ func TestEnrollWithoutAHubAndNoneFoundSendsNothing(t *testing.T) {
 	}
 }
 
+// Each answer gets its own short budget, so answers that accept and never
+// reply cannot use up the enroll: the hub behind three of them is still
+// found well inside the time cap.
+func TestEnrollGivesEachAnswerItsOwnBudget(t *testing.T) {
+	t.Parallel()
+	h := startConnectHub(t)
+	nameHub(t, h, "hub.test")
+	var svcs []conn.Service
+	for range 3 {
+		svcs = append(svcs, service(t, blackhole(t), "hub.test"))
+	}
+	d := &fakeDiscover{services: append(svcs, service(t, h.addr, "hub.test"))}
+	a := newAgent(t)
+	start := time.Now()
+	res, err := a.enrollWith(t, "", h.token, func(o *conn.Options) {
+		enrollMDNS(d)(o)
+		conn.SetEnrollMDNSLimits(o, 200*time.Millisecond, 5*time.Second)
+		o.Timeout = 5 * time.Second
+	})
+	if err != nil || !res.Discovered {
+		t.Fatalf("enroll = %+v, %v; want the hub found behind three silent answers", res, err)
+	}
+	if took := time.Since(start); took > 3*time.Second {
+		t.Errorf("enroll took %v: the silent answers were not cut at their budget", took)
+	}
+}
+
+// The search for the hub is capped as a whole: past the cap no further
+// answer is tried.
+func TestEnrollCapsTheSearch(t *testing.T) {
+	t.Parallel()
+	h := startConnectHub(t)
+	nameHub(t, h, "hub.test")
+	var svcs []conn.Service
+	for range 6 {
+		svcs = append(svcs, service(t, blackhole(t), "hub.test"))
+	}
+	d := &fakeDiscover{services: append(svcs, service(t, h.addr, "hub.test"))}
+	a := newAgent(t)
+	_, err := a.enrollWith(t, "", h.token, func(o *conn.Options) {
+		enrollMDNS(d)(o)
+		conn.SetEnrollMDNSLimits(o, 200*time.Millisecond, 500*time.Millisecond)
+	})
+	if !errors.Is(err, conn.ErrNoHubFound) || !strings.Contains(err.Error(), "could not be reached") {
+		t.Fatalf("enroll = %v, want no hub found after the cap", err)
+	}
+	if n := len(h.requests()); n != 0 {
+		t.Errorf("the hub got %d requests past the cap", n)
+	}
+}
+
 // A given --hub is used as it is, and an enrolled machine never browses.
 func TestEnrollBrowsesOnlyWithoutAHubAndUnenrolled(t *testing.T) {
 	t.Parallel()
 	h := startConnectHub(t)
 	d := &fakeDiscover{}
 	a := newAgent(t)
-	if _, err := a.enrollWith(t, h.addr, h.token, func(o *conn.Options) { o.Discover = d }); err != nil {
+	if _, err := a.enrollWith(t, h.addr, h.token, enrollMDNS(d)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := a.enrollWith(t, "", h.token, func(o *conn.Options) { o.Discover = d }); !errors.Is(err, conn.ErrAlreadyEnrolled) {
+	if _, err := a.enrollWith(t, "", h.token, enrollMDNS(d)); !errors.Is(err, conn.ErrAlreadyEnrolled) {
 		t.Fatalf("enroll again = %v, want ErrAlreadyEnrolled", err)
 	}
 	if d.count() != 0 {

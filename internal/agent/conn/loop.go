@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 
@@ -64,6 +65,8 @@ type LoopOptions struct {
 	BrowseTimeout time.Duration
 	// anchorHook, for tests only, sees each stream's hub-time anchor.
 	anchorHook func(hubRecv time.Time)
+	// mdns, for tests only, shortens the discovery limits.
+	mdns mdnsLimits
 }
 
 // Loop keeps this machine connected to its hub (03 W1 "State machine", 03n W2):
@@ -242,7 +245,11 @@ type ending struct {
 // candidate is one hub address to try. dial, set for an mDNS answer, is
 // the address dialed; addr still names the hub for the TLS check, the
 // logs and the cache.
-type candidate struct{ addr, dial, source string }
+type candidate struct {
+	addr, dial, source string
+	// budget, when set, bounds the dial and handshake together.
+	budget time.Duration
+}
 
 func (c candidate) key() string { return c.addr + " " + c.dial }
 
@@ -271,12 +278,8 @@ func (l *Loop) attempt(ctx context.Context, reason agentv1.ConnectReason) ending
 		}
 	}
 	if l.opts.Discover != nil {
-		b := l.startBrowse(w)
-		defer b.stop()
-		for c := range b.cands {
-			if out, done := next(c); done {
-				return out
-			}
+		if out, done := l.tryMDNS(ctx, w, next); done {
+			return out
 		}
 	}
 	for _, a := range l.addrs {
@@ -354,15 +357,15 @@ func connErrKind(err error, untrusted bool) string {
 }
 
 // hubAddresses normalizes a hub's address list (EnrollResponse and
-// HelloAck alike): invalid entries are dropped first, then at most 16 are
-// kept, in order.
+// HelloAck alike): invalid entries and repeats (names compared in lower
+// case) are dropped first, then at most 16 are kept, in order.
 func hubAddresses(in []string) []string {
 	out := make([]string, 0, min(len(in), maxHubAddresses))
 	for _, a := range in {
 		if len(out) == maxHubAddresses {
 			break
 		}
-		if norm, err := HubAddress(a); err == nil {
+		if norm, err := HubAddress(strings.ToLower(a)); err == nil && !slices.Contains(out, norm) {
 			out = append(out, norm)
 		}
 	}

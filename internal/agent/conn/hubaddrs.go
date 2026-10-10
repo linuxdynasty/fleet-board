@@ -61,17 +61,18 @@ func (l *Loop) configured(ctx context.Context) []string {
 }
 
 // takeAddresses applies HelloAck.hub_addresses: an empty or invalid list
-// changes nothing; one that differs from the list in use replaces it and
-// is saved. A failed save leaves the stream up.
+// changes nothing; one that differs from the list in use is saved, then
+// used. A failed save leaves the stream up and the old list in use, so the
+// next HelloAck with that list tries the save again.
 func (l *Loop) takeAddresses(ctx context.Context, peer string, list []string) {
 	addrs := hubAddresses(list)
 	if len(addrs) == 0 || slices.Equal(addrs, l.addrs) {
 		return
 	}
-	l.addrs = addrs
 	if err := saveHubAddresses(l.opts.Dir, addrs); err != nil {
 		l.log.WarnContext(ctx, "connect.failed", "peer", peer, "step", "save", "err_kind", errKind(err))
 		return
 	}
+	l.addrs = addrs
 	l.log.InfoContext(ctx, "connect.addresses_saved", "peer", peer, "count", len(addrs))
 }

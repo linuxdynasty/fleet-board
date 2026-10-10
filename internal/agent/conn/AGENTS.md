@@ -21,7 +21,9 @@ Read the root `AGENTS.md` first; it applies here. Load `fleet-go`,
   passes the same pinned-CA handshake as any address, named by its SRV
   target. Enroll sends nothing but that handshake to an answer until it
   passes, and nothing at all when none does. Never trust a TXT record or a
-  name in place of the pin.
+  name in place of the pin. Read a library answer only after the query
+  that produced it returned (the library writes it until then), and never
+  dial an answer that points at this machine.
 - `hub-addresses` is written through `writePrivate` (replace) only when a
   HelloAck's non-empty list differs from the list in use; a damaged one is
   never repaired, only ignored for the identity's list.

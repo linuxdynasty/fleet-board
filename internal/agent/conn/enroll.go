@@ -96,6 +96,8 @@ type Options struct {
 	// [DefaultTimeout].
 	Timeout time.Duration
 	Retry   Retry
+	// mdns, for tests only, shortens the discovery limits.
+	mdns mdnsLimits
 }
 
 // Result is a finished enrollment.
@@ -122,12 +124,14 @@ type enrollRun struct {
 	peer string
 }
 
-// Enroll runs 02g A1 on this machine: check the token and address, make or
-// reuse the pending key, call Enroll over TLS pinned to the token's CA
-// (no client certificate), check the response, then save the identity and
-// the hub address. Nothing reaches the network before the token parses,
-// the address is given and the folder is private, and an enrolled folder
-// is never replaced.
+// Enroll runs 02g A1 on this machine: check the token and address, find
+// the hub by mDNS when no address was given, make or reuse the pending
+// key, call Enroll over TLS pinned to the token's CA (no client
+// certificate), check the response, then save the identity and the hub
+// address. Nothing reaches the network before the token parses, an
+// address is given or Discover is set, and the folder is private; a
+// browsed answer gets only the pinned handshake until it passes; and an
+// enrolled folder is never replaced.
 func Enroll(ctx context.Context, opts Options) (Result, error) {
 	if opts.Telemetry == nil {
 		return Result{}, errors.New("conn: Enroll needs telemetry")

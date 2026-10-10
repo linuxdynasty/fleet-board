@@ -22,7 +22,7 @@ func TestAnMDNSAnswerIsTriedAsItArrives(t *testing.T) {
 	a := enrolled(t, h)
 	removeState(t, a, conn.HubAddressFile)
 	d := &fakeDiscover{services: []conn.Service{service(t, h.addr, "hub.test")}, hold: true}
-	r := startLoop(t, a, func(o *conn.LoopOptions) { o.Discover, o.BrowseTimeout = d, time.Minute })
+	r := startLoop(t, a, func(o *conn.LoopOptions) { useMDNS(o, d); o.BrowseTimeout = time.Minute })
 	h.connected(t, 1)
 	r.connected(t)
 
@@ -88,7 +88,7 @@ func TestStrayMDNSAnswersAreDropped(t *testing.T) {
 		real,
 		real, // the same answer twice is tried once
 	}}
-	r := startLoop(t, a, func(o *conn.LoopOptions) { o.Discover = d })
+	r := startLoop(t, a, func(o *conn.LoopOptions) { useMDNS(o, d) })
 	h.connected(t, 1)
 	r.connected(t)
 
@@ -103,6 +103,11 @@ func TestStrayMDNSAnswersAreDropped(t *testing.T) {
 	b := a.events(t, "connect.browse")[0]
 	if b["kept"] != float64(2) || b["dropped"] != float64(10) {
 		t.Errorf("connect.browse = %v, want kept 2 (one duplicate not counted) and dropped 10", b)
+	}
+	by, _ := b["dropped_by"].(map[string]any)
+	if by["not_hub_name"] != float64(3) || by["bad_port"] != float64(2) || by["bad_addr"] != float64(3) ||
+		by["bad_host"] != float64(2) || len(by) != 4 {
+		t.Errorf("connect.browse dropped_by = %v", by)
 	}
 	if n := metric(scrape(t, a), "fleet_agent_connect_attempts_total", `result="untrusted"`, `source="mdns"`); n != "1" {
 		t.Errorf("untrusted mdns attempts = %q, want 1", n)
@@ -125,7 +130,7 @@ func TestABrowseThatFindsNothingFallsThroughToConfigured(t *testing.T) {
 	d := &fakeDiscover{}
 	d.onBrowse = func() { before = len(a.events(t, "connect.attempt")) }
 	r := startLoop(t, a, func(o *conn.LoopOptions) {
-		o.Discover = d
+		useMDNS(o, d)
 		o.Identity.HubAddresses = []string{h.addr}
 	})
 	h.connected(t, 1)
@@ -148,7 +153,7 @@ func TestTheCachedAddressNeedsNoBrowse(t *testing.T) {
 	h := startConnectHub(t)
 	a := enrolled(t, h)
 	d := &fakeDiscover{}
-	r := startLoop(t, a, func(o *conn.LoopOptions) { o.Discover = d })
+	r := startLoop(t, a, func(o *conn.LoopOptions) { useMDNS(o, d) })
 	h.connected(t, 1)
 	r.connected(t)
 	if d.count() != 0 {
@@ -165,7 +170,7 @@ func TestAFailedBrowseFallsThrough(t *testing.T) {
 	removeState(t, a, conn.HubAddressFile)
 	d := &fakeDiscover{err: errors.New("failed to bind to any multicast udp port")}
 	r := startLoop(t, a, func(o *conn.LoopOptions) {
-		o.Discover = d
+		useMDNS(o, d)
 		o.Identity.HubAddresses = []string{h.addr}
 	})
 	h.connected(t, 1)
@@ -188,7 +193,7 @@ func TestOneBrowsePerAttemptOnTheBackoff(t *testing.T) {
 	a := enrolled(t, h)
 	writeState(t, a, conn.HubAddressFile, closedAddr(t)+"\n")
 	d := &fakeDiscover{}
-	r := startLoop(t, a, func(o *conn.LoopOptions) { o.Discover = d })
+	r := startLoop(t, a, func(o *conn.LoopOptions) { useMDNS(o, d) })
 	waitFor(t, 10*time.Second, "five failed attempts", func() bool { return len(a.events(t, "connect.backoff")) >= 5 })
 	r.cancel()
 	_ = r.result(t, 10*time.Second)
@@ -208,7 +213,7 @@ func TestAWakeStartsTheNextBrowse(t *testing.T) {
 	d := &fakeDiscover{}
 	events := make(chan wakenet.Event, 1)
 	r := startLoop(t, a, func(o *conn.LoopOptions) {
-		o.Discover = d
+		useMDNS(o, d)
 		o.Events = events
 		slowBackoff(o)
 	})
