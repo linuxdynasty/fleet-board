@@ -260,6 +260,7 @@ re-enroll rule are in [02g](02g-agent-security.md#machine-lifecycle-revoke-and-d
 | Agent restart before the state dir is fully written | `identity.json` is written once (temp file, fsync, then a hard link that never replaces a file), so it is whole or absent. Until it exists `enroll.key` is kept, so running `enroll` again with the same token replays the hub's stored answer; no new token is needed |
 | Certificate expired (machine offline longer than lifetime) | Checked before every attempt: the loop ends without dialing, `connect.ended{state="cert_expired"}`, `fleet-agent run` exits 1 and `doctor` says "re-enroll". A hub refuses it at TLS anyway |
 | Agent restarted (supervisor) after `Bye{REVOKED}`, `Bye{UNKNOWN_MACHINE}` or `FLEET_MISMATCH` | `ended.json` (written before the agent stops) makes `run` refuse before any network call, naming the end and the fix; re-enroll removes it; the owner may remove it to retry |
+| `ended.json` damaged (not whole JSON, another layout, an end it never records, no machine id) or open to other users | `run` refuses before any network call, exit 1, `run.failed{step="ended"}` (`err_kind="parse"` for a damaged file, `"constraint"` for a loose one); for a damaged file it says to remove it to try again, for one open to other users to chmod it 600; a damaged file is not guessed at, as for `identity.json` |
 | `HelloAck.epoch` above 2^63 - 2 or `hub_last_event_seq` above 2^63 - 1 - 1024 (a broken or hostile hub) | Refused before either is saved, `connect.failed{step="hello", err_kind="constraint", check, value}`, then backoff. `agent.db` keeps signed 64-bit values that never go back, and the limits keep the hub's next epoch (the stored one plus 1) and the first seq block above the floor from overflowing them |
 | Duplicate identity (same cert from two hosts) | [03n](03n-reconnect.md) W2 |
 | Clock skew > 5 min (`Hello.sent_time` or `Heartbeat.sent_time` vs hub receive time) | HelloAck still sent; machine warning; commands still evaluated in hub time; above 15 min `clock_untrusted` (02i, "Clocks") |
@@ -347,6 +348,17 @@ re-enroll rule are in [02g](02g-agent-security.md#machine-lifecycle-revoke-and-d
   `snapshot.sent{seq, bytes, unacked_results}`, `snapshot.requested{reason}`,
   `snapshot.oversize{bytes, max_bytes}`, `snapshot.result_unreadable{command_id,
   err_kind}`; `result.acked{acked, ignored}` (debug) and `result.pruned{count}`.
+  Before the loop starts, `run.failed{step, err_kind}` (`step`: `identity`,
+  `lock` when another `run` holds `fleet-agent.lock`, `ended` when
+  `ended.json` is damaged or cannot be read or removed, `store`, `loop`),
+  `run.refused{end}` when `ended.json` names this machine (exit 1, nothing
+  sent) and `run.ended_removed{file}` when it named another machine; every
+  `run.*` line after the identity is read carries `machine_id`. A signal
+  during startup is a clean stop: `run.stopped{step}` and exit 0, not
+  `run.failed`, only when the cancellation is what stopped that step (the
+  store open or the loop setup); a real failure at the same moment (not
+  enrolled, a loose or damaged file, another `run`) is still
+  `run.failed{step, err_kind}` and exit 1.
 
 At 3 AM: "why did `fleet-agent enroll` fail?" → `enroll.refused` (the reason
 the agent printed, and the peer) or `enroll.failed` (the hub's step). "machine X offline since when, why?" → `fleet_hub_machine_state` plus
@@ -355,6 +367,9 @@ the agent's `connect.attempt` logs (last candidate tried, last TLS error).
 (`failures`, `wait_ms`); the real time to the next try is the longer of
 `wait_ms` and what is left of the 5 s minimum gap since the last try
 started.
+"why does `fleet-agent run` exit at once?" → `run.refused{end}` (the end
+recorded in `ended.json`) or `run.failed{step}`; exit 0 right after start
+with `run.stopped{step}` means a stop signal arrived during startup.
 "why did machine X reconnect just now?" → the agent's `wake.detected` or
 `netchange.acted` (its `why`); "why did it not reconnect after a network
 change?" → `netchange.ignored` (the change did not touch the connection),

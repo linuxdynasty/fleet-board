@@ -61,8 +61,12 @@ func (l *Loop) saveEnd(ctx context.Context, e End, peer string) {
 	}
 }
 
-// CheckEnded reads EndedFile; the caller runs it at the start, before any
-// network call (`fleet-agent run`, row 4 PR 3-iii). A record for id's
+// ErrEndedDamaged means EndedFile is not a whole record of this layout; it
+// is not guessed at, and removing it lets run try again.
+var ErrEndedDamaged = errors.New("conn: ended.json is damaged")
+
+// CheckEnded reads EndedFile at the start of `fleet-agent run`, before any
+// network call. A record for id's
 // machine is an [*EndedError] with Recorded set, whose message names the
 // hub and the owner's fix: the caller must not reconnect. A record for another machine is a leftover of an earlier
 // enrollment: it is removed and removed is true. No file is (false, nil).
@@ -81,7 +85,7 @@ func CheckEnded(dir string, id Identity) (removed bool, err error) {
 	dec.DisallowUnknownFields()
 	var rec ended
 	if err := dec.Decode(&rec); err != nil || rec.Version != endedVersion || !recorded(rec.End) || rec.MachineID == "" {
-		return false, fmt.Errorf("conn: %s is damaged or from another version; remove it to try again", path)
+		return false, fmt.Errorf("%w: %s is damaged or from another version; remove it to try again", ErrEndedDamaged, path)
 	}
 	if rec.MachineID != id.MachineID {
 		if err := removePrivate(dir, EndedFile); err != nil {

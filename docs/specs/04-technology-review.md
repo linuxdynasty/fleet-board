@@ -440,6 +440,7 @@ Where each piece of agent state lives (the state dir is
 |---|---|
 | Command log, event ring with `seq_hwm`, `EventCounters` and `install_id`, probe assignments, goal registry, availability marks (with `fresh_context_on_reuse`), drain state, effective settings and loaded policy hash, spool chunk index | `agent.db` |
 | Key, certificate, CA chain and pinned fingerprint, `machine_id`, account salt, `fleet_id`, cached hub address (mode 0600, written before `enroll` returns) | plain files, so enrollment survives losing `agent.db` |
+| `fleet-agent.lock`: a kernel `flock` (exclusive, non-blocking) that `fleet-agent run` takes before it opens `agent.db` and holds while it runs, so a second `run` on the same folder exits 1 (#92). The kernel drops it when the process ends; the file stays and holds the pid for a reader only | plain file, mode 0600 |
 | Raw `pipe-pane` streams | plain append files (above) |
 | `policy.yaml` | the owner's file in `~/.config/fleet-agent/`; the agent only reads it |
 | Hook scripts | `~/.local/share/fleet-agent/hooks/` (01d) |

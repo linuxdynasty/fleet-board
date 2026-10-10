@@ -10,6 +10,11 @@ defer l.Release()
 ```
 
 - `fleetd init` and `fleetd run` take it before they touch `state.db`.
+  `fleet-agent run` takes `<state-dir>/fleet-agent.lock` the same way before
+  it opens `agent.db`, and says "another fleet-agent run" instead of
+  `ErrHeld`'s text, which names fleetd. With two users the package belongs
+  outside `internal/hub`; moving it (and making `ErrHeld` name no program)
+  is left for a later change.
 - A held lock is `ErrHeld` at once; nothing waits.
 - The file is mode 0600 and holds the holder's pid, for a person to read. The
   pid decides nothing: the kernel drops the lock when the process exits, even
