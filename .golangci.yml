@@ -13,12 +13,12 @@ linters:
   default: standard
   enable:
     - bodyclose # an HTTP response body is always closed
-    - depguard # only internal/proc, the tmux client and the attach PTY import os/exec (01 principle 8)
+    - depguard # only internal/proc, the tmux client and the attach PTY import os/exec (01 principle 8); only control, start, probe and the tmux client import tmux/typing, and no unsafe outside tests (01f F3)
     - durationcheck # no time.Duration multiplied by another Duration
     - errchkjson # json.Marshal errors are checked, or provably impossible
     - errorlint # %w and errors.Is/As, never == on errors (fleet-go: wrap errors)
     - exhaustive # a switch on an enum names every value or has a default
-    - forbidigo # only internal/proc starts a process without os/exec (01 principle 8)
+    - forbidigo # only internal/proc starts a process without os/exec (01 principle 8); only control, start and probe build a typing.Line (01f F3)
     - forcetypeassert # x.(T) always uses the two-value form
     - gosec # security smells: file paths, permissions, integer overflow
     - makezero # no append to a slice made with a non-zero length
@@ -59,6 +59,37 @@ linters:
               desc: start a one-shot child with internal/proc, which bounds it (01 principle 8); only internal/proc, internal/agent/tmux and internal/agent/attach import os/exec
             - pkg: golang.org/x/sys/execabs
               desc: execabs starts processes the way os/exec does; the same rule applies (01 principle 8)
+        # One package builds every send-keys line (plan row 7, #140): only
+        # internal/agent/control, start and probe, and the tmux client package
+        # itself (to name typing.Line, not to build one; forbidigo below), may
+        # import it; never their subpackages. Test files may import it.
+        # scripts/test-lint-typing-rules.sh seeds a violation of each kind.
+        tmux-typing:
+          list-mode: lax
+          files:
+            - "**/internal/**"
+            - "**/cmd/**"
+            - "!$test"
+            - "!**/internal/agent/control/*.go"
+            - "!**/internal/agent/start/*.go"
+            - "!**/internal/agent/probe/*.go"
+            - "!**/internal/agent/tmux/*.go"
+          deny:
+            - pkg: github.com/linuxdynasty/fleet-board/internal/agent/tmux/typing
+              desc: only internal/agent/control, start, probe and the tmux client import the typing package (01f F3)
+        # No unsafe outside tests (plan row 7, #140): //go:linkname needs it,
+        # and a linkname to a typing.New… function builds a typing.Line that
+        # no forbidigo pattern sees. Nothing in internal/ or cmd/ needs it
+        # today; a file that does is added here by path, with its reason.
+        no-unsafe:
+          list-mode: lax
+          files:
+            - "**/internal/**"
+            - "**/cmd/**"
+            - "!$test"
+          deny:
+            - pkg: unsafe
+              desc: no unsafe outside tests; a //go:linkname could build a typing.Line past the lint rules (01f F3)
     exhaustive:
       default-signifies-exhaustive: true
     nolintlint:
@@ -74,6 +105,12 @@ linters:
           msg: start a one-shot child with internal/proc (01 principle 8)
         - pattern: ^unix\.Exec$
           msg: start a one-shot child with internal/proc (01 principle 8)
+        # A call, an alias or a function value of any typing.New… constructor.
+        # The exclusion below waives this pattern alone, by its message, in
+        # control, start, probe, typing itself and test files.
+        - pattern: ^typing\.New
+          pkg: ^github\.com/linuxdynasty/fleet-board/internal/agent/tmux/typing$
+          msg: only internal/agent/control, start and probe build a typing.Line (01f F3)
     sloglint:
       static-msg: true
       no-mixed-args: true
@@ -84,6 +121,12 @@ linters:
     rules:
       # internal/proc itself (its own files, not a subfolder) is the one place that may start a process.
       - path: ^internal/proc/[^/]+$
+        linters:
+          - forbidigo
+      # The typing constructors (each package's own files, not a subfolder),
+      # and any test file. `text` keeps the process rules on in these files.
+      - path: ^internal/agent/(control|start|probe|tmux/typing)/[^/]+$|_test\.go$
+        text: only internal/agent/control, start and probe build a typing\.Line
         linters:
           - forbidigo
 

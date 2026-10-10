@@ -78,6 +78,12 @@ scripts/test-lint-exec-rules.sh   seeded RED/GREEN cases for the depguard (os/ex
   .golangci.yml, run in a scratch module against the real config for linux and darwin on amd64
   and arm64, with files built for one OS or architecture only (01 principle 8; also in make
   selftest)
+scripts/test-lint-typing-rules.sh   seeded RED/GREEN cases for the typing rules in
+  .golangci.yml (only control, start, probe and the tmux client import tmux/typing; only control,
+  start and probe call a typing.New… function, also through an alias or a function value; no
+  unsafe outside tests, so no //go:linkname to a constructor), run in
+  a scratch module against the real config on the same four platforms (01f F3, #140; also in make
+  selftest)
 scripts/test-make-lint-platforms.sh   checks that make lint runs the linter for all four
   platforms, with the package list worked out per platform (a stub linter; then the real linter
   on single-platform new packages in a throwaway repo; Makefile copies that skip one must fail)

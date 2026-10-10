@@ -27,7 +27,9 @@ event, a snapshot field or a stream.
    hub owns desired state, assignments, settings and anything computed from
    them (free slots, pacing, stuck). GitHub owns issue and PR truth.
 2. **Observe freely, act only through typed commands** that pass the local
-   policy ([0004](../adr/0004-agent-connectivity.md)).
+   policy ([0004](../adr/0004-agent-connectivity.md)). Every key typed into a
+   pane is a line built by one package, `internal/agent/tmux/typing`, and lint
+   rules keep it that way ([01f](01f-agent-control-goals-and-policy.md) F3).
 3. **Never touch credentials.** No harness auth files, keychain items, `gh`
    tokens or secret environment variables. Identity and sign-in state come only
    from each tool's own status output.
