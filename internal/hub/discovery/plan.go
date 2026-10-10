@@ -69,21 +69,22 @@ type Route struct{ V4, V6 netip.Addr }
 // interfaces: a LAN agent cannot reach the hub through them.
 var virtualPrefixes = []string{
 	"bridge", "utun", "awdl", "llw", "docker", "veth", "vmnet", "tun", "tap",
-	"vboxnet", "tailscale", "br-", "virbr", "wg",
+	"vboxnet", "tailscale", "br-", "virbr", "wg", "podman", "cni", "lxcbr", "lxdbr",
+	"incusbr", "zt", "flannel", "cali", "cilium", "nordlynx",
 }
 
 // Plan builds the records for a hub on hostname whose agent listener is
 // bound at listener, or says why it advertises nothing.
 //
-// A listener bound to one address advertises that address, on its interface.
-// A listener bound to the wildcard address advertises the addresses of one
-// interface, chosen so that a LAN agent can reach it: the interface that
-// holds the default route's source address, else the first up, multicast
-// interface that is not loopback, point-to-point or virtual. Of its addresses
-// only the route's source address (else the first listed) is kept for each
-// family. Loopback, unspecified, multicast, broadcast and link-local
-// addresses are never advertised (an AAAA record has no zone, and a
-// 169.254 address means no network).
+// A listener bound to one address advertises that address, on the interface
+// that holds it, however virtual that interface is: the owner chose it. A
+// listener bound to the wildcard address advertises the addresses of one
+// interface, chosen so that a LAN agent can reach it (see choose). Of its
+// addresses only the route's source address (else the first listed) is kept
+// for each family. Loopback, unspecified, multicast, broadcast and IPv6
+// link-local addresses are never advertised (an AAAA record has no zone). An
+// IPv4 link-local address (169.254/16, a direct cable with no DHCP) ranks
+// last: it is advertised only when nothing else qualifies.
 func Plan(hostname string, listener netip.AddrPort, ifaces []Iface, route Route) (Records, Reason) {
 	target := ca.ServiceTarget(hostname)
 	if target == "" {
@@ -99,7 +100,7 @@ func Plan(hostname string, listener netip.AddrPort, ifaces []Iface, route Route)
 			chosen = []netip.Addr{bound}
 		}
 	} else if ifc = choose(ifaces, route); ifc != nil {
-		chosen = pick(ifc, route)
+		chosen = pick(ifc, route, true)
 	}
 	if len(chosen) == 0 {
 		return Records{}, ReasonNoAddresses
@@ -154,34 +155,62 @@ func holder(ifaces []Iface, a netip.Addr) *Iface {
 	return nil
 }
 
-// choose is the interface of the default route when it is a reachable one
-// with something to advertise, else the first such interface.
+// choose is the interface a LAN agent is expected to reach the hub on. In
+// each of two rounds, the first without IPv4 link-local addresses and the
+// second with them (they rank last): the interface holding the default
+// route's source address when it is a reachable one; else the first
+// reachable interface; else the route holder when it is up, multicast and not
+// point-to-point, however its name looks (a Linux host that bridges its NIC
+// holds its address and the route on bridge0). A tunnel that holds the route
+// is never used.
 func choose(ifaces []Iface, route Route) *Iface {
-	for _, src := range []netip.Addr{route.V4, route.V6} {
-		if src.IsValid() {
-			if i := holder(ifaces, clean(src)); i != nil && reachable(i) && len(pick(i, route)) > 0 {
+	holders := func() []*Iface {
+		var out []*Iface
+		for _, src := range []netip.Addr{route.V4, route.V6} {
+			if src.IsValid() {
+				if i := holder(ifaces, clean(src)); i != nil {
+					out = append(out, i)
+				}
+			}
+		}
+		return out
+	}()
+	for _, linkLocal := range []bool{false, true} {
+		for _, i := range holders {
+			if reachable(i) && len(pick(i, route, linkLocal)) > 0 {
 				return i
 			}
 		}
-	}
-	for i := range ifaces {
-		if reachable(&ifaces[i]) && len(pick(&ifaces[i], route)) > 0 {
-			return &ifaces[i]
+		for n := range ifaces {
+			if reachable(&ifaces[n]) && len(pick(&ifaces[n], route, linkLocal)) > 0 {
+				return &ifaces[n]
+			}
+		}
+		for _, i := range holders {
+			if i.Flags&net.FlagPointToPoint == 0 && len(pick(i, route, linkLocal)) > 0 {
+				return i
+			}
 		}
 	}
 	return nil
 }
 
 // pick is one IPv4 and one IPv6 address of i, IPv4 first: the route's source
-// address when i holds it, else the first advertisable one listed.
-func pick(i *Iface, route Route) []netip.Addr {
+// address when i holds it, else the first advertisable one listed. An IPv4
+// link-local address is used only when linkLocal is set and i has no other
+// IPv4 address.
+func pick(i *Iface, route Route, linkLocal bool) []netip.Addr {
 	r4, r6 := clean(route.V4), clean(route.V6)
-	var v4, v6 netip.Addr
+	var v4, v6, v4LL netip.Addr
 	var v4Route, v6Route bool
 	for _, raw := range i.Addrs {
 		a := clean(raw)
 		switch {
 		case !advertisable(a):
+		case a.Is4() && a.IsLinkLocalUnicast():
+			if !v4LL.IsValid() {
+				v4LL = a
+			}
 		case a.Is4():
 			if !v4Route && (!v4.IsValid() || a == r4) {
 				v4, v4Route = a, a == r4
@@ -191,6 +220,9 @@ func pick(i *Iface, route Route) []netip.Addr {
 				v6, v6Route = a, a == r6
 			}
 		}
+	}
+	if !v4.IsValid() && linkLocal {
+		v4 = v4LL
 	}
 	var out []netip.Addr
 	for _, a := range []netip.Addr{v4, v6} {
@@ -202,12 +234,12 @@ func pick(i *Iface, route Route) []netip.Addr {
 }
 
 // advertisable is an address another machine can dial: unicast, not this
-// machine and not link-local (an AAAA record cannot carry the zone the dial
-// needs; 169.254.0.0/16 is no network at all).
+// machine, and not IPv6 link-local (an AAAA record cannot carry the zone the
+// dial needs). IPv4 link-local passes here; [pick] ranks it last.
 func advertisable(a netip.Addr) bool {
 	switch {
-	case !a.IsValid(), a.IsUnspecified(), a.IsMulticast(), a.IsLoopback(), a.IsLinkLocalUnicast(),
-		a == netip.AddrFrom4([4]byte{255, 255, 255, 255}):
+	case !a.IsValid(), a.IsUnspecified(), a.IsMulticast(), a.IsLoopback(),
+		a.Is6() && a.IsLinkLocalUnicast(), a == netip.AddrFrom4([4]byte{255, 255, 255, 255}):
 		return false
 	}
 	return true

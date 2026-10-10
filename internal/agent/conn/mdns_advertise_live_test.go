@@ -78,14 +78,20 @@ func TestLiveAdvertiserIsFoundByTheAgentBrowser(t *testing.T) {
 			if first < 0 {
 				t.Fatalf("the browser did not find fleetd-%s on %s", tc.host, rec.Iface)
 			}
-			want := tc.wantAddr
-			if want == "" {
-				want = rec.IPs[0].String()
+			// The agent dials AddrV4 first, then AddrV6; the answer must hold
+			// an address the hub advertised, in either family.
+			dial := got.AddrV4
+			if !dial.IsValid() {
+				dial = got.AddrV6
 			}
-			if got.Host != "fleetd-"+tc.host+".local." || got.Port != 7443 || got.AddrV4.String() != want {
-				t.Errorf("found %+v, want address %s", got, want)
+			advertised := false
+			for _, ip := range rec.IPs {
+				advertised = advertised || ip.String() == dial.String()
 			}
-			t.Logf("found %s on %s after %v, address %s", got.Name, rec.Iface, first, got.AddrV4)
+			if got.Host != "fleetd-"+tc.host+".local." || got.Port != 7443 || !advertised || (tc.wantAddr != "" && dial.String() != tc.wantAddr) {
+				t.Errorf("found %+v, want one of %v (%s)", got, rec.IPs, tc.wantAddr)
+			}
+			t.Logf("found %s on %s after %v, address %s", got.Name, rec.Iface, first, dial)
 
 			adv.Stop()
 			if again, _, err := find(); err == nil && again.Name != "" {

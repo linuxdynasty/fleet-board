@@ -8,9 +8,11 @@
 // certificate always holds), the port the listener's, and the TXT record only
 // proto=<min>-<max>. The addresses are explicit and belong to one interface,
 // one per IP family: the agent's library client keeps only the last A record,
-// so the interface is chosen (default route, else the first real one), not
-// all of them, and the responder joins the mDNS group on it. Never the OS
-// host name, loopback, link-local or a bridge, tunnel or VM interface.
+// so one interface is chosen (the default route's, else the first real one),
+// not all of them, and the responder joins the mDNS group on it. Never the OS
+// host name, loopback or IPv6 link-local; IPv4 link-local ranks last; a
+// bridge, tunnel or VM interface only when the listener is bound to its address
+// or it alone holds the default route and has an address.
 //
 // An [Advertiser] decides once, at start, whether to advertise: a refusal
 // (discovery.mdns off, no host name, no address, a served certificate that

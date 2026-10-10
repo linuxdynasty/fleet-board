@@ -63,6 +63,9 @@ type Options struct {
 	Env  Env
 	// Telemetry may be nil: no signals.
 	Telemetry *telemetry.Telemetry
+	// meter replaces Telemetry's meter; a test sets it (export_test.go) to
+	// make the registration fail.
+	meter metric.Meter
 }
 
 // Advertiser advertises the hub as _fleetd._tcp while the agent listener
@@ -99,6 +102,9 @@ func New(opts Options) *Advertiser {
 	if opts.Telemetry != nil {
 		a.log = opts.Telemetry.Logger.With("component", "discovery")
 		meter, prefix = opts.Telemetry.Meter(scope), opts.Telemetry.MetricPrefix()
+	}
+	if opts.meter != nil {
+		meter = opts.meter
 	}
 	var err1, err2 error
 	a.total, err1 = meter.Int64Counter(prefix+"_discovery_advertise_total",

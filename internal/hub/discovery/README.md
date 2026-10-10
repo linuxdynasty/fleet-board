@@ -6,7 +6,7 @@ find it (plan row 5, [02j](../../../docs/specs/02j-hub-runtime.md#hub-runtime),
 "Discovery"; ADR 0028; the agent's side is `internal/agent/conn`).
 
 ```go
-adv, err := discovery.New(discovery.Options{
+adv := discovery.New(discovery.Options{
     Enabled: cfg.Discovery.MDNS, Hostname: host, Listener: agentListener.Addr(),
     Cert: certs, Telemetry: tel,
 })
@@ -33,30 +33,50 @@ defer adv.Stop()
   that can never reach it). The hub therefore advertises the addresses of
   **one** interface, and joins the mDNS group on that interface (ADR 0028
   decision 1: it works "with the interface set"). A listener bound to one
-  address uses that address's interface. A listener on the wildcard address
-  uses the interface that holds the default route's source address (found by
-  connecting an unsent UDP socket, `RouteSource`), if it is a real one; else
-  the first up, multicast interface that is not loopback, point-to-point or
-  virtual (names `bridge*`, `utun*`, `awdl*`, `llw*`, `docker*`, `veth*`,
-  `vmnet*`, `tun*`, `tap*`, `vboxnet*`, `tailscale*`, `br-*`, `virbr*`,
-  `wg*`) and has an address. On it, the route's source address (else the first
-  one the system lists) is the IPv4 record and likewise one IPv6 record.
-  Loopback, unspecified, multicast, broadcast and link-local addresses (IPv6
-  has no zone in an AAAA record; 169.254/16 is no network) are never
-  advertised. A host with none left advertises nothing and logs
+  address uses the interface that holds it, however virtual: the owner chose
+  it, but it must be up and able to multicast. A listener on the wildcard
+  address uses, in this order: the interface holding the default route's
+  source address (found by connecting an unsent UDP socket, `RouteSource`)
+  when it is a reachable one; else the first reachable interface, that is up,
+  multicast, not loopback, not point-to-point and not named like a bridge,
+  tunnel or VM (`bridge*`, `utun*`, `awdl*`, `llw*`, `docker*`, `veth*`,
+  `vmnet*`, `tun*`, `tap*`, `vboxnet*`, `tailscale*`, `br-*`, `virbr*`, `wg*`,
+  `podman*`, `cni*`, `lxcbr*`, `lxdbr*`, `incusbr*`, `zt*`, `flannel*`,
+  `cali*`, `cilium*`, `nordlynx*`); else the route holder when it is up,
+  multicast and not point-to-point, whatever its name (a Linux host that
+  bridges its NIC holds its address and the default route on `bridge0`). A
+  tunnel that holds the default route is never used. On the chosen interface
+  the route's source address (else the first one the system lists) is the IPv4
+  record, and likewise one IPv6 record. That IPv6 address can be a temporary
+  privacy address that expires; the list is read once, so an IPv6-only hub
+  needs a restart then (agents try IPv4 first).
+  Loopback, unspecified, multicast, broadcast and IPv6 link-local addresses
+  (an AAAA record has no zone) are never advertised. An IPv4 link-local
+  address (169.254/16, a direct cable with no DHCP) ranks last: it is
+  advertised only when no interface has anything else. A host with nothing
+  left advertises nothing and logs
   `discovery.advertise_refused{reason=no_addresses}`. The choice is made once,
   at start. Re-advertising on a network change is later work: until then, after
   a network change restart `fleetd` or give the agent the new address (the
   agents' cached and configured addresses and the `HelloAck` list cover the
   time in between).
+- **Instance names.** The instance is `fleetd-<first label of the host>`;
+  hubs `hub.a.example` and `hub.b.example` on one network would both be
+  `fleetd-hub`. The SRV target keeps the whole host and stays unique, and the
+  agent verifies the target, so a clash costs a duplicate service name, not a
+  wrong connection.
 - **Never fatal.** A refusal or failure is one log line and one count; the hub
   keeps serving. `NewServer` of the library hides a family that cannot bind,
   so the advertiser checks `udp4` and `udp6` itself, logs each failed family
   once (`discovery.family_unavailable`) and advertises on the other; it fails
   (`advertise_failed{step=bind}`) only when neither binds.
-- **No multicast in tests.** `Env.Responder` and `Env.Addrs` are the seams;
+- **No multicast in tests.** `Env.Responder`, `Env.Ifaces` and `Env.Route` are the seams;
   the zero value is the real machine. The live check is behind
   `FLEET_MDNS_LIVE=1` in `internal/agent/conn` (it needs the agent's browser).
+- **A branch that cannot be driven from a real meter:** if the instruments
+  cannot be registered, `New` logs `discovery.advertise_failed{step=telemetry}`
+  once and the hub advertises with no counters (tested with a meter that
+  refuses; the OpenTelemetry SDK itself does not fail on these fixed names).
 - Signals: see [05b](../../../docs/specs/05b-observability.md).
 
 Tests: `CGO_ENABLED=0 go test ./internal/hub/discovery/`.

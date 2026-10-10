@@ -98,7 +98,7 @@ func TestPlan(t *testing.T) {
 			route: discovery.Route{V4: netip.MustParseAddr("203.0.113.9")}, wantIPs: []string{"10.0.0.5", "2001:db8::5"}, wantNIC: "en0", wantDial: "10.0.0.5",
 		},
 		{
-			name: "IPv4 link-local does not count: the next interface", hostname: "hub", bound: "[::]:7443",
+			name: "IPv4 link-local ranks last: the next interface has a real address", hostname: "hub", bound: "[::]:7443",
 			ifaces:  []discovery.Iface{nic("en0", up, "169.254.3.4", "fe80::1"), nic("en1", up, "10.1.1.5")},
 			wantIPs: []string{"10.1.1.5"}, wantNIC: "en1", wantDial: "10.1.1.5",
 		},
@@ -136,9 +136,76 @@ func TestPlan(t *testing.T) {
 				nic("bridge0", up, "10.9.0.1"), nic("utun2", up, "10.9.0.2"), nic("awdl0", up, "10.9.0.3"), nic("llw0", up, "10.9.0.4"),
 				nic("docker0", up, "10.9.0.5"), nic("veth1", up, "10.9.0.6"), nic("vmnet8", up, "10.9.0.7"), nic("tun0", up, "10.9.0.8"),
 				nic("tap0", up, "10.9.0.9"), nic("vboxnet0", up, "10.9.0.10"), nic("tailscale0", up, "100.64.0.3"), nic("br-1a2b", up, "10.9.0.11"),
-				nic("virbr0", up, "10.9.0.12"), nic("eth0", up, "192.168.1.8"),
+				nic("virbr0", up, "10.9.0.12"), nic("wg0", up, "10.9.0.13"), nic("podman0", up, "10.9.0.14"),
+				nic("cni0", up, "10.9.0.15"), nic("lxcbr0", up, "10.9.0.16"), nic("lxdbr0", up, "10.9.0.17"), nic("incusbr0", up, "10.9.0.18"),
+				nic("ztabcdef", up, "10.9.0.19"), nic("flannel.1", up, "10.9.0.20"), nic("cali1234", up, "10.9.0.21"), nic("cilium_host", up, "10.9.0.22"),
+				nic("nordlynx", up, "10.9.0.23"), nic("eth0", up, "192.168.1.8"),
 			},
 			wantIPs: []string{"192.168.1.8"}, wantNIC: "eth0", wantDial: "192.168.1.8",
+		},
+		{
+			name: "a KVM host: the default route is on bridge0, which has the only real address", hostname: "hub", bound: "[::]:7443",
+			ifaces: []discovery.Iface{nic("enp3s0", up), nic("bridge0", up, "192.168.1.20"), nic("virbr0", up, "192.168.122.1")},
+			route:  discovery.Route{V4: netip.MustParseAddr("192.168.1.20")}, wantIPs: []string{"192.168.1.20"}, wantNIC: "bridge0", wantDial: "192.168.1.20",
+		},
+		{
+			name: "a KVM host with no route known advertises nothing", hostname: "hub", bound: "[::]:7443",
+			ifaces: []discovery.Iface{nic("enp3s0", up), nic("bridge0", up, "192.168.1.20"), nic("virbr0", up, "192.168.122.1")}, reason: discovery.ReasonNoAddresses,
+		},
+		{
+			name: "a real interface wins over a filtered route holder", hostname: "hub", bound: "[::]:7443",
+			ifaces: []discovery.Iface{nic("bridge0", up, "192.168.1.20"), nic("eth1", up, "10.2.2.2")},
+			route:  discovery.Route{V4: netip.MustParseAddr("192.168.1.20")}, wantIPs: []string{"10.2.2.2"}, wantNIC: "eth1", wantDial: "10.2.2.2",
+		},
+		{
+			name: "a tunnel that holds the default route is not used, even with nothing else", hostname: "hub", bound: "[::]:7443",
+			ifaces: []discovery.Iface{nic("en0", up), nic("ppp0", up|net.FlagPointToPoint, "100.64.0.2")},
+			route:  discovery.Route{V4: netip.MustParseAddr("100.64.0.2")}, reason: discovery.ReasonNoAddresses,
+		},
+		{
+			name: "a route holder that is down is not used", hostname: "hub", bound: "[::]:7443",
+			ifaces: []discovery.Iface{nic("bridge0", net.FlagMulticast, "192.168.1.20")},
+			route:  discovery.Route{V4: netip.MustParseAddr("192.168.1.20")}, reason: discovery.ReasonNoAddresses,
+		},
+		{
+			name: "a direct cable: only IPv4 link-local, advertised because nothing else exists", hostname: "hub", bound: "[::]:7443",
+			ifaces:  []discovery.Iface{nic("en5", up, "169.254.10.2", "fe80::1")},
+			wantIPs: []string{"169.254.10.2"}, wantNIC: "en5", wantDial: "169.254.10.2",
+		},
+		{
+			name: "IPv4 link-local is last on its own interface", hostname: "hub", bound: "[::]:7443",
+			ifaces:  []discovery.Iface{nic("en0", up, "169.254.3.4", "10.0.0.5", "2001:db8::5")},
+			wantIPs: []string{"10.0.0.5", "2001:db8::5"}, wantNIC: "en0", wantDial: "10.0.0.5",
+		},
+		{
+			name: "a real address on a later interface wins over link-local on an earlier one", hostname: "hub", bound: "[::]:7443",
+			ifaces:  []discovery.Iface{nic("en5", up, "169.254.10.2"), nic("en0", up, "10.0.0.5")},
+			wantIPs: []string{"10.0.0.5"}, wantNIC: "en0", wantDial: "10.0.0.5",
+		},
+		{
+			name: "a listener bound to an IPv4 link-local address", hostname: "hub", bound: "169.254.10.2:7443",
+			ifaces:  []discovery.Iface{nic("en5", up, "169.254.10.2")},
+			wantIPs: []string{"169.254.10.2"}, wantNIC: "en5", wantDial: "169.254.10.2",
+		},
+		{
+			name: "route sources of both families on different interfaces: IPv4 decides", hostname: "hub", bound: "[::]:7443",
+			ifaces:  []discovery.Iface{nic("en0", up, "10.0.0.5"), nic("en1", up, "10.1.1.5", "2001:db8::9")},
+			route:   discovery.Route{V4: netip.MustParseAddr("10.0.0.5"), V6: netip.MustParseAddr("2001:db8::9")},
+			wantIPs: []string{"10.0.0.5"}, wantNIC: "en0", wantDial: "10.0.0.5",
+		},
+		{
+			name: "only an IPv6 route source: that interface", hostname: "hub", bound: "[::]:7443",
+			ifaces:  []discovery.Iface{nic("en0", up, "10.0.0.5"), nic("en1", up, "10.1.1.5", "2001:db8::9")},
+			route:   discovery.Route{V6: netip.MustParseAddr("2001:db8::9")},
+			wantIPs: []string{"10.1.1.5", "2001:db8::9"}, wantNIC: "en1", wantDial: "10.1.1.5",
+		},
+		{
+			name: "a listener bound to an address on a down interface", hostname: "hub", bound: "10.5.5.5:7443",
+			ifaces: []discovery.Iface{nic("en5", net.FlagMulticast, "10.5.5.5")}, reason: discovery.ReasonNoAddresses,
+		},
+		{
+			name: "a listener bound to an address on an interface without multicast", hostname: "hub", bound: "10.6.6.6:7443",
+			ifaces: []discovery.Iface{nic("en6", net.FlagUp, "10.6.6.6")}, reason: discovery.ReasonNoAddresses,
 		},
 		{
 			name: "a listener on one address advertises only it, on its interface", hostname: "hub", bound: "172.17.0.1:7443", ifaces: machine,
