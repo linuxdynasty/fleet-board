@@ -51,6 +51,9 @@ type Hub struct {
 type Options struct {
 	// Wrap wraps the listener's handler, for example with [DropFirstReply].
 	Wrap func(http.Handler) http.Handler
+	// Now is the hub's clock for token expiry and certificate issue
+	// (gateway.ServerOptions.Now); nil means time.Now.
+	Now func() time.Time
 }
 
 // StartHub starts a hub that lives until the test ends.
@@ -102,7 +105,7 @@ func StartHub(t *testing.T, opts Options) *Hub {
 	if err != nil {
 		t.Fatal(err)
 	}
-	srv, err := gateway.NewServer(gateway.ServerOptions{Certs: certs, Store: s, Identity: id, Revoked: list, Telemetry: tel})
+	srv, err := gateway.NewServer(gateway.ServerOptions{Certs: certs, Store: s, Identity: id, Revoked: list, Telemetry: tel, Now: opts.Now})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -194,11 +197,11 @@ func (h *Hub) InstallIDs(t *testing.T) []string {
 	return column[string](t, h, `SELECT install_id FROM enroll_responses ORDER BY id`)
 }
 
-func column[T any](t *testing.T, h *Hub, query string) []T {
+func column[T any](t *testing.T, h *Hub, query string, args ...any) []T {
 	t.Helper()
 	var out []T
 	h.read(t, func(tx *sql.Tx) error {
-		rows, err := tx.QueryContext(context.Background(), query)
+		rows, err := tx.QueryContext(context.Background(), query, args...)
 		if err != nil {
 			return err
 		}
@@ -263,11 +266,15 @@ func Lines(t *testing.T, logs, prefix string) []map[string]any {
 // DropFirstReply runs the first Enroll on the real handler, so the hub
 // commits it, then resets the stream instead of answering: the reply is
 // lost in transit.
-func DropFirstReply() func(http.Handler) http.Handler {
+func DropFirstReply() func(http.Handler) http.Handler { return DropFirstReplyTo("Enroll") }
+
+// DropFirstReplyTo is [DropFirstReply] for the first call of method (for
+// example "RenewCert").
+func DropFirstReplyTo(method string) func(http.Handler) http.Handler {
 	var dropped atomic.Bool
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if !strings.HasSuffix(r.URL.Path, "/Enroll") || !dropped.CompareAndSwap(false, true) {
+			if !strings.HasSuffix(r.URL.Path, "/"+method) || !dropped.CompareAndSwap(false, true) {
 				next.ServeHTTP(w, r)
 				return
 			}
