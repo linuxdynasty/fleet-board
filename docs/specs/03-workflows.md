@@ -133,20 +133,11 @@ tick missed while a send waits is dropped, never queued. Plan row 4 fills
 (the highest seq handed out) and `events` (agent.db's counters, as in
 `Hello`); later rows fill the rest. `connect.hello` logs the interval chosen.
 
-**Commands, settings and the outbound queue (plan row 6).** While
-Connected the loop hands each `Command` and `Settings` to its receiver and
-sends acks, progress, results and `SettingsAck` through one queue per
-stream; a result is queued only once logged, except the unlogged
-`EPOCH_MISMATCH` and `SEQ_REPLAYED` refusals. The rules are in
-[03n](03n-reconnect.md#commands-settings-and-the-outbound-queue).
-
-**Capabilities at enroll.** The agent has no capability list yet, so it
-leaves `EnrollRequest.capabilities` empty; capabilities are first sent in
-`Hello`, from the agent's list (plan row 6): `exec.raw`, an entry with no
-name, a name outside `[a-z0-9._-]` or over 64 bytes, version 0, or a
-repeated name is dropped (`connect.capability_dropped`). Row 6 advertises
-none; each command kind's capability comes with the row that builds its
-handler, so until then every `Command.requires` is answered `UNSUPPORTED`.
+**Capabilities, commands and settings (plan row 6).**
+`EnrollRequest.capabilities` stays empty; `Hello` carries the agent's list.
+While Connected the loop hands `Command` and `Settings` to their receivers
+and sends acks, progress, results and `SettingsAck` through one queue per
+stream. The rules are in [03n](03n-reconnect.md#commands-settings-and-the-outbound-queue).
 
 **Hub discovery (A2).** Candidate order: cached last-good address → mDNS
 `_fleetd._tcp` (`hashicorp/mdns`, ADR 0023; skipped with no usable multicast
@@ -448,14 +439,9 @@ re-enroll rule are in [02g](02g-agent-security.md#machine-lifecycle-revoke-and-d
   change, which resets it);
   `connect.message_ignored{kind}` (a `Command` or `Settings` with no
   receiver registered, until plan row 6 wires them);
-  `connect.outbound_blocked{kind, hook}` (warn, once per stream; a send
-  found the stream's queue full and waits, or with `hook` fails at once;
-  `kind`: `command_ack`, `command_progress`, `command_result`,
-  `settings_ack`); `connect.hook_blocked{hook, held_ms}` (warn; a hook
-  held the stream's sender over 10 s);
-  `connect.capability_dropped{reason, name}` (warn, once per entry and
-  run; `reason`: `reserved`, `invalid`, `repeat`; `name` only when it is a
-  valid name); `connect.ended{state}` (`revoked`,
+  `connect.outbound_blocked{kind, hook}`, `connect.hook_blocked{hook,
+  held_ms}` and `connect.capability_dropped{reason, name}` (warn; see
+  [03n](03n-reconnect.md#commands-settings-and-the-outbound-queue)); `connect.ended{state}` (`revoked`,
   `unknown_machine`, `fleet_mismatch`, `cert_expired`);
   `snapshot.sent{seq, bytes, unacked_results}`, `snapshot.requested{reason}`,
   `snapshot.oversize{bytes, max_bytes}`, `snapshot.result_unreadable{command_id,

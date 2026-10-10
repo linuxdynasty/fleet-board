@@ -143,6 +143,14 @@ waiting for keepalive timeouts.
 The agent side of plan row 6 (ruling forks 4 i, 11 and 12), in
 `internal/agent/conn`:
 
+- **Capabilities.** `Hello` carries the agent's list; `exec.raw`, an entry
+  with no name, a name outside `[a-z0-9._-]` or over 64 bytes, version 0,
+  or a repeated name is dropped (`connect.capability_dropped{reason, name}`,
+  once per entry and run; `reason`: `reserved`, `invalid`, `repeat`; `name`
+  only when valid). Row 6 advertises none: each kind's capability comes
+  with the row that builds its handler, so until then every
+  `Command.requires` is answered `UNSUPPORTED`.
+
 - **In.** While Connected the loop hands each `Command` and `Settings` to
   its receiver (the executor, the settings merge) with the stream's epoch
   and a context that ends with the stream or the run, without blocking: a
@@ -154,8 +162,9 @@ The agent side of plan row 6 (ruling forks 4 i, 11 and 12), in
   stream's one sender after the snapshot and its unacked results. A send
   with no Connected stream is refused at once; a full queue makes it wait
   for room, the stream's or the run's end, or its own deadline
-  (`connect.outbound_blocked`, `fleet_agent_outbound_blocked_total`
-  `result="waited"`). The
+  (`connect.outbound_blocked{kind, hook}`, once per stream;
+  `fleet_agent_outbound_blocked_total` `result="waited"`; `kind`:
+  `command_ack`, `command_progress`, `command_result`, `settings_ack`). The
   queue dies with its stream; what was left in it is counted in
   `fleet_agent_outbound_lost_total` (a lower bound) and comes back as 02i
   "Event kinds" says.
@@ -178,7 +187,8 @@ The agent side of plan row 6 (ruling forks 4 i, 11 and 12), in
   the stream's sender, so a send from a hook never waits: on a full queue
   it fails at once (counted as `result="refused"`) and the hook checks the
   error. A hook that holds the sender over 10 s is logged
-  (`connect.hook_blocked`). The receiver reads up to 8 messages ahead of
+  (`connect.hook_blocked{hook, held_ms}`; `hook`: `command`, `settings`,
+  `on_connected`). The receiver reads up to 8 messages ahead of
   the sender, so it sees the stream end even while a hook holds it.
 - Results for commands the hub already closed are ignored (idempotent by
   `command_id`); results for commands the hub never issued (DB restored from an
