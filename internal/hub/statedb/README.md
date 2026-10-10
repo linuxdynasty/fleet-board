@@ -111,6 +111,48 @@ list, err := statedb.RevokedSerials(ctx, s, now)  // revoked and not yet expired
 r, err := statedb.Renew(ctx, s, statedb.Renewal{MachineID: id, PeerSerial: serial, CSRKeyHash: h, Now: now, Sign: sign})
 ```
 
+- **Connections** (migration 5, plan row 5 PR 5a-i,
+  [02i](../../../docs/specs/02i-delivery-and-sequencing.md#connection-epoch),
+  [03n](../../../docs/specs/03n-reconnect.md), 03f race table):
+  `machines` gains `last_epoch` (0 until the first Hello) and
+  `last_seen_time`. `machine_connections` has one row per accepted Hello,
+  keyed `(machine_id, epoch)`: `boot_id`, `install_id`, `peer`,
+  `connect_reason` (`Hello.reason`), `started_time`, and once closed
+  `ended_time`, `end_reason` (a closed list, `EndReason`), `displaced_by`
+  (the epoch that displaced it) and `last_heartbeat_age_ms` (at
+  displacement, NULL when unknown). A partial unique index allows one live
+  row (`ended_time` NULL) per machine. No foreign key to `machines`, so the
+  history outlives `DeleteMachine`.
+- **`Hello`** is one writer job. It runs the `Renew` check (a machine row
+  that is not `REVOKED`, the peer serial stored for it unrevoked), sets the
+  epoch to `max(last_epoch, Hello.last_epoch) + 1` (`ErrEpochOutOfRange`
+  past `MaxEpoch`, the agent's ceiling), closes the machine's live row as
+  `displaced` and returns it as `HelloOut.Displaced`, inserts the new live
+  row and stores `last_epoch` and `last_seen_time`. It never changes
+  `machines.state`: the Snapshot transaction marks `ONLINE` (row 5 ruling,
+  fork 1). The machine id and serial come from the verified certificate;
+  `boot_id` and `install_id` must be 1 to 64 printable ASCII characters
+  without spaces and `peer` at most 128 (`ErrHelloInvalid`). The heartbeat
+  age is recorded only when `HelloIn.Live` names the displaced epoch: the
+  caller's registry may lag the store, and an unknown age stays unknown.
+- **What `HelloAck` gets from the store:** `Epoch`, `SettingsEpoch`
+  (`hub_identity`), and `HubLastEventSeq` and `SettingsGeneration`, both 0
+  until plan rows 5c and 5h store them. `hub_instance_id` is per process
+  start and not stored; the gateway mints it.
+- **`EndConnection`** closes the row of one epoch when it is still live and
+  moves `last_seen_time` (written on disconnect, defaults.md). It returns
+  whether it closed the live row: false for a displaced or closed row or an
+  epoch the machine never had, which is a no-op. Only a true result may
+  change machine state (03f, "The displaced stream closes after the newer
+  Hello"). A row left live by a crash is closed as `displaced` by the
+  machine's next Hello; the hub-start sweep is plan row 5b's.
+
+```go
+out, err := statedb.Hello(ctx, s, statedb.HelloIn{MachineID: id, PeerSerial: serial, LastEpoch: h.GetLastEpoch(), ...})
+// after commit: send HelloAck{epoch: out.Epoch, ...}; Bye{DUPLICATE_IDENTITY} to out.Displaced's stream
+live, err := statedb.EndConnection(ctx, s, id, out.Epoch, statedb.EndStreamClosed, now)
+```
+
 Tests: `CGO_ENABLED=0 go test ./internal/hub/statedb/`. They use real files:
 modes, a refused second create with the file hash unchanged, an injected
 failure before the link leaving an empty folder, the one-row constraint on
@@ -125,3 +167,12 @@ store gaining the tables. The row 4 tests cover `Renew`: a stored then
 replayed certificate (one signature, rows read from the file), each refusal
 before `Sign` runs, eight concurrent renewals with one key (one serial), the
 `cert_renewals` constraints by raw SQL, and a row 3 store gaining the table.
+The row 5 tests cover `Hello` and `EndConnection` with rows read from the
+file: epoch 1 with the machine state unchanged, `max(stored, last_epoch) + 1`
+(agent behind, equal, ahead of a restored hub), the epoch kept across a
+reopen, displacement with and without a known heartbeat age, each refusal
+writing nothing, 48 concurrent Hellos for one machine leaving one live row,
+a Hello for one machine never touching another, `EndConnection` closing once
+and a displaced stream's close as a no-op, every end reason stored, the
+table constraints by raw SQL, a row 4 store gaining the table, and
+`MaxEpoch` equal to the agent's `ring.MaxEpoch`.
