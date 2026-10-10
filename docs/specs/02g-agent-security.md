@@ -45,7 +45,10 @@ nor any part of the hash. `fleet-agent enroll --token T` does this, in order:
    the key is one. A connection that drops, resets or times out during the
    handshake is a lost connection and is retried within "Enroll tries"
    ([defaults](defaults.md)). An impostor on the LAN learns nothing, and a
-   typed or discovered address needs no trust.
+   typed or discovered address needs no trust. With no address given the
+   agent browses once and sends the request only to the first answer whose
+   handshake passes this check; the others get nothing more, and if none
+   passes it exits 1 having sent nothing (03 A2).
 3. Make or reuse the pending Ed25519 key (`enroll.key`, kept in the state
    directory until Enroll succeeds). This may happen before step 2; nothing
    leaves the machine until step 2 passes. Send `EnrollRequest{token,

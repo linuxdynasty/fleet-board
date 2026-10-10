@@ -7,6 +7,7 @@ Today it can join a machine to the fleet:
 ```bash
 TOKEN=$(fleetd enroll-token --machine laptop)      # on the hub
 fleet-agent enroll --hub hub.local --token "$TOKEN" # on the machine; port 7443 if none
+fleet-agent enroll --token "$TOKEN"                 # or find the hub on the local network
 ```
 
 `enroll` checks the hub against the CA named in the token before it sends
@@ -14,13 +15,15 @@ anything, then saves the machine's identity in the state folder
 (`~/.local/state/fleet-agent/`, or `--state-dir`), mode 0700 with 0600 files.
 It prints one line on stdout naming the machine and the fleet; log lines go
 to stderr. Exit codes: 0 enrolled, 1 the enroll failed (the line on stderr
-says why: no `--hub`, a bad or expired or used token, a hub that does not
+says why: no hub found, a bad or expired or used token, a hub that does not
 match the token, a hub that stayed busy, or a machine that is already
 enrolled), 2 bad usage. A stray argument (say a token typed without
 `--token`) is bad usage, and the error never repeats it.
 
-- `--hub` is required for now: finding the hub on the network comes later
-  in plan row 4. Without it nothing is sent.
+- Without `--hub` it asks the local network (mDNS) for the hub and sends
+  the token only to one that proves it holds the token's CA. If none does,
+  it exits 1 having sent nothing and says to pass `--hub`: a firewall on
+  the machine (ufw on Linux, say) often hides the hub from mDNS.
 - A busy hub or a dropped connection is retried a few times with the same
   token and key (docs/specs/defaults.md, "Enroll tries").
 - If the reply is still lost, run the same command again: the hub returns

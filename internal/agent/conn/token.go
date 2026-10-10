@@ -26,9 +26,9 @@ var (
 	// ErrTokenMalformed means the text is not an enroll token of 02g. Its
 	// text never echoes the token.
 	ErrTokenMalformed = errors.New("conn: the enroll token is not a fleet-board token (fbe1_...)")
-	// ErrNoHub means no hub address was given. Finding the hub on the network
-	// (02g A2) comes with discovery; until then the address is required.
-	ErrNoHub = errors.New("conn: no hub address: pass --hub host[:port]; finding the hub on the network is not built yet")
+	// ErrNoHub means no hub address was given and there was no way to
+	// look for one ([Options].Discover is nil).
+	ErrNoHub = errors.New("conn: no hub address: pass --hub host[:port]")
 	// ErrHubAddress means the hub address is not host or host:port.
 	ErrHubAddress = errors.New("conn: the hub address is not host or host:port")
 )

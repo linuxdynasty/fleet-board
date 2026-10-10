@@ -19,7 +19,8 @@ Read the root `AGENTS.md` first; it applies here. Load `fleet-go`,
   a link and is never replaced.
 - An mDNS answer is untrusted data: it only proposes a candidate, which
   passes the same pinned-CA handshake as any address, named by its SRV
-  target. Never trust a TXT record or a
+  target. Enroll sends nothing but that handshake to an answer until it
+  passes, and nothing at all when none does. Never trust a TXT record or a
   name in place of the pin.
 - `hub-addresses` is written through `writePrivate` (replace) only when a
   HelloAck's non-empty list differs from the list in use; a damaged one is

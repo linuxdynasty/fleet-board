@@ -167,7 +167,7 @@ func TestEnrollFailures(t *testing.T) {
 		{"no hub address", func(t *testing.T, dir string) []string {
 			t.Helper()
 			return []string{"--state-dir", dir, "enroll", "--token", h.Token(t, time.Now().Add(time.Hour))}
-		}, "--hub", false},
+		}, "no hub found on the local network", false},
 		{"malformed token", func(_ *testing.T, dir string) []string {
 			return []string{"--state-dir", dir, "enroll", "--hub", h.Addr, "--token", "fbe1_short"}
 		}, "not a fleet-board token", false},

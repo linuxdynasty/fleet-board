@@ -3,11 +3,12 @@
 The agent's link to the hub: enrollment
 ([02g A1](../../../docs/specs/02g-agent-security.md),
 [03 W1](../../../docs/specs/03-workflows.md#w1-enrollment-and-first-connect)),
-run by `fleet-agent enroll --hub <host[:port]> --token <token>`, and the
+run by `fleet-agent enroll [--hub <host[:port]>] --token <token>`, and the
 connection loop (03 W1 "State machine", 03n W2), run by `fleet-agent run`.
 
 ```go
-res, err := conn.Enroll(ctx, conn.Options{Dir: dir, Hub: "hub.local", Token: tok, Version: v, Telemetry: tel})
+res, err := conn.Enroll(ctx, conn.Options{Dir: dir, Hub: "hub.local", Token: tok, Version: v, Telemetry: tel,
+	Discover: conn.NewMDNS()}) // Hub "" browses; ErrNoHubFound when no answer holds the token's CA
 id, err := conn.LoadIdentity(dir)  // ErrNotEnrolled when there is none
 addr, err := conn.LoadHubAddress(dir)
 removed, err := conn.CheckEnded(dir, id) // *EndedError: the hub ended this machine; do not dial
@@ -21,8 +22,8 @@ st := l.Status()                    // state, peer, last failure per address, la
 `Enroll`, in order, stopping at the first failure:
 
 1. **Nothing leaves before the local checks.** The token must parse
-   (`ErrTokenMalformed`), a hub address must be given (`ErrNoHub`: discovery
-   comes later in plan row 4), and the state folder must be private.
+   (`ErrTokenMalformed`), a hub address must be given or `Discover` set
+   (`ErrNoHub` with neither), and the state folder must be private.
 2. **Never replace an identity.** Until re-enroll exists (later in plan row
    4, and row 13a's `previous_machine`), an enrolled folder is refused
    (`ErrAlreadyEnrolled`, naming the machine and saying to remove only
@@ -63,6 +64,18 @@ st := l.Status()                    // state, peer, last failure per address, la
    rule is `internal/hostname`, shared with the hub); the command prints a
    warning for it.
 
+**With no hub address** (03 A2, ADR 0028), after step 2 and before any
+key or request: one mDNS browse (`Discover`, `DefaultBrowseTimeout`). Each
+answer named `*._fleetd._tcp.local.` with a valid port, SRV target and
+unicast address is a candidate as it arrives (16 at most; the rest are
+dropped): it gets only the handshake of step 4, pinned to the token's CA
+for the SRV target's name, at the answer's address. The first that passes
+is used for the rest (`Result.Discovered`, `enroll.discovered`); one that
+fails it or cannot be reached gets nothing more. None is `ErrNoHubFound`
+(`enroll.failed{step="discover"}`, `err_kind` `timeout`: nothing answered,
+`io`: the browse could not run, `refused`: every answer failed), naming
+`--hub` and the likely firewall cause; nothing was sent.
+
 ## Connection loop
 
 `Loop.Run` repeats one attempt until ctx ends:
@@ -70,9 +83,8 @@ st := l.Status()                    // state, peer, last failure per address, la
 1. **Certificate first.** Past `CertNotAfter` the loop ends
    (`EndCertExpired`) without dialing.
 2. **Candidates.** The cached `hub-address`; then, after it failed, one
-   mDNS browse (`LoopOptions.Discover`; only answers named
-   `*._fleetd._tcp.local.` with a valid port, SRV target and unicast
-   address, at most 16, each tried as it arrives, dialed at its address and named, logged and cached
+   mDNS browse (`LoopOptions.Discover`; answers kept as for enroll, each
+   tried as it arrives, dialed at its address and named, logged and cached
    by its SRV target); then the configured addresses, each once. The
    configured list is `hub-addresses` (the hub's latest) when it holds a
    valid line, else the identity's (`connect.addresses{source}` says which);
@@ -207,8 +219,9 @@ metrics are listed in 03 W1 and 03n W2 "Telemetry" (`connect.*`, `snapshot.*`,
 Enroll logs: `enroll.completed{machine_id,
 replayed, hostname_mismatch}`, `enroll.refused{reason, peer}`,
 `enroll.retry{attempt, err_kind}`, `enroll.hub_untrusted{peer}`,
+`enroll.discovered{peer, kept, dropped, elapsed_ms}`,
 `enroll.failed{step, err_kind}` with `step`
-one of `token`, `hub_address`, `state`, `already_enrolled`, `key`, `call`,
+one of `token`, `hub_address`, `state`, `already_enrolled`, `discover`, `key`, `call`,
 `response`, `save`, `cleanup`. No line holds the token, the key, the salt or
 the facts; `Token` and `Identity` print redacted in every format.
 
@@ -274,7 +287,10 @@ dropped without a dial and an impostor with the right name that gets a
 handshake and nothing else, no browse while the cached address works, a
 browse after the cached address failed that finds nothing falling through
 to the configured address, a failed browse, one browse per attempt and a
-wake starting the next at once. `hub-addresses`: a HelloAck list saved and used after a
+wake starting the next at once; enroll with no hub finding the hub past a
+stray and an impostor with one request, and exiting with nothing sent when
+nothing answers, only a stray, an impostor or a closed port answers, or the
+browse fails. `hub-addresses`: a HelloAck list saved and used after a
 restart while the old address refuses; an empty, invalid or unchanged list
 not rewritten; a damaged, loose or folder file falling back to the
 identity list; a failed save keeping the stream; enroll removing it; and a

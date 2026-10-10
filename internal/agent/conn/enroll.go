@@ -77,9 +77,14 @@ func (e *RefusedError) Error() string {
 type Options struct {
 	// Dir is the agent state folder (04 Q9); see [DefaultDir].
 	Dir string
-	// Hub is the hub address, host or host:port. Empty is [ErrNoHub] until
-	// discovery exists.
+	// Hub is the hub address, host or host:port. Empty browses with
+	// Discover ([ErrNoHubFound] when no hub holds the token's CA), or is
+	// [ErrNoHub] with no Discover.
 	Hub string
+	// Discover finds the hub when Hub is empty; BrowseTimeout bounds its
+	// one browse (zero is [DefaultBrowseTimeout]).
+	Discover      Discover
+	BrowseTimeout time.Duration
 	// Token is the enroll token text the owner pasted.
 	Token string
 	// Version is the agent version, sent in the facts.
@@ -99,8 +104,10 @@ type Result struct {
 	// Replayed is true when the hub returned its stored answer to an
 	// earlier try with the same token, install_id and key.
 	Replayed bool
-	// HubAddress is the address enrolled with, now cached.
+	// HubAddress is the address enrolled with, now cached; Discovered
+	// says mDNS found it.
 	HubAddress string
+	Discovered bool
 	// Hostname is the one this machine reported; HostnameMismatch is true
 	// when the hub expected another (compared the hub's way).
 	Hostname         string
@@ -111,6 +118,8 @@ type Result struct {
 type enrollRun struct {
 	log  *slog.Logger
 	span trace.Span
+	// peer is the hub mDNS found, for the logs; empty with --hub.
+	peer string
 }
 
 // Enroll runs 02g A1 on this machine: check the token and address, make or
@@ -136,7 +145,11 @@ func Enroll(ctx context.Context, opts Options) (Result, error) {
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, step)
-		r.failure(ctx, step, err, opts.Hub)
+		hub := opts.Hub
+		if r.peer != "" {
+			hub = r.peer
+		}
+		r.failure(ctx, step, err, hub)
 		return Result{}, err
 	}
 	r.log.InfoContext(ctx, "enroll.completed", "machine_id", res.Identity.MachineID, "replayed", res.Replayed,
@@ -151,7 +164,8 @@ func enroll(ctx context.Context, r *enrollRun, opts Options) (Result, string, er
 		return Result{}, "token", err
 	}
 	addr, err := HubAddress(opts.Hub)
-	if err != nil {
+	discover := errors.Is(err, ErrNoHub) && opts.Discover != nil
+	if err != nil && !discover {
 		return Result{}, "hub_address", err
 	}
 	if err := EnsureDir(opts.Dir); err != nil {
@@ -168,6 +182,14 @@ func enroll(ctx context.Context, r *enrollRun, opts Options) (Result, string, er
 			ErrAlreadyEnrolled, id.MachineID, id.FleetID, filepath.Join(opts.Dir, IdentityFile))
 	case !errors.Is(err, ErrNotEnrolled):
 		return Result{}, "state", err
+	}
+	var dial string
+	if discover {
+		c, err := findHub(ctx, r, opts, tok)
+		if err != nil {
+			return Result{}, "discover", err
+		}
+		addr, dial, r.peer = c.addr, c.dial, c.addr
 	}
 	installID, err := readInstallID(ctx, opts)
 	if err != nil {
@@ -187,7 +209,7 @@ func enroll(ctx context.Context, r *enrollRun, opts Options) (Result, string, er
 	}
 	// Capabilities are first sent in Hello (03 W1); the agent has none to
 	// declare at enroll yet.
-	msg, err := call(ctx, r, opts, addr, tok, &agentv1.EnrollRequest{
+	msg, err := call(ctx, r, opts, addr, dial, tok, &agentv1.EnrollRequest{
 		Token: tok.Reveal(), CsrPem: csr, Facts: facts,
 		ProtoMin: protoversion.Min, ProtoMax: protoversion.Max, InstallId: installID,
 	})
@@ -220,7 +242,7 @@ func enroll(ctx context.Context, r *enrollRun, opts Options) (Result, string, er
 	}
 	host := facts.GetHostname()
 	return Result{
-		Identity: id, Replayed: msg.GetReplayed(), HubAddress: addr, Hostname: host,
+		Identity: id, Replayed: msg.GetReplayed(), HubAddress: addr, Discovered: discover, Hostname: host,
 		HostnameMismatch: id.ExpectedHostname != "" && hostname.Mismatch(id.ExpectedHostname, host),
 	}, "", nil
 }
@@ -257,7 +279,10 @@ func (r *enrollRun) failure(ctx context.Context, step string, err error, hub str
 // errKind is the closed err_kind class of 05b.
 func errKind(err error) string {
 	var ne net.Error
+	var nh *noHubError
 	switch {
+	case errors.As(err, &nh):
+		return nh.kind
 	case errors.Is(err, context.DeadlineExceeded), errors.Is(err, context.Canceled),
 		errors.As(err, &ne) && ne.Timeout():
 		return "timeout"
