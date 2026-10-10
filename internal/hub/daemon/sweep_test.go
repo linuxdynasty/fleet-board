@@ -86,6 +86,11 @@ func TestRunSweepsAtStartAndTheTickTakesASilentMachineOffline(t *testing.T) {
 		lines[0]["machine_id"] != id {
 		t.Errorf("machine.state_changed lines %v", lines)
 	}
+	// 03n: fleet_hub_machine_state is set at every change, the sweep's too,
+	// before any housekeeping pass.
+	if v := sample(h.scrape(t), "fleet_hub_machine_state", `machine="`+id+`"`, `state="STALE"`); v != 1 {
+		t.Errorf("fleet_hub_machine_state{state=STALE} = %v after the sweep, want 1", v)
+	}
 	tick := func(at time.Duration) {
 		now.Store(start.Add(at).UnixNano())
 		ticks <- time.Time{}

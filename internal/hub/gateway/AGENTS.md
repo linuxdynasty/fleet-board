@@ -31,8 +31,8 @@ anything that touches `AgentService`. Rules for this package:
   runs on the handler goroutine, only when it changes something.
 - Machine state changes go through `statedb` jobs that re-check the state
   and the live epoch in the transaction; a displaced stream's close never
-  changes its machine (#138). A housekeeping cut is a transport close with
-  no Bye (row 5 ruling, fork 4).
+  changes its machine (#138). A housekeeping cut sends no Bye: the handler
+  returns nil and the stream ends with an OK status (row 5 ruling, fork 4).
 - A new `ConnectRequest` arm gets its own file that registers it with
   `arms.add`; do not grow `arms.go`.
 - Tests dial the real listener; a fake clock and a tick channel drive renewal.

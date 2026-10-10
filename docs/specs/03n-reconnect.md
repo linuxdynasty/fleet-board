@@ -94,14 +94,16 @@ connection; a Heartbeat brings a machine back from `STALE` only on the stream
 that was live when silence made it `STALE`.
 
 How the hub judges silence (plan row 5b): a housekeeping job every 5 s
-([defaults](defaults.md)) takes the newest of the hub's start, the live row's
-`Hello` and the live stream's last `Heartbeat` (hub clock). 45 s makes an
+([defaults](defaults.md)) takes the newest of the hub's start, the `Snapshot` of
+the live connection's epoch (until plan row 5c lands it, the live row's `Hello`)
+and the live stream's last `Heartbeat` (hub clock). 45 s makes an
 `ONLINE` machine `STALE`; 3 minutes makes it `OFFLINE`, closes its live row as
 `offline` and cuts the stream. While `STALE`, a stream whose reader has been
 blocked for 45 s handing a message to its full ingest queue is cut too
 (`ingest_stalled`), and that close takes the machine `OFFLINE`; a reader
-waiting for the agent's next message is never cut. A cut is a transport close
-with no `Bye`: the agent backs off and reconnects. Every change is one writer
+waiting for the agent's next message is never cut. A cut sends no `Bye`: the
+hub's handler returns and the stream ends with an OK status; the agent sees the
+stream end, backs off and reconnects. Every change is one writer
 job that holds only while the state and the live epoch are what the job read,
 stamped for Watch; no audit row (02m has no state-change action). The live
 row's close by the stream or the agent's `Bye` takes an `ONLINE` or `STALE`

@@ -144,6 +144,15 @@ func TestAFailingJobNeverStopsTheOthers(t *testing.T) {
 	if len(lines) != 4 || kinds["fails/io"] != 2 || kinds["panics/panic"] != 2 {
 		t.Errorf("hub.housekeeping_failed lines %v", lines)
 	}
+	for _, l := range lines {
+		if l["job"] != "panics" {
+			continue
+		}
+		stack, _ := l["stack"].(string)
+		if l["panic"] != "string" || !strings.Contains(stack, "housekeeping_test") || len(stack) > 4096 {
+			t.Errorf("a panic's line has panic %v and a %d-byte stack, want its type and a bounded stack naming the job", l["panic"], len(stack))
+		}
+	}
 	body := scrape(t, tel)
 	for _, job := range []string{"fails", "panics"} {
 		if !metricIs(body, "fleet_hub_housekeeping_failures_total", `job="`+job+`"`, "2") {
@@ -231,5 +240,28 @@ func TestNewRefusesABadJob(t *testing.T) {
 		if _, err := housekeeping.New(housekeeping.Options{Telemetry: tel}, jobs...); err == nil {
 			t.Errorf("%s: New accepted it", name)
 		}
+	}
+}
+
+// A job that ends because the hub is stopping (its context ended) is not
+// a failure: nothing is logged or counted.
+func TestAJobStoppedByShutdownIsNotAFailure(t *testing.T) {
+	t.Parallel()
+	tel, logs := newTel(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	hk, err := housekeeping.New(housekeeping.Options{Now: (&clock{now: t0}).Now, Telemetry: tel},
+		housekeeping.Job{Name: "j", Every: time.Second, Run: func(ctx context.Context, _ time.Time) error {
+			cancel()
+			return fmt.Errorf("store write: %w", ctx.Err())
+		}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	hk.Check(ctx)
+	if lines := logs.events("hub.housekeeping_failed"); len(lines) != 0 {
+		t.Errorf("hub.housekeeping_failed lines %v at shutdown, want none", lines)
+	}
+	if metricIs(scrape(t, tel), "fleet_hub_housekeeping_failures_total", `job="j"`, "1") {
+		t.Error("a shutdown counted as a failure")
 	}
 }

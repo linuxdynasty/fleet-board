@@ -149,9 +149,11 @@ srv, err := gateway.NewServer(gateway.ServerOptions{
   `OfflineAfter` (3 min) is `OFFLINE` (`statedb.MarkState` also closes the
   live row as `offline`) and the stream is cut; `StaleAfter` (45 s) while
   `ONLINE` is `STALE`; while `STALE`, a stream stalled for `StaleAfter` or
-  more is cut (`ingest_stalled`). A cut ends the stream with no Bye and
+  more is cut (`ingest_stalled`). A cut sends no Bye: it ends the stream
+  (the handler returns nil, so the stream ends with an OK status) and
   cancels the stream's context (arm handlers get it), so a handler waiting
-  on the store returns. On a Heartbeat the handler goroutine runs one
+  on the store returns, and messages drained after the cut see it
+  cancelled. A stream that already ended on its own is not cut or counted. On a Heartbeat the handler goroutine runs one
   `statedb.HeartbeatSeen` job when `last_seen` is due (`LastSeenEvery`, 1
   min, the Heartbeat's receive time) or when the machine went `STALE` while
   this stream was live (then back to `ONLINE`); a `STALE` from the start
@@ -160,8 +162,15 @@ srv, err := gateway.NewServer(gateway.ServerOptions{
   `STALE` clock at the Snapshot apply, so 5c records a "heard" time on the
   stream when its Snapshot commits (not `beat`, which feeds the displaced
   stream's heartbeat age). `fleet_hub_machine_state` is
-  set at each change and each pass; the clock skew is the median of the
+  set at each change and each pass, and for the start sweep's changes by
+  `Server.RecordStates` (fleetd run, once the listener exists); the clock skew is the median of the
   last five `sent_time` samples (`Hello` and Heartbeat), in memory.
+- **A client cancel alone is not seen.** A test client that only cancels
+  its context leaves the hub's reader waiting: the Go HTTP/2 client with
+  connect-go sends nothing once the response has started while the request
+  body is open. A client must `CloseRequest` or close the transport, as the
+  real agent does (`internal/agent/conn` `session.go`); a peer that goes
+  silent is caught by `STALE` at 45 s and `OFFLINE` (and the cut) at 3 min.
 - **Handler table** (`arms.go`): one handler per `ConnectRequest` arm, added
   by later rows from files of their own (`arms.add` in an `init`). An arm
   with none is counted in `fleet_hub_connect_unhandled_total{kind}`, logged
@@ -235,6 +244,11 @@ clock: `STALE` at 45 s and `OFFLINE` at 3 min (the stream cut, the row
 stream's close leaving the machine `ONLINE` (#138, also when its own close
 wins the race with the registry), the skew median, and a
 stalled reader cut only at `STALE` after 45 s (never while `ONLINE`).
+`state_return_test.go` checks that a `STALE` from the start sweep and a
+`STALE` whose stream was displaced are not brought back by Heartbeats on
+the new stream, and that silence counts from the live row's `Hello`, not
+the hub's start; `registry_internal_test.go` that a cut finds only a
+running stream of its epoch.
 `writer_internal_test.go` drives the writer with a stub (queued messages,
 then the Bye, under one deadline; the cut after the wait) and a request
 with no response controller. `connect_end_test.go` covers Shutdown with a

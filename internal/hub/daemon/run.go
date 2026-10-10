@@ -91,30 +91,33 @@ func Run(ctx context.Context, opts Options) (err error) {
 		return s.fail(ReasonStore, err)
 	}
 	defer func() { err = errors.Join(err, nightly.Close()) }()
-	if err := sweep(ctx, st, opts, s); err != nil {
+	swept, err := sweep(ctx, st, opts, s)
+	if err != nil {
 		return s.fail(ReasonStore, err)
 	}
-	return serve(ctx, cfg, opts, hubDeps{certs: certs, hostname: host, st: st, id: id, revoked: revoked, nightly: nightly}, s)
+	return serve(ctx, cfg, opts, hubDeps{
+		certs: certs, hostname: host, st: st, id: id, revoked: revoked, nightly: nightly, swept: swept.Changes,
+	}, s)
 }
 
 // sweep is the hub-start pass (03n "Hub start"), before any listener
 // serves, so no Hello can race it: rows left live are closed as
 // hub_restart and every ONLINE machine becomes STALE.
-func sweep(ctx context.Context, st *store.Store, opts Options, s *session) error {
+func sweep(ctx context.Context, st *store.Store, opts Options, s *session) (statedb.Swept, error) {
 	now := time.Now
 	if opts.Now != nil {
 		now = opts.Now
 	}
 	out, err := statedb.StartSweep(ctx, st, now().UTC())
 	if err != nil {
-		return fmt.Errorf("daemon: start sweep: %w", err)
+		return statedb.Swept{}, fmt.Errorf("daemon: start sweep: %w", err)
 	}
 	for _, c := range out.Changes {
 		s.tel.Logger.InfoContext(ctx, "machine.state_changed", "machine_id", c.MachineID, "from", c.From, "to", c.To,
 			"reason", c.Reason)
 	}
 	s.tel.Logger.InfoContext(ctx, "hub.start_sweep", "stale", len(out.Changes), "rows_closed", out.RowsClosed)
-	return nil
+	return out, nil
 }
 
 // hubDeps is what the listeners and jobs share once the store is open.
@@ -127,6 +130,9 @@ type hubDeps struct {
 	id       statedb.Identity
 	revoked  *revocation.List
 	nightly  *backup.Schedule
+	// swept are the start sweep's changes, for the agent listener's
+	// fleet_hub_machine_state.
+	swept []statedb.StateChange
 }
 
 // revocationReason: a loose revoked-serials is mode_loose like any other
@@ -188,6 +194,7 @@ func serve(ctx context.Context, cfg *config.Config, opts Options, d hubDeps, s *
 	if err != nil {
 		return s.fail(ReasonListen, err)
 	}
+	agent.RecordStates(ctx, d.swept)
 	hk, err := housekeeping.New(housekeeping.Options{Now: opts.Now, Telemetry: s.tel}, housekeeping.Job{
 		Name: "machine_state", Every: housekeeping.TickEvery, Run: agent.Housekeep,
 	})

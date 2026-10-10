@@ -130,9 +130,10 @@ func (a *agentService) cutStalled(ctx context.Context, s *stream, now time.Time)
 	}
 }
 
-// cut ends machineID's live stream of epoch, if the registry holds it, with
-// no Bye (a transport close; the agent backs off and reconnects) and
-// cancels its context, then logs hub.stream_closed and counts it.
+// cut ends machineID's live stream of epoch, if the registry holds it and
+// it is still running, with no Bye (the handler returns nil: the stream
+// ends with an OK status; the agent backs off and reconnects) and cancels
+// its context, then logs hub.stream_closed and counts it.
 func (a *agentService) cut(ctx context.Context, machineID string, epoch uint64, reason statedb.EndReason, now time.Time) {
 	s := a.streams.get(machineID)
 	if s == nil || s.epoch != epoch {
@@ -184,6 +185,15 @@ func (a *agentService) heartbeat(ctx context.Context, s *stream) {
 	}
 	if c != nil {
 		a.stateChanged(ctx, *c)
+	}
+}
+
+// RecordStates sets fleet_hub_machine_state for changes committed before
+// this server existed (the start sweep, which logs them itself).
+func (s *Server) RecordStates(ctx context.Context, changes []statedb.StateChange) {
+	a := &agentService{enrollDeps: s.deps, connectDeps: s.connect}
+	for _, c := range changes {
+		a.recordState(ctx, c.MachineID, c.To)
 	}
 }
 

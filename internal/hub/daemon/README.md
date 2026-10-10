@@ -48,7 +48,9 @@ parses flags and calls `Init`, `Run`, `EnrollToken`, `Backup` or `Restore`.
    left live (a crash, or a Hello committed after a shutdown stopped waiting)
    is closed as `hub_restart`, and every `ONLINE` machine becomes `STALE`
    (`machine.state_changed{reason="hub_start"}`, `hub.start_sweep{stale,
-   rows_closed}`). A store failure refuses the start (`store_failed`).
+   rows_closed}`; `fleet_hub_machine_state` set through
+   `gateway.Server.RecordStates` once the agent listener is built). A store
+   failure refuses the start (`store_failed`).
 8. Binds the agent listener (`gateway.NewServer` with the store, the identity
    and the revocation list: `Enroll`, and a revoked client certificate fails
    its handshake), then the API and optional metrics listeners (port 0 is allowed; the

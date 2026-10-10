@@ -5,6 +5,7 @@
 // every [TickEvery], from one goroutine, until its context ends, and
 // [Runner.Check] is one such pass. A job reads on the read pool and writes
 // only through the store's single writer. A job that fails or panics is
-// logged (hub.housekeeping_failed) and counted
-// (fleet_hub_housekeeping_failures_total{job}); the others still run.
+// logged (hub.housekeeping_failed; a panic with its type and a bounded
+// stack) and counted (fleet_hub_housekeeping_failures_total{job}); the
+// others still run. An error after the hub began stopping is not a failure.
 package housekeeping

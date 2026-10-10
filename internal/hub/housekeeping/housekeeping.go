@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"runtime/debug"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -39,8 +40,10 @@ type Options struct {
 
 // Runner runs registered jobs on their own cadence from one
 // goroutine (the one calling Run or Check). A job that fails or panics is
-// logged (hub.housekeeping_failed) and counted
-// (fleet_hub_housekeeping_failures_total{job}); the others still run.
+// logged (hub.housekeeping_failed; a panic with its type and a stack of at
+// most 4 KiB) and counted (fleet_hub_housekeeping_failures_total{job}); the
+// others still run. A job that returns an error once the pass's context
+// ended (the hub stopping) is not a failure.
 type Runner struct {
 	now      func() time.Time
 	log      *slog.Logger
@@ -107,28 +110,47 @@ func (h *Runner) Check(ctx context.Context) {
 			continue
 		}
 		e.last = now
-		if kind := h.runOne(ctx, e.Job, now); kind != "" {
-			h.failures.Add(ctx, 1, metric.WithAttributes(attribute.String("job", e.Name)))
-			h.log.ErrorContext(ctx, "hub.housekeeping_failed", "job", e.Name, "err_kind", kind)
+		f := h.runOne(ctx, e.Job, now)
+		if f.kind == "" || (f.kind != "panic" && ctx.Err() != nil) {
+			continue // done, or stopped by the hub's shutdown: not a failure
 		}
+		h.failures.Add(ctx, 1, metric.WithAttributes(attribute.String("job", e.Name)))
+		args := []any{"job", e.Name, "err_kind", f.kind}
+		if f.kind == "panic" {
+			args = append(args, "panic", f.panicType, "stack", f.stack)
+		}
+		h.log.ErrorContext(ctx, "hub.housekeeping_failed", args...)
 	}
 }
 
-// runOne runs j, turning a panic into a failure; it returns the failure's
-// err_kind, or "" when the job succeeded.
-func (h *Runner) runOne(ctx context.Context, j Job, now time.Time) (kind string) {
+// maxStack bounds the stack a recovered panic logs.
+const maxStack = 4096
+
+// failure is how a job run ended: kind is "" on success, else its err_kind;
+// a panic also carries the panic value's type and a bounded stack (never
+// the value: it may hold data).
+type failure struct {
+	kind, panicType, stack string
+}
+
+// runOne runs j, turning a panic into a failure.
+func (h *Runner) runOne(ctx context.Context, j Job, now time.Time) (f failure) {
 	defer func() {
-		if recover() != nil {
-			kind = "panic"
+		if r := recover(); r != nil {
+			st := debug.Stack()
+			if len(st) > maxStack {
+				st = st[:maxStack]
+			}
+			f = failure{kind: "panic", panicType: fmt.Sprintf("%T", r), stack: string(st)}
 		}
 	}()
 	err := j.Run(ctx, now)
 	switch {
 	case err == nil:
-		return ""
+		return failure{}
 	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
-		return "timeout"
+		return failure{kind: "timeout"}
 	default:
-		return "io"
+		return failure{kind: "io"}
 	}
 }

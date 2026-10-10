@@ -281,6 +281,9 @@ func (a *agentService) serve(ctx context.Context, bs *connectStream, rc *http.Re
 			read = true
 		}
 	}
+	// After a housekeeping cut ctx is already cancelled: drained messages
+	// reach their arm with a cancelled context, so a store job they submit
+	// fails; the agent sends again what the hub never acked.
 	a.drain(ctx, s, s.in, unhandled)
 	if !a.stop(rc, wrote, byeWait+100*time.Millisecond) {
 		// The Bye's deadline must not outlive it: the row close below may

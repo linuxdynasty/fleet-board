@@ -186,3 +186,28 @@ func newTestDepsTo(t *testing.T, out io.Writer) (*agentService, *telemetry.Telem
 	}
 	return &agentService{enrollDeps: &enrollDeps{log: tel.Logger, now: time.Now}, connectDeps: cd}, tel
 }
+
+// A cut finds only a stream that is still running: one that already ended
+// on its own (the agent left as the cut was decided) keeps its reason and
+// is not reported as cut; another epoch is never cut.
+func TestRegistryCutOnlyARunningStreamOfTheEpoch(t *testing.T) {
+	t.Parallel()
+	r := newRegistry()
+	s := newStream(context.Background(), "m1", "boot", "p", 3, time.Time{})
+	r.register(s)
+	if got := r.cut("m1", 2, statedb.EndOffline); got != nil {
+		t.Fatalf("cut of epoch 2 = %v, want nil while epoch 3 is live", got)
+	}
+	s.end(agentv1.ByeReason_BYE_REASON_UNSPECIFIED, statedb.EndStreamClosed)
+	if got := r.cut("m1", 3, statedb.EndOffline); got != nil {
+		t.Errorf("cut of an ended stream = %v, want nil", got)
+	}
+	if s.endReason() != statedb.EndStreamClosed || s.ctx.Err() != nil {
+		t.Errorf("the ended stream's reason %s, ctx %v; want stream_closed and its context untouched", s.endReason(), s.ctx.Err())
+	}
+	live := newStream(context.Background(), "m2", "boot", "p", 1, time.Time{})
+	r.register(live)
+	if got := r.cut("m2", 1, statedb.EndIngestStalled); got != live || live.endReason() != statedb.EndIngestStalled || live.ctx.Err() == nil {
+		t.Errorf("cut of a running stream = %v (reason %s, ctx %v)", got, live.endReason(), live.ctx.Err())
+	}
+}

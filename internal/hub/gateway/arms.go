@@ -13,7 +13,9 @@ import (
 // stream's ingest goroutine, in arrival order. It may submit writer jobs
 // and wait for them (backpressure reaches the agent through the bounded
 // ingest queue and HTTP/2 flow control); it must not send on the stream
-// itself except through stream.send, after its job committed.
+// itself except through stream.send, after its job committed. ctx is the
+// stream's: a housekeeping cut cancels it, so a handler waiting on the
+// store returns, and messages drained after the cut see it cancelled.
 type armHandler func(ctx context.Context, a *agentService, s *stream, m *agentv1.ConnectRequest)
 
 // armTable maps a ConnectRequest oneof arm (armKind's names) to its

@@ -19,7 +19,10 @@ hk.Check(ctx)            // one pass, for tests
   reads on the read pool (03f: a consistent read, then write jobs). No
   transaction spans a network call.
 - **Failures** never stop the others: an error or a panic is logged and
-  counted, and the job runs again at its next turn.
+  counted, and the job runs again at its next turn. A panic logs the
+  value's type (never the value) and a stack of at most 4 KiB. An error a
+  job returns after the pass's context ended (the hub stopping) is not a
+  failure.
 - Plan row 5b registers `machine_state` (`gateway.Server.Housekeep`);
   later rows add their prune and expiry jobs to the list in
   `internal/hub/daemon`.
@@ -28,10 +31,11 @@ hk.Check(ctx)            // one pass, for tests
 
 | Signal | When |
 |---|---|
-| `hub.housekeeping_failed` (`job`, `err_kind`: `io`, `timeout`, `panic`), `fleet_hub_housekeeping_failures_total{job}` | a job returned an error or panicked (error) |
+| `hub.housekeeping_failed` (`job`, `err_kind`: `io`, `timeout`, `panic`; a panic adds `panic` and `stack`), `fleet_hub_housekeeping_failures_total{job}` | a job returned an error or panicked (error); not at shutdown |
 
 Tests: `CGO_ENABLED=0 go test ./internal/hub/housekeeping/`. A fake clock
 and direct `Check` calls: each job on its own cadence, a failing and a
-panicking job logged and counted while the others run, `Run` checking once
+panicking job logged and counted while the others run (the panic's type
+and bounded stack), no failure for a job stopped by shutdown, `Run` checking once
 per tick and returning when its context ends, a clock stepped back, and the
 refusals of `New`.
