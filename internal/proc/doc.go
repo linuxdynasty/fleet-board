@@ -20,9 +20,11 @@
 //
 // The caps come from a [Caller], one of the names in the defaults row
 // "One-shot child process" (docs/specs/defaults.md); [For] returns it. There is
-// no default cap: a caller with no entry in the row is refused. The table is
-// empty until the row that adds the first caller measures its call, and a test
-// keeps the table and the row in step.
+// no default cap: a caller with no entry in the row is refused. A row adds its
+// caller with a measured entry (the first is "tmux", for `tmux -V`), and a
+// test keeps the table and the row in step. A bare program name that is on no
+// PATH entry returns [ErrNotFound], so a caller can tell "not installed" from
+// a failed run.
 //
 // The long-lived `tmux -C` client and the attach PTY are not one-shot and do
 // not use this package. A lint rule in .golangci.yml lets only this package,

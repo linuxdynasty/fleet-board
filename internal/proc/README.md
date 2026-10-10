@@ -100,11 +100,14 @@ A `Caller` is one of the names in the defaults row "One-shot child process"
 with no entry gets `ErrUnknownCaller`; a zero `Spec`, or a Caller with a zero
 cap, is refused (`ErrNoCaller`, `ErrNoLimits`). There is no default.
 
-The table in `limits.go` is empty today, on purpose. The row says each cap is
-set from a measured run of that command, and no caller exists yet. The row
-that adds the first caller (rows 6, 7 and 8: `git`, `gh`, `loginctl`, `tmux`
-one-shot calls, the version checks) measures its real call and adds its entry
-to `limits.go` and its caps to the row as `name` seconds / KiB, in the same PR.
+Each cap is set from a measured run of that command, so a caller is added by
+the row that first runs it (rows 6, 7 and 8: `git`, `gh`, `loginctl`, `tmux`
+one-shot calls, the version checks), with its entry in `limits.go` and its caps
+in the row as `name` seconds / KiB, in the same PR. The first is `tmux` (5 s,
+1 KiB), measured on `tmux -V`: 4 to 11 ms and 10 bytes over 50 runs on macOS.
+A bare program name found on no PATH entry returns `ErrNotFound` (it is
+`exec.ErrNotFound`, so a caller need not import `os/exec`); a path that does
+not exist is an ordinary start error.
 `TestCallersMatchTheDefaultsRow` fails when they differ in a name or a number;
 `TestCheckRow` seeds each difference. This package's own tests make callers
 with `CallerForTest` (`export_test.go`), which production code cannot reach.

@@ -23,9 +23,14 @@ var (
 	ErrUnknownCaller = errors.New("proc: unknown caller")
 	ErrNoLimits      = errors.New("proc: caller has no time cap or no output cap")
 	ErrNoPath        = errors.New("proc: no program to run")
-	ErrTimeCap       = errors.New("proc: time cap passed")
-	ErrOutputCap     = errors.New("proc: output cap passed")
-	ErrHeldPipe      = errors.New("proc: a descendant still held the output open after the WaitDelay")
+	// ErrNotFound is a bare program name that is on no PATH entry: the
+	// program is not installed (or not on the agent's PATH). It is
+	// [exec.ErrNotFound], so a caller outside this package can test for it
+	// without importing os/exec.
+	ErrNotFound  = exec.ErrNotFound
+	ErrTimeCap   = errors.New("proc: time cap passed")
+	ErrOutputCap = errors.New("proc: output cap passed")
+	ErrHeldPipe  = errors.New("proc: a descendant still held the output open after the WaitDelay")
 )
 
 // ExitError is a child that ran and exited with a non-zero status (or was
