@@ -46,8 +46,14 @@ event, a snapshot field or a stream.
    fixtures.
 8. **Every short program the agent runs is bounded.** A one-shot child process
    (`git`, `gh`, `loginctl`, a version check) gets empty stdin, a time cap and
-   an output cap, and is killed when the cap passes or its caller gives up;
-   plan row 2c sets the caps and records them in [defaults](defaults.md). The
+   an output cap (stdout and stderr together), runs in a process group of its
+   own, and is killed, group and all, when a cap passes or its caller gives up.
+   All of them run through one helper, `internal/proc`; plan row 2c sets the
+   caps and records them per named caller in [defaults](defaults.md) (a caller
+   with no entry there gets no default). Every kill is logged and counted with
+   its cause ([05b](05b-observability.md)). A lint rule lets only `internal/proc`,
+   the `internal/agent/tmux` package itself and `internal/agent/attach` import
+   `os/exec`, and only `internal/proc` start a process any other way. The
    long-lived `tmux -C` client and the attach PTY are not one-shot.
 
 ## Capability map

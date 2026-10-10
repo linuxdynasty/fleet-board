@@ -129,7 +129,7 @@
   {"token": "FLEET_TOKEN", "kind": "env", "reason": "fleet CLI environment variable (02f, 02k)", "files": ["docs/plan/v1-implementation-plan.md", "docs/specs/02f-hub-authentication.md", "docs/specs/02k-v1-surface-and-cli.md", "docs/specs/ui-contract-map.md"]},
   {"token": "FLEET_URL", "kind": "env", "reason": "fleet CLI environment variable (02k, plan)", "files": ["docs/plan/v1-implementation-plan.md", "docs/specs/02j-hub-runtime.md", "docs/specs/02k-v1-surface-and-cli.md"]},
   {"token": "Detect", "kind": "go", "reason": "harness adapter method (01 adapter table)", "files": ["docs/specs/01-agent-capabilities.md", "docs/specs/03e-settings-and-drift.md", "docs/specs/05b-observability.md"]},
-  {"token": "WaitDelay", "kind": "go", "reason": "os/exec.Cmd field set by internal/proc (plan row 2c)", "files": ["docs/plan/v1-implementation-plan.md"]},
+  {"token": "WaitDelay", "kind": "go", "reason": "os/exec.Cmd field set by internal/proc (plan row 2c)", "files": ["docs/plan/v1-implementation-plan.md", "docs/specs/05b-observability.md", "docs/specs/defaults.md"]},
   {"token": "Line", "kind": "go", "reason": "internal/agent/tmux/typing.Line, the only send-keys value (plan row 7)", "files": ["docs/plan/v1-implementation-plan.md"]},
   {"token": "New", "kind": "go", "reason": "constructor name prefix in internal/agent/tmux/typing (plan row 7)", "files": ["docs/plan/v1-implementation-plan.md"]},
   {"token": "LaunchArgs", "kind": "go", "reason": "harness adapter method (01 adapter table)", "files": ["docs/specs/01-agent-capabilities.md"]},

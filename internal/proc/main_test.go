@@ -1,0 +1,90 @@
+package proc_test
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"strconv"
+	"syscall"
+	"testing"
+	"time"
+)
+
+// The fake children are this test binary run again: TestMain looks at
+// FLEET_PROC_CHILD and, when it is set, plays that child instead of running
+// the tests. No external tool is needed.
+const (
+	childEnv     = "FLEET_PROC_CHILD"
+	pidFileEnv   = "FLEET_PROC_PIDFILE"
+	exitCodeEnv  = "FLEET_PROC_EXIT"
+	grandSetsEnv = "FLEET_PROC_GRAND_SETSID"
+)
+
+func TestMain(m *testing.M) {
+	if mode := os.Getenv(childEnv); mode != "" {
+		runChild(mode)
+		return
+	}
+	os.Exit(m.Run())
+}
+
+func runChild(mode string) {
+	switch mode {
+	case "hang":
+		time.Sleep(time.Hour)
+	case "flood":
+		chunk := make([]byte, 32<<10)
+		for i := range chunk {
+			chunk[i] = 'x'
+		}
+		for {
+			if _, err := os.Stdout.Write(chunk); err != nil {
+				time.Sleep(time.Hour)
+			}
+		}
+	case "stdin":
+		b, err := io.ReadAll(os.Stdin)
+		fmt.Printf("stdin eof bytes=%d err=%v\n", len(b), err)
+	case "echo":
+		_, _ = fmt.Fprint(os.Stdout, "to-stdout")
+		_, _ = fmt.Fprint(os.Stderr, "to-stderr")
+		code, _ := strconv.Atoi(os.Getenv(exitCodeEnv))
+		os.Exit(code)
+	case "parent-exits", "parent-hangs", "parent-exits-quiet":
+		// Start a grandchild that holds our stdout and stderr, wait until it
+		// has written its pid, then exit or hang.
+		g := exec.CommandContext(context.Background(), os.Args[0]) //nolint:gosec // G204: the test binary starts itself as a fake grandchild
+		g.Env = append(os.Environ(), childEnv+"=hold")
+		if mode != "parent-exits-quiet" {
+			g.Stdout, g.Stderr = os.Stdout, os.Stderr // else the null device: nothing holds the pipes
+		}
+		if os.Getenv(grandSetsEnv) != "" {
+			g.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+		}
+		if err := g.Start(); err != nil {
+			fmt.Fprintln(os.Stderr, "start grandchild:", err)
+			os.Exit(3)
+		}
+		path := os.Getenv(pidFileEnv)
+		for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); time.Sleep(5 * time.Millisecond) {
+			if b, err := os.ReadFile(path); err == nil && len(b) > 0 { //nolint:gosec // G304: the path comes from the parent test's own t.TempDir
+				break
+			}
+		}
+		if mode == "parent-hangs" {
+			time.Sleep(time.Hour)
+		}
+	case "hold":
+		path := os.Getenv(pidFileEnv)
+		tmp := path + ".tmp"
+		if err := os.WriteFile(tmp, []byte(strconv.Itoa(os.Getpid())), 0o600); err == nil { //nolint:gosec // G703: the path comes from the parent test's own t.TempDir
+			_ = os.Rename(tmp, path) //nolint:gosec // G703: same path
+		}
+		time.Sleep(time.Hour)
+	default:
+		fmt.Fprintln(os.Stderr, "unknown child mode", mode)
+		os.Exit(2)
+	}
+}
