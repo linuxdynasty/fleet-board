@@ -60,7 +60,7 @@ The harness behavior the specs rely on today is in
 
 | Fact | How it was checked | Status |
 |---|---|---|
-| On the macOS remotes the tools are only on the login-shell PATH | `ssh allen@192.168.1.232 'zsh -lic "command -v tmux claude codex muse"'` | In use: the agent resolves absolute harness paths through a login shell at install and on a version change; the hub never sends a path (ADR 0006) |
+| On the macOS remotes the tools are only on the login-shell PATH | `ssh dev@192.0.2.30 'zsh -lic "command -v tmux claude codex muse"'` | In use: the agent resolves absolute harness paths through a login shell at install and on a version change; the hub never sends a path (ADR 0006) |
 | RAM per machine | `sysctl hw.memsize` (macOS), `/proc/meminfo` (Linux) | In use: the agent reports it as a machine fact; the hub never asks over ssh |
 
 ## Measured: one real goal

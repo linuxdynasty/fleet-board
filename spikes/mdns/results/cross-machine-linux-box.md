@@ -1,4 +1,4 @@
-# Cross-machine run: Mac mini advertises, omarchy browses
+# Cross-machine run: Mac mini advertises, linux-box browses
 
 2026-10-05, run by the coordinator over SSH (owner-authorized, no sudo).
 There is no Wi-Fi hub run: the owner chose on 2026-10-05 to skip it, keep the
@@ -7,13 +7,13 @@ be any laptop, so no one machine is special).
 
 ## Setup
 
-- Advertiser: Mac mini, macOS 27.0.1, wired `en0` 192.168.1.124,
+- Advertiser: Mac mini, macOS 27.0.1, wired `en0` 192.0.2.40,
   mDNSResponder running. `mdns advertise -instance fleet-spike-x -iface en0
   -duration 10m -stats 60s`. Both bind checks ok (udp4 and udp6 on 5353).
-- Browser: omarchy, Linux 7.2.5 x86_64, wired `enp3s0` 192.168.1.150,
+- Browser: linux-box, Linux 7.2.5 x86_64, wired `enp3s0` 192.0.2.20,
   `avahi-daemon` active and holding 5353, `ufw` active. Binary built with
   `CGO_ENABLED=0 GOOS=linux GOARCH=amd64` from this branch (sha256 prefix
-  `58c14e556b252dea`, same on both ends). omarchy's `/tmp` is over the user's
+  `58c14e556b252dea`, same on both ends). linux-box's `/tmp` is over the user's
   disk quota (`cat: write error: Disk quota exceeded`), so the binary ran from
   `~/fleet-spike/`, deleted afterwards.
 
@@ -31,12 +31,12 @@ be any laptop, so no one machine is special).
   group.
 - The Go advertiser heard the questions and answered: 245 answers for
   `_fleetd._tcp.local.` PTR over the run (8,559 questions heard in total).
-- omarchy's kernel log (`journalctl -k`, readable without sudo) shows the
+- linux-box's kernel log (`journalctl -k`, readable without sudo) shows the
   answers being dropped, 19 logged lines in the window (ufw rate-limits its
   log), for example:
 
 ```text
-Oct 05 13:33:50 omarchy kernel: [UFW BLOCK] IN=enp3s0 OUT= SRC=192.168.1.124 DST=192.168.1.150 LEN=202 TOS=0x00 PREC=0x00 TTL=64 ID=727 PROTO=UDP SPT=5353 DPT=34582 LEN=182
+Oct 05 13:33:50 linux-box kernel: [UFW BLOCK] IN=enp3s0 OUT= SRC=192.0.2.40 DST=192.0.2.20 LEN=202 TOS=0x00 PREC=0x00 TTL=64 ID=727 PROTO=UDP SPT=5353 DPT=34582 LEN=182
 ```
 
 ## What it means
@@ -74,7 +74,7 @@ Oct 05 13:33:50 omarchy kernel: [UFW BLOCK] IN=enp3s0 OUT= SRC=192.168.1.124 DST
 
 - A hub on Wi-Fi (beacon and DTIM delays on the proposed 2 s timeout):
   skipped by owner decision; row 4 confirms it in real use.
-- omarchy with ufw off or with an allow rule (needs sudo; would confirm the fix
+- linux-box with ufw off or with an allow rule (needs sudo; would confirm the fix
   for option 3 and give cross-machine timing).
 - Whether a query sent from 5353 really gets a multicast answer from the Go
   advertiser: the library always replies unicast (finding 6 in README.md), so

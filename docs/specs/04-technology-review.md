@@ -166,7 +166,7 @@ What drives disk writes (modernc, steady, 40 s each):
 | 100 | 2 KB | **250 ms** | 3.9 | **793 KB/s** |
 | 100 | 2 KB | 1 s | 1.3 | 676 KB/s |
 
-Linux (omarchy, x86_64, btrfs, load average 15 from a running Codex goal,
+Linux (linux-box, x86_64, btrfs, load average 15 from a running Codex goal,
 normal I/O priority; `fullfsync` is a no-op there):
 
 | Scenario | Commit p50 / p99 | Enqueue → commit p99 | Sidebar p99 | Disk written |
@@ -361,7 +361,7 @@ The startup truncation of partial frames in 03d is no longer needed.
 ### Chunk framing and volume (S2)
 
 [verified-facts](../research/verified-facts.md#measured-one-real-goal) measured 115× on one hour of Muse output compressed as a single stream.
-S2 recorded one hour of a busy Codex goal on omarchy (2026-10-02 09:49–10:49
+S2 recorded one hour of a busy Codex goal on linux-box (2026-10-02 09:49–10:49
 EDT, `tmux pipe-pane -o`, no keys sent; 17.8 MB raw) and compressed it the way
 the agent would ship it (klauspost/compress `SpeedDefault` ≈ zstd level 3):
 

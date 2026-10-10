@@ -190,7 +190,7 @@ sequenceDiagram
   participant A as fleet-agent
   participant T as tmux (developer's server)
   U->>H: list sessions (from Snapshot.tmux_servers[] + SessionEvent/WindowEvent)
-  U->>H: new session "scratch" on omarchy, repo eshu, harness claude
+  U->>H: new session "scratch" on linux-box, repo eshu, harness claude
   H->>H: tx: sessions{session_id, machine, name, owner Principal} · outbox EnsureSession
   H-->>A: Command{EnsureSession{session_id, server=DEFAULT, name, workdir{repo RepoRef}, harness, owner_principal, window_name, reuse=true}}
   A->>T: new-session -s scratch -c <root/eshu> · set-environment FLEET_SESSION_ID/FLEET_OWNER (= owner_principal.id)/FLEET_PANE_KEY · launch harness

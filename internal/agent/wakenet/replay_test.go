@@ -9,19 +9,19 @@ import (
 	"time"
 )
 
-// pushRecord is one push line of the spike's omarchy log
-// (spikes/wakenet/results/omarchy-live-extract.jsonl, copied to testdata/).
+// pushRecord is one push line of the spike's linux-box log
+// (spikes/wakenet/results/linux-box-live-extract.jsonl, copied to testdata/).
 type pushRecord struct {
 	at  time.Time
 	msg []byte
 }
 
-// loadOmarchy rebuilds each logged netlink message as the kernel sent it.
+// loadLinuxBox rebuilds each logged netlink message as the kernel sent it.
 // The cut-off line at the log gap is not valid JSON and is skipped, as the
 // spike's counting script did.
-func loadOmarchy(t *testing.T) []pushRecord {
+func loadLinuxBox(t *testing.T) []pushRecord {
 	t.Helper()
-	f, err := os.Open("testdata/omarchy-live-extract.jsonl")
+	f, err := os.Open("testdata/linux-box-live-extract.jsonl")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,13 +60,13 @@ func loadOmarchy(t *testing.T) []pushRecord {
 	return recs
 }
 
-// TestOmarchyReplay is the network half of capability A6: it replays every
-// recorded push message from omarchy (ADR 0029, plan row 4). The
+// TestLinuxBoxReplay is the network half of capability A6: it replays every
+// recorded push message from linux-box (ADR 0029, plan row 4). The
 // IPv6 refreshes of enp3s0 change nothing and must never start a reconnect or
 // reset the backoff; the one real change, tun0 coming up, is one event.
-func TestOmarchyReplay(t *testing.T) {
+func TestLinuxBoxReplay(t *testing.T) {
 	t.Parallel()
-	recs := loadOmarchy(t)
+	recs := loadLinuxBox(t)
 	if len(recs) != 10 {
 		t.Fatalf("fixture has %d push messages, want 10", len(recs))
 	}

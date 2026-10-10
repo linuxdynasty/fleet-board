@@ -242,7 +242,7 @@ running harness.
 ```mermaid
 sequenceDiagram
   title Enrollment
-  Owner->>fleetd: enroll-token --machine omarchy
+  Owner->>fleetd: enroll-token --machine linux-box
   fleetd-->>Owner: token (shown once), CA fingerprint
   Owner->>fleet-agent: enroll --hub H --token T
   fleet-agent->>fleet-agent: generate Ed25519 key, CSR
@@ -269,7 +269,7 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
   title Dispatch a goal
-  UI->>fleetd: dispatch eshu#7408 to omarchy/claude
+  UI->>fleetd: dispatch eshu#7408 to linux-box/claude
   fleetd->>fleetd: pre-check from last snapshot: slots, harness, pace
   fleetd->>fleet-agent: EnsureWindow{fleet, eshu-7408, cwd eshu, harness claude}
   fleet-agent->>tmux: new-window (control mode)

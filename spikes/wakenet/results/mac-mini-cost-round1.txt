@@ -3,7 +3,7 @@
 # uptime end:   11:03  up 3 days,  5:42, 2 users, load averages: 2.30 2.63 2.26
 
 ## all-1s
-{"time":"2026-10-05T11:00:40.872401-04:00","event":"run_start","host":"ip-192-168-1-124.ec2.internal","goos":"darwin","goarch":"arm64","go":"go1.27.1","methods":"clock,sleepmark,ifpoll,push","interval":"1s","duration":"3m0s","jump_threshold":"2s","route_exec":false}
+{"time":"2026-10-05T11:00:40.872401-04:00","event":"run_start","host":"mac-mini","goos":"darwin","goarch":"arm64","go":"go1.27.1","methods":"clock,sleepmark,ifpoll,push","interval":"1s","duration":"3m0s","jump_threshold":"2s","route_exec":false}
 {"time":"2026-10-05T11:03:40.875531-04:00","event":"summary","events":{"ifpoll":1,"push":114,"sleepmark":1},"relevant":{},"user_ms":53.096,"sys_ms":206.223,"maxrss":12484608,"vol_ctx_switches":4,"invol_ctx_switches":6216,"children_user_ms":0,"children_sys_ms":0}
       180.00 real         0.05 user         0.20 sys
             12648448  maximum resident set size
@@ -18,7 +18,7 @@
 rc=0
 
 ## all
-{"time":"2026-10-05T11:00:40.871773-04:00","event":"run_start","host":"ip-192-168-1-124.ec2.internal","goos":"darwin","goarch":"arm64","go":"go1.27.1","methods":"clock,sleepmark,ifpoll,push","interval":"5s","duration":"3m0s","jump_threshold":"2s","route_exec":false}
+{"time":"2026-10-05T11:00:40.871773-04:00","event":"run_start","host":"mac-mini","goos":"darwin","goarch":"arm64","go":"go1.27.1","methods":"clock,sleepmark,ifpoll,push","interval":"5s","duration":"3m0s","jump_threshold":"2s","route_exec":false}
 {"time":"2026-10-05T11:03:40.874492-04:00","event":"summary","events":{"ifpoll":1,"push":114,"sleepmark":1},"relevant":{},"user_ms":11.094,"sys_ms":46.289,"maxrss":9535488,"vol_ctx_switches":1,"invol_ctx_switches":1589,"children_user_ms":0,"children_sys_ms":0}
       180.00 real         0.01 user         0.04 sys
              9633792  maximum resident set size
@@ -33,7 +33,7 @@ rc=0
 rc=0
 
 ## clock
-{"time":"2026-10-05T11:00:40.870032-04:00","event":"run_start","host":"ip-192-168-1-124.ec2.internal","goos":"darwin","goarch":"arm64","go":"go1.27.1","methods":"clock","interval":"5s","duration":"3m0s","jump_threshold":"2s","route_exec":false}
+{"time":"2026-10-05T11:00:40.870032-04:00","event":"run_start","host":"mac-mini","goos":"darwin","goarch":"arm64","go":"go1.27.1","methods":"clock","interval":"5s","duration":"3m0s","jump_threshold":"2s","route_exec":false}
 {"time":"2026-10-05T11:03:40.871017-04:00","event":"summary","events":{},"relevant":{},"user_ms":2.45,"sys_ms":3.528,"maxrss":5963776,"vol_ctx_switches":1,"invol_ctx_switches":207,"children_user_ms":0,"children_sys_ms":0}
       180.00 real         0.00 user         0.00 sys
              6225920  maximum resident set size
@@ -46,7 +46,7 @@ rc=0
 rc=0
 
 ## ifpoll-routeexec
-{"time":"2026-10-05T11:00:40.87068-04:00","event":"run_start","host":"ip-192-168-1-124.ec2.internal","goos":"darwin","goarch":"arm64","go":"go1.27.1","methods":"ifpoll","interval":"5s","duration":"3m0s","jump_threshold":"2s","route_exec":true}
+{"time":"2026-10-05T11:00:40.87068-04:00","event":"run_start","host":"mac-mini","goos":"darwin","goarch":"arm64","go":"go1.27.1","methods":"ifpoll","interval":"5s","duration":"3m0s","jump_threshold":"2s","route_exec":true}
 {"time":"2026-10-05T11:03:40.873081-04:00","event":"summary","events":{"ifpoll":1},"relevant":{},"user_ms":14.943,"sys_ms":71.404,"maxrss":9666560,"vol_ctx_switches":73,"invol_ctx_switches":2429,"children_user_ms":28.688,"children_sys_ms":60.655}
       180.00 real         0.04 user         0.13 sys
              9879552  maximum resident set size
@@ -63,7 +63,7 @@ rc=0
 rc=0
 
 ## ifpoll
-{"time":"2026-10-05T11:00:40.870681-04:00","event":"run_start","host":"ip-192-168-1-124.ec2.internal","goos":"darwin","goarch":"arm64","go":"go1.27.1","methods":"ifpoll","interval":"5s","duration":"3m0s","jump_threshold":"2s","route_exec":false}
+{"time":"2026-10-05T11:00:40.870681-04:00","event":"run_start","host":"mac-mini","goos":"darwin","goarch":"arm64","go":"go1.27.1","methods":"ifpoll","interval":"5s","duration":"3m0s","jump_threshold":"2s","route_exec":false}
 {"time":"2026-10-05T11:03:40.873398-04:00","event":"summary","events":{"ifpoll":1},"relevant":{},"user_ms":7.493,"sys_ms":36.551,"maxrss":8994816,"vol_ctx_switches":1,"invol_ctx_switches":838,"children_user_ms":0,"children_sys_ms":0}
       180.00 real         0.00 user         0.03 sys
              9224192  maximum resident set size
@@ -77,7 +77,7 @@ rc=0
 rc=0
 
 ## none
-{"time":"2026-10-05T11:00:40.87003-04:00","event":"run_start","host":"ip-192-168-1-124.ec2.internal","goos":"darwin","goarch":"arm64","go":"go1.27.1","methods":"none","interval":"5s","duration":"3m0s","jump_threshold":"2s","route_exec":false}
+{"time":"2026-10-05T11:00:40.87003-04:00","event":"run_start","host":"mac-mini","goos":"darwin","goarch":"arm64","go":"go1.27.1","methods":"none","interval":"5s","duration":"3m0s","jump_threshold":"2s","route_exec":false}
 {"time":"2026-10-05T11:03:40.871017-04:00","event":"summary","events":{},"relevant":{},"user_ms":1.199,"sys_ms":1.833,"maxrss":5816320,"vol_ctx_switches":1,"invol_ctx_switches":65,"children_user_ms":0,"children_sys_ms":0}
       180.00 real         0.00 user         0.00 sys
              6127616  maximum resident set size
@@ -90,7 +90,7 @@ rc=0
 rc=0
 
 ## push
-{"time":"2026-10-05T11:00:40.87146-04:00","event":"run_start","host":"ip-192-168-1-124.ec2.internal","goos":"darwin","goarch":"arm64","go":"go1.27.1","methods":"push","interval":"5s","duration":"3m0s","jump_threshold":"2s","route_exec":false}
+{"time":"2026-10-05T11:00:40.87146-04:00","event":"run_start","host":"mac-mini","goos":"darwin","goarch":"arm64","go":"go1.27.1","methods":"push","interval":"5s","duration":"3m0s","jump_threshold":"2s","route_exec":false}
 {"time":"2026-10-05T11:03:40.874213-04:00","event":"summary","events":{"push":114},"relevant":{},"user_ms":4.301,"sys_ms":8.804,"maxrss":6012928,"vol_ctx_switches":1,"invol_ctx_switches":578,"children_user_ms":0,"children_sys_ms":0}
       180.00 real         0.00 user         0.00 sys
              6340608  maximum resident set size
@@ -104,7 +104,7 @@ rc=0
 rc=0
 
 ## sleepmark
-{"time":"2026-10-05T11:00:40.870023-04:00","event":"run_start","host":"ip-192-168-1-124.ec2.internal","goos":"darwin","goarch":"arm64","go":"go1.27.1","methods":"sleepmark","interval":"5s","duration":"3m0s","jump_threshold":"2s","route_exec":false}
+{"time":"2026-10-05T11:00:40.870023-04:00","event":"run_start","host":"mac-mini","goos":"darwin","goarch":"arm64","go":"go1.27.1","methods":"sleepmark","interval":"5s","duration":"3m0s","jump_threshold":"2s","route_exec":false}
 {"time":"2026-10-05T11:03:40.872413-04:00","event":"summary","events":{"sleepmark":1},"relevant":{},"user_ms":2.829,"sys_ms":4.938,"maxrss":6111232,"vol_ctx_switches":1,"invol_ctx_switches":251,"children_user_ms":0,"children_sys_ms":0}
       180.00 real         0.00 user         0.00 sys
              6307840  maximum resident set size

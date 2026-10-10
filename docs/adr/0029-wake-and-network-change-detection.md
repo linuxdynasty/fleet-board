@@ -18,21 +18,21 @@ A laptop that sleeps or changes network leaves `fleet-agent` holding a dead
 connection. Spec 01 A6 asked the agent to notice and reconnect at once, and
 left the method to plan item 0.6 (issue #51). The spike is in
 [spikes/wakenet/](../../spikes/wakenet/results/README.md); it ran four methods
-on the Mac mini, then for about a day on omarchy (Linux) and the MacBook
+on the Mac mini, then for about a day on linux-box (Linux) and the MacBook
 (macOS).
 
 - **Network change was seen on both systems.** A VPN interface came up on
-  omarchy and went down and up on the MacBook. The routing push socket (a
+  linux-box and went down and up on the MacBook. The routing push socket (a
   kernel socket that sends a message when an interface, address or route
   changes) reported each one within milliseconds, and a 5 s interface poll saw
   the same change 0.4 to 5 s later.
-- **Linux sends many push messages that change nothing.** omarchy logged at least
+- **Linux sends many push messages that change nothing.** linux-box logged at least
   972 "address added" messages, almost all for its wired interface, about one every
   38 s at the median. Its router keeps refreshing an IPv6 address, and each
   refresh re-sends the message. The interface poll saw no change for any of
   them. So a push message alone cannot mean "reconnect".
 - **No real sleep was seen.** The owner does not put machines to sleep, and the
-  product does not ask for it. One suspend on omarchy was refused by its
+  product does not ask for it. One suspend on linux-box was refused by its
   graphics driver within a second; the kernel counted no time asleep.
 - **The spike read `kern.waketime` on macOS.** It gives a wake time but no
   duration, it is zero until the first wake after boot, and its behavior on a
@@ -177,7 +177,7 @@ A2.
 
 - Plan row 4 builds transport keepalive along with wake and network-change
   detection, and its acceptance test covers both with a fake clock and injected
-  readings, including the recorded omarchy IPv6 refresh never reconnecting.
+  readings, including the recorded linux-box IPv6 refresh never reconnecting.
 - Plan row 5's gateway must allow the agent's 10 s ping without closing the
   stream with `too_many_pings` ([04](../specs/04-technology-review.md)).
 - Plan row 6's command executor follows 02i's deadline clocks (#133).

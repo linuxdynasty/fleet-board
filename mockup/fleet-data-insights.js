@@ -5,9 +5,9 @@ const insightRange = { label: "last 28 days", computed: ago(18 * 60), since: "20
 // Quota windows per subscription (weekly bucket): `used` = last reading before the reset, percent of the bucket.
 // usable = 100 - reserve; unused (waste) = max(0, usable - used); computed in view-insights.js.
 const efficiency = [
-  { acct: "claude-max", used: [66, 71, 78, 81], idleBehindH: 0, fleetUsed: 38 },
-  { acct: "chatgpt-pro", used: [52, 58, 64, 61], idleBehindH: 31, fleetUsed: 44 },
-  { acct: "muse-power", used: [3, 6, 12, 9], idleBehindH: 96, fleetUsed: 9 },
+  { acct: "claude-acct", used: [68, 74, 76, 78], idleBehindH: 0, fleetUsed: 38 },
+  { acct: "codex-acct", used: [52, 58, 64, 61], idleBehindH: 31, fleetUsed: 44 },
+  { acct: "muse-acct", used: [3, 6, 12, 9], idleBehindH: 96, fleetUsed: 9 },
 ];
 
 // OutcomeRow per harness (05 section 5). `ran` = merged + cleared; rates are shown only from 5 ran goals.
@@ -24,7 +24,7 @@ const stuck = {
   conditions: [["claude", "rate limited", "anthropic", 6, 5, "3 h 10 min"], ["codex", "usage limit", "openai", 2, 2, "9 h 30 min"], ["muse", "network", "moonshot", 3, 2, "40 min"]],
   incidents: [["anthropic", "rate limited", "Sep 25, 14:10 to 15:02", 6, 2]],
   parser: [["codex", "0.159.2", "parser 3", 3, 20, "0.158.0", true]],
-  starts: [[".124", "codex", "HARNESS_VERSION_UNSUPPORTED", 4, 2], ["omarchy", "claude", "FOLDER_UNTRUSTED", 1, 1]],
+  starts: [["mini", "codex", "HARNESS_VERSION_UNSUPPORTED", 4, 2], ["linux", "claude", "FOLDER_UNTRUSTED", 1, 1]],
 };
 
 // The latest weekly report as stored (InsightReport.text). UNTRUSTED text: the view shows it sanitized. Its last line is a
@@ -65,4 +65,4 @@ const systemSignals = [
   { kind: "CLOCK_SKEW", subject: "machines", state: "ok", measures: [{ kind: "MAIN", value: 18, unit: "SECONDS", direction: "ABOVE", warn: 300, crit: 900 }] },
 ];
 // MachineAgentHealth per machine (sample): ring events, ring MiB, unacked results, reconnects since start, RSS MiB.
-const agentHealth = { mbp: [1204, 0.9, 0, 1, 38], omarchy: [980, 0.7, 0, 0, 41], allen: [2210, 1.6, 0, 2, 44], m124: [310, 0.2, 1, 5, 36] };
+const agentHealth = { mbp: [1204, 0.9, 0, 1, 38], linux: [980, 0.7, 0, 0, 41], mbp2: [2210, 1.6, 0, 2, 44], mini: [310, 0.2, 1, 5, 36] };

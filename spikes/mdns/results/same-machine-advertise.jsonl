@@ -1,7 +1,7 @@
-{"event":"start","go":"go1.27.1","goarch":"arm64","goos":"darwin","hostname":"ip-192-168-1-124.ec2.internal","iface":"en0","instance":"fleet-spike-mini","mode":"advertise","pid":34230,"port":47999,"service":"_fleetd._tcp","ts":"2026-10-05T15:01:03.472234Z"}
+{"event":"start","go":"go1.27.1","goarch":"arm64","goos":"darwin","hostname":"mac-mini","iface":"en0","instance":"fleet-spike-mini","mode":"advertise","pid":34230,"port":47999,"service":"_fleetd._tcp","ts":"2026-10-05T15:01:03.472234Z"}
 {"event":"bind_check","group":"224.0.0.251:5353","local":"0.0.0.0:5353","mode":"advertise","network":"udp4","ok":true,"ts":"2026-10-05T15:01:03.472372Z"}
 {"event":"bind_check","group":"[ff02::fb]:5353","local":"[::]:5353","mode":"advertise","network":"udp6","ok":true,"ts":"2026-10-05T15:01:03.472443Z"}
-{"domain":"local.","event":"service","host":"fleet-spike-mini.local.","instance":"fleet-spike-mini","ips":["192.168.1.124","fdc7:f807:2afd:4e41:1c6c:2038:8789:ccb8"],"mode":"advertise","port":47999,"service":"_fleetd._tcp","ts":"2026-10-05T15:01:03.472453Z","txt":["txtvers=1","role=spike"]}
+{"domain":"local.","event":"service","host":"fleet-spike-mini.local.","instance":"fleet-spike-mini","ips":["192.0.2.40","fd00:db8:1:2:3:4:5:6"],"mode":"advertise","port":47999,"service":"_fleetd._tcp","ts":"2026-10-05T15:01:03.472453Z","txt":["txtvers=1","role=spike"]}
 {"event":"server_started","mode":"advertise","ts":"2026-10-05T15:01:03.47251Z"}
 {"event":"answered","mode":"advertise","qname":"_fleetd._tcp.local.","qtype":"PTR","records":5,"ts":"2026-10-05T15:01:05.507173Z","unicast_bit":true}
 {"event":"answered","mode":"advertise","qname":"_fleetd._tcp.local.","qtype":"PTR","records":5,"ts":"2026-10-05T15:01:05.507284Z","unicast_bit":true}

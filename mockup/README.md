@@ -21,9 +21,11 @@ rows tagged v1.
 
 ## What is real and what is sample
 
-Real (collected 2026-09-28 unless noted): machine names, IPs, OS, RAM and
-installed tools (over SSH); weekly usage for Claude, Codex and Muse read from
-`/usage` and `/status`; open and merged GitHub PRs and open issues (`gh`);
+Modeled on real readings (collected 2026-09-28 unless noted): the OS, RAM and
+installed tools of each machine, and the shape of the weekly usage screens for
+Claude, Codex and Muse. The machine names, addresses, user names, plan labels
+and usage numbers are made-up sample values. Real: open and merged GitHub PRs
+and open issues of public repos (`gh`);
 the harness command catalogs and `/goal` syntax (probed 2026-09-30 and
 2026-10-01); the credential-embedding permission prompt
 (`git fetch https://x-access-token:$(gh auth token)@…`) and the terminal log
@@ -34,7 +36,7 @@ lines, pane contents, the developer's own tmux windows, harness
 conditions, the Jira ticket `OPS-142`, the GitLab MR `infra!12`, the DeepSeek
 and Moonshot API-key accounts, forge CLI status, certificate expiry, policy
 hashes, labels, setting layers, goal-hook states per machine, session history,
-audit entries, account emails, the **observed goal** (`omarchy` window "codex prompt 2": a goal the owner started by hand, shown as "started by you · observed", with no goal controls and no slot; 03k), and everything on the Insights view and in the System section
+audit entries, account emails, the **observed goal** (`linux-box` window "codex prompt 2": a goal the owner started by hand, shown as "started by you · observed", with no goal controls and no slot; 03k), and everything on the Insights view and in the System section
 (insights, the weekly report, suggestions, health signals, agent health).
 
 The pacing, goal-state, availability and dispatch rules follow

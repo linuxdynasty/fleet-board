@@ -70,7 +70,7 @@ only starts a read.
 After a hint the watcher waits until 500 ms pass with no further hint, never
 more than 2 s after the first, then reads the interfaces that are up and
 running, their addresses and the default route of each family, and compares
-with the last reading. No difference, no event. The omarchy IPv6 refresh (the
+with the last reading. No difference, no event. The linux-box IPv6 refresh (the
 router re-announces the same address every few seconds to two minutes) is a
 replay test: every refresh reads, finds nothing, and sends nothing.
 

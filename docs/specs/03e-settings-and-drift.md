@@ -67,7 +67,7 @@ in the order `NONE < OBSERVE < CONTROL`. `share_identity_email`: hub wins (it is
 an owner privacy choice, not a machine safety ceiling). Labels: hub-assigned ∪
 local additions; a local file cannot remove a hub label. Each field records its
 `SettingSource.layer`; fields where the local value won are listed in
-`capped_fields` so the UI says "capped by local policy on omarchy". A value the
+`capped_fields` so the UI says "capped by local policy on linux-box". A value the
 agent cannot apply at all is a different thing and is **not** a cap: it goes in
 `SettingsAck.rejected[]` as `{field, reason, message}` (see the failure table).
 

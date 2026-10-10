@@ -50,10 +50,10 @@ muse and opencode (on macOS only on the login-shell PATH, so the agent resolves 
 
 | Host | Address | SSH user | RAM | Max active goals |
 |---|---|---|---|---|
-| Linuxdynasty-MacBook-Pro-14 (hub) | 192.168.1.118 | asanabria | 64 GB | 2 |
-| omarchy | 192.168.1.150 | linuxdynasty | 62 GB | 2 |
-| allens-Apple-MacBook-Pro | 192.168.1.232 | allen | 128 GB | 4 |
-| ip-192-168-1-124 | 192.168.1.124 | linuxdynasty | 64 GB | 2 |
+| macbook (hub) | 192.0.2.10 | dev | 64 GB | 2 |
+| linux-box | 192.0.2.20 | dev | 62 GB | 2 |
+| work-macbook | 192.0.2.30 | dev | 128 GB | 4 |
+| mac-mini | 192.0.2.40 | dev | 64 GB | 2 |
 
 The author sets 4 active goals on the 128 GB machine and 2 elsewhere; the limit is a per-machine setting, not a product rule.
 

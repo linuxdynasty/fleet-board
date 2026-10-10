@@ -388,13 +388,13 @@ code.inline { font-size: 12px; background: var(--raise); padding: 1px 5px; borde
       <span class="clock num" id="clock"></span>
     </div>
     <div id="summary" aria-label="Fleet summary"></div>
-    <div class="meta-line"><span class="sample" title="Real: machines, RAM, tools, weekly usage read from /usage and /status on 2026-09-28, PRs, issues, merges. Sample: goals, goal-file lines, prompts, conditions, the Jira ticket, the GitLab MR, API-key accounts, audit.">mixed real + sample</span>
-      <span>hub: this laptop · 192.168.1.118 · agents dial out, typed commands only</span><span id="upd">updated 0s ago</span><span>goals run until merged · n = next session that needs you</span></div>
+    <div class="meta-line"><span class="sample" title="Real: PRs, issues, merges of public repos. Modeled on real readings, with sample names, addresses and numbers: machines, RAM, tools, weekly usage. Sample: goals, goal-file lines, prompts, conditions, the Jira ticket, the GitLab MR, API-key accounts, audit.">mixed real + sample</span>
+      <span>hub: this laptop · 192.0.2.10 · agents dial out, typed commands only</span><span id="upd">updated 0s ago</span><span>goals run until merged · n = next session that needs you</span></div>
   </header>
 
   <main id="view"></main>
 
-  <p class="foot">Mockup. Real: machine names, IPs, OS, RAM and installed tools (SSH, 2026-09-28); PRs and issues (gh, 2026-09-28); weekly usage for Claude, Codex and Muse read from their status screens on 2026-09-28; harness command catalogs and /goal syntax (probed 2026-09-30/10-01); the credential prompt and the log sizes (measured 2026-10-01). Sample: goals, goal-file lines, conditions, the Jira ticket and GitLab MR, API-key accounts, audit. Every action shows the typed command the hub would send (api/fleet/agent/v1); nothing here sends it.</p>
+  <p class="foot">Mockup. Real: PRs and issues of public repos (gh, 2026-09-28). Modeled on real readings, with sample names, addresses and numbers: OS, RAM and installed tools (SSH, 2026-09-28) and the weekly usage screens for Claude, Codex and Muse; harness command catalogs and /goal syntax (probed 2026-09-30/10-01); the credential prompt and the log sizes (measured 2026-10-01). Sample: goals, goal-file lines, conditions, the Jira ticket and GitLab MR, API-key accounts, audit. Every action shows the typed command the hub would send (api/fleet/agent/v1); nothing here sends it.</p>
 </div>
 
 <div id="switcher" hidden>
