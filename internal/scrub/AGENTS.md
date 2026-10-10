@@ -37,7 +37,7 @@ Read the root `AGENTS.md` first; it applies here. Load `fleet-go` and
   added 36 capture groups made plain text about 30% slower. Measure
   `BenchmarkTextMiB/plain` before and after any pattern change.
 - The home folder is judged a whole name again after every round; see the
-  comment in `Text`.
+  comment on `settle`.
 - The package has no telemetry (no I/O). Callers (the hub's ingest, row 5;
   the agent's senders, row 6) call `Scrub` and count, in their own
   telemetry, messages with `Changed`, `Cut` and `Unsettled` set, and bound
@@ -45,5 +45,5 @@ Read the root `AGENTS.md` first; it applies here. Load `fleet-go` and
 - The README is the full list of shapes; 02e ("Size limits") summarizes it.
   A new shape updates both, with a case in `cases_test.go` and a case of
   near-miss text it must leave alone. The list is a choice made here (02e
-  names only the four kinds); never widen it silently.
+  names four kinds and a few forms; the rest is chosen here); never widen it silently.
 - A change here updates this README and `doc.go` in the same commit.

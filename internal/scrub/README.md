@@ -85,8 +85,8 @@ impossible.
 
 ## What counts as a secret
 
-02e names four kinds: tokens, emails, URL query values and passwords in URLs.
-It does not say which token shapes count, so this list was chosen here. The
+02e names tokens, emails, URL query values and passwords in URLs, key blocks
+and `curl -u`. It does not say which token shapes count, so this list was chosen here. The
 rule for choosing: the token formats the fleet itself mints, the tokens of the
 services a fleet machine talks to (GitHub, the harness model providers and the
 clouds behind them), and the generic forms any of those take in an error
