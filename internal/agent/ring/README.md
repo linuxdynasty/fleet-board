@@ -70,7 +70,8 @@ n, err = db.Prune(ctx, hubNow)                                // hub time; keeps
   plus the time since), never the agent's wall clock, because
   `not_after_time` is the hub's deadline (02i "Clocks"). It deletes
   entries older than 7 days (against `received_time`, the agent's clock: a
-  deadline is at most 24 h, so the age test tolerates a skewed clock).
+  deadline is at most 24 h, so the age test tolerates a clock that is off by
+  up to about 6 days).
   Past 10,000 entries it deletes the oldest that are acked or past their
   deadline, never one the hub may still re-send (not acked, inside its
   deadline), so a re-sent command is a duplicate, not a second run
