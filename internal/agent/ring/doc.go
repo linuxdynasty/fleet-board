@@ -9,8 +9,12 @@
 // [DB.ApplyCommandSeq]), all from docs/specs/02i-delivery-and-sequencing.md.
 // command_log keeps one entry per command_id ([DB.LogCommand]) and the one
 // result of each ([DB.RecordResult]), so a repeated command is answered from
-// the log. Triggers in the file refuse a step back, a deleted or replaced
-// agent_state row, a second insert or renamed command_id and a changed
-// result, whoever writes it. The event ring itself (later in row 4) and the
-// executor (row 6) come later.
+// the log until the hub acknowledges it ([DB.Unacked], [DB.AckResults]) and
+// it ages out ([DB.Prune]), never while the hub may still re-send it. [Seqs] hands out event seqs, reserving them in
+// blocks so a crash never repeats one, and reports the highest one handed
+// out ([Seqs.Last], Heartbeat.event_seq). [CheckHubMarks] refuses a hub
+// epoch or seq floor too large to keep ([ErrOutOfRange]). Triggers in the file refuse a step
+// back, a deleted or replaced agent_state row, a second insert or renamed
+// command_id, a changed result and a changed ack, whoever writes it. The
+// event ring itself and the executor (row 6) come later.
 package ring

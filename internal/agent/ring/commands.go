@@ -46,6 +46,8 @@ type Entry struct {
 	// Result is the encoded CommandResult, nil until finished.
 	Result   []byte
 	Finished time.Time
+	// Acked is when the hub's ResultAck arrived; zero until then.
+	Acked time.Time
 }
 
 // LogCommand saves c before CommandAck is sent. When c.ID is already logged
@@ -126,10 +128,10 @@ func readEntry(ctx context.Context, tx *sql.Tx, id string) (Entry, error) {
 	var e Entry
 	var epoch, seq, received, notAfter int64
 	var status string
-	var finished sql.NullInt64
+	var finished, acked sql.NullInt64
 	err := tx.QueryRowContext(ctx, `SELECT command_id, kind, epoch, seq, received_time, not_after_time, status,
-		step_reached, result, finished_time FROM command_log WHERE command_id = ?`, id).
-		Scan(&e.ID, &e.Kind, &epoch, &seq, &received, &notAfter, &status, &e.Step, &e.Result, &finished)
+		step_reached, result, finished_time, acked_time FROM command_log WHERE command_id = ?`, id).
+		Scan(&e.ID, &e.Kind, &epoch, &seq, &received, &notAfter, &status, &e.Step, &e.Result, &finished, &acked)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Entry{}, ErrUnknownCommand
 	}
@@ -140,6 +142,9 @@ func readEntry(ctx context.Context, tx *sql.Tx, id string) (Entry, error) {
 	e.Received, e.NotAfter = time.UnixMilli(received).UTC(), time.UnixMilli(notAfter).UTC()
 	if finished.Valid {
 		e.Finished = time.UnixMilli(finished.Int64).UTC()
+	}
+	if acked.Valid {
+		e.Acked = time.UnixMilli(acked.Int64).UTC()
 	}
 	return e, nil
 }

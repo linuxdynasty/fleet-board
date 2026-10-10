@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"math"
 )
 
 // Errors of the epoch and command seq rules (02i "Connection epoch").
@@ -20,7 +21,7 @@ var (
 )
 
 // Marks are the event seq high-water mark and the EventCounters, persisted
-// together (02i rule 1, 03 W2). None of them ever decreases.
+// together (02i rule 1, 03n W2). None of them ever decreases.
 type Marks struct {
 	SeqHWM    uint64
 	Shed      uint64
@@ -98,8 +99,12 @@ func (d *DB) RaiseMarks(ctx context.Context, m Marks) (Marks, error) {
 
 // StartEpoch records the epoch of a new connection (HelloAck.epoch) and
 // starts its command seq at zero. An epoch at or below the stored one is
-// [ErrEpochNotAbove] and changes nothing.
+// [ErrEpochNotAbove], one above [MaxEpoch] [ErrOutOfRange]; neither changes
+// anything.
 func (d *DB) StartEpoch(ctx context.Context, epoch uint64) error {
+	if err := CheckHubMarks(epoch, 0); err != nil {
+		return err
+	}
 	e, err := toInt("epoch", epoch)
 	if err != nil {
 		return err
@@ -139,4 +144,30 @@ func (d *DB) ApplyCommandSeq(ctx context.Context, epoch, seq uint64) error {
 		_, err = tx.ExecContext(ctx, `UPDATE agent_state SET last_applied_command_seq = ? WHERE id = 1`, s)
 		return err
 	})
+}
+
+// The largest HelloAck values agent.db takes (02i). It stores them as
+// SQLite's signed 64-bit integers and never lowers them, so each leaves
+// room: one more epoch above MaxEpoch, and one more block of seqs above
+// MaxHubLastSeq (Floor saves it, and the next Next reserves a block
+// past it). A larger one, saved, would stop every later epoch or seq.
+const (
+	MaxEpoch      uint64 = math.MaxInt64 - 1
+	MaxHubLastSeq uint64 = math.MaxInt64 - seqBlock
+)
+
+// ErrOutOfRange means a HelloAck epoch or hub_last_event_seq above
+// [MaxEpoch] or [MaxHubLastSeq]; nothing was saved.
+var ErrOutOfRange = errors.New("ring: the hub's value is too large for agent.db")
+
+// CheckHubMarks refuses a HelloAck epoch or hub_last_event_seq that
+// agent.db cannot keep ([ErrOutOfRange]). Check both before saving either.
+func CheckHubMarks(epoch, hubLastSeq uint64) error {
+	switch {
+	case epoch > MaxEpoch:
+		return fmt.Errorf("%w: epoch %d is above %d", ErrOutOfRange, epoch, MaxEpoch)
+	case hubLastSeq > MaxHubLastSeq:
+		return fmt.Errorf("%w: hub_last_event_seq %d is above %d", ErrOutOfRange, hubLastSeq, MaxHubLastSeq)
+	}
+	return nil
 }
