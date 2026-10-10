@@ -6,9 +6,12 @@ import (
 	"fmt"
 	"io/fs"
 	"net"
+	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 
+	"github.com/linuxdynasty/fleet-board/internal/hub/api"
 	"github.com/linuxdynasty/fleet-board/internal/hub/config"
 	"github.com/linuxdynasty/fleet-board/internal/hub/lock"
 	"github.com/linuxdynasty/fleet-board/internal/hub/restore"
@@ -29,8 +32,10 @@ type RestoreRequest struct {
 // a new host), takes fleetd.lock and holds it to the end, so it is refused
 // while fleetd run holds it (#92: lock_held), removes a crashed init's or
 // restore's leftovers, and replaces state.db with the backup
-// ([restore.Run]). The server certificate --address needs is issued for the
-// same name list fleetd run wants. A refusal before the restore starts is
+// ([restore.Run]), with the hub.restore audit row by the local OS user
+// (api.LocalUser, kind LOCAL_USER, as on the admin socket). The server
+// certificate --address needs is issued for the same name list fleetd run
+// wants. A refusal before the restore starts is
 // a *[StartError] logged as hub.start_failed with command restore.
 func Restore(ctx context.Context, opts Options, req RestoreRequest) (res restore.Result, err error) {
 	s, err := newSession("restore", opts)
@@ -59,7 +64,11 @@ func Restore(ctx context.Context, opts Options, req RestoreRequest) (res restore
 	if err := s.removeLeftovers(cfg.StateDir); err != nil {
 		return res, s.fail(ReasonStore, err)
 	}
+	who := api.LocalUser(uint32(os.Getuid()), nil) //nolint:gosec // G115: a uid fits in 32 bits on macOS and Linux
 	return restore.Run(ctx, restore.Options{
+		Actor: statedb.Actor{
+			ID: who.GetId().GetValue(), Kind: strings.TrimPrefix(who.GetKind().String(), "PRINCIPAL_KIND_"), Name: who.GetName(),
+		},
 		StateDir: cfg.StateDir, Backup: req.Backup, Address: req.Address, DefaultPort: agentPort(cfg.Listen.Agent),
 		Names: func(addrs []string) ([]string, error) {
 			names, _, err := opts.serverNames(cfg, addrs)

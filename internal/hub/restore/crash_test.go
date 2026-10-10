@@ -86,6 +86,9 @@ func TestARestoreKilledAtAnyStepLeavesOneWholeStore(t *testing.T) {
 			} else if got.SettingsEpoch != f.id.SettingsEpoch || marker != 1 || !got.RestoreReconcileUntil.IsZero() {
 				t.Errorf("state.db is not the whole old store: epoch %q, marker %d", got.SettingsEpoch, marker)
 			}
+			if n := len(restoreRows(t, statedb.Path(f.state))); (n == 1) != tc.restored || n > 1 {
+				t.Errorf("%d hub.restore rows in state.db, want one only once the new store is in place", n)
+			}
 			prev := previous(t, f.state)
 			if (len(prev) == 1) != tc.kept {
 				t.Fatalf("previous copies %v, want kept = %v", prev, tc.kept)

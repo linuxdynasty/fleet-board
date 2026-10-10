@@ -29,10 +29,13 @@ type RestoreUpdate struct {
 	ServerNames           []string
 	// ReconcileUntil ends the 24 h reconcile window.
 	ReconcileUntil time.Time
+	// Audit, when set, is appended (stamped with a hub_seq) in the same
+	// transaction: the hub.restore row of 02m.
+	Audit *AuditEntry
 }
 
-// ApplyRestore writes u to the hub_identity row in one writer transaction:
-// every field changes, or none does.
+// ApplyRestore writes u to the hub_identity row, and its audit row, in one
+// writer transaction: every field and the row are written, or none is.
 func ApplyRestore(ctx context.Context, s *store.Store, u RestoreUpdate) error {
 	addrs := u.HubAddresses
 	if addrs == nil {
@@ -56,13 +59,17 @@ func ApplyRestore(ctx context.Context, s *store.Store, u RestoreUpdate) error {
 		if n, err := res.RowsAffected(); err != nil || n != 1 {
 			return errors.Join(ErrNoIdentity, err)
 		}
-		if u.ServerCert == nil {
-			return nil
+		if u.ServerCert != nil {
+			_, err = tx.ExecContext(jctx, `UPDATE hub_identity SET server_cert = ?, server_key = ?, server_names = ?
+				WHERE id = 1`, u.ServerCert, u.ServerKey, string(names))
+			if err != nil {
+				return fmt.Errorf("statedb: restore server certificate: %w", err)
+			}
 		}
-		_, err = tx.ExecContext(jctx, `UPDATE hub_identity SET server_cert = ?, server_key = ?, server_names = ?
-			WHERE id = 1`, u.ServerCert, u.ServerKey, string(names))
-		if err != nil {
-			return fmt.Errorf("statedb: restore server certificate: %w", err)
+		if u.Audit != nil {
+			if _, err := AppendAudit(jctx, tx, *u.Audit); err != nil {
+				return err
+			}
 		}
 		return nil
 	})

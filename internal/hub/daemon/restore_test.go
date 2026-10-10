@@ -3,6 +3,7 @@ package daemon_test
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -13,6 +14,7 @@ import (
 	"github.com/linuxdynasty/fleet-board/internal/hub/daemon"
 	"github.com/linuxdynasty/fleet-board/internal/hub/lock"
 	"github.com/linuxdynasty/fleet-board/internal/hub/statedb"
+	"github.com/linuxdynasty/fleet-board/internal/store"
 )
 
 // #92: fleetd restore takes fleetd.lock; while another process holds it the
@@ -72,6 +74,18 @@ func TestRunServesTheCertificateRestoreIssued(t *testing.T) {
 	}
 	if done := h.logs.events(t, "restore.completed"); len(done) != 1 {
 		t.Errorf("restore.completed lines %v, want one", done)
+	}
+	db, err := store.OpenReadOnly(statedb.Path(h.state))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var actorID, actorKind string
+	err = db.QueryRowContext(t.Context(), "SELECT actor_id, actor_kind FROM audit_log WHERE action = 'hub.restore'").Scan(&actorID, &actorKind)
+	if err := errors.Join(err, db.Close()); err != nil {
+		t.Fatalf("the hub.restore audit row: %v", err)
+	}
+	if !strings.HasPrefix(actorID, "local:") || len(actorID) == len("local:") || actorKind != "LOCAL_USER" {
+		t.Errorf("hub.restore actor %q kind %q, want the local OS user", actorID, actorKind)
 	}
 
 	opts := h.options()

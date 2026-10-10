@@ -59,6 +59,9 @@ type Options struct {
 	// Names is the server certificate's name list for the given hub
 	// addresses, the same list fleetd run wants. Needed with Address.
 	Names func(hubAddresses []string) ([]string, error)
+	// Actor is who asked for the restore, the hub.restore audit row's actor
+	// (daemon.Restore: the local OS user, kind LOCAL_USER).
+	Actor statedb.Actor
 	// Now is the clock; nil means time.Now.
 	Now func() time.Time
 	// Telemetry receives restore.completed and restore.failed; nil turns
@@ -201,9 +204,14 @@ func run(ctx context.Context, o Options) (res Result, st step, err error) {
 }
 
 // rewrite migrates the copy at path forward and writes the restore's
-// identity changes and the revocation list into it, then closes it, which
-// folds its WAL into the file.
+// identity changes with its hub.restore audit row (one transaction) and the
+// revocation list into it, then closes it, which folds its WAL into the
+// file.
 func rewrite(ctx context.Context, path string, o Options, at, until time.Time) (err error) {
+	from, err := schemaVersion(ctx, path)
+	if err != nil {
+		return err
+	}
 	s, err := store.Open(ctx, store.Options{Path: path, Name: "state", Migrations: statedb.Migrations(), MustExist: true})
 	if err != nil {
 		return fmt.Errorf("restore: open the copy: %w", err)
@@ -224,6 +232,9 @@ func rewrite(ctx context.Context, path string, o Options, at, until time.Time) (
 		if err := issue(&u, id, o.Names, at); err != nil {
 			return err
 		}
+	}
+	if u.Audit, err = auditEntry(o, from, u.SettingsEpoch, at); err != nil {
+		return err
 	}
 	if err := statedb.ApplyRestore(ctx, s, u); err != nil {
 		return err

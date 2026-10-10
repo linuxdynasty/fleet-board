@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	"database/sql"
 	"errors"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -88,6 +89,18 @@ func TestRestoreRewritesTheIdentityAndKeepsThePreviousStore(t *testing.T) {
 	if m, _ := filepath.Glob(filepath.Join(f.state, ".state.db.restore-*")); len(m) != 0 {
 		t.Errorf("temporary files left: %v", m)
 	}
+	rows := restoreRows(t, statedb.Path(f.state))
+	want := map[string]any{
+		"backup": filepath.Base(path), "schema_from": float64(len(statedb.Migrations())),
+		"address_added": true, "settings_epoch": got.SettingsEpoch,
+	}
+	if len(rows) != 1 || rows[0].actorID != "local:tester" || rows[0].actorKind != "LOCAL_USER" || rows[0].target != "hub" ||
+		rows[0].seq < 1 || rows[0].created != now.UnixMilli() || !maps.Equal(rows[0].detail, want) {
+		t.Errorf("hub.restore audit rows %+v, want one by local:tester on hub with detail %v", rows, want)
+	}
+	if n := len(restoreRows(t, prev[0])); n != 0 {
+		t.Errorf("the previous copy holds %d hub.restore rows, want 0", n)
+	}
 	done := f.logs.events(t, "restore.completed")
 	if len(done) != 1 || done[0]["address_added"] != true || done[0]["previous_kept"] != true {
 		t.Errorf("restore.completed lines %v, want one with address_added and previous_kept", done)
@@ -142,6 +155,9 @@ func TestRestoreMigratesAnOlderBackupForward(t *testing.T) {
 	got := f.identity(t)
 	if got.FleetID != "fleet-old" || got.SettingsEpoch == "epoch-old" || !got.RestoreReconcileUntil.Equal(now.Add(24*time.Hour)) {
 		t.Errorf("fleet %q, epoch %q, reconcile %v", got.FleetID, got.SettingsEpoch, got.RestoreReconcileUntil)
+	}
+	if rows := restoreRows(t, path); len(rows) != 1 || rows[0].detail["schema_from"] != float64(4) {
+		t.Errorf("hub.restore rows %+v, want one with schema_from 4", rows)
 	}
 }
 
@@ -271,6 +287,9 @@ func TestRestoreRefusesABadBackupAndChangesNothing(t *testing.T) {
 	if len(previous(t, f.state)) != 0 {
 		t.Error("a refused restore kept a previous copy")
 	}
+	if n := len(restoreRows(t, statedb.Path(f.state))); n != 0 {
+		t.Errorf("%d hub.restore rows after refused restores, want 0", n)
+	}
 	if m, _ := filepath.Glob(filepath.Join(f.state, ".state.db.restore-*")); len(m) != 0 {
 		t.Errorf("temporary files left: %v", m)
 	}
@@ -344,5 +363,29 @@ func TestAddressMatchesTheAgentsSpelling(t *testing.T) {
 		if hub != agent || (hubErr == nil) != (agentErr == nil) {
 			t.Errorf("%q: hub %q, %v; agent %q, %v", in, hub, hubErr, agent, agentErr)
 		}
+	}
+}
+
+// The backup's name goes into the audit detail as its base name only, with
+// anything but letters, digits, '.', '_' and '-' replaced and at most 128
+// bytes kept: never a folder, a control character or an unbounded string.
+func TestTheAuditRowNamesTheBackupSafely(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t, "fleet-a")
+	path := f.backupOf(t)
+	odd := filepath.Join(filepath.Dir(path), "my backup\x01"+strings.Repeat("é", 100)+".db")
+	if err := os.Rename(path, odd); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := restore.Run(context.Background(), f.options(odd)); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	rows := restoreRows(t, statedb.Path(f.state))
+	if len(rows) != 1 {
+		t.Fatalf("hub.restore rows %+v, want one", rows)
+	}
+	name, _ := rows[0].detail["backup"].(string)
+	if len(name) == 0 || len(name) > 128 || !strings.HasPrefix(name, "my_backup_") || strings.ContainsAny(name, "/\x01 é") {
+		t.Errorf("detail backup %q, want the cleaned base name, at most 128 bytes", name)
 	}
 }

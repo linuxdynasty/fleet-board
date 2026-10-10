@@ -41,8 +41,10 @@ err = statedb.ReplaceServerCert(ctx, s, oldDER, certDER, keyDER, names)
   then). It holds the CA key and the salt: never log a field of it.
 - `ApplyRestore` is `fleetd restore`'s one writer transaction on the restored
   store: a new `settings_epoch`, `hub_addresses`, the server certificate, key
-  and names when an address was added, and `restore_reconcile_until`. Every
-  field changes or none does; the fleet id, CA and salt are never touched.
+  and names when an address was added, `restore_reconcile_until`, and the
+  `hub.restore` audit row (`RestoreUpdate.Audit`, `ActionRestore`, stamped by
+  `AppendAudit`). Every field and the row are written or none is; the fleet
+  id, CA and salt are never touched.
 - `ReplaceServerCert` updates only the server fields, only while the stored
   certificate is still the one replaced (`ErrServerCertChanged` otherwise).
 - **`enroll_tokens`** (migration 2, plan row 2b) holds one row per enroll

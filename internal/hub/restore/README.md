@@ -41,7 +41,16 @@ addr, err := restore.Address("Hub2.Example", "7443") // "hub2.example:7443"
    `(settings_epoch, generation)` and take any generation under a new
    epoch), adds the address to `hub_addresses` with a server certificate
    signed by the restored CA for `Names(hub_addresses)`, and sets
-   `restore_reconcile_until` to now + 24 h (Unix ms). The `revoked-serials`
+   `restore_reconcile_until` to now + 24 h (Unix ms). The same transaction
+   appends the `hub.restore` audit row ([02m](../../../docs/specs/02m-hub-api-actions-and-audit.md#audit-actions)):
+   actor `Options.Actor` (the local OS user), target `hub`, and a detail of
+   closed fields: `backup` (the base name, cleaned: letters, digits, `.`,
+   `_`, `-`, anything else `_`, at most 128 bytes), `schema_from` (read
+   before the migrations), `address_added` and the new `settings_epoch`.
+   It lands in the restored store, so a refused or interrupted restore
+   writes none. Audit rows are permanent, but a later restore replaces the
+   whole store: the rows written since the backup, an earlier `hub.restore`
+   row included, stay only in `state.db.pre-restore-<stamp>`. The `revoked-serials`
    file is applied (`revocation.Load`), so an older backup does not bring a
    revoked certificate back. The copy is closed (its WAL folded in) and
    synced.
@@ -98,9 +107,7 @@ run` is up.
 
 Not done here: closing the live `machine_connections` rows the backup holds
 (each is closed as displaced by its machine's next `Hello`; PR 5k decides
-the rest), the `hub.restore` audit row of 02m (PR 5d's `audit_log` exists
-now; writing the row in the restore transaction is not built yet), and the
-reconcile behavior in Hello (PR 5k).
+the rest), and the reconcile behavior in Hello (PR 5k).
 
 Tests: `restore_test.go` (identity, previous copy, WAL case, empty folder,
 older schema, revocations, refusals, addresses and parity with the agent),

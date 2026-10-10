@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -141,10 +142,13 @@ func TestApplyRestoreRollsBackWhenTheCertificateWriteFails(t *testing.T) {
 	err = statedb.ApplyRestore(ctx, s, statedb.RestoreUpdate{
 		SettingsEpoch: "epoch-2", HubAddresses: []string{"x.example:7443"},
 		ServerCert: []byte("c2"), ServerKey: []byte("k2"), ServerNames: []string{"x.example"},
-		ReconcileUntil: time.UnixMilli(1_790_086_400_000),
+		ReconcileUntil: time.UnixMilli(1_790_086_400_000), Audit: restoreAudit(`{"backup":"b.db"}`),
 	})
 	if err == nil {
 		t.Fatal("ApplyRestore succeeded although the certificate write was refused")
+	}
+	if n := rawCount(t, filepath.Join(dir, statedb.FileName), "SELECT count(*) FROM audit_log"); n != 0 {
+		t.Errorf("%d audit rows after a rolled-back restore, want 0", n)
 	}
 	got, err := statedb.ReadIdentity(ctx, s)
 	if err != nil {
@@ -154,5 +158,54 @@ func TestApplyRestoreRollsBackWhenTheCertificateWriteFails(t *testing.T) {
 	want.HubAddresses = []string{}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("a failed certificate write left the row changed: %+v", got)
+	}
+}
+
+func restoreAudit(detail string) *statedb.AuditEntry {
+	return &statedb.AuditEntry{
+		Actor:  statedb.Actor{ID: "local:owner", Kind: "LOCAL_USER", Name: "owner"},
+		Action: statedb.ActionRestore, Target: "hub", Detail: detail, Now: time.UnixMilli(1_790_000_100_000),
+	}
+}
+
+// The hub.restore audit row (02m) is written, stamped with a hub_seq, in
+// the same transaction as the identity rewrite: an audit row that cannot
+// be written (a detail over the cap) leaves the identity unchanged.
+func TestApplyRestoreWritesItsAuditRowInTheSameTransaction(t *testing.T) {
+	t.Parallel()
+	dir := stateDir(t)
+	create(t, dir)
+	s := open(t, dir)
+	ctx := context.Background()
+	path := filepath.Join(dir, statedb.FileName)
+	u := statedb.RestoreUpdate{
+		SettingsEpoch: "epoch-2", ReconcileUntil: time.UnixMilli(1_790_086_400_000),
+		Audit: restoreAudit(`{"backup":"` + strings.Repeat("x", statedb.MaxAuditDetail) + `"}`),
+	}
+	if err := statedb.ApplyRestore(ctx, s, u); !errors.Is(err, statedb.ErrAuditInvalid) {
+		t.Fatalf("ApplyRestore with an oversized detail = %v, want ErrAuditInvalid", err)
+	}
+	if got, err := statedb.ReadIdentity(ctx, s); err != nil || got.SettingsEpoch != sampleIdentity().SettingsEpoch {
+		t.Fatalf("a refused audit row left settings_epoch %q (%v)", got.SettingsEpoch, err)
+	}
+	u.Audit = restoreAudit(`{"backup":"b.db"}`)
+	if err := statedb.ApplyRestore(ctx, s, u); err != nil {
+		t.Fatalf("ApplyRestore: %v", err)
+	}
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	var action, target, actorID, actorKind, detail string
+	var seq, created int64
+	err = db.QueryRowContext(ctx, `SELECT action, target, actor_id, actor_kind, detail, hub_seq, create_time FROM audit_log`).
+		Scan(&action, &target, &actorID, &actorKind, &detail, &seq, &created)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if action != "hub.restore" || target != "hub" || actorID != "local:owner" || actorKind != "LOCAL_USER" ||
+		detail != `{"backup":"b.db"}` || seq != 1 || created != 1_790_000_100_000 {
+		t.Errorf("audit row %q %q %q %q %q seq %d time %d", action, target, actorID, actorKind, detail, seq, created)
 	}
 }

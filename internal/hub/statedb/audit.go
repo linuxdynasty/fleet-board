@@ -77,6 +77,7 @@ const (
 	ActionEnroll       = "machine.enroll"
 	ActionEnrollFailed = "machine.enroll_failed"
 	ActionCertRenewed  = "machine.cert_renewed"
+	ActionRestore      = "hub.restore"
 )
 
 // MaxAuditDetail caps AuditEntry.detail in bytes; the table checks it too.

@@ -23,8 +23,9 @@ for this package:
   checkpoint, or `state.db-shm` left after the close): that is
   `ErrStoreInUse`, not a broken store. The checkpoint connection uses the
   store's durability pragmas.
-- The hub_identity changes are one writer transaction
-  (`statedb.ApplyRestore`). `fleet_id`, the CA and the salt are never
+- The hub_identity changes and the `hub.restore` audit row are one writer
+  transaction (`statedb.ApplyRestore`); the row's detail stays closed
+  fields (a cleaned base name, never a path or a secret). `fleet_id`, the CA and the salt are never
   changed. The server certificate's names come from the caller's `Names`,
   which must be the list `fleetd run` wants, or run re-issues it at start.
 - The reconcile behavior in Hello belongs to the gateway (plan row 5, PR 5k),

@@ -55,6 +55,7 @@
 // restore_reconcile migration).
 // [ApplyRestore] is fleetd restore's one writer transaction on a restored
 // store: settings_epoch, hub_addresses, the server certificate when an
-// address was added, and the reconcile window. [RemoveLeftovers] also
+// address was added, the reconcile window and the hub.restore audit row
+// ([ActionRestore]). [RemoveLeftovers] also
 // clears a crashed restore's temporary file ([RestoreTempPrefix]).
 package statedb

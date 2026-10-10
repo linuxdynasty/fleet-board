@@ -172,7 +172,14 @@ writes: session actions (`session.*`, `attach.*`) `sessions/<id>`; goal actions
 `logs.*` `sessions/<id>` (or `logs` for a search); `config.import` `config`;
 settings `settings/<id>`; `machine.enroll_token` writes `enroll_tokens/<id>`;
 `machine.enroll_failed` and `machine.connect_refused` write the collection
-`machines` when no row exists; the others the collection of their resource. A
+`machines` when no row exists; `hub.restore` writes `hub`, with the OS user
+that ran `fleetd restore` as actor (kind `LOCAL_USER`), in the same
+transaction as the restore on the restored store, and a detail of closed
+fields only: `backup` (the file's base name, letters, digits, `.`, `_` and
+`-` kept, anything else `_`, at most 128 bytes; never a folder),
+`schema_from` (the backup's schema version before migration),
+`address_added` and `settings_epoch` (the new one); the others the
+collection of their resource. A
 read-only attach toggle is a re-attach (a new `attach.open`).
 
 | Area | Actions |

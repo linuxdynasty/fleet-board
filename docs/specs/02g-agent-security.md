@@ -261,8 +261,10 @@ it (#92). It:
    `HelloAck.hub_addresses`; a hub that moves host should be reachable at its
    old address or name until every agent has reconnected once.
 4. Sets `restore_reconcile` for 24 hours (`hub_identity.restore_reconcile_until`,
-   Unix ms; 0 is no window). Steps 2 to 4 are one transaction on the new
-   store, built in a temporary file; the `revoked-serials` file is applied
+   Unix ms; 0 is no window). Steps 2 to 4 and the `hub.restore` audit row
+   ([02m](02m-hub-api-actions-and-audit.md#audit-actions)) are one
+   transaction on the new store, built in a temporary file, so a refused or
+   interrupted restore leaves no row; the `revoked-serials` file is applied
    to it. Only then is the current `state.db` checkpointed (refused, with
    "wait and restore again", while another process such as `fleetd backup`
    has it open), kept as

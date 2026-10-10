@@ -122,6 +122,7 @@ func (f *fixture) backupOf(t *testing.T) string {
 func (f *fixture) options(path string) restore.Options {
 	return restore.Options{
 		StateDir: f.state, Backup: path, Now: func() time.Time { return now }, Telemetry: f.tel,
+		Actor: statedb.Actor{ID: "local:tester", Kind: "LOCAL_USER", Name: "tester"},
 		Names: func(addrs []string) ([]string, error) {
 			return append([]string{"hub", "localhost"}, hosts(addrs)...), nil
 		},
@@ -214,4 +215,43 @@ func previous(t *testing.T, state string) []string {
 		t.Fatal(err)
 	}
 	return m
+}
+
+// restoreRow is one hub.restore audit row.
+type restoreRow struct {
+	actorID, actorKind, target string
+	seq, created               int64
+	detail                     map[string]any
+}
+
+// restoreRows reads the hub.restore audit rows of the store at path.
+func restoreRows(t *testing.T, path string) []restoreRow {
+	t.Helper()
+	db, err := sql.Open("sqlite", "file:"+path+"?mode=ro")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	rows, err := db.QueryContext(t.Context(), `SELECT actor_id, actor_kind, target, hub_seq, create_time, detail
+		FROM audit_log WHERE action = 'hub.restore' ORDER BY id`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []restoreRow
+	for rows.Next() {
+		var r restoreRow
+		var detail string
+		if err := rows.Scan(&r.actorID, &r.actorKind, &r.target, &r.seq, &r.created, &detail); err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal([]byte(detail), &r.detail); err != nil {
+			t.Fatalf("detail %q: %v", detail, err)
+		}
+		out = append(out, r)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	return out
 }
