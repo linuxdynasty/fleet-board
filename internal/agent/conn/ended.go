@@ -61,10 +61,10 @@ func (l *Loop) saveEnd(ctx context.Context, e End, peer string) {
 	}
 }
 
-// CheckEnded reads EndedFile at the start of `fleet-agent run`, before any
-// network call. A record for id's machine is an [*EndedError] with Recorded
-// set, whose message names the hub and the owner's fix: run must not
-// reconnect. A record for another machine is a leftover of an earlier
+// CheckEnded reads EndedFile; the caller runs it at the start, before any
+// network call (`fleet-agent run`, row 4 PR 3-iii). A record for id's
+// machine is an [*EndedError] with Recorded set, whose message names the
+// hub and the owner's fix: the caller must not reconnect. A record for another machine is a leftover of an earlier
 // enrollment: it is removed and removed is true. No file is (false, nil).
 // A damaged file is an error naming it, as for a damaged identity.json;
 // removing it lets run try again.

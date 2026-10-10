@@ -4,7 +4,8 @@ The agent's link to the hub: enrollment
 ([02g A1](../../../docs/specs/02g-agent-security.md),
 [03 W1](../../../docs/specs/03-workflows.md#w1-enrollment-and-first-connect)),
 run by `fleet-agent enroll --hub <host[:port]> --token <token>`, and the
-connection loop (03 W1 "State machine", 03n W2), run by `fleet-agent run`.
+connection loop (03 W1 "State machine", 03n W2), which `fleet-agent run`
+will run (row 4 PR 3-iii).
 
 ```go
 res, err := conn.Enroll(ctx, conn.Options{Dir: dir, Hub: "hub.local", Token: tok, Version: v, Telemetry: tel})
@@ -123,7 +124,11 @@ st := l.Status()                    // state, peer, last failure per address, cl
    waits is dropped. A failed read or send closes the stream
    (`connect.closed{step="heartbeat"}`).
 6. **Backoff.** After n failures in a row, full jitter from 1 s up to
-   2^n s (the first wait is 1 to 2 s), capped at 60 s; a connect resets n; attempts at least 5 s apart. While connected, a
+   2^n s (the first wait is 1 to 2 s), capped at 60 s; a connect resets n,
+   and so does a wake or network change, whether it comes in the backoff
+   wait or in the 5 s gap between tries (one `pacer` holds the rule for
+   both); each wait is logged as `connect.backoff{failures, wait_ms,
+   reason}`; attempts at least 5 s apart. While connected, a
    wake, or a network change that removed the connection's local address
    or changed the default route (`wakenet.Decide`), closes the stream; in
    backoff, a wake or any network change cuts the wait. Either resets the
@@ -135,19 +140,21 @@ st := l.Status()                    // state, peer, last failure per address, cl
    `peer`, `time`; temp file, fsync, rename, folder fsync) before `Run`
    returns the `*EndedError`; a failed write logs `connect.failed{step="save"}`
    and the loop still ends. An expired certificate is not recorded: it is
-   read from the certificate. `CheckEnded`, called by `fleet-agent run`
-   before any network call, returns a `*EndedError` (`Recorded`, its message
+   read from the certificate. `CheckEnded`, for the caller to run before
+   any network call (`fleet-agent run`, row 4 PR 3-iii), returns a `*EndedError` (`Recorded`, its message
    naming the hub and the owner's fix) while the file names this machine,
    removes one that names another machine (a leftover), and refuses a
    damaged one. Enroll removes it when it saves a new identity.
 
-Not built yet, both later in plan row 4:
+Not built yet, all later in plan row 4:
 
-- Certificate renewal (`RenewCert`): the hub's handler, then the agent
-  side, under the ruling that a renewal makes a new key and keeps the
-  renewed pair in its own `cert.pem`, never rewriting `identity.json`.
-  Until then the loop ends with `EndCertExpired` when the enrolled
-  certificate runs out.
+- `fleet-agent run` and its `ended.json` refusal: row 4 PR 3-iii. Until
+  then nothing calls `NewLoop` or `CheckEnded` outside the tests.
+- The agent side of certificate renewal (the hub's `RenewCert` handler
+  is built, #147), under the ruling that a renewal makes a new key and
+  keeps the renewed pair in its own `cert.pem`, never rewriting
+  `identity.json`. Until then the loop ends with `EndCertExpired` when
+  the enrolled certificate runs out.
 - Discovery (mDNS, PR 4), and with it the discovery signals 03 W1 lists:
   the `agent.discover` span (one child per candidate) and
   `fleet_agent_discovery_seconds`. Until then the candidates are the
@@ -198,9 +205,12 @@ everything else retried, the same failure tried again and again (a closed
 port, an impostor, an address that never answers, `UNAVAILABLE`, a reset
 after `HelloAck`), each backing off with its status and metrics, the
 backoff's growth, cap and jitter (the first wait included) and its reset
-after a connect and after a wake in backoff, an unchanged routing burst
-that leaves it alone, `HelloAck.hub_addresses` capped at 16 with invalid
-ones dropped, a hub
+after a connect, after a wake in backoff and after a wake in the gap
+between tries (a real 300 ms gap, read from `connect.backoff`; the
+`pacer` is also tested on its own), an unchanged routing burst that
+leaves it alone, the hub's addresses (`HelloAck` and `EnrollResponse`
+alike) filtered then capped at 16, each HelloAck check logged with its
+`check` and `value`, a hub
 restart on the same port, a snapshot cut short
 never sent on the next stream, its seq taken before it is built, results
 resent until acked (unknown and pruned ids, a `SnapshotRequest`), the
