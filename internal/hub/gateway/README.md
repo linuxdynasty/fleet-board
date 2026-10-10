@@ -262,9 +262,7 @@ stream that never said Hello and with a Hello stuck behind the writer, a
 Hello committed during Shutdown (an `export_test.go` hook), messages queued
 before the agent's Bye (one test with a slow arm handler), the limit's
 place after the earlier checks, the registry after an agent's Bye, and a
-first message that is too big or never comes. `shutdown_wait_test.go` holds
-a row close (an `export_test.go` hook) under an agent that dropped its
-connection: Shutdown waits for it, and ends with its context. They dial the real
+first message that is too big or never comes. They dial the real
 listener with `crypto/tls` and the generated gRPC client against a real
 `state.db` and a real `revocation.List`: enroll (certificate CN and URI SAN,
 chain, accepted as a client certificate), replay until 24 h past the TTL,
@@ -279,3 +277,7 @@ RenewCert: a new serial for the CSR key, the stored certificate on a repeat,
 each refusal of the 02g table, store failure, concurrent identical calls
 (one serial), and a CA with less than 90 days left. The listener tests read one
 clock, `wallNow`, for issuing and verifying, so they pass on any date.
+
+`shutdown_wait_test.go` holds a row close (an `export_test.go` hook) under
+an agent that dropped its connection: Shutdown waits for it, and ends with
+its context.

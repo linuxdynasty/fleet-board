@@ -291,14 +291,7 @@ func serve(ctx context.Context, cfg *config.Config, opts Options, d hubDeps, s *
 	}
 	cancel()
 	adv.Stop()
-	shutdown, done := context.WithTimeout(context.Background(), shutdownGrace)
-	defer done()
-	for _, l := range ls {
-		if err := l.srv.Shutdown(shutdown); err != nil {
-			// Past the grace period: drop the connections still open.
-			serveErr = errors.Join(serveErr, fmt.Errorf("daemon: stop %s listener: %w", l.name, err), l.srv.Close())
-		}
-	}
+	serveErr = errors.Join(serveErr, stopAll(ls))
 	wg.Wait()
 	for _, l := range ls {
 		if l.flush != nil {
@@ -307,6 +300,28 @@ func serve(ctx context.Context, cfg *config.Config, opts Options, d hubDeps, s *
 	}
 	s.tel.Logger.Info("hub.stopped")
 	return serveErr
+}
+
+// stopAll shuts every listener down at the same time, each within the one
+// shutdownGrace: the agent listener's wait for its Connect handlers does
+// not eat the other listeners' grace. A listener still busy past it has
+// its open connections dropped.
+func stopAll(ls []listener) error {
+	shutdown, done := context.WithTimeout(context.Background(), shutdownGrace)
+	defer done()
+	errs := make([]error, len(ls))
+	var wg sync.WaitGroup
+	for i, l := range ls {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := l.srv.Shutdown(shutdown); err != nil {
+				errs[i] = errors.Join(fmt.Errorf("daemon: stop %s listener: %w", l.name, err), l.srv.Close())
+			}
+		}()
+	}
+	wg.Wait()
+	return errors.Join(errs...)
 }
 
 // bind opens the agent, API and (when set) metrics listeners, in that
@@ -348,6 +363,9 @@ func bind(ctx context.Context, cfg *config.Config, opts Options, d hubDeps, s *s
 			l.srv, l.flush = agent, agent.FlushAudit
 		} else {
 			l.srv = api.NewServer(s.tel, w.name, port)
+		}
+		if opts.afterBind != nil {
+			opts.afterBind(l.name, l.srv)
 		}
 		ls = append(ls, l)
 		s.tel.Logger.Info("hub.listener_opened", "listener", w.name, "port", port)

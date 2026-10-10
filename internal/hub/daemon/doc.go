@@ -20,8 +20,10 @@
 // admin socket (<state_dir>/admin.sock, mode 0600, a leftover socket removed
 // first and the socket removed on a clean stop) until its context ends. An
 // advertiser (internal/hub/discovery) announces the hub over mDNS once the
-// listeners serve and stops first at shutdown. On the way out the hub
-// writes the agent listener's audit summary of the minute in progress
+// listeners serve and stops first at shutdown. Then every listener shuts
+// down at the same time within one 10 s grace (the agent listener's
+// gateway.Server.Shutdown also waits for its Connect handlers to close
+// their rows). On the way out the hub writes the agent listener's audit summary of the minute in progress
 // before the store closes. A goroutine it owns checks the
 // certificate every hour, and another runs the
 // nightly backup (backup.Schedule: a check at start, then every minute),

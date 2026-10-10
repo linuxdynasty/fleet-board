@@ -45,7 +45,8 @@ parses flags and calls `Init`, `Run`, `EnrollToken`, `Backup` or `Restore`.
    issues for `--address`, so a restored certificate is served as is.
 7. Sweeps the store before any listener binds, so no Hello can race it
    (`statedb.StartSweep`, 03n "Hub start"): every `machine_connections` row
-   left live (a crash, or a Hello committed after a shutdown stopped waiting)
+   left live (a crash, a Hello committed after a shutdown stopped waiting, or a
+   stop whose handler wait ran out)
    is closed as `hub_restart`, and every `ONLINE` machine becomes `STALE`
    (`machine.state_changed{reason="hub_start"}`, `hub.start_sweep{stale,
    rows_closed}`; `fleet_hub_machine_state` set through
@@ -76,7 +77,8 @@ parses flags and calls `Init`, `Run`, `EnrollToken`, `Backup` or `Restore`.
    (`gateway.Server.Housekeep`: `STALE` at 45 s of silence, `OFFLINE` and
    the stream cut at 3 min, a stalled `STALE` stream cut). Later plan rows
    add their prune jobs to the same list.
-11. Stops: shuts the listeners down (10 s grace, then closes; closing the admin
+11. Stops: shuts the listeners down at the same time (one 10 s grace for all,
+   so the agent listener's handler wait does not eat the others'; then closes; closing the admin
    listener removes `admin.sock`; the agent listener's `gateway.Server.Shutdown`
    also waits for its running handlers, so each Connect stream's row is closed
    as `hub_restart` before the store closes), stops the hourly certificate check and the
@@ -170,4 +172,7 @@ crash's leftovers (an `ONLINE` machine with a live row) with the hub
 stopped, starts `Run` and finds the row closed as `hub_restart` and the
 machine `STALE`, then drives the housekeeping tick with a fake clock to
 `OFFLINE` exactly 3 minutes after the start.
+The bind test checks, through an `export_test.go` hook, that the agent
+listener is served by the `*gateway.Server` itself, not its embedded
+`*http.Server`: only the first waits for the Connect handlers on stop.
 `cmd/fleetd` repeats the cross-process cases with the built binary.

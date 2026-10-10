@@ -69,6 +69,10 @@ type Options struct {
 	// PeerUID reads an admin socket peer's user id; nil means the kernel's
 	// (api.KernelPeerUID).
 	PeerUID api.PeerUID
+
+	// afterBind, when set (tests only, export_test.go), sees each bound
+	// listener's name and the server that serves it.
+	afterBind func(name string, srv any)
 }
 
 // Addrs are the bound listener addresses; Metrics is nil without
