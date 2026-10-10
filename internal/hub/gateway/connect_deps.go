@@ -20,6 +20,7 @@ import (
 	agentv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1"
 	"github.com/linuxdynasty/fleet-board/internal/buildinfo"
 	"github.com/linuxdynasty/fleet-board/internal/hub/ingest"
+	"github.com/linuxdynasty/fleet-board/internal/hub/outbox"
 	"github.com/linuxdynasty/fleet-board/internal/hub/statedb"
 )
 
@@ -64,6 +65,10 @@ type connectDeps struct {
 	// beforeMark is a hook tests run between housekeeping's judgement of a
 	// machine and its MarkState job.
 	beforeMark func(machineID string)
+	// outbox is the command path (NewServer builds it on the store); its
+	// sender runs until stopping ends and closes outboxDone.
+	outbox     *outbox.Service
+	outboxDone chan struct{}
 }
 
 type connectMetrics struct {
@@ -113,7 +118,7 @@ func newConnectDeps(opts ServerOptions) (*connectDeps, error) {
 		afterHeartbeat: opts.afterHeartbeat, beforeRowClose: opts.beforeRowClose, started: now().UTC(), skew: newSkews(), sm: sm,
 		snap: snap, appliers: slices.Clone(opts.Appliers), onApplied: opts.OnSnapshotApplied, beforeSnapshot: opts.beforeSnapshot,
 		beforeMark: opts.beforeMark,
-		stopping:   stopping, stop: stop,
+		stopping:   stopping, stop: stop, outboxDone: make(chan struct{}),
 		streams: newRegistry(), limit: newHelloLimit(), revoked: opts.Revoked,
 		tracer: opts.Telemetry.Tracer(scope), instanceID: hex.EncodeToString(b[:]), version: buildinfo.Version,
 		helloWait: cmp.Or(opts.HelloWait, HelloWait), afterHello: opts.afterHello, afterRegister: opts.afterRegister, arms: withArms(arms, opts.arms), m: cm,

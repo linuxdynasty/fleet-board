@@ -36,5 +36,9 @@ anything that touches `AgentService`. Rules for this package:
   returns nil and the stream ends with an OK status (row 5 ruling, fork 4).
 - A new `ConnectRequest` arm gets its own file that registers it with
   `arms.add`; do not grow `arms.go`.
+- Commands go to a stream only through the outbox's sender and the
+  registry's `Send`, never from an arm handler; `ResultAck` only after the
+  result's job committed. Nothing is sent to a machine before the `ready`
+  seam for its live epoch.
 - Tests dial the real listener; a fake clock and a tick channel drive renewal.
 - A change here updates this README and `doc.go` in the same commit.

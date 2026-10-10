@@ -313,7 +313,7 @@ The hub's outbox row moves like this. A `DrainMachine` or a revoke ends rows ear
 ```mermaid
 stateDiagram-v2
   [*] --> pending: decision tx commits
-  pending --> delivered: CommandAck
+  pending --> delivered: CommandAck, or CommandProgress (the ack was lost)
   pending --> expired: not_after_time passes, or cancelled by DrainMachine
   pending --> done: RevokeMachine (status EXPIRED)
   pending --> done: CommandResult (a refusal the agent sends without logging it: EPOCH_MISMATCH, SEQ_REPLAYED)
@@ -322,6 +322,13 @@ stateDiagram-v2
   done --> [*]: ResultAck
   expired --> [*]
 ```
+
+A send is not a state. The row stays `pending` until `CommandAck`, and each send is recorded
+with its epoch and seq, so a stream that ends first leaves it pending and the next epoch
+re-sends it with the same `command_id` and that epoch's seqs from 1; a `delivered` row is
+never re-sent. `ResultAck` follows the result's commit. A message for a command the hub has no
+row for, of another machine, or from a stream a newer `Hello` displaced is refused and never
+answered ([03f](03f-hub-internals.md#the-command-path)).
 
 ## Clocks
 

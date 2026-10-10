@@ -362,6 +362,7 @@ func (a *agentService) stop(rc writeDeadliner, wrote <-chan struct{}, wait time.
 // closed and counts no false duplicate.
 func (a *agentService) closed(ctx context.Context, s *stream) {
 	a.streams.remove(s)
+	a.outbox.Gone(s.machineID, s.epoch)
 	reason := s.endReason()
 	ctx = context.WithoutCancel(ctx)
 	wctx, cancel := context.WithTimeout(ctx, endWait)

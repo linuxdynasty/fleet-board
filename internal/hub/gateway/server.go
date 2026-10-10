@@ -14,6 +14,7 @@ import (
 
 	"github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1/agentv1connect"
 	"github.com/linuxdynasty/fleet-board/internal/hub/ingest"
+	"github.com/linuxdynasty/fleet-board/internal/hub/outbox"
 	"github.com/linuxdynasty/fleet-board/internal/hub/statedb"
 	"github.com/linuxdynasty/fleet-board/internal/store"
 	"github.com/linuxdynasty/fleet-board/internal/telemetry"
@@ -98,6 +99,10 @@ func NewServer(opts ServerOptions) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
+	cdeps.outbox, err = outbox.New(outbox.Options{Store: opts.Store, Streams: cdeps.streams, Telemetry: tel, Now: opts.Now})
+	if err != nil {
+		return nil, err
+	}
 	mux := http.NewServeMux()
 	path, h := agentv1connect.NewAgentServiceHandler(&agentService{enrollDeps: deps, connectDeps: cdeps},
 		connect.WithReadMaxBytes(MaxMessageBytes))
@@ -120,6 +125,7 @@ func NewServer(opts ServerOptions) (*Server, error) {
 	// Connect stream, whose handler then returns, so the stop does not wait
 	// out its grace period (03n).
 	srv.RegisterOnShutdown(cdeps.beginShutdown)
+	cdeps.startOutbox()
 	return srv, nil
 }
 
@@ -135,9 +141,13 @@ type Server struct {
 
 // FlushAudit writes the machine.enroll_failed summary of the minute in
 // progress, if any refusal in it was suppressed, and waits for the commit
-// (at most 5 s). Call it after Shutdown has returned, so no handler adds to
-// the minute, and before the store closes. A second call writes nothing.
-func (s *Server) FlushAudit(ctx context.Context) { s.deps.flushAudit(ctx) }
+// (at most 5 s), then waits, within ctx, for the command sender to stop.
+// Call it after Shutdown has returned, so no handler adds to the minute,
+// and before the store closes. A second call writes nothing.
+func (s *Server) FlushAudit(ctx context.Context) {
+	s.deps.flushAudit(ctx)
+	s.connect.stopOutbox(ctx)
+}
 
 // ReadHeaderTimeout bounds how long a peer may take to send request headers.
 // There is no ReadTimeout: Connect, Terminal and SessionLog are long streams.
