@@ -112,7 +112,7 @@ stamped for Watch; no audit row (02m has no state-change action). The live
 row's close by the stream or the agent's `Bye` takes an `ONLINE` or `STALE`
 machine `OFFLINE` in the same job; a displaced stream's close, the hub's own
 shutdown (`hub_restart`) and a machine that never got `ONLINE` change nothing.
-`last_seen_time` is written by the `Hello`, by each close and at most once a
+`last_seen_time` is written by the `Hello`, by each applied Snapshot, by each close and at most once a
 minute from Heartbeats. On graceful shutdown the hub sends
 `Bye{HUB_RESTART}` so agents reconnect quickly with backoff rather than
 waiting for keepalive timeouts, and its agent listener's stop returns only
