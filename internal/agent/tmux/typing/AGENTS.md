@@ -11,8 +11,15 @@ change to the refusal metric or log. Rules for this package:
   returns a `Line` takes a whole `PaneKey` and a `Purpose` (row-7 ruling,
   fork 11); never a bare pane id. No exported var or const
   of type `Line` (or a type holding one), no exported var with an inferred
-  type, no exported method that returns a `Line`. `surface_test.go` enforces
-  all of it; keep its RED cases next to any new rule.
+  type, no exported method that returns a `Line`, no exported method with a
+  pointer receiver on a type holding one, nothing exported that takes a
+  `Line` by pointer, slice, map or channel, and no exported var or result of
+  type `any`, an interface or another package's type (`error` only while
+  `Line` has no `Error` method). `surface_test.go` enforces all of it; keep
+  its RED cases next to any new rule.
+- `Key` numbers equal `NamedKey` numbers (`TestKeysMapOneToOneToNamedKey`).
+- `NewKeys` accepts any key under any purpose. The gate each purpose names
+  (its caller's) decides which keys it may press, C-c included.
 - `Line` fields stay unexported, and the zero `Line` types nothing:
   `Command` returns `ErrZeroLine`. Keep `IsZero` exact.
 - Refuse, never repair. Text with a newline, carriage return or other control
@@ -30,7 +37,7 @@ change to the refusal metric or log. Rules for this package:
   pane id, bytes), never the text or a refused pane. A new
   `Reason` updates 05b in the same commit.
 - The lint rules that guard this package are in `.golangci.yml`
-  (`tmux-typing` and the `typing\.New` forbidigo pattern) and are proved by
-  `scripts/test-lint-typing-rules.sh`. A new allowed caller is an
+  (`tmux-typing`, `no-unsafe` and the `typing\.New` forbidigo pattern) and
+  are proved by `scripts/test-lint-typing-rules.sh`. A new allowed caller is an
   `arbiter-fleet` ruling first, then the rule, the script and 01f F3.
 - A change here updates this file, README.md and `doc.go` in the same commit.

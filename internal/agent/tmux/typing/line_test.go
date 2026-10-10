@@ -247,3 +247,31 @@ func TestSendKeysPurposesMapOneToOne(t *testing.T) {
 		t.Fatal("PurposeOperatorText does not equal SEND_KEYS_PURPOSE_OPERATOR_TEXT")
 	}
 }
+
+// The Key numbers are the NamedKey numbers of harness.proto, and each
+// presses the tmux key its proto name says, so the control package maps
+// them one to one: swapping two keys, or a NamedKey added to the proto,
+// fails here.
+func TestKeysMapOneToOneToNamedKey(t *testing.T) {
+	t.Parallel()
+	tmuxName := map[string]string{
+		"UNSPECIFIED": "", "ENTER": "Enter", "ESCAPE": "Escape", "TAB": "Tab", "BACKSPACE": "BSpace",
+		"UP": "Up", "DOWN": "Down", "LEFT": "Left", "RIGHT": "Right", "CTRL_C": "C-c",
+	}
+	if len(typev1.NamedKey_name) != len(tmuxName) {
+		t.Fatalf("NamedKey has %d values, this test knows %d: %v", len(typev1.NamedKey_name), len(tmuxName), typev1.NamedKey_name)
+	}
+	for num, name := range typev1.NamedKey_name {
+		want, ok := tmuxName[strings.TrimPrefix(name, "NAMED_KEY_")]
+		if !ok {
+			t.Errorf("NamedKey %s has no tmux name in this test", name)
+			continue
+		}
+		if got := typing.Key(num).String(); got != want {
+			t.Errorf("NamedKey %s = %d, but typing.Key(%d) presses %q, want %q", name, num, num, got, want)
+		}
+	}
+	if got := typing.Key(len(tmuxName)).String(); got != "" {
+		t.Errorf("typing.Key(%d) = %q: a key past the NamedKey set", len(tmuxName), got)
+	}
+}

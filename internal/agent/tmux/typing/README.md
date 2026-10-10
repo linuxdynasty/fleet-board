@@ -42,7 +42,9 @@ never in the same line: text then Enter is two lines.
   terminal is Enter. ESC, NUL, tab, DEL and C1 controls are refused
   (`control_char`); a key that needs one goes through `NewKeys`.
 - Keys come from the closed set `Enter Escape Tab BSpace Up Down Left Right
-  C-c`, 1 to 32 per line.
+  C-c`, 1 to 32 per line, numbered as `fleet.type.v1.NamedKey` (a test holds
+  it). `NewKeys` accepts any key under any purpose: the gate each purpose
+  names, in its caller, must check which keys it may press (C-c above all).
 - A refusal returns the zero `Line` and a `*RefusedError` with its `Reason`.
   `Line.Command` of the zero `Line` returns `ErrZeroLine`.
 
@@ -69,7 +71,7 @@ arrives with plan row 7 PR 7c2.
 
 ## Lint rules
 
-`.golangci.yml` has two, proved by `scripts/test-lint-typing-rules.sh`:
+`.golangci.yml` has three, proved by `scripts/test-lint-typing-rules.sh`:
 
 - `depguard` (`tmux-typing`): only `internal/agent/control`, `start`, `probe`
   and `tmux` (each package itself, not a subpackage) import this package;
@@ -77,6 +79,9 @@ arrives with plan row 7 PR 7c2.
 - `forbidigo` (`^typing\.New`, type-aware): only `control`, `start` and
   `probe` call or reference a `New…` function, through an import alias or as
   a function value too; test files and this package are excepted.
+- `depguard` (`no-unsafe`): no `unsafe` import in `internal/` or `cmd/`
+  outside tests. `//go:linkname` needs it, and a linkname to `NewLiteral`
+  would build a `Line` with no call the forbidigo pattern can see.
 
 ## Telemetry
 

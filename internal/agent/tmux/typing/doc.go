@@ -21,9 +21,12 @@
 //
 // Lint rules in .golangci.yml let only internal/agent/control, start and
 // probe import this package and call a New… function, and the tmux client
-// package import it to name the Line type. A test fails if the package
-// exports a function not named New…, a variable or constant of type Line, or
-// a method that returns a Line.
+// package import it to name the Line type; no non-test file may import
+// unsafe, so no //go:linkname reaches a constructor. A test fails if the
+// package exports a function not named New…, a variable or constant of type
+// Line, a method that returns or changes a Line, anything that takes a Line
+// by reference, or a variable or result that could carry one (any, an
+// interface).
 //
 // The package checks what a line is, not whether the pane may take it now:
 // the gate each purpose names (a prompt still showing, an empty input line)
