@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
@@ -134,7 +135,10 @@ func (h *hub) options() daemon.Options {
 		Version:    "test",
 		Discovery: discovery.Env{
 			Responder: h.resp,
-			Addrs:     func() ([]netip.Addr, error) { return []netip.Addr{netip.MustParseAddr("192.168.1.5")}, nil },
+			Ifaces: func() ([]discovery.Iface, error) {
+				return []discovery.Iface{{Name: "en0", Flags: net.FlagUp | net.FlagMulticast, Addrs: []netip.Addr{netip.MustParseAddr("192.168.1.5")}}}, nil
+			},
+			Route: func() discovery.Route { return discovery.Route{} },
 		},
 	}
 }

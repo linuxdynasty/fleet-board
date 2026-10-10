@@ -67,6 +67,16 @@ and the other still advertises. The host name is the hub's own, lower-cased and
 without `.local`, the one the default certificate names use; a host name that
 makes no DNS name advertises nothing.
 
+The agent keeps one address per IP family from an answer, so the hub advertises
+the addresses of one interface, at most one IPv4 and one IPv6: the interface that
+holds the default route's source address when it is not a bridge, tunnel or VM
+interface, else the first real one; a listener bound to one address advertises
+that address. The address list is read at start; after a network change restart
+`fleetd` or give the agent the new address (re-advertising on a network change is
+later work). So a hub found "within one 60 s backoff step" of moving
+([ADR 0028](../adr/0028-mdns-best-effort.md) decision 2) is true only after that
+restart.
+
 ## Configuration file
 
 `fleetd` reads one YAML file at start: `~/.config/fleetd/fleetd.yaml`, or the

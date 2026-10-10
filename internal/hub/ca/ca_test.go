@@ -97,6 +97,15 @@ func TestDefaultNames(t *testing.T) {
 	}
 }
 
+// labels is n dot-separated labels of size letters.
+func labels(n, size int) string {
+	out := make([]string, n)
+	for i := range out {
+		out[i] = strings.Repeat(string(rune('a'+i)), size)
+	}
+	return strings.Join(out, ".")
+}
+
 func TestServiceTarget(t *testing.T) {
 	t.Parallel()
 	cases := []struct{ hostname, want string }{
@@ -114,6 +123,8 @@ func TestServiceTarget(t *testing.T) {
 		{"a_b", "fleetd-a_b.local"},
 		{"a..b", ""},
 		{strings.Repeat("a", 60), ""}, // "fleetd-" plus 60 is a 67-byte label
+		{labels(5, 50), ""},           // 267 bytes with the prefix and ".local"
+		{labels(4, 50), "fleetd-" + labels(4, 50) + ".local"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.hostname, func(t *testing.T) {

@@ -26,14 +26,29 @@ defer adv.Stop()
   `run`). If the certificate served now does not name it (a re-issue failed),
   the advertiser refuses with `cert_missing_target`: in `fleetd run` a failed
   re-issue already stops the start, so this is the second line of defence.
-- **Addresses.** A listener on the wildcard address advertises the machine's
-  up, multicast-capable, non-loopback interface addresses; a listener on one
-  address advertises only that one. Loopback, unspecified, multicast,
-  broadcast and IPv6 link-local addresses (an AAAA record has no zone) are
-  dropped; a host with none left advertises nothing and logs
-  `discovery.advertise_refused{reason=no_addresses}`. The list is read once
-  at start: after a network change the agents' cached and configured
-  addresses and the `HelloAck` address list carry them until the next restart.
+- **Addresses: one interface, one address per family.** The agent's
+  library client keeps only the last A record and the last AAAA record it
+  reads, and the agent dials those, so every extra address is a gamble on
+  which one is dialed (a Docker or VM bridge would be dialed by a LAN agent
+  that can never reach it). The hub therefore advertises the addresses of
+  **one** interface, and joins the mDNS group on that interface (ADR 0028
+  decision 1: it works "with the interface set"). A listener bound to one
+  address uses that address's interface. A listener on the wildcard address
+  uses the interface that holds the default route's source address (found by
+  connecting an unsent UDP socket, `RouteSource`), if it is a real one; else
+  the first up, multicast interface that is not loopback, point-to-point or
+  virtual (names `bridge*`, `utun*`, `awdl*`, `llw*`, `docker*`, `veth*`,
+  `vmnet*`, `tun*`, `tap*`, `vboxnet*`, `tailscale*`, `br-*`, `virbr*`,
+  `wg*`) and has an address. On it, the route's source address (else the first
+  one the system lists) is the IPv4 record and likewise one IPv6 record.
+  Loopback, unspecified, multicast, broadcast and link-local addresses (IPv6
+  has no zone in an AAAA record; 169.254/16 is no network) are never
+  advertised. A host with none left advertises nothing and logs
+  `discovery.advertise_refused{reason=no_addresses}`. The choice is made once,
+  at start. Re-advertising on a network change is later work: until then, after
+  a network change restart `fleetd` or give the agent the new address (the
+  agents' cached and configured addresses and the `HelloAck` list cover the
+  time in between).
 - **Never fatal.** A refusal or failure is one log line and one count; the hub
   keeps serving. `NewServer` of the library hides a family that cannot bind,
   so the advertiser checks `udp4` and `udp6` itself, logs each failed family

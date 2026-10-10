@@ -172,17 +172,10 @@ func serve(ctx context.Context, cfg *config.Config, opts Options, d hubDeps, s *
 		}
 		return s.fail(ReasonListen, err)
 	}
-	adv, err := discovery.New(discovery.Options{
+	adv := discovery.New(discovery.Options{
 		Enabled: cfg.Discovery.MDNS, Hostname: d.hostname, Listener: ls[0].ln.Addr(),
 		Cert: d.certs, Env: opts.Discovery, Telemetry: s.tel,
 	})
-	if err != nil {
-		_ = admin.ln.Close() // the instrument error is the one to report
-		for _, l := range ls {
-			_ = l.ln.Close()
-		}
-		return s.fail(ReasonStore, err)
-	}
 	ls = append(ls, admin)
 	addrs.Admin = admin.ln.Addr()
 	ctx, cancel := context.WithCancel(ctx)

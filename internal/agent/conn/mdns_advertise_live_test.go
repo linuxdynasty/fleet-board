@@ -20,41 +20,46 @@ func (servesAll) Serves(string) bool { return true }
 
 // FLEET_MDNS_LIVE=1: the hub's real advertiser (internal/hub/discovery, the
 // same library and records fleetd uses) is found by the agent's own browser,
-// with the SRV target, the port and the advertised address. The advertised
-// address is a documentation address, since the hub never advertises loopback.
-// It runs on loopback, and on the default multicast interface, where a host
-// that does not let this process send multicast fails the browse and the
-// subtest skips with the library's error.
+// with the SRV target, the port and the advertised address.
+//
+// "loopback" lists the loopback interface as the one to advertise on, with a
+// documentation address, since the hub never advertises loopback itself.
+// "chosen interface" is the real choice: this machine's interfaces and
+// default route, browsed on the interface the hub picked; a host that does
+// not let this process send multicast there fails the browse and the subtest
+// skips with the library's error.
 func TestLiveAdvertiserIsFoundByTheAgentBrowser(t *testing.T) {
 	if os.Getenv("FLEET_MDNS_LIVE") == "" {
 		t.Skip("set FLEET_MDNS_LIVE=1 to advertise and browse real multicast")
 	}
-	lo, err := net.InterfaceByName(loopbackName())
-	if err != nil {
-		t.Fatal(err)
+	loName := loopbackName()
+	loopback := discovery.Env{
+		Ifaces: func() ([]discovery.Iface, error) {
+			return []discovery.Iface{{Name: loName, Flags: net.FlagUp | net.FlagMulticast, Addrs: []netip.Addr{netip.MustParseAddr("192.0.2.10")}}}, nil
+		},
+		Route: func() discovery.Route { return discovery.Route{} },
 	}
 	for _, tc := range []struct {
 		name, host string
-		iface      *net.Interface
-	}{{"loopback", "advlive-lo", lo}, {"default interface", "advlive-def", nil}} {
+		env        discovery.Env
+		wantAddr   string // "" means whatever the hub chose
+	}{{"loopback", "advlive-lo", loopback, "192.0.2.10"}, {"chosen interface", "advlive-def", discovery.Env{}, ""}} {
 		t.Run(tc.name, func(t *testing.T) {
-			adv, err := discovery.New(discovery.Options{
+			adv := discovery.New(discovery.Options{
 				Enabled: true, Hostname: tc.host, Cert: servesAll{},
-				Listener: &net.TCPAddr{IP: net.IPv6unspecified, Port: 7443},
-				Env: discovery.Env{
-					Responder: discovery.NewResponder(tc.iface),
-					Addrs:     func() ([]netip.Addr, error) { return []netip.Addr{netip.MustParseAddr("192.0.2.10")}, nil },
-				},
+				Listener: &net.TCPAddr{IP: net.IPv6unspecified, Port: 7443}, Env: tc.env,
 			})
+			adv.Start()
+			t.Cleanup(adv.Stop)
+			rec, ok := adv.Advertised()
+			if !ok {
+				t.Skip("the hub chose not to advertise on this machine (no usable interface or multicast group)")
+			}
+			ifi, err := net.InterfaceByName(rec.Iface)
 			if err != nil {
 				t.Fatal(err)
 			}
-			adv.Start()
-			t.Cleanup(adv.Stop)
-			d := conn.NewMDNS()
-			if tc.iface != nil {
-				d = conn.NewMDNSOn(tc.iface)
-			}
+			d := conn.NewMDNSOn(ifi)
 			find := func() (conn.Service, time.Duration, error) {
 				var got conn.Service
 				first := time.Duration(-1)
@@ -68,15 +73,19 @@ func TestLiveAdvertiserIsFoundByTheAgentBrowser(t *testing.T) {
 			}
 			got, first, err := find()
 			if err != nil {
-				t.Skipf("this host cannot browse multicast here (%v); not a result for the advertiser", err)
+				t.Skipf("this host cannot browse multicast on %s (%v); not a result for the advertiser", rec.Iface, err)
 			}
 			if first < 0 {
-				t.Fatalf("the browser did not find fleetd-%s", tc.host)
+				t.Fatalf("the browser did not find fleetd-%s on %s", tc.host, rec.Iface)
 			}
-			if got.Host != "fleetd-"+tc.host+".local." || got.Port != 7443 || got.AddrV4.String() != "192.0.2.10" {
-				t.Errorf("found %+v", got)
+			want := tc.wantAddr
+			if want == "" {
+				want = rec.IPs[0].String()
 			}
-			t.Logf("found %s after %v", got.Name, first)
+			if got.Host != "fleetd-"+tc.host+".local." || got.Port != 7443 || got.AddrV4.String() != want {
+				t.Errorf("found %+v, want address %s", got, want)
+			}
+			t.Logf("found %s on %s after %v, address %s", got.Name, rec.Iface, first, got.AddrV4)
 
 			adv.Stop()
 			if again, _, err := find(); err == nil && again.Name != "" {

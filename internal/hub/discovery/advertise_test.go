@@ -65,10 +65,10 @@ type fakeResponder struct {
 	stopCalls int
 }
 
-func (f *fakeResponder) CheckBind(family string) error {
+func (f *fakeResponder) CheckBind(iface, family string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.checked = append(f.checked, family)
+	f.checked = append(f.checked, iface+"/"+family)
 	return f.bindErr[family]
 }
 
@@ -100,6 +100,15 @@ func (c certNames) Serves(name string) bool {
 	return false
 }
 
+var lanIfaces = []discovery.Iface{
+	nic("lo0", up|net.FlagLoopback, "127.0.0.1", "::1"),
+	nic("docker0", up, "172.17.0.1"),
+	nic("en0", up, "192.168.1.5", "fe80::1"),
+}
+
+// errTexts are the errors the tests inject; none may reach a log line.
+var errTexts = []string{"address in use", "no multicast", "operation not permitted"}
+
 type rig struct {
 	resp *fakeResponder
 	logs *safeBuffer
@@ -123,7 +132,8 @@ func newRig(t *testing.T) *rig {
 		Cert:     certNames{"fleet-test-host", "fleetd-fleet-test-host.local"},
 		Env: discovery.Env{
 			Responder: r.resp,
-			Addrs:     func() ([]netip.Addr, error) { return addrs("192.168.1.5", "127.0.0.1", "fe80::1"), nil },
+			Ifaces:    func() ([]discovery.Iface, error) { return lanIfaces, nil },
+			Route:     func() discovery.Route { return discovery.Route{} },
 		},
 		Telemetry: tel,
 	}
@@ -132,13 +142,38 @@ func newRig(t *testing.T) *rig {
 
 func (r *rig) start(t *testing.T) *discovery.Advertiser {
 	t.Helper()
-	a, err := discovery.New(r.opts)
-	if err != nil {
-		t.Fatal(err)
-	}
+	a := discovery.New(r.opts)
 	a.Start()
 	t.Cleanup(a.Stop)
+	t.Cleanup(func() { r.checkNoErrorText(t) })
 	return a
+}
+
+// checkNoErrorText holds the telemetry rule: a discovery log line carries
+// closed reasons and counts, never an error's text (it can echo the network),
+// the host name or an address.
+func (r *rig) checkNoErrorText(t *testing.T) {
+	t.Helper()
+	logs := r.logs.String()
+	for _, leak := range append([]string{"fleet-test-host", "192.168.1.5", "172.17.0.1"}, errTexts...) {
+		if strings.Contains(logs, leak) {
+			t.Errorf("a log line holds %q:\n%s", leak, logs)
+		}
+	}
+	sc := bufio.NewScanner(strings.NewReader(logs))
+	for sc.Scan() {
+		var m map[string]any
+		if json.Unmarshal(sc.Bytes(), &m) != nil {
+			continue
+		}
+		if msg, _ := m["msg"].(string); strings.HasPrefix(msg, "discovery.") {
+			for _, k := range []string{"err", "error"} {
+				if _, ok := m[k]; ok {
+					t.Errorf("%s has a %q field: %s", msg, k, sc.Text())
+				}
+			}
+		}
+	}
 }
 
 func (r *rig) scrape(t *testing.T) string {
@@ -187,14 +222,14 @@ func TestStartAdvertisesTheRecordsAndLogsOnce(t *testing.T) {
 	if got.Target != "fleetd-fleet-test-host.local." || got.Port != 7443 || !reflect.DeepEqual(got.TXT, []string{"proto=1-1"}) {
 		t.Errorf("records %+v", got)
 	}
-	if ip := ips(t, got); !reflect.DeepEqual(ip, []string{"192.168.1.5"}) {
-		t.Errorf("addresses %q, want only 192.168.1.5", ip)
+	if ip := ips(got); !reflect.DeepEqual(ip, []string{"192.168.1.5"}) || got.Iface != "en0" {
+		t.Errorf("addresses %q on %q, want only 192.168.1.5 on en0", ip, got.Iface)
 	}
-	if !reflect.DeepEqual(r.resp.checked, []string{"udp4", "udp6"}) {
+	if !reflect.DeepEqual(r.resp.checked, []string{"en0/udp4", "en0/udp6"}) {
 		t.Errorf("bind checks %q, want one per family", r.resp.checked)
 	}
 	ev := r.logs.events(t, "discovery.advertise_started")
-	if len(ev) != 1 || ev[0]["port"] != float64(7443) || ev[0]["addresses"] != float64(1) {
+	if len(ev) != 1 || ev[0]["port"] != float64(7443) || ev[0]["addresses"] != float64(1) || ev[0]["iface"] != "en0" {
 		t.Errorf("discovery.advertise_started = %v", ev)
 	}
 	body := r.scrape(t)
@@ -203,12 +238,6 @@ func TestStartAdvertisesTheRecordsAndLogsOnce(t *testing.T) {
 	}
 	if v := metric(body, "fleet_hub_discovery_advertise_total", `result="started"`); v != 1 {
 		t.Errorf("advertise_total{started} = %v, want 1", v)
-	}
-	// The log carries counts, never the name list or an address.
-	for _, leak := range []string{"fleet-test-host", "192.168.1.5"} {
-		if strings.Contains(r.logs.String(), leak) {
-			t.Errorf("the log holds %q", leak)
-		}
 	}
 }
 
@@ -272,7 +301,7 @@ func TestRefusalsAreLoggedOnceWithTheirReason(t *testing.T) {
 		reason string
 	}{
 		{"loopback-only host", func(r *rig) {
-			r.opts.Env.Addrs = func() ([]netip.Addr, error) { return addrs("127.0.0.1", "::1"), nil }
+			r.opts.Env.Ifaces = func() ([]discovery.Iface, error) { return lanIfaces[:1], nil }
 		}, "no_addresses"},
 		{"loopback listener", func(r *rig) { r.opts.Listener = &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 7443} }, "no_addresses"},
 		{"no host name", func(r *rig) { r.opts.Hostname = "" }, "no_hostname"},
@@ -299,7 +328,7 @@ func TestDisabledAdvertisesNothingAndTouchesNothing(t *testing.T) {
 	t.Parallel()
 	r := newRig(t)
 	r.opts.Enabled = false
-	r.opts.Env.Addrs = func() ([]netip.Addr, error) { t.Error("listed the interfaces while disabled"); return nil, nil }
+	r.opts.Env.Ifaces = func() ([]discovery.Iface, error) { t.Error("listed the interfaces while disabled"); return nil, nil }
 	r.start(t)
 	if len(r.resp.served) != 0 || len(r.resp.checked) != 0 {
 		t.Error("the responder was used while disabled")
@@ -325,9 +354,6 @@ func TestOneFamilyThatCannotBindIsLoggedOnceAndTheOtherServes(t *testing.T) {
 	ev := r.logs.events(t, "discovery.family_unavailable")
 	if len(ev) != 1 || ev[0]["family"] != "udp6" || ev[0]["err_kind"] == nil {
 		t.Errorf("discovery.family_unavailable = %v", ev)
-	}
-	if strings.Contains(r.logs.String(), "address in use") {
-		t.Error("the log holds the error text")
 	}
 	if n := len(r.logs.events(t, "discovery.advertise_started")); n != 1 {
 		t.Errorf("discovery.advertise_started logged %d times, want 1", n)
@@ -377,7 +403,7 @@ func TestAResponderThatCannotStartIsLoggedOnceAndTheHubKeepsServing(t *testing.T
 func TestAnInterfaceListThatFailsIsLoggedAsAFailure(t *testing.T) {
 	t.Parallel()
 	r := newRig(t)
-	r.opts.Env.Addrs = func() ([]netip.Addr, error) { return nil, errors.New("route: operation not permitted") }
+	r.opts.Env.Ifaces = func() ([]discovery.Iface, error) { return nil, errors.New("route: operation not permitted") }
 	r.start(t)
 	ev := r.logs.events(t, "discovery.advertise_failed")
 	if len(ev) != 1 || ev[0]["step"] != "addresses" {
@@ -385,5 +411,79 @@ func TestAnInterfaceListThatFailsIsLoggedAsAFailure(t *testing.T) {
 	}
 	if len(r.resp.served) != 0 {
 		t.Error("advertised without addresses")
+	}
+}
+
+func TestStartTwiceAdvertisesOnce(t *testing.T) {
+	t.Parallel()
+	r := newRig(t)
+	a := r.start(t)
+	a.Start()
+	if len(r.resp.served) != 1 || len(r.resp.checked) != 2 {
+		t.Errorf("served %d times with %d bind checks, want 1 and 2", len(r.resp.served), len(r.resp.checked))
+	}
+	if v := metric(r.scrape(t), "fleet_hub_discovery_advertising"); v != 1 {
+		t.Errorf("fleet_hub_discovery_advertising = %v, want 1", v)
+	}
+	if rec, ok := a.Advertised(); !ok || rec.Iface != "en0" {
+		t.Errorf("Advertised() = %+v, %v", rec, ok)
+	}
+	a.Stop()
+	if _, ok := a.Advertised(); ok {
+		t.Error("Advertised() is true after Stop")
+	}
+}
+
+func TestANilCertificateRefusesInsteadOfPanicking(t *testing.T) {
+	t.Parallel()
+	r := newRig(t)
+	r.opts.Cert = nil
+	r.start(t)
+	ev := r.logs.events(t, "discovery.advertise_refused")
+	if len(ev) != 1 || ev[0]["reason"] != "cert_missing_target" || len(r.resp.served) != 0 {
+		t.Errorf("discovery.advertise_refused = %v, served %d", ev, len(r.resp.served))
+	}
+}
+
+// Of several interfaces only the chosen one is joined and advertised.
+func TestTheChosenInterfaceIsTheOneJoined(t *testing.T) {
+	t.Parallel()
+	r := newRig(t)
+	r.opts.Env.Route = func() discovery.Route { return discovery.Route{V4: netip.MustParseAddr("10.1.1.5")} }
+	r.opts.Env.Ifaces = func() ([]discovery.Iface, error) {
+		return []discovery.Iface{nic("en0", up, "192.168.1.5"), nic("en1", up, "10.1.1.5"), nic("bridge100", up, "192.168.64.1")}, nil
+	}
+	r.start(t)
+	if len(r.resp.served) != 1 || r.resp.served[0].Iface != "en1" || !reflect.DeepEqual(ips(r.resp.served[0]), []string{"10.1.1.5"}) {
+		t.Errorf("served %+v", r.resp.served)
+	}
+	if !reflect.DeepEqual(r.resp.checked, []string{"en1/udp4", "en1/udp6"}) {
+		t.Errorf("bind checks %q, want the chosen interface only", r.resp.checked)
+	}
+}
+
+// The real readers touch no multicast: they list interfaces and ask the
+// kernel for a route. Whatever the machine has, the loopback interface is
+// listed as loopback, and a route source is never loopback or unspecified.
+func TestTheMachineReadersAreSane(t *testing.T) {
+	t.Parallel()
+	ifaces, err := discovery.Interfaces()
+	if err != nil {
+		t.Fatal(err)
+	}
+	loopbacks := 0
+	for _, i := range ifaces {
+		if i.Flags&net.FlagLoopback != 0 {
+			loopbacks++
+		}
+	}
+	if loopbacks == 0 {
+		t.Error("no loopback interface among the machine's interfaces")
+	}
+	route := discovery.RouteSource()
+	for _, a := range []netip.Addr{route.V4, route.V6} {
+		if a.IsValid() && (a.IsLoopback() || a.IsUnspecified() || a.Zone() != "") {
+			t.Errorf("route source %v", a)
+		}
 	}
 }

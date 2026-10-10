@@ -1,12 +1,15 @@
 package daemon_test
 
 import (
+	"errors"
+	"net"
 	"net/netip"
 	"reflect"
 	"strconv"
 	"sync"
 	"testing"
 
+	"github.com/linuxdynasty/fleet-board/internal/hub/daemon"
 	"github.com/linuxdynasty/fleet-board/internal/hub/discovery"
 )
 
@@ -18,7 +21,7 @@ type fakeResponder struct {
 	stopped int
 }
 
-func (f *fakeResponder) CheckBind(string) error { return nil }
+func (f *fakeResponder) CheckBind(string, string) error { return nil }
 
 func (f *fakeResponder) Serve(r discovery.Records) (func(), error) {
 	f.mu.Lock()
@@ -129,7 +132,9 @@ func TestALoopbackOnlyHostServesAndAdvertisesNothing(t *testing.T) {
 	h := newHub(t, "")
 	h.init(t)
 	opts := h.options()
-	opts.Discovery.Addrs = func() ([]netip.Addr, error) { return []netip.Addr{netip.MustParseAddr("127.0.0.1")}, nil }
+	opts.Discovery.Ifaces = func() ([]discovery.Iface, error) {
+		return []discovery.Iface{{Name: "lo0", Flags: net.FlagUp | net.FlagMulticast | net.FlagLoopback, Addrs: []netip.Addr{netip.MustParseAddr("127.0.0.1")}}}, nil
+	}
 	h.start(t, opts).stop(t)
 	if served, _ := h.resp.state(); len(served) != 0 {
 		t.Error("advertised a loopback-only host")
@@ -137,5 +142,44 @@ func TestALoopbackOnlyHostServesAndAdvertisesNothing(t *testing.T) {
 	ev := h.logs.events(t, "discovery.advertise_refused")
 	if len(ev) != 1 || ev[0]["reason"] != "no_addresses" {
 		t.Errorf("discovery.advertise_refused = %v", ev)
+	}
+}
+
+// With the owner's own names, a host name that cannot be read costs only the
+// SRV target: the hub starts, its names are the owner's, and it says it is not
+// advertising.
+func TestAnUnreadableHostNameWithAgentNamesStartsWithoutTheTarget(t *testing.T) {
+	t.Parallel()
+	h := newHub(t, "tls: {agent_names: [\"hub.example\", \"127.0.0.1\"]}\n")
+	opts := h.options()
+	opts.Hostname = func() (string, error) { return "", errors.New("no host name") }
+	if err := daemon.Init(t.Context(), opts); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	if got, want := h.storedIdentity(t).ServerNames, []string{"hub.example", "127.0.0.1"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("stored SAN list %q, want %q", got, want)
+	}
+	r := h.start(t, opts)
+	if _, err := dialAgent(t, caPool(t, h.storedIdentity(t)), "127.0.0.1:"+port(r.addrs.Agent), "hub.example", 0); err != nil {
+		t.Errorf("TLS to hub.example: %v", err)
+	}
+	if served, _ := h.resp.state(); len(served) != 0 {
+		t.Error("advertised without a host name")
+	}
+	ev := h.logs.events(t, "discovery.advertise_refused")
+	if len(ev) != 1 || ev[0]["reason"] != "no_hostname" {
+		t.Errorf("discovery.advertise_refused = %v", ev)
+	}
+}
+
+// With no tls.agent_names the default names need the host name, so an
+// unreadable one still refuses the start, as before.
+func TestAnUnreadableHostNameWithDefaultNamesRefusesInit(t *testing.T) {
+	t.Parallel()
+	h := newHub(t, "")
+	opts := h.options()
+	opts.Hostname = func() (string, error) { return "", errors.New("no host name") }
+	if err := daemon.Init(t.Context(), opts); err == nil {
+		t.Fatal("Init succeeded with no host name and no agent_names")
 	}
 }

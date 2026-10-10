@@ -13,7 +13,8 @@ import (
 // countingResponder fails the test if the advertiser touches the network.
 type countingResponder struct{ t *testing.T }
 
-func (r countingResponder) CheckBind(string) error { r.t.Error("a bind check ran"); return nil }
+func (r countingResponder) CheckBind(string, string) error { r.t.Error("a bind check ran"); return nil }
+
 func (r countingResponder) Serve(discovery.Records) (func(), error) {
 	r.t.Error("Serve ran")
 	return func() {}, nil
@@ -70,17 +71,17 @@ func TestTheAdvertiserRefusesOnACertsThatCannotReissue(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = c.Ensure(context.Background()) // fails; the old certificate stays
-	adv, err := discovery.New(discovery.Options{
+	adv := discovery.New(discovery.Options{
 		Enabled: true, Hostname: "fleet-test-host.local", Cert: c, Telemetry: f.tel,
 		Listener: &net.TCPAddr{IP: net.IPv6unspecified, Port: 7443},
 		Env: discovery.Env{
 			Responder: countingResponder{t},
-			Addrs:     func() ([]netip.Addr, error) { return []netip.Addr{netip.MustParseAddr("192.168.1.5")}, nil },
+			Ifaces: func() ([]discovery.Iface, error) {
+				return []discovery.Iface{{Name: "en0", Flags: net.FlagUp | net.FlagMulticast, Addrs: []netip.Addr{netip.MustParseAddr("192.168.1.5")}}}, nil
+			},
+			Route: func() discovery.Route { return discovery.Route{} },
 		},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
 	adv.Start()
 	adv.Stop()
 	logs := f.logs.String()

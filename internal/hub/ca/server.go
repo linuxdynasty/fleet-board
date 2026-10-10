@@ -98,7 +98,7 @@ const serviceLabelPrefix = "fleetd-"
 // same lower-cased, ".local"-stripped hostname as [DefaultNames], and it is
 // distinct from the machine's own name, which the OS's responder owns. It is
 // "" when the hostname cannot make a DNS name (empty, a character outside
-// letters, digits, "-" and "_" in a label, an empty or over-long label), so
+// letters, digits, "-" and "_" in a label, an empty or over-long label, or a name over 253 bytes), so
 // nothing is advertised under a name that cannot be verified.
 func ServiceTarget(hostname string) string {
 	host := bareHost(hostname)
@@ -110,7 +110,11 @@ func ServiceTarget(hostname string) string {
 			return ""
 		}
 	}
-	return serviceLabelPrefix + host + ".local"
+	name := serviceLabelPrefix + host + ".local"
+	if len(name) > 253 {
+		return ""
+	}
+	return name
 }
 
 func validLabel(label string) bool {
