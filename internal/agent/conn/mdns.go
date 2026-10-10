@@ -15,20 +15,22 @@ import (
 // mdnsService is the DNS-SD service type fleetd advertises (02j).
 const mdnsService = "_fleetd._tcp"
 
-// mdnsWindow is one query of a browse. The library keeps writing an answer
-// it already handed over while later packets arrive, until its query
-// returns, so an answer is read only after that; short queries keep the
-// first answer within one window of arriving.
-const mdnsWindow = 500 * time.Millisecond
+// mdnsWindows are the queries of a browse (ADR 0030). The library keeps
+// writing an answer it already handed over while later packets arrive,
+// until its query returns, so an answer is read only after that. A short
+// first query hands over a quick answer within 0.5 s; the second, long
+// one still catches a slow reply (Wi-Fi power save) within the 2 s.
+var mdnsWindows = []time.Duration{500 * time.Millisecond, 1500 * time.Millisecond}
 
 // querier is mdns.QueryContext; tests replace it.
 type querier func(ctx context.Context, p *mdns.QueryParam) error
 
 // mdnsBrowser browses with github.com/hashicorp/mdns (ADR 0023): a run of
-// short queries, each from a random port, until the browse time is up.
+// queries, each from a random port, until the browse time is up.
 type mdnsBrowser struct {
-	query  querier
-	window time.Duration
+	query querier
+	// windows are the queries' lengths in order; the last repeats.
+	windows []time.Duration
 	// noIPv6 asks over IPv4 only. On macOS the library's IPv6 query has no
 	// route without an interface, and one failed send aborts the whole
 	// query (spike 0.7 finding 3).
@@ -42,16 +44,17 @@ type mdnsBrowser struct {
 func NewMDNS() Discover { return newMDNS() }
 
 func newMDNS() mdnsBrowser {
-	return mdnsBrowser{query: mdns.QueryContext, window: mdnsWindow, noIPv6: runtime.GOOS == "darwin"}
+	return mdnsBrowser{query: mdns.QueryContext, windows: mdnsWindows, noIPv6: runtime.GOOS == "darwin"}
 }
 
-// Browse runs queries of one window each until timeout passes or ctx
-// ends, and hands each distinct answer over once its query has returned.
-// A machine with no usable multicast socket gets the library's error.
+// Browse runs its queries until timeout passes or ctx ends, and hands
+// each distinct answer over once its query has returned. A machine with no
+// usable multicast socket gets the library's error; a stop is not one.
 func (m mdnsBrowser) Browse(ctx context.Context, timeout time.Duration, found func(Service)) error {
 	end := time.Now().Add(timeout)
 	seen := map[Service]bool{}
-	for ctx.Err() == nil {
+	for i := 0; ctx.Err() == nil; i++ {
+		window := m.windows[min(i, len(m.windows)-1)]
 		left := time.Until(end)
 		if left <= 0 {
 			return nil
@@ -60,7 +63,7 @@ func (m mdnsBrowser) Browse(ctx context.Context, timeout time.Duration, found fu
 		// blocking: a full buffer drops it, and the next window asks again.
 		entries := make(chan *mdns.ServiceEntry, 64)
 		err := m.query(ctx, &mdns.QueryParam{
-			Service: mdnsService, Domain: "local", Timeout: min(m.window, left), Entries: entries,
+			Service: mdnsService, Domain: "local", Timeout: min(window, left), Entries: entries,
 			DisableIPv6: m.noIPv6, Interface: m.iface,
 			// Its log lines are unstructured and echo names from the
 			// network; the result says what matters.
@@ -79,6 +82,9 @@ func (m mdnsBrowser) Browse(ctx context.Context, timeout time.Duration, found fu
 			}
 		}
 		if err != nil {
+			if ctx.Err() != nil {
+				return nil // the stop closed its sockets
+			}
 			return err
 		}
 	}

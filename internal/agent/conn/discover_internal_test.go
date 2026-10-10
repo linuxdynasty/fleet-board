@@ -151,7 +151,7 @@ func TestAnAnswerIsReadOnlyAfterItsQueryReturned(t *testing.T) {
 		time.Sleep(time.Millisecond) // the window ends
 		return nil
 	}
-	m := mdnsBrowser{query: q, window: 10 * time.Millisecond}
+	m := mdnsBrowser{query: q, windows: []time.Duration{10 * time.Millisecond}}
 	var got []Service
 	if err := m.Browse(context.Background(), 35*time.Millisecond, func(s Service) { got = append(got, s) }); err != nil {
 		t.Fatal(err)
@@ -172,7 +172,7 @@ func TestABrowseDrainsAFailedQuery(t *testing.T) {
 		}
 		return fmt.Errorf("write udp6: sendto: no route to host")
 	}
-	m := mdnsBrowser{query: q, window: time.Second}
+	m := mdnsBrowser{query: q, windows: []time.Duration{time.Second}}
 	var got []Service
 	err := m.Browse(context.Background(), time.Second, func(s Service) { got = append(got, s) })
 	if err == nil || len(got) != 1 || got[0].AddrV6 != netip.MustParseAddr("192.168.1.7") {
@@ -180,9 +180,10 @@ func TestABrowseDrainsAFailedQuery(t *testing.T) {
 	}
 }
 
-// On macOS the browse asks over IPv4 only (spike 0.7 finding 3); every
-// window asks for _fleetd._tcp in local within what is left of the browse.
-func TestTheQueryParameters(t *testing.T) {
+// A browse is a 500 ms query, then a 1500 ms one, within its 2 s (ADR
+// 0030), each asking for _fleetd._tcp in local; on macOS over IPv4 only
+// (spike 0.7 finding 3).
+func TestTheQueryWindows(t *testing.T) {
 	t.Parallel()
 	var params []mdns.QueryParam
 	q := func(_ context.Context, p *mdns.QueryParam) error {
@@ -191,19 +192,83 @@ func TestTheQueryParameters(t *testing.T) {
 		return nil
 	}
 	m := newMDNS()
-	m.query, m.window = q, 20*time.Millisecond
-	if err := m.Browse(context.Background(), 50*time.Millisecond, func(Service) {}); err != nil {
+	m.query = q
+	if err := m.Browse(context.Background(), DefaultBrowseTimeout, func(Service) {}); err != nil {
 		t.Fatal(err)
 	}
-	if len(params) < 2 {
-		t.Fatalf("%d queries in 50 ms of 20 ms windows", len(params))
+	if len(params) != 2 || params[0].Timeout != 500*time.Millisecond ||
+		params[1].Timeout > 1500*time.Millisecond || params[1].Timeout < 1400*time.Millisecond {
+		t.Fatalf("queries %+v, want 500 ms then about 1500 ms", params)
 	}
 	for _, p := range params {
-		if p.Service != "_fleetd._tcp" || p.Domain != "local" || p.Timeout > 20*time.Millisecond || p.Logger == nil {
+		if p.Service != "_fleetd._tcp" || p.Domain != "local" || p.Logger == nil {
 			t.Errorf("query %+v", p)
 		}
 		if want := runtime.GOOS == "darwin"; p.DisableIPv6 != want {
 			t.Errorf("DisableIPv6 = %v, want %v on this system", p.DisableIPv6, want)
 		}
+	}
+}
+
+// An answer is handed over when the query that brought it returns, before
+// the next query starts: within one window, not at the end of the browse.
+func TestAnAnswerIsHandedOverAfterItsWindow(t *testing.T) {
+	t.Parallel()
+	var calls int
+	var foundAt, secondAt int // the order of events
+	step := 0
+	q := func(_ context.Context, p *mdns.QueryParam) error {
+		calls++
+		step++
+		if calls == 1 {
+			p.Entries <- &mdns.ServiceEntry{Name: "a._fleetd._tcp.local.", Host: "a.local.", Port: 7443, AddrV4: net.IPv4(10, 0, 0, 1)}
+		} else if calls == 2 {
+			secondAt = step
+		}
+		time.Sleep(p.Timeout)
+		return nil
+	}
+	m := mdnsBrowser{query: q, windows: []time.Duration{20 * time.Millisecond, 60 * time.Millisecond}}
+	err := m.Browse(context.Background(), 80*time.Millisecond, func(Service) {
+		step++
+		foundAt = step
+	})
+	if err != nil || foundAt == 0 || secondAt == 0 || foundAt > secondAt {
+		t.Errorf("found at step %d, second query at step %d (%v): want the answer before the second query", foundAt, secondAt, err)
+	}
+}
+
+// A stop that lands as a query sends is a stop, not a failed browse.
+func TestAStopDuringASendIsNotAnError(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	q := func(context.Context, *mdns.QueryParam) error {
+		cancel()
+		return fmt.Errorf("write udp4: use of closed network connection")
+	}
+	m := mdnsBrowser{query: q, windows: []time.Duration{time.Second}}
+	if err := m.Browse(ctx, time.Second, func(Service) {}); err != nil {
+		t.Errorf("Browse after a stop = %v, want nil", err)
+	}
+}
+
+type failLate struct{}
+
+func (failLate) Browse(_ context.Context, _ time.Duration, found func(Service)) error {
+	found(Service{Name: "a._fleetd._tcp.local.", Host: "a.local.", Port: 7443, AddrV4: netip.MustParseAddr("10.0.0.1")})
+	return fmt.Errorf("write udp4: sendto: no route to host")
+}
+
+// A browse that kept an answer before a later query failed did run: the
+// status has no err_kind, and the late failure is kept apart.
+func TestALateQueryFailureIsNotAFailedBrowse(t *testing.T) {
+	t.Parallel()
+	var st BrowseStatus
+	b := startBrowse(context.Background(), failLate{}, time.Second, mdnsLimits{}, func(s BrowseStatus, _ time.Duration) { st = s })
+	for range b.cands {
+	}
+	b.stop()
+	if st.Kept != 1 || st.ErrKind != "" || st.lateErrKind != "io" {
+		t.Errorf("status %+v, want kept 1, no err_kind, a late io failure", st)
 	}
 }

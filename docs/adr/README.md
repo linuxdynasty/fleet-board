@@ -12,7 +12,7 @@ The owner's decisions of 2026-09-28 to 2026-10-05 are recorded in
 [0025](0025-v1-includes-dispatch.md), [0026](0026-one-home-per-fact.md),
 [0027](0027-cursor-first-class-copilot-and-messaging-later.md) and
 [0028](0028-mdns-best-effort.md) (both 2026-10-05). The newest ADR is
-[0029](0029-wake-and-network-change-detection.md) (2026-10-09).
+[0030](0030-mdns-browse-as-short-queries.md) (2026-10-10, proposed).
 
 | ADR | Title | Status | Relations |
 |---|---|---|---|
@@ -43,8 +43,9 @@ The owner's decisions of 2026-09-28 to 2026-10-05 are recorded in
 | [0025](0025-v1-includes-dispatch.md) | v1 includes dispatch: v2 merged into v1, no v2 label, watch first then dispatch, `v0.1` freezes all of v1 | Accepted | Supersedes the release split in design milestones and 0022's v2 placements; amends 0024 decisions 8, 20, 21, 23; amended by 0027 (Cursor joins the harnesses) |
 | [0026](0026-one-home-per-fact.md) | One home per fact: each kind of fact lives once, flows retired, review files dropped, tables and issue bodies generated | Accepted | Supersedes the flows' place in the order of authority (0022 addendum) |
 | [0027](0027-cursor-first-class-copilot-and-messaging-later.md) | Cursor is a first-class harness in v1; Copilot and sending messages into a session come later | Accepted | Amends 0025 (the harness list); builds on 0024 decision 3 |
-| [0028](0028-mdns-best-effort.md) | mDNS discovery is best effort; answers to ADR 0023's questions | Accepted | Resolves 0023's questions 1 and 2; supersedes in part 0023 (the exec fallback) |
+| [0028](0028-mdns-best-effort.md) | mDNS discovery is best effort; answers to ADR 0023's questions | Accepted | Resolves 0023's questions 1 and 2; supersedes in part 0023 (the exec fallback); decision 2 (one query per attempt) superseded in part by 0030 |
 | [0029](0029-wake-and-network-change-detection.md) | Wake and network-change detection: time asleep since boot plus a clock-jump check, the routing push socket as a hint, `golang.org/x/sys` | Accepted | Builds on 0004, 0020, 0028; amends 0004 (which network changes reconnect) and 0020 (adds `golang.org/x/sys`) |
+| [0030](0030-mdns-browse-as-short-queries.md) | An mDNS browse is two short queries, read after each returns | Proposed | Supersedes in part 0028 (decision 2); builds on 0023, 0028 |
 
 ## Template
 

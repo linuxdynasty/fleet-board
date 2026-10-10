@@ -70,8 +70,11 @@ type BrowseStatus struct {
 	Kept, Dropped int
 	DroppedBy     map[string]int
 	// ErrKind is set when the browse failed (no usable multicast
-	// interface): the 05b err_kind.
+	// interface) and kept nothing: the 05b err_kind.
 	ErrKind string
+	// lateErrKind is a query that failed after earlier ones kept answers:
+	// the browse ran, and this is only logged.
+	lateErrKind string
 }
 
 // mdnsLimits are the discovery limits; zero fields take the defaults.
@@ -102,7 +105,7 @@ func candidateOf(s Service, loopbackOK bool) (candidate, string) {
 	if s.Port < 1 || s.Port > 65535 {
 		return candidate{}, dropBadPort
 	}
-	host := strings.ToLower(strings.TrimSuffix(s.Host, "."))
+	host := strings.ToLower(strings.TrimRight(s.Host, "."))
 	addr, err := HubAddress(net.JoinHostPort(host, strconv.Itoa(s.Port)))
 	if host == "" || err != nil || selfName(host) {
 		return candidate{}, dropBadHost
@@ -194,8 +197,11 @@ func startBrowse(ctx context.Context, d Discover, timeout time.Duration, lim mdn
 			}
 		})
 		st.Elapsed = time.Since(start)
-		if err != nil {
+		switch {
+		case err != nil && st.Kept == 0:
 			st.ErrKind = errKind(err)
+		case err != nil:
+			st.lateErrKind = errKind(err)
 		}
 		report(st, first)
 		close(b.cands)

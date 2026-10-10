@@ -83,11 +83,16 @@ func loopbackName() string {
 	return "lo"
 }
 
-// FLEET_MDNS_WIFI_HUB=<instance>: plan row 4's Wi-Fi measurement, run on a
-// worker against a real hub on Wi-Fi advertising that instance name. Fifty
-// browses of 2 s, 3 s apart; it reports found and the first answer's p50,
-// p99 and worst, and fails on any miss or a first answer over 1 s (ADR 0028
-// open question 2: either goes back for a ruling before row 4 merges).
+// FLEET_MDNS_WIFI_HUB=<instance>: the Wi-Fi measurement of ADR 0028 open
+// question 2, run on a worker against a real hub on Wi-Fi advertising that
+// instance name; tracked in #154, row 5. Fifty browses of 2 s, 3 s apart; it
+// reports found and the first answer's p50, p99 and worst, and fails on any
+// miss or a first answer over 1 s. The time is when the agent's browser
+// hands the answer over, which is when the query that brought it ends
+// (ADR 0030): up to one query after the reply arrived. A time near 0.5 s
+// means the reply came in the first query (under 0.5 s); one near 2 s means
+// it came in the second, between 0.5 and 2 s, so over 1 s cannot be ruled
+// out and counts as over.
 func TestWiFiHubBrowseMeasurement(t *testing.T) {
 	instance := os.Getenv("FLEET_MDNS_WIFI_HUB")
 	if instance == "" {
@@ -120,6 +125,6 @@ func TestWiFiHubBrowseMeasurement(t *testing.T) {
 	}
 	t.Logf("found %d of %d; first answer p50 %v, p99 %v, worst %v", len(firsts), runs, pick(0.5), pick(0.99), pick(1))
 	if len(firsts) != runs || pick(1) > time.Second {
-		t.Errorf("a miss or a first answer over 1 s: this goes back for a ruling before row 4 merges (ADR 0028)")
+		t.Errorf("a miss or a first answer over 1 s (as handed over): tracked in #154, row 5")
 	}
 }

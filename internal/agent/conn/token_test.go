@@ -99,6 +99,11 @@ func TestHubAddressAddsTheAgentPort(t *testing.T) {
 		{"10.0.0.5", "10.0.0.5:7443"},
 		{"[::1]:7443", "[::1]:7443"},
 		{"::1", "[::1]:7443"},
+		// One spelling per address, so a list keeps no repeats.
+		{"HUB.Local.", "hub.local:7443"},
+		{"hub.local:07443", "hub.local:7443"},
+		{"[2001:DB8:0::1]:7443", "[2001:db8::1]:7443"},
+		{"[::ffff:10.0.0.5]:7443", "10.0.0.5:7443"},
 	}
 	for _, tc := range cases {
 		got, err := conn.HubAddress(tc.in)
@@ -109,7 +114,7 @@ func TestHubAddressAddsTheAgentPort(t *testing.T) {
 	if _, err := conn.HubAddress(""); !errors.Is(err, conn.ErrNoHub) {
 		t.Errorf("HubAddress(\"\") = %v, want ErrNoHub", err)
 	}
-	for _, bad := range []string{":7443", "hub:", "a b:1", "hub/x"} {
+	for _, bad := range []string{":7443", "hub:", "a b:1", "hub/x", ".:7443"} {
 		if _, err := conn.HubAddress(bad); err == nil {
 			t.Errorf("HubAddress(%q) accepted a bad address", bad)
 		}

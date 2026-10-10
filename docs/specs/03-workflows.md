@@ -149,11 +149,11 @@ cached address failed, and a browse that finds nothing moves on to the
 configured addresses in the same attempt. Only names ending in
 `._fleetd._tcp.local.` are kept; each kept entry is a candidate, tried as it
 arrives, and the first that passes TLS wins, so the agent does not wait out the
-browse timeout. The browse is a run of 500 ms queries within its 2 s: the
-library keeps writing an answer it already handed over until its query returns,
-so an answer is read only then, and "as it arrives" means within one query
-window (the first answer comes at most one window plus a round trip after it
-was sent). A kept entry names the hub by its SRV target (the name the hub's
+browse timeout. The browse is two queries, 500 ms then 1500 ms, within its
+2 s ([ADR 0030](../adr/0030-mdns-browse-as-short-queries.md)): the library
+keeps writing an answer it already handed over until its query returns, so an
+answer is read only then, and "as it arrives" means when its query ends (within
+0.5 s for a reply in the first query, within 2 s for a slower one). A kept entry names the hub by its SRV target (the name the hub's
 certificate must hold, checked by the pin) and is dialed at the address in its
 answer; it is logged and cached by that name. An answer is dropped, counted by
 reason, when its name is not a fleetd one (`not_hub_name`), its port is not
@@ -162,7 +162,8 @@ reason, when its name is not a fleetd one (`not_hub_name`), its port is not
 its address is not another machine's unicast address (loopback, unspecified,
 multicast, broadcast, IPv4 inside IPv6 judged as IPv4, link-local IPv6 without
 its zone: `bad_addr`), or 16 were already kept (`over_cap`). Each answer gets
-3 s for its dial and handshake together, and the mDNS part of an attempt 8 s,
+3 s for its dial and handshake together, and the mDNS part of an attempt 8 s
+(ADR 0030),
 after which the configured addresses are tried (`connect.mdns_cut`), so
 answers that accept and never reply cannot hold the attempt. Local config for
 hub addresses is not built in v1 yet. `fleet-agent enroll` with no `--hub`
@@ -363,7 +364,8 @@ re-enroll rule are in [02g](02g-agent-security.md#machine-lifecycle-revoke-and-d
   for an mDNS candidate); `connect.browse{kept, dropped, dropped_by,
   elapsed_ms, first_ms}` after each mDNS browse (`dropped_by` counts drops by
   reason, set when any was dropped; `first_ms` when one was kept; a warning
-  with `err_kind` when the browse could not run); `connect.mdns_cut{tried,
+  with `err_kind` when the browse could not run and kept nothing; info with
+  `late_err_kind` when a later query failed after answers were kept); `connect.mdns_cut{tried,
   phase_ms}` when the mDNS part of an attempt ran out of time; `connect.addresses{source,
   count, dropped}` at start, the list the run uses (`source`:
   `hub-addresses` or `identity`, with `err_kind` when `hub-addresses` was

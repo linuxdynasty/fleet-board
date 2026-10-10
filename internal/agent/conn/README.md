@@ -202,10 +202,14 @@ direct UDP replies (ufw on Linux) hides the hub; a hub's certificate must
 name its SRV target and advertise a TXT record (the library hands over
 only answers with one), and never a loopback address or name (row 5); the
 library returns from a query only when its timeout passes, even after a
-stop, so a stop during a browse waits up to one 500 ms window; and it keeps
-writing an answer it already handed over from later packets until its query
-returns, so `NewMDNS` asks in 500 ms queries and reads each answer only
-after its query returned (an answer arrives within one window). On macOS
+stop, so a stop during a browse waits for the query in flight (up to
+1.5 s); and it keeps writing an answer it already handed over from later
+packets until its query returns, so `NewMDNS` asks a 0.5 s query then a
+1.5 s one and reads each answer only after its query returned (ADR 0030:
+a quick reply is handed over within 0.5 s, a slow one within 2 s). A stop
+that cuts a query's send is a stop, not a failed browse, and a query that
+fails after an earlier one kept answers is only logged
+(`connect.browse{late_err_kind}`). On macOS
 it asks over IPv4 only (spike 0.7 finding 3). On a host that does not let
 the process send multicast on its network interface, the query fails at
 once (`sendto: no route to host` on the IPv4 send, `connect.browse`
@@ -323,7 +327,8 @@ repeats dropped; enroll removing it; and a child killed with SIGKILL while
 it rewrites the file leaving none or a whole list (a child that ended
 before the kill fails the test). `FLEET_MDNS_LIVE=1` browses real
 multicast for a fake fleetd advertised on this machine, on loopback and on
-the default interface; `FLEET_MDNS_WIFI_HUB=<instance>` is plan row 4's
-50-browse Wi-Fi measurement against a real hub. The `fleet-agent` binary's
+the default interface; `FLEET_MDNS_WIFI_HUB=<instance>` is the
+50-browse Wi-Fi measurement against a real hub, tracked in #154, row 5 (it
+times the hand-over, up to one query after the reply arrived). The `fleet-agent` binary's
 tests are built with `-tags fleet_nomdns` (a finder that finds nothing) and
 never send a query.

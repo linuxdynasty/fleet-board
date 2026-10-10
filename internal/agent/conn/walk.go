@@ -104,6 +104,9 @@ func (l *Loop) startBrowse(w *walk, lim mdnsLimits) *browse {
 		if st.Dropped > 0 {
 			args = append(args, "dropped_by", st.DroppedBy)
 		}
+		if st.lateErrKind != "" {
+			args = append(args, "late_err_kind", st.lateErrKind)
+		}
 		if first >= 0 {
 			args = append(args, "first_ms", first.Milliseconds())
 		}

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/netip"
 	"strconv"
 	"strings"
 )
@@ -76,8 +77,9 @@ func (Token) GoString() string { return redacted }
 // LogValue keeps slog from printing the secret.
 func (Token) LogValue() slog.Value { return slog.StringValue(redacted) }
 
-// HubAddress checks a hub address the owner typed and adds [DefaultPort]
-// when it has no port. An empty address is [ErrNoHub].
+// HubAddress checks a hub address the owner typed, adds [DefaultPort]
+// when it has no port, and gives it one spelling (see below). An empty
+// address is [ErrNoHub].
 func HubAddress(s string) (string, error) {
 	if s == "" {
 		return "", ErrNoHub
@@ -89,13 +91,19 @@ func HubAddress(s string) (string, error) {
 		}
 		host, port = s, DefaultPort
 	}
-	if n, err := strconv.Atoi(port); err != nil || n < 1 || n > 65535 {
+	n, err := strconv.Atoi(port)
+	if err != nil || n < 1 || n > 65535 {
 		return "", fmt.Errorf("%w: %q has no valid port", ErrHubAddress, s)
 	}
-	if net.ParseIP(host) == nil && !hostName(host) {
+	// One spelling per address: lower case, no trailing dot, an IP in its
+	// canonical form, the port without leading zeros.
+	host = strings.ToLower(strings.TrimRight(host, "."))
+	if ip, err := netip.ParseAddr(host); err == nil {
+		host = ip.Unmap().String()
+	} else if !hostName(host) {
 		return "", fmt.Errorf("%w: %q", ErrHubAddress, s)
 	}
-	return net.JoinHostPort(host, port), nil
+	return net.JoinHostPort(host, strconv.Itoa(n)), nil
 }
 
 // hostName accepts letters, digits, dots and hyphens, at most 253 bytes.
