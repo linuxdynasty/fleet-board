@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("%begin 1 278 1\n%continue %0\n%end 1 278 1\n")

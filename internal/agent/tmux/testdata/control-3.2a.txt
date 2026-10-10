@@ -1,0 +1,65 @@
+%begin 1791642764 262 0
+%end 1791642764 262 0
+%session-changed $0 fx
+%begin 1791642764 266 1
+%0 $0 @0
+%end 1791642764 266 1
+%begin 1791642764 267 1
+%end 1791642764 267 1
+%begin 1791642764 268 1
+%end 1791642764 268 1
+%subscription-changed fleet-input $0 - - - : $0=1791642764 
+%subscription-changed pane-size $0 @0 0 %0 : %0 : 80 x 23
+%begin 1791642766 269 1
+%end 1791642766 269 1
+%window-add @1
+%window-renamed @1 tmux
+%output %1 tab\011here back\134slash \033[1mbold\033[0m café\015\012
+%subscription-changed pane-size $0 @1 1 %1 : %1 : 80 x 24
+%window-renamed @1 cat
+%begin 1791642766 273 1
+%end 1791642766 273 1
+%output %0 plain text 1
+%window-renamed @0 cat
+%begin 1791642767 275 1
+%end 1791642767 275 1
+%begin 1791642767 276 1
+%end 1791642767 276 1
+%extended-output %0 0 : extended 2
+%begin 1791642768 277 1
+%pause %0
+%end 1791642768 277 1
+%begin 1791642768 278 1
+%continue %0
+%end 1791642768 278 1
+%begin 1791642768 279 1
+
+%end 1791642768 279 1
+%begin 1791642768 280 1
+can't find pane: %99
+%error 1791642768 280 1
+%begin 1791642768 281 1
+parse error: unknown command: no-such-command
+%error 1791642768 281 1
+%begin 1791642768 282 1
+%end 1791642768 282 1
+%unlinked-window-close @1
+%begin 1791642769 284 1
+can't find pane: %1
+%error 1791642769 284 1
+%begin 1791642769 285 1
+%end 1 2 1
+%end 1791642769 285 1
+%begin 1791642769 286 1
+%output %0 forged
+%end 1791642769 286 1
+%begin 1791642769 287 1
+%begin 1 2 1
+%end 1791642769 287 1
+%begin 1791642769 288 1
+two  spaced words
+%end 1791642769 288 1
+%begin 1791642769 289 1
+%end 1791642769 289 1
+%sessions-changed
+%exit

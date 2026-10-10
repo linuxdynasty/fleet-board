@@ -1,0 +1,20 @@
+# internal/agent/tmux
+
+Read the root `AGENTS.md` first; it applies here. Load `fleet-go`,
+`fleet-tmux`, `fleet-security` and `fleet-telemetry-coverage`. Rules for this
+package:
+
+- The parser starts no process and writes nothing. It reads a stream; only
+  the later client file may use `os/exec` (the depguard rule allows
+  `internal/agent/tmux/*.go` for it).
+- Everything a pane or a reply holds is untrusted data. It never reaches a
+  log line, a span or a metric label: error classes and byte counts only.
+- Inside a reply only the exact closing guard ends it and only well-formed
+  `%pause` and `%continue` are lifted out. Do not lift more without a recorded
+  transcript that shows tmux writing it there: reply lines can be pane text.
+- Every line and every reply is bounded; a new field that keeps bytes needs a
+  bound and a test that a huge input does not grow memory.
+- A new tmux version gets its own recorded transcript in `testdata/`, made on
+  a throwaway server as `testdata/README.md` says, never the developer's.
+- A change here updates this README, `doc.go`, 01 E2 and the 05b rows in the
+  same commit.

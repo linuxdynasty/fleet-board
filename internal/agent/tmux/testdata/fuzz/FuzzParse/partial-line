@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("%pause %1\n%output %1 abc")

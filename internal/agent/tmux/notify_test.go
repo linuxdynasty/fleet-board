@@ -1,0 +1,110 @@
+package tmux_test
+
+import (
+	"strings"
+	"testing"
+
+	"github.com/linuxdynasty/fleet-board/internal/agent/tmux"
+)
+
+func TestNotifications(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		in   string
+		want []string
+	}{
+		// %output: tmux writes bytes below space and the backslash as \ooo
+		// and every other byte (UTF-8 included) as it is.
+		{
+			"output with escapes and UTF-8", `%output %1 tab\011here back\134slash \033[1mbold\033[0m café\015\012`,
+			[]string{`output %1 "tab\there back\\slash \x1b[1mbold\x1b[0m café\r\n"`},
+		},
+		{"output of every escaped byte", `%output %7 \000\001\037\134\177`, []string{`output %7 "\x00\x01\x1f\\\x7f"`}},
+		{"output with an empty value", `%output %2 `, []string{`output %2 ""`}},
+		{"output keeps spaces", `%output %2   two  spaces `, []string{`output %2 "  two  spaces "`}},
+		{"output with a short escape", `%output %1 ab\01`, []string{`discarded bad_escape 16`}},
+		{"output with a non-octal escape", `%output %1 a\08b`, []string{`discarded bad_escape 16`}},
+		{"output with an escape past one byte", `%output %1 \400`, []string{`discarded bad_escape 15`}},
+		{"output with a lone backslash", `%output %1 \`, []string{`discarded bad_escape 12`}},
+		{"output with no value", `%output %1`, []string{`discarded bad_notification 10`}},
+		{"output with a bad pane id", `%output @1 x`, []string{`discarded bad_notification 12`}},
+		{"output with a pane id too large", `%output %99999999999 x`, []string{`discarded bad_notification 22`}},
+		{"output with a signed pane id", `%output %-1 x`, []string{`discarded bad_notification 13`}},
+
+		// %extended-output: pane, age in ms, arguments for future use, a
+		// lone ":", then the value.
+		{"extended output", `%extended-output %0 0 : extended 2`, []string{`extended-output %0 age=0s "extended 2"`}},
+		{
+			"extended output with an age and future arguments", `%extended-output %4 1500 f1 f2 : a : b\012`,
+			[]string{`extended-output %4 age=1.5s "a : b\n"`},
+		},
+		{"extended output with an empty value", `%extended-output %4 3 : `, []string{`extended-output %4 age=3ms ""`}},
+		{"extended output without the colon", `%extended-output %4 3 data`, []string{`discarded bad_notification 26`}},
+		{"extended output with a bad age", `%extended-output %4 x : d`, []string{`discarded bad_notification 25`}},
+		{"extended output with a bad escape", `%extended-output %4 1 : \9`, []string{`discarded bad_escape 26`}},
+
+		{"pause", `%pause %12`, []string{`pause %12`}},
+		{"continue", `%continue %0`, []string{`continue %0`}},
+		{"pause without a pane", `%pause`, []string{`discarded bad_notification 6`}},
+		{"continue with an extra word", `%continue %0 x`, []string{`discarded bad_notification 14`}},
+
+		{"exit", `%exit`, []string{`exit ""`}},
+		{"exit with a reason", `%exit detached (from session work)`, []string{`exit "detached (from session work)"`}},
+
+		// %subscription-changed: name $s @w index %p ... : value, with "-"
+		// for what the subscription does not cover. The value is kept byte
+		// for byte, including a " : " inside it and a trailing space.
+		{
+			"session subscription", `%subscription-changed fleet-input $0 - - - : $0=1791642745 $1=1791642700 `,
+			[]string{`subscription fleet-input $0 - - - "$0=1791642745 $1=1791642700 "`},
+		},
+		{
+			"pane subscription with a colon in the value", `%subscription-changed pane-size $0 @1 1 %1 : %1 : 80 x 24`,
+			[]string{`subscription pane-size $0 @1 1 %1 "%1 : 80 x 24"`},
+		},
+		{"subscription with future arguments", `%subscription-changed s $3 @4 5 %6 f1 f2 : v`, []string{`subscription s $3 @4 5 %6 "v"`}},
+		{
+			"a name this client never subscribed is still read", `%subscription-changed never-asked $0 - - - : x`,
+			[]string{`subscription never-asked $0 - - - "x"`},
+		},
+		{"subscription with an empty value", `%subscription-changed s $0 - - - : `, []string{`subscription s $0 - - - ""`}},
+		{
+			"subscription name with a space (names must have none)", `%subscription-changed pane size $0 @0 0 %0 : v`,
+			[]string{`discarded bad_notification 46`},
+		},
+		{"subscription without the colon", `%subscription-changed s $0 - - - v`, []string{`discarded bad_notification 34`}},
+		{"subscription with too few fields", `%subscription-changed s $0 : v`, []string{`discarded bad_notification 30`}},
+		{"subscription with a bad session id", `%subscription-changed s 0 - - - : v`, []string{`discarded bad_notification 35`}},
+
+		// Everything else is kept by name only.
+		{"a notification this parser does not read", `%window-renamed @1 my secret window`, []string{`unknown window-renamed`}},
+		{"a notification with no arguments", `%sessions-changed`, []string{`unknown sessions-changed`}},
+		{"a bare percent sign", `%`, []string{`discarded bad_notification 1`}},
+		{"a list-panes line outside a reply", `%0 $0 @0`, []string{`discarded bad_notification 8`}},
+		{"a name with characters tmux never uses", `%Window-Add @1`, []string{`discarded bad_notification 14`}},
+		{"a name that is too long", "%" + strings.Repeat("a", 65), []string{`discarded bad_notification 66`}},
+		{"a name of the longest length kept", "%" + strings.Repeat("a", 64) + " x", []string{"unknown " + strings.Repeat("a", 64)}},
+		{"two spaces after the name", `%pause  %1`, []string{`discarded bad_notification 10`}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			checkMessages(t, collect(t, strings.NewReader(tc.in+"\n"), tmux.Options{}), tc.want)
+		})
+	}
+}
+
+func TestLiftedNotificationsInsideAReplyAreOnlyWellFormedPauseAndContinue(t *testing.T) {
+	t.Parallel()
+	// tmux writes %pause and %continue inside the reply to
+	// "refresh-client -A" (recorded on 3.2a and 3.7c). Any other %-line in a
+	// reply is command output, which can be pane text, so it stays body.
+	in := "%begin 1 2 1\n%output %0 x\n%subscription-changed s $0 - - - : v\n%exit\n%window-add @1\n" +
+		"%pause %1\n%continue %2\n%pause\n%end 1 2 1\n"
+	checkMessages(t, collect(t, strings.NewReader(in), tmux.Options{}), []string{
+		`pause %1`,
+		`continue %2`,
+		`reply ok ["%output %0 x" "%subscription-changed s $0 - - - : v" "%exit" "%window-add @1" "%pause"] dropped=0`,
+	})
+}
