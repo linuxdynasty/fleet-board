@@ -17,7 +17,8 @@ import (
 // (02g A1). With no --hub it looks for the hub on the local network (mDNS,
 // 03 A2) and sends the token only to one that proves it holds the token's
 // CA. Log lines go to stderr; the outcome is one line on stdout.
-func enrollCommand(dir func() (string, error), version string, stdout, stderr io.Writer) *cobra.Command {
+func enrollCommand(dir func() (string, error), version string, discover conn.Discover, stdout, stderr io.Writer,
+) *cobra.Command {
 	var hub, token string
 	cmd := &cobra.Command{
 		Use:   "enroll",
@@ -36,7 +37,7 @@ func enrollCommand(dir func() (string, error), version string, stdout, stderr io
 			}
 			defer func() { _ = tel.Shutdown(context.WithoutCancel(cmd.Context())) }()
 			res, err := conn.Enroll(cmd.Context(), conn.Options{
-				Dir: d, Hub: hub, Token: token, Version: version, Telemetry: tel, Discover: conn.NewMDNS(),
+				Dir: d, Hub: hub, Token: token, Version: version, Telemetry: tel, Discover: discover,
 			})
 			if err != nil {
 				return commandError{err}

@@ -47,7 +47,7 @@ func newStartup(t *testing.T) *startup {
 
 // run calls runAgent with ctx, which the caller may have cancelled.
 func (s *startup) run(ctx context.Context) error {
-	return runAgent(ctx, s.dir, "test", "boot", s.tel)
+	return runAgent(ctx, s.dir, "test", "boot", s.tel, nil)
 }
 
 func cancelled() context.Context {

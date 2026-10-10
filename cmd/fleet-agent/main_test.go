@@ -26,7 +26,13 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 	bin = filepath.Join(dir, "fleet-agent")
-	build := exec.CommandContext(context.Background(), "go", "build", "-o", bin, ".") //nolint:gosec // G204: bin is a fresh temp path; every other argument is a literal
+	// Tests never send real multicast: the binary's hub finder finds
+	// nothing, unless FLEET_MDNS_LIVE asks for the real one.
+	tags := "-tags=fleet_nomdns"
+	if os.Getenv("FLEET_MDNS_LIVE") != "" {
+		tags = "-tags="
+	}
+	build := exec.CommandContext(context.Background(), "go", "build", tags, "-o", bin, ".") //nolint:gosec // G204: bin is a fresh temp path; every other argument is a literal
 	build.Env = append(os.Environ(), "CGO_ENABLED=0")
 	if out, err := build.CombinedOutput(); err != nil {
 		fmt.Fprintf(os.Stderr, "go build: %v\n%s", err, out)

@@ -43,6 +43,12 @@ func noArgs(cmd *cobra.Command, args []string) error {
 
 // run returns the exit code: 0, 1 when a command fails, 2 for bad usage.
 func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
+	return execute(ctx, args, stdout, stderr, defaultDiscover())
+}
+
+// execute is run with the hub finder enroll and run use (mDNS in a
+// release build; tests pass their own).
+func execute(ctx context.Context, args []string, stdout, stderr io.Writer, discover conn.Discover) int {
 	p := buildinfo.Current("fleet-agent")
 	root := &cobra.Command{
 		Use:           "fleet-agent",
@@ -66,7 +72,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		}
 		return conn.DefaultDir()
 	}
-	root.AddCommand(enrollCommand(dir, p.Version, stdout, stderr), runCommand(dir, p.Version, stderr))
+	root.AddCommand(enrollCommand(dir, p.Version, discover, stdout, stderr), runCommand(dir, p.Version, discover, stderr))
 
 	err := root.ExecuteContext(ctx)
 	if err == nil {

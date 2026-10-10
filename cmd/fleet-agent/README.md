@@ -80,6 +80,11 @@ make build
 go run ./cmd/fleet-agent --version
 ```
 
+The tests build the binary with `-tags fleet_nomdns`, whose hub finder
+finds nothing, so they never send an mDNS query; `FLEET_MDNS_LIVE=1`
+builds the real one. In-process tests pass their own finder to `execute`
+and `runAgent`.
+
 The logic is in `internal/agent/conn`. What the agent will do is specified
 in `docs/specs/01-agent-capabilities.md`; the build order is in
 `docs/plan/v1-implementation-plan.md` (plan row 4).
