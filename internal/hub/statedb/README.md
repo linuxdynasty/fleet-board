@@ -189,6 +189,39 @@ out, err := statedb.Hello(ctx, s, statedb.HelloIn{MachineID: id, PeerSerial: ser
 live, err := statedb.EndConnection(ctx, s, id, out.Epoch, statedb.EndStreamClosed, now)
 ```
 
+- **Audit log and Watch stamps** (migration 6, plan row 5 PR 5d; 02m, 02b,
+  02c, the row 5 ruling's fork 3):
+  - `hub_counters` is one row (`id = 1`) holding `hub_seq`, the last Watch
+    sequence handed out. `NextStamp(ctx, tx, now)` takes the next one inside
+    a writer job, once per changed resource, with `now` (the hub clock) as
+    `observed_time`. The job's savepoint rolls it back with the change, so
+    committed numbers rise in commit order; gaps are allowed (02c).
+  - `machines` gains `version` (1 at insert; covers the spec, never bumped
+    by the agent path), `observed_time` and `hub_seq` (the status stamp; 0 on
+    rows from before the migration). Enroll and a fresh renewal stamp it.
+  - `audit_log` is `AuditEntry`: `id` (AUTOINCREMENT, never reused),
+    `create_time`, `hub_seq` (unique), `actor_id`/`actor_kind`/`actor_name`
+    (empty for no actor), `action`, `target`, `machine_id`, `goal_id`,
+    `command_id`, `request_id`, `outcome` (`OK` by default), `reason`, `detail`
+    (a JSON object, at most 1 KiB) and `occurred_time`. Indexed by time,
+    target and machine. Triggers refuse `UPDATE` and `DELETE`: rows are
+    permanent (03f).
+  - `AppendAudit(ctx, tx, e)` stamps and inserts a row in the caller's job,
+    so the change and its row commit together; `WriteAudit` is a job of its
+    own for a step that changes nothing else (a refused Enroll).
+    `InsertEnrollToken` appends `machine.enroll_token` (`Actor`, target
+    `enroll_tokens/<id>`; the name, expected hostname and expiry, never the
+    hash), `Enroll` `machine.enroll` (no actor; the name, expected hostname,
+    `hostname_mismatch` and `enroll_tokens/<id>`), and `Renew`
+    `machine.cert_renewed` (no actor; the serial and `not_after`). A replay
+    writes nothing.
+
+```go
+st, err := statedb.NextStamp(ctx, tx, now)                // inside a writer job
+id, err := statedb.AppendAudit(ctx, tx, statedb.AuditEntry{Action: statedb.ActionEnroll, Target: "machines/" + mid, Now: now})
+err = statedb.WriteAudit(ctx, s, entries...)              // one job of its own
+```
+
 Tests: `CGO_ENABLED=0 go test ./internal/hub/statedb/`. They use real files:
 modes, a refused second create with the file hash unchanged, an injected
 failure before the link leaving an empty folder, the one-row constraint on
@@ -215,3 +248,10 @@ stream's close as a no-op, times never stepping back, `Live` copied while
 the caller keeps writing its entry (`-race`), every end reason stored, the
 table constraints by raw SQL, a row 4 store gaining the table, and
 `MaxEpoch` equal to the agent's `ring.MaxEpoch`.
+
+The 5d tests read `audit_log` from the file: one row per action with its
+fields and none for a replay; an injected trigger that fails the audit insert
+leaving no token, machine or renewal and `hub_seq` unchanged; a failed job's
+numbers rolled back; bad entries refused; `UPDATE` and `DELETE` refused and
+the rows surviving a restart; racing actions with distinct rising `hub_seq`
+values; and a 5a-i store gaining the tables.

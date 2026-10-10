@@ -42,4 +42,12 @@
 // and never a change of machines.state (the Snapshot transaction marks
 // ONLINE). [EndConnection]
 // closes one epoch's row if it is still live and reports whether it did.
+//
+// Plan row 5 (PR 5d) adds hub_counters, audit_log and the Watch stamp on
+// machines. [NextStamp] takes the next hub_seq inside a writer job, rolled
+// back with it on failure; [AppendAudit] stamps and inserts an audit row in
+// the same transaction as the change it records, and [WriteAudit] writes
+// rows as a job of their own. [InsertEnrollToken], [Enroll] and [Renew]
+// each append their row (machine.enroll_token, machine.enroll,
+// machine.cert_renewed); a replay writes none. Audit rows are permanent.
 package statedb

@@ -45,14 +45,19 @@ type EnrollToken struct {
 	Principal   string
 	RequestID   string
 	RequestHash [32]byte
+	// Actor is who asked, for the machine.enroll_token audit row; an empty
+	// Actor.ID is Principal.
+	Actor Actor
 }
 
 // InsertEnrollToken stores t in one writer transaction. Inside it, in
 // order: an earlier row with the same principal and request_id is
 // [ErrSecretDelivered] (same RequestHash) or [ErrRequestConflict]; a set
-// PreviousMachine is [ErrNotReenrollable]; otherwise the row is inserted.
-// Nothing is written on any error. The unique index on (principal,
-// request_id) backs the check up.
+// PreviousMachine is [ErrNotReenrollable]; otherwise the row is inserted
+// with its machine.enroll_token audit row (target enroll_tokens/<id>; the
+// machine name, expected hostname and expiry, never the hash). Nothing is
+// written on any error. The unique index on (principal, request_id) backs
+// the check up.
 func InsertEnrollToken(ctx context.Context, s *store.Store, t EnrollToken) error {
 	labels := t.Labels
 	if labels == nil {
@@ -78,7 +83,7 @@ func InsertEnrollToken(ctx context.Context, s *store.Store, t EnrollToken) error
 		if t.PreviousMachine != "" {
 			return ErrNotReenrollable
 		}
-		_, err = tx.ExecContext(jctx, `INSERT INTO enroll_tokens(secret_hash, machine_name, expected_hostname, labels,
+		res, err := tx.ExecContext(jctx, `INSERT INTO enroll_tokens(secret_hash, machine_name, expected_hostname, labels,
 			start_drained, not_after_time, created_time, principal, request_id, request_hash)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			t.SecretHash[:], t.MachineName, t.ExpectedHostname, string(list), t.StartDrained,
@@ -86,6 +91,30 @@ func InsertEnrollToken(ctx context.Context, s *store.Store, t EnrollToken) error
 		if err != nil {
 			return fmt.Errorf("statedb: insert enroll token: %w", err)
 		}
-		return nil
+		id, err := res.LastInsertId()
+		if err != nil {
+			return fmt.Errorf("statedb: enroll token id: %w", err)
+		}
+		return auditEnrollToken(jctx, tx, id, t)
 	})
+}
+
+func auditEnrollToken(ctx context.Context, tx *sql.Tx, id int64, t EnrollToken) error {
+	detail, err := auditDetail(struct {
+		MachineName      string `json:"machine_name"`
+		ExpectedHostname string `json:"expected_hostname"`
+		NotAfter         string `json:"not_after"`
+	}{t.MachineName, t.ExpectedHostname, t.NotAfter.UTC().Format(time.RFC3339)})
+	if err != nil {
+		return err
+	}
+	actor := t.Actor
+	if actor.ID == "" {
+		actor.ID = t.Principal
+	}
+	_, err = AppendAudit(ctx, tx, AuditEntry{
+		Actor: actor, Action: ActionEnrollToken, Target: fmt.Sprintf("enroll_tokens/%d", id),
+		RequestID: t.RequestID, Detail: detail, Now: t.Created,
+	})
+	return err
 }

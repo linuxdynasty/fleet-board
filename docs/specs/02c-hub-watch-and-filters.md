@@ -127,7 +127,7 @@ sequenceDiagram
   A->>H: ConnectRequest{event Event{seq, observed_time, delivery NEVER_DROP, goal_state GoalState}}
   H->>H: reader checks size, machine id = certificate, order, then the ingest queue
   H->>H: store writer tx (one batch): goal fingerprint, phase, transition, triage, history
-  H->>H: after commit: hub_seq assigned, change log appended, fan-out bus publishes
+  H->>H: in the commit tx: hub_seq assigned, change log appended; after commit: fan-out bus publishes
   H-->>D: WatchResponse{hub_seq, change_type UPDATED, topic GOALS, goal, resume_token}
   H-->>D: WatchResponse{change_type CREATED, topic TRIAGE, triage_item, resume_token} (a new item in the same tx)
   H-->>D: WatchResponse{change_type UPDATED, topic FLEET_SUMMARY} at most once per summary interval

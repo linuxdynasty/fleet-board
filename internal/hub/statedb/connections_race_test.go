@@ -196,10 +196,13 @@ func TestOpenMigratesAStoreFromTheRenewalsSchema(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := statedb.InsertEnrollToken(ctx, s, sampleToken("local:alice", "req-1", 1)); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := statedb.Enroll(ctx, s, newMachine(enrollKey("install-1", 1), renewMachineID, beforeTTL)); err != nil {
+	// Raw SQL, not Enroll: Enroll's audit row needs the 5d tables, which a
+	// migration 4 store does not have.
+	if err := s.Write(ctx, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx, `INSERT INTO machines(machine_id, name, expected_hostname, drained, install_id,
+			state, hostname_mismatch, created_time) VALUES (?, 'old', 'old', 0, 'install-1', 'ENROLLED', 0, 1)`, renewMachineID)
+		return err
+	}); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.Close(); err != nil {

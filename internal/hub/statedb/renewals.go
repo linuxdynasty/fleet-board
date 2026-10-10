@@ -68,7 +68,8 @@ type Renewed struct {
 // or revoked peer serial ([ErrPeerSerialUnknown]), and returns a stored
 // certificate for the same machine and key as a replay. Otherwise one writer
 // job checks the same again, then signs and inserts the serial and the
-// renewal together; a renewal stored since the pre-check is returned as a
+// renewal together, stamps the machine and appends the machine.cert_renewed
+// audit row; a renewal stored since the pre-check is returned as a
 // replay, so one machine and key never get two serials. Sign's error is
 // returned as is. A ctx error means the outcome is unknown; a retry finds
 // the replay.
@@ -172,6 +173,28 @@ func insertRenewal(ctx context.Context, tx *sql.Tx, r Renewal) (Renewed, error) 
 	if _, err := tx.ExecContext(ctx, `INSERT INTO cert_renewals(machine_id, csr_key_hash, serial, cert, created_time)
 		VALUES (?, ?, ?, ?, ?)`, r.MachineID, r.CSRKeyHash[:], c.Serial, c.CertDER, now); err != nil {
 		return Renewed{}, fmt.Errorf("statedb: insert cert renewal: %w", err)
+	}
+	// The machine's status (cert_not_after_time) changed: stamp it, then
+	// append the audit row. A replay never reaches here, so it writes none.
+	st, err := NextStamp(ctx, tx, r.Now)
+	if err != nil {
+		return Renewed{}, err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE machines SET observed_time = ?, hub_seq = ? WHERE machine_id = ?`,
+		st.ObservedTime.UnixMilli(), st.HubSeq, r.MachineID); err != nil {
+		return Renewed{}, fmt.Errorf("statedb: stamp machine: %w", err)
+	}
+	detail, err := auditDetail(struct {
+		Serial   string `json:"serial"`
+		NotAfter string `json:"not_after"`
+	}{c.Serial, c.NotAfter.UTC().Format(time.RFC3339)})
+	if err != nil {
+		return Renewed{}, err
+	}
+	if _, err := AppendAudit(ctx, tx, AuditEntry{
+		Action: ActionCertRenewed, Target: "machines/" + r.MachineID, MachineID: r.MachineID, Detail: detail, Now: r.Now,
+	}); err != nil {
+		return Renewed{}, err
 	}
 	return Renewed{CertDER: c.CertDER, Serial: c.Serial}, nil
 }
