@@ -66,7 +66,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		}
 		return conn.DefaultDir()
 	}
-	root.AddCommand(enrollCommand(dir, p.Version, stdout, stderr))
+	root.AddCommand(enrollCommand(dir, p.Version, stdout, stderr), runCommand(dir, p.Version, stderr))
 
 	err := root.ExecuteContext(ctx)
 	if err == nil {

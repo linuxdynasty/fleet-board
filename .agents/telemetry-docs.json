@@ -13,6 +13,7 @@
   "hub.": "docs/specs/05b-observability.md",
   "netchange.": "docs/specs/03-workflows.md",
   "result.": "docs/specs/03-workflows.md",
+  "run.": "docs/specs/03-workflows.md",
   "snapshot.": "docs/specs/03-workflows.md",
   "store.": "docs/specs/05b-observability.md",
   "tls.": "docs/specs/05b-observability.md",

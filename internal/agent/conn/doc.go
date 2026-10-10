@@ -29,11 +29,10 @@
 // if the hub has not closed it 2 s later. It ends on its own ([EndedError]) only for
 // Bye{REVOKED}, Bye{UNKNOWN_MACHINE}, another fleet's HelloAck or an
 // expired certificate. The first three are written whole to [EndedFile]
-// before Run returns. [CheckEnded] is for the caller to run before any
-// network call: it refuses while the file names its machine (`fleet-agent
-// run` uses it from row 4 PR 3-iii on), and Enroll removes the file with a
-// new identity. [Loop.Status] is its state in memory.
+// before Run returns; `fleet-agent run` calls [CheckEnded] before any
+// network call and refuses while the file names its machine, and Enroll
+// removes it with a new identity. [Loop.Status] is its state in memory.
 //
-// Discovery (mDNS), the agent side of certificate renewal and `fleet-agent
-// run` come with plan row 4's later parts.
+// Discovery (mDNS) and the agent side of certificate renewal come with
+// plan row 4's later parts.
 package conn

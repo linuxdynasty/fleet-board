@@ -29,9 +29,7 @@ type LoopOptions struct {
 	// before each attempt and written after a connect to another address.
 	Dir      string
 	Identity Identity
-	// DB is agent.db, opened once by the caller, which keeps one process
-	// per state folder (`fleet-agent run` takes fleet-agent.lock, row 4
-	// PR 3-iii).
+	// DB is agent.db, opened once by the caller under fleet-agent.lock.
 	DB      *ring.DB
 	Version string
 	// BootID is this process's random id, sent in Hello and the facts.

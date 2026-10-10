@@ -35,6 +35,33 @@ enrolled), 2 bad usage. A stray argument (say a token typed without
   `identity.json` (and `enroll.key` if present) from the state folder and
   keep `agent.db`: it holds the install id, which stays with the machine.
 
+Once enrolled, `fleet-agent run` keeps the machine connected to its hub:
+
+```bash
+fleet-agent run    # logs to stderr; stop with Ctrl-C or SIGTERM
+```
+
+- It takes `fleet-agent.lock` in the state folder first. A second `run` on
+  the same folder exits 1 and names the lock; the first keeps running.
+- It tries the hub address it last reached, then the one it enrolled with,
+  over mTLS. When the hub is down it waits and tries again (1 s growing to
+  60 s, with some randomness); waking from sleep or a network change makes
+  it try at once.
+- Exit codes: 0 after a signal (it says goodbye to the hub first), 1 when
+  the machine is not enrolled, another `run` holds the folder, or the loop
+  ended on its own: the machine was revoked or is unknown to the hub, the
+  hub belongs to another fleet, or the certificate expired. The last log
+  line says which.
+- When the hub revoked the machine, did not know it, or was another fleet,
+  `run` saves that in `ended.json` before it exits. The next `run` (say a
+  supervisor restarting it) reads the file before it touches the network,
+  logs `run.refused`, prints the fix and exits 1. For a revoked or unknown
+  machine: remove `identity.json` (keep `agent.db`), then
+  `fleet-agent enroll --token <new>`; enroll removes `ended.json`. For
+  another fleet: check the hub address, then re-enroll or remove
+  `ended.json` to try again. A file left from an earlier machine id is
+  removed.
+
 `fleet-agent --version` prints the name and the version; `-h` prints the
 usage. Release builds set the version with `-ldflags -X` (see
 `internal/buildinfo`); other builds say `dev`.

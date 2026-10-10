@@ -4,8 +4,7 @@ The agent's link to the hub: enrollment
 ([02g A1](../../../docs/specs/02g-agent-security.md),
 [03 W1](../../../docs/specs/03-workflows.md#w1-enrollment-and-first-connect)),
 run by `fleet-agent enroll --hub <host[:port]> --token <token>`, and the
-connection loop (03 W1 "State machine", 03n W2), which `fleet-agent run`
-will run (row 4 PR 3-iii).
+connection loop (03 W1 "State machine", 03n W2), run by `fleet-agent run`.
 
 ```go
 res, err := conn.Enroll(ctx, conn.Options{Dir: dir, Hub: "hub.local", Token: tok, Version: v, Telemetry: tel})
@@ -150,16 +149,14 @@ st := l.Status()                    // state, peer, last failure per address, cl
    `peer`, `time`; temp file, fsync, rename, folder fsync) before `Run`
    returns the `*EndedError`; a failed write logs `connect.failed{step="save"}`
    and the loop still ends. An expired certificate is not recorded: it is
-   read from the certificate. `CheckEnded`, for the caller to run before
-   any network call (`fleet-agent run`, row 4 PR 3-iii), returns a `*EndedError` (`Recorded`, its message
+   read from the certificate. `CheckEnded`, called by `fleet-agent run`
+   before any network call, returns a `*EndedError` (`Recorded`, its message
    naming the hub and the owner's fix) while the file names this machine,
    removes one that names another machine (a leftover), and refuses a
    damaged one. Enroll removes it when it saves a new identity.
 
 Not built yet, all later in plan row 4:
 
-- `fleet-agent run` and its `ended.json` refusal: row 4 PR 3-iii. Until
-  then nothing calls `NewLoop` or `CheckEnded` outside the tests.
 - The agent side of certificate renewal (the hub's `RenewCert` handler
   is built, #147), under the ruling that a renewal makes a new key and
   keeps the renewed pair in its own `cert.pem`, never rewriting
