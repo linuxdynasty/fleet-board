@@ -41,7 +41,7 @@ finding 7).
 (package `3.2a-4ubuntu0.2`: upstream 3.2a plus 5 small Ubuntu patches).
 `ubuntu-24.04` (`ubuntu-latest`) gives 3.4 instead, and neither runner image
 ships tmux already. For an exact upstream 3.2a, or for the latest release, build
-from the official tarball with [`../install-tmux.sh`](../install-tmux.sh)
+from the official tarball with [`scripts/install-tmux.sh`](../../../scripts/install-tmux.sh) (moved there from this folder by row 7 PR 7c2)
 (checks the SHA-256 first). Both ways were proved in an `ubuntu:22.04`
 linux/amd64 container on this Mac, and the from-source 3.2a build on macOS too.
 
@@ -211,8 +211,8 @@ CHANGES, "CHANGES FROM 3.1c TO 3.2" (identical in the 3.2a and 3.7c tarballs):
 - run: |
     sudo apt-get update
     sudo apt-get install -y --no-install-recommends build-essential pkg-config bison libevent-dev libncurses-dev
-    spikes/tmuxtyping/install-tmux.sh 3.2a 551553a4f82beaa8dadc9256800bcc284d7c000081e47aa6ecbb6ff36eacd05f "$HOME/tmux-3.2a"
-    spikes/tmuxtyping/install-tmux.sh 3.7c 7c60cae9a0e25288e2e24750aafc9e8800fc7fd4555e447e1b29ee4201cfb3bf "$HOME/tmux-3.7c"
+    scripts/install-tmux.sh 3.2a 551553a4f82beaa8dadc9256800bcc284d7c000081e47aa6ecbb6ff36eacd05f "$HOME/tmux-3.2a"
+    scripts/install-tmux.sh 3.7c 7c60cae9a0e25288e2e24750aafc9e8800fc7fd4555e447e1b29ee4201cfb3bf "$HOME/tmux-3.7c"
 ```
 
 The source builds were not timed separately; caching `$HOME/tmux-*` keyed on

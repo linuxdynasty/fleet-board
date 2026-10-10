@@ -142,6 +142,62 @@ jobs:
       - name: Build every package and run each binary once (--version)
         run: make build smoke
 
+      # Row 7: the tmux tests run against tmux 3.2a (the oldest the agent
+      # supports) and the latest release (tool-versions.env), each built from
+      # its release tarball after a SHA-256 check (scripts/install-tmux.sh) and
+      # cached by version and hash. The libraries are installed whenever the
+      # steps run: a cached build links against them. FLEET_REQUIRE_TMUX=1
+      # makes a missing tmux fail the tests instead of skipping them. To keep
+      # CI minutes inside the allowance (agent-guide.md), the steps run only
+      # when the change touches internal/agent/tmux/, the build script, the
+      # pins or these two workflows, or when BASE_REF names no commit here;
+      # otherwise the tmux tests that make test runs skip.
+      - name: Does this change touch tmux?
+        id: tmux-paths
+        run: |
+          if git rev-parse --verify -q "$BASE_REF^{commit}" > /dev/null; then
+            if git diff --name-only "$BASE_REF...HEAD" | awk '/^internal\/agent\/tmux\/|^scripts\/install-tmux\.sh$|^tool-versions\.env$|^\.github\/workflows\/(ci|macos)\.yml$/ { f = 1 } END { exit !f }'; then
+              echo "run=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "run=false" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: tmux build dependencies
+        if: steps.tmux-paths.outputs.run == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends build-essential pkg-config bison libevent-dev libncurses-dev
+
+      - name: Restore the tmux builds
+        if: steps.tmux-paths.outputs.run == 'true'
+        id: tmux-cache
+        uses: actions/cache@v6
+        with:
+          path: ~/tmux
+          key: tmux-${{ runner.os }}-${{ hashFiles('tool-versions.env', 'scripts/install-tmux.sh') }}
+
+      - name: Build tmux 3.2a and the latest release
+        if: steps.tmux-paths.outputs.run == 'true' && steps.tmux-cache.outputs.cache-hit != 'true'
+        run: |
+          . ./tool-versions.env
+          scripts/install-tmux.sh "$TMUX_32_VERSION" "$TMUX_32_SHA256" "$HOME/tmux/$TMUX_32_VERSION"
+          scripts/install-tmux.sh "$TMUX_LATEST_VERSION" "$TMUX_LATEST_SHA256" "$HOME/tmux/$TMUX_LATEST_VERSION"
+
+      - name: Point the tmux tests at the builds
+        if: steps.tmux-paths.outputs.run == 'true'
+        run: |
+          . ./tool-versions.env
+          "$HOME/tmux/$TMUX_32_VERSION/bin/tmux" -V
+          "$HOME/tmux/$TMUX_LATEST_VERSION/bin/tmux" -V
+          {
+            echo "FLEET_TMUX_32=$HOME/tmux/$TMUX_32_VERSION/bin/tmux"
+            echo "FLEET_TMUX_LATEST=$HOME/tmux/$TMUX_LATEST_VERSION/bin/tmux"
+            echo "FLEET_REQUIRE_TMUX=1"
+          } >> "$GITHUB_ENV"
+
       # A push to main tests and lints every package, not only the changed
       # ones: two PRs that pass alone can break a package neither touched once
       # both are on main. The all-zero SHA names no commit, and for it
