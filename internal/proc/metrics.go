@@ -24,10 +24,11 @@ const (
 	CauseTimeCap   Cause = "time_cap"   // the caller's time cap passed
 	CauseOutputCap Cause = "output_cap" // stdout and stderr together passed the output cap
 	CauseCancelled Cause = "cancelled"  // the caller's context ended first
-	CauseHeldPipe  Cause = "wait_delay" // a descendant held the output open past WaitDelay
+	CauseWaitDelay Cause = "wait_delay" // a descendant held the output open past WaitDelay
 )
 
-// Runner runs one-shot children and reports every kill.
+// Runner runs one-shot children and reports every kill. Make one with
+// [NewRunner]; the zero value is not usable.
 type Runner struct {
 	log   *slog.Logger
 	kills metric.Int64Counter

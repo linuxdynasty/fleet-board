@@ -228,9 +228,15 @@ func TestGrandchildHoldingThePipeIsKilledWithItsGroup(t *testing.T) {
 		sp := child(t, "parent-exits", l, pidFileEnv+"="+pidFile, grandSetsEnv+"=1")
 		sp.WaitDelay = 300 * time.Millisecond
 		start := time.Now()
+		t.Cleanup(func() { // the only thing that can reach the escapee, also when the test fails early
+			if b, err := os.ReadFile(pidFile); err == nil { //nolint:gosec // G304: the test's own t.TempDir file
+				if pid, err := strconv.Atoi(string(b)); err == nil {
+					_ = syscall.Kill(pid, syscall.SIGKILL)
+				}
+			}
+		})
 		_, err := newRunner(t).Run(t.Context(), sp)
-		pid := pidFrom(t, pidFile)
-		t.Cleanup(func() { _ = syscall.Kill(pid, syscall.SIGKILL) }) // the only thing that can reach it
+		pidFrom(t, pidFile)
 		if !errors.Is(err, proc.ErrHeldPipe) {
 			t.Fatalf("Run = %v, want ErrHeldPipe", err)
 		}
@@ -286,6 +292,17 @@ func TestCancelledCallerGetsItsReturnAtOnce(t *testing.T) {
 				t.Fatal("Run did not return after the cancel")
 			}
 		})
+	}
+}
+
+// A cap that is already over when the child would start ends the call with
+// the cap's own error, not the context package's.
+func TestCapOverBeforeStartIsATimeCap(t *testing.T) {
+	t.Parallel()
+	sp := child(t, "hang", proc.Limits{Time: time.Nanosecond, Output: 1})
+	res, err := newRunner(t).Run(t.Context(), sp)
+	if !errors.Is(err, proc.ErrTimeCap) {
+		t.Fatalf("Run = %+v, %v; want ErrTimeCap", res, err)
 	}
 }
 

@@ -102,11 +102,18 @@ func (r *Runner) Run(ctx context.Context, sp Spec) (Result, error) {
 	}
 
 	if err := cmd.Start(); err != nil {
+		if c := context.Cause(capCtx); c != nil {
+			err = c // a cap or the caller ended it before the child started
+		}
 		return Result{Elapsed: time.Since(start)}, fmt.Errorf("proc %s: start: %w", name, err)
 	}
 	res := Result{Pid: cmd.Process.Pid}
 	werr := cmd.Wait()
-	_ = killGroup(res.Pid) // a descendant that stayed in the group dies with the call
+	// A descendant that stayed in the group dies with the call. The group id
+	// is the child's pid, and the kernel does not give a pid out again while
+	// a process group still uses it, so this cannot reach an unrelated
+	// process; with no member left it returns os.ErrProcessDone.
+	_ = killGroup(res.Pid)
 	res.Stdout, res.Stderr = stdout.Bytes(), stderr.Bytes()
 	res.Elapsed = time.Since(start)
 	res.ExitCode = -1
@@ -114,7 +121,7 @@ func (r *Runner) Run(ctx context.Context, sp Spec) (Result, error) {
 		res.ExitCode = ps.ExitCode()
 	}
 
-	cause, err := r.classify(capCtx, b, werr)
+	cause, err := classify(capCtx, b, werr)
 	if cause != "" {
 		r.killed(context.WithoutCancel(ctx), sp.Caller, cause, res)
 	}
@@ -139,7 +146,7 @@ func (sp Spec) check() error {
 
 // classify turns what Wait returned into the kill cause (empty when Run did
 // not kill) and the error to return.
-func (r *Runner) classify(capCtx context.Context, b *budget, werr error) (Cause, error) {
+func classify(capCtx context.Context, b *budget, werr error) (Cause, error) {
 	switch c := context.Cause(capCtx); {
 	case b.over.Load():
 		return CauseOutputCap, ErrOutputCap
@@ -150,7 +157,7 @@ func (r *Runner) classify(capCtx context.Context, b *budget, werr error) (Cause,
 	case c != nil:
 		return CauseCancelled, c
 	case errors.Is(werr, exec.ErrWaitDelay):
-		return CauseHeldPipe, ErrHeldPipe
+		return CauseWaitDelay, ErrHeldPipe
 	}
 	var ee *exec.ExitError
 	if errors.As(werr, &ee) {
