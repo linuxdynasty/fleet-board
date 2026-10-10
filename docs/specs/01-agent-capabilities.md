@@ -372,7 +372,13 @@ optionally against one limit the owner sets.
   (`attach-session -f ignore-size,pause-after=<s>`): turned on later, it does
   not undo a shrink until the next size change. A `%continue` can arrive
   inside a command's `%begin`/`%end` reply, so the parser must accept
-  notifications there.
+  notifications there. Reply lines are raw command output (a `capture-pane`
+  line is pane text and can start with `%`), so inside a reply the parser
+  lifts out only a well-formed `%pause` or `%continue` (the two tmux 3.2a and
+  3.7c were recorded writing there) and ends the reply only at the `%end` or
+  `%error` with the same time, number and flags; every other line is reply
+  text. Lines and replies are bounded (defaults), and a line over the bound
+  is skipped to its newline and counted (05b).
 - **E3 Pane lifecycle:** created and exited with exit status. "Stopped without
   DONE" (the one-nudge rule) depends on this.
 - **E4 Activity transitions:** active ↔ idle, with the time of last output.
