@@ -1,0 +1,68 @@
+  Settings  Status   Config   Usage   Stats
+
+  Session
+
+  Total cost:            $0.0000
+  Total duration (API):  0s
+  Total duration (wall): 19s
+  Total code changes:    0 lines added, 0 lines removed
+  Usage:                 0 input, 0 output, 0 cache read, 0 cache write
+
+
+  Plugin skill-listing footprint
+  What each plugin's skill descriptions add to the system prompt (cached input after the first turn). Agents and MCP tools not yet counted.
+
+  plugin-a                    4 skills · ~101 tok/turn
+  plugin-b                    1 skill · ~42 tok/turn
+
+  Total                       ~143 tok/turn
+
+  Current session
+                                                     0% used
+  Resets 6:30pm (Example/Zone)
+
+  Current week (all models)
+  ███████████████▌                                   31% used
+  Resets Oct 14 at 10pm (Example/Zone)
+
+  Current week (Fable)
+  ████                                               8% used
+  Resets Oct 14 at 10pm (Example/Zone)
+
+  What's contributing to your limits usage?
+  Approximate, based on local sessions on this machine — does not include other devices or claude.ai
+
+  Last 24h · these are independent characteristics of your usage, not a breakdown
+
+  100% of your usage came from subagent-heavy sessions
+   Each subagent runs its own requests. Be deliberate about spawning them — and
+   consider configuring a cheaper model for simpler subagents.
+
+  100% of your usage came from sessions active for 8+ hours
+   These are often background/loop sessions. Continuous usage can add up quickly
+   so make sure it is intentional.
+
+  77% of your usage was at >150k context
+   Longer sessions are more expensive even when cached. /compact mid-task, /clear
+   when switching to new tasks.
+
+  34% of your usage came from subagents under "example-agent-a"
+   If this runs frequently, consider configuring its subagents with a cheaper
+   model or tightening their prompts.
+
+  Skills                  % of usage
+  /example-skill-a                5%
+  /example-skill-b                4%
+
+  Subagents               % of usage
+  example-agent-a                34%
+  example-skill-b                27%
+  example-skill-a                23%
+  example-agent-b                 6%
+
+  d to day · w to week
+
+  Usage credits
+  Usage credits are off · /usage-credits to turn them on
+
+  Esc to cancel

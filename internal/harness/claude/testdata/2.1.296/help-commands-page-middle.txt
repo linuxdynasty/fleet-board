@@ -1,0 +1,49 @@
+  Browse default commands
+
+    ↑ 37 more
+    /feedback
+    Send feedback to Anthropic or report a bug
+    /fewer-permission-prompts
+    Scan your transcripts for common read-only Bash and MCP tool calls, then add a prioritized allowlist to project .claude/settings.json to reduce permission prompts.
+    /focus
+    Toggle focus view: just your prompt, summary, and response
+    /fork
+    Copy this conversation into a new background session and keep working here
+    /goal
+    Set a goal Claude checks before stopping
+    /help
+    Show help and available commands
+    /hooks
+    View hook configurations for tool events
+    /ide
+    Manage IDE integrations and show status
+    /import
+    Import config from another AI coding agent
+    /init
+    Initialize a new CLAUDE.md file with codebase documentation
+    /insights
+    Generate a report analyzing your Claude Code sessions
+    /install-github-app
+    Set up Claude GitHub Actions for a repository
+    /install-slack-app
+    Install the Claude Slack app
+    /keybindings
+    Open your keyboard shortcuts file
+    /list-agents
+    List subagents, teammates, and other Claude sessions you can message
+    /login
+    Sign in with your Anthropic account
+    /logout
+    Sign out from your Anthropic account
+    /loop
+    Run a prompt or slash command on a recurring interval (e.g. /loop 5m /foo). Omit the interval to let the model self-pace.
+  ❯ /mcp
+    Manage MCP servers
+    ↓ 51 more
+
+
+  For more help: https://code.claude.com/docs/en/overview
+
+  Something else? Use /feedback to report bugs or request features.
+
+  Esc to cancel

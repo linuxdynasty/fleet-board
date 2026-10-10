@@ -1,0 +1,19 @@
+ ▐▛███▛█   Claude Code v2.1.296
+▝▜██████▀  Sonnet 5.5 with high effort · Claude Max
+ ▝▝   ▝▝   ~/work/project
+
+  Updated to latest. Got 17 features, 97 bugfixes, and 29 other changes.
+  code.claude.com/docs/en/changelog for details
+
+⚠ 3 MCP servers need authentication · run /mcp
+
+❯ /usage
+  ⎿  Stats dialog dismissed
+
+❯ /help
+  ⎿  Help dialog dismissed
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏸ plan mode on (shift+tab to cycle) · ← for agents

@@ -1,0 +1,19 @@
+ ▐▛███▛█   Claude Code v2.1.296
+▝▜██████▀  Sonnet 5.5 with high effort · Claude Max
+ ▝▝   ▝▝   ~/work/project
+
+  Updated to latest. Got 17 features, 97 bugfixes, and 29 other changes.
+  code.claude.com/docs/en/changelog for details
+
+⚠ 3 MCP servers need authentication · run /mcp
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ /usage
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ❯ /usage                                               Show session cost, plan usage, and activity stats
+    /usage-credits                                       Configure usage credits or request them from your admin when you hit a limit
+    /context                                             Visualize current context usage as a colored grid
+    /effort                                              Set effort level for model usage
+    /rate-limit-options                                  Manage usage limits and upgrade options
+    /passes                                              Share a free week of Claude Code with friends and earn usage credits
+    /team-onboarding                                     Help teammates ramp on Claude Code with a guide from your usage

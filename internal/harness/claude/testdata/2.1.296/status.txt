@@ -1,0 +1,19 @@
+  Settings  Status   Config   Usage   Stats
+
+  Version:           2.1.296
+  Session name:      /rename to add a name
+  Session ID:        00000000-0000-4000-8000-000000000001
+  Session kind:      interactive
+  Peer address:      uds:/tmp/cc-socks/0.sock
+  cwd:               ~/work/project
+  Login method:      Claude Max account
+  Organization:      user@example.com's Organization
+  Email:             user@example.com
+  Cloud sessions:    GitHub connected
+
+  Model:             sonnet (claude-sonnet-5-5)
+  MCP servers:       6 connected, 36 need auth, 1 disabled, 26 failed · /mcp
+  Setting sources:   User settings, Shared project settings
+  Auto mode server:  Enabled
+
+  Esc to cancel

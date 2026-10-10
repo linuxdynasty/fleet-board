@@ -1,0 +1,49 @@
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                                                                        Status                                               esc
+
+                                                                        No MCP Servers
+
+                                                                        No Formatters
+
+                                                                        No Plugins
+
+
+
+                                                               ┃
+                                                               ┃  Ask anything… "Fix broken tests"
+                                                               ┃
+                                                               ┃  Build · Big Pickle OpenCode Zen
+                                                               ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+                                                                                                               tab agents  ctrl+p commands
+
+
+
+                                                                        ● Tip Run /connect to add an AI provider and start coding
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  ~/scratch                                                                                                                                                                                    1.18.34
