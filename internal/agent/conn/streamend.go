@@ -51,3 +51,20 @@ func (s *session) leftBye() *agentv1.Bye {
 		}
 	}
 }
+
+// drainToEnd waits for the receiver to finish once a send found the
+// stream gone, reading what it still hands over so it can reach its end
+// (the read-ahead may be full). What the hub sent before the end is moot,
+// except a Bye, which is kept for byeOver. It returns the stream's error.
+func (s *session) drainToEnd() error {
+	for {
+		select {
+		case m := <-s.msgs:
+			if b := m.GetBye(); b != nil && s.lastBye == nil {
+				s.lastBye = b
+			}
+		case <-s.done:
+			return s.rerr
+		}
+	}
+}

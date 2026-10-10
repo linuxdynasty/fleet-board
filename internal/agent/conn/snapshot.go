@@ -133,17 +133,7 @@ func (s *session) send(m *agentv1.ConnectRequest) error {
 	if !errors.Is(err, io.EOF) {
 		return err
 	}
-	// The stream is gone; what the hub sent before it ended is moot.
-	for {
-		select {
-		case m := <-s.msgs:
-			if b := m.GetBye(); b != nil && s.lastBye == nil {
-				s.lastBye = b // byeOver acts on it
-			}
-		case <-s.done:
-			return s.rerr
-		}
-	}
+	return s.drainToEnd()
 }
 
 // ackResults stamps the hub's ResultAck in agent.db. An id the log does
