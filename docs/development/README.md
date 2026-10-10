@@ -73,6 +73,9 @@ scripts/test-verify-agent-canon.sh, test-smoke-binaries.sh, test-make-base-ref.s
   script checks, the smoke, the quoting of BASE_REF and the fuzz times, the tools/gen rebuild
   rules, the ref-named-file guard, the wiring of make gates and the shuffle and repeat flags of
   make test and make test-all (also in make selftest)
+scripts/test-lint-exec-rules.sh   seeded RED/GREEN cases for the depguard (os/exec) and forbidigo
+  (os.StartProcess, syscall.ForkExec, syscall.Exec, unix.Exec) rules in .golangci.yml, run in a
+  scratch module against the real config (01 principle 8; also in make selftest)
 tools/tscheck/                compiles the generated TypeScript (typescript 7, strict)
 tools/telemetrynames/         every log event and metric name in the Go code is in the spec
                               telemetry-docs.json maps it to (make telemetry-names; Go tests)

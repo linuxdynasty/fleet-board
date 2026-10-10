@@ -13,10 +13,12 @@ linters:
   default: standard
   enable:
     - bodyclose # an HTTP response body is always closed
+    - depguard # only internal/proc, the tmux client and the attach PTY import os/exec (01 principle 8)
     - durationcheck # no time.Duration multiplied by another Duration
     - errchkjson # json.Marshal errors are checked, or provably impossible
     - errorlint # %w and errors.Is/As, never == on errors (fleet-go: wrap errors)
     - exhaustive # a switch on an enum names every value or has a default
+    - forbidigo # only internal/proc starts a process without os/exec (01 principle 8)
     - forcetypeassert # x.(T) always uses the two-value form
     - gosec # security smells: file paths, permissions, integer overflow
     - makezero # no append to a slice made with a non-zero length
@@ -35,11 +37,41 @@ linters:
     - usestdlibvars
     - usetesting # t.Context, t.TempDir, t.Setenv in tests, not the os ones
   settings:
+    depguard:
+      rules:
+        # One helper starts every one-shot child (01 principle 8, plan row 2c):
+        # empty stdin, a time cap, an output cap, a process group of its own.
+        # Allowed to import os/exec in internal/ and cmd/: internal/proc, the
+        # internal/agent/tmux package itself (the `tmux -C` client; not its
+        # subpackages) and internal/agent/attach (the PTY, ADR 0020). Test
+        # files may import it. "!" turns a pattern into an exception.
+        os-exec:
+          list-mode: lax
+          files:
+            - "**/internal/**"
+            - "**/cmd/**"
+            - "!$test"
+            - "!**/internal/proc/*.go"
+            - "!**/internal/agent/tmux/*.go"
+            - "!**/internal/agent/attach/*.go"
+          deny:
+            - pkg: os/exec
+              desc: start a one-shot child with internal/proc, which bounds it (01 principle 8); only internal/proc, internal/agent/tmux and internal/agent/attach import os/exec
     exhaustive:
       default-signifies-exhaustive: true
     nolintlint:
       require-explanation: true
       require-specific: true
+    forbidigo:
+      # With type analysis the patterns match through an import alias too.
+      analyze-types: true
+      forbid:
+        - pattern: ^os\.StartProcess$
+          msg: start a one-shot child with internal/proc (01 principle 8)
+        - pattern: ^syscall\.(ForkExec|Exec|StartProcess)$
+          msg: start a one-shot child with internal/proc (01 principle 8)
+        - pattern: ^unix\.Exec$
+          msg: start a one-shot child with internal/proc (01 principle 8)
     sloglint:
       static-msg: true
       no-mixed-args: true
@@ -47,6 +79,11 @@ linters:
   exclusions:
     # Generated code (gen/) is never linted or edited by hand.
     generated: strict
+    rules:
+      # internal/proc is the one place that may start a process.
+      - path: ^internal/proc/
+        linters:
+          - forbidigo
 
 run:
   timeout: 5m

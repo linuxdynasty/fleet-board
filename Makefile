@@ -208,6 +208,7 @@ selftest: tools
 	scripts/test-check-versions.sh
 	scripts/test-changed-go-packages.sh
 	scripts/test-check-gofumpt.sh
+	scripts/test-lint-exec-rules.sh
 	scripts/test-pre-push.sh
 	scripts/test-pre-push-fetch.sh
 	scripts/test-check-pr-base.sh
