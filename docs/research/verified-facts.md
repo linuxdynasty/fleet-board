@@ -28,7 +28,9 @@ The harness behavior the specs rely on today is in
 
 | Fact | How it was checked | Status |
 |---|---|---|
-| Each harness asks to trust a new folder before it starts | The same probe; Claude, Codex and Muse all prompt | In use: the agent pre-trusts allowed repo roots at setup and never answers the prompt at run time (01 C3). OpenCode has no such prompt |
+| Claude Code, Cursor and Muse ask to trust a new folder; Codex asks only in a git repo; OpenCode never asks | Folder-trust probe: Claude Code 2.1.296, Codex 0.160.0, Muse 1.4.4, Cursor 2026.10.01, OpenCode 1.18.34, 2026-10-10 (01b) | In use: the agent trusts nothing and reads the harness's own screen (01 C3); the owner trusts the folder by hand |
+| Trust and parent folders: Cursor's trust covers a nested new child; Muse's does not (a trusted home folder did not cover a child); Claude Code, Codex and Muse follow the repo root; a worktree of a trusted repo is covered in Claude Code and Codex, not in Muse or Cursor | Same probe, new children started with no key pressed (01b) | In use: each folder the fleet uses is checked on its own. Not proven: Claude Code on a plain folder |
+| Several Codex startup prompts come before the trust screen and one defaults to "Update now" (`brew upgrade --cask codex`) | Same probe; also the 2026-10-02 probe (01b) | In use: update and daemon prompts go to Triage, never answered |
 | Codex resumes with `codex resume --last`; Muse with `muse resume --last` | `codex --help`, `muse --help` | In use (respawn with resume) |
 | Muse sessions live in `~/.local/share/muse/sessions/` | `ls` | Not used by the design |
 | Claude, Codex and Muse all have a native `/goal`; syntax differs (Claude has no pause) | Typed `/goal` without Enter on each, 2026-10-01 (01b) | In use. Supersedes "owner said so, not yet probed" |

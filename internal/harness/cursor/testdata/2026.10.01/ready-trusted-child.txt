@@ -1,0 +1,11 @@
+  Cursor Agent
+  v2026.10.01-e373342
+  Tip: Use subagents to parallelize work and preserve context.
+
+
+
+
+  → Plan, search, build anything
+
+
+  Auto  a  main*  ░░░░░░░░░░ 0%
