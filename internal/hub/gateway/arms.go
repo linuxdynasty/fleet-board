@@ -10,7 +10,7 @@ import (
 )
 
 // armHandler acts on one ConnectRequest arm of an accepted stream, on the
-// stream's ingest goroutine, in arrival order. It may submit writer jobs
+// stream's handler goroutine, in arrival order. It may submit writer jobs
 // and wait for them (backpressure reaches the agent through the bounded
 // ingest queue and HTTP/2 flow control); it must not send on the stream
 // itself except through stream.send, after its job committed. ctx is the

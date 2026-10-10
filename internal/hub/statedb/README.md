@@ -198,7 +198,11 @@ Notes for the rows that build on this:
   none) and `last_seen_time` is not after `Mark.Seen` (what the pass read):
   a Snapshot that commits after the read keeps the epoch and sets `ONLINE`,
   so only its `last_seen_time` tells the job the read is stale (03f race
-  table). `HeartbeatSeen` moves `last_seen_time` and, with `Promote`, takes
+  table). Known narrow edge: the comparison is in milliseconds and
+  `last_seen_time` never steps back, so after the hub clock steps back a
+  Snapshot that commits between the read and the mark leaves
+  `last_seen_time` unchanged and the stale mark still applies (no code
+  guards it; noted, not fixed). `HeartbeatSeen` moves `last_seen_time` and, with `Promote`, takes
   a `STALE` machine back to `ONLINE` (`heartbeat`) while `Epoch` is live.
   `StartSweep` (fleetd run, before any listener) closes every live row as
   `hub_restart` and makes every `ONLINE` machine `STALE` (`hub_start`).

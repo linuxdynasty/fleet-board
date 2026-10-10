@@ -59,7 +59,7 @@ type ServerOptions struct {
 	// order inside its writer job after the core and before ONLINE
 	// (ingest.Applier); empty until plan rows 7 to 10.
 	Appliers []ingest.Applier
-	// OnSnapshotApplied, when set, is called on the stream's ingest goroutine
+	// OnSnapshotApplied, when set, is called on the stream's handler goroutine
 	// after a Snapshot of the machine's current epoch committed: the
 	// machine is ONLINE on that stream (plan row 5f re-sends pending
 	// commands from it). It must not block.
