@@ -8,7 +8,8 @@
 // The state is in memory only. A restart starts it empty, so in the minute
 // of a restart at most PerWindow more rows and one more summary can be
 // written; the summary of the minute in progress is taken by [Cap.Flush]
-// when the hub stops. A summary is handed out by the next [Cap.Note] after
+// when the hub stops cleanly (a crash loses it). The carried counts keep
+// the MaxTracked pairs suppressed most recently. A summary is handed out by the next [Cap.Note] after
 // its minute, or by Flush, never by a timer: on a quiet hub it waits for
 // the next refusal or the stop. Every refusal is still counted by
 // fleet_hub_enroll_total{result="refused"} and logged as enroll.refused.

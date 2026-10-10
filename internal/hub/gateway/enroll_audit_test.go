@@ -9,6 +9,9 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+
+	typev1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/type/v1"
+	"github.com/linuxdynasty/fleet-board/internal/hub/statedb"
 )
 
 // auditRow is one audit_log row read back through the store.
@@ -123,8 +126,9 @@ func TestRefusalsAreCappedPerPeerAndSummarizedNextMinute(t *testing.T) {
 	}
 }
 
-// Stopping the server writes the summary of the minute in progress.
-func TestShutdownWritesTheMinuteInProgress(t *testing.T) {
+// FlushAudit, called after Shutdown, writes the summary of the minute in
+// progress before it returns; a second call writes nothing.
+func TestFlushAuditWritesTheMinuteInProgress(t *testing.T) {
 	t.Parallel()
 	h := startHub(t)
 	for range 2 {
@@ -137,16 +141,71 @@ func TestShutdownWritesTheMinuteInProgress(t *testing.T) {
 	if err := h.srv.Shutdown(ctx); err != nil {
 		t.Fatal(err)
 	}
+	if rows := h.auditRows(t, "machine.enroll_failed"); len(rows) != 1 {
+		t.Fatalf("%d rows after Shutdown alone, want 1 (no flush before FlushAudit)", len(rows))
+	}
+	h.srv.FlushAudit(ctx)
+	h.srv.FlushAudit(ctx)
+	rows := h.auditRows(t, "machine.enroll_failed")
+	if len(rows) != 2 || rows[1].detail["suppressed"] != float64(1) {
+		t.Fatalf("rows after FlushAudit = %+v, want the row and one summary with suppressed=1", rows)
+	}
+}
+
+// failAuditInserts makes every audit_log insert in the hub's file fail.
+func (h *hub) failAuditInserts(t *testing.T) {
+	t.Helper()
+	db, err := sql.Open("sqlite", statedb.Path(h.dir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	if _, err := db.ExecContext(t.Context(), `CREATE TRIGGER fail_audit BEFORE INSERT ON audit_log
+		BEGIN SELECT RAISE(ABORT, 'injected'); END`); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// When the store does not take a refusal's row, the agent still gets the
+// same refusal, and the failure is counted and logged.
+func TestARefusalWhoseAuditRowFailsIsStillRefusedAndSaysSo(t *testing.T) {
+	t.Parallel()
+	h := startHub(t)
+	h.failAuditInserts(t)
+	_, err := h.enroll(t, enrollRequest("fbe1_nope", newAgentKey(t), "install-1"))
+	if got := refusalOf(t, err); got.code != connect.CodeUnauthenticated || got.reason != typev1.ReasonCode_REASON_CODE_ENROLL_TOKEN_UNKNOWN {
+		t.Fatalf("refusal %v / %v, want unauthenticated / ENROLL_TOKEN_UNKNOWN as without the failure", got.code, got.reason)
+	}
+	if n := sample(scrape(t, h.fixture), "fleet_hub_enroll_audit_rows_total", `result="write_failed"`); n != 1 {
+		t.Errorf("fleet_hub_enroll_audit_rows_total{result=write_failed} = %v, want 1", n)
+	}
+	lines := h.events(t, "enroll.audit_failed")
+	if len(lines) != 1 || lines[0]["rows"] != float64(1) || lines[0]["err_kind"] == nil || lines[0]["level"] != "error" {
+		t.Errorf("enroll.audit_failed lines %v, want one error with rows=1 and err_kind", lines)
+	}
+}
+
+// The row is written even when the agent's deadline ends while the hub
+// waits for the commit: the wait is not tied to the request's context.
+func TestARefusalRowOutlivesTheAgentsDeadline(t *testing.T) {
+	t.Parallel()
+	h := startHub(t)
+	client := h.client(t)
+	if _, err := client.Enroll(context.Background(), connect.NewRequest(enrollRequest("fbe1_nope", newAgentKey(t), "install-1"))); err == nil {
+		t.Fatal("enrolled") // also opens the connection, so the next call is sent at once
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond) // under the 250 ms batch window
+	defer cancel()
+	_, _ = client.Enroll(ctx, connect.NewRequest(enrollRequest("fbe1_nope", newAgentKey(t), "")))
 	deadline := time.Now().Add(10 * time.Second)
-	for {
-		rows := h.auditRows(t, "machine.enroll_failed")
-		if len(rows) == 2 && rows[1].detail["suppressed"] == float64(1) {
-			return
-		}
+	for len(h.auditRows(t, "machine.enroll_failed")) < 2 {
 		if time.Now().After(deadline) {
-			t.Fatalf("rows after shutdown = %+v, want the row and a summary with suppressed=1", rows)
+			t.Fatal("the second refusal's row was never written")
 		}
 		time.Sleep(20 * time.Millisecond)
+	}
+	if n := sample(scrape(t, h.fixture), "fleet_hub_enroll_audit_rows_total", `result="write_failed"`); n > 0 {
+		t.Errorf("write_failed = %v, want none", n)
 	}
 }
 

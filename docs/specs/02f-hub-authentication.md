@@ -290,7 +290,8 @@ default the sole active owner), its scopes are capped to that owner's, and the
 audit actor is `Principal{LOCAL_USER, local:<os user>}` with `on_behalf_of` the
 owner. `fleetd enroll-token` uses the same socket (plan row 2b); it has no
 `--user` and no `on_behalf_of` (the caller is the local user itself), and it
-writes no audit row yet (#104).
+writes `machine.enroll_token` with that `LOCAL_USER` actor and no
+`on_behalf_of` ([02m](02m-hub-api-actions-and-audit.md#audit-actions)).
 **Break-glass:** if the last owner loses every passkey and GitHub link,
 `fleetd user invite --owner` (same socket) creates a new one-time owner invite
 and prints it like the claim URL, audited as `auth.claim`; `fleetd claim` itself

@@ -199,3 +199,53 @@ func TestConcurrentNotesAreAllCounted(t *testing.T) {
 		t.Errorf("counted %d, want %d", counted, 8*200)
 	}
 }
+
+// distinct_peers counts the peers of its own minute only.
+func TestDistinctPeersResetEachMinute(t *testing.T) {
+	t.Parallel()
+	c := auditcap.New()
+	for i := range 15 { // 10 rows, then peers 10..14 suppressed
+		c.Note(t0, "ENROLL_TOKEN_UNKNOWN", fmt.Sprintf("192.0.2.%d", i))
+	}
+	for i := range 12 { // minute 1: peers 0..9 get rows again, 10 and 11 are suppressed
+		c.Note(t0.Add(time.Minute), "ENROLL_TOKEN_UNKNOWN", fmt.Sprintf("192.0.2.%d", i))
+	}
+	s := c.Flush()
+	if s == nil || s.Suppressed != 2 || s.DistinctPeers != 2 || !s.Window.Equal(t0.Add(time.Minute)) {
+		t.Errorf("minute 1 summary = %+v, want 2 suppressed from 2 peers", s)
+	}
+}
+
+// The carried counts are bounded by MaxTracked. When full, the pair
+// suppressed longest ago is dropped, so a pair suppressed later still
+// carries its count; the dropped one's next row carries none (its count is
+// in its minute's summary).
+func TestCarriedCountsAreBoundedAndTheOldestIsDropped(t *testing.T) {
+	t.Parallel()
+	c := auditcap.New()
+	peer := func(i int) string { return fmt.Sprintf("2001:db8::%x", i) }
+	// Minute 0: rows for 0..9, then MaxTracked pairs suppressed (10 .. MaxTracked+9).
+	for i := range auditcap.MaxTracked + 10 {
+		c.Note(t0, "ENROLL_TOKEN_UNKNOWN", peer(i))
+	}
+	// Minute 5: 10 rows for fresh peers, then 3 new pairs suppressed, which
+	// push out the three oldest carried pairs (10, 11, 12).
+	base := auditcap.MaxTracked + 100
+	for i := range 13 {
+		c.Note(t0.Add(5*time.Minute), "ENROLL_TOKEN_UNKNOWN", peer(base+i))
+	}
+	at := t0.Add(10 * time.Minute)
+	for _, tc := range []struct {
+		peer int
+		want int
+	}{
+		{base + 10, 1}, // suppressed in minute 5: carried
+		{10, 0},        // the oldest: dropped
+		{13, 1},        // still carried
+	} {
+		_, row := c.Note(at, "ENROLL_TOKEN_UNKNOWN", peer(tc.peer))
+		if row == nil || row.Suppressed != tc.want {
+			t.Errorf("peer %d: row %+v, want suppressed=%d", tc.peer, row, tc.want)
+		}
+	}
+}

@@ -62,8 +62,10 @@ calls `Init`, `Run`, `EnrollToken` or `Backup`.
    `fleet_hub_backup_age_seconds` is served from the same schedule.
 9. Stops: shuts the listeners down (10 s grace, then closes; closing the admin
    listener removes `admin.sock`), stops the hourly certificate check and the
-   backup job (an unfinished copy is abandoned and leaves no file), closes
-   the store, releases the lock.
+   backup job (an unfinished copy is abandoned and leaves no file), writes
+   the agent listener's `machine.enroll_failed` summary of the minute in
+   progress (`gateway.Server.FlushAudit`), closes the store, releases the
+   lock.
 
 ## `EnrollToken`
 

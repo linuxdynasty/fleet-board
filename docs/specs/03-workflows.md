@@ -363,7 +363,9 @@ re-enroll rule are in [02g](02g-agent-security.md#machine-lifecycle-revoke-and-d
   `enroll.completed{machine_id, replayed, hostname_mismatch}`,
   `enroll.refused{reason, peer}` (`reason` is the ErrorDetail reason without
   `REASON_CODE_`), `enroll.failed{step, err_kind}` (`step`: `store`,
-  `previous_machine`, `random`, `sign`, `encode`). The agent logs the same
+  `previous_machine`, `random`, `sign`, `encode`), `enroll.audit_failed{rows,
+  err_kind}` (a refusal's `machine.enroll_failed` rows the store did not
+  take; the refusal is still answered). The agent logs the same
   names from its side: `enroll.completed{machine_id, replayed,
   hostname_mismatch}`, `enroll.refused{reason, peer}` (the hub's
   non-retryable answer), `enroll.retry{attempt, err_kind}` (a retryable

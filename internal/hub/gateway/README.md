@@ -61,8 +61,9 @@ srv, err := gateway.NewServer(gateway.ServerOptions{
   per minute, 10 per minute in all, then one summary row per minute
   (`window_start`, `suppressed`, `distinct_peers`, `reasons`; `occurred_time`
   the minute's start) written before the next refusal's row or, for the
-  minute in progress, when the server shuts down (`RegisterOnShutdown`). The
-  cap is in memory and a restart empties it. The hub's own failures write no
+  minute in progress, by `Server.FlushAudit`, which `fleetd run` calls after
+  the listener's `Shutdown` and before the store closes (a crash loses it:
+  best effort). The cap is in memory and a restart empties it. The hub's own failures write no
   row.
 - **RenewCert** ([02g](../../../docs/specs/02g-agent-security.md#certificate-renewal-a4)),
   checked in this order:

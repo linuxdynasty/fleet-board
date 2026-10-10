@@ -19,7 +19,8 @@
 // expired and replays; one writer job burns the token and inserts the
 // machine, its serial, the replayable response and the machine.enroll audit
 // row. A refusal writes a machine.enroll_failed row within the caps of
-// auditcap (a summary of the minute in progress is written at shutdown).
+// auditcap; [Server.FlushAudit], called after Shutdown and before the store
+// closes, writes the summary of the minute in progress.
 // Every EnrollResponse is
 // rebuilt from hub_identity and the stored certificate. RenewCert takes the
 // machine id and serial only from the verified client certificate, applies

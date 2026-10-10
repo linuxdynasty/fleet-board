@@ -14,9 +14,9 @@ const (
 	PerWindow = 10
 	// MaxTracked bounds each map the cap keeps (pairs carried to their next
 	// row, distinct peers in a window, reasons), so a flood from many
-	// addresses cannot grow memory. Past it, a pair's count is no longer
-	// carried (the summary still counts it) and the distinct-peer count
-	// stops at MaxTracked with PeersCapped set.
+	// addresses cannot grow memory. A new carried pair past it drops the
+	// pair suppressed longest ago (its count stays in its minute's summary);
+	// the distinct-peer count stops at MaxTracked with PeersCapped set.
 	MaxTracked = 1024
 )
 
@@ -43,6 +43,13 @@ type Summary struct {
 
 type pair struct{ reason, peer string }
 
+// carried is a pair's suppressed count since its last row, and when it was
+// last suppressed (the cap's own counter, so the oldest is well defined).
+type carried struct {
+	n    int
+	last uint64
+}
+
 // Cap decides which refused Enrolls get an audit row. It is safe for
 // concurrent use; it does no I/O and holds its lock only for the decision.
 // The zero value is not usable; call [New].
@@ -51,14 +58,15 @@ type Cap struct {
 	window  time.Time         // start of the current window; zero before the first Note
 	rows    int               // rows written in the current window
 	written map[pair]struct{} // pairs with a row in the current window
-	carry   map[pair]int      // suppressed per pair since its last row
+	carry   map[pair]carried  // suppressed per pair since its last row
+	ticks   uint64            // suppressions so far, for carried.last
 	sum     *Summary          // the current window's suppressions, nil when none
 	peers   map[string]struct{}
 }
 
 // New is a Cap with no history.
 func New() *Cap {
-	return &Cap{written: map[pair]struct{}{}, carry: map[pair]int{}, peers: map[string]struct{}{}}
+	return &Cap{written: map[pair]struct{}{}, carry: map[pair]carried{}, peers: map[string]struct{}{}}
 }
 
 // Note records one refusal at now. due is the summary of an earlier window
@@ -78,13 +86,11 @@ func (c *Cap) Note(now time.Time, reason, peer string) (due *Summary, row *Row) 
 	if _, done := c.written[p]; !done && c.rows < PerWindow {
 		c.rows++
 		c.written[p] = struct{}{}
-		n := c.carry[p]
+		n := c.carry[p].n
 		delete(c.carry, p)
 		return due, &Row{Reason: reason, Peer: peer, Suppressed: n}
 	}
-	if _, ok := c.carry[p]; ok || len(c.carry) < MaxTracked {
-		c.carry[p]++
-	}
+	c.suppress(p)
 	if c.sum == nil {
 		c.sum = &Summary{Window: c.window, Reasons: map[string]int{}}
 	}
@@ -100,6 +106,25 @@ func (c *Cap) Note(now time.Time, reason, peer string) (due *Summary, row *Row) 
 		}
 	}
 	return due, nil
+}
+
+// suppress counts one more suppression for p, dropping the pair suppressed
+// longest ago when p is new and the map is full. Callers hold mu. The scan
+// is at most MaxTracked entries, only while the map is full.
+func (c *Cap) suppress(p pair) {
+	c.ticks++
+	cur, ok := c.carry[p]
+	if !ok && len(c.carry) >= MaxTracked {
+		var oldest pair
+		first := true
+		for q, v := range c.carry {
+			if first || v.last < c.carry[oldest].last {
+				oldest, first = q, false
+			}
+		}
+		delete(c.carry, oldest)
+	}
+	c.carry[p] = carried{n: cur.n + 1, last: c.ticks}
 }
 
 // Flush takes the current window's summary, or nil when nothing in it was

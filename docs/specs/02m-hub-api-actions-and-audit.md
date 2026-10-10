@@ -159,8 +159,9 @@ rule applies again and CI runs `buf breaking` against that tag, not against
 
 `AuditEntry.action` is a dotted name. The vocabulary is open for display, but
 every name in use is listed here and a new one is added in the same change. The
-actor is the requester (a `Principal`); decisions made at the machine have actor
-kind `LOCAL_USER` ([02g](02g-agent-security.md#audit-of-decisions-made-at-the-machine)).
+actor is the requester (a `Principal`), or none for steps the agent makes
+(`machine.enroll`, `machine.cert_renewed`, `machine.enroll_failed`); decisions
+made at the machine have actor kind `LOCAL_USER` ([02g](02g-agent-security.md#audit-of-decisions-made-at-the-machine)).
 Filter on `action` with `=` or `in` ([02c](02c-hub-watch-and-filters.md)).
 
 `AuditEntry.target` is `<collection>/<id>`, so the Session timeline filters

@@ -47,12 +47,11 @@ func (d *enrollDeps) auditRefusal(ctx context.Context, peer string, err *connect
 	d.writeAudit(ctx, due != nil, row != nil, entries)
 }
 
-// flushAudit writes the summary of the minute in progress; the server calls
-// it when it shuts down.
-func (d *enrollDeps) flushAudit() {
+// flushAudit writes the summary of the minute in progress ([Server.FlushAudit]).
+func (d *enrollDeps) flushAudit(ctx context.Context) {
 	if s := d.audit.Flush(); s != nil {
 		now := d.now().UTC().Truncate(time.Millisecond)
-		d.writeAudit(context.Background(), true, false, []statedb.AuditEntry{summaryEntry(*s, now)})
+		d.writeAudit(ctx, true, false, []statedb.AuditEntry{summaryEntry(*s, now)})
 	}
 }
 

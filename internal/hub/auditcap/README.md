@@ -18,12 +18,15 @@ s := c.Flush()                                              // at stop: the minu
   would be a new pair.
 - Windows are whole minutes of the clock passed in. A clock that steps back
   stays in the current minute.
-- Every map is bounded by `MaxTracked` (1,024). Past it a pair's count is not
-  carried (the summary still counts it) and `DistinctPeers` stops there with
-  `PeersCapped`.
+- Every map is bounded by `MaxTracked` (1,024). A new carried pair past it
+  drops the pair suppressed longest ago (its count is still in its minute's
+  summary; the scan is at most 1,024 entries, only while full), and
+  `DistinctPeers` stops there with `PeersCapped`. `DistinctPeers` counts one
+  minute's peers only.
 - **In memory, by decision.** A restart empties it: in the minute of a
   restart at most 10 more rows and one more summary. A summary is handed out
-  by the next `Note` after its minute or by `Flush` at stop, never by a
+  by the next `Note` after its minute or by `Flush` at a clean stop (a crash
+  loses the minute in progress), never by a
   timer, so on a quiet hub it waits for the next refusal or the stop. The
   counter `fleet_hub_enroll_total{result="refused"}` and the `enroll.refused`
   log line still record every refusal.

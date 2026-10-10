@@ -36,7 +36,7 @@ import (
 // hub's "now" for token expiry and certificate issue.
 type hub struct {
 	*fixture
-	srv     *http.Server
+	srv     *gateway.Server
 	addr    string
 	clock   *clock
 	revoked *revocation.List

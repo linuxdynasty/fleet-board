@@ -126,8 +126,10 @@ without its port, never the token, within the cap in
 (reason, peer) per minute, 10 per minute in all, then one summary row per
 minute (detail: the reason counts, the distinct peers, the suppressed count;
 `occurred_time` the minute's start); the pair's next row carries
-`suppressed`. The cap is in memory: a restart empties it, and the minute in
-progress is summarized when the hub stops. Every refusal is still the log
+`suppressed` (for the 1,024 pairs suppressed most recently). The cap is in
+memory: a restart empties it. A clean stop writes the summary of the minute
+in progress after the listener stops and before the store closes; a crash
+loses it (best effort). Every refusal is still the log
 line `enroll.refused` (`reason`, `peer`) and `fleet_hub_enroll_total`
 (03, W1). A failure of the hub's own (`enroll.failed`: store, signing) writes
 no audit row. A successful first Enroll writes `machine.enroll` (target
