@@ -132,7 +132,7 @@ waiting for keepalive timeouts.
 | Prompt appeared and vanished while offline | `PromptDetected` + `PromptGone` replay into history only (nobody can still answer it, so no triage item); a prompt still showing comes from `Snapshot.prompts[]` (03g) |
 | Developer typed in a goal pane while offline | `PaneInput` in the ring (coalesced, latest time) and `TmuxPane.last_input_time` in the snapshot; W6's "human at keyboard" suppression is derived from the snapshot's `last_input_time` (the replayed `PaneInput` is history only) |
 | Work tracker / code host unavailable at reconnect | W4 lag rises; verification waits; dispatch stays paused while lag exceeds its threshold |
-| Flapping network (reconnect every few seconds) | Each reconnect costs a snapshot; the agent rate-limits reconnects to one per 5 s and the hub to one Hello per machine per 5 s; `fleet_hub_reconnects_total` shows it |
+| Flapping network (reconnect every few seconds) | Each reconnect costs a snapshot; the agent rate-limits reconnects to one per 5 s and the hub to one Hello per machine per 5 s (`RESOURCE_EXHAUSTED` / `RATE_LIMITED` with `retry_after`; 02g "Hello refusals"); `fleet_hub_reconnects_total` shows it |
 | Ring replay floods the hub after a long outage | Replay is rate-limited per agent; the writer batches; HTTP/2 flow control blocks the agent, never the hub's other machines (per-stream windows) |
 
 ### Telemetry
@@ -142,7 +142,10 @@ waiting for keepalive timeouts.
   `fleet_agent_events_shed_total`, `fleet_agent_events_coalesced_total`, `fleet_agent_events_evicted_total`,
   `fleet_agent_reconnects_total{reason=reconnect|wake|network_change}` (each
   stream connected with that `Hello.reason`).
-- `fleet_hub_reconnects_total{machine, reason}`, `fleet_hub_epoch{machine}`,
+- `fleet_hub_reconnects_total{machine, reason}` (every accepted `Hello`, by
+  `Hello.reason`: `start`, `reconnect`, `wake`, `network_change`,
+  `unspecified`), `fleet_hub_epoch{machine}` (the epoch of the last accepted
+  `Hello`),
   `fleet_hub_commands_expired_total{kind}`, `fleet_hub_duplicate_identity_total{machine}`,
   `fleet_hub_event_gap_total{machine}` (rises of `evicted_total`), `fleet_hub_agent_rollback_total{machine}`, `fleet_hub_replay_backlog_events{machine}`,
   `fleet_hub_results_unknown_command_total`.
@@ -150,10 +153,20 @@ waiting for keepalive timeouts.
   `hub.replay.ingest`); `agent.reconnect` (children `agent.ring.replay`) comes
   with the event ring, in the rows that emit events. Until then the agent's
   side of a reconnect is W1's `agent.connect.hello` span and `connect.hello`.
-- Logs (the hub's, plan row 5): `reconnect.hello{epoch, last_epoch, last_event_seq, hub_last_event_seq,
-  reason}`, `outbox.expired{command_id, kind, age}`, `identity.duplicate{old_boot_id,
-  new_boot_id, old_peer, new_peer}`, `replay.gap{from_seq, to_seq}`.
+- Logs (the hub's, plan row 5): `reconnect.hello{machine_id, epoch, last_epoch, last_event_seq,
+  hub_last_event_seq, reason, peer}`, `reconnect.closed{machine_id, epoch, reason, row_closed}`
+  (a stream ended; `reason` is the stored end reason: `displaced`, `stream_closed`,
+  `agent_bye`, `hub_restart`; `row_closed` false when a newer `Hello` had closed it),
+  `outbox.expired{command_id, kind, age}`, `identity.duplicate{machine_id, old_epoch, new_epoch,
+  old_boot_id, new_boot_id, old_peer, new_peer, heartbeat_age_ms}` (a live stream got
+  `Bye{DUPLICATE_IDENTITY}`; -1 when it had no Heartbeat; a row a hub crash left live is
+  displaced silently), `replay.gap{from_seq, to_seq}`. The span `hub.connect.hello` covers
+  a `Hello` from receipt to the queued `HelloAck` or the refusal (a root span: `Hello`
+  carries no trace context).
 
-At 3 AM: "did the hub lose anything during the restart?" →
+At 3 AM: "why does machine X keep reconnecting?" → `fleet_hub_reconnects_total`
+and `fleet_hub_epoch` climbing, `reconnect.closed{reason}` for how each stream
+ended, `identity.duplicate` (two hosts with one identity ping-pong) and
+`connect.refused{cause}` (03 W1). "did the hub lose anything during the restart?" →
 `fleet_hub_event_gap_total` and `replay.gap` logs; "why is this goal shown
 twice / missing?" → `snapshot.applied{diff}` and `orphan_goal_pane` items.

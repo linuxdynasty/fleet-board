@@ -68,7 +68,7 @@ machine revoke; 540–564: the hub's dispatch rules and a few action refusals,
 error, or the reason of a `PreflightCheck`, with `FieldViolation`s for
 field-level detail ([02b](02b-hub-api.md#errors)). The 600–605 codes are the typed `Enroll`
 failures, and 606 (`RENEW_CSR_INVALID`, the `RenewCert` twin of 603) the
-`RenewCert` one, carried the same way ([02g](02g-agent-security.md)).
+`RenewCert` one, carried the same way ([02g](02g-agent-security.md)). A `Hello` the hub refuses before `HelloAck` uses existing codes the same way (02g, "Hello refusals").
 
 Every `ReasonCode`, with the comment on its value in
 `api/fleet/type/v1/status.proto`. A bold row is a group heading. 303 is unused.

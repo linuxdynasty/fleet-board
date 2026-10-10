@@ -38,6 +38,7 @@ spec change. "Decided here" marks a value no earlier document gave.
 | Network-change read retry (push socket on) | 2 s after a failed read, then every 15 s, until a read works or a hint arrives | s | 01 A6, ADR 0029, decided here | fixed |
 | Transport keepalive (agent) | ping every 10 s, 20 s timeout; the hub's keepalive enforcement allows it | s | ADR 0004 | fixed |
 | HelloAck wait (agent) | 30; no `HelloAck` (or `Bye`) by then closes the stream and backs off. Keepalive pings do not cover a hub that answers pings but not `Hello` | s | [03](03-workflows.md) W1, decided here | fixed |
+| Hello wait (hub) | 30; a Connect stream with no `Hello` by then is closed with `DEADLINE_EXCEEDED` (retryable); a stream without a client certificate is closed before anything is read | s | [02g](02g-agent-security.md) "Hello refusals", decided here | fixed |
 | TLS handshake per hub address (agent) | 10; a handshake not done by then is a lost connection: retried within "Enroll tries" when enrolling, the next candidate in the connection loop | s | [03](03-workflows.md) W1, decided here | fixed |
 | Bye wait on stop (agent) | 2; after `Bye{SHUTDOWN}` the agent waits this long for the hub to close the stream, then cuts the connection (`connect.shutdown_cut`), so a hub that stopped reading cannot hold up the stop | s | 01 A7, decided here | fixed |
 | `last_seen` written to the store | at most 1 per machine per minute, and on connect and disconnect; held in memory per heartbeat | min | 04, decided here | fixed |
