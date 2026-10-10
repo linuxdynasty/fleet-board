@@ -13,7 +13,8 @@
 #                   (default origin/main): go test -shuffle=on -count=TEST_COUNT
 #                   (default 3), then go test -race -shuffle=on -count=1;
 #                   with COVERPROFILE set, the first pass writes coverage there
-#   make lint       golangci-lint on the same packages
+#   make lint       golangci-lint on the same packages, once per platform in
+#                   LINT_PLATFORMS (linux and darwin, amd64 and arm64; cgo off)
 #   make vuln       govulncheck ./... (fails on a reachable known vulnerability)
 #   make test-all   go vet ./..., then go test -race -shuffle=on -count=TEST_COUNT
 #                   on every package (the nightly run sets TEST_COUNT=10, and
@@ -187,11 +188,28 @@ fuzz:
 bench-report:
 	scripts/bench-report.sh "$$BASE_REF"
 
+# lint runs the pinned golangci-lint once per target platform, cgo off. The
+# linter reads only the files that build for the GOOS and GOARCH it runs for, so
+# a `_darwin.go` or `_arm64.go` file would pass on the Linux amd64 CI runner (and
+# a `_linux.go` file on a Mac) with a single pass. The process rules of 01
+# principle 8 (depguard on os/exec, forbidigo on os.StartProcess and the like)
+# need every platform the binaries ship for. scripts/test-make-lint-platforms.sh
+# checks that each one is linted.
+LINT_PLATFORMS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64
+
+# The package list is computed again for each platform, with its GOOS and
+# GOARCH set: go list leaves out a package none of whose files build there, so a
+# new package that only has d_darwin.go is linted on darwin and skipped on linux
+# (and not handed to a linux run that would fail with "build constraints exclude
+# all Go files").
 lint: tools
-	@pkgs="$$(scripts/changed-go-packages.sh "$$BASE_REF")" || exit 1; \
-	if [ -z "$$pkgs" ]; then echo "make lint: no Go package changed against $$BASE_REF; nothing to lint"; exit 0; fi; \
-	echo "make lint: $$pkgs"; \
-	$(GOLANGCI_LINT) run $$pkgs
+	@for platform in $(LINT_PLATFORMS); do \
+	  goos=$${platform%/*}; goarch=$${platform#*/}; \
+	  pkgs="$$(GOOS=$$goos GOARCH=$$goarch CGO_ENABLED=0 scripts/changed-go-packages.sh "$$BASE_REF")" || exit 1; \
+	  if [ -z "$$pkgs" ]; then echo "make lint: GOOS=$$goos GOARCH=$$goarch: no Go package changed against $$BASE_REF; nothing to lint"; continue; fi; \
+	  echo "make lint: GOOS=$$goos GOARCH=$$goarch: $$pkgs"; \
+	  GOOS=$$goos GOARCH=$$goarch CGO_ENABLED=0 $(GOLANGCI_LINT) run $$pkgs || exit 1; \
+	done
 
 # vuln checks every package (not only the changed ones: a new advisory can land
 # on unchanged code) against the Go vulnerability database. It needs gen/ and
@@ -203,11 +221,17 @@ vuln: tools
 actionlint:
 	$(ACTIONLINT)
 
-# selftest runs the seeded RED/GREEN cases of the repo's own gate scripts.
+# selftest runs the seeded RED/GREEN cases of the repo's own gate scripts, and
+# check-generated-headers.sh over the tree (a hand-written file with a
+# generated-code header would escape golangci-lint).
 selftest: tools
 	scripts/test-check-versions.sh
 	scripts/test-changed-go-packages.sh
 	scripts/test-check-gofumpt.sh
+	scripts/test-lint-exec-rules.sh
+	scripts/test-make-lint-platforms.sh
+	scripts/test-check-generated-headers.sh
+	scripts/check-generated-headers.sh
 	scripts/test-pre-push.sh
 	scripts/test-pre-push-fetch.sh
 	scripts/test-check-pr-base.sh
