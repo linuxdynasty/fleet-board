@@ -47,3 +47,8 @@ Read the root `AGENTS.md` first; it applies here. Load `fleet-go` and
   near-miss text it must leave alone. The list is a choice made here (02e
   names four kinds and a few forms; the rest is chosen here); never widen it silently.
 - A change here updates this README and `doc.go` in the same commit.
+- The hub pass is measured in `hub_pass_test.go` (04b). After a rule change,
+  re-run `BenchmarkHubPass` and `BenchmarkHubLoad` (`-count=10`, benchstat)
+  and update 04b if a number moves by more than its spread. The hub must cut
+  or reject a string over its field's cap before it calls `Scrub`; the cost
+  follows the input's length (a 1 MiB hostile message takes about 16 s).

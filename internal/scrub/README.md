@@ -73,15 +73,23 @@ UTF-8 for any text, home and cap; `TestTextSettlesOnFragments` checks it on
 secret case; `TestSettleRoundBound` pins the bound from both sides.
 
 **Callers bound the input.** `Scrub` costs time in proportion to its input,
-not its cap: it scrubs everything, then cuts. 1 MiB takes 0.9 to 1.6 s, and
-64 KiB built to be slow takes up to 0.9 s (see Speed). A caller with text of
-no fixed size, such as a command's stderr, cuts it first to a bound far above
-the cap, such as 64 KiB (the largest field, the insights report), on a UTF-8
-boundary. That first cut can split a secret at the bound, and the part left
-before it may be too short for its rule (a token under its minimum length).
-That part reaches the output only if scrubbing shrinks everything before it
-below the cap, which a bound many times the cap makes unlikely, not
-impossible.
+not its cap: it scrubs everything, then cuts. 1 MiB takes 0.9 to 1.6 s of
+plain text, and text built to be slow takes 13 ms at 1 KiB, 0.97 s at 64 KiB
+and 15.6 s at 1 MiB (`BenchmarkTextHostile` is the 64 KiB case; see Speed).
+A caller with text of no fixed size, such as a command's stderr, cuts it first
+to a bound far above the cap, such as 64 KiB (the largest field, the insights
+report), on a UTF-8 boundary. The hub does the same for the agent's free
+text, with the field's own cap as the bound: the 1 MiB `Connect` message cap
+alone would let an agent send a 1 MiB `message` that holds its stream's ingest
+goroutine for about 16 s, so the hub cuts a longer string to the cap, or
+rejects the message, before it calls `Scrub` (02e, 04b). That first cut can
+split a secret at the bound, and the part left before it may be too short for
+its rule (a token under its minimum length). That part reaches the output
+only if scrubbing shrinks everything before it below the cap, which a bound
+many times the cap makes unlikely, not impossible. At the cap itself (the
+hub's case) any shrinking lets it through, so the hub's cut stops the cost, not
+the leak: an honest agent already cut at the cap after scrubbing and never
+sends more, so rejecting a longer string is the safer choice.
 
 ## What counts as a secret
 
@@ -240,66 +248,42 @@ bounded it is 3.2 to 4.0 times across its eleven shapes; with the bounds
 removed it was 14.5 to 15.3 times and the test failed. A ratio, not a time
 limit, so a slow machine does not fail it.
 
-**Load budget.** 04 Q7 budgets the hub at 2,500 events a second during a
-replay. Only command results, command progress and probe health carry free
-text, and the cost grows with the length (1 KiB is the cap, not the usual
-size). The numbers below assume every event in that burst carries a full
-1 KiB message like `BenchmarkTextMessage`, which settles in 2 rounds. The
-agent's pass would need about 3.9 cores of this machine (2,500 × 1,571 µs).
-The hub's pass over text the agent already scrubbed settles in its first
-round: about 1.9 cores (2,500 × 743 µs). A message built to need 4 rounds of
-the slowest text costs about 4 times as much per byte, so a burst of those
-would not fit; the cap keeps each one to 1 KiB, about 13 ms
-(measured at 1 KiB: `BenchmarkHubPass/1KiB/hostile`). So the hub scrubs
-in its ingest goroutines, before it hands a batch to its single writer, never
-inside the write transaction, where it would hold the writer for that long.
-The agent scrubs one message at a time as it writes it.
+**Load budget.** Measured in [04b](../../docs/specs/04b-hub-scrubber-cost.md)
+(row 5l, 2026-10-10): the method, the corpora, the load model and the raw
+output. In short, per message on an Apple M4 Pro (Go 1.27.2, load average 3.5
+to 5, `-count=10`, benchstat): a 1 KiB message the agent already scrubbed
+costs 0.9 ms on the hub (a settled first round; an ordinary 165-byte line
+costs 0.14 ms), the same text unscrubbed 1.7 ms, and text built to use all
+four rounds 12.9 ms (`BenchmarkHubPass`). At the real rates (commands 0.05 /
+0.5 per second with 5 to 14 progress messages each, usage readings 0.8 per
+second, 04 Q7) the hub's pass uses at most 0.10 core, even if every message
+is that worst text (`BenchmarkHubLoad`, rows `peak`, `usage_worst`,
+`peak_startgoal`). Only if all 2,500 events a second of the replay burst
+carried a full 1 KiB message would it need 2.2 to 2.5 cores (4.4 unscrubbed);
+that cannot happen, because only coalesced `ProbeHealth` and `parse_message`
+ride events. The agent's pass over a full 1 KiB message with secrets is
+1.6 ms (`BenchmarkTextMessage`), and its first-time scrub of the same burst
+would be the 3.9-core bound (2,500 × 1.57 ms), which is also not a case.
 
-**Hub pass, measured (row 5l, 2026-10-10).** `hub_pass_test.go` models what the
-hub receives, at the 02e caps (1 KiB: `CommandResult.message`,
-`CommandProgress.message`, `parse_message`; 256 B: `ProbeHealth.message`,
-`SettingRejection.message`). `go test -run '^$' -bench BenchmarkHub -count=10
-./internal/scrub/`, benchstat, base 83b9330 plus the benchmark, Apple M4 Pro
-(12 cores), macOS 27.0.1, Go 1.27.2, load average 3.5 to 5, so not an idle
-machine. Per message, one `Scrub` call with no home folder (spread 1 to 2 %):
-
-| Corpus | 256 B | 1 KiB |
-|---|---|---|
-| typical: an error line of about 165 B, agent-scrubbed | 138 µs | 139 µs |
-| mix: agent-scrubbed, mostly benign, two placeholders per KiB | 223 µs | 897 µs |
-| unscrubbed: the same text before any agent pass (two rounds) | 419 µs | 1.74 ms |
-| dense: nothing but secrets (cheaper: a match is consumed, the text shrinks) | 80 µs | 133 µs |
-| hostile: uses all four rounds, ends `[redacted]` | 2.15 ms | 12.9 ms |
-
-The README figures above still hold on the same day (`BenchmarkTextMessage`
-1.59 ms, `BenchmarkTextScrubbed` 755 µs). `BenchmarkHubLoad` runs a window of
-each modeled load and reports `cores`, the CPU-seconds one goroutine spends
-per second. Command results and progress run at 0.05 / s steady and 0.5 / s
-peak (03f) with 5 progress messages per command (assumed), probes at about
-0. In the 2,500 events / s replay burst only coalesced `ProbeHealth` and
-`parse_message` ride events (`CommandResult` and `CommandProgress` are not
-events), so 100 % carrying text is a bound, not a case:
-
-| Load (1 KiB) | Cores | Of 12 |
-|---|---|---|
-| steady 0.3 msg / s, typical | 0.00004 | 0.0 % |
-| peak 3 msg / s: typical, mix, unscrubbed, hostile | 0.0004, 0.0027, 0.0053, 0.040 (±29 %) | ≤ 0.3 % |
-| burst, 1 % of 2,500 events carry a mix message | 0.023 | 0.2 % |
-| burst, 10 % | 0.23 | 1.9 % |
-| burst, 100 %: mix, unscrubbed, dense | 2.5, 4.4, 0.34 | 21 %, 37 %, 3 % |
-
-The insights report (64 KiB, one a week: 05, section 7) is left out of the
-table: at its worst, `BenchmarkTextHostile` takes 0.93 s (±11 %, same day),
-so a weekly report is about 0.000002 core. `SettingRejection.message` (256 B)
-is rare and costs what the 256 B column shows.
-
-One stream's ingest goroutine at the 200 events / s agent cap spends 0.18 core
-on the mix and 0.35 unscrubbed. Hostile text at that rate would need 2.6 cores,
-so that stream is CPU-bound at about 77 messages a second and backs up only
-itself. Conclusion: no faster first-pass scan is needed before the first
-producer; row 6 pastes the real `CommandResult.message` size distribution and
-the hub scrub cost before it merges, and row 17 re-checks (04 Q7, "Hub scrubber
-cost").
+- **Peak row spread.** In the first run the peak hostile row read ±29 %: each
+  iteration is a 0.4 s window, few fit in a benchtime, and other work on the
+  machine hit some of them. The repeat read 0.039 core ±3 %.
+- **The weekly report.** The insights report (64 KiB, 05 section 7) is left
+  out of the load model: at its worst `BenchmarkTextHostile` takes 0.93 s
+  (±7 %), once a week.
+- **One stream.** At the 200 events / s agent cap one stream's ingest goroutine
+  spends 0.18 to 0.2 core on the mix and 0.35 on unscrubbed text. Hostile text
+  at that rate needs 2.6 cores, so that stream is CPU-bound at about 77
+  messages a second and backs up only itself.
+- **Where it runs.** The hub scrubs in its per-stream ingest goroutines,
+  before it hands a message to its single writer, never inside the write
+  transaction, where it would hold the writer for that long. The agent scrubs
+  one message at a time as it writes it.
+- **Real sizes.** The numbers use the 02e caps, not real sizes. Row 6 records
+  its real messages as a file of JSON strings, one per line, and runs
+  `FLEET_SCRUB_BENCH_CORPUS=<file> go test -run '^$' -bench BenchmarkHubPassFile
+  -count=10 ./internal/scrub/`, which reports `cores@peak` and `cores@burst`
+  on that text. Row 17 repeats it on the seven-day run.
 
 Tests: `CGO_ENABLED=0 go test ./internal/scrub/`. Fuzz:
 `go test -run '^$' -fuzz FuzzText ./internal/scrub/` (also in `make fuzz`).

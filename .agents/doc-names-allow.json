@@ -211,6 +211,16 @@
   {"token": "M1", "kind": "capability-id", "reason": "agent capability M1, local audit (01f, ui-contract-map)", "files": ["docs/specs/ui-contract-map.md"]},
   {"token": "Your", "kind": "quoted-text", "reason": "word of the nudge text the agent types (03l)", "files": ["docs/specs/03l-goal-lifecycle-and-verification.md"]},
   {"token": "Continue", "kind": "quoted-text", "reason": "word of the nudge text the agent types (03l)", "files": ["docs/specs/03l-goal-lifecycle-and-verification.md"]},
-  {"token": "fleet.attach.v1", "kind": "websocket-subprotocol", "reason": "the Sec-WebSocket-Protocol value of the terminal attach, not a proto package", "files": ["docs/specs/02f-hub-authentication.md"]}
+  {"token": "fleet.attach.v1", "kind": "websocket-subprotocol", "reason": "the Sec-WebSocket-Protocol value of the terminal attach, not a proto package", "files": ["docs/specs/02f-hub-authentication.md"]},
+  {"token": "MaxBytes", "kind": "go", "reason": "scrub.Options.MaxBytes, the field cap (internal/scrub)", "files": ["docs/specs/04b-hub-scrubber-cost.md"]},
+  {"token": "Changed", "kind": "go", "reason": "scrub.Result flag (internal/scrub)", "files": ["docs/specs/04b-hub-scrubber-cost.md"]},
+  {"token": "Cut", "kind": "go", "reason": "scrub.Result flag (internal/scrub)", "files": ["docs/specs/04b-hub-scrubber-cost.md"]},
+  {"token": "Unsettled", "kind": "go", "reason": "scrub.Result flag (internal/scrub)", "files": ["docs/specs/04b-hub-scrubber-cost.md"]},
+  {"token": "BenchmarkHubPass", "kind": "go", "reason": "Go benchmark in internal/scrub/hub_pass_test.go (plan row 5l)", "files": ["docs/specs/04b-hub-scrubber-cost.md"]},
+  {"token": "BenchmarkHubLoad", "kind": "go", "reason": "Go benchmark in internal/scrub/hub_pass_test.go (plan row 5l)", "files": ["docs/specs/04b-hub-scrubber-cost.md"]},
+  {"token": "BenchmarkHub", "kind": "go", "reason": "benchmark name prefix in internal/scrub/hub_pass_test.go (plan row 5l)", "files": ["docs/specs/04b-hub-scrubber-cost.md"]},
+  {"token": "BenchmarkHubPassFile", "kind": "go", "reason": "Go benchmark in internal/scrub/hub_corpus_file_test.go (plan row 5l)", "files": ["docs/plan/v1-implementation-plan.md", "docs/specs/04b-hub-scrubber-cost.md"]},
+  {"token": "TestHubCorporaKeepTheirPremise", "kind": "go", "reason": "Go test in internal/scrub/hub_pass_test.go (plan row 5l)", "files": ["docs/specs/04b-hub-scrubber-cost.md"]},
+  {"token": "FLEET_SCRUB_BENCH_CORPUS", "kind": "env", "reason": "environment variable read by BenchmarkHubPassFile (plan row 5l)", "files": ["docs/specs/04b-hub-scrubber-cost.md"]}
  ]
 }

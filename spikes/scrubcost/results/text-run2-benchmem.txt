@@ -1,0 +1,36 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/linuxdynasty/fleet-board/internal/scrub
+cpu: Apple M4 Pro
+BenchmarkTextHostile-12     	       2	 903861834 ns/op	   0.07 MB/s	  792800 B/op	      32 allocs/op
+BenchmarkTextHostile-12     	       2	 890173646 ns/op	   0.07 MB/s	  795744 B/op	      35 allocs/op
+BenchmarkTextHostile-12     	       2	 898288500 ns/op	   0.07 MB/s	  795744 B/op	      35 allocs/op
+BenchmarkTextHostile-12     	       2	 880494021 ns/op	   0.07 MB/s	 1235568 B/op	     313 allocs/op
+BenchmarkTextHostile-12     	       2	 860421792 ns/op	   0.08 MB/s	 1235568 B/op	     313 allocs/op
+BenchmarkTextHostile-12     	       2	 959133396 ns/op	   0.07 MB/s	 1238512 B/op	     316 allocs/op
+BenchmarkTextHostile-12     	       2	 898553542 ns/op	   0.07 MB/s	  798688 B/op	      38 allocs/op
+BenchmarkTextHostile-12     	       2	 909089625 ns/op	   0.07 MB/s	 1241512 B/op	     320 allocs/op
+BenchmarkTextHostile-12     	       2	 887998980 ns/op	   0.07 MB/s	 1238228 B/op	     316 allocs/op
+BenchmarkTextHostile-12     	       1	1450668500 ns/op	   0.05 MB/s	  800032 B/op	      41 allocs/op
+BenchmarkTextMessage-12     	     734	   1608243 ns/op	   0.64 MB/s	   37748 B/op	      59 allocs/op
+BenchmarkTextMessage-12     	     781	   1583191 ns/op	   0.65 MB/s	   38820 B/op	      59 allocs/op
+BenchmarkTextMessage-12     	     765	   1557203 ns/op	   0.66 MB/s	   39747 B/op	      59 allocs/op
+BenchmarkTextMessage-12     	     771	   1574619 ns/op	   0.65 MB/s	   38890 B/op	      59 allocs/op
+BenchmarkTextMessage-12     	     649	   1594258 ns/op	   0.64 MB/s	   40137 B/op	      59 allocs/op
+BenchmarkTextMessage-12     	     776	   1577906 ns/op	   0.65 MB/s	   38735 B/op	      59 allocs/op
+BenchmarkTextMessage-12     	     757	   1605113 ns/op	   0.64 MB/s	   38775 B/op	      59 allocs/op
+BenchmarkTextMessage-12     	     774	   1580020 ns/op	   0.65 MB/s	   38883 B/op	      59 allocs/op
+BenchmarkTextMessage-12     	     768	   1587381 ns/op	   0.65 MB/s	   39930 B/op	      59 allocs/op
+BenchmarkTextMessage-12     	     674	   1590393 ns/op	   0.64 MB/s	   40027 B/op	      59 allocs/op
+BenchmarkTextScrubbed-12    	    1656	    773884 ns/op	   1.18 MB/s	   13465 B/op	      22 allocs/op
+BenchmarkTextScrubbed-12    	    1554	    763959 ns/op	   1.20 MB/s	   13504 B/op	      22 allocs/op
+BenchmarkTextScrubbed-12    	    1578	    749461 ns/op	   1.22 MB/s	   13430 B/op	      22 allocs/op
+BenchmarkTextScrubbed-12    	    1635	    742107 ns/op	   1.24 MB/s	   13423 B/op	      22 allocs/op
+BenchmarkTextScrubbed-12    	    1563	    797911 ns/op	   1.15 MB/s	   13503 B/op	      22 allocs/op
+BenchmarkTextScrubbed-12    	    1647	    747356 ns/op	   1.23 MB/s	   13903 B/op	      22 allocs/op
+BenchmarkTextScrubbed-12    	    1605	    759052 ns/op	   1.21 MB/s	   13519 B/op	      22 allocs/op
+BenchmarkTextScrubbed-12    	    1654	    757879 ns/op	   1.21 MB/s	   13465 B/op	      22 allocs/op
+BenchmarkTextScrubbed-12    	    1514	    782538 ns/op	   1.17 MB/s	   13536 B/op	      22 allocs/op
+BenchmarkTextScrubbed-12    	    1671	    745845 ns/op	   1.23 MB/s	   13509 B/op	      22 allocs/op
+PASS
+ok  	github.com/linuxdynasty/fleet-board/internal/scrub	50.963s
