@@ -361,10 +361,9 @@ re-enroll rule are in [02g](02g-agent-security.md#machine-lifecycle-revoke-and-d
   does not use. Every `renew.started` is followed by `renew.completed`,
   `renew.cancelled`, `renew.refused` or `renew.failed`. No line holds a
   key, a CSR or a certificate; serials are hex.
-- Hub logs of `Connect` (plan row 5a-ii): `connect.refused{cause, reason, peer, machine_id}`
-  and `connect.failed{step, err_kind, machine_id}`, described in 03n "Telemetry".
-- Hub logs of the Snapshot (plan row 5c1): `snapshot.applied`, `snapshot.refused`, `snapshot.failed`,
-  `snapshot.abandoned`, `snapshot.rollback`, `snapshot.request_dropped`: 03n "Telemetry".
+- Hub logs of `Connect` (plan row 5a-ii) and the Snapshot (row 5c1), described in 03n "Telemetry":
+  `connect.refused{cause, reason, peer, machine_id}`, `connect.failed{step, err_kind, machine_id}`, `snapshot.applied`,
+  `snapshot.refused`, `snapshot.failed`, `snapshot.abandoned`, `snapshot.rollback`, `snapshot.request_dropped`.
 - Logs: `enroll.issued{machine, expire_time, actor}`, `enroll.issue_refused{reason}`,
   `enroll.issue_failed{step, err_kind}`,
   `enroll.completed{machine_id, replayed, hostname_mismatch}`,
