@@ -13,9 +13,9 @@ owner steps and the `fleet-agent doctor` wording are in
 | Method | `fleet-live-probe`: a throwaway tmux server (`-L probe54 -f /dev/null`), an empty scratch folder, the harness started by typing its name, `capture-pane -p` (ANSI stripped) read before every key |
 | Quota | none: no prompt was sent to any model |
 
-Files (under `internal/harness/<name>/testdata/<version>/`). The Claude Code
-trust screen (`claude/.../trust-folder.txt`) is in the usage-fixture set of issue
-#25 and is not repeated here.
+Files (under `internal/harness/<name>/testdata/<version>/`). Claude Code's
+`trust-folder.txt` is byte for byte the file the usage-fixture set of issue #25
+holds at the same path (captured again here so this change stands alone).
 
 | File | Screen | Reached by |
 |---|---|---|
@@ -26,6 +26,7 @@ trust screen (`claude/.../trust-folder.txt`) is in the usage-fixture set of issu
 | `codex/.../startup-update-prompt.txt` | "Update available", "1. Update now" selected | any start while an update exists |
 | `muse/.../trust-workspace-plain-folder.txt` | "Do you trust this workspace?" | start in a new plain folder |
 | `muse/.../trust-workspace-git-root.txt` | the same with a "Trust target:" line | start in a new folder inside a git repo |
+| `claude/.../trust-folder.txt` | "Accessing workspace" box, "No, exit" selected | start in a new plain folder |
 | `claude/.../ready-trusted-child.txt` | ready screen, no box | start in a new child of a trusted repo |
 | `opencode/.../ready-new-folder.txt` | ready screen; OpenCode has no trust screen | start in a new git repo |
 
@@ -47,7 +48,7 @@ prompts (Triage), not trust screens.
   the owner's harness config, so only the Cursor throwaway trust was answered "yes",
   and the entries it made were deleted.
 - Claude Code's trust box inside a git repo: every git folder tried was already
-  covered by a trusted repo, so only the plain-folder box was seen (file from #25).
+  covered by a trusted repo, so only the plain-folder box was seen.
 
 ## Clean-up
 

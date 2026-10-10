@@ -200,7 +200,7 @@ levels below the parent, started with no key pressed:
 
 | Harness | A git repo the owner trusted | A worktree of that repo | A plain folder under a trusted plain folder |
 |---|---|---|---|
-| Claude Code | child not asked | **not asked**, although the worktree was never trusted by hand | not proven (needs a write to `~/.claude.json`) |
+| Claude Code | child not asked | **not asked**, although the worktree was never trusted by hand | not proven: neither the home folder nor the repos folder is trusted here, so no plain parent to test (trusting one needs a write to `~/.claude.json`) |
 | Codex | child not asked | not asked | no screen in any plain folder |
 | Muse | not tested; the "Trust target" line names the repo root | **asked** (its own root is the target) | **asked**: the home folder is on Muse's trust list and a fresh folder two levels below it still showed the box |
 | Cursor | child not asked | **asked** | **not asked**: a scratch folder trusted by hand covered a new child two levels below it |
