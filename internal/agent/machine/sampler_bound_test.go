@@ -218,3 +218,34 @@ func TestShutdownIsQuiet(t *testing.T) {
 		})
 	}
 }
+
+// Readings left behind by a sample that gave up on them (load, memory and
+// disk paths that never returned) must end once they are released, not stay
+// parked on a full channel: four of them finish after the sample has returned.
+func TestHungReadingsAreReleasedAfterTheSampleReturns(t *testing.T) {
+	t.Parallel()
+	release := make(chan struct{})
+	rd := good()
+	rd.Load = func(context.Context) (float64, float64, error) { <-release; return 1, 1, nil }
+	rd.Mem = func(context.Context) (uint64, uint64, error) { <-release; return 2, 1, nil }
+	rd.Usage = func(context.Context, string) (uint64, uint64, error) { <-release; return 1, 2, nil }
+	s, err := machine.NewSampler(machine.SamplerOptions{
+		StateDir: "/state", Roots: func() []string { return []string{"/a", "/b"} },
+		Readers: rd, ReadTimeout: 100 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.SampleOnceForBench(t.Context())
+	if n := s.ReadsInFlight(); n != 5 {
+		t.Fatalf("readings in flight after the sample gave up = %d, want 5 (load, memory, 3 paths)", n)
+	}
+	close(release)
+	deadline := time.Now().Add(10 * time.Second)
+	for s.ReadsInFlight() > 0 {
+		if time.Now().After(deadline) {
+			t.Fatalf("%d readings are still parked after they were released", s.ReadsInFlight())
+		}
+		time.Sleep(time.Millisecond)
+	}
+}

@@ -171,3 +171,21 @@ func TestSubscribeDoesNotHandOutAStaleSample(t *testing.T) {
 	default:
 	}
 }
+
+// The boot clock is read before the readings, so a sleep that falls inside a
+// slow reading makes the sample older, never newer: the reading may have been
+// taken before the sleep.
+func TestTheBootClockIsReadBeforeTheReadings(t *testing.T) {
+	t.Parallel()
+	c := newClock()
+	b := &bootClock{d: time.Hour}
+	rd := good()
+	rd.Load = func(context.Context) (float64, float64, error) {
+		b.add(8 * time.Hour) // the machine sleeps while this reading is out
+		return 1, 1, nil
+	}
+	s := one(t, machine.SamplerOptions{StateDir: "/state", Readers: rd, Now: c.now, Boot: b.read})
+	if s.Fresh() != nil {
+		t.Fatal("a sample whose reading spanned 8 h of sleep was reported as current")
+	}
+}

@@ -65,6 +65,11 @@ happens on a working machine.
   the boot clock cannot be read, the sample is unknown (02i "Clocks"). Each
   withheld sample is counted (`fleet_agent_sample_stale_total`) and the first of
   a run is logged (`sample.stale`), so a sampler stuck in a reading is visible.
+- Known gap, row 7's: the first Snapshot after the agent starts can go out
+  before the first sample finishes (a connect can beat a slow reading), and then
+  carries no resources. Nothing in row 6 sends the sample again until the next
+  snapshot; row 7's `resource_sample` event (every 30 s, from `Subscribe`) is
+  what closes it.
 - The 30 s sample reads local sensors; it is not a poll of an outside system, so
   ADR 0022 rule 6 ("stream where a push source exists") and ADR 0024 decision 9
   do not apply to it. ADR 0023 names the 30 s sampler.

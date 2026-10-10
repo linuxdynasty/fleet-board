@@ -33,7 +33,8 @@ const (
 // Sample is one finished resource sample. It is immutable once published:
 // readers share it, so a reader that needs to change it clones Resources.
 type Sample struct {
-	// Taken is when the sample finished, on the agent's clock.
+	// Taken is when the sample began (its readings were taken after it), on
+	// the agent's clock.
 	Taken time.Time
 	// Resources has only the readings that worked; see ResourceSample.
 	Resources *agentv1.ResourceSample
@@ -122,8 +123,11 @@ func NewSampler(o SamplerOptions) (*Sampler, error) {
 	return s, nil
 }
 
-// Run takes a sample at once, so the first Snapshot after boot is not empty,
-// then one every interval, until ctx ends. It is the Sampler's only loop.
+// Run takes a sample at once and then one every interval, until ctx ends. It
+// is the Sampler's only loop. The first Snapshot of a run can still go out
+// before the first sample is done (a connect can beat a slow reading), and
+// then carries no resources; row 7's resource_sample event is what fills that
+// gap (README).
 func (s *Sampler) Run(ctx context.Context) {
 	s.sample(ctx)
 	ticks, stop := s.o.Ticks(s.o.Interval)
@@ -247,10 +251,13 @@ func (s *Sampler) launch(ctx context.Context, out chan<- reading, key, source st
 	s.busyMu.Unlock()
 	go func() {
 		v, err := fn(ctx)
+		// The key stays busy until the result is handed over (the channel is
+		// sized for every reading of a sample, so this never waits): a
+		// goroutine parked on a full channel would show as busy, not leak.
+		out <- reading{key: key, source: source, val: v, err: err}
 		s.busyMu.Lock()
 		delete(s.busy, key)
 		s.busyMu.Unlock()
-		out <- reading{key: key, source: source, val: v, err: err}
 	}()
 	return true
 }
@@ -263,6 +270,10 @@ func (s *Sampler) launch(ctx context.Context, out chan<- reading, key, source st
 // all is not published, so the previous one ages out through [Sampler.Fresh].
 func (s *Sampler) sample(ctx context.Context) {
 	start := s.now()
+	// The boot clock is read before the readings: a sleep inside a slow
+	// reading then makes the sample older, never newer, since the reading may
+	// have been taken before the sleep.
+	boot, bootErr := s.o.Boot()
 	t := newTally(s.m)
 	r := &agentv1.ResourceSample{}
 	rd := s.o.Readers
@@ -336,9 +347,9 @@ wait:
 	if r.Load1 == nil && r.MemTotalBytes == nil && r.MemPressureLevel == nil && len(r.GetDisk()) == 0 {
 		return
 	}
-	smp := &Sample{Taken: end, Resources: r}
-	if b, err := s.o.Boot(); err == nil {
-		smp.boot, smp.bootOK = b, true
+	smp := &Sample{Taken: start, Resources: r}
+	if bootErr == nil {
+		smp.boot, smp.bootOK = boot, true
 	}
 	s.publish(smp)
 }
