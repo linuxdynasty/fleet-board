@@ -1,6 +1,7 @@
 package tmux
 
 import (
+	"errors"
 	"io"
 	"time"
 )
@@ -24,3 +25,9 @@ func SetWriteTimeoutForTest(c *Client, d time.Duration) { c.writeTimeout = d }
 
 // BackoffForTest is the production wait after n failed tries in a row.
 func BackoffForTest(n int) time.Duration { return backoff(n) }
+
+// PickSessionForTest runs the pick rule over list-sessions output.
+func PickSessionForTest(list string) (SessionID, bool, error) { return pickSession([]byte(list)) }
+
+// IsAbsentForTest reports whether err means no server or no session.
+func IsAbsentForTest(err error) bool { return errors.Is(err, errAbsent) }

@@ -92,13 +92,14 @@ type Client struct {
 	backoff      func(n int) time.Duration // the wait after n failed tries (SetBackoffForTest)
 	writeTimeout time.Duration             // the bound on one command write (SetWriteTimeoutForTest)
 
-	mu      sync.Mutex
-	state   State
-	changed chan struct{} // closed and replaced on every state change
-	conn    *conn         // the attached client, nil when not StateUp
-	session SessionID
-	startID string
-	subs    []Subscription
+	mu       sync.Mutex
+	state    State
+	changed  chan struct{} // closed and replaced on every state change
+	conn     *conn         // the attached client, nil when not StateUp
+	session  SessionID
+	internal bool // attached to an internal session (no developer one existed)
+	startID  string
+	subs     []Subscription
 }
 
 // NewClient checks opts and returns a client that is not yet attached.

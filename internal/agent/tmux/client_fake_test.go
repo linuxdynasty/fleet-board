@@ -17,7 +17,11 @@ import (
 // finding 7). It records each control-mode command line in $dir/commands.
 // FAKE_LIST_ERR makes list-sessions fail with that text on stderr;
 // FAKE_FAIL_ATTACHES=N makes the first N attaches end at once; FAKE_STALL=1
-// makes it stop reading its input after the handshake.
+// makes it stop reading its input after the handshake. FAKE_PROC_LIST and
+// FAKE_CTL_LIST are what list-sessions prints as a one-shot command and
+// through the control client (printf %b); FAKE_LIST_SLEEP slows the
+// latter; FAKE_SWITCH_ERR refuses switch-client. "capture-pane -p -t %7"
+// is answered, then five %sessions-changed follow.
 const fakeTmux = `#!/bin/sh
 dir=$(dirname "$0")
 if [ "$1" = "-V" ]; then echo "tmux $FAKE_VERSION"; exit 0; fi
@@ -25,7 +29,7 @@ shift 2
 case "$1" in
 list-sessions)
 	if [ -n "$FAKE_LIST_ERR" ]; then echo "$FAKE_LIST_ERR" >&2; exit 1; fi
-	printf '$0 \n'; exit 0 ;;
+	printf '%b' "${FAKE_PROC_LIST:-\$0 \n}"; exit 0 ;;
 -C)
 	touch "$dir/attached"
 	echo x >> "$dir/attaches"
@@ -49,6 +53,18 @@ while IFS= read -r line; do
 		if [ -n "$FAKE_STALL" ]; then echo "%end 2 $n 1"; exec sleep 600; fi ;;
 	"refresh-client -B 'bad:"*) echo "%error 2 $n 1"; continue ;;
 	"capture-pane -p -t %9") echo "%end 2 $n 1"; n=$((n+1)); echo "%begin 2 $n 1" ;;
+	"capture-pane -p -t %7")
+		echo "%end 2 $n 1"
+		for i in 1 2 3 4 5; do echo "%sessions-changed"; done
+		continue ;;
+	list-sessions*)
+		if [ -n "$FAKE_LIST_SLEEP" ]; then sleep "$FAKE_LIST_SLEEP"; fi
+		printf '%b' "${FAKE_CTL_LIST:-\$0 \n}" ;;
+	switch-client*)
+		if [ -n "$FAKE_SWITCH_ERR" ]; then echo "%error 2 $n 1"; continue; fi
+		echo "%end 2 $n 1"
+		echo "%session-changed \$1 dev"
+		continue ;;
 	capture-pane*) echo '%pause %3'; echo '%continue %4'; echo 'plain text' ;;
 	"refresh-client -A '%3:continue'") echo '%continue %4' ;;
 	"refresh-client -A '%4:continue'") echo '%continue %4' ;;

@@ -75,6 +75,7 @@ func (n *notes) waitFor(t *testing.T, from int, what string, ok func(tmux.Messag
 // running is a client whose Run loop the test owns.
 type running struct {
 	*tmux.Client
+	prog  string // the tmux program it runs (the fake's folder holds its logs)
 	notes *notes
 	logs  *lockedBuffer
 	tel   *telemetry.Telemetry
@@ -124,7 +125,7 @@ func startClientWith(t *testing.T, program, socket string, n *notes, before func
 		before(c)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	r := &running{Client: c, notes: n, logs: logs, tel: tel, done: make(chan error, 1)}
+	r := &running{Client: c, prog: program, notes: n, logs: logs, tel: tel, done: make(chan error, 1)}
 	go func() { r.done <- c.Run(ctx) }()
 	t.Cleanup(func() {
 		cancel()

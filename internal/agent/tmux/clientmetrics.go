@@ -3,6 +3,8 @@ package tmux
 import (
 	"context"
 	"log/slog"
+	"sync"
+	"time"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
@@ -21,6 +23,9 @@ type clientTelemetry struct {
 	upG  metric.Int64Gauge
 	kind attribute.KeyValue
 	word string
+
+	mu            sync.Mutex
+	lastRepickLog time.Time
 }
 
 func newClientTelemetry(tel *telemetry.Telemetry, kind string) (*clientTelemetry, error) {
@@ -47,10 +52,37 @@ func (t *clientTelemetry) up(v bool) {
 	t.upG.Record(context.Background(), n, metric.WithAttributes(t.kind))
 }
 
-// attached logs tmux.attached with the server's version and the flags the
-// client checked (the two words it asked for, not tmux's whole list).
-func (t *clientTelemetry) attached(ctx context.Context, version string) {
-	t.log.InfoContext(ctx, "tmux.attached", "server_kind", t.word, "version", version, "flags", attachFlags)
+// attached logs tmux.attached with the server's version, the flags the
+// client checked (the two words it asked for, not tmux's whole list) and
+// whether it sits on a developer or an internal session.
+func (t *clientTelemetry) attached(ctx context.Context, version string, internal bool) {
+	session := "developer"
+	if internal {
+		session = "internal"
+	}
+	t.log.InfoContext(ctx, "tmux.attached", "server_kind", t.word, "version", version, "flags", attachFlags, "session", session)
+}
+
+// sessionSwitched logs a move from an internal session to a developer one:
+// ids only, never a session name.
+func (t *clientTelemetry) sessionSwitched(from, to SessionID) {
+	t.log.InfoContext(context.Background(), "tmux.session_switched", "server_kind", t.word, "from", from.String(), "to", to.String())
+}
+
+// repickFailed logs a failed re-pick (err_kind list or switch), at most once
+// a minute; the client stays attached and waits for the next
+// %sessions-changed.
+func (t *clientTelemetry) repickFailed(errKind string) {
+	t.mu.Lock()
+	now := time.Now()
+	due := t.lastRepickLog.IsZero() || now.Sub(t.lastRepickLog) >= logGap
+	if due {
+		t.lastRepickLog = now
+	}
+	t.mu.Unlock()
+	if due {
+		t.log.WarnContext(context.Background(), "tmux.repick_failed", "server_kind", t.word, "err_kind", errKind)
+	}
 }
 
 // exit logs tmux.exit with a closed reason and, for attach_failed, the

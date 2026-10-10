@@ -65,7 +65,8 @@ type conn struct {
 	reason  string // why the stream ended (an exit reason)
 	exitMsg bool   // %exit was read
 
-	done chan struct{} // closed when the reader has returned
+	done   chan struct{} // closed when the reader has returned
+	repick chan struct{} // %sessions-changed tokens for repickLoop (buffered 1)
 }
 
 // startConn starts `tmux -S socket -C attach-session -E -t $N -f flags`.
@@ -104,6 +105,7 @@ func startConn(ctx context.Context, program, socket string, session SessionID, f
 		parser: NewParser(out, opts),
 		paused: map[PaneID]bool{},
 		done:   make(chan struct{}),
+		repick: make(chan struct{}, 1),
 	}, nil
 }
 

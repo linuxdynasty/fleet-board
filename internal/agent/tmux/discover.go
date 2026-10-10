@@ -51,11 +51,9 @@ func checkVersion(ctx context.Context, r *proc.Runner, caller proc.Caller, progr
 const sessionsFormat = "#{session_id} #{@fleet_internal}"
 
 // lowestSession lists the sessions with one `tmux list-sessions` through
-// internal/proc and returns the lowest session id, skipping sessions the
-// fleet marked internal when skipInternal is set (the developer's server;
-// on the probe server every session is internal, row-7 ruling fork 5(d)).
-// A failed list (no server, a stale socket) or no session is errAbsent.
-func lowestSession(ctx context.Context, r *proc.Runner, caller proc.Caller, program, socket string, skipInternal bool) (SessionID, error) {
+// internal/proc and picks one with pickSession. A failed list that says no
+// server (a missing or stale socket), or no session, is errAbsent.
+func lowestSession(ctx context.Context, r *proc.Runner, caller proc.Caller, program, socket string) (SessionID, bool, error) {
 	res, err := r.Run(ctx, proc.Spec{
 		Caller: caller, Path: program,
 		Args: []string{"-S", socket, "list-sessions", "-F", sessionsFormat},
@@ -63,32 +61,45 @@ func lowestSession(ctx context.Context, r *proc.Runner, caller proc.Caller, prog
 	})
 	var exit *proc.ExitError
 	if errors.As(err, &exit) && noServer(res.Stderr) {
-		return 0, errAbsent
+		return 0, false, errAbsent
 	}
 	if err != nil { // another failure (permission, protocol): retried with the backoff
-		return 0, failed("list", fmt.Errorf("tmux list-sessions: %w", err))
+		return 0, false, failed("list", fmt.Errorf("tmux list-sessions: %w", err))
 	}
-	best := SessionID(NoID)
-	for line := range strings.SplitSeq(string(res.Stdout), "\n") {
+	return pickSession(res.Stdout)
+}
+
+// pickSession is the one pick rule for every server (row-7 arbiter ruling
+// on 7c2b, amending fork 5(d)): the lowest session id not marked internal
+// (@fleet_internal set); if every session is internal, the lowest internal
+// id, and internal is true (the client then moves to a developer session
+// when %sessions-changed announces one); no session at all is errAbsent.
+func pickSession(list []byte) (SessionID, bool, error) {
+	dev, internal := SessionID(NoID), SessionID(NoID)
+	for line := range strings.SplitSeq(string(list), "\n") {
 		if line == "" {
 			continue
 		}
 		idText, mark, ok := strings.Cut(line, " ")
-		id, idOK := parseID([]byte(idText), '$')
+		n, idOK := parseID([]byte(idText), '$')
 		if !ok || !idOK {
-			return 0, failed("list", errors.New("tmux list-sessions: a line is not \"$N mark\""))
+			return 0, false, failed("list", errors.New("tmux list-sessions: a line is not \"$N mark\""))
 		}
-		if skipInternal && mark != "" {
-			continue
+		id, best := SessionID(n), &dev
+		if mark != "" {
+			best = &internal
 		}
-		if best == NoID || SessionID(id) < best {
-			best = SessionID(id)
+		if *best == NoID || id < *best {
+			*best = id
 		}
 	}
-	if best == NoID {
-		return 0, errAbsent
+	switch {
+	case dev != NoID:
+		return dev, false, nil
+	case internal != NoID:
+		return internal, true, nil
 	}
-	return best, nil
+	return 0, false, errAbsent
 }
 
 // noServer reports whether tmux's stderr says no server answers on the

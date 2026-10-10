@@ -50,22 +50,32 @@ panes, err := c.ListPanes(ctx)                   // list-panes -a: ids and numbe
 
 - `Run` checks `tmux -V` (below 3.2: `ErrTooOld`, REASON_CODE_TMUX_TOO_OLD),
   lists sessions with one `tmux list-sessions` through `internal/proc` and
-  attaches to the lowest session id (sessions marked `@fleet_internal` are
-  skipped on the `default` server), as `tmux -S <socket> -C attach-session
+  attaches by one rule on every server: the lowest session not marked
+  `@fleet_internal`, else the lowest internal one (no session at all is
+  absent), as `tmux -S <socket> -C attach-session
   -E -t $N -f ignore-size,pause-after=1` (`-E`: tmux does not apply
   `update-environment` to the developer's session). Its first command reads
   `#{client_flags}|#{pid}|#{start_time}|#{version}`: both flags missing from
   `client_flags` is `ErrTooOld` (never `-F`, spike 0.5 finding 8); the pid
   and start time make `ServerStartID`. Then every registered subscription is
   sent; one tmux refuses is an `attach_failed` (`err_kind` `subscribe`), not
-  up, and `Subscribe` drops one refused while up. Then the state is
-  `StateUp`.
+  up, and `Subscribe` drops one refused while up. On an internal session
+  the client re-picks once (below), then the state is `StateUp`: an
+  internal session is a full observer.
+- Re-pick (arbiter ruling on 7c2b): while on an internal session, once
+  before up and on every `%sessions-changed`, the client runs `list-sessions`
+  through the control client and, when a developer session exists, `switch-client -E -t $N`
+  to the lowest one (`-E` keeps the agent's environment out of it;
+  `%session-changed` confirms and `Session()` reports it; subscriptions
+  survive). A burst of notices coalesces into one list in flight. A failed
+  list or refused switch logs `tmux.repick_failed` (at most once a minute)
+  and waits for the next notice; it never detaches. On a developer session
+  `%sessions-changed` does nothing. No timer.
 - `list-sessions` failing with tmux's "no server running on" or "error
   connecting to ... (No such file or directory | Connection refused)" (3.2a
   and 3.7c) is no server; any other failure (a permission or protocol
-  error) is an `attach_failed` (`list`) retried on the backoff. A default
-  server whose sessions are all marked internal counts as no server, so the
-  client waits for a Wake: a known gap, raised with the coordinator.
+  error) is an `attach_failed` (`list`) retried on the backoff. Only a
+  server with no session at all, or no server, is absent.
 - An attach that ends (`%exit`: its session closed; the stream ended: the
   server died; a reply for no command: `desync`) fails every waiting
   command, and `Run` tries again with backoff: the shape of the connection
@@ -110,6 +120,13 @@ Run (one goroutine, owns the attach loop and the backoff timer)
        stall or ctx end kills the process, which ends the write) };
        wait chan or ctx
   Send: one hold of Client.mu checks server + start id and picks conn
+  reader, on %sessions-changed: a token into conn.repick (chan, buffered 1;
+    a full chan drops it: a burst coalesces); on %session-changed:
+    Client.mu { session = $N }
+  go repickLoop (started by attach after the handshake, ends with the
+    conn): drains conn.repick; while internal: conn.do list-sessions, then
+    conn.do switch-client -E; Client.mu only to read/write session and
+    internal, never across conn.do
 Locks: Client.mu (state, conn, start id, subs) is never held with wmu or
 pmu. wmu then pmu, never the other way; nothing is called out under a lock.
 Subscribe registers and reads conn in one hold of Client.mu; attach sets
@@ -122,7 +139,9 @@ re-sent, never lost.
 | Signal | What it says |
 |---|---|
 | `fleet_agent_tmux_control_up{server_kind}` | 1 while attached, else 0 |
-| `tmux.attached` (`server_kind`, `version`, `flags`) | an attach came up |
+| `tmux.attached` (`server_kind`, `version`, `flags`, `session` = `developer` or `internal`) | an attach came up |
+| `tmux.session_switched` (`server_kind`, `from`, `to`: ids) | the client moved from an internal session to a developer one |
+| `tmux.repick_failed` (`server_kind`, `err_kind` = `list` or `switch`) | a re-pick failed; at most once a minute; the client stays up |
 | `tmux.exit` (`server_kind`, `reason`, `err_kind` for `attach_failed`) | an attach ended or failed: `exit`, `eof`, `desync`, `write_stalled`, `attach_failed` (`version`, `list`, `start`, `handshake`, `subscribe`), `too_old`, `absent` (once per absence), `cancelled` |
 | `tmux.subscription_confirmed` (`server_kind`, `name`) | the first value of a registered subscription on an attach |
 

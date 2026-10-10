@@ -387,8 +387,11 @@ optionally against one limit the owner sets.
   The client (`internal/agent/tmux`, row 7 PR 7c2) attaches with `-E`, so
   tmux does not apply `update-environment` to the developer's session, and
   checks `tmux -V` (below
-  3.2 is `TMUX_TOO_OLD`), attaches to the lowest session id (sessions the
-  fleet marked internal are skipped on the developer's server), reads its own
+  3.2 is `TMUX_TOO_OLD`), attaches to the lowest session id (a session the
+  fleet marked internal is second choice: when only internal sessions exist
+  it attaches there, and `switch-client -E` moves it to the first developer
+  session that `%sessions-changed` announces, so no session is ever unseen
+  and no timer runs), reads its own
   `client_flags` and refuses a tmux that does not list both flags, and mints
   `server_start_id` from the server's pid and start time. On `%exit` or a
   dead stream it attaches again to the then-lowest session with backoff and
@@ -402,9 +405,7 @@ optionally against one limit the owner sets.
   two recorded runs of a pane flooding while the reader stalled 3 s during a
   command (`internal/agent/tmux/testdata/flood-*.txt`), tmux wrote no
   `%pause` and the reply came whole and in order. Further unrecorded runs
-  (3 and 8 s stalls) showed no `%pause` inside a reply either. A default
-  server whose every session is marked internal counts as no server: the
-  client waits for the next socket-folder event (a known gap).
+  (3 and 8 s stalls) showed no `%pause` inside a reply either.
 - **E3 Pane lifecycle:** created and exited with exit status. "Stopped without
   DONE" (the one-nudge rule) depends on this.
 - **E4 Activity transitions:** active ↔ idle, with the time of last output.
