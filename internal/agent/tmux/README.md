@@ -15,14 +15,19 @@ later part of plan row 7.
 - Inside a reply only the exact closing guard ends it and nothing is lifted
   out: command output can be pane text that starts with `%`. tmux writes
   `%pause %N` and `%continue %N` inside the reply to the client's own
-  `refresh-client -A`; `Reply.ControlNotes()` finds those lines, and the
-  client (7c2) honours them only for its own `refresh-client -A` reply for
-  that pane, never marking a pane resumed on a `%continue` it did not ask for.
+  `refresh-client -A`; `Reply.ControlNotes()` finds those lines. The client
+  (7c2) may honour a `%pause` from any reply (pausing is the safe direction),
+  but a `%continue` only from its own `refresh-client -A` reply for that
+  pane, never marking a pane resumed on a `%continue` it did not ask for; 7c2
+  proves this with a transcript of a flood during a command.
 - Bounds: `MaxLineBytes` (1 MiB) and `MaxReplyBytes` (8 MiB), in
   [defaults](../../../docs/specs/defaults.md). A longer line is skipped to its
   newline; memory never grows with a line's length. Each kept reply line is
   charged its bytes plus `ReplyLineOverhead` (17), so a reply of empty lines
-  is bounded too.
+  is bounded too. Options are per Parser; with the defaults a scrollback
+  capture of more than about 86,000 full 80-column lines (8 MiB at 97 bytes
+  a line) is cut short and flagged by `Reply.Dropped` (scrollback history
+  goes through `LOGS` and `pipe-pane` per the spec, not a capture reply).
 - `NewMetrics(tel)` counts failures in `fleet_agent_tmux_parse_errors_total{err_kind}`
   and `fleet_agent_tmux_lines_too_long_total`, and logs `tmux.parse_error` and
   `tmux.line_too_long` at most once a minute per class (05b).

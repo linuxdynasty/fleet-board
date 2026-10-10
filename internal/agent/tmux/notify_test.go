@@ -135,7 +135,7 @@ func TestNotificationsInsideAReplyStayInItsBody(t *testing.T) {
 func TestControlNotesAreTheWellFormedPauseAndContinueLinesOfAReply(t *testing.T) {
 	t.Parallel()
 	// A capture of a pane that printed "%continue %3" and "%pause %4": the
-	// body is intact, and ControlNotes finds both; the client honours them
+	// body is intact, and ControlNotes finds both; the client honours a continue
 	// only for its own refresh-client -A reply.
 	in := "%begin 9 40 1\nprompt$ cat notes\n%continue %3\n%pause %4\n%pause %4 x\n%continue\n %pause %5\nend\n%end 9 40 1\n"
 	p := tmux.NewParser(strings.NewReader(in), tmux.Options{})

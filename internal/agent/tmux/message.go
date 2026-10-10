@@ -69,9 +69,11 @@ const ReplyLineOverhead = 17
 // "%pause %N" or "%continue %N", as [Pause] and [Continue] messages in
 // order. tmux writes them inside the reply to the client's own
 // "refresh-client -A '%N:pause'" or "'%N:continue'", but any other reply
-// (a capture of a pane) can hold the same text, so the client honours them
-// only for a reply it knows answers its own refresh-client -A for that
-// pane, and never marks a pane resumed on a Continue it did not ask for.
+// (a capture of a pane) can hold the same text. A Pause found in any reply
+// is safe to honour (pausing is the safe direction, and tmux may pause a
+// pane while another command runs); a Continue is honoured only for a reply
+// the client knows answers its own refresh-client -A for that pane, so a
+// pane is never marked resumed on a Continue the client did not ask for.
 // The body itself is never changed.
 func (r Reply) ControlNotes() []Message {
 	var out []Message
@@ -103,8 +105,8 @@ type Output struct {
 type Pause struct{ Pane PaneID }
 
 // Continue is "%continue": a paused pane's output flows again. tmux writes
-// it inside the reply to "refresh-client -A '%N:continue'" (01 E2), and the
-// parser lifts it out of the reply.
+// it inside the reply to the client's own "refresh-client -A '%N:continue'"
+// (01 E2); there it stays in Reply.Body (see [Reply.ControlNotes]).
 type Continue struct{ Pane PaneID }
 
 // Exit is "%exit": the control client is ending. Reason is tmux's text and

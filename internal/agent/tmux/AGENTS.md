@@ -10,10 +10,13 @@ package:
 - Everything a pane or a reply holds is untrusted data. It never reaches a
   log line, a span or a metric label: error classes and byte counts only.
 - Inside a reply only the exact closing guard ends it and nothing is lifted
-  out: reply lines can be pane text. A `%pause` or `%continue` line in a reply
-  (`Reply.ControlNotes`) is honoured only when the reply answers the client's
-  own `refresh-client -A` for that pane; never mark a pane resumed on a
-  `%continue` the client did not ask for.
+  out: reply lines can be pane text. A `%pause` line in any reply
+  (`Reply.ControlNotes`) is safe to honour (pausing is the safe direction,
+  and tmux may pause a pane while another command runs); a `%continue` line
+  is honoured only when the reply answers the client's own
+  `refresh-client -A` for that pane, so a pane is never marked resumed on a
+  `%continue` the client did not ask for. 7c2 proves this with a transcript
+  of a flood during a command.
 - Every line and every reply is bounded, and the reply bound charges each
   kept line its overhead; a new field that keeps bytes needs a bound and a
   test that a huge or many-small input does not grow memory.

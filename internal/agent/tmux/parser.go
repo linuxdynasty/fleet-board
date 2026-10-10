@@ -22,9 +22,10 @@ type Options struct {
 	// is skipped to its newline and counted; the parser never holds more
 	// than this many bytes of one line.
 	MaxLineBytes int
-	// MaxReplyBytes bounds the body bytes kept for one reply; the lines from
-	// the first that would pass it to the reply's end are dropped and
-	// counted in Reply.Dropped.
+	// MaxReplyBytes bounds what one reply keeps: each kept body line costs
+	// its bytes plus ReplyLineOverhead (17). The lines from the first that
+	// would pass it to the reply's end are dropped and counted in
+	// Reply.Dropped.
 	MaxReplyBytes int
 	// Metrics counts and logs the failures; nil counts nowhere.
 	Metrics *Metrics

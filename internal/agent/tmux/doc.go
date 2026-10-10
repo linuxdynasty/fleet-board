@@ -17,8 +17,9 @@
 //   - That includes "%pause %N" and "%continue %N": tmux writes them inside
 //     the reply to the client's own "refresh-client -A", but a capture of a
 //     pane can print the same text, and only the client knows which command
-//     a reply answers. [Reply.ControlNotes] finds them; the client honours
-//     them only for its own refresh-client -A reply for that pane.
+//     a reply answers. [Reply.ControlNotes] finds them; the client may
+//     honour a pause from any reply (the safe direction) but a continue only
+//     from its own refresh-client -A reply for that pane.
 //   - "%output" values are decoded (\ooo is one byte); "%extended-output"
 //     adds the age; "%subscription-changed" keeps its value byte for byte.
 //     The client must never use a subscription name with a space: tmux

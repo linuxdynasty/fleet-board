@@ -377,9 +377,11 @@ optionally against one limit the owner sets.
   `capture-pane` line is pane text and can start with `%`), so the parser
   keeps every line of a reply as reply text, lifts nothing out, and ends the
   reply only at the `%end` or `%error` with the same time, number and flags.
-  The client honours a `%pause` or `%continue` line in a reply only when that
-  reply answers its own `refresh-client -A` for that pane, and never marks a
-  pane resumed on a `%continue` it did not ask for. Lines and replies are
+  The client may honour a `%pause` line found in any reply (pausing is the
+  safe direction, and tmux may pause a pane while another command runs), but
+  a `%continue` line only when that reply answers its own `refresh-client -A`
+  for that pane, so it never marks a pane resumed on a `%continue` it did not
+  ask for; the client's tests prove this with a flood during a command. Lines and replies are
   bounded (defaults; each kept reply line also costs its overhead), and a
   line over the bound is skipped to its newline and counted (05b).
 - **E3 Pane lifecycle:** created and exited with exit status. "Stopped without
