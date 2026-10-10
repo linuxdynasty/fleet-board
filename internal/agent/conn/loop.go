@@ -110,8 +110,9 @@ type LoopOptions struct {
 	// while the machine sleeps (wakenet.SinceBoot).
 	sleepClock func() (time.Duration, error)
 	// stepHook, for tests only, runs on Run's goroutine the moment the
-	// status says Connected ("connected") and the moment a stream's queue
-	// closes ("unpublished").
+	// status says Connected ("connected"), the moment a stream's queue
+	// closes ("unpublished") and just before a snapshot reads the unacked
+	// results ("unacked_read").
 	stepHook func(step string)
 	// hookWarn, for tests only, replaces hookHeldWarn.
 	hookWarn time.Duration

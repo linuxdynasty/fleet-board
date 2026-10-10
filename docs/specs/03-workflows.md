@@ -440,7 +440,8 @@ re-enroll rule are in [02g](02g-agent-security.md#machine-lifecycle-revoke-and-d
   `connect.message_ignored{kind}` (a `Command` or `Settings` with no
   receiver registered, until plan row 6 wires them);
   `connect.outbound_blocked{kind, hook}`, `connect.hook_blocked{hook,
-  held_ms}` and `connect.capability_dropped{reason, name}` (warn; see
+  held_ms}`, `connect.hook_released{hook, held_ms}` (info) and
+  `connect.capability_dropped{reason, name}` (warn; see
   [03n](03n-reconnect.md#commands-settings-and-the-outbound-queue)); `connect.ended{state}` (`revoked`,
   `unknown_machine`, `fleet_mismatch`, `cert_expired`);
   `snapshot.sent{seq, bytes, unacked_results}`, `snapshot.requested{reason}`,

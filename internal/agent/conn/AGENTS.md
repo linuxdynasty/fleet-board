@@ -52,7 +52,9 @@ Read the root `AGENTS.md` first; it applies here. Load `fleet-go`,
   Capabilities, Snapshot, Heartbeat) must not block. Send from a hook
   never waits: with the hook's context a full queue is `ErrQueueFull` at
   once; check its error. Keep the receiver's read-ahead: it must keep
-  reading while the sender is busy, or a dead stream goes unseen.
+  reading while the sender is busy, or a dead stream goes unseen; and
+  every stream-error exit goes through `byeOver`, so a Bye read ahead of
+  the stream's end is never lost (a revoked agent must not reconnect).
   A result is queued only once it is logged, except the two unlogged
   refusals (EPOCH_MISMATCH, SEQ_REPLAYED). A SnapshotRequest flushes the
   queue before its snapshot. Deadlines use the strict `HubClock`, never `hubNow` or

@@ -186,10 +186,15 @@ The agent side of plan row 6 (ruling forks 4 i, 11 and 12), in
   Connected only while the queue takes messages. Every receiver hook runs on
   the stream's sender, so a send from a hook never waits: on a full queue
   it fails at once (counted as `result="refused"`) and the hook checks the
-  error. A hook that holds the sender over 10 s is logged
-  (`connect.hook_blocked{hook, held_ms}`; `hook`: `command`, `settings`,
-  `on_connected`). The receiver reads up to 8 messages ahead of
-  the sender, so it sees the stream end even while a hook holds it.
+  error, logged once per stream for refusals and once for waits. A hook
+  that holds the sender over 10 s is logged (`connect.hook_blocked{hook,
+  held_ms}`; `hook`: `command`, `settings`, `on_connected`), and again with
+  the real hold time when it returns (`connect.hook_released`). The
+  receiver reads up to 8 messages ahead of the sender, so it sees the
+  stream end even while a hook holds it; a hook that never returns while
+  the hub sends more than 8 is released only by the run's end. A `Bye` the
+  receiver read ahead of the stream's end is acted on before the end, so a
+  `Bye{REVOKED}` or `Bye{UNKNOWN_MACHINE}` still ends the loop.
 - Results for commands the hub already closed are ignored (idempotent by
   `command_id`); results for commands the hub never issued (DB restored from an
   older backup) go to the audit log and a triage info item.

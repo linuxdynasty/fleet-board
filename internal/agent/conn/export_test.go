@@ -45,7 +45,8 @@ func SetSleepClock(o *LoopOptions, read func() (time.Duration, error)) { o.sleep
 
 // SetStepHook makes the loop report its queue steps ("connected" right
 // after the status says Connected, "unpublished" right after a stream's
-// queue closed), on Run's goroutine.
+// queue closed, "unacked_read" just before a snapshot reads the unacked
+// results), on Run's goroutine.
 func SetStepHook(o *LoopOptions, f func(step string)) { o.stepHook = f }
 
 // SetHookWarn shortens the wait before connect.hook_blocked.

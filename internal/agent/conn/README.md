@@ -220,7 +220,8 @@ goroutine a hook starts uses its own context, which keeps the bounded
 wait; a result is sent only once logged (proto-equal); `Connected` in the
 status means Send takes messages. Known limit: the receiver reads 8
 messages ahead, so a hook that never returns while the hub sends more than
-8 is released only by the run's end (`connect.hook_blocked` says so).
+8 is released only by the run's end (`connect.hook_blocked` says so). A
+Bye read ahead of the stream's end is acted on first (`streamend.go`).
 
 Tests: `seam_test.go`, `outbound_test.go`, `outboundhooks_test.go`,
 `strictclock_test.go` (each test's comment names the rule it pins).

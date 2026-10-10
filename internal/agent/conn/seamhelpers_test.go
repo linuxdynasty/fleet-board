@@ -23,6 +23,19 @@ func (h *connectHub) pushCommand(t *testing.T, id string, notAfter time.Time) {
 	}}})
 }
 
+// sendThenEnd sends r on the live stream, then ends the stream, in order.
+func (h *connectHub) sendThenEnd(t *testing.T, r *agentv1.ConnectResponse) {
+	t.Helper()
+	h.mu.Lock()
+	ls := h.live
+	h.live = nil
+	h.mu.Unlock()
+	if ls == nil {
+		t.Fatal("no live stream")
+	}
+	ls.last <- r
+}
+
 // pushSettings sends a Settings message of generation gen on the live stream.
 func (h *connectHub) pushSettings(t *testing.T, gen uint64) {
 	t.Helper()

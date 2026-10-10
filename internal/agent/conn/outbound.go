@@ -41,10 +41,12 @@ type hookKey struct{}
 // closed once, when the stream stops serving; gone, as soon as the stream
 // or the run ends, even while the sending goroutine is held in a hook.
 type outQueue struct {
-	ch      chan *agentv1.ConnectRequest
-	dead    chan struct{}
-	gone    <-chan struct{}
-	blocked atomic.Bool // connect.outbound_blocked was logged for this queue
+	ch   chan *agentv1.ConnectRequest
+	dead chan struct{}
+	gone <-chan struct{}
+	// waited and refused say connect.outbound_blocked was logged for this
+	// queue, once for each.
+	waited, refused atomic.Bool
 }
 
 func newOutQueue(gone <-chan struct{}) *outQueue {
@@ -110,7 +112,11 @@ func (l *Loop) Send(ctx context.Context, m *agentv1.ConnectRequest) error {
 	if l.m != nil {
 		l.m.outboundBlocked(ctx, kind, hook)
 	}
-	if q.blocked.CompareAndSwap(false, true) {
+	once := &q.waited
+	if hook {
+		once = &q.refused
+	}
+	if once.CompareAndSwap(false, true) {
 		l.log.WarnContext(ctx, "connect.outbound_blocked", "kind", kind, "hook", hook)
 	}
 	if hook {

@@ -217,8 +217,16 @@ func TestASendFromAHookNeverWaits(t *testing.T) {
 				return
 			}
 			start, full := time.Now(), 0
+			// Half the sends use a context derived from the hook's: it never
+			// waits either.
+			derived, cancel := context.WithTimeout(ctx, time.Minute)
+			defer cancel()
 			for k := range conn.QueueSize {
-				if err := loop.Send(ctx, ackOf("hook-"+strconv.Itoa(k))); errors.Is(err, conn.ErrQueueFull) {
+				c := ctx
+				if k%2 == 1 {
+					c = derived
+				}
+				if err := loop.Send(c, ackOf("hook-"+strconv.Itoa(k))); errors.Is(err, conn.ErrQueueFull) {
 					full++
 				} else if err != nil {
 					res.add("send %d: %v", k, err)
@@ -261,8 +269,15 @@ func TestAHookHoldingTheSenderIsLogged(t *testing.T) {
 	})
 	h.connected(t, 1)
 	h.pushCommand(t, "slow", time.Now().Add(time.Hour))
-	waitFor(t, 5*time.Second, "connect.hook_blocked", func() bool { return len(a.events(t, "connect.hook_blocked")) == 1 })
-	if ev := a.events(t, "connect.hook_blocked")[0]; ev["hook"] != "command" || ev["held_ms"] != float64(50) {
-		t.Errorf("connect.hook_blocked = %v", ev)
+	waitFor(t, 5*time.Second, "connect.hook_released", func() bool { return len(a.events(t, "connect.hook_released")) == 1 })
+	b, rel := a.events(t, "connect.hook_blocked"), a.events(t, "connect.hook_released")[0]
+	if len(b) != 1 || b[0]["hook"] != "command" {
+		t.Fatalf("connect.hook_blocked = %v, want one line for the command hook", b)
+	}
+	if ms, _ := b[0]["held_ms"].(float64); ms < 50 || ms >= 300 {
+		t.Errorf("hook_blocked held_ms = %v, want the time held when it was logged (50 to 300)", b[0]["held_ms"])
+	}
+	if ms, _ := rel["held_ms"].(float64); rel["hook"] != "command" || ms < 300 {
+		t.Errorf("connect.hook_released = %v, want the real hold time, 300 ms or more", rel)
 	}
 }

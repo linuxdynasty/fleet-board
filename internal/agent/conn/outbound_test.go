@@ -246,15 +246,20 @@ func TestSendWaitsForRoomButNotPastItsContext(t *testing.T) {
 	h := startConnectHub(t)
 	a := enrolled(t, h)
 	held, g := make(chan struct{}, 1), newGate()
-	r := startLoop(t, a, func(o *conn.LoopOptions) {
+	full, fromHook := make(chan struct{}), make(chan error, 1)
+	var loop *conn.Loop
+	r := startLoopThen(t, a, func(o *conn.LoopOptions) {
 		// The hook runs on the sending goroutine, so holding it holds the
-		// queue's only reader.
-		o.Command = func(context.Context, uint64, *agentv1.Command) bool {
+		// queue's only reader. Once the queue is full its own Send is
+		// refused, which must not use up the line a real wait logs.
+		o.Command = func(ctx context.Context, _ uint64, _ *agentv1.Command) bool {
 			held <- struct{}{}
+			<-full
+			fromHook <- loop.Send(ctx, ackOf("from-hook"))
 			_ = g.wait(context.Background())
 			return true
 		}
-	})
+	}, func(l *conn.Loop) { loop = l })
 	t.Cleanup(g.open)
 	h.connected(t, 1)
 	r.connected(t)
@@ -266,6 +271,10 @@ func TestSendWaitsForRoomButNotPastItsContext(t *testing.T) {
 			t.Fatalf("Send %d into a queue with room: %v", k, err)
 		}
 	}
+	close(full)
+	if err := <-fromHook; !errors.Is(err, conn.ErrQueueFull) {
+		t.Fatalf("the hook's Send into a full queue = %v, want ErrQueueFull", err)
+	}
 	short, cancel := context.WithTimeout(ctx, 200*time.Millisecond)
 	defer cancel()
 	if err := r.loop.Send(short, ackOf("over")); !errors.Is(err, context.DeadlineExceeded) {
@@ -276,8 +285,12 @@ func TestSendWaitsForRoomButNotPastItsContext(t *testing.T) {
 	if err := r.loop.Send(again, ackOf("over")); !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("a second Send into a full queue = %v, want its context's end", err)
 	}
-	if ev := a.events(t, "connect.outbound_blocked"); len(ev) != 1 || ev[0]["kind"] != "command_ack" {
-		t.Errorf("connect.outbound_blocked = %v, want one line per stream with kind command_ack", ev)
+	if ev := a.events(t, "connect.outbound_blocked"); len(ev) != 2 || ev[0]["hook"] != true || ev[1]["hook"] != false ||
+		ev[1]["kind"] != "command_ack" {
+		t.Errorf("connect.outbound_blocked = %v, want one line for the refusal and one for the waits", ev)
+	}
+	if got := metric(scrape(t, a), "fleet_agent_outbound_blocked_total", `kind="command_ack"`, `result="refused"`); got != "1" {
+		t.Errorf("refused sends = %q, want 1", got)
 	}
 	if got := metric(scrape(t, a), "fleet_agent_outbound_blocked_total", `kind="command_ack"`, `result="waited"`); got != "2" {
 		t.Errorf("fleet_agent_outbound_blocked_total = %q, want 2: every wait counts", got)

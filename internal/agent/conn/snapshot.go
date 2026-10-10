@@ -46,6 +46,7 @@ func (s *session) sendSnapshot(ctx context.Context, first bool) error {
 		}
 		s.applied = st.CommandSeq
 	}
+	l.step("unacked_read")
 	entries, err := db.Unacked(ctx)
 	if err != nil {
 		return err
@@ -135,7 +136,10 @@ func (s *session) send(m *agentv1.ConnectRequest) error {
 	// The stream is gone; what the hub sent before it ended is moot.
 	for {
 		select {
-		case <-s.msgs:
+		case m := <-s.msgs:
+			if b := m.GetBye(); b != nil && s.lastBye == nil {
+				s.lastBye = b // byeOver acts on it
+			}
 		case <-s.done:
 			return s.rerr
 		}

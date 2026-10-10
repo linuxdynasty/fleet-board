@@ -63,17 +63,25 @@ func (s *session) intake(ctx context.Context, m *agentv1.ConnectResponse) {
 const hookHeldWarn = 10 * time.Second
 
 // watchHook logs connect.hook_blocked{hook, held_ms} once if the hook
-// named runs longer than hookHeldWarn; call the returned func when it
-// returns.
+// named runs longer than hookHeldWarn, and then connect.hook_released{hook,
+// held_ms} with the real hold time when it returns; call the returned func
+// then.
 func (s *session) watchHook(hook string) func() {
 	d := hookHeldWarn
 	if s.l.opts.hookWarn > 0 {
 		d = s.l.opts.hookWarn
 	}
+	start, fired := time.Now(), make(chan struct{})
 	t := time.AfterFunc(d, func() {
-		s.l.log.WarnContext(s.hctx, "connect.hook_blocked", "hook", hook, "held_ms", d.Milliseconds())
+		defer close(fired)
+		s.l.log.WarnContext(s.hctx, "connect.hook_blocked", "hook", hook, "held_ms", time.Since(start).Milliseconds())
 	})
-	return func() { t.Stop() }
+	return func() {
+		if !t.Stop() { // it fired: wait for its line, then say how long
+			<-fired
+			s.l.log.InfoContext(s.hctx, "connect.hook_released", "hook", hook, "held_ms", time.Since(start).Milliseconds())
+		}
+	}
 }
 
 // capabilities is what Hello advertises: the hook's list without the

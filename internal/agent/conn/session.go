@@ -65,6 +65,8 @@ type session struct {
 	q     *outQueue
 	// hctx is the hooks' context: it ends with the stream or the run.
 	hctx context.Context
+	// lastBye is a Bye send drained after the stream ended (streamend.go).
+	lastBye *agentv1.Bye
 	// hubAt is this stream's HelloAck.hub_time (the agent's clock when it
 	// had none) and hubRecv when the HelloAck arrived, with its monotonic
 	// reading: see hubNow.
@@ -220,7 +222,7 @@ func (s *session) run(ctx context.Context) (ending, string, error) {
 	}
 	s.l.status.state(StateSnapshotting, "")
 	if err := s.sendSnapshot(ctx, true); err != nil {
-		return ending{}, "snapshot", err
+		return s.byeOver(ctx, ending{}, "snapshot", err)
 	}
 	return s.connected(ctx)
 }
@@ -264,15 +266,15 @@ func (s *session) awaitAck(ctx context.Context) (*agentv1.HelloAck, ending, erro
 	defer t.Stop()
 	select {
 	case m := <-s.msgs:
-		switch b := m.GetBody().(type) {
-		case *agentv1.ConnectResponse_HelloAck:
-			return b.HelloAck, ending{}, nil
-		case *agentv1.ConnectResponse_Bye:
-			return nil, s.bye(ctx, b.Bye), nil
-		default:
-			return nil, ending{}, errNotHelloAck
-		}
+		return s.ackOrBye(ctx, m)
 	case <-s.done:
+		// The receiver reads ahead: what the hub sent before the end comes
+		// first, so a Bye is never lost to the stream's end.
+		select {
+		case m := <-s.msgs:
+			return s.ackOrBye(ctx, m)
+		default:
+		}
 		return nil, ending{}, s.rerr
 	case <-t.C:
 		return nil, ending{}, errHelloTimeout
@@ -362,6 +364,7 @@ func (s *session) connected(ctx context.Context) (ending, string, error) {
 	s.renewCheck()
 	s.onConnected()
 	out, step, err := s.serve(ctx)
+	out, step, err = s.byeOver(ctx, out, step, err)
 	out.connected = true
 	return out, step, err
 }
