@@ -17,6 +17,10 @@ func Migrations() []store.Migration {
 		Version: 3,
 		Name:    "row_guards",
 		SQL:     rowGuardsSQL,
+	}, {
+		Version: 4,
+		Name:    "ack_guards",
+		SQL:     ackGuardsSQL,
 	}}
 }
 
@@ -43,6 +47,22 @@ CREATE TRIGGER command_log_id_kept BEFORE UPDATE OF command_id ON command_log
 WHEN NEW.command_id IS NOT OLD.command_id
 BEGIN
 	SELECT RAISE(ABORT, 'a command_id is logged once');
+END;`
+
+// ackGuardsSQL keeps the ResultAck time (02i "Command lifecycle"): only a
+// finished entry is acked, whether the ack comes by update or in the insert,
+// and the first ack time never changes, so an entry that was acked is never
+// re-sent.
+const ackGuardsSQL = `CREATE TRIGGER command_log_ack_kept BEFORE UPDATE OF acked_time ON command_log
+WHEN (OLD.acked_time IS NOT NULL AND NEW.acked_time IS NOT OLD.acked_time)
+	OR (NEW.acked_time IS NOT NULL AND NEW.status IS NOT 'finished')
+BEGIN
+	SELECT RAISE(ABORT, 'a result ack is kept and needs a finished result');
+END;
+CREATE TRIGGER command_log_ack_finished BEFORE INSERT ON command_log
+WHEN NEW.acked_time IS NOT NULL AND NEW.status IS NOT 'finished'
+BEGIN
+	SELECT RAISE(ABORT, 'a result ack needs a finished result');
 END;`
 
 // agentStateSQL is the one row of sequencing state (02i "Sequence numbers"

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"math"
 )
 
 // Errors of the epoch and command seq rules (02i "Connection epoch").
@@ -98,8 +99,12 @@ func (d *DB) RaiseMarks(ctx context.Context, m Marks) (Marks, error) {
 
 // StartEpoch records the epoch of a new connection (HelloAck.epoch) and
 // starts its command seq at zero. An epoch at or below the stored one is
-// [ErrEpochNotAbove] and changes nothing.
+// [ErrEpochNotAbove], one above [MaxEpoch] [ErrOutOfRange]; neither changes
+// anything.
 func (d *DB) StartEpoch(ctx context.Context, epoch uint64) error {
+	if err := CheckHubMarks(epoch, 0); err != nil {
+		return err
+	}
 	e, err := toInt("epoch", epoch)
 	if err != nil {
 		return err
@@ -139,4 +144,32 @@ func (d *DB) ApplyCommandSeq(ctx context.Context, epoch, seq uint64) error {
 		_, err = tx.ExecContext(ctx, `UPDATE agent_state SET last_applied_command_seq = ? WHERE id = 1`, s)
 		return err
 	})
+}
+
+// The largest HelloAck values agent.db takes (02i). It stores them as
+// SQLite's signed 64-bit integers and never lowers them. MaxEpoch keeps the
+// hub's next epoch (the stored one plus 1) inside a signed 64-bit integer;
+// the agent would refuse that next epoch, so it does not leave room for
+// another stream. MaxHubLastSeq keeps the first block Next reserves past
+// the floor (the floor plus 1024) inside one. A larger value, saved, would
+// overflow those sums and stop every later epoch or seq.
+const (
+	MaxEpoch      uint64 = math.MaxInt64 - 1
+	MaxHubLastSeq uint64 = math.MaxInt64 - seqBlock
+)
+
+// ErrOutOfRange means a HelloAck epoch or hub_last_event_seq above
+// [MaxEpoch] or [MaxHubLastSeq]; nothing was saved.
+var ErrOutOfRange = errors.New("ring: the hub's value is too large for agent.db")
+
+// CheckHubMarks refuses a HelloAck epoch or hub_last_event_seq that
+// agent.db cannot keep ([ErrOutOfRange]). Check both before saving either.
+func CheckHubMarks(epoch, hubLastSeq uint64) error {
+	switch {
+	case epoch > MaxEpoch:
+		return fmt.Errorf("%w: epoch %d is above %d", ErrOutOfRange, epoch, MaxEpoch)
+	case hubLastSeq > MaxHubLastSeq:
+		return fmt.Errorf("%w: hub_last_event_seq %d is above %d", ErrOutOfRange, hubLastSeq, MaxHubLastSeq)
+	}
+	return nil
 }

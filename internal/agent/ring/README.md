@@ -14,6 +14,13 @@ err = db.StartEpoch(ctx, helloAck.GetEpoch())                 // ErrEpochNotAbov
 err = db.ApplyCommandSeq(ctx, epoch, seq)                     // ErrWrongEpoch, ErrSeqReplayed
 e, dup, err := db.LogCommand(ctx, ring.Command{ID: id, Kind: k, Epoch: ep, Seq: s, Received: t, NotAfter: na})
 err = db.RecordResult(ctx, id, encodedResult, finished)       // ErrResultLogged keeps the first
+seqs, err := db.Seqs(ctx)                                     // event seq allocator
+seq, err := seqs.Next(ctx)                                    // reserves 1024 seqs per write
+err = seqs.Floor(ctx, helloAck.GetHubLastEventSeq())          // next seq above what the hub stored
+last := seqs.Last()                                           // highest seq handed out: Heartbeat.event_seq
+res, err := db.Unacked(ctx)                                   // finished results with no ResultAck
+n, err := db.AckResults(ctx, ack.GetCommandIds(), now)        // unknown or already acked ids change nothing
+n, err = db.Prune(ctx, hubNow)                                // hub time; keeps 7 days and 10,000 entries, and any the hub may re-send
 ```
 
 - **Private.** `Open` creates `agent.db` with mode 0600 before SQLite opens
@@ -37,9 +44,40 @@ err = db.RecordResult(ctx, id, encodedResult, finished)       // ErrResultLogged
 - `received_time` is the agent's wall clock, kept for pruning and display;
   row 6's executor will anchor deadlines on `HelloAck.hub_time` (02i
   "Clocks"), not on it.
-- Not here yet: the event ring (`seq` allocation in blocks, the floor from
-  `HelloAck`) later in row 4 (PR 3); the executor's steps, `ResultAck` and
-  pruning to 10,000 entries or 7 days in row 6.
+- **Seqs in blocks.** `Seqs.Next` raises `seq_hwm` by a block of 1024
+  before it hands out the first seq of the block, so a crash skips seqs
+  but never repeats one; a reopen starts above the stored mark. `Floor`
+  moves the next seq above `HelloAck.hub_last_event_seq` and never lowers
+  it. `Last` is the highest seq this allocator handed out (0 before its
+  first `Next`), never a reserved one or an unused floor; the connection
+  loop's heartbeat (row 4 PR 3-ii) sends it as `event_seq`. One live
+  `Seqs` per `agent.db` file, shared by every caller; it is safe for
+  concurrent use.
+- **Hub values in range.** `CheckHubMarks` refuses (`ErrOutOfRange`) a
+  `HelloAck.epoch` above `MaxEpoch` (2^63 - 2) or a `hub_last_event_seq`
+  above `MaxHubLastSeq` (2^63 - 1 - 1024): agent.db keeps them as signed
+  64-bit integers and never lowers them. `MaxEpoch` only keeps the hub's
+  next epoch (the stored one plus 1) from overflowing; `MaxHubLastSeq`
+  keeps the first block reserved past the floor in range. A larger one,
+  saved, would stop every later epoch or seq. `StartEpoch` and `Floor`
+  refuse them too and save nothing; the caller checks both before saving
+  either.
+- **Acks.** `AckResults` marks finished results acked once; an unknown,
+  unfinished or already acked `command_id` changes nothing, and the
+  `command_log_ack_kept` and `command_log_ack_finished` triggers
+  (migration 4) refuse a changed ack time and an ack on an unfinished
+  entry, by update or insert. `Prune` takes hub time (`HelloAck.hub_time`
+  plus the time since), never the agent's wall clock, because
+  `not_after_time` is the hub's deadline (02i "Clocks"). It deletes
+  entries older than 7 days (against `received_time`, the agent's clock: a
+  deadline is at most 24 h, so the age test tolerates a clock that is off by
+  up to about 6 days).
+  Past 10,000 entries it deletes the oldest that are acked or past their
+  deadline, never one the hub may still re-send (not acked, inside its
+  deadline), so a re-sent command is a duplicate, not a second run
+  ([02i](../../../docs/specs/02i-delivery-and-sequencing.md), [defaults](../../../docs/specs/defaults.md)).
+- Not here yet: the event ring itself (events come with the rows that emit
+  them) and the executor's steps (row 6).
 
 Signals: none of its own. `store.opened`, `store.migrated` and the
 `fleet_agent_writer_*` and `fleet_agent_store_*` metrics (`db="agent"`, 05b)
@@ -50,4 +88,9 @@ reopen, a migration from schema 2, the file mode, a loose file refused,
 install_id kept, marks never lowered (through the API and by the file's
 triggers, including delete and replace), epoch and command seq, one entry
 per `command_id` under concurrent delivery (and against raw `REPLACE` and
-renames), and the kept result.
+renames), the kept result, seq blocks across a reopen and the floor,
+results unacked until `ResultAck` and across a reopen, the first ack kept
+in the file (update and insert), pruning by age and by count (an acked
+entry inside its deadline goes, an unacked one stays), pruning by hub time
+with a skewed wall clock, and one `Seqs` shared by many goroutines under
+`-race`.
