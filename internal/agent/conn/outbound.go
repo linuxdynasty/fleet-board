@@ -156,8 +156,9 @@ const maxRefusalMessage = 256
 // bytes. retryable, retry_after, the times and the trace may be set.
 func unloggedRefusal(r *agentv1.CommandResult) bool {
 	st, why := r.GetStatus(), r.GetReason()
-	if !(st == typev1.Status_STATUS_FAILED && why == typev1.ReasonCode_REASON_CODE_EPOCH_MISMATCH) &&
-		!(st == typev1.Status_STATUS_REJECTED_BY_POLICY && why == typev1.ReasonCode_REASON_CODE_SEQ_REPLAYED) {
+	epoch := st == typev1.Status_STATUS_FAILED && why == typev1.ReasonCode_REASON_CODE_EPOCH_MISMATCH
+	replay := st == typev1.Status_STATUS_REJECTED_BY_POLICY && why == typev1.ReasonCode_REASON_CODE_SEQ_REPLAYED
+	if !epoch && !replay {
 		return false
 	}
 	if !printable(r.GetCommandId().GetValue(), maxIDBytes) || r.GetDetail() != nil || len(r.GetMetadata()) > 0 ||
