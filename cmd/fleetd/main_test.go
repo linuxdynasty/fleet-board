@@ -89,7 +89,8 @@ func setup(t *testing.T) (config, state string) {
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(root) })
 	config, state = filepath.Join(root, "fleetd.yaml"), filepath.Join(root, "state")
-	body := "state_dir: " + state + "\nlisten: {agent: \"127.0.0.1:0\", api: \"127.0.0.1:0\"}\n"
+	body := "state_dir: " + state + "\nlisten: {agent: \"127.0.0.1:0\", api: \"127.0.0.1:0\"}\n" +
+		"discovery: {mdns: false}\n" // these hubs must never answer mDNS queries on the owner's network
 	if err := os.WriteFile(config, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}

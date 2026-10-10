@@ -13,8 +13,8 @@ import (
 
 	"github.com/linuxdynasty/fleet-board/internal/hub/api"
 	"github.com/linuxdynasty/fleet-board/internal/hub/backup"
-	"github.com/linuxdynasty/fleet-board/internal/hub/ca"
 	"github.com/linuxdynasty/fleet-board/internal/hub/config"
+	"github.com/linuxdynasty/fleet-board/internal/hub/discovery"
 	"github.com/linuxdynasty/fleet-board/internal/hub/gateway"
 	"github.com/linuxdynasty/fleet-board/internal/hub/lock"
 	"github.com/linuxdynasty/fleet-board/internal/hub/revocation"
@@ -81,7 +81,7 @@ func Run(ctx context.Context, opts Options) (err error) {
 	if err != nil {
 		return s.fail(revocationReason(err), err)
 	}
-	certs, err := newCerts(ctx, cfg, opts, st, id, s)
+	certs, host, err := newCerts(ctx, cfg, opts, st, id, s)
 	if err != nil {
 		return s.fail(ReasonCert, err)
 	}
@@ -90,16 +90,19 @@ func Run(ctx context.Context, opts Options) (err error) {
 		return s.fail(ReasonStore, err)
 	}
 	defer func() { err = errors.Join(err, nightly.Close()) }()
-	return serve(ctx, cfg, opts, hubDeps{certs: certs, st: st, id: id, revoked: revoked, nightly: nightly}, s)
+	return serve(ctx, cfg, opts, hubDeps{certs: certs, hostname: host, st: st, id: id, revoked: revoked, nightly: nightly}, s)
 }
 
 // hubDeps is what the listeners and jobs share once the store is open.
 type hubDeps struct {
-	certs   *gateway.Certs
-	st      *store.Store
-	id      statedb.Identity
-	revoked *revocation.List
-	nightly *backup.Schedule
+	certs *gateway.Certs
+	// hostname is what the server certificate's names were made from; the
+	// mDNS SRV target is made from it too.
+	hostname string
+	st       *store.Store
+	id       statedb.Identity
+	revoked  *revocation.List
+	nightly  *backup.Schedule
 }
 
 // revocationReason: a loose revoked-serials is mode_loose like any other
@@ -112,16 +115,16 @@ func revocationReason(err error) Reason {
 	return ReasonRevocations
 }
 
-func newCerts(ctx context.Context, cfg *config.Config, opts Options, st *store.Store, id statedb.Identity, s *session) (*gateway.Certs, error) {
-	names, err := opts.names(cfg, ca.DefaultNames)
+func newCerts(ctx context.Context, cfg *config.Config, opts Options, st *store.Store, id statedb.Identity, s *session) (*gateway.Certs, string, error) {
+	names, host, err := opts.names(cfg)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	certs, err := gateway.NewCerts(gateway.CertsOptions{Store: st, Identity: id, Names: names, Now: opts.Now, Telemetry: s.tel})
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	return certs, certs.Ensure(ctx)
+	return certs, host, certs.Ensure(ctx)
 }
 
 func openReason(err error) Reason {
@@ -169,6 +172,17 @@ func serve(ctx context.Context, cfg *config.Config, opts Options, d hubDeps, s *
 		}
 		return s.fail(ReasonListen, err)
 	}
+	adv, err := discovery.New(discovery.Options{
+		Enabled: cfg.Discovery.MDNS, Hostname: d.hostname, Listener: ls[0].ln.Addr(),
+		Cert: d.certs, Env: opts.Discovery, Telemetry: s.tel,
+	})
+	if err != nil {
+		_ = admin.ln.Close() // the instrument error is the one to report
+		for _, l := range ls {
+			_ = l.ln.Close()
+		}
+		return s.fail(ReasonStore, err)
+	}
 	ls = append(ls, admin)
 	addrs.Admin = admin.ln.Addr()
 	ctx, cancel := context.WithCancel(ctx)
@@ -207,6 +221,9 @@ func serve(ctx context.Context, cfg *config.Config, opts Options, d hubDeps, s *
 	wg.Add(1)
 	go func() { defer wg.Done(); d.nightly.Run(ctx, backupTicks) }()
 
+	// Advertise only now that the agent listener serves: an agent that
+	// follows the answer finds it. It never fails the hub (02j "Discovery").
+	adv.Start()
 	s.tel.Logger.Info("hub.started", "mode", cfg.Mode, "listeners", len(ls))
 	if opts.Ready != nil {
 		opts.Ready(addrs)
@@ -219,6 +236,7 @@ func serve(ctx context.Context, cfg *config.Config, opts Options, d hubDeps, s *
 		s.tel.Logger.Error("hub.listener_failed", "err_kind", errKind(serveErr))
 	}
 	cancel()
+	adv.Stop()
 	shutdown, done := context.WithTimeout(context.Background(), shutdownGrace)
 	defer done()
 	for _, l := range ls {

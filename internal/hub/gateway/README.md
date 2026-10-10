@@ -76,7 +76,12 @@ srv, err := gateway.NewServer(gateway.ServerOptions{
   certificate is signed by the stored CA and written with
   `statedb.ReplaceServerCert` (one writer transaction) before it is served; on
   a failure the old one stays in service and the next tick retries.
-- No mDNS advertising yet (row 5); `discovery.mdns` is loaded and has no effect.
+- `Serves(name)` reports whether the certificate served now names `name`;
+  the mDNS advertiser (`internal/hub/discovery`) asks it for the SRV target,
+  so after a failed re-issue it refuses to advertise a name agents cannot
+  verify. The wanted names (`CertsOptions.Names`) are `ca.AgentNames`: the SRV
+  target is in them even when `tls.agent_names` is set, so adding it to an
+  older certificate is one `names_changed` re-issue.
 
 ## Signals
 

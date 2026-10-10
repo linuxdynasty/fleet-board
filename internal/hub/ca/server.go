@@ -71,16 +71,72 @@ func (a *Authority) IssueServer(names []string, now time.Time, random io.Reader)
 	return ServerCert{CertDER: der, KeyDER: keyDER, Names: slices.Clone(names)}, nil
 }
 
+// bareHost is the hostname as every name here uses it: lower-cased, without
+// a trailing ".local".
+func bareHost(hostname string) string {
+	return strings.TrimSuffix(strings.ToLower(hostname), ".local")
+}
+
 // DefaultNames is the SAN list used when tls.agent_names is empty (02j): the
 // hostname without a trailing ".local", "<hostname>.local", localhost,
 // 127.0.0.1 and ::1, lower-cased, without duplicates.
 func DefaultNames(hostname string) []string {
-	host := strings.TrimSuffix(strings.ToLower(hostname), ".local")
+	host := bareHost(hostname)
 	var names []string
 	if host != "" {
 		names = append(names, host, host+".local")
 	}
 	names = append(names, "localhost", "127.0.0.1", "::1")
+	return dedupe(names)
+}
+
+// serviceLabelPrefix starts the host label of the mDNS service name.
+const serviceLabelPrefix = "fleetd-"
+
+// ServiceTarget is the name the hub advertises over mDNS as its SRV target,
+// "fleetd-<host>.local" (ADR 0028, 02j "Discovery"). It is derived from the
+// same lower-cased, ".local"-stripped hostname as [DefaultNames], and it is
+// distinct from the machine's own name, which the OS's responder owns. It is
+// "" when the hostname cannot make a DNS name (empty, a character outside
+// letters, digits, "-" and "_" in a label, an empty or over-long label), so
+// nothing is advertised under a name that cannot be verified.
+func ServiceTarget(hostname string) string {
+	host := bareHost(hostname)
+	if host == "" {
+		return ""
+	}
+	for _, label := range strings.Split(serviceLabelPrefix+host, ".") {
+		if label == "" || len(label) > 63 || !validLabel(label) {
+			return ""
+		}
+	}
+	return serviceLabelPrefix + host + ".local"
+}
+
+func validLabel(label string) bool {
+	if label[0] == '-' || label[len(label)-1] == '-' {
+		return false
+	}
+	for _, r := range label {
+		if (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '-' && r != '_' {
+			return false
+		}
+	}
+	return true
+}
+
+// AgentNames is the agent listener's SAN list: configured (tls.agent_names)
+// when it is not empty, else [DefaultNames], and always [ServiceTarget], so
+// the name the hub advertises is one its certificate holds even when the
+// owner lists their own names. Without duplicates; configured is not changed.
+func AgentNames(hostname string, configured []string) []string {
+	names := slices.Clone(configured)
+	if len(names) == 0 {
+		names = DefaultNames(hostname)
+	}
+	if target := ServiceTarget(hostname); target != "" {
+		names = append(names, target)
+	}
 	return dedupe(names)
 }
 

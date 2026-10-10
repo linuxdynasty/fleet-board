@@ -18,7 +18,9 @@
 // the API listener, the optional metrics listener and the
 // admin socket (<state_dir>/admin.sock, mode 0600, a leftover socket removed
 // first and the socket removed on a clean stop) until its context ends. A
-// goroutine it owns checks the certificate every hour, and another runs the
+// advertiser (internal/hub/discovery) announces the hub over mDNS once the
+// listeners serve and stops first at shutdown; a goroutine it owns checks the
+// certificate every hour, and another runs the
 // nightly backup (backup.Schedule: a check at start, then every minute).
 //
 // [EnrollToken] asks the running hub over the admin socket for an enroll

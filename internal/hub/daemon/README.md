@@ -14,7 +14,8 @@ calls `Init`, `Run`, `EnrollToken` or `Backup`.
    left more than an hour ago (`backup.RemoveLeftovers`).
 4. Refuses when `state.db` exists (`store_exists`; nothing changes).
 5. Mints the identity: random fleet id (UUID), Ed25519 CA, Ed25519 server
-   certificate for `tls.agent_names` or the default names, a 32-byte account
+   certificate for `tls.agent_names` or the default names plus the mDNS SRV
+   target `fleetd-<host>.local`, a 32-byte account
    salt (`salt_version` 1), a random `settings_epoch`; `hub_addresses` empty.
 6. Creates `state.db` with the row atomically (`statedb.Create`). If only the
    folder sync after the link fails, `state.db` exists and is complete; init
@@ -38,7 +39,8 @@ calls `Init`, `Run`, `EnrollToken` or `Backup`.
    unreadable file or a failed reconcile is `revocations_invalid`. This
    happens before any listener binds, so no handshake ever runs without it.
 6. Re-issues the server certificate if `tls.agent_names` changed or it is past
-   two thirds of its life.
+   two thirds of its life. The wanted names are `ca.AgentNames`: the SRV target
+   `fleetd-<host>.local` is always among them, even with `tls.agent_names` set.
 7. Binds the agent listener (`gateway.NewServer` with the store, the identity
    and the revocation list: `Enroll`, and a revoked client certificate fails
    its handshake), then the API and optional metrics listeners (port 0 is allowed; the
@@ -47,8 +49,11 @@ calls `Init`, `Run`, `EnrollToken` or `Backup`.
    other file at that path refuses the start (`listen_failed`) and is left
    alone. The new socket is chmod 0600 at once and served by `api.NewAdmin`
    (FleetService `CreateEnrollmentToken`, kernel peer user id check;
-   `Options.PeerUID` injects the reader in tests). Then it serves until the
-   context ends (SIGTERM).
+   `Options.PeerUID` injects the reader in tests). Then it starts the mDNS
+   advertiser (`internal/hub/discovery`, while `discovery.mdns` is true; it
+   never fails the hub, and `Options.Discovery` injects the multicast
+   responder and the interface list in tests) and serves until the context
+   ends (SIGTERM), when it stops advertising first.
 8. Runs the nightly backup in a goroutine it owns (`backup.Schedule`,
    [internal/hub/backup](../backup/README.md)): a check at start, then every
    minute (`Options.BackupTicks` in tests). A copy is made at the first check

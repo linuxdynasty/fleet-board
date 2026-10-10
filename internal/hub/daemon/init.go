@@ -82,7 +82,7 @@ func Init(ctx context.Context, opts Options) (err error) {
 // certificate for the configured or default names, a 32-byte account salt
 // (salt_version 1) and the settings epoch. hub_addresses stays empty.
 func newIdentity(cfg *config.Config, opts Options) (statedb.Identity, error) {
-	names, err := opts.names(cfg, ca.DefaultNames)
+	names, _, err := opts.names(cfg)
 	if err != nil {
 		return statedb.Identity{}, err
 	}

@@ -4,7 +4,9 @@
 // [New] mints an Ed25519 CA valid for [CAYears] years; [Parse] rebuilds it
 // from the DER certificate and PKCS #8 key that state.db stores.
 // [Authority.IssueServer] signs the agent listener's Ed25519 certificate for
-// a SAN list ([DefaultNames] when tls.agent_names is empty), valid for
+// a SAN list ([AgentNames]: tls.agent_names, or [DefaultNames] when it is empty,
+// plus [ServiceTarget], the fleetd-<host>.local name the hub advertises over
+// mDNS), valid for
 // [ServerLifetime] and never past the CA. [NeedsRenewal] is the two-thirds
 // rule and [SameNames] the names check that trigger a re-issue. [NewToken]
 // mints an enroll token: fbe1_ plus unpadded base64url of [TokenVersion],

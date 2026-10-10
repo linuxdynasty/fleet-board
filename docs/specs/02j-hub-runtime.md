@@ -46,17 +46,26 @@ a `Host` it refuses (`HOST_NOT_ALLOWED`). `fleet` on the other machine sets
 
 The agent listener's certificate is issued by the hub CA for the names in
 `tls.agent_names` (default: the machine's hostname, `<hostname>.local`,
-`localhost`, `127.0.0.1`, `::1`), so an agent on the hub's own machine connects to
-`127.0.0.1:7443` and verifies it like any other. In `authenticated` mode the API
+`localhost`, `127.0.0.1`, `::1`) and always the mDNS name
+`fleetd-<hostname>.local` (see Discovery, below), so an agent on the hub's own
+machine connects to `127.0.0.1:7443` and verifies it like any other. In `authenticated` mode the API
 certificate is the owner's (`tls.api_cert_file`, `tls.api_key_file`) or a
 Tailscale certificate (`tls.api_tailscale: true`); without one `fleetd` refuses
 to start.
 
 **Discovery.** While `discovery.mdns` is true (default) `fleetd` advertises
-`_fleetd._tcp` on the agent port with `hashicorp/mdns` (ADR 0023). Where no
-multicast interface is usable it logs once and the agents use their cached or
-configured addresses. Advertising arrives with plan row 5; until then the key is
-loaded and has no effect.
+`_fleetd._tcp` on the agent port with `hashicorp/mdns` (ADR 0023). The SRV target
+is `fleetd-<host>.local`, always in the server certificate's names; the hub
+advertises its explicit non-loopback addresses, never the OS host name; TXT
+carries the proto range only. Advertising is best effort and never stops the hub
+([ADR 0028](../adr/0028-mdns-best-effort.md)): a host with no address to
+advertise, no multicast family that binds, a responder that cannot start, or a
+served certificate that lacks the target logs once (`discovery.advertise_refused`
+or `discovery.advertise_failed`, [05b](05b-observability.md)) and the agents use
+their cached or configured addresses. A family that cannot bind is logged once
+and the other still advertises. The host name is the hub's own, lower-cased and
+without `.local`, the one the default certificate names use; a host name that
+makes no DNS name advertises nothing.
 
 ## Configuration file
 

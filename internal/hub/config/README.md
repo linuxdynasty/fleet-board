@@ -25,7 +25,7 @@ err = config.WriteDefault(path)           // fleetd init: the defaults, mode 060
 - **Not built yet.** `mode: authenticated`, `listen.pprof`, `public_hosts`,
   `public_origins`, `tls.api_cert_file`, `tls.api_key_file`, `tls.api_tailscale`
   and `telemetry.otlp.endpoint` are refused (`Error.NotBuilt`) until their plan
-  rows land. `discovery.mdns` (row 5), `rate_limits` (row 12), `timing`
+  rows land. `rate_limits` (row 12), `timing`
   (rows 13, 21, 22, 23) and `github` (row 11) are loaded and checked but have
   no effect until those rows; 02k keeps both lists.
 - **Admin socket path.** `state_dir` is refused when `<state_dir>/admin.sock`

@@ -15,7 +15,9 @@ import (
 
 	"github.com/linuxdynasty/fleet-board/internal/hub/api"
 	"github.com/linuxdynasty/fleet-board/internal/hub/backup"
+	"github.com/linuxdynasty/fleet-board/internal/hub/ca"
 	"github.com/linuxdynasty/fleet-board/internal/hub/config"
+	"github.com/linuxdynasty/fleet-board/internal/hub/discovery"
 	"github.com/linuxdynasty/fleet-board/internal/hub/lock"
 	"github.com/linuxdynasty/fleet-board/internal/hub/revocation"
 	"github.com/linuxdynasty/fleet-board/internal/hub/statedb"
@@ -53,6 +55,10 @@ type Options struct {
 	LogOutput io.Writer
 	// Ready, when set, is called once every listener is serving.
 	Ready func(Addrs)
+	// Discovery holds the seams of the mDNS advertiser: the multicast
+	// responder and the interface addresses. The zero value is the real
+	// machine; tests set both so they send no multicast.
+	Discovery discovery.Env
 	// PeerUID reads an admin socket peer's user id; nil means the kernel's
 	// (api.KernelPeerUID).
 	PeerUID api.PeerUID
@@ -180,18 +186,31 @@ func (o Options) now() time.Time {
 	return time.Now()
 }
 
-// names is tls.agent_names, or the default list from the hostname.
-func (o Options) names(cfg *config.Config, defaults func(string) []string) ([]string, error) {
-	if len(cfg.TLS.AgentNames) > 0 {
-		return cfg.TLS.AgentNames, nil
-	}
+// hostName is the machine's host name, from the seam or os.Hostname.
+func (o Options) hostName() (string, error) {
 	hostname := o.Hostname
 	if hostname == nil {
 		hostname = os.Hostname
 	}
 	h, err := hostname()
 	if err != nil {
-		return nil, fmt.Errorf("daemon: hostname: %w", err)
+		return "", fmt.Errorf("daemon: hostname: %w", err)
 	}
-	return defaults(h), nil
+	return h, nil
+}
+
+// names is the agent listener's SAN list: tls.agent_names, or the default
+// names from the host name, and always the mDNS SRV target (ca.AgentNames),
+// with the host name it was made from. When the owner lists names, a host
+// name that cannot be read costs only the target (nothing is advertised);
+// with no list it is an error, as before.
+func (o Options) names(cfg *config.Config) (names []string, host string, err error) {
+	host, err = o.hostName()
+	if err != nil {
+		if len(cfg.TLS.AgentNames) == 0 {
+			return nil, "", err
+		}
+		host = ""
+	}
+	return ca.AgentNames(host, cfg.TLS.AgentNames), host, nil
 }

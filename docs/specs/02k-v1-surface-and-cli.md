@@ -29,8 +29,7 @@ it belongs and a reader can tell "not built yet" from "forgotten".
   authenticated-mode keys `public_hosts`, `public_origins`, `tls.api_cert_file`,
   `tls.api_key_file`, `tls.api_tailscale` (v3); `listen.pprof` (no plan row builds
   it yet); `telemetry.otlp.endpoint` (until OTLP export lands).
-  **Loaded and checked, no effect until the row that uses it:** `discovery.mdns`
-  (row 5, mDNS advertising); `rate_limits.*` (row 12, the per-principal and
+  **Loaded and checked, no effect until the row that uses it:** `rate_limits.*` (row 12, the per-principal and
   per-peer limits, `/metrics` included); `timing.max_sync_lag` (rows 13 and 23);
   `timing.verify_grace` (row 22); `timing.ready_timeout` and
   `timing.goal_file_timeout` (row 21); the `github` section (row 11; its key files
