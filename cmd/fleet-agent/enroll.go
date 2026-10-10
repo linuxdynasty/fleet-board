@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"os"
 
 	"github.com/spf13/cobra"
 
@@ -17,9 +18,9 @@ import (
 // (02g A1). With no --hub it looks for the hub on the local network (mDNS,
 // 03 A2) and sends the token only to one that proves it holds the token's
 // CA. Log lines go to stderr; the outcome is one line on stdout.
-func enrollCommand(dir func() (string, error), version string, discover conn.Discover, stdout, stderr io.Writer,
+func enrollCommand(dir, cfg func() (string, error), version string, discover conn.Discover, stdout, stderr io.Writer,
 ) *cobra.Command {
-	var hub, token string
+	var hub, token, repos string
 	cmd := &cobra.Command{
 		Use:   "enroll",
 		Short: "Join this machine to the fleet with a token from fleetd enroll-token",
@@ -28,6 +29,21 @@ func enrollCommand(dir func() (string, error), version string, discover conn.Dis
 			d, err := dir()
 			if err != nil {
 				return commandError{err}
+			}
+			cd, err := cfg()
+			if err != nil {
+				return commandError{err}
+			}
+			// Asked before the network is used, so a typo does not cost the
+			// one-time token. An existing policy.yaml is never replaced, so
+			// it is not asked about either.
+			answer := ""
+			if !hasPolicy(cd) {
+				home, _ := os.UserHomeDir() // a failure leaves ~ unexpandable; the folder check then asks for a full path
+				in := cmd.InOrStdin()
+				if answer, err = chooseRepos(repos, isTerminal(in), in, stderr, home); err != nil {
+					return commandError{err}
+				}
 			}
 			tel, err := telemetry.New(telemetry.Config{
 				Service: telemetry.Agent, Version: version, InstanceID: bootID(), LogOutput: stderr,
@@ -55,6 +71,7 @@ func enrollCommand(dir func() (string, error), version string, discover conn.Dis
 			if err != nil {
 				return commandError{err}
 			}
+			starterNotes(stderr, cd, answer)
 			if res.HostnameMismatch {
 				// The hub records the mismatch too (03 W1); the owner decides.
 				// With no --expect-host the hub compares with the machine name.
@@ -67,6 +84,7 @@ func enrollCommand(dir func() (string, error), version string, discover conn.Dis
 	f := cmd.Flags()
 	f.StringVar(&hub, "hub", "", "hub address, host or host:port (port 7443 if none); without it the hub is looked for on the local network (mDNS)")
 	f.StringVar(&token, "token", "", "the one-time token from fleetd enroll-token (required)")
+	f.StringVar(&repos, "repos", "", "folder that holds your repos, written to policy.yaml as allowed_repo_roots (asked for on a terminal when not given)")
 	_ = cmd.MarkFlagRequired("token") // the flag is defined just above
 	return cmd
 }
