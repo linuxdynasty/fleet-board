@@ -76,6 +76,8 @@ type Service struct {
 type epochSends struct {
 	epoch, seq uint64
 	sent       map[string]bool
+	// backoff is the wait before the next look after a full queue.
+	backoff time.Duration
 }
 
 // New builds a Service; call Run to send and Close when done.

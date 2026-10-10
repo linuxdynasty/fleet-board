@@ -42,7 +42,8 @@ func newMetrics(tel *telemetry.Telemetry, pending pendingFunc, clock func() time
 		metric.WithDescription("Time from a command's enqueue to its stored CommandResult, by kind."))
 	x.messages, errs[2] = m.Int64Counter(p+"_command_messages_total",
 		metric.WithDescription("CommandAck, CommandProgress and CommandResult messages by arm and outcome: applied, "+
-			"known (a repeat), unknown_command, wrong_machine, stale_stream, invalid, failed (store error)."))
+			"known (a repeat), unknown_command, wrong_machine, stale_stream, invalid, epoch_mismatch and seq_replayed "+
+			"(a refusal the agent did not log), failed (store error)."))
 	x.unknown, errs[3] = m.Int64Counter(p+"_results_unknown_command_total",
 		metric.WithDescription("CommandResults for a command_id the hub has no row for; refused, never stored."))
 	x.sends, errs[4] = m.Int64Counter(p+"_outbox_sends_total",

@@ -125,13 +125,16 @@ contract; this is how the hub runs it.
   caller hands the row back to the outbox, which logs `outbox.enqueued` and
   wakes the sender.
 - **Send.** One sender goroutine does every send. A machine
-  gets commands only after the Snapshot of its current epoch committed: that
-  transaction calls the gateway's `ready(machine, epoch)` seam (plan row 5c),
-  so nothing is sent between `Hello` and `Snapshot`. The sender reads the
-  pending rows not yet sent on that epoch through the read pool, oldest
-  first; queues each on the stream of exactly that epoch, never blocking
-  (a full queue is retried after 50 ms); then records the sends
-  (`sent_epoch`, `sent_seq`, `sent_time`) in one writer job. A send is not a
+  gets commands only after the Snapshot of its current epoch committed: the
+  Snapshot step calls the gateway's `ready(machine, epoch)` seam after its
+  transaction commits (plan row 5c), so nothing is sent between `Hello` and
+  `Snapshot`. The sender reads the pending rows not yet sent on that epoch
+  through the read pool, a page at a time in send order (so rows it skips
+  never hide the rows behind them); queues each on the stream of exactly
+  that epoch, never blocking (a full queue is looked at again after 50 ms,
+  doubling to 2 s while it stays full); then records every send of the pass
+  (`sent_epoch`, `sent_seq`, `sent_time`) in one writer job. A stored
+  command that does not decode is logged and skipped. A send is not a
   state: the row stays `pending` until `CommandAck`, so a stream that dies
   leaves it pending and the next epoch re-sends it with the same
   `command_id` and that epoch's seqs from 1. A seq is used only when the
@@ -143,16 +146,32 @@ contract; this is how the hub runs it.
   applies the message. `ResultAck` is queued after that job commits. A
   message from a stream that is no longer its machine's live one, or for a
   command with no row or of another machine, is refused and counted; it
-  writes nothing and is never answered. A repeat changes nothing; a repeated
-  result is answered again. Every change bumps the `Operation` version and
-  takes a `hub_seq` stamp; a send does neither.
+  writes nothing and is never answered; so is a malformed `command_id`, never
+  logged. So is a refusal the agent sends without logging the command
+  (`EPOCH_MISMATCH`, `SEQ_REPLAYED`): no result is stored, no row moves, and
+  the command goes out again under the live epoch (02i). A repeat, a
+  progress the row already holds included, changes nothing; a repeated
+  result is answered again. The read pool decides first, so a repeat or a
+  refusal costs no writer job. Every change bumps the `Operation` version
+  and takes a `hub_seq` stamp; a send does neither. A result's `metadata` is
+  cut to 16 entries of 256 bytes without control characters, and a status
+  or reason this hub has no name for is stored and counted as `UNKNOWN`.
+- **Not yet.** A result for a command the hub never issued (a store
+  restored from an older backup) is only counted and logged here; the audit
+  row and triage info item 03n asks for come with plan row 5k (restore
+  reconcile). A result's `detail` (screen text up to 256 KiB) is stored as
+  the agent sent it, so one result row can approach the 1 MiB message cap;
+  bounding it is noted for plan row 5g. Each answer waits for its own writer
+  batch window on the ingest goroutine (about 250 to 350 ms a result, one
+  after another), and each sender pass waits for its record job: plan row
+  5c2's fork-6 benchmark includes the command arms and the sender.
 
 **Telemetry.** Metrics: `fleet_hub_commands_total{kind, status}` and
 `fleet_hub_command_roundtrip_seconds{kind}` (03 conventions; a stored
 result), `fleet_hub_command_messages_total{arm, outcome}` (`arm`:
 `command_ack`, `command_progress`, `command_result`; `outcome`: `applied`,
 `known`, `unknown_command`, `wrong_machine`, `stale_stream`, `invalid`,
-`failed`), `fleet_hub_results_unknown_command_total` (03n),
+`epoch_mismatch`, `seq_replayed`, `failed`), `fleet_hub_results_unknown_command_total` (03n),
 `fleet_hub_outbox_sends_total{result}` (`queued`, `full`, `not_live`,
 `invalid`: a stored command that does not decode, skipped),
 `fleet_hub_outbox_pending{machine}` and

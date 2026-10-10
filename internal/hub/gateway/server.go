@@ -141,7 +141,8 @@ type Server struct {
 
 // FlushAudit writes the machine.enroll_failed summary of the minute in
 // progress, if any refusal in it was suppressed, and waits for the commit
-// (at most 5 s), then waits, within ctx, for the command sender to stop.
+// (at most 5 s). It also stops the command sender and waits, within ctx,
+// for it to end: it is the listener's last step before the store closes.
 // Call it after Shutdown has returned, so no handler adds to the minute,
 // and before the store closes. A second call writes nothing.
 func (s *Server) FlushAudit(ctx context.Context) {

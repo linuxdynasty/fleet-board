@@ -1,6 +1,8 @@
 package outbox
 
 import (
+	"maps"
+	"slices"
 	"strings"
 	"unicode/utf8"
 
@@ -14,6 +16,10 @@ const (
 	MaxMessage = 1024
 	// maxStep caps CommandProgress.step, a name (the 256-byte name cap).
 	maxStep = 256
+	// maxMetadata and maxMetadataBytes bound CommandResult.metadata: at most
+	// 16 entries of 256 bytes (command.proto).
+	maxMetadata      = 16
+	maxMetadataBytes = 256
 )
 
 // scrubText is the hub's scrub pass. A variable only so an internal test
@@ -50,6 +56,33 @@ func cleanMessage(s string, max int) cleaned {
 // is not free text, so it is not scrubbed.
 func cleanName(s string) string {
 	return strings.ToValidUTF8(stripControl(cutUTF8(s, maxStep)), "�")
+}
+
+// cleanMetadata bounds a result's metadata before it is stored: the first
+// 16 keys in sorted order, each key and value cut to 256 bytes on a UTF-8
+// boundary with its control characters dropped. Keys that collide once
+// cleaned keep the first. It is small structured facts, not free text,
+// so it is not scrubbed (02e lists the scrubbed fields).
+func cleanMetadata(m map[string]string) map[string]string {
+	if len(m) == 0 {
+		return nil
+	}
+	keys := slices.Sorted(maps.Keys(m))
+	out := make(map[string]string, min(len(keys), maxMetadata))
+	for _, k := range keys {
+		if len(out) == maxMetadata {
+			break
+		}
+		ck := cleanShort(k)
+		if _, dup := out[ck]; !dup {
+			out[ck] = cleanShort(m[k])
+		}
+	}
+	return out
+}
+
+func cleanShort(s string) string {
+	return strings.ToValidUTF8(cutUTF8(stripControl(cutUTF8(s, maxMetadataBytes)), maxMetadataBytes), "\uFFFD")
 }
 
 // cutUTF8 is s cut to at most n bytes without splitting a character.

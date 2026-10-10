@@ -24,6 +24,9 @@ var (
 	// ErrMachineUnknown: no machines row has the machine id. Nothing is
 	// written.
 	ErrMachineUnknown = errors.New("outbox: unknown machine")
+	// ErrConflict: the command_id is stored for another machine. Nothing is
+	// written.
+	ErrConflict = errors.New("outbox: command_id stored for another machine")
 )
 
 // maxID is the longest command_id the outbox stores (the 02g install_id
@@ -68,7 +71,8 @@ type Op struct {
 // resulting tx"), so the decision and its command commit together or not
 // at all. It never sends: after the job commits the caller hands the
 // returned Op to [Service.Notify]. A command_id already stored is a no-op
-// that returns the stored row (Created false). The command's identity is
+// that returns the stored row (Created false), unless the row is another
+// machine's ([ErrConflict]). The command's identity is
 // its command_id alone; the epoch and per-epoch seq it travels with are
 // assigned each time it is sent.
 func Enqueue(ctx context.Context, tx *sql.Tx, in In) (Op, error) {
@@ -85,6 +89,9 @@ func Enqueue(ctx context.Context, tx *sql.Tx, in In) (Op, error) {
 	}
 	id := cmd.GetCommandId().GetValue()
 	if op, found, err := loadOp(ctx, tx, id); err != nil || found {
+		if err == nil && op.MachineID != in.MachineID {
+			return Op{}, ErrConflict
+		}
 		return op, err
 	}
 	var known int
@@ -124,8 +131,8 @@ func validate(in In) error {
 		return fmt.Errorf("%w: no command kind", ErrInvalid)
 	case in.Now.IsZero():
 		return fmt.Errorf("%w: no hub time", ErrInvalid)
-	case c.GetNotAfterTime() == nil || !c.GetNotAfterTime().AsTime().After(in.Now):
-		return fmt.Errorf("%w: not_after_time must be after now", ErrInvalid)
+	case c.GetNotAfterTime() == nil || c.GetNotAfterTime().AsTime().UnixMilli() <= in.Now.UnixMilli():
+		return fmt.Errorf("%w: not_after_time must be at least a millisecond after now", ErrInvalid)
 	case c.GetEpoch() != 0 || c.GetSeq() != 0:
 		return fmt.Errorf("%w: epoch and seq are set when the command is sent", ErrInvalid)
 	}

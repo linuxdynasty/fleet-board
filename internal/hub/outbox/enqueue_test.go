@@ -161,3 +161,23 @@ func TestEnqueueLeavesTheCallersCommandAlone(t *testing.T) {
 		t.Errorf("Enqueue changed the caller's command: %v", c)
 	}
 }
+
+// A known command_id for another machine is a conflict, not the stored
+// row; a deadline less than a millisecond ahead (the stored unit) is
+// invalid, not an insert error.
+func TestEnqueueRefusesAConflictAndASubMillisecondDeadline(t *testing.T) {
+	t.Parallel()
+	s := newStore(t)
+	mustEnqueue(t, s, "m1", "c1")
+	if _, err := enqueue(t, s, outbox.In{MachineID: "m2", Command: interrupt("c1"), Now: t0}); !errors.Is(err, outbox.ErrConflict) {
+		t.Errorf("Enqueue for another machine = %v, want ErrConflict", err)
+	}
+	c := interrupt("c2")
+	c.NotAfterTime = timestamppb.New(t0.Add(500 * time.Microsecond))
+	if _, err := enqueue(t, s, outbox.In{MachineID: "m1", Command: c, Now: t0}); !errors.Is(err, outbox.ErrInvalid) {
+		t.Errorf("Enqueue with a deadline 0.5 ms ahead = %v, want ErrInvalid", err)
+	}
+	if n := count(t, s, `SELECT count(*) FROM commands`); n != 1 {
+		t.Errorf("%d rows, want 1", n)
+	}
+}

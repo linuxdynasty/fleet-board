@@ -3,10 +3,7 @@ package outbox
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
-	"strings"
-	"time"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -16,7 +13,6 @@ import (
 
 	agentv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1"
 	typev1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/type/v1"
-	"github.com/linuxdynasty/fleet-board/internal/hub/statedb"
 )
 
 // From is the stream an agent message arrived on.
@@ -40,28 +36,29 @@ const (
 	// Applied: the commands row changed (and, for a result, the result was
 	// stored). The writer job committed.
 	Applied Outcome = iota + 1
-	// Known: a repeat for a command that already moved past it; nothing
-	// changed. A known result is answered with ResultAck like a new one.
+	// Known: a repeat for a command that already moved past it, or that
+	// says what the row already holds; nothing changed. A known result is
+	// answered with ResultAck like a new one.
 	Known
-	// Refused: no command of this stream's machine has the id, or the
-	// stream is not live. Nothing was written, and it is never answered.
+	// Refused: not an answer this hub takes: no command of this stream's
+	// machine has the id, the id is malformed, the stream is not live, or
+	// it is a refusal the agent did not log. Nothing was written, and it
+	// is never answered.
 	Refused
 )
 
 // Ack applies a CommandAck: pending -> delivered, Operation DELIVERED
 // (02i "Command lifecycle").
 func (s *Service) Ack(ctx context.Context, from From, a *agentv1.CommandAck) (Outcome, error) {
+	id := a.GetCommandId().GetValue()
 	now := s.now().UTC()
-	out, _, err := s.apply(ctx, from, "command_ack", a.GetCommandId().GetValue(), func(jctx context.Context, tx *sql.Tx, c current) (bool, error) {
-		if c.state != "pending" {
-			return false, nil
-		}
-		return true, c.update(jctx, tx, now, `UPDATE commands SET state = 'delivered', op_state = 'DELIVERED', ack_time = ?,
-			`+stamped, now.UnixMilli())
-	})
+	out, _, err := s.apply(ctx, from, "command_ack", id, func(c current) bool { return c.state == "pending" },
+		func(jctx context.Context, tx *sql.Tx, c current) error {
+			return c.update(jctx, tx, now, `UPDATE commands SET state = 'delivered', op_state = 'DELIVERED', ack_time = ?,
+				`+stamped, now.UnixMilli())
+		})
 	if out == Applied {
-		s.log.InfoContext(ctx, "outbox.acked", "command_id", a.GetCommandId().GetValue(), "machine_id", from.MachineID,
-			"epoch", from.Epoch)
+		s.log.InfoContext(ctx, "outbox.acked", "command_id", id, "machine_id", from.MachineID, "epoch", from.Epoch)
 		s.kick(from.MachineID) // the stream took a command: room for the next
 	}
 	return out, err
@@ -70,56 +67,69 @@ func (s *Service) Ack(ctx context.Context, from From, a *agentv1.CommandAck) (Ou
 // Progress applies a CommandProgress: the Operation is RUNNING at the step
 // reported, with its scrubbed message. The outbox row counts as delivered
 // (the agent persisted the command before it ran it), even if its ack was
-// lost. A closed command ignores it.
+// lost. A closed command ignores it, and so does a row that already holds
+// this progress: the agent re-sends its last progress after every
+// reconnect, and a repeat bumps nothing.
 func (s *Service) Progress(ctx context.Context, from From, p *agentv1.CommandProgress) (Outcome, error) {
 	msg := cleanMessage(p.GetMessage(), MaxMessage)
 	s.m.text(ctx, "command_progress.message", msg)
 	step := cleanName(p.GetStep())
 	now := s.now().UTC()
-	out, _, err := s.apply(ctx, from, "command_progress", p.GetCommandId().GetValue(), func(jctx context.Context, tx *sql.Tx, c current) (bool, error) {
-		if c.closed() {
-			return false, nil
-		}
-		return true, c.update(jctx, tx, now, `UPDATE commands SET state = 'delivered', op_state = 'RUNNING', step = ?,
+	out, _, err := s.apply(ctx, from, "command_progress", p.GetCommandId().GetValue(), func(c current) bool {
+		same := c.state == "delivered" && c.opState == "RUNNING" && c.step == step && c.stepIndex == int64(p.GetStepIndex()) &&
+			c.stepCount == int64(p.GetStepCount()) && c.message == msg.text
+		return !c.closed() && !same
+	}, func(jctx context.Context, tx *sql.Tx, c current) error {
+		return c.update(jctx, tx, now, `UPDATE commands SET state = 'delivered', op_state = 'RUNNING', step = ?,
 			step_index = ?, step_count = ?, message = ?, `+stamped, step, p.GetStepIndex(), p.GetStepCount(), msg.text)
 	})
 	return out, err
 }
 
 // Result applies a CommandResult in one job: the result, its message
-// scrubbed, is stored once in command_results, and the row is closed
-// (done, Operation DONE with the status and reason). A pending row closes
-// too: EPOCH_MISMATCH and SEQ_REPLAYED come without an ack (row 6 ruling).
-// A command already closed keeps its first result (Known). The caller
-// sends ResultAck after an Applied or Known outcome, never before.
+// scrubbed and its metadata bounded, is stored once in command_results,
+// and the row is closed (done, Operation DONE with the status and reason),
+// from pending too (the ack was lost). A command already closed keeps its
+// first result (Known). The caller sends ResultAck after an Applied or
+// Known outcome, never before.
+//
+// A refusal the agent sends without logging the command (EPOCH_MISMATCH,
+// SEQ_REPLAYED: it answered a stale copy, row 6 ruling, 02-contracts
+// "Envelope checks") is Refused: nothing is stored, the row stays as it
+// is and is not answered, so a pending row goes out again under the next
+// ready epoch with the same command_id.
+// Closing the row on it would answer that re-issue Known forever.
 func (s *Service) Result(ctx context.Context, from From, r *agentv1.CommandResult) (Outcome, error) {
 	id := r.GetCommandId().GetValue()
+	status, reason := statusName(r.GetStatus()), reasonName(r.GetReason())
 	ctx, span := s.tracer.Start(ctx, "hub.command.result", trace.WithAttributes(
-		attribute.String("command_id", id), attribute.String("machine_id", from.MachineID),
-		attribute.String("status", statusName(r.GetStatus()))), trace.WithLinks(agentLink(ctx, r.GetTrace())))
+		attribute.String("command_id", boundedID(id)), attribute.String("machine_id", from.MachineID),
+		attribute.String("status", status)), trace.WithLinks(agentLink(ctx, r.GetTrace())))
 	defer span.End()
+	if cause := unlogged(r.GetReason()); cause != "" {
+		s.refused(ctx, from, "command_result", id, cause)
+		return Refused, nil
+	}
 	msg := cleanMessage(r.GetMessage(), MaxMessage)
 	s.m.text(ctx, "command_result.message", msg)
 	stored := proto.CloneOf(r)
 	stored.Message = msg.text
+	stored.Metadata = cleanMetadata(r.GetMetadata())
 	body, err := proto.MarshalOptions{Deterministic: true}.Marshal(stored)
 	if err != nil {
 		return Refused, fmt.Errorf("outbox: encode result: %w", err)
 	}
-	status, reason := statusName(r.GetStatus()), reasonName(r.GetReason())
 	now := s.now().UTC()
-	out, c, err := s.apply(ctx, from, "command_result", id, func(jctx context.Context, tx *sql.Tx, c current) (bool, error) {
-		if c.closed() || c.hasResult {
-			return false, nil
-		}
-		if _, err := tx.ExecContext(jctx, `INSERT INTO command_results(command_id, machine_id, epoch, status, reason,
-			message, result, received_time) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-			id, from.MachineID, from.Epoch, status, reason, msg.text, body, now.UnixMilli()); err != nil {
-			return false, fmt.Errorf("outbox: store result: %w", err)
-		}
-		return true, c.update(jctx, tx, now, `UPDATE commands SET state = 'done', op_state = 'DONE', status = ?, reason = ?,
-			message = ?, done_time = ?, `+stamped, status, reason, msg.text, now.UnixMilli())
-	})
+	out, c, err := s.apply(ctx, from, "command_result", id, func(c current) bool { return !c.closed() && !c.hasResult },
+		func(jctx context.Context, tx *sql.Tx, c current) error {
+			if _, err := tx.ExecContext(jctx, `INSERT INTO command_results(command_id, machine_id, epoch, status, reason,
+				message, result, received_time) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+				id, from.MachineID, from.Epoch, status, reason, msg.text, body, now.UnixMilli()); err != nil {
+				return fmt.Errorf("outbox: store result: %w", err)
+			}
+			return c.update(jctx, tx, now, `UPDATE commands SET state = 'done', op_state = 'DONE', status = ?, reason = ?,
+				message = ?, done_time = ?, `+stamped, status, reason, msg.text, now.UnixMilli())
+		})
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "apply")
@@ -136,120 +146,15 @@ func (s *Service) Result(ctx context.Context, from From, r *agentv1.CommandResul
 	return out, nil
 }
 
-// current is the commands row a message is for, read inside its job.
-type current struct {
-	id, machine, kind, state string
-	created                  time.Time
-	hasResult                bool
-}
-
-func (c current) closed() bool { return c.state != "pending" && c.state != "delivered" }
-
-// stamped ends every Operation update: the version rises, and the
-// update time and hub_seq stamp follow, for the row of one command_id.
-const stamped = `version = version + 1, update_time = ?, hub_seq = ? WHERE command_id = ?`
-
-// update runs query, an UPDATE of c's row ending in [stamped], with args
-// and then the stamp's values, in the job's transaction.
-func (c current) update(ctx context.Context, tx *sql.Tx, now time.Time, query string, args ...any) error {
-	st, err := statedb.NextStamp(ctx, tx, now)
-	if err != nil {
-		return err
-	}
-	args = append(args, now.UnixMilli(), st.HubSeq, c.id)
-	if _, err := tx.ExecContext(ctx, query, args...); err != nil {
-		return fmt.Errorf("outbox: update command: %w", err)
-	}
-	return nil
-}
-
-// apply runs change on id's row in one writer job, after the checks every
-// arm shares; change reports whether it changed the row. It counts and
-// logs the outcome.
-func (s *Service) apply(ctx context.Context, from From, arm, id string,
-	change func(context.Context, *sql.Tx, current) (bool, error),
-) (Outcome, current, error) {
-	cause := ""
-	switch {
-	case id == "":
-		cause = "invalid"
-	case !from.Live:
-		cause = "stale_stream"
-	}
-	var c current
-	changed := false
-	if cause == "" {
-		jctx := context.WithoutCancel(ctx) // see statedb.WriteAudit
-		err := s.store.Write(ctx, func(tx *sql.Tx) error {
-			cause, changed = "", false
-			var err error
-			c, cause, err = load(jctx, tx, id, from.MachineID)
-			if err != nil || cause != "" {
-				return err
-			}
-			changed, err = change(jctx, tx, c)
-			return err
-		})
-		if err != nil {
-			s.m.message(ctx, arm, "failed")
-			s.log.ErrorContext(ctx, "outbox.failed", "step", arm, "err_kind", errKind(err), "command_id", id,
-				"machine_id", from.MachineID)
-			return Refused, c, err
-		}
-	}
-	switch {
-	case cause != "":
-		s.m.message(ctx, arm, cause)
-		if arm == "command_result" && cause == "unknown_command" {
-			s.m.unknown.Add(ctx, 1)
-		}
-		s.log.WarnContext(ctx, "outbox.refused", "arm", arm, "cause", cause, "command_id", id,
-			"machine_id", from.MachineID, "epoch", from.Epoch)
-		return Refused, c, nil
-	case changed:
-		s.m.message(ctx, arm, "applied")
-		return Applied, c, nil
+// unlogged is the refusal cause of a result the agent sends without
+// logging the command, or "" for any other result.
+func unlogged(r typev1.ReasonCode) string {
+	switch r {
+	case typev1.ReasonCode_REASON_CODE_EPOCH_MISMATCH:
+		return "epoch_mismatch"
+	case typev1.ReasonCode_REASON_CODE_SEQ_REPLAYED:
+		return "seq_replayed"
 	default:
-		s.m.message(ctx, arm, "known")
-		return Known, c, nil
-	}
-}
-
-// load reads id's row for machine; cause is unknown_command or
-// wrong_machine when the message is not for it.
-func load(ctx context.Context, tx *sql.Tx, id, machine string) (current, string, error) {
-	c := current{id: id}
-	var created int64
-	err := tx.QueryRowContext(ctx, `SELECT machine_id, kind, state, create_time,
-		EXISTS (SELECT 1 FROM command_results r WHERE r.command_id = c.command_id)
-		FROM commands c WHERE command_id = ?`, id).Scan(&c.machine, &c.kind, &c.state, &created, &c.hasResult)
-	switch {
-	case errors.Is(err, sql.ErrNoRows):
-		return c, "unknown_command", nil
-	case err != nil:
-		return c, "", fmt.Errorf("outbox: read command: %w", err)
-	case c.machine != machine:
-		return c, "wrong_machine", nil
-	}
-	c.created = time.UnixMilli(created)
-	return c, "", nil
-}
-
-func statusName(st typev1.Status) string { return strings.TrimPrefix(st.String(), "STATUS_") }
-
-func reasonName(r typev1.ReasonCode) string {
-	if r == typev1.ReasonCode_REASON_CODE_UNSPECIFIED {
 		return ""
-	}
-	return strings.TrimPrefix(r.String(), "REASON_CODE_")
-}
-
-// errKind is a bounded class of a store error.
-func errKind(err error) string {
-	switch {
-	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
-		return "timeout"
-	default:
-		return "io"
 	}
 }

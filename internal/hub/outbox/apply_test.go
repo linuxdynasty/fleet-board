@@ -127,8 +127,7 @@ func TestAResultClosesTheCommandOnce(t *testing.T) {
 	}
 }
 
-// A result for a command that was never acked (EPOCH_MISMATCH and
-// SEQ_REPLAYED come without an ack, row 6 ruling) still closes it.
+// A result for a command whose ack was lost still closes it.
 func TestAResultWithoutAnAckClosesAPendingCommand(t *testing.T) {
 	t.Parallel()
 	s := newStore(t)

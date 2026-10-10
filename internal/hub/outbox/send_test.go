@@ -3,6 +3,7 @@ package outbox_test
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"slices"
 	"testing"
 	"time"
@@ -322,5 +323,84 @@ func TestAnUndecodableCommandDoesNotHoldUpTheRest(t *testing.T) {
 	}
 	if v := sample(body, "fleet_hub_outbox_sends_total", `result="not_live"`); v != -1 {
 		t.Errorf("sends{not_live} = %v, want none", v)
+	}
+}
+
+// A full page of sends whose record failed does not hide the rows behind
+// it: once the store records again, the next commands still go out, with
+// the epoch's next seqs (the reviewer's probe: 100 failed records, then
+// two more commands, 102 sends).
+func TestRowsBehindAFullPageOfUnrecordedSendsStillGo(t *testing.T) {
+	t.Parallel()
+	s := newStore(t)
+	exec := func(q string) {
+		t.Helper()
+		if err := s.Write(context.Background(), func(tx *sql.Tx) error {
+			_, err := tx.ExecContext(context.Background(), q)
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	exec(`CREATE TRIGGER refuse_marks BEFORE UPDATE OF sent_epoch ON commands BEGIN SELECT RAISE(ABORT, 'test'); END`)
+	streams := newFakeStreams()
+	streams.setLive("m1", 1)
+	h := newService(t, s, streams, fixedClock(t0))
+	enqueueMany(t, s, "m1", 100, "c")
+	h.svc.Ready("m1", 1)
+	streams.waitSent(t, 100)
+	waitEvent(t, h, "outbox.failed")
+	exec(`DROP TRIGGER refuse_marks`)
+	h.svc.Notify(enqueueMany(t, s, "m1", 2, "late")...)
+	got := streams.waitSent(t, 102)
+	if len(got) != 102 || got[100].cmd.GetCommandId().GetValue() != "late0" || got[101].cmd.GetSeq() != 102 {
+		t.Fatalf("%d sends; last two %v", len(got), ids(got[len(got)-2:]))
+	}
+	waitMarked(t, s, "late1", 1, 102)
+}
+
+// enqueueMany enqueues n Interrupts for machine in one writer job, with ids
+// prefix0, prefix1, ...
+func enqueueMany(t *testing.T, s *store.Store, machine string, n int, prefix string) []outbox.Op {
+	t.Helper()
+	ops := make([]outbox.Op, 0, n)
+	err := s.Write(context.Background(), func(tx *sql.Tx) error {
+		for i := range n {
+			op, err := outbox.Enqueue(context.Background(), tx, outbox.In{
+				MachineID: machine,
+				Command:   interrupt(fmt.Sprintf("%s%d", prefix, i)), Now: t0,
+			})
+			if err != nil {
+				return err
+			}
+			ops = append(ops, op)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return ops
+}
+
+// A send that finds the ready epoch's stream gone drops the machine's ready
+// mark: later commands for it wait for the next Ready instead of trying
+// the dead epoch again.
+func TestAGoneStreamDropsItsReadyMark(t *testing.T) {
+	t.Parallel()
+	s := newStore(t)
+	streams := newFakeStreams()
+	streams.setLive("m1", 2) // epoch 1's stream is already gone
+	streams.setLive("m2", 1)
+	h := newService(t, s, streams, fixedClock(t0))
+	h.svc.Ready("m1", 1)
+	h.svc.Notify(mustEnqueue(t, s, "m1", "c1"))
+	waitSends(t, h, "not_live", 1)
+	h.svc.Notify(mustEnqueue(t, s, "m1", "c2"))
+	h.svc.Notify(mustEnqueue(t, s, "m2", "c3"))
+	h.svc.Ready("m2", 1)
+	waitMarked(t, s, "c3", 1, 1) // that pass has ended
+	if v := sample(h.scrape(t), "fleet_hub_outbox_sends_total", `result="not_live"`); v != 1 {
+		t.Errorf("sends{not_live} = %v, want 1: the dead epoch was tried again", v)
 	}
 }

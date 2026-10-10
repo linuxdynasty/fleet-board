@@ -34,8 +34,8 @@ anything that touches `AgentService`. Rules for this package:
   transaction; a displaced stream's close never
   changes its machine (#138). A housekeeping cut sends no Bye: the handler
   returns nil and the stream ends with an OK status (row 5 ruling, fork 4).
-- A new `ConnectRequest` arm gets its own file that registers it with
-  `arms.add`; do not grow `arms.go`.
+- A new `ConnectRequest` arm, or one plan row's family of arms, gets its
+  own file that registers it with `arms.add`; do not grow `arms.go`.
 - Commands go to a stream only through the outbox's sender and the
   registry's `Send`, never from an arm handler; `ResultAck` only after the
   result's job committed. Nothing is sent to a machine before the `ready`

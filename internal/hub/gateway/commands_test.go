@@ -135,10 +135,15 @@ func TestACommandMakesTheRoundTrip(t *testing.T) {
 			t.Errorf("%s still counted unhandled: %v", arm, v)
 		}
 	}
-	// A repeated result is answered again and changes nothing.
+	// A repeated result is answered again, changes nothing and, decided on
+	// the read pool, costs no writer job.
+	jobs := metricSum(scrape(t, h.fixture), "fleet_hub_writer_jobs_total")
 	s.send(t, reqResult("c1", "other"))
 	if ra := s.next(t).GetResultAck(); ra == nil || ra.GetCommandIds()[0].GetValue() != "c1" {
 		t.Fatalf("want a second ResultAck{c1}, got %v", ra)
+	}
+	if got := metricSum(scrape(t, h.fixture), "fleet_hub_writer_jobs_total"); got != jobs {
+		t.Errorf("a repeated result ran %v writer jobs, want 0", got-jobs)
 	}
 }
 
@@ -227,5 +232,35 @@ func TestACommandEnqueuedBeforeARestartIsSentAfterIt(t *testing.T) {
 		if got.GetCommandId().GetValue() != want || got.GetEpoch() != e2 || got.GetSeq() != uint64(i+1) {
 			t.Errorf("send %d after the restart: %v", i, got)
 		}
+	}
+}
+
+// A refusal the agent did not log (EPOCH_MISMATCH: it answered a stale
+// copy) gets no ResultAck and leaves the command open; the command's real
+// answers then close it with their own result.
+func TestAnUnloggedRefusalIsNotAcknowledged(t *testing.T) {
+	t.Parallel()
+	h := startHub(t)
+	m := h.enrollMachine(t)
+	s, epoch := h.connected(t, m, 0)
+	h.enqueue(t, m.id, "c1")
+	gateway.Ready(h.srv, m.id, epoch)
+	s.command(t)
+	refusal := reqResult("c1", "")
+	refusal.GetCommandResult().Status = typev1.Status_STATUS_FAILED
+	refusal.GetCommandResult().Reason = typev1.ReasonCode_REASON_CODE_EPOCH_MISMATCH
+	s.send(t, refusal)
+	h.waitMetric(t, "fleet_hub_command_messages_total", 1, `outcome="epoch_mismatch"`)
+	s.silent(t, 200*time.Millisecond)
+	if r := h.opRow(t, "c1"); r.state != "pending" {
+		t.Fatalf("the refusal changed the row: %+v", r)
+	}
+	s.send(t, reqAck("c1"))
+	s.send(t, reqResult("c1", ""))
+	if ra := s.next(t).GetResultAck(); ra == nil || ra.GetCommandIds()[0].GetValue() != "c1" {
+		t.Fatalf("want ResultAck{c1}, got %v", ra)
+	}
+	if r := h.opRow(t, "c1"); r.state != "done" || r.opState != "DONE" {
+		t.Errorf("row after the real result: %+v", r)
 	}
 }

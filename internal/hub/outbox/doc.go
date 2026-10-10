@@ -19,5 +19,7 @@
 // text is cut to its 1 KiB cap and scrubbed there, never in the writer's
 // transaction, then one writer job applies the message. A message for a
 // command with no row, of another machine, or from a stream that is no
-// longer live is [Refused] and writes nothing.
+// longer live is [Refused] and writes nothing, and so is a refusal the
+// agent sends without logging the command (EPOCH_MISMATCH, SEQ_REPLAYED):
+// the command goes out again under the live epoch.
 package outbox

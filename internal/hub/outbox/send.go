@@ -18,16 +18,19 @@ import (
 const (
 	// sendBatch is the most pending rows one read loads for a machine.
 	sendBatch = 100
-	// retryFull is how long a machine whose stream queue was full waits
-	// before it is looked at again.
-	retryFull = 50 * time.Millisecond
+	// retryFull is how long a machine whose stream queue was full first
+	// waits before it is looked at again; it doubles while the queue stays
+	// full, up to retryFullMax, and starts over after a queued send.
+	retryFull    = 50 * time.Millisecond
+	retryFullMax = 2 * time.Second
 )
 
 // Run is the one goroutine that sends commands, until ctx ends. Each pass
-// takes the machines that were kicked and are ready, and for each sends
-// its pending commands in enqueue order on the ready epoch's stream, then
-// records the sends in one writer job. It reads through the read pool and
-// writes only after the sends are queued: no transaction spans a send.
+// takes the machines that were kicked and are ready, sends each its
+// pending commands in enqueue order on the ready epoch's stream, then
+// records every send of the pass in one writer job. It reads through the
+// read pool and writes only after the sends are queued: no transaction
+// spans a send.
 func (s *Service) Run(ctx context.Context) {
 	for {
 		select {
@@ -41,11 +44,15 @@ func (s *Service) Run(ctx context.Context) {
 				delete(s.sends, machine)
 			}
 		}
+		var marks []mark
 		for machine, epoch := range ready {
 			if ctx.Err() != nil {
 				return
 			}
-			s.sendPending(ctx, machine, epoch)
+			marks = append(marks, s.sendPending(ctx, machine, epoch)...)
+		}
+		if len(marks) > 0 {
+			s.markSent(ctx, marks)
 		}
 	}
 }
@@ -57,58 +64,65 @@ func (s *Service) isReady(machine string) bool {
 	return ok
 }
 
-// pendingRow is one command to send.
+// pendingRow is one command to send; rowid is its send order.
 type pendingRow struct {
+	rowid   int64
 	id      string
 	command []byte
 }
 
-// mark records that a command went out on epoch with seq.
+// mark records that a command went out on machine's epoch with seq.
 type mark struct {
-	id  string
-	seq uint64
+	machine, id string
+	epoch, seq  uint64
 }
 
 // sendPending sends machine's pending commands not yet sent on epoch, in
-// enqueue order, with the epoch and the next seqs of that epoch.
-func (s *Service) sendPending(ctx context.Context, machine string, epoch uint64) {
+// enqueue order, with the epoch and the next seqs of that epoch, and
+// returns the sends to record. It pages by send order, so rows it skips
+// (sent on this epoch already, or undecodable) never hide the rows behind
+// them. A full stream queue stops it and looks again after a backoff; a
+// stream that is gone stops it and drops the epoch's ready mark.
+func (s *Service) sendPending(ctx context.Context, machine string, epoch uint64) []mark {
 	es := s.sends[machine]
 	if es == nil || es.epoch != epoch {
 		es = &epochSends{epoch: epoch, sent: map[string]bool{}}
 		s.sends[machine] = es
 	}
+	var marks []mark
+	var after int64
 	for {
-		rows, maxSeq, err := s.loadPending(ctx, machine, epoch)
+		rows, maxSeq, err := s.loadPending(ctx, machine, epoch, after)
 		if err != nil {
 			s.log.ErrorContext(ctx, "outbox.failed", "step", "load", "err_kind", errKind(err), "machine_id", machine)
-			return
+			return marks
 		}
 		es.seq = max(es.seq, maxSeq) // a backstop: Run is the only sender, so they agree
-		var marks []mark
-		stopped := false
 		for _, r := range rows {
+			after = r.rowid
 			if es.sent[r.id] {
 				continue
 			}
 			res, ok := s.sendOne(ctx, machine, es, r)
 			if !ok {
-				continue // logged and counted; it never holds up the rows behind it
+				continue // logged and counted; paging goes on past it
 			}
 			s.m.send(ctx, res)
-			if res != SendQueued {
-				stopped = true
-				if res == SendFull {
-					time.AfterFunc(retryFull, func() { s.kick(machine) })
-				}
-				break
+			switch res {
+			case SendQueued:
+				es.backoff = 0
+				marks = append(marks, mark{machine: machine, id: r.id, epoch: epoch, seq: es.seq})
+				continue
+			case SendFull:
+				es.backoff = min(max(2*es.backoff, retryFull), retryFullMax)
+				time.AfterFunc(es.backoff, func() { s.kick(machine) })
+			case SendNotLive:
+				s.Gone(machine, epoch)
 			}
-			marks = append(marks, mark{id: r.id, seq: es.seq})
+			return marks
 		}
-		if len(marks) > 0 {
-			s.markSent(ctx, machine, epoch, marks)
-		}
-		if stopped || len(rows) < sendBatch || len(marks) == 0 {
-			return
+		if len(rows) < sendBatch {
+			return marks
 		}
 	}
 }
@@ -150,10 +164,11 @@ func (s *Service) sendOne(ctx context.Context, machine string, es *epochSends, r
 	return res, true
 }
 
-// loadPending reads machine's pending rows not sent on epoch and still
-// inside their deadline (expiry is the hub's, 5g), oldest first, and the
-// highest seq already recorded for the epoch.
-func (s *Service) loadPending(ctx context.Context, machine string, epoch uint64) ([]pendingRow, uint64, error) {
+// loadPending reads a page of machine's pending rows after the row id
+// after, not sent on epoch and still inside their deadline (expiry is the
+// hub's, 5g), oldest first, and the highest seq already recorded for the
+// epoch.
+func (s *Service) loadPending(ctx context.Context, machine string, epoch uint64, after int64) ([]pendingRow, uint64, error) {
 	var rows []pendingRow
 	var maxSeq int64
 	err := s.store.Read(ctx, func(tx *sql.Tx) error {
@@ -161,16 +176,16 @@ func (s *Service) loadPending(ctx context.Context, machine string, epoch uint64)
 			machine, epoch).Scan(&maxSeq); err != nil {
 			return err
 		}
-		q, err := tx.QueryContext(ctx, `SELECT command_id, command FROM commands WHERE machine_id = ? AND state = 'pending'
-			AND (sent_epoch IS NULL OR sent_epoch < ?) AND not_after_time > ? ORDER BY id LIMIT ?`,
-			machine, epoch, s.now().UnixMilli(), sendBatch)
+		q, err := tx.QueryContext(ctx, `SELECT id, command_id, command FROM commands WHERE machine_id = ? AND state = 'pending'
+			AND id > ? AND (sent_epoch IS NULL OR sent_epoch < ?) AND not_after_time > ? ORDER BY id LIMIT ?`,
+			machine, after, epoch, s.now().UnixMilli(), sendBatch)
 		if err != nil {
 			return err
 		}
 		defer func() { _ = q.Close() }()
 		for q.Next() {
 			var r pendingRow
-			if err := q.Scan(&r.id, &r.command); err != nil {
+			if err := q.Scan(&r.rowid, &r.id, &r.command); err != nil {
 				return err
 			}
 			rows = append(rows, r)
@@ -183,25 +198,29 @@ func (s *Service) loadPending(ctx context.Context, machine string, epoch uint64)
 	return rows, uint64(maxSeq), nil //nolint:gosec // G115: sent_seq has CHECK >= 1
 }
 
-// markSent records the sends in one writer job, after they were queued.
-// A send is recorded only over an older one, so a slow job from an
+// markSent records a pass's sends in one writer job, after they were
+// queued. A send is recorded only over an older one, so a slow job from an
 // earlier epoch never lowers it. When the job fails, the sends stay
-// remembered in memory for the epoch and the rows stay pending.
-func (s *Service) markSent(ctx context.Context, machine string, epoch uint64, marks []mark) {
+// remembered in memory for their epoch and the rows stay pending.
+func (s *Service) markSent(ctx context.Context, marks []mark) {
 	now := s.now().UnixMilli()
 	jctx := context.WithoutCancel(ctx)
 	err := s.store.Write(ctx, func(tx *sql.Tx) error {
 		for _, m := range marks {
 			if _, err := tx.ExecContext(jctx, `UPDATE commands SET sent_epoch = ?, sent_seq = ?, sent_time = ?
-				WHERE command_id = ? AND (sent_epoch IS NULL OR sent_epoch < ?)`, epoch, m.seq, now, m.id, epoch); err != nil {
+				WHERE command_id = ? AND (sent_epoch IS NULL OR sent_epoch < ?)`, m.epoch, m.seq, now, m.id, m.epoch); err != nil {
 				return err
 			}
 		}
 		return nil
 	})
 	if err != nil {
-		s.log.ErrorContext(ctx, "outbox.failed", "step", "mark", "err_kind", errKind(err), "machine_id", machine,
-			"epoch", epoch, "commands", len(marks))
+		machines := map[string]bool{}
+		for _, m := range marks {
+			machines[m.machine] = true
+		}
+		s.log.ErrorContext(ctx, "outbox.failed", "step", "mark", "err_kind", errKind(err), "commands", len(marks),
+			"machines", len(machines))
 	}
 }
 
