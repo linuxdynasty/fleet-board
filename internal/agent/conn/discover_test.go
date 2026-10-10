@@ -192,7 +192,9 @@ func TestOneBrowsePerAttemptOnTheBackoff(t *testing.T) {
 	waitFor(t, 10*time.Second, "five failed attempts", func() bool { return len(a.events(t, "connect.backoff")) >= 5 })
 	r.cancel()
 	_ = r.result(t, 10*time.Second)
-	if tries := len(a.events(t, "connect.attempt")); d.count() != tries {
+	// The stop may land between an attempt's cached try and its browse,
+	// so the last attempt may have none.
+	if tries := len(a.events(t, "connect.attempt")); d.count() != tries && d.count() != tries-1 {
 		t.Errorf("browses = %d, attempts = %d; want one browse per attempt", d.count(), tries)
 	}
 }
