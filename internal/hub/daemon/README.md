@@ -43,7 +43,13 @@ parses flags and calls `Init`, `Run`, `EnrollToken`, `Backup` or `Restore`.
    `fleetd-<host>.local` is always among them, even with `tls.agent_names`
    set) plus the host of every `hub_addresses` entry: the same list `Restore`
    issues for `--address`, so a restored certificate is served as is.
-7. Binds the agent listener (`gateway.NewServer` with the store, the identity
+7. Sweeps the store before any listener binds, so no Hello can race it
+   (`statedb.StartSweep`, 03n "Hub start"): every `machine_connections` row
+   left live (a crash, or a Hello committed after a shutdown stopped waiting)
+   is closed as `hub_restart`, and every `ONLINE` machine becomes `STALE`
+   (`machine.state_changed{reason="hub_start"}`, `hub.start_sweep{stale,
+   rows_closed}`). A store failure refuses the start (`store_failed`).
+8. Binds the agent listener (`gateway.NewServer` with the store, the identity
    and the revocation list: `Enroll`, and a revoked client certificate fails
    its handshake), then the API and optional metrics listeners (port 0 is allowed; the
    real port is logged), then `<state_dir>/admin.sock`: a socket already
@@ -56,15 +62,21 @@ parses flags and calls `Init`, `Run`, `EnrollToken`, `Backup` or `Restore`.
    never fails the hub, and `Options.Discovery` injects the multicast
    responder and the interface list in tests) and serves until the context
    ends (SIGTERM), when it stops advertising first.
-8. Runs the nightly backup in a goroutine it owns (`backup.Schedule`,
+9. Runs the nightly backup in a goroutine it owns (`backup.Schedule`,
    [internal/hub/backup](../backup/README.md)): a check at start, then every
    minute (`Options.BackupTicks` in tests). A copy is made at the first check
    of each local date at or after 03:00, and at start or wake when the newest
    nightly copy is more than 24 h old; the last 7 nightly copies are kept.
    `fleet_hub_backup_age_seconds` is served from the same schedule.
-9. Stops: shuts the listeners down (10 s grace, then closes; closing the admin
+10. Runs the housekeeping jobs in a goroutine it owns
+   ([internal/hub/housekeeping](../housekeeping/README.md)), checked every
+   5 s (`Options.HousekeepingTicks` in tests): `machine_state`
+   (`gateway.Server.Housekeep`: `STALE` at 45 s of silence, `OFFLINE` and
+   the stream cut at 3 min, a stalled `STALE` stream cut). Later plan rows
+   add their prune jobs to the same list.
+11. Stops: shuts the listeners down (10 s grace, then closes; closing the admin
    listener removes `admin.sock`), stops the hourly certificate check and the
-   backup job (an unfinished copy is abandoned and leaves no file), writes
+   backup job and the housekeeping (an unfinished copy is abandoned and leaves no file), writes
    the agent listener's `machine.enroll_failed` summary of the minute in
    progress (`gateway.Server.FlushAudit`), closes the store, releases the
    lock.
@@ -149,5 +161,9 @@ held), take one with the hub stopped and then start `Run`, and watch `Run`
 make its start-up catch-up copy and serve its age. The restore tests refuse
 a restore while another process holds `fleetd.lock` (`state.db` unchanged,
 the refusal counted), and restore with `--address` and then check `Run`
-serves that certificate without re-issuing it.
+serves that certificate without re-issuing it. The sweep test seeds a
+crash's leftovers (an `ONLINE` machine with a live row) with the hub
+stopped, starts `Run` and finds the row closed as `hub_restart` and the
+machine `STALE`, then drives the housekeeping tick with a fake clock to
+`OFFLINE` exactly 3 minutes after the start.
 `cmd/fleetd` repeats the cross-process cases with the built binary.

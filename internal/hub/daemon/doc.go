@@ -13,7 +13,8 @@
 // it opens state.db, opens the existing store (never creating one), reads the
 // identity row, loads the revocation list (revoked-serials reconciled with
 // state.db; a bad file refuses the start as revocations_invalid) before any
-// listener binds, makes sure the server certificate is current, and serves the
+// listener binds, sweeps the store (rows left live closed as hub_restart,
+// ONLINE machines made STALE) before any listener binds, makes sure the server certificate is current, and serves the
 // agent listener (Enroll; revoked client certificates fail the handshake),
 // the API listener, the optional metrics listener and the
 // admin socket (<state_dir>/admin.sock, mode 0600, a leftover socket removed
@@ -23,7 +24,9 @@
 // writes the agent listener's audit summary of the minute in progress
 // before the store closes. A goroutine it owns checks the
 // certificate every hour, and another runs the
-// nightly backup (backup.Schedule: a check at start, then every minute).
+// nightly backup (backup.Schedule: a check at start, then every minute),
+// and another the housekeeping jobs every 5 s (machine STALE and OFFLINE
+// marking through gateway.Server.Housekeep).
 //
 // [EnrollToken] asks the running hub over the admin socket for an enroll
 // token; with no hub listening it is [ErrNotRunning] and writes nothing.
