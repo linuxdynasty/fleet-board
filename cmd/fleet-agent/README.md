@@ -49,7 +49,8 @@ fleet-agent run    # logs to stderr; stop with Ctrl-C or SIGTERM
   it try at once.
 - Exit codes: 0 after a signal (it says goodbye to the hub first; a
   signal while it is still starting is a clean stop too, logged as
-  `run.stopped`), 1 when
+  `run.stopped{step}`; a real startup failure at the same moment still
+  exits 1 with `run.failed`), 1 when
   the machine is not enrolled, another `run` holds the folder, or the loop
   ended on its own: the machine was revoked or is unknown to the hub, the
   hub belongs to another fleet, or the certificate expired. The last log

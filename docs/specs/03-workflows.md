@@ -355,7 +355,10 @@ re-enroll rule are in [02g](02g-agent-security.md#machine-lifecycle-revoke-and-d
   sent) and `run.ended_removed{file}` when it named another machine; every
   `run.*` line after the identity is read carries `machine_id`. A signal
   during startup is a clean stop: `run.stopped{step}` and exit 0, not
-  `run.failed`.
+  `run.failed`, only when the cancellation is what stopped that step (the
+  store open or the loop setup); a real failure at the same moment (not
+  enrolled, a loose or damaged file, another `run`) is still
+  `run.failed{step, err_kind}` and exit 1.
 
 At 3 AM: "why did `fleet-agent enroll` fail?" → `enroll.refused` (the reason
 the agent printed, and the peer) or `enroll.failed` (the hub's step). "machine X offline since when, why?" → `fleet_hub_machine_state` plus
@@ -365,7 +368,8 @@ the agent's `connect.attempt` logs (last candidate tried, last TLS error).
 `wait_ms` and what is left of the 5 s minimum gap since the last try
 started.
 "why does `fleet-agent run` exit at once?" → `run.refused{end}` (the end
-recorded in `ended.json`) or `run.failed{step}`.
+recorded in `ended.json`) or `run.failed{step}`; exit 0 right after start
+with `run.stopped{step}` means a stop signal arrived during startup.
 "why did machine X reconnect just now?" → the agent's `wake.detected` or
 `netchange.acted` (its `why`); "why did it not reconnect after a network
 change?" → `netchange.ignored` (the change did not touch the connection),

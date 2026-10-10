@@ -109,6 +109,9 @@ func TestARunAfterAnEndSendsNothing(t *testing.T) {
 			if lines := conntest.Lines(t, out, "store.opened"); len(lines) != 0 {
 				t.Errorf("a refused run opened agent.db first: %v", lines)
 			}
+			if lines := conntest.Lines(t, out, "connect.attempt"); len(lines) != 0 {
+				t.Errorf("a refused run tried to connect to %v", lines)
+			}
 			if n := dialed.Load(); n != 0 || h.Requests() != before {
 				t.Errorf("run after %s made %d connections and %d hub requests, want none", tc.end, n, h.Requests()-before)
 			}

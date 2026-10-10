@@ -53,10 +53,12 @@ func runCommand(dir func() (string, error), version string, stderr io.Writer) *c
 func runAgent(ctx context.Context, dir, version, boot string, tel *telemetry.Telemetry) error {
 	log := tel.Logger.With("component", "run")
 	failed := func(step string, err error) error {
-		if ctx.Err() != nil {
-			// A signal during startup is a clean stop, not a failure.
+		// A signal during startup is a clean stop, not a failure, but only
+		// when the signal is what failed the step: a real failure (a loose
+		// file, not enrolled) that coincides with one is still a failure.
+		if cerr := ctx.Err(); cerr != nil && errors.Is(err, cerr) {
 			log.InfoContext(ctx, "run.stopped", "step", step)
-			return nil //nolint:nilerr // the error is the stop itself (a cancelled context), so exit 0
+			return nil
 		}
 		log.ErrorContext(ctx, "run.failed", "step", step, "err_kind", runErrKind(err))
 		return commandError{err}

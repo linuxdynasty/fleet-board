@@ -76,6 +76,10 @@ func TestRunNeedsAnEnrolledMachine(t *testing.T) {
 		if r.code != 1 || !strings.Contains(r.stderr, "not enrolled") {
 			t.Errorf("run on %s = %d %q, want 1 and not enrolled", filepath.Base(dir), r.code, r.stderr)
 		}
+		if failed := conntest.Lines(t, r.stderr, "run.failed"); len(failed) != 1 || failed[0]["step"] != "identity" ||
+			failed[0]["err_kind"] != "constraint" {
+			t.Errorf("run on %s logged %v, want one run.failed{step=identity, err_kind=constraint}", filepath.Base(dir), failed)
+		}
 	}
 }
 
@@ -106,8 +110,12 @@ func TestOnlyOneRunPerStateFolder(t *testing.T) {
 		t.Fatal("a second run on the same folder is still running")
 	}
 	if out := second.stderr.String(); second.code != 1 || !strings.Contains(out, "fleet-agent.lock") ||
-		!strings.Contains(out, `"run.failed"`) || strings.Contains(out, "fleetd") {
+		strings.Contains(out, "fleetd") {
 		t.Errorf("a second run = %d %q, want 1 naming fleet-agent.lock", second.code, out)
+	}
+	if failed := conntest.Lines(t, second.stderr.String(), "run.failed"); len(failed) != 1 || failed[0]["step"] != "lock" ||
+		failed[0]["err_kind"] != "constraint" {
+		t.Errorf("a second run logged %v, want one run.failed{step=lock, err_kind=constraint}", failed)
 	}
 	if first.exited() {
 		t.Fatalf("the first run ended (%d): %s", first.code, first.stderr.String())

@@ -48,6 +48,35 @@ func TestARunWithADamagedEndSendsNothing(t *testing.T) {
 	if dialed != 0 {
 		t.Errorf("run with a damaged ended.json made %d connections, want none", dialed)
 	}
+	if lines := conntest.Lines(t, out, "connect.attempt"); len(lines) != 0 {
+		t.Errorf("run with a damaged ended.json tried to connect to %v", lines)
+	}
+}
+
+// An ended.json open to other users is refused the same way, as a
+// constraint (03 W1): exit 1, run.failed{step="ended", err_kind="constraint"}
+// and no connection.
+func TestARunWithALooseEndSendsNothing(t *testing.T) {
+	t.Parallel()
+	h := conntest.StartHub(t, conntest.Options{})
+	dir, machine := enrolledDir(t, h)
+	writeEnded(t, dir, "revoked", machine)
+	if err := os.Chmod(filepath.Join(dir, "ended.json"), 0o644); err != nil { //nolint:gosec // G302: the test makes the file loose on purpose
+		t.Fatal(err)
+	}
+	r, dialed := countedRun(t, dir)
+	out := r.stderr.String()
+	failed := conntest.Lines(t, out, "run.failed")
+	if r.code != 1 || len(failed) != 1 || failed[0]["step"] != "ended" || failed[0]["err_kind"] != "constraint" ||
+		failed[0]["machine_id"] != machine {
+		t.Errorf("run = %d %q; want 1 and one run.failed{step=ended, err_kind=constraint, machine_id=%s}", r.code, out, machine)
+	}
+	if dialed != 0 {
+		t.Errorf("run with a loose ended.json made %d connections, want none", dialed)
+	}
+	if lines := conntest.Lines(t, out, "connect.attempt"); len(lines) != 0 {
+		t.Errorf("run with a loose ended.json tried to connect to %v", lines)
+	}
 }
 
 // The loop ending on its own exits 1: here the certificate has expired
@@ -81,5 +110,8 @@ func TestARunWhoseLoopEndsExitsOne(t *testing.T) {
 	}
 	if dialed != 0 {
 		t.Errorf("run with an expired certificate made %d connections, want none", dialed)
+	}
+	if lines := conntest.Lines(t, out, "connect.attempt"); len(lines) != 0 {
+		t.Errorf("run with an expired certificate tried to connect to %v", lines)
 	}
 }

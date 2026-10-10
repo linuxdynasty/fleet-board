@@ -2,6 +2,7 @@ package ring_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/linuxdynasty/fleet-board/internal/agent/ring"
@@ -165,5 +166,22 @@ func TestLastIsTheHighestSeqHandedOut(t *testing.T) {
 	}
 	if got := again.Last(); got != 0 {
 		t.Errorf("Last of a new allocator = %d, want 0 until its first Next", got)
+	}
+}
+
+// fleet-agent run tells a stop signal from a real failure with
+// errors.Is(err, ctx.Err()) (cmd/fleet-agent/run.go), so a cancelled context
+// must stay visible in the error Seqs returns.
+func TestSeqsWithACancelledContextWrapsTheCancellation(t *testing.T) {
+	t.Parallel()
+	db, err := ring.Open(context.Background(), stateDir(t), ring.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := db.Seqs(ctx); !errors.Is(err, context.Canceled) {
+		t.Errorf("Seqs on a cancelled context = %v, want an error wrapping context.Canceled", err)
 	}
 }
