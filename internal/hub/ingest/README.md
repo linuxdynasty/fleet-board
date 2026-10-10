@@ -6,9 +6,10 @@ appliers follow.
 
 ```go
 c := ingest.Clean(snap) // on the stream's ingest goroutine; c.Cut, c.Scrubbed for telemetry
-out, err := ingest.ApplySnapshot(ctx, st, ingest.Stream{MachineID: id, Epoch: e, LastEventSeq: h.GetLastEventSeq(),
+p, err := ingest.SubmitSnapshot(ctx, st, ingest.Stream{MachineID: id, Epoch: e, LastEventSeq: h.GetLastEventSeq(),
 	Counters: counters, InstallID: h.GetInstallId()}, snap, appliers, now)
-// out.Generation, out.Rollback (02i rule 3 causes)
+out, err := p.Wait(ctx) // out.Generation, out.Rollback (02i rule 3 causes), out.Change
+// a ctx error leaves the outcome unknown; p.Wait can be called again later
 ```
 
 - **`Clean`** works in place, before the writer job: the one exception to
@@ -70,7 +71,7 @@ records `fleet_hub_snapshot_apply_seconds{result}`,
 Tests: `CGO_ENABLED=0 go test ./internal/hub/ingest/`. They cover `Clean`:
 caps, control and format characters, invalid UTF-8, a cut on a character
 boundary, the scrubbed fields and the cut to the cap before the scrubber
-(six hostile 160 KiB fields hand it at most 6 x 256 bytes). `ApplySnapshot` is driven
+(six hostile 160 KiB fields hand it at most 6 x 256 bytes). `SubmitSnapshot` is driven
 through the real listener in `internal/hub/gateway` (applier order, a
 failing or panicking applier rolling everything back) and the statedb core in
 `internal/hub/statedb`.

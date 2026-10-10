@@ -45,9 +45,10 @@
 // returned (each row closed) or its context ends.
 //
 // The Snapshot arm cleans the Snapshot's text and applies it with
-// ingest.ApplySnapshot as one writer job (the core, ServerOptions.Appliers,
-// then ONLINE, logged as machine.state_changed{reason="snapshot"}), whose wait ends, as a Hello's does, when the agent leaves
-// or Shutdown begins (snapshot.abandoned); after the commit it calls ServerOptions.OnSnapshotApplied and, on a seq
+// ingest.SubmitSnapshot as one writer job (the core, ServerOptions.Appliers,
+// then ONLINE, logged as machine.state_changed{reason="snapshot"}), whose wait ends, as a Hello's does, when the agent leaves,
+// a housekeeping cut or Shutdown begins (snapshot.abandoned; the teardown logs the job's change ahead of the row
+// close's); after the commit it calls ServerOptions.OnSnapshotApplied and, on a seq
 // rollback in the epoch's first Snapshot, sends SnapshotRequest (counted
 // when the send queue drops it). A Snapshot not applied
 // ends the stream unless a newer Hello already displaced it.

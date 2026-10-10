@@ -53,10 +53,52 @@ func TestASnapshotWhoseAgentLeftIsAbandonedNotFailed(t *testing.T) {
 	// teardown's close of the live row takes the machine OFFLINE (plan row
 	// 5b): the agent left.
 	h.waitRow(t, m.id, "the job's commit, then the close", func(r machineRow) bool { return r.state == "OFFLINE" && r.snapSeq == 5 })
+	// Both committed changes are logged, in commit order (03n: every
+	// committed change of machines.state): the teardown reads the abandoned
+	// job's result before it closes the row.
+	c := h.waitChanges(t, m.id, 2)
+	if len(c) != 2 || c[0]["from"] != "ENROLLED" || c[0]["to"] != "ONLINE" || c[0]["reason"] != "snapshot" ||
+		c[1]["from"] != "ONLINE" || c[1]["to"] != "OFFLINE" || c[1]["reason"] != "stream_closed" {
+		t.Errorf("machine.state_changed lines %v, want ENROLLED to ONLINE (snapshot), then ONLINE to OFFLINE (stream_closed)", c)
+	}
 	if n := len(h.events(t, "snapshot.failed")); n != 0 {
 		t.Errorf("%d snapshot.failed lines, want none", n)
 	}
 	h.waitMetric(t, "fleet_hub_snapshot_apply_seconds_count", 1, `result="abandoned"`)
+}
+
+// A housekeeping cut while the Snapshot waits ends the wait too; the
+// abandoned line names the cut, not the agent. The OFFLINE mark closed
+// the row first, so the job finds no live connection and changes nothing.
+func TestASnapshotCutByHousekeepingIsAbandonedAsCut(t *testing.T) {
+	t.Parallel()
+	var (
+		h  *hub
+		id string
+	)
+	h = startHub(t, func(o *gateway.ServerOptions) {
+		gateway.SetBeforeSnapshotJob(o, func(ctx context.Context) {
+			h.exec(t, `UPDATE machines SET state = 'STALE' WHERE machine_id = ?`, id)
+			h.housekeep(t, gateway.OfflineAfter) // OFFLINE, row closed, stream cut
+			select {
+			case <-ctx.Done():
+			case <-time.After(10 * time.Second):
+			}
+		})
+	})
+	m := h.enrollMachine(t)
+	id = m.id
+	s := h.open(t, m)
+	s.send(t, hello(m, 0))
+	s.ack(t)
+	s.send(t, snapshotMsg(5, "laptop", "h1"))
+	if l := h.waitEvents(t, "snapshot.abandoned", 1)[0]; l["reason"] != "cut" {
+		t.Errorf("snapshot.abandoned %v, want reason cut", l)
+	}
+	h.waitClosed(t, 1)
+	if r := h.machineRow(t, m.id); r.state != "OFFLINE" || r.snapSeq != 0 {
+		t.Errorf("row %+v, want OFFLINE with no Snapshot stored", r)
+	}
 }
 
 // An applier that panics on agent data rolls the Snapshot back like one

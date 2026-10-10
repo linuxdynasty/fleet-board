@@ -283,9 +283,11 @@ The agent side of plan row 6 (ruling forks 4 i, 11 and 12), in
   `snapshot.parts`), `revoked`, `unknown_machine`, `invalid` (a number above 2^63 - 1)),
   `snapshot.failed{machine_id, epoch, seq, step, err_kind}` (error; `step`: `store`,
   `applier`, a panic included), `snapshot.abandoned{machine_id, epoch, seq, reason}`
-  (info; `agent_left` or `shutdown`: as for a `Hello`, the wait ends with the stream so
-  the teardown closes the row before the store closes; the job may still commit, the
-  outcome is unknown, and the stream is ending anyway), `snapshot.rollback{machine_id, epoch, causes, event_generation}` (warn;
+  (info; `agent_left`, `cut` (a housekeeping cut) or `shutdown`: as for a `Hello`, the
+  wait ends with the stream so the teardown closes the row before the store closes; the
+  job may still commit, and the teardown reads its result once the row's close returns
+  (the one writer runs jobs in order), so an `ONLINE` it committed is logged as `machine.state_changed{reason="snapshot"}` ahead of
+  the close's change), `snapshot.rollback{machine_id, epoch, causes, event_generation}` (warn;
   02i rule 3, judged on the epoch's first Snapshot only; `causes` from `last_event_seq`,
   `counters`, `install_id`, `snapshot_seq`; `snapshot_seq` also sends
   `SnapshotRequest{seq_rollback}`), `snapshot.request_dropped{machine_id, epoch, reason}`

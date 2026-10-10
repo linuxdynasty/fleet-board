@@ -21,8 +21,8 @@ import (
 // policy) and before the machine is marked ONLINE. It must use only tx (no
 // network call, no wait, no Commit) and treat snap as read-only cleaned
 // data; an error rolls back the whole Snapshot, so the machine stays as it
-// was and not ONLINE. It should not panic on agent data; [ApplySnapshot]
-// recovers a panic into an error all the same, so the writer lives on. Text a row stores beyond what [Clean] covers is
+// was and not ONLINE. It should not panic on agent data; the job
+// [SubmitSnapshot] queues recovers a panic into an error all the same, so the writer lives on. Text a row stores beyond what [Clean] covers is
 // cleaned before the job, never in Apply.
 type Applier interface {
 	Apply(ctx context.Context, tx *sql.Tx, machineID string, snap *agentv1.Snapshot) error
@@ -41,23 +41,25 @@ type Stream struct {
 	InstallID    string
 }
 
-// ApplySnapshot applies a cleaned snap ([Clean]) as ONE writer job:
+// SubmitSnapshot queues a cleaned snap ([Clean]) as ONE writer job:
 // statedb.ApplySnapshot, then each applier in order, then
-// statedb.MarkOnline (its state change in the result's Change). Its result arrives after the commit; any error rolls
-// the whole job back. A ctx error means the outcome is unknown. now is the
-// hub clock: observed_time, last_seen_time and an audit row's time.
-func ApplySnapshot(ctx context.Context, st *store.Store, s Stream, snap *agentv1.Snapshot, appliers []Applier,
+// statedb.MarkOnline (its state change in the result's Change); any error
+// rolls the whole job back. ctx bounds only the wait for a place in the
+// queue; once it returns a [Pending], the job runs and its result can be
+// read later, even after the caller stopped waiting. now is the hub clock:
+// observed_time, last_seen_time and an audit row's time.
+func SubmitSnapshot(ctx context.Context, st *store.Store, s Stream, snap *agentv1.Snapshot, appliers []Applier,
 	now time.Time,
-) (statedb.SnapshotOut, error) {
+) (*Pending, error) {
 	in, err := snapshotIn(s, snap, now)
 	if err != nil {
-		return statedb.SnapshotOut{}, err
+		return nil, err
 	}
 	jctx := context.WithoutCancel(ctx) // the job runs on the writer; ctx only bounds the wait
-	var out statedb.SnapshotOut
-	err = st.Write(ctx, func(tx *sql.Tx) error {
+	p := &Pending{}
+	p.done, err = st.Submit(ctx, func(tx *sql.Tx) error {
 		var err error
-		if out, err = statedb.ApplySnapshot(jctx, tx, in); err != nil {
+		if p.out, err = statedb.ApplySnapshot(jctx, tx, in); err != nil {
 			return err
 		}
 		for i, a := range appliers {
@@ -65,13 +67,39 @@ func ApplySnapshot(ctx context.Context, st *store.Store, s Stream, snap *agentv1
 				return fmt.Errorf("%w: applier %d: %w", ErrApplier, i, err)
 			}
 		}
-		_, out.Change, err = statedb.MarkOnline(jctx, tx, s.MachineID, now)
+		_, p.out.Change, err = statedb.MarkOnline(jctx, tx, s.MachineID, now)
 		return err
 	})
 	if err != nil {
-		return statedb.SnapshotOut{}, err
+		return nil, err
 	}
-	return out, nil
+	return p, nil
+}
+
+// Pending is a queued Snapshot job ([SubmitSnapshot]). One goroutine at a
+// time reads it.
+type Pending struct {
+	done   <-chan error
+	out    statedb.SnapshotOut // written by the job; read after done
+	result error
+	read   bool
+}
+
+// Wait returns the job's result once it committed or failed, or ctx's
+// error (the outcome still unknown; Wait may be called again).
+func (p *Pending) Wait(ctx context.Context) (statedb.SnapshotOut, error) {
+	if !p.read {
+		select {
+		case p.result = <-p.done:
+			p.read = true
+		case <-ctx.Done():
+			return statedb.SnapshotOut{}, ctx.Err()
+		}
+	}
+	if p.result != nil {
+		return statedb.SnapshotOut{}, p.result
+	}
+	return p.out, nil
 }
 
 // apply runs one applier and turns a panic into an error: the job runs on

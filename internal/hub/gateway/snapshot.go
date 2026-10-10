@@ -66,7 +66,7 @@ func newSnapshotMetrics(tel *telemetry.Telemetry) (snapshotMetrics, error) {
 // snapshotArm applies a Snapshot on the stream's ingest goroutine: the
 // stream must still be its machine's live one and the snapshot whole (this
 // hub lists no snapshot.parts); its text is cleaned here, never in the
-// transaction; then ingest.ApplySnapshot runs as one writer job. After the
+// transaction; then ingest.SubmitSnapshot queues it as one writer job. After the
 // commit: OnSnapshotApplied, and SnapshotRequest{seq_rollback} when
 // Snapshot.seq was not above the stored event seq (02i rule 3). A Snapshot
 // not applied for any other reason than a newer stream ends this stream,
@@ -103,24 +103,34 @@ func snapshotArm(ctx context.Context, a *agentService, s *stream, m *agentv1.Con
 	if a.beforeSnapshot != nil {
 		a.beforeSnapshot(ctx)
 	}
-	// As for a Hello (connect.go), the wait ends when the agent leaves or
-	// Shutdown begins, so the teardown closes the row before the store
-	// closes; the job itself still runs and may commit.
+	// As for a Hello (connect.go), the wait ends when the agent leaves, a
+	// housekeeping cut or Shutdown begins, so the teardown closes the row
+	// before the store closes; the job itself still runs and may commit,
+	// and the teardown reads its result then (abandonedSnapshot).
 	wctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	unwatch := context.AfterFunc(a.stopping, cancel)
 	defer unwatch()
 	at := a.now().UTC()
-	out, err := ingest.ApplySnapshot(wctx, a.store, ingest.Stream{
+	p, err := ingest.SubmitSnapshot(wctx, a.store, ingest.Stream{
 		MachineID: s.machineID, Epoch: s.epoch, LastEventSeq: s.hello.lastEventSeq, Counters: s.hello.counters,
 		InstallID: s.hello.installID,
 	}, snap, a.appliers, at)
+	var out statedb.SnapshotOut
+	if err == nil {
+		out, err = p.Wait(wctx)
+	}
 	switch {
 	case err != nil && (ctx.Err() != nil || a.stopping.Err() != nil):
-		// Not a failure: the stream is ending and the outcome is unknown.
+		// Not a failure: the stream is ending and the outcome is unknown
+		// here; a queued job's result is read at the teardown.
+		s.abandoned = p
 		reason := "agent_left"
-		if ctx.Err() == nil {
+		switch {
+		case ctx.Err() == nil:
 			reason = "shutdown"
+		case s.endReason() == statedb.EndIngestStalled || s.endReason() == statedb.EndOffline:
+			reason = "cut"
 		}
 		done("abandoned")
 		a.log.InfoContext(ctx, "snapshot.abandoned", "machine_id", s.machineID, "epoch", s.epoch, "seq", snap.GetSeq(),
@@ -189,5 +199,24 @@ func (a *agentService) rolledBack(ctx context.Context, s *stream, out statedb.Sn
 		a.snap.dropped.Add(ctx, 1, metric.WithAttributes(attribute.String("machine", s.machineID)))
 		a.log.WarnContext(ctx, "snapshot.request_dropped", "machine_id", s.machineID, "epoch", s.epoch,
 			"reason", "seq_rollback")
+	}
+}
+
+// abandonedSnapshot logs the state change of a Snapshot job whose wait the
+// arm gave up (03n: every committed change of machines.state is logged).
+// It runs in the teardown on the handler goroutine once the row's close
+// returned, and before that close's change is logged: the one writer runs
+// jobs in order, so the Snapshot job is done by then, and its ONLINE is
+// logged before the close's OFFLINE. A job that failed, or a store too
+// slow for wctx, logs nothing here.
+func (a *agentService) abandonedSnapshot(wctx context.Context, s *stream) {
+	p := s.abandoned
+	if p == nil {
+		return
+	}
+	s.abandoned = nil
+	out, err := p.Wait(wctx)
+	if err == nil && out.Change != nil {
+		a.stateChanged(wctx, *out.Change)
 	}
 }

@@ -11,7 +11,7 @@ Read the root `AGENTS.md` first; it applies here. Load `fleet-go`,
   goroutine before the job, cut to a small bound before the scrubber
   (02e, 04b), never inside the transaction.
 - No telemetry here: the gateway's Snapshot arm logs and counts the outcome
-  `ApplySnapshot` returns.
+  `SubmitSnapshot`'s `Pending` returns.
 - Tests use a real `state.db` in `t.TempDir()`; the gateway's tests drive
   the arm through the real listener.
 - A change here updates this README and `doc.go` in the same commit.

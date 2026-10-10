@@ -100,7 +100,7 @@ type SnapshotOut struct {
 	// the same epoch. snapshot_seq also asks for SnapshotRequest{seq_rollback}.
 	Rollback []string
 	// Change is the state change [MarkOnline] made at the end of the job
-	// (ingest.ApplySnapshot fills it); nil when the machine was ONLINE.
+	// (the job ingest.SubmitSnapshot queues fills it); nil when the machine was ONLINE.
 	Change *StateChange
 }
 

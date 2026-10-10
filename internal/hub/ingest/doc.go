@@ -5,8 +5,8 @@
 // goroutine, before any writer job: control and format characters and
 // invalid UTF-8 dropped, every string cut to its cap on a character
 // boundary, and the agent's free text (version strings, the policy error)
-// passed through internal/scrub only after that cut. [ApplySnapshot] is the Snapshot transaction as ONE writer
-// job: statedb.ApplySnapshot (the current-epoch check, agent rollback,
+// passed through internal/scrub only after that cut. [SubmitSnapshot] queues the Snapshot transaction as ONE writer
+// job, whose result [Pending.Wait] reads (again, after a wait that gave up): statedb.ApplySnapshot (the current-epoch check, agent rollback,
 // facts, resources, policy, drain, counters, the seq floor), then each
 // [Applier] in order (the seam plan rows 7 to 10 fill), then
 // statedb.MarkOnline. Any error rolls the whole Snapshot back

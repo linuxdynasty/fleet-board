@@ -12,6 +12,7 @@ import (
 	"connectrpc.com/connect"
 
 	agentv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1"
+	"github.com/linuxdynasty/fleet-board/internal/hub/ingest"
 	"github.com/linuxdynasty/fleet-board/internal/hub/statedb"
 )
 
@@ -80,6 +81,10 @@ type stream struct {
 	// beats wakes the handler goroutine after a Heartbeat (or a STALE
 	// mark); one pending wake is enough.
 	beats chan struct{}
+	// abandoned is a Snapshot job whose wait the arm gave up when the
+	// stream ended; the teardown reads its result. Only the handler
+	// goroutine uses it.
+	abandoned *ingest.Pending
 	// seenWritten is the hub clock of the last last_seen_time write for
 	// this stream (the Hello's at first); only the handler goroutine uses it.
 	seenWritten time.Time
@@ -355,16 +360,23 @@ func (a *agentService) stop(rc writeDeadliner, wrote <-chan struct{}, wait time.
 func (a *agentService) closed(ctx context.Context, s *stream) {
 	a.streams.remove(s)
 	reason := s.endReason()
-	var ended statedb.Ended
+	ctx = context.WithoutCancel(ctx)
+	wctx, cancel := context.WithTimeout(ctx, endWait)
+	defer cancel()
+	var (
+		ended statedb.Ended
+		err   error
+	)
 	if reason != statedb.EndDisplaced {
 		if a.beforeRowClose != nil {
 			a.beforeRowClose()
 		}
-		ctx := context.WithoutCancel(ctx)
-		wctx, cancel := context.WithTimeout(ctx, endWait)
-		defer cancel()
-		var err error
 		ended, err = statedb.EndConnection(wctx, a.store, s.machineID, s.epoch, reason, a.now().UTC())
+	}
+	// After the close's job is queued, never before: the teardown can
+	// outlive Shutdown, and the store closes once Shutdown returns.
+	a.abandonedSnapshot(wctx, s)
+	if reason != statedb.EndDisplaced {
 		if err != nil {
 			a.log.ErrorContext(ctx, "connect.failed", "step", "store", "err_kind", errKind(err), "machine_id", s.machineID,
 				"epoch", s.epoch)
