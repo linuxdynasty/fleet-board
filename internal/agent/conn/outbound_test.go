@@ -125,6 +125,9 @@ func TestSendTakesOnlyQueueableKindsAndLoggedResults(t *testing.T) {
 		{"retryable with a short message", func(r *agentv1.CommandResult) {
 			r.Retryable, r.Message = true, "the epoch moved on"
 		}, true},
+		{"a 256-byte message", func(r *agentv1.CommandResult) {
+			r.CommandId.Value, r.Message = "shape-256", strings.Repeat("m", 256)
+		}, true},
 		{"no command id", func(r *agentv1.CommandResult) { r.CommandId = nil }, false},
 		{"an id with a control character", func(r *agentv1.CommandResult) { r.CommandId.Value = "e\x1bm" }, false},
 		{"a 4 KiB message", func(r *agentv1.CommandResult) { r.Message = strings.Repeat("m", 4096) }, false},
@@ -168,13 +171,14 @@ func TestSendTakesOnlyQueueableKindsAndLoggedResults(t *testing.T) {
 			t.Errorf("Send(%T) = %v", m.GetBody(), err)
 		}
 	}
-	waitFor(t, 5*time.Second, "the six messages", func() bool { return len(h.stream(1).msgs) >= 7 })
+	waitFor(t, 5*time.Second, "the seven messages", func() bool { return len(h.stream(1).msgs) >= 8 })
 	got := h.stream(1).msgs[1:]
 	if got[0].GetCommandResult().GetCommandId().GetValue() != "done" ||
 		got[1].GetCommandResult().GetCommandId().GetValue() != "em" ||
 		got[2].GetCommandResult().GetCommandId().GetValue() != "sr" ||
-		got[3].GetCommandResult().GetCommandId().GetValue() != "shape" || got[4].GetCommandProgress() == nil ||
-		got[5].GetSettingsAck().GetGeneration() != 2 || len(got) != 6 {
+		got[3].GetCommandResult().GetCommandId().GetValue() != "shape" ||
+		got[4].GetCommandResult().GetCommandId().GetValue() != "shape-256" || got[5].GetCommandProgress() == nil ||
+		got[6].GetSettingsAck().GetGeneration() != 2 || len(got) != 7 {
 		t.Errorf("after the snapshot the hub got %v", got)
 	}
 }
@@ -293,19 +297,21 @@ func TestTheQueueDiesWithItsStream(t *testing.T) {
 	t.Parallel()
 	h := startConnectHub(t)
 	a := enrolled(t, h)
-	held, g := make(chan struct{}, 1), newGate()
+	held := make(chan struct{}, 1)
 	first := true
 	r := startLoop(t, a, func(o *conn.LoopOptions) {
-		o.Command = func(context.Context, uint64, *agentv1.Command) bool {
+		// The first hook holds the sender until its context ends, which is
+		// when the receiver has seen the stream die: nothing is drained
+		// before then, so the queue dies full.
+		o.Command = func(ctx context.Context, _ uint64, _ *agentv1.Command) bool {
 			if first {
 				first = false
 				held <- struct{}{}
-				_ = g.wait(context.Background())
+				<-ctx.Done()
 			}
 			return true
 		}
 	})
-	t.Cleanup(g.open)
 	h.connected(t, 1)
 	r.connected(t)
 	h.pushCommand(t, "hold", time.Now().Add(time.Hour))
@@ -318,15 +324,12 @@ func TestTheQueueDiesWithItsStream(t *testing.T) {
 	}
 	waiting := make(chan error, 1)
 	go func() { waiting <- r.loop.Send(ctx, ackOf("waiting")) }()
+	waitFor(t, 5*time.Second, "the Send to wait", func() bool { return len(a.events(t, "connect.outbound_blocked")) == 1 })
 	h.dropLive(t)
-	g.open()
 	select {
 	case err := <-waiting:
-		// The sender may free one slot before it sees the stream gone, so
-		// the wait can end queued (nil) on the dying queue; it must not
-		// hang or fail otherwise. queue_internal_test.go pins ErrNoStream.
-		if err != nil && !errors.Is(err, conn.ErrNoStream) {
-			t.Errorf("a Send waiting on a dead stream's queue = %v, want ErrNoStream or queued", err)
+		if !errors.Is(err, conn.ErrNoStream) {
+			t.Errorf("a Send waiting on a dead stream's queue = %v, want ErrNoStream", err)
 		}
 	case <-time.After(10 * time.Second):
 		t.Fatal("a Send waiting on a dead stream's queue never returned")
@@ -340,11 +343,10 @@ func TestTheQueueDiesWithItsStream(t *testing.T) {
 	if got := h.acks(2); !slices.Equal(got, []string{"new"}) {
 		t.Errorf("stream 2 got acks %q; the old stream's queue must die with it", got)
 	}
-	// What died in the queue is counted, as a lower bound: the sender may
-	// take a few before it sees the stream gone, and the waiting Send may
-	// add one.
+	// What died in the queue is counted: all of it, or all but the one the
+	// sender may take (and fail to send) before it sees the stream gone.
 	lost, _ := strconv.Atoi(metric(scrape(t, a), "fleet_agent_outbound_lost_total"))
-	if lost < conn.QueueSize/2 || lost > conn.QueueSize+1 {
-		t.Errorf("fleet_agent_outbound_lost_total = %d, want about %d", lost, conn.QueueSize)
+	if lost < conn.QueueSize-1 || lost > conn.QueueSize {
+		t.Errorf("fleet_agent_outbound_lost_total = %d, want %d or %d", lost, conn.QueueSize-1, conn.QueueSize)
 	}
 }

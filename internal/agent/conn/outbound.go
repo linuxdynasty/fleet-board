@@ -60,6 +60,7 @@ func (l *Loop) publish(q *outQueue) { l.out.Store(q) }
 func (l *Loop) unpublish(q *outQueue) {
 	l.out.CompareAndSwap(q, nil)
 	close(q.dead)
+	l.step("unpublished")
 }
 
 // Send queues m for the Connected stream, whose sending goroutine sends it
@@ -224,7 +225,6 @@ func (s *session) serveQueue(ctx context.Context) func() {
 		unhook()
 		cancel()
 		l.unpublish(s.q)
-		l.step("unpublished")
 		// A lower bound: a Send racing the end may still add one.
 		if n := len(s.q.ch); n > 0 {
 			l.m.outboundLost(ctx, n)

@@ -101,6 +101,8 @@ type statusBox struct {
 	// changed holds one pending signal for StatusChanged; nil in tests
 	// that build a Loop by hand.
 	changed chan struct{}
+	// step is LoopOptions.stepHook, run as the state becomes Connected.
+	step func(string)
 }
 
 func (b *statusBox) get() Status {
@@ -126,6 +128,9 @@ func (b *statusBox) update(fn func(s *Status)) {
 
 func (b *statusBox) state(st State, peer string) {
 	b.update(func(s *Status) { s.State, s.Peer = st, peer })
+	if st == StateConnected && b.step != nil {
+		b.step("connected")
+	}
 }
 
 func (b *statusBox) failed(addr string, f Failure) {

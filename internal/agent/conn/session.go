@@ -347,7 +347,6 @@ func (s *session) connected(ctx context.Context) (ending, string, error) {
 	// The queue opens first, so a Send that sees Connected is taken.
 	defer s.serveQueue(ctx)()
 	l.status.state(StateConnected, s.c.addr)
-	l.step("connected")
 	l.m.connected.Store(1)
 	defer l.m.connected.Store(0)
 	l.m.attempt(ctx, "connected", s.c.source)

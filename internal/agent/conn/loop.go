@@ -109,9 +109,9 @@ type LoopOptions struct {
 	// sleepClock, for tests only, replaces the clock that keeps counting
 	// while the machine sleeps (wakenet.SinceBoot).
 	sleepClock func() (time.Duration, error)
-	// stepHook, for tests only, runs on Run's goroutine right after the
-	// status says Connected ("connected") and right after a stream's queue
-	// is closed ("unpublished").
+	// stepHook, for tests only, runs on Run's goroutine the moment the
+	// status says Connected ("connected") and the moment a stream's queue
+	// closes ("unpublished").
 	stepHook func(step string)
 	// hookWarn, for tests only, replaces hookHeldWarn.
 	hookWarn time.Duration
@@ -228,6 +228,7 @@ func NewLoop(ctx context.Context, opts LoopOptions) (*Loop, error) {
 	}
 	l.status.pushOff = opts.PushOff
 	l.status.changed = make(chan struct{}, 1)
+	l.status.step = opts.stepHook
 	return l, nil
 }
 
