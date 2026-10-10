@@ -70,8 +70,9 @@ type Failure struct {
 	Time    time.Time
 }
 
-// Status is what the loop knows about its connection, kept in memory for
-// `fleet-agent status` (plan row 6). Times are the agent's wall clock.
+// Status is what the loop knows about its connection, kept in memory.
+// internal/agent/statusfile writes it to status.json for `fleet-agent
+// doctor` (plan row 6). Times are the agent's wall clock.
 type Status struct {
 	State State
 	// Peer is the hub address of the live stream; empty when not connected.

@@ -5,7 +5,8 @@
 // takes fleet-agent.lock in the state folder and keeps the machine connected
 // (internal/agent/conn), refusing before any network call when ended.json
 // records that the hub ended this machine, and prints its name and version
-// (internal/buildinfo).
+// (internal/buildinfo). `run` also keeps status.json current and `enroll`
+// leaves a failure's code in enroll.json (internal/agent/statusfile).
 // Exit codes: 0 (a signal, even during startup, is a clean stop unless a
 // real failure came with it), 1 when a command fails, 2 for bad usage. The rest of the agent arrives with plan
 // row 4 onward of docs/plan/v1-implementation-plan.md. This package is wiring
