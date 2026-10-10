@@ -8,7 +8,7 @@ Read the root `AGENTS.md` first; it applies here. Load `fleet-go`,
   approved (`load.AvgWithContext`, `mem.VirtualMemoryWithContext`,
   `disk.UsageWithContext`); `host`, `process` and the rest are not imported,
   because on macOS they run `sw_vers`, `ps` and `system_profiler`.
-  `TestOnlyApprovedGopsutilCalls` fails otherwise. Add a call only with a check
+  `TestOnlyApprovedGopsutilCalls` (by import path) fails otherwise. Add a call only with a check
   that it starts no child.
 - A reading that fails is left unset and counted
   (`fleet_agent_sample_failures_total{source}`), never replaced with 0 or an
@@ -19,9 +19,11 @@ Read the root `AGENTS.md` first; it applies here. Load `fleet-go`,
   Heartbeat hook runs on the connection loop's sending goroutine: it may only
   read what the Sampler holds. Hand a copy (`proto.Clone`) to anything that
   changes it.
-- Disk reads run in goroutines the sample can leave behind (a statfs on a hung
-  mount cannot be cancelled). Keep the per-path guard and the timeout, and the
-  test that fails without them.
+- Readings run in goroutines the sample can leave behind (a statfs on a hung
+  mount, or gopsutil, cannot be cancelled). Keep the per-key guard and the
+  timeout, and the tests that fail without them.
+- A sample's age counts sleep: the larger of the monotonic age and the boot
+  clock age, unknown when the boot clock fails. Never compare `Taken` alone.
 - `tmux` missing is not a failure; every other tmux problem is. Output of a
   child is untrusted: it passes `parseTmuxVersion`'s shape check or is dropped.
 - Memory pressure thresholds for Linux are in `pressure.go` and in

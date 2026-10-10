@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"os/user"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
@@ -41,9 +42,16 @@ type CollectorOptions struct {
 	Runner *proc.Runner
 	// Metrics receives failed readings; nil reports nowhere.
 	Metrics *Metrics
+	// TmuxDirs are the directories searched for tmux when it is not on the
+	// agent's PATH (launchd and systemd start an agent with a minimal one).
+	// Nil is [DefaultTmuxDirs]; an empty non-nil slice searches none.
+	TmuxDirs []string
 	// Mem reads total memory; nil is the real reading ([DefaultReaders]).
 	Mem func(ctx context.Context) (total, available uint64, err error)
 }
+
+// DefaultTmuxDirs are searched, in order, for tmux when PATH lacks it.
+var DefaultTmuxDirs = []string{"/usr/local/bin", "/opt/homebrew/bin", "/usr/bin"}
 
 // Collector fills the B1 machine facts that the connection loop's basic
 // facts (conn.BasicFacts) do not have: os_version, ram_bytes, timezone,
@@ -81,6 +89,10 @@ func NewCollector(ctx context.Context, o CollectorOptions) (*Collector, error) {
 	if memFn == nil {
 		memFn = DefaultReaders().Mem
 	}
+	dirs := o.TmuxDirs
+	if dirs == nil {
+		dirs = DefaultTmuxDirs
+	}
 	s := system{
 		readlink:  os.Readlink,
 		readFile:  readSmall,
@@ -92,7 +104,7 @@ func NewCollector(ctx context.Context, o CollectorOptions) (*Collector, error) {
 		},
 		username:   currentUsername,
 		binaryHash: executableHash,
-		tmux:       func(ctx context.Context) (string, error) { return tmuxVersion(ctx, o.Runner) },
+		tmux:       func(ctx context.Context) (string, error) { return tmuxVersion(ctx, o.Runner, dirs) },
 	}
 	return newCollector(ctx, s, m), nil
 }
@@ -170,9 +182,12 @@ func parseTmuxVersion(out []byte) (string, error) {
 }
 
 // tmuxVersion runs `tmux -V` through internal/proc under the measured caller
-// "tmux". tmux not installed (or not on PATH) is an answer, not a failure: the
-// version is empty, as 02e says. -V never contacts a server.
-func tmuxVersion(ctx context.Context, r *proc.Runner) (string, error) {
+// "tmux": the tmux on the agent's PATH, else the first executable tmux in dirs.
+// tmux not installed is an answer, not a failure: the version is empty, as 02e
+// says. -V never contacts a server. The tmux client that rows 7 and 8 start
+// must find tmux the same way, or facts and behaviour can name different
+// programs.
+func tmuxVersion(ctx context.Context, r *proc.Runner, dirs []string) (string, error) {
 	if r == nil {
 		return "", nil
 	}
@@ -180,14 +195,33 @@ func tmuxVersion(ctx context.Context, r *proc.Runner) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	res, err := r.Run(ctx, proc.Spec{Caller: caller, Path: "tmux", Args: []string{"-V"}})
+	run := func(program string) (proc.Result, error) {
+		return r.Run(ctx, proc.Spec{Caller: caller, Path: program, Args: []string{"-V"}})
+	}
+	res, err := run("tmux")
 	if errors.Is(err, proc.ErrNotFound) {
-		return "", nil
+		found := false
+		for _, d := range dirs {
+			if p := filepath.Join(d, "tmux"); isExecutableFile(p) {
+				res, err = run(p)
+				found = true
+				break
+			}
+		}
+		if !found {
+			return "", nil
+		}
 	}
 	if err != nil {
 		return "", fmt.Errorf("tmux -V: %w", err)
 	}
 	return parseTmuxVersion(res.Stdout)
+}
+
+// isExecutableFile reports a regular file with an execute bit.
+func isExecutableFile(p string) bool {
+	fi, err := os.Stat(p)
+	return err == nil && fi.Mode().IsRegular() && fi.Mode().Perm()&0o111 != 0
 }
 
 // zoneFromLink takes the IANA name from the target of /etc/localtime: what

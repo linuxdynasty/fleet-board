@@ -30,14 +30,24 @@ func pathWith(t *testing.T, script string) {
 	}
 }
 
+// noDirs turns off the fallback directories, so a tmux installed on the
+// machine running the test cannot be found.
+func noDirs() machine.CollectorOptions { return machine.CollectorOptions{TmuxDirs: []string{}} }
+
 func collect(t *testing.T) (*agentv1.MachineFacts, *lockedBuffer, string) {
+	t.Helper()
+	return collectWith(t, noDirs())
+}
+
+func collectWith(t *testing.T, o machine.CollectorOptions) (*agentv1.MachineFacts, *lockedBuffer, string) {
 	t.Helper()
 	runner, err := proc.NewRunner(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	tel, m, logs := newTel(t)
-	c, err := machine.NewCollector(t.Context(), machine.CollectorOptions{Runner: runner, Metrics: m})
+	o.Runner, o.Metrics = runner, m
+	c, err := machine.NewCollector(t.Context(), o)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -145,4 +155,48 @@ func TestTheRealMachineFacts(t *testing.T) {
 	}
 	t.Logf("facts: os_version=%q ram=%d tz=%q user=%q container=%v hash=%.12s...",
 		f.GetOsVersion(), f.GetRamBytes(), f.GetTimezone(), f.GetUsername(), f.GetContainer(), f.GetAgentBinaryHash())
+}
+
+// launchd and systemd start the agent with a minimal PATH. tmux is then looked
+// for in the usual install directories, after PATH.
+func TestTmuxIsFoundInTheFallbackDirectoriesWhenPathLacksIt(t *testing.T) {
+	pathWith(t, "") // no tmux on PATH
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "tmux"), []byte("#!/bin/sh\necho 'tmux 3.9'\n"), 0o700); err != nil { //nolint:gosec // G306: a test script must be executable.
+		t.Fatal(err)
+	}
+	empty := t.TempDir()
+	f, logs, _ := collectWith(t, machine.CollectorOptions{TmuxDirs: []string{empty, dir}})
+	if f.GetTmuxVersion() != "tmux 3.9" {
+		t.Fatalf("tmux_version = %q, want the one in the fallback directory", f.GetTmuxVersion())
+	}
+	if ev := logs.events("sample.failed"); len(ev) != 0 {
+		t.Fatalf("a tmux found in a fallback directory logged a failure: %v", ev)
+	}
+}
+
+// A file named tmux that is not executable is not tmux.
+func TestANonExecutableTmuxInAFallbackDirectoryIsIgnored(t *testing.T) {
+	pathWith(t, "")
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "tmux"), []byte("#!/bin/sh\necho 'tmux 3.9'\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	f, logs, _ := collectWith(t, machine.CollectorOptions{TmuxDirs: []string{dir}})
+	if f.GetTmuxVersion() != "" || len(logs.events("sample.failed")) != 0 {
+		t.Fatalf("tmux_version = %q, failures %v", f.GetTmuxVersion(), logs.events("sample.failed"))
+	}
+}
+
+// PATH wins over the fallback directories.
+func TestTmuxOnPathWinsOverTheFallbackDirectories(t *testing.T) {
+	pathWith(t, `echo "tmux 1.1"`)
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "tmux"), []byte("#!/bin/sh\necho 'tmux 2.2'\n"), 0o700); err != nil { //nolint:gosec // G306: a test script must be executable.
+		t.Fatal(err)
+	}
+	f, _, _ := collectWith(t, machine.CollectorOptions{TmuxDirs: []string{dir}})
+	if f.GetTmuxVersion() != "tmux 1.1" {
+		t.Fatalf("tmux_version = %q, want the one on PATH", f.GetTmuxVersion())
+	}
 }

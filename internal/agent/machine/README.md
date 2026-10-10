@@ -30,13 +30,13 @@ replaced, which is what SHED means) or `sampler.Latest()`.
 | | `ram_bytes` | gopsutil `mem` total |
 | | `timezone` | the `/etc/localtime` link (after `zoneinfo/`), else `/etc/timezone` |
 | | `agent_binary_hash` | SHA-256 of the executable, read once at start |
-| | `tmux_version` | `tmux -V`, run at every snapshot; empty when tmux is not on PATH |
-| | `container`, `username` | `/.dockerenv` or `/run/.containerenv`; the login user |
+| | `tmux_version` | `tmux -V`, run at every snapshot, on the agent's `PATH` and then in `/usr/local/bin`, `/opt/homebrew/bin`, `/usr/bin` (launchd and systemd give an agent a minimal `PATH`); empty when none has tmux |
+| | `container`, `username` | true when `/.dockerenv` or `/run/.containerenv` exists; the login user |
 | `ResourceSample` | `load1`, `load5` | gopsutil `load.Avg` |
 | | `mem_total_bytes`, `mem_available_bytes` | gopsutil `mem.VirtualMemory` |
 | | `mem_pressure_level` | macOS sysctl; Linux PSI then MemAvailable (levels in [defaults](../../../docs/specs/defaults.md)) |
 | | `disk` | free and total under the state folder, then each repo root, at most 32 |
-| `Heartbeat` | `load1` | the latest sample, when it is at most three intervals old |
+| `Heartbeat` | `load1` | the latest sample, when it is fresh (below) |
 
 Unset, not 0: `ResourceSample.load1`, `load5`, the two memory sizes and
 `mem_pressure_level`, and `Heartbeat.load1`, are `optional`, so "load 0" and
@@ -50,11 +50,27 @@ happens on a working machine.
   `mem.VirtualMemoryWithContext`, `disk.UsageWithContext`. Others start child
   processes on macOS (`sw_vers`, `ps`, `system_profiler`) outside
   `internal/proc`. `TestOnlyApprovedGopsutilCalls` enforces it.
-- A hung mount cannot stall a sample: each disk read runs in its own
-  goroutine, the sample waits at most 10 s, and a path whose last read has not
-  returned is not read again (one parked goroutine per path, never a pile).
-- A sample with no reading at all is not published; `Fresh` stops vouching for
-  a sample older than three intervals, so a stuck sampler reports unknown.
+- Nothing can stall a sample: load, memory and each disk path are read at the
+  same time, each in its own goroutine (gopsutil takes no time bound, and a
+  statfs on a hung mount ignores a context). The sample waits at most 10 s,
+  leaves a reading that has not returned unset, and does not start it again
+  while it is still out: one parked goroutine per reading, never a pile.
+- A value that cannot be true is not a reading: a size of 0, free space above
+  the total, available memory above the total.
+- A sample with no reading at all is not published. `Fresh` (and `Subscribe`)
+  vouch for a sample only while it is at most three intervals old, where age is
+  the larger of the age on the monotonic clock and on the boot clock
+  (`wakenet.SinceBoot`), because the monotonic clock stands still while the
+  machine sleeps: a sample from before 8 h of sleep is not current on wake. If
+  the boot clock cannot be read, the sample is unknown (02i "Clocks"). Each
+  withheld sample is counted (`fleet_agent_sample_stale_total`) and the first of
+  a run is logged (`sample.stale`), so a sampler stuck in a reading is visible.
+- The 30 s sample reads local sensors; it is not a poll of an outside system, so
+  ADR 0022 rule 6 ("stream where a push source exists") and ADR 0024 decision 9
+  do not apply to it. ADR 0023 names the 30 s sampler.
+- tmux is searched on the agent's own `PATH` first. Rows 7 and 8 start tmux and
+  must use the same lookup, or the reported version and the program that runs
+  could differ.
 
 ## Dependency note (ADR 0023, ADR 0020 rules)
 

@@ -268,3 +268,17 @@ func TestFillLeavesTheTimezoneEmptyWhenItCannotBeRead(t *testing.T) {
 		t.Fatalf("timezone = %q, want empty", f.GetTimezone())
 	}
 }
+
+// Either marker file makes the machine a container.
+func TestContainerFollowsEitherMarkerFile(t *testing.T) {
+	t.Parallel()
+	for _, marker := range []string{"/.dockerenv", "/run/.containerenv"} {
+		s := fakeSystem()
+		s.exists = func(p string) bool { return p == marker }
+		f := &agentv1.MachineFacts{}
+		newTestCollector(t, s).Fill(t.Context(), f)
+		if !f.GetContainer() {
+			t.Errorf("container is false with %s present", marker)
+		}
+	}
+}

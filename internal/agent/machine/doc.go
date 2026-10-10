@@ -12,7 +12,9 @@
 // disk under the state folder and each allowed repo root. A reading that
 // fails is left unset in the message (the optional fields of
 // ResourceSample), never 0; it is counted and logged once per run of
-// failures. The latest sample is an atomic pointer, so [Hooks.Heartbeat]
+// failures. A sample older than three intervals, counting the time the
+// machine slept, is withheld as unknown ([Sampler.Fresh]). The latest sample
+// is an atomic pointer, so [Hooks.Heartbeat]
 // reads it on the connection loop's sending goroutine without a lock, and
 // [Sampler.Subscribe] is the seam row 7's resource_sample event uses.
 //

@@ -38,7 +38,7 @@ const (
 var (
 	errParse      = errors.New("machine: the value could not be read")
 	errConstraint = errors.New("machine: over a limit")
-	errBusy       = errors.New("machine: an earlier read of this path is still blocked")
+	errBusy       = errors.New("machine: an earlier read of this source is still blocked")
 )
 
 // errKind sorts a failure into the closed `err_kind` set (05b): timeout,
@@ -67,10 +67,12 @@ func errKind(err error) string {
 type Metrics struct {
 	log      *slog.Logger
 	failures metric.Int64Counter
+	staleCtr metric.Int64Counter
 	seconds  metric.Float64Histogram
 
 	mu      sync.Mutex
 	failing map[string]bool
+	isStale bool
 }
 
 // NewMetrics registers the signals on tel. A nil tel makes Metrics that log
@@ -92,7 +94,12 @@ func NewMetrics(tel *telemetry.Telemetry) (*Metrics, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Metrics{log: log, failures: failures, seconds: seconds, failing: map[string]bool{}}, nil
+	staleCtr, err := m.Int64Counter(prefix+"_sample_stale_total",
+		metric.WithDescription("Times a Snapshot or Heartbeat found the latest resource sample too old to send, by reason (age, boot_clock)."))
+	if err != nil {
+		return nil, err
+	}
+	return &Metrics{log: log, failures: failures, staleCtr: staleCtr, seconds: seconds, failing: map[string]bool{}}, nil
 }
 
 // failed counts one failed reading and logs the first of a run of them.
@@ -115,6 +122,29 @@ func (m *Metrics) recovered(ctx context.Context, source string) {
 	m.mu.Unlock()
 	if was {
 		m.log.InfoContext(ctx, "sample.recovered", "source", source)
+	}
+}
+
+// stale counts one withheld sample and logs the first of a run of them.
+func (m *Metrics) stale(ctx context.Context, reason string) {
+	m.staleCtr.Add(ctx, 1, metric.WithAttributes(attribute.String("reason", reason)))
+	m.mu.Lock()
+	first := !m.isStale
+	m.isStale = true
+	m.mu.Unlock()
+	if first {
+		m.log.WarnContext(ctx, "sample.stale", "reason", reason)
+	}
+}
+
+// freshAgain logs the first fresh sample after a run of stale ones.
+func (m *Metrics) freshAgain(ctx context.Context) {
+	m.mu.Lock()
+	was := m.isStale
+	m.isStale = false
+	m.mu.Unlock()
+	if was {
+		m.log.InfoContext(ctx, "sample.fresh")
 	}
 }
 

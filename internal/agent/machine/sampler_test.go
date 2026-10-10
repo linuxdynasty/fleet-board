@@ -266,8 +266,12 @@ func TestASlowSubscriberKeepsOnlyTheNewestSample(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan struct{})
 	go func() { s.Run(ctx); close(done) }()
-	for range 4 { // the start sample plus 3 ticks, unread
+	fast, unfast := s.Subscribe() // one that reads, to know when the last sample is out
+	defer unfast()
+	for range 4 { // the start sample plus 4 ticks, unread by sub
 		k.ch <- time.Now()
+	}
+	for (<-fast).Resources.GetLoad1() != 5 {
 	}
 	cancel()
 	<-done
@@ -359,7 +363,7 @@ func TestAHungDiskPathDoesNotStopTheSample(t *testing.T) {
 	k := newTicker()
 	s, err := machine.NewSampler(machine.SamplerOptions{
 		StateDir: "/state", Roots: func() []string { return []string{"/mnt/hung", "/repos/a"} },
-		Readers: rd, Metrics: m, Ticks: k.fn, DiskTimeout: 200 * time.Millisecond,
+		Readers: rd, Metrics: m, Ticks: k.fn, ReadTimeout: 200 * time.Millisecond,
 	})
 	if err != nil {
 		t.Fatal(err)

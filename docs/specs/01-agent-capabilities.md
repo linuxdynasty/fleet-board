@@ -186,7 +186,11 @@ and dispatches it there).
 
 - **B1 Machine facts:** hostname, OS and version, architecture, CPU count,
   RAM, **IANA timezone and UTC offset**, agent version, tmux version, policy
-  schema version.
+  schema version. `container` is true when `/.dockerenv` or
+  `/run/.containerenv` exists. tmux is looked up on the agent's PATH, then
+  in `/usr/local/bin`, `/opt/homebrew/bin` and `/usr/bin`, because launchd and
+  systemd start an agent with a minimal PATH; none found leaves
+  `tmux_version` empty.
 - **B2 Resource samples** every 30 s: load, memory pressure, free bytes under
   each repo root and the state directory.
   A reading the agent could not take is left unset in `ResourceSample` (its
