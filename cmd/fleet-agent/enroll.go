@@ -13,9 +13,12 @@ import (
 	"github.com/linuxdynasty/fleet-board/internal/telemetry"
 )
 
-// enrollCommand is `fleet-agent enroll --hub <host[:port]> --token <token>`
-// (02g A1). Log lines go to stderr; the outcome is one line on stdout.
-func enrollCommand(dir func() (string, error), version string, stdout, stderr io.Writer) *cobra.Command {
+// enrollCommand is `fleet-agent enroll [--hub <host[:port]>] --token <token>`
+// (02g A1). With no --hub it looks for the hub on the local network (mDNS,
+// 03 A2) and sends the token only to one that proves it holds the token's
+// CA. Log lines go to stderr; the outcome is one line on stdout.
+func enrollCommand(dir func() (string, error), version string, discover conn.Discover, stdout, stderr io.Writer,
+) *cobra.Command {
 	var hub, token string
 	cmd := &cobra.Command{
 		Use:   "enroll",
@@ -34,14 +37,17 @@ func enrollCommand(dir func() (string, error), version string, stdout, stderr io
 			}
 			defer func() { _ = tel.Shutdown(context.WithoutCancel(cmd.Context())) }()
 			res, err := conn.Enroll(cmd.Context(), conn.Options{
-				Dir: d, Hub: hub, Token: token, Version: version, Telemetry: tel,
+				Dir: d, Hub: hub, Token: token, Version: version, Telemetry: tel, Discover: discover,
 			})
 			if err != nil {
 				return commandError{err}
 			}
 			note := ""
+			if res.Discovered {
+				note = " (found on the local network)"
+			}
 			if res.Replayed {
-				note = " (the hub's answer to an earlier try)"
+				note += " (the hub's answer to an earlier try)"
 			}
 			_, err = fmt.Fprintf(stdout, "fleet-agent: enrolled as %q (machine %s) in fleet %s through %s%s\n",
 				res.Identity.MachineName, res.Identity.MachineID, res.Identity.FleetID, res.HubAddress, note)
@@ -58,7 +64,7 @@ func enrollCommand(dir func() (string, error), version string, stdout, stderr io
 		},
 	}
 	f := cmd.Flags()
-	f.StringVar(&hub, "hub", "", "hub address, host or host:port (port 7443 if none); required until discovery is built")
+	f.StringVar(&hub, "hub", "", "hub address, host or host:port (port 7443 if none); without it the hub is looked for on the local network (mDNS)")
 	f.StringVar(&token, "token", "", "the one-time token from fleetd enroll-token (required)")
 	_ = cmd.MarkFlagRequired("token") // the flag is defined just above
 	return cmd

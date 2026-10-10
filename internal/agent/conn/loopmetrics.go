@@ -28,7 +28,7 @@ func newLoopMetrics(tel *telemetry.Telemetry, certNotAfter time.Time) (*loopMetr
 	out := &loopMetrics{}
 	var errs [5]error
 	out.attempts, errs[0] = m.Int64Counter(p+"_connect_attempts_total",
-		metric.WithDescription("Connect attempts per hub address tried, by result (connected, failed, untrusted) and source (cached, configured)."))
+		metric.WithDescription("Connect attempts per hub address tried, by result (connected, failed, untrusted) and source (cached, mdns, configured)."))
 	out.reconnects, errs[1] = m.Int64Counter(p+"_reconnects_total",
 		metric.WithDescription("Streams connected after the first, by the Hello reason (reconnect, wake, network_change)."))
 	connected, err2 := m.Int64ObservableGauge(p+"_connected",

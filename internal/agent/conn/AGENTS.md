@@ -17,6 +17,16 @@ Read the root `AGENTS.md` first; it applies here. Load `fleet-go`,
 - Every file in the state folder is written 0600 through `writePrivate`
   (temp, fsync, rename or link, folder fsync). The identity is written with
   a link and is never replaced.
+- An mDNS answer is untrusted data: it only proposes a candidate, which
+  passes the same pinned-CA handshake as any address, named by its SRV
+  target. Enroll sends nothing but that handshake to an answer until it
+  passes, and nothing at all when none does. Never trust a TXT record or a
+  name in place of the pin. Read a library answer only after the query
+  that produced it returned (the library writes it until then), and never
+  dial an answer that points at this machine.
+- `hub-addresses` is written through `writePrivate` (replace) only when a
+  HelloAck's non-empty list differs from the list in use; a damaged one is
+  never repaired, only ignored for the identity's list.
 - Never read or touch a harness's files or credentials from here.
 - Text from the hub is trusted only after the pin, and still capped and
   stripped of control characters before it is saved or printed.

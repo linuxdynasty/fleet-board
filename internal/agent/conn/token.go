@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/netip"
 	"strconv"
 	"strings"
 )
@@ -26,9 +27,9 @@ var (
 	// ErrTokenMalformed means the text is not an enroll token of 02g. Its
 	// text never echoes the token.
 	ErrTokenMalformed = errors.New("conn: the enroll token is not a fleet-board token (fbe1_...)")
-	// ErrNoHub means no hub address was given. Finding the hub on the network
-	// (02g A2) comes with discovery; until then the address is required.
-	ErrNoHub = errors.New("conn: no hub address: pass --hub host[:port]; finding the hub on the network is not built yet")
+	// ErrNoHub means no hub address was given and there was no way to
+	// look for one ([Options].Discover is nil).
+	ErrNoHub = errors.New("conn: no hub address: pass --hub host[:port]")
 	// ErrHubAddress means the hub address is not host or host:port.
 	ErrHubAddress = errors.New("conn: the hub address is not host or host:port")
 )
@@ -76,8 +77,9 @@ func (Token) GoString() string { return redacted }
 // LogValue keeps slog from printing the secret.
 func (Token) LogValue() slog.Value { return slog.StringValue(redacted) }
 
-// HubAddress checks a hub address the owner typed and adds [DefaultPort]
-// when it has no port. An empty address is [ErrNoHub].
+// HubAddress checks a hub address the owner typed, adds [DefaultPort]
+// when it has no port, and gives it one spelling (see below). An empty
+// address is [ErrNoHub].
 func HubAddress(s string) (string, error) {
 	if s == "" {
 		return "", ErrNoHub
@@ -89,13 +91,19 @@ func HubAddress(s string) (string, error) {
 		}
 		host, port = s, DefaultPort
 	}
-	if n, err := strconv.Atoi(port); err != nil || n < 1 || n > 65535 {
+	n, err := strconv.Atoi(port)
+	if err != nil || n < 1 || n > 65535 {
 		return "", fmt.Errorf("%w: %q has no valid port", ErrHubAddress, s)
 	}
-	if net.ParseIP(host) == nil && !hostName(host) {
+	// One spelling per address: lower case, no trailing dot, an IP in its
+	// canonical form, the port without leading zeros.
+	host = strings.ToLower(strings.TrimRight(host, "."))
+	if ip, err := netip.ParseAddr(host); err == nil {
+		host = ip.Unmap().String()
+	} else if !hostName(host) {
 		return "", fmt.Errorf("%w: %q", ErrHubAddress, s)
 	}
-	return net.JoinHostPort(host, port), nil
+	return net.JoinHostPort(host, strconv.Itoa(n)), nil
 }
 
 // hostName accepts letters, digits, dots and hyphens, at most 253 bytes.

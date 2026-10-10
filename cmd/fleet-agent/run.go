@@ -27,7 +27,7 @@ var errAnotherRun = errors.New("another fleet-agent run holds the lock")
 // runCommand is `fleet-agent run`: stay connected to the hub until a signal
 // (exit 0) or until the hub or the certificate ends the loop (exit 1). A run
 // that finds the hub's end in ended.json exits 1 before any network call.
-func runCommand(dir func() (string, error), version string, stderr io.Writer) *cobra.Command {
+func runCommand(dir func() (string, error), version string, discover conn.Discover, stderr io.Writer) *cobra.Command {
 	return &cobra.Command{
 		Use:   "run",
 		Short: "Connect this machine to its hub and stay connected",
@@ -45,12 +45,12 @@ func runCommand(dir func() (string, error), version string, stderr io.Writer) *c
 				return commandError{err}
 			}
 			defer func() { _ = tel.Shutdown(context.WithoutCancel(cmd.Context())) }()
-			return runAgent(cmd.Context(), d, version, boot, tel)
+			return runAgent(cmd.Context(), d, version, boot, tel, discover)
 		},
 	}
 }
 
-func runAgent(ctx context.Context, dir, version, boot string, tel *telemetry.Telemetry) error {
+func runAgent(ctx context.Context, dir, version, boot string, tel *telemetry.Telemetry, discover conn.Discover) error {
 	log := tel.Logger.With("component", "run")
 	failed := func(step string, err error) error {
 		// A signal during startup is a clean stop, not a failure, but only
@@ -107,7 +107,7 @@ func runAgent(ctx context.Context, dir, version, boot string, tel *telemetry.Tel
 
 	loop, err := conn.NewLoop(ctx, conn.LoopOptions{
 		Dir: dir, Identity: id, DB: db, Version: version, BootID: boot,
-		Telemetry: tel, Events: events, PushOff: nw.PushOff,
+		Telemetry: tel, Events: events, PushOff: nw.PushOff, Discover: discover,
 	})
 	if err != nil {
 		return failed("loop", err)

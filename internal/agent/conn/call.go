@@ -62,14 +62,15 @@ func (r Retry) wait(try int) time.Duration {
 // retryable answer or a transport error, up to the policy. The request is
 // the same on every try (token, CSR key, install_id), so a try after a lost
 // reply gets the hub's stored answer.
-func call(ctx context.Context, r *enrollRun, opts Options, addr string, tok Token, req *agentv1.EnrollRequest,
+// dial, when set, is the address dialed for addr (an mDNS answer's).
+func call(ctx context.Context, r *enrollRun, opts Options, addr, dial string, tok Token, req *agentv1.EnrollRequest,
 ) (*agentv1.EnrollResponse, error) {
 	host, _, err := net.SplitHostPort(addr)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %q", ErrHubAddress, addr)
 	}
 	var untrusted atomic.Bool
-	tr := pinnedTransport(tok.CAFingerprint, host, &untrusted)
+	tr := pinnedTransport(tok.CAFingerprint, host, dial, &untrusted)
 	defer tr.CloseIdleConnections()
 	client := agentv1connect.NewAgentServiceClient(&http.Client{Transport: tr, Timeout: callTimeout}, "https://"+addr,
 		connect.WithGRPC(), connect.WithReadMaxBytes(maxMessageBytes), connect.WithSendMaxBytes(maxMessageBytes))
@@ -150,13 +151,16 @@ func errorDetail(ce *connect.Error) *typev1.ErrorDetail {
 // pin, the name, the key proof, an alert or a non-TLS answer) marks the hub
 // untrusted. A connection that is refused, drops, resets or times out is a
 // lost connection, retried within the enroll tries.
-func pinnedTransport(fp [32]byte, host string, untrusted *atomic.Bool) *http.Transport {
+func pinnedTransport(fp [32]byte, host, dial string, untrusted *atomic.Bool) *http.Transport {
 	cfg := pinnedTLS(fp, host)
 	d := &net.Dialer{Timeout: handshakeTimeout}
 	return &http.Transport{
 		ForceAttemptHTTP2:      true,
 		MaxResponseHeaderBytes: 64 << 10,
 		DialTLSContext: func(ctx context.Context, network, address string) (net.Conn, error) {
+			if dial != "" {
+				address = dial
+			}
 			raw, err := d.DialContext(ctx, network, address)
 			if err != nil {
 				return nil, err

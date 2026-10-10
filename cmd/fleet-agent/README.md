@@ -7,6 +7,7 @@ Today it can join a machine to the fleet:
 ```bash
 TOKEN=$(fleetd enroll-token --machine laptop)      # on the hub
 fleet-agent enroll --hub hub.local --token "$TOKEN" # on the machine; port 7443 if none
+fleet-agent enroll --token "$TOKEN"                 # or find the hub on the local network
 ```
 
 `enroll` checks the hub against the CA named in the token before it sends
@@ -14,13 +15,15 @@ anything, then saves the machine's identity in the state folder
 (`~/.local/state/fleet-agent/`, or `--state-dir`), mode 0700 with 0600 files.
 It prints one line on stdout naming the machine and the fleet; log lines go
 to stderr. Exit codes: 0 enrolled, 1 the enroll failed (the line on stderr
-says why: no `--hub`, a bad or expired or used token, a hub that does not
+says why: no hub found, a bad or expired or used token, a hub that does not
 match the token, a hub that stayed busy, or a machine that is already
 enrolled), 2 bad usage. A stray argument (say a token typed without
 `--token`) is bad usage, and the error never repeats it.
 
-- `--hub` is required for now: finding the hub on the network comes later
-  in plan row 4. Without it nothing is sent.
+- Without `--hub` it asks the local network (mDNS) for the hub and sends
+  the token only to one that proves it holds the token's CA. If none does,
+  it exits 1 having sent nothing and says to pass `--hub`: a firewall on
+  the machine (ufw on Linux, say) often hides the hub from mDNS.
 - A busy hub or a dropped connection is retried a few times with the same
   token and key (docs/specs/defaults.md, "Enroll tries").
 - If the reply is still lost, run the same command again: the hub returns
@@ -43,8 +46,10 @@ fleet-agent run    # logs to stderr; stop with Ctrl-C or SIGTERM
 
 - It takes `fleet-agent.lock` in the state folder first. A second `run` on
   the same folder exits 1 and names the lock; the first keeps running.
-- It tries the hub address it last reached, then the one it enrolled with,
-  over mTLS. When the hub is down it waits and tries again (1 s growing to
+- It tries the hub address it last reached, then the hub found by one mDNS
+  browse, then the hub's latest list of addresses (`hub-addresses`, saved
+  when the hub sends a new one), else the list it enrolled with, over mTLS.
+  An address from mDNS is only a candidate: it must pass the same check. When the hub is down it waits and tries again (1 s growing to
   60 s, with some randomness); waking from sleep or a network change makes
   it try at once.
 - Exit codes: 0 after a signal (it says goodbye to the hub first; a
@@ -74,6 +79,11 @@ usage. Release builds set the version with `-ldflags -X` (see
 make build
 go run ./cmd/fleet-agent --version
 ```
+
+The tests build the binary with `-tags fleet_nomdns`, whose hub finder
+finds nothing, so they never send an mDNS query; `FLEET_MDNS_LIVE=1`
+builds the real one. In-process tests pass their own finder to `execute`
+and `runAgent`.
 
 The logic is in `internal/agent/conn`. What the agent will do is specified
 in `docs/specs/01-agent-capabilities.md`; the build order is in
