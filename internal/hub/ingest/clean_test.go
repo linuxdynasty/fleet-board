@@ -3,7 +3,6 @@ package ingest_test
 import (
 	"strings"
 	"testing"
-	"time"
 	"unicode/utf8"
 
 	agentv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1"
@@ -50,20 +49,54 @@ func TestCleanCapsAndScrubsTheSnapshotsText(t *testing.T) {
 	}
 }
 
-// A hostile policy error far over its cap is cut before the scrubber runs,
-// so it costs what a short one does (04b): the uncut 512 KiB takes the
-// scrubber seconds.
-func TestCleanCutsBeforeItScrubs(t *testing.T) {
+// Hostile text far over its cap (the slowest shape for the scrubber, from
+// internal/scrub's hub pass benchmark: glued keys of alternating kinds,
+// then a long run of "--n") is cut to the field's 256-byte cap before the
+// scrubber runs (04b): the scrubber is handed at most 256 bytes per field.
+func TestCleanCutsToTheCapBeforeItScrubs(t *testing.T) {
 	t.Parallel()
-	long := strings.Repeat("password=x ", (512<<10)/11)
-	snap := &agentv1.Snapshot{Policy: &agentv1.PolicyInfo{Error: long}, Facts: &agentv1.MachineFacts{AgentVersion: long}}
-	start := time.Now()
-	ingest.Clean(snap)
-	if d := time.Since(start); d > time.Second {
-		t.Errorf("Clean took %v on 2 x 512 KiB, want well under a second", d)
+	aws, google := "AKIA"+strings.Repeat("Z", 16), "AIza"+strings.Repeat("x", 35)
+	keys := aws + google + aws + google + " "
+	hostile := keys + strings.Repeat("--n", (160<<10)/3)
+	snap := &agentv1.Snapshot{
+		Facts: &agentv1.MachineFacts{
+			OsVersion: hostile, AgentVersion: hostile, TmuxVersion: hostile, PolicySchemaVersion: hostile,
+		},
+		Policy: &agentv1.PolicyInfo{Error: hostile, SchemaVersion: hostile},
 	}
-	if n := len(snap.GetPolicy().GetError()); n > 256 || n == 0 {
-		t.Errorf("policy error %d bytes, want 1 to 256", n)
+	got := ingest.Clean(snap)
+	if got.ScrubBytes > 6*256 || got.ScrubBytes == 0 {
+		t.Errorf("the scrubber was handed %d bytes for 6 fields, want at most 6 x 256", got.ScrubBytes)
+	}
+	for _, v := range []string{snap.GetFacts().GetOsVersion(), snap.GetPolicy().GetError()} {
+		if len(v) > 256 || strings.Contains(v, "AKIAZZ") {
+			t.Errorf("field %q (%d bytes), want at most 256 bytes and no key", v[:min(len(v), 40)], len(v))
+		}
+	}
+}
+
+// A cut never splits a character, and invisible format characters (a
+// direction override, a zero-width space) and line or paragraph
+// separators are dropped like control characters (02b, display spoofing).
+func TestCleanCutsOnACharacterAndDropsFormatCharacters(t *testing.T) {
+	t.Parallel()
+	wide := "a" + strings.Repeat("é", 200)
+	snap := &agentv1.Snapshot{
+		Facts:  &agentv1.MachineFacts{Hostname: "lap\u202etop\u200b x\u2028\u2029", Username: wide, AgentVersion: wide},
+		Policy: &agentv1.PolicyInfo{Hash: wide},
+	}
+	ingest.Clean(snap)
+	if got := snap.GetFacts().GetHostname(); got != "laptop x" {
+		t.Errorf("hostname %q, want laptop x", got)
+	}
+	want := "a" + strings.Repeat("é", 127) // 255 bytes: a 256th would split an é
+	for name, v := range map[string]string{
+		"username": snap.GetFacts().GetUsername(), "agent_version": snap.GetFacts().GetAgentVersion(),
+		"policy hash": snap.GetPolicy().GetHash(),
+	} {
+		if v != want || !utf8.ValidString(v) {
+			t.Errorf("%s %d bytes (valid %v), want the 255-byte prefix on a character boundary", name, len(v), utf8.ValidString(v))
+		}
 	}
 }
 

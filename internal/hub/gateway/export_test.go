@@ -24,8 +24,9 @@ func SetArm(o *ServerOptions, kind string, f func()) {
 }
 
 // SetBeforeSnapshotJob makes the server built from o call f in the
-// Snapshot arm, on the stream's ingest goroutine, before its writer job.
-func SetBeforeSnapshotJob(o *ServerOptions, f func()) { o.beforeSnapshot = f }
+// Snapshot arm, on the stream's ingest goroutine, with the stream's
+// context, before its writer job.
+func SetBeforeSnapshotJob(o *ServerOptions, f func(context.Context)) { o.beforeSnapshot = f }
 
 // SetAfterRegister makes the server built from o call f after a stream is
 // registered as its machine's live one, before its HelloAck is queued.

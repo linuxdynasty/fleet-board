@@ -326,7 +326,7 @@ re-enroll rule are in [02g](02g-agent-security.md#machine-lifecycle-revoke-and-d
   outcome: `written`, `suppressed`, `summary`, `write_failed`; plan row 5),
   `fleet_hub_agents_connected`,
   `fleet_hub_machine_state{machine, state}` (gauge 0/1 per state),
-  `fleet_hub_snapshot_apply_seconds`, `fleet_hub_snapshot_bytes`,
+  `fleet_hub_snapshot_apply_seconds`, `fleet_hub_snapshot_bytes`, `fleet_hub_snapshot_requests_dropped_total{machine}` (03n),
   `fleet_hub_events_discarded_before_snapshot_total`, `fleet_hub_clock_skew_seconds{machine}` (plan row 5b),
   `fleet_hub_connect_refused_total{cause}`, `fleet_hub_connect_unhandled_total{kind}`,
   `fleet_hub_connect_closed_before_hello_total{err_kind}` (the hub's `Connect`, plan
@@ -363,8 +363,8 @@ re-enroll rule are in [02g](02g-agent-security.md#machine-lifecycle-revoke-and-d
   key, a CSR or a certificate; serials are hex.
 - Hub logs of `Connect` (plan row 5a-ii): `connect.refused{cause, reason, peer, machine_id}`
   and `connect.failed{step, err_kind, machine_id}`, described in 03n "Telemetry".
-- Hub logs of the Snapshot (plan row 5c1): `snapshot.applied`, `snapshot.refused`,
-  `snapshot.failed` and `snapshot.rollback`, described in 03n "Telemetry".
+- Hub logs of the Snapshot (plan row 5c1): `snapshot.applied`, `snapshot.refused`, `snapshot.failed`,
+  `snapshot.abandoned`, `snapshot.rollback`, `snapshot.request_dropped`: 03n "Telemetry".
 - Logs: `enroll.issued{machine, expire_time, actor}`, `enroll.issue_refused{reason}`,
   `enroll.issue_failed{step, err_kind}`,
   `enroll.completed{machine_id, replayed, hostname_mismatch}`,

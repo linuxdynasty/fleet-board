@@ -188,10 +188,17 @@ srv, err := gateway.NewServer(gateway.ServerOptions{
   one writer job (the statedb core with the current-epoch check and agent
   rollback, `ServerOptions.Appliers` in order, then ONLINE), compared with
   the values the stream's `Hello` carried. Only its commit marks the
-  machine ONLINE; the Hello transaction never does. After the commit:
+  machine ONLINE; the Hello transaction never does. As for a Hello, the
+  wait for the job ends when the agent leaves or Shutdown begins
+  (`snapshot.abandoned` at info, `result="abandoned"`: the outcome is
+  unknown and the job may still commit), so the teardown closes the row
+  before the store closes. After the commit:
   `ServerOptions.OnSnapshotApplied(machineID, epoch)` (plan row 5f re-sends
-  pending commands from it), and `SnapshotRequest{seq_rollback}` when
-  `Snapshot.seq` was not above the stored event seq. A Snapshot not applied
+  pending commands from it; it must check the stream is still live, since
+  it also runs for a Snapshot handled after the agent left), and
+  `SnapshotRequest{seq_rollback}` when the epoch's first Snapshot had a seq
+  not above the stored event seq (counted and logged when the send queue
+  is full). A Snapshot not applied
   ends the stream (no Bye) so the agent reconnects with a fresh one, except
   `not_current`: a newer Hello already displaced the stream.
 - **Request cap**: `connect.WithReadMaxBytes(MaxMessageBytes)`, the 1 MiB of 02e;
@@ -240,7 +247,9 @@ srv, err := gateway.NewServer(gateway.ServerOptions{
 | `fleet_hub_connect_unhandled_total{kind}`, `hub.connect.unhandled` (`machine_id`, `epoch`, `kind`) | a message of an arm with no handler yet |
 | `snapshot.applied` (`machine_id`, `epoch`, `seq`, `bytes`, `ms`, `event_generation`, `text_cut`, `text_scrubbed`), `fleet_hub_snapshot_apply_seconds{result="applied"}`, `fleet_hub_snapshot_bytes`, span `hub.snapshot.apply` | a Snapshot committed; the machine is ONLINE |
 | `snapshot.refused` (`reason`: `not_current`, `parts`, `revoked`, `unknown_machine`, `invalid`), `snapshot.failed` (`step`: `store`, `applier`; `err_kind`), `result="refused"` / `"failed"` | a Snapshot not applied (warn / error) |
+| `snapshot.abandoned` (`reason`: `agent_left`, `shutdown`), `result="abandoned"` | the stream ended while the Snapshot's job waited (info; outcome unknown) |
 | `snapshot.rollback` (`machine_id`, `epoch`, `causes`, `event_generation`), `fleet_hub_agent_rollback_total{machine}` | an agent rollback (02i rule 3), with a `machine.install_changed` audit row |
+| `snapshot.request_dropped` (`machine_id`, `epoch`, `reason`), `fleet_hub_snapshot_requests_dropped_total{machine}` | a `SnapshotRequest{seq_rollback}` the full send queue refused |
 | `fleet_hub_server_cert_issues_total{reason, result}`, `tls.server_cert_issued` (`reason`, `names` count, `not_after`), `tls.server_cert_issue_failed` (`reason`, `err_kind`, `not_after` still served) | server certificate re-issues |
 
 No token, secret or part of its hash, no facts, no key, no certificate and no
@@ -285,8 +294,13 @@ the Snapshot commits (text cut and scrubbed, the hook, the log and the
 histogram), a failing applier rolling everything back and ending the
 stream, a Snapshot in parts refused, a Snapshot of a displaced epoch
 refused in its transaction (an `export_test.go` hook completes the newer
-Hello first), and a seeded seq rollback answered with
-`SnapshotRequest{seq_rollback}` whose answer replaces the facts. They dial the real
+Hello first), a seeded seq rollback answered with one
+`SnapshotRequest{seq_rollback}` (a second low-seq Snapshot starts no
+generation and asks for nothing) whose answer replaces the facts, a
+Snapshot whose agent left logged as abandoned (not failed) while its job
+still commits, and a
+panicking applier rolled back with the hub still serving;
+`snapshot_internal_test.go` counts a dropped `SnapshotRequest`. They dial the real
 listener with `crypto/tls` and the generated gRPC client against a real
 `state.db` and a real `revocation.List`: enroll (certificate CN and URI SAN,
 chain, accepted as a client certificate), replay until 24 h past the TTL,

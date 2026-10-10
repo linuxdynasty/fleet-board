@@ -60,7 +60,7 @@ type connectDeps struct {
 	snap           snapshotMetrics
 	appliers       []ingest.Applier
 	onApplied      func(machineID string, epoch uint64)
-	beforeSnapshot func()
+	beforeSnapshot func(context.Context)
 }
 
 type connectMetrics struct {

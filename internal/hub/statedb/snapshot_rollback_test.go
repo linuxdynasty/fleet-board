@@ -23,7 +23,9 @@ func TestEachRollbackCauseStartsANewEventGeneration(t *testing.T) {
 	}{
 		{"none", func(*statedb.SnapshotIn) {}, nil},
 		{"hello seq below the hub's", func(in *statedb.SnapshotIn) { in.LastEventSeq = 99 }, []string{"last_event_seq"}},
-		{"a counter went down", func(in *statedb.SnapshotIn) { in.Counters.Coalesced = 4 }, []string{"counters"}},
+		{"shed went down", func(in *statedb.SnapshotIn) { in.Counters.Shed = 4 }, []string{"counters"}},
+		{"coalesced went down", func(in *statedb.SnapshotIn) { in.Counters.Coalesced = 4 }, []string{"counters"}},
+		{"evicted went down", func(in *statedb.SnapshotIn) { in.Counters.Evicted = 4 }, []string{"counters"}},
 		{"another install_id", func(in *statedb.SnapshotIn) { in.InstallID = "install-2" }, []string{"install_id"}},
 		// Seeded only: a 5c1 hub stores no event seq, so a real agent floored
 		// by HelloAck never sends a Snapshot.seq at or below it.
@@ -57,7 +59,8 @@ func TestEachRollbackCauseStartsANewEventGeneration(t *testing.T) {
 			}
 			got := readSnap(t, dir)
 			if got.generation != int64(wantGen) || got.install != in.InstallID || got.hubLastSeq != 100 ||
-				got.coalesced != int64(in.Counters.Coalesced) || got.state != "ONLINE" { //nolint:gosec // G115: small
+				got.shed != int64(in.Counters.Shed) || got.coalesced != int64(in.Counters.Coalesced) || //nolint:gosec // G115: small
+				got.evicted != int64(in.Counters.Evicted) || got.state != "ONLINE" { //nolint:gosec // G115: small
 				t.Errorf("row %+v, want generation %d, install %s, hub_last_event_seq 100, the new counters, ONLINE",
 					got, wantGen, in.InstallID)
 			}
@@ -84,5 +87,44 @@ func TestEachRollbackCauseStartsANewEventGeneration(t *testing.T) {
 				t.Errorf("repeat = %+v, %v; want generation 2 and no rollback", out, err)
 			}
 		})
+	}
+}
+
+// Only the epoch's first Snapshot judges the stream's Hello. Later
+// Snapshots on that epoch (SnapshotRequest answers) are applied but start
+// no generation, write no audit row and never move the stored counters
+// back, even when their seq is still at or below the stored event seq or
+// the stored counters rose since (5c2 stores Heartbeat counters).
+func TestLaterSnapshotsOnAnEpochNeverRollBack(t *testing.T) {
+	t.Parallel()
+	dir, s := enrolledStore(t)
+	mustHello(t, s, hello(0, "boot-a", "192.0.2.7:51000", helloAt))
+	if _, err := rawDB(t, dir).ExecContext(t.Context(), `UPDATE machines SET hub_last_event_seq = 100`); err != nil {
+		t.Fatal(err)
+	}
+	rows := len(auditRows(t, dir))
+	in := snapIn(1, 50, snapAt)
+	in.LastEventSeq = 100
+	if out, err := applySnapshot(t, s, in); err != nil || out.Generation != 2 || len(out.Rollback) != 1 {
+		t.Fatalf("first = %+v, %v; want generation 2 for snapshot_seq", out, err)
+	}
+	if _, err := rawDB(t, dir).ExecContext(t.Context(), `UPDATE machines SET events_shed_total = 7,
+		events_coalesced_total = 7, events_evicted_total = 7`); err != nil {
+		t.Fatal(err)
+	}
+	for i, seq := range []uint64{60, 70} {
+		again := in
+		again.Seq, again.Now = seq, snapAt.Add(time.Duration(i+1)*time.Second)
+		out, err := applySnapshot(t, s, again)
+		if err != nil || out.Generation != 2 || len(out.Rollback) != 0 {
+			t.Errorf("snapshot seq %d = %+v, %v; want generation 2 and no rollback", seq, out, err)
+		}
+	}
+	got := readSnap(t, dir)
+	if got.generation != 2 || got.snapSeq != 70 || got.shed != 7 || got.coalesced != 7 || got.evicted != 7 {
+		t.Errorf("row %+v, want generation 2, seq 70 and the counters kept at 7", got)
+	}
+	if n := len(auditRows(t, dir)) - rows; n != 1 {
+		t.Errorf("%d machine.install_changed rows, want 1", n)
 	}
 }

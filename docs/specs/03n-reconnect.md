@@ -213,7 +213,7 @@ The agent side of plan row 6 (ruling forks 4 i, 11 and 12), in
 | Failure | What happens |
 |---|---|
 | Agent offline for hours | Goals run on; ring fills (latest per key); on reconnect snapshot gives truth, ring gives timeline; ring overflow shows as a rise of `evicted_total` and a `gap` on the timeline |
-| Agent crashed, or its state directory was wiped or a VM image reverted | `seq` resumes above `seq_hwm` after a crash; after a wipe `Hello.last_event_seq` is below the hub's, the hub records an agent rollback (new `event_generation`, timeline marker, audit row) and the agent floors `seq` above `hub_last_event_seq`, so nothing is dropped as a duplicate |
+| Agent crashed, or its state directory was wiped or a VM image reverted | `seq` resumes above `seq_hwm` after a crash; after a wipe `Hello.last_event_seq` is below the hub's, the hub records an agent rollback (new `event_generation`, timeline marker, audit row; the "state reset" timeline marker comes with the event history, plan row 5c2, and until then the audit row, `snapshot.rollback` and `fleet_hub_agent_rollback_total` stand for it) and the agent floors `seq` above `hub_last_event_seq`, so nothing is dropped as a duplicate |
 | Hub restart mid-snapshot apply | Stream drops; the partial tx rolls back; the agent reconnects and sends a fresh snapshot |
 | Hub store restored from backup | Epoch rises above the agent's `last_epoch` (no `SEQ_REPLAYED`); `hub_last_event_seq` is lower, so the agent replays its ring and the snapshot covers the rest; registry entries for unknown goals → `orphan_goal_pane` triage; unknown results → audit only; settings generation on the agent may be newer than the hub's → hub re-sends its current generation and the agent applies it (settings are ordered by `(settings_epoch, generation)`, and a different epoch is accepted whatever its generation; 02, "Settings order") |
 | Duplicate `command_id` re-issued | Logged result returned, nothing re-executed |
@@ -279,11 +279,17 @@ The agent side of plan row 6 (ruling forks 4 i, 11 and 12), in
   `not_current` (a newer `Hello` displaced the stream), `parts` (this hub lists no
   `snapshot.parts`), `revoked`, `unknown_machine`, `invalid` (a number above 2^63 - 1)),
   `snapshot.failed{machine_id, epoch, seq, step, err_kind}` (error; `step`: `store`,
-  `applier`), `snapshot.rollback{machine_id, epoch, causes, event_generation}` (warn;
-  02i rule 3; `causes` from `last_event_seq`, `counters`, `install_id`, `snapshot_seq`;
-  `snapshot_seq` also sends `SnapshotRequest{seq_rollback}`). A Snapshot not applied,
+  `applier`, a panic included), `snapshot.abandoned{machine_id, epoch, seq, reason}`
+  (info; `agent_left` or `shutdown`: as for a `Hello`, the wait ends with the stream so
+  the teardown closes the row before the store closes; the job may still commit, the
+  outcome is unknown, and the stream is ending anyway), `snapshot.rollback{machine_id, epoch, causes, event_generation}` (warn;
+  02i rule 3, judged on the epoch's first Snapshot only; `causes` from `last_event_seq`,
+  `counters`, `install_id`, `snapshot_seq`; `snapshot_seq` also sends
+  `SnapshotRequest{seq_rollback}`), `snapshot.request_dropped{machine_id, epoch, reason}`
+  (warn) with `fleet_hub_snapshot_requests_dropped_total{machine}` (that request found the
+  stream's send queue full; the next connection's first Snapshot is judged again). A Snapshot not applied,
   except `not_current`, ends the stream, so the agent reconnects and sends a fresh one.
-  `fleet_hub_snapshot_apply_seconds{result}` (`applied`, `refused`, `failed`) and
+  `fleet_hub_snapshot_apply_seconds{result}` (`applied`, `refused`, `failed`, `abandoned`) and
   `fleet_hub_snapshot_bytes`; the span `hub.snapshot.apply`. "Why is machine X
   connected but not ONLINE?" is its `snapshot.refused` or `snapshot.failed` line.
 

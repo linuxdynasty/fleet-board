@@ -66,9 +66,9 @@ type ServerOptions struct {
 	OnSnapshotApplied func(machineID string, epoch uint64)
 	// arms, set only by tests, adds arm handlers to the product table.
 	arms armTable
-	// beforeSnapshot, set only by tests, runs in the Snapshot arm before
-	// its writer job.
-	beforeSnapshot func()
+	// beforeSnapshot, set only by tests, runs in the Snapshot arm with the
+	// stream's context, before its writer job.
+	beforeSnapshot func(context.Context)
 }
 
 // NewServer is the agent listener (listen.agent): TLS 1.3 only, the

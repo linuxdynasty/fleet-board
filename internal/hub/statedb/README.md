@@ -208,6 +208,11 @@ Notes for the rows that build on this:
   (`NextStamp`); a `STALE` from the start sweep returns only that way.
 - **5m:** the 30-day prune of `machine_connections` (03f) is 5m's; nothing
   prunes the table yet.
+- **5c2:** when Heartbeats store `EventCounters`, keep the rule that only
+  an epoch's first Snapshot writes the Hello's counters: a later Snapshot
+  on the stream (the answer to `event_lost`) must not move them back or
+  read a rise as a rollback. 5c2 also puts the rollback's "state reset"
+  marker on the event history.
 
 ```go
 out, err := statedb.Hello(ctx, s, statedb.HelloIn{MachineID: id, PeerSerial: serial, LastEpoch: h.GetLastEpoch(), ...})
@@ -279,12 +284,15 @@ err = statedb.WriteAudit(ctx, s, entries...)              // one job of its own
   machine row that is not `REVOKED` (`ErrMachineUnknown`,
   `ErrMachineRevoked`) with a live connection row of `in.Epoch` that is its
   `last_epoch` (`ErrSnapshotNotCurrent`), numbers that fit SQLite
-  (`ErrSnapshotInvalid`); then agent rollback (02i rule 3): the stream's
-  `Hello.last_event_seq` below `hub_last_event_seq` (on the epoch's first
-  Snapshot only: a `SnapshotRequest`'s answer carries the same Hello), any
-  counter below the stored one, another `install_id`, or `Snapshot.seq` at
-  or below a non-zero `hub_last_event_seq` (`SnapshotOut.Rollback` names
-  them). A rollback bumps `event_generation` and appends
+  (`ErrSnapshotInvalid`); then, on the epoch's first Snapshot only, agent
+  rollback (02i rule 3): the stream's `Hello.last_event_seq` below
+  `hub_last_event_seq`, any counter below the stored one, another
+  `install_id`, or `Snapshot.seq` at or below a non-zero
+  `hub_last_event_seq` (`SnapshotOut.Rollback` names them). A later
+  Snapshot on the same epoch (a `SnapshotRequest`'s answer) carries the same
+  Hello: it is applied but judged no more, and keeps the stored counters
+  and `install_id`, so an agent cannot loop the hub through generations,
+  audit rows and requests. A rollback bumps `event_generation` and appends
   `machine.install_changed` (no actor; the causes, both generations, both
   install ids); `hub_last_event_seq` is kept, since the agent floors its
   next seq above it. It then stores the facts, resources, policy, drain,
@@ -333,8 +341,9 @@ Snapshots and read the row from the file: ENROLLED after `Hello`, then the
 stored Snapshot and ONLINE with one stamp; a second Snapshot replacing the
 facts (unknown resources as NULL); a displaced or closed epoch, a missing
 and a REVOKED machine refused with nothing changed; out-of-range numbers;
-each rollback cause alone and together (generation, audit row, stored
-values, no repeat); `ReadSnapshot` returning every stored value;
+each rollback cause alone (each counter too) and together (generation,
+audit row, stored values, no repeat); later Snapshots on an epoch judged no
+more and keeping newer counters; `ReadSnapshot` returning every stored value;
 `Hello` returning the stored event seq; and a 5j store
 gaining the columns with their defaults.
 

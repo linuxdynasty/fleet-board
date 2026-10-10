@@ -94,18 +94,20 @@ type SnapshotIn struct {
 type SnapshotOut struct {
 	// Generation is the machine's event_generation after the Snapshot.
 	Generation uint64
-	// Rollback names the 02i rule 3 causes found, in a fixed order
-	// (last_event_seq, counters, install_id, snapshot_seq); nil when none.
-	// snapshot_seq alone also asks for SnapshotRequest{seq_rollback}.
+	// Rollback names the 02i rule 3 causes found on the epoch's first
+	// Snapshot, in a fixed order (last_event_seq, counters, install_id,
+	// snapshot_seq); nil when none, and always nil for a later Snapshot on
+	// the same epoch. snapshot_seq also asks for SnapshotRequest{seq_rollback}.
 	Rollback []string
 }
 
 // ApplySnapshot is the core of the Snapshot transaction, in the writer
 // job's tx: the machine must exist, not be REVOKED, and hold a live
 // connection row of in.Epoch that is its last epoch
-// ([ErrSnapshotNotCurrent]); then it detects an agent rollback, which bumps
-// event_generation and appends machine.install_changed, and replaces the
-// facts, resources, policy, drain, counters, install_id and the seq floor.
+// ([ErrSnapshotNotCurrent]); then, on the epoch's first Snapshot only, it
+// detects an agent rollback, which bumps event_generation and appends
+// machine.install_changed; it replaces the facts, resources, policy, drain
+// and the seq floor, and (first Snapshot only) the counters and install_id.
 // It leaves machines.state alone: [MarkOnline] ends the job, after the
 // appliers of later rows. Errors leave the job to roll back.
 func ApplySnapshot(ctx context.Context, tx *sql.Tx, in SnapshotIn) (SnapshotOut, error) {
@@ -132,22 +134,29 @@ func ApplySnapshot(ctx context.Context, tx *sql.Tx, in SnapshotIn) (SnapshotOut,
 	case ok == 0 || uint64(lastEpoch) != in.Epoch: //nolint:gosec // G115: CHECK >= 0
 		return SnapshotOut{}, fmt.Errorf("%w: epoch %d, machine at %d", ErrSnapshotNotCurrent, in.Epoch, lastEpoch)
 	}
-	c := in.Counters
 	out := SnapshotOut{Generation: uint64(gen)} //nolint:gosec // G115: CHECK >= 1
-	// The Hello's values count once per connection: a second Snapshot on
-	// the stream (a SnapshotRequest's answer) carries the same Hello.
-	first := snapEpoch != lastEpoch
-	for _, r := range []struct {
-		cause string
-		hit   bool
-	}{
-		{"last_event_seq", first && int64(in.LastEventSeq) < hubLast},                                      //nolint:gosec // G115: validated
-		{"counters", int64(c.Shed) < shed || int64(c.Coalesced) < coalesced || int64(c.Evicted) < evicted}, //nolint:gosec // G115: validated
-		{"install_id", in.InstallID != install},
-		{"snapshot_seq", hubLast > 0 && int64(in.Seq) <= hubLast}, //nolint:gosec // G115: validated
-	} {
-		if r.hit {
-			out.Rollback = append(out.Rollback, r.cause)
+	// Only the epoch's first Snapshot judges the stream's Hello and its seq
+	// (02i rule 3). Later Snapshots on the epoch (SnapshotRequest answers)
+	// carry the same Hello: judged again they would start a generation, an
+	// audit row and a SnapshotRequest per answer, and write the Hello's
+	// counters over newer ones. They keep the stored counters and install_id.
+	c, installID := in.Counters, in.InstallID
+	if snapEpoch == lastEpoch {
+		c = EventCounters{Shed: uint64(shed), Coalesced: uint64(coalesced), Evicted: uint64(evicted)} //nolint:gosec // G115: CHECK >= 0
+		installID = install
+	} else {
+		for _, r := range []struct {
+			cause string
+			hit   bool
+		}{
+			{"last_event_seq", int64(in.LastEventSeq) < hubLast},                                               //nolint:gosec // G115: validated
+			{"counters", int64(c.Shed) < shed || int64(c.Coalesced) < coalesced || int64(c.Evicted) < evicted}, //nolint:gosec // G115: validated
+			{"install_id", installID != install},
+			{"snapshot_seq", hubLast > 0 && int64(in.Seq) <= hubLast}, //nolint:gosec // G115: validated
+		} {
+			if r.hit {
+				out.Rollback = append(out.Rollback, r.cause)
+			}
 		}
 	}
 	if out.Rollback != nil {
@@ -170,7 +179,7 @@ func ApplySnapshot(ctx context.Context, tx *sql.Tx, in SnapshotIn) (SnapshotOut,
 		event_generation = ?, snapshot_seq = ?, snapshot_epoch = ?, last_seen_time = max(ifnull(last_seen_time, 0), ?)
 		WHERE machine_id = ?`,
 		in.Facts, resources, p.Hash, p.SchemaVersion, loaded, p.ChangedSinceLoad, p.SafeMode, p.Error, d.Draining, d.Local,
-		int64(c.Shed), int64(c.Coalesced), int64(c.Evicted), in.InstallID, int64(out.Generation), //nolint:gosec // G115: validated
+		int64(c.Shed), int64(c.Coalesced), int64(c.Evicted), installID, int64(out.Generation), //nolint:gosec // G115: validated
 		int64(in.Seq), int64(in.Epoch), in.Now.UnixMilli(), in.MachineID) //nolint:gosec // G115: validated
 	if err != nil {
 		return SnapshotOut{}, fmt.Errorf("statedb: store snapshot: %w", err)

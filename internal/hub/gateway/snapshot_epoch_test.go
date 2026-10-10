@@ -1,6 +1,7 @@
 package gateway_test
 
 import (
+	"context"
 	"strings"
 	"sync"
 	"testing"
@@ -27,7 +28,7 @@ func TestASnapshotOfADisplacedEpochIsRefused(t *testing.T) {
 	// The hook runs on the hub's ingest goroutine: it only opens the newer
 	// stream and hands over its first answer; the test goroutine checks it.
 	h = startHub(t, func(o *gateway.ServerOptions) {
-		gateway.SetBeforeSnapshotJob(o, func() {
+		gateway.SetBeforeSnapshotJob(o, func(context.Context) {
 			once.Do(func() {
 				h.clock.set(h.clock.now().Add(6 * time.Second)) // past the Hello rate limit
 				newer = h.open(t, m)
@@ -77,8 +78,10 @@ func TestASnapshotOfADisplacedEpochIsRefused(t *testing.T) {
 // event seq 100, above both the Hello's last_event_seq (0) and the
 // Snapshot.seq (50), so both causes are found. The hub applies it, starts generation 2,
 // counts and logs the rollback, writes machine.install_changed and asks
-// for a new snapshot (seq_rollback); the answer, above the floor, replaces
-// the facts and is no second rollback.
+// for a new snapshot (seq_rollback). A second Snapshot on the epoch still
+// at or below the floor (an agent that ignores the floor) is applied but
+// judged no more: no new generation, audit row or request, so an agent
+// cannot drive a loop. The answer above the floor replaces the facts.
 func TestASeqRollbackAppliesAndAsksForAFreshSnapshot(t *testing.T) {
 	t.Parallel()
 	h := startHub(t)
@@ -106,6 +109,12 @@ func TestASeqRollbackAppliesAndAsksForAFreshSnapshot(t *testing.T) {
 	}
 	if rows := h.auditRows(t, "machine.install_changed"); len(rows) != 1 {
 		t.Errorf("%d machine.install_changed rows, want 1", len(rows))
+	}
+	s.send(t, snapshotMsg(60, "laptop", "h1"))
+	h.waitRow(t, m.id, "the low answer", func(r machineRow) bool { return r.snapSeq == 60 })
+	s.silent(t, 200*time.Millisecond)
+	if got := h.machineRow(t, m.id); got.generation != 2 || len(h.auditRows(t, "machine.install_changed")) != 1 {
+		t.Errorf("after a second low-seq Snapshot: row %+v; want generation 2 and one audit row", got)
 	}
 	s.send(t, snapshotMsg(101, "laptop2", "h2"))
 	got = h.waitRow(t, m.id, "the answer", func(r machineRow) bool { return r.snapSeq == 101 })

@@ -74,7 +74,8 @@
 // EventCounters, the seq floor and its epoch, resources, policy and the
 // reported drain. [ApplySnapshot] is the core of the Snapshot's writer job:
 // the current-epoch check ([ErrSnapshotNotCurrent], [ErrSnapshotInvalid]),
-// agent rollback (a new event_generation and a machine.install_changed row,
+// agent rollback on the epoch's first Snapshot only (a new
+// event_generation and a machine.install_changed row,
 // [ActionInstallChanged]) and the stored values; [MarkOnline] ends the job
 // after the later rows' appliers; [ReadSnapshot] reads them back. [Hello]
 // returns hub_last_event_seq.

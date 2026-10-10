@@ -21,7 +21,8 @@ import (
 // policy) and before the machine is marked ONLINE. It must use only tx (no
 // network call, no wait, no Commit) and treat snap as read-only cleaned
 // data; an error rolls back the whole Snapshot, so the machine stays as it
-// was and not ONLINE. Text a row stores beyond what [Clean] covers is
+// was and not ONLINE. It should not panic on agent data; [ApplySnapshot]
+// recovers a panic into an error all the same, so the writer lives on. Text a row stores beyond what [Clean] covers is
 // cleaned before the job, never in Apply.
 type Applier interface {
 	Apply(ctx context.Context, tx *sql.Tx, machineID string, snap *agentv1.Snapshot) error
@@ -60,7 +61,7 @@ func ApplySnapshot(ctx context.Context, st *store.Store, s Stream, snap *agentv1
 			return err
 		}
 		for i, a := range appliers {
-			if err := a.Apply(jctx, tx, s.MachineID, snap); err != nil {
+			if err := apply(jctx, tx, a, s.MachineID, snap); err != nil {
 				return fmt.Errorf("%w: applier %d: %w", ErrApplier, i, err)
 			}
 		}
@@ -72,6 +73,21 @@ func ApplySnapshot(ctx context.Context, st *store.Store, s Stream, snap *agentv1
 	}
 	return out, nil
 }
+
+// apply runs one applier and turns a panic into an error: the job runs on
+// the store's writer goroutine, which has no recover, so a panic on agent
+// data would end the hub. The error rolls the Snapshot back like any other.
+func apply(ctx context.Context, tx *sql.Tx, a Applier, machineID string, snap *agentv1.Snapshot) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("%w: %v", errApplierPanic, r)
+		}
+	}()
+	return a.Apply(ctx, tx, machineID, snap)
+}
+
+// errApplierPanic marks an applier that panicked.
+var errApplierPanic = errors.New("ingest: the applier panicked")
 
 // snapshotIn is the statedb input: the facts and resources as protojson
 // (the Enroll encoding of machines.facts), the policy and the drain.

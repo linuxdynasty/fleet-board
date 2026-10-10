@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -38,21 +39,24 @@ func marksOf(h *agentv1.Hello) helloMarks {
 }
 
 type snapshotMetrics struct {
-	seconds  metric.Float64Histogram
-	bytes    metric.Int64Histogram
-	rollback metric.Int64Counter
+	seconds           metric.Float64Histogram
+	bytes             metric.Int64Histogram
+	rollback, dropped metric.Int64Counter
 }
 
 func newSnapshotMetrics(tel *telemetry.Telemetry) (snapshotMetrics, error) {
 	m, p := tel.Meter(scope), tel.MetricPrefix()
 	var sm snapshotMetrics
-	var errs [3]error
+	var errs [4]error
 	sm.seconds, errs[0] = m.Float64Histogram(p+"_snapshot_apply_seconds", metric.WithUnit("s"),
-		metric.WithDescription("Snapshot arm time from receipt to the answer, by result: applied, refused or failed."))
+		metric.WithDescription("Snapshot arm time from receipt to the answer, by result: applied, refused, failed or "+
+			"abandoned (the stream ended during the wait)."))
 	sm.bytes, errs[1] = m.Int64Histogram(p+"_snapshot_bytes", metric.WithUnit("By"),
 		metric.WithDescription("Size of each Snapshot message the hub took."))
 	sm.rollback, errs[2] = m.Int64Counter(p+"_agent_rollback_total",
 		metric.WithDescription("Agent rollbacks (02i rule 3: a new event_generation), by machine."))
+	sm.dropped, errs[3] = m.Int64Counter(p+"_snapshot_requests_dropped_total",
+		metric.WithDescription("SnapshotRequests not sent because the stream's send queue was full or it had ended, by machine."))
 	if err := errors.Join(errs[:]...); err != nil {
 		return snapshotMetrics{}, fmt.Errorf("gateway: snapshot metrics: %w", err)
 	}
@@ -97,13 +101,30 @@ func snapshotArm(ctx context.Context, a *agentService, s *stream, m *agentv1.Con
 	}
 	cleaned := ingest.Clean(snap)
 	if a.beforeSnapshot != nil {
-		a.beforeSnapshot()
+		a.beforeSnapshot(ctx)
 	}
-	out, err := ingest.ApplySnapshot(ctx, a.store, ingest.Stream{
+	// As for a Hello (connect.go), the wait ends when the agent leaves or
+	// Shutdown begins, so the teardown closes the row before the store
+	// closes; the job itself still runs and may commit.
+	wctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	unwatch := context.AfterFunc(a.stopping, cancel)
+	defer unwatch()
+	out, err := ingest.ApplySnapshot(wctx, a.store, ingest.Stream{
 		MachineID: s.machineID, Epoch: s.epoch, LastEventSeq: s.hello.lastEventSeq, Counters: s.hello.counters,
 		InstallID: s.hello.installID,
 	}, snap, a.appliers, a.now().UTC())
 	switch {
+	case err != nil && (ctx.Err() != nil || a.stopping.Err() != nil):
+		// Not a failure: the stream is ending and the outcome is unknown.
+		reason := "agent_left"
+		if ctx.Err() == nil {
+			reason = "shutdown"
+		}
+		done("abandoned")
+		a.log.InfoContext(ctx, "snapshot.abandoned", "machine_id", s.machineID, "epoch", s.epoch, "seq", snap.GetSeq(),
+			"reason", reason)
+		return
 	case errors.Is(err, statedb.ErrSnapshotNotCurrent):
 		refuse("not_current", false) // a newer Hello displaced the stream; it is ending
 		return
@@ -148,11 +169,16 @@ func (a *agentService) rolledBack(ctx context.Context, s *stream, out statedb.Sn
 	a.snap.rollback.Add(ctx, 1, metric.WithAttributes(attribute.String("machine", s.machineID)))
 	a.log.WarnContext(ctx, "snapshot.rollback", "machine_id", s.machineID, "epoch", s.epoch,
 		"causes", strings.Join(out.Rollback, ","), "event_generation", out.Generation)
-	for _, c := range out.Rollback {
-		if c == "snapshot_seq" {
-			s.send(&agentv1.ConnectResponse{Body: &agentv1.ConnectResponse_SnapshotRequest{
-				SnapshotRequest: &agentv1.SnapshotRequest{Reason: "seq_rollback"},
-			}})
-		}
+	if !slices.Contains(out.Rollback, "snapshot_seq") {
+		return
+	}
+	if !s.send(&agentv1.ConnectResponse{Body: &agentv1.ConnectResponse_SnapshotRequest{
+		SnapshotRequest: &agentv1.SnapshotRequest{Reason: "seq_rollback"},
+	}}) {
+		// The next connection's first Snapshot is judged again, so nothing
+		// is lost for good; the count shows a stream too slow to read.
+		a.snap.dropped.Add(ctx, 1, metric.WithAttributes(attribute.String("machine", s.machineID)))
+		a.log.WarnContext(ctx, "snapshot.request_dropped", "machine_id", s.machineID, "epoch", s.epoch,
+			"reason", "seq_rollback")
 	}
 }
