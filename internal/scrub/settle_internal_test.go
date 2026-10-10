@@ -1,34 +1,48 @@
 package scrub
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
-// No known input needs maxRounds to settle, so the branch for text that has
-// not settled is reached with a bound of 1 and an input that needs 2 rounds:
-// the first round exposes a password the second would remove.
-func TestSettleFailsClosed(t *testing.T) {
+// Glued keys of different kinds: each key's \b fails until its left
+// neighbour is a placeholder, so each round removes one more. Three keys
+// need three changing rounds and a fourth to confirm.
+var (
+	awsKey    = "AKIA" + strings.Repeat("Z", 16)
+	googleKey = "AIza" + strings.Repeat("x", 35)
+	threeKeys = awsKey + googleKey + awsKey
+)
+
+// The bound is pinned from both sides: with maxRounds an input needing
+// three changing rounds comes back scrubbed, and with one round fewer it
+// fails closed. A bound of 1 reaches the fallback with a two-round input.
+func TestSettleRoundBound(t *testing.T) {
 	t.Parallel()
-	const in = "a://cookie: \"-.0@x"
+	const twoRounds = "a://cookie: \"-.0@x"
 	cases := []struct {
-		name   string
-		rounds int
-		limit  int
-		want   string
+		name          string
+		in            string
+		rounds, limit int
+		want          Result
 	}{
-		{"enough rounds", maxRounds, 64, "a://cookie:[redacted]@x"},
-		{"bound reached", 1, 64, redacted},
+		{"two rounds, enough", twoRounds, maxRounds, 64, Result{Text: "a://cookie:[redacted]@x", Changed: true}},
+		{"two rounds, bound 1", twoRounds, 1, 64, Result{Text: redacted, Changed: true, Unsettled: true}},
 		// The cut never splits a placeholder.
-		{"bound reached, small cap", 1, 4, ""},
+		{"bound 1, small cap", twoRounds, 1, 4, Result{Text: "", Changed: true, Cut: true, Unsettled: true}},
+		{"three rounds, maxRounds", threeKeys, maxRounds, 256, Result{Text: "AKIA[redacted]AIza[redacted]AKIA[redacted]", Changed: true}},
+		{"three rounds, one fewer", threeKeys, maxRounds - 1, 256, Result{Text: redacted, Changed: true, Unsettled: true}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			opt := Options{MaxBytes: tc.limit}
-			got := settle(in, opt, tc.rounds)
+			got := settle(tc.in, opt, tc.rounds)
 			if got != tc.want {
-				t.Errorf("settle(%q, %d rounds)\n got %q\nwant %q", in, tc.rounds, got, tc.want)
+				t.Errorf("settle(%q, %d rounds)\n got %+v\nwant %+v", tc.in, tc.rounds, got, tc.want)
 			}
-			if again := Text(got, opt); again != got {
-				t.Errorf("second pass changed %q to %q", got, again)
+			if again := Text(got.Text, opt); again != got.Text {
+				t.Errorf("second pass changed %q to %q", got.Text, again)
 			}
 		})
 	}

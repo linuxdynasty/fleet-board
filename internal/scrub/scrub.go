@@ -18,41 +18,69 @@ type Options struct {
 
 // maxRounds bounds the redaction rounds Text runs to reach text a round
 // leaves unchanged. Redaction can make text longer (a=b becomes a=[redacted]),
-// so the bound, not the length, is what ends the loop. The reproducers in
-// settle_test.go settle by the third round.
+// so the bound, not the length, is what ends the loop. Most text with a
+// secret takes two rounds (one to redact, one to confirm). Glued keys of
+// different kinds take one changing round per key (settle_internal_test.go),
+// so four of them reach the bound and fail closed.
 const maxRounds = 4
 
+// Result is what Scrub did to one field, for the caller's telemetry: Text has
+// no I/O and no metrics of its own.
+type Result struct {
+	// Text is the scrubbed text, at most Options.MaxBytes long.
+	Text string
+	// Changed is true when a secret or the home folder was replaced: the
+	// scrubbed text, before the cut, differs from the input. Turning invalid
+	// UTF-8 into U+FFFD alone is not a change.
+	Changed bool
+	// Cut is true when the scrubbed text was longer than MaxBytes and was cut,
+	// or when MaxBytes is zero or less and the input was not empty.
+	Cut bool
+	// Unsettled is true when maxRounds rounds still changed the text, so the
+	// whole field became [redacted] (cut to the cap) rather than risk a
+	// secret a further round would have found.
+	Unsettled bool
+}
+
 // Text returns text with secrets removed, cut to opt.MaxBytes on a UTF-8
-// boundary. Invalid UTF-8 becomes U+FFFD. Text of its own output returns the
-// output unchanged, with the same Home or with none.
+// boundary: Scrub(text, opt).Text. Invalid UTF-8 becomes U+FFFD. Text of its
+// own output returns the output unchanged, with the same Home or with none.
 func Text(text string, opt Options) string {
+	return Scrub(text, opt).Text
+}
+
+// Scrub is Text, and also says whether anything was replaced, whether the
+// text was cut, and whether it failed closed (see Result).
+func Scrub(text string, opt Options) Result {
 	return settle(text, opt, maxRounds)
 }
 
-// settle is Text with the round bound as a parameter, so a test can reach the
-// branch for text that does not settle: no known input needs maxRounds.
-func settle(text string, opt Options, rounds int) string {
+// settle is Scrub with the round bound as a parameter, so a test can pin the
+// bound from both sides.
+func settle(text string, opt Options, rounds int) Result {
 	if opt.MaxBytes <= 0 {
-		return ""
+		return Result{Cut: text != ""}
 	}
 	home := cleanHome(opt.Home)
-	s := strings.ToValidUTF8(text, "\uFFFD")
+	in := strings.ToValidUTF8(text, "\uFFFD")
 	// Home goes before secrets, so a path inside a secret's shape is seen as
 	// "~". A redaction can delete the byte that stopped another rule (a ],
 	// a quote, a #) or that made home part of a longer name, so the round
 	// repeats, home included, until a round changes nothing.
-	s = replaceHome(s, home)
+	s := replaceHome(in, home)
 	for range rounds {
 		next, spans := redact(s)
 		if next == s {
-			return cut(s, spans, home, opt.MaxBytes)
+			out := cut(s, spans, home, opt.MaxBytes)
+			return Result{Text: out, Changed: s != in, Cut: len(out) < len(s)}
 		}
 		s = replaceHome(next, home)
 	}
 	// Text that has not settled may still hold a secret a further round would
 	// find. It goes whole, which also settles: no rule matches a placeholder
 	// alone.
-	return cut(redacted, nil, "", opt.MaxBytes)
+	out := cut(redacted, nil, "", opt.MaxBytes)
+	return Result{Text: out, Changed: true, Cut: len(out) < len(redacted), Unsettled: true}
 }
 
 // cut shortens s, which a redaction round leaves unchanged, to at most limit

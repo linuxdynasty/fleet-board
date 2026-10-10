@@ -25,6 +25,8 @@ var worstUnits = []struct{ name, unit string }{
 	{"chained url user names holding @", "x://a@b.co."},
 	{"chained email passwords", "a@b.co:pw@h."},
 	{"chained fragment values", "#a=b"},
+	{"glued google keys", "AIza" + strings.Repeat("x", 35)},
+	{"repeated --n", "--n"},
 }
 
 func repeatTo(unit string, size int) string {
@@ -75,6 +77,24 @@ func BenchmarkTextWorst(b *testing.B) {
 				scrub.Text(text, opt)
 			}
 		})
+	}
+}
+
+// BenchmarkTextHostile is 64 KiB that costs the most per round (repeated
+// --n) and also uses every round: four glued keys of alternating kinds take
+// one round each, so the text fails closed after maxRounds.
+func BenchmarkTextHostile(b *testing.B) {
+	aws := "AKIA" + strings.Repeat("Z", 16)
+	google := "AIza" + strings.Repeat("x", 35)
+	keys := aws + google + aws + google + " "
+	text := keys + repeatTo("--n", reportCap-len(keys))
+	opt := scrub.Options{MaxBytes: reportCap}
+	if !scrub.Scrub(text, opt).Unsettled {
+		b.Fatal("the input settled; it no longer uses every round")
+	}
+	b.SetBytes(int64(len(text)))
+	for b.Loop() {
+		scrub.Scrub(text, opt)
 	}
 }
 

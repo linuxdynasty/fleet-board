@@ -7,11 +7,23 @@ is sent (row 6), and again on the hub before it is stored (row 5). The hub also
 scrubs the insights report with it (05, "Verification").
 
 ```go
-msg = scrub.Text(msg, scrub.Options{MaxBytes: 1024, Home: home}) // agent: home folder becomes ~
+r := scrub.Scrub(msg, scrub.Options{MaxBytes: 1024, Home: home}) // agent: home folder becomes ~
 msg = scrub.Text(msg, scrub.Options{MaxBytes: 1024})             // hub: same rules, no home folder
 ```
 
-What `Text` does, in order:
+`Text` returns the scrubbed text. `Scrub` returns a `Result`: the same text,
+plus three flags for the caller's own telemetry, since the package has no
+I/O, logs or metrics:
+
+- `Changed`: a secret or the home folder was replaced (turning invalid UTF-8
+  into U+FFFD alone does not count);
+- `Cut`: the scrubbed text was longer than the cap and was cut (or the cap is
+  zero or less and the input was not empty);
+- `Unsettled`: the rounds ran out and the field became `[redacted]` (step 5).
+
+Rows 5 and 6 count messages with each flag set.
+
+What `Scrub` does, in order:
 
 1. Turns bytes that are not valid UTF-8 into U+FFFD.
 2. When `Home` is set, writes each whole occurrence of it as `~` and keeps the
@@ -21,24 +33,28 @@ What `Text` does, in order:
    absolute, not `/`, and made of name characters (letters, digits, `.`, `_`,
    `-`, any non-ASCII) and `/`; anything else is ignored. A home path is
    personal data, not a secret (#139), so only the agent passes it.
-3. Swaps each secret for a placeholder, keeping the part that says what it
-   was (see the table).
+3. Removes private key blocks, then swaps each other secret for a
+   placeholder, keeping the part that says what it was (see the table). Key
+   blocks go first so a name before one (`PRIVATE_KEY=-----BEGIN …`) cannot
+   end its value at the key's first space.
 4. Does step 2 again. Whether the home is a whole name depends on the bytes
    around it, and those may have been part of a secret: in
    `/Users/al` + `x@b.co`, the home is only whole once the email is
    `[email]`.
 5. Repeats steps 3 and 4 until a round changes nothing. A redaction can
    delete the byte that stopped another rule (a `]`, a quote, a `#`, a space)
-   or make a home whole, and the next round then finds a new secret:
-   in `?secret=#;-----END` the `#` becomes `[redacted]` in round 1, and
-   round 2 sees the query value run on through `;-----END`. Rounds are
-   bounded at 4 (3 that change the text and 1 that confirms). Redaction can
-   make text longer (`a=b` becomes `a=[redacted]`), so the bound, not the
-   length, is what ends the loop. In a one-off probe (not kept in the tree)
-   of 3 million random inputs joined from up to 28 of the pieces in
-   `settle_test.go`, none needed more than 2 changing rounds.
-   Text that has still not settled after 4 rounds becomes `[redacted]` whole,
-   rather than being sent with a secret a further round might have found.
+   or make a home whole, and the next round then finds a new secret: in
+   `?secret=#;-----END` the `#` becomes `[redacted]` in round 1, and round 2
+   sees the query value run on through `;-----END`. Rounds are bounded at 4
+   (3 that change the text and 1 that confirms). Redaction can make text
+   longer (`a=b` becomes `a=[redacted]`), so the bound, not the length, is
+   what ends the loop. Most text with a secret settles in 2 rounds. Glued
+   keys of different kinds take one round per key, because each key's word
+   boundary appears only once its left neighbour is a placeholder:
+   `AKIA…AIza…AKIA…` takes 3 changing rounds and comes back scrubbed, and
+   four such keys come back as `[redacted]` whole, with `Unsettled` set.
+   Text that has not settled after 4 rounds goes whole rather than being sent
+   with a secret a further round might have found.
 6. Cuts the result to `MaxBytes`. The cut never splits a character or a
    placeholder (`ghp_[redacted]` cut short becomes `ghp_`), never keeps part
    of a match a second pass would scrub again (`?a=[reda` would become
@@ -54,17 +70,18 @@ to the right of its match. `FuzzText` checks the guarantee, the cap and valid
 UTF-8 for any text, home and cap; `TestTextSettlesOnFragments` checks it on
 200,000 inputs joined from the pieces of known hard cases;
 `TestTextAgentThenHub` checks the agent-then-hub pair on every home and
-secret case.
+secret case; `TestSettleRoundBound` pins the bound from both sides.
 
-**Callers bound the input.** `Text` costs time in proportion to its input,
-not its cap: it scrubs everything, then cuts (1 MiB took 0.8 to 1.5 s, see
-Speed). A caller with text of no fixed size, such as a command's stderr, cuts
-it first to a bound far above the cap, such as 64 KiB (the largest field,
-the insights report), on a UTF-8 boundary. That first cut can split a secret
-at the bound, and the part left before it may be too short for its rule (a
-token under its minimum length). That part reaches the output only if
-scrubbing shrinks everything before it below the cap, which a bound many
-times the cap makes unlikely, not impossible.
+**Callers bound the input.** `Scrub` costs time in proportion to its input,
+not its cap: it scrubs everything, then cuts. 1 MiB takes 0.9 to 1.6 s, and
+64 KiB built to be slow takes up to 0.9 s (see Speed). A caller with text of
+no fixed size, such as a command's stderr, cuts it first to a bound far above
+the cap, such as 64 KiB (the largest field, the insights report), on a UTF-8
+boundary. That first cut can split a secret at the bound, and the part left
+before it may be too short for its rule (a token under its minimum length).
+That part reaches the output only if scrubbing shrinks everything before it
+below the cap, which a bound many times the cap makes unlikely, not
+impossible.
 
 ## What counts as a secret
 
@@ -82,16 +99,17 @@ message. Each line is a pattern in `rules.go`. This README is the full list;
 | Fleet API token | `fbt_<id>.<secret>` → `fbt_[redacted]` | the fleet's own (02f), used by the CLI |
 | GitHub tokens | `ghp_`, `gho_`, `ghu_`, `ghs_`, `ghr_`, `github_pat_` → prefix + `[redacted]` | the GitHub integration and `gh` on every machine (03j) |
 | `sk-` keys | `sk-ant-api03-…`, `sk-proj-…`, `sk-or-…` → `sk-[redacted]` | Anthropic, OpenAI and OpenRouter keys behind Claude Code, Codex and OpenCode |
-| AWS access key id | `AKIA…` → `AKIA[redacted]`, `ASIA…` → `ASIA[redacted]` | Claude Code on Amazon Bedrock |
-| Google API key | `AIza` + 35 chars → `AIza[redacted]` | Gemini through OpenCode |
+| AWS access key id | `AKIA…` → `AKIA[redacted]`, `ASIA…` → `ASIA[redacted]`; several glued together go as one | Claude Code on Amazon Bedrock |
+| Google API key | `AIza` + 35 chars → `AIza[redacted]`; several glued together go as one | Gemini through OpenCode |
 | JSON Web Token | `eyJ….eyJ….sig` → `[redacted]` | bearer tokens of many services |
 | Bearer token | `Bearer <16+ chars>`, or fewer ending in `=` padding (`Bearer abc==`) → `Bearer [redacted]` | any HTTP API |
 | Authorization header | `Authorization: Basic …` → `Authorization: Basic [redacted]`; `map[Authorization:[Bearer …]]` → `map[Authorization:[Bearer [redacted]]]`; `HTTP_AUTHORIZATION=Basic …` → `HTTP_AUTHORIZATION=Basic [redacted]` | any HTTP API. The name may follow `_` (an environment variable). The value goes to the end of the line, a `]` or a closing quote. A known scheme word (the IANA list plus `Token`, `ApiKey`, `SSWS`, AWS) is kept; any other first word may be the credential, so `Authorization: abc123 failed` → `Authorization: [redacted]` |
 | Cookie and token headers | `Cookie: …`, `Set-Cookie: …`, `PROXY_COOKIE=…`, `Private-Token: …` (any `…-Token:`) → name + `[redacted]` | session cookies; GitLab-style token headers. A cookie name may follow `_` and take `=` |
-| Private key block | `-----BEGIN … PRIVATE KEY-----` (PEM) or `… PRIVATE KEY BLOCK-----` (PGP) to its END line, or to the end of the text when cut short → `[redacted]` | the hub's CA key and SSH keys (02g); signing keys |
+| Private key block | `-----BEGIN … PRIVATE KEY-----` (PEM) or `… PRIVATE KEY BLOCK-----` (PGP) to its END line, or to the end of the text when cut short → `[redacted]`, also as a named value (`PRIVATE_KEY=-----BEGIN …` → `PRIVATE_KEY=[redacted]`) | the hub's CA key and SSH keys (02g); signing keys |
 | Secret-named value | see below | a variable, flag or key whose name ends in a secret word |
 | URL query value | `?code=abc&state=x` → `?code=[redacted]&state=[redacted]`; a fragment too: `#code=abc` → `#code=[redacted]` | 02e: every value, not just ones that look secret. OAuth redirects carry codes and tokens in the fragment |
 | Password in a URL | `postgres://al:hunter2@db` → `postgres://al:[redacted]@db`; `https://al@example.com:pw@host` → `https://[email]:[redacted]@host`; with no scheme, `al@example.com:pw@host` → `[email]:[redacted]@host` | 02e; up to the last `@` before the path. The user name may hold `@` (an email, or `al@corp`); with no scheme, only an email user name marks the shape |
+| curl user and password | `curl -u al:hunter2 …`, `curl --user 'al:pa:ss' …` → `al:[redacted]` | a password on a curl command line. Only within 256 bytes after `curl`: `docker run -u 1000:1000` is a user and group |
 | Token as a URL user name | `https://ghp_…:x-oauth-basic@github.com` → `https://ghp_[redacted]:[redacted]@github.com` | the user name is scrubbed by the rules above |
 | Email | `al@example.com` → `[email]` | 02e; 01e hides emails by default |
 
@@ -106,13 +124,15 @@ working folder. These forms count:
 
 | Form | Example in, out |
 |---|---|
-| `NAME=value` | `GITHUB_TOKEN=abc` → `GITHUB_TOKEN=[redacted]` |
+| `NAME=value` | `GITHUB_TOKEN=abc` → `GITHUB_TOKEN=[redacted]`; the value runs to whitespace or a quote, so `DB_PASSWORD=Xy7&k;9q,Zr` goes whole |
 | bracketed name | `os.environ["TOKEN"] = "abc"` → `os.environ["TOKEN"] = "[redacted]"`; `env['API_KEY']='k'` likewise |
 | quoted value (quotes kept) | `--password='p w'` → `--password='[redacted]'`; `TOKEN="a b"` → `TOKEN="[redacted]"` |
 | quote never closed | `token='abc def` → `token='[redacted]`, to the end of the line |
-| flag and value | `--password hunter2`, `--api-key x` → `--password [redacted]`, `--api-key [redacted]`; not a flag that starts with `no-` (`--no-password` takes no value) |
-| `name: value` | `db_password: hunter2` → `db_password: [redacted]`; also `X-Api-Key:`, `refresh_token:`, `access_token:` |
+| flag and value | `--password hunter2`, `--api-key x` → `--password [redacted]`, `--api-key [redacted]`; the value runs to whitespace or a quote; not a flag that starts with `no-` (`--no-password` takes no value) |
+| connection string | `Server=db;Uid=al;Password=hunter2;Database=x` → `…;Password=[redacted];Database=x`: after a `;`, the value ends at the next `;` |
+| `name: value` | `db_password: hunter2` → `db_password: [redacted]`; also `X-Api-Key:`, `refresh_token:`, `access_token:`; the value ends at whitespace, a quote, `&`, `;` or `,` |
 | JSON, Python, escaped JSON | `"api_key": "…"`, `'token': '…'`, `\"token\": \"…\"` → value `[redacted]`, quotes kept; an escaped quote inside the value (`"ab\"cd"`) stays inside it. A bare JSON or dict value goes too: `{"password": 12345}` → `{"password": [redacted]}` (not an object or array) |
+| Ruby and PHP `=>` | `"password" => "x"`, `'api_key' => 'k'`, `:password => "x"` → value `[redacted]`, quotes kept |
 
 `name: value` does not count for token, pass or pwd: `input_tokens: 1234` is
 a count, `token: expired` is prose, and `--- PASS: TestX` is a test result.
@@ -124,7 +144,28 @@ spot is still caught by its prefix when it has one.
 `bypass=true`, `--bypass`, `--- PASS: TestX`, `pass: 12`, `PWD=/srv/x`,
 `"pwd": "/srv/x"`, `--no-password`, `cookies: 3`, `the bearer token expired`,
 `issue #12`, `--verbose`, `task-runner` (`sk-` must start a word),
-`ssh al@mac-mini` (no domain), host and port pairs, URLs with no query.
+`ssh al@mac-mini` (no domain), `docker run -u 1000:1000`, host and port
+pairs, URLs with no query.
+
+**Not covered (known leaks, left for a later change):**
+
+- A name with no value of its own takes the next word as its value, even
+  another secret's name: `API_KEY= DB_PASSWORD='my secret'` →
+  `API_KEY= [redacted]'my secret'`; `password: --token Zq7Xk` →
+  `password: [redacted] Zq7Xk`; `token= secret = Zq7Xk` →
+  `token= [redacted] = Zq7Xk`. A pattern that skipped to the second name made
+  all text about 30% slower, so it was not added.
+- A password in a `.netrc` line: `machine db login al password hunter2`.
+- `docker login -p hunter2` and `mysql -phunter2`: short flags with no
+  secret name.
+- A connection string that starts with a bare `Pwd`: `Pwd=x;Server=y` (a bare
+  `PWD` is the shell's working folder).
+- A `name: value` value holding `&`, `;` or `,` keeps its tail:
+  `password: ab,cd` → `password: [redacted],cd`.
+- A bearer token outside an Authorization header that is short and has no
+  `=` padding, or sits on the line after `Bearer`: `Bearer abc123`.
+- Tokens of a variable length glued together: in `ghp_<16+>ghp_<16+>` the
+  first token's body takes the next `ghp`, and the second body stays.
 
 **Considered and not added:** GitLab (`glpat-`), Slack (`xoxb-`, `xoxp-`),
 npm (`npm_`), PyPI (`pypi-`) and Hugging Face (`hf_`) token prefixes. By the
@@ -138,9 +179,10 @@ and in 02e when a spec needs it.
 
 - A query value runs to whitespace, a quote, `<`, `>`, a backtick, `&` or
   `#`, and a `#` starts the next `name=value`. So `this.#n=1` in code loses
-  its `1`; a fragment value is worth more. A `)` is part of it (`?token=ab)cd` → `?token=[redacted]`), so in
-  `(see https://x/?a=b)` the `)` goes too. A URL may hold `)`, and keeping a
-  secret's tail is worse than losing a bracket.
+  its `1`; a fragment value is worth more. A `)` is part of it
+  (`?token=ab)cd` → `?token=[redacted]`), so in `(see https://x/?a=b)` the
+  `)` goes too. A URL may hold `)`, and keeping a secret's tail is worse than
+  losing a bracket.
 - A GitHub SSH remote looks like an email and goes like one:
   `git@github.com:o/r.git` → `[email]:o/r.git`.
 - Every email goes. Row 8 (C2) needs a way to keep the account email on a
@@ -149,7 +191,8 @@ and in 02e when a spec needs it.
 
 ## How the rules are written
 
-All rules are joined into one regular expression (Go `regexp`, which runs in
+Private key blocks have their own pattern, run first in each round. All
+other rules are joined into one regular expression (Go `regexp`, which runs in
 time linear in the input), and one round runs it once over the text. In each
 rule's pattern, the capture groups hold the secret, one group per
 alternative; the rest of the match is kept and the placeholder replaces the
@@ -163,24 +206,29 @@ least two (one to redact, one to confirm nothing changed).
 ## Speed
 
 Measured on an Apple M4 Pro (12 cores, other work running at a load average
-near 4, so not an idle machine), Go 1.27.2,
-`go test -run '^$' -bench BenchmarkText -count=10 ./internal/scrub/`
-(min, mean and max of the 10 runs). "Before" is the single-round scrubber
-with the earlier shapes, measured back to back with "after" on the same
-machine; it matches this table's earlier numbers (548 µs mean) within 1%.
+of 2 to 4, so not an idle machine), Go 1.27.2,
+`go test -run '^$' -bench BenchmarkText -count=5 ./internal/scrub/`
+(min, mean and max of the 5 runs). "Before" is this branch before the round-3
+review fixes (5304d0a), measured back to back with "after" on the same
+machine. Before the repeated rounds and the round-2 shapes, a 1 KiB message
+took 549 µs.
 
 | Input | Before | After |
 |---|---|---|
-| a 1 KiB command message (`BenchmarkTextMessage`) | 541, 549, 557 µs | 1394, 1417, 1442 µs |
-| 64 KiB of chained secrets, the slowest shape (`BenchmarkTextWorst`) | 61, 62, 63 ms | 137, 140, 142 ms |
-| 64 KiB, the other shapes | 2 to 61 ms | 2 to 137 ms |
-| 1 MiB of plain text, cap 1 KiB (`BenchmarkTextMiB/plain`) | 587, 599, 607 ms | 811, 820, 830 ms |
-| 1 MiB full of secrets, cap 1 KiB (`BenchmarkTextMiB/secrets`) | 558, 561, 565 ms | 1440, 1452, 1474 ms |
+| a 1 KiB command message (`BenchmarkTextMessage`) | 1399, 1437, 1492 µs | 1548, 1571, 1599 µs |
+| the hub's pass over that message, already scrubbed (`BenchmarkTextScrubbed`) | 662, 680, 714 µs | 739, 743, 749 µs |
+| 1 MiB of plain text, cap 1 KiB (`BenchmarkTextMiB/plain`) | 808, 819, 843 ms | 882, 886, 890 ms |
+| 1 MiB full of secrets, cap 1 KiB (`BenchmarkTextMiB/secrets`) | 1435, 1487, 1552 ms | 1600, 1620, 1641 ms |
+| 64 KiB of glued Google keys (`BenchmarkTextWorst`) | 474, 479, 483 ms | 0.77, 0.79, 0.80 ms |
+| 64 KiB of `--n` repeated, one round, no match | 208, 212, 219 ms | 223, 227, 236 ms |
+| 64 KiB, the other nine shapes | 2 to 141 ms | 2 to 152 ms |
+| 64 KiB of `--n` after four alternating glued keys: every round, then `[redacted]` (`BenchmarkTextHostile`) | not measured | 882, 899, 910 ms |
 
-Text with a secret now costs at least two rounds, one to redact and one to
-confirm; that is about 2 times. The rest (about 1.4 times on plain text) is
-the cost per byte of the shapes this change added. No single new shape
-dominates: dropping the no-scheme email password, the largest, saved 7%.
+The new shapes cost about 9% per byte. Glued Google keys took four rounds
+before (and failed closed); they now go in one. `--n` repeated is the slowest
+text per round found so far (a reviewer's search; the cause was not
+profiled). The most a field can cost is about 4 times its slowest round,
+which `BenchmarkTextHostile` shows: about 0.9 s for 64 KiB.
 
 **Worst-case growth.** A pattern that can start inside a run of word
 characters (an email's local part, a URL scheme, a `-Token` header name) has a
@@ -188,23 +236,24 @@ bounded length before its first fixed character. Unbounded, an attempt starts
 again after each match and runs to the end of the run, so the time grows with
 the square of the length. `TestTextWorstCaseStaysLinear` times 16 KiB and
 64 KiB (best of 5 each) and fails if 64 KiB takes more than 8 times as long:
-bounded it is 3.7 to 4.1 times across its nine shapes (the repeated rounds
-and the new shapes did not change that); with the bounds removed it was 14.5
-to 15.3 times and the test failed. A ratio, not a time limit, so a slow machine does
-not fail it.
+bounded it is 3.2 to 4.0 times across its eleven shapes; with the bounds
+removed it was 14.5 to 15.3 times and the test failed. A ratio, not a time
+limit, so a slow machine does not fail it.
 
 **Load budget.** 04 Q7 budgets the hub at 2,500 events a second during a
 replay. Only command results, command progress and probe health carry free
 text, and the cost grows with the length (1 KiB is the cap, not the usual
-size). If every event in that burst carried a full 1 KiB message holding
-secrets, scrubbing would need about 3.5 cores of this machine (2,500 × the
-1,417 µs mean; 1.4 cores before this change). The hub's own pass is cheaper:
-text the agent already scrubbed settles in its first round, so it costs one
-round, not two. `BenchmarkTextScrubbed` measures it at 648 to 669 µs per 1 KiB
-message (5 runs), about 1.7 cores for the same all-1-KiB burst. So the hub scrubs in its ingest
-goroutines, before it hands a batch to its single writer, never inside the
-write transaction, where it would hold the writer for that long. The agent
-scrubs one message at a time as it writes it.
+size). The numbers below assume every event in that burst carries a full
+1 KiB message like `BenchmarkTextMessage`, which settles in 2 rounds. The
+agent's pass would need about 3.9 cores of this machine (2,500 × 1,571 µs).
+The hub's pass over text the agent already scrubbed settles in its first
+round: about 1.9 cores (2,500 × 743 µs). A message built to need 4 rounds of
+the slowest text costs about 4 times as much per byte, so a burst of those
+would not fit; the cap keeps each one to 1 KiB, about 14 ms at the
+`BenchmarkTextHostile` rate (estimated, not measured at 1 KiB). So the hub scrubs
+in its ingest goroutines, before it hands a batch to its single writer, never
+inside the write transaction, where it would hold the writer for that long.
+The agent scrubs one message at a time as it writes it.
 
 Tests: `CGO_ENABLED=0 go test ./internal/scrub/`. Fuzz:
 `go test -run '^$' -fuzz FuzzText ./internal/scrub/` (also in `make fuzz`).
