@@ -1,6 +1,7 @@
 package conn_test
 
 import (
+	"context"
 	"errors"
 	"sync"
 	"sync/atomic"
@@ -39,12 +40,12 @@ type seen struct {
 }
 
 func (s *seen) hooks(o *conn.LoopOptions) {
-	o.OnConnected = func(_ uint64, c conn.HubClock) {
+	o.OnConnected = func(_ context.Context, _ uint64, c conn.HubClock) {
 		s.mu.Lock()
 		defer s.mu.Unlock()
 		s.clock = c
 	}
-	o.Command = func(_ uint64, c *agentv1.Command) bool {
+	o.Command = func(_ context.Context, _ uint64, c *agentv1.Command) bool {
 		s.mu.Lock()
 		defer s.mu.Unlock()
 		s.cmds = append(s.cmds, c)

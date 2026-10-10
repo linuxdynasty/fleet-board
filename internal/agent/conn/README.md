@@ -206,38 +206,44 @@ sent.
 
 ## Commands and the outbound queue
 
-Plan row 6's seam (ruling forks 11, 12; `inbound.go`, `outbound.go`,
-`hubclock.go`; 03 W1 "Commands, settings and the outbound queue"):
+Plan row 6's seam (ruling forks 4 i, 11, 12; `inbound.go`, `outbound.go`,
+`hubclock.go`; 03n "Commands, settings and the outbound queue"):
 
 - **In.** `LoopOptions.Command` and `.Settings` get each message with the
-  stream's epoch, on the sending goroutine, without blocking; `false` (a
-  full intake) drops it unacked: `command.intake_full{kind, command_id}`,
+  stream's epoch and a context that ends with the stream or the run;
+  `false` (a full intake) drops it unacked: `command.intake_full`,
   `fleet_agent_command_intake_dropped_total{kind}`; the hub re-sends.
-- **Out.** `Loop.Send` queues a `CommandAck`, `CommandProgress`, logged
-  `CommandResult` or `SettingsAck` (`ErrNotQueueable`,
-  `ErrResultNotLogged`) on the Connected stream's queue (256), drained as
-  one more case of `serve`'s select, so `Run`'s goroutine stays the only
-  sender. No stream: `ErrNoStream` at once; a full queue waits
-  (`connect.outbound_blocked{kind}`) for room, the stream's end or the
-  caller's context. The queue (an atomic pointer `Run` publishes at
-  Connected, then swaps out and closes when `serve` returns) dies with its
-  stream; Send's `agent.db` read runs on the caller's goroutine.
-- **Lifecycle.** `OnConnected(epoch, clock)` once the snapshot and its
-  unacked results are out; `OnDisconnected()` once Send refuses the stream.
+- **Out.** `Loop.Send` queues a `CommandAck`, `CommandProgress`,
+  `CommandResult` or `SettingsAck` (`ErrNotQueueable`) on the Connected
+  stream's queue (256), drained as one more case of `serve`'s select, so
+  `Run`'s goroutine stays the only sender. A result must be agent.db's
+  finished result, unchanged (`ErrResultNotLogged`), except an unlogged
+  refusal for an id the log does not hold: `FAILED`/`EPOCH_MISMATCH`,
+  `REJECTED_BY_POLICY`/`SEQ_REPLAYED`. No stream: `ErrNoStream` at once; a
+  full queue waits for room, the stream's or run's end or the caller's
+  context (`connect.outbound_blocked` once per stream,
+  `fleet_agent_outbound_blocked_total`). The queue dies with its stream
+  (`fleet_agent_outbound_lost_total`). A `SnapshotRequest` first flushes
+  the queue, so a progress never follows the result its snapshot re-sends.
+- **Hooks.** Command, Settings, OnConnected, OnDisconnected and
+  Capabilities run on the sending goroutine: never block, never wait on
+  Send (hand work to a goroutine). OnConnected may Send up to 256 without
+  waiting; it runs once the snapshot and its results are out, and
+  OnDisconnected once Send refuses the stream.
 - **Strict clock.** `Loop.HubClock().Now()`: the latest HelloAck's
   `hub_time` plus the larger of the monotonic and sleep-counting time
   since; not `ok` before the first HelloAck, after one with no `hub_time`,
   or with the sleep clock unreadable then or now (a deadline is then past).
-  The anchor is stored once per HelloAck, so it never reads a gap.
-- **Capabilities** fill `Hello` (`LoopOptions.Capabilities`, none in row
-  6), without `exec.raw`, invalid entries or repeats
-  (`connect.capability_dropped{reason, name}`). `Loop.StatusChanged()`
-  signals a status change (`PushOff` is read live).
+- **Capabilities** fill `Hello` (none in row 6), without `exec.raw`,
+  invalid entries or repeats (`connect.capability_dropped`, once per entry
+  and run). `Loop.StatusChanged()` signals a status change.
 
-Tests (`seam_test.go`, `outbound_test.go`, `strictclock_test.go`): hooks
-and epochs, a full intake, refused kinds and results, 8 senders across 15
-snapshots under `-race`, a full queue and its deadline, the queue dying
-with its stream, the lifecycle order, and a command from before a
+Tests (`seam_test.go`, `outbound_test.go`, `outboundhooks_test.go`,
+`strictclock_test.go`): hooks and epochs, a full intake, refused kinds and
+results and the two unlogged refusals, 8 senders across 15 snapshots under
+`-race`, a full queue and its deadline, a hook waiting on Send released by
+the stream's or run's end, progress before a requested snapshot, the queue
+dying with its stream, the lifecycle order, and a command from before a
 two-hour sleep past its deadline after the wake.
 
 ## Certificate renewal

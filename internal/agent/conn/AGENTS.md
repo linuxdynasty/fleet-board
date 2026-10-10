@@ -49,8 +49,11 @@ Read the root `AGENTS.md` first; it applies here. Load `fleet-go`,
   SettingsAck) goes through `Loop.Send` and the stream's queue, which
   `serve` drains; never call `bs.Send` elsewhere. A hook that runs on the
   sending goroutine (Command, Settings, OnConnected, OnDisconnected,
-  Snapshot, Heartbeat) must not block, and a result is queued only once
-  it is logged. Deadlines use the strict `HubClock`, never `hubNow` or
+  Capabilities, Snapshot, Heartbeat) must not block and must never wait
+  on `Loop.Send`; only OnConnected may Send there, up to the queue's room.
+  A result is queued only once it is logged, except the two unlogged
+  refusals (EPOCH_MISMATCH, SEQ_REPLAYED). A SnapshotRequest flushes the
+  queue before its snapshot. Deadlines use the strict `HubClock`, never `hubNow` or
   `hubTime`. The heartbeat is a ticker case in `serve`'s select, never
   a goroutine of its own, so nothing lands between a snapshot and its
   results. A snapshot belongs to its stream and is never carried to

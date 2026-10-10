@@ -59,19 +59,23 @@ type LoopOptions struct {
 	// goroutine, so it must only read what it already holds.
 	Heartbeat func(ctx context.Context, hb *agentv1.Heartbeat)
 	// Command and Settings take each Command and Settings the hub sends,
-	// with the epoch of the stream it came on (ruling fork 12 c). They run
-	// on the sending goroutine and must not block: false means the
+	// with the epoch of the stream it came on and a context that ends with
+	// that stream or the run (ruling fork 12 c); false means the
 	// receiver's intake is full, and the message is dropped unacked
 	// (command.intake_full). nil logs the kind as ignored.
-	Command  func(epoch uint64, c *agentv1.Command) bool
-	Settings func(epoch uint64, s *agentv1.Settings) bool
+	Command  func(ctx context.Context, epoch uint64, c *agentv1.Command) bool
+	Settings func(ctx context.Context, epoch uint64, s *agentv1.Settings) bool
 	// OnConnected runs once a stream's snapshot and unacked results are
-	// out and [Loop.Send] takes messages for it; OnDisconnected once that
-	// stream stopped serving and Send refuses it. Both run on the sending
-	// goroutine and must not block.
-	OnConnected    func(epoch uint64, clock HubClock)
+	// out and [Loop.Send] takes messages for it, with the same context;
+	// it may Send up to the queue's room (256) without waiting.
+	// OnDisconnected runs once that stream stopped serving and Send
+	// refuses it.
+	OnConnected    func(ctx context.Context, epoch uint64, clock HubClock)
 	OnDisconnected func()
 	// Capabilities lists what each Hello advertises; nil advertises none.
+	// Command, Settings, OnConnected, OnDisconnected and Capabilities run
+	// on the sending goroutine: they must not block and must never wait on
+	// Send (hand the work to a goroutine of their own).
 	Capabilities func() []*typev1.Capability
 	Backoff      Backoff
 	Keepalive    Keepalive
@@ -148,6 +152,9 @@ type Loop struct {
 	// out is the Connected stream's outbound queue, nil when none
 	// (outbound.go); only Run's goroutine stores it.
 	out atomic.Pointer[outQueue]
+	// capsDropped is each capability entry already logged as dropped;
+	// only Run's goroutine touches it.
+	capsDropped map[string]bool
 	// discovery is fleet_agent_discovery_seconds.
 	discovery metric.Float64Histogram
 	// Only Run's goroutine touches these.

@@ -58,6 +58,8 @@ type session struct {
 	// Connected (outbound.go).
 	epoch uint64
 	q     *outQueue
+	// hctx is the hooks' context: it ends with the stream or the run.
+	hctx context.Context
 	// hubAt is this stream's HelloAck.hub_time (the agent's clock when it
 	// had none) and hubRecv when the HelloAck arrived, with its monotonic
 	// reading: see hubNow.
@@ -351,7 +353,7 @@ func (s *session) connected(ctx context.Context) (ending, string, error) {
 		}
 	}
 	s.renewCheck()
-	defer s.serveQueue()()
+	defer s.serveQueue(ctx)()
 	out, step, err := s.serve(ctx)
 	out.connected = true
 	return out, step, err
@@ -413,6 +415,9 @@ func (s *session) handle(ctx context.Context, m *agentv1.ConnectResponse) (endin
 		}
 	case *agentv1.ConnectResponse_SnapshotRequest:
 		s.l.log.InfoContext(ctx, "snapshot.requested", "reason", clean(b.SnapshotRequest.GetReason(), maxReasonBytes))
+		if err := s.flush(); err != nil {
+			return ending{}, true, "outbound", err
+		}
 		if err := s.sendSnapshot(ctx, false); err != nil {
 			return ending{}, true, "snapshot", err
 		}

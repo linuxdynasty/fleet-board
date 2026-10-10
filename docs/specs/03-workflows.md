@@ -134,20 +134,11 @@ tick missed while a send waits is dropped, never queued. Plan row 4 fills
 `Hello`); later rows fill the rest. `connect.hello` logs the interval chosen.
 
 **Commands, settings and the outbound queue (plan row 6).** While
-Connected the loop hands each `Command` and `Settings` to its receiver
-(the executor, the settings merge) with the stream's epoch, without
-blocking: a receiver whose bounded intake is full refuses it, and the
-message is dropped unlogged and unacked (`command.intake_full`), so the
-hub's at-least-once re-send covers it. `CommandAck`, `CommandProgress`,
-`CommandResult` and `SettingsAck` go back through one queue per stream
-(256), drained by the stream's one sender after the snapshot and its
-unacked results: a send with no Connected stream is refused at once, a
-full queue makes it wait for room, the stream's end or its own deadline,
-and the queue dies with its stream. A result is queued only once it is
-logged, unchanged, in `agent.db`, so one lost with its stream is re-sent
-after the next snapshot. The receivers are told when a stream is
-Connected (after its snapshot and results, with its epoch and the strict
-hub clock of 02i "Clocks") and when it stopped serving.
+Connected the loop hands each `Command` and `Settings` to its receiver and
+sends acks, progress, results and `SettingsAck` through one queue per
+stream; a result is queued only once logged, except the unlogged
+`EPOCH_MISMATCH` and `SEQ_REPLAYED` refusals. The rules are in
+[03n](03n-reconnect.md#commands-settings-and-the-outbound-queue).
 
 **Capabilities at enroll.** The agent has no capability list yet, so it
 leaves `EnrollRequest.capabilities` empty; capabilities are first sent in
@@ -457,11 +448,12 @@ re-enroll rule are in [02g](02g-agent-security.md#machine-lifecycle-revoke-and-d
   change, which resets it);
   `connect.message_ignored{kind}` (a `Command` or `Settings` with no
   receiver registered, until plan row 6 wires them);
-  `connect.outbound_blocked{kind}` (warn; a send found the stream's queue
-  full and waits; `kind`: `command_ack`, `command_progress`,
-  `command_result`, `settings_ack`); `connect.capability_dropped{reason,
-  name}` (warn; `reason`: `reserved`, `invalid`, `repeat`; `name` only when
-  it is a valid name); `connect.ended{state}` (`revoked`,
+  `connect.outbound_blocked{kind}` (warn, once per stream; a send found
+  the stream's queue full and waits; `kind`: `command_ack`,
+  `command_progress`, `command_result`, `settings_ack`);
+  `connect.capability_dropped{reason, name}` (warn, once per entry and
+  run; `reason`: `reserved`, `invalid`, `repeat`; `name` only when it is a
+  valid name); `connect.ended{state}` (`revoked`,
   `unknown_machine`, `fleet_mismatch`, `cert_expired`);
   `snapshot.sent{seq, bytes, unacked_results}`, `snapshot.requested{reason}`,
   `snapshot.oversize{bytes, max_bytes}`, `snapshot.result_unreadable{command_id,

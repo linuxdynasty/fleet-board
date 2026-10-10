@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync/atomic"
 
 	"google.golang.org/protobuf/proto"
 
 	agentv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1"
+	typev1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/type/v1"
 	"github.com/linuxdynasty/fleet-board/internal/agent/ring"
 )
 
@@ -24,20 +26,23 @@ var (
 	// CommandProgress, CommandResult or SettingsAck.
 	ErrNotQueueable = errors.New("conn: only command acks, progress, results and settings acks are queued")
 	// ErrResultNotLogged means a CommandResult is not the one agent.db holds
-	// as that command's finished result.
+	// as that command's finished result, and is not an unlogged refusal.
 	ErrResultNotLogged = errors.New("conn: the result is not the one logged in agent.db")
 )
 
 // outQueue is one stream's outbound queue. Command goroutines put into
 // ch; the stream's sending goroutine (serve) is its only reader. dead is
-// closed once, when the stream stops serving.
+// closed once, when the stream stops serving; gone, as soon as the stream
+// or the run ends, even while the sending goroutine is held in a hook.
 type outQueue struct {
-	ch   chan *agentv1.ConnectRequest
-	dead chan struct{}
+	ch      chan *agentv1.ConnectRequest
+	dead    chan struct{}
+	gone    <-chan struct{}
+	blocked atomic.Bool // connect.outbound_blocked was logged for this queue
 }
 
-func newOutQueue() *outQueue {
-	return &outQueue{ch: make(chan *agentv1.ConnectRequest, queueSize), dead: make(chan struct{})}
+func newOutQueue(gone <-chan struct{}) *outQueue {
+	return &outQueue{ch: make(chan *agentv1.ConnectRequest, queueSize), dead: make(chan struct{}), gone: gone}
 }
 
 // publish makes q the queue Send puts into; Run's goroutine calls it once
@@ -52,15 +57,22 @@ func (l *Loop) unpublish(q *outQueue) {
 }
 
 // Send queues m for the Connected stream, whose sending goroutine sends it
-// after the snapshot and its unacked results (03n "Ordering and
-// consistency"). m is a CommandAck, CommandProgress, CommandResult or
-// SettingsAck ([ErrNotQueueable]); a CommandResult must already be logged,
-// unchanged, as its command's result in agent.db ([ErrResultNotLogged]),
-// so one lost with its stream is re-sent from there. With no Connected
-// stream Send returns [ErrNoStream] at once; with a full queue it waits
-// for room, the stream's end ([ErrNoStream]) or ctx, whichever comes
-// first. nil means queued, not sent: a message queued as its stream ends
-// is dropped with it. Send never sends on the stream itself.
+// after the snapshot and its unacked results (03n "Commands, settings and
+// the outbound queue"). m is a CommandAck, CommandProgress, CommandResult
+// or SettingsAck ([ErrNotQueueable]). A CommandResult must already be
+// logged, unchanged, as its command's result in agent.db, so one lost with
+// its stream is re-sent from there; the one exception is a refusal that is
+// never logged (fork 4 i): FAILED/EPOCH_MISMATCH or
+// REJECTED_BY_POLICY/SEQ_REPLAYED for a command_id the log does not hold
+// ([ErrResultNotLogged] otherwise).
+//
+// With no Connected stream Send returns [ErrNoStream] at once. With a full
+// queue it waits for room, the stream's or the run's end ([ErrNoStream])
+// or ctx, whichever comes first. nil means queued, not sent: a message
+// queued as its stream ends is dropped with it
+// (fleet_agent_outbound_lost_total). Never wait on Send from a hook that
+// runs on the sending goroutine: only OnConnected may Send there, up to
+// the queue's room (256), which is empty when it runs.
 func (l *Loop) Send(ctx context.Context, m *agentv1.ConnectRequest) error {
 	kind, ok := queueKind(m)
 	if !ok {
@@ -81,15 +93,24 @@ func (l *Loop) Send(ctx context.Context, m *agentv1.ConnectRequest) error {
 	select {
 	case <-q.dead:
 		return ErrNoStream
+	case <-q.gone:
+		return ErrNoStream
 	case q.ch <- m:
 		return nil
 	default:
 	}
-	l.log.WarnContext(ctx, "connect.outbound_blocked", "kind", kind)
+	if l.m != nil {
+		l.m.outboundBlocked(ctx, kind)
+	}
+	if q.blocked.CompareAndSwap(false, true) {
+		l.log.WarnContext(ctx, "connect.outbound_blocked", "kind", kind)
+	}
 	select {
 	case q.ch <- m:
 		return nil
 	case <-q.dead:
+		return ErrNoStream
+	case <-q.gone:
 		return ErrNoStream
 	case <-ctx.Done():
 		return ctx.Err()
@@ -113,38 +134,87 @@ func queueKind(m *agentv1.ConnectRequest) (string, bool) {
 	return "", false
 }
 
+// unloggedRefusal is a refusal the executor answers without a log row or
+// an ack, because the hub re-issues the same command_id (02-contracts
+// "Envelope checks", ruling fork 4 i).
+func unloggedRefusal(r *agentv1.CommandResult) bool {
+	st, why := r.GetStatus(), r.GetReason()
+	return (st == typev1.Status_STATUS_FAILED && why == typev1.ReasonCode_REASON_CODE_EPOCH_MISMATCH) ||
+		(st == typev1.Status_STATUS_REJECTED_BY_POLICY && why == typev1.ReasonCode_REASON_CODE_SEQ_REPLAYED)
+}
+
 // logged checks that r is the finished result agent.db holds for its
-// command (ruling fork 12 b: committed before it is queued).
+// command (ruling fork 12 b: committed before it is queued), or an
+// unlogged refusal for a command_id the log does not hold.
 func (l *Loop) logged(ctx context.Context, r *agentv1.CommandResult) error {
-	e, err := l.opts.DB.Command(ctx, r.GetCommandId().GetValue())
+	id := r.GetCommandId().GetValue()
+	e, err := l.opts.DB.Command(ctx, id)
 	if errors.Is(err, ring.ErrUnknownCommand) {
+		if unloggedRefusal(r) {
+			return nil
+		}
 		return ErrResultNotLogged
 	}
 	if err != nil {
 		return fmt.Errorf("conn: check the result is logged: %w", err)
 	}
+	if e.Status != ring.StatusFinished {
+		return fmt.Errorf("%w: the command has no result yet", ErrResultNotLogged)
+	}
 	var want agentv1.CommandResult
-	if e.Status != ring.StatusFinished || proto.Unmarshal(e.Result, &want) != nil || !proto.Equal(&want, r) {
-		return ErrResultNotLogged
+	if err := proto.Unmarshal(e.Result, &want); err != nil {
+		args := []any{"err_kind", "parse"}
+		if printable(id, maxIDBytes) {
+			args = append(args, "command_id", id)
+		}
+		l.log.WarnContext(ctx, "command.result_unreadable", args...)
+		return fmt.Errorf("%w: the logged result cannot be read", ErrResultNotLogged)
+	}
+	if !proto.Equal(&want, r) {
+		return fmt.Errorf("%w: it differs from the logged one", ErrResultNotLogged)
 	}
 	return nil
 }
 
 // serveQueue opens this stream's queue once it is Connected and runs
-// OnConnected; the returned func, called when the stream stops serving,
-// ends the queue and then runs OnDisconnected. Both hooks run on Run's
-// goroutine, the stream's only sender.
-func (s *session) serveQueue() func() {
+// OnConnected with s.hctx, a context that ends with the stream or the run
+// (ctx); the returned func, called when the stream stops serving, ends the
+// queue, counts what was left in it and then runs OnDisconnected. The
+// hooks run on Run's goroutine, the stream's only sender.
+func (s *session) serveQueue(ctx context.Context) func() {
 	l := s.l
-	s.q = newOutQueue()
+	hctx, cancel := context.WithCancel(s.sctx)
+	unhook := context.AfterFunc(ctx, cancel)
+	s.hctx = hctx
+	s.q = newOutQueue(hctx.Done())
 	l.publish(s.q)
 	if f := l.opts.OnConnected; f != nil {
-		f(s.epoch, l.HubClock())
+		f(hctx, s.epoch, l.HubClock())
 	}
 	return func() {
+		unhook()
+		cancel()
 		l.unpublish(s.q)
+		// A lower bound: a Send racing the end may still add one.
+		if n := len(s.q.ch); n > 0 {
+			l.m.outboundLost(ctx, n)
+		}
 		if f := l.opts.OnDisconnected; f != nil {
 			f()
 		}
 	}
+}
+
+// flush sends what the queue holds now, in order, without waiting for
+// more. A SnapshotRequest flushes before its snapshot is built, so an ack
+// or progress queued before it never reaches the hub after the result
+// that snapshot re-sends, and nothing lands between the snapshot and its
+// results.
+func (s *session) flush() error {
+	for n := len(s.q.ch); n > 0; n-- {
+		if err := s.send(<-s.q.ch); err != nil {
+			return err
+		}
+	}
+	return nil
 }

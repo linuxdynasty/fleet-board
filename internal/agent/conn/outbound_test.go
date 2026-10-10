@@ -88,6 +88,49 @@ func TestSendTakesOnlyQueueableKindsAndLoggedResults(t *testing.T) {
 	if err := r.loop.Send(ctx, resultOf("done", typev1.Status_STATUS_OK)); err != nil {
 		t.Fatalf("the logged result: %v", err)
 	}
+	// The two refusals that are never logged (02-contracts "Envelope
+	// checks", ruling fork 4 i) go out for an id the log does not hold;
+	// no other unlogged result does, and a logged id gets only its result.
+	const (
+		failed   = typev1.Status_STATUS_FAILED
+		rejected = typev1.Status_STATUS_REJECTED_BY_POLICY
+		epochMM  = typev1.ReasonCode_REASON_CODE_EPOCH_MISMATCH
+		replayed = typev1.ReasonCode_REASON_CODE_SEQ_REPLAYED
+	)
+	for _, c := range []struct {
+		id     string
+		st     typev1.Status
+		why    typev1.ReasonCode
+		wantOK bool
+	}{
+		{"em", failed, epochMM, true},
+		{"sr", rejected, replayed, true},
+		{"x1", failed, replayed, false},
+		{"x2", rejected, epochMM, false},
+		{"x3", failed, typev1.ReasonCode_REASON_CODE_PANE_BUSY, false},
+		{"done", failed, epochMM, false},
+	} {
+		err := r.loop.Send(ctx, refusalOf(c.id, c.st, c.why))
+		if c.wantOK && err != nil || !c.wantOK && !errors.Is(err, conn.ErrResultNotLogged) {
+			t.Errorf("Send(%s %v/%v) = %v, want ok %v", c.id, c.st, c.why, err, c.wantOK)
+		}
+	}
+	// A logged result that cannot be read is refused and logged.
+	if _, _, err := db.LogCommand(ctx, ring.Command{
+		ID: "garbled", Kind: "capture_pane", Epoch: 1, Seq: 2, Received: time.Now(), NotAfter: time.Now().Add(time.Hour),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.RecordResult(ctx, "garbled", []byte{0xff, 0xff, 0xff}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.loop.Send(ctx, resultOf("garbled", typev1.Status_STATUS_OK)); !errors.Is(err, conn.ErrResultNotLogged) {
+		t.Errorf("a result whose logged copy cannot be read: %v, want ErrResultNotLogged", err)
+	}
+	if ev := a.events(t, "command.result_unreadable"); len(ev) != 1 || ev[0]["command_id"] != "garbled" ||
+		ev[0]["err_kind"] != "parse" {
+		t.Errorf("command.result_unreadable = %v, want one line for garbled", ev)
+	}
 	progress := &agentv1.ConnectRequest{Body: &agentv1.ConnectRequest_CommandProgress{
 		CommandProgress: &agentv1.CommandProgress{CommandId: &typev1.CommandId{Value: "open"}},
 	}}
@@ -97,10 +140,12 @@ func TestSendTakesOnlyQueueableKindsAndLoggedResults(t *testing.T) {
 			t.Errorf("Send(%T) = %v", m.GetBody(), err)
 		}
 	}
-	waitFor(t, 5*time.Second, "the three messages", func() bool { return len(h.stream(1).msgs) >= 4 })
+	waitFor(t, 5*time.Second, "the five messages", func() bool { return len(h.stream(1).msgs) >= 6 })
 	got := h.stream(1).msgs[1:]
-	if got[0].GetCommandResult().GetCommandId().GetValue() != "done" || got[1].GetCommandProgress() == nil ||
-		got[2].GetSettingsAck().GetGeneration() != 2 {
+	if got[0].GetCommandResult().GetCommandId().GetValue() != "done" ||
+		got[1].GetCommandResult().GetCommandId().GetValue() != "em" ||
+		got[2].GetCommandResult().GetCommandId().GetValue() != "sr" || got[3].GetCommandProgress() == nil ||
+		got[4].GetSettingsAck().GetGeneration() != 2 || len(got) != 5 {
 		t.Errorf("after the snapshot the hub got %v", got)
 	}
 }
@@ -169,7 +214,7 @@ func TestSendWaitsForRoomButNotPastItsContext(t *testing.T) {
 	r := startLoop(t, a, func(o *conn.LoopOptions) {
 		// The hook runs on the sending goroutine, so holding it holds the
 		// queue's only reader.
-		o.Command = func(uint64, *agentv1.Command) bool {
+		o.Command = func(context.Context, uint64, *agentv1.Command) bool {
 			held <- struct{}{}
 			_ = g.wait(context.Background())
 			return true
@@ -191,8 +236,16 @@ func TestSendWaitsForRoomButNotPastItsContext(t *testing.T) {
 	if err := r.loop.Send(short, ackOf("over")); !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("Send into a full queue = %v, want its context's end", err)
 	}
+	again, cancel2 := context.WithTimeout(ctx, 50*time.Millisecond)
+	defer cancel2()
+	if err := r.loop.Send(again, ackOf("over")); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("a second Send into a full queue = %v, want its context's end", err)
+	}
 	if ev := a.events(t, "connect.outbound_blocked"); len(ev) != 1 || ev[0]["kind"] != "command_ack" {
-		t.Errorf("connect.outbound_blocked = %v, want one line with kind command_ack", ev)
+		t.Errorf("connect.outbound_blocked = %v, want one line per stream with kind command_ack", ev)
+	}
+	if got := metric(scrape(t, a), "fleet_agent_outbound_blocked_total", `kind="command_ack"`); got != "2" {
+		t.Errorf("fleet_agent_outbound_blocked_total = %q, want 2: every wait counts", got)
 	}
 	g.open()
 	waitFor(t, 10*time.Second, "the queued acks", func() bool { return len(h.acks(1)) == conn.QueueSize })
@@ -212,7 +265,7 @@ func TestTheQueueDiesWithItsStream(t *testing.T) {
 	held, g := make(chan struct{}, 1), newGate()
 	first := true
 	r := startLoop(t, a, func(o *conn.LoopOptions) {
-		o.Command = func(uint64, *agentv1.Command) bool {
+		o.Command = func(context.Context, uint64, *agentv1.Command) bool {
 			if first {
 				first = false
 				held <- struct{}{}
@@ -255,5 +308,12 @@ func TestTheQueueDiesWithItsStream(t *testing.T) {
 	waitFor(t, 5*time.Second, "the new ack", func() bool { return len(h.acks(2)) > 0 })
 	if got := h.acks(2); !slices.Equal(got, []string{"new"}) {
 		t.Errorf("stream 2 got acks %q; the old stream's queue must die with it", got)
+	}
+	// What died in the queue is counted, as a lower bound: the sender may
+	// take a few before it sees the stream gone, and the waiting Send may
+	// add one.
+	lost, _ := strconv.Atoi(metric(scrape(t, a), "fleet_agent_outbound_lost_total"))
+	if lost < conn.QueueSize/2 || lost > conn.QueueSize+1 {
+		t.Errorf("fleet_agent_outbound_lost_total = %d, want about %d", lost, conn.QueueSize)
 	}
 }

@@ -22,7 +22,7 @@ func ack(id string) *agentv1.ConnectRequest {
 func TestASendWaitingOnAFullQueueIsRefusedWhenTheStreamEnds(t *testing.T) {
 	t.Parallel()
 	l := &Loop{log: slog.New(slog.DiscardHandler)}
-	q := newOutQueue()
+	q := newOutQueue(make(chan struct{}))
 	l.publish(q)
 	ctx := context.Background()
 	for range queueSize {
@@ -58,7 +58,7 @@ func TestASendWaitingOnAFullQueueIsRefusedWhenTheStreamEnds(t *testing.T) {
 func TestSendWithAnEndedContextQueuesNothing(t *testing.T) {
 	t.Parallel()
 	l := &Loop{log: slog.New(slog.DiscardHandler)}
-	q := newOutQueue()
+	q := newOutQueue(make(chan struct{}))
 	l.publish(q)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -67,5 +67,37 @@ func TestSendWithAnEndedContextQueuesNothing(t *testing.T) {
 	}
 	if len(q.ch) != 0 {
 		t.Errorf("the queue holds %d after a refused Send", len(q.ch))
+	}
+}
+
+// The stream's or the run's end (gone) releases a Send waiting on a full
+// queue even while the sending goroutine never returns to unpublish it
+// (a hook that waits on Send).
+func TestTheStreamsEndReleasesASendWaitingOnAFullQueue(t *testing.T) {
+	t.Parallel()
+	l := &Loop{log: slog.New(slog.DiscardHandler)}
+	gone := make(chan struct{})
+	l.publish(newOutQueue(gone))
+	ctx := context.Background()
+	for range queueSize {
+		if err := l.Send(ctx, ack("a")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got := make(chan error, 1)
+	go func() { got <- l.Send(ctx, ack("waiting")) }()
+	select {
+	case err := <-got:
+		t.Fatalf("Send into a full queue returned %v without waiting", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(gone)
+	select {
+	case err := <-got:
+		if !errors.Is(err, ErrNoStream) {
+			t.Errorf("the waiting Send = %v, want ErrNoStream", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the stream's end did not release the waiting Send")
 	}
 }

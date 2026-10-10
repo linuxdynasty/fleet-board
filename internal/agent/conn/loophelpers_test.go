@@ -55,6 +55,13 @@ type loopRun struct {
 // options.
 func startLoop(t *testing.T, a *agent, set func(*conn.LoopOptions)) *loopRun {
 	t.Helper()
+	return startLoopThen(t, a, set, nil)
+}
+
+// startLoopThen is startLoop that hands the Loop to got before it runs,
+// so hooks can use it from their first call.
+func startLoopThen(t *testing.T, a *agent, set func(*conn.LoopOptions), got func(*conn.Loop)) *loopRun {
+	t.Helper()
 	id, err := conn.LoadIdentity(a.dir)
 	if err != nil {
 		t.Fatal(err)
@@ -69,6 +76,9 @@ func startLoop(t *testing.T, a *agent, set func(*conn.LoopOptions)) *loopRun {
 	l, err := conn.NewLoop(context.Background(), opts)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if got != nil {
+		got(l)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	r := &loopRun{loop: l, cancel: cancel, done: make(chan struct{})}
