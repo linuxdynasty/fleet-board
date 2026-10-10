@@ -211,8 +211,8 @@ func TestOpenMigratesAStoreFromTheMachinesSchema(t *testing.T) {
 		t.Fatal(err)
 	}
 	s = open(t, dir)
-	if got := s.SchemaVersion(); got != 4 {
-		t.Errorf("schema version %d, want 4", got)
+	if got := s.SchemaVersion(); got != len(statedb.Migrations()) {
+		t.Errorf("schema version %d, want %d", got, len(statedb.Migrations()))
 	}
 	if err := statedb.InsertEnrollToken(context.Background(), s, sampleToken("local:a", "r", 1)); err != nil {
 		t.Fatal(err)

@@ -19,10 +19,10 @@ sequenceDiagram
   H-xA: stream closed (Bye{HUB_RESTART} or transport)
   Note over A: goals run on · observer runs on · probes run on last schedule ·<br/>never-dropped events → persisted ring (latest per key for coalesced kinds) ·<br/>results → local command log
   A->>H: Connect, Hello{last_epoch=7, last_applied_command_seq=41, last_event_seq=90210, boot_id, reason=RECONNECT, settings_generation=12}
-  H->>H: tx: epoch = max(stored, last_epoch=7) + 1 = 8 · machine ONLINE · load outbox for machine
+  H->>H: tx: epoch = max(stored, last_epoch=7) + 1 = 8 · load outbox for machine
   H-->>A: HelloAck{epoch=8, hub_last_event_seq=89950, settings_generation=12}
   A->>H: Snapshot{seq=90210, … , unacked_results=[c17, c19], probes[], goals[]}
-  H->>H: tx: apply snapshot (state) · expire outbox rows past not_after_time
+  H->>H: tx: apply snapshot (state) · machine ONLINE · expire outbox rows past not_after_time
   A->>H: CommandResult{c17}, CommandResult{c19} (from local log)
   H->>H: tx: close outbox rows (ignore if already done)
   H-->>A: ResultAck{[c17, c19]}
@@ -101,7 +101,7 @@ waiting for keepalive timeouts.
 | Goal registry (`GoalRegistration` per pane) and availability marks (per pane key) | `agent.db` | `register_goal`, `RegisterGoal`, `ReleaseGoal`, mark commands; both reported in every snapshot (02h) |
 | Outbox rows (`pending/delivered/done/expired/failed`, epoch, seq) | hub store | Hello tx (expiry), result tx (close) |
 | Event history (replayed and live, 1 week) | hub store | per writer batch |
-| `machine_connections` (epoch, boot_id, reason, peer, displaced_by) | hub store | Hello tx |
+| `machine_connections` (epoch, boot_id, install_id, peer, connect_reason, started and ended time, end_reason, displaced_by, last_heartbeat_age_ms at displacement) and the machine's `last_epoch` | hub store | Hello tx (opens the row, closes the one it displaces); stream close or `Bye` (closes it) |
 | Per machine: `hub_last_event_seq`, `event_generation`, last `EventCounters`, `install_id` | hub store | writer batch (seq); Hello tx (the rest) |
 
 ### Ordering and consistency

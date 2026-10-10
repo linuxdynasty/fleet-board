@@ -111,7 +111,7 @@ sequenceDiagram
   A->>A: persist cert/key/CA/salt (0600), cache hub address
   A->>T: identity + catalog probe per harness (C2, C4) on fleet-probe
   A->>H: Connect [mTLS] Hello{machine_id, capabilities, boot_id, last_epoch=0, last_event_seq=0, reason=START, sent_time, settings_generation=0}
-  H->>H: tx: machine_connections{epoch=1}, machine ONLINE · revocation lookup
+  H->>H: tx: machine_connections{epoch=1}, last_seen · revocation lookup (state unchanged until the Snapshot tx)
   H-->>A: HelloAck{hub_time, epoch=1, proto_version, capabilities_accepted, hub_last_event_seq=0, max_message_bytes, heartbeat_interval, settings_generation}
   H-->>A: Settings{generation, labels, values} (if generation > 0)
   A->>H: Snapshot{seq, facts, harnesses[], accounts[], tmux_servers[], goals[], repos[], forge_cli, usage[], probes[], policy, settings, drain}
@@ -231,8 +231,8 @@ stateDiagram-v2
 ```
 
 Hub-side machine state: `ENROLLED` (never connected) → `ONLINE` (Hello +
-Snapshot applied) → `STALE` (no heartbeat 45 s) → `OFFLINE` (3 min, or agent
-`Bye`) → `ONLINE`; from any of them `RevokeMachine` → `REVOKED` (serials on the
+Snapshot applied) → `STALE` (no heartbeat 45 s) → `OFFLINE` (3 min, agent
+`Bye`, or the stream closed) → `ONLINE`; from any of them `RevokeMachine` → `REVOKED` (serials on the
 revocation list, `Bye{REVOKED}` on the live stream, goals `ABANDONED` or `STUCK`, row
 kept), and `DeleteMachine` forgets a revoked machine. The cascade and the
 re-enroll rule are in [02g](02g-agent-security.md#machine-lifecycle-revoke-and-delete).
@@ -247,7 +247,7 @@ re-enroll rule are in [02g](02g-agent-security.md#machine-lifecycle-revoke-and-d
 | `status.json` (the running agent's last-known state; its entries are listed in plan row 6) and `enroll.json` (the last enroll failure code) | agent state dir, mode 0600 | each written whole (temp file, sync, rename) by its one writer: `fleet-agent run` and `fleet-agent enroll` |
 | The end the connection loop stopped on (revoked, unknown machine, fleet mismatch) | agent state dir, `ended.json`, mode 0600 | written whole before `run` exits; removed by enroll |
 | The hub's latest address list (`HelloAck.hub_addresses`) | agent state dir, `hub-addresses`, mode 0600 | replaced whole (temp file, fsync, rename) when a non-empty list differs from the one in use; read at start ahead of the enroll-time list |
-| `machine_connections{epoch, boot_id, peer_addr, reason, connect_time}` | hub store | the Hello tx (also marks ONLINE) |
+| `machine_connections{epoch, boot_id, install_id, peer, connect_reason, started_time}` | hub store | the Hello tx (state unchanged; the Snapshot tx marks ONLINE) |
 | Inventory from the snapshot | hub store | the snapshot tx (replace per machine) |
 | Outbox transitions (`pending → delivered`, `→ expired`) | hub store | the snapshot tx; messages sent after commit |
 
@@ -255,6 +255,9 @@ re-enroll rule are in [02g](02g-agent-security.md#machine-lifecycle-revoke-and-d
 
 - Nothing but `Hello` is accepted before `HelloAck`; events before the
   `Snapshot` of this epoch are discarded with a counter.
+- A machine is ONLINE only once the Snapshot of the current epoch is
+  committed; between Hello and Snapshot its stored state is unchanged and no
+  command is sent.
 - `Snapshot.seq` supersedes every event with lower `seq`; later events apply
   only if `seq > last_event_seq` (strictly increasing per machine and
   `event_generation`; the agent keeps it so across crashes, 02i).
