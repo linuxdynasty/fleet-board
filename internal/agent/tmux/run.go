@@ -127,6 +127,9 @@ func (c *Client) attach(ctx context.Context) (string, error) {
 		return reasonAttachFailed, failed("start", err)
 	}
 	cn.writeTimeout = c.writeTimeout
+	c.mu.Lock()
+	c.expect = session // the attach's own %session-changed is expected
+	c.mu.Unlock()
 	go cn.read(c.notify(cn))
 	info, err := c.handshake(ctx, cn)
 	if err != nil {
@@ -137,7 +140,7 @@ func (c *Client) attach(ctx context.Context) (string, error) {
 		return reasonAttachFailed, failed("handshake", err)
 	}
 	c.mu.Lock()
-	c.conn, c.session, c.startID, c.internal = cn, session, info.startID, internal
+	c.conn, c.session, c.startID, c.internal, c.expect = cn, session, info.startID, internal, session
 	subs := append([]Subscription(nil), c.subs...)
 	c.mu.Unlock()
 	for _, s := range subs {
@@ -193,12 +196,27 @@ func (c *Client) notify(cn *conn) func(Message) {
 			case cn.repick <- struct{}{}:
 			default:
 			}
-		case SessionChanged: // tmux confirms the session this client is on
+		case SessionChanged: // the session this client is on now
 			c.mu.Lock()
+			unexpected := false
 			if c.conn == cn || c.conn == nil {
-				c.session = m.Session
+				// The attach and the client's own switch-client set expect.
+				// Anything else is tmux moving the client by itself (with
+				// detach-on-destroy off, when its session ends): whether
+				// the new one is internal is unknown until a re-pick.
+				unexpected = m.Session != c.expect
+				c.session, c.expect = m.Session, m.Session
+				if unexpected {
+					c.internal = true
+				}
 			}
 			c.mu.Unlock()
+			if unexpected {
+				select {
+				case cn.repick <- struct{}{}:
+				default:
+				}
+			}
 		}
 		if c.opts.Notify != nil {
 			c.opts.Notify(m)
@@ -235,18 +253,38 @@ func (c *Client) repickLoop(ctx context.Context, cn *conn) {
 // command.
 func (c *Client) repick(ctx context.Context, cn *conn) {
 	r, err := cn.do(ctx, "list-sessions -F '"+sessionsFormat+"'", NoID)
+	if errors.Is(err, errConnClosed) || ctx.Err() != nil {
+		return // the attach is ending: tmux.exit says why
+	}
 	if err != nil || r.Failed || r.Dropped > 0 {
 		c.tel.repickFailed("list")
 		return
 	}
-	id, internal, err := pickSession([]byte(strings.Join(r.Body, "\n")))
-	if err != nil || internal {
-		return // still no developer session
+	body := []byte(strings.Join(r.Body, "\n"))
+	marks, err := parseSessions(body)
+	if err != nil {
+		c.tel.repickFailed("list")
+		return
 	}
 	c.mu.Lock()
 	from := c.session // before the switch: %session-changed updates it
+	if in, ok := marks[from]; ok && !in && c.conn == cn {
+		c.internal = false // already on a developer session (tmux moved it there)
+		c.mu.Unlock()
+		return
+	}
+	c.mu.Unlock()
+	id, internal, err := pickSession(body)
+	if err != nil || internal {
+		return // still no developer session: stay, wait for the next notice
+	}
+	c.mu.Lock()
+	c.expect = id // the %session-changed this switch brings is ours
 	c.mu.Unlock()
 	r, err = cn.do(ctx, "switch-client -E -t "+id.String(), NoID)
+	if errors.Is(err, errConnClosed) || ctx.Err() != nil {
+		return
+	}
 	if err != nil || r.Failed {
 		c.tel.repickFailed("switch")
 		return

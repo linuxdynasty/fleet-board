@@ -19,14 +19,15 @@ import (
 
 // Exit reasons: the closed `reason` of tmux.exit (05b).
 const (
-	reasonExit         = "exit"          // tmux wrote %exit (its session or the server ended)
-	reasonEOF          = "eof"           // the stream ended without %exit (the server was killed)
-	reasonDesync       = "desync"        // a reply arrived for no command: the stream lost its place
-	reasonAttachFailed = "attach_failed" // a step before up failed (err_kind says which)
-	reasonWriteStalled = "write_stalled" // tmux stopped reading: a command write passed writeTimeout
-	reasonTooOld       = "too_old"       // tmux older than 3.2, or the flags missing from client_flags
-	reasonAbsent       = "absent"        // no server answers on the socket
-	reasonCancelled    = "cancelled"     // the agent stopped the client
+	reasonExit          = "exit"           // tmux wrote %exit (its session or the server ended)
+	reasonEOF           = "eof"            // the stream ended without %exit (the server was killed)
+	reasonDesync        = "desync"         // a reply arrived for no command: the stream lost its place
+	reasonAttachFailed  = "attach_failed"  // a step before up failed (err_kind says which)
+	reasonWriteStalled  = "write_stalled"  // tmux stopped reading: a command write passed writeTimeout
+	reasonWriteCanceled = "write_canceled" // the caller's context ended while its write was blocked
+	reasonTooOld        = "too_old"        // tmux older than 3.2, or the flags missing from client_flags
+	reasonAbsent        = "absent"         // no server answers on the socket
+	reasonCancelled     = "cancelled"      // the agent stopped the client
 )
 
 // killWait is how long close waits for tmux to exit after its stdin closes
@@ -169,16 +170,22 @@ func (c *conn) write(ctx context.Context, line string) error {
 		}
 		return nil
 	case <-t.C:
+		c.endWith(reasonWriteStalled)
 	case <-ctx.Done():
+		c.endWith(reasonWriteCanceled)
 	}
-	c.pmu.Lock()
-	if c.reason == "" {
-		c.reason = reasonWriteStalled
-	}
-	c.pmu.Unlock()
 	c.kill()
 	<-done // the kill closed the pipe: the write returns
 	return fmt.Errorf("tmux: write command stalled: %w", errConnClosed)
+}
+
+// endWith records why the conn is ending, unless a reason is already set.
+func (c *conn) endWith(reason string) {
+	c.pmu.Lock()
+	defer c.pmu.Unlock()
+	if c.reason == "" {
+		c.reason = reason
+	}
 }
 
 // read is the reader goroutine: it owns the parser and stdout, matches

@@ -97,7 +97,8 @@ type Client struct {
 	changed  chan struct{} // closed and replaced on every state change
 	conn     *conn         // the attached client, nil when not StateUp
 	session  SessionID
-	internal bool // attached to an internal session (no developer one existed)
+	internal bool      // attached to an internal session (no developer one existed), or not yet known
+	expect   SessionID // the session the attach or the client's own switch-client moves to
 	startID  string
 	subs     []Subscription
 }

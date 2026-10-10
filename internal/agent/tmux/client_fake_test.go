@@ -20,8 +20,11 @@ import (
 // makes it stop reading its input after the handshake. FAKE_PROC_LIST and
 // FAKE_CTL_LIST are what list-sessions prints as a one-shot command and
 // through the control client (printf %b); FAKE_LIST_SLEEP slows the
-// latter; FAKE_SWITCH_ERR refuses switch-client. "capture-pane -p -t %7"
-// is answered, then five %sessions-changed follow.
+// latter; FAKE_LIST_EXIT makes it exit instead of answering that list;
+// FAKE_SWITCH_ERR refuses switch-client (else it confirms with
+// %session-changed to the target). "capture-pane -p -t %7" is answered,
+// then five %sessions-changed follow; "-t %6" is answered, then tmux moves
+// the client to $2 by itself (%session-changed $2).
 const fakeTmux = `#!/bin/sh
 dir=$(dirname "$0")
 if [ "$1" = "-V" ]; then echo "tmux $FAKE_VERSION"; exit 0; fi
@@ -53,17 +56,22 @@ while IFS= read -r line; do
 		if [ -n "$FAKE_STALL" ]; then echo "%end 2 $n 1"; exec sleep 600; fi ;;
 	"refresh-client -B 'bad:"*) echo "%error 2 $n 1"; continue ;;
 	"capture-pane -p -t %9") echo "%end 2 $n 1"; n=$((n+1)); echo "%begin 2 $n 1" ;;
+	"capture-pane -p -t %6")
+		echo "%end 2 $n 1"
+		echo "%session-changed \$2 moved"
+		continue ;;
 	"capture-pane -p -t %7")
 		echo "%end 2 $n 1"
 		for i in 1 2 3 4 5; do echo "%sessions-changed"; done
 		continue ;;
 	list-sessions*)
+		if [ -n "$FAKE_LIST_EXIT" ]; then exit 0; fi
 		if [ -n "$FAKE_LIST_SLEEP" ]; then sleep "$FAKE_LIST_SLEEP"; fi
 		printf '%b' "${FAKE_CTL_LIST:-\$0 \n}" ;;
 	switch-client*)
 		if [ -n "$FAKE_SWITCH_ERR" ]; then echo "%error 2 $n 1"; continue; fi
 		echo "%end 2 $n 1"
-		echo "%session-changed \$1 dev"
+		echo "%session-changed ${line##* } dev"
 		continue ;;
 	capture-pane*) echo '%pause %3'; echo '%continue %4'; echo 'plain text' ;;
 	"refresh-client -A '%3:continue'") echo '%continue %4' ;;

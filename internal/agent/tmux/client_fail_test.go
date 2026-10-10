@@ -1,6 +1,7 @@
 package tmux_test
 
 import (
+	"context"
 	"errors"
 	"path/filepath"
 	"strings"
@@ -200,4 +201,14 @@ func TestBackoffShape(t *testing.T) {
 			t.Fatalf("backoff(%d) never under 2 s in 500 draws (least %s): not uniform from 1 s", tc.n, least)
 		}
 	}
+}
+
+func fakeKey() *typev1.PaneKey {
+	return &typev1.PaneKey{Server: "fleet", ServerStartId: fakeStart, PaneId: "%1"}
+}
+
+func bigText() string { return strings.Repeat("y", 4000) }
+
+func contextWithTimeout(d time.Duration) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), d)
 }

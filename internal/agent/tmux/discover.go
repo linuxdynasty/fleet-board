@@ -75,18 +75,14 @@ func lowestSession(ctx context.Context, r *proc.Runner, caller proc.Caller, prog
 // id, and internal is true (the client then moves to a developer session
 // when %sessions-changed announces one); no session at all is errAbsent.
 func pickSession(list []byte) (SessionID, bool, error) {
+	marks, err := parseSessions(list)
+	if err != nil {
+		return 0, false, err
+	}
 	dev, internal := SessionID(NoID), SessionID(NoID)
-	for line := range strings.SplitSeq(string(list), "\n") {
-		if line == "" {
-			continue
-		}
-		idText, mark, ok := strings.Cut(line, " ")
-		n, idOK := parseID([]byte(idText), '$')
-		if !ok || !idOK {
-			return 0, false, failed("list", errors.New("tmux list-sessions: a line is not \"$N mark\""))
-		}
-		id, best := SessionID(n), &dev
-		if mark != "" {
+	for id, in := range marks {
+		best := &dev
+		if in {
 			best = &internal
 		}
 		if *best == NoID || id < *best {
@@ -100,6 +96,24 @@ func pickSession(list []byte) (SessionID, bool, error) {
 		return internal, true, nil
 	}
 	return 0, false, errAbsent
+}
+
+// parseSessions reads `list-sessions -F '#{session_id} #{@fleet_internal}'`
+// into each session id and whether the fleet marked it internal.
+func parseSessions(list []byte) (map[SessionID]bool, error) {
+	marks := map[SessionID]bool{}
+	for line := range strings.SplitSeq(string(list), "\n") {
+		if line == "" {
+			continue
+		}
+		idText, mark, ok := strings.Cut(line, " ")
+		n, idOK := parseID([]byte(idText), '$')
+		if !ok || !idOK {
+			return nil, failed("list", errors.New("tmux list-sessions: a line is not \"$N mark\""))
+		}
+		marks[SessionID(n)] = mark != ""
+	}
+	return marks, nil
 }
 
 // noServer reports whether tmux's stderr says no server answers on the

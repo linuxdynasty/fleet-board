@@ -69,8 +69,12 @@ panes, err := c.ListPanes(ctx)                   // list-panes -a: ids and numbe
   `%session-changed` confirms and `Session()` reports it; subscriptions
   survive). A burst of notices coalesces into one list in flight. A failed
   list or refused switch logs `tmux.repick_failed` (at most once a minute)
-  and waits for the next notice; it never detaches. On a developer session
-  `%sessions-changed` does nothing. No timer.
+  and waits for the next notice; it never detaches (the conn ending during
+  a re-pick is not logged as one). On a developer session
+  `%sessions-changed` does nothing. A `%session-changed` the client did not
+  ask for (tmux moved it, as with `detach-on-destroy off`) marks the session
+  unknown and re-picks: back to a developer session if it landed on an
+  internal one, or stays if it is a developer one. No timer.
 - `list-sessions` failing with tmux's "no server running on" or "error
   connecting to ... (No such file or directory | Connection refused)" (3.2a
   and 3.7c) is no server; any other failure (a permission or protocol
@@ -95,7 +99,10 @@ panes, err := c.ListPanes(ctx)                   // list-panes -a: ids and numbe
   and the choice of the attached client are one hold of the lock.
 - One command write is bounded (10 s): a tmux that stops reading its input
   ends the attach (`write_stalled`) and every waiting caller gets
-  `ErrNotAttached`, instead of all of them waiting forever.
+  `ErrNotAttached`, instead of all of them waiting forever. A caller whose
+  context ends while its write is blocked ends the attach too
+  (`write_canceled`): a part-written command would put the stream out of
+  step.
 - `%pause` (as a notification or inside any reply) marks a pane paused;
   only the reply to the client's own `Continue(pane)` with `%continue %N`
   for that pane resumes it. The client never resumes a pane by itself:
@@ -142,7 +149,7 @@ re-sent, never lost.
 | `tmux.attached` (`server_kind`, `version`, `flags`, `session` = `developer` or `internal`) | an attach came up |
 | `tmux.session_switched` (`server_kind`, `from`, `to`: ids) | the client moved from an internal session to a developer one |
 | `tmux.repick_failed` (`server_kind`, `err_kind` = `list` or `switch`) | a re-pick failed; at most once a minute; the client stays up |
-| `tmux.exit` (`server_kind`, `reason`, `err_kind` for `attach_failed`) | an attach ended or failed: `exit`, `eof`, `desync`, `write_stalled`, `attach_failed` (`version`, `list`, `start`, `handshake`, `subscribe`), `too_old`, `absent` (once per absence), `cancelled` |
+| `tmux.exit` (`server_kind`, `reason`, `err_kind` for `attach_failed`) | an attach ended or failed: `exit`, `eof`, `desync`, `write_stalled`, `write_canceled`, `attach_failed` (`version`, `list`, `start`, `handshake`, `subscribe`), `too_old`, `absent` (once per absence), `cancelled` |
 | `tmux.subscription_confirmed` (`server_kind`, `name`) | the first value of a registered subscription on an attach |
 
 Never pane text, a session or window name, the `%exit` text or tmux's

@@ -32,9 +32,9 @@ func TestAttachLeavesTheSessionEnvironmentAlone(t *testing.T) {
 	}
 }
 
-// On the developer's server the client skips sessions the fleet marked
-// internal (@fleet_internal) and attaches to the lowest other one (row-7
-// ruling fork 5(d)).
+// The one pick rule (arbiter ruling on 7c2b, amending fork 5(d)): with a
+// developer session there, the client attaches to it, not to a lower
+// internal (@fleet_internal) one.
 func TestDefaultServerSkipsInternalSessions(t *testing.T) {
 	for _, b := range tmuxtest.Binaries() {
 		t.Run(b.Name, func(t *testing.T) {

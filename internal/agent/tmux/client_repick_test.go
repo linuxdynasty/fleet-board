@@ -89,6 +89,14 @@ func TestRepickBeforeUp(t *testing.T) {
 		t.Fatalf("commands when up = %q, want one switch-client -E -t $1", got)
 	}
 	waitTrue(t, "Session $1", func() bool { return r.Session() == 1 })
+	// The client's own switch is not an unexpected move: no second list.
+	if _, err := r.Capture(ctxT(t), 3); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(300 * time.Millisecond) // proving no further list is sent
+	if got := commands(t, r); count(got, "list-sessions") != 1 {
+		t.Fatalf("commands = %q, want exactly one list-sessions", got)
+	}
 }
 
 // T3: on a developer session %sessions-changed sends nothing.
