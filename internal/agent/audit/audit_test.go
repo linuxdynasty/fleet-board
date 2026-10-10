@@ -256,3 +256,45 @@ func TestConcurrentAppendsKeepWholeLines(t *testing.T) {
 		}
 	}
 }
+
+func TestASymlinkInPlaceOfTheFileIsRefusedAndItsTargetNeverWritten(t *testing.T) {
+	t.Parallel()
+	r := newRig(t, nil)
+	target := filepath.Join(t.TempDir(), "elsewhere")
+	if err := os.WriteFile(target, []byte("keep\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, filepath.Join(r.dir, audit.File)); err != nil {
+		t.Fatal(err)
+	}
+	r.log.Append(audit.Entry{Action: audit.PolicyChanged})
+	if got, _ := os.ReadFile(target); string(got) != "keep\n" { //nolint:gosec // G304: a test folder
+		t.Errorf("the link's target was written: %q", got)
+	}
+	if m := r.scrape(t); !strings.Contains(m, `fleet_agent_audit_write_failures_total{err_kind="io"`) {
+		t.Errorf("the refusal was not counted:\n%s", m)
+	}
+}
+
+// logrotate moves the file away and a new one appears in its place; entries
+// must go to the new file, not the moved one the handle still points at.
+func TestAFileRenamedAwayAndRecreatedGetsTheNextEntry(t *testing.T) {
+	t.Parallel()
+	r := newRig(t, nil)
+	r.log.Append(audit.Entry{Action: audit.PolicyChanged, Detail: map[string]string{"n": "1"}})
+	live := filepath.Join(r.dir, audit.File)
+	moved := filepath.Join(r.dir, "audit.log.moved")
+	if err := os.Rename(live, moved); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(live, nil, 0o600); err != nil { // another process makes a new one
+		t.Fatal(err)
+	}
+	r.log.Append(audit.Entry{Action: audit.PolicyChanged, Detail: map[string]string{"n": "2"}})
+	if got := r.lines(t, audit.File); len(got) != 1 || !strings.Contains(got[0], `"n":"2"`) {
+		t.Errorf("new file = %q, want the second entry", got)
+	}
+	if got := r.lines(t, "audit.log.moved"); len(got) != 1 || !strings.Contains(got[0], `"n":"1"`) {
+		t.Errorf("moved file = %q, want only the first entry", got)
+	}
+}

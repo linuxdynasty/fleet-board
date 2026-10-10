@@ -46,21 +46,27 @@ func approvalRules(v *yaml.Node) ([]ApprovalRule, *Problem) {
 	seen := map[string]bool{}
 	p := items(v, scope, func(item *yaml.Node) *Problem {
 		var r ApprovalRule
-		var have bool
+		var haveKind, haveRequired bool
 		if p := visit(item, scope, approvalKeys, func(key string, val *yaml.Node) *Problem {
 			var p *Problem
 			if key == "command_kind" {
 				r.CommandKind, p = kindOf(val, scope)
-				have = p == nil
+				haveKind = p == nil
 				return p
 			}
 			r.Required, p = boolean(val, scope)
+			haveRequired = p == nil
 			return p
 		}); p != nil {
 			return p
 		}
-		if !have {
+		// Both are stated: a rule that leaves `required` out is not read as
+		// false, because the parse never guesses what the owner meant.
+		if !haveKind {
 			return problem(CodeBadValue, resolve(item).Line, scope, "command_kind is missing")
+		}
+		if !haveRequired {
+			return problem(CodeBadValue, resolve(item).Line, scope, "required is missing")
 		}
 		if seen[r.CommandKind] {
 			return problem(CodeDuplicateKey, resolve(item).Line, scope, r.CommandKind+" is given twice")

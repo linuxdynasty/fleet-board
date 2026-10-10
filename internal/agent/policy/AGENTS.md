@@ -21,6 +21,7 @@ Read the root `AGENTS.md` first; it applies here. Load `fleet-go`,
 - The agent never writes `policy.yaml` except `WriteStarter`, which never
   overwrites. `run` does not call it.
 - Command kind names come from the `Command.kind` oneof descriptor, not a table.
-- Locks: `checkMu` then `mu`; nothing slow (audit sync, callback, log) under `mu`.
+- Locks: `checkMu` then `mu`; nothing slow (audit sync, callback, log) under either. Changes are reported by the drain goroutine, in order; keep `Recheck` and `Snapshot` free of waits on anything but the file read.
+- Reading the file must never block: it opens with `O_NONBLOCK` and takes only regular files.
 - A change here updates this README, `doc.go`, 03e and defaults.md in the same
   commit.

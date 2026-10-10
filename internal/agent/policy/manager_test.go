@@ -51,6 +51,7 @@ type rig struct {
 	tel     *telemetry.Telemetry
 	audit   *auditSink
 	changes chan policy.Change
+	clockMu sync.Mutex
 	now     time.Time
 }
 
@@ -73,9 +74,21 @@ func newRig(t *testing.T, file string) *rig {
 	return r
 }
 
+func (r *rig) clock() time.Time {
+	r.clockMu.Lock()
+	defer r.clockMu.Unlock()
+	return r.now
+}
+
+func (r *rig) advance(d time.Duration) {
+	r.clockMu.Lock()
+	defer r.clockMu.Unlock()
+	r.now = r.now.Add(d)
+}
+
 func (r *rig) opts() policy.Options {
 	return policy.Options{
-		Dir: r.dir, Telemetry: r.tel, Audit: r.audit, Now: func() time.Time { return r.now },
+		Dir: r.dir, Telemetry: r.tel, Audit: r.audit, Now: r.clock,
 		OnChange: func(c policy.Change) { r.changes <- c }, Settle: 40 * time.Millisecond,
 	}
 }
@@ -155,8 +168,8 @@ func TestAMissingFileIsANormalFirstRun(t *testing.T) {
 	if info.GetSchemaVersion() != "" || info.GetHash() != "" || info.GetSafeMode() || info.GetError() != "" || info.GetChangedSinceLoad() {
 		t.Errorf("Info = %v, want an empty hash and schema_version, no safe mode", info)
 	}
-	if !info.GetLoadedTime().AsTime().Equal(r.now) {
-		t.Errorf("loaded_time = %v, want %v", info.GetLoadedTime().AsTime(), r.now)
+	if !info.GetLoadedTime().AsTime().Equal(r.clock()) {
+		t.Errorf("loaded_time = %v, want %v", info.GetLoadedTime().AsTime(), r.clock())
 	}
 	p := m.Policy()
 	if len(p.AllowedRepoRoots) != 0 || p.AllowedHarnesses != nil || m.SafeMode() {
@@ -263,10 +276,10 @@ func TestAHashChangeIsReportedAndChangesNothingLive(t *testing.T) {
 	m := r.load(t)
 	next := "schema_version: \"1\"\nmax_active: 9\n"
 	r.write(t, next)
-	r.now = r.now.Add(time.Hour)
+	r.advance(time.Hour)
 	m.Recheck(t.Context())
 	c := r.nextChange(t)
-	if c.PreviousHash != sum(goodFile) || c.Hash != sum(next) || !c.Time.Equal(r.now) {
+	if c.PreviousHash != sum(goodFile) || c.Hash != sum(next) || !c.Time.Equal(r.clock()) {
 		t.Errorf("Change = %+v", c)
 	}
 	if c.Info.GetHash() != sum(next) || !c.Info.GetChangedSinceLoad() {
@@ -358,5 +371,54 @@ func TestAnUnreadableFileAtRecheckChangesNothingAndIsLogged(t *testing.T) {
 	r.noChange(t, 50*time.Millisecond)
 	if ev := r.events(t, "policy.check_failed"); len(ev) != 1 || ev[0]["err_kind"] != "io" {
 		t.Errorf("policy.check_failed = %v", ev)
+	}
+}
+
+// A slow OnChange (row 7 will enqueue an event there) or a slow audit sync
+// must not hold up the Snapshot that found the change, and changes found while
+// it is busy are still delivered in order.
+func TestASlowOnChangeNeverBlocksRecheckOrSnapshotAndKeepsOrder(t *testing.T) {
+	t.Parallel()
+	r := newRig(t, goodFile)
+	release := make(chan struct{})
+	var mu sync.Mutex
+	var seen []string
+	o := r.opts()
+	o.OnChange = func(c policy.Change) {
+		<-release
+		mu.Lock()
+		seen = append(seen, c.Hash)
+		mu.Unlock()
+	}
+	m, err := policy.Load(o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	released := false
+	release2 := func() {
+		if !released {
+			released = true
+			close(release)
+		}
+	}
+	t.Cleanup(func() { release2(); m.Close() })
+	v1, v2 := goodFile+"max_total: 5\n", goodFile+"max_total: 6\n"
+	for _, v := range []string{v1, v2} {
+		r.write(t, v)
+		within(t, "Snapshot while OnChange is busy", func() {
+			if err := m.Snapshot(t.Context(), &agentv1.Snapshot{}); err != nil {
+				t.Error(err)
+			}
+		})
+	}
+	if !m.Info().GetChangedSinceLoad() {
+		t.Error("the state did not move on while OnChange was busy")
+	}
+	release2()
+	m.Close() // waits for the queued changes to be reported
+	mu.Lock()
+	defer mu.Unlock()
+	if len(seen) != 2 || seen[0] != sum(v1) || seen[1] != sum(v2) {
+		t.Errorf("OnChange saw %v, want %s then %s", seen, sum(v1), sum(v2))
 	}
 }

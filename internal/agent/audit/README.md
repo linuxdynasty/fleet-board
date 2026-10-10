@@ -29,3 +29,9 @@ l.Append(audit.Entry{
 Today the writers are the policy loader (`policy.safe_mode` at load,
 `policy.changed` from the watcher). The executor adds `command.refused`, the
 approver `command.local_approval`, and drain the two `machine.local_*` rows.
+
+The local `policy.safe_mode` row differs from the hub's (02g): it carries
+`reason=<code>` (`unknown_key`, `bad_type`, `out_of_range`, `unreadable` and so
+on) and `detail.hash`, never the one-line `PolicyInfo.error`, because the local
+fields are closed values. The one-line error is in the snapshot and in the
+`policy.safe_mode` log line; the hub writes its own row from the snapshot.

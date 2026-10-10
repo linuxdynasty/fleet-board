@@ -28,16 +28,23 @@ type fileRead struct {
 }
 
 // readFile reads the policy file at path. A missing file is present=false,
-// not an error. A file that is not a regular file or cannot be opened is an
-// unreadable problem; one over [MaxFileBytes] is too_large (its first bytes
-// are still hashed, so a change to it is seen).
+// not an error. A symlink to a regular file is followed (dotfile managers
+// link it); a file that is not a regular file after that (a FIFO, a device, a
+// folder, a link to one) or cannot be opened is an unreadable problem, and one
+// over [MaxFileBytes] is too_large (its first bytes are still hashed, so a
+// change to it is seen). The open never blocks: a FIFO named policy.yaml must
+// not stall the caller, which may hold up a Snapshot.
 func readFile(path string) (fileRead, error) {
-	f, err := os.Open(path) //nolint:gosec // G304: the policy path is the owner's config folder plus a fixed name
+	unreadable := fileRead{present: true, problem: problem(CodeUnreadable, 0, "", "the file cannot be read")}
+	f, err := openNonblocking(path)
 	if errors.Is(err, fs.ErrNotExist) {
+		if _, lerr := os.Lstat(path); lerr == nil { // a link to nothing
+			return unreadable, err
+		}
 		return fileRead{}, nil
 	}
 	if err != nil {
-		return fileRead{present: true, problem: problem(CodeUnreadable, 0, "", "the file cannot be read")}, err
+		return unreadable, err
 	}
 	defer func() { _ = f.Close() }()
 	fi, err := f.Stat()
@@ -45,11 +52,11 @@ func readFile(path string) (fileRead, error) {
 		if err == nil {
 			err = errors.New("policy: not a regular file")
 		}
-		return fileRead{present: true, problem: problem(CodeUnreadable, 0, "", "the file cannot be read")}, err
+		return unreadable, err
 	}
 	data, err := io.ReadAll(io.LimitReader(f, MaxFileBytes+1))
 	if err != nil {
-		return fileRead{present: true, problem: problem(CodeUnreadable, 0, "", "the file cannot be read")}, err
+		return unreadable, err
 	}
 	sum := sha256.Sum256(data)
 	out := fileRead{present: true, data: data, hash: hex.EncodeToString(sum[:])}

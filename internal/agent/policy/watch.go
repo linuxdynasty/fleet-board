@@ -13,6 +13,7 @@ import (
 // Watcher is the directory watch ([fsnotify.Watcher] behind a seam).
 type Watcher interface {
 	Add(dir string) error
+	Remove(dir string) error
 	Events() <-chan fsnotify.Event
 	Errors() <-chan error
 	Close() error
@@ -29,6 +30,7 @@ func newFSWatcher() (Watcher, error) {
 }
 
 func (f fsWatcher) Add(dir string) error          { return f.w.Add(dir) }
+func (f fsWatcher) Remove(dir string) error       { return f.w.Remove(dir) }
 func (f fsWatcher) Events() <-chan fsnotify.Event { return f.w.Events }
 func (f fsWatcher) Errors() <-chan error          { return f.w.Errors }
 func (f fsWatcher) Close() error                  { return f.w.Close() }
@@ -59,10 +61,12 @@ func (m *Manager) Watch(ctx context.Context) error {
 		return nil
 	}
 	defer func() { _ = w.Close() }()
-	m.watching.Store(true)
 	defer m.watching.Store(false)
 	// An edit between Load and the watch being set raised no event.
 	m.Recheck(ctx)
+	// Only now is the watch fully in place: a reader that sees Watching true
+	// knows the first look at the file is done.
+	m.watching.Store(true)
 
 	settle := m.opts.Settle
 	if settle <= 0 {
@@ -71,6 +75,8 @@ func (m *Manager) Watch(ctx context.Context) error {
 	timer := time.NewTimer(settle)
 	timer.Stop()
 	defer timer.Stop()
+	var lastWarn time.Time // policy.watch_error is logged once a minute at most
+	suppressed := 0
 	for {
 		select {
 		case <-ctx.Done():
@@ -84,6 +90,9 @@ func (m *Manager) Watch(ctx context.Context) error {
 				// put back in its place can be watched again, else the
 				// watch is off (and still no poll).
 				m.Recheck(ctx)
+				// The old watch is dead (kqueue holds a descriptor of the
+				// folder that went); drop it and watch the one in its place.
+				_ = w.Remove(m.opts.Dir)
 				if err := w.Add(m.opts.Dir); err != nil {
 					m.setWatchOff(ctx, err)
 					return nil
@@ -98,7 +107,12 @@ func (m *Manager) Watch(ctx context.Context) error {
 			}
 			// An overflow means events were lost; any error means we may
 			// have missed one. Look at the file once after the settle.
-			m.log.WarnContext(ctx, "policy.watch_error", "err_kind", watchErrKind(err))
+			if now := m.now(); lastWarn.IsZero() || now.Sub(lastWarn) >= time.Minute {
+				m.log.WarnContext(ctx, "policy.watch_error", "err_kind", watchErrKind(err), "suppressed", suppressed)
+				lastWarn, suppressed = now, 0
+			} else {
+				suppressed++
+			}
 			timer.Reset(settle)
 		case <-timer.C:
 			m.Recheck(ctx)

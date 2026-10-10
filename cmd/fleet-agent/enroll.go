@@ -36,14 +36,12 @@ func enrollCommand(dir, cfg func() (string, error), version string, discover con
 			}
 			// Asked before the network is used, so a typo does not cost the
 			// one-time token. An existing policy.yaml is never replaced, so
-			// it is not asked about either.
-			answer := ""
-			if !hasPolicy(cd) {
-				home, _ := os.UserHomeDir() // a failure leaves ~ unexpandable; the folder check then asks for a full path
-				in := cmd.InOrStdin()
-				if answer, err = chooseRepos(repos, isTerminal(in), in, stderr, home); err != nil {
-					return commandError{err}
-				}
+			// it is not asked about; a --repos given anyway is still checked.
+			home, _ := os.UserHomeDir() // a failure leaves ~ unexpandable; the folder check then asks for a full path
+			in := cmd.InOrStdin()
+			answer, err := chooseRepos(repos, !hasPolicy(cd) && isTerminal(in), in, stderr, home)
+			if err != nil {
+				return commandError{err}
 			}
 			tel, err := telemetry.New(telemetry.Config{
 				Service: telemetry.Agent, Version: version, InstanceID: bootID(), LogOutput: stderr,

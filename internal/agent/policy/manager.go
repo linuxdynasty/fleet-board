@@ -47,8 +47,11 @@ type Options struct {
 	Logger *slog.Logger
 	// Audit receives policy.safe_mode and policy.changed rows; nil drops them.
 	Audit Auditor
-	// OnChange is called for each hash change, on the goroutine that found
-	// it, with no lock held. It must not block and must not call Recheck.
+	// OnChange is called for each hash change, in order, on a goroutine of
+	// the Manager's own with no lock held, after the change is counted, logged
+	// and audited. Recheck and Snapshot never wait for it, but later changes
+	// queue behind a slow one, so it should return quickly (enqueue, do not
+	// wait). Close waits for it to return.
 	OnChange func(Change)
 	// Settle is the watcher's settle time; zero is [DefaultSettle].
 	Settle time.Duration
@@ -60,9 +63,11 @@ type Options struct {
 
 // Manager holds the policy the agent loaded and watches the file for change.
 //
-// Locks, in order: checkMu (one re-hash at a time, held while the change is
-// reported) then mu (the small state below, held only to read or swap it).
-// Info and Policy take mu alone, so a snapshot never waits for an audit sync.
+// Locks, in order: checkMu (one re-hash at a time: read, hash, compare, queue
+// the change) then mu (the small state below, held only to read or swap it).
+// A change is reported (counter, log, audit fsync, OnChange) afterwards by one
+// drain goroutine in order, with neither lock held, so neither Info nor a
+// Snapshot waits for an audit sync or for OnChange.
 type Manager struct {
 	opts Options
 	log  *slog.Logger
@@ -78,6 +83,11 @@ type Manager struct {
 	st state
 
 	checkMu sync.Mutex
+	// pending and reporting are guarded by mu: the changes found and not yet
+	// reported, and whether a drain goroutine is running.
+	pending   []Change
+	reporting bool
+	wg        sync.WaitGroup // the drain goroutine
 
 	watching atomic.Bool
 	watchOff atomic.Bool
@@ -195,9 +205,10 @@ func (m *Manager) Snapshot(ctx context.Context, s *agentv1.Snapshot) error {
 }
 
 // Recheck re-hashes policy.yaml now. A hash different from the last one seen
-// is a change: counted, logged, audited and passed to OnChange. A file that
-// cannot be read changes nothing and is logged. Safe to call from any
-// goroutine; calls run one at a time.
+// is a change: it is counted, logged, audited and passed to OnChange, in order,
+// by a goroutine of the Manager's own; Recheck returns without waiting for
+// that. A file that cannot be read changes nothing and is logged. Safe to call
+// from any goroutine; re-hashes run one at a time.
 func (m *Manager) Recheck(ctx context.Context) {
 	m.checkMu.Lock()
 	defer m.checkMu.Unlock()
@@ -213,12 +224,36 @@ func (m *Manager) Recheck(ctx context.Context) {
 		return
 	}
 	m.st.diskHash = fr.hash
-	c := Change{PreviousHash: prev, Hash: fr.hash, Time: m.now(), Info: m.infoLocked(fr.hash)}
+	m.pending = append(m.pending, Change{PreviousHash: prev, Hash: fr.hash, Time: m.now(), Info: m.infoLocked(fr.hash)})
+	start := !m.reporting
+	m.reporting = true
 	m.mu.Unlock()
+	if start {
+		m.wg.Go(m.drain)
+	}
+}
 
+// drain reports the queued changes in order until none is left.
+func (m *Manager) drain() {
+	for {
+		m.mu.Lock()
+		if len(m.pending) == 0 {
+			m.reporting = false
+			m.mu.Unlock()
+			return
+		}
+		c := m.pending[0]
+		m.pending = m.pending[1:]
+		m.mu.Unlock()
+		m.report(c)
+	}
+}
+
+func (m *Manager) report(c Change) {
+	ctx := context.Background()
 	m.m.changed.Add(ctx, 1)
-	m.log.InfoContext(ctx, "policy.changed", "old_hash", prev, "new_hash", fr.hash)
-	m.audit(audit.Entry{Time: c.Time, Action: audit.PolicyChanged, Detail: map[string]string{"old_hash": prev, "new_hash": fr.hash}})
+	m.log.InfoContext(ctx, "policy.changed", "old_hash", c.PreviousHash, "new_hash", c.Hash)
+	m.audit(audit.Entry{Time: c.Time, Action: audit.PolicyChanged, Detail: map[string]string{"old_hash": c.PreviousHash, "new_hash": c.Hash}})
 	if m.opts.OnChange != nil {
 		m.opts.OnChange(c)
 	}
@@ -232,5 +267,9 @@ func (m *Manager) Watching() bool { return m.watching.Load() }
 // Snapshot and Settings message.
 func (m *Manager) WatchOff() bool { return m.watchOff.Load() }
 
-// Close releases the gauge callback.
-func (m *Manager) Close() { _ = m.m.reg.Unregister() }
+// Close waits for the changes already found to be reported, then releases the
+// gauge callback. Stop the Watch goroutine and the callers of Recheck first.
+func (m *Manager) Close() {
+	m.wg.Wait()
+	_ = m.m.reg.Unregister()
+}

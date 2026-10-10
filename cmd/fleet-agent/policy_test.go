@@ -169,3 +169,46 @@ func TestAFailedEnrollWritesNoPolicyFile(t *testing.T) {
 		t.Error("enrolled")
 	}
 }
+
+// The machine is enrolled once the hub says so; a starter file that cannot be
+// written is a warning, not a rollback, and the exit code stays 0.
+func TestAStarterFileThatCannotBeWrittenIsAWarningAfterASuccessfulEnroll(t *testing.T) {
+	t.Parallel()
+	if os.Geteuid() == 0 {
+		t.Skip("root can write into a read-only folder")
+	}
+	h := conntest.StartHub(t, conntest.Options{})
+	cfg := mkdir(t, filepath.Join(t.TempDir(), "cfg"))
+	if err := os.Chmod(cfg, 0o500); err != nil { //nolint:gosec // G302: a read-only test folder
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(cfg, 0o700) }) //nolint:gosec // G302: lets the test folder be removed
+	args := enrollArgs(t, h, "--config-dir", cfg)
+	r := agentIn(t, t.TempDir(), nil, args...)
+	if r.code != 0 {
+		t.Fatalf("enroll = %d: %s", r.code, r.stderr)
+	}
+	if !strings.Contains(r.stderr, "fleet-agent: warning: could not write "+filepath.Join(cfg, policy.File)) {
+		t.Errorf("stderr %q has no warning naming the file", r.stderr)
+	}
+	if _, err := conn.LoadIdentity(args[1]); err != nil {
+		t.Errorf("the machine is not enrolled: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(cfg, policy.File)); err == nil {
+		t.Error("a policy file exists")
+	}
+}
+
+func TestReposIsCheckedEvenWhenAPolicyFileExists(t *testing.T) {
+	t.Parallel()
+	h := conntest.StartHub(t, conntest.Options{})
+	cfg := mkdir(t, filepath.Join(t.TempDir(), "cfg"))
+	if err := os.WriteFile(filepath.Join(cfg, policy.File), []byte("schema_version: \"1\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	before := h.Requests()
+	r := agentIn(t, t.TempDir(), nil, append(enrollArgs(t, h, "--config-dir", cfg), "--repos", filepath.Join(t.TempDir(), "missing"))...)
+	if r.code != 1 || !strings.Contains(r.stderr, "--repos:") || h.Requests() != before {
+		t.Errorf("exit %d, stderr %q, hub reached %v; want 1 naming --repos and the hub untouched", r.code, r.stderr, h.Requests() != before)
+	}
+}

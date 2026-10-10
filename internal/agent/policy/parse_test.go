@@ -26,6 +26,7 @@ local_approval:
   - command_kind: KillWindow
     required: true
   - command_kind: Drain
+    required: false
 rate_limits:
   - command_kind: SendKeys
     per_minute: 30
@@ -128,6 +129,11 @@ func TestParseRefusesWithAClosedOneLineReason(t *testing.T) {
 	}{
 		{"unknown key", "schema_version: \"1\"\nmax_activ: 2\n", "unknown_key", "line 2: unknown key"},
 		{"unknown key in a rule", "local_approval:\n  - command_kind: Drain\n    sudo: true\n", "unknown_key", "line 3: local_approval: unknown key"},
+		{"approval without required", "local_approval:\n  - command_kind: Drain\n", "bad_value", "line 2: local_approval: required is missing"},
+		{"approval without a kind", "local_approval:\n  - required: true\n", "bad_value", "line 2: local_approval: command_kind is missing"},
+		{"approval twice", "local_approval:\n  - {command_kind: Drain, required: true}\n  - {command_kind: Drain, required: false}\n", "duplicate_key", "line 3: local_approval: Drain is given twice"},
+		{"idle_threshold zero", "idle_threshold: 0s\n", "out_of_range", "line 1: idle_threshold: must be above zero"},
+		{"attach_idle_timeout zero", "attach_idle_timeout: 0s\n", "out_of_range", "line 1: attach_idle_timeout: must be above zero"},
 		{"duplicate key", "max_active: 2\nmax_active: 3\n", "duplicate_key", "line 2: max_active: given twice"},
 		{"unknown schema version", "schema_version: \"2\"\n", "schema_version", `line 1: schema_version: only "1" is known`},
 		{"schema version not a string", "schema_version: 1\n", "bad_type", "line 1: schema_version: must be text"},
@@ -159,7 +165,7 @@ func TestParseRefusesWithAClosedOneLineReason(t *testing.T) {
 		{"telemetry signals", "telemetry:\n  signals: [spans]\n", "out_of_range", "line 2: telemetry.signals: each is traces, metrics or logs"},
 		{"headers_env is a name", "telemetry:\n  otlp:\n    headers_env: \"Bearer " + secret + "\"\n", "bad_value", "line 3: telemetry.otlp.headers_env: must be an environment variable name"},
 		{"exec unknown", "exec:\n  shell: true\n", "unknown_key", "line 2: exec: unknown key"},
-		{"template control", "window_name_template: \"a\\nb\"\n", "bad_value", "line 1: window_name_template: no control characters, at most 128 bytes"},
+		{"template control", "window_name_template: \"a\\nb\"\n", "bad_value", "line 1: window_name_template: no control characters"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

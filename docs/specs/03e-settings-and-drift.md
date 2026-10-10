@@ -182,8 +182,12 @@ built-in default in the table is what the agent uses. Decision 4 of
   `--repos <dir>` when not interactive), checks that the folder exists, and writes
   `policy.yaml` (mode 0644, owner only writes it) with `schema_version: "1"`,
   `allowed_repo_roots: [<that folder>]` and every other key as a commented-out
-  line showing its default. It never overwrites an existing file, and with no
-  answer it writes the file with an empty `allowed_repo_roots` and says so.
+  line showing its default. Keys that have no default (`min_probe_interval`,
+  `labels`, `metrics_listen`, `pprof_listen`, `telemetry`) are named in a closing
+  comment instead. It never overwrites an existing file, and with no
+  answer it writes the file with an empty `allowed_repo_roots` and says so. A
+  `--repos` that is not an existing folder stops `enroll` before the token is
+  used, even when a `policy.yaml` already exists.
 
 Every key (the merge column is the tighten-only rule above, applied per key). Default values are in [defaults.md](defaults.md); the empty-by-default and every-installed-harness rules are in the bullets above:
 
@@ -196,18 +200,20 @@ Every key (the merge column is the tighten-only rule above, applied per key). De
 | `max_windows` | uint | at least 1 | `min` |
 | `allowed_harnesses` | list of harness names | names C1 knows | `hub ∩ local` |
 | `allowed_repo_roots` | list of absolute paths | existing directories | `hub ∩ local` |
-| `local_approval` | list of `{command_kind, required}` | known command kinds | `hub OR local` per kind |
+| `local_approval` | list of `{command_kind, required}` | known command kinds; both fields stated, each kind once | `hub OR local` per kind |
 | `rate_limits` | list of `{command_kind, per_minute}` | at least 1 | `min` per kind |
 | `cert_lifetime` | duration | up to 365 days | `min` |
-| `attach_idle_timeout` | duration | | `min` |
+| `attach_idle_timeout` | duration | above zero | `min` |
 | `spool_cap_bytes` | uint | | `min` |
 | `block_on_battery` | bool | | `hub OR local` |
-| `window_name_template`, `idle_threshold`, `share_identity_email` | string, duration, bool | | the hub wins (not a safety field) |
+| `window_name_template` | string | no control characters | the hub wins (not a safety field) |
+| `idle_threshold` | duration | above zero | the hub wins (not a safety field) |
+| `share_identity_email` | bool | | the hub wins (not a safety field) |
 | `min_probe_interval` | duration | at least 1 minute | `max(hub, local)` (a floor, see "Probe interval") |
 | `labels` | list of strings | `[a-z0-9][a-z0-9-]{0,31}` | `hub ∪ local`; local cannot remove a hub label |
 | `metrics_listen`, `pprof_listen` | loopback `host:port` | loopback only | local only, never delivered ([05b](05b-observability.md)) |
 | `telemetry` | the keys of 05b section 5 | | local only |
-| `exec.raw` | bool | | none |
+| `exec.raw` (written `exec:` then `raw: true`) | bool | | none |
 
 `min_probe_interval`, `metrics_listen` and `pprof_listen` are local-only names
 carried by no proto. `exec.raw` is reserved: never honoured, never advertised.
@@ -219,8 +225,12 @@ result and which layer won (`EffectiveSettings`).
 
 **How the file is read and watched** (plan row 6, PR 6b). The agent reads at most
 64 KiB; a larger file, one that is not a regular file and one it cannot open are
-safe mode. The parse is strict and never guesses: an unknown key, a key given
-twice, a wrong type, a value outside its range, a relative or missing
+safe mode. `policy.yaml` may be a symlink to a regular file (a dotfile manager
+links it); a link to anything else, or to nothing, is unreadable like any other
+file that is not a regular file (a FIFO is refused without waiting for a writer).
+The parse is strict and never guesses: an unknown key, a key given
+twice, a wrong type, a `local_approval` entry that leaves out `required`, a value
+outside its range, a relative or missing
 `allowed_repo_roots` entry, a `command_kind` that is not an arm of `Command.kind`
 and a second YAML document are safe mode. A key with no value (`key:`) states no
 opinion, like an absent one; a list written as `[]` is an opinion (none).
@@ -231,7 +241,9 @@ a fixed reason, never from the file's text. `PolicyInfo.hash` is the SHA-256, in
 lowercase hex, of the file's bytes: of the loaded file in a `Snapshot`, and of the
 file now on disk in `PolicyChanged.policy` (the hub keeps the second as
 `policy_hash_on_disk`). A file that exists but is invalid still has a hash;
-one that could not be read has none.
+one that could not be read has none. A file over 64 KiB is hashed over the first
+64 KiB + 1 bytes it was read for, so an edit inside that prefix is seen as a
+change and one beyond it is not; a file of exactly 64 KiB is read whole.
 
 A change is noticed by a directory watch on the config folder, not the file,
 because editors replace a file by renaming another over it. Any event naming
@@ -240,10 +252,13 @@ file is hashed again and a different hash is the change (`policy.changed`, the
 `policy.changed` local audit row, `PolicyInfo.changed_since_load`, and the Changed
 seam row 7 reads for the `policy_changed` event). Nothing else re-reads the file
 on a timer (ADR 0022 rule 6). The safety net is event-driven too: the file is
-hashed again when each `Snapshot` is built and when a `Settings` message arrives.
-When the watch cannot be set (the inotify limit, no file handles) the agent logs
-`policy.watch_off` once, and `status.json` says `policy_watch: off`. It does not
-poll. The loaded policy never changes while the agent runs.
+hashed again when each `Snapshot` is built (this PR) and when a `Settings` message
+arrives (from PR 6f). When the watch cannot be set (the inotify limit, no file
+handles) the agent logs `policy.watch_off` once, and `status.json` says
+`policy_watch: off` (from PR 6d). It does not poll. The loaded policy never
+changes while the agent runs. A change is reported (counter, log line, audit row,
+the Changed seam) by a goroutine of the policy loader, in order, so building a
+`Snapshot` never waits for the audit sync or for the seam's consumer.
 
 ### State machine (settings delivery per machine, owned by the hub)
 
@@ -318,8 +333,8 @@ Machine drain state: `ACTIVE` → `DRAINING{hub}` → `ACTIVE` (Undrain);
   `Settings.trace` and `Command.trace` (02g, "Trace context").
 - Agent logs (L1; never a path or file text): `policy.loaded{hash, schema_version, safe_mode}`
   at start; `policy.watch_off{err_kind}` (the directory watch could not be set,
-  once); `policy.watch_error{err_kind}` (the watch reported an error or lost
-  events, so the file is read once after the settle); `policy.check_failed{err_kind}`
+  once); `policy.watch_error{err_kind, suppressed}` (the watch reported an error or lost
+  events, so the file is read once after the settle; at most once a minute); `policy.check_failed{err_kind}`
   (the file exists but could not be read; nothing changes); `policy.key_ignored{key}`
   (`exec.raw` was in the file); `policy.config_dir_failed{err_kind}` (`run` could
   not make the config folder and went on without a watch).

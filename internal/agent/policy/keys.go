@@ -71,8 +71,8 @@ var topKeys = map[string]handler{
 		if pr != nil {
 			return pr
 		}
-		if !printable(s, 128) {
-			return problem(CodeBadValue, resolve(v).Line, "window_name_template", "no control characters, at most 128 bytes")
+		if !printable(s, MaxFileBytes) {
+			return problem(CodeBadValue, resolve(v).Line, "window_name_template", "no control characters")
 		}
 		p.WindowNameTemplate = &s
 		return nil

@@ -44,16 +44,19 @@ func chainSnapshot(hooks ...func(context.Context, *agentv1.Snapshot) error) func
 
 // policyRun is the local policy (L1) and the audit log (M1) of one run.
 type policyRun struct {
-	mgr   *policy.Manager
-	audit *audit.Log
+	mgr    *policy.Manager
+	audit  *audit.Log
+	cancel context.CancelFunc
+	watch  sync.WaitGroup
 }
 
 // startPolicy makes the config folder when it is missing (so there is
 // something to watch; it never writes policy.yaml), loads the policy, opens
-// audit.log in the state folder and starts the directory watch on wg. A
-// config folder that cannot be made is logged and the agent runs on: a
-// missing policy file is a normal first run, and the watch goes off.
-func startPolicy(ctx context.Context, wg *sync.WaitGroup, cfgDir, stateDir, machineID string, tel *telemetry.Telemetry) (*policyRun, error) {
+// audit.log in the state folder and starts the directory watch. A config
+// folder that cannot be made is logged and the agent runs on: a missing policy
+// file is a normal first run, and the watch goes off. The caller ends it with
+// close.
+func startPolicy(ctx context.Context, cfgDir, stateDir, machineID string, tel *telemetry.Telemetry) (*policyRun, error) {
 	log := tel.Logger.With("machine_id", machineID)
 	if err := policy.EnsureDir(cfgDir); err != nil {
 		log.With("component", "policy").WarnContext(ctx, "policy.config_dir_failed", "err_kind", "io")
@@ -67,11 +70,17 @@ func startPolicy(ctx context.Context, wg *sync.WaitGroup, cfgDir, stateDir, mach
 		_ = al.Close()
 		return nil, err
 	}
-	wg.Go(func() { _ = mgr.Watch(ctx) })
-	return &policyRun{mgr: mgr, audit: al}, nil
+	wctx, cancel := context.WithCancel(ctx)
+	p := &policyRun{mgr: mgr, audit: al, cancel: cancel}
+	p.watch.Go(func() { _ = mgr.Watch(wctx) })
+	return p, nil
 }
 
+// close stops the watch, lets the manager report the changes it already
+// found (they write audit rows), and only then closes audit.log.
 func (p *policyRun) close() {
+	p.cancel()
+	p.watch.Wait()
 	p.mgr.Close()
 	_ = p.audit.Close()
 }

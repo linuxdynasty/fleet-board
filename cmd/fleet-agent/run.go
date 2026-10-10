@@ -103,7 +103,7 @@ func runAgent(ctx context.Context, dir, cfgDir, version, boot string, tel *telem
 	wctx, stop := context.WithCancel(ctx)
 	var wg sync.WaitGroup
 	defer func() { stop(); wg.Wait() }()
-	pol, err := startPolicy(wctx, &wg, cfgDir, dir, id.MachineID, tel)
+	pol, err := startPolicy(wctx, cfgDir, dir, id.MachineID, tel)
 	if err != nil {
 		return failed("policy", err)
 	}

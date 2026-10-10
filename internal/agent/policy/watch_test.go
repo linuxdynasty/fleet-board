@@ -143,18 +143,39 @@ func TestAPolicyFolderRemovedIsSeenAndTheWatchGoesOffWithoutPolling(t *testing.T
 
 // fakeWatcher is a Watcher the test drives by hand.
 type fakeWatcher struct {
-	addErr error
-	events chan fsnotify.Event
-	errs   chan error
-	mu     sync.Mutex
-	closed bool
+	addErr  error
+	adds    int
+	removes int
+	events  chan fsnotify.Event
+	errs    chan error
+	mu      sync.Mutex
+	closed  bool
 }
 
 func newFake() *fakeWatcher {
 	return &fakeWatcher{events: make(chan fsnotify.Event, 16), errs: make(chan error, 16)}
 }
 
-func (f *fakeWatcher) Add(string) error              { return f.addErr }
+func (f *fakeWatcher) Add(string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.adds++
+	return f.addErr
+}
+
+func (f *fakeWatcher) Remove(string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.removes++
+	return nil
+}
+
+func (f *fakeWatcher) counts() (adds, removes int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.adds, f.removes
+}
+
 func (f *fakeWatcher) Events() <-chan fsnotify.Event { return f.events }
 func (f *fakeWatcher) Errors() <-chan error          { return f.errs }
 func (f *fakeWatcher) Close() error {
@@ -241,30 +262,107 @@ func TestOnlyEventsNamingTheFileStartASettleAndNothingElseReadsIt(t *testing.T) 
 	r.noChange(t, 200*time.Millisecond)
 }
 
-func TestABurstOfEventsIsOneReadAfterTheLastOne(t *testing.T) {
+func TestABurstLongerThanTheSettleIsOneReadAfterTheLastEvent(t *testing.T) {
 	t.Parallel()
 	r := newRig(t, goodFile)
 	fake := newFake()
-	const settle = time.Second
+	const settle = 600 * time.Millisecond
 	m := r.withWatcher(t, fake, settle)
 	watch(t, m)
 	next := goodFile + "max_total: 8\n"
 	r.write(t, next)
-	for range 6 {
+	// 12 events 60 ms apart: the burst lasts 1.1 times the settle. A timer
+	// that is not restarted by each event (or only by the first) fires 600 ms
+	// after the first event, before the last one is sent.
+	for range 12 {
 		fake.events <- fsnotify.Event{Name: r.path, Op: fsnotify.Write}
-		time.Sleep(settle / 10)
-	}
-	// 0.6 settle has passed since the first event, 0.1 since the last: a
-	// timer that was not restarted by each event would have read by now.
-	select {
-	case c := <-r.changes:
-		t.Fatalf("read before the burst settled: %+v", c)
-	default:
+		select {
+		case c := <-r.changes:
+			t.Fatalf("read before the burst ended: %+v", c)
+		case <-time.After(settle / 10):
+		}
 	}
 	if c := r.nextChange(t); c.Hash != sum(next) {
 		t.Errorf("Change = %+v", c)
 	}
 	r.noChange(t, settle/2)
+}
+
+func TestAFolderPutBackIsWatchedAgainAfterTheOldWatchIsDropped(t *testing.T) {
+	t.Parallel()
+	r := newRig(t, goodFile)
+	fake := newFake()
+	m := r.withWatcher(t, fake, 20*time.Millisecond)
+	watch(t, m)
+	fake.events <- fsnotify.Event{Name: r.dir, Op: fsnotify.Rename}
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		if adds, removes := fake.counts(); adds >= 2 && removes >= 1 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the folder was not dropped and added again")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if !m.Watching() || m.WatchOff() {
+		t.Errorf("Watching = %v, WatchOff = %v; want the watch still on", m.Watching(), m.WatchOff())
+	}
+	next := goodFile + "max_total: 9\n"
+	r.write(t, next)
+	fake.events <- fsnotify.Event{Name: r.path, Op: fsnotify.Write}
+	if c := r.nextChange(t); c.Hash != sum(next) {
+		t.Errorf("Change = %+v", c)
+	}
+}
+
+func TestAFolderThatCannotBeWatchedAgainTurnsTheWatchOff(t *testing.T) {
+	t.Parallel()
+	r := newRig(t, goodFile)
+	fake := newFake()
+	m := r.withWatcher(t, fake, 20*time.Millisecond)
+	watch(t, m)
+	fake.mu.Lock()
+	fake.addErr = os.ErrNotExist
+	fake.mu.Unlock()
+	fake.events <- fsnotify.Event{Name: r.dir, Op: fsnotify.Remove}
+	deadline := time.Now().Add(10 * time.Second)
+	for !m.WatchOff() {
+		if time.Now().After(deadline) {
+			t.Fatal("the watch did not go off")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if m.Watching() {
+		t.Error("Watching is still true after the watch went off")
+	}
+}
+
+func TestWatchErrorsAreLoggedOncePerMinute(t *testing.T) {
+	t.Parallel()
+	r := newRig(t, goodFile)
+	fake := newFake()
+	m := r.withWatcher(t, fake, 10*time.Millisecond)
+	watch(t, m)
+	for range 5 {
+		fake.errs <- errors.New("boom")
+	}
+	time.Sleep(200 * time.Millisecond) // let the loop take them all
+	if ev := r.events(t, "policy.watch_error"); len(ev) != 1 {
+		t.Errorf("policy.watch_error lines = %d, want 1 (the clock did not move)", len(ev))
+	}
+	r.advance(2 * time.Minute)
+	fake.errs <- errors.New("boom")
+	deadline := time.Now().Add(10 * time.Second)
+	for len(r.events(t, "policy.watch_error")) < 2 {
+		if time.Now().After(deadline) {
+			t.Fatal("no second line a minute later")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if ev := r.events(t, "policy.watch_error"); ev[1]["suppressed"] != float64(4) {
+		t.Errorf("second line = %v, want suppressed 4", ev[1])
+	}
 }
 
 func TestAnEventOverflowIsFollowedByARead(t *testing.T) {

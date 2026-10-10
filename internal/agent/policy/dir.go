@@ -67,6 +67,9 @@ func EnsureDir(dir string) error {
 // folder. It returns the cleaned path; the error text is safe to print.
 func CheckRepoFolder(answer, home string) (string, error) {
 	s := strings.TrimSpace(answer)
+	if !printable(s, 4096) {
+		return "", errors.New("the name has a control character")
+	}
 	switch {
 	case s == "~":
 		s = home

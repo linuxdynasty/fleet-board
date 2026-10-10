@@ -25,6 +25,10 @@ var yamlLine = regexp.MustCompile(`line (\d+)`)
 // Parse reads policy.yaml bytes. It is strict: an unknown key, a duplicate
 // key, a wrong type or a value outside its range is a Problem (safe mode),
 // never a guess. The reason in the Problem never carries file contents.
+//
+// Parse is not pure: it stats each allowed_repo_roots entry (it must be an
+// existing folder, 03e), so the same bytes can parse differently once a folder
+// appears or goes. That is why Load, not a later hash check, decides safe mode.
 func Parse(data []byte) Result {
 	if len(data) > MaxFileBytes {
 		return Result{Problem: problem(CodeTooLarge, 0, "", "the file is over 64 KiB")}
