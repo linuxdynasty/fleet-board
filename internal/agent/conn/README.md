@@ -100,7 +100,9 @@ st := l.Status()                    // state, peer, last failure per address, cl
    unacked entry inside its deadline is never pruned for the count, even
    past 10,000, because a forgotten `command_id` the hub re-sends would
    run twice (02i "What agent.db keeps", defaults.md); the 7-day age limit
-   still applies.
+   still applies. It prunes by hub time (the agent's clock plus the
+   offset measured at this stream's `HelloAck.hub_time`, 02i "Clocks"),
+   never the agent's wall clock: `not_after_time` is the hub's deadline.
 5. **Connected.** The cached address is rewritten if it changed. A
    `ResultAck` stamps its ids (unknown ones change nothing); a
    `SnapshotRequest` gets a new snapshot and the unacked results; a `Bye`
@@ -201,7 +203,8 @@ that leaves it alone, `HelloAck.hub_addresses` capped at 16 with invalid
 ones dropped, a hub
 restart on the same port, a snapshot cut short
 never sent on the next stream, its seq taken before it is built, results
-resent until acked (unknown and pruned ids, a `SnapshotRequest`), seqs that
+resent until acked (unknown and pruned ids, a `SnapshotRequest`), the
+command log pruned by hub time with an agent clock 2 h fast, seqs that
 never go back (a wiped agent and a restored hub), a displaced stream
 backing off, wake and network change while connected and in backoff, a
 silent hub caught by the keepalive through a proxy that goes quiet

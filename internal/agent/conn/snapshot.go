@@ -34,7 +34,7 @@ func (s *session) sendSnapshot(ctx context.Context, first bool) error {
 	l := s.l
 	db := l.opts.DB
 	now := time.Now()
-	if n, err := db.Prune(ctx, now); err != nil {
+	if n, err := db.Prune(ctx, s.hubNow()); err != nil {
 		return err
 	} else if n > 0 {
 		l.log.InfoContext(ctx, "result.pruned", "count", n)
@@ -144,13 +144,13 @@ func (s *session) ackResults(ctx context.Context, a *agentv1.ResultAck) error {
 		}
 	}
 	db := s.l.opts.DB
-	n, err := db.AckResults(ctx, ids, time.Now())
+	n, err := db.AckResults(ctx, ids, s.hubNow())
 	if err != nil {
 		return err
 	}
 	s.l.m.unacked.Store(max(0, s.l.m.unacked.Load()-int64(n)))
 	s.l.log.DebugContext(ctx, "result.acked", "acked", n, "ignored", len(a.GetCommandIds())-n)
-	pruned, err := db.Prune(ctx, time.Now())
+	pruned, err := db.Prune(ctx, s.hubNow())
 	if err != nil {
 		return err
 	}
@@ -158,4 +158,13 @@ func (s *session) ackResults(ctx context.Context, a *agentv1.ResultAck) error {
 		s.l.log.InfoContext(ctx, "result.pruned", "count", pruned)
 	}
 	return nil
+}
+
+// hubNow is the hub's time now: the agent's clock plus the offset measured
+// at this stream's HelloAck (02i "Clocks"). The command log is pruned by it,
+// because not_after_time is the hub's deadline and a wrong agent clock must
+// not expire a command the hub may still re-send. With no HelloAck.hub_time
+// the offset is 0 and the agent's clock is all there is.
+func (s *session) hubNow() time.Time {
+	return time.Now().Add(s.hubOffset)
 }

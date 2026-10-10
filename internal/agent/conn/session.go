@@ -54,6 +54,9 @@ type session struct {
 	maxBytes int
 	// beat is the heartbeat interval this stream's HelloAck chose.
 	beat time.Duration
+	// hubOffset is hub time minus the agent's clock, from this stream's
+	// HelloAck.hub_time (0 when it had none): see hubNow.
+	hubOffset time.Duration
 }
 
 // try runs one candidate. accepted is true when its handshake passed, so
@@ -267,6 +270,7 @@ func (s *session) accept(ctx context.Context, ack *agentv1.HelloAck, st ring.Sta
 	var offset time.Duration
 	if ht := ack.GetHubTime(); ht.IsValid() {
 		offset = ht.AsTime().Sub(sent.Add(recv.Sub(sent) / 2))
+		s.hubOffset = offset
 		s.l.status.update(func(st *Status) { st.ClockOffset, st.ClockOffsetTime = offset, recv })
 	}
 	if addrs := hubAddresses(ack.GetHubAddresses()); len(addrs) > 0 {
