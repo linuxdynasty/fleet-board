@@ -25,6 +25,7 @@
   "status.": "docs/specs/03-workflows.md",
   "store.": "docs/specs/05b-observability.md",
   "tls.": "docs/specs/05b-observability.md",
+  "typing.": "docs/specs/05b-observability.md",
   "wake.": "docs/specs/03-workflows.md"
  },
  "metrics": {
@@ -49,6 +50,7 @@
   "start_failures_": "docs/specs/05b-observability.md",
   "status_writes_": "docs/specs/03-workflows.md",
   "store_": "docs/specs/05b-observability.md",
+  "typing_": "docs/specs/05b-observability.md",
   "unacked_results": "docs/specs/03n-reconnect.md",
   "writer_": "docs/specs/05b-observability.md"
  }
