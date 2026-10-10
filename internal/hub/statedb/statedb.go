@@ -83,6 +83,10 @@ func Migrations() []store.Migration {
 		Version: 7,
 		Name:    "restore_reconcile",
 		SQL:     restoreSQL,
+	}, {
+		Version: 8,
+		Name:    "machine_snapshot",
+		SQL:     snapshotSQL,
 	}}
 }
 
