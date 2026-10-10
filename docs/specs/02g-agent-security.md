@@ -230,19 +230,37 @@ takes no lock: it reads `state.db` on a read-only connection of its own, so
 it runs beside `fleetd run` (#92). Backups are stored like the private key of
 the GitHub App.
 
-**`fleetd restore <file> [--address <new>]`** is an offline command. It:
+**`fleetd restore <file> [--address <new>]`** is an offline command. It takes
+`fleetd.lock` for the whole command, so it is refused while `fleetd run` holds
+it (#92). It:
 
-1. Checks the file has `hub_identity` and a matching schema version.
+1. Checks the file: a regular file, not an age file (an encrypted backup is
+   refused with how to decrypt it first), passing `quick_check`, with
+   `hub_identity` and a schema version this `fleetd` knows (an older one is
+   migrated forward, a newer one refused). When the state folder has a
+   `state.db`, the backup's `fleet_id` must be its `fleet_id`; a backup of
+   another fleet is refused (move that `state.db` away to replace the
+   fleet on purpose). A state folder with no `state.db`, a hub moved to a
+   new host, has nothing to compare. A refused restore changes nothing.
 2. Mints a fresh **`settings_epoch`** (otherwise the agent still holds
    `(E, 20)` against a restored `(E, 15)` and ignores the hub's settings, the
    exact case the epoch exists for) and clears the live-connection and
    in-memory-queue state. `hub_instance_id` is new on every process start anyway.
-3. If `--address` is given, issues a server certificate covering the old and
-   the new address and adds it to `hub_addresses`. An agent that reaches the
+3. If `--address` is given (host or host:port; the port defaults to
+   `listen.agent`'s, else 7443; spelled the way the agent keeps an address),
+   adds it to `hub_addresses` and issues a server certificate from the same
+   CA for the names `fleetd run` wants: `tls.agent_names` (or the default
+   list) plus the host of every `hub_addresses` entry, so the old and the new
+   address are covered and `fleetd run` serves it as is. An agent that reaches the
    restored hub (by name, mDNS or its old address) receives the new list in
    `HelloAck.hub_addresses`; a hub that moves host should be reachable at its
    old address or name until every agent has reconnected once.
-4. Sets `restore_reconcile` for 24 hours.
+4. Sets `restore_reconcile` for 24 hours (`hub_identity.restore_reconcile_until`,
+   Unix ms; 0 is no window). Steps 2 to 4 are one transaction on the new
+   store, built in a temporary file; the `revoked-serials` file is applied
+   to it. Only then is the current `state.db` checkpointed, kept as
+   `state.db.pre-restore-<UTC stamp>` ([02j](02j-hub-runtime.md#state-directory)),
+   and the new store renamed over it, so a crash leaves one whole store.
 
 While `restore_reconcile` is set, the first `Hello` of each machine is answered
 with a `SnapshotRequest{reason: "reconcile"}` and the hub diffs what the agent

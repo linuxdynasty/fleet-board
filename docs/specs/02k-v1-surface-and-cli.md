@@ -105,7 +105,7 @@ Destructive commands need `--yes`.
 | `fleet watch`, `fleet debug stream` | tail or decode a `Watch` | `Watch` | not scheduled |
 | `fleetd run`, `init`, `enroll-token` | start, create config and state, mint a token (only the token on stdout; the `enroll` command on stderr) | `init` and `run` local; `enroll-token` calls `CreateEnrollmentToken` over `admin.sock` | v1 (2b) |
 | `fleetd backup [--encrypt]` | one manual copy of `state.db` into `backups/`, only its path on stdout; takes no lock, so it runs beside `fleetd run`; `--encrypt` asks for the passphrase twice on the terminal ([02j](02j-hub-runtime.md)) | local | v1 (3) |
-| `fleetd restore` | local, never RPCs | local | v1 (5) |
+| `fleetd restore <backup> [--address <addr>]` | replace `state.db` with a backup, offline: takes `fleetd.lock`, so it is refused while `fleetd run` is up; keeps the replaced store as `state.db.pre-restore-<UTC stamp>` ([02g](02g-agent-security.md#hub-identity-and-restore), [02j](02j-hub-runtime.md)) | local, never an RPC | v1 (5) |
 | `fleetd setup github` | the GitHub App manifest and keys | local | v1 (13a) |
 | `fleetd insights rebuild` | recompute rollups | local | v1 (13) |
 | `fleetd debug agent-stream` | tap the agent bus | local | not scheduled |

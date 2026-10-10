@@ -179,6 +179,7 @@ hub *this* fleet's hub. That lives in the one `hub_identity` row (details in
 | `account_salt`, `salt_version` | `AccountKey` is a hash over it; a new salt splits accounts silently |
 | `settings_epoch` | Orders settings across restores; **is** regenerated on restore |
 | `hub_addresses` | Where agents find the hub; sent in `HelloAck` |
+| `restore_reconcile_until` | End of the 24 h reconcile window after a restore (Unix ms, 0 when none); set by `fleetd restore` |
 
 It is stored **inside `state.db`**, so the nightly `VACUUM INTO` backup (ADR
 0014) carries it, and therefore **a backup is a secret**: it holds the CA
@@ -195,7 +196,8 @@ committed row, WAL included. Neither takes `fleetd.lock`: `fleetd backup`
 works whether or not the hub runs (#92). Names, schedule and pruning are in
 [02j](02j-hub-runtime.md#state-directory).
 
-`fleetd restore` is offline. It checks the backup, mints a new `settings_epoch`
+`fleetd restore` is offline: it takes `fleetd.lock`, so it is refused while
+`fleetd run` is up (#92). It checks the backup, mints a new `settings_epoch`
 (so agents holding a higher generation under the old epoch accept the restored
 settings), needs no step for the connection epoch or event seq (the hub issues
 `max(stored, Hello.last_epoch) + 1` and agents floor `seq` above
