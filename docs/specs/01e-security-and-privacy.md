@@ -37,6 +37,14 @@ itself adds is kept safe by construction, with no setup:
   update and remove its own named hook entries in the user-level settings, never
   reads any other key, never logs file contents, and backs the file up first
   ([ADR 0024](../adr/0024-pre-build-owner-decisions.md), decision 3).
+- **Developer checkouts.** In a checkout the agent writes only inside its own
+  folder `.fleet-board/` at the top of the checkout a goal is starting in (or
+  the goal's scratch folder), creates every file there itself, and never edits
+  a file outside it: not `.git/info/exclude`, not the repo's `.gitignore`, not
+  `.git/config`, nothing under `.git/`. The folder ignores itself, so
+  `git status` shows nothing; `ReleaseGoal` removes it. How the writes are made
+  safe (no symlinks followed, a foreign folder left alone):
+  [01d2](01d2-goal-file-safe-writes.md).
 - **Secrets on screen** stay on the hub, behind the `LOGS` scope (owner by default; [0010](../adr/0010-session-logs.md)).
 - **Emails** hidden by default; account keys are pseudonymous.
 

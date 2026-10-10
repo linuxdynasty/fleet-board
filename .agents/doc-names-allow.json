@@ -86,7 +86,7 @@
   {"token": "GOCACHE", "kind": "env", "reason": "Go environment variable (agent-guide.md)", "files": ["docs/development/agent-guide.md"]},
   {"token": "GOFLAGS", "kind": "env", "reason": "Go environment variable (agent-guide.md)", "files": ["docs/development/agent-guide.md"]},
   {"token": "GOTMPDIR", "kind": "env", "reason": "Go environment variable (agent-guide.md)", "files": ["docs/development/agent-guide.md"]},
-  {"token": "GIT_DIR", "kind": "env", "reason": "git environment variable (agent-guide.md)", "files": ["docs/development/agent-guide.md"]},
+  {"token": "GIT_DIR", "kind": "env", "reason": "git environment variable (agent-guide.md)", "files": ["docs/development/agent-guide.md", "docs/specs/01d2-goal-file-safe-writes.md"]},
   {"token": "GIT_INDEX_FILE", "kind": "env", "reason": "git environment variable (agent-guide.md)", "files": ["docs/development/agent-guide.md"]},
   {"token": "GIT_WORK_TREE", "kind": "env", "reason": "git environment variable (agent-guide.md)", "files": ["docs/development/agent-guide.md"]},
   {"token": "GNUMAKEFLAGS", "kind": "env", "reason": "make environment variable (agent-guide.md)", "files": ["docs/development/agent-guide.md"]},
@@ -184,7 +184,7 @@
   {"token": "RELEASE", "kind": "tag-key", "reason": "proto comment tag key (02e, Comment tags)", "files": ["docs/specs/02e-contract-rules.md", "docs/specs/02k-v1-surface-and-cli.md"]},
   {"token": "DELIVERY", "kind": "tag-key", "reason": "proto comment tag key (02e, Comment tags)", "files": ["docs/specs/02-contracts.md", "docs/specs/02e-contract-rules.md", "docs/specs/02i-delivery-and-sequencing.md"]},
   {"token": "CAP", "kind": "tag-key", "reason": "proto comment tag key (02e, Comment tags)", "files": ["docs/specs/02-contracts.md", "docs/specs/02e-contract-rules.md"]},
-  {"token": "CONSENT", "kind": "protocol-marker", "reason": "goal-file CONSENT: line (01b, 01d, 01f, 02h, dev docs)", "files": ["docs/development/agent-guide.md", "docs/development/hooks.md", "docs/specs/01b-harness-commands.md", "docs/specs/01d-goal-hooks.md", "docs/specs/01f-agent-control-goals-and-policy.md", "docs/specs/02h-goal-binding-and-pane-signals.md", "docs/specs/03c-goals.md", "docs/specs/03g-load-and-handoff.md"]},
+  {"token": "CONSENT", "kind": "protocol-marker", "reason": "goal-file CONSENT: line (01b, 01d, 01f, 02h, dev docs)", "files": ["docs/development/agent-guide.md", "docs/development/hooks.md", "docs/specs/01b-harness-commands.md", "docs/specs/01d-goal-hooks.md", "docs/specs/01d2-goal-file-safe-writes.md", "docs/specs/01f-agent-control-goals-and-policy.md", "docs/specs/02h-goal-binding-and-pane-signals.md", "docs/specs/03c-goals.md", "docs/specs/03g-load-and-handoff.md"]},
   {"token": "WATCH", "kind": "protocol-marker", "reason": "BLOCKED ... WATCH=<pid> goal-line marker (01d, 03l, ui-contract-map, hooks.md)", "files": ["docs/development/hooks.md", "docs/specs/01d-goal-hooks.md", "docs/specs/03l-goal-lifecycle-and-verification.md", "docs/specs/ui-contract-map.md"]},
   {"token": "RULING", "kind": "protocol-marker", "reason": "arbiter reply marker (agent-guide.md)", "files": ["docs/development/agent-guide.md"]},
   {"token": "PASS", "kind": "protocol-marker", "reason": "gate report status (agent-guide.md)", "files": ["docs/development/agent-guide.md"]},
@@ -224,6 +224,14 @@
   {"token": "BenchmarkHubPassFile", "kind": "go", "reason": "Go benchmark in internal/scrub/hub_corpus_file_test.go (plan row 5l)", "files": ["docs/plan/v1-implementation-plan.md", "docs/specs/04b-hub-scrubber-cost.md"]},
   {"token": "TestHubCorporaKeepTheirPremise", "kind": "go", "reason": "Go test in internal/scrub/hub_pass_test.go (plan row 5l)", "files": ["docs/specs/04b-hub-scrubber-cost.md"]},
   {"token": "FLEET_SCRUB_BENCH_CORPUS", "kind": "env", "reason": "environment variable read by BenchmarkHubPassFile (plan row 5l)", "files": ["docs/specs/04b-hub-scrubber-cost.md"]},
-  {"token": "XDG_CONFIG_HOME", "kind": "env", "reason": "environment variable that moves the agent config folder (plan row 6, PR 6b)", "files": ["docs/specs/02k-v1-surface-and-cli.md", "docs/specs/03e-settings-and-drift.md", "docs/specs/04-technology-review.md"]}
+  {"token": "XDG_CONFIG_HOME", "kind": "env", "reason": "environment variable that moves the agent config folder (plan row 6, PR 6b)", "files": ["docs/specs/02k-v1-surface-and-cli.md", "docs/specs/03e-settings-and-drift.md", "docs/specs/04-technology-review.md"]},
+  {"token": "O_DIRECTORY", "kind": "syscall-flag", "reason": "POSIX open(2) flag named in the goal-file safe writes (01d2)", "files": ["docs/specs/01d2-goal-file-safe-writes.md"]},
+  {"token": "O_NOFOLLOW", "kind": "syscall-flag", "reason": "POSIX open(2) flag named in the goal-file safe writes (01d2)", "files": ["docs/specs/01d2-goal-file-safe-writes.md"]},
+  {"token": "O_CLOEXEC", "kind": "syscall-flag", "reason": "POSIX open(2) flag named in the goal-file safe writes (01d2)", "files": ["docs/specs/01d2-goal-file-safe-writes.md"]},
+  {"token": "O_WRONLY", "kind": "syscall-flag", "reason": "POSIX open(2) flag named in the goal-file safe writes (01d2)", "files": ["docs/specs/01d2-goal-file-safe-writes.md"]},
+  {"token": "O_CREAT", "kind": "syscall-flag", "reason": "POSIX open(2) flag named in the goal-file safe writes (01d2)", "files": ["docs/specs/01d2-goal-file-safe-writes.md"]},
+  {"token": "O_EXCL", "kind": "syscall-flag", "reason": "POSIX open(2) flag named in the goal-file safe writes (01d2)", "files": ["docs/specs/01d2-goal-file-safe-writes.md"]},
+  {"token": "O_RDONLY", "kind": "syscall-flag", "reason": "POSIX open(2) flag named in the goal-file safe writes (01d2)", "files": ["docs/specs/01d2-goal-file-safe-writes.md"]},
+  {"token": "EvalSymlinks", "kind": "go", "reason": "Go standard library function path/filepath.EvalSymlinks (02h step 4)", "files": ["docs/specs/02h-goal-binding-and-pane-signals.md"]}
  ]
 }

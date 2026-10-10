@@ -152,7 +152,7 @@ flowchart TB
 
 | Topic | Owner |
 |---|---|
-| Goal protocol: the goal file's first line, hooks, goal identity | [01d](specs/01d-goal-hooks.md), [02h](specs/02h-goal-binding-and-pane-signals.md), [03l](specs/03l-goal-lifecycle-and-verification.md) |
+| Goal protocol: the goal file's first line, hooks, goal identity | [01d](specs/01d-goal-hooks.md), [01d2](specs/01d2-goal-file-safe-writes.md) (safe writes, cleanup), [02h](specs/02h-goal-binding-and-pane-signals.md), [03l](specs/03l-goal-lifecycle-and-verification.md) |
 | Dispatching a goal (`StartGoal`) | [02h](specs/02h-goal-binding-and-pane-signals.md), [03c](specs/03c-goals.md) |
 | When a worker is free: `DONE` is a claim, verified before freeing | [03l](specs/03l-goal-lifecycle-and-verification.md), [03h](specs/03h-goal-phases-in-depth.md) |
 | Work item stages, goal phases, routines | [03m](specs/03m-work-source-and-code-host-sync.md), [03l](specs/03l-goal-lifecycle-and-verification.md), [03i](specs/03i-routines.md) |
