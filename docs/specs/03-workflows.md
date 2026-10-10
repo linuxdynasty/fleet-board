@@ -133,11 +133,8 @@ tick missed while a send waits is dropped, never queued. Plan row 4 fills
 (the highest seq handed out) and `events` (agent.db's counters, as in
 `Hello`); later rows fill the rest. `connect.hello` logs the interval chosen.
 
-**Capabilities, commands and settings (plan row 6).**
-`EnrollRequest.capabilities` stays empty; `Hello` carries the agent's list.
-While Connected the loop hands `Command` and `Settings` to their receivers
-and sends acks, progress, results and `SettingsAck` through one queue per
-stream. The rules are in [03n](03n-reconnect.md#commands-settings-and-the-outbound-queue).
+**Capabilities, commands and settings (plan row 6)**: see
+[03n](03n-reconnect.md#commands-settings-and-the-outbound-queue).
 
 **Hub discovery (A2).** Candidate order: cached last-good address → mDNS
 `_fleetd._tcp` (`hashicorp/mdns`, ADR 0023; skipped with no usable multicast
@@ -439,10 +436,8 @@ re-enroll rule are in [02g](02g-agent-security.md#machine-lifecycle-revoke-and-d
   change, which resets it);
   `connect.message_ignored{kind}` (a `Command` or `Settings` with no
   receiver registered, until plan row 6 wires them);
-  `connect.outbound_blocked{kind, hook}`, `connect.hook_blocked{hook,
-  held_ms}`, `connect.hook_released{hook, held_ms}` (info) and
-  `connect.capability_dropped{reason, name}` (warn; see
-  [03n](03n-reconnect.md#commands-settings-and-the-outbound-queue)); `connect.ended{state}` (`revoked`,
+  `connect.outbound_blocked`, `connect.hook_blocked`, `connect.hook_released`,
+  `connect.capability_dropped` ([03n](03n-reconnect.md#commands-settings-and-the-outbound-queue)); `connect.ended{state}` (`revoked`,
   `unknown_machine`, `fleet_mismatch`, `cert_expired`);
   `snapshot.sent{seq, bytes, unacked_results}`, `snapshot.requested{reason}`,
   `snapshot.oversize{bytes, max_bytes}`, `snapshot.result_unreadable{command_id,

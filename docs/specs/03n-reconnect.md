@@ -143,7 +143,8 @@ waiting for keepalive timeouts.
 The agent side of plan row 6 (ruling forks 4 i, 11 and 12), in
 `internal/agent/conn`:
 
-- **Capabilities.** `Hello` carries the agent's list; `exec.raw`, an entry
+- **Capabilities.** `EnrollRequest.capabilities` stays empty (the agent
+  has no list yet at enroll); `Hello` carries the agent's list; `exec.raw`, an entry
   with no name, a name outside `[a-z0-9._-]` or over 64 bytes, version 0,
   or a repeated name is dropped (`connect.capability_dropped{reason, name}`,
   once per entry and run; `reason`: `reserved`, `invalid`, `repeat`; `name`
@@ -189,7 +190,8 @@ The agent side of plan row 6 (ruling forks 4 i, 11 and 12), in
   error, logged once per stream for refusals and once for waits. A hook
   that holds the sender over 10 s is logged (`connect.hook_blocked{hook,
   held_ms}`; `hook`: `command`, `settings`, `on_connected`), and again with
-  the real hold time when it returns (`connect.hook_released`). The
+  the real hold time when it returns (`connect.hook_released{hook,
+  held_ms}`, info). The
   receiver reads up to 8 messages ahead of the sender, so it sees the
   stream end even while a hook holds it; a hook that never returns while
   the hub sends more than 8 is released only by the run's end. A `Bye` the
