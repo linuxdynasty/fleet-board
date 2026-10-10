@@ -53,4 +53,4 @@ hub shows the effective value and which layer set it.
   point of total compromise: safer changes come from anywhere, riskier changes
   only from the machine itself.
 - The UI must explain why a value is what it is ("capped by local policy on
-  omarchy").
+  linux-box").

@@ -1,4 +1,4 @@
-{"time":"2026-10-08T02:15:26.000589775-04:00","event":"run_start","host":"omarchy","goos":"linux","goarch":"amd64","go":"go1.27.1","methods":"clock,sleepmark,ifpoll,push","interval":"5s","duration":"48h0m0s","jump_threshold":"2s","route_exec":false}
+{"time":"2026-10-08T02:15:26.000589775-04:00","event":"run_start","host":"linux-box","goos":"linux","goarch":"amd64","go":"go1.27.1","methods":"clock,sleepmark,ifpoll,push","interval":"5s","duration":"48h0m0s","jump_threshold":"2s","route_exec":false}
 {"time":"2026-10-08T02:15:26.00084243-04:00","event":"listening","method":"push","relevant":false,"socket":"netlink"}
 {"time":"2026-10-08T02:15:26.000855804-04:00","event":"baseline","method":"sleepmark","relevant":false,"wake_time":"0001-01-01T00:00:00Z","suspended_ms":0}
 {"time":"2026-10-08T02:15:26.001361188-04:00","event":"baseline","method":"ifpoll","relevant":false,"interfaces":9,"default_iface":"enp3s0","default_gw":"192.168.1.1","route_checked":true}

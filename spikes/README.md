@@ -6,6 +6,9 @@ Throwaway measurement code for
 here becomes a dependency of the product. Raw output is kept under
 `*/results/` so every number in the spec can be traced.
 
+Before the repo went public, host names, addresses and user names in the
+result files were replaced with sample values (the measurements are unchanged).
+
 | Spike | Question | Run |
 |---|---|---|
 | [S1 `sqlite/`](sqlite/) | Does embedded SQLite with one writer meet 04's A50 load on a pure-Go driver, is a commit durable on macOS, and does `logs.db` hold session logs? | `go build -o s1 . && ./s1 -driver modernc -scenario commit\|steady\|burst\|logs` |
@@ -17,8 +20,8 @@ here becomes a dependency of the product. Raw output is kept under
 
 ## S1 setup
 
-- Machines: the hub machine (Linuxdynasty-MacBook-Pro-14, Apple silicon,
-  internal SSD, APFS) and omarchy (Linux 7.2, x86_64, btrfs, while a Codex
+- Machines: the hub machine (macbook, Apple silicon,
+  internal SSD, APFS) and linux-box (Linux 7.2, x86_64, btrfs, while a Codex
   goal was running), Go 1.27.1, 2026-10-02. The Linux binary is built with
   `GOOS=linux GOARCH=amd64 CGO_ENABLED=0`; disk bytes come from
   `/proc/self/io` there.
@@ -47,9 +50,9 @@ here becomes a dependency of the product. Raw output is kept under
 ## S2 setup
 
 - Recorder attached with `tmux pipe-pane -o` (no keys sent) to a busy Codex
-  goal pane on omarchy (Linux x86_64), 60 minutes from 2026-10-02 09:49 EDT.
+  goal pane on linux-box (Linux x86_64), 60 minutes from 2026-10-02 09:49 EDT.
 - Only the analysis output is kept (`zstdchunk/results/`); the raw recording
-  was deleted from omarchy and from this machine after analysis because
+  was deleted from linux-box and from this machine after analysis because
   terminal output can contain secrets.
 - Compression with `github.com/klauspost/compress/zstd` v1.20.1 at
   `SpeedDefault` (≈ zstd level 3), the encoder the agent would use; the

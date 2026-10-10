@@ -10,12 +10,12 @@ func pfx(s string) netip.Prefix { return netip.MustParsePrefix(s) }
 
 func addr(s string) netip.Addr { return netip.MustParseAddr(s) }
 
-// homeReading is a laptop on wired Ethernet with an IPv6 ULA, as on omarchy.
+// homeReading is a laptop on wired Ethernet with an IPv6 ULA, as on linux-box.
 func homeReading() Reading {
 	return Reading{
 		Interfaces: map[string][]netip.Prefix{
 			"lo":     {pfx("127.0.0.1/8"), pfx("::1/128")},
-			"enp3s0": {pfx("192.168.1.50/24"), pfx("fdc7:1:2:3::50/64"), pfx("fe80::1/64")},
+			"enp3s0": {pfx("192.168.1.50/24"), pfx("fd00:1:2:3::50/64"), pfx("fe80::1/64")},
 		},
 		DefaultV4: Route{Iface: "enp3s0", Gateway: addr("192.168.1.1")},
 		DefaultV6: Route{Iface: "enp3s0", Gateway: addr("fe80::1")},
@@ -44,7 +44,7 @@ func TestDiff(t *testing.T) {
 			name: "address added and removed",
 			change: func(r *Reading) {
 				r.Interfaces["enp3s0"] = []netip.Prefix{
-					pfx("192.168.1.51/24"), pfx("fdc7:1:2:3::50/64"), pfx("fe80::1/64"),
+					pfx("192.168.1.51/24"), pfx("fd00:1:2:3::50/64"), pfx("fe80::1/64"),
 				}
 			},
 			want: []Change{
@@ -79,7 +79,7 @@ func TestDiff(t *testing.T) {
 func TestDiffIgnoresAddressOrder(t *testing.T) {
 	t.Parallel()
 	old, cur := homeReading(), homeReading()
-	cur.Interfaces["enp3s0"] = []netip.Prefix{pfx("fe80::1/64"), pfx("fdc7:1:2:3::50/64"), pfx("192.168.1.50/24")}
+	cur.Interfaces["enp3s0"] = []netip.Prefix{pfx("fe80::1/64"), pfx("fd00:1:2:3::50/64"), pfx("192.168.1.50/24")}
 	if got := Diff(old, cur); len(got) != 0 {
 		t.Errorf("Diff = %+v, want none", got)
 	}

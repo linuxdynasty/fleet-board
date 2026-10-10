@@ -179,10 +179,10 @@ expect_contains "BLOCKED with a dead watcher refuses the stop" "$out" "NOT runni
 printf 'SESSION: %s\nBLOCKED: waiting on CI WATCH=1\nFinish\n' "$g" >"$gf"
 run "$hooks/goal-continue.sh" "$(stop_payload "$g" "$gdir" false)"
 expect_contains "WATCH=1 is not a real watcher" "$out" '"decision": "block"'
-printf 'SESSION: %s\nBLOCKED: needs a credential OWNER=allen ACTION=add the deploy key\nFinish\n' "$g" >"$gf"
+printf 'SESSION: %s\nBLOCKED: needs a credential OWNER=dev ACTION=add the deploy key\nFinish\n' "$g" >"$gf"
 run "$hooks/goal-continue.sh" "$(stop_payload "$g" "$gdir" false)"
 expect_empty "BLOCKED with OWNER and ACTION allows the stop" "$out"
-printf 'SESSION: %s\nBLOCKED: needs a credential OWNER=allen\nFinish\n' "$g" >"$gf"
+printf 'SESSION: %s\nBLOCKED: needs a credential OWNER=dev\nFinish\n' "$g" >"$gf"
 run "$hooks/goal-continue.sh" "$(stop_payload "$g" "$gdir" false)"
 expect_contains "OWNER without ACTION is refused" "$out" '"decision": "block"'
 printf 'SESSION: %s\nBLOCKED: hard question\nFinish\n' "$g" >"$gf"

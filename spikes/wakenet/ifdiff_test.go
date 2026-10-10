@@ -8,7 +8,7 @@ import (
 
 func TestDiff(t *testing.T) {
 	t.Parallel()
-	en0 := IfState{Name: "en0", Up: true, Addrs: []string{"192.168.1.124/24", "fe80::1/64"}}
+	en0 := IfState{Name: "en0", Up: true, Addrs: []string{"192.0.2.40/24", "fe80::1/64"}}
 	cases := []struct {
 		name     string
 		old, new Snapshot
@@ -37,7 +37,7 @@ func TestDiff(t *testing.T) {
 			new:  Snapshot{"en0": {Name: "en0", Up: false, Addrs: []string{"fe80::1/64"}}},
 			want: []Change{
 				{Iface: "en0", Kind: "down"},
-				{Iface: "en0", Kind: "addr_removed", Detail: "192.168.1.124/24"},
+				{Iface: "en0", Kind: "addr_removed", Detail: "192.0.2.40/24"},
 			},
 		},
 		{
@@ -46,7 +46,7 @@ func TestDiff(t *testing.T) {
 			new:  Snapshot{"en0": {Name: "en0", Up: true, Addrs: []string{"10.0.0.7/24", "fe80::1/64"}}},
 			want: []Change{
 				{Iface: "en0", Kind: "addr_added", Detail: "10.0.0.7/24"},
-				{Iface: "en0", Kind: "addr_removed", Detail: "192.168.1.124/24"},
+				{Iface: "en0", Kind: "addr_removed", Detail: "192.0.2.40/24"},
 			},
 		},
 		{

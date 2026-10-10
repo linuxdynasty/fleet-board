@@ -1,6 +1,6 @@
 // Mockup data, part 1: machines, accounts, integrations, settings, harness catalogs.
-// Real: machines, RAM, tools, weekly usage (status-command probes 2026-09-28 ~20:35 EDT),
-// PRs, issues, merges (fleet-data-work.js). Sample: everything marked `sample`.
+// Machines, RAM, tools and usage readings are modeled on real probes (2026-09-28); the names, addresses, user names and
+// usage numbers here are made-up sample values. PRs, issues, merges (fleet-data-work.js) are public GitHub data.
 const T0 = Date.now();
 const ago = s => new Date(T0 - s * 1000);
 const at = iso => new Date(iso).getTime();
@@ -9,28 +9,28 @@ const inDays = d => new Date(T0 + d * 86400e3);
 // B1 MachineFacts + H4 ForgeCliStatus + L1 PolicyInfo + L2 EffectiveSettings.sources (sample where noted).
 // `sess` lists the developer's own tmux sessions (E1); fleet-started windows live in `sessions` (fleet-data-work.js).
 const machines = [
-  { id: "mbp", name: "Linuxdynasty-MacBook-Pro-14", short: "mbp", user: "asanabria", os: "macOS 27 · arm64", ram: 64, hub: true,
+  { id: "mbp", name: "macbook", short: "mbp", user: "dev", os: "macOS 27 · arm64", ram: 64, hub: true,
     harnesses: ["claude", "codex", "muse", "opencode"], versions: { claude: "2.1.286", codex: "0.159.2", muse: "1.4.2", opencode: "1.18.34" },
     maxActive: 2, maxTotal: 4, repoRoot: "~/repos", tmuxVersion: "tmux 3.5a", defaultServer: "control", labels: ["laptop", "hub"],
-    forge: [{ tool: "gh", host: "github.com", user: "linuxdynasty", access: [["eshu-hq/eshu", "ADMIN"], ["CigarsOnly/virtual-humidor", "WRITE"]] }],
+    forge: [{ tool: "gh", host: "github.com", user: "dev", access: [["eshu-hq/eshu", "ADMIN"], ["example-org/example-app", "WRITE"]] }],
     certExpires: inDays(61), policyHash: "a91f3c", policyChanged: false, agentVersion: "0.3.1", beat: ago(2), drained: false,
     sources: { max_active: "machine", max_total: "group laptop", default_server: "fleet default", cert_lifetime: "fleet default", local_approval: "local ceiling", idle_threshold: "fleet default" } },
-  { id: "omarchy", name: "omarchy", short: "omarchy", user: "linuxdynasty", os: "Linux 7.2 · x86_64", ram: 62,
+  { id: "linux", name: "linux-box", short: "linux", user: "dev", os: "Linux 7.2 · x86_64", ram: 62,
     harnesses: ["claude", "codex", "muse", "opencode"], versions: { claude: "2.1.285", codex: "0.159.2", muse: "1.4.1", opencode: "1.18.30" },
     maxActive: 2, maxTotal: 4, repoRoot: "~/repos", tmuxVersion: "tmux 3.4", defaultServer: "control", labels: ["always-on", "linux"],
-    forge: [{ tool: "gh", host: "github.com", user: "linuxdynasty", access: [["eshu-hq/eshu", "ADMIN"]] }, { tool: "glab", host: "gitlab.com", user: "linuxdynasty", access: [["acme/infra", "Maintainer"]] }],
+    forge: [{ tool: "gh", host: "github.com", user: "dev", access: [["eshu-hq/eshu", "ADMIN"]] }, { tool: "glab", host: "gitlab.com", user: "dev", access: [["acme/infra", "Maintainer"]] }],
     certExpires: inDays(12), policyHash: "7be210", policyChanged: true, agentVersion: "0.3.1", beat: ago(4), drained: false,
     sources: { max_active: "group always-on", max_total: "group always-on", default_server: "local ceiling", cert_lifetime: "machine", local_approval: "fleet default", idle_threshold: "machine" } },
-  { id: "allen", name: "allens-Apple-MacBook-Pro", short: "allen", user: "allen", os: "macOS 25.6 · arm64", ram: 128,
+  { id: "mbp2", name: "work-macbook", short: "mbp2", user: "dev", os: "macOS 25.6 · arm64", ram: 128,
     harnesses: ["claude", "codex", "muse", "opencode"], versions: { claude: "2.1.286", codex: "0.159.2", muse: "1.4.2", opencode: "1.18.34" },
     maxActive: 4, maxTotal: 8, repoRoot: "~/repos", tmuxVersion: "tmux 3.5a", defaultServer: "control", labels: ["always-on", "big"],
-    forge: [{ tool: "gh", host: "github.com", user: "linuxdynasty", access: [["eshu-hq/eshu", "ADMIN"], ["CigarsOnly/virtual-humidor", "WRITE"]] }],
+    forge: [{ tool: "gh", host: "github.com", user: "dev", access: [["eshu-hq/eshu", "ADMIN"], ["example-org/example-app", "WRITE"]] }],
     certExpires: inDays(88), policyHash: "a91f3c", policyChanged: false, agentVersion: "0.3.1", beat: ago(3), drained: false,
     sources: { max_active: "machine", max_total: "machine", default_server: "fleet default", cert_lifetime: "fleet default", local_approval: "fleet default", idle_threshold: "fleet default" } },
-  { id: "m124", name: "ip-192-168-1-124", short: ".124", user: "linuxdynasty", os: "macOS 27 · arm64", ram: 64,
+  { id: "mini", name: "mac-mini", short: "mini", user: "dev", os: "macOS 27 · arm64", ram: 64,
     harnesses: ["claude", "codex", "muse", "opencode"], versions: { claude: "2.1.286", codex: "0.157.1", muse: "1.4.2", opencode: "1.18.32" },
     maxActive: 2, maxTotal: 4, repoRoot: "~/repos", tmuxVersion: "tmux 3.2a", defaultServer: "observe", labels: ["laptop"],
-    forge: [{ tool: "gh", host: "github.com", user: "linuxdynasty", access: [["eshu-hq/eshu", "ADMIN"]] }],
+    forge: [{ tool: "gh", host: "github.com", user: "dev", access: [["eshu-hq/eshu", "ADMIN"]] }],
     certExpires: inDays(4), policyHash: "c0ffee", policyChanged: false, agentVersion: "0.3.0", beat: ago(6), drained: false,
     sources: { max_active: "group laptop", max_total: "group laptop", default_server: "local ceiling", cert_lifetime: "fleet default", local_approval: "local ceiling", idle_threshold: "fleet default" } },
 ];
@@ -43,30 +43,30 @@ const CLAUDE_HOOKS = "~/.claude/settings.json", CODEX_HOOKS = "~/.codex/hooks.js
 const TRUST_APPROVE = { codex: "/hooks", muse: "muse plugins approve fleet-goal-hooks" };
 const goalHooks = {
   mbp: { claude: hk({ trust: "NOT_REQUIRED", config_path: CLAUDE_HOOKS }), codex: hk({ config_path: CODEX_HOOKS, hook_hash: "b41c07", trust: "PENDING" }), muse: hk({ config_path: MUSE_HOOKS, hook_hash: "b41c07", trust: "PENDING" }) },
-  omarchy: { claude: hk({ trust: "NOT_REQUIRED", config_path: CLAUDE_HOOKS, repo_ships_own: true }), codex: hk({ config_path: CODEX_HOOKS, hook_hash: "b41c07" }), muse: hk({ config_path: MUSE_HOOKS, hook_hash: "b41c07" }) },
-  allen: { claude: hk({ trust: "NOT_REQUIRED", config_path: CLAUDE_HOOKS }), codex: hk({ config_path: CODEX_HOOKS, hook_hash: "b41c07", trust: "PENDING" }), muse: hk({ config_path: MUSE_HOOKS, hook_hash: "b41c07", trust: "PENDING" }) },
-  m124: { claude: hk({ trust: "NOT_REQUIRED", config_path: CLAUDE_HOOKS }), codex: hk({ installed: false, verified: false, hook_version: "", hook_hash: "", config_path: CODEX_HOOKS, why: "codex 0.157.1 is older than the supported versions; update Codex" }), muse: hk({ config_path: MUSE_HOOKS, hook_hash: "b41c07" }) },
+  linux: { claude: hk({ trust: "NOT_REQUIRED", config_path: CLAUDE_HOOKS, repo_ships_own: true }), codex: hk({ config_path: CODEX_HOOKS, hook_hash: "b41c07" }), muse: hk({ config_path: MUSE_HOOKS, hook_hash: "b41c07" }) },
+  mbp2: { claude: hk({ trust: "NOT_REQUIRED", config_path: CLAUDE_HOOKS }), codex: hk({ config_path: CODEX_HOOKS, hook_hash: "b41c07", trust: "PENDING" }), muse: hk({ config_path: MUSE_HOOKS, hook_hash: "b41c07", trust: "PENDING" }) },
+  mini: { claude: hk({ trust: "NOT_REQUIRED", config_path: CLAUDE_HOOKS }), codex: hk({ installed: false, verified: false, hook_version: "", hook_hash: "", config_path: CODEX_HOOKS, why: "codex 0.157.1 is older than the supported versions; update Codex" }), muse: hk({ config_path: MUSE_HOOKS, hook_hash: "b41c07" }) },
 };
 
 // Subscription accounts (BUDGET_KIND_SUBSCRIPTION_PERCENT). `shown` mirrors the harness's own screen (D2 "as shown");
 // `buckets` is the standardized half the scheduler uses. Emails are sample and hidden unless settings.showEmails.
 const accounts = [
-  { id: "claude-max", harness: "claude", label: "Claude Code", plan: "Claude Max account", email: "owner@example.com", reserve: 25, source: "/usage", sourceKind: "probe",
+  { id: "claude-acct", harness: "claude", label: "Claude Code", plan: "Sample plan (Claude)", email: "owner@example.com", reserve: 25, source: "/usage", sourceKind: "probe",
     consent: ["push", "pr-open"], mode: "fleet",
-    shown: [["Current session", "10% used", "Resets 11:40pm"], ["Current week (all models)", "81% used", "Resets Sep 30 at 10pm"], ["Current week (Fable)", "53% used", "Resets Sep 30 at 10pm"]],
-    buckets: [{ key: "weekly_all", label: "all models", used: 81 }, { key: "weekly_fable", label: "Fable", used: 53 }],
-    short: { label: "session", used: 10, resets: at("2026-09-28T23:40:00-04:00") },
-    resets: at("2026-09-30T22:00:00-04:00"), windowDays: 7, read: ago(10 * 60), passive: "You've used 81% of your weekly limit · resets 10pm (America/New_York)" },
-  { id: "chatgpt-pro", harness: "codex", label: "Codex", plan: "Account: Pro", email: "(not shown by Codex; mapped on the hub)", reserve: 10, source: "/status", sourceKind: "probe",
+    shown: [["Current session", "7% used", "Resets 11:40pm"], ["Current week (all models)", "78% used", "Resets Sep 30 at 10pm"], ["Current week (Fable)", "37% used", "Resets Sep 30 at 10pm"]],
+    buckets: [{ key: "weekly_all", label: "all models", used: 78 }, { key: "weekly_fable", label: "Fable", used: 37 }],
+    short: { label: "session", used: 7, resets: at("2026-09-28T23:40:00-04:00") },
+    resets: at("2026-09-30T22:00:00-04:00"), windowDays: 7, read: ago(10 * 60), passive: "You've used 78% of your weekly limit · resets 10pm (America/New_York)" },
+  { id: "codex-acct", harness: "codex", label: "Codex", plan: "Sample plan (Codex)", email: "(not shown by Codex; mapped on the hub)", reserve: 10, source: "/status", sourceKind: "probe",
     consent: ["push", "pr-open", "merge"], mode: "fleet",
-    shown: [["Weekly limit", "58% left", "Resets Oct 4 at 9:29pm"], ["Account", "Pro", ""], ["Model", "gpt-5.3-codex · high", ""]],
-    buckets: [{ key: "weekly", label: "weekly", used: 42, remaining: true }], short: null,
+    shown: [["Weekly limit", "71% left", "Resets Oct 4 at 9:29pm"], ["Account", "Sample plan", ""], ["Model", "gpt-5.3-codex · high", ""]],
+    buckets: [{ key: "weekly", label: "weekly", used: 29, remaining: true }], short: null,
     resets: at("2026-10-04T21:29:00-04:00"), windowDays: 7, read: ago(12 * 60) },
-  { id: "muse-power", harness: "muse", label: "Muse", plan: "Muse Code Power Usage", email: "owner@example.com", reserve: 10, source: "/usage", sourceKind: "passive",
+  { id: "muse-acct", harness: "muse", label: "Muse", plan: "Sample plan (Muse)", email: "owner@example.com", reserve: 10, source: "/usage", sourceKind: "passive",
     consent: ["push", "pr-open", "merge"], mode: "fleet",
-    shown: [["Current", "0% used", "Resets 9:06pm"], ["Weekly", "2% used", "Resets Oct 4 at 8pm"], ["Session", "41.2k in · 12.8k cached · 6.1k out", "17 turns · 2 subagents"]],
-    buckets: [{ key: "weekly", label: "weekly", used: 2 }], short: { label: "current", used: 0, resets: at("2026-09-28T21:06:00-04:00") },
-    resets: at("2026-10-04T20:00:00-04:00"), windowDays: 7, read: ago(3 * 60), passive: "status line: weekly 2%" },
+    shown: [["Current", "0% used", "Resets 9:06pm"], ["Weekly", "5% used", "Resets Oct 4 at 8pm"], ["Session", "36.5k in · 9.4k cached · 5.2k out", "14 turns · 1 subagent"]],
+    buckets: [{ key: "weekly", label: "weekly", used: 5 }], short: { label: "current", used: 0, resets: at("2026-09-28T21:06:00-04:00") },
+    resets: at("2026-10-04T20:00:00-04:00"), windowDays: 7, read: ago(3 * 60), passive: "status line: weekly 5%" },
 ];
 
 // API-key accounts reached through OpenCode (BUDGET_KIND_DOLLAR_CAP). Manual dispatch only, never auto. Sample.
@@ -77,7 +77,7 @@ const apiAccounts = [
 
 // ADR 0012 integrations. GitHub is connected (ADR 0005); the rest are planned adapters with their declared capabilities.
 const integrations = [
-  { id: "github-com", provider: "GitHub", status: "connected", how: "GitHub App · read-only", roles: ["work tracker", "code host"], claims: ["comment", "assignee", "label"], sync: "poll (conditional, ETags)", checks: true, reviews: true, merge: true, watched: ["eshu-hq/eshu", "CigarsOnly/virtual-humidor"] },
+  { id: "github-com", provider: "GitHub", status: "connected", how: "GitHub App · read-only", roles: ["work tracker", "code host"], claims: ["comment", "assignee", "label"], sync: "poll (conditional, ETags)", checks: true, reviews: true, merge: true, watched: ["eshu-hq/eshu", "example-org/example-app"] },
   { id: "gitlab", provider: "GitLab", status: "planned", roles: ["work tracker", "code host"], claims: ["comment", "assignee", "label"], sync: "poll (conditional) · webhook", checks: true, reviews: true, merge: true, note: "nested groups, self-hosted; MRs shown as !12" },
   { id: "jira", provider: "Jira", status: "planned", roles: ["work tracker"], claims: ["status (In Progress)", "assignee"], sync: "poll", checks: false, reviews: false, merge: false, note: "tickets only; code lives on a separate host" },
   { id: "bitbucket", provider: "Bitbucket", status: "planned", roles: ["code host"], claims: ["assignee"], sync: "poll", checks: true, reviews: true, merge: true },
@@ -87,7 +87,7 @@ const integrations = [
 const settings = {
   repos: [
     { repo: "eshu-hq/eshu", host: "github.com", provider: "github", on: true, hooks: "eshu" },
-    { repo: "CigarsOnly/virtual-humidor", host: "github.com", provider: "github", on: false, hooks: "auto" },
+    { repo: "example-org/example-app", host: "github.com", provider: "github", on: false, hooks: "auto" },
     { repo: "acme/infra", host: "gitlab.com", provider: "gitlab", on: true, hooks: "generic", sample: true },
   ],
   consent: ["push", "pr-open", "merge"],

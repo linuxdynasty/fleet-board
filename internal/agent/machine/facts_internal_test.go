@@ -131,7 +131,7 @@ func TestParseTmuxVersion(t *testing.T) {
 func TestValidUsername(t *testing.T) {
 	t.Parallel()
 	for in, want := range map[string]bool{
-		"linuxdynasty": true, "svc_agent": true, "a.b-c": true, "user$": true, "r00t": true,
+		"alice": true, "svc_agent": true, "a.b-c": true, "user$": true, "r00t": true,
 		"": false, "a b": false, "a@b": false, `DOM\user`: false, "a\nb": false, "-x": false,
 	} {
 		if got := validUsername(in); got != want {

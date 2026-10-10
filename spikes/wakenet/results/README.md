@@ -6,7 +6,7 @@ reconnects at once instead of waiting for a dead connection to time out?
 
 **Status: Done (plan item 0.6, ADR 0029).** Cost measured on the Mac mini;
 routing-socket delivery measured with a no-root trigger; real network changes
-seen on omarchy (Linux) and the MacBook (macOS) by the push socket and the
+seen on linux-box (Linux) and the MacBook (macOS) by the push socket and the
 interface poll; Linux push noise measured. **No real sleep has been observed,
 and none will be forced:** the owner does not put any machine to sleep. Wake
 detection rests on the Go runtime and OS clock rules below, fake-clock tests in
@@ -50,7 +50,7 @@ hard-coded kernel constants against `x/sys/unix`.
 
 ## Setup
 
-- Mac mini, Apple M4 Pro, 12 cores, macOS 27.0.1 (26A434), 192.168.1.124, wired
+- Mac mini, Apple M4 Pro, 12 cores, macOS 27.0.1 (26A434), 192.0.2.40, wired
   `en0`, 32 interfaces (many `utun`, `bridge`, `vmenet`). Not slept since boot
   (`kern.waketime` = 0 as reported at the time, not verified since; on
   2026-10-09 `CLOCK_MONOTONIC_RAW − CLOCK_UPTIME_RAW` read 0.000 s asleep since
@@ -142,7 +142,7 @@ sends on a real link or address change or on wake.
 Both probes ran `/tmp/wakenet -interval 5s -duration 48h` with all four methods;
 the MacBook run adds `-route-exec`.
 
-- omarchy: Linux, wired `enp3s0`, NVIDIA GTX 1080 Ti; started 2026-10-08
+- linux-box: Linux, wired `enp3s0`, NVIDIA GTX 1080 Ti; started 2026-10-08
   02:15:25.
 - MacBook: macOS 27.0.1, arm64; started 2026-10-08 14:15:50.
 
@@ -152,7 +152,7 @@ Both were still running when these numbers were taken (2026-10-09, about
 **Real network changes.** The push socket saw each one at once; the 5 s poll saw
 it 0.4 to 5 s later. Each burst of push messages lasted under 10 ms.
 
-- omarchy, 05:10:30 (2026-10-08): a VPN interface `tun0` came up. Push:
+- linux-box, 05:10:30 (2026-10-08): a VPN interface `tun0` came up. Push:
   `RTM_NEWLINK` down then up, index 2387, at 05:10:30 (then two `RTM_NEWADDR` on
   index 2387 within 9 ms); ifpoll: `net_change` `iface_added` `tun0` at
   05:10:31.
@@ -163,25 +163,25 @@ it 0.4 to 5 s later. Each burst of push messages lasted under 10 ms.
   and `RTM_NEWADDR` (index 36); ifpoll `iface_added` `utun10` at 08:54:30.661
   (+4.9 s).
 
-**Linux push noise.** omarchy logged at least 972 `RTM_NEWADDR` "relevant"
+**Linux push noise.** linux-box logged at least 972 `RTM_NEWADDR` "relevant"
 messages in 32.9 h (the counting script skips the cut-off line at the gap, which
 still holds one whole record), 970 on index 2 (`enp3s0`) and 2 on index 2387
 (`tun0`). Gaps between them: p10 4.6 s, p50 38.5 s, p90 114.5 s. ifpoll saw no change for them.
-`enp3s0` has a dynamic IPv6 ULA (a private IPv6 address, `fdc7:…/64`,
+`enp3s0` has a dynamic IPv6 ULA (a private IPv6 address, `fd00:…/64`,
 `valid_lft` about 1690 s) refreshed by router advertisements, and each refresh
 re-sends `RTM_NEWADDR`. So a push message alone must never mean "reconnect".
 
-**A gap in the omarchy log.** There are no lines from 2026-10-08 13:33:09 to
+**A gap in the linux-box log.** There are no lines from 2026-10-08 13:33:09 to
 2026-10-09 10:05:52 (20.6 h). The last line before the gap stops in the middle
 of a record, and the next record follows on the same line (raw line 898, kept in
 the extract). The same process wrote the same file the whole time (checked with
 `ps` and `/proc/<pid>/fd/1` on 2026-10-09), so its writes most likely failed
-during the gap. omarchy's `/tmp` is a 32 GB in-memory file system, 72 % full
+during the gap. linux-box's `/tmp` is a 32 GB in-memory file system, 72 % full
 when checked; a full `/tmp` is a likely cause but was not checked. So only about
 12.4 of the 32.9 hours were logged, and the 972 messages and the gaps above come
 from those hours (the 20.6 h hole is only the largest gap).
 
-**One aborted suspend** on omarchy, 2026-10-08 15:56:02 to 15:56:03: the NVIDIA
+**One aborted suspend** on linux-box, 2026-10-08 15:56:02 to 15:56:03: the NVIDIA
 driver refused ("nv_pmops_suspend returns -5") and "PM: suspend exit" came
 about 1 s later. It falls inside the log gap, so the probe's log cannot show what
 the probe saw. The kernel's own record of time asleep (`CLOCK_BOOTTIME` minus
@@ -189,18 +189,18 @@ the probe saw. The kernel's own record of time asleep (`CLOCK_BOOTTIME` minus
 a clock gap of about 1 s is under the 2 s threshold.
 
 **No wake.** Zero `wake`, `wake_suspected` or `wall_step_back` events on either
-machine (no sleep happened; on omarchy, over the logged hours). The earlier Mac
+machine (no sleep happened; on linux-box, over the logged hours). The earlier Mac
 mini rounds also had zero false positives.
 
 Extracts of the deciding lines (the raw logs are not committed):
-[omarchy-live-extract.jsonl](omarchy-live-extract.jsonl) holds raw lines 1 to
+[linux-box-live-extract.jsonl](linux-box-live-extract.jsonl) holds raw lines 1 to
 7, 254 to 258, 897 to 899 and 980 of 980 (start, three sample refreshes, the
 `tun0` burst, the lines around the gap, the last line; the gap line is not valid
 JSON). [macbook-live-extract.jsonl](macbook-live-extract.jsonl) is the whole
 12-line MacBook log, with its host name shortened to `MacBook`.
 
-Counting commands, run on a copy of the raw omarchy log
-(`/tmp/wakenet-linux-wake.jsonl` on omarchy, not committed):
+Counting commands, run on a copy of the raw linux-box log
+(`/tmp/wakenet-linux-wake.jsonl` on linux-box, not committed):
 
 ```bash
 python3 - wakenet-linux-wake.jsonl <<'EOF'
@@ -292,7 +292,7 @@ Readings on 2026-10-09 (read only, nothing slept):
 |---|---|---|
 | Mac mini | 0.000 s | |
 | MacBook (booted 2026-10-02 05:25) | 0.000 s | `kern.waketime` and `kern.sleeptime` 0; `pmset -g log` shows a lid close on 2026-10-05 17:30:26 that entered DarkWake and returned to full wake 5 s later, with no time counted asleep |
-| omarchy | 0.0 s (`CLOCK_BOOTTIME − CLOCK_MONOTONIC`) | the probe's `sleepmark` baseline on 2026-10-08 02:15:26 showed `suspended_ms` 0 |
+| linux-box | 0.0 s (`CLOCK_BOOTTIME − CLOCK_MONOTONIC`) | the probe's `sleepmark` baseline on 2026-10-08 02:15:26 showed `suspended_ms` 0 |
 
 The macOS readings came from this program (`sleeptotal`), built inside
 `spikes/wakenet` with `CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -o
@@ -334,7 +334,7 @@ func main() {
 |---|---|
 | Real sleep and wake (macOS and Linux) | No machine is put to sleep for this; the Mac mini has not slept since boot, and no laptop slept during the live runs. Checked on the first natural sleep (#132). |
 | Network-change latency from a triggered change | Every trigger that changes an interface or address needs root: `ifconfig lo0 alias` and `route add` need sudo, and creating a `utun` as a normal user fails with "operation not permitted" (tested with a throwaway program; nothing was created). A ping to unassigned `127.0.0.2` produced no routing message. Turning Wi-Fi or Ethernet off is forbidden. Real changes were seen instead (live observations). |
-| Linux CPU cost | The omarchy run had not printed its `summary` line when these numbers were taken. |
+| Linux CPU cost | The linux-box run had not printed its `summary` line when these numbers were taken. |
 | Wake latency of `clock` and `sleepmark` | Theory: Go timers run on the monotonic clock, which stops during sleep, so the first tick after wake fires within one interval (≤ 5 s). Not observed. |
 | macOS dark wake (Power Nap) from real sleep | Unknown how a dark wake shows in the time asleep since boot. The only DarkWake on record (MacBook, 2026-10-05) came from a lid close without real sleep and counted 0 s. |
 
@@ -415,4 +415,4 @@ Wake detection on any real machine; dark-wake behavior after real sleep (a
 macOS Power Nap, as the time asleep since boot sees it); whether Linux `s2idle`
 stops `CLOCK_MONOTONIC`; how late Go's ticker fires after a wake; Wi-Fi
 roaming flaps on a laptop, where `awdl0` and other interfaces may come and go; Linux CPU cost, until the 48 h `summary` lines
-are recorded; and what the omarchy probe saw during its 20.6 h log gap.
+are recorded; and what the linux-box probe saw during its 20.6 h log gap.

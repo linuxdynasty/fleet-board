@@ -1,4 +1,4 @@
-Linux 7.2.5-3-omarchy
+Linux 7.2.5-3-linux-box
 /dev/mapper/root btrfs  475G  373G   82G  83% /home
 # driver=modernc fullfsync=false synchronous=FULL scenario=commit
 commit_1row            n=300     p50=1.208ms    p99=3.241ms    max=3.967ms

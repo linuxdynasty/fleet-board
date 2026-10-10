@@ -1,5 +1,5 @@
 # routing-socket delivery: 30 x '/sbin/route -n get 192.0.2.1' as trigger, push method, RTM_GET counted
-{"time":"2026-10-05T10:59:32.559355-04:00","event":"run_start","host":"ip-192-168-1-124.ec2.internal","goos":"darwin","goarch":"arm64","go":"go1.27.1","methods":"push","interval":"5s","duration":"20s","jump_threshold":"2s","route_exec":false}
+{"time":"2026-10-05T10:59:32.559355-04:00","event":"run_start","host":"mac-mini","goos":"darwin","goarch":"arm64","go":"go1.27.1","methods":"push","interval":"5s","duration":"20s","jump_threshold":"2s","route_exec":false}
 {"time":"2026-10-05T10:59:33.091015-04:00","event":"detected","method":"push","trigger":"trigger_1","first_event":"RTM_GET","latency_from_start_ms":28.37}
 {"time":"2026-10-05T10:59:33.091873-04:00","event":"trigger_ran","name":"trigger_1","cmd":"/sbin/route -n get 192.0.2.1 >/dev/null","took_ms":29.428,"output":""}
 {"time":"2026-10-05T10:59:33.623264-04:00","event":"detected","method":"push","trigger":"trigger_2","first_event":"RTM_GET","latency_from_start_ms":28.913}

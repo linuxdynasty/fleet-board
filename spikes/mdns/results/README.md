@@ -15,10 +15,10 @@ cross-machine test**: both ends were on one Mac, so no packet crossed Wi-Fi or
 the wire, Linux was not involved, and no firewall was in the path (the macOS
 firewall is off on this machine). The owner run below settles that.
 
-**Cross-machine update ([cross-machine-omarchy.md](cross-machine-omarchy.md)):**
-from omarchy (Linux, `ufw` active) the browser found the Mac mini's service
-0 of 100 times. The answers were sent and then dropped by omarchy's firewall
-(`[UFW BLOCK] ... SRC=192.168.1.124 ... SPT=5353 DPT=<random>`), because the
+**Cross-machine update ([cross-machine-linux-box.md](cross-machine-linux-box.md)):**
+from linux-box (Linux, `ufw` active) the browser found the Mac mini's service
+0 of 100 times. The answers were sent and then dropped by linux-box's firewall
+(`[UFW BLOCK] ... SRC=192.0.2.40 ... SPT=5353 DPT=<random>`), because the
 browser asks from a random port and gets direct replies. macOS's own responder
 was dropped the same way. A Wi-Fi hub run was skipped by owner decision; row 4
 confirms the 2 s timeout in real use.
@@ -26,7 +26,7 @@ confirms the 2 s timeout in real use.
 ## Setup
 
 - Machine: Mac mini, macOS 27.0.1 (26A434), Apple silicon, wired `en0`
-  192.168.1.124, mDNSResponder running (pid 683). Application firewall off
+  192.0.2.40, mDNSResponder running (pid 683). Application firewall off
   (`socketfilterfw --getglobalstate`: `Firewall is disabled. (State = 0)`).
 - Go 1.27.1, `CGO_ENABLED=0`; `hashicorp/mdns` v1.0.7 with `miekg/dns`
   v1.1.72 and `golang.org/x/net` v0.48.0. Branch `spike/0.7-mdns` from
@@ -210,7 +210,7 @@ below tells which.
 Update: the cross-machine run hit exactly that firewall case, and the step 4
 control showed mDNSResponder's answers dropped too, so a responder swap does
 not fix it; the gap is on the browse side. The options are in
-[cross-machine-omarchy.md](cross-machine-omarchy.md#what-it-means). ADR 0028
+[cross-machine-linux-box.md](cross-machine-linux-box.md#what-it-means). ADR 0028
 rules the exec fallback out and makes mDNS best effort.
 
 ## ADR 0023 status
@@ -223,7 +223,7 @@ says so.
 
 ## Owner run
 
-Done in part on 2026-10-05: the Mac mini advertised and omarchy browsed, over
+Done in part on 2026-10-05: the Mac mini advertised and linux-box browsed, over
 SSH with the owner's permission and no `sudo`
-([cross-machine-omarchy.md](cross-machine-omarchy.md)). The owner chose to skip
+([cross-machine-linux-box.md](cross-machine-linux-box.md)). The owner chose to skip
 the Wi-Fi hub run; plan row 4 checks it in real use (ADR 0028 open question 2).

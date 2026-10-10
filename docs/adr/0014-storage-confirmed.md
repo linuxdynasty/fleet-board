@@ -46,7 +46,7 @@ Option 1, measured in spike S1 ([04](../specs/04-technology-review.md#q1-durable
 - Install stays one binary per role with nothing else to run.
 - Postgres remains possible behind the `store` interface for more than one hub.
 
-- Measured on the hub MacBook (APFS) and on omarchy (Linux, btrfs) with the
+- Measured on the hub MacBook (APFS) and on linux-box (Linux, btrfs) with the
   same results within 2× (04, Q1).
 
 ## Open questions

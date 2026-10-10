@@ -29,7 +29,7 @@ func TestDecide(t *testing.T) {
 	dropWired := func(r *Reading) { delete(r.Interfaces, "enp3s0") }
 	newGateway := func(r *Reading) { r.DefaultV4.Gateway = addr("192.168.1.254") }
 	dropLocal := func(r *Reading) {
-		r.Interfaces["enp3s0"] = []netip.Prefix{pfx("fdc7:1:2:3::50/64"), pfx("fe80::1/64")}
+		r.Interfaces["enp3s0"] = []netip.Prefix{pfx("fd00:1:2:3::50/64"), pfx("fe80::1/64")}
 	}
 	dropOther := func(r *Reading) {
 		r.Interfaces["enp3s0"] = []netip.Prefix{pfx("192.168.1.50/24"), pfx("fe80::1/64")}

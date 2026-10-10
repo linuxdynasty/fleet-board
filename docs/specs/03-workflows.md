@@ -99,7 +99,7 @@ sequenceDiagram
   participant H as fleetd
   participant A as fleet-agent
   participant T as tmux / harnesses
-  O->>H: enroll-token --machine omarchy
+  O->>H: enroll-token --machine linux-box
   H->>H: tx: enroll_tokens{secret hash, name, expected_hostname, labels, start_drained, not_after_time}
   H-->>O: token (once, embeds the CA SHA-256)
   O->>A: fleet-agent enroll --token T

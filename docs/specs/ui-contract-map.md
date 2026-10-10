@@ -159,7 +159,7 @@ which kinds have more. Release = the first release whose source can raise it.
 | [planned] "Put it back in the queue" on a cleared or exhausted card | calls `RequeueWorkItem{id, expected_version}` (not for an untrusted item); `WorkItem.manual_reason` | 03h | v1 |
 | Dispatch panel account list incl. "via OpenCode (manual only)" | `ListAccounts` → `spec.mode`, `spec.budget_kind`, `status.pacing.state = EXCLUDED` | `AccountIdentity.budget_kind` (01 §C, ADR 0008) | v1 |
 | "OpenCode has no /goal yet" reason | `MachineHarness.goal_control` is unset for the harness (no `/goal`) | `CommandCatalog`; `GOAL_SUBCOMMAND_UNSUPPORTED` (01b) | v1 |
-| HARNESS_VERSION_UNSUPPORTED reason (codex 0.157.1 on .124) | `MachineHarness.version_support`, `parser_support[]`, `health` | `HarnessInfo.version_support`; preflight `ReasonCode` 2 (C1, I1) | v1 |
+| HARNESS_VERSION_UNSUPPORTED reason (codex 0.157.1 on mac-mini) | `MachineHarness.version_support`, `parser_support[]`, `health` | `HarnessInfo.version_support`; preflight `ReasonCode` 2 (C1, I1) | v1 |
 | StartGoal preview | calls `StartGoal{input{work_item, repo, change_request, placement, consent[], goal_text, model, effort, fresh_context, dispatch_reason}, acknowledged_warnings}` → `goal`, `Operation` (steps in `Operation.step`) | `StartGoal{spec GoalSpec}`, `CommandProgress.step` (G3) | v1 |
 | "keys the agent will type: /goal …" | `PreflightGoal` → `Operation.output_text` | `PreflightResult.goal_line_preview`; adapter `GoalCommand` (01b) | v1 |
 | "eshu hook convention" label on `/goal consent <acts> -- <text>` | `Machine.status.repos[].goal_hooks[].state.repo_ships_own` | `RepoCheckout.goal_hooks[]` (G1, 03g #7) | v1 |

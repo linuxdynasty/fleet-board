@@ -6,49 +6,49 @@
 // window (no FLEET_* tags); otherwise started by fleet and named by the template `{harness} {work}`.
 // `display` is WorkItemRef.display; `provider` is ProviderKind. `pane` here is the screen (E5), `paneId` the tmux pane id.
 const sessions = [
-  // omarchy: fleet session + the developer's own "main"
-  { id: "g1", m: "omarchy", harness: "claude", sess: "fleet", idx: 1, win: "claude eshu#7380", paneId: "%11", repo: "eshu-hq/eshu", provider: "github", issue: 7380, pr: 7412, display: "eshu#7380", branch: "perf/7380-entity-anchor-plans",
+  // linux: fleet session + the developer's own "main"
+  { id: "g1", m: "linux", harness: "claude", sess: "fleet", idx: 1, win: "claude eshu#7380", paneId: "%11", repo: "eshu-hq/eshu", provider: "github", issue: 7380, pr: 7412, display: "eshu#7380", branch: "perf/7380-entity-anchor-plans",
     line: "BLOCKED: waiting on CI for #7412 WATCH=48213", watchAlive: true, last: ago(40), started: ago(5 * 3600),
     pane: [["dim", "● Bash(gh pr checks 7412 --repo eshu-hq/eshu --watch)"], ["", "  ⎿  54 passing · 1 pending · 1 failing (retrying)"], ["", ""], ["warn", "● Goal: BLOCKED: waiting on CI for #7412 WATCH=48213"], ["dim", "  watcher 48213 alive · wakes on check completion"]] },
-  { id: "g2", m: "omarchy", harness: "codex", sess: "fleet", idx: 2, win: "codex eshu#7251", paneId: "%12", repo: "eshu-hq/eshu", provider: "github", issue: 7251, pr: 7410, display: "eshu#7251", branch: "perf/7251-graph-summary",
+  { id: "g2", m: "linux", harness: "codex", sess: "fleet", idx: 2, win: "codex eshu#7251", paneId: "%12", repo: "eshu-hq/eshu", provider: "github", issue: 7251, pr: 7410, display: "eshu#7251", branch: "perf/7251-graph-summary",
     line: "Drive eshu-hq/eshu#7251 to merged", last: ago(15), started: ago(3 * 3600), cond: "c2",
     pane: [["", "• gh pr checks 7410: 1 failing (go-test-integration)"], ["", "• Reading failure log"], ["warn", "⚠ Rate limited (HTTP 429) · retrying in 30s · attempt 2/5"], ["hl", "• Working (1m 12s · esc to interrupt)"]] },
-  // The developer's own "main" session on omarchy: base-index 1, eight windows as the real status line shows them.
+  // The developer's own "main" session on linux: base-index 1, eight windows as the real status line shows them.
   // `layout` + `panes` describe split windows (TmuxWindow.panes[]); pane 0 is the window's main pane (`pane`, `paneId`).
-  { id: "s0", m: "omarchy", harness: "shell", yours: true, sess: "main", idx: 1, win: "btop", paneId: "%0", repo: "", line: null, last: ago(3), started: ago(3 * 86400),
-    pane: [["hl", "btop 1.4.0 ─ omarchy ─ up 3d 02:11"], ["", "cpu  ▇▇▃▁▁▁▁▁▁▁▁▁▁▁▁▁ 18%   load 1.42 0.98 0.77"], ["", "mem  ▇▇▇▇▇▃▁▁▁▁▁▁▁▁▁▁ 9.1/62G"], ["", "net  ↓ 1.2 MiB/s  ↑ 212 KiB/s"], ["dim", "pid    user         cpu%  mem%  command"], ["", "41822  linuxdynasty  9.1   2.4   claude"], ["", "40118  linuxdynasty  6.3   1.9   codex"], ["", "  912  linuxdynasty  0.4   0.1   fleet-agent"]] },
-  { id: "s7", m: "omarchy", harness: "opencode", yours: true, sess: "main", idx: 2, win: "opencode", paneId: "%7", repo: "eshu-hq/eshu", line: null, last: ago(55 * 60), started: ago(6 * 3600), idle: true, available: false,
+  { id: "s0", m: "linux", harness: "shell", yours: true, sess: "main", idx: 1, win: "btop", paneId: "%0", repo: "", line: null, last: ago(3), started: ago(3 * 86400),
+    pane: [["hl", "btop 1.4.0 ─ linux-box ─ up 3d 02:11"], ["", "cpu  ▇▇▃▁▁▁▁▁▁▁▁▁▁▁▁▁ 18%   load 1.42 0.98 0.77"], ["", "mem  ▇▇▇▇▇▃▁▁▁▁▁▁▁▁▁▁ 9.1/62G"], ["", "net  ↓ 1.2 MiB/s  ↑ 212 KiB/s"], ["dim", "pid    user         cpu%  mem%  command"], ["", "41822  dev           9.1   2.4   claude"], ["", "40118  dev           6.3   1.9   codex"], ["", "  912  dev           0.4   0.1   fleet-agent"]] },
+  { id: "s7", m: "linux", harness: "opencode", yours: true, sess: "main", idx: 2, win: "opencode", paneId: "%7", repo: "eshu-hq/eshu", line: null, last: ago(55 * 60), started: ago(6 * 3600), idle: true, available: false,
     model: "Build · DeepSeek V3.2 · DeepSeek", acct: "deepseek-api",
     pane: [["dim", "OpenCode 1.18.30 · ~/repos/eshu"], ["", ""], ["", "> "], ["dim", "Build · DeepSeek V3.2 · DeepSeek"]] },
-  { id: "s1", m: "omarchy", harness: "codex", yours: true, sess: "main", idx: 3, win: "codex prompt 1", paneId: "%1", repo: "eshu-hq/eshu", line: null, last: ago(26 * 60), started: ago(7 * 3600), idle: true, available: false,
+  { id: "s1", m: "linux", harness: "codex", yours: true, sess: "main", idx: 3, win: "codex prompt 1", paneId: "%1", repo: "eshu-hq/eshu", line: null, last: ago(26 * 60), started: ago(7 * 3600), idle: true, available: false,
     pane: [["dim", "› Codex 0.159.2 · gpt-5.3-codex · ~/repos/eshu"], ["", ""], ["", "> "], ["dim", "  idle 26m · no goal · not marked available"]],
-    layout: "cols", panes: [{ cmd: "go", paneId: "%8", pane: [["", "linuxdynasty@omarchy ~/repos/eshu % go test ./go/internal/query/... -run Anchor"], ["ok", "ok      eshu/go/internal/query   4.218s"], ["", "linuxdynasty@omarchy ~/repos/eshu % go test -bench Anchor -run xxx ./go/internal/query/"], ["", "BenchmarkAnchorPlan-16    1203    948211 ns/op"], ["dim", "PASS · running…"]] }] },
-  { id: "s8", m: "omarchy", harness: "codex", yours: true, observed: true, sess: "main", idx: 4, win: "codex prompt 2", paneId: "%9", repo: "eshu-hq/eshu", line: "Keep the projector failure details under 4 KiB", last: ago(8), started: ago(2 * 3600),
+    layout: "cols", panes: [{ cmd: "go", paneId: "%8", pane: [["", "dev@linux-box ~/repos/eshu % go test ./go/internal/query/... -run Anchor"], ["ok", "ok      eshu/go/internal/query   4.218s"], ["", "dev@linux-box ~/repos/eshu % go test -bench Anchor -run xxx ./go/internal/query/"], ["", "BenchmarkAnchorPlan-16    1203    948211 ns/op"], ["dim", "PASS · running…"]] }] },
+  { id: "s8", m: "linux", harness: "codex", yours: true, observed: true, sess: "main", idx: 4, win: "codex prompt 2", paneId: "%9", repo: "eshu-hq/eshu", line: "Keep the projector failure details under 4 KiB", last: ago(8), started: ago(2 * 3600),
     pane: [["dim", "› Codex 0.159.2 · gpt-5.3-codex · ~/repos/eshu"], ["", "• Reading go/internal/projector/supersede.go"], ["", "• Running go test ./go/internal/projector/..."], ["hl", "• Working (3m 02s · esc to interrupt)"]] },
-  { id: "s9", m: "omarchy", harness: "codex", yours: true, sess: "main", idx: 5, win: "codex prompt 3", paneId: "%10", repo: "eshu-hq/eshu", line: null, last: ago(2 * 3600), started: ago(5 * 3600), idle: true, available: false,
+  { id: "s9", m: "linux", harness: "codex", yours: true, sess: "main", idx: 5, win: "codex prompt 3", paneId: "%10", repo: "eshu-hq/eshu", line: null, last: ago(2 * 3600), started: ago(5 * 3600), idle: true, available: false,
     pane: [["dim", "› Codex 0.159.2 · gpt-5.3-codex · ~/repos/eshu"], ["", ""], ["", "> "], ["dim", "  idle 2h · no goal · not marked available"]] },
-  { id: "s10", m: "omarchy", harness: "claude", yours: true, sess: "main", idx: 6, win: "claude w1", paneId: "%13", repo: "eshu-hq/eshu", line: null, last: ago(12), started: ago(8 * 3600),
-    pane: [["dim", "Claude Code 2.1.285 · ~/repos/eshu · Claude Max"], ["", "● Read go/internal/retention/runner.go"], ["", "● Grep pattern: \"pollInterval\""], ["hl", "● Thinking (22s · esc to interrupt)"]],
-    layout: "rows", panes: [{ cmd: "git", paneId: "%14", pane: [["", "linuxdynasty@omarchy ~/repos/eshu % git log --oneline -4"], ["", "7f1c2e9 retention: count cascade children in BatchRowLimit"], ["", "a04d9b1 projector: bound failure details"], ["", "c93e77a fix(storage): keep the prior failure on supersede"], ["", "11be0f4 perf(query): language-inventory aggregation"], ["", "linuxdynasty@omarchy ~/repos/eshu % "]] }] },
-  { id: "s2", m: "omarchy", harness: "claude", yours: true, sess: "main", idx: 7, win: "claude w2", paneId: "%2", repo: "eshu-hq/eshu", dirty: true, line: null, last: ago(41 * 60), started: ago(9 * 3600), idle: true, available: true,
-    pane: [["dim", "Claude Code 2.1.285 · ~/repos/eshu · Claude Max"], ["", ""], ["", "> "], ["ok", "  idle 41m · marked available for work on the board"]] },
-  { id: "s11", m: "omarchy", harness: "shell", yours: true, sess: "main", idx: 8, win: "zsh", paneId: "%15", repo: "", line: null, last: ago(30), started: ago(3 * 86400),
-    pane: [["", "linuxdynasty@omarchy ~ % tmux ls"], ["", "fleet: 2 windows (created Thu Oct  2 09:12:40 2026)"], ["", "main: 8 windows (created Mon Sep 29 07:40:03 2026) (attached)"], ["", "linuxdynasty@omarchy ~ % "]],
+  { id: "s10", m: "linux", harness: "claude", yours: true, sess: "main", idx: 6, win: "claude w1", paneId: "%13", repo: "eshu-hq/eshu", line: null, last: ago(12), started: ago(8 * 3600),
+    pane: [["dim", "Claude Code 2.1.285 · ~/repos/eshu · sample plan"], ["", "● Read go/internal/retention/runner.go"], ["", "● Grep pattern: \"pollInterval\""], ["hl", "● Thinking (22s · esc to interrupt)"]],
+    layout: "rows", panes: [{ cmd: "git", paneId: "%14", pane: [["", "dev@linux-box ~/repos/eshu % git log --oneline -4"], ["", "7f1c2e9 retention: count cascade children in BatchRowLimit"], ["", "a04d9b1 projector: bound failure details"], ["", "c93e77a fix(storage): keep the prior failure on supersede"], ["", "11be0f4 perf(query): language-inventory aggregation"], ["", "dev@linux-box ~/repos/eshu % "]] }] },
+  { id: "s2", m: "linux", harness: "claude", yours: true, sess: "main", idx: 7, win: "claude w2", paneId: "%2", repo: "eshu-hq/eshu", dirty: true, line: null, last: ago(41 * 60), started: ago(9 * 3600), idle: true, available: true,
+    pane: [["dim", "Claude Code 2.1.285 · ~/repos/eshu · sample plan"], ["", ""], ["", "> "], ["ok", "  idle 41m · marked available for work on the board"]] },
+  { id: "s11", m: "linux", harness: "shell", yours: true, sess: "main", idx: 8, win: "zsh", paneId: "%15", repo: "", line: null, last: ago(30), started: ago(3 * 86400),
+    pane: [["", "dev@linux-box ~ % tmux ls"], ["", "fleet: 2 windows (created Thu Oct  2 09:12:40 2026)"], ["", "main: 8 windows (created Mon Sep 29 07:40:03 2026) (attached)"], ["", "dev@linux-box ~ % "]],
     layout: "main-vertical", panes: [
-      { cmd: "tail", paneId: "%16", pane: [["", "linuxdynasty@omarchy ~ % tail -f ~/.local/state/fleet-agent/agent.log"], ["dim", "09:12:41 INFO  hello ok machine=omarchy hub=192.168.1.118"], ["dim", "09:12:41 INFO  control-mode attached server=default windows=10"], ["dim", "10:48:02 INFO  prompt detected pane=%12 id=p-… (none pending)"], ["dim", "11:03:19 INFO  heartbeat active=2/2 total=2/4"]] },
-      { cmd: "htop", paneId: "%17", pane: [["hl", "htop ─ Tasks: 212, 1 running"], ["", "  PID USER        PRI  NI  CPU%  MEM%  Command"], ["", "41822 linuxdynasty 20   0   9.1   2.4  claude"], ["", "40118 linuxdynasty 20   0   6.3   1.9  codex"], ["", "  912 linuxdynasty 20   0   0.4   0.1  fleet-agent"]] }] },
-  // allen: fleet session + the developer's own "work"
-  { id: "g3", m: "allen", harness: "muse", sess: "fleet", idx: 1, win: "muse virtual-humidor#780", paneId: "%21", repo: "CigarsOnly/virtual-humidor", provider: "github", issue: 780, pr: 794, display: "virtual-humidor#780", branch: "fix/780-db-test-leak-detector",
+      { cmd: "tail", paneId: "%16", pane: [["", "dev@linux-box ~ % tail -f ~/.local/state/fleet-agent/agent.log"], ["dim", "09:12:41 INFO  hello ok machine=linux-box hub=192.0.2.10"], ["dim", "09:12:41 INFO  control-mode attached server=default windows=10"], ["dim", "10:48:02 INFO  prompt detected pane=%12 id=p-… (none pending)"], ["dim", "11:03:19 INFO  heartbeat active=2/2 total=2/4"]] },
+      { cmd: "htop", paneId: "%17", pane: [["hl", "htop ─ Tasks: 212, 1 running"], ["", "  PID USER        PRI  NI  CPU%  MEM%  Command"], ["", "41822 dev          20   0   9.1   2.4  claude"], ["", "40118 dev          20   0   6.3   1.9  codex"], ["", "  912 dev          20   0   0.4   0.1  fleet-agent"]] }] },
+  // mbp2: fleet session + the developer's own "work"
+  { id: "g3", m: "mbp2", harness: "muse", sess: "fleet", idx: 1, win: "muse example-app#780", paneId: "%21", repo: "example-org/example-app", provider: "github", issue: 780, pr: 794, display: "example-app#780", branch: "fix/780-db-test-leak-detector",
     line: "BLOCKED: TEST_DATABASE_URL not reachable from this machine", watchAlive: false, last: ago(14 * 60 + 20), started: ago(80 * 60),
-    pane: [["", "> go test ./humidor-service/... -run Leak"], ["bad", "    dial tcp 127.0.0.1:55432: connect: connection refused"], ["warn", "Goal: BLOCKED: TEST_DATABASE_URL not reachable from this machine"], ["dim", "(no watcher armed · no output for 14m)"]] },
-  { id: "g4", m: "allen", harness: "muse", sess: "fleet", idx: 2, win: "muse eshu#7407", paneId: "%22", repo: "eshu-hq/eshu", provider: "github", issue: 7407, pr: null, display: "eshu#7407", branch: "fix/7407-failure-details-bound",
+    pane: [["", "> go test ./app-service/... -run Leak"], ["bad", "    dial tcp 127.0.0.1:55432: connect: connection refused"], ["warn", "Goal: BLOCKED: TEST_DATABASE_URL not reachable from this machine"], ["dim", "(no watcher armed · no output for 14m)"]] },
+  { id: "g4", m: "mbp2", harness: "muse", sess: "fleet", idx: 2, win: "muse eshu#7407", paneId: "%22", repo: "eshu-hq/eshu", provider: "github", issue: 7407, pr: null, display: "eshu#7407", branch: "fix/7407-failure-details-bound",
     line: "Drive eshu-hq/eshu#7407 to merged", last: ago(25), started: ago(35 * 60), perm: "p1",
     pane: [["", "> Bash: rm -rf go/internal/queue/testdata/fixtures"], ["", ""], ["bad", " Allow this command?"], ["", " ❯ 1. Allow once"], ["", "   2. Allow for this session"], ["", "   3. Deny"]] },
-  { id: "g9", m: "allen", harness: "claude", sess: "fleet", idx: 3, win: "claude OPS-142", paneId: "%23", repo: "eshu-hq/eshu", provider: "jira", issue: "OPS-142", pr: null, display: "OPS-142", branch: "ops/OPS-142-runner-idle-alert", sample: true,
+  { id: "g9", m: "mbp2", harness: "claude", sess: "fleet", idx: 3, win: "claude OPS-142", paneId: "%23", repo: "eshu-hq/eshu", provider: "jira", issue: "OPS-142", pr: null, display: "OPS-142", branch: "ops/OPS-142-runner-idle-alert", sample: true,
     line: "Drive OPS-142 to merged", last: ago(50), started: ago(22 * 60),
     pane: [["dim", "● Jira OPS-142 → github.com/eshu-hq/eshu (ticket in one system, code in another)"], ["", "● Read go/internal/retention/runner.go"], ["hl", "● Working (48s · esc to interrupt)"]] },
-  { id: "s3", m: "allen", harness: "shell", yours: true, sess: "work", idx: 0, win: "zsh", paneId: "%3", repo: "", line: null, last: ago(2 * 3600), started: ago(2 * 86400), pane: [["dim", "allen@allens-Apple-MacBook-Pro ~ %"]] },
-  { id: "s4", m: "allen", harness: "opencode", yours: true, sess: "work", idx: 1, win: "opencode", paneId: "%4", repo: "eshu-hq/eshu", line: null, last: ago(9 * 60), started: ago(4 * 3600), idle: true, available: false,
+  { id: "s3", m: "mbp2", harness: "shell", yours: true, sess: "work", idx: 0, win: "zsh", paneId: "%3", repo: "", line: null, last: ago(2 * 3600), started: ago(2 * 86400), pane: [["dim", "dev@work-macbook ~ %"]] },
+  { id: "s4", m: "mbp2", harness: "opencode", yours: true, sess: "work", idx: 1, win: "opencode", paneId: "%4", repo: "eshu-hq/eshu", line: null, last: ago(9 * 60), started: ago(4 * 3600), idle: true, available: false,
     model: "Build · Kimi K3 Moonshot AI · high", acct: "moonshot-api",
     pane: [["dim", "OpenCode 1.18.34 · ~/repos/eshu"], ["", ""], ["", "> "], ["dim", "Build · Kimi K3 Moonshot AI · high"]] },
   // mbp (hub): fleet session + "main"
@@ -58,15 +58,15 @@ const sessions = [
   { id: "g7", m: "mbp", harness: "muse", sess: "fleet", idx: 1, win: "muse eshu#7398", paneId: "%32", repo: "eshu-hq/eshu", provider: "github", issue: 7398, pr: null, display: "eshu#7398", branch: "fix/7398-retention-idle-sleep",
     line: "Drive eshu-hq/eshu#7398 to merged", last: ago(60), started: ago(62 * 60), perm: "p2",
     pane: [["", "> Bash: git fetch https://x-access-token:$(gh auth token)@github.com/eshu-hq/eshu"], ["", ""], ["bad", " Allow this command?"], ["", " ❯ 1. Allow once"], ["", "   2. Allow for this session"], ["", "   3. Deny"]] },
-  { id: "s5", m: "mbp", harness: "shell", yours: true, sess: "main", idx: 0, win: "zsh", paneId: "%5", repo: "", line: null, last: ago(120), started: ago(86400), pane: [["dim", "asanabria@mbp ~/repos/fleet-board %"]] },
-  // .124: fleet session + "dev"
-  { id: "g6", m: "m124", harness: "codex", sess: "fleet", idx: 0, win: "codex eshu#7411", paneId: "%41", repo: "eshu-hq/eshu", provider: "github", issue: null, pr: 7411, display: "eshu#7411", branch: "codex-agent-spawn-guard",
+  { id: "s5", m: "mbp", harness: "shell", yours: true, sess: "main", idx: 0, win: "zsh", paneId: "%5", repo: "", line: null, last: ago(120), started: ago(86400), pane: [["dim", "dev@mbp ~/repos/fleet-board %"]] },
+  // mac-mini: fleet session + "dev"
+  { id: "g6", m: "mini", harness: "codex", sess: "fleet", idx: 0, win: "codex eshu#7411", paneId: "%41", repo: "eshu-hq/eshu", provider: "github", issue: null, pr: 7411, display: "eshu#7411", branch: "codex-agent-spawn-guard",
     line: "BLOCKED: waiting for review on #7411 WATCH=9120", watchAlive: true, last: ago(18 * 60), started: ago(6 * 3600),
     pane: [["", "• PR #7411: 83 passing · 1 pending"], ["warn", "Goal: BLOCKED: waiting for review on #7411 WATCH=9120"]] },
-  { id: "g8", m: "m124", harness: "muse", sess: "fleet", idx: 1, win: "muse eshu#7397", paneId: "%42", repo: "eshu-hq/eshu", provider: "github", issue: 7397, pr: null, display: "eshu#7397", branch: "fix/7397-savepoint-giveback", sample: true,
+  { id: "g8", m: "mini", harness: "muse", sess: "fleet", idx: 1, win: "muse eshu#7397", paneId: "%42", repo: "eshu-hq/eshu", provider: "github", issue: 7397, pr: null, display: "eshu#7397", branch: "fix/7397-savepoint-giveback", sample: true,
     line: "Drive eshu-hq/eshu#7397 to merged", last: ago(7), started: ago(48 * 60), cond: "c1",
     pane: [["", "> Edit go/internal/retention/prune.go"], ["bad", "⚠ Meta Model API server error (HTTP 500) · retrying in 7s · attempt 6/10"], ["dim", "  goal stays set · harness retries on its own"]] },
-  { id: "s6", m: "m124", harness: "shell", yours: true, sess: "dev", idx: 0, win: "zsh", paneId: "%6", repo: "", line: null, last: ago(5 * 3600), started: ago(3 * 86400), pane: [["dim", "linuxdynasty@ip-192-168-1-124 ~ %"]] },
+  { id: "s6", m: "mini", harness: "shell", yours: true, sess: "dev", idx: 0, win: "zsh", paneId: "%6", repo: "", line: null, last: ago(5 * 3600), started: ago(3 * 86400), pane: [["dim", "dev@mac-mini ~ %"]] },
 ];
 sessions.forEach(s => { s.target = `${s.sess}:${s.idx}`; });
 
@@ -105,16 +105,16 @@ const backlog = [
   { repo: "eshu-hq/eshu", n: 7398, t: "retention: the runner sleeps a full poll interval after a pass that found candidates and pruned none" },
   { repo: "eshu-hq/eshu", n: 7397, t: "retention: the general path keeps up to 100 scope rows locked while it prunes a few; generalise PR-3d's savepoint give-back" },
   { repo: "eshu-hq/eshu", n: 7396, t: "retention: BatchRowLimit and the retention events do not count fifteen cascade children of scope_generations", untrusted: true, sample: true },
-  { repo: "CigarsOnly/virtual-humidor", n: 785, t: "Uniform 404 for GET /public/v1/shares/{slug} on non-viewable states (share enumeration)" },
+  { repo: "example-org/example-app", n: 785, t: "Uniform 404 for GET /public/v1/items/{slug} on hidden states (item enumeration)", sample: true },
   { repo: "eshu-hq/eshu", provider: "jira", project: "OPS", n: "OPS-142", display: "OPS-142", kindLabel: "ticket", targetRepo: "github.com/eshu-hq/eshu", t: "Alert when the retention runner idles a full poll interval with candidates pending", sample: true },
 ];
 
 const audit = [
-  { at: ago(22 * 60), who: "you", what: "dispatched OPS-142 (Jira → github.com/eshu-hq/eshu) to claude", where: "allen fleet:3", s: "g9" },
-  { at: ago(35 * 60), who: "fleet", what: "started eshu#7407 on muse (behind pace, 2% used) (sample)", where: "allen fleet:2", s: "g4" },
-  { at: ago(41 * 60), who: "you", what: "marked claude w2 available for work", where: "omarchy main:7", s: "s2" },
-  { at: ago(80 * 60), who: "fleet", what: "started virtual-humidor#780 on muse (sample)", where: "allen fleet:1", s: "g3" },
-  { at: ago(5 * 3600), who: "you", what: "dispatched eshu#7380 to claude", where: "omarchy fleet:1", s: "g1" },
+  { at: ago(22 * 60), who: "you", what: "dispatched OPS-142 (Jira → github.com/eshu-hq/eshu) to claude", where: "mbp2 fleet:3", s: "g9" },
+  { at: ago(35 * 60), who: "fleet", what: "started eshu#7407 on muse (behind pace, 5% used) (sample)", where: "mbp2 fleet:2", s: "g4" },
+  { at: ago(41 * 60), who: "you", what: "marked claude w2 available for work", where: "linux main:7", s: "s2" },
+  { at: ago(80 * 60), who: "fleet", what: "started example-app#780 on muse (sample)", where: "mbp2 fleet:1", s: "g3" },
+  { at: ago(5 * 3600), who: "you", what: "dispatched eshu#7380 to claude", where: "linux fleet:1", s: "g1" },
 ];
 
 // ADR 0010 session history (v1): sample timeline for the replay placeholder. Sizes use the measured numbers from

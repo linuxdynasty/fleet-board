@@ -21,7 +21,7 @@ in [spikes/mdns/results/](../../spikes/mdns/results/README.md).
   error, macOS's `dns-sd` saw and resolved it, and the Go browser found it 150
   of 150 times (worst first answer 10.3 ms). The browser found a service macOS
   registered 10 of 10 times (worst 83.6 ms).
-- **Mac to Linux.** From omarchy (Linux, `ufw` active, its policy inferred as
+- **Mac to Linux.** From linux-box (Linux, `ufw` active, its policy inferred as
   "deny incoming" because `ufw status` needs root, `avahi-daemon` holding
   5353), the browser found the Mac's service 0 of 100 times, and a service
   macOS itself registered 1 of 20 times. The kernel log
@@ -35,7 +35,7 @@ in [spikes/mdns/results/](../../spikes/mdns/results/README.md).
   still get a direct reply. macOS's own responder was dropped the same way.
 - **Not run.** A hub on Wi-Fi (the owner chose on 2026-10-05 to skip it; the
   hub can be any laptop, so row 4 checks it in real use), a Linux hub, and
-  omarchy with its firewall off (needs root).
+  linux-box with its firewall off (needs root).
 
 ## Options
 

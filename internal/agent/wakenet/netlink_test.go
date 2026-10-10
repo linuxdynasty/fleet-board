@@ -92,7 +92,7 @@ func TestNetlinkHint(t *testing.T) {
 		b    []byte
 		want bool
 	}{
-		{"address added (the omarchy IPv6 refresh)", nlMsg(nlNewAddr, ifaddrmsg(afInet6Linux, 64, 2)), true},
+		{"address added (the linux-box IPv6 refresh)", nlMsg(nlNewAddr, ifaddrmsg(afInet6Linux, 64, 2)), true},
 		{"address removed", nlMsg(nlDelAddr, ifaddrmsg(afInet, 24, 2)), true},
 		{"link up", nlMsg(nlNewLink, ifinfomsg(2387, 0x41)), true},
 		{"link removed", nlMsg(nlDelLink, ifinfomsg(2387, 0)), true},
