@@ -338,8 +338,9 @@ re-enroll rule are in [02g](02g-agent-security.md#machine-lifecycle-revoke-and-d
   within the Bye wait after a stop ([defaults](defaults.md));
   `connect.epoch_regressed{epoch, last_epoch}`;
   `connect.backoff{failures, wait_ms, reason}` each time the loop waits
-  before the next try (`wait_ms` is the planned backoff wait) (`failures` is the count in a row the wait doubles
-  from; 0 after a wake or network change, which resets it);
+  before the next try (`wait_ms` is the planned backoff wait; `failures` is
+  the count in a row the wait doubles from, 0 after a wake or network
+  change, which resets it);
   `connect.message_ignored{kind}` (a `Command` or `Settings` before plan rows
   6 and 10 handle them); `connect.ended{state}` (`revoked`,
   `unknown_machine`, `fleet_mismatch`, `cert_expired`);

@@ -106,8 +106,12 @@ st := l.Status()                    // state, peer, last failure per address, cl
    HelloAck arrived, read from the monotonic clock, 02i "Clocks"), never
    the agent's wall clock: `not_after_time` is the hub's deadline, and
    setting the wall clock does not move hub time. A HelloAck with no
-   `hub_time` leaves the agent's clock at arrival as the start, skew 0,
-   and `connect.hello{hub_time_ok=false}`.
+   `hub_time` falls back to the agent's clock at its arrival and logs
+   `hub_time_ok=false` (skew 0, not measured); a conforming hub always
+   sends it. Hub time this way does not count time asleep (the monotonic
+   clock stops or slows in sleep), so it runs late after a sleep: safe
+   for pruning, which then happens later, but row 6's executor must not
+   reuse it for deadline checks, which must count the time asleep.
 5. **Connected.** The cached address is rewritten if it changed. A
    `ResultAck` stamps its ids (unknown ones change nothing); a
    `SnapshotRequest` gets a new snapshot and the unacked results; a `Bye`
@@ -222,8 +226,10 @@ restart on the same port, a snapshot cut short
 never sent on the next stream, its seq taken before it is built, results
 resent until acked (unknown and pruned ids, a `SnapshotRequest`), the
 command log pruned by hub time with an agent clock 2 h fast, hub time as
-`hub_time` plus monotonic time elapsed, a HelloAck with no `hub_time`
-logged as `hub_time_ok=false`, seqs that
+`hub_time` plus the monotonic time elapsed (the monotonic clock is
+replaced in the test so the wall clock can be stepped apart from it) and
+an anchor that keeps its monotonic reading, a HelloAck with no
+`hub_time` logged as `hub_time_ok=false`, seqs that
 never go back (a wiped agent and a restored hub), a displaced stream
 backing off, wake and network change while connected and in backoff, a
 silent hub caught by the keepalive through a proxy that goes quiet

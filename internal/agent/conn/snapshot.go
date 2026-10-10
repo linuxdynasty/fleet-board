@@ -170,5 +170,5 @@ func (s *session) ackResults(ctx context.Context, a *agentv1.ResultAck) error {
 // deadline and a wrong agent clock must not expire a command the hub may
 // still re-send. With no hub_time, hubAt is the agent's clock at arrival.
 func (s *session) hubNow() time.Time {
-	return s.hubAt.Add(time.Since(s.hubRecv))
+	return s.hubAt.Add(s.l.since(s.hubRecv))
 }

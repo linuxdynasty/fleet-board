@@ -58,6 +58,8 @@ type LoopOptions struct {
 	// HandshakeTimeout bounds the TLS handshake of each candidate; zero is
 	// 10 s, as for enroll.
 	HandshakeTimeout time.Duration
+	// anchorHook, for tests only, sees each stream's hub-time anchor.
+	anchorHook func(hubRecv time.Time)
 }
 
 // Loop keeps this machine connected to its hub (03 W1 "State machine", 03n W2):
@@ -68,6 +70,9 @@ type LoopOptions struct {
 // does not know the machine, the hub is another fleet, or the certificate
 // expired.
 type Loop struct {
+	// since is the monotonic time elapsed since t (time.Since); a test
+	// replaces it to step the wall clock apart from it.
+	since  func(t time.Time) time.Duration
 	opts   LoopOptions
 	log    *slog.Logger
 	tracer trace.Tracer
@@ -112,7 +117,8 @@ func NewLoop(ctx context.Context, opts LoopOptions) (*Loop, error) {
 		opts.HandshakeTimeout = handshakeTimeout
 	}
 	l := &Loop{
-		opts: opts, log: opts.Telemetry.Logger.With("component", "conn"), tracer: opts.Telemetry.Tracer(scope),
+		since: time.Since,
+		opts:  opts, log: opts.Telemetry.Logger.With("component", "conn"), tracer: opts.Telemetry.Tracer(scope),
 		m: m, cert: cert, fp: [32]byte(raw), seqs: seqs, addrs: hubAddresses(opts.Identity.HubAddresses),
 		events: opts.Events,
 	}

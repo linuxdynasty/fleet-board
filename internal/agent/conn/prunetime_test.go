@@ -3,6 +3,7 @@ package conn_test
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -10,6 +11,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	agentv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1"
+	"github.com/linuxdynasty/fleet-board/internal/agent/conn"
 	"github.com/linuxdynasty/fleet-board/internal/agent/ring"
 )
 
@@ -107,5 +109,28 @@ func TestAHelloAckWithNoHubTimeIsLogged(t *testing.T) {
 		if len(hello) != 1 || hello[0]["hub_time_ok"] != !missing || (missing && hello[0]["skew_ms"] != float64(0)) {
 			t.Errorf("hub_time missing %v: connect.hello = %v, want hub_time_ok %v", missing, hello, !missing)
 		}
+	}
+}
+
+// The hub-time anchor (when the HelloAck arrived) keeps its monotonic
+// reading, so hub time later is measured on the monotonic clock, not as a
+// difference of wall readings that setting the clock would move.
+func TestTheHubTimeAnchorIsMonotonic(t *testing.T) {
+	t.Parallel()
+	h := startConnectHub(t)
+	a := enrolled(t, h)
+	got := make(chan time.Time, 4)
+	r := startLoop(t, a, func(o *conn.LoopOptions) {
+		conn.SetAnchorHook(o, func(hubRecv time.Time) { got <- hubRecv })
+	})
+	h.connected(t, 1)
+	r.connected(t)
+	select {
+	case recv := <-got:
+		if !strings.Contains(recv.String(), " m=") {
+			t.Errorf("the anchor %v has no monotonic reading", recv)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("no anchor was reported")
 	}
 }

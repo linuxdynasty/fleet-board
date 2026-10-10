@@ -273,6 +273,9 @@ func (s *session) accept(ctx context.Context, ack *agentv1.HelloAck, st ring.Sta
 	}
 	var offset time.Duration
 	s.hubAt, s.hubRecv = recv, recv
+	if hook := s.l.opts.anchorHook; hook != nil {
+		hook(s.hubRecv)
+	}
 	ht := ack.GetHubTime()
 	hubTimeOK := ht.IsValid()
 	if hubTimeOK {
