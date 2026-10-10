@@ -252,6 +252,7 @@ func (s *session) receive() {
 		}
 		select {
 		case s.msgs <- m:
+			s.l.step("received")
 		case <-s.sctx.Done():
 			s.rerr = s.sctx.Err()
 			return
@@ -407,9 +408,12 @@ func (s *session) serve(ctx context.Context) (ending, string, error) {
 				continue
 			}
 			if d, ok := s.l.decide(ctx, ev, wakenet.Conn{Connected: true, LocalAddr: s.k.localAddr()}); ok {
-				return ending{event: &d}, "", nil
+				return s.byeFirst(ctx, ending{event: &d}), "", nil
 			}
 		case <-ctx.Done():
+			if b := s.leftBye(); b != nil { // the hub's Bye came first: no Bye back
+				return s.bye(ctx, b), "", nil
+			}
 			s.goodbye(agentv1.ByeReason_BYE_REASON_SHUTDOWN)
 			return ending{}, "", nil
 		}

@@ -51,6 +51,7 @@ func (s *session) sendSnapshot(ctx context.Context, first bool) error {
 	if err != nil {
 		return err
 	}
+	l.step("unacked_done")
 	// A requested snapshot first sends what is queued (outbound.go flush),
 	// after the read: a progress queued before a result it lists then
 	// never follows that result.

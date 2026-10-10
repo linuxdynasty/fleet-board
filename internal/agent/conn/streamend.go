@@ -29,9 +29,26 @@ func (s *session) byeOver(ctx context.Context, out ending, step string, err erro
 		return out, step, err
 	}
 	if b := s.leftBye(); b != nil {
+		// The failure the Bye stands in for is still said (a Snapshot
+		// hook's error, say), then the Bye decides what happens.
+		event := "connect.failed"
+		if s.serving.Load() {
+			event = "connect.closed"
+		}
+		s.l.log.WarnContext(ctx, event, "peer", s.c.addr, "step", step, "err_kind", connErrKind(err, false))
 		return s.bye(ctx, b), "", nil
 	}
 	return out, step, err
+}
+
+// byeFirst is out, unless a Bye the hub sent is waiting: then the Bye's
+// outcome, so a wake, a network change or a stop that came at the same
+// time never hides a Bye{REVOKED}.
+func (s *session) byeFirst(ctx context.Context, out ending) ending {
+	if b := s.leftBye(); b != nil {
+		return s.bye(ctx, b)
+	}
+	return out
 }
 
 // leftBye is lastBye, else the first Bye left in msgs; the other messages

@@ -60,7 +60,8 @@ type LoopOptions struct {
 	Heartbeat func(ctx context.Context, hb *agentv1.Heartbeat)
 	// Command and Settings take each Command and Settings the hub sends,
 	// with the epoch of the stream it came on and a context that ends with
-	// that stream or the run (ruling fork 12 c); false means the
+	// that stream or the run (ruling fork 12 c; it may already have ended
+	// for a message read ahead of a dead stream: check ctx.Err()); false means the
 	// receiver's intake is full, and the message is dropped unacked
 	// (command.intake_full). nil logs the kind as ignored.
 	Command  func(ctx context.Context, epoch uint64, c *agentv1.Command) bool
@@ -111,8 +112,9 @@ type LoopOptions struct {
 	sleepClock func() (time.Duration, error)
 	// stepHook, for tests only, runs on Run's goroutine the moment the
 	// status says Connected ("connected"), the moment a stream's queue
-	// closes ("unpublished") and just before a snapshot reads the unacked
-	// results ("unacked_read").
+	// closes ("unpublished"), just before and just after a snapshot reads
+	// the unacked results ("unacked_read", "unacked_done"); and on the
+	// receiver's goroutine once it handed a message over ("received").
 	stepHook func(step string)
 	// hookWarn, for tests only, replaces hookHeldWarn.
 	hookWarn time.Duration
@@ -269,10 +271,12 @@ func (l *Loop) Run(ctx context.Context) error {
 			l.avoidPresented(ctx)
 		}
 		switch {
+		case out.end != "":
+			// Before a stop: a revoke that came with the stop still ends
+			// the loop and is recorded.
+			return l.end(ctx, out.end, out.peer)
 		case ctx.Err() != nil:
 			return l.stopped()
-		case out.end != "":
-			return l.end(ctx, out.end, out.peer)
 		case out.connected:
 			p.onConnect()
 		}

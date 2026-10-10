@@ -221,7 +221,10 @@ wait; a result is sent only once logged (proto-equal); `Connected` in the
 status means Send takes messages. Known limit: the receiver reads 8
 messages ahead, so a hook that never returns while the hub sends more than
 8 is released only by the run's end (`connect.hook_blocked` says so). A
-Bye read ahead of the stream's end is acted on first (`streamend.go`).
+Bye read ahead is acted on before the stream's end, a wake or a stop
+(`streamend.go`). A Command or Settings read ahead of a stream that then
+died can reach its hook with an ended context: hooks (6e, 6f) check
+`ctx.Err()` before they start work for that stream.
 
 Tests: `seam_test.go`, `outbound_test.go`, `outboundhooks_test.go`,
 `strictclock_test.go` (each test's comment names the rule it pins).

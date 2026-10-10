@@ -195,7 +195,8 @@ The agent side of plan row 6 (ruling forks 4 i, 11 and 12), in
   receiver reads up to 8 messages ahead of the sender, so it sees the
   stream end even while a hook holds it; a hook that never returns while
   the hub sends more than 8 is released only by the run's end. A `Bye` the
-  receiver read ahead of the stream's end is acted on before the end, so a
+  receiver read ahead is acted on before the stream's end, a wake, a
+  network change or a stop that is ready at the same moment, so a
   `Bye{REVOKED}` or `Bye{UNKNOWN_MACHINE}` still ends the loop.
 - Results for commands the hub already closed are ignored (idempotent by
   `command_id`); results for commands the hub never issued (DB restored from an

@@ -117,9 +117,11 @@ func (b *statusBox) get() Status {
 }
 
 func (b *statusBox) update(fn func(s *Status)) {
-	b.mu.Lock()
-	fn(&b.s)
-	b.mu.Unlock()
+	func() {
+		b.mu.Lock()
+		defer b.mu.Unlock() // a panic in fn must not leave it locked
+		fn(&b.s)
+	}()
 	select {
 	case b.changed <- struct{}{}:
 	default:

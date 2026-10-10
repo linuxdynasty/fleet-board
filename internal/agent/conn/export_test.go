@@ -49,6 +49,16 @@ func SetSleepClock(o *LoopOptions, read func() (time.Duration, error)) { o.sleep
 // results), on Run's goroutine.
 func SetStepHook(o *LoopOptions, f func(step string)) { o.stepHook = f }
 
+// QueueLen is how many messages the Connected stream's queue holds, -1
+// with no Connected stream.
+func QueueLen(l *Loop) int {
+	q := l.out.Load()
+	if q == nil {
+		return -1
+	}
+	return len(q.ch)
+}
+
 // SetHookWarn shortens the wait before connect.hook_blocked.
 func SetHookWarn(o *LoopOptions, d time.Duration) { o.hookWarn = d }
 

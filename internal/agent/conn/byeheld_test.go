@@ -3,6 +3,9 @@ package conn_test
 import (
 	"context"
 	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
 	"sync/atomic"
 	"testing"
@@ -11,6 +14,7 @@ import (
 	agentv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1"
 	typev1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/type/v1"
 	"github.com/linuxdynasty/fleet-board/internal/agent/conn"
+	"github.com/linuxdynasty/fleet-board/internal/agent/wakenet"
 )
 
 // A Bye{REVOKED} or Bye{UNKNOWN_MACHINE} the hub sends just before it ends
@@ -67,20 +71,28 @@ func TestAByeBeforeTheStreamEndsIsNotLostToAHeldSender(t *testing.T) {
 // A progress, its logged result and the result, queued by another
 // goroutine just before a requested snapshot reads the unacked results,
 // reach the hub in that order: the snapshot flushes the queue after its
-// read, so the progress never follows the result the snapshot re-sends.
+// read (still queued at the unacked_done step, right after the read), so
+// the progress never follows the result the snapshot re-sends.
 func TestWorkQueuedBeforeTheUnackedReadIsFlushedFirst(t *testing.T) {
 	t.Parallel()
 	h := startConnectHub(t)
 	a := enrolled(t, h)
 	db := a.openDB(t)
-	var armed atomic.Bool
+	var armed, checkDone atomic.Bool
 	var errs hookLog
 	var loop *conn.Loop
 	r := startLoopThen(t, a, func(o *conn.LoopOptions) {
 		conn.SetStepHook(o, func(step string) {
+			if step == "unacked_done" && checkDone.CompareAndSwap(true, false) {
+				// The read is done and the flush has not run yet: what was
+				// queued before the read is still in the queue.
+				errs.add("queued at the read's end: %d", conn.QueueLen(loop))
+				return
+			}
 			if step != "unacked_read" || !armed.CompareAndSwap(true, false) {
 				return
 			}
+			checkDone.Store(true)
 			done := make(chan struct{})
 			go func() { // a command goroutine, not the sender
 				defer close(done)
@@ -107,8 +119,8 @@ func TestWorkQueuedBeforeTheUnackedReadIsFlushedFirst(t *testing.T) {
 		at := snapshotsAt(q)
 		return len(at) == 2 && len(q) > at[1]+1
 	})
-	if e := errs.get(); len(e) != 0 {
-		t.Fatalf("the command goroutine failed: %q", e)
+	if e := errs.get(); !slices.Equal(e, []string{"queued at the read's end: 2"}) {
+		t.Fatalf("the steps saw %q, want the progress and the result still queued after the read", e)
 	}
 	if ids := h.snapshots(1)[1].GetUnackedResults(); len(ids) != 1 || ids[0].GetValue() != "x" {
 		t.Fatalf("the requested snapshot lists %v, want x (logged before its read)", ids)
@@ -116,5 +128,100 @@ func TestWorkQueuedBeforeTheUnackedReadIsFlushedFirst(t *testing.T) {
 	q := h.queued(1)
 	if p, res := slices.Index(q, "progress:x"), slices.Index(q, "result:x"); p < 0 || p > res {
 		t.Errorf("the hub got %q: the progress must come before the first result for x", q)
+	}
+}
+
+// A Bye{REVOKED} waiting for the sender wins over a wake or a stop that is
+// ready at the same moment: the loop ends as revoked and records it in
+// ended.json. The sender is held by a hook while the Bye is read ahead and
+// the wake or stop arrives, so both are ready when it returns; eight runs
+// make a coin flip near certain to show.
+func TestAWaitingByeWinsOverAWakeOrAStop(t *testing.T) {
+	t.Parallel()
+	for _, how := range []string{"wake", "stop"} {
+		for i := range 8 {
+			t.Run(fmt.Sprintf("%s-%d", how, i), func(t *testing.T) {
+				t.Parallel()
+				h := startConnectHub(t)
+				a := enrolled(t, h)
+				events := make(chan wakenet.Event, 1)
+				held, release, received := make(chan struct{}, 1), make(chan struct{}), make(chan struct{}, 8)
+				var first, armed atomic.Bool
+				r := startLoop(t, a, func(o *conn.LoopOptions) {
+					o.Events = events
+					o.Command = func(context.Context, uint64, *agentv1.Command) bool {
+						if first.CompareAndSwap(false, true) {
+							held <- struct{}{}
+							<-release
+						}
+						return true
+					}
+					conn.SetStepHook(o, func(step string) {
+						if step == "received" && armed.Load() {
+							received <- struct{}{}
+						}
+					})
+				})
+				h.connected(t, 1)
+				r.connected(t)
+				h.pushCommand(t, "hold", time.Now().Add(time.Hour))
+				<-held
+				armed.Store(true)
+				h.push(t, &agentv1.ConnectResponse{Body: &agentv1.ConnectResponse_Bye{Bye: bye(agentv1.ByeReason_BYE_REASON_REVOKED)}})
+				<-received // the Bye waits in the read-ahead
+				if how == "wake" {
+					events <- wake
+				} else {
+					r.cancel()
+				}
+				close(release)
+				var ended *conn.EndedError
+				if err := r.result(t, 10*time.Second); !errors.As(err, &ended) || ended.End != conn.EndRevoked {
+					t.Fatalf("Run = %v, want the loop ended as revoked", err)
+				}
+				if _, err := os.Stat(filepath.Join(a.dir, conn.EndedFile)); err != nil {
+					t.Errorf("ended.json: %v, want it written", err)
+				}
+			})
+		}
+	}
+}
+
+// A Snapshot hook error that a waiting Bye stands in for is still logged
+// before the Bye decides (here a Bye{HUB_RESTART}: reconnect).
+func TestAFailureAByeStandsInForIsStillLogged(t *testing.T) {
+	t.Parallel()
+	h := startConnectHub(t)
+	a := enrolled(t, h)
+	building, received := make(chan struct{}, 1), make(chan struct{}, 8)
+	var first, armed atomic.Bool
+	startLoop(t, a, func(o *conn.LoopOptions) {
+		o.Snapshot = func(context.Context, *agentv1.Snapshot) error {
+			if !first.CompareAndSwap(false, true) {
+				return nil
+			}
+			building <- struct{}{}
+			<-received
+			return errors.New("the hook failed")
+		}
+		conn.SetStepHook(o, func(step string) {
+			if step == "received" && armed.Load() {
+				received <- struct{}{}
+			}
+		})
+	})
+	<-building
+	armed.Store(true)
+	h.push(t, &agentv1.ConnectResponse{Body: &agentv1.ConnectResponse_Bye{Bye: bye(agentv1.ByeReason_BYE_REASON_HUB_RESTART)}})
+	waitFor(t, 10*time.Second, "the next stream", func() bool { return h.count() >= 2 })
+	var found bool
+	for _, e := range a.events(t, "connect.failed") {
+		found = found || e["step"] == "snapshot"
+	}
+	if !found {
+		t.Errorf("connect.failed = %v, want the Snapshot hook's failure at step snapshot", a.events(t, "connect.failed"))
+	}
+	if b := a.events(t, "connect.bye"); len(b) == 0 || b[0]["reason"] != "HUB_RESTART" {
+		t.Errorf("connect.bye = %v, want the hub's restart Bye acted on", b)
 	}
 }

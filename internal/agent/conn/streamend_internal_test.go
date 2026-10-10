@@ -62,3 +62,39 @@ func TestAByeBeforeTheEndAnswersTheHello(t *testing.T) {
 		}
 	}
 }
+
+// byeOver finds a Bye behind other messages the receiver read ahead: the
+// ResultAck in front of it is passed over, not taken as "no Bye".
+func TestAByeBehindAnotherMessageStillEndsTheLoop(t *testing.T) {
+	t.Parallel()
+	s := &session{
+		l: &Loop{log: slog.New(slog.DiscardHandler)}, msgs: make(chan *agentv1.ConnectResponse, receiveAhead),
+		done: make(chan struct{}),
+	}
+	s.msgs <- &agentv1.ConnectResponse{Body: &agentv1.ConnectResponse_ResultAck{ResultAck: &agentv1.ResultAck{}}}
+	s.msgs <- &agentv1.ConnectResponse{Body: &agentv1.ConnectResponse_Bye{
+		Bye: &agentv1.Bye{Reason: agentv1.ByeReason_BYE_REASON_REVOKED},
+	}}
+	out, step, err := s.byeOver(context.Background(), ending{}, "stream", errors.New("the stream ended"))
+	if out.end != EndRevoked || err != nil || step != "" {
+		t.Errorf("byeOver = %v, %q, %v; want the loop ended as revoked", out, step, err)
+	}
+}
+
+// A panic inside a status update leaves the status usable: the lock is
+// released on the way out.
+func TestAPanicInAStatusUpdateReleasesTheLock(t *testing.T) {
+	t.Parallel()
+	var b statusBox
+	func() {
+		defer func() { _ = recover() }()
+		b.update(func(*Status) { panic("in the update") })
+	}()
+	got := make(chan State, 1)
+	go func() { got <- b.get().State }()
+	select {
+	case <-got:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the status lock stayed held after a panic in an update")
+	}
+}
