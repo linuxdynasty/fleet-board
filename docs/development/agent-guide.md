@@ -243,23 +243,33 @@ a month (typical / worst case):
 | nightly | daily, skipped when `main` did not move since the last night (Sundays always run) | ~390 | ~520 | built (#107) |
 | macOS weekly | Sundays, on demand, and PRs that change it | ~260 | ~394 | built (#107); the tmux steps run on demand only: none typical, one dispatch a month at most in the worst case (below) |
 | perf report | PRs whose changed packages hold a benchmark | ~48 | ~48 | built (#107) |
-| **Total** | | **~1361** | **~1983** | |
+| **Total** | | **~1364** | **~1979** | the sums of the rows above |
 
-How the tmux steps (row 7) were counted. The rows above imply about 21 PR
-runs and 10 `main` runs a month typical, 32 and 17 worst (their minutes over
-the 17.6 and 17.4 minute medians of the last 58 `ci.yml` runs). The steps run
-on a change that reaches tmux: 16 of the last 40 merges would have (40%,
-mostly go.mod and Makefile changes, which retest every package); worst
-assumes 60%. Such a run adds about 1.2 minutes: 0.5 for the build libraries
-and 0.7 for the real-tmux tests, run once with `-race` in their own step
-(`make test` skips them). A tmux build on a cache miss adds about 3: once
+How the tmux steps (row 7) were counted, and what that rests on. The table's
+run counts are its own assumptions, not measurements: about 21 PR runs and
+10 `main` runs a month typical, 32 and 17 worst (its minutes over the 17.6
+and 17.4 minute medians of the last 58 `ci.yml` runs). Real use has run far
+above them: 95 merges reached `main` in the 30 days to 2026-10-10, bunched
+(22 on 10-02, 20 on 10-10); at that pace every row above is low, with or
+without tmux, and the owner, who approves every change to CI minutes,
+decides. The tmux steps run on a change that reaches the tmux packages:
+16 of the last 40 merges would have (40%, by today's import graph of
+`./internal/agent/tmux/...`: `internal/proc`, `internal/telemetry`,
+`gen/`, plus the build inputs; mostly `api/`, `go.mod` and the Makefile);
+worst assumes 60%. Such a run adds about 1.2 minutes: 0.5 for the build
+libraries and 0.7 for the real-tmux tests, run once with `-race` in their
+own step (`make test` skips them; the step covers only
+`./internal/agent/tmux/...`, so a package that starts using `tmuxtest`
+must be added to it). A tmux build on a cache miss adds about 3: once
 after a pin or script change in the PR that makes it (a PR's cache is its
-own; a PR reads `main`'s but not another PR's) and once on `main` after the
-merge, and again when a cache unused for 7 days was evicted. Typical: one
-change, so one miss in each row; worst: two changes and two evictions in
-the PR row, two misses on `main`. PRs +13 / +35, `main` +8 / +18. The macOS
-tmux steps run only on a manual dispatch; the worst case allows at most one
-a month, with a cache miss: (1 Homebrew + 3 build + 1 tests) x 10 = 50.
+own; a PR reads `main`'s but not another PR's) and once on `main` after
+the merge, and again when a cache unused for 7 days was evicted. Typical:
+one change, so one miss in each row; worst: two changes and two evictions
+in the PR row, two misses on `main`. PRs +13 / +35, `main` +8 / +18. The
+macOS tmux steps run only on a manual dispatch; the worst case allows at
+most one a month, with a cache miss: (1 Homebrew + 3 build + 1 tests) x
+10 = 50. At the observed pace (about 95 `main` runs and twice as many PR
+runs a month) the tmux steps alone would add about 46 + 91 minutes.
 
 A PR that adds CI minutes (a new workflow, job, trigger or a longer step)
 updates this table in the same PR. The PR goes to the owner before it merges

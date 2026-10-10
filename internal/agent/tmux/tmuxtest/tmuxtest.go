@@ -147,6 +147,7 @@ func Start(tb testing.TB, b Binary, args ...string) *Server {
 	if err != nil {
 		tb.Fatal(err)
 	}
+	tb.Cleanup(func() { _ = os.RemoveAll(dir) }) // first, so a Fatal below leaks no folder
 	runner, err := proc.NewRunner(nil)
 	if err != nil {
 		tb.Fatal(err)
@@ -157,14 +158,11 @@ func Start(tb testing.TB, b Binary, args ...string) *Server {
 	}
 	s := &Server{Bin: b, Dir: dir, Socket: filepath.Join(dir, "s"), runner: runner, caller: caller}
 	s.env = cleanEnv(dir)
-	owner := fmt.Sprintf("%d\n%s\n", os.Getpid(), b.Path)
+	tb.Cleanup(func() { s.Kill(tb) }) // runs before the folder's removal
+	owner := strconv.Itoa(os.Getpid()) + "\n"
 	if err := os.WriteFile(filepath.Join(dir, OwnerFile), []byte(owner), 0o600); err != nil {
 		tb.Fatal(err)
 	}
-	tb.Cleanup(func() {
-		s.Kill(tb)
-		_ = os.RemoveAll(dir)
-	})
 	s.NewSession(tb, args...)
 	return s
 }
@@ -262,14 +260,17 @@ func cleanEnv(dir string) []string {
 }
 
 // OwnerFile is the file in each server folder that records the pid of the
-// test process that started the server and the tmux program it used.
+// test process that started the server: the pid and nothing else.
 const OwnerFile = "owner"
 
 // Sweep kills the servers a dead test process left behind (a panic or a kill
-// before its cleanup ran) and removes their folders. It looks only at
-// folders this package made (fbt* in the system temp folder and /tmp) that
-// hold an OwnerFile, and only at those whose recorded pid is no longer
-// running; it never matches a tmux process by name. Main runs it first.
+// before its cleanup ran) and removes their folders. It looks only at fbt*
+// folders in the system temp folder and /tmp that are real folders (not
+// symlinks), owned by this user and closed to everyone else (no group or
+// other permission bits), with an OwnerFile of the same kind whose pid is no
+// longer running. It reads nothing but that pid: the kill-server runs the
+// tmux this package found itself (Binaries), never a program named on disk,
+// and it never matches a tmux process by name. Main runs it first.
 func Sweep() {
 	runner, err := proc.NewRunner(nil)
 	if err != nil {
@@ -279,32 +280,59 @@ func Sweep() {
 	if err != nil {
 		return
 	}
+	var programs []string
+	for _, b := range Binaries() {
+		if b.Path != "" {
+			programs = append(programs, b.Path)
+		}
+	}
 	for _, base := range []string{os.TempDir(), "/tmp"} {
 		dirs, _ := filepath.Glob(filepath.Join(base, "fbt*"))
 		for _, dir := range dirs {
-			pid, program, ok := readOwner(filepath.Join(dir, OwnerFile))
+			pid, ok := orphanedBy(dir)
 			if !ok || processAlive(pid) {
 				continue
 			}
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			_, _ = runner.Run(ctx, proc.Spec{Caller: caller, Path: program, Args: []string{"-S", filepath.Join(dir, "s"), "kill-server"}, Env: cleanEnv(dir)})
-			cancel()
+			for _, program := range programs { // any tmux 3.2+ talks to the server
+				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				_, err := runner.Run(ctx, proc.Spec{Caller: caller, Path: program, Args: []string{"-S", filepath.Join(dir, "s"), "kill-server"}, Env: cleanEnv(dir)})
+				cancel()
+				if err == nil {
+					break
+				}
+			}
 			_ = os.RemoveAll(dir)
 		}
 	}
 }
 
-func readOwner(path string) (int, string, bool) {
-	b, err := os.ReadFile(path) //nolint:gosec // G304: a file in a folder this package made
+// orphanedBy returns the pid in dir's OwnerFile when dir and the file are
+// ones this user made for itself.
+func orphanedBy(dir string) (int, bool) {
+	if !private(dir, true) || !private(filepath.Join(dir, OwnerFile), false) {
+		return 0, false
+	}
+	b, err := os.ReadFile(filepath.Join(dir, OwnerFile)) //nolint:gosec // G304: checked above: this user's own private file
 	if err != nil {
-		return 0, "", false
+		return 0, false
 	}
-	pidText, program, _ := strings.Cut(strings.TrimSpace(string(b)), "\n")
+	pidText, _, _ := strings.Cut(strings.TrimSpace(string(b)), "\n")
 	pid, err := strconv.Atoi(pidText)
-	if err != nil || pid <= 0 || !isExecutable(program) {
-		return 0, "", false
+	if err != nil || pid <= 0 {
+		return 0, false
 	}
-	return pid, program, true
+	return pid, true
+}
+
+// private reports whether path is a folder (dir) or a regular file, not a
+// symlink, owned by this user, with no group or other permission bits.
+func private(path string, dir bool) bool {
+	fi, err := os.Lstat(path)
+	if err != nil || fi.Mode()&os.ModeSymlink != 0 || fi.IsDir() != dir || (!dir && !fi.Mode().IsRegular()) {
+		return false
+	}
+	st, ok := fi.Sys().(*syscall.Stat_t)
+	return ok && int(st.Uid) == os.Geteuid() && fi.Mode().Perm()&0o077 == 0
 }
 
 // processAlive reports whether pid names a running process (signal 0).

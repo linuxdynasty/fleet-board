@@ -106,7 +106,7 @@ func TestSweepKillsOnlyServersWhoseTestProcessIsGone(t *testing.T) {
 			if _, err := os.Stat(owner); err != nil {
 				t.Fatalf("Start wrote no owner file: %v", err)
 			}
-			if err := os.WriteFile(owner, []byte(fmt.Sprintf("%d\n%s\n", deadPid(t, b), b.Path)), 0o600); err != nil {
+			if err := os.WriteFile(owner, []byte(fmt.Sprintf("%d\n", deadPid(t, b))), 0o600); err != nil {
 				t.Fatal(err)
 			}
 			tmuxtest.Sweep()

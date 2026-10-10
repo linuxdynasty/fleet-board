@@ -8,10 +8,10 @@
 // test runs against, from FLEET_TMUX_32 and FLEET_TMUX_LATEST (the tmux on
 // PATH stands in for the latest); a missing one skips, or fails under
 // FLEET_REQUIRE_TMUX=1. [Main] is the TestMain body: it runs [Sweep] (kill
-// the servers a dead test process left, found by the [OwnerFile] in their
-// folder) and points TMUX_TMPDIR at an empty folder for the whole test
-// binary. One-shot tmux commands go
-// through internal/proc; a test file that needs a long-lived client (a person
+// the servers a dead test process left: only this user's private fbt*
+// folders whose [OwnerFile] pid is gone, with the rig's own tmux) and
+// points TMUX_TMPDIR at an empty folder for the whole test binary. One-shot
+// tmux commands go through internal/proc; a test file that needs a long-lived client (a person
 // at the keyboard on a PTY) starts it itself with [Server.Argv] and
 // [Server.Env].
 package tmuxtest

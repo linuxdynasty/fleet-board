@@ -177,13 +177,21 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends build-essential pkg-config bison libevent-dev libncurses-dev
 
+      # The runner image is in the cache key (a new image can bring new
+      # libraries). ImageOS is a runner variable, not in the env context, so
+      # a step reads it.
+      - name: Runner image for the tmux cache key
+        if: steps.tmux-paths.outputs.run == 'true'
+        id: tmux-image
+        run: echo "image=$ImageOS" >> "$GITHUB_OUTPUT"
+
       - name: Restore the tmux builds
         if: steps.tmux-paths.outputs.run == 'true'
         id: tmux-cache
         uses: actions/cache@v6
         with:
           path: ~/tmux
-          key: tmux-${{ runner.os }}-${{ env.ImageOS }}-${{ hashFiles('tool-versions.env', 'scripts/install-tmux.sh') }}
+          key: tmux-${{ runner.os }}-${{ steps.tmux-image.outputs.image }}-${{ hashFiles('tool-versions.env', 'scripts/install-tmux.sh') }}
 
       - name: Build tmux 3.2a and the latest release
         if: steps.tmux-paths.outputs.run == 'true' && steps.tmux-cache.outputs.cache-hit != 'true'
