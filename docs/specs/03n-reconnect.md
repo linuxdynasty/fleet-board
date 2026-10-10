@@ -77,7 +77,7 @@ stateDiagram-v2
   ONLINE --> REPLAYING: replayed events arriving
   REPLAYING --> ONLINE: last replayed seq reached
   ONLINE --> STALE: no Heartbeat for 45 s
-  STALE --> ONLINE: Heartbeat
+  STALE --> ONLINE: Heartbeat, or Hello + Snapshot
   STALE --> OFFLINE: 3 min, or Bye from agent
   ONLINE --> OFFLINE: Bye{SHUTDOWN|UPGRADE|RE_ENROLL} / stream closed
   ONLINE --> DISPLACED: newer Hello for same machine_id

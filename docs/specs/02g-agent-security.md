@@ -307,7 +307,7 @@ stateDiagram-v2
   ONLINE --> STALE: no heartbeat 45 s
   ONLINE --> OFFLINE: Bye or stream closed
   STALE --> OFFLINE: 3 min, Bye, or stream closed
-  STALE --> ONLINE: Heartbeat
+  STALE --> ONLINE: Heartbeat, or Hello + Snapshot
   OFFLINE --> ONLINE: Hello + Snapshot
   ENROLLED --> REVOKED: RevokeMachine
   ONLINE --> REVOKED: RevokeMachine
