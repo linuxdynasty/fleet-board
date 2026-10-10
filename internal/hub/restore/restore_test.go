@@ -17,6 +17,7 @@ import (
 	"github.com/linuxdynasty/fleet-board/internal/hub/restore"
 	"github.com/linuxdynasty/fleet-board/internal/hub/revocation"
 	"github.com/linuxdynasty/fleet-board/internal/hub/statedb"
+	"github.com/linuxdynasty/fleet-board/internal/store"
 )
 
 // A restore puts the backup's rows back, keeps the fleet id, CA and salt,
@@ -108,6 +109,38 @@ func TestRestoreIntoAFolderWithNoStateDB(t *testing.T) {
 	}
 	if got := dst.identity(t); got.FleetID != "fleet-a" || got.SettingsEpoch == src.id.SettingsEpoch {
 		t.Errorf("fleet %q epoch %q", got.FleetID, got.SettingsEpoch)
+	}
+}
+
+// A backup from an older fleetd (schema 4, before the reconcile column) is
+// migrated forward and gets the window.
+func TestRestoreMigratesAnOlderBackupForward(t *testing.T) {
+	t.Parallel()
+	f := emptyFixture(t)
+	path := statedb.Path(f.state)
+	s, err := store.Open(context.Background(), store.Options{Path: path, Name: "state", Migrations: statedb.Migrations()[:4]})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = s.Write(context.Background(), func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(context.Background(), `INSERT INTO hub_identity(id, fleet_id, ca_cert, ca_key, server_cert,
+			server_key, server_names, account_salt, salt_version, settings_epoch, created_time)
+			VALUES (1, 'fleet-old', x'00', x'00', x'00', x'00', '[]', zeroblob(32), 1, 'epoch-old', 0)`)
+		return err
+	})
+	if err := errors.Join(err, s.Close(), os.Chmod(path, 0o600)); err != nil {
+		t.Fatal(err)
+	}
+	backupPath := f.backupOf(t)
+	if _, err := restore.Run(context.Background(), f.options(backupPath)); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if n := count(t, path, "SELECT max(version) FROM schema_migrations"); n != len(statedb.Migrations()) {
+		t.Errorf("schema version %d after the restore, want %d", n, len(statedb.Migrations()))
+	}
+	got := f.identity(t)
+	if got.FleetID != "fleet-old" || got.SettingsEpoch == "epoch-old" || !got.RestoreReconcileUntil.Equal(now.Add(24*time.Hour)) {
+		t.Errorf("fleet %q, epoch %q, reconcile %v", got.FleetID, got.SettingsEpoch, got.RestoreReconcileUntil)
 	}
 }
 
