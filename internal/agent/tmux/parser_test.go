@@ -138,6 +138,12 @@ func TestLineBoundDropsTheLineAndResyncsAtTheNextNewline(t *testing.T) {
 			want: []string{`reply ok ["" "" ""] dropped=1`},
 		},
 		{
+			name: "a truncated reply counts the long line it dropped",
+			in:   "%begin 1 2 1\nab\n" + long + "\n",
+			opts: tmux.Options{MaxLineBytes: 32},
+			want: []string{`discarded truncated_reply 113`},
+		},
+		{
 			name: "a long line cut off by the end of the stream",
 			in:   "%pause %1\n" + long,
 			opts: tmux.Options{MaxLineBytes: 32},
