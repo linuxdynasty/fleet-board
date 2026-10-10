@@ -6,6 +6,8 @@
 // admin socket for an enroll token and prints only the token on stdout;
 // `fleetd backup [--encrypt]` copies state.db into the state folder's
 // backups/ without taking any lock and prints only the copy's path;
+// `fleetd restore BACKUP [--address A]` replaces state.db with a backup
+// offline, under fleetd.lock, so it is refused while fleetd run is up;
 // `fleetd --version` prints the name and version (internal/buildinfo).
 // Exit codes: 0 success, 1 the command failed, 2 bad usage. This package is
 // wiring only: cobra parses the flags and internal/hub/daemon does the work.

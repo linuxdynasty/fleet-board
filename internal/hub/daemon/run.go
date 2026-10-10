@@ -116,7 +116,7 @@ func revocationReason(err error) Reason {
 }
 
 func newCerts(ctx context.Context, cfg *config.Config, opts Options, st *store.Store, id statedb.Identity, s *session) (*gateway.Certs, string, error) {
-	names, host, err := opts.names(cfg)
+	names, host, err := opts.serverNames(cfg, id.HubAddresses)
 	if err != nil {
 		return nil, "", err
 	}

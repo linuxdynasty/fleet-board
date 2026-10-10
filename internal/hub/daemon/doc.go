@@ -1,5 +1,5 @@
-// Package daemon is what `fleetd init`, `fleetd run`, `fleetd enroll-token`
-// and `fleetd backup` do (docs/specs/02j-hub-runtime.md); cmd/fleetd only
+// Package daemon is what `fleetd init`, `fleetd run`, `fleetd enroll-token`,
+// `fleetd backup` and `fleetd restore` do (docs/specs/02j-hub-runtime.md); cmd/fleetd only
 // parses flags and calls it.
 //
 // [Init] reads fleetd.yaml (writing the defaults when it is missing), creates
@@ -31,6 +31,11 @@
 // [Backup] writes one manual copy of state.db into backups/ (backup.Take,
 // encrypted with a passphrase from Options.Terminal on request). It takes no
 // lock, so it works whether or not Run holds fleetd.lock.
+//
+// [Restore] takes fleetd.lock (so it is refused while Run holds it) and
+// replaces state.db with a backup (restore.Run). The server certificate it
+// issues for --address and the one Run wants share one name list:
+// tls.agent_names or the default names, plus the host of every hub address.
 //
 // A refusal to start is a *[StartError] with a closed [Reason], logged as
 // hub.start_failed and counted in fleet_hub_start_failures_total{command,
