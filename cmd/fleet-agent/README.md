@@ -59,6 +59,11 @@ fleet-agent run    # logs to stderr; stop with Ctrl-C or SIGTERM
   `cert.pem`, used from the next connection; `identity.json` is never
   changed. A failed renewal is tried again at the next check and never
   stops `run`.
+- Each snapshot carries the machine facts (OS version, RAM, time zone, tmux
+  version, user, binary hash) and the latest resource sample (load, memory,
+  memory pressure, free disk under the state folder), and each heartbeat the
+  load. A reading that failed is left out, not sent as 0
+  (`internal/agent/machine`; `sample.failed` in the log).
 - Exit codes: 0 after a signal (it says goodbye to the hub first; a
   signal while it is still starting is a clean stop too, logged as
   `run.stopped{step}`; a real startup failure at the same moment still

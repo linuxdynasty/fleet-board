@@ -105,9 +105,14 @@ func runAgent(ctx context.Context, dir, version, boot string, tel *telemetry.Tel
 	wg.Go(func() { wake.Run(wctx, events) })
 	wg.Go(func() { nw.Run(wctx, events) })
 
+	snapshot, heartbeat, err := machineHooks(wctx, &wg, tel, dir, nil)
+	if err != nil {
+		return failed("machine", err)
+	}
 	loop, err := conn.NewLoop(ctx, conn.LoopOptions{
 		Dir: dir, Identity: id, DB: db, Version: version, BootID: boot,
 		Telemetry: tel, Events: events, PushOff: nw.PushOff, Discover: discover,
+		Snapshot: snapshot, Heartbeat: heartbeat,
 	})
 	if err != nil {
 		return failed("loop", err)

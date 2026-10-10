@@ -236,6 +236,22 @@ func TestOutputAndExitStatus(t *testing.T) {
 	})
 }
 
+// A bare program name that is on no PATH entry is ErrNotFound, so a caller can
+// tell "not installed" (tmux, loginctl) from a program that ran and failed.
+func TestProgramNotOnPathIsErrNotFound(t *testing.T) {
+	t.Parallel()
+	sp := child(t, "echo", proc.Limits{Time: 5 * time.Second, Output: 1 << 10})
+	sp.Path = "fleet-proc-test-no-such-program"
+	_, err := newRunner(t).Run(deadline(t), sp)
+	if !errors.Is(err, proc.ErrNotFound) {
+		t.Fatalf("Run = %v, want ErrNotFound", err)
+	}
+	sp.Path = "/nonexistent/fleet-proc-test"
+	if _, err := newRunner(t).Run(deadline(t), sp); errors.Is(err, proc.ErrNotFound) {
+		t.Fatalf("a path that does not exist is a start error, not ErrNotFound: %v", err)
+	}
+}
+
 // A cap that is already over when the child would start ends the call with
 // the cap's own error, not the context package's.
 func TestCapOverBeforeStartIsATimeCap(t *testing.T) {

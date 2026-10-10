@@ -443,7 +443,8 @@ re-enroll rule are in [02g](02g-agent-security.md#machine-lifecycle-revoke-and-d
   err_kind}`; `result.acked{acked, ignored}` (debug) and `result.pruned{count}`.
   Before the loop starts, `run.failed{step, err_kind}` (`step`: `identity`,
   `lock` when another `run` holds `fleet-agent.lock`, `ended` when
-  `ended.json` is damaged or cannot be read or removed, `store`, `loop`),
+  `ended.json` is damaged or cannot be read or removed, `store`, `machine` when the
+  machine facts or sampler could not be set up, `loop`),
   `run.refused{end}` when `ended.json` names this machine (exit 1, nothing
   sent) and `run.ended_removed{file}` when it named another machine; every
   `run.*` line after the identity is read carries `machine_id`. A signal

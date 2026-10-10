@@ -42,7 +42,8 @@ message MachineFacts {
   string policy_schema_version = 12;
   // Random id minted at agent process start; changes on restart.
   string boot_id = 13;
-  // True if the machine is a container (FLEET_ENROLL_TOKEN boot path).
+  // True if the agent found a container marker file: /.dockerenv or
+  // /run/.containerenv. False also means "no marker found", not a proof.
   bool container = 14;
   // Login user the agent runs as, for the copyable `ssh -t <user>@<host>
   // tmux attach` line (03g change #3); the hub never connects itself.
@@ -50,14 +51,19 @@ message MachineFacts {
 }
 
 // [CAP B2]
-// ResourceSample, every 30 s.
+// ResourceSample, every 30 s. A reading the agent could not take is left
+// unset, never 0: a machine with load 0 or no free memory is a real
+// reading, a missing one is not (principle 3; ADR 0023). `disk` lists
+// only the paths that were read.
 message ResourceSample {
-  double load1 = 1;
-  double load5 = 2;
-  uint64 mem_total_bytes = 3;
-  uint64 mem_available_bytes = 4;
-  // macOS memory pressure level when available: 1 normal, 2 warn, 4 critical.
-  uint32 mem_pressure_level = 5;
+  optional double load1 = 1;
+  optional double load5 = 2;
+  optional uint64 mem_total_bytes = 3;
+  optional uint64 mem_available_bytes = 4;
+  // macOS memory pressure level when available: 1 normal, 2 warn, 4
+  // critical. Linux derives the same three values (defaults.md "Memory
+  // pressure level").
+  optional uint32 mem_pressure_level = 5;
   repeated DiskFree disk = 6;
 }
 
