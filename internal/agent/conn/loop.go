@@ -29,7 +29,9 @@ type LoopOptions struct {
 	// before each attempt and written after a connect to another address.
 	Dir      string
 	Identity Identity
-	// DB is agent.db, opened once by the caller under fleet-agent.lock.
+	// DB is agent.db, opened once by the caller, which keeps one process
+	// per state folder (`fleet-agent run` takes fleet-agent.lock, row 4
+	// PR 3-iii).
 	DB      *ring.DB
 	Version string
 	// BootID is this process's random id, sent in Hello and the facts.
@@ -126,8 +128,7 @@ func (l *Loop) Status() Status { return l.status.get() }
 func (l *Loop) Run(ctx context.Context) error {
 	defer func() { _ = l.m.close() }()
 	b := l.opts.Backoff
-	reason := agentv1.ConnectReason_CONNECT_REASON_START
-	failures := 0
+	p := newPacer(b)
 	var last time.Time
 	for {
 		if !time.Now().Before(l.opts.Identity.CertNotAfter) {
@@ -139,34 +140,35 @@ func (l *Loop) Run(ctx context.Context) error {
 				return l.stopped()
 			}
 			if d != nil {
-				reason = d.Reason
+				p.onEvent(d.Reason)
 			}
 		}
 		last = time.Now()
-		out := l.attempt(ctx, reason)
+		out := l.attempt(ctx, p.reason)
 		switch {
 		case ctx.Err() != nil:
 			return l.stopped()
 		case out.end != "":
 			return l.end(ctx, out.end, out.peer)
 		case out.connected:
-			failures = 0
+			p.onConnect()
 		}
-		reason = agentv1.ConnectReason_CONNECT_REASON_RECONNECT
 		var wait time.Duration
 		if out.event != nil {
-			reason, failures, wait = out.event.Reason, 0, b.eventDelay()
+			p.onEvent(out.event.Reason)
+			wait = b.eventDelay()
 		} else {
-			failures++
-			wait = b.wait(failures)
+			wait = p.onFailure()
 		}
 		l.status.state(StateBackoff, "")
+		l.log.InfoContext(ctx, "connect.backoff", "failures", p.failures, "wait_ms", wait.Milliseconds(),
+			"reason", reasonLabel(p.reason))
 		d, ok := l.pause(ctx, wait, out.event == nil)
 		if !ok {
 			return l.stopped()
 		}
 		if d != nil {
-			reason, failures = d.Reason, 0
+			p.onEvent(d.Reason)
 			if !sleep(ctx, b.eventDelay()) {
 				return l.stopped()
 			}
@@ -274,12 +276,30 @@ func (l *Loop) stopped() error {
 func (l *Loop) fail(ctx context.Context, c candidate, step string, err error, connected, untrusted bool) {
 	kind := connErrKind(err, untrusted)
 	l.status.failed(c.addr, Failure{Step: step, ErrKind: kind, Time: time.Now()})
+	args := []any{"peer", c.addr, "step", step, "err_kind", kind}
+	if ce, ok := errors.AsType[*checkError](err); ok {
+		args = append(args, "check", ce.check, "value", ce.value)
+	}
 	if connected {
-		l.log.WarnContext(ctx, "connect.closed", "peer", c.addr, "step", step, "err_kind", kind)
+		l.log.WarnContext(ctx, "connect.closed", args...)
 		return
 	}
-	l.log.WarnContext(ctx, "connect.failed", "peer", c.addr, "step", step, "err_kind", kind)
+	l.log.WarnContext(ctx, "connect.failed", args...)
 }
+
+// checkError is a HelloAck that failed one of the agent's checks: check
+// names it (proto_version, epoch_out_of_range, seq_out_of_range,
+// epoch_regressed) and value is the hub's number, both logged with
+// err_kind="constraint".
+type checkError struct {
+	check string
+	value uint64
+	err   error
+}
+
+func (e *checkError) Error() string { return fmt.Sprintf("%v (%s %d)", e.err, e.check, e.value) }
+
+func (e *checkError) Unwrap() error { return e.err }
 
 // connErrKind is the 05b err_kind of a connect failure: a peer that failed
 // the handshake or refused the machine is "refused".
@@ -302,8 +322,9 @@ func connErrKind(err error, untrusted bool) string {
 	return errKind(err)
 }
 
-// hubAddresses normalizes a hub's address list, at most 16, dropping any
-// that is not a valid address.
+// hubAddresses normalizes a hub's address list (EnrollResponse and
+// HelloAck alike): invalid entries are dropped first, then at most 16 are
+// kept, in order.
 func hubAddresses(in []string) []string {
 	out := make([]string, 0, min(len(in), maxHubAddresses))
 	for _, a := range in {

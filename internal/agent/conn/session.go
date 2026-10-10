@@ -250,17 +250,20 @@ func (s *session) accept(ctx context.Context, ack *agentv1.HelloAck, st ring.Sta
 		return ending{end: EndFleetMismatch}, nil
 	}
 	if v := ack.GetProtoVersion(); v < protoversion.Min || v > protoversion.Max {
-		return ending{}, errProtoVersion
+		return ending{}, &checkError{check: "proto_version", value: uint64(v), err: errProtoVersion}
 	}
 	// Both are checked before either is saved: agent.db never lowers them,
 	// so one too large would stop every later epoch or seq.
-	if err := ring.CheckHubMarks(ack.GetEpoch(), ack.GetHubLastEventSeq()); err != nil {
-		return ending{}, err
+	if err := ring.CheckHubMarks(ack.GetEpoch(), 0); err != nil {
+		return ending{}, &checkError{check: "epoch_out_of_range", value: ack.GetEpoch(), err: err}
+	}
+	if err := ring.CheckHubMarks(0, ack.GetHubLastEventSeq()); err != nil {
+		return ending{}, &checkError{check: "seq_out_of_range", value: ack.GetHubLastEventSeq(), err: err}
 	}
 	if err := s.l.opts.DB.StartEpoch(ctx, ack.GetEpoch()); err != nil {
 		if errors.Is(err, ring.ErrEpochNotAbove) {
 			s.l.log.WarnContext(ctx, "connect.epoch_regressed", "epoch", ack.GetEpoch(), "last_epoch", st.Epoch)
-			return ending{}, errEpochRegressed
+			return ending{}, &checkError{check: "epoch_regressed", value: ack.GetEpoch(), err: errEpochRegressed}
 		}
 		return ending{}, err
 	}
@@ -271,7 +274,7 @@ func (s *session) accept(ctx context.Context, ack *agentv1.HelloAck, st ring.Sta
 	if ht := ack.GetHubTime(); ht.IsValid() {
 		offset = ht.AsTime().Sub(sent.Add(recv.Sub(sent) / 2))
 		s.hubOffset = offset
-		s.l.status.update(func(st *Status) { st.ClockOffset, st.ClockOffsetTime = offset, recv })
+		s.l.status.update(func(ss *Status) { ss.ClockOffset, ss.ClockOffsetTime = offset, recv })
 	}
 	if addrs := hubAddresses(ack.GetHubAddresses()); len(addrs) > 0 {
 		s.l.addrs = addrs

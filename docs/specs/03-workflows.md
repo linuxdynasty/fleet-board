@@ -260,7 +260,7 @@ re-enroll rule are in [02g](02g-agent-security.md#machine-lifecycle-revoke-and-d
 | Agent restart before the state dir is fully written | `identity.json` is written once (temp file, fsync, then a hard link that never replaces a file), so it is whole or absent. Until it exists `enroll.key` is kept, so running `enroll` again with the same token replays the hub's stored answer; no new token is needed |
 | Certificate expired (machine offline longer than lifetime) | Checked before every attempt: the loop ends without dialing, `connect.ended{state="cert_expired"}`, `fleet-agent run` exits 1 and `doctor` says "re-enroll". A hub refuses it at TLS anyway |
 | Agent restarted (supervisor) after `Bye{REVOKED}`, `Bye{UNKNOWN_MACHINE}` or `FLEET_MISMATCH` | `ended.json` (written before the agent stops) makes `run` refuse before any network call, naming the end and the fix; re-enroll removes it; the owner may remove it to retry |
-| `HelloAck.epoch` or `hub_last_event_seq` too large for `agent.db` to keep and still leave room for the next epoch or seq block (a broken or hostile hub) | Refused before either is saved, `connect.failed{step="hello", err_kind="constraint"}`, then backoff; `agent.db` never lowers them, so a saved one would stop every later epoch or seq |
+| `HelloAck.epoch` above 2^63 - 2 or `hub_last_event_seq` above 2^63 - 1 - 1024 (a broken or hostile hub) | Refused before either is saved, `connect.failed{step="hello", err_kind="constraint", check, value}`, then backoff. `agent.db` keeps signed 64-bit values that never go back, and the limits keep the hub's next epoch (the stored one plus 1) and the first seq block above the floor from overflowing them |
 | Duplicate identity (same cert from two hosts) | [03n](03n-reconnect.md) W2 |
 | Clock skew > 5 min (`Hello.sent_time` or `Heartbeat.sent_time` vs hub receive time) | HelloAck still sent; machine warning; commands still evaluated in hub time; above 15 min `clock_untrusted` (02i, "Clocks") |
 | Snapshot would exceed 960 KiB | Sent as parts (`snapshot_id`, `part_index`, `part_count`, same `seq`) that split whole servers, sessions or list entries, never a pane; the hub applies it once every part arrived (02, "Snapshot parts"). The agent never drops a pane or a goal to fit. A hub that does not list `snapshot.parts` gets one snapshot (`raw_screen` is always omitted); if that is still over the cap the agent logs `snapshot.oversize` and `doctor` says the hub must be upgraded |
@@ -325,13 +325,19 @@ re-enroll rule are in [02g](02g-agent-security.md#machine-lifecycle-revoke-and-d
   `connect.attempt{peer, source, reason}`; `connect.failed{peer, step,
   err_kind}` before Connected (`step`: `discover`, `dial` when the connection
   never got past TLS, `state`, `hello`, `snapshot`; also `save` when the
-  cached address or `ended.json` cannot be written; a stop is not a failure) and
+  cached address or `ended.json` cannot be written; a stop is not a failure;
+  a HelloAck that fails a check adds `check`, one of `proto_version`,
+  `epoch_out_of_range`, `seq_out_of_range`, `epoch_regressed`, and `value`,
+  the hub's number) and
   `connect.closed{peer, step, err_kind}` after (`stream`, `snapshot`,
   `result_ack`, `heartbeat`), where a peer that failed the handshake or refused the
   certificate is `err_kind="refused"`; `connect.bye{peer, reason, message}`;
   `connect.shutdown_cut{peer, wait_ms}` when the hub did not close the stream
   within the Bye wait after a stop ([defaults](defaults.md));
   `connect.epoch_regressed{epoch, last_epoch}`;
+  `connect.backoff{failures, wait_ms, reason}` each time the loop waits
+  before the next try (`failures` is the count in a row the wait doubles
+  from; 0 after a wake or network change, which resets it);
   `connect.message_ignored{kind}` (a `Command` or `Settings` before plan rows
   6 and 10 handle them); `connect.ended{state}` (`revoked`,
   `unknown_machine`, `fleet_mismatch`, `cert_expired`);
@@ -342,6 +348,8 @@ re-enroll rule are in [02g](02g-agent-security.md#machine-lifecycle-revoke-and-d
 At 3 AM: "why did `fleet-agent enroll` fail?" → `enroll.refused` (the reason
 the agent printed, and the peer) or `enroll.failed` (the hub's step). "machine X offline since when, why?" → `fleet_hub_machine_state` plus
 the agent's `connect.attempt` logs (last candidate tried, last TLS error).
+"why is machine X waiting so long to reconnect?" → `connect.backoff`
+(`failures`, `wait_ms`).
 "why did machine X reconnect just now?" → the agent's `wake.detected` or
 `netchange.acted` (its `why`); "why did it not reconnect after a network
 change?" → `netchange.ignored` (the change did not touch the connection),

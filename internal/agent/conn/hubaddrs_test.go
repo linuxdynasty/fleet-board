@@ -1,11 +1,13 @@
 package conn_test
 
 import (
+	"fmt"
 	"slices"
 	"testing"
 	"time"
 
 	agentv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1"
+	"github.com/linuxdynasty/fleet-board/internal/hub/ca"
 )
 
 // HelloAck.hub_addresses replaces the configured addresses for the rest of
@@ -67,5 +69,32 @@ func TestHelloAckAddressesAreCappedAt16(t *testing.T) {
 				t.Errorf("a cycle tried %d configured addresses %v, want the first 16 valid ones %v", len(cycle), cycle, want)
 			}
 		})
+	}
+}
+
+// Enroll keeps the hub's addresses the same way the loop does: invalid
+// entries are dropped first, then at most 16 are kept, so four invalid
+// ones at the front still leave 16 valid ones.
+func TestEnrollKeepsSixteenValidHubAddresses(t *testing.T) {
+	t.Parallel()
+	list := []string{"", "host:port:extra", "http://hub.example", "hub.example:99999"}
+	var want []string
+	for i := range 20 {
+		a := fmt.Sprintf("hub%d.example:7443", i)
+		list = append(list, a)
+		if i < 16 {
+			want = append(want, a)
+		}
+	}
+	f := &fakeHub{auth: newCA(t), tamper: func(res *agentv1.EnrollResponse, _ *ca.Authority) {
+		res.HubAddresses = list
+	}}
+	addr, tok := startFakeHub(t, f)
+	res, err := newAgent(t).enroll(t, addr, tok)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := res.Identity.HubAddresses; !slices.Equal(got, want) {
+		t.Errorf("identity.json keeps %d addresses %v, want the first 16 valid ones", len(got), got)
 	}
 }

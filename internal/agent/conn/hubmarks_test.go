@@ -11,19 +11,30 @@ import (
 	"github.com/linuxdynasty/fleet-board/internal/agent/conn"
 )
 
-// A HelloAck epoch or hub_last_event_seq too large for agent.db is refused
-// before anything is saved (connect.failed{step="hello",
-// err_kind="constraint"}) and the loop backs off; once the hub sends sane
-// values it connects and works.
+// A HelloAck epoch or hub_last_event_seq too large for agent.db, an epoch
+// not above the last, or a protocol version out of range is refused before
+// anything is saved (connect.failed{step="hello", err_kind="constraint",
+// check, value}) and the loop backs off; once the hub sends sane values it
+// connects and works.
 func TestAHubValueTooLargeSavesNothingAndIsTriedAgain(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
 		name   string
 		tamper func(ack *agentv1.HelloAck)
+		check  string
+		value  float64
 	}{
-		{"epoch MaxInt64", func(ack *agentv1.HelloAck) { ack.Epoch = math.MaxInt64 }},
-		{"hub_last_event_seq MaxInt64 - 10", func(ack *agentv1.HelloAck) { ack.HubLastEventSeq = math.MaxInt64 - 10 }},
-		{"hub_last_event_seq MaxUint64", func(ack *agentv1.HelloAck) { ack.HubLastEventSeq = math.MaxUint64 }},
+		{"epoch MaxInt64", func(ack *agentv1.HelloAck) { ack.Epoch = math.MaxInt64 }, "epoch_out_of_range", math.MaxInt64},
+		{
+			"hub_last_event_seq MaxInt64 - 10", func(ack *agentv1.HelloAck) { ack.HubLastEventSeq = math.MaxInt64 - 10 },
+			"seq_out_of_range", math.MaxInt64 - 10,
+		},
+		{
+			"hub_last_event_seq MaxUint64", func(ack *agentv1.HelloAck) { ack.HubLastEventSeq = math.MaxUint64 },
+			"seq_out_of_range", math.MaxUint64,
+		},
+		{"epoch zero", func(ack *agentv1.HelloAck) { ack.Epoch = 0 }, "epoch_regressed", 0},
+		{"protocol version 999", func(ack *agentv1.HelloAck) { ack.ProtoVersion = 999 }, "proto_version", 999},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -45,8 +56,8 @@ func TestAHubValueTooLargeSavesNothingAndIsTriedAgain(t *testing.T) {
 				t.Fatalf("agent.db after refused HelloAcks: epoch %d, seq_hwm %d; want 0 and 0", st.Epoch, st.Marks.SeqHWM)
 			}
 			for _, f := range a.events(t, "connect.failed") {
-				if f["step"] != "hello" || f["err_kind"] != "constraint" {
-					t.Errorf("connect.failed = %v, want step hello, err_kind constraint", f)
+				if f["step"] != "hello" || f["err_kind"] != "constraint" || f["check"] != tc.check || f["value"] != tc.value {
+					t.Errorf("connect.failed = %v, want step hello, err_kind constraint, check %s, value %v", f, tc.check, tc.value)
 				}
 			}
 			for n := 1; n <= 3; n++ {

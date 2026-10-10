@@ -128,3 +128,52 @@ func TestAnUnchangedRoutingBurstLeavesTheBackoff(t *testing.T) {
 	}
 	r.running(t)
 }
+
+// A wake that lands in the minimum gap between two tries (not in the
+// backoff wait) resets the doubling too: the try it starts says WAKE, and
+// when that try fails the backoff starts again from one failure
+// (connect.backoff{failures=1}, a wait of First to 2*First), not from four.
+func TestAWakeInTheGapBetweenTriesResetsTheBackoff(t *testing.T) {
+	t.Parallel()
+	const gap = 300 * time.Millisecond
+	h := startConnectHub(t)
+	a := enrolled(t, h)
+	h.set(func(h *connectHub) {
+		h.refuse = func(int) error { return connect.NewError(connect.CodeUnavailable, errors.New("busy")) }
+	})
+	events := make(chan wakenet.Event)
+	r := startLoop(t, a, func(o *conn.LoopOptions) {
+		o.Backoff.First, o.Backoff.Max, o.Backoff.MinGap = resetFirst, resetMax, gap
+		o.Events = events
+	})
+	// After three failures the wait is at most 80 ms, so from then until
+	// the gap ends (300 ms after the try started) the loop is in the gap.
+	waitFor(t, 20*time.Second, "three backoffs", func() bool { return len(a.events(t, "connect.backoff")) >= 3 })
+	third := a.events(t, "connect.backoff")[2]
+	if third["failures"] != float64(3) {
+		t.Fatalf("the third connect.backoff = %v, want failures 3", third)
+	}
+	waitMS, _ := third["wait_ms"].(float64)
+	waitEnd := logTime(t, third).Add(time.Duration(waitMS) * time.Millisecond)
+	time.Sleep(time.Until(waitEnd.Add(60 * time.Millisecond)))
+	events <- wake
+	sent := time.Now()
+	if sent.Before(waitEnd) {
+		t.Fatalf("the wake was read at %v, before the backoff wait ended at %v", sent, waitEnd)
+	}
+	waitFor(t, 20*time.Second, "the backoff after the wake's try", func() bool {
+		return len(a.events(t, "connect.backoff")) >= 4
+	})
+	attempts := a.events(t, "connect.attempt")
+	if got := attempts[3]["reason"]; got != "wake" {
+		t.Fatalf("the try after the wake says %v, want wake (did the wake land in the gap?)", got)
+	}
+	next := a.events(t, "connect.backoff")[3]
+	if next["failures"] != float64(1) {
+		t.Errorf("the backoff after the wake's failed try = %v, want failures 1 (reset), not 4", next)
+	}
+	if w, _ := next["wait_ms"].(float64); w > float64(2*resetFirst/time.Millisecond) {
+		t.Errorf("the wait after the wake's failed try = %v ms, want at most %v", w, 2*resetFirst)
+	}
+	r.running(t)
+}

@@ -115,16 +115,7 @@ func checkResponse(res *agentv1.EnrollResponse, key ed25519.PrivateKey, fp [32]b
 	if len(res.GetAccountSalt()) < minSaltBytes || res.GetSaltVersion() == 0 {
 		return bad("no account salt")
 	}
-	addrs := res.GetHubAddresses()
-	if len(addrs) > maxHubAddresses {
-		addrs = addrs[:maxHubAddresses]
-	}
-	kept := make([]string, 0, len(addrs))
-	for _, a := range addrs {
-		if norm, err := HubAddress(a); err == nil {
-			kept = append(kept, norm)
-		}
-	}
+	kept := hubAddresses(res.GetHubAddresses())
 	keyText, err := keyPEM(key)
 	if err != nil {
 		return Identity{}, err

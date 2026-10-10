@@ -4,6 +4,8 @@ import (
 	"context"
 	"math/rand/v2"
 	"time"
+
+	agentv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1"
 )
 
 // Reconnect pacing (defaults.md "Reconnect backoff" and "Random delay before
@@ -83,4 +85,37 @@ func sleep(ctx context.Context, d time.Duration) bool {
 	case <-ctx.Done():
 		return false
 	}
+}
+
+// pacer holds the connection loop's failures in a row and the reason the
+// next Hello gives. Every rule that moves them is here, so the backoff
+// wait and the minimum gap between tries apply the same one: a failure
+// doubles the next wait's ceiling; a connect, a wake or a network change
+// resets the doubling (defaults.md "Reconnect backoff").
+type pacer struct {
+	b        Backoff
+	failures int
+	reason   agentv1.ConnectReason
+}
+
+func newPacer(b Backoff) *pacer {
+	return &pacer{b: b, reason: agentv1.ConnectReason_CONNECT_REASON_START}
+}
+
+// onFailure counts a failed try (or a stream that closed) and returns the
+// wait before the next; that try says RECONNECT unless an event comes.
+func (p *pacer) onFailure() time.Duration {
+	p.failures++
+	p.reason = agentv1.ConnectReason_CONNECT_REASON_RECONNECT
+	return p.b.wait(p.failures)
+}
+
+// onConnect resets the doubling: the stream reached Connected.
+func (p *pacer) onConnect() { p.failures = 0 }
+
+// onEvent resets the doubling for a wake or network change that calls for
+// a reconnect; the next try gives its reason.
+func (p *pacer) onEvent(r agentv1.ConnectReason) {
+	p.failures = 0
+	p.reason = r
 }
