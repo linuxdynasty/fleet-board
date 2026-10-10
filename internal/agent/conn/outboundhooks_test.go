@@ -182,6 +182,9 @@ func TestConnectedMeansSendTakesMessages(t *testing.T) {
 	var loop *conn.Loop
 	startLoopThen(t, a, func(o *conn.LoopOptions) {
 		conn.SetStepHook(o, func(step string) {
+			if step != "connected" && step != "unpublished" {
+				return
+			}
 			err := loop.Send(context.Background(), ackOf(step))
 			got.add("%s: %s, send %v", step, loop.Status().State, errors.Is(err, conn.ErrNoStream))
 		})
