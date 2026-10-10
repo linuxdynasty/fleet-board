@@ -36,6 +36,7 @@ import (
 // hub's "now" for token expiry and certificate issue.
 type hub struct {
 	*fixture
+	srv     *http.Server
 	addr    string
 	clock   *clock
 	revoked *revocation.List
@@ -80,7 +81,7 @@ func startHubOn(t *testing.T, f *fixture, adjust ...func(*gateway.ServerOptions)
 	}
 	go func() { _ = srv.ServeTLS(ln, "", "") }()
 	t.Cleanup(func() { _ = srv.Close() })
-	return &hub{fixture: f, addr: ln.Addr().String(), clock: clk, revoked: list}
+	return &hub{fixture: f, srv: srv, addr: ln.Addr().String(), clock: clk, revoked: list}
 }
 
 var requestSeq atomic.Int64

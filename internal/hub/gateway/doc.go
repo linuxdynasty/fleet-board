@@ -17,7 +17,10 @@
 // install_id, the token's format and CA hash, the proto range and the CSR are
 // checked before the store; the read-pool pre-check answers unknown, used,
 // expired and replays; one writer job burns the token and inserts the
-// machine, its serial and the replayable response. Every EnrollResponse is
+// machine, its serial, the replayable response and the machine.enroll audit
+// row. A refusal writes a machine.enroll_failed row within the caps of
+// auditcap (a summary of the minute in progress is written at shutdown).
+// Every EnrollResponse is
 // rebuilt from hub_identity and the stored certificate. RenewCert takes the
 // machine id and serial only from the verified client certificate, applies
 // the enroll CSR rule and refuses the presented certificate's key, then

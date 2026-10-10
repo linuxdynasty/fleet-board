@@ -62,7 +62,7 @@ func NewServer(opts ServerOptions) (*http.Server, error) {
 	mux := http.NewServeMux()
 	path, h := agentv1connect.NewAgentServiceHandler(&agentService{enrollDeps: deps}, connect.WithReadMaxBytes(MaxMessageBytes))
 	mux.Handle(path, withPeerCert(h))
-	return &http.Server{
+	srv := &http.Server{
 		Handler: mux,
 		TLSConfig: &tls.Config{
 			MinVersion:       tls.VersionTLS13,
@@ -74,7 +74,11 @@ func NewServer(opts ServerOptions) (*http.Server, error) {
 		ReadHeaderTimeout: ReadHeaderTimeout,
 		IdleTimeout:       IdleTimeout,
 		ErrorLog:          tel.HTTPErrorLog("agent"),
-	}, nil
+	}
+	// Shutdown runs this in its own goroutine, before the daemon closes the
+	// store; a write that loses that race is counted as write_failed.
+	srv.RegisterOnShutdown(deps.flushAudit)
+	return srv, nil
 }
 
 // ReadHeaderTimeout bounds how long a peer may take to send request headers.

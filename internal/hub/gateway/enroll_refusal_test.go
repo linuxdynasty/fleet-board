@@ -128,6 +128,11 @@ func TestEnrollRefusals(t *testing.T) {
 			if strings.Contains(h.logs.String(), req.GetToken()) {
 				t.Error("a log line holds the token")
 			}
+			rows := h.auditRows(t, "machine.enroll_failed")
+			if len(rows) != 1 || rows[0].reason != want || rows[0].detail["peer"] != "127.0.0.1" ||
+				strings.Contains(rows[0].whole, req.GetToken()) {
+				t.Errorf("machine.enroll_failed rows %+v, want one with reason %s, the peer and no token", rows, want)
+			}
 			if tc.burnFree {
 				fixed := enrollRequest(req.GetToken(), newAgentKey(t), "install-1")
 				if _, err := h.enroll(t, fixed); err != nil {

@@ -269,7 +269,7 @@ re-enroll rule are in [02g](02g-agent-security.md#machine-lifecycle-revoke-and-d
 
 | Failure | What happens |
 |---|---|
-| Token unknown, expired or already used | `Enroll` fails with a gRPC error whose `ErrorDetail.reason` is `ENROLL_TOKEN_UNKNOWN`, `_EXPIRED` or `_USED` (02g); nothing persisted on the hub except an audit row (`machine.enroll_failed`; not yet: plan row 5, #104, until then only `enroll.refused` with `reason` and `peer`); `fleet_hub_enroll_total{result="refused"}`; the agent prints the reason and exits 1 |
+| Token unknown, expired or already used | `Enroll` fails with a gRPC error whose `ErrorDetail.reason` is `ENROLL_TOKEN_UNKNOWN`, `_EXPIRED` or `_USED` (02g); nothing persisted on the hub except an audit row (`machine.enroll_failed`, capped per [defaults](defaults.md); `fleet_hub_enroll_audit_rows_total{result="suppressed"}` counts the refusals without a row of their own, and `enroll.audit_failed` (`rows`, `err_kind`) a row the store did not take) and the log line `enroll.refused` (`reason`, `peer`); `fleet_hub_enroll_total{result="refused"}` counts every refusal; the agent prints the reason and exits 1 |
 | Bad CSR, bad `install_id` or no common proto version | `ENROLL_CSR_INVALID`, `FIELD_TOO_LARGE` / `INVALID_ARGUMENT` or `ENROLL_PROTO_UNSUPPORTED` (02g); checked before the store, so the token is not burned and a fixed request still enrolls; `enroll.refused` |
 | Hub store busy or failing during `Enroll` | `UNAVAILABLE` with `retryable = true`; `enroll.failed{step="store"}` and `fleet_hub_enroll_total{result="failed"}`. A write cancelled mid-way has an unknown outcome: the agent retries and gets the replay. The agent retries a retryable answer or a lost connection a bounded number of times ([defaults](defaults.md), "Enroll tries"), each with the same token, key and `install_id`, logging `enroll.retry{attempt, err_kind}`; when the tries run out, or the whole-enroll time cap ends a call or a wait, it logs `enroll.failed{step="call"}`, says running the same command again is safe, and exits 1 (the cap logs `err_kind="timeout"`; the caller's own cancel during a call gets no advice). A bare `INTERNAL` or `UNKNOWN` (a cut stream) is retried; an `INTERNAL` with the hub's `ErrorDetail` is not retried, and the agent does not advise a rerun, since the same request fails the same way. A request over the 1 MiB cap (refused as resource exhausted, [02g](02g-agent-security.md)) is not retried. Only a non-retryable reason is a refusal (`enroll.refused`) |
 | Enroll response lost after the token burned | Run `enroll` again: the same token, `install_id` and CSR key return the stored response (`replayed = true`), same `machine_id` and certificate, no second machine row |
@@ -321,7 +321,10 @@ re-enroll rule are in [02g](02g-agent-security.md#machine-lifecycle-revoke-and-d
   `cert.pem` or `renew.key` that could not be written or read).
 - `fleet_hub_enroll_tokens_total{result}` (token creation, plan row 2b),
   `fleet_hub_enroll_total{result}` (`enrolled`, `replayed`, `refused`: the
-  caller's error, `failed`: the hub's; plan row 3), `fleet_hub_agents_connected`,
+  caller's error, `failed`: the hub's; plan row 3),
+  `fleet_hub_enroll_audit_rows_total{result}` (refused Enrolls by audit
+  outcome: `written`, `suppressed`, `summary`, `write_failed`; plan row 5),
+  `fleet_hub_agents_connected`,
   `fleet_hub_machine_state{machine, state}` (gauge 0/1 per state),
   `fleet_hub_snapshot_apply_seconds`, `fleet_hub_snapshot_bytes`,
   `fleet_hub_events_discarded_before_snapshot_total`, `fleet_hub_clock_skew_seconds{machine}`.

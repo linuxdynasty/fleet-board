@@ -96,4 +96,7 @@ func TestRenewCertRepeatReturnsTheStoredCertificate(t *testing.T) {
 	if len(lines) != 2 || lines[1]["result"] != "replayed" {
 		t.Errorf("cert.renewed lines %v, want the second with result replayed", lines)
 	}
+	if rows := h.auditRows(t, "machine.cert_renewed"); len(rows) != 1 || rows[0].machine != m.id {
+		t.Errorf("machine.cert_renewed rows %+v, want one for %s: the repeat wrote another", rows, m.id)
+	}
 }
