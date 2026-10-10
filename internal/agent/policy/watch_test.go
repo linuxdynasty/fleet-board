@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"syscall"
 	"testing"
@@ -379,5 +380,31 @@ func TestAnEventOverflowIsFollowedByARead(t *testing.T) {
 	}
 	if ev := r.events(t, "policy.watch_error"); len(ev) != 1 || ev[0]["err_kind"] != "constraint" {
 		t.Errorf("policy.watch_error = %v", ev)
+	}
+}
+
+// Watching is true only once the first look at the file is done: a reader
+// that sees it can rely on an edit made before the watch having been found.
+func TestWatchingIsTrueOnlyAfterTheFirstLookAtTheFile(t *testing.T) {
+	t.Parallel()
+	for range 20 {
+		r := newRig(t, goodFile)
+		m := r.load(t)
+		r.write(t, goodFile+"max_total: 5\n") // before the watch: no event
+		ctx, cancel := context.WithCancel(t.Context())
+		done := make(chan struct{})
+		go func() { _ = m.Watch(ctx); close(done) }()
+		deadline := time.Now().Add(10 * time.Second)
+		for !m.Watching() {
+			if time.Now().After(deadline) {
+				t.Fatal("the watch was not set within 10s")
+			}
+			runtime.Gosched()
+		}
+		if !m.Info().GetChangedSinceLoad() {
+			t.Error("Watching was true before the edit made ahead of it was found")
+		}
+		cancel()
+		<-done
 	}
 }
