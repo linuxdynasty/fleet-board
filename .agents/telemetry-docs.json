@@ -18,6 +18,7 @@
   "result.": "docs/specs/03-workflows.md",
   "run.": "docs/specs/03-workflows.md",
   "snapshot.": "docs/specs/03-workflows.md",
+  "status.": "docs/specs/03-workflows.md",
   "store.": "docs/specs/05b-observability.md",
   "tls.": "docs/specs/05b-observability.md",
   "wake.": "docs/specs/03-workflows.md"
@@ -39,6 +40,7 @@
   "reconnects_": "docs/specs/03n-reconnect.md",
   "server_cert_": "docs/specs/05b-observability.md",
   "start_failures_": "docs/specs/05b-observability.md",
+  "status_writes_": "docs/specs/03-workflows.md",
   "store_": "docs/specs/05b-observability.md",
   "unacked_results": "docs/specs/03n-reconnect.md",
   "writer_": "docs/specs/05b-observability.md"

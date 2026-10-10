@@ -243,7 +243,7 @@ re-enroll rule are in [02g](02g-agent-security.md#machine-lifecycle-revoke-and-d
 | Enrollment token secret hash, expected hostname, TTL, `used_time`, `previous_machine` | hub store | one tx at `enroll-token`; burned in the Enroll tx |
 | Machine row (id, name, facts, labels), cert serial + `not_after_time`, the stored Enroll response (kept until the token's TTL + 24 h, keyed by token, `install_id` and CSR key, for replay) | hub store | the Enroll tx (token burn + machine + serial + response together; signing is local CPU, not a network call) |
 | Key (kept until Enroll succeeds, so a retry sends the same CSR), cert, CA chain + pinned fingerprint, `machine_id`, salt, `fleet_id`, cached hub address | agent state dir, mode 0600: a pending key file until success, then `hub-address` and `identity.json` (written once, never replaced); a renewed key and certificate in `cert.pem` (replaced by temp file, fsync, rename), with `renew.key` kept until it is saved; `install_id` is in `agent.db` | written before `Enroll` returns to the shell; salt never logged |
-| `status.json` (the running agent's last-known state; its entries are listed in plan row 6) and `enroll.json` (the last enroll failure code) | agent state dir, mode 0600 | each written whole (temp file, sync, rename) by its one writer: `fleet-agent run` and `fleet-agent enroll` |
+| `status.json` (the running agent's last-known state; its entries are listed in plan row 6) and `enroll.json` (the last enroll failure code) | agent state dir, mode 0600 | each written whole (temp file, sync, rename, folder sync) by its one writer: `fleet-agent run` (`status.json`: at start, at most once a second after a change, at least once a minute, and once more after the connection loop returns) and `fleet-agent enroll` (`enroll.json`: a failed enroll writes its code, a good one removes the file). A reader ignores keys it does not know, refuses another `version`, and cleans every string |
 | The end the connection loop stopped on (revoked, unknown machine, fleet mismatch) | agent state dir, `ended.json`, mode 0600 | written whole before `run` exits; removed by enroll |
 | The hub's latest address list (`HelloAck.hub_addresses`) | agent state dir, `hub-addresses`, mode 0600 | replaced whole (temp file, fsync, rename) when a non-empty list differs from the one in use; read at start ahead of the enroll-time list |
 | `machine_connections{epoch, boot_id, install_id, peer, connect_reason, started_time}` | hub store | the Hello tx (state unchanged; the Snapshot tx marks ONLINE) |
@@ -447,7 +447,24 @@ re-enroll rule are in [02g](02g-agent-security.md#machine-lifecycle-revoke-and-d
   enrolled, a loose or damaged file, another `run`) is still
   `run.failed{step, err_kind}` and exit 1.
 
-At 3 AM: "why did `fleet-agent enroll` fail?" → `enroll.refused` (the reason
+  `status.write_failed{file, step, err_kind}` (warn; `file` is `status.json` or
+  `enroll.json`, `step` is `start`, `dir`, `temp`, `write`, `sync`, `rename`,
+  `dirsync` or `remove`; at most one line a minute per file while it keeps
+  failing, never a path or the error text), `status.write_recovered{file}`
+  (info; the first good write after a failure) and
+  `fleet_agent_status_writes_total{file, result}` (`result`: `ok`, `failed`).
+  Until plan row 6 PR 6a lands the loop has no change notification, so a
+  change reaches `status.json` within a minute (the floor); no timer re-reads
+  the loop's state (ADR 0022 rule 6, ADR 0024 decision 9).
+
+At 3 AM: "why is doctor's `status.json` old or missing?" →
+`fleet_agent_status_writes_total{file="status.json", result="failed"}` and
+`status.write_failed` (`step`, `err_kind`: `constraint` is a full or read-only
+disk, `refused` a permission); no failure there and an old file means the
+agent is down (`run` writes at least once a minute). "why does doctor show no
+enroll failure?" → the last enroll worked (a good enroll removes
+`enroll.json`) or none ran.
+"why did `fleet-agent enroll` fail?" → `enroll.refused` (the reason
 the agent printed, and the peer) or `enroll.failed` (the hub's step). "machine X offline since when, why?" → `fleet_hub_machine_state` plus
 the agent's `connect.attempt` logs (last candidate tried, last TLS error).
 "why does the agent not find the hub on its own?" → `connect.browse`
