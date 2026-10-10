@@ -286,6 +286,9 @@ func TestCancelDuringTheHeldPipeWait(t *testing.T) {
 	if !errors.Is(o.err, context.Canceled) || errors.Is(o.err, proc.ErrHeldPipe) {
 		t.Fatalf("Run = %v, want context.Canceled and not ErrHeldPipe", o.err)
 	}
+	if o.res.ExitCode != 0 {
+		t.Fatalf("exit code %d: the child had exited 0 by itself", o.res.ExitCode)
+	}
 	if o.took > time.Second {
 		t.Fatalf("returned %v after the cancel; the wait for the pipes must watch the context", o.took)
 	}

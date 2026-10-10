@@ -11,8 +11,9 @@
 // it also knows when a descendant still holds them after the child is gone:
 // after at most [DefaultWaitDelay] it returns [ErrHeldPipe], whatever the exit
 // status. It does not kill that descendant: once the child is reaped its
-// process group id may be free. A caller whose context ends during that wait
-// gets its own error back at once. A call lasts at most its time cap plus that
+// process group id may be free. A caller that cancels during that wait
+// gets its own error back at once; the time cap passing then ends nothing,
+// since the child had finished by itself. A call lasts at most its time cap plus that
 // delay. Every kill (and output cap) is logged (proc.killed) and counted
 // (fleet_<program>_proc_kills_total) with its cause: time_cap, output_cap or
 // cancelled; a held pipe is logged (proc.pipe_held) and counted separately.

@@ -5,6 +5,7 @@ package proc
 import (
 	"errors"
 	"os"
+	"runtime"
 	"syscall"
 )
 
@@ -31,10 +32,11 @@ func killGroup(pid int) error {
 		return os.ErrProcessDone // never -0 or a negative group: that would signal our own
 	}
 	err := syscall.Kill(-pid, syscall.SIGKILL)
-	// ESRCH: no member is left. EPERM: on macOS, a group that holds only a
+	// ESRCH: no member is left. EPERM on macOS: a group that holds only a
 	// zombie (a child that has exited and not been waited for yet) answers
-	// EPERM, and there is nothing to kill either.
-	if errors.Is(err, syscall.ESRCH) || errors.Is(err, syscall.EPERM) {
+	// EPERM, and there is nothing to kill either. On Linux EPERM means a live
+	// member we are not allowed to signal, which is a real error: keep it.
+	if errors.Is(err, syscall.ESRCH) || (runtime.GOOS == "darwin" && errors.Is(err, syscall.EPERM)) {
 		return os.ErrProcessDone
 	}
 	return err

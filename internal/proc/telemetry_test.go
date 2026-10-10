@@ -262,3 +262,42 @@ func TestOutputCapOfAFastChildIsAlwaysSignalled(t *testing.T) {
 		t.Errorf("the counter does not hold %d for test_fast:\n%s", runs, body)
 	}
 }
+
+// The child exits by itself just under its time cap and a descendant holds the
+// pipes; the time cap passes during the wait for them. The child had already
+// finished, so the cap did not end anything: the result is ErrHeldPipe (exit
+// 0), the holder is logged and counted, and no time cap is.
+func TestTimeCapPassingDuringTheHeldWaitIsNotACap(t *testing.T) {
+	t.Parallel()
+	logs := &lockedBuffer{}
+	tel, err := telemetry.New(telemetry.Config{Service: telemetry.Agent, Version: "v0", InstanceID: "boot-3", LogOutput: logs})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = tel.Shutdown(context.Background()) })
+	r, err := proc.NewRunner(tel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pidFile := t.TempDir() + "/pid"
+	killLater(t, pidFile)
+	l := proc.Limits{Time: 2 * time.Second, Output: 1 << 10} // the child exits well before, the wait (2 s) runs past it
+	sp := child(t, "parent-exits", l, pidFileEnv+"="+pidFile)
+	sp.Caller = proc.CallerForTest("test_capwait", l)
+	res, err := r.Run(deadline(t), sp)
+	if !errors.Is(err, proc.ErrHeldPipe) || errors.Is(err, proc.ErrTimeCap) || res.ExitCode != 0 {
+		t.Fatalf("Run = %+v, %v; want ErrHeldPipe and exit code 0", res, err)
+	}
+	body := scrape(t, tel)
+	if !hasSeries(body, "fleet_agent_proc_pipe_held_total{", `caller="test_capwait"`) {
+		t.Errorf("the holder was not counted:\n%s", body)
+	}
+	if strings.Contains(body, "fleet_agent_proc_kills_total{") {
+		t.Errorf("a cap that ended nothing was counted:\n%s", body)
+	}
+	for _, m := range logs.lines() {
+		if m["msg"] == "proc.killed" {
+			t.Errorf("a cap that ended nothing was logged: %v", m)
+		}
+	}
+}

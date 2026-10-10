@@ -41,16 +41,19 @@ res, err := runner.Run(ctx, proc.Spec{Caller: git, Path: "git", Args: []string{"
   the exit status; `Result.ExitCode` has it). **It does not kill that
   descendant**: the child is reaped, so its group id may be free, and a kill by
   number could reach an unrelated group. The holder is logged
-  (`proc.pipe_held`), counted, and left running. If the caller's context ends
-  while `Run` waits like this (the time cap too), `Run` stops waiting after a
-  grace of 100 ms, for output that was about to end by itself, and returns the
-  context's error, not `ErrHeldPipe`; the holder is still logged and counted.
+  (`proc.pipe_held`), counted, and left running. If the caller cancels while
+  `Run` waits like this, `Run` stops waiting after a grace of about 100 ms (the
+  tests allow 1 s under load), for output that was about to end by itself, and
+  returns the context's error, not `ErrHeldPipe`; the holder is still logged and
+  counted. The time cap passing during this wait does not stop it or count as a
+  cap: the child had already finished by itself, and only the delay bounds the
+  wait (so a call still lasts at most the cap plus the delay).
 - **How long a call lasts.** At most the time cap plus the 2 s delay. A
   cancelled caller gets its return at once: while the child runs, the group is
   killed and its pipes close; after a kill `Run` waits at most 250 ms for them,
   so even a descendant that left the group (it survives and still holds them)
   does not hold the return; and during the wait for a holder, the caller's
-  cancel is seen within 100 ms.
+  cancel is seen within about 100 ms (tests allow 1 s under load).
 - **The only group kill is the one for a cap or a cancel, made while the child
   is alive.** A group id is the child's pid, and the system does not hand that
   pid out again while any member of the group is alive. After the child is
@@ -73,7 +76,10 @@ res, err := runner.Run(ctx, proc.Spec{Caller: git, Path: "git", Args: []string{"
   `ErrTimeCap` or the context's error, with `killed` true, though it had
   finished. On macOS a group that holds only a zombie answers `EPERM`; `Run`
   treats that like "nothing left to kill" (`killGroup` returns
-  `os.ErrProcessDone`), so the child's real result is returned. Without that,
+  `os.ErrProcessDone`), so almost always the child's real result is returned (once in
+  about 2,400 macOS runs in review, a child that had exited 0 was still reported
+  as cancelled; the cancel came in the same instant as the exit). On Linux `EPERM` stays an error: it
+  means a live member we may not signal. Without that,
   `os/exec` returned "exec: canceling Cmd: operation not permitted", unlogged
   (17 of 300 and 18 of 400 runs on macOS in review).
   `TestKillGroupOfAnExitedChildIsNeverEPERM` and

@@ -110,7 +110,9 @@ func (k *kills) record(c Cause, err error) {
 // [DefaultWaitDelay]) for end-of-file on its stdout and stderr, so a call lasts
 // at most the time cap plus that delay. A descendant still holding them then
 // is reported as [ErrHeldPipe], whatever the child's exit status, and is not
-// killed: logged (proc.pipe_held) and counted, and left running.
+// killed: logged (proc.pipe_held) and counted, and left running. A caller that
+// cancels during that wait gets its own error at once; the time cap passing
+// during it ends nothing (the child had already finished by itself).
 //
 // The only group kill is the one for a cap or a cancel, made while the child
 // is alive. Once the child is reaped its pid, and so the group id, may be free,
@@ -178,9 +180,10 @@ func (r *Runner) Run(ctx context.Context, sp Spec) (Result, error) {
 	// Output ends when every holder of a pipe is gone. Wait for that, but not
 	// beyond the WaitDelay: past it a descendant is holding the pipes, and that
 	// is reported, not killed (the group id may be free by now). If the group
-	// was killed, its pipes close at once, so a short grace is enough. If not, a
-	// context that ends during the wait stops it too, after a short grace for
-	// output that is about to end.
+	// was killed, its pipes close at once, so a short grace is enough. If not,
+	// the caller's cancel stops the wait too, after a short grace for output that
+	// is about to end. The time cap does not: the child already finished by
+	// itself, so the cap ended nothing, and only the WaitDelay bounds the wait.
 	held, stopped := false, false
 	timer := time.NewTimer(wait)
 	if did {
@@ -196,7 +199,7 @@ func (r *Runner) Run(ctx context.Context, sp Spec) (Result, error) {
 		case <-p.done:
 		case <-timer.C:
 			held = true
-		case <-capCtx.Done():
+		case <-runCtx.Done():
 			grace := time.NewTimer(min(cancelGrace, wait))
 			select {
 			case <-p.done:
@@ -240,7 +243,7 @@ func (r *Runner) Run(ctx context.Context, sp Spec) (Result, error) {
 	case over:
 		rerr = ErrOutputCap
 	case stopped:
-		rerr = context.Cause(capCtx)
+		rerr = context.Cause(runCtx) // the caller's own error
 	case held:
 		rerr = ErrHeldPipe
 	case werr != nil:
