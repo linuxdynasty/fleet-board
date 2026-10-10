@@ -139,7 +139,7 @@ func TestThePreviousCopyIsPrivate(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, "fleet-a")
 	path := f.backupOf(t)
-	if err := os.Chmod(statedb.Path(f.state), 0o640); err != nil {
+	if err := os.Chmod(statedb.Path(f.state), 0o640); err != nil { //nolint:gosec // G302: the test widens the old store on purpose
 		t.Fatal(err)
 	}
 	res, err := restore.Run(context.Background(), f.options(path))
