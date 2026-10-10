@@ -65,7 +65,7 @@ func ack(epoch uint64) *agentv1.ConnectResponse {
 func TestWriterFlushesWhatIsQueuedThenSaysBye(t *testing.T) {
 	t.Parallel()
 	for range 20 { // the writer's select sees the queue and the end together
-		s := newStream("m1", "boot", "p", 1)
+		s := newStream(context.Background(), "m1", "boot", "p", 1, time.Time{})
 		w := &stubWire{}
 		for e := range uint64(3) {
 			s.send(ack(e + 1))
@@ -88,7 +88,7 @@ func TestWriterFlushesWhatIsQueuedThenSaysBye(t *testing.T) {
 // A stream that ends with no Bye sends nothing more and sets no deadline.
 func TestWriterSendsNothingAfterAnEndWithoutBye(t *testing.T) {
 	t.Parallel()
-	s := newStream("m1", "boot", "p", 1)
+	s := newStream(context.Background(), "m1", "boot", "p", 1, time.Time{})
 	w := &stubWire{}
 	s.end(agentv1.ByeReason_BYE_REASON_UNSPECIFIED, statedb.EndAgentBye)
 	done := make(chan struct{})
@@ -132,7 +132,7 @@ func TestStopCutsAWriterBlockedPastTheWait(t *testing.T) {
 // send refuses once the stream ended, so nothing is queued behind a Bye.
 func TestSendAfterTheEndIsRefused(t *testing.T) {
 	t.Parallel()
-	s := newStream("m1", "boot", "p", 1)
+	s := newStream(context.Background(), "m1", "boot", "p", 1, time.Time{})
 	s.end(agentv1.ByeReason_BYE_REASON_HUB_RESTART, statedb.EndHubRestart)
 	if s.send(ack(1)) || len(s.out) != 0 {
 		t.Error("send after the end queued a message")

@@ -7,6 +7,7 @@
 // first reply of a method (Enroll, RenewCert) after the hub commits it. It
 // serves the hub's own Connect, restarts the listener on the same state.db
 // and port (on a socket it holds open, so the port is never free), holds
-// state.db's writer on demand, and reads machines.last_epoch and
-// machine_connections. Test code only.
+// state.db's writer on demand, reads machines.last_epoch and
+// machine_connections, seeds and reads machines.state, and runs the hub's
+// machine-state housekeeping job once. Test code only.
 package conntest

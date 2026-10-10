@@ -125,18 +125,43 @@ srv, err := gateway.NewServer(gateway.ServerOptions{
   closed.
 - **Per stream** (`stream.go`): the handler goroutine runs the ingest loop
   and the teardown; one reader (the only `Receive` caller) keeps Heartbeats
-  in memory only (the registry's last-heartbeat time, read for
-  `HelloIn.Live`; no store write), ends the stream on the agent's `Bye` or a
-  second `Hello`, and hands every other message in order to a bounded queue
-  (64); one writer (the only `Send` caller) sends queued messages (16) and
+  in memory (the stream's last-heartbeat time, read for `HelloIn.Live` and
+  for silence; a clock skew sample) and wakes the handler goroutine, ends
+  the stream on the agent's `Bye` or a second `Hello`, and hands every other
+  message in order to a bounded queue (64), marking the stream stalled
+  while the queue is full; one writer (the only `Send` caller) sends queued messages (16) and
   then, when the stream ends with a Bye, what is still queued, in order,
   and then the Bye, all within 2 s. The teardown wakes the
   reader with the response's read deadline, cuts a send still blocked by
   flow control after 2 s with the write deadline, handles what was queued,
   removes the stream from the registry, then closes its row with
   `statedb.EndConnection` (not for a displaced one) on a context that the
-  stream's end does not cancel. No goroutine touches the stream after the
+  stream's end does not cancel; that job takes an `ONLINE` or `STALE`
+  machine `OFFLINE` when the row was the live one (`stream_closed`,
+  `agent_bye`, `ingest_stalled`, `offline`; never for a displaced stream,
+  #138, nor for `hub_restart`). No goroutine touches the stream after the
   handler returns, and no transaction spans a send.
+- **Machine state** (`presence.go`, plan row 5b, 03n): `Server.Housekeep`
+  is the housekeeping job (`fleetd run`, every 5 s). It reads every machine
+  and its live row (`statedb.MachineStates`) and, for an `ONLINE` or
+  `STALE` one, takes the silence since the newest of this process's start,
+  the live row's `Hello` and the live stream's last Heartbeat (hub clock):
+  `OfflineAfter` (3 min) is `OFFLINE` (`statedb.MarkState` also closes the
+  live row as `offline`) and the stream is cut; `StaleAfter` (45 s) while
+  `ONLINE` is `STALE`; while `STALE`, a stream stalled for `StaleAfter` or
+  more is cut (`ingest_stalled`). A cut ends the stream with no Bye and
+  cancels the stream's context (arm handlers get it), so a handler waiting
+  on the store returns. On a Heartbeat the handler goroutine runs one
+  `statedb.HeartbeatSeen` job when `last_seen` is due (`LastSeenEvery`, 1
+  min, the Heartbeat's receive time) or when the machine went `STALE` while
+  this stream was live (then back to `ONLINE`); a `STALE` from the start
+  sweep waits for the Snapshot (plan row 5c). Note for 5c: the silence of
+  a live stream now counts from its `Hello`; the row 5 ruling starts the
+  `STALE` clock at the Snapshot apply, so 5c records a "heard" time on the
+  stream when its Snapshot commits (not `beat`, which feeds the displaced
+  stream's heartbeat age). `fleet_hub_machine_state` is
+  set at each change and each pass; the clock skew is the median of the
+  last five `sent_time` samples (`Hello` and Heartbeat), in memory.
 - **Handler table** (`arms.go`): one handler per `ConnectRequest` arm, added
   by later rows from files of their own (`arms.add` in an `init`). An arm
   with none is counted in `fleet_hub_connect_unhandled_total{kind}`, logged
@@ -178,8 +203,11 @@ srv, err := gateway.NewServer(gateway.ServerOptions{
 | `fleet_hub_reconnects_total{machine, reason}`, `fleet_hub_epoch{machine}`, `reconnect.hello` (`machine_id`, `epoch`, `last_epoch`, `last_event_seq`, `hub_last_event_seq`, `reason`, `peer`), span `hub.connect.hello` | an accepted Hello |
 | `fleet_hub_duplicate_identity_total{machine}`, `identity.duplicate` (`machine_id`, `old_epoch`, `new_epoch`, `old_boot_id`, `new_boot_id`, `old_peer`, `new_peer`, `heartbeat_age_ms`) | a live stream displaced by a newer Hello |
 | `reconnect.closed` (`machine_id`, `epoch`, `reason`, `row_closed`) | a stream ended |
+| `machine.state_changed` (`machine_id`, `from`, `to`, `reason`), `fleet_hub_machine_state{machine, state}` | a committed state change: `silence`, `heartbeat`, or the live row's end reason |
+| `hub.stream_closed` (`machine_id`, `epoch`, `reason`, `stalled_s`, `queue_depth`), `fleet_hub_stream_closed_total{reason}` | housekeeping cut a stream (warn): `offline` or `ingest_stalled` |
+| `fleet_hub_clock_skew_seconds{machine}` | the median skew after each `sent_time` sample |
 | `fleet_hub_connect_refused_total{cause}`, `connect.refused` (`cause`, `reason`, `peer`, `machine_id`) | a refused Hello (warn) |
-| `connect.failed` (`step`: `validate`, `store`, `wiring`; `err_kind`, `machine_id`) | the hub's failure at a Hello or a stream's close (error) |
+| `connect.failed` (`step`: `validate`, `store`, `wiring`, `heartbeat`; `err_kind`, `machine_id`) | the hub's failure at a Hello, a stream's close or a Heartbeat's store job (error) |
 | `fleet_hub_connect_closed_before_hello_total{err_kind}`, `reconnect.closed` (`epoch` 0, `reason` `before_hello`, `err_kind`: `oversize`, `reset`, `timeout`, `shutdown`) | a stream with a certificate that ended before a Hello was accepted |
 | `fleet_hub_connect_unhandled_total{kind}`, `hub.connect.unhandled` (`machine_id`, `epoch`, `kind`) | a message of an arm with no handler yet |
 | `fleet_hub_server_cert_issues_total{reason, result}`, `tls.server_cert_issued` (`reason`, `names` count, `not_after`), `tls.server_cert_issue_failed` (`reason`, `err_kind`, `not_after` still served) | server certificate re-issues |
@@ -200,6 +228,13 @@ last_seen unchanged, counted and logged), the Hello wait, a second Hello, an
 unknown reason, the rate limit's boundaries, the 1 MiB cap and a closed
 store; `registry_internal_test.go` covers the out-of-order register, cancel,
 byeAll, the queue bound, the limiter and its sweep, and the handler table;
+`state_test.go` and `state_stall_test.go` drive `Housekeep` with the fake
+clock: `STALE` at 45 s and `OFFLINE` at 3 min (the stream cut, the row
+`offline`), a Heartbeat bringing a `STALE` machine back in one job,
+`last_seen` once a minute and no job for other Heartbeats, a displaced
+stream's close leaving the machine `ONLINE` (#138, also when its own close
+wins the race with the registry), the skew median, and a
+stalled reader cut only at `STALE` after 45 s (never while `ONLINE`).
 `writer_internal_test.go` drives the writer with a stub (queued messages,
 then the Bye, under one deadline; the cut after the wait) and a request
 with no response controller. `connect_end_test.go` covers Shutdown with a

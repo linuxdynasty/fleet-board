@@ -84,9 +84,31 @@ stateDiagram-v2
   DISPLACED --> OFFLINE: old stream gets Bye{DUPLICATE_IDENTITY} and closes, the machine stays ONLINE on the new stream (03f)
 ```
 
-Hub start: every machine is set to `STALE` with `since_time = hub_start`, so the
-usual 3-minute rule turns silent ones `OFFLINE`; nothing is scheduled on a
-machine until it is `ONLINE` again. On graceful shutdown the hub sends
+Hub start: before the agent listener serves (so no `Hello` races it), every
+`ONLINE` machine is set to `STALE` and its silence is counted from the hub's
+start, so the usual 3-minute rule turns silent ones `OFFLINE`; nothing is
+scheduled on a machine until it is `ONLINE` again. The same pass closes every
+`machine_connections` row left live (no stream of the new process holds it) as
+`hub_restart`. A `STALE` from this pass ends with the `Snapshot` of a new
+connection; a Heartbeat brings a machine back from `STALE` only on the stream
+that was live when silence made it `STALE`.
+
+How the hub judges silence (plan row 5b): a housekeeping job every 5 s
+([defaults](defaults.md)) takes the newest of the hub's start, the live row's
+`Hello` and the live stream's last `Heartbeat` (hub clock). 45 s makes an
+`ONLINE` machine `STALE`; 3 minutes makes it `OFFLINE`, closes its live row as
+`offline` and cuts the stream. While `STALE`, a stream whose reader has been
+blocked for 45 s handing a message to its full ingest queue is cut too
+(`ingest_stalled`), and that close takes the machine `OFFLINE`; a reader
+waiting for the agent's next message is never cut. A cut is a transport close
+with no `Bye`: the agent backs off and reconnects. Every change is one writer
+job that holds only while the state and the live epoch are what the job read,
+stamped for Watch; no audit row (02m has no state-change action). The live
+row's close by the stream or the agent's `Bye` takes an `ONLINE` or `STALE`
+machine `OFFLINE` in the same job; a displaced stream's close, the hub's own
+shutdown (`hub_restart`) and a machine that never got `ONLINE` change nothing.
+`last_seen_time` is written by the `Hello`, by each close and at most once a
+minute from Heartbeats. On graceful shutdown the hub sends
 `Bye{HUB_RESTART}` so agents reconnect quickly with backoff rather than
 waiting for keepalive timeouts.
 
@@ -101,7 +123,7 @@ waiting for keepalive timeouts.
 | Goal registry (`GoalRegistration` per pane) and availability marks (per pane key) | `agent.db` | `register_goal`, `RegisterGoal`, `ReleaseGoal`, mark commands; both reported in every snapshot (02h) |
 | Outbox rows (`pending/delivered/done/expired/failed`, epoch, seq) | hub store | Hello tx (expiry), result tx (close) |
 | Event history (replayed and live, 1 week) | hub store | per writer batch |
-| `machine_connections` (epoch, boot_id, install_id, peer, connect_reason, started and ended time, end_reason, displaced_by, last_heartbeat_age_ms at displacement) and the machine's `last_epoch` | hub store | Hello tx (opens the row, closes the one it displaces); stream close or `Bye` (closes it). A row can stay open with no stream behind it after a hub crash, or after a graceful shutdown that stopped waiting for a Hello whose transaction then committed; the machine's next Hello closes it as displaced (heartbeat age unknown), and the hub-start sweep (plan row 5b) must expect such rows |
+| `machine_connections` (epoch, boot_id, install_id, peer, connect_reason, started and ended time, end_reason, displaced_by, last_heartbeat_age_ms at displacement) and the machine's `last_epoch` | hub store | Hello tx (opens the row, closes the one it displaces); stream close or `Bye` (closes it, and marks the machine `OFFLINE` in the same tx); housekeeping's `OFFLINE` (closes it as `offline`). A row can stay open with no stream behind it after a hub crash, or after a graceful shutdown that stopped waiting for a Hello whose transaction then committed; the hub-start sweep closes such rows as `hub_restart` |
 | Per machine: `hub_last_event_seq`, `event_generation`, last `EventCounters`, `install_id` | hub store | writer batch (seq); Hello tx (the rest) |
 
 ### Ordering and consistency
@@ -156,7 +178,8 @@ waiting for keepalive timeouts.
 - Logs (the hub's, plan row 5): `reconnect.hello{machine_id, epoch, last_epoch, last_event_seq,
   hub_last_event_seq, reason, peer}`, `reconnect.closed{machine_id, epoch, reason, row_closed}`
   (a stream ended; `reason` is the stored end reason: `displaced`, `stream_closed`,
-  `agent_bye`, `hub_restart`; `row_closed` false when a newer `Hello` had closed it;
+  `agent_bye`, `hub_restart`, `offline`, `ingest_stalled`; `row_closed` false when a
+  newer `Hello` or housekeeping's `OFFLINE` had closed it;
   a stream with a certificate that ended before a `Hello` was accepted has `epoch` 0,
   `reason` `before_hello` and `err_kind`: `oversize`, `reset`, `timeout`, `shutdown`,
   counted in 03's `fleet_hub_connect_closed_before_hello_total`),
@@ -167,6 +190,18 @@ waiting for keepalive timeouts.
   a `Hello` from receipt to the queued `HelloAck` or the refusal (a root span: `Hello`
   carries no trace context).
 
+- Machine state (plan row 5b): `machine.state_changed{machine_id, from, to, reason}`
+  (info; every committed change of `machines.state`: `reason` is `silence`
+  (housekeeping: 45 s to `STALE`, 3 minutes to `OFFLINE`), `heartbeat` (`STALE` back to
+  `ONLINE`), `hub_start` (the start sweep), or the end reason of the live row's close:
+  `stream_closed`, `agent_bye`, `ingest_stalled`, `offline`); 05b's `hub.stream_closed{machine_id,
+  epoch, reason, stalled_s, queue_depth}` (warn) and `fleet_hub_stream_closed_total{reason}`
+  (`ingest_stalled`, `offline`) for a stream housekeeping cut; 03's
+  `fleet_hub_machine_state{machine, state}` (set at every change and every housekeeping
+  pass) and `fleet_hub_clock_skew_seconds{machine}` (the median of the last five
+  `Hello.sent_time` and `Heartbeat.sent_time` samples, 02i "Clocks"; the warning and
+  `clock_untrusted` come with plan row 5e). A Heartbeat's store job that fails logs
+  `connect.failed{step="heartbeat"}`.
 - The hub's `Connect` before `HelloAck` (plan row 5a-ii; the names are 03 W1's):
   `fleet_hub_connect_refused_total{cause}` and `connect.refused{cause, reason, peer,
   machine_id}` (warn) for a refused `Hello` (02g "Hello refusals"; `cause`:
@@ -175,7 +210,8 @@ waiting for keepalive timeouts.
   `rate_limited`, `revoked`, `unknown_machine`, `proto_unsupported`; `reason` the
   ErrorDetail reason without `REASON_CODE_`, the `ByeReason`, or `none`);
   `connect.failed{step, err_kind, machine_id}` (error; `step`: `validate`, `store`,
-  `wiring`: the listener put no response controller on the request, `INTERNAL`);
+  `wiring`: the listener put no response controller on the request, `INTERNAL`;
+  `heartbeat`: a Heartbeat's last_seen or `STALE` to `ONLINE` job failed);
   `fleet_hub_connect_closed_before_hello_total{err_kind}` (a stream with a client
   certificate that ended before a `Hello` was accepted: `oversize`, `reset`, `timeout`
   (the Hello wait), `shutdown`; also `reconnect.closed` above);
@@ -183,7 +219,9 @@ waiting for keepalive timeouts.
   oneof arm name; ignored, never fatal; 05b's `hub.connect.unhandled` once per kind per
   stream).
 
-At 3 AM: "why does machine X keep reconnecting?" → `fleet_hub_reconnects_total`
+At 3 AM: "why is machine X offline, since when?" → `machine.state_changed` (its
+`reason`), `fleet_hub_machine_state`, and `hub.stream_closed` when the hub cut the
+stream. "why does machine X keep reconnecting?" → `fleet_hub_reconnects_total`
 and `fleet_hub_epoch` climbing, `reconnect.closed{reason}` for how each stream
 ended, `identity.duplicate` (two hosts with one identity ping-pong) and
 `connect.refused{cause}` (03 W1). "did the hub lose anything during the restart?" →

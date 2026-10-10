@@ -166,11 +166,13 @@ r, err := statedb.Renew(ctx, s, statedb.Renewal{MachineID: id, PeerSerial: seria
   start and not stored; the gateway mints it.
 - **`EndConnection`** closes the row of one epoch when it is still live and
   moves `last_seen_time` (written on disconnect, defaults.md). It returns
-  whether it closed the live row: false for a displaced or closed row or an
-  epoch the machine never had, which is a no-op. Only a true result may
-  change machine state (03f, "The displaced stream closes after the newer
-  Hello"). A row left live by a crash is closed as `displaced` by the
-  machine's next Hello; the hub-start sweep is plan row 5b's.
+  `Ended`: `Live` is false for a displaced or closed row or an epoch the
+  machine never had, which is a no-op. In the same job a live row closed
+  as `stream_closed`, `agent_bye`, `ingest_stalled` or `offline` takes an
+  `ONLINE` or `STALE` machine `OFFLINE` (`Ended.Change`), so a displaced
+  stream never changes its machine (03f, "The displaced stream closes after
+  the newer Hello"; #138). `hub_restart` and `revoked` change no state
+  (the start sweep and 13a own those), nor does a close while `ENROLLED`.
 
 Notes for the rows that build on this:
 
@@ -183,23 +185,37 @@ Notes for the rows that build on this:
   Hello for that machine is refused for good. Only that certificate's
   holder can do it; recovery is revoking and deleting the machine and
   enrolling it again.
+- **Machine state** (`machinestate.go`, `sweep.go`, plan row 5b, 03n):
+  every change is one writer job that re-checks the state (and, for the
+  housekeeping and Heartbeat paths, the live epoch) in the transaction,
+  stamps the row (`NextStamp`: status `observed_time` and `hub_seq`) and
+  returns a `StateChange{MachineID, From, To, Reason, Stamp}`, or nil when
+  the check no longer held. No audit row: 02m has no state-change action.
+  `MarkState` is housekeeping's (`silence`): `STALE` from `ONLINE`,
+  `OFFLINE` from `ONLINE` or `STALE` with the live row closed as `offline`
+  in the same job, both only while the live epoch is the one judged (0 for
+  none). `HeartbeatSeen` moves `last_seen_time` and, with `Promote`, takes
+  a `STALE` machine back to `ONLINE` (`heartbeat`) while `Epoch` is live.
+  `StartSweep` (fleetd run, before any listener) closes every live row as
+  `hub_restart` and makes every `ONLINE` machine `STALE` (`hub_start`).
+  `MachineStates` lists every machine with its live epoch and start on the
+  read pool.
 - **13a:** `RevokeMachine` closes the live row with
   `EndConnection(EndRevoked)` after sending `Bye{REVOKED}`, and
   `DeleteMachine` closes any live row; the history rows stay.
-- **5b:** do the machine state change (OFFLINE) in the same writer job as
-  the close, or make it conditional on there being no live row. A second job
-  after `EndConnection` could land after the next Snapshot has set `ONLINE`.
-  The hub-start sweep must expect live rows no stream holds: a crash, or a
-  graceful shutdown (or an agent leaving) that stopped waiting for a Hello
-  whose job then committed (5a-ii). The machine's next Hello closes such a
-  row as displaced, heartbeat age unknown.
+- **5c:** the Snapshot transaction marks `ONLINE` with the same stamp
+  (`NextStamp`); a `STALE` from the start sweep returns only that way.
 - **5m:** the 30-day prune of `machine_connections` (03f) is 5m's; nothing
   prunes the table yet.
 
 ```go
 out, err := statedb.Hello(ctx, s, statedb.HelloIn{MachineID: id, PeerSerial: serial, LastEpoch: h.GetLastEpoch(), ...})
 // after commit: send HelloAck{epoch: out.Epoch, ...}; Bye{DUPLICATE_IDENTITY} to out.Displaced's stream
-live, err := statedb.EndConnection(ctx, s, id, out.Epoch, statedb.EndStreamClosed, now)
+ended, err := statedb.EndConnection(ctx, s, id, out.Epoch, statedb.EndStreamClosed, now) // ended.Live, ended.Change
+c, err := statedb.MarkState(ctx, s, statedb.Mark{MachineID: id, Epoch: e, To: statedb.MachineStale, Now: now})
+c, err = statedb.HeartbeatSeen(ctx, s, statedb.Beat{MachineID: id, Epoch: e, Promote: true, Now: beat})
+swept, err := statedb.StartSweep(ctx, s, now)             // fleetd run, before the listeners
+list, err := statedb.MachineStates(ctx, s)
 ```
 
 - **Audit log and Watch stamps** (migration 6, plan row 5 PR 5d; 02m, 02b,
@@ -271,6 +287,12 @@ stream's close as a no-op, times never stepping back, `Live` copied while
 the caller keeps writing its entry (`-race`), every end reason stored, the
 table constraints by raw SQL, a row 4 store gaining the table, and
 `MaxEpoch` equal to the agent's `ring.MaxEpoch`.
+
+The 5b tests (`machinestate_test.go`) cover each close reason from
+`ONLINE`, `STALE`, `ENROLLED` and `OFFLINE` (stamped, no audit row), a
+displaced stream's close changing nothing (#138), `MarkState`'s state and
+live-epoch checks and the `offline` row close, `HeartbeatSeen` with and
+without `Promote`, the start sweep (twice) and `MachineStates`.
 
 The 5d tests read `audit_log` from the file: one row per action with its
 fields and none for a replay; an injected trigger that fails the audit insert

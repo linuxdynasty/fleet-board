@@ -110,8 +110,8 @@ func TestHelloForOneMachineNeverTouchesAnother(t *testing.T) {
 		}
 	}
 	// A's epoch 1 is closed already; B's epoch 1 is live and must stay so.
-	if live, err := statedb.EndConnection(ctx, s, renewMachineID, 1, statedb.EndStreamClosed, helloAt.Add(time.Minute)); err != nil || live {
-		t.Errorf("EndConnection(A, epoch 1) = %v, %v; want a no-op", live, err)
+	if ended, err := statedb.EndConnection(ctx, s, renewMachineID, 1, statedb.EndStreamClosed, helloAt.Add(time.Minute)); err != nil || ended.Live {
+		t.Errorf("EndConnection(A, epoch 1) = %+v, %v; want a no-op", ended, err)
 	}
 	if err := s.Close(); err != nil {
 		t.Fatal(err)

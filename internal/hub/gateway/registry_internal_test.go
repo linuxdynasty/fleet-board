@@ -26,7 +26,7 @@ func endedWith(s *stream) (agentv1.ByeReason, statedb.EndReason, bool) {
 func TestRegistryHigherEpochWins(t *testing.T) {
 	t.Parallel()
 	r := newRegistry()
-	five, six := newStream("m1", "boot-a", "p1", 5), newStream("m1", "boot-b", "p2", 6)
+	five, six := newStream(context.Background(), "m1", "boot-a", "p1", 5, time.Time{}), newStream(context.Background(), "m1", "boot-b", "p2", 6, time.Time{})
 	if got, old := r.register(six); got != registeredLive || old != nil {
 		t.Fatalf("register(6) = %v, %v; want live, no old", got, old)
 	}
@@ -38,7 +38,7 @@ func TestRegistryHigherEpochWins(t *testing.T) {
 		t.Fatal("the late lower epoch disturbed the live stream")
 	}
 	// A newer one displaces 6 with Bye{DUPLICATE_IDENTITY}.
-	seven := newStream("m1", "boot-c", "p3", 7)
+	seven := newStream(context.Background(), "m1", "boot-c", "p3", 7, time.Time{})
 	if got, old := r.register(seven); got != registeredLive || old != six {
 		t.Fatalf("register(7) = %v, %v; want live replacing 6", got, old)
 	}
@@ -65,7 +65,7 @@ func TestRegistryLiveCancelAndByeAll(t *testing.T) {
 	if got := r.live("m1"); got.Epoch != 0 {
 		t.Fatalf("live of an unknown machine = %+v", got)
 	}
-	a, b := newStream("m1", "boot", "p", 1), newStream("m2", "boot", "p", 1)
+	a, b := newStream(context.Background(), "m1", "boot", "p", 1, time.Time{}), newStream(context.Background(), "m2", "boot", "p", 1, time.Time{})
 	r.register(a)
 	r.register(b)
 	at := time.Unix(1_700_000_000, 0)
@@ -86,7 +86,7 @@ func TestRegistryLiveCancelAndByeAll(t *testing.T) {
 	if bye, reason, ended := endedWith(b); !ended || bye != agentv1.ByeReason_BYE_REASON_HUB_RESTART || reason != statedb.EndHubRestart {
 		t.Errorf("byeAll ended b %v with %v %v", ended, bye, reason)
 	}
-	if got, _ := r.register(newStream("m4", "boot", "p", 1)); got != registeredClosing {
+	if got, _ := r.register(newStream(context.Background(), "m4", "boot", "p", 1, time.Time{})); got != registeredClosing {
 		t.Errorf("register after byeAll = %v, want closing", got)
 	}
 }
@@ -94,7 +94,7 @@ func TestRegistryLiveCancelAndByeAll(t *testing.T) {
 // The first end wins and send never blocks.
 func TestStreamEndOnceAndSendNeverBlocks(t *testing.T) {
 	t.Parallel()
-	s := newStream("m1", "boot", "p", 1)
+	s := newStream(context.Background(), "m1", "boot", "p", 1, time.Time{})
 	for range outQueue {
 		if !s.send(&agentv1.ConnectResponse{}) {
 			t.Fatal("send refused below the queue size")
@@ -148,7 +148,7 @@ func TestArmTableRunsRegisteredHandlers(t *testing.T) {
 	})
 	f := newTestDeps(t)
 	f.arms = tbl
-	s := newStream("m1", "boot", "p", 1)
+	s := newStream(context.Background(), "m1", "boot", "p", 1, time.Time{})
 	seen := map[string]bool{}
 	f.handle(context.Background(), s, &agentv1.ConnectRequest{Body: &agentv1.ConnectRequest_SettingsAck{}}, seen)
 	f.handle(context.Background(), s, &agentv1.ConnectRequest{Body: &agentv1.ConnectRequest_Event{}}, seen)

@@ -48,6 +48,9 @@ type ServerOptions struct {
 	afterHello func()
 	// afterRegister, set only by tests, runs after the stream is registered.
 	afterRegister func()
+	// afterHeartbeat, set only by tests, runs after a stream's handler
+	// finished with a Heartbeat wake, with the stream's Heartbeat count then.
+	afterHeartbeat func(n uint64)
 	// arms, set only by tests, adds arm handlers to the product table.
 	arms armTable
 }

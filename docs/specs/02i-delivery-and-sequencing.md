@@ -323,7 +323,10 @@ that machine and for nothing that decides between machines.
 - **Skew.** One sample per `Hello.sent_time` (at connect) and per
   `Heartbeat.sent_time` (every 15 s) is `agent time - hub receive time`; the
   reported `MachineTelemetry.clock_skew` is the median of the last five, so one
-  slow packet does not move it. The error is at most the one-way delay.
+  slow packet does not move it. The error is at most the one-way delay. The
+  hub keeps the last five per machine in memory (a restart starts again at
+  the next `Hello`), skips a message without `sent_time`, and exports the
+  median as `fleet_hub_clock_skew_seconds{machine}`.
 - **Hub-adjusted time** is the agent's time minus the machine's skew. It is
   clamped to `received_time` when it lies in the future by more than a minute,
   so a clock that runs ahead cannot plant a future timestamp. (Replayed events

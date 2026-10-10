@@ -44,15 +44,39 @@ type (
 )
 
 // stream is one accepted Connect stream. Three goroutines serve it: the
-// handler's (the ingest loop and the teardown), one reader (the only caller
-// of Receive) and one writer (the only caller of Send).
+// handler's (the ingest loop, Heartbeat store jobs and the teardown), one
+// reader (the only caller of Receive) and one writer (the only caller of
+// Send).
 type stream struct {
 	machineID, bootID, peer string
 	epoch                   uint64
-	// beat is the last Heartbeat's receive time in Unix nanoseconds, 0 when
-	// none came; memory only (5b persists last_seen once a minute).
+	// ctx is the stream's context, given to arm handlers; cancel ends it
+	// (a housekeeping cut), so a handler waiting on the store returns.
+	ctx    context.Context
+	cancel context.CancelFunc
+	// beat is the last Heartbeat's receive time (hub clock) in Unix
+	// nanoseconds, 0 when none came.
 	beat atomic.Int64
-	out  chan *agentv1.ConnectResponse
+	// beatsRead counts the Heartbeats the reader took, stored after beat.
+	beatsRead atomic.Uint64
+	// stalled is when the reader blocked handing a message to the full
+	// ingest queue (hub clock, Unix nanoseconds), 0 while it is not
+	// blocked there; a reader waiting in Receive is not stalled (row 5
+	// ruling, fork 4).
+	stalled atomic.Int64
+	// staled is set when housekeeping marked the machine STALE while this
+	// stream was its live one: only then does a Heartbeat on it bring the
+	// machine back to ONLINE (a STALE from the start sweep waits for the
+	// Snapshot, row 5 ruling, fork 1).
+	staled atomic.Bool
+	// beats wakes the handler goroutine after a Heartbeat (or a STALE
+	// mark); one pending wake is enough.
+	beats chan struct{}
+	// seenWritten is the hub clock of the last last_seen_time write for
+	// this stream (the Hello's at first); only the handler goroutine uses it.
+	seenWritten time.Time
+	in          chan *agentv1.ConnectRequest
+	out         chan *agentv1.ConnectResponse
 
 	once   sync.Once
 	ended  chan struct{} // closed by end
@@ -60,10 +84,23 @@ type stream struct {
 	reason statedb.EndReason
 }
 
-func newStream(machineID, bootID, peer string, epoch uint64) *stream {
+// newStream is the stream of an accepted Hello at now; ctx is the request's.
+func newStream(ctx context.Context, machineID, bootID, peer string, epoch uint64, now time.Time) *stream {
+	sctx, cancel := context.WithCancel(ctx)
 	return &stream{
-		machineID: machineID, bootID: bootID, peer: peer, epoch: epoch,
+		machineID: machineID, bootID: bootID, peer: peer, epoch: epoch, ctx: sctx, cancel: cancel,
+		beats: make(chan struct{}, 1), seenWritten: now,
+		in:  make(chan *agentv1.ConnectRequest, ingestQueue),
 		out: make(chan *agentv1.ConnectResponse, outQueue), ended: make(chan struct{}),
+	}
+}
+
+// wake asks the handler goroutine to look at the stream's Heartbeat state;
+// it never blocks.
+func (s *stream) wake() {
+	select {
+	case s.beats <- struct{}{}:
+	default:
 	}
 }
 
@@ -139,13 +176,15 @@ func (s *stream) write(bs sender, rc writeDeadliner, done chan<- struct{}) {
 	}
 }
 
-// read is the stream's reader (03f connReader): a Heartbeat only moves the
-// in-memory last-seen time, a Bye from the agent ends the stream, anything
-// else goes to the ingest loop in arrival order, blocking while the queue
-// is full (HTTP/2 flow control then holds the agent). A second Hello ends
-// the stream (errSecondHello). err is how reading ended: nil for the
+// read is the stream's reader (03f connReader): a Heartbeat moves the
+// in-memory last-heartbeat time, goes to beat (the clock skew sample) and
+// wakes the handler goroutine, which decides any store write; a Bye from
+// the agent ends the stream; anything else goes to the ingest loop in
+// arrival order, blocking while the queue is full (HTTP/2 flow control then
+// holds the agent; the block is the stream's stalled time). A second Hello
+// ends the stream (errSecondHello). err is how reading ended: nil for the
 // agent's Bye or a clean close.
-func (s *stream) read(bs *connectStream, now func() time.Time, in chan<- *agentv1.ConnectRequest, done chan<- error) {
+func (s *stream) read(bs *connectStream, now func() time.Time, beat func(*agentv1.Heartbeat, time.Time), done chan<- error) {
 	for {
 		m, err := bs.Receive()
 		if err != nil {
@@ -158,7 +197,11 @@ func (s *stream) read(bs *connectStream, now func() time.Time, in chan<- *agentv
 		}
 		switch m.GetBody().(type) {
 		case *agentv1.ConnectRequest_Heartbeat:
-			s.beat.Store(now().UnixNano())
+			at := now()
+			s.beat.Store(at.UnixNano())
+			s.beatsRead.Add(1)
+			beat(m.GetHeartbeat(), at)
+			s.wake()
 			continue
 		case *agentv1.ConnectRequest_Bye:
 			s.end(agentv1.ByeReason_BYE_REASON_UNSPECIFIED, statedb.EndAgentBye)
@@ -169,13 +212,38 @@ func (s *stream) read(bs *connectStream, now func() time.Time, in chan<- *agentv
 			done <- errSecondHello
 			return
 		}
-		select {
-		case in <- m:
-		case <-s.ended:
+		if !s.hand(m, now) {
 			done <- nil
 			return
 		}
 	}
+}
+
+// hand gives m to the ingest queue, marking the stream stalled while the
+// queue is full; false when the stream ended first.
+func (s *stream) hand(m *agentv1.ConnectRequest, now func() time.Time) bool {
+	select {
+	case s.in <- m:
+		return true
+	default:
+	}
+	s.stalled.Store(now().UnixNano())
+	defer s.stalled.Store(0)
+	select {
+	case s.in <- m:
+		return true
+	case <-s.ended:
+		return false
+	}
+}
+
+// stalledFor is how long the reader has been stalled at now; 0 when it is
+// not.
+func (s *stream) stalledFor(now time.Time) time.Duration {
+	if ns := s.stalled.Load(); ns != 0 {
+		return max(now.Sub(time.Unix(0, ns)), 0)
+	}
+	return 0
 }
 
 // errSecondHello is a Hello on a stream that already had one.
@@ -187,18 +255,21 @@ var errSecondHello = errors.New("gateway: a second Hello on the stream")
 // stream after it. The returned error is the reader's (an oversize message
 // is RESOURCE_EXHAUSTED), nil when the stream ended normally.
 func (a *agentService) serve(ctx context.Context, bs *connectStream, rc *http.ResponseController, s *stream) error {
+	defer s.cancel()
+	ctx = s.ctx
 	wrote := make(chan struct{})
 	readErr := make(chan error, 1)
-	in := make(chan *agentv1.ConnectRequest, ingestQueue)
 	go s.write(bs, rc, wrote)
-	go s.read(bs, a.now, in, readErr)
+	go s.read(bs, a.now, func(h *agentv1.Heartbeat, at time.Time) { a.skewSample(ctx, s.machineID, h.GetSentTime(), at) }, readErr)
 	unhandled := map[string]bool{}
 	var rerr error
 	read := false
 	for !read {
 		select {
-		case m := <-in:
+		case m := <-s.in:
 			a.handle(ctx, s, m, unhandled)
+		case <-s.beats:
+			a.heartbeat(ctx, s)
 		case rerr = <-readErr:
 			read = true
 		case <-s.ended:
@@ -210,7 +281,7 @@ func (a *agentService) serve(ctx context.Context, bs *connectStream, rc *http.Re
 			read = true
 		}
 	}
-	a.drain(ctx, s, in, unhandled)
+	a.drain(ctx, s, s.in, unhandled)
 	if !a.stop(rc, wrote, byeWait+100*time.Millisecond) {
 		// The Bye's deadline must not outlive it: the row close below may
 		// take longer, and an expired deadline would reset the stream
@@ -254,23 +325,29 @@ func (a *agentService) stop(rc writeDeadliner, wrote <-chan struct{}, wait time.
 }
 
 // closed takes the stream out of the registry, then closes its connection
-// row (moving last_seen) unless a newer Hello already closed it as
-// displaced. Removing first means a Hello racing this close never sees a
-// stream whose row is already closed and counts no false duplicate.
+// row (moving last_seen, and taking an ONLINE or STALE machine OFFLINE in
+// the same job) unless a newer Hello already closed it as displaced: a
+// displaced stream never changes its machine (#138). Removing first means
+// a Hello racing this close never sees a stream whose row is already
+// closed and counts no false duplicate.
 func (a *agentService) closed(ctx context.Context, s *stream) {
 	a.streams.remove(s)
 	reason := s.endReason()
-	live := false
+	var ended statedb.Ended
 	if reason != statedb.EndDisplaced {
-		wctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), endWait)
+		ctx := context.WithoutCancel(ctx)
+		wctx, cancel := context.WithTimeout(ctx, endWait)
 		defer cancel()
 		var err error
-		live, err = statedb.EndConnection(wctx, a.store, s.machineID, s.epoch, reason, a.now().UTC())
+		ended, err = statedb.EndConnection(wctx, a.store, s.machineID, s.epoch, reason, a.now().UTC())
 		if err != nil {
 			a.log.ErrorContext(ctx, "connect.failed", "step", "store", "err_kind", errKind(err), "machine_id", s.machineID,
 				"epoch", s.epoch)
 		}
+		if ended.Change != nil {
+			a.stateChanged(ctx, *ended.Change)
+		}
 	}
 	a.log.InfoContext(ctx, "reconnect.closed", "machine_id", s.machineID, "epoch", s.epoch, "reason", string(reason),
-		"row_closed", live)
+		"row_closed", ended.Live)
 }
