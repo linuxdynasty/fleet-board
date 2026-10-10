@@ -1,8 +1,7 @@
 package tmux_test
 
 import (
-	"os"
-	"path/filepath"
+	"bytes"
 	"regexp"
 	"strings"
 	"testing"
@@ -57,15 +56,10 @@ var transcriptWant = []string{
 
 func TestRecordedTranscripts(t *testing.T) {
 	t.Parallel()
-	for _, version := range []string{"3.2a", "3.7c"} {
+	for _, version := range transcriptVersions {
 		t.Run(version, func(t *testing.T) {
 			t.Parallel()
-			f, err := os.Open(filepath.Join("testdata", "control-"+version+".txt"))
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer func() { _ = f.Close() }()
-			got := collect(t, f, tmux.Options{})
+			got := collect(t, bytes.NewReader(readTranscript(t, version)), tmux.Options{})
 			if len(got) != len(transcriptWant) {
 				t.Fatalf("%d messages, want %d:\n  %s", len(got), len(transcriptWant), strings.Join(got, "\n  "))
 			}
@@ -81,15 +75,10 @@ func TestRecordedTranscripts(t *testing.T) {
 
 func TestRecordedReplyGuards(t *testing.T) {
 	t.Parallel()
-	for _, version := range []string{"3.2a", "3.7c"} {
+	for _, version := range transcriptVersions {
 		t.Run(version, func(t *testing.T) {
 			t.Parallel()
-			f, err := os.Open(filepath.Join("testdata", "control-"+version+".txt"))
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer func() { _ = f.Close() }()
-			p := tmux.NewParser(f, tmux.Options{})
+			p := tmux.NewParser(bytes.NewReader(readTranscript(t, version)), tmux.Options{})
 			var replies []tmux.Reply
 			for {
 				m, err := p.Next()

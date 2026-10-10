@@ -91,6 +91,7 @@ func (p *Parser) Next() (Message, error) {
 			p.err = err
 		}
 		switch state {
+		case lineWhole: // read below
 		case lineNone:
 			continue
 		case lineTooLong:

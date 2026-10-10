@@ -5,8 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
 	"slices"
 	"testing"
 	"testing/iotest"
@@ -50,12 +48,8 @@ func parseAll(t *testing.T, r io.Reader, lines int) []tmux.Message {
 // every bound, it never makes bytes up, it gives the same messages whatever
 // the read sizes, and every failure has a class from the closed set.
 func FuzzParse(f *testing.F) {
-	for _, v := range []string{"3.2a", "3.7c"} {
-		b, err := os.ReadFile(filepath.Join("testdata", "control-"+v+".txt"))
-		if err != nil {
-			f.Fatal(err)
-		}
-		f.Add(b)
+	for _, v := range transcriptVersions {
+		f.Add(readTranscript(f, v))
 	}
 	f.Fuzz(func(t *testing.T, data []byte) {
 		lines := bytes.Count(data, []byte("\n"))

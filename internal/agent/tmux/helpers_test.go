@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -33,6 +35,19 @@ func collect(t *testing.T, r io.Reader, opts tmux.Options) []string {
 		}
 		out = append(out, render(m))
 	}
+}
+
+// transcriptVersions are the tmux versions with a recorded transcript.
+var transcriptVersions = []string{"3.2a", "3.7c"}
+
+// readTranscript returns testdata/control-<version>.txt.
+func readTranscript(tb testing.TB, version string) []byte {
+	tb.Helper()
+	b, err := os.ReadFile(filepath.Join("testdata", "control-"+version+".txt")) //nolint:gosec // G304: a fixed transcript under testdata
+	if err != nil {
+		tb.Fatal(err)
+	}
+	return b
 }
 
 // render is a one-line, hand-checkable form of a message.

@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -92,9 +93,9 @@ func newTelemetry(t *testing.T) (*telemetry.Telemetry, *lockedBuffer) {
 	return tel, logs
 }
 
-// The secret word stands for pane text: it must reach neither a log line nor
+// paneText stands for pane text: it must reach neither a log line nor
 // a series.
-const secret = "hunter2-pane-text"
+const paneText = "hunter2-pane-text"
 
 func TestFailuresAreCountedAndLoggedWithoutPaneBytes(t *testing.T) {
 	t.Parallel()
@@ -106,12 +107,12 @@ func TestFailuresAreCountedAndLoggedWithoutPaneBytes(t *testing.T) {
 	clock := time.Date(2026, 10, 10, 3, 0, 0, 0, time.UTC)
 	tmux.SetClockForTest(m, func() time.Time { return clock })
 
-	long := "%output %0 " + secret + strings.Repeat("z", 64)
+	long := "%output %0 " + paneText + strings.Repeat("z", 64)
 	in := long + "\n" + // line_too_long, outside a reply
 		"%begin 1 2 1\n" + long + "\n%end 1 2 1\n" + // line_too_long inside a reply
-		secret + "\n" + secret + "\n" + // stray_line twice: one line logged
-		"%output %0 \\9" + secret + "\n" + // bad_escape
-		"%begin 1 3 1\n" + secret + "\n" + secret + "\n%end 1 3 1\n" + // reply_too_large once
+		paneText + "\n" + paneText + "\n" + // stray_line twice: one line logged
+		"%output %0 \\9" + paneText + "\n" + // bad_escape
+		"%begin 1 3 1\n" + paneText + "\n" + paneText + "\n%end 1 3 1\n" + // reply_too_large once
 		"%exit\n"
 	got := collect(t, strings.NewReader(in), tmux.Options{MaxLineBytes: 40, MaxReplyBytes: 20, Metrics: m})
 	checkMessages(t, got, []string{
@@ -135,7 +136,7 @@ func TestFailuresAreCountedAndLoggedWithoutPaneBytes(t *testing.T) {
 			t.Errorf("%s{%s} = %q, want %s", c.name, c.label, v, c.want)
 		}
 	}
-	if strings.Contains(body, secret) {
+	if strings.Contains(body, paneText) {
 		t.Error("the scrape holds pane text")
 	}
 
@@ -148,11 +149,10 @@ func TestFailuresAreCountedAndLoggedWithoutPaneBytes(t *testing.T) {
 	}
 	var gotEv []string
 	for _, e := range ev {
-		s := e["msg"].(string)
+		s := fmt.Sprint(e["msg"])
 		for _, k := range []string{"err_kind", "bytes", "limit_bytes", "suppressed"} {
 			if v, ok := e[k]; ok {
-				b, _ := json.Marshal(v)
-				s += " " + k + "=" + strings.Trim(string(b), `"`)
+				s += " " + k + "=" + fmt.Sprint(v)
 			}
 		}
 		if e["level"] != "warn" || e["component"] != "agent.tmux" {
@@ -161,7 +161,7 @@ func TestFailuresAreCountedAndLoggedWithoutPaneBytes(t *testing.T) {
 		gotEv = append(gotEv, s)
 	}
 	checkMessages(t, gotEv, want)
-	if strings.Contains(logs.String(), secret) || strings.Contains(logs.String(), "zzzz") {
+	if strings.Contains(logs.String(), paneText) || strings.Contains(logs.String(), "zzzz") {
 		t.Errorf("a log line holds pane text:\n%s", logs.String())
 	}
 
