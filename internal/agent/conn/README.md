@@ -24,6 +24,9 @@ st := l.Status()                    // state, peer, last failure per address, la
 1. **Nothing leaves before the local checks.** The token must parse
    (`ErrTokenMalformed`), a hub address must be given or `Discover` set
    (`ErrNoHub` with neither), and the state folder must be private.
+   `HubAddress` spells an address one way (lower case, port 7443 added when
+   missing, canonical IP) and refuses an IPv6 zone or more than 261 bytes;
+   the hub's `fleetd restore --address` uses the same rules.
 2. **Never replace an identity.** Until re-enroll exists (later in plan row
    4, and row 13a's `previous_machine`), an enrolled folder is refused
    (`ErrAlreadyEnrolled`, naming the machine and saying to remove only

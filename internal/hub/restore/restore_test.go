@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/linuxdynasty/fleet-board/internal/agent/conn"
 	"github.com/linuxdynasty/fleet-board/internal/hub/backup"
 	"github.com/linuxdynasty/fleet-board/internal/hub/restore"
 	"github.com/linuxdynasty/fleet-board/internal/hub/revocation"
@@ -303,6 +304,11 @@ func TestAddress(t *testing.T) {
 		{"hub:x", "7443", "", false},
 		{"a/b:7443", "7443", "", false},
 		{strings.Repeat("a", 254), "7443", "", false},
+		{strings.Repeat("a", 253) + ":7443", "7443", strings.Repeat("a", 253) + ":7443", true},
+		{"[fe80::1%a\x01b]:7443", "7443", "", false},
+		{"[fe80::1%eth0]:7443", "7443", "", false},
+		{"fe80::1%eth0", "7443", "", false},
+		{strings.Repeat("a", 253) + ":" + strings.Repeat("0", 300) + "1", "7443", "", false},
 	}
 	for _, tc := range cases {
 		got, err := restore.Address(tc.in, tc.port)
@@ -311,6 +317,24 @@ func TestAddress(t *testing.T) {
 		}
 		if err != nil && !errors.Is(err, restore.ErrAddress) {
 			t.Errorf("Address(%q) error %v is not ErrAddress", tc.in, err)
+		}
+	}
+}
+
+// The hub stores only addresses the agent keeps, spelled as the agent
+// spells them (conn.HubAddress, which adds port 7443).
+func TestAddressMatchesTheAgentsSpelling(t *testing.T) {
+	t.Parallel()
+	for _, in := range []string{
+		"Hub2.Example", "hub2.example.:8443", "10.0.0.5", "[::FFFF:10.0.0.5]:7443", "[2001:DB8::1]:07443",
+		"2001:db8::1", "", "bad host!", "hub:0", "hub:70000", "hub:x", "a/b:7443", strings.Repeat("a", 254),
+		strings.Repeat("a", 253), "[fe80::1%a\x01b]:7443", "[fe80::1%eth0]:7443", "fe80::1%eth0", "hub:", ":7443",
+		strings.Repeat("a", 253) + ":" + strings.Repeat("0", 300) + "1",
+	} {
+		hub, hubErr := restore.Address(in, conn.DefaultPort)
+		agent, agentErr := conn.HubAddress(in)
+		if hub != agent || (hubErr == nil) != (agentErr == nil) {
+			t.Errorf("%q: hub %q, %v; agent %q, %v", in, hub, hubErr, agent, agentErr)
 		}
 	}
 }

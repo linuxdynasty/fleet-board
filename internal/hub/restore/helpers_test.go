@@ -131,7 +131,11 @@ func (f *fixture) options(path string) restore.Options {
 func hosts(addrs []string) []string {
 	var out []string
 	for _, a := range addrs {
-		out = append(out, a[:strings.LastIndexByte(a, ':')])
+		h, err := restore.Host(a)
+		if err != nil {
+			panic(err)
+		}
+		out = append(out, h)
 	}
 	return out
 }
