@@ -40,9 +40,9 @@ func TestRepliesAndTheLinesInsideThem(t *testing.T) {
 			want: []string{`reply ok ["%0 $0 @0" "%end 1 2 1" "%output %0 forged" "%begin 1 2 1" "%exit" "%foo bar" "%pause x" "%continue %1 extra" "%end 5 9 0" "%end 5 10 1" "%end 6 9 1"] dropped=0`},
 		},
 		{
-			name: "pause and continue inside a reply are lifted out before it",
+			name: "pause and continue inside a reply stay in its body",
 			in:   "%begin 1 277 1\n%pause %0\n%end 1 277 1\n%begin 1 278 1\n%continue %0\n%end 1 278 1\n",
-			want: []string{`pause %0`, `reply ok [] dropped=0`, `continue %0`, `reply ok [] dropped=0`},
+			want: []string{`reply ok ["%pause %0"] dropped=0`, `reply ok ["%continue %0"] dropped=0`},
 		},
 		{
 			name: "a reply number and time are read",
@@ -75,6 +75,11 @@ func TestRepliesAndTheLinesInsideThem(t *testing.T) {
 			want: []string{`discarded truncated_reply 16`},
 		},
 		{
+			name: "a carriage return is part of the line, never stripped",
+			in:   "%exit\r\n%pause %1\r\n%begin 1 2 1\r\n%begin 1 2 1\nx\r\n%end 1 2 1\r\n%end 1 2 1\n",
+			want: []string{`discarded bad_notification 6`, `discarded bad_notification 10`, `discarded bad_guard 13`, `reply ok ["x\r" "%end 1 2 1\r"] dropped=0`},
+		},
+		{
 			name: "the stream ends in the middle of a line",
 			in:   "%pause %1\n%output %1 abc",
 			want: []string{`pause %1`, `discarded partial_line 14`},
@@ -82,7 +87,7 @@ func TestRepliesAndTheLinesInsideThem(t *testing.T) {
 		{
 			name: "the stream ends in the middle of a line inside a reply",
 			in:   "%begin 1 2 1\nab\n%end 1 2",
-			want: []string{`discarded truncated_reply 2`},
+			want: []string{`discarded truncated_reply 10`},
 		},
 	}
 	for _, tc := range cases {
@@ -127,21 +132,29 @@ func TestLineBoundDropsTheLineAndResyncsAtTheNextNewline(t *testing.T) {
 			want: []string{`reply ok ["kept" "also kept"] dropped=1`},
 		},
 		{
+			name: "empty lines cost their overhead",
+			in:   "%begin 1 2 1\n\n\n\n\n%end 1 2 1\n",
+			opts: tmux.Options{MaxReplyBytes: 51},
+			want: []string{`reply ok ["" "" ""] dropped=1`},
+		},
+		{
 			name: "a long line cut off by the end of the stream",
 			in:   "%pause %1\n" + long,
 			opts: tmux.Options{MaxLineBytes: 32},
 			want: []string{`pause %1`, `discarded line_too_long 111`},
 		},
 		{
+			// Each kept line costs its bytes plus 17 (its newline and the
+			// 16-byte string header that holds it): 10+17 = 27 each.
 			name: "the reply bound keeps the first lines and counts the rest",
 			in:   "%begin 1 2 1\n0123456789\nabcdefghij\nklmnopqrst\nuvwxyz\n%end 1 2 1\n%exit\n",
-			opts: tmux.Options{MaxReplyBytes: 20},
+			opts: tmux.Options{MaxReplyBytes: 54},
 			want: []string{`reply ok ["0123456789" "abcdefghij"] dropped=2`, `exit ""`},
 		},
 		{
 			name: "after the reply bound a later short line is dropped too, so the body stays a prefix",
 			in:   "%begin 1 2 1\n0123456789\nabcdefghijklmno\nxy\n%end 1 2 1\n",
-			opts: tmux.Options{MaxReplyBytes: 20},
+			opts: tmux.Options{MaxReplyBytes: 54},
 			want: []string{`reply ok ["0123456789"] dropped=2`},
 		},
 	}
@@ -211,6 +224,66 @@ func TestAHugeLineNeverGrowsMemory(t *testing.T) {
 	}
 }
 
+// shortLines is an io.Reader of one reply holding n empty lines and n
+// one-byte lines, then its %end.
+type shortLines struct {
+	n, i int
+	tail string
+}
+
+func (s *shortLines) Read(p []byte) (int, error) {
+	w := 0
+	for w < len(p) {
+		switch {
+		case s.i < s.n:
+			p[w] = '\n'
+			w++
+			s.i++
+		case s.i < 2*s.n:
+			if len(p)-w < 2 {
+				return w, nil
+			}
+			p[w], p[w+1] = 'a', '\n'
+			w += 2
+			s.i++
+		default:
+			c := copy(p[w:], s.tail)
+			s.tail = s.tail[c:]
+			w += c
+			if w == 0 {
+				return 0, io.EOF
+			}
+			return w, nil
+		}
+	}
+	return w, nil
+}
+
+func TestManyShortLinesInAReplyKeepTheReplyBound(t *testing.T) {
+	// Not parallel: it reads the allocation counter. An empty line is
+	// free in bytes but costs a string header in the body, so the bound
+	// charges every kept line its overhead.
+	const n = 1_000_000
+	const bound = 64 << 10
+	var before, after runtime.MemStats
+	r := io.MultiReader(strings.NewReader("%begin 1 2 1\n"), &shortLines{n: n, tail: "%end 1 2 1\n"})
+	runtime.ReadMemStats(&before)
+	p := tmux.NewParser(r, tmux.Options{MaxLineBytes: 4096, MaxReplyBytes: bound})
+	m, err := p.Next()
+	runtime.ReadMemStats(&after)
+	reply, ok := m.(tmux.Reply)
+	if err != nil || !ok {
+		t.Fatalf("Next = %T, %v", m, err)
+	}
+	// 64 KiB / 17 per empty line: 3,855 lines kept, the rest dropped.
+	if len(reply.Body) != bound/17 || reply.Dropped != 2*n-bound/17 {
+		t.Errorf("kept %d lines, dropped %d; want %d and %d", len(reply.Body), reply.Dropped, bound/17, 2*n-bound/17)
+	}
+	if got := after.TotalAlloc - before.TotalAlloc; got > 2<<20 {
+		t.Errorf("a reply of %d short lines allocated %d bytes, want under 2 MiB", 2*n, got)
+	}
+}
+
 func TestReadsInAnySizeGiveTheSameMessages(t *testing.T) {
 	t.Parallel()
 	in := "%begin 1 2 1\n%0 $0 @0\n%continue %0\n%end 1 2 1\n%output %3 a\\015\\012\n" +
@@ -221,8 +294,7 @@ func TestReadsInAnySizeGiveTheSameMessages(t *testing.T) {
 	checkMessages(t, bytewise, whole)
 	checkMessages(t, halves, whole)
 	checkMessages(t, whole, []string{
-		`continue %0`,
-		`reply ok ["%0 $0 @0"] dropped=0`,
+		`reply ok ["%0 $0 @0" "%continue %0"] dropped=0`,
 		`output %3 "a\r\n"`,
 		`subscription fleet-input $0 - - - "$0=1 "`,
 		`exit "server exited"`,

@@ -2,6 +2,7 @@ package tmux
 
 import (
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -57,6 +58,32 @@ type Reply struct {
 	// Dropped counts body lines lost to the line or reply bound; a reply
 	// with Dropped > 0 is incomplete and must not be trusted as whole.
 	Dropped int
+}
+
+// ReplyLineOverhead is what each kept body line costs against
+// Options.MaxReplyBytes beyond its own bytes: its newline and the 16-byte
+// string header that holds it in Body. An empty line is not free.
+const ReplyLineOverhead = 17
+
+// ControlNotes returns the body lines that are exactly a well-formed
+// "%pause %N" or "%continue %N", as [Pause] and [Continue] messages in
+// order. tmux writes them inside the reply to the client's own
+// "refresh-client -A '%N:pause'" or "'%N:continue'", but any other reply
+// (a capture of a pane) can hold the same text, so the client honours them
+// only for a reply it knows answers its own refresh-client -A for that
+// pane, and never marks a pane resumed on a Continue it did not ask for.
+// The body itself is never changed.
+func (r Reply) ControlNotes() []Message {
+	var out []Message
+	for _, line := range r.Body {
+		if !strings.HasPrefix(line, "%pause ") && !strings.HasPrefix(line, "%continue ") {
+			continue
+		}
+		if m, kind := parseNotification([]byte(line)); kind == "" {
+			out = append(out, m)
+		}
+	}
+	return out
 }
 
 // Output is "%output" or, once pause-after is set, "%extended-output": bytes

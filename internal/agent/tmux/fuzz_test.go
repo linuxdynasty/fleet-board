@@ -63,12 +63,12 @@ func FuzzParse(f *testing.F) {
 					if len(l) > fuzzMaxLine || bytes.IndexByte([]byte(l), '\n') >= 0 || !bytes.Contains(data, []byte(l)) {
 						t.Fatalf("body line %q breaks a bound or is not in the input", l)
 					}
-					body += len(l)
+					body += len(l) + tmux.ReplyLineOverhead
 				}
 				if body > fuzzMaxReply || v.Dropped < 0 {
 					t.Fatalf("reply body %d bytes, dropped %d", body, v.Dropped)
 				}
-				emitted += body
+				emitted += body - len(v.Body)*tmux.ReplyLineOverhead
 			case tmux.Output:
 				if len(v.Data) > fuzzMaxLine || v.Pane < 0 || v.Age < 0 {
 					t.Fatalf("output %+v breaks a bound", v)
@@ -144,7 +144,7 @@ func FuzzOutputRoundTrip(f *testing.F) {
 	f.Fuzz(func(t *testing.T, pane []byte) {
 		enc := encodeOutput(pane)
 		in := "%output %3 " + string(enc) + "\n%extended-output %3 7 : " + string(enc) + "\n"
-		p := tmux.NewParser(bytes.NewReader([]byte(in)), tmux.Options{})
+		p := tmux.NewParser(bytes.NewReader([]byte(in)), tmux.Options{MaxLineBytes: len(enc) + 64})
 		for _, extended := range []bool{false, true} {
 			m, err := p.Next()
 			o, ok := m.(tmux.Output)

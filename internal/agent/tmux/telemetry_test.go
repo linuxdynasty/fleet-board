@@ -114,7 +114,7 @@ func TestFailuresAreCountedAndLoggedWithoutPaneBytes(t *testing.T) {
 		"%output %0 \\9" + paneText + "\n" + // bad_escape
 		"%begin 1 3 1\n" + paneText + "\n" + paneText + "\n%end 1 3 1\n" + // reply_too_large once
 		"%exit\n"
-	got := collect(t, strings.NewReader(in), tmux.Options{MaxLineBytes: 40, MaxReplyBytes: 20, Metrics: m})
+	got := collect(t, strings.NewReader(in), tmux.Options{MaxLineBytes: 40, MaxReplyBytes: 40, Metrics: m})
 	checkMessages(t, got, []string{
 		`discarded line_too_long 92`,
 		`reply ok [] dropped=1`,

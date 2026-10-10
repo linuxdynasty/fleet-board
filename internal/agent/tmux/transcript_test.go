@@ -35,11 +35,9 @@ var transcriptWant = []string{
 	`reply ok [] dropped=0`, // refresh-client -f pause-after=1
 	`reply ok [] dropped=0`, // send-keys -l
 	`extended-output %0 age=0s "extended 2"`,
-	`pause %0`, // written inside the reply to refresh-client -A '%0:pause'
-	`reply ok [] dropped=0`,
-	`continue %0`, // and inside the reply to refresh-client -A '%0:continue'
-	`reply ok [] dropped=0`,
-	`reply ok [""] dropped=0`, // display-message -t %99: an empty line, not an error
+	`reply ok ["%pause %0"] dropped=0`,    // tmux writes it inside the reply to refresh-client -A '%0:pause'
+	`reply ok ["%continue %0"] dropped=0`, // and to refresh-client -A '%0:continue'
+	`reply ok [""] dropped=0`,             // display-message -t %99: an empty line, not an error
 	`reply error ["can't find pane: %99"] dropped=0`,
 	`reply error ["parse error: unknown command: no-such-command"] dropped=0`,
 	`reply ok [] dropped=0`, // kill-pane -t %1
@@ -114,6 +112,15 @@ func TestRecordedReplyGuards(t *testing.T) {
 			if replies[0].Flags != 0 || replies[0].Time < 1_700_000_000 {
 				t.Errorf("attach reply = %+v", replies[0])
 			}
+			// The flow-control lines are found only in the replies to the
+			// two refresh-client -A commands.
+			var notes []string
+			for _, r := range replies {
+				for _, n := range r.ControlNotes() {
+					notes = append(notes, render(n))
+				}
+			}
+			checkMessages(t, notes, []string{`pause %0`, `continue %0`})
 			for i := 1; i < len(replies); i++ {
 				if replies[i].Flags != 1 || replies[i].Number <= replies[i-1].Number || replies[i].Time < replies[i-1].Time {
 					t.Errorf("reply %d = %+v after %+v", i, replies[i], replies[i-1])

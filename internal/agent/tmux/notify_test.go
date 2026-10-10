@@ -119,16 +119,41 @@ func TestNotifications(t *testing.T) {
 	}
 }
 
-func TestLiftedNotificationsInsideAReplyAreOnlyWellFormedPauseAndContinue(t *testing.T) {
+func TestNotificationsInsideAReplyStayInItsBody(t *testing.T) {
 	t.Parallel()
-	// tmux writes %pause and %continue inside the reply to
-	// "refresh-client -A" (recorded on 3.2a and 3.7c). Any other %-line in a
-	// reply is command output, which can be pane text, so it stays body.
+	// tmux writes %pause and %continue inside the reply to the client's own
+	// "refresh-client -A" (recorded on 3.2a and 3.7c), but a capture of a
+	// pane can print the same lines. Only the client knows which command a
+	// reply answers, so the parser keeps every line in the body.
 	in := "%begin 1 2 1\n%output %0 x\n%subscription-changed s $0 - - - : v\n%exit\n%window-add @1\n" +
-		"%pause %1\n%continue %2\n%pause\n%end 1 2 1\n"
+		"%pause %1\n%continue %2\n%pause\n%continue %3 x\n%end 1 2 1\n"
 	checkMessages(t, collect(t, strings.NewReader(in), tmux.Options{}), []string{
-		`pause %1`,
-		`continue %2`,
-		`reply ok ["%output %0 x" "%subscription-changed s $0 - - - : v" "%exit" "%window-add @1" "%pause"] dropped=0`,
+		`reply ok ["%output %0 x" "%subscription-changed s $0 - - - : v" "%exit" "%window-add @1" "%pause %1" "%continue %2" "%pause" "%continue %3 x"] dropped=0`,
 	})
+}
+
+func TestControlNotesAreTheWellFormedPauseAndContinueLinesOfAReply(t *testing.T) {
+	t.Parallel()
+	// A capture of a pane that printed "%continue %3" and "%pause %4": the
+	// body is intact, and ControlNotes finds both; the client honours them
+	// only for its own refresh-client -A reply.
+	in := "%begin 9 40 1\nprompt$ cat notes\n%continue %3\n%pause %4\n%pause %4 x\n%continue\n %pause %5\nend\n%end 9 40 1\n"
+	p := tmux.NewParser(strings.NewReader(in), tmux.Options{})
+	m, err := p.Next()
+	reply, ok := m.(tmux.Reply)
+	if err != nil || !ok {
+		t.Fatalf("Next = %T, %v", m, err)
+	}
+	want := []string{"prompt$ cat notes", "%continue %3", "%pause %4", "%pause %4 x", "%continue", " %pause %5", "end"}
+	if strings.Join(reply.Body, "|") != strings.Join(want, "|") || reply.Dropped != 0 {
+		t.Errorf("body = %q, dropped %d; want %q", reply.Body, reply.Dropped, want)
+	}
+	var notes []string
+	for _, n := range reply.ControlNotes() {
+		notes = append(notes, render(n))
+	}
+	checkMessages(t, notes, []string{`continue %3`, `pause %4`})
+	if got := (tmux.Reply{Body: []string{"x", "%end 1 2 1"}}).ControlNotes(); len(got) != 0 {
+		t.Errorf("ControlNotes of a reply with none = %v", got)
+	}
 }

@@ -43,7 +43,8 @@ type Parser struct {
 	open      bool   // a %begin was read and its %end or %error was not
 	guardArgs []byte // "time number flags" of the open reply, as tmux wrote them
 	reply     Reply
-	bodyBytes int
+	bodyCost  int  // what the kept body lines cost against maxBody
+	readBytes int  // body bytes read for the open reply, kept or not
 	overflow  bool // the open reply passed maxBody
 }
 
@@ -80,7 +81,7 @@ func (p *Parser) Next() (Message, error) {
 	for {
 		if p.err != nil {
 			if p.open {
-				n := p.bodyBytes
+				n := p.readBytes
 				p.closeReply()
 				return p.discard(ErrTruncatedReply, n), nil
 			}
@@ -97,12 +98,14 @@ func (p *Parser) Next() (Message, error) {
 		case lineTooLong:
 			p.m.lineTooLong(n, p.maxLine)
 			if p.open {
+				p.readBytes += n
 				p.reply.Dropped++
 				continue
 			}
 			return Discarded{ErrKind: ErrLineTooLong, Bytes: n}, nil
 		case linePartial:
 			if p.open {
+				p.readBytes += n
 				continue // reported as the truncated reply
 			}
 			return p.discard(ErrPartialLine, n), nil
@@ -154,8 +157,7 @@ func (p *Parser) readLine() (line []byte, state lineState, n int, err error) {
 	}
 }
 
-// inReply reads one line of an open reply: its closing guard, a lifted
-// %pause or %continue, or a body line.
+// inReply reads one line of an open reply: its closing guard or a body line.
 func (p *Parser) inReply(line []byte) Message {
 	if args, ok := guardArgs(line, "%end "); ok && bytes.Equal(args, p.guardArgs) {
 		return p.finish(false)
@@ -163,23 +165,20 @@ func (p *Parser) inReply(line []byte) Message {
 	if args, ok := guardArgs(line, "%error "); ok && bytes.Equal(args, p.guardArgs) {
 		return p.finish(true)
 	}
-	// tmux writes these two inside the reply to "refresh-client -A". Every
-	// other %-line here is command output (it can be pane text), so it is
-	// body, never a notification.
-	if bytes.HasPrefix(line, []byte("%pause ")) || bytes.HasPrefix(line, []byte("%continue ")) {
-		if m, kind := parseNotification(line); kind == "" {
-			return m
-		}
-	}
-	if p.overflow || p.bodyBytes+len(line) > p.maxBody {
+	// Every other line is body, even one that looks like a notification:
+	// command output can be pane text. tmux's %pause and %continue for the
+	// client's own refresh-client -A stay here too (Reply.ControlNotes).
+	p.readBytes += len(line)
+	cost := len(line) + ReplyLineOverhead
+	if p.overflow || p.bodyCost+cost > p.maxBody {
 		if !p.overflow {
 			p.overflow = true
-			p.m.parseError(ErrReplyTooLarge, p.bodyBytes+len(line))
+			p.m.parseError(ErrReplyTooLarge, p.readBytes)
 		}
 		p.reply.Dropped++
 		return nil
 	}
-	p.bodyBytes += len(line)
+	p.bodyCost += cost
 	p.reply.Body = append(p.reply.Body, string(line))
 	return nil
 }
@@ -223,7 +222,7 @@ func (p *Parser) finish(failed bool) Message {
 }
 
 func (p *Parser) closeReply() {
-	p.open, p.overflow, p.bodyBytes = false, false, 0
+	p.open, p.overflow, p.bodyCost, p.readBytes = false, false, 0, 0
 	p.reply = Reply{}
 }
 

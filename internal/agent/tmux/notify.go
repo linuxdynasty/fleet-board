@@ -117,7 +117,8 @@ func parseExtendedOutput(rest []byte, hasRest bool) (Message, ErrKind) {
 }
 
 // parseSubscription reads "name $s @w index %p [future args...] : value".
-// A name holds no space (the client's own names; a name with one is refused).
+// The client must never use a name with a space: tmux accepts one, and the
+// line is then misread (here as a bad notification).
 func parseSubscription(rest []byte, hasRest bool) (Message, ErrKind) {
 	f, value, ok := fieldsToColon(rest)
 	if !hasRest || !ok || len(f) < 5 || len(f[0]) == 0 {

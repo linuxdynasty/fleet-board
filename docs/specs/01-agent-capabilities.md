@@ -371,14 +371,17 @@ optionally against one limit the owner sets.
   reads `client_flags` and never trusts `-F`. `ignore-size` is set at attach
   (`attach-session -f ignore-size,pause-after=<s>`): turned on later, it does
   not undo a shrink until the next size change. A `%continue` can arrive
-  inside a command's `%begin`/`%end` reply, so the parser must accept
-  notifications there. Reply lines are raw command output (a `capture-pane`
-  line is pane text and can start with `%`), so inside a reply the parser
-  lifts out only a well-formed `%pause` or `%continue` (the two tmux 3.2a and
-  3.7c were recorded writing there) and ends the reply only at the `%end` or
-  `%error` with the same time, number and flags; every other line is reply
-  text. Lines and replies are bounded (defaults), and a line over the bound
-  is skipped to its newline and counted (05b).
+  inside a command's `%begin`/`%end` reply: tmux 3.2a and 3.7c write
+  `%pause` and `%continue` inside the reply to the client's own
+  `refresh-client -A`. Reply lines are also raw command output (a
+  `capture-pane` line is pane text and can start with `%`), so the parser
+  keeps every line of a reply as reply text, lifts nothing out, and ends the
+  reply only at the `%end` or `%error` with the same time, number and flags.
+  The client honours a `%pause` or `%continue` line in a reply only when that
+  reply answers its own `refresh-client -A` for that pane, and never marks a
+  pane resumed on a `%continue` it did not ask for. Lines and replies are
+  bounded (defaults; each kept reply line also costs its overhead), and a
+  line over the bound is skipped to its newline and counted (05b).
 - **E3 Pane lifecycle:** created and exited with exit status. "Stopped without
   DONE" (the one-nudge rule) depends on this.
 - **E4 Activity transitions:** active ↔ idle, with the time of last output.

@@ -9,11 +9,14 @@ package:
   `internal/agent/tmux/*.go` for it).
 - Everything a pane or a reply holds is untrusted data. It never reaches a
   log line, a span or a metric label: error classes and byte counts only.
-- Inside a reply only the exact closing guard ends it and only well-formed
-  `%pause` and `%continue` are lifted out. Do not lift more without a recorded
-  transcript that shows tmux writing it there: reply lines can be pane text.
-- Every line and every reply is bounded; a new field that keeps bytes needs a
-  bound and a test that a huge input does not grow memory.
+- Inside a reply only the exact closing guard ends it and nothing is lifted
+  out: reply lines can be pane text. A `%pause` or `%continue` line in a reply
+  (`Reply.ControlNotes`) is honoured only when the reply answers the client's
+  own `refresh-client -A` for that pane; never mark a pane resumed on a
+  `%continue` the client did not ask for.
+- Every line and every reply is bounded, and the reply bound charges each
+  kept line its overhead; a new field that keeps bytes needs a bound and a
+  test that a huge or many-small input does not grow memory.
 - A new tmux version gets its own recorded transcript in `testdata/`, made on
   a throwaway server as `testdata/README.md` says, never the developer's.
 - A change here updates this README, `doc.go`, 01 E2 and the 05b rows in the

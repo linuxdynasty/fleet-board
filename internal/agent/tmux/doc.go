@@ -14,17 +14,21 @@
 //     "%error T N F" with the same three fields. Reply lines are raw command
 //     output, which can be pane text and can start with "%", so any other
 //     line inside a reply is body.
-//   - The one exception is a well-formed "%pause %N" or "%continue %N": tmux
-//     writes them inside the reply to "refresh-client -A", and the parser
-//     returns them on their own before the reply.
+//   - That includes "%pause %N" and "%continue %N": tmux writes them inside
+//     the reply to the client's own "refresh-client -A", but a capture of a
+//     pane can print the same text, and only the client knows which command
+//     a reply answers. [Reply.ControlNotes] finds them; the client honours
+//     them only for its own refresh-client -A reply for that pane.
 //   - "%output" values are decoded (\ooo is one byte); "%extended-output"
 //     adds the age; "%subscription-changed" keeps its value byte for byte.
-//     Subscription names must hold no space. Window and session names in
+//     The client must never use a subscription name with a space: tmux
+//     accepts one, and the line is then misread. Window and session names in
 //     "%window-renamed" and "%session-changed" are kept byte for byte.
 //   - A line over [Options.MaxLineBytes] is skipped to its newline and
 //     counted, so memory stays bounded whatever tmux or a pane sends; a reply
-//     body over [Options.MaxReplyBytes] keeps its first lines and counts the
-//     rest in [Reply.Dropped].
+//     body over [Options.MaxReplyBytes] (each line charged its bytes plus
+//     [ReplyLineOverhead]) keeps its first lines and counts the rest in
+//     [Reply.Dropped].
 //
 // Failures are counted and logged through [Metrics] with an error class and
 // byte counts only, never pane bytes.
