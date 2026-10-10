@@ -81,10 +81,9 @@ func (m mdnsBrowser) Browse(ctx context.Context, timeout time.Duration, found fu
 				drained = true
 			}
 		}
-		if err != nil {
-			if ctx.Err() != nil {
-				return nil // the stop closed its sockets
-			}
+		// After a stop, a send error is the stop closing its sockets: the
+		// loop ends with no error.
+		if err != nil && ctx.Err() == nil {
 			return err
 		}
 	}

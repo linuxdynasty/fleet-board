@@ -220,9 +220,10 @@ func TestAnAnswerIsHandedOverAfterItsWindow(t *testing.T) {
 	q := func(_ context.Context, p *mdns.QueryParam) error {
 		calls++
 		step++
-		if calls == 1 {
+		switch calls {
+		case 1:
 			p.Entries <- &mdns.ServiceEntry{Name: "a._fleetd._tcp.local.", Host: "a.local.", Port: 7443, AddrV4: net.IPv4(10, 0, 0, 1)}
-		} else if calls == 2 {
+		case 2:
 			secondAt = step
 		}
 		time.Sleep(p.Timeout)
