@@ -66,14 +66,16 @@ type conn struct {
 	done chan struct{} // closed when the reader has returned
 }
 
-// startConn starts `tmux -S socket -C attach-session -t $N -f flags`. The
-// child gets the agent's own environment without TMUX (so tmux does not
+// startConn starts `tmux -S socket -C attach-session -E -t $N -f flags`.
+// -E stops tmux applying update-environment from this client to the
+// developer's session (it would replace or remove SSH_AUTH_SOCK, DISPLAY and
+// the rest there). The child gets the agent's own environment without TMUX (so tmux does not
 // refuse the attach as nested); its stderr is discarded (it can name the
 // socket path or a session: never logged).
 func startConn(ctx context.Context, program, socket string, session SessionID, flags string, opts Options, tee io.Writer) (*conn, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	//nolint:gosec // G204: program is the tmux the agent's facts found; the rest are fixed words, the socket the agent named and a "$N" id
-	cmd := exec.CommandContext(ctx, program, "-S", socket, "-C", "attach-session", "-t", session.String(), "-f", flags)
+	cmd := exec.CommandContext(ctx, program, "-S", socket, "-C", "attach-session", "-E", "-t", session.String(), "-f", flags)
 	cmd.Env = withoutTMUX(os.Environ())
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
