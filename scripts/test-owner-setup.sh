@@ -59,25 +59,46 @@ run_suite() {
     [ ! -e "$home/.bashrc" ] && ok || bad "$sh" "bash on macOS leaves .bashrc alone"
   fi
 
+  # Stage 3 prints the steps of the 01 C3 table for the harnesses it finds.
+  bin=$(mktemp -d)
+  for h in claude codex muse cursor-agent opencode; do printf '#!/bin/sh\n' >"$bin/$h"; chmod +x "$bin/$h"; done
+  log="$home.out"
+  DRIVE_LOG="$log" drive "$sh" "$home" '\n\n\n\n\n\n' /bin/zsh 3 "$bin"
+  out=$(cat "$log"); rm -f "$log"
+  [ -n "$out" ] && ok || bad "$sh" "stage 3 printed something"
+  printf '%s\n' "$out" | grep -qi 'provisional' && bad "$sh" "stage 3 no longer says provisional" || ok
+  printf '%s\n' "$out" | grep -q 'Down' && ok || bad "$sh" "stage 3 tells Claude Code to press Down first"
+  printf '%s\n' "$out" | grep -q 'Trust this workspace' && ok || bad "$sh" "stage 3 names the Cursor screen"
+  printf '%s\n' "$out" | grep -q 'Do you trust this workspace' && ok || bad "$sh" "stage 3 names the Muse screen"
+  printf '%s\n' "$out" | grep -q 'git repo' && ok || bad "$sh" "stage 3 says Codex asks only in a git repo"
+  printf '%s\n' "$out" | grep -q 'opencode: no trust' && ok || bad "$sh" "stage 3 says OpenCode has no trust screen"
+  printf '%s\n' "$out" | grep -qi 'with yes' && bad "$sh" "stage 3 has no blanket yes" || ok
+  rm -rf "$bin"
+
   rm -rf "$home"
 }
 
-drive() { # drive SHELL HOME ANSWERS [LOGIN_SHELL]: run stage 2 on a pseudo-terminal
-  python3 - "$1" "$script" "$2" "$3" "${4:-/bin/zsh}" <<'PY'
+drive() { # drive SHELL HOME ANSWERS [LOGIN_SHELL] [STAGE] [PATH_DIR]: run a stage on a pseudo-terminal
+  python3 - "$1" "$script" "$2" "$3" "${4:-/bin/zsh}" "${5:-2}" "${6:-}" <<'PY'
 import os, subprocess, sys
-sh, script, home, answers, login_shell = sys.argv[1:6]
+sh, script, home, answers, login_shell, stage, extra = sys.argv[1:8]
 master, slave = os.openpty()
-env = {"HOME": home, "SHELL": login_shell, "PATH": os.environ["PATH"], "MUSE_NO_AUTO_UPDATE": ""}
-p = subprocess.Popen([sh, script, "--stage", "2"], stdin=slave, stdout=slave, stderr=slave, env=env)
+env = {"HOME": home, "SHELL": login_shell, "PATH": (extra + ":" if extra else "") + os.environ["PATH"], "MUSE_NO_AUTO_UPDATE": ""}
+p = subprocess.Popen([sh, script, "--stage", stage], stdin=slave, stdout=slave, stderr=slave, env=env)
 os.close(slave)
 os.write(master, answers.encode().decode("unicode_escape").encode())
+out = b""
 while True:
     try:
-        if not os.read(master, 4096):
+        chunk = os.read(master, 4096)
+        if not chunk:
             break
+        out += chunk
     except OSError:
         break
 p.wait(timeout=20)
+if os.environ.get("DRIVE_LOG"):
+    open(os.environ["DRIVE_LOG"], "wb").write(out)
 PY
 }
 

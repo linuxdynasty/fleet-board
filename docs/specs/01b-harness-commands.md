@@ -157,26 +157,37 @@ Plan item 0.9 (#54). Claude Code 2.1.296, Codex 0.160.0, Muse 1.4.4, Cursor
 `cursor-agent` 2026.10.01-e373342 and OpenCode 1.18.34, macOS, tmux 3.7c, panes
 200x50, each started by typing its name in a shell in a throwaway tmux server
 (`-L probe54`, killed at the end). No prompt went to any model, so no quota was
-spent. Every screen was read before a key was sent, except one pass of two Codex
-starts where the same three screens, already read, were answered in a loop; no
-trust was given. The keys sent were the
-"no" answers (the Esc key, or `q` for Cursor), one deliberate "trust" on a throwaway
-folder for Cursor only (below), and `1` plus the Esc key on two Codex startup
-prompts. Redacted fixtures are under `internal/harness/<name>/testdata/`,
+spent. **One rule was broken.** The fleet's rule is never to send a key blind
+(a key sent to a screen nobody has read). On one pass of two Codex starts the
+three screens had each been read once on an earlier start, and the keys
+were then sent in a loop without reading the screens again. That was a blind
+send. Per screen, the loop sent `1` on the "Background server"
+prompt (option 1, "Run without daemon this time") and the Esc key on the "Update
+available" prompt (skip). The Esc key was recorded only on the update prompt;
+the record does not name the third screen of the loop or say which key,
+if any, reached it. Results: Codex
+was still 0.160.0 afterwards, `brew upgrade` did not run, no trust was given,
+and the only change to Codex's `config.toml` was the model-notice counter (see
+below). Apart from that pass, the keys sent were the
+"no" answers (the Esc key, or `q` for Cursor) and one deliberate "trust" on a
+throwaway folder for Cursor only (below). The Cursor trust entries were deleted,
+not restored, and `config.toml` was not restored (both explained below).
+Redacted fixtures are under `internal/harness/<name>/testdata/`,
 listed in [../research/folder-trust-fixtures.md](../research/folder-trust-fixtures.md).
 
 **What a new (untrusted) folder shows**
 
 | Harness | New folder | The "no" answer | Default option |
 |---|---|---|---|
-| Claude Code | "Accessing workspace:" box, then "No, exit" / "Yes, I trust this folder" | the Esc key (it exits to the shell) | "No, exit" |
+| Claude Code | "Accessing workspace:" box, then "No, exit" / "Yes, I trust this folder" | the Esc key (it exits to the shell) | "No, exit" (so the owner presses Down before Enter to trust) |
 | Codex | "Folder access" / "Trust this folder? ..." with "1. Trust and continue" / "2. Quit". **Only in a git repo.** A plain folder shows no screen, with this machine's settings (YOLO mode) and with `-s workspace-write -a on-request` | the Esc key (quits) | "1. Trust and continue" |
 | Muse | "Do you trust this workspace?" with "1 Trust and continue" / "2 Quit". Inside a git repo it adds a line "Trust target: <repo root>" | the Esc key (quits) | "1 Trust and continue" |
 | Cursor | "Workspace Trust Required" box with "[a] Trust this workspace" / "[q] Quit" | `q` | "[a] Trust this workspace" |
 | OpenCode | **no trust screen**, in a plain folder or a fresh git repo; it goes straight to the ready screen | none needed | none |
 
 In three of the five the default option is **trust**, so Enter on the trust
-screen trusts the folder. This is why a trust screen is read, never answered,
+screen would trust the folder (no Enter was pressed in this probe; what each
+Enter does follows the option selected). This is why a trust screen is read, never answered,
 by the fleet (principle 4, 01 C3).
 
 **What a trusted folder shows:** the harness's normal ready screen, with no
@@ -192,7 +203,7 @@ the fleet never answers:
    default). Option 2 saves settings that change other Codex clients.
 2. "Update available · 0.160.0 → 0.162.1" with "1. **Update now** (runs `brew
    upgrade --cask codex`)" as the default, "2. Skip", "3. Skip until next
-   version". The Esc key skips. The same trap as the 2026-10-02 probe above: a
+   version". The Esc key skips (recorded here, on this prompt only). The same trap as the 2026-10-02 probe above: a
    blind Enter upgrades the harness.
 
 **Does trusting a parent cover a new child?** Observed with the new child two

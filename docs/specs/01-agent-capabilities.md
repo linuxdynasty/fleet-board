@@ -279,12 +279,14 @@ optionally against one limit the owner sets.
   [ADR 0024](../adr/0024-pre-build-owner-decisions.md)).
   The usage probe (D1) always runs in one folder the agent owns and keeps empty,
   `~/.local/share/fleet-agent/probe/`. Most harnesses ask about trusting a new
-  folder once (OpenCode never; Codex only for a git repo; the probe record is
+  folder once (OpenCode never; Codex only for a git repo, as seen with command-line settings only; the probe record is
   [01b](01b-harness-commands.md#folder-trust-probe-2026-10-10)). The owner
   answers that question by hand, once per harness, in a terminal of their own:
   `fleet-agent doctor` says which harness is waiting and prints the steps in the
-  table below. Trust belongs to the folder, not to a tmux session, so no attach
-  command is needed. The agent never answers a trust
+  table below. Trust belongs to the folder, not to a tmux session, so the owner
+  needs no attach command for the trust step: a terminal of their own is enough
+  (other startup screens, such as update or login, may still need the pane).
+  The agent never answers a trust
   prompt (01b) and never reads a harness's trust list. It learns that a folder is
   untrusted only from the harness's own screen: a probe or a start that ended on
   the trust screen is reported as `FOLDER_UNTRUSTED` (`TRUST_PROMPT_SEEN` is the
@@ -304,15 +306,16 @@ optionally against one limit the owner sets.
 
   | Harness | Doctor prints (plain words) |
   |---|---|
-  | Claude Code | "Claude Code is waiting for you to trust `<folder>`. In a terminal run `cd <folder> && claude`. When the box 'Accessing workspace' appears, choose 'Yes, I trust this folder' and press Enter. Then type `/exit`." |
-  | Codex | "Codex is waiting for you to trust `<folder>`. In a terminal run `cd <folder> && codex`. If it first asks about an update or a background server, read it and skip it (Esc); do not choose 'Update now'. On 'Folder access' choose '1. Trust and continue'. Then type `/exit`." Codex asks this only inside a git repo, so for the plain probe folder this block normally never shows. |
+  | Claude Code | "Claude Code is waiting for you to trust `<folder>`. In a terminal run `cd <folder> && claude`. When the box 'Accessing workspace' appears, it starts on 'No, exit': press Down first, choose 'Yes, I trust this folder' and press Enter. Then type `/exit`." |
+  | Codex | "Codex is waiting for you to trust `<folder>`. In a terminal run `cd <folder> && codex`. If it first asks about an update, read it and skip it (Esc skips it, do not choose 'Update now'). If it asks about a background server, read it and choose '1. Run without daemon this time', never '2. Restart with these settings'. On 'Folder access' choose '1. Trust and continue'. Then type `/exit`." Codex asks this only inside a git repo (seen with command-line settings only; YOLO off in `config.toml` is not proven), so for the plain probe folder this block normally never shows. The probe recorded Esc only on the update prompt; on the background-server prompt it tried only option 1. |
   | Muse | "Muse is waiting for you to trust `<folder>`. In a terminal run `cd <folder> && muse`. On 'Do you trust this workspace?' choose '1 Trust and continue'. Then leave Muse the way you usually do." |
   | Cursor | "Cursor Agent is waiting for you to trust `<folder>`. In a terminal run `cd <folder> && cursor-agent`. On 'Workspace Trust Required' choose '[a] Trust this workspace'. Then leave Cursor Agent the way you usually do." |
   | OpenCode | Nothing to do: OpenCode has no folder-trust screen. |
 
   Trust and the folder: Cursor trusts a folder and everything below it; Claude
-  Code, Codex and Muse appear to follow the git repo root; **Muse does not extend trust
-  from a parent folder to a child**. So the weekly report's scratch folder is
+  Code, Codex and Muse appear to follow the git repo root (not proven: Claude
+  Code on a plain folder, and Muse's repo root covering its children);
+  **Muse does not extend trust from a parent folder to a child**. So the weekly report's scratch folder is
   checked and trusted on its own, never assumed from the probe folder. The
   "yes" answer is the owner's act, once per harness and folder; the typed `/exit`
   is the owner's too, since the fleet never presses a key on a trust screen.

@@ -31,8 +31,8 @@ scripts/test-dev-hooks.sh     self-test for the hooks (hooks.md)
 scripts/test-cursor-hook.py, test-cursor-hook-edges.py, test-cursor-hook-family.py,
 test-cursor-hook-worktrees.py, cursor_hook_testkit.py
                               self-test for the Cursor adapter and .cursor/hooks.json (make selftest)
-scripts/owner-setup.sh        walks the owner through owner-only setup steps (plan section 3)
-scripts/test-owner-setup.sh   self-test for owner-setup.sh, run with each bash on the machine
+scripts/owner-setup.sh        walks the owner through owner-only setup steps (plan section 3); its trust stage prints the steps of 01 C3
+scripts/test-owner-setup.sh   self-test for owner-setup.sh (stages 2 and 3), run with each bash on the machine
 Makefile, tool-versions.env   make targets (make lint, make vuln, make gates, ...) and the one file
                               of pinned tool versions (agent-guide.md)
 .githooks/pre-push            refuses a push to main; before a branch push, fetches origin main
