@@ -65,7 +65,7 @@ func Restore(ctx context.Context, opts Options, req RestoreRequest) (res restore
 			names, _, err := opts.serverNames(cfg, addrs)
 			return names, err
 		},
-		Now:   opts.Now, Telemetry: s.tel,
+		Now: opts.Now, Telemetry: s.tel,
 	})
 }
 
