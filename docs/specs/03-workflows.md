@@ -298,7 +298,9 @@ re-enroll rule are in [02g](02g-agent-security.md#machine-lifecycle-revoke-and-d
   `enroll.failed{step, err_kind}` (`step`: `token`, `hub_address`, `state`,
   `already_enrolled`, `key`, `call`, `response`, `save`, `cleanup`),
   `connect.hello{peer, epoch, last_epoch, last_event_seq, hub_last_event_seq,
-  boot_id, reason, skew_ms, heartbeat_ms}`, `snapshot.applied{panes,
+  boot_id, reason, skew_ms, hub_time_ok, heartbeat_ms}` (`hub_time_ok` is
+  false when the HelloAck had no `hub_time`: then `skew_ms` is 0, not
+  measured, and hub time starts from the agent's clock), `snapshot.applied{panes,
   goals, bytes, diff: probes_reissued, goals_pane_lost, orphan_panes}`. No
   enroll line carries the token, its secret, any part of its hash, or the
   facts. A revoked certificate at the handshake is 05b's
@@ -336,7 +338,7 @@ re-enroll rule are in [02g](02g-agent-security.md#machine-lifecycle-revoke-and-d
   within the Bye wait after a stop ([defaults](defaults.md));
   `connect.epoch_regressed{epoch, last_epoch}`;
   `connect.backoff{failures, wait_ms, reason}` each time the loop waits
-  before the next try (`failures` is the count in a row the wait doubles
+  before the next try (`wait_ms` is the planned backoff wait) (`failures` is the count in a row the wait doubles
   from; 0 after a wake or network change, which resets it);
   `connect.message_ignored{kind}` (a `Command` or `Settings` before plan rows
   6 and 10 handle them); `connect.ended{state}` (`revoked`,
@@ -349,7 +351,9 @@ At 3 AM: "why did `fleet-agent enroll` fail?" → `enroll.refused` (the reason
 the agent printed, and the peer) or `enroll.failed` (the hub's step). "machine X offline since when, why?" → `fleet_hub_machine_state` plus
 the agent's `connect.attempt` logs (last candidate tried, last TLS error).
 "why is machine X waiting so long to reconnect?" → `connect.backoff`
-(`failures`, `wait_ms`).
+(`failures`, `wait_ms`); the real time to the next try is the longer of
+`wait_ms` and what is left of the 5 s minimum gap since the last try
+started.
 "why did machine X reconnect just now?" → the agent's `wake.detected` or
 `netchange.acted` (its `why`); "why did it not reconnect after a network
 change?" → `netchange.ignored` (the change did not touch the connection),

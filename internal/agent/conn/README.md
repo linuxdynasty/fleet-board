@@ -101,9 +101,13 @@ st := l.Status()                    // state, peer, last failure per address, cl
    unacked entry inside its deadline is never pruned for the count, even
    past 10,000, because a forgotten `command_id` the hub re-sends would
    run twice (02i "What agent.db keeps", defaults.md); the 7-day age limit
-   still applies. It prunes by hub time (the agent's clock plus the
-   offset measured at this stream's `HelloAck.hub_time`, 02i "Clocks"),
-   never the agent's wall clock: `not_after_time` is the hub's deadline.
+   likewise spares an entry the hub may re-send. It prunes by hub time
+   (this stream's `HelloAck.hub_time` plus the time elapsed since the
+   HelloAck arrived, read from the monotonic clock, 02i "Clocks"), never
+   the agent's wall clock: `not_after_time` is the hub's deadline, and
+   setting the wall clock does not move hub time. A HelloAck with no
+   `hub_time` leaves the agent's clock at arrival as the start, skew 0,
+   and `connect.hello{hub_time_ok=false}`.
 5. **Connected.** The cached address is rewritten if it changed. A
    `ResultAck` stamps its ids (unknown ones change nothing); a
    `SnapshotRequest` gets a new snapshot and the unacked results; a `Bye`
@@ -128,7 +132,9 @@ st := l.Status()                    // state, peer, last failure per address, cl
    and so does a wake or network change, whether it comes in the backoff
    wait or in the 5 s gap between tries (one `pacer` holds the rule for
    both); each wait is logged as `connect.backoff{failures, wait_ms,
-   reason}`; attempts at least 5 s apart. While connected, a
+   reason}`. A wake read in the gap starts its try when the gap ends,
+   without the 20 to 120 ms random delay a wake in the backoff wait gets
+   (accepted: the gap has already spread the tries); attempts at least 5 s apart. While connected, a
    wake, or a network change that removed the connection's local address
    or changed the default route (`wakenet.Decide`), closes the stream; in
    backoff, a wake or any network change cuts the wait. Either resets the
@@ -206,7 +212,8 @@ port, an impostor, an address that never answers, `UNAVAILABLE`, a reset
 after `HelloAck`), each backing off with its status and metrics, the
 backoff's growth, cap and jitter (the first wait included) and its reset
 after a connect, after a wake in backoff and after a wake in the gap
-between tries (a real 300 ms gap, read from `connect.backoff`; the
+between tries (a real 1 s gap, the wake checked to land inside it, read
+from `connect.backoff`; the
 `pacer` is also tested on its own), an unchanged routing burst that
 leaves it alone, the hub's addresses (`HelloAck` and `EnrollResponse`
 alike) filtered then capped at 16, each HelloAck check logged with its
@@ -214,7 +221,9 @@ alike) filtered then capped at 16, each HelloAck check logged with its
 restart on the same port, a snapshot cut short
 never sent on the next stream, its seq taken before it is built, results
 resent until acked (unknown and pruned ids, a `SnapshotRequest`), the
-command log pruned by hub time with an agent clock 2 h fast, seqs that
+command log pruned by hub time with an agent clock 2 h fast, hub time as
+`hub_time` plus monotonic time elapsed, a HelloAck with no `hub_time`
+logged as `hub_time_ok=false`, seqs that
 never go back (a wiped agent and a restored hub), a displaced stream
 backing off, wake and network change while connected and in backoff, a
 silent hub caught by the keepalive through a proxy that goes quiet

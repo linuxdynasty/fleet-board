@@ -86,3 +86,26 @@ func logCommands(t *testing.T, db *ring.DB, from, n int, now time.Time, set func
 	close(next)
 	wg.Wait()
 }
+
+// A HelloAck with no hub_time leaves the agent's own clock as hub time and
+// skew 0; connect.hello says so (hub_time_ok=false) once per stream, so a
+// zero skew is not mistaken for a measured one.
+func TestAHelloAckWithNoHubTimeIsLogged(t *testing.T) {
+	t.Parallel()
+	for _, missing := range []bool{true, false} {
+		h := startConnectHub(t)
+		if missing {
+			h.set(func(h *connectHub) {
+				h.tamperAck = func(_ int, ack *agentv1.HelloAck) { ack.HubTime = nil }
+			})
+		}
+		a := enrolled(t, h)
+		r := startLoop(t, a, nil)
+		h.connected(t, 1)
+		r.connected(t)
+		hello := a.events(t, "connect.hello")
+		if len(hello) != 1 || hello[0]["hub_time_ok"] != !missing || (missing && hello[0]["skew_ms"] != float64(0)) {
+			t.Errorf("hub_time missing %v: connect.hello = %v, want hub_time_ok %v", missing, hello, !missing)
+		}
+	}
+}

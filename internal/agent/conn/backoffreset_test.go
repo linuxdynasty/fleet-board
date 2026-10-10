@@ -135,7 +135,7 @@ func TestAnUnchangedRoutingBurstLeavesTheBackoff(t *testing.T) {
 // (connect.backoff{failures=1}, a wait of First to 2*First), not from four.
 func TestAWakeInTheGapBetweenTriesResetsTheBackoff(t *testing.T) {
 	t.Parallel()
-	const gap = 300 * time.Millisecond
+	const gap = time.Second
 	h := startConnectHub(t)
 	a := enrolled(t, h)
 	h.set(func(h *connectHub) {
@@ -146,8 +146,9 @@ func TestAWakeInTheGapBetweenTriesResetsTheBackoff(t *testing.T) {
 		o.Backoff.First, o.Backoff.Max, o.Backoff.MinGap = resetFirst, resetMax, gap
 		o.Events = events
 	})
-	// After three failures the wait is at most 80 ms, so from then until
-	// the gap ends (300 ms after the try started) the loop is in the gap.
+	// After three failures the wait is at most 80 ms; from its end until
+	// the gap ends (1 s after the third try started) the loop is in the
+	// gap. The wake goes 200 ms after the wait ends.
 	waitFor(t, 20*time.Second, "three backoffs", func() bool { return len(a.events(t, "connect.backoff")) >= 3 })
 	third := a.events(t, "connect.backoff")[2]
 	if third["failures"] != float64(3) {
@@ -155,11 +156,18 @@ func TestAWakeInTheGapBetweenTriesResetsTheBackoff(t *testing.T) {
 	}
 	waitMS, _ := third["wait_ms"].(float64)
 	waitEnd := logTime(t, third).Add(time.Duration(waitMS) * time.Millisecond)
-	time.Sleep(time.Until(waitEnd.Add(60 * time.Millisecond)))
-	events <- wake
-	sent := time.Now()
-	if sent.Before(waitEnd) {
-		t.Fatalf("the wake was read at %v, before the backoff wait ended at %v", sent, waitEnd)
+	gapEnd := logTime(t, a.events(t, "connect.attempt")[2]).Add(gap)
+	time.Sleep(time.Until(waitEnd.Add(200 * time.Millisecond)))
+	before := time.Now()
+	events <- wake // returns once the loop has read it
+	read := time.Now()
+	// The loop read it after its backoff wait ended and before the gap
+	// did: in the gap. A loop held up past either end fails here instead
+	// of proving nothing.
+	if !before.After(waitEnd) || !read.Before(gapEnd) {
+		t.Fatalf("the wake was read between %v and %v; the gap ran from %v to %v",
+			before.UTC().Format(time.StampMicro), read.UTC().Format(time.StampMicro),
+			waitEnd.UTC().Format(time.StampMicro), gapEnd.UTC().Format(time.StampMicro))
 	}
 	waitFor(t, 20*time.Second, "the backoff after the wake's try", func() bool {
 		return len(a.events(t, "connect.backoff")) >= 4

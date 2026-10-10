@@ -54,9 +54,10 @@ type session struct {
 	maxBytes int
 	// beat is the heartbeat interval this stream's HelloAck chose.
 	beat time.Duration
-	// hubOffset is hub time minus the agent's clock, from this stream's
-	// HelloAck.hub_time (0 when it had none): see hubNow.
-	hubOffset time.Duration
+	// hubAt is this stream's HelloAck.hub_time (the agent's clock when it
+	// had none) and hubRecv when the HelloAck arrived, with its monotonic
+	// reading: see hubNow.
+	hubAt, hubRecv time.Time
 }
 
 // try runs one candidate. accepted is true when its handshake passed, so
@@ -271,9 +272,12 @@ func (s *session) accept(ctx context.Context, ack *agentv1.HelloAck, st ring.Sta
 		return ending{}, err
 	}
 	var offset time.Duration
-	if ht := ack.GetHubTime(); ht.IsValid() {
-		offset = ht.AsTime().Sub(sent.Add(recv.Sub(sent) / 2))
-		s.hubOffset = offset
+	s.hubAt, s.hubRecv = recv, recv
+	ht := ack.GetHubTime()
+	hubTimeOK := ht.IsValid()
+	if hubTimeOK {
+		s.hubAt = ht.AsTime()
+		offset = s.hubAt.Sub(sent.Add(recv.Sub(sent) / 2))
 		s.l.status.update(func(ss *Status) { ss.ClockOffset, ss.ClockOffsetTime = offset, recv })
 	}
 	if addrs := hubAddresses(ack.GetHubAddresses()); len(addrs) > 0 {
@@ -286,7 +290,8 @@ func (s *session) accept(ctx context.Context, ack *agentv1.HelloAck, st ring.Sta
 	}
 	s.l.log.InfoContext(ctx, "connect.hello", "peer", s.c.addr, "epoch", ack.GetEpoch(), "last_epoch", st.Epoch,
 		"last_event_seq", st.Marks.SeqHWM, "hub_last_event_seq", ack.GetHubLastEventSeq(), "boot_id", s.l.opts.BootID,
-		"reason", reasonLabel(s.reason), "skew_ms", offset.Milliseconds(), "heartbeat_ms", s.beat.Milliseconds())
+		"reason", reasonLabel(s.reason), "skew_ms", offset.Milliseconds(), "hub_time_ok", hubTimeOK,
+		"heartbeat_ms", s.beat.Milliseconds())
 	return ending{}, nil
 }
 

@@ -160,11 +160,15 @@ func (s *session) ackResults(ctx context.Context, a *agentv1.ResultAck) error {
 	return nil
 }
 
-// hubNow is the hub's time now: the agent's clock plus the offset measured
-// at this stream's HelloAck (02i "Clocks"). The command log is pruned by it,
-// because not_after_time is the hub's deadline and a wrong agent clock must
-// not expire a command the hub may still re-send. With no HelloAck.hub_time
-// the offset is 0 and the agent's clock is all there is.
+// hubNow is the hub's time now: this stream's HelloAck.hub_time plus the
+// time elapsed since the HelloAck arrived (02i "Clocks"). The elapsed time
+// comes from the monotonic clock, so setting the agent's wall clock does
+// not move it; the monotonic clock may run behind during sleep, which only
+// makes hub time late and pruning later, the safe side. Taking hub_time as
+// the hub's time on arrival also errs late, by the one-way delay. The
+// command log is pruned by it, because not_after_time is the hub's
+// deadline and a wrong agent clock must not expire a command the hub may
+// still re-send. With no hub_time, hubAt is the agent's clock at arrival.
 func (s *session) hubNow() time.Time {
-	return time.Now().Add(s.hubOffset)
+	return s.hubAt.Add(time.Since(s.hubRecv))
 }
