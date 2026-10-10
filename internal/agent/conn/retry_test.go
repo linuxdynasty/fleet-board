@@ -46,16 +46,17 @@ func TestEnrollRetriesWhatTheHubSaysToRetry(t *testing.T) {
 			return nil
 		}, 2, true, 1, false},
 		{"busy on every try", func(int) error { return busy }, conn.DefaultAttempts, false, conn.DefaultAttempts - 1, true},
-		// The hub applies the deadline it was sent; when its timer fires first it
-		// answers "canceled" while the agent's own is still running.
-		{"the hub's deadline fired first, then enrolled", func(call int) error {
+		// connect-go reports an HTTP/2 RST_STREAM (CANCEL), a cut stream, as
+		// "canceled" (the hub stopping, its timer winning, a proxy); the agent's
+		// own context is still alive, so it is tried again.
+		{"a cut stream (canceled), then enrolled", func(call int) error {
 			if call == 1 {
-				return connect.NewError(connect.CodeCanceled, errors.New("context deadline exceeded"))
+				return connect.NewError(connect.CodeCanceled, errors.New("stream error: CANCEL"))
 			}
 			return nil
 		}, 2, true, 1, false},
-		{"the hub's deadline fires first on every try", func(int) error {
-			return connect.NewError(connect.CodeCanceled, errors.New("context deadline exceeded"))
+		{"a cut stream (canceled) on every try", func(int) error {
+			return connect.NewError(connect.CodeCanceled, errors.New("stream error: CANCEL"))
 		}, conn.DefaultAttempts, false, conn.DefaultAttempts - 1, true},
 		{"the hub's own failure is not retried", func(int) error { return internal }, 1, false, 0, false},
 		{"a request too large is not retried", func(int) error { return tooLarge }, 1, false, 0, false},
@@ -178,14 +179,11 @@ func TestACancelEndsTheWaitBetweenTries(t *testing.T) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	cancelled := time.Now()
 	cancel()
 	select {
 	case err := <-done:
-		// The wait it was in lasts up to an hour.
-		if took := time.Since(cancelled); took > 10*time.Second {
-			t.Errorf("Enroll returned %v after the cancel, want at once", took)
-		}
+		// At once: the wait it was in lasts up to an hour, and the 5 s case
+		// below is the bound.
 		if !errors.Is(err, conn.ErrHubFailed) || !errors.Is(err, context.Canceled) {
 			t.Errorf("Enroll = %v, want ErrHubFailed with the cancel", err)
 		}
@@ -248,11 +246,11 @@ func TestTheCapEndingACallAdvisesARerun(t *testing.T) {
 			!strings.Contains(err.Error(), "run the same command again") {
 			t.Errorf("Enroll = %v, want ErrHubFailed with the deadline and the rerun advice", err)
 		}
-		// The hub applies the deadline it was sent and may answer "canceled"
-		// just before the cap fires; that call is then tried once more. How
-		// the two timers order is not the promise under test.
-		if calls < 1 {
-			t.Errorf("the hub got %d calls, want at least 1", calls)
+		// A stream cut just before the cap fires is tried once more, so the
+		// count is not exact; how the two orderings fall is not the promise
+		// under test. It is bounded by the tries.
+		if calls < 1 || calls > conn.DefaultAttempts {
+			t.Errorf("the hub got %d calls, want 1 to %d", calls, conn.DefaultAttempts)
 		}
 		if lines := a.events(t, "enroll.failed"); len(lines) != 1 || lines[0]["step"] != "call" || lines[0]["err_kind"] != "timeout" {
 			t.Errorf("enroll.failed lines %v, want one with step=call, err_kind=timeout", lines)

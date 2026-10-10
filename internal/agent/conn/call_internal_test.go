@@ -11,15 +11,15 @@ import (
 	"connectrpc.com/connect"
 )
 
-// The hub gets the caller's deadline as a header and sorts its own ctx out of
-// it, so its "canceled: context deadline exceeded" can reach the agent just
-// before the agent's own timer fires, or just after. Both orders must give the
-// same answer: the cap ended the call, the error carries the deadline, and a
-// rerun is safe.
+// A cut stream (connect-go turns an HTTP/2 RST_STREAM with CANCEL into
+// "canceled": the hub stopping, its timer winning, a proxy) can reach the
+// agent just before the agent's own cap fires, or just after. Both orders
+// must give the same answer: the cap ended the call, the error carries the
+// deadline, and a rerun is safe.
 func TestTheCapEndingACallIsTheSameWhicheverSideNoticesFirst(t *testing.T) {
 	t.Parallel()
-	// What the agent sees of a hub's answer: the message, not the hub's cause.
-	wire := connect.NewError(connect.CodeCanceled, errors.New("context deadline exceeded"))
+	// What the agent sees of a cut stream: a code and text, no deadline cause.
+	wire := connect.NewError(connect.CodeCanceled, errors.New("stream error: stream ID 1; CANCEL"))
 	ctx, cancel := context.WithTimeoutCause(context.Background(), time.Nanosecond, errEnrollCap)
 	defer cancel()
 	<-ctx.Done()
@@ -30,5 +30,8 @@ func TestTheCapEndingACallIsTheSameWhicheverSideNoticesFirst(t *testing.T) {
 	}
 	if got := errKind(err); got != "timeout" {
 		t.Errorf("err_kind = %q, want timeout", got)
+	}
+	if strings.Contains(err.Error(), "\n") {
+		t.Errorf("error %q spans lines", err)
 	}
 }

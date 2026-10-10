@@ -105,11 +105,11 @@ func outcome(ctx context.Context, err error, untrusted *atomic.Bool, addr string
 	}
 	if ctx.Err() != nil {
 		if errors.Is(context.Cause(ctx), errEnrollCap) {
-			// The hub may have answered "canceled" off the deadline it was
-			// sent just before ours fired; that answer does not carry the
-			// deadline, so the cap's own error is added.
+			// A cut stream reaches us as "canceled" (the hub stopping, its
+			// timer firing first, a proxy) and carries no deadline, so the
+			// cap's own error is added to say why.
 			if !errors.Is(err, ctx.Err()) {
-				err = errors.Join(err, ctx.Err())
+				err = fmt.Errorf("%w (%w)", err, ctx.Err())
 			}
 			return false, fmt.Errorf("%w: the enroll ran out of time during a call; %s: %w", ErrHubFailed, rerun, err)
 		}
@@ -133,9 +133,9 @@ func outcome(ctx context.Context, err error, untrusted *atomic.Bool, addr string
 	// A bare answer with no ErrorDetail: the stream was cut or the hub was
 	// not ready. RESOURCE_EXHAUSTED is the 1 MiB request cap (02g); a resend
 	// is refused the same way, so it is not tried again. CANCELED while our
-	// context is alive is the hub's: it applies the deadline it was sent and
-	// can fire it just before ours, so it is a cut call, tried again; the
-	// caller's own cancel is sorted out above.
+	// context is alive is a cut stream: connect-go maps an HTTP/2 RST_STREAM
+	// (CANCEL) to it (the hub stopping, its own timer winning, a proxy), so
+	// it is tried again; the caller's own cancel is sorted out above.
 	switch ce.Code() {
 	case connect.CodeUnavailable, connect.CodeUnknown, connect.CodeInternal, connect.CodeDeadlineExceeded,
 		connect.CodeAborted, connect.CodeCanceled:

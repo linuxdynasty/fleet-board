@@ -123,8 +123,10 @@ func (f *fakeHub) Enroll(ctx context.Context, req *connect.Request[agentv1.Enrol
 	call := len(f.reqs)
 	f.mu.Unlock()
 	if f.hang {
+		// What a handler that gives up with its context returns; connect-go
+		// sends it as deadline_exceeded or canceled by the cause.
 		<-ctx.Done()
-		return nil, connect.NewError(connect.CodeCanceled, ctx.Err())
+		return nil, ctx.Err()
 	}
 	if f.fail != nil {
 		if err := f.fail(call); err != nil {
