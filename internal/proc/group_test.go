@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"strconv"
 	"syscall"
 	"testing"
@@ -26,14 +27,22 @@ func killLater(t *testing.T, pidFile string) {
 	})
 }
 
+// alive reports whether pid is still running, after a pause in which a process
+// we had killed would have been reaped.
+func alive(pid int) bool {
+	time.Sleep(300 * time.Millisecond)
+	return syscall.Kill(pid, 0) == nil
+}
+
 // The child exits and a grandchild still holds stdout and stderr. Without a
 // bound, the read of the output would last as long as the grandchild does (an
-// hour here).
+// hour here). The holder is reported, not killed: the child is reaped, so its
+// group id may be free, and a kill by number could reach someone else.
 func TestGrandchildHoldingThePipe(t *testing.T) {
 	t.Parallel()
 	l := proc.Limits{Time: 20 * time.Second, Output: 1 << 10}
 
-	t.Run("child exited 0: reported, and the group is killed", func(t *testing.T) {
+	t.Run("child exited 0: reported, and the holder is left alone", func(t *testing.T) {
 		t.Parallel()
 		pidFile := t.TempDir() + "/pid"
 		killLater(t, pidFile)
@@ -47,14 +56,14 @@ func TestGrandchildHoldingThePipe(t *testing.T) {
 		if took > 5*time.Second {
 			t.Fatalf("returned after %v", took)
 		}
-		if pid := pidFrom(t, pidFile); !gone(pid) {
-			t.Fatalf("grandchild %d is still running", pid)
+		if pid := pidFrom(t, pidFile); !alive(pid) {
+			t.Fatalf("grandchild %d was killed: nothing may signal a group after its leader is reaped", pid)
 		}
 	})
 
 	// Go's own WaitDelay error only shows when the exit status is zero; the
 	// held pipe must be reported whatever the status.
-	t.Run("child exited 3: reported with its exit code, and the group is killed", func(t *testing.T) {
+	t.Run("child exited 3: reported with its exit code, and the holder is left alone", func(t *testing.T) {
 		t.Parallel()
 		pidFile := t.TempDir() + "/pid"
 		killLater(t, pidFile)
@@ -65,8 +74,8 @@ func TestGrandchildHoldingThePipe(t *testing.T) {
 		if !errors.Is(err, proc.ErrHeldPipe) || res.ExitCode != 3 {
 			t.Fatalf("Run = %+v, %v; want ErrHeldPipe and exit code 3", res, err)
 		}
-		if pid := pidFrom(t, pidFile); !gone(pid) {
-			t.Fatalf("grandchild %d is still running", pid)
+		if pid := pidFrom(t, pidFile); !alive(pid) {
+			t.Fatalf("grandchild %d was killed: nothing may signal a group after its leader is reaped", pid)
 		}
 	})
 
@@ -80,7 +89,7 @@ func TestGrandchildHoldingThePipe(t *testing.T) {
 		if !errors.Is(err, proc.ErrHeldPipe) {
 			t.Fatalf("Run = %v, want ErrHeldPipe", err)
 		}
-		if took < 1500*time.Millisecond || took > 6*time.Second {
+		if took < 1800*time.Millisecond || took > 3500*time.Millisecond {
 			t.Fatalf("returned after %v, want about proc.DefaultWaitDelay (%v)", took, proc.DefaultWaitDelay)
 		}
 	})
@@ -96,7 +105,7 @@ func TestGrandchildHoldingThePipe(t *testing.T) {
 		if !errors.Is(err, proc.ErrHeldPipe) {
 			t.Fatalf("Run = %v, want ErrHeldPipe", err)
 		}
-		if took > 6*time.Second {
+		if took < 1800*time.Millisecond || took > 3500*time.Millisecond {
 			t.Fatalf("returned after %v: a WaitDelay of an hour must be cut to %v", took, proc.DefaultWaitDelay)
 		}
 	})
@@ -160,6 +169,35 @@ func TestQuietGrandchildOfAFinishedChildIsLeftAlone(t *testing.T) {
 	}
 }
 
+// Cancel can fire after the leader was reaped (the context ending races the
+// wait). It must then signal nothing: the group id may be free, and its
+// remaining members are not ours to kill by number.
+func TestCancelAfterTheLeaderWasReapedSignalsNothing(t *testing.T) {
+	t.Parallel()
+	pidFile := t.TempDir() + "/pid"
+	killLater(t, pidFile)
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.CommandContext(deadline(t), self) //nolint:gosec // G204: the test binary starts itself as a fake child
+	cmd.Env = append(os.Environ(), childEnv+"=parent-exits-quiet", pidFileEnv+"="+pidFile)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	pid := pidFrom(t, pidFile) // the grandchild, in the leader's group
+	if err := cmd.Wait(); err != nil {
+		t.Fatalf("Wait: %v", err)
+	}
+	if err := proc.KillGroupOf(cmd.Process); !errors.Is(err, os.ErrProcessDone) {
+		t.Fatalf("killGroupOf after the reap = %v, want os.ErrProcessDone", err)
+	}
+	if !alive(pid) {
+		t.Fatalf("the group member %d was killed through a leader that was already reaped", pid)
+	}
+}
+
 func TestCancelledCallerGetsItsReturn(t *testing.T) {
 	t.Parallel()
 	for _, mode := range []string{"hang", "parent-hangs"} {
@@ -172,7 +210,7 @@ func TestCancelledCallerGetsItsReturn(t *testing.T) {
 			if !errors.Is(o.err, context.Canceled) {
 				t.Fatalf("Run = %v, want context.Canceled", o.err)
 			}
-			if o.took > 2*time.Second {
+			if o.took > time.Second {
 				t.Fatalf("returned %v after the cancel", o.took)
 			}
 			if !gone(o.res.Pid) {

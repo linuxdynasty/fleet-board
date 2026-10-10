@@ -10,21 +10,24 @@ Read the root `AGENTS.md` first; it applies here. Load `fleet-go`,
 - `Run` must keep all of these, each with a test that fails without it: empty
   stdin (the test binary's own stdin is `/dev/zero`), the time cap, the output
   cap (stdout and stderr together, one budget), a process group of its own,
-  the group killed on a cap and on cancel, a held pipe reported whatever the
-  exit status, a `WaitDelay` that defaults to 2 s and is never more, and no
-  kill after a clean finish. Break one on purpose and see the test fail before
+  the group killed on a cap and on cancel, a held pipe reported (not killed)
+  whatever the exit status, a `WaitDelay` that defaults to 2 s and is never
+  more, a signal for every `ErrOutputCap`, and no signal after the child was
+  reaped. Break one on purpose and see the test fail before
   you change the code around it.
 - A group kill is safe only while a group member is alive, because a pid can
-  be handed out again once its group is empty. Do not add a kill after the
-  child was reaped, other than the one at the `WaitDelay` for a descendant
-  seen holding the pipes.
+  be handed out again once its group is empty. The plan row says kill the group
+  when a cap passes or the caller cancels, nothing more: do not add a kill after
+  the child was reaped (a holder of the pipes is reported, never killed). Keep
+  the signal-0 guard in `killGroupOf` and its test.
 - There is no default cap, and the table in `limits.go` is empty until a
   caller's real call is measured (the defaults row says each cap is set from a
   measured run). A new caller adds its entry and its row in one commit.
 - `CallerForTest` (`export_test.go`) is for this package's tests. Do not add
   a way to build a `Caller` with caps of your own to non-test code.
 - A signal carries the caller name, the cause, the pid and counts. A group
-  kill is logged and counted; a holder that cannot be killed is only logged. Never the
+  kill is logged and counted; a holder of the pipes is logged and counted in
+  its own counter. Never the
   program, the arguments, the environment, the directory or the output: they
   can hold secrets or user text. The `cause` and `caller` label sets are
   closed.

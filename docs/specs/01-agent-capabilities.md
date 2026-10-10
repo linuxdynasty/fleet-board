@@ -55,7 +55,7 @@ event, a snapshot field or a stream.
    (plan rows 6, 7, 8) measures it. Every kill is logged and counted with its
    cause ([05b](05b-observability.md)). A lint rule lets only `internal/proc`,
    the `internal/agent/tmux` package itself and `internal/agent/attach` import
-   `os/exec`, and only `internal/proc` start a process any other way. The
+   `os/exec` (or `golang.org/x/sys/execabs`), and only `internal/proc` start a process any other way. The
    long-lived `tmux -C` client and the attach PTY are not one-shot.
 
 ## Capability map

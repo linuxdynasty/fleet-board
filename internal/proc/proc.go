@@ -46,7 +46,8 @@ type Spec struct {
 	// Dir is the child's working directory; empty is the caller's own.
 	Dir string
 	// Env is the child's environment; nil is the caller's own. The helper
-	// reads no variable and adds none.
+	// reads no variable and adds none, except what os/exec itself adds (PWD
+	// when Dir is set and Env is nil).
 	Env []string
 	// WaitDelay is how long Run waits for the output pipes after the child
 	// is gone. Zero, or more than [DefaultWaitDelay], means DefaultWaitDelay:
@@ -69,19 +70,18 @@ type Result struct {
 	Elapsed time.Duration
 }
 
-// kills records the kills Run made, from Cancel's goroutine and from Run's.
+// kills records the group kill Run made, from Cancel's goroutine and Run's.
 type kills struct {
 	mu    sync.Mutex
 	did   bool  // a group kill signalled at least one process
-	cause Cause // of the first one
-	byCtx bool  // that kill was the cap or the caller (not the WaitDelay)
+	cause Cause // why, for the first one
 }
 
-func (k *kills) record(c Cause, byCtx bool) {
+func (k *kills) record(c Cause) {
 	k.mu.Lock()
 	defer k.mu.Unlock()
 	if !k.did {
-		k.did, k.cause, k.byCtx = true, c, byCtx
+		k.did, k.cause = true, c
 	}
 }
 
@@ -92,21 +92,20 @@ func (k *kills) record(c Cause, byCtx bool) {
 // together). When a cap passes or ctx ends while the child runs, Run kills the
 // whole group with SIGKILL, logs and counts the cause, and returns with
 // [ErrTimeCap], [ErrOutputCap] or the context's own error; the output so far
-// is in the Result.
+// is in the Result. An output cap passed by a child that has already exited
+// kills nothing, and is still logged and counted (killed=false).
 //
 // After the child is gone, Run waits up to WaitDelay (at most
 // [DefaultWaitDelay]) for end-of-file on its stdout and stderr, so a call lasts
 // at most the time cap plus that delay. A descendant still holding them then
-// is reported as [ErrHeldPipe], whatever the child's exit status, and is
-// killed with its group if it stayed in it (cause wait_delay). One that left
-// the group (setsid) is out of reach: Run stops waiting for it and says so in
-// the log (proc.pipe_held).
+// is reported as [ErrHeldPipe], whatever the child's exit status, and is not
+// killed: logged (proc.pipe_held) and counted, and left running.
 //
-// There is no kill after a clean finish. Once the child is reaped its pid, and
-// so the group id, may be free, so a group kill is safe only while some member
-// is alive: Run signals the group only before the child is reaped (a cap or a
-// cancel) or when a descendant is seen holding the pipes. A descendant that
-// holds no pipe and outlives a child that exited by itself is left running.
+// The only group kill is the one for a cap or a cancel, made while the child
+// is alive. Once the child is reaped its pid, and so the group id, may be free,
+// and a signal to it could reach an unrelated group. Run never signals after a
+// reap, except that a cancel racing the reap is guarded by a signal-0 check
+// that leaves a gap of a few instructions (see the README).
 func (r *Runner) Run(ctx context.Context, sp Spec) (Result, error) {
 	if err := sp.check(); err != nil {
 		return Result{}, err
@@ -138,7 +137,7 @@ func (r *Runner) Run(ctx context.Context, sp Spec) (Result, error) {
 	cmd.Cancel = func() error {
 		err := killGroupOf(cmd.Process)
 		if err == nil {
-			k.record(causeOf(context.Cause(capCtx)), true)
+			k.record(causeOf(context.Cause(capCtx)))
 		}
 		return err
 	}
@@ -161,18 +160,14 @@ func (r *Runner) Run(ctx context.Context, sp Spec) (Result, error) {
 	werr := cmd.Wait()
 
 	// Output ends when every holder of a pipe is gone. Wait for that, but not
-	// beyond the WaitDelay: past it a descendant is holding the pipes.
+	// beyond the WaitDelay: past it a descendant is holding the pipes. It is
+	// reported, not killed: the group id may be free by now.
 	held := false
 	timer := time.NewTimer(wait)
 	select {
 	case <-p.done:
 	case <-timer.C:
 		held = true
-		// The leader is reaped, but a holder of the pipes is alive, and a group
-		// id is not given out again while a member uses it.
-		if killGroup(res.Pid) == nil {
-			k.record(CauseWaitDelay, false)
-		}
 		p.closeReaders()
 		<-p.done
 	}
@@ -186,20 +181,24 @@ func (r *Runner) Run(ctx context.Context, sp Spec) (Result, error) {
 	}
 
 	k.mu.Lock()
-	did, cause, byCtx := k.did, k.cause, k.byCtx
+	did, cause := k.did, k.cause
 	k.mu.Unlock()
+	over := b.over.Load()
 	switch {
 	case did:
-		r.killed(context.WithoutCancel(ctx), sp.Caller, cause, held, res)
-	case held:
-		r.pipeHeld(context.WithoutCancel(ctx), sp.Caller, res)
+		r.killed(context.WithoutCancel(ctx), sp.Caller, cause, true, res)
+	case over: // the child had already exited: counted too, nothing to kill
+		r.killed(context.WithoutCancel(ctx), sp.Caller, CauseOutputCap, false, res)
+	}
+	if held {
+		r.heldPipe(context.WithoutCancel(ctx), sp.Caller, res)
 	}
 
 	var rerr error
 	switch {
-	case b.over.Load():
+	case over:
 		rerr = ErrOutputCap
-	case did && byCtx:
+	case did:
 		rerr = context.Cause(capCtx) // ErrTimeCap, or the caller's own error
 	case held:
 		rerr = ErrHeldPipe

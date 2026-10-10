@@ -41,8 +41,11 @@ var callers = map[string]Limits{}
 
 // For returns the caller with that name, or [ErrUnknownCaller] when the
 // defaults row has no entry for it.
-func For(name string) (Caller, error) {
-	l, ok := callers[name]
+func For(name string) (Caller, error) { return lookup(callers, name) }
+
+// lookup is For over a given table, so a test can seed one.
+func lookup(table map[string]Limits, name string) (Caller, error) {
+	l, ok := table[name]
 	if !ok {
 		return Caller{}, fmt.Errorf("%w %q: measure its call and add it to the defaults row \"One-shot child process\" first", ErrUnknownCaller, name)
 	}

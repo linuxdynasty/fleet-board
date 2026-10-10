@@ -6,13 +6,15 @@
 // time cap and an output cap (stdout and stderr together), and a process group
 // of its own. When a cap passes or the caller's context ends while the child
 // runs, it kills the whole group with SIGKILL, so a grandchild goes too, and
-// returns. It makes the output pipes itself, so it also knows when a
-// descendant still holds them after the child is gone: after at most
-// [DefaultWaitDelay] it returns [ErrHeldPipe], whatever the exit status, and
-// kills the group if the descendant stayed in it. A call lasts at most its time
-// cap plus that delay. Every group kill is logged (proc.killed) and counted
-// (fleet_<program>_proc_kills_total) with its cause: time_cap, output_cap,
-// cancelled or wait_delay.
+// returns. An output cap passed after the child has exited kills nothing and
+// is still logged and counted. [Runner.Run] makes the output pipes itself, so
+// it also knows when a descendant still holds them after the child is gone:
+// after at most [DefaultWaitDelay] it returns [ErrHeldPipe], whatever the exit
+// status. It does not kill that descendant: once the child is reaped its
+// process group id may be free. A call lasts at most its time cap plus that
+// delay. Every kill (and output cap) is logged (proc.killed) and counted
+// (fleet_<program>_proc_kills_total) with its cause: time_cap, output_cap or
+// cancelled; a held pipe is logged (proc.pipe_held) and counted separately.
 //
 // The caps come from a [Caller], one of the names in the defaults row
 // "One-shot child process" (docs/specs/defaults.md); [For] returns it. There is

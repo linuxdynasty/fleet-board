@@ -21,6 +21,7 @@ const (
 	exitCodeEnv  = "FLEET_PROC_EXIT"
 	grandSetsEnv = "FLEET_PROC_GRAND_SETSID"
 	splitEnv     = "FLEET_PROC_SPLIT_BYTES"
+	grandModeEnv = "FLEET_PROC_GRAND_MODE" // hold (default) or late-flood
 )
 
 func TestMain(m *testing.M) {
@@ -68,7 +69,11 @@ func runChild(mode string) {
 		// Start a grandchild that holds our stdout and stderr, wait until it
 		// has written its pid, then exit or hang.
 		g := exec.CommandContext(context.Background(), os.Args[0]) //nolint:gosec // G204: the test binary starts itself as a fake grandchild
-		g.Env = append(os.Environ(), childEnv+"=hold")
+		gm := os.Getenv(grandModeEnv)
+		if gm == "" {
+			gm = "hold"
+		}
+		g.Env = append(os.Environ(), childEnv+"="+gm)
 		if mode != "parent-exits-quiet" {
 			g.Stdout, g.Stderr = os.Stdout, os.Stderr // else the null device: nothing holds the pipes
 		}
@@ -90,11 +95,21 @@ func runChild(mode string) {
 		}
 		code, _ := strconv.Atoi(os.Getenv(exitCodeEnv))
 		os.Exit(code)
-	case "hold":
+	case "hold", "late-flood":
 		path := os.Getenv(pidFileEnv)
 		tmp := path + ".tmp"
 		if err := os.WriteFile(tmp, []byte(strconv.Itoa(os.Getpid())), 0o600); err == nil { //nolint:gosec // G703: the path comes from the parent test's own t.TempDir
 			_ = os.Rename(tmp, path) //nolint:gosec // G703: same path
+		}
+		if mode == "late-flood" {
+			// After the parent has exited (this process is then adopted by
+			// another parent) and, a moment later, been reaped by Run.
+			for orig, end := os.Getppid(), time.Now().Add(10*time.Second); os.Getppid() == orig && time.Now().Before(end); {
+				time.Sleep(5 * time.Millisecond)
+			}
+			time.Sleep(400 * time.Millisecond)
+			n, _ := strconv.Atoi(os.Getenv(splitEnv))
+			_, _ = os.Stdout.Write(make([]byte, n))
 		}
 		time.Sleep(time.Hour)
 	default:

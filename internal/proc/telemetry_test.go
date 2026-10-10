@@ -8,6 +8,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -55,16 +56,22 @@ func scrape(t *testing.T, tel *telemetry.Telemetry) string {
 	return rec.Body.String()
 }
 
-func hasSeries(body string, want ...string) bool {
+func hasSeries(body, prefix string, want ...string) bool {
+	return seriesIs(body, prefix, "1", want...)
+}
+
+// seriesIs reports a series whose name starts with prefix, whose labels
+// contain every want and whose value is value.
+func seriesIs(body, prefix, value string, want ...string) bool {
 	for line := range strings.SplitSeq(body, "\n") {
-		if !strings.HasPrefix(line, "fleet_agent_proc_kills_total{") {
+		if !strings.HasPrefix(line, prefix) {
 			continue
 		}
 		ok := true
 		for _, w := range want {
 			ok = ok && strings.Contains(line, w)
 		}
-		if ok && strings.HasSuffix(line, " 1") {
+		if ok && strings.HasSuffix(line, " "+value) {
 			return true
 		}
 	}
@@ -115,78 +122,141 @@ func TestEveryKillIsLoggedAndCounted(t *testing.T) {
 	if _, err := r.Run(ctx, sp); err == nil {
 		t.Fatal("cancel: no error")
 	}
-	heldFile := t.TempDir() + "/pid"
-	killLater(t, heldFile)
-	sp = child(t, "parent-exits", l, pidFileEnv+"="+heldFile)
-	sp.Caller = proc.CallerForTest("test_held", l)
-	sp.WaitDelay = 200 * time.Millisecond
-	if _, err := r.Run(t.Context(), sp); !errors.Is(err, proc.ErrHeldPipe) {
-		t.Fatalf("held pipe: %v", err)
+	// A holder that outlives a child that exited by itself is reported, never
+	// killed, whether it stayed in the group or left it.
+	for _, name := range []string{"test_held", "test_escape"} {
+		pidFile := t.TempDir() + "/pid"
+		killLater(t, pidFile)
+		env := []string{pidFileEnv + "=" + pidFile}
+		if name == "test_escape" {
+			env = append(env, grandSetsEnv+"=1")
+		}
+		sp = child(t, "parent-exits", l, env...)
+		sp.Caller = proc.CallerForTest(name, l)
+		sp.WaitDelay = 200 * time.Millisecond
+		if _, err := r.Run(t.Context(), sp); !errors.Is(err, proc.ErrHeldPipe) {
+			t.Fatalf("%s: %v", name, err)
+		}
 	}
-	// A holder that left the group cannot be killed: logged, not counted.
-	escFile := t.TempDir() + "/pid"
-	killLater(t, escFile)
-	sp = child(t, "parent-exits", l, pidFileEnv+"="+escFile, grandSetsEnv+"=1")
-	sp.Caller = proc.CallerForTest("test_escape", l)
-	sp.WaitDelay = 200 * time.Millisecond
-	if _, err := r.Run(t.Context(), sp); !errors.Is(err, proc.ErrHeldPipe) {
-		t.Fatalf("escapee: %v", err)
+	// An output cap passed after the child had exited (a grandchild writes long
+	// after the parent was reaped): counted and logged, nothing to kill.
+	lateFile := t.TempDir() + "/pid"
+	killLater(t, lateFile)
+	lateLimits := proc.Limits{Time: 20 * time.Second, Output: 1 << 10}
+	sp = child(t, "parent-exits", lateLimits, pidFileEnv+"="+lateFile, grandModeEnv+"=late-flood", splitEnv+"=4096")
+	sp.Caller = proc.CallerForTest("test_late", lateLimits)
+	sp.WaitDelay = 1800 * time.Millisecond
+	if _, err := r.Run(t.Context(), sp); !errors.Is(err, proc.ErrOutputCap) {
+		t.Fatalf("late output: %v", err)
 	}
 
 	body := scrape(t, tel)
 	for _, w := range [][]string{
-		{`caller="test_time"`, `cause="time_cap"`},
-		{`caller="test_output"`, `cause="output_cap"`},
-		{`caller="test_cancel"`, `cause="cancelled"`},
-		{`caller="test_held"`, `cause="wait_delay"`},
+		{"fleet_agent_proc_kills_total{", `caller="test_time"`, `cause="time_cap"`},
+		{"fleet_agent_proc_kills_total{", `caller="test_output"`, `cause="output_cap"`},
+		{"fleet_agent_proc_kills_total{", `caller="test_cancel"`, `cause="cancelled"`},
+		{"fleet_agent_proc_kills_total{", `caller="test_late"`, `cause="output_cap"`},
+		{"fleet_agent_proc_pipe_held_total{", `caller="test_held"`},
+		{"fleet_agent_proc_pipe_held_total{", `caller="test_escape"`},
+		{"fleet_agent_proc_pipe_held_total{", `caller="test_late"`},
 	} {
-		if !hasSeries(body, w...) {
+		if !hasSeries(body, w[0], w[1:]...) {
 			t.Errorf("no series with count 1 for %v in:\n%s", w, body)
 		}
 	}
-
-	if strings.Contains(body, `caller="test_escape"`) {
-		t.Errorf("an unkillable holder was counted as a kill:\n%s", body)
+	for _, c := range []string{"test_held", "test_escape"} {
+		if hasSeries(body, "fleet_agent_proc_kills_total{", `caller="`+c+`"`) {
+			t.Errorf("a holder nothing killed was counted as a kill: %s", c)
+		}
 	}
-	causes := map[string]string{}
-	escapeeLogged := false
+
+	type kill struct {
+		cause  string
+		killed bool
+	}
+	kills := map[string]kill{}
+	held := map[string]bool{}
 	for _, m := range logs.lines() {
-		if m["msg"] == "proc.pipe_held" && m["caller"] == "test_escape" && m["level"] == "warn" {
-			escapeeLogged = true
-		}
-		if m["msg"] != "proc.killed" {
-			continue
-		}
-		if m["caller"] == "test_held" && m["held_pipe"] != true {
-			t.Errorf("the wait_delay kill lacks held_pipe=true: %v", m)
-		}
-		if m["level"] != "warn" {
-			t.Errorf("proc.killed at level %v, want warn", m["level"])
-		}
 		caller, _ := m["caller"].(string)
-		cause, _ := m["cause"].(string)
-		causes[caller] = cause
-		for _, k := range []string{"held_pipe", "pid", "elapsed_ms", "output_bytes", "time_cap_ms", "output_cap_bytes"} {
-			if _, ok := m[k]; !ok {
-				t.Errorf("proc.killed lacks %q: %v", k, m)
+		switch m["msg"] {
+		case "proc.pipe_held":
+			held[caller] = m["level"] == "warn"
+		case "proc.killed":
+			if m["level"] != "warn" {
+				t.Errorf("proc.killed at level %v, want warn", m["level"])
 			}
+			cause, _ := m["cause"].(string)
+			killed, _ := m["killed"].(bool)
+			kills[caller] = kill{cause, killed}
+			for _, k := range []string{"killed", "pid", "elapsed_ms", "output_bytes", "time_cap_ms", "output_cap_bytes"} {
+				if _, ok := m[k]; !ok {
+					t.Errorf("proc.killed lacks %q: %v", k, m)
+				}
+			}
+		default:
+			continue
 		}
 		for k := range m {
 			if k == "path" || k == "args" || k == "env" || k == "output" {
-				t.Errorf("proc.killed carries %q; it may hold IDs and counts only", k)
+				t.Errorf("%v carries %q; it may hold IDs and counts only", m["msg"], k)
 			}
 		}
 	}
-	if !escapeeLogged {
-		t.Error("no proc.pipe_held warn for the holder that left the group")
+	wantKills := map[string]kill{
+		"test_time":   {"time_cap", true},
+		"test_output": {"output_cap", true},
+		"test_cancel": {"cancelled", true},
+		"test_late":   {"output_cap", false},
 	}
-	want := map[string]string{"test_time": "time_cap", "test_output": "output_cap", "test_cancel": "cancelled", "test_held": "wait_delay"}
-	if len(causes) != len(want) {
-		t.Fatalf("logged kills %v, want %v", causes, want)
+	if len(kills) != len(wantKills) {
+		t.Fatalf("logged %v, want %v", kills, wantKills)
 	}
-	for k, v := range want {
-		if causes[k] != v {
-			t.Errorf("caller %s logged cause %q, want %q", k, causes[k], v)
+	for k, v := range wantKills {
+		if kills[k] != v {
+			t.Errorf("caller %s logged %+v, want %+v", k, kills[k], v)
 		}
+	}
+	for _, c := range []string{"test_held", "test_escape", "test_late"} {
+		if !held[c] {
+			t.Errorf("no proc.pipe_held warn for %s", c)
+		}
+	}
+}
+
+// A child that writes past the cap and exits at once may be gone before the
+// kill (killed=false) or still running (killed=true); either way the cap
+// passed, so every run is logged and counted once.
+func TestOutputCapOfAFastChildIsAlwaysSignalled(t *testing.T) {
+	t.Parallel()
+	logs := &lockedBuffer{}
+	tel, err := telemetry.New(telemetry.Config{Service: telemetry.Agent, Version: "v0", InstanceID: "boot-2", LogOutput: logs})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = tel.Shutdown(context.Background()) })
+	r, err := proc.NewRunner(tel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const runs = 20
+	l := proc.Limits{Time: 20 * time.Second, Output: 1 << 10}
+	for range runs {
+		sp := child(t, "split", l, splitEnv+"=2048") // 4 KiB in all, then exit 0
+		sp.Caller = proc.CallerForTest("test_fast", l)
+		if _, err := r.Run(deadline(t), sp); !errors.Is(err, proc.ErrOutputCap) {
+			t.Fatalf("Run = %v, want ErrOutputCap", err)
+		}
+	}
+	lines := 0
+	for _, m := range logs.lines() {
+		if m["msg"] == "proc.killed" && m["cause"] == "output_cap" {
+			lines++
+		}
+	}
+	if lines != runs {
+		t.Errorf("%d proc.killed lines for %d runs", lines, runs)
+	}
+	if body := scrape(t, tel); !seriesIs(body, "fleet_agent_proc_kills_total{", strconv.Itoa(runs), `caller="test_fast"`, `cause="output_cap"`) {
+		t.Errorf("the counter does not hold %d for test_fast:\n%s", runs, body)
 	}
 }

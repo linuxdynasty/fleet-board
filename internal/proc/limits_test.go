@@ -1,6 +1,7 @@
 package proc_test
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"regexp"
@@ -108,5 +109,55 @@ func TestCallersMatchTheDefaultsRow(t *testing.T) {
 		if _, err := proc.For(name); err != nil {
 			t.Errorf("For(%q): %v", name, err)
 		}
+	}
+}
+
+// lookup is what For does with the table: a found caller carries its caps, a
+// name with no entry gets no default.
+func TestLookupOverASeededTable(t *testing.T) {
+	t.Parallel()
+	table := map[string]proc.Limits{
+		"git": {Time: 90 * time.Second, Output: 64 << 10},
+		"gh":  {Time: 30 * time.Second, Output: 8 << 10},
+	}
+	for name, want := range table {
+		c, err := proc.LookupForTest(table, name)
+		if err != nil || c.Name() != name || c.Limits() != want {
+			t.Errorf("lookup(%q) = %q %+v, %v; want its own caps %+v", name, c.Name(), c.Limits(), err, want)
+		}
+	}
+	for _, name := range []string{"loginctl", "", "GIT"} {
+		if c, err := proc.LookupForTest(table, name); !errors.Is(err, proc.ErrUnknownCaller) || c.Limits() != (proc.Limits{}) {
+			t.Errorf("lookup(%q) = %+v, %v; want ErrUnknownCaller and no caps", name, c.Limits(), err)
+		}
+	}
+	if _, err := proc.LookupForTest(nil, "git"); !errors.Is(err, proc.ErrUnknownCaller) {
+		t.Errorf("lookup in an empty table = %v, want ErrUnknownCaller", err)
+	}
+}
+
+// waitDelayInRow is "at most 2 s (`WaitDelay`)" in the defaults row.
+var waitDelayInRow = regexp.MustCompile("at most ([0-9]+) s \\(`WaitDelay`\\)")
+
+// The WaitDelay the row states is the constant in code.
+func TestDefaultWaitDelayMatchesTheDefaultsRow(t *testing.T) {
+	t.Parallel()
+	b, err := os.ReadFile("../../docs/specs/defaults.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var row string
+	for line := range strings.SplitSeq(string(b), "\n") {
+		if strings.HasPrefix(line, defaultsRowPrefix) {
+			row = line
+		}
+	}
+	m := waitDelayInRow.FindStringSubmatch(row)
+	if m == nil {
+		t.Fatalf("the defaults row does not say \"at most N s (`WaitDelay`)\": %q", row)
+	}
+	secs, _ := strconv.Atoi(m[1])
+	if got := time.Duration(secs) * time.Second; got != proc.DefaultWaitDelay {
+		t.Fatalf("the row says %v, proc.DefaultWaitDelay is %v", got, proc.DefaultWaitDelay)
 	}
 }

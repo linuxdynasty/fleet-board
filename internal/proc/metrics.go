@@ -17,21 +17,19 @@ const scope = "github.com/linuxdynasty/fleet-board/internal/proc"
 // event proc.killed (05b).
 type Cause string
 
-// The four causes. The first three are the ones named in plan row 2c; the
-// fourth is a child that exited while a descendant still held its output
-// open, which Run ends with the same group kill.
+// The three causes of plan row 2c.
 const (
 	CauseTimeCap   Cause = "time_cap"   // the caller's time cap passed
 	CauseOutputCap Cause = "output_cap" // stdout and stderr together passed the output cap
 	CauseCancelled Cause = "cancelled"  // the caller's context ended first
-	CauseWaitDelay Cause = "wait_delay" // a descendant held the output open past WaitDelay
 )
 
 // Runner runs one-shot children and reports every kill. Make one with
 // [NewRunner]; the zero value is not usable.
 type Runner struct {
-	log   *slog.Logger
-	kills metric.Int64Counter
+	log           *slog.Logger
+	kills         metric.Int64Counter
+	pipeHeldTotal metric.Int64Counter
 }
 
 // NewRunner returns a Runner that logs through tel.Logger and counts kills
@@ -48,19 +46,25 @@ func NewRunner(tel *telemetry.Telemetry) (*Runner, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Runner{log: log, kills: kills}, nil
+	held, err := m.Int64Counter(prefix+"_proc_pipe_held_total",
+		metric.WithDescription("One-shot children gone while a descendant still held their output past the WaitDelay, by caller."))
+	if err != nil {
+		return nil, err
+	}
+	return &Runner{log: log, kills: kills, pipeHeldTotal: held}, nil
 }
 
-// killed logs and counts one group kill. It carries IDs and counts only: never
-// the program, its arguments or its output. held says a descendant was still
-// holding the output past the WaitDelay.
-func (r *Runner) killed(ctx context.Context, c Caller, cause Cause, held bool, res Result) {
+// killed logs and counts one passed cap or cancel. killed says a group kill
+// signalled a process; it is false for an output cap passed by a child that
+// had already exited. It carries IDs and counts only: never the program, its
+// arguments or its output.
+func (r *Runner) killed(ctx context.Context, c Caller, cause Cause, killed bool, res Result) {
 	r.kills.Add(ctx, 1, metric.WithAttributes(
 		attribute.String("caller", c.name), attribute.String("cause", string(cause))))
 	r.log.WarnContext(ctx, "proc.killed",
 		"caller", c.name,
 		"cause", string(cause),
-		"held_pipe", held,
+		"killed", killed,
 		"pid", res.Pid,
 		"elapsed_ms", res.Elapsed.Milliseconds(),
 		"output_bytes", len(res.Stdout)+len(res.Stderr),
@@ -68,10 +72,11 @@ func (r *Runner) killed(ctx context.Context, c Caller, cause Cause, held bool, r
 		"output_cap_bytes", c.limits.Output)
 }
 
-// pipeHeld logs a descendant that holds the output past the WaitDelay and could
-// not be killed: it left the process group (setsid), so no kill was made and
-// nothing is counted.
-func (r *Runner) pipeHeld(ctx context.Context, c Caller, res Result) {
+// heldPipe logs and counts a descendant that holds the output past the
+// WaitDelay. Nothing is killed: the child was reaped, so its group id may be
+// free.
+func (r *Runner) heldPipe(ctx context.Context, c Caller, res Result) {
+	r.pipeHeldTotal.Add(ctx, 1, metric.WithAttributes(attribute.String("caller", c.name)))
 	r.log.WarnContext(ctx, "proc.pipe_held",
 		"caller", c.name,
 		"pid", res.Pid,
