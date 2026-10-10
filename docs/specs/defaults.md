@@ -69,6 +69,8 @@ spec change. "Decided here" marks a value no earlier document gave.
 | `metrics_listen`; `pprof_listen` | none: the agent has no listener | | 03e, [05b](05b-observability.md) | `agent`, local only |
 | `telemetry` (`policy.yaml`) | off | | 03e, 05b | `agent`, local only |
 | Typing detection: tmux `session_activity` subscription (tmux re-checks it about once a second) plus one `list-clients` read per change; the 2 s `list-clients` poll runs only while the subscription is not confirmed | about 1 (set by tmux); backup 2 | s | [02h](02h-goal-binding-and-pane-signals.md), ADR 0022 A.6; backup: ADR 0024 decision 9 | fixed |
+| tmux control-mode line bound: a longer line is skipped to its newline and counted (the longest notification measured under a binary flood was 5,316 bytes on 3.7c; a `capture-pane -J` reply line can be much longer) | 1 | MiB | [01](01-agent-capabilities.md) E2, [05b](05b-observability.md) | fixed |
+| tmux control-mode reply bound: what one command's reply may keep, each line charged its bytes plus 17 (its newline and the string header that holds it, so empty lines are not free); later lines are dropped and counted in the reply | 8 | MiB | 01 E2, 05b | fixed |
 | Goal-file rescan for missed file events | 60 | s | [02h](02h-goal-binding-and-pane-signals.md), ADR 0024 (the other allowed exception) | fixed |
 | Agent low-disk point (`DISK_LOW` under any repo root) | 5 | GiB free | ADR 0024 | fixed |
 | `idle_threshold` | 2 | min | [01](01-agent-capabilities.md) E11 | setting |

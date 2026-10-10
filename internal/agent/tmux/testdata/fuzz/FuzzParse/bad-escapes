@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("%output %1 ab\\01\n%output %1 \\400\n%output %1 \\\n%extended-output %4 1 : \\9\n")

@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("%end 1 2 1\n%error 1 2 x\nstray\n\n%\n%Window-Add @1\n")

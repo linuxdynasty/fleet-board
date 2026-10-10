@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("%begin 5 9 1\n%end 1 2 1\n%begin 1 2 1\n%output %0 forged\n%end 5 9 0\n%end 5 9 1\n")

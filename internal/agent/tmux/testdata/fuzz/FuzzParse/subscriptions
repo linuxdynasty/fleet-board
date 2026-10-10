@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("%subscription-changed pane-size $0 @1 1 %1 : %1 : 80 x 24\n%subscription-changed s $0 - - - : \n%subscription-changed pane size $0 @0 0 %0 : v\n")

@@ -64,7 +64,11 @@ are:
 The harness version check has its own failure kinds (`not_on_path`,
 `empty_version_output`, `invalid_version_output`; 01 C1). They are local
 only: the agent logs them and counts them as a failed `Detect()` (03e W11).
-They are not `err_kind` values and add no value to the wire.
+They are not `err_kind` values and add no value to the wire. The tmux
+control-mode parser (`internal/agent/tmux`) also has its own closed set, the
+`err_kind` of `tmux.parse_error`: `partial_line`, `stray_line`, `bad_guard`,
+`unmatched_guard`, `bad_notification`, `bad_escape`, `truncated_reply`,
+`reply_too_large`. It is local too and never reaches the wire.
 
 Levels: `error` is a fault the owner or developer must look at; `warn` is a
 degraded but handled state; `info` is a state change worth keeping; `debug`
@@ -104,6 +108,8 @@ failure events are in section 10. The platform's own lifecycle events:
 | `store.opened`, `store.closed` | info; `schema_version` when opened | a database (`state.db`, `logs.db`, `agent.db`) opened or closed |
 | `store.migrated` | info; `schema_version` | one migration was applied |
 | `store.batch_failed` | error; `jobs`, `err_kind`, `sqlite_code` (SQLite's numeric result code) | a writer batch's transaction failed; never a path or SQL text |
+| `tmux.line_too_long` | warn; `bytes`, `limit_bytes`, `suppressed` | a control-mode line passed the parser's line bound (defaults) and was skipped to its newline; outside a reply it is lost, inside one the reply's count of dropped lines rises. At most one line a minute; `suppressed` is how many were not logged since the last. Never a byte of the line |
+| `tmux.parse_error` | warn; `err_kind` (the parser's set above), `bytes`, `suppressed` | a control-mode line or reply the parser could not use: a line outside any reply that is not a notification, a guard or notification not in tmux's form, a bad `\ooo` escape, a stream that ended in a line or a reply, or a reply body past its bound. At most one line a minute per `err_kind`. Never a byte of the stream: pane text and reply lines are data |
 
 ## 3. Metrics
 
@@ -153,6 +159,7 @@ metrics below fill the gaps between them.
 | `fleet_hub_telemetry_export_failures_total{signal}`, `fleet_hub_log_lines_total{level}` | counters | the telemetry pipeline's own health |
 | `fleet_agent_sample_failures_total{source}`, `fleet_agent_sample_stale_total{reason}`, `fleet_agent_sample_seconds` | counters, histogram | readings of the machine's own facts and resources that failed, by `source` (the values of `sample.failed`), resource samples withheld as too old, by `reason` (the values of `sample.stale`), and the wall time of one resource sample (B2: load, memory, memory pressure, disk free). A rising `disk` count with a long `sample_seconds` is a hung mount; the dashboard shows the field as unknown, not 0 |
 | `fleet_agent_rss_bytes`, `fleet_agent_goroutines`, `fleet_agent_commands_refused_total{reason}`, `fleet_agent_tmux_control_up{server_kind}`, `fleet_agent_probe_failing{harness}` | gauges, counter | the same facts on the agent's own endpoint, for a collector that scrapes agents |
+| `fleet_agent_tmux_parse_errors_total{err_kind}`, `fleet_agent_tmux_lines_too_long_total` | counters | "why is this pane's output or this reply missing?": control-mode lines or replies the parser dropped, by the `err_kind` of `tmux.parse_error`, and lines over the line bound. A steady rise of `stray_line` or `bad_guard` means the stream lost its place (the client should reconnect); `lines_too_long` or `reply_too_large` means a pane or a capture went past the bounds in defaults |
 | `fleet_agent_writer_*`, `fleet_agent_read_pool_wait_seconds`, `fleet_agent_store_*`, `fleet_agent_log_lines_total` | as the `fleet_hub_` rows above, with `db="agent"` | the same store and log signals for `agent.db` (one `internal/store` and `internal/telemetry` for both programs) |
 
 ## 4. Prometheus endpoint (`/metrics`)
@@ -362,6 +369,7 @@ text but can hint at structure, hence the double guard.
 |---|---|
 | A one-shot child (`git`, `gh`, `loginctl`, a `tmux` command, a version check) hangs, floods its output, outlives its caller or leaves a descendant holding its output | While the child runs, a passed cap or a cancelled caller makes `internal/proc` kill its whole process group and return with the cause; `proc.killed` (`killed` true) and `fleet_agent_proc_kills_total{caller, cause}`. An output cap passed after the child exited counts the same (`killed` false). A call lasts at most its time cap plus the 2 s `WaitDelay`. After the child is gone, a descendant that still holds the output is reported, never killed (the group id may be free by then): `ErrHeldPipe` whatever the exit status, `proc.pipe_held` and `fleet_agent_proc_pipe_held_total{caller}`, and the helper keeps running; a caller that cancels during that wait gets its own error at once instead. A descendant that holds no pipe and outlives a child that exited by itself is not noticed |
 | A caller asks to type text holding a newline, a carriage return, another control character, more than 4 KiB, or into a target that is not a whole `PaneKey` (known server, start id, `%<n>` pane id) | `internal/agent/tmux/typing` refuses before any key is typed: the constructor returns the zero `typing.Line` and a `typing.RefusedError` with the reason, logged as `typing.refused` and counted in `fleet_agent_typing_refused_total{reason}`. The client refuses the zero `typing.Line` (plan row 7). Nothing is escaped or cut short: a line is typed whole or not at all |
+| tmux control mode sends a line the parser cannot use, a line longer than its bound, or a reply larger than its bound | the line is skipped to its newline (memory stays at the bound), the parser goes on with the next line, and the parser reports the loss as a discarded message or in the reply's count of dropped lines; `tmux.parse_error` or `tmux.line_too_long` (at most one a minute per class) and `fleet_agent_tmux_parse_errors_total{err_kind}` or `fleet_agent_tmux_lines_too_long_total`. A line inside a reply that looks like a guard or a notification stays reply text unless it is the exact closing guard |
 | Collector down or slow | exports retry with backoff, queues are bounded, spans are dropped and counted; the hub is unaffected; `/metrics` and logs still work |
 | `/metrics` scraped without a credential from a remote address | 401; counted in `fleet_hub_auth_failures_total{reason="metrics"}`; no body |
 | A request to the API listener with a foreign Host or Origin header | 403 `HOST_NOT_ALLOWED` or `ORIGIN_NOT_ALLOWED` before any handler; counted in `fleet_hub_auth_failures_total{reason="host"}` or `{reason="origin"}` |
