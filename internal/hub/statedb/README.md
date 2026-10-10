@@ -195,12 +195,15 @@ Notes for the rows that build on this:
   `MarkState` is housekeeping's (`silence`): `STALE` from `ONLINE`,
   `OFFLINE` from `ONLINE` or `STALE` with the live row closed as `offline`
   in the same job, both only while the live epoch is the one judged (0 for
-  none). `HeartbeatSeen` moves `last_seen_time` and, with `Promote`, takes
+  none) and `last_seen_time` is not after `Mark.Seen` (what the pass read):
+  a Snapshot that commits after the read keeps the epoch and sets `ONLINE`,
+  so only its `last_seen_time` tells the job the read is stale (03f race
+  table). `HeartbeatSeen` moves `last_seen_time` and, with `Promote`, takes
   a `STALE` machine back to `ONLINE` (`heartbeat`) while `Epoch` is live.
   `StartSweep` (fleetd run, before any listener) closes every live row as
   `hub_restart` and makes every `ONLINE` machine `STALE` (`hub_start`).
-  `MachineStates` lists every machine with its live epoch and start on the
-  read pool.
+  `MachineStates` lists every machine with its live epoch and start and
+  its `last_seen_time` on the read pool.
 - **13a:** `RevokeMachine` closes the live row with
   `EndConnection(EndRevoked)` after sending `Bye{REVOKED}`, and
   `DeleteMachine` closes any live row; the history rows stay.
@@ -218,7 +221,7 @@ Notes for the rows that build on this:
 out, err := statedb.Hello(ctx, s, statedb.HelloIn{MachineID: id, PeerSerial: serial, LastEpoch: h.GetLastEpoch(), ...})
 // after commit: send HelloAck{epoch: out.Epoch, ...}; Bye{DUPLICATE_IDENTITY} to out.Displaced's stream
 ended, err := statedb.EndConnection(ctx, s, id, out.Epoch, statedb.EndStreamClosed, now) // ended.Live, ended.Change
-c, err := statedb.MarkState(ctx, s, statedb.Mark{MachineID: id, Epoch: e, To: statedb.MachineStale, Now: now})
+c, err := statedb.MarkState(ctx, s, statedb.Mark{MachineID: id, Epoch: m.Epoch, Seen: m.LastSeen, To: statedb.MachineStale, Now: now})
 c, err = statedb.HeartbeatSeen(ctx, s, statedb.Beat{MachineID: id, Epoch: e, Promote: true, Now: beat})
 swept, err := statedb.StartSweep(ctx, s, now)             // fleetd run, before the listeners
 list, err := statedb.MachineStates(ctx, s)
@@ -350,8 +353,8 @@ gaining the columns with their defaults.
 
 The 5b tests (`machinestate_test.go`) cover each close reason from
 `ONLINE`, `STALE`, `ENROLLED` and `OFFLINE` (stamped, no audit row), a
-displaced stream's close changing nothing (#138), `MarkState`'s state and
-live-epoch checks and the `offline` row close, `HeartbeatSeen` with and
+displaced stream's close changing nothing (#138), `MarkState`'s state,
+live-epoch and `last_seen_time` checks and the `offline` row close, `HeartbeatSeen` with and
 without `Promote`, the start sweep (twice) and `MachineStates`.
 
 The 5d tests read `audit_log` from the file: one row per action with its

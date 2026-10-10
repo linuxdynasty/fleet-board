@@ -69,6 +69,9 @@ type ServerOptions struct {
 	// beforeSnapshot, set only by tests, runs in the Snapshot arm with the
 	// stream's context, before its writer job.
 	beforeSnapshot func(context.Context)
+	// beforeMark, set only by tests, runs in housekeeping after it judged a
+	// machine and before its MarkState job.
+	beforeMark func(machineID string)
 }
 
 // NewServer is the agent listener (listen.agent): TLS 1.3 only, the

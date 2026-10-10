@@ -151,9 +151,10 @@ func snapshotArm(ctx context.Context, a *agentService, s *stream, m *agentv1.Con
 		s.end(agentv1.ByeReason_BYE_REASON_UNSPECIFIED, statedb.EndStreamClosed)
 		return
 	}
-	// Housekeeping counts this stream's silence from the Snapshot (03n).
-	// A pass that read the machine before this store may still mark it
-	// STALE; a Heartbeat on this stream then brings it back.
+	// Housekeeping counts this stream's silence from the Snapshot (03n). It
+	// also reads the Snapshot's last_seen_time with the state, and a mark
+	// judged from a read before this commit is refused (MarkState), so the
+	// time recorded here is never the only guard.
 	s.snapshotAt(at)
 	done("applied")
 	if out.Change != nil {

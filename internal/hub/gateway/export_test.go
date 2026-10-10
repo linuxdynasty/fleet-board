@@ -57,3 +57,7 @@ func Stalled(s *Server, machineID string) bool {
 	st := s.connect.streams.get(machineID)
 	return st != nil && st.stalled.Load() != 0
 }
+
+// SetBeforeMark makes the server built from o call f in housekeeping after
+// it judged machineID and before its MarkState job.
+func SetBeforeMark(o *ServerOptions, f func(machineID string)) { o.beforeMark = f }

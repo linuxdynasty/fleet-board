@@ -61,6 +61,9 @@ type connectDeps struct {
 	appliers       []ingest.Applier
 	onApplied      func(machineID string, epoch uint64)
 	beforeSnapshot func(context.Context)
+	// beforeMark is a hook tests run between housekeeping's judgement of a
+	// machine and its MarkState job.
+	beforeMark func(machineID string)
 }
 
 type connectMetrics struct {
@@ -109,7 +112,8 @@ func newConnectDeps(opts ServerOptions) (*connectDeps, error) {
 	return &connectDeps{
 		afterHeartbeat: opts.afterHeartbeat, beforeRowClose: opts.beforeRowClose, started: now().UTC(), skew: newSkews(), sm: sm,
 		snap: snap, appliers: slices.Clone(opts.Appliers), onApplied: opts.OnSnapshotApplied, beforeSnapshot: opts.beforeSnapshot,
-		stopping: stopping, stop: stop,
+		beforeMark: opts.beforeMark,
+		stopping:   stopping, stop: stop,
 		streams: newRegistry(), limit: newHelloLimit(), revoked: opts.Revoked,
 		tracer: opts.Telemetry.Tracer(scope), instanceID: hex.EncodeToString(b[:]), version: buildinfo.Version,
 		helloWait: cmp.Or(opts.HelloWait, HelloWait), afterHello: opts.afterHello, afterRegister: opts.afterRegister, arms: withArms(arms, opts.arms), m: cm,

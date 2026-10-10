@@ -80,13 +80,16 @@ func machinesIn(ctx context.Context, tx *sql.Tx, state string) ([]string, error)
 	return ids, nil
 }
 
-// MachineLive is one machine as housekeeping reads it: its stored state and
-// its live connection (Epoch 0 and a zero Started when none).
+// MachineLive is one machine as housekeeping reads it: its stored state,
+// its live connection (Epoch 0 and a zero Started when none) and its
+// last_seen_time (zero when never seen). A [Mark] carries LastSeen back as
+// Seen, so the job can tell that something was heard after the read.
 type MachineLive struct {
 	MachineID string
 	State     string
 	Epoch     uint64
 	Started   time.Time
+	LastSeen  time.Time
 }
 
 // MachineStates lists every machine with its live connection, on the read
@@ -95,8 +98,8 @@ func MachineStates(ctx context.Context, s *store.Store) ([]MachineLive, error) {
 	var out []MachineLive
 	err := s.Read(ctx, func(tx *sql.Tx) error {
 		out = nil
-		rows, err := tx.QueryContext(ctx, `SELECT m.machine_id, m.state, ifnull(c.epoch, 0), ifnull(c.started_time, 0)
-			FROM machines m LEFT JOIN machine_connections c ON c.machine_id = m.machine_id AND c.ended_time IS NULL
+		rows, err := tx.QueryContext(ctx, `SELECT m.machine_id, m.state, ifnull(c.epoch, 0), ifnull(c.started_time, 0),
+			ifnull(m.last_seen_time, 0) FROM machines m LEFT JOIN machine_connections c ON c.machine_id = m.machine_id AND c.ended_time IS NULL
 			ORDER BY m.machine_id`)
 		if err != nil {
 			return fmt.Errorf("statedb: list machine states: %w", err)
@@ -104,15 +107,18 @@ func MachineStates(ctx context.Context, s *store.Store) ([]MachineLive, error) {
 		defer func() { _ = rows.Close() }()
 		for rows.Next() {
 			var (
-				m              MachineLive
-				epoch, started int64
+				m                    MachineLive
+				epoch, started, seen int64
 			)
-			if err := rows.Scan(&m.MachineID, &m.State, &epoch, &started); err != nil {
+			if err := rows.Scan(&m.MachineID, &m.State, &epoch, &started, &seen); err != nil {
 				return fmt.Errorf("statedb: list machine states: %w", err)
 			}
 			m.Epoch = uint64(epoch) //nolint:gosec // G115: epoch has CHECK BETWEEN 1 AND MaxEpoch
 			if epoch != 0 {
 				m.Started = time.UnixMilli(started)
+			}
+			if seen != 0 {
+				m.LastSeen = time.UnixMilli(seen)
 			}
 			out = append(out, m)
 		}

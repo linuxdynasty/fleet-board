@@ -152,8 +152,8 @@ srv, err := gateway.NewServer(gateway.ServerOptions{
   and its live row (`statedb.MachineStates`) and, for an `ONLINE` or
   `STALE` one, takes the silence since the newest of this process's start,
   the live row's `Hello`, the live stream's last applied Snapshot (the
-  row 5 ruling starts the `STALE` clock there) and its last Heartbeat (hub
-  clock):
+  row 5 ruling starts the `STALE` clock there), its last Heartbeat and the
+  machine's `last_seen_time` read with its state (hub clock):
   `OfflineAfter` (3 min) is `OFFLINE` (`statedb.MarkState` also closes the
   live row as `offline`) and the stream is cut; `StaleAfter` (45 s) while
   `ONLINE` is `STALE`; while `STALE`, a stream stalled for `StaleAfter` or
@@ -169,8 +169,10 @@ srv, err := gateway.NewServer(gateway.ServerOptions{
   machine back to `ONLINE` (`machine.state_changed{reason="snapshot"}`).
   The Snapshot arm records its hub time on the stream (`snapped`, not
   `beat`, which feeds the displaced stream's heartbeat age) after the
-  commit; a pass that read the machine just before that store may still
-  mark it `STALE`, and a Heartbeat on the stream brings it back.
+  commit. Neither that record nor the pass's read can lose the Snapshot:
+  the Snapshot tx moves `last_seen_time`, a pass that reads after the
+  commit counts silence from it, and a mark judged from a read before the
+  commit is refused in its job (`Mark.Seen`, 03f race table).
   `fleet_hub_machine_state` is
   set at each change and each pass, and for the start sweep's changes by
   `Server.RecordStates` (fleetd run, once the listener exists); the clock skew is the median of the

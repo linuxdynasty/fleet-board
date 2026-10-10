@@ -4,8 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"testing"
+	"time"
 
 	"github.com/linuxdynasty/fleet-board/internal/hub/statedb"
+	"github.com/linuxdynasty/fleet-board/internal/store"
 )
 
 // MarkOnline reports the change it made, so the gateway can log
@@ -48,6 +50,53 @@ func TestMarkOnlineReportsTheStateItLeft(t *testing.T) {
 			want := statedb.StateChange{MachineID: renewMachineID, From: from, To: statedb.MachineOnline, Reason: statedb.ReasonSnapshot, Stamp: st}
 			if change == nil || *change != want {
 				t.Errorf("change %+v, want %+v", change, want)
+			}
+		})
+	}
+}
+
+// read is the machine as a housekeeping pass reads it.
+func read(t *testing.T, s *store.Store, machineID string) statedb.MachineLive {
+	t.Helper()
+	list, err := statedb.MachineStates(context.Background(), s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range list {
+		if m.MachineID == machineID {
+			return m
+		}
+	}
+	t.Fatalf("no machine %s in %+v", machineID, list)
+	return statedb.MachineLive{}
+}
+
+// A housekeeping pass that read the machine before the Snapshot committed
+// must not mark it from that stale read: the Snapshot keeps the live epoch
+// and sets ONLINE, so the state and epoch checks pass, but it moved
+// last_seen_time past what the pass read (03f race table, "A housekeeping
+// pass reads the machine before the Snapshot commits").
+func TestAMarkJudgedBeforeTheSnapshotIsRefused(t *testing.T) {
+	t.Parallel()
+	for _, to := range []string{statedb.MachineStale, statedb.MachineOffline} {
+		t.Run(to, func(t *testing.T) {
+			t.Parallel()
+			_, s := enrolledStore(t)
+			mustHello(t, s, hello(0, "boot-a", "192.0.2.7:51000", helloAt))
+			setState(t, s, renewMachineID, statedb.MachineStale) // as the start sweep leaves it
+			judged := read(t, s, renewMachineID)
+			if _, err := applySnapshot(t, s, snapIn(1, 5, snapAt)); err != nil {
+				t.Fatal(err)
+			}
+			got, err := statedb.MarkState(context.Background(), s, statedb.Mark{
+				MachineID: renewMachineID, Epoch: judged.Epoch, Seen: judged.LastSeen, To: to, Now: helloAt.Add(time.Hour),
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			row, live := machineOf(t, s, renewMachineID), liveEpochs(t, s, renewMachineID)
+			if got != nil || row.state != statedb.MachineOnline || len(live) != 1 {
+				t.Errorf("MarkState = %+v, row %+v, live %v; want refused, ONLINE, epoch 1 live", got, row, live)
 			}
 		})
 	}
