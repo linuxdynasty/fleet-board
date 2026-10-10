@@ -107,8 +107,8 @@ runs a known harness and that no registry entry names:
    harness session id) and take the file with the **newest modification time**. It
    must be newer than the start of the harness process in the pane (from the OS),
    so a file left by an earlier goal is not attributed. The agent reads no other file for an observed goal; the
-   generic goal file of fleet-started goals is `<workdir>/.fleet/goal-<goal_id>`
-   ([01d](01d-goal-hooks.md#goal-file-location-probe-2026-10-10)).
+   generic goal file of fleet-started goals is `<checkout top>/.fleet-board/goal-<goal_id>`
+   (probed for Claude Code, Codex and Muse, [01d](01d-goal-hooks.md#goal-file-location-probe-2026-10-10)).
 3. If exactly one pane running a known harness has that checkout as its folder,
    the file belongs to that pane. If two or more do, nothing is attributed: the
    agent never guesses (the harness session id that would tell them apart is
@@ -165,7 +165,7 @@ each with its own reason so the hub can react:
 |---|---|---|
 | pane exists, no live goal bound to it, checkout not used by another goal | `SESSION_NOT_AVAILABLE` | new window, same machine |
 | still available for work, ready pattern showing, input line empty | `SESSION_NOT_AVAILABLE` or `PANE_BUSY` | new window; one retry after 30 s for `PANE_BUSY` |
-| pane directory is a checkout of `spec.repo` under an allowed root | `SESSION_WORKDIR_MISMATCH` | new window; durable for that pane until its directory changes (`PaneChanged`) |
+| pane directory is the top-level folder of a checkout of `spec.repo` under an allowed root (a linked worktree is its own top; a subfolder of a checkout is a mismatch) | `SESSION_WORKDIR_MISMATCH` | new window; durable for that pane until its directory changes (`PaneChanged`) |
 | checkout has no uncommitted or untracked changes | `CHECKOUT_DIRTY` | new window; retryable when the developer cleans up |
 
 `WORKTREE_DIRTY` stays the refusal of `EnsureWorktree` and `PruneWorktree`.
@@ -179,7 +179,9 @@ does not run for a reused pane.
 **Cleanup order.** `KillWindow`, then `PruneWorktree`. A reused pane's
 checkout is the pane's own, so it is never pruned while the window lives; a
 worktree some live pane works in is `WORKTREE_IN_USE`. Only a worktree the
-agent created is pruned.
+agent created is pruned. `ReleaseGoal` removes its own `goal-<goal_id>` and then
+`.fleet-board/` when only the self-ignoring `.gitignore` is left; a folder with
+anything else stays ([01d2](01d2-goal-file-safe-writes.md#cleanup)).
 
 ## StartGoal steps
 
@@ -193,7 +195,7 @@ reported).
 | 1 | `preflight` | both | every check; skipped when `skip_preflight`; includes the local goal cap | declarative: run again | preflight codes, `AGENT_GOAL_CAP_REACHED` |
 | 2 | `pick_session` | reuse | the table above | read-only: run again | `SESSION_NOT_AVAILABLE`, `SESSION_WORKDIR_MISMATCH`, `CHECKOUT_DIRTY`, `PANE_BUSY` |
 | 3 | `prepare_branch` | reuse, `AGENT_ENSURES` | branch started in place | declarative: already on that branch is OK | `GIT_FAILED`, `CHECKOUT_DIRTY` |
-| 4 | `ensure_worktree` | new, `AGENT_ENSURES` | `EnsureWorktree` | declarative | `WORKTREE_EXISTS`, `GIT_FAILED`, `CHECKOUT_MISSING`, `REPO_ROOT_NOT_ALLOWED` |
+| 4 | `ensure_worktree` | new, `AGENT_ENSURES` | `EnsureWorktree`; the path is resolved to its real path (`EvalSymlinks`) before the window starts, and the registry stores that path (Codex refuses a symlinked writable root, 01d) | declarative | `WORKTREE_EXISTS`, `GIT_FAILED`, `CHECKOUT_MISSING`, `REPO_ROOT_NOT_ALLOWED` |
 | 5 | `ensure_window` | new | session and window, harness launched with `FLEET_*` | declarative: reuses a window carrying the same `FLEET_PANE_KEY` tag | `MAX_WINDOWS_REACHED`, `INVALID_NAME`, `HARNESS_PROFILE_MISSING` |
 | 6 | `register_goal` | both | registry entry, `GoalRegistryChanged` | declarative | `INTERNAL` |
 | 7 | `start_log_capture` | both | `pipe-pane` on the goal pane (K1) | declarative | `INTERNAL` |
@@ -201,7 +203,7 @@ reported).
 | 9 | `set_model` | when `spec.model` | the harness's `/model` (SESSION class), picker handled | verify: read the shown model first, type only when it differs | `MODEL_NOT_AVAILABLE`, `PANE_BUSY` |
 | 10 | `set_effort` | when `spec.effort` | the harness's `/effort` | verify, as above | `EFFORT_NOT_SUPPORTED`, `PANE_BUSY` |
 | 11 | `clear_context` | `fresh_context`, reuse | `/clear` (DESTRUCTIVE class), fleet-started session or a mark with `fresh_context_on_reuse` | **not idempotent**: started without done is `UNKNOWN_OUTCOME` | `FRESH_CONTEXT_NOT_ALLOWED` |
-| 12 | `write_goal_file` | both; skipped when the checkout's hooks are repo-owned (`repo_ships_own`, `REPO_DRIVER`) | the agent writes the initial goal file; for a repo-owned file it writes nothing and step 14 reads the repo's own | declarative: same content again is OK | `GOAL_FILE_WRITE_FAILED` |
+| 12 | `write_goal_file` | both; skipped when the checkout's hooks are repo-owned (`repo_ships_own`, `REPO_DRIVER`) | creates `.fleet-board/`, its `.gitignore` and `goal-<goal_id>` in the pane's folder, no-follow ([01d2](01d2-goal-file-safe-writes.md#safe-writes)); for a repo-owned file it writes nothing and step 14 reads the repo's own | declarative: same content again is OK | `GOAL_FILE_WRITE_FAILED` (`goal_dir_not_plain`, `goal_dir_foreign`) |
 | 13 | `type_goal` | both | the adapter's `GoalCommand` plus Enter | **not idempotent**: `UNKNOWN_OUTCOME` unless step 14 proves it | `PANE_BUSY` |
 | 14 | `confirm_goal_file` | both | goal file appears within `goal_file_timeout` | read-only | `GOAL_FILE_NOT_SEEN` |
 
@@ -232,7 +234,7 @@ starts the harness with the goal's scratch directory
 (`<agent state dir>/scratch/<goal id>/`, made by `EnsureScratch` just before)
 as its working directory, step 12 writes the goal file there, and `preflight`
 adds `SCRATCH_MISSING`. The registry entry binds by pane and harness session id,
-like a `REPO_DRIVER` goal, and `ReleaseGoal` removes the directory.
+like a `REPO_DRIVER` goal, and `ReleaseGoal` removes the directory whole.
 
 **Roles and approval.** The scheduler may run `StartGoal` including steps 9
 to 11: they are part of the composite the owner or routine chose (02g). The

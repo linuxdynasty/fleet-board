@@ -242,6 +242,9 @@ Sub-flags held with the phase (on `GoalStatus`): `provider_condition`,
   `KillWindow` (fleet windows only; never a developer's), then
   `PruneWorktree{repo, goal_id, path}` (agent-created worktrees only, and only
   once no live pane works in it). A pane that was reused is left alone.
+  `ReleaseGoal` also removes the goal's own `goal-<goal_id>` and then
+  `.fleet-board/` when only its `.gitignore` is left (anything else in the
+  folder stays; [01d2](01d2-goal-file-safe-writes.md#cleanup)).
 - **Pause / resume / edit / clear** are operator actions typed as the
   developer would (01b): `RunHarnessCommand{pane, "/goal", args, expected_class
   = GOAL, catalog_hash}` at an idle prompt. If the harness is mid-turn the hub
@@ -268,7 +271,7 @@ Sub-flags held with the phase (on `GoalStatus`): `provider_condition`,
 | `goals` (state, flags above, fingerprint, `cr_ref`, timestamps) | hub store | one tx per applying event or timer; commands enqueued in the same tx |
 | `goal_transitions` (seq, from, to, reason, pause_reason, actor, command, fingerprint, transition_time) and `goal_runs` (number, cause, start and end, end phase and reason, machine, pane, harness session id, nudges, usage consumed from readings, log and transcript keys) | hub store, kept with the goal (`ListGoalTransitions`, `ListGoalRuns`); the 7-day timeline filters goals by `start_time` and `end_time` | same tx |
 | Triage items raised here | hub store | same tx (W7) |
-| On the agent: the command log and the goal registry (02h); the goal file itself belongs to the harness and lives in the worktree | machine disk | n/a |
+| On the agent: the command log and the goal registry (02h); the goal file itself belongs to the harness and lives in `.fleet-board/` at the top of the worktree | machine disk | n/a |
 
 ### Ordering and consistency
 
