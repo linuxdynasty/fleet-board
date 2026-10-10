@@ -115,8 +115,9 @@ func (v *view) Addr() net.Addr { return v.h.ln.Addr() }
 // BindRetry listens on addr, retrying while the address is in use (a port
 // another process holds for a moment). It is for a test that must see the
 // hub down first, so the socket cannot be held. After limit the test is
-// skipped, not failed: the port belongs to another process, which is not
-// something the code under test did.
+// skipped, not failed, because the port belongs to another process and not
+// to the code under test; when the CI environment variable is set it fails
+// instead, so a skip cannot hide a real problem in a gate run.
 func BindRetry(t *testing.T, addr string, limit time.Duration) net.Listener {
 	t.Helper()
 	var lc net.ListenConfig
@@ -130,7 +131,11 @@ func BindRetry(t *testing.T, addr string, limit time.Duration) net.Listener {
 			t.Fatal(err)
 		}
 		if time.Now().After(end) {
-			t.Skipf("skipped: %s stayed in use by another process for %v (%v)", addr, limit, err)
+			t.Logf("%s stayed in use for %v: %v (find the holder with lsof -nP -iTCP -sTCP:LISTEN)", addr, limit, err)
+			if os.Getenv("CI") != "" {
+				t.Fatalf("%s stayed in use by another process for %v", addr, limit)
+			}
+			t.Skipf("skipped: %s stayed in use by another process for %v", addr, limit)
 		}
 		time.Sleep(20 * time.Millisecond)
 	}

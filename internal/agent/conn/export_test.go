@@ -42,6 +42,6 @@ func SetSleepClock(o *LoopOptions, read func() (time.Duration, error)) { o.sleep
 
 // SetRenewHook makes the loop report each renewal step ("before_send",
 // "after_answer", "after_rename"), each check ("check") and the renewal
-// goroutine's report to the gate ("reported"); returning true stops the renewal there
-// as a crash would.
+// goroutine's report to the gate ("reported"); returning true stops the
+// renewal there as a crash would.
 func SetRenewHook(o *LoopOptions, f func(step string) bool) { o.renewHook = f }

@@ -76,7 +76,10 @@ func TestARenewalWaitsOneIntervalAfterTheLast(t *testing.T) {
 			case "check":
 				checks.Add(1)
 			case "reported":
-				reported <- struct{}{}
+				select {
+				case reported <- struct{}{}:
+				default: // the test reads only the first
+				}
 			default:
 			}
 			return false

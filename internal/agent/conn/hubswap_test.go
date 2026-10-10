@@ -3,10 +3,10 @@ package conn_test
 import (
 	"context"
 	"net"
-	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/linuxdynasty/fleet-board/internal/agent/conn/conntest"
 )
 
 // A hub swap never frees its port: a thief that binds the address in a loop
@@ -15,29 +15,11 @@ import (
 func TestAHubSwapNeverFreesThePort(t *testing.T) {
 	t.Parallel()
 	h := startConnectHub(t)
-	var stolen atomic.Int64
-	stop := make(chan struct{})
-	var wg sync.WaitGroup
-	wg.Go(func() {
-		var lc net.ListenConfig
-		for {
-			select {
-			case <-stop:
-				return
-			default:
-			}
-			if ln, err := lc.Listen(context.Background(), "tcp", h.addr); err == nil {
-				stolen.Add(1)
-				_ = ln.Close()
-			}
-		}
-	})
+	thief := conntest.StartThief(t, h.addr)
 	for range 20 {
 		h.swap(t)
 	}
-	close(stop)
-	wg.Wait()
-	if n := stolen.Load(); n != 0 {
+	if n := thief.Stolen(); n != 0 {
 		t.Errorf("another listener bound %s %d times during the swaps, want 0", h.addr, n)
 	}
 	before := h.open.Load()
