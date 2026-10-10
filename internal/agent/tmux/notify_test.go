@@ -103,7 +103,9 @@ func TestNotifications(t *testing.T) {
 		// Everything else is kept by name only.
 		{"a notification this parser does not read", `%unlinked-window-renamed @1 my secret window`, []string{`unknown unlinked-window-renamed`}},
 		{"a closed linked window is not read yet", `%window-close @1`, []string{`unknown window-close`}},
-		{"a notification with no arguments", `%sessions-changed`, []string{`unknown sessions-changed`}},
+		{"sessions created or destroyed", `%sessions-changed`, []string{`sessions-changed`}},
+		{"sessions-changed with arguments tmux never sends", `%sessions-changed $1`, []string{`discarded bad_notification 20`}},
+		{"an unread notification with no arguments", `%client-detached`, []string{`unknown client-detached`}},
 		{"a bare percent sign", `%`, []string{`discarded bad_notification 1`}},
 		{"a list-panes line outside a reply", `%0 $0 @0`, []string{`discarded bad_notification 8`}},
 		{"a name with characters tmux never uses", `%Window-Add @1`, []string{`discarded bad_notification 14`}},

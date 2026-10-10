@@ -4,8 +4,8 @@
 // [Parser] turns the bytes a control client prints into a closed set of
 // [Message] values (a [Reply] per command, [Output], [Pause], [Continue],
 // [Exit], [SubscriptionChanged], [WindowAdd], [WindowClose],
-// [WindowRenamed], [SessionChanged], [Unknown] and [Discarded]). It starts
-// no process and writes nothing.
+// [WindowRenamed], [SessionChanged], [SessionsChanged], [Unknown] and
+// [Discarded]). It starts no process and writes nothing.
 //
 // [Client] attaches one `tmux -C` client to one server with ignore-size and
 // pause-after, checks both in client_flags (tmux before 3.2 is [ErrTooOld]),

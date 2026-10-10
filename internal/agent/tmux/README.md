@@ -11,7 +11,7 @@ the `tmux -C` client that attaches to one server and sends typed commands
   `Continue`, `Exit`, `SubscriptionChanged`, `WindowAdd` (`%window-add`,
   `%unlinked-window-add`), `WindowClose` (`%unlinked-window-close`; the linked
   `%window-close` is not read yet), `WindowRenamed`, `SessionChanged`,
-  `Unknown` (name only) and `Discarded` (an error class and a byte count).
+  `SessionsChanged` (a session was created or destroyed), `Unknown` (name only) and `Discarded` (an error class and a byte count).
   Window and session names are the developer's text: never logged.
 - Inside a reply only the exact closing guard ends it and nothing is lifted
   out: command output can be pane text that starts with `%`. tmux writes

@@ -84,6 +84,11 @@ func parseNotification(line []byte) (Message, ErrKind) {
 			return nil, ErrBadNotification
 		}
 		return WindowRenamed{Window: WindowID(w), Name: label}, ""
+	case "sessions-changed":
+		if hasRest {
+			return nil, ErrBadNotification
+		}
+		return SessionsChanged{}, ""
 	case "session-changed":
 		s, label, ok := idAndName(rest, hasRest, '$')
 		if !ok {
