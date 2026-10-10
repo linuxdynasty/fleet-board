@@ -89,6 +89,24 @@ func FuzzParse(f *testing.F) {
 				if !slices.Contains(errKinds, v.ErrKind) || v.Bytes < 0 || v.Bytes > len(data) {
 					t.Fatalf("discarded %+v", v)
 				}
+			case tmux.WindowRenamed:
+				if v.Window < 0 || !bytes.Contains(data, []byte(v.Name)) {
+					t.Fatalf("window renamed %+v is not from the input", v)
+				}
+				emitted += len(v.Name)
+			case tmux.SessionChanged:
+				if v.Session < 0 || !bytes.Contains(data, []byte(v.Name)) {
+					t.Fatalf("session changed %+v is not from the input", v)
+				}
+				emitted += len(v.Name)
+			case tmux.WindowAdd:
+				if v.Window < 0 {
+					t.Fatalf("window add %+v", v)
+				}
+			case tmux.WindowClose:
+				if v.Window < 0 || !v.Unlinked {
+					t.Fatalf("window close %+v", v)
+				}
 			case tmux.Pause, tmux.Continue:
 			default:
 				t.Fatalf("unexpected message %T", m)

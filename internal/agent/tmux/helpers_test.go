@@ -76,6 +76,20 @@ func render(m tmux.Message) string {
 			idx = strconv.Itoa(v.WindowIndex)
 		}
 		return fmt.Sprintf("subscription %s %v %v %s %v %q", v.Name, v.Session, v.Window, idx, v.Pane, v.Value)
+	case tmux.WindowAdd:
+		if v.Unlinked {
+			return fmt.Sprintf("unlinked-window-add %v", v.Window)
+		}
+		return fmt.Sprintf("window-add %v", v.Window)
+	case tmux.WindowClose:
+		if v.Unlinked {
+			return fmt.Sprintf("unlinked-window-close %v", v.Window)
+		}
+		return fmt.Sprintf("window-close %v", v.Window)
+	case tmux.WindowRenamed:
+		return fmt.Sprintf("window-renamed %v %q", v.Window, v.Name)
+	case tmux.SessionChanged:
+		return fmt.Sprintf("session-changed %v %q", v.Session, v.Name)
 	case tmux.Unknown:
 		return "unknown " + v.Name
 	case tmux.Discarded:

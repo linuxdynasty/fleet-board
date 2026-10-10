@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("%window-add @1\n%unlinked-window-add @2\n%unlinked-window-close @3\n%window-renamed @0 my  win\n%window-renamed @0 \n%session-changed $1 a b : c\n%session-changed @1 x\n%subscription-changed win-act $0 - - - : @0=1 @2=2 @3=3 \n")

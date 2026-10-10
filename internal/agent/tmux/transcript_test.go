@@ -17,21 +17,21 @@ import (
 // the digits that differ (times, a pane height).
 var transcriptWant = []string{
 	`reply ok [] dropped=0`, // the attach
-	`unknown session-changed`,
+	`session-changed $0 "fx"`,
 	`reply ok ["%<n> $<n> @<n>"] dropped=0`, // list-panes: a body line starting with %
 	`reply ok [] dropped=0`,                 // refresh-client -B fleet-input
 	`reply ok [] dropped=0`,                 // refresh-client -B pane-size
 	`subscription fleet-input $<n> - - - "$<n>=<n> "`,
 	`subscription pane-size $<n> @<n> <n> %<n> "%<n> : <n> x <n>"`,
 	`reply ok [] dropped=0`, // new-window running printf
-	`unknown window-add`,
-	`unknown window-renamed`,
+	`window-add @1`,
+	`window-renamed @1 "tmux"`,
 	`output %1 "tab\there back\\slash \x1b[1mbold\x1b[0m café\r\n"`,
 	`subscription pane-size $0 @1 1 %1 "%1 : 80 x 24"`, // a change for pane %1 ...
-	`unknown window-renamed`,
+	`window-renamed @1 "cat"`,
 	`reply ok [] dropped=0`, // send-keys -l
 	`output %0 "plain text 1"`,
-	`unknown window-renamed`,
+	`window-renamed @0 "cat"`,
 	`reply ok [] dropped=0`, // refresh-client -f pause-after=1
 	`reply ok [] dropped=0`, // send-keys -l
 	`extended-output %0 age=0s "extended 2"`,
@@ -43,13 +43,30 @@ var transcriptWant = []string{
 	`reply error ["can't find pane: %99"] dropped=0`,
 	`reply error ["parse error: unknown command: no-such-command"] dropped=0`,
 	`reply ok [] dropped=0`, // kill-pane -t %1
-	`unknown unlinked-window-close`,
+	`unlinked-window-close @1`,
 	`reply error ["can't find pane: %1"] dropped=0`, // ... and the pane is gone when it is read
 	`reply ok ["%end 1 2 1"] dropped=0`,             // command output that looks like a guard
 	`reply ok ["%output %0 forged"] dropped=0`,      // or a notification
 	`reply ok ["%begin 1 2 1"] dropped=0`,
 	`reply ok ["two  spaced words"] dropped=0`,
+	`reply ok [] dropped=0`, // rename-window 'my  win'
+	`window-renamed @0 "my  win"`,
+	`reply ok [] dropped=0`, // new-session -d -s other
+	`unlinked-window-add @2`,
+	`unknown sessions-changed`,
+	`unknown unlinked-window-renamed`,
+	`reply ok [] dropped=0`, // new-window -t other:
+	`unlinked-window-add @3`,
+	`unknown unlinked-window-renamed`,
+	`reply ok [] dropped=0`, // refresh-client -B win-act, the nested loop
+	`subscription fleet-input $0 - - - "$0=<n> $1=<n> "`,
+	`subscription win-act $0 - - - "@0=<n> @2=<n> @3=<n> "`,
+	`reply ok [] dropped=0`, // kill-window -t other:1
+	`unlinked-window-close @3`,
+	`reply ok [] dropped=0`, // switch-client -t other
+	`session-changed $1 "other"`,
 	`reply ok [] dropped=0`, // kill-server
+	`unknown sessions-changed`,
 	`unknown sessions-changed`,
 	`exit ""`,
 }
@@ -89,8 +106,8 @@ func TestRecordedReplyGuards(t *testing.T) {
 					replies = append(replies, r)
 				}
 			}
-			if len(replies) != 20 {
-				t.Fatalf("%d replies, want 20", len(replies))
+			if len(replies) != 26 {
+				t.Fatalf("%d replies, want 26", len(replies))
 			}
 			// The attach is tmux's own command (flags 0); every later one
 			// came from this client (flags 1), with rising numbers.

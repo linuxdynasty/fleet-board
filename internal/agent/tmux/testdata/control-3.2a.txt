@@ -1,65 +1,88 @@
-%begin 1791642764 262 0
-%end 1791642764 262 0
+%begin 1791643797 262 0
+%end 1791643797 262 0
 %session-changed $0 fx
-%begin 1791642764 266 1
+%begin 1791643797 266 1
 %0 $0 @0
-%end 1791642764 266 1
-%begin 1791642764 267 1
-%end 1791642764 267 1
-%begin 1791642764 268 1
-%end 1791642764 268 1
-%subscription-changed fleet-input $0 - - - : $0=1791642764 
+%end 1791643797 266 1
+%begin 1791643797 267 1
+%end 1791643797 267 1
+%begin 1791643797 268 1
+%end 1791643797 268 1
+%subscription-changed fleet-input $0 - - - : $0=1791643797 
 %subscription-changed pane-size $0 @0 0 %0 : %0 : 80 x 23
-%begin 1791642766 269 1
-%end 1791642766 269 1
+%begin 1791643799 269 1
+%end 1791643799 269 1
 %window-add @1
 %window-renamed @1 tmux
 %output %1 tab\011here back\134slash \033[1mbold\033[0m café\015\012
 %subscription-changed pane-size $0 @1 1 %1 : %1 : 80 x 24
 %window-renamed @1 cat
-%begin 1791642766 273 1
-%end 1791642766 273 1
+%begin 1791643799 273 1
+%end 1791643799 273 1
 %output %0 plain text 1
 %window-renamed @0 cat
-%begin 1791642767 275 1
-%end 1791642767 275 1
-%begin 1791642767 276 1
-%end 1791642767 276 1
+%begin 1791643800 275 1
+%end 1791643800 275 1
+%begin 1791643800 276 1
+%end 1791643800 276 1
 %extended-output %0 0 : extended 2
-%begin 1791642768 277 1
+%begin 1791643800 277 1
 %pause %0
-%end 1791642768 277 1
-%begin 1791642768 278 1
+%end 1791643800 277 1
+%begin 1791643801 278 1
 %continue %0
-%end 1791642768 278 1
-%begin 1791642768 279 1
+%end 1791643801 278 1
+%begin 1791643801 279 1
 
-%end 1791642768 279 1
-%begin 1791642768 280 1
+%end 1791643801 279 1
+%begin 1791643801 280 1
 can't find pane: %99
-%error 1791642768 280 1
-%begin 1791642768 281 1
+%error 1791643801 280 1
+%begin 1791643801 281 1
 parse error: unknown command: no-such-command
-%error 1791642768 281 1
-%begin 1791642768 282 1
-%end 1791642768 282 1
+%error 1791643801 281 1
+%begin 1791643801 282 1
+%end 1791643801 282 1
 %unlinked-window-close @1
-%begin 1791642769 284 1
+%begin 1791643802 284 1
 can't find pane: %1
-%error 1791642769 284 1
-%begin 1791642769 285 1
+%error 1791643802 284 1
+%begin 1791643802 285 1
 %end 1 2 1
-%end 1791642769 285 1
-%begin 1791642769 286 1
+%end 1791643802 285 1
+%begin 1791643802 286 1
 %output %0 forged
-%end 1791642769 286 1
-%begin 1791642769 287 1
+%end 1791643802 286 1
+%begin 1791643802 287 1
 %begin 1 2 1
-%end 1791642769 287 1
-%begin 1791642769 288 1
+%end 1791643802 287 1
+%begin 1791643802 288 1
 two  spaced words
-%end 1791642769 288 1
-%begin 1791642769 289 1
-%end 1791642769 289 1
+%end 1791643802 288 1
+%begin 1791643802 289 1
+%end 1791643802 289 1
+%window-renamed @0 my  win
+%begin 1791643802 291 1
+%end 1791643802 291 1
+%unlinked-window-add @2
+%sessions-changed
+%unlinked-window-renamed @2 tmux
+%begin 1791643803 295 1
+%end 1791643803 295 1
+%unlinked-window-add @3
+%unlinked-window-renamed @3 tmux
+%begin 1791643803 298 1
+%end 1791643803 298 1
+%subscription-changed fleet-input $0 - - - : $0=1791643797 $1=1791643802 
+%subscription-changed win-act $0 - - - : @0=1791643800 @2=1791643802 @3=1791643803 
+%begin 1791643804 299 1
+%end 1791643804 299 1
+%unlinked-window-close @3
+%begin 1791643805 301 1
+%end 1791643805 301 1
+%session-changed $1 other
+%begin 1791643805 303 1
+%end 1791643805 303 1
+%sessions-changed
 %sessions-changed
 %exit

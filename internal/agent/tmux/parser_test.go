@@ -52,7 +52,7 @@ func TestRepliesAndTheLinesInsideThem(t *testing.T) {
 		{
 			name: "notifications between replies",
 			in:   "%begin 1 1 1\n%end 1 1 1\n%window-add @1\n%begin 1 2 1\n%end 1 2 1\n",
-			want: []string{`reply ok [] dropped=0`, `unknown window-add`, `reply ok [] dropped=0`},
+			want: []string{`reply ok [] dropped=0`, `window-add @1`, `reply ok [] dropped=0`},
 		},
 		{
 			name: "a guard outside a reply that is not three numbers",

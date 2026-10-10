@@ -3,7 +3,8 @@
 // This first part is the protocol parser only: [Parser] turns the bytes a
 // control client prints into a closed set of [Message] values (a [Reply] per
 // command, [Output], [Pause], [Continue], [Exit], [SubscriptionChanged],
-// [Unknown] and [Discarded]). It starts no process and writes nothing; the
+// [WindowAdd], [WindowClose], [WindowRenamed], [SessionChanged], [Unknown]
+// and [Discarded]). It starts no process and writes nothing; the
 // client that runs tmux and sends commands comes later (plan row 7).
 //
 // The parser's rules, from tmux's man page and two recorded transcripts
@@ -18,7 +19,8 @@
 //     returns them on their own before the reply.
 //   - "%output" values are decoded (\ooo is one byte); "%extended-output"
 //     adds the age; "%subscription-changed" keeps its value byte for byte.
-//     Subscription names must hold no space.
+//     Subscription names must hold no space. Window and session names in
+//     "%window-renamed" and "%session-changed" are kept byte for byte.
 //   - A line over [Options.MaxLineBytes] is skipped to its newline and
 //     counted, so memory stays bounded whatever tmux or a pane sends; a reply
 //     body over [Options.MaxReplyBytes] keeps its first lines and counts the

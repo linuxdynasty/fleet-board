@@ -69,6 +69,27 @@ func parseNotification(line []byte) (Message, ErrKind) {
 		return Exit{Reason: string(rest)}, ""
 	case "subscription-changed":
 		return parseSubscription(rest, hasRest)
+	case "window-add", "unlinked-window-add", "unlinked-window-close":
+		id, ok := parseID(rest, '@')
+		if !hasRest || !ok {
+			return nil, ErrBadNotification
+		}
+		if string(name) == "unlinked-window-close" {
+			return WindowClose{Window: WindowID(id), Unlinked: true}, ""
+		}
+		return WindowAdd{Window: WindowID(id), Unlinked: string(name) == "unlinked-window-add"}, ""
+	case "window-renamed":
+		w, label, ok := idAndName(rest, hasRest, '@')
+		if !ok {
+			return nil, ErrBadNotification
+		}
+		return WindowRenamed{Window: WindowID(w), Name: label}, ""
+	case "session-changed":
+		s, label, ok := idAndName(rest, hasRest, '$')
+		if !ok {
+			return nil, ErrBadNotification
+		}
+		return SessionChanged{Session: SessionID(s), Name: label}, ""
 	default:
 		return Unknown{Name: string(name)}, ""
 	}
@@ -113,6 +134,17 @@ func parseSubscription(rest []byte, hasRest bool) (Message, ErrKind) {
 		Name: string(f[0]), Session: SessionID(s), Window: WindowID(w),
 		WindowIndex: idx, Pane: PaneID(pn), Value: string(value),
 	}, ""
+}
+
+// idAndName reads "<id> <name>", where the name is everything after the first
+// space, kept byte for byte (it can be empty or hold spaces).
+func idAndName(rest []byte, hasRest bool, prefix byte) (int, string, bool) {
+	idPart, label, ok := bytes.Cut(rest, []byte(" "))
+	id, idOK := parseID(idPart, prefix)
+	if !hasRest || !ok || !idOK {
+		return 0, "", false
+	}
+	return id, string(label), true
 }
 
 // fieldsToColon splits rest at single spaces up to the first field that is a

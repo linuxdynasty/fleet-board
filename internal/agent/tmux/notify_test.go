@@ -77,8 +77,32 @@ func TestNotifications(t *testing.T) {
 		{"subscription with too few fields", `%subscription-changed s $0 : v`, []string{`discarded bad_notification 30`}},
 		{"subscription with a bad session id", `%subscription-changed s 0 - - - : v`, []string{`discarded bad_notification 35`}},
 
+		// Window and session changes (the row-7 ruling's set). Names are
+		// the developer's text, kept byte for byte.
+		{"window added", `%window-add @1`, []string{`window-add @1`}},
+		{"window added to another session", `%unlinked-window-add @12`, []string{`unlinked-window-add @12`}},
+		{"window in another session closed", `%unlinked-window-close @3`, []string{`unlinked-window-close @3`}},
+		{"window renamed", `%window-renamed @0 my  win `, []string{`window-renamed @0 "my  win "`}},
+		{"window renamed to nothing", `%window-renamed @0 `, []string{`window-renamed @0 ""`}},
+		{"session changed", `%session-changed $1 other`, []string{`session-changed $1 "other"`}},
+		{"session changed to a name with spaces", `%session-changed $0 a b : c`, []string{`session-changed $0 "a b : c"`}},
+		{"window added with a pane id", `%window-add %1`, []string{`discarded bad_notification 14`}},
+		{"window added with no id", `%window-add`, []string{`discarded bad_notification 11`}},
+		{"window added with an extra word", `%unlinked-window-add @1 x`, []string{`discarded bad_notification 25`}},
+		{"window closed with a bad id", `%unlinked-window-close @x`, []string{`discarded bad_notification 25`}},
+		{"window renamed with no name", `%window-renamed @0`, []string{`discarded bad_notification 18`}},
+		{"window renamed with a session id", `%window-renamed $0 x`, []string{`discarded bad_notification 20`}},
+		{"session changed with no name", `%session-changed $1`, []string{`discarded bad_notification 19`}},
+		{"session changed with a window id", `%session-changed @1 x`, []string{`discarded bad_notification 21`}},
+		// A nested loop's value: spaces and repeated "=" kept as they are.
+		{
+			"nested window-activity loop", `%subscription-changed win-act $0 - - - : @0=1791643800 @2=1791643802 @3=1791643803 `,
+			[]string{`subscription win-act $0 - - - "@0=1791643800 @2=1791643802 @3=1791643803 "`},
+		},
+
 		// Everything else is kept by name only.
-		{"a notification this parser does not read", `%window-renamed @1 my secret window`, []string{`unknown window-renamed`}},
+		{"a notification this parser does not read", `%unlinked-window-renamed @1 my secret window`, []string{`unknown unlinked-window-renamed`}},
+		{"a closed linked window is not read yet", `%window-close @1`, []string{`unknown window-close`}},
 		{"a notification with no arguments", `%sessions-changed`, []string{`unknown sessions-changed`}},
 		{"a bare percent sign", `%`, []string{`discarded bad_notification 1`}},
 		{"a list-panes line outside a reply", `%0 $0 @0`, []string{`discarded bad_notification 8`}},

@@ -7,8 +7,11 @@ later part of plan row 7.
 - `NewParser(r, Options)` and `Parser.Next()` read a control client's output
   one message at a time: `Reply` (a `%begin` block and its `%end` or
   `%error`), `Output` (`%output` and `%extended-output`, decoded), `Pause`,
-  `Continue`, `Exit`, `SubscriptionChanged`, `Unknown` (name only) and
-  `Discarded` (an error class and a byte count).
+  `Continue`, `Exit`, `SubscriptionChanged`, `WindowAdd` (`%window-add`,
+  `%unlinked-window-add`), `WindowClose` (`%unlinked-window-close`; the linked
+  `%window-close` is not read yet), `WindowRenamed`, `SessionChanged`,
+  `Unknown` (name only) and `Discarded` (an error class and a byte count).
+  Window and session names are the developer's text: never logged.
 - Inside a reply only the exact closing guard ends it, and only a well-formed
   `%pause %N` or `%continue %N` is lifted out; every other line is body,
   because command output can be pane text that starts with `%`.

@@ -32,7 +32,8 @@ func idString(prefix byte, n int) string {
 
 // Message is one thing the [Parser] read from a control-mode stream: a
 // [Reply], [Output], [Pause], [Continue], [Exit], [SubscriptionChanged],
-// [Unknown] or [Discarded]. The set is closed; a type switch over it is the
+// [WindowAdd], [WindowClose], [WindowRenamed], [SessionChanged], [Unknown] or
+// [Discarded]. The set is closed; a type switch over it is the
 // way to read one.
 type Message interface {
 	message()
@@ -96,8 +97,37 @@ type SubscriptionChanged struct {
 	Value       string
 }
 
+// WindowAdd is "%window-add" (a window linked to this client's session) or,
+// with Unlinked, "%unlinked-window-add" (a window made in another session).
+type WindowAdd struct {
+	Window   WindowID
+	Unlinked bool
+}
+
+// WindowClose is "%unlinked-window-close": a window of another session
+// closed. "%window-close" is not read yet and comes as [Unknown], so
+// Unlinked is always true for now.
+type WindowClose struct {
+	Window   WindowID
+	Unlinked bool
+}
+
+// WindowRenamed is "%window-renamed". Name is the developer's text, byte for
+// byte (spaces kept): never logged, never a metric label.
+type WindowRenamed struct {
+	Window WindowID
+	Name   string
+}
+
+// SessionChanged is "%session-changed": this client is now attached to
+// Session. Name is the developer's text: never logged, never a label.
+type SessionChanged struct {
+	Session SessionID
+	Name    string
+}
+
 // Unknown is a notification this parser does not read (for example
-// "%window-add" or "%session-renamed"). Only the name is kept: the rest of
+// "%window-close" or "%session-renamed"). Only the name is kept: the rest of
 // the line can hold the developer's text.
 type Unknown struct{ Name string }
 
@@ -115,6 +145,10 @@ func (Pause) message()               {}
 func (Continue) message()            {}
 func (Exit) message()                {}
 func (SubscriptionChanged) message() {}
+func (WindowAdd) message()           {}
+func (WindowClose) message()         {}
+func (WindowRenamed) message()       {}
+func (SessionChanged) message()      {}
 func (Unknown) message()             {}
 func (Discarded) message()           {}
 
