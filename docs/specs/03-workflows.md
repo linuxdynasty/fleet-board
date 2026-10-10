@@ -231,8 +231,8 @@ stateDiagram-v2
 ```
 
 Hub-side machine state: `ENROLLED` (never connected) → `ONLINE` (Hello +
-Snapshot applied) → `STALE` (no heartbeat 45 s) → `OFFLINE` (3 min, or agent
-`Bye`) → `ONLINE`; from any of them `RevokeMachine` → `REVOKED` (serials on the
+Snapshot applied) → `STALE` (no heartbeat 45 s) → `OFFLINE` (3 min, agent
+`Bye`, or the stream closed) → `ONLINE`; from any of them `RevokeMachine` → `REVOKED` (serials on the
 revocation list, `Bye{REVOKED}` on the live stream, goals `ABANDONED` or `STUCK`, row
 kept), and `DeleteMachine` forgets a revoked machine. The cascade and the
 re-enroll rule are in [02g](02g-agent-security.md#machine-lifecycle-revoke-and-delete).
