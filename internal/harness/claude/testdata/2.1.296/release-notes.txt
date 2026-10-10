@@ -1,0 +1,49 @@
+▝▜██████▀  Sonnet 5.5 with high effort · Claude Max
+ ▝▝   ▝▝   ~/work/project
+
+  Updated to latest. Got 17 features, 97 bugfixes, and 29 other changes.
+  code.claude.com/docs/en/changelog for details
+
+⚠ 3 MCP servers need authentication · run /mcp
+
+❯ /usage
+  ⎿  Stats dialog dismissed
+
+❯ /help
+  ⎿  Help dialog dismissed
+
+❯ /release-notes
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Release notes
+
+  Select a version to view its notes.
+
+
+  ❯ Show all          418 versions
+    Version 2.1.296   79 items
+    Version 2.1.295   143 items
+    Version 2.1.294   2 items
+    Version 2.1.293   56 items
+    Version 2.1.292   92 items
+    Version 2.1.291   2 items
+    Version 2.1.290   190 items
+    Version 2.1.289   27 items
+    Version 2.1.288   89 items
+    Version 2.1.287   106 items
+    Version 2.1.286   88 items
+    Version 2.1.285   136 items
+    Version 2.1.284   100 items
+    Version 2.1.283   94 items
+    Version 2.1.282   86 items
+    Version 2.1.281   177 items
+    Version 2.1.280   114 items
+    Version 2.1.278   2 items
+    Version 2.1.277   87 items
+    Version 2.1.276   1 item
+    Version 2.1.275   95 items
+    Version 2.1.274   108 items
+    Version 2.1.273   64 items
+    ↓ 395 more
+
+  Enter to confirm · Esc to cancel

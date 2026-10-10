@@ -25,7 +25,8 @@ commands). Observed on 2026-09-30:
   /goal /hooks /login /logout /mcp /memory /model /permissions /plan /plugin
   /rate-limit-options /recap /release-notes /rename /resume /rewind /sandbox
   /status /statusline /tasks /usage`, plus installed skills and plugins
-  (capture was partial; the full list goes into fixtures).
+  (this list was partial; the full 2.1.296 list, 107 commands, is in
+  [the Claude fixtures](../../internal/harness/claude/testdata/2.1.296/help-commands-catalog.tsv)).
 
 All three have a native `/goal` command. The agent discovers the catalog by
 walking the harness's own command list in the probe session at start and on
@@ -236,3 +237,55 @@ Probed 2026-10-01 by typing `/goal` and `/goal ` without Enter, then bare
   for it, Codex does not). Claude's hooks do not see an interrupt at all and
   Codex's `Interrupt` hook is notify-only; see
   [01d](01d-goal-hooks.md#probe-record-2026-10-02).
+
+## Screen fixtures, 2026-10-10
+
+Plan item 0.1 ([#25](https://github.com/linuxdynasty/fleet-board/issues/25)).
+Real screens captured in a throwaway tmux server, no prompt sent, are in
+`internal/harness/<name>/testdata/<version>/` with a README per harness (how
+each was reached, what was redacted, what was not captured):
+[Claude Code 2.1.296](../../internal/harness/claude/testdata/README.md),
+[Codex 0.160.0](../../internal/harness/codex/testdata/README.md),
+[Muse 1.4.4](../../internal/harness/muse/testdata/README.md),
+[OpenCode 1.18.34](../../internal/harness/opencode/testdata/README.md).
+
+What the capture found that the notes above did not have:
+
+- **Muse auto-updated on launch**, 1.4.2 to 1.4.4, before the first screen.
+  The trust box defaults to "Trust and continue" (Claude's defaults to "No,
+  exit"), so a probe pane must never press Enter on it.
+- **Codex 0.160.0** can open with a blocking choice, "Background server has
+  incompatible feature settings" (default "Cancel"; "Restart with these
+  settings" restarts the shared server). In this capture the update notice was
+  only a banner; the blocking update prompt of the 0.159.2 to 0.160.0
+  update is not reproduced, so keep classifying that prompt as a startup prompt.
+  No trust box appeared in a new folder. `/status` showed a weekly limit only
+  ("0% left", the account was out of quota that day) and a credits row.
+  `/usage` is now a menu ("View analytics", "Redeem reset"), not a reading.
+- **Claude Code 2.1.296** `/usage` shows "Current session", "Current week (all
+  models)" and "Current week (Fable)" with a time zone name on the reset line,
+  then a "What's contributing" section that names the developer's skills and
+  subagents (the fixtures replace them).
+- **Muse 1.4.4** has 49 built-in commands in `/help`. Against the 1.4.1 list
+  above, `/agents`, `/chronicle` and `/delete` are gone, and `/deep-research`,
+  `/grill`, `/import`, `/loop`, `/manage-settings`, `/migrate`, `/plan`,
+  `/resume-claude` and `/resume-codex` are new.
+- **Codex 0.160.0**'s idle `/` menu has 49 commands. Against the 0.159.2 list
+  above, `/clear`, `/feedback`, `/private`, `/ps`, `/stop` and `/subagents` are
+  not listed (hidden at idle, or removed: not checked); nothing is new.
+- A catalog description can be a state string, not a fixed label: Claude's
+  `/sandbox` row reads "◯ sandbox disabled (⏎ to configure)". A catalog parser
+  keys on the command name and treats the description as free text.
+- **OpenCode 1.18.34** on this machine has no provider (`0 credentials`) and
+  no sessions; its `/` menu has 17 commands (no `/variants`).
+
+The steps, redactions and cleanup (what was restored, what was deleted, what
+was never opened) for each harness are in its README.
+
+Not captured on any harness: prompt and permission screens, condition screens
+such as Muse "HTTP 500 retrying", and limit screens. They need a model call or a
+real failure; they stay open for a probe that is allowed to spend quota.
+
+Cursor (`cursor-agent`) was not captured here (plan row 30, item 0.19). All
+captures are ANSI-stripped, so an empty-input placeholder cannot be told from
+typed text by colour (see the READMEs).

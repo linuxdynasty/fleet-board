@@ -1,0 +1,49 @@
+  Browse default commands
+
+    ↑ 88 more
+    /statusline
+    Set up Claude Code's status line UI
+    /stickers
+    Order Claude Code stickers
+    /subtask
+    Send a subagent off with your full context; its result comes back here
+    /tasks
+    View and manage everything running in the background
+    /team-onboarding
+    Help teammates ramp on Claude Code with a guide from your usage
+    /teleport
+    Send this session to the cloud, or resume one from claude.ai
+    /terminal-setup
+    Install Shift+Enter key binding for newlines
+    /theme
+    Change the theme
+    /tui
+    Set the terminal UI renderer (default | fullscreen)
+    /ultrareview
+    Start a cloud agent that finds and verifies bugs in your branch (~15-25 min, $5-$25 USD) · Runs in a cloud session. See https://code.claude.com/docs/en/claude-code-on-the-web
+    /update-config
+    Use this skill to configure the Claude Code harness via settings.json. Automated behaviors ("from now on when X", "each time X", "whenever X", "before/after X") require hooks configured in sett…
+    /upgrade
+    Upgrade to Max for higher rate limits and more Opus
+    /usage
+    Show session cost, plan usage, and activity stats
+    /usage-credits
+    Configure usage credits or request them from your admin when you hit a limit
+    /verify
+    Verify that a code change actually does what it's supposed to by exercising it end-to-end and observing behavior — drive the affected flow, not just tests or typecheck. Run before committing no…
+    /voice
+    Toggle voice mode
+    /web-setup
+    Set up cloud sessions with your GitHub account
+    /workflow-authoring
+    Reference for writing a Workflow tool script (script API and gotchas, resume, quality patterns, worked examples). Load before authoring a script for a workflow the user already opted into; it d…
+  ❯ /workflows
+    Browse running and completed workflows
+
+
+
+  For more help: https://code.claude.com/docs/en/overview
+
+  Something else? Use /feedback to report bugs or request features.
+
+  Esc to cancel

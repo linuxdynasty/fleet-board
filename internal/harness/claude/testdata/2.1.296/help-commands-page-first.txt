@@ -1,0 +1,49 @@
+  Browse default commands
+
+  ❯ /add-dir
+    Add a new working directory
+    /advisor
+    Let Claude consult a stronger model at key moments
+    /artifact-capabilities
+    Runtime capabilities a published Artifact page can be granted — behavior static HTML cannot provide on its own, such as the page reading live or connected data, remembering what people do on it…
+    /artifact-diagramming
+    Diagramming know-how for Artifacts - when a picture earns its place, how to draw one that shows the real mechanism, and the inline-SVG mechanics that keep it legible in both themes.
+    /artifacts
+    Browse your published and shared artifacts
+    /auto-mode-setup
+    Teach auto mode about your environment, plus optional rule tweaks
+    /autocompact
+    Set how full the context gets before auto-summarizing
+    /autofix-pr
+    Monitor and autofix any issues with the current PR
+    /background
+    Send this session to the background and free the terminal
+    /batch
+    Research and plan a large-scale change, then execute it in parallel across 5–30 isolated worktree agents that each open a PR.
+    /branch
+    Create a branch of the current conversation at this point
+    /btw
+    Ask a quick side question without interrupting the main conversation
+    /bug
+    Report a bug or share your conversation
+    /cd
+    Move this session to a new working directory
+    /chrome
+    Open Claude in Chrome settings
+    /claude-api
+    Reference for the Claude API / Anthropic SDK — model ids, pricing, params, streaming, tool use, MCP, agents, caching, token counting, model migration. TRIGGER — read BEFORE opening the target f…
+    /claude-in-chrome
+    Automates your Chrome browser to interact with web pages - clicking elements, filling forms, capturing screenshots, reading console logs, and navigating sites. Opens pages in new tabs within yo…
+    /clear
+    Start a new session with empty context; previous session stays on disk (resumable with /resume)
+    /code-review
+    Review the current diff, or a PR number/branch/path target, for correctness bugs (plus reuse/simplification/efficiency cleanups where the model's review recipe covers them) at the given effort …
+
+    ↓ 88 more
+
+
+  For more help: https://code.claude.com/docs/en/overview
+
+  Something else? Use /feedback to report bugs or request features.
+
+  Esc to cancel

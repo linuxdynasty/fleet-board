@@ -1,0 +1,49 @@
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                                                               ┃ /agents     Switch agent                                                ┃
+                                                               ┃ /connect    Connect provider                                            ┃
+                                                               ┃ /debug      View debug info                                             ┃
+                                                               ┃ /diff       Open diff viewer                                            ┃
+                                                               ┃ /editor     Open editor                                                 ┃
+                                                               ┃ /exit       Exit the app                                                ┃
+                                                               ┃ /help       Help                                                        ┃
+                                                               ┃ /init       guided AGENTS.md setup                                      ┃
+                                                               ┃ /mcps       Toggle MCPs                                                 ┃
+                                                               ┃ /models     Switch model                                                ┃
+                                                               ┃
+                                                               ┃  /
+                                                               ┃
+                                                               ┃  Build · Big Pickle OpenCode Zen
+                                                               ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+                                                                                                               tab agents  ctrl+p commands
+
+
+
+                                                                        ● Tip Run /connect to add an AI provider and start coding
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  ~/scratch                                                                                                                                                                                    1.18.34

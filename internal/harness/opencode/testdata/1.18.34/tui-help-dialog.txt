@@ -1,0 +1,49 @@
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                                                                        Help                                           esc/enter
+
+                                                                        Press ctrl+p to see all available actions and commands
+                                                                        in any context.
+
+
+                                                                                                                           ok
+
+
+
+                                                               ┃
+                                                               ┃  Ask anything… "Fix broken tests"
+                                                               ┃
+                                                               ┃  Build · Big Pickle OpenCode Zen
+                                                               ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+                                                                                                               tab agents  ctrl+p commands
+
+
+
+                                                                        ● Tip Run /connect to add an AI provider and start coding
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  ~/scratch                                                                                                                                                                                    1.18.34

@@ -1,0 +1,27 @@
+ ▐▛███▛█   Claude Code v2.1.296
+▝▜██████▀  Sonnet 5.5 with high effort · Claude Max
+ ▝▝   ▝▝   ~/work/project
+
+  Updated to latest. Got 17 features, 97 bugfixes, and 29 other changes.
+  code.claude.com/docs/en/changelog for details
+
+⚠ 3 MCP servers need authentication · run /mcp
+
+❯ /usage
+  ⎿  Stats dialog dismissed
+
+❯ /help
+  ⎿  Help dialog dismissed
+
+❯ /exit
+
+✢ Hashing…
+  ⎿  Tip: For a fast, cheap code review, try /code-review low. It runs the built-in skill at its lightest effort level.
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ auto mode on (shift+tab to cycle) · esc to interrupt · ← for agents
+
+Resume this session with:
+claude --resume 00000000-0000-4000-8000-000000000001

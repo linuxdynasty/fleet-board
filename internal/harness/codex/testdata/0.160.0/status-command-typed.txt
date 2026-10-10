@@ -1,0 +1,49 @@
+╭─────────────────────────────────────────────────╮
+│ ✨ Update available! 0.160.0 -> 0.162.1         │
+│ Run brew upgrade --cask codex to update.        │
+│                                                 │
+│ See full release notes:                         │
+│ https://github.com/openai/codex/releases/latest │
+╰─────────────────────────────────────────────────╯
+
+
+  >_ OpenAI Codex (v0.160.0)
+     ~/scratch
+  permissions: YOLO mode
+
+  Well, this terminal just got interesting.
+
+  To get started, describe a task or try one of these commands:
+
+  /init - create an AGENTS.md file with instructions for Codex
+  /status - show current session configuration
+  /permissions - choose what Codex is allowed to do
+  /model - choose what model and reasoning effort to use
+  /review - review any changes and find issues
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+› /status      show current session configuration and token usage
+  /statusline  configure which items appear in the status line
+
+› /status
+
+  GPT-6-Luna high · ~/scratch
