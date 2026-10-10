@@ -33,7 +33,10 @@ concurrency:
 jobs:
   gates:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # A run that covers every package (a push to main, or a change to the
+    # Makefile or .golangci.yml) took about 31 minutes once make lint ran
+    # for four platforms: tests 12, lint 7, self-tests 3, the rest 9.
+    timeout-minutes: 45
     env:
       # A PR is measured against its base. A push to main is measured against
       # the commit main was at before the push (github.event.before), so make
