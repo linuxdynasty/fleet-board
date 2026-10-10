@@ -12,7 +12,7 @@ import (
 )
 
 // A Snapshot whose stream a newer Hello displaced while it waited is
-// refused in its transaction: the hook runs on the old stream's ingest
+// refused in its transaction: the hook runs on the old stream's handler
 // goroutine before the job and completes the newer Hello. Nothing is
 // stored and the machine is not ONLINE until the newer stream's own
 // Snapshot, which applies on epoch 2.
@@ -25,7 +25,7 @@ func TestASnapshotOfADisplacedEpochIsRefused(t *testing.T) {
 		once   sync.Once
 		answer = make(chan *agentv1.ConnectResponse, 1)
 	)
-	// The hook runs on the hub's ingest goroutine: it only opens the newer
+	// The hook runs on the hub's handler goroutine: it only opens the newer
 	// stream and hands over its first answer; the test goroutine checks it.
 	h = startHub(t, func(o *gateway.ServerOptions) {
 		gateway.SetBeforeSnapshotJob(o, func(context.Context) {
@@ -124,5 +124,27 @@ func TestASeqRollbackAppliesAndAsksForAFreshSnapshot(t *testing.T) {
 	s.silent(t, 200*time.Millisecond)
 	if n := len(h.events(t, "snapshot.rollback")); n != 1 {
 		t.Errorf("%d snapshot.rollback lines, want 1", n)
+	}
+}
+
+// A rollback found only in the counters (or the install_id) is counted and
+// logged, but the hub asks for no fresh snapshot: only a Snapshot.seq at
+// or below the stored event seq does (02i rule 3).
+func TestACountersRollbackSendsNoSnapshotRequest(t *testing.T) {
+	t.Parallel()
+	h := startHub(t)
+	m := h.enrollMachine(t)
+	s := h.open(t, m)
+	s.send(t, hello(m, 0))
+	s.ack(t)
+	h.exec(t, `UPDATE machines SET events_shed_total = 7 WHERE machine_id = ?`, m.id)
+	s.send(t, snapshotMsg(5, "laptop", "h1"))
+	h.waitRow(t, m.id, "the Snapshot", func(r machineRow) bool { return r.snapSeq == 5 })
+	if lines := h.waitEvents(t, "snapshot.rollback", 1); lines[0]["causes"] != "counters" {
+		t.Errorf("snapshot.rollback %v, want causes counters", lines[0])
+	}
+	s.silent(t, 200*time.Millisecond)
+	if n := len(h.events(t, "snapshot.request_dropped")); n != 0 {
+		t.Errorf("%d snapshot.request_dropped lines, want none", n)
 	}
 }
