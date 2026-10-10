@@ -249,11 +249,57 @@ agent's pass would need about 3.9 cores of this machine (2,500 × 1,571 µs).
 The hub's pass over text the agent already scrubbed settles in its first
 round: about 1.9 cores (2,500 × 743 µs). A message built to need 4 rounds of
 the slowest text costs about 4 times as much per byte, so a burst of those
-would not fit; the cap keeps each one to 1 KiB, about 14 ms at the
-`BenchmarkTextHostile` rate (estimated, not measured at 1 KiB). So the hub scrubs
+would not fit; the cap keeps each one to 1 KiB, about 13 ms
+(measured at 1 KiB: `BenchmarkHubPass/1KiB/hostile`). So the hub scrubs
 in its ingest goroutines, before it hands a batch to its single writer, never
 inside the write transaction, where it would hold the writer for that long.
 The agent scrubs one message at a time as it writes it.
+
+**Hub pass, measured (row 5l, 2026-10-10).** `hub_pass_test.go` models what the
+hub receives, at the 02e caps (1 KiB: `CommandResult.message`,
+`CommandProgress.message`, `parse_message`; 256 B: `ProbeHealth.message`,
+`SettingRejection.message`). `go test -run '^$' -bench BenchmarkHub -count=10
+./internal/scrub/`, benchstat, base 83b9330 plus the benchmark, Apple M4 Pro
+(12 cores), macOS 27.0.1, Go 1.27.2, load average 3.5 to 5, so not an idle
+machine. Per message, one `Scrub` call with no home folder (spread 1 to 2 %):
+
+| Corpus | 256 B | 1 KiB |
+|---|---|---|
+| typical: an error line of about 165 B, agent-scrubbed | 138 µs | 139 µs |
+| mix: agent-scrubbed, mostly benign, two placeholders per KiB | 223 µs | 897 µs |
+| unscrubbed: the same text before any agent pass (two rounds) | 419 µs | 1.74 ms |
+| dense: nothing but secrets (cheaper: a match is consumed, the text shrinks) | 80 µs | 133 µs |
+| hostile: uses all four rounds, ends `[redacted]` | 2.15 ms | 12.9 ms |
+
+The README figures above still hold on the same day (`BenchmarkTextMessage`
+1.59 ms, `BenchmarkTextScrubbed` 755 µs). `BenchmarkHubLoad` runs a window of
+each modeled load and reports `cores`, the CPU-seconds one goroutine spends
+per second. Command results and progress run at 0.05 / s steady and 0.5 / s
+peak (03f) with 5 progress messages per command (assumed), probes at about
+0. In the 2,500 events / s replay burst only coalesced `ProbeHealth` and
+`parse_message` ride events (`CommandResult` and `CommandProgress` are not
+events), so 100 % carrying text is a bound, not a case:
+
+| Load (1 KiB) | Cores | Of 12 |
+|---|---|---|
+| steady 0.3 msg / s, typical | 0.00004 | 0.0 % |
+| peak 3 msg / s: typical, mix, unscrubbed, hostile | 0.0004, 0.0027, 0.0053, 0.040 (±29 %) | ≤ 0.3 % |
+| burst, 1 % of 2,500 events carry a mix message | 0.023 | 0.2 % |
+| burst, 10 % | 0.23 | 1.9 % |
+| burst, 100 %: mix, unscrubbed, dense | 2.5, 4.4, 0.34 | 21 %, 37 %, 3 % |
+
+The insights report (64 KiB, one a week: 05, section 7) is left out of the
+table: at its worst, `BenchmarkTextHostile` takes 0.93 s (±11 %, same day),
+so a weekly report is about 0.000002 core. `SettingRejection.message` (256 B)
+is rare and costs what the 256 B column shows.
+
+One stream's ingest goroutine at the 200 events / s agent cap spends 0.18 core
+on the mix and 0.35 unscrubbed. Hostile text at that rate would need 2.6 cores,
+so that stream is CPU-bound at about 77 messages a second and backs up only
+itself. Conclusion: no faster first-pass scan is needed before the first
+producer; row 6 pastes the real `CommandResult.message` size distribution and
+the hub scrub cost before it merges, and row 17 re-checks (04 Q7, "Hub scrubber
+cost").
 
 Tests: `CGO_ENABLED=0 go test ./internal/scrub/`. Fuzz:
 `go test -run '^$' -fuzz FuzzText ./internal/scrub/` (also in `make fuzz`).

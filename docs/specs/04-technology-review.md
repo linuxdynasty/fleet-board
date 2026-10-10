@@ -403,6 +403,26 @@ with commit p99 ≤ 28 ms and enqueue → commit p99 ≤ 59 ms, at most ≈ 70 %
 writer time. **Decision:** keep 200 ev/s per agent and 2,500 ev/s per hub
 (decided here).
 
+### Hub scrubber cost (measured 2026-10-10, row 5l, #33)
+The hub-pass benchmarks in `internal/scrub/hub_pass_test.go`, `-count=10`,
+benchstat; 83b9330 plus them; Apple M4 Pro (12 cores), macOS 27.0.1, Go 1.27.2,
+load 3.5 to 5. Commands 0.05 / 0.5 per s, 5 progress each (assumed); probes and
+the weekly 64 KiB report about 0 (03f, 05); burst 2,500 events/s, but only
+coalesced `ProbeHealth` and `parse_message` ride events. 1 KiB caps.
+
+| Load (one goroutine) | Cores | Of 12 |
+|---|---|---|
+| peak 3 msg/s: typical / full mix / unscrubbed / hostile | 0.0004 / 0.0027 / 0.0053 / 0.040 | ≤ 0.3 % |
+| burst, 1 % / 10 % of events carry a full mix message | 0.023 / 0.23 | 0.2 % / 1.9 % |
+| burst, every event: mix / unscrubbed / dense secrets | 2.5 / 4.4 / 0.34 | 21 % / 37 % / 3 % |
+
+**Decision:** no faster first-pass scan before the first producer; scrubbing
+stays in the per-stream ingest goroutine, never in the writer tx. This used
+the caps, not real sizes: **row 6 pastes the real `CommandResult.message`
+size distribution and the hub scrub cost before it merges**; row 17
+re-checks; over 1 core hub-wide there, build a cheaper scan first. Per-message
+times: `internal/scrub/README.md`.
+
 ## Q8. Provider limits and webhook ingress
 
 - A GitHub App installation gets 5,000 REST requests/h, plus 50/h per repo and
