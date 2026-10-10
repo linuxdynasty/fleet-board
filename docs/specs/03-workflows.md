@@ -449,7 +449,7 @@ re-enroll rule are in [02g](02g-agent-security.md#machine-lifecycle-revoke-and-d
 
   `status.write_failed{file, step, err_kind}` (warn; `file` is `status.json` or
   `enroll.json`, `step` is `start`, `dir`, `temp`, `write`, `sync`, `rename`,
-  `dirsync` or `remove`; at most one line a minute per file while it keeps
+  `dirsync`, `remove` or `encode`; at most one line a minute per file while it keeps
   failing, never a path or the error text), `status.write_recovered{file}`
   (info; the first good write after a failure) and
   `fleet_agent_status_writes_total{file, result}` (`result`: `ok`, `failed`).
