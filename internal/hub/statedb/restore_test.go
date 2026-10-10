@@ -17,7 +17,7 @@ import (
 
 // A state.db from plan row 4 (migrations 1 to 4) gains
 // hub_identity.restore_reconcile_until, 0 (no window) on the existing row.
-func TestOpenMigratesAStoreFromTheRenewalsSchema(t *testing.T) {
+func TestOpenAddsTheRestoreReconcileColumnToARenewalsSchemaStore(t *testing.T) {
 	t.Parallel()
 	dir := stateDir(t)
 	path := filepath.Join(dir, statedb.FileName)
