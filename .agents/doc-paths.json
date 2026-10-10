@@ -30,7 +30,7 @@
   {"globs": ["internal/agent/control/**"], "specs": ["docs/specs/01f-agent-control-goals-and-policy.md"], "exclude": ["*.md"], "note": "01f sections F and L3"},
   {"globs": ["internal/agent/start/**"], "specs": ["docs/specs/03c-goals.md", "docs/specs/02h-goal-binding-and-pane-signals.md"], "exclude": ["*.md"]},
   {"globs": ["internal/agent/worktree/**"], "specs": ["docs/specs/01f-agent-control-goals-and-policy.md", "docs/specs/01-agent-capabilities.md"], "exclude": ["*.md"], "note": "capabilities H2 and F7: defined in 01f, mapped in 01's capability table"},
-  {"globs": ["internal/agent/hooks/**", "hooks/**"], "specs": ["docs/specs/01d-goal-hooks.md", "docs/specs/01d2-goal-file-safe-writes.md"], "exclude": ["*.md"]},
+  {"globs": ["internal/agent/hooks/**", "hooks/**"], "specs": ["docs/specs/01d-goal-hooks.md"], "exclude": ["*.md"]},
   {"globs": ["internal/agent/logship/**"], "specs": ["docs/specs/01f-agent-control-goals-and-policy.md", "docs/specs/01-agent-capabilities.md"], "exclude": ["*.md"], "note": "capabilities K1 and K2"},
   {"globs": ["internal/agent/attach/**"], "specs": ["docs/specs/01f-agent-control-goals-and-policy.md", "docs/specs/01-agent-capabilities.md"], "exclude": ["*.md"], "note": "capability J1"},
   {"globs": ["internal/store/**"], "specs": ["docs/specs/03f-hub-internals.md", "docs/specs/04-technology-review.md"], "exclude": ["*.md"], "note": "03f Concurrency model (the single writer) and Data model sketch; 04 Q1 Durable store (pragmas, one writer, batches) and Q9 Agent-side persistence"},
