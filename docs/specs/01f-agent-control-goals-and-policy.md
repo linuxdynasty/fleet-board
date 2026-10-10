@@ -30,6 +30,18 @@ All pass local policy, carry a `command_id`, and are idempotent except F3.
   purpose that decides the gate (02h). A prompt answer carries the `prompt_id`
   from E6; if that prompt is gone the agent refuses with `prompt_gone`. Not
   idempotent: a retry after an unknown outcome returns `UNKNOWN_OUTCOME`.
+  Every `send-keys` line is built by one package, `internal/agent/tmux/typing`
+  (#140): each constructor takes the whole `PaneKey` and a stated purpose,
+  types literal text with `-l --` in single quotes (at most 4 KiB, no newline,
+  carriage return or other control character) or keys from the closed named
+  set, and refuses anything else; a `typing.Line` has only unexported fields
+  and the tmux client refuses the zero `typing.Line` and one built for another
+  server or server start. The purpose names the gate that must pass first: the
+  four `SendKeysPurpose` values, then the probe's command, a harness command
+  and the goal start, whose gates are not `SendKeys` gates. Lint rules (`make lint`) let only
+  `internal/agent/control`, `start` and `probe` import the package and call a
+  `typing.New…` constructor, and the tmux client package import it to name the
+  type; `scripts/test-lint-typing-rules.sh` seeds a violation of each.
 - **F4 Interrupt**, **F5 Respawn pane** (adapter `ResumeArgs`), **F6 Kill
   window.** Resize belongs to J1.
 - **F8 Run harness command:** `RunHarnessCommand{target, command, args}`,
