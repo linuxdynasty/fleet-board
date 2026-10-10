@@ -99,8 +99,8 @@ func TestHeartbeatsFollowTheHubsIntervalAfterTheSnapshot(t *testing.T) {
 	if beats[0].i != 2 {
 		t.Errorf("the first heartbeat is message %d, want 2 (after the snapshot and its result)", beats[0].i)
 	}
-	if d := beats[0].got.Sub(s.times[1]); d < 500*time.Millisecond || d > 2*time.Second {
-		t.Errorf("the first heartbeat came %v after the results, want one interval (1 s)", d)
+	if d := beats[0].got.Sub(s.times[1]); d < 500*time.Millisecond || d > 5*time.Second {
+		t.Errorf("the first heartbeat came %v after the results, want one interval (1 s; the default is 15 s)", d)
 	}
 	for k, b := range beats {
 		hb := b.hb

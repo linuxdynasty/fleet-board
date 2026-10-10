@@ -71,7 +71,8 @@ func TestAStopDuringAnAttemptIsNotAFailure(t *testing.T) {
 	})
 	waitFor(t, 5*time.Second, "the attempt", func() bool { return len(a.events(t, "connect.attempt")) == 1 })
 	time.Sleep(100 * time.Millisecond)
-	stopWithin(t, r, time.Second)
+	// The attempt would otherwise run its minute-long handshake timeout.
+	stopWithin(t, r, 10*time.Second)
 	if got := metric(scrape(t, a), "fleet_agent_connect_attempts_total", `result="failed"`); got != "" {
 		t.Errorf(`connect_attempts_total{result="failed"} = %s after a stop, want none`, got)
 	}

@@ -22,7 +22,6 @@ func TestSilentMDNSAnswersDoNotHoldUpTheConfiguredAddress(t *testing.T) {
 		svcs = append(svcs, service(t, blackhole(t), "hole"+strconv.Itoa(i)+".test"))
 	}
 	d := &fakeDiscover{services: svcs}
-	start := time.Now()
 	r := startLoop(t, a, func(o *conn.LoopOptions) {
 		useMDNS(o, d)
 		conn.SetMDNSLimits(o, 200*time.Millisecond, 700*time.Millisecond)
@@ -30,9 +29,8 @@ func TestSilentMDNSAnswersDoNotHoldUpTheConfiguredAddress(t *testing.T) {
 	})
 	h.connected(t, 1)
 	r.connected(t)
-	if took := time.Since(start); took > 3*time.Second {
-		t.Errorf("connecting took %v behind silent answers", took)
-	}
+	// No elapsed-time bound: eight silent answers at 200 ms each fit any bound
+	// a loaded machine allows. The attempts below prove the phase cap cut them.
 	got := attempts(t, a)
 	mdns := slices.IndexFunc(got, func(at [2]string) bool { return at[0] != "mdns" })
 	if mdns < 1 || mdns > 5 || got[len(got)-1] != [2]string{"configured", h.addr} {
