@@ -74,7 +74,6 @@ func writeEnded(t *testing.T, dir, end, machineID string) {
 // naming the end and the fix. Removing ended.json lets it try again.
 func TestARunAfterAnEndSendsNothing(t *testing.T) {
 	t.Parallel()
-	h := conntest.StartHub(t, conntest.Options{})
 	cases := []struct{ end, fix string }{
 		{"revoked", "remove `identity.json` (keep `agent.db`), then `fleet-agent enroll --token <new>`"},
 		{"unknown_machine", "remove `identity.json` (keep `agent.db`), then `fleet-agent enroll --token <new>`"},
@@ -83,6 +82,9 @@ func TestARunAfterAnEndSendsNothing(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.end, func(t *testing.T) {
 			t.Parallel()
+			// Its own hub: another subtest's enroll must not show up in
+			// this one's request count.
+			h := conntest.StartHub(t, conntest.Options{})
 			dir, machine := enrolledDir(t, h)
 			// The cached address is tried first: point it at a counter.
 			addr, dialed := countingHub(t)
@@ -99,8 +101,9 @@ func TestARunAfterAnEndSendsNothing(t *testing.T) {
 			}
 			out := r.stderr.String()
 			refused := conntest.Lines(t, out, "run.refused")
-			if r.code != 1 || len(refused) != 1 || refused[0]["end"] != tc.end || !strings.Contains(out, tc.fix) {
-				t.Errorf("run = %d %q; want 1, run.refused{end=%s} and the fix %q", r.code, out, tc.end, tc.fix)
+			if r.code != 1 || len(refused) != 1 || refused[0]["end"] != tc.end || refused[0]["machine_id"] != machine ||
+				!strings.Contains(out, tc.fix) {
+				t.Errorf("run = %d %q; want 1, run.refused{end=%s, machine_id} and the fix %q", r.code, out, tc.end, tc.fix)
 			}
 			// The check comes before agent.db is opened, not only before a dial.
 			if lines := conntest.Lines(t, out, "store.opened"); len(lines) != 0 {

@@ -153,7 +153,8 @@ st := l.Status()                    // state, peer, last failure per address, cl
    before any network call, returns a `*EndedError` (`Recorded`, its message
    naming the hub and the owner's fix) while the file names this machine,
    removes one that names another machine (a leftover), and refuses a
-   damaged one. Enroll removes it when it saves a new identity.
+   damaged one (`ErrEndedDamaged`). Enroll removes it when it saves a new
+   identity.
 
 Not built yet, all later in plan row 4:
 

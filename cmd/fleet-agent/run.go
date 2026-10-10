@@ -53,6 +53,11 @@ func runCommand(dir func() (string, error), version string, stderr io.Writer) *c
 func runAgent(ctx context.Context, dir, version, boot string, tel *telemetry.Telemetry) error {
 	log := tel.Logger.With("component", "run")
 	failed := func(step string, err error) error {
+		if ctx.Err() != nil {
+			// A signal during startup is a clean stop, not a failure.
+			log.InfoContext(ctx, "run.stopped", "step", step)
+			return nil //nolint:nilerr // the error is the stop itself (a cancelled context), so exit 0
+		}
 		log.ErrorContext(ctx, "run.failed", "step", step, "err_kind", runErrKind(err))
 		return commandError{err}
 	}
@@ -60,6 +65,8 @@ func runAgent(ctx context.Context, dir, version, boot string, tel *telemetry.Tel
 	if err != nil {
 		return failed("identity", err)
 	}
+	// From here every line names the machine.
+	log = log.With("machine_id", id.MachineID)
 	path := filepath.Join(dir, lockFile)
 	lk, err := lock.Acquire(path)
 	if errors.Is(err, lock.ErrHeld) {
@@ -114,6 +121,8 @@ func runErrKind(err error) string {
 	case errors.Is(err, conn.ErrNotEnrolled), errors.Is(err, conn.ErrLooseMode),
 		errors.Is(err, ring.ErrLooseMode), errors.Is(err, errAnotherRun):
 		return "constraint"
+	case errors.Is(err, conn.ErrEndedDamaged):
+		return "parse"
 	default:
 		return "io"
 	}

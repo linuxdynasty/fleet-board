@@ -47,7 +47,9 @@ fleet-agent run    # logs to stderr; stop with Ctrl-C or SIGTERM
   over mTLS. When the hub is down it waits and tries again (1 s growing to
   60 s, with some randomness); waking from sleep or a network change makes
   it try at once.
-- Exit codes: 0 after a signal (it says goodbye to the hub first), 1 when
+- Exit codes: 0 after a signal (it says goodbye to the hub first; a
+  signal while it is still starting is a clean stop too, logged as
+  `run.stopped`), 1 when
   the machine is not enrolled, another `run` holds the folder, or the loop
   ended on its own: the machine was revoked or is unknown to the hub, the
   hub belongs to another fleet, or the certificate expired. The last log
@@ -60,7 +62,8 @@ fleet-agent run    # logs to stderr; stop with Ctrl-C or SIGTERM
   `fleet-agent enroll --token <new>`; enroll removes `ended.json`. For
   another fleet: check the hub address, then re-enroll or remove
   `ended.json` to try again. A file left from an earlier machine id is
-  removed.
+  removed. A damaged `ended.json` also exits 1 before any network call
+  (`run.failed{step="ended", err_kind="parse"}`), saying to remove it.
 
 `fleet-agent --version` prints the name and the version; `-h` prints the
 usage. Release builds set the version with `-ldflags -X` (see
