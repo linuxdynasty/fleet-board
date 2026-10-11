@@ -81,8 +81,8 @@ func count(lines []string, prefix string) int {
 
 // T3: with the fake, the switch is sent before the client reports up.
 func TestRepickBeforeUp(t *testing.T) {
-	t.Setenv("FAKE_PROC_LIST", `$0 attach_view\n`)
-	t.Setenv("FAKE_CTL_LIST", `$0 attach_view\n$1 \n`)
+	t.Setenv("FAKE_PROC_LIST", `$0 1\n`)
+	t.Setenv("FAKE_CTL_LIST", `$0 1\n$1 0\n`)
 	r := startFake(t, &backoffs{wait: time.Hour}, nil)
 	r.waitState(t, tmux.StateUp)
 	if got := commands(t, r); count(got, "switch-client -E -t $1") != 1 {
@@ -118,8 +118,8 @@ func TestSessionsChangedOnADeveloperSessionDoesNothing(t *testing.T) {
 // T3: a burst of %sessions-changed on an internal session coalesces: one
 // list in flight, fewer lists than notices.
 func TestABurstOfSessionsChangedCoalesces(t *testing.T) {
-	t.Setenv("FAKE_PROC_LIST", `$0 attach_view\n`)
-	t.Setenv("FAKE_CTL_LIST", `$0 attach_view\n`)
+	t.Setenv("FAKE_PROC_LIST", `$0 1\n`)
+	t.Setenv("FAKE_CTL_LIST", `$0 1\n`)
 	t.Setenv("FAKE_LIST_SLEEP", "0.3")
 	r := startFake(t, &backoffs{wait: time.Hour}, nil)
 	r.waitState(t, tmux.StateUp)
@@ -136,8 +136,8 @@ func TestABurstOfSessionsChangedCoalesces(t *testing.T) {
 
 // T3: a refused switch logs tmux.repick_failed and the client stays up.
 func TestARefusedSwitchStaysUp(t *testing.T) {
-	t.Setenv("FAKE_PROC_LIST", `$0 attach_view\n`)
-	t.Setenv("FAKE_CTL_LIST", `$0 attach_view\n$1 \n`)
+	t.Setenv("FAKE_PROC_LIST", `$0 1\n`)
+	t.Setenv("FAKE_CTL_LIST", `$0 1\n$1 0\n`)
 	t.Setenv("FAKE_SWITCH_ERR", "1")
 	r := startFake(t, &backoffs{wait: time.Hour}, nil)
 	r.waitState(t, tmux.StateUp)

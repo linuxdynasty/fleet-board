@@ -32,7 +32,7 @@ shift 2
 case "$1" in
 list-sessions)
 	if [ -n "$FAKE_LIST_ERR" ]; then echo "$FAKE_LIST_ERR" >&2; exit 1; fi
-	printf '%b' "${FAKE_PROC_LIST:-\$0 \n}"; exit 0 ;;
+	printf '%b' "${FAKE_PROC_LIST:-\$0 0\n}"; exit 0 ;;
 -C)
 	touch "$dir/attached"
 	echo x >> "$dir/attaches"
@@ -67,7 +67,7 @@ while IFS= read -r line; do
 	list-sessions*)
 		if [ -n "$FAKE_LIST_EXIT" ]; then exit 0; fi
 		if [ -n "$FAKE_LIST_SLEEP" ]; then sleep "$FAKE_LIST_SLEEP"; fi
-		printf '%b' "${FAKE_CTL_LIST:-\$0 \n}" ;;
+		printf '%b' "${FAKE_CTL_LIST:-\$0 0\n}" ;;
 	switch-client*)
 		if [ -n "$FAKE_SWITCH_ERR" ]; then echo "%error 2 $n 1"; continue; fi
 		echo "%end 2 $n 1"

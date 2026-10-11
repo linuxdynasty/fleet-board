@@ -91,8 +91,12 @@ st, changed := c.Changed()                       // the state, and a chan closed
 - `Run` checks `tmux -V` (below 3.2: `ErrTooOld`, REASON_CODE_TMUX_TOO_OLD),
   lists sessions with one `tmux list-sessions` through `internal/proc` and
   attaches by one rule on every server: the lowest session not marked
-  `@fleet_internal`, else the lowest internal one (no session at all is
-  absent), as `tmux -S <socket> -C attach-session
+  internal, else the lowest internal one (no session at all is absent).
+  A session is internal only when its `@fleet_internal` is exactly
+  `attach_view`: the list reads `#{session_id} #{==:#{@fleet_internal},attach_view}`,
+  so tmux compares the mark and each line is `$N 0` or `$N 1` (anything else
+  is an `attach_failed` `list`; a mark with a newline once put a bare line
+  there and failed every attach). It attaches as `tmux -S <socket> -C attach-session
   -E -t $N -f ignore-size,pause-after=1` (`-E`: tmux does not apply
   `update-environment` to the developer's session). Its first command reads
   `#{client_flags}|#{pid}|#{start_time}|#{version}`: both flags missing from

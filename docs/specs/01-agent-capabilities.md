@@ -422,7 +422,8 @@ optionally against one limit the owner sets.
   tmux does not apply `update-environment` to the developer's session, and
   checks `tmux -V` (below
   3.2 is `TMUX_TOO_OLD`), attaches to the lowest session id (a session the
-  fleet marked internal is second choice: when only internal sessions exist
+  fleet marked internal, its `@fleet_internal` exactly `attach_view` as tmux
+  compares it, is second choice: when only internal sessions exist
   it attaches there, and `switch-client -E` moves it to the first developer
   session that `%sessions-changed` announces, so no session is ever unseen
   and no timer runs), reads its own

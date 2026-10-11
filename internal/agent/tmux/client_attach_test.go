@@ -67,3 +67,51 @@ func TestAbsentTriesNothingUntilWoken(t *testing.T) {
 		})
 	}
 }
+
+// The internal mark is the exact string attach_view (02h; ruling fork 2 on
+// 7d1). A mark that only starts with it is a developer session: one with a
+// newline once put a bare line in the session list and failed every attach
+// (tmux.exit attach_failed, err_kind list). A session marked exactly
+// attach_view is internal, attached only because it is the only one.
+func TestInternalMarkIsExact(t *testing.T) {
+	for _, b := range tmuxtest.Binaries() {
+		t.Run(b.Name, func(t *testing.T) {
+			for _, tc := range []struct{ name, mark, session string }{
+				{"mark with a newline", "attach_view\nz", "developer"},
+				{"exact mark", "attach_view", "internal"},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					t.Parallel()
+					srv := tmuxtest.Start(t, b, "-s", "only", "exec cat")
+					srv.Run(t, "set-option", "-t", "only", "@fleet_internal", tc.mark)
+					r := startClient(t, srv, nil, func(o *tmux.ClientOptions) { o.Server = "default" })
+					ev := attachOutcome(t, r.logs)
+					if ev["msg"] != "tmux.attached" || ev["session"] != tc.session {
+						t.Fatalf("first outcome = %v, want tmux.attached with session %s", ev, tc.session)
+					}
+					r.waitState(t, tmux.StateUp)
+					inv, err := r.ReadInventory(ctxT(t))
+					if err != nil || len(inv.Sessions) != 1 || inv.Sessions[0].Tags.AttachView != (tc.session == "internal") {
+						t.Fatalf("inventory = %+v, %v; want AttachView %v", inv.Sessions, err, tc.session == "internal")
+					}
+				})
+			}
+		})
+	}
+}
+
+// attachOutcome waits for the first tmux.attached or tmux.exit line.
+func attachOutcome(t *testing.T, logs *lockedBuffer) map[string]any {
+	t.Helper()
+	deadline := time.Now().Add(wait)
+	for time.Now().Before(deadline) {
+		for _, ev := range logs.events(t) {
+			if ev["msg"] == "tmux.attached" || ev["msg"] == "tmux.exit" {
+				return ev
+			}
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("no tmux.attached or tmux.exit within %s:\n%s", wait, logs.String())
+	return nil
+}
