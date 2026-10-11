@@ -137,14 +137,23 @@ func TestRateWindow(t *testing.T) {
 		w.add("K", t0.Add(timeSec(i*10)))
 	}
 	now := t0.Add(timeSec(20))
-	if wait, over := w.over("K", now, 2); !over || wait != timeSec(50) {
+	if wait, over := w.overCounting("K", now, now, 2); !over || wait != timeSec(50) {
 		t.Errorf("over %v wait %v, want over, 50s (the second command at 10s ages out at 70s)", over, wait)
 	}
-	if _, over := w.over("K", now, 3); over {
+	if _, over := w.overCounting("K", now, now, 3); over {
 		t.Error("three commands under a limit of 3 are over")
 	}
-	if _, over := w.over("K", t0.Add(timeSec(65)), 2); over {
+	if _, over := w.overCounting("K", t0.Add(timeSec(65)), t0.Add(timeSec(65)), 2); over {
 		t.Error("the first command did not leave the window after a minute")
+	}
+	// An entry logged before the window is not in it: it counts once, as if
+	// logged now (10 s and 20 s are in the window, so three is over 2).
+	if _, over := w.overCounting("K", t0.Add(timeSec(65)), t0.Add(-timeSec(30)), 2); !over {
+		t.Error("an entry from before the window was not counted")
+	}
+	// One inside the window is counted already, not twice.
+	if _, over := w.overCounting("K", t0.Add(timeSec(65)), t0.Add(timeSec(10)), 2); over {
+		t.Error("an entry in the window was counted twice")
 	}
 }
 

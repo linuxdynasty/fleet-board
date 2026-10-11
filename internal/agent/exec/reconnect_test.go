@@ -99,3 +99,50 @@ func TestConnectsNeverStartAHeldRunAgain(t *testing.T) {
 		t.Errorf("%d results, want 1", n)
 	}
 }
+
+// failFor is agent.db whose RecordResult fails once for one command_id.
+type failFor struct {
+	exec.Store
+	id     string
+	failed atomic.Bool
+}
+
+func (f *failFor) RecordResult(ctx context.Context, id string, b []byte, at time.Time) error {
+	if id == f.id && f.failed.CompareAndSwap(false, true) {
+		return errors.New("disk full")
+	}
+	return f.Store.RecordResult(ctx, id, b, at)
+}
+
+// A refused command whose result write failed is still received: it was
+// never admitted, so the resume pass runs the rate check on it again
+// (counting it once, as it is already in the window) instead of running
+// it. Only a running entry, already admitted, skips the window.
+func TestAResumedReceivedEntryIsRateCheckedAgain(t *testing.T) {
+	t.Parallel()
+	h := capturePane("tmux.observe")
+	r := newRig(t)
+	ex, err := exec.New(exec.Options{
+		DB: &failFor{Store: r.db, id: "r-2"}, Sender: r.send, Clock: r.clock, Policy: r.pol,
+		Handlers: []exec.Handler{h}, Telemetry: r.tel,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.ex = ex
+	r.pol.limits["CapturePane"] = 1
+	r.start(t)
+	r.give(t, cmd("r-1", 1, "tmux.observe"))
+	r.result(t, "r-1")
+	r.give(t, cmd("r-2", 2, "tmux.observe")) // RATE_LIMITED, but its result write fails
+	waitFor(t, func() bool { return r.metric(t, "fleet_agent_command_store_failed_total", `step="result"`) == "1" })
+	waitFor(t, func() bool { return r.metric(t, "fleet_agent_commands_running", "") == "0" })
+	r.ex.OnConnected(context.Background(), 2, r.clock)
+	if res := r.result(t, "r-2"); res.GetReason() != typev1.ReasonCode_REASON_CODE_RATE_LIMITED {
+		t.Errorf("after the next connect: %v, want RATE_LIMITED", res)
+	}
+	waitFor(t, func() bool { return r.metric(t, "fleet_agent_commands_running", "") == "0" })
+	if n := h.runs.Load(); n != 1 {
+		t.Errorf("the handler ran %d times, want 1 (r-1 only)", n)
+	}
+}

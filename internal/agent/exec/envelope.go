@@ -139,10 +139,11 @@ func (e *Executor) answerKnown(ctx context.Context, ent ring.Entry) {
 }
 
 // decide runs the checks after the log: requires, policy (safe mode, rate
-// limit), role, then whether a local approval is needed. A resumed entry
-// skips the rate window (it was counted when logged, and the window is
-// rebuilt from the log at start); a resumed running entry also skips the
-// approval it already had, while a resumed received entry is asked again.
+// limit), role, then whether a local approval is needed. A resumed running
+// entry was admitted before: it skips the rate check and the approval it
+// already had. A resumed received entry was never admitted: it gets both
+// again, the rate check counting it once (it is in the window already when
+// it was logged in the last minute).
 func (e *Executor) decide(c *agentv1.Command, kind string, ent ring.Entry, resumed bool) plan {
 	h := e.reg[kind]
 	if !e.reg.supports(kind, c.GetRequires()) {
@@ -158,12 +159,20 @@ func (e *Executor) decide(c *agentv1.Command, kind string, ent ring.Entry, resum
 		return plan{refusal: refusal(typev1.Status_STATUS_REJECTED_BY_POLICY, typev1.ReasonCode_REASON_CODE_POLICY_SAFE_MODE,
 			"the agent is in policy safe mode and runs observe commands only")}
 	}
-	if !resumed {
+	// A running entry was admitted and skips the window; a fresh command
+	// and a resumed received entry (never admitted, perhaps a refusal whose
+	// result write failed) are checked, each counted once.
+	if !resumed || ent.Status == ring.StatusReceived {
 		limit := DefaultRateLimit
 		if n, ok := pol.RateLimit(kind); ok && n < limit {
 			limit = n
 		}
-		if wait, over := e.window.over(kind, e.opts.Now(), limit); over {
+		now := e.opts.Now()
+		counted := now // a fresh command was added to the window just now
+		if resumed {
+			counted = ent.Received
+		}
+		if wait, over := e.window.overCounting(kind, now, counted, limit); over {
 			r := refusal(typev1.Status_STATUS_REJECTED_BY_POLICY, typev1.ReasonCode_REASON_CODE_RATE_LIMITED,
 				"too many commands of this kind in the last minute")
 			r.Retryable, r.RetryAfter = true, durationpb.New(wait)

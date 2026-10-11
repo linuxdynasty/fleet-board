@@ -41,11 +41,16 @@ func (w *rateWindow) recent(kind string, now time.Time) []time.Time {
 	return ts
 }
 
-// over reports whether kind holds more than limit commands in the window,
-// the one just added included, and when a new one would fit: the window
-// counts refusals, so it frees as the newest ones over the limit age out.
-func (w *rateWindow) over(kind string, now time.Time, limit int) (time.Duration, bool) {
+// overCounting reports whether kind holds more than limit commands in the
+// window, the one being checked included once, and when a new one would
+// fit: the window counts refusals, so it frees as the newest ones over the
+// limit age out. at is when the checked command was logged: inside the
+// window it is already counted; older, it counts as if logged now.
+func (w *rateWindow) overCounting(kind string, now, at time.Time, limit int) (time.Duration, bool) {
 	ts := w.recent(kind, now)
+	if !at.After(now.Add(-rateSpan)) {
+		ts = append(append([]time.Time(nil), ts...), now)
+	}
 	if limit < 1 || len(ts) <= limit {
 		return 0, false
 	}
