@@ -53,6 +53,20 @@ func TestARunWritesStatusJSONAtStartAndAtStop(t *testing.T) {
 	}
 }
 
+// The loop's change signal reaches the file: a run that connects shows
+// state "connected" in status.json well inside the once-a-minute floor.
+// Before the signal was wired the file said so only at the next minute.
+func TestARunShowsItsConnectionInStatusJSONWithinSeconds(t *testing.T) {
+	t.Parallel()
+	h := conntest.StartHub(t, conntest.Options{})
+	dir, _ := enrolledDir(t, h)
+	startAgent(t, "--state-dir", dir, "run")
+	poll(t, 20*time.Second, "status.json to say connected", func() bool {
+		s, err := statusfile.Read(dir)
+		return err == nil && s.State == "connected"
+	})
+}
+
 // A loop that ends on its own leaves the end it stopped on in status.json
 // (written before the agent exits), here an expired certificate.
 func TestARunThatEndsLeavesTheEndInStatusJSON(t *testing.T) {

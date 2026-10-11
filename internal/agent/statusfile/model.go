@@ -30,6 +30,10 @@ const (
 // that is not one of the closed values.
 const StateUnknown = "unknown"
 
+// PolicyWatchOff is the one value of Status.PolicyWatch: the policy
+// loader could not set its directory watch (03e).
+const PolicyWatchOff = "off"
+
 // The three results of an mDNS browse (ADR 0028 decision 3). They are
 // their own closed values, not err_kind classes.
 const (
@@ -42,6 +46,7 @@ var (
 	states = setOf("discovering", "connecting", "hello_sent", "snapshotting", "connected", "backoff", "stopped", "ended")
 	ends   = setOf("revoked", "unknown_machine", "fleet_mismatch", "cert_expired")
 	finds  = setOf(BrowseFound, BrowseNone, BrowseNoMulticastInterface)
+	watch  = setOf(PolicyWatchOff)
 )
 
 func setOf(v ...string) map[string]bool {
@@ -74,6 +79,10 @@ type Status struct {
 	Ended                string     `json:"ended,omitempty"`
 	SnapshotOversizeTime *time.Time `json:"snapshot_oversize_time,omitempty"`
 	Browse               *Browse    `json:"browse,omitempty"`
+	// PolicyWatch is [PolicyWatchOff] when the policy loader could not set
+	// its directory watch; left out while the watch works (or is not
+	// known), so doctor can tell "working" from "never said".
+	PolicyWatch string `json:"policy_watch,omitempty"`
 }
 
 // Failure is the last failure for one hub address.
@@ -148,6 +157,7 @@ func timePtr(t time.Time) *time.Time {
 func (s Status) cleaned() Status {
 	s.State = enum(s.State, states)
 	s.Ended = enum(s.Ended, ends)
+	s.PolicyWatch = enum(s.PolicyWatch, watch)
 	s.Peer = addr(s.Peer)
 	if len(s.Failures) > 0 {
 		s.Failures = boundFailures(s.Failures)

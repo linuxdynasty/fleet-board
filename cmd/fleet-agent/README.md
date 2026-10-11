@@ -104,8 +104,11 @@ fleet-agent run    # logs to stderr; stop with Ctrl-C or SIGTERM
   written at start, at least once a minute, and once more when `run` stops,
   so it shows the stop. A value not yet known is left out. `fleet-agent
   doctor` (plan row 6) reads it and prints its age, so it works while the
-  agent is down. Until plan row 6 PR 6a lands, a change shows in the file
-  within a minute.
+  agent is down. A change of the connection shows in the file within about
+  a second (the loop's change signal wakes the writer, which writes at most
+  once a second). `policy_watch: off` appears when the policy folder watch
+  is off. The push socket and the policy watch are read when the file is
+  written, so they can be up to a minute old.
 - A failed `enroll` leaves its failure code in `enroll.json` (a closed word
   such as `token_malformed`, `hub_untrusted` or `refused` with the hub's
   reason name; never the token, the address or the message), only into a

@@ -53,9 +53,15 @@ type Options struct {
 	Source    func() conn.Status
 	Telemetry *telemetry.Telemetry
 	// Changed, when set, says the status changed, like [Writer.Notify]:
-	// the loop's change notification (Loop.StatusChanged, plan row 6 PR
-	// 6a). A nil channel never fires. It is read until Stop.
+	// the loop's change notification (Loop.StatusChanged). A nil channel
+	// never fires. It is read until Stop.
 	Changed <-chan struct{}
+	// PolicyWatchOff, when set, says the policy loader's directory watch is
+	// off ([policy.Manager.WatchOff]); status.json then carries
+	// policy_watch: off. It is read when the file is written, from the
+	// writer's goroutine, and nothing signals it: a change shows within a
+	// minute, like push_off.
+	PolicyWatchOff func() bool
 
 	// Test seams: the clock, a hook run after each write attempt, and the
 	// disk steps.
@@ -193,7 +199,7 @@ func (w *Writer) run() {
 			return
 		case <-w.changed:
 			onChange()
-		case <-w.opts.Changed: // nil until the loop's notification is wired
+		case <-w.opts.Changed: // nil when the caller has no change signal
 			onChange()
 		case <-throttleC:
 			throttle, throttleC = nil, nil
@@ -214,7 +220,11 @@ func (w *Writer) run() {
 func (w *Writer) write() {
 	now := w.clk.Now()
 	w.lastWrite = now
-	data, err := encode(FromConn(w.opts.Source(), now))
+	st := FromConn(w.opts.Source(), now)
+	if w.opts.PolicyWatchOff != nil && w.opts.PolicyWatchOff() {
+		st.PolicyWatch = PolicyWatchOff
+	}
+	data, err := encode(st)
 	if err == nil {
 		err = writeAtomic(w.opts.Dir, StatusFile, data, w.opts.ops)
 	}

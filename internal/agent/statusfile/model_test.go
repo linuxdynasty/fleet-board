@@ -194,8 +194,8 @@ func TestReadRoundTripsAndIgnoresUnknownKeys(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// A key a later row adds (policy_watch, row 6b) must not break an older reader.
-	withExtra := strings.Replace(string(b), "{", `{"policy_watch":"off","future":{"a":1},`, 1)
+	// A key a later row adds must not break an older reader.
+	withExtra := strings.Replace(string(b), "{", `{"future":{"a":1},`, 1)
 	write(t, dir, StatusFile, withExtra)
 	got, err := Read(dir)
 	if err != nil {
@@ -328,5 +328,28 @@ func TestEveryLoopStateAndEndIsInTheClosedLists(t *testing.T) {
 	}
 	if len(states) != len(found["State"]) || len(ends) != len(found["End"]) {
 		t.Errorf("statusfile lists %d states and %d ends; conn has %d and %d", len(states), len(ends), len(found["State"]), len(found["End"]))
+	}
+}
+
+// Only the closed word survives a read: anything else in policy_watch
+// (a damaged or hostile file) reads as unknown, empty stays unset.
+func TestReadCleansPolicyWatch(t *testing.T) {
+	t.Parallel()
+	for in, want := range map[string]string{"off": "off", "": "", "on": "unknown", "\u001b[31mred": "unknown"} {
+		dir := t.TempDir()
+		st := FromConn(conn.Status{State: conn.StateConnected}, t0)
+		st.PolicyWatch = in
+		b, err := json.Marshal(st)
+		if err != nil {
+			t.Fatal(err)
+		}
+		write(t, dir, StatusFile, string(b))
+		got, err := Read(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.PolicyWatch != want {
+			t.Errorf("policy_watch %q read as %q, want %q", in, got.PolicyWatch, want)
+		}
 	}
 }
