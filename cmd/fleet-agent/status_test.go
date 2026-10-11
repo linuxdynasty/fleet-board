@@ -61,18 +61,10 @@ func TestARunShowsItsConnectionInStatusJSONWithinSeconds(t *testing.T) {
 	h := conntest.StartHub(t, conntest.Options{})
 	dir, _ := enrolledDir(t, h)
 	startAgent(t, "--state-dir", dir, "run")
-	var last string
 	poll(t, 20*time.Second, "status.json to say connected", func() bool {
 		s, err := statusfile.Read(dir)
-		if err != nil {
-			return false
-		}
-		last = s.State
-		return s.State == "connected"
+		return err == nil && s.State == "connected"
 	})
-	if last != "connected" {
-		t.Errorf("state = %q", last)
-	}
 }
 
 // A loop that ends on its own leaves the end it stopped on in status.json
