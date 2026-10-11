@@ -22,9 +22,10 @@ import (
 // through the control client (printf %b); FAKE_LIST_SLEEP slows the
 // latter; FAKE_LIST_EXIT makes it exit instead of answering that list;
 // FAKE_SWITCH_ERR refuses switch-client (else it confirms with
-// %session-changed to the target). "capture-pane -p -t %7" is answered,
-// then five %sessions-changed follow; "-t %6" is answered, then tmux moves
-// the client to $2 by itself (%session-changed $2).
+// %session-changed to the target); list-panes prints FAKE_PANES (printf
+// %b). "capture-pane -p -t %7" is answered, then five %sessions-changed
+// follow; "-t %6" is answered, then tmux moves the client to $2 by itself
+// (%session-changed $2).
 const fakeTmux = `#!/bin/sh
 dir=$(dirname "$0")
 if [ "$1" = "-V" ]; then echo "tmux $FAKE_VERSION"; exit 0; fi
@@ -77,6 +78,7 @@ while IFS= read -r line; do
 	capture-pane*) echo '%pause %3'; echo '%continue %4'; echo 'plain text' ;;
 	"refresh-client -A '%3:continue'") echo '%continue %4' ;;
 	"refresh-client -A '%4:continue'") echo '%continue %4' ;;
+	list-panes*) printf '%b' "$FAKE_PANES" ;;
 	esac
 	echo "%end 2 $n 1"
 done

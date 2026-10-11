@@ -20,19 +20,34 @@ const (
 	nText
 )
 
-// rec is one list-panes record to forge: the pane id, the seven text
+// Where some fixed fields of a list-panes record sit, counted by hand from
+// the format: ids, flags and sizes, then the attach_view flag.
+const (
+	fPaneID     = 7
+	fDead       = 10
+	fDeadStatus = 11
+	fDeadSignal = 12
+	fWidth      = 13
+	fHeight     = 14
+	fAttachView = 15
+)
+
+// rec is one list-panes record to forge: the fixed fields, the seven text
 // values as tmux sends them, the byte counts tmux sends beside them, and
 // the canary.
 type rec struct {
-	pane   string
+	fixed  []string
 	text   [nText]string
 	n      [nText]int
 	canary string
 }
 
-// newRec is a record whose counts match its text, as tmux sends it.
+// newRec is a record of a live pane whose counts match its text, as tmux
+// sends it.
 func newRec(pane string, text [nText]string) rec {
-	r := rec{pane: pane, text: text, canary: "1"}
+	fixed := []string{"$0", "1790000000", "0", "@0", "0", "1", "0", "", "0", "1", "0", "", "", "80", "24", "0"}
+	fixed[fPaneID] = pane
+	r := rec{fixed: fixed, text: text, canary: "1"}
 	for i, v := range text {
 		r.n[i] = len(v)
 	}
@@ -43,7 +58,7 @@ func newRec(pane string, text [nText]string) rec {
 // flags and sizes, the attach_view flag, the counts, the canary, then the
 // text) and a closing marker.
 func (r rec) line(marker string) string {
-	fields := []string{"$0", "1790000000", "0", "@0", "0", "1", "0", r.pane, "0", "1", "0", "", "80", "24", "0"}
+	fields := append([]string(nil), r.fixed...)
 	for _, n := range r.n {
 		fields = append(fields, strconv.Itoa(n))
 	}

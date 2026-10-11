@@ -7,7 +7,8 @@
 // against their id's shape and otherwise dropped. diff turns two reads of
 // the same server start into inventory events: SessionEvent, WindowEvent,
 // PaneCreated, PaneChanged and PaneExited (exit_status only when tmux kept
-// the pane).
+// the pane). The read's DeadSignal is not reported yet: no snapshot field
+// carries it.
 //
 // Sessions on the probe server, and sessions whose @fleet_internal user
 // option is exactly "attach_view" (tmux compares it; the agent never reads

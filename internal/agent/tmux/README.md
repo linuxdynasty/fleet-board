@@ -62,7 +62,10 @@ st, changed := c.Changed()                       // the state, and a chan closed
   (a grouped pair lists a pane twice; a window linked twice into one session
   is kept at its first index). Names, commands and option values are raw and
   untrusted: the caller bounds and checks them.
-- Each record is the ids, flags and sizes; `#{==:#{@fleet_internal},attach_view}`
+- Each record is the ids, flags and sizes (with `pane_dead_status` and
+  `pane_dead_signal`, read by the `ListPanes` rule below and its shared
+  helper: `DeadSignal` only for a dead pane, a status and a signal both
+  present is `ErrBadReply`); `#{==:#{@fleet_internal},attach_view}`
   (1 only for that exact mark: `Tags.AttachView`; the value never leaves
   tmux); the byte length `#{n:X}` of each of the seven text fields
   (`@fleet_session_id`, `@fleet_owner`, `@fleet_pane_key`, `@fleet_goal_id`,
@@ -85,15 +88,16 @@ st, changed := c.Changed()                       // the state, and a chan closed
   `a_b` has the same length), which is why the client runs with `-u`.
 - What the bound leaves: one known gap, the 8 MiB reply bound. Each reply
   line is charged its bytes plus 17, so a newline in a value costs 17
-  bytes, not 1. Measured on 3.2a and 3.7c (macOS):
-  - Normal panes (short names, no tags): 605 bytes a record, 622 charged:
-    about 13,480 panes on one server.
-  - Long values: every text field at 1 KiB with no newline is 7,780 bytes,
-    7,797 charged: about 1,075 panes (6,759 bytes measured with a 3-byte
+  bytes, not 1. Measured on 3.2a and 3.7c (macOS), with `pane_dead_signal`
+  in the record (it adds 18 bytes, a marker and an empty value):
+  - Normal panes (short names, no tags): 623 bytes a record (622 on 3.7c),
+    640 charged: about 13,100 panes on one server.
+  - Long values: every text field at 1 KiB with no newline is 7,798 bytes,
+    7,815 charged: about 1,073 panes (6,777 bytes measured with a 3-byte
     command, plus the rest of the command's 1 KiB).
   - Newline-heavy, the worst case: the four `@fleet_*` options set with
     `set-option -g` to 1,024 newlines each make every pane's record 4,097
-    lines, 70,266 bytes charged; 119 panes read, 120 fail. Session and
+    lines, 70,284 bytes charged; 119 panes read, 120 fail. Session and
     window names cannot add lines (3.2a escapes a newline in them, 3.7c
     refuses one). A program's name can (the last field); with 1 KiB of
     newlines there too it would be about 95 panes (computed, not measured).
@@ -175,6 +179,24 @@ st, changed := c.Changed()                       // the state, and a chan closed
   only the reply to the client's own `Continue(pane)` with `%continue %N`
   for that pane resumes it. The client never resumes a pane by itself:
   `%output` feeds nothing (row-7 ruling fork 5(a)).
+- `ListPanes` reads eight fields a pane (ids, `pane_dead`,
+  `pane_dead_status`, `pane_dead_signal`, size). A dead pane kept by
+  `remain-on-exit` has `DeadStatus` when its program exited and
+  `DeadSignal` when a signal killed it, never both: one of `hup`, `int`,
+  `quit`, `abort`, `kill`, `segv`, `pipe`, `term`, else `other:<n>` (1 to
+  127), else empty. tmux 3.7c prints the signal by name or by number: the
+  name on macOS and the BSDs (`kill`), the number on Linux (`9`); 3.2a has
+  no `pane_dead_signal` and never reports one. The signal is a diagnostic,
+  not structure, so it fails open: text the client cannot read (a name
+  this OS lacks, or a number outside 1 to 127) is `other`
+  with no number, and the pane still comes back; tmux's text is never
+  passed on. `<n>` is the host's own number (10 is USR1 on Linux, BUS on
+  macOS), so the hub cannot compare it across hosts. A bad id, `pane_dead`,
+  size or field count, or a status and a signal both present (tmux fills
+  one or the other), is `ErrBadReply`. In 3.7c a pane is dead only once
+  tmux has its status. On 3.2a, "dead, no status, no signal" is either the
+  moment before the status is in or a pane a signal killed: it stays that
+  way, because 3.2a never names the signal.
 - `ControlDown(clients...)` is `AgentHealth.tmux_control_down`.
 
 ### Concurrency

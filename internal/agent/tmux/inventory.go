@@ -169,17 +169,22 @@ func parseInventoryLine(line, marker string) (SessionInfo, PaneInfo, []fieldDrop
 		return SessionInfo{}, PaneInfo{}, nil, false
 	}
 	f = f[1 : len(f)-1]
-	sid, ok1 := parseID([]byte(f[0]), '$')
-	created, err1 := strconv.ParseInt(f[1], 10, 64)
-	attached, err2 := strconv.Atoi(f[2])
-	wid, ok2 := parseID([]byte(f[3]), '@')
-	widx, err3 := strconv.Atoi(f[4])
-	pid, ok3 := parseID([]byte(f[7]), '%')
-	pidx, err4 := strconv.Atoi(f[8])
-	w, err5 := strconv.Atoi(f[12])
-	h, err6 := strconv.Atoi(f[13])
-	flags := []string{f[5], f[6], f[9], f[10], f[14]}
+	sid, ok1 := parseID([]byte(f[fixSessionID]), '$')
+	created, err1 := strconv.ParseInt(f[fixCreated], 10, 64)
+	attached, err2 := strconv.Atoi(f[fixAttached])
+	wid, ok2 := parseID([]byte(f[fixWindowID]), '@')
+	widx, err3 := strconv.Atoi(f[fixWindowIndex])
+	pid, ok3 := parseID([]byte(f[fixPaneID]), '%')
+	pidx, err4 := strconv.Atoi(f[fixPaneIndex])
+	w, err5 := strconv.Atoi(f[fixWidth])
+	h, err6 := strconv.Atoi(f[fixHeight])
+	flags := []string{f[fixWindowActive], f[fixAutoRename], f[fixPaneActive], f[fixDead], f[fixAttachView]}
 	if !ok1 || !ok2 || !ok3 || firstErr(err1, err2, err3, err4, err5, err6) != nil || !allFlags(flags) || attached < 0 || f[canaryAt] != "1" {
+		return SessionInfo{}, PaneInfo{}, nil, false
+	}
+	dead := f[fixDead] == "1"
+	status, signal, ok := deadFields(dead, f[fixDeadStatus], f[fixDeadSignal])
+	if !ok {
 		return SessionInfo{}, PaneInfo{}, nil, false
 	}
 	var text [len(textFields)]string
@@ -195,24 +200,17 @@ func parseInventoryLine(line, marker string) (SessionInfo, PaneInfo, []fieldDrop
 		text[i] = v
 	}
 	tags := Tags{
-		AttachView: f[14] == "1",
+		AttachView: f[fixAttachView] == "1",
 		SessionID:  text[textSessionID], Owner: text[textOwner], PaneKey: text[textPaneKey], GoalID: text[textGoalID],
 	}
 	s := SessionInfo{ID: SessionID(sid), Name: text[textSessionName], Created: time.Unix(created, 0), Clients: attached, Tags: tags}
 	p := PaneInfo{
 		Pane: Pane{
 			Session: SessionID(sid), Window: WindowID(wid), ID: PaneID(pid),
-			Dead: f[10] == "1", DeadStatus: NoStatus, Width: w, Height: h,
+			Dead: dead, DeadStatus: status, DeadSignal: signal, Width: w, Height: h,
 		},
-		WindowIndex: widx, WindowName: text[textWindowName], WindowActive: f[5] == "1", AutoRename: f[6] == "1",
-		Index: pidx, Active: f[9] == "1", Command: text[textCommand], Tags: tags,
-	}
-	if p.Dead && f[11] != "" { // no status on a dead pane is a signal death, never 0
-		st, err := strconv.Atoi(f[11])
-		if err != nil {
-			return SessionInfo{}, PaneInfo{}, nil, false
-		}
-		p.DeadStatus = st
+		WindowIndex: widx, WindowName: text[textWindowName], WindowActive: f[fixWindowActive] == "1", AutoRename: f[fixAutoRename] == "1",
+		Index: pidx, Active: f[fixPaneActive] == "1", Command: text[textCommand], Tags: tags,
 	}
 	return s, p, drops, true
 }
