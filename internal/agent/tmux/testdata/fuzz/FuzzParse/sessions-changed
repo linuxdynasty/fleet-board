@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("%sessions-changed\n%sessions-changed x\n%begin 1 1 1\n%sessions-changed\n%end 1 1 1\n")

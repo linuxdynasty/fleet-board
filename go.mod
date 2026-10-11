@@ -5,6 +5,7 @@ go 1.27
 require (
 	connectrpc.com/connect v1.21.0
 	filippo.io/age v1.3.2
+	github.com/creack/pty v1.1.24
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/hashicorp/mdns v1.0.7
 	github.com/prometheus/client_golang v1.24.1

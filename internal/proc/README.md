@@ -148,8 +148,10 @@ it reads only the files that build for the GOOS and GOARCH it runs for, so a
 `scripts/test-make-lint-platforms.sh` checks the Makefile runs all four, and
 `scripts/test-lint-exec-rules.sh` seeds files built for one platform only.
 
-`internal/agent/tmux` and `internal/agent/attach` do not exist yet; the rules
-name them so they are allowed when they arrive.
+`internal/agent/tmux` starts its long-lived `tmux -C` client in one file,
+`conn.go`, and its one-shot tmux calls through this package.
+`internal/agent/attach` does not exist yet; the rules name it so it is
+allowed when it arrives.
 
 **What the rules do not catch** (a lint cannot see these, and a reviewer must):
 a file with a custom build tag (`//go:build fleetdebug`) is built by none of

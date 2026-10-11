@@ -51,7 +51,7 @@ var transcriptWant = []string{
 	`window-renamed @0 "my  win"`,
 	`reply ok [] dropped=0`, // new-session -d -s other
 	`unlinked-window-add @2`,
-	`unknown sessions-changed`,
+	`sessions-changed`,
 	`unknown unlinked-window-renamed`,
 	`reply ok [] dropped=0`, // new-window -t other:
 	`unlinked-window-add @3`,
@@ -64,8 +64,8 @@ var transcriptWant = []string{
 	`reply ok [] dropped=0`, // switch-client -t other
 	`session-changed $1 "other"`,
 	`reply ok [] dropped=0`, // kill-server
-	`unknown sessions-changed`,
-	`unknown sessions-changed`,
+	`sessions-changed`,
+	`sessions-changed`,
 	`exit ""`,
 }
 

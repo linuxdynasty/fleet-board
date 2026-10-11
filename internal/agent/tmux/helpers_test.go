@@ -90,6 +90,8 @@ func render(m tmux.Message) string {
 		return fmt.Sprintf("window-renamed %v %q", v.Window, v.Name)
 	case tmux.SessionChanged:
 		return fmt.Sprintf("session-changed %v %q", v.Session, v.Name)
+	case tmux.SessionsChanged:
+		return "sessions-changed"
 	case tmux.Unknown:
 		return "unknown " + v.Name
 	case tmux.Discarded:

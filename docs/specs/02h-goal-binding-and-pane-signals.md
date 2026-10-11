@@ -356,6 +356,8 @@ same `PaneKey`, with the real session), never counts their clients, and
 excludes the probe server from session counts and filters (`server` is
 `DEFAULT` or `FLEET` on every listed session). `attached_clients` on a
 session already excludes the agent's control client and attach clients.
+The agent's control client prefers a developer session and attaches to an
+internal one only while none exists (01 E2).
 
 ## SendKeys purposes
 

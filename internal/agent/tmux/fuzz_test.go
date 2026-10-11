@@ -107,7 +107,7 @@ func FuzzParse(f *testing.F) {
 				if v.Window < 0 || !v.Unlinked {
 					t.Fatalf("window close %+v", v)
 				}
-			case tmux.Pause, tmux.Continue:
+			case tmux.Pause, tmux.Continue, tmux.SessionsChanged:
 			default:
 				t.Fatalf("unexpected message %T", m)
 			}

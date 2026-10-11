@@ -33,8 +33,8 @@ func idString(prefix byte, n int) string {
 
 // Message is one thing the [Parser] read from a control-mode stream: a
 // [Reply], [Output], [Pause], [Continue], [Exit], [SubscriptionChanged],
-// [WindowAdd], [WindowClose], [WindowRenamed], [SessionChanged], [Unknown] or
-// [Discarded]. The set is closed; a type switch over it is the
+// [WindowAdd], [WindowClose], [WindowRenamed], [SessionChanged],
+// [SessionsChanged], [Unknown] or [Discarded]. The set is closed; a type switch over it is the
 // way to read one.
 type Message interface {
 	message()
@@ -155,6 +155,12 @@ type SessionChanged struct {
 	Name    string
 }
 
+// SessionsChanged is "%sessions-changed": a session was created or
+// destroyed somewhere on the server. Every control client gets it, whatever
+// session it is attached to. It carries nothing; the client lists the
+// sessions to learn what changed.
+type SessionsChanged struct{}
+
 // Unknown is a notification this parser does not read (for example
 // "%window-close" or "%session-renamed"). Only the name is kept: the rest of
 // the line can hold the developer's text.
@@ -178,6 +184,7 @@ func (WindowAdd) message()           {}
 func (WindowClose) message()         {}
 func (WindowRenamed) message()       {}
 func (SessionChanged) message()      {}
+func (SessionsChanged) message()     {}
 func (Unknown) message()             {}
 func (Discarded) message()           {}
 
