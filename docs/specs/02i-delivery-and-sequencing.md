@@ -69,6 +69,11 @@ re-sends the command (a known `command_id` is acked again); a
 `CommandProgress` is re-sent by the executor after each new stream's
 snapshot; a `SettingsAck` is re-derived because `Settings` is re-sent on
 connect. `Bye` is sent by the stream's sender itself, never queued.
+The number of results not yet acknowledged that the heartbeat reports
+(`AgentHealth.unacked_results`) is kept in memory by the command log's writer,
+seeded at start and moved only after the job that changes it committed, so the
+heartbeat never waits on the store; `AgentHealth.reconnects_total` is the
+connection loop's count of streams after the first.
 `Hello`, `HelloAck`, `Snapshot` and `SnapshotRequest` are not events either and
 are never dropped; the handshake and recovery depend on them.
 
