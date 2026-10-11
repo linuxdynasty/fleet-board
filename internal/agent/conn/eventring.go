@@ -25,14 +25,18 @@ const eventRate = 200
 type eventBucket struct {
 	tokens float64
 	last   time.Time
+	// now is time.Now; a test replaces it.
+	now func() time.Time
 }
 
-func newEventBucket() *eventBucket { return &eventBucket{tokens: eventBatch, last: time.Now()} }
+func newEventBucket() *eventBucket {
+	return &eventBucket{tokens: eventBatch, last: time.Now(), now: time.Now}
+}
 
-// take returns how many events may go now (at most limit) and, when none,
-// how long until one may.
+// take returns how many events may go now (at most limit, and never more
+// than the tokens held) and, when none, how long until one may.
 func (p *eventBucket) take(limit int) (int, time.Duration) {
-	now := time.Now()
+	now := p.now()
 	p.tokens = min(eventBatch, p.tokens+now.Sub(p.last).Seconds()*eventRate)
 	p.last = now
 	if p.tokens < 1 {
