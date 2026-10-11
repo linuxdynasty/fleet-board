@@ -65,6 +65,9 @@ func (d *DB) writeThen(ctx context.Context, apply store.ApplyFunc, after func())
 		}
 		return err
 	case <-ctx.Done():
+		// The caller stopped waiting, not the job: it may still commit. This
+		// goroutine cannot leak, because the writer always sends the job's
+		// outcome (the channel holds one) and drains its queue on Close.
 		go func() {
 			if <-done == nil {
 				after()

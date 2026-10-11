@@ -179,10 +179,38 @@ func checkProcessUse(t *testing.T, f string, af *ast.File, local string) int {
 		return true
 	})
 
+	// namesPackage reports whether a type expression mentions the package.
+	namesPackage := func(e ast.Expr) bool {
+		found := false
+		ast.Inspect(e, func(n ast.Node) bool {
+			if sel, ok := n.(*ast.SelectorExpr); ok {
+				if x, ok := sel.X.(*ast.Ident); ok && x.Name == local {
+					found = true
+				}
+			}
+			return !found
+		})
+		return found
+	}
+
 	calls := 0
 	ast.Inspect(af, func(n ast.Node) bool {
 		switch n := n.(type) {
+		case *ast.Field:
+			// A parameter, result or struct field of a gopsutil type: a
+			// Process could be handed to code this check does not follow.
+			if n.Type != nil && namesPackage(n.Type) {
+				t.Errorf("%s declares a field, parameter or result of a %s type: keep the Process in one function", f, local)
+			}
+		case *ast.ValueSpec:
+			if n.Type != nil && namesPackage(n.Type) {
+				t.Errorf("%s declares a variable of a %s type: use `v := &%s.Process{…}`", f, local, local)
+			}
 		case *ast.SelectorExpr:
+			// (&process.Process{}).Children() and (p).Cmdline().
+			if _, ok := n.X.(*ast.ParenExpr); ok {
+				t.Errorf("%s calls %s on a parenthesised expression: call MemoryInfoWithContext on the assigned variable", f, n.Sel.Name)
+			}
 			// Every use of the package name.
 			if x, ok := n.X.(*ast.Ident); ok && x.Name == local {
 				lit, inLit := parent[n].(*ast.CompositeLit)
