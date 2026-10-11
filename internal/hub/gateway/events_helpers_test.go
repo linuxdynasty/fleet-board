@@ -81,7 +81,7 @@ func (h *hub) waitSeq(t *testing.T, id string, want int64) {
 func eventMsg(seq uint64, replayed bool) *agentv1.ConnectRequest {
 	return &agentv1.ConnectRequest{Body: &agentv1.ConnectRequest_Event{Event: &agentv1.Event{
 		Seq: seq, Replayed: replayed, Delivery: agentv1.DeliveryClass_DELIVERY_CLASS_NEVER_DROP,
-		Body: &agentv1.Event_PaneExited{PaneExited: &agentv1.PaneExited{ExitStatus: 1}},
+		Body: &agentv1.Event_PaneExited{PaneExited: &agentv1.PaneExited{ExitStatus: proto.Int32(1)}},
 	}}}
 }
 
