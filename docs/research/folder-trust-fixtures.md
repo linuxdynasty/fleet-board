@@ -26,6 +26,7 @@ holds at the same path (captured again here so this change stands alone).
 | `codex/.../startup-update-prompt.txt` | "Update available", "1. Update now" selected | any start while an update exists |
 | `muse/.../trust-workspace-plain-folder.txt` | "Do you trust this workspace?" | start in a new plain folder |
 | `muse/.../trust-workspace-git-root.txt` | the same with a "Trust target:" line | start in a new folder inside a git repo |
+| `muse/.../trust-workspace.txt` | older capture of the plain-folder screen, with a leading "Muse Code updated" line; kept as is, use `trust-workspace-plain-folder.txt` as the canonical one | start in a new plain folder |
 | `claude/.../trust-folder.txt` | "Accessing workspace" box, "No, exit" selected | start in a new plain folder |
 | `claude/.../ready-trusted-child.txt` | ready screen, no box | start in a new child of a trusted repo |
 | `opencode/.../ready-new-folder.txt` | ready screen; OpenCode has no trust screen | start in a new git repo |
