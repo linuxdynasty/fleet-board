@@ -9,7 +9,8 @@
 // [DB.ApplyCommandSeq]), all from docs/specs/02i-delivery-and-sequencing.md.
 // command_log keeps one entry per command_id ([DB.LogCommand]) and the one
 // result of each ([DB.RecordResult]), so a repeated command is answered from
-// the log until the hub acknowledges it ([DB.Unacked], [DB.AckResults]) and
+// the log until the hub acknowledges it ([DB.Unacked], [DB.AckResults]; the
+// count is [DB.UnackedCount], kept in memory for the heartbeat) and
 // it ages out by hub time ([DB.Prune]), never while the hub may still
 // re-send it. [Seqs] hands out event seqs, reserving them in blocks so a
 // crash never repeats one, and reports the highest one handed out

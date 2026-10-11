@@ -12,6 +12,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"time"
 
 	"github.com/linuxdynasty/fleet-board/internal/store"
@@ -41,6 +42,8 @@ type Options struct {
 // DB is agent.db: one store with its single writer goroutine.
 type DB struct {
 	s *store.Store
+	// unacked is [DB.UnackedCount]'s number.
+	unacked atomic.Int64
 }
 
 // Open creates agent.db (mode 0600) in dir when it is missing, checks it is
@@ -70,6 +73,9 @@ func Open(ctx context.Context, dir string, opts Options) (*DB, error) {
 	}
 	d := &DB{s: s}
 	if err := d.mintInstallID(ctx, opts.Random, opts.Now()); err != nil {
+		return nil, errors.Join(err, s.Close())
+	}
+	if err := d.seedUnacked(ctx); err != nil {
 		return nil, errors.Join(err, s.Close())
 	}
 	return d, nil

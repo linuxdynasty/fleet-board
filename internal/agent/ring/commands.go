@@ -111,7 +111,9 @@ func (d *DB) RecordResult(ctx context.Context, id string, result []byte, at time
 	if result == nil {
 		result = []byte{}
 	}
-	return d.s.Write(ctx, func(tx *sql.Tx) error {
+	var recorded bool
+	return d.writeThen(ctx, func(tx *sql.Tx) error {
+		recorded = false
 		res, err := tx.ExecContext(ctx, `UPDATE command_log SET status = ?, result = ?, finished_time = ?
 			WHERE command_id = ? AND status <> ?`,
 			string(StatusFinished), result, at.UnixMilli(), id, string(StatusFinished))
@@ -119,12 +121,17 @@ func (d *DB) RecordResult(ctx context.Context, id string, result []byte, at time
 			return fmt.Errorf("ring: record result: %w", err)
 		}
 		if n, err := res.RowsAffected(); err != nil || n == 1 {
+			recorded = err == nil
 			return err
 		}
 		if _, err := readEntry(ctx, tx, id); err != nil {
 			return err
 		}
 		return ErrResultLogged
+	}, func() {
+		if recorded { // a new result is unacked: the ack time of an unfinished entry is always NULL
+			d.unacked.Add(1)
+		}
 	})
 }
 
