@@ -175,11 +175,16 @@ sent.
    and `events` (agent.db's counters, as in Hello), set after the
    `LoopOptions.Heartbeat` hook, which fills what later rows own (row 6 fills
    `load1` and `health`; the hook reads `Loop.Reconnects` for
-   `health.reconnects_total`). It is a
+   `health.reconnects_total`; with an `Emitter` the loop sets
+   `health.ring_events` and `ring_bytes`). It is a
    `time.Ticker` case in the same select, so the one sender never puts it
    between a snapshot and its results, and a tick missed while a send
    waits is dropped. A failed read or send closes the stream
-   (`connect.closed{step="heartbeat"}`).
+   (`connect.closed{step="heartbeat"}`). **Events** (`LoopOptions.Emitter`,
+   `eventring.go`): after the snapshot and its results the stream attaches
+   an `events.Cursor` at the HelloAck floor and serve sends what it returns,
+   64 a turn, in seq order (02i). An `EventAck` trims the ring only when the
+   HelloAck listed `event.ack`; otherwise `connect.message_ignored{kind="event_ack"}`.
 6. **Backoff.** After n failures in a row, full jitter from 1 s up to
    2^n s (the first wait is 1 to 2 s), capped at 60 s; a connect resets n,
    and so does a wake or network change, whether it comes in the backoff

@@ -187,6 +187,15 @@ The agent side of plan row 6 (ruling forks 4 i, 11 and 12), in
   the hub re-issues the same `command_id` ([02](02-contracts.md), "Envelope
   checks"): `FAILED` / `EPOCH_MISMATCH` and `REJECTED_BY_POLICY` /
   `SEQ_REPLAYED`, for a `command_id` the log does not hold.
+- **Events** (plan row 7, PR 7a-B). Events are not in that queue: once the
+  snapshot and its unacked results are out, the stream takes a cursor on
+  the event ring (`internal/agent/events`) and its sender sends the ring's
+  events above `HelloAck.hub_last_event_seq`, then live ones, strictly in
+  seq order (02i "Queue and ring rules"); an event below the stream's first
+  `Snapshot.seq` is sent `replayed`. `EventAck` trims the ring only when the
+  HelloAck listed `event.ack` (`connect.message_ignored{kind="event_ack"}`
+  otherwise). The first events are `policy_changed` (the policy loader's
+  change seam) and `resource_sample` (each 30 s sample, SHED).
 - **A `SnapshotRequest` flushes first.** Before a requested snapshot is
   built, what the queue holds is sent in order, without waiting for more,
   so a progress or ack queued before it never reaches the hub after the

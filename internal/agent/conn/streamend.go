@@ -2,6 +2,7 @@ package conn
 
 import (
 	"context"
+	"time"
 
 	agentv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1"
 )
@@ -83,6 +84,42 @@ func (s *session) drainToEnd() error {
 			}
 		case <-s.done:
 			return s.rerr
+		}
+	}
+}
+
+// bye logs the hub's Bye; REVOKED and UNKNOWN_MACHINE end the loop, any
+// other reason is a reconnect with backoff.
+func (s *session) bye(ctx context.Context, b *agentv1.Bye) ending {
+	r := b.GetReason()
+	s.l.log.InfoContext(ctx, "connect.bye", "peer", s.c.addr, "reason", byeLabel(r),
+		"message", clean(b.GetMessage(), maxHubMessage))
+	switch r {
+	case agentv1.ByeReason_BYE_REASON_REVOKED:
+		return ending{end: EndRevoked}
+	case agentv1.ByeReason_BYE_REASON_UNKNOWN_MACHINE:
+		return ending{end: EndUnknownMachine}
+	default:
+		return ending{}
+	}
+}
+
+// goodbye sends Bye (SHUTDOWN when the agent stops, 01 A7) and gives the
+// hub a moment to close the stream, draining what it still sends.
+func (s *session) goodbye(reason agentv1.ByeReason) {
+	err := s.bs.Send(&agentv1.ConnectRequest{Body: &agentv1.ConnectRequest_Bye{Bye: &agentv1.Bye{Reason: reason}}})
+	if err == nil {
+		_ = s.bs.CloseRequest()
+	}
+	t := time.NewTimer(shutdownWait)
+	defer t.Stop()
+	for {
+		select {
+		case <-s.msgs:
+		case <-s.done:
+			return
+		case <-t.C:
+			return
 		}
 	}
 }

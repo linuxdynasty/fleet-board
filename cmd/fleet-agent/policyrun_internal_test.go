@@ -136,7 +136,7 @@ func TestAChangeFoundAtShutdownIsAuditedBeforeTheLogCloses(t *testing.T) {
 	if err := os.MkdirAll(s.cfg, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	pol, err := startPolicy(context.Background(), s.cfg, s.dir, s.machine, s.tel)
+	pol, err := startPolicy(context.Background(), s.cfg, s.dir, s.machine, s.tel, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

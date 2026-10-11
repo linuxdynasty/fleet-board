@@ -85,6 +85,9 @@ func (s *session) sendSnapshot(ctx context.Context, first bool) error {
 		return err
 	}
 	snap.Seq = seq
+	if first {
+		s.firstSnap = seq // events below it are sent replayed (eventring.go)
+	}
 	if err := s.build(ctx, snap); err != nil {
 		return err
 	}

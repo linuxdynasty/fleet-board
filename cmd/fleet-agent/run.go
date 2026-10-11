@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/linuxdynasty/fleet-board/internal/agent/conn"
+	"github.com/linuxdynasty/fleet-board/internal/agent/events"
 	"github.com/linuxdynasty/fleet-board/internal/agent/ring"
 	"github.com/linuxdynasty/fleet-board/internal/agent/wakenet"
 	"github.com/linuxdynasty/fleet-board/internal/hub/lock"
@@ -99,11 +100,18 @@ func runAgent(ctx context.Context, dir, cfgDir, version, boot string, tel *telem
 		return failed("store", err)
 	}
 	defer func() { _ = db.Close() }()
+	// The emitter closes after the policy and the sampler stop (defers run
+	// last first) and before agent.db.
+	em, err := events.New(ctx, events.Options{DB: db, Telemetry: tel})
+	if err != nil {
+		return failed("events", err)
+	}
+	defer em.Close()
 
 	wctx, stop := context.WithCancel(ctx)
 	var wg sync.WaitGroup
 	defer func() { stop(); wg.Wait() }()
-	pol, err := startPolicy(wctx, cfgDir, dir, id.MachineID, tel)
+	pol, err := startPolicy(wctx, cfgDir, dir, id.MachineID, tel, events.PolicyChanges(em))
 	if err != nil {
 		return failed("policy", err)
 	}
@@ -119,14 +127,14 @@ func runAgent(ctx context.Context, dir, cfgDir, version, boot string, tel *telem
 	var loop *conn.Loop
 	snapshot, heartbeat, err := machineHooks(wctx, &wg, tel, dir, nil, healthSeams{
 		Unacked: db.UnackedCount, Reconnects: func() uint64 { return loop.Reconnects() },
-	})
+	}, em)
 	if err != nil {
 		return failed("machine", err)
 	}
 	loop, err = conn.NewLoop(ctx, conn.LoopOptions{
 		Dir: dir, Identity: id, DB: db, Version: version, BootID: boot,
 		Telemetry: tel, Events: events, PushOff: nw.PushOff, Discover: discover,
-		Snapshot: chainSnapshot(snapshot, pol.mgr.Snapshot), Heartbeat: heartbeat,
+		Snapshot: chainSnapshot(snapshot, pol.mgr.Snapshot), Heartbeat: heartbeat, Emitter: em,
 	})
 	if err != nil {
 		return failed("loop", err)
