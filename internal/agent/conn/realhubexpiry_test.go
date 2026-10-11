@@ -2,12 +2,15 @@ package conn_test
 
 import (
 	"context"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"google.golang.org/protobuf/types/known/timestamppb"
+
+	agentv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1"
 
 	"github.com/linuxdynasty/fleet-board/internal/agent/conn"
 	"github.com/linuxdynasty/fleet-board/internal/agent/conn/conntest"
@@ -125,6 +128,51 @@ func TestTheRealHubExpiresADeliveredCommandAndIgnoresItsLateResult(t *testing.T)
 	defer x.mu.Unlock()
 	if len(x.errs) != 0 {
 		t.Errorf("the executor failed: %v", x.errs)
+	}
+	r.running(t)
+}
+
+// The Snapshot job expires at most 500 due commands (ingest.ExpireInSnapshot)
+// so one reconnect never makes a long writer job; the housekeeping tick
+// takes the rest. None of the 501 is ever sent.
+func TestTheRealHubSnapshotExpiresAtMost500AndTheTickTheRest(t *testing.T) {
+	t.Parallel()
+	hubClock := &skewClock{}
+	h := conntest.StartHub(t, conntest.Options{Now: hubClock.now})
+	a, id := enrolledAgent(t, h)
+	cmds := make([]*agentv1.Command, 501)
+	for i := range cmds {
+		cmds[i] = interruptCmd(fmt.Sprintf("c-%d", i))
+		cmds[i].NotAfterTime = timestamppb.New(hubClock.now().Add(time.Minute))
+	}
+	h.Enqueue(t, id, cmds...)
+	hubClock.set(2 * time.Minute)
+
+	x := &testExecutor{db: a.openDB(t)}
+	r := startLoopThen(t, a, func(o *conn.LoopOptions) { o.Command = x.hook }, func(l *conn.Loop) { x.loop = l })
+	r.connected(t)
+	waitFor(t, 10*time.Second, "the Snapshot's expiries logged", func() bool { return len(h.Events(t, "outbox.expired")) >= 500 })
+	states := map[string]int{}
+	for _, c := range h.Commands(t, id) {
+		states[c.State]++
+	}
+	if states["expired"] != 500 || states["pending"] != 1 {
+		t.Fatalf("after the Snapshot: %v, want 500 expired and 1 pending", states)
+	}
+	if ev := h.Events(t, "snapshot.applied"); len(ev) != 1 || ev[0]["expired"] != float64(500) {
+		t.Errorf("snapshot.applied %v, want expired 500", ev)
+	}
+	h.ExpireCommands(t, hubClock.now())
+	for _, c := range h.Commands(t, id) {
+		if c.State != "expired" || c.SentEpoch != 0 {
+			t.Errorf("%s: %+v, want expired and never sent", c.CommandID, c)
+		}
+	}
+	if n := len(h.Events(t, "outbox.expired")); n != 501 {
+		t.Errorf("%d outbox.expired lines, want 501", n)
+	}
+	if got := x.got(); len(got) != 0 {
+		t.Errorf("the agent got %q", got)
 	}
 	r.running(t)
 }

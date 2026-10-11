@@ -277,7 +277,8 @@ The agent side of plan row 6 (ruling forks 4 i, 11 and 12), in
   `connect.failed{step="heartbeat"}`.
 
 - The Snapshot (plan row 5c1; the names are 03 W1's): `snapshot.applied{machine_id,
-  epoch, seq, bytes, ms, event_generation, text_cut, text_scrubbed}` (committed; the
+  epoch, seq, bytes, ms, event_generation, text_cut, text_scrubbed, expired}` (committed; `expired`
+  counts the commands its job closed past their deadline, 03f; the
   machine is ONLINE; the rows that diff inventory add `panes`, `goals` and the diff
   counts), `snapshot.refused{machine_id, epoch, seq, reason}` (warn; `reason`:
   `not_current` (a newer `Hello` displaced the stream), `parts` (this hub lists no

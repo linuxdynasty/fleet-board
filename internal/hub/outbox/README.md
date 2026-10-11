@@ -22,6 +22,12 @@ Plan row 5, PRs 5f and 5g (deadlines, expiry, revoke, pruning).
 | `Service.Prune(ctx, now)` | housekeeping job `outbox_prune`, hourly | deletes rows closed more than 30 days ago with their results, in jobs of 1,000 |
 | `Service.Ack`, `Progress`, `Result` | the stream's ingest goroutine | clean the free text, decide on the read pool, then apply a change in one writer job; a result the agent did not log (`EPOCH_MISMATCH`, `SEQ_REPLAYED`) is refused and the command goes out again under the live epoch |
 
+The Snapshot job's `Expire` for one machine reads the open rows by
+deadline (`commands_open`) and filters the machine, so it walks every
+machine's due rows; that stays small only because `outbox_expiry` closes
+them every 5 s. Its 500-row bound was checked against the load model (tens
+of commands per machine), not measured.
+
 ## Concurrency
 
 ```text

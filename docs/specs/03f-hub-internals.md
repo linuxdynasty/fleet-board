@@ -72,6 +72,8 @@ state or `insight_pacing_interval` means `pacing`.
 | Verifier and the goal-state apply both move a goal | Both are jobs on the single writer; transitions are computed from the current row inside the tx; an impossible transition is rejected and logged |
 | Log chunk arrives twice from two reconnects | Per-stream end offset in memory, loaded from `logs.db`; `log_chunks` unique `(session, pane, stream, raw_offset)`; every chunk is answered with the stored end (03d) |
 | Triage raised twice for one state | `triage_items` unique `(fingerprint) WHERE state IN (OPEN, SNOOZED, IN_FLIGHT)` |
+| The sender reads a pending row just inside its deadline, then housekeeping or a Snapshot job expires it before the send is queued or recorded | The agent's start deadline: the command reaches it past `not_after_time` and is refused `EXPIRED`, never started (02i "Clocks"); its result lands on a closed row and is dropped as late (`outbox.late_result`); the row stays `expired` |
+| A `CommandResult` and the expiry of the same row race | Both are writer jobs: the result's job reloads the row and decides again inside the job (`needs`), so a row expired first takes the result as a late one (acked, logged, stored nowhere) and a result committed first leaves nothing open to expire |
 | Outbox command delivered on two epochs | `commands` unique `(command_id)`; the agent's own command log makes the second delivery return the logged result |
 | Settings change while a `SettingsAck` is in flight | Latest ack per machine wins only if `ack.generation ≥ stored.generation` |
 
@@ -140,7 +142,10 @@ contract; this is how the hub runs it.
   leaves it pending and the next epoch re-sends it with the same
   `command_id` and that epoch's seqs from 1. A seq is used only when the
   command was queued, and `(machine_id, sent_epoch, sent_seq)` is unique.
-  Rows past `not_after_time` are not sent.
+  Rows past `not_after_time` are not sent after the sender's read; one
+  sent within milliseconds of its deadline is refused `EXPIRED` by the
+  agent (02i "Clocks") and its result is dropped as late
+  (`outbox.late_result`).
 - **Deadline.** `outbox.Enqueue` fills an unset `not_after_time` with the hub
   clock plus the kind's default (02 "Deadlines": 2 min, 30 min, 24 h for
   `StopProbe`, 10 min else), in the row and in the stored `Command`, so no
@@ -151,9 +156,13 @@ contract; this is how the hub runs it.
   `hub_seq` stamp. It runs inside the Snapshot transaction for that
   machine (after the appliers, before `ONLINE`; at most 500 rows), so a
   command that came due while the machine was away is closed before
-  anything is sent on the new epoch, and in the housekeeping job
+  anything is sent on the new epoch (`snapshot.applied{expired}` counts
+  them), and in the housekeeping job
   `outbox_expiry` at every tick for every machine (writer jobs of at most
-  500 rows). Each closed row is logged after its commit. A result that
+  500 rows). Each closed row is logged after its commit, except the rows of
+  a Snapshot job whose stream ended and whose teardown stopped waiting
+  before the job committed: they are closed but not logged (the same
+  accepted gap as that job's state change). A result that
   arrives for a row already closed with no result is answered with
   `ResultAck` (so the agent stops re-sending it), stored nowhere, logged
   `outbox.late_result` and counted as outcome `late`; the row stays as it
