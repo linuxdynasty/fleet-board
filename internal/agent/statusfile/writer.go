@@ -53,8 +53,8 @@ type Options struct {
 	Source    func() conn.Status
 	Telemetry *telemetry.Telemetry
 	// Changed, when set, says the status changed, like [Writer.Notify]:
-	// the loop's change notification (Loop.StatusChanged, plan row 6 PR
-	// 6a). A nil channel never fires. It is read until Stop.
+	// the loop's change notification (Loop.StatusChanged). A nil channel
+	// never fires. It is read until Stop.
 	Changed <-chan struct{}
 
 	// Test seams: the clock, a hook run after each write attempt, and the
@@ -193,7 +193,7 @@ func (w *Writer) run() {
 			return
 		case <-w.changed:
 			onChange()
-		case <-w.opts.Changed: // nil until the loop's notification is wired
+		case <-w.opts.Changed: // nil when the caller has no change signal
 			onChange()
 		case <-throttleC:
 			throttle, throttleC = nil, nil

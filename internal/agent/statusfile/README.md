@@ -14,7 +14,7 @@ w, err := statusfile.Start(statusfile.Options{Dir: dir, Source: loop.Status, Tel
 w.Stop() // one more write: the file carries the end the loop stopped on
 ```
 
-`w.Notify()` says the status changed; it never blocks. The writer then writes
+`Options.Changed` (the loop's signal) or `w.Notify()` says the status changed; it never blocks. The writer then writes
 at most once a second, and at least once a minute whatever happens. The
 minute starts when a write ends, so the real gap is a minute plus one write.
 **A reader (doctor) must call the file stale only well past a minute; use
@@ -36,13 +36,12 @@ is `found`, `none` or `no_multicast_interface`, with `time`, `elapsed_ms`,
 `kept`, `dropped`, `dropped_by`). `enroll.json` is `version`,
 `written_time`, `code` and, for a hub refusal, `reason`.
 
-## Follow-up
+## Change signal
 
-Until plan row 6 PR 6a merges, nothing signals a change, so a change shows in
-`status.json` within a minute. After 6a, one line in `cmd/fleet-agent/status.go`
-wires `Options.Changed` (a channel, nil until then) to `Loop.StatusChanged()`.
-`push_off` is read when the file is written, so after 6a it can be up to a
-minute old.
+`cmd/fleet-agent/status.go` passes `Loop.StatusChanged()` as `Options.Changed`,
+so a change in the loop shows in `status.json` within about a second. The
+loop does not signal `push_off`; it is read when the file is written, so it
+can be up to a minute old.
 
 ## `enroll.json`
 

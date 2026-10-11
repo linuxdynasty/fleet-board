@@ -126,7 +126,7 @@ func runAgent(ctx context.Context, dir, cfgDir, version, boot string, tel *telem
 	if err != nil {
 		return failed("loop", err)
 	}
-	defer startStatusFile(dir, tel, loop.Status)()
+	defer startStatusFile(dir, tel, loop)()
 	if err := loop.Run(ctx); err != nil {
 		return commandError{err}
 	}

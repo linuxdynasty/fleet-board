@@ -302,8 +302,7 @@ func TestStatusFileIsPrivate(t *testing.T) {
 	}
 }
 
-// A change signalled on Options.Changed (the loop's StatusChanged, once
-// plan row 6 PR 6a lands) is throttled and written like a Notify.
+// A change signalled on Options.Changed (the loop's StatusChanged) is throttled and written like a Notify.
 func TestAChangeOnTheChangedChannelIsWritten(t *testing.T) {
 	t.Parallel()
 	r, _ := newRig(t)

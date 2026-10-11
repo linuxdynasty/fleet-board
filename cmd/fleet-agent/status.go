@@ -13,21 +13,17 @@ import (
 // exists and run the returned function after Run returns (defer it), so the
 // last write carries the end the loop stopped on.
 //
-// The file is written at start, at least once a minute, and at the stop.
-// FOLLOW-UP after plan row 6 PR 6a merges: 6a's Loop.StatusChanged() is the
-// push source for changes between those writes. Add one line to the
-// Options below, `Changed: loop.StatusChanged()`, and pass the loop instead
-// of its Status method (the writer then writes at most once a second after
-// a change). Until then a change shows in the file within a minute, never
-// sooner: ADR 0022 rule 6 and ADR 0024 decision 9 allow no timer that
-// re-reads the loop's state. push_off is read when the file is written, so
-// after 6a it can be up to a minute old.
+// The file is written at start, at most once a second after the loop
+// signals a change (Loop.StatusChanged, a push source: no timer re-reads the
+// loop's state, ADR 0022 rule 6, ADR 0024 decision 9), at least once a
+// minute, and at the stop. push_off is not signalled by the loop; it is read
+// when the file is written, so it can be up to a minute old.
 //
 // A run that got this far has loaded an identity, so it has no failed enroll
 // to show: it removes enroll.json.
-func startStatusFile(dir string, tel *telemetry.Telemetry, status func() conn.Status) func() {
+func startStatusFile(dir string, tel *telemetry.Telemetry, loop *conn.Loop) func() {
 	_ = statusfile.RecordEnroll(tel, dir, time.Now(), nil)
-	w, err := statusfile.Start(statusfile.Options{Dir: dir, Source: status, Telemetry: tel})
+	w, err := statusfile.Start(statusfile.Options{Dir: dir, Source: loop.Status, Changed: loop.StatusChanged(), Telemetry: tel})
 	if err != nil {
 		// Only the metric registration can fail here. The agent runs
 		// without a status file rather than not at all.
