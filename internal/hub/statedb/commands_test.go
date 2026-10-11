@@ -121,15 +121,25 @@ func TestMigrationTenIndexesOpenAndClosedCommands(t *testing.T) {
 		t.Fatal(err)
 	}
 	db = rawDB(t, dir)
-	for _, tc := range []struct{ name, query, index string }{
-		{"expiry", `SELECT command_id FROM commands WHERE state IN ('pending', 'delivered') AND not_after_time <= 5
-			ORDER BY not_after_time, id LIMIT 500`, "commands_open"},
+	for _, tc := range []struct {
+		name, query, index string
+		args               []any
+	}{
+		// outbox.Expire's query, for every machine and for one.
+		{"expiry, all machines", `SELECT command_id, machine_id, kind, state, create_time FROM commands
+		WHERE state IN ('pending', 'delivered') AND not_after_time <= ? AND (? = '' OR machine_id = ?)
+		ORDER BY not_after_time, id LIMIT ?`, "commands_open", []any{5, "", "", 500}},
+		{"expiry, one machine", `SELECT command_id, machine_id, kind, state, create_time FROM commands
+		WHERE state IN ('pending', 'delivered') AND not_after_time <= ? AND (? = '' OR machine_id = ?)
+		ORDER BY not_after_time, id LIMIT ?`, "commands_open", []any{5, "m1", "m1", 500}},
+		// outbox.Service.Prune's.
 		{
-			"prune", `SELECT id FROM commands WHERE state IN ('done', 'expired', 'failed') AND done_time < 5 LIMIT 1000`,
+			"prune", `SELECT id FROM commands WHERE state IN ('done', 'expired', 'failed') AND done_time < ? LIMIT ?`,
 			"commands_closed",
+			[]any{5, 1000},
 		},
 	} {
-		rows, err := db.QueryContext(t.Context(), `EXPLAIN QUERY PLAN `+tc.query)
+		rows, err := db.QueryContext(t.Context(), `EXPLAIN QUERY PLAN `+tc.query, tc.args...)
 		if err != nil {
 			t.Fatal(err)
 		}
