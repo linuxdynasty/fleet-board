@@ -10,24 +10,29 @@ import (
 // LogAndApply logs c and records its seq as the last applied command of its
 // epoch, in one store job (ruling fork 4 i; 02i "What agent.db keeps"), so a
 // crash never leaves a seq applied with no log row. A known c.ID is checked
-// first: nothing is saved and the logged entry comes back with dup set,
-// whatever c's epoch and seq. Otherwise an epoch that is not the current one
+// first, before the range check: nothing is saved and the logged entry comes
+// back with dup set, whatever c's epoch and seq. Otherwise an epoch that is not the current one
 // is [ErrWrongEpoch] and a seq at or below the last applied one
 // [ErrSeqReplayed]; neither saves anything.
 func (d *DB) LogAndApply(ctx context.Context, c Command) (Entry, bool, error) {
-	epoch, seq, err := c.ints()
-	if err != nil {
-		return Entry{}, false, err
+	if c.ID == "" || c.Kind == "" {
+		return Entry{}, false, errors.New("ring: a command needs an id and a kind")
 	}
 	var out Entry
 	var dup bool
-	err = d.s.Write(ctx, func(tx *sql.Tx) error {
+	err := d.s.Write(ctx, func(tx *sql.Tx) error {
 		e, err := readEntry(ctx, tx, c.ID)
 		if err == nil {
 			out, dup = e, true
 			return nil
 		}
 		if !errors.Is(err, ErrUnknownCommand) {
+			return err
+		}
+		// The range check comes after the lookup: a known id is answered
+		// before any other check, whatever its re-issued epoch and seq.
+		epoch, seq, err := c.ints()
+		if err != nil {
 			return err
 		}
 		st, err := readState(ctx, tx)

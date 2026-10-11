@@ -91,7 +91,8 @@ n, err = db.Prune(ctx, hubNow)                                // hub time; 7 day
   the epoch. Migration 5 adds the encoded command (`command`), so `Open`
   hands an entry back to the executor after a restart; `SetRunning` marks
   it running and never lowers the step reached, and refuses a finished
-  entry (`ErrResultLogged`).
+  entry (`ErrResultLogged`). An entry logged before migration 5 has a nil
+  `Body`; the executor ends it `UNKNOWN_OUTCOME`.
 - Not here yet: the event ring itself (events come with the rows that emit
   them).
 
@@ -104,13 +105,15 @@ reopen, a migration from schema 2, the file mode, a loose file refused,
 install_id kept, marks never lowered (through the API and by the file's
 triggers, including delete and replace), epoch and command seq, one entry
 per `command_id` under concurrent delivery (and against raw `REPLACE` and
-renames), the log and the seq advance in one job (a seeded trigger
-aborts the seq update and the log row goes with it), epoch then seq
-refusals that save nothing, running and open entries, the kept result, seq blocks across a reopen and the floor,
-results unacked until `ResultAck` and across a reopen, the first ack kept
-in the file (update and insert), pruning by age and by count (an acked
-entry inside its deadline goes, an unacked one stays), the age limit with
-the agent clock 8 days behind (an unacked entry inside its deadline stays;
-acked and expired ones older than 7 days go), pruning by hub time
-with a skewed wall clock, and one `Seqs` shared by many goroutines under
-`-race`.
+renames), the `command` column in the file, a schema-4 entry that migrates
+with a nil body, the epoch-0 refusal, bad arguments saving nothing, a known
+id answered before the range check, the log and the seq advance in one job
+(a seeded trigger aborts the seq update and the log row goes with it), epoch
+then seq refusals that save nothing, running and open entries, the kept
+result, seq blocks across a reopen and the floor, results unacked until
+`ResultAck` and across a reopen, the first ack kept in the file (update and
+insert), pruning by age and by count (an acked entry inside its deadline
+goes, an unacked one stays), the age limit with the agent clock 8 days
+behind (an unacked entry inside its deadline stays; acked and expired ones
+older than 7 days go), pruning by hub time with a skewed wall clock, and one
+`Seqs` shared by many goroutines under `-race`.
