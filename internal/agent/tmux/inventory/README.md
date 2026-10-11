@@ -45,7 +45,7 @@ events when they change.
 | renamed | RENAMED, its own fields |
 | other attributes (clients, tags, auto rename, index) | UPDATED, its own fields |
 | closed | CLOSED, ids only |
-| a new pane id | `PaneCreated` |
+| a new pane id | `PaneCreated`; one first seen dead (it lived and died between two reads) also gets `PaneExited` `remains: true` |
 | a pane's command, size, tags, window or index; a dead pane respawned | `PaneChanged` (focus alone raises nothing) |
 | a pane dies and tmux keeps it (`remain-on-exit`) | `PaneExited` with `exit_status` (unset for a signal death), `remains: true` |
 | a pane is gone | `PaneExited` `remains: false`, `exit_status` unset unless it was read dead first |

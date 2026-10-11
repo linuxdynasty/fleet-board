@@ -347,6 +347,8 @@ their own events and never raise it. Window and session attribute changes use
 `RENAMED`). A `CREATED` session or window carries its windows and
 panes; a `RENAMED` or `UPDATED` one carries its own fields only, and a `CLOSED`
 one its ids. A pane's or window's focus (`active`) raises no event on its own.
+A `WindowEvent` is scoped by `session_tmux_id`: a `CLOSED` one for a window of a
+grouped pair removes it from that session only, while the other keeps it.
 
 ### Internal sessions
 

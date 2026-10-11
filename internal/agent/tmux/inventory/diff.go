@@ -14,10 +14,11 @@ import (
 // then what went (panes, then windows, then sessions), so a hub applying
 // them in seq order never sees a child without its parent.
 //
-// A created session or window carries its windows and panes; a renamed or
-// updated one carries its own fields only. Panes are keyed by pane id
-// across the server: a grouped pair lists a pane under both sessions, and
-// its PaneCreated and PaneExited are sent once. A pane's or window's focus
+// A pane first seen dead is created and exited (E3), so the one-nudge
+// rule still runs. A created session or window carries its windows and
+// panes; a renamed or updated one carries its own fields only. Panes are
+// keyed by pane id across the server: a grouped pair lists a pane under
+// both sessions, and its PaneCreated and PaneExited are sent once. A pane's or window's focus
 // (active) raises nothing on its own (02h lists what PaneChanged is for);
 // the Snapshot carries it as a level.
 func diff(old, next *agentv1.TmuxServer) []*agentv1.Event {
@@ -55,6 +56,9 @@ func diff(old, next *agentv1.TmuxServer) []*agentv1.Event {
 		switch {
 		case !ok:
 			created = append(created, &agentv1.Event{Body: &agentv1.Event_PaneCreated{PaneCreated: &agentv1.PaneCreated{Pane: p}}})
+			if p.GetDead() { // lived and died between two reads: still an exit (E3)
+				created = append(created, exited(p, p.ExitStatus, true))
+			}
 			continue
 		case !was.GetDead() && p.GetDead():
 			changed = append(changed, exited(p, p.ExitStatus, true))

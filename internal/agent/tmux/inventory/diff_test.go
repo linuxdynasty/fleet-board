@@ -50,6 +50,18 @@ func TestDiff(t *testing.T) {
 		{"no change", func(*tmux.Inventory) {}, ""},
 		{"focus moves: no event", func(i *tmux.Inventory) { i.Panes[0].Active, i.Panes[1].Active = false, true }, ""},
 		{"new pane", func(i *tmux.Inventory) { i.Panes = append(i.Panes, pane(0, 0, 2, 2)) }, "created %2"},
+		// A pane first seen dead (it lived and died between two reads) is
+		// created and exited, so the one-nudge rule still runs (review of 7d1).
+		{"pane born dead", func(i *tmux.Inventory) {
+			p := pane(0, 0, 2, 2)
+			p.Dead, p.DeadStatus = true, 7
+			i.Panes = append(i.Panes, p)
+		}, "created %2; exited %2 status=7 remains=true"},
+		{"pane born dead by signal", func(i *tmux.Inventory) {
+			p := pane(0, 0, 2, 2)
+			p.Dead = true
+			i.Panes = append(i.Panes, p)
+		}, "created %2; exited %2 status=? remains=true"},
 		{"pane gone while alive", func(i *tmux.Inventory) { i.Panes = i.Panes[:1] }, "exited %1 status=? remains=false"},
 		{"pane dies with status", func(i *tmux.Inventory) { i.Panes[1].Dead, i.Panes[1].DeadStatus = true, 4 }, "exited %1 status=4 remains=true"},
 		{"pane dies by signal", func(i *tmux.Inventory) { i.Panes[1].Dead = true }, "exited %1 status=? remains=true"},
