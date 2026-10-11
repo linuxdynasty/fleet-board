@@ -49,8 +49,9 @@ func (h Hooks) Snapshot(ctx context.Context, s *agentv1.Snapshot) error {
 // It reads only what the Sampler and the seams already hold, as the loop
 // requires of a Heartbeat hook (it runs on the sending goroutine).
 //
-// ring_events and ring_bytes stay 0, which is true until row 7 holds an event
-// ring; probes_failing is row 8's.
+// ring_events and ring_bytes are left unset here: the connection loop sets
+// them after this hook from the event ring (conn/heartbeat.go);
+// probes_failing is row 8's.
 func (h Hooks) Heartbeat(_ context.Context, hb *agentv1.Heartbeat) {
 	health := &agentv1.AgentHealth{}
 	hb.Health = health
