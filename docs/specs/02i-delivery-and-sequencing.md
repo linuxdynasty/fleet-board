@@ -95,7 +95,7 @@ size-capped) and holds only NEVER_DROP and COALESCE events.
 |---|---|---|---|
 | SHED | oldest dropped first | not kept | `EventCounters.shed_total`++ |
 | COALESCE | a newer event with the same key replaces the queued one | one entry per key, replaced in place | `coalesced_total`++ (not loss) |
-| NEVER_DROP | never dropped; the producer waits (the ring is the queue) | kept in seq order until the size cap or one week evicts the oldest | `evicted_total`++ (**loss**; also an event above the 02e message cap, which can never be sent) |
+| NEVER_DROP | never dropped; the producer waits (the ring is the queue) | kept in seq order until the size cap or one week evicts the oldest | `evicted_total`++ (**loss**; also an event above the 02e message cap, which can never be sent, one whose ring write failed, and a ring entry that does not decode) |
 
 While connected, the hub sends `EventAck{last_event_seq}` after its writer
 commits a batch (at most one per machine per second) and lists `event.ack` in

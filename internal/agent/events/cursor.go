@@ -8,6 +8,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	agentv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1"
+	"github.com/linuxdynasty/fleet-board/internal/agent/ring"
 	"github.com/linuxdynasty/fleet-board/internal/protoversion"
 )
 
@@ -19,6 +20,8 @@ type Cursor struct {
 	// before the first); replayBelow is the first snapshot's seq: an event
 	// below it was created before the snapshot and is sent as replayed.
 	after, replayBelow uint64
+	// gen is the Attach this cursor came from.
+	gen uint64
 }
 
 // Attach starts a stream's cursor once its snapshot and unacked results are
@@ -41,19 +44,29 @@ func (e *Emitter) Attach(ctx context.Context, floor, snapshotSeq uint64) (*Curso
 	}
 	e.mu.Lock()
 	e.attached, e.shed = true, nil
-	last := e.last
+	e.gen++
+	last, gen := e.last, e.gen
 	e.mu.Unlock()
 	if size.Events > 0 {
 		e.log.InfoContext(ctx, "ring.replay", "from_seq", floor+1, "to_seq", max(last, snapshotSeq), "n", size.Events)
 	}
 	e.wake()
-	return &Cursor{e: e, after: floor, replayBelow: snapshotSeq}, nil
+	return &Cursor{e: e, after: floor, replayBelow: snapshotSeq, gen: gen}, nil
 }
 
 // Next returns up to limit events above the last one sent, in seq order,
 // and whether the ring may hold more. It never returns an event while a
 // lower seq is still being committed, so the wire order is seq order. The
 // cursor counts the returned events as sent.
+//
+// The ring rows read and the queued SHED events are walked together in seq
+// order. When the page of rows is full, nothing above its last row is
+// handled (a ring row past it was not read yet). The walk stops once limit
+// events are taken; from there on nothing is sent, skipped or counted, and
+// the cursor stays below it: SHED events go back on the queue, rows are read
+// again. A row that can never be sent (above the message cap, or one that
+// does not decode as its own seq) is deleted and counted as loss once, when
+// the walk reaches it.
 func (c *Cursor) Next(ctx context.Context, limit int) ([]*agentv1.Event, bool, error) {
 	e := c.e
 	e.mu.Lock()
@@ -74,40 +87,43 @@ func (c *Cursor) Next(ctx context.Context, limit int) ([]*agentv1.Event, bool, e
 		return nil, false, fmt.Errorf("events: read the ring: %w", err)
 	}
 	more := len(rows) == limit
-	out := make([]*agentv1.Event, 0, len(rows)+len(shed))
+	if more {
+		bound = rows[len(rows)-1].Seq + 1 // rows above it are not read yet
+	}
+	out := make([]*agentv1.Event, 0, limit)
 	var lost []uint64
-	for _, r := range rows {
-		if len(r.Body) > protoversion.MaxPartBytes {
-			// Never sendable (stored before the emit guard, or by hand): loss.
-			e.log.WarnContext(ctx, "ring.unreadable", "seq", r.Seq, "err_kind", "oversize")
+	ri, si := 0, 0
+	for len(out) < limit {
+		takeRow := ri < len(rows) && (si >= len(shed) || rows[ri].Seq < shed[si].GetSeq())
+		switch {
+		case takeRow:
+			r := rows[ri]
+			ri++
 			c.after = max(c.after, r.Seq)
-			lost = append(lost, r.Seq)
-			continue
+			if ev, kind := decode(r); kind != "" {
+				e.log.WarnContext(ctx, "ring.unreadable", "seq", r.Seq, "err_kind", kind)
+				lost = append(lost, r.Seq)
+			} else {
+				out = append(out, ev)
+			}
+		case si < len(shed) && shed[si].GetSeq() < bound:
+			c.after = max(c.after, shed[si].GetSeq())
+			out = append(out, shed[si])
+			si++
+		default:
+			ri = len(rows) // nothing more this call may handle
 		}
-		ev := &agentv1.Event{}
-		if err := proto.Unmarshal(r.Body, ev); err != nil || ev.GetSeq() != r.Seq {
-			e.log.WarnContext(ctx, "ring.unreadable", "seq", r.Seq, "err_kind", "parse")
-			c.after = max(c.after, r.Seq) // never sendable; step past it
-			continue
+		if ri == len(rows) && (si == len(shed) || shed[si].GetSeq() >= bound) {
+			break
 		}
-		out = append(out, ev)
 	}
+	more = more || ri < len(rows) || (si < len(shed) && shed[si].GetSeq() < bound)
+	c.unread(shed[si:])
 	if len(lost) > 0 {
-		e.loss(ctx, len(lost), lost...)
-	}
-	out = append(out, shed...)
-	slices.SortFunc(out, func(a, b *agentv1.Event) int { return compare(a.GetSeq(), b.GetSeq()) })
-	// What is past limit waits for the next call: SHED events go back on
-	// the queue, ring rows are read again.
-	if len(out) > limit {
-		c.unread(slices.DeleteFunc(slices.Clone(out[limit:]), func(ev *agentv1.Event) bool {
-			return ev.GetDelivery() != agentv1.DeliveryClass_DELIVERY_CLASS_SHED
-		}))
-		out, more = out[:limit], true
+		e.loss(ctx, 0, lost...)
 	}
 	replayed := 0
 	for _, ev := range out {
-		c.after = max(c.after, ev.GetSeq())
 		ev.Replayed = ev.GetSeq() < c.replayBelow
 		if ev.GetReplayed() {
 			replayed++
@@ -118,6 +134,19 @@ func (c *Cursor) Next(ctx context.Context, limit int) ([]*agentv1.Event, bool, e
 		e.wake()
 	}
 	return out, more, nil
+}
+
+// decode reads a ring row; kind names why it can never be sent ("oversize"
+// above the message cap, "parse" when it does not decode as its own seq).
+func decode(r ring.EventRow) (*agentv1.Event, string) {
+	if len(r.Body) > protoversion.MaxPartBytes {
+		return nil, "oversize"
+	}
+	ev := &agentv1.Event{}
+	if err := proto.Unmarshal(r.Body, ev); err != nil || ev.GetSeq() != r.Seq {
+		return nil, "parse"
+	}
+	return ev, ""
 }
 
 // unread puts SHED events taken from the queue back at its front.
@@ -132,16 +161,6 @@ func (c *Cursor) unread(shed []*agentv1.Event) {
 		return
 	}
 	c.e.shed = append(shed, c.e.shed...)
-}
-
-func compare(a, b uint64) int {
-	switch {
-	case a < b:
-		return -1
-	case a > b:
-		return 1
-	}
-	return 0
 }
 
 // Ack drops the ring entries at or below seq that this stream sent: the hub
@@ -166,11 +185,15 @@ func (c *Cursor) Ack(ctx context.Context, seq uint64) error {
 }
 
 // Detach ends the stream's cursor: the SHED events still queued are dropped
-// and counted; durable ones stay in the ring for the next stream.
+// and counted; durable ones stay in the ring for the next stream. A cursor
+// that a newer Attach replaced detaches nothing.
 func (c *Cursor) Detach() {
 	e := c.e
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	if c.gen != e.gen {
+		return // a newer Attach owns the queue now
+	}
 	e.attached = false
 	if n := len(e.shed); n > 0 {
 		e.shed = nil

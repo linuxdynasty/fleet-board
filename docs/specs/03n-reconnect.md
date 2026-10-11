@@ -250,13 +250,18 @@ The agent side of plan row 6 (ruling forks 4 i, 11 and 12), in
   (warn, loss), `ring.trimmed{to_seq, n, reason}` (info for the HelloAck
   floor, debug for an EventAck), `ring.replay{from_seq, to_seq, n}` when a
   stream attaches with entries to replay, `ring.unreadable{seq, err_kind}`
-  (an entry that does not decode is skipped; one above the message cap,
-  `err_kind="oversize"`, is deleted and counted as evicted), `ring.emit_failed{kind, err_kind}`
-  (a `policy_changed` or `resource_sample` that could not be saved or queued),
+  (an entry that can never be sent, `err_kind` `parse` when it does not
+  decode as its own seq or `oversize` above the message cap, is deleted and
+  counted once as evicted when the sender reaches it), `ring.emit_failed{kind, err_kind}`
+  (a `policy_changed` or `resource_sample` that was not saved or queued;
+  `err_kind` `closed`, `oversize`, `constraint`, `timeout` or `io`; a
+  NEVER_DROP or COALESCE one whose ring write failed is counted as evicted),
   `ring.emit_refused{kind, bytes}` (warn, at most once per kind per minute: an
   event above the 02e message cap, never sendable; counted as evicted or shed),
-  `ring.counters_failed{err_kind}`
-  (`shed_total` could not be saved; retried at the next drop); span
+  `ring.counters_failed{counter, err_kind}`
+  (`counter="shed_total"`: the background save failed, retried at the next
+  drop; `counter="evicted_total"`: a loss outside a cap eviction could not
+  be saved, so the hub learns of it only from the next snapshot); span
   `agent.ring.replay` for the attach. "Why did the hub ask for an
   `event_lost` snapshot?" is `ring.evicted` and `fleet_agent_events_evicted_total`;
   "why is the ring growing?" is `fleet_agent_ring_events` with no

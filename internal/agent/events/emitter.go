@@ -80,6 +80,8 @@ type Emitter struct {
 	pending  []uint64
 	shed     []*agentv1.Event
 	attached bool
+	// gen counts Attach calls; a cursor of an older one detaches nothing.
+	gen uint64
 	// shedTotal is shed_total including drops not yet saved; flushing says
 	// a goroutine is saving it.
 	shedTotal   uint64
@@ -180,6 +182,7 @@ func (e *Emitter) Emit(ctx context.Context, ev *agentv1.Event) (uint64, error) {
 	}
 	if err != nil {
 		e.mu.Unlock()
+		e.loss(ctx, 1) // the seq is taken and the event is in no ring: loss
 		return 0, fmt.Errorf("events: save event %d: %w", seq, err)
 	}
 	e.pending = append(e.pending, seq)
@@ -194,6 +197,7 @@ func (e *Emitter) Emit(ctx context.Context, ev *agentv1.Event) (uint64, error) {
 	e.mu.Unlock()
 	e.wake()
 	if err != nil {
+		e.loss(ctx, 1) // the write failed: the event is in no ring
 		return 0, fmt.Errorf("events: save event %d: %w", seq, err)
 	}
 	e.storeSize(res.Size)
@@ -216,12 +220,12 @@ func (e *Emitter) checkSize(ctx context.Context, ev *agentv1.Event, now time.Tim
 		return nil
 	}
 	kind := bodyKind(ev)
-	e.m.refused("oversize")
 	e.mu.Lock()
 	if e.closed {
 		e.mu.Unlock()
 		return ErrClosed
 	}
+	e.m.refused("oversize")
 	if last, ok := e.refusedLogged[kind]; !ok || now.Sub(last) >= refusedLogEvery {
 		if e.refusedLogged == nil {
 			e.refusedLogged = map[string]time.Time{}
@@ -240,15 +244,18 @@ func (e *Emitter) checkSize(ctx context.Context, ev *agentv1.Event, now time.Tim
 	return fmt.Errorf("%w: %s, %d bytes", ErrOversize, kind, n)
 }
 
-// loss counts n NEVER_DROP or COALESCE events lost without a cap eviction,
-// deleting the stored entries drop names.
-func (e *Emitter) loss(ctx context.Context, n int, drop ...uint64) {
-	e.m.lost(n)
-	size, err := e.db.CountLoss(context.WithoutCancel(ctx), n, drop...)
+// loss counts NEVER_DROP or COALESCE events lost without a cap eviction:
+// unsaved ones that never got an entry, and the stored entries drop names,
+// deleted with their count. A count that cannot be saved is logged
+// (ring.counters_failed); the hub then learns of the loss from the next
+// snapshot, not from evicted_total.
+func (e *Emitter) loss(ctx context.Context, unsaved int, drop ...uint64) {
+	added, size, err := e.db.CountLoss(context.WithoutCancel(ctx), unsaved, drop...)
 	if err != nil {
-		e.log.WarnContext(ctx, "ring.counters_failed", "err_kind", "io")
+		e.log.WarnContext(ctx, "ring.counters_failed", "counter", "evicted_total", "err_kind", "io")
 		return
 	}
+	e.m.lost(added)
 	e.storeSize(size)
 }
 
@@ -290,7 +297,7 @@ func (e *Emitter) flush() {
 			e.flushing = false
 			e.mu.Unlock()
 			if err != nil {
-				e.log.Warn("ring.counters_failed", "err_kind", "io")
+				e.log.Warn("ring.counters_failed", "counter", "shed_total", "err_kind", "io")
 			}
 			return
 		}

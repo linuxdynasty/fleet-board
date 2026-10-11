@@ -21,7 +21,7 @@ wait, err := db.SubmitEvent(ctx, ring.EventRow{Seq: s, Key: k, Created: t, Body:
 a, err := wait()                                              // committed: Coalesced, Evicted, OldestEvicted, Size
 rows, err := db.EventsBetween(ctx, after, before, limit)      // after < seq < before, seq order
 n, size, err := db.TrimEvents(ctx, upTo)                       // the hub holds them: not loss
-size, err = db.CountLoss(ctx, n, seqs...)                     // evicted_total + n, deleting those entries
+added, size, err := db.CountLoss(ctx, unsaved, seqs...)        // evicted_total + unsaved + entries it deleted
 seqs, err := db.Seqs(ctx)                                     // event seq allocator
 seq, err := seqs.Next(ctx)                                    // reserves 1024 seqs per write
 err = seqs.Floor(ctx, helloAck.GetHubLastEventSeq())          // next seq above what the hub stored
@@ -114,9 +114,10 @@ n, err = db.Prune(ctx, hubNow)                                // hub time; 7 day
   `event_ring_kept` refuses any change to an entry. `event_ring_size` keeps
   the count and bytes through triggers. `TrimEvents` drops entries at or
   below a seq the hub holds (HelloAck floor, EventAck) and moves no counter.
-  `CountLoss` raises `evicted_total` for events above the message cap (refused
-  at emit, or stored entries it deletes in the same job), so each is counted
-  once.
+  `CountLoss` raises `evicted_total` for events lost outside a cap eviction:
+  one per unsaved event (refused at emit, or a failed ring write) and one per
+  named entry this job deleted (`RowsAffected`), so an entry already gone is
+  not counted twice.
 
 Signals: none of its own. `store.opened`, `store.migrated` and the
 `fleet_agent_writer_*` and `fleet_agent_store_*` metrics (`db="agent"`, 05b)

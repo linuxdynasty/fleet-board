@@ -2,6 +2,7 @@ package events
 
 import (
 	"context"
+	"errors"
 
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -24,7 +25,7 @@ func PolicyChanges(e *Emitter) func(policy.Change) {
 			}},
 		}
 		if _, err := e.Emit(context.Background(), ev); err != nil {
-			e.log.Warn("ring.emit_failed", "kind", "policy_changed", "err_kind", "io")
+			e.log.Warn("ring.emit_failed", "kind", "policy_changed", "err_kind", emitErrKind(err))
 		}
 	}
 }
@@ -47,8 +48,26 @@ func ResourceSamples(ctx context.Context, e *Emitter, samples <-chan *machine.Sa
 				Body:         &agentv1.Event_ResourceSample{ResourceSample: rs},
 			}
 			if _, err := e.Emit(ctx, ev); err != nil && ctx.Err() == nil {
-				e.log.WarnContext(ctx, "ring.emit_failed", "kind", "resource_sample", "err_kind", "io")
+				e.log.WarnContext(ctx, "ring.emit_failed", "kind", "resource_sample", "err_kind", emitErrKind(err))
 			}
 		}
 	}
+}
+
+// emitErrKind is the closed err_kind of an Emit error: "closed" after
+// Close, "oversize" above the message cap, "constraint" for a body or key
+// the table refuses, "timeout" for a context that ended, else "io" (the
+// ring write).
+func emitErrKind(err error) string {
+	switch {
+	case errors.Is(err, ErrClosed):
+		return "closed"
+	case errors.Is(err, ErrOversize):
+		return "oversize"
+	case errors.Is(err, ErrNoBody), errors.Is(err, ErrNoKey):
+		return "constraint"
+	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
+		return "timeout"
+	}
+	return "io"
 }

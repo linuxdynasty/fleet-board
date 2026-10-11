@@ -209,3 +209,22 @@ func TestBadRingArgumentsSaveNothing(t *testing.T) {
 		t.Errorf("ring %+v (%v), want empty", size, err)
 	}
 }
+
+// Review P2: CountLoss adds one per unsaved event and one per named entry it
+// actually deleted, so an entry that is already gone is not counted again.
+func TestCountLossCountsOnlyWhatItDeleted(t *testing.T) {
+	t.Parallel()
+	db := open(t, stateDir(t))
+	put(t, db, ev(7, "", 3), bigCaps)
+	added, size, err := db.CountLoss(context.Background(), 1, 7, 99)
+	if err != nil || added != 2 || size.Events != 0 {
+		t.Fatalf("CountLoss(1, 7, 99) = %d, %+v, %v; want 2 and an empty ring", added, size, err)
+	}
+	if added, _, err := db.CountLoss(context.Background(), 0, 7); err != nil || added != 0 {
+		t.Errorf("a second CountLoss of entry 7 added %d (%v), want 0", added, err)
+	}
+	st, err := db.State(context.Background())
+	if err != nil || st.Marks.Evicted != 2 {
+		t.Errorf("evicted_total %d (%v), want 2", st.Marks.Evicted, err)
+	}
+}

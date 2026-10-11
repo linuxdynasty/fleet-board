@@ -224,32 +224,43 @@ func (d *DB) TrimEvents(ctx context.Context, upTo uint64) (int, Size, error) {
 	return int(n), size, nil
 }
 
-// CountLoss raises evicted_total by n for NEVER_DROP or COALESCE events lost
-// without a cap eviction, because they are above the message cap and can
-// never be sent (ruling round 3, 3d): one refused at emit (no entry), or the
-// stored entries drop names, deleted in the same job so no later stream
-// counts them again.
-// It returns what the ring holds after.
-func (d *DB) CountLoss(ctx context.Context, n int, drop ...uint64) (Size, error) {
+// CountLoss raises evicted_total for NEVER_DROP or COALESCE events lost
+// without a cap eviction (ruling round 3, 3d; review P2): unsaved events that
+// never got an entry (refused at emit, or a failed ring write) count one
+// each, and each stored entry drop names (it can never be sent) counts once,
+// only if this job deleted it, so no later stream counts it again. It
+// returns how many it added and what the ring holds after.
+func (d *DB) CountLoss(ctx context.Context, unsaved int, drop ...uint64) (int, Size, error) {
+	var added int64
 	var size Size
 	err := d.s.Write(ctx, func(tx *sql.Tx) error {
+		added = int64(unsaved)
 		for _, s := range drop {
 			v, err := toInt("seq", s)
 			if err != nil {
 				return err
 			}
-			if _, err := tx.ExecContext(ctx, `DELETE FROM event_ring WHERE seq = ?`, v); err != nil {
+			res, err := tx.ExecContext(ctx, `DELETE FROM event_ring WHERE seq = ?`, v)
+			if err != nil {
 				return fmt.Errorf("ring: count loss: %w", err)
 			}
+			k, err := res.RowsAffected()
+			if err != nil {
+				return fmt.Errorf("ring: count loss: %w", err)
+			}
+			added += k
 		}
-		_, err := tx.ExecContext(ctx, `UPDATE agent_state SET evicted_total = evicted_total + ? WHERE id = 1`, n)
-		if err != nil {
+		if _, err := tx.ExecContext(ctx, `UPDATE agent_state SET evicted_total = evicted_total + ? WHERE id = 1`, added); err != nil {
 			return fmt.Errorf("ring: count loss: %w", err)
 		}
+		var err error
 		size, err = readSize(ctx, tx)
 		return err
 	})
-	return size, err
+	if err != nil {
+		return 0, Size{}, err
+	}
+	return int(added), size, nil
 }
 
 // EventsSize is what the ring holds now.

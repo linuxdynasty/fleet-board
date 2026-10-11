@@ -39,7 +39,7 @@ func newMetrics(tel *telemetry.Telemetry, e *Emitter) (*metrics, error) {
 	out.coalesced, errs[2] = m.Int64Counter(p+"_events_coalesced_total",
 		metric.WithDescription("COALESCE ring entries replaced by a newer event with the same key (not loss)."))
 	out.evicts, errs[3] = m.Int64Counter(p+"_events_evicted_total",
-		metric.WithDescription("Ring entries evicted by the one-week or 64 MiB cap: loss."))
+		metric.WithDescription("NEVER_DROP or COALESCE events lost: evicted by the one-week or 64 MiB cap, refused or skipped above the message cap, undecodable in the ring, or not saved."))
 	out.replayedC, errs[4] = m.Int64Counter(p+"_replayed_events_total",
 		metric.WithDescription("Events sent with replayed=true: created before the stream's first snapshot."))
 	out.droppedC, errs[5] = m.Int64Counter(p+"_ring_dropped_total",

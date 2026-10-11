@@ -21,10 +21,12 @@ func pane2(id string) *typev1.PaneKey {
 	return &typev1.PaneKey{Server: "default", ServerStartId: "s1", PaneId: id}
 }
 
-// Ruling fork 2 / 7a proof: a NEVER_DROP event is in the ring once Emit
-// returns, before anything queues it, so a crash right after (no stream,
-// the process gone) still replays it on the next connect, marked replayed.
-func TestANeverDropEventSurvivesACrashBeforeItIsSent(t *testing.T) {
+// Ruling fork 2 / 7a proof: a NEVER_DROP event is committed to agent.db
+// once Emit returns, before anything queues it, so with no stream ever
+// attached and the store reopened it replays on the next connect, marked
+// replayed. (The process is closed in order, not killed: what this proves
+// is that the commit precedes Emit's return.)
+func TestANeverDropEventIsInTheRingWhenEmitReturns(t *testing.T) {
 	t.Parallel()
 	dir := stateDir(t)
 	r := newRig(t, dir, events.Options{})

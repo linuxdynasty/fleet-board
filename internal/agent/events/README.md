@@ -22,10 +22,21 @@ c.Detach()                          // stream ended: queued SHED events counted 
 | COALESCE | waits for the ring commit; replaces the entry with its key (`coalesced_total`) | same | kept, one per key |
 | SHED | never waits, never touches agent.db | bounded queue (256), oldest dropped first (`shed_total`) | dropped (`shed_total`) |
 
-- **Order.** The seq is allocated and the ring job queued under one lock, so
-  commits run in seq order (agent.db refuses an entry below the newest). The
-  cursor's bound is the lowest seq still committing (or the next one), so a
-  SHED event never goes out ahead of a lower NEVER_DROP one.
+- **Order.** The seq is allocated and the ring job queued under one lock
+  (`Emitter.mu`), so commits run in seq order (agent.db refuses an entry
+  below the newest). Under that lock `Seqs.Next` may write agent.db once per
+  1,024 seqs, and queueing the job waits while the store's writer queue is
+  full (1,000 jobs, defaults), so a producer and the sender's next page can
+  wait on a busy store there; never on the network, never on a commit (the
+  commit is awaited with the lock released). The cursor's bound is the
+  lowest seq still committing (or the next one), so a SHED event never goes
+  out ahead of a lower NEVER_DROP one.
+- **Pages.** `Next(limit)` walks the rows read and the queued SHED events
+  together in seq order and stops at `limit`. When the page of rows is full,
+  nothing above its last row is handled, because a ring row past it was not
+  read yet; past the stop point nothing is sent, skipped or counted, and the
+  cursor stays below it (SHED events go back on the queue), so an EventAck
+  can never trim an entry that was not sent.
 - **Caps.** One week or 64 MiB (defaults.md); the oldest entry is evicted
   first whatever its class, counted in `evicted_total` and logged
   `ring.evicted{n, oldest_seq}`: loss.
@@ -49,9 +60,11 @@ c.Detach()                          // stream ended: queued SHED events counted 
   refuses it with `ErrOversize` before it takes a seq: a NEVER_DROP or
   COALESCE one counts as loss (`evicted_total` + 1, so the hub asks for a
   snapshot), a SHED one as shed; `ring.emit_refused{kind, bytes}` at most
-  once per kind per minute. A stored entry above the cap is skipped, deleted
-  and counted as loss in one job (`ring.unreadable{err_kind="oversize"}`),
-  so it can never poison a stream.
+  once per kind per minute. A stored entry above the cap, or one that does
+  not decode as its own seq, is deleted and counted as loss in one job when
+  the walk reaches it (`ring.unreadable{err_kind="oversize"|"parse"}`), so it
+  can never poison a stream. A durable event whose ring write fails is
+  counted as loss too (its seq is taken and it is in no ring).
 
 Signals (03n "Telemetry"): `fleet_agent_events_total{kind, delivery}`,
 `fleet_agent_events_shed_total`, `_events_coalesced_total`,
