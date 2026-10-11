@@ -110,6 +110,20 @@ func (r *rig) write(t *testing.T, s string) {
 	}
 }
 
+// writeAtomic replaces the file in one step (temp file, then rename), as an
+// editor or a config tool does, so a read that lands mid-write sees the old
+// or the new file and never an empty one.
+func (r *rig) writeAtomic(t *testing.T, s string) {
+	t.Helper()
+	tmp := filepath.Join(t.TempDir(), "policy.yaml.tmp")
+	if err := os.WriteFile(tmp, []byte(s), 0o644); err != nil { //nolint:gosec // G306: the policy file is 0644 by design (03e)
+		t.Fatal(err)
+	}
+	if err := os.Rename(tmp, r.path); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func (r *rig) scrape(t *testing.T) string {
 	t.Helper()
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/metrics", nil)
