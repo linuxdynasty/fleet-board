@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"time"
 )
 
 // LogAndApply logs c and records its seq as the last applied command of its
@@ -113,6 +114,42 @@ func (d *DB) Open(ctx context.Context) ([]Entry, error) {
 				return err
 			}
 			out = append(out, e)
+		}
+		return nil
+	})
+	return out, err
+}
+
+// Logged is one entry's kind and received time (the agent's clock).
+type Logged struct {
+	Kind     string
+	Received time.Time
+}
+
+// Recent returns the kind and received time of every entry received at or
+// after since, finished or not, oldest first, at most [MaxCommands]. The
+// executor rebuilds its per-kind rate window from it at start, so a
+// restart does not reset the limit (02-contracts "Envelope checks").
+func (d *DB) Recent(ctx context.Context, since time.Time) ([]Logged, error) {
+	var out []Logged
+	err := d.s.Read(ctx, func(tx *sql.Tx) error {
+		rows, err := tx.QueryContext(ctx, `SELECT kind, received_time FROM command_log WHERE received_time >= ?
+			ORDER BY received_time, command_id LIMIT ?`, since.UnixMilli(), MaxCommands)
+		if err != nil {
+			return fmt.Errorf("ring: read recent commands: %w", err)
+		}
+		defer func() { _ = rows.Close() }()
+		for rows.Next() {
+			var l Logged
+			var ms int64
+			if err := rows.Scan(&l.Kind, &ms); err != nil {
+				return fmt.Errorf("ring: read recent commands: %w", err)
+			}
+			l.Received = time.UnixMilli(ms).UTC()
+			out = append(out, l)
+		}
+		if err := rows.Err(); err != nil {
+			return fmt.Errorf("ring: read recent commands: %w", err)
 		}
 		return nil
 	})

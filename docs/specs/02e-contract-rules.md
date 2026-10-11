@@ -229,7 +229,7 @@ The hub API's limits are in [02b](02b-hub-api.md#size-limits). The agent wire:
 | `PromptDetected.text` | 16 KiB | agent |
 | `PaneSummary.last_lines`, `GoalState.first_line`, `KeyInput.literal`, `RunHarnessCommand.args`, `GoalSpec.goal_text` | 4 KiB | agent (hub validates before sending) |
 | Labels, names, window names, `ShownField` strings, `ResetTime.original_text`, `ProbeHealth.message` | 256 bytes | agent; `ProbeHealth.message` also on the hub, as above |
-| `CommandResult.message`, `CommandProgress.message`, `parse_message` | 1 KiB | agent; the hub cuts or rejects a longer string before it scrubs it (below) |
+| `CommandResult.message`, `CommandProgress.message`, `parse_message` | 1 KiB | agent: a handler's text is cut to 8 KiB on a line boundary (the text is whole lines or empty) before the scrub, then the scrubber cuts to 1 KiB ([04b](04b-hub-scrubber-cost.md): cost follows the input); the hub cuts or rejects a longer string before it scrubs it (below) |
 | `TermUp.output` | 64 KiB per message | agent |
 | `TermDown.input` | 4 KiB per message | hub |
 | `LogChunk.zstd` | 960 KiB per chunk (chunks are about 100 KiB in practice) | agent |

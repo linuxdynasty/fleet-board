@@ -16,6 +16,7 @@ e, dup, err := db.LogCommand(ctx, ring.Command{ID: id, Kind: k, Epoch: ep, Seq: 
 e, dup, err = db.LogAndApply(ctx, cmd)                         // log + seq advance in one job: ErrWrongEpoch, ErrSeqReplayed save nothing
 err = db.SetRunning(ctx, id, step)                            // running, step reached never lowered
 open, err := db.Open(ctx)                                     // entries with no result yet, in applied order
+recent, err := db.Recent(ctx, now.Add(-time.Minute))          // kind and received time since, oldest first: the rate window at start
 err = db.RecordResult(ctx, id, encodedResult, finished)       // ErrResultLogged keeps the first
 wait, err := db.SubmitEvent(ctx, ring.EventRow{Seq: s, Key: k, Created: t, Body: b}, ring.DefaultCaps)
 a, err := wait()                                              // committed: Coalesced, Evicted, OldestEvicted, Size
@@ -99,6 +100,10 @@ n, err = db.Prune(ctx, hubNow)                                // hub time; 7 day
   it running and never lowers the step reached, and refuses a finished
   entry (`ErrResultLogged`). An entry logged before migration 5 has a nil
   `Body`; the executor ends it `UNKNOWN_OUTCOME`.
+- **Recent kinds.** `Recent` returns the kind and received time (the
+  agent's clock) of every entry received since a time, finished or not,
+  oldest first and at most 10,000, on the `command_log_received` index;
+  the executor rebuilds its per-kind rate window from it at start.
 - **Event ring** (migration 6, plan row 7; the emitter is
   `internal/agent/events`). `event_ring` holds NEVER_DROP entries (key `''`)
   and COALESCE entries (one per non-empty `coalesce_key`, a unique index),

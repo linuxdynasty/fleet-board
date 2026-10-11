@@ -13,5 +13,8 @@
 // whether it failed closed, for the caller's telemetry; [Text] returns only
 // the text.
 //
+// [Bound] cuts text of no fixed size to whole lines before it is scrubbed,
+// so the cut never leaves a secret's head that no rule matches.
+//
 // The token shapes it knows are listed in README.md with the reason for each.
 package scrub

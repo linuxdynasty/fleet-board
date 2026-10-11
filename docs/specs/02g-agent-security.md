@@ -365,17 +365,11 @@ resolves it.
 
 ## What each principal may ask an agent to do
 
-The hub checks scopes ([02d](02d-hub-authz.md)); the agent re-checks the role
-in `requested_by.role` against this matrix. It is defence in depth against a
-confused or compromised hub, and the local policy is the real ceiling: it can
-make a cell stricter, never looser. A refusal is `REJECTED_BY_POLICY` /
-`ROLE_INSUFFICIENT`.
+The hub checks scopes ([02d](02d-hub-authz.md)); the agent re-checks the role in `requested_by.role` against this matrix. It is defence in depth against a confused or compromised hub, and the local policy is the real ceiling: it can make a cell stricter, never looser. A refusal is `REJECTED_BY_POLICY` / `ROLE_INSUFFICIENT`.
 
-`A` allowed. `L` allowed, and waits for local approval (a `CommandProgress` in
-state `AWAITING_LOCAL_CONFIRM`, then the one result or `LOCAL_CONFIRM_TIMEOUT`) when the machine's local rule
-covers that kind; the default rule is off. `L!` always waits for local approval.
-`F` only in a session or window the fleet started. `F*` as `F`, or a pane the
-developer marked available with `fresh_context_on_reuse` (below). `—` refused.
+`A` allowed. `L` allowed, and waits for local approval (a `CommandProgress` in state `AWAITING_LOCAL_CONFIRM`, then the one result or `LOCAL_CONFIRM_TIMEOUT`) when the machine's local rule covers that kind; the default rule is off. A local rule names a command kind and makes every allowed cell of that kind wait, `A` cells included (the `StartGoal` note below); it never loosens a cell. `L!` always waits for local approval. `F` only in a session or window the fleet started. `F*` as `F`, or a pane the developer marked available with `fresh_context_on_reuse` (below). `—` refused. `F` and `F*` are judged by the kind's handler after the cell allows the command (only it sees tmux and the pane mark); "after `merged_grace`" is the hub's own timer ([03l](03l-goal-lifecycle-and-verification.md)) and the agent does not re-check it. A `KillWindow` the handler cannot place is judged as a developer's window.
+
+An **observe command** is one the VIEWER column allows (`CapturePane`, `RunHarnessCommand` class OBSERVE, read-only `OpenAttach`, `CloseAttach`); every other kind is a control command, which policy safe mode refuses with `POLICY_SAFE_MODE` whatever the role ([03e](03e-settings-and-drift.md)).
 
 | Command (class or variant) | VIEWER | OPERATOR | OWNER | SCHEDULER | ARBITER |
 |---|---|---|---|---|---|
@@ -402,6 +396,8 @@ developer marked available with `fresh_context_on_reuse` (below). `—` refused.
 | `RunHarnessCommand` class DENY (and anything not in the catalog) | — | — | — | — | — |
 | `PruneWorktree` | — | — | A | A (never `allow_dirty`) | — |
 | `EnsureGoalHooks` | — | — | A | A | — |
+| `EnsureScratch` (before a scratch `StartGoal`, [05](05-insights.md)) | — | A | A | A | — |
+| `CollectScratch` (the verifier reads the report, [05](05-insights.md)) | — | — | A | A | — |
 | `OpenAttach`, `CloseAttach` | A (read-only) | A | A | — | — |
 | `SetLogCapture` | — | A | A | A | — |
 | `SetLogShipping` | — | — | A | A | — |

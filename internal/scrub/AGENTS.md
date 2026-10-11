@@ -3,8 +3,15 @@
 Read the root `AGENTS.md` first; it applies here. Load `fleet-go` and
 `fleet-security`. Rules for this package:
 
-- Two pure functions: `Scrub` returns a `Result` (the text and the
-  `Changed`, `Cut` and `Unsettled` flags), and `Text` returns its text.
+- Pure functions: `Scrub` returns a `Result` (the text and the
+  `Changed`, `Cut` and `Unsettled` flags), `Text` returns its text, and
+  `Bound` cuts text to whole lines before it is scrubbed. Its guarantee
+  rests on two things every rule keeps: it asserts nothing to the right
+  of its match, and its secret lies on the last line of its match (`curl
+  -u` spans a line end with its password on the last line; the
+  private-key block redacts a block cut short). A new rule that breaks
+  either breaks `Bound` (README, "Callers bound the input"); keep
+  `FuzzBound` and `TestBoundThenTextLeavesNoSecretHead` green.
   Standard library only, no cgo, no I/O, no logging, no package state
   besides the compiled rules. Both the agent and the
   hub import it, so it imports nothing from `internal/agent` or `internal/hub`.

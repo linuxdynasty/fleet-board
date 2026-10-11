@@ -32,7 +32,9 @@ message Command {
   uint64 seq = 3;
   // Hub time.
   google.protobuf.Timestamp issued_time = 4;
-  // Hub time. Default 2 min for interactive kinds, 30 min for dispatch.
+  // Hub time, always set by the hub (defaults: 2 min for interactive kinds,
+  // 30 min for dispatch, 02-contracts "Deadlines"). The agent treats an
+  // unset deadline as already past (EXPIRED).
   google.protobuf.Timestamp not_after_time = 5;
   // For a device or API token, role is the one the hub maps from the
   // principal's scopes (02d). The agent checks it against the role x command
@@ -146,8 +148,9 @@ message CommandResult {
   google.protobuf.Timestamp finished_time = 6;
   // Capability the agent lacks, for STATUS_UNSUPPORTED.
   fleet.type.v1.Capability missing_capability = 7;
-  // True when the hub may send the same kind again (new command_id) and
-  // expect it to work: EPOCH_MISMATCH, PANE_BUSY, RATE_LIMITED,
+  // True when the hub may send the same kind again and expect it to work: a
+  // new command_id, or for EPOCH_MISMATCH the same command_id re-issued
+  // under the new epoch (02i): EPOCH_MISMATCH, PANE_BUSY, RATE_LIMITED,
   // READY_TIMEOUT. Never true for UNKNOWN_OUTCOME.
   bool retryable = 8;
   // Earliest sensible retry when the agent knows it (rate limit window).

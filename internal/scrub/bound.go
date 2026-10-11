@@ -1,0 +1,26 @@
+package scrub
+
+import "strings"
+
+// Bound cuts s to whole lines of at most n bytes before it is scrubbed, so
+// the cut never splits a secret: it returns s when it fits, else s up to and
+// including the last "\n" in its first n bytes, or "" when there is none.
+// cut is true when anything was dropped. Only "\n" ends a line, never "\r"
+// (the quoted-value rules admit "\r"). No rule asserts anything right of
+// its match, and each rule's secret lies on its match's last line (curl -u
+// can span a line end; the private-key block redacts a block cut short), so
+// a kept secret line is scrubbed whole and a dropped one is gone whole
+// (README, "Callers bound the input").
+func Bound(s string, n int) (string, bool) {
+	if len(s) <= n {
+		return s, false
+	}
+	if n <= 0 {
+		return "", s != ""
+	}
+	i := strings.LastIndexByte(s[:n], '\n')
+	if i < 0 {
+		return "", true
+	}
+	return s[:i+1], true
+}

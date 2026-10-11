@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"testing"
+	"time"
 
 	"github.com/linuxdynasty/fleet-board/internal/agent/ring"
 )
@@ -126,5 +128,33 @@ func TestRunningAndOpenEntries(t *testing.T) {
 	if len(open) != 2 || open[0].ID != "a" || open[0].Status != ring.StatusReceived ||
 		open[1].ID != "b" || open[1].Status != ring.StatusRunning || open[1].Step != 2 {
 		t.Errorf("open entries %+v, want a received, then b running at step 2", open)
+	}
+}
+
+// The executor rebuilds its rate window at start from what the log holds
+// for the last minute (6e ruling, fork 8): kind and received time of every
+// entry received at or after since, oldest first, finished ones included.
+func TestRecentReturnsKindsSince(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	db := open(t, stateDir(t))
+	for i, at := range []time.Duration{-2 * time.Minute, -30 * time.Second, -10 * time.Second} {
+		c := command(fmt.Sprintf("c-%d", i), 0, 0)
+		c.Kind = []string{"A", "B", "A"}[i]
+		c.Received = t0.Add(at)
+		if _, _, err := db.LogCommand(ctx, c); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := db.RecordResult(ctx, "c-1", []byte("r"), t0); err != nil {
+		t.Fatal(err)
+	}
+	got, err := db.Recent(ctx, t0.Add(-time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []ring.Logged{{Kind: "B", Received: t0.Add(-30 * time.Second)}, {Kind: "A", Received: t0.Add(-10 * time.Second)}}
+	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		t.Errorf("Recent = %+v, want %+v", got, want)
 	}
 }
