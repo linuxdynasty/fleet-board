@@ -29,8 +29,46 @@ func Migrations() []store.Migration {
 		Version: 6,
 		Name:    "event_ring",
 		SQL:     eventRingSQL,
+	}, {
+		Version: 7,
+		Name:    "settings_held",
+		SQL:     settingsHeldSQL,
 	}}
 }
+
+// settingsHeldSQL is the hub settings the agent holds (03e "Persistence":
+// settings {generation, values, effective} and the loaded policy hash,
+// written before SettingsAck is sent). One row: the (settings_epoch,
+// generation) Hello reports, the hub's Settings as kept (encoded), the
+// SettingsAck last sent (encoded), and the policy hash the effective values
+// were merged under. Within an epoch the generation never goes down; a new
+// epoch (a restore) takes any generation (02-contracts "Settings order").
+// The row is never deleted, and INSERT OR REPLACE is refused like a second
+// row, because its implicit delete fires no delete trigger.
+const settingsHeldSQL = `CREATE TABLE settings_held(
+	id INTEGER PRIMARY KEY CHECK (id = 1),
+	settings_epoch TEXT NOT NULL CHECK (settings_epoch <> ''),
+	generation INTEGER NOT NULL CHECK (generation >= 0),
+	settings BLOB NOT NULL,
+	ack BLOB NOT NULL,
+	policy_hash TEXT NOT NULL,
+	applied_time INTEGER NOT NULL
+) STRICT;
+CREATE TRIGGER settings_held_never_back BEFORE UPDATE ON settings_held
+WHEN NEW.id IS NOT OLD.id
+	OR (NEW.settings_epoch = OLD.settings_epoch AND NEW.generation < OLD.generation)
+BEGIN
+	SELECT RAISE(ABORT, 'held settings never go back within an epoch');
+END;
+CREATE TRIGGER settings_held_never_deleted BEFORE DELETE ON settings_held
+BEGIN
+	SELECT RAISE(ABORT, 'held settings are never deleted');
+END;
+CREATE TRIGGER settings_held_one_row BEFORE INSERT ON settings_held
+WHEN EXISTS (SELECT 1 FROM settings_held)
+BEGIN
+	SELECT RAISE(ABORT, 'settings_held has one row');
+END;`
 
 // eventRingSQL is the offline event ring (02i "Queue and ring rules", 03n
 // W2 "Persistence"): NEVER_DROP and COALESCE events, encoded whole, in seq

@@ -30,6 +30,8 @@ last := seqs.Last()                                           // highest seq han
 res, err := db.Unacked(ctx)                                   // finished results with no ResultAck
 n := db.UnackedCount()                                        // len(res) from memory: Heartbeat.health.unacked_results
 n, err := db.AckResults(ctx, ack.GetCommandIds(), now)        // unknown or already acked ids change nothing
+err = db.SaveSettings(ctx, ring.Held{Epoch: e, Generation: g, Settings: kept, Ack: ack, PolicyHash: h}) // ErrSettingsOrder below the held generation of e
+h, ok, err := db.HeldSettings(ctx)                           // the held settings; State has their epoch and generation for Hello
 n, err = db.Prune(ctx, hubNow)                                // hub time; 7 days and 10,000 entries, never one the hub may re-send
 ```
 

@@ -122,6 +122,7 @@ sent.
    handshake (see "Certificate renewal").
 3. **Hello, HelloAck.** Hello carries the marks from `agent.db`
    (`last_epoch`, `last_applied_command_seq`, `last_event_seq` = `seq_hwm`,
+   `settings_epoch` and `settings_generation` from the held settings row,
    counters, `install_id`, `boot_id`, the reason). No HelloAck within
    `DefaultHelloTimeout` (30 s) is a failure. Another fleet's `fleet_id`
    gets `Bye{FLEET_MISMATCH}` and ends the loop, before anything is saved;
