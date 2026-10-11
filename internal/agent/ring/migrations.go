@@ -25,8 +25,51 @@ func Migrations() []store.Migration {
 		Version: 5,
 		Name:    "command_body",
 		SQL:     commandBodySQL,
+	}, {
+		Version: 6,
+		Name:    "event_ring",
+		SQL:     eventRingSQL,
 	}}
 }
+
+// eventRingSQL is the offline event ring (02i "Queue and ring rules", 03n
+// W2 "Persistence"): NEVER_DROP and COALESCE events, encoded whole, in seq
+// order. coalesce_key is ” for NEVER_DROP; one entry per non-empty key.
+// created_time (agent clock, ms) drives the one-week cap and bytes the
+// 64 MiB cap (defaults.md). event_ring_size keeps the count and the bytes
+// in step through the triggers, so the cap check reads one row. Entries are
+// inserted in seq order and never changed; trimming and eviction delete.
+const eventRingSQL = `CREATE TABLE event_ring(
+	seq INTEGER PRIMARY KEY CHECK (seq > 0),
+	coalesce_key TEXT NOT NULL DEFAULT '',
+	created_time INTEGER NOT NULL,
+	bytes INTEGER NOT NULL CHECK (bytes > 0),
+	event BLOB NOT NULL CHECK (length(event) = bytes)
+) STRICT;
+CREATE UNIQUE INDEX event_ring_key ON event_ring(coalesce_key) WHERE coalesce_key <> '';
+CREATE TABLE event_ring_size(
+	id INTEGER PRIMARY KEY CHECK (id = 1),
+	events INTEGER NOT NULL CHECK (events >= 0),
+	bytes INTEGER NOT NULL CHECK (bytes >= 0)
+) STRICT;
+INSERT INTO event_ring_size(id, events, bytes) VALUES (1, 0, 0);
+CREATE TRIGGER event_ring_in_order BEFORE INSERT ON event_ring
+WHEN NEW.seq <= (SELECT max(seq) FROM event_ring)
+BEGIN
+	SELECT RAISE(ABORT, 'ring entries are inserted in seq order');
+END;
+CREATE TRIGGER event_ring_kept BEFORE UPDATE ON event_ring
+BEGIN
+	SELECT RAISE(ABORT, 'a ring entry never changes');
+END;
+CREATE TRIGGER event_ring_added AFTER INSERT ON event_ring
+BEGIN
+	UPDATE event_ring_size SET events = events + 1, bytes = bytes + NEW.bytes WHERE id = 1;
+END;
+CREATE TRIGGER event_ring_removed AFTER DELETE ON event_ring
+BEGIN
+	UPDATE event_ring_size SET events = events - 1, bytes = bytes - OLD.bytes WHERE id = 1;
+END;`
 
 // commandBodySQL adds the encoded Command of each logged entry, so the
 // executor can run a received entry, or resume a running one, after a

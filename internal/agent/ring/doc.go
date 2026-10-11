@@ -24,5 +24,10 @@
 // command so [DB.Open] can hand it back after a restart, and
 // [DB.SetRunning] marks it running with the step reached. An entry logged
 // before migration 5 has a nil Body; the executor ends it UNKNOWN_OUTCOME.
-// The event ring itself comes later.
+// Migration 6 adds the event ring (plan row 7): [DB.SubmitEvent] queues a
+// NEVER_DROP or COALESCE event, replacing the entry with its key and
+// evicting past [Caps] (counted), in one job; the file keeps entries in seq
+// order and never changes one. [DB.EventsBetween] reads them in seq order
+// and [DB.TrimEvents] drops what the hub holds (not loss). The emitter is
+// internal/agent/events.
 package ring

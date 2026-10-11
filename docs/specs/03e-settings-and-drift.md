@@ -251,7 +251,8 @@ because editors replace a file by renaming another over it. Any event naming
 `policy.yaml` starts a 500 ms wait; each further event restarts it; then the
 file is hashed again and a different hash is the change (`policy.changed`, the
 `policy.changed` local audit row, `PolicyInfo.changed_since_load`, and the Changed
-seam row 7 reads for the `policy_changed` event). Nothing else re-reads the file
+seam that row 7 turns into the `policy_changed` event, saved in the agent's
+event ring before the callback returns). Nothing else re-reads the file
 on a timer (ADR 0022 rule 6). The safety net is event-driven too: the file is
 hashed again when each `Snapshot` is built (this PR) and when a `Settings` message
 arrives (from PR 6f). When the watch cannot be set (the inotify limit, no file

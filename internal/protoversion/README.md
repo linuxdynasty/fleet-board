@@ -13,6 +13,10 @@ if !ok { /* ENROLL_PROTO_UNSUPPORTED, or Bye{PROTO_UNSUPPORTED} on Connect */ }
 - `Negotiate` refuses an unset bound (0), a range whose min is above its max,
   and a range that misses `[Min, Max]`; otherwise it returns the highest
   version both sides speak.
+- `MaxPartBytes` (960 KiB) is the largest `Connect` message the agent sends
+  as one part: a `Snapshot` part or one `Event`, under the 1 MiB message
+  cap of [02e](../../docs/specs/02e-contract-rules.md) so the envelope fits.
+  The snapshot sender and the event emitter share it.
 - The hub's `Enroll` uses it today (plan row 3); `Hello` and the agent use it
   from rows 4 and 5.
 

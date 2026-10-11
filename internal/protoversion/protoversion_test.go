@@ -39,3 +39,11 @@ func TestNegotiate(t *testing.T) {
 		})
 	}
 }
+
+// 02e: a part leaves room for the envelope under the 1 MiB message cap.
+func TestMaxPartBytesIsTheSnapshotPartCap(t *testing.T) {
+	t.Parallel()
+	if protoversion.MaxPartBytes != 960<<10 || protoversion.MaxPartBytes >= 1<<20 {
+		t.Errorf("MaxPartBytes %d, want 960 KiB, under 1 MiB", protoversion.MaxPartBytes)
+	}
+}

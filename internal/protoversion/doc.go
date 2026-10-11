@@ -4,5 +4,7 @@
 // The v1 wire is version 1 and 0 means unset
 // (docs/specs/02l-versioning-errors-and-decisions.md). [Negotiate] checks a
 // peer's EnrollRequest or Hello proto_min and proto_max against [Min] and
-// [Max] and picks the highest common version.
+// [Max] and picks the highest common version. [MaxPartBytes] is the largest
+// Connect message the agent sends as one part (a Snapshot part or one
+// Event), shared by the snapshot sender and the event emitter.
 package protoversion

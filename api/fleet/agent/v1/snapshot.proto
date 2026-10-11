@@ -143,8 +143,9 @@ message TmuxPane {
   fleet.type.v1.Activity activity = 10;
   google.protobuf.Timestamp last_output_time = 11;
   bool dead = 12;
-  // Exit status when dead.
-  int32 exit_status = 13;
+  // Exit status when tmux still had the pane (remain-on-exit); unset when the
+  // pane was gone before it could be read.
+  optional int32 exit_status = 13;
   // [CAP E11]
   fleet.type.v1.Availability availability = 14;
   // Terminal log capture (pipe-pane) is on for this pane (K1).
