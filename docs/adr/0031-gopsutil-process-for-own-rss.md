@@ -19,6 +19,8 @@ to come from the agent's own process, in process, with no child process
 (01 principle 8), and it has to build with `CGO_ENABLED=0` for darwin and linux
 on amd64 and arm64.
 
+## Options
+
 | Option | Verdict |
 |---|---|
 | `gopsutil/v4/process`, own pid, `MemoryInfoWithContext` | Linux reads `/proc/<pid>/statm` in pure Go. macOS calls `proc_pidinfo(PROC_PIDTASKINFO)` through `ebitengine/purego`, the mechanism `mem` and `disk` already use. |
@@ -36,9 +38,13 @@ one use: the agent's own resident memory.** The same module and version
   (`&process.Process{Pid: …}`), never with `process.NewProcess`: that
   constructor looks the pid up and reads its start time, which on macOS can
   start `ps`. The one method called is `MemoryInfoWithContext`, and nothing
-  else of the package. `TestOnlyApprovedGopsutilCalls` and
-  `TestOnlyMemoryInfoIsCalledOnAProcess` (`internal/agent/machine`) fail on any
-  other call, constructor or method.
+  else of the package. `TestOnlyApprovedGopsutilCalls` (by import path) and
+  `TestOnlyMemoryInfoIsCalledOnAProcess` (`internal/agent/machine`) enforce the
+  form: the package name appears only as the literal `process.Process{…}` that
+  is the whole right-hand side of an assignment to one variable, and that
+  variable is only ever the receiver of a `MemoryInfoWithContext` call. A
+  constructor, another method, an inline `(&process.Process{}).Cmdline()`, or
+  a literal or variable passed to a function fails them.
 - `process` imports `gopsutil/v4/cpu` and `gopsutil/v4/net` (same module, same
   licence) and `tklauser/go-sysconf` (already in the module graph through
   `mem`). They come along as code; the agent calls nothing of them.
@@ -61,3 +67,9 @@ one use: the agent's own resident memory.** The same module and version
   PR 6c2 runs it. `make vuln` covers the module as before.
 - A later change that wants another `process` method (open files, threads)
   needs its own check that it starts no child, then an ADR line.
+
+## Open questions
+
+None for this decision. The agent's own `fleet_agent_rss_bytes` gauge (05b) is a
+separate signal for a collector that scrapes agents, and is not part of this
+change.

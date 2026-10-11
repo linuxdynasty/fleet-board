@@ -353,7 +353,9 @@ bit, another owner, or a symlink is refused (`ErrLooseMode`), never re-moded.
 `agent.cert.renew`. Loop logs and metrics are listed in 03 W1 and 03n W2
 "Telemetry" (`connect.*`, `snapshot.*`, `result.*`, `renew.*`;
 `fleet_agent_connect_attempts_total`, `fleet_agent_connected`,
-`fleet_agent_reconnects_total`, `fleet_agent_unacked_results`,
+`fleet_agent_reconnects_total`, `fleet_agent_unacked_results` (the loop's own
+gauge, set at each snapshot and ResultAck; it can differ for a moment from the
+exact `unacked_results` the heartbeat reports from the store's count),
 `fleet_agent_cert_expiry_seconds` for the pair that ends last,
 `fleet_agent_cert_renewals_total{result}`, `fleet_agent_discovery_seconds`),
 and `cert.file_invalid` in 05b.
