@@ -94,20 +94,6 @@ func TestConnection(t *testing.T) {
 			t.Errorf("reason = %q, want three failures and '2 more'", c.Reason)
 		}
 	})
-	endings := []struct{ end, words string }{
-		{"revoked", "new token"},
-		{"unknown_machine", "new token"},
-		{"fleet_mismatch", "another fleet"},
-		{"cert_expired", "re-enroll"},
-	}
-	for _, e := range endings {
-		t.Run("ended "+e.end, func(t *testing.T) {
-			t.Parallel()
-			r := newRig(t)
-			r.writeStatus(time.Hour, func(s *statusfile.Status) { s.State, s.Ended = "ended", e.end })
-			r.want("connection", doctor.Fail, e.end, e.words)
-		})
-	}
 	t.Run("old status: the state is last-known, not current", func(t *testing.T) {
 		t.Parallel()
 		r := newRig(t)

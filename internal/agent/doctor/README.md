@@ -36,7 +36,7 @@ that is not ok or not_checked has a fix line.
 | `policy_roots`, `policy_harnesses` | the defaults in force | warns on empty roots or an explicit empty harness list |
 | `policy_watch` | `policy_watch: off` in status.json | warns when off |
 | `status_file` | `status.json` age (old after 2 minutes) | warns when old or damaged |
-| `connection` | state, peer, last failure per address, the end the loop stopped on | fails for revoked, unknown machine, fleet mismatch, cert expired |
+| `connection` | state, peer, last failure per address; `ended.json` (read-only, once) and the certificate for the end the loop stopped on; status.json's end is only a note | fails when `ended.json` names this machine (revoked, unknown machine, fleet mismatch), is damaged, or the certificate that ends last is expired; a leftover for another machine, or an end status.json names that `ended.json` no longer does, is `unknown` |
 | `push_socket` | `push_off` in status.json: the network watcher's push socket (ADR 0029 decision 6) | warns when off (the agent then polls every 15 seconds); unknown when the file is old |
 | `mdns_browse` | the last mDNS browse in status.json (its own time, kept when the file is old) | warns when it found no hub or had no multicast interface; unknown before any browse |
 | `snapshot_size` | `snapshot_oversize` | warns: the hub must be upgraded |
@@ -51,5 +51,5 @@ that is not ok or not_checked has a fix line.
 
 The hub handshake and Linux linger are listed as `not_checked` until PR 6h
 adds them (`doctor.NotCheckedYetAt` gives the label "row 6, PR 6h"). The
-harness trust-screen steps are row 8. `ended.json` is not read: the loop's end
-is in status.json.
+harness trust-screen steps are row 8. Doctor never removes `ended.json`, even
+a leftover for another machine: `run` does that.

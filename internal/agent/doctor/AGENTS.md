@@ -7,7 +7,13 @@ Read the root `AGENTS.md` first; it applies here. Load `fleet-go`,
   anything, and never calls a function that does: not `policy.Load`
   (metrics, log, audit row), `conn.CheckEnded` (it removes another machine's
   file), `statusfile.RecordEnroll`, `conn.EnsureDir`, `policy.EnsureDir`.
-  Use `policy.Inspect`, `statusfile.Read`, `statusfile.ReadEnroll` and `lstat`.
+  Use `policy.Inspect`, `statusfile.Read`, `statusfile.ReadEnroll`,
+  `conn.ReadEnded` and `lstat`. `conn.ReadEnded` is the read `run` makes of
+  `ended.json`, without the removal; keep it that way.
+- "The agent will not reconnect" comes from what `run` reads: `ended.json`
+  (revoked, unknown machine, another fleet) and the certificate (expired). An
+  end that only status.json names is a note that may be old: `unknown`, never
+  `fail`.
 - Never read a credential. `identity.json` is decoded into a struct that has no
   key or salt field; `cert.pem` is parsed only to its first CERTIFICATE block;
   `renew.key` and `enroll.key` are only looked at (mode). Never open `agent.log`,

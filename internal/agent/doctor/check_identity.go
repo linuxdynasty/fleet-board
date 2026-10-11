@@ -214,28 +214,41 @@ func renewKeyCheck(_ context.Context, e *Env) Outcome {
 	return ok("renew.key is there: a renewal is in progress or was cut off, and the next renewal check finishes it; its contents were not read")
 }
 
-// certExpiryCheck judges the certificate that ends last, the one the agent
-// follows (03 W1, "Certificate expired"), by this machine's clock. Past two
-// thirds of its life the agent should have renewed it.
-func certExpiryCheck(_ context.Context, e *Env) Outcome {
+// certLife is the validity window of one certificate.
+type certLife struct{ notBefore, notAfter time.Time }
+
+// lastEndingCert is the certificate that ends last, the one the agent follows
+// (03 W1, "Certificate expired"): the enrolled one or a valid renewed one.
+// It returns the identity problem when identity.json cannot be used, and nil
+// with no problem when it holds no certificate doctor can read.
+func lastEndingCert(e *Env) (*certLife, *fileProblem) {
 	id, prob := e.loadIdentity()
 	if prob != nil {
-		return notEnrolled()
+		return nil, prob
 	}
-	type pair struct{ notBefore, notAfter time.Time }
-	var best *pair
-	consider := func(p pair) {
+	var best *certLife
+	consider := func(p certLife) {
 		if best == nil || p.notAfter.After(best.notAfter) {
 			best = &p
 		}
 	}
 	if leaf, okLeaf := leafOf([]byte(id.CertPEM)); okLeaf {
-		consider(pair{leaf.NotBefore, leaf.NotAfter})
+		consider(certLife{leaf.NotBefore, leaf.NotAfter})
 	} else if !id.CertNotAfter.IsZero() {
-		consider(pair{notAfter: id.CertNotAfter})
+		consider(certLife{notAfter: id.CertNotAfter})
 	}
 	if r := e.loadRenewed(); r.leaf != nil && r.why == "" && r.problem == nil {
-		consider(pair{r.leaf.NotBefore, r.leaf.NotAfter})
+		consider(certLife{r.leaf.NotBefore, r.leaf.NotAfter})
+	}
+	return best, nil
+}
+
+// certExpiryCheck judges the certificate that ends last by this machine's
+// clock. Past two thirds of its life the agent should have renewed it.
+func certExpiryCheck(_ context.Context, e *Env) Outcome {
+	best, prob := lastEndingCert(e)
+	if prob != nil {
+		return notEnrolled()
 	}
 	if best == nil {
 		return unknown("identity.json holds no certificate doctor can read", "see the identity check")

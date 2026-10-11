@@ -6,6 +6,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/linuxdynasty/fleet-board/internal/agent/conn"
 	"github.com/linuxdynasty/fleet-board/internal/agent/policy"
 	"github.com/linuxdynasty/fleet-board/internal/agent/statusfile"
 )
@@ -42,6 +43,10 @@ type Env struct {
 	statusRead bool
 	status     statusfile.Status
 	statusErr  error
+
+	endedRead bool
+	ended     conn.EndedRecord
+	endedErr  error
 
 	policyRead bool
 	policy     policy.Inspection
@@ -82,6 +87,18 @@ func (e *Env) Status() (statusfile.Status, error) {
 		e.status, e.statusErr = statusfile.Read(e.opts.StateDir)
 	}
 	return e.status, e.statusErr
+}
+
+// Ended reads ended.json once, through [conn.ReadEnded]: the same read `run`
+// makes, and it changes nothing. The error wraps [fs.ErrNotExist] when there
+// is no file, and [conn.ErrEndedDamaged] or another refusal when `run` would
+// stop on the file.
+func (e *Env) Ended() (conn.EndedRecord, error) {
+	if !e.endedRead {
+		e.endedRead = true
+		e.ended, e.endedErr = conn.ReadEnded(e.opts.StateDir)
+	}
+	return e.ended, e.endedErr
 }
 
 // Policy reads and judges policy.yaml once, with no side effect.

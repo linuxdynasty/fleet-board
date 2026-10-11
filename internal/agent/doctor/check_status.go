@@ -39,12 +39,15 @@ func statusFileCheck(_ context.Context, e *Env) Outcome {
 const maxFailuresShown = 3
 
 func connectionCheck(_ context.Context, e *Env) Outcome {
+	if out, done := endedFileOutcome(e); done {
+		return out
+	}
 	s, old, err := e.freshStatus()
 	if err != nil {
 		return noStatus(err)
 	}
 	if s.Ended != "" {
-		return endedOutcome(s.Ended)
+		return statusEndOutcome(e, s)
 	}
 	switch {
 	case old:
@@ -102,26 +105,6 @@ func failureList(s statusfile.Status) string {
 		out += fmt.Sprintf("; and %d more", more)
 	}
 	return out
-}
-
-// endedOutcome is a connection loop that stopped on a state only the owner
-// can fix (03 W1). It stays true however old the file is.
-func endedOutcome(end string) Outcome {
-	switch end {
-	case "revoked", "unknown_machine":
-		what := "the hub revoked this machine"
-		if end == "unknown_machine" {
-			what = "the hub does not know this machine"
-		}
-		return fail(what+" ("+end+"): the agent stopped and will not reconnect",
-			"get a new token from the dashboard, remove only identity.json (keep agent.db), then fleet-agent enroll --token <new token>")
-	case "fleet_mismatch":
-		return fail("the hub at the address in use belongs to another fleet (fleet_mismatch): the agent stopped and will not reconnect",
-			"check the hub address; if it is right, re-enroll with a token from that hub, or remove ended.json to try again")
-	case "cert_expired":
-		return fail("the certificate ran out while the agent was off (cert_expired): the agent stopped", "re-enroll: remove only identity.json (keep agent.db), then fleet-agent enroll --token <new token>")
-	}
-	return fail("the agent stopped in an end this doctor does not know (unknown)", "use the same version of fleet-agent and fleet-agent doctor")
 }
 
 func snapshotSizeCheck(_ context.Context, e *Env) Outcome {

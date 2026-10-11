@@ -42,7 +42,7 @@ Read the root `AGENTS.md` first; it applies here. Load `fleet-go`,
   is a reconnect with backoff. Adding an end needs a spec change (03 W1).
   Revoked, unknown machine and fleet mismatch are written to `ended.json`
   (through `writePrivate`, replace) before `Run` returns, and `CheckEnded`
-  refuses a run for that machine before anything touches the network;
+  refuses a run for that machine before anything touches the network (`ReadEnded` is its read-only half, used by doctor: never add a write to it);
   never move that check after a dial, and never record `cert_expired`.
 - One goroutine sends on a stream (Run's); the receiver only hands
   messages over. Anything else that sends (acks, progress, results,

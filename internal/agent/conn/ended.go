@@ -65,27 +65,52 @@ func (l *Loop) saveEnd(ctx context.Context, e End, peer string) {
 // is not guessed at, and removing it lets run try again.
 var ErrEndedDamaged = errors.New("conn: ended.json is damaged")
 
-// CheckEnded reads EndedFile at the start of `fleet-agent run`, before any
-// network call. A record for id's
-// machine is an [*EndedError] with Recorded set, whose message names the
-// hub and the owner's fix: the caller must not reconnect. A record for another machine is a leftover of an earlier
-// enrollment: it is removed and removed is true. No file is (false, nil).
-// A damaged file is an error naming it, as for a damaged identity.json;
-// removing it lets run try again.
-func CheckEnded(dir string, id Identity) (removed bool, err error) {
+// EndedRecord is what EndedFile says, as [ReadEnded] returns it.
+type EndedRecord struct {
+	End       End
+	MachineID string
+	// Peer is the hub address the end came from, cleaned and capped.
+	Peer string
+	Time time.Time
+}
+
+// ReadEnded reads EndedFile and changes nothing: no removal of a leftover,
+// no write, no lock. It is the read `fleet-agent doctor` makes, and the one
+// [CheckEnded] builds on, so the two never disagree about what is on disk.
+// A missing file is an error that wraps [fs.ErrNotExist]. A file that is not
+// a whole record of this layout is [ErrEndedDamaged]. A file that is not a
+// regular file (a FIFO, a link, a folder) or is open to other users is
+// refused before it is opened, as for identity.json.
+func ReadEnded(dir string) (EndedRecord, error) {
 	path := filepath.Join(dir, EndedFile)
 	data, err := readPrivate(path)
-	if errors.Is(err, fs.ErrNotExist) {
-		return false, nil
-	}
 	if err != nil {
-		return false, err
+		return EndedRecord{}, err
 	}
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
 	var rec ended
 	if err := dec.Decode(&rec); err != nil || rec.Version != endedVersion || !recorded(rec.End) || rec.MachineID == "" {
-		return false, fmt.Errorf("%w: %s is damaged or from another version; remove it to try again", ErrEndedDamaged, path)
+		return EndedRecord{}, fmt.Errorf("%w: %s is damaged or from another version; remove it to try again", ErrEndedDamaged, path)
+	}
+	return EndedRecord{End: rec.End, MachineID: rec.MachineID, Peer: clean(rec.Peer, maxEndedPeer), Time: rec.Time}, nil
+}
+
+// CheckEnded reads EndedFile at the start of `fleet-agent run`, before any
+// network call. A record for id's machine is an [*EndedError] with Recorded
+// set, whose message names the hub and the owner's fix: the caller must not
+// reconnect. A record for another machine is a leftover of an earlier
+// enrollment: it is removed and removed is true. No file is (false, nil). A
+// damaged file is an error naming it, as for a damaged identity.json;
+// removing it lets run try again. It removes a file, so doctor uses
+// [ReadEnded] instead.
+func CheckEnded(dir string, id Identity) (removed bool, err error) {
+	rec, err := ReadEnded(dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
 	}
 	if rec.MachineID != id.MachineID {
 		if err := removePrivate(dir, EndedFile); err != nil {
@@ -93,7 +118,7 @@ func CheckEnded(dir string, id Identity) (removed bool, err error) {
 		}
 		return true, nil
 	}
-	return false, &EndedError{End: rec.End, Recorded: true, Peer: clean(rec.Peer, maxEndedPeer), Time: rec.Time, Dir: dir}
+	return false, &EndedError{End: rec.End, Recorded: true, Peer: rec.Peer, Time: rec.Time, Dir: dir}
 }
 
 // recordedMessage is the refusal of a run that finds its own end in
