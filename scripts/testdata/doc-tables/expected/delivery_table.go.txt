@@ -1,0 +1,6 @@
+var deliveryTable = []deliveryRow{
+	{10, "resource_sample", agentv1.DeliveryClass_DELIVERY_CLASS_SHED, ""},
+	{11, "harness_ready", agentv1.DeliveryClass_DELIVERY_CLASS_COALESCE, "ready:<pane>"},
+	{12, "pane_exited", agentv1.DeliveryClass_DELIVERY_CLASS_NEVER_DROP, ""},
+	{13, "pane_gone", agentv1.DeliveryClass_DELIVERY_CLASS_NEVER_DROP, ""},
+}

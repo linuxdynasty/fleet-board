@@ -167,6 +167,10 @@ message ConnectResponse {
     // Hub acknowledges results so the agent can drop them from its log.
     ResultAck result_ack = 5;
     Bye bye = 6;
+    // Hub committed every event of this generation up to last_event_seq; the
+    // agent may drop them from its ring (02i). Sent after the commit, at most
+    // once a second per machine.
+    EventAck event_ack = 7;
   }
 }
 
@@ -264,7 +268,8 @@ message HelloAck {
   // generation (replaces 03g's settings_restored bool).
   string settings_epoch = 11;
   // Hub features the agent may rely on, e.g. {"snapshot.parts", 1},
-  // {"event.delivery", 1}. The agent never uses a feature not listed.
+  // {"event.delivery", 1}, {"event.ack", 1} (the hub sends EventAck). The
+  // agent never uses a feature not listed.
   repeated fleet.type.v1.Capability hub_capabilities = 12;
   // Current addresses of the hub, replacing the list the agent holds
   // (EnrollResponse.hub_addresses). A hub restored on another host updates
@@ -408,6 +413,15 @@ message SettingsAck {
 // ResultAck: the hub stored these results; the agent may forget them.
 message ResultAck {
   repeated fleet.type.v1.CommandId command_ids = 1;
+}
+
+// EventAck: the highest event seq of this machine and event_generation that
+// the hub's writer has committed (its hub_last_event_seq as of that commit).
+// The hub sends it only when HelloAck.hub_capabilities lists "event.ack", and
+// never before the Snapshot transaction. It carries no seq of its own; a
+// repeat or an older ack changes nothing (02i, "Queue and ring rules").
+message EventAck {
+  uint64 last_event_seq = 1;
 }
 
 // ByeReason, for both directions.

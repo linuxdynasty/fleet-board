@@ -158,7 +158,7 @@ of one `command_id` never re-runs ([02](02-contracts.md#delivery-semantics)).
 Other names in use: `usage.passive.<harness>`, `prompt.detect.<harness>`, `pane.input` (E13), `goal.pause_signals` (interrupt and pause conditions),
 `logs.transcript`, `confirm.local`, `power`, `settings` (they gate events and
 settings, not commands). Hub features the agent may rely on are in
-`HelloAck.hub_capabilities` (`snapshot.parts`, `event.delivery`). Reserved,
+`HelloAck.hub_capabilities` (`snapshot.parts`, `event.delivery`, `event.ack`). Reserved,
 never advertised: `exec.raw`.
 
 ## Comment tags
