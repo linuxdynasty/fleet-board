@@ -70,6 +70,8 @@ local additions; a local file cannot remove a hub label. Each field records its
 `capped_fields` so the UI says "capped by local policy on linux-box". A value the
 agent cannot apply at all is a different thing and is **not** a cap: it goes in
 `SettingsAck.rejected[]` as `{field, reason, message}` (see the failure table).
+How the agent checks, merges, keeps and reports each field:
+[03e2](03e2-settings-merge-on-the-agent.md).
 
 **Probe interval.** A machine's probe interval for an account has three
 carriers, and one rule picks among them: the first set of
