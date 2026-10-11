@@ -41,8 +41,11 @@ func Read(dir string) (Status, error) {
 func readJSON(dir, name string, v any) error {
 	path := filepath.Join(dir, name)
 	// Open first, then look at what was opened: no gap for a swap between
-	// the check and the read. O_NOFOLLOW refuses a symlink.
-	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW, 0) //nolint:gosec // G304: a fixed file name inside the agent's own state folder
+	// the check and the read. O_NOFOLLOW refuses a symlink. O_NONBLOCK keeps
+	// open(2) on a FIFO with no writer from blocking for good (a signal does
+	// not stop it); the FIFO is then refused below as not a regular file. It
+	// does not change the read of a regular file.
+	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0) //nolint:gosec // G304: a fixed file name inside the agent's own state folder
 	if errors.Is(err, syscall.ELOOP) {
 		return fmt.Errorf("%w: %s is a symlink", ErrDamaged, name)
 	}

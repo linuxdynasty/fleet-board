@@ -200,3 +200,27 @@ func TestTmuxOnPathWinsOverTheFallbackDirectories(t *testing.T) {
 		t.Fatalf("tmux_version = %q, want the one on PATH", f.GetTmuxVersion())
 	}
 }
+
+// Doctor asks the same question the facts do, through the exported call.
+func TestTmuxVersionIsExportedForDoctorAndFindsTmuxTheSameWay(t *testing.T) {
+	runner, err := proc.NewRunner(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pathWith(t, `echo "tmux 3.4"`)
+	if v, err := machine.TmuxVersion(t.Context(), runner, []string{}); v != "tmux 3.4" || err != nil {
+		t.Errorf("TmuxVersion = %q, %v", v, err)
+	}
+	pathWith(t, "")
+	if v, err := machine.TmuxVersion(t.Context(), runner, []string{}); v != "" || err != nil {
+		t.Errorf("missing tmux: TmuxVersion = %q, %v, want empty and no error", v, err)
+	}
+	// Not on PATH, but in a fallback folder.
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "tmux"), []byte("#!/bin/sh\necho 'tmux next-3.7'\n"), 0o700); err != nil { //nolint:gosec // G306: a test script must be executable.
+		t.Fatal(err)
+	}
+	if v, err := machine.TmuxVersion(t.Context(), runner, []string{dir}); v != "tmux next-3.7" || err != nil {
+		t.Errorf("fallback folder: TmuxVersion = %q, %v", v, err)
+	}
+}

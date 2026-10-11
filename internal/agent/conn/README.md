@@ -206,7 +206,9 @@ says so (`ErrHubFailed` or the stop), with no advice. Nothing was sent.
    before any network call, returns a `*EndedError` (`Recorded`, its message
    naming the hub and the owner's fix) while the file names this machine,
    removes one that names another machine (a leftover), and refuses a
-   damaged one (`ErrEndedDamaged`). Enroll removes it when it saves a new identity.
+   damaged one (`ErrEndedDamaged`). `ReadEnded(dir)` is the same read without
+   the removal (`fleet-agent doctor` uses it). Enroll removes it when it saves
+   a new identity.
 
 ## Commands and the outbound queue
 

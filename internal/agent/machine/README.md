@@ -83,6 +83,7 @@ happens on a working machine.
 - tmux is searched on the agent's own `PATH` first. Rows 7 and 8 start tmux and
   must use the same lookup, or the reported version and the program that runs
   could differ.
+  `TmuxVersion(ctx, runner, dirs)` is that same call, exported for `fleet-agent doctor`.
 
 ## Dependency note (ADR 0023, ADR 0020 rules)
 

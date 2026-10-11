@@ -39,7 +39,8 @@
 // expired certificate. The first three are written whole to [EndedFile]
 // before Run returns; `fleet-agent run` calls [CheckEnded] before any
 // network call and refuses while the file names its machine, and Enroll
-// removes it with a new identity. [Loop.Status] is its state in memory and
+// removes it with a new identity. [ReadEnded] is the same read without the
+// removal, for `fleet-agent doctor`. [Loop.Status] is its state in memory and
 // [Loop.StatusChanged] signals a change.
 //
 // The seam for commands and settings (plan row 6): [LoopOptions].Command

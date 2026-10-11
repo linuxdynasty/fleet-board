@@ -121,6 +121,19 @@ fleet-agent run    # logs to stderr; stop with Ctrl-C or SIGTERM
   because the machine is already enrolled leaves it alone, and `run`
   removes it once it has an identity.
 
+- `doctor` (`--json` for one JSON object) runs the local checks of
+  `internal/agent/doctor` and prints one line per check: `ok`, `warn`, `fail`,
+  `unknown` (a fact that is missing, never 0) or `not_checked` (a check a later
+  row adds, naming the row), then the reason, and a `fix:` line under each
+  problem. It prints the state and config folders it used. It exits 0 when
+  nothing failed (warnings and unknowns are not failures) and 1 when a check
+  failed. It reads `status.json` and `enroll.json` and prints their age, looks
+  at the dates and modes of `identity.json`, `cert.pem` and `renew.key` without
+  reading a key, reads `policy.yaml` fresh, and runs `tmux -V`; so it works
+  while the agent is down and leaves a running agent's stream alone. It never
+  opens `agent.log` or `agent.db`, and creates, writes and removes nothing.
+  Every printed string is stripped of control characters and bounded.
+
 `--state-dir` and `--config-dir` are flags of every command.
 
 `fleet-agent --version` prints the name and the version; `-h` prints the

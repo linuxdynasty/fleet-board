@@ -26,6 +26,7 @@ res := policy.Parse(data) // the strict parse alone: res.Policy or res.Problem
   event-driven safety net. If the watch cannot be set, `WatchOff()` is true and
   `policy.watch_off` is logged once.
 - The loaded policy never changes while the agent runs.
+- `Inspect(dir)` reads and judges the file with no side effect (no metric, log line or audit row): the one decision `Load` and `fleet-agent doctor` share. Doctor runs it fresh, so it works while the agent is down.
 - `WriteStarter(dir, repos)` writes the starter file for `fleet-agent enroll`
   (mode 0644, never over an existing file); `CheckRepoFolder` checks the answer.
 
