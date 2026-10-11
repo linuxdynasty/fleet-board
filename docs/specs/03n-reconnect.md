@@ -128,7 +128,7 @@ the stop's 10 s grace, [defaults](defaults.md) "Stop grace (hub)"), so the store
 | Command log (last 10,000 or 7 days; status, result, step reached, the encoded command) | `agent.db` | per state change, before `CommandAck` is sent |
 | Probe assignments (`EnsureProbe` as received) | `agent.db` | with the command log |
 | Goal registry (`GoalRegistration` per pane) and availability marks (per pane key) | `agent.db` | `register_goal`, `RegisterGoal`, `ReleaseGoal`, mark commands; both reported in every snapshot (02h) |
-| Outbox rows (`pending/delivered/done/expired/failed`, epoch, seq) | hub store | Hello tx (expiry), result tx (close) |
+| Outbox rows (`pending/delivered/done/expired/failed`, epoch, seq) | hub store | Snapshot tx and housekeeping (expiry), result tx (close) |
 | Event history (replayed and live, 1 week) | hub store | per writer batch |
 | `machine_connections` (epoch, boot_id, install_id, peer, connect_reason, started and ended time, end_reason, displaced_by, last_heartbeat_age_ms at displacement) and the machine's `last_epoch` | hub store | Hello tx (opens the row, closes the one it displaces); stream close or `Bye` (closes it, and marks the machine `OFFLINE` in the same tx); housekeeping's `OFFLINE` (closes it as `offline`). A row can stay open with no stream behind it after a hub crash, after a graceful shutdown that stopped waiting for a Hello whose transaction then committed, or after a stop whose handler wait ran out (`hub.shutdown_wait_timeout`); the hub-start sweep closes such rows as `hub_restart` |
 | Per machine: `hub_last_event_seq`, `event_generation`, last `EventCounters`, `install_id`, and the last applied `Snapshot.seq` and its epoch (`snapshot_seq`, `snapshot_epoch`) | hub store | writer batch (`hub_last_event_seq`); the Snapshot tx (the rest: it compares the stream's `Hello` values with the stored ones, 02i rule 3, and marks the machine ONLINE) |
@@ -240,7 +240,7 @@ The agent side of plan row 6 (ruling forks 4 i, 11 and 12), in
   `Hello.reason`: `start`, `reconnect`, `wake`, `network_change`,
   `unspecified`), `fleet_hub_epoch{machine}` (the epoch of the last accepted
   `Hello`),
-  `fleet_hub_commands_expired_total{kind}`, `fleet_hub_duplicate_identity_total{machine}`,
+  `fleet_hub_commands_expired_total{kind, cause}` (`cause`: `deadline`, `revoked`; 03f), `fleet_hub_duplicate_identity_total{machine}`,
   `fleet_hub_event_gap_total{machine}` (rises of `evicted_total`), `fleet_hub_agent_rollback_total{machine}` (each agent rollback the Snapshot tx found, with 03's `snapshot.rollback` and a `machine.install_changed` audit row), `fleet_hub_replay_backlog_events{machine}`,
   `fleet_hub_results_unknown_command_total`.
 - Spans: `hub.reconnect` (children `hub.snapshot.apply`, `hub.outbox.reconcile`,
@@ -255,7 +255,7 @@ The agent side of plan row 6 (ruling forks 4 i, 11 and 12), in
   a stream with a certificate that ended before a `Hello` was accepted has `epoch` 0,
   `reason` `before_hello` and `err_kind`: `oversize`, `reset`, `timeout`, `shutdown`,
   counted in 03's `fleet_hub_connect_closed_before_hello_total`),
-  `outbox.expired{command_id, kind, age}`, `identity.duplicate{machine_id, old_epoch, new_epoch,
+  `outbox.expired{command_id, machine_id, kind, from, cause, age_ms}` (03f), `identity.duplicate{machine_id, old_epoch, new_epoch,
   old_boot_id, new_boot_id, old_peer, new_peer, heartbeat_age_ms}` (a live stream got
   `Bye{DUPLICATE_IDENTITY}`; -1 when it had no Heartbeat; a row a hub crash or a shutdown that cancelled a waiting Hello left live is
   displaced silently), `replay.gap{from_seq, to_seq}`. The span `hub.connect.hello` covers

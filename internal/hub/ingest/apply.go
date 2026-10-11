@@ -11,6 +11,7 @@ import (
 
 	agentv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1"
 	typev1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/type/v1"
+	"github.com/linuxdynasty/fleet-board/internal/hub/outbox"
 	"github.com/linuxdynasty/fleet-board/internal/hub/statedb"
 	"github.com/linuxdynasty/fleet-board/internal/store"
 )
@@ -42,9 +43,10 @@ type Stream struct {
 }
 
 // SubmitSnapshot queues a cleaned snap ([Clean]) as ONE writer job:
-// statedb.ApplySnapshot, then each applier in order, then
-// statedb.MarkOnline (its state change in the result's Change); any error
-// rolls the whole job back. ctx bounds only the wait for a place in the
+// statedb.ApplySnapshot, then each applier in order, then outbox.Expire
+// for the machine (its commands whose deadline came while it was away,
+// at most [ExpireInSnapshot]; 03n), then statedb.MarkOnline (its state
+// change in the result's Change); any error rolls the whole job back. ctx bounds only the wait for a place in the
 // queue; once it returns a [Pending], the job runs and its result can be
 // read later, even after the caller stopped waiting. now is the hub clock:
 // observed_time, last_seen_time and an audit row's time.
@@ -67,6 +69,9 @@ func SubmitSnapshot(ctx context.Context, st *store.Store, s Stream, snap *agentv
 				return fmt.Errorf("%w: applier %d: %w", ErrApplier, i, err)
 			}
 		}
+		if p.expired, err = outbox.Expire(jctx, tx, s.MachineID, now, ExpireInSnapshot); err != nil {
+			return err
+		}
 		_, p.out.Change, err = statedb.MarkOnline(jctx, tx, s.MachineID, now)
 		return err
 	})
@@ -76,13 +81,28 @@ func SubmitSnapshot(ctx context.Context, st *store.Store, s Stream, snap *agentv
 	return p, nil
 }
 
+// ExpireInSnapshot bounds the commands one Snapshot job expires; the
+// housekeeping expiry takes any rest (the sender never sends a command
+// past its deadline either way).
+const ExpireInSnapshot = 500
+
 // Pending is a queued Snapshot job ([SubmitSnapshot]). One goroutine at a
 // time reads it.
 type Pending struct {
-	done   <-chan error
-	out    statedb.SnapshotOut // written by the job; read after done
-	result error
-	read   bool
+	done    <-chan error
+	out     statedb.SnapshotOut // written by the job; read after done
+	expired []outbox.Closed     // written by the job; read after done
+	result  error
+	read    bool
+}
+
+// Expired are the commands the job expired, for outbox.Service.Closed;
+// nil until a [Pending.Wait] returned without error.
+func (p *Pending) Expired() []outbox.Closed {
+	if !p.read || p.result != nil {
+		return nil
+	}
+	return p.expired
 }
 
 // Wait returns the job's result once it committed or failed, or ctx's

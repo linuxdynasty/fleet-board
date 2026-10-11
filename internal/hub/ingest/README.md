@@ -49,7 +49,12 @@ out, err := p.Wait(ctx) // out.Generation, out.Rollback (02i rule 3 causes), out
   in 5c1). Notes for the rows that build on it:
   - Inventory rows (7 to 10) replace their tables wholesale from the
     Snapshot and diff derived state (03 "Ordering and consistency").
-  - 5g closes `Snapshot.unacked_results` outbox rows through an `Applier`.
+  - 5g expires the machine's due commands in the job, after the appliers
+    and before `MarkOnline` (`outbox.Expire`, at most `ExpireInSnapshot`;
+    `Pending.Expired` lists them for the log after the commit). It is not
+    an `Applier`. `Snapshot.unacked_results` needs no write: the results
+    that follow the Snapshot close their rows (03n), and no spec rule
+    closes a row the list leaves out (#33).
   - 5h keeps `Snapshot.settings` in `machine_effective_settings` (03e
     "Persistence"); 5c1 stores no settings.
   - 5e writes the `policy.safe_mode` audit row with the `policy_invalid`

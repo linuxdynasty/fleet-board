@@ -22,4 +22,12 @@
 // longer live is [Refused] and writes nothing, and so is a refusal the
 // agent sends without logging the command (EPOCH_MISMATCH, SEQ_REPLAYED):
 // the command goes out again under the live epoch.
+//
+// Deadlines: [Enqueue] fills an unset not_after_time with the kind's
+// [DefaultDeadline]. [Expire] closes due open rows inside a caller's job
+// (the Snapshot transaction, ingest.SubmitSnapshot) and
+// [Service.ExpireDue] is the housekeeping job that does it for every
+// machine; [CloseForRevoke] closes a revoked machine's open rows inside
+// the revoke's job; [Service.Closed] logs and counts them after the
+// commit. [Service.Prune] deletes rows closed more than [Retention] ago.
 package outbox

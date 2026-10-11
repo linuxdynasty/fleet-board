@@ -91,6 +91,10 @@ func Migrations() []store.Migration {
 		Version: 9,
 		Name:    "commands_outbox",
 		SQL:     commandsSQL,
+	}, {
+		Version: 10,
+		Name:    "commands_expiry",
+		SQL:     commandsExpirySQL,
 	}}
 }
 

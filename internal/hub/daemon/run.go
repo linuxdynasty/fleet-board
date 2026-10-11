@@ -18,6 +18,7 @@ import (
 	"github.com/linuxdynasty/fleet-board/internal/hub/gateway"
 	"github.com/linuxdynasty/fleet-board/internal/hub/housekeeping"
 	"github.com/linuxdynasty/fleet-board/internal/hub/lock"
+	"github.com/linuxdynasty/fleet-board/internal/hub/outbox"
 	"github.com/linuxdynasty/fleet-board/internal/hub/revocation"
 	"github.com/linuxdynasty/fleet-board/internal/hub/statedb"
 	"github.com/linuxdynasty/fleet-board/internal/store"
@@ -207,6 +208,10 @@ func serve(ctx context.Context, cfg *config.Config, opts Options, d hubDeps, s *
 	agent.RecordStates(ctx, d.swept)
 	hk, err := housekeeping.New(housekeeping.Options{Now: opts.Now, Telemetry: s.tel}, housekeeping.Job{
 		Name: "machine_state", Every: housekeeping.TickEvery, Run: agent.Housekeep,
+	}, housekeeping.Job{
+		Name: "outbox_expiry", Every: housekeeping.TickEvery, Run: agent.Outbox().ExpireDue,
+	}, housekeeping.Job{
+		Name: "outbox_prune", Every: outbox.PruneEvery, Run: agent.Outbox().Prune,
 	})
 	if err != nil {
 		for _, l := range ls {
