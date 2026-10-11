@@ -184,14 +184,15 @@ st, changed := c.Changed()                       // the state, and a chan closed
   name on macOS and the BSDs (`kill`), the number on Linux (`9`); 3.2a has
   no `pane_dead_signal` and never reports one. The signal is a diagnostic,
   not structure, so it fails open: text the client cannot read (a name
-  this OS lacks, such as `iot`, or a number outside 1 to 127) is `other`
+  this OS lacks, or a number outside 1 to 127) is `other`
   with no number, and the pane still comes back; tmux's text is never
   passed on. `<n>` is the host's own number (10 is USR1 on Linux, BUS on
   macOS), so the hub cannot compare it across hosts. A bad id, `pane_dead`,
   size or field count, or a status and a signal both present (tmux fills
   one or the other), is `ErrBadReply`. In 3.7c a pane is dead only once
-  tmux has its status, so "dead, no status, no signal" is a 3.2a moment
-  before the status is in.
+  tmux has its status. On 3.2a, "dead, no status, no signal" is either the
+  moment before the status is in or a pane a signal killed: it stays that
+  way, because 3.2a never names the signal.
 - `ControlDown(clients...)` is `AgentHealth.tmux_control_down`.
 
 ### Concurrency

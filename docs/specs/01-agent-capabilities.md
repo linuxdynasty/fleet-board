@@ -454,11 +454,12 @@ optionally against one limit the owner sets.
   tmux kept the pane (`remain-on-exit`, which the agent never sets on a
   developer's pane); a pane gone first has `exit_status` unset (row 7 PR 7d,
   `internal/agent/tmux/inventory`). A pane a signal killed has no exit
-  status; tmux 3.7c gives the signal's name or number (name on macOS,
-  number on Linux) and the agent reports it as one of `hup`, `int`, `quit`,
-  `abort`, `kill`, `segv`, `pipe`, `term`, `other:<n>` (the host's own
-  number, not comparable across hosts) or `other` when it cannot read the
-  text, never tmux's text (3.2a reports no signal).
+  status; tmux 3.7c gives the signal's name or number (name on macOS, number
+  on Linux) and the agent's tmux client reads it as one of `hup`, `int`,
+  `quit`, `abort`, `kill`, `segv`, `pipe`, `term`, `other:<n>` (the host's
+  own number, not comparable across hosts) or `other` when it cannot read the
+  text, never tmux's text (3.2a reports no signal). No snapshot field carries
+  it yet; `TmuxPane` has only `dead` and `exit_status`.
 - **E4 Activity transitions:** active ↔ idle, with the time of last output.
   Never dropped under backpressure; the hub's stuck detection depends on it.
 - **E5 Pane summaries:** last lines, ANSI stripped; at most one per pane every
