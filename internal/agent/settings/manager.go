@@ -124,17 +124,24 @@ func Open(ctx context.Context, opts Options) (*Manager, error) {
 		}
 	}
 	out := Merge(Input{Hub: kept, Local: opts.Local.Policy(), SafeMode: opts.Local.SafeMode()})
-	v := newView(ok, kept, out.Ack)
-	if m.m, err = newMetrics(opts.Telemetry, func() int64 { return int64(min(m.cur.Load().gen, 1<<62)) }); err != nil {
+	m.cur.Store(newView(ok, kept, out.Ack)) // before the gauge can read it
+	if m.m, err = newMetrics(opts.Telemetry, m.generation); err != nil {
 		return nil, fmt.Errorf("settings: register metrics: %w", err)
 	}
-	m.cur.Store(v)
 	if ok {
 		if err := m.reevaluate(ctx, held, out); err != nil {
 			return nil, err
 		}
 	}
 	return m, nil
+}
+
+// generation is the held generation for the gauge (0 before any).
+func (m *Manager) generation() int64 {
+	if v := m.cur.Load(); v != nil {
+		return int64(min(v.gen, 1<<62))
+	}
+	return 0
 }
 
 // reevaluate saves the merge under the policy loaded now when it changed.
