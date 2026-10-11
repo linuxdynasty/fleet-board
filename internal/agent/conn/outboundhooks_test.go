@@ -127,7 +127,9 @@ func TestProgressQueuedBeforeASnapshotRequestGoesBeforeIts(t *testing.T) {
 		h.pushCommand(t, fmt.Sprintf("c%02d", k), time.Now().Add(time.Hour))
 		h.push(t, &agentv1.ConnectResponse{Body: &agentv1.ConnectResponse_SnapshotRequest{SnapshotRequest: &agentv1.SnapshotRequest{}}})
 	}
-	waitFor(t, 20*time.Second, "every round's snapshot and its results", func() bool {
+	// Twenty rounds take about 11 s on an idle machine under -race (each
+	// round waits out its own snapshot), so the bound is far above that.
+	waitFor(t, 90*time.Second, "every round's snapshot and its results", func() bool {
 		snaps := h.snapshots(1)
 		if len(snaps) != rounds+1 {
 			return false
