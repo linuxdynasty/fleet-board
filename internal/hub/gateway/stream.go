@@ -376,8 +376,9 @@ func (a *agentService) closed(ctx context.Context, s *stream) {
 		}
 		ended, err = statedb.EndConnection(wctx, a.store, s.machineID, s.epoch, reason, a.now().UTC())
 	}
-	// After the close's job is queued, never before: the teardown can
-	// outlive Shutdown, and the store closes once Shutdown returns.
+	// After the close returns, never before: the close is the last job this
+	// stream queues, and when Shutdown's wait runs out the store closes
+	// under a teardown that is still running.
 	a.abandonedSnapshots(ctx, s)
 	if reason != statedb.EndDisplaced {
 		if err != nil {
