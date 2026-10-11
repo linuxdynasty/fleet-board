@@ -72,7 +72,7 @@ machine.
   cd spikes/sqlite && CGO_ENABLED=1 go build -o s1 . && ./s1 -driver modernc -scenario burst -dur 60s
   ```
 - Machine: Apple M4 Pro, 12 cores, 64 GB, macOS 27.0.1, APFS on the
-  internal SSD; Go 1.27.2 darwin/arm64. The quiet-host runs were measured at ed6baed before the rebase onto b4ae10f; the measured packages (internal/hub/ingest, internal/hub/statedb, internal/store) are unchanged at dad1658 except the benchmark comment, eventloss.go (the RecordEventLoss bound check, not on the measured path) and eventloss_test.go.
+  internal SSD; Go 1.27.2 darwin/arm64. The quiet-host runs were measured at ed6baed, before the rebases onto b4ae10f and a5dbb9e. At 2a4a1c9 the per-event job is unchanged: internal/store, internal/hub/ingest/event.go and clean_event.go are identical, and internal/hub/statedb/events.go differs only in a comment (the events table is now migration 11, after row 5g's migration 10). The other changes in those packages since are off the measured path: 5g's command expiry in the Snapshot job (used only to set up the benchmark) and its command indexes, the RecordEventLoss bound check, the benchmark comment and tests.
 
 ## Results
 
