@@ -46,7 +46,8 @@ column is never reached and an unknown role is refused; a `local_approval`
 rule makes every allowed cell of its kind wait, `A` cells included; `F`
 and `F*` are the handler's to judge, "after `merged_grace`" is the hub's
 timer, and a `KillWindow` the handler cannot place is a developer's
-window (02g legend); free text is cut to 8 KiB before the scrub. The rate window is rebuilt
+window (02g legend); free text is cut back to whole lines within 8 KiB before the scrub
+(`scrub.Bound`; empty when its first 8 KiB hold no line end). The rate window is rebuilt
 from the last minute of the command log at start (`ring.Recent`), so a
 restart does not reset it; a read that fails is logged
 (`command.store_failed{step=window}`) and the window starts empty.

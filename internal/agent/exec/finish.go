@@ -6,7 +6,6 @@ import (
 	"regexp"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -19,8 +18,9 @@ import (
 )
 
 // Free text caps (02e "Size limits"): a result or progress message is at
-// most 1 KiB after the scrub. preCut bounds the scrubber's input; a message
-// longer than it is cut first.
+// most 1 KiB after the scrub. preCut bounds the scrubber's input, and the
+// cut never splits a line (scrub.Bound; internal/scrub README "Callers
+// bound the input"): a secret is never cut short and left unmatched.
 const (
 	maxMessage = 1 << 10
 	preCut     = 8 << 10
@@ -128,20 +128,15 @@ func errKind(err error) string {
 	}
 }
 
-// text is agent-written free text as it may leave the machine: cut to
-// preCut, scrubbed with the home folder written as ~, at most 1 KiB
-// (02e; internal/scrub).
+// text is agent-written free text as it may leave the machine: cut back
+// to whole lines within preCut (or "" when its first 8 KiB hold no line
+// end), scrubbed with the home folder written as ~, at most 1 KiB (02e;
+// internal/scrub README "Callers bound the input").
 func (e *Executor) text(s string) string {
 	if s == "" {
 		return ""
 	}
-	if len(s) > preCut {
-		cut := preCut
-		for cut > 0 && !utf8.RuneStart(s[cut]) {
-			cut--
-		}
-		s = s[:cut]
-	}
+	s, _ = scrub.Bound(s, preCut)
 	return scrub.Text(s, scrub.Options{MaxBytes: maxMessage, Home: e.opts.Home})
 }
 

@@ -76,20 +76,29 @@ secret case; `TestSettleRoundBound` pins the bound from both sides.
 not its cap: it scrubs everything, then cuts. 1 MiB takes 0.9 to 1.6 s of
 plain text, and text built to be slow takes 13 ms at 1 KiB, 0.97 s at 64 KiB
 and 15.6 s at 1 MiB (`BenchmarkTextHostile` is the 64 KiB case; see Speed).
-A caller with text of no fixed size, such as a command's stderr, cuts it first
-to a bound far above the cap, such as 64 KiB (the largest field, the insights
-report), on a UTF-8 boundary. The hub does the same for the agent's free
-text, with the field's own cap as the bound: the 1 MiB `Connect` message cap
-alone would let an agent send a 1 MiB `message` that holds its stream's ingest
-goroutine for about 16 s, so the hub cuts a longer string to the cap, or
-rejects the message, before it calls `Scrub` (02e, 04b). That first cut can
-split a secret at the bound, and the part left before it may be too short for
-its rule (a token under its minimum length). That part reaches the output
-only if scrubbing shrinks everything before it below the cap, which a bound
-many times the cap makes unlikely, not impossible. At the cap itself (the
-hub's case) any shrinking lets it through, so the hub's cut stops the cost, not
-the leak: an honest agent already cut at the cap after scrubbing and never
-sends more, so rejecting a longer string is the safer choice.
+So a caller with text of no fixed size cuts it first, with `Bound(s, n)`:
+the whole text when it fits, else the text up to and including the last
+`\n` in its first `n` bytes, or `""` when there is none (`cut` says so).
+That cut never splits a secret, which a cut at a byte or a word can: every
+rule but the private-key block matches within one line (no rule uses `\s`,
+`(?s)` or `[\s\S]`, the header and quoted-value classes exclude `\n`, and
+names, flags, query values and tokens end at whitespace), so each kept line
+is scrubbed whole and a dropped line is gone whole; the private-key block
+has a cut-short arm that redacts a block with no end line. Only `\n` ends a
+line: the quoted-value classes admit `\r`, so a cut at a bare `\r` could
+leave the head of a quoted secret. A cut at a byte bound is not safe even
+far above the cap: redaction can shrink everything before the bound below
+the cap, and the head of a secret split at the bound (too short for its
+rule) is then sent (`TestBoundThenTextLeavesNoSecretHead`; `FuzzBound`
+checks the line rule). The agent cuts its free text with `Bound` at 8 KiB
+before it scrubs to 1 KiB (02e, defaults). The hub still cuts the agent's
+free text at the field's own cap, or rejects the message, before it calls
+`Scrub` (02e, 04b): the 1 MiB `Connect` message cap alone would let an agent
+send a 1 MiB `message` that holds its stream's ingest goroutine for about
+16 s. At the cap any shrinking lets a split secret's head through, so the
+hub's cut stops the cost, not the leak; an honest agent already cut and
+scrubbed and never sends more, so rejecting a longer string is the safer
+choice, and moving the hub's two cuts to `Bound` is a follow-up.
 
 ## What counts as a secret
 
@@ -172,6 +181,11 @@ pairs, URLs with no query.
   `password: ab,cd` → `password: [redacted],cd`.
 - A bearer token outside an Authorization header that is short and has no
   `=` padding, or sits on the line after `Bearer`: `Bearer abc123`.
+- An unclosed quote in the JSON, Python, `=>` and `name: "value` forms is
+  not redacted to the end of the line, unlike `NAME='abc def`:
+  `"api_key": "abc`, `'token': 'abc`, `"password" => "abc` and
+  `token: "abc` stay as they are. The gap exists with no cut at all; a
+  follow-up closes it.
 - Tokens of a variable length glued together: in `ghp_<16+>ghp_<16+>` the
   first token's body takes the next `ghp`, and the second body stays.
 
