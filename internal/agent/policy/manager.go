@@ -128,22 +128,13 @@ func Load(opts Options) (*Manager, error) {
 }
 
 func (m *Manager) load() {
-	fr, rerr := readFile(m.path)
-	st := state{loadedTime: m.now(), loadedHash: fr.hash, diskHash: fr.hash}
-	m.loaded = &Policy{}
-	switch {
-	case fr.problem != nil:
-		st.safeMode, st.problem = true, fr.problem
+	in, rerr := inspectPath(m.path)
+	st := state{loadedTime: m.now(), loadedHash: in.Hash, diskHash: in.Hash, schema: in.SchemaVersion}
+	m.loaded = in.Policy
+	if in.Problem != nil {
+		st.safeMode, st.problem = true, in.Problem
 		if rerr != nil {
 			m.log.Warn("policy.check_failed", "err_kind", "io")
-		}
-	case fr.present:
-		res := Parse(fr.data)
-		st.schema = res.SchemaVersion
-		if res.Problem != nil {
-			st.safeMode, st.problem = true, res.Problem
-		} else {
-			m.loaded = res.Policy
 		}
 	}
 	m.st = st
