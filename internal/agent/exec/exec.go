@@ -221,12 +221,6 @@ func (e *Executor) claim(id, kind string) bool {
 	return true
 }
 
-func (e *Executor) isRunning(id string) bool {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	return e.running[id] != nil
-}
-
 func (e *Executor) release(id string) {
 	e.mu.Lock()
 	defer e.mu.Unlock()

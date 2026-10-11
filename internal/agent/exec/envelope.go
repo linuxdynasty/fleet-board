@@ -189,6 +189,11 @@ func (e *Executor) start(ctx context.Context, c *agentv1.Command, ent ring.Entry
 	if !e.claim(ent.ID, ent.Kind) {
 		return
 	}
+	e.launch(ctx, c, ent, p)
+}
+
+// launch starts the goroutine of a command already claimed.
+func (e *Executor) launch(ctx context.Context, c *agentv1.Command, ent ring.Entry, p plan) {
 	e.wg.Add(1)
 	go e.do(ctx, c, ent, p)
 }
