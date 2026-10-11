@@ -223,6 +223,7 @@
   {"token": "BenchmarkHub", "kind": "go", "reason": "benchmark name prefix in internal/scrub/hub_pass_test.go (plan row 5l)", "files": ["docs/specs/04b-hub-scrubber-cost.md"]},
   {"token": "BenchmarkHubPassFile", "kind": "go", "reason": "Go benchmark in internal/scrub/hub_corpus_file_test.go (plan row 5l)", "files": ["docs/plan/v1-implementation-plan.md", "docs/specs/04b-hub-scrubber-cost.md"]},
   {"token": "TestHubCorporaKeepTheirPremise", "kind": "go", "reason": "Go test in internal/scrub/hub_pass_test.go (plan row 5l)", "files": ["docs/specs/04b-hub-scrubber-cost.md"]},
-  {"token": "FLEET_SCRUB_BENCH_CORPUS", "kind": "env", "reason": "environment variable read by BenchmarkHubPassFile (plan row 5l)", "files": ["docs/specs/04b-hub-scrubber-cost.md"]}
+  {"token": "FLEET_SCRUB_BENCH_CORPUS", "kind": "env", "reason": "environment variable read by BenchmarkHubPassFile (plan row 5l)", "files": ["docs/specs/04b-hub-scrubber-cost.md"]},
+  {"token": "XDG_CONFIG_HOME", "kind": "env", "reason": "environment variable that moves the agent config folder (plan row 6, PR 6b)", "files": ["docs/specs/02k-v1-surface-and-cli.md", "docs/specs/03e-settings-and-drift.md", "docs/specs/04-technology-review.md"]}
  ]
 }

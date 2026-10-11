@@ -33,6 +33,14 @@ enrolled), 2 bad usage. A stray argument (say a token typed without
   names both hostnames.
 - If the hub failed on its own side, the error does not suggest running
   the command again: it would fail the same way; fleetd's log says why.
+- `enroll` also writes a starter `policy.yaml` in the config folder
+  (`~/.config/fleet-agent/`, or `$XDG_CONFIG_HOME/fleet-agent/` when that is an
+  absolute path, or `--config-dir`; mode 0644, the folder 0700). On a terminal
+  it asks "Folder that holds your repos (for example ~/repos):" before any
+  network call; `--repos <dir>` answers it, and a folder that does not exist
+  stops `enroll` before the token is spent. With no answer the file has an
+  empty `allowed_repo_roots` and `enroll` says so. An existing `policy.yaml` is
+  never replaced. The line goes to stderr; stdout stays one line.
 - Until re-enroll exists (later in plan row 4), an enrolled machine is never
   re-enrolled over its identity. To start again, remove only
   `identity.json` (and `enroll.key` if present) from the state folder and
@@ -64,6 +72,14 @@ fleet-agent run    # logs to stderr; stop with Ctrl-C or SIGTERM
   memory pressure, free disk under the state folder), and each heartbeat the
   load. A reading that failed is left out, not sent as 0
   (`internal/agent/machine`; `sample.failed` in the log).
+- It makes the config folder (mode 0700) when it is missing, loads
+  `policy.yaml` once, and watches the folder: an edit, a replace by rename, a
+  delete or a new file is noticed 500 ms after the last event (no polling),
+  logged as `policy.changed` and written to `audit.log` in the state folder, and
+  `Snapshot.policy.changed_since_load` is set. The new file takes effect when
+  `run` restarts. A missing file is a normal first run; an invalid one starts
+  the agent in safe mode (`policy.safe_mode`, one line naming the line number and
+  key, never the file's text). `run` never writes `policy.yaml`.
 - Exit codes: 0 after a signal (it says goodbye to the hub first; a
   signal while it is still starting is a clean stop too, logged as
   `run.stopped{step}`; a real startup failure at the same moment still
@@ -96,6 +112,8 @@ fleet-agent run    # logs to stderr; stop with Ctrl-C or SIGTERM
   state folder that exists. A good `enroll` removes the file, a refusal
   because the machine is already enrolled leaves it alone, and `run`
   removes it once it has an identity.
+
+`--state-dir` and `--config-dir` are flags of every command.
 
 `fleet-agent --version` prints the name and the version; `-h` prints the
 usage. Release builds set the version with `-ldflags -X` (see

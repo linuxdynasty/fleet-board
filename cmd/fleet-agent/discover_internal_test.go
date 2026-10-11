@@ -31,7 +31,7 @@ func TestEnrollWithoutAHubUsesItsFinder(t *testing.T) {
 	d := &countingDiscover{}
 	dir := filepath.Join(t.TempDir(), "state")
 	var out, errOut bytes.Buffer
-	code := execute(context.Background(), []string{"--state-dir", dir, "enroll", "--token", h.Token(t, time.Now().Add(time.Hour))},
+	code := execute(context.Background(), []string{"--state-dir", dir, "--config-dir", filepath.Join(t.TempDir(), "config"), "enroll", "--token", h.Token(t, time.Now().Add(time.Hour))},
 		&out, &errOut, d)
 	if code != 1 || !strings.Contains(errOut.String(), "no hub found on the local network") ||
 		!strings.Contains(errOut.String(), "--hub") {
@@ -60,7 +60,7 @@ func TestRunBrowsesWithItsFinder(t *testing.T) {
 	d := &countingDiscover{}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- runAgent(ctx, s.dir, "test", "boot", s.tel, d) }()
+	go func() { done <- runAgent(ctx, s.dir, s.cfg, "test", "boot", s.tel, d) }()
 	deadline := time.Now().Add(10 * time.Second)
 	for d.n.Load() == 0 && time.Now().Before(deadline) {
 		time.Sleep(10 * time.Millisecond)

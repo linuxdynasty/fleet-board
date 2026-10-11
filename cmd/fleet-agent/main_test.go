@@ -51,8 +51,15 @@ type result struct {
 // agent runs the built binary with args and an empty HOME.
 func agent(t *testing.T, args ...string) result {
 	t.Helper()
+	return agentIn(t, t.TempDir(), nil, args...)
+}
+
+// agentIn runs the built binary with args, the given HOME and extra
+// environment entries (such as XDG_CONFIG_HOME=...).
+func agentIn(t *testing.T, home string, env []string, args ...string) result {
+	t.Helper()
 	cmd := exec.CommandContext(t.Context(), bin, args...) //nolint:gosec // G204: bin is the binary TestMain built; args come from the tests
-	cmd.Env = []string{"HOME=" + t.TempDir(), "PATH=" + os.Getenv("PATH")}
+	cmd.Env = append([]string{"HOME=" + home, "PATH=" + os.Getenv("PATH")}, env...)
 	var out, errOut bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errOut
 	err := cmd.Run()

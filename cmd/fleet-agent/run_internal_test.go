@@ -18,6 +18,7 @@ import (
 // and the log buffer runAgent writes to.
 type startup struct {
 	dir     string
+	cfg     string
 	machine string
 	tel     *telemetry.Telemetry
 	logs    *conntest.Buffer
@@ -42,12 +43,12 @@ func newStartup(t *testing.T) *startup {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &startup{dir: dir, machine: id.MachineID, tel: tel, logs: logs}
+	return &startup{dir: dir, cfg: filepath.Join(t.TempDir(), "config"), machine: id.MachineID, tel: tel, logs: logs}
 }
 
 // run calls runAgent with ctx, which the caller may have cancelled.
 func (s *startup) run(ctx context.Context) error {
-	return runAgent(ctx, s.dir, "test", "boot", s.tel, nil)
+	return runAgent(ctx, s.dir, s.cfg, "test", "boot", s.tel, nil)
 }
 
 func cancelled() context.Context {
