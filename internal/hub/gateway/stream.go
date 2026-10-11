@@ -85,6 +85,11 @@ type stream struct {
 	// stream ended, in the order they were queued; the teardown reads their
 	// results. Only the handler goroutine uses it.
 	abandoned []*ingest.Pending
+	// lastBeat is the last Heartbeat the reader took, not yet judged for
+	// its event fields (beatEvents swaps it out).
+	lastBeat atomic.Pointer[agentv1.Heartbeat]
+	// ev is the Event arm's bookkeeping; only the handler goroutine uses it.
+	ev eventState
 	// seenWritten is the hub clock of the last last_seen_time write for
 	// this stream (the Hello's at first); only the handler goroutine uses it.
 	seenWritten time.Time
@@ -284,7 +289,10 @@ func (a *agentService) serve(ctx context.Context, bs *connectStream, rc *http.Re
 	wrote := make(chan struct{})
 	readErr := make(chan error, 1)
 	go s.write(bs, rc, wrote)
-	go s.read(bs, a.now, func(h *agentv1.Heartbeat, at time.Time) { a.skewSample(ctx, s.machineID, h.GetSentTime(), at) }, readErr)
+	go s.read(bs, a.now, func(h *agentv1.Heartbeat, at time.Time) {
+		s.lastBeat.Store(h)
+		a.skewSample(ctx, s.machineID, h.GetSentTime(), at)
+	}, readErr)
 	unhandled := map[string]bool{}
 	var rerr error
 	read := false
@@ -294,6 +302,10 @@ func (a *agentService) serve(ctx context.Context, bs *connectStream, rc *http.Re
 			a.handle(ctx, s, m, unhandled)
 		case <-s.beats:
 			a.heartbeat(ctx, s)
+		case err := <-s.ev.oldest():
+			a.settle(ctx, s, err)
+		case <-s.ev.ack.due():
+			a.ackDue(ctx, s)
 		case rerr = <-readErr:
 			read = true
 		case <-s.ended:
@@ -312,6 +324,7 @@ func (a *agentService) serve(ctx context.Context, bs *connectStream, rc *http.Re
 	// (abandonedSnapshots); a job that finds the writer queue full is not
 	// submitted, and the agent sends again what the hub never acked.
 	a.drain(ctx, s, s.in, unhandled)
+	a.settleAll(ctx, s)
 	if !a.stop(rc, wrote, byeWait+100*time.Millisecond) {
 		// The Bye's deadline must not outlive it: the row close below may
 		// take longer, and an expired deadline would reset the stream

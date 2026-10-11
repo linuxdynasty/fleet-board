@@ -65,6 +65,13 @@ type ServerOptions struct {
 	// machine is ONLINE on that stream. It runs after the outbox's ready
 	// seam, which sends the machine's pending commands. It must not block.
 	OnSnapshotApplied func(machineID string, epoch uint64)
+	// EventAppliers are the later rows' parts of an Event's writer job
+	// (ingest.EventApplier), run in order for an event the hub did not
+	// already hold; empty until plan rows 7 to 10.
+	EventAppliers []ingest.EventApplier
+	// eventAcker, set only by tests, records the EventAcks the hub would
+	// send; nil sends none (the arm comes with plan row 7a).
+	eventAcker eventAcker
 	// arms, set only by tests, adds arm handlers to the product table.
 	arms armTable
 	// beforeSnapshot, set only by tests, runs in the Snapshot arm with the

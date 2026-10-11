@@ -267,7 +267,7 @@ at **4 machines** / **50 machines × 10 panes** from the load table in
 | `sessions` | `session_id`; unique `(machine_id, name)` | W5, W8 | rare | per machine; available set | permanent (fleet-created) |
 | `panes` (latest state per pane) | `(machine_id, server, server_start_id, pane_id)` | snapshots, pane events | activity 0.33 / 5 (peak 20); summaries go to `pane_summaries` (next row) | per machine; per session | current only |
 | `pane_summaries` | pane key | E5 | 4 / 100 | per visible pane | **latest per pane, always persisted** (ADR 0013, 0015). `state.db` keeps only the latest summary of each live pane and deletes the row when the pane goes away. **Once the logs row lands**, the last summary of each pane is archived to `logs.db` when its session ends, so the last screen of an ended session is kept (03d, ADR 0015, ADR 0025 decision 6, which replaces the deferral in ADR 0024 decision 23). Until then nothing is archived |
-| `events` (history, never-dropped kinds + replays) | `(machine_id, seq)` | all | ≈ 0.4 / 7 steady; bursts 2,500/s at hub restart (rate-limited) | timeline by machine/goal/time | 1 week |
+| `events` (history, never-dropped kinds + replays: every NEVER_DROP event and every replayed one, never a live SHED or COALESCE one; plus the hub's `gap` and `state_reset` markers; body as protobuf wire bytes) | `(machine_id, event_generation, seq)` (02i rule 3) | all | ≈ 0.4 / 7 steady; bursts 2,500/s at hub restart (rate-limited) | timeline by machine/goal/time | 1 week |
 | `harness_installs`, `catalog_entries` | `(machine_id, harness)`; `(…, catalog_hash, name)` | W11 | rare (bursts of ≤ 100 rows per catalog) | per machine | current + 30-day history |
 | `work_items` (mirror) | `WorkItemKey` (`integration_id, kind, project, key`; `provider_name` when no integration); `manual_reason`; `trust` verdict; `dispatch_block` | W4, W5 | ≤ 2 / ≤ 10 (page upserts, bursty) | by stage; by repo; READY in `dispatch_order` | while open + 30 days |
 | `change_requests` (mirror) | `WorkItemKey` (`integration_id, kind = CHANGE_REQUEST, project = repo path, key`); `repo RepoRef` is a column for lookups | W4 | ≤ 1 / ≤ 5 | by source_branch (head ref); by goal | while linked goal exists + 30 days |
@@ -293,7 +293,7 @@ ranking, the summary strip counts.
 
 **Index needs implied by the read patterns:** `goals(state)`,
 `goals(machine_id, state)`, `goals(account_id, state)`, `commands(machine_id,
-id) WHERE state = 'pending'`, `triage_items(state, kind, raise_time)`, `events(machine_id, seq)`,
+id) WHERE state = 'pending'`, `triage_items(state, kind, raise_time)`, `events(machine_id, event_generation, seq)`, `events(machine_id, observed_time)`,
 `events(goal_id, observed_time)`, `log_chunks(session_id, pane, stream, raw_offset)` and
 `(session_id, pane, stream, first_time)`, `change_requests(integration_id, source_branch)`,
 `work_items(stage, integration_id)`.

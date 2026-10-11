@@ -217,6 +217,35 @@ srv, err := gateway.NewServer(gateway.ServerOptions{
   is full). A Snapshot not applied
   ends the stream (no Bye) so the agent reconnects with a fresh one, except
   `not_current`: a newer Hello already displaced the stream.
+- **Events** (`arm_events.go`, `events_counters.go`, `events_prune.go`;
+  plan row 5 PR 5c2; 02i, 03n, row 5 ruling forks 2a and 6): on the
+  handler goroutine an Event needs the machine's live stream with its
+  Snapshot applied and a seq above the last one taken on the stream
+  (holes are normal); otherwise it is dropped (`event.refused`, once per
+  reason per stream) and an order break (`before_snapshot`, `seq_order`)
+  sends one `SnapshotRequest{out_of_order}` per stream. `ingest.CleanEvent`
+  scrubs its free text; then `ingest.SubmitEvent` queues ONE writer job
+  without waiting (at most `maxInflight`, 256, in flight per stream; at
+  the cap the arm waits for the oldest), and the serve loop settles the
+  outcomes in order as they come: counted in
+  `fleet_hub_events_total{kind, result}`; a failure (`event.failed`) ends
+  the stream so the agent sends again what was not committed (the store's
+  chain check fails every later job). The teardown settles what is still
+  in flight within `endWait` (`event.unsettled` past it). The replay phase
+  (first replayed event to the first live one) is the span
+  `hub.replay.ingest` and `replay.done`; a ring-overflow gap the Snapshot
+  found is logged as `replay.gap` at the first replayed event.
+  Heartbeat counters are judged after the Snapshot only: a rise of
+  `evicted_total` is `event.lost`, a gap marker and the counters stored
+  (`statedb.RecordEventLoss`), `fleet_hub_event_gap_total`, and
+  `SnapshotRequest{event_lost}` at most once per `EventLostEvery` (5 min)
+  per machine (in memory); `fleet_hub_replay_backlog_events` is
+  `Heartbeat.event_seq` minus the committed seq. EventAck (row 7 ruling,
+  fork 1): a committed seq, at most one per `AckEvery` per stream, the
+  held-back last one on a timer; the arm itself comes with plan row 7a, so
+  the product's acker sends nothing and HelloAck lists no `event.ack`.
+  `Server.PruneEvents` is the hourly housekeeping job that deletes history
+  older than `EventRetention` (7 days) in jobs of 5,000 rows.
 - **Commands** (`outbox.go`, `arm_commands.go`; plan row 5, PR 5f): the
   server builds the `internal/hub/outbox` Service on its store and runs its
   sender until `Shutdown` or `Close` (`FlushAudit` waits for it); callers

@@ -212,6 +212,8 @@ func serve(ctx context.Context, cfg *config.Config, opts Options, d hubDeps, s *
 		Name: "outbox_expiry", Every: housekeeping.TickEvery, Run: agent.Outbox().ExpireDue,
 	}, housekeeping.Job{
 		Name: "outbox_prune", Every: outbox.PruneEvery, Run: agent.Outbox().Prune,
+	}, housekeeping.Job{
+		Name: "events_prune", Every: gateway.PruneEventsEvery, Run: agent.PruneEvents,
 	})
 	if err != nil {
 		for _, l := range ls {

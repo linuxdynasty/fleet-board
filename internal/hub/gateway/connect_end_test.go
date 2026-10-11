@@ -15,10 +15,10 @@ import (
 	"github.com/linuxdynasty/fleet-board/internal/hub/gateway"
 )
 
-// eventMsg is a message of an arm with no product handler yet (plan row
-// 5c2 adds Event's).
-func eventMsg() *agentv1.ConnectRequest {
-	return &agentv1.ConnectRequest{Body: &agentv1.ConnectRequest_Event{Event: &agentv1.Event{}}}
+// unhandledMsg is a message of an arm with no product handler yet
+// (SettingsAck's comes with plan row 5h).
+func unhandledMsg() *agentv1.ConnectRequest {
+	return &agentv1.ConnectRequest{Body: &agentv1.ConnectRequest_SettingsAck{SettingsAck: &agentv1.SettingsAck{}}}
 }
 
 func agentBye() *agentv1.ConnectRequest {
@@ -66,13 +66,13 @@ func TestQueuedMessagesBeforeTheAgentsByeAreAllHandled(t *testing.T) {
 	s.ack(t)
 	const burst = 3
 	for range burst {
-		s.send(t, eventMsg())
+		s.send(t, unhandledMsg())
 	}
 	s.send(t, agentBye())
 	if err := s.ended(t); err != nil {
 		t.Fatalf("stream end %v, want clean", err)
 	}
-	if v := sample(scrape(t, h.fixture), "fleet_hub_connect_unhandled_total", `kind="event"`); v != burst {
+	if v := sample(scrape(t, h.fixture), "fleet_hub_connect_unhandled_total", `kind="settings_ack"`); v != burst {
 		t.Errorf("fleet_hub_connect_unhandled_total{kind=event} = %v when the stream ended, want %d", v, burst)
 	}
 }
@@ -84,7 +84,7 @@ func TestQueuedMessagesBeforeTheAgentsByeAreHandledBehindASlowArm(t *testing.T) 
 	t.Parallel()
 	var handled atomic.Int64
 	h := startHub(t, func(o *gateway.ServerOptions) {
-		gateway.SetArm(o, "event", func() {
+		gateway.SetArm(o, "settings_ack", func() {
 			time.Sleep(20 * time.Millisecond)
 			handled.Add(1)
 		})
@@ -96,7 +96,7 @@ func TestQueuedMessagesBeforeTheAgentsByeAreHandledBehindASlowArm(t *testing.T) 
 	// Ten, so the reader's end is almost surely seen with some still queued.
 	const burst = 10
 	for range burst {
-		s.send(t, eventMsg())
+		s.send(t, unhandledMsg())
 	}
 	s.send(t, agentBye())
 	if err := s.ended(t); err != nil {
