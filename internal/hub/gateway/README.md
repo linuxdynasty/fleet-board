@@ -122,7 +122,13 @@ srv, err := gateway.NewServer(gateway.ServerOptions{
   The same holds for an agent that leaves while its Hello waits (logged as
   a departure, `reconnect.closed{err_kind=reset}`, at info). A Hello that
   commits after the hook ran is answered `Bye{HUB_RESTART}` with its row
-  closed.
+  closed. `http.Server.Shutdown` waits for connections, not handlers: an
+  agent that drops the connection on its Bye lets it return while that
+  stream's handler is still closing its row. So `Server.Shutdown`
+  (`inflight.go`) then waits, bounded by its context, for every handler the
+  listener runs (a count kept around the whole mux); when the context ends
+  first it logs `hub.shutdown_wait_timeout{handlers}` and returns the error.
+  The store may close only after it returns.
 - **Per stream** (`stream.go`): the handler goroutine runs the ingest loop
   and the teardown; one reader (the only `Receive` caller) keeps Heartbeats
   in memory (the stream's last-heartbeat time, read for `HelloIn.Live` and
@@ -271,3 +277,7 @@ RenewCert: a new serial for the CSR key, the stored certificate on a repeat,
 each refusal of the 02g table, store failure, concurrent identical calls
 (one serial), and a CA with less than 90 days left. The listener tests read one
 clock, `wallNow`, for issuing and verifying, so they pass on any date.
+
+`shutdown_wait_test.go` holds a row close (an `export_test.go` hook) under
+an agent that dropped its connection: Shutdown waits for it, and ends with
+its context.

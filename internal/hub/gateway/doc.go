@@ -40,8 +40,9 @@
 // handler goroutine, everything else through a bounded queue to a per-arm
 // handler table) and one writer; the teardown stops both before the
 // handler returns and closes the connection row, which takes the machine
-// OFFLINE when the row was the live one. Shutdown sends Bye{HUB_RESTART} on
-// every stream.
+// OFFLINE when the row was the live one. [Server.Shutdown] sends
+// Bye{HUB_RESTART} on every stream and returns only once every handler has
+// returned (each row closed) or its context ends.
 //
 // [Server.Housekeep] is the machine-state job of fleetd's housekeeping:
 // no Heartbeat for [StaleAfter] is STALE, for [OfflineAfter] OFFLINE (and

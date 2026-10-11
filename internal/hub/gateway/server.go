@@ -51,6 +51,9 @@ type ServerOptions struct {
 	// afterHeartbeat, set only by tests, runs after a stream's handler
 	// finished with a Heartbeat wake, with the stream's Heartbeat count then.
 	afterHeartbeat func(n uint64)
+	// beforeRowClose, set only by tests, runs as a stream's handler is
+	// about to close its connection row.
+	beforeRowClose func()
 	// arms, set only by tests, adds arm handlers to the product table.
 	arms armTable
 }
@@ -83,8 +86,9 @@ func NewServer(opts ServerOptions) (*Server, error) {
 	path, h := agentv1connect.NewAgentServiceHandler(&agentService{enrollDeps: deps, connectDeps: cdeps},
 		connect.WithReadMaxBytes(MaxMessageBytes))
 	mux.Handle(path, withPeerCert(h))
-	srv := &Server{deps: deps, connect: cdeps, Server: &http.Server{
-		Handler: mux,
+	handlers := newInflight()
+	srv := &Server{deps: deps, connect: cdeps, handlers: handlers, Server: &http.Server{
+		Handler: handlers.track(mux),
 		TLSConfig: &tls.Config{
 			MinVersion:       tls.VersionTLS13,
 			GetCertificate:   certs.GetCertificate,
@@ -109,6 +113,8 @@ type Server struct {
 	*http.Server
 	deps    *enrollDeps
 	connect *connectDeps
+	// handlers counts running handlers for [Server.Shutdown].
+	handlers *inflight
 }
 
 // FlushAudit writes the machine.enroll_failed summary of the minute in

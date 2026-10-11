@@ -36,6 +36,8 @@ type connectDeps struct {
 	// afterRegister, set only by tests, runs once the stream is the
 	// machine's live one, before its HelloAck is queued.
 	afterRegister func()
+	// beforeRowClose, set only by tests, runs before a stream's row close.
+	beforeRowClose func()
 	// afterHeartbeat, set only by tests, runs after the handler goroutine
 	// finished with a Heartbeat wake.
 	afterHeartbeat func(n uint64)
@@ -93,7 +95,7 @@ func newConnectDeps(opts ServerOptions) (*connectDeps, error) {
 	}
 	stopping, stop := context.WithCancel(context.Background())
 	return &connectDeps{
-		afterHeartbeat: opts.afterHeartbeat, started: now().UTC(), skew: newSkews(), sm: sm,
+		afterHeartbeat: opts.afterHeartbeat, beforeRowClose: opts.beforeRowClose, started: now().UTC(), skew: newSkews(), sm: sm,
 		stopping: stopping, stop: stop,
 		streams: newRegistry(), limit: newHelloLimit(), revoked: opts.Revoked,
 		tracer: opts.Telemetry.Tracer(scope), instanceID: hex.EncodeToString(b[:]), version: buildinfo.Version,

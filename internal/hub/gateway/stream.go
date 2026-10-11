@@ -338,6 +338,9 @@ func (a *agentService) closed(ctx context.Context, s *stream) {
 	reason := s.endReason()
 	var ended statedb.Ended
 	if reason != statedb.EndDisplaced {
+		if a.beforeRowClose != nil {
+			a.beforeRowClose()
+		}
 		ctx := context.WithoutCancel(ctx)
 		wctx, cancel := context.WithTimeout(ctx, endWait)
 		defer cancel()

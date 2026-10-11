@@ -112,7 +112,9 @@ shutdown (`hub_restart`) and a machine that never got `ONLINE` change nothing.
 `last_seen_time` is written by the `Hello`, by each close and at most once a
 minute from Heartbeats. On graceful shutdown the hub sends
 `Bye{HUB_RESTART}` so agents reconnect quickly with backoff rather than
-waiting for keepalive timeouts.
+waiting for keepalive timeouts, and its agent listener's stop returns only
+once every stream's handler has closed its row as `hub_restart` (within
+the stop's 10 s grace, [defaults](defaults.md) "Stop grace (hub)"), so the store never closes under a row close.
 
 ### Persistence
 
@@ -125,7 +127,7 @@ waiting for keepalive timeouts.
 | Goal registry (`GoalRegistration` per pane) and availability marks (per pane key) | `agent.db` | `register_goal`, `RegisterGoal`, `ReleaseGoal`, mark commands; both reported in every snapshot (02h) |
 | Outbox rows (`pending/delivered/done/expired/failed`, epoch, seq) | hub store | Hello tx (expiry), result tx (close) |
 | Event history (replayed and live, 1 week) | hub store | per writer batch |
-| `machine_connections` (epoch, boot_id, install_id, peer, connect_reason, started and ended time, end_reason, displaced_by, last_heartbeat_age_ms at displacement) and the machine's `last_epoch` | hub store | Hello tx (opens the row, closes the one it displaces); stream close or `Bye` (closes it, and marks the machine `OFFLINE` in the same tx); housekeeping's `OFFLINE` (closes it as `offline`). A row can stay open with no stream behind it after a hub crash, or after a graceful shutdown that stopped waiting for a Hello whose transaction then committed; the hub-start sweep closes such rows as `hub_restart` |
+| `machine_connections` (epoch, boot_id, install_id, peer, connect_reason, started and ended time, end_reason, displaced_by, last_heartbeat_age_ms at displacement) and the machine's `last_epoch` | hub store | Hello tx (opens the row, closes the one it displaces); stream close or `Bye` (closes it, and marks the machine `OFFLINE` in the same tx); housekeeping's `OFFLINE` (closes it as `offline`). A row can stay open with no stream behind it after a hub crash, after a graceful shutdown that stopped waiting for a Hello whose transaction then committed, or after a stop whose handler wait ran out (`hub.shutdown_wait_timeout`); the hub-start sweep closes such rows as `hub_restart` |
 | Per machine: `hub_last_event_seq`, `event_generation`, last `EventCounters`, `install_id` | hub store | writer batch (seq); Hello tx (the rest) |
 
 ### Ordering and consistency
@@ -279,6 +281,8 @@ The agent side of plan row 6 (ruling forks 4 i, 11 and 12), in
   `connect.failed{step, err_kind, machine_id}` (error; `step`: `validate`, `store`,
   `wiring`: the listener put no response controller on the request, `INTERNAL`;
   `heartbeat`: a Heartbeat's last_seen or `STALE` to `ONLINE` job failed);
+  05b's `hub.shutdown_wait_timeout{handlers}` when the stop's grace ran out
+  with handlers still closing rows;
   `fleet_hub_connect_closed_before_hello_total{err_kind}` (a stream with a client
   certificate that ended before a `Hello` was accepted: `oversize`, `reset`, `timeout`
   (the Hello wait), `shutdown`; also `reconnect.closed` above);
