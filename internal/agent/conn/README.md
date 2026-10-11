@@ -93,8 +93,7 @@ was seen: nothing answered (`timeout`) or the browse could not run (`io`),
 with the likely firewall cause; answers that did not prove the CA or could
 not be reached (`refused`, or `timeout` when not every one refused the
 connection), without it. The whole-enroll cap or a stop during the search
-says so instead (`ErrHubFailed` or the stop), with no advice. Nothing was
-sent.
+says so (`ErrHubFailed` or the stop), with no advice. Nothing was sent.
 
 ## Connection loop
 
@@ -207,8 +206,7 @@ sent.
    before any network call, returns a `*EndedError` (`Recorded`, its message
    naming the hub and the owner's fix) while the file names this machine,
    removes one that names another machine (a leftover), and refuses a
-   damaged one (`ErrEndedDamaged`). Enroll removes it when it saves a new
-   identity.
+   damaged one (`ErrEndedDamaged`). Enroll removes it when it saves a new identity.
 
 ## Commands and the outbound queue
 
@@ -295,8 +293,7 @@ renewal may start), `renew.go` (the steps), `renewlog.go` (their logs) and
   at a time inside the certificates' own lives, not the agent's clock, so
   an agent clock behind the hub's does not refuse a fresh certificate.
   Then `cert.pem` is replaced (temp file, fsync, rename, folder fsync),
-  the set swapped, and `renew.key` removed. `identity.json` is never
-  touched.
+  the set swapped, and `renew.key` removed. `identity.json` is never touched.
 - **Failure.** A failure saves nothing, keeps `renew.key` and the stream,
   and is tried again at the next check: a refusal (`renew.refused`), a
   failed call such as an older hub's `UNIMPLEMENTED` or a busy one's
