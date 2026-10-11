@@ -10,8 +10,10 @@ import (
 // longer value as empty, with its length beside it (ruling fork 1 on 7d1).
 // tmux's #{=N:...} is no bound: it cuts by screen width, and zero-width
 // characters and #[style] blocks pass it whole. With seven text fields a
-// record is at most about 7.7 KiB, far under the parser's line bound. The
-// inventory package still cuts a name to its 256 bytes (02e).
+// record is at most about 7.6 KiB, far under the parser's line bound; how
+// many records the reply bound holds (fewest when values are newlines) is
+// in the README. The inventory package still cuts a name to its 256 bytes
+// (02e).
 const MaxFieldBytes = 1024
 
 // attachViewMark is the @fleet_internal value of an internal session: row

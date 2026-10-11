@@ -83,17 +83,27 @@ st, changed := c.Changed()                       // the state, and a chan closed
   3.2a and 3.7c send each non-ASCII or control character as `_` or drop
   it; the length check sees a change in byte count only (`a\nb` sent as
   `a_b` has the same length), which is why the client runs with `-u`.
-- What the bound leaves (the reply bound, the one residual): a record with
-  every text field at 1 KiB is 7,762 bytes (measured on 3.2a and 3.7c;
-  7,779 with the reply's per-line charge), so the 8 MiB reply bound holds
-  about 1,078 such panes on one server, and about 13,900 panes with short
-  names and no tags (587 bytes each, 604 charged). The budget in
-  [04](../../../docs/specs/04-technology-review.md) is 10 observed panes per
-  machine and 500 fleet-wide. Past the reply bound the read fails as
-  `ErrBadReply`, counted in
-  `fleet_agent_tmux_parse_errors_total{err_kind="reply_too_large"}` (and
-  7d2's `tmux.inventory_failed{err_kind=reply}`).
+- What the bound leaves: one known gap, the 8 MiB reply bound. Each reply
+  line is charged its bytes plus 17, so a newline in a value costs 17
+  bytes, not 1. Measured on 3.2a and 3.7c (macOS):
+  - Normal panes (short names, no tags): 605 bytes a record, 622 charged:
+    about 13,480 panes on one server.
+  - Long values: every text field at 1 KiB with no newline is 7,780 bytes,
+    7,797 charged: about 1,075 panes (6,759 bytes measured with a 3-byte
+    command, plus the rest of the command's 1 KiB).
+  - Newline-heavy, the worst case: the four `@fleet_*` options set with
+    `set-option -g` to 1,024 newlines each make every pane's record 4,097
+    lines, 70,266 bytes charged; 119 panes read, 120 fail. Session and
+    window names cannot add lines (3.2a escapes a newline in them, 3.7c
+    refuses one). A program's name can (the last field); with 1 KiB of
+    newlines there too it would be about 95 panes (computed, not measured).
 
+  Past the bound the read fails loudly, never partly: `ErrBadReply`,
+  counted in `fleet_agent_tmux_parse_errors_total{err_kind="reply_too_large"}`
+  (measured: 1 at 120 panes) and 7d2's `tmux.inventory_failed{err_kind=reply}`.
+  Every case is far above the budget in
+  [04](../../../docs/specs/04-technology-review.md): 10 observed panes per
+  machine and 500 fleet-wide.
 - `Run` checks `tmux -V` (below 3.2: `ErrTooOld`, REASON_CODE_TMUX_TOO_OLD),
   lists sessions with one `tmux list-sessions` through `internal/proc` and
   attaches by one rule on every server: the lowest session not marked
