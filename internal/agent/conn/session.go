@@ -233,6 +233,7 @@ func (s *session) hello(st ring.State, sent time.Time) *agentv1.Hello {
 		ProtoMin: protoversion.Min, ProtoMax: protoversion.Max, BootId: s.l.opts.BootID,
 		LastEpoch: st.Epoch, LastAppliedCommandSeq: st.CommandSeq, LastEventSeq: st.Marks.SeqHWM,
 		Reason: s.reason, SentTime: timestamppb.New(sent), InstallId: st.InstallID,
+		SettingsGeneration: st.SettingsGeneration, SettingsEpoch: st.SettingsEpoch,
 		EventCounters: &agentv1.EventCounters{
 			ShedTotal: st.Marks.Shed, CoalescedTotal: st.Marks.Coalesced, EvictedTotal: st.Marks.Evicted,
 		},

@@ -37,6 +37,10 @@ type State struct {
 	// Hello.last_applied_command_seq.
 	Epoch      uint64
 	CommandSeq uint64
+	// SettingsEpoch and SettingsGeneration are Hello.settings_epoch and
+	// settings_generation: the held settings ("" and 0 when none).
+	SettingsEpoch      string
+	SettingsGeneration uint64
 }
 
 // State reads the agent_state row.
@@ -52,15 +56,16 @@ func (d *DB) State(ctx context.Context) (State, error) {
 
 func readState(ctx context.Context, tx *sql.Tx) (State, error) {
 	var st State
-	var v [6]int64
+	var v [7]int64
 	err := tx.QueryRowContext(ctx, `SELECT install_id, seq_hwm, shed_total, coalesced_total, evicted_total,
-		last_epoch, last_applied_command_seq FROM agent_state WHERE id = 1`).
-		Scan(&st.InstallID, &v[0], &v[1], &v[2], &v[3], &v[4], &v[5])
+		last_epoch, last_applied_command_seq, coalesce(h.settings_epoch, ''), coalesce(h.generation, 0)
+		FROM agent_state LEFT JOIN settings_held h ON h.id = 1 WHERE agent_state.id = 1`).
+		Scan(&st.InstallID, &v[0], &v[1], &v[2], &v[3], &v[4], &v[5], &st.SettingsEpoch, &v[6])
 	if err != nil {
 		return State{}, fmt.Errorf("ring: read agent_state: %w", err)
 	}
 	st.Marks = Marks{SeqHWM: toUint(v[0]), Shed: toUint(v[1]), Coalesced: toUint(v[2]), Evicted: toUint(v[3])}
-	st.Epoch, st.CommandSeq = toUint(v[4]), toUint(v[5])
+	st.Epoch, st.CommandSeq, st.SettingsGeneration = toUint(v[4]), toUint(v[5]), toUint(v[6])
 	return st, nil
 }
 

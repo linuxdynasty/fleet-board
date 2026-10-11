@@ -32,4 +32,10 @@
 // order and never changes one. [DB.EventsBetween] reads them in seq order
 // and [DB.TrimEvents] drops what the hub holds (not loss). The emitter is
 // internal/agent/events.
+// Migration 7 keeps the hub settings the agent holds (plan row 6, 03e
+// "Persistence"): [DB.SaveSettings] saves the kept Settings, the SettingsAck
+// and the policy hash it was merged under in one job before the ack is
+// sent, never a lower generation within an epoch ([ErrSettingsOrder]);
+// [DB.HeldSettings] reads it back, and [State] carries its epoch and
+// generation for Hello. The merge is internal/agent/settings.
 package ring
