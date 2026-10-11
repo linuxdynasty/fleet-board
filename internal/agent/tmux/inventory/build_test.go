@@ -128,7 +128,7 @@ func TestBuildBoundsTextAndChecksTags(t *testing.T) {
 func TestBuildInternal(t *testing.T) {
 	t.Parallel()
 	inv := sampleInventory()
-	inv.Sessions[1].Tags.Internal = "attach_view"
+	inv.Sessions[1].Tags.AttachView = true // @fleet_internal is exactly attach_view
 	srv := buildServer("default", inv, "3.7c")
 	if s := srv.GetSessions()[0]; s.GetInternal() || s.GetAttachView() {
 		t.Fatalf("unmarked session = %v", s)
@@ -136,9 +136,9 @@ func TestBuildInternal(t *testing.T) {
 	if s := srv.GetSessions()[1]; !s.GetInternal() || !s.GetAttachView() {
 		t.Fatalf("marked session = %v", s)
 	}
-	inv.Sessions[1].Tags.Internal = "other"
-	if s := buildServer("default", inv, "3.7c").GetSessions()[1]; !s.GetInternal() || s.GetAttachView() {
-		t.Fatalf("a mark other than attach_view is internal, not a view: %v", s)
+	inv.Sessions[1].Tags.AttachView = false // @fleet_internal is "other": tmux reads it as 0
+	if s := buildServer("default", inv, "3.7c").GetSessions()[1]; s.GetInternal() || s.GetAttachView() {
+		t.Fatalf("a mark other than exactly attach_view is neither internal nor a view: %v", s)
 	}
 	probe := buildServer("fleet-probe", sampleInventory(), "3.7c")
 	if probe.GetKind() != typev1.TmuxServerKind_TMUX_SERVER_KIND_PROBE {

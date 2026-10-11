@@ -15,13 +15,15 @@ import (
 // finds them from that pane (pane, then window, then session options:
 // row-7 ruling forks 6 and 7). Values are raw and untrusted: anyone who can
 // run tmux can set them, and one can hold a newline or a tab (the caller
-// cleans them).
+// cleans them). A value over MaxFieldBytes reads as empty.
 type Tags struct {
-	Internal  string // @fleet_internal: the creator's mark of an internal session ("attach_view")
-	SessionID string // @fleet_session_id (FLEET_SESSION_ID)
-	Owner     string // @fleet_owner (FLEET_OWNER)
-	PaneKey   string // @fleet_pane_key (FLEET_PANE_KEY)
-	GoalID    string // @fleet_goal_id (FLEET_GOAL_ID)
+	// AttachView is whether @fleet_internal is exactly "attach_view": the
+	// creator's mark of an internal session (02h). The value is not read.
+	AttachView bool
+	SessionID  string // @fleet_session_id (FLEET_SESSION_ID)
+	Owner      string // @fleet_owner (FLEET_OWNER)
+	PaneKey    string // @fleet_pane_key (FLEET_PANE_KEY)
+	GoalID     string // @fleet_goal_id (FLEET_GOAL_ID)
 }
 
 // SessionInfo is one session in an [Inventory]. Name is the developer's
@@ -63,42 +65,12 @@ type Inventory struct {
 	Panes []PaneInfo
 }
 
-// inventoryFields are the fields of one list-panes line, in order. The
-// marker between them is new for every read, so no name or option value
-// can hold it.
-var inventoryFields = []string{
-	"session_id", "session_created", "session_attached",
-	"window_id", "window_index", "window_active", "automatic-rename",
-	"pane_id", "pane_index", "pane_active", "pane_dead", "pane_dead_status", "pane_width", "pane_height",
-	"@fleet_internal", "@fleet_session_id", "@fleet_owner", "@fleet_pane_key", "@fleet_goal_id",
-	"session_name", "window_name", "pane_current_command",
-}
-
-// MaxFieldChars caps each text field (the names, the command and the
-// @fleet_* options) in tmux itself, with #{=N:...} (tmux 3.2a and 3.7c), so
-// no value can push a line past the parser's line bound or the reply past
-// its bound: 22 fields of at most 256 characters (4 bytes each at worst)
-// keep a pane's line near 23 KiB. The caller cuts names to their bytes.
-const MaxFieldChars = 256
-
-// firstText is the index of the first text field in inventoryFields.
-const firstText = 14
-
-func inventoryFormat(marker string) string {
-	var b strings.Builder
-	for i, f := range inventoryFields {
-		if i >= firstText {
-			f = "=" + strconv.Itoa(MaxFieldChars) + ":" + f
-		}
-		b.WriteString(marker + "#{" + f + "}")
-	}
-	return b.String()
-}
-
 // ReadInventory lists every session, window and pane with one
 // list-panes -a. A server that restarted, or an attach that ended, while
 // it ran is ErrNotAttached; a reply cut short or not in the asked shape is
-// ErrBadReply (nothing partial is returned).
+// ErrBadReply (nothing partial is returned). A text field over
+// MaxFieldBytes, or not the length tmux gave, reads as empty and is counted
+// in the parser's Metrics; it never fails the read.
 func (c *Client) ReadInventory(ctx context.Context) (Inventory, error) {
 	c.mu.Lock()
 	// The session the control client sits on is read with the conn, before
@@ -137,8 +109,9 @@ func (c *Client) ReadInventory(ctx context.Context) (Inventory, error) {
 		p PaneID
 	}
 	panes := map[where]WindowID{}
+	var drops []fieldDrop
 	for _, line := range joinRecords(r.Body, marker) {
-		s, p, ok := parseInventoryLine(line, marker)
+		s, p, dropped, ok := parseInventoryLine(line, marker)
 		if !ok {
 			return Inventory{}, fmt.Errorf("tmux: inventory: %w", ErrBadReply)
 		}
@@ -149,6 +122,7 @@ func (c *Client) ReadInventory(ctx context.Context) (Inventory, error) {
 			continue // the same window at a second index
 		}
 		panes[where{s.ID, p.ID}] = p.Window
+		drops = append(drops, dropped...)
 		if !seen[s.ID] {
 			seen[s.ID] = true
 			if s.ID == own && s.Clients > 0 {
@@ -159,6 +133,9 @@ func (c *Client) ReadInventory(ctx context.Context) (Inventory, error) {
 		inv.Panes = append(inv.Panes, p)
 	}
 	slices.SortFunc(inv.Sessions, func(a, b SessionInfo) int { return int(a.ID) - int(b.ID) })
+	for _, d := range drops { // a read that failed reports none: its error says why
+		c.opts.Parser.Metrics.fieldDropped(d)
+	}
 	return inv, nil
 }
 
@@ -166,7 +143,8 @@ func (c *Client) ReadInventory(ctx context.Context) (Inventory, error) {
 // write a newline in an option value raw, and a value ending in one puts
 // the next field, marker first, at the start of a line. So a record takes
 // lines until it holds one marker per field; the marker is random per read,
-// so no value can hold one and counting them is safe.
+// so no value can hold one and counting them is safe. The length tmux sends
+// beside each text field then checks the join (a newline is one byte).
 func joinRecords(body []string, marker string) []string {
 	out := make([]string, 0, len(body))
 	for _, line := range body {
@@ -179,11 +157,13 @@ func joinRecords(body []string, marker string) []string {
 	return out
 }
 
-// parseInventoryLine reads one list-panes line of inventoryFields.
-func parseInventoryLine(line, marker string) (SessionInfo, PaneInfo, bool) {
+// parseInventoryLine reads one list-panes record of inventoryFields, with
+// the text fields it left blank. Only the fixed fields and the canary can
+// make it not in the asked shape (ok false).
+func parseInventoryLine(line, marker string) (SessionInfo, PaneInfo, []fieldDrop, bool) {
 	f := strings.Split(line, marker)
 	if len(f) != len(inventoryFields)+1 || f[0] != "" {
-		return SessionInfo{}, PaneInfo{}, false
+		return SessionInfo{}, PaneInfo{}, nil, false
 	}
 	f = f[1:]
 	sid, ok1 := parseID([]byte(f[0]), '$')
@@ -195,28 +175,43 @@ func parseInventoryLine(line, marker string) (SessionInfo, PaneInfo, bool) {
 	pidx, err4 := strconv.Atoi(f[8])
 	w, err5 := strconv.Atoi(f[12])
 	h, err6 := strconv.Atoi(f[13])
-	flags := []string{f[5], f[6], f[9], f[10]}
-	if !ok1 || !ok2 || !ok3 || firstErr(err1, err2, err3, err4, err5, err6) != nil || !allFlags(flags) || attached < 0 {
-		return SessionInfo{}, PaneInfo{}, false
+	flags := []string{f[5], f[6], f[9], f[10], f[14]}
+	if !ok1 || !ok2 || !ok3 || firstErr(err1, err2, err3, err4, err5, err6) != nil || !allFlags(flags) || attached < 0 || f[canaryAt] != "1" {
+		return SessionInfo{}, PaneInfo{}, nil, false
 	}
-	tags := Tags{Internal: f[14], SessionID: f[15], Owner: f[16], PaneKey: f[17], GoalID: f[18]}
-	s := SessionInfo{ID: SessionID(sid), Name: f[19], Created: time.Unix(created, 0), Clients: attached, Tags: tags}
+	var text [len(textFields)]string
+	var drops []fieldDrop
+	for i := range textFields {
+		v, drop, ok := boundedText(i, f[firstLength+i], f[firstText+i])
+		if !ok {
+			return SessionInfo{}, PaneInfo{}, nil, false
+		}
+		if drop != nil {
+			drops = append(drops, *drop)
+		}
+		text[i] = v
+	}
+	tags := Tags{
+		AttachView: f[14] == "1",
+		SessionID:  text[textSessionID], Owner: text[textOwner], PaneKey: text[textPaneKey], GoalID: text[textGoalID],
+	}
+	s := SessionInfo{ID: SessionID(sid), Name: text[textSessionName], Created: time.Unix(created, 0), Clients: attached, Tags: tags}
 	p := PaneInfo{
 		Pane: Pane{
 			Session: SessionID(sid), Window: WindowID(wid), ID: PaneID(pid),
 			Dead: f[10] == "1", DeadStatus: NoStatus, Width: w, Height: h,
 		},
-		WindowIndex: widx, WindowName: f[20], WindowActive: f[5] == "1", AutoRename: f[6] == "1",
-		Index: pidx, Active: f[9] == "1", Command: f[21], Tags: tags,
+		WindowIndex: widx, WindowName: text[textWindowName], WindowActive: f[5] == "1", AutoRename: f[6] == "1",
+		Index: pidx, Active: f[9] == "1", Command: text[textCommand], Tags: tags,
 	}
 	if p.Dead && f[11] != "" { // no status on a dead pane is a signal death, never 0
 		st, err := strconv.Atoi(f[11])
 		if err != nil {
-			return SessionInfo{}, PaneInfo{}, false
+			return SessionInfo{}, PaneInfo{}, nil, false
 		}
 		p.DeadStatus = st
 	}
-	return s, p, true
+	return s, p, drops, true
 }
 
 func allFlags(fs []string) bool {

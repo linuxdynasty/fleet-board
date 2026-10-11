@@ -9,8 +9,10 @@
 // PaneCreated, PaneChanged and PaneExited (exit_status only when tmux kept
 // the pane).
 //
-// Sessions on the probe server, and sessions whose creator set the
-// @fleet_internal user option, are internal (row-7 ruling fork 6); a tag is
+// Sessions on the probe server, and sessions whose @fleet_internal user
+// option is exactly "attach_view" (tmux compares it; the agent never reads
+// the value), are internal (row-7 ruling fork 6; ruling fork 2 on 7d1). A
+// text field over 1 KiB reaches this package blank (tmux bounds it). A tag is
 // data anyone can set, and the hub trusts a session id only when its own
 // table minted it (fork 7). The agent never reads a process environment.
 package inventory

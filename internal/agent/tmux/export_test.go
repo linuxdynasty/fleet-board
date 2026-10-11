@@ -32,18 +32,29 @@ func PickSessionForTest(list string) (SessionID, bool, error) { return pickSessi
 // IsAbsentForTest reports whether err means no server or no session.
 func IsAbsentForTest(err error) bool { return errors.Is(err, errAbsent) }
 
+// FieldDropForTest is one text field an inventory record left blank.
+type FieldDropForTest struct {
+	Field, Reason string
+	Bytes         int
+}
+
 // InventoryRecordsForTest splits a list-panes reply body made with marker
-// into records and parses each, as ReadInventory does.
-func InventoryRecordsForTest(body []string, marker string) ([]PaneInfo, bool) {
+// into records and parses each, as ReadInventory does, with the fields each
+// left blank.
+func InventoryRecordsForTest(body []string, marker string) ([]PaneInfo, []FieldDropForTest, bool) {
 	var out []PaneInfo
+	var drops []FieldDropForTest
 	for _, line := range joinRecords(body, marker) {
-		_, p, ok := parseInventoryLine(line, marker)
+		_, p, dropped, ok := parseInventoryLine(line, marker)
 		if !ok {
-			return nil, false
+			return nil, nil, false
 		}
 		out = append(out, p)
+		for _, d := range dropped {
+			drops = append(drops, FieldDropForTest{Field: d.field, Reason: d.reason, Bytes: d.bytes})
+		}
 	}
-	return out, true
+	return out, drops, true
 }
 
 // InventoryFieldCountForTest is how many fields a list-panes line holds.

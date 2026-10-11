@@ -10,7 +10,11 @@ events when they change.
   it is one moment): ids, indexes, flags, sizes, `pane_dead_status`, the
   `@fleet_*` user options and the three names. Fields are split by a marker
   that is random per read, so no name can fake a field; a newline tmux
-  writes raw in an option value is joined back. A server that restarted
+  writes raw in an option value is joined back. tmux bounds each name,
+  command and option value at 1 KiB in bytes and sends a longer one empty,
+  with its length: it reaches this package blank (counted in
+  `fleet_agent_tmux_inventory_fields_dropped_total`), and never fails the
+  read. A server that restarted
   while the command ran is refused (the start id is checked before and
   after).
 - Session and window names and `current_command` are cut to 256 bytes on a
@@ -27,7 +31,10 @@ events when they change.
   tags are taken from its first pane, through tmux's inheritance, so a pane
   or window option of the same name set by hand shadows the session's.
 - Internal (fork 6): every session on the probe server, and a session whose
-  `@fleet_internal` is set; `attach_view` when it is `attach_view`. Grouping
+  `@fleet_internal` is exactly `attach_view` (also `attach_view` then; tmux
+  compares the mark, the agent never reads it; any other value, such as
+  `attach_view` and a newline, is a developer session: ruling fork 2 on
+  7d1). Grouping
   alone never makes a session internal: a developer's grouped pair is two
   sessions with the same PaneKeys.
 - `harness` unset, `availability` not idle and not available, and

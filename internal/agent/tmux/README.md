@@ -31,7 +31,9 @@ the `tmux -C` client that attaches to one server and sends typed commands
   goes through `LOGS` and `pipe-pane` per the spec, not a capture reply).
 - `NewMetrics(tel)` counts failures in `fleet_agent_tmux_parse_errors_total{err_kind}`
   and `fleet_agent_tmux_lines_too_long_total`, and logs `tmux.parse_error` and
-  `tmux.line_too_long` at most once a minute per class (05b).
+  `tmux.line_too_long` at most once a minute per class (05b). Given to a
+  client as `ClientOptions.Parser.Metrics`, it also counts the text fields
+  `ReadInventory` left blank (below).
 
 ## The client
 
@@ -52,15 +54,39 @@ st, changed := c.Changed()                       // the state, and a chan closed
 
 - `ReadInventory` reads every session, window and pane with one
   `list-panes -a` for the inventory package (7d): fields split by a marker
-  random per read (no name can fake a field), each text field capped by tmux
-  at `MaxFieldChars` (256) with `#{=256:...}` (3.2a and 3.7c), so no value
-  can pass the line or reply bound, a record that a newline in a value broke
-  joined back by counting markers, the start id checked before and after (a restart
-  meanwhile is `ErrNotAttached`), the agent's own control client left out of
-  a session's client count, one pane per session (a grouped pair lists a
-  pane twice; a window linked twice into one session is kept at its first
-  index). Names, commands and option values are raw and untrusted: the
-  caller bounds and checks them.
+  random per read (no name can fake a field), a record that a newline in a
+  value broke joined back by counting markers, the start id checked before
+  and after (a restart meanwhile is `ErrNotAttached`), the agent's own
+  control client left out of a session's client count, one pane per session
+  (a grouped pair lists a pane twice; a window linked twice into one session
+  is kept at its first index). Names, commands and option values are raw and
+  untrusted: the caller bounds and checks them.
+- Each record is the ids, flags and sizes; `#{==:#{@fleet_internal},attach_view}`
+  (1 only for that exact mark: `Tags.AttachView`; the value never leaves
+  tmux); the byte length `#{n:X}` of each of the seven text fields
+  (`@fleet_session_id`, `@fleet_owner`, `@fleet_pane_key`, `@fleet_goal_id`,
+  `session_name`, `window_name`, `pane_current_command`); a canary
+  `#{e|<:1,2}` that must read `1` (a tmux without these modifiers is
+  `ErrBadReply`, never a read of blank fields); then each text field as
+  `#{?#{e|<:#{n:X},1025},#{X},}`. So tmux bounds every text field in bytes
+  at `MaxFieldBytes` (1 KiB, defaults) and sends a longer value empty
+  (`e|<` compares numbers; a plain `<` compares strings). `#{=N:...}` is no
+  bound: it cuts by screen width, and zero-width characters and `#[style]`
+  blocks pass it whole. The agent checks each field against its length: at
+  most 1 KiB must arrive whole, over it empty; any other shape blanks that
+  field only (`mismatch`). Either way the field reads as empty and is
+  counted; no text value can fail the read. The length also checks the join
+  of a record a newline broke.
+- What the bound leaves (the reply bound, the one residual): a record with
+  every text field at 1 KiB is 7,762 bytes (measured on 3.2a and 3.7c;
+  7,779 with the reply's per-line charge), so the 8 MiB reply bound holds
+  about 1,078 such panes on one server, and about 13,900 panes with short
+  names and no tags (587 bytes each, 604 charged). The budget in
+  [04](../../../docs/specs/04-technology-review.md) is 10 observed panes per
+  machine and 500 fleet-wide. Past the reply bound the read fails as
+  `ErrBadReply`, counted in
+  `fleet_agent_tmux_parse_errors_total{err_kind="reply_too_large"}` (and
+  7d2's `tmux.inventory_failed{err_kind=reply}`).
 
 - `Run` checks `tmux -V` (below 3.2: `ErrTooOld`, REASON_CODE_TMUX_TOO_OLD),
   lists sessions with one `tmux list-sessions` through `internal/proc` and
@@ -165,6 +191,8 @@ re-sent, never lost.
 | `tmux.repick_failed` (`server_kind`, `err_kind` = `list` or `switch`) | a re-pick failed; at most once a minute; the client stays up |
 | `tmux.exit` (`server_kind`, `reason`, `err_kind` for `attach_failed`) | an attach ended or failed: `exit`, `eof`, `desync`, `write_stalled`, `write_canceled`, `attach_failed` (`version`, `list`, `start`, `handshake`, `subscribe`), `too_old`, `absent` (once per absence), `cancelled` |
 | `tmux.subscription_confirmed` (`server_kind`, `name`) | the first value of a registered subscription on an attach |
+| `fleet_agent_tmux_inventory_fields_dropped_total{field, reason}` | text fields an inventory read left blank: `field` is one of the seven text fields, `reason` is `over_bound` (over 1 KiB) or `mismatch` (the bytes are not the length tmux gave). Counted on every read, per pane record kept; needs `ClientOptions.Parser.Metrics` |
+| `tmux.inventory_field_dropped` (`field`, `reason`, `bytes`: the length tmux gave, `suppressed`) | the same, at most once a minute per field; never the value |
 
 Never pane text, a session or window name, the `%exit` text or tmux's
 stderr (05b).

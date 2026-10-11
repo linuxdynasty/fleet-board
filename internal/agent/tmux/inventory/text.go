@@ -55,7 +55,3 @@ const (
 	tagPaneKey   = "FLEET_PANE_KEY"
 	tagGoalID    = "FLEET_GOAL_ID"
 )
-
-// attachViewMark is the @fleet_internal value row 26 sets on a grouped
-// attach-view session (row-7 ruling fork 6).
-const attachViewMark = "attach_view"

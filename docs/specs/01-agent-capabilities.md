@@ -388,8 +388,12 @@ optionally against one limit the owner sets.
   renames them automatically. The harness in a pane is identified from the
   running process (`pane_current_command` and the adapter's `Detect()`), never
   from the window name. Panes are keyed by `(server, server_start_id, pane_id)` plus
-  `FLEET_*` environment tags, because tmux ids restart from zero with a new
-  server.
+  the `FLEET_*` tags read from the `@fleet_*` options (above), because tmux ids
+  restart from zero with a new server. Every name, command and option value
+  is bounded in tmux itself at 1 KiB in bytes (defaults; row 7 PR 7d1): tmux
+  sends a longer value empty with its length beside it, so that field reads
+  as blank and is counted (05b), and no value can fail a read. A session is
+  internal only when its `@fleet_internal` is exactly `attach_view` (02h).
 - **E2 Control-mode observer:** one `tmux -C` client per server, attached with
   the `ignore-size` client flag (added in tmux 3.2) so it never changes the
   size of the developer's windows, and with the `pause-after=<s>` flag
@@ -428,7 +432,12 @@ optionally against one limit the owner sets.
   sends its subscriptions again before it reports up; with no server on the
   socket it waits for the socket-folder watch, never a timer (defaults). It
   sends only typed commands and `typing.Line`s, refusing a line built for
-  another server or an earlier start of this one. Measured in its tests on
+  another server or an earlier start of this one. Its inventory read is one
+  `list-panes -a` whose text fields tmux bounds in bytes (E1): with every
+  text field at the bound a pane's record is about 7.6 KiB, so the 8 MiB
+  reply bound holds about 1,078 such panes on one server (about 13,900 with
+  short names), far over the 04 budget of 10 observed panes per machine.
+  Measured in its tests on
   tmux 3.2a and 3.7c (macOS, and Linux in a container), 2026-10-10: the
   nested `#{S:#{W:...}}` subscription expands on 3.2a as on 3.7c, so the
   per-window fallback of the row-7 ruling fork 5(e) is not needed; in the

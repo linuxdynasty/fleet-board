@@ -53,12 +53,12 @@ func TestReadInventory(t *testing.T) {
 			if work.Name != "work" || other.Name != "other two" {
 				t.Fatalf("names = %q, %q", work.Name, other.Name)
 			}
-			if work.Tags.SessionID != "s-1" || work.Tags.Owner != "local-owner" || work.Tags.Internal != "" {
+			if work.Tags.SessionID != "s-1" || work.Tags.Owner != "local-owner" || work.Tags.AttachView {
 				t.Fatalf("work tags = %+v", work.Tags)
 			}
 			// A newline or a tab in an option value may come through or be
 			// dropped by tmux; either way the read holds the rest.
-			if other.Tags.Internal != "attach_view" || printable(other.Tags.Owner) != "abc" || printable(other.Tags.SessionID) != "" {
+			if !other.Tags.AttachView || printable(other.Tags.Owner) != "abc" || printable(other.Tags.SessionID) != "" {
 				t.Fatalf("other tags = %+v", other.Tags)
 			}
 			if work.Created.IsZero() || time.Since(work.Created) > time.Hour {

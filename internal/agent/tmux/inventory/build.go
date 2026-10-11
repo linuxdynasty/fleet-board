@@ -68,10 +68,11 @@ func buildSession(s tmux.SessionInfo, probe bool) *agentv1.TmuxSession {
 	ts := &agentv1.TmuxSession{
 		TmuxId: s.ID.String(), Name: cleanText(s.Name, maxNameBytes),
 		AttachedClients: uint32(max(s.Clients, 0)), //nolint:gosec // clamped at 0
-		// Internal by server or by the creator's mark, never by grouping
-		// or a name (row-7 ruling fork 6).
-		Internal:   probe || s.Tags.Internal != "",
-		AttachView: s.Tags.Internal == attachViewMark,
+		// Internal by server or by the creator's exact attach_view mark,
+		// never by grouping or a name (row-7 ruling fork 6; ruling fork 2
+		// on 7d1: tmux compares the mark, the agent never reads it).
+		Internal:   probe || s.Tags.AttachView,
+		AttachView: s.Tags.AttachView,
 	}
 	if !s.Created.IsZero() {
 		ts.CreateTime = timestamppb.New(s.Created)
