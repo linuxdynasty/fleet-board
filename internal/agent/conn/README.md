@@ -173,7 +173,9 @@ sent.
    interval after the snapshot and its results: `sent_time`, `uptime`
    (monotonic, since the process started), `event_seq` (`ring.Seqs.Last`)
    and `events` (agent.db's counters, as in Hello), set after the
-   `LoopOptions.Heartbeat` hook, which fills what later rows own. It is a
+   `LoopOptions.Heartbeat` hook, which fills what later rows own (row 6 fills
+   `load1` and `health`; the hook reads `Loop.Reconnects` for
+   `health.reconnects_total`). It is a
    `time.Ticker` case in the same select, so the one sender never puts it
    between a snapshot and its results, and a tick missed while a send
    waits is dropped. A failed read or send closes the stream
