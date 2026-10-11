@@ -158,7 +158,7 @@ st, changed := c.Changed()                       // the state, and a chan closed
   loop's (after n failures, uniform from 1 to 2^n s, capped at 60 s), reset
   after an attach that came up (defaults row "tmux control client"). A
   `Wake` that came while it was up is dropped then, so it never cuts that
-  backoff short. 7d2's inventory observer debounces Wake (at most
+  backoff short. The inventory observer debounces Wake (at most
   one per server a second): each costs one `list-sessions` while absent. When no server answers it waits in `StateAbsent` for `Wake`,
   with no timer (row-7 ruling fork 4). The backup `list-clients` poll of
   02h is 7f's. A `Program` that cannot run at all (tmux uninstalled) is an
@@ -246,6 +246,11 @@ re-sent, never lost.
 
 Never pane text, a session or window name, the `%exit` text or tmux's
 stderr (05b).
+
+Subscriptions per server, for 7f's cost run (proof 9, measured with all
+three live): E13's `session_activity` (7f), E4's `window_activity` (7e) and
+the inventory's `fleet-structure` (7d, coordinator decision amending row-7
+ruling fork 5(f)), each checked by tmux about once a second.
 
 Tests: `CGO_ENABLED=0 go test ./internal/agent/tmux/`. The client tests run
 against real tmux 3.2 and the latest release in throwaway servers

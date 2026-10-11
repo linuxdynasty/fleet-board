@@ -445,6 +445,11 @@ optionally against one limit the owner sets.
   stalled 3 s during a command (`internal/agent/tmux/testdata/flood-*.txt`),
   tmux wrote no `%pause` and the reply came whole and in order. Further
   unrecorded runs (3 and 8 s stalls) showed no `%pause` inside a reply either.
+  The agent finds the developer's server from the socket folder (a directory
+  watch plus rescans at each snapshot; defaults), never a timer, and does not
+  see a server started with `-S` elsewhere. A server with no session (tmux's
+  `exit-empty` off) cannot be attached, and its first `new-session` changes no
+  socket: it is seen at the next rescan (Snapshot, SnapshotRequest, `%exit`).
 - **E3 Pane lifecycle:** created and exited with exit status. "Stopped without
   DONE" (the one-nudge rule) depends on this. The status is known only when
   tmux kept the pane (`remain-on-exit`, which the agent never sets on a
@@ -455,6 +460,10 @@ optionally against one limit the owner sets.
   `segv`, `pipe`, `term`, `other:<n>` (the host's number, not comparable
   across hosts) or `other` (unreadable), never tmux's text; 3.2a gives none.
   No snapshot field carries it yet; `TmuxPane` has only `dead` and `exit_status`.
+  A pane change in a session the control client is not on raises no notice,
+  so a structure subscription makes it
+  a read (defaults); a pane that lives under a second is seen at the next
+  rescan.
 - **E4 Activity transitions:** active ↔ idle, with the time of last output.
   Never dropped under backpressure; the hub's stuck detection depends on it.
 - **E5 Pane summaries:** last lines, ANSI stripped; at most one per pane every
