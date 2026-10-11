@@ -218,6 +218,18 @@ func tmuxVersion(ctx context.Context, r *proc.Runner, dirs []string) (string, er
 	return parseTmuxVersion(res.Stdout)
 }
 
+// TmuxPath is the tmux program the agent runs: the first "tmux" on PATH,
+// else the first in dirs (a launchd agent's PATH often lacks Homebrew's
+// folder), else "" (not installed). It runs nothing.
+func TmuxPath(path string, dirs []string) string {
+	for _, d := range append(filepath.SplitList(path), dirs...) {
+		if p := filepath.Join(d, "tmux"); d != "" && filepath.IsAbs(d) && isExecutableFile(p) {
+			return p
+		}
+	}
+	return ""
+}
+
 // isExecutableFile reports a regular file with an execute bit.
 func isExecutableFile(p string) bool {
 	fi, err := os.Stat(p)

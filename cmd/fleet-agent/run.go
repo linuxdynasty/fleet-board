@@ -131,15 +131,19 @@ func runAgent(ctx context.Context, dir, cfgDir, version, boot string, tel *telem
 	if err != nil {
 		return failed("machine", err)
 	}
+	tmx, err := startTmux(wctx, &wg, tel)
+	if err != nil {
+		return failed("tmux", err)
+	}
 	loop, err = conn.NewLoop(ctx, conn.LoopOptions{
 		Dir: dir, Identity: id, DB: db, Version: version, BootID: boot,
 		Telemetry: tel, Events: netEvents, PushOff: nw.PushOff, Discover: discover,
-		Snapshot: chainSnapshot(snapshot, pol.mgr.Snapshot), Heartbeat: heartbeat, Emitter: em,
+		Snapshot: chainSnapshot(snapshot, pol.mgr.Snapshot, tmx.snapshot), Heartbeat: heartbeat, Emitter: em,
 	})
 	if err != nil {
 		return failed("loop", err)
 	}
-	defer startStatusFile(dir, tel, loop, pol.mgr.WatchOff)()
+	defer startStatusFile(dir, tel, loop, pol.mgr.WatchOff, tmx.watch)()
 	if err := loop.Run(ctx); err != nil {
 		return commandError{err}
 	}

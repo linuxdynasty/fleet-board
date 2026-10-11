@@ -15,6 +15,7 @@ import (
 
 	"github.com/linuxdynasty/fleet-board/internal/agent/conn"
 	"github.com/linuxdynasty/fleet-board/internal/agent/conn/conntest"
+	"github.com/linuxdynasty/fleet-board/internal/agent/tmux/tmuxtest"
 )
 
 var bin string
@@ -38,10 +39,17 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "go build: %v\n%s", err, out)
 		os.Exit(1)
 	}
-	code := m.Run()
+	// TMUX_TMPDIR points at a new empty folder for this binary and every
+	// agent it starts (tmuxEnv), so the agent's tmux observer never finds
+	// the developer's own server.
+	code := tmuxtest.Main(m)
 	_ = os.RemoveAll(dir)
 	os.Exit(code)
 }
+
+// tmuxEnv is the TMUX_TMPDIR entry for an agent a test starts: the empty
+// folder tmuxtest.Main made, never the developer's.
+func tmuxEnv() string { return "TMUX_TMPDIR=" + os.Getenv("TMUX_TMPDIR") }
 
 type result struct {
 	code           int
@@ -59,7 +67,7 @@ func agent(t *testing.T, args ...string) result {
 func agentIn(t *testing.T, home string, env []string, args ...string) result {
 	t.Helper()
 	cmd := exec.CommandContext(t.Context(), bin, args...) //nolint:gosec // G204: bin is the binary TestMain built; args come from the tests
-	cmd.Env = append([]string{"HOME=" + home, "PATH=" + os.Getenv("PATH")}, env...)
+	cmd.Env = append([]string{"HOME=" + home, "PATH=" + os.Getenv("PATH"), tmuxEnv()}, env...)
 	var out, errOut bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errOut
 	err := cmd.Run()

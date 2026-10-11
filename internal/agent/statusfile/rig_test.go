@@ -96,7 +96,12 @@ type rig struct {
 	rename atomic.Pointer[func(string, string) error]
 	// watchOff is Options.PolicyWatchOff's answer.
 	watchOff atomic.Bool
+	// tmuxOff is Options.TmuxWatch's off answer (its folder is tmuxFolder).
+	tmuxOff atomic.Bool
 }
+
+// tmuxFolder is the socket folder the rig's TmuxWatch names.
+const tmuxFolder = "/tmp/tmux-501"
 
 type lockedBuilder struct {
 	mu sync.Mutex
@@ -133,6 +138,7 @@ func newRig(t *testing.T) (*rig, *lockedBuilder) {
 			return conn.Status{State: *r.state.Load(), Ended: *r.ended.Load()}
 		},
 		PolicyWatchOff: r.watchOff.Load,
+		TmuxWatch:      func() (string, bool) { return tmuxFolder, r.tmuxOff.Load() },
 		clock:          r.clock,
 		Changed:        r.push,
 		afterWrite:     func(err error) { r.wrote <- err; r.gate() },

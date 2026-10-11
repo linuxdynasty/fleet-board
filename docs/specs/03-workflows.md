@@ -463,8 +463,8 @@ re-enroll rule are in [02g](02g-agent-security.md#machine-lifecycle-revoke-and-d
   without waiting for it) and
   `fleet_agent_status_writes_total{file, result}` (`result`: `ok`, `failed`).
   A loop change reaches `status.json` in about a second: the loop's change signal
-  goes to the writer, no timer (ADR 0022 rule 6). `push_off` and `policy_watch:
-  off` ([03e](03e-settings-and-drift.md)) are read at write time, a minute old at most.
+  goes to the writer, no timer (ADR 0022 rule 6). `push_off`, `policy_watch`, `tmux_folder`
+  and `tmux_watch` ([03e](03e-settings-and-drift.md), 01 E2) are read at write time, a minute old at most.
 
 At 3 AM: "why is doctor's `status.json` old or missing?" →
 `fleet_agent_status_writes_total{file="status.json", result="failed"}` and
