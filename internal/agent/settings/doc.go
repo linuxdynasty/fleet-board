@@ -9,7 +9,8 @@
 // [Merge] is the pure merge of one message. [Manager] is the running part:
 // [Manager.Hook] is conn.LoopOptions.Settings and only hands over; one
 // [Manager.Run] goroutine orders, merges, saves and acks; [Open] merges the
-// held settings again under the policy file loaded at start. The Manager is
+// held settings again under the policy file loaded at start and keeps the
+// saved ack's rejections. The Manager is
 // the executor's exec.Policy (safe mode, rate limits, local approval).
 // Wiring into fleet-agent run is plan row 6i.
 package settings

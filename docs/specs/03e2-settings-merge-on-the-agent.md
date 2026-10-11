@@ -84,12 +84,21 @@ not know go in `unrecognized_value_fields` and `unrecognized_settings_fields`.
 ## At start
 
 `fleet-agent` merges the held `Settings` again under the policy file it just
-loaded. When the policy hash or the result differs from what was saved, it
-saves the new ack for the same generation and logs `settings.reevaluated`;
-the next `Snapshot.settings` shows the new effective values (03e state
-machine, CEILING_CHANGED). In safe mode it saves nothing: the effective
-values are the built-in defaults at generation 0 and the held row waits for
-the next normal start.
+loaded. The held message already has each invalid field replaced, so this
+merge finds nothing to reject; the new ack's `rejected` is the saved ack's
+list, then any field this merge rejects that the list does not name (a newer
+binary's stricter check). No check of a value reads the policy file, so a
+rejection does not change with it, and the hub's `rejected_settings` goes on
+showing it (03e failure table). When the policy hash differs from the one
+saved, it saves the new ack for the same generation and logs
+`settings.reevaluated`; the next `Snapshot.settings` shows the new effective
+values (03e state machine, CEILING_CHANGED). Under the same hash the saved ack
+stands. A field that kept its value from an older generation is named `HUB`,
+as it was before the restart; mapping it to its hub layer is the hub's (plan
+row 5). In safe mode it saves nothing: the effective values are the built-in
+defaults at generation 0, every field is rejected with `POLICY_SAFE_MODE`
+(the saved rejections included), and the held row waits for the next normal
+start.
 
 ## Concurrency
 

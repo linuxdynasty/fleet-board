@@ -117,23 +117,63 @@ func Open(ctx context.Context, opts Options) (*Manager, error) {
 	if err != nil {
 		return nil, fmt.Errorf("settings: read the held settings: %w", err)
 	}
-	kept := &agentv1.Settings{}
+	kept, was := &agentv1.Settings{}, &agentv1.SettingsAck{}
 	if ok {
 		if err := proto.Unmarshal(held.Settings, kept); err != nil {
 			return nil, fmt.Errorf("settings: decode the held settings: %w", err)
 		}
+		if err := proto.Unmarshal(held.Ack, was); err != nil {
+			return nil, fmt.Errorf("settings: decode the held ack: %w", err)
+		}
 	}
-	out := Merge(Input{Hub: kept, Local: opts.Local.Policy(), SafeMode: opts.Local.SafeMode()})
+	safe := opts.Local.SafeMode()
+	out := Merge(Input{Hub: kept, Local: opts.Local.Policy(), SafeMode: safe})
+	carry(out.Ack, was.GetRejected(), safe)
 	m.cur.Store(newView(ok, kept, out.Ack)) // before the gauge can read it
 	if m.m, err = newMetrics(opts.Telemetry, m.generation); err != nil {
 		return nil, fmt.Errorf("settings: register metrics: %w", err)
 	}
-	if ok && !opts.Local.SafeMode() { // safe mode saves nothing (03e2)
+	if ok && !safe { // safe mode saves nothing (03e2)
 		if err := m.reevaluate(ctx, held, out); err != nil {
+			m.m.close() // no Manager is returned to Close
 			return nil, err
 		}
 	}
 	return m, nil
+}
+
+// carry puts the saved ack's rejections back in ack at start. agent.db keeps
+// the message with each invalid field already replaced, so merging it again
+// finds nothing to reject; but no check reads the policy file, so the saved
+// list still holds and the hub must go on seeing it (03e failure table). The
+// saved list comes first, in its order, then any field the merge rejects now
+// that it does not name (a newer binary's stricter check). In safe mode
+// every field is rejected for safe mode, the saved ones included.
+func carry(ack *agentv1.SettingsAck, saved []*typev1.SettingRejection, safe bool) {
+	named := map[string]bool{}
+	var out []*typev1.SettingRejection
+	add := func(r *typev1.SettingRejection) {
+		if !named[r.GetField()] {
+			named[r.GetField()] = true
+			out = append(out, r)
+		}
+	}
+	if safe {
+		for _, r := range ack.GetRejected() {
+			add(r)
+		}
+		for _, r := range saved {
+			add(&typev1.SettingRejection{Field: r.GetField(), Reason: typev1.ReasonCode_REASON_CODE_POLICY_SAFE_MODE, Message: safeModeMsg})
+		}
+	} else {
+		for _, r := range saved {
+			add(r)
+		}
+		for _, r := range ack.GetRejected() {
+			add(r)
+		}
+	}
+	ack.Rejected = out
 }
 
 // generation is the held generation for the gauge (0 before any).
@@ -144,11 +184,13 @@ func (m *Manager) generation() int64 {
 	return 0
 }
 
-// reevaluate saves the merge under the policy loaded now when it changed.
+// reevaluate saves the merge when the policy file changed since the save.
+// Under the same file the saved ack stands: the merge again gives the same
+// ack with the same binary, and a newer binary's stricter checks are found
+// again at each start (they reach the view and the repeat answer).
 func (m *Manager) reevaluate(ctx context.Context, held ring.Held, out Outcome) error {
 	hash := m.opts.Local.Info().GetHash()
-	var was agentv1.SettingsAck
-	if hash == held.PolicyHash && proto.Unmarshal(held.Ack, &was) == nil && proto.Equal(&was, out.Ack) {
+	if hash == held.PolicyHash {
 		return nil
 	}
 	ack, err := marshal(out.Ack)
