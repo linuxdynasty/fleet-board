@@ -53,9 +53,10 @@ func TestRenewAtTwoThirdsEndToEnd(t *testing.T) {
 		return len(a.events(t, "renew.completed")) == 1
 	})
 	r.running(t)
-	if exists(t, filepath.Join(a.dir, conn.RenewKeyFile)) {
-		t.Errorf("%s is left after the renewal", conn.RenewKeyFile)
-	}
+	// renew.completed is logged just before the renewal's key file is
+	// removed, so wait for the removal instead of checking it at once.
+	keyFile := filepath.Join(a.dir, conn.RenewKeyFile)
+	waitFor(t, 10*time.Second, conn.RenewKeyFile+" to be removed after the renewal", func() bool { return !exists(t, keyFile) })
 	renewed := savedPair(t, a)
 	if !renewed.NotAfter.After(old.NotAfter) || serialOf(renewed) == serialOf(old) {
 		t.Fatalf("renewed certificate %s ends %v; the enrolled one %s ends %v", serialOf(renewed), renewed.NotAfter,
