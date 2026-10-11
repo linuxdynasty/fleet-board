@@ -179,9 +179,11 @@ type Pane struct {
 	ID      PaneID
 	// Dead is set for a pane whose program ended and that tmux kept
 	// (remain-on-exit). DeadStatus is then its exit status if it exited,
-	// else NoStatus; DeadSignal names the signal that killed it, one of
-	// the Signal constants or SignalOther and its number, else "" (3.2a
-	// never reports a signal).
+	// else NoStatus; DeadSignal names the signal that killed it: one of
+	// the Signal constants, "other:<n>", SignalOther alone when tmux's
+	// text could not be read, else "" (3.2a never reports a signal).
+	// <n> is this host's own signal number (10 is USR1 on Linux and BUS
+	// on macOS), so the hub cannot compare it across hosts.
 	Dead          bool
 	DeadStatus    int
 	DeadSignal    string
@@ -220,9 +222,14 @@ func parsePane(line string) (Pane, bool) {
 	p, ok3 := parseID([]byte(f[2]), '%')
 	wd, err1 := strconv.Atoi(f[6])
 	ht, err2 := strconv.Atoi(f[7])
-	sig, ok4 := deadSignal(f[5])
-	if !ok1 || !ok2 || !ok3 || !ok4 || err1 != nil || err2 != nil || (f[3] != "0" && f[3] != "1") || (f[4] != "" && f[5] != "") {
-		return Pane{}, false // a program either exited or was killed (WIFEXITED, WIFSIGNALED)
+	if !ok1 || !ok2 || !ok3 || err1 != nil || err2 != nil || (f[3] != "0" && f[3] != "1") {
+		return Pane{}, false
+	}
+	// format.c fills pane_dead_status only under WIFEXITED and
+	// pane_dead_signal only under WIFSIGNALED: a program either exited or
+	// was killed, so both at once is a reply in the wrong shape.
+	if f[4] != "" && f[5] != "" {
+		return Pane{}, false
 	}
 	pane := Pane{Session: SessionID(s), Window: WindowID(w), ID: PaneID(p), Dead: f[3] == "1", DeadStatus: NoStatus, Width: wd, Height: ht}
 	if pane.Dead && f[4] != "" {
@@ -233,7 +240,7 @@ func parsePane(line string) (Pane, bool) {
 		pane.DeadStatus = st
 	}
 	if pane.Dead {
-		pane.DeadSignal = sig
+		pane.DeadSignal = deadSignal(f[5])
 	}
 	return pane, true
 }

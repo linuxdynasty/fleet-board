@@ -59,3 +59,6 @@ func InventoryRecordsForTest(body []string, marker string) ([]PaneInfo, []FieldD
 
 // InventoryFieldCountForTest is how many fields a list-panes line holds.
 func InventoryFieldCountForTest() int { return len(inventoryFields) }
+
+// ParsePaneForTest parses one list-panes line.
+func ParsePaneForTest(line string) (Pane, bool) { return parsePane(line) }

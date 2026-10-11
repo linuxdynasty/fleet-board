@@ -15,7 +15,9 @@ import (
 // prints a signal by its sys_signame name where the OS has one (macOS:
 // "kill") and by number elsewhere (Linux: "9"; tmux.c sig2name), and 3.2a,
 // which has no pane_dead_signal, prints nothing. The client turns it into
-// one closed set or reports a bad reply: never tmux's text.
+// one closed set, never tmux's text. The signal is a diagnostic, not
+// structure: text it cannot read is SignalOther with no number, and the pane
+// still comes back.
 func TestListPanesReadsTheDeadSignalIntoAClosedSet(t *testing.T) {
 	usr1 := map[string]string{"darwin": "other:30", "linux": "other:10"}[runtime.GOOS]
 	cases := []struct {
@@ -49,15 +51,16 @@ func TestListPanesReadsTheDeadSignalIntoAClosedSet(t *testing.T) {
 		{"the highest number", "$0 @1 %1 1  127 80 24", true, tmux.NoStatus, "other:127", false},
 		{"another name", "$0 @1 %1 1  usr1 80 24", true, tmux.NoStatus, usr1, false},
 		{"a live pane drops a signal", "$0 @1 %1 0  9 80 24", false, tmux.NoStatus, "", false},
-		{"zero", "$0 @1 %1 1  0 80 24", false, 0, "", true},
-		{"past 127", "$0 @1 %1 1  128 80 24", false, 0, "", true},
-		{"leading zero", "$0 @1 %1 1  09 80 24", false, 0, "", true},
-		{"signed", "$0 @1 %1 1  +9 80 24", false, 0, "", true},
-		{"upper case", "$0 @1 %1 1  KILL 80 24", false, 0, "", true},
-		{"sig prefix", "$0 @1 %1 1  sigkill 80 24", false, 0, "", true},
-		{"unknown name", "$0 @1 %1 1  bogus 80 24", false, 0, "", true},
-		{"punctuation", "$0 @1 %1 1  k-ll 80 24", false, 0, "", true},
-		{"too long", "$0 @1 %1 1  " + strings.Repeat("a", 17) + " 80 24", false, 0, "", true},
+		{"zero", "$0 @1 %1 1  0 80 24", true, tmux.NoStatus, tmux.SignalOther, false},
+		{"past 127", "$0 @1 %1 1  128 80 24", true, tmux.NoStatus, tmux.SignalOther, false},
+		{"leading zero", "$0 @1 %1 1  09 80 24", true, tmux.NoStatus, tmux.SignalOther, false},
+		{"signed", "$0 @1 %1 1  +9 80 24", true, tmux.NoStatus, tmux.SignalOther, false},
+		{"upper case", "$0 @1 %1 1  KILL 80 24", true, tmux.NoStatus, tmux.SignalOther, false},
+		{"sig prefix", "$0 @1 %1 1  sigkill 80 24", true, tmux.NoStatus, tmux.SignalOther, false},
+		{"unknown name", "$0 @1 %1 1  bogus 80 24", true, tmux.NoStatus, tmux.SignalOther, false},
+		{"punctuation", "$0 @1 %1 1  k-ll 80 24", true, tmux.NoStatus, tmux.SignalOther, false},
+		{"too long", "$0 @1 %1 1  " + strings.Repeat("a", 17) + " 80 24", true, tmux.NoStatus, tmux.SignalOther, false},
+		{"a live pane drops junk", "$0 @1 %1 0  bogus 80 24", false, tmux.NoStatus, "", false},
 		{"both a status and a signal", "$0 @1 %1 1 4 9 80 24", false, 0, "", true},
 		{"the old seven fields", "$0 @1 %1 1 4 80 24", false, 0, "", true},
 		{"nine fields", "$0 @1 %1 1 4  80 24 x", false, 0, "", true},
@@ -83,6 +86,27 @@ func TestListPanesReadsTheDeadSignalIntoAClosedSet(t *testing.T) {
 				t.Fatalf("ListPanes(%q) = %+v, want Dead %v DeadStatus %d DeadSignal %q, 80x24", tc.line, p, tc.dead, tc.status, tc.signal)
 			}
 		})
+	}
+}
+
+// A signal the client cannot read on one pane costs that pane its signal
+// name, never the other panes: a pane kept by remain-on-exit stays dead, so
+// failing the whole list would blind every later read of the server.
+func TestListPanesKeepsOtherPanesPastABadSignal(t *testing.T) {
+	prog := writeFake(t, "3.7c", goodFlags)
+	t.Setenv("FAKE_PANES", `$0 @1 %1 1  iot 80 24\n$0 @0 %0 0   100 30\n`)
+	r := startClientFor(t, prog, filepath.Join(filepath.Dir(prog), "s"), nil)
+	r.waitState(t, tmux.StateUp)
+	panes, err := r.ListPanes(ctxT(t))
+	if err != nil || len(panes) != 2 {
+		t.Fatalf("ListPanes = %+v, %v; want two panes", panes, err)
+	}
+	a, b := panes[0], panes[1]
+	if a.ID.String() != "%1" || !a.Dead || a.DeadSignal != tmux.SignalOther {
+		t.Fatalf("pane A = %+v, want %%1 dead with DeadSignal %q", a, tmux.SignalOther)
+	}
+	if b.ID.String() != "%0" || b.Dead || b.DeadSignal != "" || b.Width != 100 || b.Height != 30 {
+		t.Fatalf("pane B = %+v, want %%0 live, no signal, 100x30", b)
 	}
 }
 

@@ -8,8 +8,9 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// The values of Pane.DeadSignal: a closed set, never tmux's own text. Any
-// other signal is SignalOther and its number ("other:31").
+// The values of Pane.DeadSignal: a closed set, never tmux's own text. A
+// signal outside the named eight is SignalOther and its number
+// ("other:31"); text the client cannot read is SignalOther alone.
 const (
 	SignalHup   = "hup"
 	SignalInt   = "int"
@@ -19,7 +20,7 @@ const (
 	SignalSegv  = "segv"
 	SignalPipe  = "pipe"
 	SignalTerm  = "term"
-	SignalOther = "other:"
+	SignalOther = "other"
 )
 
 var signalNames = map[syscall.Signal]string{
@@ -37,22 +38,25 @@ var signalNames = map[syscall.Signal]string{
 const maxSignal = 127
 
 // deadSignal turns tmux's pane_dead_signal into the closed set. tmux 3.7c
-// prints sys_signame[n] where the OS has it (macOS: "kill") and the number
-// elsewhere (Linux: "9"; tmux.c sig2name); 3.2a has no such variable and
-// prints nothing. A number is 1 to 127 with no sign or leading zero; a
-// name is lower case and one this OS knows. Anything else is not ok.
-func deadSignal(f string) (string, bool) {
+// prints sys_signame[n] where the OS has it (macOS and the BSDs: "kill")
+// and the number elsewhere (Linux: "9"; tmux.c sig2name); 3.2a has no such
+// variable and prints nothing. A number is 1 to 127 with no sign or
+// leading zero; a name is lower case and one this OS knows. The signal is
+// a diagnostic, not structure, so anything else (a name this OS lacks,
+// such as "iot" or "pwr", or a number out of range) is SignalOther with no
+// number: the client never guesses one.
+func deadSignal(f string) string {
 	if f == "" {
-		return "", true
+		return ""
 	}
 	n, ok := signalNumber(f)
 	if !ok {
-		return "", false
+		return SignalOther
 	}
 	if name, ok := signalNames[n]; ok {
-		return name, true
+		return name
 	}
-	return SignalOther + strconv.Itoa(int(n)), true
+	return SignalOther + ":" + strconv.Itoa(int(n))
 }
 
 func signalNumber(f string) (syscall.Signal, bool) {
