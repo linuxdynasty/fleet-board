@@ -137,8 +137,22 @@ for every harness, just before `type_goal`, from what it already knows
 - eshu repos keep their own file (`.claude/active-goal.<session_id>`) and
   their own `CONSENT:` handling; the agent reads it (G2) and writes nothing
   (`StartGoal` skips its `write_goal_file` step when `repo_ships_own` is true).
-- Generic file location: open question (below). It must be writable from
-  inside the harness sandbox and must not show up as a repo change.
+- **Generic file location (decided 2026-10-10, ruling on #57):**
+  `<checkout top>/.fleet-board/goal-<goal_id>`. The pane's folder is the
+  checkout top for every fleet-started goal ([03c](03c-goals.md),
+  [02h](02h-goal-binding-and-pane-signals.md)). Step 12 creates the folder and
+  `.fleet-board/.gitignore` (`*`), so the folder ignores itself; the agent
+  never writes under `.git/` or edits any file it did not create. Rules:
+  [safe writes and cleanup](01d2-goal-file-safe-writes.md#safe-writes).
+  Probe: [below](#goal-file-location-probe-2026-10-10). The model gets the
+  relative path `.fleet-board/goal-<goal_id>` in the objective text. The
+  folder is named `.fleet-board`, not `.fleet`, because a short generic name
+  may collide with another tool (recollection, not proof). In a scratch folder
+  (F7) the same folder is made at the top of the scratch folder.
+- **Claude Code `default` permission mode** asks for approval on every file
+  edit, whatever the place. That is a harness fact (probed, table below), not a
+  bug: a goal in that mode waits on each goal-file update, and Triage shows
+  the prompt ([03d](03d-triage-sessions-logs.md)). Known limit.
 
 ## Interrupts
 
@@ -306,6 +320,111 @@ its values was not recorded. The copy was deleted on 2026-10-05 without being
 opened again, and 01b now lists the file as one the agent never reads. No other
 credential file was opened.
 
+## Goal-file location probe (2026-10-10)
+
+Question: where can the agent write a goal file that the model can later edit
+from inside each harness's sandbox, without the checkout showing a change?
+Claude Code 2.1.296, Codex 0.160.0 and Muse Code 1.4.4 on the hub MacBook (tmux
+3.7c). Throwaway tmux server on its own socket (`-S`, `-f /dev/null`), a real
+linked worktree of this repo as the working directory, one small prompt per
+harness, every screen read before the next key. Each prompt asked the model to
+run (or write with the file tool) one tiny file at four places: (1) `.fleet/goal` in the
+worktree (the literal path probed; the decided folder name `.fleet-board`
+differs only in that name, and `.fleet-board/` itself was not TUI-probed),
+(2) a folder in the worktree's git directory (for a linked worktree
+that is `<main checkout>/.git/worktrees/<name>/`, outside the worktree), (3) a
+file in `/tmp`, (4) a folder under the home folder. Sandbox settings were the
+harness's own flags for one run: Codex `-s workspace-write -a on-request`,
+Claude Code `--permission-mode default|acceptEdits` and, for the sandbox,
+`--settings` with `sandbox.enabled` and `autoAllowBashIfSandboxed` (the second
+setting is what removed the Bash prompts; without it Claude Code still asks), Muse's default (sandbox on, approval
+`on-request`) with `--trust-workspace`.
+
+| Place | Codex 0.160.0 `workspace-write` | Claude Code 2.1.296 sandbox on + `autoAllowBashIfSandboxed` | Claude Code, permission prompt only | Muse Code 1.4.4 sandbox on | Cursor, OpenCode |
+|---|---|---|---|---|---|
+| `<worktree>/.fleet/goal` | written, no prompt | written, no prompt | `acceptEdits`: no prompt. `default`: one approval per write | written, no prompt | not probed; hypothesis: the same cwd rule |
+| worktree git dir (outside the worktree) | `Operation not permitted` | written | prompt, even in `acceptEdits` | written | not probed; hypothesis: the same cwd rule |
+| `/tmp/<file>` | written | `operation not permitted` (only `/tmp/claude` and the per-user temp folder) | prompt | written | not probed; hypothesis: the same cwd rule |
+| `~/.local/share/<dir>` | `Operation not permitted` | `Operation not permitted` | prompt, even in `acceptEdits` | `Operation not permitted` | not probed; hypothesis: the same cwd rule |
+
+`.fleet/` inside the working directory was the only place writable in all three: Claude Code, Codex
+and Muse. In Claude Code it was the only place that needed no approval in
+`acceptEdits` with no `--settings` flag (the "permission prompt only" column:
+only `--permission-mode` was set). The sandbox column did use `--settings`, for
+that one run, so it is not the pass-through case. The probe also checked
+`git status --porcelain` with a `/.fleet/` line in `info/exclude` (plain repo
+and linked worktree, in a scratch repo). That mechanism was **rejected** by the
+ruling, because the agent may not edit files it did not create; the
+self-ignoring folder replaces it
+([check](01d2-goal-file-safe-writes.md#self-ignoring-folder-check-2026-10-10)).
+
+Extra findings:
+
+- **Codex marks `.git/` read-only when `.git` sits directly under the
+  writable root.** `codex sandbox -P :workspace -C <plain repo>` (the sandbox
+  command, which starts no model; **not** run in the TUI) refused a new file
+  under `.git/fleet/` and under `.git/info/`, and accepted `.fleet/` next to
+  it. The carve-out is only for `<cwd>/.git`: from `-C <repo>/sub/deep` the
+  same command wrote `../../.git/info/fleet-test`,
+  `../../.fleet-board-top-test`, `../../.fleet-board/goal-top` and a file in
+  `/tmp` (rc=0), while from `-C <repo>` the `.git/info` write got "Operation
+  not permitted" (arbiter run, 2026-10-10). The ruling does not rely on this;
+  it never writes under `.git/` at all.
+- **Codex refuses a workspace reached through a symlink** (also from
+  `codex sandbox`, not the TUI). With the repos
+  folder reached through a symlink, `codex sandbox -P :workspace` stopped with
+  "writable root … contains symlink component …; symlinked writable roots are
+  not supported". The TUI runs used the real path. `StartGoal` resolves the work folder to its
+  real path before it starts the window and the registry stores that path
+  ([02h](02h-goal-binding-and-pane-signals.md#startgoal-steps)); not re-run in
+  the TUI.
+- The probe forced the strictest sandbox of each harness on purpose; a
+  developer's day-to-day settings may be looser. The goal file must work in
+  both.
+- `git worktree remove` works with the ignored folder present, and
+  `git clean -fdx` deletes it (without `-x` it stays). Both were checked by the
+  arbiter on `.fleet-board/` with its own `.gitignore`, not on `.fleet/`
+  ([check](01d2-goal-file-safe-writes.md#self-ignoring-folder-check-2026-10-10)).
+  The goal file is not durable state: the hub and the agent keep the goal, the
+  file is a working copy.
+- Codex's first reply to the multi-path prompt claimed three paths failed
+  without having run them; only a second prompt produced the real errors, and
+  the files on disk were the check. Judge a probe by the disk, not by the
+  model's report.
+- A model write needs an approval in Claude Code `default` mode wherever the
+  file lives, so a goal run in that mode waits on every goal-file update.
+  **Hypothesis (not probed):** the Stop guard and E8 still work in that mode,
+  because hooks run outside the sandbox; no hook read the file in this probe.
+
+**Not proved:** a plain (non-worktree) repo under Claude Code and Muse
+(**hypothesis, not probed:** the sandboxes decide by the working directory; the
+one plain-repo point measured is Codex); Claude Code's edit tool (only its write
+tool and Bash were run); hooks reading the file (hooks run outside the sandbox,
+not probed here); Windows; Cursor and OpenCode (not probed; hypothesis: the same
+working-directory rule). A pane started in a subfolder of a repo no longer
+matters: a fleet-started goal always starts at a checkout top, and a pane in a
+subfolder is `SESSION_WORKDIR_MISMATCH`
+([03c](03c-goals.md), [02h](02h-goal-binding-and-pane-signals.md)). A harness
+that still refuses the write ends as `GOAL_FILE_NOT_SEEN` and stuck detection.
+
+**Cleanup:** the tmux server was killed and its socket deleted; the probe files
+under the worktree, its git dir, `/tmp` were removed and the scratch repo was
+deleted (removal checked on disk); a home-folder write was tried and refused
+in all three, so nothing was written there. No trust
+entry was saved by hand: Codex asked about trust in the scratch repo, and
+Muse in the worktree and in the main checkout; each was answered "Quit". The
+worktree showed no trust question in Codex or Claude Code. Muse ran with
+`--trust-workspace` (its help says it does not save trust; taken from the help
+text, not tested). Muse's trust file kept its old modification time
+(September), so no entry was added. **Codex's trust state is unproven:** its
+config file, which holds its trust entries, changed modification time during
+the probe window, for a reason not established (contents never read), and no
+checksum was taken before the probe, so there is no baseline. The Codex daemon and update prompts were answered "Run without daemon
+this time" and "Skip". `~/.claude.json`, `~/.codex/auth.json`,
+`~/.codex/config.toml`, `~/.config/muse/` and the keychain were never opened.
+About nine short prompts were spent; their session logs stay in the owner's
+Claude Code, Codex and Muse history.
+
 ## Trust that survives upgrades (proposed)
 
 Codex and Muse both re-ask for trust when a hook definition changes, and what
@@ -325,10 +444,12 @@ it, because the entry never changes either way.
 
 ## Open questions
 
-- Generic goal file location that every harness sandbox can write (Codex
-  `workspace-write` limits writes to the workspace) without dirtying the
-  checkout: candidates are a path under `.git/` or a git-ignored path the
-  agent adds to `.git/info/exclude`. Needs a probe per harness.
+- ~~Generic goal file location that every harness sandbox can write~~
+  Answered 2026-10-10 (ruling on #57): `<checkout top>/.fleet-board/goal-<goal_id>`
+  in a self-ignoring folder ([decision](#who-writes-the-goal-file),
+  [probe](#goal-file-location-probe-2026-10-10),
+  [safe writes](01d2-goal-file-safe-writes.md)). The subfolder case is dissolved
+  by rule and the Claude Code `default` mode limit is recorded above.
 - ~~Muse goal registry by `cwd`~~ Answered by the registry design: entries
   match by pane and `harness_session_id`; `cwd` is only the bootstrap until the
   first hook after registration records the session id. Still to confirm:

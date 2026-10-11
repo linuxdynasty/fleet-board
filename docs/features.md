@@ -88,7 +88,7 @@ Everything here changes a pane. Each action passes the checks for its purpose ([
 | Worktrees: a second copy of the repo folder per job, made and cleaned up by the agent (H2). A goal with no repo (the weekly report) gets a scratch folder instead (F7) | v1 | [02h](specs/02h-goal-binding-and-pane-signals.md), [01f](specs/01f-agent-control-goals-and-policy.md) H | #69 |
 | Consent in every goal: only push, pr-open and merge exist. Without merge a goal stops at a green, approved PR for you. Force-push and releases are never grantable | v1 | [ADR 0008](adr/0008-goal-consent-and-account-modes.md), [03c](specs/03c-goals.md) | #71 |
 | Preflight before dispatch: harness signed in, `gh` can push, checkout exists, folder trusted, disk has room. Each failure has a named reason. A manual dispatch shows every check as Block, Confirm, Warn or Info (I1) | v1 | [03h](specs/03h-goal-phases-in-depth.md) | #70, #71 |
-| Goal hooks: small hooks in Claude, Codex, Muse and Cursor that report turn ends and guard the stop (G1). The hook approval step for Codex and Muse is shown on Machines | v1 | [01d](specs/01d-goal-hooks.md) | #69, #77; waits on #57, #58; Cursor #95 |
+| Goal hooks: small hooks in Claude, Codex, Muse and Cursor that report turn ends and guard the stop (G1). The hook approval step for Codex and Muse is shown on Machines | v1 | [01d](specs/01d-goal-hooks.md) | #69, #77; waits on #58; Cursor #95 |
 | The goal's life: starting, running, waiting, blocked, stuck, cooldown, paused, limit wait, verifying, merged, disagree. Done is a claim, checked against GitHub before the worker is freed | v1 | [03c](specs/03c-goals.md), [03l](specs/03l-goal-lifecycle-and-verification.md), [03h](specs/03h-goal-phases-in-depth.md) | #71 |
 | Goal control: pause, resume, edit and clear a goal through the harness's own `/goal` (G4). Re-arm a goal that said done too early | v1 | [03c](specs/03c-goals.md), [03l](specs/03l-goal-lifecycle-and-verification.md), [01b](specs/01b-harness-commands.md) | #70, #71; waits on #59 |
 | One nudge for a stuck goal, then Triage. An escalating cooldown. A pause after repeated review rounds with no merge. Nudges happen only in sessions the fleet started | v1 | [03h](specs/03h-goal-phases-in-depth.md), [defaults](specs/defaults.md) | #73 |
@@ -244,8 +244,6 @@ Nothing below blocks starting v1. The owner answered the other questions on
   offering fleet-board to others ([research](research/terms-of-service.md)).
 - **Merge churn.** Whether the per-repo cap on live goals is right, and what rebases and CI queues
   cost, is unmeasured ([defaults](specs/defaults.md)).
-- **Goal-file location** that every harness sandbox can write without dirtying the checkout
-  ([01d](specs/01d-goal-hooks.md#open-questions)).
 - **Prompt answers for Codex and Muse** need detection verified per version
   ([02h](specs/02h-goal-binding-and-pane-signals.md)); until then the prompt is a notice.
 - **Usage push sources:** issue #46. **Weekly report cost:** measured by its first run

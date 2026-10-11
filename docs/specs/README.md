@@ -15,6 +15,7 @@ the next started; the owner has approved the plan and implementation follows it.
 | 1b | [01b-harness-commands.md](01b-harness-commands.md) | Which harness commands exist and which may the hub send? | Accepted |
 | 1c | moved: [verified facts](../research/verified-facts.md) and [plan section 6](../plan/v1-implementation-plan.md#6-how-it-is-tested) | What step 2 had to pin down, and the volumes to expect (kept as a stub) | Accepted |
 | 1d | [01d-goal-hooks.md](01d-goal-hooks.md) | Which harness hooks do goals need, where are they installed, what do they see? | Accepted |
+| 1d2 | [01d2-goal-file-safe-writes.md](01d2-goal-file-safe-writes.md) | How does the agent write, read and remove the goal file inside a developer's checkout without harming it? | Accepted |
 | 1e | [01e-security-and-privacy.md](01e-security-and-privacy.md) | What can the hub make an agent do, what is never touched (credentials, harness config), what is the fleet scope? | Accepted |
 | 1f | [01f-agent-control-goals-and-policy.md](01f-agent-control-goals-and-policy.md) | Sections F to M of the capability list: what can the agent control, how are goals, repos, preflight, attach, logs and policy handled? | Accepted |
 | 2 | [02-contracts.md](02-contracts.md) and [02l](02l-versioning-errors-and-decisions.md) + [`api/fleet/*/v1/*.proto`](../../api/fleet/) | What exactly crosses the wire for each capability, and how are versions, errors and size limits handled? | Accepted |

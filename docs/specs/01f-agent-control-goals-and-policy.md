@@ -69,7 +69,8 @@ All pass local policy, carry a `command_id`, and are idempotent except F3.
   Goal text is agent-written and untrusted: length-capped, control characters
   stripped, rendered as data. For observed goals the agent reads eshu's
   `.claude/active-goal.<session_id>` files; the generic goal file of
-  fleet-started goals is set by 01d (open question, #57).
+  fleet-started goals is `<checkout top>/.fleet-board/goal-<goal_id>` (probed
+  for Claude Code, Codex and Muse, [01d](01d-goal-hooks.md#goal-file-location-probe-2026-10-10)).
 - **G3 Start goal**, agent-side composite under one `command_id`, so it
   survives a hub outage: preflight → reuse an available clean pane working in a
   checkout of the goal's repo (new branch in place), or ensure a worktree (H2)

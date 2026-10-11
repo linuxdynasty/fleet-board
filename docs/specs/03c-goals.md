@@ -38,7 +38,7 @@ sequenceDiagram
   A->>A: persist · CommandAck
   A->>W: CommandProgress{step=preflight, OK}
   alt reuse_pane set
-    A->>T: pick_session: available, ready, input line empty, pane cwd is a clean checkout of spec.repo
+    A->>T: pick_session: available, ready, input line empty, pane cwd is the top folder of a clean checkout of spec.repo (a subfolder is SESSION_WORKDIR_MISMATCH)
     A->>W: CommandProgress{step=pick_session, OK | FAILED SESSION_NOT_AVAILABLE, SESSION_WORKDIR_MISMATCH, CHECKOUT_DIRTY}
     A->>T: prepare_branch: git switch -c branch in the pane's checkout (AGENT_ENSURES)
   else new window
@@ -189,8 +189,11 @@ reused pane keeps its directory; one in another repo or a dirty checkout is not 
 for that harness and workdir) the adapter types `/goal consent push,pr-open,merge
 -- <goal_text>` and the hook writes the `CONSENT:` line. Otherwise the adapter
 writes consent into the objective text: `/goal <goal_text> (consent: push,
-pr-open, merge)`, having written the goal file itself just before typing
-(Codex hooks never see `/goal` lines, [01d](01d-goal-hooks.md)). The exact
+pr-open, merge)`, having written `.fleet-board/goal-<goal_id>` itself just
+before typing (Codex hooks never see `/goal` lines, [01d](01d-goal-hooks.md)).
+Known limit: Claude Code in `default` permission mode asks for approval on every
+file edit, so such a goal waits on each approval (Triage shows the prompt,
+[03d](03d-triage-sessions-logs.md); 01d). The exact
 line typed is reported back for the audit log (`StartGoalResult.typed_goal_line`).
 The consent list on the wire is `repeated ConsentAct`, never text: the adapter
 renders and joins the acts itself, so nothing the hub sends can add a `--`, a
