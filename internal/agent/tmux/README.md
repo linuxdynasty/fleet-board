@@ -108,6 +108,12 @@ st, changed := c.Changed()                       // the state, and a chan closed
   lists sessions with one `tmux list-sessions` through `internal/proc` and
   attaches by one rule on every server: the lowest session not marked
   internal, else the lowest internal one (no session at all is absent).
+  The mark is a session option (`set-option -t <session>`), which every
+  pane of the session inherits: this list reads it from the current
+  window's active pane and `ReadInventory` takes a session's tags from its
+  first pane, so they agree (`TestSessionMarksAgreeBetweenThePickAndTheInventory`).
+  A mark set on one window or pane only is not a session mark, and the two
+  may differ.
   A session is internal only when its `@fleet_internal` is exactly
   `attach_view`: the list reads `#{session_id} #{==:#{@fleet_internal},attach_view}`,
   so tmux compares the mark and each line is `$N 0` or `$N 1` (anything else

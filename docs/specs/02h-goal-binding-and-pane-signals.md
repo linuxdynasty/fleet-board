@@ -366,7 +366,12 @@ The agent's control client prefers a developer session and attaches to an
 internal one only while none exists (01 E2). The creator of a view session marks it
 (`@fleet_internal attach_view` and `FLEET_INTERNAL`) and the agent reads only
 that mark; grouping alone never makes a session internal, so a developer's own
-grouped session is reported as theirs.
+grouped session is reported as theirs. The mark, like `@fleet_session_id` and
+`@fleet_owner`, is a session option (`set-option -t <session>`): every pane of
+the session inherits it, so the agent's session pick (read from the current
+window's active pane) and its inventory (a session's tags from its first pane)
+agree. A mark set on one window or pane only is not a session mark, and the two
+reads may then differ.
 
 ## SendKeys purposes
 
