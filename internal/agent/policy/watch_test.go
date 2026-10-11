@@ -330,7 +330,9 @@ func TestAFolderPutBackIsWatchedAgainAfterTheOldWatchIsDropped(t *testing.T) {
 		t.Errorf("Watching = %v, WatchOff = %v; want the watch still on", m.Watching(), m.WatchOff())
 	}
 	next := goodFile + "max_total: 9\n"
-	r.write(t, next)
+	// The dropped folder's own re-read may still be pending; an atomic
+	// replace means it sees the old file or this one, never a half-written one.
+	r.writeAtomic(t, next)
 	fake.events <- fsnotify.Event{Name: r.path, Op: fsnotify.Write}
 	if c := r.nextChange(t); c.Hash != sum(next) {
 		t.Errorf("Change = %+v", c)

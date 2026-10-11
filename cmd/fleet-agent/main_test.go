@@ -129,6 +129,12 @@ func TestEnrollWarnsOnAHostnameMismatch(t *testing.T) {
 		if r.code != 0 {
 			t.Fatalf("enroll = %d: %s", r.code, r.stderr)
 		}
+		// A laptop's hostname can change while the test runs (DHCP or the
+		// network name); then the match case compares two different names and
+		// proves nothing.
+		if now, herr := os.Hostname(); !tc.warn && (herr != nil || now != host) {
+			t.Skipf("hostname changed from %q during the test", host)
+		}
 		warned := strings.Count(r.stderr, "fleet-agent: warning:")
 		// The hub compares with the machine name when the owner gave no
 		// hostname, so the warning names the hub, not the token.
