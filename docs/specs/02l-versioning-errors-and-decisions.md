@@ -123,7 +123,7 @@ fails when it is out of date:
 | 132 | `WORKTREE_IN_USE` | PruneWorktree: a live pane's working directory is inside the worktree. Close the window (KillWindow) first. |
 | 133 | `SCRATCH_MISSING` | Scratch directory or file absent, not a regular file, or a link. |
 |  | **Envelope and policy.** |  |
-| 200 | `EXPIRED` |  |
+| 200 | `EXPIRED` | EXPIRED: the agent received it past its deadline, or the hub had no result by the deadline (02i). |
 | 201 | `EPOCH_MISMATCH` |  |
 | 202 | `SEQ_REPLAYED` |  |
 | 203 | `SIGNATURE_INVALID` |  |
@@ -180,7 +180,7 @@ fails when it is out of date:
 | 529 | `HOST_NOT_ALLOWED` | The request's Host is not on the hub's allow-list (DNS rebinding guard; HTTP 403). |
 | 530 | `MACHINE_NOT_REVOKED` | DeleteMachine on a machine that is not REVOKED; revoke it first. |
 | 531 | `MACHINE_NOT_REENROLLABLE` | An enrollment token's previous_machine names a machine that is neither REVOKED nor past its certificate lifetime. |
-| 532 | `MACHINE_REVOKED` | A command-issuing action on a REVOKED machine, or RenewCert with that machine's certificate. |
+| 532 | `MACHINE_REVOKED` | A command-issuing action on a REVOKED machine, or RenewCert with that machine's certificate, and the reason on the outbox rows a revoke closes (02g "Revoke, in one transaction"). |
 |  | **Hub dispatch rules (03c planning rules, 03h). Each is a reason the hub refuses, delays or warns about a dispatch: PreflightCheck.check, StartGoal errors, Goal.status.start_error and the "why is nothing starting" fields (DispatchBlock). Which severity each has in a manual dispatch is the table in 03h.** |  |
 | 540 | `WORK_ITEM_UNTRUSTED` | The work item failed the trusted-issues gate (or lost it after an edit). |
 | 541 | `WORK_ITEM_CLAIMED` | Someone else's claim is on the work item (claim comment, assignee). |
