@@ -227,7 +227,7 @@ and acked like any command and gets its one result, so a repeat of that
 one result and neither logged nor acked, because the hub re-issues the same
 `command_id` under the new epoch. The rate limit is part of local policy
 (`rate_limits`, 03e) and is checked in the policy step, counting every logged
-`command_id` of that kind in the last minute, logged refusals included.
+`command_id` of that kind in the last minute, logged refusals included; the count is rebuilt from the command log at start, so a restart does not reset it.
 
 **Deadlines.** `not_after_time` defaults: 2 min for `SendKeys`, `Interrupt`,
 `RunHarnessCommand`, `CapturePane`, `OpenAttach`; 30 min for `StartGoal`,

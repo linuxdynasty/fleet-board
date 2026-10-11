@@ -16,6 +16,8 @@ import (
 	agentv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1"
 	typev1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/type/v1"
 	"github.com/linuxdynasty/fleet-board/internal/agent/audit"
+	"github.com/linuxdynasty/fleet-board/internal/agent/conn/conntest"
+	"github.com/linuxdynasty/fleet-board/internal/agent/exec"
 	"github.com/linuxdynasty/fleet-board/internal/agent/ring"
 )
 
@@ -218,4 +220,56 @@ func (a *approver) Await(context.Context, string, string) (bool, string, error) 
 func (r *rig) withApprover(t *testing.T, a *approver, hs ...*handler) {
 	t.Helper()
 	r.buildWith(t, a, hs)
+}
+
+// The window is every logged command_id of the kind in the last minute
+// (02-contracts), so it is rebuilt from the command log at start: a
+// restart, or a crash loop, does not reset the limit (6e ruling, fork 8).
+func TestARestartDoesNotResetTheRateLimit(t *testing.T) {
+	t.Parallel()
+	r := newRig(t, capturePane("tmux.observe"))
+	r.pol.limits["CapturePane"] = 2
+	r.start(t)
+	for i, id := range []string{"w-1", "w-2"} {
+		r.give(t, cmd(id, uint64(i+1), "tmux.observe"))
+		r.result(t, id)
+	}
+	r.stop()
+	r.build(t, nil, capturePane("tmux.observe"))
+	r.start(t)
+	r.give(t, cmd("w-3", 3, "tmux.observe"))
+	if res := r.result(t, "w-3"); res.GetReason() != typev1.ReasonCode_REASON_CODE_RATE_LIMITED {
+		t.Errorf("after a restart: %v, want RATE_LIMITED from the two logged before it", res)
+	}
+}
+
+// failingRecent is agent.db whose Recent read fails.
+type failingRecent struct{ exec.Store }
+
+func (failingRecent) Recent(context.Context, time.Time) ([]ring.Logged, error) {
+	return nil, errors.New("disk on fire")
+}
+
+// A window that cannot be read is logged and starts empty: the limit fails
+// open, it never stops the executor.
+func TestAnUnreadableWindowStartsEmpty(t *testing.T) {
+	t.Parallel()
+	r := newRig(t)
+	ex, err := exec.New(exec.Options{
+		DB: failingRecent{r.db}, Sender: r.send, Clock: r.clock, Policy: r.pol, Telemetry: r.tel,
+		Handlers: []exec.Handler{capturePane("tmux.observe")},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.ex = ex
+	r.start(t)
+	r.give(t, cmd("e-1", 1, "tmux.observe"))
+	if res := r.result(t, "e-1"); res.GetStatus() != typev1.Status_STATUS_OK {
+		t.Errorf("result %v, want OK", res)
+	}
+	lines := conntest.Lines(t, r.logs.String(), "command.store_failed")
+	if len(lines) != 1 || lines[0]["step"] != "window" {
+		t.Errorf("command.store_failed lines %v, want one with step=window", lines)
+	}
 }

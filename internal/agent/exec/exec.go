@@ -23,6 +23,7 @@ type Store interface {
 	SetRunning(ctx context.Context, id string, step int) error
 	RecordResult(ctx context.Context, id string, result []byte, at time.Time) error
 	Open(ctx context.Context) ([]ring.Entry, error)
+	Recent(ctx context.Context, since time.Time) ([]ring.Logged, error)
 }
 
 // Sender queues an ack, progress or result for the connected stream;
@@ -177,6 +178,7 @@ func (e *Executor) OnConnected(context.Context, uint64, conn.HubClock) {
 func (e *Executor) Run(ctx context.Context) error {
 	defer e.m.close()
 	defer e.wg.Wait()
+	e.seedWindow(ctx)
 	for {
 		select {
 		case <-ctx.Done():

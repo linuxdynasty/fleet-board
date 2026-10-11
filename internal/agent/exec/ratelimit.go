@@ -1,6 +1,9 @@
 package exec
 
-import "time"
+import (
+	"context"
+	"time"
+)
 
 // DefaultRateLimit is the per-kind command limit when neither policy.yaml
 // nor the hub states one (defaults.md "Agent command rate limit").
@@ -8,7 +11,10 @@ const DefaultRateLimit = 60
 
 // rateWindow counts every logged command_id of a kind in the last minute,
 // logged refusals included (ruling fork 4 i). Only the envelope goroutine
-// uses it. It lives in memory: a restart starts it empty.
+// uses it. Run rebuilds it from the command log before it takes a command,
+// so a restart does not reset the limit (6e ruling, fork 8). Both it and
+// received_time are the agent's clock; a clock jump moves it by at most a
+// minute.
 type rateWindow struct {
 	times map[string][]time.Time
 }
@@ -44,4 +50,19 @@ func (w *rateWindow) over(kind string, now time.Time, limit int) (time.Duration,
 		return 0, false
 	}
 	return ts[len(ts)-limit].Add(rateSpan).Sub(now), true
+}
+
+// seedWindow rebuilds the window from the last minute of the command log.
+// A read that fails is logged and the window starts empty: the limit
+// fails open, it never stops the executor.
+func (e *Executor) seedWindow(ctx context.Context) {
+	now := e.opts.Now()
+	recent, err := e.opts.DB.Recent(ctx, now.Add(-rateSpan))
+	if err != nil {
+		e.storeFailed(ctx, "", "window", err)
+		return
+	}
+	for _, l := range recent {
+		e.window.add(l.Kind, l.Received)
+	}
 }
