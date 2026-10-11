@@ -20,6 +20,6 @@
 // over an existing one. [DefaultDir], [ResolveDir] and [EnsureDir] name and
 // make the config folder.
 //
-// The tighten-only merge with the hub's settings is the next PR (6f); the
-// command executor (6e) reads [Manager.SafeMode].
+// The tighten-only merge with the hub's settings is internal/agent/settings;
+// the command executor reads [Manager.SafeMode] through it.
 package policy

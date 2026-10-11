@@ -5,8 +5,9 @@ import "github.com/linuxdynasty/fleet-board/internal/agent/policy"
 // localPolicy reads the policy file in force.
 type localPolicy struct{ m *policy.Manager }
 
-// FromPolicy is the [Policy] of policy.yaml alone. Row 6f merges the hub's
-// settings in, tighten only.
+// FromPolicy is the [Policy] of policy.yaml alone. With the hub's settings
+// merged in, tighten only, the Policy is settings.Manager (plan row 6i
+// wires it).
 func FromPolicy(m *policy.Manager) Policy { return localPolicy{m: m} }
 
 func (p localPolicy) SafeMode() bool { return p.m.SafeMode() }

@@ -46,7 +46,7 @@ type Telemetry struct {
 // Policy is a valid policy.yaml. A pointer or a nil list is a key the file
 // does not state: no local opinion, so the built-in default or the hub's value
 // applies. A non-nil empty list is an opinion: no harness, no root, no rule.
-// The merge with the hub's settings is not here.
+// The merge with the hub's settings is internal/agent/settings.
 type Policy struct {
 	SchemaVersion string
 
