@@ -110,3 +110,53 @@ func TestTheSettingsRowRefusesAStepBackInTheFile(t *testing.T) {
 		t.Error("agent.db has no settings_held_never_back trigger")
 	}
 }
+
+// The normal path: the hub sends the next generation and the agent keeps all
+// of it, not only the two numbers State reads. A save that left the ack or
+// the policy hash stale would re-send an old ack after every restart.
+func TestSaveSettingsKeepsEveryColumnOnEachUpdate(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	db := open(t, stateDir(t))
+	at := time.UnixMilli(1_700_000_000_000)
+	for _, h := range []ring.Held{
+		{Epoch: "e1", Generation: 13, Settings: []byte("s13"), Ack: []byte("a13"), PolicyHash: "h1", Applied: at},
+		{Epoch: "e1", Generation: 14, Settings: []byte("s14"), Ack: []byte("a14"), PolicyHash: "h1", Applied: at.Add(time.Second)},
+		{Epoch: "e1", Generation: 14, Settings: []byte("s14"), Ack: []byte("a14b"), PolicyHash: "h2", Applied: at.Add(2 * time.Second)},
+		{Epoch: "e2", Generation: 2, Settings: []byte("s2"), Ack: []byte("a2"), PolicyHash: "h3", Applied: at.Add(3 * time.Second)},
+	} {
+		if err := db.SaveSettings(ctx, h); err != nil {
+			t.Fatalf("SaveSettings(%s, %d): %v", h.Epoch, h.Generation, err)
+		}
+		got, ok, err := db.HeldSettings(ctx)
+		if err != nil || !ok {
+			t.Fatalf("HeldSettings after (%s, %d): %v, %v", h.Epoch, h.Generation, ok, err)
+		}
+		if got.Epoch != h.Epoch || got.Generation != h.Generation || !bytes.Equal(got.Settings, h.Settings) ||
+			!bytes.Equal(got.Ack, h.Ack) || got.PolicyHash != h.PolicyHash || !got.Applied.Equal(h.Applied) {
+			t.Errorf("after (%s, %d) held %+v, want %+v", h.Epoch, h.Generation, got, h)
+		}
+	}
+}
+
+// The file refuses only a step back. A step forward and the same generation
+// are allowed from any writer, so the guard is not wider than the rule.
+func TestTheSettingsRowAllowsAStepForwardInTheFile(t *testing.T) {
+	t.Parallel()
+	dir := stateDir(t)
+	ctx := context.Background()
+	db := open(t, dir)
+	if err := db.SaveSettings(ctx, ring.Held{Epoch: "e1", Generation: 5, Settings: []byte("s"), Ack: []byte("a")}); err != nil {
+		t.Fatal(err)
+	}
+	f := raw(t, dir)
+	for _, q := range []string{
+		`UPDATE settings_held SET generation = 6 WHERE id = 1`,
+		`UPDATE settings_held SET generation = 6, policy_hash = 'x' WHERE id = 1`,
+		`UPDATE settings_held SET settings_epoch = 'e2', generation = 1 WHERE id = 1`,
+	} {
+		if _, err := f.ExecContext(ctx, q); err != nil {
+			t.Errorf("%s: %v, want the file to allow it", q, err)
+		}
+	}
+}
