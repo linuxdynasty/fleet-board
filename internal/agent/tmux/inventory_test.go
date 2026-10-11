@@ -24,10 +24,14 @@ func TestReadInventory(t *testing.T) {
 			srv.Run(t, "set-option", "-t", "work", "@fleet_owner", "local-owner")
 			srv.Run(t, "set-option", "-t", "other two", "@fleet_internal", "attach_view")
 			srv.Run(t, "set-option", "-t", "other two", "@fleet_owner", "a\nb\tc")
+			// A value ending in a newline once split a record and failed every
+			// read of the server (review of 7d1).
+			srv.Run(t, "set-option", "-t", "other two", "@fleet_session_id", "\n\n")
 			srv.Run(t, "set-option", "-w", "-t", "other two:0", "remain-on-exit", "on")
 			srv.Run(t, "split-window", "-d", "-t", "other two:0", "exit 3")
 			pane := strings.TrimSpace(srv.Run(t, "display-message", "-p", "-t", "work:0.0", "#{pane_id}"))
 			srv.Run(t, "set-option", "-p", "-t", pane, "@fleet_pane_key", "fleet/x/"+pane)
+			srv.Run(t, "set-option", "-p", "-t", pane, "@fleet_goal_id", "x\n")
 			r := startClient(t, srv, nil)
 			r.waitState(t, tmux.StateUp)
 
@@ -52,8 +56,9 @@ func TestReadInventory(t *testing.T) {
 			if work.Tags.SessionID != "s-1" || work.Tags.Owner != "local-owner" || work.Tags.Internal != "" {
 				t.Fatalf("work tags = %+v", work.Tags)
 			}
-			// A newline and a tab in an option value come through raw.
-			if other.Tags.Internal != "attach_view" || other.Tags.Owner != "a\nb\tc" {
+			// A newline or a tab in an option value may come through or be
+			// dropped by tmux; either way the read holds the rest.
+			if other.Tags.Internal != "attach_view" || printable(other.Tags.Owner) != "abc" || printable(other.Tags.SessionID) != "" {
 				t.Fatalf("other tags = %+v", other.Tags)
 			}
 			if work.Created.IsZero() || time.Since(work.Created) > time.Hour {
@@ -78,7 +83,7 @@ func TestReadInventory(t *testing.T) {
 			if live.WindowName != "my  win %1 ~x~ : ' \"q\"" || live.AutoRename || !live.WindowActive || !live.Active {
 				t.Fatalf("live pane = %+v", *live)
 			}
-			if live.Command != "cat" || live.Width <= 0 || live.Tags.PaneKey != "fleet/x/"+pane || live.Tags.SessionID != "s-1" {
+			if live.Command != "cat" || live.Width <= 0 || live.Tags.PaneKey != "fleet/x/"+pane || live.Tags.SessionID != "s-1" || printable(live.Tags.GoalID) != "x" {
 				t.Fatalf("live pane = %+v", *live)
 			}
 			if dead.DeadStatus != 3 || dead.Session != other.ID || dead.Tags.PaneKey != "" {
@@ -90,7 +95,13 @@ func TestReadInventory(t *testing.T) {
 
 // A person attached to a session is counted; the control client is not.
 func TestReadInventoryCountsAPersonNotTheObserver(t *testing.T) {
-	b := tmuxtest.Binaries()[0]
+	for _, b := range tmuxtest.Binaries() {
+		t.Run(b.Name, func(t *testing.T) { countsAPerson(t, b) })
+	}
+}
+
+func countsAPerson(t *testing.T, b tmuxtest.Binary) {
+	t.Helper()
 	srv := tmuxtest.Start(t, b, "-s", "work", "exec cat")
 	r := startClient(t, srv, nil)
 	r.waitState(t, tmux.StateUp)
@@ -148,4 +159,14 @@ func TestReadInventoryGroupedSession(t *testing.T) {
 			}
 		})
 	}
+}
+
+// printable drops the control characters a test value holds.
+func printable(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r < 0x20 {
+			return -1
+		}
+		return r
+	}, s)
 }

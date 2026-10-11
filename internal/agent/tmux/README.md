@@ -52,8 +52,10 @@ st, changed := c.Changed()                       // the state, and a chan closed
 
 - `ReadInventory` reads every session, window and pane with one
   `list-panes -a` for the inventory package (7d): fields split by a marker
-  random per read (no name can fake a field), a newline tmux writes raw in an
-  option value joined back, the start id checked before and after (a restart
+  random per read (no name can fake a field), each text field capped by tmux
+  at `MaxFieldChars` (256) with `#{=256:...}` (3.2a and 3.7c), so no value
+  can pass the line or reply bound, a record that a newline in a value broke
+  joined back by counting markers, the start id checked before and after (a restart
   meanwhile is `ErrNotAttached`), the agent's own control client left out of
   a session's client count, one pane per session (a grouped pair lists a
   pane twice). Names, commands and option values are raw and untrusted: the
@@ -97,8 +99,8 @@ st, changed := c.Changed()                       // the state, and a chan closed
   loop's (after n failures, uniform from 1 to 2^n s, capped at 60 s), reset
   after an attach that came up (defaults row "tmux control client"). A
   `Wake` that came while it was up is dropped then, so it never cuts that
-  backoff short. The inventory package debounces Wake (at most one
-  per server a second): each costs one `list-sessions` while absent. When no server answers it waits in `StateAbsent` for `Wake`,
+  backoff short. 7d2's inventory observer debounces Wake (at most
+  one per server a second): each costs one `list-sessions` while absent. When no server answers it waits in `StateAbsent` for `Wake`,
   with no timer (row-7 ruling fork 4). The backup `list-clients` poll of
   02h is 7f's. A `Program` that cannot run at all (tmux uninstalled) is an
   `attach_failed` try like any other: retried on the backoff, one

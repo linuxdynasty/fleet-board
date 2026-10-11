@@ -31,3 +31,20 @@ func PickSessionForTest(list string) (SessionID, bool, error) { return pickSessi
 
 // IsAbsentForTest reports whether err means no server or no session.
 func IsAbsentForTest(err error) bool { return errors.Is(err, errAbsent) }
+
+// InventoryRecordsForTest splits a list-panes reply body made with marker
+// into records and parses each, as ReadInventory does.
+func InventoryRecordsForTest(body []string, marker string) ([]PaneInfo, bool) {
+	var out []PaneInfo
+	for _, line := range joinRecords(body, marker) {
+		_, p, ok := parseInventoryLine(line, marker)
+		if !ok {
+			return nil, false
+		}
+		out = append(out, p)
+	}
+	return out, true
+}
+
+// InventoryFieldCountForTest is how many fields a list-panes line holds.
+func InventoryFieldCountForTest() int { return len(inventoryFields) }

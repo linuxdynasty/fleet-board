@@ -74,9 +74,22 @@ var inventoryFields = []string{
 	"session_name", "window_name", "pane_current_command",
 }
 
+// MaxFieldChars caps each text field (the names, the command and the
+// @fleet_* options) in tmux itself, with #{=N:...} (tmux 3.2a and 3.7c), so
+// no value can push a line past the parser's line bound or the reply past
+// its bound: 22 fields of at most 256 characters (4 bytes each at worst)
+// keep a pane's line near 23 KiB. The caller cuts names to their bytes.
+const MaxFieldChars = 256
+
+// firstText is the index of the first text field in inventoryFields.
+const firstText = 14
+
 func inventoryFormat(marker string) string {
 	var b strings.Builder
-	for _, f := range inventoryFields {
+	for i, f := range inventoryFields {
+		if i >= firstText {
+			f = "=" + strconv.Itoa(MaxFieldChars) + ":" + f
+		}
 		b.WriteString(marker + "#{" + f + "}")
 	}
 	return b.String()
@@ -139,15 +152,16 @@ func (c *Client) ReadInventory(ctx context.Context) (Inventory, error) {
 	return inv, nil
 }
 
-// joinRecords puts back records that a value broke across lines: tmux
-// writes a newline in an option value or a name raw, so a line that does
-// not start with the read's marker is the rest of the line before it. The
-// marker is random per read, so no value can start a record of its own.
+// joinRecords puts back records that a value broke across lines: tmux can
+// write a newline in an option value raw, and a value ending in one puts
+// the next field, marker first, at the start of a line. So a record takes
+// lines until it holds one marker per field; the marker is random per read,
+// so no value can hold one and counting them is safe.
 func joinRecords(body []string, marker string) []string {
 	out := make([]string, 0, len(body))
 	for _, line := range body {
-		if !strings.HasPrefix(line, marker) && len(out) > 0 {
-			out[len(out)-1] += "\n" + line
+		if n := len(out); n > 0 && strings.Count(out[n-1], marker) < len(inventoryFields) {
+			out[n-1] += "\n" + line
 			continue
 		}
 		out = append(out, line)
