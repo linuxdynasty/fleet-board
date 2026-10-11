@@ -131,10 +131,9 @@ sent.
    block in `agent.db`, which never goes back) saves neither and is
    `connect.failed{step="hello", err_kind="constraint"}` and a backoff; an
    epoch not above the last is `connect.epoch_regressed` and a backoff;
-   otherwise the epoch is
-   stored, the next seq floored above `hub_last_event_seq` (and saved as
-   `seq_hwm` when above it, so a failed snapshot does not lose it), and the
-   clock offset kept.
+   otherwise the epoch is stored, the next seq floored above
+   `hub_last_event_seq` (and saved as `seq_hwm` when above it, so a failed
+   snapshot does not lose it), and the clock offset kept.
 4. **Snapshot, then results.** Each stream builds its own snapshot (new
    `snapshot_id`, a fresh seq taken before it is built, because a snapshot
    supersedes the events at or below its seq; the facts stub with `boot_id`, the unacked
@@ -164,23 +163,27 @@ sent.
    `SnapshotRequest` gets a new snapshot and the unacked results; a `Bye`
    other than `REVOKED` or `UNKNOWN_MACHINE` closes the stream; `Command`
    and `Settings` go to their hooks (see "Commands and the outbound
-   queue"), or are logged as `connect.message_ignored` with none. On stop the
-   agent sends `Bye{SHUTDOWN}` and waits up to 2 s for the hub to close;
-   then the stream and its connection are cut (`connect.shutdown_cut`), so a send held by HTTP/2
-   flow control (a hub that stopped reading) cannot hold up the stop. A
-   stop before Connected cuts at once and is not a failed attempt.
-   **Heartbeat (A5).** Every `HelloAck.heartbeat_interval` when it is 1 to
-   15 s, else 15 s (logged as `connect.hello{heartbeat_ms}`), the first one
-   interval after the snapshot and its results: `sent_time`, `uptime`
-   (monotonic, since the process started), `event_seq` (`ring.Seqs.Last`)
-   and `events` (agent.db's counters, as in Hello), set after the
-   `LoopOptions.Heartbeat` hook, which fills what later rows own (row 6 fills
-   `load1` and `health`; the hook reads `Loop.Reconnects` for
-   `health.reconnects_total`). It is a
-   `time.Ticker` case in the same select, so the one sender never puts it
-   between a snapshot and its results, and a tick missed while a send
-   waits is dropped. A failed read or send closes the stream
-   (`connect.closed{step="heartbeat"}`).
+   queue"), or are logged as `connect.message_ignored` with none. On stop
+   the agent sends `Bye{SHUTDOWN}`, waits up to 2 s for the hub to close,
+   then cuts the stream and its connection (`connect.shutdown_cut`), so a
+   send held by HTTP/2 flow control cannot hold up the stop. A stop before
+   Connected cuts at once and is not a failed attempt. Once Connected, the
+   stream's agent.db work (event attach, reads and trims, acks, heartbeats,
+   snapshots) runs on the stream's context, so a stop never fails it before
+   the `Bye`. **Heartbeat (A5).** Every `HelloAck.heartbeat_interval` when
+   it is 1 to 15 s, else 15 s (logged as `connect.hello{heartbeat_ms}`), the
+   first one interval after the snapshot and its results: `sent_time`,
+   `uptime` (monotonic, since the process started), `event_seq`
+   (`ring.Seqs.Last`) and `events` (agent.db's counters, as in Hello), set
+   after the `LoopOptions.Heartbeat` hook, which fills what later rows own
+   (row 6: `load1`, `health`, `Loop.Reconnects`; with an `Emitter` the loop
+   sets `health.ring_events` and `ring_bytes`). It is a `time.Ticker` case
+   in the same select, so the one sender never puts it between a snapshot
+   and its results, and a tick missed while a send waits is dropped. A
+   failed read or send closes the stream (`connect.closed{step="heartbeat"}`).
+   **Events** (`eventring.go`): a cursor at the HelloAck floor after the
+   snapshot and results, sent in seq order at 200/s at most; `EventAck`
+   trims only if HelloAck listed `event.ack`.
 6. **Backoff.** After n failures in a row, full jitter from 1 s up to
    2^n s (the first wait is 1 to 2 s), capped at 60 s; a connect resets n,
    and so does a wake or network change, whether it comes in the backoff
@@ -394,24 +397,23 @@ after `HelloAck`), each backing off with its status and metrics, the
 backoff's growth, cap and jitter (the first wait included) and its reset
 after a connect, after a wake in backoff and after a wake in the gap
 between tries (a real 1 s gap, the wake checked to land inside it, read
-from `connect.backoff`; the
-`pacer` is also tested on its own), an unchanged routing burst that
-leaves it alone, the hub's addresses (`HelloAck` and `EnrollResponse`
-alike) filtered then capped at 16, each HelloAck check logged with its
-`check` and `value`, a hub
-restart on the same port, a snapshot cut short
-never sent on the next stream, its seq taken before it is built, results
-resent until acked (unknown and pruned ids, a `SnapshotRequest`), the
-command log pruned by hub time with an agent clock 2 h fast, hub time as
-`hub_time` plus the monotonic time elapsed (the monotonic clock is
-replaced in the test so the wall clock can be stepped apart from it) and
-an anchor that keeps its monotonic reading, a HelloAck with no
-`hub_time` logged as `hub_time_ok=false`, seqs that
-never go back (a wiped agent and a restored hub), a displaced stream
+from `connect.backoff`; the `pacer` is also tested on its own), an
+unchanged routing burst that leaves it alone, the hub's addresses
+(`HelloAck` and `EnrollResponse` alike) filtered then capped at 16, each
+HelloAck check logged with its `check` and `value`, a hub restart on the
+same port, a snapshot cut short never sent on the next stream, its seq
+taken before it is built, results resent until acked (unknown and pruned
+ids, a `SnapshotRequest`), the command log pruned by hub time with an
+agent clock 2 h fast, hub time as `hub_time` plus the monotonic time
+elapsed (the monotonic clock is replaced in the test so the wall clock
+can be stepped apart from it) and an anchor that keeps its monotonic
+reading, a HelloAck with no `hub_time` logged as `hub_time_ok=false`, seqs
+that never go back (a wiped agent and a restored hub), a displaced stream
 backing off, wake and network change while connected and in backoff, a
 silent hub caught by the keepalive through a proxy that goes quiet
 (`FLEET_SLOW_TESTS=1` runs the 30 s default in real time), a stop not held
-up by a hub that stopped reading or by a dial, the status, an oversize
+up by a hub that stopped reading or by a dial, `Bye{SHUTDOWN}` for a stop
+just before the event attach or a paced ring read, the status, an oversize
 snapshot, and the metrics. Heartbeats come at the hub's 1 s interval one
 interval after the snapshot and its result, none while the snapshot is
 held, with rising uptime, the current `event_seq` and counters, and the

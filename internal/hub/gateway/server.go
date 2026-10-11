@@ -70,7 +70,7 @@ type ServerOptions struct {
 	// already hold; empty until plan rows 7 to 10.
 	EventAppliers []ingest.EventApplier
 	// eventAcker, set only by tests, records the EventAcks the hub would
-	// send; nil sends none (the arm comes with plan row 7a).
+	// send instead of sending them; nil sends them on the stream.
 	eventAcker eventAcker
 	// arms, set only by tests, adds arm handlers to the product table.
 	arms armTable

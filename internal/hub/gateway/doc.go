@@ -75,7 +75,9 @@
 // goroutine (a failure ends the stream). Out-of-order events are dropped
 // and a rise of evicted_total in a Heartbeat records a gap; either asks
 // for a snapshot, both under one limit of once per [EventLostEvery] per
-// machine. [Server.PruneEvents] keeps
-// [EventRetention] of history.
+// machine. After a commit the stream gets EventAck{last_event_seq} (the
+// committed seq, at most once per [AckEvery]), and HelloAck lists
+// [EventAckCapability] (plan row 7a-B; row 7 ruling round 3, 3e).
+// [Server.PruneEvents] keeps [EventRetention] of history.
 // Terminal and SessionLog answer Unimplemented until their rows land.
 package gateway

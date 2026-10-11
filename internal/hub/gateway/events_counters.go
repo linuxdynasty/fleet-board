@@ -27,14 +27,14 @@ const EventLostEvery = 5 * time.Minute
 const AckEvery = time.Second
 
 type eventMetrics struct {
-	events, cleaned, gaps metric.Int64Counter
-	backlog               metric.Int64Gauge
+	events, cleaned, gaps, acks metric.Int64Counter
+	backlog                     metric.Int64Gauge
 }
 
 func newEventMetrics(tel *telemetry.Telemetry) (eventMetrics, error) {
 	m, p := tel.Meter(scope), tel.MetricPrefix()
 	var em eventMetrics
-	var errs [4]error
+	var errs [5]error
 	em.events, errs[0] = m.Int64Counter(p+"_events_total",
 		metric.WithDescription("Events the hub took, by kind (the Event.body arm) and result: applied, history (at or "+
 			"below the Snapshot floor), known (already held), refused (dropped before the store) or failed."))
@@ -45,22 +45,47 @@ func newEventMetrics(tel *telemetry.Telemetry) (eventMetrics, error) {
 	em.backlog, errs[3] = m.Int64Gauge(p+"_replay_backlog_events",
 		metric.WithDescription("Heartbeat.event_seq minus the hub's committed event seq, by machine: how far the hub is "+
 			"behind (seq numbers, holes included)."))
+	em.acks, errs[4] = m.Int64Counter(p+"_event_acks_total",
+		metric.WithDescription("EventAcks by machine and result: sent (queued for the stream after the commit), "+
+			"queue_full (skipped; the agent keeps those ring entries until a later ack or the next HelloAck floor) "+
+			"or ended (the stream had ended)."))
 	if err := errors.Join(errs[:]...); err != nil {
 		return eventMetrics{}, fmt.Errorf("gateway: event metrics: %w", err)
 	}
 	return em, nil
 }
 
+// EventAckCapability is the hub feature HelloAck.hub_capabilities lists:
+// this hub sends EventAck (02i "Queue and ring rules"; row 7 ruling fork 1,
+// round 3, 3e).
+const EventAckCapability = "event.ack"
+
 // eventAcker sends EventAck{last_event_seq} on a stream (row 7 ruling,
-// fork 1). The ConnectResponse arm comes with plan row 7a; until then the
-// product's acker sends nothing and HelloAck lists no event.ack.
+// fork 1). ackCommitted calls it only with a committed seq, at most once
+// per AckEvery; streamAcks is the product's, a test may record instead.
+// ackEvents returns the result: "sent", "queue_full" or "ended".
 type eventAcker interface {
-	ackEvents(s *stream, lastEventSeq uint64) bool
+	ackEvents(s *stream, lastEventSeq uint64) string
 }
 
-type noAcks struct{}
+// streamAcks queues ConnectResponse.event_ack for the stream's writer. It
+// never blocks: with the queue full the ack is skipped, and the agent keeps
+// those ring entries until a later ack or the next HelloAck floor.
+type streamAcks struct{}
 
-func (noAcks) ackEvents(*stream, uint64) bool { return false }
+func (streamAcks) ackEvents(s *stream, seq uint64) string {
+	if s.send(&agentv1.ConnectResponse{Body: &agentv1.ConnectResponse_EventAck{
+		EventAck: &agentv1.EventAck{LastEventSeq: seq},
+	}}) {
+		return "sent"
+	}
+	select {
+	case <-s.ended:
+		return "ended"
+	default:
+		return "queue_full"
+	}
+}
 
 // ackState paces a stream's EventAcks: only a committed seq, at most one
 // per AckEvery, the last one held back sent when its time comes.
@@ -97,9 +122,11 @@ func (a *agentService) ackCommitted(ctx context.Context, s *stream) {
 		return
 	}
 	k.last, k.sent = time.Now(), seq
-	if a.acker.ackEvents(s, seq) {
+	result := a.acker.ackEvents(s, seq)
+	if result == "sent" {
 		a.log.DebugContext(ctx, "event.acked", "machine_id", s.machineID, "epoch", s.epoch, "seq", seq)
 	}
+	a.ev.acks.Add(ctx, 1, metric.WithAttributes(attribute.String("machine", s.machineID), attribute.String("result", result)))
 }
 
 // ackDue runs when the held-back ack's timer fired.

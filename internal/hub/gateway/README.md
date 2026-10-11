@@ -245,9 +245,12 @@ srv, err := gateway.NewServer(gateway.ServerOptions{
   `SnapshotRequest{event_lost}` at most once per `EventLostEvery` (5 min)
   per machine, the limit `out_of_order` shares (in memory); `fleet_hub_replay_backlog_events` is
   `Heartbeat.event_seq` minus the committed seq. EventAck (row 7 ruling,
-  fork 1): a committed seq, at most one per `AckEvery` per stream, the
-  held-back last one on a timer; the arm itself comes with plan row 7a, so
-  the product's acker sends nothing and HelloAck lists no `event.ack`.
+  fork 1; round 3, 3e): a committed seq, at most one per `AckEvery` per
+  stream, the held-back last one on a timer, queued for the stream's writer
+  as `ConnectResponse.event_ack` (`streamAcks`; a full queue skips it,
+  `fleet_hub_event_acks_total{machine, result="queue_full"}`, or
+  `result="ended"` once the stream ended); HelloAck lists
+  `event.ack` 1. A failed job ends the stream before any ack covers it.
   `Server.PruneEvents` is the hourly housekeeping job that deletes history
   older than `EventRetention` (7 days) in jobs of 5,000 rows.
 - **Commands** (`outbox.go`, `arm_commands.go`; plan row 5, PR 5f): the

@@ -18,6 +18,7 @@ import (
 
 	agentv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1"
 	typev1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/type/v1"
+	"github.com/linuxdynasty/fleet-board/internal/agent/events"
 	"github.com/linuxdynasty/fleet-board/internal/agent/ring"
 	"github.com/linuxdynasty/fleet-board/internal/agent/wakenet"
 	"github.com/linuxdynasty/fleet-board/internal/telemetry"
@@ -72,6 +73,9 @@ type LoopOptions struct {
 	// refuses it.
 	OnConnected    func(ctx context.Context, epoch uint64, clock HubClock)
 	OnDisconnected func()
+	// Emitter is the event ring (internal/agent/events); nil sends no
+	// events. Its allocator is then the loop's (Snapshot.seq included).
+	Emitter *events.Emitter
 	// Capabilities lists what each Hello advertises; nil advertises none.
 	// Command, Settings, OnConnected, OnDisconnected and Capabilities run
 	// on the sending goroutine and must not block. Send from a hook never
@@ -113,7 +117,8 @@ type LoopOptions struct {
 	// stepHook, for tests only, runs on Run's goroutine the moment the
 	// status says Connected ("connected"), the moment a stream's queue
 	// closes ("unpublished"), just before and just after a snapshot reads
-	// the unacked results ("unacked_read", "unacked_done"); and on the
+	// the unacked results ("unacked_read", "unacked_done"), just before the
+	// stream reads its next events from the ring ("events_next"); and on the
 	// receiver's goroutine once it handed a message over ("received").
 	stepHook func(step string)
 	// hookWarn, for tests only, replaces hookHeldWarn.
@@ -187,8 +192,10 @@ func NewLoop(ctx context.Context, opts LoopOptions) (*Loop, error) {
 	if err != nil {
 		return nil, err
 	}
-	seqs, err := opts.DB.Seqs(ctx)
-	if err != nil {
+	var seqs *ring.Seqs
+	if opts.Emitter != nil {
+		seqs = opts.Emitter.Seqs() // one live allocator per agent.db
+	} else if seqs, err = opts.DB.Seqs(ctx); err != nil {
 		return nil, err
 	}
 	disc, err := newDiscoveryHistogram(opts.Telemetry)

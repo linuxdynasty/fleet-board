@@ -274,7 +274,8 @@ resident memory, read by the resource sampler on its 30 s tick (gopsutil
 it could not be read or the sample is older than three intervals;
 `commands_refused_total` and `tmux_control_down` come from the command executor
 and the tmux control clients (rows 6e and 7), and read 0 until those exist;
-`ring_events` and `ring_bytes` are 0 until row 7 holds an event ring;
+`ring_events` and `ring_bytes` are what the event ring holds (entries and
+bytes, `events.Emitter.Size`), set by the connection loop at each heartbeat;
 `probes_failing` is row 8's. The agent's own gauge `fleet_agent_unacked_results` is set by the connection loop at each snapshot and `ResultAck`, so it can differ for a moment from the exact `unacked_results` of the heartbeat, which is the store's count. Counters are plain numbers, because 0 is a true
 zero for them; `rss_bytes` is `optional`, because a process always holds some
 memory and a 0 would be a failed read, which the hub shows as unknown. Not added: goroutine counts and GC data (the

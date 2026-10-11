@@ -32,7 +32,8 @@ func TestHeartbeatHookFillsAgentHealth(t *testing.T) {
 	if got.RssBytes == nil || got.GetRssBytes() != 96<<20 {
 		t.Errorf("rss_bytes = %v, want 96 MiB from the sample", got.RssBytes)
 	}
-	// The ring holds no events until row 7 (ruling row 6 fork 1): 0 is true.
+	// The hook leaves the ring fields to the connection loop, which sets them
+	// from the event ring after this hook runs, so they stay 0 here.
 	if got.GetRingEvents() != 0 || got.GetRingBytes() != 0 || got.GetProbesFailing() != 0 {
 		t.Errorf("health = %v, want ring_events, ring_bytes and probes_failing 0", got)
 	}

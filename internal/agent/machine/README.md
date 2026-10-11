@@ -39,7 +39,8 @@ replaced, which is what SHED means) or `sampler.Latest()`.
 | `Heartbeat` | `load1` | the latest sample, when it is fresh (below) |
 | | `health.rss_bytes` | the agent's own resident memory, read on the same tick (gopsutil `process`, own pid, ADR 0031); unset when it is 0 or the read failed |
 | | `health.unacked_results`, `reconnects_total`, `commands_refused_total`, `tmux_control_down` | the `Hooks` seams `Unacked` (`ring.DB.UnackedCount`), `Reconnects` (`conn.Loop.Reconnects`), `Refused` (`exec.Executor.RefusedTotal`, added in row 6e; wired into these hooks in row 6i) and `ControlDown` (row 7); nil reads 0 |
-| | `health.ring_events`, `ring_bytes`, `probes_failing` | 0 until rows 7 and 8 |
+| | `health.ring_events`, `ring_bytes` | not set here: the connection loop sets them after this hook, from the event ring (`conn/heartbeat.go`) |
+| | `health.probes_failing` | 0 until row 8 |
 
 Unset, not 0: `ResourceSample.load1`, `load5`, the two memory sizes and
 `mem_pressure_level`, and `Heartbeat.load1`, are `optional`, so "load 0" and
@@ -71,11 +72,11 @@ happens on a working machine.
   the boot clock cannot be read, the sample is unknown (02i "Clocks"). Each
   withheld sample is counted (`fleet_agent_sample_stale_total`) and the first of
   a run is logged (`sample.stale`), so a sampler stuck in a reading is visible.
-- Known gap, row 7's: the first Snapshot after the agent starts can go out
-  before the first sample finishes (a connect can beat a slow reading), and then
-  carries no resources. Nothing in row 6 sends the sample again until the next
-  snapshot; row 7's `resource_sample` event (every 30 s, from `Subscribe`) is
-  what closes it.
+- The first Snapshot after the agent starts can go out before the first sample
+  finishes (a connect can beat a slow reading), and then carries no resources.
+  Row 7 closes that gap: `fleet-agent run` also sends each sample as a
+  `resource_sample` event (every 30 s, from `Subscribe`), so a sample follows
+  the snapshot on the stream within one 30 s interval.
 - The 30 s sample reads local sensors; it is not a poll of an outside system, so
   ADR 0022 rule 6 ("stream where a push source exists") and ADR 0024 decision 9
   do not apply to it. ADR 0023 names the 30 s sampler.

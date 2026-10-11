@@ -52,6 +52,15 @@ func (s *session) sendHeartbeat(ctx context.Context) error {
 	hb.SentTime = timestamppb.Now()
 	hb.Uptime = durationpb.New(time.Since(started))
 	hb.EventSeq = l.seqs.Last()
+	if e := l.opts.Emitter; e != nil {
+		h := hb.GetHealth()
+		if h == nil {
+			h = &agentv1.AgentHealth{}
+			hb.Health = h
+		}
+		size := e.Size()
+		h.RingEvents, h.RingBytes = size.Events, size.Bytes
+	}
 	hb.Events = &agentv1.EventCounters{
 		ShedTotal: st.Marks.Shed, CoalescedTotal: st.Marks.Coalesced, EvictedTotal: st.Marks.Evicted,
 	}

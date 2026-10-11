@@ -26,7 +26,7 @@ func TestMachineHooksFillHealthFromTheSeams(t *testing.T) {
 		Unacked:    func() int { return 5 },
 		Reconnects: func() uint64 { return 9 },
 	}
-	_, heartbeat, err := machineHooks(ctx, &wg, tel, t.TempDir(), nil, seams)
+	_, heartbeat, err := machineHooks(ctx, &wg, tel, t.TempDir(), nil, seams, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

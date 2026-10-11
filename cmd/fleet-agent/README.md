@@ -79,7 +79,10 @@ fleet-agent run    # logs to stderr; stop with Ctrl-C or SIGTERM
   delete or a new file is noticed 500 ms after the last event (no polling),
   logged as `policy.changed` and written to `audit.log` in the state folder, and
   `Snapshot.policy.changed_since_load` is set. The new file takes effect when
-  `run` restarts. A missing file is a normal first run; an invalid one starts
+  `run` restarts. Each change is also a `policy_changed` event, kept in the
+  event ring (`agent.db`) until the hub holds it, and each resource sample a
+  `resource_sample` event (sent only while connected; `internal/agent/events`).
+  A missing file is a normal first run; an invalid one starts
   the agent in safe mode (`policy.safe_mode`, one line naming the line number and
   key, never the file's text). `run` never writes `policy.yaml`.
 - Exit codes: 0 after a signal (it says goodbye to the hub first; a

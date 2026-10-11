@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/linuxdynasty/fleet-board/internal/agent/conn"
+	"github.com/linuxdynasty/fleet-board/internal/agent/events"
 	"github.com/linuxdynasty/fleet-board/internal/agent/ring"
 	"github.com/linuxdynasty/fleet-board/internal/agent/wakenet"
 	"github.com/linuxdynasty/fleet-board/internal/hub/lock"
@@ -99,34 +100,41 @@ func runAgent(ctx context.Context, dir, cfgDir, version, boot string, tel *telem
 		return failed("store", err)
 	}
 	defer func() { _ = db.Close() }()
+	// The emitter closes after the policy and the sampler stop (defers run
+	// last first) and before agent.db.
+	em, err := events.New(ctx, events.Options{DB: db, Telemetry: tel})
+	if err != nil {
+		return failed("events", err)
+	}
+	defer em.Close()
 
 	wctx, stop := context.WithCancel(ctx)
 	var wg sync.WaitGroup
 	defer func() { stop(); wg.Wait() }()
-	pol, err := startPolicy(wctx, cfgDir, dir, id.MachineID, tel)
+	pol, err := startPolicy(wctx, cfgDir, dir, id.MachineID, tel, events.PolicyChanges(em))
 	if err != nil {
 		return failed("policy", err)
 	}
 	defer pol.close()
-	events := make(chan wakenet.Event)
+	netEvents := make(chan wakenet.Event)
 	wlog := tel.Logger.With("component", "wakenet")
 	wake, nw := wakenet.NewWake(wlog), wakenet.NewNet(wlog)
-	wg.Go(func() { wake.Run(wctx, events) })
-	wg.Go(func() { nw.Run(wctx, events) })
+	wg.Go(func() { wake.Run(wctx, netEvents) })
+	wg.Go(func() { nw.Run(wctx, netEvents) })
 
 	// The heartbeat hook reads the loop's reconnect count; the loop exists only
 	// after the hook, and the hook runs only inside loop.Run.
 	var loop *conn.Loop
 	snapshot, heartbeat, err := machineHooks(wctx, &wg, tel, dir, nil, healthSeams{
 		Unacked: db.UnackedCount, Reconnects: func() uint64 { return loop.Reconnects() },
-	})
+	}, em)
 	if err != nil {
 		return failed("machine", err)
 	}
 	loop, err = conn.NewLoop(ctx, conn.LoopOptions{
 		Dir: dir, Identity: id, DB: db, Version: version, BootID: boot,
-		Telemetry: tel, Events: events, PushOff: nw.PushOff, Discover: discover,
-		Snapshot: chainSnapshot(snapshot, pol.mgr.Snapshot), Heartbeat: heartbeat,
+		Telemetry: tel, Events: netEvents, PushOff: nw.PushOff, Discover: discover,
+		Snapshot: chainSnapshot(snapshot, pol.mgr.Snapshot), Heartbeat: heartbeat, Emitter: em,
 	})
 	if err != nil {
 		return failed("loop", err)

@@ -58,7 +58,7 @@ type policyRun struct {
 // folder that cannot be made is logged and the agent runs on: a missing policy
 // file is a normal first run, and the watch goes off. The caller ends it with
 // close.
-func startPolicy(ctx context.Context, cfgDir, stateDir, machineID string, tel *telemetry.Telemetry) (*policyRun, error) {
+func startPolicy(ctx context.Context, cfgDir, stateDir, machineID string, tel *telemetry.Telemetry, onChange func(policy.Change)) (*policyRun, error) {
 	log := tel.Logger.With("machine_id", machineID)
 	if err := policy.EnsureDir(cfgDir); err != nil {
 		log.With("component", "policy").WarnContext(ctx, "policy.config_dir_failed", "err_kind", "io")
@@ -67,7 +67,7 @@ func startPolicy(ctx context.Context, cfgDir, stateDir, machineID string, tel *t
 	if err != nil {
 		return nil, err
 	}
-	mgr, err := policy.Load(policy.Options{Dir: cfgDir, Telemetry: tel, Logger: log.With("component", "policy"), Audit: al})
+	mgr, err := policy.Load(policy.Options{Dir: cfgDir, Telemetry: tel, Logger: log.With("component", "policy"), Audit: al, OnChange: onChange})
 	if err != nil {
 		_ = al.Close()
 		return nil, err

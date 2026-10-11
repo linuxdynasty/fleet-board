@@ -53,16 +53,18 @@ func checkField(v string) (typev1.ReasonCode, bool) {
 // helloAck is what the agent checks (session.go accept: fleet_id, the
 // proto version in its range, an epoch above its last and in range, the
 // seq floor, hub_time, the heartbeat interval, the message cap, the hub
-// addresses) plus settings_epoch and this process's hub_instance_id. No
-// hub_capabilities: snapshots arrive whole, at most MaxMessageBytes (row 5
-// ruling, amendment 7).
+// addresses) plus settings_epoch and this process's hub_instance_id.
+// hub_capabilities lists event.ack (the hub sends EventAck after each
+// committed batch); no snapshot.parts: snapshots arrive whole, at most
+// MaxMessageBytes (row 5 ruling, amendment 7).
 func (a *agentService) helloAck(out statedb.HelloOut, version uint32, now time.Time) *agentv1.HelloAck {
 	return &agentv1.HelloAck{
 		HubVersion: a.version, HubTime: timestamppb.New(now), Epoch: out.Epoch, ProtoVersion: version,
 		HubLastEventSeq: out.HubLastEventSeq, MaxMessageBytes: MaxMessageBytes,
 		HeartbeatInterval: durationpb.New(HeartbeatInterval), SettingsGeneration: out.SettingsGeneration,
 		HubInstanceId: a.instanceID, SettingsEpoch: out.SettingsEpoch, HubAddresses: a.id.HubAddresses,
-		FleetId: a.id.FleetID,
+		FleetId:         a.id.FleetID,
+		HubCapabilities: []*typev1.Capability{{Name: EventAckCapability, Version: 1}},
 	}
 }
 

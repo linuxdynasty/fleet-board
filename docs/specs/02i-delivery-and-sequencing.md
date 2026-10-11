@@ -98,10 +98,13 @@ size-capped) and holds only NEVER_DROP and COALESCE events.
 | NEVER_DROP | never dropped; the producer waits (the ring is the queue) | kept in seq order until the size cap or one week evicts the oldest | `evicted_total`++ (**loss**; also an event above the 02e message cap, which can never be sent, one whose ring write failed, and a ring entry that does not decode) |
 
 While connected, the hub sends `EventAck{last_event_seq}` after its writer
-commits a batch (at most one per machine per second) and lists `event.ack` in
+commits a batch (at most one per stream per second, [defaults](defaults.md)) and lists `event.ack` in
 `HelloAck.hub_capabilities`; the agent then drops ring entries at or below it.
 Without that capability the ring keeps every entry until the next `HelloAck`
-floor or the cap evicts it, and an eviction is counted as loss either way.
+floor or the cap evicts it, and an eviction is counted as loss either way. The
+hub (from plan row 7a-B) acks only the `hub_last_event_seq` a committed writer
+job set, never a seq it received but has not committed: a job that fails ends
+the stream before any ack can cover it, so the agent sends that event again.
 
 Every event consumes a seq at the moment it is created, shed or coalesced ones
 included, so **seq has holes by design** and contiguity means nothing. A

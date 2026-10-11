@@ -15,6 +15,7 @@ import (
 
 	agentv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1"
 	typev1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/type/v1"
+	"github.com/linuxdynasty/fleet-board/internal/agent/events"
 	"github.com/linuxdynasty/fleet-board/internal/agent/ring"
 	"github.com/linuxdynasty/fleet-board/internal/agent/wakenet"
 	"github.com/linuxdynasty/fleet-board/internal/protoversion"
@@ -59,6 +60,15 @@ type session struct {
 	maxBytes int
 	// beat is the heartbeat interval this stream's HelloAck chose.
 	beat time.Duration
+	// floor is HelloAck.hub_last_event_seq, firstSnap the first snapshot's
+	// seq, eventAck whether the hub listed event.ack, and cursor the
+	// stream's place in the event ring once Connected (eventring.go).
+	floor, firstSnap uint64
+	eventAck         bool
+	cursor           *events.Cursor
+	// pace limits the event rate; paceWait fires when a token is back.
+	pace     *eventBucket
+	paceWait <-chan time.Time
 	// epoch is this stream's HelloAck.epoch; q its outbound queue once
 	// Connected (outbound.go).
 	epoch uint64
@@ -331,6 +341,7 @@ func (s *session) accept(ctx context.Context, ack *agentv1.HelloAck, st ring.Sta
 	}
 	s.l.anchor.Store(anchor)
 	s.epoch = ack.GetEpoch()
+	s.floor, s.eventAck = ack.GetHubLastEventSeq(), hubLists(ack, eventAckCapability)
 	s.l.takeAddresses(ctx, s.c.addr, ack.GetHubAddresses())
 	s.beat = heartbeatInterval(ack.GetHeartbeatInterval())
 	s.maxBytes = snapshotMaxBytes
@@ -364,6 +375,12 @@ func (s *session) connected(ctx context.Context) (ending, string, error) {
 		}
 	}
 	s.renewCheck()
+	// The stream's context, as in serve: a stop here must not fail the
+	// attach's trim and end the stream without Bye{SHUTDOWN}.
+	if err := s.attachEvents(s.sctx); err != nil {
+		return s.byeOver(ctx, ending{connected: true}, "events", err)
+	}
+	defer s.detachEvents()
 	s.onConnected()
 	out, step, err := s.serve(ctx)
 	out, step, err = s.byeOver(ctx, out, step, err)
@@ -392,9 +409,21 @@ func (s *session) serve(ctx context.Context) (ending, string, error) {
 				return ending{}, "heartbeat", err
 			}
 		case m := <-s.msgs:
-			out, done, step, err := s.handle(ctx, m)
+			// The stream's context, as for the heartbeat: a stop that races
+			// this case must not fail its agent.db work (an ack, a snapshot,
+			// a trim) and end the stream without Bye{SHUTDOWN}.
+			out, done, step, err := s.handle(s.sctx, m)
 			if err != nil || done {
 				return out, step, err
+			}
+		case <-s.feed():
+			if err := s.sendEvents(s.sctx); err != nil {
+				return ending{}, "events", err
+			}
+		case <-s.paceWait:
+			s.paceWait = nil
+			if err := s.sendEvents(s.sctx); err != nil {
+				return ending{}, "events", err
 			}
 		case m := <-s.q.ch:
 			// Queued by Loop.Send; only this goroutine sends on the stream.
@@ -435,6 +464,10 @@ func (s *session) handle(ctx context.Context, m *agentv1.ConnectResponse) (endin
 		}
 	case *agentv1.ConnectResponse_Bye:
 		return s.bye(ctx, b.Bye), true, "", nil
+	case *agentv1.ConnectResponse_EventAck:
+		if err := s.ackEvents(ctx, b.EventAck); err != nil {
+			return ending{}, true, "event_ack", err
+		}
 	case *agentv1.ConnectResponse_Command, *agentv1.ConnectResponse_Settings:
 		s.intake(ctx, m)
 	case *agentv1.ConnectResponse_HelloAck:
@@ -443,40 +476,4 @@ func (s *session) handle(ctx context.Context, m *agentv1.ConnectResponse) (endin
 		s.l.log.InfoContext(ctx, "connect.message_ignored", "kind", "unknown")
 	}
 	return ending{}, false, "", nil
-}
-
-// bye logs the hub's Bye; REVOKED and UNKNOWN_MACHINE end the loop, any
-// other reason is a reconnect with backoff.
-func (s *session) bye(ctx context.Context, b *agentv1.Bye) ending {
-	r := b.GetReason()
-	s.l.log.InfoContext(ctx, "connect.bye", "peer", s.c.addr, "reason", byeLabel(r),
-		"message", clean(b.GetMessage(), maxHubMessage))
-	switch r {
-	case agentv1.ByeReason_BYE_REASON_REVOKED:
-		return ending{end: EndRevoked}
-	case agentv1.ByeReason_BYE_REASON_UNKNOWN_MACHINE:
-		return ending{end: EndUnknownMachine}
-	default:
-		return ending{}
-	}
-}
-
-// goodbye sends Bye (SHUTDOWN when the agent stops, 01 A7) and gives the
-// hub a moment to close the stream, draining what it still sends.
-func (s *session) goodbye(reason agentv1.ByeReason) {
-	err := s.bs.Send(&agentv1.ConnectRequest{Body: &agentv1.ConnectRequest_Bye{Bye: &agentv1.Bye{Reason: reason}}})
-	if err == nil {
-		_ = s.bs.CloseRequest()
-	}
-	t := time.NewTimer(shutdownWait)
-	defer t.Stop()
-	for {
-		select {
-		case <-s.msgs:
-		case <-s.done:
-			return
-		case <-t.C:
-			return
-		}
-	}
 }
