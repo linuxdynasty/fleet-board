@@ -62,6 +62,7 @@ func TestListPanesReadsTheDeadSignalIntoAClosedSet(t *testing.T) {
 		{"too long", "$0 @1 %1 1  " + strings.Repeat("a", 17) + " 80 24", true, tmux.NoStatus, tmux.SignalOther, false},
 		{"a live pane drops junk", "$0 @1 %1 0  bogus 80 24", false, tmux.NoStatus, "", false},
 		{"both a status and a signal", "$0 @1 %1 1 4 9 80 24", false, 0, "", true},
+		{"pane_dead not 0 or 1", "$0 @1 %1 2 4  80 24", false, 0, "", true},
 		{"the old seven fields", "$0 @1 %1 1 4 80 24", false, 0, "", true},
 		{"nine fields", "$0 @1 %1 1 4  80 24 x", false, 0, "", true},
 	}
