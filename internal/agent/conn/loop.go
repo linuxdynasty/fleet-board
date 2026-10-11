@@ -117,7 +117,8 @@ type LoopOptions struct {
 	// stepHook, for tests only, runs on Run's goroutine the moment the
 	// status says Connected ("connected"), the moment a stream's queue
 	// closes ("unpublished"), just before and just after a snapshot reads
-	// the unacked results ("unacked_read", "unacked_done"); and on the
+	// the unacked results ("unacked_read", "unacked_done"), just before the
+	// stream reads its next events from the ring ("events_next"); and on the
 	// receiver's goroutine once it handed a message over ("received").
 	stepHook func(step string)
 	// hookWarn, for tests only, replaces hookHeldWarn.

@@ -167,7 +167,11 @@ sent.
    agent sends `Bye{SHUTDOWN}` and waits up to 2 s for the hub to close;
    then the stream and its connection are cut (`connect.shutdown_cut`), so a send held by HTTP/2
    flow control (a hub that stopped reading) cannot hold up the stop. A
-   stop before Connected cuts at once and is not a failed attempt.
+   stop before Connected cuts at once and is not a failed attempt. Once
+   Connected, the stream's own agent.db work (the event attach and its
+   trim, event reads, acks, heartbeats, requested snapshots) runs on the
+   stream's context, not the run's, so a stop never fails it and the hub
+   still gets `Bye{SHUTDOWN}`.
    **Heartbeat (A5).** Every `HelloAck.heartbeat_interval` when it is 1 to
    15 s, else 15 s (logged as `connect.hello{heartbeat_ms}`), the first one
    interval after the snapshot and its results: `sent_time`, `uptime`
@@ -412,7 +416,9 @@ never go back (a wiped agent and a restored hub), a displaced stream
 backing off, wake and network change while connected and in backoff, a
 silent hub caught by the keepalive through a proxy that goes quiet
 (`FLEET_SLOW_TESTS=1` runs the 30 s default in real time), a stop not held
-up by a hub that stopped reading or by a dial, the status, an oversize
+up by a hub that stopped reading or by a dial, `Bye{SHUTDOWN}` for a stop
+placed by a step hook just before the event cursor attaches and just
+before a ring read in the paced part of a drain, the status, an oversize
 snapshot, and the metrics. Heartbeats come at the hub's 1 s interval one
 interval after the snapshot and its result, none while the snapshot is
 held, with rising uptime, the current `event_seq` and counters, and the

@@ -104,6 +104,7 @@ func (s *session) sendEvents(ctx context.Context) error {
 		s.paceWait = time.After(wait)
 		return nil
 	}
+	s.l.step("events_next")
 	evs, _, err := s.cursor.Next(ctx, n)
 	if err != nil {
 		return err

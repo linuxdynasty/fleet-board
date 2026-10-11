@@ -27,8 +27,14 @@
 // touched the connection (ADR 0029). An HTTP/2 keepalive ([Keepalive])
 // catches a silent hub. While connected, the same goroutine sends an A5
 // Heartbeat every HelloAck.heartbeat_interval (1 to 15 s, else 15 s;
-// [LoopOptions].Heartbeat fills what later rows own). A stop says Bye{SHUTDOWN} and cuts the connection
-// if the hub has not closed it 2 s later. It ends on its own ([EndedError]) only for
+// [LoopOptions].Heartbeat fills what later rows own). With a
+// [LoopOptions].Emitter, the stream attaches an event cursor at the HelloAck
+// floor once the snapshot and its results are out, sends the ring's events
+// in seq order at 200 a second at most (bursts of 64), and trims the ring
+// on EventAck only when HelloAck listed event.ack. A stop says Bye{SHUTDOWN} and cuts the connection
+// if the hub has not closed it 2 s later; once Connected, the stream's
+// agent.db work runs on the stream's context, so a stop never fails it
+// before that goodbye. It ends on its own ([EndedError]) only for
 // Bye{REVOKED}, Bye{UNKNOWN_MACHINE}, another fleet's HelloAck or an
 // expired certificate. The first three are written whole to [EndedFile]
 // before Run returns; `fleet-agent run` calls [CheckEnded] before any

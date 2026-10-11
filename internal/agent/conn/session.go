@@ -374,7 +374,9 @@ func (s *session) connected(ctx context.Context) (ending, string, error) {
 		}
 	}
 	s.renewCheck()
-	if err := s.attachEvents(ctx); err != nil {
+	// The stream's context, as in serve: a stop here must not fail the
+	// attach's trim and end the stream without Bye{SHUTDOWN}.
+	if err := s.attachEvents(s.sctx); err != nil {
 		return s.byeOver(ctx, ending{connected: true}, "events", err)
 	}
 	defer s.detachEvents()
