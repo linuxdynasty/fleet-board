@@ -66,25 +66,8 @@ func CloseForRevoke(ctx context.Context, tx *sql.Tx, machineID string, now time.
 func closeOpen(ctx context.Context, tx *sql.Tx, query string, args []any, now time.Time, state, reason,
 	cause string,
 ) ([]Closed, error) {
-	q, err := tx.QueryContext(ctx, query, args...)
+	out, err := readOpen(ctx, tx, query, args, now, cause)
 	if err != nil {
-		return nil, fmt.Errorf("outbox: read open commands: %w", err)
-	}
-	var out []Closed
-	for q.Next() {
-		c := Closed{Cause: cause, At: now}
-		var created int64
-		if err := q.Scan(&c.CommandID, &c.MachineID, &c.Kind, &c.From, &created); err != nil {
-			_ = q.Close()
-			return nil, fmt.Errorf("outbox: read open commands: %w", err)
-		}
-		c.Created = time.UnixMilli(created)
-		out = append(out, c)
-	}
-	if err := q.Close(); err != nil {
-		return nil, fmt.Errorf("outbox: read open commands: %w", err)
-	}
-	if err := q.Err(); err != nil {
 		return nil, fmt.Errorf("outbox: read open commands: %w", err)
 	}
 	for _, c := range out {
@@ -95,6 +78,27 @@ func closeOpen(ctx context.Context, tx *sql.Tx, query string, args []any, now ti
 		}
 	}
 	return out, nil
+}
+
+// readOpen reads the open rows query selects, closing its cursor before
+// any row is changed.
+func readOpen(ctx context.Context, tx *sql.Tx, query string, args []any, now time.Time, cause string) ([]Closed, error) {
+	q, err := tx.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = q.Close() }()
+	var out []Closed
+	for q.Next() {
+		c := Closed{Cause: cause, At: now}
+		var created int64
+		if err := q.Scan(&c.CommandID, &c.MachineID, &c.Kind, &c.From, &created); err != nil {
+			return nil, err
+		}
+		c.Created = time.UnixMilli(created)
+		out = append(out, c)
+	}
+	return out, q.Err()
 }
 
 // Closed is what a caller of [Expire] or [CloseForRevoke] does once its

@@ -3,6 +3,7 @@ package daemon_test
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -62,7 +63,7 @@ func (h *hub) commandState(t *testing.T, id string) string {
 	defer func() { _ = db.Close() }()
 	var state string
 	err = db.QueryRowContext(context.Background(), `SELECT state FROM commands WHERE command_id = ?`, id).Scan(&state)
-	if err != nil && err != sql.ErrNoRows {
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		t.Fatal(err)
 	}
 	return state

@@ -2,6 +2,7 @@ package statedb_test
 
 import (
 	"context"
+	"database/sql"
 	"os"
 	"path/filepath"
 	"slices"
@@ -139,20 +140,7 @@ func TestMigrationTenIndexesOpenAndClosedCommands(t *testing.T) {
 			[]any{5, 1000},
 		},
 	} {
-		rows, err := db.QueryContext(t.Context(), `EXPLAIN QUERY PLAN `+tc.query, tc.args...)
-		if err != nil {
-			t.Fatal(err)
-		}
-		var plan []string
-		for rows.Next() {
-			var id, parent, unused int
-			var detail string
-			if err := rows.Scan(&id, &parent, &unused, &detail); err != nil {
-				t.Fatal(err)
-			}
-			plan = append(plan, detail)
-		}
-		_ = rows.Close()
+		plan := queryPlan(t, db, tc.query, tc.args...)
 		if !slices.ContainsFunc(plan, func(d string) bool { return strings.Contains(d, "USING INDEX "+tc.index) }) {
 			t.Errorf("%s plan %q, want %s", tc.name, plan, tc.index)
 		}
@@ -160,4 +148,27 @@ func TestMigrationTenIndexesOpenAndClosedCommands(t *testing.T) {
 	if n := rawCount(t, path, `SELECT count(*) FROM commands`); n != 1 {
 		t.Errorf("%d rows after the migration, want 1", n)
 	}
+}
+
+// queryPlan is the detail column of EXPLAIN QUERY PLAN for query.
+func queryPlan(t *testing.T, db *sql.DB, query string, args ...any) []string {
+	t.Helper()
+	rows, err := db.QueryContext(t.Context(), `EXPLAIN QUERY PLAN `+query, args...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = rows.Close() }()
+	var plan []string
+	for rows.Next() {
+		var id, parent, unused int
+		var detail string
+		if err := rows.Scan(&id, &parent, &unused, &detail); err != nil {
+			t.Fatal(err)
+		}
+		plan = append(plan, detail)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	return plan
 }
