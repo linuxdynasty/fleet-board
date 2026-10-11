@@ -90,12 +90,12 @@ failure events are in section 10. The platform's own lifecycle events:
 | `command.intake_full` | warn; `kind` (`command`, `settings`), `command_id` (a command's, when it is printable) | the connection loop handed a hub `Command` or `Settings` to its receiver and the receiver's bounded intake was full: the message is dropped unlogged and unacked, so the hub's at-least-once re-send covers it ([03 W1](03-workflows.md#w1-enrollment-and-first-connect)). Counted in `fleet_agent_command_intake_dropped_total`. Never the message body |
 | `command.result_unreadable` | warn; `command_id` (when printable), `err_kind` (`parse`) | a `CommandResult` was offered to the connection loop but the copy logged in `agent.db` for that command cannot be decoded, so it is refused and not sent ([03n](03n-reconnect.md#commands-settings-and-the-outbound-queue)). Never the result bytes |
 | `command.received` | info; `command_id`, `kind`, `epoch`, `seq` | the executor took a command from the hub off its intake, before any check ([02](02-contracts.md#delivery-semantics) "Envelope checks"). `kind` is the `Command.kind` message name, or `unknown` for an empty or newer arm. Never the command body |
-| `command.refused` | info; `command_id`, `kind`, `status`, `reason` | the executor's own checks answered a command and no handler ran: `EXPIRED`, `FAILED`/`EPOCH_MISMATCH` and `REJECTED_BY_POLICY`/`SEQ_REPLAYED` (both unlogged and unacked), `UNSUPPORTED`, `REJECTED_BY_POLICY` with `POLICY_SAFE_MODE`, `RATE_LIMITED`, `ROLE_INSUFFICIENT`, `LOCAL_DENIED` or `LOCAL_CONFIRM_TIMEOUT`. Counted in `fleet_agent_commands_refused_total`; each `REJECTED_BY_POLICY` is also a `command.refused` row in `audit.log` (02g) |
+| `command.refused` | info; `command_id`, `kind`, `status`, `reason` | the executor's own checks answered a command and no handler ran: `EXPIRED`, `FAILED`/`EPOCH_MISMATCH` and `REJECTED_BY_POLICY`/`SEQ_REPLAYED` (both unlogged and unacked), `UNSUPPORTED`, `REJECTED_BY_POLICY` with `POLICY_SAFE_MODE`, `RATE_LIMITED`, `ROLE_INSUFFICIENT`, `LOCAL_DENIED` or `LOCAL_CONFIRM_TIMEOUT`, and `UNKNOWN_OUTCOME` for a logged command that cannot be read back after a restart (reason `UNSPECIFIED`). Counted in `fleet_agent_commands_refused_total` and in the executor's refused count (for `AgentHealth.commands_refused_total`, wired in plan row 6i); each `REJECTED_BY_POLICY` is also a `command.refused` row in `audit.log` (02g) |
 | `command.finished` | info; `command_id`, `kind`, `status`, `reason`, `elapsed_ms` | a handler's result, or `UNKNOWN_OUTCOME` for a command that was running when the agent stopped and is not repeat safe, was logged and queued |
 | `command.resumed` | info; `command_id`, `kind`, `class` (`repeat_safe`, `not_repeat_safe`, `per_step`) | after a restart, once the first stream's snapshot was out, the executor took up a command that was running ([02i](02i-delivery-and-sequencing.md#what-agentdb-keeps) `command_log`) |
 | `command.dropped` | warn; `reason` (`invalid_command_id`), `kind` | a command whose `command_id` is empty, over 128 bytes or not printable cannot be logged or answered; it is dropped. A steady rise is a hub bug |
 | `command.store_failed` | warn; `step` (`read`, `encode`, `decode`, `log`, `running`, `result`, `open`, `window`), `err_kind` (`store`, `canceled`), `command_id` (when printable) | an `agent.db` read or write of the command log failed; the command stays as the log left it and the hub's re-send or the next start's resume takes it up |
-| `command.send_failed` | warn; `err_kind` (`not_logged`, `queue_full`, `other`) | the connection loop refused an ack, progress or result for a reason other than "no stream" (which is normal: the result is re-sent after the next snapshot) |
+| `command.send_failed` | warn; `err_kind` (`not_logged`, `queue_full`, `other`), `kind`, `command_id` (when printable) | the connection loop refused an ack, progress or result for a reason other than "no stream" (which is normal: the result is re-sent after the next snapshot) |
 | `hub.leftovers_removed` | info; `command`, `files` | `fleetd init`, `run` or `restore` removed a crashed init's or restore's temporary files (`.state.db.init-*`, `.state.db.restore-*`), or a crashed backup's (`.backup-plain-*`, `backups/.partial-*`) more than an hour old |
 | `hub.connect.unhandled` | info; `machine_id`, `epoch`, `kind` | the first Connect message of an arm with no handler yet on a stream (`kind` is the oneof arm name, `unknown` for an arm the hub does not know); it is ignored and every one is counted in `fleet_hub_connect_unhandled_total{kind}` (03 W1). At 3 AM: "is the hub dropping what this agent sends?" |
 | `restore.completed` | info; `address_added`, `previous_kept`, `reconcile_until` | `fleetd restore` put the backup in place as `state.db` with a new `settings_epoch` and the reconcile window open until `reconcile_until` (RFC 3339); `previous_kept` says the replaced store was kept as `state.db.pre-restore-<stamp>` ([02g](02g-agent-security.md#hub-identity-and-restore)). Answers "did the restore finish, and when does reconcile end?" The restored store also holds its `hub.restore` audit row (who, from which backup and schema version; [02m](02m-hub-api-actions-and-audit.md#audit-actions)) |
@@ -289,10 +289,13 @@ per-message context, so their spans are separate roots linked by attributes.
 `Operation.trace_id` lets a UI link a command to its trace; without a
 collector, the same id is on every log line of the flow.
 
-On the agent every command runs under one `agent.command{kind}` span, a
-child of `Command.trace` (from the envelope check to the result, the
-approval wait included); the kind's own spans below are its children, and
-`CommandResult.trace` carries it, unset when the command carried none.
+On the agent every command that is logged runs under one
+`agent.command{kind}` span, a child of `Command.trace`. It starts in the
+command's own goroutine once the envelope checks and the ack are done and
+lasts to the result, the approval wait included; the kind's own spans
+below are its children, and `CommandResult.trace` carries it, unset when
+the command carried none. The unlogged `EPOCH_MISMATCH` and `SEQ_REPLAYED`
+answers have no span.
 
 | Flow | Span tree (hub, then agent) | Notes |
 |---|---|---|

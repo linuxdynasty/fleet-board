@@ -46,14 +46,18 @@ type Request struct {
 	// the developer marked available with fresh_context_on_reuse (`F*`).
 	// The handler checks them: only it can see tmux.
 	FleetOnly, FleetOrMarked bool
-	// Progress reports a step of a composite. The executor marks the step
-	// in the command log and sends it; a nil return is not "sent", only
-	// "recorded and queued or kept for the next stream".
+	// Progress reports a step of a composite. The executor copies p (the
+	// handler may keep and change its own), marks the step in the command
+	// log and sends the copy; a nil return is not "sent", only "recorded and
+	// queued or kept for the next stream".
 	Progress func(ctx context.Context, p *agentv1.CommandProgress) error
 }
 
 // Handler runs one command kind. Every handler is a later plan row; row 6
-// registers none, so every command is UNSUPPORTED.
+// registers none, so every command is UNSUPPORTED. Run and Resume must
+// return soon after ctx ends: the executor's Run waits for every command
+// goroutine before it returns, so a handler that ignores ctx holds the
+// agent's shutdown.
 type Handler interface {
 	// Kind is the Command.kind arm's message name, such as "CapturePane".
 	Kind() string

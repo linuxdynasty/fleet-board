@@ -51,7 +51,8 @@ type Auditor interface{ Append(audit.Entry) }
 // Approver asks the person at the machine. Await returns once they decide
 // (approved, and the channel: "cli" or "notification") or ctx ends. An
 // error is no decision: the executor waits out that round (at most 30 s or
-// the deadline) and asks again. The
+// the deadline) and asks again. Await must return soon after ctx ends: the
+// executor's Run waits for the command goroutine that calls it. The
 // CLI that fills it is plan rows 18, 20 and 24; with none, a wait ends at
 // the deadline as LOCAL_CONFIRM_TIMEOUT (ruling fork 4 iv).
 type Approver interface {
@@ -238,27 +239,44 @@ func (e *Executor) setProgress(id string, p *agentv1.CommandProgress) {
 // resendProgress re-sends the last progress of every running command.
 func (e *Executor) resendProgress(ctx context.Context) {
 	e.mu.Lock()
-	var ps []*agentv1.CommandProgress
+	var rs []run
 	for _, r := range e.running {
 		if r.last != nil {
-			ps = append(ps, r.last)
+			rs = append(rs, *r)
 		}
 	}
 	e.mu.Unlock()
-	for _, p := range ps {
-		e.send(ctx, &agentv1.ConnectRequest{Body: &agentv1.ConnectRequest_CommandProgress{CommandProgress: p}})
+	for _, r := range rs {
+		e.send(ctx, r.kind, &agentv1.ConnectRequest{Body: &agentv1.ConnectRequest_CommandProgress{CommandProgress: r.last}})
 	}
 }
 
 // send queues m. With no stream, or a stream that ends, nothing is lost: a
 // result is re-sent from the log after the next snapshot, an ack is
 // re-derived by the hub's re-send, a progress re-sent by resendProgress.
-func (e *Executor) send(ctx context.Context, m *agentv1.ConnectRequest) {
+// kind is the command's kind, for the log line.
+func (e *Executor) send(ctx context.Context, kind string, m *agentv1.ConnectRequest) {
 	err := e.opts.Sender.Send(ctx, m)
 	if err == nil || errors.Is(err, conn.ErrNoStream) || ctx.Err() != nil {
 		return
 	}
-	e.log.WarnContext(ctx, "command.send_failed", "err_kind", sendErrKind(err))
+	args := []any{"err_kind", sendErrKind(err), "kind", kind}
+	if id := sentID(m); printableID(id) {
+		args = append(args, "command_id", id)
+	}
+	e.log.WarnContext(ctx, "command.send_failed", args...)
+}
+
+// sentID is the command_id an ack, progress or result is about.
+func sentID(m *agentv1.ConnectRequest) string {
+	switch {
+	case m.GetCommandAck() != nil:
+		return m.GetCommandAck().GetCommandId().GetValue()
+	case m.GetCommandProgress() != nil:
+		return m.GetCommandProgress().GetCommandId().GetValue()
+	default:
+		return m.GetCommandResult().GetCommandId().GetValue()
+	}
 }
 
 func sendErrKind(err error) string {

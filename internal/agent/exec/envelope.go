@@ -103,7 +103,7 @@ func (e *Executor) accepted(ctx context.Context, kind string, ent ring.Entry, no
 }
 
 func (e *Executor) ack(ctx context.Context, ent ring.Entry) {
-	e.send(ctx, &agentv1.ConnectRequest{Body: &agentv1.ConnectRequest_CommandAck{CommandAck: &agentv1.CommandAck{
+	e.send(ctx, ent.Kind, &agentv1.ConnectRequest{Body: &agentv1.ConnectRequest_CommandAck{CommandAck: &agentv1.CommandAck{
 		CommandId: &typev1.CommandId{Value: ent.ID}, ReceivedTime: timestamppb.New(ent.Received),
 	}}})
 }
@@ -134,7 +134,7 @@ func (e *Executor) answerKnown(ctx context.Context, ent ring.Entry) {
 		e.storeFailed(ctx, ent.ID, "decode", err)
 		return
 	}
-	e.send(ctx, &agentv1.ConnectRequest{Body: &agentv1.ConnectRequest_CommandResult{CommandResult: &r}})
+	e.send(ctx, ent.Kind, &agentv1.ConnectRequest{Body: &agentv1.ConnectRequest_CommandResult{CommandResult: &r}})
 }
 
 // decide runs the checks after the log: requires, policy (safe mode, rate

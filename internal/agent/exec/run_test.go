@@ -207,3 +207,44 @@ func TestAFailingApproverDoesNotSpin(t *testing.T) {
 		t.Errorf("the approver was asked %d times in 2 s, want at most a few", n)
 	}
 }
+
+// stepper reports one step, then changes its own progress and waits.
+type stepper struct {
+	handler
+	reported chan struct{}
+}
+
+func (s *stepper) Run(ctx context.Context, r exec.Request) *agentv1.CommandResult {
+	p := &agentv1.CommandProgress{Step: "wait_ready", StepIndex: 3, StepCount: 14, Status: typev1.Status_STATUS_OK}
+	if err := r.Progress(ctx, p); err != nil {
+		return nil
+	}
+	p.Step = "changed after reporting"
+	close(s.reported)
+	<-ctx.Done()
+	return nil
+}
+
+// The executor keeps its own copy of a reported step: a handler that
+// changes its progress afterwards does not change what is re-sent on the
+// next connect, nor race the envelope goroutine that re-sends it.
+func TestAReportedStepIsCopied(t *testing.T) {
+	t.Parallel()
+	h := &stepper{handler: handler{kind: "StartGoal", caps: []*typev1.Capability{{Name: "goal.start", Version: 1}}}, reported: make(chan struct{})}
+	r := newRig(t, h)
+	r.start(t)
+	c := cmd("st-1", 1, "goal.start")
+	c.Kind = &agentv1.Command_StartGoal{StartGoal: &agentv1.StartGoal{}}
+	r.give(t, c)
+	<-h.reported
+	r.ex.OnConnected(context.Background(), 2, r.clock)
+	waitFor(t, func() bool { _, p, _ := r.count("st-1"); return p == 2 })
+	for _, m := range r.send.all() {
+		if p := m.GetCommandProgress(); p != nil && p.GetStep() != "wait_ready" {
+			t.Errorf("progress step %q sent, want the reported wait_ready", p.GetStep())
+		}
+	}
+	if e, err := r.db.Command(context.Background(), "st-1"); err != nil || e.Step != 3 {
+		t.Errorf("entry %+v err %v, want step 3 in the log", e, err)
+	}
+}

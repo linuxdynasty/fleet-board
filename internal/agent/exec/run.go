@@ -6,6 +6,7 @@ import (
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	agentv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1"
@@ -60,7 +61,7 @@ func (e *Executor) do(ctx context.Context, c *agentv1.Command, ent ring.Entry, p
 	}
 	req := Request{
 		Command: c, Step: ent.Step, FleetOnly: p.cell.fleetOnly, FleetOrMarked: p.cell.fleetOrMarked,
-		Progress: e.progress(ent.ID),
+		Progress: e.progress(ent.ID, ent.Kind),
 	}
 	var r *agentv1.CommandResult
 	if p.resume && class == PerStep {
@@ -89,7 +90,7 @@ func (e *Executor) await(ctx context.Context, c *agentv1.Command, ent ring.Entry
 		Metadata: map[string]string{"deadline": deadline.UTC().Format(time.RFC3339), "approver": "local_user"},
 	}
 	e.setProgress(ent.ID, p)
-	e.send(ctx, &agentv1.ConnectRequest{Body: &agentv1.ConnectRequest_CommandProgress{CommandProgress: p}})
+	e.send(ctx, ent.Kind, &agentv1.ConnectRequest{Body: &agentv1.ConnectRequest_CommandProgress{CommandProgress: p}})
 	for {
 		now, ok := e.opts.Clock.Now()
 		if !ok || !now.Before(deadline) {
@@ -132,17 +133,19 @@ func (e *Executor) await(ctx context.Context, c *agentv1.Command, ent ring.Entry
 	}
 }
 
-// progress is the Request.Progress of one command: it marks the step in
-// the log, keeps the progress for a re-send and queues it.
-func (e *Executor) progress(id string) func(context.Context, *agentv1.CommandProgress) error {
-	return func(ctx context.Context, p *agentv1.CommandProgress) error {
+// progress is the Request.Progress of one command: it copies p (the
+// handler keeps its own), marks the step in the log, keeps the copy for a
+// re-send from the envelope goroutine and queues it.
+func (e *Executor) progress(id, kind string) func(context.Context, *agentv1.CommandProgress) error {
+	return func(ctx context.Context, in *agentv1.CommandProgress) error {
+		p := proto.CloneOf(in)
 		p.CommandId = &typev1.CommandId{Value: id}
 		p.Message = e.text(p.GetMessage())
 		if err := e.opts.DB.SetRunning(ctx, id, int(p.GetStepIndex())); err != nil {
 			return err
 		}
 		e.setProgress(id, p)
-		e.send(ctx, &agentv1.ConnectRequest{Body: &agentv1.ConnectRequest_CommandProgress{CommandProgress: p}})
+		e.send(ctx, kind, &agentv1.ConnectRequest{Body: &agentv1.ConnectRequest_CommandProgress{CommandProgress: p}})
 		return nil
 	}
 }

@@ -10,6 +10,7 @@ import (
 
 	agentv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1"
 	typev1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/type/v1"
+	"github.com/linuxdynasty/fleet-board/internal/agent/conn"
 	"github.com/linuxdynasty/fleet-board/internal/agent/conn/conntest"
 	"github.com/linuxdynasty/fleet-board/internal/agent/exec"
 )
@@ -145,5 +146,34 @@ func TestRequiresChecksTheVersion(t *testing.T) {
 	r.give(t, c)
 	if res := r.result(t, "v-1"); res.GetStatus() != typev1.Status_STATUS_UNSUPPORTED || h.runs.Load() != 0 {
 		t.Errorf("result %v, want UNSUPPORTED for a capability below the required version", res)
+	}
+}
+
+// refusing is a connection loop that refuses every message for a reason
+// other than "no stream".
+type refusing struct{}
+
+func (refusing) Send(context.Context, *agentv1.ConnectRequest) error { return conn.ErrResultNotLogged }
+
+// A send the loop refuses is logged with the command's id and kind, so the
+// 3 AM reader knows which command did not reach the hub.
+func TestASendFailureNamesTheCommand(t *testing.T) {
+	t.Parallel()
+	r := newRig(t)
+	ex, err := exec.New(exec.Options{
+		DB: r.db, Sender: refusing{}, Clock: r.clock, Policy: r.pol, Telemetry: r.tel,
+		Handlers: []exec.Handler{capturePane("tmux.observe")},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.ex = ex
+	r.start(t)
+	r.give(t, cmd("sf-1", 1, "tmux.observe"))
+	waitFor(t, func() bool { return len(conntest.Lines(t, r.logs.String(), "command.send_failed")) >= 2 })
+	for _, l := range conntest.Lines(t, r.logs.String(), "command.send_failed") {
+		if l["command_id"] != "sf-1" || l["kind"] != "CapturePane" || l["err_kind"] != "not_logged" {
+			t.Errorf("command.send_failed %v, want command_id sf-1, kind CapturePane, err_kind not_logged", l)
+		}
 	}
 }

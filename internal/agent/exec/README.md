@@ -84,8 +84,10 @@ restart does not reset it; a read that fails is logged
   instead of failing; `ErrNoStream` is normal (results are re-sent from the
   log after the next snapshot, acks re-derived by the hub's re-send,
   progress re-sent on the next `OnConnected`).
-- **Stop**: `Run` returns after every command goroutine; a run cut off
-  leaves its entry received or running for the next start's resume.
+- **Stop**: `Run` returns after every command goroutine (`wg.Wait`), so
+  `Handler.Run`, `Handler.Resume` and `Approver.Await` must return soon
+  after their context ends, or they hold the agent's shutdown. A run cut
+  off leaves its entry received or running for the next start's resume.
 
 `RefusedTotal()` is how many commands the executor's own checks refused
 since start, logged or not; the heartbeat's

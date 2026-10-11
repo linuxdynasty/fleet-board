@@ -62,7 +62,7 @@ func (e *Executor) finish(ctx context.Context, c *agentv1.Command, ent ring.Entr
 	}
 	e.outcome(ctx, c, ent.Kind, r, elapsed, started.IsZero())
 	sp.status(r)
-	e.send(ctx, &agentv1.ConnectRequest{Body: &agentv1.ConnectRequest_CommandResult{CommandResult: r}})
+	e.send(ctx, ent.Kind, &agentv1.ConnectRequest{Body: &agentv1.ConnectRequest_CommandResult{CommandResult: r}})
 }
 
 // unlogged answers EPOCH_MISMATCH or SEQ_REPLAYED with one result that is
@@ -73,7 +73,7 @@ func (e *Executor) unlogged(ctx context.Context, c *agentv1.Command, kind string
 	r.Message = e.text(r.GetMessage())
 	r.FinishedTime = timestamppb.New(e.opts.Now())
 	e.outcome(ctx, c, kind, r, 0, true)
-	e.send(ctx, &agentv1.ConnectRequest{Body: &agentv1.ConnectRequest_CommandResult{CommandResult: r}})
+	e.send(ctx, kind, &agentv1.ConnectRequest{Body: &agentv1.ConnectRequest_CommandResult{CommandResult: r}})
 }
 
 // outcome logs, counts and audits one result. refused is a result the
