@@ -18,10 +18,11 @@ out := settings.Merge(settings.Input{Hub: s, Prev: kept, Local: pol.Policy(), Sa
   epoch is taken whatever its generation; no epoch is ignored.
 - **Checks.** An out-of-range value is rejected (`INVALID_ARGUMENT`) and the
   field keeps the value kept before it. In safe mode every field is rejected
-  (`POLICY_SAFE_MODE`) and only the defaults are in effect, but the hub's
-  values are still kept, so a fixed file applies them at the next start.
+  (`POLICY_SAFE_MODE`), the defaults are in effect and nothing is kept: Hello
+  still reports the generation held before, so the hub re-sends after the fix.
 - **Restart.** `Open` merges the held settings under the policy loaded now
-  and saves the new ack when it changed (`settings.reevaluated`).
+  and saves the new ack when it changed (`settings.reevaluated`); not in
+  safe mode.
 - **Layers.** `LOCAL_CEILING` when the file's value is in effect,
-  `AGENT_DEFAULT` for a built-in default; a hub value is unnamed for now
-  (`SETTING_LAYER_UNSPECIFIED`, an open question of PR 6f).
+  `AGENT_DEFAULT` for a built-in default, `HUB` when the hub's value stood
+  (the hub names its own layer); the known-harness fallback has no source.

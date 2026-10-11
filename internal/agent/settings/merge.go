@@ -41,11 +41,15 @@ type Outcome struct {
 // Merge is the tighten-only merge of 03e, field by field, of the hub's
 // settings under the local policy file: the file can only make a hub value
 // stricter, never looser. A field no layer states takes the built-in
-// default. It is a pure function of its input.
+// default. In safe mode every stated field is rejected for safe mode and the
+// effective values are the defaults at generation 0; the caller keeps
+// nothing. It is a pure function of its input.
 func Merge(in Input) Outcome {
 	kept, rej := keep(in.Hub, in.Prev)
 	h, labels, probes := kept.GetValues(), kept.GetLabels(), kept.GetProbeIntervalByAccount()
-	if in.SafeMode {
+	gen := in.Hub.GetGeneration()
+	if in.SafeMode { // nothing is merged or kept: report the defaults (03e2)
+		gen = 0
 		rej = rej[:0]
 		for _, f := range sent(in.Hub) {
 			rej = append(rej, rejection{field: f, reason: typev1.ReasonCode_REASON_CODE_POLICY_SAFE_MODE, msg: "the policy file is invalid: the agent is in safe mode"})
@@ -53,7 +57,7 @@ func Merge(in Input) Outcome {
 		h, labels, probes = &typev1.SettingValues{}, nil, nil
 	}
 	l := in.Local
-	m := &merger{eff: &typev1.EffectiveSettings{Generation: in.Hub.GetGeneration(), Values: &typev1.SettingValues{}}}
+	m := &merger{eff: &typev1.EffectiveSettings{Generation: gen, Values: &typev1.SettingValues{}}}
 	v := m.eff.GetValues()
 	minNum := func(a, b uint32) bool { return a < b }
 	tighten(m, fMaxActive, h.MaxActive, l.MaxActive, ptr[uint32](defMaxActive), minNum, func(x uint32) { v.MaxActive = &x }, num)

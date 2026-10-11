@@ -26,6 +26,14 @@ func (m *Manager) handle(ctx context.Context, it item) {
 	case epoch == "" || !printable(epoch, maxEpoch):
 		m.ignored(ctx, "no_epoch", gen, cur)
 		return
+	case m.opts.Local.SafeMode():
+		// Nothing is kept and the view stays the defaults; Hello goes on
+		// reporting the held generation, so the hub sends its Settings again
+		// once the file is fixed (03e2).
+		out := Merge(Input{Hub: s, Local: m.opts.Local.Policy(), SafeMode: true})
+		m.report(ctx, out, true)
+		m.send(ctx, it.ctx, out.Ack)
+		return
 	case cur.held && epoch == cur.epoch && gen == cur.gen:
 		m.ignored(ctx, "repeat", gen, cur)
 		m.send(ctx, it.ctx, cur.ack)
@@ -38,8 +46,7 @@ func (m *Manager) handle(ctx context.Context, it item) {
 	mctx, span := m.m.tracer.Start(parent(ctx, s), "agent.settings.merge",
 		trace.WithAttributes(attribute.Int64("generation", int64(min(gen, 1<<62)))))
 	defer span.End()
-	safe := m.opts.Local.SafeMode()
-	out := Merge(Input{Hub: s, Prev: cur.kept, Local: m.opts.Local.Policy(), SafeMode: safe})
+	out := Merge(Input{Hub: s, Prev: cur.kept, Local: m.opts.Local.Policy()})
 	if err := m.save(mctx, out); err != nil {
 		span.RecordError(err)
 		m.m.storeFailed(mctx)
@@ -47,7 +54,7 @@ func (m *Manager) handle(ctx context.Context, it item) {
 		return // no ack: the hub sends Settings again (03e state machine)
 	}
 	m.cur.Store(newView(true, out.Kept, out.Ack))
-	m.report(mctx, out, safe)
+	m.report(mctx, out, false)
 	m.send(mctx, it.ctx, out.Ack)
 }
 
