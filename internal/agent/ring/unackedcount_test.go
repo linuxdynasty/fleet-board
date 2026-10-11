@@ -2,6 +2,7 @@ package ring_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"testing"
@@ -128,4 +129,51 @@ func TestUnackedCountIsExactUnderConcurrentWriters(t *testing.T) {
 	}
 	wg.Wait()
 	sameAsUnacked(t, db, "after concurrent writers")
+}
+
+// The executor's writes (LogAndApply, SetRunning, a refused SetRunning on a
+// finished entry, a repeated LogAndApply) log and mark entries that have no
+// result yet, so they never move the count; only the result that follows
+// does. Checked step by step against Unacked().
+func TestUnackedCountIgnoresLogAndApplyAndSetRunning(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	db := open(t, stateDir(t))
+	if err := db.StartEpoch(ctx, 2); err != nil {
+		t.Fatal(err)
+	}
+	for i := range 3 {
+		if _, dup, err := db.LogAndApply(ctx, command(fmt.Sprintf("c-%d", i), 2, uint64(i+1))); err != nil || dup {
+			t.Fatalf("LogAndApply c-%d: dup %v, err %v", i, dup, err)
+		}
+		sameAsUnacked(t, db, fmt.Sprintf("after LogAndApply c-%d", i))
+	}
+	if got := db.UnackedCount(); got != 0 {
+		t.Fatalf("UnackedCount = %d with three commands and no result, want 0", got)
+	}
+	if err := db.SetRunning(ctx, "c-0", 2); err != nil {
+		t.Fatal(err)
+	}
+	sameAsUnacked(t, db, "after SetRunning")
+	if _, dup, err := db.LogAndApply(ctx, command("c-0", 2, 9)); err != nil || !dup {
+		t.Fatalf("a repeated LogAndApply: dup %v, err %v; want dup", dup, err)
+	}
+	sameAsUnacked(t, db, "after a repeated LogAndApply")
+
+	if err := db.RecordResult(ctx, "c-0", []byte("r"), t0); err != nil {
+		t.Fatal(err)
+	}
+	sameAsUnacked(t, db, "after the result of a running command")
+	if got := db.UnackedCount(); got != 1 {
+		t.Fatalf("UnackedCount = %d after one result, want 1", got)
+	}
+	if err := db.SetRunning(ctx, "c-0", 3); !errors.Is(err, ring.ErrResultLogged) {
+		t.Fatalf("SetRunning on a finished entry = %v, want ErrResultLogged", err)
+	}
+	sameAsUnacked(t, db, "after a refused SetRunning")
+	opened, err := db.Open(ctx)
+	if err != nil || len(opened) != 2 {
+		t.Fatalf("Open = %d entries, %v; want 2 (c-1 and c-2)", len(opened), err)
+	}
+	sameAsUnacked(t, db, "after Open")
 }
