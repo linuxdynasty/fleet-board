@@ -100,6 +100,7 @@ type Client struct {
 	internal bool      // attached to an internal session (no developer one existed), or not yet known
 	expect   SessionID // the session the attach or the client's own switch-client moves to
 	startID  string
+	version  string // the server's #{version} at the last attach
 	subs     []Subscription
 }
 
@@ -158,6 +159,15 @@ func (c *Client) State() State {
 	return c.state
 }
 
+// Changed returns the client's state and a channel that is closed at its
+// next change: a watcher reads the state again when it closes, with no
+// timer.
+func (c *Client) Changed() (State, <-chan struct{}) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.state, c.changed
+}
+
 // Up reports whether the client is attached.
 func (c *Client) Up() bool { return c.State() == StateUp }
 
@@ -198,6 +208,13 @@ func (c *Client) ServerStartID() string {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.startID
+}
+
+// Version is the server's #{version} at the last attach ("" before it).
+func (c *Client) Version() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.version
 }
 
 // Session is the session the client is attached to (NoID before the first

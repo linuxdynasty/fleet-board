@@ -141,6 +141,7 @@ func (c *Client) attach(ctx context.Context) (string, error) {
 	}
 	c.mu.Lock()
 	c.conn, c.session, c.startID, c.internal, c.expect = cn, session, info.startID, internal, session
+	c.version = info.version
 	subs := append([]Subscription(nil), c.subs...)
 	c.mu.Unlock()
 	for _, s := range subs {

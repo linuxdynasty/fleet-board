@@ -167,6 +167,21 @@ func Start(tb testing.TB, b Binary, args ...string) *Server {
 	return s
 }
 
+// Sibling starts another throwaway server in s's folder whose socket is
+// named name (a socket-folder watch test needs a "default" socket there),
+// with one detached session made from args as for [Start]. It is killed
+// and checked gone when the test ends, before the folder is removed.
+func (s *Server) Sibling(tb testing.TB, name string, args ...string) *Server {
+	tb.Helper()
+	if name == "" || strings.ContainsAny(name, "/.") || len(filepath.Join(s.Dir, name)) > maxSocketPath {
+		tb.Fatalf("tmuxtest: sibling socket name %q", name)
+	}
+	sib := &Server{Bin: s.Bin, Dir: s.Dir, Socket: filepath.Join(s.Dir, name), runner: s.runner, caller: s.caller, env: s.env}
+	tb.Cleanup(func() { sib.Kill(tb) })
+	sib.NewSession(tb, args...)
+	return sib
+}
+
 // NewSession runs new-session -d with args. After Kill it starts a new
 // server on the same socket.
 func (s *Server) NewSession(tb testing.TB, args ...string) {
@@ -293,17 +308,31 @@ func Sweep() {
 			if !ok || processAlive(pid) {
 				continue
 			}
-			for _, program := range programs { // any tmux 3.2+ talks to the server
-				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-				_, err := runner.Run(ctx, proc.Spec{Caller: caller, Path: program, Args: []string{"-S", filepath.Join(dir, "s"), "kill-server"}, Env: cleanEnv(dir)})
-				cancel()
-				if err == nil {
-					break
+			for _, sock := range sockets(dir) { // "s" and any Sibling's
+				for _, program := range programs { // any tmux 3.2+ talks to the server
+					ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+					_, err := runner.Run(ctx, proc.Spec{Caller: caller, Path: program, Args: []string{"-S", sock, "kill-server"}, Env: cleanEnv(dir)})
+					cancel()
+					if err == nil {
+						break
+					}
 				}
 			}
 			_ = os.RemoveAll(dir)
 		}
 	}
+}
+
+// sockets lists the sockets in a server folder: "s", and a Sibling's.
+func sockets(dir string) []string {
+	entries, _ := os.ReadDir(dir)
+	var out []string
+	for _, e := range entries {
+		if e.Type()&os.ModeSocket != 0 {
+			out = append(out, filepath.Join(dir, e.Name()))
+		}
+	}
+	return out
 }
 
 // orphanedBy returns the pid in dir's OwnerFile when dir and the file are

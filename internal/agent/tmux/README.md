@@ -46,7 +46,18 @@ err = c.Subscribe(ctx, tmux.Subscription{Name: "win-act", Format: "#{S:#{W:#{win
 err = c.Send(ctx, line)                          // a typing.Line only
 cap, err := c.Capture(ctx, pane)                 // capture-pane -p
 panes, err := c.ListPanes(ctx)                   // list-panes -a: ids and numbers only
+inv, err := c.ReadInventory(ctx)                 // list-panes -a: names, flags, @fleet_* options too
+st, changed := c.Changed()                       // the state, and a chan closed at its next change
 ```
+
+- `ReadInventory` reads every session, window and pane with one
+  `list-panes -a` for the inventory package (7d): fields split by a marker
+  random per read (no name can fake a field), a newline tmux writes raw in an
+  option value joined back, the start id checked before and after (a restart
+  meanwhile is `ErrNotAttached`), the agent's own control client left out of
+  a session's client count, one pane per session (a grouped pair lists a
+  pane twice). Names, commands and option values are raw and untrusted: the
+  caller bounds and checks them.
 
 - `Run` checks `tmux -V` (below 3.2: `ErrTooOld`, REASON_CODE_TMUX_TOO_OLD),
   lists sessions with one `tmux list-sessions` through `internal/proc` and
@@ -86,8 +97,8 @@ panes, err := c.ListPanes(ctx)                   // list-panes -a: ids and numbe
   loop's (after n failures, uniform from 1 to 2^n s, capped at 60 s), reset
   after an attach that came up (defaults row "tmux control client"). A
   `Wake` that came while it was up is dropped then, so it never cuts that
-  backoff short. 7d should debounce Wake (at most one per server a
-  second): each costs one `list-sessions` while absent. When no server answers it waits in `StateAbsent` for `Wake`,
+  backoff short. The inventory package debounces Wake (at most one
+  per server a second): each costs one `list-sessions` while absent. When no server answers it waits in `StateAbsent` for `Wake`,
   with no timer (row-7 ruling fork 4). The backup `list-clients` poll of
   02h is 7f's. A `Program` that cannot run at all (tmux uninstalled) is an
   `attach_failed` try like any other: retried on the backoff, one

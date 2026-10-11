@@ -12,7 +12,10 @@
 // keeps itself attached ([Client.Run]: backoff while the server is there,
 // [StateAbsent] with no timer until [Client.Wake]), and sends only typed
 // commands: [Client.Send] of a typing.Line, [Client.Capture],
-// [Client.ListPanes], [Client.Subscribe] and [Client.Continue]. Its file
+// [Client.ListPanes], [Client.ReadInventory] (every session, window and
+// pane with names and @fleet_* options, for the inventory package),
+// [Client.Subscribe] and [Client.Continue]. [Client.Changed] lets a watcher
+// follow its state with no timer. Its file
 // conn.go is the only one in the agent that starts the long-lived tmux
 // process; one-shot tmux calls go through internal/proc. The README has the
 // concurrency diagram.
