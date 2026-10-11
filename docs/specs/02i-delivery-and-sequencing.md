@@ -340,6 +340,13 @@ stores no result and moves no row, pending or delivered, and the command goes ou
 the live epoch with the same `command_id` (02-contracts "Envelope checks"); closing the row on
 it would answer that re-issue from the closed row forever.
 
+The hub fills `not_after_time` when the caller set none (02 "Deadlines") and closes an open
+row whose deadline came: in the Snapshot transaction of its machine, so a row that came due
+while the machine was away is never sent on the new epoch, and on the housekeeping tick for
+every machine ([03f](03f-hub-internals.md#the-command-path)). A result that arrives for a row
+already closed (expired, or closed by a revoke) is answered with `ResultAck`, so the agent
+stops re-sending it, and stored nowhere.
+
 ## Clocks
 
 Time is the hub's. An agent's clock is used to say when something happened on
