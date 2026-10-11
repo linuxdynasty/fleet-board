@@ -114,7 +114,7 @@ func TestEveryRefusalPath(t *testing.T) {
 		{"no local confirm", func(r *rig, c *agentv1.Command) {
 			r.pol.approval["Interrupt"] = true
 			c.Kind = &agentv1.Command_Interrupt{Interrupt: &agentv1.Interrupt{}}
-			c.NotAfterTime = timestamppb.New(hub0.Add(300 * time.Millisecond))
+			c.NotAfterTime = timestamppb.New(hub0.Add(3 * time.Second))
 		}, want{typev1.Status_STATUS_REJECTED_BY_POLICY, typev1.ReasonCode_REASON_CODE_LOCAL_CONFIRM_TIMEOUT, false, true, true}},
 		{"denied at the machine", func(r *rig, c *agentv1.Command) {
 			r.pol.approval["Interrupt"] = true

@@ -154,7 +154,7 @@ func roleCell(c *agentv1.Command, kind string, h Handler) (cell, bool) {
 			return cl, false
 		case cl.noAllowDirty && v == "allow_dirty":
 			return cl, false
-		case cl.readOnly && v != "read_only":
+		case cl.readOnly && kind == "OpenAttach" && v != "read_only":
 			return cl, false
 		}
 		return cl, true
@@ -186,7 +186,7 @@ func observeOnly(c *agentv1.Command, kind string, h Handler) bool {
 	for _, row := range roleMatrix {
 		if contains(row.kinds, kind) && matchVariant(row.variants, v) {
 			cl := parseCell(row.cells[0])
-			return cl.allowed && (!cl.readOnly || v == "read_only")
+			return cl.allowed && (!cl.readOnly || kind != "OpenAttach" || v == "read_only")
 		}
 	}
 	return false

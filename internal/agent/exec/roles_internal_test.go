@@ -86,6 +86,7 @@ func TestRoleCells(t *testing.T) {
 		{"scheduler prune", &agentv1.Command{Kind: &agentv1.Command_PruneWorktree{PruneWorktree: &agentv1.PruneWorktree{}}}, typev1.Role_ROLE_SCHEDULER, true, nil},
 		{"scheduler prune dirty", &agentv1.Command{Kind: &agentv1.Command_PruneWorktree{PruneWorktree: &agentv1.PruneWorktree{AllowDirty: true}}}, typev1.Role_ROLE_SCHEDULER, false, nil},
 		{"viewer attach", &agentv1.Command{Kind: &agentv1.Command_OpenAttach{OpenAttach: &agentv1.OpenAttach{}}}, typev1.Role_ROLE_VIEWER, false, nil},
+		{"viewer closes an attach", &agentv1.Command{Kind: &agentv1.Command_CloseAttach{CloseAttach: &agentv1.CloseAttach{}}}, typev1.Role_ROLE_VIEWER, true, nil},
 		{"viewer read-only attach", &agentv1.Command{Kind: &agentv1.Command_OpenAttach{OpenAttach: &agentv1.OpenAttach{ReadOnly: true}}}, typev1.Role_ROLE_VIEWER, true, nil},
 		{"operator kills a developer window", &agentv1.Command{Kind: &agentv1.Command_KillWindow{KillWindow: &agentv1.KillWindow{}}}, typev1.Role_ROLE_OPERATOR, false, nil},
 		{"owner drains", &agentv1.Command{Kind: &agentv1.Command_Drain{Drain: &agentv1.Drain{}}}, typev1.Role_ROLE_OWNER, true, nil},

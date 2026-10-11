@@ -47,7 +47,9 @@ type Policy interface {
 type Auditor interface{ Append(audit.Entry) }
 
 // Approver asks the person at the machine. Await returns once they decide
-// (approved, and the channel: "cli" or "notification") or ctx ends. The
+// (approved, and the channel: "cli" or "notification") or ctx ends. An
+// error is no decision: the executor waits out that round (at most 30 s or
+// the deadline) and asks again. The
 // CLI that fills it is plan rows 18, 20 and 24; with none, a wait ends at
 // the deadline as LOCAL_CONFIRM_TIMEOUT (ruling fork 4 iv).
 type Approver interface {
@@ -90,9 +92,8 @@ type Executor struct {
 	reg    registry
 	m      *metrics
 	intake chan *agentv1.Command
-	// resume and resend wake the envelope goroutine from OnConnected.
+	// resume wakes the envelope goroutine from OnConnected.
 	resume chan struct{}
-	resend chan struct{}
 
 	// Only the envelope goroutine uses these.
 	window  rateWindow
@@ -133,8 +134,8 @@ func New(opts Options) (*Executor, error) {
 	}
 	e := &Executor{
 		opts: opts, log: log, reg: reg,
-		intake: make(chan *agentv1.Command, opts.Intake),
-		resume: make(chan struct{}, 1), resend: make(chan struct{}, 1),
+		intake:  make(chan *agentv1.Command, opts.Intake),
+		resume:  make(chan struct{}, 1),
 		running: map[string]*run{},
 	}
 	if e.m, err = newMetrics(opts.Telemetry, e.runningCount); err != nil {

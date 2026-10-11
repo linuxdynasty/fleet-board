@@ -42,7 +42,9 @@ Choices this package makes where the spec is silent (named in the PR):
 an observe command, the only kind safe mode runs, is one the matrix lets a
 `VIEWER` ask for; `ARBITER` has no `Role` value, so its column is never
 reached and an unknown role is refused; `EnsureScratch` and
-`CollectScratch` have no matrix row and are refused; a `local_approval`
+`CollectScratch` have no matrix row and are refused; the VIEWER cell
+"A (read-only)" of `OpenAttach`, `CloseAttach` limits `OpenAttach` to
+`read_only` and lets a viewer close an attach; a `local_approval`
 rule makes any allowed cell wait, never loosens one; F and F* conditions
 are handed to the handler; free text is cut to 8 KiB before the scrub; the
 rate window lives in memory and starts empty at each start.

@@ -103,6 +103,9 @@ func (e *Executor) await(ctx context.Context, c *agentv1.Command, ent ring.Entry
 			var err error
 			approved, channel, err = a.Await(wctx, ent.ID, ent.Kind)
 			decided = err == nil
+			if !decided {
+				<-wctx.Done() // an approver that fails at once must not spin
+			}
 		} else {
 			<-wctx.Done()
 		}

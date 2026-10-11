@@ -2,7 +2,9 @@ package exec_test
 
 import (
 	"context"
+	"errors"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -11,6 +13,7 @@ import (
 
 	agentv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1"
 	typev1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/type/v1"
+	"github.com/linuxdynasty/fleet-board/internal/agent/exec"
 	"github.com/linuxdynasty/fleet-board/internal/agent/ring"
 )
 
@@ -170,5 +173,37 @@ func waitFor(t *testing.T, ok func() bool) {
 			t.Fatal("timed out")
 		}
 		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// failing is an approver that cannot reach anyone.
+type failing struct{ calls atomic.Int32 }
+
+func (f *failing) Await(context.Context, string, string) (bool, string, error) {
+	f.calls.Add(1)
+	return false, "", errors.New("no approver socket")
+}
+
+// An approver that fails at once is no decision: the wait still ends at
+// the deadline, without asking it in a tight loop.
+func TestAFailingApproverDoesNotSpin(t *testing.T) {
+	t.Parallel()
+	h := &handler{kind: "Interrupt", caps: []*typev1.Capability{{Name: "tmux.control", Version: 1}}}
+	r := newRig(t)
+	a := &failing{}
+	var list []exec.Handler
+	r.build(t, a, append(list, h)...)
+	r.pol.approval["Interrupt"] = true
+	r.start(t)
+	c := cmd("f-1", 1, "tmux.control")
+	c.Kind = &agentv1.Command_Interrupt{Interrupt: &agentv1.Interrupt{}}
+	c.NotAfterTime = timestamppb.New(hub0.Add(2 * time.Second))
+	r.give(t, c)
+	res := r.result(t, "f-1")
+	if res.GetReason() != typev1.ReasonCode_REASON_CODE_LOCAL_CONFIRM_TIMEOUT || h.runs.Load() != 0 {
+		t.Errorf("result %v after %d runs, want LOCAL_CONFIRM_TIMEOUT, never run", res, h.runs.Load())
+	}
+	if n := a.calls.Load(); n > 3 {
+		t.Errorf("the approver was asked %d times in 2 s, want at most a few", n)
 	}
 }
