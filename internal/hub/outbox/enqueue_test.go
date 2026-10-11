@@ -123,7 +123,6 @@ func TestEnqueueRefusesAndWritesNothing(t *testing.T) {
 		{"no machine", "", func() *agentv1.Command { return interrupt("c1") }, t0, outbox.ErrInvalid},
 		{"no command", "m1", func() *agentv1.Command { return nil }, t0, outbox.ErrInvalid},
 		{"no kind", "m1", func() *agentv1.Command { c := interrupt("c1"); c.Kind = nil; return c }, t0, outbox.ErrInvalid},
-		{"no deadline", "m1", func() *agentv1.Command { c := interrupt("c1"); c.NotAfterTime = nil; return c }, t0, outbox.ErrInvalid},
 		{"deadline passed", "m1", func() *agentv1.Command { return interrupt("c1") }, t0.Add(time.Hour), outbox.ErrInvalid},
 		{"no clock", "m1", func() *agentv1.Command { return interrupt("c1") }, time.Time{}, outbox.ErrInvalid},
 		{"epoch set", "m1", func() *agentv1.Command { c := interrupt("c1"); c.Epoch = 3; return c }, t0, outbox.ErrInvalid},

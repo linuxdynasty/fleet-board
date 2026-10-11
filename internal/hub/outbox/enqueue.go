@@ -11,6 +11,7 @@ import (
 
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	agentv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1"
 	typev1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/type/v1"
@@ -38,10 +39,13 @@ type In struct {
 	// MachineID is the machine the command is for; its machines row must
 	// exist.
 	MachineID string
-	// Command is the agent Command: a kind arm and not_after_time are
-	// required; command_id is minted when empty; epoch and seq must be
-	// unset, because they are set per connection epoch when it is sent.
-	// The caller's message is not changed.
+	// Command is the agent Command: a kind arm is required;
+	// not_after_time, when unset, becomes Now plus the kind's
+	// [DefaultDeadline] (the agent takes an unset deadline as already
+	// past, so no command leaves the outbox without one); command_id is
+	// minted when empty; epoch and seq must be unset, because they are set
+	// per connection epoch when it is sent. The caller's message is not
+	// changed.
 	Command *agentv1.Command
 	// RequestID is the API request that caused it, GoalID the goal it
 	// belongs to; both optional, for the Operation.
@@ -87,6 +91,9 @@ func Enqueue(ctx context.Context, tx *sql.Tx, in In) (Op, error) {
 		}
 		cmd.CommandId = &typev1.CommandId{Value: id}
 	}
+	if cmd.GetNotAfterTime() == nil {
+		cmd.NotAfterTime = timestamppb.New(in.Now.Add(DefaultDeadline(KindName(cmd))))
+	}
 	id := cmd.GetCommandId().GetValue()
 	if op, found, err := loadOp(ctx, tx, id); err != nil || found {
 		if err == nil && op.MachineID != in.MachineID {
@@ -131,7 +138,7 @@ func validate(in In) error {
 		return fmt.Errorf("%w: no command kind", ErrInvalid)
 	case in.Now.IsZero():
 		return fmt.Errorf("%w: no hub time", ErrInvalid)
-	case c.GetNotAfterTime() == nil || c.GetNotAfterTime().AsTime().UnixMilli() <= in.Now.UnixMilli():
+	case c.GetNotAfterTime() != nil && c.GetNotAfterTime().AsTime().UnixMilli() <= in.Now.UnixMilli():
 		return fmt.Errorf("%w: not_after_time must be at least a millisecond after now", ErrInvalid)
 	case c.GetEpoch() != 0 || c.GetSeq() != 0:
 		return fmt.Errorf("%w: epoch and seq are set when the command is sent", ErrInvalid)
