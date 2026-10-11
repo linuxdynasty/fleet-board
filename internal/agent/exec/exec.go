@@ -141,6 +141,7 @@ func New(opts Options) (*Executor, error) {
 		intake:  make(chan *agentv1.Command, opts.Intake),
 		resume:  make(chan struct{}, 1),
 		running: map[string]*run{},
+		window:  rateWindow{times: map[string][]time.Time{}},
 	}
 	if e.m, err = newMetrics(opts.Telemetry, e.runningCount); err != nil {
 		return nil, err

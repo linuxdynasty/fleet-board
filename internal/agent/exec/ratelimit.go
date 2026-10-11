@@ -16,16 +16,13 @@ const DefaultRateLimit = 60
 // received_time are the agent's clock; a clock jump moves it by at most a
 // minute.
 type rateWindow struct {
-	times map[string][]time.Time
+	times map[string][]time.Time // made in New; never nil
 }
 
 const rateSpan = time.Minute
 
 // add counts one logged command of kind at now.
 func (w *rateWindow) add(kind string, now time.Time) {
-	if w.times == nil {
-		w.times = map[string][]time.Time{}
-	}
 	w.times[kind] = append(w.recent(kind, now), now)
 }
 
@@ -45,12 +42,14 @@ func (w *rateWindow) recent(kind string, now time.Time) []time.Time {
 // window, the one being checked included once, and when a new one would
 // fit: the window counts refusals, so it frees as the newest ones over the
 // limit age out. at is when the checked command was logged: inside the
-// window it is already counted; older, it counts as if logged now.
+// window it is already counted; older (a resumed entry from before the
+// window), it is added to the window now, as a fresh command is when it is
+// logged, so the next entry of a backlog counts it.
 func (w *rateWindow) overCounting(kind string, now, at time.Time, limit int) (time.Duration, bool) {
-	ts := w.recent(kind, now)
 	if !at.After(now.Add(-rateSpan)) {
-		ts = append(append([]time.Time(nil), ts...), now)
+		w.add(kind, now)
 	}
+	ts := w.recent(kind, now)
 	if limit < 1 || len(ts) <= limit {
 		return 0, false
 	}
