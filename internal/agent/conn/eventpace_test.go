@@ -106,3 +106,26 @@ func TestAnOverCapRingEntryNeverReachesTheStream(t *testing.T) {
 		t.Errorf("%d streams, want the first one still up", h.count())
 	}
 }
+
+// Review P1: a stop while a paced backlog drains still ends with
+// Bye{SHUTDOWN}. The event case of serve's select must not fail on the
+// stopped run's context and end the stream without the goodbye.
+func TestAStopWhileEventsDrainStillSaysBye(t *testing.T) {
+	t.Parallel()
+	h := startConnectHub(t)
+	a := enrolled(t, h)
+	fillRing(t, a, 300)
+	r := startLoop(t, a, func(o *conn.LoopOptions) { o.Emitter = a.emitter(t) })
+	h.connected(t, 1)
+	waitFor(t, 10*time.Second, "the paced part of the drain", func() bool { _, _, evs, _ := streamEvents(h, 1); return len(evs) > 70 })
+	r.cancel()
+	if err := r.result(t, 10*time.Second); err != nil {
+		t.Fatalf("Run returned %v after a stop", err)
+	}
+	for _, m := range h.stream(1).msgs {
+		if m.GetBye().GetReason() == agentv1.ByeReason_BYE_REASON_SHUTDOWN {
+			return
+		}
+	}
+	t.Error("the hub got no Bye{SHUTDOWN} for a stop while events were draining")
+}

@@ -406,17 +406,20 @@ func (s *session) serve(ctx context.Context) (ending, string, error) {
 				return ending{}, "heartbeat", err
 			}
 		case m := <-s.msgs:
-			out, done, step, err := s.handle(ctx, m)
+			// The stream's context, as for the heartbeat: a stop that races
+			// this case must not fail its agent.db work (an ack, a snapshot,
+			// a trim) and end the stream without Bye{SHUTDOWN}.
+			out, done, step, err := s.handle(s.sctx, m)
 			if err != nil || done {
 				return out, step, err
 			}
 		case <-s.feed():
-			if err := s.sendEvents(ctx); err != nil {
+			if err := s.sendEvents(s.sctx); err != nil {
 				return ending{}, "events", err
 			}
 		case <-s.paceWait:
 			s.paceWait = nil
-			if err := s.sendEvents(ctx); err != nil {
+			if err := s.sendEvents(s.sctx); err != nil {
 				return ending{}, "events", err
 			}
 		case m := <-s.q.ch:
