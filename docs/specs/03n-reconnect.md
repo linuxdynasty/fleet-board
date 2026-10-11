@@ -194,8 +194,8 @@ The agent side of plan row 6 (ruling forks 4 i, 11 and 12), in
   seq order (02i "Queue and ring rules") and at most 200 a second
   ([defaults](defaults.md) "Agent event send rate"); an event below the stream's first
   `Snapshot.seq` is sent `replayed`. `EventAck` trims the ring only when the
-  HelloAck listed `event.ack` (`connect.message_ignored{kind="event_ack"}`
-  otherwise). The hub lists it from plan row 7a-B on and acks only a
+  HelloAck listed `event.ack` (`connect.message_ignored{kind="event_ack", reason}`
+  otherwise, `reason` `not_listed`; `no_ring` for a loop with no emitter). The hub lists it from plan row 7a-B on and acks only a
   committed seq, at most once a second per stream. The first events are `policy_changed` (the policy loader's
   change seam) and `resource_sample` (each 30 s sample, SHED).
 - **A `SnapshotRequest` flushes first.** Before a requested snapshot is
@@ -261,7 +261,7 @@ The agent side of plan row 6 (ruling forks 4 i, 11 and 12), in
   `unspecified`), `fleet_hub_epoch{machine}` (the epoch of the last accepted
   `Hello`),
   `fleet_hub_commands_expired_total{kind, cause}` (`cause`: `deadline`, `revoked`; 03f), `fleet_hub_duplicate_identity_total{machine}`,
-  `fleet_hub_event_gap_total{machine}` (rises of `evicted_total`), `fleet_hub_agent_rollback_total{machine}` (each agent rollback the Snapshot tx found, with 03's `snapshot.rollback` and a `machine.install_changed` audit row), `fleet_hub_replay_backlog_events{machine}` (`Heartbeat.event_seq` minus the committed seq, holes included), `fleet_hub_events_total{kind, result}` (every Event the hub took, by body arm and `applied`, `history`, `known`, `refused` or `failed`), `fleet_hub_event_text_cleaned_total{kind}` (free-text fields cut or scrubbed), `fleet_hub_event_acks_total{result}` (EventAcks `sent` after a commit, or skipped as `queue_full`; "why is this agent's ring growing?" when it stays at 0),
+  `fleet_hub_event_gap_total{machine}` (rises of `evicted_total`), `fleet_hub_agent_rollback_total{machine}` (each agent rollback the Snapshot tx found, with 03's `snapshot.rollback` and a `machine.install_changed` audit row), `fleet_hub_replay_backlog_events{machine}` (`Heartbeat.event_seq` minus the committed seq, holes included), `fleet_hub_events_total{kind, result}` (every Event the hub took, by body arm and `applied`, `history`, `known`, `refused` or `failed`), `fleet_hub_event_text_cleaned_total{kind}` (free-text fields cut or scrubbed), `fleet_hub_event_acks_total{machine, result}` (EventAcks `sent` after a commit, or skipped as `queue_full` or `ended`; "why is this agent's ring growing?": the machine's `sent` count standing still while its `fleet_hub_agent_ring_events` rises),
   `fleet_hub_results_unknown_command_total`.
 - Agent ring logs (`internal/agent/events`): `ring.evicted{n, oldest_seq}`
   (warn, loss), `ring.trimmed{to_seq, n, reason}` (info for the HelloAck

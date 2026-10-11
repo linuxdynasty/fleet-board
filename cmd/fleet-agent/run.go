@@ -116,11 +116,11 @@ func runAgent(ctx context.Context, dir, cfgDir, version, boot string, tel *telem
 		return failed("policy", err)
 	}
 	defer pol.close()
-	events := make(chan wakenet.Event)
+	netEvents := make(chan wakenet.Event)
 	wlog := tel.Logger.With("component", "wakenet")
 	wake, nw := wakenet.NewWake(wlog), wakenet.NewNet(wlog)
-	wg.Go(func() { wake.Run(wctx, events) })
-	wg.Go(func() { nw.Run(wctx, events) })
+	wg.Go(func() { wake.Run(wctx, netEvents) })
+	wg.Go(func() { nw.Run(wctx, netEvents) })
 
 	// The heartbeat hook reads the loop's reconnect count; the loop exists only
 	// after the hook, and the hook runs only inside loop.Run.
@@ -133,7 +133,7 @@ func runAgent(ctx context.Context, dir, cfgDir, version, boot string, tel *telem
 	}
 	loop, err = conn.NewLoop(ctx, conn.LoopOptions{
 		Dir: dir, Identity: id, DB: db, Version: version, BootID: boot,
-		Telemetry: tel, Events: events, PushOff: nw.PushOff, Discover: discover,
+		Telemetry: tel, Events: netEvents, PushOff: nw.PushOff, Discover: discover,
 		Snapshot: chainSnapshot(snapshot, pol.mgr.Snapshot), Heartbeat: heartbeat, Emitter: em,
 	})
 	if err != nil {

@@ -64,7 +64,7 @@ func TestTheHubListsEventAckAndSendsItAfterTheCommit(t *testing.T) {
 	if len(got) == 0 || got[len(got)-1] != 13 {
 		t.Fatalf("EventAcks %v, want the last to be 13", got)
 	}
-	h.waitMetric(t, "fleet_hub_event_acks_total", float64(len(got)), `result="sent"`)
+	h.waitMetric(t, "fleet_hub_event_acks_total", float64(len(got)), `machine="`+m.id+`"`, `result="sent"`)
 }
 
 // With a store that fails an event, no EventAck covers it or anything

@@ -424,9 +424,9 @@ re-enroll rule are in [02g](02g-agent-security.md#machine-lifecycle-revoke-and-d
   a HelloAck that fails a check adds `check`, one of `proto_version`,
   `epoch_out_of_range`, `seq_out_of_range`, `epoch_regressed`, and `value`,
   the hub's number) and
-  `connect.closed{peer, step, err_kind}` after (`stream`, `snapshot`,
-  `result_ack`, `heartbeat`, `outbound`: a queued message), where a peer that failed the handshake or refused the
-  certificate is `err_kind="refused"`; `connect.bye{peer, reason, message}`;
+  `connect.closed{peer, step, err_kind}` after (`stream`, `snapshot`, `result_ack`, `heartbeat`,
+  `outbound`: a queued message, `events`: sending the ring's events, `event_ack`: trimming at an EventAck),
+  where a peer that failed the handshake or refused the certificate is `err_kind="refused"`; `connect.bye{peer, reason, message}`;
   `connect.shutdown_cut{peer, wait_ms}` when the hub did not close the stream
   within the Bye wait after a stop ([defaults](defaults.md));
   `connect.epoch_regressed{epoch, last_epoch}`;
@@ -434,8 +434,7 @@ re-enroll rule are in [02g](02g-agent-security.md#machine-lifecycle-revoke-and-d
   before the next try (`wait_ms` is the planned backoff wait; `failures` is
   the count in a row the wait doubles from, 0 after a wake or network
   change, which resets it);
-  `connect.message_ignored{kind}` (a `Command` or `Settings` with no
-  receiver registered, until plan row 6 wires them);
+  `connect.message_ignored{kind}` (a `Command` or `Settings` with no receiver registered; an `EventAck` with `reason` `not_listed` or `no_ring`, 03n);
   `connect.outbound_blocked`, `connect.hook_blocked`, `connect.hook_released`,
   `connect.capability_dropped` ([03n](03n-reconnect.md#commands-settings-and-the-outbound-queue)); `connect.ended{state}` (`revoked`,
   `unknown_machine`, `fleet_mismatch`, `cert_expired`);

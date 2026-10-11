@@ -84,4 +84,4 @@ func SetEventAcker(o *ServerOptions, f func(machineID string, epoch, seq uint64)
 
 type ackFunc func(machineID string, epoch, seq uint64)
 
-func (f ackFunc) ackEvents(s *stream, seq uint64) bool { f(s.machineID, s.epoch, seq); return true }
+func (f ackFunc) ackEvents(s *stream, seq uint64) string { f(s.machineID, s.epoch, seq); return "sent" }

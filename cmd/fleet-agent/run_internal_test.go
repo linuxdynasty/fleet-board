@@ -22,6 +22,7 @@ type startup struct {
 	machine string
 	tel     *telemetry.Telemetry
 	logs    *conntest.Buffer
+	hub     *conntest.Hub
 }
 
 func newStartup(t *testing.T) *startup {
@@ -43,7 +44,7 @@ func newStartup(t *testing.T) *startup {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &startup{dir: dir, cfg: filepath.Join(t.TempDir(), "config"), machine: id.MachineID, tel: tel, logs: logs}
+	return &startup{dir: dir, cfg: filepath.Join(t.TempDir(), "config"), machine: id.MachineID, tel: tel, logs: logs, hub: h}
 }
 
 // run calls runAgent with ctx, which the caller may have cancelled.

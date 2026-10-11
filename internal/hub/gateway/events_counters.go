@@ -46,8 +46,9 @@ func newEventMetrics(tel *telemetry.Telemetry) (eventMetrics, error) {
 		metric.WithDescription("Heartbeat.event_seq minus the hub's committed event seq, by machine: how far the hub is "+
 			"behind (seq numbers, holes included)."))
 	em.acks, errs[4] = m.Int64Counter(p+"_event_acks_total",
-		metric.WithDescription("EventAcks by result: sent (queued for the stream after the commit) or queue_full "+
-			"(skipped; the agent keeps those ring entries until a later ack or the next HelloAck floor)."))
+		metric.WithDescription("EventAcks by machine and result: sent (queued for the stream after the commit), "+
+			"queue_full (skipped; the agent keeps those ring entries until a later ack or the next HelloAck floor) "+
+			"or ended (the stream had ended)."))
 	if err := errors.Join(errs[:]...); err != nil {
 		return eventMetrics{}, fmt.Errorf("gateway: event metrics: %w", err)
 	}
@@ -62,8 +63,9 @@ const EventAckCapability = "event.ack"
 // eventAcker sends EventAck{last_event_seq} on a stream (row 7 ruling,
 // fork 1). ackCommitted calls it only with a committed seq, at most once
 // per AckEvery; streamAcks is the product's, a test may record instead.
+// ackEvents returns the result: "sent", "queue_full" or "ended".
 type eventAcker interface {
-	ackEvents(s *stream, lastEventSeq uint64) bool
+	ackEvents(s *stream, lastEventSeq uint64) string
 }
 
 // streamAcks queues ConnectResponse.event_ack for the stream's writer. It
@@ -71,10 +73,18 @@ type eventAcker interface {
 // those ring entries until a later ack or the next HelloAck floor.
 type streamAcks struct{}
 
-func (streamAcks) ackEvents(s *stream, seq uint64) bool {
-	return s.send(&agentv1.ConnectResponse{Body: &agentv1.ConnectResponse_EventAck{
+func (streamAcks) ackEvents(s *stream, seq uint64) string {
+	if s.send(&agentv1.ConnectResponse{Body: &agentv1.ConnectResponse_EventAck{
 		EventAck: &agentv1.EventAck{LastEventSeq: seq},
-	}})
+	}}) {
+		return "sent"
+	}
+	select {
+	case <-s.ended:
+		return "ended"
+	default:
+		return "queue_full"
+	}
 }
 
 // ackState paces a stream's EventAcks: only a committed seq, at most one
@@ -112,12 +122,11 @@ func (a *agentService) ackCommitted(ctx context.Context, s *stream) {
 		return
 	}
 	k.last, k.sent = time.Now(), seq
-	result := "queue_full"
-	if a.acker.ackEvents(s, seq) {
-		result = "sent"
+	result := a.acker.ackEvents(s, seq)
+	if result == "sent" {
 		a.log.DebugContext(ctx, "event.acked", "machine_id", s.machineID, "epoch", s.epoch, "seq", seq)
 	}
-	a.ev.acks.Add(ctx, 1, metric.WithAttributes(attribute.String("result", result)))
+	a.ev.acks.Add(ctx, 1, metric.WithAttributes(attribute.String("machine", s.machineID), attribute.String("result", result)))
 }
 
 // ackDue runs when the held-back ack's timer fired.

@@ -120,8 +120,12 @@ func (s *session) sendEvents(ctx context.Context) error {
 // ackEvents trims what the hub committed (EventAck), only when its HelloAck
 // listed event.ack; otherwise the ack is logged and ignored.
 func (s *session) ackEvents(ctx context.Context, a *agentv1.EventAck) error {
-	if !s.eventAck || s.cursor == nil {
-		s.l.log.InfoContext(ctx, "connect.message_ignored", "kind", "event_ack")
+	switch {
+	case !s.eventAck:
+		s.l.log.InfoContext(ctx, "connect.message_ignored", "kind", "event_ack", "reason", "not_listed")
+		return nil
+	case s.cursor == nil: // no emitter: nothing to trim
+		s.l.log.InfoContext(ctx, "connect.message_ignored", "kind", "event_ack", "reason", "no_ring")
 		return nil
 	}
 	return s.cursor.Ack(ctx, a.GetLastEventSeq())
