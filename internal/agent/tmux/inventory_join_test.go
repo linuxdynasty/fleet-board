@@ -39,8 +39,9 @@ func newRec(pane string, text [nText]string) rec {
 	return r
 }
 
-// line builds the record: ids, flags and sizes, the attach_view flag, the
-// counts, the canary, then the text.
+// line builds the record as tmux sends it: a marker before each field (ids,
+// flags and sizes, the attach_view flag, the counts, the canary, then the
+// text) and a closing marker.
 func (r rec) line(marker string) string {
 	fields := []string{"$0", "1790000000", "0", "@0", "0", "1", "0", r.pane, "0", "1", "0", "", "80", "24", "0"}
 	for _, n := range r.n {
@@ -51,7 +52,7 @@ func (r rec) line(marker string) string {
 	if len(fields) != tmux.InventoryFieldCountForTest() {
 		panic("rec: field count")
 	}
-	return marker + strings.Join(fields, marker)
+	return marker + strings.Join(fields, marker) + marker
 }
 
 // record builds one list-panes line with goal as the @fleet_goal_id value.

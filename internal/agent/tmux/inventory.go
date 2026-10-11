@@ -140,15 +140,17 @@ func (c *Client) ReadInventory(ctx context.Context) (Inventory, error) {
 }
 
 // joinRecords puts back records that a value broke across lines: tmux can
-// write a newline in an option value raw, and a value ending in one puts
-// the next field, marker first, at the start of a line. So a record takes
-// lines until it holds one marker per field; the marker is random per read,
-// so no value can hold one and counting them is safe. The length tmux sends
-// beside each text field then checks the join (a newline is one byte).
+// write a newline in a text value raw (an option value, or a program's
+// name in the last field), and a value ending in one puts the next field,
+// marker first, at the start of a line. So a record takes lines until it
+// holds one marker per field plus the closing marker after the last field;
+// the marker is random per read, so no value can hold one and counting them
+// is safe. The length tmux sends beside each text field then checks the
+// join (a newline is one byte).
 func joinRecords(body []string, marker string) []string {
 	out := make([]string, 0, len(body))
 	for _, line := range body {
-		if n := len(out); n > 0 && strings.Count(out[n-1], marker) < len(inventoryFields) {
+		if n := len(out); n > 0 && strings.Count(out[n-1], marker) < recordMarkers {
 			out[n-1] += "\n" + line
 			continue
 		}
@@ -158,14 +160,15 @@ func joinRecords(body []string, marker string) []string {
 }
 
 // parseInventoryLine reads one list-panes record of inventoryFields, with
-// the text fields it left blank. Only the fixed fields and the canary can
+// the text fields it left blank. The record starts with a marker and ends
+// with the closing one; only those, the fixed fields and the canary can
 // make it not in the asked shape (ok false).
 func parseInventoryLine(line, marker string) (SessionInfo, PaneInfo, []fieldDrop, bool) {
 	f := strings.Split(line, marker)
-	if len(f) != len(inventoryFields)+1 || f[0] != "" {
+	if len(f) != recordMarkers+1 || f[0] != "" || f[len(f)-1] != "" {
 		return SessionInfo{}, PaneInfo{}, nil, false
 	}
-	f = f[1:]
+	f = f[1 : len(f)-1]
 	sid, ok1 := parseID([]byte(f[0]), '$')
 	created, err1 := strconv.ParseInt(f[1], 10, 64)
 	attached, err2 := strconv.Atoi(f[2])

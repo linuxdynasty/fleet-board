@@ -86,14 +86,22 @@ var inventoryFields = func() []string {
 	return out
 }()
 
-// inventoryFormat is the list-panes -F format: each field after the marker.
+// inventoryFormat is the list-panes -F format: each field after the marker,
+// and one closing marker after the last field, so a newline in the last
+// text field leaves its record short of markers and the join takes the
+// next line (review of 7d1, round 2).
 func inventoryFormat(marker string) string {
 	var b strings.Builder
 	for _, f := range inventoryFields {
 		b.WriteString(marker + f)
 	}
+	b.WriteString(marker)
 	return b.String()
 }
+
+// recordMarkers is how many markers a whole record holds: one before each
+// field and the closing one.
+var recordMarkers = len(inventoryFields) + 1
 
 // The reasons a text field is dropped (the closed reason label).
 const (

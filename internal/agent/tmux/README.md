@@ -55,7 +55,8 @@ st, changed := c.Changed()                       // the state, and a chan closed
 - `ReadInventory` reads every session, window and pane with one
   `list-panes -a` for the inventory package (7d): fields split by a marker
   random per read (no name can fake a field), a record that a newline in a
-  value broke joined back by counting markers, the start id checked before
+  value broke (in any text field, the last one too) joined back by counting
+  markers, the start id checked before
   and after (a restart meanwhile is `ErrNotAttached`), the agent's own
   control client left out of a session's client count, one pane per session
   (a grouped pair lists a pane twice; a window linked twice into one session
@@ -68,7 +69,9 @@ st, changed := c.Changed()                       // the state, and a chan closed
   `session_name`, `window_name`, `pane_current_command`); a canary
   `#{e|<:1,2}` that must read `1` (a tmux without these modifiers is
   `ErrBadReply`, never a read of blank fields); then each text field as
-  `#{?#{e|<:#{n:X},1025},#{X},}`. So tmux bounds every text field in bytes
+  `#{?#{e|<:#{n:X},1025},#{X},}`; then a closing marker, so a newline in the
+  last field (`pane_current_command`: a program's name can hold one) still
+  leaves the record short of markers and the next line is joined to it. So tmux bounds every text field in bytes
   at `MaxFieldBytes` (1 KiB, defaults) and sends a longer value empty
   (`e|<` compares numbers; a plain `<` compares strings). `#{=N:...}` is no
   bound: it cuts by screen width, and zero-width characters and `#[style]`
