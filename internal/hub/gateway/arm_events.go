@@ -35,8 +35,6 @@ type eventState struct {
 	broken bool
 	// refused marks the refusal reasons already logged on this stream.
 	refused map[string]bool
-	// asked: the stream already got its SnapshotRequest{out_of_order}.
-	asked bool
 	// counters are the EventCounters last judged (the Hello's, then each
 	// Heartbeat's after the Snapshot).
 	counters statedb.EventCounters
@@ -225,15 +223,14 @@ func (a *agentService) eventRefused(ctx context.Context, s *stream, ev *agentv1.
 }
 
 // outOfOrder drops an event that broke the stream's order (03n "Ordering
-// and consistency": discard and ask for a snapshot): one
-// SnapshotRequest{out_of_order} per stream at most.
+// and consistency": discard and ask for a snapshot; the stream stays
+// open): SnapshotRequest{out_of_order} under the per-machine limit it
+// shares with event_lost (arbiter ruling, round 2, B2).
 func (a *agentService) outOfOrder(ctx context.Context, s *stream, ev *agentv1.Event, kind, reason string) {
 	a.eventRefused(ctx, s, ev, kind, reason)
-	if s.ev.asked {
-		return
+	if a.lost.allow(s.machineID, a.now()) {
+		a.requestSnapshot(ctx, s, "out_of_order")
 	}
-	s.ev.asked = true
-	a.requestSnapshot(ctx, s, "out_of_order")
 }
 
 // requestSnapshot queues SnapshotRequest{reason}; a full or ended stream

@@ -223,7 +223,8 @@ srv, err := gateway.NewServer(gateway.ServerOptions{
   Snapshot applied and a seq above the last one taken on the stream
   (holes are normal); otherwise it is dropped (`event.refused`, once per
   reason per stream) and an order break (`before_snapshot`, `seq_order`)
-  sends one `SnapshotRequest{out_of_order}` per stream. `ingest.CleanEvent`
+  sends `SnapshotRequest{out_of_order}` under the per-machine 5-minute limit
+  it shares with `event_lost`; the stream stays open. `ingest.CleanEvent`
   scrubs its free text; then `ingest.SubmitEvent` queues ONE writer job
   without waiting (at most `maxInflight`, 256, in flight per stream; at
   the cap the arm waits for the oldest), and the serve loop settles the
@@ -239,7 +240,7 @@ srv, err := gateway.NewServer(gateway.ServerOptions{
   `evicted_total` is `event.lost`, a gap marker and `evicted_total` stored
   (`statedb.RecordEventLoss`), `fleet_hub_event_gap_total`, and
   `SnapshotRequest{event_lost}` at most once per `EventLostEvery` (5 min)
-  per machine (in memory); `fleet_hub_replay_backlog_events` is
+  per machine, the limit `out_of_order` shares (in memory); `fleet_hub_replay_backlog_events` is
   `Heartbeat.event_seq` minus the committed seq. EventAck (row 7 ruling,
   fork 1): a committed seq, at most one per `AckEvery` per stream, the
   held-back last one on a timer; the arm itself comes with plan row 7a, so

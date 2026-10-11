@@ -52,7 +52,7 @@ func TestEventsAreHistoryAtOrBelowTheSnapshotFloorAndLiveAbove(t *testing.T) {
 
 // 03n "Ordering and consistency": an Event before the stream's Snapshot,
 // or one whose seq does not rise on the stream, is dropped and the hub
-// asks for a snapshot, once per stream; the refusals are counted, each
+// asks for a snapshot (once here: both within the 5-minute limit); the refusals are counted, each
 // reason logged once.
 func TestAnEventOutOfOrderIsDroppedAndAsksForOneSnapshot(t *testing.T) {
 	t.Parallel()

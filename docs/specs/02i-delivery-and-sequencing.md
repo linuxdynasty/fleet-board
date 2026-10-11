@@ -229,6 +229,7 @@ from the counters:
 | `evicted_total` rises in a `Heartbeat` | a NEVER_DROP or COALESCE event was lost while connected | `SnapshotRequest{reason: "event_lost"}` (at most one per 5 minutes per machine), a gap marker on the timeline |
 | `evicted_total` in `Hello` is above the stored value | ring overflow while the agent was offline | gap marker with the seq range between `hub_last_event_seq` and the first replayed seq; the `Snapshot` that follows every connect already repairs state |
 | any counter lower than stored | agent state lost | rollback (above) |
+| an Event out of order on its stream | the agent broke its own order (03n) | dropped and counted; `SnapshotRequest{reason: "out_of_order"}` under the `event_lost` limit |
 
 So a hub never fires a snapshot because pane summaries are being shed, and a
 lost never-dropped event is never mistaken for shedding. The gap marker's wire
@@ -242,7 +243,9 @@ A reconnect delivers a `Snapshot` first and then events in `seq` order.
   written to the timeline and run history and runs **no rule**. It changes no
   derived state (goal phase, triage items, the one-nudge rule, "human at
   keyboard"), because the `Snapshot` already holds its effect.
-- An event with `seq > Snapshot.seq` is applied to state and written to history.
+- An event with `seq > Snapshot.seq` is applied to state and, when its kind
+  is never dropped or it is replayed, written to history (a live SHED or
+  COALESCE event updates state only: 03f `events`).
 - **Audit is not derived state.** `local_approval`, `policy_changed` and
   `drain_state` events with a local actor still produce their `AuditEntry` even
   when replayed, once: the audit row is idempotent on `(machine,
@@ -272,8 +275,8 @@ against the committed floor, never a stream's memory. An event at or below
 `hub_last_event_seq` is already held and runs nothing. On a stream the hub
 takes events only after that stream's `Snapshot` and only with a seq above
 the last one the stream sent (holes are normal); anything else is dropped
-and one `SnapshotRequest{reason: "out_of_order"}` per stream asks for a fresh
-snapshot. History rows are kept for every NEVER_DROP and every replayed
+and `SnapshotRequest{reason: "out_of_order"}` asks for a fresh snapshot under
+the `event_lost` limit (one per machine per 5 minutes); the stream stays open. History rows are kept for every NEVER_DROP and every replayed
 event (03f `events`); a live SHED or COALESCE event only moves the seq.
 
 ## Durable facts and how they clear

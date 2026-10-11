@@ -16,9 +16,10 @@ import (
 	"github.com/linuxdynasty/fleet-board/internal/telemetry"
 )
 
-// EventLostEvery is the least time between two SnapshotRequest{event_lost}
-// for one machine (02i "Gaps": at most one per 5 minutes, forever while
-// evicted_total keeps rising).
+// EventLostEvery is the least time between two SnapshotRequests for lost
+// or out-of-order events (reasons event_lost and out_of_order, one limit
+// shared) for one machine (02i "Gaps": at most one per 5 minutes, forever
+// while it keeps happening).
 const EventLostEvery = 5 * time.Minute
 
 // AckEvery is the least time between two EventAcks on a stream (row 7
@@ -108,8 +109,8 @@ func (a *agentService) ackDue(ctx context.Context, s *stream) {
 	a.ackCommitted(ctx, s)
 }
 
-// lossLimit is the per-machine pace of SnapshotRequest{event_lost}, in
-// memory: a hub restart clears it.
+// lossLimit is the per-machine pace of SnapshotRequest{event_lost} and
+// {out_of_order}, one limit for both, in memory: a hub restart clears it.
 type lossLimit struct {
 	mu   sync.Mutex
 	last map[string]time.Time

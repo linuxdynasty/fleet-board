@@ -131,13 +131,19 @@ the stop's 10 s grace, [defaults](defaults.md) "Stop grace (hub)"), so the store
 | Outbox rows (`pending/delivered/done/expired/failed`, epoch, seq) | hub store | Snapshot tx and housekeeping tick (expiry), result tx (close) |
 | Event history (replayed and live, 1 week) | hub store | one writer job per event (row 5 ruling fork 6), each refusing to run past the stream's previous event if that one did not commit; the writer batches them |
 | `machine_connections` (epoch, boot_id, install_id, peer, connect_reason, started and ended time, end_reason, displaced_by, last_heartbeat_age_ms at displacement) and the machine's `last_epoch` | hub store | Hello tx (opens the row, closes the one it displaces); stream close or `Bye` (closes it, and marks the machine `OFFLINE` in the same tx); housekeeping's `OFFLINE` (closes it as `offline`). A row can stay open with no stream behind it after a hub crash, after a graceful shutdown that stopped waiting for a Hello whose transaction then committed, or after a stop whose handler wait ran out (`hub.shutdown_wait_timeout`); the hub-start sweep closes such rows as `hub_restart` |
-| Per machine: `hub_last_event_seq`, `event_generation`, last `EventCounters`, `install_id`, and the last applied `Snapshot.seq` and its epoch (`snapshot_seq`, `snapshot_epoch`) | hub store | each event's writer job (`hub_last_event_seq`), and a Heartbeat's rise of `evicted_total` (that counter only); the Snapshot tx (the rest: it compares the stream's `Hello` values with the stored ones, 02i rule 3, and marks the machine ONLINE) |
+| Per machine: `hub_last_event_seq`, `event_generation`, last `EventCounters`, `install_id`, and the last applied `Snapshot.seq` and its epoch (`snapshot_seq`, `snapshot_epoch`) | hub store | writer batch (`hub_last_event_seq`, in each event's job); the Snapshot tx and the gap-marker job of a Heartbeat rise (the rest; the gap-marker job stores `evicted_total` only; the Snapshot tx it compares the stream's `Hello` values with the stored ones, 02i rule 3, and marks the machine ONLINE) |
 
 ### Ordering and consistency
 
 - Per machine: Snapshot first, then unacked results, then replayed events in
   `seq` order, then live events. The agent enforces this order on its side;
-  the hub discards anything out of order and asks for a snapshot.
+  the hub drops anything out of order (an Event before the epoch's Snapshot,
+  or a seq at or below the last one taken on the stream), counts it, logs
+  the first per reason per stream, and sends `SnapshotRequest{reason:
+  "out_of_order"}` under the same per-machine limit as `event_lost` (one per
+  5 minutes); the stream stays open. A seq above the stream's last but at or
+  below `hub_last_event_seq` is a re-send: known, nothing written, no rule
+  runs.
 - Acks, progress and results from command goroutines go through one
   per-stream queue drained by the stream's sending goroutine, after the
   snapshot and its unacked results; a result is committed to the command
@@ -281,7 +287,7 @@ The agent side of plan row 6 (ruling forks 4 i, 11 and 12), in
   `outbox.expired{command_id, machine_id, kind, from, cause, age_ms}` (03f), `identity.duplicate{machine_id, old_epoch, new_epoch,
   old_boot_id, new_boot_id, old_peer, new_peer, heartbeat_age_ms}` (a live stream got
   `Bye{DUPLICATE_IDENTITY}`; -1 when it had no Heartbeat; a row a hub crash or a shutdown that cancelled a waiting Hello left live is
-  displaced silently), `replay.gap{from_seq, to_seq}` (at the first replayed event after a Snapshot that found ring overflow), `replay.done{events, first_seq, last_seq, ms}` (the replay phase ended: the first live event or the stream's end), `event.refused{seq, kind, reason}` (warn, once per reason per stream; `reason` is `not_current`, `before_snapshot`, `seq_order` or `stream_failed`; the order cases also send one `SnapshotRequest{out_of_order}` per stream), `event.failed{seq, kind, step, err_kind}` (error; `step` is `encode`, `store` or `applier`; the stream ends so the agent sends again what was not committed), `event.unsettled{events}` (warn; jobs still unanswered when the stream's teardown stopped waiting), `event.lost{evicted_from, evicted_to, from_seq, snapshot_requested}` (warn; `evicted_total` rose in a Heartbeat), `event.counters_lower` (warn; a Heartbeat counter below the stream's last), `event.acked{seq}` (debug), `event.pruned{rows, before}` (the hourly prune of history older than a week; its failures are `fleet_hub_housekeeping_failures_total{job="events_prune"}`). The span `hub.connect.hello` covers
+  displaced silently), `replay.gap{from_seq, to_seq}` (at the first replayed event after a Snapshot that found ring overflow), `replay.done{events, first_seq, last_seq, ms}` (the replay phase ended: the first live event or the stream's end), `event.refused{seq, kind, reason}` (warn, once per reason per stream; `reason` is `not_current`, `before_snapshot`, `seq_order` or `stream_failed`; the order cases ask for a snapshot under the event_lost limit), `event.failed{seq, kind, step, err_kind}` (error; `step` is `encode`, `store` or `applier`; the stream ends so the agent sends again what was not committed), `event.unsettled{events}` (warn; jobs still unanswered when the stream's teardown stopped waiting), `event.lost{evicted_from, evicted_to, from_seq, snapshot_requested}` (warn; `evicted_total` rose in a Heartbeat), `event.counters_lower` (warn; a Heartbeat counter below the stream's last), `event.acked{seq}` (debug), `event.pruned{rows, before}` (the hourly prune of history older than a week; its failures are `fleet_hub_housekeeping_failures_total{job="events_prune"}`). The span `hub.connect.hello` covers
   a `Hello` from receipt to the queued `HelloAck` or the refusal (a root span: `Hello`
   carries no trace context).
 

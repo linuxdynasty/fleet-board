@@ -73,9 +73,9 @@
 // stream with a rising seq is scrubbed and queued as one writer job
 // without waiting; the outcomes are settled in order on the handler
 // goroutine (a failure ends the stream). Out-of-order events are dropped
-// with one SnapshotRequest{out_of_order} per stream; a rise of
-// evicted_total in a Heartbeat records a gap and asks for a snapshot at
-// most once per [EventLostEvery] per machine. [Server.PruneEvents] keeps
+// and a rise of evicted_total in a Heartbeat records a gap; either asks
+// for a snapshot, both under one limit of once per [EventLostEvery] per
+// machine. [Server.PruneEvents] keeps
 // [EventRetention] of history.
 // Terminal and SessionLog answer Unimplemented until their rows land.
 package gateway
