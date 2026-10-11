@@ -101,7 +101,9 @@ func inventoryFormat(marker string) string {
 // ErrBadReply (nothing partial is returned).
 func (c *Client) ReadInventory(ctx context.Context) (Inventory, error) {
 	c.mu.Lock()
-	cn, start := c.conn, c.startID
+	// The session the control client sits on is read with the conn, before
+	// the command: tmux counts the client there when it runs the command.
+	cn, start, own := c.conn, c.startID, c.session
 	up := c.state == StateUp
 	c.mu.Unlock()
 	if cn == nil || !up {
@@ -116,7 +118,6 @@ func (c *Client) ReadInventory(ctx context.Context) (Inventory, error) {
 	}
 	c.mu.Lock()
 	same := c.conn == cn && c.startID == start
-	own := c.session
 	c.mu.Unlock()
 	if !same {
 		return Inventory{}, ErrNotAttached
@@ -127,18 +128,27 @@ func (c *Client) ReadInventory(ctx context.Context) (Inventory, error) {
 	inv := Inventory{StartID: start}
 	seen := map[SessionID]bool{}
 	// A window linked into several sessions (a grouped session) lists its
-	// panes once per session: one pane per session is the rule.
+	// panes once per session, and one linked twice into the same session
+	// (link-window) once per index: that repeat is dropped, so the window is
+	// reported once, at its first index (tmux lists indexes in order). A
+	// pane listed in two windows of one session is not tmux's shape.
 	type where struct {
 		s SessionID
 		p PaneID
 	}
-	panes := map[where]bool{}
+	panes := map[where]WindowID{}
 	for _, line := range joinRecords(r.Body, marker) {
 		s, p, ok := parseInventoryLine(line, marker)
-		if !ok || panes[where{s.ID, p.ID}] {
+		if !ok {
 			return Inventory{}, fmt.Errorf("tmux: inventory: %w", ErrBadReply)
 		}
-		panes[where{s.ID, p.ID}] = true
+		if w, dup := panes[where{s.ID, p.ID}]; dup {
+			if w != p.Window {
+				return Inventory{}, fmt.Errorf("tmux: inventory: %w", ErrBadReply)
+			}
+			continue // the same window at a second index
+		}
+		panes[where{s.ID, p.ID}] = p.Window
 		if !seen[s.ID] {
 			seen[s.ID] = true
 			if s.ID == own && s.Clients > 0 {

@@ -59,3 +59,24 @@ func TestReadInventoryHugeValuesAreCapped(t *testing.T) {
 		})
 	}
 }
+
+// tmux can link one window twice into the same session (link-window): it
+// lists the window's panes once per index. The read reports the window
+// once, at its first index, instead of failing (review of 7d1).
+func TestReadInventoryWindowLinkedTwiceIntoOneSession(t *testing.T) {
+	for _, b := range tmuxtest.Binaries() {
+		t.Run(b.Name, func(t *testing.T) {
+			srv := tmuxtest.Start(t, b, "-s", "work", "exec cat")
+			srv.Run(t, "link-window", "-s", "work:0", "-t", "work:5")
+			r := startClient(t, srv, nil)
+			r.waitState(t, tmux.StateUp)
+			inv, err := r.ReadInventory(ctxT(t))
+			if err != nil {
+				t.Fatalf("ReadInventory: %v", err)
+			}
+			if len(inv.Panes) != 1 || inv.Panes[0].WindowIndex != 0 {
+				t.Fatalf("panes = %+v, want the one pane at index 0", inv.Panes)
+			}
+		})
+	}
+}

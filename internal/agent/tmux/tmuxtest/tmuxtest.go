@@ -173,7 +173,9 @@ func Start(tb testing.TB, b Binary, args ...string) *Server {
 // and checked gone when the test ends, before the folder is removed.
 func (s *Server) Sibling(tb testing.TB, name string, args ...string) *Server {
 	tb.Helper()
-	if name == "" || strings.ContainsAny(name, "/.") || len(filepath.Join(s.Dir, name)) > maxSocketPath {
+	// "s" is the first server's socket (a sibling's cleanup would kill it)
+	// and OwnerFile is Sweep's: neither is a fresh socket name.
+	if name == "" || name == "s" || name == OwnerFile || strings.ContainsAny(name, "/.") || len(filepath.Join(s.Dir, name)) > maxSocketPath {
 		tb.Fatalf("tmuxtest: sibling socket name %q", name)
 	}
 	sib := &Server{Bin: s.Bin, Dir: s.Dir, Socket: filepath.Join(s.Dir, name), runner: s.runner, caller: s.caller, env: s.env}

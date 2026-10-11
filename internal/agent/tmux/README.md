@@ -58,7 +58,8 @@ st, changed := c.Changed()                       // the state, and a chan closed
   joined back by counting markers, the start id checked before and after (a restart
   meanwhile is `ErrNotAttached`), the agent's own control client left out of
   a session's client count, one pane per session (a grouped pair lists a
-  pane twice). Names, commands and option values are raw and untrusted: the
+  pane twice; a window linked twice into one session is kept at its first
+  index). Names, commands and option values are raw and untrusted: the
   caller bounds and checks them.
 
 - `Run` checks `tmux -V` (below 3.2: `ErrTooOld`, REASON_CODE_TMUX_TOO_OLD),
