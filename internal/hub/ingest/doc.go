@@ -1,5 +1,5 @@
 // Package ingest applies what an agent reports to the hub store: in plan
-// row 5 PR 5c1 the Snapshot (03f, 03n W2, 02i).
+// row 5 PR 5c1 the Snapshot, in PR 5c2 the events (03f, 03n W2, 02i).
 //
 // [Clean] makes a Snapshot's stored text safe on the stream's ingest
 // goroutine, before any writer job: control and format characters and
@@ -12,4 +12,10 @@
 // outbox.Expire for the machine's due commands ([Pending.Expired]), then
 // statedb.MarkOnline. Any error rolls the whole Snapshot back
 // ([ErrApplier] wraps an applier's error or recovered panic).
+//
+// Events: [CleanEvent] cuts and scrubs an Event's free text before the
+// job; [EventIn] encodes it (wire bytes, [EventKind]) and decides whether
+// it gets a history row; [SubmitEvent] queues ONE writer job per event,
+// statedb.ApplyEvent then each [EventApplier], without waiting for the
+// commit; [EventPending.Result] delivers the outcomes in order.
 package ingest

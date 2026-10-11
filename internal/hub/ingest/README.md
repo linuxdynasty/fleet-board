@@ -1,7 +1,7 @@
 # internal/hub/ingest
 
 What an agent reports, applied to the hub store (plan row 5; 03f, 03n W2,
-02i). PR 5c1 brings the Snapshot; events (5c2) and the later rows'
+02i). PR 5c1 brings the Snapshot, PR 5c2 the events; the later rows'
 appliers follow.
 
 ```go
@@ -60,11 +60,47 @@ out, err := p.Wait(ctx) // out.Generation, out.Rollback (02i rule 3 causes), out
   - 5e writes the `policy.safe_mode` audit row with the `policy_invalid`
     item, only when the stored `policy_safe_mode` changes from off to on
     (not on every Snapshot, which would flood a permanent table).
-  - 5c2 puts the "state reset" marker of an agent rollback (02i rule 3,
-    03n) on the event history it builds; 5c1 writes the audit row, the log
-    and the counter only.
+  - The "state reset" marker of an agent rollback (02i rule 3, 03n) and
+    the gap marker of ring overflow are written by statedb's Snapshot core
+    (5c2), not by an applier.
   - A row that stores more agent text adds its cleaning beside `Clean`,
     before the job.
+
+## Events (PR 5c2)
+
+```go
+c := ingest.CleanEvent(ev)                       // on the ingest goroutine, before the job
+in, err := ingest.EventIn(ingest.Stream{MachineID: id, Epoch: e}, ev, prevSeq, now)
+p, err := ingest.SubmitEvent(ctx, st, in, ev, eventAppliers) // never waits for the commit
+err = <-p.Result()                                // in submission order; then p.Out()
+```
+
+- **`CleanEvent`** cuts the two free-text Event fields the agent writes
+  (`UsageReading.parse_message`, 1 KiB; `ProbeHealth.message`, 256 bytes;
+  row 5 ruling fork 9) to their cap, then scrubs them. Other strings are
+  the applying row's to clean, as for `Clean`.
+- **`EventIn`** encodes the cleaned Event as protobuf wire bytes (an arm
+  this hub has no name for is kept whole; `EventKind` names it `unknown`)
+  and decides the history row: every NEVER_DROP event, every replayed one
+  and any of an unknown class get one (03f `events`); a live SHED or
+  COALESCE event only moves `hub_last_event_seq` and reaches the appliers.
+  `PrevSeq` is the seq the stream submitted before it.
+- **`SubmitEvent`** is ONE writer job per event (row 5 ruling, fork 6):
+  `statedb.ApplyEvent`, then, for an event the hub did not already hold,
+  each `EventApplier` in order. It returns once the job is queued, so a
+  stream keeps many in flight and the writer fills its batches; `Result`
+  delivers each outcome once, in order. Any error rolls that event back;
+  the store's chain check (`PrevSeq` at or below the stored seq) then
+  fails every later job of the stream, so no commit moves the seq past a
+  lost event.
+- **`EventApplier`** is the seam rows 7 to 10 fill:
+  `ApplyEvent(ctx, tx, machineID, out, ev)`. `out.History` true means the
+  event is at or below the Snapshot floor: write history (an audit row
+  idempotent on machine, generation and seq: 02i "Audit is not derived
+  state"), run no rule.
+- **The fork 6 gate**: `BenchmarkEventBurst` (`burst_bench_test.go`) runs
+  the S1 burst shape through the real writer and `SubmitEvent`; how to run
+  it and the numbers are in [04c](../../../docs/specs/04c-event-ingest-benchmark.md).
 
 Signals: none of its own; the gateway's Snapshot arm logs
 `snapshot.applied`, `snapshot.refused`, `snapshot.failed`,

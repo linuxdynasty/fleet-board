@@ -80,13 +80,16 @@ func (c *Cleaned) text(s string, limit int) string {
 }
 
 // scrub is s clipped to maxText, then the scrubber at maxText.
-func (c *Cleaned) scrub(s string) string {
+func (c *Cleaned) scrub(s string) string { return c.scrubTo(s, maxText) }
+
+// scrubTo is s clipped to limit, then the scrubber at limit.
+func (c *Cleaned) scrubTo(s string, limit int) string {
 	if s == "" {
 		return s
 	}
-	in, cut := clip(s, maxText)
+	in, cut := clip(s, limit)
 	c.ScrubBytes += len(in)
-	r := scrub.Scrub(in, scrub.Options{MaxBytes: maxText})
+	r := scrub.Scrub(in, scrub.Options{MaxBytes: limit})
 	if r.Changed {
 		c.Scrubbed++
 	}
