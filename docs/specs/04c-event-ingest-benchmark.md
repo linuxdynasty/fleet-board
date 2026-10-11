@@ -1,6 +1,6 @@
 # 04c. Event ingest: per-message jobs at the replay burst
 
-- Status: Measured 2026-10-11 (plan row 5 PR 5c2); one line missed by 2.4 ms, decision pending (below)
+- Status: Measured 2026-10-11 (plan row 5 PR 5c2); accepted, arbiter round 4: per-message jobs stay; the enqueue-to-commit line is 90 ms (derived below)
 - Date: 2026-10-11
 - Part of: [README](README.md), step 4; follows [04](04-technology-review.md)
   Q7 (replay budget). Required by the row 5 ruling, fork 6.
@@ -21,22 +21,25 @@ every job):
 |---|---|
 | Jobs committed per second, sustained | at least 2,500 |
 | Commit (one batch) p99 | at most 50 ms |
-| Enqueue to commit p99 | at most 60 ms |
+| Enqueue to commit p99 | at most 90 ms at 2,500 events/s: the batch fill at the rate (100 jobs / 2,500 per s = 40 ms, batch size from ADR 0014) plus the commit p99 budget (50 ms). Arbiter round 4; supersedes the row-5 fork-6 line of 60 ms, which was the S1 shim's measured 59 ms plus 1 ms, less than the shim's own spread and drift (57.6-58.9 ms in Q7, 59.5 ms today) |
 | Writer busy (batch time / wall time) | at most 70 % |
+| Jobs in flight per stream at p99 (enqueue-to-commit p99 x the rate) | under the arm's cap of 256 ([defaults](defaults.md), "Event jobs in flight per stream") with margin |
 
 The producer offers exactly 2,500 events/s, so "sustained" is read as: no
 job failed, every submitted job committed, and the last ones committed
 within about one enqueue-to-commit p99 of the producer stopping
 (`drain_ms`): the writer kept up. A job also waits for its batch to fill
 (100 jobs, about 40 ms at this rate) before the commit starts, so
-enqueue to commit is about that wait plus the commit; a miss of the 60 ms
-line with commit p99 inside 50 ms is the batch window, and is reported as
-such.
+enqueue to commit is about that wait plus the commit.
 
-Any miss switches to per-machine micro-batch jobs of at most 50
-consecutive events of one stream, in arrival order, falling back to
-per-message jobs on any failure; that variant needs its own numbers before
-it lands. Never traded: one writer, ack after commit, arrival order per
+A miss of jobs per second, commit p99 or writer busy switches to
+per-machine micro-batch jobs of at most 50 consecutive events of one
+stream, in arrival order, falling back to per-message jobs on any failure;
+that variant needs its own numbers before it lands. A miss of the
+enqueue-to-commit line cannot be fixed by micro-batching: at <= 50 events
+per job the writer sees <= 50 jobs/s, 100 jobs no longer arrive inside the
+250 ms window, and every event waits for the window (about 250 ms plus the
+commit, as the drain and the S1 steady rows show). Never traded: one writer, ack after commit, arrival order per
 machine.
 
 ## Method
@@ -101,9 +104,10 @@ ran; the owner's editor was the only other busy process). Ten 60 s runs,
 |---|---|---|---|
 | Jobs committed per second | at least 2,500 | 2,499 ± 0 % (2,499 to 2,500); 0 failed; every job committed | within (the producer offers exactly 2,500) |
 | Commit p99 | at most 50 ms | 36.8 ms ± 3 % (29.2 to 37.5) | within |
-| Enqueue to commit p99 | at most 60 ms | 62.4 ms ± 2 % (59.1 to 63.7; 9 of 10 runs above 60) | **missed by 2.4 ms** |
+| Enqueue to commit p99 | at most 90 ms | 62.4 ms ± 2 % (59.1 to 63.7) | 62.4 ms; within the 90 ms line; over the superseded 60 ms line by 2.4 ms (9 of 10 runs) |
 | Enqueue to commit p50 | none | 38.6 ms ± 6 % | |
 | Writer busy | at most 70 % | 41.9 % ± 2 % | within |
+| Jobs in flight per stream at p99 | under 256 with margin | 62.4 ms x 2,500/s | 156 of 256 |
 | Jobs per batch | none | 100 (every batch full) | |
 | Drain after the producer stops | about one enqueue-to-commit p99 | 262 ms ± 5 % | the last, partial batch waits for the store's 250 ms batch window; not a backlog |
 
@@ -116,11 +120,28 @@ to commit p99 and 3 ms to enqueue to commit p99.
 
 Reading: the writer keeps up with a wide margin (42 % busy, commit p99 37
 ms); the enqueue-to-commit p99 is the batch fill (100 jobs at 2,500/s,
-about 40 ms) plus the commit, and goes over 60 ms by 2.4 ms. Per the
-switch rule a miss is a miss; whether this one calls for the micro-batch
-variant (which would not shorten the fill wait: it batches jobs, not
-commits) or a budget reading is a decision for the coordinator. The
-micro-batch variant is not built.
+about 40 ms) plus the commit. It missed the 60 ms line as first written by
+2.4 ms in 9 of 10 runs: a miss, not noise. The arbiter (round 4) found
+that line had 1 ms of headroom over the shim it was copied from and no
+product consumer tighter than the 256 in-flight cap (102 ms at this rate),
+and reset it to 90 ms (fill plus the commit budget); 62.4 ms is within
+it. The writer knobs were not changed: at the burst the batch size (100)
+closed every batch; the 250 ms window closed only the last, partial one
+(the drain). The micro-batch variant is not built and not measured: it
+would cut the writer to at most 50 jobs/s at this rate, so every batch
+would close on the 250 ms window and every event would wait about 250 ms
+plus the commit, which raises this number instead of lowering it.
+
+Not proven here:
+
+- a busy host (the preliminary runs above show the tails follow load);
+- Linux on btrfs;
+- many streams at once and the 200 events/s per agent x N agents shape;
+- the micro-batch variant;
+- BatchMax 50;
+- the benchmark's enqueue stamp is taken before `EventIn` and its result is
+  read in a collector goroutine, so its boundary is slightly wider than the
+  shim's `end.Sub(m.at)`; not corrected for.
 
 Raw output (ten benchmark lines, the S1 run, the load log):
 [`spikes/sqlite/results/s1-event-burst-2026-10-11.txt`](../../spikes/sqlite/results/s1-event-burst-2026-10-11.txt).

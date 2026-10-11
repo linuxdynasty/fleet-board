@@ -40,7 +40,9 @@ import (
 // that keeps up drains in about one enqueue-to-commit time).
 // FLEET_EVENT_BURST_DURATION shortens the run for a smoke check. Budget:
 // jobs/s >= 2,500 sustained, commit p99 <= 50 ms, enqueue to commit p99 <=
-// 60 ms, writer busy <= 70 %.
+// 90 ms (fill 40 ms + commit budget 50 ms; 04c), writer busy <= 70 %, and
+// jobs in flight at p99 (enqueue to commit p99 x the rate) well under the
+// arm's cap of 256.
 const burstEnv = "FLEET_EVENT_BURST"
 
 const (
