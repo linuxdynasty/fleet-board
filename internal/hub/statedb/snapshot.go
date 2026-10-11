@@ -99,9 +99,20 @@ type SnapshotOut struct {
 	// snapshot_seq); nil when none, and always nil for a later Snapshot on
 	// the same epoch. snapshot_seq also asks for SnapshotRequest{seq_rollback}.
 	Rollback []string
+	// Gap is set when the epoch's first Snapshot came with a Hello whose
+	// evicted_total is above the stored one and no rollback: events were
+	// lost to ring overflow while the agent was offline (02i "Gaps"). A gap
+	// marker row was written with it.
+	Gap *Gap
 	// Change is the state change [MarkOnline] made at the end of the job
 	// (the job ingest.SubmitSnapshot queues fills it); nil when the machine was ONLINE.
 	Change *StateChange
+}
+
+// Gap is ring overflow while the agent was offline: Evicted more events
+// lost, after FromSeq (the hub_last_event_seq the Snapshot found).
+type Gap struct {
+	FromSeq, Evicted uint64
 }
 
 // ApplySnapshot is the core of the Snapshot transaction, in the writer
@@ -162,6 +173,9 @@ func ApplySnapshot(ctx context.Context, tx *sql.Tx, in SnapshotIn) (SnapshotOut,
 			}
 		}
 	}
+	if out.Rollback == nil && snapEpoch != lastEpoch && int64(c.Evicted) > evicted { //nolint:gosec // G115: validated
+		out.Gap = &Gap{FromSeq: uint64(hubLast), Evicted: c.Evicted - uint64(evicted)} //nolint:gosec // G115: CHECK >= 0
+	}
 	if out.Rollback != nil {
 		out.Generation++
 		if err := auditRollback(ctx, tx, in, install, out); err != nil {
@@ -187,7 +201,41 @@ func ApplySnapshot(ctx context.Context, tx *sql.Tx, in SnapshotIn) (SnapshotOut,
 	if err != nil {
 		return SnapshotOut{}, fmt.Errorf("statedb: store snapshot: %w", err)
 	}
+	if err := snapshotMarkers(ctx, tx, in, out); err != nil {
+		return SnapshotOut{}, err
+	}
 	return out, nil
+}
+
+// snapshotMarkers puts the timeline marks of the epoch's first Snapshot
+// in the event history, under the generation just stored: a state reset
+// for a rollback (02i rule 3), a gap for ring overflow (02i "Gaps").
+func snapshotMarkers(ctx context.Context, tx *sql.Tx, in SnapshotIn, out SnapshotOut) error {
+	var m Marker
+	switch {
+	case out.Rollback != nil:
+		d, err := auditDetail(struct {
+			Causes     []string `json:"causes"`
+			Generation uint64   `json:"event_generation"`
+		}{out.Rollback, out.Generation})
+		if err != nil {
+			return err
+		}
+		m = Marker{Kind: MarkerStateReset, Detail: d}
+	case out.Gap != nil:
+		d, err := auditDetail(struct {
+			FromSeq uint64 `json:"from_seq"`
+			Evicted uint64 `json:"evicted"`
+		}{out.Gap.FromSeq, out.Gap.Evicted})
+		if err != nil {
+			return err
+		}
+		m = Marker{Kind: MarkerGap, Detail: d}
+	default:
+		return nil
+	}
+	m.MachineID, m.Now = in.MachineID, in.Now
+	return AppendMarker(ctx, tx, m)
 }
 
 func (in SnapshotIn) validate() error {

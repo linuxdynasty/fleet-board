@@ -80,8 +80,8 @@ func TestOpenMigratesAStoreFromTheRestoreSchema(t *testing.T) {
 		t.Fatal(err)
 	}
 	s = open(t, dir)
-	if got := s.SchemaVersion(); got != 10 {
-		t.Errorf("schema version %d, want 10", got)
+	if got, want := s.SchemaVersion(), len(statedb.Migrations()); got != want {
+		t.Errorf("schema version %d, want %d", got, want)
 	}
 	if err := s.Close(); err != nil {
 		t.Fatal(err)

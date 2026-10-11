@@ -101,7 +101,9 @@ func TestTheSnapshotOfTheCurrentEpochIsStoredAndMarksTheMachineOnline(t *testing
 		resources:    sql.NullString{String: `{"load1":0.5}`, Valid: true},
 		policyLoaded: sql.NullInt64{Int64: snapAt.Add(-time.Hour).UnixMilli(), Valid: true},
 		lastSeen:     sql.NullInt64{Int64: snapAt.UnixMilli(), Valid: true},
-		snapSeq:      42, snapEpoch: 1, generation: 1, shed: 3, coalesced: 2, evicted: 1, hubSeq: before + 1,
+		// Two stamps: the gap marker (the Hello's evicted_total 1 is above
+		// the stored 0: ring overflow while offline) and the status.
+		snapSeq: 42, snapEpoch: 1, generation: 1, shed: 3, coalesced: 2, evicted: 1, hubSeq: before + 2,
 		observed: snapAt.UnixMilli(), changed: true, safe: true, draining: true, local: true,
 	}
 	if got != want {
