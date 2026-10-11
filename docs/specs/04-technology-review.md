@@ -401,7 +401,9 @@ which S1 measured above.
 At 100 messages per batch the writer committed 2,543–2,626 rows/s for 60 s
 with commit p99 ≤ 28 ms and enqueue → commit p99 ≤ 59 ms, at most ≈ 70 % of
 writer time. **Decision:** keep 200 ev/s per agent and 2,500 ev/s per hub
-(decided here).
+(decided here). Per-message Event jobs through the real writer at this
+burst (row 5 ruling, fork 6) are measured in
+[04c](04c-event-ingest-benchmark.md).
 
 **Hub scrubber cost (2026-10-10, row 5l).** The hub's secret scrubbing over
 free text the agent already scrubbed is measured in
