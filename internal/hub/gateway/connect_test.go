@@ -81,10 +81,10 @@ func TestASecondHelloDisplacesTheFirst(t *testing.T) {
 	for range 5 {
 		first.send(t, heartbeat())
 	}
-	// The reader takes messages in order, so once the Snapshot after them
-	// is counted the Heartbeats were taken.
-	first.send(t, &agentv1.ConnectRequest{Body: &agentv1.ConnectRequest_Snapshot{Snapshot: &agentv1.Snapshot{}}})
-	h.waitMetric(t, "fleet_hub_connect_unhandled_total", 1, `kind="snapshot"`)
+	// The reader takes messages in order, so once the Event after them is
+	// counted the Heartbeats were taken.
+	first.send(t, eventMsg())
+	h.waitMetric(t, "fleet_hub_connect_unhandled_total", 1, `kind="event"`)
 	if got := metricSum(scrape(t, h.fixture), "fleet_hub_writer_jobs_total"); got != jobs {
 		t.Errorf("heartbeats ran %v writer jobs, want none", got-jobs)
 	}
@@ -165,11 +165,11 @@ func TestAnUnhandledArmIsCountedAndIgnored(t *testing.T) {
 	s.send(t, hello(m, 0))
 	s.ack(t)
 	for range 3 {
-		s.send(t, &agentv1.ConnectRequest{Body: &agentv1.ConnectRequest_Snapshot{Snapshot: &agentv1.Snapshot{}}})
+		s.send(t, eventMsg())
 	}
-	h.waitMetric(t, "fleet_hub_connect_unhandled_total", 3, `kind="snapshot"`)
-	if lines := h.events(t, "hub.connect.unhandled"); len(lines) != 1 || lines[0]["kind"] != "snapshot" {
-		t.Errorf("hub.connect.unhandled lines %v, want one for snapshot", lines)
+	h.waitMetric(t, "fleet_hub_connect_unhandled_total", 3, `kind="event"`)
+	if lines := h.events(t, "hub.connect.unhandled"); len(lines) != 1 || lines[0]["kind"] != "event" {
+		t.Errorf("hub.connect.unhandled lines %v, want one for event", lines)
 	}
 	s.send(t, heartbeat())
 	s.silent(t, 100*time.Millisecond)

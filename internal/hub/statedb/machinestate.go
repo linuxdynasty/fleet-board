@@ -27,6 +27,7 @@ const (
 	ReasonSilence   = "silence"   // housekeeping: no Heartbeat for 45 s (STALE) or 3 min (OFFLINE)
 	ReasonHeartbeat = "heartbeat" // a Heartbeat on the live stream brought a STALE machine back
 	ReasonHubStart  = "hub_start" // the start sweep: ONLINE becomes STALE
+	ReasonSnapshot  = "snapshot"  // the Snapshot transaction marked the machine ONLINE (MarkOnline)
 )
 
 // StateChange is one committed change of machines.state, stamped for Watch
@@ -157,18 +158,23 @@ func liveEpoch(ctx context.Context, tx *sql.Tx, machineID string) (uint64, error
 }
 
 // Mark is one housekeeping decision: To (STALE or OFFLINE) for MachineID,
-// judged while Epoch was its live connection (0 for none).
+// judged while Epoch was its live connection (0 for none) and Seen its
+// last_seen_time ([MachineLive].LastSeen, zero when never seen).
 type Mark struct {
 	MachineID string
 	Epoch     uint64
+	Seen      time.Time
 	To        string
 	Now       time.Time
 }
 
 // MarkState applies a housekeeping decision (reason "silence") as one
 // writer job, only while it still holds: the machine's live epoch is still
-// m.Epoch (a Hello that committed after the read wins) and its state is
-// ONLINE (for STALE) or ONLINE or STALE (for OFFLINE). OFFLINE also closes
+// m.Epoch (a Hello that committed after the read wins), nothing was heard
+// after the read (its last_seen_time is not after m.Seen: a Snapshot that
+// committed after the read keeps the epoch and sets ONLINE, and must win
+// too) and its state is ONLINE (for STALE) or ONLINE or STALE (for
+// OFFLINE). OFFLINE also closes
 // the live row as offline in the same job, so nothing is left live for a
 // stream that is about to be cut or that no stream holds. It returns the
 // change, or nil when the decision no longer held.
@@ -189,6 +195,9 @@ func MarkState(ctx context.Context, s *store.Store, m Mark) (*StateChange, error
 		if err != nil || live != m.Epoch {
 			return err
 		}
+		if heard, err := heardAfter(jctx, tx, m.MachineID, m.Seen); err != nil || heard {
+			return err
+		}
 		if out, err = changeState(jctx, tx, m.MachineID, from, m.To, ReasonSilence, m.Now); err != nil || out == nil {
 			return err
 		}
@@ -201,6 +210,24 @@ func MarkState(ctx context.Context, s *store.Store, m Mark) (*StateChange, error
 		return nil, err
 	}
 	return out, nil
+}
+
+// heardAfter reports whether machineID's last_seen_time is after seen (a
+// zero seen: after never).
+func heardAfter(ctx context.Context, tx *sql.Tx, machineID string, seen time.Time) (bool, error) {
+	var ms int64
+	err := tx.QueryRowContext(ctx, `SELECT ifnull(last_seen_time, 0) FROM machines WHERE machine_id = ?`, machineID).Scan(&ms)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("statedb: read last seen: %w", err)
+	}
+	var floor int64
+	if !seen.IsZero() {
+		floor = seen.UnixMilli()
+	}
+	return ms > floor, nil
 }
 
 // Beat is what a Heartbeat on a live stream asks the store for: last_seen

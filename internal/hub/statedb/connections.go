@@ -125,8 +125,8 @@ type LiveStream struct {
 // from the store.
 type HelloOut struct {
 	Epoch uint64
-	// HubLastEventSeq is the hub's stored event seq for the machine. Plan
-	// row 5c stores it; until then it is 0.
+	// HubLastEventSeq is the machine's stored hub_last_event_seq (migration
+	// 8); 0 until plan row 5c2 stores events.
 	HubLastEventSeq uint64
 	// SettingsGeneration is the machine's resolved settings generation. Plan
 	// row 5h stores it; until then it is 0.
@@ -243,11 +243,12 @@ func applyHello(ctx context.Context, tx *sql.Tx, in HelloIn) (HelloOut, error) {
 	if err != nil {
 		return HelloOut{}, fmt.Errorf("statedb: read settings epoch: %w", err)
 	}
-	var stored int64
-	if err := tx.QueryRowContext(ctx, `SELECT last_epoch FROM machines WHERE machine_id = ?`, in.MachineID).
-		Scan(&stored); err != nil {
+	var stored, hubLast int64
+	if err := tx.QueryRowContext(ctx, `SELECT last_epoch, hub_last_event_seq FROM machines WHERE machine_id = ?`, in.MachineID).
+		Scan(&stored, &hubLast); err != nil {
 		return HelloOut{}, fmt.Errorf("statedb: read last epoch: %w", err)
 	}
+	out.HubLastEventSeq = uint64(hubLast)     //nolint:gosec // G115: CHECK >= 0
 	prev := max(uint64(stored), in.LastEpoch) //nolint:gosec // G115: last_epoch has CHECK BETWEEN 0 AND MaxEpoch
 	if prev >= MaxEpoch {
 		return HelloOut{}, fmt.Errorf("%w: max(stored, last_epoch) is %d", ErrEpochOutOfRange, prev)

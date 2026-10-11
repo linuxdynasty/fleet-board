@@ -53,8 +53,9 @@ func newStateMetrics(m metric.Meter, p string) (stateMetrics, error) {
 // Housekeep is the machine-state job of fleetd's housekeeping (03f, 03n): it
 // reads every machine and its live connection on the read pool and, for an
 // ONLINE or STALE one, the silence since the last thing heard (the newest
-// of this process's start, the live row's Hello and the live stream's last
-// Heartbeat, by the hub clock):
+// of this process's start, the live row's Hello, the live stream's last
+// applied Snapshot and its last Heartbeat, and the machine's
+// last_seen_time read with its state, by the hub clock):
 //
 //   - 3 minutes or more: OFFLINE, the live row closed as offline in the
 //     same job, then the live stream cut (offline);
@@ -63,8 +64,9 @@ func newStateMetrics(m metric.Meter, p string) (stateMetrics, error) {
 //   - while STALE, a live stream whose reader has been stalled 45 s or more
 //     is cut (ingest_stalled); its row's close takes the machine OFFLINE.
 //
-// Each change is one writer job that holds only while the state and the
-// live epoch are still what was read. It also sets fleet_hub_machine_state
+// Each change is one writer job that holds only while the state, the live
+// epoch and last_seen_time are still what was read (a Snapshot that
+// committed after the read wins). It also sets fleet_hub_machine_state
 // for every machine. Errors are joined; the other machines are still done.
 func (s *Server) Housekeep(ctx context.Context, now time.Time) error {
 	a := &agentService{enrollDeps: s.deps, connectDeps: s.connect}
@@ -92,22 +94,31 @@ func (a *agentService) judge(ctx context.Context, m statedb.MachineLive, now tim
 	if m.Epoch != 0 && m.Started.After(heard) {
 		heard = m.Started
 	}
+	// last_seen_time is a time something was heard (the Hello, the
+	// Snapshot, a Heartbeat once a minute): read with the state, it covers
+	// a Snapshot that committed before the read but that the stream has
+	// not recorded yet.
+	if m.LastSeen.After(heard) {
+		heard = m.LastSeen
+	}
 	if s != nil {
-		if hb := s.lastHeartbeat(); hb.After(heard) {
-			heard = hb
+		for _, t := range []time.Time{s.lastSnapshot(), s.lastHeartbeat()} {
+			if t.After(heard) {
+				heard = t
+			}
 		}
 	}
 	silence := now.Sub(heard)
 	switch {
 	case silence >= OfflineAfter:
-		c, err := statedb.MarkState(ctx, a.store, statedb.Mark{MachineID: m.MachineID, Epoch: m.Epoch, To: statedb.MachineOffline, Now: now})
+		c, err := a.mark(ctx, m, statedb.MachineOffline, now)
 		if err != nil || c == nil {
 			return err
 		}
 		a.stateChanged(ctx, *c)
 		a.cut(ctx, m.MachineID, m.Epoch, statedb.EndOffline, now)
 	case m.State == statedb.MachineOnline && silence >= StaleAfter:
-		c, err := statedb.MarkState(ctx, a.store, statedb.Mark{MachineID: m.MachineID, Epoch: m.Epoch, To: statedb.MachineStale, Now: now})
+		c, err := a.mark(ctx, m, statedb.MachineStale, now)
 		if err != nil || c == nil {
 			return err
 		}
@@ -121,6 +132,15 @@ func (a *agentService) judge(ctx context.Context, m statedb.MachineLive, now tim
 		a.cutStalled(ctx, s, now)
 	}
 	return nil
+}
+
+// mark runs the MarkState job of a decision judged from m: it does
+// nothing when the epoch, the state or last_seen_time moved after the read.
+func (a *agentService) mark(ctx context.Context, m statedb.MachineLive, to string, now time.Time) (*statedb.StateChange, error) {
+	if a.beforeMark != nil {
+		a.beforeMark(m.MachineID)
+	}
+	return statedb.MarkState(ctx, a.store, statedb.Mark{MachineID: m.MachineID, Epoch: m.Epoch, Seen: m.LastSeen, To: to, Now: now})
 }
 
 // cutStalled cuts s when its reader has been stalled for [StaleAfter].

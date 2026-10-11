@@ -17,6 +17,7 @@ h.LastEpoch(t, machineID); h.Connections(t, machineID) // machines.last_epoch, m
 free := h.HoldWriter(t)                                // block state.db's writer until free()
 h.SetState(t, machineID, "ONLINE"); h.State(t, machineID) // seed and read machines.state
 h.Housekeep(t, now)                                    // the hub's machine-state job once (STALE, OFFLINE, cuts)
+m := h.Machine(t, machineID)                           // statedb.ReadSnapshot: state, facts, policy, seq floor
 ```
 
 `Requests` counts every HTTP request the listener served, so a test can
@@ -35,7 +36,8 @@ process on a busy machine cannot take it. A test that needs the hub down
 first rebinds with `BindRetry`, which retries a port in use and skips the
 test, not fails it, if the port stays taken. `LastEpoch` reads
 `machines.last_epoch` and `Connections` the machine's `machine_connections`
-rows. `Options.Now` is also the hub's clock for `HelloAck.hub_time` and the
+rows. `Machine` is `statedb.ReadSnapshot`: what the Hello and Snapshot
+transactions stored on `machines` (plan row 5 PR 5c1). `Options.Now` is also the hub's clock for `HelloAck.hub_time` and the
 Hello rate limit. `SetState` seeds `machines.state` (plan row 5c's Snapshot marks `ONLINE`),
 and `Housekeep` runs the machine-state job of `fleetd run`'s housekeeping
 once at the given hub clock. Tests that need what a real hub cannot do (a deaf hub, a

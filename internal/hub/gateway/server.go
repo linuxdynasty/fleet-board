@@ -13,6 +13,7 @@ import (
 	"go.opentelemetry.io/otel/metric/noop"
 
 	"github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1/agentv1connect"
+	"github.com/linuxdynasty/fleet-board/internal/hub/ingest"
 	"github.com/linuxdynasty/fleet-board/internal/hub/statedb"
 	"github.com/linuxdynasty/fleet-board/internal/store"
 	"github.com/linuxdynasty/fleet-board/internal/telemetry"
@@ -54,8 +55,23 @@ type ServerOptions struct {
 	// beforeRowClose, set only by tests, runs as a stream's handler is
 	// about to close its connection row.
 	beforeRowClose func()
+	// Appliers are the later rows' parts of the Snapshot transaction, run in
+	// order inside its writer job after the core and before ONLINE
+	// (ingest.Applier); empty until plan rows 7 to 10.
+	Appliers []ingest.Applier
+	// OnSnapshotApplied, when set, is called on the stream's handler goroutine
+	// after a Snapshot of the machine's current epoch committed: the
+	// machine is ONLINE on that stream (plan row 5f re-sends pending
+	// commands from it). It must not block.
+	OnSnapshotApplied func(machineID string, epoch uint64)
 	// arms, set only by tests, adds arm handlers to the product table.
 	arms armTable
+	// beforeSnapshot, set only by tests, runs in the Snapshot arm with the
+	// stream's context, before its writer job.
+	beforeSnapshot func(context.Context)
+	// beforeMark, set only by tests, runs in housekeeping after it judged a
+	// machine and before its MarkState job.
+	beforeMark func(machineID string)
 }
 
 // NewServer is the agent listener (listen.agent): TLS 1.3 only, the

@@ -12,6 +12,7 @@ import (
 	"connectrpc.com/connect"
 
 	agentv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1"
+	"github.com/linuxdynasty/fleet-board/internal/hub/ingest"
 	"github.com/linuxdynasty/fleet-board/internal/hub/statedb"
 )
 
@@ -50,6 +51,10 @@ type (
 type stream struct {
 	machineID, bootID, peer string
 	epoch                   uint64
+	// hello is what the stream's Hello said that the Snapshot job compares
+	// with the store; set before the stream is registered, read only by its
+	// handler goroutine.
+	hello helloMarks
 	// ctx is the stream's context, given to arm handlers; cancel ends it
 	// (a housekeeping cut), so a handler waiting on the store returns.
 	ctx    context.Context
@@ -57,6 +62,10 @@ type stream struct {
 	// beat is the last Heartbeat's receive time (hub clock) in Unix
 	// nanoseconds, 0 when none came.
 	beat atomic.Int64
+	// snapped is when the stream's last applied Snapshot was built (hub
+	// clock, Unix nanoseconds), 0 before the first; housekeeping counts
+	// silence from it.
+	snapped atomic.Int64
 	// beatsRead counts the Heartbeats the reader took, stored after beat.
 	beatsRead atomic.Uint64
 	// stalled is when the reader blocked handing a message to the full
@@ -72,6 +81,10 @@ type stream struct {
 	// beats wakes the handler goroutine after a Heartbeat (or a STALE
 	// mark); one pending wake is enough.
 	beats chan struct{}
+	// abandoned are the Snapshot jobs whose waits the arm gave up when the
+	// stream ended, in the order they were queued; the teardown reads their
+	// results. Only the handler goroutine uses it.
+	abandoned []*ingest.Pending
 	// seenWritten is the hub clock of the last last_seen_time write for
 	// this stream (the Hello's at first); only the handler goroutine uses it.
 	seenWritten time.Time
@@ -93,6 +106,17 @@ func newStream(ctx context.Context, machineID, bootID, peer string, epoch uint64
 		in:  make(chan *agentv1.ConnectRequest, ingestQueue),
 		out: make(chan *agentv1.ConnectResponse, outQueue), ended: make(chan struct{}),
 	}
+}
+
+// snapshotAt records the hub time of an applied Snapshot.
+func (s *stream) snapshotAt(at time.Time) { s.snapped.Store(at.UnixNano()) }
+
+// lastSnapshot is the hub time of the last applied Snapshot, zero when none.
+func (s *stream) lastSnapshot() time.Time {
+	if n := s.snapped.Load(); n != 0 {
+		return time.Unix(0, n)
+	}
+	return time.Time{}
 }
 
 // wake asks the handler goroutine to look at the stream's Heartbeat state;
@@ -281,9 +305,12 @@ func (a *agentService) serve(ctx context.Context, bs *connectStream, rc *http.Re
 			read = true
 		}
 	}
-	// After a housekeeping cut ctx is already cancelled: drained messages
-	// reach their arm with a cancelled context, so a store job they submit
-	// fails; the agent sends again what the hub never acked.
+	// After a housekeeping cut or the agent leaving ctx is already
+	// cancelled: drained messages reach their arm with a cancelled context.
+	// A Snapshot's wait ends at once, but Submit's non-blocking path may
+	// still queue its job, whose result the teardown reads
+	// (abandonedSnapshots); a job that finds the writer queue full is not
+	// submitted, and the agent sends again what the hub never acked.
 	a.drain(ctx, s, s.in, unhandled)
 	if !a.stop(rc, wrote, byeWait+100*time.Millisecond) {
 		// The Bye's deadline must not outlive it: the row close below may
@@ -336,16 +363,24 @@ func (a *agentService) stop(rc writeDeadliner, wrote <-chan struct{}, wait time.
 func (a *agentService) closed(ctx context.Context, s *stream) {
 	a.streams.remove(s)
 	reason := s.endReason()
-	var ended statedb.Ended
+	ctx = context.WithoutCancel(ctx)
+	wctx, cancel := context.WithTimeout(ctx, endWait)
+	defer cancel()
+	var (
+		ended statedb.Ended
+		err   error
+	)
 	if reason != statedb.EndDisplaced {
 		if a.beforeRowClose != nil {
 			a.beforeRowClose()
 		}
-		ctx := context.WithoutCancel(ctx)
-		wctx, cancel := context.WithTimeout(ctx, endWait)
-		defer cancel()
-		var err error
 		ended, err = statedb.EndConnection(wctx, a.store, s.machineID, s.epoch, reason, a.now().UTC())
+	}
+	// After the close returns, never before: the close is the last job this
+	// stream queues, and when Shutdown's wait runs out the store closes
+	// under a teardown that is still running.
+	a.abandonedSnapshots(ctx, s)
+	if reason != statedb.EndDisplaced {
 		if err != nil {
 			a.log.ErrorContext(ctx, "connect.failed", "step", "store", "err_kind", errKind(err), "machine_id", s.machineID,
 				"epoch", s.epoch)

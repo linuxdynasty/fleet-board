@@ -152,9 +152,10 @@ func TestADisplacedStreamsCloseLeavesTheMachineAsItWas(t *testing.T) {
 	}
 }
 
-// Housekeeping's marks are compare-and-set on the state and on the live
-// epoch it judged (0 for none): a Hello that committed after the read wins.
-// OFFLINE closes the live row as offline in the same job.
+// Housekeeping's marks are compare-and-set on the state, on the live epoch
+// it judged (0 for none) and on the last_seen_time it read: a Hello, or
+// anything heard, that committed after the read wins. OFFLINE closes the
+// live row as offline in the same job.
 func TestMarkStateChecksTheStateAndTheLiveEpoch(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -162,16 +163,19 @@ func TestMarkStateChecksTheStateAndTheLiveEpoch(t *testing.T) {
 	cases := []struct {
 		name, from, to string
 		epoch          uint64 // the live epoch judged; the store has 1 live
+		heardLater     bool   // last_seen_time moved 1 ms past what was read
 		want           bool
 	}{
-		{"online to stale", statedb.MachineOnline, statedb.MachineStale, 1, true},
-		{"online to offline", statedb.MachineOnline, statedb.MachineOffline, 1, true},
-		{"stale to offline", statedb.MachineStale, statedb.MachineOffline, 1, true},
-		{"stale to stale", statedb.MachineStale, statedb.MachineStale, 1, false},
-		{"offline to stale", statedb.MachineOffline, statedb.MachineStale, 1, false},
-		{"enrolled to offline", statedb.MachineEnrolled, statedb.MachineOffline, 1, false},
-		{"a newer hello committed", statedb.MachineOnline, statedb.MachineStale, 0, false},
-		{"an older epoch judged", statedb.MachineOnline, statedb.MachineOffline, 7, false},
+		{"online to stale", statedb.MachineOnline, statedb.MachineStale, 1, false, true},
+		{"online to offline", statedb.MachineOnline, statedb.MachineOffline, 1, false, true},
+		{"stale to offline", statedb.MachineStale, statedb.MachineOffline, 1, false, true},
+		{"stale to stale", statedb.MachineStale, statedb.MachineStale, 1, false, false},
+		{"offline to stale", statedb.MachineOffline, statedb.MachineStale, 1, false, false},
+		{"enrolled to offline", statedb.MachineEnrolled, statedb.MachineOffline, 1, false, false},
+		{"a newer hello committed", statedb.MachineOnline, statedb.MachineStale, 0, false, false},
+		{"an older epoch judged", statedb.MachineOnline, statedb.MachineOffline, 7, false, false},
+		{"heard after the read, stale", statedb.MachineOnline, statedb.MachineStale, 1, true, false},
+		{"heard after the read, offline", statedb.MachineStale, statedb.MachineOffline, 1, true, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -179,7 +183,11 @@ func TestMarkStateChecksTheStateAndTheLiveEpoch(t *testing.T) {
 			_, s := enrolledStore(t)
 			mustHello(t, s, hello(0, "boot-a", "192.0.2.7:51000", helloAt))
 			setState(t, s, renewMachineID, tc.from)
-			got, err := statedb.MarkState(ctx, s, statedb.Mark{MachineID: renewMachineID, Epoch: tc.epoch, To: tc.to, Now: at})
+			seen := read(t, s, renewMachineID).LastSeen
+			if tc.heardLater {
+				seen = seen.Add(-time.Millisecond)
+			}
+			got, err := statedb.MarkState(ctx, s, statedb.Mark{MachineID: renewMachineID, Epoch: tc.epoch, Seen: seen, To: tc.to, Now: at})
 			if err != nil {
 				t.Fatal(err)
 			}

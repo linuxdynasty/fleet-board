@@ -278,7 +278,20 @@ same rule to the agent's free text: it cuts a string over its field's cap to
 the cap (on a UTF-8 boundary), or rejects the message, before it calls the
 scrubber, because the 1 MiB message cap alone would let one agent send a
 1 MiB `message` that takes the scrubber about 16 s and holds that agent's
-ingest goroutine ([04b](04b-hub-scrubber-cost.md)). This is a summary; the
+ingest goroutine ([04b](04b-hub-scrubber-cost.md)). The Snapshot's own text
+is the one exception to "the hub rejects anything else" above (plan row
+5c1): rejecting a Snapshot ends the stream, the agent sends the same one
+again, and the machine never goes ONLINE. So the hub cleans it instead, on
+the stream's ingest goroutine and never in the transaction: each string of
+`MachineFacts`, `ResourceSample` and `PolicyInfo` loses its control and
+format (Cf) characters and line and paragraph separators (a direction
+override or a zero-width space can make one name look like another, 02b)
+and is cut on a character boundary to 256 bytes (a disk path to 1 KiB, at
+most 32 disk entries); the version strings and `PolicyInfo.error` are cut
+to that cap first and then scrubbed, so the scrubber never sees more than
+the cap (a secret that straddles the cap is cut in half and the half left
+may stay). Invalid UTF-8 never arrives: protobuf-go refuses it when it
+decodes a proto3 string. This is a summary; the
 package README lists each pattern, why, what is left alone and what is not
 covered, and a change updates both.
 

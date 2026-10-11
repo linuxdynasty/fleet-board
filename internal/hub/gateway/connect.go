@@ -168,6 +168,7 @@ func (a *agentService) hello(ctx context.Context, bs *connectStream, peer, machi
 		a.afterHello()
 	}
 	s := newStream(ctx, machineID, h.GetBootId(), peer, out.Epoch, now)
+	s.hello = marksOf(h)
 	switch got, old := a.streams.register(s); got {
 	case registeredClosing:
 		// The hub began to shut down while the job ran: close the new row

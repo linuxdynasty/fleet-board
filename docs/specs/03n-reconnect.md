@@ -77,7 +77,7 @@ stateDiagram-v2
   ONLINE --> REPLAYING: replayed events arriving
   REPLAYING --> ONLINE: last replayed seq reached
   ONLINE --> STALE: no Heartbeat for 45 s
-  STALE --> ONLINE: Heartbeat
+  STALE --> ONLINE: Heartbeat, or Hello + Snapshot
   STALE --> OFFLINE: 3 min, or Bye from agent
   ONLINE --> OFFLINE: Bye{SHUTDOWN|UPGRADE|RE_ENROLL} / stream closed
   ONLINE --> DISPLACED: newer Hello for same machine_id
@@ -94,9 +94,10 @@ connection; a Heartbeat brings a machine back from `STALE` only on the stream
 that was live when silence made it `STALE`.
 
 How the hub judges silence (plan row 5b): a housekeeping job every 5 s
-([defaults](defaults.md)) takes the newest of the hub's start, the `Snapshot` of
-the live connection's epoch (until plan row 5c lands it, the live row's `Hello`)
-and the live stream's last `Heartbeat` (hub clock). 45 s makes an
+([defaults](defaults.md)) takes the newest of the hub's start, the live row's `Hello`,
+the `Snapshot` of the live connection's epoch (plan row 5c1), the live
+stream's last `Heartbeat` and the machine's `last_seen_time` read with its
+state (hub clock). 45 s makes an
 `ONLINE` machine `STALE`; 3 minutes makes it `OFFLINE`, closes its live row as
 `offline` and cuts the stream. While `STALE`, a stream whose reader has been
 blocked for 45 s handing a message to its full ingest queue is cut too
@@ -104,12 +105,14 @@ blocked for 45 s handing a message to its full ingest queue is cut too
 waiting for the agent's next message is never cut. A cut sends no `Bye`: the
 hub's handler returns and the stream ends with an OK status; the agent sees the
 stream end, backs off and reconnects. Every change is one writer
-job that holds only while the state and the live epoch are what the job read,
+job that holds only while the state, the live epoch and `last_seen_time` are
+what the job read (a `Snapshot`, a `Hello` or a Heartbeat's once-a-minute
+`last_seen_time` write that committed after the read wins),
 stamped for Watch; no audit row (02m has no state-change action). The live
 row's close by the stream or the agent's `Bye` takes an `ONLINE` or `STALE`
 machine `OFFLINE` in the same job; a displaced stream's close, the hub's own
 shutdown (`hub_restart`) and a machine that never got `ONLINE` change nothing.
-`last_seen_time` is written by the `Hello`, by each close and at most once a
+`last_seen_time` is written by the `Hello`, by each applied Snapshot, by each close and at most once a
 minute from Heartbeats. On graceful shutdown the hub sends
 `Bye{HUB_RESTART}` so agents reconnect quickly with backoff rather than
 waiting for keepalive timeouts, and its agent listener's stop returns only
@@ -128,7 +131,7 @@ the stop's 10 s grace, [defaults](defaults.md) "Stop grace (hub)"), so the store
 | Outbox rows (`pending/delivered/done/expired/failed`, epoch, seq) | hub store | Hello tx (expiry), result tx (close) |
 | Event history (replayed and live, 1 week) | hub store | per writer batch |
 | `machine_connections` (epoch, boot_id, install_id, peer, connect_reason, started and ended time, end_reason, displaced_by, last_heartbeat_age_ms at displacement) and the machine's `last_epoch` | hub store | Hello tx (opens the row, closes the one it displaces); stream close or `Bye` (closes it, and marks the machine `OFFLINE` in the same tx); housekeeping's `OFFLINE` (closes it as `offline`). A row can stay open with no stream behind it after a hub crash, after a graceful shutdown that stopped waiting for a Hello whose transaction then committed, or after a stop whose handler wait ran out (`hub.shutdown_wait_timeout`); the hub-start sweep closes such rows as `hub_restart` |
-| Per machine: `hub_last_event_seq`, `event_generation`, last `EventCounters`, `install_id` | hub store | writer batch (seq); Hello tx (the rest) |
+| Per machine: `hub_last_event_seq`, `event_generation`, last `EventCounters`, `install_id`, and the last applied `Snapshot.seq` and its epoch (`snapshot_seq`, `snapshot_epoch`) | hub store | writer batch (`hub_last_event_seq`); the Snapshot tx (the rest: it compares the stream's `Hello` values with the stored ones, 02i rule 3, and marks the machine ONLINE) |
 
 ### Ordering and consistency
 
@@ -213,7 +216,7 @@ The agent side of plan row 6 (ruling forks 4 i, 11 and 12), in
 | Failure | What happens |
 |---|---|
 | Agent offline for hours | Goals run on; ring fills (latest per key); on reconnect snapshot gives truth, ring gives timeline; ring overflow shows as a rise of `evicted_total` and a `gap` on the timeline |
-| Agent crashed, or its state directory was wiped or a VM image reverted | `seq` resumes above `seq_hwm` after a crash; after a wipe `Hello.last_event_seq` is below the hub's, the hub records an agent rollback (new `event_generation`, timeline marker, audit row) and the agent floors `seq` above `hub_last_event_seq`, so nothing is dropped as a duplicate |
+| Agent crashed, or its state directory was wiped or a VM image reverted | `seq` resumes above `seq_hwm` after a crash; after a wipe `Hello.last_event_seq` is below the hub's, the hub records an agent rollback (new `event_generation`, timeline marker, audit row; the "state reset" timeline marker comes with the event history, plan row 5c2, and until then the audit row, `snapshot.rollback` and `fleet_hub_agent_rollback_total` stand for it) and the agent floors `seq` above `hub_last_event_seq`, so nothing is dropped as a duplicate |
 | Hub restart mid-snapshot apply | Stream drops; the partial tx rolls back; the agent reconnects and sends a fresh snapshot |
 | Hub store restored from backup | Epoch rises above the agent's `last_epoch` (no `SEQ_REPLAYED`); `hub_last_event_seq` is lower, so the agent replays its ring and the snapshot covers the rest; registry entries for unknown goals → `orphan_goal_pane` triage; unknown results → audit only; settings generation on the agent may be newer than the hub's → hub re-sends its current generation and the agent applies it (settings are ordered by `(settings_epoch, generation)`, and a different epoch is accepted whatever its generation; 02, "Settings order") |
 | Duplicate `command_id` re-issued | Logged result returned, nothing re-executed |
@@ -238,7 +241,7 @@ The agent side of plan row 6 (ruling forks 4 i, 11 and 12), in
   `unspecified`), `fleet_hub_epoch{machine}` (the epoch of the last accepted
   `Hello`),
   `fleet_hub_commands_expired_total{kind}`, `fleet_hub_duplicate_identity_total{machine}`,
-  `fleet_hub_event_gap_total{machine}` (rises of `evicted_total`), `fleet_hub_agent_rollback_total{machine}`, `fleet_hub_replay_backlog_events{machine}`,
+  `fleet_hub_event_gap_total{machine}` (rises of `evicted_total`), `fleet_hub_agent_rollback_total{machine}` (each agent rollback the Snapshot tx found, with 03's `snapshot.rollback` and a `machine.install_changed` audit row), `fleet_hub_replay_backlog_events{machine}`,
   `fleet_hub_results_unknown_command_total`.
 - Spans: `hub.reconnect` (children `hub.snapshot.apply`, `hub.outbox.reconcile`,
   `hub.replay.ingest`); `agent.reconnect` (children `agent.ring.replay`) comes
@@ -262,7 +265,8 @@ The agent side of plan row 6 (ruling forks 4 i, 11 and 12), in
 - Machine state (plan row 5b): `machine.state_changed{machine_id, from, to, reason}`
   (info; every committed change of `machines.state`: `reason` is `silence`
   (housekeeping: 45 s to `STALE`, 3 minutes to `OFFLINE`), `heartbeat` (`STALE` back to
-  `ONLINE`), `hub_start` (the start sweep), or the end reason of the live row's close:
+  `ONLINE`), `hub_start` (the start sweep), `snapshot` (the Snapshot tx marked the machine
+  `ONLINE` from `ENROLLED`, `STALE` or `OFFLINE`; plan row 5c1), or the end reason of the live row's close:
   `stream_closed`, `agent_bye`, `ingest_stalled`, `offline`); 05b's `hub.stream_closed{machine_id,
   epoch, reason, stalled_s, queue_depth}` (warn) and `fleet_hub_stream_closed_total{reason}`
   (`ingest_stalled`, `offline`) for a stream housekeeping cut; 03's
@@ -271,6 +275,35 @@ The agent side of plan row 6 (ruling forks 4 i, 11 and 12), in
   `Hello.sent_time` and `Heartbeat.sent_time` samples, 02i "Clocks"; the warning and
   `clock_untrusted` come with plan row 5e). A Heartbeat's store job that fails logs
   `connect.failed{step="heartbeat"}`.
+
+- The Snapshot (plan row 5c1; the names are 03 W1's): `snapshot.applied{machine_id,
+  epoch, seq, bytes, ms, event_generation, text_cut, text_scrubbed}` (committed; the
+  machine is ONLINE; the rows that diff inventory add `panes`, `goals` and the diff
+  counts), `snapshot.refused{machine_id, epoch, seq, reason}` (warn; `reason`:
+  `not_current` (a newer `Hello` displaced the stream), `parts` (this hub lists no
+  `snapshot.parts`), `revoked`, `unknown_machine`, `invalid` (a number above 2^63 - 1)),
+  `snapshot.failed{machine_id, epoch, seq, step, err_kind}` (error; `step`: `store`,
+  `applier`, a panic included), `snapshot.abandoned{machine_id, epoch, seq, reason}`
+  (info; `agent_left`, `cut` (a housekeeping cut, `offline` or `ingest_stalled`) or
+  `shutdown`; a newer `Hello` alone never ends the wait (the job is refused
+  `not_current`), so a displaced agent that hangs up first logs `agent_left`: as for a
+  `Hello`, the wait ends with the stream so the teardown closes the row before the store
+  closes; the job may still commit, and the teardown reads the result of every abandoned
+  job, in queue order, once the row's close is queued (the one writer runs jobs in
+  order), so an `ONLINE` it committed is logged as `machine.state_changed{reason="snapshot"}`
+  ahead of the close's change; that read has its own `endWait` bound, so only a store
+  slower than that leaves a committed `ONLINE` unlogged, next to the close's
+  `connect.failed{step=store}`), `snapshot.rollback{machine_id, epoch, causes, event_generation}` (warn;
+  02i rule 3, judged on the epoch's first Snapshot only; `causes` from `last_event_seq`,
+  `counters`, `install_id`, `snapshot_seq`; `snapshot_seq` also sends
+  `SnapshotRequest{seq_rollback}`), `snapshot.request_dropped{machine_id, epoch, reason}`
+  (warn) with `fleet_hub_snapshot_requests_dropped_total{machine}` (that request found the
+  stream's send queue full; the next connection's first Snapshot is judged again). A Snapshot not applied,
+  except `not_current`, ends the stream, so the agent reconnects and sends a fresh one.
+  `fleet_hub_snapshot_apply_seconds{result}` (`applied`, `refused`, `failed`, `abandoned`) and
+  `fleet_hub_snapshot_bytes`; the span `hub.snapshot.apply`. "Why is machine X
+  connected but not ONLINE?" is its `snapshot.refused` or `snapshot.failed` line.
+
 - The hub's `Connect` before `HelloAck` (plan row 5a-ii; the names are 03 W1's):
   `fleet_hub_connect_refused_total{cause}` and `connect.refused{cause, reason, peer,
   machine_id}` (warn) for a refused `Hello` (02g "Hello refusals"; `cause`:

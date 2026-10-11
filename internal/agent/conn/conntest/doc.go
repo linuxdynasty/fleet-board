@@ -8,6 +8,7 @@
 // serves the hub's own Connect, restarts the listener on the same state.db
 // and port (on a socket it holds open, so the port is never free), holds
 // state.db's writer on demand, reads machines.last_epoch and
-// machine_connections, seeds and reads machines.state, and runs the hub's
-// machine-state housekeeping job once. Test code only.
+// machine_connections, seeds and reads machines.state, runs the hub's
+// machine-state housekeeping job once, and reads what the Snapshot
+// transaction stored (statedb.ReadSnapshot). Test code only.
 package conntest

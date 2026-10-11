@@ -14,7 +14,8 @@ Read the root `AGENTS.md` first; it applies here. Load `fleet-go`,
   never log a field of the identity row (CA key, server key, salt).
 - `Hello` never changes `machines.state`; only the Snapshot transaction
   marks a machine `ONLINE` (row 5 ruling, fork 1). Every state change is
-  one job that re-checks the state (and the live epoch) inside it and
+  one job that re-checks the state (and the live epoch; for housekeeping
+  also `last_seen_time`) inside it and
   stamps the row; a displaced stream's close never changes its machine. The machine id and serial
   a connection writes come from the verified certificate, never from a
   message.

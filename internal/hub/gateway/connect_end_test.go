@@ -15,8 +15,10 @@ import (
 	"github.com/linuxdynasty/fleet-board/internal/hub/gateway"
 )
 
-func snapshotMsg() *agentv1.ConnectRequest {
-	return &agentv1.ConnectRequest{Body: &agentv1.ConnectRequest_Snapshot{Snapshot: &agentv1.Snapshot{}}}
+// eventMsg is a message of an arm with no product handler yet (plan row
+// 5c2 adds Event's).
+func eventMsg() *agentv1.ConnectRequest {
+	return &agentv1.ConnectRequest{Body: &agentv1.ConnectRequest_Event{Event: &agentv1.Event{}}}
 }
 
 func agentBye() *agentv1.ConnectRequest {
@@ -64,14 +66,14 @@ func TestQueuedMessagesBeforeTheAgentsByeAreAllHandled(t *testing.T) {
 	s.ack(t)
 	const burst = 3
 	for range burst {
-		s.send(t, snapshotMsg())
+		s.send(t, eventMsg())
 	}
 	s.send(t, agentBye())
 	if err := s.ended(t); err != nil {
 		t.Fatalf("stream end %v, want clean", err)
 	}
-	if v := sample(scrape(t, h.fixture), "fleet_hub_connect_unhandled_total", `kind="snapshot"`); v != burst {
-		t.Errorf("fleet_hub_connect_unhandled_total{kind=snapshot} = %v when the stream ended, want %d", v, burst)
+	if v := sample(scrape(t, h.fixture), "fleet_hub_connect_unhandled_total", `kind="event"`); v != burst {
+		t.Errorf("fleet_hub_connect_unhandled_total{kind=event} = %v when the stream ended, want %d", v, burst)
 	}
 }
 
@@ -82,7 +84,7 @@ func TestQueuedMessagesBeforeTheAgentsByeAreHandledBehindASlowArm(t *testing.T) 
 	t.Parallel()
 	var handled atomic.Int64
 	h := startHub(t, func(o *gateway.ServerOptions) {
-		gateway.SetArm(o, "snapshot", func() {
+		gateway.SetArm(o, "event", func() {
 			time.Sleep(20 * time.Millisecond)
 			handled.Add(1)
 		})
@@ -94,14 +96,14 @@ func TestQueuedMessagesBeforeTheAgentsByeAreHandledBehindASlowArm(t *testing.T) 
 	// Ten, so the reader's end is almost surely seen with some still queued.
 	const burst = 10
 	for range burst {
-		s.send(t, snapshotMsg())
+		s.send(t, eventMsg())
 	}
 	s.send(t, agentBye())
 	if err := s.ended(t); err != nil {
 		t.Fatalf("stream end %v, want clean", err)
 	}
 	if n := handled.Load(); n != burst {
-		t.Errorf("%d snapshots handled when the stream ended, want %d", n, burst)
+		t.Errorf("%d events handled when the stream ended, want %d", n, burst)
 	}
 }
 

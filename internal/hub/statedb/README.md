@@ -161,8 +161,9 @@ r, err := statedb.Renew(ctx, s, statedb.Renewal{MachineID: id, PeerSerial: seria
   stepped back) is stored as the start, and the table refuses
   `ended_time < started_time`; `last_seen_time` only moves forward.
 - **What `HelloAck` gets from the store:** `Epoch`, `SettingsEpoch`
-  (`hub_identity`), and `HubLastEventSeq` and `SettingsGeneration`, both 0
-  until plan rows 5c and 5h store them. `hub_instance_id` is per process
+  (`hub_identity`), `HubLastEventSeq` (`machines.hub_last_event_seq`,
+  migration 8; 0 until plan row 5c2 stores events) and `SettingsGeneration`
+  (0 until plan row 5h stores it). `hub_instance_id` is per process
   start and not stored; the gateway mints it.
 - **`EndConnection`** closes the row of one epoch when it is still live and
   moves `last_seen_time` (written on disconnect, defaults.md). It returns
@@ -194,12 +195,19 @@ Notes for the rows that build on this:
   `MarkState` is housekeeping's (`silence`): `STALE` from `ONLINE`,
   `OFFLINE` from `ONLINE` or `STALE` with the live row closed as `offline`
   in the same job, both only while the live epoch is the one judged (0 for
-  none). `HeartbeatSeen` moves `last_seen_time` and, with `Promote`, takes
+  none) and `last_seen_time` is not after `Mark.Seen` (what the pass read):
+  a Snapshot that commits after the read keeps the epoch and sets `ONLINE`,
+  so only its `last_seen_time` tells the job the read is stale (03f race
+  table). Known narrow edge: the comparison is in milliseconds and
+  `last_seen_time` never steps back, so after the hub clock steps back a
+  Snapshot that commits between the read and the mark leaves
+  `last_seen_time` unchanged and the stale mark still applies (no code
+  guards it; noted, not fixed). `HeartbeatSeen` moves `last_seen_time` and, with `Promote`, takes
   a `STALE` machine back to `ONLINE` (`heartbeat`) while `Epoch` is live.
   `StartSweep` (fleetd run, before any listener) closes every live row as
   `hub_restart` and makes every `ONLINE` machine `STALE` (`hub_start`).
-  `MachineStates` lists every machine with its live epoch and start on the
-  read pool.
+  `MachineStates` lists every machine with its live epoch and start and
+  its `last_seen_time` on the read pool.
 - **13a:** `RevokeMachine` closes the live row with
   `EndConnection(EndRevoked)` after sending `Bye{REVOKED}`, and
   `DeleteMachine` closes any live row; the history rows stay.
@@ -207,12 +215,17 @@ Notes for the rows that build on this:
   (`NextStamp`); a `STALE` from the start sweep returns only that way.
 - **5m:** the 30-day prune of `machine_connections` (03f) is 5m's; nothing
   prunes the table yet.
+- **5c2:** when Heartbeats store `EventCounters`, keep the rule that only
+  an epoch's first Snapshot writes the Hello's counters: a later Snapshot
+  on the stream (the answer to `event_lost`) must not move them back or
+  read a rise as a rollback. 5c2 also puts the rollback's "state reset"
+  marker on the event history.
 
 ```go
 out, err := statedb.Hello(ctx, s, statedb.HelloIn{MachineID: id, PeerSerial: serial, LastEpoch: h.GetLastEpoch(), ...})
 // after commit: send HelloAck{epoch: out.Epoch, ...}; Bye{DUPLICATE_IDENTITY} to out.Displaced's stream
 ended, err := statedb.EndConnection(ctx, s, id, out.Epoch, statedb.EndStreamClosed, now) // ended.Live, ended.Change
-c, err := statedb.MarkState(ctx, s, statedb.Mark{MachineID: id, Epoch: e, To: statedb.MachineStale, Now: now})
+c, err := statedb.MarkState(ctx, s, statedb.Mark{MachineID: id, Epoch: m.Epoch, Seen: m.LastSeen, To: statedb.MachineStale, Now: now})
 c, err = statedb.HeartbeatSeen(ctx, s, statedb.Beat{MachineID: id, Epoch: e, Promote: true, Now: beat})
 swept, err := statedb.StartSweep(ctx, s, now)             // fleetd run, before the listeners
 list, err := statedb.MachineStates(ctx, s)
@@ -261,6 +274,51 @@ id, err := statedb.AppendAudit(ctx, tx, statedb.AuditEntry{Action: statedb.Actio
 err = statedb.WriteAudit(ctx, s, entries...)              // one job of its own
 ```
 
+- **The Snapshot** (migration 8, plan row 5 PR 5c1; 02i, 03n, 03e, the row 5
+  ruling's forks 1 and 2a). `machines` gains `hub_last_event_seq` (the
+  highest event seq stored, which `Hello` returns for `HelloAck`; 5c2
+  advances it, the Snapshot never does: raising it to `Snapshot.seq` would
+  tell the agent to drop ring entries a dead stream swallowed),
+  `event_generation` (1, then one more per agent rollback), the three
+  `EventCounters` columns, `snapshot_seq` and `snapshot_epoch` (the last
+  applied `Snapshot.seq`, the floor at or below which a replayed event is
+  history only, and its epoch, so 5c2 can tell events before this epoch's
+  Snapshot in the transaction), `resources` (`ResourceSample` as
+  protojson, NULL when unknown), the policy columns of 03e "Persistence"
+  and the drain the agent reports (`agent_draining`, `agent_drain_local`).
+  No inventory tables: rows 7 to 10 add theirs through `ingest.Applier`.
+- **`ApplySnapshot(ctx, tx, in)`** runs in the Snapshot's writer job: a
+  machine row that is not `REVOKED` (`ErrMachineUnknown`,
+  `ErrMachineRevoked`) with a live connection row of `in.Epoch` that is its
+  `last_epoch` (`ErrSnapshotNotCurrent`), numbers that fit SQLite
+  (`ErrSnapshotInvalid`); then, on the epoch's first Snapshot only, agent
+  rollback (02i rule 3): the stream's `Hello.last_event_seq` below
+  `hub_last_event_seq`, any counter below the stored one, another
+  `install_id`, or `Snapshot.seq` at or below a non-zero
+  `hub_last_event_seq` (`SnapshotOut.Rollback` names them). A later
+  Snapshot on the same epoch (a `SnapshotRequest`'s answer) carries the same
+  Hello: it is applied but judged no more, and keeps the stored counters
+  and `install_id`, so an agent cannot loop the hub through generations,
+  audit rows and requests. A rollback bumps `event_generation` and appends
+  `machine.install_changed` (no actor; the causes, both generations, both
+  install ids); `hub_last_event_seq` is kept, since the agent floors its
+  next seq above it. It then stores the facts, resources, policy, drain,
+  counters, `install_id`, the seq floor and `last_seen_time`, and leaves
+  `state` alone. **`MarkOnline(ctx, tx, id, now)`** ends the job after the
+  appliers: `ONLINE` and one Watch stamp, and the change it made (`reason`
+  `snapshot`; nil when the machine was already `ONLINE`). Text arrives cleaned
+  (`ingest.Clean`); nothing is scrubbed in the transaction.
+
+```go
+out, err := statedb.ApplySnapshot(ctx, tx, statedb.SnapshotIn{MachineID: id, Epoch: e, Seq: snap.GetSeq(), ...})
+st, change, err := statedb.MarkOnline(ctx, tx, id, now) // after every applier, same job
+m, err := statedb.ReadSnapshot(ctx, s, id)       // read pool: what the Snapshot stored
+```
+
+**`ReadSnapshot`** reads those columns back on the read pool as a
+`MachineSnapshot` (`ErrMachineUnknown` without a row); conntest's `Machine`
+uses it.
+
 Tests: `CGO_ENABLED=0 go test ./internal/hub/statedb/`. They use real files:
 modes, a refused second create with the file hash unchanged, an injected
 failure before the link leaving an empty folder, the one-row constraint on
@@ -286,12 +344,21 @@ Hello for one machine never touching another at the same epoch,
 stream's close as a no-op, times never stepping back, `Live` copied while
 the caller keeps writing its entry (`-race`), every end reason stored, the
 table constraints by raw SQL, a row 4 store gaining the table, and
-`MaxEpoch` equal to the agent's `ring.MaxEpoch`.
+`MaxEpoch` equal to the agent's `ring.MaxEpoch`. The 5c1 tests apply
+Snapshots and read the row from the file: ENROLLED after `Hello`, then the
+stored Snapshot and ONLINE with one stamp; a second Snapshot replacing the
+facts (unknown resources as NULL); a displaced or closed epoch, a missing
+and a REVOKED machine refused with nothing changed; out-of-range numbers;
+each rollback cause alone (each counter too) and together (generation,
+audit row, stored values, no repeat); later Snapshots on an epoch judged no
+more and keeping newer counters; `ReadSnapshot` returning every stored value;
+`Hello` returning the stored event seq; and a 5j store
+gaining the columns with their defaults.
 
 The 5b tests (`machinestate_test.go`) cover each close reason from
 `ONLINE`, `STALE`, `ENROLLED` and `OFFLINE` (stamped, no audit row), a
-displaced stream's close changing nothing (#138), `MarkState`'s state and
-live-epoch checks and the `offline` row close, `HeartbeatSeen` with and
+displaced stream's close changing nothing (#138), `MarkState`'s state,
+live-epoch and `last_seen_time` checks and the `offline` row close, `HeartbeatSeen` with and
 without `Promote`, the start sweep (twice) and `MachineStates`.
 
 The 5d tests read `audit_log` from the file: one row per action with its

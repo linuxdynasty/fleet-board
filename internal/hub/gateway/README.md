@@ -151,7 +151,9 @@ srv, err := gateway.NewServer(gateway.ServerOptions{
   is the housekeeping job (`fleetd run`, every 5 s). It reads every machine
   and its live row (`statedb.MachineStates`) and, for an `ONLINE` or
   `STALE` one, takes the silence since the newest of this process's start,
-  the live row's `Hello` and the live stream's last Heartbeat (hub clock):
+  the live row's `Hello`, the live stream's last applied Snapshot (the
+  row 5 ruling starts the `STALE` clock there), its last Heartbeat and the
+  machine's `last_seen_time` read with its state (hub clock):
   `OfflineAfter` (3 min) is `OFFLINE` (`statedb.MarkState` also closes the
   live row as `offline`) and the stream is cut; `StaleAfter` (45 s) while
   `ONLINE` is `STALE`; while `STALE`, a stream stalled for `StaleAfter` or
@@ -163,11 +165,15 @@ srv, err := gateway.NewServer(gateway.ServerOptions{
   `statedb.HeartbeatSeen` job when `last_seen` is due (`LastSeenEvery`, 1
   min, the Heartbeat's receive time) or when the machine went `STALE` while
   this stream was live (then back to `ONLINE`); a `STALE` from the start
-  sweep waits for the Snapshot (plan row 5c). Note for 5c: the silence of
-  a live stream now counts from its `Hello`; the row 5 ruling starts the
-  `STALE` clock at the Snapshot apply, so 5c records a "heard" time on the
-  stream when its Snapshot commits (not `beat`, which feeds the displaced
-  stream's heartbeat age). `fleet_hub_machine_state` is
+  sweep waits for the Snapshot, whose commit brings any non-`REVOKED`
+  machine back to `ONLINE` (`machine.state_changed{reason="snapshot"}`).
+  The Snapshot arm records its hub time on the stream (`snapped`, not
+  `beat`, which feeds the displaced stream's heartbeat age) after the
+  commit. Neither that record nor the pass's read can lose the Snapshot:
+  the Snapshot tx moves `last_seen_time`, a pass that reads after the
+  commit counts silence from it, and a mark judged from a read before the
+  commit is refused in its job (`Mark.Seen`, 03f race table).
+  `fleet_hub_machine_state` is
   set at each change and each pass, and for the start sweep's changes by
   `Server.RecordStates` (fleetd run, once the listener exists); the clock skew is the median of the
   last five `sent_time` samples (`Hello` and Heartbeat), in memory.
@@ -181,6 +187,32 @@ srv, err := gateway.NewServer(gateway.ServerOptions{
   by later rows from files of their own (`arms.add` in an `init`). An arm
   with none is counted in `fleet_hub_connect_unhandled_total{kind}`, logged
   once per kind per stream (`hub.connect.unhandled`) and ignored.
+- **Snapshot** (`snapshot.go`, plan row 5 PR 5c1; 03n, 02i, row 5 ruling
+  forks 1 and 2a): on the stream's handler goroutine the stream must still be
+  its machine's live one and the Snapshot whole (no `snapshot.parts`);
+  `ingest.Clean` cuts and scrubs its text; then the Snapshot is
+  one writer job (`ingest.SubmitSnapshot`, then `Pending.Wait`; the statedb core with the current-epoch check and agent
+  rollback, `ServerOptions.Appliers` in order, then ONLINE), compared with
+  the values the stream's `Hello` carried. Only its commit marks the
+  machine ONLINE; the Hello transaction never does. As for a Hello, the
+  wait for the job ends when the agent leaves, a housekeeping cut or
+  Shutdown begins (`snapshot.abandoned` at info, `result="abandoned"`: the
+  outcome is unknown and the job may still commit), so the teardown closes
+  the row before the store closes. Once the row's close is queued, the
+  teardown reads every abandoned job's result in queue order (the one
+  writer runs them first; its own `endWait` bound) and logs their state
+  changes before the close's, so every committed change is logged in
+  commit order. The abandoned reason never waits for the stream's end
+  (the reader may be blocked on the full ingest queue that only this
+  goroutine drains); displacement alone never abandons a wait. After the commit:
+  `ServerOptions.OnSnapshotApplied(machineID, epoch)` (plan row 5f re-sends
+  pending commands from it; it must check the stream is still live, since
+  it also runs for a Snapshot handled after the agent left), and
+  `SnapshotRequest{seq_rollback}` when the epoch's first Snapshot had a seq
+  not above the stored event seq (counted and logged when the send queue
+  is full). A Snapshot not applied
+  ends the stream (no Bye) so the agent reconnects with a fresh one, except
+  `not_current`: a newer Hello already displaced the stream.
 - **Request cap**: `connect.WithReadMaxBytes(MaxMessageBytes)`, the 1 MiB of 02e;
   on Connect the stream ends `RESOURCE_EXHAUSTED` and its row closes as
   `stream_closed`.
@@ -218,13 +250,18 @@ srv, err := gateway.NewServer(gateway.ServerOptions{
 | `fleet_hub_reconnects_total{machine, reason}`, `fleet_hub_epoch{machine}`, `reconnect.hello` (`machine_id`, `epoch`, `last_epoch`, `last_event_seq`, `hub_last_event_seq`, `reason`, `peer`), span `hub.connect.hello` | an accepted Hello |
 | `fleet_hub_duplicate_identity_total{machine}`, `identity.duplicate` (`machine_id`, `old_epoch`, `new_epoch`, `old_boot_id`, `new_boot_id`, `old_peer`, `new_peer`, `heartbeat_age_ms`) | a live stream displaced by a newer Hello |
 | `reconnect.closed` (`machine_id`, `epoch`, `reason`, `row_closed`) | a stream ended |
-| `machine.state_changed` (`machine_id`, `from`, `to`, `reason`), `fleet_hub_machine_state{machine, state}` | a committed state change: `silence`, `heartbeat`, or the live row's end reason |
+| `machine.state_changed` (`machine_id`, `from`, `to`, `reason`), `fleet_hub_machine_state{machine, state}` | a committed state change: `silence`, `heartbeat`, `snapshot` (the Snapshot tx's `ONLINE`), or the live row's end reason |
 | `hub.stream_closed` (`machine_id`, `epoch`, `reason`, `stalled_s`, `queue_depth`), `fleet_hub_stream_closed_total{reason}` | housekeeping cut a stream (warn): `offline` or `ingest_stalled` |
 | `fleet_hub_clock_skew_seconds{machine}` | the median skew after each `sent_time` sample |
 | `fleet_hub_connect_refused_total{cause}`, `connect.refused` (`cause`, `reason`, `peer`, `machine_id`) | a refused Hello (warn) |
 | `connect.failed` (`step`: `validate`, `store`, `wiring`, `heartbeat`; `err_kind`, `machine_id`) | the hub's failure at a Hello, a stream's close or a Heartbeat's store job (error) |
 | `fleet_hub_connect_closed_before_hello_total{err_kind}`, `reconnect.closed` (`epoch` 0, `reason` `before_hello`, `err_kind`: `oversize`, `reset`, `timeout`, `shutdown`) | a stream with a certificate that ended before a Hello was accepted |
 | `fleet_hub_connect_unhandled_total{kind}`, `hub.connect.unhandled` (`machine_id`, `epoch`, `kind`) | a message of an arm with no handler yet |
+| `snapshot.applied` (`machine_id`, `epoch`, `seq`, `bytes`, `ms`, `event_generation`, `text_cut`, `text_scrubbed`), `fleet_hub_snapshot_apply_seconds{result="applied"}`, `fleet_hub_snapshot_bytes`, span `hub.snapshot.apply` | a Snapshot committed; the machine is ONLINE |
+| `snapshot.refused` (`reason`: `not_current`, `parts`, `revoked`, `unknown_machine`, `invalid`), `snapshot.failed` (`step`: `store`, `applier`; `err_kind`), `result="refused"` / `"failed"` | a Snapshot not applied (warn / error) |
+| `snapshot.abandoned` (`reason`: `agent_left`, `cut`, `shutdown`), `result="abandoned"` | the stream ended while the Snapshot's job waited (info; outcome unknown) |
+| `snapshot.rollback` (`machine_id`, `epoch`, `causes`, `event_generation`), `fleet_hub_agent_rollback_total{machine}` | an agent rollback (02i rule 3), with a `machine.install_changed` audit row |
+| `snapshot.request_dropped` (`machine_id`, `epoch`, `reason`), `fleet_hub_snapshot_requests_dropped_total{machine}` | a `SnapshotRequest{seq_rollback}` the full send queue refused |
 | `fleet_hub_server_cert_issues_total{reason, result}`, `tls.server_cert_issued` (`reason`, `names` count, `not_after`), `tls.server_cert_issue_failed` (`reason`, `err_kind`, `not_after` still served) | server certificate re-issues |
 
 No token, secret or part of its hash, no facts, no key, no certificate and no
@@ -253,7 +290,9 @@ stalled reader cut only at `STALE` after 45 s (never while `ONLINE`).
 `state_return_test.go` checks that a `STALE` from the start sweep and a
 `STALE` whose stream was displaced are not brought back by Heartbeats on
 the new stream, and that silence counts from the live row's `Hello`, not
-the hub's start; `registry_internal_test.go` that a cut finds only a
+the hub's start; `snapshot_state_test.go` that the Snapshot brings a
+`STALE` machine back with one `machine.state_changed{reason="snapshot"}`
+and that silence then counts from the Snapshot; `registry_internal_test.go` that a cut finds only a
 running stream of its epoch.
 `writer_internal_test.go` drives the writer with a stub (queued messages,
 then the Bye, under one deadline; the cut after the wait) and a request
@@ -262,7 +301,21 @@ stream that never said Hello and with a Hello stuck behind the writer, a
 Hello committed during Shutdown (an `export_test.go` hook), messages queued
 before the agent's Bye (one test with a slow arm handler), the limit's
 place after the earlier checks, the registry after an agent's Bye, and a
-first message that is too big or never comes. They dial the real
+first message that is too big or never comes. The Snapshot tests
+(`snapshot_test.go`, `snapshot_epoch_test.go`) prove the machine stays
+ENROLLED after HelloAck and is ONLINE with its facts and policy only after
+the Snapshot commits (text cut and scrubbed, the hook, the log and the
+histogram), a failing applier rolling everything back and ending the
+stream, a Snapshot in parts refused, a Snapshot of a displaced epoch
+refused in its transaction (an `export_test.go` hook completes the newer
+Hello first), a seeded seq rollback answered with one
+`SnapshotRequest{seq_rollback}` (a second low-seq Snapshot starts no
+generation and asks for nothing) whose answer replaces the facts, a
+Snapshot whose agent left logged as abandoned (not failed) while its job
+still commits and its ONLINE is logged before the close's OFFLINE, a
+Snapshot cut by housekeeping logged as abandoned with reason `cut`, and a
+panicking applier rolled back with the hub still serving;
+`snapshot_internal_test.go` counts a dropped `SnapshotRequest`. They dial the real
 listener with `crypto/tls` and the generated gRPC client against a real
 `state.db` and a real `revocation.List`: enroll (certificate CN and URI SAN,
 chain, accepted as a client certificate), replay until 24 h past the TTL,

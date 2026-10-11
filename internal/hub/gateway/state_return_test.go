@@ -66,8 +66,9 @@ func TestAHeartbeatOnTheStreamThatDisplacedTheStaleOneDoesNotBringItBack(t *test
 	}
 }
 
-// 03n: a live stream's silence counts from its Hello (until plan row 5c,
-// from the Snapshot of its epoch), not from the hub's start.
+// 03n: a live stream's silence counts from its Hello (and, once its
+// Snapshot lands, from that: TestSilenceCountsFromTheSnapshot), not from
+// the hub's start.
 func TestSilenceCountsFromTheLiveRowsHello(t *testing.T) {
 	t.Parallel()
 	h := startHub(t)
