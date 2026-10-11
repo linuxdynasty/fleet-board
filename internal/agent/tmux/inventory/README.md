@@ -93,7 +93,9 @@ its own today. A read the client refused as not attached, or that the
 agent's stop cut short, is not counted (`fleet_agent_tmux_control_up` and
 `tmux.exit` say why). A server whose every read has failed since the agent
 started has no last inventory, so it is reported `running: false`, like
-one never seen, while `fleet_agent_tmux_control_up` is 1.
+one never seen, while `fleet_agent_tmux_control_up` is 1; its first good
+read is then the first state read, which emits nothing, so the hub learns
+of the server only at the next Snapshot or SnapshotRequest.
 
 ## Events
 
