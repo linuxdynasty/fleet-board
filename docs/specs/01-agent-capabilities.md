@@ -420,6 +420,9 @@ optionally against one limit the owner sets.
   line over the bound is skipped to its newline and counted (05b).
   The client (`internal/agent/tmux`, row 7 PR 7c2) attaches with `-E`, so
   tmux does not apply `update-environment` to the developer's session, and
+  with `-u`, so names and values come byte for byte whatever LANG the
+  agent has (under LANG=C, which a service often gets, tmux would send each
+  non-ASCII or control character as `_`), and
   checks `tmux -V` (below
   3.2 is `TMUX_TOO_OLD`), attaches to the lowest session id (a session the
   fleet marked internal, its `@fleet_internal` exactly `attach_view` as tmux

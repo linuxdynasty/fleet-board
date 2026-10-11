@@ -28,6 +28,7 @@ import (
 const fakeTmux = `#!/bin/sh
 dir=$(dirname "$0")
 if [ "$1" = "-V" ]; then echo "tmux $FAKE_VERSION"; exit 0; fi
+if [ "$1" = "-u" ]; then shift; fi
 shift 2
 case "$1" in
 list-sessions)

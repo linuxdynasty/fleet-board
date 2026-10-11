@@ -56,9 +56,9 @@ func TestReadInventory(t *testing.T) {
 			if work.Tags.SessionID != "s-1" || work.Tags.Owner != "local-owner" || work.Tags.AttachView {
 				t.Fatalf("work tags = %+v", work.Tags)
 			}
-			// A newline or a tab in an option value may come through or be
-			// dropped by tmux; either way the read holds the rest.
-			if !other.Tags.AttachView || printable(other.Tags.Owner) != "abc" || printable(other.Tags.SessionID) != "" {
+			// A newline or a tab in an option value comes through byte for
+			// byte (the client runs with -u), and the read holds the rest.
+			if !other.Tags.AttachView || other.Tags.Owner != "a\nb\tc" || other.Tags.SessionID != "\n\n" {
 				t.Fatalf("other tags = %+v", other.Tags)
 			}
 			if work.Created.IsZero() || time.Since(work.Created) > time.Hour {
@@ -83,7 +83,7 @@ func TestReadInventory(t *testing.T) {
 			if live.WindowName != "my  win %1 ~x~ : ' \"q\"" || live.AutoRename || !live.WindowActive || !live.Active {
 				t.Fatalf("live pane = %+v", *live)
 			}
-			if live.Command != "cat" || live.Width <= 0 || live.Tags.PaneKey != "fleet/x/"+pane || live.Tags.SessionID != "s-1" || printable(live.Tags.GoalID) != "x" {
+			if live.Command != "cat" || live.Width <= 0 || live.Tags.PaneKey != "fleet/x/"+pane || live.Tags.SessionID != "s-1" || live.Tags.GoalID != "x\n" {
 				t.Fatalf("live pane = %+v", *live)
 			}
 			if dead.DeadStatus != 3 || dead.Session != other.ID || dead.Tags.PaneKey != "" {
@@ -159,14 +159,4 @@ func TestReadInventoryGroupedSession(t *testing.T) {
 			}
 		})
 	}
-}
-
-// printable drops the control characters a test value holds.
-func printable(s string) string {
-	return strings.Map(func(r rune) rune {
-		if r < 0x20 {
-			return -1
-		}
-		return r
-	}, s)
 }

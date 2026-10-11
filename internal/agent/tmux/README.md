@@ -76,7 +76,10 @@ st, changed := c.Changed()                       // the state, and a chan closed
   most 1 KiB must arrive whole, over it empty; any other shape blanks that
   field only (`mismatch`). Either way the field reads as empty and is
   counted; no text value can fail the read. The length also checks the join
-  of a record a newline broke.
+  of a record a newline broke. Without `-u` (below), under LANG=C tmux
+  3.2a and 3.7c send each non-ASCII or control character as `_` or drop
+  it; the length check sees a change in byte count only (`a\nb` sent as
+  `a_b` has the same length), which is why the client runs with `-u`.
 - What the bound leaves (the reply bound, the one residual): a record with
   every text field at 1 KiB is 7,762 bytes (measured on 3.2a and 3.7c;
   7,779 with the reply's per-line charge), so the 8 MiB reply bound holds
@@ -96,9 +99,11 @@ st, changed := c.Changed()                       // the state, and a chan closed
   `attach_view`: the list reads `#{session_id} #{==:#{@fleet_internal},attach_view}`,
   so tmux compares the mark and each line is `$N 0` or `$N 1` (anything else
   is an `attach_failed` `list`; a mark with a newline once put a bare line
-  there and failed every attach). It attaches as `tmux -S <socket> -C attach-session
-  -E -t $N -f ignore-size,pause-after=1` (`-E`: tmux does not apply
-  `update-environment` to the developer's session). Its first command reads
+  there and failed every attach). It attaches as `tmux -u -S <socket> -C
+  attach-session -E -t $N -f ignore-size,pause-after=1` (`-u`: the control
+  client runs as UTF-8, so names and values are byte-exact whatever LANG
+  the agent has; `-E`: tmux does not apply `update-environment` to the
+  developer's session). Its first command reads
   `#{client_flags}|#{pid}|#{start_time}|#{version}`: both flags missing from
   `client_flags` is `ErrTooOld` (never `-F`, spike 0.5 finding 8); the pid
   and start time make `ServerStartID`. Then every registered subscription is
