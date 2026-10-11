@@ -344,7 +344,9 @@ changes (a developer starts `claude` in a shell pane; a pane `cd`s to another
 repo). Activity, output time, input time, availability and ready state have
 their own events and never raise it. Window and session attribute changes use
 `WindowEvent` and `SessionEvent` with kind `UPDATED` (name changes stay
-`RENAMED`).
+`RENAMED`). A `CREATED` session or window carries its windows and
+panes; a `RENAMED` or `UPDATED` one carries its own fields only, and a `CLOSED`
+one its ids. A pane's or window's focus (`active`) raises no event on its own.
 
 ### Internal sessions
 
@@ -357,7 +359,10 @@ excludes the probe server from session counts and filters (`server` is
 `DEFAULT` or `FLEET` on every listed session). `attached_clients` on a
 session already excludes the agent's control client and attach clients.
 The agent's control client prefers a developer session and attaches to an
-internal one only while none exists (01 E2).
+internal one only while none exists (01 E2). The creator of a view session marks it
+(`@fleet_internal attach_view` and `FLEET_INTERNAL`) and the agent reads only
+that mark; grouping alone never makes a session internal, so a developer's own
+grouped session is reported as theirs.
 
 ## SendKeys purposes
 

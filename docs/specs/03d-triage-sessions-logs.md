@@ -244,7 +244,7 @@ peer address; the hub never runs it.
 |---|---|---|
 | `sessions{session_id, machine, name, owner Principal, create_time, log_capture}` and `panes{pane_key, available_for_work, reserved_for_goal}` | hub store | create tx; availability tx on event |
 | Attach registry (`attach_id`, session, principal, read_only, open_time) | hub memory + audit row open/close with byte counts (no content) | audit tx |
-| `FLEET_*` tags, view session | tmux environment on the machine | n/a |
+| `FLEET_*` tags, view session | tmux session environment and `@fleet_*` user options on the machine | n/a |
 | Developer-created sessions | hub mirror from snapshot/events only; never owned | snapshot/event tx |
 
 ### Ordering and consistency

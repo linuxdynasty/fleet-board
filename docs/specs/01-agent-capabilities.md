@@ -376,7 +376,10 @@ optionally against one limit the owner sets.
 ## E. tmux observation
 
 - **E1 Inventory:** every session, window and pane on the developer's tmux
-  server (marked "yours" or "started by fleet" from `FLEET_*` tags), plus the
+  server (marked "yours" or "started by fleet" from `FLEET_*` tags (read from
+  the `@fleet_*` user options tmux holds, never from a process's environment;
+  row 18 sets them, and the matching `FLEET_*` session environment for the
+  harness and its hooks, when it creates a session or window)), plus the
   internal `fleet-probe` server (internal sessions are marked and the hub
   ignores them). Panes carry their directory, repo and dirty flag when under an
   allowed root; attribute changes are `PaneChanged` events (02h). Windows are reported with their index and
@@ -434,7 +437,10 @@ optionally against one limit the owner sets.
   `%pause` and the reply came whole and in order. Further unrecorded runs
   (3 and 8 s stalls) showed no `%pause` inside a reply either.
 - **E3 Pane lifecycle:** created and exited with exit status. "Stopped without
-  DONE" (the one-nudge rule) depends on this.
+  DONE" (the one-nudge rule) depends on this. The status is known only when
+  tmux kept the pane (`remain-on-exit`, which the agent never sets on a
+  developer's pane); a pane gone first has `exit_status` unset (row 7 PR 7d,
+  `internal/agent/tmux/inventory`).
 - **E4 Activity transitions:** active ↔ idle, with the time of last output.
   Never dropped under backpressure; the hub's stuck detection depends on it.
 - **E5 Pane summaries:** last lines, ANSI stripped; at most one per pane every

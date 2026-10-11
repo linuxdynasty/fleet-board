@@ -134,10 +134,10 @@ message TmuxPane {
   // [CAP E9]
   // Harness session id learned through hooks. Untrusted text.
   string harness_session_id = 7;
-  // FLEET_* environment tags: FLEET_SESSION_ID, FLEET_OWNER, FLEET_PANE_KEY,
-  // FLEET_GOAL_ID. Empty for the developer's own panes. The environment of a
-  // running harness cannot change, so after a pane is reused FLEET_GOAL_ID is
-  // missing or the previous goal's: use `goal` below, never this tag.
+  // FLEET_* tags from the pane's and session's @fleet_* tmux user options,
+  // never a process environment (01 E1): FLEET_SESSION_ID, FLEET_OWNER,
+  // FLEET_PANE_KEY, FLEET_GOAL_ID. Empty for the developer's own panes. For
+  // the pane's goal use `goal` below, never FLEET_GOAL_ID (a reused pane).
   map<string, string> fleet_tags = 8;
   bool started_by_fleet = 9;
   fleet.type.v1.Activity activity = 10;
