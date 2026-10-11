@@ -257,7 +257,13 @@ message HelloAck {
   // at which they last changed, 03e), not the fleet-wide counter, so one
   // machine's change does not resend settings to the others. A Settings
   // message follows if it is newer than Hello.settings_generation, or if
-  // settings_epoch differs from Hello.settings_epoch.
+  // settings_epoch differs from Hello.settings_epoch. It also follows, once
+  // on this stream and without waiting for the 60 s resend, when it equals
+  // Hello.settings_generation in the same epoch but the hub holds no
+  // SettingsAck for that generation (the ack was lost): the agent answers
+  // that repeat with its held SettingsAck, rejections included, and the hub
+  // stores it only if its generation is not lower than the stored one (03e,
+  // 03e2). Hub side: plan row 5 (settings send and SettingsAck).
   uint64 settings_generation = 9;
   // Random id per hub process start. A change tells the agent the hub
   // restarted (its in-memory queues are gone), even on the same address.
