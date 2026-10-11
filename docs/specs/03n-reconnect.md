@@ -123,7 +123,7 @@ the stop's 10 s grace, [defaults](defaults.md) "Stop grace (hub)"), so the store
 
 | What | Where | Transaction |
 |---|---|---|
-| Event ring (`seq`, body, 1 week or 64 MiB, [defaults](defaults.md)) | `agent.db` | per event, fsync batched ≤ 1 s |
+| Event ring (`seq`, body, 1 week or 64 MiB, [defaults](defaults.md)) | `agent.db` | per event, fsync batched ≤ 1 s; trimmed by EventAck while connected |
 | `seq_hwm` (reserved in blocks of 1024), `EventCounters`, `install_id`, `last_epoch`, `last_applied_command_seq` | `agent.db` | one fsync per block; counters with it; the epoch and command marks never step back |
 | Command log (last 10,000 or 7 days; status, result, step reached, the encoded command) | `agent.db` | per state change, before `CommandAck` is sent |
 | Probe assignments (`EnsureProbe` as received) | `agent.db` | with the command log |
@@ -231,8 +231,10 @@ The agent side of plan row 6 (ruling forks 4 i, 11 and 12), in
 
 ### Telemetry
 
-- `fleet_agent_ring_events`, `fleet_agent_ring_bytes`, `fleet_agent_ring_dropped_total`,
+- `fleet_agent_ring_events`, `fleet_agent_ring_bytes`, `fleet_agent_ring_dropped_total{reason=floor|acked}`
+  (entries the hub holds, not loss),
   `fleet_agent_replayed_events_total`, `fleet_agent_unacked_results`,
+  `fleet_agent_events_total{kind, delivery}` (each event created, by body kind and class),
   `fleet_agent_events_shed_total`, `fleet_agent_events_coalesced_total`, `fleet_agent_events_evicted_total`,
   `fleet_agent_reconnects_total{reason=reconnect|wake|network_change}` (each
   stream connected with that `Hello.reason`).
@@ -243,6 +245,18 @@ The agent side of plan row 6 (ruling forks 4 i, 11 and 12), in
   `fleet_hub_commands_expired_total{kind, cause}` (`cause`: `deadline`, `revoked`; 03f), `fleet_hub_duplicate_identity_total{machine}`,
   `fleet_hub_event_gap_total{machine}` (rises of `evicted_total`), `fleet_hub_agent_rollback_total{machine}` (each agent rollback the Snapshot tx found, with 03's `snapshot.rollback` and a `machine.install_changed` audit row), `fleet_hub_replay_backlog_events{machine}`,
   `fleet_hub_results_unknown_command_total`.
+- Agent ring logs (`internal/agent/events`): `ring.evicted{n, oldest_seq}`
+  (warn, loss), `ring.trimmed{to_seq, n, reason}` (info for the HelloAck
+  floor, debug for an EventAck), `ring.replay{from_seq, to_seq, n}` when a
+  stream attaches with entries to replay, `ring.unreadable{seq, err_kind}`
+  (an entry that does not decode is skipped), `ring.emit_failed{kind, err_kind}`
+  (a `policy_changed` or `resource_sample` that could not be saved or queued),
+  `ring.counters_failed{err_kind}`
+  (`shed_total` could not be saved; retried at the next drop); span
+  `agent.ring.replay` for the attach. "Why did the hub ask for an
+  `event_lost` snapshot?" is `ring.evicted` and `fleet_agent_events_evicted_total`;
+  "why is the ring growing?" is `fleet_agent_ring_events` with no
+  `ring_dropped_total{reason="acked"}` (the hub does not send `EventAck`).
 - Spans: `hub.reconnect` (children `hub.snapshot.apply`, `hub.outbox.reconcile`,
   `hub.replay.ingest`); `agent.reconnect` (children `agent.ring.replay`) comes
   with the event ring, in the rows that emit events. Until then the agent's

@@ -17,6 +17,10 @@ e, dup, err = db.LogAndApply(ctx, cmd)                         // log + seq adva
 err = db.SetRunning(ctx, id, step)                            // running, step reached never lowered
 open, err := db.Open(ctx)                                     // entries with no result yet, in applied order
 err = db.RecordResult(ctx, id, encodedResult, finished)       // ErrResultLogged keeps the first
+wait, err := db.SubmitEvent(ctx, ring.EventRow{Seq: s, Key: k, Created: t, Body: b}, ring.DefaultCaps)
+a, err := wait()                                              // committed: Coalesced, Evicted, OldestEvicted, Size
+rows, err := db.EventsBetween(ctx, after, before, limit)      // after < seq < before, seq order
+n, size, err := db.TrimEvents(ctx, upTo)                       // the hub holds them: not loss
 seqs, err := db.Seqs(ctx)                                     // event seq allocator
 seq, err := seqs.Next(ctx)                                    // reserves 1024 seqs per write
 err = seqs.Floor(ctx, helloAck.GetHubLastEventSeq())          // next seq above what the hub stored
@@ -94,8 +98,21 @@ n, err = db.Prune(ctx, hubNow)                                // hub time; 7 day
   it running and never lowers the step reached, and refuses a finished
   entry (`ErrResultLogged`). An entry logged before migration 5 has a nil
   `Body`; the executor ends it `UNKNOWN_OUTCOME`.
-- Not here yet: the event ring itself (events come with the rows that emit
-  them).
+- **Event ring** (migration 6, plan row 7; the emitter is
+  `internal/agent/events`). `event_ring` holds NEVER_DROP entries (key `''`)
+  and COALESCE entries (one per non-empty `coalesce_key`, a unique index),
+  each the encoded `Event`. `SubmitEvent` is one job: delete the entry with
+  the key (`coalesced_total` + 1), insert, then evict oldest first, whatever
+  the class, while an entry is older than `MaxAge` (against the new entry's
+  agent-clock time) or the ring is over `MaxBytes` (`evicted_total` + n);
+  1 week and 64 MiB by default ([defaults](../../../docs/specs/defaults.md)).
+  It returns a wait that answers once the batch committed, whatever the
+  context does. The writer runs jobs in queue order and the
+  `event_ring_in_order` trigger refuses an entry at or below the newest, so
+  the emitter, which queues under one lock, commits in seq order;
+  `event_ring_kept` refuses any change to an entry. `event_ring_size` keeps
+  the count and bytes through triggers. `TrimEvents` drops entries at or
+  below a seq the hub holds (HelloAck floor, EventAck) and moves no counter.
 
 Signals: none of its own. `store.opened`, `store.migrated` and the
 `fleet_agent_writer_*` and `fleet_agent_store_*` metrics (`db="agent"`, 05b)

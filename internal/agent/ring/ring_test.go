@@ -107,7 +107,8 @@ func TestMigrationsApplyOnAFreshFileAndAgainAreANoOp(t *testing.T) {
 	for _, name := range []string{
 		"agent_state", "command_log", "agent_state_never_back", "command_log_result_kept",
 		"agent_state_never_deleted", "agent_state_one_row", "command_log_insert_once", "command_log_id_kept",
-		"command_log_ack_kept", "command_log_ack_finished",
+		"command_log_ack_kept", "command_log_ack_finished", "event_ring", "event_ring_size", "event_ring_in_order",
+		"event_ring_kept", "event_ring_added", "event_ring_removed",
 	} {
 		if !got[name] {
 			t.Errorf("agent.db has no %s", name)
