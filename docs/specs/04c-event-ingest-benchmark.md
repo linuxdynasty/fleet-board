@@ -72,7 +72,7 @@ machine.
   cd spikes/sqlite && CGO_ENABLED=1 go build -o s1 . && ./s1 -driver modernc -scenario burst -dur 60s
   ```
 - Machine: Apple M4 Pro, 12 cores, 64 GB, macOS 27.0.1, APFS on the
-  internal SSD; Go 1.27.2 darwin/arm64; base commit 9cb5d13 plus this PR.
+  internal SSD; Go 1.27.2 darwin/arm64. The quiet-host runs were measured at ed6baed before the rebase onto b4ae10f; the measured packages (internal/hub/ingest, internal/hub/statedb, internal/store) are unchanged at dad1658 except the benchmark comment, eventloss.go (the RecordEventLoss bound check, not on the measured path) and eventloss_test.go.
 
 ## Results
 
@@ -92,7 +92,7 @@ The unchanged S1 shim went from 28 ms to 70 ms commit p99 on this host
 today, so the tails follow the host's load, not the job shape. Writer CPU
 is not the limit (42 % busy at 2,500 jobs/s, 100 jobs per batch).
 
-### Quiet host (2026-10-11, commit ed6baed)
+### Quiet host (2026-10-11)
 
 Other developers idle and no builds or tests but these; load average 2.97
 before, 2.12 after the ten runs and 1.34 after the S1 rerun (it rose to 7
