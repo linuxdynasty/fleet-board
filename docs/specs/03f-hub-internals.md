@@ -127,8 +127,8 @@ contract; this is how the hub runs it.
 - **Send.** One sender goroutine does every send. A machine
   gets commands only after the Snapshot of its current epoch committed: the
   Snapshot step calls the gateway's `ready(machine, epoch)` seam after its
-  transaction commits (plan row 5c), so nothing is sent between `Hello` and
-  `Snapshot`. The sender reads the pending rows not yet sent on that epoch
+  transaction commits (the Snapshot arm's after-commit hook, wired
+  when the listener is built), so nothing is sent between `Hello` and `Snapshot`. The sender reads the pending rows not yet sent on that epoch
   through the read pool, a page at a time in send order (so rows it skips
   never hide the rows behind them); queues each on the stream of exactly
   that epoch, never blocking (a full queue is looked at again after 50 ms,

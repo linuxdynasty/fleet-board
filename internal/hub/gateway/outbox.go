@@ -41,8 +41,8 @@ func (d *connectDeps) stopOutbox(ctx context.Context) {
 	}
 }
 
-// ready is the seam the Snapshot transaction (plan row 5c) calls once it
-// committed: machineID's pending commands may now go out on epoch's
+// ready is the seam the Snapshot arm calls once its transaction committed
+// (NewServer wires it into onApplied): machineID's pending commands may now go out on epoch's
 // stream (row 5 ruling, fork 1; 03n "Ordering and consistency"). It is
 // false, and nothing is sent, unless epoch is the machine's live stream.
 func (d *connectDeps) ready(machineID string, epoch uint64) bool {

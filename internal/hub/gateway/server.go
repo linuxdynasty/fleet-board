@@ -62,8 +62,8 @@ type ServerOptions struct {
 	Appliers []ingest.Applier
 	// OnSnapshotApplied, when set, is called on the stream's handler goroutine
 	// after a Snapshot of the machine's current epoch committed: the
-	// machine is ONLINE on that stream (plan row 5f re-sends pending
-	// commands from it). It must not block.
+	// machine is ONLINE on that stream. It runs after the outbox's ready
+	// seam, which sends the machine's pending commands. It must not block.
 	OnSnapshotApplied func(machineID string, epoch uint64)
 	// arms, set only by tests, adds arm handlers to the product table.
 	arms armTable

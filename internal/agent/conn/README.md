@@ -377,7 +377,10 @@ reset streams with the same request, and refusals, a hub-side `INTERNAL`
 and an over-cap request not retried; listeners that close or reset during
 the handshake retried, never untrusted, with a table of handshake error
 shapes; the whole-enroll cap and a cancel during a wait; and ten tampered responses
-against a fake hub, each saving nothing. The loop runs against `connecthub_test.go`, a
+against a fake hub, each saving nothing. The command path runs end to end:
+a test executor on `LoopOptions.Command` gets the hub's commands only once
+its Snapshot committed, and after a hub restart only the never-acked one
+comes again, on seq 1 of epoch 2 (`realhubcommands_test.go`). The loop runs against `connecthub_test.go`, a
 fake hub with Connect over mTLS and the hub's epoch, seq and
 duplicate-identity rules: hello and snapshot contents, the four ends and
 everything else retried, the same failure tried again and again (a closed

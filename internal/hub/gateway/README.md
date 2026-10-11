@@ -205,9 +205,10 @@ srv, err := gateway.NewServer(gateway.ServerOptions{
   commit order. The abandoned reason never waits for the stream's end
   (the reader may be blocked on the full ingest queue that only this
   goroutine drains); displacement alone never abandons a wait. After the commit:
-  `ServerOptions.OnSnapshotApplied(machineID, epoch)` (plan row 5f re-sends
-  pending commands from it; it must check the stream is still live, since
-  it also runs for a Snapshot handled after the agent left), and
+  the outbox's `ready(machineID, epoch)` (pending commands go out from
+  it), then `ServerOptions.OnSnapshotApplied(machineID, epoch)` when set
+  (each must check the stream is still live, since it also runs for a
+  Snapshot handled after the agent left; `ready` does), and
   `SnapshotRequest{seq_rollback}` when the epoch's first Snapshot had a seq
   not above the stored event seq (counted and logged when the send queue
   is full). A Snapshot not applied
@@ -219,8 +220,8 @@ srv, err := gateway.NewServer(gateway.ServerOptions{
   reach it through `Server.Outbox()`. The registry is its `Streams`: a
   command goes only to the machine's live stream of the command's epoch,
   without blocking (a full queue is retried by the sender). `ready(machine,
-  epoch)` is the seam the Snapshot transaction (plan row 5c) calls after it
-  commits; nothing is sent to a machine before it, and it refuses an epoch
+  epoch)` is the seam the Snapshot arm calls after its transaction
+  commits (`NewServer` wires it ahead of `OnSnapshotApplied`); nothing is sent to a machine before it, and it refuses an epoch
   that is not the live stream's. A stream's close tells the outbox the
   epoch is gone. The arms `command_ack`, `command_progress` and
   `command_result` hand the message to the outbox with the stream's machine,
