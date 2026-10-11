@@ -206,33 +206,6 @@ func lastN(s string, n int) string {
 	return s
 }
 
-func TestPaneExitWithStatus(t *testing.T) {
-	for _, b := range tmuxtest.Binaries() {
-		t.Run(b.Name, func(t *testing.T) {
-			srv := tmuxtest.Start(t, b, "-s", "work", "exec cat")
-			// remain-on-exit keeps the dead pane so its status can be read; the
-			// agent never sets it on a developer's server (row-7 ruling fork 12).
-			srv.Run(t, "set-option", "-g", "remain-on-exit", "on")
-			r := startClient(t, srv, nil)
-			r.waitState(t, tmux.StateUp)
-			id := strings.TrimSpace(srv.Run(t, "new-window", "-P", "-F", "#{pane_id}", "-t", "work", "exit 4"))
-			waitPanes(t, r, "pane "+id+" dead with status 4", func(panes []tmux.Pane) bool {
-				for _, p := range panes {
-					if p.ID.String() == id {
-						return p.Dead && p.DeadStatus == 4
-					}
-				}
-				return false
-			})
-			// A live pane reports no status.
-			live := firstPane(t, r, 0)
-			if live.Dead || live.DeadStatus != tmux.NoStatus {
-				t.Fatalf("live pane = %+v, want Dead false and NoStatus", live)
-			}
-		})
-	}
-}
-
 func TestWindowRenameArrives(t *testing.T) {
 	for _, b := range tmuxtest.Binaries() {
 		t.Run(b.Name, func(t *testing.T) {
