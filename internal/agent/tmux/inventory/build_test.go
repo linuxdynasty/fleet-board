@@ -164,3 +164,26 @@ func TestBuildGroupedSession(t *testing.T) {
 		t.Fatalf("grouped = %v", srv)
 	}
 }
+
+// A pane is started by fleet only when its FLEET_PANE_KEY is its own key:
+// a pane key set as a session option reaches every pane of the session
+// through tmux's inheritance, and must not mark them all (review of 7d1).
+// The tag itself is still reported, as data.
+func TestStartedByFleetNeedsThePanesOwnKey(t *testing.T) {
+	t.Parallel()
+	inv := sampleInventory()
+	inv.Panes[0].Tags.PaneKey = "default/abc-1/%0" // its own
+	inv.Panes[1].Tags.PaneKey = "default/abc-1/%0" // %1 inherits %0's key
+	inv.Panes[2].Tags.PaneKey = "default/other-start/%2"
+	panes := buildServer("default", inv, "3.7c").GetSessions()[0].GetWindows()[0].GetPanes()
+	if !panes[0].GetStartedByFleet() {
+		t.Fatalf("pane with its own key not started by fleet: %v", panes[0])
+	}
+	if panes[1].GetStartedByFleet() || panes[1].GetFleetTags()["FLEET_PANE_KEY"] != "default/abc-1/%0" {
+		t.Fatalf("pane with another pane's key = %v", panes[1])
+	}
+	other := buildServer("default", inv, "3.7c").GetSessions()[1].GetWindows()[0].GetPanes()[0]
+	if other.GetStartedByFleet() {
+		t.Fatalf("pane with a key from another server start = %v", other)
+	}
+}

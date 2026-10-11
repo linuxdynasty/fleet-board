@@ -113,6 +113,8 @@ func buildPane(server, start string, window *typev1.WindowKey, p tmux.PaneInfo) 
 	if len(tags) > 0 {
 		tp.FleetTags = tags
 	}
-	tp.StartedByFleet = tags[tagPaneKey] != ""
+	// Its own key only: a pane key set as a session or window option reaches
+	// every pane through tmux's inheritance, and marks none of the others.
+	tp.StartedByFleet = tags[tagPaneKey] == server+"/"+start+"/"+p.ID.String()
 	return tp
 }

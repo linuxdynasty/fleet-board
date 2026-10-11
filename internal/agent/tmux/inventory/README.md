@@ -20,8 +20,9 @@ events when they change.
   `@fleet_goal_id` (fork 7), as a format finds them from each pane (pane,
   window, then session options), reported under their `FLEET_*` names only
   when they have their id's shape, else dropped whole. A session with a
-  `FLEET_SESSION_ID` is `started_by_fleet`, a pane with a `FLEET_PANE_KEY`
-  is. A tag is data anyone can set: the hub trusts a session id only when
+  `FLEET_SESSION_ID` is `started_by_fleet`, and a pane whose
+  `FLEET_PANE_KEY` is its own key (`server/server_start_id/pane_id`; one
+  inherited from a session option names another pane) is. A tag is data anyone can set: the hub trusts a session id only when
   its own table minted it. No process environment is ever read. A session's
   tags are taken from its first pane, through tmux's inheritance, so a pane
   or window option of the same name set by hand shadows the session's.
