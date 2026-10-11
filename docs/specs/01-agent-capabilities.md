@@ -450,8 +450,8 @@ optionally against one limit the owner sets.
   tmux kept the pane (`remain-on-exit`, which the agent never sets on a
   developer's pane); a pane gone first has `exit_status` unset (row 7 PR 7d,
   `internal/agent/tmux/inventory`). A signal-killed pane has no exit status;
-  tmux 3.7c names the signal (macOS) or numbers it (Linux), and both reads
-  (`ListPanes`, the inventory) give `hup`, `int`, `quit`, `abort`, `kill`,
+  tmux 3.7c names the signal (macOS) or numbers it (Linux), and both reads,
+  the pane list and the inventory, give `hup`, `int`, `quit`, `abort`, `kill`,
   `segv`, `pipe`, `term`, `other:<n>` (the host's number, not comparable
   across hosts) or `other` (unreadable), never tmux's text; 3.2a gives none.
   No snapshot field carries it yet; `TmuxPane` has only `dead` and `exit_status`.
