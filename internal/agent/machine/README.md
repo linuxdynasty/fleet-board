@@ -56,7 +56,7 @@ happens on a working machine.
   (`sw_vers`, `ps`, `system_profiler`) outside `internal/proc`.
   `TestOnlyApprovedGopsutilCalls` and `TestOnlyMemoryInfoIsCalledOnAProcess`
   enforce it.
-- Nothing can stall a sample: load, memory and each disk path are read at the
+- Nothing can stall a sample: load, memory, the agent's own RSS and each disk path are read at the
   same time, each in its own goroutine (gopsutil takes no time bound, and a
   statfs on a hung mount ignores a context). The sample waits at most 10 s,
   leaves a reading that has not returned unset, and does not start it again

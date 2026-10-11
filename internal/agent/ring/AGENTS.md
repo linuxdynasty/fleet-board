@@ -13,5 +13,9 @@ Read the root `AGENTS.md` first; it applies here. Load `fleet-go` and
   changes; a rule like that gets a trigger or constraint in the file, not
   only a check in Go, and a test that writes the file directly.
 - Never log a command's result bytes; ids and counts only.
+- `UnackedCount` (the heartbeat's `unacked_results`) is moved only by the
+  after-func of a `writeThen`, after the batch committed. Any new write that
+  finishes, acks or deletes a `command_log` row must move it the same way,
+  with a test that compares it to `len(Unacked())`.
 - A change here updates this README, `doc.go` and 02i's "What agent.db
   keeps" in the same commit.

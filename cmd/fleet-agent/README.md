@@ -70,7 +70,9 @@ fleet-agent run    # logs to stderr; stop with Ctrl-C or SIGTERM
 - Each snapshot carries the machine facts (OS version, RAM, time zone, tmux
   version, user, binary hash) and the latest resource sample (load, memory,
   memory pressure, free disk under the state folder), and each heartbeat the
-  load. A reading that failed is left out, not sent as 0
+  load and its health numbers (results not yet acknowledged, reconnects since
+  start, its own resident memory; the refused-command and tmux counts read 0
+  until those parts exist). A reading that failed is left out, not sent as 0
   (`internal/agent/machine`; `sample.failed` in the log).
 - It makes the config folder (mode 0700) when it is missing, loads
   `policy.yaml` once, and watches the folder: an edit, a replace by rename, a
