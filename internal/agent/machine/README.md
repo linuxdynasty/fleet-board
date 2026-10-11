@@ -75,8 +75,8 @@ happens on a working machine.
 - The first Snapshot after the agent starts can go out before the first sample
   finishes (a connect can beat a slow reading), and then carries no resources.
   Row 7 closes that gap: `fleet-agent run` also sends each sample as a
-  `resource_sample` event (every 30 s, from `Subscribe`), so the first sample
-  follows the snapshot on the stream.
+  `resource_sample` event (every 30 s, from `Subscribe`), so a sample follows
+  the snapshot on the stream within one 30 s interval.
 - The 30 s sample reads local sensors; it is not a poll of an outside system, so
   ADR 0022 rule 6 ("stream where a push source exists") and ADR 0024 decision 9
   do not apply to it. ADR 0023 names the 30 s sampler.
