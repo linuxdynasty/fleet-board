@@ -166,6 +166,7 @@ func runBurst(b *testing.B, dur time.Duration) burstResult {
 // openState creates and opens a real state.db (every migration, the
 // production pragmas) in a fresh 0700 folder.
 func openState(ctx context.Context, b *testing.B, tel *telemetry.Telemetry) (*store.Store, error) {
+	b.Helper()
 	dir := filepath.Join(b.TempDir(), "state")
 	if err := statedb.EnsureDir(dir); err != nil {
 		return nil, err

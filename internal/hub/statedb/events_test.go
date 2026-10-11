@@ -31,7 +31,7 @@ func snappedStore(t *testing.T) (string, *store.Store) {
 func evIn(seq, prev uint64) statedb.EventIn {
 	return statedb.EventIn{
 		MachineID: renewMachineID, Epoch: 1, Seq: seq, PrevSeq: prev, Kind: "pane_exited", Delivery: "never_drop",
-		Keep: true, EventTime: evAt.Add(-time.Minute), Body: []byte{0x08, byte(seq)}, Now: evAt,
+		Keep: true, EventTime: evAt.Add(-time.Minute), Body: []byte{0x08, 0x01}, Now: evAt,
 	}
 }
 

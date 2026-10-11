@@ -46,8 +46,8 @@ func TestTheFirstSnapshotWritesAStateResetOrAGapMarker(t *testing.T) {
 	}
 }
 
-// A Heartbeat's evicted_total rise on the live stream stores the counters
-// (only upward) and a gap marker after hub_last_event_seq; a stream that
+// A Heartbeat's evicted_total rise on the live stream stores it (only
+// upward; shed and coalesced stay as the Snapshot stored them) and a gap marker after hub_last_event_seq; a stream that
 // is not live writes nothing.
 func TestRecordEventLossStoresTheCountersAndAGap(t *testing.T) {
 	t.Parallel()
@@ -63,8 +63,8 @@ func TestRecordEventLossStoresTheCountersAndAGap(t *testing.T) {
 		t.Fatalf("RecordEventLoss = %d, %v; want 120", from, err)
 	}
 	r := readSnap(t, dir)
-	if r.shed != 9 || r.evicted != 3 {
-		t.Errorf("counters shed %d evicted %d, want 9 and 3", r.shed, r.evicted)
+	if r.shed != 0 || r.evicted != 3 {
+		t.Errorf("counters shed %d evicted %d, want 0 (not stored) and 3", r.shed, r.evicted)
 	}
 	rows := eventRows(t, dir)
 	if len(rows) != 2 || rows[1].kind != statedb.MarkerGap || rows[1].detail != `{"from_seq":120,"evicted":3}` {
@@ -75,8 +75,8 @@ func TestRecordEventLossStoresTheCountersAndAGap(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if r := readSnap(t, dir); r.shed != 9 || r.evicted != 5 {
-		t.Errorf("counters shed %d evicted %d, want 9 (never down) and 5", r.shed, r.evicted)
+	if r := readSnap(t, dir); r.evicted != 5 {
+		t.Errorf("evicted %d, want 5", r.evicted)
 	}
 	mustHello(t, s, hello(1, "boot-b", "192.0.2.8:51000", helloAt.Add(time.Second)))
 	if _, err := statedb.RecordEventLoss(ctx, s, statedb.EventLoss{
@@ -95,7 +95,7 @@ func TestPruneEventsDeletesOldRowsInBoundedJobs(t *testing.T) {
 	t.Parallel()
 	dir, s := snappedStore(t)
 	for i := range 5 {
-		in := evIn(uint64(101+i), 0) //nolint:gosec // G115: small
+		in := evIn(uint64(101+i), 0)
 		in.Now = evAt.Add(time.Duration(i) * time.Hour)
 		if _, err := applyEvent(t, s, in); err != nil {
 			t.Fatal(err)

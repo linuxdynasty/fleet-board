@@ -256,7 +256,7 @@ func (a *agentService) replayed(ctx context.Context, s *stream, ev *agentv1.Even
 	r := &s.ev.replay
 	switch {
 	case ev.GetReplayed() && r.span == nil && !r.done:
-		_, r.span = a.tracer.Start(ctx, "hub.replay.ingest", traceAttrs(s))
+		_, r.span = a.tracer.Start(ctx, "hub.replay.ingest", traceAttrs(s)) //nolint:spancheck // replayEnd ends it: the first live event or the teardown
 		r.first, r.start = ev.GetSeq(), time.Now()
 		if g := s.ev.gap; g != nil {
 			a.log.WarnContext(ctx, "replay.gap", "machine_id", s.machineID, "epoch", s.epoch, "from_seq", g.FromSeq,

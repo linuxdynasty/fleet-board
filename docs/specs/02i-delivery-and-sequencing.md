@@ -266,6 +266,16 @@ counterpart in the snapshot; this is the list the hub relies on:
 A prompt that appeared and went while the hub was away is therefore only on the
 timeline, never a triage item: nobody can still answer it.
 
+How the hub applies the rule (plan row 5c2): each `Event` is one writer job
+that reads `snapshot_seq` in its transaction, so "at or below" is judged
+against the committed floor, never a stream's memory. An event at or below
+`hub_last_event_seq` is already held and runs nothing. On a stream the hub
+takes events only after that stream's `Snapshot` and only with a seq above
+the last one the stream sent (holes are normal); anything else is dropped
+and one `SnapshotRequest{reason: "out_of_order"}` per stream asks for a fresh
+snapshot. History rows are kept for every NEVER_DROP and every replayed
+event (03f `events`); a live SHED or COALESCE event only moves the seq.
+
 ## Durable facts and how they clear
 
 A machine marked unfit for a durable preflight reason (03c) clears when the fact

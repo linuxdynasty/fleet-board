@@ -23,9 +23,12 @@ type EventLoss struct {
 }
 
 // RecordEventLoss is one writer job: while in.Epoch is the machine's live
-// connection, it stores the Heartbeat's counters (each only upward, so the
+// connection, it stores the Heartbeat's evicted_total (only upward, so the
 // next Hello is not judged a second gap for the same loss) and appends a
-// gap marker after hub_last_event_seq. It returns the stored
+// gap marker after hub_last_event_seq. Shed and coalesced are not stored:
+// the agent persists its counters only with its seq block, so after an
+// agent crash its next Hello may carry lower ones than a Heartbeat did,
+// which the Snapshot would read as a rollback. It returns the stored
 // hub_last_event_seq; a stream that is no longer live is
 // [ErrEventNotCurrent] and writes nothing.
 func RecordEventLoss(ctx context.Context, st *store.Store, in EventLoss) (uint64, error) {
@@ -46,9 +49,8 @@ func RecordEventLoss(ctx context.Context, st *store.Store, in EventLoss) (uint64
 		case err != nil:
 			return fmt.Errorf("statedb: read machine for event loss: %w", err)
 		}
-		if _, err := tx.ExecContext(ctx, `UPDATE machines SET events_shed_total = max(events_shed_total, ?),
-			events_coalesced_total = max(events_coalesced_total, ?), events_evicted_total = max(events_evicted_total, ?)
-			WHERE machine_id = ?`, int64(c.Shed), int64(c.Coalesced), int64(c.Evicted), in.MachineID); err != nil { //nolint:gosec // G115: checked above
+		if _, err := tx.ExecContext(ctx, `UPDATE machines SET events_evicted_total = max(events_evicted_total, ?)
+			WHERE machine_id = ?`, int64(c.Evicted), in.MachineID); err != nil { //nolint:gosec // G115: checked above
 			return fmt.Errorf("statedb: store event counters: %w", err)
 		}
 		from = uint64(hubLast) //nolint:gosec // G115: CHECK >= 0

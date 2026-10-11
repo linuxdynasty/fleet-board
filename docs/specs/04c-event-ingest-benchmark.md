@@ -14,7 +14,7 @@ not show whether this shape keeps up. This page measures it.
 ## Budget and switch rule
 
 At the S1 burst shape (2,500 events/s for 60 s, 300-byte events, one
-machine stream, `synchronous=FULL`, `fullfsync`, the `hub_seq` UPDATE in
+machine stream, synchronous=FULL, fullfsync, the `hub_seq` UPDATE in
 every job):
 
 | Measure | Budget |
@@ -24,6 +24,15 @@ every job):
 | Enqueue to commit p99 | at most 60 ms |
 | Writer busy (batch time / wall time) | at most 70 % |
 
+The producer offers exactly 2,500 events/s, so "sustained" is read as: no
+job failed, every submitted job committed, and the last ones committed
+within about one enqueue-to-commit p99 of the producer stopping
+(`drain_ms`): the writer kept up. A job also waits for its batch to fill
+(100 jobs, about 40 ms at this rate) before the commit starts, so
+enqueue to commit is about that wait plus the commit; a miss of the 60 ms
+line with commit p99 inside 50 ms is the batch window, and is reported as
+such.
+
 Any miss switches to per-machine micro-batch jobs of at most 50
 consecutive events of one stream, in arrival order, falling back to
 per-message jobs on any failure; that variant needs its own numbers before
@@ -32,7 +41,7 @@ machine.
 
 ## Method
 
-- `BenchmarkEventBurst` in `internal/hub/ingest/burst_bench_test.go`: a real
+- BenchmarkEventBurst in `internal/hub/ingest/burst_bench_test.go`: a real
   `state.db` made by `statedb.Create` (every migration, the production
   pragmas) in a temporary folder, one machine with a live connection and an
   applied Snapshot, then a producer that offers exactly 2,500 events/s
@@ -53,9 +62,12 @@ machine.
   bucket bound, so "at most 50 ms" is exact), `enqueue_commit_p50_ms` and
   `_p99_ms` (Submit to the job's result), `busy_pct`, `jobs/batch`,
   `drain_ms` (last commit after the producer stopped) and `failed`.
-- The S1 shim the same day on the same machine:
-  `cd spikes/sqlite && CGO_ENABLED=1 go build -o s1 . && ./s1 -driver modernc -scenario burst -dur 60s`
-  (its disk counter needs cgo on macOS; it is throwaway spike code).
+- The S1 shim the same day on the same machine (its disk counter needs
+  cgo on macOS; it is throwaway spike code):
+
+  ```bash
+  cd spikes/sqlite && CGO_ENABLED=1 go build -o s1 . && ./s1 -driver modernc -scenario burst -dur 60s
+  ```
 - Machine: Apple M4 Pro, 12 cores, 64 GB, macOS 27.0.1, APFS on the
   internal SSD; Go 1.27.2 darwin/arm64; base commit 9cb5d13 plus this PR.
 
@@ -70,8 +82,8 @@ spread. Back to back:
 | Run | Load | Jobs/s | Commit p99 | Enqueue to commit p50 / p99 | Busy |
 |---|---|---|---|---|---|
 | S1 shim, burst (Q7 recorded: 2,626 rows/s, 28 ms, 30 / 58 ms) | 5 to 10 | 2,604 | 70 ms | 31 / 311 ms | not reported |
-| `BenchmarkEventBurst`, 60 s | 10 to 14 | 2,489 | 98 ms | 32 / 231 ms | 42 % |
-| `BenchmarkEventBurst`, 60 s, earlier | 21 | 928 | 3,190 ms | 272 / 10,048 ms | 93 % |
+| BenchmarkEventBurst, 60 s | 10 to 14 | 2,489 | 98 ms | 32 / 231 ms | 42 % |
+| BenchmarkEventBurst, 60 s, earlier | 21 | 928 | 3,190 ms | 272 / 10,048 ms | 93 % |
 
 The unchanged S1 shim went from 28 ms to 70 ms commit p99 on this host
 today, so the tails follow the host's load, not the job shape. Writer CPU

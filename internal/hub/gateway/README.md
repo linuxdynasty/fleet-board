@@ -236,7 +236,7 @@ srv, err := gateway.NewServer(gateway.ServerOptions{
   `hub.replay.ingest` and `replay.done`; a ring-overflow gap the Snapshot
   found is logged as `replay.gap` at the first replayed event.
   Heartbeat counters are judged after the Snapshot only: a rise of
-  `evicted_total` is `event.lost`, a gap marker and the counters stored
+  `evicted_total` is `event.lost`, a gap marker and `evicted_total` stored
   (`statedb.RecordEventLoss`), `fleet_hub_event_gap_total`, and
   `SnapshotRequest{event_lost}` at most once per `EventLostEvery` (5 min)
   per machine (in memory); `fleet_hub_replay_backlog_events` is

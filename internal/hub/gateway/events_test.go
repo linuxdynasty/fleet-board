@@ -75,7 +75,8 @@ func TestAnEventOutOfOrderIsDroppedAndAsksForOneSnapshot(t *testing.T) {
 	s.silent(t, 100*time.Millisecond) // no second SnapshotRequest
 	got := map[string]int{}
 	for _, l := range h.events(t, "event.refused") {
-		got[l["reason"].(string)]++
+		r, _ := l["reason"].(string)
+		got[r]++
 	}
 	if got["before_snapshot"] != 1 || got["seq_order"] != 1 {
 		t.Errorf("event.refused reasons %v, want before_snapshot and seq_order once each", got)

@@ -132,7 +132,7 @@ func (l *lossLimit) allow(machineID string, now time.Time) bool {
 // goroutine, once the stream's Snapshot is applied (before it, the Snapshot
 // job still compares the Hello's counters with the store, and a stored
 // Heartbeat value would read as a rollback): it sets the replay backlog,
-// and a rise of evicted_total is loss: a gap marker, the counters stored,
+// and a rise of evicted_total is loss: a gap marker, evicted_total stored,
 // and SnapshotRequest{event_lost} at most once per EventLostEvery per
 // machine. A counter lower than the stream's last is logged, never acted
 // on (the next Hello judges a rollback).

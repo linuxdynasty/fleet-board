@@ -351,7 +351,7 @@ err = statedb.WriteAudit(ctx, s, entries...)              // one job of its own
   row when `in.Keep`, `hub_last_event_seq = seq` and one Watch stamp on the
   machine (version untouched, fork 3). **`AppendMarker`** inserts a marker
   in a job's tx; **`RecordEventLoss`** is the job for a Heartbeat's rise
-  of `evicted_total` (counters stored only upward, a gap marker);
+  of `evicted_total` (that counter stored only upward, a gap marker; shed and coalesced are not, so an agent crash cannot fake a rollback);
   **`PruneEvents(ctx, st, cutoff, limit)`** deletes at most `limit` rows
   older than `cutoff` by hub time.
 
