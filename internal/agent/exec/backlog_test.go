@@ -2,6 +2,7 @@ package exec_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"testing"
@@ -9,6 +10,7 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
+	agentv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1"
 	typev1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/type/v1"
 	"github.com/linuxdynasty/fleet-board/internal/agent/exec"
 	"github.com/linuxdynasty/fleet-board/internal/agent/ring"
@@ -180,5 +182,94 @@ func TestRecentAndOldEntriesShareTheCount(t *testing.T) {
 	}
 	if n := h.runs.Load(); n != 2 {
 		t.Errorf("the handler ran %d times, want 2", n)
+	}
+}
+
+// failAlways is agent.db whose RecordResult always fails for one id.
+type failAlways struct {
+	exec.Store
+	id string
+}
+
+func (f failAlways) RecordResult(ctx context.Context, id string, b []byte, at time.Time) error {
+	if id == f.id {
+		return errors.New("disk full")
+	}
+	return f.Store.RecordResult(ctx, id, b, at)
+}
+
+// An old entry whose result write keeps failing is taken up at every
+// connect, and counted once, not once per connect: at a limit of 3, after
+// three connects 5 s apart two fresh commands still run.
+func TestAnEntryRetriedAtEachConnectIsCountedOnce(t *testing.T) {
+	t.Parallel()
+	h := &handler{kind: "Interrupt", caps: []*typev1.Capability{{Name: "tmux.control", Version: 1}}}
+	r := newRig(t)
+	clock := &agentClock{now: time.Date(2026, 10, 11, 9, 0, 0, 0, time.UTC)}
+	ex, err := exec.New(exec.Options{
+		DB: failAlways{Store: r.db, id: "stuck"}, Sender: r.send, Clock: r.clock, Policy: r.pol,
+		Handlers: []exec.Handler{h}, Telemetry: r.tel, Now: clock.Now,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.ex = ex
+	r.pol.limits["Interrupt"] = 3
+	stuck := cmd("stuck", 1, "tmux.control")
+	stuck.RequestedBy.Role = typev1.Role_ROLE_VIEWER // refused after the rate check, and its write fails
+	stuck.Kind = &agentv1.Command_Interrupt{Interrupt: &agentv1.Interrupt{}}
+	body, err := proto.Marshal(stuck)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := r.db.LogAndApply(context.Background(), ring.Command{
+		ID: "stuck", Kind: "Interrupt", Epoch: 1, Seq: 1, Received: clock.Now().Add(-2 * time.Minute),
+		NotAfter: stuck.GetNotAfterTime().AsTime(), Body: body,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	r.start(t)
+	for i := range 3 {
+		r.ex.OnConnected(context.Background(), uint64(i+1), r.clock)
+		want := fmt.Sprint(i + 1)
+		waitFor(t, func() bool { return r.metric(t, "fleet_agent_command_store_failed_total", `step="result"`) == want })
+		waitFor(t, func() bool { return r.metric(t, "fleet_agent_commands_running", "") == "0" })
+		clock.add(5 * time.Second)
+	}
+	for i, id := range []string{"f-1", "f-2"} {
+		c := cmd(id, uint64(i+2), "tmux.control")
+		c.Kind = &agentv1.Command_Interrupt{Interrupt: &agentv1.Interrupt{}}
+		r.give(t, c)
+		if res := r.result(t, id); res.GetStatus() != typev1.Status_STATUS_OK {
+			t.Errorf("%s: %v, want OK (the stuck entry counts once)", id, res)
+		}
+	}
+}
+
+// An entry the agent logged while its clock ran an hour ahead is seeded
+// into the window at start. It counts as now, so the window frees within a
+// minute of the clock as it reads now, and retry_after is never negative.
+func TestAnEntryFromAClockAheadFreesWithinAMinute(t *testing.T) {
+	t.Parallel()
+	r, h, clock := backlogRig(t, 1)
+	ahead := clock.Now().Add(time.Hour)
+	if _, _, err := r.db.LogCommand(context.Background(), ring.Command{
+		ID: "ahead", Kind: "CapturePane", Epoch: 1, Seq: 1, Received: ahead, NotAfter: ahead,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.db.RecordResult(context.Background(), "ahead", []byte{}, ahead); err != nil {
+		t.Fatal(err)
+	}
+	r.start(t)
+	r.give(t, cmd("n-1", 2, "tmux.observe"))
+	res := r.result(t, "n-1")
+	if d := res.GetRetryAfter().AsDuration(); res.GetReason() != typev1.ReasonCode_REASON_CODE_RATE_LIMITED || d <= 0 || d > time.Minute {
+		t.Errorf("right after the start: %v (retry_after %v), want RATE_LIMITED within a minute", res, d)
+	}
+	clock.add(61 * time.Second)
+	r.give(t, cmd("n-2", 3, "tmux.observe"))
+	if res := r.result(t, "n-2"); res.GetStatus() != typev1.Status_STATUS_OK || h.runs.Load() != 1 {
+		t.Errorf("61 s later: %v after %d runs, want OK", res, h.runs.Load())
 	}
 }

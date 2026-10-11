@@ -1,6 +1,7 @@
 package exec
 
 import (
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -133,26 +134,26 @@ func TestRateWindow(t *testing.T) {
 	t.Parallel()
 	t0 := hub()
 	fresh := func() *rateWindow {
-		w := &rateWindow{times: map[string][]time.Time{}}
+		w := &rateWindow{times: map[string][]stamp{}}
 		for i := range 3 {
-			w.add("K", t0.Add(timeSec(i*10)))
+			w.add("K", fmt.Sprintf("c-%d", i), t0.Add(timeSec(i*10)), t0.Add(timeSec(i*10)))
 		}
 		return w
 	}
 	now := t0.Add(timeSec(20))
-	if wait, over := fresh().overCounting("K", now, now, 2); !over || wait != timeSec(50) {
+	if wait, over := fresh().overCounting("K", "new", now, now, 2); !over || wait != timeSec(50) {
 		t.Errorf("over %v wait %v, want over, 50s (the second command at 10s ages out at 70s)", over, wait)
 	}
-	if _, over := fresh().overCounting("K", now, now, 3); over {
+	if _, over := fresh().overCounting("K", "new", now, now, 3); over {
 		t.Error("three commands under a limit of 3 are over")
 	}
 	later := t0.Add(timeSec(65))
-	if _, over := fresh().overCounting("K", later, later, 2); over {
+	if _, over := fresh().overCounting("K", "new", later, later, 2); over {
 		t.Error("the first command did not leave the window after a minute")
 	}
 	// One inside the window is counted already, not twice, and not added.
 	w := fresh()
-	if _, over := w.overCounting("K", later, t0.Add(timeSec(10)), 2); over {
+	if _, over := w.overCounting("K", "new", later, t0.Add(timeSec(10)), 2); over {
 		t.Error("an entry in the window was counted twice")
 	}
 	if n := len(w.recent("K", later)); n != 2 {
@@ -162,7 +163,7 @@ func TestRateWindow(t *testing.T) {
 	// and 20 s are in the window, so three is over 2), and it stays for the
 	// next check.
 	w = fresh()
-	if _, over := w.overCounting("K", later, t0.Add(-timeSec(30)), 2); !over {
+	if _, over := w.overCounting("K", "new", later, t0.Add(-timeSec(30)), 2); !over {
 		t.Error("an entry from before the window was not counted")
 	}
 	if n := len(w.recent("K", later)); n != 3 {

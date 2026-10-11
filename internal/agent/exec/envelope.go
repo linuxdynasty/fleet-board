@@ -98,7 +98,7 @@ func (e *Executor) past(c *agentv1.Command) bool {
 // accepted counts a logged command in the rate window and acks it: the ack
 // follows the commit (CommandAck means received and persisted).
 func (e *Executor) accepted(ctx context.Context, kind string, ent ring.Entry, now time.Time) {
-	e.window.add(kind, now)
+	e.window.add(kind, ent.ID, now, now)
 	e.ack(ctx, ent)
 }
 
@@ -142,8 +142,12 @@ func (e *Executor) answerKnown(ctx context.Context, ent ring.Entry) {
 // limit), role, then whether a local approval is needed. A resumed running
 // entry was admitted before: it skips the rate check and the approval it
 // already had. A resumed received entry was never admitted: it gets both
-// again, the rate check counting it once (it is in the window already when
-// it was logged in the last minute).
+// again, the rate check counting it once per command_id (it is in the
+// window already when it was logged in the last minute). So after a
+// restart, k received entries logged in the last minute, with k over the
+// limit, are all refused RATE_LIMITED: the window seeded from the log holds
+// all k, and each one sees more than the limit. That fails closed, and the
+// refusal is retryable.
 func (e *Executor) decide(c *agentv1.Command, kind string, ent ring.Entry, resumed bool) plan {
 	h := e.reg[kind]
 	if !e.reg.supports(kind, c.GetRequires()) {
@@ -172,7 +176,7 @@ func (e *Executor) decide(c *agentv1.Command, kind string, ent ring.Entry, resum
 		if resumed {
 			counted = ent.Received
 		}
-		if wait, over := e.window.overCounting(kind, now, counted, limit); over {
+		if wait, over := e.window.overCounting(kind, ent.ID, now, counted, limit); over {
 			r := refusal(typev1.Status_STATUS_REJECTED_BY_POLICY, typev1.ReasonCode_REASON_CODE_RATE_LIMITED,
 				"too many commands of this kind in the last minute")
 			r.Retryable, r.RetryAfter = true, durationpb.New(wait)
