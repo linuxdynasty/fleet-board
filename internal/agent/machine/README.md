@@ -37,6 +37,9 @@ replaced, which is what SHED means) or `sampler.Latest()`.
 | | `mem_pressure_level` | macOS sysctl; Linux PSI then MemAvailable (levels in [defaults](../../../docs/specs/defaults.md)) |
 | | `disk` | free and total under the state folder, then each repo root, at most 32 |
 | `Heartbeat` | `load1` | the latest sample, when it is fresh (below) |
+| | `health.rss_bytes` | the agent's own resident memory, read on the same tick (gopsutil `process`, own pid, ADR 0031); unset when it is 0 or the read failed |
+| | `health.unacked_results`, `reconnects_total`, `commands_refused_total`, `tmux_control_down` | the `Hooks` seams `Unacked` (`ring.DB.UnackedCount`), `Reconnects` (`conn.Loop.Reconnects`), `Refused` (row 6e) and `ControlDown` (row 7); nil reads 0 |
+| | `health.ring_events`, `ring_bytes`, `probes_failing` | 0 until rows 7 and 8 |
 
 Unset, not 0: `ResourceSample.load1`, `load5`, the two memory sizes and
 `mem_pressure_level`, and `Heartbeat.load1`, are `optional`, so "load 0" and
@@ -46,10 +49,13 @@ happens on a working machine.
 
 ## Rules this package keeps
 
-- Three gopsutil functions only: `load.AvgWithContext`,
-  `mem.VirtualMemoryWithContext`, `disk.UsageWithContext`. Others start child
-  processes on macOS (`sw_vers`, `ps`, `system_profiler`) outside
-  `internal/proc`. `TestOnlyApprovedGopsutilCalls` enforces it.
+- Four gopsutil uses only: `load.AvgWithContext`,
+  `mem.VirtualMemoryWithContext`, `disk.UsageWithContext`, and
+  `MemoryInfoWithContext` on a `process.Process` literal with our own pid
+  (never `process.NewProcess`). Others start child processes on macOS
+  (`sw_vers`, `ps`, `system_profiler`) outside `internal/proc`.
+  `TestOnlyApprovedGopsutilCalls` and `TestOnlyMemoryInfoIsCalledOnAProcess`
+  enforce it.
 - Nothing can stall a sample: load, memory and each disk path are read at the
   same time, each in its own goroutine (gopsutil takes no time bound, and a
   statfs on a hung mount ignores a context). The sample waits at most 10 s,
@@ -79,7 +85,9 @@ happens on a working machine.
 
 ## Dependency note (ADR 0023, ADR 0020 rules)
 
-`github.com/shirou/gopsutil/v4` v4.26.9, BSD-3-Clause. In the build for
+`github.com/shirou/gopsutil/v4` v4.26.9, BSD-3-Clause (ADR 0031 adds its
+`process` subpackage, with `cpu` and `net` of the same module coming along as
+code the agent does not call). In the build for
 darwin and linux, amd64 and arm64 (`CGO_ENABLED=0`) it adds one more module,
 `github.com/ebitengine/purego` v0.11.1 (Apache-2.0), which loads system
 libraries on macOS without cgo. `go.sum` also lists modules that gopsutil

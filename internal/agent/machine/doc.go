@@ -9,7 +9,8 @@
 //
 // [Sampler.Run] takes a ResourceSample at start and every 30 s: load
 // averages, total and available memory, the memory pressure level, and free
-// disk under the state folder and each allowed repo root. A reading that
+// disk under the state folder and each allowed repo root, and the agent's own
+// resident memory (Sample.RSSBytes, 0 when unknown). A reading that
 // fails is left unset in the message (the optional fields of
 // ResourceSample), never 0; it is counted and logged once per run of
 // failures. A sample older than three intervals, counting the time the
@@ -18,8 +19,11 @@
 // reads it on the connection loop's sending goroutine without a lock, and
 // [Sampler.Subscribe] is the seam row 7's resource_sample event uses.
 //
-// The readings come from github.com/shirou/gopsutil/v4 (disk, load and mem
-// only, three approved calls: see [DefaultReaders]) and from the platform:
+// [Hooks.Heartbeat] also fills Heartbeat.health (AgentHealth) from the sample
+// and from four function seams the other packages own.
+//
+// The readings come from github.com/shirou/gopsutil/v4 (disk, load, mem and
+// process: four approved uses, see [DefaultReaders] and ADR 0031) and from the platform:
 // kern.memorystatus_vm_pressure_level on macOS, /proc/pressure/memory with a
 // MemAvailable fallback on Linux. Nothing here starts a process except
 // through internal/proc, and nothing needs cgo.

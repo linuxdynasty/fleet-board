@@ -9,7 +9,7 @@ import (
 	"github.com/shirou/gopsutil/v4/mem"
 )
 
-// Readers are the four readings a sample takes. A nil field is the real
+// Readers are the five readings a sample takes. A nil field is the real
 // reading ([DefaultReaders]); tests and row 7 may replace one. Each returns
 // an error instead of a made-up value: a failed reading is unset, never 0.
 type Readers struct {
@@ -22,13 +22,17 @@ type Readers struct {
 	Pressure func(ctx context.Context, total, available uint64, memOK bool) (uint32, error)
 	// Usage is the free and total bytes of the filesystem holding path.
 	Usage func(ctx context.Context, path string) (free, total uint64, err error)
+	// RSS is the agent process's own resident memory in bytes. 0 is not a
+	// reading: the sampler treats it as a failed one.
+	RSS func(ctx context.Context) (uint64, error)
 }
 
 // DefaultReaders reads through gopsutil's load, mem and disk packages and the
 // platform's memory pressure source.
 //
-// Only three gopsutil functions may be called: load.AvgWithContext,
-// mem.VirtualMemoryWithContext and disk.UsageWithContext. Others start child
+// Only these gopsutil calls may be made: load.AvgWithContext,
+// mem.VirtualMemoryWithContext, disk.UsageWithContext and, for the agent's own
+// RSS, MemoryInfoWithContext on a process.Process literal (rss.go). Others start child
 // processes on macOS (sw_vers, ps, system_profiler) outside internal/proc,
 // which 01 principle 8 forbids; TestOnlyApprovedGopsutilCalls enforces it.
 func DefaultReaders() Readers {
@@ -58,6 +62,7 @@ func DefaultReaders() Readers {
 			}
 			return u.Free, u.Total, nil
 		},
+		RSS: ownRSS,
 	}
 }
 
@@ -75,6 +80,9 @@ func (r Readers) withDefaults() Readers {
 	}
 	if r.Usage == nil {
 		r.Usage = d.Usage
+	}
+	if r.RSS == nil {
+		r.RSS = d.RSS
 	}
 	return r
 }
