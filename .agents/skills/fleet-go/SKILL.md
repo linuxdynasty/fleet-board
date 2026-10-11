@@ -63,7 +63,7 @@ code does proves nothing; assert a value worked out by hand or from the spec.
 Tests of the schema, pragmas, constraints and migrations assert on the database
 file itself (`fleet-sqlite-store`). Prefer table-driven tests with named cases
 (`t.Run(tc.name, ...)`) and `t.Parallel()` where the case has no shared state.
-Use real tmux in a throwaway server (`-L`) for tmux tests and captured fixtures
+Use real tmux in a `tmuxtest` throwaway server (`-S` in a temp folder) for tmux tests and captured fixtures
 for screen parsing; never mock the thing under test. Cover every dispatch
 variant of a shared helper. Confirm filtered tests ran (`go test -list '.*'
 ./pkg/...`). `make test` runs tests in a random order, three times, so a test

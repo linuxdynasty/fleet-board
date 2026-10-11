@@ -19,8 +19,11 @@ sections E, F, J.
 | `tmux -L fleet` | optional fleet server (`TmuxServerKind.FLEET`, capability `tmux.fleet_server`) | agent may create, drive, close after the merged grace period |
 | `tmux -L fleet-probe` | one hidden idle session per account for usage probes | internal only, usage probes only |
 
-Tests and live probes use a throwaway `-L <unique-name>` server and kill it
-afterwards. Minimum tmux is 3.2; CI covers 3.2 and the latest.
+Tests start tmux only through `internal/agent/tmux/tmuxtest`: `-S` in a short
+temp folder, `-f /dev/null`, killed and checked gone. `-L` puts the socket
+next to the owner's own, so only a live probe uses it, with a unique name,
+and checks `has-session` fails after killing it. Minimum tmux is 3.2; CI
+covers 3.2a and the latest.
 
 ## Observation: control mode
 
@@ -68,7 +71,7 @@ blocks. `viewer` attaches are read-only (the hub drops input).
 
 ## Tests
 
-Test against a real tmux in a throwaway server, with a fake harness script for
+Test against a real tmux in a `tmuxtest` server, with a fake harness script for
 screens. Cover: pane exit with status, window rename, a burst of output beyond
 one read, a `%pause`/`%continue` cycle, tmux killed under the client, and keys
 containing tmux key names as literal text. Report the tmux version used.

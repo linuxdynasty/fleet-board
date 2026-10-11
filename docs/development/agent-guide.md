@@ -82,7 +82,7 @@ The `Makefile` is the one entry point; CI runs the same targets, one per step
 | `gen` | removes `gen/`, then `buf generate` into it (Go and TypeScript), through `go run` at the pinned buf |
 | `build`, `smoke` | `CGO_ENABLED=0 go build ./...`; builds each `cmd/<name>` and checks that `--version` prints its name |
 | `test` | `go vet ./...`, then on the changed packages `go test -shuffle=on -count=3` (`TEST_COUNT`) and `go test -race -shuffle=on -count=1`; with `COVERPROFILE` set, the first pass writes its coverage profile there |
-| `lint` | the pinned `golangci-lint` on the same packages, once for each of linux and darwin on amd64 and arm64 (LINT_PLATFORMS in the Makefile; cgo off; the linter reads only the files that build for its own GOOS and GOARCH, so a `_darwin.go` or `_arm64.go` file would pass the Linux amd64 CI run with one pass; the package list is worked out for each platform too). Linters and settings are in `.golangci.yml`; a `//nolint` names its linter and says why. It includes two process rules: `depguard` lets only `internal/proc`, `internal/agent/tmux` and `internal/agent/attach` import `os/exec` (or `golang.org/x/sys/execabs`) in `internal/` and `cmd/` (tests excepted), and `forbidigo` forbids starting a process any other way outside `internal/proc` (01 principle 8). Two typing rules keep every `send-keys` line in `internal/agent/tmux/typing`: `depguard` lets only `internal/agent/control`, `start`, `probe` and the `internal/agent/tmux` client import it, and `forbidigo` lets only `control`, `start` and `probe` call a `typing.New…` function; a third `depguard` rule bars `unsafe` outside tests, so no `//go:linkname` reaches a constructor (tests excepted; 01f F3) |
+| `lint` | the pinned `golangci-lint` on the same packages, once for each of linux and darwin on amd64 and arm64 (LINT_PLATFORMS in the Makefile; cgo off; the linter reads only the files that build for its own GOOS and GOARCH, so a `_darwin.go` or `_arm64.go` file would pass the Linux amd64 CI run with one pass; the package list is worked out for each platform too). Linters and settings are in `.golangci.yml`; a `//nolint` names its linter and says why. It includes two process rules: `depguard` lets only `internal/proc`, `internal/agent/tmux` and `internal/agent/attach` import `os/exec` (or `golang.org/x/sys/execabs`) in `internal/` and `cmd/` (tests excepted), and `forbidigo` forbids starting a process any other way outside `internal/proc` (01 principle 8). Two typing rules keep every `send-keys` line in `internal/agent/tmux/typing`: `depguard` lets only `internal/agent/control`, `start`, `probe` and the `internal/agent/tmux` client import it, and `forbidigo` lets only `control`, `start` and `probe` call a `typing.New…` function; a third `depguard` rule bars `unsafe` outside tests, so no `//go:linkname` reaches a constructor (tests excepted; 01f F3); a fourth lets only test files import the tmux test rig `internal/agent/tmux/tmuxtest` |
 | `vuln` | the pinned `govulncheck ./...` on every package; a known vulnerability the code can reach fails it (exit 3). Needs `gen/` and network access to vuln.go.dev |
 | `test-all` | `go vet ./...`, then `go test -race -shuffle=on -count=TEST_COUNT ./...` on every package (the nightly run sets `TEST_COUNT=10`), with a coverage profile when `COVERPROFILE` is set. Not part of `gates` |
 | `fuzz` | each Go fuzz target (`FuzzParse` in `internal/hub/config` and in `internal/agent/tmux`, `FuzzOutputRoundTrip`, `FuzzCheckEnrollRequest`, `FuzzText`) for `FUZZTIME` (default `60s`), one `go test -fuzz` each; the seeds already run in `test`. Not part of `gates` |
@@ -187,7 +187,10 @@ rerunning the old run reuses the old base (a rerun replays the original event).
 runner on Sundays, on demand (`gh workflow run macos`), and on a PR that
 changes the file; the store's F_FULLFSYNC commits and the admin socket's
 LOCAL_PEERCRED check exist only there. It fails unless those macOS-only tests
-ran and passed (a skip fails). macOS minutes count ten times.
+ran and passed (a skip fails). Run on demand only, it also runs the tmux tests
+against tmux 3.2a and 3.7c, built and cached as in `ci.yml`; a missing tmux
+fails them. macOS
+minutes count ten times.
 
 `.github/workflows/nightly.yml` runs at 07:17 UTC, on demand (`gh workflow run
 nightly`), and on a PR that changes the file. It runs `make test-all` with
@@ -234,13 +237,39 @@ a month (typical / worst case):
 
 | Workflow | Runs on | Typical | Worst | Status |
 |---|---|---|---|---|
-| `ci.yml` gates on PRs | PR opened, new commits, reopened | ~370 | ~564 | built |
+| `ci.yml` gates on PRs | PR opened, new commits, reopened | ~383 | ~599 | built; tmux steps (row 7) only on a change that reaches tmux (below) |
 | `pr-meta.yml` | every PR event, edits included | ~100 | ~100 | built (#107) |
-| `ci.yml` on `main` pushes | each merge: every package, plus the report job | ~175 | ~300 | built (#107) |
+| `ci.yml` on `main` pushes | each merge: every package, plus the report job | ~183 | ~318 | built (#107); tmux steps as above |
 | nightly | daily, skipped when `main` did not move since the last night (Sundays always run) | ~390 | ~520 | built (#107) |
-| macOS weekly | Sundays, on demand, and PRs that change it | ~260 | ~344 | built (#107) |
+| macOS weekly | Sundays, on demand, and PRs that change it | ~260 | ~394 | built (#107); the tmux steps run on demand only: none typical, one dispatch a month at most in the worst case (below) |
 | perf report | PRs whose changed packages hold a benchmark | ~48 | ~48 | built (#107) |
-| **Total** | | **~1340** | **~1880** | |
+| **Total** | | **~1364** | **~1979** | the sums of the rows above |
+
+How the tmux steps (row 7) were counted, and what that rests on. The table's
+run counts are its own assumptions, not measurements: about 21 PR runs and
+10 `main` runs a month typical, 32 and 17 worst (its minutes over the 17.6
+and 17.4 minute medians of the last 58 `ci.yml` runs). Real use has run far
+above them: 95 merges reached `main` in the 30 days to 2026-10-10, bunched
+(22 on 10-02, 22 on 10-10); at that pace every row above is low, with or
+without tmux, and the owner, who approves every change to CI minutes,
+decides. The tmux steps run on a change that reaches the tmux packages:
+16 of the last 40 merges would have (40%, by today's import graph of
+`./internal/agent/tmux/...`: `internal/proc`, `internal/telemetry`,
+`gen/`, plus the build inputs; mostly `api/`, `go.mod` and the Makefile);
+worst assumes 60%. Such a run adds about 1.2 minutes: 0.5 for the build
+libraries and 0.7 for the real-tmux tests, run once with `-race` in their
+own step (`make test` skips them; the step covers only
+`./internal/agent/tmux/...`, so a package that starts using `tmuxtest`
+must be added to it). A tmux build on a cache miss adds about 3: once
+after a pin or script change in the PR that makes it (a PR's cache is its
+own; a PR reads `main`'s but not another PR's) and once on `main` after
+the merge, and again when a cache unused for 7 days was evicted. Typical:
+one change, so one miss in each row; worst: two changes and two evictions
+in the PR row, two misses on `main`. PRs +13 / +35, `main` +8 / +18. The
+macOS tmux steps run only on a manual dispatch; the worst case allows at
+most one a month, with a cache miss: (1 Homebrew + 3 build + 1 tests) x
+10 = 50. At the observed pace (about 95 `main` runs and twice as many PR
+runs a month) the tmux steps alone would add about 46 + 91 minutes.
 
 A PR that adds CI minutes (a new workflow, job, trigger or a longer step)
 updates this table in the same PR. The PR goes to the owner before it merges
@@ -252,7 +281,8 @@ pass 2000 (the free allowance).
 `tool-versions.env` is the one file that holds every pinned version: Go, Node
 major, `golangci-lint`, `buf`, `gofumpt`, `govulncheck`, `actionlint`,
 `benchstat` (a pseudo-version: `golang.org/x/perf` has no release tags),
-`typescript` and the `protoc-gen-es` version. The Makefile includes it and CI sources it, so neither
+`typescript`, the `protoc-gen-es` version, and the two tmux releases the tmux
+tests run against with their tarball SHA-256s (`scripts/install-tmux.sh`). The Makefile includes it and CI sources it, so neither
 spells out a version. `make tools` builds `golangci-lint`, `gofumpt` and
 `govulncheck` with the local Go into `.bin/` (gitignored); the `golangci-lint`
 on `PATH` is built with an older Go and refuses a `go 1.27` module, so the

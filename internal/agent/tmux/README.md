@@ -32,7 +32,8 @@ later part of plan row 7.
   and `fleet_agent_tmux_lines_too_long_total`, and logs `tmux.parse_error` and
   `tmux.line_too_long` at most once a minute per class (05b).
 
-Tests: `CGO_ENABLED=0 go test ./internal/agent/tmux/`. The recorded
+Tests: `CGO_ENABLED=0 go test ./internal/agent/tmux/`. Tests that need a
+real tmux use the throwaway servers of [`tmuxtest`](tmuxtest/README.md). The recorded
 transcripts and how they were made are in [testdata](testdata/README.md).
 `go test` runs the fuzz seeds (the transcripts and `testdata/fuzz/FuzzParse/`);
 to fuzz: `go test -run='^$' -fuzz='^FuzzParse$' -fuzztime=60s ./internal/agent/tmux/`

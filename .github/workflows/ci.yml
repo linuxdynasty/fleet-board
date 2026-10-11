@@ -142,6 +142,64 @@ jobs:
       - name: Build every package and run each binary once (--version)
         run: make build smoke
 
+      # Row 7: the tmux tests run against tmux 3.2a (the oldest the agent
+      # supports) and the latest release (tool-versions.env), each built from
+      # its release tarball after a SHA-256 check (scripts/install-tmux.sh) and
+      # cached by version, hash and runner image. To keep CI minutes inside
+      # the allowance (agent-guide.md) this happens only when the change
+      # reaches the tmux packages: changed-go-packages.sh names one of them or
+      # every package (its own build inputs: go.mod, go.sum, the Makefile,
+      # .golangci.yml, tool-versions.env, api/, a change in internal/proc that
+      # tmux imports), or the change touches the tmux build script or these
+      # two workflows, or BASE_REF names no commit here. The real-tmux tests
+      # then run once, in their own step after make test (where they skip,
+      # since make test sees no FLEET_TMUX_*), with FLEET_REQUIRE_TMUX=1 so a
+      # missing tmux fails them. The nightly run sets no FLEET_TMUX_*, so its
+      # tmux tests skip.
+      - name: Does this change reach tmux?
+        id: tmux-paths
+        run: |
+          run=false
+          if git rev-parse --verify -q "$BASE_REF^{commit}" > /dev/null; then
+            pkgs="$(scripts/changed-go-packages.sh "$BASE_REF")"
+            case "$pkgs" in *./internal/agent/tmux*|*./...*) run=true ;; esac
+            if git diff --name-only "$BASE_REF...HEAD" | awk '/^scripts\/install-tmux\.sh$|^\.github\/workflows\/(ci|macos)\.yml$/ { f = 1 } END { exit !f }'; then
+              run=true
+            fi
+          else
+            run=true
+          fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+
+      - name: tmux build dependencies
+        if: steps.tmux-paths.outputs.run == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends build-essential pkg-config bison libevent-dev libncurses-dev
+
+      # The runner image is in the cache key (a new image can bring new
+      # libraries). ImageOS is a runner variable, not in the env context, so
+      # a step reads it.
+      - name: Runner image for the tmux cache key
+        if: steps.tmux-paths.outputs.run == 'true'
+        id: tmux-image
+        run: echo "image=$ImageOS" >> "$GITHUB_OUTPUT"
+
+      - name: Restore the tmux builds
+        if: steps.tmux-paths.outputs.run == 'true'
+        id: tmux-cache
+        uses: actions/cache@v6
+        with:
+          path: ~/tmux
+          key: tmux-${{ runner.os }}-${{ steps.tmux-image.outputs.image }}-${{ hashFiles('tool-versions.env', 'scripts/install-tmux.sh') }}
+
+      - name: Build tmux 3.2a and the latest release
+        if: steps.tmux-paths.outputs.run == 'true' && steps.tmux-cache.outputs.cache-hit != 'true'
+        run: |
+          . ./tool-versions.env
+          scripts/install-tmux.sh "$TMUX_32_VERSION" "$TMUX_32_SHA256" "$HOME/tmux/$TMUX_32_VERSION"
+          scripts/install-tmux.sh "$TMUX_LATEST_VERSION" "$TMUX_LATEST_SHA256" "$HOME/tmux/$TMUX_LATEST_VERSION"
+
       # A push to main tests and lints every package, not only the changed
       # ones: two PRs that pass alone can break a package neither touched once
       # both are on main. The all-zero SHA names no commit, and for it
@@ -151,6 +209,17 @@ jobs:
           BASE_REF: ${{ github.event_name == 'push' && '0000000000000000000000000000000000000000' || env.BASE_REF }}
           COVERPROFILE: ${{ runner.temp }}/cover.out
         run: make test
+
+      - name: tmux tests against tmux 3.2a and the latest release (when the change reaches tmux)
+        if: steps.tmux-paths.outputs.run == 'true'
+        run: |
+          . ./tool-versions.env
+          export FLEET_TMUX_32="$HOME/tmux/$TMUX_32_VERSION/bin/tmux"
+          export FLEET_TMUX_LATEST="$HOME/tmux/$TMUX_LATEST_VERSION/bin/tmux"
+          export FLEET_REQUIRE_TMUX=1
+          "$FLEET_TMUX_32" -V
+          "$FLEET_TMUX_LATEST" -V
+          CGO_ENABLED=1 go test -race -shuffle=on -count=1 ./internal/agent/tmux/...
 
       # #107: the coverage of the packages make test ran, from its non-race
       # pass, in the job summary. A report: no minimum, and it never fails

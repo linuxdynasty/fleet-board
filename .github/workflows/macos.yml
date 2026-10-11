@@ -4,6 +4,10 @@
 # -race on macOS once a week, on demand, and on a PR that changes this file.
 # macOS minutes count ten times against the Actions allowance, so it never runs
 # on every PR or main push (agent-guide.md, "CI runs and the minutes budget").
+# Run on demand (gh workflow run macos), it also runs the tmux tests against
+# the same two tmux releases as ci.yml; the weekly and PR runs skip them to
+# keep CI minutes inside the allowance (agent-guide.md), and the Linux gates
+# run them on every change that touches tmux.
 name: macos
 
 on:
@@ -24,7 +28,9 @@ concurrency:
 jobs:
   test:
     runs-on: macos-latest
-    timeout-minutes: 8
+    # 8 minutes for the tests; on demand, the first tmux builds (cached after)
+    # add about 3.
+    timeout-minutes: 12
     # shell: bash runs with -o pipefail, so go test failing before tee fails
     # the step (the default shell for run is bash -e only).
     defaults:
@@ -49,6 +55,49 @@ jobs:
 
       - name: Generate Go and TypeScript (buf generate)
         run: make gen
+
+      # On demand only: the same two tmux releases as ci.yml (tool-versions.env),
+      # built from the tarballs with Homebrew's libevent and ncurses and
+      # cached; the libraries are installed whenever the steps run, since the
+      # builds link to them.
+      - name: tmux build dependencies
+        if: github.event_name == 'workflow_dispatch'
+        id: tmux-deps
+        run: |
+          brew install libevent ncurses pkg-config
+          echo "libs=$(brew list --versions libevent ncurses | tr ' \n' '-_')" >> "$GITHUB_OUTPUT"
+          echo "image=$ImageOS" >> "$GITHUB_OUTPUT"
+
+      - name: Restore the tmux builds
+        if: github.event_name == 'workflow_dispatch'
+        id: tmux-cache
+        uses: actions/cache@v6
+        with:
+          path: ~/tmux
+          key: tmux-${{ runner.os }}-${{ runner.arch }}-${{ steps.tmux-deps.outputs.image }}-${{ steps.tmux-deps.outputs.libs }}-${{ hashFiles('tool-versions.env', 'scripts/install-tmux.sh') }}
+
+      - name: Build tmux 3.2a and the latest release
+        if: github.event_name == 'workflow_dispatch' && steps.tmux-cache.outputs.cache-hit != 'true'
+        run: |
+          . ./tool-versions.env
+          CPPFLAGS="-I$(brew --prefix libevent)/include -I$(brew --prefix ncurses)/include"
+          LDFLAGS="-L$(brew --prefix libevent)/lib -L$(brew --prefix ncurses)/lib"
+          TMUX_CONFIGURE_ARGS="--disable-utf8proc --disable-jemalloc"
+          export CPPFLAGS LDFLAGS TMUX_CONFIGURE_ARGS
+          scripts/install-tmux.sh "$TMUX_32_VERSION" "$TMUX_32_SHA256" "$HOME/tmux/$TMUX_32_VERSION"
+          scripts/install-tmux.sh "$TMUX_LATEST_VERSION" "$TMUX_LATEST_SHA256" "$HOME/tmux/$TMUX_LATEST_VERSION"
+
+      - name: Point the tmux tests at the builds
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          . ./tool-versions.env
+          "$HOME/tmux/$TMUX_32_VERSION/bin/tmux" -V
+          "$HOME/tmux/$TMUX_LATEST_VERSION/bin/tmux" -V
+          {
+            echo "FLEET_TMUX_32=$HOME/tmux/$TMUX_32_VERSION/bin/tmux"
+            echo "FLEET_TMUX_LATEST=$HOME/tmux/$TMUX_LATEST_VERSION/bin/tmux"
+            echo "FLEET_REQUIRE_TMUX=1"
+          } >> "$GITHUB_ENV"
 
       - name: go test -race on every package (macOS)
         run: CGO_ENABLED=0 go test -race -shuffle=on -count=1 -v ./... 2>&1 | tee go-test.log

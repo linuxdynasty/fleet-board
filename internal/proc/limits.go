@@ -37,11 +37,13 @@ func (c Caller) Limits() Limits { return c.limits }
 // fails when the two differ). A name with no entry gets no default.
 //
 //   - tmux: `tmux -V`, 50 runs on macOS 27 (arm64), tmux 3.7c, a loaded host:
-//     4 to 11 ms, 10 bytes of output. Capped at 5 s and 1 KiB. Not measured
-//     on Linux yet; row 7 measures its other one-shot tmux calls and raises
-//     the entry if they need it.
+//     4 to 11 ms, 10 bytes of output. Row 7 (7c2) added `tmux list-sessions
+//     -F '#{session_id} #{@fleet_internal}'`: at 200 sessions (the load
+//     target) 1,101 bytes, 3.4 to 7.6 ms over 50 runs on tmux 3.2a and 3.7c
+//     (macOS). Capped at 5 s and 16 KiB (about 2,900 sessions). Not measured
+//     on Linux yet.
 var callers = map[string]Limits{
-	"tmux": {Time: 5 * time.Second, Output: 1 << 10},
+	"tmux": {Time: 5 * time.Second, Output: 16 << 10},
 }
 
 // For returns the caller with that name, or [ErrUnknownCaller] when the
