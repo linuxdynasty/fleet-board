@@ -438,13 +438,9 @@ optionally against one limit the owner sets.
   sends only typed commands and `typing.Line`s, refusing a line built for
   another server or an earlier start of this one. Its inventory read is one
   `list-panes -a` whose text fields tmux bounds in bytes (E1). Its one known
-  gap is the 8 MiB reply bound, which charges each reply line 17 bytes on
-  top of its text, so newlines in values cost most: measured on 3.2a and
-  3.7c, it holds about 13,480 normal panes on one server, about 1,075 with
-  every text field at 1 KiB, and 119 in the worst case (the four `@fleet_*`
-  options at 1,024 newlines each). Past it the read fails whole and is
-  counted (`reply_too_large`, 05b). All are far over the 04 budget of 10
-  observed panes per machine and 500 fleet-wide.
+  gap is the 8 MiB reply bound: about 13,480 normal panes on one server, 119
+  in the worst case (newline-filled tags; defaults), far over the 04 budget
+  of 10 per machine; past it the read fails whole, counted (05b).
   Measured in its tests on
   tmux 3.2a and 3.7c (macOS, and Linux in a container), 2026-10-10: the
   nested `#{S:#{W:...}}` subscription expands on 3.2a as on 3.7c, so the
