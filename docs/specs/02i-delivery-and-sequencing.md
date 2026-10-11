@@ -148,7 +148,10 @@ then dropped the new events as "already seen". The rules:
    (new `install_id`) therefore resumes above what the hub holds instead of
    being discarded as duplicates.
 3. **Rollback on the hub's side.** The hub treats `Hello.last_event_seq <
-   hub_last_event_seq`, a decrease of any `EventCounters` field, or a changed
+   hub_last_event_seq`, a decrease of any `EventCounters` field in `Hello`
+   below the stored value (shed and coalesced are stored from `Hello` only;
+   `evicted_total` also from a Heartbeat rise, because the agent commits it
+   with the eviction), or a changed
    `install_id` on a valid certificate as **agent rollback**: it keeps history,
    bumps the machine's `event_generation` (history and idempotency are keyed
    `(machine, event_generation, seq)`), puts a "state reset" marker on the
@@ -224,7 +227,7 @@ from the counters:
 
 | Signal | Meaning | Hub action |
 |---|---|---|
-| `shed_total` or `coalesced_total` rises | deliberate drops | metric only |
+| `shed_total` or `coalesced_total` rises | deliberate drops | metric only; a Heartbeat value is never stored, and one lower than the stream's last is logged (`event.counters_lower`), not acted on |
 | `Heartbeat.event_seq` above the highest seq the hub stored | newer events are in flight, or were shed or coalesced | none; compared only to show replay progress |
 | `evicted_total` rises in a `Heartbeat` | a NEVER_DROP or COALESCE event was lost while connected | `SnapshotRequest{reason: "event_lost"}` (at most one per 5 minutes per machine), a gap marker on the timeline |
 | `evicted_total` in `Hello` is above the stored value | ring overflow while the agent was offline | gap marker with the seq range between `hub_last_event_seq` and the first replayed seq; the `Snapshot` that follows every connect already repairs state |
