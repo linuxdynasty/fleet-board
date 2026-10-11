@@ -151,6 +151,99 @@ Probed 2026-10-05 on Copilot CLI 1.0.91 with **no prompt sent** (the plan was
   session) and `--acp` (an Agent Client Protocol server) exist. No local command
   sends text into a running session.
 
+## Folder trust probe (2026-10-10)
+
+Plan item 0.9 (#54). Claude Code 2.1.296, Codex 0.160.0, Muse 1.4.4, Cursor
+`cursor-agent` 2026.10.01-e373342 and OpenCode 1.18.34, macOS, tmux 3.7c, panes
+200x50, each started by typing its name in a shell in a throwaway tmux server
+(`-L probe54`, killed at the end). No prompt went to any model, so no quota was
+spent. **One rule was broken.** The fleet's rule is never to send a key blind
+(a key sent to a screen nobody has read). On one pass of two Codex starts the
+three screens had each been read once on an earlier start, and the keys
+were then sent in a loop without reading the screens again. That was a blind
+send. Per screen, the loop sent `1` on the "Background server"
+prompt (option 1, "Run without daemon this time") and the Esc key on the "Update
+available" prompt (skip). The Esc key was recorded only on the update prompt;
+the record does not name the third screen of the loop or say which key,
+if any, reached it. Results: Codex
+was still 0.160.0 afterwards, `brew upgrade` did not run, no trust was given,
+and the only change to Codex's `config.toml` was the model-notice counter (see
+below). Apart from that pass, the keys sent were the
+"no" answers (the Esc key, or `q` for Cursor) and one deliberate "trust" on a
+throwaway folder for Cursor only (below). The Cursor trust entries were deleted,
+not restored, and `config.toml` was not restored (both explained below).
+Redacted fixtures are under `internal/harness/<name>/testdata/`,
+listed in [../research/folder-trust-fixtures.md](../research/folder-trust-fixtures.md).
+
+**What a new (untrusted) folder shows**
+
+| Harness | New folder | The "no" answer | Default option |
+|---|---|---|---|
+| Claude Code | "Accessing workspace:" box, then "No, exit" / "Yes, I trust this folder" | the Esc key (it exits to the shell) | "No, exit" (so the owner presses Down before Enter to trust) |
+| Codex | "Folder access" / "Trust this folder? ..." with "1. Trust and continue" / "2. Quit". **Only in a git repo.** A plain folder shows no screen, with this machine's settings (YOLO mode) and with `-s workspace-write -a on-request` | the Esc key (quits) | "1. Trust and continue" |
+| Muse | "Do you trust this workspace?" with "1 Trust and continue" / "2 Quit". Inside a git repo it adds a line "Trust target: <repo root>" | the Esc key (quits) | "1 Trust and continue" |
+| Cursor | "Workspace Trust Required" box with "[a] Trust this workspace" / "[q] Quit" | `q` | "[a] Trust this workspace" |
+| OpenCode | **no trust screen**, in a plain folder or a fresh git repo; it goes straight to the ready screen | none needed | none |
+
+In three of the five the default option is **trust**, so Enter on the trust
+screen would trust the folder (no Enter was pressed in this probe; what each
+Enter does follows the option selected). This is why a trust screen is read, never answered,
+by the fleet (principle 4, 01 C3).
+
+**What a trusted folder shows:** the harness's normal ready screen, with no
+box. Nothing on the ready screen says "trusted", so the only sign is that the
+trust screen did not appear.
+
+**Startup prompts that come before the trust screen (Codex 0.160.0).** Two
+appeared on every start here, in this order, and both are Triage items that
+the fleet never answers:
+
+1. "Background server has incompatible feature settings" with "1. Run without
+   daemon this time" / "2. Restart with these settings" / "3. Cancel" (the
+   default). Option 2 saves settings that change other Codex clients.
+2. "Update available · 0.160.0 → 0.162.1" with "1. **Update now** (runs `brew
+   upgrade --cask codex`)" as the default, "2. Skip", "3. Skip until next
+   version". The Esc key skips (recorded here, on this prompt only). The same trap as the 2026-10-02 probe above: a
+   blind Enter upgrades the harness.
+
+**Does trusting a parent cover a new child?** Observed with the new child two
+levels below the parent, started with no key pressed:
+
+| Harness | A git repo the owner trusted | A worktree of that repo | A plain folder under a trusted plain folder |
+|---|---|---|---|
+| Claude Code | child not asked | **not asked**, although the worktree was never trusted by hand | not proven: neither the home folder nor the repos folder is trusted here, so no plain parent to test (trusting one needs a write to `~/.claude.json`) |
+| Codex | child not asked | not asked | no screen in any plain folder |
+| Muse | not tested; the "Trust target" line names the repo root | **asked** (its own root is the target) | **asked**: the home folder is on Muse's trust list and a fresh folder two levels below it still showed the box |
+| Cursor | child not asked | **asked** | **not asked**: a scratch folder trusted by hand covered a new child two levels below it |
+| OpenCode | no screen | no screen | no screen |
+
+Reading it: trust appears to follow the **git root** in Claude Code, Codex and
+Muse, and the **folder path** in Cursor (a parent folder covers its children there). Muse
+does not let an ancestor folder cover a child. A scratch folder the weekly
+report makes under the probe folder is therefore covered by trusting the probe
+folder in Cursor, and **not** in Muse; for Claude Code it is not proven. The
+safe rule for the fleet: every folder the fleet starts a harness in is trusted
+by hand itself, or is known to be covered by the screen-read check; `doctor`
+checks each such folder, never an ancestor.
+
+**Cursor trust is kept per folder** in a small file under
+`~/.cursor/projects/<folder-path-with-dashes>/`. The probe trusted one throwaway
+folder, tested a child of it, and then deleted the four folders the probe made
+there (checked with `ls` afterwards). Claude Code's
+trust list is `~/.claude.json` and Muse's `~/.config/muse/trust.json`; they were
+not written. `~/.claude.json` was never opened. `trust.json` was opened once, for
+its key names only (it holds one entry for the home folder and one for a repo),
+and its sha256 was the same before and after, as was `settings.json`.
+Codex's `config.toml` changed once during the probe, only the
+`"gpt-6.1-sol"` counter in its model-notice table (1 to 3), which Codex bumps
+on each start; no trust entry was written. It was not restored, because Codex
+will write it again on the next start anyway.
+
+**Not proven, so still a hypothesis:** the parent answer for Claude Code on a
+plain (non-git) folder; that trusting a repo root in Muse covers its children;
+how Codex treats a plain folder it has never seen if the owner turns YOLO off
+in `config.toml` (only the command-line form was tried).
+
 ## Sending a message into a session
 
 `later` ([ADR 0027](../adr/0027-cursor-first-class-copilot-and-messaging-later.md)

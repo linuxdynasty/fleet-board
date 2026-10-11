@@ -11,7 +11,7 @@
 # Stages (plan section 3, docs/plan/v1-implementation-plan.md):
 #   1 github-app      create and install the read-only GitHub App (#26, item 0.2)
 #   2 muse-update     choose whether Muse updates itself on this machine (#28, 0.4)
-#   3 probe-trust     trust the probe folder once in each harness (C3; provisional until #54)
+#   3 probe-trust     trust the probe folder once in each harness that asks (C3, plan item 0.9)
 #   4 mac-quarantine  clear the "downloaded from the internet" flag (after install)
 #   5 linux-linger    keep fleet-agent running after logout (Linux workers)
 #
@@ -20,7 +20,7 @@
 set -u
 
 PROBE_DIR="${HOME}/.local/share/fleet-agent/probe"
-HARNESSES="claude codex muse opencode"
+HARNESSES="claude codex muse cursor-agent opencode"
 BINARIES="fleetd fleet-agent fleet"
 BIN_DIR="${HOME}/.local/bin"   # where the install script puts them (02j)
 STAGES="github-app muse-update probe-trust mac-quarantine linux-linger"
@@ -145,19 +145,46 @@ stage_muse_update() {
 }
 
 stage_probe_trust() {
-  header 3 "Probe folder trust (C3, provisional)"
+  header 3 "Probe folder trust (C3)"
   say "fleet-agent reads usage in one folder it owns: $PROBE_DIR"
-  say "Each harness asks once whether to trust a new folder, and only you answer it."
-  say "These steps are provisional: plan item 0.9 (#54) records each harness's real"
-  say "trust screen, and fleet-agent doctor will then print the exact steps (01 C3)."
+  say "Some harnesses ask once whether to trust a new folder, and only you answer it."
+  say "The steps below are the table in 01 C3 (probe record: 01b, plan item 0.9)."
+  say "Read each screen before you press a key. Three points are not proven yet: the"
+  say "Claude Code answer for a plain parent folder, Muse trust for a repo's children,"
+  say "and Codex in a plain folder with YOLO off in config.toml."
   say "Trust is per folder. Keep your own files out of it; a harness may add its own."
   local h any=0
   for h in $HARNESSES; do
     command -v "$h" >/dev/null 2>&1 || continue
     any=1
-    step "$h: in another terminal, run:"
-    say "     mkdir -p \"$PROBE_DIR\" && cd \"$PROBE_DIR\" && $h"
-    say "     Answer the trust question with yes, then quit $h."
+    case "$h" in
+      opencode)
+        step "opencode: no trust screen. Nothing to do."
+        continue ;;
+      codex)
+        step "codex: asks about trust only inside a git repo, so the plain probe folder"
+        say "     normally shows no trust screen. To check, run:"
+        say "     mkdir -p \"$PROBE_DIR\" && cd \"$PROBE_DIR\" && codex"
+        say "     If it asks about an update, press Esc; never choose 'Update now'."
+        say "     If it asks about a background server, choose '1. Run without daemon"
+        say "     this time', never '2. Restart with these settings'."
+        say "     If 'Folder access' appears, choose '1. Trust and continue'. Then type /exit." ;;
+      claude)
+        step "claude: in another terminal, run:"
+        say "     mkdir -p \"$PROBE_DIR\" && cd \"$PROBE_DIR\" && claude"
+        say "     The box 'Accessing workspace' starts on 'No, exit'. Press Down, choose"
+        say "     'Yes, I trust this folder' and press Enter. Then type /exit." ;;
+      muse)
+        step "muse: in another terminal, run:"
+        say "     mkdir -p \"$PROBE_DIR\" && cd \"$PROBE_DIR\" && muse"
+        say "     On 'Do you trust this workspace?' choose '1 Trust and continue'."
+        say "     Then leave Muse the way you usually do." ;;
+      cursor-agent)
+        step "cursor-agent: in another terminal, run:"
+        say "     mkdir -p \"$PROBE_DIR\" && cd \"$PROBE_DIR\" && cursor-agent"
+        say "     On 'Workspace Trust Required' choose '[a] Trust this workspace'."
+        say "     Then leave Cursor Agent the way you usually do." ;;
+    esac
     pause
   done
   [ "$any" = 1 ] || say "  No harness found on this machine."
