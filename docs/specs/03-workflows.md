@@ -463,9 +463,9 @@ re-enroll rule are in [02g](02g-agent-security.md#machine-lifecycle-revoke-and-d
   wait_ms}` (warn; the last write at exit took over 5 s, so the agent stopped
   without waiting for it) and
   `fleet_agent_status_writes_total{file, result}` (`result`: `ok`, `failed`).
-  Until plan row 6 PR 6a lands the loop has no change notification, so a
-  change reaches `status.json` within a minute (the floor); no timer re-reads
-  the loop's state (ADR 0022 rule 6, ADR 0024 decision 9).
+  A loop change reaches `status.json` in about a second: the loop's change signal
+  goes to the writer, no timer (ADR 0022 rule 6). `push_off` and `policy_watch:
+  off` ([03e](03e-settings-and-drift.md)) are read at write time, a minute old at most.
 
 At 3 AM: "why is doctor's `status.json` old or missing?" →
 `fleet_agent_status_writes_total{file="status.json", result="failed"}` and

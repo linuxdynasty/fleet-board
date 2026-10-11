@@ -94,6 +94,8 @@ type rig struct {
 	block  chan struct{} // when set, afterWrite waits on it
 	tel    *telemetry.Telemetry
 	rename atomic.Pointer[func(string, string) error]
+	// watchOff is Options.PolicyWatchOff's answer.
+	watchOff atomic.Bool
 }
 
 type lockedBuilder struct {
@@ -130,10 +132,11 @@ func newRig(t *testing.T) (*rig, *lockedBuilder) {
 		Source: func() conn.Status {
 			return conn.Status{State: *r.state.Load(), Ended: *r.ended.Load()}
 		},
-		clock:      r.clock,
-		Changed:    r.push,
-		afterWrite: func(err error) { r.wrote <- err; r.gate() },
-		ops:        fileOps{rename: func(a, b string) error { return (*r.rename.Load())(a, b) }},
+		PolicyWatchOff: r.watchOff.Load,
+		clock:          r.clock,
+		Changed:        r.push,
+		afterWrite:     func(err error) { r.wrote <- err; r.gate() },
+		ops:            fileOps{rename: func(a, b string) error { return (*r.rename.Load())(a, b) }},
 	})
 	if err != nil {
 		t.Fatal(err)

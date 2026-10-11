@@ -56,6 +56,12 @@ type Options struct {
 	// the loop's change notification (Loop.StatusChanged). A nil channel
 	// never fires. It is read until Stop.
 	Changed <-chan struct{}
+	// PolicyWatchOff, when set, says the policy loader's directory watch is
+	// off ([policy.Manager.WatchOff]); status.json then carries
+	// policy_watch: off. It is read when the file is written, from the
+	// writer's goroutine, and nothing signals it: a change shows within a
+	// minute, like push_off.
+	PolicyWatchOff func() bool
 
 	// Test seams: the clock, a hook run after each write attempt, and the
 	// disk steps.
@@ -214,7 +220,11 @@ func (w *Writer) run() {
 func (w *Writer) write() {
 	now := w.clk.Now()
 	w.lastWrite = now
-	data, err := encode(FromConn(w.opts.Source(), now))
+	st := FromConn(w.opts.Source(), now)
+	if w.opts.PolicyWatchOff != nil && w.opts.PolicyWatchOff() {
+		st.PolicyWatch = PolicyWatchOff
+	}
+	data, err := encode(st)
 	if err == nil {
 		err = writeAtomic(w.opts.Dir, StatusFile, data, w.opts.ops)
 	}

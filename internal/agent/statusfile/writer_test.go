@@ -358,3 +358,30 @@ func TestStopGivesUpOnAStalledLastWrite(t *testing.T) {
 	}
 	unblock()
 }
+
+// The policy loader's "the directory watch is off" (03e) reaches the file as
+// policy_watch: "off"; a working watch leaves the key out, so doctor can
+// say unknown for a file that never set it.
+func TestPolicyWatchOffIsWrittenWhenTheWatchIsOff(t *testing.T) {
+	t.Parallel()
+	r, _ := newRig(t)
+	_ = r.waitWrite(t)
+	if got := r.read(t); got.PolicyWatch != "" {
+		t.Fatalf("policy_watch = %q with the watch working, want it left out", got.PolicyWatch)
+	}
+	raw, err := os.ReadFile(filepath.Join(r.dir, StatusFile))
+	if err != nil || strings.Contains(string(raw), "policy_watch") {
+		t.Fatalf("status.json names policy_watch with the watch working: %v\n%s", err, raw)
+	}
+	r.clock.wantTimer(t, time.Minute)
+	r.watchOff.Store(true)
+	r.w.Notify()
+	r.clock.wantTimer(t, time.Second)
+	r.clock.Advance(time.Second)
+	if err := r.waitWrite(t); err != nil {
+		t.Fatal(err)
+	}
+	if got := r.read(t); got.PolicyWatch != PolicyWatchOff {
+		t.Errorf("policy_watch = %q, want %q", got.PolicyWatch, PolicyWatchOff)
+	}
+}

@@ -16,14 +16,15 @@ import (
 // The file is written at start, at most once a second after the loop
 // signals a change (Loop.StatusChanged, a push source: no timer re-reads the
 // loop's state, ADR 0022 rule 6, ADR 0024 decision 9), at least once a
-// minute, and at the stop. push_off is not signalled by the loop; it is read
-// when the file is written, so it can be up to a minute old.
+// minute, and at the stop. push_off and policy_watch (watchOff, the policy
+// loader's flag) are not signalled; they are read when the file is written,
+// so they can be up to a minute old.
 //
 // A run that got this far has loaded an identity, so it has no failed enroll
 // to show: it removes enroll.json.
-func startStatusFile(dir string, tel *telemetry.Telemetry, loop *conn.Loop) func() {
+func startStatusFile(dir string, tel *telemetry.Telemetry, loop *conn.Loop, watchOff func() bool) func() {
 	_ = statusfile.RecordEnroll(tel, dir, time.Now(), nil)
-	w, err := statusfile.Start(statusfile.Options{Dir: dir, Source: loop.Status, Changed: loop.StatusChanged(), Telemetry: tel})
+	w, err := statusfile.Start(statusfile.Options{Dir: dir, Source: loop.Status, Changed: loop.StatusChanged(), PolicyWatchOff: watchOff, Telemetry: tel})
 	if err != nil {
 		// Only the metric registration can fail here. The agent runs
 		// without a status file rather than not at all.
