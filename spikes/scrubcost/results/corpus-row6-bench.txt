@@ -1,0 +1,16 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/linuxdynasty/fleet-board/internal/scrub
+cpu: Apple M4 Pro
+BenchmarkHubPassFile-12    	   24664	     48651 ns/op	        52.79 B/msg	         0.1216 cores@burst	         0.0003649 cores@peak
+BenchmarkHubPassFile-12    	   25814	     49854 ns/op	        52.79 B/msg	         0.1246 cores@burst	         0.0003739 cores@peak
+BenchmarkHubPassFile-12    	   25863	     50426 ns/op	        52.79 B/msg	         0.1261 cores@burst	         0.0003782 cores@peak
+BenchmarkHubPassFile-12    	   23847	     48196 ns/op	        52.79 B/msg	         0.1205 cores@burst	         0.0003615 cores@peak
+BenchmarkHubPassFile-12    	   24720	     47330 ns/op	        52.79 B/msg	         0.1183 cores@burst	         0.0003550 cores@peak
+BenchmarkHubPassFile-12    	   25986	     47160 ns/op	        52.79 B/msg	         0.1179 cores@burst	         0.0003537 cores@peak
+BenchmarkHubPassFile-12    	   24778	     49042 ns/op	        52.79 B/msg	         0.1226 cores@burst	         0.0003678 cores@peak
+BenchmarkHubPassFile-12    	   22057	     49164 ns/op	        52.79 B/msg	         0.1229 cores@burst	         0.0003687 cores@peak
+BenchmarkHubPassFile-12    	   23383	     52181 ns/op	        52.79 B/msg	         0.1305 cores@burst	         0.0003914 cores@peak
+BenchmarkHubPassFile-12    	   25928	     49159 ns/op	        52.79 B/msg	         0.1229 cores@burst	         0.0003687 cores@peak
+PASS
+ok  	github.com/linuxdynasty/fleet-board/internal/scrub	17.164s
