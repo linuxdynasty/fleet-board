@@ -376,7 +376,10 @@ optionally against one limit the owner sets.
 ## E. tmux observation
 
 - **E1 Inventory:** every session, window and pane on the developer's tmux
-  server (marked "yours" or "started by fleet" from `FLEET_*` tags), plus the
+  server (marked "yours" or "started by fleet" from `FLEET_*` tags (read from
+  the `@fleet_*` user options tmux holds, never from a process's environment;
+  row 18 sets them, and the matching `FLEET_*` session environment for the
+  harness and its hooks, when it creates a session or window)), plus the
   internal `fleet-probe` server (internal sessions are marked and the hub
   ignores them). Panes carry their directory, repo and dirty flag when under an
   allowed root; attribute changes are `PaneChanged` events (02h). Windows are reported with their index and
@@ -385,8 +388,12 @@ optionally against one limit the owner sets.
   renames them automatically. The harness in a pane is identified from the
   running process (`pane_current_command` and the adapter's `Detect()`), never
   from the window name. Panes are keyed by `(server, server_start_id, pane_id)` plus
-  `FLEET_*` environment tags, because tmux ids restart from zero with a new
-  server.
+  the `FLEET_*` tags read from the `@fleet_*` options (above), because tmux ids
+  restart from zero with a new server. Every name, command and option value
+  is bounded in tmux itself at 1 KiB in bytes (defaults; row 7 PR 7d1): tmux
+  sends a longer value empty with its length beside it, so that field reads
+  as blank and is counted (05b), and no value can fail a read. A session is
+  internal only when its `@fleet_internal` is exactly `attach_view` (02h).
 - **E2 Control-mode observer:** one `tmux -C` client per server, attached with
   the `ignore-size` client flag (added in tmux 3.2) so it never changes the
   size of the developer's windows, and with the `pause-after=<s>` flag
@@ -413,9 +420,13 @@ optionally against one limit the owner sets.
   line over the bound is skipped to its newline and counted (05b).
   The client (`internal/agent/tmux`, row 7 PR 7c2) attaches with `-E`, so
   tmux does not apply `update-environment` to the developer's session, and
+  with `-u`, so names and values come byte for byte whatever LANG the
+  agent has (under LANG=C, which a service often gets, tmux would send each
+  non-ASCII or control character as `_`), and
   checks `tmux -V` (below
   3.2 is `TMUX_TOO_OLD`), attaches to the lowest session id (a session the
-  fleet marked internal is second choice: when only internal sessions exist
+  fleet marked internal, its `@fleet_internal` exactly `attach_view` as tmux
+  compares it, is second choice: when only internal sessions exist
   it attaches there, and `switch-client -E` moves it to the first developer
   session that `%sessions-changed` announces, so no session is ever unseen
   and no timer runs), reads its own
@@ -425,7 +436,12 @@ optionally against one limit the owner sets.
   sends its subscriptions again before it reports up; with no server on the
   socket it waits for the socket-folder watch, never a timer (defaults). It
   sends only typed commands and `typing.Line`s, refusing a line built for
-  another server or an earlier start of this one. Measured in its tests on
+  another server or an earlier start of this one. Its inventory read is one
+  `list-panes -a` whose text fields tmux bounds in bytes (E1). Its one known
+  gap is the 8 MiB reply bound: about 13,480 normal panes on one server, 119
+  in the worst case (newline-filled tags; defaults), far over the 04 budget
+  of 10 per machine; past it the read fails whole, counted (05b).
+  Measured in its tests on
   tmux 3.2a and 3.7c (macOS, and Linux in a container), 2026-10-10: the
   nested `#{S:#{W:...}}` subscription expands on 3.2a as on 3.7c, so the
   per-window fallback of the row-7 ruling fork 5(e) is not needed; in the
@@ -434,7 +450,10 @@ optionally against one limit the owner sets.
   `%pause` and the reply came whole and in order. Further unrecorded runs
   (3 and 8 s stalls) showed no `%pause` inside a reply either.
 - **E3 Pane lifecycle:** created and exited with exit status. "Stopped without
-  DONE" (the one-nudge rule) depends on this.
+  DONE" (the one-nudge rule) depends on this. The status is known only when
+  tmux kept the pane (`remain-on-exit`, which the agent never sets on a
+  developer's pane); a pane gone first has `exit_status` unset (row 7 PR 7d,
+  `internal/agent/tmux/inventory`).
 - **E4 Activity transitions:** active ↔ idle, with the time of last output.
   Never dropped under backpressure; the hub's stuck detection depends on it.
 - **E5 Pane summaries:** last lines, ANSI stripped; at most one per pane every

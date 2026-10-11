@@ -45,10 +45,13 @@ func checkVersion(ctx context.Context, r *proc.Runner, caller proc.Caller, progr
 	return nil
 }
 
-// sessionsFormat lists each session's id and the creator's internal mark
-// (the @fleet_internal user option, row-7 ruling fork 6): ids and a mark
-// only, never a session name.
-const sessionsFormat = "#{session_id} #{@fleet_internal}"
+// sessionsFormat lists each session's id and whether the creator marked it
+// internal: 1 only when its @fleet_internal user option is exactly
+// attach_view (row-7 ruling fork 6; ruling fork 2 on 7d1), else 0. tmux
+// compares the mark, so no value reaches the agent: one with a newline once
+// put a bare line here and failed every attach. Ids and a flag only, never
+// a session name.
+const sessionsFormat = "#{session_id} " + isAttachView
 
 // lowestSession lists the sessions with one `tmux list-sessions` through
 // internal/proc and picks one with pickSession. A failed list that says no
@@ -71,9 +74,10 @@ func lowestSession(ctx context.Context, r *proc.Runner, caller proc.Caller, prog
 
 // pickSession is the one pick rule for every server (row-7 arbiter ruling
 // on 7c2b, amending fork 5(d)): the lowest session id not marked internal
-// (@fleet_internal set); if every session is internal, the lowest internal
-// id, and internal is true (the client then moves to a developer session
-// when %sessions-changed announces one); no session at all is errAbsent.
+// (@fleet_internal exactly attach_view); if every session is internal, the
+// lowest internal id, and internal is true (the client then moves to a
+// developer session when %sessions-changed announces one); no session at
+// all is errAbsent.
 func pickSession(list []byte) (SessionID, bool, error) {
 	marks, err := parseSessions(list)
 	if err != nil {
@@ -98,8 +102,9 @@ func pickSession(list []byte) (SessionID, bool, error) {
 	return 0, false, errAbsent
 }
 
-// parseSessions reads `list-sessions -F '#{session_id} #{@fleet_internal}'`
-// into each session id and whether the fleet marked it internal.
+// parseSessions reads `list-sessions -F sessionsFormat` into each session id
+// and whether the fleet marked it internal. Every line is "$N 0" or "$N 1";
+// anything else is not tmux's answer to that format.
 func parseSessions(list []byte) (map[SessionID]bool, error) {
 	marks := map[SessionID]bool{}
 	for line := range strings.SplitSeq(string(list), "\n") {
@@ -108,10 +113,10 @@ func parseSessions(list []byte) (map[SessionID]bool, error) {
 		}
 		idText, mark, ok := strings.Cut(line, " ")
 		n, idOK := parseID([]byte(idText), '$')
-		if !ok || !idOK {
-			return nil, failed("list", errors.New("tmux list-sessions: a line is not \"$N mark\""))
+		if !ok || !idOK || mark != "0" && mark != "1" {
+			return nil, failed("list", errors.New("tmux list-sessions: a line is not \"$N 0\" or \"$N 1\""))
 		}
-		marks[SessionID(n)] = mark != ""
+		marks[SessionID(n)] = mark == "1"
 	}
 	return marks, nil
 }

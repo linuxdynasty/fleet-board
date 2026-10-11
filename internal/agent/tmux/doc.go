@@ -12,7 +12,12 @@
 // keeps itself attached ([Client.Run]: backoff while the server is there,
 // [StateAbsent] with no timer until [Client.Wake]), and sends only typed
 // commands: [Client.Send] of a typing.Line, [Client.Capture],
-// [Client.ListPanes], [Client.Subscribe] and [Client.Continue]. Its file
+// [Client.ListPanes], [Client.ReadInventory] (every session, window and
+// pane with names and @fleet_* options, for the inventory package; tmux
+// bounds each text field at [MaxFieldBytes] in bytes and sends a longer one
+// empty with its length, so no value can fail the read),
+// [Client.Subscribe] and [Client.Continue]. [Client.Changed] lets a watcher
+// follow its state with no timer. Its file
 // conn.go is the only one in the agent that starts the long-lived tmux
 // process; one-shot tmux calls go through internal/proc. The README has the
 // concurrency diagram.
@@ -41,8 +46,9 @@
 //     [ReplyLineOverhead]) keeps its first lines and counts the rest in
 //     [Reply.Dropped].
 //
-// Parse failures are counted and logged through [Metrics], and the client's
-// state through fleet_agent_tmux_control_up and the tmux.attached, tmux.exit
-// and tmux.subscription_confirmed log events: closed words, ids and byte
-// counts only, never pane bytes or names.
+// Parse failures, and inventory text fields left blank, are counted and
+// logged through [Metrics], and the client's state through
+// fleet_agent_tmux_control_up and the tmux.attached, tmux.exit and
+// tmux.subscription_confirmed log events: closed words, ids and byte counts
+// only, never pane bytes, names or values.
 package tmux

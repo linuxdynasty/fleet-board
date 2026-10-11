@@ -24,6 +24,11 @@ for _, b := range tmuxtest.Binaries() {               // "3.2" and "latest"
   then removes the folder.
 - `Kill` then `NewSession` starts a new server on the same socket (a
   restart).
+- `Sibling(tb, name, args...)` starts another server in the same folder
+  whose socket is `name` (the inventory package's socket-folder watch needs
+  a `default` socket there; `s`, `owner` and a name with `/` or `.` are
+  refused); it is killed and checked gone like the first,
+  and `Sweep` kills every socket in an orphaned folder.
 - `Run` and `Try` run under the measured `tmux` caller of `internal/proc`
   (5 s, 16 KiB), so a reply up to 16 KiB comes back whole.
 - Each server folder holds an `owner` file: the pid of the test process that

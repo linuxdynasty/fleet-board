@@ -164,3 +164,30 @@ func TestKillThenNewSessionStartsANewServerOnTheSameSocket(t *testing.T) {
 		})
 	}
 }
+
+// A Sibling is a second server in the same folder on its own socket; both
+// run at once and the Sibling is killed when its test ends.
+func TestSiblingIsASecondServerInTheFolder(t *testing.T) {
+	for _, b := range tmuxtest.Binaries() {
+		t.Run(b.Name, func(t *testing.T) {
+			tmuxtest.Need(t, b)
+			var sib *tmuxtest.Server
+			t.Run("start", func(t *testing.T) {
+				srv := tmuxtest.Start(t, b, "-s", "one", "exec cat")
+				sib = srv.Sibling(t, "default", "-s", "two", "exec cat")
+				if sib.Socket != filepath.Join(srv.Dir, "default") || !srv.Alive() || !sib.Alive() {
+					t.Fatalf("sibling %s alive %v, first alive %v", sib.Socket, sib.Alive(), srv.Alive())
+				}
+				if got := strings.TrimSpace(sib.Run(t, "list-sessions", "-F", "#{session_name}")); got != "two" {
+					t.Fatalf("sibling sessions = %q", got)
+				}
+			})
+			if sib == nil {
+				t.Fatal("the start subtest made no sibling")
+			}
+			if sib.Alive() {
+				t.Fatal("sibling still alive after its test ended")
+			}
+		})
+	}
+}

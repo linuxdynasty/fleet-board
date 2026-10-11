@@ -83,7 +83,10 @@ connection loop's count of streams after the first.
 An inventory event (`tmux_server`, `session`, `window`, `pane_created`,
 `pane_changed`, `repo`) carries the object after the change, so the hub applies
 it as an **upsert** (closed: a delete). A hub that missed the earlier event of
-the same object still reaches the right state.
+the same object still reaches the right state. A pane that dies with
+`remain-on-exit` is one `pane_exited` with `remains` true and, when tmux later
+drops it, a second with `remains` false: the hub applies the second as a delete
+only, idempotent, and never evaluates the one-nudge rule twice (7h).
 
 ## Queue and ring rules per class
 

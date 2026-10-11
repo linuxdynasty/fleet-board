@@ -31,7 +31,9 @@ the `tmux -C` client that attaches to one server and sends typed commands
   goes through `LOGS` and `pipe-pane` per the spec, not a capture reply).
 - `NewMetrics(tel)` counts failures in `fleet_agent_tmux_parse_errors_total{err_kind}`
   and `fleet_agent_tmux_lines_too_long_total`, and logs `tmux.parse_error` and
-  `tmux.line_too_long` at most once a minute per class (05b).
+  `tmux.line_too_long` at most once a minute per class (05b). Given to a
+  client as `ClientOptions.Parser.Metrics`, it also counts the text fields
+  `ReadInventory` left blank (below).
 
 ## The client
 
@@ -46,15 +48,81 @@ err = c.Subscribe(ctx, tmux.Subscription{Name: "win-act", Format: "#{S:#{W:#{win
 err = c.Send(ctx, line)                          // a typing.Line only
 cap, err := c.Capture(ctx, pane)                 // capture-pane -p
 panes, err := c.ListPanes(ctx)                   // list-panes -a: ids and numbers only
+inv, err := c.ReadInventory(ctx)                 // list-panes -a: names, flags, @fleet_* options too
+st, changed := c.Changed()                       // the state, and a chan closed at its next change
 ```
 
+- `ReadInventory` reads every session, window and pane with one
+  `list-panes -a` for the inventory package (7d): fields split by a marker
+  random per read (no name can fake a field), a record that a newline in a
+  value broke (in any text field, the last one too) joined back by counting
+  markers, the start id checked before
+  and after (a restart meanwhile is `ErrNotAttached`), the agent's own
+  control client left out of a session's client count, one pane per session
+  (a grouped pair lists a pane twice; a window linked twice into one session
+  is kept at its first index). Names, commands and option values are raw and
+  untrusted: the caller bounds and checks them.
+- Each record is the ids, flags and sizes; `#{==:#{@fleet_internal},attach_view}`
+  (1 only for that exact mark: `Tags.AttachView`; the value never leaves
+  tmux); the byte length `#{n:X}` of each of the seven text fields
+  (`@fleet_session_id`, `@fleet_owner`, `@fleet_pane_key`, `@fleet_goal_id`,
+  `session_name`, `window_name`, `pane_current_command`); a canary
+  `#{e|<:1,2}` that must read `1` (a tmux without these modifiers is
+  `ErrBadReply`, never a read of blank fields); then each text field as
+  `#{?#{e|<:#{n:X},1025},#{X},}`; then a closing marker, so a newline in the
+  last field (`pane_current_command`: a program's name can hold one) still
+  leaves the record short of markers and the next line is joined to it. So tmux bounds every text field in bytes
+  at `MaxFieldBytes` (1 KiB, defaults) and sends a longer value empty
+  (`e|<` compares numbers; a plain `<` compares strings). `#{=N:...}` is no
+  bound: it cuts by screen width, and zero-width characters and `#[style]`
+  blocks pass it whole. The agent checks each field against its length: at
+  most 1 KiB must arrive whole, over it empty; any other shape blanks that
+  field only (`mismatch`). Either way the field reads as empty and is
+  counted; no text value can fail the read. The length also checks the join
+  of a record a newline broke. Without `-u` (below), under LANG=C tmux
+  3.2a and 3.7c send each non-ASCII or control character as `_` or drop
+  it; the length check sees a change in byte count only (`a\nb` sent as
+  `a_b` has the same length), which is why the client runs with `-u`.
+- What the bound leaves: one known gap, the 8 MiB reply bound. Each reply
+  line is charged its bytes plus 17, so a newline in a value costs 17
+  bytes, not 1. Measured on 3.2a and 3.7c (macOS):
+  - Normal panes (short names, no tags): 605 bytes a record, 622 charged:
+    about 13,480 panes on one server.
+  - Long values: every text field at 1 KiB with no newline is 7,780 bytes,
+    7,797 charged: about 1,075 panes (6,759 bytes measured with a 3-byte
+    command, plus the rest of the command's 1 KiB).
+  - Newline-heavy, the worst case: the four `@fleet_*` options set with
+    `set-option -g` to 1,024 newlines each make every pane's record 4,097
+    lines, 70,266 bytes charged; 119 panes read, 120 fail. Session and
+    window names cannot add lines (3.2a escapes a newline in them, 3.7c
+    refuses one). A program's name can (the last field); with 1 KiB of
+    newlines there too it would be about 95 panes (computed, not measured).
+
+  Past the bound the read fails loudly, never partly: `ErrBadReply`,
+  counted in `fleet_agent_tmux_parse_errors_total{err_kind="reply_too_large"}`
+  (measured: 1 at 120 panes) and 7d2's `tmux.inventory_failed{err_kind=reply}`.
+  Every case is far above the budget in
+  [04](../../../docs/specs/04-technology-review.md): 10 observed panes per
+  machine and 500 fleet-wide.
 - `Run` checks `tmux -V` (below 3.2: `ErrTooOld`, REASON_CODE_TMUX_TOO_OLD),
   lists sessions with one `tmux list-sessions` through `internal/proc` and
   attaches by one rule on every server: the lowest session not marked
-  `@fleet_internal`, else the lowest internal one (no session at all is
-  absent), as `tmux -S <socket> -C attach-session
-  -E -t $N -f ignore-size,pause-after=1` (`-E`: tmux does not apply
-  `update-environment` to the developer's session). Its first command reads
+  internal, else the lowest internal one (no session at all is absent).
+  The mark is a session option (`set-option -t <session>`), which every
+  pane of the session inherits: this list reads it from the current
+  window's active pane and `ReadInventory` takes a session's tags from its
+  first pane, so they agree (`TestSessionMarksAgreeBetweenThePickAndTheInventory`).
+  A mark set on one window or pane only is not a session mark, and the two
+  may differ.
+  A session is internal only when its `@fleet_internal` is exactly
+  `attach_view`: the list reads `#{session_id} #{==:#{@fleet_internal},attach_view}`,
+  so tmux compares the mark and each line is `$N 0` or `$N 1` (anything else
+  is an `attach_failed` `list`; a mark with a newline once put a bare line
+  there and failed every attach). It attaches as `tmux -u -S <socket> -C
+  attach-session -E -t $N -f ignore-size,pause-after=1` (`-u`: the control
+  client runs as UTF-8, so names and values are byte-exact whatever LANG
+  the agent has; `-E`: tmux does not apply `update-environment` to the
+  developer's session). Its first command reads
   `#{client_flags}|#{pid}|#{start_time}|#{version}`: both flags missing from
   `client_flags` is `ErrTooOld` (never `-F`, spike 0.5 finding 8); the pid
   and start time make `ServerStartID`. Then every registered subscription is
@@ -86,8 +154,8 @@ panes, err := c.ListPanes(ctx)                   // list-panes -a: ids and numbe
   loop's (after n failures, uniform from 1 to 2^n s, capped at 60 s), reset
   after an attach that came up (defaults row "tmux control client"). A
   `Wake` that came while it was up is dropped then, so it never cuts that
-  backoff short. 7d should debounce Wake (at most one per server a
-  second): each costs one `list-sessions` while absent. When no server answers it waits in `StateAbsent` for `Wake`,
+  backoff short. 7d2's inventory observer debounces Wake (at most
+  one per server a second): each costs one `list-sessions` while absent. When no server answers it waits in `StateAbsent` for `Wake`,
   with no timer (row-7 ruling fork 4). The backup `list-clients` poll of
   02h is 7f's. A `Program` that cannot run at all (tmux uninstalled) is an
   `attach_failed` try like any other: retried on the backoff, one
@@ -151,6 +219,8 @@ re-sent, never lost.
 | `tmux.repick_failed` (`server_kind`, `err_kind` = `list` or `switch`) | a re-pick failed; at most once a minute; the client stays up |
 | `tmux.exit` (`server_kind`, `reason`, `err_kind` for `attach_failed`) | an attach ended or failed: `exit`, `eof`, `desync`, `write_stalled`, `write_canceled`, `attach_failed` (`version`, `list`, `start`, `handshake`, `subscribe`), `too_old`, `absent` (once per absence), `cancelled` |
 | `tmux.subscription_confirmed` (`server_kind`, `name`) | the first value of a registered subscription on an attach |
+| `fleet_agent_tmux_inventory_fields_dropped_total{field, reason}` | text fields an inventory read left blank: `field` is one of the seven text fields, `reason` is `over_bound` (over 1 KiB) or `mismatch` (the bytes are not the length tmux gave). Counted on every read, per pane record kept; needs `ClientOptions.Parser.Metrics` |
+| `tmux.inventory_field_dropped` (`field`, `reason`, `bytes`: the length tmux gave, `suppressed`) | the same, at most once a minute per field; never the value |
 
 Never pane text, a session or window name, the `%exit` text or tmux's
 stderr (05b).

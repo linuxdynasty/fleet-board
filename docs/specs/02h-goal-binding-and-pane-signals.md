@@ -344,7 +344,13 @@ changes (a developer starts `claude` in a shell pane; a pane `cd`s to another
 repo). Activity, output time, input time, availability and ready state have
 their own events and never raise it. Window and session attribute changes use
 `WindowEvent` and `SessionEvent` with kind `UPDATED` (name changes stay
-`RENAMED`).
+`RENAMED`). A `CREATED` session or window carries its windows and
+panes; a `RENAMED` or `UPDATED` one carries its own fields only, and a `CLOSED`
+one its ids. A pane's or window's focus (`active`) raises no event on its own.
+A `WindowEvent` is scoped by `session_tmux_id`: a `CLOSED` one for a window of a
+grouped pair removes it from that session only, while the other keeps it. A window
+linked twice into one session (`link-window`) is reported once, at its first
+index.
 
 ### Internal sessions
 
@@ -357,7 +363,15 @@ excludes the probe server from session counts and filters (`server` is
 `DEFAULT` or `FLEET` on every listed session). `attached_clients` on a
 session already excludes the agent's control client and attach clients.
 The agent's control client prefers a developer session and attaches to an
-internal one only while none exists (01 E2).
+internal one only while none exists (01 E2). The creator of a view session marks it
+(`@fleet_internal attach_view` and `FLEET_INTERNAL`) and the agent reads only
+that mark; grouping alone never makes a session internal, so a developer's own
+grouped session is reported as theirs. The mark, like `@fleet_session_id` and
+`@fleet_owner`, is a session option (`set-option -t <session>`): every pane of
+the session inherits it, so the agent's session pick (read from the current
+window's active pane) and its inventory (a session's tags from its first pane)
+agree. A mark set on one window or pane only is not a session mark, and the two
+reads may then differ.
 
 ## SendKeys purposes
 

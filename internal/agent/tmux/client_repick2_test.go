@@ -12,7 +12,7 @@ import (
 // client did not ask for makes it re-pick: moved to an internal session
 // while a developer one exists, it switches back.
 func TestAnUnexpectedSessionChangeRepicks(t *testing.T) {
-	t.Setenv("FAKE_CTL_LIST", `$0 \n$2 attach_view\n`)
+	t.Setenv("FAKE_CTL_LIST", `$0 0\n$2 1\n`)
 	r := startFake(t, &backoffs{wait: time.Hour}, nil)
 	r.waitState(t, tmux.StateUp)
 	if _, err := r.Capture(ctxT(t), 6); err != nil { // tmux then moves the client to $2
@@ -24,7 +24,7 @@ func TestAnUnexpectedSessionChangeRepicks(t *testing.T) {
 
 // Moved by tmux to another developer session, the client lists and stays.
 func TestAnUnexpectedMoveToADeveloperSessionStays(t *testing.T) {
-	t.Setenv("FAKE_CTL_LIST", `$0 \n$2 \n`)
+	t.Setenv("FAKE_CTL_LIST", `$0 0\n$2 0\n`)
 	r := startFake(t, &backoffs{wait: time.Hour}, nil)
 	r.waitState(t, tmux.StateUp)
 	if _, err := r.Capture(ctxT(t), 6); err != nil {
@@ -41,7 +41,7 @@ func TestAnUnexpectedMoveToADeveloperSessionStays(t *testing.T) {
 
 // A list line the client cannot read is a failed re-pick, logged.
 func TestAMalformedListIsARepickFailure(t *testing.T) {
-	t.Setenv("FAKE_PROC_LIST", `$0 attach_view\n`)
+	t.Setenv("FAKE_PROC_LIST", `$0 1\n`)
 	t.Setenv("FAKE_CTL_LIST", `garbage\n`)
 	r := startFake(t, &backoffs{wait: time.Hour}, nil)
 	r.waitState(t, tmux.StateUp)
@@ -51,7 +51,7 @@ func TestAMalformedListIsARepickFailure(t *testing.T) {
 // The conn ending while a re-pick waits is the attach ending, not a failed
 // re-pick: no tmux.repick_failed.
 func TestAConnEndingDuringARepickLogsNoRepickFailure(t *testing.T) {
-	t.Setenv("FAKE_PROC_LIST", `$0 attach_view\n`)
+	t.Setenv("FAKE_PROC_LIST", `$0 1\n`)
 	t.Setenv("FAKE_LIST_EXIT", "1")
 	r := startFake(t, &backoffs{wait: time.Hour}, nil)
 	waitEvent(t, r.logs, "tmux.exit", map[string]any{"reason": "eof"})

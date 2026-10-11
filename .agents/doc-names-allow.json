@@ -113,6 +113,7 @@
   {"token": "MUSE_PLUGIN_ROOT", "kind": "env", "reason": "Muse plugin environment variable (01d)", "files": ["docs/specs/01d-goal-hooks.md"]},
   {"token": "HOOK_LOG", "kind": "env", "reason": "probe environment variable (01d)", "files": ["docs/specs/01d-goal-hooks.md"]},
   {"token": "PROBE_TOKEN", "kind": "env", "reason": "probe environment variable (01d)", "files": ["docs/specs/01d-goal-hooks.md"]},
+  {"token": "FLEET_INTERNAL", "kind": "env", "reason": "session environment mark of an attach-view session (row-7 ruling fork 6)", "files": ["docs/specs/02h-goal-binding-and-pane-signals.md"]},
   {"token": "TMUX_PANE", "kind": "env", "reason": "tmux environment variable (01d, 02h)", "files": ["docs/specs/01d-goal-hooks.md", "docs/specs/02h-goal-binding-and-pane-signals.md"]},
   {"token": "OTEL_EXPORTER_OTLP_ENDPOINT", "kind": "env", "reason": "OpenTelemetry environment variable (05b)", "files": ["docs/specs/05b-observability.md"]},
   {"token": "FLEETD_CONFIG", "kind": "env", "reason": "fleetd environment variable (02j)", "files": ["docs/specs/02j-hub-runtime.md"]},
