@@ -22,7 +22,7 @@ holds at the same path (captured again here so this change stands alone).
 | `cursor/.../trust-workspace.txt` | "Workspace Trust Required" box, `[a]` selected | start in a new plain folder |
 | `cursor/.../ready-trusted-child.txt` | ready screen, no box | start in a new child of a trusted repo |
 | `codex/.../trust-folder-git.txt` | "Folder access", "1. Trust and continue" selected | start in a new git repo |
-| `codex/.../startup-daemon-prompt.txt` | "Background server has incompatible feature settings", "3. Cancel" selected | any start while a Codex background server runs |
+| `codex/.../startup-daemon-settings-incompatible.txt` | "Background server has incompatible feature settings", "3. Cancel" selected | any start while a Codex background server runs |
 | `codex/.../startup-update-prompt.txt` | "Update available", "1. Update now" selected | any start while an update exists |
 | `muse/.../trust-workspace-plain-folder.txt` | "Do you trust this workspace?" | start in a new plain folder |
 | `muse/.../trust-workspace-git-root.txt` | the same with a "Trust target:" line | start in a new folder inside a git repo |
