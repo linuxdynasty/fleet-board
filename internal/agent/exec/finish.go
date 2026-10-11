@@ -28,8 +28,11 @@ const (
 
 // finish records r as the command's one result, then queues it: committed
 // before queued (ruling fork 12 b). A result already logged wins and is the
-// one sent.
-func (e *Executor) finish(ctx context.Context, c *agentv1.Command, ent ring.Entry, r *agentv1.CommandResult, started time.Time, sp *span) {
+// one sent. refused says the executor's own checks gave r (the envelope
+// checks, or a denial or timeout of the local approval): it is logged as
+// command.refused and counted as a refusal, and never timed. started is
+// zero for a refusal.
+func (e *Executor) finish(ctx context.Context, c *agentv1.Command, ent ring.Entry, r *agentv1.CommandResult, started time.Time, refused bool, sp *span) {
 	done := e.opts.Now()
 	r.CommandId = &typev1.CommandId{Value: ent.ID}
 	r.Message = e.text(r.GetMessage())
@@ -60,7 +63,7 @@ func (e *Executor) finish(ctx context.Context, c *agentv1.Command, ent ring.Entr
 	if !started.IsZero() {
 		elapsed = done.Sub(started)
 	}
-	e.outcome(ctx, c, ent.Kind, r, elapsed, started.IsZero())
+	e.outcome(ctx, c, ent.Kind, r, elapsed, refused)
 	sp.status(r)
 	e.send(ctx, ent.Kind, &agentv1.ConnectRequest{Body: &agentv1.ConnectRequest_CommandResult{CommandResult: r}})
 }

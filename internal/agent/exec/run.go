@@ -30,7 +30,7 @@ func (e *Executor) do(ctx context.Context, c *agentv1.Command, ent ring.Entry, p
 	defer s.End()
 	sp := &span{s: s, carried: carried}
 	if p.refusal != nil {
-		e.finish(ctx, c, ent, p.refusal, time.Time{}, sp)
+		e.finish(ctx, c, ent, p.refusal, time.Time{}, true, sp)
 		return
 	}
 	started := e.opts.Now()
@@ -39,8 +39,8 @@ func (e *Executor) do(ctx context.Context, c *agentv1.Command, ent ring.Entry, p
 		if cut {
 			return
 		}
-		if r != nil {
-			e.finish(ctx, c, ent, r, started, sp)
+		if r != nil { // denied or timed out: a refusal, not timed
+			e.finish(ctx, c, ent, r, time.Time{}, true, sp)
 			return
 		}
 	}
@@ -51,7 +51,7 @@ func (e *Executor) do(ctx context.Context, c *agentv1.Command, ent ring.Entry, p
 			e.finish(ctx, c, ent, &agentv1.CommandResult{
 				Status:  typev1.Status_STATUS_UNKNOWN_OUTCOME,
 				Message: "the agent restarted while the command ran and cannot tell whether it took effect",
-			}, started, sp)
+			}, started, false, sp)
 			return
 		}
 	}
@@ -75,7 +75,7 @@ func (e *Executor) do(ctx context.Context, c *agentv1.Command, ent ring.Entry, p
 	if r == nil {
 		r = &agentv1.CommandResult{Status: typev1.Status_STATUS_FAILED, Message: "the handler returned no result"}
 	}
-	e.finish(ctx, c, ent, r, started, sp)
+	e.finish(ctx, c, ent, r, started, false, sp)
 }
 
 // await sends the AWAITING_LOCAL_CONFIRM progress and waits for the person
