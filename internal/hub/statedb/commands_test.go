@@ -2,8 +2,11 @@ package statedb_test
 
 import (
 	"context"
+	"database/sql"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/linuxdynasty/fleet-board/internal/hub/statedb"
@@ -60,7 +63,8 @@ func TestTheCommandsSchemaBacksTheOutboxRules(t *testing.T) {
 	}
 }
 
-// A store from migration 7 (the restore flag) gains the empty outbox.
+// A store from migration 7 (the restore flag) gains the empty outbox and
+// its expiry indexes.
 func TestOpenMigratesAStoreFromTheRestoreSchema(t *testing.T) {
 	t.Parallel()
 	dir := stateDir(t)
@@ -76,8 +80,8 @@ func TestOpenMigratesAStoreFromTheRestoreSchema(t *testing.T) {
 		t.Fatal(err)
 	}
 	s = open(t, dir)
-	if got := s.SchemaVersion(); got != 9 {
-		t.Errorf("schema version %d, want 9", got)
+	if got := s.SchemaVersion(); got != 10 {
+		t.Errorf("schema version %d, want 10", got)
 	}
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
@@ -87,4 +91,84 @@ func TestOpenMigratesAStoreFromTheRestoreSchema(t *testing.T) {
 			t.Errorf("%s has %d rows", table, n)
 		}
 	}
+}
+
+// Migration 10 on the file itself, over a store at migration 9 that holds
+// rows: the expiry's read of open rows by deadline and the prune's read
+// of closed rows by close time each use their partial index, not a scan.
+func TestMigrationTenIndexesOpenAndClosedCommands(t *testing.T) {
+	t.Parallel()
+	dir := stateDir(t)
+	path := filepath.Join(dir, statedb.FileName)
+	s, err := store.Open(context.Background(), store.Options{Path: path, Name: "state", Migrations: statedb.Migrations()[:9]})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(path, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	db := rawDB(t, dir)
+	if _, err := db.ExecContext(t.Context(), `INSERT INTO commands(command_id, machine_id, kind, command, create_time,
+		not_after_time, update_time, hub_seq) VALUES ('c1', 'm1', 'interrupt', x'00', 1, 2, 1, 1)`); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := open(t, dir).Close(); err != nil {
+		t.Fatal(err)
+	}
+	db = rawDB(t, dir)
+	for _, tc := range []struct {
+		name, query, index string
+		args               []any
+	}{
+		// outbox.Expire's query, for every machine and for one.
+		{"expiry, all machines", `SELECT command_id, machine_id, kind, state, create_time FROM commands
+		WHERE state IN ('pending', 'delivered') AND not_after_time <= ? AND (? = '' OR machine_id = ?)
+		ORDER BY not_after_time, id LIMIT ?`, "commands_open", []any{5, "", "", 500}},
+		{"expiry, one machine", `SELECT command_id, machine_id, kind, state, create_time FROM commands
+		WHERE state IN ('pending', 'delivered') AND not_after_time <= ? AND (? = '' OR machine_id = ?)
+		ORDER BY not_after_time, id LIMIT ?`, "commands_open", []any{5, "m1", "m1", 500}},
+		// outbox.Service.Prune's.
+		{
+			"prune", `SELECT id FROM commands WHERE state IN ('done', 'expired', 'failed') AND done_time < ? LIMIT ?`,
+			"commands_closed",
+			[]any{5, 1000},
+		},
+	} {
+		plan := queryPlan(t, db, tc.query, tc.args...)
+		if !slices.ContainsFunc(plan, func(d string) bool { return strings.Contains(d, "USING INDEX "+tc.index) }) {
+			t.Errorf("%s plan %q, want %s", tc.name, plan, tc.index)
+		}
+	}
+	if n := rawCount(t, path, `SELECT count(*) FROM commands`); n != 1 {
+		t.Errorf("%d rows after the migration, want 1", n)
+	}
+}
+
+// queryPlan is the detail column of EXPLAIN QUERY PLAN for query.
+func queryPlan(t *testing.T, db *sql.DB, query string, args ...any) []string {
+	t.Helper()
+	rows, err := db.QueryContext(t.Context(), `EXPLAIN QUERY PLAN `+query, args...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = rows.Close() }()
+	var plan []string
+	for rows.Next() {
+		var id, parent, unused int
+		var detail string
+		if err := rows.Scan(&id, &parent, &unused, &detail); err != nil {
+			t.Fatal(err)
+		}
+		plan = append(plan, detail)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	return plan
 }

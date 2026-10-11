@@ -11,14 +11,18 @@ import (
 )
 
 // Enqueue puts cmds in the hub's outbox for machineID the way a product
-// caller does: outbox.Enqueue inside one writer job of state.db, then,
-// once it committed, the listener's Outbox().Notify with the rows.
+// caller does: outbox.Enqueue inside one writer job of state.db at the
+// hub's clock (Options.Now), then, once it committed, the listener's
+// Outbox().Notify with the rows.
 func (h *Hub) Enqueue(t *testing.T, machineID string, cmds ...*agentv1.Command) []outbox.Op {
 	t.Helper()
 	h.mu.Lock()
 	s, srv := h.store, h.srv
 	h.mu.Unlock()
 	now := time.Now()
+	if h.opts.Now != nil {
+		now = h.opts.Now()
+	}
 	var ops []outbox.Op
 	err := s.Write(context.Background(), func(tx *sql.Tx) error {
 		ops = ops[:0]
@@ -40,7 +44,7 @@ func (h *Hub) Enqueue(t *testing.T, machineID string, cmds ...*agentv1.Command) 
 
 // CommandRow is one commands row.
 type CommandRow struct {
-	CommandID, State, OpState, Status string
+	CommandID, State, OpState, Status, Reason string
 	// SentEpoch and SentSeq are the last recorded send's; 0 when never sent.
 	SentEpoch, SentSeq uint64
 	// Acked is whether a CommandAck set ack_time.
@@ -52,7 +56,7 @@ func (h *Hub) Commands(t *testing.T, machineID string) []CommandRow {
 	t.Helper()
 	var out []CommandRow
 	h.read(t, func(tx *sql.Tx) error {
-		rows, err := tx.QueryContext(context.Background(), `SELECT command_id, state, op_state, status,
+		rows, err := tx.QueryContext(context.Background(), `SELECT command_id, state, op_state, status, reason,
 			ifnull(sent_epoch, 0), ifnull(sent_seq, 0), ack_time IS NOT NULL FROM commands WHERE machine_id = ? ORDER BY id`,
 			machineID)
 		if err != nil {
@@ -62,7 +66,7 @@ func (h *Hub) Commands(t *testing.T, machineID string) []CommandRow {
 		for rows.Next() {
 			var c CommandRow
 			var epoch, seq int64
-			if err := rows.Scan(&c.CommandID, &c.State, &c.OpState, &c.Status, &epoch, &seq, &c.Acked); err != nil {
+			if err := rows.Scan(&c.CommandID, &c.State, &c.OpState, &c.Status, &c.Reason, &epoch, &seq, &c.Acked); err != nil {
 				return err
 			}
 			c.SentEpoch, c.SentSeq = uint64(epoch), uint64(seq) //nolint:gosec // G115: both have CHECK >= 1 when set
@@ -103,6 +107,18 @@ func (h *Hub) Results(t *testing.T, machineID string) []ResultRow {
 		return rows.Err()
 	})
 	return out
+}
+
+// ExpireCommands runs the hub's outbox expiry job once at now (fleetd
+// run's housekeeping tick): every open command due at now is expired.
+func (h *Hub) ExpireCommands(t *testing.T, now time.Time) {
+	t.Helper()
+	h.mu.Lock()
+	srv := h.srv
+	h.mu.Unlock()
+	if err := srv.Outbox().ExpireDue(context.Background(), now); err != nil {
+		t.Fatalf("ExpireDue: %v", err)
+	}
 }
 
 // LogText is every log line the hub wrote so far (JSON, one per line), so

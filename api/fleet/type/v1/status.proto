@@ -149,6 +149,8 @@ enum ReasonCode {
 
   // Envelope and policy.
 
+  // EXPIRED: the agent received it past its deadline, or the hub had no
+  // result by the deadline (02i).
   REASON_CODE_EXPIRED = 200;
   REASON_CODE_EPOCH_MISMATCH = 201;
   REASON_CODE_SEQ_REPLAYED = 202;
@@ -282,7 +284,8 @@ enum ReasonCode {
   // REVOKED nor past its certificate lifetime.
   REASON_CODE_MACHINE_NOT_REENROLLABLE = 531;
   // A command-issuing action on a REVOKED machine, or RenewCert with that
-  // machine's certificate.
+  // machine's certificate, and the reason on the outbox rows a revoke closes
+  // (02g "Revoke, in one transaction").
   REASON_CODE_MACHINE_REVOKED = 532;
 
   // Hub dispatch rules (03c planning rules, 03h). Each is a reason the hub

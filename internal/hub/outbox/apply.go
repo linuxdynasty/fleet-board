@@ -90,8 +90,10 @@ func (s *Service) Progress(ctx context.Context, from From, p *agentv1.CommandPro
 // scrubbed and its metadata bounded, is stored once in command_results,
 // and the row is closed (done, Operation DONE with the status and reason),
 // from pending too (the ack was lost). A command already closed keeps its
-// first result (Known). The caller sends ResultAck after an Applied or
-// Known outcome, never before.
+// first result (Known). A result for a row the hub closed with no result
+// (expired, or closed by a revoke) is Known too and stored nowhere; it is
+// logged (outbox.late_result) and counted as outcome late. The caller
+// sends ResultAck after an Applied or Known outcome, never before.
 //
 // A refusal the agent sends without logging the command (EPOCH_MISMATCH,
 // SEQ_REPLAYED: it answered a stale copy, row 6 ruling, 02-contracts
@@ -133,6 +135,10 @@ func (s *Service) Result(ctx context.Context, from From, r *agentv1.CommandResul
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "apply")
+	}
+	if out == Known && c.late() {
+		s.log.InfoContext(ctx, "outbox.late_result", "command_id", id, "machine_id", from.MachineID, "kind", c.kind,
+			"status", status, "reason", reason, "late_ms", now.Sub(c.done).Milliseconds())
 	}
 	if out != Applied {
 		return out, err

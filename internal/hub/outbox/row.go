@@ -16,11 +16,15 @@ import (
 type current struct {
 	id, machine, kind, state, opState, step, message string
 	stepIndex, stepCount                             int64
-	created                                          time.Time
+	created, done                                    time.Time
 	hasResult                                        bool
 }
 
 func (c current) closed() bool { return c.state != "pending" && c.state != "delivered" }
+
+// late is a row the hub closed with no stored result (expired by its
+// deadline, or closed by a revoke): a result for it came too late to count.
+func (c current) late() bool { return c.closed() && !c.hasResult }
 
 // stamped ends every Operation update: the version rises, and the
 // update time and hub_seq stamp follow, for the row of one command_id.
@@ -91,6 +95,9 @@ func (s *Service) apply(ctx context.Context, from From, arm, id string, needs fu
 	case changed:
 		s.m.message(ctx, arm, "applied")
 		return Applied, c, nil
+	case arm == "command_result" && c.late():
+		s.m.message(ctx, arm, "late") // the caller logs outbox.late_result
+		return Known, c, nil
 	default:
 		s.m.message(ctx, arm, "known")
 		return Known, c, nil
@@ -118,11 +125,11 @@ func boundedID(id string) string {
 // wrong_machine when the message is not for it.
 func load(ctx context.Context, tx *sql.Tx, id, machine string) (current, string, error) {
 	c := current{id: id}
-	var created int64
+	var created, done int64
 	err := tx.QueryRowContext(ctx, `SELECT machine_id, kind, state, op_state, step, step_index, step_count, message,
-		create_time, EXISTS (SELECT 1 FROM command_results r WHERE r.command_id = c.command_id)
+		create_time, ifnull(done_time, 0), EXISTS (SELECT 1 FROM command_results r WHERE r.command_id = c.command_id)
 		FROM commands c WHERE command_id = ?`, id).Scan(&c.machine, &c.kind, &c.state, &c.opState, &c.step,
-		&c.stepIndex, &c.stepCount, &c.message, &created, &c.hasResult)
+		&c.stepIndex, &c.stepCount, &c.message, &created, &done, &c.hasResult)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
 		return c, "unknown_command", nil
@@ -131,7 +138,7 @@ func load(ctx context.Context, tx *sql.Tx, id, machine string) (current, string,
 	case c.machine != machine:
 		return c, "wrong_machine", nil
 	}
-	c.created = time.UnixMilli(created)
+	c.created, c.done = time.UnixMilli(created), time.UnixMilli(done)
 	return c, "", nil
 }
 

@@ -3,7 +3,7 @@
 The hub's command path: the outbox, the `Operation` each command is, and the
 agent's answers. Spec: [03f "The command path"](../../../docs/specs/03f-hub-internals.md#the-command-path)
 and [02i "Command lifecycle"](../../../docs/specs/02i-delivery-and-sequencing.md#command-lifecycle).
-Plan row 5, PR 5f. Expiry, revoke and pruning come with PR 5g.
+Plan row 5, PRs 5f and 5g (deadlines, expiry, revoke, pruning).
 
 ## API
 
@@ -14,7 +14,19 @@ Plan row 5, PR 5f. Expiry, revoke and pruning come with PR 5g.
 | `Service.Ready(machine, epoch)` | after the Snapshot of that epoch committed (the gateway's `ready` seam) | the machine's pending commands may go out on that epoch |
 | `Service.Gone(machine, epoch)` | when that epoch's stream ended | stops sending on it |
 | `Service.Run(ctx)` | one goroutine, owned by the gateway's `Server` | the sender |
+| `DefaultDeadline(kind)` | `Enqueue`, when the Command has no `not_after_time` | 2 min interactive kinds, 30 min dispatch kinds, 24 h `stop_probe`, 10 min else (02 "Deadlines") |
+| `Expire(ctx, tx, machine, now, limit)` | inside the caller's writer job (the Snapshot job, `ingest.SubmitSnapshot`) | closes open rows due at `now`: `expired`, `DONE`, status and reason `EXPIRED`, `done_time`, one stamp each; `""` is every machine |
+| `CloseForRevoke(ctx, tx, machine, now)` | inside the revoke's writer job (plan row 13a) | closes every open row of the machine: `done`, `DONE`, `EXPIRED`, reason `MACHINE_REVOKED` |
+| `Service.Closed(ctx, list)` | after that job committed | logs `outbox.expired` and counts `fleet_hub_commands_expired_total{kind, cause}` |
+| `Service.ExpireDue(ctx, now)` | housekeeping job `outbox_expiry`, every tick | `Expire` for every machine in jobs of 500, then `Closed` |
+| `Service.Prune(ctx, now)` | housekeeping job `outbox_prune`, hourly | deletes rows closed more than 30 days ago with their results, in jobs of 1,000 |
 | `Service.Ack`, `Progress`, `Result` | the stream's ingest goroutine | clean the free text, decide on the read pool, then apply a change in one writer job; a result the agent did not log (`EPOCH_MISMATCH`, `SEQ_REPLAYED`) is refused and the command goes out again under the live epoch |
+
+The Snapshot job's `Expire` for one machine reads the open rows by
+deadline (`commands_open`) and filters the machine, so it walks every
+machine's due rows; that stays small only because `outbox_expiry` closes
+them every 5 s. Its 500-row bound was checked against the load model (tens
+of commands per machine), not measured.
 
 ## Concurrency
 
@@ -59,7 +71,8 @@ through `scrub.Scrub` with no home folder. The step name is cut to 256 bytes
 and stripped, not scrubbed. A result's metadata keeps its first 16 keys in
 sorted order, each key and value cut to 256 bytes without control
 characters. Its `detail` is kept as the agent sent it (bounding it is noted
-for plan row 5g).
+on #33). A result for a row already closed (expired, revoked) is answered
+and stored nowhere.
 
 ## Telemetry
 
@@ -70,7 +83,8 @@ Listed in 03f "The command path": `fleet_hub_commands_total{kind,status}`,
 `fleet_hub_outbox_pending{machine}`, `fleet_hub_outbox_oldest_age_seconds{machine}`,
 `fleet_hub_scrub_total{field,result}`, `fleet_hub_scrub_oversize_total{field}`;
 logs `outbox.enqueued`, `outbox.sent`, `outbox.acked`, `outbox.resulted`,
-`outbox.refused`, `outbox.failed`; spans `hub.command.send`, `hub.command.result`.
+`outbox.refused`, `outbox.failed`, `outbox.expired`, `outbox.pruned`;
+`fleet_hub_commands_expired_total{kind,cause}`, `fleet_hub_outbox_pruned_total`; spans `hub.command.send`, `hub.command.result`.
 
 ## Tests
 

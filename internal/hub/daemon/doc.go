@@ -28,7 +28,8 @@
 // owns checks the certificate every hour, and another runs the
 // nightly backup (backup.Schedule: a check at start, then every minute),
 // and another the housekeeping jobs every 5 s (machine STALE and OFFLINE
-// marking through gateway.Server.Housekeep).
+// marking through gateway.Server.Housekeep, the outbox's command expiry,
+// and its hourly prune).
 //
 // [EnrollToken] asks the running hub over the admin socket for an enroll
 // token; with no hub listening it is [ErrNotRunning] and writes nothing.

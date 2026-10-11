@@ -87,6 +87,8 @@ spec change. "Decided here" marks a value no earlier document gave.
 | `share_identity_email` | false | | 01 C2 | setting |
 | `merged_grace` | 1 | hour | [03c](03c-goals.md), decided here | setting (hub-only) |
 | Command deadline `not_after_time` | 2 min (`SendKeys`, `Interrupt`, `RunHarnessCommand`, `CapturePane`, `OpenAttach`); 30 min (`StartGoal`, worktree and hook commands); 24 h (`StopProbe`); 10 min else | | [02](02-contracts.md) | fixed |
+| Outbox expiry | a command whose `not_after_time` is at or before the hub clock is closed (`expired`, status `EXPIRED`) and never sent: in the Snapshot transaction of its machine (at most 500 rows) and at every housekeeping tick (5 s; writer jobs of at most 500 rows). The outbox fills `not_after_time` from the row above when the caller sets none | | [03f](03f-hub-internals.md) "The command path", decided here | fixed |
+| Outbox retention (`commands`, `command_results`) | 30 days after a command closed (`done_time`); pruned hourly in writer jobs of at most 1,000 rows; an open command is never pruned | days | [03f](03f-hub-internals.md) data model | fixed |
 | `ready_timeout` in `StartGoal` | 90 | s | [02j](02j-hub-runtime.md), decided here | `timing.ready_timeout` config |
 | `goal_file_timeout` in `StartGoal` | 30 | s | 02j, decided here | `timing.goal_file_timeout` config |
 | Log writer batch | at most 1 | s | [03f](03f-hub-internals.md) | fixed |

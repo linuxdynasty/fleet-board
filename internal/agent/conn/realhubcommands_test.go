@@ -38,11 +38,13 @@ func interruptCmd(id string) *agentv1.Command {
 // goroutine, which logs the command in agent.db, sends CommandAck, logs
 // its OK result and sends it. A command listed in swallow for an epoch is
 // taken and never answered on that epoch, as if the stream died before
-// the ack.
+// the ack. With hold set, each result waits for hold to open after the
+// ack.
 type testExecutor struct {
 	loop    *conn.Loop
 	db      *ring.DB
 	swallow map[string]uint64
+	hold    *gate
 
 	mu   sync.Mutex
 	seen []string
@@ -78,6 +80,12 @@ func (x *testExecutor) run(c *agentv1.Command) {
 	if err := x.loop.Send(ctx, ackOf(id)); err != nil {
 		x.fail(fmt.Errorf("ack %s: %w", id, err))
 		return
+	}
+	if x.hold != nil {
+		if err := x.hold.wait(ctx); err != nil {
+			x.fail(fmt.Errorf("hold %s: %w", id, err))
+			return
+		}
 	}
 	res := &agentv1.CommandResult{
 		CommandId: &typev1.CommandId{Value: id}, Status: typev1.Status_STATUS_OK,

@@ -167,7 +167,8 @@ func snapshotArm(ctx context.Context, a *agentService, s *stream, m *agentv1.Con
 	}
 	a.log.InfoContext(ctx, "snapshot.applied", "machine_id", s.machineID, "epoch", s.epoch, "seq", snap.GetSeq(),
 		"bytes", size, "ms", time.Since(start).Milliseconds(), "event_generation", out.Generation,
-		"text_cut", cleaned.Cut, "text_scrubbed", cleaned.Scrubbed)
+		"text_cut", cleaned.Cut, "text_scrubbed", cleaned.Scrubbed, "expired", len(p.Expired()))
+	a.outbox.Closed(ctx, p.Expired()) // the commands this Snapshot's job expired
 	a.rolledBack(ctx, s, out)
 	if a.onApplied != nil {
 		a.onApplied(s.machineID, s.epoch)
@@ -241,6 +242,7 @@ func (a *agentService) abandonedSnapshots(ctx context.Context, s *stream) {
 		if err == nil && out.Change != nil {
 			a.stateChanged(wctx, *out.Change)
 		}
+		a.outbox.Closed(wctx, p.Expired())
 	}
 	s.abandoned = nil
 }

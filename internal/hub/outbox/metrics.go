@@ -18,6 +18,7 @@ import (
 // the fixed sets below, field the free-text field, machine a machine id.
 type metrics struct {
 	commands, messages, unknown, sends, scrubbed, oversize metric.Int64Counter
+	expired, pruned                                        metric.Int64Counter
 	roundtrip                                              metric.Float64Histogram
 	reg                                                    metric.Registration
 }
@@ -35,14 +36,14 @@ func newMetrics(tel *telemetry.Telemetry, pending pendingFunc, clock func() time
 	m := tel.Meter(scope)
 	p := tel.MetricPrefix()
 	var x metrics
-	var errs [9]error
+	var errs [11]error
 	x.commands, errs[0] = m.Int64Counter(p+"_commands_total",
 		metric.WithDescription("Commands that ended, by kind and final status (a CommandResult the hub stored)."))
 	x.roundtrip, errs[1] = m.Float64Histogram(p+"_command_roundtrip_seconds", metric.WithUnit("s"),
 		metric.WithDescription("Time from a command's enqueue to its stored CommandResult, by kind."))
 	x.messages, errs[2] = m.Int64Counter(p+"_command_messages_total",
 		metric.WithDescription("CommandAck, CommandProgress and CommandResult messages by arm and outcome: applied, "+
-			"known (a repeat), unknown_command, wrong_machine, stale_stream, invalid, epoch_mismatch and seq_replayed "+
+			"known (a repeat), late (a result for a row the hub closed with none: expired or revoked), unknown_command, wrong_machine, stale_stream, invalid, epoch_mismatch and seq_replayed "+
 			"(a refusal the agent did not log), failed (store error)."))
 	x.unknown, errs[3] = m.Int64Counter(p+"_results_unknown_command_total",
 		metric.WithDescription("CommandResults for a command_id the hub has no row for; refused, never stored."))
@@ -54,6 +55,11 @@ func newMetrics(tel *telemetry.Telemetry, pending pendingFunc, clock func() time
 			"redacted, unsettled (replaced whole)."))
 	x.oversize, errs[6] = m.Int64Counter(p+"_scrub_oversize_total",
 		metric.WithDescription("Agent free text over its field's cap, cut to the cap before the scrub ran, by field."))
+	x.expired, errs[9] = m.Int64Counter(p+"_commands_expired_total",
+		metric.WithDescription("Commands the hub closed without a result, by kind and cause: deadline (not_after_time "+
+			"came first) or revoked (the machine was revoked)."))
+	x.pruned, errs[10] = m.Int64Counter(p+"_outbox_pruned_total",
+		metric.WithDescription("Closed commands (with their results) deleted 30 days after they closed."))
 	count, errPending := m.Int64ObservableGauge(p+"_outbox_pending",
 		metric.WithDescription("Commands pending (not yet acknowledged) per machine."))
 	age, errAge := m.Float64ObservableGauge(p+"_outbox_oldest_age_seconds", metric.WithUnit("s"),

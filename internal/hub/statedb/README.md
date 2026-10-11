@@ -282,6 +282,9 @@ list, err := statedb.MachineStates(ctx, s)
     twice in one epoch), `version` (rises on every Operation change) and the
     `hub_seq` stamp. No foreign key to `machines`, like
     `machine_connections`. A partial index holds only pending rows.
+    Migration 10 (PR 5g) adds two more partial indexes: open rows
+    (`pending`, `delivered`) by `not_after_time` for the expiry, and closed
+    rows by `done_time` for the 30-day prune; every close sets `done_time`.
   - `command_results`: the first `CommandResult` per command (its message
     scrubbed), with the epoch it came on. Triggers refuse an update and an
     insert over a stored one; it goes with its command (`ON DELETE CASCADE`).

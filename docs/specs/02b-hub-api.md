@@ -208,8 +208,7 @@ command's `CommandId`, so the UI, the audit log and the agent's local log
 name the same thing. The operation follows the outbox: `PENDING` →
 `DELIVERED` (`CommandAck`) → `RUNNING` (progress, local confirmation) →
 `DONE` with `status` and, if not OK, `error` (`ErrorDetail`). Expiry
-(`not_after_time`) ends it `DONE / EXPIRED` ("not delivered, machine was
-offline"). Results that carry text (CapturePane, OBSERVE harness commands,
+(`not_after_time`) ends it `DONE / EXPIRED` ("never delivered while the machine was away, or delivered with no result before the deadline"). Results that carry text (CapturePane, OBSERVE harness commands,
 the preflight goal-line preview) land in `output_text` (requester and `LOGS` holders only). The effects show up
 on their own resources (a new window on the `Session`, the goal's `phase`).
 `Operation.kind` is an `OperationKind` enum numbered like the agent's

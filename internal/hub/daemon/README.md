@@ -75,7 +75,9 @@ parses flags and calls `Init`, `Run`, `EnrollToken`, `Backup` or `Restore`.
    ([internal/hub/housekeeping](../housekeeping/README.md)), checked every
    5 s (`Options.HousekeepingTicks` in tests): `machine_state`
    (`gateway.Server.Housekeep`: `STALE` at 45 s of silence, `OFFLINE` and
-   the stream cut at 3 min, a stalled `STALE` stream cut). Later plan rows
+   the stream cut at 3 min, a stalled `STALE` stream cut), `outbox_expiry`
+   (every open command whose deadline came is closed `EXPIRED`) and, hourly,
+   `outbox_prune` (commands closed more than 30 days ago). Later plan rows
    add their prune jobs to the same list.
 11. Stops: shuts the listeners down at the same time (one 10 s grace for
    all, so the agent listener's handler wait does not eat the others'; then
@@ -172,7 +174,9 @@ serves that certificate without re-issuing it. The sweep test seeds a
 crash's leftovers (an `ONLINE` machine with a live row) with the hub
 stopped, starts `Run` and finds the row closed as `hub_restart` and the
 machine `STALE`, then drives the housekeeping tick with a fake clock to
-`OFFLINE` exactly 3 minutes after the start.
+`OFFLINE` exactly 3 minutes after the start. The outbox jobs test seeds a
+due command and one closed 31 days ago with the hub stopped, and one tick
+expires the first and prunes the second.
 The bind test checks, through an `export_test.go` hook, that the agent
 listener is served by the `*gateway.Server` itself, not its embedded
 `*http.Server`: only the first waits for the Connect handlers on stop.

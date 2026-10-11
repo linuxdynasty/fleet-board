@@ -192,7 +192,8 @@ srv, err := gateway.NewServer(gateway.ServerOptions{
   its machine's live one and the Snapshot whole (no `snapshot.parts`);
   `ingest.Clean` cuts and scrubs its text; then the Snapshot is
   one writer job (`ingest.SubmitSnapshot`, then `Pending.Wait`; the statedb core with the current-epoch check and agent
-  rollback, `ServerOptions.Appliers` in order, then ONLINE), compared with
+  rollback, `ServerOptions.Appliers` in order, then `outbox.Expire` for
+  the machine's due commands, then ONLINE), compared with
   the values the stream's `Hello` carried. Only its commit marks the
   machine ONLINE; the Hello transaction never does. As for a Hello, the
   wait for the job ends when the agent leaves, a housekeeping cut or
@@ -205,6 +206,8 @@ srv, err := gateway.NewServer(gateway.ServerOptions{
   commit order. The abandoned reason never waits for the stream's end
   (the reader may be blocked on the full ingest queue that only this
   goroutine drains); displacement alone never abandons a wait. After the commit:
+  `outbox.Closed` logs and counts the commands the job expired (an
+  abandoned job's, at the teardown, when its result is read in time),
   the outbox's `ready(machineID, epoch)` (pending commands go out from
   it), then `ServerOptions.OnSnapshotApplied(machineID, epoch)` when set
   (each must check the stream is still live, since it also runs for a
@@ -272,7 +275,7 @@ srv, err := gateway.NewServer(gateway.ServerOptions{
 | `connect.failed` (`step`: `validate`, `store`, `wiring`, `heartbeat`; `err_kind`, `machine_id`) | the hub's failure at a Hello, a stream's close or a Heartbeat's store job (error) |
 | `fleet_hub_connect_closed_before_hello_total{err_kind}`, `reconnect.closed` (`epoch` 0, `reason` `before_hello`, `err_kind`: `oversize`, `reset`, `timeout`, `shutdown`) | a stream with a certificate that ended before a Hello was accepted |
 | `fleet_hub_connect_unhandled_total{kind}`, `hub.connect.unhandled` (`machine_id`, `epoch`, `kind`) | a message of an arm with no handler yet |
-| `snapshot.applied` (`machine_id`, `epoch`, `seq`, `bytes`, `ms`, `event_generation`, `text_cut`, `text_scrubbed`), `fleet_hub_snapshot_apply_seconds{result="applied"}`, `fleet_hub_snapshot_bytes`, span `hub.snapshot.apply` | a Snapshot committed; the machine is ONLINE |
+| `snapshot.applied` (`machine_id`, `epoch`, `seq`, `bytes`, `ms`, `event_generation`, `text_cut`, `text_scrubbed`, `expired`), `fleet_hub_snapshot_apply_seconds{result="applied"}`, `fleet_hub_snapshot_bytes`, span `hub.snapshot.apply` | a Snapshot committed; the machine is ONLINE |
 | `snapshot.refused` (`reason`: `not_current`, `parts`, `revoked`, `unknown_machine`, `invalid`), `snapshot.failed` (`step`: `store`, `applier`; `err_kind`), `result="refused"` / `"failed"` | a Snapshot not applied (warn / error) |
 | `snapshot.abandoned` (`reason`: `agent_left`, `cut`, `shutdown`), `result="abandoned"` | the stream ended while the Snapshot's job waited (info; outcome unknown) |
 | `snapshot.rollback` (`machine_id`, `epoch`, `causes`, `event_generation`), `fleet_hub_agent_rollback_total{machine}` | an agent rollback (02i rule 3), with a `machine.install_changed` audit row |

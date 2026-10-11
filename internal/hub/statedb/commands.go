@@ -23,7 +23,7 @@ package statedb
 //   - command_results: the first CommandResult of each command, with its
 //     free text already scrubbed; triggers refuse an update and an insert
 //     over a stored one (INSERT OR REPLACE deletes without firing delete
-//     triggers). A row goes only with its command (the prune, plan row 5g).
+//     triggers). A row goes only with its command (the outbox prune).
 const commandsSQL = `CREATE TABLE commands(
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
 	command_id TEXT NOT NULL UNIQUE CHECK (length(command_id) BETWEEN 1 AND 64),
@@ -72,3 +72,11 @@ BEGIN SELECT RAISE(ABORT, 'a command keeps its first result'); END;
 CREATE TRIGGER command_results_no_replace BEFORE INSERT ON command_results
 WHEN EXISTS (SELECT 1 FROM command_results WHERE command_id = NEW.command_id)
 BEGIN SELECT RAISE(ABORT, 'a command keeps its first result'); END;`
+
+// commandsExpirySQL is migration 10 (plan row 5, PR 5g): the indexes the
+// outbox's expiry and prune read. commands_open holds only open rows by
+// deadline (the Snapshot transaction and housekeeping expire them);
+// commands_closed holds only closed rows by close time (the prune, 30
+// days after done_time). Every close sets done_time.
+const commandsExpirySQL = `CREATE INDEX commands_open ON commands(not_after_time) WHERE state IN ('pending', 'delivered');
+CREATE INDEX commands_closed ON commands(done_time) WHERE state IN ('done', 'expired', 'failed');`
