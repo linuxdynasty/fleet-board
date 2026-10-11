@@ -31,6 +31,7 @@ const (
 	sourceBinaryHash = "binary_hash"
 	sourceUsername   = "username"
 	sourceTmux       = "tmux"
+	sourceRSS        = "rss"
 )
 
 // Reasons a reading failed that are not an operating system error. Each maps

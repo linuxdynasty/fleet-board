@@ -33,5 +33,10 @@ func TestRealSampleOnThisMachine(t *testing.T) {
 			t.Errorf("disk %q free %d total %d", d.GetPath(), d.GetFreeBytes(), d.GetTotalBytes())
 		}
 	}
-	t.Logf("%s", protojson.Format(r))
+	// The agent's own resident memory: a Go test binary holds well over 1 MiB
+	// and nowhere near 16 GiB.
+	if rss := s.Latest().RSSBytes; rss < 1<<20 || rss > 16<<30 {
+		t.Errorf("RSSBytes = %d, want the test binary's own resident memory", rss)
+	}
+	t.Logf("%s\nrss_bytes: %d", protojson.Format(r), s.Latest().RSSBytes)
 }

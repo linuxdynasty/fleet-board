@@ -114,11 +114,16 @@ func runAgent(ctx context.Context, dir, cfgDir, version, boot string, tel *telem
 	wg.Go(func() { wake.Run(wctx, events) })
 	wg.Go(func() { nw.Run(wctx, events) })
 
-	snapshot, heartbeat, err := machineHooks(wctx, &wg, tel, dir, nil)
+	// The heartbeat hook reads the loop's reconnect count; the loop exists only
+	// after the hook, and the hook runs only inside loop.Run.
+	var loop *conn.Loop
+	snapshot, heartbeat, err := machineHooks(wctx, &wg, tel, dir, nil, healthSeams{
+		Unacked: db.UnackedCount, Reconnects: func() uint64 { return loop.Reconnects() },
+	})
 	if err != nil {
 		return failed("machine", err)
 	}
-	loop, err := conn.NewLoop(ctx, conn.LoopOptions{
+	loop, err = conn.NewLoop(ctx, conn.LoopOptions{
 		Dir: dir, Identity: id, DB: db, Version: version, BootID: boot,
 		Telemetry: tel, Events: events, PushOff: nw.PushOff, Discover: discover,
 		Snapshot: chainSnapshot(snapshot, pol.mgr.Snapshot), Heartbeat: heartbeat,

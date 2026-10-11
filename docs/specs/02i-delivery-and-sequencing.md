@@ -72,6 +72,12 @@ connect. `Bye` is sent by the stream's sender itself, never queued.
 `Hello`, `HelloAck`, `Snapshot` and `SnapshotRequest` are not events either and
 are never dropped; the handshake and recovery depend on them.
 
+The number of results not yet acknowledged that the heartbeat reports
+(`AgentHealth.unacked_results`) is kept in memory by the command log's writer,
+seeded at start and moved only after the job that changes it committed, so the
+heartbeat never waits on the store; `AgentHealth.reconnects_total` is the
+connection loop's count of streams after the first.
+
 An inventory event (`tmux_server`, `session`, `window`, `pane_created`,
 `pane_changed`, `repo`) carries the object after the change, so the hub applies
 it as an **upsert** (closed: a delete). A hub that missed the earlier event of

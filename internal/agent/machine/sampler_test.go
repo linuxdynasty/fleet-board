@@ -26,6 +26,7 @@ func good() machine.Readers {
 			return 2, nil
 		},
 		Usage: func(_ context.Context, p string) (uint64, uint64, error) { return uint64(len(p)) * 1000, 1 << 40, nil },
+		RSS:   func(context.Context) (uint64, error) { return 96 << 20, nil },
 	}
 }
 

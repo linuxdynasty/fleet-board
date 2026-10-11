@@ -22,6 +22,7 @@ seq, err := seqs.Next(ctx)                                    // reserves 1024 s
 err = seqs.Floor(ctx, helloAck.GetHubLastEventSeq())          // next seq above what the hub stored
 last := seqs.Last()                                           // highest seq handed out: Heartbeat.event_seq
 res, err := db.Unacked(ctx)                                   // finished results with no ResultAck
+n := db.UnackedCount()                                        // len(res) from memory: Heartbeat.health.unacked_results
 n, err := db.AckResults(ctx, ack.GetCommandIds(), now)        // unknown or already acked ids change nothing
 n, err = db.Prune(ctx, hubNow)                                // hub time; 7 days and 10,000 entries, never one the hub may re-send
 ```
@@ -115,5 +116,14 @@ result, seq blocks across a reopen and the floor, results unacked until
 insert), pruning by age and by count (an acked entry inside its deadline
 goes, an unacked one stays), the age limit with the agent clock 8 days
 behind (an unacked entry inside its deadline stays; acked and expired ones
-older than 7 days go), pruning by hub time with a skewed wall clock, and one
-`Seqs` shared by many goroutines under `-race`.
+older than 7 days go), pruning by hub time with a skewed wall clock, one
+`Seqs` shared by many goroutines under `-race`, and `UnackedCount` equal to
+`len(Unacked())` after a result, an ack, a prune that removes unacked rows, a
+reopen, concurrent writers, and a write whose caller gave up waiting but still
+committed (`writeThen`).
+
+`UnackedCount` exists because the heartbeat may not query the store. It is
+seeded by one `count(*)` at `Open` and moved only after the batch holding the
+job committed: `RecordResult` +1, `AckResults` -n, `Prune` minus the unacked
+rows its two deletes took (counted in the same transaction). A new write that
+changes `status` or `acked_time`, or deletes rows, must move it too.

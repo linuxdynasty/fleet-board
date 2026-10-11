@@ -24,6 +24,9 @@ type loopMetrics struct {
 
 	connected atomic.Int64
 	unacked   atomic.Int64
+	// reconnected is the same count as reconnects, kept in memory for
+	// [Loop.Reconnects] (AgentHealth.reconnects_total).
+	reconnected atomic.Uint64
 }
 
 // newLoopMetrics registers the loop's signals; certLeft is the time left
@@ -74,6 +77,7 @@ func (m *loopMetrics) attempt(ctx context.Context, result, source string) {
 }
 
 func (m *loopMetrics) reconnect(ctx context.Context, reason string) {
+	m.reconnected.Add(1)
 	m.reconnects.Add(ctx, 1, metric.WithAttributes(attribute.String("reason", reason)))
 }
 

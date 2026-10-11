@@ -185,7 +185,9 @@ message MachineAgentHealth {
   uint64 ring_bytes = 2;
   uint32 unacked_results = 3;
   uint64 reconnects_total = 4;
-  uint64 rss_bytes = 5;
+  // Unset when the agent could not read it, or is too old to send it: the
+  // dashboard shows unknown, not 0.
+  optional uint64 rss_bytes = 5;
   uint32 tmux_control_down = 6;
   uint32 probes_failing = 7;
   uint64 commands_refused_total = 8;

@@ -238,6 +238,11 @@ func NewLoop(ctx context.Context, opts LoopOptions) (*Loop, error) {
 // Status is a copy of what the loop knows now.
 func (l *Loop) Status() Status { return l.status.get() }
 
+// Reconnects is how many streams connected after the first since this
+// process started (what fleet_agent_reconnects_total counts), read from memory
+// so a Heartbeat hook may call it.
+func (l *Loop) Reconnects() uint64 { return l.m.reconnected.Load() }
+
 // StatusChanged signals, coalesced, after the status changed; read
 // Status then. PushOff is read live and not signaled.
 func (l *Loop) StatusChanged() <-chan struct{} { return l.status.changed }

@@ -280,7 +280,10 @@ changes nothing. This replaces 03g's `settings_restored` flag.
 
 **Other messages on the stream.** `Bye` is the last message a side sends on a
 stream, and a repeated `Bye` is harmless. `Heartbeat` carries no seq and is
-unordered; a repeat is harmless. `RenewCert` is idempotent; `Enroll` is
+unordered; a repeat is harmless. Its `health` (`AgentHealth`) sends plain
+counters, where 0 is a true zero, and `rss_bytes` as `optional`: unset means
+the agent could not read its own resident memory, and the hub shows unknown,
+never 0 ([05b](05b-observability.md) section 6). `RenewCert` is idempotent; `Enroll` is
 retry-safe ([02g](02g-agent-security.md#enrollment-trust-anchor-and-retry-a1)).
 
 **Identity.** `EnrollResponse.fleet_id` and `HelloAck.fleet_id` name the

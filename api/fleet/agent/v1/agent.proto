@@ -341,8 +341,9 @@ message AgentHealth {
   uint32 unacked_results = 3;
   // Reconnects of the Connect stream since this process started.
   uint64 reconnects_total = 4;
-  // Resident memory of the agent process.
-  uint64 rss_bytes = 5;
+  // Resident memory of the agent process; unset when it could not be read
+  // (a reading of 0 is not a reading), never 0.
+  optional uint64 rss_bytes = 5;
   // tmux servers whose control connection is down (observed, not asked).
   uint32 tmux_control_down = 6;
   // Accounts whose usage probe has failed three times in a row on this

@@ -38,6 +38,10 @@ type Sample struct {
 	Taken time.Time
 	// Resources has only the readings that worked; see ResourceSample.
 	Resources *agentv1.ResourceSample
+	// RSSBytes is the agent's own resident memory (AgentHealth.rss_bytes), or
+	// 0 when it could not be read: a process always holds some, so 0 is
+	// "unknown", never a reading.
+	RSSBytes uint64
 
 	// boot is the clock that keeps counting in sleep at Taken; bootOK is
 	// false when it could not be read, which makes the sample unknowable.
@@ -230,6 +234,7 @@ type reading struct {
 type (
 	loadVal struct{ l1, l5 float64 }
 	memVal  struct{ total, avail uint64 }
+	rssVal  struct{ bytes uint64 }
 	diskVal struct {
 		i           int
 		path        string
@@ -284,7 +289,7 @@ func (s *Sampler) sample(ctx context.Context) {
 	if capped {
 		t.fail(ctx, sourceDisk, errConstraint)
 	}
-	out := make(chan reading, 2+len(paths))
+	out := make(chan reading, 3+len(paths))
 	pending := map[string]string{} // key -> source
 	start1 := func(key, source string, fn func(context.Context) (any, error)) {
 		if s.launch(ctx, out, key, source, fn) {
@@ -301,6 +306,10 @@ func (s *Sampler) sample(ctx context.Context) {
 		a, b, err := rd.Mem(ctx)
 		return memVal{a, b}, err
 	})
+	start1("rss", sourceRSS, func(ctx context.Context) (any, error) {
+		b, err := rd.RSS(ctx)
+		return rssVal{b}, err
+	})
 	for i, p := range paths {
 		start1("disk:"+p, sourceDisk, func(ctx context.Context) (any, error) {
 			f, tot, err := rd.Usage(ctx, p)
@@ -310,6 +319,7 @@ func (s *Sampler) sample(ctx context.Context) {
 
 	var total, avail uint64
 	memOK := false
+	var rss uint64
 	disks := make([]*agentv1.DiskFree, len(paths))
 	timer := time.NewTimer(s.o.ReadTimeout)
 	defer timer.Stop()
@@ -318,6 +328,10 @@ wait:
 		select {
 		case rr := <-out:
 			delete(pending, rr.key)
+			if rr.source == sourceRSS {
+				rss = s.acceptRSS(ctx, t, rr)
+				continue
+			}
 			total, avail, memOK = s.accept(ctx, t, r, disks, rr, total, avail, memOK)
 		case <-timer.C:
 			for _, source := range pending {
@@ -349,7 +363,7 @@ wait:
 	if r.Load1 == nil && r.MemTotalBytes == nil && r.MemPressureLevel == nil && len(r.GetDisk()) == 0 {
 		return
 	}
-	smp := &Sample{Taken: start, Resources: r}
+	smp := &Sample{Taken: start, Resources: r, RSSBytes: rss}
 	if bootErr == nil {
 		smp.boot, smp.bootOK = boot, true
 	}
@@ -383,6 +397,23 @@ func (s *Sampler) accept(ctx context.Context, t *tally, r *agentv1.ResourceSampl
 	}
 	t.ok(rr.source)
 	return total, avail, memOK
+}
+
+// acceptRSS records the agent's own resident memory, or 0 (unknown) for a
+// reading that failed or that says 0: a running process holds memory, and
+// gopsutil's macOS reader returns 0 with no error when proc_pidinfo fails.
+func (s *Sampler) acceptRSS(ctx context.Context, t *tally, rr reading) uint64 {
+	v, _ := rr.val.(rssVal)
+	switch {
+	case rr.err != nil:
+		t.fail(ctx, sourceRSS, rr.err)
+	case v.bytes == 0:
+		t.fail(ctx, sourceRSS, errParse)
+	default:
+		t.ok(sourceRSS)
+		return v.bytes
+	}
+	return 0
 }
 
 // diskPaths are the paths one sample reads: the state folder, then the repo

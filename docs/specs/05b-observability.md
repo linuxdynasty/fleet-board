@@ -105,7 +105,7 @@ failure events are in section 10. The platform's own lifecycle events:
 | `hub.stopped` | info | `fleetd run` shut down |
 | `proc.killed` | warn; `caller`, `cause` (`time_cap`, `output_cap`, `cancelled`), `killed` (a group kill signalled a process; `false` for an output cap passed by a child that had already exited), `pid`, `elapsed_ms`, `output_bytes`, `time_cap_ms`, `output_cap_bytes` | `internal/proc` ended a one-shot child: its time cap or output cap passed, or the caller's context ended, while it ran, and its whole process group was killed; or its output passed the cap after it had already exited (nothing to kill). One line per call. Never the program, its arguments, environment or output |
 | `proc.pipe_held` | warn; `caller`, `pid`, `elapsed_ms`, `output_bytes` | a one-shot child is gone but a descendant still holds its stdout or stderr after the 2 s `WaitDelay`, so `internal/proc` stopped waiting and returned `ErrHeldPipe`. The descendant is not killed (the child was reaped, so its process group id may be free) and keeps running. Counted in `proc_pipe_held_total` |
-| `sample.failed` | warn; `source` (`load`, `mem`, `mem_pressure`, `disk`, `os_version`, `ram`, `timezone`, `binary_hash`, `username`, `tmux`), `err_kind` | a reading of the machine's own facts or resources (B1, B2) failed; the field stays unset in the snapshot, never 0. Logged once at the start of a run of failures of that source (a read of `load`, `mem` or a `disk` path that did not return in 10 s is `err_kind` `timeout`, and is not started again while the last one is still out; a `disk` path over the 32-path cap is `constraint`); every failure is counted in `fleet_agent_sample_failures_total`. `tmux` not on PATH is not a failure. Never a path, a user name or the error text |
+| `sample.failed` | warn; `source` (`load`, `mem`, `mem_pressure`, `disk`, `os_version`, `ram`, `timezone`, `binary_hash`, `username`, `tmux`, `rss`), `err_kind` | a reading of the machine's own facts or resources (B1, B2) or of the agent's own resident memory (`AgentHealth.rss_bytes`) failed; the field stays unset in the snapshot, never 0. Logged once at the start of a run of failures of that source (a read of `load`, `mem`, `rss` or a `disk` path that did not return in 10 s is `err_kind` `timeout`, and is not started again while the last one is still out; a `disk` path over the 32-path cap is `constraint`; an `rss` of 0 with no error, which gopsutil returns on macOS when `proc_pidinfo` fails, is `parse`); every failure is counted in `fleet_agent_sample_failures_total`. `tmux` not on PATH is not a failure. Never a path, a user name or the error text |
 | `sample.recovered` | info; `source` | the first pass in which that source read without a failure after `sample.failed` |
 | `sample.stale` | warn; `reason` (`age`, `boot_clock`) | a Snapshot or Heartbeat found the latest resource sample too old to send, so its resources and `load1` went out unset (the hub shows unknown). `age`: older than three intervals, counting the time the machine slept; `boot_clock`: the clock that counts sleep could not be read (02i "Clocks"), so no age can be vouched for. Logged once at the start of a run of them; every withheld sample is counted in `fleet_agent_sample_stale_total`. It answers "why is this machine's load missing while the agent is connected" when `sample.failed` is silent: a sampler stuck inside a reading shows here |
 | `sample.fresh` | info | the first fresh sample after `sample.stale` |
@@ -253,7 +253,20 @@ connections down, accounts whose probe failed three times in a row, and
 commands refused since start. The hub keeps the latest in
 `MachineTelemetry.agent_health` (a volatile field: at most one Watch message
 per 30 s), shows it in the System section, and exports it as
-`fleet_hub_agent_*{machine}`. Not added: goroutine counts and GC data (the
+`fleet_hub_agent_*{machine}`. Where the agent gets each number, all read from
+memory on the heartbeat's sending goroutine: `unacked_results` is an atomic in
+the command log's store, seeded at start and moved by the writer's own jobs
+(`ring.DB.UnackedCount`); `reconnects_total` is the connection loop's count of
+streams after the first (`conn.Loop.Reconnects`); `rss_bytes` is the agent's own
+resident memory, read by the resource sampler on its 30 s tick (gopsutil
+`process`, [ADR 0031](../adr/0031-gopsutil-process-for-own-rss.md)), unset when
+it could not be read or the sample is older than three intervals;
+`commands_refused_total` and `tmux_control_down` come from the command executor
+and the tmux control clients (rows 6e and 7), and read 0 until those exist;
+`ring_events` and `ring_bytes` are 0 until row 7 holds an event ring;
+`probes_failing` is row 8's. The agent's own gauge `fleet_agent_unacked_results` is set by the connection loop at each snapshot and `ResultAck`, so it can differ for a moment from the exact `unacked_results` of the heartbeat, which is the store's count. Counters are plain numbers, because 0 is a true
+zero for them; `rss_bytes` is `optional`, because a process always holds some
+memory and a 0 would be a failed read, which the hub shows as unknown. Not added: goroutine counts and GC data (the
 agent's own `/metrics` or OTLP, for the developer who wants them), and agent log
 lines (paths and text: they stay on the machine; `fleet-agent doctor` reads
 the agent's status file, not the log, and names `agent.log` for detail).

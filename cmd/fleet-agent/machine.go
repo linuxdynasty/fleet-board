@@ -10,11 +10,21 @@ import (
 	"github.com/linuxdynasty/fleet-board/internal/telemetry"
 )
 
+// healthSeams are the AgentHealth numbers the machine hooks read from other
+// parts of the agent. A nil one reads 0 (machine.Hooks). Row 6e wires Refused
+// and row 7 ControlDown.
+type healthSeams struct {
+	Unacked     func() int
+	Reconnects  func() uint64
+	Refused     func() uint64
+	ControlDown func() uint32
+}
+
 // machineHooks starts the B2 sampler on wg (it stops with ctx) and returns
 // the B1 facts and B2 sample as the connection loop's Snapshot and Heartbeat
 // hooks. roots is the allowed repo roots now (nil until the policy exists,
 // row 6b); the state folder is always sampled.
-func machineHooks(ctx context.Context, wg *sync.WaitGroup, tel *telemetry.Telemetry, dir string, roots func() []string) (
+func machineHooks(ctx context.Context, wg *sync.WaitGroup, tel *telemetry.Telemetry, dir string, roots func() []string, seams healthSeams) (
 	snapshot func(context.Context, *agentv1.Snapshot) error, heartbeat func(context.Context, *agentv1.Heartbeat), err error,
 ) {
 	m, err := machine.NewMetrics(tel)
@@ -34,6 +44,9 @@ func machineHooks(ctx context.Context, wg *sync.WaitGroup, tel *telemetry.Teleme
 		return nil, nil, err
 	}
 	wg.Go(func() { sampler.Run(ctx) })
-	h := machine.Hooks{Collector: collector, Sampler: sampler}
+	h := machine.Hooks{
+		Collector: collector, Sampler: sampler,
+		Unacked: seams.Unacked, Reconnects: seams.Reconnects, Refused: seams.Refused, ControlDown: seams.ControlDown,
+	}
 	return h.Snapshot, h.Heartbeat, nil
 }

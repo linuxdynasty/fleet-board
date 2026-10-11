@@ -62,7 +62,8 @@ func unackedIDs(ctx context.Context, tx *sql.Tx) ([]string, error) {
 // pruned), one not finished yet and one already acked change nothing.
 func (d *DB) AckResults(ctx context.Context, ids []string, at time.Time) (int, error) {
 	var n int64
-	err := d.s.Write(ctx, func(tx *sql.Tx) error {
+	err := d.writeThen(ctx, func(tx *sql.Tx) error {
+		n = 0
 		st, err := tx.PrepareContext(ctx, `UPDATE command_log SET acked_time = ?
 			WHERE command_id = ? AND status = ? AND acked_time IS NULL`)
 		if err != nil {
@@ -81,7 +82,7 @@ func (d *DB) AckResults(ctx context.Context, ids []string, at time.Time) (int, e
 			n += k
 		}
 		return nil
-	})
+	}, func() { d.unacked.Add(-n) })
 	if err != nil {
 		return 0, err
 	}
@@ -122,8 +123,13 @@ func (d *DB) Prune(ctx context.Context, now time.Time) (int, error) {
 	if !due {
 		return 0, nil
 	}
-	var n int64
-	err := d.s.Write(ctx, func(tx *sql.Tx) error {
+	var n, unacked int64
+	err := d.writeThen(ctx, func(tx *sql.Tx) error {
+		n, unacked = 0, 0
+		before, err := countUnacked(ctx, tx)
+		if err != nil {
+			return err
+		}
 		res, err := tx.ExecContext(ctx, `DELETE FROM command_log WHERE received_time < ? AND `+forgettable, old, at)
 		if err != nil {
 			return fmt.Errorf("ring: prune command log: %w", err)
@@ -140,8 +146,15 @@ func (d *DB) Prune(ctx context.Context, now time.Time) (int, error) {
 		}
 		k, err := res.RowsAffected()
 		n += k
+		if err != nil {
+			return err
+		}
+		// What the two deletes took from the unacked results, counted in the
+		// same transaction.
+		after, err := countUnacked(ctx, tx)
+		unacked = before - after
 		return err
-	})
+	}, func() { d.unacked.Add(-unacked) })
 	if err != nil {
 		return 0, err
 	}
