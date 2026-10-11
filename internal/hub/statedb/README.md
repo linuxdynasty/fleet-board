@@ -268,7 +268,7 @@ list, err := statedb.MachineStates(ctx, s)
     `machine.cert_renewed` (no actor; the serial and `not_after`). A replay
     writes nothing.
 
-- **Commands** (migration 8, plan row 5 PR 5f; 03f "The command path", 02i
+- **Commands** (migration 9, plan row 5 PR 5f; 03f "The command path", 02i
   "Command lifecycle"): the schema only; `internal/hub/outbox` owns every
   query.
   - `commands`: one row per `command_id` (unique, 1 to 64 bytes), in send

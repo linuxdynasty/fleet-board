@@ -19,7 +19,7 @@ func TestRegistrySendNeedsTheLiveEpoch(t *testing.T) {
 	if got := r.Send("m1", 1, msg); got != outbox.SendNotLive {
 		t.Errorf("no stream: %v, want not live", got)
 	}
-	s1 := newStream("m1", "b", "p", 1)
+	s1 := newStream(context.Background(), "m1", "b", "p", 1, time.Time{})
 	r.register(s1)
 	if got := r.Send("m1", 2, msg); got != outbox.SendNotLive {
 		t.Errorf("another epoch: %v, want not live", got)
@@ -32,7 +32,7 @@ func TestRegistrySendNeedsTheLiveEpoch(t *testing.T) {
 	if got := r.Send("m1", 1, msg); got != outbox.SendFull {
 		t.Errorf("a full queue: %v, want full", got)
 	}
-	s2 := newStream("m1", "b", "p", 2)
+	s2 := newStream(context.Background(), "m1", "b", "p", 2, time.Time{})
 	r.register(s2) // displaces s1
 	if got := r.Send("m1", 1, msg); got != outbox.SendNotLive {
 		t.Errorf("a displaced epoch: %v, want not live", got)
@@ -50,7 +50,7 @@ func TestRegistrySendNeedsTheLiveEpoch(t *testing.T) {
 // or the context ends.
 func TestStreamQueueWaitsForRoom(t *testing.T) {
 	t.Parallel()
-	s := newStream("m1", "b", "p", 1)
+	s := newStream(context.Background(), "m1", "b", "p", 1, time.Time{})
 	msg := &agentv1.ConnectResponse{}
 	for range outQueue {
 		s.out <- msg

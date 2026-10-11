@@ -103,6 +103,17 @@ func NewServer(opts ServerOptions) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
+	// The Snapshot's commit makes the machine's pending commands ready: the
+	// outbox sends nothing before it (row 5 ruling, fork 1). ready refuses an
+	// epoch that is not the live stream's, so a Snapshot handled after the
+	// agent left sends nothing.
+	userApplied := cdeps.onApplied
+	cdeps.onApplied = func(machineID string, epoch uint64) {
+		cdeps.ready(machineID, epoch)
+		if userApplied != nil {
+			userApplied(machineID, epoch)
+		}
+	}
 	mux := http.NewServeMux()
 	path, h := agentv1connect.NewAgentServiceHandler(&agentService{enrollDeps: deps, connectDeps: cdeps},
 		connect.WithReadMaxBytes(MaxMessageBytes))

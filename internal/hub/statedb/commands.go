@@ -1,6 +1,6 @@
 package statedb
 
-// commandsSQL is migration 8 (plan row 5, PR 5f): the command outbox and
+// commandsSQL is migration 9 (plan row 5, PR 5f): the command outbox and
 // the Operation it is, in one row (row 5 ruling, fork 5), and the results
 // beside it (03f data model). internal/hub/outbox owns every query.
 //

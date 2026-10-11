@@ -224,8 +224,8 @@ func TestOpenAddsTheSnapshotColumnsToARestoreSchemaStore(t *testing.T) {
 	if n != 1 {
 		t.Errorf("%d migrated machine rows with the snapshot defaults, want 1", n)
 	}
-	if v := statedb.Migrations()[len(statedb.Migrations())-1]; v.Version != 8 || v.Name != "machine_snapshot" {
-		t.Errorf("last migration %d %q, want 8 machine_snapshot", v.Version, v.Name)
+	if v := statedb.Migrations()[7]; v.Version != 8 || v.Name != "machine_snapshot" {
+		t.Errorf("migration 8 is %d %q, want 8 machine_snapshot", v.Version, v.Name)
 	}
 }
 
