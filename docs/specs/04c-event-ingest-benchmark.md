@@ -139,7 +139,7 @@ Not proven here:
 - many streams at once and the 200 events/s per agent x N agents shape;
 - the micro-batch variant;
 - BatchMax 50;
-- the benchmark's enqueue stamp is taken before `EventIn` and its result is
+- the benchmark's enqueue stamp is taken before EventIn and its result is
   read in a collector goroutine, so its boundary is slightly wider than the
   shim's `end.Sub(m.at)`; not corrected for.
 
