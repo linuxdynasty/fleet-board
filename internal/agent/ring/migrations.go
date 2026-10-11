@@ -21,8 +21,18 @@ func Migrations() []store.Migration {
 		Version: 4,
 		Name:    "ack_guards",
 		SQL:     ackGuardsSQL,
+	}, {
+		Version: 5,
+		Name:    "command_body",
+		SQL:     commandBodySQL,
 	}}
 }
+
+// commandBodySQL adds the encoded Command of each logged entry, so the
+// executor can run a received entry, or resume a running one, after a
+// restart (02i "What agent.db keeps"; ruling fork 4 iii). An entry logged
+// before this migration has none (NULL). Pruning deletes it with its row.
+const commandBodySQL = `ALTER TABLE command_log ADD COLUMN command BLOB;`
 
 // rowGuardsSQL closes the paths the UPDATE triggers miss: DELETE (the next
 // Open would mint a new install_id), and INSERT OR REPLACE or REPLACE, whose

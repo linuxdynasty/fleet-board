@@ -36,6 +36,9 @@ type Command struct {
 	Seq      uint64
 	Received time.Time
 	NotAfter time.Time
+	// Body is the encoded Command, kept so an entry the agent had not
+	// finished can be run or resumed after a restart (ruling fork 4 iii).
+	Body []byte
 }
 
 // Entry is one command log row.
@@ -54,39 +57,51 @@ type Entry struct {
 // it saves nothing and returns the logged entry with dup set, so the caller
 // answers from the log without running the command again (02i).
 func (d *DB) LogCommand(ctx context.Context, c Command) (Entry, bool, error) {
-	if c.ID == "" || c.Kind == "" {
-		return Entry{}, false, errors.New("ring: a command needs an id and a kind")
-	}
-	epoch, err := toInt("epoch", c.Epoch)
-	if err != nil {
-		return Entry{}, false, err
-	}
-	seq, err := toInt("seq", c.Seq)
+	epoch, seq, err := c.ints()
 	if err != nil {
 		return Entry{}, false, err
 	}
 	var out Entry
 	var dup bool
 	err = d.s.Write(ctx, func(tx *sql.Tx) error {
-		res, err := tx.ExecContext(ctx, `INSERT INTO command_log(command_id, kind, epoch, seq, received_time,
-			not_after_time, status) SELECT ?, ?, ?, ?, ?, ?, ?
-			WHERE NOT EXISTS (SELECT 1 FROM command_log WHERE command_id = ?)`,
-			c.ID, c.Kind, epoch, seq, c.Received.UnixMilli(), c.NotAfter.UnixMilli(), string(StatusReceived), c.ID)
-		if err != nil {
-			return fmt.Errorf("ring: log command: %w", err)
-		}
-		n, err := res.RowsAffected()
-		if err != nil {
-			return fmt.Errorf("ring: log command: %w", err)
-		}
-		dup = n == 0
-		out, err = readEntry(ctx, tx, c.ID)
+		var err error
+		out, dup, err = insertCommand(ctx, tx, c, epoch, seq)
 		return err
 	})
 	if err != nil {
 		return Entry{}, false, err
 	}
 	return out, dup, nil
+}
+
+// ints checks c's id and kind and converts its epoch and seq for SQLite.
+func (c Command) ints() (epoch, seq int64, err error) {
+	if c.ID == "" || c.Kind == "" {
+		return 0, 0, errors.New("ring: a command needs an id and a kind")
+	}
+	if epoch, err = toInt("epoch", c.Epoch); err != nil {
+		return 0, 0, err
+	}
+	seq, err = toInt("seq", c.Seq)
+	return epoch, seq, err
+}
+
+// insertCommand logs c unless its id is logged, and returns the entry; dup
+// is true when it was already there and nothing was saved.
+func insertCommand(ctx context.Context, tx *sql.Tx, c Command, epoch, seq int64) (Entry, bool, error) {
+	res, err := tx.ExecContext(ctx, `INSERT INTO command_log(command_id, kind, epoch, seq, received_time,
+		not_after_time, status, command) SELECT ?, ?, ?, ?, ?, ?, ?, ?
+		WHERE NOT EXISTS (SELECT 1 FROM command_log WHERE command_id = ?)`,
+		c.ID, c.Kind, epoch, seq, c.Received.UnixMilli(), c.NotAfter.UnixMilli(), string(StatusReceived), c.Body, c.ID)
+	if err != nil {
+		return Entry{}, false, fmt.Errorf("ring: log command: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return Entry{}, false, fmt.Errorf("ring: log command: %w", err)
+	}
+	e, err := readEntry(ctx, tx, c.ID)
+	return e, n == 0, err
 }
 
 // RecordResult stores the command's one result. A second result is
@@ -130,8 +145,8 @@ func readEntry(ctx context.Context, tx *sql.Tx, id string) (Entry, error) {
 	var status string
 	var finished, acked sql.NullInt64
 	err := tx.QueryRowContext(ctx, `SELECT command_id, kind, epoch, seq, received_time, not_after_time, status,
-		step_reached, result, finished_time, acked_time FROM command_log WHERE command_id = ?`, id).
-		Scan(&e.ID, &e.Kind, &epoch, &seq, &received, &notAfter, &status, &e.Step, &e.Result, &finished, &acked)
+		step_reached, result, finished_time, acked_time, command FROM command_log WHERE command_id = ?`, id).
+		Scan(&e.ID, &e.Kind, &epoch, &seq, &received, &notAfter, &status, &e.Step, &e.Result, &finished, &acked, &e.Body)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Entry{}, ErrUnknownCommand
 	}

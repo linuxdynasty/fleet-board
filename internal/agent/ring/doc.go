@@ -17,6 +17,11 @@
 // or seq floor too large to keep ([ErrOutOfRange]). Triggers in the file
 // refuse a step back, a deleted or replaced agent_state row, a second
 // insert or renamed command_id, a changed result and a changed ack or an
-// ack on an unfinished entry, whoever writes it. The event ring itself and
-// the executor (row 6) come later.
+// ack on an unfinished entry, whoever writes it. For the executor (row 6)
+// [DB.LogAndApply] logs a command and applies its seq in one job, so a crash
+// never leaves a seq applied with no log row; the entry keeps the encoded
+// command so [DB.Open] can hand it back after a restart, and
+// [DB.SetRunning] marks it running with the step reached. An entry logged
+// before migration 5 has a nil Body; the executor ends it UNKNOWN_OUTCOME.
+// The event ring itself comes later.
 package ring

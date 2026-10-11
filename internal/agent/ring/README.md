@@ -12,7 +12,10 @@ st, err := db.State(ctx)                                     // install_id, mark
 m, err := db.RaiseMarks(ctx, ring.Marks{SeqHWM: next + 1023}) // never lowers a field
 err = db.StartEpoch(ctx, helloAck.GetEpoch())                 // ErrEpochNotAbove at or below the last
 err = db.ApplyCommandSeq(ctx, epoch, seq)                     // ErrWrongEpoch, ErrSeqReplayed
-e, dup, err := db.LogCommand(ctx, ring.Command{ID: id, Kind: k, Epoch: ep, Seq: s, Received: t, NotAfter: na})
+e, dup, err := db.LogCommand(ctx, ring.Command{ID: id, Kind: k, Epoch: ep, Seq: s, Received: t, NotAfter: na, Body: b})
+e, dup, err = db.LogAndApply(ctx, cmd)                         // log + seq advance in one job: ErrWrongEpoch, ErrSeqReplayed save nothing
+err = db.SetRunning(ctx, id, step)                            // running, step reached never lowered
+open, err := db.Open(ctx)                                     // entries with no result yet, in applied order
 err = db.RecordResult(ctx, id, encodedResult, finished)       // ErrResultLogged keeps the first
 seqs, err := db.Seqs(ctx)                                     // event seq allocator
 seq, err := seqs.Next(ctx)                                    // reserves 1024 seqs per write
@@ -77,8 +80,21 @@ n, err = db.Prune(ctx, hubNow)                                // hub time; 7 day
   deadline, never one the hub may still re-send (not acked, inside its
   deadline), so a re-sent command is a duplicate, not a second run
   ([02i](../../../docs/specs/02i-delivery-and-sequencing.md), [defaults](../../../docs/specs/defaults.md)).
+- **Log and seq in one job.** `LogAndApply` answers a known `command_id`
+  from its entry before any check, then refuses another epoch
+  (`ErrWrongEpoch`) or a seq at or below the last (`ErrSeqReplayed`)
+  without saving anything, else inserts the entry and applies its seq in
+  the same job, so a crash cannot leave a seq applied with no log row (the
+  hub's re-send would then be `SEQ_REPLAYED` on an unknown id: a lost
+  command; ruling fork 4 i). `LogCommand` alone logs without the seq: the
+  executor uses it for a command past its deadline, which is checked before
+  the epoch. Migration 5 adds the encoded command (`command`), so `Open`
+  hands an entry back to the executor after a restart; `SetRunning` marks
+  it running and never lowers the step reached, and refuses a finished
+  entry (`ErrResultLogged`). An entry logged before migration 5 has a nil
+  `Body`; the executor ends it `UNKNOWN_OUTCOME`.
 - Not here yet: the event ring itself (events come with the rows that emit
-  them) and the executor's steps (row 6).
+  them).
 
 Signals: none of its own. `store.opened`, `store.migrated` and the
 `fleet_agent_writer_*` and `fleet_agent_store_*` metrics (`db="agent"`, 05b)
@@ -89,11 +105,15 @@ reopen, a migration from schema 2, the file mode, a loose file refused,
 install_id kept, marks never lowered (through the API and by the file's
 triggers, including delete and replace), epoch and command seq, one entry
 per `command_id` under concurrent delivery (and against raw `REPLACE` and
-renames), the kept result, seq blocks across a reopen and the floor,
-results unacked until `ResultAck` and across a reopen, the first ack kept
-in the file (update and insert), pruning by age and by count (an acked
-entry inside its deadline goes, an unacked one stays), the age limit with
-the agent clock 8 days behind (an unacked entry inside its deadline stays;
-acked and expired ones older than 7 days go), pruning by hub time
-with a skewed wall clock, and one `Seqs` shared by many goroutines under
-`-race`.
+renames), the `command` column in the file, a schema-4 entry that migrates
+with a nil body, the epoch-0 refusal, bad arguments saving nothing, a known
+id answered before the range check, the log and the seq advance in one job
+(a seeded trigger aborts the seq update and the log row goes with it), epoch
+then seq refusals that save nothing, running and open entries, the kept
+result, seq blocks across a reopen and the floor, results unacked until
+`ResultAck` and across a reopen, the first ack kept in the file (update and
+insert), pruning by age and by count (an acked entry inside its deadline
+goes, an unacked one stays), the age limit with the agent clock 8 days
+behind (an unacked entry inside its deadline stays; acked and expired ones
+older than 7 days go), pruning by hub time with a skewed wall clock, and one
+`Seqs` shared by many goroutines under `-race`.

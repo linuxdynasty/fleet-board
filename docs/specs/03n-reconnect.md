@@ -125,7 +125,7 @@ the stop's 10 s grace, [defaults](defaults.md) "Stop grace (hub)"), so the store
 |---|---|---|
 | Event ring (`seq`, body, 1 week or 64 MiB, [defaults](defaults.md)) | `agent.db` | per event, fsync batched ≤ 1 s |
 | `seq_hwm` (reserved in blocks of 1024), `EventCounters`, `install_id`, `last_epoch`, `last_applied_command_seq` | `agent.db` | one fsync per block; counters with it; the epoch and command marks never step back |
-| Command log (last 10,000 or 7 days; status, result, step reached) | `agent.db` | per state change, before `CommandAck` is sent |
+| Command log (last 10,000 or 7 days; status, result, step reached, the encoded command) | `agent.db` | per state change, before `CommandAck` is sent |
 | Probe assignments (`EnsureProbe` as received) | `agent.db` | with the command log |
 | Goal registry (`GoalRegistration` per pane) and availability marks (per pane key) | `agent.db` | `register_goal`, `RegisterGoal`, `ReleaseGoal`, mark commands; both reported in every snapshot (02h) |
 | Outbox rows (`pending/delivered/done/expired/failed`, epoch, seq) | hub store | Hello tx (expiry), result tx (close) |
