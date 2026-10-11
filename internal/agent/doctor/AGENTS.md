@@ -23,7 +23,8 @@ Read the root `AGENTS.md` first; it applies here. Load `fleet-go`,
   is a bug.
 - Judge a status.json fact only when the file is fresh (`StaleAfter`, 2
   minutes: the writer rewrites at least once a minute). The end the loop stopped
-  on and the clock measurement are the exceptions: they stay true when old.
+  on, the clock measurement and the last mDNS browse are the exceptions: they
+  stay true when old.
 - No telemetry: doctor prints to the person who ran it
   (`No-Observability-Change`, the proc call is already counted by `internal/proc`).
 - A new check updates the table in README.md, the count in the tests and 02k.

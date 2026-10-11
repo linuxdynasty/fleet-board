@@ -13,7 +13,7 @@ if rep.Failed() { /* exit 1 */ }
 ```
 
 A new check is a `doctor.Check{ID, Title, Run}`; append it to the list passed to
-`Run`. A check this build cannot run yet is `doctor.NotCheckedYet(id, title, row)`.
+`Run`. A check this build cannot run yet is `doctor.NotCheckedYet(id, title, row)` (or `NotCheckedYetAt(id, title, label)`).
 
 ## Statuses
 
@@ -37,15 +37,19 @@ that is not ok or not_checked has a fix line.
 | `policy_watch` | `policy_watch: off` in status.json | warns when off |
 | `status_file` | `status.json` age (old after 2 minutes) | warns when old or damaged |
 | `connection` | state, peer, last failure per address, the end the loop stopped on | fails for revoked, unknown machine, fleet mismatch, cert expired |
+| `push_socket` | `push_off` in status.json: the network watcher's push socket (ADR 0029 decision 6) | warns when off (the agent then polls every 15 seconds); unknown when the file is old |
+| `mdns_browse` | the last mDNS browse in status.json (its own time, kept when the file is old) | warns when it found no hub or had no multicast interface; unknown before any browse |
 | `snapshot_size` | `snapshot_oversize` | warns: the hub must be upgraded |
 | `clock` | hub time minus this clock at the last hello | warns over 5 minutes, fails over 15 |
 | `enroll` | `enroll.json`: the last failed enroll's code and reason | fails when a failure is recorded |
 | `tmux` | `tmux -V` through `machine.TmuxVersion` | missing or older than 3.2 |
 | `probe_folder` | the usage probe's folder: exists, private, empty (names inside are never printed) | warns |
+| `hub_handshake`, `linger` | nothing yet | `not_checked` (row 6, PR 6h) |
 | `harness_paths`, `probe_trust`, `two_pane_folders` | nothing yet | `not_checked` (rows 8 and 9) |
 
 ## Not here
 
-The hub handshake, mDNS and push socket, and Linux linger are PR 6h. The
+The hub handshake and Linux linger are listed as `not_checked` until PR 6h
+adds them (`doctor.NotCheckedYetAt` gives the label "row 6, PR 6h"). The
 harness trust-screen steps are row 8. `ended.json` is not read: the loop's end
 is in status.json.

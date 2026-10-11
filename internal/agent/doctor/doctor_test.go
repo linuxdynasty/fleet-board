@@ -23,8 +23,8 @@ func TestEveryLocalCheckIsListedOnceWithAStatusAndAReason(t *testing.T) {
 	want := []string{
 		"state_dir", "config_dir", "identity", "cert_expiry", "cert_file", "renew_key",
 		"policy_file", "policy_roots", "policy_harnesses", "policy_watch",
-		"status_file", "connection", "snapshot_size", "clock", "enroll",
-		"tmux", "probe_folder", "harness_paths", "probe_trust", "two_pane_folders",
+		"status_file", "connection", "push_socket", "mdns_browse", "snapshot_size", "clock", "enroll",
+		"tmux", "probe_folder", "hub_handshake", "linger", "harness_paths", "probe_trust", "two_pane_folders",
 	}
 	var got []string
 	valid := []doctor.Status{doctor.OK, doctor.Warn, doctor.Fail, doctor.Unknown, doctor.NotChecked}
@@ -177,7 +177,7 @@ func TestJSONHasTheFoldersTheChecksAndTheCounts(t *testing.T) {
 	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
 		t.Fatalf("not JSON: %v\n%s", err, buf.String())
 	}
-	if got.StateDir != r.state || got.ConfigDir != r.cfg || len(got.Checks) != 20 {
+	if got.StateDir != r.state || got.ConfigDir != r.cfg || len(got.Checks) != 24 {
 		t.Errorf("got %q %q and %d checks", got.StateDir, got.ConfigDir, len(got.Checks))
 	}
 	total := 0
@@ -188,8 +188,8 @@ func TestJSONHasTheFoldersTheChecksAndTheCounts(t *testing.T) {
 		}
 		total += v
 	}
-	if total != 20 {
-		t.Errorf("summary adds up to %d, want 20", total)
+	if total != 24 {
+		t.Errorf("summary adds up to %d, want 24", total)
 	}
 }
 

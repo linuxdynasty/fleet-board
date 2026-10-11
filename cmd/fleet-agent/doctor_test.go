@@ -46,7 +46,7 @@ func TestDoctorJSONAndFlagsAreHonoured(t *testing.T) {
 	if err := json.Unmarshal([]byte(r.stdout), &rep); err != nil {
 		t.Fatalf("not JSON: %v\n%s", err, r.stdout)
 	}
-	if r.code != 1 || rep.StateDir != state || rep.ConfigDir != cfg || len(rep.Checks) != 20 {
+	if r.code != 1 || rep.StateDir != state || rep.ConfigDir != cfg || len(rep.Checks) != 24 {
 		t.Errorf("exit %d, folders %q %q, %d checks", r.code, rep.StateDir, rep.ConfigDir, len(rep.Checks))
 	}
 }
