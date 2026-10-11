@@ -66,6 +66,9 @@ type session struct {
 	floor, firstSnap uint64
 	eventAck         bool
 	cursor           *events.Cursor
+	// pace limits the event rate; paceWait fires when a token is back.
+	pace     *eventBucket
+	paceWait <-chan time.Time
 	// epoch is this stream's HelloAck.epoch; q its outbound queue once
 	// Connected (outbound.go).
 	epoch uint64
@@ -408,6 +411,11 @@ func (s *session) serve(ctx context.Context) (ending, string, error) {
 				return out, step, err
 			}
 		case <-s.feed():
+			if err := s.sendEvents(ctx); err != nil {
+				return ending{}, "events", err
+			}
+		case <-s.paceWait:
+			s.paceWait = nil
 			if err := s.sendEvents(ctx); err != nil {
 				return ending{}, "events", err
 			}

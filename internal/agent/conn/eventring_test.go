@@ -15,13 +15,18 @@ import (
 	"github.com/linuxdynasty/fleet-board/internal/agent/events"
 )
 
-func newEmitter(t *testing.T, a *agent) *events.Emitter {
+// emitter is the agent's one emitter on its agent.db, made once per test.
+func (a *agent) emitter(t *testing.T) *events.Emitter {
 	t.Helper()
+	if a.em != nil {
+		return a.em
+	}
 	e, err := events.New(context.Background(), events.Options{DB: a.openDB(t), Telemetry: a.tel})
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(e.Close)
+	a.em = e
 	return e
 }
 
@@ -56,7 +61,7 @@ func TestEventsGoOutAfterTheSnapshotAndResultsInSeqOrder(t *testing.T) {
 	a := enrolled(t, h)
 	db := a.openDB(t)
 	logResult(t, db, "cmd-1", time.Now())
-	e := newEmitter(t, a)
+	e := a.emitter(t)
 	var before []uint64
 	for i := range 3 {
 		s, err := e.Emit(context.Background(), policyEvent(string(rune('a'+i))))
@@ -121,7 +126,7 @@ func TestEventAckTrimsTheRingOnlyWhenTheHubListsIt(t *testing.T) {
 				}
 			})
 			a := enrolled(t, h)
-			e := newEmitter(t, a)
+			e := a.emitter(t)
 			var last uint64
 			for range 2 {
 				s, err := e.Emit(context.Background(), policyEvent("x"))
@@ -160,7 +165,7 @@ func TestTheHeartbeatCarriesTheRingSize(t *testing.T) {
 		h.tamperAck = func(_ int, ack *agentv1.HelloAck) { ack.HeartbeatInterval = durationpb.New(time.Second) }
 	})
 	a := enrolled(t, h)
-	e := newEmitter(t, a)
+	e := a.emitter(t)
 	if _, err := e.Emit(context.Background(), policyEvent("x")); err != nil {
 		t.Fatal(err)
 	}
@@ -180,7 +185,7 @@ func TestALongRingReplaysWholeInSeqOrder(t *testing.T) {
 	t.Parallel()
 	h := startConnectHub(t)
 	a := enrolled(t, h)
-	e := newEmitter(t, a)
+	e := a.emitter(t)
 	var want []uint64
 	for range 150 {
 		s, err := e.Emit(context.Background(), policyEvent("x"))

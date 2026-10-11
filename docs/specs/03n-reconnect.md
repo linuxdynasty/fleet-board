@@ -191,7 +191,8 @@ The agent side of plan row 6 (ruling forks 4 i, 11 and 12), in
   snapshot and its unacked results are out, the stream takes a cursor on
   the event ring (`internal/agent/events`) and its sender sends the ring's
   events above `HelloAck.hub_last_event_seq`, then live ones, strictly in
-  seq order (02i "Queue and ring rules"); an event below the stream's first
+  seq order (02i "Queue and ring rules") and at most 200 a second
+  ([defaults](defaults.md) "Agent event send rate"); an event below the stream's first
   `Snapshot.seq` is sent `replayed`. `EventAck` trims the ring only when the
   HelloAck listed `event.ack` (`connect.message_ignored{kind="event_ack"}`
   otherwise). The first events are `policy_changed` (the policy loader's
@@ -242,7 +243,7 @@ The agent side of plan row 6 (ruling forks 4 i, 11 and 12), in
 | Developer typed in a goal pane while offline | `PaneInput` in the ring (coalesced, latest time) and `TmuxPane.last_input_time` in the snapshot; W6's "human at keyboard" suppression is derived from the snapshot's `last_input_time` (the replayed `PaneInput` is history only) |
 | Work tracker / code host unavailable at reconnect | W4 lag rises; verification waits; dispatch stays paused while lag exceeds its threshold |
 | Flapping network (reconnect every few seconds) | Each reconnect costs a snapshot; the agent rate-limits reconnects to one per 5 s and the hub to one Hello per machine per 5 s (`RESOURCE_EXHAUSTED` / `RATE_LIMITED` with `retry_after`; 02g "Hello refusals"); `fleet_hub_reconnects_total` shows it |
-| Ring replay floods the hub after a long outage | Replay is rate-limited per agent; the writer batches; HTTP/2 flow control blocks the agent, never the hub's other machines (per-stream windows) |
+| Ring replay floods the hub after a long outage | Replay is rate-limited per agent (200 events/s, [defaults](defaults.md)); the writer batches; HTTP/2 flow control blocks the agent, never the hub's other machines (per-stream windows) |
 
 ### Telemetry
 
