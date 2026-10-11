@@ -1,6 +1,6 @@
 # 04c. Event ingest: per-message jobs at the replay burst
 
-- Status: In progress (plan row 5 PR 5c2); the gate is not settled yet
+- Status: Measured 2026-10-11 (plan row 5 PR 5c2); one line missed by 2.4 ms, decision pending (below)
 - Date: 2026-10-11
 - Part of: [README](README.md), step 4; follows [04](04-technology-review.md)
   Q7 (replay budget). Required by the row 5 ruling, fork 6.
@@ -89,7 +89,38 @@ The unchanged S1 shim went from 28 ms to 70 ms commit p99 on this host
 today, so the tails follow the host's load, not the job shape. Writer CPU
 is not the limit (42 % busy at 2,500 jobs/s, 100 jobs per batch).
 
-### Quiet host
+### Quiet host (2026-10-11, commit ed6baed)
 
-Not run yet: needs the machine to itself for about 25 minutes (ten 60 s
-runs plus the S1 rerun).
+Other developers idle and no builds or tests but these; load average 2.97
+before, 2.12 after the ten runs and 1.34 after the S1 rerun (it rose to 7
+during the runs: macOS counts threads waiting on fsync, and no other build
+ran; the owner's editor was the only other busy process). Ten 60 s runs,
+`benchstat` (median ± spread):
+
+| Measure | Budget | BenchmarkEventBurst | Verdict |
+|---|---|---|---|
+| Jobs committed per second | at least 2,500 | 2,499 ± 0 % (2,499 to 2,500); 0 failed; every job committed | within (the producer offers exactly 2,500) |
+| Commit p99 | at most 50 ms | 36.8 ms ± 3 % (29.2 to 37.5) | within |
+| Enqueue to commit p99 | at most 60 ms | 62.4 ms ± 2 % (59.1 to 63.7; 9 of 10 runs above 60) | **missed by 2.4 ms** |
+| Enqueue to commit p50 | none | 38.6 ms ± 6 % | |
+| Writer busy | at most 70 % | 41.9 % ± 2 % | within |
+| Jobs per batch | none | 100 (every batch full) | |
+| Drain after the producer stops | about one enqueue-to-commit p99 | 262 ms ± 5 % | the last, partial batch waits for the store's 250 ms batch window; not a backlog |
+
+The S1 shim right after, same window: 2,623 rows/s, commit p99 31.3 ms,
+enqueue to commit p50 29.4 ms, p99 59.5 ms (Q7 recorded 2,626, 28.2, 30.2
+and 57.8 ms). So the shim itself sits just under the 60 ms line today, and
+the per-message job shape (savepoint, the machine read, the history row,
+the `hub_counters` UPDATE and the machine UPDATE per event) adds about 5 ms
+to commit p99 and 3 ms to enqueue to commit p99.
+
+Reading: the writer keeps up with a wide margin (42 % busy, commit p99 37
+ms); the enqueue-to-commit p99 is the batch fill (100 jobs at 2,500/s,
+about 40 ms) plus the commit, and goes over 60 ms by 2.4 ms. Per the
+switch rule a miss is a miss; whether this one calls for the micro-batch
+variant (which would not shorten the fill wait: it batches jobs, not
+commits) or a budget reading is a decision for the coordinator. The
+micro-batch variant is not built.
+
+Raw output (ten benchmark lines, the S1 run, the load log):
+[`spikes/sqlite/results/s1-event-burst-2026-10-11.txt`](../../spikes/sqlite/results/s1-event-burst-2026-10-11.txt).
