@@ -24,6 +24,8 @@
 // command so [DB.Open] can hand it back after a restart, and
 // [DB.SetRunning] marks it running with the step reached. An entry logged
 // before migration 5 has a nil Body; the executor ends it UNKNOWN_OUTCOME.
+// [DB.Recent] lists what was received in the last minute for the
+// executor's rate window.
 // Migration 6 adds the event ring (plan row 7): [DB.SubmitEvent] queues a
 // NEVER_DROP or COALESCE event, replacing the entry with its key and
 // evicting past [Caps] (counted), in one job; the file keeps entries in seq
