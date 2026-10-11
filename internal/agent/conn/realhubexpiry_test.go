@@ -117,6 +117,9 @@ func TestTheRealHubExpiresADeliveredCommandAndIgnoresItsLateResult(t *testing.T)
 	if res := h.Results(t, id); len(res) != 0 {
 		t.Errorf("results stored for an expired command: %+v", res)
 	}
+	if ev := h.Events(t, "outbox.late_result"); len(ev) != 1 || ev[0]["command_id"] != "c-late" || ev[0]["status"] != "OK" {
+		t.Errorf("outbox.late_result %v, want one line for c-late", ev)
+	}
 	x.wg.Wait()
 	x.mu.Lock()
 	defer x.mu.Unlock()

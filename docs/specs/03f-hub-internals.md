@@ -123,7 +123,8 @@ contract; this is how the hub runs it.
   decision that caused it, so both commit or neither does. A known
   `command_id` is a no-op that returns the stored row. After the commit the
   caller hands the row back to the outbox, which logs `outbox.enqueued` and
-  wakes the sender.
+  wakes the sender. A REVOKED machine is refused (`MACHINE_REVOKED`, 02b)
+  and nothing is written.
 - **Send.** One sender goroutine does every send. A machine
   gets commands only after the Snapshot of its current epoch committed: the
   Snapshot step calls the gateway's `ready(machine, epoch)` seam after its
@@ -153,8 +154,10 @@ contract; this is how the hub runs it.
   anything is sent on the new epoch, and in the housekeeping job
   `outbox_expiry` at every tick for every machine (writer jobs of at most
   500 rows). Each closed row is logged after its commit. A result that
-  arrives for a row already closed is answered with `ResultAck` (so the
-  agent stops re-sending it) and stored nowhere; the row stays as it is.
+  arrives for a row already closed with no result is answered with
+  `ResultAck` (so the agent stops re-sending it), stored nowhere, logged
+  `outbox.late_result` and counted as outcome `late`; the row stays as it
+  is.
 - **Revoke.** `outbox.CloseForRevoke(tx, machine)` closes every open row
   of the machine inside the revoke's transaction, whatever its deadline:
   `done`, `DONE`, status `EXPIRED`, reason `MACHINE_REVOKED` (02g; 02i).
@@ -193,7 +196,8 @@ contract; this is how the hub runs it.
 `fleet_hub_command_roundtrip_seconds{kind}` (03 conventions; a stored
 result), `fleet_hub_command_messages_total{arm, outcome}` (`arm`:
 `command_ack`, `command_progress`, `command_result`; `outcome`: `applied`,
-`known`, `unknown_command`, `wrong_machine`, `stale_stream`, `invalid`,
+`known`, `late` (a result for a row the hub closed with none: expired or
+revoked), `unknown_command`, `wrong_machine`, `stale_stream`, `invalid`,
 `epoch_mismatch`, `seq_replayed`, `failed`), `fleet_hub_results_unknown_command_total` (03n),
 `fleet_hub_outbox_sends_total{result}` (`queued`, `full`, `not_live`,
 `invalid`: a stored command that does not decode, skipped),
@@ -212,14 +216,17 @@ epoch}` (warn), `outbox.failed{step, err_kind, …}` (error; `step`: `load`,
 machine_id, epoch}` (the stream ended first; the agent re-sends the result
 after its next Snapshot), `outbox.expired{command_id, machine_id, kind,
 from, cause, age_ms}` (`from`: `pending`, `delivered`; `age_ms` from the
-enqueue) and `outbox.pruned{commands, before_ms}`. Spans
+enqueue), `outbox.late_result{command_id, machine_id, kind, status, reason,
+late_ms}` (a result for a row already closed with none; `late_ms` after the
+close) and `outbox.pruned{commands, before_ms}`. Spans
 `hub.command.send{command_id}` (a child of the span that issued the command;
 its context is the one the agent receives) and `hub.command.result{command_id}`
 (linked to the agent's span). At 3 AM: "why did machine X not get its
 command?" → `fleet_hub_outbox_pending{machine}` and its oldest age,
 `fleet_hub_outbox_sends_total{result}`, `outbox.sent`; "why is this
 operation stuck?" → `outbox.acked`, `outbox.refused{cause}`,
-`fleet_hub_command_messages_total{outcome}`; "why was this command
+`fleet_hub_command_messages_total{outcome}`; "the Operation says EXPIRED; did it run?" → `outbox.late_result`
+(its `status`) and `fleet_hub_command_messages_total{outcome="late"}`; "why was this command
 never run?" → `outbox.expired` (`from` `pending`: it never reached the
 agent; `delivered`: the agent took it and sent no result in time) and
 `fleet_hub_commands_expired_total{kind, cause}`; "is the outbox

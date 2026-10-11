@@ -28,6 +28,10 @@ var (
 	// ErrConflict: the command_id is stored for another machine. Nothing is
 	// written.
 	ErrConflict = errors.New("outbox: command_id stored for another machine")
+	// ErrMachineRevoked: the machine is REVOKED; nothing is sent to it
+	// again (02g), so nothing is written. The caller answers
+	// FAILED_PRECONDITION / MACHINE_REVOKED (02b).
+	ErrMachineRevoked = errors.New("outbox: the machine is revoked")
 )
 
 // maxID is the longest command_id the outbox stores (the 02g install_id
@@ -76,7 +80,9 @@ type Op struct {
 // at all. It never sends: after the job commits the caller hands the
 // returned Op to [Service.Notify]. A command_id already stored is a no-op
 // that returns the stored row (Created false), unless the row is another
-// machine's ([ErrConflict]). The command's identity is
+// machine's ([ErrConflict]). A REVOKED machine is refused
+// ([ErrMachineRevoked]) after that check, so a repeat still returns the
+// stored row. The command's identity is
 // its command_id alone; the epoch and per-epoch seq it travels with are
 // assigned each time it is sent.
 func Enqueue(ctx context.Context, tx *sql.Tx, in In) (Op, error) {
@@ -101,12 +107,15 @@ func Enqueue(ctx context.Context, tx *sql.Tx, in In) (Op, error) {
 		}
 		return op, err
 	}
-	var known int
-	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM machines WHERE machine_id = ?`, in.MachineID).Scan(&known); err != nil {
-		return Op{}, fmt.Errorf("outbox: look up machine: %w", err)
-	}
-	if known == 0 {
+	var state string
+	err := tx.QueryRowContext(ctx, `SELECT state FROM machines WHERE machine_id = ?`, in.MachineID).Scan(&state)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
 		return Op{}, ErrMachineUnknown
+	case err != nil:
+		return Op{}, fmt.Errorf("outbox: look up machine: %w", err)
+	case state == statedb.MachineRevoked:
+		return Op{}, ErrMachineRevoked
 	}
 	body, err := proto.MarshalOptions{Deterministic: true}.Marshal(cmd)
 	if err != nil {

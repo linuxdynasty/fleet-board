@@ -226,7 +226,7 @@ local approval if required (a `CommandProgress` in state
 `EnsureWorktree`, `PruneWorktree`, `EnsureGoalHooks`; 24 h for `StopProbe`
 (its machine may be asleep; the snapshot reconcile covers longer); 10 min else. The agent evaluates deadlines in hub time
 (`HelloAck.hub_time` plus the time elapsed since, counting time the machine
-slept; 02i, "Clocks"). The hub is the time
+slept; 02i, "Clocks"). For the agent `not_after_time` is the latest start; for the hub it is the latest time a result counts: a row with no result at the deadline is expired, in its machine's Snapshot transaction and on the housekeeping tick, and a result that arrives later is acknowledged, logged (`outbox.late_result`) and stored nowhere (02i). The hub is the time
 authority: it measures skew from `Hello.sent_time` and `Heartbeat.sent_time`,
 warns over 5 minutes, orders cross-machine data by hub-adjusted time and
 distrusts a machine's clock over 15 minutes (02i, "Clocks"; ADR 0004).

@@ -345,7 +345,7 @@ row whose deadline came: in the Snapshot transaction of its machine, so a row th
 while the machine was away is never sent on the new epoch, and on the housekeeping tick for
 every machine ([03f](03f-hub-internals.md#the-command-path)). A result that arrives for a row
 already closed (expired, or closed by a revoke) is answered with `ResultAck`, so the agent
-stops re-sending it, and stored nowhere.
+stops re-sending it, stored nowhere, and logged `outbox.late_result`.
 
 ## Clocks
 
