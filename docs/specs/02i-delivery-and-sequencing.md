@@ -148,7 +148,10 @@ then dropped the new events as "already seen". The rules:
    (new `install_id`) therefore resumes above what the hub holds instead of
    being discarded as duplicates.
 3. **Rollback on the hub's side.** The hub treats `Hello.last_event_seq <
-   hub_last_event_seq`, a decrease of any `EventCounters` field, or a changed
+   hub_last_event_seq`, a decrease of any `EventCounters` field in `Hello`
+   below the stored value (shed and coalesced are stored from `Hello` only;
+   `evicted_total` also from a Heartbeat rise, because the agent commits it
+   with the eviction), or a changed
    `install_id` on a valid certificate as **agent rollback**: it keeps history,
    bumps the machine's `event_generation` (history and idempotency are keyed
    `(machine, event_generation, seq)`), puts a "state reset" marker on the
@@ -224,11 +227,12 @@ from the counters:
 
 | Signal | Meaning | Hub action |
 |---|---|---|
-| `shed_total` or `coalesced_total` rises | deliberate drops | metric only |
+| `shed_total` or `coalesced_total` rises | deliberate drops | metric only; a Heartbeat value is never stored, and one lower than the stream's last is logged (`event.counters_lower`), not acted on |
 | `Heartbeat.event_seq` above the highest seq the hub stored | newer events are in flight, or were shed or coalesced | none; compared only to show replay progress |
 | `evicted_total` rises in a `Heartbeat` | a NEVER_DROP or COALESCE event was lost while connected | `SnapshotRequest{reason: "event_lost"}` (at most one per 5 minutes per machine), a gap marker on the timeline |
 | `evicted_total` in `Hello` is above the stored value | ring overflow while the agent was offline | gap marker with the seq range between `hub_last_event_seq` and the first replayed seq; the `Snapshot` that follows every connect already repairs state |
 | any counter lower than stored | agent state lost | rollback (above) |
+| an Event out of order on its stream | the agent broke its own order (03n) | dropped and counted; `SnapshotRequest{reason: "out_of_order"}` under the `event_lost` limit |
 
 So a hub never fires a snapshot because pane summaries are being shed, and a
 lost never-dropped event is never mistaken for shedding. The gap marker's wire
@@ -242,7 +246,9 @@ A reconnect delivers a `Snapshot` first and then events in `seq` order.
   written to the timeline and run history and runs **no rule**. It changes no
   derived state (goal phase, triage items, the one-nudge rule, "human at
   keyboard"), because the `Snapshot` already holds its effect.
-- An event with `seq > Snapshot.seq` is applied to state and written to history.
+- An event with `seq > Snapshot.seq` is applied to state and, when its kind
+  is never dropped or it is replayed, written to history (a live SHED or
+  COALESCE event updates state only: 03f `events`).
 - **Audit is not derived state.** `local_approval`, `policy_changed` and
   `drain_state` events with a local actor still produce their `AuditEntry` even
   when replayed, once: the audit row is idempotent on `(machine,
@@ -265,6 +271,18 @@ counterpart in the snapshot; this is the list the hub relies on:
 
 A prompt that appeared and went while the hub was away is therefore only on the
 timeline, never a triage item: nobody can still answer it.
+
+How the hub applies the rule (plan row 5c2): each `Event` is one writer job
+that reads `snapshot_seq` in its transaction, so "at or below" is judged
+against the committed floor, never a stream's memory. An event at or below
+`hub_last_event_seq` is already held and runs nothing. On a stream the hub
+takes events only after that stream's `Snapshot` and only with a seq above
+the last one the stream sent (holes are normal); anything else is dropped
+and `SnapshotRequest{reason: "out_of_order"}` asks for a fresh snapshot
+under the `event_lost` limit (one per machine per 5 minutes); the stream
+stays open. History rows are kept for every NEVER_DROP event, every
+replayed one and one of a delivery class the hub does not know (03f
+`events`); a live SHED or COALESCE event only moves the seq.
 
 ## Durable facts and how they clear
 

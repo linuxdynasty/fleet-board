@@ -184,6 +184,7 @@ func (a *agentService) heartbeat(ctx context.Context, s *stream) {
 		return
 	default:
 	}
+	a.beatEvents(ctx, s)
 	hb := s.lastHeartbeat()
 	if hb.IsZero() {
 		return

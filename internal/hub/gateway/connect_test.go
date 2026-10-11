@@ -83,8 +83,8 @@ func TestASecondHelloDisplacesTheFirst(t *testing.T) {
 	}
 	// The reader takes messages in order, so once the Event after them is
 	// counted the Heartbeats were taken.
-	first.send(t, eventMsg())
-	h.waitMetric(t, "fleet_hub_connect_unhandled_total", 1, `kind="event"`)
+	first.send(t, unhandledMsg())
+	h.waitMetric(t, "fleet_hub_connect_unhandled_total", 1, `kind="settings_ack"`)
 	if got := metricSum(scrape(t, h.fixture), "fleet_hub_writer_jobs_total"); got != jobs {
 		t.Errorf("heartbeats ran %v writer jobs, want none", got-jobs)
 	}
@@ -165,11 +165,11 @@ func TestAnUnhandledArmIsCountedAndIgnored(t *testing.T) {
 	s.send(t, hello(m, 0))
 	s.ack(t)
 	for range 3 {
-		s.send(t, eventMsg())
+		s.send(t, unhandledMsg())
 	}
-	h.waitMetric(t, "fleet_hub_connect_unhandled_total", 3, `kind="event"`)
-	if lines := h.events(t, "hub.connect.unhandled"); len(lines) != 1 || lines[0]["kind"] != "event" {
-		t.Errorf("hub.connect.unhandled lines %v, want one for event", lines)
+	h.waitMetric(t, "fleet_hub_connect_unhandled_total", 3, `kind="settings_ack"`)
+	if lines := h.events(t, "hub.connect.unhandled"); len(lines) != 1 || lines[0]["kind"] != "settings_ack" {
+		t.Errorf("hub.connect.unhandled lines %v, want one for settings_ack", lines)
 	}
 	s.send(t, heartbeat())
 	s.silent(t, 100*time.Millisecond)

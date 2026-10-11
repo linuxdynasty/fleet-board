@@ -68,5 +68,14 @@
 // after that epoch's Snapshot committed (the ready seam). The command_ack,
 // command_progress and command_result arms apply the agent's answers
 // through the outbox and answer ResultAck after the result commits.
+//
+// The event arm (plan row 5 PR 5c2): an Event on the live, snapshotted
+// stream with a rising seq is scrubbed and queued as one writer job
+// without waiting; the outcomes are settled in order on the handler
+// goroutine (a failure ends the stream). Out-of-order events are dropped
+// and a rise of evicted_total in a Heartbeat records a gap; either asks
+// for a snapshot, both under one limit of once per [EventLostEvery] per
+// machine. [Server.PruneEvents] keeps
+// [EventRetention] of history.
 // Terminal and SessionLog answer Unimplemented until their rows land.
 package gateway

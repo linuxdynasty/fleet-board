@@ -62,6 +62,12 @@ type connectDeps struct {
 	appliers       []ingest.Applier
 	onApplied      func(machineID string, epoch uint64)
 	beforeSnapshot func(context.Context)
+	// The Event arm (arm_events.go): its metrics, the appliers, the acker
+	// and the per-machine pace of SnapshotRequest{event_lost}.
+	ev            eventMetrics
+	eventAppliers []ingest.EventApplier
+	acker         eventAcker
+	lost          *lossLimit
 	// beforeMark is a hook tests run between housekeeping's judgement of a
 	// machine and its MarkState job.
 	beforeMark func(machineID string)
@@ -109,6 +115,14 @@ func newConnectDeps(opts ServerOptions) (*connectDeps, error) {
 	if err != nil {
 		return nil, err
 	}
+	ev, err := newEventMetrics(opts.Telemetry)
+	if err != nil {
+		return nil, err
+	}
+	acker := opts.eventAcker
+	if acker == nil {
+		acker = noAcks{}
+	}
 	now := opts.Now
 	if now == nil {
 		now = time.Now
@@ -118,7 +132,8 @@ func newConnectDeps(opts ServerOptions) (*connectDeps, error) {
 		afterHeartbeat: opts.afterHeartbeat, beforeRowClose: opts.beforeRowClose, started: now().UTC(), skew: newSkews(), sm: sm,
 		snap: snap, appliers: slices.Clone(opts.Appliers), onApplied: opts.OnSnapshotApplied, beforeSnapshot: opts.beforeSnapshot,
 		beforeMark: opts.beforeMark,
-		stopping:   stopping, stop: stop, outboxDone: make(chan struct{}),
+		ev:         ev, eventAppliers: slices.Clone(opts.EventAppliers), acker: acker, lost: newLossLimit(),
+		stopping: stopping, stop: stop, outboxDone: make(chan struct{}),
 		streams: newRegistry(), limit: newHelloLimit(), revoked: opts.Revoked,
 		tracer: opts.Telemetry.Tracer(scope), instanceID: hex.EncodeToString(b[:]), version: buildinfo.Version,
 		helloWait: cmp.Or(opts.HelloWait, HelloWait), afterHello: opts.afterHello, afterRegister: opts.afterRegister, arms: withArms(arms, opts.arms), m: cm,

@@ -129,15 +129,21 @@ the stop's 10 s grace, [defaults](defaults.md) "Stop grace (hub)"), so the store
 | Probe assignments (`EnsureProbe` as received) | `agent.db` | with the command log |
 | Goal registry (`GoalRegistration` per pane) and availability marks (per pane key) | `agent.db` | `register_goal`, `RegisterGoal`, `ReleaseGoal`, mark commands; both reported in every snapshot (02h) |
 | Outbox rows (`pending/delivered/done/expired/failed`, epoch, seq) | hub store | Snapshot tx and housekeeping tick (expiry), result tx (close) |
-| Event history (replayed and live, 1 week) | hub store | per writer batch |
+| Event history (replayed and live, 1 week) | hub store | one writer job per event (row 5 ruling fork 6), each refusing to run past the stream's previous event if that one did not commit; the writer batches them |
 | `machine_connections` (epoch, boot_id, install_id, peer, connect_reason, started and ended time, end_reason, displaced_by, last_heartbeat_age_ms at displacement) and the machine's `last_epoch` | hub store | Hello tx (opens the row, closes the one it displaces); stream close or `Bye` (closes it, and marks the machine `OFFLINE` in the same tx); housekeeping's `OFFLINE` (closes it as `offline`). A row can stay open with no stream behind it after a hub crash, after a graceful shutdown that stopped waiting for a Hello whose transaction then committed, or after a stop whose handler wait ran out (`hub.shutdown_wait_timeout`); the hub-start sweep closes such rows as `hub_restart` |
-| Per machine: `hub_last_event_seq`, `event_generation`, last `EventCounters`, `install_id`, and the last applied `Snapshot.seq` and its epoch (`snapshot_seq`, `snapshot_epoch`) | hub store | writer batch (`hub_last_event_seq`); the Snapshot tx (the rest: it compares the stream's `Hello` values with the stored ones, 02i rule 3, and marks the machine ONLINE) |
+| Per machine: `hub_last_event_seq`, `event_generation`, last `EventCounters`, `install_id`, and the last applied `Snapshot.seq` and its epoch (`snapshot_seq`, `snapshot_epoch`) | hub store | writer batch (`hub_last_event_seq`); the Snapshot tx (the rest: it compares the stream's `Hello` values with the stored ones, 02i rule 3, and marks the machine ONLINE); the gap-marker job of a Heartbeat `evicted_total` rise stores that one counter (upward only), never shed or coalesced |
 
 ### Ordering and consistency
 
 - Per machine: Snapshot first, then unacked results, then replayed events in
   `seq` order, then live events. The agent enforces this order on its side;
-  the hub discards anything out of order and asks for a snapshot.
+  the hub drops anything out of order (an Event before the epoch's Snapshot,
+  or a seq at or below the last one taken on the stream), counts it, logs
+  the first per reason per stream, and sends `SnapshotRequest{reason:
+  "out_of_order"}` under the same per-machine limit as `event_lost` (one per
+  5 minutes); the stream stays open. A seq above the stream's last but at or
+  below `hub_last_event_seq` is a re-send: known, nothing written, no rule
+  runs.
 - Acks, progress and results from command goroutines go through one
   per-stream queue drained by the stream's sending goroutine, after the
   snapshot and its unacked results; a result is committed to the command
@@ -216,7 +222,7 @@ The agent side of plan row 6 (ruling forks 4 i, 11 and 12), in
 | Failure | What happens |
 |---|---|
 | Agent offline for hours | Goals run on; ring fills (latest per key); on reconnect snapshot gives truth, ring gives timeline; ring overflow shows as a rise of `evicted_total` and a `gap` on the timeline |
-| Agent crashed, or its state directory was wiped or a VM image reverted | `seq` resumes above `seq_hwm` after a crash; after a wipe `Hello.last_event_seq` is below the hub's, the hub records an agent rollback (new `event_generation`, timeline marker, audit row; the "state reset" timeline marker comes with the event history, plan row 5c2, and until then the audit row, `snapshot.rollback` and `fleet_hub_agent_rollback_total` stand for it) and the agent floors `seq` above `hub_last_event_seq`, so nothing is dropped as a duplicate |
+| Agent crashed, or its state directory was wiped or a VM image reverted | `seq` resumes above `seq_hwm` after a crash; after a wipe `Hello.last_event_seq` is below the hub's, the hub records an agent rollback (new `event_generation`, timeline marker: a `state_reset` row in the event history, written by the Snapshot tx with the audit row, `snapshot.rollback` and `fleet_hub_agent_rollback_total`) and the agent floors `seq` above `hub_last_event_seq`, so nothing is dropped as a duplicate |
 | Hub restart mid-snapshot apply | Stream drops; the partial tx rolls back; the agent reconnects and sends a fresh snapshot |
 | Hub store restored from backup | Epoch rises above the agent's `last_epoch` (no `SEQ_REPLAYED`); `hub_last_event_seq` is lower, so the agent replays its ring and the snapshot covers the rest; registry entries for unknown goals → `orphan_goal_pane` triage; unknown results → audit only; settings generation on the agent may be newer than the hub's → hub re-sends its current generation and the agent applies it (settings are ordered by `(settings_epoch, generation)`, and a different epoch is accepted whatever its generation; 02, "Settings order") |
 | Duplicate `command_id` re-issued | Logged result returned, nothing re-executed |
@@ -244,7 +250,7 @@ The agent side of plan row 6 (ruling forks 4 i, 11 and 12), in
   `unspecified`), `fleet_hub_epoch{machine}` (the epoch of the last accepted
   `Hello`),
   `fleet_hub_commands_expired_total{kind, cause}` (`cause`: `deadline`, `revoked`; 03f), `fleet_hub_duplicate_identity_total{machine}`,
-  `fleet_hub_event_gap_total{machine}` (rises of `evicted_total`), `fleet_hub_agent_rollback_total{machine}` (each agent rollback the Snapshot tx found, with 03's `snapshot.rollback` and a `machine.install_changed` audit row), `fleet_hub_replay_backlog_events{machine}`,
+  `fleet_hub_event_gap_total{machine}` (rises of `evicted_total`), `fleet_hub_agent_rollback_total{machine}` (each agent rollback the Snapshot tx found, with 03's `snapshot.rollback` and a `machine.install_changed` audit row), `fleet_hub_replay_backlog_events{machine}` (`Heartbeat.event_seq` minus the committed seq, holes included), `fleet_hub_events_total{kind, result}` (every Event the hub took, by body arm and `applied`, `history`, `known`, `refused` or `failed`), `fleet_hub_event_text_cleaned_total{kind}` (free-text fields cut or scrubbed),
   `fleet_hub_results_unknown_command_total`.
 - Agent ring logs (`internal/agent/events`): `ring.evicted{n, oldest_seq}`
   (warn, loss), `ring.trimmed{to_seq, n, reason}` (info for the HelloAck
@@ -281,7 +287,7 @@ The agent side of plan row 6 (ruling forks 4 i, 11 and 12), in
   `outbox.expired{command_id, machine_id, kind, from, cause, age_ms}` (03f), `identity.duplicate{machine_id, old_epoch, new_epoch,
   old_boot_id, new_boot_id, old_peer, new_peer, heartbeat_age_ms}` (a live stream got
   `Bye{DUPLICATE_IDENTITY}`; -1 when it had no Heartbeat; a row a hub crash or a shutdown that cancelled a waiting Hello left live is
-  displaced silently), `replay.gap{from_seq, to_seq}`. The span `hub.connect.hello` covers
+  displaced silently), `replay.gap{from_seq, to_seq}` (at the first replayed event after a Snapshot that found ring overflow), `replay.done{events, first_seq, last_seq, ms}` (the replay phase ended: the first live event or the stream's end), `event.refused{seq, kind, reason}` (warn, once per reason per stream; `reason` is `not_current`, `before_snapshot`, `seq_order`, `invalid` (a seq above 2^63 - 1) or `stream_failed`; the order cases ask for a snapshot under the event_lost limit), `event.failed{seq, kind, step, err_kind}` (error; `step` is `encode`, `queue` (the writer's queue was full as the stream ended), `store` or `applier`; the stream ends so the agent sends again what was not committed, and no later event of the stream is stored past it), `event.unsettled{events}` (warn; jobs still unanswered when the stream's teardown stopped waiting), `event.lost{evicted_from, evicted_to, from_seq, snapshot_requested}` (warn; `evicted_total` rose in a Heartbeat), `event.counters_lower` (warn; a Heartbeat counter below the stream's last), `event.acked{seq}` (debug), `event.pruned{rows, before}` (the hourly prune of history older than a week; its failures are `fleet_hub_housekeeping_failures_total{job="events_prune"}`). The span `hub.connect.hello` covers
   a `Hello` from receipt to the queued `HelloAck` or the refusal (a root span: `Hello`
   carries no trace context).
 
@@ -337,7 +343,8 @@ The agent side of plan row 6 (ruling forks 4 i, 11 and 12), in
   ErrorDetail reason without `REASON_CODE_`, the `ByeReason`, or `none`);
   `connect.failed{step, err_kind, machine_id}` (error; `step`: `validate`, `store`,
   `wiring`: the listener put no response controller on the request, `INTERNAL`;
-  `heartbeat`: a Heartbeat's last_seen or `STALE` to `ONLINE` job failed);
+  `heartbeat`: a Heartbeat's last_seen or `STALE` to `ONLINE` job failed;
+  `event_loss`: a Heartbeat's gap-marker job failed);
   05b's `hub.shutdown_wait_timeout{handlers}` when the stop's grace ran out
   with handlers still closing rows;
   `fleet_hub_connect_closed_before_hello_total{err_kind}` (a stream with a client
@@ -355,3 +362,6 @@ ended, `identity.duplicate` (two hosts with one identity ping-pong) and
 `connect.refused{cause}` (03 W1). "did the hub lose anything during the restart?" →
 `fleet_hub_event_gap_total` and `replay.gap` logs; "why is this goal shown
 twice / missing?" → `snapshot.applied{diff}` and `orphan_goal_pane` items.
+"why did events stop applying on machine X?" → `event.failed{step, err_kind}`,
+`fleet_hub_events_total{result="failed"}` and `event.unsettled`; `event.refused{reason}`
+and `fleet_hub_events_total{result="refused"}` when the hub dropped them before the store.

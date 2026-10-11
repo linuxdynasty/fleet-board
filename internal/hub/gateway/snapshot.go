@@ -170,6 +170,7 @@ func snapshotArm(ctx context.Context, a *agentService, s *stream, m *agentv1.Con
 		"text_cut", cleaned.Cut, "text_scrubbed", cleaned.Scrubbed, "expired", len(p.Expired()))
 	a.outbox.Closed(ctx, p.Expired()) // the commands this Snapshot's job expired
 	a.rolledBack(ctx, s, out)
+	a.snapshotGap(ctx, s, out)
 	if a.onApplied != nil {
 		a.onApplied(s.machineID, s.epoch)
 	}

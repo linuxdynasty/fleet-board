@@ -75,3 +75,13 @@ func Queued(s *Server, machineID string) int {
 // Ready runs the seam the Snapshot transaction (plan row 5c1) calls after
 // it commits: machineID's pending commands may go out on epoch's stream.
 func Ready(s *Server, machineID string, epoch uint64) bool { return s.connect.ready(machineID, epoch) }
+
+// SetEventAcker makes the server built from o call f for each EventAck it
+// would send (the arm itself comes with plan row 7a).
+func SetEventAcker(o *ServerOptions, f func(machineID string, epoch, seq uint64)) {
+	o.eventAcker = ackFunc(f)
+}
+
+type ackFunc func(machineID string, epoch, seq uint64)
+
+func (f ackFunc) ackEvents(s *stream, seq uint64) bool { f(s.machineID, s.epoch, seq); return true }

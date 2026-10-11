@@ -364,7 +364,9 @@ message AgentHealth {
 message SnapshotRequest {
   // Open vocabulary, so the agent logs it: "reconcile", "ui_refresh",
   // "after_settings", "event_lost" (EventCounters.evicted_total rose),
-  // "seq_rollback" (the agent's seq space went backwards), "slot_mismatch".
+  // "seq_rollback" (the agent's seq space went backwards), "slot_mismatch",
+  // "out_of_order" (an Event arrived before the epoch's Snapshot or with a
+  // seq that did not rise on its stream; 03n).
   string reason = 1;
 }
 

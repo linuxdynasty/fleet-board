@@ -81,6 +81,13 @@
 // ([ReasonSnapshot]); [ReadSnapshot] reads them back. [Hello]
 // returns hub_last_event_seq.
 //
+// Plan row 5 (PR 5c2) adds the event history (events migration):
+// [ApplyEvent] stores one event in its writer job (the live, snapshotted
+// epoch, [ErrEventNotCurrent]; the stream's chain, [ErrEventChainBroken];
+// a re-send is [EventKnown]; history only at or below snapshot_seq) and
+// moves hub_last_event_seq; [AppendMarker], [RecordEventLoss] and
+// [PruneEvents]. The Snapshot core writes the gap and state_reset markers.
+//
 // Plan row 5 (PR 5f) adds commands (the outbox row and its Operation in
 // one, unique per command_id, a send unique per machine, epoch and seq)
 // and command_results (the first result, never changed). The queries are

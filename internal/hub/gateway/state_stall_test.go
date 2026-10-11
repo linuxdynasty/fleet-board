@@ -22,7 +22,7 @@ func stalledHub(t *testing.T) (*hub, chan struct{}) {
 		}
 	})
 	h := startHub(t, func(o *gateway.ServerOptions) {
-		gateway.SetArmContext(o, "event", func(ctx context.Context) {
+		gateway.SetArmContext(o, "settings_ack", func(ctx context.Context) {
 			select {
 			case <-release:
 			case <-ctx.Done():
@@ -37,7 +37,7 @@ func stalledHub(t *testing.T) (*hub, chan struct{}) {
 func (h *hub) stall(t *testing.T, s *agentStream, machineID string) {
 	t.Helper()
 	for range 66 {
-		s.send(t, eventMsg())
+		s.send(t, unhandledMsg())
 	}
 	end := time.Now().Add(10 * time.Second)
 	for !gateway.Stalled(h.srv, machineID) {

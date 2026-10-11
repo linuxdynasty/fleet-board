@@ -328,7 +328,32 @@ err = statedb.WriteAudit(ctx, s, entries...)              // one job of its own
   `state` alone. **`MarkOnline(ctx, tx, id, now)`** ends the job after the
   appliers: `ONLINE` and one Watch stamp, and the change it made (`reason`
   `snapshot`; nil when the machine was already `ONLINE`). Text arrives cleaned
-  (`ingest.Clean`); nothing is scrubbed in the transaction.
+  (`ingest.Clean`); nothing is scrubbed in the transaction. On the epoch's
+  first Snapshot it also writes the timeline marks into `events`: a
+  `state_reset` row for a rollback (under the new generation) or, with no
+  rollback, a `gap` row when the Hello's `evicted_total` is above the
+  stored one (`SnapshotOut.Gap`: ring overflow while offline).
+- **The event history** (migration 11, plan row 5 PR 5c2; 03f `events`,
+  02i). One row per stored event, unique on `(machine_id,
+  event_generation, seq)` (a rolled-back agent may reuse a seq in a new
+  generation): `kind` (the body arm), `delivery`, `replayed`,
+  `history_only` (seq at or below `snapshot_seq` when written),
+  `event_time` (agent clock), `observed_time` and `hub_seq` (the job's
+  stamp), `body` (the cleaned Event as protobuf wire bytes, so an unknown
+  arm is kept whole). Hub markers (`gap`, `state_reset`) have no seq and
+  no body, and `detail` JSON; CHECKs tie the three together.
+  **`ApplyEvent(ctx, tx, in)`** is one event's job: the machine not
+  `REVOKED`, a live connection of `in.Epoch` that is its last epoch and
+  whose Snapshot was applied (`ErrEventNotCurrent`), and the stream's
+  previous event committed (`in.PrevSeq` at or below
+  `hub_last_event_seq`, else `ErrEventChainBroken`); a seq at or below
+  `hub_last_event_seq` is `EventKnown` and writes nothing; otherwise a
+  row when `in.Keep`, `hub_last_event_seq = seq` and one Watch stamp on the
+  machine (version untouched, fork 3). **`AppendMarker`** inserts a marker
+  in a job's tx; **`RecordEventLoss`** is the job for a Heartbeat's rise
+  of `evicted_total` (that counter stored only upward, a gap marker; shed and coalesced are not, so an agent crash cannot fake a rollback);
+  **`PruneEvents(ctx, st, cutoff, limit)`** deletes at most `limit` rows
+  older than `cutoff` by hub time.
 
 ```go
 out, err := statedb.ApplySnapshot(ctx, tx, statedb.SnapshotIn{MachineID: id, Epoch: e, Seq: snap.GetSeq(), ...})
@@ -375,6 +400,16 @@ audit row, stored values, no repeat); later Snapshots on an epoch judged no
 more and keeping newer counters; `ReadSnapshot` returning every stored value;
 `Hello` returning the stored event seq; and a 5j store
 gaining the columns with their defaults.
+
+The 5c2 tests (`events_test.go`, `eventloss_test.go`) read `events` and
+the machine row from the file: history only at or below the Snapshot
+floor and live above it, one stamp each shared by the row and the machine;
+no row for a SHED event but the seq moved; re-sends known with nothing
+written; the chain check; refusals off the live, snapshotted epoch and of
+malformed input; markers and the table's constraints by raw SQL (a seq
+reused only in a new generation); the Snapshot's `gap` and `state_reset`
+rows; `RecordEventLoss` storing counters only upward; the bounded prune;
+and a 5f store gaining the table.
 
 The 5b tests (`machinestate_test.go`) cover each close reason from
 `ONLINE`, `STALE`, `ENROLLED` and `OFFLINE` (stamped, no audit row), a
