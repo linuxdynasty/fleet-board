@@ -278,9 +278,11 @@ against the committed floor, never a stream's memory. An event at or below
 `hub_last_event_seq` is already held and runs nothing. On a stream the hub
 takes events only after that stream's `Snapshot` and only with a seq above
 the last one the stream sent (holes are normal); anything else is dropped
-and `SnapshotRequest{reason: "out_of_order"}` asks for a fresh snapshot under
-the `event_lost` limit (one per machine per 5 minutes); the stream stays open. History rows are kept for every NEVER_DROP and every replayed
-event (03f `events`); a live SHED or COALESCE event only moves the seq.
+and `SnapshotRequest{reason: "out_of_order"}` asks for a fresh snapshot
+under the `event_lost` limit (one per machine per 5 minutes); the stream
+stays open. History rows are kept for every NEVER_DROP event, every
+replayed one and one of a delivery class the hub does not know (03f
+`events`); a live SHED or COALESCE event only moves the seq.
 
 ## Durable facts and how they clear
 

@@ -227,7 +227,10 @@ srv, err := gateway.NewServer(gateway.ServerOptions{
   it shares with `event_lost`; the stream stays open. `ingest.CleanEvent`
   scrubs its free text; then `ingest.SubmitEvent` queues ONE writer job
   without waiting (at most `maxInflight`, 256, in flight per stream; at
-  the cap the arm waits for the oldest), and the serve loop settles the
+  the cap the arm waits for the oldest; so one stream holds at most 256
+  queued jobs in memory, each with the decoded Event and its wire bytes:
+  about 512 MiB at the 1 MiB message cap in the worst case, about 150 KiB
+  at the 300-byte replay size), and the serve loop settles the
   outcomes in order as they come: counted in
   `fleet_hub_events_total{kind, result}`; a failure (`event.failed`) ends
   the stream so the agent sends again what was not committed (the store's

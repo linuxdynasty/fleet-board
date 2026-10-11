@@ -69,3 +69,18 @@ func TestEventLostAndOutOfOrderShareOneLimit(t *testing.T) {
 		})
 	}
 }
+
+// A seq the store cannot hold (above 2^63 - 1) is refused on the handler
+// goroutine with reason invalid: no job, the stream stays open.
+func TestAnEventSeqAboveTheStoreRangeIsRefused(t *testing.T) {
+	t.Parallel()
+	h := startHub(t)
+	m, s := h.snapshotted(t, 10)
+	s.send(t, eventMsg(1<<63, false))
+	h.waitMetric(t, "fleet_hub_events_total", 1, `result="refused"`)
+	if l := h.waitEvents(t, "event.refused", 1)[0]; l["reason"] != "invalid" {
+		t.Errorf("event.refused %v, want reason invalid", l)
+	}
+	s.send(t, eventMsg(11, false))
+	h.waitSeq(t, m.id, 11)
+}

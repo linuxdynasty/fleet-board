@@ -33,8 +33,8 @@ type EventLoss struct {
 // [ErrEventNotCurrent] and writes nothing.
 func RecordEventLoss(ctx context.Context, st *store.Store, in EventLoss) (uint64, error) {
 	c := in.Counters
-	if c.Shed > math.MaxInt64 || c.Coalesced > math.MaxInt64 || c.Evicted > math.MaxInt64 || in.Epoch > math.MaxInt64 {
-		return 0, fmt.Errorf("%w: a counter above 2^63 - 1", ErrEventInvalid)
+	if c.Evicted > math.MaxInt64 || in.Epoch > math.MaxInt64 {
+		return 0, fmt.Errorf("%w: evicted_total or the epoch above 2^63 - 1", ErrEventInvalid)
 	}
 	var from uint64
 	err := st.Write(ctx, func(tx *sql.Tx) error {

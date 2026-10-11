@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"errors"
+	"math"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -27,10 +28,12 @@ type eventState struct {
 	// inflight are the submitted jobs, oldest first; the writer answers
 	// them in this order.
 	inflight []inflightEvent
-	// taken is the highest seq the arm took on this stream (the order
-	// check); prev the seq of the last job submitted (the store's chain
-	// check); committed the hub_last_event_seq the last settled job saw.
-	taken, prev, committed uint64
+	// taken is the highest seq the arm took on this stream: the order
+	// check, and the predecessor every next job names for the store's
+	// chain check, so an event taken but never committed (not queued, or
+	// its job failed) stops every later one. committed is the
+	// hub_last_event_seq the last settled job saw.
+	taken, committed uint64
 	// broken: a job failed, the stream is ending; later events are dropped.
 	broken bool
 	// refused marks the refusal reasons already logged on this stream.
@@ -82,11 +85,17 @@ func eventArm(ctx context.Context, a *agentService, s *stream, m *agentv1.Connec
 	case ev.GetSeq() <= e.taken:
 		a.outOfOrder(ctx, s, ev, kind, "seq_order")
 		return
+	case ev.GetSeq() > math.MaxInt64:
+		// The store cannot hold it (statedb.ErrEventInvalid); refused here
+		// so it never reaches the writer or ends the stream.
+		a.eventRefused(ctx, s, ev, kind, "invalid")
+		return
 	}
+	prev := e.taken
 	e.taken = ev.GetSeq()
 	a.replayed(ctx, s, ev)
 	cleaned := ingest.CleanEvent(ev)
-	in, err := ingest.EventIn(ingest.Stream{MachineID: s.machineID, Epoch: s.epoch}, ev, e.prev, a.now().UTC())
+	in, err := ingest.EventIn(ingest.Stream{MachineID: s.machineID, Epoch: s.epoch}, ev, prev, a.now().UTC())
 	if err != nil {
 		a.eventFailed(ctx, s, ev.GetSeq(), kind, "encode", err)
 		return
@@ -96,17 +105,21 @@ func eventArm(ctx context.Context, a *agentService, s *stream, m *agentv1.Connec
 	unwatch := context.AfterFunc(a.stopping, cancel)
 	defer unwatch()
 	p, err := ingest.SubmitEvent(wctx, a.store, in, ev, a.eventAppliers)
-	switch {
-	case err != nil && wctx.Err() != nil:
-		return // the stream is ending: nothing was queued, the agent sends it again
-	case err != nil:
-		a.eventFailed(ctx, s, ev.GetSeq(), kind, "store", err)
+	if err != nil {
+		// Not queued (the writer's queue was full and the stream is ending,
+		// or the store is closed): the stream must end so the agent sends
+		// it again, and no later event may be stored past it (the next
+		// job's predecessor is this seq; the store refuses it).
+		step := "store"
+		if wctx.Err() != nil {
+			step = "queue"
+		}
+		a.eventFailed(ctx, s, ev.GetSeq(), kind, step, err)
 		return
 	}
 	if cleaned.Scrubbed > 0 || cleaned.Cut > 0 {
 		a.ev.cleaned.Add(ctx, int64(cleaned.Scrubbed+cleaned.Cut), metric.WithAttributes(attribute.String("kind", kind)))
 	}
-	e.prev = ev.GetSeq()
 	e.inflight = append(e.inflight, inflightEvent{p: p, kind: kind, seq: ev.GetSeq()})
 	a.settleReady(ctx, s)
 	for len(e.inflight) >= maxInflight {

@@ -136,7 +136,7 @@ Not proven here:
 
 - a busy host (the preliminary runs above show the tails follow load);
 - Linux on btrfs;
-- many streams at once and the 200 events/s per agent x N agents shape;
+- several streams replaying at once, and the 200 events/s per agent x N agents shape;
 - the micro-batch variant;
 - BatchMax 50;
 - the benchmark's enqueue stamp is taken before EventIn and its result is

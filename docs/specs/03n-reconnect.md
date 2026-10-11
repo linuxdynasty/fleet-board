@@ -287,7 +287,7 @@ The agent side of plan row 6 (ruling forks 4 i, 11 and 12), in
   `outbox.expired{command_id, machine_id, kind, from, cause, age_ms}` (03f), `identity.duplicate{machine_id, old_epoch, new_epoch,
   old_boot_id, new_boot_id, old_peer, new_peer, heartbeat_age_ms}` (a live stream got
   `Bye{DUPLICATE_IDENTITY}`; -1 when it had no Heartbeat; a row a hub crash or a shutdown that cancelled a waiting Hello left live is
-  displaced silently), `replay.gap{from_seq, to_seq}` (at the first replayed event after a Snapshot that found ring overflow), `replay.done{events, first_seq, last_seq, ms}` (the replay phase ended: the first live event or the stream's end), `event.refused{seq, kind, reason}` (warn, once per reason per stream; `reason` is `not_current`, `before_snapshot`, `seq_order` or `stream_failed`; the order cases ask for a snapshot under the event_lost limit), `event.failed{seq, kind, step, err_kind}` (error; `step` is `encode`, `store` or `applier`; the stream ends so the agent sends again what was not committed), `event.unsettled{events}` (warn; jobs still unanswered when the stream's teardown stopped waiting), `event.lost{evicted_from, evicted_to, from_seq, snapshot_requested}` (warn; `evicted_total` rose in a Heartbeat), `event.counters_lower` (warn; a Heartbeat counter below the stream's last), `event.acked{seq}` (debug), `event.pruned{rows, before}` (the hourly prune of history older than a week; its failures are `fleet_hub_housekeeping_failures_total{job="events_prune"}`). The span `hub.connect.hello` covers
+  displaced silently), `replay.gap{from_seq, to_seq}` (at the first replayed event after a Snapshot that found ring overflow), `replay.done{events, first_seq, last_seq, ms}` (the replay phase ended: the first live event or the stream's end), `event.refused{seq, kind, reason}` (warn, once per reason per stream; `reason` is `not_current`, `before_snapshot`, `seq_order`, `invalid` (a seq above 2^63 - 1) or `stream_failed`; the order cases ask for a snapshot under the event_lost limit), `event.failed{seq, kind, step, err_kind}` (error; `step` is `encode`, `queue` (the writer's queue was full as the stream ended), `store` or `applier`; the stream ends so the agent sends again what was not committed, and no later event of the stream is stored past it), `event.unsettled{events}` (warn; jobs still unanswered when the stream's teardown stopped waiting), `event.lost{evicted_from, evicted_to, from_seq, snapshot_requested}` (warn; `evicted_total` rose in a Heartbeat), `event.counters_lower` (warn; a Heartbeat counter below the stream's last), `event.acked{seq}` (debug), `event.pruned{rows, before}` (the hourly prune of history older than a week; its failures are `fleet_hub_housekeeping_failures_total{job="events_prune"}`). The span `hub.connect.hello` covers
   a `Hello` from receipt to the queued `HelloAck` or the refusal (a root span: `Hello`
   carries no trace context).
 
@@ -343,7 +343,8 @@ The agent side of plan row 6 (ruling forks 4 i, 11 and 12), in
   ErrorDetail reason without `REASON_CODE_`, the `ByeReason`, or `none`);
   `connect.failed{step, err_kind, machine_id}` (error; `step`: `validate`, `store`,
   `wiring`: the listener put no response controller on the request, `INTERNAL`;
-  `heartbeat`: a Heartbeat's last_seen or `STALE` to `ONLINE` job failed);
+  `heartbeat`: a Heartbeat's last_seen or `STALE` to `ONLINE` job failed;
+  `event_loss`: a Heartbeat's gap-marker job failed);
   05b's `hub.shutdown_wait_timeout{handlers}` when the stop's grace ran out
   with handlers still closing rows;
   `fleet_hub_connect_closed_before_hello_total{err_kind}` (a stream with a client
@@ -361,3 +362,6 @@ ended, `identity.duplicate` (two hosts with one identity ping-pong) and
 `connect.refused{cause}` (03 W1). "did the hub lose anything during the restart?" →
 `fleet_hub_event_gap_total` and `replay.gap` logs; "why is this goal shown
 twice / missing?" → `snapshot.applied{diff}` and `orphan_goal_pane` items.
+"why did events stop applying on machine X?" → `event.failed{step, err_kind}`,
+`fleet_hub_events_total{result="failed"}` and `event.unsettled`; `event.refused{reason}`
+and `fleet_hub_events_total{result="refused"}` when the hub dropped them before the store.
