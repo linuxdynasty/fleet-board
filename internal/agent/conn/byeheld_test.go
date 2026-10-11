@@ -136,6 +136,12 @@ func TestWorkQueuedBeforeTheUnackedReadIsFlushedFirst(t *testing.T) {
 // ended.json. The sender is held by a hook while the Bye is read ahead and
 // the wake or stop arrives, so both are ready when it returns; eight runs
 // make a coin flip near certain to show.
+//
+// The receiver says "received" only after it handed a message over, so the
+// Command's step can run after the hook took the Command. The test waits for
+// the Bye's own step (the third message: HelloAck, Command, Bye; this fake
+// sends nothing unasked), and holds the Command's step until the hook has
+// the Command, so that late order runs every time.
 func TestAWaitingByeWinsOverAWakeOrAStop(t *testing.T) {
 	t.Parallel()
 	for _, how := range []string{"wake", "stop"} {
@@ -146,7 +152,9 @@ func TestAWaitingByeWinsOverAWakeOrAStop(t *testing.T) {
 				a := enrolled(t, h)
 				events := make(chan wakenet.Event, 1)
 				held, release, received := make(chan struct{}, 1), make(chan struct{}), make(chan struct{}, 8)
-				var first, armed atomic.Bool
+				late := make(chan struct{})
+				var first atomic.Bool
+				var n atomic.Int32
 				r := startLoop(t, a, func(o *conn.LoopOptions) {
 					o.Events = events
 					o.Command = func(context.Context, uint64, *agentv1.Command) bool {
@@ -157,7 +165,13 @@ func TestAWaitingByeWinsOverAWakeOrAStop(t *testing.T) {
 						return true
 					}
 					conn.SetStepHook(o, func(step string) {
-						if step == "received" && armed.Load() {
+						if step != "received" {
+							return
+						}
+						switch n.Add(1) {
+						case 2: // the Command's step, held until the hook has it
+							<-late
+						case 3: // the Bye's step: it is in the read-ahead
 							received <- struct{}{}
 						}
 					})
@@ -166,7 +180,7 @@ func TestAWaitingByeWinsOverAWakeOrAStop(t *testing.T) {
 				r.connected(t)
 				h.pushCommand(t, "hold", time.Now().Add(time.Hour))
 				<-held
-				armed.Store(true)
+				close(late)
 				h.push(t, &agentv1.ConnectResponse{Body: &agentv1.ConnectResponse_Bye{Bye: bye(agentv1.ByeReason_BYE_REASON_REVOKED)}})
 				<-received // the Bye waits in the read-ahead
 				if how == "wake" {
@@ -188,13 +202,16 @@ func TestAWaitingByeWinsOverAWakeOrAStop(t *testing.T) {
 }
 
 // A Snapshot hook error that a waiting Bye stands in for is still logged
-// before the Bye decides (here a Bye{HUB_RESTART}: reconnect).
+// before the Bye decides (here a Bye{HUB_RESTART}: reconnect). As above,
+// the test waits for the Bye's own "received" step (the second message,
+// after HelloAck), with the HelloAck's step held until the hook runs.
 func TestAFailureAByeStandsInForIsStillLogged(t *testing.T) {
 	t.Parallel()
 	h := startConnectHub(t)
 	a := enrolled(t, h)
-	building, received := make(chan struct{}, 1), make(chan struct{}, 8)
-	var first, armed atomic.Bool
+	building, received, late := make(chan struct{}, 1), make(chan struct{}, 8), make(chan struct{})
+	var first atomic.Bool
+	var n atomic.Int32
 	startLoop(t, a, func(o *conn.LoopOptions) {
 		o.Snapshot = func(context.Context, *agentv1.Snapshot) error {
 			if !first.CompareAndSwap(false, true) {
@@ -205,13 +222,19 @@ func TestAFailureAByeStandsInForIsStillLogged(t *testing.T) {
 			return errors.New("the hook failed")
 		}
 		conn.SetStepHook(o, func(step string) {
-			if step == "received" && armed.Load() {
+			if step != "received" {
+				return
+			}
+			switch n.Add(1) {
+			case 1: // the HelloAck's step, held until the hook runs
+				<-late
+			case 2: // the Bye's step: it is in the read-ahead
 				received <- struct{}{}
 			}
 		})
 	})
 	<-building
-	armed.Store(true)
+	close(late)
 	h.push(t, &agentv1.ConnectResponse{Body: &agentv1.ConnectResponse_Bye{Bye: bye(agentv1.ByeReason_BYE_REASON_HUB_RESTART)}})
 	waitFor(t, 10*time.Second, "the next stream", func() bool { return h.count() >= 2 })
 	var found bool
