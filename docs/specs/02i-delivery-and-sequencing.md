@@ -69,8 +69,11 @@ command log (`Snapshot.unacked_results`); a `CommandAck`, and an unlogged
 `EPOCH_MISMATCH` or `SEQ_REPLAYED` refusal, are re-derived when the hub
 re-sends the command (a known `command_id` is acked again); a
 `CommandProgress` is re-sent by the executor after each new stream's
-snapshot; a `SettingsAck` is re-derived because `Settings` is re-sent on
-connect. `Bye` is sent by the stream's sender itself, never queued.
+snapshot; a `SettingsAck` is re-derived because, at `Hello`, the hub re-sends
+the `Settings` it holds no ack for, even at the generation the agent reports,
+and the agent answers that repeat with its held ack
+([03e2](03e2-settings-merge-on-the-agent.md) step 7; hub side plan row 5).
+`Bye` is sent by the stream's sender itself, never queued.
 `Hello`, `HelloAck`, `Snapshot` and `SnapshotRequest` are not events either and
 are never dropped; the handshake and recovery depend on them.
 

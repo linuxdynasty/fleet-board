@@ -40,8 +40,16 @@ anything, the built-in default ([defaults](defaults.md)) does.
    agent.db keeps", `settings_held`). A failed save sends no ack; the hub sends
    the settings again. Nothing is saved in safe mode.
 7. Swap the effective values the executor and the `Snapshot` read, then queue
-   the `SettingsAck`. A lost ack comes back because the hub re-sends
-   `Settings` on connect.
+   the `SettingsAck`. A lost ack comes back at the next `Hello`: when the
+   hub's generation for the machine equals `Hello.settings_generation` in the
+   same epoch and the hub holds no `SettingsAck` for it, the hub re-sends that
+   `Settings` once on the new stream, without waiting for the 60 s resend
+   (`HelloAck.settings_generation`, agent.proto), and step 3 answers the
+   repeat with the held ack, rejections included. The hub stores an ack only
+   if its generation is not lower (03e), so the repeat changes nothing else.
+   The hub side is plan row 5 (settings send and `SettingsAck`); until it
+   lands, a lost ack for generation N comes back only with generation N+1,
+   though the effective values still reach the hub in `Snapshot.settings`.
 
 In safe mode nothing is kept: Hello goes on reporting the generation held
 before, so once the owner fixes the file and restarts, the hub sends its
@@ -126,7 +134,7 @@ network call. The worker is the only writer of `settings_held`.
 | `settings.ignored{reason, generation, held_generation}` (info) | `reason` is `repeat`, `older` or `no_epoch` |
 | `settings.reevaluated{old_hash, new_hash, generation, capped}` (info) | at start, the held settings merged under a changed policy file |
 | `settings.store_failed{err_kind}` (warn) | the save failed; no ack was sent |
-| `settings.ack_unsent{err_kind, generation}` (info) | the ack could not be queued (`no_stream`, `queue_full`, `ended`, `other`); the hub re-sends on connect |
+| `settings.ack_unsent{err_kind, generation}` (info) | the ack could not be queued (`no_stream`, `queue_full`, `ended`, `other`); the hub re-sends at the next `Hello` when it holds no ack for the generation (step 7) |
 | `fleet_agent_settings_applied_generation` (gauge) | the generation held, 0 before any |
 | `fleet_agent_settings_capped_total{field}` | fields the file lowered, at each merge |
 | `fleet_agent_settings_rejected_total{field, reason}` | fields not applied |
