@@ -7,8 +7,8 @@ import (
 	"time"
 )
 
-// SetState writes machines.state of machineID through the store's writer:
-// plan row 5c's Snapshot transaction marks ONLINE, which tests seed.
+// SetState writes machines.state of machineID through the store's writer,
+// for a test that needs a state the agent's own Snapshot did not set.
 func (h *Hub) SetState(t *testing.T, machineID, state string) {
 	t.Helper()
 	err := h.current().Write(context.Background(), func(tx *sql.Tx) error {

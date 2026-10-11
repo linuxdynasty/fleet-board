@@ -268,6 +268,24 @@ list, err := statedb.MachineStates(ctx, s)
     `machine.cert_renewed` (no actor; the serial and `not_after`). A replay
     writes nothing.
 
+- **Commands** (migration 9, plan row 5 PR 5f; 03f "The command path", 02i
+  "Command lifecycle"): the schema only; `internal/hub/outbox` owns every
+  query.
+  - `commands`: one row per `command_id` (unique, 1 to 64 bytes), in send
+    order by `id` (AUTOINCREMENT). It holds the encoded agent `Command` with
+    epoch and seq unset, the outbox `state` (`pending`, `delivered`, `done`,
+    `expired`, `failed`) and the Operation's `op_state` (`PENDING`,
+    `DELIVERED`, `RUNNING`, `DONE`; a closed outbox row is `DONE` and nothing
+    else is), status and reason names, the step reached, the scrubbed
+    message (at most 1 KiB), the last send (`sent_epoch`, `sent_seq`,
+    `sent_time`, all or none; unique per machine, so a seq is never issued
+    twice in one epoch), `version` (rises on every Operation change) and the
+    `hub_seq` stamp. No foreign key to `machines`, like
+    `machine_connections`. A partial index holds only pending rows.
+  - `command_results`: the first `CommandResult` per command (its message
+    scrubbed), with the epoch it came on. Triggers refuse an update and an
+    insert over a stored one; it goes with its command (`ON DELETE CASCADE`).
+
 ```go
 st, err := statedb.NextStamp(ctx, tx, now)                // inside a writer job
 id, err := statedb.AppendAudit(ctx, tx, statedb.AuditEntry{Action: statedb.ActionEnroll, Target: "machines/" + mid, Now: now})

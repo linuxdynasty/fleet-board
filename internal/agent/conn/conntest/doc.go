@@ -10,5 +10,7 @@
 // state.db's writer on demand, reads machines.last_epoch and
 // machine_connections, seeds and reads machines.state, runs the hub's
 // machine-state housekeeping job once, and reads what the Snapshot
-// transaction stored (statedb.ReadSnapshot). Test code only.
+// transaction stored (statedb.ReadSnapshot). It enqueues commands through
+// the hub's outbox (outbox.Enqueue in a writer job, then Notify) and reads
+// the commands and command_results tables. Test code only.
 package conntest

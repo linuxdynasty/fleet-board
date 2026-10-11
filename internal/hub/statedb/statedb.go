@@ -87,6 +87,10 @@ func Migrations() []store.Migration {
 		Version: 8,
 		Name:    "machine_snapshot",
 		SQL:     snapshotSQL,
+	}, {
+		Version: 9,
+		Name:    "commands_outbox",
+		SQL:     commandsSQL,
 	}}
 }
 

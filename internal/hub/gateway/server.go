@@ -14,6 +14,7 @@ import (
 
 	"github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1/agentv1connect"
 	"github.com/linuxdynasty/fleet-board/internal/hub/ingest"
+	"github.com/linuxdynasty/fleet-board/internal/hub/outbox"
 	"github.com/linuxdynasty/fleet-board/internal/hub/statedb"
 	"github.com/linuxdynasty/fleet-board/internal/store"
 	"github.com/linuxdynasty/fleet-board/internal/telemetry"
@@ -61,8 +62,8 @@ type ServerOptions struct {
 	Appliers []ingest.Applier
 	// OnSnapshotApplied, when set, is called on the stream's handler goroutine
 	// after a Snapshot of the machine's current epoch committed: the
-	// machine is ONLINE on that stream (plan row 5f re-sends pending
-	// commands from it). It must not block.
+	// machine is ONLINE on that stream. It runs after the outbox's ready
+	// seam, which sends the machine's pending commands. It must not block.
 	OnSnapshotApplied func(machineID string, epoch uint64)
 	// arms, set only by tests, adds arm handlers to the product table.
 	arms armTable
@@ -98,6 +99,21 @@ func NewServer(opts ServerOptions) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
+	cdeps.outbox, err = outbox.New(outbox.Options{Store: opts.Store, Streams: cdeps.streams, Telemetry: tel, Now: opts.Now})
+	if err != nil {
+		return nil, err
+	}
+	// The Snapshot's commit makes the machine's pending commands ready: the
+	// outbox sends nothing before it (row 5 ruling, fork 1). ready refuses an
+	// epoch that is not the live stream's, so a Snapshot handled after the
+	// agent left sends nothing.
+	userApplied := cdeps.onApplied
+	cdeps.onApplied = func(machineID string, epoch uint64) {
+		cdeps.ready(machineID, epoch)
+		if userApplied != nil {
+			userApplied(machineID, epoch)
+		}
+	}
 	mux := http.NewServeMux()
 	path, h := agentv1connect.NewAgentServiceHandler(&agentService{enrollDeps: deps, connectDeps: cdeps},
 		connect.WithReadMaxBytes(MaxMessageBytes))
@@ -120,6 +136,7 @@ func NewServer(opts ServerOptions) (*Server, error) {
 	// Connect stream, whose handler then returns, so the stop does not wait
 	// out its grace period (03n).
 	srv.RegisterOnShutdown(cdeps.beginShutdown)
+	cdeps.startOutbox()
 	return srv, nil
 }
 
@@ -135,9 +152,14 @@ type Server struct {
 
 // FlushAudit writes the machine.enroll_failed summary of the minute in
 // progress, if any refusal in it was suppressed, and waits for the commit
-// (at most 5 s). Call it after Shutdown has returned, so no handler adds to
-// the minute, and before the store closes. A second call writes nothing.
-func (s *Server) FlushAudit(ctx context.Context) { s.deps.flushAudit(ctx) }
+// (at most 5 s). It also stops the command sender and waits, within ctx,
+// for it to end: it is the listener's last step before the store closes.
+// Call it after Shutdown has returned, so no handler adds to the minute,
+// and before the store closes. A second call writes nothing.
+func (s *Server) FlushAudit(ctx context.Context) {
+	s.deps.flushAudit(ctx)
+	s.connect.stopOutbox(ctx)
+}
 
 // ReadHeaderTimeout bounds how long a peer may take to send request headers.
 // There is no ReadTimeout: Connect, Terminal and SessionLog are long streams.

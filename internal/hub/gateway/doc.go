@@ -61,5 +61,12 @@
 // the stream that was live when silence made the machine STALE brings it
 // back to ONLINE; last_seen is written from Heartbeats at most once per
 // [LastSeenEvery]. The clock skew is the median of the last five samples.
+//
+// The command path: the server runs internal/hub/outbox's sender on its
+// store ([Server.Outbox]), with the registry as its streams, so a command
+// reaches only its machine's live stream of the command's epoch, and only
+// after that epoch's Snapshot committed (the ready seam). The command_ack,
+// command_progress and command_result arms apply the agent's answers
+// through the outbox and answer ResultAck after the result commits.
 // Terminal and SessionLog answer Unimplemented until their rows land.
 package gateway

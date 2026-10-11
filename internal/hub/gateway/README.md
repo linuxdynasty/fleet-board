@@ -205,14 +205,29 @@ srv, err := gateway.NewServer(gateway.ServerOptions{
   commit order. The abandoned reason never waits for the stream's end
   (the reader may be blocked on the full ingest queue that only this
   goroutine drains); displacement alone never abandons a wait. After the commit:
-  `ServerOptions.OnSnapshotApplied(machineID, epoch)` (plan row 5f re-sends
-  pending commands from it; it must check the stream is still live, since
-  it also runs for a Snapshot handled after the agent left), and
+  the outbox's `ready(machineID, epoch)` (pending commands go out from
+  it), then `ServerOptions.OnSnapshotApplied(machineID, epoch)` when set
+  (each must check the stream is still live, since it also runs for a
+  Snapshot handled after the agent left; `ready` does), and
   `SnapshotRequest{seq_rollback}` when the epoch's first Snapshot had a seq
   not above the stored event seq (counted and logged when the send queue
   is full). A Snapshot not applied
   ends the stream (no Bye) so the agent reconnects with a fresh one, except
   `not_current`: a newer Hello already displaced the stream.
+- **Commands** (`outbox.go`, `arm_commands.go`; plan row 5, PR 5f): the
+  server builds the `internal/hub/outbox` Service on its store and runs its
+  sender until `Shutdown` or `Close` (`FlushAudit` waits for it); callers
+  reach it through `Server.Outbox()`. The registry is its `Streams`: a
+  command goes only to the machine's live stream of the command's epoch,
+  without blocking (a full queue is retried by the sender). `ready(machine,
+  epoch)` is the seam the Snapshot arm calls after its transaction
+  commits (`NewServer` wires it ahead of `OnSnapshotApplied`); nothing is sent to a machine before it, and it refuses an epoch
+  that is not the live stream's. A stream's close tells the outbox the
+  epoch is gone. The arms `command_ack`, `command_progress` and
+  `command_result` hand the message to the outbox with the stream's machine,
+  epoch and whether it is still live, on a write context the stream's end
+  does not cancel (5 s); after a stored or already-stored result the
+  handler queues `ResultAck`, waiting for room in the stream's queue.
 - **Request cap**: `connect.WithReadMaxBytes(MaxMessageBytes)`, the 1 MiB of 02e;
   on Connect the stream ends `RESOURCE_EXHAUSTED` and its row closes as
   `stream_closed`.
@@ -262,6 +277,7 @@ srv, err := gateway.NewServer(gateway.ServerOptions{
 | `snapshot.abandoned` (`reason`: `agent_left`, `cut`, `shutdown`), `result="abandoned"` | the stream ended while the Snapshot's job waited (info; outcome unknown) |
 | `snapshot.rollback` (`machine_id`, `epoch`, `causes`, `event_generation`), `fleet_hub_agent_rollback_total{machine}` | an agent rollback (02i rule 3), with a `machine.install_changed` audit row |
 | `snapshot.request_dropped` (`machine_id`, `epoch`, `reason`), `fleet_hub_snapshot_requests_dropped_total{machine}` | a `SnapshotRequest{seq_rollback}` the full send queue refused |
+| `outbox.result_ack_unsent` (`command_id`, `machine_id`, `epoch`) | a stored result whose `ResultAck` the stream could no longer take; the outbox's own signals are in its README |
 | `fleet_hub_server_cert_issues_total{reason, result}`, `tls.server_cert_issued` (`reason`, `names` count, `not_after`), `tls.server_cert_issue_failed` (`reason`, `err_kind`, `not_after` still served) | server certificate re-issues |
 
 No token, secret or part of its hash, no facts, no key, no certificate and no

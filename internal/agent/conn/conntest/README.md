@@ -18,6 +18,9 @@ free := h.HoldWriter(t)                                // block state.db's write
 h.SetState(t, machineID, "ONLINE"); h.State(t, machineID) // seed and read machines.state
 h.Housekeep(t, now)                                    // the hub's machine-state job once (STALE, OFFLINE, cuts)
 m := h.Machine(t, machineID)                           // statedb.ReadSnapshot: state, facts, policy, seq floor
+ops := h.Enqueue(t, machineID, cmd)                    // outbox.Enqueue in a writer job, then Outbox().Notify
+h.Commands(t, machineID); h.Results(t, machineID)      // commands, command_results
+h.LogText()                                            // every hub log line, to check order
 ```
 
 `Requests` counts every HTTP request the listener served, so a test can
@@ -38,9 +41,13 @@ test, not fails it, if the port stays taken. `LastEpoch` reads
 `machines.last_epoch` and `Connections` the machine's `machine_connections`
 rows. `Machine` is `statedb.ReadSnapshot`: what the Hello and Snapshot
 transactions stored on `machines` (plan row 5 PR 5c1). `Options.Now` is also the hub's clock for `HelloAck.hub_time` and the
-Hello rate limit. `SetState` seeds `machines.state` (plan row 5c's Snapshot marks `ONLINE`),
+Hello rate limit. `SetState` seeds `machines.state` (a real Snapshot marks `ONLINE` itself),
 and `Housekeep` runs the machine-state job of `fleetd run`'s housekeeping
-once at the given hub clock. Tests that need what a real hub cannot do (a deaf hub, a
+once at the given hub clock. `Enqueue` is the product path of a command:
+`outbox.Enqueue` inside one writer job, then `Outbox().Notify` after the
+commit; the hub sends it once the machine's Snapshot of its epoch
+committed. `Commands` reads `commands` (outbox and Operation state, the
+last send's epoch and seq) and `Results` reads `command_results`. Tests that need what a real hub cannot do (a deaf hub, a
 cut after HelloAck) keep the in-package fakes and route `Connect` to them
 through `Wrap`.
 

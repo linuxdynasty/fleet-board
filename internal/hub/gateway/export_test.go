@@ -71,3 +71,7 @@ func Queued(s *Server, machineID string) int {
 	}
 	return len(st.in)
 }
+
+// Ready runs the seam the Snapshot transaction (plan row 5c1) calls after
+// it commits: machineID's pending commands may go out on epoch's stream.
+func Ready(s *Server, machineID string, epoch uint64) bool { return s.connect.ready(machineID, epoch) }

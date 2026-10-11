@@ -112,6 +112,89 @@ and `agent.db` (plan row 2):
   binary refuses a file with a newer version or an applied migration whose SQL
   changed.
 
+### The command path
+
+`internal/hub/outbox` (plan row 5, PR 5f) holds the outbox and the
+`Operation` in one `commands` row, and results in `command_results`. The
+[02i lifecycle](02i-delivery-and-sequencing.md#command-lifecycle) is the
+contract; this is how the hub runs it.
+
+- **Enqueue** is `outbox.Enqueue(tx, …)` inside the writer job of the
+  decision that caused it, so both commit or neither does. A known
+  `command_id` is a no-op that returns the stored row. After the commit the
+  caller hands the row back to the outbox, which logs `outbox.enqueued` and
+  wakes the sender.
+- **Send.** One sender goroutine does every send. A machine
+  gets commands only after the Snapshot of its current epoch committed: the
+  Snapshot step calls the gateway's `ready(machine, epoch)` seam after its
+  transaction commits (the Snapshot arm's after-commit hook, wired
+  when the listener is built), so nothing is sent between `Hello` and `Snapshot`. The sender reads the pending rows not yet sent on that epoch
+  through the read pool, a page at a time in send order (so rows it skips
+  never hide the rows behind them); queues each on the stream of exactly
+  that epoch, never blocking (a full queue is looked at again after 50 ms,
+  doubling to 2 s while it stays full); then records every send of the pass
+  (`sent_epoch`, `sent_seq`, `sent_time`) in one writer job. A stored
+  command that does not decode is logged and skipped. A send is not a
+  state: the row stays `pending` until `CommandAck`, so a stream that dies
+  leaves it pending and the next epoch re-sends it with the same
+  `command_id` and that epoch's seqs from 1. A seq is used only when the
+  command was queued, and `(machine_id, sent_epoch, sent_seq)` is unique.
+  Rows past `not_after_time` are not sent (their expiry is plan row 5g).
+- **Answers.** `CommandAck`, `CommandProgress` and `CommandResult` are
+  handled on the stream's ingest goroutine: the free text is cut to its cap
+  and scrubbed there ([04b](04b-hub-scrubber-cost.md)), then one writer job
+  applies the message. `ResultAck` is queued after that job commits. A
+  message from a stream that is no longer its machine's live one, or for a
+  command with no row or of another machine, is refused and counted; it
+  writes nothing and is never answered; so is a malformed `command_id`, never
+  logged. So is a refusal the agent sends without logging the command
+  (`EPOCH_MISMATCH`, `SEQ_REPLAYED`): no result is stored, no row moves, and
+  the command goes out again under the live epoch (02i). A repeat, a
+  progress the row already holds included, changes nothing; a repeated
+  result is answered again. The read pool decides first, so a repeat or a
+  refusal costs no writer job. Every change bumps the `Operation` version
+  and takes a `hub_seq` stamp; a send does neither. A result's `metadata` is
+  cut to 16 entries of 256 bytes without control characters, and a status
+  or reason this hub has no name for is stored and counted as `UNKNOWN`.
+- **Not yet.** A result for a command the hub never issued (a store
+  restored from an older backup) is only counted and logged here; the audit
+  row and triage info item 03n asks for come with plan row 5k (restore
+  reconcile). A result's `detail` (screen text up to 256 KiB) is stored as
+  the agent sent it, so one result row can approach the 1 MiB message cap;
+  bounding it is noted for plan row 5g. Each answer waits for its own writer
+  batch window on the ingest goroutine (about 250 to 350 ms a result, one
+  after another), and each sender pass waits for its record job: plan row
+  5c2's fork-6 benchmark includes the command arms and the sender.
+
+**Telemetry.** Metrics: `fleet_hub_commands_total{kind, status}` and
+`fleet_hub_command_roundtrip_seconds{kind}` (03 conventions; a stored
+result), `fleet_hub_command_messages_total{arm, outcome}` (`arm`:
+`command_ack`, `command_progress`, `command_result`; `outcome`: `applied`,
+`known`, `unknown_command`, `wrong_machine`, `stale_stream`, `invalid`,
+`epoch_mismatch`, `seq_replayed`, `failed`), `fleet_hub_results_unknown_command_total` (03n),
+`fleet_hub_outbox_sends_total{result}` (`queued`, `full`, `not_live`,
+`invalid`: a stored command that does not decode, skipped),
+`fleet_hub_outbox_pending{machine}` and
+`fleet_hub_outbox_oldest_age_seconds{machine}` (05b, read at scrape time),
+`fleet_hub_scrub_total{field, result}` (`clean`, `redacted`, `unsettled`)
+and `fleet_hub_scrub_oversize_total{field}` (text cut to its cap before the
+scrub), and plan row 5g's `fleet_hub_commands_expired_total{kind}`. Logs:
+`outbox.enqueued{command_id, machine_id, kind}`, `outbox.sent{command_id,
+machine_id, kind, epoch, seq}`, `outbox.acked{command_id, machine_id,
+epoch}`, `outbox.resulted{command_id, machine_id, epoch, kind, status,
+reason, roundtrip_ms}`, `outbox.refused{arm, cause, command_id, machine_id,
+epoch}` (warn), `outbox.failed{step, err_kind, …}` (error; `step`: `load`,
+`decode`, `mark`, or the arm), `outbox.result_ack_unsent{command_id,
+machine_id, epoch}` (the stream ended first; the agent re-sends the result
+after its next Snapshot) and row 5g's `outbox.expired`. Spans
+`hub.command.send{command_id}` (a child of the span that issued the command;
+its context is the one the agent receives) and `hub.command.result{command_id}`
+(linked to the agent's span). At 3 AM: "why did machine X not get its
+command?" → `fleet_hub_outbox_pending{machine}` and its oldest age,
+`fleet_hub_outbox_sends_total{result}`, `outbox.sent`; "why is this
+operation stuck?" → `outbox.acked`, `outbox.refused{cause}`,
+`fleet_hub_command_messages_total{outcome}`.
+
 ## Data model sketch
 
 Entities and keys the workflows need; no SQL. "Writes" are steady-state rates
@@ -163,7 +246,7 @@ ranking, the summary strip counts.
 
 **Index needs implied by the read patterns:** `goals(state)`,
 `goals(machine_id, state)`, `goals(account_id, state)`, `commands(machine_id,
-state)`, `triage_items(state, kind, raise_time)`, `events(machine_id, seq)`,
+id) WHERE state = 'pending'`, `triage_items(state, kind, raise_time)`, `events(machine_id, seq)`,
 `events(goal_id, observed_time)`, `log_chunks(session_id, pane, stream, raw_offset)` and
 `(session_id, pane, stream, first_time)`, `change_requests(integration_id, source_branch)`,
 `work_items(stage, integration_id)`.
