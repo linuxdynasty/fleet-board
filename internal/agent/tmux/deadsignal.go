@@ -34,6 +34,31 @@ var signalNames = map[syscall.Signal]string{
 	syscall.SIGTERM: SignalTerm,
 }
 
+// deadFields reads pane_dead_status and pane_dead_signal, the rule both
+// pane reads share (ListPanes and ReadInventory). format.c fills the status
+// only under WIFEXITED and the signal only under WIFSIGNALED: a program
+// either exited or was killed, so both at once is a reply in the wrong
+// shape (ok false), on any pane. A live pane has NoStatus and no signal;
+// a dead one has its status when tmux sent one (a status that is not a
+// number is ok false; none is a signal death, never 0) and its signal
+// through deadSignal, which never fails.
+func deadFields(dead bool, status, signal string) (int, string, bool) {
+	if status != "" && signal != "" {
+		return 0, "", false
+	}
+	if !dead {
+		return NoStatus, "", true
+	}
+	if status == "" {
+		return NoStatus, deadSignal(signal), true
+	}
+	st, err := strconv.Atoi(status)
+	if err != nil {
+		return 0, "", false
+	}
+	return st, "", true
+}
+
 // maxSignal is the highest number a wait status holds (WTERMSIG is 7 bits).
 const maxSignal = 127
 

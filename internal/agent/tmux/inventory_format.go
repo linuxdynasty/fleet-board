@@ -52,13 +52,47 @@ const (
 )
 
 // fixedFields are the ids, flags and sizes of a record, then the
-// attach_view flag. No text a developer can set reaches them.
-var fixedFields = []string{
-	"#{session_id}", "#{session_created}", "#{session_attached}",
-	"#{window_id}", "#{window_index}", "#{window_active}", "#{automatic-rename}",
-	"#{pane_id}", "#{pane_index}", "#{pane_active}", "#{pane_dead}", "#{pane_dead_status}", "#{pane_width}", "#{pane_height}",
-	isAttachView,
+// attach_view flag, in the order of the fix* indexes. No text a developer
+// can set reaches them; pane_dead_signal is tmux's name or number of a
+// signal (3.2a sends it empty), read into a closed set.
+var fixedFields = [...]string{
+	fixSessionID:    "#{session_id}",
+	fixCreated:      "#{session_created}",
+	fixAttached:     "#{session_attached}",
+	fixWindowID:     "#{window_id}",
+	fixWindowIndex:  "#{window_index}",
+	fixWindowActive: "#{window_active}",
+	fixAutoRename:   "#{automatic-rename}",
+	fixPaneID:       "#{pane_id}",
+	fixPaneIndex:    "#{pane_index}",
+	fixPaneActive:   "#{pane_active}",
+	fixDead:         "#{pane_dead}",
+	fixDeadStatus:   "#{pane_dead_status}",
+	fixDeadSignal:   "#{pane_dead_signal}",
+	fixWidth:        "#{pane_width}",
+	fixHeight:       "#{pane_height}",
+	fixAttachView:   isAttachView,
 }
+
+// Indexes into fixedFields: where each fixed field sits in a record.
+const (
+	fixSessionID = iota
+	fixCreated
+	fixAttached
+	fixWindowID
+	fixWindowIndex
+	fixWindowActive
+	fixAutoRename
+	fixPaneID
+	fixPaneIndex
+	fixPaneActive
+	fixDead
+	fixDeadStatus
+	fixDeadSignal
+	fixWidth
+	fixHeight
+	fixAttachView
+)
 
 // canaryFormat must read "1": a tmux without the e|< comparison is a reply
 // not in the asked shape, never a read whose every text field is blank.
@@ -76,7 +110,7 @@ var (
 // sent only when its length is at most MaxFieldBytes. e|< compares numbers:
 // a plain < compares strings ("10000" < "1025").
 var inventoryFields = func() []string {
-	out := append([]string(nil), fixedFields...)
+	out := append([]string(nil), fixedFields[:]...)
 	for _, f := range textFields {
 		out = append(out, "#{n:"+f.name+"}")
 	}

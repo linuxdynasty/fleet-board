@@ -20,10 +20,11 @@
 // follow its state with no timer. Its file
 // conn.go is the only one in the agent that starts the long-lived tmux
 // process; one-shot tmux calls go through internal/proc. The README has the
-// concurrency diagram. [Pane] reports a dead pane's exit status or the
-// signal that killed it, the signal as a closed set ([SignalKill] and the
-// rest, or [SignalOther] and its number). The signal fails open: text the
-// client cannot read is [SignalOther] with no number, never a bad reply.
+// concurrency diagram. [Pane], in both reads ([PaneInfo] embeds it),
+// reports a dead pane's exit status or the signal that killed it, the
+// signal as a closed set ([SignalKill] and the rest, or [SignalOther] and
+// its number). The signal fails open: text the client cannot read is
+// [SignalOther] with no number, never a bad reply.
 //
 // The parser's rules, from tmux's man page and two recorded transcripts
 // (tmux 3.2a and 3.7c, testdata/):

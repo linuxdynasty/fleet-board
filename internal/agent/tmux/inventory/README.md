@@ -7,10 +7,11 @@ events when they change.
 ## What is reported
 
 - One `list-panes -a` reads everything (tmux runs one command at a time, so
-  it is one moment): ids, indexes, flags, sizes, `pane_dead_status`, the
-  `@fleet_*` user options and the three names. Fields are split by a marker
-  that is random per read, so no name can fake a field, and closed by one
-  more after the last field; a newline tmux writes raw in an option value or
+  it is one moment): ids, indexes, flags, sizes, `pane_dead_status`,
+  `pane_dead_signal` (as `PaneInfo.DeadSignal`, the closed set; no snapshot
+  field carries it yet), the `@fleet_*` user options and the three names.
+  Fields are split by a marker that is random per read, so no name can
+  fake a field, and closed by one more after the last field; a newline tmux writes raw in an option value or
   a program's name is joined back. tmux bounds each name,
   command and option value at 1 KiB in bytes and sends a longer one empty,
   with its length: it reaches this package blank (counted in

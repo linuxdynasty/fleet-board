@@ -225,22 +225,10 @@ func parsePane(line string) (Pane, bool) {
 	if !ok1 || !ok2 || !ok3 || err1 != nil || err2 != nil || (f[3] != "0" && f[3] != "1") {
 		return Pane{}, false
 	}
-	// format.c fills pane_dead_status only under WIFEXITED and
-	// pane_dead_signal only under WIFSIGNALED: a program either exited or
-	// was killed, so both at once is a reply in the wrong shape.
-	if f[4] != "" && f[5] != "" {
+	pane := Pane{Session: SessionID(s), Window: WindowID(w), ID: PaneID(p), Dead: f[3] == "1", Width: wd, Height: ht}
+	var ok bool
+	if pane.DeadStatus, pane.DeadSignal, ok = deadFields(pane.Dead, f[4], f[5]); !ok {
 		return Pane{}, false
-	}
-	pane := Pane{Session: SessionID(s), Window: WindowID(w), ID: PaneID(p), Dead: f[3] == "1", DeadStatus: NoStatus, Width: wd, Height: ht}
-	if pane.Dead && f[4] != "" {
-		st, err := strconv.Atoi(f[4])
-		if err != nil {
-			return Pane{}, false
-		}
-		pane.DeadStatus = st
-	}
-	if pane.Dead {
-		pane.DeadSignal = deadSignal(f[5])
 	}
 	return pane, true
 }
