@@ -226,3 +226,28 @@ func TestExpireDueLogsCountsAndIgnoresALateResult(t *testing.T) {
 		t.Errorf("c1 is %s after a late result", r.state)
 	}
 }
+
+// A row the sender read inside its deadline, then expired by housekeeping
+// before the sender recorded the send, keeps an honest sent stamp (it was
+// queued; a send is not a state), stays expired, and takes no version or
+// hub_seq bump from the mark (03f race table: the agent refuses it
+// EXPIRED and its result is dropped as late).
+func TestASendRecordedAfterExpiryStampsOnlyTheSend(t *testing.T) {
+	t.Parallel()
+	s := newStore(t)
+	h := newService(t, s, newFakeStreams(), func() time.Time { return t0 })
+	due := t0.Add(time.Minute)
+	enqueueDue(t, s, "m1", "c1", due)
+	writeJob(t, s, func(ctx context.Context, tx *sql.Tx) ([]outbox.Closed, error) {
+		return outbox.Expire(ctx, tx, "m1", due, 10)
+	})
+	before, _ := readRow(t, s, "c1")
+	outbox.MarkSent(h.svc, "m1", "c1", 3, 1)
+	after, _ := readRow(t, s, "c1")
+	if !after.sentEpoch.Valid || after.sentEpoch.Int64 != 3 || after.sentSeq.Int64 != 1 {
+		t.Errorf("sent stamp %v/%v, want epoch 3 seq 1: the command was queued", after.sentEpoch, after.sentSeq)
+	}
+	if after.state != "expired" || after.opState != "DONE" || after.version != before.version || after.hubSeq != before.hubSeq {
+		t.Errorf("row %+v after the mark, was %+v: a send changes no state", after, before)
+	}
+}
