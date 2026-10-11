@@ -21,7 +21,7 @@ const approvalCheck = 30 * time.Second
 
 // do is one command's goroutine: it records a refusal, or waits for local
 // approval and runs the handler, then records and sends the one result. A
-// run cut off by the end of Run leaves the entry for the next run's resume.
+// run cut off by the end of Run leaves the entry for the resume pass.
 func (e *Executor) do(ctx context.Context, c *agentv1.Command, ent ring.Entry, p plan) {
 	defer e.wg.Done()
 	defer e.release(ent.ID)

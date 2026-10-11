@@ -12,10 +12,11 @@
 // The role check is the 02g matrix copied as a table; the rate limit counts
 // every logged command_id of a kind in the last minute (60 unless policy
 // says less); a REJECTED_BY_POLICY result is a command.refused row in the
-// local audit log. After a restart, once the first stream's snapshot is
-// out (hub time is known only then), unfinished entries are deadline-checked
-// and run, run again, resumed per step or ended UNKNOWN_OUTCOME, as their
-// handler's [Class] says. The registry is empty in row 6 ([Handlers]), so
+// local audit log. At each connect, once the stream's snapshot is out (hub
+// time is known only then), unfinished entries no goroutine holds (left by
+// a restart or a failed store write) are deadline-checked and run, run
+// again, resumed per step or ended UNKNOWN_OUTCOME, as their handler's
+// [Class] says. The registry is empty in row 6 ([Handlers]), so
 // nothing is advertised and every command is UNSUPPORTED; no code here
 // reaches tmux.
 package exec

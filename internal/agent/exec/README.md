@@ -64,8 +64,8 @@ restart does not reset it; a read that fails is logged
                                               │     decide: requires, policy, role
                                               │     claim(id) ── mu ──▶ running set
                                               │     wg.Add, go do() ─────────────────▶ approval wait (strict clock, Approver)
-                                              └──▶ first: resumeOpen (Open read,        SetRunning   ── store job
-                                                   claim, go do())                      handler.Run / Resume
+                                              └──▶ each: resumeOpen (Open read, claim,  SetRunning   ── store job
+                                                   re-read, go do())                    handler.Run / Resume
                                                    each: resend last progress            RecordResult ── store job, then
                                                          (snapshot of running set        Send(CommandResult)
                                                           under mu, Send outside it)    release(id) ── mu
@@ -73,7 +73,7 @@ restart does not reset it; a read that fails is logged
 
 - **Shared state**: the running set (`map[command_id]*run`, the last
   progress of each) under one mutex, held only for map reads and writes,
-  never across a store job or a `Send`. The rate window, the resumed flag
+  never across a store job or a `Send`. The rate window
   and the registry belong to the envelope goroutine alone.
 - **Channels**: the intake (64) and the resume signal (1) are written
   without blocking by hooks on the connection's sending goroutine.
@@ -87,7 +87,8 @@ restart does not reset it; a read that fails is logged
 - **Stop**: `Run` returns after every command goroutine (`wg.Wait`), so
   `Handler.Run`, `Handler.Resume` and `Approver.Await` must return soon
   after their context ends, or they hold the agent's shutdown. A run cut
-  off leaves its entry received or running for the next start's resume.
+  off leaves its entry received or running for the resume pass at the
+  next connect, as does a `SetRunning` or `RecordResult` that failed.
 
 `RefusedTotal()` is how many commands the executor's own checks refused
 since start, logged or not; the heartbeat's

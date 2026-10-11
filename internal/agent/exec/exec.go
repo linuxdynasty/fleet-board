@@ -99,8 +99,7 @@ type Executor struct {
 	resume chan struct{}
 
 	// Only the envelope goroutine uses these.
-	window  rateWindow
-	resumed bool
+	window rateWindow
 
 	refused atomic.Uint64 // results the executor's own checks gave
 
@@ -166,9 +165,9 @@ func (e *Executor) Command(_ context.Context, _ uint64, c *agentv1.Command) bool
 }
 
 // OnConnected is the LoopOptions.OnConnected hook, called once a stream's
-// snapshot and unacked results are out. The first of the run starts the
-// resume pass (hub time is known only now); every one re-sends the last
-// progress of each running command (ruling fork 4 iii, iv).
+// snapshot and unacked results are out. Each one runs the resume pass (hub
+// time is known only now) and re-sends the last progress of each running
+// command (6e round-2 ruling D; ruling fork 4 iii, iv).
 func (e *Executor) OnConnected(context.Context, uint64, conn.HubClock) {
 	select {
 	case e.resume <- struct{}{}:
@@ -178,7 +177,7 @@ func (e *Executor) OnConnected(context.Context, uint64, conn.HubClock) {
 
 // Run is the envelope goroutine. It returns when ctx ends, after every
 // command goroutine has returned; a command cut off there stays received
-// or running in the log and is resumed by the next run.
+// or running in the log and is resumed at the next connect.
 func (e *Executor) Run(ctx context.Context) error {
 	defer e.m.close()
 	defer e.wg.Wait()
@@ -190,10 +189,7 @@ func (e *Executor) Run(ctx context.Context) error {
 		case c := <-e.intake:
 			e.envelope(ctx, c)
 		case <-e.resume:
-			if !e.resumed {
-				e.resumed = true
-				e.resumeOpen(ctx)
-			}
+			e.resumeOpen(ctx)
 			e.resendProgress(ctx)
 		}
 	}

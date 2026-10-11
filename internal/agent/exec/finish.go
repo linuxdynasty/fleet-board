@@ -106,13 +106,16 @@ func (e *Executor) audit(a audit.Entry) {
 	}
 }
 
-// storeFailed logs an agent.db failure. The command stays as the log left
-// it: the hub's re-send or the next run's resume takes it up.
+// storeFailed logs and counts an agent.db failure. The command stays as
+// the log left it: an unlogged one is re-sent by the hub at its next
+// connect; a logged one with no result (a failed SetRunning or
+// RecordResult) is taken up by the resume pass at the next connect.
 func (e *Executor) storeFailed(ctx context.Context, id, step string, err error) {
 	args := []any{"step", step, "err_kind", errKind(err)}
 	if printableID(id) {
 		args = append(args, "command_id", id)
 	}
+	e.m.storeFailed(ctx, step)
 	e.log.WarnContext(ctx, "command.store_failed", args...)
 }
 

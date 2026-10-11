@@ -109,7 +109,8 @@ func (e *Executor) ack(ctx context.Context, ent ring.Entry) {
 }
 
 // loggedOr answers a command the log already holds, or reports the store
-// error; the hub's re-send retries a command whose log write failed.
+// error. A command whose log write failed was neither logged nor acked, so
+// it is still pending at the hub, which re-sends it at the next connect.
 func (e *Executor) loggedOr(ctx context.Context, id string, ent ring.Entry, dup bool, err error) {
 	if err != nil {
 		e.storeFailed(ctx, id, "log", err)
@@ -139,8 +140,9 @@ func (e *Executor) answerKnown(ctx context.Context, ent ring.Entry) {
 
 // decide runs the checks after the log: requires, policy (safe mode, rate
 // limit), role, then whether a local approval is needed. A resumed entry
-// skips the rate window (it was counted when logged) and the approval it
-// already had.
+// skips the rate window (it was counted when logged, and the window is
+// rebuilt from the log at start); a resumed running entry also skips the
+// approval it already had, while a resumed received entry is asked again.
 func (e *Executor) decide(c *agentv1.Command, kind string, ent ring.Entry, resumed bool) plan {
 	h := e.reg[kind]
 	if !e.reg.supports(kind, c.GetRequires()) {

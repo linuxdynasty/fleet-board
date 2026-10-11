@@ -10,16 +10,14 @@ import (
 	"github.com/linuxdynasty/fleet-board/internal/agent/ring"
 )
 
-// resumeOpen is the restart pass (ruling fork 4 iii). It runs once per run,
-// on the envelope goroutine, after the first stream's snapshot and unacked
-// results are out, because deadlines need hub time. The list it reads can
-// be stale by the time it reaches an entry: a command this run took may
-// have finished since. So each entry is claimed first and read again; one
-// another goroutine holds, or that has its result now, is skipped. The
-// rest are deadline-checked on the strict clock: past, it ends EXPIRED
-// (received or running); a received entry then goes through the checks
-// after the log and runs; a running one is run again, resumed per step or
-// ended UNKNOWN_OUTCOME as its handler's class says.
+// resumeOpen is the resume pass (6e round-2 ruling D; ruling fork 4 iii).
+// It runs at every connect, on the envelope goroutine, once the stream's
+// snapshot and unacked results are out (deadlines need hub time), and takes
+// up every unfinished entry no goroutine holds: one left by a restart, or
+// by a store write that failed (RecordResult, SetRunning) in this run. It
+// reads no timer and retries nothing on its own; a connect is its retry.
+// The list it reads can be stale by the time it reaches an entry, so each
+// one goes through startResumed.
 func (e *Executor) resumeOpen(ctx context.Context) {
 	open, err := e.opts.DB.Open(ctx)
 	if err != nil {
@@ -27,22 +25,33 @@ func (e *Executor) resumeOpen(ctx context.Context) {
 		return
 	}
 	for _, listed := range open {
-		if !e.claim(listed.ID, listed.Kind) {
-			continue
-		}
-		ent, err := e.opts.DB.Command(ctx, listed.ID)
-		if err != nil {
-			e.release(listed.ID)
-			e.storeFailed(ctx, listed.ID, "read", err)
-			continue
-		}
-		if ent.Status == ring.StatusFinished {
-			e.release(ent.ID)
-			continue
-		}
-		c, p := e.resumeCommand(ent)
-		e.launch(ctx, c, ent, p)
+		e.startResumed(ctx, listed)
 	}
+}
+
+// startResumed claims a listed entry, reads it again, and skips it when a
+// goroutine holds it or it has its result now; otherwise the fresh entry
+// (received or running may have changed) decides what runs. Past its
+// deadline it ends EXPIRED; a received entry goes through the checks after
+// the log, its local approval included even if one was given before a
+// failed write (asked again: conservative); a running one is run again,
+// resumed per step or ended UNKNOWN_OUTCOME as its handler's class says.
+func (e *Executor) startResumed(ctx context.Context, listed ring.Entry) {
+	if !e.claim(listed.ID, listed.Kind) {
+		return
+	}
+	fresh, err := e.opts.DB.Command(ctx, listed.ID)
+	if err != nil {
+		e.release(listed.ID)
+		e.storeFailed(ctx, listed.ID, "read", err)
+		return
+	}
+	if fresh.Status == ring.StatusFinished {
+		e.release(fresh.ID)
+		return
+	}
+	c, p := e.resumeCommand(fresh)
+	e.launch(ctx, c, fresh, p)
 }
 
 // resumeCommand decodes a claimed open entry and decides what to do with it.

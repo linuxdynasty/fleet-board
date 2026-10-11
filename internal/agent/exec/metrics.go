@@ -26,6 +26,7 @@ type metrics struct {
 	total    metric.Int64Counter
 	seconds  metric.Float64Histogram
 	refused  metric.Int64Counter
+	failed   metric.Int64Counter
 	reg      metric.Registration
 	disabled bool
 }
@@ -36,16 +37,18 @@ func newMetrics(tel *telemetry.Telemetry, running func() int64) (*metrics, error
 	}
 	m, p := tel.Meter(scope), tel.MetricPrefix()
 	out := &metrics{tracer: tel.Tracer(scope)}
-	var e1, e2, e3, e4 error
+	var e1, e2, e3, e4, e5 error
 	out.total, e1 = m.Int64Counter(p+"_commands_total",
 		metric.WithDescription("Commands the agent answered, by kind and final status."))
 	out.seconds, e2 = m.Float64Histogram(p+"_command_seconds", metric.WithUnit("s"),
 		metric.WithDescription("Time from a command's start to its result, by kind; refusals are not timed."))
 	out.refused, e3 = m.Int64Counter(p+"_commands_refused_total",
 		metric.WithDescription("Commands the agent's own checks refused before any handler ran, by reason."))
+	out.failed, e5 = m.Int64Counter(p+"_command_store_failed_total",
+		metric.WithDescription("Command log reads and writes in agent.db that failed, by step."))
 	gauge, e4 := m.Int64ObservableGauge(p+"_commands_running",
 		metric.WithDescription("Commands the agent holds between their ack and their result."))
-	if err := errors.Join(e1, e2, e3, e4); err != nil {
+	if err := errors.Join(e1, e2, e3, e4, e5); err != nil {
 		return nil, err
 	}
 	var err error
@@ -62,6 +65,12 @@ func newMetrics(tel *telemetry.Telemetry, running func() int64) (*metrics, error
 func (m *metrics) close() {
 	if m.reg != nil {
 		_ = m.reg.Unregister()
+	}
+}
+
+func (m *metrics) storeFailed(ctx context.Context, step string) {
+	if !m.disabled {
+		m.failed.Add(ctx, 1, metric.WithAttributes(attribute.String("step", step)))
 	}
 }
 

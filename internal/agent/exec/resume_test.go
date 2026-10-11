@@ -45,8 +45,8 @@ func kindName(c *agentv1.Command) string {
 // entry is deadline-checked and runs, a running entry past its deadline
 // ends EXPIRED, and a running one inside it is run again (repeat safe),
 // ended UNKNOWN_OUTCOME (not repeat safe) or resumed at its step (per
-// step). The pass runs once per run, and a hub re-send that races it never
-// starts a second run.
+// step). The pass runs at every connect, and neither a second connect nor
+// a hub re-send that races it ever starts a second run.
 func TestRestartResumesEachClassOnce(t *testing.T) {
 	t.Parallel()
 	safe := capturePane("tmux.observe")
@@ -102,7 +102,7 @@ func TestRestartResumesEachClassOnce(t *testing.T) {
 }
 
 // A run cut off by the agent stopping leaves its entry running, with no
-// result, for the next run to resume.
+// result, for the resume pass to take up.
 func TestStoppingLeavesARunToResume(t *testing.T) {
 	t.Parallel()
 	h := capturePane("tmux.observe")
