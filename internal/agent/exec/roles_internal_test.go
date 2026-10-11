@@ -91,7 +91,10 @@ func TestRoleCells(t *testing.T) {
 		{"operator kills a developer window", &agentv1.Command{Kind: &agentv1.Command_KillWindow{KillWindow: &agentv1.KillWindow{}}}, typev1.Role_ROLE_OPERATOR, false, nil},
 		{"owner drains", &agentv1.Command{Kind: &agentv1.Command_Drain{Drain: &agentv1.Drain{}}}, typev1.Role_ROLE_OWNER, true, nil},
 		{"operator drains", &agentv1.Command{Kind: &agentv1.Command_Drain{Drain: &agentv1.Drain{}}}, typev1.Role_ROLE_OPERATOR, false, nil},
-		{"scratch has no row", &agentv1.Command{Kind: &agentv1.Command_EnsureScratch{EnsureScratch: &agentv1.EnsureScratch{}}}, typev1.Role_ROLE_OWNER, false, nil},
+		{"operator ensures scratch", &agentv1.Command{Kind: &agentv1.Command_EnsureScratch{EnsureScratch: &agentv1.EnsureScratch{}}}, typev1.Role_ROLE_OPERATOR, true, nil},
+		{"viewer ensures scratch", &agentv1.Command{Kind: &agentv1.Command_EnsureScratch{EnsureScratch: &agentv1.EnsureScratch{}}}, typev1.Role_ROLE_VIEWER, false, nil},
+		{"operator collects scratch", &agentv1.Command{Kind: &agentv1.Command_CollectScratch{CollectScratch: &agentv1.CollectScratch{}}}, typev1.Role_ROLE_OPERATOR, false, nil},
+		{"scheduler collects scratch", &agentv1.Command{Kind: &agentv1.Command_CollectScratch{CollectScratch: &agentv1.CollectScratch{}}}, typev1.Role_ROLE_SCHEDULER, true, nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()

@@ -38,15 +38,15 @@ go ex.Run(ctx)
    deadline: `LOCAL_DENIED` or `LOCAL_CONFIRM_TIMEOUT`. With no approver
    (until rows 18, 20, 24) a wait ends at the deadline.
 
-Choices this package makes where the spec is silent (named in the PR):
-an observe command, the only kind safe mode runs, is one the matrix lets a
-`VIEWER` ask for; `ARBITER` has no `Role` value, so its column is never
-reached and an unknown role is refused; `EnsureScratch` and
-`CollectScratch` have no matrix row and are refused; the VIEWER cell
-"A (read-only)" of `OpenAttach`, `CloseAttach` limits `OpenAttach` to
-`read_only` and lets a viewer close an attach; a `local_approval`
-rule makes any allowed cell wait, never loosens one; F and F* conditions
-are handed to the handler; free text is cut to 8 KiB before the scrub; the
+Rules the 6e ruling settled, each stated in its spec: an observe command,
+the only kind safe mode runs, is one the 02g VIEWER column allows
+(`CapturePane`, OBSERVE `RunHarnessCommand`, read-only `OpenAttach`,
+`CloseAttach`), whatever the role; `ARBITER` has no `Role` value, so its
+column is never reached and an unknown role is refused; a `local_approval`
+rule makes every allowed cell of its kind wait, `A` cells included; `F`
+and `F*` are the handler's to judge, "after `merged_grace`" is the hub's
+timer, and a `KillWindow` the handler cannot place is a developer's
+window (02g legend); free text is cut to 8 KiB before the scrub; the
 rate window lives in memory and starts empty at each start.
 
 ## Concurrency

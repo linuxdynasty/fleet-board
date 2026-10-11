@@ -20,9 +20,8 @@ type roleRow struct {
 
 const no = "—"
 
-// roleMatrix is 02g's table. A kind with no row (EnsureScratch,
-// CollectScratch) or a variant with no row (a SendKeys purpose or a
-// RunHarnessCommand class not listed) is refused.
+// roleMatrix is 02g's table. A kind or a variant with no row (a SendKeys
+// purpose or a RunHarnessCommand class not listed) is refused.
 var roleMatrix = []roleRow{
 	{"`EnsureProbe` (`run_now` from `ProbeAccount`)", []string{"EnsureProbe"}, nil, [5]string{no, "A", "A", "A", no}},
 	{"`StopProbe`", []string{"StopProbe"}, nil, [5]string{no, no, "A", "A", no}},
@@ -47,6 +46,8 @@ var roleMatrix = []roleRow{
 	{"`RunHarnessCommand` class DENY (and anything not in the catalog)", []string{"RunHarnessCommand"}, []string{"DENY"}, [5]string{no, no, no, no, no}},
 	{"`PruneWorktree`", []string{"PruneWorktree"}, []string{"", "allow_dirty"}, [5]string{no, no, "A", "A (never `allow_dirty`)", no}},
 	{"`EnsureGoalHooks`", []string{"EnsureGoalHooks"}, nil, [5]string{no, no, "A", "A", no}},
+	{"`EnsureScratch` (before a scratch `StartGoal`, [05](05-insights.md))", []string{"EnsureScratch"}, nil, [5]string{no, "A", "A", "A", no}},
+	{"`CollectScratch` (the verifier reads the report, [05](05-insights.md))", []string{"CollectScratch"}, nil, [5]string{no, no, "A", "A", no}},
 	{"`OpenAttach`, `CloseAttach`", []string{"OpenAttach", "CloseAttach"}, []string{"", "read_only"}, [5]string{"A (read-only)", "A", "A", no, no}},
 	{"`SetLogCapture`", []string{"SetLogCapture"}, nil, [5]string{no, "A", "A", "A", no}},
 	{"`SetLogShipping`", []string{"SetLogShipping"}, nil, [5]string{no, no, "A", "A", no}},
@@ -55,8 +56,11 @@ var roleMatrix = []roleRow{
 
 // cell is one parsed matrix cell.
 type cell struct {
-	allowed       bool
-	local         bool // L: waits when a local approval rule covers the kind
+	allowed bool
+	// local is L. It adds no check of its own: a local approval rule makes
+	// every allowed cell of its kind wait, A cells included (02g legend), so
+	// decide reads the rule, not this flag. Kept so the cell parses whole.
+	local         bool
 	alwaysLocal   bool // L!: always waits
 	fleetOnly     bool // F
 	fleetOrMarked bool // F*
