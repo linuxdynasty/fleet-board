@@ -35,7 +35,7 @@ const (
 func (e *Executor) finish(ctx context.Context, c *agentv1.Command, ent ring.Entry, r *agentv1.CommandResult, started time.Time, refused bool, sp *span) {
 	done := e.opts.Now()
 	r.CommandId = &typev1.CommandId{Value: ent.ID}
-	r.Message = e.text(r.GetMessage())
+	r.Message = e.text(ctx, fieldResult, ent.ID, ent.Kind, r.GetMessage())
 	if !started.IsZero() {
 		r.StartedTime = timestamppb.New(started)
 	}
@@ -73,7 +73,7 @@ func (e *Executor) finish(ctx context.Context, c *agentv1.Command, ent ring.Entr
 // new epoch, which a logged refusal would answer forever (ruling fork 4 i).
 func (e *Executor) unlogged(ctx context.Context, c *agentv1.Command, kind string, r *agentv1.CommandResult) {
 	r.CommandId = &typev1.CommandId{Value: c.GetCommandId().GetValue()}
-	r.Message = e.text(r.GetMessage())
+	r.Message = e.text(ctx, fieldResult, c.GetCommandId().GetValue(), kind, r.GetMessage())
 	r.FinishedTime = timestamppb.New(e.opts.Now())
 	e.outcome(ctx, c, kind, r, 0, true)
 	e.send(ctx, kind, &agentv1.ConnectRequest{Body: &agentv1.ConnectRequest_CommandResult{CommandResult: r}})
@@ -131,16 +131,33 @@ func errKind(err error) string {
 	}
 }
 
+// The fields text writes, as the field label of fleet_agent_text_scrub_total.
+const (
+	fieldResult   = "result_message"
+	fieldProgress = "progress_message"
+)
+
 // text is agent-written free text as it may leave the machine: cut back
 // to whole lines within preCut (or "" when its first 8 KiB hold no line
 // end), scrubbed with the home folder written as ~, at most 1 KiB (02e;
-// internal/scrub README "Callers bound the input").
-func (e *Executor) text(s string) string {
+// internal/scrub README "Callers bound the input"). What the cut and the
+// scrub did is counted by field (02e: callers count it), and a field the
+// cut empties is logged, so a blank message has a visible reason.
+func (e *Executor) text(ctx context.Context, field, id, kind, s string) string {
 	if s == "" {
 		return ""
 	}
-	s, _ = scrub.Bound(s, preCut)
-	return scrub.Text(s, scrub.Options{MaxBytes: maxMessage, Home: e.opts.Home})
+	kept, preCutDone := scrub.Bound(s, preCut)
+	res := scrub.Scrub(kept, scrub.Options{MaxBytes: maxMessage, Home: e.opts.Home})
+	e.m.scrubbed(ctx, field, preCutDone, res)
+	if preCutDone && kept == "" {
+		args := []any{"field", field, "kind", kind, "bytes", len(s)}
+		if printableID(id) {
+			args = append(args, "command_id", id)
+		}
+		e.log.WarnContext(ctx, "command.text_emptied", args...)
+	}
+	return res.Text
 }
 
 func enumName(s, prefix string) string { return strings.TrimPrefix(s, prefix) }

@@ -77,6 +77,7 @@
   "start_failures_": "docs/specs/05b-observability.md",
   "status_writes_": "docs/specs/03-workflows.md",
   "store_": "docs/specs/05b-observability.md",
+  "text_scrub_": "docs/specs/05b-observability.md",
   "tmux_": "docs/specs/05b-observability.md",
   "typing_": "docs/specs/05b-observability.md",
   "stream_closed_": "docs/specs/03n-reconnect.md",

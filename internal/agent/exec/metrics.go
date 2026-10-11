@@ -14,6 +14,7 @@ import (
 
 	agentv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1"
 	typev1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/type/v1"
+	"github.com/linuxdynasty/fleet-board/internal/scrub"
 	"github.com/linuxdynasty/fleet-board/internal/telemetry"
 )
 
@@ -27,6 +28,7 @@ type metrics struct {
 	seconds  metric.Float64Histogram
 	refused  metric.Int64Counter
 	failed   metric.Int64Counter
+	scrub    metric.Int64Counter
 	reg      metric.Registration
 	disabled bool
 }
@@ -37,7 +39,7 @@ func newMetrics(tel *telemetry.Telemetry, running func() int64) (*metrics, error
 	}
 	m, p := tel.Meter(scope), tel.MetricPrefix()
 	out := &metrics{tracer: tel.Tracer(scope)}
-	var e1, e2, e3, e4, e5 error
+	var e1, e2, e3, e4, e5, e6 error
 	out.total, e1 = m.Int64Counter(p+"_commands_total",
 		metric.WithDescription("Commands the agent answered, by kind and final status."))
 	out.seconds, e2 = m.Float64Histogram(p+"_command_seconds", metric.WithUnit("s"),
@@ -46,9 +48,11 @@ func newMetrics(tel *telemetry.Telemetry, running func() int64) (*metrics, error
 		metric.WithDescription("Commands the agent's own checks refused before any handler ran, by reason."))
 	out.failed, e5 = m.Int64Counter(p+"_command_store_failed_total",
 		metric.WithDescription("Command log reads and writes in agent.db that failed, by step."))
+	out.scrub, e6 = m.Int64Counter(p+"_text_scrub_total",
+		metric.WithDescription("Agent-written messages the line pre-cut or the scrubber changed, by field and what happened."))
 	gauge, e4 := m.Int64ObservableGauge(p+"_commands_running",
 		metric.WithDescription("Commands the agent holds between their ack and their result."))
-	if err := errors.Join(e1, e2, e3, e4, e5); err != nil {
+	if err := errors.Join(e1, e2, e3, e4, e5, e6); err != nil {
 		return nil, err
 	}
 	var err error
@@ -65,6 +69,23 @@ func newMetrics(tel *telemetry.Telemetry, running func() int64) (*metrics, error
 func (m *metrics) close() {
 	if m.reg != nil {
 		_ = m.reg.Unregister()
+	}
+}
+
+// scrubbed counts what the pre-cut and the scrubber did to one field:
+// pre_cut (lines dropped past 8 KiB), redacted (a secret or the home folder
+// replaced), cut (cut to the 1 KiB cap), unsettled (replaced whole).
+func (m *metrics) scrubbed(ctx context.Context, field string, preCut bool, r scrub.Result) {
+	if m.disabled {
+		return
+	}
+	for _, c := range []struct {
+		on     bool
+		result string
+	}{{preCut, "pre_cut"}, {r.Changed, "redacted"}, {r.Cut, "cut"}, {r.Unsettled, "unsettled"}} {
+		if c.on {
+			m.scrub.Add(ctx, 1, metric.WithAttributes(attribute.String("field", field), attribute.String("result", c.result)))
+		}
 	}
 }
 

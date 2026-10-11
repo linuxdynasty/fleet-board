@@ -7,6 +7,7 @@ import (
 
 	agentv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1"
 	typev1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/type/v1"
+	"github.com/linuxdynasty/fleet-board/internal/agent/conn/conntest"
 	"github.com/linuxdynasty/fleet-board/internal/agent/ring"
 )
 
@@ -133,5 +134,34 @@ func TestRefusedTotal(t *testing.T) {
 	r.result(t, "u-3")
 	if got := r.ex.RefusedTotal(); got != 2 {
 		t.Errorf("RefusedTotal = %d, want 2", got)
+	}
+}
+
+// The scrubber's results are counted by field (02e: callers count them).
+// A one-line message longer than 8 KiB has no line end to cut back to: the
+// field is emptied, counted as pre_cut and logged, so the operator sees why
+// a message is blank.
+func TestScrubResultsAreCounted(t *testing.T) {
+	t.Parallel()
+	h := capturePane("tmux.observe")
+	r := newRig(t, h)
+	r.start(t)
+	h.result = &agentv1.CommandResult{Status: typev1.Status_STATUS_OK, Message: strings.Repeat("y", 9<<10)}
+	r.give(t, cmd("sc-1", 1, "tmux.observe"))
+	if out := r.result(t, "sc-1").GetMessage(); out != "" {
+		t.Errorf("a one-line 9 KiB message became %d bytes, want empty", len(out))
+	}
+	if got := r.metric(t, "fleet_agent_text_scrub_total", `result="pre_cut"`); got != "1" {
+		t.Errorf("text_scrub_total{pre_cut} %q, want 1", got)
+	}
+	lines := conntest.Lines(t, r.logs.String(), "command.text_emptied")
+	if len(lines) != 1 || lines[0]["command_id"] != "sc-1" || lines[0]["field"] != "result_message" {
+		t.Errorf("command.text_emptied lines %v, want one for sc-1 result_message", lines)
+	}
+	h.result = &agentv1.CommandResult{Status: typev1.Status_STATUS_OK, Message: "used ghp_" + strings.Repeat("Z", 36)}
+	r.give(t, cmd("sc-2", 2, "tmux.observe"))
+	r.result(t, "sc-2")
+	if got := r.metric(t, "fleet_agent_text_scrub_total", `result="redacted"`); got != "1" {
+		t.Errorf("text_scrub_total{redacted} %q, want 1", got)
 	}
 }

@@ -140,7 +140,7 @@ func (e *Executor) progress(id, kind string) func(context.Context, *agentv1.Comm
 	return func(ctx context.Context, in *agentv1.CommandProgress) error {
 		p := proto.CloneOf(in)
 		p.CommandId = &typev1.CommandId{Value: id}
-		p.Message = e.text(p.GetMessage())
+		p.Message = e.text(ctx, fieldProgress, id, kind, p.GetMessage())
 		if err := e.opts.DB.SetRunning(ctx, id, int(p.GetStepIndex())); err != nil {
 			return err
 		}
