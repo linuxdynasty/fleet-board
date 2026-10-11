@@ -97,9 +97,12 @@ since start, logged or not; the heartbeat's
 
 Signals: logs `command.received`, `command.refused`, `command.finished`,
 `command.resumed`, `command.dropped`, `command.store_failed`,
-`command.send_failed`; metrics `fleet_agent_commands_total{kind, status}`,
+`command.send_failed`, `command.text_emptied`; metrics
+`fleet_agent_commands_total{kind, status}`,
 `fleet_agent_command_seconds{kind}`, `fleet_agent_commands_running`,
-`fleet_agent_commands_refused_total{reason}`; span `agent.command{kind}`
+`fleet_agent_commands_refused_total{reason}`,
+`fleet_agent_command_store_failed_total{step}`,
+`fleet_agent_text_scrub_total{field, result}`; span `agent.command{kind}`
 ([05b](../../../docs/specs/05b-observability.md)).
 
 Tests: every kind arm, an empty kind and field 99 are `UNSUPPORTED` with no
