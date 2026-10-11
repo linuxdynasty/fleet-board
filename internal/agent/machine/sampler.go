@@ -251,13 +251,15 @@ func (s *Sampler) launch(ctx context.Context, out chan<- reading, key, source st
 	s.busyMu.Unlock()
 	go func() {
 		v, err := fn(ctx)
-		// The key stays busy until the result is handed over (the channel is
-		// sized for every reading of a sample, so this never waits): a
-		// goroutine parked on a full channel would show as busy, not leak.
-		out <- reading{key: key, source: source, val: v, err: err}
+		// The key is free the moment the reading returns, before its result
+		// is handed over: the sample that receives the result may finish and
+		// the next one start at once, and it must not find the key busy. The
+		// hand-over never waits (the channel is sized for every reading of a
+		// sample, one slot per key), so nothing parks here.
 		s.busyMu.Lock()
 		delete(s.busy, key)
 		s.busyMu.Unlock()
+		out <- reading{key: key, source: source, val: v, err: err}
 	}()
 	return true
 }
