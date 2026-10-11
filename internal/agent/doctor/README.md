@@ -27,12 +27,12 @@ that is not ok or not_checked has a fix line.
 | ID | Looks at | Fails when |
 |---|---|---|
 | `state_dir` | the state folder: a real folder, yours, no group/other access | missing, a link, another owner, mode over 0700 |
-| `config_dir` | the config folder (prints the one used) | not a folder, another owner, group/other can write |
+| `config_dir` | the config folder (prints the one used) | not a folder, another owner, every user can write (warns when only its group can) |
 | `identity` | `identity.json`: present, private, whole (the key is never decoded) | missing, loose, damaged |
 | `cert_expiry` | the certificate that ends last (identity or a valid `cert.pem`) | expired; warns past two thirds of its life |
 | `cert_file` | `cert.pem`: private, a certificate for this machine signed by the pinned CA; the key block is never read | loose (fail); damaged or wrong machine or CA (warn: the enrolled pair is used) |
 | `renew_key` | `renew.key`: presence and mode only | open to other users (renewal is blocked) |
-| `policy_file` | `policy.yaml` read fresh: missing (normal), valid, safe mode with its one-line error | safe mode, or writable by others |
+| `policy_file` | `policy.yaml` read fresh: missing (normal), valid, safe mode with its one-line error | safe mode, or writable by every user (warns when only its group can write it) |
 | `policy_roots`, `policy_harnesses` | the defaults in force | warns on empty roots or an explicit empty harness list |
 | `policy_watch` | `policy_watch: off` in status.json | warns when off |
 | `status_file` | `status.json` age (old after 2 minutes) | warns when old or damaged |

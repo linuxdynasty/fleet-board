@@ -22,12 +22,24 @@ func listed(names []string) string {
 
 // policyFileCheck reads policy.yaml fresh, with no side effect: the file
 // the agent would load at its next start, not necessarily the one it runs on.
+// The agent loads the file whatever its mode. A file every user may write is a
+// fail (any local account could loosen the ceiling); one only its group may
+// write is a warning, because Ubuntu and Debian make a hand-made file 0664
+// with a private group (03e, "The local policy file").
 func policyFileCheck(_ context.Context, e *Env) Outcome {
 	in := e.Policy()
+	var groupWritable *Outcome
 	if in.Present {
-		if p, err := stat(in.Path); err == nil && p.Regular && p.perm()&0o022 != 0 {
-			return fail(fmt.Sprintf("policy.yaml is mode %s: other users could change it and loosen this machine's ceiling", modeText(p)),
-				"chmod go-w "+shellQuote(in.Path))
+		if p, err := stat(in.Path); err == nil && p.Regular {
+			switch perm := p.perm(); {
+			case perm&0o002 != 0:
+				return fail(fmt.Sprintf("policy.yaml is mode %s: any user on this machine could change it and loosen this machine's ceiling", modeText(p)),
+					"chmod go-w "+shellQuote(in.Path))
+			case perm&0o020 != 0:
+				w := warn(fmt.Sprintf("policy.yaml is mode %s: its group could change it and loosen this machine's ceiling", modeText(p)),
+					"chmod g-w "+shellQuote(in.Path)+"; fine as it is if that group is only you")
+				groupWritable = &w
+			}
 		}
 	}
 	switch {
@@ -36,6 +48,8 @@ func policyFileCheck(_ context.Context, e *Env) Outcome {
 	case in.Problem != nil:
 		return fail(fmt.Sprintf("policy.yaml puts the agent in safe mode (%s): %s. In safe mode it refuses every control command and every hub setting", in.Problem.Code, in.Problem.Error()),
 			"fix the line named above in "+shellQuote(in.Path)+"; the agent reads the file again at its next start")
+	case groupWritable != nil:
+		return *groupWritable
 	}
 	return ok(fmt.Sprintf("policy.yaml is valid (schema_version %s, hash %s)", in.SchemaVersion, short(in.Hash)))
 }

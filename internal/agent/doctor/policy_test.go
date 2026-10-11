@@ -40,11 +40,31 @@ func TestPolicyFile(t *testing.T) {
 		r.policy("schema_version: \"2\"\n", 0o644)
 		r.want("policy_file", doctor.Fail, "safe mode", "schema_version")
 	})
-	t.Run("a file others can write could loosen the ceiling", func(t *testing.T) {
+	modes := []struct {
+		name   string
+		mode   os.FileMode
+		status doctor.Status
+		words  []string
+	}{
+		{"private is ok", 0o600, doctor.OK, nil},
+		{"readable by others is the owner's choice", 0o644, doctor.OK, nil},
+		{"a group may write it: a warning, since Ubuntu and Debian make it so", 0o664, doctor.Warn, []string{"0664", "chmod g-w", "that group is only you"}},
+		{"every user may write it: it could loosen the ceiling", 0o666, doctor.Fail, []string{"0666", "chmod go-w"}},
+		{"group and other write", 0o662, doctor.Fail, []string{"0662", "chmod go-w"}},
+	}
+	for _, tc := range modes {
+		t.Run("mode "+tc.name, func(t *testing.T) {
+			t.Parallel()
+			r := newRig(t)
+			r.policy("schema_version: \"1\"\n", tc.mode)
+			r.want("policy_file", tc.status, tc.words...)
+		})
+	}
+	t.Run("a group-writable file in safe mode is still the safe mode failure", func(t *testing.T) {
 		t.Parallel()
 		r := newRig(t)
-		r.policy("schema_version: \"1\"\n", 0o666)
-		r.want("policy_file", doctor.Fail, "0666", "chmod go-w")
+		r.policy("schema_version: \"2\"\n", 0o664)
+		r.want("policy_file", doctor.Fail, "safe mode", "schema_version")
 	})
 	t.Run("a folder named policy.yaml is unreadable, not a hang", func(t *testing.T) {
 		t.Parallel()

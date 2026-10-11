@@ -92,22 +92,28 @@ func TestConfigFolder(t *testing.T) {
 		}
 		r.want("config_dir", doctor.OK, r.cfg, "does not exist yet", "enroll")
 	})
-	t.Run("others can write it", func(t *testing.T) {
-		t.Parallel()
-		r := newRig(t)
-		if err := os.Chmod(r.cfg, 0o777); err != nil { //nolint:gosec // G302: the point of the test
-			t.Fatal(err)
-		}
-		r.want("config_dir", doctor.Fail, "0777", "chmod go-w")
-	})
-	t.Run("readable by others is the owner's choice", func(t *testing.T) {
-		t.Parallel()
-		r := newRig(t)
-		if err := os.Chmod(r.cfg, 0o755); err != nil { //nolint:gosec // G302: the point of the test
-			t.Fatal(err)
-		}
-		r.want("config_dir", doctor.OK)
-	})
+	modes := []struct {
+		name   string
+		mode   os.FileMode
+		status doctor.Status
+		words  []string
+	}{
+		{"private is ok", 0o700, doctor.OK, nil},
+		{"readable by others is the owner's choice", 0o755, doctor.OK, nil},
+		{"a group may write it: a warning, since Ubuntu and Debian make it so", 0o775, doctor.Warn, []string{"0775", "chmod g-w", "that group is only you"}},
+		{"every user may write it", 0o777, doctor.Fail, []string{"0777", "chmod go-w"}},
+		{"other write only", 0o703, doctor.Fail, []string{"0703", "chmod go-w"}},
+	}
+	for _, tc := range modes {
+		t.Run("mode "+tc.name, func(t *testing.T) {
+			t.Parallel()
+			r := newRig(t)
+			if err := os.Chmod(r.cfg, tc.mode); err != nil {
+				t.Fatal(err)
+			}
+			r.want("config_dir", tc.status, tc.words...)
+		})
+	}
 	t.Run("owned by another user", func(t *testing.T) {
 		t.Parallel()
 		r := newRig(t)

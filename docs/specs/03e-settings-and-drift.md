@@ -188,6 +188,13 @@ built-in default in the table is what the agent uses. Decision 4 of
   answer it writes the file with an empty `allowed_repo_roots` and says so. A
   `--repos` that is not an existing folder stops `enroll` before the token is
   used, even when a `policy.yaml` already exists.
+- **The file's mode is the owner's business; doctor only warns.** `fleet-agent
+  doctor` fails when the file or its folder is writable by every user and warns
+  when its group may write it; the agent itself loads the file either way. A
+  file every user may write lets any local account loosen the ceiling. A file
+  only its group may write is common (Ubuntu and Debian make a hand-made file
+  0664 and a folder 0775, with a group that holds only the owner), so it is a
+  warning with the line `chmod g-w`, not a failure.
 
 Every key (the merge column is the tighten-only rule above, applied per key). Default values are in [defaults.md](defaults.md); the empty-by-default and every-installed-harness rules are in the bullets above:
 

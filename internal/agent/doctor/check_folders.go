@@ -32,8 +32,10 @@ func stateDirCheck(_ context.Context, e *Env) Outcome {
 }
 
 // configDirCheck is the config folder. Reading by others is the owner's
-// choice (policy.yaml is mode 0644); writing by others is not: anyone who can
-// write there can loosen the machine's ceiling (ADR 0009).
+// choice (policy.yaml is mode 0644). A folder every user may write is a fail:
+// any local account could change policy.yaml and loosen the machine's ceiling.
+// One only its group may write is a warning, since Ubuntu and Debian make a
+// hand-made folder 0775 with a private group (03e, "The local policy file").
 func configDirCheck(_ context.Context, e *Env) Outcome {
 	dir := e.ConfigDir()
 	p, err := stat(dir) // a link to a folder is fine here: dotfile managers make them
@@ -47,9 +49,12 @@ func configDirCheck(_ context.Context, e *Env) Outcome {
 	case !e.owned(p):
 		return fail(fmt.Sprintf("%s is owned by another user (uid %d, not uid %d)", dir, p.UID, e.opts.Getuid()),
 			"use a folder you own with --config-dir, or fix the owner with chown")
-	case p.perm()&0o022 != 0:
-		return fail(fmt.Sprintf("%s is mode %s: other users could change policy.yaml and loosen this machine's ceiling", dir, modeText(p)),
+	case p.perm()&0o002 != 0:
+		return fail(fmt.Sprintf("%s is mode %s: any user on this machine could change policy.yaml and loosen this machine's ceiling", dir, modeText(p)),
 			"chmod go-w "+shellQuote(dir))
+	case p.perm()&0o020 != 0:
+		return warn(fmt.Sprintf("%s is mode %s: its group could change policy.yaml and loosen this machine's ceiling", dir, modeText(p)),
+			"chmod g-w "+shellQuote(dir)+"; fine as it is if that group is only you")
 	}
 	return ok(fmt.Sprintf("%s is mode %s and yours", dir, modeText(p)))
 }
