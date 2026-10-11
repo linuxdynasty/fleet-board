@@ -8,6 +8,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	agentv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1"
+	"github.com/linuxdynasty/fleet-board/internal/protoversion"
 )
 
 // Cursor is one stream's place in the event order. Only the stream's
@@ -74,7 +75,15 @@ func (c *Cursor) Next(ctx context.Context, limit int) ([]*agentv1.Event, bool, e
 	}
 	more := len(rows) == limit
 	out := make([]*agentv1.Event, 0, len(rows)+len(shed))
+	var lost []uint64
 	for _, r := range rows {
+		if len(r.Body) > protoversion.MaxPartBytes {
+			// Never sendable (stored before the emit guard, or by hand): loss.
+			e.log.WarnContext(ctx, "ring.unreadable", "seq", r.Seq, "err_kind", "oversize")
+			c.after = max(c.after, r.Seq)
+			lost = append(lost, r.Seq)
+			continue
+		}
 		ev := &agentv1.Event{}
 		if err := proto.Unmarshal(r.Body, ev); err != nil || ev.GetSeq() != r.Seq {
 			e.log.WarnContext(ctx, "ring.unreadable", "seq", r.Seq, "err_kind", "parse")
@@ -82,6 +91,9 @@ func (c *Cursor) Next(ctx context.Context, limit int) ([]*agentv1.Event, bool, e
 			continue
 		}
 		out = append(out, ev)
+	}
+	if len(lost) > 0 {
+		e.loss(ctx, len(lost), lost...)
 	}
 	out = append(out, shed...)
 	slices.SortFunc(out, func(a, b *agentv1.Event) int { return compare(a.GetSeq(), b.GetSeq()) })

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -15,6 +16,7 @@ import (
 
 	agentv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1"
 	"github.com/linuxdynasty/fleet-board/internal/agent/ring"
+	"github.com/linuxdynasty/fleet-board/internal/protoversion"
 	"github.com/linuxdynasty/fleet-board/internal/telemetry"
 )
 
@@ -22,8 +24,17 @@ import (
 // oldest is dropped (the outbound queue's room, ruling row 6 fork 12 a).
 const DefaultShedQueue = 256
 
-// ErrClosed means Emit after Close.
-var ErrClosed = errors.New("events: the emitter is closed")
+// Errors of [Emitter.Emit].
+var (
+	// ErrClosed means Emit after Close.
+	ErrClosed = errors.New("events: the emitter is closed")
+	// ErrOversize means the encoded event is above protoversion.MaxPartBytes:
+	// it could never be sent, so it is not kept (counted as loss or shed).
+	ErrOversize = errors.New("events: the event is above the message cap")
+)
+
+// refusedLogEvery is how often ring.emit_refused may be logged per kind.
+const refusedLogEvery = time.Minute
 
 // Options are the inputs of [New].
 type Options struct {
@@ -75,6 +86,8 @@ type Emitter struct {
 	flushing    bool
 	closed      bool
 	afterSubmit func(seq uint64)
+	// refusedLogged is when ring.emit_refused was last logged, per kind.
+	refusedLogged map[string]time.Time
 }
 
 // New makes the emitter and the seq allocator of agent.db.
@@ -139,6 +152,9 @@ func (e *Emitter) Emit(ctx context.Context, ev *agentv1.Event) (uint64, error) {
 		ev.ObservedTime = timestamppb.New(now)
 	}
 	ev.Replayed = false
+	if err := e.checkSize(ctx, ev, now); err != nil {
+		return 0, err
+	}
 	e.mu.Lock()
 	if e.closed {
 		e.mu.Unlock()
@@ -186,6 +202,54 @@ func (e *Emitter) Emit(ctx context.Context, ev *agentv1.Event) (uint64, error) {
 		e.log.Warn("ring.evicted", "n", res.Evicted, "oldest_seq", res.OldestEvicted)
 	}
 	return seq, nil
+}
+
+// checkSize refuses an event that could never be sent (ruling round 3, 3d):
+// its size is measured with the widest seq, before a seq is taken. A
+// refused NEVER_DROP or COALESCE event is loss (evicted_total + 1, so the
+// hub asks for a snapshot); a refused SHED one is shed.
+func (e *Emitter) checkSize(ctx context.Context, ev *agentv1.Event, now time.Time) error {
+	ev.Seq = math.MaxUint64
+	n := proto.Size(ev)
+	ev.Seq = 0
+	if n <= protoversion.MaxPartBytes {
+		return nil
+	}
+	kind := bodyKind(ev)
+	e.m.refused("oversize")
+	e.mu.Lock()
+	if e.closed {
+		e.mu.Unlock()
+		return ErrClosed
+	}
+	if last, ok := e.refusedLogged[kind]; !ok || now.Sub(last) >= refusedLogEvery {
+		if e.refusedLogged == nil {
+			e.refusedLogged = map[string]time.Time{}
+		}
+		e.refusedLogged[kind] = now
+		e.log.WarnContext(ctx, "ring.emit_refused", "kind", kind, "bytes", n)
+	}
+	shed := ev.GetDelivery() == agentv1.DeliveryClass_DELIVERY_CLASS_SHED
+	if shed {
+		e.dropShed(1)
+	}
+	e.mu.Unlock()
+	if !shed {
+		e.loss(ctx, 1)
+	}
+	return fmt.Errorf("%w: %s, %d bytes", ErrOversize, kind, n)
+}
+
+// loss counts n NEVER_DROP or COALESCE events lost without a cap eviction,
+// deleting the stored entries drop names.
+func (e *Emitter) loss(ctx context.Context, n int, drop ...uint64) {
+	e.m.lost(n)
+	size, err := e.db.CountLoss(context.WithoutCancel(ctx), n, drop...)
+	if err != nil {
+		e.log.WarnContext(ctx, "ring.counters_failed", "err_kind", "io")
+		return
+	}
+	e.storeSize(size)
 }
 
 // queueShed puts a SHED event on the attached stream's queue, dropping the

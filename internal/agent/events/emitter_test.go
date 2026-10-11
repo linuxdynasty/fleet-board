@@ -1,15 +1,20 @@
 package events_test
 
 import (
+	"errors"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"google.golang.org/protobuf/proto"
 
 	agentv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1"
 	typev1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/type/v1"
 	"github.com/linuxdynasty/fleet-board/internal/agent/events"
 	"github.com/linuxdynasty/fleet-board/internal/agent/ring"
+	"github.com/linuxdynasty/fleet-board/internal/protoversion"
 )
 
 func pane2(id string) *typev1.PaneKey {
@@ -249,5 +254,99 @@ func TestConcurrentProducersArriveInSeqOrder(t *testing.T) {
 			t.Fatal(err)
 		}
 		sent = append(sent, seqs(got)...)
+	}
+}
+
+func bigPolicyEv(n int) *agentv1.Event {
+	return policyEv(strings.Repeat("h", n))
+}
+
+// Ruling round 3, 3d: an event above the 02e cap can never be sent, so Emit
+// refuses it (ErrOversize) instead of storing a poison ring entry; a
+// refused NEVER_DROP event is loss (evicted_total + 1), a refused SHED one
+// counts as shed. The log line comes at most once per kind per minute.
+func TestAnOversizeEventIsRefusedAndCounted(t *testing.T) {
+	t.Parallel()
+	r := newRig(t, stateDir(t), events.Options{})
+	for range 2 {
+		if _, err := r.e.Emit(t.Context(), bigPolicyEv(protoversion.MaxPartBytes)); !errors.Is(err, events.ErrOversize) {
+			t.Fatalf("Emit of an over-cap event: %v, want ErrOversize", err)
+		}
+	}
+	big := sampleEv()
+	big.GetResourceSample().Disk = []*agentv1.DiskFree{{Path: strings.Repeat("p", protoversion.MaxPartBytes)}}
+	if _, err := r.e.Emit(t.Context(), big); !errors.Is(err, events.ErrOversize) {
+		t.Fatalf("Emit of an over-cap SHED event: %v, want ErrOversize", err)
+	}
+	r.e.Close()
+	if m := r.marks(t); m.Evicted != 2 || m.Shed != 1 {
+		t.Errorf("evicted_total %d, shed_total %d; want 2 and 1", m.Evicted, m.Shed)
+	}
+	if s, _ := r.db.EventsSize(t.Context()); s.Events != 0 {
+		t.Errorf("the ring holds %d entries", s.Events)
+	}
+	if got := len(r.logs.events("ring.emit_refused")); got != 2 {
+		t.Errorf("ring.emit_refused logged %d times, want 2 (once per kind per minute)", got)
+	}
+	if v := r.metric(t, "fleet_agent_events_refused_total", `reason="oversize"`); v != "3" {
+		t.Errorf("events_refused_total %q, want 3", v)
+	}
+	if _, err := r.e.Emit(t.Context(), bigPolicyEv(100)); !errors.Is(err, events.ErrClosed) {
+		t.Errorf("after Close: %v", err)
+	}
+}
+
+// A stored entry above the cap (written before the guard, or by hand) is
+// skipped like an undecodable one, counted as loss, and the events after it
+// still go out.
+func TestAnOverCapRingEntryIsSkippedAndCounted(t *testing.T) {
+	t.Parallel()
+	r := newRig(t, stateDir(t), events.Options{})
+	alloc := r.e.Seqs()
+	first, err := alloc.Next(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := proto.Marshal(&agentv1.Event{Seq: first, Body: &agentv1.Event_PolicyChanged{
+		PolicyChanged: &agentv1.PolicyChanged{PreviousHash: strings.Repeat("h", protoversion.MaxPartBytes)},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wait, err := r.db.SubmitEvent(t.Context(), ring.EventRow{Seq: first, Created: time.Now(), Body: body}, ring.DefaultCaps)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := wait(); err != nil {
+		t.Fatal(err)
+	}
+	after := emit(t, r.e, policyEv("ok"))
+	c, err := r.e.Attach(t.Context(), 0, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := drain(t, c); !slices.Equal(seqs(got), []uint64{after}) {
+		t.Fatalf("sent %v, want only %d", seqs(got), after)
+	}
+	c.Detach()
+	// The entry is gone with its count: the next stream neither sends nor
+	// counts it again.
+	c2, err := r.e.Attach(t.Context(), 0, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c2.Detach()
+	if got := drain(t, c2); !slices.Equal(seqs(got), []uint64{after}) {
+		t.Fatalf("the next stream sent %v, want only %d", seqs(got), after)
+	}
+	if m := r.marks(t); m.Evicted != 1 {
+		t.Errorf("evicted_total %d, want 1", m.Evicted)
+	}
+	if size := r.e.Size(); size.Events != 1 {
+		t.Errorf("the ring holds %d entries, want 1 (the over-cap one deleted)", size.Events)
+	}
+	ls := r.logs.events("ring.unreadable")
+	if len(ls) != 1 || ls[0]["err_kind"] != "oversize" {
+		t.Errorf("ring.unreadable lines %v", ls)
 	}
 }

@@ -124,7 +124,7 @@ the stop's 10 s grace, [defaults](defaults.md) "Stop grace (hub)"), so the store
 | What | Where | Transaction |
 |---|---|---|
 | Event ring (`seq`, body, 1 week or 64 MiB, [defaults](defaults.md)) | `agent.db` | per event, fsync batched ≤ 1 s; trimmed by EventAck while connected |
-| `seq_hwm` (reserved in blocks of 1024), `EventCounters`, `install_id`, `last_epoch`, `last_applied_command_seq` | `agent.db` | one fsync per block; counters with it; the epoch and command marks never step back |
+| `seq_hwm` (reserved in blocks of 1024), `EventCounters`, `install_id`, `last_epoch`, `last_applied_command_seq` | `agent.db` | one fsync per block for `seq_hwm`; `evicted_total` and `coalesced_total` are committed in the ring job that evicts or replaces (ADR 0014 pragmas, synchronous FULL); `shed_total` is saved in the background; Hello and Heartbeat report saved values only, so no reported counter is ever above the next Hello's; the epoch and command marks never step back |
 | Command log (last 10,000 or 7 days; status, result, step reached, the encoded command) | `agent.db` | per state change, before `CommandAck` is sent |
 | Probe assignments (`EnsureProbe` as received) | `agent.db` | with the command log |
 | Goal registry (`GoalRegistration` per pane) and availability marks (per pane key) | `agent.db` | `register_goal`, `RegisterGoal`, `ReleaseGoal`, mark commands; both reported in every snapshot (02h) |
@@ -236,6 +236,7 @@ The agent side of plan row 6 (ruling forks 4 i, 11 and 12), in
   `fleet_agent_replayed_events_total`, `fleet_agent_unacked_results`,
   `fleet_agent_events_total{kind, delivery}` (each event created, by body kind and class),
   `fleet_agent_events_shed_total`, `fleet_agent_events_coalesced_total`, `fleet_agent_events_evicted_total`,
+  `fleet_agent_events_refused_total{reason="oversize"}` (an event above the 02e cap, refused at emit),
   `fleet_agent_reconnects_total{reason=reconnect|wake|network_change}` (each
   stream connected with that `Hello.reason`).
 - `fleet_hub_reconnects_total{machine, reason}` (every accepted `Hello`, by
@@ -249,8 +250,11 @@ The agent side of plan row 6 (ruling forks 4 i, 11 and 12), in
   (warn, loss), `ring.trimmed{to_seq, n, reason}` (info for the HelloAck
   floor, debug for an EventAck), `ring.replay{from_seq, to_seq, n}` when a
   stream attaches with entries to replay, `ring.unreadable{seq, err_kind}`
-  (an entry that does not decode is skipped), `ring.emit_failed{kind, err_kind}`
+  (an entry that does not decode is skipped; one above the message cap,
+  `err_kind="oversize"`, is deleted and counted as evicted), `ring.emit_failed{kind, err_kind}`
   (a `policy_changed` or `resource_sample` that could not be saved or queued),
+  `ring.emit_refused{kind, bytes}` (warn, at most once per kind per minute: an
+  event above the 02e message cap, never sendable; counted as evicted or shed),
   `ring.counters_failed{err_kind}`
   (`shed_total` could not be saved; retried at the next drop); span
   `agent.ring.replay` for the attach. "Why did the hub ask for an

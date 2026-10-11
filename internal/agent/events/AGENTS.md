@@ -16,8 +16,12 @@ Read the root `AGENTS.md` first; it applies here. Load `fleet-go`,
 - Counters on the wire come from agent.db only: a shed drop is counted in
   memory and saved by the flush goroutine before Hello or Heartbeat can
   report it. A counter the hub saw must never fall after a crash.
-- A COALESCE key placeholder no body carries (`<profile>`) is refused
-  (`ErrNoKey`), never filled with a guess.
+- Every key placeholder but `<profile>` must be non-empty (`ErrNoKey`);
+  `<profile>` empty is the default profile (ruling round 3, 3a). Never fill a
+  key with a guess.
+- An event above `protoversion.MaxPartBytes` is never stored or sent: refuse
+  it at emit and count it (evicted or shed); a stored one is deleted and
+  counted once. A poison entry would end every stream that replays it.
 - Never put event body text in a log line or a label: seqs, counts, kinds.
 - A change here updates this README, `doc.go`, and 02i or 03n in the same
   commit.

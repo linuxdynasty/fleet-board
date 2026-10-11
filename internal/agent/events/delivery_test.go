@@ -3,6 +3,7 @@ package events_test
 import (
 	"errors"
 	"regexp"
+	"strings"
 	"testing"
 
 	agentv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1"
@@ -41,11 +42,13 @@ func pane() *typev1.PaneKey {
 }
 
 // Every COALESCE arm yields its key from a sample body (values worked out
-// by hand from the 02i table), and the two that name <profile>, which no
-// body carries, are refused rather than stamped with a wrong key.
+// by hand from the 02i table). <profile> is HarnessInfo.profile, empty for
+// the default profile and always empty for account_identity (ruling round 3,
+// 3a): an empty profile is a valid key part.
 func TestStampFillsEveryCoalesceKey(t *testing.T) {
 	t.Parallel()
 	ak := &typev1.AccountKey{Value: "ab12"}
+	h := &typev1.Harness{Name: "claude"}
 	cases := []struct {
 		name string
 		ev   *agentv1.Event
@@ -58,6 +61,9 @@ func TestStampFillsEveryCoalesceKey(t *testing.T) {
 		{"pane_input", &agentv1.Event{Body: &agentv1.Event_PaneInput{PaneInput: &agentv1.PaneInput{Pane: pane()}}}, "input:default/s1/%3"},
 		{"pane_changed", &agentv1.Event{Body: &agentv1.Event_PaneChanged{PaneChanged: &agentv1.PaneChanged{Pane: &agentv1.TmuxPane{Key: pane()}}}}, "pane:default/s1/%3"},
 		{"branch_state", &agentv1.Event{Body: &agentv1.Event_BranchState{BranchState: &agentv1.BranchState{Path: "/w/repo-1"}}}, "branch:/w/repo-1"},
+		{"account_identity", &agentv1.Event{Body: &agentv1.Event_AccountIdentity{AccountIdentity: &agentv1.AccountIdentity{Harness: h}}}, "identity:claude:"},
+		{"harness_changed", &agentv1.Event{Body: &agentv1.Event_HarnessChanged{HarnessChanged: &agentv1.HarnessInfo{Harness: h}}}, "harness:claude:"},
+		{"harness_changed work", &agentv1.Event{Body: &agentv1.Event_HarnessChanged{HarnessChanged: &agentv1.HarnessInfo{Harness: h, Profile: "work"}}}, "harness:claude:work"},
 		{"forge_cli_status", &agentv1.Event{Body: &agentv1.Event_ForgeCliStatus{ForgeCliStatus: &agentv1.ForgeCliStatus{Tool: "gh", Host: "github.com"}}}, "forge:gh:github.com"},
 	}
 	for _, tc := range cases {
@@ -71,18 +77,28 @@ func TestStampFillsEveryCoalesceKey(t *testing.T) {
 			}
 		})
 	}
-	h := &typev1.Harness{Name: "claude"}
-	for _, e := range []*agentv1.Event{
-		{Body: &agentv1.Event_AccountIdentity{AccountIdentity: &agentv1.AccountIdentity{Harness: h}}},
-		{Body: &agentv1.Event_HarnessChanged{HarnessChanged: &agentv1.HarnessInfo{Harness: h}}},
-	} {
-		if err := events.Stamp(e); !errors.Is(err, events.ErrNoKey) {
-			t.Errorf("%T: %v, want ErrNoKey (no body carries <profile>)", e.GetBody(), err)
+	covered := map[string]bool{}
+	for _, tc := range cases {
+		covered[strings.Fields(tc.name)[0]] = true
+	}
+	for _, r := range events.Table() {
+		if r.Class == agentv1.DeliveryClass_DELIVERY_CLASS_COALESCE && !covered[r.Name] {
+			t.Errorf("COALESCE arm %s has no sample body here", r.Name)
 		}
+	}
+	// Only <profile> may be empty: a harness_changed with no harness is no key.
+	if err := events.Stamp(&agentv1.Event{Body: &agentv1.Event_HarnessChanged{HarnessChanged: &agentv1.HarnessInfo{Profile: "work"}}}); !errors.Is(err, events.ErrNoKey) {
+		t.Errorf("a harness_changed with no harness: %v, want ErrNoKey", err)
 	}
 	// A COALESCE body without the field its key names is refused too.
 	if err := events.Stamp(&agentv1.Event{Body: &agentv1.Event_PaneInput{PaneInput: &agentv1.PaneInput{}}}); !errors.Is(err, events.ErrNoKey) {
 		t.Errorf("a pane_input with no pane: %v, want ErrNoKey", err)
+	}
+	// A PaneKey missing a part is no key: "input:default//%3" would merge
+	// panes of different servers.
+	partial := &typev1.PaneKey{Server: "default", PaneId: "%3"}
+	if err := events.Stamp(&agentv1.Event{Body: &agentv1.Event_PaneInput{PaneInput: &agentv1.PaneInput{Pane: partial}}}); !errors.Is(err, events.ErrNoKey) {
+		t.Errorf("a pane_input with no server_start_id: %v, want ErrNoKey", err)
 	}
 }
 

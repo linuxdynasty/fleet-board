@@ -13,12 +13,14 @@ import (
 
 	agentv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1"
 	typev1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/type/v1"
+	"github.com/linuxdynasty/fleet-board/internal/protoversion"
 )
 
 const (
-	// snapshotMaxBytes is the snapshot cap of 02e. Snapshot parts are not
-	// built yet, so a larger snapshot is not sent (03 W1 failure table).
-	snapshotMaxBytes = 960 << 10
+	// snapshotMaxBytes is the snapshot cap of 02e, shared with the event
+	// emitter. Snapshot parts are not built yet, so a larger snapshot is not
+	// sent (03 W1 failure table).
+	snapshotMaxBytes = protoversion.MaxPartBytes
 	// maxReasonBytes caps SnapshotRequest.reason in a log line.
 	maxReasonBytes = 64
 )

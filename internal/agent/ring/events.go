@@ -112,27 +112,8 @@ func evict(ctx context.Context, tx *sql.Tx, old, maxBytes int64, out *Appended) 
 		return err
 	}
 	excess := int64(size.Bytes) - maxBytes //nolint:gosec // G115: bytes is a sum of lengths, far below 2^63
-	var upTo, first int64
-	var n int
-	rows, err := tx.QueryContext(ctx, `SELECT seq, bytes, created_time FROM event_ring ORDER BY seq`)
+	first, upTo, n, err := oldest(ctx, tx, old, excess)
 	if err != nil {
-		return fmt.Errorf("ring: evict: %w", err)
-	}
-	for rows.Next() {
-		var seq, b, created int64
-		if err := rows.Scan(&seq, &b, &created); err != nil {
-			_ = rows.Close()
-			return fmt.Errorf("ring: evict: %w", err)
-		}
-		if excess <= 0 && created >= old {
-			break
-		}
-		if n == 0 {
-			first = seq
-		}
-		upTo, excess, n = seq, excess-b, n+1
-	}
-	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
 		return fmt.Errorf("ring: evict: %w", err)
 	}
 	if n == 0 {
@@ -146,6 +127,31 @@ func evict(ctx context.Context, tx *sql.Tx, old, maxBytes int64, out *Appended) 
 	}
 	out.Evicted, out.OldestEvicted = n, toUint(first)
 	return nil
+}
+
+// oldest walks the ring from its oldest entry while an entry is older than
+// old or the ring is still excess bytes over its cap, and returns the first
+// and last seq of that run and its length.
+func oldest(ctx context.Context, tx *sql.Tx, old, excess int64) (first, upTo int64, n int, err error) {
+	rows, err := tx.QueryContext(ctx, `SELECT seq, bytes, created_time FROM event_ring ORDER BY seq`)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var seq, b, created int64
+		if err := rows.Scan(&seq, &b, &created); err != nil {
+			return 0, 0, 0, err
+		}
+		if excess <= 0 && created >= old {
+			break
+		}
+		if n == 0 {
+			first = seq
+		}
+		upTo, excess, n = seq, excess-b, n+1
+	}
+	return first, upTo, n, rows.Err()
 }
 
 func readSize(ctx context.Context, tx *sql.Tx) (Size, error) {
@@ -216,6 +222,34 @@ func (d *DB) TrimEvents(ctx context.Context, upTo uint64) (int, Size, error) {
 		return 0, Size{}, err
 	}
 	return int(n), size, nil
+}
+
+// CountLoss raises evicted_total by n for NEVER_DROP or COALESCE events lost
+// without a cap eviction, because they are above the message cap and can
+// never be sent (ruling round 3, 3d): one refused at emit (no entry), or the
+// stored entries drop names, deleted in the same job so no later stream
+// counts them again.
+// It returns what the ring holds after.
+func (d *DB) CountLoss(ctx context.Context, n int, drop ...uint64) (Size, error) {
+	var size Size
+	err := d.s.Write(ctx, func(tx *sql.Tx) error {
+		for _, s := range drop {
+			v, err := toInt("seq", s)
+			if err != nil {
+				return err
+			}
+			if _, err := tx.ExecContext(ctx, `DELETE FROM event_ring WHERE seq = ?`, v); err != nil {
+				return fmt.Errorf("ring: count loss: %w", err)
+			}
+		}
+		_, err := tx.ExecContext(ctx, `UPDATE agent_state SET evicted_total = evicted_total + ? WHERE id = 1`, n)
+		if err != nil {
+			return fmt.Errorf("ring: count loss: %w", err)
+		}
+		size, err = readSize(ctx, tx)
+		return err
+	})
+	return size, err
 }
 
 // EventsSize is what the ring holds now.

@@ -7,6 +7,12 @@ const (
 	Max uint32 = 1
 )
 
+// MaxPartBytes is the largest Connect message the agent sends as one part:
+// a Snapshot part, or one Event (02e "Size limits", 960 KiB, under the
+// 1 MiB message cap so the envelope fits). An Event above it can never be
+// sent, so the agent refuses it when it is emitted.
+const MaxPartBytes = 960 << 10
+
 // Negotiate picks the highest version both sides speak, given the peer's
 // inclusive [peerMin, peerMax]. An unset bound (0), a reversed range, or a
 // range that misses [Min, Max] has none: ok is false.

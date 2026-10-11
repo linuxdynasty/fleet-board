@@ -23,6 +23,7 @@ type metrics struct {
 	events                   metric.Int64Counter
 	shedC, coalesced, evicts metric.Int64Counter
 	replayedC, droppedC      metric.Int64Counter
+	refusedC                 metric.Int64Counter
 	reg                      metric.Registration
 }
 
@@ -30,7 +31,7 @@ func newMetrics(tel *telemetry.Telemetry, e *Emitter) (*metrics, error) {
 	m := tel.Meter(scope)
 	p := tel.MetricPrefix()
 	out := &metrics{tracer: tel.Tracer(scope)}
-	errs := make([]error, 9)
+	errs := make([]error, 10)
 	out.events, errs[0] = m.Int64Counter(p+"_events_total",
 		metric.WithDescription("Events created, by body kind and delivery class (each took a seq)."))
 	out.shedC, errs[1] = m.Int64Counter(p+"_events_shed_total",
@@ -43,6 +44,8 @@ func newMetrics(tel *telemetry.Telemetry, e *Emitter) (*metrics, error) {
 		metric.WithDescription("Events sent with replayed=true: created before the stream's first snapshot."))
 	out.droppedC, errs[5] = m.Int64Counter(p+"_ring_dropped_total",
 		metric.WithDescription("Ring entries dropped because the hub holds them: reason floor (HelloAck) or acked (EventAck). Not loss."))
+	out.refusedC, errs[9] = m.Int64Counter(p+"_events_refused_total",
+		metric.WithDescription("Events refused at emit: reason oversize (above the 02e message cap, never sendable)."))
 	var ev, by metric.Int64ObservableGauge
 	ev, errs[6] = m.Int64ObservableGauge(p+"_ring_events", metric.WithDescription("Events held in the ring."))
 	by, errs[7] = m.Int64ObservableGauge(p+"_ring_bytes", metric.WithDescription("Bytes held in the ring (cap 64 MiB)."), metric.WithUnit("By"))
@@ -60,11 +63,22 @@ func newMetrics(tel *telemetry.Telemetry, e *Emitter) (*metrics, error) {
 
 var bg = context.Background()
 
-func (m *metrics) emitted(ev *agentv1.Event) {
-	kind := ""
+// bodyKind is the Event.body field name: a closed label.
+func bodyKind(ev *agentv1.Event) string {
 	if f := ev.ProtoReflect().WhichOneof(ev.ProtoReflect().Descriptor().Oneofs().ByName("body")); f != nil {
-		kind = string(f.Name())
+		return string(f.Name())
 	}
+	return ""
+}
+
+func (m *metrics) refused(reason string) {
+	m.refusedC.Add(bg, 1, metric.WithAttributes(attribute.String("reason", reason)))
+}
+
+func (m *metrics) lost(n int) { m.evicts.Add(bg, int64(n)) }
+
+func (m *metrics) emitted(ev *agentv1.Event) {
+	kind := bodyKind(ev)
 	class := strings.ToLower(strings.TrimPrefix(ev.GetDelivery().String(), "DELIVERY_CLASS_"))
 	m.events.Add(bg, 1, metric.WithAttributes(attribute.String("kind", kind), attribute.String("delivery", class)))
 }

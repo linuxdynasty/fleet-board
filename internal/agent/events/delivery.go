@@ -16,8 +16,7 @@ var (
 	// ErrNoBody means the event has no body, or one this build's table does
 	// not list.
 	ErrNoBody = errors.New("events: the event has no known body")
-	// ErrNoKey means a COALESCE body lacks what its key names, or the key
-	// names a placeholder no body carries yet (<profile>).
+	// ErrNoKey means a COALESCE body lacks what its key names.
 	ErrNoKey = errors.New("events: the coalesce_key cannot be filled from the body")
 )
 
@@ -53,10 +52,13 @@ var fills = map[string]func(m protoreflect.Message) string{
 	"<worktree path>": func(m protoreflect.Message) string { return str(m, "path") },
 	"<tool>":          func(m protoreflect.Message) string { return str(m, "tool") },
 	"<host>":          func(m protoreflect.Message) string { return str(m, "host") },
-	// No body carries a profile yet (AccountIdentity, HarnessInfo): the row
-	// that first emits those kinds decides it; until then they are refused.
-	"<profile>": func(protoreflect.Message) string { return "" },
+	// HarnessInfo.profile; "" is the default profile (ADR 0018), and
+	// AccountIdentity has none. The one placeholder that may be empty.
+	"<profile>": func(m protoreflect.Message) string { return str(m, "profile") },
 }
+
+// mayBeEmpty are the placeholders whose empty value is a valid key part.
+var mayBeEmpty = map[string]bool{"<profile>": true}
 
 // KnownPlaceholder reports whether the key fill knows p (for the table test).
 func KnownPlaceholder(p string) bool { _, ok := fills[p]; return ok }
@@ -83,7 +85,7 @@ func Stamp(ev *agentv1.Event) error {
 			if fill := fills[p]; fill != nil {
 				v = fill(body)
 			}
-			missing = missing || v == ""
+			missing = missing || (v == "" && !mayBeEmpty[p])
 			return v
 		})
 		if missing {
