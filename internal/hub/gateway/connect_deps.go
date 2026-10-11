@@ -121,7 +121,7 @@ func newConnectDeps(opts ServerOptions) (*connectDeps, error) {
 	}
 	acker := opts.eventAcker
 	if acker == nil {
-		acker = noAcks{}
+		acker = streamAcks{}
 	}
 	now := opts.Now
 	if now == nil {

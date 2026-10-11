@@ -24,7 +24,8 @@ func TestConnectAnswersHelloWithHelloAck(t *testing.T) {
 	ack := s.ack(t)
 	if ack.GetFleetId() != "fleet-1" || ack.GetProtoVersion() != 1 || ack.GetEpoch() != 1 ||
 		ack.GetMaxMessageBytes() != 1<<20 || ack.GetHeartbeatInterval().AsDuration() != 15*time.Second ||
-		ack.GetSettingsEpoch() != "epoch-1" || ack.GetHubInstanceId() == "" || len(ack.GetHubCapabilities()) != 0 ||
+		ack.GetSettingsEpoch() != "epoch-1" || ack.GetHubInstanceId() == "" || len(ack.GetHubCapabilities()) != 1 ||
+		ack.GetHubCapabilities()[0].GetName() != "event.ack" || ack.GetHubCapabilities()[0].GetVersion() != 1 ||
 		ack.GetHubLastEventSeq() != 0 || len(ack.GetHubAddresses()) != 1 || ack.GetHubAddresses()[0] != "hub.example:7443" {
 		t.Errorf("HelloAck = %v", ack)
 	}

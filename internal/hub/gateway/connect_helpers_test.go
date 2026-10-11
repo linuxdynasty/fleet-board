@@ -78,8 +78,20 @@ func (s *agentStream) send(t *testing.T, m *agentv1.ConnectRequest) {
 }
 
 // next is the next message from the hub, failing the test if the stream
-// ends or nothing comes within 10 s.
+// ends or nothing comes within 10 s. EventAcks are skipped: they come on
+// their own pace (AckEvery) after commits; events_ack_test.go reads them.
 func (s *agentStream) next(t *testing.T) *agentv1.ConnectResponse {
+	t.Helper()
+	for {
+		m := s.nextAny(t)
+		if m.GetEventAck() == nil {
+			return m
+		}
+	}
+}
+
+// nextAny is next with EventAcks included.
+func (s *agentStream) nextAny(t *testing.T) *agentv1.ConnectResponse {
 	t.Helper()
 	select {
 	case m := <-s.msgs:
@@ -123,32 +135,45 @@ func (s *agentStream) bye(t *testing.T) agentv1.ByeReason {
 	return m.GetBye().GetReason()
 }
 
-// ended waits for the end of the stream: nil for a clean end.
+// ended waits for the end of the stream: nil for a clean end. An EventAck
+// on the way is not a message the test waits for.
 func (s *agentStream) ended(t *testing.T) error {
 	t.Helper()
-	select {
-	case err := <-s.end:
-		if errors.Is(err, io.EOF) {
+	deadline := time.After(10 * time.Second)
+	for {
+		select {
+		case err := <-s.end:
+			if errors.Is(err, io.EOF) {
+				return nil
+			}
+			return err
+		case m := <-s.msgs:
+			if m.GetEventAck() == nil {
+				t.Fatalf("unexpected message %v, want the end", m)
+			}
+		case <-deadline:
+			t.Fatal("the stream did not end in 10 s")
 			return nil
 		}
-		return err
-	case m := <-s.msgs:
-		t.Fatalf("unexpected message %v, want the end", m)
-	case <-time.After(10 * time.Second):
-		t.Fatal("the stream did not end in 10 s")
 	}
-	return nil
 }
 
-// silent fails the test if the hub sends or ends anything within d.
+// silent fails the test if the hub sends anything but an EventAck, or
+// ends the stream, within d.
 func (s *agentStream) silent(t *testing.T, d time.Duration) {
 	t.Helper()
-	select {
-	case m := <-s.msgs:
-		t.Fatalf("unexpected message %v", m)
-	case err := <-s.end:
-		t.Fatalf("the stream ended: %v", err)
-	case <-time.After(d):
+	deadline := time.After(d)
+	for {
+		select {
+		case m := <-s.msgs:
+			if m.GetEventAck() == nil {
+				t.Fatalf("unexpected message %v", m)
+			}
+		case err := <-s.end:
+			t.Fatalf("the stream ended: %v", err)
+		case <-deadline:
+			return
+		}
 	}
 }
 
