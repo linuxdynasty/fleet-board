@@ -176,13 +176,19 @@ func (r *obsRig) snapshot(t *testing.T) *agentv1.Snapshot {
 	return snap
 }
 
-func (r *obsRig) metric(t *testing.T, name string, labels ...string) string {
+// scrape is the whole metrics page of the rig's telemetry.
+func (r *obsRig) scrape(t *testing.T) string {
 	t.Helper()
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/metrics", nil)
 	req.RemoteAddr = "127.0.0.1:50000"
 	rec := httptest.NewRecorder()
 	r.tel.MetricsHandler(nil).ServeHTTP(rec, req)
-	for line := range strings.SplitSeq(rec.Body.String(), "\n") {
+	return rec.Body.String()
+}
+
+func (r *obsRig) metric(t *testing.T, name string, labels ...string) string {
+	t.Helper()
+	for line := range strings.SplitSeq(r.scrape(t), "\n") {
 		if !strings.HasPrefix(line, name) {
 			continue
 		}

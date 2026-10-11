@@ -77,6 +77,24 @@ c := obs.Client("default")           // 7e and 7f subscribe through it
   observer cannot read it; the real signal is the client's
   `tmux.exit{reason="too_old"}` and `REASON_CODE_TMUX_TOO_OLD` (03h).
 
+## When reads fail
+
+A read that fails (`command`, `reply`, `timeout` or `io`) changes nothing
+the hub is told: the last good inventory stands, with `observed: true`,
+because `observed` says the control client is attached (`snapshot.proto`
+TmuxServer, 05b) and it still is. Nothing is reported gone or closed, so a
+pane never looks exited because a read failed. The next notice, Snapshot,
+SnapshotRequest or state change reads again, and the first good read emits
+what changed meanwhile. The operator sees it in
+`fleet_agent_tmux_inventory_reads_total{server_kind, result}` (a rise with
+no `ok` beside it is a picture going stale) and in `tmux.inventory_failed`.
+`timeout` comes only from a caller's deadline: the read path sets none of
+its own today. A read the client refused as not attached, or that the
+agent's stop cut short, is not counted (`fleet_agent_tmux_control_up` and
+`tmux.exit` say why). A server whose every read has failed since the agent
+started has no last inventory, so it is reported `running: false`, like
+one never seen, while `fleet_agent_tmux_control_up` is 1.
+
 ## Events
 
 The first state read after the agent starts emits nothing (the connect
@@ -146,7 +164,9 @@ client's. Nothing is held across a control-mode command or an Emit.
 | `fleet_agent_tmux_servers{kind}` | 1 while a server of that kind runs and was read, else 0 |
 | `tmux.server_seen` (`server_kind`, `server_start_id`, `version`) | a server start the agent had not seen |
 | `tmux.watch_off` (`err_kind` = `constraint`, `permission`, `io`) | the folder watch is off; once per run |
+| `fleet_agent_tmux_inventory_reads_total{server_kind, result}` | inventory reads that ended, `result` = `ok`, `command`, `reply`, `timeout`, `io` (closed); see "When reads fail" |
 | `tmux.inventory_failed` (`server_kind`, `err_kind` = `command`, `reply`, `timeout`, `io`) | a read failed; at most once a minute per server |
+| `fleet_agent_tmux_inventory_fields_dropped_total{field, reason}`, `tmux.inventory_field_dropped`, `fleet_agent_tmux_parse_errors_total`, `fleet_agent_tmux_lines_too_long_total` | internal/agent/tmux's parser signals: `New` builds one `tmux.Metrics` for every client it makes, so they count in production |
 | `status.json` `tmux_folder`, `tmux_watch: off` | the folder watched, and whether the watch is off |
 
 Event loss is the emitter's to count (`ring.emit_failed`, `evicted_total`).
@@ -158,6 +178,8 @@ CI runs `./internal/agent/tmux/...`): a socket created in the watched folder
 raises a connect, a repeat `Create` is a no-op, the watch off falls back to
 rescans, lifecycle events, pane changes in a session the client is not on
 (both versions), one read a second under a burst of notices, a restart, a
-seeded tag, the probe server, and events landing in a real ring; plus table
+seeded tag, the probe server, events landing in a real ring, a field over
+1 KiB counted through the observer's clients, and failed reads counted by
+result while the last inventory stands; plus table
 tests of the tree build, the diff, the trigger seam, the text and tag rules
 and the wake debounce.

@@ -23,12 +23,15 @@ const scope = "github.com/linuxdynasty/fleet-board/internal/agent/tmux/inventory
 const failGap = time.Minute
 
 // obsTelemetry is the observer's signals (05b): the gauge
-// fleet_agent_tmux_servers{kind} and the log events tmux.server_seen,
-// tmux.watch_off and tmux.inventory_failed. Ids, closed words and counts
-// only: never a session or window name, a command, a tag value or a path.
+// fleet_agent_tmux_servers{kind}, the counter
+// fleet_agent_tmux_inventory_reads_total{server_kind, result} and the log
+// events tmux.server_seen, tmux.watch_off and tmux.inventory_failed. Ids,
+// closed words and counts only: never a session or window name, a command,
+// a tag value or a path.
 type obsTelemetry struct {
 	log     *slog.Logger
 	servers metric.Int64Gauge
+	reads   metric.Int64Counter
 	off     atomic.Bool
 
 	mu       sync.Mutex
@@ -46,7 +49,19 @@ func newObsTelemetry(tel *telemetry.Telemetry) (*obsTelemetry, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &obsTelemetry{log: log, servers: g, lastFail: map[string]time.Time{}}, nil
+	reads, err := m.Int64Counter(prefix+"_tmux_inventory_reads_total",
+		metric.WithDescription("Inventory reads that ended, by server kind and result (ok, command, reply, timeout, io)."))
+	if err != nil {
+		return nil, err
+	}
+	return &obsTelemetry{log: log, servers: g, reads: reads, lastFail: map[string]time.Time{}}, nil
+}
+
+// readDone counts one inventory read that ended: result is "ok" or a
+// readErrKind word. A read the client refused as not attached, or that the
+// agent's stop cut short, is not counted (the client's state says why).
+func (t *obsTelemetry) readDone(ctx context.Context, kind, result string) {
+	t.reads.Add(ctx, 1, metric.WithAttributes(attribute.String("server_kind", kind), attribute.String("result", result)))
 }
 
 // running records whether the server of kind (default, fleet, probe) runs.

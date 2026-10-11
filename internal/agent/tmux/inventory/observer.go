@@ -47,6 +47,10 @@ type Options struct {
 	// server (7e and 7f read them): on the client's reader goroutine, so it
 	// must not block or call the client.
 	Notify func(server string, m tmux.Message)
+
+	// maxReply is each client's reply bound (0: the parser's default);
+	// only a test sets it, to make a read fail (export_test.go).
+	maxReply int
 }
 
 // Observer finds the tmux servers in the socket folder, keeps one control
@@ -71,6 +75,15 @@ func New(opts Options) (*Observer, error) {
 	if o.folder == "" {
 		o.folder = SocketFolder(os.Getenv, os.Getuid())
 	}
+	// One parser Metrics for every client: the parse failures and the text
+	// fields a read left blank (fleet_agent_tmux_inventory_fields_dropped_total)
+	// reach the agent's meter and log only through it.
+	var pm *tmux.Metrics
+	if opts.Telemetry != nil {
+		if pm, err = tmux.NewMetrics(opts.Telemetry); err != nil {
+			return nil, err
+		}
+	}
 	names := opts.Servers
 	if names == nil {
 		names = []string{"default", "fleet-probe"}
@@ -83,6 +96,7 @@ func New(opts Options) (*Observer, error) {
 		c, err := tmux.NewClient(tmux.ClientOptions{
 			Program: opts.Program, Socket: filepath.Join(o.folder, name), Server: name,
 			Runner: opts.Runner, Telemetry: opts.Telemetry, Notify: s.notify,
+			Parser: tmux.Options{MaxReplyBytes: opts.maxReply, Metrics: pm},
 		})
 		if err != nil {
 			return nil, err
@@ -242,9 +256,13 @@ func (s *server) sync(ctx context.Context) {
 			return // the client's state change wakes the loop
 		}
 		if err != nil {
+			// The last good inventory stands, observed true while the
+			// client is attached (README "When reads fail").
+			s.o.tel.readDone(ctx, s.kind, readErrKind(err))
 			s.o.tel.inventoryFailed(ctx, s.kind, err)
 			return
 		}
+		s.o.tel.readDone(ctx, s.kind, "ok")
 		s.apply(ctx, buildServer(s.name, inv, s.c.Version()))
 	case tmux.StateAbsent:
 		s.apply(ctx, nil)

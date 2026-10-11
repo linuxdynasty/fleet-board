@@ -18,9 +18,12 @@
 // control-mode notice, the structure subscription (a pane change in any
 // session), a client state change or a Snapshot asks (notices at most once
 // a second), turns it
-// into the TmuxServer the agent reports (names and commands bounded and
-// control-stripped, 02e; @fleet_* tags checked against their id's shape and
-// otherwise dropped), and emits the difference from the last read as
+// into the TmuxServer the agent reports (tmux sends each name, command and
+// @fleet_* value over 1 KiB in bytes empty, and the read counts it; names
+// and commands are then cut and control-stripped, 02e; @fleet_* tags are
+// checked against their id's shape and otherwise dropped; the internal mark
+// is tmux's exact compare with attach_view), and emits the difference from
+// the last read as
 // inventory events: TmuxServerEvent, SessionEvent, WindowEvent, PaneCreated,
 // PaneChanged and PaneExited (exit_status only when tmux kept the pane).
 // [Observer.Snapshot] is the conn Snapshot hook.
