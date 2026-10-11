@@ -285,6 +285,13 @@ when the store is restored or recreated. The agent applies `Settings` when
 the epoch differs from the one it holds (any generation) or the generation
 is higher under the same epoch; it ignores the rest, so a repeated `Settings`
 changes nothing. This replaces 03g's `settings_restored` flag.
+In `SettingsAck.effective` a field whose hub value stood is named
+`SETTING_LAYER_HUB`, because the agent sees resolved values only; the hub
+replaces it with its own fleet, group or machine layer ([03e](03e-settings-and-drift.md)).
+In safe mode the agent keeps nothing: the ack rejects every stated field and
+carries the built-in defaults, and `Hello` still reports the generation held
+before, so the hub sends its settings again once the file is fixed
+([03e2](03e2-settings-merge-on-the-agent.md)).
 
 **Other messages on the stream.** `Bye` is the last message a side sends on a
 stream, and a repeated `Bye` is harmless. `Heartbeat` carries no seq and is

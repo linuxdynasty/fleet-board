@@ -25,8 +25,15 @@ enum SettingLayer {
   SETTING_LAYER_FLEET_DEFAULT = 2;
   SETTING_LAYER_GROUP = 3;
   SETTING_LAYER_MACHINE = 4;
-  // The local policy file capped the hub's value.
+  // The local policy file's value is in effect: it capped the hub's value
+  // (then the field is also in SettingsAck.capped_fields) or the hub had no
+  // opinion.
   SETTING_LAYER_LOCAL_CEILING = 5;
+  // The hub's resolved value stood. Agent wire only: the hub replaces it with
+  // FLEET_DEFAULT, GROUP or MACHINE from its own resolve when it stores the
+  // ack or the snapshot; a client sees HUB only when the hub could not name
+  // the layer.
+  SETTING_LAYER_HUB = 6;
 }
 
 // LocalApprovalRule requires `fleet-agent approve` for a command kind.
@@ -44,6 +51,9 @@ message RateLimit {
 
 // SettingValues are the settings the hub can deliver (A8) and the agent
 // reports as effective (L2). Unset optional fields mean "no opinion".
+// An empty repeated field means the same (proto3 cannot tell it from an
+// explicit empty list), so the hub cannot say "allow no harness" through
+// allowed_harnesses; draining the machine is the tool for that.
 message SettingValues {
   // Effective when no layer sets them: 2, 4 and 12 (docs/specs/defaults.md).
   optional uint32 max_active = 1;

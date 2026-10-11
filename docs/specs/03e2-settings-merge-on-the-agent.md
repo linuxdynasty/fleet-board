@@ -32,20 +32,22 @@ anything, the built-in default ([defaults](defaults.md)) does.
    `INVALID_ARGUMENT` and that field keeps the value kept before it. A probe
    interval is checked per account (`probe_interval_by_account.<id>`).
    `merged_grace` is the hub's own and is echoed unchecked.
-5. Merge field by field (below). In safe mode every field the message states
-   is rejected with `POLICY_SAFE_MODE` and only the built-in defaults are in
-   effect.
+5. Merge field by field (below). In safe mode nothing is merged: every field
+   the message states is rejected with `POLICY_SAFE_MODE`, the ack carries the
+   built-in defaults, and steps 6 and 7 are skipped except queuing the ack.
 6. Save the kept `Settings`, the `SettingsAck` and the loaded policy hash in
    one `agent.db` transaction ([02i](02i-delivery-and-sequencing.md) "What
    agent.db keeps", `settings_held`). A failed save sends no ack; the hub sends
-   the settings again.
+   the settings again. Nothing is saved in safe mode.
 7. Swap the effective values the executor and the `Snapshot` read, then queue
    the `SettingsAck`. A lost ack comes back because the hub re-sends
    `Settings` on connect.
 
-The hub's `Settings` is kept even in safe mode, so once the owner fixes the
-file and restarts the agent, the held settings are merged under it and apply
-without the hub sending them again (`Hello` already reports that generation).
+In safe mode nothing is kept: Hello goes on reporting the generation held
+before, so once the owner fixes the file and restarts, the hub sends its
+current Settings at the first connect (HelloAck, agent.proto) and the agent
+merges and checks it fresh. Until then the held generation applies under the
+fixed file.
 
 ## The merge
 
@@ -62,7 +64,8 @@ without the hub sending them again (`Hello` already reports that generation).
 | labels | `Settings.labels` | `hub ∪ local`, sorted | never |
 
 On the wire an empty list cannot be told from an absent one, so an empty hub
-list is no opinion. In `policy.yaml` an absent list is no opinion and `[]` is
+list is no opinion, so the hub cannot say "allow no harness" through
+`allowed_harnesses`; draining the machine is the tool for that. In `policy.yaml` an absent list is no opinion and `[]` is
 one (none), except `allowed_repo_roots`, where absent is empty too (03e): so
 the hub alone never adds a repo folder. Repo roots match exactly after
 cleaning the path, never as a sub-folder, so a symlink inside a local root
@@ -70,11 +73,11 @@ cannot lead out of it. With no opinion anywhere `allowed_harnesses` is the
 names the contract knows (03e), with no source entry.
 
 Each effective field names its `SettingSource.layer`: `LOCAL_CEILING` when
-the file's value is in effect (capped, or the hub said nothing),
-`AGENT_DEFAULT` for a built-in default. A field whose hub value stands is
-named with `SETTING_LAYER_UNSPECIFIED` for now: `Settings` carries resolved
-values only, so the agent cannot tell the fleet, group and machine layers
-apart (an open question of PR 6f). A field the agent rejected is in
+the file's value is in effect (capped, or the hub said nothing; only a cap is
+in `capped_fields`), `AGENT_DEFAULT` for a built-in default, and `HUB` when
+the hub's value stood: `Settings` carries resolved values only, so the hub
+replaces `HUB` with the fleet, group or machine layer when it stores the ack
+and the snapshot (03e). A field the agent rejected is in
 `rejected`, never in `capped_fields`. Field numbers the agent's schema does
 not know go in `unrecognized_value_fields` and `unrecognized_settings_fields`.
 
@@ -84,7 +87,9 @@ not know go in `unrecognized_value_fields` and `unrecognized_settings_fields`.
 loaded. When the policy hash or the result differs from what was saved, it
 saves the new ack for the same generation and logs `settings.reevaluated`;
 the next `Snapshot.settings` shows the new effective values (03e state
-machine, CEILING_CHANGED).
+machine, CEILING_CHANGED). In safe mode it saves nothing: the effective
+values are the built-in defaults at generation 0 and the held row waits for
+the next normal start.
 
 ## Concurrency
 
@@ -106,7 +111,7 @@ network call. The worker is the only writer of `settings_held`.
 
 | Signal | When |
 |---|---|
-| `settings.applied{epoch, generation, capped, rejected, unrecognized, safe_mode}` (info) | a `Settings` was merged and saved |
+| `settings.applied{epoch, generation, capped, rejected, unrecognized, safe_mode}` (info) | a `Settings` was merged, and saved unless in safe mode |
 | `settings.capped{field, hub_value, local_ceiling}` (info) | the file lowered a field; the two values only for a number, duration or mode, never for a list (it may hold paths) |
 | `settings.rejected{field, reason}` (warn) | a field was not applied |
 | `settings.ignored{reason, generation, held_generation}` (info) | `reason` is `repeat`, `older` or `no_epoch` |

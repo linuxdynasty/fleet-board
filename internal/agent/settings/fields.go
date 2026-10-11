@@ -33,11 +33,11 @@ const (
 	fProbeByAccount = "probe_interval_by_account"
 )
 
-// The layers the merge names. hubLayer is a field whose hub value stands:
-// Settings carries resolved values only, so the agent cannot tell the fleet,
-// group or machine layer apart (an open fork, reported in 6f).
+// The layers the merge names. hubLayer is a field whose hub value stood:
+// Settings carries resolved values only, so the agent names it HUB and the
+// hub replaces that with the fleet, group or machine layer (03e).
 const (
-	hubLayer     = typev1.SettingLayer_SETTING_LAYER_UNSPECIFIED
+	hubLayer     = typev1.SettingLayer_SETTING_LAYER_HUB
 	localLayer   = typev1.SettingLayer_SETTING_LAYER_LOCAL_CEILING
 	defaultLayer = typev1.SettingLayer_SETTING_LAYER_AGENT_DEFAULT
 	noLayer      = typev1.SettingLayer(-1) // no source entry

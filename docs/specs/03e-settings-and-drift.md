@@ -66,10 +66,11 @@ sequenceDiagram
 in the order `NONE < OBSERVE < CONTROL`. `share_identity_email`: hub wins (it is
 an owner privacy choice, not a machine safety ceiling). Labels: hub-assigned ∪
 local additions; a local file cannot remove a hub label. Each field records its
-`SettingSource.layer`; fields where the local value won are listed in
+`SettingSource.layer`; fields where the local value won over a hub value are listed in
 `capped_fields` so the UI says "capped by local policy on linux-box". A value the
 agent cannot apply at all is a different thing and is **not** a cap: it goes in
 `SettingsAck.rejected[]` as `{field, reason, message}` (see the failure table).
+The agent names a field whose hub value stood `SETTING_LAYER_HUB` (it sees resolved values only); the hub replaces it with the fleet, group or machine layer from its own resolve when it stores the `SettingsAck` and when it re-reads `Snapshot.settings`.
 How the agent checks, merges, keeps and reports each field:
 [03e2](03e2-settings-merge-on-the-agent.md).
 
@@ -297,7 +298,7 @@ Machine drain state: `ACTIVE` → `DRAINING{hub}` → `ACTIVE` (Undrain);
 | `machine_effective_settings{machine, gen, effective, capped_fields, rejected, unenforced, ack_time}` | hub store | ack tx |
 | `machines.policy_hash`, `policy_schema_version`, `policy_loaded_time`, `policy_changed_since_load`, `policy_safe_mode`, `policy_error` (cut to 256 bytes and scrubbed before the tx); `policy_hash_on_disk` comes with the `policy_changed` event (plan row 7) | hub store | snapshot tx; `policy_changed` tx |
 | Audit: who changed what (old → new) | hub store (permanent) | change tx |
-| Settings `{generation, values, effective}` and the loaded policy hash; the policy file itself stays the owner's | `agent.db` / config dir | before `SettingsAck` is sent |
+| Settings `{generation, values, effective}` and the loaded policy hash; the policy file itself stays the owner's | `agent.db` / config dir | before `SettingsAck` is sent (not in safe mode, where nothing is kept and the ack carries the defaults: [03e2](03e2-settings-merge-on-the-agent.md)) |
 | Drain state and reason | `agent.db` (survives restart) and hub `machines.drain`; the drain the agent reports is `machines.agent_draining` and `agent_drain_local` (snapshot tx) | per change |
 
 ### Ordering and consistency

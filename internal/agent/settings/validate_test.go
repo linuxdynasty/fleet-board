@@ -95,8 +95,9 @@ func TestAHubValueWithNoLocalOpinionStands(t *testing.T) {
 	t.Parallel()
 	a := merge(hub(2, &typev1.SettingValues{
 		MaxActive: u32(9), RateLimits: []*typev1.RateLimit{{CommandKind: "Drain", PerMinute: 120}},
-		AllowedHarnesses: []string{"codex"}, BlockOnBattery: flag(false),
-	}), nil)
+		AllowedHarnesses: []string{"codex"}, BlockOnBattery: flag(false), IdleThreshold: pd(time.Minute),
+		DefaultServer: typev1.DefaultServerMode_DEFAULT_SERVER_MODE_OBSERVE.Enum(),
+	}), &policy.Policy{MaxTotal: u32(1)})
 	v := a.GetEffective().GetValues()
 	if v.GetMaxActive() != 9 || rate(v, "Drain") != 120 || !slices.Equal(v.GetAllowedHarnesses(), []string{"codex"}) {
 		t.Errorf("effective %v", v)
@@ -104,9 +105,16 @@ func TestAHubValueWithNoLocalOpinionStands(t *testing.T) {
 	if len(a.GetCappedFields()) != 0 {
 		t.Errorf("capped %v", a.GetCappedFields())
 	}
-	for _, f := range []string{"max_active", "rate_limits", "allowed_harnesses"} {
-		if l := layer(a, f); l == typev1.SettingLayer_SETTING_LAYER_LOCAL_CEILING || l == typev1.SettingLayer_SETTING_LAYER_AGENT_DEFAULT || l == -1 {
-			t.Errorf("%s layer %v, want the hub's", f, l)
+	// The agent sees resolved values only, so a hub value that stood is
+	// SETTING_LAYER_HUB: a number, a duration, a mode and lists alike.
+	for f, want := range map[string]typev1.SettingLayer{
+		"max_active": typev1.SettingLayer_SETTING_LAYER_HUB, "idle_threshold": typev1.SettingLayer_SETTING_LAYER_HUB,
+		"default_server": typev1.SettingLayer_SETTING_LAYER_HUB, "rate_limits": typev1.SettingLayer_SETTING_LAYER_HUB,
+		"allowed_harnesses": typev1.SettingLayer_SETTING_LAYER_HUB, "block_on_battery": typev1.SettingLayer_SETTING_LAYER_HUB,
+		"max_total": typev1.SettingLayer_SETTING_LAYER_LOCAL_CEILING, "max_windows": typev1.SettingLayer_SETTING_LAYER_AGENT_DEFAULT,
+	} {
+		if l := layer(a, f); l != want {
+			t.Errorf("%s layer %v, want %v", f, l, want)
 		}
 	}
 	// A local value with no hub opinion is the local layer, not a cap.
@@ -138,10 +146,20 @@ func TestSafeModeRejectsEveryHubSetting(t *testing.T) {
 	if v.GetMaxActive() != 2 || v.GetBlockOnBattery() || len(out.Ack.GetEffective().GetLabels()) != 0 {
 		t.Errorf("effective in safe mode %v, want the defaults only", v)
 	}
-	// The hub's values are still kept, so a restart with a fixed file
-	// applies them without a re-send.
-	if out.Kept.GetValues().GetMaxActive() != 1 || out.Ack.GetGeneration() != 8 {
-		t.Errorf("kept %v ack generation %d", out.Kept.GetValues(), out.Ack.GetGeneration())
+	for _, src := range out.Ack.GetEffective().GetSources() {
+		if src.GetLayer() != typev1.SettingLayer_SETTING_LAYER_AGENT_DEFAULT {
+			t.Errorf("source %v in safe mode, want AGENT_DEFAULT only", src)
+		}
+	}
+	e := out.Ack.GetEffective()
+	if len(e.GetProbeIntervalByAccount()) != 0 || len(out.Ack.GetCappedFields()) != 0 || e.GetGeneration() != 0 ||
+		out.Ack.GetGeneration() != 8 || out.Ack.GetSettingsEpoch() != "e1" {
+		t.Errorf("safe-mode ack %v", out.Ack)
+	}
+	// A value that is also out of range is rejected for safe mode only.
+	bad := settings.Merge(settings.Input{Hub: hub(9, &typev1.SettingValues{MaxActive: u32(40)}), Local: &policy.Policy{}, SafeMode: true})
+	if got := rejected(bad.Ack); len(got) != 1 || got["max_active"] != typev1.ReasonCode_REASON_CODE_POLICY_SAFE_MODE {
+		t.Errorf("rejected %v", got)
 	}
 }
 

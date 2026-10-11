@@ -92,8 +92,8 @@ type view struct {
 // Open reads the held settings from agent.db and merges them under the
 // policy file loaded now, which may differ from the one they were merged
 // under before the restart: the held ack is then saved again with the new
-// merge (settings.reevaluated). Before any Settings the built-in defaults
-// are in effect at generation 0.
+// merge (settings.reevaluated). Before any Settings, and in safe mode, the
+// built-in defaults are in effect at generation 0; safe mode saves nothing.
 func Open(ctx context.Context, opts Options) (*Manager, error) {
 	if opts.DB == nil || opts.Local == nil || opts.Sender == nil {
 		return nil, errors.New("settings: DB, Local and Sender are needed")
@@ -128,7 +128,7 @@ func Open(ctx context.Context, opts Options) (*Manager, error) {
 	if m.m, err = newMetrics(opts.Telemetry, m.generation); err != nil {
 		return nil, fmt.Errorf("settings: register metrics: %w", err)
 	}
-	if ok {
+	if ok && !opts.Local.SafeMode() { // safe mode saves nothing (03e2)
 		if err := m.reevaluate(ctx, held, out); err != nil {
 			return nil, err
 		}

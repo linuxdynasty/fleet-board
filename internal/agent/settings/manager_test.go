@@ -2,6 +2,7 @@ package settings_test
 
 import (
 	"context"
+	"reflect"
 	"slices"
 	"testing"
 	"time"
@@ -150,21 +151,47 @@ func TestARestartMergesTheHeldSettingsUnderTheNewPolicy(t *testing.T) {
 	}
 }
 
-// Safe mode rejects every hub setting but keeps them, so once the owner fixes
-// the file and restarts, they apply without the hub sending them again.
-func TestSafeModeKeepsTheHubSettingsForTheFixedFile(t *testing.T) {
+// Safe mode keeps nothing (ruling round 5, fork C): agent.db and the held
+// generation Hello reports stay as they were, the ack rejects every stated
+// field and carries the defaults. Once the file is fixed, the hub's re-send
+// is merged, checked and saved fresh.
+func TestSafeModeKeepsNothing(t *testing.T) {
 	t.Parallel()
-	r := newRig(t, &local{safe: true})
-	a := r.deliver(t, hub(8, &typev1.SettingValues{MaxActive: u32(1)}), 1)
-	if len(a.GetRejected()) != 1 || a.GetRejected()[0].GetReason() != typev1.ReasonCode_REASON_CODE_POLICY_SAFE_MODE {
-		t.Errorf("ack in safe mode %v", a)
+	r := newRig(t, &local{hash: "h1"})
+	r.deliver(t, hub(7, &typev1.SettingValues{MaxActive: u32(3)}), 1)
+	before := r.held(t)
+	r.restart(t, &local{safe: true, hash: "broken"})
+	if after := r.held(t); !reflect.DeepEqual(after, before) {
+		t.Errorf("Open in safe mode changed the held row:\n%+v\n%+v", before, after)
 	}
-	if !r.m.SafeMode() || r.m.Effective().GetValues().GetMaxActive() != 2 {
-		t.Errorf("safe mode %v, max_active %d", r.m.SafeMode(), r.m.Effective().GetValues().GetMaxActive())
+	if v := r.m.Effective(); v.GetValues().GetMaxActive() != 2 || v.GetGeneration() != 0 {
+		t.Errorf("effective in safe mode %v, want the defaults", v)
 	}
-	r.restart(t, &local{})
-	if v := r.m.Effective().GetValues().GetMaxActive(); v != 1 {
-		t.Errorf("max_active after the fix %d, want the hub's 1", v)
+	msg := hub(8, &typev1.SettingValues{MaxActive: u32(1), MaxWindows: u32(0)})
+	a := r.deliver(t, msg, 1)
+	if got := rejected(a); len(got) != 2 || got["max_active"] != typev1.ReasonCode_REASON_CODE_POLICY_SAFE_MODE ||
+		got["max_windows"] != typev1.ReasonCode_REASON_CODE_POLICY_SAFE_MODE {
+		t.Errorf("rejected %v", got)
+	}
+	if a.GetGeneration() != 8 || a.GetEffective().GetValues().GetMaxActive() != 2 || len(a.GetCappedFields()) != 0 {
+		t.Errorf("safe-mode ack %v", a)
+	}
+	if after := r.held(t); !reflect.DeepEqual(after, before) {
+		t.Errorf("a Settings in safe mode changed the held row")
+	}
+	if st, _ := r.db.State(t.Context()); st.SettingsGeneration != 7 || st.SettingsEpoch != "e1" {
+		t.Errorf("Hello would report (%q, %d), want the held (e1, 7)", st.SettingsEpoch, st.SettingsGeneration)
+	}
+	if r.m.Effective().GetValues().GetMaxActive() != 2 {
+		t.Error("the view left the defaults in safe mode")
+	}
+	r.restart(t, &local{hash: "h2"})
+	a = r.deliver(t, msg, 1)
+	if got := rejected(a); len(got) != 1 || got["max_windows"] != typev1.ReasonCode_REASON_CODE_INVALID_ARGUMENT {
+		t.Errorf("after the fix rejected %v, want max_windows INVALID_ARGUMENT", got)
+	}
+	if h := r.held(t); h.Generation != 8 || h.PolicyHash != "h2" || r.m.Effective().GetValues().GetMaxActive() != 1 {
+		t.Errorf("after the fix held %+v effective %v", h, r.m.Effective().GetValues())
 	}
 }
 
