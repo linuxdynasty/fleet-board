@@ -41,6 +41,9 @@ func TestTheRealHubAppliesTheLoopsSnapshot(t *testing.T) {
 		t.Errorf("machine %+v, want the first snapshot on epoch 1", m)
 	}
 	first := m.SnapshotSeq
+	// The hub logs snapshot.applied just after the commit that made the
+	// machine ONLINE, so the line can trail the state by a moment.
+	waitFor(t, 10*time.Second, "one snapshot.applied line", func() bool { return len(h.Events(t, "snapshot.applied")) >= 1 })
 	if n := len(h.Events(t, "snapshot.applied")); n != 1 {
 		t.Errorf("%d snapshot.applied lines, want 1", n)
 	}
