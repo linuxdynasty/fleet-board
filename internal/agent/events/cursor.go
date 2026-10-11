@@ -28,7 +28,8 @@ type Cursor struct {
 // out (03n "Ordering"). It drops the ring entries at or below floor, the
 // HelloAck.hub_last_event_seq the hub holds (02i rule 2), and from now on
 // keeps SHED events for the stream. Detach it when the stream ends; one
-// cursor at a time.
+// cursor at a time: a new Attach counts as shed what the earlier stream
+// left queued, and the earlier cursor then takes and detaches nothing.
 func (e *Emitter) Attach(ctx context.Context, floor, snapshotSeq uint64) (*Cursor, error) {
 	_, span := e.m.tracer.Start(ctx, "agent.ring.replay")
 	defer span.End()
@@ -43,6 +44,9 @@ func (e *Emitter) Attach(ctx context.Context, floor, snapshotSeq uint64) (*Curso
 		e.log.InfoContext(ctx, "ring.trimmed", "to_seq", floor, "n", n, "reason", "floor")
 	}
 	e.mu.Lock()
+	if n := len(e.shed); n > 0 { // left by a stream that never detached
+		e.dropShed(n)
+	}
 	e.attached, e.shed = true, nil
 	e.gen++
 	last, gen := e.last, e.gen
@@ -55,7 +59,8 @@ func (e *Emitter) Attach(ctx context.Context, floor, snapshotSeq uint64) (*Curso
 }
 
 // Next returns up to limit events above the last one sent, in seq order,
-// and whether the ring may hold more. It never returns an event while a
+// and whether the ring may hold more. A limit below 1, or a cursor that a
+// newer Attach replaced, returns nothing. It never returns an event while a
 // lower seq is still being committed, so the wire order is seq order. The
 // cursor counts the returned events as sent.
 //
@@ -69,7 +74,14 @@ func (e *Emitter) Attach(ctx context.Context, floor, snapshotSeq uint64) (*Curso
 // the walk reaches it.
 func (c *Cursor) Next(ctx context.Context, limit int) ([]*agentv1.Event, bool, error) {
 	e := c.e
+	if limit < 1 {
+		return nil, false, nil
+	}
 	e.mu.Lock()
+	if c.gen != e.gen {
+		e.mu.Unlock()
+		return nil, false, nil // a newer Attach owns the queue now
+	}
 	bound := e.last + 1
 	if len(e.pending) > 0 {
 		bound = min(bound, e.pending[0])
@@ -156,8 +168,8 @@ func (c *Cursor) unread(shed []*agentv1.Event) {
 	}
 	c.e.mu.Lock()
 	defer c.e.mu.Unlock()
-	if !c.e.attached {
-		c.e.dropShed(len(shed))
+	if !c.e.attached || c.gen != c.e.gen {
+		c.e.dropShed(len(shed)) // the stream they were taken for is gone
 		return
 	}
 	c.e.shed = append(shed, c.e.shed...)

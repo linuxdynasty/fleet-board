@@ -13,6 +13,7 @@ c, err := e.Attach(ctx, helloAck.GetHubLastEventSeq(), snapshot.GetSeq()) // aft
 evs, more, err := c.Next(ctx, 64)  // in seq order; replayed = seq below the first snapshot's
 err = c.Ack(ctx, eventAck.GetLastEventSeq()) // only when HelloAck listed event.ack
 c.Detach()                          // stream ended: queued SHED events counted as shed
+// a newer Attach replaces c: c.Next and c.Detach then do nothing; Next(limit < 1) returns nothing
 <-e.Ready()                         // something new for the attached cursor
 ```
 

@@ -225,3 +225,76 @@ func TestAStaleDetachDoesNotDetachTheNewStream(t *testing.T) {
 		t.Errorf("shed_total %d: the stale Detach dropped the queue", m.Shed)
 	}
 }
+
+// Review F1: a cursor a newer Attach replaced takes nothing: its Next
+// returns nothing and the new stream keeps the SHED event.
+func TestAStaleCursorTakesNothing(t *testing.T) {
+	t.Parallel()
+	r := newRig(t, stateDir(t), events.Options{})
+	old, err := r.e.Attach(t.Context(), 0, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cur, err := r.e.Attach(t.Context(), 0, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cur.Detach()
+	s := emit(t, r.e, sampleEv())
+	if got, more, err := old.Next(t.Context(), 8); err != nil || more || len(got) != 0 {
+		t.Fatalf("the stale cursor got %v (more %v, %v), want nothing", seqs(got), more, err)
+	}
+	if got := drain(t, cur); !slices.Equal(seqs(got), []uint64{s}) {
+		t.Errorf("the new stream got %v, want [%d]", seqs(got), s)
+	}
+}
+
+// Review F2: a second Attach counts the SHED events it drops from the
+// earlier stream's queue.
+func TestASecondAttachCountsTheShedQueueItDrops(t *testing.T) {
+	t.Parallel()
+	r := newRig(t, stateDir(t), events.Options{})
+	if _, err := r.e.Attach(t.Context(), 0, 1); err != nil {
+		t.Fatal(err)
+	}
+	emit(t, r.e, sampleEv())
+	c, err := r.e.Attach(t.Context(), 0, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.Detach()
+	r.e.Close()
+	if m := r.marks(t); m.Shed != 1 {
+		t.Errorf("shed_total %d, want 1", m.Shed)
+	}
+}
+
+// Review P3: a limit below 1 returns nothing at once.
+func TestALimitBelowOneReturnsNothing(t *testing.T) {
+	t.Parallel()
+	r := newRig(t, stateDir(t), events.Options{})
+	c, err := r.e.Attach(t.Context(), 0, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Detach()
+	emit(t, r.e, policyEv("x"))
+	emit(t, r.e, sampleEv())
+	for _, limit := range []int{0, -1} {
+		done := make(chan struct{})
+		var got []*agentv1.Event
+		var more bool
+		go func() { got, more, err = c.Next(t.Context(), limit); close(done) }()
+		select {
+		case <-done:
+		case <-time.After(10 * time.Second):
+			t.Fatalf("Next(%d) did not return", limit)
+		}
+		if err != nil || more || len(got) != 0 {
+			t.Errorf("Next(%d) = %v, %v, %v; want nothing", limit, seqs(got), more, err)
+		}
+	}
+	if got := drain(t, c); len(got) != 2 {
+		t.Errorf("after the empty calls the stream got %d events, want 2", len(got))
+	}
+}
