@@ -232,7 +232,7 @@ one result and neither logged nor acked, because the hub re-issues the same
 **Deadlines.** `not_after_time` defaults: 2 min for `SendKeys`, `Interrupt`,
 `RunHarnessCommand`, `CapturePane`, `OpenAttach`; 30 min for `StartGoal`,
 `EnsureWorktree`, `PruneWorktree`, `EnsureGoalHooks`; 24 h for `StopProbe`
-(its machine may be asleep; the snapshot reconcile covers longer); 10 min else. The agent evaluates deadlines in hub time
+(its machine may be asleep; the snapshot reconcile covers longer); 10 min else. The hub always sets it; the agent treats an unset `not_after_time` as already past. The agent evaluates deadlines in hub time
 (`HelloAck.hub_time` plus the time elapsed since, counting time the machine
 slept; 02i, "Clocks"). For the agent `not_after_time` is the latest start; for the hub it is the latest time a result counts: a row with no result at the deadline is expired, in its machine's Snapshot transaction and on the housekeeping tick, and a result that arrives later is acknowledged, logged (`outbox.late_result`) and stored nowhere (02i). The hub is the time
 authority: it measures skew from `Hello.sent_time` and `Heartbeat.sent_time`,

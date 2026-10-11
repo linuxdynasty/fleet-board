@@ -87,6 +87,10 @@ restart does not reset it; a read that fails is logged
 - **Stop**: `Run` returns after every command goroutine; a run cut off
   leaves its entry received or running for the next start's resume.
 
+`RefusedTotal()` is how many commands the executor's own checks refused
+since start, logged or not; the heartbeat's
+`AgentHealth.commands_refused_total` reads it (wired in 6i).
+
 Signals: logs `command.received`, `command.refused`, `command.finished`,
 `command.resumed`, `command.dropped`, `command.store_failed`,
 `command.send_failed`; metrics `fleet_agent_commands_total{kind, status}`,

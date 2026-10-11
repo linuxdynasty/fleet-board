@@ -83,6 +83,7 @@ func (e *Executor) outcome(ctx context.Context, c *agentv1.Command, kind string,
 	st, why := enumName(r.GetStatus().String(), "STATUS_"), enumName(r.GetReason().String(), "REASON_CODE_")
 	e.m.result(ctx, kind, st, why, elapsed, refused)
 	if refused {
+		e.refused.Add(1)
 		e.log.InfoContext(ctx, "command.refused", "command_id", id, "kind", kind, "status", st, "reason", why)
 	} else {
 		e.log.InfoContext(ctx, "command.finished", "command_id", id, "kind", kind, "status", st, "reason", why,

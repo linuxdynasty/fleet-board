@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	agentv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1"
@@ -100,6 +101,8 @@ type Executor struct {
 	window  rateWindow
 	resumed bool
 
+	refused atomic.Uint64 // results the executor's own checks gave
+
 	mu      sync.Mutex // guards running
 	running map[string]*run
 	wg      sync.WaitGroup // command goroutines
@@ -194,6 +197,11 @@ func (e *Executor) Run(ctx context.Context) error {
 		}
 	}
 }
+
+// RefusedTotal is how many commands the executor's own checks refused
+// since start, logged or not (AgentHealth.commands_refused_total). Safe from
+// any goroutine; the heartbeat reads it.
+func (e *Executor) RefusedTotal() uint64 { return e.refused.Load() }
 
 func (e *Executor) runningCount() int64 {
 	e.mu.Lock()
