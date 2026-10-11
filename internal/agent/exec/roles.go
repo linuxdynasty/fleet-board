@@ -118,6 +118,8 @@ func variant(c *agentv1.Command, h Handler) string {
 	case *agentv1.Command_SendKeys:
 		return strings.TrimPrefix(k.SendKeys.GetPurpose().String(), "SEND_KEYS_PURPOSE_")
 	case *agentv1.Command_RunHarnessCommand:
+		// The hub's expected class: the handler re-classifies from its own
+		// catalog and refuses a mismatch (Request docs).
 		return strings.TrimPrefix(k.RunHarnessCommand.GetExpectedClass().String(), "COMMAND_CLASS_")
 	case *agentv1.Command_StartGoal:
 		if k.StartGoal.GetSpec().GetFreshContext() {

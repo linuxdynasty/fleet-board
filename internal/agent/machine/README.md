@@ -38,7 +38,7 @@ replaced, which is what SHED means) or `sampler.Latest()`.
 | | `disk` | free and total under the state folder, then each repo root, at most 32 |
 | `Heartbeat` | `load1` | the latest sample, when it is fresh (below) |
 | | `health.rss_bytes` | the agent's own resident memory, read on the same tick (gopsutil `process`, own pid, ADR 0031); unset when it is 0 or the read failed |
-| | `health.unacked_results`, `reconnects_total`, `commands_refused_total`, `tmux_control_down` | the `Hooks` seams `Unacked` (`ring.DB.UnackedCount`), `Reconnects` (`conn.Loop.Reconnects`), `Refused` (row 6e) and `ControlDown` (row 7); nil reads 0 |
+| | `health.unacked_results`, `reconnects_total`, `commands_refused_total`, `tmux_control_down` | the `Hooks` seams `Unacked` (`ring.DB.UnackedCount`), `Reconnects` (`conn.Loop.Reconnects`), `Refused` (`exec.Executor.RefusedTotal`, added in row 6e; wired into these hooks in row 6i) and `ControlDown` (row 7); nil reads 0 |
 | | `health.ring_events`, `ring_bytes`, `probes_failing` | 0 until rows 7 and 8 |
 
 Unset, not 0: `ResourceSample.load1`, `load5`, the two memory sizes and

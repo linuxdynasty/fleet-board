@@ -60,12 +60,12 @@ func (e *Executor) resumeCommand(ent ring.Entry) (*agentv1.Command, plan) {
 	if len(ent.Body) == 0 || proto.Unmarshal(ent.Body, c) != nil {
 		c = &agentv1.Command{CommandId: &typev1.CommandId{Value: ent.ID}}
 		return c, plan{refusal: &agentv1.CommandResult{
-			Status: typev1.Status_STATUS_UNKNOWN_OUTCOME, Message: "the logged command cannot be read after a restart",
+			Status: typev1.Status_STATUS_UNKNOWN_OUTCOME, Message: "the logged command cannot be read back",
 		}}
 	}
 	if e.past(c) {
 		return c, plan{refusal: refusal(typev1.Status_STATUS_EXPIRED, typev1.ReasonCode_REASON_CODE_EXPIRED,
-			"the command's deadline passed while the agent was stopped")}
+			"the command's deadline passed before the agent could take it up again")}
 	}
 	return c, e.decide(c, ent.Kind, ent, true)
 }

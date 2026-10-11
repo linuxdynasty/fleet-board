@@ -12,7 +12,7 @@ Machine: Apple M4 Pro, 12 cores, 64 GB, macOS 27.0.1, Go 1.27.2, 2026-10-10.
 | `hub-pass-run2-benchmem.txt` | `... -bench 'BenchmarkHubPass$' -benchmem -count=10 ...` | 10 to 13 |
 | `hub-load-run2-benchmem.txt` | `... -bench BenchmarkHubLoad -benchmem -count=10 ...` | 5 to 10 |
 | `corpus-row6.jsonl` | the executor's own result messages, one JSON string per line (plan row 6 PR 6e, ruling fork 2): `FLEET_EXEC_CORPUS_OUT=<file> go test -count=1 ./internal/agent/exec/` | |
-| `corpus-row6-bench.txt`, `corpus-row6-benchstat.txt` | `FLEET_SCRUB_BENCH_CORPUS=spikes/scrubcost/results/corpus-row6.jsonl go test -run '^$' -bench BenchmarkHubPassFile -count=10 ./internal/scrub/`, then `benchstat` | about 9.3 to 9.8 (other agents running) |
+| `corpus-row6-bench.txt`, `corpus-row6-benchstat.txt` | `FLEET_SCRUB_BENCH_CORPUS=spikes/scrubcost/results/corpus-row6.jsonl go test -run '^$' -bench BenchmarkHubPassFile -count=10 ./internal/scrub/`, then `benchstat` | about 12 to 18 (other agents running), 2026-10-11 rerun after the message rewording |
 | `text-run2-benchmem.txt` | `... -bench 'BenchmarkTextHostile$\|BenchmarkTextMessage$\|BenchmarkTextScrubbed$' -benchmem -count=10 ...` | 5 to 6.6 |
 
 Read with `benchstat <file>`. Run 1 is the cleaner timing; run 2 was taken while

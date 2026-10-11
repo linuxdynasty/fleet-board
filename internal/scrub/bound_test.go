@@ -93,3 +93,27 @@ func TestBoundThenTextLeavesNoSecretHead(t *testing.T) {
 		})
 	}
 }
+
+// curl -u is the one rule besides the private-key block that can span a
+// line end; its password is on the match's last line, so a line cut keeps
+// it whole (and redacted) or drops it whole, at every offset.
+func TestBoundKeepsACurlPasswordAcrossALineEnd(t *testing.T) {
+	t.Parallel()
+	const pre = 8 << 10
+	curlLine := "curl -s https://x.example/api\n-u al:Hunter2Secret9 -X POST"
+	if out := scrub.Text(curlLine, scrub.Options{MaxBytes: 1 << 10}); strings.Contains(out, "Hunter2") {
+		t.Fatalf("the whole text is not redacted: %q", out)
+	}
+	unit := "password=" + strings.Repeat("p", 500) + " "
+	for k := 1; k < len(curlLine); k++ {
+		fill := strings.Repeat(unit, (pre-k-1)/len(unit))
+		fill += strings.Repeat(" ", pre-k-1-len(fill)) + "\n"
+		kept, _ := scrub.Bound(fill+curlLine+" tail", pre)
+		out := scrub.Text(kept, scrub.Options{MaxBytes: 1 << 10})
+		for i := 4; i <= len("Hunter2Secret9"); i++ {
+			if strings.Contains(out, "Hunter2Secret9"[:i]) {
+				t.Fatalf("offset %d: the output keeps %q of the password", k, "Hunter2Secret9"[:i])
+			}
+		}
+	}
+}

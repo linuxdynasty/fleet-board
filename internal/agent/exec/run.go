@@ -50,7 +50,7 @@ func (e *Executor) do(ctx context.Context, c *agentv1.Command, ent ring.Entry, p
 		if class == NotRepeatSafe {
 			e.finish(ctx, c, ent, &agentv1.CommandResult{
 				Status:  typev1.Status_STATUS_UNKNOWN_OUTCOME,
-				Message: "the agent restarted while the command ran and cannot tell whether it took effect",
+				Message: "the agent lost track of the command while it ran and cannot tell whether it took effect",
 			}, started, false, sp)
 			return
 		}

@@ -4,16 +4,16 @@ pkg: github.com/linuxdynasty/fleet-board/internal/scrub
 cpu: Apple M4 Pro
                │ spikes/scrubcost/results/corpus-row6-bench.txt │
                │                     sec/op                     │
-HubPassFile-12                                      49.10µ ± 4%
+HubPassFile-12                                     49.19µ ± 11%
 
                │ spikes/scrubcost/results/corpus-row6-bench.txt │
                │                     B/msg                      │
-HubPassFile-12                                       52.79 ± 0%
+HubPassFile-12                                       53.36 ± 0%
 
                │ spikes/scrubcost/results/corpus-row6-bench.txt │
                │                  cores@burst                   │
-HubPassFile-12                                      122.8m ± 4%
+HubPassFile-12                                     123.0m ± 11%
 
                │ spikes/scrubcost/results/corpus-row6-bench.txt │
                │                   cores@peak                   │
-HubPassFile-12                                      368.2µ ± 4%
+HubPassFile-12                                     368.9µ ± 11%

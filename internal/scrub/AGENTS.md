@@ -5,11 +5,13 @@ Read the root `AGENTS.md` first; it applies here. Load `fleet-go` and
 
 - Pure functions: `Scrub` returns a `Result` (the text and the
   `Changed`, `Cut` and `Unsettled` flags), `Text` returns its text, and
-  `Bound` cuts text to whole lines before it is scrubbed. A rule that
-  matches across a line end breaks `Bound`'s guarantee: keep every rule
-  but the private-key block inside one line (README, "Callers bound the
-  input"), and keep `FuzzBound` and `TestBoundThenTextLeavesNoSecretHead`
-  green.
+  `Bound` cuts text to whole lines before it is scrubbed. Its guarantee
+  rests on two things every rule keeps: it asserts nothing to the right
+  of its match, and its secret lies on the last line of its match (`curl
+  -u` spans a line end with its password on the last line; the
+  private-key block redacts a block cut short). A new rule that breaks
+  either breaks `Bound` (README, "Callers bound the input"); keep
+  `FuzzBound` and `TestBoundThenTextLeavesNoSecretHead` green.
   Standard library only, no cgo, no I/O, no logging, no package state
   besides the compiled rules. Both the agent and the
   hub import it, so it imports nothing from `internal/agent` or `internal/hub`.

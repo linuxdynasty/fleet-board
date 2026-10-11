@@ -15,7 +15,8 @@ type Class int
 // The restart classes. The zero value is NotRepeatSafe, so a handler that
 // says nothing fails closed.
 const (
-	// NotRepeatSafe ends a running command UNKNOWN_OUTCOME after a restart
+	// NotRepeatSafe ends a running command UNKNOWN_OUTCOME when the resume
+	// pass takes it up (after a restart or a failed store write)
 	// (SendKeys, a non-OBSERVE RunHarnessCommand; 02-contracts).
 	NotRepeatSafe Class = iota
 	// RepeatSafe runs the command again from the start.
@@ -41,6 +42,9 @@ type Request struct {
 	Command *agentv1.Command
 	// Step is the step the command log reached; Resume reads it.
 	Step int
+	// Cell notes. For RunHarnessCommand the cell was judged on the hub's
+	// expected_class: the handler classifies the command from its own
+	// catalog and refuses it when the class differs (command_tmux.proto).
 	// FleetOnly says the role cell allows the command only in a session or
 	// window the fleet started (02g `F`); FleetOrMarked also allows a pane
 	// the developer marked available with fresh_context_on_reuse (`F*`).
@@ -63,13 +67,18 @@ type Handler interface {
 	Kind() string
 	// Capabilities are advertised in Hello while the handler is registered.
 	Capabilities() []*typev1.Capability
-	// Class is what to do with the command after a restart.
+	// Class is what to do with the command when the resume pass takes it
+	// up while it was running.
 	Class(c *agentv1.Command) Class
 	// Run does the command and returns its result: status, reason,
 	// message, metadata and detail. The executor sets the id, the times
-	// and the trace, and scrubs the message.
+	// and the trace, and scrubs the message, and only the message:
+	// CommandResult.detail and metadata, and CommandProgress.metadata, are
+	// closed values the handler owns (ids, enum names, counts; never screen
+	// or file text) and leave as the handler wrote them.
 	Run(ctx context.Context, r Request) *agentv1.CommandResult
-	// Resume continues a PerStep command from r.Step after a restart.
+	// Resume continues a PerStep command from r.Step when the resume pass
+	// takes it up.
 	Resume(ctx context.Context, r Request) *agentv1.CommandResult
 }
 

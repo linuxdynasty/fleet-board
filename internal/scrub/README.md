@@ -79,12 +79,16 @@ and 15.6 s at 1 MiB (`BenchmarkTextHostile` is the 64 KiB case; see Speed).
 So a caller with text of no fixed size cuts it first, with `Bound(s, n)`:
 the whole text when it fits, else the text up to and including the last
 `\n` in its first `n` bytes, or `""` when there is none (`cut` says so).
-That cut never splits a secret, which a cut at a byte or a word can: every
-rule but the private-key block matches within one line (no rule uses `\s`,
-`(?s)` or `[\s\S]`, the header and quoted-value classes exclude `\n`, and
-names, flags, query values and tokens end at whitespace), so each kept line
-is scrubbed whole and a dropped line is gone whole; the private-key block
-has a cut-short arm that redacts a block with no end line. Only `\n` ends a
+That cut never splits a secret, which a cut at a byte or a word can. No
+rule asserts anything to the right of its match, and every rule's secret
+lies on the last line of its match: most rules match within one line (the
+header and quoted-value classes exclude `\n`; names, flags, query values
+and tokens end at whitespace); `curl -u` can span one line end (the
+whitespace before `-u` may be a newline) but its password is on the
+match's last line; and the private-key block, the one secret over many
+lines, has a cut-short arm that redacts a block with no end line. So a
+line cut keeps a secret's line whole, with everything its rule matched
+before it, or drops it whole. Only `\n` ends a
 line: the quoted-value classes admit `\r`, so a cut at a bare `\r` could
 leave the head of a quoted secret. A cut at a byte bound is not safe even
 far above the cap: redaction can shrink everything before the bound below

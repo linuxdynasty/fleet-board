@@ -24,7 +24,7 @@ type plan struct {
 	handler  Handler
 	cell     cell
 	approval bool
-	resume   bool // a running entry after a restart: Resume or run again
+	resume   bool // a running entry the resume pass took up: run again, Resume or UNKNOWN_OUTCOME
 }
 
 // envelope runs the checks of 02-contracts "Envelope checks" in order on
