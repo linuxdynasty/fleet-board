@@ -2,6 +2,7 @@ package settings_test
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -71,10 +72,26 @@ func (s *sender) all() []*agentv1.SettingsAck {
 	return append([]*agentv1.SettingsAck(nil), s.acks...)
 }
 
+// failing is agent.db whose next fails saves fail.
+type failing struct {
+	*ring.DB
+	fails atomic.Int64
+}
+
+var errDiskFull = errors.New("disk full")
+
+func (f *failing) SaveSettings(ctx context.Context, h ring.Held) error {
+	if f.fails.Add(-1) >= 0 {
+		return errDiskFull
+	}
+	return f.DB.SaveSettings(ctx, h)
+}
+
 // rig is a settings Manager on a real agent.db in a temp folder.
 type rig struct {
 	dir   string
 	db    *ring.DB
+	store *failing // the Manager's Store: r.db with saves that can fail
 	local *local
 	send  *sender
 	logs  *conntest.Buffer
@@ -113,7 +130,8 @@ func (r *rig) restart(t *testing.T, l *local) {
 	if r.db, err = ring.Open(ctx, r.dir, ring.Options{}); err != nil {
 		t.Fatal(err)
 	}
-	r.m, err = settings.Open(ctx, settings.Options{DB: r.db, Local: l, Sender: r.send, Telemetry: tel})
+	r.store = &failing{DB: r.db}
+	r.m, err = settings.Open(ctx, settings.Options{DB: r.store, Local: l, Sender: r.send, Telemetry: tel})
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}

@@ -24,6 +24,9 @@ type Input struct {
 	SafeMode bool
 }
 
+// safeModeMsg is the message of every POLICY_SAFE_MODE rejection.
+const safeModeMsg = "the policy file is invalid: the agent is in safe mode"
+
 // Capped is one field the local ceiling lowered. Hub and Local are the two
 // values for a number, a duration or a mode, and empty for a list (a list
 // may hold paths, which are never logged).
@@ -52,7 +55,7 @@ func Merge(in Input) Outcome {
 		gen = 0
 		rej = rej[:0]
 		for _, f := range sent(in.Hub) {
-			rej = append(rej, rejection{field: f, reason: typev1.ReasonCode_REASON_CODE_POLICY_SAFE_MODE, msg: "the policy file is invalid: the agent is in safe mode"})
+			rej = append(rej, rejection{field: f, reason: typev1.ReasonCode_REASON_CODE_POLICY_SAFE_MODE, msg: safeModeMsg})
 		}
 		h, labels, probes = &typev1.SettingValues{}, nil, nil
 	}

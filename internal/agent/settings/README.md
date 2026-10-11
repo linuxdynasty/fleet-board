@@ -21,8 +21,10 @@ out := settings.Merge(settings.Input{Hub: s, Prev: kept, Local: pol.Policy(), Sa
   (`POLICY_SAFE_MODE`), the defaults are in effect and nothing is kept: Hello
   still reports the generation held before, so the hub re-sends after the fix.
 - **Restart.** `Open` merges the held settings under the policy loaded now
-  and saves the new ack when it changed (`settings.reevaluated`); not in
-  safe mode.
+  and keeps the saved ack's `rejected` list (no check reads the file, so a
+  rejection still holds). It saves the new ack only when the policy hash
+  changed (`settings.reevaluated`, never with the same hash); not in safe
+  mode.
 - **Layers.** `LOCAL_CEILING` when the file's value is in effect,
   `AGENT_DEFAULT` for a built-in default, `HUB` when the hub's value stood
   (the hub names its own layer); the known-harness fallback has no source.
