@@ -13,7 +13,8 @@ import (
 
 // A pane whose program a signal killed is dead with no exit status: tmux
 // prints pane_dead_status only for a program that exited (WIFEXITED in
-// format.c, 3.2a and 3.7c alike), and the client never makes one up.
+// format.c, 3.2a and 3.7c alike), and the client never makes one up. 3.7c
+// names the signal; 3.2a has no pane_dead_signal, so it reports none.
 func TestPaneKilledBySignalHasNoStatus(t *testing.T) {
 	for _, b := range tmuxtest.Binaries() {
 		t.Run(b.Name, func(t *testing.T) {
@@ -36,24 +37,23 @@ func TestPaneKilledBySignalHasNoStatus(t *testing.T) {
 			if err := syscall.Kill(pid, syscall.SIGKILL); err != nil { // our throwaway server's own pane
 				t.Fatal(err)
 			}
-			// 3.2a marks a pane dead when its terminal closes, which can come
-			// before tmux has the status; wait for the signal to be in.
+			want := ""
+			if b.Name == "latest" {
+				want = tmux.SignalKill
+			}
+			// 3.7c marks a pane dead only once tmux has its status, so the
+			// signal is in by then; 3.2a never reports one.
 			waitPanes(t, r, "pane "+id+" dead", func(panes []tmux.Pane) bool {
 				for _, p := range panes {
 					if p.ID.String() == id && p.Dead {
-						return b.Name != "latest" || deathOf(srv, id).signal != ""
+						return p.DeadSignal == want
 					}
 				}
 				return false
 			})
-			// tmux names the signal from sys_signame where there is one
-			// (macOS: "kill"), else by number (Linux: "9").
-			if d := deathOf(srv, id); b.Name == "latest" && d.signal != "9" && !strings.EqualFold(d.signal, "kill") {
-				t.Fatalf("pane_dead_signal = %q, want 9 or kill (%s)", d.signal, d)
-			}
 			for _, p := range mustListPanes(t, r) {
-				if p.ID.String() == id && (!p.Dead || p.DeadStatus != tmux.NoStatus) {
-					t.Fatalf("pane killed by SIGKILL = %+v, want Dead true and NoStatus", p)
+				if p.ID.String() == id && (!p.Dead || p.DeadStatus != tmux.NoStatus || p.DeadSignal != want) {
+					t.Fatalf("pane killed by SIGKILL = %+v, want Dead true, NoStatus and DeadSignal %q", p, want)
 				}
 			}
 		})
@@ -71,20 +71,21 @@ func TestPaneExitWithStatus(t *testing.T) {
 			r.waitState(t, tmux.StateUp)
 			id := strings.TrimSpace(srv.Run(t, "new-window", "-P", "-F", "#{pane_id}", "-t", "work", "exit 4"))
 			waitExitStatus(t, srv, r, id, 4)
-			// A live pane reports no status.
+			// A live pane reports no status and no signal.
 			live := firstPane(t, r, 0)
-			if live.Dead || live.DeadStatus != tmux.NoStatus {
-				t.Fatalf("live pane = %+v, want Dead false and NoStatus", live)
+			if live.Dead || live.DeadStatus != tmux.NoStatus || live.DeadSignal != "" {
+				t.Fatalf("live pane = %+v, want Dead false, NoStatus and no signal", live)
 			}
 		})
 	}
 }
 
-// waitExitStatus waits until pane id is dead with exit status want. A pane
-// that a signal killed stays dead with no status for good, so the wait stops
-// there and names the signal and the pane's pid. A CI run on tmux 3.7c once
-// saw "exit 4" end as dead with no status for the whole 30 s, which tmux
-// prints only for a signal death (format.c), with nothing to say which.
+// waitExitStatus waits until pane id is dead with exit status want and no
+// signal. A pane that a signal killed stays dead with no status for good, so
+// the wait stops there and names the signal and the pane's pid. A CI run on
+// tmux 3.7c once saw "exit 4" end as dead with no status for the whole 30 s,
+// which tmux prints only for a signal death (format.c), with nothing to say
+// which.
 func waitExitStatus(t *testing.T, srv *tmuxtest.Server, r *running, id string, want int) {
 	t.Helper()
 	deadline := time.Now().Add(wait)
@@ -94,11 +95,11 @@ func waitExitStatus(t *testing.T, srv *tmuxtest.Server, r *running, id string, w
 			if p.ID.String() != id || !p.Dead {
 				continue
 			}
-			if p.DeadStatus == want {
+			if p.DeadStatus == want && p.DeadSignal == "" {
 				return
 			}
-			if d := deathOf(srv, id); p.DeadStatus == tmux.NoStatus && d.signal != "" {
-				t.Fatalf("pane %s was killed by a signal, not exited with status %d: %s; panes %+v", id, want, d, panes)
+			if p.DeadSignal != "" {
+				t.Fatalf("pane %s was killed by signal %s, not exited with status %d (%s); panes %+v", id, p.DeadSignal, want, deathOf(srv, id), panes)
 			}
 		}
 		if time.Now().After(deadline) {

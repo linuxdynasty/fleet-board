@@ -177,14 +177,18 @@ type Pane struct {
 	Session SessionID
 	Window  WindowID
 	ID      PaneID
-	// Dead is set for a pane whose program exited and that tmux kept
-	// (remain-on-exit); DeadStatus is then its exit status, else NoStatus.
+	// Dead is set for a pane whose program ended and that tmux kept
+	// (remain-on-exit). DeadStatus is then its exit status if it exited,
+	// else NoStatus; DeadSignal names the signal that killed it, one of
+	// the Signal constants or SignalOther and its number, else "" (3.2a
+	// never reports a signal).
 	Dead          bool
 	DeadStatus    int
+	DeadSignal    string
 	Width, Height int
 }
 
-const panesFormat = "#{session_id} #{window_id} #{pane_id} #{pane_dead} #{pane_dead_status} #{pane_width} #{pane_height}"
+const panesFormat = "#{session_id} #{window_id} #{pane_id} #{pane_dead} #{pane_dead_status} #{pane_dead_signal} #{pane_width} #{pane_height}"
 
 // ListPanes lists every pane on the server (list-panes -a).
 func (c *Client) ListPanes(ctx context.Context) ([]Pane, error) {
@@ -208,16 +212,17 @@ func (c *Client) ListPanes(ctx context.Context) ([]Pane, error) {
 
 func parsePane(line string) (Pane, bool) {
 	f := strings.Split(line, " ")
-	if len(f) != 7 {
+	if len(f) != 8 {
 		return Pane{}, false
 	}
 	s, ok1 := parseID([]byte(f[0]), '$')
 	w, ok2 := parseID([]byte(f[1]), '@')
 	p, ok3 := parseID([]byte(f[2]), '%')
-	wd, err1 := strconv.Atoi(f[5])
-	ht, err2 := strconv.Atoi(f[6])
-	if !ok1 || !ok2 || !ok3 || err1 != nil || err2 != nil || (f[3] != "0" && f[3] != "1") {
-		return Pane{}, false
+	wd, err1 := strconv.Atoi(f[6])
+	ht, err2 := strconv.Atoi(f[7])
+	sig, ok4 := deadSignal(f[5])
+	if !ok1 || !ok2 || !ok3 || !ok4 || err1 != nil || err2 != nil || (f[3] != "0" && f[3] != "1") || (f[4] != "" && f[5] != "") {
+		return Pane{}, false // a program either exited or was killed (WIFEXITED, WIFSIGNALED)
 	}
 	pane := Pane{Session: SessionID(s), Window: WindowID(w), ID: PaneID(p), Dead: f[3] == "1", DeadStatus: NoStatus, Width: wd, Height: ht}
 	if pane.Dead && f[4] != "" {
@@ -226,6 +231,9 @@ func parsePane(line string) (Pane, bool) {
 			return Pane{}, false
 		}
 		pane.DeadStatus = st
+	}
+	if pane.Dead {
+		pane.DeadSignal = sig
 	}
 	return pane, true
 }

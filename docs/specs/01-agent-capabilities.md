@@ -453,7 +453,10 @@ optionally against one limit the owner sets.
   DONE" (the one-nudge rule) depends on this. The status is known only when
   tmux kept the pane (`remain-on-exit`, which the agent never sets on a
   developer's pane); a pane gone first has `exit_status` unset (row 7 PR 7d,
-  `internal/agent/tmux/inventory`).
+  `internal/agent/tmux/inventory`). A pane a signal killed has no exit
+  status; tmux 3.7c names the signal and the agent reports it as one of
+  `hup`, `int`, `quit`, `abort`, `kill`, `segv`, `pipe`, `term` or
+  `other:<n>`, never tmux's text (3.2a reports no signal).
 - **E4 Activity transitions:** active ↔ idle, with the time of last output.
   Never dropped under backpressure; the hub's stuck detection depends on it.
 - **E5 Pane summaries:** last lines, ANSI stripped; at most one per pane every

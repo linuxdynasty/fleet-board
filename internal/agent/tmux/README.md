@@ -175,6 +175,16 @@ st, changed := c.Changed()                       // the state, and a chan closed
   only the reply to the client's own `Continue(pane)` with `%continue %N`
   for that pane resumes it. The client never resumes a pane by itself:
   `%output` feeds nothing (row-7 ruling fork 5(a)).
+- `ListPanes` reads eight fields a pane (ids, `pane_dead`,
+  `pane_dead_status`, `pane_dead_signal`, size). A dead pane kept by
+  `remain-on-exit` has `DeadStatus` when its program exited and
+  `DeadSignal` when a signal killed it, never both: one of `hup`, `int`,
+  `quit`, `abort`, `kill`, `segv`, `pipe`, `term`, else `other:<n>` (1 to
+  127), else empty. tmux 3.7c prints the signal by name on macOS (`kill`)
+  and by number on Linux (`9`); 3.2a has no `pane_dead_signal` and never
+  reports one. Any other text there is `ErrBadReply`, never passed on. In
+  3.7c a pane is dead only once tmux has its status, so "dead, no status,
+  no signal" is a 3.2a moment before the status is in.
 - `ControlDown(clients...)` is `AgentHealth.tmux_control_down`.
 
 ### Concurrency
