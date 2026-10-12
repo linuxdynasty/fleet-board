@@ -35,7 +35,7 @@ harness config), not into each repo.
 | Claude Code | `~/.claude/settings.json` | `SessionStart`, `UserPromptSubmit`, `Stop` |
 | Codex | `~/.codex/hooks.json` | `SessionStart`, `Stop`, `Interrupt` (notify only) |
 | Muse | a plugin installed at user scope: `muse plugins install <bundle> --scope user` (see [Muse](#muse-hooks-are-a-plugin-package)) | `SessionStart`, `Stop` (probed), `Interrupt` |
-| Cursor (`cursor-agent`) | `~/.cursor/hooks.json` | to be decided by plan item 0.23; `beforeSubmitPrompt` and `stop` fire ([probe](#cursor-hooks-probe-2026-10-05)) |
+| Cursor (`cursor-agent`) | `~/.cursor/hooks.json` | `beforeSubmitPrompt` (E9, fires for `/goal` lines too), `stop` (E8 and the Stop guard via `followup_message`); decided by plan item 0.23 ([decision](01d3-cursor-goal-hooks.md)) |
 
 - Every fleet hook exits 0 with no output unless it is running for a fleet
   goal, so the developer's own sessions, including ones on the same machine,
@@ -56,14 +56,21 @@ harness config), not into each repo.
     an entry's worktree matches only when exactly one Muse pane is registered
     for that checkout. In `REPO_DRIVER` mode the registered path is the main
     checkout and is never the match key. Anything else exits 0 silently.
+  - **Cursor:** the pane environment reaches hook commands (probed:
+    `TMUX_PANE` is the pane's own id), so `TMUX_PANE` identifies the
+    pane exactly like Claude Code and Codex. `conversation_id` equals
+    `session_id`; the bootstrap key is `workspace_roots`
+    ([decision](01d3-cursor-goal-hooks.md)).
   - The first `UserPromptSubmit` or `PreToolUse` after registration records the
     harness session id (E9), since `SessionStart` fired before the goal existed.
+    Cursor's equivalent is the first `beforeSubmitPrompt`.
 - The hook scripts live under the agent's data directory
   (`~/.local/share/fleet-agent/hooks/<harness>/`); the settings entries only
   point at them. The command string stays fixed across upgrades and the script
   carries its version.
 - **One hook definition for Claude Code, Codex and Muse** (Cursor's own
-  `hooks.json` shape differs; plan item 0.23). Claude's `settings.json` hooks,
+  `hooks.json` shape carries the same two jobs on its own events;
+  [decision](01d3-cursor-goal-hooks.md)). Claude's `settings.json` hooks,
   Codex's `hooks.json` and Muse's Claude-compatible plugin `hooks/hooks.json`
   share one JSON shape (`{"hooks": {"<Event>": [{"matcher", "hooks": [{"type":
   "command", "command"}]}]}}`). The agent generates the three files from one
@@ -105,7 +112,9 @@ harness config), not into each repo.
    registered worktree, run through `muse plugins hook test <plugin>:<hook>
    --fixture <file>`; the fixture is `{"event": "Stop", "stdin": {…payload…}}`
    and `hook test` passes neither the caller's environment nor an `env` field
-   to the hook. Report `hook_version`, `hook_hash` (sha256 of scripts plus
+   to the hook. For Cursor the pair is a synthetic `beforeSubmitPrompt`
+   and `stop` ([decision](01d3-cursor-goal-hooks.md#install-verify-uninstall-cursor)).
+   Report `hook_version`, `hook_hash` (sha256 of scripts plus
    entries), `verified`.
 4. **Codex trust.** Codex runs a new or changed hook only after the user
    approves it in `/hooks` (trust is recorded per hook hash). `/hooks` is on
@@ -120,6 +129,8 @@ harness config), not into each repo.
    recorded per definition hash (`trusted_definition_hash`), so a changed hook
    prompts again. The agent never runs `approve`; the same `trust` Triage item
    names the command.
+   **Cursor** has no hook approval: entries run in a trusted workspace, so
+   Cursor never reports `PENDING` ([decision](01d3-cursor-goal-hooks.md)).
 
 `fleet-agent hooks uninstall [--harness]` removes only fleet entries (same
 match rule), keeps the backup, and deletes the scripts. Upgrades of the agent

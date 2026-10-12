@@ -47,7 +47,7 @@ The harness behavior the specs rely on today is in
 | Muse hooks come through plugins; `muse plugins hook test <plugin-id>:<hook-id>` tests one | `muse plugins --help` (Muse Code 1.4.0) | In use: user-level hooks are a plugin package, 19 events including `Stop` (01d) |
 | A Muse `Stop` hook returning `decision: block` continues the turn; Muse hooks do not see the pane environment | Probed 2026-10-02 (01d) | In use: goal identity comes from the agent's goal registry, not an environment variable |
 | Muse schema has a detailed approval model and mentions `quota` once | `muse schema generate-json-schema --out DIR`, then `rg` | Not used |
-| Cursor (`cursor-agent` 2026.10.01) fires `beforeSubmitPrompt` and `stop`, not `subagentStart`; a helper's tool events carry a new `conversation_id` with no link to its parent | Probed 2026-10-05 (01d) | In use: ADR 0027, plan item 0.23 |
+| Cursor (`cursor-agent` 2026.10.01) fires `beforeSubmitPrompt` and `stop`, not `subagentStart`; a helper's tool events carry a new `conversation_id` with no link to its parent | Probed 2026-10-05 (01d) | Decided 2026-10-12: plan item 0.23 ([01d3](../specs/01d3-cursor-goal-hooks.md)): `beforeSubmitPrompt` fires for `/goal` lines too, `stop` holds a turn through `followup_message` (loop-capped), the pane environment reaches hooks (`TMUX_PANE`), user entries live in `~/.cursor/hooks.json` with no approval step |
 
 ## Cursor, Copilot and messaging
 
