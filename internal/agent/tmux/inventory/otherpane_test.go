@@ -37,12 +37,17 @@ func TestPaneChangesInAnotherSessionAreSeen(t *testing.T) {
 
 			dev.Run(t, "set-option", "-w", "-t", "other:0", "remain-on-exit", "on")
 			dev.Run(t, "split-window", "-d", "-t", "other:0", "sleep 2; exit 5")
-			ev, _ = r.rec.waitFor(t, i, "PaneExited with a status", func(ev *agentv1.Event) bool {
-				return ev.GetPaneExited() != nil && ev.GetPaneExited().GetRemains()
+			// tmux can report the fresh-dead pane before it knows the status,
+			// which then arrives on the next read: wait for the death with
+			// status 5 however it arrives (PaneExited, or PaneChanged after a
+			// status-less exit).
+			r.rec.waitFor(t, i, "death with status 5", func(ev *agentv1.Event) bool {
+				if pe := ev.GetPaneExited(); pe != nil && pe.GetRemains() && pe.GetExitStatus() == 5 {
+					return true
+				}
+				pc := ev.GetPaneChanged()
+				return pc != nil && pc.GetPane().GetDead() && pc.GetPane().GetExitStatus() == 5
 			})
-			if pe := ev.GetPaneExited(); pe.ExitStatus == nil || pe.GetExitStatus() != 5 {
-				t.Fatalf("died = %v, want status 5", pe)
-			}
 		})
 	}
 }
