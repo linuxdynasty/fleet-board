@@ -217,7 +217,7 @@ typed by the hub):
 > Keep its first line current at all times:
 > - while working, the first line is this objective in one line;
 > - waiting on outside work you started (CI, a command still running):
->   `BLOCKED: <reason> WATCH=<pid>` with the live watcher pid;
+>   BLOCKED: <reason> WATCH=<pid> with the live watcher pid;
 > - waiting on a person: `BLOCKED: <reason> OWNER=<who> ACTION=<what>`;
 > - anything else that stops you: `BLOCKED: <reason>` and wait;
 > - done: `DONE`, and nothing else, only when the work is merged
@@ -227,7 +227,7 @@ typed by the hub):
 >    `gh issue comment <n> --body "fleet <goal_id>: working this issue"`.
 >    If someone else already claimed it, stop: write
 >    `BLOCKED: issue already claimed OWNER=fleet ACTION=decide` and wait.
-> 2. Push the branch, open the PR, link the issue (`Fixes #<n>` only when the
+> 2. Push the branch, open the PR, link the issue (Fixes #n only when the
 >    merge should close it). Never force-push someone else's commits.
 > 3. After review asks for changes, address them and push again. After three
 >    rounds of `CHANGES_REQUESTED` with no merge, stop: write
