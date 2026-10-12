@@ -257,7 +257,13 @@ message HelloAck {
   // at which they last changed, 03e), not the fleet-wide counter, so one
   // machine's change does not resend settings to the others. A Settings
   // message follows if it is newer than Hello.settings_generation, or if
-  // settings_epoch differs from Hello.settings_epoch.
+  // settings_epoch differs from Hello.settings_epoch. It also follows, once
+  // on this stream and without waiting for the 60 s resend, when it equals
+  // Hello.settings_generation in the same epoch but the hub holds no
+  // SettingsAck for that generation (the ack was lost): the agent answers
+  // that repeat with its held SettingsAck, rejections included, and the hub
+  // stores it only if its generation is not lower than the stored one (03e,
+  // 03e2). Hub side: plan row 5 (settings send and SettingsAck).
   uint64 settings_generation = 9;
   // Random id per hub process start. A change tells the agent the hub
   // restarted (its in-memory queues are gone), even on the same address.
@@ -402,7 +408,9 @@ message SettingsAck {
   string settings_epoch = 4;
   // Fields the agent refused: an invalid value (REASON_CODE_INVALID_ARGUMENT),
   // or every field while the policy file is invalid and the agent is in safe
-  // mode (REASON_CODE_POLICY_SAFE_MODE). The previous effective value stands.
+  // mode (REASON_CODE_POLICY_SAFE_MODE). For an invalid value the previous
+  // effective value stands; in safe mode the built-in defaults are the
+  // effective values and nothing is kept (03e2).
   repeated fleet.type.v1.SettingRejection rejected = 5;
   // Field numbers of SettingValues that this agent's schema does not know
   // (an older agent behind a newer hub). Absent from `effective`, so without

@@ -245,7 +245,9 @@ message MachineStatus {
   // Settings fields the local policy capped.
   repeated string capped_settings = 33;
   // Settings fields the agent refused (invalid value, or safe mode), from
-  // the last SettingsAck. The previous effective value stands.
+  // the last SettingsAck. For an invalid value the previous effective value
+  // stands; in safe mode the built-in defaults are the effective values and
+  // nothing is kept (03e2).
   repeated fleet.type.v1.SettingRejection rejected_settings = 38;
   // Names of settings the hub sent that this agent's version does not know,
   // so they are NOT enforced there. Derived from

@@ -33,8 +33,8 @@ type Sender interface {
 	Send(ctx context.Context, m *agentv1.ConnectRequest) error
 }
 
-// Policy is what the executor reads of local policy (and, from plan row 6f,
-// the effective settings): safe mode, the per-kind rate limit and the
+// Policy is what the executor reads of local policy and the effective
+// settings (settings.Manager): safe mode, the per-kind rate limit and the
 // local approval rules.
 type Policy interface {
 	SafeMode() bool
