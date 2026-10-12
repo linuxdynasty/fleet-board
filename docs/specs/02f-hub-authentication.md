@@ -29,15 +29,18 @@ transport, and how a terminal attach over WebSocket is opened and closed.
 Listening only on the Tailscale interface, and needing login to attach, apply to
 `authenticated` mode only.
 
-**Open decision (not decided yet).** In `local_trusted` mode any process on
-the hub machine is the owner, and the hub machine also runs goals. A goal that reads
-an untrusted issue could call the loopback API and approve its own request. Before
-v1 dispatch is switched on, the owner decides whether approvals and settings changes
-there need a local secret ([ADR 0024](../adr/0024-pre-build-owner-decisions.md),
-decision 20, issue #62). Until then no goal starts, manual or automatic: plan row 22
-(goal start) depends on row 19 (approvals), which waits on this decision.
-`local_trusted` is a convenience for one person on one machine, and the Host and
-Origin checks below are what keep a web page the owner visits from using it.
+**Decided** ([ADR 0032](../adr/0032-local-trusted-approval-secret.md), issue
+#62, plan item 0.17). In `local_trusted` mode any process on the hub machine
+still counts as the owner for everyday calls, but two kinds of calls need the
+local approval secret as well and fail without it, even on loopback: approving
+a request (`DecideApproval`), and changing settings (the calls with the
+`SETTINGS` or `ADMIN` scope). The secret is created at `fleetd init`, shown
+once at the terminal, and kept in the owner's dashboard session, never in the
+shell or in a file a goal reads. Until plan row 19 builds this, no goal
+starts, manual or automatic: plan row 22 (goal start) depends on row 19
+(approvals). Row 19 writes the exact call list and the denied-path tests.
+`local_trusted` stays a convenience for one person on one machine, and the Host
+and Origin checks below are what keep a web page the owner visits from using it.
 The loopback rule applies to the API listener only: agents reach the hub on a
 separate mTLS listener (default port 7443), which supersedes ADR 0004's "one
 TLS port" ([02j](02j-hub-runtime.md#listeners)).
