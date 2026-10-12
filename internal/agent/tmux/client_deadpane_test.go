@@ -22,9 +22,10 @@ func TestPaneKilledBySignalHasNoStatus(t *testing.T) {
 			srv.Run(t, "set-option", "-g", "remain-on-exit", "on")
 			r := startClient(t, srv, nil)
 			r.waitState(t, tmux.StateUp)
-			// tmux prints pane_pid right after its fork, so the kill can reach
-			// the shell before it runs sleep. SIGKILL, because no shell can
-			// catch it (zsh catches SIGHUP and exits 1).
+			// tmux prints pane_pid right after its fork, so a kill sent at
+			// once can reach the shell before it runs sleep, and the pane
+			// then sits dead with no status and no signal (#216). SIGKILL,
+			// because no shell can catch it (zsh catches SIGHUP and exits 1).
 			out := strings.Fields(srv.Run(t, "new-window", "-P", "-F", "#{pane_id} #{pane_pid}", "-t", "work", "exec sleep 100"))
 			if len(out) != 2 {
 				t.Fatalf("new-window printed %q, want the pane id and pid", out)
@@ -34,6 +35,7 @@ func TestPaneKilledBySignalHasNoStatus(t *testing.T) {
 			if err != nil || pid <= 0 {
 				t.Fatalf("pane_pid = %q: %v", out[1], err)
 			}
+			waitPaneCommand(t, srv, id, "sleep")
 			if err := syscall.Kill(pid, syscall.SIGKILL); err != nil { // our throwaway server's own pane
 				t.Fatal(err)
 			}
@@ -104,6 +106,24 @@ func waitExitStatus(t *testing.T, srv *tmuxtest.Server, r *running, id string, w
 		}
 		if time.Now().After(deadline) {
 			t.Fatalf("no pane %s dead with status %d (%s): %+v", id, want, deathOf(srv, id), panes)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// waitPaneCommand waits until pane id reports pane_current_command == want.
+// A new window reports another command (for example "tmux") until its
+// program execs, so killing its pid first can hit the shell instead (#216).
+func waitPaneCommand(t *testing.T, srv *tmuxtest.Server, id, want string) {
+	t.Helper()
+	deadline := time.Now().Add(wait)
+	for {
+		got := strings.TrimSpace(srv.Run(t, "display-message", "-p", "-t", id, "#{pane_current_command}"))
+		if got == want {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("pane %s runs %q, want %q", id, got, want)
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
