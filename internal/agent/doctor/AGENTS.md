@@ -21,9 +21,12 @@ Read the root `AGENTS.md` first; it applies here. Load `fleet-go`,
 - Every string printed goes through `clean` in `Run`, whatever the check
   returned. A check never prints a name found in a folder, an OS error text or a
   child's output: use fixed sentences and the closed words of status.json.
-- Start a process only through `Options.TmuxVersion` (the measured proc caller
-  `tmux`). No `os/exec`, no import of `internal/agent/ring`, `internal/agent/tmux`
-  or `internal/store`; `TestDoctorImportsNoProcessNoRingAndNoTmuxClient` holds it.
+- Start a process only through `Options` (`TmuxVersion` for `tmux -V`,
+  `Linger` for `loginctl show-user --property=Linger`): the measured proc
+  caller in cmd. The hub handshake dials through `Options.HubHandshake` and
+  never sends a `Connect` call. No `os/exec`, no import of
+  `internal/agent/ring`, `internal/agent/tmux` or `internal/store`;
+  `TestDoctorImportsNoProcessNoRingAndNoTmuxClient` holds it.
 - Every check returns a reason. A value never set is `unknown`, never 0 or ok;
   a check this build cannot run is `NotCheckedYet(..., row)`. A silent omission
   is a bug.

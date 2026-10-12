@@ -28,6 +28,7 @@ type identityFile struct {
 	CertNotAfter time.Time `json:"cert_not_after"`
 	CertPEM      string    `json:"cert_pem"`
 	CAPEM        string    `json:"ca_pem"`
+	HubAddresses []string  `json:"hub_addresses"`
 }
 
 // problemKind says why a file in the state folder could not be used.

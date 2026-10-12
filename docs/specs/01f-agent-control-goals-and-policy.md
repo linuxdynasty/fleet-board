@@ -160,7 +160,12 @@ All pass local policy, carry a `command_id`, and are idempotent except F3.
   `fleet-agent run` writes (plan row 6 lists the entries); every other check
   runs fresh when doctor runs. Doctor's hub check is a TLS handshake against
   the pinned CA, never a `Connect` call, which would displace the running
-  agent's stream.
+  agent's stream. It tries the cached address, the live peer, then the hub's
+  latest list or the enrolled one, 10 s per address ([defaults](defaults.md)):
+  the first handshake that passes is `ok`; a hub that fails the pin is `fail`;
+  an unreachable hub is `warn`; with no identity or no address it is `unknown`.
+  The linger check is `ok` off Linux; on Linux `fail` when off (with the
+  `enable-linger` fix) and `unknown` when unreadable.
 - **M4 Drain and undrain**: from the hub or locally (`fleet-agent
   drain|undrain`); reported in snapshot and heartbeat. While draining, the agent
   refuses G3, harness-starting F1/F2 and F5 (except a pane with a registered live goal) with `draining`.
