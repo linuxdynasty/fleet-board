@@ -1,13 +1,13 @@
 # Codex screen fixtures
 
 Real screens from Codex, for the parser tests in `internal/harness/codex`
-(plan item 0.1, issue #25). Files are in `0.160.0/`.
+(plan item 0.1, issues #25 and #180). Files are in `0.160.0/` and `0.162.1/`.
 
 | Field | Value |
 |---|---|
-| Harness version | codex-cli 0.160.0 (`codex --version`; the banner offered 0.162.1, not installed) |
-| Captured | 2026-10-10, macOS, tmux 3.7c, pane 200x50, zsh |
-| Plan | "Pro 200" and a credits balance (shown on `/status`) |
+| Harness version | `0.160.0/`: codex-cli 0.160.0; `0.162.1/`: codex-cli 0.162.1 (`codex --version`) |
+| Captured | 2026-10-10 (0.160.0) and 2026-10-12 (0.162.1), macOS, tmux 3.7c/3.8, pane 200x50, zsh |
+| Plan | "Pro 200" and a credits balance (shown on 0.160.0 `/status`) |
 
 ## How it was captured
 
@@ -40,6 +40,36 @@ input), and `/exit`.
 Most files are the visible 50 rows, so earlier output and the top of the update
 box can be cut or still on screen, as in the real pane.
 
+## 0.162.1 (2026-10-12, issue #180)
+
+Same protocol (throwaway server `-L probe180`, killed at the end; every screen
+read before the next key; no prompt sent, no quota spent). Started by typing
+`codex` in a shell pane in an empty scratch folder.
+
+| File | Screen | How reached |
+|---|---|---|
+| `0.162.1/startup-ready.txt` | header, getting-started list, ready prompt, footer | start (no startup prompt appeared) |
+| `0.162.1/ready-ansi.txt` | the same screen with ANSI escapes | idle |
+| `0.162.1/ready-input-has-draft.txt` | ready prompt with unsent text | typed text |
+| `0.162.1/ready-input-has-draft-ansi.txt` | the draft line with ANSI escapes | typed text, then Ctrl+U to clear |
+| `0.162.1/status.txt` | the `/status` card | `/status` (typed, then Enter on the read screen) |
+| `0.162.1/trust-folder-git.txt` | "Folder access" trust screen, choices "1. Trust and continue" / "2. Back to Agent Command Center" | start in a fresh git repo |
+| `0.162.1/warnings-startup-1-of-1.txt` | the one startup warning ("Under-development features enabled: chronicle") | F2, then Escape |
+
+What changed since 0.160.0: no daemon-settings screen and no update banner
+appeared (0.162.1 is installed); the `/status` card shows the account email
+(`user@example.com` here, redacted) next to the plan, a new `Server: Local
+background server` row, and no `Credits:` row; the usage URL is now
+`https://chatgpt.com/settings/usage`; the trust screen's second choice is now
+"Back to Agent Command Center" (Escape lands there, showing the owner's other
+sessions, so that screen was not kept and Ctrl+C returned to the shell); the
+model line reads `GPT-6-Luna (reasoning high)`. The weekly reading (`0% left`,
+`resets 11:57 PM on 17 Oct`) is the real one from that day.
+
+Placeholder against draft: the empty input line renders `›` bold plus
+`Ask Codex to do anything` dim (`^[[2m`); typed text renders in the default
+colour. A parser must match the dim attribute, not the words.
+
 ## Redactions and clean-up
 
 - Paths are `~`, `~/scratch`; the config path in the warning is `~/.codex/config.toml`.
@@ -64,19 +94,23 @@ box can be cut or still on screen, as in the real pane.
 
 ## Not captured, and why
 
-- A trust screen: none appeared in a new folder (the pane runs in "YOLO mode").
-- A blocking update screen: only the banner appeared.
+- A trust screen in a plain folder: none appeared (the pane runs in "YOLO
+  mode"). The git-repo trust screen is `0.162.1/trust-folder-git.txt`.
+- A blocking update screen: only the banner appeared (0.160.0); nothing
+  appeared (0.162.1, installed).
 - Anything past the `/usage` menu ("View analytics" opens a web page and
   "Redeem reset" uses a reset), `/model`, `/permissions`, `/logout`.
 - Prompt and error screens: they need a model call.
 
 ## Limits of these captures
 
-All captures are ANSI-stripped (`capture-pane -p`, no `-e`). The empty-input
-placeholder `› Ask Codex to do anything` therefore looks like typed text with
-no colour to tell them apart, and a draft that equals the placeholder text
-cannot be told from the placeholder. `-e` variants were not captured. A parser
-must not treat the placeholder as an empty-input proof by text alone.
+Most captures are ANSI-stripped (`capture-pane -p`, no `-e`). In those files
+the empty-input placeholder `› Ask Codex to do anything` looks like typed text
+with no colour to tell them apart, and a draft that equals the placeholder
+text cannot be told from the placeholder. A parser must not treat the
+placeholder as an empty-input proof by text alone. The `0.162.1/ready-ansi.txt`
+and `0.162.1/ready-input-has-draft-ansi.txt` files keep the escapes (see the
+0.162.1 section above).
 
 Raw pane captures, the baseline copies of config files and the helper scripts
 were deleted after the redacted files were written; only the files in this
@@ -84,6 +118,7 @@ folder remain.
 
 ## Config touched
 
-`~/.codex/config.toml` had the same sha256 before and after.
+`~/.codex/config.toml` had the same sha256 before and after (both captures;
+verified 2026-10-10 and 2026-10-12).
 Codex keeps its own history and log files; those were not opened. The shared
 background server was not restarted. Credential files were never opened.

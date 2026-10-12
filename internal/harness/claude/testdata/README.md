@@ -24,6 +24,14 @@ Keys sent: the typed slash commands, Enter, Left and Right (tab switch), Down
 (menu paging), Escape, Shift+Tab (permission mode cycle, back to the start
 mode), and `/exit`.
 
+2026-10-12 addition (issue #180): the two `-ansi.txt` files only. Same
+protocol and version, ready screen in an already-trusted folder. Keys sent:
+unsent draft text, Ctrl+U to clear it, and `/exit`. No prompt was sent, so no
+quota was spent. `~/.claude/settings.json` had the same sha256 before and
+after; `~/.claude.json` was never opened. The stale trust-box rows above the
+banner in the raw capture (same pane, earlier start) were cut; each file
+starts at the Claude banner.
+
 ## Files
 
 | File | Screen | How reached |
@@ -32,6 +40,8 @@ mode), and `/exit`.
 | `startup-ready.txt` | banner, "Updated to latest" release line, MCP warning, ready prompt | start in a trusted folder |
 | `ready-auto-mode.txt`, `ready-manual-mode.txt`, `ready-accept-edits-mode.txt`, `ready-plan-mode.txt` | the ready prompt in each permission mode (status line text differs) | Shift+Tab |
 | `ready-input-has-draft.txt` | ready prompt with unsent text on the input line | typed text, then Escape twice to clear |
+| `ready-ansi.txt` | the ready prompt and dim placeholder, with ANSI escapes (`capture-pane -e -p`) | idle on the ready screen, 2026-10-12 |
+| `ready-input-has-draft-ansi.txt` | the draft input line, with ANSI escapes | typed text, then Ctrl+U to clear, 2026-10-12 |
 | `usage-command-typed.txt` | the slash menu with `/usage` highlighted | typed `/usage` |
 | `usage.txt` | the `/usage` dialog: session cost, plugin footprint, current session, weekly all-models, weekly Fable, contributors | Enter |
 | `status.txt` | the Status tab: version, session, login method, organization, email, model, MCP counts | Left twice from the Usage tab |
@@ -76,11 +86,18 @@ the pane history, from the tab line to "Esc to cancel".
 
 ## Limits of these captures
 
-All captures are ANSI-stripped (`capture-pane -p`, no `-e`). The empty-input
-placeholder `❯ Try "fix typecheck errors"` therefore looks like typed text with
-no colour to tell them apart, and a draft that equals the placeholder text
-cannot be told from the placeholder. `-e` variants were not captured. A parser
-must not treat the placeholder as an empty-input proof by text alone.
+Most captures are ANSI-stripped (`capture-pane -p`, no `-e`). The empty-input
+placeholder therefore looks like typed text with no colour to tell them apart
+in those files, and a draft that equals the placeholder text cannot be told
+from the placeholder. A parser must not treat the placeholder as an
+empty-input proof by text alone.
+
+`ready-ansi.txt` and `ready-input-has-draft-ansi.txt` (2026-10-12, issue #180)
+keep the escapes: the placeholder renders dim (`SGR 2`, `^[[2mTry ...^[[0m`)
+while typed draft text renders in the default colour. The suggestion inside
+the placeholder rotates (`Try "refactor view-session.js"` here), so a parser
+must match the dim attribute, not the words. Escape twice did not clear the
+draft on 2.1.296 (it did on the 2026-10-10 capture); Ctrl+U did.
 
 Raw pane captures, the baseline copies of config files and the helper scripts
 were deleted after the redacted files were written; only the files in this

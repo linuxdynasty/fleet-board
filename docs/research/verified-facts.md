@@ -17,7 +17,7 @@ The harness behavior the specs rely on today is in
 
 | Fact | How it was checked | Status |
 |---|---|---|
-| Claude `/usage`, Codex `/status` and Muse `/usage` show weekly usage and reset times; none has a CLI subcommand | Each run in a throwaway tmux server, `tmux capture-pane`, 2026-09-28 (Claude Code 2.1.284, codex-cli 0.157.1, Muse Code 1.4.0) | In use. Later probes: Claude Code 2.1.286, Codex 0.160.0, Muse 1.4.2 (01b); fixtures of Claude Code 2.1.296, Codex 0.160.0, Muse 1.4.4 and OpenCode 1.18.34 on 2026-10-10 (01b, "Screen fixtures") |
+| Claude `/usage`, Codex `/status` and Muse `/usage` show weekly usage and reset times; none has a CLI subcommand | Each run in a throwaway tmux server, `tmux capture-pane`, 2026-09-28 (Claude Code 2.1.284, codex-cli 0.157.1, Muse Code 1.4.0) | In use. Later probes: Claude Code 2.1.286, Codex 0.160.0, Muse 1.4.2 (01b); fixtures of Claude Code 2.1.296, Codex 0.160.0, Muse 1.4.4 and OpenCode 1.18.34 on 2026-10-10, plus ANSI ready/draft variants and fixtures of Codex 0.162.1, Muse 1.4.6 and OpenCode 1.19.0 on 2026-10-12 (01b, "Screen fixtures") |
 | Claude reports separate weekly buckets: all models, and Fable | Claude `/usage` output | In use (03b tracks every bucket) |
 | Codex session logs also carry `rate_limits` (`used_percent`, `window_minutes` 10080, `resets_at`), but can be stale | `rg '"rate_limits"' ~/.codex/sessions/.../rollout-*.jsonl` against `/status` a day later | **Not used.** The status command is the only source; no spec reads the session logs |
 | OpenCode has no `/usage` and no `/goal`; `opencode stats` prints all-time totals only, `opencode providers list` shows logins without secrets | OpenCode 1.18.30, 2026-10-01 (01b) | In use: usage for OpenCode is inventory only |

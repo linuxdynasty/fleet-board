@@ -99,6 +99,9 @@ no tmux pane and is out of scope.
   [02h](02h-goal-binding-and-pane-signals.md) cannot yet tell them apart. Plan
   item 0.19 finds how to tell them apart and how to clear old text safely;
   until then nothing is typed into a Cursor pane, probe sessions included (02h).
+  The 2026-10-12 capture (`ready-ansi.txt`) records the placeholder's exact
+  bytes (`→` dim, `P` reverse-video, rest dim) as the tell to test a future
+  draft against; the draft half is still open.
 - **Credentials.** `~/.cursor/cli-config.json` holds settings and also an
   authInfo section, so the agent never reads it; it learns settings only from
   Cursor's own screens.
@@ -405,5 +408,78 @@ such as Muse "HTTP 500 retrying", and limit screens. They need a model call or a
 real failure; they stay open for a probe that is allowed to spend quota.
 
 Cursor (`cursor-agent`) was not captured here (plan row 30, item 0.19). All
-captures are ANSI-stripped, so an empty-input placeholder cannot be told from
-typed text by colour (see the READMEs).
+captures here are ANSI-stripped, so an empty-input placeholder cannot be told
+from typed text by colour (see the READMEs); the 2026-10-12 capture below adds
+the ANSI variants.
+
+## Screen fixtures, 2026-10-12 (issue #180)
+
+Follow-up to the 2026-10-10 capture: the ANSI (colour) variants of the
+ready and draft screens, and fixtures for the versions the harnesses
+auto-updated to since (Codex 0.162.1, Muse 1.4.6, OpenCode 1.19.0). Same
+protocol: throwaway tmux server (`-L probe180 -f /dev/null`), an empty scratch
+folder per harness, each harness started by typing its name, every screen read
+with `capture-pane -p` (and `-e -p` for the ANSI files) before the next key.
+No prompt was sent to any model, so no quota was spent. The server was killed
+at the end; the raw captures and the scratch folders were deleted after the
+redacted fixtures were written. Details per harness (steps, redactions, what
+each screen shows) are in the testdata READMEs:
+[Claude Code](../../internal/harness/claude/testdata/README.md),
+[Codex](../../internal/harness/codex/testdata/README.md),
+[Muse](../../internal/harness/muse/testdata/README.md),
+[OpenCode](../../internal/harness/opencode/testdata/README.md),
+[Cursor](../../internal/harness/cursor/testdata/README.md) (new).
+
+| Step | Observed |
+|---|---|
+| start each harness in a new folder | Claude 2.1.296 and Muse 1.4.6 show their trust box (unchanged); Codex 0.162.1 shows it only in a git repo; OpenCode 1.19.0 shows none; all answered with the "no" choice on purpose (the trust-parent questions went to the [follow-up probe](#folder-trust-follow-up-probe-2026-10-12) the same day) |
+| ready screen, idle | captured `-p` for the three new versions, `-e -p` for all five harnesses |
+| unsent draft on the input line | typed text, read, captured `-p` and `-e -p` (not on Cursor: typing there is forbidden until 0.19), cleared with Ctrl+U |
+| `/status` (Codex, Muse), `/usage` (Muse), `providers list` + `stats` (OpenCode CLI) | captured; all render locally, no model call |
+| quit | `/exit`, `/quit`, `q`, or Ctrl+C after the screen was read |
+
+What the capture found:
+
+- **Placeholder against draft, in bytes.** Claude renders the placeholder dim
+  (SGR 2) and draft text in the default colour; Codex renders `›` bold in
+  both cases, the placeholder dim and the draft in the default colour; OpenCode
+  renders the placeholder grey (`38;2;128;128;128`) and the draft near-white
+  (`38;2;238;238;238`); Muse shows no placeholder text at all (`❯` in blue,
+  `38;2;90;160;255`) and the draft in light grey (`38;2;204;211;219`); Cursor
+  renders `→` dim, `P` in reverse video (`^[[0;7m`), the rest dim (`^[[0;2m`).
+  The Cursor draft half is still open (no typing there), so item 0.19 is not
+  proven, only narrowed: the placeholder bytes above are the tell to test a
+  future draft against.
+- **Codex 0.162.1** starts with no daemon-settings screen and no update banner;
+  `/status` now shows the account email next to the plan and a Server: row;
+  the trust screen's second choice is "Back to Agent Command Center" and Escape
+  lands there (the owner's other sessions are listed, so that screen was not
+  kept); the one startup warning is about `chronicle`.
+- **Muse 1.4.6** dropped the "Model set to" line; `/status` is a wider box with
+  new WORKSPACE, `USAGE`, CONTEXT, `SESSION`, ACTIVITY and BILLING rows.
+- **OpenCode 1.19.0** points at "/update to upgrade to OpenCode 2.0", the model
+  line reads "Big Pickle OpenCode", and `stats` shows real nonzero totals from
+  the probe's own session (a parser now sees the TOOL USAGE block).
+- A typed slash command followed at once by Enter sat unsubmitted on the input
+  line twice (Codex `/status`, Muse `/usage`); pressing Enter on the read
+  screen submitted it. A probe step should pause between typing and Enter.
+
+**Cleanup:** `~/.claude/settings.json`, `~/.codex/config.toml`,
+`~/.config/muse/{settings,trust}.json` and
+`~/.config/opencode/opencode.jsonc` had the same sha256 before and after.
+`~/.claude.json` was never opened (it changes whenever any Claude session
+runs). `trust.json` was not opened this time. `auth.json` files, the keychain
+and `gh` auth were never opened. The empty Cursor project dir the trust-box
+start created was deleted. Left behind on purpose and recorded here: the
+harnesses' own session and log bookkeeping (a Cursor `worker.log` append,
+Codex session entries for the two probe starts, OpenCode `stats` counting the
+probe session).
+
+**Not captured, and why:** prompt and permission screens (need a model call —
+spending quota needs owner consent beyond this probe); limit, rate-limit and
+network-error screens (only when they happen on their own; nothing was
+provoked); sign-in screens and a signed-in OpenCode provider (the accounts are
+signed in and signing out would break the developer's login); a blocking Codex
+update prompt (0.162.1 is installed, none appeared); full command catalogs for
+the three new versions (paging work, left for the adapter PR); the Cursor
+draft half of 0.19 (typing forbidden). These stay open on issue #180.
