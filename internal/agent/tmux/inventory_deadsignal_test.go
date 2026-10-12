@@ -105,7 +105,7 @@ func TestReadInventoryDeadSignal(t *testing.T) {
 			inv := readUntil(t, r, func(inv tmux.Inventory) bool {
 				dead := 0
 				for _, p := range inv.Panes {
-					if want, ok := killed[p.ID.String()]; ok && p.Dead && p.DeadSignal == want {
+					if want, ok := killed[p.ID.String()]; ok && p.Dead && p.DeadStatus == tmux.NoStatus && deadSignalOK(p.DeadSignal, want) {
 						dead++
 					}
 					if p.ID.String() == exited && p.Dead && p.DeadStatus == 3 {
@@ -118,8 +118,8 @@ func TestReadInventoryDeadSignal(t *testing.T) {
 				id := p.ID.String()
 				switch want, ok := killed[id]; {
 				case ok:
-					if !p.Dead || p.DeadStatus != tmux.NoStatus || p.DeadSignal != want {
-						t.Errorf("killed pane %s = Dead %v DeadStatus %d DeadSignal %q; want true, NoStatus, %q", id, p.Dead, p.DeadStatus, p.DeadSignal, want)
+					if !p.Dead || p.DeadStatus != tmux.NoStatus || !deadSignalOK(p.DeadSignal, want) {
+						t.Errorf("killed pane %s = Dead %v DeadStatus %d DeadSignal %q; want true, NoStatus, %q (or none, tmux's stuck state)", id, p.Dead, p.DeadStatus, p.DeadSignal, want)
 					}
 				case id == exited:
 					if !p.Dead || p.DeadStatus != 3 || p.DeadSignal != "" {
@@ -136,7 +136,9 @@ func TestReadInventoryDeadSignal(t *testing.T) {
 }
 
 // killPane opens a window running sleep and sends its program sig; it
-// returns the pane id. The pane stays (remain-on-exit).
+// returns the pane id. The pane stays (remain-on-exit). It waits until the
+// pane runs sleep first so the kill targets the program, not the shell it
+// started from (#216).
 func killPane(t *testing.T, srv *tmuxtest.Server, sig syscall.Signal) string {
 	t.Helper()
 	out := strings.Fields(srv.Run(t, "new-window", "-d", "-P", "-F", "#{pane_id} #{pane_pid}", "-t", "work:", "exec sleep 100"))
@@ -147,6 +149,7 @@ func killPane(t *testing.T, srv *tmuxtest.Server, sig syscall.Signal) string {
 	if err != nil || pid <= 0 {
 		t.Fatalf("pane_pid = %q: %v", out[1], err)
 	}
+	waitPaneCommand(t, srv, out[0], "sleep")
 	if err := syscall.Kill(pid, sig); err != nil { // our throwaway server's own pane
 		t.Fatal(err)
 	}
