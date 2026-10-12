@@ -210,7 +210,8 @@ sequenceDiagram
    OpenCode) that is **behind pace, idle while behind, or projected to leave at
    least 5 points unused**, and where `used + expected_cost <= 100 - reserve`
    on every bucket: never into the reserve. The expected cost is the last
-   report's `usage_consumed` (3 points until a first run measured it). Among
+   report's `usage_consumed` (1 point since the 2026-10-12 measurement in
+   step 6 below; 3 points before it). Among
    eligible pairs it takes the highest `projected_unused_percent`, ties by
    `rank` (03i step 3). No eligible pair: the fire stays due and is retried
    every pass until the next fire replaces it (counted in `skipped_fires`);
@@ -257,12 +258,19 @@ sequenceDiagram
    at most 64 KiB; tables, lists, headings and code are fine. The numbers
    behind it are one click away (`GetInsightReport{include_bundle}`).
 6. **Cost and off switch.** The report's `usage_consumed` is stored and shown
-   on the Insights view, so the cost is measured, not assumed (`NOT_MEASURED`
-   until the first run). Issue #61 records what one report costs from that first
-   run. The built-in routine is on by default and runs only on spare quota
-   (ADR 0022 addendum, decision 3). The owner disables the routine with
-   `spec.enabled = false`; a built-in routine cannot be deleted, and the
-   owner cannot edit its goal text or done rule.
+   on the Insights view. **Measured 2026-10-12** (plan item 0.16, issue #61,
+   probe record in [verified-facts.md](../research/verified-facts.md#measured-weekly-report-cost-plan-item-016)):
+   one report-like run on Muse 1.4.6 (`muse-spark-1.3`, xhigh effort),
+   reading a 53 KiB `stats.json` bundle and writing a 1,437-byte `report.md`
+   in 1m 33s, moved the Current bucket from 2% to 3% used (+1 point) and left
+   the Weekly bucket at 4% (under its 1-point granularity); the session
+   reported 277,457 tokens over 5 turns, two-thirds cached input. The
+   expected cost is therefore 1 point at default effort; a cheap-model run
+   should cost less, and the built-in routine's first run after row 27 lands
+   confirms the number. The built-in routine is on by default and runs only
+   on spare quota (ADR 0022 addendum, decision 3). The owner disables the
+   routine with `spec.enabled = false`; a built-in routine cannot be deleted,
+   and the owner cannot edit its goal text or done rule.
 
 **Security notes** (`fleet-security`). The scratch commands take a goal id and
 a bare file name; the agent applies the local policy ceiling, rejects links and
