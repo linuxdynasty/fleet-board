@@ -313,9 +313,9 @@ optionally against one limit the owner sets.
   | OpenCode | Nothing to do: OpenCode has no folder-trust screen. |
 
   Trust and the folder: Cursor trusts a folder and everything below it; Claude
-  Code, Codex and Muse appear to follow the git repo root (not proven: Claude
-  Code on a plain folder, and Muse's repo root covering its children);
-  **Muse was not seen to extend trust from a parent folder to a child** (one observation: a trusted home folder did not cover a child). So the weekly report's scratch folder is
+  Code and Codex appear to follow the git repo root (not proven: Claude Code
+  on a plain folder). **Muse trust covers one folder only**: neither a trusted
+  home folder nor a trusted repo root covered a plain child (the box still names the repo root, 01b). So the weekly report's scratch folder is
   checked and trusted on its own, never assumed from the probe folder. The
   "yes" answer is the owner's act, once per harness and folder; the typed `/exit`
   is the owner's too, since the fleet never presses a key on a trust screen.

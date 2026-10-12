@@ -49,10 +49,14 @@ STUB
 chmod +x "$stub"
 
 # calls <Makefile>: run its lint target against the stub and print what it called.
+# BASE_REF rides the command line, not the environment: a forced BASE_REF from
+# MAKEOVERRIDES (the pre-push hook names origin/main on its make command line)
+# would otherwise beat the unknown ref and shrink the package list, so a branch
+# with no Go change could never see all four platforms.
 calls() {
   : > "$log"
-  (cd "$root" && FLEET_LINT_CALLS="$log" BASE_REF=no-such-ref-for-the-selftest \
-    make -f "$1" -o tools lint GOLANGCI_LINT="$stub" > "$work/make.out" 2>&1)
+  (cd "$root" && FLEET_LINT_CALLS="$log" \
+    make -f "$1" -o tools lint GOLANGCI_LINT="$stub" BASE_REF=no-such-ref-for-the-selftest > "$work/make.out" 2>&1)
   return $?
 }
 
