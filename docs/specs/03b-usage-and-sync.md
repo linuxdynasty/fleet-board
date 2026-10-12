@@ -73,7 +73,9 @@ no usage screen sends no reading, only `ProbeHealth`, so the last good reading
 keeps pacing until it is older than `stale_after`. The exceptions are a probe
 stuck on a startup screen or asking to sign in, which make the account
 `UNKNOWN` at once (Failure modes, below). A `PARSE_FAILED` reading makes the
-account `UNKNOWN` at once.
+account `UNKNOWN` at once. Readings are levels, not sums: v1 adds up no token
+records. When v3 harness transcripts (K3 in 01-agent-capabilities.md) arrive,
+each token record is counted once per (tool, session, record id) (#142).
 
 **Passive signals (D3).** The adapter parses banners and status lines in panes
 it already observes and emits `UsageReading{source=PASSIVE}` only when a
