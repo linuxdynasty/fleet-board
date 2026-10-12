@@ -200,6 +200,49 @@ renders and joins the acts itself, so nothing the hub sends can add a `--`, a
 comma or a newline to the typed line; an act the agent does not know is
 `INVALID_ARGUMENT` and the goal is not typed.
 
+### Default goal text for repos without eshu's hooks (0.18 — DRAFT, needs owner approval)
+
+DRAFT for [#63](https://github.com/linuxdynasty/fleet-board/issues/63): the
+wording below is proposed, not decided. It becomes normative when the owner
+approves it (approval is merging this section, plus a comment on #63). Until
+then row 22 gates the first `StartGoal` in such a repo.
+
+When the checkout does not ship eshu's hooks, the hub builds
+`GoalSpec.goal_text` from this template (`<...>` is filled per goal; the
+consent list is rendered by the adapter as in "Consent form" above, never
+typed by the hub):
+
+> Work issue <owner/repo#n> on branch <branch>: <one-line summary>.
+> Your goal file is `.fleet-board/goal-<goal_id>` at the top of this checkout.
+> Keep its first line current at all times:
+> - while working, the first line is this objective in one line;
+> - waiting on outside work you started (CI, a command still running):
+>   `BLOCKED: <reason> WATCH=<pid>` with the live watcher pid;
+> - waiting on a person: `BLOCKED: <reason> OWNER=<who> ACTION=<what>`;
+> - anything else that stops you: `BLOCKED: <reason>` and wait;
+> - done: `DONE`, and nothing else, only when the work is merged
+>   (or, without merge consent, when the PR is approved and its checks are green).
+> Rules:
+> 1. First, claim the issue so no second fleet takes it:
+>    `gh issue comment <n> --body "fleet <goal_id>: working this issue"`.
+>    If someone else already claimed it, stop: write
+>    `BLOCKED: issue already claimed OWNER=fleet ACTION=decide` and wait.
+> 2. Push the branch, open the PR, link the issue (`Fixes #<n>` only when the
+>    merge should close it). Never force-push someone else's commits.
+> 3. After review asks for changes, address them and push again. After three
+>    rounds of `CHANGES_REQUESTED` with no merge, stop: write
+>    `BLOCKED: review loop OWNER=fleet ACTION=decide` and wait for a person.
+>    Do not push new fixes past that point; the hub pauses the goal.
+> 4. The hub checks every `DONE` against GitHub before the worker is freed.
+>    Writing `DONE` early only sends the goal back. A `DONE` that GitHub
+>    contradicts becomes a task for a person, not a merge.
+
+Why each line is there: the claim step keeps two fleets off one issue (W4,
+`double_claim`); the `BLOCKED` lines are the only forms the goal-file reader
+tells apart ([01d](01d-goal-hooks.md), the stop guard); the three-round cap is
+the hub's review-loop pause ([03l](03l-goal-lifecycle-and-verification.md));
+the `DONE` rule is verification (W6).
+
 ### State machine (goal start, owned by the hub)
 
 ```mermaid
