@@ -66,6 +66,46 @@ The harness behavior the specs rely on today is in
 | On the macOS remotes the tools are only on the login-shell PATH | `ssh dev@192.0.2.30 'zsh -lic "command -v tmux claude codex muse"'` | In use: the agent resolves absolute harness paths through a login shell at install and on a version change; the hub never sends a path (ADR 0006) |
 | RAM per machine | `sysctl hw.memsize` (macOS), `/proc/meminfo` (Linux) | In use: the agent reports it as a machine fact; the hub never asks over ssh |
 
+## Measured: usage-probe cost (plan item 0.8)
+
+Checked 2026-10-12 on macOS, tmux 3.8, one throwaway tmux server per harness
+(`-L probe53<name>`, killed after), an empty scratch folder, every screen read
+before each key, and no model prompt sent on any harness. Baselines were saved
+before each probe and restored byte for byte after (checksums verified);
+throwaway trust entries were removed. Each harness: one baseline usage reading,
+N usage probes, one reading after; plus an idle harness start with no prompt.
+Copilot CLI (1.0.95) was not probed: it is `later` per
+[ADR 0027](../adr/0027-cursor-first-class-copilot-and-messaging-later.md), out
+of v1 scope.
+
+| Harness (version) | Probes | Before | After | Cost |
+|---|---|---|---|---|
+| Claude Code 2.1.296 | 6x `/usage` | Week (all models) 79%, week (Fable) 36%, session 38%, cost $0.00 | Identical (79% / 36% / 38%, $0.00) | None |
+| Codex 0.162.1 | 5x `/status` | Weekly 0% left (resets Oct 17, 11:57 PM), Pro 200 account | Identical 0% left, same session | None seen (account already at 0%: floor effect) |
+| Muse 1.4.6 | 5x `/usage` | Current 0%, weekly 0% (resets Oct 18, 8 PM), session 0 tokens, 0 turns | Identical | None |
+| cursor-agent 2026.10.01-e373342 | 5x `/usage` | Included, Auto and API 100% used, resets Nov 4, On-Demand Disabled | Identical | None seen (account at 100%: ceiling effect) |
+| OpenCode 1.19.0 | 5x `stats` plus an idle TUI start (about 30 s, no prompt) | Sessions 1, messages 3, total $0.00; providers: 0 credentials, DeepSeek by environment only | Identical | None (no usage window; inventory only) |
+
+Findings:
+- **No harness spent quota on usage probes or idle starts.** The mid-range
+  reading (Claude at 79%) is the strong case: six probes left every bucket
+  unchanged. Codex, Cursor and Muse sat at a floor or ceiling (0% left, 100%
+  used, 0%), so their unchanged readings are consistent with no cost but
+  weaker; the Claude result carries the conclusion.
+- **The 10-minute probe default stands.** No per-harness number is needed, so
+  [defaults.md](../specs/defaults.md) and [03b](../specs/03b-usage-and-sync.md)
+  are unchanged by this item.
+- **Cursor input-line care (supports 0.19).** This probe sent zero model
+  prompts, so every `/usage` went into the fresh placeholder
+  ("Plan, search, build anything") and each `/usage` dialog was closed with
+  Esc before the next. No old prompt was ever present to be re-sent.
+- **Codex note (not this issue).** The Codex TUI does not start with this
+  machine's checked-in config model name (`gpt-6-luna`; bootstrap fails with
+  `account/read ... code -32603`); it starts with a `-c model=` flag override
+  (config file untouched). Left as an observation for the owner; not fixed here.
+- `auth.json` files were never opened; `opencode providers list` output only
+  was used for OpenCode.
+
 ## Measured: one real goal
 
 Checked 2026-10-01 (moved here from 01c, still the basis of the load table in [04](../specs/04-technology-review.md)). Muse 1.4.2 working eshu-hq/eshu#7398 for 60 minutes on macOS, recorded with

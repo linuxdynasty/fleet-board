@@ -57,7 +57,7 @@ returns after the deadline has an expired `StopProbe`, so the snapshot
 reconcile is the safety net: a probe in `Snapshot.probes[]` that the hub no longer
 assigns to that machine gets a fresh `StopProbe` (W1, "Snapshot reconcile"). Two
 probes briefly alive for one account during failover is harmless: status
-commands are expected to cost no quota (plan 0.8 measures it) and both are idle sessions; the hub keeps readings from
+commands are expected to cost no quota (plan item 0.8 measured it: [verified-facts.md](../research/verified-facts.md#measured-usage-probe-cost-plan-item-08)) and both are idle sessions; the hub keeps readings from
 either, newest hub-adjusted `read_time` wins (agent time minus the machine's
 measured skew, clamped to the hub's `received_time`; ties by `received_time`; a
 `clock_untrusted` machine never overrides a trusted one; 02i, "Clocks").
