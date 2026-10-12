@@ -62,6 +62,10 @@ type Options struct {
 	// writer's goroutine, and nothing signals it: a change shows within a
 	// minute, like push_off.
 	PolicyWatchOff func() bool
+	// TmuxWatch, when set, returns the tmux socket folder the inventory
+	// watches and whether that watch is off; status.json then carries
+	// tmux_folder and, when off, tmux_watch: off. Read like PolicyWatchOff.
+	TmuxWatch func() (folder string, off bool)
 
 	// Test seams: the clock, a hook run after each write attempt, and the
 	// disk steps.
@@ -223,6 +227,13 @@ func (w *Writer) write() {
 	st := FromConn(w.opts.Source(), now)
 	if w.opts.PolicyWatchOff != nil && w.opts.PolicyWatchOff() {
 		st.PolicyWatch = PolicyWatchOff
+	}
+	if w.opts.TmuxWatch != nil {
+		folder, off := w.opts.TmuxWatch()
+		st.TmuxFolder = folderPath(folder)
+		if off {
+			st.TmuxWatch = TmuxWatchOff
+		}
 	}
 	data, err := encode(st)
 	if err == nil {

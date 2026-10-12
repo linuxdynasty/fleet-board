@@ -112,8 +112,17 @@ fleet-agent run    # logs to stderr; stop with Ctrl-C or SIGTERM
   agent is down. A change of the connection shows in the file within about
   a second (the loop's change signal wakes the writer, which writes at most
   once a second). `policy_watch: off` appears when the policy folder watch
-  is off. The push socket and the policy watch are read when the file is
-  written, so they can be up to a minute old.
+  is off; `tmux_folder` names the tmux socket folder the agent watches and
+  `tmux_watch: off` appears when that watch is off. The push socket and the
+  two watches are read when the file is written, so they can be up to a
+  minute old.
+- `run` starts the tmux inventory (`internal/agent/tmux/inventory`) when a
+  tmux is on `PATH` or in Homebrew's or the system's folder: a control client
+  on the `default` and `fleet-probe` servers of the socket folder, and their
+  sessions, windows and panes in every Snapshot. Its lifecycle events reach
+  the hub once the event emitter is wired to the stream (row 7 PR 7a-B).
+  Tests point `TMUX_TMPDIR` at an empty folder (`tmuxtest.Main`), so a test
+  agent never sees the developer's own server.
 - A failed `enroll` leaves its failure code in `enroll.json` (a closed word
   such as `token_malformed`, `hub_untrusted` or `refused` with the hub's
   reason name; never the token, the address or the message), only into a

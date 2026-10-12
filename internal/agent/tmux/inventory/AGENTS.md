@@ -5,8 +5,15 @@ apply here. Load `fleet-go`, `fleet-tmux`, `fleet-security` and
 `fleet-telemetry-coverage`. Rules for this package:
 
 - The tree build and the diff are pure functions: no tmux, no clock, no
-  goroutine, no lock. Row 7 PR 7d2 adds the observer that reads tmux and
-  calls them, with its own rules here.
+  goroutine, no lock.
+- No timer reads tmux or the socket folder (row-7 ruling fork 4): a read
+  follows a control-mode notice, a client state change, a Snapshot or a
+  folder event. The two timers, the wake debounce (`wakeGap`) and the read
+  pacing (`readGap`), only delay what an event already asked for.
+- Only the sync goroutine of a server reads, diffs, stores and emits for it;
+  `Notify` drops tokens and never calls the client. Nothing is held across a
+  control-mode command or an `Emit`. A change to that updates the README
+  diagram in the same commit.
 - Names, commands and tag values are the developer's text: bounded and
   control-stripped before they are reported (02e), never logged or used as
   a label. A tag is reported only with its id's shape, else dropped whole;

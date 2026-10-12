@@ -34,6 +34,13 @@ const StateUnknown = "unknown"
 // loader could not set its directory watch (03e).
 const PolicyWatchOff = "off"
 
+// TmuxWatchOff is the one value of Status.TmuxWatch: the agent could not
+// set its watch on the tmux socket folder (row-7 ruling fork 4(b)).
+const TmuxWatchOff = "off"
+
+// maxFolderBytes bounds Status.TmuxFolder.
+const maxFolderBytes = 256
+
 // The three results of an mDNS browse (ADR 0028 decision 3). They are
 // their own closed values, not err_kind classes.
 const (
@@ -61,7 +68,8 @@ func setOf(v ...string) map[string]bool {
 // as the loop keeps it in memory ([conn.Status]), stamped with the time it
 // was written. A value not yet known is left out, never written as 0 or an
 // empty word, so a reader can say "unknown". It holds closed words, times,
-// numbers and hub addresses: no token, no error text, no file path.
+// numbers and hub addresses: no token and no error text. The one path is
+// the tmux socket folder the agent watches, which doctor prints.
 type Status struct {
 	Version     int       `json:"version"`
 	WrittenTime time.Time `json:"written_time"`
@@ -83,6 +91,13 @@ type Status struct {
 	// its directory watch; left out while the watch works (or is not
 	// known), so doctor can tell "working" from "never said".
 	PolicyWatch string `json:"policy_watch,omitempty"`
+	// TmuxWatch is [TmuxWatchOff] when the agent could not set its watch
+	// on the tmux socket folder; left out while it works.
+	TmuxWatch string `json:"tmux_watch,omitempty"`
+	// TmuxFolder is the tmux socket folder the agent watches
+	// ($TMUX_TMPDIR or /tmp, then tmux-<uid>): the launchd-versus-shell
+	// TMUX_TMPDIR mismatch shows here.
+	TmuxFolder string `json:"tmux_folder,omitempty"`
 }
 
 // Failure is the last failure for one hub address.
@@ -158,6 +173,8 @@ func (s Status) cleaned() Status {
 	s.State = enum(s.State, states)
 	s.Ended = enum(s.Ended, ends)
 	s.PolicyWatch = enum(s.PolicyWatch, watch)
+	s.TmuxWatch = enum(s.TmuxWatch, watch)
+	s.TmuxFolder = folderPath(s.TmuxFolder)
 	s.Peer = addr(s.Peer)
 	if len(s.Failures) > 0 {
 		s.Failures = boundFailures(s.Failures)
@@ -170,6 +187,20 @@ func (s Status) cleaned() Status {
 		s.Browse = &b
 	}
 	return s
+}
+
+// folderPath keeps an absolute path of printable ASCII up to
+// maxFolderBytes; anything else reads as unknown ("").
+func folderPath(p string) string {
+	if len(p) > maxFolderBytes || !strings.HasPrefix(p, "/") {
+		return ""
+	}
+	for i := 0; i < len(p); i++ {
+		if p[i] < 0x20 || p[i] > 0x7e {
+			return ""
+		}
+	}
+	return p
 }
 
 // boundFailures cleans each entry and keeps the newest maxFailures.

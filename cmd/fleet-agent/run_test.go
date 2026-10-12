@@ -24,7 +24,7 @@ type running struct {
 func startAgent(t *testing.T, args ...string) *running {
 	t.Helper()
 	cmd := exec.CommandContext(t.Context(), bin, args...) //nolint:gosec // G204: bin is the binary TestMain built; args come from the tests
-	cmd.Env = []string{"HOME=" + t.TempDir(), "PATH=" + os.Getenv("PATH")}
+	cmd.Env = []string{"HOME=" + t.TempDir(), "PATH=" + os.Getenv("PATH"), tmuxEnv()}
 	r := &running{cmd: cmd, stderr: &conntest.Buffer{}, done: make(chan struct{})}
 	cmd.Stderr = r.stderr
 	if err := cmd.Start(); err != nil {

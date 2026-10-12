@@ -32,7 +32,10 @@ age := s.Age(time.Now())
 `version`, `written_time`, then only what is known: `state`, `peer`,
 `failures` (per hub address: `step`, `err_kind`, `time`), `push_off`, `clock`
 (`offset_ms`, `time`), `ended`, `snapshot_oversize_time`, `policy_watch` (only `off`, when the policy
-loader could not set its directory watch; left out otherwise), `browse` (`result`
+loader could not set its directory watch; left out otherwise), `tmux_folder` (the
+tmux socket folder the inventory watches: the one path in the file, an absolute
+printable path of at most 256 bytes or left out) and `tmux_watch` (only `off`,
+when that watch could not be set), `browse` (`result`
 is `found`, `none` or `no_multicast_interface`, with `time`, `elapsed_ms`,
 `kept`, `dropped`, `dropped_by`). `enroll.json` is `version`,
 `written_time`, `code` and, for a hub refusal, `reason`.
@@ -42,8 +45,9 @@ is `found`, `none` or `no_multicast_interface`, with `time`, `elapsed_ms`,
 `cmd/fleet-agent/status.go` passes `Loop.StatusChanged()` as `Options.Changed`,
 so a change in the loop shows in `status.json` within about a second. The
 loop does not signal `push_off`, and nothing signals `policy_watch`
-(`Options.PolicyWatchOff`, the policy loader's flag); both are read when the
-file is written, so they can be up to a minute old.
+(`Options.PolicyWatchOff`, the policy loader's flag) or `tmux_watch`
+(`Options.TmuxWatch`, the tmux inventory's folder and flag); they are read
+when the file is written, so they can be up to a minute old.
 
 ## `enroll.json`
 

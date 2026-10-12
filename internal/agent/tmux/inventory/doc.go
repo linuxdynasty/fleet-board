@@ -9,6 +9,28 @@
 // PaneCreated, PaneChanged and PaneExited (exit_status only when tmux kept
 // the pane). The read's DeadSignal is not reported yet: no snapshot field
 // carries it.
+// An [Observer] watches the tmux socket folder ([SocketFolder]: $TMUX_TMPDIR
+// or /tmp, then tmux-<uid>) with fsnotify and wakes a control client
+// (internal/agent/tmux) when a server's socket appears: there is no timer
+// (row-7 ruling fork 4). The folder is also re-listed at each Snapshot, each
+// SnapshotRequest and after a control client's %exit. One sync goroutine per
+// server reads the whole inventory with one list-panes -a whenever a
+// control-mode notice, the structure subscription (a pane change in any
+// session), a client state change or a Snapshot asks (notices at most once
+// a second), turns it
+// into the TmuxServer the agent reports (tmux sends each name, command and
+// @fleet_* value over 1 KiB in bytes empty, and the read counts it; names
+// and commands are then cut and control-stripped, 02e; @fleet_* tags are
+// checked against their id's shape and otherwise dropped; the internal mark
+// is tmux's exact compare with attach_view), and emits the difference from
+// the last read as
+// inventory events: TmuxServerEvent, SessionEvent, WindowEvent, PaneCreated,
+// PaneChanged and PaneExited (exit_status only when tmux kept the pane).
+// Each read is bounded at 10 s (defaults, fixed): past it the read is
+// abandoned and counted as a timeout, keeping the last good inventory. The
+// first good read after reads failed emits CREATED with the full server;
+// a clean start emits nothing.
+// [Observer.Snapshot] is the conn Snapshot hook.
 //
 // Sessions on the probe server, and sessions whose @fleet_internal user
 // option is exactly "attach_view" (tmux compares it; the agent never reads
@@ -16,4 +38,6 @@
 // text field over 1 KiB reaches this package blank (tmux bounds it). A tag is
 // data anyone can set, and the hub trusts a session id only when its own
 // table minted it (fork 7). The agent never reads a process environment.
+//
+// The README has the concurrency diagram and the telemetry.
 package inventory

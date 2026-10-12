@@ -3,6 +3,7 @@ package main_test
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"testing"
@@ -47,6 +48,11 @@ func TestARunWritesStatusJSONAtStartAndAtStop(t *testing.T) {
 	}
 	if got.State != "stopped" {
 		t.Errorf("final state = %q, want stopped", got.State)
+	}
+	// The tmux observer watches the test's own empty folder, never the
+	// developer's /tmp/tmux-<uid> (when tmux is installed at all).
+	if want := filepath.Join(os.Getenv("TMUX_TMPDIR"), "tmux-"+strconv.Itoa(os.Getuid())); got.TmuxFolder != "" && got.TmuxFolder != want {
+		t.Errorf("tmux_folder = %q, want %q", got.TmuxFolder, want)
 	}
 	if time.Since(got.WrittenTime) > time.Minute {
 		t.Errorf("written_time %v is not fresh", got.WrittenTime)

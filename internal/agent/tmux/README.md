@@ -158,7 +158,7 @@ st, changed := c.Changed()                       // the state, and a chan closed
   loop's (after n failures, uniform from 1 to 2^n s, capped at 60 s), reset
   after an attach that came up (defaults row "tmux control client"). A
   `Wake` that came while it was up is dropped then, so it never cuts that
-  backoff short. 7d2's inventory observer debounces Wake (at most
+  backoff short. The inventory observer debounces Wake (at most
   one per server a second): each costs one `list-sessions` while absent. When no server answers it waits in `StateAbsent` for `Wake`,
   with no timer (row-7 ruling fork 4). The backup `list-clients` poll of
   02h is 7f's. A `Program` that cannot run at all (tmux uninstalled) is an
@@ -241,11 +241,16 @@ re-sent, never lost.
 | `tmux.repick_failed` (`server_kind`, `err_kind` = `list` or `switch`) | a re-pick failed; at most once a minute; the client stays up |
 | `tmux.exit` (`server_kind`, `reason`, `err_kind` for `attach_failed`) | an attach ended or failed: `exit`, `eof`, `desync`, `write_stalled`, `write_canceled`, `attach_failed` (`version`, `list`, `start`, `handshake`, `subscribe`), `too_old`, `absent` (once per absence), `cancelled` |
 | `tmux.subscription_confirmed` (`server_kind`, `name`) | the first value of a registered subscription on an attach |
-| `fleet_agent_tmux_inventory_fields_dropped_total{field, reason}` | text fields an inventory read left blank: `field` is one of the seven text fields, `reason` is `over_bound` (over 1 KiB) or `mismatch` (the bytes are not the length tmux gave). Counted on every read, per pane record kept; needs `ClientOptions.Parser.Metrics` |
+| `fleet_agent_tmux_inventory_fields_dropped_total{field, reason}` | text fields an inventory read left blank: `field` is one of the seven text fields, `reason` is `over_bound` (over 1 KiB) or `mismatch` (the bytes are not the length tmux gave). Counted on every read, per pane record kept; needs `ClientOptions.Parser.Metrics` (the inventory observer passes it) |
 | `tmux.inventory_field_dropped` (`field`, `reason`, `bytes`: the length tmux gave, `suppressed`) | the same, at most once a minute per field; never the value |
 
 Never pane text, a session or window name, the `%exit` text or tmux's
 stderr (05b).
+
+Subscriptions per server, for 7f's cost run (proof 9, measured with all
+three live): E13's `session_activity` (7f), E4's `window_activity` (7e) and
+the inventory's `fleet-structure` (7d, coordinator decision amending row-7
+ruling fork 5(f)), each checked by tmux about once a second.
 
 Tests: `CGO_ENABLED=0 go test ./internal/agent/tmux/`. The client tests run
 against real tmux 3.2 and the latest release in throwaway servers
