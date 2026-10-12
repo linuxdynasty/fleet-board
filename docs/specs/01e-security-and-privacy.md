@@ -55,9 +55,13 @@ exposure the developer already accepts when running a harness unattended.
 Developers who want more can use harness sandbox modes, rootless containers on
 Linux, a root-owned install or a separate worker account with tmux
 `server-access` (3.3+); none of it is required or assumed, and no hardening
-guide is written yet ([features.md](../features.md), the "later" rows). One open case is decided by the owner before v1 dispatch is switched on
-(ADR 0024, decision 20): in `local_trusted` mode a goal on the hub machine is
-the owner to the loopback API ([02f](02f-hub-authentication.md#modes)).
+guide is written yet ([features.md](../features.md), the "later" rows). The
+`local_trusted` case is decided ([ADR 0032](../adr/0032-local-trusted-approval-secret.md),
+issue #62): in `local_trusted` mode a goal on the hub machine is still the owner
+to the loopback API for everyday calls ([02f](02f-hub-authentication.md#modes)),
+but approving a request and changing settings need the local approval secret,
+which lives in the owner's dashboard session, not in a file a goal reads. Until
+plan row 19 builds this, no goal starts.
 
 **Checked 2026-10-01 (for a future hardening guide, not requirements):**
 `codex sandbox -- <cmd>` on macOS runs under Seatbelt: all writes and all
