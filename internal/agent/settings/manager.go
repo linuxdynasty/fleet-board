@@ -128,7 +128,7 @@ func Open(ctx context.Context, opts Options) (*Manager, error) {
 	}
 	safe := opts.Local.SafeMode()
 	out := Merge(Input{Hub: kept, Local: opts.Local.Policy(), SafeMode: safe})
-	carry(out.Ack, was.GetRejected(), safe)
+	carry(out.Ack, was.GetRejected())
 	m.cur.Store(newView(ok, kept, out.Ack)) // before the gauge can read it
 	if m.m, err = newMetrics(opts.Telemetry, m.generation); err != nil {
 		return nil, fmt.Errorf("settings: register metrics: %w", err)
@@ -147,9 +147,8 @@ func Open(ctx context.Context, opts Options) (*Manager, error) {
 // finds nothing to reject; but no check reads the policy file, so the saved
 // list still holds and the hub must go on seeing it (03e failure table). The
 // saved list comes first, in its order, then any field the merge rejects now
-// that it does not name (a newer binary's stricter check). In safe mode
-// every field is rejected for safe mode, the saved ones included.
-func carry(ack *agentv1.SettingsAck, saved []*typev1.SettingRejection, safe bool) {
+// that it does not name (a newer binary's stricter check).
+func carry(ack *agentv1.SettingsAck, saved []*typev1.SettingRejection) {
 	named := map[string]bool{}
 	var out []*typev1.SettingRejection
 	add := func(r *typev1.SettingRejection) {
@@ -158,20 +157,11 @@ func carry(ack *agentv1.SettingsAck, saved []*typev1.SettingRejection, safe bool
 			out = append(out, r)
 		}
 	}
-	if safe {
-		for _, r := range ack.GetRejected() {
-			add(r)
-		}
-		for _, r := range saved {
-			add(&typev1.SettingRejection{Field: r.GetField(), Reason: typev1.ReasonCode_REASON_CODE_POLICY_SAFE_MODE, Message: safeModeMsg})
-		}
-	} else {
-		for _, r := range saved {
-			add(r)
-		}
-		for _, r := range ack.GetRejected() {
-			add(r)
-		}
+	for _, r := range saved {
+		add(r)
+	}
+	for _, r := range ack.GetRejected() {
+		add(r)
 	}
 	ack.Rejected = out
 }

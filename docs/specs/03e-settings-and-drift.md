@@ -71,8 +71,7 @@ local additions; a local file cannot remove a hub label. Each field records its
 agent cannot apply at all is a different thing and is **not** a cap: it goes in
 `SettingsAck.rejected[]` as `{field, reason, message}` (see the failure table).
 The agent names a field whose hub value stood `SETTING_LAYER_HUB` (it sees resolved values only); the hub replaces it with the fleet, group or machine layer from its own resolve when it stores the `SettingsAck` and when it re-reads `Snapshot.settings`.
-How the agent checks, merges, keeps and reports each field:
-[03e2](03e2-settings-merge-on-the-agent.md).
+How the agent checks, merges, keeps and reports each field: [03e2](03e2-settings-merge-on-the-agent.md).
 
 **Probe interval.** A machine's probe interval for an account has three
 carriers, and one rule picks among them: the first set of

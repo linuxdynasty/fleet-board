@@ -98,8 +98,9 @@ func TestARestartUnderANewFileRecomputesCapsAndKeepsRejections(t *testing.T) {
 }
 
 // In safe mode the re-delivered generation names the field the hub sent
-// wrong as POLICY_SAFE_MODE, like every other, and keeps nothing.
-func TestARestartInSafeModeRejectsTheCarriedField(t *testing.T) {
+// wrong as POLICY_SAFE_MODE, like every other, and keeps nothing. The ack is
+// a fresh merge, not the carried one: safe mode never serves the held ack.
+func TestARestartInSafeModeRejectsEveryStatedField(t *testing.T) {
 	t.Parallel()
 	r := newRig(t, &local{hash: "h1"})
 	msg := hub(7, &typev1.SettingValues{MaxActive: u32(3), MaxWindows: u32(0)})
