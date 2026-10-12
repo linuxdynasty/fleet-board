@@ -54,6 +54,7 @@ The harness behavior the specs rely on today is in
 | Fact | How it was checked | Status |
 |---|---|---|
 | Cursor `/usage` shows a monthly plan (Included, Auto, API %, one reset date); after a turn its input line keeps the old prompt | cursor-agent 2026.10.01, throwaway tmux server, 2026-10-05 (01b) | In use: plan items 0.19 and 0.20 |
+| Cursor's signed-in email comes from `cursor-agent status` / `about` (email, plan, CLI version, JSON on request); the TUI ready screen, `/` menu and `/usage` show no account identity | cursor-agent 2026.10.01, CLI commands plus a throwaway tmux TUI probe with no prompt sent, 2026-10-12 (01, 01b) | In use: plan item 0.22 |
 | Copilot CLI `/usage` shows AI credits used against a monthly plan; it has hooks and asks to trust a new folder | Copilot CLI 1.0.91, no prompt sent, 2026-10-05 (01b) | Not used yet (Copilot is `later`) |
 | `codex queue` delivers text into a running Codex session, in order, one turn at a time | codex-cli 0.160.0, throwaway tmux server, 2026-10-05 (01b) | Not used yet (messaging is `later`) |
 | A Claude Code session that skips permission prompts holds messages from a session that does not | code.claude.com cross-session-messaging docs, and one held message on 2026-10-04 (01b) | Not used yet (messaging is `later`) |

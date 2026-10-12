@@ -252,6 +252,7 @@ optionally against one limit the owner sets.
     organization.
   - Codex `/status`: plan only ("Account: Pro").
   - Muse `/status`: name and email, billing.
+  - Cursor `cursor-agent status` / `about`: the signed-in email, plan and CLI version (checked: 2026.10.01-e373342, 2026-10-12; TUI shows none; detail in [01b](01b-harness-commands.md#cursor)); its account key hashes the email.
 
   The agent sends an **account key** = hash(fleet salt from A1, identity it can
   see), so the same account matches across machines, plus a display label.
