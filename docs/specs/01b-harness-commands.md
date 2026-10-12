@@ -240,9 +240,34 @@ on each start; no trust entry was written. It was not restored, because Codex
 will write it again on the next start anyway.
 
 **Not proven, so still a hypothesis:** the parent answer for Claude Code on a
-plain (non-git) folder; that trusting a repo root in Muse covers its children;
-how Codex treats a plain folder it has never seen if the owner turns YOLO off
-in `config.toml` (only the command-line form was tried).
+plain (non-git) folder, and how Codex treats a plain folder it has never seen
+if the owner turns YOLO off in `config.toml` (only the command-line form was
+tried; this machine currently has `approval_policy = "never"`). Both need an
+owner hand act; the agent writes no harness config. Muse's side is answered
+by the follow-up probe below.
+
+## Folder trust follow-up probe (2026-10-12)
+
+Plan item 0.9 (#54): the cells the 2026-10-10 probe left open. macOS,
+tmux 3.8, panes 200x50, throwaway servers (`-L probe54b-*`, all killed), empty
+scratch folders, no prompt sent to any model. No trust was given anywhere:
+every trust screen got the documented "no" answer (the Esc key) and every
+server was killed afterwards.
+
+| Question | Harness and version | Observed |
+|---|---|---|
+| Does a trusted repo root cover a plain child folder? | Muse 1.4.6 | **No.** A new empty child directly inside a trusted repo root still showed "Do you trust this workspace?" with "Trust target:" naming the repo root. Esc quit to the shell. Muse trust covers one folder only: not plain children, not worktrees. |
+| Same trust screen on the new version? | Codex 0.162.1 | **Same shape.** A fresh git repo showed "Folder access" / "Trust this folder?" with "1. Trust and continue" selected. Neither the background-server nor the update prompt appeared. Esc backed out to the Agent Command Center (not the shell as on 0.160.0); a second Esc reached a bare start header and the server was killed. |
+| Still no trust screen on the new version? | OpenCode 1.19.0 | **None.** A fresh git repo went straight to the ready screen (plus a passive "/update to upgrade to OpenCode 2.0" line). Server killed. |
+
+**Cleanup:** the empty child folder inside the trusted repo was removed
+(`git status` there shows only the pre-existing `keys.sql.tmpl`);
+`~/.config/muse/trust.json` (read again for its project paths only, to find
+the trusted repo for a read-only child start) and `~/.codex/config.toml` have
+the same sha256 before and after; `~/.claude.json` was never opened; no auth
+file was opened; all pane captures were deleted. Unlike the 2026-10-10 probe,
+this Codex start left `config.toml` byte-identical, and no key was ever sent
+to an unread screen.
 
 ## Sending a message into a session
 
