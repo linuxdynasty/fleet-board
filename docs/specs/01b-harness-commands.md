@@ -111,8 +111,21 @@ no tmux pane and is out of scope.
   `session_id` in the probe); transcripts are at
   `~/.cursor/projects/<workspace>/agent-transcripts/<id>/<id>.jsonl`, a helper in
   its own folder. Hooks: [01d](01d-goal-hooks.md#cursor-hooks-probe-2026-10-05).
-- **Not probed:** `/goal` subcommands, pause and resume (item 0.21), account
-  identity (0.22), permission prompts under each approval mode, and what probing
+- **Account identity (item 0.22).** Probed 2026-10-12 on `cursor-agent`
+  2026.10.01-e373342 (macOS): `cursor-agent status` prints the signed-in email
+  ("Logged in as `<email>`"); `cursor-agent about` prints the email, the plan
+  ("Subscription Tier Pro+") and the CLI version; both take
+  `--format json` (status adds `userId`, `firstName`, `createdAt`;
+  `team list` reports no teams for this account). The TUI shows no account:
+  the ready screen names none, the `/` menu has no identity command (`/status`
+  matches only `/statusline`, `/status-indicators`, `/bedrock` and
+  `/internal-comms`), and `/usage` shows the plan only. The agent reads
+  identity from these commands, never from `~/.cursor/cli-config.json`.
+  No prompt was sent; one throwaway trust entry was created and deleted
+  (directory listing matches the baseline), `hooks.json` kept its checksum,
+  and no credential file was opened.
+- **Not probed:** `/goal` subcommands, pause and resume (item 0.21),
+  permission prompts under each approval mode, and what probing
   costs (0.8). For the monthly budget ([03b](03b-usage-and-sync.md#monthly-windows-cursor),
   "Monthly windows"), row 30 settles these from probes or Cursor's docs, never
   by guessing:
