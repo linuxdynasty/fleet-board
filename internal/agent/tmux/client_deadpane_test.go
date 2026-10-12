@@ -15,6 +15,16 @@ import (
 // prints pane_dead_status only for a program that exited (WIFEXITED in
 // format.c, 3.2a and 3.7c alike), and the client never makes one up. 3.7c
 // names the signal; 3.2a has no pane_dead_signal, so it reports none.
+// 3.7c can also leave a pane it killed dead with neither: dead with no
+// status and no signal for the whole wait (CI runs 38178261489 and this
+// change's own gate run 38304469084, both tmux 3.7c on Linux, SIGKILL sent
+// after the pane reported it runs sleep). The cause in tmux is not known;
+// its reap loop records a status for every child it finds, so the loss is
+// deeper inside tmux (#208 tracks adjacent 3.8 stall behavior). The test
+// accepts that stuck state: the client contract already admits a dead pane
+// with no status and no signal (3.2a), and the signal mapping itself is
+// pinned by TestListPanesReadsTheDeadSignalIntoAClosedSet. A signal tmux
+// does name must still be the killing one.
 func TestPaneKilledBySignalHasNoStatus(t *testing.T) {
 	for _, b := range tmuxtest.Binaries() {
 		t.Run(b.Name, func(t *testing.T) {
@@ -23,9 +33,10 @@ func TestPaneKilledBySignalHasNoStatus(t *testing.T) {
 			r := startClient(t, srv, nil)
 			r.waitState(t, tmux.StateUp)
 			// tmux prints pane_pid right after its fork, so a kill sent at
-			// once can reach the shell before it runs sleep, and the pane
-			// then sits dead with no status and no signal (#216). SIGKILL,
-			// because no shell can catch it (zsh catches SIGHUP and exits 1).
+			// once can reach the shell before it runs sleep; wait until
+			// the pane runs sleep so the kill targets the program (#216).
+			// SIGKILL, because no shell can catch it (zsh catches SIGHUP
+			// and exits 1).
 			out := strings.Fields(srv.Run(t, "new-window", "-P", "-F", "#{pane_id} #{pane_pid}", "-t", "work", "exec sleep 100"))
 			if len(out) != 2 {
 				t.Fatalf("new-window printed %q, want the pane id and pid", out)
@@ -43,19 +54,20 @@ func TestPaneKilledBySignalHasNoStatus(t *testing.T) {
 			if b.Name == "latest" {
 				want = tmux.SignalKill
 			}
-			// 3.7c marks a pane dead only once tmux has its status, so the
-			// signal is in by then; 3.2a never reports one.
+			// A signal tmux names must be the killing one; none at all is
+			// the stuck state above, which the client reports as no signal.
+			// 3.2a never reports one.
 			waitPanes(t, r, "pane "+id+" dead", func(panes []tmux.Pane) bool {
 				for _, p := range panes {
-					if p.ID.String() == id && p.Dead {
-						return p.DeadSignal == want
+					if p.ID.String() == id && p.Dead && p.DeadStatus == tmux.NoStatus {
+						return deadSignalOK(p.DeadSignal, want)
 					}
 				}
 				return false
 			})
 			for _, p := range mustListPanes(t, r) {
-				if p.ID.String() == id && (!p.Dead || p.DeadStatus != tmux.NoStatus || p.DeadSignal != want) {
-					t.Fatalf("pane killed by SIGKILL = %+v, want Dead true, NoStatus and DeadSignal %q", p, want)
+				if p.ID.String() == id && (!p.Dead || p.DeadStatus != tmux.NoStatus || !deadSignalOK(p.DeadSignal, want)) {
+					t.Fatalf("pane killed by SIGKILL = %+v, want Dead true, NoStatus and DeadSignal %q (or none, tmux's stuck state)", p, want)
 				}
 			}
 		})
@@ -127,6 +139,17 @@ func waitPaneCommand(t *testing.T, srv *tmuxtest.Server, id, want string) {
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
+}
+
+// deadSignalOK reports whether got is a signal the test accepts: the one
+// tmux should name for the killing signal, or none at all where tmux can
+// leave a killed pane stuck dead with neither status nor signal (3.7c; on
+// 3.2a want is already "", so only none passes).
+func deadSignalOK(got, want string) bool {
+	if got == want {
+		return true
+	}
+	return want != "" && got == ""
 }
 
 func mustListPanes(t *testing.T, r *running) []tmux.Pane {
