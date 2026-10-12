@@ -68,7 +68,7 @@ Probed 2026-10-01 on OpenCode 1.18.30.
   to the account it is spending from.
 - **No folder-trust prompt** at startup.
 - **Server mode:** `opencode serve`, `opencode attach <url>`, `--mdns`. A future
-  adapter could read structured session events from it instead of the screen.
+  adapter could read structured session events from it instead of the screen. #46 (2026-10-12) leaves this parked: the serve feed needs a signed-in provider (not probed); verdict in [03b](03b-usage-and-sync.md#push-sources-issue-46).
 - **Goals:** no native `/goal`; needs fleet-board's generic goal protocol
   ([01d](01d-goal-hooks.md)) plus a plugin before it can run goals; until then:
   inventory, sessions, attach.
