@@ -27,6 +27,8 @@
   {"token": "Read", "kind": "harness-tool", "reason": "Cursor tool name a dev hook matches (hooks.md)", "files": ["docs/development/hooks.md"]},
   {"token": "Task", "kind": "harness-tool", "reason": "Cursor tool name a dev hook matches (hooks.md)", "files": ["docs/development/hooks.md"]},
   {"token": "Skill", "kind": "harness-tool", "reason": "Claude Code tool name a dev hook matches (hooks.md)", "files": ["docs/development/hooks.md"]},
+  {"token": "CreateGoal", "kind": "harness-tool", "reason": "Cursor goal skill MCP tool (01b2)", "files": ["docs/specs/01b2-cursor-goal-control.md"]},
+  {"token": "UpdateGoal", "kind": "harness-tool", "reason": "Cursor goal skill MCP tool (01b2)", "files": ["docs/specs/01b2-cursor-goal-control.md"]},
   {"token": "Authorization", "kind": "http", "reason": "HTTP header (02f)", "files": ["docs/specs/02d-hub-authz.md", "docs/specs/02f-hub-authentication.md", "docs/specs/05b-observability.md"]},
   {"token": "Bearer", "kind": "http", "reason": "HTTP auth scheme (02f)", "files": ["docs/specs/02f-hub-authentication.md", "docs/specs/05b-observability.md"]},
   {"token": "Cookie", "kind": "http", "reason": "HTTP header (02f)", "files": ["docs/specs/02f-hub-authentication.md"]},

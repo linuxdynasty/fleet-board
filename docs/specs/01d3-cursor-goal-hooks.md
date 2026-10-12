@@ -102,7 +102,8 @@ follow-up; every screen read before the next key.
 ## Side findings for sibling items (not this decision)
 
 - `/goal` takes a bare objective with no `status` subcommand; with no
-  goal the model says so and creates nothing (for 0.21, #98).
+  goal the model says so and creates nothing (probed for 0.21, #98:
+  [01b2](01b2-cursor-goal-control.md)).
 - After a turn the input line showed the "Add a follow-up" placeholder,
   and a typed line twice needed a second Enter to submit (for 0.19,
   #96; observations only, nothing decided).

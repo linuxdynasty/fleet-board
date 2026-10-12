@@ -124,8 +124,7 @@ no tmux pane and is out of scope.
   No prompt was sent; one throwaway trust entry was created and deleted
   (directory listing matches the baseline), `hooks.json` kept its checksum,
   and no credential file was opened.
-- **Not probed:** `/goal` subcommands, pause and resume (item 0.21),
-  permission prompts under each approval mode, and what probing
+- **Goal control** (0.21, #98; probed 2026-10-12): `/goal <objective>` only — mapping in the goal tables below, full record in [01b2](01b2-cursor-goal-control.md). **Not probed:** permission prompts under each approval mode, and what probing
   costs (0.8). For the monthly budget ([03b](03b-usage-and-sync.md#monthly-windows-cursor),
   "Monthly windows"), row 30 settles these from probes or Cursor's docs, never
   by guessing:
@@ -330,6 +329,7 @@ Probed 2026-10-01 by typing `/goal` and `/goal ` without Enter, then bare
 | Claude Code 2.1.286 | `/goal [<condition> \| clear]` | "Goal · No goal set · /goal <condition> to set one" |
 | Codex 0.159.2 | `/goal [<objective>\|clear\|edit\|pause\|resume]` | prints that usage and "No goal is currently set." |
 | Muse 1.4.2 | `/goal [<objective>\|edit <objective>\|clear\|pause\|resume]` | "No goal is set." |
+| Cursor 2026.10.01 | `/goal <objective>` only (builtin skill, no subcommands) | silent no-op: no text, no hook, no model call ([probe](01b2-cursor-goal-control.md)) |
 
 - Claude Code has only set and clear; pausing a Claude goal means
   interrupting it (F4). Probed 2026-10-02:
@@ -339,6 +339,7 @@ Probed 2026-10-01 by typing `/goal` and `/goal ` without Enter, then bare
   | Claude Code 2.1.286 | goal stays active ("Goal active") | no | typing `continue` |
   | Codex 0.160.0 | "Goal paused" | no | `/goal resume` (checks where it stopped first) |
   | Muse 1.4.2 | "goal paused by interrupt" | no | `/goal resume` |
+  | Cursor 2026.10.01 | "Goal paused (Ns)" after an idle stall; Ctrl+C mid-turn (the input hints "ctrl+c to stop") | idle "Continuing goal" turns while work remains, then it stalls into pause | a plain message (a normal turn; no resume subcommand) |
 
   Claude prints "✔ Goal achieved (…)" when done and clears the goal itself.
   Its empty input line can show placeholder text ("I have no suggestion for the

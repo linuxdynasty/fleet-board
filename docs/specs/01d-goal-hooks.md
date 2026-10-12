@@ -7,7 +7,8 @@ How fleet-board installs and uses harness hooks for goals. Capability G1 in
 ## What the hooks are for
 
 The loop itself is each harness's native `/goal` ([01b](01b-harness-commands.md#goal-subcommands)):
-Claude, Codex and Muse (and Cursor, to be confirmed by plan item 0.21) keep
+Claude, Codex, Muse and Cursor (confirmed for Cursor by plan item 0.21,
+[probe](01b2-cursor-goal-control.md)) keep
 working toward the objective without any fleet hook.
 Fleet's hooks do three narrower jobs:
 
@@ -310,6 +311,11 @@ reply, then one asking a Task helper to read `README.md`.
 
 - The `stop` payload carries `input_tokens`, `output_tokens`,
   `cache_read_tokens`, `cache_write_tokens`, `loop_count` and `status`.
+- A `stop` with no token counts marks a goal pause or an aborted turn, not a
+  finished turn: the 0.21 probe saw it for "Goal paused (Ns)", for Ctrl+C
+  ("aborted" then "error"), while Cursor's own idle "Continuing goal" turns
+  end with normal token-carrying stops and never re-fire
+  `beforeSubmitPrompt` ([probe](01b2-cursor-goal-control.md)).
 - A helper's events carry `conversation_id`, `cursor_version`, `duration`,
   `generation_id`, `hook_event_name`, `model`, `session_id`, `tool_input`,
   `tool_name`, `tool_output`, `tool_use_id`, `transcript_path`, `user_email`,
@@ -317,8 +323,9 @@ reply, then one asking a Task helper to read `README.md`.
 - So in this version a helper cannot be tied to its parent from hook data, and
   its transcript is a separate top-level folder. A fleet goal hook keys on the
   parent's own events and ignores a helper's.
-- Not checked: `/goal` lines reaching `beforeSubmitPrompt`, whether `stop` can
-  hold a turn for a fleet goal (item 0.23), and the Cursor IDE.
+- Not checked: the Cursor IDE. (`/goal` lines reach `beforeSubmitPrompt`
+  when they carry text, and `stop` holds a turn, per item 0.23 and the 0.21
+  [probe](01b2-cursor-goal-control.md).)
 
 Cleanup: tmux server killed; `~/.cursor/hooks.json` byte-identical to its
 baseline; the two probe project folders under `~/.cursor/projects/` and the
