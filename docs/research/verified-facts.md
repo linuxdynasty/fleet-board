@@ -107,6 +107,55 @@ Findings:
 - `auth.json` files were never opened; `opencode providers list` output only
   was used for OpenCode.
 
+## Measured: weekly report cost (plan item 0.16)
+
+Checked 2026-10-12 on macOS, tmux 3.8, one throwaway tmux server
+(`-L probe61`, killed after), a plain non-git scratch folder, every screen read
+before each key, and one model prompt spent in total. Codex's `config.toml`
+checksum was identical before and after; `~/.claude.json` and every `auth.json`
+were never opened. The scratch folder, the prompt file, the trust backup and
+all pane captures were deleted after; checksums below verify the restores.
+
+Question: what does one weekly-report-like run cost: read a ~50 KiB
+`stats.json` bundle, write a `report.md` under 6 KiB starting with the
+`<!-- fleet-insights bundle=<first 12 hex of the digest> -->` marker, then
+reply DONE. Cost is the harness's own usage screen before and after.
+
+Setup: `stats.json` synthesized (seeded generator, 20 days, numbers only,
+schema version 1 per [05](../specs/05-insights.md) section 7): 54,496 bytes,
+sha256 `3abe0dce721b941b05be514ffc0ce53681882afe78abc0bfb7aad402a6836fe2`.
+The prompt was 05's fixed goal text with that digest (370 bytes, one line).
+
+Codex 0.162.1: the config model (`gpt-6-luna`) fails TUI bootstrap
+(`account/read ... code -32603`, as in the 0.8 probe above); it starts with
+`-c model="gpt-5.6-mini"`, config file untouched. Its Pro 200 account sat at
+**0% weekly left** (floor, resets Oct 17), so no run happened there: zero
+prompts sent on Codex, idle start only.
+
+Muse 1.4.6 (`muse-spark-1.3`, xhigh effort, Auto-review): the trust box on
+the scratch folder was read first, then answered once ("Trust and continue");
+`trust.json` was copied aside beforehand and restored byte for byte after
+(sha256 identical), `settings.json` unchanged.
+
+| Step | Before | After |
+|---|---|---|
+| `/usage` baseline, no prompt yet | Session 0 in / 0 cached / 0 out, 0 turns; Current 2% used, Weekly 4% used | — |
+| One report prompt | read the 53 KiB bundle, wrote a 1,437-byte `report.md` (marker exact, four sections), replied DONE; worked 1m 33s with no permission prompt, no network, no other file | Session 266,078 in / 191,044 cached / 11,379 out / 277,457 total, 5 turns; Current **3%** used, Weekly **4%** used |
+
+Findings:
+- **One report costs about 1 quota point** on the Current bucket at the
+  default xhigh effort, and under 1 point on the Weekly bucket (no visible
+  move). Session cost was about 277,000 tokens over 5 turns, two-thirds of it
+  cached input.
+- **The 3-point expected cost in 05 is now 1 point**, measured at default
+  effort; the owner picking a cheap model for the routine should come in
+  under it. The spare-quota guard (5 unused points, never into the reserve)
+  is unchanged.
+- **Not proven:** a cheap-model run, any other harness, and the built-in
+  routine's first run after row 27 lands, which confirms this number.
+- What stays in the owner's history: one Muse session holding the single
+  report turn; one Codex idle session with no prompts.
+
 ## Measured: one real goal
 
 Checked 2026-10-01 (moved here from 01c, still the basis of the load table in [04](../specs/04-technology-review.md)). Muse 1.4.2 working eshu-hq/eshu#7398 for 60 minutes on macOS, recorded with
