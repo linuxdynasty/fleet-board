@@ -8,9 +8,9 @@
 // folder's policy.yaml (policy.Inspect, with no side effect), and run `tmux -V`
 // through the agent's measured proc caller. They never open agent.log or
 // agent.db, never read a private key, and never write, create or remove
-// anything. Checks that need a later row (the hub handshake and Linux linger,
-// the harness trust screens) are added by that row; until then the harness ones
-// are listed as not_checked and name their row.
+// anything. Checks that need a later row (the harness trust screens) are
+// added by that row; until then they are listed as not_checked and name
+// their row.
 //
 // [Run] cleans and bounds every string of the report before it is printed:
 // policy errors, hub addresses and file names come from files an attacker might

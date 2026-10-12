@@ -89,9 +89,6 @@ func TestMDNSBrowse(t *testing.T) {
 func TestChecksBuildCannotRunYet(t *testing.T) {
 	t.Parallel()
 	r := newRig(t)
-	for _, id := range []string{"hub_handshake", "linger"} {
-		r.want(id, doctor.NotChecked, "this build cannot check it yet (row 6, PR 6h)")
-	}
 	for _, id := range []string{"harness_paths", "probe_trust"} {
 		r.want(id, doctor.NotChecked, "(row 8)")
 	}

@@ -43,7 +43,8 @@ func (c Caller) Limits() Limits { return c.limits }
 //     (macOS). Capped at 5 s and 16 KiB (about 2,900 sessions). Not measured
 //     on Linux yet.
 var callers = map[string]Limits{
-	"tmux": {Time: 5 * time.Second, Output: 16 << 10},
+	"tmux":     {Time: 5 * time.Second, Output: 16 << 10},
+	"loginctl": {Time: 5 * time.Second, Output: 4 << 10},
 }
 
 // For returns the caller with that name, or [ErrUnknownCaller] when the

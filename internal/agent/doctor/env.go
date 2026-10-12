@@ -33,6 +33,17 @@ type Options struct {
 	// error when tmux is not installed. The agent's measured proc caller is
 	// the only way to start it (machine.TmuxVersion).
 	TmuxVersion func(ctx context.Context) (string, error)
+	// HubHandshake runs a TLS handshake against the pinned CA at addr,
+	// without a client certificate and without a Connect call (which would
+	// displace a running agent's stream). Nil means unconfigured.
+	HubHandshake func(ctx context.Context, addr, caPEM string) error
+	// Linger runs `loginctl show-user <user> --property=Linger` and returns
+	// its output. Nil means unconfigured; only used on Linux.
+	Linger func(ctx context.Context) (string, error)
+	// LingerUser is the user named in the linger fix line.
+	LingerUser string
+	// GOOS overrides runtime.GOOS; empty is the runtime value.
+	GOOS string
 }
 
 // Env is what a check reads: the options and the files read once for the whole

@@ -44,12 +44,11 @@ that is not ok or not_checked has a fix line.
 | `enroll` | `enroll.json`: the last failed enroll's code and reason | fails when a failure is recorded |
 | `tmux` | `tmux -V` through `machine.TmuxVersion` | missing or older than 3.2 |
 | `probe_folder` | the usage probe's folder: exists, private, empty (names inside are never printed) | warns |
-| `hub_handshake`, `linger` | nothing yet | `not_checked` (row 6, PR 6h) |
+| `hub_handshake` | a TLS handshake against the pinned CA, never a `Connect` call | warns when unreachable, fails when untrusted; unknown with no identity or address |
+| `linger` | `loginctl show-user --property=Linger` on Linux (ok on other systems) | fails when off; unknown when unreadable |
 | `harness_paths`, `probe_trust`, `two_pane_folders` | nothing yet | `not_checked` (rows 8 and 9) |
 
 ## Not here
 
-The hub handshake and Linux linger are listed as `not_checked` until PR 6h
-adds them (`doctor.NotCheckedYetAt` gives the label "row 6, PR 6h"). The
-harness trust-screen steps are row 8. Doctor never removes `ended.json`, even
+The harness trust-screen steps are row 8. Doctor never removes `ended.json`, even
 a leftover for another machine: `run` does that.
