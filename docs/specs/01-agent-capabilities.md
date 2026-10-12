@@ -371,7 +371,7 @@ optionally against one limit the owner sets.
   line (`/statusline`). The adapter parses these from panes it is already
   observing and reports them as readings with `source: passive`. The scheduler
   prefers the latest probe reading and uses passive signals to notice sharp
-  changes between probes.
+  changes between probes. Push-feed verdicts (#46, no feed qualifies for v1) are in [03b](03b-usage-and-sync.md#push-sources-issue-46); the evidence is in [verified-facts](../research/verified-facts.md).
 
 ## E. tmux observation
 

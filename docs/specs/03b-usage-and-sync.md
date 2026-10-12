@@ -249,6 +249,28 @@ is `PercentUnknown{NOT_SHOWN}`, and the account is `UNKNOWN`.
 | any | | one bucket at 90 | | | 0 (RESERVE) | 0 | reserve alert |
 | any, On-Demand on or not shown | | | | | 0 (EXCLUDED) | | manual dispatch only |
 
+### Push sources (issue #46)
+
+Plan item 0.11 asked whether any harness pushes usage, so readings become a
+stream instead of a 10-minute probe. Checked 2026-10-12 with no quota spent
+(evidence: [verified-facts](../research/verified-facts.md), "Usage and limits"):
+
+| Harness | Push shape | Verdict |
+|---|---|---|
+| Claude Code 2.1.296 | The statusLine feed carries five-hour and seven-day percent used with reset times (docs; appears only after a model call, not run live) | Not consumed: the fleet never edits harness settings, so it installs no statusLine command. Text a status line draws in an observed pane stays a D3 signal. |
+| Codex 0.162.1 | Session logs record rate_limits per turn while the session runs (seen live on 0.160.0), stale after it ends | Not consumed: an idle probe session never takes a turn, so its file never updates; match against the status command unverified. Forensics only. |
+| Muse 1.4.6 | The session protocol has a usage/read call and a usage/changed push event with weekly and window percent and resets | Not consumed: reachable only through a non-interactive session host, which is not how the developer runs Muse. Quota-exhaustion hook detail maps to a pane condition instead. |
+| OpenCode 1.19.0 | Nothing with a window or limit: stats prints all-time totals, the serve feed needs a signed-in provider (not probed) | Inventory only, as before. |
+
+**Rule.** A push reading that ever qualifies enters as `USAGE_SOURCE_PASSIVE`
+in a `UsageReading`: it can trigger a probe on the usual jump, it never paces
+alone, and the probe stays the source of truth until the feed matches the
+status command on the installed version. No contract change: `UsageSource`
+already covers this. Still parked (needs quota or an owner act, a later item
+before `v0.1`): Claude's populated feed against `/usage`, Codex's file against
+`/status`, OpenCode's serve feed with a signed-in provider, and the Muse serve
+posture.
+
 ### State machine (probe, owned by the hub)
 
 ```mermaid
