@@ -4,6 +4,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	agentv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1"
 	"github.com/linuxdynasty/fleet-board/internal/agent/tmux"
@@ -119,6 +120,79 @@ func TestObserverCountsFailedReads(t *testing.T) {
 			}
 			if n := r.count(t, readsTotal, `server_kind="default"`, `result="ok"`); n <= okBefore {
 				t.Errorf("%s{result=ok} = %d after a good read, want more than %d", readsTotal, n, okBefore)
+			}
+		})
+	}
+}
+
+// Each inventory read is bounded at 10s in the observer: a read past it is
+// abandoned and counted as result timeout, keeping the last good inventory
+// with observed true and emitting nothing gone. The log is throttled to one
+// line a minute like every other read failure.
+func TestObserverReadTimeout(t *testing.T) {
+	for _, b := range tmuxtest.Binaries() {
+		t.Run(b.Name, func(t *testing.T) {
+			folder := tmuxtest.Start(t, b, "-s", "unwatched", "exec cat")
+			folder.Sibling(t, "default", "-s", "work", "exec cat")
+			r := startObserver(t, b, folder.Dir, nil, "default")
+			r.waitState(t, "default", tmux.StateUp)
+			good := r.snapshot(t).GetTmuxServers()
+			if len(good) != 1 || !good[0].GetObserved() || !good[0].GetRunning() || len(good[0].GetSessions()) != 1 {
+				t.Fatalf("first snapshot = %v, want one observed running server with one session", good)
+			}
+			okBefore := r.count(t, readsTotal, `server_kind="default"`, `result="ok"`)
+			evBefore := len(r.rec.all())
+
+			restore := inventory.SetReadTimeoutForTest(time.Nanosecond)
+			defer restore()
+			for i := range 3 {
+				srv := r.snapshot(t).GetTmuxServers()
+				if len(srv) != 1 || !srv[0].GetObserved() || !srv[0].GetRunning() || len(srv[0].GetSessions()) != 1 ||
+					srv[0].GetServerStartId() != good[0].GetServerStartId() {
+					t.Fatalf("snapshot %d after a timed-out read = %v, want the last good inventory, observed", i, srv)
+				}
+			}
+			if n := r.count(t, readsTotal, `server_kind="default"`, `result="timeout"`); n < 3 {
+				t.Errorf("%s{server_kind=default,result=timeout} = %d, want at least 3", readsTotal, n)
+			}
+			failed := r.logs.named("tmux.inventory_failed")
+			if len(failed) != 1 || failed[0]["server_kind"] != "default" || failed[0]["err_kind"] != "timeout" {
+				t.Errorf("tmux.inventory_failed lines = %v, want one (once a minute) with server_kind default, err_kind timeout", failed)
+			}
+			for _, ev := range r.rec.all()[evBefore:] {
+				if serverKind(ev, agentv1.ChangeKind_CHANGE_KIND_CLOSED) || ev.GetPaneExited() != nil || ev.GetSession().GetKind() == agentv1.ChangeKind_CHANGE_KIND_CLOSED {
+					t.Errorf("a timed-out read reported something gone: %v", ev)
+				}
+			}
+
+			restore()
+			if srv := r.snapshot(t).GetTmuxServers(); len(srv) != 1 || !srv[0].GetObserved() || len(srv[0].GetSessions()) != 1 {
+				t.Fatalf("snapshot after the timeout went = %v", srv)
+			}
+			if n := r.count(t, readsTotal, `server_kind="default"`, `result="ok"`); n <= okBefore {
+				t.Errorf("%s{result=ok} = %d after a good read, want more than %d", readsTotal, n, okBefore)
+			}
+		})
+	}
+}
+
+// A server whose every read has timed out since the agent started has no
+// last inventory, so it is reported running false, like one never seen.
+func TestObserverTimeoutWithNoGoodReadYet(t *testing.T) {
+	for _, b := range tmuxtest.Binaries() {
+		t.Run(b.Name, func(t *testing.T) {
+			folder := tmuxtest.Start(t, b, "-s", "unwatched", "exec cat")
+			folder.Sibling(t, "default", "-s", "work", "exec cat")
+			restore := inventory.SetReadTimeoutForTest(time.Nanosecond)
+			defer restore()
+			r := startObserver(t, b, folder.Dir, nil, "default")
+			r.waitState(t, "default", tmux.StateUp)
+			srv := r.snapshot(t).GetTmuxServers()
+			if len(srv) != 1 || srv[0].GetRunning() || srv[0].GetObserved() || len(srv[0].GetSessions()) != 0 {
+				t.Fatalf("snapshot with every read timed out = %v, want one server running false, observed false, no sessions", srv)
+			}
+			if n := r.count(t, readsTotal, `server_kind="default"`, `result="timeout"`); n < 1 {
+				t.Errorf("%s{result=timeout} = %d, want at least 1", readsTotal, n)
 			}
 		})
 	}

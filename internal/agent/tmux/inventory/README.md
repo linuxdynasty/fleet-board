@@ -87,20 +87,22 @@ pane never looks exited because a read failed. The next notice, Snapshot,
 SnapshotRequest or state change reads again, and the first good read emits
 what changed meanwhile. The operator sees it in
 `fleet_agent_tmux_inventory_reads_total{server_kind, result}` (a rise with
-no `ok` beside it is a picture going stale) and in `tmux.inventory_failed`.
-`timeout` comes only from a caller's deadline: the read path sets none of
-its own today. A read the client refused as not attached, or that the
-agent's stop cut short, is not counted (`fleet_agent_tmux_control_up` and
-`tmux.exit` say why). A server whose every read has failed since the agent
-started has no last inventory, so it is reported `running: false`, like
-one never seen, while `fleet_agent_tmux_control_up` is 1; its first good
-read is then the first state read, which emits nothing, so the hub learns
-of the server only at the next Snapshot or SnapshotRequest.
+no `ok` beside it is a picture going stale) and in `tmux.inventory_failed`
+(at most one line a minute per server). `timeout` is the observer's 10 s
+bound on each read (defaults, fixed): past it the read is abandoned. A
+read the client refused as not attached, or that the agent's stop cut
+short, is not counted (`fleet_agent_tmux_control_up` and `tmux.exit` say
+why). A server whose every read has failed since the agent started has no
+last inventory, so it is reported `running: false`, like one never seen,
+while `fleet_agent_tmux_control_up` is 1; its first good read emits
+CREATED with the full server, so the hub learns of it at once.
 
 ## Events
 
 The first state read after the agent starts emits nothing (the connect
-Snapshot carries it). After that each read is compared with the last:
+Snapshot carries it), unless reads failed before it: the first good read
+then emits CREATED with the full server. After that each read is compared
+with the last:
 
 | Change | Event |
 |---|---|

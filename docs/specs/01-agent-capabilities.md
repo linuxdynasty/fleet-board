@@ -434,7 +434,7 @@ optionally against one limit the owner sets.
   with no server on the socket it waits for the socket-folder watch, never a
   timer (defaults). It sends only typed commands and `typing.Line`s, refusing
   a line built for another server or an earlier start of this one. Its
-  inventory read is one `list-panes -a` whose text fields tmux bounds in bytes
+  inventory read is one `list-panes -a`, bounded at 10 s (defaults), whose text fields tmux bounds in bytes
   (E1). Its one known gap is the 8 MiB reply bound: about 13,100 normal panes
   on one server, 119 in the worst case (newline-filled tags; defaults), far
   over the 04 budget of 10 per machine; past it the read fails whole, counted
@@ -445,22 +445,15 @@ optionally against one limit the owner sets.
   stalled 3 s during a command (`internal/agent/tmux/testdata/flood-*.txt`),
   tmux wrote no `%pause` and the reply came whole and in order. Further
   unrecorded runs (3 and 8 s stalls) showed no `%pause` inside a reply either.
-  Servers are found by that watch and rescans: never one run with `-S`
-  elsewhere, one with no session (`exit-empty` off) only at a rescan.
 - **E3 Pane lifecycle:** created and exited with exit status. "Stopped without
   DONE" (the one-nudge rule) depends on this. The status is known only when
   tmux kept the pane (`remain-on-exit`, which the agent never sets on a
-  developer's pane); a pane gone first has `exit_status` unset (row 7 PR 7d,
-  `internal/agent/tmux/inventory`). A signal-killed pane has no exit status;
+  developer's pane); a pane gone first has `exit_status` unset (row 7 PR 7d, `internal/agent/tmux/inventory`; read triggers in defaults). A signal-killed pane has no exit status;
   tmux 3.7c names the signal (macOS) or numbers it (Linux), and both reads,
   the pane list and the inventory, give `hup`, `int`, `quit`, `abort`, `kill`,
   `segv`, `pipe`, `term`, `other:<n>` (the host's number, not comparable
   across hosts) or `other` (unreadable), never tmux's text; 3.2a gives none.
   No snapshot field carries it yet; `TmuxPane` has only `dead` and `exit_status`.
-  A pane change in a session the control client is not on raises no notice,
-  so a structure subscription makes it
-  a read (defaults); a pane that lives under a second is seen at the next
-  rescan.
 - **E4 Activity transitions:** active ↔ idle, with the time of last output.
   Never dropped under backpressure; the hub's stuck detection depends on it.
 - **E5 Pane summaries:** last lines, ANSI stripped; at most one per pane every

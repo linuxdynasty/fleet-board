@@ -53,6 +53,11 @@ type Options struct {
 	maxReply int
 }
 
+// readTimeout bounds each inventory read (defaults, fixed): a read that has
+// not returned by then is abandoned and counted as result timeout. Only a
+// test changes it (SetReadTimeoutForTest), to force timeouts fast.
+var readTimeout = 10 * time.Second
+
 // Observer finds the tmux servers in the socket folder, keeps one control
 // client on each, reports each server's inventory in the Snapshot and
 // emits the E1 and E3 lifecycle events (01 E1, E2, E3).
@@ -187,8 +192,9 @@ type server struct {
 	reads atomic.Int64 // inventory reads started (the pacing test counts them)
 
 	// Owned by the loop goroutine alone.
-	last  *agentv1.TmuxServer // nil: no server running (or none seen yet)
-	known bool                // a first state was read: events start after it
+	last   *agentv1.TmuxServer // nil: no server running (or none seen yet)
+	known  bool                // a first state was read: events start after it
+	failed bool                // a read failed before the first good state
 }
 
 // notify runs on the client's reader goroutine: it only drops tokens.
@@ -246,12 +252,28 @@ func (s *server) level() *agentv1.TmuxServer {
 	return proto.CloneOf(s.last)
 }
 
-// sync reads the server's state now and emits what changed.
+// sync reads the server's state now and emits what changed. Each read is
+// bounded at readTimeout: past it the read is abandoned and counted as a
+// timeout, keeping the last good inventory. A context already spent is
+// never issued as a command: the write would race the dead deadline and
+// take the conn down with it.
 func (s *server) sync(ctx context.Context) {
 	switch s.c.State() {
 	case tmux.StateUp:
 		s.reads.Add(1)
-		inv, err := s.c.ReadInventory(ctx)
+		if ctx.Err() != nil {
+			return // the waiter went away: count nothing, as before
+		}
+		rctx, cancel := context.WithTimeout(ctx, readTimeout)
+		if rctx.Err() != nil {
+			cancel()
+			s.o.tel.readDone(ctx, s.kind, "timeout")
+			s.o.tel.inventoryFailed(ctx, s.kind, rctx.Err())
+			s.failed = true
+			return
+		}
+		inv, err := s.c.ReadInventory(rctx)
+		cancel()
 		if errors.Is(err, tmux.ErrNotAttached) || ctx.Err() != nil {
 			return // the client's state change wakes the loop
 		}
@@ -260,6 +282,7 @@ func (s *server) sync(ctx context.Context) {
 			// client is attached (README "When reads fail").
 			s.o.tel.readDone(ctx, s.kind, readErrKind(err))
 			s.o.tel.inventoryFailed(ctx, s.kind, err)
+			s.failed = true
 			return
 		}
 		s.o.tel.readDone(ctx, s.kind, "ok")
@@ -278,7 +301,9 @@ func (s *server) sync(ctx context.Context) {
 
 // apply stores next (nil: no server) and then emits the events from the
 // last state to it. The first state read after the agent starts emits
-// nothing: the connect Snapshot carries it (02i).
+// nothing: the connect Snapshot carries it (02i). But a first good read
+// after reads failed emits CREATED with the full server, so the hub learns
+// of a server whose reads failed from the start.
 func (s *server) apply(ctx context.Context, next *agentv1.TmuxServer) {
 	prev, known := s.last, s.known
 	s.last, s.known = next, true
@@ -286,7 +311,7 @@ func (s *server) apply(ctx context.Context, next *agentv1.TmuxServer) {
 	if next != nil && (prev == nil || prev.GetServerStartId() != next.GetServerStartId()) {
 		s.o.tel.serverSeen(ctx, s.kind, next.GetServerStartId(), next.GetVersion())
 	}
-	if !known {
+	if !known && (!s.failed || next == nil) {
 		return
 	}
 	switch {

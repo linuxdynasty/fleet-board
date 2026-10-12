@@ -7,6 +7,7 @@ import (
 
 	agentv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1"
 	"github.com/linuxdynasty/fleet-board/internal/agent/tmux"
+	"github.com/linuxdynasty/fleet-board/internal/agent/tmux/inventory"
 	"github.com/linuxdynasty/fleet-board/internal/agent/tmux/tmuxtest"
 )
 
@@ -87,6 +88,44 @@ func findExited(evs []*agentv1.Event) *agentv1.PaneExited {
 		}
 	}
 	return nil
+}
+
+// A server whose every read has failed since the agent started is reported
+// running false; its first good read emits CREATED with the full server
+// (running true, observed true, every session). A clean cold start with no
+// prior failure still emits nothing (TestLifecycleEvents).
+func TestFirstGoodAfterFailuresEmitsCreated(t *testing.T) {
+	for _, b := range tmuxtest.Binaries() {
+		t.Run(b.Name, func(t *testing.T) {
+			folder := tmuxtest.Start(t, b, "-s", "unwatched", "exec cat")
+			dev := folder.Sibling(t, "default", "-s", "work", "exec cat")
+			big := strings.Repeat("x", 1000)
+			dev.Run(t, "set-option", "-t", "work", "@fleet_owner", big)
+			dev.Run(t, "set-option", "-t", "work", "@fleet_goal_id", big)
+			r := startObserver(t, b, folder.Dir, func(o *inventory.Options) { inventory.SetReplyBoundForTest(o, 2048) }, "default")
+			r.waitState(t, "default", tmux.StateUp)
+			srv := r.snapshot(t).GetTmuxServers()
+			if len(srv) != 1 || srv[0].GetRunning() || srv[0].GetObserved() || len(srv[0].GetSessions()) != 0 {
+				t.Fatalf("snapshot with every read failed = %v, want running false, observed false, no sessions", srv)
+			}
+			if n := len(r.rec.all()); n != 0 {
+				t.Fatalf("failed reads emitted %d events: %v", n, r.rec.all())
+			}
+			dev.Run(t, "set-option", "-u", "-t", "work", "@fleet_owner")
+			dev.Run(t, "set-option", "-u", "-t", "work", "@fleet_goal_id")
+			ev, _ := r.rec.waitFor(t, 0, "TmuxServer CREATED", func(ev *agentv1.Event) bool {
+				return serverKind(ev, agentv1.ChangeKind_CHANGE_KIND_CREATED)
+			})
+			s := ev.GetTmuxServer().GetServer()
+			if !s.GetRunning() || !s.GetObserved() || len(s.GetSessions()) != 1 || s.GetServerStartId() == "" {
+				t.Fatalf("first good CREATED = %v, want running true, observed true, every session", s)
+			}
+			snap := r.snapshot(t).GetTmuxServers()
+			if len(snap) != 1 || !snap[0].GetRunning() || !snap[0].GetObserved() || len(snap[0].GetSessions()) != 1 {
+				t.Fatalf("snapshot after the first good read = %v, want the read inventory", snap)
+			}
+		})
+	}
 }
 
 // A server that dies is CLOSED; one started on the same socket is a new

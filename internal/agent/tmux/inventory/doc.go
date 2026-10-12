@@ -26,6 +26,10 @@
 // the last read as
 // inventory events: TmuxServerEvent, SessionEvent, WindowEvent, PaneCreated,
 // PaneChanged and PaneExited (exit_status only when tmux kept the pane).
+// Each read is bounded at 10 s (defaults, fixed): past it the read is
+// abandoned and counted as a timeout, keeping the last good inventory. The
+// first good read after reads failed emits CREATED with the full server;
+// a clean start emits nothing.
 // [Observer.Snapshot] is the conn Snapshot hook.
 //
 // Sessions on the probe server, and sessions whose @fleet_internal user
