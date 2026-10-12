@@ -8,8 +8,8 @@ owner steps and the `fleet-agent doctor` wording are in
 
 | Field | Value |
 |---|---|
-| Captured | 2026-10-10, macOS, tmux 3.7c, panes 200x50 |
-| Versions | Claude Code 2.1.296, Codex 0.160.0, Muse 1.4.4, Cursor `cursor-agent` 2026.10.01-e373342, OpenCode 1.18.34 |
+| Captured | 2026-10-10, macOS, tmux 3.7c, panes 200x50; two trust screens re-captured 2026-10-12 (tmux 3.8) for the auto-updated versions |
+| Versions | Claude Code 2.1.296, Codex 0.160.0 and 0.162.1, Muse 1.4.4 and 1.4.6, Cursor `cursor-agent` 2026.10.01-e373342, OpenCode 1.18.34 |
 | Method | `fleet-live-probe`: a throwaway tmux server (`-L probe54 -f /dev/null`), an empty scratch folder, the harness started by typing its name, `capture-pane -p` (ANSI stripped) read before every key |
 | Quota | none: no prompt was sent to any model |
 
@@ -30,6 +30,8 @@ holds at the same path (captured again here so this change stands alone).
 | `claude/.../trust-folder.txt` | "Accessing workspace" box, "No, exit" selected | start in a new plain folder |
 | `claude/.../ready-trusted-child.txt` | ready screen, no box | start in a new child of a trusted repo |
 | `opencode/.../ready-new-folder.txt` | ready screen; OpenCode has no trust screen | start in a new git repo |
+| `codex/0.162.1/trust-folder-git.txt` | "Folder access"; the second choice is now "2. Back to Agent Command Center" (was "2. Quit") | start in a new git repo, 2026-10-12 (issue #180) |
+| `muse/1.4.6/trust-workspace.txt` | "Do you trust this workspace?", same two choices | start in a new plain folder, 2026-10-12 (issue #180) |
 
 A parser tests the trust screens as a positive match and the `ready-*` files as
 "not a trust screen". The Codex daemon and update prompts are separate startup
