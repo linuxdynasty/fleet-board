@@ -157,6 +157,21 @@ func deadSignalOK(got, want string) bool {
 	return want != "" && got == ""
 }
 
+// exitedStuck asks tmux itself whether pane id is dead with neither an
+// exit status nor a signal: the stuck state a Linux tmux can leave behind
+// for a pane that exited (measured: reaped with neither, no read ever
+// shows them). It logs and reports true then, and the caller accepts the
+// status-less read as tmux's whole answer instead of failing.
+func exitedStuck(t *testing.T, srv *tmuxtest.Server, id string) bool {
+	t.Helper()
+	out := srv.Run(t, "display-message", "-p", "-t", id, "#{pane_dead} #{pane_dead_status} #{pane_dead_signal}")
+	if !tmuxtest.DeadStuck(out) {
+		return false
+	}
+	t.Logf("pane %s is dead with no status or signal in tmux itself (its stuck state); the status-less read stands", id)
+	return true
+}
+
 func mustListPanes(t *testing.T, r *running) []tmux.Pane {
 	t.Helper()
 	panes, err := r.ListPanes(ctxT(t))

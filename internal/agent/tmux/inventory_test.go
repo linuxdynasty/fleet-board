@@ -86,7 +86,10 @@ func TestReadInventory(t *testing.T) {
 			if live.Command != "cat" || live.Width <= 0 || live.Tags.PaneKey != "fleet/x/"+pane || live.Tags.SessionID != "s-1" || live.Tags.GoalID != "x\n" {
 				t.Fatalf("live pane = %+v", *live)
 			}
-			if dead.DeadStatus != 3 || dead.Session != other.ID || dead.Tags.PaneKey != "" {
+			if dead.DeadStatus != 3 && !exitedStuck(t, srv, dead.ID.String()) {
+				t.Fatalf("dead pane = %+v", *dead)
+			}
+			if dead.Session != other.ID || dead.Tags.PaneKey != "" {
 				t.Fatalf("dead pane = %+v", *dead)
 			}
 		})

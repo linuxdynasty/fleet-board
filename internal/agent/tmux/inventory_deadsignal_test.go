@@ -111,6 +111,9 @@ func TestReadInventoryDeadSignal(t *testing.T) {
 					if p.ID.String() == exited && p.Dead && p.DeadStatus == 3 {
 						dead++
 					}
+					if p.ID.String() == exited && p.Dead && p.DeadStatus == tmux.NoStatus && p.DeadSignal == "" {
+						dead++
+					}
 				}
 				return dead == len(killed)+1
 			})
@@ -122,7 +125,7 @@ func TestReadInventoryDeadSignal(t *testing.T) {
 						t.Errorf("killed pane %s = Dead %v DeadStatus %d DeadSignal %q; want true, NoStatus, %q (or none, tmux's stuck state)", id, p.Dead, p.DeadStatus, p.DeadSignal, want)
 					}
 				case id == exited:
-					if !p.Dead || p.DeadStatus != 3 || p.DeadSignal != "" {
+					if !p.Dead || p.DeadSignal != "" || (p.DeadStatus != 3 && !exitedStuck(t, srv, id)) {
 						t.Errorf("exited pane %s = Dead %v DeadStatus %d DeadSignal %q; want true, 3, no signal", id, p.Dead, p.DeadStatus, p.DeadSignal)
 					}
 				default:
