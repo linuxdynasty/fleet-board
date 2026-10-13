@@ -113,6 +113,26 @@ func (r *recorder) waitFor(t *testing.T, from int, what string, ok func(*agentv1
 	}
 }
 
+// waitFound is waitFor without the failure: whether an event matched
+// before the deadline, so a test can accept a second outcome (tmux's stuck
+// state) after the wait runs out.
+func (r *recorder) waitFound(from int, ok func(*agentv1.Event) bool) bool {
+	deadline := time.After(wait)
+	for {
+		evs := r.all()
+		for i := from; i < len(evs); i++ {
+			if ok(evs[i]) {
+				return true
+			}
+		}
+		select {
+		case <-r.added:
+		case <-deadline:
+			return false
+		}
+	}
+}
+
 type obsRig struct {
 	o    *inventory.Observer
 	rec  *recorder

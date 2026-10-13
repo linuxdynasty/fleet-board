@@ -339,9 +339,9 @@ a `REVIEW_LOOP` pause, the cap compares `review_rounds` minus
 
 `ChangeKind.UPDATED` and `Event.pane_changed` (`PaneChanged`, COALESCE key
 `pane:<pane>`) carry the full pane when the harness, `current_command`,
-`workdir`, `harness_session_id`, `goal`, `dead`, `log_capture` or size
-changes (a developer starts `claude` in a shell pane; a pane `cd`s to another
-repo). Activity, output time, input time, availability and ready state have
+`workdir`, `harness_session_id`, `goal`, `dead` (with `exit_status` landing
+after a status-less death), `log_capture` or size changes (a developer
+starts `claude` in a shell pane; a pane `cd`s to another repo). Activity, output time, input time, availability and ready state have
 their own events and never raise it. Window and session attribute changes use
 `WindowEvent` and `SessionEvent` with kind `UPDATED` (name changes stay
 `RENAMED`). A `CREATED` session or window carries its windows and

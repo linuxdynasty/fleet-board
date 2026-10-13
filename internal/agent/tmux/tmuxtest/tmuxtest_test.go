@@ -191,3 +191,28 @@ func TestSiblingIsASecondServerInTheFolder(t *testing.T) {
 		})
 	}
 }
+
+// DeadStuck names only tmux's stuck readout: dead with neither status nor
+// signal. Every other shape, including a live pane and tmux printing both
+// at once (which it never does), is not stuck.
+func TestDeadStuckReadsOnlyTheStuckState(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		out  string
+		want bool
+	}{
+		{"stuck", "1  ", true},
+		{"exited", "1 5 ", false},
+		{"signalled", "1  9", false},
+		{"named-signal", "1  kill", false},
+		{"live", "0  ", false},
+		{"empty", "", false},
+		{"both", "1 5 9", false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			if got := tmuxtest.DeadStuck(c.out); got != c.want {
+				t.Fatalf("DeadStuck(%q) = %v, want %v", c.out, got, c.want)
+			}
+		})
+	}
+}
