@@ -47,6 +47,38 @@ installed code, or buys usage (Claude's `/usage-credits` and
 `/rate-limit-options` offer paid overage). Local policy can move a command to
 a stricter class, never a looser one.
 
+## Usage parsers (D2)
+
+Each adapter reads its own usage screen into the standardized buckets of
+[01 D2](01-agent-capabilities.md): the Claude `/usage` dialog in
+`internal/harness/claude`, the Codex `/status` card in
+`internal/harness/codex`, the Muse `/usage` box in `internal/harness/muse`
+and the Cursor dialog in `internal/harness/cursor` (below). Bucket keys are
+fixed across parser versions: Claude `session` (short window), `weekly_all`
+and one `weekly_<model>` per per-model row shown; Codex `weekly`; Muse
+`current` (short window) and `weekly`; Cursor `monthly_included`,
+`monthly_auto` and `monthly_api`. Codex shows a percent left, so its bucket
+carries 100 minus that number with `shown_as_remaining` set; the others show
+a percent used. No parser sets `LimitBucket.window`: a weekly bucket paces
+at seven days and a short bucket is a speed limit until a screen shows a
+length ([03b](03b-usage-and-sync.md)).
+
+Reset texts have no year and are local. A date and time ("Oct 14 at 10pm")
+resolves to the next such moment after the capture; a time alone
+("6:30pm") resolves to today, or tomorrow when it has passed. Claude names
+the timezone on the line and that zone resolves the text; when the name
+does not load on the machine, the machine's own zone does. Codex and Muse
+name no zone, so the machine's resolves theirs. A day no nearby year has
+(Feb 30) leaves the reset unknown. A row a screen should show and does not
+keeps its key with an unknown percent (not shown); a row that shows in a
+shape the parser cannot read is unknown as a parse failure; a screen with
+no usage dialog at all fails with no buckets. Nothing is ever guessed, and
+the percentages outside the limit rows (Claude's "What's contributing",
+Muse's token counts) never form a bucket. Each version with fixtures
+declares the usage feature verified and the version `UNVERIFIED_PARSING`
+until the other features land; the shared conformance test and the golden
+support tables are in `internal/harness`.
+
 ## OpenCode
 
 Probed 2026-10-01 on OpenCode 1.18.30.

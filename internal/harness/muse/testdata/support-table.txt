@@ -1,0 +1,5 @@
+harness muse
+version support USAGE IDENTITY PROMPT READY CONDITION
+1.4.4 UNVERIFIED_PARSING supported - - - -
+1.4.6 UNVERIFIED_PARSING supported - - - -
+1.4.7 UNVERIFIED_PARSING supported - - - -

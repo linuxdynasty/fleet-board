@@ -2,9 +2,12 @@
 
 Read the root `AGENTS.md` first; it applies here. Rules for this package:
 
-- This package holds only what every adapter shares: the version check and
-  the conformance test. Parser behavior for one harness lives in its own
-  subfolder, behind that adapter's test calling `harness.Conform`.
+- This package holds only what every adapter shares: the version check, the
+  conformance test and the reset-time calendar helpers. Parser behavior for
+  one harness (its labels, shapes and bucket keys) lives in its own
+  subfolder, behind that adapter's test calling `harness.Conform`. A change
+  to a shared helper changes every parser that uses it, so it bumps each
+  such adapter's `ParserVersion` in the same commit.
 - Never guess: a screen that does not parse yields unknown with the raw
   screen attached, never a nearby number, a previous reading or `0`. The
   shared check refuses any third outcome.

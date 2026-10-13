@@ -1,0 +1,24 @@
+# internal/harness/codex
+
+The Codex adapter: screen parsers and fixtures (plan row 8,
+issue #36). It never runs the harness and never opens a credential
+file; it parses text it is given.
+
+- `usage.go`: `ParseUsage` reads the `/status` card (01 D2) into the
+  one bucket the card shows, `weekly` (`WINDOW_KIND_WEEKLY`). Codex
+  shows a percent left; the bucket carries the percent used with
+  `shown_as_remaining` set. The plan comes from the account line,
+  never from an email on it. A weekly row that no longer reads is
+  `PARSE_FAILED` and the reading partial; a screen with no weekly row
+  fails with no buckets. Nothing is ever guessed. `ParserVersion`
+  bumps when the parser's behavior changes.
+- `codex_test.go`: the adapter's declaration for the shared
+  conformance test (`harness.Conform`). Versions `0.160.0` and
+  `0.162.1` are `UNVERIFIED_PARSING` with `USAGE` fixture-verified;
+  the golden table is `testdata/support-table.txt`, so a claim change
+  is a reviewed diff.
+- Fixtures under `testdata/0.160.0/` and `testdata/0.162.1/`,
+  documented in `testdata/README.md`.
+
+Tests: `CGO_ENABLED=0 go test -shuffle=on -count=3
+./internal/harness/codex/`. The fixtures need no harness.
