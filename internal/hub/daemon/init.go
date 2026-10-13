@@ -74,6 +74,9 @@ func Init(ctx context.Context, opts Options) (err error) {
 	case err != nil:
 		return s.fail(ReasonStore, err)
 	}
+	if err := showSecretOnce(ctx, cfg.StateDir, opts.SecretOutput, s.tel.Logger); err != nil {
+		return s.fail(ReasonStore, err)
+	}
 	s.tel.Logger.Info("hub.initialized", "server_names", len(id.ServerNames), "config_written", missing)
 	return nil
 }

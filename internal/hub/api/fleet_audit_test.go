@@ -8,6 +8,10 @@ import (
 	"encoding/hex"
 	"strings"
 	"testing"
+
+	"connectrpc.com/connect"
+
+	typev1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/type/v1"
 )
 
 // auditRowText is every audit_log row with the action, each as one string
@@ -42,17 +46,31 @@ func (e *fleetEnv) auditRowText(t *testing.T, action string) []string {
 // #104: creating a token writes one machine.enroll_token row naming the
 // caller and enroll_tokens/<id>, with the machine name, expected hostname
 // and expiry; no part of the token, its secret or its hash is in it. A
+// TestCreateEnrollmentTokenNeedsSecret: an ADMIN call without the local
+// approval secret fails closed in local_trusted mode (ADR 0032).
+func TestCreateEnrollmentTokenNeedsSecret(t *testing.T) {
+	t.Parallel()
+	e := newFleetEnv(t, localUser("alice"))
+	if _, err := e.client.CreateEnrollmentToken(context.Background(),
+		enrollReq("6f1c2a4e-0d3b-4c5e-9f7a-1b2c3d4e5f62", "laptop")); err == nil {
+		t.Fatal("enroll token without a secret succeeded")
+	} else if code, reason, _ := detail(t, err); code != connect.CodePermissionDenied ||
+		reason != typev1.ReasonCode_REASON_CODE_CREDENTIALS_INVALID {
+		t.Fatalf("got %v %v, want PermissionDenied CREDENTIALS_INVALID", code, reason)
+	}
+}
+
 // retried request_id writes no second row.
 func TestCreateEnrollmentTokenWritesOneAuditRowWithoutTheToken(t *testing.T) {
 	t.Parallel()
 	e := newFleetEnv(t, localUser("alice"))
 	req := enrollReq("6f1c2a4e-0d3b-4c5e-9f7a-1b2c3d4e5f61", "laptop")
 	req.Msg.ExpectedHostname = "laptop.lan"
-	resp, err := e.client.CreateEnrollmentToken(context.Background(), req)
+	resp, err := e.client.CreateEnrollmentToken(context.Background(), withEnrollSecret(t, e, req))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := e.client.CreateEnrollmentToken(context.Background(), req); err == nil {
+	if _, err := e.client.CreateEnrollmentToken(context.Background(), withEnrollSecret(t, e, req)); err == nil {
 		t.Fatal("a repeated request_id made a second token")
 	}
 	rows := e.auditRowText(t, "machine.enroll_token")

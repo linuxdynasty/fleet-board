@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"net"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -19,17 +20,33 @@ import (
 	"github.com/linuxdynasty/fleet-board/internal/hub/api"
 	"github.com/linuxdynasty/fleet-board/internal/hub/config"
 	"github.com/linuxdynasty/fleet-board/internal/hub/daemon"
+	"github.com/linuxdynasty/fleet-board/internal/hub/secret"
 	"github.com/linuxdynasty/fleet-board/internal/hub/statedb"
 )
 
-func enroll(t *testing.T, sock, requestID string) (*hubv1.CreateEnrollmentTokenResponse, error) {
+// enrollSecret attaches the hub's local approval secret to an enrollment
+// request: CreateEnrollmentToken needs the secret in local_trusted mode
+// (ADR 0032). The secret lives next to the admin socket in the state dir.
+func enrollSecret(t *testing.T, sock string,
+	req *connect.Request[hubv1.CreateEnrollmentTokenRequest],
+) (*hubv1.CreateEnrollmentTokenResponse, error) {
 	t.Helper()
-	resp, err := api.AdminClient(sock).CreateEnrollmentToken(context.Background(),
-		connect.NewRequest(&hubv1.CreateEnrollmentTokenRequest{RequestId: requestID, MachineName: "laptop"}))
+	shown, err := secret.Reveal(filepath.Dir(sock))
+	if err != nil {
+		return nil, err
+	}
+	req.Header().Set(api.SecretHeader, shown)
+	resp, err := api.AdminClient(sock).CreateEnrollmentToken(context.Background(), req)
 	if err != nil {
 		return nil, err
 	}
 	return resp.Msg, nil
+}
+
+func enroll(t *testing.T, sock, requestID string) (*hubv1.CreateEnrollmentTokenResponse, error) {
+	t.Helper()
+	req := connect.NewRequest(&hubv1.CreateEnrollmentTokenRequest{RequestId: requestID, MachineName: "laptop"})
+	return enrollSecret(t, sock, req)
 }
 
 // stateBytes reads every file in the state folder (state.db, its -wal and

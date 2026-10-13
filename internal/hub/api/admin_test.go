@@ -149,7 +149,7 @@ func TestTheSameUserIsServedOnTheAdminSocket(t *testing.T) {
 	t.Parallel()
 	e := newFleetEnv(t, nil)
 	path := serveAdmin(t, e, nil)
-	resp, err := api.AdminClient(path).CreateEnrollmentToken(context.Background(), enrollReq("req-1", "laptop"))
+	resp, err := api.AdminClient(path).CreateEnrollmentToken(context.Background(), withEnrollSecret(t, e, enrollReq("req-1", "laptop")))
 	if err != nil {
 		t.Fatalf("CreateEnrollmentToken over the socket: %v", err)
 	}
@@ -181,7 +181,7 @@ func TestAMismatchedPeerIsClosedUnserved(t *testing.T) {
 			t.Parallel()
 			e := newFleetEnv(t, nil)
 			path := serveAdmin(t, e, tc.peer)
-			_, err := api.AdminClient(path).CreateEnrollmentToken(context.Background(), enrollReq("req-1", "laptop"))
+			_, err := api.AdminClient(path).CreateEnrollmentToken(context.Background(), withEnrollSecret(t, e, enrollReq("req-1", "laptop")))
 			if err == nil {
 				t.Fatal("the refused peer got a response")
 			}

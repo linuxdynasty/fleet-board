@@ -34,7 +34,7 @@ func TestCreateEnrollmentTokenIssuesATokenForTheStoredCA(t *testing.T) {
 	req.Msg.Labels = []string{"gpu", "home"}
 	req.Msg.ExpectedHostname = "laptop.lan"
 	req.Msg.StartDrained = true
-	resp, err := e.client.CreateEnrollmentToken(context.Background(), req)
+	resp, err := e.client.CreateEnrollmentToken(context.Background(), withEnrollSecret(t, e, req))
 	if err != nil {
 		t.Fatalf("CreateEnrollmentToken: %v", err)
 	}
@@ -120,7 +120,7 @@ func TestEnrollmentTokenLifetime(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			req := enrollReq("ttl-"+strconv.Itoa(i), "laptop")
 			req.Msg.Ttl = tc.ttl
-			resp, err := e.client.CreateEnrollmentToken(context.Background(), req)
+			resp, err := e.client.CreateEnrollmentToken(context.Background(), withEnrollSecret(t, e, req))
 			if tc.want == 0 {
 				code, reason, fields := detail(t, err)
 				if code != connect.CodeInvalidArgument || reason != typev1.ReasonCode_REASON_CODE_INVALID_ARGUMENT ||
@@ -233,7 +233,7 @@ func TestEnrollmentTokenRequestValidation(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			req := enrollReq("valid-id", "laptop")
 			tc.edit(req.Msg)
-			_, err := e.client.CreateEnrollmentToken(context.Background(), req)
+			_, err := e.client.CreateEnrollmentToken(context.Background(), withEnrollSecret(t, e, req))
 			code, reason, fields := detail(t, err)
 			if code != connect.CodeInvalidArgument || reason != tc.reason || len(fields) != 1 || fields[0] != tc.field {
 				t.Errorf("got %v %v %v, want invalid_argument %v on %s", code, reason, fields, tc.reason, tc.field)
@@ -263,7 +263,7 @@ func TestEnrollmentTokenRequestIDReuse(t *testing.T) {
 	t.Parallel()
 	e := newFleetEnv(t, localUser("alice"))
 	ctx := context.Background()
-	if _, err := e.client.CreateEnrollmentToken(ctx, enrollReq("req-1", "laptop")); err != nil {
+	if _, err := e.client.CreateEnrollmentToken(ctx, withEnrollSecret(t, e, enrollReq("req-1", "laptop"))); err != nil {
 		t.Fatal(err)
 	}
 	for _, tc := range []struct {
@@ -275,7 +275,7 @@ func TestEnrollmentTokenRequestIDReuse(t *testing.T) {
 		{"same body", "laptop", connect.CodeAlreadyExists, typev1.ReasonCode_REASON_CODE_SECRET_ALREADY_DELIVERED},
 		{"different body", "desktop", connect.CodeAlreadyExists, typev1.ReasonCode_REASON_CODE_REQUEST_ID_CONFLICT},
 	} {
-		resp, err := e.client.CreateEnrollmentToken(ctx, enrollReq("req-1", tc.machine))
+		resp, err := e.client.CreateEnrollmentToken(ctx, withEnrollSecret(t, e, enrollReq("req-1", tc.machine)))
 		if code, reason, _ := detail(t, err); code != tc.code || reason != tc.reason {
 			t.Errorf("%s: %v %v, want %v %v", tc.name, code, reason, tc.code, tc.reason)
 		}
@@ -298,7 +298,7 @@ func TestConcurrentRequestIDReuseMintsOneToken(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_, err := e.client.CreateEnrollmentToken(context.Background(), enrollReq("req-race", "laptop"))
+			_, err := e.client.CreateEnrollmentToken(context.Background(), withEnrollSecret(t, e, enrollReq("req-race", "laptop")))
 			errs <- err
 		}()
 	}
@@ -328,7 +328,7 @@ func TestAPreviousMachineIsNotReenrollable(t *testing.T) {
 	e := newFleetEnv(t, localUser("alice"))
 	req := enrollReq("req-1", "laptop")
 	req.Msg.PreviousMachine = &typev1.MachineId{Value: "01jabcdefghjkmnpqrstvwxyz0"}
-	_, err := e.client.CreateEnrollmentToken(context.Background(), req)
+	_, err := e.client.CreateEnrollmentToken(context.Background(), withEnrollSecret(t, e, req))
 	if code, reason, _ := detail(t, err); code != connect.CodeFailedPrecondition ||
 		reason != typev1.ReasonCode_REASON_CODE_MACHINE_NOT_REENROLLABLE {
 		t.Errorf("got %v %v, want failed_precondition MACHINE_NOT_REENROLLABLE", code, reason)
@@ -358,7 +358,7 @@ func TestEnrollmentTokenDeniedPaths(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			e := newFleetEnv(t, tc.who)
-			_, err := e.client.CreateEnrollmentToken(context.Background(), enrollReq("", ""))
+			_, err := e.client.CreateEnrollmentToken(context.Background(), withEnrollSecret(t, e, enrollReq("", "")))
 			if code, reason, _ := detail(t, err); code != tc.code || reason != tc.reason {
 				t.Errorf("got %v %v, want %v %v", code, reason, tc.code, tc.reason)
 			}

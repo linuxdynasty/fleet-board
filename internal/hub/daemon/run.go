@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/linuxdynasty/fleet-board/internal/hub/api"
+	"github.com/linuxdynasty/fleet-board/internal/hub/approvals"
 	"github.com/linuxdynasty/fleet-board/internal/hub/backup"
 	"github.com/linuxdynasty/fleet-board/internal/hub/config"
 	"github.com/linuxdynasty/fleet-board/internal/hub/discovery"
@@ -26,6 +27,11 @@ import (
 
 // RenewEvery is how often run checks the server certificate.
 const RenewEvery = time.Hour
+
+// approvalsExpiryEvery is how often run expires past-due approvals with
+// the DENY fallback (approval_timeout is 30 minutes; Decide and Get also
+// expire their own row lazily, so a minute pass is plenty).
+const approvalsExpiryEvery = time.Minute
 
 // shutdownGrace bounds how long a stop waits for open requests.
 const shutdownGrace = 10 * time.Second
@@ -71,6 +77,11 @@ func Run(ctx context.Context, opts Options) (err error) {
 		return s.fail(openReason(err), openMessage(cfg.StateDir, err))
 	}
 	defer func() { err = errors.Join(err, st.Close()) }()
+	// Stores from before row 19 have no secret file; the first start
+	// creates it and shows it once, the same as init.
+	if err := showSecretOnce(ctx, cfg.StateDir, opts.SecretOutput, s.tel.Logger); err != nil {
+		return s.fail(ReasonStore, err)
+	}
 	id, err := statedb.ReadIdentity(ctx, st)
 	if errors.Is(err, statedb.ErrNoIdentity) {
 		return s.fail(ReasonIdentityMissing, fmt.Errorf("%s has no hub identity; it was not made by fleetd init: %w",
@@ -214,6 +225,17 @@ func serve(ctx context.Context, cfg *config.Config, opts Options, d hubDeps, s *
 		Name: "outbox_prune", Every: outbox.PruneEvery, Run: agent.Outbox().Prune,
 	}, housekeeping.Job{
 		Name: "events_prune", Every: gateway.PruneEventsEvery, Run: agent.PruneEvents,
+	}, housekeeping.Job{
+		Name: "approvals_expiry", Every: approvalsExpiryEvery, Run: func(ctx context.Context, now time.Time) error {
+			expired, err := approvals.ExpirePass(ctx, d.st, now)
+			if err != nil {
+				return err
+			}
+			if len(expired) > 0 {
+				s.tel.Logger.InfoContext(ctx, "approval.expired", "count", len(expired), "fallback", "deny")
+			}
+			return nil
+		},
 	})
 	if err != nil {
 		for _, l := range ls {
