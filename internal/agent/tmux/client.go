@@ -92,16 +92,17 @@ type Client struct {
 	backoff      func(n int) time.Duration // the wait after n failed tries (SetBackoffForTest)
 	writeTimeout time.Duration             // the bound on one command write (SetWriteTimeoutForTest)
 
-	mu       sync.Mutex
-	state    State
-	changed  chan struct{} // closed and replaced on every state change
-	conn     *conn         // the attached client, nil when not StateUp
-	session  SessionID
-	internal bool      // attached to an internal session (no developer one existed), or not yet known
-	expect   SessionID // the session the attach or the client's own switch-client moves to
-	startID  string
-	version  string // the server's #{version} at the last attach
-	subs     []Subscription
+	mu        sync.Mutex
+	state     State
+	changed   chan struct{}   // closed and replaced on every state change
+	conn      *conn           // the attached client, nil when not StateUp
+	confirmed map[string]bool // subscriptions with a value on this attach
+	session   SessionID
+	internal  bool      // attached to an internal session (no developer one existed), or not yet known
+	expect    SessionID // the session the attach or the client's own switch-client moves to
+	startID   string
+	version   string // the server's #{version} at the last attach
+	subs      []Subscription
 }
 
 // NewClient checks opts and returns a client that is not yet attached.

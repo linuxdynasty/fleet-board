@@ -89,14 +89,37 @@ func (c *Client) Subscribe(ctx context.Context, s Subscription) error {
 	return nil
 }
 
-// registered reports whether a subscription of that name is registered.
-func (c *Client) registered(name string) bool {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+func (c *Client) registeredLocked(name string) bool {
 	for _, s := range c.subs {
 		if s.Name == name {
 			return true
 		}
 	}
 	return false
+}
+
+// markConfirmed records the first value of a registered subscription on
+// this attach and reports whether this is that first value. 7f's backup
+// list-clients poll runs until the input subscription confirms, and after
+// %exit until it is confirmed again.
+func (c *Client) markConfirmed(name string) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !c.registeredLocked(name) || c.confirmed[name] {
+		return false
+	}
+	if c.confirmed == nil {
+		c.confirmed = map[string]bool{}
+	}
+	c.confirmed[name] = true
+	return true
+}
+
+// SubscriptionConfirmed reports whether a value of the named subscription
+// has arrived on this attach: tmux took it, so 7f's backup poll may stop.
+// A name never registered, or a new attach with no value yet, is false.
+func (c *Client) SubscriptionConfirmed(name string) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.confirmed[name]
 }

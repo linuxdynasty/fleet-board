@@ -16,8 +16,10 @@
 // pane with names and @fleet_* options, for the inventory package; tmux
 // bounds each text field at [MaxFieldBytes] in bytes and sends a longer one
 // empty with its length, so no value can fail the read),
+// [Client.ReadClients] (every attached client for E13, 01 E13),
 // [Client.Subscribe] and [Client.Continue]. [Client.Changed] lets a watcher
-// follow its state with no timer. Its file
+// follow its state with no timer, and [Client.SubscriptionConfirmed] says
+// whether a subscription's first value arrived on this attach. Its file
 // conn.go is the only one in the agent that starts the long-lived tmux
 // process; one-shot tmux calls go through internal/proc. The README has the
 // concurrency diagram. [Pane], in both reads ([PaneInfo] embeds it),

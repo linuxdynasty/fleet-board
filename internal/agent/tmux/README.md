@@ -198,6 +198,13 @@ st, changed := c.Changed()                       // the state, and a chan closed
   moment before the status is in or a pane a signal killed: it stays that
   way, because 3.2a never names the signal.
 - `ControlDown(clients...)` is `AgentHealth.tmux_control_down`.
+- `ReadClients` reads one `list-clients` row per attached client (pid,
+  key time, control flag, session and pane id) for E13 (01 E13): a reply
+  cut short or not in the asked shape is `ErrBadReply`, never partial; no
+  clients is an empty read. `SubscriptionConfirmed(name)` reports whether a
+  value of that subscription arrived on this attach (a new attach resets
+  it): 7f's backup `list-clients` poll runs until the input subscription
+  confirms, then stops.
 
 ### Concurrency
 
@@ -209,7 +216,8 @@ Run (one goroutine, owns the attach loop and the backoff timer)
      |    Reply flags&1 -> pop pending[0] under pmu, honour     |
      |       ControlNotes (pause any; continue own only), send  |
      |       on its buffered chan                               |
-     |    other messages -> paused set (pmu) -> Notify (no lock)|
+     |    other messages -> paused set (pmu) -> Notify (no lock);
+     |      a registered SubscriptionChanged also marks confirmed (Client.mu)
      |    end of stream -> pmu: closed, reason; fail pending    |
      v
   typed methods (any goroutine): Client.mu -> conn; release;
@@ -224,8 +232,9 @@ Run (one goroutine, owns the attach loop and the backoff timer)
     conn): drains conn.repick; while internal: conn.do list-sessions, then
     conn.do switch-client -E; Client.mu only to read/write session and
     internal, never across conn.do
-Locks: Client.mu (state, conn, start id, subs) is never held with wmu or
-pmu. wmu then pmu, never the other way; nothing is called out under a lock.
+Locks: Client.mu (state, conn, start id, subs, confirmed) is never held
+with wmu or pmu. wmu then pmu, never the other way; nothing is called out
+under a lock.
 Subscribe registers and reads conn in one hold of Client.mu; attach sets
 conn and copies the list in one hold, so a subscription is sent once or
 re-sent, never lost.
@@ -250,7 +259,14 @@ stderr (05b).
 Subscriptions per server, for 7f's cost run (proof 9, measured with all
 three live): E13's `session_activity` (7f), E4's `window_activity` (7e) and
 the inventory's `fleet-structure` (7d, coordinator decision amending row-7
-ruling fork 5(f)), each checked by tmux about once a second.
+ruling fork 5(f)), each checked by tmux about once a second. Cost (7f, same
+Mac, tmux 3.7c, idle sessions, 60 s windows): the 2 s `list-clients` poll
+vs all three subscriptions, tmux server CPU seconds per 60 s: N=1: 0.00 vs
+0.00; N=50: 0.01 vs 0.04; N=200: 0.02 vs 0.16 (structure alone 0.15 at
+N=200: activity and input add ~0.01). Stream per attach ~0.4/2.8/10.9 KiB
+at N=1/50/200 (the initial values), then guards only. The totals exceed
+the poll past N=50, almost all of it the already-shipped structure
+subscription: under arbiter review on #35 before 7f merges.
 
 Tests: `CGO_ENABLED=0 go test ./internal/agent/tmux/`. The client tests run
 against real tmux 3.2 and the latest release in throwaway servers

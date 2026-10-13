@@ -155,6 +155,29 @@ command handler that answers the hub is row 18's (pane control owns every
 command check, and no executor is wired in `cmd/` yet); 7e gives it this
 seam to call.
 
+## Developer input (7f)
+
+E13 typing comes from one session-activity subscription per server (02h
+E13): tmux checks `fleet-input` about once a second, and any change only
+dirties one `list-clients` read (never an inventory read). The read names
+every client (pid, key time, control flag, session and pane id); control
+clients (the agent's own observer) are ignored, and input is credited only
+to a client whose key time moved or is seen first, at its active pane
+(browser attach clients count: a person is typing). The agent's own
+send-keys, new-session, resizes and captures move no client's key time, so
+they credit nothing; an attach is a new client and counts as input. Each
+credit is a `PaneInput` event (COALESCE `input:<pane>`), at most one per
+pane per 10 s while the level (`TmuxPane.last_input_time`, stamped on the
+Snapshot and every pane-carrying event) keeps every key. On (re)attach the
+loop reads the clients once against the last seen times, so a key pressed
+during the gap is still reported; until the subscription confirms, a 2 s
+backup poll keeps the same read going, then stops (ADR 0024, decision 9).
+No poll runs while the subscription is live. Row 18's SendKeys check calls
+`Observer.CheckInput`, which reads at that moment and stamps but never
+emits, so a missed push cannot open the gate. Cost is the three
+subscriptions together (proof 9): the numbers are with the client package
+(`internal/agent/tmux` README).
+
 What starts a read (the seam is `triggers` in `trigger.go`): a window,
 session or client notice, `%sessions-changed`, `%exit`, a new value of the
 `fleet-structure` subscription, a client state change, a Snapshot, and a
@@ -195,7 +218,8 @@ Observer.Run (owns every goroutine below; returns when all have)
        (dirty chan, buffered 1; on %exit also the rescan chan)
   per server: sync loop, the only goroutine that reads, diffs, stores and emits
      waits on dirty | Client.Changed() | snapshot request | dead-status
-       follow-up timer | ctx; after a notice it waits out readGap (a timer,
+       follow-up timer | activity notice | input notice | input poll timer
+       | idle timer | ctx; after a notice it waits out readGap (a timer,
        still serving Snapshot requests); while a status-less remains death
        is owed follow-ups it arms one more timer for deadStatusPollGap
        after the last read (the death's notice asked for the status)
@@ -203,10 +227,17 @@ Observer.Run (owns every goroutine below; returns when all have)
        -> Emit each event (waits for the ring commit; no lock held)
        -> settle dead-status waits (landed | expired, at most
        deadStatusPollMax reads per pane)
+     input notices and the poll timer run ReadClients -> the input tracker
+       -> Emit PaneInput (no lock held); a (re)attach also reads once, then
+       polls every 2 s until the input subscription confirms
   Snapshot hook (the conn session goroutine): a rescan token, then per
      server a request with a reply chan to its sync loop; no shared state
-Locks: waker.mu only. The sync loop's state is its own; Client.mu is the
-client's. Nothing is held across a control-mode command or an Emit.
+  CheckInput (row 18's SendKeys check, any caller goroutine): ReadClients
+     -> the input tracker under inMu -> stamp, never Emit
+Locks: waker.mu plus the input tracker's inMu, taken only around the pure
+evaluate/stamp (never across a control-mode command or an Emit). The rest
+of the sync loop's state is its own; Client.mu is the client's. Nothing is
+held across a control-mode command or an Emit.
 ```
 
 ## Telemetry
@@ -219,6 +250,9 @@ client's. Nothing is held across a control-mode command or an Emit.
 | `fleet_agent_tmux_inventory_reads_total{server_kind, result}` | inventory reads that ended, `result` = `ok`, `command`, `reply`, `timeout`, `io` (closed); see "When reads fail" |
 | `fleet_agent_tmux_dead_status_polls_total{server_kind, result}` | status-less remains deaths waited on until they settled, `result` = `landed` (a later read had the exit status) or `expired` (the `deadStatusPollMax` follow-ups still showed none: a signal death). 3 AM: "why did this pane's exit status never arrive?": `expired` rising with no `landed` beside it is statuses never landing |
 | `tmux.inventory_failed` (`server_kind`, `err_kind` = `command`, `reply`, `timeout`, `io`) | a read failed; at most once a minute per server |
+| `fleet_agent_tmux_input_reads_total{server_kind, result}` | client reads that ended, `result` = `ok`, `command`, `reply`, `timeout`, `io` (closed); a read refused as not attached, or cut short by the stop, is not counted |
+| `fleet_agent_tmux_pane_inputs_total{server_kind}` | `PaneInput` events that went out |
+| `tmux.input_failed` (`server_kind`, `err_kind` = `command`, `reply`, `timeout`, `io`) | a client read failed; at most once a minute per server |
 | `fleet_agent_tmux_inventory_fields_dropped_total{field, reason}`, `tmux.inventory_field_dropped`, `fleet_agent_tmux_parse_errors_total`, `fleet_agent_tmux_lines_too_long_total` | internal/agent/tmux's parser signals: `New` builds one `tmux.Metrics` for every client it makes, so they count in production |
 | `status.json` `tmux_folder`, `tmux_watch: off` | the folder watched, and whether the watch is off |
 
@@ -235,6 +269,11 @@ seeded tag, the probe server, events landing in a real ring, a field over
 1 KiB counted through the observer's clients, failed reads counted by
 result while the last inventory stands, a landing exit status emitted as a
 dead `PaneChanged` and counted `landed`, and a signal death's wait ending
-`expired` after `deadStatusPollMax` reads with no status event; plus table
-tests of the tree build, the diff, the trigger seam, the text and tag rules
-and the wake debounce.
+`expired` after `deadStatusPollMax` reads with no status event; typing on
+the right pane within 2 s on both sessions, no credit for the agent's own
+keys/sessions/selects/captures/respawns/resizes/reattaches, gap keys after
+`%exit`, grouped-view keys on the real pane, 60 s idle with zero reads and
+zero events, the on-demand read with no push, and no credit for the
+observer's own switch; plus table tests of the tree build, the diff, the
+trigger seam, the text and tag rules, the input credit rule and the
+subscription routing, and the wake debounce.
