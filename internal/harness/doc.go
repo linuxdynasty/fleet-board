@@ -1,5 +1,6 @@
 // Package harness is what every harness adapter shares: the strict version
-// check of 01 C1 and the conformance test of plan row 8.
+// check of 01 C1, the conformance test of plan row 8 and the reset-time
+// helpers of the usage parsers.
 //
 // A version command runs through the one child-process helper (01 principle
 // 8) and its first line must hold a dotted number, or there is no version:
@@ -12,4 +13,8 @@
 // version, a version marked SUPPORTED with any feature not supported, a
 // fixture that neither parses nor cleanly yields unknown, and declared
 // support that differs from the committed golden table.
+//
+// Reset texts have no year and are local (01 D2): [NextMonthDayTime] and
+// [NextTimeOfDay] resolve one against the capture time in a stated zone,
+// and an impossible day stays unknown rather than guessed.
 package harness

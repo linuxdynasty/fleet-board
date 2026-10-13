@@ -1,10 +1,12 @@
 # internal/harness
 
-What every harness adapter shares: the strict version check (01 C1) and the
-shared conformance test (plan row 8). The per-harness adapters live in the
-subfolders (`claude/`, `codex/`, `cursor/`, `muse/`, `opencode/`), as parsers
-plus recorded screens under each one's `testdata/<version>/` (first parser:
-`cursor/` reads the `/usage` dialog, row 30).
+What every harness adapter shares: the strict version check (01 C1), the
+shared conformance test (plan row 8) and the reset-time helpers the usage
+parsers share. The per-harness adapters live in the subfolders (`claude/`,
+`codex/`, `cursor/`, `muse/`, `opencode/`), as parsers plus recorded screens
+under each one's `testdata/<version>/`. Usage parsers so far: `cursor/`
+reads the `/usage` dialog (row 30), and `claude/`, `codex/` and `muse/`
+read their `/usage` and `/status` screens (row 8).
 
 - `version.go`: `Detector` runs a harness's version command through
   `internal/proc` under the `version` caller (empty stdin, 5 s, 16 KiB).
@@ -18,6 +20,12 @@ plus recorded screens under each one's `testdata/<version>/` (first parser:
   marked `SUPPORTED` must have every feature supported, a supported feature
   must bring a fixture of that version, and every fixture must parse or
   cleanly yield unknown, never fail.
+- `resettime.go`: the calendar half every usage parser shares. Reset texts
+  have no year and are local (01 D2), so `NextMonthDayTime` resolves one to
+  the next such date and time after the capture and `NextTimeOfDay` to today
+  or tomorrow; an impossible day (Feb 30) stays unknown. `StripControls`,
+  `MaxScreenBytes`, `Clock12`, `MonthFromShort` and the `Percent` builders
+  keep each adapter's own file down to its labels and shapes.
 
 Tests: `CGO_ENABLED=0 go test -shuffle=on -count=3 ./internal/harness/`.
 `TestDetectThroughProc` runs the real helper around `go version`, so it needs
