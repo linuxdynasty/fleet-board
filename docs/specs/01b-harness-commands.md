@@ -377,3 +377,7 @@ Probed 2026-10-01 by typing `/goal` and `/goal ` without Enter, then bare
 Plan item 0.1 ([#25](https://github.com/linuxdynasty/fleet-board/issues/25)):
 the dated fixture captures lived here and moved to
 [01b3](01b3-screen-fixtures.md) when this file neared the 500-line cap.
+Every adapter's test runs these fixtures through the shared `harness.Conform`
+check in `internal/harness` (#141), which also refuses a support claim that
+contradicts the adapter's committed golden table, and every harness version is
+checked by `harness.Detector` under 01 C1.

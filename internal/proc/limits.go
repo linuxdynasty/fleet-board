@@ -42,9 +42,16 @@ func (c Caller) Limits() Limits { return c.limits }
 //     target) 1,101 bytes, 3.4 to 7.6 ms over 50 runs on tmux 3.2a and 3.7c
 //     (macOS). Capped at 5 s and 16 KiB (about 2,900 sessions). Not measured
 //     on Linux yet.
+//   - version: the harness `--version` commands with empty stdin, 5 runs
+//     each on macOS 27 (arm64), a loaded host: worst 0.32 s (cursor-agent)
+//     and 22 bytes (claude). Capped at 5 s and 16 KiB, like `tmux`: headroom
+//     for a slow machine and for a wrapper that prints an install prompt
+//     instead of a version. Row 8 (#141) added it. The `gemini` binary was
+//     not installed here, and Linux is not measured yet.
 var callers = map[string]Limits{
 	"tmux":     {Time: 5 * time.Second, Output: 16 << 10},
 	"loginctl": {Time: 5 * time.Second, Output: 4 << 10},
+	"version":  {Time: 5 * time.Second, Output: 16 << 10},
 }
 
 // For returns the caller with that name, or [ErrUnknownCaller] when the
