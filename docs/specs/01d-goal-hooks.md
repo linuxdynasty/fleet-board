@@ -35,7 +35,7 @@ harness config), not into each repo.
 |---|---|---|
 | Claude Code | `~/.claude/settings.json` | `SessionStart`, `UserPromptSubmit`, `Stop` |
 | Codex | `~/.codex/hooks.json` | `SessionStart`, `Stop`, `Interrupt` (notify only) |
-| Muse | a plugin installed at user scope: `muse plugins install <bundle> --scope user` (see [Muse](#muse-hooks-are-a-plugin-package)) | `SessionStart`, `Stop` (probed), `Interrupt` |
+| Muse | a plugin installed at user scope: `muse plugins install <bundle> --scope user` (see [Muse](#muse-hooks-are-a-plugin-package)) | `SessionStart` (fires once, with the first prompt: stays inert, [01d4](01d4-muse-sessionstart.md)), `UserPromptSubmit` (E9, fires for the first turn, [01d4](01d4-muse-sessionstart.md)), `Stop` (probed), `Interrupt` |
 | Cursor (`cursor-agent`) | `~/.cursor/hooks.json` | `beforeSubmitPrompt` (E9, fires for `/goal` lines too), `stop` (E8 and the Stop guard via `followup_message`); decided by plan item 0.23 ([decision](01d3-cursor-goal-hooks.md)) |
 
 - Every fleet hook exits 0 with no output unless it is running for a fleet
@@ -63,7 +63,10 @@ harness config), not into each repo.
     `session_id`; the bootstrap key is `workspace_roots`
     ([decision](01d3-cursor-goal-hooks.md)).
   - The first `UserPromptSubmit` or `PreToolUse` after registration records the
-    harness session id (E9), since `SessionStart` fired before the goal existed.
+    harness session id (E9). `SessionStart` is no earlier: on Muse it fires
+    once, with the first prompt, in the same second as the first
+    `UserPromptSubmit`, and never refires
+    ([probe](01d4-muse-sessionstart.md)).
     Cursor's equivalent is the first `beforeSubmitPrompt`.
 - The hook scripts live under the agent's data directory
   (`~/.local/share/fleet-agent/hooks/<harness>/`); the settings entries only
@@ -470,8 +473,13 @@ it, because the entry never changes either way.
   by rule and the Claude Code `default` mode limit is recorded above.
 - ~~Muse goal registry by `cwd`~~ Answered by the registry design: entries
   match by pane and `harness_session_id`; `cwd` is only the bootstrap until the
-  first hook after registration records the session id. Still to confirm:
-  `UserPromptSubmit` fires for the first turn of a plugin-hooked Muse session.
+  first hook after registration records the session id. Confirmed 2026-10-12
+  ([01d4](01d4-muse-sessionstart.md)): `UserPromptSubmit` fires for the first
+  turn of a plugin-hooked Muse session.
+- ~~Muse `SessionStart` as registry fallback~~ Answered 2026-10-12
+  ([01d4](01d4-muse-sessionstart.md)): it fires once per session, with the
+  first prompt, in the same second as the first `UserPromptSubmit`, and never
+  refires, so it stays inert like Cursor's `sessionStart`.
 - ~~Muse `Stop` payload and continuation output~~ Answered by the Muse Stop
   probe above.
 - Whether a Claude-compatible plugin package also installs as a Claude Code
