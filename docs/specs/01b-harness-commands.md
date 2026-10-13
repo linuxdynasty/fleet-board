@@ -98,6 +98,20 @@ Probed 2026-10-01 on OpenCode 1.18.30.
 - **Model line** under the input box: agent, model and provider (for example
   "Build · Kimi K3 Moonshot AI · high"). The adapter reads it to link a session
   to the account it is spending from.
+- **Adapter (row 8, issue #36):** `internal/harness/opencode` parses the three
+  outputs above (parser version 1): `stats` into all-time counts and the total
+  cost as exact micro-units (token counts stay as shown, since "29.5K" names
+  no base), `providers list` into the credential count with its rows plus the
+  Environment section when shown, and the model line into the agent, the
+  model-plus-provider selection as shown, and the variant when one is set.
+  The parser never splits the model from the provider by guessing; the probe
+  matches the selection against the providers list. A screen with no stats
+  table or no credentials count fails with no numbers; anything less than a
+  full read is partial. Versions 1.18.34 and 1.19.0 are `UNVERIFIED_PARSING`
+  with `USAGE` and `IDENTITY` fixture-verified (fixtures in
+  `internal/harness/opencode/testdata/`); the `model · provider[ · variant]`
+  order was checked against the 1.19.0 binary itself, and the agent-first
+  line shape against the TUI fixtures.
 - **No folder-trust prompt** at startup.
 - **Server mode:** `opencode serve`, `opencode attach <url>`, `--mdns`. A future
   adapter could read structured session events from it instead of the screen. #46 (2026-10-12) leaves this parked: the serve feed needs a signed-in provider (not probed); verdict in [03b](03b-usage-and-sync.md#push-sources-issue-46).
