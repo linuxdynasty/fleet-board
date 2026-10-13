@@ -449,7 +449,7 @@ optionally against one limit the owner sets.
 - **E3 Pane lifecycle:** created and exited with exit status. "Stopped without
   DONE" (the one-nudge rule) depends on this. The status is known only when
   tmux kept the pane (`remain-on-exit`, which the agent never sets on a
-  developer's pane); a pane gone first has `exit_status` unset (row 7 PR 7d, `internal/agent/tmux/inventory`; read triggers in defaults). A signal-killed pane has no exit status;
+  developer's pane); a pane gone first has `exit_status` unset (row 7 PR 7d, `internal/agent/tmux/inventory`; read triggers in defaults). A status that lands after the death is re-read: the `fleet-structure` subscription value carries the dead status and signal, so their arrival starts a new read. A signal-killed pane has no exit status;
   tmux 3.7c names the signal (macOS) or numbers it (Linux), and both reads,
   the pane list and the inventory, give `hup`, `int`, `quit`, `abort`, `kill`,
   `segv`, `pipe`, `term`, `other:<n>` (the host's number, not comparable
