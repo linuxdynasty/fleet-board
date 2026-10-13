@@ -171,6 +171,12 @@ contract; this is how the hub runs it.
   of the machine inside the revoke's transaction, whatever its deadline:
   `done`, `DONE`, status `EXPIRED`, reason `MACHINE_REVOKED` (02g; 02i).
   `RevokeMachine` (plan row 13a) calls it.
+- **Prompt answers.** A `SendKeys` that answers a prompt holds that
+  prompt's in-flight marker until the command ends: a result, the expiry
+  pass, and the revoke path all release it in the same transaction, so the
+  next answer for that prompt can go and a dead answer never blocks it
+  (03d W7). Other command kinds hold nothing; releasing a prompt the hub
+  never held is a no-op.
 - **Prune.** The housekeeping job `outbox_prune` deletes, every hour,
   the rows that closed more than 30 days before (`done_time`), their
   results with them, in writer jobs of at most 1,000 rows; an open row is
