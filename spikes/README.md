@@ -44,6 +44,10 @@ result files were replaced with sample values (the measurements are unchanged).
   64 GiB RAM, internal SSD, APFS), `-prefill 12900000` (49.9 GiB) against
   `-prefill 500000` in the same session; the run prints each B-tree's depth
   ([`results/s1-logs-50g.txt`](sqlite/results/s1-logs-50g.txt)).
+- `logs` cold-cache run (plan 0.15, still open): fill and measure run as
+  separate processes — `./s1 -scenario logs -prefill 12900000 -prefill-only
+  -dir <dir>`, drop the page cache, then `./s1 -scenario logs -reuse -dir
+  <dir>`; each prefill gives one cold run.
 - Disk bytes written come from macOS `proc_pid_rusage`
   (`ri_diskio_byteswritten`), so they include WAL, checkpoints and growth.
 

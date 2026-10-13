@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"fmt"
 	"math/rand/v2"
 	"os"
@@ -25,34 +26,37 @@ CREATE INDEX log_chunks_time ON log_chunks(session_id, stream, first_at)
 `
 
 func runLogs(path string) {
+	if *reuse && *prefillOnly {
+		panic("-reuse and -prefill-only exclude each other")
+	}
 	w, r := open(path)
-	// auto_vacuum must be chosen before the first table exists.
-	mustExec(w, "PRAGMA auto_vacuum=INCREMENTAL")
-	mustExec(w, "VACUUM")
-	for _, s := range strings.Split(strings.TrimSpace(logsSchema), ";\n") {
-		mustExec(w, s)
-	}
-
-	// Prefill: whole sessions of chunkSize bytes, oldest first.
-	t0 := time.Now()
-	sess := 0
-	ins := "INSERT INTO log_chunks(session_id, stream, raw_offset, raw_length, first_at, last_at, gap_before, data) VALUES (?,?,?,?,?,?,?,?)"
-	for n := 0; n < *prefill; {
-		tx := must(w.Begin())
-		st := must(tx.Prepare(ins))
-		for i := 0; i < 20 && n < *prefill; i++ {
-			sess++
-			must(tx.Exec("INSERT INTO log_sessions VALUES (?,?,?,?,?,1)", sess, sess%machines, sess, sess, chunksPerSess**chunkSize))
-			for c := 0; c < chunksPerSess && n < *prefill; c, n = c+1, n+1 {
-				must(st.Exec(sess, 0, c*75_000, 75_000, sess*3600+c*10, sess*3600+c*10+10, 0, blob(*chunkSize)))
-			}
+	var sess int
+	if *reuse {
+		// Cold-cache measuring run: the filling process wrote the file,
+		// this process only measures it.
+		var err error
+		sess, err = logsSessionCount(w)
+		if err != nil {
+			panic("reuse " + path + ": " + err.Error())
 		}
-		check(tx.Commit())
+		fmt.Printf("reuse: %d sessions already in %s\n", sess, path)
+	} else {
+		// auto_vacuum must be chosen before the first table exists.
+		mustExec(w, "PRAGMA auto_vacuum=INCREMENTAL")
+		mustExec(w, "VACUUM")
+		createLogsSchema(w)
+		sess = prefillLogs(w, path)
+		printDepths("after_prefill", w, path)
+		if *prefillOnly {
+			// First half of a cold-cache run: leave everything in the
+			// main file so the measuring process starts complete.
+			mustExec(w, "PRAGMA wal_checkpoint(TRUNCATE)")
+			return
+		}
 	}
-	fmt.Printf("prefill: %d chunks, %d sessions, %.0f MB, %v\n", *prefill, sess, fileMB(path), time.Since(t0).Round(time.Millisecond))
-	printDepths("after_prefill", w, path)
 
 	// Steady ingest with concurrent replay reads.
+	ins := "INSERT INTO log_chunks(session_id, stream, raw_offset, raw_length, first_at, last_at, gap_before, data) VALUES (?,?,?,?,?,?,?,?)"
 	stop := make(chan struct{})
 	var wg sync.WaitGroup
 	var replay, point []time.Duration
@@ -159,4 +163,53 @@ func fileMB(path string) float64 {
 		return 0
 	}
 	return float64(fi.Size()) / 1e6
+}
+
+func createLogsSchema(w *sql.DB) {
+	for _, s := range strings.Split(strings.TrimSpace(logsSchema), ";\n") {
+		mustExec(w, s)
+	}
+}
+
+// prefillLogs writes whole sessions of chunkSize bytes, oldest first, and
+// returns the session count the measuring phases continue from.
+func prefillLogs(w *sql.DB, path string) int {
+	t0 := time.Now()
+	sess := 0
+	ins := "INSERT INTO log_chunks(session_id, stream, raw_offset, raw_length, first_at, last_at, gap_before, data) VALUES (?,?,?,?,?,?,?,?)"
+	for n := 0; n < *prefill; {
+		tx := must(w.Begin())
+		st := must(tx.Prepare(ins))
+		for i := 0; i < 20 && n < *prefill; i++ {
+			sess++
+			must(tx.Exec("INSERT INTO log_sessions VALUES (?,?,?,?,?,1)", sess, sess%machines, sess, sess, chunksPerSess**chunkSize))
+			for c := 0; c < chunksPerSess && n < *prefill; c, n = c+1, n+1 {
+				must(st.Exec(sess, 0, c*75_000, 75_000, sess*3600+c*10, sess*3600+c*10+10, 0, blob(*chunkSize)))
+			}
+		}
+		check(tx.Commit())
+	}
+	fmt.Printf("prefill: %d chunks, %d sessions, %.0f MB, %v\n", *prefill, sess, fileMB(path), time.Since(t0).Round(time.Millisecond))
+	return sess
+}
+
+// logsSessionCount returns the sessions a filling process wrote, for the
+// measuring process of a cold-cache run to continue from. It refuses a file
+// that was never prefilled instead of measuring an empty store.
+func logsSessionCount(w *sql.DB) (int, error) {
+	var schema int
+	if err := w.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE name='log_chunks'").Scan(&schema); err != nil {
+		return 0, err
+	}
+	if schema == 0 {
+		return 0, fmt.Errorf("no log_chunks table: not a prefilled file")
+	}
+	var sess int
+	if err := w.QueryRow("SELECT COALESCE(MAX(session_id),0) FROM log_sessions").Scan(&sess); err != nil {
+		return 0, err
+	}
+	if sess == 0 {
+		return 0, fmt.Errorf("no sessions: not a prefilled file")
+	}
+	return sess, nil
 }

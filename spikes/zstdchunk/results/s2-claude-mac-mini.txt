@@ -1,0 +1,18 @@
+# Claude Code goal hour, 2026-10-12 19:03-20:04 EDT, Mac mini (M4 Pro, 64 GiB RAM,
+# APFS), Claude Code 2.1.296 (Sonnet 5.5, high effort), 120x40 tmux pipe-pane.
+# One scratch-folder session: Go CLI from nothing (flags, table tests,
+# go test/vet runs, 50 MB benchmark with pprof and an optimization pass,
+# two-minute fuzz run, three more features, REPL, README with every example run);
+# 7 model prompts plus 5 design answers, no other keys sent. Raw deleted after
+# analysis. Shared host load average 9-26 during recording; analysis runs offline
+# on the recorded bytes, so the ratios do not depend on host load.
+recording: 1.01 h, raw 2.4 MB (2.3 MB/h)
+
+method (zstd level 3)                              MB/h    ratio     B/s/pane    chunk p50 B
+whole recording, one frame (01c baseline)         0.142      16x           40              -
+independent frame per 10 s chunk                  0.278       8x           77            864
+independent frame per 30 s chunk                  0.218      11x           61           2185
+independent frame per 60 s chunk                  0.192      12x           53           4130
+frame per 5 min, flushed every 10 s               0.172      14x           48            470
+frame per 60 min, flushed every 10 s              0.155      15x           43            455
+independent 10 s chunk + trained dictionary       0.227      10x           63            680  (dict 16716 B, last 80%)

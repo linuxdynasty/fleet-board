@@ -27,6 +27,8 @@ var (
 	dur          = flag.Duration("dur", 60*time.Second, "measured duration")
 	chunkSize    = flag.Int("chunk", 2048, "logs: compressed chunk bytes")
 	prefill      = flag.Int("prefill", 500_000, "logs: chunks inserted before measuring")
+	reuse        = flag.Bool("reuse", false, "logs: open the prefilled database at -dir and skip schema, vacuum and prefill (cold-cache measuring run)")
+	prefillOnly  = flag.Bool("prefill-only", false, "logs: prefill then exit without measuring (cold-cache filling run)")
 	batchWindow  = flag.Duration("batch-window", 50*time.Millisecond, "writer batch window (03f: 50 ms)")
 	summaryRate  = flag.Int("summary-rate", 100, "pane summary writes/s (100 = every update; ~17 = 30 s write-behind of 500 panes)")
 	summaryBytes = flag.Int("summary-bytes", 2048, "pane summary bytes as stored (2048 raw; ~600 zstd)")

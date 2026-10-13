@@ -31,7 +31,7 @@ pages were read on 2026-10-02.
 | Q4 hot state | **Read from the store.** No cache process, no in-memory copy of record | S1: 500-row sidebar read p99 21 ms under burst |
 | Q5 browser fan-out | **Connect** (unary + server streaming, one stream per tab); terminal attach over **WebSocket** with byte acks | Vendor docs (browsers cannot stream requests) |
 | Q6 log storage | **`logs.db`**: zstd chunks as rows in a second SQLite file with its own writer; replaces "files on disk" in ADR 0010 | S1: 30 chunks/s commit p99 ≤ 19 ms; delete one session 6 ms; prune and vacuum in ≈ 55 ms steps; at the 50 GiB cap commit p99 ≤ 24 ms, vacuum step p99 ≤ 74 ms (2026-10-08) |
-| Q6 chunk framing | One zstd frame per stream for ≤ 5 min or 4 MiB raw, flushed into a chunk every 10 s; replay seeks by frame | S2: 14× vs 8× for independent 10 s frames (Codex, 60 min) |
+| Q6 chunk framing | One zstd frame per stream for ≤ 5 min or 4 MiB raw, flushed into a chunk every 10 s; replay seeks by frame | S2: 14× vs 8× for independent 10 s frames (Codex, 60 min); Claude Code 2026-10-12 confirms the same 14× vs 8× |
 | Q6 log volume | The first estimate was low: Codex output compresses 15×, not 115× (Muse); A50 is **50–270 GB/month** depending on the harness mix; default size cap 50 GiB | S2 |
 | Q7 replay budget | 200 ev/s per agent, 2,500 ev/s per hub, as proposed | S1 burst |
 | Q8 provider limits | Polling only in v1; webhook ingress later and optional | GitHub docs: 5,000 req/h per installation; 304s free |
@@ -336,8 +336,8 @@ nearly doubles. Single outliers were a 242 ms commit at 2 GB and a 344 ms vacuum
 at 50 GiB, both inside the 1 s batch window. Prune and vacuum time grow with
 the amount removed. No block reads were counted in any run (`/usr/bin/time
 -l`): the file was served from memory, so a cold cache is not measured. With
-smaller chunks (Muse, about 650 B) the cap holds several times more rows, a
-shape not run at 50 GiB. Each 2,048 B chunk took a 4 KiB
+smaller chunks (Muse ≈ 650 B; Claude ≈ 470 B, 2026-10-12) hold several times
+more rows, a shape not run at 50 GiB. Each 2,048 B chunk took a 4 KiB
 page of its own (12.9 M chunks, 26.4 GB of chunk data, in a 53.6 GB file): a
 chunk of about 2 to 4 KB costs one page, so the store on disk is larger than
 the chunk bytes and the cap holds fewer days than the monthly volumes below
@@ -374,6 +374,11 @@ the agent would ship it (klauspost/compress `SpeedDefault` ≈ zstd level 3):
 | **one frame per 5 min, flushed every 10 s** | **1.25** | **14×** | **348** | **3,227 B** |
 | one frame per 60 min, flushed every 10 s | 1.18 | 15× | 329 | 3,049 B |
 
+Claude Code, one goal hour 2026-10-12 (Mac mini, 2.1.296, 120×40 pipe-pane; [raw deleted, full table kept](../../spikes/zstdchunk/results/s2-claude-mac-mini.txt)):
+one scratch session (Go CLI from nothing, 7 prompts, 5 answers), 2.35 MB over 1.01 h.
+Same shape as Codex: 5-minute framing **14×** (48 B/s, p50 470 B) vs 8× independent 10 s frames;
+whole-stream 16× (40 B/s).
+
 - A frame needs no end to be read: each flush emits complete zstd blocks, so
   a frame cut short by an agent crash still decodes up to its last block
   ([RFC 8878 §3.1](https://www.rfc-editor.org/rfc/rfc8878.html)).
@@ -390,11 +395,11 @@ the chunk that starts the frame, so seeking costs at most 5 minutes of
 output (≈ 1.5 MB raw for Codex). This is within 7 % of the whole-hour ratio.
 
 **Volume, corrected.** Busy panes write 65 B/s (Muse, verified-facts) to 348 B/s (Codex,
-S2) after compression. At A50 with 300 capturing panes that is 19.5–104 KB/s,
-**50–270 GB/month**; at A4 (10 panes) 2–9 GB/month. The size cap therefore
-matters: **default 50 GiB**, oldest `FINAL` sessions pruned first, and the
-Usage view shows how many days the cap currently holds. Chunks are ≈ 3.3 KB,
-which S1 measured above.
+S2) after compression. Claude Code measured 40 B/s whole-stream (48 at 5-minute
+framing) on 2026-10-12, below the span's floor; the budgeted span is unchanged until
+the Muse leg lands and re-derives it (#60). The size cap therefore matters: **default
+50 GiB**, oldest `FINAL` sessions pruned first, and the Usage view shows how many days
+the cap currently holds. Chunks are ≈ 3.3 KB, which S1 measured above.
 
 ## Q7. Replay budget
 
@@ -490,5 +495,5 @@ second engine to learn.
 | Gap | Cover |
 |---|---|
 | `logs.db` at the 50 GiB cap with a cold page cache | Measured warm on 2026-10-08 (Q6, issue #60): indexes one level deeper, every single transaction and vacuum step within the 1 s batch window; no block reads were counted on the 64 GiB host. A cold run gates the merge of plan row 25, not its start: the `logs` scenario with a new spike flag, `-reuse`, that opens a prefilled `logs.db` and skips schema, vacuum and prefill, so prefill and measuring run as separate processes (prune and vacuum change the file, so each prefill gives one cold run); on a file larger than the machine's RAM (the hub MacBook preferred), or after the owner runs `sudo purge` by hand between the two processes, with the measuring process showing disk reads (`/usr/bin/time -l` block input operations in the thousands, not 0). Pass: commit p99 ≤ 250 ms; every commit, prune transaction and vacuum step under 1 s; replay 1 h p99 ≤ 1 s; offset lookup p99 ≤ 100 ms |
-| Muse and Claude Code under the framing above (S2 measured Codex) | Re-run `zstdchunk` on one goal hour of each before the first logs PR; this measurement (issue #60) gates the v1 logs work, plan item 0.15 (section 3) |
+| Muse under the framing above (S2 measured Codex; Claude Code measured 2026-10-12: 14× at the 5-minute framing vs 8× for independent 10 s frames, same shape as Codex, Q6 table) | Re-run `zstdchunk` on one Muse goal hour; this measurement (issue #60) gates the v1 logs work, plan item 0.15 (section 3). Blocked 2026-10-12: the plan stands 98% used (6,888 / 7,000 AIC), so an hour-long recording would overspend the owner's quota — it needs a quota reset or top-up, or owner-designated live sessions |
 | Harness transcripts (K3) compression | Measured in v3 before K3 ships. At A50 the raw transcript rate (1.08 MB/s) is higher than the terminal logs, so K3 stays opt-in and compressed |
