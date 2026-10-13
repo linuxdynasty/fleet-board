@@ -148,13 +148,15 @@ func statusLanded(was, p *agentv1.TmuxPane) bool {
 }
 
 // paneFacts is p with what never raises PaneChanged taken out (focus,
-// activity and output time: E4 has its own events), and the death fields
-// taken from death, so a death alone is PaneExited's.
+// activity and output time: E4 has its own events; availability: E11 has
+// its own), and the death fields taken from death, so a death alone is
+// PaneExited's.
 func paneFacts(p, death *agentv1.TmuxPane) *agentv1.TmuxPane {
 	c := proto.CloneOf(p)
 	c.Active = false
 	c.Activity = typev1.Activity_ACTIVITY_UNSPECIFIED
 	c.LastOutputTime = nil
+	c.Availability = nil
 	if death.GetDead() {
 		c.Dead, c.ExitStatus = death.GetDead(), death.ExitStatus
 	}

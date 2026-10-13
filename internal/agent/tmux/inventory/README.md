@@ -206,6 +206,21 @@ client state change). 7f measures the cost of the three subscriptions
 together (E13's `session_activity`, E4's `window_activity` and this one;
 proof 9).
 
+## Availability (7g scaffold)
+
+E11's idle half stays `false` for every pane until row 8 computes it from
+the ready pattern and the goal state (row-7 ruling fork 9). The
+available-for-work half is a mark overlay (`avail.go`): row 18's
+`SetPaneAvailability` handler drives it through `Observer.ApplyAvailability`,
+which records the mark and pokes one inventory read; the loop's next read
+reports it in `TmuxPane.availability` (with the mark's `since_time`) and
+emits `AvailabilityChanged` (never dropped). A mark for an unknown pane, a
+stale server start or a missing reason is refused, so a reused pane id
+never inherits one; a mark is dropped when its pane dies (emitted with
+`PANE_CHANGED`) or its server restarts, and a mark never raises
+`PaneChanged`. Edges go out through the emitter, so the agent's per-kind
+event counter already covers them; no observer signal is new.
+
 ## Concurrency
 
 ```text
@@ -234,8 +249,12 @@ Observer.Run (owns every goroutine below; returns when all have)
      server a request with a reply chan to its sync loop; no shared state
   CheckInput (row 18's SendKeys check, any caller goroutine): ReadClients
      -> the input tracker under inMu -> stamp, never Emit
+  ApplyAvailability (row 18's SetPaneAvailability, any caller goroutine):
+     the mark overlay under availMu -> poke dirty, never Emit; the loop's
+     next read reconciles, stamps and Emits (no lock held)
 Locks: waker.mu plus the input tracker's inMu, taken only around the pure
-evaluate/stamp (never across a control-mode command or an Emit). The rest
+evaluate/stamp (never across a control-mode command or an Emit); availMu
+the same, around the overlay's reconcile/stamp only. The rest
 of the sync loop's state is its own; Client.mu is the client's. Nothing is
 held across a control-mode command or an Emit.
 ```
