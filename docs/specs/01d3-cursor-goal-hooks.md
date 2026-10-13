@@ -106,7 +106,7 @@ follow-up; every screen read before the next key.
   [01b2](01b2-cursor-goal-control.md)).
 - After a turn the input line showed the "Add a follow-up" placeholder,
   and a typed line twice needed a second Enter to submit (for 0.19,
-  #96; observations only, nothing decided).
+  #96; decided there: 01b, 02h, cursor fixtures).
 
 ## Still open
 

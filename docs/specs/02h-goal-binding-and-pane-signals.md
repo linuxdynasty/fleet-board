@@ -391,13 +391,14 @@ are not blocked while prompt detection is unverified. Text is never typed
 into a running turn: in Claude the empty input line during a turn would queue
 it as the next message.
 
-Cursor's input line keeps the previous prompt after a turn (`→ <old text>`,
-[01b](01b-harness-commands.md#cursor)), and text typed next is added to it. A
-fresh line shows a placeholder in the same shape ("→ Plan, search, build
-anything"), and a plain screen capture does not yet tell the two apart. Until
-plan item 0.19 settles both, the agent refuses every `SendKeys` purpose and
-every `RunHarnessCommand` on a Cursor pane with `PANE_BUSY`, the usage probe's
-own session included, so Cursor usage stays unknown until then.
+Cursor's input line is a placeholder when empty ("→ Plan, search, build
+anything" fresh, "→ Add a follow-up" after a turn;
+[01b](01b-harness-commands.md#cursor)), identical to real text in a plain
+capture. Item 0.19 (2026-10-12) settled the tell: read the line styled;
+faint (`^[[2m`) is empty, full intensity is text. Clear with `Ctrl-U`
+(idle `Ctrl-C`), re-read to faint, send text and Enter separately. Without
+styled reads the agent keeps refusing Cursor `SendKeys`/`RunHarnessCommand`
+with `PANE_BUSY`, probe sessions included.
 
 ## Availability per pane
 

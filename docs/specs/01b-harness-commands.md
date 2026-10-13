@@ -92,13 +92,13 @@ no tmux pane and is out of scope.
 | `/` | a scrolling command menu; seen: `/model`, `/goal` ("durable goal that continues while idle"), `/run-everything`, `/auto-review`, `/plan`, `/ask`, `/usage` (partial list; the full catalog goes into fixtures) |
 | `/usage` | "Usage • Pro+", "Resets Nov 4"; Included 10% used, Auto 11%, API 0%; On-Demand Disabled; "Esc to close". A monthly plan, not a weekly one |
 | after a one-word prompt | the footer shows the context share ("Auto · 9.4%") |
-| after a turn | **the input line still holds the previous prompt** (`→ <old text>`); text typed next was added to it, and both went as one message |
+| after a turn | the input line shows the faint "Add a follow-up" placeholder (empty), not the old prompt (0.19 probe, 2026-10-12, below) |
 
-- **Typing.** The fresh input line is a placeholder ("→ Plan, search, build
-  anything") in the same shape as leftover text, so the empty-input check of
-  [02h](02h-goal-binding-and-pane-signals.md) cannot yet tell them apart. Plan
-  item 0.19 finds how to tell them apart and how to clear old text safely;
-  until then nothing is typed into a Cursor pane, probe sessions included (02h).
+- **Typing.** An empty line is a placeholder ("→ Plan, search, build anything" fresh, "→ Add a
+  follow-up" after a turn), identical in a plain capture. The [02h](02h-goal-binding-and-pane-signals.md)
+  check reads the styled line: faint (`^[[2m`) is empty, full intensity is text. Clear (`Ctrl-U`,
+  or idle `Ctrl-C`), re-read, send text and Enter separately. Item 0.19 decided this (probe
+  2026-10-12); row 30 implements it, and until then nothing is typed into a Cursor pane.
   The 2026-10-12 capture (`ready-ansi.txt`) records the placeholder's exact
   bytes (`→` dim, `P` reverse-video, rest dim) as the tell to test a future
   draft against; the draft half is still open.
