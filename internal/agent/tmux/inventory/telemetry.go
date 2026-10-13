@@ -23,8 +23,9 @@ const scope = "github.com/linuxdynasty/fleet-board/internal/agent/tmux/inventory
 const failGap = time.Minute
 
 // obsTelemetry is the observer's signals (05b): the gauge
-// fleet_agent_tmux_servers{kind}, the counter
-// fleet_agent_tmux_inventory_reads_total{server_kind, result} and the log
+// fleet_agent_tmux_servers{kind}, the counters
+// fleet_agent_tmux_inventory_reads_total{server_kind, result} and
+// fleet_agent_tmux_dead_status_polls_total{server_kind, result}, and the log
 // events tmux.server_seen, tmux.watch_off and tmux.inventory_failed. Ids,
 // closed words and counts only: never a session or window name, a command,
 // a tag value or a path.
@@ -32,6 +33,7 @@ type obsTelemetry struct {
 	log     *slog.Logger
 	servers metric.Int64Gauge
 	reads   metric.Int64Counter
+	polls   metric.Int64Counter
 	off     atomic.Bool
 
 	mu       sync.Mutex
@@ -54,7 +56,12 @@ func newObsTelemetry(tel *telemetry.Telemetry) (*obsTelemetry, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &obsTelemetry{log: log, servers: g, reads: reads, lastFail: map[string]time.Time{}}, nil
+	polls, err := m.Int64Counter(prefix+"_tmux_dead_status_polls_total",
+		metric.WithDescription("Status-less remains deaths waited on until the exit status landed or the follow-ups ran out, by server kind and result (landed, expired)."))
+	if err != nil {
+		return nil, err
+	}
+	return &obsTelemetry{log: log, servers: g, reads: reads, polls: polls, lastFail: map[string]time.Time{}}, nil
 }
 
 // readDone counts one inventory read that ended: result is "ok" or a
@@ -62,6 +69,13 @@ func newObsTelemetry(tel *telemetry.Telemetry) (*obsTelemetry, error) {
 // agent's stop cut short, is not counted (the client's state says why).
 func (t *obsTelemetry) readDone(ctx context.Context, kind, result string) {
 	t.reads.Add(ctx, 1, metric.WithAttributes(attribute.String("server_kind", kind), attribute.String("result", result)))
+}
+
+// deadStatusDone counts one status-less remains death that settled: result
+// is "landed" (a later read had the exit status) or "expired" (the
+// deadStatusPollMax follow-up reads still showed none: a signal death).
+func (t *obsTelemetry) deadStatusDone(ctx context.Context, kind, result string) {
+	t.polls.Add(ctx, 1, metric.WithAttributes(attribute.String("server_kind", kind), attribute.String("result", result)))
 }
 
 // running records whether the server of kind (default, fleet, probe) runs.

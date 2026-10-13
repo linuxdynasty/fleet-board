@@ -9,7 +9,12 @@ apply here. Load `fleet-go`, `fleet-tmux`, `fleet-security` and
 - No timer reads tmux or the socket folder (row-7 ruling fork 4): a read
   follows a control-mode notice, a client state change, a Snapshot or a
   folder event. The two timers, the wake debounce (`wakeGap`) and the read
-  pacing (`readGap`), only delay what an event already asked for.
+  pacing (`readGap`), only delay what an event already asked for. One
+  bounded exception: a pane read dead with no exit status is owed
+  `deadStatusPollMax` follow-up reads one second apart, until its status
+  lands or the cap runs out — the death's own notice asked for the status
+  (Linux sends no notice when only the status lands), so the timer still
+  only delays what that notice asked for, never polls for anything new.
 - Only the sync goroutine of a server reads, diffs, stores and emits for it;
   `Notify` drops tokens and never calls the client. Nothing is held across a
   control-mode command or an `Emit`. A change to that updates the README
