@@ -1,0 +1,78 @@
+{
+  "data": {
+    "repo": {
+      "b0": {
+        "nodes": [
+          {
+            "number": 7412,
+            "title": "Fleet the goal branch",
+            "state": "OPEN",
+            "isDraft": false,
+            "mergedAt": null,
+            "closedAt": null,
+            "updatedAt": "2026-10-01T14:00:00Z",
+            "headRefName": "fleet/eshu-7398",
+            "headRefOid": "abc123def456",
+            "headRepository": {"nameWithOwner": "acme/web"},
+            "baseRepository": {"nameWithOwner": "acme/web"},
+            "baseRefName": "main",
+            "author": {"login": "fleetdev", "__typename": "User", "databaseId": 2001},
+            "mergedBy": null,
+            "mergeStateStatus": "BLOCKED",
+            "reviewDecision": "APPROVED",
+            "body": "Implements the goal.\n\nFixes #7398",
+            "commits": {
+              "nodes": [
+                {"commit": {"oid": "111111111111", "committedDate": "2026-10-01T12:00:00Z", "statusCheckRollup": {"state": "PENDING"}}},
+                {"commit": {"oid": "abc123def456", "committedDate": "2026-10-01T13:30:00Z", "statusCheckRollup": {"state": "SUCCESS"}}}
+              ]
+            },
+            "reviews": {
+              "nodes": [
+                {"author": {"login": "alice", "databaseId": 1001}, "state": "CHANGES_REQUESTED", "submittedAt": "2026-10-01T12:30:00Z"},
+                {"author": {"login": "alice", "databaseId": 1001}, "state": "APPROVED", "submittedAt": "2026-10-01T13:45:00Z"}
+              ]
+            },
+            "closingIssuesReferences": {"edges": [{"node": {"number": 7398}}]}
+          }
+        ]
+      },
+      "c0": {
+        "associatedPullRequests": {
+          "nodes": [
+            {
+              "number": 7400,
+              "title": "Earlier work, merged",
+              "state": "MERGED",
+              "isDraft": false,
+              "mergedAt": "2026-09-30T12:00:00Z",
+              "closedAt": "2026-09-30T12:00:00Z",
+              "updatedAt": "2026-09-30T12:00:00Z",
+              "headRefName": "fleet/eshu-7300",
+              "headRefOid": "deadbeef0001",
+              "headRepository": {"nameWithOwner": "fork/web"},
+              "baseRepository": {"nameWithOwner": "acme/web"},
+              "baseRefName": "main",
+              "author": {"login": "fleetdev", "__typename": "User", "databaseId": 2001},
+              "mergedBy": {"login": "alice", "__typename": "User", "databaseId": 1001},
+              "mergeStateStatus": "CLEAN",
+              "reviewDecision": null,
+              "body": "Done.",
+              "commits": {
+                "nodes": [
+                  {"commit": {"oid": "deadbeef0001", "committedDate": "2026-09-30T11:00:00Z", "statusCheckRollup": null}}
+                ]
+              },
+              "reviews": {"nodes": []},
+              "closingIssuesReferences": {"edges": []}
+            }
+          ]
+        }
+      }
+    },
+    "linked": {
+      "edges": []
+    },
+    "rateLimit": {"limit": 5000, "cost": 12, "remaining": 4988, "resetAt": "2026-10-01T13:00:00Z"}
+  }
+}
