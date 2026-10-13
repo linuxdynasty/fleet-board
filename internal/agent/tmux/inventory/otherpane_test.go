@@ -1,7 +1,9 @@
 package inventory_test
 
 import (
+	"fmt"
 	"testing"
+	"time"
 
 	agentv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1"
 	"github.com/linuxdynasty/fleet-board/internal/agent/tmux"
@@ -37,6 +39,29 @@ func TestPaneChangesInAnotherSessionAreSeen(t *testing.T) {
 
 			dev.Run(t, "set-option", "-w", "-t", "other:0", "remain-on-exit", "on")
 			dev.Run(t, "split-window", "-d", "-t", "other:0", "sleep 2; exit 5")
+			// DIAGNOSTIC ONLY [DEBUG-7f3a]: sample what list-panes reports
+			// for dead panes over 35 s (reverted before merge; the sampling
+			// snapshots also settle the observer, so the wait below still
+			// decides pass/fail exactly as before).
+			for k := 0; k < 35; k++ {
+				snap := r.snapshot(t)
+				for _, srv := range snap.GetTmuxServers() {
+					for _, sess := range srv.GetSessions() {
+						for _, w := range sess.GetWindows() {
+							for _, p := range w.GetPanes() {
+								if p.GetDead() {
+									st := "?"
+									if p.ExitStatus != nil {
+										st = fmt.Sprint(p.GetExitStatus())
+									}
+									t.Logf("[DEBUG-7f3a] t+%ds pane %s dead exit=%s cmd=%q", k, p.GetKey().GetPaneId(), st, p.GetCurrentCommand())
+								}
+							}
+						}
+					}
+				}
+				time.Sleep(time.Second)
+			}
 			// tmux can report the fresh-dead pane before it knows the status,
 			// which then arrives on the next read: wait for the death with
 			// status 5 however it arrives (PaneExited, or PaneChanged after a
