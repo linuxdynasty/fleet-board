@@ -253,6 +253,30 @@ func TestRefusalsBeforeTheLimitDoNotStartItsWindow(t *testing.T) {
 
 // A stream the agent left with Bye is gone from the registry: the next
 // Hello for the machine counts no duplicate.
+// Bye.message is dropped with the stream (02e): a Bye carrying a secret
+// ends the stream as agent_bye, and the message is never stored or logged.
+func TestAnAgentByeWithAMessageIsDroppedWithTheStream(t *testing.T) {
+	t.Parallel()
+	h := startHub(t)
+	m := h.enrollMachine(t)
+	s := h.open(t, m)
+	s.send(t, hello(m, 0))
+	s.ack(t)
+	secret := "ghp_0123456789abcdefghijABCDEFGHIJ012345"
+	bye := agentBye()
+	bye.GetBye().Message = "leaving: token " + secret
+	s.send(t, bye)
+	if err := s.ended(t); err != nil {
+		t.Fatal(err)
+	}
+	h.waitConns(t, m.id, "the agent_bye row", func(c []conn) bool {
+		return len(c) == 1 && c[0].endReason == "agent_bye"
+	})
+	if logs := h.logs.String(); strings.Contains(logs, secret) {
+		t.Errorf("a log line carries the Bye message's secret")
+	}
+}
+
 func TestAnAgentByeLeavesNoStreamForTheNextHello(t *testing.T) {
 	t.Parallel()
 	h := startHub(t)

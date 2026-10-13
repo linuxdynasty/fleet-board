@@ -12,7 +12,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"connectrpc.com/connect"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 
@@ -299,6 +298,12 @@ func (l *Loop) Run(ctx context.Context) error {
 		} else {
 			wait = p.onFailure()
 		}
+		// The hub's asked wait wins over a shorter backoff, capped at the
+		// backoff ceiling so a hub cannot park the agent (02g "Hello
+		// refusals": RATE_LIMITED carries retry_after).
+		if wait < min(out.retryAfter, b.Max) {
+			wait = min(out.retryAfter, b.Max)
+		}
 		l.status.state(StateBackoff, "")
 		l.log.InfoContext(ctx, "connect.backoff", "failures", p.failures, "wait_ms", wait.Milliseconds(),
 			"reason", reasonLabel(p.reason))
@@ -358,6 +363,9 @@ type ending struct {
 	peer string
 	// event is the wake or network change that closed the stream.
 	event *wakenet.Decision
+	// retryAfter is the wait the hub asked for before the next try, from
+	// its refusal's ErrorDetail, or 0.
+	retryAfter time.Duration
 }
 
 // candidate is one hub address to try. dial, set for an mDNS answer, is
@@ -429,6 +437,9 @@ func (l *Loop) fail(ctx context.Context, c candidate, step string, err error, co
 	kind := connErrKind(err, untrusted)
 	l.status.failed(c.addr, Failure{Step: step, ErrKind: kind, Time: time.Now()})
 	args := []any{"peer", c.addr, "step", step, "err_kind", kind}
+	if d := retryAfter(err); d > 0 {
+		args = append(args, "retry_after_ms", d.Milliseconds())
+	}
 	if ce, ok := errors.AsType[*checkError](err); ok {
 		args = append(args, "check", ce.check, "value", ce.value)
 	}
@@ -452,27 +463,6 @@ type checkError struct {
 func (e *checkError) Error() string { return fmt.Sprintf("%v (%s %d)", e.err, e.check, e.value) }
 
 func (e *checkError) Unwrap() error { return e.err }
-
-// connErrKind is the 05b err_kind of a connect failure: a peer that failed
-// the handshake or refused the machine is "refused".
-func connErrKind(err error, untrusted bool) string {
-	var ce *connect.Error
-	switch {
-	case untrusted:
-		return "refused"
-	case errors.Is(err, errEpochRegressed), errors.Is(err, errSnapshotOversize), errors.Is(err, errProtoVersion),
-		errors.Is(err, ring.ErrOutOfRange):
-		return "constraint"
-	case errors.Is(err, errNotHelloAck):
-		return "parse"
-	case errors.As(err, &ce) && (ce.Code() == connect.CodeUnauthenticated ||
-		ce.Code() == connect.CodePermissionDenied || ce.Code() == connect.CodeUnimplemented):
-		return "refused"
-	case errors.As(err, &ce) && ce.Code() == connect.CodeDeadlineExceeded:
-		return "timeout"
-	}
-	return errKind(err)
-}
 
 // hubAddresses normalizes a hub's address list (EnrollResponse and
 // HelloAck alike): invalid entries and repeats (names compared in lower

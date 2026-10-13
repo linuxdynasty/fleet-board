@@ -98,7 +98,10 @@ srv, err := gateway.NewServer(gateway.ServerOptions{
   hub_time, `HeartbeatInterval` (15 s), `MaxMessageBytes`, hub_addresses,
   settings_epoch, settings_generation, hub_last_event_seq and a
   hub_instance_id minted per process start; no hub_capabilities (snapshots
-  arrive whole).
+  arrive whole). Then, still after the commit: an adopted Hello is logged
+  as `connect.adopted` and counted (`fleet_hub_connect_adopted_total`), and
+  a reconcile Hello is answered with `SnapshotRequest{reconcile}` (a full or
+  ended stream drops it, counted as `snapshot.request_dropped`).
 - **Registry** (`registry.go`): one live stream per machine, registered only
   after the commit; the higher epoch wins whatever order two results arrive
   in, so a late lower one gets `Bye{DUPLICATE_IDENTITY}` itself; removal is by

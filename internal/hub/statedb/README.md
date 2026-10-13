@@ -156,7 +156,16 @@ r, err := statedb.Renew(ctx, s, statedb.Renewal{MachineID: id, PeerSerial: seria
   caller's registry may lag the store, and an unknown age stays unknown.
   `Live` is a value (`Epoch` 0 is none): the caller copies its registry
   entry under its own lock, because the job reads it on the writer
-  goroutine.
+  goroutine. Inside the restore's reconcile window (`restore_reconcile_until`
+  still ahead, 02g) an unknown machine is adopted instead of refused:
+  its row is recreated `ENROLLED` under its machine id with its presented
+  serial stored (a serial row outliving its machine row is adopted too; a
+  revoked serial or one stored for another machine still refuses), with a
+  `machine.adopted` audit row in the same transaction, and the Hello reports
+  `Adopted`. The window's first Hello per machine (no connection row started
+  since the restore) reports `Reconcile`: the gateway answers
+  `SnapshotRequest{reconcile}`. Outside the window an unknown machine is
+  still `ErrMachineUnknown`.
 - **Times never step back.** An end before the row's start (a hub clock
   stepped back) is stored as the start, and the table refuses
   `ended_time < started_time`; `last_seen_time` only moves forward.

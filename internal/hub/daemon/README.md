@@ -63,7 +63,10 @@ parses flags and calls `Init`, `Run`, `EnrollToken`, `Backup` or `Restore`.
    `Options.PeerUID` injects the reader in tests). Then it starts the mDNS
    advertiser (`internal/hub/discovery`, while `discovery.mdns` is true; it
    never fails the hub, and `Options.Discovery` injects the multicast
-   responder and the interface list in tests) and serves until the context
+   responder and the interface list in tests). A goroutine it owns rechecks
+   the addresses every 60 s (`Options.DiscoveryTicks` in tests) and
+   re-serves when the records changed, so a hub that moved networks is
+   found without a restart. Then it serves until the context
    ends (SIGTERM), when it stops advertising first.
 9. Runs the nightly backup in a goroutine it owns (`backup.Schedule`,
    [internal/hub/backup](../backup/README.md)): a check at start, then every

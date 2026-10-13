@@ -230,6 +230,10 @@ The hub API's limits are in [02b](02b-hub-api.md#size-limits). The agent wire:
 | `PaneSummary.last_lines`, `GoalState.first_line`, `KeyInput.literal`, `RunHarnessCommand.args`, `GoalSpec.goal_text` | 4 KiB | agent (hub validates before sending) |
 | Labels, names, window names, `ShownField` strings, `ResetTime.original_text`, `ProbeHealth.message` | 256 bytes | agent; `ProbeHealth.message` also on the hub, as above |
 | `CommandResult.message`, `CommandProgress.message`, `parse_message` | 1 KiB | agent: a handler's text is cut to 8 KiB on a line boundary (the text is whole lines or empty) before the scrub, then the scrubber cuts to 1 KiB ([04b](04b-hub-scrubber-cost.md): cost follows the input); the hub cuts or rejects a longer string before it scrubs it (below) |
+| `CommandResult.metadata` | 16 entries of 256 bytes per key and value | agent; the hub keeps the first 16 keys in sorted order, each key and value cut to 256 bytes with control characters dropped, and does not scrub them: small structured facts, not free text |
+| `CommandProgress.metadata` | 16 entries of 256 bytes per key and value | agent; the hub stores no progress metadata, so it keeps nothing |
+| `SettingRejection.message` | 256 bytes | agent: fixed one-line phrases; the hub does not consume `SettingsAck` yet (counted `hub.connect.unhandled`), so it stores nothing |
+| `Bye.message` | no cap in the contract | the agent sends the reason only; the hub never reads the message (the stream close keeps the reason), so it stores nothing |
 | `TermUp.output` | 64 KiB per message | agent |
 | `TermDown.input` | 4 KiB per message | hub |
 | `LogChunk.zstd` | 960 KiB per chunk (chunks are about 100 KiB in practice) | agent |
@@ -243,7 +247,10 @@ rejects anything else.
 Agent-written free text (`CommandResult.message`, `CommandProgress.message`,
 `parse_message`, `ProbeHealth.message`) passes the shared secret scrubber
 (`internal/scrub`) on the agent, with the home folder written as `~`, and again
-on the hub before storage. The scrubber removes private key blocks (PEM and
+on the hub before storage. Not free text, so never scrubbed: `CommandResult.metadata`
+(bounded structured facts), `CommandProgress.metadata` (kept nowhere),
+`SettingRejection.message` and `Bye.message` (both kept nowhere; caps in the
+table above). The scrubber removes private key blocks (PEM and
 PGP) first, then tokens, emails, URL query and fragment values and passwords
 in URLs (the user name may be an email; with no scheme,
 `al@example.com:pw@host` counts too) or in `curl -u user:password`. Removing

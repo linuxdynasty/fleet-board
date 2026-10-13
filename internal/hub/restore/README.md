@@ -109,8 +109,11 @@ cover a refusal before the restore starts, such as `lock_held` while `fleetd
 run` is up.
 
 Not done here: closing the live `machine_connections` rows the backup holds
-(each is closed as displaced by its machine's next `Hello`; PR 5k decides
-the rest), and the reconcile behavior in Hello (PR 5k).
+(each is closed as displaced by its machine's next `Hello`, and any row
+still live at the next start is closed as `hub_restart` by the start sweep;
+that is PR 5k's decision, recorded in 02g). The reconcile behavior in Hello
+(`SnapshotRequest{reconcile}`, adoption of unknown machines) lives in the
+gateway and `statedb`, not here.
 
 Tests: `restore_test.go` (identity, previous copy, WAL case, empty folder,
 older schema, revocations, refusals, addresses and parity with the agent),

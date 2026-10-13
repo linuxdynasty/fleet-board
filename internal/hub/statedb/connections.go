@@ -96,6 +96,10 @@ type HelloIn struct {
 	// never from the Hello message.
 	MachineID  string
 	PeerSerial string
+	// PeerNotAfter is the verified certificate's expiry. Hello needs it
+	// only to adopt an unknown machine inside the restore's reconcile
+	// window (02g): the adopted cert_serials row cannot be NULL.
+	PeerNotAfter time.Time
 	// LastEpoch is Hello.last_epoch.
 	LastEpoch uint64
 	// BootID and InstallID are Hello.boot_id and Hello.install_id: 1 to 64
@@ -135,6 +139,15 @@ type HelloOut struct {
 	SettingsEpoch string
 	// Displaced is the connection this Hello displaced, or nil.
 	Displaced *Displaced
+	// Reconcile is true when this is the machine's first Hello inside the
+	// restore's reconcile window: the gateway answers it with
+	// SnapshotRequest{reason: "reconcile"} (02g, 03f).
+	Reconcile bool
+	// Adopted is true when this Hello recreated the machine's row inside
+	// the window (02g): the machine enrolled after the backup the hub was
+	// restored from. The machine.adopted audit row is already in this
+	// transaction; the row is ENROLLED until its Snapshot commits.
+	Adopted bool
 }
 
 // Displaced is a connection a newer Hello displaced. Its stream gets
@@ -232,10 +245,35 @@ func printable(s string, n int) bool {
 }
 
 func applyHello(ctx context.Context, tx *sql.Tx, in HelloIn) (HelloOut, error) {
-	if err := checkConnectPeer(ctx, tx, in.MachineID, in.PeerSerial); err != nil {
-		return HelloOut{}, err
-	}
 	var out HelloOut
+	if err := checkConnectPeer(ctx, tx, in.MachineID, in.PeerSerial); err != nil {
+		if !errors.Is(err, ErrMachineUnknown) {
+			return HelloOut{}, err
+		}
+		// A machine the restored store does not know: adopt it inside the
+		// restore's reconcile window (02g), refuse it outside.
+		until, err := reconcileUntil(ctx, tx)
+		if err != nil {
+			return HelloOut{}, err
+		}
+		if until <= in.Now.UnixMilli() {
+			return HelloOut{}, ErrMachineUnknown
+		}
+		if in.PeerNotAfter.IsZero() {
+			return HelloOut{}, fmt.Errorf("%w: adoption needs the certificate expiry", ErrHelloInvalid)
+		}
+		// The presented serial still has to be this machine's and
+		// unrevoked: checkConnectPeer stopped at the missing machine row.
+		// A revoked serial, or one stored for another machine, refuses.
+		known, serr := checkSerial(ctx, tx, in.MachineID, in.PeerSerial)
+		if serr != nil {
+			return HelloOut{}, serr
+		}
+		if err := adoptMachine(ctx, tx, in, known); err != nil {
+			return HelloOut{}, err
+		}
+		out.Adopted = true
+	}
 	err := tx.QueryRowContext(ctx, `SELECT settings_epoch FROM hub_identity WHERE id = 1`).Scan(&out.SettingsEpoch)
 	if errors.Is(err, sql.ErrNoRows) {
 		return HelloOut{}, ErrNoIdentity
@@ -254,6 +292,9 @@ func applyHello(ctx context.Context, tx *sql.Tx, in HelloIn) (HelloOut, error) {
 		return HelloOut{}, fmt.Errorf("%w: max(stored, last_epoch) is %d", ErrEpochOutOfRange, prev)
 	}
 	out.Epoch = prev + 1
+	if out.Reconcile, err = firstHelloSinceRestore(ctx, tx, in.MachineID, in.Now); err != nil {
+		return HelloOut{}, err
+	}
 	if out.Displaced, err = displace(ctx, tx, in, out.Epoch); err != nil {
 		return HelloOut{}, err
 	}
@@ -270,6 +311,92 @@ func applyHello(ctx context.Context, tx *sql.Tx, in HelloIn) (HelloOut, error) {
 	return out, nil
 }
 
+// reconcileUntil is the restore window's end (Unix ms); 0 when no restore
+// opened one. A store without the hub_identity row reads as no window;
+// the settings_epoch read below still refuses it.
+func reconcileUntil(ctx context.Context, q querier) (int64, error) {
+	var until int64
+	err := q.QueryRowContext(ctx, `SELECT restore_reconcile_until FROM hub_identity WHERE id = 1`).Scan(&until)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, fmt.Errorf("statedb: read reconcile window: %w", err)
+	}
+	return until, nil
+}
+
+// firstHelloSinceRestore is whether this Hello is the machine's first
+// inside the restore's reconcile window: no connection row started since
+// the restore began (the window's end minus ReconcileWindow). Outside the
+// window it is always false, so the gateway asks for a reconcile Snapshot
+// once per machine, not once per Hello (02g, 03f).
+func firstHelloSinceRestore(ctx context.Context, q querier, machineID string, now time.Time) (bool, error) {
+	until, err := reconcileUntil(ctx, q)
+	if err != nil {
+		return false, err
+	}
+	if until <= now.UnixMilli() {
+		return false, nil
+	}
+	var one int
+	err = q.QueryRowContext(ctx, `SELECT 1 FROM machine_connections WHERE machine_id = ? AND started_time >= ?`,
+		machineID, time.UnixMilli(until).Add(-ReconcileWindow).UnixMilli()).Scan(&one)
+	if errors.Is(err, sql.ErrNoRows) {
+		return true, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("statedb: read connections since restore: %w", err)
+	}
+	return false, nil
+}
+
+// adoptMachine recreates the row of a machine that enrolled after the
+// backup the hub was restored from (02g "While restore_reconcile is set"):
+// ENROLLED under its machine id (the name until its Snapshot says more),
+// its presented serial stored, and the machine.adopted audit row, all in
+// the Hello's transaction. The Snapshot transaction marks it ONLINE. Until
+// the row that builds the triage store lands there is no triage item for
+// it; the audit row is the record.
+func adoptMachine(ctx context.Context, tx *sql.Tx, in HelloIn, serialKnown bool) error {
+	now := in.Now.UnixMilli()
+	st, err := NextStamp(ctx, tx, in.Now)
+	if err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO machines(machine_id, name, expected_hostname, labels, drained,
+		install_id, state, hostname_mismatch, facts, created_time, version, observed_time, hub_seq)
+		VALUES (?, ?, ?, '[]', 0, ?, ?, 0, '{}', ?, 1, ?, ?)`,
+		in.MachineID, in.MachineID, in.MachineID, in.InstallID, MachineEnrolled, now,
+		st.ObservedTime.UnixMilli(), st.HubSeq); err != nil {
+		return fmt.Errorf("statedb: adopt machine: %w", err)
+	}
+	// The serial row may outlive its machine row (a deleted machine keeps
+	// its serials until not_after): adopt it when it is this machine's,
+	// refused as revoked or another machine's above.
+	if serialKnown {
+		if _, err := tx.ExecContext(ctx, `UPDATE cert_serials SET not_after_time = ?, created_time = ?
+			WHERE serial = ? AND machine_id = ?`, in.PeerNotAfter.UnixMilli(), now, in.PeerSerial, in.MachineID); err != nil {
+			return fmt.Errorf("statedb: adopt cert serial: %w", err)
+		}
+	} else if _, err := tx.ExecContext(ctx, `INSERT INTO cert_serials(serial, machine_id, not_after_time, created_time)
+		VALUES (?, ?, ?, ?)`, in.PeerSerial, in.MachineID, in.PeerNotAfter.UnixMilli(), now); err != nil {
+		return fmt.Errorf("statedb: adopt cert serial: %w", err)
+	}
+	detail, err := auditDetail(struct {
+		Serial string `json:"serial"`
+	}{in.PeerSerial})
+	if err != nil {
+		return err
+	}
+	if _, err := AppendAudit(ctx, tx, AuditEntry{
+		Action: ActionAdopted, Target: "machines/" + in.MachineID, MachineID: in.MachineID, Detail: detail, Now: in.Now,
+	}); err != nil {
+		return err
+	}
+	return nil
+}
+
 // checkConnectPeer is Connect's check (02g "A revoked or deleted machine
 // stays out", 03f "Revocation"): a machine row that is not REVOKED, and a
 // presented serial that is neither revoked ([ErrSerialRevoked]) nor stored
@@ -282,23 +409,35 @@ func checkConnectPeer(ctx context.Context, q querier, machineID, serial string) 
 	if err := checkMachine(ctx, q, machineID); err != nil {
 		return err
 	}
+	_, err := checkSerial(ctx, q, machineID, serial)
+	return err
+}
+
+// checkSerial is the serial half of checkConnectPeer, without the machine
+// row: the presented serial is neither revoked ([ErrSerialRevoked]) nor
+// stored for another machine ([ErrPeerSerialUnknown]). A serial the store
+// does not have is accepted and reported unknown (known false): TLS
+// verified the certificate against the CA and the revocation list, and a
+// hub restored from a backup older than the machine's last renewal has no
+// row for its serial. Adoption stores it.
+func checkSerial(ctx context.Context, q querier, machineID, serial string) (known bool, err error) {
 	var (
 		owner   string
 		revoked sql.NullInt64
 	)
-	err := q.QueryRowContext(ctx, `SELECT machine_id, revoked_time FROM cert_serials WHERE serial = ?`, serial).
+	err = q.QueryRowContext(ctx, `SELECT machine_id, revoked_time FROM cert_serials WHERE serial = ?`, serial).
 		Scan(&owner, &revoked)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
-		return nil
+		return false, nil
 	case err != nil:
-		return fmt.Errorf("statedb: read peer serial: %w", err)
+		return false, fmt.Errorf("statedb: read peer serial: %w", err)
 	case owner != machineID:
-		return ErrPeerSerialUnknown
+		return true, ErrPeerSerialUnknown
 	case revoked.Valid:
-		return ErrSerialRevoked
+		return true, ErrSerialRevoked
 	}
-	return nil
+	return true, nil
 }
 
 // displace closes the machine's live row, if any, as displaced by epoch.

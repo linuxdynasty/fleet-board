@@ -67,7 +67,7 @@ func (a *agentService) Connect(ctx context.Context, bs *connectStream) error {
 		return a.refuse(ctx, bs, peer, machineID, helloRefusal{cause: causeNotHello})
 	}
 	ctx, span := a.tracer.Start(ctx, "hub.connect.hello", trace.WithAttributes(attribute.String("machine_id", machineID)))
-	s, err := a.hello(ctx, bs, peer, machineID, ca.SerialHex(leaf.SerialNumber), first.GetHello())
+	s, err := a.hello(ctx, bs, peer, machineID, ca.SerialHex(leaf.SerialNumber), leaf.NotAfter, first.GetHello())
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "hello")
@@ -116,7 +116,7 @@ func (a *agentService) firstMessage(bs *connectStream, rc *http.ResponseControll
 
 // hello runs the Hello checks and transaction. It returns the registered
 // stream with HelloAck queued, or nil with the refusal already answered.
-func (a *agentService) hello(ctx context.Context, bs *connectStream, peer, machineID, serial string,
+func (a *agentService) hello(ctx context.Context, bs *connectStream, peer, machineID, serial string, certNotAfter time.Time,
 	h *agentv1.Hello,
 ) (*stream, error) {
 	if h.GetMachineId().GetValue() != machineID {
@@ -147,8 +147,8 @@ func (a *agentService) hello(ctx context.Context, bs *connectStream, peer, machi
 	unwatch := context.AfterFunc(a.stopping, cancel)
 	defer unwatch()
 	out, err := statedb.Hello(hctx, a.store, statedb.HelloIn{
-		MachineID: machineID, PeerSerial: serial, LastEpoch: h.GetLastEpoch(), BootID: h.GetBootId(),
-		InstallID: h.GetInstallId(), Peer: peer, Reason: connectReason(h.GetReason()),
+		MachineID: machineID, PeerSerial: serial, PeerNotAfter: certNotAfter, LastEpoch: h.GetLastEpoch(),
+		BootID: h.GetBootId(), InstallID: h.GetInstallId(), Peer: peer, Reason: connectReason(h.GetReason()),
 		Live: a.streams.live(machineID), Now: now,
 	})
 	switch {
@@ -200,6 +200,18 @@ func (a *agentService) hello(ctx context.Context, bs *connectStream, peer, machi
 	if s.send(&agentv1.ConnectResponse{Body: &agentv1.ConnectResponse_HelloAck{HelloAck: a.helloAck(out, version, now)}}) {
 		a.accepted(ctx, s, h, out)
 		a.skewSample(ctx, machineID, h.GetSentTime(), now)
+		if out.Adopted {
+			// The restore window recreated this machine's row from its
+			// certificate (02g): the machine.adopted audit row is in the
+			// Hello's transaction.
+			a.adopted(ctx, s)
+		}
+		if out.Reconcile {
+			// The first Hello inside the restore's window: ask for a
+			// Snapshot, so the hub adopts what the agent knows (02g, 03f).
+			// A full or ended stream drops it, counted and logged.
+			a.requestSnapshot(ctx, s, "reconcile")
+		}
 	}
 	return s, nil
 }

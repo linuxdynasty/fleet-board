@@ -80,11 +80,15 @@ address advertises that address on the interface that holds it. An IPv4
 link-local address (169.254/16) is advertised only when nothing else qualifies;
 IPv6 link-local never.
 
-The address list is read at start; after a network change restart `fleetd` or
-give the agent the new address (re-advertising on a network change is later
-work). So a hub found "within one 60 s backoff step" of moving
-([ADR 0028](../adr/0028-mdns-best-effort.md) decision 2) is true only after that
-restart.
+The address list is read at start and re-read every 60 s (defaults.md
+"mDNS re-advertise check"): when the records changed the hub stops the old
+serve and serves the new ones (`discovery.advertise_refreshed`, [05b](05b-observability.md));
+no change, no re-serve. A recheck that cannot plan or serve keeps what is
+served now, and a hub that found no network at start serves once one
+appears. So a hub is found "within one 60 s backoff step" of moving
+([ADR 0028](../adr/0028-mdns-best-effort.md) decision 2) without a restart;
+the agents' cached and configured addresses still cover a move the hub
+cannot see.
 
 ## Configuration file
 

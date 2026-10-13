@@ -207,6 +207,10 @@ func TestAStopSaysByeToTheHub(t *testing.T) {
 	msgs := h.stream(1).msgs
 	if last := msgs[len(msgs)-1]; last.GetBye().GetReason() != agentv1.ByeReason_BYE_REASON_SHUTDOWN {
 		t.Errorf("the last message before a stop is %v, want Bye{SHUTDOWN}", last)
+	} else if last.GetBye().GetMessage() != "" {
+		// Bye carries the reason only (02e): the hub never reads or stores
+		// its message.
+		t.Errorf("Bye{SHUTDOWN} carries message %q, want none", last.GetBye().GetMessage())
 	}
 	// The hub closed the stream in time, so nothing was cut, now or later.
 	time.Sleep(2500 * time.Millisecond)

@@ -193,8 +193,9 @@ contract; this is how the hub runs it.
   or reason this hub has no name for is stored and counted as `UNKNOWN`.
 - **Not yet.** A result for a command the hub never issued (a store
   restored from an older backup) is only counted and logged here; the audit
-  row and triage info item 03n asks for come with plan row 5k (restore
-  reconcile). A result's `detail` (screen text up to 256 KiB) is stored as
+  row 03n asks for waits on an arbiter ruling recorded in the row-5 PR (the
+  `command_results` foreign key blocks storing it as history, and no triage
+  store exists yet for the info item). A result's `detail` (screen text up to 256 KiB) is stored as
   the agent sent it, so one result row can approach the 1 MiB message cap;
   bounding it is still open (#33). Each answer waits for its own writer
   batch window on the ingest goroutine (about 250 to 350 ms a result, one

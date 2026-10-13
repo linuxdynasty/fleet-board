@@ -20,7 +20,9 @@
 // (discovery.mdns off, no host name, no address, a served certificate that
 // lacks the target) or a failure (the interface list, no multicast family
 // that binds, the responder) is logged and counted once and never stops the
-// hub. [Responder] is the only code that touches the network, the library
+// hub. [Advertiser.Recheck] re-reads the addresses on the daemon's recheck
+// tick and re-serves when the records changed, at most once a tick.
+// [Responder] is the only code that touches the network, the library
 // github.com/hashicorp/mdns (ADR 0023); [NewResponder] is the real one and
 // tests inject a fake, so the default test run sends no multicast.
 package discovery

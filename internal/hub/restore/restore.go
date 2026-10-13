@@ -19,8 +19,8 @@ import (
 )
 
 // ReconcileWindow is how long after a restore the hub adopts what agents
-// know and it does not (02g, 03f).
-const ReconcileWindow = 24 * time.Hour
+// know and it does not (02g, 03f): statedb's, where Hello reads it.
+const ReconcileWindow = statedb.ReconcileWindow
 
 // Why a restore was refused.
 var (
