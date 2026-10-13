@@ -78,8 +78,8 @@ type connectDeps struct {
 }
 
 type connectMetrics struct {
-	reconnects, duplicates, unhandled, refused, beforeHello metric.Int64Counter
-	epoch                                                   metric.Int64Gauge
+	reconnects, duplicates, unhandled, refused, beforeHello, adopted metric.Int64Counter
+	epoch                                                            metric.Int64Gauge
 }
 
 func newConnectDeps(opts ServerOptions) (*connectDeps, error) {
@@ -90,7 +90,7 @@ func newConnectDeps(opts ServerOptions) (*connectDeps, error) {
 	m := opts.Telemetry.Meter(scope)
 	p := opts.Telemetry.MetricPrefix()
 	var cm connectMetrics
-	var errs [6]error
+	var errs [7]error
 	cm.reconnects, errs[0] = m.Int64Counter(p+"_reconnects_total",
 		metric.WithDescription("Hellos the hub accepted, by machine and Hello.reason (start, reconnect, wake, network_change, unspecified)."))
 	cm.epoch, errs[1] = m.Int64Gauge(p+"_epoch",
@@ -104,6 +104,9 @@ func newConnectDeps(opts ServerOptions) (*connectDeps, error) {
 	cm.beforeHello, errs[5] = m.Int64Counter(p+"_connect_closed_before_hello_total",
 		metric.WithDescription("Connect streams with a certificate that ended before a Hello was accepted, by err_kind: "+
 			"oversize, reset, timeout (the Hello wait) or shutdown."))
+	cm.adopted, errs[6] = m.Int64Counter(p+"_connect_adopted_total",
+		metric.WithDescription("Machines adopted after a restore: unknown to the restored store, recreated from the "+
+			"certificate on the first Hello inside the reconcile window (02g)."))
 	if err := errors.Join(errs[:]...); err != nil {
 		return nil, fmt.Errorf("gateway: connect metrics: %w", err)
 	}
@@ -172,6 +175,14 @@ func (a *agentService) accepted(ctx context.Context, s *stream, h *agentv1.Hello
 	a.m.epoch.Record(ctx, int64(out.Epoch), metric.WithAttributes(machine)) //nolint:gosec // G115: epoch <= statedb.MaxEpoch
 	a.log.InfoContext(ctx, "reconnect.hello", "machine_id", s.machineID, "epoch", out.Epoch, "last_epoch", h.GetLastEpoch(),
 		"last_event_seq", h.GetLastEventSeq(), "hub_last_event_seq", out.HubLastEventSeq, "reason", reason, "peer", s.peer)
+}
+
+// adopted logs connect.adopted and counts a machine the restore window
+// adopted: its row was recreated from its certificate on this Hello (02g).
+// The machine.adopted audit row is in the Hello's transaction.
+func (a *agentService) adopted(ctx context.Context, s *stream) {
+	a.m.adopted.Add(ctx, 1, metric.WithAttributes(attribute.String("machine", s.machineID)))
+	a.log.InfoContext(ctx, "connect.adopted", "machine_id", s.machineID, "epoch", s.epoch)
 }
 
 // duplicate logs identity.duplicate and counts a live stream (old) that

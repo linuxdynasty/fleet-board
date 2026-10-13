@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/linuxdynasty/fleet-board/internal/hub/daemon"
 	"github.com/linuxdynasty/fleet-board/internal/hub/discovery"
@@ -181,5 +182,48 @@ func TestAnUnreadableHostNameWithDefaultNamesRefusesInit(t *testing.T) {
 	opts.Hostname = func() (string, error) { return "", errors.New("no host name") }
 	if err := daemon.Init(t.Context(), opts); err == nil {
 		t.Fatal("Init succeeded with no host name and no agent_names")
+	}
+}
+
+// A discovery tick re-serves when the addresses changed (02j "Discovery"):
+// a hub that moved networks stops advertising the old addresses.
+func TestADiscoveryTickReadvertisesNewAddresses(t *testing.T) {
+	t.Parallel()
+	h := newHub(t, "")
+	h.init(t)
+	opts := h.options()
+	var mu sync.Mutex
+	ifaces := []discovery.Iface{{
+		Name: "en0", Flags: net.FlagUp | net.FlagMulticast,
+		Addrs: []netip.Addr{netip.MustParseAddr("192.168.1.5")},
+	}}
+	opts.Discovery.Ifaces = func() ([]discovery.Iface, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		return ifaces, nil
+	}
+	ticks := make(chan time.Time)
+	opts.DiscoveryTicks = ticks
+	h.start(t, opts)
+	if served, _ := h.resp.state(); len(served) != 1 {
+		t.Fatalf("served %d times after start, want 1", len(served))
+	}
+	mu.Lock()
+	ifaces = []discovery.Iface{{
+		Name: "en1", Flags: net.FlagUp | net.FlagMulticast,
+		Addrs: []netip.Addr{netip.MustParseAddr("10.0.0.7")},
+	}}
+	mu.Unlock()
+	ticks <- time.Time{} // the second send returns once the recheck finished
+	ticks <- time.Time{}
+	served, stopped := h.resp.state()
+	if len(served) != 2 || stopped != 1 {
+		t.Fatalf("served %d, stopped %d after the tick, want 2 and 1", len(served), stopped)
+	}
+	if got := served[1].IPs; len(got) != 1 || got[0].String() != "10.0.0.7" || served[1].Iface != "en1" {
+		t.Errorf("re-advertised %+v, want only 10.0.0.7 on en1", served[1])
+	}
+	if n := len(h.logs.events(t, "discovery.advertise_refreshed")); n != 1 {
+		t.Errorf("discovery.advertise_refreshed logged %d times, want 1", n)
 	}
 }

@@ -285,6 +285,26 @@ func serve(ctx context.Context, cfg *config.Config, opts Options, d hubDeps, s *
 	// Advertise only now that the agent listener serves: an agent that
 	// follows the answer finds it. It never fails the hub (02j "Discovery").
 	adv.Start()
+	// Re-advertise when the addresses change (a hub that moved networks),
+	// at most once a tick: the tick's cadence is the rate limit (02j).
+	discTicks := opts.DiscoveryTicks
+	if discTicks == nil {
+		t := time.NewTicker(discovery.RecheckEvery)
+		defer t.Stop()
+		discTicks = t.C
+	}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-discTicks:
+				adv.Recheck()
+			}
+		}
+	}()
 	s.tel.Logger.Info("hub.started", "mode", cfg.Mode, "listeners", len(ls))
 	if opts.Ready != nil {
 		opts.Ready(addrs)

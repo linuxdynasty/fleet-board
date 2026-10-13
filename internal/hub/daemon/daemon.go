@@ -53,6 +53,9 @@ type Options struct {
 	// and OFFLINE marking); nil means a ticker every
 	// housekeeping.TickEvery that Run owns.
 	HousekeepingTicks <-chan time.Time
+	// DiscoveryTicks drives the mDNS re-advertise check in Run; nil means
+	// a ticker every discovery.RecheckEvery that Run owns.
+	DiscoveryTicks <-chan time.Time
 	// Terminal is where Backup reads an encrypted copy's passphrase
 	// (backup.NewTerminal on stdin in the binary).
 	Terminal backup.Terminal

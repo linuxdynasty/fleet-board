@@ -15,6 +15,12 @@ import (
 // Unix milliseconds like created_time; 0 is no window (02g, 03f).
 const restoreSQL = `ALTER TABLE hub_identity ADD COLUMN restore_reconcile_until INTEGER NOT NULL DEFAULT 0;`
 
+// ReconcileWindow is how long after a restore the hub adopts what agents
+// know and it does not (02g, 03f). fleetd restore opens it; Hello reads it.
+// The store keeps only the window's end (restore_reconcile_until); its
+// start is the end minus this, so the two packages never disagree.
+const ReconcileWindow = 24 * time.Hour
+
 // RestoreUpdate is what fleetd restore changes in the hub_identity row of a
 // restored store. Everything else (fleet id, CA, salt) stays.
 type RestoreUpdate struct {

@@ -91,3 +91,22 @@ func TestAnOversizeMessageIsCutBeforeTheScrub(t *testing.T) {
 		t.Errorf("fleet_hub_scrub_oversize_total = %v, want 1", v)
 	}
 }
+
+// A result's metadata is small structured facts, not free text (02e): it
+// is bounded to 16 entries of 256 bytes, but a secret-looking value is
+// kept verbatim, never scrubbed.
+func TestResultMetadataIsBoundedNotScrubbed(t *testing.T) {
+	t.Parallel()
+	s := newStore(t)
+	h := newService(t, s, newFakeStreams(), fixedClock(t0))
+	mustEnqueue(t, s, "m1", "c1")
+	res := resultOf("c1", typev1.Status_STATUS_FAILED, "")
+	res.Metadata = map[string]string{"approver": "local_user", "token": seededToken, "note": seededEmail}
+	if got, err := h.svc.Result(context.Background(), live1, res); err != nil || got != outbox.Applied {
+		t.Fatalf("Result = %v, %v", got, err)
+	}
+	md := storedResult(t, s, "c1").GetMetadata()
+	if md["token"] != seededToken || md["note"] != seededEmail || md["approver"] != "local_user" {
+		t.Errorf("stored metadata %q, want the values verbatim", md)
+	}
+}

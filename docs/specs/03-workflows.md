@@ -363,7 +363,7 @@ re-enroll rule are in [02g](02g-agent-security.md#machine-lifecycle-revoke-and-d
   key, a CSR or a certificate; serials are hex.
 - Hub logs of `Connect` (plan row 5a-ii) and the Snapshot (row 5c1), described in 03n "Telemetry":
   `connect.refused{cause, reason, peer, machine_id}`, `connect.failed{step, err_kind, machine_id}`, `snapshot.applied`,
-  `snapshot.refused`, `snapshot.failed`, `snapshot.abandoned`, `snapshot.rollback`, `snapshot.request_dropped`.
+  `snapshot.refused`, `snapshot.failed`, `snapshot.abandoned`, `snapshot.rollback`, `snapshot.request_dropped`, `connect.adopted{machine_id, epoch}` and `fleet_hub_connect_adopted_total{machine}` (5k: a machine adopted after a restore).
 - Logs: `enroll.issued{machine, expire_time, actor}`, `enroll.issue_refused{reason}`,
   `enroll.issue_failed{step, err_kind}`,
   `enroll.completed{machine_id, replayed, hostname_mismatch}`,

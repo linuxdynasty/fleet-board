@@ -137,6 +137,9 @@ func (l *Loop) try(ctx context.Context, c candidate, reason agentv1.ConnectReaso
 		l.m.attempt(ctx, result, c.source)
 	}
 	if err != nil {
+		if out.end == "" && !out.connected {
+			out.retryAfter = retryAfter(err)
+		}
 		l.fail(ctx, c, step, err, out.connected, untrusted)
 	}
 	return out, handshook && !untrusted

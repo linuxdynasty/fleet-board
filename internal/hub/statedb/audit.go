@@ -76,8 +76,12 @@ const (
 	ActionEnrollToken  = "machine.enroll_token"
 	ActionEnroll       = "machine.enroll"
 	ActionEnrollFailed = "machine.enroll_failed"
-	ActionCertRenewed  = "machine.cert_renewed"
-	ActionRestore      = "hub.restore"
+	// ActionAdopted is a machine the hub adopted after a restore (02g):
+	// enrolled after the backup, recreated from its certificate on its
+	// first Hello inside the reconcile window.
+	ActionAdopted     = "machine.adopted"
+	ActionCertRenewed = "machine.cert_renewed"
+	ActionRestore     = "hub.restore"
 )
 
 // MaxAuditDetail caps AuditEntry.detail in bytes; the table checks it too.

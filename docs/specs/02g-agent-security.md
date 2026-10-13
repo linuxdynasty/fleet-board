@@ -241,8 +241,11 @@ holds `fleetd.lock` throughout, so it is refused while `fleetd run` runs (#92). 
 2. Mints a fresh **`settings_epoch`** (otherwise the agent still holds
    `(E, 20)` against a restored `(E, 15)` and ignores the hub's settings, the
    exact case the epoch exists for). It changes no `machine_connections`
-   rows: a restored live row is displaced by that machine's next `Hello`,
-   and PR 5k decides what restored live and `ONLINE` rows mean.
+   rows, and that is the decision PR 5k recorded: a restored live row is
+   displaced by that machine's next `Hello`, and any row still live at the
+   next start is closed as `hub_restart` by the start sweep, which also
+   marks every `ONLINE` machine `STALE` (03n "Hub start"). Machines the hub
+   knows but that never reconnect stay `OFFLINE` through housekeeping.
 3. If `--address` is given (host[:port], port from `listen.agent`, else
    7443, spelled as the agent keeps it), adds it to `hub_addresses` and
    issues a server certificate from the same CA for the names `fleetd run`
@@ -265,11 +268,11 @@ knows against what it holds:
 
 | Agent has, hub does not | Action |
 |---|---|
-| A machine (valid certificate from this CA, **serial not revoked**, machine id unknown) enrolled after the backup | Adopt it: recreate the row from the certificate and snapshot in state `ONLINE`, raise an info triage item "machine adopted after restore"; outside the 24 h window, or for a revoked serial, it gets `Bye{UNKNOWN_MACHINE}` |
-| A probe in `Snapshot.probes` for an account the hub has | Adopt the assignment; for an unknown account, `StopProbe` |
-| A tmux session with a `FLEET_SESSION_ID` the hub does not know | Recreate the `Session` row under that id, as a fleet session |
-| A `Snapshot.goal_registry` entry for a goal the hub does not know | Existing `orphan_goal_pane` triage (W7); `ReleaseGoal` only after the owner decides |
-| Unacknowledged results for commands the hub never issued | Stored as history only, then acked |
+| A machine (valid certificate from this CA, **serial not revoked**, machine id unknown) enrolled after the backup | Adopt it: recreate the row `ENROLLED` from the certificate on its first `Hello` in the window (name and expected hostname are the machine id until a later row renames it), store its presented serial, answer `SnapshotRequest{reason: "reconcile"}`, and write a `machine.adopted` audit row; the Snapshot marks it `ONLINE`. The info triage item follows when the row that builds the triage store lands. Outside the 24 h window, or for a revoked serial, it gets `Bye{UNKNOWN_MACHINE}` |
+| A probe in `Snapshot.probes` for an account the hub has | Adopt the assignment; for an unknown account, `StopProbe`. Not in row 5: no probe-assignment store exists yet; the reconcile snapshot still arrives and its `ProbeHealth` events apply as usual |
+| A tmux session with a `FLEET_SESSION_ID` the hub does not know | Recreate the `Session` row under that id, as a fleet session. Not in row 5: no sessions table exists yet (row 7 builds the hub's tmux mirror) |
+| A `Snapshot.goal_registry` entry for a goal the hub does not know | Existing `orphan_goal_pane` triage (W7); `ReleaseGoal` only after the owner decides. Not in row 5: no goal store exists yet |
+| Unacknowledged results for commands the hub never issued | Counted and logged (`fleet_hub_results_unknown_command_total`); storing them as history is blocked on the `command_results` foreign key, and the audit row 03n asks for waits on an arbiter ruling both recorded in the row-5 PR. Until then the agent resends them every reconnect until it prunes them |
 
 Machines the hub knows but that never reconnect stay `OFFLINE`. Nothing in
 restore touches `fleet_id`, the CA, the salt or the account bindings. **Restore
