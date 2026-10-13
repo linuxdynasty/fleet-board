@@ -146,6 +146,37 @@ func TestDeadStatusWaitExpires(t *testing.T) {
 	}
 }
 
+// The wait spans the whole window a status may take, not just the first
+// ten re-reads: a status landing late still finds its wait owed (Linux CI:
+// the status can arrive after the first seconds, inside the 30 s wait).
+func TestDeadStatusWaitSpansTheWindow(t *testing.T) {
+	tel, err := telemetry.New(telemetry.Config{Service: telemetry.Agent, Version: "v0", InstanceID: "window", LogOutput: &bytes.Buffer{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, em := deadStatusServer(t, tel)
+	ctx := context.Background()
+	s.apply(ctx, buildServer("default", deadStatusInventory(tmux.NoStatus, false), "3.7c"))
+	stillDead := buildServer("default", deadStatusInventory(tmux.NoStatus, true), "3.7c")
+	s.apply(ctx, stillDead)
+	em.evs = nil
+	for range 10 {
+		s.apply(ctx, stillDead)
+	}
+	if len(s.pending) != 1 {
+		t.Fatalf("pending waits = %d after 10 status-less re-reads, want the wait still owed", len(s.pending))
+	}
+	for range deadStatusPollMax {
+		s.apply(ctx, stillDead)
+	}
+	if len(s.pending) != 0 {
+		t.Fatalf("pending waits = %d after the full window of re-reads, want none left", len(s.pending))
+	}
+	if got := scrapeValue(t, tel, "fleet_agent_tmux_dead_status_polls_total", `server_kind="default"`, `result="expired"`); got != "1" {
+		t.Fatalf("dead_status_polls{result=expired} = %q, want 1", got)
+	}
+}
+
 // A signal death stays status-less for good: the loop's follow-up reads
 // end after deadStatusPollMax, counted expired, with no status event and
 // no runaway polling.
@@ -249,9 +280,11 @@ func eachDeadStatusPollEnds(t *testing.T, b tmuxtest.Binary) {
 			t.Fatalf("no PaneExited for the killed pane %s", id)
 		}
 	}
-	// ... and the wait ends expired: bounded reads, no status event.
+	// ... and the wait ends expired: bounded reads, no status event. The
+	// window spans the full 30 s of follow-up reads, so this phase allows
+	// twice that.
 	expired := ""
-	deadline = time.Now().Add(30 * time.Second)
+	deadline = time.Now().Add(60 * time.Second)
 	for expired != "1" {
 		expired = scrapeValue(t, tel, "fleet_agent_tmux_dead_status_polls_total", `server_kind="default"`, `result="expired"`)
 		if time.Now().After(deadline) {

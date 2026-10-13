@@ -60,15 +60,17 @@ var readTimeout = 10 * time.Second
 
 // deadStatusPollGap is how soon after a read that saw a fresh-dead pane
 // with no exit status the loop reads again, and deadStatusPollMax how many
-// such follow-ups one pane is owed. tmux can report the death before
-// waitpid hands it the status, and on Linux no notice follows when only
-// the status lands, so without these the hub would never learn it. A
-// signal death never gains a status: the cap bounds that waste to ten
-// extra reads. The death's own notice asked for the status; the timer only
+// such follow-ups one pane is owed: thirty one-second reads span the whole
+// 30 s window the tests allow a status, since on Linux it can land well
+// after the first seconds. tmux can report the death before waitpid hands
+// it the status, and on Linux no notice follows when only the status lands,
+// so without these the hub would never learn it. A signal death never
+// gains a status: the cap bounds that waste to thirty extra reads, counted
+// expired. The death's own notice asked for the status; the timer only
 // delays what that notice already asked for, like readGap.
 const (
 	deadStatusPollGap = time.Second
-	deadStatusPollMax = 10
+	deadStatusPollMax = 30
 )
 
 // Observer finds the tmux servers in the socket folder, keeps one control
