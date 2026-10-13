@@ -60,6 +60,10 @@ type Options struct {
 	// Init and Run build their own, logging to LogOutput (nil: stderr).
 	Telemetry *telemetry.Telemetry
 	LogOutput io.Writer
+	// SecretOutput takes the local approval secret the one time it is
+	// created (nil: stderr). Tests pass a buffer. The secret never reaches
+	// the structured log.
+	SecretOutput io.Writer
 	// Ready, when set, is called once every listener is serving.
 	Ready func(Addrs)
 	// Discovery holds the seams of the mDNS advertiser: the multicast

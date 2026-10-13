@@ -76,6 +76,13 @@ func closeOpen(ctx context.Context, tx *sql.Tx, query string, args []any, now ti
 			reason = ?, done_time = ?, `+stamped, state, reason, now.UnixMilli()); err != nil {
 			return nil, err
 		}
+		// An expired answer never lands: release its prompt so the next
+		// answer for it can go (03d "Hub restart").
+		if c.Kind == "send_keys" {
+			if err := releasePrompt(ctx, tx, c.MachineID, c.CommandID); err != nil {
+				return nil, err
+			}
+		}
 	}
 	return out, nil
 }

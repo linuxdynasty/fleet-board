@@ -354,3 +354,27 @@ principal and, through `Principal.device`, the device. A prompt raises a
 triage item and an approval; Triage's "Send choice…" is `DecideApproval`.
 `SendKeys` never answers prompts, so every answer is bound to its `prompt_id`
 and audited once.
+
+### The local approval secret
+
+Decided ([ADR 0032](../adr/0032-local-trusted-approval-secret.md), issue
+#62, plan item 0.17). In `local_trusted` mode any process on the hub machine
+counts as the owner for everyday calls, but two kinds of calls need the
+local approval secret as well and fail with `CREDENTIALS_INVALID` without
+it, even on loopback:
+
+1. Approving a request: `DecideApproval`.
+2. Changing settings: every call whose scope above is `SETTINGS` or `ADMIN`
+   (`UpdateSettings`, `ImportConfig`, the repo, account, routine,
+   integration, machine-label and hook calls, the machine admin calls,
+   devices, users, passkeys, login sessions, API tokens, notification
+   targets, `GetStoreStatus`).
+
+The secret is 256-bit random, created at `fleetd init` beside the state
+database (mode 0600) and shown once at the terminal; the first start of an
+older store creates it the same way. It travels as the
+`X-Fleet-Approval-Secret` header (02f), kept in the dashboard login session
+and prompted for by `fleet` at the terminal: never in the shell environment
+and never in a plain file. Row 19 enforces it on `DecideApproval` (the only
+one of these calls it builds); the check attaches to each further call as
+its row lands, from this list.

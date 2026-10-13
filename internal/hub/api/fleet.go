@@ -42,21 +42,32 @@ type FleetOptions struct {
 	Now func() time.Time
 	// Random is the source of token secrets; nil means crypto/rand.
 	Random io.Reader
+	// StateDir holds the approval secret file (secret.Path); empty fails
+	// the secret check closed. Set from the hub config's state dir.
+	StateDir string
+	// LocalTrusted is the hub's auth mode (config.Mode): in local_trusted
+	// mode DecideApproval and the SETTINGS and ADMIN calls need the local
+	// approval secret as well (ADR 0032).
+	LocalTrusted bool
 }
 
-// Fleet is the hub's FleetService. Only CreateEnrollmentToken is built;
-// every other method answers Unimplemented. The caller comes from
-// [PrincipalFrom], set by the server in front of it.
+// Fleet is the hub's FleetService. The caller comes from [PrincipalFrom],
+// set by the server in front of it; the secret comes from the
+// X-Fleet-Approval-Secret header ([SecretHeader]).
 type Fleet struct {
 	hubv1connect.UnimplementedFleetServiceHandler
 
-	store       *store.Store
-	caDER       []byte
-	fingerprint string
-	tel         *telemetry.Telemetry
-	now         func() time.Time
-	random      io.Reader
-	tokens      metric.Int64Counter
+	store        *store.Store
+	caDER        []byte
+	fingerprint  string
+	tel          *telemetry.Telemetry
+	now          func() time.Time
+	random       io.Reader
+	stateDir     string
+	localTrusted bool
+	tokens       metric.Int64Counter
+	sessCmds     metric.Int64Counter
+	approvals    metric.Int64Counter
 }
 
 // NewFleet builds the service.
@@ -73,11 +84,23 @@ func NewFleet(opts FleetOptions) (*Fleet, error) {
 	}
 	fp := sha256.Sum256(opts.CACert)
 	f.fingerprint = hex.EncodeToString(fp[:])
+	f.stateDir = opts.StateDir
+	f.localTrusted = opts.LocalTrusted
 	var err error
 	f.tokens, err = f.tel.Meter(scope).Int64Counter(f.tel.MetricPrefix()+"_enroll_tokens_total",
 		metric.WithDescription("CreateEnrollmentToken calls, by result: issued, refused (the caller's error) or failed (the hub's)."))
 	if err != nil {
 		return nil, fmt.Errorf("api: enroll token counter: %w", err)
+	}
+	f.sessCmds, err = f.tel.Meter(scope).Int64Counter(f.tel.MetricPrefix()+"_session_commands_total",
+		metric.WithDescription("Session-control calls by agent command kind and result: sent, replayed, refused or failed."))
+	if err != nil {
+		return nil, fmt.Errorf("api: session command counter: %w", err)
+	}
+	f.approvals, err = f.tel.Meter(scope).Int64Counter(f.tel.MetricPrefix()+"_approvals_total",
+		metric.WithDescription("Approvals by kind and outcome: created, approved, denied, expired or withdrawn."))
+	if err != nil {
+		return nil, fmt.Errorf("api: approval counter: %w", err)
 	}
 	return f, nil
 }

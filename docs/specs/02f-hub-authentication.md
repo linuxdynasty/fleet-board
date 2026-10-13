@@ -36,9 +36,9 @@ local approval secret as well and fail without it, even on loopback: approving
 a request (`DecideApproval`), and changing settings (the calls with the
 `SETTINGS` or `ADMIN` scope). The secret is created at `fleetd init`, shown
 once at the terminal, and kept in the owner's dashboard session, never in the
-shell or in a file a goal reads. Until plan row 19 builds this, no goal
-starts, manual or automatic: plan row 22 (goal start) depends on row 19
-(approvals). Row 19 writes the exact call list and the denied-path tests.
+shell or in a file a goal reads. Row 19 builds the check on `DecideApproval`,
+the exact call list (02d) and the denied-path tests; until row 22 (goal
+start) lands on top of it, no goal starts, manual or automatic.
 `local_trusted` stays a convenience for one person on one machine, and the Host
 and Origin checks below are what keep a web page the owner visits from using it.
 The loopback rule applies to the API listener only: agents reach the hub on a
@@ -53,6 +53,7 @@ TLS port" ([02j](02j-hub-runtime.md#listeners)).
 | `fleet` CLI, scripts | API token | `Authorization: Bearer fbt_<token id>.<secret>` (`FLEET_TOKEN`) | `{kind API_TOKEN, id "token/<id>", role mapped, on_behalf_of <user>}` |
 | Phone | paired device | `Authorization: Fleet-Device <device id>.<unix seconds>.<nonce>.<Ed25519 signature>` over method, path, SHA-256 of the body, timestamp and nonce; the hub refuses a timestamp more than 60 s off or a nonce it saw in that window | `{kind DEVICE, device, id "device/<id>", role mapped, on_behalf_of <user>}` |
 | Owner in `local_trusted` | none | nothing | the fixed local owner |
+| Owner in `local_trusted`, for `DecideApproval` and the `SETTINGS`/`ADMIN` calls | local approval secret | `X-Fleet-Approval-Secret: <hex shown once by fleetd init>`, kept in the dashboard login session, prompted for by `fleet` at the terminal; never in the shell or a file. A missing or wrong secret is `CREDENTIALS_INVALID`, even on loopback | the fixed local owner |
 | `fleet-agent`, `fleetd` peers | mTLS client certificate | not this API: `AgentService` only | n/a |
 
 A request with two credential kinds (a cookie and an `Authorization` header) is

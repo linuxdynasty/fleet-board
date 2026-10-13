@@ -128,7 +128,7 @@ func TestASecondInitFailsAndChangesNothing(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, e := range entries {
-		if e.Name() != "state.db" && e.Name() != "fleetd.lock" {
+		if e.Name() != "state.db" && e.Name() != "fleetd.lock" && e.Name() != "approval_secret" {
 			t.Errorf("the state folder holds %s after a refused init", e.Name())
 		}
 	}

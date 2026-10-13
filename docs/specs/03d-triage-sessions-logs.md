@@ -160,6 +160,12 @@ stateDiagram-v2
   `fleet_hub_prompt_answer_latency_seconds` (detected → `OK`),
   `fleet_hub_prompt_answers_total{result, destructive}`,
   `fleet_hub_triage_expired_total{kind}`.
+- `fleet_hub_approvals_total{kind, outcome}` (`created`, `approved`, `denied`,
+  `refused`, `failed`, `secret_refused`); expiries and withdrawals are
+  `approval.expire` / `approval.withdraw` audit rows plus the
+  `approval.expired` log line below, countable the same way,
+  `fleet_hub_session_commands_total{kind, result}`
+  (`sent`, `replayed`, `refused`, `failed`).
 - `fleet_agent_prompt_detected_total{harness, source, destructive, answerable}`,
   `fleet_agent_prompt_gone_total{harness}`, `fleet_agent_send_keys_total{result}`.
 - Spans: `hub.triage.raise{kind}`, `hub.prompt.answer{prompt_id}` →
@@ -167,6 +173,13 @@ stateDiagram-v2
 - Logs: `triage.raised{kind, fingerprint, goal_id, machine}`,
   `prompt.answered{prompt_id, by, option, destructive, result}`,
   `triage.expired{kind, age}`.
+- Hub session and approval calls (row 19): `session.sent{kind, machine,
+  command, actor}`, `session.issue_refused{reason, actor}`,
+  `session.issue_failed{step, err_kind, actor}`, `approval.created{kind,
+  approval, actor}`, `approval.decided{kind, approval, sends, replay, actor}`,
+  `approval.expired{count, fallback}`, `approval.secret_created` (no secret
+  value, ever), `approval.secret_refused{actor}`,
+  `approval.issue_refused{reason}`, `approval.issue_failed{step, err_kind}`.
 
 At 3 AM: "a prompt has been waiting for hours" →
 `fleet_hub_triage_open_age_seconds{kind="prompt"}` and whether `answerable`

@@ -129,8 +129,14 @@ func (s *Service) Result(ctx context.Context, from From, r *agentv1.CommandResul
 				id, from.MachineID, from.Epoch, status, reason, msg.text, body, now.UnixMilli()); err != nil {
 				return fmt.Errorf("outbox: store result: %w", err)
 			}
-			return c.update(jctx, tx, now, `UPDATE commands SET state = 'done', op_state = 'DONE', status = ?, reason = ?,
-				message = ?, done_time = ?, `+stamped, status, reason, msg.text, now.UnixMilli())
+			if err := c.update(jctx, tx, now, `UPDATE commands SET state = 'done', op_state = 'DONE', status = ?, reason = ?,
+				message = ?, done_time = ?, `+stamped, status, reason, msg.text, now.UnixMilli()); err != nil {
+				return err
+			}
+			if c.kind == "send_keys" {
+				return releasePrompt(jctx, tx, from.MachineID, id)
+			}
+			return nil
 		})
 	if err != nil {
 		span.RecordError(err)

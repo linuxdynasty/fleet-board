@@ -35,7 +35,10 @@ func bindAdmin(cfg *config.Config, opts Options, st *store.Store, id statedb.Ide
 	if err := os.Chmod(path, 0o600); err != nil {
 		return listener{}, errors.Join(fmt.Errorf("daemon: chmod admin socket: %w", err), ln.Close())
 	}
-	fleet, err := api.NewFleet(api.FleetOptions{Store: st, CACert: id.CACert, Telemetry: s.tel, Now: opts.Now})
+	fleet, err := api.NewFleet(api.FleetOptions{
+		Store: st, CACert: id.CACert, Telemetry: s.tel, Now: opts.Now,
+		StateDir: cfg.StateDir, LocalTrusted: cfg.Mode == "local_trusted",
+	})
 	if err != nil {
 		return listener{}, errors.Join(err, ln.Close())
 	}
