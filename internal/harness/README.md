@@ -5,8 +5,10 @@ shared conformance test (plan row 8) and the reset-time helpers the usage
 parsers share. The per-harness adapters live in the subfolders (`claude/`,
 `codex/`, `cursor/`, `muse/`, `opencode/`), as parsers plus recorded screens
 under each one's `testdata/<version>/`. Usage parsers so far: `cursor/`
-reads the `/usage` dialog (row 30), and `claude/`, `codex/` and `muse/`
-read their `/usage` and `/status` screens (row 8).
+reads the `/usage` dialog (row 30), `claude/`, `codex/` and `muse/`
+read their `/usage` and `/status` screens (row 8), and `opencode/` reads
+the `stats` spend table, the `providers list` account output and the TUI
+model line (row 8, issue #36).
 
 - `version.go`: `Detector` runs a harness's version command through
   `internal/proc` under the `version` caller (empty stdin, 5 s, 16 KiB).
