@@ -408,12 +408,12 @@ because availability is a fact about one harness pane and a developer's
 session often holds several. The agent keeps each mark in its state directory
 keyed by pane key (which includes `server_start_id`), drops it when the pane
 dies or the tmux server restarts, and reports it in `TmuxPane.availability`
-on every snapshot. A mark by the developer also carries `fresh_context_on_reuse`
+on every snapshot. Row 7 keeps the mark in memory (row 18 adds the state-dir
+keep). A mark by the developer also carries `fresh_context_on_reuse`
 (default off): they choose when marking whether a goal sent to that pane starts
 with `/clear`. Without it the goal is typed into their existing context. The
 flag lives and dies with the mark; the hub compares and re-sends a missing mark, since
-principle 1 puts desired state on the hub. `AvailabilityChanged.reason` is
-the enum `AvailabilityReason`.
+principle 1 puts desired state on the hub; `AvailabilityChanged.reason` is the enum `AvailabilityReason`.
 
 ## Goal control support
 

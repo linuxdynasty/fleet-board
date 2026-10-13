@@ -133,6 +133,7 @@ func New(opts Options) (*Observer, error) {
 			o: o, name: name, kind: kindWord(name), dirty: make(chan struct{}, 1), snap: make(chan chan *agentv1.TmuxServer),
 			actDirty: make(chan struct{}, 1), inDirty: make(chan struct{}, 1),
 			track: newActivityTracker(time.Now, opts.IdleThreshold), inputs: newInputTracker(time.Now, opts.inputEmitGap()),
+			avail:  newAvailOverlay(),
 			winAct: map[string]time.Time{}, summaries: map[string]time.Time{}, pending: map[string]int{},
 		}
 		c, err := tmux.NewClient(tmux.ClientOptions{
@@ -252,6 +253,15 @@ type server struct {
 	inMu   sync.Mutex
 	inputs *inputTracker
 
+	// availMu guards the availability scaffold: the loop's sync and row
+	// 18's ApplyAvailability share the overlay, the last synced start
+	// and the last synced live pane ids. The loop never emits or reads
+	// tmux while holding it.
+	availMu    sync.Mutex
+	avail      *availOverlay
+	availStart string
+	availLive  map[string]bool
+
 	reads atomic.Int64 // inventory reads started (the pacing test counts them)
 
 	// Owned by the loop goroutine alone.
@@ -346,6 +356,9 @@ func (s *server) sync(ctx context.Context) {
 			s.inMu.Lock()
 			s.inputs.reset()
 			s.inMu.Unlock()
+			s.availMu.Lock()
+			s.avail.reset()
+			s.availMu.Unlock()
 			s.winAct = map[string]time.Time{}
 			s.summaries = map[string]time.Time{}
 		}
@@ -356,13 +369,24 @@ func (s *server) sync(ctx context.Context) {
 		s.inMu.Lock()
 		s.inputs.stamp(next)
 		s.inMu.Unlock()
+		s.availMu.Lock()
+		live, sess := availLive(next)
+		availEdges := s.avail.reconcile(live, sess, s.name, inv.StartID)
+		s.avail.stamp(next)
+		s.availStart, s.availLive = inv.StartID, live
+		s.availMu.Unlock()
 		s.apply(ctx, next)
 		s.emitChanges(ctx, inv.StartID, changes)
+		s.emit(ctx, availEdges...)
 	case tmux.StateAbsent:
 		s.track.reset()
 		s.inMu.Lock()
 		s.inputs.reset()
 		s.inMu.Unlock()
+		s.availMu.Lock()
+		s.avail.reset()
+		s.availStart, s.availLive = "", nil
+		s.availMu.Unlock()
 		s.winAct = map[string]time.Time{}
 		s.summaries = map[string]time.Time{}
 		s.apply(ctx, nil)

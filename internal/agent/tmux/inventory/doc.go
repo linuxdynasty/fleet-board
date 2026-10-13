@@ -40,6 +40,12 @@
 // confirms, a 2 s backup poll keeps the same read going (ADR 0024,
 // decision 9); [Observer.CheckInput] is row 18's on-demand read for the
 // SendKeys check: it reads at that moment and stamps, never emits.
+// E11 availability (01 E11) is a scaffold: every pane reports idle false
+// (row-7 ruling fork 9; rows 8 and 18 own the idle computation), and the
+// developer's available-for-work mark is an overlay row 18 drives through
+// [Observer.ApplyAvailability]. The loop's next read reports the mark in
+// the Snapshot and emits AvailabilityChanged; a mark never raises
+// PaneChanged, and dies with its pane or its server.
 // [Observer.Snapshot] is the conn Snapshot hook.
 //
 // Sessions on the probe server, and sessions whose @fleet_internal user
