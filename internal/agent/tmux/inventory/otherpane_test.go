@@ -40,7 +40,8 @@ func TestPaneChangesInAnotherSessionAreSeen(t *testing.T) {
 			dev.Run(t, "set-option", "-w", "-t", "other:0", "remain-on-exit", "on")
 			dev.Run(t, "split-window", "-d", "-t", "other:0", "sleep 2; exit 5")
 			// DIAGNOSTIC ONLY [DEBUG-7f3a]: sample what list-panes reports
-			// for dead panes every 3 s over 60 s (reverted before merge).
+			// for dead panes every 3 s over 60 s, plus tmux's raw
+			// pane_dead_status/pane_dead_signal for %3 (reverted early).
 			// t.Logf shows on a race-hit failure; a clean pass reruns via
 			// gh run rerun until the race hits.
 			for k := 0; k < 20; k++ {
@@ -55,7 +56,8 @@ func TestPaneChangesInAnotherSessionAreSeen(t *testing.T) {
 									if p.ExitStatus != nil {
 										st = fmt.Sprint(p.GetExitStatus())
 									}
-									desc = fmt.Sprintf("pane %s dead exit=%s cmd=%q", p.GetKey().GetPaneId(), st, p.GetCurrentCommand())
+									raw, rawErr := dev.Try("display-message", "-p", "-t", p.GetKey().GetPaneId(), "#{pane_dead_status}:#{pane_dead_signal}")
+									desc = fmt.Sprintf("pane %s dead exit=%s cmd=%q raw=%q rawerr=%v", p.GetKey().GetPaneId(), st, p.GetCurrentCommand(), raw, rawErr)
 								}
 							}
 						}
