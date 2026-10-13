@@ -32,14 +32,14 @@ type Cleaned struct {
 
 // Clean makes snap's stored text safe, in place, on the stream's ingest
 // goroutine before the writer job (never in the transaction): every string
-// of the facts, the resources and the policy loses its control characters
-// and invalid UTF-8 and is cut to its cap; the version strings and the
-// policy error, the agent's free text, are cut to their cap and only then
-// passed to the shared scrubber, which is never handed more than the cap
-// (04b): a hostile 1 MiB string costs what a short one does. A secret that
-// straddles the cap is cut in half first; the half left is no longer a
-// whole secret and may stay as it is. The rest of the Snapshot is the later
-// rows' to clean.
+// of the facts, the resources, the policy and the goals loses its control
+// characters and invalid UTF-8 and is cut to its cap; the version strings,
+// the policy error and the two long goal lines, the agent's free text, are
+// cut to their cap and only then passed to the shared scrubber, which is
+// never handed more than the cap (04b): a hostile 1 MiB string costs what
+// a short one does. A secret that straddles the cap is cut in half first;
+// the half left is no longer a whole secret and may stay as it is. The
+// rest of the Snapshot is the later rows' to clean.
 func Clean(snap *agentv1.Snapshot) Cleaned {
 	var c Cleaned
 	if f := snap.GetFacts(); f != nil {
@@ -65,6 +65,11 @@ func Clean(snap *agentv1.Snapshot) Cleaned {
 		p.Hash = c.text(p.GetHash(), maxText)
 		p.SchemaVersion = c.scrub(p.GetSchemaVersion())
 		p.Error = c.scrub(p.GetError())
+	}
+	for _, g := range snap.GetGoals() {
+		if g != nil {
+			cleanGoalState(&c, g)
+		}
 	}
 	return c
 }

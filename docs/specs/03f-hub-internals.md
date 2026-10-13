@@ -184,7 +184,9 @@ contract; this is how the hub runs it.
 - **Answers.** `CommandAck`, `CommandProgress` and `CommandResult` are
   handled on the stream's ingest goroutine: the free text is cut to its cap
   and scrubbed there ([04b](04b-hub-scrubber-cost.md)), then one writer job
-  applies the message. `ResultAck` is queued after that job commits. A
+  applies the message. GoalState text rides the same path (row 9): the two
+  long goal lines at 4 KiB, owner, action, commit and branch at 256 bytes,
+  paths at the path cap, the rest losing only controls and overlong bytes. `ResultAck` is queued after that job commits. A
   message from a stream that is no longer its machine's live one, or for a
   command with no row or of another machine, is refused and counted; it
   writes nothing and is never answered; so is a malformed `command_id`, never

@@ -48,10 +48,21 @@ func (c Caller) Limits() Limits { return c.limits }
 //     for a slow machine and for a wrapper that prints an install prompt
 //     instead of a version. Row 8 (#141) added it. The `gemini` binary was
 //     not installed here, and Linux is not measured yet.
+//   - git: `git status --porcelain`, `rev-parse`, `rev-list --count` and
+//     `remote get-url`, 3 runs on macOS 26 (arm64) on this repo: 10 to
+//     160 ms (cold) and tens of bytes. Row 9 (H1, H3) runs them per
+//     checkout once a minute. Capped at 90 s and 64 KiB (about a thousand
+//     changed paths); a dirtier tree keeps its last reading.
+//   - gh: `gh auth status` and `gh repo view --json viewerPermission`,
+//     one run each on macOS 26 (arm64): 0.46 s and 0.38 s, under a
+//     kilobyte. Row 9 (H4) re-checks hourly (the forge_cli_status event).
+//     Capped at 30 s and 8 KiB for a slow network.
 var callers = map[string]Limits{
 	"tmux":     {Time: 5 * time.Second, Output: 16 << 10},
 	"loginctl": {Time: 5 * time.Second, Output: 4 << 10},
 	"version":  {Time: 5 * time.Second, Output: 16 << 10},
+	"git":      {Time: 90 * time.Second, Output: 64 << 10},
+	"gh":       {Time: 30 * time.Second, Output: 8 << 10},
 }
 
 // For returns the caller with that name, or [ErrUnknownCaller] when the

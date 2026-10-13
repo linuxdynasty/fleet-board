@@ -66,6 +66,11 @@ type Options struct {
 	// watches and whether that watch is off; status.json then carries
 	// tmux_folder and, when off, tmux_watch: off. Read like PolicyWatchOff.
 	TmuxWatch func() (folder string, off bool)
+	// Observed, when set, returns the checkout folders holding two
+	// harness panes (the goals tracker's Ambiguous); status.json then
+	// carries ambiguous_folders, left out when empty. Read like
+	// PolicyWatchOff.
+	Observed func() []string
 
 	// Test seams: the clock, a hook run after each write attempt, and the
 	// disk steps.
@@ -234,6 +239,9 @@ func (w *Writer) write() {
 		if off {
 			st.TmuxWatch = TmuxWatchOff
 		}
+	}
+	if w.opts.Observed != nil {
+		st.AmbiguousFolders = cleanFolders(w.opts.Observed())
 	}
 	data, err := encode(st)
 	if err == nil {

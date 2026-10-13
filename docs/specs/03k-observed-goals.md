@@ -108,3 +108,11 @@ Plan PR 9 (agent) and PR 5 and 12 (hub): eshu goal-file fixtures; the attributio
 rule with one pane, two panes and a stale file; id stability across an agent
 restart; a replayed event applied twice makes one row; `DONE` and pane exit end it;
 no `Command` is ever queued for an observed goal.
+
+## Telemetry
+
+- `goals.refresh_failed`, `goals.scan_failed`: the agent's 60 s tick logs
+  which half failed (checkout table, goal scan); the next tick retries and
+  the last readings stay.
+- `GoalState` emission is counted by the shared event counter with
+  `kind="goal_state"`; loss is the emitter's, counted there.

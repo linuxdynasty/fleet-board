@@ -236,6 +236,7 @@
   {"token": "O_CREAT", "kind": "syscall-flag", "reason": "POSIX open(2) flag named in the goal-file safe writes (01d2)", "files": ["docs/specs/01d2-goal-file-safe-writes.md"]},
   {"token": "O_EXCL", "kind": "syscall-flag", "reason": "POSIX open(2) flag named in the goal-file safe writes (01d2)", "files": ["docs/specs/01d2-goal-file-safe-writes.md"]},
   {"token": "O_RDONLY", "kind": "syscall-flag", "reason": "POSIX open(2) flag named in the goal-file safe writes (01d2)", "files": ["docs/specs/01d2-goal-file-safe-writes.md"]},
-  {"token": "EvalSymlinks", "kind": "go", "reason": "Go standard library function path/filepath.EvalSymlinks (02h step 4)", "files": ["docs/specs/02h-goal-binding-and-pane-signals.md"]}
+  {"token": "EvalSymlinks", "kind": "go", "reason": "Go standard library function path/filepath.EvalSymlinks (02h step 4)", "files": ["docs/specs/02h-goal-binding-and-pane-signals.md"]},
+  {"token": "PaneLocation", "kind": "go", "reason": "internal/agent/tmux Client method result for the observed-goal tracker (plan row 9)", "files": ["docs/specs/02h-goal-binding-and-pane-signals.md"]}
  ]
 }

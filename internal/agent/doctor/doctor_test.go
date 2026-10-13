@@ -50,7 +50,9 @@ func TestChecksThatNeedLaterRowsAreListedAsNotChecked(t *testing.T) {
 	r := newRig(t)
 	r.want("harness_paths", doctor.NotChecked, "this build cannot check it yet (row 8)")
 	r.want("probe_trust", doctor.NotChecked, "this build cannot check it yet (row 8)")
-	r.want("two_pane_folders", doctor.NotChecked, "this build cannot check it yet (row 9)")
+	// two_pane_folders landed with row 9: without a status file it reads
+	// unknown, never not_checked.
+	r.want("two_pane_folders", doctor.Unknown, "status.json")
 }
 
 func TestExitFollowsTheWorstStatus(t *testing.T) {
