@@ -45,7 +45,9 @@ is approved. (`KillWindow` on a developer's window joins this rule with the
 row-5 session mirror, which tells hub windows from developer ones; until
 then a `KillWindow` for an unknown session fails `SESSION_NOT_FOUND`.)
 `DecideApproval` then returns the `operation` (and, for a dispatch, the
-`goal`); `Approval.operation` names it. A denied or expired approval creates
+`goal`, once row 22 starts goals from decided approvals; until then an
+approved dispatch decides but releases no operation); `Approval.operation`
+names it. A denied or expired approval creates
 neither. A client therefore polls the approval, not an operation that does
 not exist yet. Raising the approval stamps `hub_seq` for Watch (the
 APPROVALS topic ships with the row-5 mirror); the audit row lands when it

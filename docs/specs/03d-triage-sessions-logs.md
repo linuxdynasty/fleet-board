@@ -165,7 +165,9 @@ stateDiagram-v2
   `approval.expire` / `approval.withdraw` audit rows plus the
   `approval.expired` log line below, countable the same way,
   `fleet_hub_session_commands_total{kind, result}`
-  (`sent`, `replayed`, `refused`, `failed`).
+  (`sent`, `replayed`, `refused`, `failed`); `refused` and `failed` carry
+  `kind="unknown"` and the reason rides the `session.issue_refused` /
+  `session.issue_failed` log line instead.
 - `fleet_agent_prompt_detected_total{harness, source, destructive, answerable}`,
   `fleet_agent_prompt_gone_total{harness}`, `fleet_agent_send_keys_total{result}`.
 - Spans: `hub.triage.raise{kind}`, `hub.prompt.answer{prompt_id}` →

@@ -39,7 +39,8 @@ func authorizeApprovals(ctx context.Context) (*typev1.Principal, error) {
 
 // ListApprovals lists approvals newest first. Filter and order_by follow
 // 02c once row 12 lands that query language; until then only the empty
-// filter reads everything.
+// filter reads everything. Past-due rows expire in the same job, so a
+// client polling the list sees EXPIRED like a Get would.
 func (f *Fleet) ListApprovals(ctx context.Context, req *connect.Request[hubv1.ListApprovalsRequest],
 ) (*connect.Response[hubv1.ListApprovalsResponse], error) {
 	if _, err := authorizeApprovals(ctx); err != nil {
@@ -58,11 +59,16 @@ func (f *Fleet) ListApprovals(ctx context.Context, req *connect.Request[hubv1.Li
 	if size <= 0 {
 		size = 50
 	}
+	now := f.hubNow()
 	var list []*hubv1.Approval
 	var next string
-	err := f.store.Read(ctx, func(tx *sql.Tx) error {
+	err := f.store.Write(ctx, func(tx *sql.Tx) error {
+		if _, err := approvals.ExpireDue(ctx, tx, now, 200); err != nil {
+			return err
+		}
 		var err error
-		list, next, err = approvals.List(ctx, tx, approvals.Filter{PageSize: int(size), PageToken: m.GetPageToken()})
+		list, next, err = approvals.List(ctx, tx,
+			approvals.Filter{PageSize: int(size), PageToken: m.GetPageToken()}, now)
 		return err
 	})
 	if err != nil {
@@ -117,12 +123,14 @@ func (f *Fleet) DecideApproval(ctx context.Context, req *connect.Request[hubv1.D
 	}
 	actor := who.GetId().GetValue()
 	if err := f.checkLocalSecret(hubProcedure("DecideApproval"), req.Header().Get(SecretHeader)); err != nil {
+		// Counted once as secret_refused (not refused): the secret check
+		// runs before any approval is touched.
 		f.tel.Logger.InfoContext(ctx, "approval.secret_refused", "actor", actor)
 		f.approvals.Add(ctx, 1, metric.WithAttributes(
 			attribute.String("kind", "unknown"), attribute.String("outcome", "secret_refused")))
-		return nil, f.apprRefused(ctx, apiError(connect.CodePermissionDenied,
+		return nil, apiError(connect.CodePermissionDenied,
 			typev1.ReasonCode_REASON_CODE_CREDENTIALS_INVALID,
-			"this call needs the local approval secret", nil, nil))
+			"this call needs the local approval secret", nil, nil)
 	}
 	m := req.Msg
 	now := f.hubNow()
@@ -136,6 +144,7 @@ func (f *Fleet) DecideApproval(ctx context.Context, req *connect.Request[hubv1.D
 	}
 	var outcome approvals.Outcome
 	var sent *hubv1.Operation
+	var sentKind string
 	err = f.store.Write(ctx, func(tx *sql.Tx) error {
 		var err error
 		outcome, err = approvals.Decide(ctx, tx, approvals.DecideInput{
@@ -159,7 +168,7 @@ func (f *Fleet) DecideApproval(ctx context.Context, req *connect.Request[hubv1.D
 		if !outcome.Sends {
 			return nil
 		}
-		sent, err = f.sendDecided(ctx, tx, who, outcome, m.GetRequestId(), now)
+		sent, sentKind, err = f.sendDecided(ctx, tx, who, outcome, m.GetRequestId(), now)
 		if err != nil {
 			return err
 		}
@@ -177,6 +186,9 @@ func (f *Fleet) DecideApproval(ctx context.Context, req *connect.Request[hubv1.D
 	}
 	f.approvals.Add(ctx, 1, metric.WithAttributes(
 		attribute.String("kind", kind), attribute.String("outcome", outcomeName)))
+	if sent != nil && !outcome.Replay {
+		f.countSession(ctx, sentKind, "sent")
+	}
 	f.tel.Logger.InfoContext(ctx, "approval.decided", "kind", kind,
 		"approval", outcome.Approval.GetId().GetValue(),
 		"sends", outcome.Sends, "replay", outcome.Replay, "actor", actor)
@@ -253,7 +265,7 @@ func approvalKindAttr(k hubv1.ApprovalKind) string {
 // row 22's StartGoal reads the decided approval and starts the goal.
 func (f *Fleet) sendDecided(ctx context.Context, tx *sql.Tx, who *typev1.Principal,
 	outcome approvals.Outcome, requestID string, now time.Time,
-) (*hubv1.Operation, error) {
+) (*hubv1.Operation, string, error) {
 	a := outcome.Approval
 	switch a.GetKind() {
 	case hubv1.ApprovalKind_APPROVAL_KIND_PROMPT_ANSWER:
@@ -272,11 +284,11 @@ func (f *Fleet) sendDecided(ctx context.Context, tx *sql.Tx, who *typev1.Princip
 	case hubv1.ApprovalKind_APPROVAL_KIND_COMMAND_CONFIRM:
 		cmd, err := approvals.StoredCommand(ctx, tx, a.GetId().GetValue())
 		if err != nil {
-			return nil, err
+			return nil, "", err
 		}
 		return f.sendApprovedTx(ctx, tx, who, a, cmd, requestID, now)
 	default:
-		return nil, nil
+		return nil, "", nil
 	}
 }
 
@@ -295,6 +307,7 @@ func (f *Fleet) gateCommand(ctx context.Context, who *typev1.Principal, req prot
 	}
 	sum := sha256.Sum256(body)
 	var approval *hubv1.Approval
+	var fresh *hubv1.Approval
 	err = f.store.Write(ctx, func(tx *sql.Tx) error {
 		machine, err := resolveSession(ctx, tx, sessionID)
 		if err != nil {
@@ -326,15 +339,17 @@ func (f *Fleet) gateCommand(ctx context.Context, who *typev1.Principal, req prot
 		if err := logGate(ctx, tx, actor, requestID, created.GetId().GetValue(), sum[:], now); err != nil {
 			return err
 		}
-		approval = created
-		f.approvals.Add(ctx, 1, metric.WithAttributes(
-			attribute.String("kind", "command_confirm"), attribute.String("outcome", "created")))
-		f.tel.Logger.InfoContext(ctx, "approval.created", "kind", "command_confirm",
-			"approval", created.GetId().GetValue(), "actor", actor)
+		approval, fresh = created, created
 		return nil
 	})
 	if err != nil {
 		return nil, f.storeError(ctx, actor, err)
+	}
+	if fresh != nil {
+		f.approvals.Add(ctx, 1, metric.WithAttributes(
+			attribute.String("kind", "command_confirm"), attribute.String("outcome", "created")))
+		f.tel.Logger.InfoContext(ctx, "approval.created", "kind", "command_confirm",
+			"approval", fresh.GetId().GetValue(), "actor", actor)
 	}
 	return approval, nil
 }

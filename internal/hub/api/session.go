@@ -100,6 +100,9 @@ func (f *Fleet) sendOne(ctx context.Context, who *typev1.Principal, req proto.Me
 	}
 	sum := sha256.Sum256(body)
 	var out *hubv1.Operation
+	// Telemetry waits for the commit: a job that rolls back must not
+	// leave a "sent" count or log behind.
+	var emitKind, emitOutcome, emitMachine, emitCommand string
 	err = f.store.Write(ctx, func(tx *sql.Tx) error {
 		machine, err := resolveSession(ctx, tx, sessionID)
 		if err != nil {
@@ -110,7 +113,7 @@ func (f *Fleet) sendOne(ctx context.Context, who *typev1.Principal, req proto.Me
 				return err
 			}
 			out = op
-			f.countSession(ctx, outbox.KindName(cmd), "replayed")
+			emitKind, emitOutcome = outbox.KindName(cmd), "replayed"
 			return nil
 		}
 		cmd.RequestedBy = who
@@ -131,36 +134,39 @@ func (f *Fleet) sendOne(ctx context.Context, who *typev1.Principal, req proto.Me
 			return err
 		}
 		out = operationFromOp(op, machine, who, requestID, now, cmd.GetNotAfterTime().AsTime())
-		f.countSession(ctx, op.Kind, "sent")
-		f.tel.Logger.InfoContext(ctx, "session.sent", "kind", op.Kind,
-			"machine", machine, "command", op.CommandID, "actor", actor)
+		emitKind, emitOutcome, emitMachine, emitCommand = op.Kind, "sent", machine, op.CommandID
 		return nil
 	})
 	if err != nil {
 		return nil, f.storeError(ctx, actor, err)
 	}
+	f.countSession(ctx, emitKind, emitOutcome)
+	if emitOutcome == "sent" {
+		f.tel.Logger.InfoContext(ctx, "session.sent", "kind", emitKind,
+			"machine", emitMachine, "command", emitCommand, "actor", actor)
+	}
 	return out, nil
 }
 
 // sendApprovedTx enqueues the command an approval released and attaches it
-// to the approval, inside the Decide transaction the caller owns.
+// to the approval, inside the Decide transaction the caller owns. It
+// returns the sent command's kind so the caller counts it after commit.
 func (f *Fleet) sendApprovedTx(ctx context.Context, tx *sql.Tx, who *typev1.Principal,
 	approval *hubv1.Approval, cmd *agentv1.Command, requestID string, now time.Time,
-) (*hubv1.Operation, error) {
+) (*hubv1.Operation, string, error) {
 	cmd.RequestedBy = who
 	cmd.IssuedTime = timestamppb.New(now)
 	op, err := outbox.Enqueue(ctx, tx, outbox.In{
 		MachineID: approval.GetMachine().GetValue(), Command: cmd, RequestID: requestID, Now: now,
 	})
 	if err != nil {
-		return nil, mapOutboxError(err)
+		return nil, "", mapOutboxError(err)
 	}
 	if err := approvals.AttachOperation(ctx, tx, approval.GetId().GetValue(), op.CommandID, now); err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	f.countSession(ctx, op.Kind, "sent")
 	return operationFromOp(op, approval.GetMachine().GetValue(), who, requestID, now,
-		cmd.GetNotAfterTime().AsTime()), nil
+		cmd.GetNotAfterTime().AsTime()), op.Kind, nil
 }
 
 // storeError renders a writer-job failure: caller errors stay as refused,

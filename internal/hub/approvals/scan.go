@@ -180,6 +180,8 @@ func scan(s scanner) (record, error) {
 	}
 	rec.promptID = promptID
 	rec.operation = operation
+	// Message fields stay absent when the row holds nothing for them, so
+	// has_machine/has_pane and friends tell "no value" from "empty value".
 	a := &hubv1.Approval{
 		Id:               &hubv1.ApprovalId{Value: id},
 		Version:          uint64(version), //nolint:gosec // G115: approvals.version has CHECK >= 1
@@ -189,17 +191,29 @@ func scan(s scanner) (record, error) {
 		State:            parseState(state),
 		Severity:         parseSeverity(severity),
 		Preview:          preview,
-		Machine:          &typev1.MachineId{Value: machineID},
-		Session:          &typev1.SessionId{Value: sessionID},
-		Pane:             &typev1.PaneKey{Server: paneServer, ServerStartId: paneStartID, PaneId: paneID},
-		Goal:             &typev1.GoalId{Value: goalID},
-		TriageItem:       &hubv1.TriageItemId{Value: triageItemID},
 		AllowedDecisions: choices,
 		DefaultChoice:    defaultChoice,
 		ExpireTime:       timestamppb.New(time.UnixMilli(expireMillis).UTC()),
 		RequiredRole:     parseRole(requiredRole),
 		Decision:         decision,
-		Operation:        &typev1.CommandId{Value: operation},
+	}
+	if machineID != "" {
+		a.Machine = &typev1.MachineId{Value: machineID}
+	}
+	if sessionID != "" {
+		a.Session = &typev1.SessionId{Value: sessionID}
+	}
+	if paneServer != "" || paneStartID != "" || paneID != "" {
+		a.Pane = &typev1.PaneKey{Server: paneServer, ServerStartId: paneStartID, PaneId: paneID}
+	}
+	if goalID != "" {
+		a.Goal = &typev1.GoalId{Value: goalID}
+	}
+	if triageItemID != "" {
+		a.TriageItem = &hubv1.TriageItemId{Value: triageItemID}
+	}
+	if operation != "" {
+		a.Operation = &typev1.CommandId{Value: operation}
 	}
 	if fallback == "DENY" {
 		a.Fallback = hubv1.ApprovalFallback_APPROVAL_FALLBACK_DENY
@@ -230,15 +244,6 @@ func principalKind(s string) typev1.PrincipalKind {
 		return typev1.PrincipalKind_PRINCIPAL_KIND_UNSPECIFIED
 	}
 	return typev1.PrincipalKind(n) //nolint:gosec // G115: stored by kindNumber from a valid enum
-}
-
-// parseOffset reads a List page token back (an opaque row offset).
-func parseOffset(tok string) (int, error) {
-	n, err := strconv.Atoi(tok)
-	if err != nil || n < 0 {
-		return 0, fmt.Errorf("%w: bad page_token", ErrInvalid)
-	}
-	return n, nil
 }
 
 // isConflict reports a UNIQUE violation on the approvals id.

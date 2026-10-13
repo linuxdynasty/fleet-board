@@ -125,6 +125,46 @@ func TestStoredCommandRoundTrip(t *testing.T) {
 	}
 }
 
+// TestAbsentFieldsStayAbsent: a confirm carries no pane, session, goal,
+// triage item or operation, so the read-back message leaves them unset
+// instead of returning empty values.
+func TestAbsentFieldsStayAbsent(t *testing.T) {
+	t.Parallel()
+	s := newStore(t)
+	ctx := context.Background()
+	var id string
+	if err := s.Write(ctx, func(tx *sql.Tx) error {
+		a, err := approvals.CreateApproval(ctx, tx, confirmIn())
+		if err != nil {
+			return err
+		}
+		id = a.GetId().GetValue()
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var got *hubv1.Approval
+	if err := s.Read(ctx, func(tx *sql.Tx) error {
+		var err error
+		got, err = approvals.Get(ctx, tx, id, t0)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if got.GetMachine() == nil {
+		t.Error("machine is unset, want m1")
+	}
+	for name, absent := range map[string]bool{
+		"session": got.GetSession() == nil, "pane": got.GetPane() == nil,
+		"goal": got.GetGoal() == nil, "triage_item": got.GetTriageItem() == nil,
+		"operation": got.GetOperation() == nil,
+	} {
+		if !absent {
+			t.Errorf("%s is set, want absent", name)
+		}
+	}
+}
+
 func TestListFiltersState(t *testing.T) {
 	t.Parallel()
 	s := newStore(t)
@@ -144,7 +184,7 @@ func TestListFiltersState(t *testing.T) {
 		var err error
 		list, next, err = approvals.List(ctx, tx, approvals.Filter{
 			State: hubv1.ApprovalState_APPROVAL_STATE_PENDING, HasState: true, PageSize: 10,
-		})
+		}, t0)
 		return err
 	})
 	if err != nil {
@@ -160,7 +200,7 @@ func TestListFiltersState(t *testing.T) {
 		var err error
 		list, next, err = approvals.List(ctx, tx, approvals.Filter{
 			State: hubv1.ApprovalState_APPROVAL_STATE_DECIDED, HasState: true, PageSize: 10,
-		})
+		}, t0)
 		return err
 	})
 	if err != nil {
@@ -171,7 +211,8 @@ func TestListFiltersState(t *testing.T) {
 	}
 }
 
-// TestListPages: 51 approvals read back as 50 plus a token, then 1.
+// TestListPages: 51 approvals read back as 50 plus a token, then 1,
+// with no id seen twice.
 func TestListPages(t *testing.T) {
 	t.Parallel()
 	s := newStore(t)
@@ -193,7 +234,7 @@ func TestListPages(t *testing.T) {
 	var token string
 	err = s.Read(ctx, func(tx *sql.Tx) error {
 		var err error
-		first, token, err = approvals.List(ctx, tx, approvals.Filter{PageSize: 50})
+		first, token, err = approvals.List(ctx, tx, approvals.Filter{PageSize: 50}, t0)
 		return err
 	})
 	if err != nil {
@@ -206,7 +247,7 @@ func TestListPages(t *testing.T) {
 	var last string
 	err = s.Read(ctx, func(tx *sql.Tx) error {
 		var err error
-		second, last, err = approvals.List(ctx, tx, approvals.Filter{PageSize: 50, PageToken: token})
+		second, last, err = approvals.List(ctx, tx, approvals.Filter{PageSize: 50, PageToken: token}, t0)
 		return err
 	})
 	if err != nil {
@@ -214,5 +255,169 @@ func TestListPages(t *testing.T) {
 	}
 	if len(second) != 1 || last != "" {
 		t.Fatalf("page 2 = %d approvals token %q, want 1 and empty", len(second), last)
+	}
+	seen := map[string]bool{}
+	for _, a := range append(first, second...) {
+		id := a.GetId().GetValue()
+		if seen[id] {
+			t.Fatalf("approval %s on both pages", id)
+		}
+		seen[id] = true
+	}
+	if len(seen) != 51 {
+		t.Fatalf("paged ids = %d, want 51", len(seen))
+	}
+}
+
+// TestListPagesSurviveInserts: rows created between pages sort in front of
+// the cursor, so the second page neither repeats nor skips.
+func TestListPagesSurviveInserts(t *testing.T) {
+	t.Parallel()
+	s := newStore(t)
+	ctx := context.Background()
+	// Distinct create times order the rows: the test must not depend on
+	// random id order.
+	created := []time.Time{t0, t0.Add(time.Second), t0.Add(2 * time.Second)}
+	for _, at := range created {
+		at := at
+		if err := s.Write(ctx, func(tx *sql.Tx) error {
+			in := confirmIn()
+			in.ID = ""
+			in.Now = at
+			in.ExpireTime = at.Add(30 * time.Minute)
+			_, err := approvals.CreateApproval(ctx, tx, in)
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var token string
+	var first []*hubv1.Approval
+	if err := s.Read(ctx, func(tx *sql.Tx) error {
+		var err error
+		first, token, err = approvals.List(ctx, tx, approvals.Filter{PageSize: 2}, t0)
+		return err
+	}); err != nil {
+		t.Fatalf("page 1: %v", err)
+	}
+	// A row arriving between pages sorts strictly newest, in front of
+	// the cursor.
+	if err := s.Write(ctx, func(tx *sql.Tx) error {
+		in := confirmIn()
+		in.ID = ""
+		in.Now = t0.Add(3 * time.Second)
+		in.ExpireTime = t0.Add(33 * time.Minute)
+		_, err := approvals.CreateApproval(ctx, tx, in)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var second []*hubv1.Approval
+	var last string
+	if err := s.Read(ctx, func(tx *sql.Tx) error {
+		var err error
+		second, last, err = approvals.List(ctx, tx, approvals.Filter{PageSize: 2, PageToken: token}, t0)
+		return err
+	}); err != nil {
+		t.Fatalf("page 2: %v", err)
+	}
+	if len(second) != 1 || last != "" {
+		t.Fatalf("page 2 = %d approvals token %q, want 1 and empty", len(second), last)
+	}
+	for _, a := range second {
+		for _, b := range first {
+			if a.GetId().GetValue() == b.GetId().GetValue() {
+				t.Fatalf("approval %s repeated across the insert", a.GetId().GetValue())
+			}
+		}
+	}
+	// The same token with another page size is another query: rejected.
+	if err := s.Read(ctx, func(tx *sql.Tx) error {
+		_, _, lerr := approvals.List(ctx, tx, approvals.Filter{PageSize: 3, PageToken: token}, t0)
+		return lerr
+	}); err == nil {
+		t.Fatal("token from a size-2 query accepted on a size-3 query")
+	}
+}
+
+// TestListRejectsBadTokens: a garbled token, one minted for another query
+// and an expired one all fail invalid.
+func TestListRejectsBadTokens(t *testing.T) {
+	t.Parallel()
+	s := newStore(t)
+	ctx := context.Background()
+	if err := s.Write(ctx, func(tx *sql.Tx) error {
+		_, err := approvals.CreateApproval(ctx, tx, confirmIn())
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Write(ctx, func(tx *sql.Tx) error {
+		for i := 0; i < 2; i++ {
+			in := confirmIn()
+			in.ID = ""
+			if _, err := approvals.CreateApproval(ctx, tx, in); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var token string
+	if err := s.Read(ctx, func(tx *sql.Tx) error {
+		var err error
+		_, token, err = approvals.List(ctx, tx, approvals.Filter{PageSize: 1}, t0)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if token == "" {
+		t.Fatal("two rows in pages of 1 left no token")
+	}
+	cases := map[string]approvals.Filter{
+		"garbled":      {PageSize: 1, PageToken: "not-a-token"},
+		"other query":  {PageSize: 2, PageToken: token},
+		"other filter": {PageSize: 1, PageToken: token, HasState: true, State: hubv1.ApprovalState_APPROVAL_STATE_PENDING},
+	}
+	for name, f := range cases {
+		if err := s.Read(ctx, func(tx *sql.Tx) error {
+			_, _, err := approvals.List(ctx, tx, f, t0)
+			return err
+		}); err == nil {
+			t.Errorf("%s token accepted", name)
+		}
+	}
+	// Expired: eleven minutes past the mint.
+	if err := s.Read(ctx, func(tx *sql.Tx) error {
+		_, _, err := approvals.List(ctx, tx, approvals.Filter{PageSize: 1, PageToken: token}, t0.Add(11*time.Minute))
+		return err
+	}); err == nil {
+		t.Error("expired token accepted")
+	}
+}
+
+// TestListCapsPageSize: a client asking over the 02b max gets 500 rows.
+func TestListCapsPageSize(t *testing.T) {
+	t.Parallel()
+	s := newStore(t)
+	ctx := context.Background()
+	if err := s.Write(ctx, func(tx *sql.Tx) error {
+		_, err := approvals.CreateApproval(ctx, tx, confirmIn())
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Read(ctx, func(tx *sql.Tx) error {
+		list, next, err := approvals.List(ctx, tx, approvals.Filter{PageSize: 5000}, t0)
+		if err != nil {
+			return err
+		}
+		if len(list) != 1 || next != "" {
+			t.Fatalf("capped list = %d approvals token %q, want 1 and empty", len(list), next)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
 	}
 }

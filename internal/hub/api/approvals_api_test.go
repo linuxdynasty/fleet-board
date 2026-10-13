@@ -88,6 +88,30 @@ func TestDestructiveCommandGates(t *testing.T) {
 	}
 }
 
+// TestListApprovalsExpiresDue: a client polling the list sees EXPIRED,
+// not stale PENDING, once the clock passes the approval's time.
+func TestListApprovalsExpiresDue(t *testing.T) {
+	t.Parallel()
+	now := fleetNow
+	e := newFleetEnv(t, localUser("alice"), envOpt{now: func() time.Time { return now }})
+	enrollMachine(t, e, "m1")
+	sess := createSession(t, e, "m1", "work")
+	if _, err := e.client.RunHarnessCommand(context.Background(), connect.NewRequest(destructiveReq(sess))); err != nil {
+		t.Fatal(err)
+	}
+	now = fleetNow.Add(31 * time.Minute) // past approval_timeout
+	res, err := e.client.ListApprovals(context.Background(), connect.NewRequest(&hubv1.ListApprovalsRequest{}))
+	if err != nil {
+		t.Fatalf("ListApprovals: %v", err)
+	}
+	if len(res.Msg.GetApprovals()) != 1 {
+		t.Fatalf("list = %d approvals, want 1", len(res.Msg.GetApprovals()))
+	}
+	if got := res.Msg.GetApprovals()[0].GetState(); got != hubv1.ApprovalState_APPROVAL_STATE_EXPIRED {
+		t.Fatalf("listed state = %v, want EXPIRED", got)
+	}
+}
+
 // TestDecideApprovalSendsStoredCommand: approving the gated command sends
 // exactly it, audited as approval.decide.
 func TestDecideApprovalSendsStoredCommand(t *testing.T) {
@@ -243,6 +267,17 @@ func TestDecideApprovalNeedsSecret(t *testing.T) {
 		t.Fatal("decide with a wrong secret succeeded")
 	} else if _, reason, _ := detail(t, err); reason != typev1.ReasonCode_REASON_CODE_CREDENTIALS_INVALID {
 		t.Fatalf("wrong secret reason = %v, want CREDENTIALS_INVALID", reason)
+	}
+	// Two secret refusals count once each as secret_refused, never as
+	// refused: the check runs before any approval is touched.
+	if got := sample(e.scrape(t), "fleet_hub_approvals_total", `outcome="secret_refused"`); got != 2 {
+		t.Fatalf("secret_refused count = %v, want 2", got)
+	}
+	if got := sample(e.scrape(t), "fleet_hub_approvals_total", `outcome="refused"`); got != -1 {
+		t.Fatalf("refused count = %v, want none", got)
+	}
+	if n := len(e.logs.events(t, "approval.secret_refused")); n != 2 {
+		t.Fatalf("approval.secret_refused events = %d, want 2", n)
 	}
 }
 

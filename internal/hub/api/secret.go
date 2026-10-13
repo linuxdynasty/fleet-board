@@ -56,7 +56,9 @@ var requiresLocalSecret = map[string]bool{
 
 // RequiresLocalSecret reports whether procedure needs the local approval
 // secret in local_trusted mode. The 02d scope table is the human copy;
-// this map is the enforced one.
+// this map is the required list. Enforcement is per-RPC: each handler
+// calls checkLocalSecret, so a new SETTINGS or ADMIN RPC must add its own
+// call and denied-path test with it.
 func RequiresLocalSecret(procedure string) bool {
 	return requiresLocalSecret[procedure]
 }

@@ -63,14 +63,20 @@ func (f *Fleet) CreateSession(ctx context.Context, req *connect.Request[hubv1.Cr
 	sum := sha256.Sum256(body)
 	var sessID string
 	var out *hubv1.Operation
+	// Telemetry waits for the commit: a job that rolls back must not
+	// leave a "sent" count behind.
+	var emitKind, emitOutcome string
 	err = f.store.Write(ctx, func(tx *sql.Tx) error {
 		if op, replay, err := checkRequest(ctx, tx, actor, m.GetRequestId(), sum[:]); err != nil || replay {
 			if err != nil {
 				return err
 			}
-			sessID = sessionOfCommand(ctx, tx, op.GetId().GetValue())
+			sessID, err = sessionOfCommand(ctx, tx, op.GetId().GetValue())
+			if err != nil {
+				return err
+			}
 			out = op
-			f.countSession(ctx, "ensure_session", "replayed")
+			emitKind, emitOutcome = "ensure_session", "replayed"
 			return nil
 		}
 		id, err := mintSessionID()
@@ -107,12 +113,13 @@ func (f *Fleet) CreateSession(ctx context.Context, req *connect.Request[hubv1.Cr
 		}
 		sessID, out = id, operationFromOp(op, m.GetMachine().GetValue(), who, m.GetRequestId(), now,
 			cmd.GetNotAfterTime().AsTime())
-		f.countSession(ctx, op.Kind, "sent")
+		emitKind, emitOutcome = op.Kind, "sent"
 		return nil
 	})
 	if err != nil {
 		return nil, f.storeError(ctx, actor, err)
 	}
+	f.countSession(ctx, emitKind, emitOutcome)
 	return connect.NewResponse(&hubv1.CreateSessionResponse{
 		Session:   &typev1.SessionId{Value: sessID},
 		Operation: out,
@@ -120,16 +127,17 @@ func (f *Fleet) CreateSession(ctx context.Context, req *connect.Request[hubv1.Cr
 }
 
 // sessionOfCommand reads the hub-assigned session id back out of a stored
-// EnsureSession command (the CreateSession replay path).
-func sessionOfCommand(ctx context.Context, tx *sql.Tx, commandID string) string {
+// EnsureSession command (the CreateSession replay path). A missing or
+// unreadable row is the hub's failure, never an empty session id.
+func sessionOfCommand(ctx context.Context, tx *sql.Tx, commandID string) (string, error) {
 	var raw []byte
 	if err := tx.QueryRowContext(ctx, `SELECT command FROM commands WHERE command_id = ?`,
 		commandID).Scan(&raw); err != nil {
-		return ""
+		return "", fmt.Errorf("replay session: %w", err)
 	}
 	var cmd agentv1.Command
 	if err := proto.Unmarshal(raw, &cmd); err != nil {
-		return ""
+		return "", fmt.Errorf("replay session: %w", err)
 	}
-	return cmd.GetEnsureSession().GetSessionId().GetValue()
+	return cmd.GetEnsureSession().GetSessionId().GetValue(), nil
 }

@@ -3,11 +3,14 @@ package approvals
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"google.golang.org/protobuf/proto"
@@ -158,16 +161,26 @@ func CreateApproval(ctx context.Context, tx *sql.Tx, in Create) (*hubv1.Approval
 		State:            hubv1.ApprovalState_APPROVAL_STATE_PENDING,
 		Severity:         in.Severity,
 		Preview:          in.Preview,
-		Machine:          &typev1.MachineId{Value: in.MachineID},
-		Session:          &typev1.SessionId{Value: in.SessionID},
 		Pane:             in.Pane,
-		Goal:             &typev1.GoalId{Value: in.GoalID},
-		TriageItem:       &hubv1.TriageItemId{Value: in.TriageItemID},
 		AllowedDecisions: choicesToProto(in.Allowed),
 		DefaultChoice:    in.DefaultChoice,
 		Fallback:         in.Fallback,
 		ExpireTime:       timestamppb.New(in.ExpireTime),
 		RequiredRole:     in.RequiredRole,
+	}
+	// Message fields stay absent when the create holds nothing for them,
+	// like the scan read-back does.
+	if in.MachineID != "" {
+		a.Machine = &typev1.MachineId{Value: in.MachineID}
+	}
+	if in.SessionID != "" {
+		a.Session = &typev1.SessionId{Value: in.SessionID}
+	}
+	if in.GoalID != "" {
+		a.Goal = &typev1.GoalId{Value: in.GoalID}
+	}
+	if in.TriageItemID != "" {
+		a.TriageItem = &hubv1.TriageItemId{Value: in.TriageItemID}
 	}
 	_, err = tx.ExecContext(ctx, `INSERT INTO approvals(id, version, kind, state, severity, preview,
 		machine_id, session_id, pane_server, pane_server_start_id, pane_id, goal_id, triage_item_id, prompt_id, command,
@@ -262,22 +275,32 @@ func getRow(ctx context.Context, tx *sql.Tx, id string) (record, error) {
 	return rec, nil
 }
 
+// pageTokenLife is how long a List page token stays valid (02b paging:
+// opaque, valid for 10 min, from the same query).
+const pageTokenLife = 10 * time.Minute
+
 // List reads approvals newest first. PageSize defaults to 50 and caps at
-// 200 (02b paging); PageToken is the row offset. One row past the page is
-// read to detect the next page: the returned token is empty on the last
-// page and the offset of the next page otherwise.
-func List(ctx context.Context, tx *sql.Tx, f Filter) ([]*hubv1.Approval, string, error) {
+// 500 (02b paging). PageToken is an opaque cursor: the query it came from
+// plus the last row seen. One row past the page is read to detect the
+// next page: the returned token is empty on the last page. A cursor stays
+// valid while rows only arrive in front of it, so inserts between pages
+// neither repeat nor skip rows.
+func List(ctx context.Context, tx *sql.Tx, f Filter, now time.Time) ([]*hubv1.Approval, string, error) {
 	size := f.PageSize
 	if size <= 0 {
 		size = 50
 	}
-	if size > 200 {
-		size = 200
+	if size > 500 {
+		size = 500
 	}
-	offset := 0
+	if now.IsZero() {
+		return nil, "", fmt.Errorf("%w: now is required", ErrInvalid)
+	}
+	want := queryHash(f, size)
+	var cursor *pageCursor
 	if f.PageToken != "" {
 		var err error
-		if offset, err = parseOffset(f.PageToken); err != nil {
+		if cursor, err = parseToken(f.PageToken, want, now); err != nil {
 			return nil, "", err
 		}
 	}
@@ -299,8 +322,12 @@ func List(ctx context.Context, tx *sql.Tx, f Filter) ([]*hubv1.Approval, string,
 		q += ` AND kind = ?`
 		args = append(args, name)
 	}
-	q += ` ORDER BY create_time DESC, id LIMIT ? OFFSET ?`
-	args = append(args, size+1, offset)
+	if cursor != nil {
+		q += ` AND (create_time < ? OR (create_time = ? AND id < ?))`
+		args = append(args, cursor.CreateMillis, cursor.CreateMillis, cursor.ID)
+	}
+	q += ` ORDER BY create_time DESC, id DESC LIMIT ?`
+	args = append(args, size+1)
 	rows, err := tx.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, "", fmt.Errorf("approvals: list: %w", err)
@@ -320,10 +347,62 @@ func List(ctx context.Context, tx *sql.Tx, f Filter) ([]*hubv1.Approval, string,
 	if len(out) <= size {
 		return out, "", nil
 	}
-	return out[:size], offsetString(offset + size), nil
+	last := out[size-1]
+	return out[:size], mintToken(want, last.GetCreateTime().AsTime(), last.GetId().GetValue(), now), nil
 }
 
-// offsetString is the opaque next-page token: the next row offset.
-func offsetString(offset int) string {
-	return fmt.Sprintf("%d", offset)
+// queryHash binds a page token to the query that minted it: state, kind
+// and page size. A token from another query is rejected.
+func queryHash(f Filter, size int) string {
+	sum := sha256.Sum256(fmt.Appendf(nil, "%s\x00%s\x00%d",
+		stateName(f.State), kindName(f.Kind), size))
+	return hex.EncodeToString(sum[:])
+}
+
+// pageCursor is a decoded List page token.
+type pageCursor struct {
+	CreateMillis int64
+	ID           string
+}
+
+// pageToken is the minted form: version, query hash, cursor, expiry.
+type pageToken struct {
+	V   int    `json:"v"`
+	Q   string `json:"q"`
+	CT  int64  `json:"ct"`
+	ID  string `json:"id"`
+	Exp int64  `json:"exp"`
+}
+
+// mintToken seals a next-page token: clients treat it as opaque.
+func mintToken(query string, created time.Time, id string, now time.Time) string {
+	raw, err := json.Marshal(pageToken{
+		V: 1, Q: query,
+		CT: created.UnixMilli(), ID: id, Exp: now.Add(pageTokenLife).Unix(),
+	})
+	if err != nil {
+		return ""
+	}
+	return "v1." + base64.RawURLEncoding.EncodeToString(raw)
+}
+
+// parseToken opens a List page token minted for want by now: a token from
+// another query, a past one, or a garbled one is ErrInvalid.
+func parseToken(tok, want string, now time.Time) (*pageCursor, error) {
+	rest, ok := strings.CutPrefix(tok, "v1.")
+	if !ok {
+		return nil, fmt.Errorf("%w: bad page_token", ErrInvalid)
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(rest)
+	if err != nil {
+		return nil, fmt.Errorf("%w: bad page_token", ErrInvalid)
+	}
+	var t pageToken
+	if err := json.Unmarshal(raw, &t); err != nil || t.V != 1 {
+		return nil, fmt.Errorf("%w: bad page_token", ErrInvalid)
+	}
+	if t.Q != want || t.ID == "" || now.Unix() > t.Exp {
+		return nil, fmt.Errorf("%w: bad page_token", ErrInvalid)
+	}
+	return &pageCursor{CreateMillis: t.CT, ID: t.ID}, nil
 }

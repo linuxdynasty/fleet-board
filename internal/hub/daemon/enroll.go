@@ -59,8 +59,9 @@ func EnrollToken(ctx context.Context, opts Options, req EnrollRequest) (*hubv1.C
 	defer cancel()
 	creq := connect.NewRequest(m)
 	// CreateEnrollmentToken needs the local approval secret (ADR 0032).
-	// The secret is unreadable only when no hub ever ran here; then the
-	// dial below fails and the caller still hears ErrNotRunning.
+	// A missing secret means no hub ever initialized here, so the dial
+	// below fails with ErrNotRunning; any other unreadable secret omits
+	// the header and the running hub refuses the call instead.
 	if shown, serr := secret.Reveal(cfg.StateDir); serr == nil {
 		creq.Header().Set(api.SecretHeader, shown)
 	}
