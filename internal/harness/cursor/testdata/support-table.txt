@@ -1,0 +1,3 @@
+harness cursor
+version support USAGE IDENTITY PROMPT READY CONDITION
+2026.10.01 UNVERIFIED_PARSING supported - - - -

@@ -2,8 +2,9 @@
 
 What every harness adapter shares: the strict version check (01 C1) and the
 shared conformance test (plan row 8). The per-harness adapters live in the
-subfolders (`claude/`, `codex/`, `cursor/`, `muse/`, `opencode/`), today as
-recorded screens under each one's `testdata/<version>/`.
+subfolders (`claude/`, `codex/`, `cursor/`, `muse/`, `opencode/`), as parsers
+plus recorded screens under each one's `testdata/<version>/` (first parser:
+`cursor/` reads the `/usage` dialog, row 30).
 
 - `version.go`: `Detector` runs a harness's version command through
   `internal/proc` under the `version` caller (empty stdin, 5 s, 16 KiB).

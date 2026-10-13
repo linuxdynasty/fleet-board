@@ -7,7 +7,7 @@ are in `2026.10.01/`.
 | Field | Value |
 |---|---|
 | Harness version | `cursor-agent` 2026.10.01-e373342 (`cursor-agent --version`) |
-| Captured | 2026-10-10 (`trust-workspace.txt`, `ready-trusted-child.txt`) and 2026-10-12 (`ready-ansi.txt`, the `ready-input-*` and `ready-followup-*` files), macOS, tmux 3.7c/3.8, pane 200x50, zsh |
+| Captured | 2026-10-10 (`trust-workspace.txt`, `ready-trusted-child.txt`), 2026-10-12 (`ready-ansi.txt`, the `ready-input-*` and `ready-followup-*` files) and 2026-10-13 (`usage.txt`, `usage-not-shown.txt`), macOS, tmux 3.7c/3.8, pane 200x50, zsh |
 | Plan | Pro+ (shown on `/usage`; see 01b) |
 
 ## How it was captured
@@ -38,6 +38,8 @@ section below); every screen was read before each key.
 | `ready-input-has-draft.ansi.txt` | the same input line with ANSI escapes: no faint attribute anywhere | same screen, `capture-pane -e` |
 | `ready-followup-placeholder.txt` | post-turn input line (`→ Add a follow-up`) | after a completed turn (same probe) |
 | `ready-followup-placeholder.ansi.txt` | the same input line with ANSI escapes: `→` and text faint | same screen, `capture-pane -e` |
+| `usage.txt` | the `/usage` dialog: "Usage • Pro+", "Resets Nov 4", Included / Auto / API % used, On-Demand Disabled, "Esc to close" | `/usage` typed at the ready prompt, Enter separately, dialog read, Esc |
+| `usage-not-shown.txt` | `/usage` typed but not submitted: the `/` command menu, no dialog | `/usage` typed at the ready prompt, no Enter; the usage parser must yield unknown on it |
 
 ## Redactions and clean-up
 
@@ -81,14 +83,38 @@ Row 30 reads the rule from 01b and 02h; the `.ansi.txt` fixtures above are
 its parser tests (both halves). A parser must read styled lines; on plain
 lines every `→ <text>` is unknown, never empty.
 
+## /usage dialog (row 30 D2, 2026-10-13)
+
+Probed on `cursor-agent` 2026.10.01-e373342, macOS, two throwaway servers
+(`-L probe95usage`, `-L probe95usage2`, both killed after), empty scratch
+folders under `/tmp`, pane 200x50. Every screen read before each key. No
+prompt sent to a model, so no quota spent.
+
+- The trust box appeared in each new folder and was answered `a` on purpose
+  (the default); both per-folder project dirs were deleted after (directory
+  listing matches the baseline) and `hooks.json` kept its checksum.
+- Typing `/usage` shows the `/` command menu first ("→ /usage: Show plan
+  and on-demand usage"); a separate Enter opens the dialog
+  (`usage-not-shown.txt` is the menu state). `Ctrl-U` cleared the typed line
+  afterwards (faint placeholder back, verified by re-read).
+- The dialog (`usage.txt`): title "Usage • Pro+" with "Resets Nov 4" at the
+  right, "Monthly plan and on-demand usage", a `Category / Current / Usage`
+  table with Included, Auto and API rows ("100% used" with block bars: the
+  account sat at its ceiling), an "On-Demand: Disabled" row with an em-dash
+  bar, the note "On-demand usage is off", a dashboard link and "Esc to
+  close". Esc closed it. The dialog shows the plan only, no account identity.
+- `cli-config.json` and `auth.json` were never opened. Raw pane captures
+  were deleted after the redacted fixtures above were written.
+
 ## Not captured, and why
 
 - A permission prompt or post-turn input line holding old text: typing into a Cursor
   pane followed the 0.19 probe protocol; no leftover-text state appeared, and
   mid-turn interrupt (Esc) is still open (row 30).
-- `/usage` with On-Demand on or off, `/goal` subcommands, pause and resume
+- `/usage` with On-Demand on, `/goal` subcommands, pause and resume
   (0.21), account identity (0.22), probing cost (0.8): see the "Not probed"
-  list in 01b; several need quota spend or docs.
+  list in 01b; several need quota spend or docs. (`/usage` with On-Demand
+  off is `usage.txt` above.)
 - Prompt, limit and error screens: they need a model call or a real limit,
   and the probe spends no quota and provokes no errors.
 - Sign-in screens: the account is signed in, and signing out would break the
