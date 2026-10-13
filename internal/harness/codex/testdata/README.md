@@ -98,6 +98,10 @@ colour. A parser must match the dim attribute, not the words.
   mode"). The git-repo trust screen is `0.162.1/trust-folder-git.txt`.
 - A blocking update screen: only the banner appeared (0.160.0); nothing
   appeared (0.162.1, installed).
+- A 0.162.1 slash-menu catalog: the TUI would not bootstrap on 2026-10-12
+  ("account/read failed ... code -32603", four starts, two folders), so the
+  `/` menu could not be paged; the 0.160.0 49-command catalog stands until a
+  later probe (issue #25).
 - Anything past the `/usage` menu ("View analytics" opens a web page and
   "Redeem reset" uses a reset), `/model`, `/permissions`, `/logout`.
 - Prompt and error screens: they need a model call.

@@ -1,0 +1,49 @@
+── Voice input (alt(option)+v to start) ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  General  [Commands]  Custom commands
+  Browse built-in commands
+  ↑ 4 more
+  /create-plugin
+    Create and validate a new native Muse plugin package in the current workspace. Use ONLY when the user explicitly asks to create a Muse plugin or invokes the create-plugin skill. Do NOT use for ap…
+  /create-skill
+    Create and validate a new Muse skill — project-local in the current workspace by default, or a personal skill staged for `muse skills install` into the managed personal root. Use ONLY when the us…
+  /deep-research <question>
+    Research a question across sources with cross-checking and citations
+  /doctor
+    Diagnose Muse Code product/runtime issues from installed binary evidence. Use ONLY when the user explicitly invokes the doctor skill, asks to debug/troubleshoot Muse Code itself, asks what happen…
+  /effort [<none|minimal|low|medium|high|xhigh|max|ultra>]
+    Set the model's effort level
+  /export [transcript|trajectory]
+    Save the conversation, or the full session log
+  /feedback [note]
+    Send quick feedback to the team
+  /fork [prompt]
+    Branch this session from the latest message
+  /goal [<objective>|edit <objective>|clear|cancel|stop|pause|resume]
+    Start or manage continuous work toward a goal
+  /grill
+    Run an explicitly requested decision interview and record each settled decision in durable project documentation.
+  /help
+    Show help
+  /hud
+    Choose what appears in the bottom status bar
+  /import <session-id-or-path>
+    Import a Claude Code, Codex, or Grok session
+  /init
+    Explore the workspace and create or improve AGENTS.md
+  /keymap
+    Show keyboard shortcuts
+  /logout
+    Log out, forget the saved login, and exit
+  /loop [interval] <prompt>
+    Schedule a recurring prompt
+  /manage-settings
+    Any explicit Muse Code setting question or change (model, reasoning effort, /settings) requires a silent read_skill call for bundled:manage-settings as FIRST ACTION—no assistant text or other too…
+  /mcp
+    Show MCP servers and tools
+⟩ /migrate [memory|mcp] [claude|codex]
+    Migrate Claude Code / Codex memory and MCP servers into Muse
+  ↓ 25 more
+  For CLI options: muse --help
+  Esc to close
