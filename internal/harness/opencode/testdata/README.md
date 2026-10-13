@@ -51,6 +51,9 @@ in a fresh shell window after the TUI was left with Ctrl+C.
 | `1.19.0/tui-status-dialog.txt` | `/status`: "No MCP Servers", "No Formatters", "No Plugins" | `/status` |
 | `1.19.0/providers-list.txt` | `opencode providers list`: "Credentials", the harness's own store path, "0 credentials" | CLI |
 | `1.19.0/stats.txt` | `opencode stats`: OVERVIEW, COST & TOKENS and TOOL USAGE, all real | CLI |
+| `1.19.0/tui-slash-menu-first.txt` | the `/` menu, top rows `/agents` to `/models` | typed `/` |
+| `1.19.0/tui-slash-menu-last.txt` | the `/` menu scrolled to `/themes` (10 rows `/init` to `/themes`) | Down |
+| `1.19.0/tui-slash-menu-catalog.tsv` | all 17 menu commands, `name<TAB>description` (derived from both views) | see above |
 
 What changed since 1.18.34: the ready screen points at `/update to upgrade to
 OpenCode 2.0` and the model line reads "Big Pickle OpenCode" (was "Big Pickle
@@ -64,6 +67,22 @@ from other sessions stay uncaptured.
 Placeholder against draft: the placeholder renders in grey
 (`38;2;128;128;128`); typed text renders near-white (`38;2;238;238;238`). A
 parser must match the colour, not the words.
+
+## 1.19.0 slash menu (2026-10-12, issue #25)
+
+Same protocol (throwaway server `-L probe25 -f /dev/null`, killed at the end;
+every screen read before the next key; no prompt sent and no model called).
+Typed `/` in the TUI in an empty scratch folder, read the menu, paged Down to
+`/themes`, read again, closed the menu with Escape and quit with `/exit`.
+
+The menu holds the same 17 commands as 1.18.34 (no `/variants`); the catalog
+is byte-identical to the 1.18.34 one. One rendering trap is pinned by both
+views: the centered "/update to upgrade to OpenCode 2.0" banner overwrites the
+tail of whichever menu row sits on its screen row (`/mcps` read
+"Toggle/update to upgrade to OpenCode 2.0" in the first view and clean
+"Toggle MCPs" in the second; `/status` read "View s/update to upgrade to
+OpenCode 2.0"). A catalog parser must key on the command name, never on the
+description tail.
 
 ## Redactions and clean-up
 
@@ -96,6 +115,7 @@ folder remain.
 ## Config touched
 
 `~/.config/opencode/opencode.jsonc` had the same sha256 before and after
-(both captures; verified 2026-10-10 and 2026-10-12).
+(all three captures; verified 2026-10-10, 2026-10-12 twice, the second for
+issue #25).
 OpenCode's own `auth.json` path is printed by `providers list`; the file was
 never opened.

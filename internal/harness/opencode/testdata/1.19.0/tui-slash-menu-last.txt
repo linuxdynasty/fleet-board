@@ -1,0 +1,49 @@
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                                                               ┃ /init       guided AGENTS.md setup                                      ┃
+                                                               ┃ /mcps       Toggle MCPs                                                 ┃
+                                                               ┃ /models     Switch model                                                ┃
+                                                               ┃ /move       Move to another project dir                                 ┃
+                                                               ┃ /new        New session                                                 ┃
+                                                               ┃ /review     review changes [commit|branch|pr], defaults to uncommitted  ┃
+                                                               ┃ /sessions   Switch session                                              ┃
+                                                               ┃ /skills     Skills                                                      ┃
+                                                               ┃ /status     View s/update to upgrade to OpenCode 2.0                    ┃
+                                                               ┃ /themes     Switch theme                                                ┃
+                                                               ┃
+                                                               ┃  /
+                                                               ┃
+                                                               ┃  Build · Big Pickle OpenCode
+                                                               ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+                                                                                                               tab agents  ctrl+p commands
+
+
+
+                                                                        ● Tip Run /connect to add an AI provider and start coding
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  ~/scratch                                                                                                                                                         1.19.0

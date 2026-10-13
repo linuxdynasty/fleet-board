@@ -1,0 +1,49 @@
+── Voice input (alt(option)+v to start) ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  General  [Commands]  Custom commands
+  Browse built-in commands
+  ↑ 29 more
+  /quit
+    Quit when idle
+  /recap
+    Show a recap of recent session activity
+  /resume [--last|<id-or-name>]
+    Resume an earlier Muse Code session
+  /resume-claude [session-id-or-log-path]
+    Continue a Claude Code session here
+  /resume-codex [session-id-or-log-path]
+    Continue a Codex session here
+  /rewind
+    Rewind conversation to an earlier input
+  /rules [import]
+    Show which md files govern this session
+  /settings
+    Open local settings
+  /side [prompt]
+    Start a side conversation
+  /skills [import|reload|manage|diagnostics|use <id-or-path> [prompt]]
+    Browse and use skills
+  /status
+    Show current session status
+  /stop [all]
+    Stop all background tasks
+  /subagents
+    View running and past subagents
+  /tasks
+    View and manage background tasks and terminals
+  /theme
+    Choose color theme
+  /upgrade
+    Show your subscription plan
+  /usage
+    Show session usage
+  /vim
+    Toggle Vim editing in the composer for this session
+  /voice [status|debug]
+    Manage voice input
+⟩ /workflows
+    Browse workflow runs
+
+  For CLI options: muse --help
+  Esc to close

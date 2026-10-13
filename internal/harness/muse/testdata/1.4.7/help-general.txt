@@ -1,0 +1,50 @@
+│    Cached     0                                      │
+│    Output     0                                      │
+│    Total      0                                      │
+│                                                      │
+│    Turns         0                                   │
+│    Subagents  none                                   │
+│                                                      │
+│  Subscription · Muse Code Example Plan               │
+│    Current        17% used · Resets at 10:24 PM      │
+│    Weekly         5% used · Resets Oct 18 at 8:00 PM │
+│    as of 8:50 PM                                     │
+└──────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│  MUSE CODE 1.4.7 / example-name                                             IDLE    │
+│                                                                                     │
+│  MODEL          muse-model-x   · xhigh                                              │
+│                 example                                                             │
+│                                                                                     │
+│  WORKSPACE      ~                                                                   │
+│                 trusted · not found                                                 │
+│  ACCESS         Auto-review                                                         │
+│                 Example account                                                     │
+│  ACCOUNT        Example User (user@example.com)                                     │
+│                                                                                     │
+│  USAGE          0 tokens · 0 turns · 0 subagents                                    │
+│  CONTEXT        not projected · 1008K limit                                         │
+│                 Usage: cumulative session tokens; context: current prompt estimate. │
+│                                                                                     │
+│  SESSION        00000000-0000-4000-8000-000000000007                                │
+│  ACTIVITY       no tasks                                                            │
+│                 0 terminals · inbox clear                                           │
+│                                                                                     │
+│  BILLING        Subscription · Muse Code Example Plan                               │
+└─────────────────────────────────────────────────────────────────────────────────────┘
+
+── Voice input (alt(option)+v to start) ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  [General]  Commands  Custom commands
+  Shortcuts
+  /               for commands                                      !               for shell commands                                ctrl + j        for newline
+  enter           to submit message                                 @               for file paths                                    ctrl + v        to paste images
+  ?               to show or close shortcuts                        esc             to cancel or close                                ctrl + p/n      browse history
+  ctrl + c        clear/interrupt/exit                              tab             to queue while running                            alt(option) + v to start voice input
+  ctrl + o        to expand tool output                             ctrl + g        to edit in $EDITOR                                ctrl + b        to send to background
+  Browse or customize shortcuts with /keymap.
+  Send feedback with /feedback.
+  For CLI options: muse --help
+  Esc to close
