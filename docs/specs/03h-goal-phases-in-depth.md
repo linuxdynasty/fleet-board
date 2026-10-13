@@ -277,12 +277,33 @@ So the hub re-arms instead of nudging:
 4. Failure follows `StartGoal`: `PANE_BUSY` (retry once), `UNKNOWN_OUTCOME`
    (triage, never retried), `READY_TIMEOUT`.
 
-**To probe before relying on it:** that Codex 0.160.0 and Muse accept `/goal
-<text>` after a completed goal in the same session. Claude Code does (its goal
-is cleared when achieved, so setting one is a fresh set). Until probed, the
-hub marks a re-arm on those two unverified in the audit row, and a failed
-set-goal falls back to the operator typing the line (the triage item carries
-it).
+**Probe record 2026-10-12 (issue #59, plan item 0.14).** Muse 1.4.6 accepts
+`/goal <text>` after a completed goal in the same session, so re-arm there is
+verified. Codex 0.162.1 could not be probed (it would not start, below), so a
+re-arm on Codex stays unverified in the audit row, and a failed set-goal falls
+back to the operator typing the line (the triage item carries it).
+
+Setup: `fleet-live-probe` skill, throwaway tmux servers (killed at the end),
+one empty scratch folder per harness (deleted), macOS tmux 3.8. Two one-line
+prompts spent on Muse, none on Codex or Claude Code. Baselines: Codex
+`config.toml` and Muse `settings.json` had the same sha256 before and after;
+Muse `trust.json` regained its exact bytes after the throwaway trust entry was
+removed (verified with `cmp`); `~/.claude.json` was never opened (mtime
+unchanged); `auth.json` files, the keychain and `gh` auth were never opened.
+
+| Step | Observed |
+|---|---|
+| Muse 1.4.6 trust box in the new folder | read, then trusted on purpose (throwaway folder only) |
+| "/goal Reply with exactly the words probe done and then stop" | "Goal set", "probe done", "Goal already met — marking it complete.", "Completed goal 100%", footer "Goal (8s) 100%" |
+| "/goal Second probe goal ..." in the same session after DONE | "Goal set", ran, "Completed goal 100%", footer "Goal (4s) 100%": re-arm works |
+| Muse "/usage" | Current 21% (resets 10:24 PM), Weekly 10% (resets Oct 18): no limit live |
+| Codex 0.162.1 start, scratch folder and home, 5 tries | every start failed before the first screen: "account/read failed ... failed to load workspace requirements (code -32603)"; no goal could run |
+| Claude Code 2.1.296 start in a plain scratch folder | trust box ("No, exit" default); declined with Esc, nothing trusted, no prompt sent |
+
+Resume after a usage limit is still unprobed on all three harnesses: no limit
+was live to wait out, provoking one would burn quota, and the wait itself is
+multi-day. `limit_resume_verified` stays false everywhere until a limit is
+caught on its own and the resume past the reset is seen.
 
 ## Scheduler explanations
 
