@@ -398,19 +398,17 @@ optionally against one limit the owner sets.
   the `ignore-size` client flag (added in tmux 3.2) so it never changes the
   size of the developer's windows, and with the `pause-after=<s>` flag
   (`%pause`, `%continue`, `%extended-output`), set at attach or later by
-  `refresh-client -f`. Spike 0.5 ran both flags on tmux 3.2a and 3.7c
-  (2026-10-08, [results](../../spikes/tmuxtyping/results/README.md)): both
-  arrived in tmux 3.2 (its CHANGES file), and 3.1c refuses `-f` but silently
-  ignores both under the old `-F` (read from its source), so a version check
-  reads `client_flags` and never trusts `-F`. `ignore-size` is set at attach
+  `refresh-client -f`. Spike 0.5 (2026-10-08,
+  [results](../../spikes/tmuxtyping/results/README.md)) dates both flags to
+  tmux 3.2, so the version check reads `client_flags` and never trusts `-F`.
+  `ignore-size` is set at attach
   (`attach-session -f ignore-size,pause-after=<s>`): turned on later, it does
   not undo a shrink until the next size change. A `%continue` can arrive
-  inside a command's `%begin`/`%end` reply: tmux 3.2a and 3.7c write
-  `%pause` and `%continue` inside the reply to the client's own
-  `refresh-client -A`. Reply lines are also raw command output (a
-  `capture-pane` line is pane text and can start with `%`), so the parser
-  keeps every line of a reply as reply text, lifts nothing out, and ends the
-  reply only at the `%end` or `%error` with the same time, number and flags.
+  inside a command's `%begin`/`%end` reply: tmux 3.2a and 3.7c write `%pause`
+  and `%continue` inside the reply to the client's own `refresh-client -A`.
+  Reply lines are also raw command output (pane text can start with `%`), so
+  the parser keeps every line as reply text and ends the reply only at the
+  `%end` or `%error` with the same time, number and flags.
   The client may honour a `%pause` line found in any reply (pausing is the
   safe direction, and tmux may pause a pane while another command runs), but
   a `%continue` line only when that reply answers its own `refresh-client -A`
@@ -419,11 +417,9 @@ optionally against one limit the owner sets.
   bounded (defaults; each kept reply line also costs its overhead), and a
   line over the bound is skipped to its newline and counted (05b).
   The client (`internal/agent/tmux`, row 7 PR 7c2) attaches with `-E`, so tmux
-  does not apply `update-environment` to the developer's session, and with
-  `-u`, so names and values come byte for byte whatever LANG the agent has
-  (under LANG=C, which a service often gets, tmux would send each non-ASCII or
-  control character as `_`), and checks `tmux -V` (below 3.2 is
-  `TMUX_TOO_OLD`), attaches to the lowest session id (a session the fleet
+  leaves the developer's environment alone, and with `-u`, so names and values
+  come byte for byte whatever LANG the agent has, and checks `tmux -V` (below
+  3.2 is `TMUX_TOO_OLD`), attaches to the lowest session id (a session the fleet
   marked internal, its `@fleet_internal` exactly `attach_view` as tmux
   compares it, is second choice: when only internal sessions exist it attaches
   there, and `switch-client -E` moves it to the first developer session that
@@ -436,16 +432,20 @@ optionally against one limit the owner sets.
   timer (defaults). It sends only typed commands and `typing.Line`s, refusing
   a line built for another server or an earlier start of this one. Its
   inventory read is one `list-panes -a`, bounded at 10 s (defaults), whose text fields tmux bounds in bytes
-  (E1). Its one known gap is the 8 MiB reply bound: about 13,100 normal panes
-  on one server, 119 in the worst case (newline-filled tags; defaults), far
-  over the 04 budget of 10 per machine; past it the read fails whole, counted
-  (05b). Measured in its tests on tmux 3.2a and 3.7c (macOS, and Linux in a
-  container), 2026-10-10: the nested `#{S:#{W:...}}` subscription expands on
-  3.2a as on 3.7c, so the per-window fallback of the row-7 ruling fork 5(e) is
-  not needed; in the two recorded runs of a pane flooding while the reader
-  stalled 3 s during a command (`internal/agent/tmux/testdata/flood-*.txt`),
-  tmux wrote no `%pause` and the reply came whole and in order. Further
-  unrecorded runs (3 and 8 s stalls) showed no `%pause` inside a reply either.
+  (E1). Its one known gap is the 8 MiB reply bound, far over the 04 budget of
+  10 per machine (defaults; the per-version pane counts live there): past it
+  the read fails whole, counted (05b). Floods during a command
+  (`internal/agent/tmux/testdata/flood-*.txt`, reader stalled 3 s): on 3.2a
+  and 3.7c the reply comes whole and in order with no `%pause` in it; the
+  nested `#{S:#{W:...}}` subscription expands alike on both, so the per-window
+  fallback of the row-7 ruling fork 5(e) is not needed. On 3.8 (Homebrew,
+  macOS, #208) the same run wedges the server under machine load (2 of 4
+  tries 2026-10-13, 2 of 14 on 2026-10-11): no `%pause`, the stream stops
+  mid-flood (last age 5 ms), the reply never comes, the server burns CPU
+  (`internal/agent/tmux/testdata/flood-stalled-3.8.txt` pins the signature).
+  Same family as upstream #4969 (fixed) and #5024 (open):
+  the pinned latest tmux stays 3.7c, and one read stays bounded at 10 s and
+  counted (defaults): wedges degrade, never freeze.
 - **E3 Pane lifecycle:** created and exited with exit status. "Stopped without
   DONE" (the one-nudge rule) depends on this. The status is known only when
   tmux kept the pane (`remain-on-exit`, which the agent never sets on a

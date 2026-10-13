@@ -2,6 +2,7 @@ package tmux_test
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -63,7 +64,7 @@ func TestFloodDuringACommand(t *testing.T) {
 			close(release)
 			out := <-got
 			if out.err != nil {
-				t.Fatalf("ListPanes during the flood: %v", out.err)
+				t.Fatalf("ListPanes during the flood: %v (%s)", out.err, floodSummary(t, raw))
 			}
 			if len(out.panes) != 2 {
 				t.Fatalf("ListPanes during the flood = %d panes, want 2", len(out.panes))
@@ -83,6 +84,115 @@ func TestFloodDuringACommand(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestFloodSummary checks the one-line failure evidence a flood run logs:
+// what tmux wrote before the command failed, so a recurrence of the 3.8
+// stall (#208) carries how much output arrived, how fresh the last of it
+// was, whether tmux ever paused, and how many own replies came back.
+func TestFloodSummary(t *testing.T) {
+	handshake := "%begin 1791888111 317 0\n%end 1791888111 317 0\n" +
+		"%begin 1791888111 319 1\nattached,focused,control-mode,ignore-size,pause-after=1,UTF-8|1|2|3.8\n%end 1791888111 319 1\n"
+	listReply := "%begin 1791888111 320 1\n$0 @0 %0 0   80 23\n$0 @0 %1 0   80 23\n%end 1791888111 320 1\n"
+	for _, tc := range []struct {
+		name   string
+		stream string
+		want   string
+	}{
+		{
+			name: "stalled",
+			stream: handshake +
+				"%extended-output %1 0 : flood-line\\015\\012\n" +
+				"%extended-output %1 1 : flood-line\\015\\012\n" +
+				"%extended-output %1 5 : flood-line\\015\\012\n",
+			want: "3 outputs (last age 5ms), 0 %pause, 0 %continue, 1 own reply",
+		},
+		{
+			name: "healthy",
+			stream: handshake +
+				"%extended-output %1 0 : flood-line\\015\\012\n" +
+				"%pause %1\n" +
+				listReply,
+			want: "1 output (last age 0s), 1 %pause, 0 %continue, 2 own replies",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "raw.txt")
+			if err := os.WriteFile(path, []byte(tc.stream), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			want := fmt.Sprintf("stream %d bytes: %s", len(tc.stream), tc.want)
+			if got := floodSummary(t, path); got != want {
+				t.Fatalf("floodSummary = %q, want %q", got, want)
+			}
+		})
+	}
+	t.Run("missing", func(t *testing.T) {
+		got := floodSummary(t, filepath.Join(t.TempDir(), "absent.txt"))
+		want := "stream unreadable"
+		if len(got) < len(want) || got[:len(want)] != want {
+			t.Fatalf("floodSummary = %q, want prefix %q", got, want)
+		}
+	})
+}
+
+// floodSummary reads back the recorded stream after a flood command failed:
+// its size, how much output arrived and how fresh the last of it was,
+// whether tmux ever paused, and how many of the client's own replies came
+// back. Pane text is never quoted, only counted.
+func floodSummary(t *testing.T, path string) string {
+	t.Helper()
+	fi, err := os.Stat(path) //nolint:gosec // G703: a recorded transcript the test names
+	if err != nil {
+		return fmt.Sprintf("stream unreadable: %v", err)
+	}
+	f, err := os.Open(path) //nolint:gosec // G304: a recorded transcript the test names
+	if err != nil {
+		return fmt.Sprintf("stream unreadable: %v", err)
+	}
+	defer func() { _ = f.Close() }()
+	var outputs, pauses, continues, replies int
+	var lastAge time.Duration
+	p := tmux.NewParser(f, tmux.Options{})
+	for {
+		m, err := p.Next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return fmt.Sprintf("stream %d bytes, parse stopped: %v", fi.Size(), err)
+		}
+		switch m := m.(type) {
+		case tmux.Reply:
+			if m.Flags&1 == 1 {
+				replies++
+			}
+			for _, note := range m.ControlNotes() {
+				if _, ok := note.(tmux.Pause); ok {
+					pauses++
+				}
+			}
+		case tmux.Output:
+			outputs++
+			if m.Extended {
+				lastAge = m.Age
+			}
+		case tmux.Pause:
+			pauses++
+		case tmux.Continue:
+			continues++
+		}
+	}
+	replyWord := "replies"
+	if replies == 1 {
+		replyWord = "reply"
+	}
+	outputWord := "outputs"
+	if outputs == 1 {
+		outputWord = "output"
+	}
+	return fmt.Sprintf("stream %d bytes: %d %s (last age %s), %d %%pause, %d %%continue, %d own %s",
+		fi.Size(), outputs, outputWord, lastAge, pauses, continues, replies, replyWord)
 }
 
 // pausesIn parses a recorded stream and counts %pause lines inside replies
@@ -113,6 +223,61 @@ func pausesIn(t *testing.T, path string) (inReply, outside int) {
 		case tmux.Pause:
 			outside++
 		}
+	}
+}
+
+// The recorded stalled transcript (testdata/flood-stalled-3.8.txt, the
+// first 30 lines of a TestFloodDuringACommand run on tmux 3.8 under machine
+// load whose ListPanes never got a reply, #208): the handshake shows
+// pause-after=1, flood output arrives fresh (ages 0 to 1 ms), and then the
+// wedge signature: no %pause anywhere and no second own reply. The full
+// 110-line stream ends the same way, mid-flood, with the last age 5 ms.
+func TestRecordedStalledTranscript(t *testing.T) {
+	path := filepath.Join("testdata", "flood-stalled-3.8.txt")
+	f, err := os.Open(path) //nolint:gosec // G304: a testdata file named here
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = f.Close() }()
+	p := tmux.NewParser(f, tmux.Options{})
+	var own, outputs, pauses int
+	var lastAge time.Duration
+	for {
+		m, err := p.Next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		switch m := m.(type) {
+		case tmux.Reply:
+			if m.Flags&1 == 1 {
+				own++
+			}
+			for _, note := range m.ControlNotes() {
+				if _, ok := note.(tmux.Pause); ok {
+					pauses++
+				}
+			}
+		case tmux.Output:
+			outputs++
+			if m.Extended {
+				lastAge = m.Age
+			}
+		case tmux.Pause:
+			pauses++
+		case tmux.Discarded:
+			t.Fatalf("discarded: %+v", m)
+		}
+	}
+	// The handshake's own reply, flood output, and nothing else: tmux never
+	// paused the pane and never answered list-panes.
+	if own != 1 || outputs < 10 || pauses != 0 {
+		t.Fatalf("own replies %d, outputs %d, %%pauses %d", own, outputs, pauses)
+	}
+	if lastAge > time.Second {
+		t.Fatalf("last output age %s: the stream went stale, not wedged fresh", lastAge)
 	}
 }
 
