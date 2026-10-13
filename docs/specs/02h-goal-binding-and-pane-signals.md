@@ -270,31 +270,31 @@ is explicit: `TmuxPane.last_input_time` (level) and `Event.pane_input`
 (`PaneInput`, COALESCE key `input:<pane>`, at most one per pane per 10 s;
 replayed from the ring after an outage with its original time).
 
-Detection (a push, per spike 0.5: tmux 3.2a and 3.7c, 2026-10-08,
-[results](../../spikes/tmuxtyping/results/README.md)): the agent subscribes
-once per tmux server with `refresh-client -B
-'fleet-input::#{S:#{session_id}=#{session_activity} }'` (session ids, never
-names, which are the developer's text). tmux re-checks it about once a second
-and moves `session_activity` when an attached client presses a key (mouse
-input counts). It also moves, read from the 3.2a source and not measured, on
-attach, `new-session` (the agent's own included), `switch-client`, pane
-focus-in and a client waking from suspend; the agent's own `send-keys` did
-not move it. A change only triggers one `tmux list-clients -F
-'#{client_activity} #{client_flags} #{client_session} #{pane_id}'` read: the
-agent ignores control-mode clients (its own observer) and credits input only
-to a client whose `client_activity` moved, at its active pane, so a browser
-attach through a grouped view session lands on the real pane (browser attach
-clients count: a person is typing). When unsure, it counts as input; a
-client seen for the first time counts as input. No timed
-poll runs while the subscription is live; the 2 s `list-clients` poll runs
-only from attach until the first `%subscription-changed` confirms it, and
-after `%exit` until it is confirmed again (ADR 0024, decision 9). On
-reconnect the agent compares each client's `client_activity` with the last
-value seen, so a key pressed during the gap is still reported. `#{L:...}`
-(tmux 3.4) is not used. The "developer typing" check before any `SendKeys`
-reads `list-clients` at that moment, never stored push state. A pane whose
-input line changes while no fleet command is in flight is a second, weaker
-evidence the agent may use where `client_activity` is unavailable.
+Detection (a push: spike 0.5, tmux 3.2a and 3.7c, 2026-10-08,
+[results](../../spikes/tmuxtyping/results/README.md), proved in 7f on
+both): the agent subscribes once per server with `refresh-client -B
+'fleet-input::#{S:#{session_id}=#{session_activity} }'` (session ids,
+never names, the developer's text). tmux re-checks it about once a
+second; `session_activity` moves when an attached client sends anything
+(keys, mouse, focus reports). Measured (7f): an attach is a new client
+and counts as input; a `switch-client` by anyone, the agent's own
+`new-session`, `send-keys`, resizes and captures move no client's key
+time, so the tripwire's read credits nothing. A change only triggers
+one `tmux list-clients -F '#{client_pid} #{client_activity}
+#{client_control_mode} #{session_id} #{pane_id}'` read: control-mode
+clients (the agent's own observer) are ignored; input is credited only
+to a client whose key time moved or is seen first, at its active pane:
+a grouped view's keys land on the real pane. No timed poll runs while
+the subscription is live (60 s idle with a person attached: zero
+`list-clients`, zero events); the 2 s poll runs only from attach until
+the first `%subscription-changed` confirms it, and after `%exit` until
+confirmed again (ADR 0024, decision 9; the first value arrives right
+after registration on both versions). On reconnect the agent compares
+each client's key time with the last seen, so a key pressed during the
+gap is still reported. The "developer typing" check before any
+`SendKeys` reads `list-clients` at that moment, never stored push
+state. A pane whose input line changes with no fleet command in flight
+is weaker evidence where `client_activity` is unavailable.
 
 The hub holds off nudges and goal control for 10 minutes after the latest
 input (`human_at_keyboard_until_time`) and shows the typing banner from

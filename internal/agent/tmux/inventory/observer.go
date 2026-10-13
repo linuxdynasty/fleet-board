@@ -55,6 +55,34 @@ type Options struct {
 	// maxReply is each client's reply bound (0: the parser's default);
 	// only a test sets it, to make a read fail (export_test.go).
 	maxReply int
+
+	// inputPoll is the backup list-clients poll gap (0: inputPollGap);
+	// only a test sets it, to watch the poll run and stop fast
+	// (export_test.go).
+	inputPoll time.Duration
+
+	// emitGap is the least time between two PaneInput events of one pane
+	// (0: defaultInputGap, the 10 s contract); only a test sets it, to
+	// prove the gate without waiting out the contract (export_test.go).
+	emitGap time.Duration
+}
+
+// pollGap is the backup list-clients poll gap: the 2 s production value,
+// or the test's override.
+func (o *Options) pollGap() time.Duration {
+	if o.inputPoll > 0 {
+		return o.inputPoll
+	}
+	return inputPollGap
+}
+
+// inputEmitGap is the per-pane PaneInput gate: the 10 s contract value,
+// or the test's override.
+func (o *Options) inputEmitGap() time.Duration {
+	if o.emitGap > 0 {
+		return o.emitGap
+	}
+	return defaultInputGap
 }
 
 // readTimeout bounds each inventory read (defaults, fixed): a read that has
@@ -103,7 +131,8 @@ func New(opts Options) (*Observer, error) {
 		}
 		s := &server{
 			o: o, name: name, kind: kindWord(name), dirty: make(chan struct{}, 1), snap: make(chan chan *agentv1.TmuxServer),
-			actDirty: make(chan struct{}, 1), track: newActivityTracker(time.Now, opts.IdleThreshold),
+			actDirty: make(chan struct{}, 1), inDirty: make(chan struct{}, 1),
+			track: newActivityTracker(time.Now, opts.IdleThreshold), inputs: newInputTracker(time.Now, opts.inputEmitGap()),
 			winAct: map[string]time.Time{}, summaries: map[string]time.Time{}, pending: map[string]int{},
 		}
 		c, err := tmux.NewClient(tmux.ClientOptions{
@@ -161,6 +190,12 @@ func (o *Observer) Run(ctx context.Context) {
 		if err := s.c.Subscribe(ctx, activitySub); err != nil {
 			o.tel.subscribeFailed(ctx, s.kind, activitySub.Name, err)
 		}
+		// A refused input subscription is logged and the observer runs
+		// without it: the backup poll never confirms, so it keeps the
+		// 2 s reads (a missed push cannot lose a key, 02h E13).
+		if err := s.c.Subscribe(ctx, inputSub); err != nil {
+			o.tel.subscribeFailed(ctx, s.kind, inputSub.Name, err)
+		}
 		wg.Go(func() { _ = s.c.Run(ctx) }) // ends with ctx, or ErrTooOld (its tmux.exit says so)
 		wg.Go(func() { s.loop(ctx) })
 	}
@@ -208,6 +243,14 @@ type server struct {
 	dirty      chan struct{}                 // a notice came: read again (buffered 1)
 	snap       chan chan *agentv1.TmuxServer // Snapshot requests
 	actDirty   chan struct{}                 // window activity moved: refresh it (buffered 1)
+	inDirty    chan struct{}                 // session activity moved: read the clients (buffered 1)
+
+	// inMu guards inputs: the loop's syncInput and row 18's on-demand
+	// CheckInput share the one tracker, and CheckInput runs on the
+	// caller's goroutine. Everything else below stays owned by the loop
+	// goroutine alone.
+	inMu   sync.Mutex
+	inputs *inputTracker
 
 	reads atomic.Int64 // inventory reads started (the pacing test counts them)
 
@@ -236,126 +279,23 @@ func (s *server) notify(m tmux.Message) {
 			s.o.askRescan() // fork 4(b): rescan after a control client exits
 		}
 	}
-	if m, ok := m.(tmux.SubscriptionChanged); ok && m.Name == activitySub.Name {
-		select {
-		case s.actDirty <- struct{}{}:
-		default:
+	if m, ok := m.(tmux.SubscriptionChanged); ok {
+		var dst chan struct{}
+		switch m.Name {
+		case activitySub.Name:
+			dst = s.actDirty
+		case inputSub.Name:
+			dst = s.inDirty
+		}
+		if dst != nil {
+			select {
+			case dst <- struct{}{}:
+			default:
+			}
 		}
 	}
 	if s.o.opts.Notify != nil {
 		s.o.opts.Notify(s.name, m)
-	}
-}
-
-// loop is the one goroutine that reads, diffs and emits for this server.
-// A burst of notices coalesces into one read, and notices start a read at
-// most once a second (readGap); nothing is held across a read or an emit.
-// While a fresh-dead pane with no exit status is owed follow-ups, a timer
-// starts one more read a deadStatusPollGap after the last one: the timer
-// only fires when the death's own notice already asked for the status.
-// Window-activity notices refresh only the activity times (no inventory
-// read); the idle timer re-evaluates from the cached times when a server
-// goes quiet, so idle edges are emitted with no new notice.
-func (s *server) loop(ctx context.Context) {
-	read := true
-	var last time.Time
-	var poll *time.Timer
-	armed := func() <-chan time.Time {
-		if poll == nil {
-			return nil
-		}
-		return poll.C
-	}
-	stop := func() {
-		if poll == nil {
-			return
-		}
-		if !poll.Stop() {
-			select {
-			case <-poll.C:
-			default:
-			}
-		}
-		poll = nil
-	}
-	var idleT *time.Timer
-	var idleC <-chan time.Time
-	arm := func() {
-		at, ok := s.track.nextIdle()
-		if !ok {
-			if idleT != nil && !idleT.Stop() {
-				select {
-				case <-idleT.C:
-				default:
-				}
-			}
-			idleC = nil
-			return
-		}
-		d := time.Until(at)
-		if d < 0 {
-			d = 0
-		}
-		if idleT == nil {
-			idleT = time.NewTimer(d)
-		} else {
-			if !idleT.Stop() {
-				select {
-				case <-idleT.C:
-				default:
-				}
-			}
-			idleT.Reset(d)
-		}
-		idleC = idleT.C
-	}
-	defer func() {
-		if idleT != nil {
-			idleT.Stop()
-		}
-	}()
-	for {
-		_, changed := s.c.Changed()
-		if read {
-			s.sync(ctx)
-			last = time.Now()
-			arm()
-		}
-		read = true
-		stop()
-		if len(s.pending) > 0 && s.c.State() == tmux.StateUp {
-			poll = time.NewTimer(deadStatusPollGap)
-		}
-		select {
-		case <-ctx.Done():
-			stop()
-			return
-		case <-changed:
-		case <-s.dirty:
-			ok, _ := s.pace(ctx, last)
-			if !ok {
-				stop()
-				return
-			}
-		case <-armed():
-		case <-s.actDirty:
-			ok, _ := s.pace(ctx, last)
-			if !ok {
-				return
-			}
-			s.syncActivity(ctx)
-			arm()
-		case <-idleC:
-			idleC = nil
-			s.reapIdle(ctx)
-			arm()
-		case reply := <-s.snap:
-			s.sync(ctx)
-			last = time.Now()
-			arm()
-			reply <- s.level()
-			read = false // just read
-		}
 	}
 }
 
@@ -403,6 +343,9 @@ func (s *server) sync(ctx context.Context) {
 		s.o.tel.readDone(ctx, s.kind, "ok")
 		if s.last == nil || s.last.GetServerStartId() != inv.StartID {
 			s.track.reset() // tmux ids restart with a new server: reuse nothing
+			s.inMu.Lock()
+			s.inputs.reset()
+			s.inMu.Unlock()
 			s.winAct = map[string]time.Time{}
 			s.summaries = map[string]time.Time{}
 		}
@@ -410,10 +353,16 @@ func (s *server) sync(ctx context.Context) {
 		changes := s.track.evaluate(s.outlets(inv))
 		next := buildServer(s.name, inv, s.c.Version())
 		s.track.stamp(next)
+		s.inMu.Lock()
+		s.inputs.stamp(next)
+		s.inMu.Unlock()
 		s.apply(ctx, next)
 		s.emitChanges(ctx, inv.StartID, changes)
 	case tmux.StateAbsent:
 		s.track.reset()
+		s.inMu.Lock()
+		s.inputs.reset()
+		s.inMu.Unlock()
 		s.winAct = map[string]time.Time{}
 		s.summaries = map[string]time.Time{}
 		s.apply(ctx, nil)

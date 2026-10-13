@@ -128,7 +128,8 @@ func (c *Client) attach(ctx context.Context) (string, error) {
 	}
 	cn.writeTimeout = c.writeTimeout
 	c.mu.Lock()
-	c.expect = session // the attach's own %session-changed is expected
+	c.expect = session              // the attach's own %session-changed is expected
+	c.confirmed = map[string]bool{} // a new attach confirms nothing yet
 	c.mu.Unlock()
 	go cn.read(c.notify(cn))
 	info, err := c.handshake(ctx, cn)
@@ -184,12 +185,10 @@ func (c *Client) detach(cn *conn, reason string) {
 // notify wraps the caller's Notify with the client's own bookkeeping: the
 // first value of each subscription on this attach is logged as confirmed.
 func (c *Client) notify(cn *conn) func(Message) {
-	confirmed := map[string]bool{}
 	return func(m Message) {
 		switch m := m.(type) {
 		case SubscriptionChanged:
-			if !confirmed[m.Name] && c.registered(m.Name) {
-				confirmed[m.Name] = true
+			if c.markConfirmed(m.Name) {
 				c.tel.subscriptionConfirmed(m.Name)
 			}
 		case SessionsChanged: // a token for the re-pick goroutine; a burst coalesces

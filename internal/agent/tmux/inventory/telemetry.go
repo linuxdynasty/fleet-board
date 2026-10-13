@@ -26,12 +26,14 @@ const failGap = time.Minute
 // fleet_agent_tmux_servers{kind}, the counters
 // fleet_agent_tmux_inventory_reads_total{server_kind, result},
 // fleet_agent_tmux_dead_status_polls_total{server_kind, result},
-// fleet_agent_tmux_activity_transitions_total{server_kind, change} and
-// fleet_agent_tmux_pane_summaries_total{server_kind, result}, and the log
-// events tmux.server_seen, tmux.watch_off, tmux.inventory_failed,
-// tmux.activity_failed and tmux.subscribe_failed. Ids, closed words and
-// counts only: never a session or window name, a command, a tag value or
-// a path.
+// fleet_agent_tmux_activity_transitions_total{server_kind, change},
+// fleet_agent_tmux_pane_summaries_total{server_kind, result},
+// fleet_agent_tmux_input_reads_total{server_kind, result} and
+// fleet_agent_tmux_pane_inputs_total{server_kind}, and the log events
+// tmux.server_seen, tmux.watch_off, tmux.inventory_failed,
+// tmux.activity_failed, tmux.input_failed and tmux.subscribe_failed. Ids,
+// closed words and counts only: never a session or window name, a
+// command, a tag value or a path.
 type obsTelemetry struct {
 	log         *slog.Logger
 	servers     metric.Int64Gauge
@@ -39,6 +41,8 @@ type obsTelemetry struct {
 	polls       metric.Int64Counter
 	transitions metric.Int64Counter
 	summaries   metric.Int64Counter
+	inputReads  metric.Int64Counter
+	inputs      metric.Int64Counter
 	off         atomic.Bool
 
 	mu       sync.Mutex
@@ -76,7 +80,44 @@ func newObsTelemetry(tel *telemetry.Telemetry) (*obsTelemetry, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &obsTelemetry{log: log, servers: g, reads: reads, polls: polls, transitions: transitions, summaries: summaries, lastFail: map[string]time.Time{}}, nil
+	inputReads, err := m.Int64Counter(prefix+"_tmux_input_reads_total",
+		metric.WithDescription("E13 client reads that ended, by server kind and result (ok, command, reply, timeout, io)."))
+	if err != nil {
+		return nil, err
+	}
+	inputs, err := m.Int64Counter(prefix+"_tmux_pane_inputs_total",
+		metric.WithDescription("E13 PaneInput events emitted, by server kind."))
+	if err != nil {
+		return nil, err
+	}
+	return &obsTelemetry{log: log, servers: g, reads: reads, polls: polls, transitions: transitions, summaries: summaries, inputReads: inputReads, inputs: inputs, lastFail: map[string]time.Time{}}, nil
+}
+
+// paneInput counts one PaneInput event that went out.
+func (t *obsTelemetry) paneInput(ctx context.Context, kind string) {
+	t.inputs.Add(ctx, 1, metric.WithAttributes(attribute.String("server_kind", kind)))
+}
+
+// inputRead counts one client read that ended: result is "ok" or a
+// readErrKind word. A read the client refused as not attached, or that the
+// agent's stop cut short, is not counted (the client's state says why).
+func (t *obsTelemetry) inputRead(ctx context.Context, kind, result string) {
+	t.inputReads.Add(ctx, 1, metric.WithAttributes(attribute.String("server_kind", kind), attribute.String("result", result)))
+}
+
+// inputFailed logs a failed client read, at most once a minute per
+// server; the last client times stand until the next read.
+func (t *obsTelemetry) inputFailed(ctx context.Context, kind string, err error) {
+	t.mu.Lock()
+	now := time.Now()
+	due := now.Sub(t.lastFail["input/"+kind]) >= failGap
+	if due {
+		t.lastFail["input/"+kind] = now
+	}
+	t.mu.Unlock()
+	if due {
+		t.log.WarnContext(ctx, "tmux.input_failed", "server_kind", kind, "err_kind", readErrKind(err))
+	}
 }
 
 // transition counts one E4 edge: change is to_active or to_idle.

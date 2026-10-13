@@ -62,3 +62,6 @@ func InventoryFieldCountForTest() int { return len(inventoryFields) }
 
 // ParsePaneForTest parses one list-panes line.
 func ParsePaneForTest(line string) (Pane, bool) { return parsePane(line) }
+
+// ParseClientsForTest parses one list-clients read, as ReadClients does.
+func ParseClientsForTest(body []string) ([]ClientInfo, error) { return parseClients(body) }

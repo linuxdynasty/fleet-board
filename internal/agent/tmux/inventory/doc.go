@@ -32,6 +32,14 @@
 // abandoned and counted as a timeout, keeping the last good inventory. The
 // first good read after reads failed emits CREATED with the full server;
 // a clean start emits nothing.
+// E13 developer input (01 E13, 02h) comes from the fleet-input
+// session-activity subscription and one list-clients read per change: the
+// inputTracker credits a moved or first-seen client at its pane (control
+// clients ignored) and emits PaneInput, at most one per pane per 10 s,
+// while TmuxPane.last_input_time keeps every key. Until the subscription
+// confirms, a 2 s backup poll keeps the same read going (ADR 0024,
+// decision 9); [Observer.CheckInput] is row 18's on-demand read for the
+// SendKeys check: it reads at that moment and stamps, never emits.
 // [Observer.Snapshot] is the conn Snapshot hook.
 //
 // Sessions on the probe server, and sessions whose @fleet_internal user
