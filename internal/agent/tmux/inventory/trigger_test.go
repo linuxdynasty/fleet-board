@@ -1,10 +1,25 @@
 package inventory
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/linuxdynasty/fleet-board/internal/agent/tmux"
 )
+
+// A pane tmux reports dead before it knows the exit status must change the
+// structure subscription's value when the status lands, or no re-read fires
+// and the hub never learns the status (Linux CI: "exit 4" stayed dead with
+// no status for the whole 30 s wait, and the observer emitted a status-less
+// PaneExited with no follow-up PaneChanged).
+func TestStructureSubscriptionTracksExitStatus(t *testing.T) {
+	t.Parallel()
+	for _, want := range []string{"#{pane_dead_status}", "#{pane_dead_signal}"} {
+		if !strings.Contains(structure.Format, want) {
+			t.Fatalf("structure.Format = %q, want it to track %s", structure.Format, want)
+		}
+	}
+}
 
 func TestTriggers(t *testing.T) {
 	t.Parallel()

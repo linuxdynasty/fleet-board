@@ -16,9 +16,13 @@ import (
 // of their own. A pane that lives under a second can be missed by it; the
 // next rescan (Snapshot, SnapshotRequest, a client's state change) reads
 // it. 7f measures the cost of the three subscriptions together (proof 9).
+// The value tracks the dead status and signal too: tmux can report a
+// fresh-dead pane before waitpid hands it the status, and only a value that
+// changes when the status lands triggers the re-read that delivers it as a
+// dead PaneChanged (3.2a has no pane_dead_signal and reads it empty).
 var structure = tmux.Subscription{
 	Name:   "fleet-structure",
-	Format: "#{S:#{session_id}:#{W:#{window_id}=#{P:#{pane_id}.#{pane_dead} }}}",
+	Format: "#{S:#{session_id}:#{W:#{window_id}=#{P:#{pane_id}.#{pane_dead}.#{pane_dead_status}.#{pane_dead_signal} }}}",
 }
 
 // readGap is the least time between two reads a notice asks for: a burst

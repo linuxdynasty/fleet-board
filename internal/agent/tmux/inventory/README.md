@@ -133,10 +133,12 @@ paced. Measured on tmux 3.2a and 3.7c, a `-d` split, a kill of a non-active
 pane and a pane death in a session the client is not attached to raise no
 notice of their own, so the observer registers one subscription per server
 (coordinator decision on 7d, amending row-7 ruling fork 5(f)):
-`#{S:#{session_id}:#{W:#{window_id}=#{P:#{pane_id}.#{pane_dead} }}}`, which
-tmux checks about once a second. A pane that lives under a second can be
-missed by it and is read at the next rescan (Snapshot, SnapshotRequest, a
-client state change). 7f measures the cost of the three subscriptions
+`#{S:#{session_id}:#{W:#{window_id}=#{P:#{pane_id}.#{pane_dead}.#{pane_dead_status}.#{pane_dead_signal} }}}`,
+which tmux checks about once a second. The dead status and signal ride in
+the value so a status that lands after the death itself triggers a re-read
+(a fresh-dead pane can read dead before tmux knows its status). A pane that
+lives under a second can be missed by it and is read at the next rescan
+(Snapshot, SnapshotRequest, a client state change). 7f measures the cost of the three subscriptions
 together (E13's `session_activity`, E4's `window_activity` and this one;
 proof 9).
 
