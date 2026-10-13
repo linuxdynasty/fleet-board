@@ -20,6 +20,7 @@ burn-down bands around the target. The projection
 window and whenever the reading is stale or unknown: it is never guessed.
 
 Not here yet (later slices of issue #38): persisting `account_pacing` and
-`insight_pacing_interval` rows, probe assignment (`pacing/probe`), the
-`pacing.decision` log and the `fleet_hub_pacing_*` metrics, account
-discovery and Codex mapping, and spend display for API-key accounts.
+`insight_pacing_interval` rows, the `probes` table with its unique-active
+rule, the `pacing.decision` log and the `fleet_hub_pacing_*` metrics,
+account discovery and Codex mapping, and spend display for API-key
+accounts. Probe assignment lives in `probe`.
