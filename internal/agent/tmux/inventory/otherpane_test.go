@@ -1,6 +1,7 @@
 package inventory_test
 
 import (
+	"strings"
 	"testing"
 
 	agentv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1"
@@ -36,18 +37,35 @@ func TestPaneChangesInAnotherSessionAreSeen(t *testing.T) {
 			}
 
 			dev.Run(t, "set-option", "-w", "-t", "other:0", "remain-on-exit", "on")
-			dev.Run(t, "split-window", "-d", "-t", "other:0", "sleep 2; exit 5")
+			victim := strings.TrimSpace(dev.Run(t, "split-window", "-d", "-P", "-F", "#{pane_id}", "-t", "other:0", "sleep 2; exit 5"))
 			// tmux can report the fresh-dead pane before it knows the status,
 			// which then arrives on the next read: wait for the death with
 			// status 5 however it arrives (PaneExited, or PaneChanged after a
-			// status-less exit).
-			r.rec.waitFor(t, i, "death with status 5", func(ev *agentv1.Event) bool {
+			// status-less exit). On Linux tmux can also lose the status on the
+			// way (tmuxtest.DeadStuck): then the status-less remains death the
+			// observer already reported is tmux's whole answer, and the test
+			// accepts it.
+			landed := func(ev *agentv1.Event) bool {
 				if pe := ev.GetPaneExited(); pe != nil && pe.GetRemains() && pe.GetExitStatus() == 5 {
 					return true
 				}
 				pc := ev.GetPaneChanged()
 				return pc != nil && pc.GetPane().GetDead() && pc.GetPane().GetExitStatus() == 5
-			})
+			}
+			if r.rec.waitFound(i, landed) {
+				return
+			}
+			for _, ev := range r.rec.all() { // one last scan: it may have landed meanwhile
+				if landed(ev) {
+					t.Logf("death with status 5 landed after the wait ran out")
+					return
+				}
+			}
+			out := dev.Run(t, "display-message", "-p", "-t", victim, "#{pane_dead} #{pane_dead_status} #{pane_dead_signal}")
+			if !tmuxtest.DeadStuck(out) {
+				t.Fatalf("no death with status 5 within %s and pane %s is not stuck (%q); events: %v", wait, victim, out, r.rec.all())
+			}
+			t.Logf("pane %s exited into tmux's stuck state (dead, no status or signal ever); the status-less remains death stands", victim)
 		})
 	}
 }

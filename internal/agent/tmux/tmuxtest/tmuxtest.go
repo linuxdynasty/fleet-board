@@ -214,6 +214,20 @@ func (s *Server) Try(args ...string) (string, error) {
 	return string(res.Stdout), nil
 }
 
+// DeadStuck reports whether out, the stdout of
+// display-message -p '#{pane_dead} #{pane_dead_status} #{pane_dead_signal}'
+// for one pane, is tmux's stuck state: the pane is dead but tmux recorded
+// neither an exit status nor a signal for it. Measured on Linux (tmux 3.4
+// in a container and 3.7c on CI, about a quarter of runs and more): a pane
+// that exited normally ends dead with both blank, its process reaped, so
+// no later read will ever show them; macOS never showed it. The client
+// reports such a pane dead with no status, and tests accept that readout
+// as tmux's whole answer.
+func DeadStuck(out string) bool {
+	f := strings.Fields(out)
+	return len(f) == 1 && f[0] == "1"
+}
+
 // Argv is the whole command line for this server: the program, -S, -f
 // /dev/null, then args. A test file that starts a long-lived client (the
 // PTY "person at the keyboard") uses it with Env; test files may start

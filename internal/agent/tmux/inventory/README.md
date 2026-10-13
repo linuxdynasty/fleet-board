@@ -140,10 +140,12 @@ which tmux checks about once a second. The dead status and signal ride in
 the value so a death that lands together with its status is read with it;
 but a fresh-dead pane can read dead before tmux knows its status, and on
 Linux no notice follows when only the status lands, so that pane is owed
-`deadStatusPollMax` (10, defaults) follow-up reads one second apart: the
+`deadStatusPollMax` (30, defaults) follow-up reads one second apart: the
 loop's timer starts one more whole-inventory read (never a per-pane poll)
 until the status lands as a dead `PaneChanged` or the cap runs out (a
-signal death never gains one). Every read settles the wait, whatever
+signal death never gains one; on Linux tmux can also lose an exited pane's
+status on the way, and then the status-less remains death already reported
+is tmux's whole answer). Every read settles the wait, whatever
 started it; a server going away or restarting drops it (pane ids restart
 with the server). A pane that lives under a second can be missed by the
 subscription and is read at the next rescan (Snapshot, SnapshotRequest, a
