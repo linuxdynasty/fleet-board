@@ -456,9 +456,9 @@ optionally against one limit the owner sets.
   across hosts) or `other` (unreadable), never tmux's text; 3.2a gives none.
   No snapshot field carries it yet; `TmuxPane` has only `dead` and `exit_status`.
 - **E4 Activity transitions:** active ↔ idle, with the time of last output.
-  Never dropped under backpressure; the hub's stuck detection depends on it.
+  Never dropped under backpressure; the hub's stuck detection depends on it. Row 7 PR 7e (`internal/agent/tmux/inventory`): one `fleet-activity` subscription per server (`%output` is not a source); active inside `idle_threshold`; `ActivityTransition` edges and Snapshot level, never `PaneChanged`; quiet servers report idle edges from an idle timer.
 - **E5 Pane summaries:** last lines, ANSI stripped; at most one per pane every
-  5 s; droppable.
+  5 s; droppable. Row 7 PR 7e: one summary per edge, at most one per pane per 5 s; visible screen, control-stripped, capped at 4 KiB.
 - **E6 Prompt detected:** `prompt_id`, text, options, destructive flag, source
   (screen pattern or hook) and confidence. Send-to-pane stays disabled for a
   harness until its detection is verified (Claude first).
@@ -496,4 +496,4 @@ optionally against one limit the owner sets.
   Found from a tmux format subscription with a `list-clients` read on each
   change; the 2 s poll runs only as a backup until the subscription is
   confirmed (02h E13).
-- **E10 Capture pane:** visible screen or last N lines, ANSI stripped by default.
+- **E10 Capture pane:** visible screen or last N lines, ANSI stripped by default. Row 7 PR 7e gives the read path (the inventory observer's capture call, 256 KiB clamp); row 18 wires the command.

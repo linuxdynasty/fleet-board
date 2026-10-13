@@ -67,8 +67,8 @@ c := obs.Client("default")           // 7e and 7f subscribe through it
   sessions with the same PaneKeys.
 - `harness` unset, `availability` not idle and not available, and
   `ready_pattern_showing` false: rows 8 and 18 own them (fork 9). `activity`
-  and output times are 7e's, input time 7f's, `workdir` and `goal` later
-  rows'.
+  and output times are 7e's (tracked and stamped; see below), input time
+  7f's, `workdir` and `goal` later rows'.
 - `attached_clients` leaves out the agent's own control client.
 - In the Snapshot, a server never seen is `running: false`; a server whose
   client is down keeps its last inventory with `observed: false`, so a pane
@@ -124,6 +124,36 @@ went (panes, windows, sessions). Panes are keyed by pane id across the
 server, so a grouped pair raises one event per pane. A pane read dead and
 later dropped by tmux gets a second `PaneExited` (`remains: false`): the hub
 applies it idempotently (02i), so the one-nudge rule runs once.
+
+## Activity, summaries and capture (7e)
+
+E4 activity comes from one window-activity subscription per server (row-7
+ruling, 1 s granularity): tmux's `window_activity`, read with one
+`list-windows -a` whenever the `fleet-activity` subscription moves, at each
+inventory read that needs it, and at each Snapshot. `%output` is not a
+source. A pane is active while its window's latest output is inside
+`idle_threshold` (2 minutes, `Options.IdleThreshold` in tests), else idle.
+The Snapshot and every pane-carrying event stamp the level; only the edges
+become `ActivityTransition` events (never dropped). Activity never raises
+`PaneChanged` (the contract's own-events rule).
+
+E5 summaries go out on each edge, at most one per pane per 5 s: the visible
+screen through `capture-pane -p`, ANSI-stripped, control-stripped and capped
+at 4 KiB (droppable). The per-pane gate means quick edges share one summary.
+
+The loop arms an idle timer while any pane is active: a server gone quiet
+emits its idle edges from the cached times with no new notice (E4 feeds the
+hub's stuck detection, and quiet arrives with no notice of its own). The
+timer never scans the socket folder and never starts an inventory read, so
+the row-7 "no timer" ruling (folder scans only) still holds.
+
+E10's read path is `Observer.CapturePane` (`capture.go`): the visible
+screen through `capture-pane -p`, rendered by the same `renderScreen` E5
+uses (capped and control-stripped text, ANSI kept only on request, never
+scrubbed (02e)), clamped to the contract's 256 KiB. The `CapturePane`
+command handler that answers the hub is row 18's (pane control owns every
+command check, and no executor is wired in `cmd/` yet); 7e gives it this
+seam to call.
 
 What starts a read (the seam is `triggers` in `trigger.go`): a window,
 session or client notice, `%sessions-changed`, `%exit`, a new value of the
