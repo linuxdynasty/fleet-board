@@ -100,16 +100,18 @@ func TestEvaluateMonthly(t *testing.T) {
 			want: want{state: hubv1.PacingState_PACING_STATE_BEHIND, allowed: 3, ahead: -15, deciding: "monthly_included", window: pacing.WindowReading, proj: proj(30)},
 		},
 		{
-			// Exact decimal ahead is -18.5; the float ratio lands just
-			// under it, so the rounded point is -18. The verdict, the
-			// allowance and the projection carry the row's meaning.
+			// 12 h out the exact decimal ahead is -18.5, a rounding
+			// knife-edge that lands -18 on macOS and -19 on Linux. 18 h
+			// out the decimal is -17.75, which rounds to -18 on every
+			// platform. The verdict, the allowance and the projection
+			// carry the row's meaning.
 			name:    "last day ignores the line",
 			window:  30 * day,
-			elapsed: 29*day + 12*time.Hour,
+			elapsed: 29*day + 6*time.Hour,
 			buckets: func() []*typev1.LimitBucket {
 				return []*typev1.LimitBucket{monthlyBucket("monthly_included", 70, monthReset, 30*day)}
 			},
-			want: want{state: hubv1.PacingState_PACING_STATE_OK, allowed: 2, ahead: -18, deciding: "monthly_included", window: pacing.WindowReading, proj: proj(19)},
+			want: want{state: hubv1.PacingState_PACING_STATE_OK, allowed: 2, ahead: -18, deciding: "monthly_included", window: pacing.WindowReading, proj: proj(18)},
 		},
 		{
 			name:    "unknown window is unknown never seven days",
