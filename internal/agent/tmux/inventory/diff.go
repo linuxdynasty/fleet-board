@@ -62,6 +62,14 @@ func diff(old, next *agentv1.TmuxServer) []*agentv1.Event {
 			continue
 		case !was.GetDead() && p.GetDead():
 			changed = append(changed, exited(p, p.ExitStatus, true))
+		case statusLanded(was, p):
+			// The exit status landed after the death was read: the hub
+			// already has the status-less PaneExited, so the status rides
+			// one PaneChanged (the paneFacts compare below would hide a
+			// status-only change, and anything else changed rides along:
+			// the event carries the whole pane).
+			changed = append(changed, &agentv1.Event{Body: &agentv1.Event_PaneChanged{PaneChanged: &agentv1.PaneChanged{Pane: p}}})
+			continue
 		}
 		if !proto.Equal(paneFacts(was, p), paneFacts(p, p)) {
 			changed = append(changed, &agentv1.Event{Body: &agentv1.Event_PaneChanged{PaneChanged: &agentv1.PaneChanged{Pane: p}}})
@@ -131,6 +139,12 @@ func ownW(w *agentv1.TmuxWindow) *agentv1.TmuxWindow {
 	c := proto.CloneOf(w)
 	c.Panes, c.Active = nil, false
 	return c
+}
+
+// statusLanded reports that an already-dead pane's exit status arrived
+// after the death was read: dead before with none, dead now with one.
+func statusLanded(was, p *agentv1.TmuxPane) bool {
+	return was.GetDead() && p.GetDead() && was.ExitStatus == nil && p.ExitStatus != nil
 }
 
 // paneFacts is p with what never raises PaneChanged taken out (focus), and

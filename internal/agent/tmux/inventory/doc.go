@@ -11,13 +11,15 @@
 // carries it.
 // An [Observer] watches the tmux socket folder ([SocketFolder]: $TMUX_TMPDIR
 // or /tmp, then tmux-<uid>) with fsnotify and wakes a control client
-// (internal/agent/tmux) when a server's socket appears: there is no timer
-// (row-7 ruling fork 4). The folder is also re-listed at each Snapshot, each
+// (internal/agent/tmux) when a server's socket appears: the folder watch
+// itself never polls (row-7 ruling fork 4). The folder is also re-listed at each Snapshot, each
 // SnapshotRequest and after a control client's %exit. One sync goroutine per
 // server reads the whole inventory with one list-panes -a whenever a
 // control-mode notice, the structure subscription (a pane change in any
-// session), a client state change or a Snapshot asks (notices at most once
-// a second), turns it
+// session), a client state change, a Snapshot, or a follow-up owed to a
+// status-less remains death asks (notices at most once a second; the one
+// bounded timer arms a follow-up a second after the last read until the
+// status lands or deadStatusPollMax reads run out), turns it
 // into the TmuxServer the agent reports (tmux sends each name, command and
 // @fleet_* value over 1 KiB in bytes empty, and the read counts it; names
 // and commands are then cut and control-stripped, 02e; @fleet_* tags are

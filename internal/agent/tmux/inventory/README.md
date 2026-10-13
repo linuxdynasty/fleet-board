@@ -115,7 +115,8 @@ with the last:
 | closed | CLOSED, ids only |
 | a new pane id | `PaneCreated`; one first seen dead (it lived and died between two reads) also gets `PaneExited` `remains: true` |
 | a pane's command, size, tags, window or index; a dead pane respawned | `PaneChanged` (a pane's or window's focus alone raises nothing) |
-| a pane dies and tmux keeps it (`remain-on-exit`) | `PaneExited` with `exit_status` (unset for a signal death), `remains: true` |
+| a pane dies and tmux keeps it (`remain-on-exit`) | `PaneExited` with `exit_status` (unset for a signal death, and unset for a death tmux reports before it knows the status), `remains: true` |
+| a dead pane's exit status lands after a status-less exit | `PaneChanged` carrying the dead pane with `exit_status` |
 | a pane is gone | `PaneExited` `remains: false`, `exit_status` unset unless it was read dead first |
 
 Order: what is created (sessions, windows, panes), what changed, then what
@@ -126,19 +127,27 @@ applies it idempotently (02i), so the one-nudge rule runs once.
 
 What starts a read (the seam is `triggers` in `trigger.go`): a window,
 session or client notice, `%sessions-changed`, `%exit`, a new value of the
-`fleet-structure` subscription, a client state change, and a Snapshot.
-Notices and subscription values start a read at most once a second per
-server (`readGap`, defaults); a Snapshot's read and a state change are not
-paced. Measured on tmux 3.2a and 3.7c, a `-d` split, a kill of a non-active
-pane and a pane death in a session the client is not attached to raise no
-notice of their own, so the observer registers one subscription per server
+`fleet-structure` subscription, a client state change, a Snapshot, and a
+follow-up owed to a status-less remains death (below). Notices and
+subscription values start a read at most once a second per server
+(`readGap`, defaults); a Snapshot's read and a state change are not paced.
+Measured on tmux 3.2a and 3.7c, a `-d` split, a kill of a non-active pane
+and a pane death in a session the client is not attached to raise no notice
+of their own, so the observer registers one subscription per server
 (coordinator decision on 7d, amending row-7 ruling fork 5(f)):
 `#{S:#{session_id}:#{W:#{window_id}=#{P:#{pane_id}.#{pane_dead}.#{pane_dead_status}.#{pane_dead_signal} }}}`,
 which tmux checks about once a second. The dead status and signal ride in
-the value so a status that lands after the death itself triggers a re-read
-(a fresh-dead pane can read dead before tmux knows its status). A pane that
-lives under a second can be missed by it and is read at the next rescan
-(Snapshot, SnapshotRequest, a client state change). 7f measures the cost of the three subscriptions
+the value so a death that lands together with its status is read with it;
+but a fresh-dead pane can read dead before tmux knows its status, and on
+Linux no notice follows when only the status lands, so that pane is owed
+`deadStatusPollMax` (10, defaults) follow-up reads one second apart: the
+loop's timer starts one more whole-inventory read (never a per-pane poll)
+until the status lands as a dead `PaneChanged` or the cap runs out (a
+signal death never gains one). Every read settles the wait, whatever
+started it; a server going away or restarting drops it (pane ids restart
+with the server). A pane that lives under a second can be missed by the
+subscription and is read at the next rescan (Snapshot, SnapshotRequest, a
+client state change). 7f measures the cost of the three subscriptions
 together (E13's `session_activity`, E4's `window_activity` and this one;
 proof 9).
 
@@ -153,10 +162,15 @@ Observer.Run (owns every goroutine below; returns when all have)
      Notify on the reader goroutine: non-blocking sends only
        (dirty chan, buffered 1; on %exit also the rescan chan)
   per server: sync loop, the only goroutine that reads, diffs, stores and emits
-     waits on dirty | Client.Changed() | snapshot request | ctx; after a
-       notice it waits out readGap (a timer, still serving Snapshot requests)
+     waits on dirty | Client.Changed() | snapshot request | dead-status
+       follow-up timer | ctx; after a notice it waits out readGap (a timer,
+       still serving Snapshot requests); while a status-less remains death
+       is owed follow-ups it arms one more timer for deadStatusPollGap
+       after the last read (the death's notice asked for the status)
      ReadInventory (one control-mode command) -> buildServer -> store last
        -> Emit each event (waits for the ring commit; no lock held)
+       -> settle dead-status waits (landed | expired, at most
+       deadStatusPollMax reads per pane)
   Snapshot hook (the conn session goroutine): a rescan token, then per
      server a request with a reply chan to its sync loop; no shared state
 Locks: waker.mu only. The sync loop's state is its own; Client.mu is the
@@ -171,6 +185,7 @@ client's. Nothing is held across a control-mode command or an Emit.
 | `tmux.server_seen` (`server_kind`, `server_start_id`, `version`) | a server start the agent had not seen |
 | `tmux.watch_off` (`err_kind` = `constraint`, `permission`, `io`) | the folder watch is off; once per run |
 | `fleet_agent_tmux_inventory_reads_total{server_kind, result}` | inventory reads that ended, `result` = `ok`, `command`, `reply`, `timeout`, `io` (closed); see "When reads fail" |
+| `fleet_agent_tmux_dead_status_polls_total{server_kind, result}` | status-less remains deaths waited on until they settled, `result` = `landed` (a later read had the exit status) or `expired` (the `deadStatusPollMax` follow-ups still showed none: a signal death). 3 AM: "why did this pane's exit status never arrive?": `expired` rising with no `landed` beside it is statuses never landing |
 | `tmux.inventory_failed` (`server_kind`, `err_kind` = `command`, `reply`, `timeout`, `io`) | a read failed; at most once a minute per server |
 | `fleet_agent_tmux_inventory_fields_dropped_total{field, reason}`, `tmux.inventory_field_dropped`, `fleet_agent_tmux_parse_errors_total`, `fleet_agent_tmux_lines_too_long_total` | internal/agent/tmux's parser signals: `New` builds one `tmux.Metrics` for every client it makes, so they count in production |
 | `status.json` `tmux_folder`, `tmux_watch: off` | the folder watched, and whether the watch is off |
@@ -185,7 +200,9 @@ raises a connect, a repeat `Create` is a no-op, the watch off falls back to
 rescans, lifecycle events, pane changes in a session the client is not on
 (both versions), one read a second under a burst of notices, a restart, a
 seeded tag, the probe server, events landing in a real ring, a field over
-1 KiB counted through the observer's clients, and failed reads counted by
-result while the last inventory stands; plus table
+1 KiB counted through the observer's clients, failed reads counted by
+result while the last inventory stands, a landing exit status emitted as a
+dead `PaneChanged` and counted `landed`, and a signal death's wait ending
+`expired` after `deadStatusPollMax` reads with no status event; plus table
 tests of the tree build, the diff, the trigger seam, the text and tag rules
 and the wake debounce.

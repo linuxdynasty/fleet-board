@@ -58,6 +58,19 @@ type Options struct {
 // test changes it (SetReadTimeoutForTest), to force timeouts fast.
 var readTimeout = 10 * time.Second
 
+// deadStatusPollGap is how soon after a read that saw a fresh-dead pane
+// with no exit status the loop reads again, and deadStatusPollMax how many
+// such follow-ups one pane is owed. tmux can report the death before
+// waitpid hands it the status, and on Linux no notice follows when only
+// the status lands, so without these the hub would never learn it. A
+// signal death never gains a status: the cap bounds that waste to ten
+// extra reads. The death's own notice asked for the status; the timer only
+// delays what that notice already asked for, like readGap.
+const (
+	deadStatusPollGap = time.Second
+	deadStatusPollMax = 10
+)
+
 // Observer finds the tmux servers in the socket folder, keeps one control
 // client on each, reports each server's inventory in the Snapshot and
 // emits the E1 and E3 lifecycle events (01 E1, E2, E3).
@@ -97,7 +110,7 @@ func New(opts Options) (*Observer, error) {
 		if _, ok := serverKinds[name]; !ok || o.servers[name] != nil {
 			return nil, fmt.Errorf("inventory: server %q is not default, fleet or fleet-probe, or is named twice", name)
 		}
-		s := &server{o: o, name: name, kind: kindWord(name), dirty: make(chan struct{}, 1), snap: make(chan chan *agentv1.TmuxServer)}
+		s := &server{o: o, name: name, kind: kindWord(name), dirty: make(chan struct{}, 1), snap: make(chan chan *agentv1.TmuxServer), pending: map[string]int{}}
 		c, err := tmux.NewClient(tmux.ClientOptions{
 			Program: opts.Program, Socket: filepath.Join(o.folder, name), Server: name,
 			Runner: opts.Runner, Telemetry: opts.Telemetry, Notify: s.notify,
@@ -195,6 +208,9 @@ type server struct {
 	last   *agentv1.TmuxServer // nil: no server running (or none seen yet)
 	known  bool                // a first state was read: events start after it
 	failed bool                // a read failed before the first good state
+	// pending maps a pane id read dead with no exit status to the
+	// follow-up reads still owed it (deadStatusPollMax at most).
+	pending map[string]int
 }
 
 // notify runs on the client's reader goroutine: it only drops tokens.
@@ -216,9 +232,31 @@ func (s *server) notify(m tmux.Message) {
 // loop is the one goroutine that reads, diffs and emits for this server.
 // A burst of notices coalesces into one read, and notices start a read at
 // most once a second (readGap); nothing is held across a read or an emit.
+// While a fresh-dead pane with no exit status is owed follow-ups, a timer
+// starts one more read a deadStatusPollGap after the last one: the timer
+// only fires when the death's own notice already asked for the status.
 func (s *server) loop(ctx context.Context) {
 	read := true
 	var last time.Time
+	var poll *time.Timer
+	armed := func() <-chan time.Time {
+		if poll == nil {
+			return nil
+		}
+		return poll.C
+	}
+	stop := func() {
+		if poll == nil {
+			return
+		}
+		if !poll.Stop() {
+			select {
+			case <-poll.C:
+			default:
+			}
+		}
+		poll = nil
+	}
 	for {
 		_, changed := s.c.Changed()
 		if read {
@@ -226,15 +264,22 @@ func (s *server) loop(ctx context.Context) {
 			last = time.Now()
 		}
 		read = true
+		stop()
+		if len(s.pending) > 0 && s.c.State() == tmux.StateUp {
+			poll = time.NewTimer(deadStatusPollGap)
+		}
 		select {
 		case <-ctx.Done():
+			stop()
 			return
 		case <-changed:
 		case <-s.dirty:
 			ok, _ := s.pace(ctx, last)
 			if !ok {
+				stop()
 				return
 			}
+		case <-armed():
 		case reply := <-s.snap:
 			s.sync(ctx)
 			last = time.Now()
@@ -317,16 +362,79 @@ func (s *server) apply(ctx context.Context, next *agentv1.TmuxServer) {
 	switch {
 	case prev == nil && next == nil:
 	case next == nil:
+		s.clearDeadStatus() // the server is gone: nothing to wait for
 		s.emit(ctx, closedServer(prev))
 	case prev == nil:
 		s.emit(ctx, serverEvent(agentv1.ChangeKind_CHANGE_KIND_CREATED, next))
 	case prev.GetServerStartId() != next.GetServerStartId():
+		// Pane ids restart with the server: a wait for the old %3 must
+		// not settle on the new %3.
+		s.clearDeadStatus()
 		s.emit(ctx, closedServer(prev), serverEvent(agentv1.ChangeKind_CHANGE_KIND_CREATED, next))
 	default:
-		s.emit(ctx, diff(prev, next)...)
+		evs := diff(prev, next)
+		s.emit(ctx, evs...)
+		s.reapDeadStatus(ctx)
+		s.watchDeadStatus(evs)
 		if !prev.GetObserved() { // seen again: the level, after what changed meanwhile
 			s.emit(ctx, serverEvent(agentv1.ChangeKind_CHANGE_KIND_UPDATED, next))
 		}
+	}
+}
+
+// watchDeadStatus owes follow-ups to every pane this diff reported dead
+// with no exit status yet (a status-less remains PaneExited): tmux can
+// report the death before it knows the status. A pane first seen dead is
+// not watched: had it exited, its status would already be there, so a
+// status-less one is a signal death with no status coming.
+func (s *server) watchDeadStatus(evs []*agentv1.Event) {
+	for _, ev := range evs {
+		pe := ev.GetPaneExited()
+		if pe == nil || !pe.GetRemains() || pe.ExitStatus != nil {
+			continue
+		}
+		if s.pending == nil {
+			s.pending = map[string]int{}
+		}
+		if id := pe.GetPane().GetPaneId(); id != "" {
+			if _, ok := s.pending[id]; !ok {
+				s.pending[id] = deadStatusPollMax
+			}
+		}
+	}
+}
+
+// reapDeadStatus settles waits against the latest inventory: a pane with a
+// status now counts landed, one tmux dropped meanwhile is dropped with its
+// remains:false exit, and one still status-less loses one owed follow-up,
+// counting expired at zero. Every read settles, whatever started it.
+func (s *server) reapDeadStatus(ctx context.Context) {
+	if len(s.pending) == 0 || s.last == nil {
+		return
+	}
+	panes := index(s.last).panes
+	for id, left := range s.pending {
+		p, ok := panes[id]
+		switch {
+		case !ok:
+			delete(s.pending, id)
+		case p.ExitStatus != nil:
+			delete(s.pending, id)
+			s.o.tel.deadStatusDone(ctx, s.kind, "landed")
+		case left <= 1:
+			delete(s.pending, id)
+			s.o.tel.deadStatusDone(ctx, s.kind, "expired")
+		default:
+			s.pending[id] = left - 1
+		}
+	}
+}
+
+// clearDeadStatus drops every wait: the server went away or restarted, so
+// no owed follow-up can settle it.
+func (s *server) clearDeadStatus() {
+	for id := range s.pending {
+		delete(s.pending, id)
 	}
 }
 

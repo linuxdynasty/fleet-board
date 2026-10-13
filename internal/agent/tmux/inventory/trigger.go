@@ -16,10 +16,15 @@ import (
 // of their own. A pane that lives under a second can be missed by it; the
 // next rescan (Snapshot, SnapshotRequest, a client's state change) reads
 // it. 7f measures the cost of the three subscriptions together (proof 9).
-// The value tracks the dead status and signal too: tmux can report a
-// fresh-dead pane before waitpid hands it the status, and only a value that
-// changes when the status lands triggers the re-read that delivers it as a
-// dead PaneChanged (3.2a has no pane_dead_signal and reads it empty).
+// The value tracks the dead status and signal too, so a death that lands
+// together with its status is read with it. But tmux can report a
+// fresh-dead pane before waitpid hands it the status, and on Linux no
+// notice follows when only the status lands (measured: a status-less
+// remains death with no follow-up event for the whole 30 s wait), so the
+// value change alone does not re-read it: the loop owes that pane
+// deadStatusPollMax follow-up reads (observer.go), and the status lands as
+// a dead PaneChanged (diff.go). 3.2a has no pane_dead_signal and reads it
+// empty.
 var structure = tmux.Subscription{
 	Name:   "fleet-structure",
 	Format: "#{S:#{session_id}:#{W:#{window_id}=#{P:#{pane_id}.#{pane_dead}.#{pane_dead_status}.#{pane_dead_signal} }}}",
