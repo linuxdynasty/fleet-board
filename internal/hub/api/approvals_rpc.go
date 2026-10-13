@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"time"
+	"unicode/utf8"
 
 	"connectrpc.com/connect"
 	"go.opentelemetry.io/otel/attribute"
@@ -58,9 +59,10 @@ func (f *Fleet) ListApprovals(ctx context.Context, req *connect.Request[hubv1.Li
 		size = 50
 	}
 	var list []*hubv1.Approval
+	var next string
 	err := f.store.Read(ctx, func(tx *sql.Tx) error {
 		var err error
-		list, err = approvals.List(ctx, tx, approvals.Filter{PageSize: int(size), PageToken: m.GetPageToken()})
+		list, next, err = approvals.List(ctx, tx, approvals.Filter{PageSize: int(size), PageToken: m.GetPageToken()})
 		return err
 	})
 	if err != nil {
@@ -70,7 +72,7 @@ func (f *Fleet) ListApprovals(ctx context.Context, req *connect.Request[hubv1.Li
 		}
 		return nil, f.apprFailed(ctx, "store", err)
 	}
-	return connect.NewResponse(&hubv1.ListApprovalsResponse{Approvals: list}), nil
+	return connect.NewResponse(&hubv1.ListApprovalsResponse{Approvals: list, NextPageToken: next}), nil
 }
 
 // GetApproval reads one approval. A past-due PENDING approval comes back
@@ -143,7 +145,18 @@ func (f *Fleet) DecideApproval(ctx context.Context, req *connect.Request[hubv1.D
 		if err != nil {
 			return err
 		}
-		if outcome.Replay || !outcome.Sends {
+		if outcome.Replay {
+			// A retry returns the stored response, operation included
+			// (02b idempotency): nothing is decided or sent twice.
+			if outcome.Sends && outcome.OperationID != "" {
+				sent, err = loadOperation(ctx, tx, outcome.OperationID)
+				if err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+		if !outcome.Sends {
 			return nil
 		}
 		sent, err = f.sendDecided(ctx, tx, who, outcome, m.GetRequestId(), now)
@@ -155,7 +168,7 @@ func (f *Fleet) DecideApproval(ctx context.Context, req *connect.Request[hubv1.D
 		return err
 	})
 	if err != nil {
-		return nil, f.decideStoreError(ctx, actor, m.GetId().GetValue(), err)
+		return nil, f.decideStoreError(ctx, err)
 	}
 	kind := approvalKindAttr(outcome.Approval.GetKind())
 	outcomeName := "denied"
@@ -174,15 +187,17 @@ func (f *Fleet) DecideApproval(ctx context.Context, req *connect.Request[hubv1.D
 
 // decideStoreError renders a Decide failure: the replay conflict, the
 // closed approval (a withdrawn prompt is PROMPT_GONE, anything else
-// APPROVAL_CLOSED), then the field checks.
-func (f *Fleet) decideStoreError(ctx context.Context, actor, id string, err error) error {
+// APPROVAL_CLOSED), then the field checks. The closed state comes from the
+// decision's own transaction (approvals.ClosedError), never a second read.
+func (f *Fleet) decideStoreError(ctx context.Context, err error) error {
 	switch {
 	case errors.Is(err, approvals.ErrRequestConflict):
 		return f.apprRefused(ctx, apiError(connect.CodeAlreadyExists,
 			typev1.ReasonCode_REASON_CODE_REQUEST_ID_CONFLICT,
 			"this request_id was used for a different decision", nil, nil))
 	case errors.Is(err, approvals.ErrClosed):
-		if f.approvalWithdrawn(ctx, id) {
+		var closed *approvals.ClosedError
+		if errors.As(err, &closed) && closed.State == hubv1.ApprovalState_APPROVAL_STATE_WITHDRAWN {
 			return f.apprRefused(ctx, apiError(connect.CodeFailedPrecondition,
 				typev1.ReasonCode_REASON_CODE_PROMPT_GONE,
 				"the prompt left the screen; nothing was typed", nil, nil))
@@ -202,8 +217,8 @@ func (f *Fleet) decideStoreError(ctx context.Context, actor, id string, err erro
 			typev1.ReasonCode_REASON_CODE_INVALID_ARGUMENT, "the decision is not one of the allowed choices", nil, nil))
 	case errors.Is(err, approvals.ErrInflight):
 		return f.apprRefused(ctx, apiError(connect.CodeAborted,
-			typev1.ReasonCode_REASON_CODE_PROMPT_GONE,
-			"another answer for this prompt is already on its way", nil, nil))
+			typev1.ReasonCode_REASON_CODE_APPROVAL_CLOSED,
+			"another answer for this prompt is already on its way; wait for its result", nil, nil))
 	case errors.Is(err, approvals.ErrUnknown):
 		return f.apprRefused(ctx, apiError(connect.CodeNotFound,
 			typev1.ReasonCode_REASON_CODE_RESOURCE_NOT_FOUND, "unknown approval", nil, nil))
@@ -216,16 +231,6 @@ func (f *Fleet) decideStoreError(ctx context.Context, actor, id string, err erro
 		return f.apprRefused(ctx, err)
 	}
 	return f.apprFailed(ctx, "store", err)
-}
-
-// approvalWithdrawn reports whether id names a withdrawn prompt approval.
-func (f *Fleet) approvalWithdrawn(ctx context.Context, id string) bool {
-	var state string
-	_ = f.store.Read(ctx, func(tx *sql.Tx) error {
-		_ = tx.QueryRowContext(ctx, `SELECT state FROM approvals WHERE id = ?`, id).Scan(&state)
-		return nil
-	})
-	return state == "WITHDRAWN"
 }
 
 // approvalKindAttr is the bounded kind label for approval metrics.
@@ -365,12 +370,17 @@ func logGate(ctx context.Context, tx *sql.Tx, principal, requestID, approvalID s
 	return nil
 }
 
-// truncatePreview caps an approval preview at the 2 KiB the contract holds.
+// truncatePreview caps an approval preview at the 2 KiB the contract
+// holds, on a rune boundary so multibyte text is never split.
 func truncatePreview(s string) string {
-	if len(s) > approvals.MaxPreview {
-		return s[:approvals.MaxPreview]
+	if len(s) <= approvals.MaxPreview {
+		return s
 	}
-	return s
+	cut := s[:approvals.MaxPreview]
+	for len(cut) > 0 && !utf8.ValidString(cut) {
+		cut = cut[:len(cut)-1]
+	}
+	return cut
 }
 
 // apprRefused counts and logs an approval caller error and returns it.

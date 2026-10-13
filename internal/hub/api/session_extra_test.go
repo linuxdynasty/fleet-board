@@ -2,7 +2,9 @@ package api_test
 
 import (
 	"context"
+	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"connectrpc.com/connect"
 
@@ -140,6 +142,39 @@ func TestSendKeysReplay(t *testing.T) {
 	}
 	if got := pendingCommands(t, e, "m1"); got != before {
 		t.Fatalf("outbox holds %d commands, want %d: a replay sends nothing", got, before)
+	}
+}
+
+// TestGatePreviewStaysValidText: a long multibyte command gates to a
+// preview within the 2 KiB contract that is still valid text.
+func TestGatePreviewStaysValidText(t *testing.T) {
+	t.Parallel()
+	e := newFleetEnv(t, localUser("alice"))
+	enrollMachine(t, e, "m1")
+	sess := createSession(t, e, "m1", "work")
+	long := "/" + strings.Repeat("こ", 3000)
+	res, err := e.client.RunHarnessCommand(context.Background(), connect.NewRequest(&hubv1.RunHarnessCommandRequest{
+		RequestId:     "req-long-1",
+		Session:       &typev1.SessionId{Value: sess},
+		Pane:          &typev1.PaneKey{Server: "fleet", ServerStartId: "s1", PaneId: "%1"},
+		Command:       long,
+		ExpectedClass: typev1.CommandClass_COMMAND_CLASS_DESTRUCTIVE,
+	}))
+	if err != nil {
+		t.Fatalf("gate long command: %v", err)
+	}
+	got, err := e.client.GetApproval(context.Background(), connect.NewRequest(&hubv1.GetApprovalRequest{
+		Id: res.Msg.GetApproval(),
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	preview := got.Msg.GetApproval().GetPreview()
+	if len(preview) > 2048 {
+		t.Fatalf("preview is %d bytes, over 2048", len(preview))
+	}
+	if !utf8.ValidString(preview) {
+		t.Fatal("preview is not valid text")
 	}
 }
 

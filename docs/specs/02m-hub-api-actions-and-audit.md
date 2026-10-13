@@ -38,16 +38,20 @@ placement.
 
 ### Actions that need an approval
 
-One rule covers `StartGoal` with a `CONFIRM` check, `RunHarnessCommand` with a
-DESTRUCTIVE command and `KillWindow` on a developer's window: the response
-carries the `approval` and **no operation**, nothing is sent, and no `Operation`
-exists until the approval is approved. `DecideApproval` then returns the
-`operation` (and, for a dispatch, the `goal`); `Approval.operation` names it. A
-denied or expired approval creates neither. A client therefore polls the approval,
-not an operation that does not exist yet. Raising the approval is stamped for
-Watch; the audit row lands when it is decided, expires or is withdrawn
-(`approval.decide`, `approval.expire`, `approval.withdraw`). Who may decide
-is `Approval.required_role`: `DISPATCH_CONFIRM` and `COMMAND_CONFIRM` need
+One rule covers `StartGoal` with a `CONFIRM` check and `RunHarnessCommand`
+with a DESTRUCTIVE command: the response carries the `approval` and **no
+operation**, nothing is sent, and no `Operation` exists until the approval
+is approved. (`KillWindow` on a developer's window joins this rule with the
+row-5 session mirror, which tells hub windows from developer ones; until
+then a `KillWindow` for an unknown session fails `SESSION_NOT_FOUND`.)
+`DecideApproval` then returns the `operation` (and, for a dispatch, the
+`goal`); `Approval.operation` names it. A denied or expired approval creates
+neither. A client therefore polls the approval, not an operation that does
+not exist yet. Raising the approval stamps `hub_seq` for Watch (the
+APPROVALS topic ships with the row-5 mirror); the audit row lands when it
+is decided, expires or is withdrawn (`approval.decide`,
+`approval.expire`, `approval.withdraw`). Who may decide is
+`Approval.required_role`: `DISPATCH_CONFIRM` and `COMMAND_CONFIRM` need
 `OWNER`, a prompt answer needs `OPERATOR`.
 
 **Control.** `ControlGoal` guards on `expected_phase`; which action is allowed in

@@ -375,6 +375,6 @@ database (mode 0600) and shown once at the terminal; the first start of an
 older store creates it the same way. It travels as the
 `X-Fleet-Approval-Secret` header (02f), kept in the dashboard login session
 and prompted for by `fleet` at the terminal: never in the shell environment
-and never in a plain file. Row 19 enforces it on `DecideApproval` (the only
-one of these calls it builds); the check attaches to each further call as
-its row lands, from this list.
+and never in a plain file. Row 19 enforces it on `DecideApproval` and
+`CreateEnrollmentToken` (the only two of these calls it builds); the check
+attaches to each further call as its row lands, from this list.

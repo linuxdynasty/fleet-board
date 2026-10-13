@@ -3,6 +3,7 @@ package approvals
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -77,10 +78,13 @@ func expireRow(ctx context.Context, tx *sql.Tx, a *hubv1.Approval, now time.Time
 	if err != nil {
 		return fmt.Errorf("approvals: expire: %w", err)
 	}
-	detail := `{"fallback":"deny","cause":` + jsonString(cause) + `}`
+	detail, err := json.Marshal(map[string]string{"fallback": "deny", "cause": cause})
+	if err != nil {
+		return fmt.Errorf("approvals: expire detail: %w", err)
+	}
 	_, err = statedb.AppendAudit(ctx, tx, statedb.AuditEntry{
 		Action: "approval.expire", Target: "approvals/" + a.GetId().GetValue(),
-		Detail: detail, Now: now,
+		Detail: string(detail), Now: now,
 	})
 	return err
 }
@@ -102,7 +106,7 @@ func Withdraw(ctx context.Context, tx *sql.Tx, id string, actor statedb.Actor, n
 		return nil, err
 	}
 	if a.GetState() != hubv1.ApprovalState_APPROVAL_STATE_PENDING {
-		return nil, fmt.Errorf("%w: %s is %v", ErrClosed, id, a.GetState())
+		return nil, &ClosedError{ID: id, State: a.GetState()}
 	}
 	if a.GetKind() != hubv1.ApprovalKind_APPROVAL_KIND_PROMPT_ANSWER {
 		return nil, fmt.Errorf("%w: only a prompt approval withdraws", ErrInvalid)

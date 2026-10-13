@@ -122,6 +122,14 @@ func (f *Fleet) CreateEnrollmentToken(ctx context.Context, req *connect.Request[
 		return nil, f.refused(ctx, "", err)
 	}
 	actor := who.GetId().GetValue()
+	// ADMIN scope, so the local approval secret is needed in local_trusted
+	// mode too (ADR 0032); the check attaches to each further SETTINGS and
+	// ADMIN call as its row lands, from RequiresLocalSecret.
+	if err := f.checkLocalSecret(hubProcedure("CreateEnrollmentToken"), req.Header().Get(SecretHeader)); err != nil {
+		return nil, f.refused(ctx, actor, apiError(connect.CodePermissionDenied,
+			typev1.ReasonCode_REASON_CODE_CREDENTIALS_INVALID,
+			"this call needs the local approval secret", nil, nil))
+	}
 	m := req.Msg
 	ttl, err := checkEnrollRequest(m)
 	if err != nil {

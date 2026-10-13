@@ -147,10 +147,12 @@ type scanner interface {
 }
 
 // record is one approvals row: the wire message plus the prompt id the
-// in-flight answer is keyed on (no wire field carries it).
+// in-flight answer is keyed on and the sent command (neither has a wire
+// field carrying it).
 type record struct {
-	approval *hubv1.Approval
-	promptID string
+	approval  *hubv1.Approval
+	promptID  string
+	operation string
 }
 
 func scan(s scanner) (record, error) {
@@ -166,9 +168,9 @@ func scan(s scanner) (record, error) {
 	var operation string
 	var createMillis, updateMillis int64
 	if err := s.Scan(&id, &version, &kind, &state, &severity, &preview,
-		&machineID, &sessionID, &paneServer, &paneStartID, &paneID, &goalID, &triageItemID, &promptID,
+		&machineID, &sessionID, &paneServer, &paneStartID, &paneID, &goalID, &triageItemID, &promptID, &operation,
 		&allowed, &defaultChoice, &fallback, &expireMillis, &requiredRole,
-		&decidedByID, &decidedByKind, &decidedByName, &decision, &decidedMillis, &operation,
+		&decidedByID, &decidedByKind, &decidedByName, &decision, &decidedMillis,
 		&createMillis, &updateMillis); err != nil {
 		return rec, err
 	}
@@ -177,6 +179,7 @@ func scan(s scanner) (record, error) {
 		return rec, err
 	}
 	rec.promptID = promptID
+	rec.operation = operation
 	a := &hubv1.Approval{
 		Id:               &hubv1.ApprovalId{Value: id},
 		Version:          uint64(version), //nolint:gosec // G115: approvals.version has CHECK >= 1

@@ -17,10 +17,12 @@ import (
 
 	"connectrpc.com/connect"
 
+	"github.com/linuxdynasty/fleet-board/gen/go/fleet/hub/v1"
 	"github.com/linuxdynasty/fleet-board/gen/go/fleet/hub/v1/hubv1connect"
 	typev1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/type/v1"
 	"github.com/linuxdynasty/fleet-board/internal/hub/api"
 	"github.com/linuxdynasty/fleet-board/internal/hub/ca"
+	"github.com/linuxdynasty/fleet-board/internal/hub/secret"
 	"github.com/linuxdynasty/fleet-board/internal/hub/statedb"
 	"github.com/linuxdynasty/fleet-board/internal/store"
 	"github.com/linuxdynasty/fleet-board/internal/telemetry"
@@ -91,6 +93,30 @@ type envOpt struct {
 // trusted toggles local_trusted mode for the test hub.
 func trusted(on bool) envOpt {
 	return envOpt{localTrusted: &on}
+}
+
+// secretMu serializes test secret creation: Ensure writes the file after
+// creating it, so two parallel tests must not Ensure at once (production
+// holds the fleetd lock instead).
+var secretMu sync.Mutex
+
+// withEnrollSecret ensures the approval secret and sets its header on an
+// enroll request: CreateEnrollmentToken carries the ADMIN scope, so it
+// needs the secret in local_trusted mode (ADR 0032).
+func withEnrollSecret(t *testing.T, e *fleetEnv, req *connect.Request[hubv1.CreateEnrollmentTokenRequest],
+) *connect.Request[hubv1.CreateEnrollmentTokenRequest] {
+	t.Helper()
+	secretMu.Lock()
+	defer secretMu.Unlock()
+	if _, err := secret.Ensure(e.dir, rand.Read); err != nil {
+		t.Fatal(err)
+	}
+	shown, err := secret.Reveal(e.dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header().Set(api.SecretHeader, shown)
+	return req
 }
 
 func newFleetEnv(t *testing.T, who *typev1.Principal, opts ...envOpt) *fleetEnv {

@@ -218,9 +218,9 @@ func checkCreate(in Create) error {
 
 // rowColumns lists every approvals column scan reads, in scan order.
 const rowColumns = `id, version, kind, state, severity, preview,
-		machine_id, session_id, pane_server, pane_server_start_id, pane_id, goal_id, triage_item_id, prompt_id,
+		machine_id, session_id, pane_server, pane_server_start_id, pane_id, goal_id, triage_item_id, prompt_id, operation,
 		allowed, default_choice, fallback, expire_time, required_role,
-		decided_by_id, decided_by_kind, decided_by_name, decision, decided_time, operation,
+		decided_by_id, decided_by_kind, decided_by_name, decision, decided_time,
 		create_time, update_time`
 
 // Get reads one approval by id. A PENDING approval past its expire_time is
@@ -263,8 +263,10 @@ func getRow(ctx context.Context, tx *sql.Tx, id string) (record, error) {
 }
 
 // List reads approvals newest first. PageSize defaults to 50 and caps at
-// 200 (02b paging); PageToken is the row offset.
-func List(ctx context.Context, tx *sql.Tx, f Filter) ([]*hubv1.Approval, error) {
+// 200 (02b paging); PageToken is the row offset. One row past the page is
+// read to detect the next page: the returned token is empty on the last
+// page and the offset of the next page otherwise.
+func List(ctx context.Context, tx *sql.Tx, f Filter) ([]*hubv1.Approval, string, error) {
 	size := f.PageSize
 	if size <= 0 {
 		size = 50
@@ -276,7 +278,7 @@ func List(ctx context.Context, tx *sql.Tx, f Filter) ([]*hubv1.Approval, error) 
 	if f.PageToken != "" {
 		var err error
 		if offset, err = parseOffset(f.PageToken); err != nil {
-			return nil, err
+			return nil, "", err
 		}
 	}
 	q := `SELECT ` + rowColumns + ` FROM approvals WHERE 1 = 1`
@@ -284,7 +286,7 @@ func List(ctx context.Context, tx *sql.Tx, f Filter) ([]*hubv1.Approval, error) 
 	if f.HasState {
 		name := stateName(f.State)
 		if name == "" {
-			return nil, fmt.Errorf("%w: bad state filter", ErrInvalid)
+			return nil, "", fmt.Errorf("%w: bad state filter", ErrInvalid)
 		}
 		q += ` AND state = ?`
 		args = append(args, name)
@@ -292,7 +294,7 @@ func List(ctx context.Context, tx *sql.Tx, f Filter) ([]*hubv1.Approval, error) 
 	if f.HasKind {
 		name := kindName(f.Kind)
 		if name == "" {
-			return nil, fmt.Errorf("%w: bad kind filter", ErrInvalid)
+			return nil, "", fmt.Errorf("%w: bad kind filter", ErrInvalid)
 		}
 		q += ` AND kind = ?`
 		args = append(args, name)
@@ -301,19 +303,27 @@ func List(ctx context.Context, tx *sql.Tx, f Filter) ([]*hubv1.Approval, error) 
 	args = append(args, size+1, offset)
 	rows, err := tx.QueryContext(ctx, q, args...)
 	if err != nil {
-		return nil, fmt.Errorf("approvals: list: %w", err)
+		return nil, "", fmt.Errorf("approvals: list: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 	var out []*hubv1.Approval
 	for rows.Next() {
 		rec, err := scan(rows)
 		if err != nil {
-			return nil, err
+			return nil, "", err
 		}
 		out = append(out, rec.approval)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("approvals: list: %w", err)
+		return nil, "", fmt.Errorf("approvals: list: %w", err)
 	}
-	return out, nil
+	if len(out) <= size {
+		return out, "", nil
+	}
+	return out[:size], offsetString(offset + size), nil
+}
+
+// offsetString is the opaque next-page token: the next row offset.
+func offsetString(offset int) string {
+	return fmt.Sprintf("%d", offset)
 }

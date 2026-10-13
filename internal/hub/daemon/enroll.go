@@ -15,6 +15,7 @@ import (
 	typev1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/type/v1"
 	"github.com/linuxdynasty/fleet-board/internal/hub/api"
 	"github.com/linuxdynasty/fleet-board/internal/hub/config"
+	"github.com/linuxdynasty/fleet-board/internal/hub/secret"
 )
 
 // ErrNotRunning means no hub answers on admin.sock.
@@ -56,7 +57,14 @@ func EnrollToken(ctx context.Context, opts Options, req EnrollRequest) (*hubv1.C
 	}
 	ctx, cancel := context.WithTimeout(ctx, enrollTimeout)
 	defer cancel()
-	resp, err := api.AdminClient(config.AdminSocketPath(cfg.StateDir)).CreateEnrollmentToken(ctx, connect.NewRequest(m))
+	creq := connect.NewRequest(m)
+	// CreateEnrollmentToken needs the local approval secret (ADR 0032).
+	// The secret is unreadable only when no hub ever ran here; then the
+	// dial below fails and the caller still hears ErrNotRunning.
+	if shown, serr := secret.Reveal(cfg.StateDir); serr == nil {
+		creq.Header().Set(api.SecretHeader, shown)
+	}
+	resp, err := api.AdminClient(config.AdminSocketPath(cfg.StateDir)).CreateEnrollmentToken(ctx, creq)
 	if errors.Is(err, syscall.ENOENT) || errors.Is(err, syscall.ECONNREFUSED) {
 		return nil, ErrNotRunning
 	}

@@ -127,6 +127,50 @@ func TestDecideApprovalSendsStoredCommand(t *testing.T) {
 	}
 }
 
+// TestDecideApprovalReplayReturnsOperation: repeating the approve returns
+// the stored decision with its operation, and sends nothing twice (F1).
+func TestDecideApprovalReplayReturnsOperation(t *testing.T) {
+	t.Parallel()
+	e := newFleetEnv(t, localUser("alice"))
+	hexSecret := secretEnv(t, e)
+	enrollMachine(t, e, "m1")
+	sess := createSession(t, e, "m1", "work")
+	gated, err := e.client.RunHarnessCommand(context.Background(), connect.NewRequest(destructiveReq(sess)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := gated.Msg.GetApproval().GetValue()
+	decide := func() *hubv1.DecideApprovalResponse {
+		t.Helper()
+		res, err := e.client.DecideApproval(context.Background(), withSecret(connect.NewRequest(
+			&hubv1.DecideApprovalRequest{
+				RequestId:       "req-decide-1",
+				Id:              &hubv1.ApprovalId{Value: id},
+				ExpectedVersion: 1,
+				Decision:        "approve",
+			}), hexSecret))
+		if err != nil {
+			t.Fatalf("DecideApproval: %v", err)
+		}
+		return res.Msg
+	}
+	first := decide()
+	if first.GetOperation() == nil {
+		t.Fatal("first decide returned no operation")
+	}
+	before := pendingCommands(t, e, "m1")
+	second := decide()
+	if second.GetOperation() == nil {
+		t.Fatal("replay returned no operation")
+	}
+	if second.GetOperation().GetId().GetValue() != first.GetOperation().GetId().GetValue() {
+		t.Fatal("replay returned another operation")
+	}
+	if got := pendingCommands(t, e, "m1"); got != before {
+		t.Fatalf("outbox holds %d commands, want %d: a replay sends nothing", got, before)
+	}
+}
+
 // TestDecideApprovalDenySendsNothing: a deny returns no operation and the
 // outbox does not grow.
 func TestDecideApprovalDenySendsNothing(t *testing.T) {

@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -19,6 +20,8 @@ var (
 	// ErrClosed: the approval is no longer PENDING (decided, expired or
 	// withdrawn). It wins over ErrVersion, so a client learns "already
 	// decided", not "reload" (triage.proto DecideApprovalRequest).
+	// A *ClosedError carries which state closed it, read in the decision's
+	// own transaction, so the caller never re-reads outside it.
 	ErrClosed = errors.New("approvals: approval is closed")
 	// ErrVersion: expected_version missed the stored version.
 	ErrVersion = errors.New("approvals: version mismatch")
@@ -37,6 +40,20 @@ var (
 // denyKey is the decision key that sends nothing, for every kind: the
 // denial leaves the prompt or pane alone (03d "a deny sends nothing").
 const denyKey = "deny"
+
+// ClosedError is ErrClosed with the state that closed the approval,
+// decided inside the same transaction (no re-read outside it).
+type ClosedError struct {
+	ID    string
+	State hubv1.ApprovalState
+}
+
+func (e *ClosedError) Error() string {
+	return "approvals: " + e.ID + " is " + e.State.String()
+}
+
+// Unwrap reports every ClosedError as ErrClosed.
+func (e *ClosedError) Unwrap() error { return ErrClosed }
 
 // Decide records one person's decision inside tx and audits it as
 // approval.decide. Order of checks: the replay, the state (ErrClosed wins
@@ -67,6 +84,9 @@ type Outcome struct {
 	// PromptID is the answered prompt (PROMPT_ANSWER only), so the caller
 	// can build the SendKeys bound to it.
 	PromptID string
+	// OperationID is the sent command (a replay of a decision that sent),
+	// so the caller can return the stored Operation.
+	OperationID string
 }
 
 // Decide records the decision.
@@ -86,20 +106,20 @@ func Decide(ctx context.Context, tx *sql.Tx, in DecideInput) (Outcome, error) {
 		if err != nil {
 			return Outcome{}, err
 		}
-		out := Outcome{Approval: a, Sends: sendsFor(a, in.Decision), Replay: true}
+		out := Outcome{Approval: a, Sends: sendsFor(a, in.Decision), Replay: true, OperationID: rec.operation}
 		if a.GetKind() == hubv1.ApprovalKind_APPROVAL_KIND_PROMPT_ANSWER {
 			out.PromptID = rec.promptID
 		}
 		return out, nil
 	}
 	if a.GetState() != hubv1.ApprovalState_APPROVAL_STATE_PENDING {
-		return Outcome{}, fmt.Errorf("%w: %s is %v", ErrClosed, in.ID, a.GetState())
+		return Outcome{}, &ClosedError{ID: in.ID, State: a.GetState()}
 	}
 	if !a.GetExpireTime().AsTime().After(in.Now) {
 		if err := expireRow(ctx, tx, a, in.Now, "timeout"); err != nil {
 			return Outcome{}, err
 		}
-		return Outcome{}, fmt.Errorf("%w: %s expired", ErrClosed, in.ID)
+		return Outcome{}, &ClosedError{ID: in.ID, State: hubv1.ApprovalState_APPROVAL_STATE_EXPIRED}
 	}
 	if a.GetVersion() != in.ExpectedVersion {
 		return Outcome{}, fmt.Errorf("%w: saw %d, stored %d", ErrVersion, in.ExpectedVersion, a.GetVersion())
@@ -207,7 +227,7 @@ func storeDecision(ctx context.Context, tx *sql.Tx, a *hubv1.Approval, in Decide
 	if err != nil {
 		return nil, err
 	}
-	_, err = tx.ExecContext(ctx, `UPDATE approvals SET version = version + 1, state = 'DECIDED',
+	res, err := tx.ExecContext(ctx, `UPDATE approvals SET version = version + 1, state = 'DECIDED',
 		decided_by_id = ?, decided_by_kind = ?, decided_by_name = ?, decision = ?, decided_time = ?,
 		decide_principal = ?, decide_request_id = ?, decide_request_hash = ?,
 		update_time = ?, hub_seq = ?, observed_time = ? WHERE id = ? AND state = 'PENDING'`,
@@ -218,10 +238,23 @@ func storeDecision(ctx context.Context, tx *sql.Tx, a *hubv1.Approval, in Decide
 	if err != nil {
 		return nil, fmt.Errorf("approvals: decide: %w", err)
 	}
-	detail := `{"decision":` + jsonString(in.Decision) + `,"sends":` + boolString(sends) + `}`
+	if n, err := res.RowsAffected(); err != nil {
+		return nil, fmt.Errorf("approvals: decide: %w", err)
+	} else if n == 0 {
+		// Lost the race: read the closer's state in this same job.
+		rec, rerr := getRow(ctx, tx, in.ID)
+		if rerr != nil {
+			return nil, rerr
+		}
+		return nil, &ClosedError{ID: in.ID, State: rec.approval.GetState()}
+	}
+	detail, err := json.Marshal(map[string]any{"decision": in.Decision, "sends": sends})
+	if err != nil {
+		return nil, fmt.Errorf("approvals: decide detail: %w", err)
+	}
 	if _, err := statedb.AppendAudit(ctx, tx, statedb.AuditEntry{
 		Actor: in.Actor, Action: "approval.decide", Target: "approvals/" + in.ID,
-		Detail: detail, Now: now,
+		Detail: string(detail), Now: now,
 	}); err != nil {
 		return nil, err
 	}
@@ -276,30 +309,4 @@ func mustDecodeHash(s string) []byte {
 		panic("approvals: bad hash: " + err.Error())
 	}
 	return b
-}
-
-// jsonString quotes s for the audit detail object.
-func jsonString(s string) string {
-	var b strings.Builder
-	b.WriteByte('"')
-	for _, r := range s {
-		switch r {
-		case '"', '\\':
-			b.WriteByte('\\')
-			b.WriteRune(r)
-		case '\n':
-			b.WriteString(`\n`)
-		default:
-			b.WriteRune(r)
-		}
-	}
-	b.WriteByte('"')
-	return b.String()
-}
-
-func boolString(b bool) string {
-	if b {
-		return "true"
-	}
-	return "false"
 }

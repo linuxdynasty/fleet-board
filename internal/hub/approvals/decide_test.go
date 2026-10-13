@@ -3,6 +3,7 @@ package approvals_test
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"testing"
 
@@ -215,6 +216,46 @@ func TestDecideRefusals(t *testing.T) {
 				t.Fatalf("decide = %v, want %v", err, tc.want)
 			}
 		})
+	}
+}
+
+// TestDecideAuditDetailIsJSON: the audit detail stays valid JSON even for
+// a decision full of quotes and control characters.
+func TestDecideAuditDetailIsJSON(t *testing.T) {
+	t.Parallel()
+	s := newStore(t)
+	ctx := context.Background()
+	in := confirmIn()
+	in.Allowed = []approvals.Choice{{Key: "a\"b\\\r\t\x01", Label: "weird"}}
+	id := mustCreate(t, s, in)
+	err := s.Write(ctx, func(tx *sql.Tx) error {
+		_, err := approvals.Decide(ctx, tx, approvals.DecideInput{
+			ID: id, ExpectedVersion: 1, Decision: "a\"b\\\r\t\x01",
+			Decider: localDecider(), Actor: actor(), RequestID: "req-1", Now: t0,
+		})
+		return err
+	})
+	if err != nil {
+		t.Fatalf("decide: %v", err)
+	}
+	err = s.Read(ctx, func(tx *sql.Tx) error {
+		var detail string
+		err := tx.QueryRowContext(ctx, `SELECT detail FROM audit_log WHERE target = ?`,
+			"approvals/"+id).Scan(&detail)
+		if err != nil {
+			return err
+		}
+		var v map[string]any
+		if err := json.Unmarshal([]byte(detail), &v); err != nil {
+			t.Fatalf("audit detail is not JSON: %v: %q", err, detail)
+		}
+		if v["decision"] != "a\"b\\\r\t\x01" {
+			t.Fatalf("decision round trip = %q", v["decision"])
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("audit read: %v", err)
 	}
 }
 

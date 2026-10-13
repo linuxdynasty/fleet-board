@@ -139,9 +139,10 @@ func TestListFiltersState(t *testing.T) {
 		t.Fatalf("create: %v", err)
 	}
 	var list []*hubv1.Approval
+	var next string
 	err = s.Read(ctx, func(tx *sql.Tx) error {
 		var err error
-		list, err = approvals.List(ctx, tx, approvals.Filter{
+		list, next, err = approvals.List(ctx, tx, approvals.Filter{
 			State: hubv1.ApprovalState_APPROVAL_STATE_PENDING, HasState: true, PageSize: 10,
 		})
 		return err
@@ -152,8 +153,12 @@ func TestListFiltersState(t *testing.T) {
 	if len(list) != 1 {
 		t.Fatalf("pending list = %d approvals, want 1", len(list))
 	}
+	if next != "" {
+		t.Fatalf("next page token = %q on the last page, want empty", next)
+	}
 	err = s.Read(ctx, func(tx *sql.Tx) error {
-		list, err = approvals.List(ctx, tx, approvals.Filter{
+		var err error
+		list, next, err = approvals.List(ctx, tx, approvals.Filter{
 			State: hubv1.ApprovalState_APPROVAL_STATE_DECIDED, HasState: true, PageSize: 10,
 		})
 		return err
@@ -163,5 +168,51 @@ func TestListFiltersState(t *testing.T) {
 	}
 	if len(list) != 0 {
 		t.Fatalf("decided list = %d approvals, want 0", len(list))
+	}
+}
+
+// TestListPages: 51 approvals read back as 50 plus a token, then 1.
+func TestListPages(t *testing.T) {
+	t.Parallel()
+	s := newStore(t)
+	ctx := context.Background()
+	err := s.Write(ctx, func(tx *sql.Tx) error {
+		for i := 0; i < 51; i++ {
+			in := confirmIn()
+			in.ID = ""
+			if _, err := approvals.CreateApproval(ctx, tx, in); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	var first []*hubv1.Approval
+	var token string
+	err = s.Read(ctx, func(tx *sql.Tx) error {
+		var err error
+		first, token, err = approvals.List(ctx, tx, approvals.Filter{PageSize: 50})
+		return err
+	})
+	if err != nil {
+		t.Fatalf("page 1: %v", err)
+	}
+	if len(first) != 50 || token == "" {
+		t.Fatalf("page 1 = %d approvals token %q, want 50 and a token", len(first), token)
+	}
+	var second []*hubv1.Approval
+	var last string
+	err = s.Read(ctx, func(tx *sql.Tx) error {
+		var err error
+		second, last, err = approvals.List(ctx, tx, approvals.Filter{PageSize: 50, PageToken: token})
+		return err
+	})
+	if err != nil {
+		t.Fatalf("page 2: %v", err)
+	}
+	if len(second) != 1 || last != "" {
+		t.Fatalf("page 2 = %d approvals token %q, want 1 and empty", len(second), last)
 	}
 }
