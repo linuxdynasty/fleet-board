@@ -1,0 +1,22 @@
+# internal/harness/cursor
+
+The `cursor-agent` adapter: screen parsers and fixtures (plan row 30,
+issue #95). It never runs the harness and never opens a credential file; it
+parses text it is given.
+
+- `usage.go`: `ParseUsage` reads the `/usage` dialog (01b D2) into the three
+  monthly buckets `monthly_included`, `monthly_auto`, `monthly_api`
+  (`WINDOW_KIND_MONTHLY`), one `date_only` reset, the 03b "Monthly windows"
+  rule-2 window, and `OverageBilling` off, on or unknown. A missing row is
+  `NOT_SHOWN`, a missing On-Demand row is `UNKNOWN`, a screen with no dialog
+  fails cleanly; nothing is ever guessed. `ParserVersion` bumps when the
+  parser's behavior changes.
+- `cursor_test.go`: the adapter's declaration for the shared conformance
+  test (`harness.Conform`). Version `2026.10.01` is `UNVERIFIED_PARSING`
+  with `USAGE` fixture-verified; the golden table is
+  `testdata/support-table.txt`, so a claim change is a reviewed diff.
+- Fixtures under `testdata/2026.10.01/`, documented in
+  `testdata/README.md`.
+
+Tests: `CGO_ENABLED=0 go test -shuffle=on -count=3
+./internal/harness/cursor/`. The fixtures need no harness.

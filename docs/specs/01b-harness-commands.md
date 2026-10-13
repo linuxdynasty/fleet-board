@@ -90,7 +90,7 @@ no tmux pane and is out of scope.
 | start in a new folder | a "Workspace Trust Required" box: "[a] Trust this workspace" / "[q] Quit" |
 | ready screen | "→ Plan, search, build anything"; footer with the model ("Auto"), the approval mode ("Auto-review") and "-- INSERT --"; a path and branch line |
 | `/` | a scrolling command menu; seen: `/model`, `/goal` ("durable goal that continues while idle"), `/run-everything`, `/auto-review`, `/plan`, `/ask`, `/usage` (partial list; the full catalog goes into fixtures) |
-| `/usage` | "Usage • Pro+", "Resets Nov 4"; Included 10% used, Auto 11%, API 0%; On-Demand Disabled; "Esc to close". A monthly plan, not a weekly one |
+| `/usage` | "Usage • Pro+", "Resets Nov 4"; Included 10% used, Auto 11%, API 0%; On-Demand Disabled; "Esc to close". A monthly plan, not a weekly one. Re-captured 2026-10-13 (row 30 fixtures `usage.txt`, `usage-not-shown.txt`): typing `/usage` shows the `/` menu first; Enter opens the dialog (Category/Current/Usage table with block bars, On-Demand row with em-dash bar, "On-demand usage is off", dashboard link, Esc closes). At the ceiling: 100/100/100. Plan only, no identity |
 | after a one-word prompt | the footer shows the context share ("Auto · 9.4%") |
 | after a turn | the input line shows the faint "Add a follow-up" placeholder (empty), not the old prompt (0.19 probe, 2026-10-12, below) |
 
