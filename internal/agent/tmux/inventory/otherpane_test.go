@@ -40,10 +40,10 @@ func TestPaneChangesInAnotherSessionAreSeen(t *testing.T) {
 			dev.Run(t, "set-option", "-w", "-t", "other:0", "remain-on-exit", "on")
 			dev.Run(t, "split-window", "-d", "-t", "other:0", "sleep 2; exit 5")
 			// DIAGNOSTIC ONLY [DEBUG-7f3a]: sample what list-panes reports
-			// for dead panes over 35 s (reverted before merge; the sampling
-			// snapshots also settle the observer, so the wait below still
-			// decides pass/fail exactly as before).
-			for k := 0; k < 35; k++ {
+			// for dead panes every 3 s over 45 s (reverted before merge;
+			// the sampling snapshots also settle the observer, so the wait
+			// below still decides pass/fail exactly as before).
+			for k := 0; k < 15; k++ {
 				snap := r.snapshot(t)
 				for _, srv := range snap.GetTmuxServers() {
 					for _, sess := range srv.GetSessions() {
@@ -54,13 +54,13 @@ func TestPaneChangesInAnotherSessionAreSeen(t *testing.T) {
 									if p.ExitStatus != nil {
 										st = fmt.Sprint(p.GetExitStatus())
 									}
-									t.Logf("[DEBUG-7f3a] t+%ds pane %s dead exit=%s cmd=%q", k, p.GetKey().GetPaneId(), st, p.GetCurrentCommand())
+									t.Logf("[DEBUG-7f3a] t+%ds pane %s dead exit=%s cmd=%q", 3*k, p.GetKey().GetPaneId(), st, p.GetCurrentCommand())
 								}
 							}
 						}
 					}
 				}
-				time.Sleep(time.Second)
+				time.Sleep(3 * time.Second)
 			}
 			// tmux can report the fresh-dead pane before it knows the status,
 			// which then arrives on the next read: wait for the death with
