@@ -11,9 +11,13 @@ parses text it is given.
   `NOT_SHOWN`, a missing On-Demand row is `UNKNOWN`, a screen with no dialog
   fails cleanly; nothing is ever guessed. `ParserVersion` bumps when the
   parser's behavior changes.
+- `ready.go`: `ParseReady` reads the ready prompt (01b, row 30): the trust
+  box reads as trust (`FOLDER_UNTRUSTED`), a styled input line with the
+  faint attribute reads empty, a styled line at full intensity reads as
+  typed text, and a plain `→ <text>` line reads unknown, never empty.
 - `cursor_test.go`: the adapter's declaration for the shared conformance
   test (`harness.Conform`). Version `2026.10.01` is `UNVERIFIED_PARSING`
-  with `USAGE` fixture-verified; the golden table is
+  with `USAGE` and `READY` fixture-verified; the golden table is
   `testdata/support-table.txt`, so a claim change is a reviewed diff.
 - Fixtures under `testdata/2026.10.01/`, documented in
   `testdata/README.md`.

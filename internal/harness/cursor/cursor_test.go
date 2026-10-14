@@ -21,14 +21,23 @@ func readData(t *testing.T, name string) string {
 }
 
 // TestConform runs the shared adapter check (row 8's conformance, which row
-// 30's adapter calls too): the golden table matches the claims, the USAGE
-// claim brings a fixture of this version, and every fixture parses or
-// yields unknown, never fails. 2026.10.01 stays UNVERIFIED_PARSING: only
-// USAGE is fixture-verified, and PROMPT, READY, IDENTITY and CONDITION are
+// 30's adapter calls too): the golden table matches the claims, a supported
+// feature brings a fixture of this version, and every fixture parses or
+// yields unknown, never fails. 2026.10.01 stays UNVERIFIED_PARSING: USAGE
+// and READY are fixture-verified, and PROMPT, IDENTITY and CONDITION are
 // later slices.
 func TestConform(t *testing.T) {
-	parse := func(screen string) harness.ParseResult {
+	usage := func(screen string) harness.ParseResult {
 		switch ParseUsage(screen, time.Now()).ParseOutcome {
+		case typev1.ParseOutcome_PARSE_OUTCOME_OK,
+			typev1.ParseOutcome_PARSE_OUTCOME_PARTIAL:
+			return harness.ParseOK
+		default:
+			return harness.ParseUnknown
+		}
+	}
+	ready := func(screen string) harness.ParseResult {
+		switch ParseReady(screen).ParseOutcome {
 		case typev1.ParseOutcome_PARSE_OUTCOME_OK,
 			typev1.ParseOutcome_PARSE_OUTCOME_PARTIAL:
 			return harness.ParseOK
@@ -45,10 +54,26 @@ func TestConform(t *testing.T) {
 				Features: map[harness.Feature]harness.FeatureCase{
 					harness.FeatureUsage: {
 						Claim: harness.FeatureClaim{Supported: true},
-						Parse: parse,
+						Parse: usage,
 						Fixtures: []harness.Fixture{
 							{Name: "usage.txt", Screen: readData(t, "2026.10.01/usage.txt")},
 							{Name: "usage-not-shown.txt", Screen: readData(t, "2026.10.01/usage-not-shown.txt")},
+						},
+					},
+					harness.FeatureReady: {
+						Claim: harness.FeatureClaim{Supported: true},
+						Parse: ready,
+						Fixtures: []harness.Fixture{
+							{Name: "ready-ansi.txt", Screen: readData(t, "2026.10.01/ready-ansi.txt")},
+							{Name: "ready-followup-placeholder.ansi.txt", Screen: readData(t, "2026.10.01/ready-followup-placeholder.ansi.txt")},
+							{Name: "ready-input-has-draft.ansi.txt", Screen: readData(t, "2026.10.01/ready-input-has-draft.ansi.txt")},
+							{Name: "ready-followup-placeholder.txt", Screen: readData(t, "2026.10.01/ready-followup-placeholder.txt")},
+							{Name: "ready-input-has-draft.txt", Screen: readData(t, "2026.10.01/ready-input-has-draft.txt")},
+							{Name: "ready-trusted-child.txt", Screen: readData(t, "2026.10.01/ready-trusted-child.txt")},
+							{Name: "usage-not-shown.txt", Screen: readData(t, "2026.10.01/usage-not-shown.txt")},
+							{Name: "trust-workspace.txt", Screen: readData(t, "2026.10.01/trust-workspace.txt")},
+							{Name: "usage.txt", Screen: readData(t, "2026.10.01/usage.txt")},
+							{Name: "ready-truncated.txt", Screen: readData(t, "2026.10.01/ready-truncated.txt")},
 						},
 					},
 				},
