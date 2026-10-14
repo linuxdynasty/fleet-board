@@ -1,4 +1,6 @@
 // Package cursor reads cursor-agent screens: the /usage dialog with its
-// monthly plan buckets (01b D2, 03b "Monthly windows"). It never runs the
-// harness and never opens a credential file; it parses text it is given.
+// monthly plan buckets (01b D2, 03b "Monthly windows"), the ready prompt
+// with the trust box and the input line, and the account identity from
+// `status` and `about` (01b C2). It never runs the harness and never opens
+// a credential file; it parses text it is given.
 package cursor

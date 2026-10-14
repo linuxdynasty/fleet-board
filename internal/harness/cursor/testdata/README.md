@@ -41,11 +41,15 @@ section below); every screen was read before each key.
 | `usage.txt` | the `/usage` dialog: "Usage • Pro+", "Resets Nov 4", Included / Auto / API % used, On-Demand Disabled, "Esc to close" | `/usage` typed at the ready prompt, Enter separately, dialog read, Esc |
 | `usage-not-shown.txt` | `/usage` typed but not submitted: the `/` command menu, no dialog | `/usage` typed at the ready prompt, no Enter; the usage parser must yield unknown on it |
 | `ready-truncated.txt` | derived, not a capture: the first three lines of `ready-trusted-child.txt` (header only, no input line) | cut by hand to pin the truncated case; the ready parser must fail on it, never guess a prompt |
+| `status.txt` | `cursor-agent status`: "✓ Logged in as" with the signed-in email | ran on this machine 2026-10-14 (item 0.22 commands, no prompt sent, no quota spent); the address is redacted to `owner@example.com` |
+| `about.txt` | `cursor-agent about`: CLI version, plan ("Subscription Tier Pro+"), environment rows, "User Email" | same run, same redaction; the "Latest" update line is kept so the parser proves it ignores it |
+| `identity-truncated.txt` | derived, not a capture: the `about` output cut before the "User Email" row | cut by hand to pin the truncated case; the identity parser must fail on it, never guess an address |
 
 ## Redactions and clean-up
 
 - Paths are `~/scratch`. The repo name on the ready footer is `a` and the
-  branch is `main*`.
+  branch is `main*`. The signed-in address reads `owner@example.com`: the
+  real address the commands printed is never committed.
 - Trailing spaces and trailing blank lines are trimmed.
 
 ## Input-line rule (item 0.19 decided 2026-10-12, #96)

@@ -1,0 +1,10 @@
+About Cursor CLI
+
+CLI Version         2026.10.01-e373342
+Latest              2026.10.14-0f9edde (update available — run `agent update`)
+Model               Auto
+Subscription Tier   Pro+
+OS                  darwin (arm64)
+Terminal            ghostty
+Shell               zsh
+User Email          owner@example.com

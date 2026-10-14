@@ -3,9 +3,11 @@
 Read the root `AGENTS.md` and `internal/harness/AGENTS.md` first; they apply
 here. Rules for this package:
 
-- This package parses `cursor-agent` screens, starting with the `/usage`
-  dialog (`ParseUsage` in `usage.go`, 01b D2). Product code here never runs
-  the harness, never answers a prompt, never opens a credential file.
+- This package parses `cursor-agent` screens: the `/usage` dialog
+  (`ParseUsage` in `usage.go`, 01b D2), the ready prompt (`ParseReady` in
+  `ready.go`) and the account identity (`ParseIdentity` in `identity.go`,
+  01b C2). Product code here never runs the harness, never answers a
+  prompt, never opens a credential file.
 - Never guess: a row the screen should show and does not is `NOT_SHOWN`, a
   missing On-Demand row is `UNKNOWN`, a screen with no dialog fails with no
   buckets. No nearby number, no previous reading, no `0`.
