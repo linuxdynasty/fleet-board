@@ -45,7 +45,9 @@ err = s.Read(ctx, func(tx *sql.Tx) error { ... }) // short read on the pool
   waiting on other goroutines, no `Commit` or `Rollback`. Do the round trip
   first, then submit the result.
 - **Backpressure.** The queue holds 1,000 jobs; `Submit` waits when it is full,
-  until its context ends.
+  until its context ends. A `Submit` that finds no room stamps the start of
+  the full period (`QueueFullSince`); the writer clears it when it takes a
+  job and the queue has room, so only an unbroken full stretch counts.
 - **Readers** (at most 10) see the last commit and never wait for the writer.
 - **Migrations** are forward-only, numbered from 1, each applied with its
   `schema_migrations` row in one transaction. `Open` refuses a file whose
@@ -72,6 +74,8 @@ or `fleet_agent`): `_writer_batch_messages`, `_writer_batch_seconds`,
 `_writer_queue_age_seconds`, `_writer_jobs_total{result}` (`committed`,
 `failed`, `aborted`), `_writer_oldest_job_age_seconds` and
 `_writer_queue_depth` (gauges that rise while the writer is stuck),
+`_writer_queue_full_seconds` (how long the queue has been continuously full,
+0 when it is not),
 `_writer_queue_full_total` (submits that gave up on a full queue),
 `_read_pool_wait_seconds`, `_store_bytes`, `_store_wal_bytes`. Log events: `store.opened`, `store.migrated`,
 `store.batch_failed` (with `err_kind` and `sqlite_code`, SQLite's numeric

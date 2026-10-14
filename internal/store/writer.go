@@ -39,6 +39,10 @@ func (s *Store) Submit(ctx context.Context, apply ApplyFunc) (<-chan error, erro
 		return j.done, nil
 	default:
 	}
+	// No room: this Submit found the queue full. Stamp the start of the full
+	// period once; the writer clears it when it sees room again, so only an
+	// unbroken full stretch counts.
+	s.fullSince.CompareAndSwap(0, time.Now().UnixNano())
 	select {
 	case s.jobs <- j:
 		return j.done, nil
@@ -50,6 +54,16 @@ func (s *Store) Submit(ctx context.Context, apply ApplyFunc) (<-chan error, erro
 
 func (s *Store) oldestJob() time.Time {
 	if ns := s.oldest.Load(); ns != 0 {
+		return time.Unix(0, ns)
+	}
+	return time.Time{}
+}
+
+// QueueFullSince is when the writer queue became continuously full, the
+// WRITER_QUEUE_FULL reading of 05b. It is zero when the queue is not full:
+// no Submit has found it full since the writer last saw room in it.
+func (s *Store) QueueFullSince() time.Time {
+	if ns := s.fullSince.Load(); ns != 0 {
 		return time.Unix(0, ns)
 	}
 	return time.Time{}
@@ -88,6 +102,12 @@ func (s *Store) run() {
 				return
 			}
 			batch = append(batch, j)
+			// A receive frees one slot; a Submit blocked on the full queue
+			// fills it again before this check runs, so room here means the
+			// full period really broke.
+			if len(s.jobs) < cap(s.jobs) {
+				s.fullSince.Store(0)
+			}
 			if len(batch) == 1 {
 				s.oldest.Store(j.enqueued.UnixNano())
 				timer.Reset(s.window)

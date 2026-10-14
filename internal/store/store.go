@@ -85,6 +85,11 @@ type Store struct {
 	// writer holds, 0 when it holds none. Jobs are FIFO, so no queued job is
 	// older.
 	oldest atomic.Int64
+	// fullSince is when the queue became continuously full (Unix ns), 0 when
+	// it is not full. Set by a Submit that finds no room; cleared by the
+	// writer when it takes a job and the queue has room. The
+	// WRITER_QUEUE_FULL measure of 05b reads it through QueueFullSince.
+	fullSince atomic.Int64
 
 	closeOnce sync.Once
 	closeErr  error
@@ -201,7 +206,7 @@ func Open(ctx context.Context, opts Options) (*Store, error) {
 	r.SetMaxOpenConns(opts.Readers)
 	r.SetMaxIdleConns(opts.Readers)
 	s.readers = r
-	obs := observed{path: opts.Path, depth: func() int { return len(s.jobs) }, oldest: s.oldestJob}
+	obs := observed{path: opts.Path, depth: func() int { return len(s.jobs) }, oldest: s.oldestJob, fullSince: s.QueueFullSince}
 	if s.m, err = newMetrics(opts.Telemetry, opts.Name, obs); err != nil {
 		return nil, errors.Join(err, r.Close(), w.Close())
 	}
