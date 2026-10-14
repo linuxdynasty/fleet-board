@@ -10,8 +10,10 @@ pure: no state, no database, no telemetry of its own.
 
 What it applies, in order: never auto-dispatch (`EXCLUDED`) for API-key
 spend accounts, observe-only accounts, and Cursor plans that bill past the
-limit; `UNKNOWN` when there is no reading, the parse failed, a needed row
-is missing, or a monthly bucket has no window (a monthly window is never
+limit; `UNKNOWN` when the probe is stuck on a startup screen or asking to sign in
+(at once, even when the cached reading is fresh), when there is no reading,
+when the parse failed, when a needed row is missing, or when a monthly bucket
+has no window (a monthly window is never
 assumed: the hub-seen window wins, then the reading's); `STALE` past
 `stale_after` (default 30 minutes); `RESERVE` at `100 - reserve`, which beats
 the `SHORT_LIMIT` speed limit so the reserve alert still fires; then the
