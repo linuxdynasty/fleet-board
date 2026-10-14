@@ -20,6 +20,10 @@ func capabilitiesFor(kind typev1.TmuxServerKind) []*typev1.Capability {
 		caps = append(caps, &typev1.Capability{Name: "tmux.default_server.control", Version: 1})
 	case typev1.TmuxServerKind_TMUX_SERVER_KIND_FLEET:
 		caps = append(caps, &typev1.Capability{Name: "tmux.fleet_server", Version: 1})
+	case typev1.TmuxServerKind_TMUX_SERVER_KIND_PROBE,
+		typev1.TmuxServerKind_TMUX_SERVER_KIND_UNSPECIFIED:
+		// No specific name: control alone. UNSPECIFIED never reaches
+		// here; New refuses it.
 	}
 	return caps
 }
