@@ -12,8 +12,8 @@ import (
 	"github.com/linuxdynasty/fleet-board/internal/proc"
 )
 
-// testOptions builds Options against no server: tests that never reach tmux
-// pass no socket and fail before any child runs.
+// testOptions builds Options with a dummy socket no server listens on:
+// refusal tests fail before any child runs.
 func testOptions() Options {
 	caller, err := proc.For("tmux")
 	if err != nil {
