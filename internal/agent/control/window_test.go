@@ -59,6 +59,10 @@ func TestEnsureWindowRefusals(t *testing.T) {
 		reason typev1.ReasonCode
 	}{
 		{"empty window name", func(c *agentv1.EnsureWindow) { c.WindowName = "" }, typev1.Status_STATUS_FAILED, typev1.ReasonCode_REASON_CODE_INVALID_NAME},
+		{"newline window name", func(c *agentv1.EnsureWindow) { c.WindowName = "fleet\nwin" }, typev1.Status_STATUS_FAILED, typev1.ReasonCode_REASON_CODE_INVALID_NAME},
+		{"oversized window name", func(c *agentv1.EnsureWindow) {
+			c.WindowName = strings.Repeat("w", 257)
+		}, typev1.Status_STATUS_FAILED, typev1.ReasonCode_REASON_CODE_INVALID_NAME},
 		{"no session target", func(c *agentv1.EnsureWindow) { c.Session = nil }, typev1.Status_STATUS_FAILED, typev1.ReasonCode_REASON_CODE_INVALID_ARGUMENT},
 		{"shapeless target name", func(c *agentv1.EnsureWindow) {
 			c.Session = &agentv1.SessionTarget{By: &agentv1.SessionTarget_Name{Name: "NOT A NAME"}}
@@ -68,7 +72,13 @@ func TestEnsureWindowRefusals(t *testing.T) {
 		}, typev1.Status_STATUS_FAILED, typev1.ReasonCode_REASON_CODE_INVALID_ARGUMENT},
 		{"tmux id without a start id", func(c *agentv1.EnsureWindow) {
 			c.Session = &agentv1.SessionTarget{By: &agentv1.SessionTarget_TmuxId{TmuxId: "$0"}}
-		}, typev1.Status_STATUS_FAILED, typev1.ReasonCode_REASON_CODE_SESSION_NOT_FOUND},
+		}, typev1.Status_STATUS_FAILED, typev1.ReasonCode_REASON_CODE_INVALID_ARGUMENT},
+		{"tmux id of the wrong shape", func(c *agentv1.EnsureWindow) {
+			c.Session = &agentv1.SessionTarget{
+				By:            &agentv1.SessionTarget_TmuxId{TmuxId: "control-base"},
+				ServerStartId: "0-0",
+			}
+		}, typev1.Status_STATUS_FAILED, typev1.ReasonCode_REASON_CODE_INVALID_ARGUMENT},
 		{"harness waits for its slice", func(c *agentv1.EnsureWindow) {
 			c.Harness = &typev1.Harness{Name: "claude"}
 		}, typev1.Status_STATUS_UNSUPPORTED, typev1.ReasonCode_REASON_CODE_HARNESS_NOT_ALLOWED},
@@ -274,6 +284,54 @@ func TestEnsureWindowSessionTarget(t *testing.T) {
 			if res := e.EnsureWindow(ctx, missing); res.GetStatus() != typev1.Status_STATUS_FAILED || res.GetReason() != typev1.ReasonCode_REASON_CODE_SESSION_NOT_FOUND {
 				t.Fatalf("missing session = %v/%v, want FAILED/SESSION_NOT_FOUND",
 					res.GetStatus(), res.GetReason())
+			}
+		})
+	}
+}
+
+// TestEnsureWindowRacers runs two creates for the same new name at once
+// against real tmux: the per-server lock serializes the list/create
+// sequence, so exactly one window lands and the loser takes the conflict
+// instead of doubling under the cap.
+func TestEnsureWindowRacers(t *testing.T) {
+	t.Parallel()
+	for _, b := range tmuxtest.Binaries() {
+		t.Run(b.Name, func(t *testing.T) {
+			t.Parallel()
+			o, srv := liveOptions(t, b, []string{"/tmp"})
+			e, err := New(o)
+			if err != nil {
+				t.Fatal(err)
+			}
+			ctx := t.Context()
+			start := make(chan struct{})
+			results := make(chan *agentv1.CommandResult, 2)
+			for range 2 {
+				go func() {
+					<-start
+					results <- e.EnsureWindow(ctx, windowCmd("fleet-race"))
+				}()
+			}
+			close(start)
+			var created, conflict int
+			for range 2 {
+				res := <-results
+				switch {
+				case res.GetStatus() == typev1.Status_STATUS_OK && res.GetEnsureWindow().GetCreated():
+					created++
+				case res.GetStatus() == typev1.Status_STATUS_FAILED && res.GetReason() == typev1.ReasonCode_REASON_CODE_INVALID_ARGUMENT:
+					conflict++
+				default:
+					t.Errorf("racer = %v/%v, want one create and one conflict",
+						res.GetStatus(), res.GetReason())
+				}
+			}
+			if created != 1 || conflict != 1 {
+				t.Fatalf("created/conflict = %d/%d, want 1/1", created, conflict)
+			}
+			listed := srv.Run(t, "list-windows", "-t", "control-base", "-F", "#{window_name}")
+			if n := strings.Count(listed, "fleet-race"); n != 1 {
+				t.Fatalf("windows named fleet-race = %d, want 1", n)
 			}
 		})
 	}

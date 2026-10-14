@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	agentv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1"
@@ -78,6 +79,10 @@ type Ensurer struct {
 	workdir func(*typev1.Workdir) (string, error)
 	maxwin  func() uint32
 	now     func() time.Time
+	// mu serializes F2's list/find/cap/create sequence per server, so two
+	// racing commands cannot both land under the cap or the same name.
+	// Never nested: nothing under it calls back into the Ensurer.
+	mu sync.Mutex
 }
 
 // New checks the setup and fails fast: a half-built Ensurer must never

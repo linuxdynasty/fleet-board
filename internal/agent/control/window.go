@@ -5,12 +5,29 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
+	"unicode"
 
 	agentv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1"
 	typev1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/type/v1"
 )
+
+// tmuxIDRE is the shape of a tmux session id from the snapshot (such as
+// "$3"). Anything else as a tmux_id is a malformed command, not an address:
+// passing target expressions to -t could operate on another session.
+var tmuxIDRE = regexp.MustCompile(`^\$[0-9]+$`)
+
+// validWindowName holds the line-based window reads together: a newline
+// would split one window into several list-windows rows, and anything past
+// 256 bytes never shows (the snapshot cap).
+func validWindowName(name string) bool {
+	if name == "" || len(name) > 256 {
+		return false
+	}
+	return strings.IndexFunc(name, unicode.IsControl) < 0
+}
 
 // defaultMaxWindows caps the windows per session when Options.MaxWindows is
 // nil: the settings default (03e2), so an unconfigured Ensurer still refuses
@@ -32,9 +49,9 @@ func (e *Ensurer) maxWindows() uint32 {
 // until the adapter start surface lands in a later slice of row 18.
 func (e *Ensurer) EnsureWindow(ctx context.Context, cmd *agentv1.EnsureWindow) *agentv1.CommandResult {
 	name := cmd.GetWindowName()
-	if name == "" {
+	if !validWindowName(name) {
 		return refuse(typev1.Status_STATUS_FAILED, typev1.ReasonCode_REASON_CODE_INVALID_NAME,
-			"window name must not be empty")
+			"window name must be 1-256 bytes with no control characters")
 	}
 	t := cmd.GetSession()
 	if t == nil {
@@ -74,6 +91,13 @@ func (e *Ensurer) EnsureWindow(ctx context.Context, cmd *agentv1.EnsureWindow) *
 	if bad != nil {
 		return bad
 	}
+
+	// One Ensurer call at a time past this point: the list/find/cap/create
+	// sequence below must see its own creates, or two racing commands both
+	// land under the cap and under the same name. The lock never nests:
+	// nothing under it calls back into the Ensurer.
+	e.mu.Lock()
+	defer e.mu.Unlock()
 
 	sess, res := e.resolveSession(ctx, t)
 	if res != nil {
@@ -165,9 +189,9 @@ func (e *Ensurer) resolveSession(ctx context.Context, t *agentv1.SessionTarget) 
 		}
 		return name, nil
 	case *agentv1.SessionTarget_TmuxId:
-		if by.TmuxId == "" || t.GetServerStartId() == "" {
-			return "", refuse(typev1.Status_STATUS_FAILED, typev1.ReasonCode_REASON_CODE_SESSION_NOT_FOUND,
-				"a tmux id needs the server start id it belongs to")
+		if !tmuxIDRE.MatchString(by.TmuxId) || t.GetServerStartId() == "" {
+			return "", refuse(typev1.Status_STATUS_FAILED, typev1.ReasonCode_REASON_CODE_INVALID_ARGUMENT,
+				"a tmux target is a snapshot id like $3 plus its server start id")
 		}
 		start, err := e.startID(ctx)
 		if err != nil {
@@ -343,6 +367,11 @@ func (e *Ensurer) createWindow(ctx context.Context, a windowArgs) (tmuxWindow, s
 	}
 	win.index = uint32(n)
 	if err := e.tagWindow(ctx, win.id, f[1], a.goalID, sessionID, owner); err != nil {
+		// The window is seconds old and ours alone (its id came back on
+		// this call), so leave no orphan behind the retry cannot own: a
+		// RepeatSafe replay matches the stored goal tag, and an untagged
+		// window would fail it as a conflict.
+		_, _ = e.tmuxCall(ctx, "kill-window", "-t", win.id)
 		return empty, "", err
 	}
 	return win, f[1], nil

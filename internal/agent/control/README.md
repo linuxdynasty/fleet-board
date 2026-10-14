@@ -28,10 +28,11 @@ res := e.EnsureWindow(ctx, cmd.GetEnsureWindow())
 ## Order of checks
 
 1. **Shape**: the session name matches `[a-z0-9][a-z0-9-]{0,31}` (F1), the
-   window name is not empty (F2, `INVALID_NAME`), the session target names
-   this server's kind by name, session id or tmux id plus server start id,
-   and no harness, resume or lone profile is set (`INVALID_ARGUMENT`,
-   `HARNESS_NOT_ALLOWED`).
+   window name is 1-256 bytes with no control characters (F2,
+   `INVALID_NAME`, so the line-based window reads hold together), the
+   session target names this server's kind by name, session id or snapshot
+   tmux id (`$3`) plus server start id, and no harness, resume or lone
+   profile is set (`INVALID_ARGUMENT`, `HARNESS_NOT_ALLOWED`).
 2. **Drain**: a harness start while draining is `DRAINING`; a login shell
    runs on (01f M4).
 3. **Workdir**: resolves to a checkout under an allowed repo root, else
@@ -42,9 +43,13 @@ res := e.EnsureWindow(ctx, cmd.GetEnsureWindow())
    reads `TMUX_SERVER_DOWN`, unless starting it is allowed: `new-session`
    then starts it implicitly (03d). A lost create race (`duplicate
    session`) takes the exists path. F2 never creates sessions: a missing
-   one reads `SESSION_NOT_FOUND`. An existing window reuses, or stays a
-   conflict unless its stored goal tag matches the retried goal; past the
-   per-session window cap a create reads `MAX_WINDOWS_REACHED`.
+   one reads `SESSION_NOT_FOUND`. Past the refusal checks one call holds
+   the server lock through list, find, cap and create, so two racing
+   commands cannot both land under the cap or the same name. An existing
+   window reuses, or stays a conflict unless its stored goal tag matches
+   the retried goal; past the per-session window cap a create reads
+   `MAX_WINDOWS_REACHED`. A window whose tagging fails is removed again,
+   so the retry never meets an orphan it cannot own.
 
 ## Results report stored tags
 
