@@ -307,8 +307,8 @@ Cursor role runs on the session's model.
 |---|---|---|---|---|
 | fast | haiku | gpt-6-luna (high) | muse-spark-1.3 (low) | cheapest; scanning only |
 | workhorse | sonnet | gpt-6-sol (medium) | muse-spark-1.3 (high) | the default for real work |
-| deep | opus | gpt-6-sol (high) | muse-spark-1.3 (xhigh) | only on escalation |
-| arbiter | fable | gpt-6-astra (high) | muse-spark-1.3 (xhigh) | only for rulings |
+| deep | opus | gpt-6-sol (high) | muse-wonder-full-1.0 (xhigh) | only on escalation |
+| arbiter | fable | gpt-6-astra (high) | muse-wonder-full-1.0 (xhigh) | only for rulings |
 
 | Role | Tier | Access | Skill | Job |
 |---|---|---|---|---|
