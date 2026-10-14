@@ -156,12 +156,12 @@ no tmux pane and is out of scope.
   unknown, never empty. A screen with no prompt and no trust box fails
   with no reading. `cursor-agent status` ("Logged in as") and `about`
   ("User Email") yield the signed-in email; anything without either
-  marker fails with no reading. A derived `usage-ondemand-on.txt` fixture
-  (`usage.txt` with only the On-Demand row flipped to Enabled; the on-state
-  wording is an open probe, so the note line is kept verbatim) parses to
-  `ON` billing, and a dialog with no On-Demand row parses to `UNKNOWN`;
-  pacing excludes both from auto-dispatch (03b step 6). Version 2026.10.01 is
-  `UNVERIFIED_PARSING` with `USAGE`, `IDENTITY` and `READY`
+  marker fails with no reading. An `Enabled` On-Demand cell parses to `ON`
+  billing, and a dialog with no On-Demand row parses to `UNKNOWN`; pacing
+  excludes both from auto-dispatch (03b step 6). No live on-state dialog
+  has been captured yet (open probe 5 above), so the on-case is pinned by
+  an in-test mutation of the live capture, not a fixture. Version
+  2026.10.01 is `UNVERIFIED_PARSING` with `USAGE`, `IDENTITY` and `READY`
   fixture-verified (fixtures in `internal/harness/cursor/testdata/`).
 - **Credentials.** `~/.cursor/cli-config.json` holds settings and also an
   authInfo section, so the agent never reads it; it learns settings only from

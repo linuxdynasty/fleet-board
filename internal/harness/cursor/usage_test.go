@@ -204,10 +204,11 @@ func TestParseUsageNoDialog(t *testing.T) {
 
 // On-Demand on, or no On-Demand row at all, keeps the account out of
 // auto-dispatch (03b step 6, row 30): the reading parses to ON or UNKNOWN
-// billing, and pacing excludes it. The on-state wording is an open probe
-// (01b), so the on-fixture is usage.txt with only the table row flipped to
-// Enabled; the "On-demand usage is off" note is kept verbatim because only
-// the row decides billing.
+// billing, and pacing excludes it. No live on-state dialog has been
+// captured (an open probe, 01b), so the on-case mutates the live capture
+// in-test, the same way dropLines mutates it for the missing cases: only
+// the table cell changes, and the "On-demand usage is off" note is kept
+// verbatim because only the row decides billing.
 func TestParseUsageOnDemandExcluded(t *testing.T) {
 	read := time.Date(2026, time.October, 13, 11, 8, 0, 0, time.UTC)
 	cases := []struct {
@@ -216,8 +217,11 @@ func TestParseUsageOnDemandExcluded(t *testing.T) {
 		billing typev1.OverageBilling
 	}{
 		{
-			name:    "on demand on",
-			screen:  func() string { return loadScreen(t, "usage-ondemand-on.txt") },
+			name: "on demand on",
+			screen: func() string {
+				return strings.Replace(
+					loadScreen(t, "usage.txt"), "On-Demand       Disabled", "On-Demand       Enabled", 1)
+			},
 			billing: typev1.OverageBilling_OVERAGE_BILLING_ON,
 		},
 		{
