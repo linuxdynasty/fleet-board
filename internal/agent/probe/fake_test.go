@@ -119,8 +119,13 @@ func (f *fakeBackend) ServerStartID(_ context.Context) (string, error) {
 	return "test-start", nil
 }
 
-func (f *fakeBackend) FirstPane(_ context.Context, _ string) (string, error) {
+func (f *fakeBackend) FirstPane(_ context.Context, name string) (string, error) {
 	defer f.enter()()
+	// No pane before the session exists: the pass must read the key
+	// again after ensuring it.
+	if _, ok := f.sessions[name]; !ok {
+		return "", nil
+	}
 	return "%0", nil
 }
 

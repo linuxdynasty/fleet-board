@@ -118,6 +118,14 @@ func TestScheduleRunsDuePasses(t *testing.T) {
 	if len(be.sent) == 0 {
 		t.Errorf("scheduled pass typed nothing")
 	}
+	// The schedule advances before the pass, so health already names
+	// the run after this one.
+	health := em.health()
+	last := health[len(health)-1]
+	if !last.GetNextRunTime().AsTime().After(last.GetLastAttemptTime().AsTime()) {
+		t.Errorf("next_run_time %v is not after last_attempt_time %v",
+			last.GetNextRunTime().AsTime(), last.GetLastAttemptTime().AsTime())
+	}
 }
 
 // TestConcurrentEnsuresSerialize runs overlapping commands at one manager:

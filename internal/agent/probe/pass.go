@@ -17,23 +17,29 @@ func (m *Manager) pass(ctx context.Context, a *assignment) *agentv1.CommandResul
 	now := m.now()
 	name := sessionName(a.probeID.GetValue())
 	harnessName := a.harness.GetName()
+	// The key of any pre-existing session; it is read again after the
+	// session is ensured, so first-pass health names the live pane.
 	pane := m.paneKey(ctx, name)
 
 	binary, ok := harnessBinaries[harnessName]
 	if !ok {
 		return fail(typev1.ReasonCode_REASON_CODE_INTERNAL, false, "probe: no binary for harness "+harnessName)
 	}
-	if _, err := m.lookPath(binary); err != nil {
+	// The resolved path launches the session, not the bare name: the
+	// tmux server need not share the agent's PATH.
+	looked, err := m.lookPath(binary)
+	if err != nil {
 		return m.failed(ctx, a, pane, now, false, typev1.ReasonCode_REASON_CODE_HARNESS_NOT_INSTALLED, true,
 			"harness "+binary+" is not on PATH")
 	}
-	if err := m.ensureSession(ctx, name, binary); err != nil {
+	if err := m.ensureSession(ctx, name, looked); err != nil {
 		if ctx.Err() != nil {
 			return fail(typev1.ReasonCode_REASON_CODE_INTERNAL, false, "probe: pass ended with its context")
 		}
 		return m.failed(ctx, a, pane, now, false, typev1.ReasonCode_REASON_CODE_PROBE_START_FAILED, true,
 			"the probe session would not start")
 	}
+	pane = m.paneKey(ctx, name)
 	screen, settled := m.settle(ctx, name)
 	if !settled {
 		if ctx.Err() != nil {
@@ -56,7 +62,7 @@ func (m *Manager) pass(ctx context.Context, a *assignment) *agentv1.CommandResul
 			typev1.ReasonCode_REASON_CODE_STARTUP_PROMPT_SEEN, c.Kind,
 			kindMessage(c.Kind))
 	case OutcomeReady:
-		return m.runStatus(ctx, a, pane, now, name, harnessName)
+		return m.runStatus(ctx, a, pane, now, name, harnessName, screen)
 	default:
 		return m.idleUnknown(ctx, a, pane, now, name, c.Input)
 	}
@@ -115,7 +121,7 @@ func (m *Manager) idleUnknown(ctx context.Context, a *assignment, pane *typev1.P
 // runStatus types the one status command and reads the answer. The screen
 // was proven idle with an empty input line by Classify; this is the only
 // place a pass sends keys, and it sends nothing else.
-func (m *Manager) runStatus(ctx context.Context, a *assignment, pane *typev1.PaneKey, now time.Time, name, harnessName string) *agentv1.CommandResult {
+func (m *Manager) runStatus(ctx context.Context, a *assignment, pane *typev1.PaneKey, now time.Time, name, harnessName, before string) *agentv1.CommandResult {
 	command, _ := StatusCommand(harnessName)
 	if err := m.be.SendCommand(ctx, name, command); err != nil {
 		return m.failed(ctx, a, pane, now, true, typev1.ReasonCode_REASON_CODE_PROBE_COMMAND_TIMEOUT, true,
@@ -132,8 +138,10 @@ func (m *Manager) runStatus(ctx context.Context, a *assignment, pane *typev1.Pan
 	}
 	if reading.GetParse() == typev1.ParseOutcome_PARSE_OUTCOME_FAILED {
 		// No usage content: a trust or named startup screen that won
-		// the race after typing blocks the reading, anything else is
-		// still reported as parse_failed with its redacted raw screen.
+		// the race after typing blocks the reading; an unchanged
+		// screen means the command showed no output, so health goes
+		// out alone (03b); anything else is still reported as
+		// parse_failed with its redacted raw screen.
 		if c := Classify(harnessName, screen); c.Outcome == OutcomeTrust {
 			return m.blocked(ctx, a, pane, now, typev1.ReasonCode_REASON_CODE_FOLDER_UNTRUSTED,
 				typev1.ReasonCode_REASON_CODE_STARTUP_PROMPT_SEEN, "trust",
@@ -142,6 +150,9 @@ func (m *Manager) runStatus(ctx context.Context, a *assignment, pane *typev1.Pan
 			return m.blocked(ctx, a, pane, now, typev1.ReasonCode_REASON_CODE_STARTUP_PROMPT_SEEN,
 				typev1.ReasonCode_REASON_CODE_STARTUP_PROMPT_SEEN, c.Kind,
 				kindMessage(c.Kind))
+		} else if screen == before {
+			return m.failed(ctx, a, pane, now, true, typev1.ReasonCode_REASON_CODE_PROBE_COMMAND_TIMEOUT, true,
+				"the status command showed no output")
 		}
 	}
 	return m.succeeded(ctx, a, pane, now, reading, "probed "+command)
@@ -182,7 +193,9 @@ func (m *Manager) ensureSession(ctx context.Context, name, binary string) error 
 }
 
 // settle captures until two consecutive screens match: only a stable
-// screen is classified, and only a stable answer is parsed.
+// screen is classified, and only a stable answer is parsed. A screen
+// that keeps changing through every poll is unsettled, never the last
+// render: classifying a repaint could type into a prompt.
 func (m *Manager) settle(ctx context.Context, name string) (string, bool) {
 	prev, err := m.be.Capture(ctx, name)
 	if err != nil {
@@ -203,7 +216,7 @@ func (m *Manager) settle(ctx context.Context, name string) (string, bool) {
 		}
 		prev = cur
 	}
-	return prev, true
+	return "", false
 }
 
 // paneKey reads the probe pane's key for events. A key that will not

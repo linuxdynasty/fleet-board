@@ -188,8 +188,10 @@ func (m *Manager) Run(ctx context.Context) error {
 			now := m.now()
 			for _, a := range rows {
 				if !now.Before(a.nextRun) {
-					m.pass(ctx, a)
+					// The schedule advances before the pass, so the
+					// health it emits already names the next run.
 					a.nextRun = m.now().Add(a.interval)
+					m.pass(ctx, a)
 				}
 			}
 			arm()

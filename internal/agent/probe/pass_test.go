@@ -89,6 +89,11 @@ func TestPassTrustTypesNothing(t *testing.T) {
 	if len(em.readings()) != 0 {
 		t.Errorf("usage readings = %d on a trust screen, want none", len(em.readings()))
 	}
+	// The pane key is read after the session is ensured, so even the
+	// first pass names the live pane.
+	if got := h.GetPane(); got == nil || got.GetPaneId() != "%0" || got.GetServer() != "fleet-probe" {
+		t.Errorf("health pane = %+v, want the ensured session's first pane", got)
+	}
 }
 
 // TestPassUpdateTypesNothing is the A3 case: the Codex update screen ends
@@ -185,12 +190,60 @@ func TestPassClaudeTrust(t *testing.T) {
 		t.Errorf("typed %v on a trust screen", be.sent)
 	}
 	for name, bin := range be.sessions {
-		if bin != "claude" {
-			t.Errorf("session %s started %q, want the claude binary", name, bin)
+		// The session runs the resolved PATH lookup, not the bare
+		// name: the tmux server need not share the agent's PATH.
+		if bin != "/bin/claude" {
+			t.Errorf("session %s started %q, want the resolved claude path", name, bin)
 		}
 		if be.dirs[name] != "/probe" {
 			t.Errorf("session %s started in %q, want the probe folder", name, be.dirs[name])
 		}
+	}
+}
+
+// TestPassStatusNoOutput is the quiet-command case: the status command
+// leaves the idle screen unchanged, so no usage screen was read and only
+// health goes out (03b), never a parse-failed reading for a screen that
+// simply shows no output.
+func TestPassStatusNoOutput(t *testing.T) {
+	t.Parallel()
+	be, em := newFakeBackend(t), &fakeEmitter{}
+	ready := loadFixture(t, "../../harness/muse/testdata/1.4.6/startup-ready.txt")
+	be.captures = []string{ready, ready, ready, ready}
+	m := runManager(t, be, em)
+
+	res := runEnsure(t, m, ensureCommand("probe-1", "acc-1", "key-1", "muse", true))
+	if res.GetReason() != typev1.ReasonCode_REASON_CODE_PROBE_COMMAND_TIMEOUT {
+		t.Errorf("reason = %v, want PROBE_COMMAND_TIMEOUT", res.GetReason())
+	}
+	if len(be.sent) != 2 {
+		t.Errorf("sent = %v, want the one typed status command", be.sent)
+	}
+	if len(em.readings()) != 0 {
+		t.Errorf("usage readings = %d with no output, want none", len(em.readings()))
+	}
+	if len(em.health()) != 1 {
+		t.Fatalf("health events = %d, want 1", len(em.health()))
+	}
+}
+
+// TestPassUnsettledScreen never classifies a repaint: a screen that keeps
+// changing through every poll ends the pass without typing.
+func TestPassUnsettledScreen(t *testing.T) {
+	t.Parallel()
+	be, em := newFakeBackend(t), &fakeEmitter{}
+	be.captures = []string{"screen-a", "screen-b"}
+	m := runManager(t, be, em)
+
+	res := runEnsure(t, m, ensureCommand("probe-1", "acc-1", "key-1", "codex", true))
+	if res.GetReason() != typev1.ReasonCode_REASON_CODE_PROBE_COMMAND_TIMEOUT {
+		t.Errorf("reason = %v, want PROBE_COMMAND_TIMEOUT", res.GetReason())
+	}
+	if len(be.sent) != 0 {
+		t.Errorf("typed %v on an unsettled screen", be.sent)
+	}
+	if len(em.readings()) != 0 || len(em.health()) != 1 {
+		t.Errorf("readings = %d, health = %d; want 0 and 1", len(em.readings()), len(em.health()))
 	}
 }
 
