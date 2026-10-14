@@ -7,7 +7,10 @@ import (
 	"testing"
 	"time"
 
+	hubv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/hub/v1"
 	typev1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/type/v1"
+	"github.com/linuxdynasty/fleet-board/internal/hub/pacing"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 func loadScreen(t *testing.T, name string) string {
@@ -196,5 +199,60 @@ func TestParseUsageNoDialog(t *testing.T) {
 		if len(got.Buckets) != 0 {
 			t.Errorf("%s: buckets = %d, want 0", name, len(got.Buckets))
 		}
+	}
+}
+
+// On-Demand on, or no On-Demand row at all, keeps the account out of
+// auto-dispatch (03b step 6, row 30): the reading parses to ON or UNKNOWN
+// billing, and pacing excludes it. No live on-state dialog has been
+// captured (an open probe, 01b), so the on-case mutates the live capture
+// in-test, the same way dropLines mutates it for the missing cases: only
+// the table cell changes, and the "On-demand usage is off" note is kept
+// verbatim because only the row decides billing.
+func TestParseUsageOnDemandExcluded(t *testing.T) {
+	read := time.Date(2026, time.October, 13, 11, 8, 0, 0, time.UTC)
+	cases := []struct {
+		name    string
+		screen  func() string
+		billing typev1.OverageBilling
+	}{
+		{
+			name: "on demand on",
+			screen: func() string {
+				return strings.Replace(
+					loadScreen(t, "usage.txt"), "On-Demand       Disabled", "On-Demand       Enabled", 1)
+			},
+			billing: typev1.OverageBilling_OVERAGE_BILLING_ON,
+		},
+		{
+			name: "no on demand row",
+			screen: func() string {
+				return dropLines(loadScreen(t, "usage.txt"), "On-Demand       Disabled")
+			},
+			billing: typev1.OverageBilling_OVERAGE_BILLING_UNKNOWN,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			// No t.Parallel: the screen loaders report through the
+			// parent t, which must stay on this goroutine.
+			got := ParseUsage(tc.screen(), read)
+			if got.OverageBilling != tc.billing {
+				t.Fatalf("overage = %v, want %v", got.OverageBilling, tc.billing)
+			}
+			in := pacing.Input{
+				Usage: &hubv1.AccountUsage{
+					ReadTime:       timestamppb.New(read),
+					Parse:          got.ParseOutcome,
+					Buckets:        got.Buckets,
+					OverageBilling: got.OverageBilling,
+				},
+				Overage: got.OverageBilling,
+			}
+			res := pacing.Evaluate(read, in)
+			if res.Pacing.GetState() != hubv1.PacingState_PACING_STATE_EXCLUDED {
+				t.Errorf("state = %v, want EXCLUDED", res.Pacing.GetState())
+			}
+		})
 	}
 }
