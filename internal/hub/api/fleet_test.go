@@ -373,9 +373,9 @@ func TestEveryOtherFleetMethodIsUnimplemented(t *testing.T) {
 	t.Parallel()
 	e := newFleetEnv(t, localUser("alice"))
 	ctx := context.Background()
-	_, err := e.client.ListMachines(ctx, connect.NewRequest(&hubv1.ListMachinesRequest{}))
+	_, err := e.client.ListSessions(ctx, connect.NewRequest(&hubv1.ListSessionsRequest{}))
 	if code := connect.CodeOf(err); code != connect.CodeUnimplemented {
-		t.Errorf("ListMachines: %v, want unimplemented", code)
+		t.Errorf("ListSessions: %v, want unimplemented", code)
 	}
 	_, err = e.client.CreateApiToken(ctx, connect.NewRequest(&hubv1.CreateApiTokenRequest{RequestId: "x"}))
 	if code := connect.CodeOf(err); code != connect.CodeUnimplemented {

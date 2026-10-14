@@ -81,6 +81,11 @@
 // ([ReasonSnapshot]); [ReadSnapshot] reads them back. [Hello]
 // returns hub_last_event_seq.
 //
+// Plan row 12 adds the machine reads: [MachineRow] is one machines row as
+// stored; [ReadMachineRow] reads one by id ([ErrMachineUnknown] without a
+// row) and [ListMachineRows] reads them all, both on the read pool for the
+// hub API's filter, sort and page.
+//
 // Plan row 5 (PR 5c2) adds the event history (events migration):
 // [ApplyEvent] stores one event in its writer job (the live, snapshotted
 // epoch, [ErrEventNotCurrent]; the stream's chain, [ErrEventChainBroken];

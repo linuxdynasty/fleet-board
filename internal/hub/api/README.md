@@ -7,8 +7,9 @@ checks, and `FleetService` with `CreateEnrollmentToken`, the watched-repo
 writes (`CreateRepo`, `UpdateRepo`, `DeleteRepo`), the machine admin
 writes (`UpdateMachine`, `RevokeMachine`, `DeleteMachine`), the
 hub-state triage writes (`SnoozeTriageItem`, `DismissTriageItem`),
-the session-control and approvals calls, and `GetServerInfo` on the
-local admin socket.
+the session-control and approvals calls, `GetServerInfo`, and the
+machine reads (`ListMachines`, `GetMachine`) on the local admin
+socket.
 
 ```go
 srv := api.NewServer(tel, "api", boundPort) // api.Handler plus timeouts and the JSON ErrorLog
@@ -49,7 +50,8 @@ own error lines are debug-level `http.server_error` events, not stderr text.
 `Fleet` embeds the generated `UnimplementedFleetServiceHandler`, so every
 method but `CreateEnrollmentToken`, the watched-repo writes, the machine
 admin writes, the hub-state triage writes, the session-control and
-approvals calls, and `GetServerInfo` answers `unimplemented`
+approvals calls, `GetServerInfo`, `ListMachines` and `GetMachine`
+answers `unimplemented`
 ([02k](../../../docs/specs/02k-v1-surface-and-cli.md)).
 `Handler()` is its Connect route (requests capped at 1 MiB), ready for a
 later row to mount on the API listener. The caller is the `Principal`
@@ -60,6 +62,21 @@ the server put in the context
 `fleet_id` and `hub_instance_id`, the server time, the (still empty) feature
 list, the auth mode, and the caller with its 02d scopes. A store that cannot
 return the hub identity is `INTERNAL`, logged as `server_info.failed`.
+
+`ListMachines` and `GetMachine` need `READ` (02d). Until a later row-12
+slice brings caller scopes, only a `LOCAL_USER` principal (the admin socket)
+holds it. `ListMachines` serves the 02c Machine filter but not `harness`
+(the hub stores no harness inventory yet) or `is_hub` (the hub keeps no
+hub-machine link yet); `order_by` takes `name`, `ct` and `last_seen_time`
+and defaults to display name; pages are 50 by default, 500 at most, with a
+query-bound token good for 10 minutes. `update_time` reads as `create_time`
+until `UpdateMachine` (row 13a) can move the version. The `Machine` view is
+the enroll-time spec with the stored state, facts, policy row, resource
+sample and event counters: the drain reason, local label additions, and
+what no row stores yet (harnesses, repos, effective settings with their
+capped, rejected and unenforced sets, heartbeat health past the event
+counters, spool, battery, clock skew, slots, forge state, certificates,
+capabilities, unfit) stay unset until their rows land.
 
 `CreateEnrollmentToken` needs `ADMIN` (02d). Until plan row 12 brings scopes,
 only a `LOCAL_USER` principal (the admin socket) holds it: no principal is

@@ -15,10 +15,11 @@
 // row), the machine admin writes UpdateMachine, RevokeMachine and
 // DeleteMachine (each with its machine.* audit row), the hub-state
 // triage writes SnoozeTriageItem and DismissTriageItem (each with its
-// triage.* audit row), the session-control and approvals calls, and
-// [Fleet.GetServerInfo] built; every other method is Unimplemented (02k):
-// it checks the caller ([PrincipalFrom], ADMIN for enrollment and
-// revoke/delete, SETTINGS for repos and update, APPROVALS for triage;
+// triage.* audit row), the session-control and approvals calls,
+// [Fleet.GetServerInfo], [Fleet.ListMachines] and [Fleet.GetMachine]
+// built; every other method is Unimplemented (02k): it checks the caller
+// ([PrincipalFrom], ADMIN for enrollment and revoke/delete, SETTINGS for
+// repos and update, READ for the machine reads, APPROVALS for triage;
 // GetServerInfo needs no scope), the fields and the request_id (02b),
 // mints the token in package ca and stores only its secret hash, merges
 // the masked repo patch inside the writer transaction, revokes a machine
