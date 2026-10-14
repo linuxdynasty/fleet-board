@@ -149,12 +149,15 @@ no tmux pane and is out of scope.
   bytes (`→` dim, `P` reverse-video, rest dim); the draft half is pinned by
   `ready-input-has-draft.ansi.txt` (no faint attribute anywhere on the line).
 - **Adapter (row 30, issue #95):** `internal/harness/cursor` parses the
-  `/usage` dialog (parser version 1) and the ready prompt. The trust box
-  reads as trust (`FOLDER_UNTRUSTED`); a styled input line with the faint
-  attribute reads empty, a styled line at full intensity reads as typed
-  text, and a plain `→ <text>` line reads unknown, never empty. A screen
-  with no prompt and no trust box fails with no reading. Version
-  2026.10.01 is `UNVERIFIED_PARSING` with `USAGE` and `READY`
+  `/usage` dialog (parser version 1), the ready prompt, and the account
+  identity. The trust box reads as trust (`FOLDER_UNTRUSTED`); a styled
+  input line with the faint attribute reads empty, a styled line at full
+  intensity reads as typed text, and a plain `→ <text>` line reads
+  unknown, never empty. A screen with no prompt and no trust box fails
+  with no reading. `cursor-agent status` ("Logged in as") and `about`
+  ("User Email") yield the signed-in email; anything without either
+  marker fails with no reading. Version 2026.10.01 is
+  `UNVERIFIED_PARSING` with `USAGE`, `IDENTITY` and `READY`
   fixture-verified (fixtures in `internal/harness/cursor/testdata/`).
 - **Credentials.** `~/.cursor/cli-config.json` holds settings and also an
   authInfo section, so the agent never reads it; it learns settings only from

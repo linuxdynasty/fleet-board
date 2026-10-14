@@ -23,8 +23,8 @@ func readData(t *testing.T, name string) string {
 // TestConform runs the shared adapter check (row 8's conformance, which row
 // 30's adapter calls too): the golden table matches the claims, a supported
 // feature brings a fixture of this version, and every fixture parses or
-// yields unknown, never fails. 2026.10.01 stays UNVERIFIED_PARSING: USAGE
-// and READY are fixture-verified, and PROMPT, IDENTITY and CONDITION are
+// yields unknown, never fails. 2026.10.01 stays UNVERIFIED_PARSING: USAGE,
+// IDENTITY and READY are fixture-verified, and PROMPT and CONDITION are
 // later slices.
 func TestConform(t *testing.T) {
 	usage := func(screen string) harness.ParseResult {
@@ -45,6 +45,15 @@ func TestConform(t *testing.T) {
 			return harness.ParseUnknown
 		}
 	}
+	identity := func(screen string) harness.ParseResult {
+		switch ParseIdentity(screen).ParseOutcome {
+		case typev1.ParseOutcome_PARSE_OUTCOME_OK,
+			typev1.ParseOutcome_PARSE_OUTCOME_PARTIAL:
+			return harness.ParseOK
+		default:
+			return harness.ParseUnknown
+		}
+	}
 	harness.Conform(t, harness.Declaration{
 		Harness: "cursor",
 		Versions: []harness.VersionCase{
@@ -58,6 +67,15 @@ func TestConform(t *testing.T) {
 						Fixtures: []harness.Fixture{
 							{Name: "usage.txt", Screen: readData(t, "2026.10.01/usage.txt")},
 							{Name: "usage-not-shown.txt", Screen: readData(t, "2026.10.01/usage-not-shown.txt")},
+						},
+					},
+					harness.FeatureIdentity: {
+						Claim: harness.FeatureClaim{Supported: true},
+						Parse: identity,
+						Fixtures: []harness.Fixture{
+							{Name: "status.txt", Screen: readData(t, "2026.10.01/status.txt")},
+							{Name: "about.txt", Screen: readData(t, "2026.10.01/about.txt")},
+							{Name: "identity-truncated.txt", Screen: readData(t, "2026.10.01/identity-truncated.txt")},
 						},
 					},
 					harness.FeatureReady: {
