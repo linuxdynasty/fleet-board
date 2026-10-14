@@ -233,17 +233,13 @@ func (e *Ensurer) underRoots(dir string) bool {
 	if len(roots) == 0 {
 		return false
 	}
-	clean := dir
-	if resolved, err := filepath.EvalSymlinks(dir); err == nil {
-		clean = resolved
-	} else {
+	clean, err := filepath.EvalSymlinks(dir)
+	if err != nil {
 		clean = filepath.Clean(dir)
 	}
 	for _, r := range roots {
-		base := r
-		if resolved, err := filepath.EvalSymlinks(r); err == nil {
-			base = resolved
-		} else {
+		base, err := filepath.EvalSymlinks(r)
+		if err != nil {
 			base = filepath.Clean(r)
 		}
 		if clean == base || strings.HasPrefix(clean, base+string(filepath.Separator)) {
