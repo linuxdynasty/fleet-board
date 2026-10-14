@@ -31,6 +31,25 @@ const (
 	maxReservePercent = 50
 )
 
+// ProbeBlock is why the latest probe run produced no usable reading: it
+// is stuck on a startup screen (ProbeHealth last_failure
+// STARTUP_PROMPT_SEEN) or asking to sign in (an open SIGN_IN_REQUIRED
+// condition on the probe pane). Either makes the account UNKNOWN at once,
+// even when the cached reading is fresh (03b, "Readings" and "Failure
+// modes"). The store slice clears it when a good reading arrives.
+type ProbeBlock int
+
+const (
+	// ProbeBlockNone means the latest probe run was not blocked.
+	ProbeBlockNone ProbeBlock = iota
+	// ProbeBlockStartupPrompt means the probe pane shows a startup screen
+	// the agent never answers (trust, update, release notes, login).
+	ProbeBlockStartupPrompt
+	// ProbeBlockSignInRequired means the harness wants the developer to
+	// sign in again on the probe machine.
+	ProbeBlockSignInRequired
+)
+
 // Input is everything [Evaluate] needs for one account. Times the caller
 // passes are hub-adjusted (02i, "Clocks"): read_time already has the
 // machine's measured skew applied.
@@ -57,6 +76,9 @@ type Input struct {
 	UsageLimitUntil time.Time
 	// Usage is the latest PROBE reading. Nil means no reading yet.
 	Usage *hubv1.AccountUsage
+	// ProbeBlock is the latest probe run's block, if any. Non-none makes
+	// the account UNKNOWN at once, ahead of the cached reading.
+	ProbeBlock ProbeBlock
 }
 
 // Result is the verdict plus the debug the pacing.decision log needs.
@@ -71,7 +93,7 @@ type Result struct {
 }
 
 // Evaluate applies the 03b pacing decision to one account. Precedence:
-// EXCLUDED, then UNKNOWN (no reading or parse failed), then STALE (reading
+// EXCLUDED, then UNKNOWN (blocked probe, no reading or parse failed), then STALE (reading
 // older than stale_after), then RESERVE, then SHORT_LIMIT, then UNKNOWN for
 // the line, then the burn-down bands. RESERVE beats SHORT_LIMIT so the
 // reserve alert still fires when both hit; a concrete SHORT_LIMIT beats an
@@ -84,6 +106,22 @@ func Evaluate(now time.Time, in Input) Result {
 	if cause := excludedCause(in); cause != "" {
 		out.State = hubv1.PacingState_PACING_STATE_EXCLUDED
 		res.Reason = "excluded:" + cause
+		return res
+	}
+	switch in.ProbeBlock {
+	case ProbeBlockNone:
+		// Not blocked: pace on the cached reading below.
+	case ProbeBlockStartupPrompt:
+		// A probe stuck on a startup screen makes the account UNKNOWN at
+		// once, even when the cached reading is fresh (03b, "Readings").
+		out.State = hubv1.PacingState_PACING_STATE_UNKNOWN
+		res.Reason = "unknown:startup_prompt_seen"
+		return res
+	case ProbeBlockSignInRequired:
+		// A probe asking to sign in makes the account UNKNOWN at once,
+		// even when the cached reading is fresh (03b, "Readings").
+		out.State = hubv1.PacingState_PACING_STATE_UNKNOWN
+		res.Reason = "unknown:sign_in_required"
 		return res
 	}
 	u := in.Usage

@@ -31,6 +31,24 @@ func TestEvaluateStates(t *testing.T) {
 		check(t, got, want{state: hubv1.PacingState_PACING_STATE_UNKNOWN})
 	})
 
+	t.Run("startup screen is unknown at once", func(t *testing.T) {
+		t.Parallel()
+		in := baseInput()
+		in.Usage = usageAt(now.Add(-time.Minute), weeklyBucket(30, weekReset, week))
+		in.ProbeBlock = pacing.ProbeBlockStartupPrompt
+		got := pacing.Evaluate(now, in)
+		check(t, got, want{state: hubv1.PacingState_PACING_STATE_UNKNOWN})
+	})
+
+	t.Run("sign-in required is unknown at once", func(t *testing.T) {
+		t.Parallel()
+		in := baseInput()
+		in.Usage = usageAt(now.Add(-time.Minute), weeklyBucket(30, weekReset, week))
+		in.ProbeBlock = pacing.ProbeBlockSignInRequired
+		got := pacing.Evaluate(now, in)
+		check(t, got, want{state: hubv1.PacingState_PACING_STATE_UNKNOWN})
+	})
+
 	t.Run("old reading is stale", func(t *testing.T) {
 		t.Parallel()
 		in := baseInput()
