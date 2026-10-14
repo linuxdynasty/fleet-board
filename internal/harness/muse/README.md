@@ -13,11 +13,18 @@ file; it parses text it is given.
   `PARSE_FAILED`, and a screen with no usage box fails with no
   buckets. Nothing is ever guessed. `ParserVersion` bumps when the
   parser's behavior changes.
+- `ready.go`: `ParseReady` reads the workspace-trust box (01 C3): the
+  "Do you trust this workspace?" question with its "Trust and continue"
+  row reads as trust (`FOLDER_UNTRUSTED`); any other screen fails
+  cleanly, since prompt detection is a later slice. Nothing is ever
+  guessed. `ReadyParserVersion` bumps when this parser's behavior
+  changes.
 - `muse_test.go`: the adapter's declaration for the shared
   conformance test (`harness.Conform`). Versions `1.4.4`, `1.4.6` and
-  `1.4.7` are `UNVERIFIED_PARSING` with `USAGE` fixture-verified; the
-  golden table is `testdata/support-table.txt`, so a claim change is
-  a reviewed diff.
+  `1.4.7` are `UNVERIFIED_PARSING` with `USAGE` and the trust half of
+  `READY` fixture-verified; the golden table is
+  `testdata/support-table.txt`, so a claim change is a reviewed
+  diff.
 - Fixtures under `testdata/1.4.4/`, `testdata/1.4.6/` and
   `testdata/1.4.7/`, documented in `testdata/README.md`.
 

@@ -21,13 +21,23 @@ func readData(t *testing.T, name string) string {
 }
 
 // TestConform runs the shared adapter check (row 8): the golden table
-// matches the claims, the USAGE claim brings a fixture of this version,
-// and every fixture parses or yields unknown, never fails. 2.1.296 stays
-// UNVERIFIED_PARSING: only USAGE is fixture-verified, and PROMPT, READY,
-// IDENTITY and CONDITION are later slices.
+// matches the claims, the USAGE and READY claims bring a fixture of this
+// version, and every fixture parses or yields unknown, never fails. 2.1.296
+// stays UNVERIFIED_PARSING: USAGE and the trust half of READY are
+// fixture-verified, and PROMPT, IDENTITY and CONDITION (plus prompt
+// detection inside READY) are later slices.
 func TestConform(t *testing.T) {
-	parse := func(screen string) harness.ParseResult {
+	usage := func(screen string) harness.ParseResult {
 		switch ParseUsage(screen, time.Now()).ParseOutcome {
+		case typev1.ParseOutcome_PARSE_OUTCOME_OK,
+			typev1.ParseOutcome_PARSE_OUTCOME_PARTIAL:
+			return harness.ParseOK
+		default:
+			return harness.ParseUnknown
+		}
+	}
+	ready := func(screen string) harness.ParseResult {
+		switch ParseReady(screen).ParseOutcome {
 		case typev1.ParseOutcome_PARSE_OUTCOME_OK,
 			typev1.ParseOutcome_PARSE_OUTCOME_PARTIAL:
 			return harness.ParseOK
@@ -43,9 +53,16 @@ func TestConform(t *testing.T) {
 			Features: map[harness.Feature]harness.FeatureCase{
 				harness.FeatureUsage: {
 					Claim: harness.FeatureClaim{Supported: true},
-					Parse: parse,
+					Parse: usage,
 					Fixtures: []harness.Fixture{
 						{Name: "usage.txt", Screen: readData(t, v+"/usage.txt")},
+					},
+				},
+				harness.FeatureReady: {
+					Claim: harness.FeatureClaim{Supported: true},
+					Parse: ready,
+					Fixtures: []harness.Fixture{
+						{Name: "trust-folder.txt", Screen: readData(t, v+"/trust-folder.txt")},
 					},
 				},
 			},
