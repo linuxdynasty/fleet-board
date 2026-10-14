@@ -247,16 +247,16 @@ func TestAgentActionsCreditNoInput(t *testing.T) {
 			none("new-session")
 
 			// The control client's own reattach: killing its session ends
-			// the attach with %exit and reattaches to the lowest session
-			// left. Its switch moves the tripwire; control clients are
-			// ignored, so nothing is credited. The down wait comes
-			// first: Up alone can return on the stale pre-kill attach,
-			// and the reattach's 1 to 2 s backoff then races a fixed
-			// sleep (main failed this way on a loaded Linux runner:
-			// re-attached to $0, want $1).
+			// the attach with %exit and the client lands on the lowest
+			// session left. Its switch moves the tripwire; control clients
+			// are ignored, so nothing is credited. The wait is for the
+			// landed session, not for the drop in between: the drop is not
+			// guaranteed to show between two 20 ms polls on a loaded
+			// machine (Linux CI and a loaded Linux rig failed the drop
+			// wait with the client still up), while the landed session is
+			// the whole assertion.
 			dev.Run(t, "kill-session", "-t", "work")
-			waitDown(t, r)
-			r.waitState(t, "default", tmux.StateUp)
+			waitSession(t, r, 1)
 			time.Sleep(3500 * time.Millisecond)
 			none("reattach")
 			if got := r.o.Client("default").Session(); got != 1 {
