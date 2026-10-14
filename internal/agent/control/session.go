@@ -53,12 +53,18 @@ type Options struct {
 	// it) to a local checkout path. The repo inventory (plan row 9) owns
 	// the production resolver; this slice takes the seam.
 	ResolveWorkdir func(*typev1.Workdir) (string, error)
+	// MaxWindows caps the windows per session for F2 (02h
+	// MAX_WINDOWS_REACHED). Nil means the settings default of 12; zero
+	// refuses every create. The settings merge (03e2) owns the production
+	// value; this slice takes the seam.
+	MaxWindows func() uint32
 	// Now is the clock for result timestamps. Nil means time.Now.
 	Now func() time.Time
 }
 
-// Ensurer runs EnsureSession (F1) against one tmux server. One goroutine
-// owns each Ensurer call; tmux serializes the commands itself.
+// Ensurer runs EnsureSession (F1) and EnsureWindow (F2) against one tmux
+// server. One goroutine owns each Ensurer call; tmux serializes the commands
+// itself.
 type Ensurer struct {
 	runner  Runner
 	caller  proc.Caller
@@ -70,6 +76,7 @@ type Ensurer struct {
 	drain   func() bool
 	start   func() bool
 	workdir func(*typev1.Workdir) (string, error)
+	maxwin  func() uint32
 	now     func() time.Time
 }
 
@@ -106,6 +113,7 @@ func New(o Options) (*Ensurer, error) {
 		kind:    o.Kind,
 		roots:   o.Roots,
 		workdir: o.ResolveWorkdir,
+		maxwin:  o.MaxWindows,
 		now:     o.Now,
 		start:   o.StartServer,
 	}
@@ -187,27 +195,9 @@ func (e *Ensurer) EnsureSession(ctx context.Context, cmd *agentv1.EnsureSession)
 		return refuse(typev1.Status_STATUS_FAILED, typev1.ReasonCode_REASON_CODE_INVALID_ARGUMENT,
 			"goal id must match the 02e id format")
 	}
-	dir, err := e.workdir(cmd.GetWorkdir())
-	if err != nil || dir == "" {
-		return refuse(typev1.Status_STATUS_FAILED, typev1.ReasonCode_REASON_CODE_CHECKOUT_MISSING,
-			"the workdir resolves to no local checkout")
-	}
-	if rel := cmd.GetWorkdir().GetRelativePath(); rel != "" {
-		// 01e: the agent rejects "..", it never clamps it into the
-		// checkout: "../secret" must not quietly become "<repo>/secret".
-		// The raw path is checked: cleaning first would resolve the
-		// traversal away before it is seen.
-		for _, el := range strings.Split(rel, "/") {
-			if el == ".." {
-				return refuse(typev1.Status_STATUS_REJECTED_BY_POLICY, typev1.ReasonCode_REASON_CODE_REPO_ROOT_NOT_ALLOWED,
-					"the work path climbs out of its checkout")
-			}
-		}
-		dir = filepath.Join(dir, filepath.Clean("/"+rel))
-	}
-	if !e.underRoots(dir) {
-		return refuse(typev1.Status_STATUS_REJECTED_BY_POLICY, typev1.ReasonCode_REASON_CODE_REPO_ROOT_NOT_ALLOWED,
-			"the workdir is under no allowed repo root")
+	dir, bad := e.resolveDir(cmd.GetWorkdir())
+	if bad != nil {
+		return bad
 	}
 
 	found, err := e.hasSession(ctx, name)

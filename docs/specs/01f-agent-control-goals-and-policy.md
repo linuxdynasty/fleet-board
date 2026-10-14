@@ -33,7 +33,13 @@ All pass local policy, carry a `command_id`, and are idempotent except F3.
   sessions without a work item, the name the developer typed. The template is
   configurable per machine or group. Fleet turns off `automatic-rename` for its
   own windows only; the developer's windows are untouched.
-- **F2 Ensure window:** same, for a window in a session.
+- **F2 Ensure window:** same, for a window in a session: the target
+  session by fleet name, hub session id or tmux id plus server start id; a
+  missing session reads `SESSION_NOT_FOUND` (F2 never creates sessions);
+  past the per-session window cap a create reads `MAX_WINDOWS_REACHED`.
+  Landed in slices like F1: login shells first (`internal/agent/control`,
+  issue #67); the harness start and resume wait for the adapter start
+  surface.
 - **F3 Send keys:** literal text plus named keys, rate-limited, each with a
   purpose that decides the gate (02h). A prompt answer carries the `prompt_id`
   from E6; if that prompt is gone the agent refuses with `prompt_gone`. Not

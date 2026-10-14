@@ -68,3 +68,45 @@ func (h sessionHandler) Run(ctx context.Context, r exec.Request) *agentv1.Comman
 func (h sessionHandler) Resume(ctx context.Context, r exec.Request) *agentv1.CommandResult {
 	return h.Run(ctx, r)
 }
+
+// windowHandler is the exec.Handler for EnsureWindow. The wiring row
+// registers one per server the agent serves, next to the session handler.
+type windowHandler struct {
+	e *Ensurer
+}
+
+// WindowHandler returns the Ensurer as the executor's Handler for
+// EnsureWindow.
+func (e *Ensurer) WindowHandler() exec.Handler { return windowHandler{e: e} }
+
+// Kind is the Command.kind arm's message name.
+func (h windowHandler) Kind() string { return "EnsureWindow" }
+
+// Capabilities are advertised in Hello while the handler is registered.
+func (h windowHandler) Capabilities() []*typev1.Capability {
+	return capabilitiesFor(h.e.kind)
+}
+
+// Class re-runs the command from the start: EnsureWindow is declarative,
+// and a replayed command_id that found its window returns it with
+// created=false.
+func (h windowHandler) Class(*agentv1.Command) exec.Class { return exec.RepeatSafe }
+
+// Run does the command and returns its result. The executor sets the id,
+// the times and the trace, and scrubs the message.
+func (h windowHandler) Run(ctx context.Context, r exec.Request) *agentv1.CommandResult {
+	cmd, ok := r.Command.GetKind().(*agentv1.Command_EnsureWindow)
+	if !ok || cmd.EnsureWindow == nil {
+		return &agentv1.CommandResult{
+			Status:  typev1.Status_STATUS_FAILED,
+			Reason:  typev1.ReasonCode_REASON_CODE_INTERNAL,
+			Message: "control: EnsureWindow handler got another kind",
+		}
+	}
+	return h.e.EnsureWindow(ctx, cmd.EnsureWindow)
+}
+
+// Resume re-runs from the start: there are no steps to continue from.
+func (h windowHandler) Resume(ctx context.Context, r exec.Request) *agentv1.CommandResult {
+	return h.Run(ctx, r)
+}
