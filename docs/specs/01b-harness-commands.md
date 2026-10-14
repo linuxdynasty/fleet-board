@@ -156,7 +156,7 @@ no tmux pane and is out of scope.
   unknown, never empty. A screen with no prompt and no trust box fails
   with no reading. `cursor-agent status` ("Logged in as") and `about`
   ("User Email") yield the signed-in email; anything without either
-  marker fails with no reading. An `Enabled` On-Demand cell parses to `ON`
+  marker fails with no reading. An Enabled On-Demand cell parses to `ON`
   billing, and a dialog with no On-Demand row parses to `UNKNOWN`; pacing
   excludes both from auto-dispatch (03b step 6). No live on-state dialog
   has been captured yet (open probe 5 above), so the on-case is pinned by
