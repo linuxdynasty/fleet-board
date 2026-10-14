@@ -8,11 +8,21 @@ import (
 	"github.com/linuxdynasty/fleet-board/internal/agent/exec"
 )
 
-// capabilityF1 is the wire name of the [CAP F1] capability the handler
-// advertises in Hello: the capability id lowercased, since the connection
-// loop drops names outside [a-z0-9._-]. A Command whose requires names it
-// at this version or below is supported once this handler is registered.
-var capabilityF1 = &typev1.Capability{Name: "f1", Version: 1}
+// capabilitiesFor is the [CAP F1] capability set the handler advertises in
+// Hello (02e "Command kinds and capabilities"): tmux.control plus the
+// server-specific one, so a Command whose requires names either at this
+// version or below is supported once this handler is registered. The probe
+// server has no specific name in 02e, so it advertises tmux.control alone.
+func capabilitiesFor(kind typev1.TmuxServerKind) []*typev1.Capability {
+	caps := []*typev1.Capability{{Name: "tmux.control", Version: 1}}
+	switch kind {
+	case typev1.TmuxServerKind_TMUX_SERVER_KIND_DEFAULT:
+		caps = append(caps, &typev1.Capability{Name: "tmux.default_server.control", Version: 1})
+	case typev1.TmuxServerKind_TMUX_SERVER_KIND_FLEET:
+		caps = append(caps, &typev1.Capability{Name: "tmux.fleet_server", Version: 1})
+	}
+	return caps
+}
 
 // sessionHandler is the exec.Handler for EnsureSession. The wiring row
 // registers one per server the agent serves.
@@ -28,7 +38,7 @@ func (h sessionHandler) Kind() string { return "EnsureSession" }
 
 // Capabilities are advertised in Hello while the handler is registered.
 func (h sessionHandler) Capabilities() []*typev1.Capability {
-	return []*typev1.Capability{capabilityF1}
+	return capabilitiesFor(h.e.kind)
 }
 
 // Class re-runs the command from the start: EnsureSession is declarative,

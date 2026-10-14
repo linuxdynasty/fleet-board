@@ -77,8 +77,17 @@ func TestHandlerContract(t *testing.T) {
 		t.Fatalf("Kind = %q, want EnsureSession (F1)", h.Kind())
 	}
 	caps := h.Capabilities()
-	if len(caps) != 1 || caps[0].GetName() != "f1" || caps[0].GetVersion() != 1 {
-		t.Fatalf("Capabilities = %v, want [{f1 1}] for F1", caps)
+	// 02e "Command kinds and capabilities": tmux.control plus the
+	// server-specific one. F1 appears here as a whole word for the
+	// capability report.
+	want := map[string]uint32{"tmux.control": 1, "tmux.default_server.control": 1}
+	if len(caps) != len(want) {
+		t.Fatalf("Capabilities = %v, want %v for F1", caps, want)
+	}
+	for _, c := range caps {
+		if want[c.GetName()] != c.GetVersion() || c.GetVersion() != 1 {
+			t.Fatalf("Capabilities = %v, want %v for F1", caps, want)
+		}
 	}
 	cmd := &agentv1.Command{Kind: &agentv1.Command_EnsureSession{EnsureSession: &agentv1.EnsureSession{}}}
 	if got := h.Class(cmd); got != exec.RepeatSafe {
@@ -170,6 +179,7 @@ func TestEnsureCreatesAndReuses(t *testing.T) {
 			create := ensureCmd("fleet-one")
 			create.SessionId = &typev1.SessionId{Value: "sess-1"}
 			create.OwnerPrincipal = &typev1.Principal{Id: &typev1.PrincipalId{Value: "owner-1"}}
+			create.GoalId = &typev1.GoalId{Value: "goal-1"}
 			res := e.EnsureSession(ctx, create)
 			if res.GetStatus() != typev1.Status_STATUS_OK {
 				t.Fatalf("create status/reason = %v/%v (%s)", res.GetStatus(), res.GetReason(), res.GetMessage())
@@ -186,18 +196,29 @@ func TestEnsureCreatesAndReuses(t *testing.T) {
 				t.Fatalf("pane key = %v, want server/default, a pane id and a start id", key)
 			}
 			// The tags the observer reads: environment on the session and
-			// the @fleet_* session options.
+			// the @fleet_* session options, including the first pane's
+			// key and the goal id.
+			paneKey := "default/" + key.GetServerStartId() + "/" + key.GetPaneId()
 			for _, tc := range []struct {
 				args []string
 				want string
 			}{
 				{[]string{"show-environment", "-t", "fleet-one", "FLEET_SESSION_ID"}, "FLEET_SESSION_ID=sess-1\n"},
+				{[]string{"show-environment", "-t", "fleet-one", "FLEET_PANE_KEY"}, "FLEET_PANE_KEY=" + paneKey + "\n"},
 				{[]string{"show-options", "-v", "-t", "fleet-one", "@fleet_session_id"}, "sess-1\n"},
 				{[]string{"show-options", "-v", "-t", "fleet-one", "@fleet_owner"}, "owner-1\n"},
+				{[]string{"show-options", "-v", "-t", "fleet-one", "@fleet_pane_key"}, paneKey + "\n"},
+				{[]string{"show-options", "-v", "-t", "fleet-one", "@fleet_goal_id"}, "goal-1\n"},
 			} {
 				if got := srv.Run(t, tc.args...); got != tc.want {
 					t.Fatalf("%v = %q, want %q", tc.args, got, tc.want)
 				}
+			}
+			if got.GetSession().GetSessionId().GetValue() != "sess-1" {
+				t.Fatalf("reported session id = %v, want the stored tag sess-1", got.GetSession().GetSessionId())
+			}
+			if !got.GetSession().GetStartedByFleet() {
+				t.Fatal("created tagged session reports started_by_fleet=false")
 			}
 			listed := srv.Run(t, "list-sessions", "-F", "#{session_name}")
 			if !strings.Contains(listed, "fleet-one") {
@@ -222,6 +243,132 @@ func TestEnsureCreatesAndReuses(t *testing.T) {
 			}
 			if reused.GetEnsureSession().GetPane().GetServerStartId() != key.GetServerStartId() {
 				t.Fatalf("reuse start id changed across calls")
+			}
+		})
+	}
+}
+
+// TestEnsureTraversalRefused pins the 01e rule: a ".." element in the work
+// path is refused, never clamped into the checkout. Roots are "/" here so
+// only the traversal rule can refuse: the clamped path would be allowed on
+// every machine (on macOS an unresolved symlink can otherwise refuse first
+// and hide a missing check).
+func TestEnsureTraversalRefused(t *testing.T) {
+	t.Parallel()
+	for _, rel := range []string{"../secret", "sub/../../secret", ".."} {
+		t.Run(rel, func(t *testing.T) {
+			t.Parallel()
+			o := testOptions()
+			o.Roots = func() []string { return []string{"/"} }
+			o.ResolveWorkdir = func(w *typev1.Workdir) (string, error) { return "/tmp/fleet-control-repo", nil }
+			e, err := New(o)
+			if err != nil {
+				t.Fatal(err)
+			}
+			cmd := ensureCmd("fleet-trav")
+			cmd.Workdir = &typev1.Workdir{RelativePath: rel}
+			res := e.EnsureSession(t.Context(), cmd)
+			if res.GetStatus() != typev1.Status_STATUS_REJECTED_BY_POLICY || res.GetReason() != typev1.ReasonCode_REASON_CODE_REPO_ROOT_NOT_ALLOWED {
+				t.Fatalf("status/reason = %v/%v (%s), want REJECTED_BY_POLICY/REPO_ROOT_NOT_ALLOWED",
+					res.GetStatus(), res.GetReason(), res.GetMessage())
+			}
+		})
+	}
+}
+
+// TestEnsureReuseReportsStoredTags attaches to a session the fleet did not
+// create and reports what its tags say: no fleet id, not fleet-owned. The
+// result never claims ownership the tags do not show.
+func TestEnsureReuseReportsStoredTags(t *testing.T) {
+	t.Parallel()
+	for _, b := range tmuxtest.Binaries() {
+		t.Run(b.Name, func(t *testing.T) {
+			t.Parallel()
+			o, _ := liveOptions(t, b, []string{"/tmp"})
+			e, err := New(o)
+			if err != nil {
+				t.Fatal(err)
+			}
+			reuse := ensureCmd("control-base")
+			reuse.Reuse = true
+			res := e.EnsureSession(t.Context(), reuse)
+			if res.GetStatus() != typev1.Status_STATUS_OK {
+				t.Fatalf("reuse status/reason = %v/%v (%s)", res.GetStatus(), res.GetReason(), res.GetMessage())
+			}
+			got := res.GetEnsureSession()
+			if got.GetCreated() {
+				t.Fatal("reuse reported created=true")
+			}
+			if got.GetSession().GetStartedByFleet() {
+				t.Fatal("reused untagged session reports started_by_fleet=true")
+			}
+			if got.GetSession().GetSessionId() != nil {
+				t.Fatalf("reused untagged session reports session id %v", got.GetSession().GetSessionId())
+			}
+		})
+	}
+}
+
+// TestEnsureRetryAfterCreate is the crash window: the first call created the
+// session but its result never reached the log, so the executor re-runs the
+// RepeatSafe handler with reuse=false. The stored session tag matches the
+// retried session id, so the retry completes OK instead of failing on a
+// session that is already the command's own effect.
+func TestEnsureRetryAfterCreate(t *testing.T) {
+	t.Parallel()
+	for _, b := range tmuxtest.Binaries() {
+		t.Run(b.Name, func(t *testing.T) {
+			t.Parallel()
+			o, _ := liveOptions(t, b, []string{"/tmp"})
+			e, err := New(o)
+			if err != nil {
+				t.Fatal(err)
+			}
+			ctx := t.Context()
+			first := ensureCmd("fleet-retry")
+			first.SessionId = &typev1.SessionId{Value: "sess-retry"}
+			if res := e.EnsureSession(ctx, first); res.GetStatus() != typev1.Status_STATUS_OK {
+				t.Fatalf("create status/reason = %v/%v (%s)", res.GetStatus(), res.GetReason(), res.GetMessage())
+			}
+			retry := ensureCmd("fleet-retry")
+			retry.SessionId = &typev1.SessionId{Value: "sess-retry"}
+			res := e.EnsureSession(ctx, retry)
+			if res.GetStatus() != typev1.Status_STATUS_OK || res.GetEnsureSession().GetCreated() {
+				t.Fatalf("retry status/created = %v/%v, want OK with created=false",
+					res.GetStatus(), res.GetEnsureSession().GetCreated())
+			}
+
+			// Another session id on the same name is a real conflict.
+			clash := ensureCmd("fleet-retry")
+			clash.SessionId = &typev1.SessionId{Value: "sess-other"}
+			res = e.EnsureSession(ctx, clash)
+			if res.GetStatus() != typev1.Status_STATUS_FAILED || res.GetReason() != typev1.ReasonCode_REASON_CODE_INVALID_ARGUMENT {
+				t.Fatalf("clash status/reason = %v/%v, want FAILED/INVALID_ARGUMENT",
+					res.GetStatus(), res.GetReason())
+			}
+		})
+	}
+}
+
+// TestEnsureStartsAMissingServer: with the start allowed, the first ensure
+// on a dead socket creates the session (new-session starts the server).
+// Without it, the same call reads TMUX_SERVER_DOWN.
+func TestEnsureStartsAMissingServer(t *testing.T) {
+	t.Parallel()
+	for _, b := range tmuxtest.Binaries() {
+		t.Run(b.Name, func(t *testing.T) {
+			t.Parallel()
+			o, srv := liveOptions(t, b, []string{"/tmp"})
+			srv.Kill(t)
+			o.StartServer = func() bool { return true }
+			e, err := New(o)
+			if err != nil {
+				t.Fatal(err)
+			}
+			res := e.EnsureSession(t.Context(), ensureCmd("fleet-fresh"))
+			if res.GetStatus() != typev1.Status_STATUS_OK || !res.GetEnsureSession().GetCreated() {
+				t.Fatalf("start status/created = %v/%v (%s), want OK created=true",
+					res.GetStatus(), res.GetEnsureSession().GetCreated(), res.GetMessage())
 			}
 		})
 	}

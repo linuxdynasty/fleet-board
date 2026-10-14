@@ -22,7 +22,11 @@ All pass local policy, carry a `command_id`, and are idempotent except F3.
   slices: login shells first (`internal/agent/control`, issue #67); the
   harness start and resume wait for the adapter start surface. A session for
   another server kind is refused, and with no allowed repo roots configured
-  every ensure is refused.
+  every ensure is refused. A `..` in the work path is refused outright. The
+  result reports the session's stored tags, so a retry that finds its own
+  tag completes OK (F1 is idempotent) while reuse of a developer session
+  reports it as the developer's. A missing server reads `TMUX_SERVER_DOWN`
+  unless starting it is allowed, in which case `new-session` starts it.
 - **Window naming.** Fleet-created windows are named after the harness and the
   work: default template `{harness} {work}`, where `{work}` is the work item's
   short form (`muse eshu#7398`, `codex eshu!12`, `claude PROJ-123`); for

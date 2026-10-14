@@ -44,6 +44,11 @@ type Options struct {
 	// Draining reports the drain state (plan row 24 owns it). Nil means
 	// never draining.
 	Draining func() bool
+	// StartServer allows creating the tmux server when the socket has
+	// none: new-session starts it implicitly (03d failure table). Nil
+	// means never: a missing server reads TMUX_SERVER_DOWN. The wiring
+	// row allows it from the local default_server policy.
+	StartServer func() bool
 	// ResolveWorkdir maps the command's Workdir (a repo plus a path under
 	// it) to a local checkout path. The repo inventory (plan row 9) owns
 	// the production resolver; this slice takes the seam.
@@ -63,6 +68,7 @@ type Ensurer struct {
 	kind    typev1.TmuxServerKind
 	roots   func() []string
 	drain   func() bool
+	start   func() bool
 	workdir func(*typev1.Workdir) (string, error)
 	now     func() time.Time
 }
@@ -101,12 +107,16 @@ func New(o Options) (*Ensurer, error) {
 		roots:   o.Roots,
 		workdir: o.ResolveWorkdir,
 		now:     o.Now,
+		start:   o.StartServer,
 	}
 	if e.tmux == "" {
 		e.tmux = "tmux"
 	}
 	if e.drain = o.Draining; e.drain == nil {
 		e.drain = func() bool { return false }
+	}
+	if e.start == nil {
+		e.start = func() bool { return false }
 	}
 	if e.now == nil {
 		e.now = time.Now
@@ -183,6 +193,16 @@ func (e *Ensurer) EnsureSession(ctx context.Context, cmd *agentv1.EnsureSession)
 			"the workdir resolves to no local checkout")
 	}
 	if rel := cmd.GetWorkdir().GetRelativePath(); rel != "" {
+		// 01e: the agent rejects "..", it never clamps it into the
+		// checkout: "../secret" must not quietly become "<repo>/secret".
+		// The raw path is checked: cleaning first would resolve the
+		// traversal away before it is seen.
+		for _, el := range strings.Split(rel, "/") {
+			if el == ".." {
+				return refuse(typev1.Status_STATUS_REJECTED_BY_POLICY, typev1.ReasonCode_REASON_CODE_REPO_ROOT_NOT_ALLOWED,
+					"the work path climbs out of its checkout")
+			}
+		}
 		dir = filepath.Join(dir, filepath.Clean("/"+rel))
 	}
 	if !e.underRoots(dir) {
@@ -192,14 +212,13 @@ func (e *Ensurer) EnsureSession(ctx context.Context, cmd *agentv1.EnsureSession)
 
 	found, err := e.hasSession(ctx, name)
 	if err != nil {
-		return e.down(err)
-	}
-	if found {
-		if !cmd.GetReuse() {
-			return refuse(typev1.Status_STATUS_FAILED, typev1.ReasonCode_REASON_CODE_INVALID_ARGUMENT,
-				"session "+name+" exists and reuse is false")
+		if !isDown(err.Error()) || !e.start() {
+			return e.down(err)
 		}
-		return e.describe(ctx, describeArgs{name: name, sessionID: sessionID, ownerID: ownerID, owner: owner, created: false})
+		// The server is missing and starting it is allowed:
+		// new-session below starts it implicitly.
+	} else if found {
+		return e.existing(ctx, name, cmd.GetReuse(), sessionID)
 	}
 	if err := e.create(ctx, createArgs{
 		name: name, dir: dir, window: cmd.GetWindowName(),
@@ -208,21 +227,38 @@ func (e *Ensurer) EnsureSession(ctx context.Context, cmd *agentv1.EnsureSession)
 		if isDuplicate(err) {
 			// Lost the race with another creator: the session is
 			// there now, so take the exists path.
-			found, derr := e.hasSession(ctx, name)
-			if derr != nil {
+			if found, derr := e.hasSession(ctx, name); derr != nil {
 				return e.down(derr)
-			}
-			if found {
-				if !cmd.GetReuse() {
-					return refuse(typev1.Status_STATUS_FAILED, typev1.ReasonCode_REASON_CODE_INVALID_ARGUMENT,
-						"session "+name+" exists and reuse is false")
-				}
-				return e.describe(ctx, describeArgs{name: name, sessionID: sessionID, ownerID: ownerID, owner: owner, created: false})
+			} else if found {
+				return e.existing(ctx, name, cmd.GetReuse(), sessionID)
 			}
 		}
 		return e.down(err)
 	}
-	return e.describe(ctx, describeArgs{name: name, sessionID: sessionID, ownerID: ownerID, owner: owner, created: true})
+	return e.describe(ctx, name, true)
+}
+
+// existing answers for a session that is already there. With reuse it
+// attaches; without, only a stored session tag matching the requested
+// session id completes the call: that is this command's own effect seen
+// again after its result was lost (F1 is idempotent, 01f), while any other
+// session under the name stays a conflict.
+func (e *Ensurer) existing(ctx context.Context, name string, reuse bool, sessionID string) *agentv1.CommandResult {
+	if !reuse {
+		if sessionID == "" {
+			return refuse(typev1.Status_STATUS_FAILED, typev1.ReasonCode_REASON_CODE_INVALID_ARGUMENT,
+				"session "+name+" exists and reuse is false")
+		}
+		stored, err := e.sessionTag(ctx, name, "@fleet_session_id")
+		if err != nil {
+			return e.down(err)
+		}
+		if stored != sessionID {
+			return refuse(typev1.Status_STATUS_FAILED, typev1.ReasonCode_REASON_CODE_INVALID_ARGUMENT,
+				"session "+name+" exists and reuse is false")
+		}
+	}
+	return e.describe(ctx, name, false)
 }
 
 // underRoots reports whether dir sits under a configured root. Both sides
@@ -242,7 +278,10 @@ func (e *Ensurer) underRoots(dir string) bool {
 		if err != nil {
 			base = filepath.Clean(r)
 		}
-		if clean == base || strings.HasPrefix(clean, base+string(filepath.Separator)) {
+		// A root of "/" matches everything: appending another
+		// separator would look for "//".
+		edge := strings.TrimSuffix(base, string(filepath.Separator)) + string(filepath.Separator)
+		if clean == base || strings.HasPrefix(clean, edge) {
 			return true
 		}
 	}
@@ -277,20 +316,13 @@ func isDuplicate(err error) bool {
 	return strings.Contains(err.Error(), "duplicate session")
 }
 
-// describeArgs are the fields an OK result reports.
-type describeArgs struct {
-	name      string
-	sessionID string
-	ownerID   string
-	owner     *typev1.Principal
-	created   bool
-}
-
 // describe builds the OK result for the named session: its tmux id, the
-// first pane's key, and whether this call created it. A session with no
-// panes left reads SESSION_NOT_FOUND: it went away between the calls.
-func (e *Ensurer) describe(ctx context.Context, a describeArgs) *agentv1.CommandResult {
-	out, err := e.tmuxCall(ctx, "list-panes", "-t", a.name, "-F", "#{session_id} #{pane_id}")
+// first pane's key, and whether this call created it. Ownership and ids
+// come from the session's stored tags, never from the request: attaching
+// to a developer session reports it as the developer's, and a session
+// with no panes left reads SESSION_NOT_FOUND.
+func (e *Ensurer) describe(ctx context.Context, name string, created bool) *agentv1.CommandResult {
+	out, err := e.tmuxCall(ctx, "list-panes", "-t", name, "-F", "#{session_id} #{pane_id}")
 	if err != nil {
 		return e.down(err)
 	}
@@ -298,36 +330,51 @@ func (e *Ensurer) describe(ctx context.Context, a describeArgs) *agentv1.Command
 	f := strings.Fields(lines[0])
 	if len(f) < 2 {
 		return refuse(typev1.Status_STATUS_FAILED, typev1.ReasonCode_REASON_CODE_SESSION_NOT_FOUND,
-			"session "+a.name+" went away")
+			"session "+name+" went away")
 	}
 	start, err := e.startID(ctx)
 	if err != nil {
 		return e.down(err)
 	}
+	key := e.server + "/" + start + "/" + f[1]
+	sessionID, err := e.sessionTag(ctx, name, "@fleet_session_id")
+	if err != nil {
+		return e.down(err)
+	}
+	ownerID, err := e.sessionTag(ctx, name, "@fleet_owner")
+	if err != nil {
+		return e.down(err)
+	}
+	paneKey, err := e.sessionTag(ctx, name, "@fleet_pane_key")
+	if err != nil {
+		return e.down(err)
+	}
 	session := &agentv1.TmuxSession{
 		TmuxId:          f[0],
-		Name:            cap256(a.name),
-		StartedByFleet:  true,
+		Name:            cap256(name),
+		StartedByFleet:  paneKey == key,
 		CreateTime:      timestamppb.New(e.now()),
 		AttachedClients: 0,
 	}
-	if a.sessionID != "" {
-		session.SessionId = &typev1.SessionId{Value: a.sessionID}
+	// The observer reports a tag only when it has its id's shape; the
+	// result matches that view, so the two never disagree.
+	if idRE.MatchString(sessionID) {
+		session.SessionId = &typev1.SessionId{Value: sessionID}
 	}
-	if a.owner != nil {
-		session.OwnerPrincipal = a.owner
+	if principalRE.MatchString(ownerID) {
+		session.OwnerPrincipal = &typev1.Principal{Id: &typev1.PrincipalId{Value: ownerID}}
 	}
 	verb := "reused session "
-	if a.created {
+	if created {
 		verb = "created session "
 	}
 	return &agentv1.CommandResult{
 		Status:  typev1.Status_STATUS_OK,
 		Reason:  typev1.ReasonCode_REASON_CODE_UNSPECIFIED,
-		Message: verb + a.name,
+		Message: verb + name,
 		Detail: &agentv1.CommandResult_EnsureSession{EnsureSession: &agentv1.EnsureSessionResult{
 			Session: session,
-			Created: a.created,
+			Created: created,
 			Pane: &typev1.PaneKey{
 				Server:        e.server,
 				ServerStartId: start,

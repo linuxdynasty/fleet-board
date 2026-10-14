@@ -134,11 +134,32 @@ func (e *Ensurer) tag(ctx context.Context, name, paneID, sessionID, owner, goalI
 	if owner != "" {
 		set("set-option", "-t", name, "@fleet_owner", owner)
 	}
+	// The pane key goes to the session option the observer reads (it
+	// matches only the pane it names) as well as the environment the
+	// first pane's processes read.
+	set("set-option", "-t", name, "@fleet_pane_key", key)
+	if goalID != "" {
+		set("set-option", "-t", name, "@fleet_goal_id", goalID)
+	}
 	set("set-environment", "-t", name, "FLEET_PANE_KEY", key)
 	if len(errs) > 0 {
 		return errors.New(strings.Join(errs, "; "))
 	}
 	return nil
+}
+
+// sessionTag reads one @fleet_* session option. An option that was never
+// set reads empty: show-options refuses it, which is not a failure. A
+// server that answers nothing is.
+func (e *Ensurer) sessionTag(ctx context.Context, name, option string) (string, error) {
+	out, err := e.tmuxCall(ctx, "show-options", "-v", "-t", name, option)
+	if err != nil {
+		if isDown(err.Error()) {
+			return "", err
+		}
+		return "", nil
+	}
+	return strings.TrimSpace(out), nil
 }
 
 // startID derives the PaneKey server start id from the server's pid and

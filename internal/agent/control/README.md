@@ -17,7 +17,8 @@ e, err := control.New(control.Options{
 })
 res := e.EnsureSession(ctx, cmd.GetEnsureSession())
 // Handler: h := e.Handler() satisfies exec.Handler (Kind EnsureSession,
-// capability f1 v1, RepeatSafe). The wiring row registers it.
+// tmux.control plus the server-specific capability, RepeatSafe). The
+// wiring row registers it.
 ```
 
 ## Order of checks
@@ -28,11 +29,21 @@ res := e.EnsureSession(ctx, cmd.GetEnsureSession())
 2. **Drain**: a harness start while draining is `DRAINING`; a login shell
    runs on (01f M4).
 3. **Workdir**: resolves to a checkout under an allowed repo root, else
-   `CHECKOUT_MISSING` or `REPO_ROOT_NOT_ALLOWED`. No roots configured
+   `CHECKOUT_MISSING` or `REPO_ROOT_NOT_ALLOWED`. A `..` element in the
+   relative path is refused outright, never clamped. No roots configured
    refuses everything.
-4. **tmux**: `has-session` decides create vs reuse; a missing server reads
-   `TMUX_SERVER_DOWN`. A lost create race (`duplicate session`) takes the
-   exists path.
+4. **tmux**: `has-session` decides create vs reuse. A missing server reads
+   `TMUX_SERVER_DOWN`, unless starting it is allowed: `new-session` then
+   starts it implicitly (03d). A lost create race (`duplicate session`)
+   takes the exists path.
+
+## Results report stored tags
+
+The OK result reads the session's `@fleet_*` options back: ownership and
+ids come from tmux, never from the request, so attaching to a developer
+session reports it as the developer's. A retry that finds the session tag
+it asked for completes OK (F1 is idempotent); any other session under the
+name with `reuse` unset stays a conflict.
 
 ## Tagging
 
