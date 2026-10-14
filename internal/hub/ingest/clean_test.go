@@ -101,6 +101,41 @@ func TestCleanCutsOnACharacterAndDropsFormatCharacters(t *testing.T) {
 }
 
 // A Snapshot without facts, resources or policy is left alone.
+// Goal lines are agent-written free text: cut to their caps, control
+// characters dropped, and the two long lines scrubbed before they are
+// stored (row 5's scrub rule).
+func TestCleanCleansGoalStates(t *testing.T) {
+	t.Parallel()
+	token := "ghp_" + strings.Repeat("A", 36)
+	snap := &agentv1.Snapshot{Goals: []*agentv1.GoalState{{
+		FirstLine:    "Working " + token + " \x00" + strings.Repeat("x", 5000),
+		ConsentLine:  "CONSENT: push",
+		Owner:        "ann\x7f" + strings.Repeat("o", 300),
+		Action:       "decide",
+		HeadCommit:   "abc123",
+		Branch:       "fleet/12",
+		GoalFile:     ".claude/active-goal.s1",
+		WorktreePath: "/repos/a",
+	}}}
+	c := ingest.Clean(snap)
+	g := snap.GetGoals()[0]
+	if strings.Contains(g.GetFirstLine(), token) || strings.Contains(g.GetFirstLine(), "\x00") {
+		t.Errorf("first line keeps a secret or a control byte: %q", g.GetFirstLine()[:64])
+	}
+	if len(g.GetFirstLine()) > 4096 {
+		t.Errorf("first line %d bytes, want at most 4096", len(g.GetFirstLine()))
+	}
+	if len(g.GetOwner()) > 256 || strings.Contains(g.GetOwner(), "\x7f") {
+		t.Errorf("owner %q, want 256 bytes without controls", g.GetOwner())
+	}
+	if g.GetConsentLine() != "CONSENT: push" || g.GetBranch() != "fleet/12" || g.GetHeadCommit() != "abc123" {
+		t.Errorf("consent %q branch %q head %q", g.GetConsentLine(), g.GetBranch(), g.GetHeadCommit())
+	}
+	if c.Scrubbed == 0 || c.Cut == 0 {
+		t.Errorf("Clean = %+v, want the secret scrubbed and the long lines cut", c)
+	}
+}
+
 func TestCleanOfAnEmptySnapshot(t *testing.T) {
 	t.Parallel()
 	if got := ingest.Clean(&agentv1.Snapshot{}); got != (ingest.Cleaned{}) {

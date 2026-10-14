@@ -103,6 +103,10 @@ func Migrations() []store.Migration {
 		Version: 12,
 		Name:    "approvals",
 		SQL:     approvalsSQL,
+	}, {
+		Version: 13,
+		Name:    "goals_observed",
+		SQL:     goalsSQL,
 	}}
 }
 

@@ -292,8 +292,8 @@ func TestOpenMigratesAStoreFromTheCommandExpirySchema(t *testing.T) {
 		t.Fatal(err)
 	}
 	s = open(t, dir)
-	if got := s.SchemaVersion(); got != 12 {
-		t.Errorf("schema version %d, want 12", got)
+	if got := s.SchemaVersion(); got != 13 {
+		t.Errorf("schema version %d, want 13", got)
 	}
 	if err := s.Close(); err != nil {
 		t.Fatal(err)

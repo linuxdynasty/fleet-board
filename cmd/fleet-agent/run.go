@@ -135,15 +135,24 @@ func runAgent(ctx context.Context, dir, cfgDir, version, boot string, tel *telem
 	if err != nil {
 		return failed("tmux", err)
 	}
+	// The goals-and-repos observer (row 9) reads the pane checkouts and
+	// attributes the goal files: its GoalState events travel on the
+	// stream, its repos and goals in every Snapshot.
+	roots := func() []string { return pol.mgr.Policy().AllowedRepoRoots }
+	observed, err := startGoals(tel, id.MachineID, db, em, tmx, roots)
+	if err != nil {
+		return failed("goals", err)
+	}
+	wg.Go(func() { observed.run(wctx) })
 	loop, err = conn.NewLoop(ctx, conn.LoopOptions{
 		Dir: dir, Identity: id, DB: db, Version: version, BootID: boot,
 		Telemetry: tel, Events: netEvents, PushOff: nw.PushOff, Discover: discover,
-		Snapshot: chainSnapshot(snapshot, pol.mgr.Snapshot, tmx.snapshot), Heartbeat: heartbeat, Emitter: em,
+		Snapshot: chainSnapshot(snapshot, pol.mgr.Snapshot, tmx.snapshot, observed.snapshot), Heartbeat: heartbeat, Emitter: em,
 	})
 	if err != nil {
 		return failed("loop", err)
 	}
-	defer startStatusFile(dir, tel, loop, pol.mgr.WatchOff, tmx.watch)()
+	defer startStatusFile(dir, tel, loop, pol.mgr.WatchOff, tmx.watch, observed.ambiguous)()
 	if err := loop.Run(ctx); err != nil {
 		return commandError{err}
 	}

@@ -23,9 +23,9 @@ import (
 //
 // A run that got this far has loaded an identity, so it has no failed enroll
 // to show: it removes enroll.json.
-func startStatusFile(dir string, tel *telemetry.Telemetry, loop *conn.Loop, watchOff func() bool, tmuxWatch func() (string, bool)) func() {
+func startStatusFile(dir string, tel *telemetry.Telemetry, loop *conn.Loop, watchOff func() bool, tmuxWatch func() (string, bool), observed func() []string) func() {
 	_ = statusfile.RecordEnroll(tel, dir, time.Now(), nil)
-	w, err := statusfile.Start(statusfile.Options{Dir: dir, Source: loop.Status, Changed: loop.StatusChanged(), PolicyWatchOff: watchOff, TmuxWatch: tmuxWatch, Telemetry: tel})
+	w, err := statusfile.Start(statusfile.Options{Dir: dir, Source: loop.Status, Changed: loop.StatusChanged(), PolicyWatchOff: watchOff, TmuxWatch: tmuxWatch, Observed: observed, Telemetry: tel})
 	if err != nil {
 		// Only the metric registration can fail here. The agent runs
 		// without a status file rather than not at all.

@@ -107,6 +107,23 @@ func failureList(s statusfile.Status) string {
 	return out
 }
 
+// twoPaneFoldersCheck lists the checkout folders holding two harness
+// panes (02h "Observed goals"): no goal is attributed there, so a goal
+// started by hand in one of them never shows. One pane per checkout, or
+// work in separate checkouts, fixes it.
+func twoPaneFoldersCheck(_ context.Context, e *Env) Outcome {
+	s, _, err := e.freshStatus()
+	if err != nil {
+		return noStatus(err)
+	}
+	if len(s.AmbiguousFolders) == 0 {
+		return ok("no folder holds two harness panes")
+	}
+	return warn("no goal is observed in "+strings.Join(s.AmbiguousFolders, ", ")+
+		": each holds two harness panes and the agent never guesses which one a goal file belongs to",
+		"keep one harness pane per checkout, or work in separate checkouts")
+}
+
 func snapshotSizeCheck(_ context.Context, e *Env) Outcome {
 	s, _, err := e.freshStatus()
 	if err != nil {

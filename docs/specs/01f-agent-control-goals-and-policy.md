@@ -163,7 +163,9 @@ All pass local policy, carry a `command_id`, and are idempotent except F3.
 
 - **M1** local audit log (`audit.log` in the state folder: the machine-side rows of the 02g audit table, closed fields, rotated like `agent.log`; the local `policy.safe_mode` row carries a reason code and the file hash, not the one-line error (that is in the snapshot and the log, and the hub writes its own row from it); [defaults](defaults.md)), **M2** OTEL, **M3** `doctor` (tmux, harness paths,
   mDNS, policy, cert expiry, hub reachability, clock skew, the probe folder's
-  trust per harness (C3), and on Linux whether `loginctl enable-linger` is on).
+  trust per harness (C3), folders holding two harness panes (row 9: no goal is
+  attributed there, so the check warns with the one-pane-per-checkout fix),
+  and on Linux whether `loginctl enable-linger` is on).
   Every fact about the running agent comes from the status file that
   `fleet-agent run` writes (plan row 6 lists the entries); every other check
   runs fresh when doctor runs. Doctor's hub check is a TLS handshake against

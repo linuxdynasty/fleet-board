@@ -168,6 +168,42 @@ func (c *Client) Capture(ctx context.Context, pane PaneID) (Capture, error) {
 	return Capture{Lines: r.Body, Truncated: r.Dropped > 0}, nil
 }
 
+// Location is a pane's working folder and pid: display-message reads both
+// at once, for the observed-goal tracker (02h) and pane reuse. The path is
+// the pane's own text and never logged whole.
+type Location struct {
+	Path string
+	PID  int32
+}
+
+// PaneLocation reads one pane's working folder and pid (display-message).
+// A dead or vanished pane is an error; the caller skips it.
+func (c *Client) PaneLocation(ctx context.Context, pane PaneID) (Location, error) {
+	if pane < 0 {
+		return Location{}, fmt.Errorf("tmux: location: %w", ErrBadReply)
+	}
+	r, err := c.run(ctx, "display-message -p -t "+pane.String()+" -F '#{pane_pid} #{pane_current_path}'", NoID)
+	if err != nil || len(r.Body) == 0 {
+		if err == nil {
+			err = ErrBadReply
+		}
+		return Location{}, err
+	}
+	pid, path, ok := strings.Cut(r.Body[0], " ")
+	if !ok {
+		return Location{}, fmt.Errorf("tmux: location: %w", ErrBadReply)
+	}
+	n, err := strconv.ParseInt(pid, 10, 32)
+	if err != nil || n <= 0 {
+		return Location{}, fmt.Errorf("tmux: location: %w", ErrBadReply)
+	}
+	// A path holding a newline arrives as more lines; they belong to it.
+	if rest := strings.Join(r.Body[1:], "\n"); rest != "" {
+		path += "\n" + rest
+	}
+	return Location{Path: path, PID: int32(n)}, nil
+}
+
 // NoStatus is Pane.DeadStatus when tmux has no exit status (a live pane).
 const NoStatus = -1
 

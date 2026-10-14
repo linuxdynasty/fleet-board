@@ -98,8 +98,8 @@ resumed or controlled by the fleet. The hub side is in
 **Attribution: the pane's folder and the newest goal file.** For each pane that
 runs a known harness and that no registry entry names:
 
-1. Take the pane's working folder (`TmuxPane.workdir`) and the git top-level
-   containing it, its **checkout** (a linked worktree is its own checkout). A pane
+1. Take the pane's working folder and harness pid in one `display-message` read (`PaneLocation`; a dead or vanished pane is skipped) and the git top-level
+   containing the folder, its **checkout** (a linked worktree is its own checkout). A pane
    outside every allowed root (03e) or outside a git checkout has no observed goal;
    the path never leaves the machine. (`allowed_repo_roots` is empty on a fresh
    agent until `fleet-agent enroll` or the owner sets it.)

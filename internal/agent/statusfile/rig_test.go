@@ -98,6 +98,9 @@ type rig struct {
 	watchOff atomic.Bool
 	// tmuxOff is Options.TmuxWatch's off answer (its folder is tmuxFolder).
 	tmuxOff atomic.Bool
+	// observed is Options.Observed's answer: the folders holding two
+	// harness panes.
+	observed atomic.Pointer[[]string]
 }
 
 // tmuxFolder is the socket folder the rig's TmuxWatch names.
@@ -139,10 +142,16 @@ func newRig(t *testing.T) (*rig, *lockedBuilder) {
 		},
 		PolicyWatchOff: r.watchOff.Load,
 		TmuxWatch:      func() (string, bool) { return tmuxFolder, r.tmuxOff.Load() },
-		clock:          r.clock,
-		Changed:        r.push,
-		afterWrite:     func(err error) { r.wrote <- err; r.gate() },
-		ops:            fileOps{rename: func(a, b string) error { return (*r.rename.Load())(a, b) }},
+		Observed: func() []string {
+			if p := r.observed.Load(); p != nil {
+				return *p
+			}
+			return nil
+		},
+		clock:      r.clock,
+		Changed:    r.push,
+		afterWrite: func(err error) { r.wrote <- err; r.gate() },
+		ops:        fileOps{rename: func(a, b string) error { return (*r.rename.Load())(a, b) }},
 	})
 	if err != nil {
 		t.Fatal(err)

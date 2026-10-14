@@ -141,6 +141,29 @@ func TestSnapshotSize(t *testing.T) {
 	})
 }
 
+func TestTwoPaneFolders(t *testing.T) {
+	t.Parallel()
+	t.Run("none is ok", func(t *testing.T) {
+		t.Parallel()
+		r := newRig(t)
+		r.writeStatus(time.Second, nil)
+		r.want("two_pane_folders", doctor.OK, "no folder")
+	})
+	t.Run("folders are listed", func(t *testing.T) {
+		t.Parallel()
+		r := newRig(t)
+		r.writeStatus(time.Second, func(s *statusfile.Status) {
+			s.AmbiguousFolders = []string{"/repos/a", "/repos/b"}
+		})
+		r.want("two_pane_folders", doctor.Warn, "/repos/a", "/repos/b", "one harness pane")
+	})
+	t.Run("no status file", func(t *testing.T) {
+		t.Parallel()
+		r := newRig(t)
+		r.want("two_pane_folders", doctor.Unknown, "status.json")
+	})
+}
+
 func TestClock(t *testing.T) {
 	t.Parallel()
 	offset := func(d time.Duration) func(*statusfile.Status) {

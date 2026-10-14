@@ -18,7 +18,9 @@ import (
 	"github.com/linuxdynasty/fleet-board/internal/hub/discovery"
 	"github.com/linuxdynasty/fleet-board/internal/hub/gateway"
 	"github.com/linuxdynasty/fleet-board/internal/hub/housekeeping"
+	"github.com/linuxdynasty/fleet-board/internal/hub/ingest"
 	"github.com/linuxdynasty/fleet-board/internal/hub/lock"
+	"github.com/linuxdynasty/fleet-board/internal/hub/observed"
 	"github.com/linuxdynasty/fleet-board/internal/hub/outbox"
 	"github.com/linuxdynasty/fleet-board/internal/hub/revocation"
 	"github.com/linuxdynasty/fleet-board/internal/hub/statedb"
@@ -376,8 +378,16 @@ func stopAll(ls []listener) error {
 // bind opens the agent, API and (when set) metrics listeners, in that
 // order, and returns the agent listener's server too.
 func bind(ctx context.Context, cfg *config.Config, opts Options, d hubDeps, s *session) ([]listener, *gateway.Server, error) {
+	// Row 9 stores the observed goals (03k): the snapshot and event
+	// appliers run in the stream's writer jobs.
+	now := time.Now
+	if opts.Now != nil {
+		now = opts.Now
+	}
 	agent, err := gateway.NewServer(gateway.ServerOptions{
 		Certs: d.certs, Store: d.st, Identity: d.id, Revoked: d.revoked, Telemetry: s.tel, Now: opts.Now,
+		Appliers:      []ingest.Applier{observed.Applier{Now: now}},
+		EventAppliers: []ingest.EventApplier{observed.Applier{Now: now}},
 	})
 	if err != nil {
 		return nil, nil, err

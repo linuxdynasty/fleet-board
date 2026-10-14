@@ -33,8 +33,38 @@ func Migrations() []store.Migration {
 		Version: 7,
 		Name:    "settings_held",
 		SQL:     settingsHeldSQL,
+	}, {
+		Version: 8,
+		Name:    "observed_episodes",
+		SQL:     observedEpisodesSQL,
 	}}
 }
+
+// observedEpisodesSQL is the observed-goal episodes (02h "Observed goals",
+// row 9): one row per (goal file, first-seen time), so an agent restart
+// keeps the agent-minted id and the hub's apply stays idempotent. A row
+// never changes except to end; ending keeps the row, so a file reused for
+// the next goal after DONE is a new row with a new id.
+const observedEpisodesSQL = `CREATE TABLE observed_episodes(
+	id TEXT PRIMARY KEY CHECK (id <> ''),
+	path TEXT NOT NULL CHECK (path <> ''),
+	first_seen_ns INTEGER NOT NULL CHECK (first_seen_ns > 0),
+	ended INTEGER NOT NULL DEFAULT 0 CHECK (ended IN (0, 1))
+) STRICT;
+CREATE INDEX observed_episodes_path ON observed_episodes(path);
+CREATE TRIGGER observed_episodes_kept BEFORE UPDATE OF id, path, first_seen_ns ON observed_episodes
+BEGIN
+	SELECT RAISE(ABORT, 'an observed episode is never renamed');
+END;
+CREATE TRIGGER observed_episodes_ended_once BEFORE UPDATE OF ended ON observed_episodes
+WHEN OLD.ended = 1 AND NEW.ended = 0
+BEGIN
+	SELECT RAISE(ABORT, 'an ended episode never reopens');
+END;
+CREATE TRIGGER observed_episodes_never_deleted BEFORE DELETE ON observed_episodes
+BEGIN
+	SELECT RAISE(ABORT, 'observed episodes are never deleted');
+END;`
 
 // settingsHeldSQL is the hub settings the agent holds (03e "Persistence":
 // settings {generation, values, effective} and the loaded policy hash,

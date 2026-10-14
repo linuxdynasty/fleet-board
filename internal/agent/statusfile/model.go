@@ -41,6 +41,10 @@ const TmuxWatchOff = "off"
 // maxFolderBytes bounds Status.TmuxFolder.
 const maxFolderBytes = 256
 
+// maxAmbiguous bounds Status.AmbiguousFolders: folders are checkouts, and
+// dozens already mean a broken roots setting.
+const maxAmbiguous = 32
+
 // The three results of an mDNS browse (ADR 0028 decision 3). They are
 // their own closed values, not err_kind classes.
 const (
@@ -98,6 +102,10 @@ type Status struct {
 	// ($TMUX_TMPDIR or /tmp, then tmux-<uid>): the launchd-versus-shell
 	// TMUX_TMPDIR mismatch shows here.
 	TmuxFolder string `json:"tmux_folder,omitempty"`
+	// AmbiguousFolders are the checkout folders holding two harness panes
+	// (02h "Observed goals"): no goal is attributed there, and doctor
+	// lists them. Left out when empty.
+	AmbiguousFolders []string `json:"ambiguous_folders,omitempty"`
 }
 
 // Failure is the last failure for one hub address.
@@ -175,6 +183,7 @@ func (s Status) cleaned() Status {
 	s.PolicyWatch = enum(s.PolicyWatch, watch)
 	s.TmuxWatch = enum(s.TmuxWatch, watch)
 	s.TmuxFolder = folderPath(s.TmuxFolder)
+	s.AmbiguousFolders = cleanFolders(s.AmbiguousFolders)
 	s.Peer = addr(s.Peer)
 	if len(s.Failures) > 0 {
 		s.Failures = boundFailures(s.Failures)
@@ -201,6 +210,19 @@ func folderPath(p string) string {
 		}
 	}
 	return p
+}
+
+// cleanFolders keeps the absolute, printable, bounded folders, sorted,
+// at most maxAmbiguous: a hostile or damaged file reads clean.
+func cleanFolders(in []string) []string {
+	var out []string
+	for _, f := range in {
+		if p := folderPath(f); p != "" {
+			out = append(out, p)
+		}
+	}
+	sort.Strings(out)
+	return out[:min(len(out), maxAmbiguous)]
 }
 
 // boundFailures cleans each entry and keeps the newest maxFailures.

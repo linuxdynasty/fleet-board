@@ -34,7 +34,7 @@ func Local() []Check {
 		{"linger", "Linux linger", lingerCheck},
 		NotCheckedYet("harness_paths", "Harness paths and versions", 8),
 		NotCheckedYet("probe_trust", "Probe folder trust per harness", 8),
-		NotCheckedYet("two_pane_folders", "Folders with two harness panes", 9),
+		{"two_pane_folders", "Folders with two harness panes", twoPaneFoldersCheck},
 	}
 }
 
