@@ -275,7 +275,9 @@ stands in for the latest; a missing one skips, or fails with
 `FLEET_REQUIRE_TMUX=1` as CI sets), and against a fake tmux script for the
 version gate and the pause and continue rule. `testdata/flood-*.txt` are the
 first lines of a flood during a command (`TestFloodDuringACommand` with
-`FLEET_TMUX_RECORD=<dir>`). The recorded
+`FLEET_TMUX_RECORD=<dir>`). The flood skips tmux 3.8, whose server wedges
+under load with a command in flight (#208); set `FLEET_TMUX_FLOOD_FORCE=1`
+to run it there anyway. The recorded
 transcripts and how they were made are in [testdata](testdata/README.md).
 `go test` runs the fuzz seeds (the transcripts and `testdata/fuzz/FuzzParse/`);
 to fuzz: `go test -run='^$' -fuzz='^FuzzParse$' -fuzztime=60s ./internal/agent/tmux/`
