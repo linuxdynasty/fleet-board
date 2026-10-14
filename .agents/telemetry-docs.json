@@ -33,6 +33,7 @@
     "ring.": "docs/specs/03n-reconnect.md",
     "run.": "docs/specs/03-workflows.md",
     "sample.": "docs/specs/05b-observability.md",
+    "server_info.": "docs/specs/02k-v1-surface-and-cli.md",
     "session.": "docs/specs/03d-triage-sessions-logs.md",
     "settings.": "docs/specs/03e2-settings-merge-on-the-agent.md",
     "snapshot.": "docs/specs/03-workflows.md",

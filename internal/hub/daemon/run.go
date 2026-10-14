@@ -251,7 +251,7 @@ func serve(ctx context.Context, cfg *config.Config, opts Options, d hubDeps, s *
 	}
 	admin, err := bindAdmin(cfg, opts, d.st, d.id, machineAdmin{
 		revoked: d.revoked, bye: agent.ByeMachine, closed: agent.Outbox().Closed,
-	}, s)
+	}, agent.InstanceID(), s)
 	if err != nil {
 		for _, l := range ls {
 			_ = l.ln.Close() // the bind error is the one to report

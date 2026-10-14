@@ -64,6 +64,10 @@ type FleetOptions struct {
 	// outbox service to log and count after commit. Nil skips it. The
 	// daemon passes the agent listener's outbox service.
 	OnCommandsClosed func(ctx context.Context, closed []outbox.Closed)
+	// HubInstanceID is the hub_instance_id the gateway sends on the agent
+	// wire (HelloAck): random per process start. GetServerInfo reports it
+	// so a new id invalidates every Watch resume token (02k).
+	HubInstanceID string
 }
 
 // Fleet is the hub's FleetService. The caller comes from [PrincipalFrom],
@@ -83,6 +87,7 @@ type Fleet struct {
 	revoker          Revoker
 	byeMachine       func(machineID string) bool
 	onCommandsClosed func(ctx context.Context, closed []outbox.Closed)
+	instanceID       string
 	tokens           metric.Int64Counter
 	sessCmds         metric.Int64Counter
 	approvals        metric.Int64Counter
@@ -94,9 +99,13 @@ func NewFleet(opts FleetOptions) (*Fleet, error) {
 	if opts.Store == nil || len(opts.CACert) == 0 || opts.Telemetry == nil {
 		return nil, errors.New("api: NewFleet needs a store, the CA certificate and telemetry")
 	}
+	if opts.HubInstanceID == "" {
+		return nil, errors.New("api: NewFleet needs the hub instance id")
+	}
 	f := &Fleet{
 		store: opts.Store, caDER: opts.CACert, tel: opts.Telemetry, now: opts.Now, random: opts.Random,
 		revoker: opts.Revoker, byeMachine: opts.ByeMachine, onCommandsClosed: opts.OnCommandsClosed,
+		instanceID: opts.HubInstanceID,
 	}
 	if f.now == nil {
 		f.now = time.Now
