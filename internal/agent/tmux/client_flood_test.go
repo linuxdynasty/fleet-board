@@ -1,23 +1,94 @@
 package tmux_test
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/linuxdynasty/fleet-board/internal/agent/tmux"
 	"github.com/linuxdynasty/fleet-board/internal/agent/tmux/tmuxtest"
+	"github.com/linuxdynasty/fleet-board/internal/proc"
 )
 
 // stallFor is how long the test stops the reader while a pane floods: past
 // pause-after (1 s), so tmux may pause the pane during the command. A %pause
 // cannot be provoked reliably (spike 0.5 finding 7), so nothing waits for one.
 const stallFor = 3 * time.Second
+
+// TestFloodQuarantinedVersion checks which tmux releases the flood test
+// skips: only tmux 3.8, whose control server wedges under machine load when
+// a command is in flight while a pane floods (#208). Every other release,
+// and anything the test cannot read, runs the flood.
+func TestFloodQuarantinedVersion(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		ver  string
+		want bool
+	}{
+		{name: "quarantined 3.8", ver: "tmux 3.8", want: true},
+		{name: "trailing newline", ver: "tmux 3.8\n", want: true},
+		{name: "pinned latest 3.7c runs", ver: "tmux 3.7c", want: false},
+		{name: "oldest 3.2a runs", ver: "tmux 3.2a", want: false},
+		{name: "newer runs", ver: "tmux 3.9", want: false},
+		{name: "prerelease runs", ver: "tmux next-3.8", want: false},
+		{name: "empty runs", ver: "", want: false},
+		{name: "garbage runs", ver: "not tmux", want: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := floodQuarantinedVersion(tc.ver); got != tc.want {
+				t.Fatalf("floodQuarantinedVersion(%q) = %v, want %v", tc.ver, got, tc.want)
+			}
+		})
+	}
+}
+
+// floodForceEnv runs the flood even on a quarantined tmux: set it to re-probe
+// a release (for example a tmux 3.8 build with a fix) without editing the test.
+const floodForceEnv = "FLEET_TMUX_FLOOD_FORCE"
+
+// floodQuarantinedVersion reports whether the flood test skips a tmux that
+// prints ver as the first line of `tmux -V`: only tmux 3.8, whose control
+// server wedges under machine load when a command is in flight while a pane
+// floods and the reader stalls (no %pause, no reply, the server burns CPU;
+// #208). Anything else, and anything unreadable, runs: a skip must name a
+// proven release, so the flood keeps its coverage on 3.2a and 3.7c.
+func floodQuarantinedVersion(ver string) bool {
+	f := strings.Fields(ver)
+	return len(f) == 2 && f[0] == "tmux" && f[1] == "3.8"
+}
+
+// floodBinaryVersion runs `program -V` through internal/proc under the tmux
+// caller (bounded, counted; it contacts no server) and returns its first
+// line, or "" when tmux cannot tell: an unreadable version never
+// quarantines.
+func floodBinaryVersion(program string) string {
+	if program == "" {
+		return ""
+	}
+	runner, err := proc.NewRunner(nil)
+	if err != nil {
+		return ""
+	}
+	caller, err := proc.For("tmux")
+	if err != nil {
+		return ""
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	res, err := runner.Run(ctx, proc.Spec{Caller: caller, Path: program, Args: []string{"-V"}})
+	if err != nil {
+		return ""
+	}
+	line, _, _ := strings.Cut(strings.TrimSpace(string(res.Stdout)), "\n")
+	return line
+}
 
 // A pane floods while the reader is stalled and a command is waiting for its
 // reply. The command still gets its own reply, the stream stays in step, and
@@ -27,6 +98,9 @@ const stallFor = 3 * time.Second
 func TestFloodDuringACommand(t *testing.T) {
 	for _, b := range tmuxtest.Binaries() {
 		t.Run(b.Name, func(t *testing.T) {
+			if ver := floodBinaryVersion(b.Path); floodQuarantinedVersion(ver) && os.Getenv(floodForceEnv) == "" {
+				t.Skipf("flood skips %s: its control server wedges under load with a command in flight during a flood (no reply, no %%pause; #208); coverage stays on 3.2a and 3.7c, set %s=1 to re-probe", ver, floodForceEnv)
+			}
 			srv := tmuxtest.Start(t, b, "-s", "work", "exec cat")
 			raw := filepath.Join(t.TempDir(), "raw.txt")
 			if dir := os.Getenv("FLEET_TMUX_RECORD"); dir != "" {

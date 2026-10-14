@@ -435,17 +435,17 @@ optionally against one limit the owner sets.
   (E1). Its one known gap is the 8 MiB reply bound, far over the 04 budget of
   10 per machine (defaults; the per-version pane counts live there): past it
   the read fails whole, counted (05b). Floods during a command
-  (`internal/agent/tmux/testdata/flood-*.txt`, reader stalled 3 s): on 3.2a
-  and 3.7c the reply comes whole and in order with no `%pause` in it; the
-  nested `#{S:#{W:...}}` subscription expands alike on both, so the per-window
-  fallback of the row-7 ruling fork 5(e) is not needed. On 3.8 (Homebrew,
-  macOS, #208) the same run wedges the server under machine load (2 of 4
-  tries 2026-10-13, 2 of 14 on 2026-10-11): no `%pause`, the stream stops
-  mid-flood (last age 5 ms), the reply never comes, the server burns CPU
-  (`internal/agent/tmux/testdata/flood-stalled-3.8.txt` pins the signature).
-  Same family as upstream #4969 (fixed) and #5024 (open):
-  the pinned latest tmux stays 3.7c, and one read stays bounded at 10 s and
-  counted (defaults): wedges degrade, never freeze.
+  (`internal/agent/tmux/testdata/flood-*.txt`, reader stalled 3 s): on 3.2a and 3.7c the
+  reply comes whole and in order with no `%pause` in it, and the nested `#{S:#{W:...}}` subscription
+  expands alike on both, so the per-window fallback of the row-7 ruling fork 5(e) is not needed. On
+  3.8 (Homebrew, macOS, #208) the same run wedges the server under machine load (8 of 30
+  tries 2026-10-11 to 2026-10-14; 3.7c passed all 26 beside-runs): no `%pause`,
+  the stream stops mid-flood (last age 5 ms), the reply never comes, the
+  server burns CPU (83 to 90%, control connection idle;
+  `internal/agent/tmux/testdata/flood-stalled-3.8.txt` pins the signature).
+  Same family as upstream #4969 (fixed) and #5024 (open): the pinned latest
+  stays 3.7c, the flood test skips 3.8 (full check on 3.2a/3.7c), and one read
+  stays bounded at 10 s and counted (defaults): wedges degrade, never freeze.
 - **E3 Pane lifecycle:** created and exited with exit status. "Stopped without
   DONE" (the one-nudge rule) depends on this. The status is known only when
   tmux kept the pane (`remain-on-exit`, which the agent never sets on a
