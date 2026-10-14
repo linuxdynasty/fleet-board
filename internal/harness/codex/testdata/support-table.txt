@@ -1,4 +1,4 @@
 harness codex
 version support USAGE IDENTITY PROMPT READY CONDITION
-0.160.0 UNVERIFIED_PARSING supported - - - -
-0.162.1 UNVERIFIED_PARSING supported - - - -
+0.160.0 UNVERIFIED_PARSING supported - - supported -
+0.162.1 UNVERIFIED_PARSING supported - - supported -

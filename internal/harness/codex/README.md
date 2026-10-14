@@ -12,9 +12,15 @@ file; it parses text it is given.
   `PARSE_FAILED` and the reading partial; a screen with no weekly row
   fails with no buckets. Nothing is ever guessed. `ParserVersion`
   bumps when the parser's behavior changes.
+- `ready.go`: `ParseReady` reads the folder-access box (01 C3): the
+  "Folder access" heading with its "1. Trust and continue" row reads as
+  trust (`FOLDER_UNTRUSTED`); any other screen fails cleanly, since
+  prompt detection is a later slice. Nothing is ever guessed.
+  `ReadyParserVersion` bumps when this parser's behavior changes.
 - `codex_test.go`: the adapter's declaration for the shared
   conformance test (`harness.Conform`). Versions `0.160.0` and
-  `0.162.1` are `UNVERIFIED_PARSING` with `USAGE` fixture-verified;
+  `0.162.1` are `UNVERIFIED_PARSING` with `USAGE` and the trust half
+  of `READY` fixture-verified;
   the golden table is `testdata/support-table.txt`, so a claim change
   is a reviewed diff.
 - Fixtures under `testdata/0.160.0/` and `testdata/0.162.1/`,

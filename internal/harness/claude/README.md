@@ -14,9 +14,16 @@ file; it parses text it is given.
   shown row that does not read is `PARSE_FAILED`, and a screen with no
   limit heading fails with no buckets. Nothing is ever guessed.
   `ParserVersion` bumps when the parser's behavior changes.
+- `ready.go`: `ParseReady` reads the folder-trust box (01 C3): the
+  "Accessing workspace:" heading with its "Yes, I trust this folder"
+  row reads as trust (`FOLDER_UNTRUSTED`); any other screen fails
+  cleanly, since prompt detection is a later slice. Nothing is ever
+  guessed. `ReadyParserVersion` bumps when this parser's behavior
+  changes.
 - `claude_test.go`: the adapter's declaration for the shared
   conformance test (`harness.Conform`). Version `2.1.296` is
-  `UNVERIFIED_PARSING` with `USAGE` fixture-verified; the golden table
+  `UNVERIFIED_PARSING` with `USAGE` and the trust half of `READY`
+  fixture-verified; the golden table
   is `testdata/support-table.txt`, so a claim change is a reviewed
   diff.
 - Fixtures under `testdata/2.1.296/`, documented in
