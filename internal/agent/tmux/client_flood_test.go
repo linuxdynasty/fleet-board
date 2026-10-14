@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -15,6 +14,7 @@ import (
 
 	"github.com/linuxdynasty/fleet-board/internal/agent/tmux"
 	"github.com/linuxdynasty/fleet-board/internal/agent/tmux/tmuxtest"
+	"github.com/linuxdynasty/fleet-board/internal/proc"
 )
 
 // stallFor is how long the test stops the reader while a pane floods: past
@@ -64,20 +64,29 @@ func floodQuarantinedVersion(ver string) bool {
 	return len(f) == 2 && f[0] == "tmux" && f[1] == "3.8"
 }
 
-// floodBinaryVersion runs `program -V` (it contacts no server) and returns
-// its first line, or "" when tmux cannot tell: an unreadable version never
+// floodBinaryVersion runs `program -V` through internal/proc under the tmux
+// caller (bounded, counted; it contacts no server) and returns its first
+// line, or "" when tmux cannot tell: an unreadable version never
 // quarantines.
 func floodBinaryVersion(program string) string {
 	if program == "" {
 		return ""
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	out, err := exec.CommandContext(ctx, program, "-V").Output()
+	runner, err := proc.NewRunner(nil)
 	if err != nil {
 		return ""
 	}
-	line, _, _ := strings.Cut(strings.TrimSpace(string(out)), "\n")
+	caller, err := proc.For("tmux")
+	if err != nil {
+		return ""
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	res, err := runner.Run(ctx, proc.Spec{Caller: caller, Path: program, Args: []string{"-V"}})
+	if err != nil {
+		return ""
+	}
+	line, _, _ := strings.Cut(strings.TrimSpace(string(res.Stdout)), "\n")
 	return line
 }
 
