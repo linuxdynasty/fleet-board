@@ -146,8 +146,16 @@ no tmux pane and is out of scope.
   or idle `Ctrl-C`), re-read, send text and Enter separately. Item 0.19 decided this (probe
   2026-10-12); row 30 implements it, and until then nothing is typed into a Cursor pane.
   The 2026-10-12 capture (`ready-ansi.txt`) records the placeholder's exact
-  bytes (`→` dim, `P` reverse-video, rest dim) as the tell to test a future
-  draft against; the draft half is still open.
+  bytes (`→` dim, `P` reverse-video, rest dim); the draft half is pinned by
+  `ready-input-has-draft.ansi.txt` (no faint attribute anywhere on the line).
+- **Adapter (row 30, issue #95):** `internal/harness/cursor` parses the
+  `/usage` dialog (parser version 1) and the ready prompt. The trust box
+  reads as trust (`FOLDER_UNTRUSTED`); a styled input line with the faint
+  attribute reads empty, a styled line at full intensity reads as typed
+  text, and a plain `→ <text>` line reads unknown, never empty. A screen
+  with no prompt and no trust box fails with no reading. Version
+  2026.10.01 is `UNVERIFIED_PARSING` with `USAGE` and `READY`
+  fixture-verified (fixtures in `internal/harness/cursor/testdata/`).
 - **Credentials.** `~/.cursor/cli-config.json` holds settings and also an
   authInfo section, so the agent never reads it; it learns settings only from
   Cursor's own screens.

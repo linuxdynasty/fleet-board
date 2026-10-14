@@ -40,6 +40,7 @@ section below); every screen was read before each key.
 | `ready-followup-placeholder.ansi.txt` | the same input line with ANSI escapes: `→` and text faint | same screen, `capture-pane -e` |
 | `usage.txt` | the `/usage` dialog: "Usage • Pro+", "Resets Nov 4", Included / Auto / API % used, On-Demand Disabled, "Esc to close" | `/usage` typed at the ready prompt, Enter separately, dialog read, Esc |
 | `usage-not-shown.txt` | `/usage` typed but not submitted: the `/` command menu, no dialog | `/usage` typed at the ready prompt, no Enter; the usage parser must yield unknown on it |
+| `ready-truncated.txt` | derived, not a capture: the first three lines of `ready-trusted-child.txt` (header only, no input line) | cut by hand to pin the truncated case; the ready parser must fail on it, never guess a prompt |
 
 ## Redactions and clean-up
 
@@ -82,6 +83,15 @@ count, a poem). Every screen read before each key.
 Row 30 reads the rule from 01b and 02h; the `.ansi.txt` fixtures above are
 its parser tests (both halves). A parser must read styled lines; on plain
 lines every `→ <text>` is unknown, never empty.
+
+## Ready parser (row 30, 2026-10-14)
+
+`ParseReady` (`internal/harness/cursor/ready.go`) implements the read half of
+the rule above over the fixtures in Files, with no new captures: the trust
+box reads as trust, one styled `→` line decides by its faint attribute
+(empty) or full intensity (text), and anything else plain, truncated, or
+unrelated reads partial or fails, never guessed. Several styled `→` lines
+stay unknown until fixtures pin that shape.
 
 ## /usage dialog (row 30 D2, 2026-10-13)
 
