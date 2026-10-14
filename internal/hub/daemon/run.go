@@ -306,6 +306,21 @@ func serve(ctx context.Context, cfg *config.Config, opts Options, d hubDeps, s *
 	wg.Add(1)
 	go func() { defer wg.Done(); hk.Run(ctx, hkTicks) }()
 
+	// The provider sync loop (plan row 11) runs beside the listeners when
+	// fleetd.yaml holds github keys; a bad key refuses the start before
+	// anything serves.
+	gsync, err := githubSyncer(ctx, cfg, d.st, s.tel, time.Now())
+	if err != nil {
+		for _, l := range ls {
+			_ = l.ln.Close() // the key error is the one to report
+		}
+		return s.fail(ReasonConfig, err)
+	}
+	if gsync != nil {
+		wg.Add(1)
+		go func() { defer wg.Done(); gsync.Loop(ctx, GitHubIntegrationID) }()
+	}
+
 	// Advertise only now that the agent listener serves: an agent that
 	// follows the answer finds it. It never fails the hub (02j "Discovery").
 	adv.Start()

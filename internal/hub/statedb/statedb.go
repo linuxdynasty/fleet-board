@@ -107,6 +107,10 @@ func Migrations() []store.Migration {
 		Version: 13,
 		Name:    "goals_observed",
 		SQL:     goalsSQL,
+	}, {
+		Version: 14,
+		Name:    "provider_sync_mirrors",
+		SQL:     syncSQL,
 	}}
 }
 

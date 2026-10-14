@@ -176,3 +176,15 @@ the text whose editor was checked. The CONFIRM check that bypasses the gate
 | `meta.provider_time` differs from the hub clock by over 5 min | Logged `sync.provider_skew`; provider timestamps stay untrusted ordering evidence (03m) |
 | Adapter lacks a capability the integration is configured for (upgrade) | `DEGRADED`, `CAPABILITY_MISSING`; auto-dispatch for it stops |
 | `max_batch_size = 0` | The verifier sends one branch per call; the 60 s loop widens its interval accordingly |
+
+Row 11 implements this page with three deltas. The label path is evaluated
+first: a present trusted label whose apply is unusable denies at once
+(`EVIDENCE_MISSING` for an unknown actor, `NOT_ALLOW_LISTED` for an
+outside applier) without falling through to the author path — the table's
+fail-closed reading, since the label's presence already claims a grant.
+Access-lost and double-claim notices are emitted with their 03d
+fingerprints (`sync.triage_raised` / `sync.triage_retired`); the
+`triage_items` write lands with row 12. `by_fleet` matches the configured
+fleet users, empty until row 22 wires the machine users in, so every claim
+reads foreign until then; a sequential loop already runs at concurrency 1,
+so a secondary limit backs off to the reset like a primary one.

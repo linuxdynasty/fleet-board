@@ -92,4 +92,16 @@
 // one, unique per command_id, a send unique per machine, epoch and seq)
 // and command_results (the first result, never changed). The queries are
 // internal/hub/outbox's.
+//
+// Plan row 11 adds the provider mirrors (provider_sync_mirrors migration):
+// work_items and change_requests keyed canonically with the hub's verdicts
+// beside the provider shape, sync_cursors and rate_limit_state per page
+// and budget, and the integrations and repos rows. [UpsertWorkItemPage]
+// and [UpsertChangeRequestPage] commit one API page with its cursors and
+// budgets under the update_time guard; [UpdateWorkItemClaims] is the claim
+// loop's column with its stage recompute; [GetCursor],
+// [GetWorkItemStages], [GetWorkItemState] and [ListClaimCandidates] are the
+// loop's reads; [EnsureIntegration], [GetIntegration] and
+// [SetIntegrationStatus] own the integration row; [UpsertRepo] and
+// [ListWatchedRepos] own the watched repos.
 package statedb

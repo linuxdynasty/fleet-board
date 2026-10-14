@@ -176,6 +176,17 @@ Provider failures arrive as a `ProviderError` kind (03j has the mapping to RPC c
 - Logs: `sync.rate_limited{integration, remaining, resets_time}`,
   `sync.access_lost{integration, repo, status}`, `sync.double_claim{work_item,
   ours_time, theirs_time, theirs_author}`, `sync.cursor_reset{resource}`.
+- Row 11 implements this list with four deltas: `not_modified` rounds count
+  in `sync_requests_total{status="not_modified"}` (the ratio derives from
+  it, with no separate gauge); the `sync_rate_remaining`, `sync_work_items`
+  and `sync_change_requests` gauges wait for row 12's read API (budgets are
+  already visible in `IntegrationStatus.rate_limits`); `hub.sync.verify_one`
+  lands with row 22's verifier; and four operator logs cover the loop
+  itself: `sync.round_failed{integration, error}`, `sync.provider_error`
+  (an unexpected provider kind: a hub bug), `sync.status_failed`
+  (the status row did not persist), `sync.provider_skew{integration, skew}`
+  (the 03j clock rule), and `sync.triage_raised` /
+  `sync.triage_retired{fingerprint}` (the row-12 triage write's seam).
 
 At 3 AM: "why is the queue empty / dispatch paused?" → `fleet_hub_sync_lag_seconds`
 and `fleet_hub_integration_state`; "why is this goal stuck in verifying?" →
