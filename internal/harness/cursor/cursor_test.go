@@ -67,6 +67,7 @@ func TestConform(t *testing.T) {
 						Fixtures: []harness.Fixture{
 							{Name: "usage.txt", Screen: readData(t, "2026.10.01/usage.txt")},
 							{Name: "usage-not-shown.txt", Screen: readData(t, "2026.10.01/usage-not-shown.txt")},
+							{Name: "usage-ondemand-on.txt", Screen: readData(t, "2026.10.01/usage-ondemand-on.txt")},
 						},
 					},
 					harness.FeatureIdentity: {
