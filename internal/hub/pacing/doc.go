@@ -2,8 +2,11 @@
 // account: the burn-down line, the projection and the per-account verdict
 // (03b, "Pacing decision" and "Monthly windows").
 //
-// [Evaluate] is pure: the account's settings plus its latest reading in,
-// the [hubv1.AccountPacing] verdict plus decision debug out. It keeps no
+// [Evaluate] is pure: the account's settings, its latest reading, and the
+// latest probe run's block status ([ProbeBlock]) in,
+// the [hubv1.AccountPacing] verdict plus decision debug out. A blocked probe
+// (startup prompt, sign-in required) reports UNKNOWN at once, ahead of the
+// cached reading. It keeps no
 // state, touches no database and emits no telemetry; the scheduler owns the
 // single decision goroutine, the store slice persists account_pacing rows,
 // and that slice logs pacing.decision from [Result.Reason] and
