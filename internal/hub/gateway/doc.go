@@ -38,6 +38,9 @@
 // one writer job; every refusal is in one table. After the commit a
 // registry makes the stream its machine's live one (the higher epoch wins),
 // HelloAck is sent and a displaced stream gets Bye{DUPLICATE_IDENTITY}.
+// [Server.InstanceID] reports the hub_instance_id sent on HelloAck (random
+// per process start); the Fleet API reports the same id, so a new one
+// invalidates every Watch resume token (02k).
 // Each stream has one reader (Heartbeats kept in memory and handed to the
 // handler goroutine, everything else through a bounded queue to a per-arm
 // handler table) and one writer; the teardown stops both before the
