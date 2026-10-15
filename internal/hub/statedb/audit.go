@@ -108,6 +108,13 @@ const (
 	// 3): target settings/fleet, with the request_id and the scope and
 	// version in detail.
 	ActionSettingsUpdate = "settings.update"
+	// ActionMachineUpdate, ActionMachineRevoke and ActionMachineDelete
+	// are the machine admin writes (row 13a slice 4): target
+	// machines/<id>, with the request_id and the row's version in
+	// detail (the revoke's reason too).
+	ActionMachineUpdate = "machine.update"
+	ActionMachineRevoke = "machine.revoke"
+	ActionMachineDelete = "machine.delete"
 )
 
 // MaxAuditDetail caps AuditEntry.detail in bytes; the table checks it too.

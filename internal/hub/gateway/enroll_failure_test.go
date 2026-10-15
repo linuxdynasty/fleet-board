@@ -10,7 +10,6 @@ import (
 
 	"connectrpc.com/connect"
 
-	typev1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/type/v1"
 	"github.com/linuxdynasty/fleet-board/internal/hub/ca"
 	"github.com/linuxdynasty/fleet-board/internal/hub/gateway"
 )
@@ -109,9 +108,10 @@ func TestEnrollAnswersInternalWhenRandomnessFails(t *testing.T) {
 	}
 }
 
-// Re-enroll is plan row 13a: a token naming a previous machine is never
-// burned here, and the hub answers its own failure (step previous_machine).
-func TestEnrollDoesNotBurnATokenNamingAPreviousMachine(t *testing.T) {
+// Re-enroll is plan row 13a: a token naming a previous machine that is
+// gone enrolls a fresh machine (the token's previous pointer is cleared,
+// then the request burns it as a fresh token).
+func TestEnrollWithAGonePreviousMachineEnrollsFresh(t *testing.T) {
 	t.Parallel()
 	h := startHub(t)
 	tok := h.token(t, h.clock.now().Add(time.Hour))
@@ -119,8 +119,8 @@ func TestEnrollDoesNotBurnATokenNamingAPreviousMachine(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// CreateEnrollmentToken refuses previous_machine until row 13a, so set it
-	// the way a later row's token would carry it.
+	// Set the pointer the way a token issued before the machine's delete
+	// carries it.
 	err = h.store.Write(context.Background(), func(tx *sql.Tx) error {
 		_, err := tx.ExecContext(context.Background(), `UPDATE enroll_tokens SET previous_machine = '01jold0000000000000000000a' WHERE secret_hash = ?`,
 			parsed.SecretHash[:])
@@ -129,17 +129,15 @@ func TestEnrollDoesNotBurnATokenNamingAPreviousMachine(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = h.enroll(t, enrollRequest(tok, newAgentKey(t), "install-1"))
-	got := refusalOf(t, err)
-	if got.code != connect.CodeInternal || got.reason != typev1.ReasonCode_REASON_CODE_INTERNAL || got.retryable {
-		t.Fatalf("refusal %v / %v / retryable %v, want internal / INTERNAL / false", got.code, got.reason, got.retryable)
+	res, err := h.enroll(t, enrollRequest(tok, newAgentKey(t), "install-1"))
+	if err != nil {
+		t.Fatalf("enroll with a gone previous machine: %v", err)
 	}
-	lines := h.events(t, "enroll.failed")
-	if len(lines) != 1 || lines[0]["step"] != "previous_machine" || lines[0]["err_kind"] != "refused" {
-		t.Errorf("enroll.failed lines %v, want one with step previous_machine, err_kind refused", lines)
+	if got := res.GetMachineId().GetValue(); got == "" || got == "01jold0000000000000000000a" {
+		t.Errorf("machine id = %q, want a fresh id", got)
 	}
-	if h.tokenUsed(t, tok) || h.machineCount(t) != 0 {
-		t.Error("the token was burned or a machine was written")
+	if !h.tokenUsed(t, tok) || h.machineCount(t) != 1 {
+		t.Error("the token was not burned as a fresh token")
 	}
 }
 

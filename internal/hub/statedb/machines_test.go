@@ -207,9 +207,9 @@ func TestAReplayForARevokedMachineIsUsed(t *testing.T) {
 	}
 }
 
-// Row 3 does not re-enroll (13a): a token naming a previous machine is
-// never burned.
-func TestATokenWithAPreviousMachineIsNotBurned(t *testing.T) {
+// Row 13a re-enrolls: a token naming a deleted previous machine clears
+// the pointer and is never burned (Enroll treats it as a fresh machine).
+func TestATokenWithAGonePreviousMachineIsNotBurned(t *testing.T) {
 	t.Parallel()
 	dir, s := tokenStore(t)
 	if err := s.Close(); err != nil {
@@ -220,17 +220,29 @@ func TestATokenWithAPreviousMachineIsNotBurned(t *testing.T) {
 	}
 	s = open(t, dir)
 	key := enrollKey("install-1", 1)
-	if _, err := statedb.CheckEnroll(context.Background(), s, key, beforeTTL); !errors.Is(err, statedb.ErrPreviousMachine) {
-		t.Errorf("CheckEnroll = %v, want ErrPreviousMachine", err)
+	check, err := statedb.CheckEnroll(context.Background(), s, key, beforeTTL)
+	if err != nil {
+		t.Fatalf("CheckEnroll: %v", err)
 	}
-	if _, err := statedb.Enroll(context.Background(), s, newMachine(key, "01jmachine0000000000000001", beforeTTL)); !errors.Is(err, statedb.ErrPreviousMachine) {
-		t.Errorf("Enroll = %v, want ErrPreviousMachine", err)
+	if check.Token.PreviousMachine != "01jold" {
+		t.Fatalf("CheckEnroll = %+v, want the token naming 01jold", check)
+	}
+	prev := statedb.ReenrollMachine{
+		Key: key, PreviousMachine: "01jold", CertDER: []byte("cert"), Serial: "cd0001",
+		CertNotAfter: beforeTTL.Add(90 * 24 * time.Hour), ReportedHostname: "laptop.lan",
+		Facts: `{"hostname":"laptop.lan"}`, Now: beforeTTL,
+	}
+	if _, err := statedb.EnrollPrevious(context.Background(), s, prev); !errors.Is(err, statedb.ErrPreviousGone) {
+		t.Errorf("EnrollPrevious = %v, want ErrPreviousGone", err)
 	}
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
 	}
 	if n := rawCount(t, statedb.Path(dir), "SELECT count(*) FROM enroll_tokens WHERE used_time IS NOT NULL"); n != 0 {
 		t.Error("the token was burned")
+	}
+	if n := rawCount(t, statedb.Path(dir), "SELECT count(*) FROM enroll_tokens WHERE previous_machine IS NOT NULL"); n != 0 {
+		t.Error("the previous pointer was not cleared")
 	}
 }
 

@@ -12,6 +12,7 @@ import (
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/metric/noop"
 
+	agentv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1"
 	"github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1/agentv1connect"
 	"github.com/linuxdynasty/fleet-board/internal/hub/ingest"
 	"github.com/linuxdynasty/fleet-board/internal/hub/outbox"
@@ -155,6 +156,14 @@ type Server struct {
 	connect *connectDeps
 	// handlers counts running handlers for [Server.Shutdown].
 	handlers *inflight
+}
+
+// ByeMachine ends the machine's live Connect stream with Bye{REVOKED},
+// for RevokeMachine after commit (02g "Machine lifecycle: revoke and
+// delete"). It reports whether the hub held a live stream; the stream's
+// own teardown closes the connection row with EndRevoked.
+func (s *Server) ByeMachine(machineID string) bool {
+	return s.connect.streams.cancel(machineID, agentv1.ByeReason_BYE_REASON_REVOKED, statedb.EndRevoked)
 }
 
 // FlushAudit writes the machine.enroll_failed summary of the minute in

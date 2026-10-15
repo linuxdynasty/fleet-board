@@ -20,7 +20,7 @@
 //
 // Plan row 3 adds machines, cert_serials and enroll_responses. [CheckEnroll]
 // is the read-pool pre-check in the 02g order ([ErrTokenUnknown], a replay
-// or [ErrTokenUsed], [ErrTokenExpired], [ErrPreviousMachine]); [Enroll] is
+// or [ErrTokenUsed], [ErrTokenExpired]); [Enroll] is
 // the one writer job that burns the token and inserts the machine, its
 // serial and the replayable response, or classifies again when the burn
 // changes nothing. [RevokeSerials] and [RevokedSerials] keep the revocation

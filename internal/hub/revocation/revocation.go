@@ -131,6 +131,48 @@ func (l *List) Revoked(serial string) bool {
 	return ok
 }
 
+// Stage appends entries missing from the in-memory set to the file and
+// the set (the first two steps of the 02g write order), without the
+// state.db write. The caller submits the store write next; a store
+// failure leaves the serials revoked (fail closed) and the next start
+// reconciles state.db from the file. Entries already revoked are
+// skipped, so a retry adds no duplicate lines.
+func (l *List) Stage(add []Entry) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	set := *l.set.Load()
+	var missing []Entry
+	for _, e := range add {
+		if !serialHex.MatchString(e.Serial) {
+			return errors.New("revocation: a serial is not lowercase hex")
+		}
+		if _, ok := set[e.Serial]; ok {
+			continue
+		}
+		missing = append(missing, e)
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+	next := maps.Clone(set)
+	for _, e := range missing {
+		next[e.Serial] = later(next[e.Serial], e.NotAfter)
+	}
+	var err error
+	if l.dirty {
+		err = rewrite(l.dir, entries(next))
+	} else {
+		err = appendEntries(l.dir, missing)
+	}
+	if err != nil {
+		l.dirty = true
+		return err
+	}
+	l.dirty = false
+	l.set.Store(&next)
+	return nil
+}
+
 // Revoke adds entries in the 02g order: append and fsync the file (fsync
 // the folder when the file is new), then the in-memory set, then the
 // state.db write. A file failure changes nothing else and is returned; the

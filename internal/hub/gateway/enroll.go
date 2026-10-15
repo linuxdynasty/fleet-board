@@ -39,10 +39,13 @@ type agentService struct {
 
 // Enroll checks, in order: install_id, the token's format and CA hash
 // (ENROLL_TOKEN_UNKNOWN), the proto range, the CSR, then the store's
-// read-pool pre-check (unknown, replay or used, expired, previous machine).
-// A fresh token is then burned by one writer job that inserts the machine,
-// its serial and the replayable response. Nothing before the writer job
-// burns the token. A client certificate on the connection is ignored.
+// read-pool pre-check (unknown, replay or used, expired). A token naming
+// a previous machine the request does not contradict re-enrolls it (the
+// same id back to ENROLLED with a new serial); a deleted previous
+// machine enrolls fresh. A fresh token is burned by one writer job that
+// inserts the machine, its serial and the replayable response. Nothing
+// before the writer job burns the token. A client certificate on the
+// connection is ignored.
 func (s *agentService) Enroll(ctx context.Context, req *connect.Request[agentv1.EnrollRequest],
 ) (*connect.Response[agentv1.EnrollResponse], error) {
 	m, peer := req.Msg, req.Peer().Addr
@@ -70,6 +73,23 @@ func (s *agentService) Enroll(ctx context.Context, req *connect.Request[agentv1.
 		return nil, s.storeOutcome(ctx, peer, err)
 	}
 	enrolled := check.Replay
+	if enrolled == nil && check.Token.PreviousMachine != "" {
+		if prev := m.GetPreviousMachineId().GetValue(); prev != "" && prev != check.Token.PreviousMachine {
+			return nil, s.refused(ctx, peer, refusal(connect.CodeFailedPrecondition,
+				typev1.ReasonCode_REASON_CODE_ENROLL_PREVIOUS_MACHINE_MISMATCH,
+				"the request names another machine than the token"))
+		}
+		e, err := s.enrollPrevious(ctx, peer, key, csr, m, check.Token.PreviousMachine, now)
+		if errors.Is(err, statedb.ErrPreviousGone) {
+			// The previous machine was deleted after the token was
+			// issued: the request enrolls a fresh machine (02g).
+			e, err = s.enrollNew(ctx, peer, key, csr, m.GetFacts(), now)
+		}
+		if err != nil {
+			return nil, err
+		}
+		enrolled = &e
+	}
 	if enrolled == nil {
 		e, err := s.enrollNew(ctx, peer, key, csr, m.GetFacts(), now)
 		if err != nil {
@@ -83,6 +103,40 @@ func (s *agentService) Enroll(ctx context.Context, req *connect.Request[agentv1.
 	}
 	s.completed(ctx, *enrolled)
 	return connect.NewResponse(res), nil
+}
+
+// enrollPrevious signs the certificate for the token's previous machine
+// and submits the re-enroll writer job, which returns the same machine
+// id to ENROLLED with the new serial. A deleted previous machine is
+// [statedb.ErrPreviousGone]: the caller enrolls fresh instead.
+func (s *agentService) enrollPrevious(ctx context.Context, peer string, key statedb.EnrollKey, csr ca.CSR,
+	m *agentv1.EnrollRequest, previous string, now time.Time,
+) (statedb.Enrolled, error) {
+	cert, err := s.auth.IssueAgent(previous, csr.Key, now, s.random)
+	if err != nil {
+		return statedb.Enrolled{}, s.failed(ctx, "sign", err)
+	}
+	facts := m.GetFacts()
+	if facts == nil {
+		facts = &agentv1.MachineFacts{}
+	}
+	factsJSON, err := protojson.Marshal(facts)
+	if err != nil {
+		return statedb.Enrolled{}, s.failed(ctx, "encode", err)
+	}
+	e, err := statedb.EnrollPrevious(ctx, s.store, statedb.ReenrollMachine{
+		Key: key, PreviousMachine: previous, RequestPrevious: m.GetPreviousMachineId().GetValue(),
+		CertDER: cert.CertDER, Serial: ca.SerialHex(cert.Serial), CertNotAfter: cert.NotAfter,
+		ReportedHostname: facts.GetHostname(), Facts: string(factsJSON), Now: now,
+	})
+	if errors.Is(err, statedb.ErrPreviousGone) {
+		// Raw, so the caller enrolls fresh instead of refusing.
+		return statedb.Enrolled{}, err
+	}
+	if err != nil {
+		return statedb.Enrolled{}, s.storeOutcome(ctx, peer, err)
+	}
+	return e, nil
 }
 
 // enrollNew mints the machine id, signs the certificate and submits the
@@ -159,9 +213,9 @@ func checkInstallID(id string) *connect.Error {
 }
 
 // storeOutcome maps a statedb answer: the token errors are the caller's
-// (refused); a token naming a previous machine is the hub's (failed, never
-// burned, plan row 13a); anything else is the store's, UNAVAILABLE and
-// retryable. A cancelled write has an unknown outcome; the retry replays.
+// (refused); a previous machine that is gone enrolls fresh upstream
+// (never here); anything else is the store's, UNAVAILABLE and retryable.
+// A cancelled write has an unknown outcome; the retry replays.
 func (s *agentService) storeOutcome(ctx context.Context, peer string, err error) error {
 	switch {
 	case errors.Is(err, statedb.ErrTokenUnknown):
@@ -173,8 +227,14 @@ func (s *agentService) storeOutcome(ctx context.Context, peer string, err error)
 	case errors.Is(err, statedb.ErrTokenUsed):
 		return s.refused(ctx, peer, refusal(connect.CodeAlreadyExists, typev1.ReasonCode_REASON_CODE_ENROLL_TOKEN_USED,
 			"the token was already used by another install or key"))
-	case errors.Is(err, statedb.ErrPreviousMachine):
-		return s.failed(ctx, "previous_machine", err)
+	case errors.Is(err, statedb.ErrPreviousMismatch):
+		return s.refused(ctx, peer, refusal(connect.CodeFailedPrecondition,
+			typev1.ReasonCode_REASON_CODE_ENROLL_PREVIOUS_MACHINE_MISMATCH,
+			"the request names another machine than the token"))
+	case errors.Is(err, statedb.ErrNotReenrollable):
+		return s.refused(ctx, peer, refusal(connect.CodeFailedPrecondition,
+			typev1.ReasonCode_REASON_CODE_MACHINE_NOT_REENROLLABLE,
+			"the previous machine is neither revoked nor past its certificate lifetime"))
 	default:
 		return s.failed(ctx, "store", err)
 	}

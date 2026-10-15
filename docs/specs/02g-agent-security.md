@@ -76,10 +76,11 @@ running `enroll` again, and no second machine row appears. **Check order:**
 the request's own fields first, none of which burns the token (`install_id`,
 the token's format and CA hash, the proto range, the CSR); then unknown
 token, then (for a burned token) the replay triple, then expiry, so a replay
-after the token's TTL still succeeds within the 24 h. Any other call with a
-used token is `ENROLL_TOKEN_USED`, and so is a replay once the machine is
-`REVOKED` or deleted: a stored response is never replayed for a machine that
-is no longer live. Enroll ignores a valid client certificate on the
+after the token's TTL still succeeds within the 24 h, then the previous
+hint (`ENROLL_PREVIOUS_MACHINE_MISMATCH`, burns nothing). Any other
+call with a used token is `ENROLL_TOKEN_USED`, and so is a replay once the
+machine is `REVOKED` or deleted: a stored response is never replayed for a
+machine that is no longer live. Enroll ignores a valid client certificate on the
 connection, but the listener checks any certificate it is given before Enroll
 runs: an expired one fails the handshake, and so does a revoked one. So the
 agent always calls Enroll without a client certificate, re-enroll included.
@@ -93,7 +94,6 @@ certificate has common name = `machine_id`, the URI SAN `fleet://machine/<machin
 client-auth usage only, a random 128-bit serial and the 90-day lifetime of
 [defaults](defaults.md), backdated 5 minutes and never past the CA.
 `install_id` is 1 to 64 printable ASCII characters without spaces.
-`previous_machine_id` is ignored until re-enroll exists (plan row 13a).
 
 **Typed failures.** An Enroll failure is a gRPC error whose `ErrorDetail.reason`
 is a code the CLI prints and `doctor` shows:
@@ -106,8 +106,9 @@ is a code the CLI prints and `doctor` shows:
 | CSR breaks the CSR rule above | `INVALID_ARGUMENT` | `ENROLL_CSR_INVALID` |
 | `install_id` over 64 bytes / empty, a space or a byte outside printable ASCII | `INVALID_ARGUMENT` | `FIELD_TOO_LARGE` / `INVALID_ARGUMENT` |
 | No common `proto_min`/`proto_max` (0 is unset, `min > max`, or a range without 1); the token is not burned | `FAILED_PRECONDITION` | `ENROLL_PROTO_UNSUPPORTED` |
-| `previous_machine_id` names a machine and the token names a different one (plan row 13a) | `FAILED_PRECONDITION` | `ENROLL_PREVIOUS_MACHINE_MISMATCH` |
-| Not yet: the token names a previous machine before re-enroll exists (plan row 13a); the token is not burned | `INTERNAL` | `INTERNAL` |
+| `previous_machine_id` names a machine and the token names a different one; the token is not burned | `FAILED_PRECONDITION` | `ENROLL_PREVIOUS_MACHINE_MISMATCH` |
+| The token names a previous machine that is neither `REVOKED` nor past its certificate lifetime; the token is not burned | `FAILED_PRECONDITION` | `MACHINE_NOT_REENROLLABLE` |
+| The token names a previous machine whose row was deleted; the token's previous pointer is cleared and the request enrolls a new machine | (fresh enroll's row) | (fresh enroll's reason) |
 | Hub starting, store busy, or a store error (a cancelled write has an unknown outcome; the retry finds the replay) | `UNAVAILABLE` | no reason, `retryable = true` |
 | Request over the 1 MiB message cap ([02e](02e-contract-rules.md#size-limits-agent-wire)) | `RESOURCE_EXHAUSTED` | none (refused before the handler) |
 
@@ -136,7 +137,8 @@ no audit row. A successful first Enroll writes `machine.enroll` (target
 `machines/<id>`, no actor; detail: the machine name, the expected hostname,
 `hostname_mismatch` and the token row `enroll_tokens/<id>`, whose
 `machine.enroll_token` row names who issued it) in the transaction that burns
-the token; a replay writes none. Creating a token writes
+the token; a replay writes none (a re-enroll writes `machine.enroll` too).
+Creating a token writes
 `machine.enroll_token` (target `enroll_tokens/<id>`, the caller as actor,
 no machine; detail: the machine name, the expected hostname and the expiry;
 never the token, its secret or its hash) in the transaction that stores it.
@@ -321,7 +323,9 @@ stateDiagram-v2
 ```
 
 `RevokeMachine` keeps the row; `DeleteMachine` then forgets it and is refused
-for a machine that is not `REVOKED` (`MACHINE_NOT_REVOKED`). Revoking is the
+for a machine that is not `REVOKED` (`MACHINE_NOT_REVOKED`). `UpdateMachine`
+renames and relabels any machine row (see 02m for the three writes'
+idempotency, versions and audit rows). Revoking is the
 action for a stolen or retired machine, deleting is housekeeping, and a machine
 can be revoked without losing its history.
 
@@ -342,18 +346,17 @@ can be revoked without losing its history.
 | Settings, labels, drain | Kept on the row, so a re-enrolled machine gets them back |
 | Audit | `machine.revoke` with the requester and reason |
 
-**Re-enroll** (plan row 13a; until then `CreateEnrollmentToken` refuses
-`previous_machine` and Enroll never burns a token that names one).
-`CreateEnrollmentToken{previous_machine}` is allowed only for a
-`REVOKED` machine or one whose certificate lifetime has passed, and only while
-its row exists. The Enroll that uses it returns the same `machine_id` with new
-certificate serials and sets the state back to `ENROLLED`; the revoked serials
-stay revoked. The revocation record stays in the audit log. After delete, the
+**Re-enroll** (plan row 13a): `CreateEnrollmentToken{previous_machine}` is
+allowed only for a `REVOKED` machine or one whose certificate lifetime has
+passed, and only while its row exists. The Enroll that uses it returns the
+same `machine_id` with new certificate serials and sets the state back to
+`ENROLLED`; the revoked serials stay revoked. The revocation record stays in
+the audit log. After delete, the
 history under the machine id remains, and a new machine can only enroll as a
-new id. **A revoked or deleted machine stays out:** `RenewCert`, `Terminal` and
-`SessionLog` (and `Connect`) need a live machine row for the certificate's
-machine id, checked on every call and not only at TLS and `Hello`; the one
-exception is the restore adoption above.
+new id. **A revoked or deleted machine stays out:** `RenewCert`, `Terminal`
+and `SessionLog` (and `Connect`) need a live machine row for the
+certificate's machine id, checked on every call and not
+only at TLS and `Hello`; the one exception is the restore adoption above.
 
 **Duplicate identity.** A newer `Hello` for a `machine_id` that has a live
 stream always wins, silently. The old stream gets `Bye{DUPLICATE_IDENTITY}`
