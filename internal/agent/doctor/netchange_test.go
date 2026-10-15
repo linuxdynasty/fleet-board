@@ -89,7 +89,9 @@ func TestMDNSBrowse(t *testing.T) {
 func TestChecksBuildCannotRunYet(t *testing.T) {
 	t.Parallel()
 	r := newRig(t)
-	for _, id := range []string{"harness_paths", "probe_trust"} {
+	// probe_trust used to be listed here: the probe seam (row 8, PR #292)
+	// now exists, so it runs a real check instead of a placeholder.
+	for _, id := range []string{"harness_paths"} {
 		r.want(id, doctor.NotChecked, "(row 8)")
 	}
 }

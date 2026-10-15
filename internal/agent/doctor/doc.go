@@ -7,8 +7,10 @@
 // identity.json, cert.pem and renew.key for their dates and modes), the config
 // folder's policy.yaml (policy.Inspect, with no side effect), and run `tmux -V`
 // through the agent's measured proc caller. They never open agent.log or
-// agent.db, never read a private key, and never write, create or remove
-// anything. Checks that need a later row (the harness trust screens) are
+// agent.db and never read a private key. The probe-trust check is the one
+// exception to read-only: it starts each installed harness once in the probe
+// folder on a throwaway tmux server, reads the first screen, sends no key
+// and tears the session down (01 C3). Checks that need a later row are
 // added by that row; until then they are listed as not_checked and name
 // their row.
 //

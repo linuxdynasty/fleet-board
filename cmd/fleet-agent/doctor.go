@@ -35,6 +35,9 @@ type doctorDeps struct {
 	handshake func(ctx context.Context, addr, caPEM string) error
 	// linger runs `loginctl show-user --property=Linger` on Linux.
 	linger func(ctx context.Context) (string, error)
+	// probeTrust starts one harness in the probe folder, reads its first
+	// screen, sends no key and tears the session down (01 C3).
+	probeTrust func(ctx context.Context, harness, probeDir string) (screen string, installed bool, err error)
 	// lingerUser is named in the linger fix line.
 	lingerUser string
 	// checks is the list to run; nil is doctor.Local.
@@ -43,8 +46,11 @@ type doctorDeps struct {
 
 // doctorCommand is `fleet-agent doctor`: every local check with a reason, one
 // line each (or one JSON object with --json). It reads status.json and
-// enroll.json, so it works while the agent is down, and starts nothing but
-// `tmux -V`. Exit 0 when nothing failed, 1 when a check failed.
+// enroll.json, so it works while the agent is down; the only processes it
+// starts are `tmux -V` and the probe-trust look, which starts each installed
+// harness once in the probe folder on a throwaway tmux server, reads the
+// first screen, sends no key and tears the session down (01 C3). Exit 0 when
+// nothing failed, 1 when a check failed.
 func doctorCommand(dir, cfg func() (string, error), stdout io.Writer) *cobra.Command {
 	u, _ := user.Current()
 	name := ""
@@ -54,6 +60,7 @@ func doctorCommand(dir, cfg func() (string, error), stdout io.Writer) *cobra.Com
 	return newDoctorCommand(dir, cfg, doctorDeps{
 		probeDir: defaultProbeDir, tmux: tmuxVersion,
 		handshake: doctorHandshake, linger: lingerOutput, lingerUser: name,
+		probeTrust: probeTrustCapture,
 	}, stdout)
 }
 
@@ -83,6 +90,7 @@ func newDoctorCommand(dir, cfg func() (string, error), deps doctorDeps, stdout i
 			rep := doctor.Run(cmd.Context(), doctor.Options{
 				StateDir: d, ConfigDir: cd, ProbeDir: probe, TmuxVersion: deps.tmux,
 				HubHandshake: deps.handshake, Linger: deps.linger, LingerUser: deps.lingerUser,
+				ProbeTrustCapture: deps.probeTrust,
 			}, checks...)
 			write := doctor.WriteText
 			if asJSON {
