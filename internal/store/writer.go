@@ -36,6 +36,14 @@ func (s *Store) Submit(ctx context.Context, apply ApplyFunc) (<-chan error, erro
 	j := job{apply: apply, enqueued: time.Now(), done: make(chan error, 1)}
 	select {
 	case s.jobs <- j:
+		// This send may have filled the last slot: stamp the start of the
+		// full period while the queue is full, so a full queue behind a
+		// stuck writer reads even when no later Submit arrives. CAS keeps
+		// the earliest stamp; a receive between the send and this check
+		// means the queue already has room again, and then this is a no-op.
+		if len(s.jobs) == cap(s.jobs) {
+			s.fullSince.CompareAndSwap(0, time.Now().UnixNano())
+		}
 		return j.done, nil
 	default:
 	}
@@ -61,7 +69,7 @@ func (s *Store) oldestJob() time.Time {
 
 // QueueFullSince is when the writer queue became continuously full, the
 // WRITER_QUEUE_FULL reading of 05b. It is zero when the queue is not full:
-// no Submit has found it full since the writer last saw room in it.
+// no Submit has filled or found it full since the writer last saw room.
 func (s *Store) QueueFullSince() time.Time {
 	if ns := s.fullSince.Load(); ns != 0 {
 		return time.Unix(0, ns)
