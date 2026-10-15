@@ -14,20 +14,21 @@ import (
 )
 
 // importBaseline reads the snapshot an import plan diffs against: every
-// watched repo's spec and version by "host/path", and the integration id
+// watched repo's spec and version by "host/path", the integration id
 // reaching each document host (a host with none plans its repos as
-// skipped).
-func (f *Fleet) importBaseline(ctx context.Context, doc *hubv1.FleetConfig) (map[string]*hubv1.RepoSpec, map[string]uint64, map[string]string, error) {
+// skipped), and the stored hub settings, fleet values, integrations and
+// accounts the rest of the document diffs against.
+func (f *Fleet) importBaseline(ctx context.Context, doc *hubv1.FleetConfig) (map[string]*hubv1.RepoSpec, map[string]uint64, map[string]string, *configRest, error) {
 	rows, err := statedb.ListAllWatchedRepoSpecs(ctx, f.store)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 	existing := make(map[string]*hubv1.RepoSpec, len(rows))
 	versions := make(map[string]uint64, len(rows))
 	for _, r := range rows {
 		var spec hubv1.RepoSpec
 		if err := protojson.Unmarshal(r.Spec, &spec); err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, nil, err
 		}
 		existing[r.Host+"/"+r.Path] = &spec
 		versions[r.Host+"/"+r.Path] = r.Version
@@ -43,11 +44,62 @@ func (f *Fleet) importBaseline(ctx context.Context, doc *hubv1.FleetConfig) (map
 			if errors.Is(err, statedb.ErrCodeHostUnknown) {
 				continue
 			}
-			return nil, nil, nil, err
+			return nil, nil, nil, nil, err
 		}
 		codeHosts[host] = id
 	}
-	return existing, versions, codeHosts, nil
+	rest, err := f.configRestBaseline(ctx)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+	return existing, versions, codeHosts, rest, nil
+}
+
+// configRestBaseline reads the stored configuration the non-repo
+// document sections diff against: the fleet layer with the integrations
+// and accounts by their document keys.
+func (f *Fleet) configRestBaseline(ctx context.Context) (*configRest, error) {
+	rest := &configRest{
+		integrations: map[string]*hubv1.IntegrationConfig{},
+		accounts:     map[string]*hubv1.AccountConfig{},
+	}
+	if spec, _, found, err := statedb.ReadFleetSettings(ctx, f.store); err != nil {
+		return nil, err
+	} else if found {
+		var layer hubv1.SettingsSpec
+		if err := protojson.Unmarshal(spec, &layer); err != nil {
+			return nil, err
+		}
+		rest.hub, rest.fleetValues = layer.GetHub(), layer.GetValues()
+	}
+	integrationRows, err := statedb.ListIntegrationRows(ctx, f.store)
+	if err != nil {
+		return nil, err
+	}
+	for _, r := range integrationRows {
+		var spec hubv1.IntegrationSpec
+		if err := protojson.Unmarshal(r.Spec, &spec); err != nil {
+			return nil, err
+		}
+		rest.integrations[r.Provider+"\x00"+r.BaseURL] = &hubv1.IntegrationConfig{
+			ProviderName: r.Provider, BaseUrl: r.BaseURL,
+			Label: spec.GetLabel(), TrackerProjects: spec.GetTrackerProjects(),
+		}
+	}
+	accountRows, err := statedb.ListAccountRows(ctx, f.store)
+	if err != nil {
+		return nil, err
+	}
+	for _, r := range accountRows {
+		var spec hubv1.AccountSpec
+		if err := protojson.Unmarshal(r.Spec, &spec); err != nil {
+			return nil, err
+		}
+		rest.accounts[r.Harness+"\x00"+r.DisplayName] = &hubv1.AccountConfig{
+			Harness: &typev1.Harness{Name: r.Harness}, Provider: r.Provider, Spec: &spec,
+		}
+	}
+	return rest, nil
 }
 
 // importOps rebuilds the store writes of an appliable plan with the same
@@ -168,11 +220,11 @@ func (f *Fleet) ImportConfig(ctx context.Context, req *connect.Request[hubv1.Imp
 		return nil, f.configFailed(ctx, actor, "encode", err)
 	}
 	now := f.hubNow()
-	existing, versions, codeHosts, err := f.importBaseline(ctx, m.GetConfig())
+	existing, versions, codeHosts, rest, err := f.importBaseline(ctx, m.GetConfig())
 	if err != nil {
 		return nil, f.configFailed(ctx, actor, "store", err)
 	}
-	changes, err := planConfigImport(m.GetConfig(), existing, codeHosts)
+	changes, err := planConfigImport(m.GetConfig(), existing, codeHosts, rest)
 	if err != nil {
 		if errors.Is(err, errImportPlanTooLarge) {
 			var v violations
