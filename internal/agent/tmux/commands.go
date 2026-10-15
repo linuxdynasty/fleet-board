@@ -21,6 +21,14 @@ var (
 	// ErrCommandFailed: tmux answered %error. The reply text is tmux's and
 	// can echo pane or session text: it is not in the error.
 	ErrCommandFailed = errors.New("tmux: command failed")
+	// ErrMaybeApplied: the command's write reached tmux's input but its
+	// reply never confirmed the effect (the write stalled, the wait's
+	// context ended, or the attach died first), so tmux may already have
+	// applied it. It wraps alongside the narrower cause (ErrNotAttached
+	// when the attach is gone), never instead of it. A non-idempotent
+	// caller (SendKeys) ends UNKNOWN_OUTCOME on it, never a known
+	// failure; an explicit %error reply stays ErrCommandFailed alone.
+	ErrMaybeApplied = errors.New("tmux: command may have been applied")
 	// ErrBadReply: a reply that is not in the shape the command asked for,
 	// or one the reply bound cut short.
 	ErrBadReply = errors.New("tmux: reply not in the asked shape")
@@ -66,13 +74,18 @@ func (c *Client) run(ctx context.Context, line string, continuePane PaneID) (Rep
 }
 
 // on sends one command on cn and returns its reply; a %error reply is
-// ErrCommandFailed, a conn that ended is ErrNotAttached.
+// ErrCommandFailed, a conn that ended is ErrNotAttached. A queued command
+// whose effect tmux may already have applied keeps ErrMaybeApplied
+// alongside, so a non-idempotent caller can tell it from a refusal.
 func (c *Client) on(ctx context.Context, cn *conn, line string, continuePane PaneID) (Reply, error) {
 	r, err := cn.do(ctx, line, continuePane)
-	if errors.Is(err, errConnClosed) {
-		return Reply{}, ErrNotAttached
-	}
 	if err != nil {
+		if errors.Is(err, errConnClosed) {
+			if errors.Is(err, ErrMaybeApplied) {
+				return Reply{}, errors.Join(ErrNotAttached, ErrMaybeApplied)
+			}
+			return Reply{}, ErrNotAttached
+		}
 		return Reply{}, err
 	}
 	if r.Failed {
@@ -162,6 +175,21 @@ func (c *Client) Capture(ctx context.Context, pane PaneID) (Capture, error) {
 		return Capture{}, fmt.Errorf("tmux: capture: %w", ErrBadReply)
 	}
 	r, err := c.run(ctx, "capture-pane -p -t "+pane.String(), NoID)
+	if err != nil {
+		return Capture{}, err
+	}
+	return Capture{Lines: r.Body, Truncated: r.Dropped > 0}, nil
+}
+
+// CaptureStyled reads pane's visible screen with styling kept
+// (capture-pane -p -e). The SendKeys gate needs the faint placeholder
+// attribute a plain read strips (02h 0.19): without it a normal Claude
+// prompt reads as typed text. Snapshots stay on Capture.
+func (c *Client) CaptureStyled(ctx context.Context, pane PaneID) (Capture, error) {
+	if pane < 0 {
+		return Capture{}, fmt.Errorf("tmux: capture: %w", ErrBadReply)
+	}
+	r, err := c.run(ctx, "capture-pane -p -e -t "+pane.String(), NoID)
 	if err != nil {
 		return Capture{}, err
 	}

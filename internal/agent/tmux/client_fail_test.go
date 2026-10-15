@@ -64,6 +64,22 @@ func TestAWaitingCommandFailsWhenTmuxExits(t *testing.T) {
 	}
 }
 
+// A command whose write reached tmux but whose reply never comes (tmux
+// exits first) may already have taken effect: it reports ErrMaybeApplied
+// alongside ErrNotAttached, so a non-idempotent caller ends UNKNOWN_OUTCOME
+// instead of claiming a known failure.
+func TestAWaitingCommandMayHaveAppliedWhenTmuxExits(t *testing.T) {
+	r := startFake(t, &backoffs{wait: time.Hour}, nil)
+	r.waitState(t, tmux.StateUp)
+	_, err := r.Capture(ctxT(t), 8)
+	if !errors.Is(err, tmux.ErrMaybeApplied) {
+		t.Fatalf("Capture = %v, want ErrMaybeApplied", err)
+	}
+	if !errors.Is(err, tmux.ErrNotAttached) {
+		t.Fatalf("Capture = %v, want ErrNotAttached kept", err)
+	}
+}
+
 // A subscription tmux refuses (%error) is an attach failure, not an up
 // client; one refused while up is not kept for the next attach.
 func TestARefusedSubscriptionIsNotUp(t *testing.T) {
