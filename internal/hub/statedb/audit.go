@@ -82,6 +82,12 @@ const (
 	ActionAdopted     = "machine.adopted"
 	ActionCertRenewed = "machine.cert_renewed"
 	ActionRestore     = "hub.restore"
+	// ActionRepoCreate, ActionRepoUpdate and ActionRepoDelete are the
+	// owner repo writes (row 13a): target repos/<host>/<path>, with the
+	// request_id and the host, path, code host and version in detail.
+	ActionRepoCreate = "repo.create"
+	ActionRepoUpdate = "repo.update"
+	ActionRepoDelete = "repo.delete"
 )
 
 // MaxAuditDetail caps AuditEntry.detail in bytes; the table checks it too.

@@ -1,0 +1,419 @@
+package statedb
+
+import (
+	"bytes"
+	"context"
+	"database/sql"
+	"errors"
+	"fmt"
+	"net/url"
+	"time"
+
+	"github.com/linuxdynasty/fleet-board/internal/store"
+)
+
+// repoRequestLogSQL is migration 15 (plan row 13a): the owner repo writes
+// stamp the repos row they change and keep their idempotency record.
+//
+//   - repos gains hub_seq (Watch order; 0 = never stamped by an owner
+//     write): the stamp of the create, update or delete, so a later read
+//     can name the change without scanning the audit log.
+//   - repo_request_log keys (principal, request_id) to the watched repo
+//     and the SHA-256 of the request body, to tell a retry from a
+//     conflict. The unique key backs the check up.
+const repoRequestLogSQL = `ALTER TABLE repos ADD COLUMN hub_seq INTEGER NOT NULL DEFAULT 0;
+CREATE TABLE repo_request_log(
+	principal_id TEXT NOT NULL CHECK (principal_id <> ''),
+	request_id TEXT NOT NULL CHECK (request_id <> ''),
+	host TEXT NOT NULL CHECK (host <> ''),
+	path TEXT NOT NULL CHECK (path <> ''),
+	request_hash BLOB NOT NULL,
+	create_time INTEGER NOT NULL,
+	PRIMARY KEY (principal_id, request_id)
+) STRICT;`
+
+// Outcomes of the owner repo writes other than success (02b "Idempotency",
+// "Versions and ETags").
+var (
+	// ErrRepoExists: the repo is already watched (ALREADY_EXISTS).
+	ErrRepoExists = errors.New("statedb: this repo is already watched")
+	// ErrRepoUnknown: no watched repo at host/path (NOT_FOUND).
+	ErrRepoUnknown = errors.New("statedb: unknown repo")
+)
+
+// VersionConflict is a stale expected_version: Current is the repo's
+// version now, for metadata["current_version"] (02b).
+type VersionConflict struct {
+	Current uint64
+}
+
+func (e *VersionConflict) Error() string {
+	return fmt.Sprintf("statedb: expected_version is stale, the repo is at version %d", e.Current)
+}
+
+// RepoWrite is the idempotency and audit envelope of one owner repo write.
+// RequestHash is SHA-256 of the request body, to tell a retry from a
+// conflict; Actor with an empty ID is Principal.
+type RepoWrite struct {
+	Principal   string
+	RequestID   string
+	RequestHash [32]byte
+	Actor       Actor
+	Now         time.Time
+}
+
+// CreateRepo is one watched repository to start watching.
+type CreateRepo struct {
+	RepoWrite
+	Host     string
+	Path     string
+	CodeHost string
+	Enabled  bool
+	// Spec is the RepoSpec as protojson, stored whole.
+	Spec []byte
+}
+
+// UpdateRepo is a spec rewrite of a watched repo at ExpectedVersion; 0
+// skips the check (02b "Versions and ETags").
+type UpdateRepo struct {
+	RepoWrite
+	Host            string
+	Path            string
+	Enabled         bool
+	Spec            []byte
+	ExpectedVersion uint64
+}
+
+// DeleteRepo stops watching a repo at ExpectedVersion; 0 skips the check.
+type DeleteRepo struct {
+	RepoWrite
+	Host            string
+	Path            string
+	ExpectedVersion uint64
+}
+
+// RepoStored is the watched repo after the write. Replay is set when the
+// principal already used the request_id for the same request: the stored
+// row comes back and nothing is written twice.
+type RepoStored struct {
+	Host     string
+	Path     string
+	CodeHost string
+	Version  uint64
+	CreateMs int64
+	UpdateMs int64
+	HubSeq   int64
+	Spec     []byte
+	Replay   bool
+}
+
+func repoTarget(host, path string) string {
+	return "repos/" + host + "/" + path
+}
+
+func auditRepo(ctx context.Context, tx *sql.Tx, action string, stored RepoStored, w RepoWrite) error {
+	detail, err := auditDetail(struct {
+		Host     string `json:"host"`
+		Path     string `json:"path"`
+		CodeHost string `json:"code_host"`
+		Version  uint64 `json:"version"`
+	}{stored.Host, stored.Path, stored.CodeHost, stored.Version})
+	if err != nil {
+		return err
+	}
+	actor := w.Actor
+	if actor.ID == "" {
+		actor.ID = w.Principal
+	}
+	_, err = AppendAudit(ctx, tx, AuditEntry{
+		Actor: actor, Action: action, Target: repoTarget(stored.Host, stored.Path),
+		RequestID: w.RequestID, Detail: detail, Now: w.Now,
+	})
+	return err
+}
+
+// checkRepoReplay returns the stored repo when the principal already used
+// the request_id for the same request body, or [ErrRequestConflict] when
+// the body differs. A miss is a nil stored repo and no error.
+func checkRepoReplay(ctx context.Context, tx *sql.Tx, w RepoWrite, host, path string) (*RepoStored, error) {
+	var stored struct {
+		host string
+		path string
+		hash []byte
+	}
+	err := tx.QueryRowContext(ctx, `SELECT host, path, request_hash FROM repo_request_log
+		WHERE principal_id = ? AND request_id = ?`, w.Principal, w.RequestID).
+		Scan(&stored.host, &stored.path, &stored.hash)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		return nil, nil
+	case err != nil:
+		return nil, fmt.Errorf("statedb: look up repo request_id: %w", err)
+	case !bytes.Equal(stored.hash, w.RequestHash[:]) || stored.host != host || stored.path != path:
+		return nil, ErrRequestConflict
+	}
+	got, err := readRepo(ctx, tx, host, path)
+	if errors.Is(err, ErrRepoUnknown) {
+		// The replayed request deleted the repo: the delete is done, so a
+		// retry answers the same empty outcome, marked as a replay.
+		return &RepoStored{Host: host, Path: path, Replay: true}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	got.Replay = true
+	return &got, nil
+}
+
+func logRepoRequest(ctx context.Context, tx *sql.Tx, w RepoWrite, host, path string) error {
+	_, err := tx.ExecContext(ctx, `INSERT INTO repo_request_log(principal_id, request_id, host, path,
+		request_hash, create_time) VALUES (?, ?, ?, ?, ?, ?)`,
+		w.Principal, w.RequestID, host, path, w.RequestHash[:], w.Now.UnixMilli())
+	if err != nil {
+		return fmt.Errorf("statedb: log repo request: %w", err)
+	}
+	return nil
+}
+
+func readRepo(ctx context.Context, tx *sql.Tx, host, path string) (RepoStored, error) {
+	var got RepoStored
+	var spec string
+	var version, createMs, updateMs, hubSeq, enabled int64
+	err := tx.QueryRowContext(ctx, `SELECT host, path, code_host, spec_json, version,
+		create_ms, update_ms, hub_seq, enabled FROM repos WHERE host = ? AND path = ?`,
+		host, path).Scan(&got.Host, &got.Path, &got.CodeHost, &spec, &version,
+		&createMs, &updateMs, &hubSeq, &enabled)
+	if errors.Is(err, sql.ErrNoRows) {
+		return RepoStored{}, ErrRepoUnknown
+	}
+	if err != nil {
+		return RepoStored{}, fmt.Errorf("statedb: read repo: %w", err)
+	}
+	got.Spec = []byte(spec)
+	got.Version = uint64(version) //nolint:gosec // G115: versions start at 1 and only rise
+	got.CreateMs, got.UpdateMs, got.HubSeq = createMs, updateMs, hubSeq
+	return got, nil
+}
+
+func checkRepoVersion(current, expected uint64) error {
+	if expected != 0 && expected != current {
+		return &VersionConflict{Current: current}
+	}
+	return nil
+}
+
+// GetWatchedRepo reads one watched repo (ErrRepoUnknown when missing).
+func GetWatchedRepo(ctx context.Context, s *store.Store, host, path string) (RepoStored, error) {
+	var out RepoStored
+	err := s.Read(ctx, func(tx *sql.Tx) error {
+		var err error
+		out, err = readRepo(ctx, tx, host, path)
+		return err
+	})
+	if err != nil {
+		return RepoStored{}, err
+	}
+	return out, nil
+}
+
+// ErrCodeHostUnknown is a repo no configured integration can reach.
+var ErrCodeHostUnknown = errors.New("statedb: no code-host integration reaches this repo")
+
+// codeHostProviders pairs a repo host with the integration provider that
+// serves it. The github adapter reads github.com repos through
+// api.github.com (integration/github), so the host and the API base never
+// match; this is the row-13a minimal rule, grown when the next code-host
+// adapter lands.
+var codeHostProviders = map[string]string{
+	"github.com": "github",
+}
+
+// MatchCodeHost names the configured integration that reaches host: a row
+// whose provider serves the host, or whose base URL is on the host.
+// Unknown hosts and hosts with no such row are ErrCodeHostUnknown.
+func MatchCodeHost(ctx context.Context, s *store.Store, host string) (string, error) {
+	var id string
+	err := s.Read(ctx, func(tx *sql.Tx) error {
+		rows, err := tx.QueryContext(ctx, `SELECT id, provider, base_url FROM integrations ORDER BY id`)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = rows.Close() }()
+		for rows.Next() {
+			var row struct {
+				id       string
+				provider string
+				base     string
+			}
+			if err := rows.Scan(&row.id, &row.provider, &row.base); err != nil {
+				return err
+			}
+			if row.provider == codeHostProviders[host] || urlHost(row.base) == host {
+				if id == "" {
+					id = row.id
+				}
+			}
+		}
+		return rows.Err()
+	})
+	if err != nil {
+		return "", fmt.Errorf("statedb: match code host: %w", err)
+	}
+	if id == "" {
+		return "", ErrCodeHostUnknown
+	}
+	return id, nil
+}
+
+// urlHost is the host of a base URL, or "" when it has none.
+func urlHost(base string) string {
+	u, err := url.Parse(base)
+	if err != nil {
+		return ""
+	}
+	return u.Hostname()
+}
+
+// CreateWatchedRepo starts watching a repo in one writer transaction. In
+// order: a replayed request_id returns the stored repo ([ErrRequestConflict]
+// on another body); an existing row is [ErrRepoExists]; otherwise the row
+// is inserted at version 1, stamped, with its repo.create audit row.
+// Nothing is written on any error. The unique key on (principal,
+// request_id) backs the replay check up.
+func CreateWatchedRepo(ctx context.Context, s *store.Store, in CreateRepo) (RepoStored, error) {
+	jctx := context.WithoutCancel(ctx) // see insertIdentity
+	var out RepoStored
+	err := s.Write(ctx, func(tx *sql.Tx) error {
+		if replay, err := checkRepoReplay(jctx, tx, in.RepoWrite, in.Host, in.Path); err != nil || replay != nil {
+			if err == nil {
+				out = *replay
+			}
+			return err
+		}
+		var exists bool
+		err := tx.QueryRowContext(jctx, `SELECT TRUE FROM repos WHERE host = ? AND path = ?`,
+			in.Host, in.Path).Scan(&exists)
+		switch {
+		case err == nil:
+			return ErrRepoExists
+		case !errors.Is(err, sql.ErrNoRows):
+			return fmt.Errorf("statedb: look up repo: %w", err)
+		}
+		st, err := NextStamp(jctx, tx, in.Now)
+		if err != nil {
+			return err
+		}
+		enabled := 0
+		if in.Enabled {
+			enabled = 1
+		}
+		nowMs := in.Now.UnixMilli()
+		if _, err := tx.ExecContext(jctx, `INSERT INTO repos(host, path, code_host, enabled,
+			spec_json, version, create_ms, update_ms, hub_seq) VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)`,
+			in.Host, in.Path, in.CodeHost, enabled, string(in.Spec), nowMs, nowMs, st.HubSeq); err != nil {
+			return fmt.Errorf("statedb: insert repo: %w", err)
+		}
+		out = RepoStored{
+			Host: in.Host, Path: in.Path, CodeHost: in.CodeHost,
+			Version: 1, CreateMs: nowMs, UpdateMs: nowMs, HubSeq: st.HubSeq, Spec: in.Spec,
+		}
+		if err := auditRepo(jctx, tx, ActionRepoCreate, out, in.RepoWrite); err != nil {
+			return err
+		}
+		return logRepoRequest(jctx, tx, in.RepoWrite, in.Host, in.Path)
+	})
+	if err != nil {
+		return RepoStored{}, err
+	}
+	return out, nil
+}
+
+// UpdateWatchedRepo rewrites a watched repo's spec in one writer
+// transaction: a replayed request_id returns the stored repo, a missing
+// row is [ErrRepoUnknown], a stale version is [VersionConflict].
+// Otherwise the spec is replaced, the version rises by 1 and the row is
+// stamped, with its repo.update audit row.
+func UpdateWatchedRepo(ctx context.Context, s *store.Store, in UpdateRepo) (RepoStored, error) {
+	jctx := context.WithoutCancel(ctx) // see insertIdentity
+	var out RepoStored
+	err := s.Write(ctx, func(tx *sql.Tx) error {
+		if replay, err := checkRepoReplay(jctx, tx, in.RepoWrite, in.Host, in.Path); err != nil || replay != nil {
+			if err == nil {
+				out = *replay
+			}
+			return err
+		}
+		got, err := readRepo(jctx, tx, in.Host, in.Path)
+		if err != nil {
+			return err
+		}
+		if err := checkRepoVersion(got.Version, in.ExpectedVersion); err != nil {
+			return err
+		}
+		st, err := NextStamp(jctx, tx, in.Now)
+		if err != nil {
+			return err
+		}
+		enabled := 0
+		if in.Enabled {
+			enabled = 1
+		}
+		nowMs := in.Now.UnixMilli()
+		if _, err := tx.ExecContext(jctx, `UPDATE repos SET enabled = ?, spec_json = ?,
+			version = version + 1, update_ms = ?, hub_seq = ? WHERE host = ? AND path = ?`,
+			enabled, string(in.Spec), nowMs, st.HubSeq, in.Host, in.Path); err != nil {
+			return fmt.Errorf("statedb: update repo: %w", err)
+		}
+		out = RepoStored{
+			Host: got.Host, Path: got.Path, CodeHost: got.CodeHost,
+			Version: got.Version + 1, CreateMs: got.CreateMs, UpdateMs: nowMs,
+			HubSeq: st.HubSeq, Spec: in.Spec,
+		}
+		if err := auditRepo(jctx, tx, ActionRepoUpdate, out, in.RepoWrite); err != nil {
+			return err
+		}
+		return logRepoRequest(jctx, tx, in.RepoWrite, in.Host, in.Path)
+	})
+	if err != nil {
+		return RepoStored{}, err
+	}
+	return out, nil
+}
+
+// DeleteWatchedRepo stops watching a repo in one writer transaction: a
+// replayed request_id answers the same outcome, a missing row is
+// [ErrRepoUnknown], a stale version is [VersionConflict]. Otherwise the
+// row is deleted with its repo.delete audit row; the run's goals continue
+// and its mirrors age out like any unwatched item (repo.proto).
+func DeleteWatchedRepo(ctx context.Context, s *store.Store, in DeleteRepo) (RepoStored, error) {
+	jctx := context.WithoutCancel(ctx) // see insertIdentity
+	var out RepoStored
+	err := s.Write(ctx, func(tx *sql.Tx) error {
+		if replay, err := checkRepoReplay(jctx, tx, in.RepoWrite, in.Host, in.Path); err != nil || replay != nil {
+			if err == nil {
+				out = *replay
+			}
+			return err
+		}
+		got, err := readRepo(jctx, tx, in.Host, in.Path)
+		if err != nil {
+			return err
+		}
+		if err := checkRepoVersion(got.Version, in.ExpectedVersion); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(jctx, `DELETE FROM repos WHERE host = ? AND path = ?`,
+			in.Host, in.Path); err != nil {
+			return fmt.Errorf("statedb: delete repo: %w", err)
+		}
+		out = got
+		if err := auditRepo(jctx, tx, ActionRepoDelete, out, in.RepoWrite); err != nil {
+			return err
+		}
+		return logRepoRequest(jctx, tx, in.RepoWrite, in.Host, in.Path)
+	})
+	if err != nil {
+		return RepoStored{}, err
+	}
+	return out, nil
+}
