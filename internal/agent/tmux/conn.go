@@ -130,7 +130,10 @@ var errConnClosed = errors.New("tmux: control client closed")
 
 // do writes one command line and waits for its reply. The queue entry and
 // the write happen under wmu, so replies, which tmux writes in the order it
-// read the commands, match the queue in order.
+// read the commands, match the queue in order. Past the queue point the
+// command may already have taken effect, so every error from there on wraps
+// ErrMaybeApplied next to its cause; only the refused-before-queue return
+// above stays a bare errConnClosed.
 func (c *conn) do(ctx context.Context, line string, continuePane PaneID) (Reply, error) {
 	p := &pending{continuePane: continuePane, ch: make(chan result, 1)}
 	c.wmu.Lock()
@@ -146,14 +149,14 @@ func (c *conn) do(ctx context.Context, line string, continuePane PaneID) (Reply,
 	c.wmu.Unlock()
 	if err != nil {
 		c.kill()
-		return Reply{}, err
+		return Reply{}, errors.Join(ErrMaybeApplied, err)
 	}
 	select {
 	case r := <-p.ch:
 		return r.reply, r.err
 	case <-ctx.Done():
 		// The entry stays queued so later replies still match in order.
-		return Reply{}, ctx.Err()
+		return Reply{}, errors.Join(ErrMaybeApplied, ctx.Err())
 	}
 }
 
@@ -272,7 +275,9 @@ func (c *conn) isPaused(pane PaneID) bool {
 	return c.paused[pane]
 }
 
-// finish marks the conn closed and fails every waiting command.
+// finish marks the conn closed and fails every waiting command. Every
+// waiter queued its command, so each one may already have taken effect:
+// the failure wraps ErrMaybeApplied next to errConnClosed.
 func (c *conn) finish(reason string) {
 	c.pmu.Lock()
 	if c.reason == "" {
@@ -286,7 +291,7 @@ func (c *conn) finish(reason string) {
 	c.pending = nil
 	c.pmu.Unlock()
 	for _, p := range waiting {
-		p.ch <- result{err: errConnClosed}
+		p.ch <- result{err: errors.Join(ErrMaybeApplied, errConnClosed)}
 	}
 }
 

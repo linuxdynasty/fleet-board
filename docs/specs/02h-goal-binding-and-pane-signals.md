@@ -388,8 +388,8 @@ reads may then differ.
 too. The E6 verification gate therefore applies to prompt answers only: nudges
 and resume depend on the READY parser, not PROMPT, so Codex and Muse nudges
 are not blocked while prompt detection is unverified. Text is never typed
-into a running turn: in Claude the empty input line during a turn would queue
-it as the next message.
+into a running turn (it would queue as the next message); the gate reads
+the screen styled and a lost reply ends `UNKNOWN_OUTCOME`.
 
 Cursor's input line is a placeholder when empty ("→ Plan, search, build
 anything" fresh, "→ Add a follow-up" after a turn;
