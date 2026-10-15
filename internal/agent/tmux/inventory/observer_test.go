@@ -63,16 +63,19 @@ func TestLifecycleEvents(t *testing.T) {
 			// remain-on-exit on: tmux keeps the pane and its status.
 			dev.Run(t, "set-option", "-w", "-t", "work:0", "remain-on-exit", "on")
 			dev.Run(t, "split-window", "-d", "-t", "work:0", "exit 3")
+			// tmux can report the death before waitpid hands it the
+			// status: the rescan then reads a status-less remains
+			// PaneExited (CI run 38668317877 attempt 2 caught exactly
+			// that) and diff corrects with one PaneChanged carrying
+			// the status ~1 s later (statusLanded, pinned by
+			// TestDiffDeadStatusLandingEmitsChanged). Either arrival
+			// proves the exit; the wait bound is unchanged.
 			for deadline := time.Now().Add(wait); ; {
 				if time.Now().After(deadline) {
-					t.Fatalf("no PaneExited with remains within %s: %v", wait, r.rec.all()[i:])
+					t.Fatalf("no remains PaneExited with status 3 within %s (nor its status-3 PaneChanged): %v", wait, r.rec.all()[i:])
 				}
 				r.snapshot(t) // a death raises no notice of its own: the rescan reads it
-				evs := r.rec.all()
-				if found := findExited(evs[i:]); found != nil {
-					if found.ExitStatus == nil || found.GetExitStatus() != 3 || !found.GetRemains() {
-						t.Fatalf("exited with remain-on-exit on = %v, want status 3 and remains", found)
-					}
+				if exitedWithStatus(t, r.rec.all()[i:]) {
 					break
 				}
 				time.Sleep(50 * time.Millisecond)
@@ -81,13 +84,36 @@ func TestLifecycleEvents(t *testing.T) {
 	}
 }
 
-func findExited(evs []*agentv1.Event) *agentv1.PaneExited {
+// exitedWithStatus reports whether a remains exit reached status 3,
+// either on the PaneExited itself or landed later: a death read before
+// tmux knew the status emits a status-less remains PaneExited first, and
+// the only correction diff ever emits is one PaneChanged carrying the
+// status on that same pane (statusLanded, pinned by
+// TestDiffDeadStatusLandingEmitsChanged). A remains exit carrying any
+// other non-nil status fails the test at once: only a status-less exit
+// is ever corrected, so a wrong status is a product bug, never a slow
+// landing.
+func exitedWithStatus(t *testing.T, evs []*agentv1.Event) bool {
+	t.Helper()
+	exited := map[string]bool{}
 	for _, ev := range evs {
 		if pe := ev.GetPaneExited(); pe != nil && pe.GetRemains() {
-			return pe
+			switch {
+			case pe.ExitStatus == nil:
+				exited[pe.GetPane().GetPaneId()] = true
+			case pe.GetExitStatus() == 3:
+				return true
+			default:
+				t.Fatalf("remains PaneExited = %v, want status 3 or unset: only a status-less exit is ever corrected", pe)
+			}
+			continue
+		}
+		if pc := ev.GetPaneChanged(); pc != nil &&
+			exited[pc.GetPane().GetKey().GetPaneId()] && pc.GetPane().GetExitStatus() == 3 {
+			return true
 		}
 	}
-	return nil
+	return false
 }
 
 // A server whose every read has failed since the agent started is reported
