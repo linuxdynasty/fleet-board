@@ -29,7 +29,9 @@ var (
 const (
 	maxHarnessName = 64
 	maxProfileName = 128
-	maxReserve     = 100
+	// maxReserve is the AccountSpec.reserve_percent cap: 0 to 50
+	// (defaults.md, ADR 0024).
+	maxReserve = 50
 	// defaultReserve is the quota a new account keeps for interactive
 	// use (account.proto).
 	defaultReserve = 10
@@ -92,7 +94,7 @@ func checkAccountSpec(spec *hubv1.AccountSpec) error {
 	}
 	if r := spec.GetReservePercent(); r > maxReserve {
 		v.add("spec.reserve_percent", typev1.ReasonCode_REASON_CODE_INVALID_ARGUMENT,
-			"spec.reserve_percent is at most 100")
+			"spec.reserve_percent is 0 to 50")
 	}
 	for i, c := range spec.GetConsent() {
 		switch c {

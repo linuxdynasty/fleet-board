@@ -34,6 +34,7 @@ const configRequestLogSQL = `CREATE TABLE config_request_log(
 	create_ms INTEGER NOT NULL DEFAULT 0,
 	update_ms INTEGER NOT NULL DEFAULT 0,
 	hub_seq INTEGER NOT NULL DEFAULT 0,
+	status TEXT NOT NULL DEFAULT '',
 	deleted INTEGER NOT NULL DEFAULT 0 CHECK (deleted IN (0, 1)),
 	PRIMARY KEY (principal_id, request_id)
 ) STRICT;`
@@ -110,6 +111,7 @@ type configLogRow struct {
 	harness    string
 	provider   string
 	origin     string
+	status     string
 	spec       string
 	version    int64
 	respCms    int64
@@ -122,10 +124,10 @@ func readConfigLog(ctx context.Context, tx *sql.Tx, principal, requestID string)
 	var row configLogRow
 	var deleted int64
 	err := tx.QueryRowContext(ctx, `SELECT request_hash, create_time, kind, resource_id, harness, provider, origin,
-		spec, version, create_ms, update_ms, hub_seq, deleted FROM config_request_log
+		spec, version, create_ms, update_ms, hub_seq, status, deleted FROM config_request_log
 		WHERE principal_id = ? AND request_id = ?`, principal, requestID).
 		Scan(&row.hash, &row.createMs, &row.kind, &row.resourceID, &row.harness, &row.provider, &row.origin,
-			&row.spec, &row.version, &row.respCms, &row.respUms, &row.hubSeq, &deleted)
+			&row.spec, &row.version, &row.respCms, &row.respUms, &row.hubSeq, &row.status, &deleted)
 	if err != nil {
 		return configLogRow{}, err
 	}
@@ -178,7 +180,7 @@ func configReplay(ctx context.Context, tx *sql.Tx, w ConfigWrite, kind string) (
 // sweeps a bounded batch of expired rows, so the table cannot grow
 // without bound. Replays add no rows and prune nothing.
 func logConfigRequest(ctx context.Context, tx *sql.Tx, w ConfigWrite, kind, resourceID, harness, provider, origin, spec string,
-	version, createMs, updateMs, hubSeq int64, deleted bool,
+	version, createMs, updateMs, hubSeq int64, status string, deleted bool,
 ) error {
 	del := 0
 	if deleted {
@@ -186,10 +188,10 @@ func logConfigRequest(ctx context.Context, tx *sql.Tx, w ConfigWrite, kind, reso
 	}
 	_, err := tx.ExecContext(ctx, `INSERT INTO config_request_log(principal_id, request_id,
 		request_hash, create_time, kind, resource_id, harness, provider, origin, spec, version,
-		create_ms, update_ms, hub_seq, deleted)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		create_ms, update_ms, hub_seq, status, deleted)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		w.Principal, w.RequestID, w.RequestHash[:], w.Now.UnixMilli(), kind, resourceID,
-		harness, provider, origin, spec, version, createMs, updateMs, hubSeq, del)
+		harness, provider, origin, spec, version, createMs, updateMs, hubSeq, status, del)
 	if err != nil {
 		return fmt.Errorf("statedb: log config request: %w", err)
 	}

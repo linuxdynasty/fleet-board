@@ -66,6 +66,9 @@ func TestUpdateSettingsWritesTheFleetLayer(t *testing.T) {
 	if got.GetSpec().GetValues().GetMaxActive() != 2 || !got.GetSpec().GetHub().GetAutoDispatch() {
 		t.Errorf("spec = %+v, want max_active 2 with auto_dispatch", got.GetSpec())
 	}
+	if got.GetSpec().GetScope().GetFleet() == nil {
+		t.Errorf("scope = %+v, want the fleet layer identity", got.GetSpec().GetScope())
+	}
 	spec, version, found, err := statedb.ReadFleetSettings(t.Context(), e.st)
 	if err != nil || !found || version != 1 {
 		t.Fatalf("stored = %q/%d/%v/%v, want the layer at version 1", spec, version, found, err)
@@ -120,6 +123,8 @@ func TestUpdateSettingsValidatesItsFields(t *testing.T) {
 		{name: "fleet only", spec: &hubv1.SettingsSpec{Scope: groupScope("gpu")}, paths: []string{"spec.values.max_active"}, field: "spec.scope"},
 		{name: "mask required", spec: &hubv1.SettingsSpec{Scope: fleetScope()}, paths: nil, field: "update_mask"},
 		{name: "mask path allowlisted", spec: &hubv1.SettingsSpec{Scope: fleetScope()}, paths: []string{"spec.priority"}, field: "update_mask.paths[0]"},
+		{name: "active bounded", spec: &hubv1.SettingsSpec{Scope: fleetScope(), Values: &typev1.SettingValues{MaxActive: func() *uint32 { v := uint32(17); return &v }()}}, paths: []string{"spec.values.max_active"}, field: "spec.values.max_active"},
+		{name: "total bounded", spec: &hubv1.SettingsSpec{Scope: fleetScope(), Values: &typev1.SettingValues{MaxTotal: func() *uint32 { v := uint32(33); return &v }()}}, paths: []string{"spec.values.max_total"}, field: "spec.values.max_total"},
 		{name: "idle bounded", spec: &hubv1.SettingsSpec{Scope: fleetScope(), Hub: &hubv1.HubSettings{SessionIdleTimeout: idle}}, paths: []string{"spec.hub.session_idle_timeout"}, field: "spec.hub.session_idle_timeout"},
 		{name: "idle within max", spec: &hubv1.SettingsSpec{
 			Scope: fleetScope(),

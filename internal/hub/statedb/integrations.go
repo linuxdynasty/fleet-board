@@ -211,16 +211,9 @@ func UpdateIntegrationSpec(ctx context.Context, s *store.Store, in UpdateIntegra
 	err := s.Write(ctx, func(tx *sql.Tx) error {
 		if row, err := configReplay(jctx, tx, in.ConfigWrite, configKindIntegration); err != nil || row != nil {
 			if err == nil {
-				status, rerr := readIntegrationStatus(jctx, tx, in.ID)
-				if rerr != nil {
-					return rerr
-				}
-				out = IntegrationStored{
-					ID: in.ID, Label: status.label, Spec: []byte(row.spec),
-					Version:  uint64(row.version), //nolint:gosec // G115: versions start at 1 and only rise
-					CreateMs: row.respCms, UpdateMs: row.respUms, HubSeq: row.hubSeq,
-					Status: status.raw, Replay: true,
-				}
+				// The status replays from the log, not the row: the
+				// syncer may have moved it after the original call.
+				out = replayIntegration(in.ID, row)
 			}
 			return err
 		}
@@ -259,12 +252,12 @@ func UpdateIntegrationSpec(ctx context.Context, s *store.Store, in UpdateIntegra
 		}); err != nil {
 			return err
 		}
-		if err := logConfigRequest(jctx, tx, in.ConfigWrite, configKindIntegration, in.ID,
-			"", "", "", string(merged), version+1, createMs, nowMs, st.HubSeq, false); err != nil {
-			return err
-		}
 		status, err := readIntegrationStatus(jctx, tx, in.ID)
 		if err != nil {
+			return err
+		}
+		if err := logConfigRequest(jctx, tx, in.ConfigWrite, configKindIntegration, in.ID,
+			"", "", "", string(merged), version+1, createMs, nowMs, st.HubSeq, string(status.raw), false); err != nil {
 			return err
 		}
 		out = IntegrationStored{
@@ -278,6 +271,18 @@ func UpdateIntegrationSpec(ctx context.Context, s *store.Store, in UpdateIntegra
 		return IntegrationStored{}, err
 	}
 	return out, nil
+}
+
+// replayIntegration rebuilds the stored integration of an idempotent
+// retry: the spec of the original call with its status, marked as a
+// replay so nothing is written twice.
+func replayIntegration(id string, row *configLogRow) IntegrationStored {
+	return IntegrationStored{
+		ID: id, Spec: []byte(row.spec),
+		Version:  uint64(row.version), //nolint:gosec // G115: versions start at 1 and only rise
+		CreateMs: row.respCms, UpdateMs: row.respUms, HubSeq: row.hubSeq,
+		Status: []byte(row.status), Replay: true,
+	}
 }
 
 // IntegrationStored is the integration after the write: the owner spec

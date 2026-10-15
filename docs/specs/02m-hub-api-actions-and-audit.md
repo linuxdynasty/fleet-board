@@ -172,14 +172,17 @@ idempotent response is kept for 24 h like every write.
 
 `CreateAccount` adds an owner-defined API-key account (`BUDGET_KIND_DOLLAR_CAP`
 only): a new account gets reserve 10 and the push, pr-open and merge consent
-when the request leaves them unset. `UpdateAccount` rewrites the masked spec
+when the request leaves them unset. The hub refuses a reserve outside 0 to
+50 on create and update (defaults.md, ADR 0024). `UpdateAccount` rewrites the masked spec
 fields (display name, mode, reserve, consent, budget kind, spend cap, and the
 bindings that map a Codex account showing no identity to a machine);
 `DeleteAccount` removes an account nothing uses (`ACCOUNT_IN_USE` follows with
 the dispatch rows, which are the first tables that can reference one).
 `UpdateSettings` rewrites the masked fields of the fleet settings layer,
-creating it at version 1 (group and machine layers follow with their
-management). `UpdateIntegration` rewrites an integration's label and tracker
+creating it at version 1 with the fleet scope seeded (group and machine
+layers follow with their management). The hub refuses `max_active`
+outside 1 to 16 and `max_total` outside 1 to 32 when set (defaults.md,
+ADR 0024). `UpdateIntegration` rewrites an integration's label and tracker
 projects. Every write checks the caller, the local secret, the fields, then
 the request id in one store transaction (a repeat id with the same body
 returns what is stored, another body is refused), stamps the row, versions

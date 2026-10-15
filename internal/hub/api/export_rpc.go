@@ -88,12 +88,12 @@ func exportAccounts(rows []statedb.AccountRow) ([]*hubv1.AccountConfig, error) {
 // ExportConfig returns the configuration as one FleetConfig (02m): the
 // hub database is the source of truth, fleet.yaml is only the CLI's
 // rendering of this message, and it holds no secrets and no ids. It is
-// a read: the caller needs SETTINGS but no request id and no local
-// secret. Exporting then importing (dry run) plans nothing to do: every
-// exported section diffs to unchanged.
+// a read ([SCOPE READ] in service.proto, 02d): the caller needs READ
+// but no request id and no local secret. Exporting then importing (dry
+// run) plans nothing to do: every exported section diffs to unchanged.
 func (f *Fleet) ExportConfig(ctx context.Context, req *connect.Request[hubv1.ExportConfigRequest],
 ) (*connect.Response[hubv1.ExportConfigResponse], error) {
-	who, err := authorizeSettings(ctx)
+	who, err := authorizeRead(ctx)
 	if err != nil {
 		return nil, f.exportRefused(ctx, "", err)
 	}

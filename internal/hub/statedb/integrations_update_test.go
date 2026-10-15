@@ -86,3 +86,35 @@ func TestUpdateIntegrationSpecRefusesUnknownStaleAndConflict(t *testing.T) {
 		t.Errorf("conflict = %v, want ErrRequestConflict", err)
 	}
 }
+
+func TestUpdateIntegrationReplayReturnsTheOriginalStatus(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, s := openConfigStore(t)
+	seedGitHubForUpdate(t, s)
+	setStatus := func(status string) {
+		t.Helper()
+		if err := statedb.SetIntegrationStatus(ctx, s, "github", []byte(status), accountTime.UnixMilli()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	setStatus(`{"health":"ok"}`)
+	op := func(req string, body byte) (statedb.IntegrationStored, error) {
+		return statedb.UpdateIntegrationSpec(ctx, s, statedb.UpdateIntegrationOp{
+			ConfigWrite: configWrite("local:alice", req, body), ID: "github",
+			Merge: integrationMerge("GitHub", `{"label":"GitHub"}`),
+		})
+	}
+	first, err := op("req-1", 'a')
+	if err != nil || first.Replay {
+		t.Fatalf("update = %+v/%v, want success", first, err)
+	}
+	setStatus(`{"health":"degraded"}`)
+	replayed, err := op("req-1", 'a')
+	if err != nil || !replayed.Replay {
+		t.Fatalf("replay = %+v/%v, want the stored integration", replayed, err)
+	}
+	if string(replayed.Status) != `{"health":"ok"}` {
+		t.Errorf("replay status = %s, want the original one", replayed.Status)
+	}
+}

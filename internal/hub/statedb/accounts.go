@@ -227,7 +227,7 @@ func CreateOwnerAccount(ctx context.Context, s *store.Store, in CreateAccount) (
 			return err
 		}
 		if err := logConfigRequest(jctx, tx, in.ConfigWrite, configKindAccount, in.ID,
-			in.Harness, in.Provider, in.Origin, string(in.Spec), 1, nowMs, nowMs, st.HubSeq, false); err != nil {
+			in.Harness, in.Provider, in.Origin, string(in.Spec), 1, nowMs, nowMs, st.HubSeq, "", false); err != nil {
 			return err
 		}
 		out = AccountStored{
@@ -281,6 +281,18 @@ func UpdateOwnerAccount(ctx context.Context, s *store.Store, in UpdateAccountOp)
 		if err != nil {
 			return err
 		}
+		if displayName != got.DisplayName {
+			var clash bool
+			err := tx.QueryRowContext(jctx, `SELECT TRUE FROM accounts
+				WHERE harness = ? AND display_name = ? AND id <> ?`,
+				got.Harness, displayName, in.ID).Scan(&clash)
+			switch {
+			case err == nil:
+				return ErrAccountExists
+			case !errors.Is(err, sql.ErrNoRows):
+				return fmt.Errorf("statedb: look up account: %w", err)
+			}
+		}
 		st, err := NextStamp(jctx, tx, in.Now)
 		if err != nil {
 			return err
@@ -296,7 +308,7 @@ func UpdateOwnerAccount(ctx context.Context, s *store.Store, in UpdateAccountOp)
 		}
 		if err := logConfigRequest(jctx, tx, in.ConfigWrite, configKindAccount, in.ID,
 			got.Harness, got.Provider, got.Origin, string(merged), int64(got.Version)+1, //nolint:gosec // G115: versions start at 1 and only rise
-			got.CreateMs, nowMs, st.HubSeq, false); err != nil {
+			got.CreateMs, nowMs, st.HubSeq, "", false); err != nil {
 			return err
 		}
 		out = AccountStored{
@@ -346,7 +358,7 @@ func DeleteOwnerAccount(ctx context.Context, s *store.Store, in DeleteAccountOp)
 		}
 		if err := logConfigRequest(jctx, tx, in.ConfigWrite, configKindAccount, in.ID,
 			got.Harness, got.Provider, got.Origin, "", int64(got.Version), //nolint:gosec // G115: versions start at 1 and only rise
-			got.CreateMs, got.UpdateMs, got.HubSeq, true); err != nil {
+			got.CreateMs, got.UpdateMs, got.HubSeq, "", true); err != nil {
 			return err
 		}
 		out = AccountStored{ID: in.ID, Version: got.Version}

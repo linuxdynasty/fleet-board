@@ -83,6 +83,23 @@ func authorizeSettings(ctx context.Context) (*typev1.Principal, error) {
 	return p, nil
 }
 
+// authorizeRead admits a caller that holds READ (02d: config export,
+// audit reads, watches). Until plan row 12 brings scopes, that is only
+// the local user on the admin socket, who maps to OWNER and holds every
+// scope.
+func authorizeRead(ctx context.Context) (*typev1.Principal, error) {
+	p := PrincipalFrom(ctx)
+	if p.GetId().GetValue() == "" {
+		return nil, apiError(connect.CodeUnauthenticated, typev1.ReasonCode_REASON_CODE_CREDENTIALS_INVALID,
+			"no caller identity", nil, nil)
+	}
+	if p.GetKind() != typev1.PrincipalKind_PRINCIPAL_KIND_LOCAL_USER {
+		return nil, apiError(connect.CodePermissionDenied, typev1.ReasonCode_REASON_CODE_SCOPE_MISSING,
+			"this call needs the READ scope", map[string]string{"scope": "READ"}, nil)
+	}
+	return p, nil
+}
+
 // apiError is a Connect error with the 02b ErrorDetail.
 func apiError(code connect.Code, reason typev1.ReasonCode, msg string, metadata map[string]string,
 	violations []*typev1.FieldViolation,

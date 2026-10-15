@@ -77,7 +77,7 @@ func TestCreateAccountValidatesItsFields(t *testing.T) {
 		}(), field: "spec.budget_kind"},
 		{name: "reserve capped", requestID: "r", harness: "opencode", provider: "anthropic", spec: func() *hubv1.AccountSpec {
 			s := accountSpec()
-			s.ReservePercent = 101
+			s.ReservePercent = 51
 			return s
 		}(), field: "spec.reserve_percent"},
 		{name: "display name required", requestID: "r", harness: "opencode", provider: "anthropic", spec: func() *hubv1.AccountSpec {
@@ -294,5 +294,39 @@ func TestDeleteAccountRemoves(t *testing.T) {
 	code, reason, _ := detail(t, err)
 	if code != connect.CodeNotFound || reason != typev1.ReasonCode_REASON_CODE_RESOURCE_NOT_FOUND {
 		t.Errorf("second delete = %v/%v, want NOT_FOUND/RESOURCE_NOT_FOUND", code, reason)
+	}
+}
+
+func TestAccountReserveBoundary(t *testing.T) {
+	t.Parallel()
+	e := newFleetEnv(t, localUser("alice"), trusted(false))
+	fifty := accountSpec()
+	fifty.ReservePercent = 50
+	got := createOwnerAccount(t, e, "req-50", fifty)
+	if got.GetSpec().GetReservePercent() != 50 {
+		t.Errorf("reserve = %d, want 50 stored", got.GetSpec().GetReservePercent())
+	}
+}
+
+func TestUpdateAccountRenameCollisionIsAlreadyExists(t *testing.T) {
+	t.Parallel()
+	e := newFleetEnv(t, localUser("alice"), trusted(false))
+	first := createOwnerAccount(t, e, "req-1", accountSpec())
+	other := accountSpec()
+	other.DisplayName = "play"
+	createOwnerAccount(t, e, "req-2", other)
+	renamed := accountSpec()
+	renamed.DisplayName = "play"
+	_, err := e.client.UpdateAccount(t.Context(), connect.NewRequest(&hubv1.UpdateAccountRequest{
+		RequestId: "req-3",
+		Account: &hubv1.Account{
+			Id:   first.GetId(),
+			Spec: renamed,
+		},
+		UpdateMask: fieldMask([]string{"spec.display_name"}),
+	}))
+	code, reason, _ := detail(t, err)
+	if code != connect.CodeAlreadyExists || reason != typev1.ReasonCode_REASON_CODE_RESOURCE_ALREADY_EXISTS {
+		t.Errorf("rename = %v/%v, want ALREADY_EXISTS/RESOURCE_ALREADY_EXISTS", code, reason)
 	}
 }

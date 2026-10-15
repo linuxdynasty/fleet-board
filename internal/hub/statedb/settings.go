@@ -164,7 +164,7 @@ func UpdateFleetSettings(ctx context.Context, s *store.Store, in UpdateSettingsO
 		}
 		if err := logConfigRequest(jctx, tx, in.ConfigWrite, configKindSettings, FleetScope,
 			"", "", "", string(merged), int64(out.Version), //nolint:gosec // G115: versions start at 1 and only rise
-			out.CreateMs, out.UpdateMs, out.HubSeq, false); err != nil {
+			out.CreateMs, out.UpdateMs, out.HubSeq, "", false); err != nil {
 			return err
 		}
 		return nil

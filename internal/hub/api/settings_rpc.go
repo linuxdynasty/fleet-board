@@ -142,13 +142,22 @@ func checkMergedHub(hub *hubv1.HubSettings) error {
 }
 
 // checkMergedValues applies the SettingValues rules: durations valid and
-// non-negative. Ranges stay the agents' domain (03e); the 1 MiB message
-// cap bounds the lists.
+// non-negative, max_active 1 to 16 and max_total 1 to 32 when set
+// (defaults.md, ADR 0024). Other ranges stay the agents' domain (03e);
+// the 1 MiB message cap bounds the lists.
 func checkMergedValues(values *typev1.SettingValues) error {
 	if values == nil {
 		return nil
 	}
 	var v violations
+	if a := values.MaxActive; a != nil && (*a == 0 || *a > 16) {
+		v.add("spec.values.max_active", typev1.ReasonCode_REASON_CODE_INVALID_ARGUMENT,
+			"spec.values.max_active is 1 to 16")
+	}
+	if t := values.MaxTotal; t != nil && (*t == 0 || *t > 32) {
+		v.add("spec.values.max_total", typev1.ReasonCode_REASON_CODE_INVALID_ARGUMENT,
+			"spec.values.max_total is 1 to 32")
+	}
 	checkValidDuration(&v, "spec.values.cert_lifetime", values.GetCertLifetime())
 	checkValidDuration(&v, "spec.values.idle_threshold", values.GetIdleThreshold())
 	checkValidDuration(&v, "spec.values.attach_idle_timeout", values.GetAttachIdleTimeout())
@@ -159,6 +168,15 @@ func checkMergedValues(values *typev1.SettingValues) error {
 			"the request has invalid fields", nil, v)
 	}
 	return nil
+}
+
+// fleetScopeSpec is the empty fleet layer: scope is the layer's
+// identity, so a created layer carries it even though the mask cannot
+// set it.
+func fleetScopeSpec() hubv1.SettingsSpec {
+	return hubv1.SettingsSpec{
+		Scope: &hubv1.SettingsScope{Kind: &hubv1.SettingsScope_Fleet_{Fleet: &hubv1.SettingsScope_Fleet{}}},
+	}
 }
 
 // settingsFromStored answers the Settings layer of a stored row with
@@ -260,7 +278,7 @@ func (f *Fleet) UpdateSettings(ctx context.Context, req *connect.Request[hubv1.U
 		},
 		ExpectedVersion: m.GetExpectedVersion(),
 		Merge: func(current []byte) ([]byte, error) {
-			var currentSpec hubv1.SettingsSpec
+			currentSpec := fleetScopeSpec()
 			if len(current) > 0 {
 				if err := protojson.Unmarshal(current, &currentSpec); err != nil {
 					return nil, err

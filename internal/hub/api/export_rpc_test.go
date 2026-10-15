@@ -6,6 +6,7 @@ import (
 	"connectrpc.com/connect"
 
 	hubv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/hub/v1"
+	typev1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/type/v1"
 )
 
 func exportConfig(t *testing.T, e *fleetEnv) *hubv1.FleetConfig {
@@ -46,5 +47,22 @@ func TestExportConfigNeedsSettingsScope(t *testing.T) {
 	code, _, _ := detail(t, err)
 	if code != connect.CodeUnauthenticated {
 		t.Errorf("= %v, want UNAUTHENTICATED", code)
+	}
+}
+
+func TestExportConfigNeedsReadScope(t *testing.T) {
+	t.Parallel()
+	e := newFleetEnv(t, &typev1.Principal{
+		Name: "agent", Role: typev1.Role_ROLE_OWNER,
+		Kind: typev1.PrincipalKind_PRINCIPAL_KIND_DEVICE,
+		Id:   &typev1.PrincipalId{Value: "device:a"},
+	}, trusted(false))
+	_, err := e.client.ExportConfig(t.Context(), connect.NewRequest(&hubv1.ExportConfigRequest{}))
+	code, reason, _ := detail(t, err)
+	if code != connect.CodePermissionDenied || reason != typev1.ReasonCode_REASON_CODE_SCOPE_MISSING {
+		t.Errorf("= %v/%v, want PERMISSION_DENIED/SCOPE_MISSING", code, reason)
+	}
+	if metadataOf(t, err)["scope"] != "READ" {
+		t.Errorf("scope = %q, want READ", metadataOf(t, err)["scope"])
 	}
 }
