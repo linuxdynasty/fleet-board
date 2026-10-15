@@ -55,7 +55,7 @@ func TestApplyConfigImportWritesReposAndOneAuditRow(t *testing.T) {
 			importCreateOp("github.com", "acme/web"),
 			{
 				Host: "github.com", Path: "acme/api", CodeHost: "github",
-				Enabled: false, Spec: []byte(`{"enabled":false}`),
+				Enabled: false, Spec: []byte(`{"enabled":false}`), ExpectedVersion: 1,
 			},
 		})
 	if replay || string(resp) != `{"applied":true,"plan_hash":"abc123"}` {
@@ -99,6 +99,33 @@ func TestApplyConfigImportIsOneTransaction(t *testing.T) {
 	}
 	if got := rawCount(t, statedb.Path(dir), `SELECT COUNT(*) FROM audit_log WHERE action = 'config.import'`); got != 0 {
 		t.Errorf("config.import rows = %d after a failed apply, want 0", got)
+	}
+}
+
+func TestApplyConfigImportRefusesAStaleUpdate(t *testing.T) {
+	t.Parallel()
+	dir := stateDir(t)
+	create(t, dir)
+	s := open(t, dir)
+	createRepo(t, s, repoWrite("local:alice", "seed-1", 1))
+	_, _, err := statedb.ApplyConfigImport(context.Background(), s, statedb.ConfigImport{
+		ImportWrite: importWrite("local:alice", "imp-1", 7, importTime),
+		PlanHash:    "abc123",
+		Ops: []statedb.ImportRepoOp{{
+			Host: "github.com", Path: "acme/api", CodeHost: "github",
+			Enabled: false, Spec: []byte(`{"enabled":false}`), ExpectedVersion: 2,
+		}},
+		Response: []byte(`{}`),
+	})
+	if !errors.Is(err, statedb.ErrImportStale) {
+		t.Fatalf("stale update = %v, want ErrImportStale", err)
+	}
+	spec, version, _, _ := repoRow(t, dir)
+	if spec != `{"enabled":true}` || version != 1 {
+		t.Errorf("row = %q v%d after a stale apply, want the seed spec at v1", spec, version)
+	}
+	if got := rawCount(t, statedb.Path(dir), `SELECT COUNT(*) FROM audit_log`); got != 1 {
+		t.Errorf("audit rows = %d after a stale apply, want only the seed", got)
 	}
 }
 

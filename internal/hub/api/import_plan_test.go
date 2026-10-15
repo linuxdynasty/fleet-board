@@ -130,22 +130,36 @@ func TestPlanConfigImportRejectsBadRepoEntries(t *testing.T) {
 	if got := changes[0].GetKind(); got != hubv1.ConfigChangeKind_CONFIG_CHANGE_KIND_CREATE {
 		t.Errorf("first entry = %v, want CREATE", got)
 	}
-	for i, want := range []string{"duplicated", "lowercase", "code-host"} {
+	problemText := func(c *hubv1.ConfigChange) string {
+		text := ""
+		for _, v := range c.GetProblem().GetViolations() {
+			text += v.GetField() + ": " + v.GetDescription() + "; "
+		}
+		return text
+	}
+	for i, want := range []string{"duplicated", "lowercase"} {
 		c := changes[i+1]
 		if c.GetKind() != hubv1.ConfigChangeKind_CONFIG_CHANGE_KIND_SKIPPED {
 			t.Errorf("entry %d kind = %v, want SKIPPED", i+1, c.GetKind())
 		}
-		problem := c.GetProblem()
-		if problem.GetReason() != typev1.ReasonCode_REASON_CODE_CONFIG_INVALID {
-			t.Errorf("entry %d reason = %v, want CONFIG_INVALID", i+1, problem.GetReason())
+		if reason := c.GetProblem().GetReason(); reason != typev1.ReasonCode_REASON_CODE_CONFIG_INVALID {
+			t.Errorf("entry %d reason = %v, want CONFIG_INVALID", i+1, reason)
 		}
-		text := ""
-		for _, v := range problem.GetViolations() {
-			text += v.GetField() + ": " + v.GetDescription() + "; "
-		}
-		if !strings.Contains(text, want) {
+		if text := problemText(c); !strings.Contains(text, want) {
 			t.Errorf("entry %d problem = %q, want it to mention %q", i+1, text, want)
 		}
+	}
+	// A repo no integration reaches is a waivable skip, not a validation
+	// failure: allow_skipped applies the rest.
+	missing := changes[3]
+	if missing.GetKind() != hubv1.ConfigChangeKind_CONFIG_CHANGE_KIND_SKIPPED {
+		t.Errorf("missing integration kind = %v, want SKIPPED", missing.GetKind())
+	}
+	if reason := missing.GetProblem().GetReason(); reason != typev1.ReasonCode_REASON_CODE_RESOURCE_NOT_FOUND {
+		t.Errorf("missing integration reason = %v, want RESOURCE_NOT_FOUND", reason)
+	}
+	if text := problemText(missing); !strings.Contains(text, "code-host") {
+		t.Errorf("missing integration problem = %q, want it to name the code host", text)
 	}
 }
 

@@ -14,20 +14,23 @@ import (
 )
 
 // importBaseline reads the snapshot an import plan diffs against: every
-// watched repo's spec by "host/path", and the integration id reaching each
-// document host (a host with none plans its repos as invalid).
-func (f *Fleet) importBaseline(ctx context.Context, doc *hubv1.FleetConfig) (map[string]*hubv1.RepoSpec, map[string]string, error) {
+// watched repo's spec and version by "host/path", and the integration id
+// reaching each document host (a host with none plans its repos as
+// skipped).
+func (f *Fleet) importBaseline(ctx context.Context, doc *hubv1.FleetConfig) (map[string]*hubv1.RepoSpec, map[string]uint64, map[string]string, error) {
 	rows, err := statedb.ListAllWatchedRepoSpecs(ctx, f.store)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	existing := make(map[string]*hubv1.RepoSpec, len(rows))
+	versions := make(map[string]uint64, len(rows))
 	for _, r := range rows {
 		var spec hubv1.RepoSpec
 		if err := protojson.Unmarshal(r.Spec, &spec); err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		existing[r.Host+"/"+r.Path] = &spec
+		versions[r.Host+"/"+r.Path] = r.Version
 	}
 	hosts := map[string]bool{}
 	for _, r := range doc.GetRepos() {
@@ -40,24 +43,28 @@ func (f *Fleet) importBaseline(ctx context.Context, doc *hubv1.FleetConfig) (map
 			if errors.Is(err, statedb.ErrCodeHostUnknown) {
 				continue
 			}
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		codeHosts[host] = id
 	}
-	return existing, codeHosts, nil
+	return existing, versions, codeHosts, nil
 }
 
-// importOps rebuilds the store writes of a problem-free plan with the same
-// classifier the plan used, so the apply writes what the dry run showed.
-// Any problem here is the hub's own failure: the handler already refused
-// documents with problems before calling it.
+// importOps rebuilds the store writes of an appliable plan with the same
+// classifier the plan used, so the apply writes what the dry run showed. A
+// waivable skip (a problem the owner cleared with allow_skipped) writes
+// nothing. A validation failure here is the hub's own failure: the handler
+// already refused documents with blocking problems before calling it.
 func importOps(doc *hubv1.FleetConfig, existing map[string]*hubv1.RepoSpec,
-	codeHosts map[string]string,
+	versions map[string]uint64, codeHosts map[string]string,
 ) (ops []statedb.ImportRepoOp, created, updated int, err error) {
 	seen := map[string]bool{}
 	for i, r := range doc.GetRepos() {
-		kind, _, normalized, _, problem := classifyRepo(r, i, existing, codeHosts, seen)
+		kind, name, normalized, _, problem := classifyRepo(r, i, existing, codeHosts, seen)
 		if problem != nil {
+			if problem.GetProblem().GetReason() != typev1.ReasonCode_REASON_CODE_CONFIG_INVALID {
+				continue
+			}
 			return nil, 0, 0, errors.New("api: a planned repo cannot apply")
 		}
 		specJSON, merr := protojson.Marshal(normalized)
@@ -78,6 +85,7 @@ func importOps(doc *hubv1.FleetConfig, existing map[string]*hubv1.RepoSpec,
 				Host: normalized.GetRepo().GetHost(), Path: normalized.GetRepo().GetPath(),
 				CodeHost: normalized.GetRepo().GetCodeHost().GetValue(),
 				Enabled:  normalized.GetEnabled(), Spec: specJSON,
+				ExpectedVersion: versions[name],
 			})
 		case hubv1.ConfigChangeKind_CONFIG_CHANGE_KIND_UNCHANGED:
 			// Nothing to write.
@@ -105,6 +113,10 @@ func importCallerError(err error) (error, bool) {
 	case errors.Is(err, statedb.ErrRepoUnknown):
 		return apiError(connect.CodeNotFound,
 			typev1.ReasonCode_REASON_CODE_RESOURCE_NOT_FOUND,
+			"a repo changed since the dry run; run it again", nil, nil), true
+	case errors.Is(err, statedb.ErrImportStale):
+		return apiError(connect.CodeFailedPrecondition,
+			typev1.ReasonCode_REASON_CODE_VERSION_MISMATCH,
 			"a repo changed since the dry run; run it again", nil, nil), true
 	default:
 		return nil, false
@@ -156,7 +168,7 @@ func (f *Fleet) ImportConfig(ctx context.Context, req *connect.Request[hubv1.Imp
 		return nil, f.configFailed(ctx, actor, "encode", err)
 	}
 	now := f.hubNow()
-	existing, codeHosts, err := f.importBaseline(ctx, m.GetConfig())
+	existing, versions, codeHosts, err := f.importBaseline(ctx, m.GetConfig())
 	if err != nil {
 		return nil, f.configFailed(ctx, actor, "store", err)
 	}
@@ -230,7 +242,7 @@ func (f *Fleet) ImportConfig(ctx context.Context, req *connect.Request[hubv1.Imp
 			Changes: changes, PlanHash: hash,
 		}), nil
 	}
-	ops, created, updated, err := importOps(m.GetConfig(), existing, codeHosts)
+	ops, created, updated, err := importOps(m.GetConfig(), existing, versions, codeHosts)
 	if err != nil {
 		return nil, f.configFailed(ctx, actor, "encode", err)
 	}

@@ -44,8 +44,9 @@ type ImportWrite struct {
 }
 
 // ImportRepoOp is one repo write of a verified import plan. Create inserts
-// the repo at version 1; an update replaces the spec and bumps the version.
-// The plan hash already guards staleness, so there is no per-repo version.
+// the repo at version 1; an update replaces the spec and bumps the version
+// when it still holds ExpectedVersion, so a repo rewritten after the dry
+// run aborts the whole apply instead of losing the concurrent change.
 type ImportRepoOp struct {
 	Host     string
 	Path     string
@@ -54,7 +55,13 @@ type ImportRepoOp struct {
 	// Spec is the RepoSpec as protojson, stored whole.
 	Spec   []byte
 	Create bool
+	// ExpectedVersion is the repo's version at plan time (updates only).
+	ExpectedVersion uint64
 }
+
+// ErrImportStale is a repo rewritten after the import plan: the apply
+// aborts with nothing written, and the caller runs a dry run again.
+var ErrImportStale = errors.New("statedb: the repo changed since the import plan")
 
 // ConfigImport applies a verified import plan in one writer transaction:
 // every repo op lands and the config.import audit row with it, or nothing
@@ -71,17 +78,19 @@ type ConfigImport struct {
 
 // RepoSpecRow is one watched repo for import diffing, in host/path order.
 type RepoSpecRow struct {
-	Host string
-	Path string
-	Spec []byte
+	Host    string
+	Path    string
+	Version uint64
+	Spec    []byte
 }
 
-// ListAllWatchedRepoSpecs reads every watched repo's spec in host/path
-// order, so an import plan diffs against a stable snapshot.
+// ListAllWatchedRepoSpecs reads every watched repo's spec and version in
+// host/path order, so an import plan diffs against a stable snapshot and
+// the apply can verify nothing moved under it.
 func ListAllWatchedRepoSpecs(ctx context.Context, s *store.Store) ([]RepoSpecRow, error) {
 	var out []RepoSpecRow
 	err := s.Read(ctx, func(tx *sql.Tx) error {
-		rows, err := tx.QueryContext(ctx, `SELECT host, path, spec_json FROM repos ORDER BY host, path`)
+		rows, err := tx.QueryContext(ctx, `SELECT host, path, version, spec_json FROM repos ORDER BY host, path`)
 		if err != nil {
 			return err
 		}
@@ -89,9 +98,11 @@ func ListAllWatchedRepoSpecs(ctx context.Context, s *store.Store) ([]RepoSpecRow
 		for rows.Next() {
 			var r RepoSpecRow
 			var spec string
-			if err := rows.Scan(&r.Host, &r.Path, &spec); err != nil {
+			var version int64
+			if err := rows.Scan(&r.Host, &r.Path, &version, &spec); err != nil {
 				return err
 			}
+			r.Version = uint64(version) //nolint:gosec // G115: versions start at 1 and only rise
 			r.Spec = []byte(spec)
 			out = append(out, r)
 		}
@@ -181,16 +192,21 @@ func insertImportRepo(ctx context.Context, tx *sql.Tx, now time.Time, st Stamp, 
 		}
 		return nil
 	}
-	res, err := tx.ExecContext(ctx, `UPDATE repos SET code_host = ?, enabled = ?, spec_json = ?,
-		version = version + 1, update_ms = ?, hub_seq = ? WHERE host = ? AND path = ?`,
-		op.CodeHost, enabled, string(op.Spec), nowMs, st.HubSeq, op.Host, op.Path)
-	if err != nil {
-		return fmt.Errorf("statedb: update repo: %w", err)
-	}
-	if n, err := res.RowsAffected(); err != nil {
-		return fmt.Errorf("statedb: update repo: %w", err)
-	} else if n == 0 {
+	var current uint64
+	err := tx.QueryRowContext(ctx, `SELECT version FROM repos WHERE host = ? AND path = ?`,
+		op.Host, op.Path).Scan(&current)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
 		return ErrRepoUnknown
+	case err != nil:
+		return fmt.Errorf("statedb: read repo version: %w", err)
+	case current != op.ExpectedVersion:
+		return ErrImportStale
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE repos SET code_host = ?, enabled = ?, spec_json = ?,
+		version = version + 1, update_ms = ?, hub_seq = ? WHERE host = ? AND path = ?`,
+		op.CodeHost, enabled, string(op.Spec), nowMs, st.HubSeq, op.Host, op.Path); err != nil {
+		return fmt.Errorf("statedb: update repo: %w", err)
 	}
 	return nil
 }

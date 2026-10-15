@@ -107,20 +107,27 @@ func planConfigHash(changes []*hubv1.ConfigChange) string {
 }
 
 // invalidImportLine is a plan line for a document entry the hub cannot
-// apply: kind SKIPPED with the CONFIG_INVALID problem, so an apply answers
-// applied false with something to fix (config.proto). field is the path in
-// the document (config.repos[2].spec.repo.path); descriptions never echo the
-// request.
-func invalidImportLine(entity hubv1.ConfigEntity, name, field, desc string) *hubv1.ConfigChange {
+// apply: kind SKIPPED with the problem, so an apply answers applied false
+// with something to fix (config.proto). A CONFIG_INVALID problem always
+// blocks the apply; any other reason is a waivable skip the owner clears
+// with allow_skipped. field is the path in the document
+// (config.repos[2].spec.repo.path); descriptions never echo the request.
+func invalidImportLine(entity hubv1.ConfigEntity, name, field string, reason typev1.ReasonCode, desc string) *hubv1.ConfigChange {
 	return &hubv1.ConfigChange{
 		Entity: entity, Name: name, Kind: hubv1.ConfigChangeKind_CONFIG_CHANGE_KIND_SKIPPED,
 		Problem: &typev1.ErrorDetail{
-			Reason: typev1.ReasonCode_REASON_CODE_CONFIG_INVALID,
+			Reason: reason,
 			Violations: []*typev1.FieldViolation{{
-				Field: field, Reason: typev1.ReasonCode_REASON_CODE_CONFIG_INVALID, Description: desc,
+				Field: field, Reason: reason, Description: desc,
 			}},
 		},
 	}
+}
+
+// blockedImportLine is a plan line for a document entry that fails
+// validation: never waivable, even with allow_skipped.
+func blockedImportLine(entity hubv1.ConfigEntity, name, field, desc string) *hubv1.ConfigChange {
+	return invalidImportLine(entity, name, field, typev1.ReasonCode_REASON_CODE_CONFIG_INVALID, desc)
 }
 
 // firstViolationText is the first field violation of a field-check error,
@@ -188,23 +195,27 @@ func classifyRepo(r *hubv1.RepoSpec, i int, existing map[string]*hubv1.RepoSpec,
 	host, path, err := checkRepoIdentity(&hubv1.Repo{Spec: r})
 	if err != nil {
 		return 0, fallbackRepoName(r, i), nil, nil,
-			invalidImportLine(hubv1.ConfigEntity_CONFIG_ENTITY_REPO, fallbackRepoName(r, i), field, firstViolationText(err))
+			blockedImportLine(hubv1.ConfigEntity_CONFIG_ENTITY_REPO, fallbackRepoName(r, i), field, firstViolationText(err))
 	}
 	name = host + "/" + path
 	if seen[name] {
 		return 0, name, nil, nil,
-			invalidImportLine(hubv1.ConfigEntity_CONFIG_ENTITY_REPO, name, field, "the repo is duplicated in the document")
+			blockedImportLine(hubv1.ConfigEntity_CONFIG_ENTITY_REPO, name, field, "the repo is duplicated in the document")
 	}
 	seen[name] = true
 	if err := checkRepoSpec(r); err != nil {
 		return 0, name, nil, nil,
-			invalidImportLine(hubv1.ConfigEntity_CONFIG_ENTITY_REPO, name, field, firstViolationText(err))
+			blockedImportLine(hubv1.ConfigEntity_CONFIG_ENTITY_REPO, name, field, firstViolationText(err))
 	}
 	codeHost, ok := codeHosts[host]
 	if !ok {
+		// A missing integration is a skip, not a validation failure
+		// (config.proto): allow_skipped applies the lines that can apply,
+		// and the owner connects the integration first.
 		return 0, name, nil, nil,
 			invalidImportLine(hubv1.ConfigEntity_CONFIG_ENTITY_REPO, name, field,
-				"no code-host integration reaches this repo")
+				typev1.ReasonCode_REASON_CODE_RESOURCE_NOT_FOUND,
+				"no code-host integration reaches this repo; connect it first")
 	}
 	normalized = proto.Clone(r).(*hubv1.RepoSpec) //nolint:forcetypeassert // Clone keeps the message type
 	normalized.Repo.CodeHost = &typev1.IntegrationId{Value: codeHost}
@@ -219,10 +230,10 @@ func classifyRepo(r *hubv1.RepoSpec, i int, existing map[string]*hubv1.RepoSpec,
 }
 
 // unsupportedImportLine is the plan line for a document section the hub
-// does not apply yet (later slices of row 13a): SKIPPED with CONFIG_INVALID,
-// so it blocks an apply even with allow_skipped.
+// does not apply yet (later slices of row 13a): SKIPPED with
+// CONFIG_INVALID, so it blocks an apply even with allow_skipped.
 func unsupportedImportLine(entity hubv1.ConfigEntity, name, field, section string) *hubv1.ConfigChange {
-	return invalidImportLine(entity, name, field, section+" imports are not built yet")
+	return blockedImportLine(entity, name, field, section+" imports are not built yet")
 }
 
 // isEmptyHub is an unset or default hub section: nothing to import.

@@ -302,6 +302,50 @@ func TestImportPlansUpdateAndUnchanged(t *testing.T) {
 	}
 }
 
+func TestImportAllowSkippedWaivesAMissingIntegration(t *testing.T) {
+	t.Parallel()
+	e := newFleetEnv(t, localUser("alice"), trusted(false))
+	seedGitHub(t, e)
+	doc := importDoc(
+		repoRequest("", "github.com", "acme/api"),
+		repoRequest("", "example.com", "acme/api"),
+	)
+	plan := dryRun(t, e, "dry-1", doc)
+	if len(plan.GetChanges()) != 2 {
+		t.Fatalf("plan has %d lines, want 2", len(plan.GetChanges()))
+	}
+	// Without allow_skipped the whole document waits for its integration.
+	held, err := e.client.ImportConfig(t.Context(), connect.NewRequest(&hubv1.ImportConfigRequest{
+		RequestId: "apply-held", Config: doc, ExpectedPlanHash: plan.GetPlanHash(),
+	}))
+	if err != nil {
+		t.Fatalf("held apply is a plan answer, not an RPC error: %v", err)
+	}
+	if held.Msg.GetApplied() {
+		t.Error("apply ran without allow_skipped past a skipped line")
+	}
+	if got := statedbRowCount(t, e, "repos"); got != 0 {
+		t.Errorf("%d repos stored by a held apply, want 0", got)
+	}
+	// With allow_skipped the reachable repo applies and the missing one
+	// stays a skipped line.
+	res, err := e.client.ImportConfig(t.Context(), connect.NewRequest(&hubv1.ImportConfigRequest{
+		RequestId: "apply-1", Config: doc, ExpectedPlanHash: plan.GetPlanHash(), AllowSkipped: true,
+	}))
+	if err != nil {
+		t.Fatalf("waived apply: %v", err)
+	}
+	if !res.Msg.GetApplied() {
+		t.Fatalf("apply with allow_skipped did not apply: %v", res.Msg.GetChanges())
+	}
+	if _, err := statedb.GetWatchedRepo(context.Background(), e.st, "github.com", "acme/api"); err != nil {
+		t.Errorf("reachable repo not applied: %v", err)
+	}
+	if got := statedbRowCount(t, e, "repos"); got != 1 {
+		t.Errorf("%d repos stored, want only the reachable one", got)
+	}
+}
+
 func TestImportUnsupportedSectionsBlockApply(t *testing.T) {
 	t.Parallel()
 	e := newFleetEnv(t, localUser("alice"), trusted(false))
