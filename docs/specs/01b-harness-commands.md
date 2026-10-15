@@ -160,7 +160,11 @@ no tmux pane and is out of scope.
   billing, and a dialog with no On-Demand row parses to `UNKNOWN`; pacing
   excludes both from auto-dispatch (03b step 6). No live on-state dialog
   has been captured yet (open probe 5 above), so the on-case is pinned by
-  an in-test mutation of the live capture, not a fixture. Version
+  an in-test mutation of the live capture, not a fixture. It also
+  classifies the discovered slash commands (C4): `/usage`
+  observe, `/model` session, `/goal` goal, `/quit` destructive, and
+  everything else deny; a discovered command whose effect is unprobed
+  stays deny until a probe moves it. Version
   2026.10.01 is `UNVERIFIED_PARSING` with `USAGE`, `IDENTITY` and `READY`
   fixture-verified (fixtures in `internal/harness/cursor/testdata/`).
 - **Credentials.** `~/.cursor/cli-config.json` holds settings and also an

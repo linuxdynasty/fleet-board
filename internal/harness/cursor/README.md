@@ -19,6 +19,10 @@ parses text it is given.
   0.22) from `cursor-agent status` ("Logged in as") or `about` ("User
   Email"). Anything without either marker fails with no reading; the
   agent never reads `~/.cursor/cli-config.json`.
+- `commands.go`: `Classify` returns the 01b class of one slash command
+  (C4): `/usage` observe, `/model` session, `/goal` goal, `/quit`
+  destructive, everything else deny. A discovered command whose effect
+  is unprobed stays deny; it moves only with a probe record.
 - `cursor_test.go`: the adapter's declaration for the shared conformance
   test (`harness.Conform`). Version `2026.10.01` is `UNVERIFIED_PARSING`
   with `USAGE`, `IDENTITY` and `READY` fixture-verified; the golden table is

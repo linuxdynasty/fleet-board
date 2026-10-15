@@ -6,8 +6,10 @@ here. Rules for this package:
 - This package parses `cursor-agent` screens: the `/usage` dialog
   (`ParseUsage` in `usage.go`, 01b D2), the ready prompt (`ParseReady` in
   `ready.go`) and the account identity (`ParseIdentity` in `identity.go`,
-  01b C2). Product code here never runs the harness, never answers a
-  prompt, never opens a credential file.
+  01b C2). It also classifies slash commands (`Classify` in
+  `commands.go`, 01b C4): an unprobed effect stays deny. Product code
+  here never runs the harness, never answers a prompt, never opens a
+  credential file.
 - Never guess: a row the screen should show and does not is `NOT_SHOWN`, a
   missing On-Demand row is `UNKNOWN`, a screen with no dialog fails with no
   buckets. No nearby number, no previous reading, no `0`.
