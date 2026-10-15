@@ -70,19 +70,29 @@ res := e.SendKeys(ctx, cmd.GetSendKeys())
    within the last 10 minutes (the dashboard banner's window): `PANE_BUSY`,
    retryable, and nothing typed.
 8. **Screen** (F3): the pane runs a known harness (a shell or unknown program
-   reads `PANE_BUSY`, retryable: this slice types into harness panes only)
-   and its fresh capture proves a ready prompt with an empty input line
-   through the probe's screen classifier. A folder-trust screen reads
+   reads `PANE_BUSY`, retryable: this slice types into harness panes only;
+   OpenCode is deferred, not unknown: it takes no probe session and has no
+   ready parser, so every `OPERATOR_TEXT` to one reads `PANE_BUSY`,
+   retryable, until row 8 lands that parser) and its fresh styled capture
+   (`capture-pane -p -e`: the Claude placeholder check needs the faint
+   attribute a plain read strips) proves a ready prompt with an empty input
+   line through the probe's screen classifier. A folder-trust screen reads
    `FOLDER_UNTRUSTED`, a startup screen `STARTUP_PROMPT_SEEN`, typed text in
    the line `PANE_BUSY` (retryable), anything else `READY_TIMEOUT`
-   (retryable); a Cursor pane that proves nothing stays `PANE_BUSY` (row 30:
-   plain captures never carry the styled empty check). A capture the reply
-   bound cut short is refused `READY_TIMEOUT`: an incomplete screen proves
-   nothing.
+   (retryable). One pane's check-and-send holds that pane's lock from the
+   pane listing through the typing, so two commands to one pane cannot both
+   pass the gate before either types; different panes never wait on each
+   other. A Cursor pane that proves ready still stays `PANE_BUSY`: row 30
+   owns the styled-input rule. A capture the reply bound cut short is
+   refused `READY_TIMEOUT`: an incomplete screen proves nothing.
 9. **Send** (F3): each key goes as its own `typing.Line` in order through the
    observer client, counted on success. A refused send ends `INTERNAL`
-   naming how many typed; the OK result names the count and carries no
-   screen text.
+   naming how many typed; a send whose write reached tmux but whose reply
+   never came back ends `UNKNOWN_OUTCOME` naming what is certain, and the
+   hub asks a person whether the rest landed instead of sending it again
+   (the class is `NotRepeatSafe`: a retry after `UNKNOWN_OUTCOME` is refused
+   by the executor, never retyped). The OK result names the count and
+   carries no screen text.
 
 ## Results report stored tags
 
