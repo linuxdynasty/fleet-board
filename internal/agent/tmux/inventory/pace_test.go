@@ -58,8 +58,17 @@ func eachNoticesAreReadAtMostOnceASecond(t *testing.T, b tmuxtest.Binary) {
 	time.Sleep(2500 * time.Millisecond) // let the last paced read run
 	elapsed := time.Since(start)
 	reads := s.reads.Load() - before
-	if max := int64(elapsed/readGap) + 2; reads > max {
-		t.Fatalf("%d reads in %s for 20 renames, want at most %d (one a second)", reads, elapsed, max)
+	// Reads come from two notice streams, each paced to one a second
+	// (readGap): structure changes (dirty) and subscription values
+	// such as window activity (actDirty) — a rename can move both. A
+	// notice landing over a second after the last read reads at once,
+	// auxiliary wakes each read once unpaced at the top of the loop,
+	// and either edge of the window can straddle on a loaded box: CI
+	// run 38676003964 saw 5 reads in 2.546 s. The guard is the
+	// collapse — far below one read per rename — and the last rename
+	// still read below.
+	if max := 2 * (int64(elapsed/readGap) + 2); reads > max {
+		t.Fatalf("%d reads in %s for 20 renames, want at most %d (about one a second per notice stream)", reads, elapsed, max)
 	}
 	// The paced read after the burst saw the last rename, with no Snapshot.
 	deadline := time.After(30 * time.Second)
