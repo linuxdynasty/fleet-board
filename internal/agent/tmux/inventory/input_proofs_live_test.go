@@ -288,6 +288,18 @@ func TestCheckInputReportsKeysWithNoPush(t *testing.T) {
 			if again.Before(at) || again.After(t0.Add(10*time.Second)) {
 				t.Fatalf("second CheckInput = %v, want %v onward within 10 s of the key at %v", again, at, t0)
 			}
+			// A third read with no new key returns the same time: the
+			// level only moves on keys (client_activity is each client's
+			// last key time, never wall clock), so an
+			// every-call-new-timestamp regression passes the settling
+			// check above but fails here.
+			third, err := r.o.CheckInput(ctx, "default", "%0")
+			if err != nil {
+				t.Fatalf("third CheckInput: %v", err)
+			}
+			if !third.Equal(again) {
+				t.Fatalf("third CheckInput = %v, want %v: no new key, no new time", third, again)
+			}
 		})
 	}
 }

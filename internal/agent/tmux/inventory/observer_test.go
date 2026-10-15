@@ -75,7 +75,7 @@ func TestLifecycleEvents(t *testing.T) {
 					t.Fatalf("no remains PaneExited with status 3 within %s (nor its status-3 PaneChanged): %v", wait, r.rec.all()[i:])
 				}
 				r.snapshot(t) // a death raises no notice of its own: the rescan reads it
-				if exitedWithStatus(r.rec.all()[i:]) {
+				if exitedWithStatus(t, r.rec.all()[i:]) {
 					break
 				}
 				time.Sleep(50 * time.Millisecond)
@@ -88,15 +88,24 @@ func TestLifecycleEvents(t *testing.T) {
 // either on the PaneExited itself or landed later: a death read before
 // tmux knew the status emits a status-less remains PaneExited first, and
 // the only correction diff ever emits is one PaneChanged carrying the
-// status on that same pane (statusLanded).
-func exitedWithStatus(evs []*agentv1.Event) bool {
+// status on that same pane (statusLanded, pinned by
+// TestDiffDeadStatusLandingEmitsChanged). A remains exit carrying any
+// other non-nil status fails the test at once: only a status-less exit
+// is ever corrected, so a wrong status is a product bug, never a slow
+// landing.
+func exitedWithStatus(t *testing.T, evs []*agentv1.Event) bool {
+	t.Helper()
 	exited := map[string]bool{}
 	for _, ev := range evs {
 		if pe := ev.GetPaneExited(); pe != nil && pe.GetRemains() {
-			if pe.ExitStatus != nil && pe.GetExitStatus() == 3 {
+			switch {
+			case pe.ExitStatus == nil:
+				exited[pe.GetPane().GetPaneId()] = true
+			case pe.GetExitStatus() == 3:
 				return true
+			default:
+				t.Fatalf("remains PaneExited = %v, want status 3 or unset: only a status-less exit is ever corrected", pe)
 			}
-			exited[pe.GetPane().GetPaneId()] = true
 			continue
 		}
 		if pc := ev.GetPaneChanged(); pc != nil &&
