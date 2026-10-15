@@ -57,11 +57,14 @@ All pass local policy, carry a `command_id`, and are idempotent except F3.
   `typing.New…` constructor, and the tmux client package import it to name the
   type, and no non-test file in `internal/` or `cmd/` import `unsafe` (a
   `//go:linkname` to a constructor needs it);
-  `scripts/test-lint-typing-rules.sh` seeds a violation of each. The one send
-  outside `typing` is F4's fixed C-c below: a constant control key with a
-  re-validated pane id sent as one-shot CLI argv, never a control-mode
-  line; no `SendKeys` purpose names its gate, and a borrowed purpose would
-  mislabel the keystroke in telemetry.
+  `scripts/test-lint-typing-rules.sh` seeds a violation of each. F4's fixed
+  C-c below travels as a `typing.Line` through the observer client: a
+  constant control key borrowing the `OPERATOR_TEXT` purpose (no `SendKeys`
+  purpose names its gate, and a new purpose needs an arbiter ruling), with
+  no `typing.sent` event, so the borrowed purpose reaches no telemetry.
+  The client refuses a line built for an older server start before writing
+  anything, so a server that restarted under the checks cannot take the
+  C-c on its reused pane id.
   Landed in slices like F1: `OPERATOR_TEXT` first (`internal/agent/control`,
   issue #67): the pane's start id, its listing, the developer-input read at
   that moment (E13), a known harness command (the four with a usage probe;
@@ -79,7 +82,13 @@ All pass local policy, carry a `command_id`, and are idempotent except F3.
   listing hold under that pane's lock, shared with F3; a stale key or a
   missing pane reads `PANE_NOT_FOUND`, a dead pane `PANE_BUSY` (not
   retryable; respawn is F5's). No screen gate: the pane is interrupted
-  because a turn is running. Landed (`internal/agent/control`, issue #67).
+  because a turn is running. The C-c goes as a `typing.Line` through the
+  observer client, so the start-id check is atomic with the write: a
+  generation that restarted under the checks reads `PANE_NOT_FOUND`, a
+  detached client `TMUX_SERVER_DOWN`, a lost reply `UNKNOWN_OUTCOME`, and
+  a refused send re-reads the listing (gone `PANE_NOT_FOUND`, dead
+  `PANE_BUSY`, else `INTERNAL`). Landed (`internal/agent/control`,
+  issue #67).
 - **F5 Respawn pane** (adapter `ResumeArgs`), **F6 Kill
   window.** Resize belongs to J1.
 - **F8 Run harness command:** `RunHarnessCommand{target, command, args}`,

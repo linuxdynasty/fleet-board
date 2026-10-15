@@ -9,7 +9,10 @@ Read the root `AGENTS.md` first; it applies here. Rules for this package:
 - Nothing here types into a pane. Keystrokes stay in the `SendKeys` slice,
   built by `internal/agent/tmux/typing` only. The one exception is
   `Interrupt`'s fixed C-c (F4): a constant control key, not operator text,
-  sent as one-shot CLI argv with a re-validated pane id (01f F4).
+  built as a `typing.Line` and sent through the observer client, so the
+  server-start check is atomic with the write (01f F4). It borrows
+  `PurposeOperatorText` (no new purpose without an arbiter ruling) and
+  emits no `typing.sent`.
 - Behavior lands with a test against a real `tmuxtest` server; a refusal
   names its status and reason in the test.
 - A change here updates this README and `doc.go` in the same commit, and
