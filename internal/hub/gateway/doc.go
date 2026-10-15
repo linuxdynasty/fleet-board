@@ -16,9 +16,11 @@
 // handshakes alike. AgentService serves Enroll (docs/specs/02g-agent-security.md):
 // install_id, the token's format and CA hash, the proto range and the CSR are
 // checked before the store; the read-pool pre-check answers unknown, used,
-// expired and replays; one writer job burns the token and inserts the
-// machine, its serial, the replayable response and the machine.enroll audit
-// row. A refusal writes a machine.enroll_failed row within the caps of
+// expired and replays; a token naming a previous machine re-enrolls it
+// through statedb.EnrollPrevious (the same id back to ENROLLED with a new
+// serial; a deleted previous machine enrolls fresh); one writer job burns
+// the token and inserts the machine, its serial, the replayable response
+// and the machine.enroll audit row. A refusal writes a machine.enroll_failed row within the caps of
 // auditcap; [Server.FlushAudit], called after Shutdown and before the store
 // closes, writes the summary of the minute in progress.
 // Every EnrollResponse is

@@ -49,8 +49,14 @@ srv, err := gateway.NewServer(gateway.ServerOptions{
   runs, so the agent calls Enroll without one. A
   store or writer error is `UNAVAILABLE` with `retryable` set; a cancelled
   write has an unknown outcome, and the agent's retry finds the replay. A token
-  naming a previous machine is the hub's failure (`INTERNAL`, never burned;
-  re-enroll is plan row 13a).
+  naming a previous machine re-enrolls it: the request's
+  `previous_machine_id` must agree with the token's
+  (`ENROLL_PREVIOUS_MACHINE_MISMATCH`, burns nothing), then a fresh
+  certificate is signed for the previous id and `statedb.EnrollPrevious`
+  returns the same machine id to `ENROLLED` with the new serial (the revoked
+  serials stay revoked). A previous machine that is neither `REVOKED` nor
+  past its certificate lifetime is `MACHINE_NOT_REENROLLABLE` and burns
+  nothing; a deleted previous machine enrolls a fresh machine instead.
 
   **Audit.** A first Enroll's `machine.enroll` row is written by
   `statedb.Enroll` in its job; a replay writes none. Every refusal (the
@@ -297,7 +303,7 @@ srv, err := gateway.NewServer(gateway.ServerOptions{
 | `fleet_hub_enroll_total{result}` | every Enroll: `enrolled`, `replayed`, `refused` (the caller's error), `failed` (the hub's) |
 | `enroll.completed` (`machine_id`, `replayed`, `hostname_mismatch`) | a new or replayed enroll |
 | `enroll.refused` (`reason`, `peer`) | a refusal; `reason` is the ErrorDetail reason without `REASON_CODE_` |
-| `enroll.failed` (`step`, `err_kind`) | the hub's failure; `step` is `store`, `previous_machine`, `random`, `sign` or `encode` |
+| `enroll.failed` (`step`, `err_kind`) | the hub's failure; `step` is `store`, `random`, `sign` or `encode` |
 | `fleet_hub_enroll_audit_rows_total{result}` | a refusal's audit outcome: `written`, `suppressed` (capped), `summary` (a minute's summary row), `write_failed` |
 | `enroll.audit_failed` (`rows`, `err_kind`) | audit rows for a refusal the store did not take (the refusal is still answered) |
 | `fleet_hub_agent_cert_renewals_total{result}` | every RenewCert: `renewed`, `replayed`, `refused`, `failed` |

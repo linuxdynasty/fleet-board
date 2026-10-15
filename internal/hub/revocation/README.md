@@ -9,7 +9,7 @@ handshake.
 ```go
 list, err := revocation.Load(ctx, revocation.Options{Dir: stateDir, Store: st, Logger: log}) // at start, before the agent listener binds
 if list.Revoked(ca.SerialHex(leaf.SerialNumber)) { /* refuse the handshake */ }
-err = list.Revoke(ctx, []revocation.Entry{{Serial: s, NotAfter: end}}, now) // RevokeMachine (plan row 13a)
+err = list.Stage([]revocation.Entry{{Serial: s, NotAfter: end}}) // RevokeMachine, before its state.db write
 ```
 
 ## The file
@@ -46,16 +46,23 @@ Mode 0600, owned by the user running `fleetd`; the file lives outside
 
 The in-memory set is the union of the file and `state.db`.
 
-## Revoke
+## Stage and Revoke
 
-In this order, under one mutex: append the lines and fsync the file (a new
-file gets the header and an fsync of the folder); update the in-memory set
-(copy on write, one atomic pointer swap); then `statedb.RevokeSerials`. A
-file failure changes nothing else and makes the next `Revoke` rewrite the
-whole file instead of appending after a possibly torn line. A `state.db`
-failure is returned with the serial already revoked in the file and in
-memory: revocation fails closed, and the next start reconciles `state.db`.
-Row 3 builds this path; `RevokeMachine` (plan row 13a) calls it.
+`Stage` appends the entries the in-memory set lacks to the file and the
+set, without the `state.db` write. `RevokeMachine` calls it twice: once
+for the pre-checked serials before its writer job (02g write order, fail
+closed), and once after commit for the serials the job itself revoked, so
+a certificate that landed in between is still caught. Entries already on
+the set are skipped, so a retry adds no duplicate lines.
+
+`Revoke` does all three steps at once, in this order, under one mutex:
+append the lines and fsync the file (a new file gets the header and an
+fsync of the folder); update the in-memory set (copy on write, one atomic
+pointer swap); then `statedb.RevokeSerials`. A file failure changes nothing
+else and makes the next `Revoke` rewrite the whole file instead of appending
+after a possibly torn line. A `state.db` failure is returned with the serial
+already revoked in the file and in memory: revocation fails closed, and the
+next start reconciles `state.db`. Row 3 builds this path.
 
 ## Signals
 

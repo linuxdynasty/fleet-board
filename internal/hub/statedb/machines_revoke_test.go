@@ -195,3 +195,91 @@ func TestDeleteMachineNeedsARevokedMachine(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestMachineReplayNeedsTheKind(t *testing.T) {
+	t.Parallel()
+	id := "01jmachine0000000000000001"
+	_, s := enrolledMachineStore(t, id, beforeTTL)
+	ctx := context.Background()
+	at := beforeTTL.Add(time.Minute)
+
+	// A RevokeMachineRequest with an empty reason and a
+	// DeleteMachineRequest share wire fields 1-3, so the same principal,
+	// request id, machine id and version hash identically. The delete
+	// under the revoke's key is a different request, not a replay.
+	if _, err := statedb.RevokeMachine(ctx, s, statedb.MachineRevoke{
+		MachineWrite: machineWrite("local:alice", "req-1", 9, at),
+		MachineID:    id, CloseOpen: closeForRevoke,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := statedb.DeleteMachine(ctx, s, statedb.MachineDelete{
+		MachineWrite: machineWrite("local:alice", "req-1", 9, at.Add(time.Minute)),
+		MachineID:    id,
+	}); !errors.Is(err, statedb.ErrRequestConflict) {
+		t.Fatalf("delete under the revoke's key = %v, want ErrRequestConflict", err)
+	}
+	if _, err := statedb.UpdateMachine(ctx, s, statedb.MachineUpdate{
+		MachineWrite: machineWrite("local:alice", "req-1", 9, at.Add(2*time.Minute)),
+		MachineID:    id, Name: "renamed", HasName: true,
+	}); !errors.Is(err, statedb.ErrRequestConflict) {
+		t.Fatalf("update under the revoke's key = %v, want ErrRequestConflict", err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestPrecheckRevokeDecidesBeforeAnyEffect(t *testing.T) {
+	t.Parallel()
+	id := "01jmachine0000000000000001"
+	missing := "01jmissing0000000000000001"
+	_, s := enrolledMachineStore(t, id, beforeTTL)
+	ctx := context.Background()
+	at := beforeTTL.Add(time.Minute)
+
+	if _, err := statedb.PrecheckRevoke(ctx, s,
+		machineWrite("local:alice", "req-0", 9, at), missing, 0); !errors.Is(err, statedb.ErrMachineUnknown) {
+		t.Errorf("missing machine = %v, want ErrMachineUnknown", err)
+	}
+
+	plan, err := statedb.PrecheckRevoke(ctx, s, machineWrite("local:alice", "req-1", 9, at), id, 0)
+	if err != nil {
+		t.Fatalf("PrecheckRevoke: %v", err)
+	}
+	if plan.Replay != nil || plan.LiveRevoked {
+		t.Errorf("plan = %+v, want a commit on a live machine", plan)
+	}
+	if len(plan.Serials) != 1 || plan.Serials[0].Serial != "ab0001" {
+		t.Errorf("serials = %+v, want [ab0001]", plan.Serials)
+	}
+
+	var stale *statedb.VersionStale
+	if _, err := statedb.PrecheckRevoke(ctx, s,
+		machineWrite("local:alice", "req-2", 10, at), id, 9); !errors.As(err, &stale) {
+		t.Errorf("stale version = %v, want VersionStale", err)
+	}
+
+	if _, err := statedb.RevokeMachine(ctx, s, statedb.MachineRevoke{
+		MachineWrite: machineWrite("local:alice", "req-1", 9, at),
+		MachineID:    id, CloseOpen: closeForRevoke,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	replay, err := statedb.PrecheckRevoke(ctx, s,
+		machineWrite("local:alice", "req-1", 9, at.Add(time.Minute)), id, 0)
+	if err != nil {
+		t.Fatalf("replay PrecheckRevoke: %v", err)
+	}
+	if replay.Replay == nil || !replay.Replay.Replay || !replay.LiveRevoked {
+		t.Errorf("replay = %+v, want the stored response on a live revoked row", replay)
+	}
+	if _, err := statedb.PrecheckRevoke(ctx, s,
+		machineWrite("local:alice", "req-1", 10, at.Add(time.Minute)), id, 0); !errors.Is(err,
+		statedb.ErrRequestConflict) {
+		t.Errorf("reused key = %v, want ErrRequestConflict", err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+}

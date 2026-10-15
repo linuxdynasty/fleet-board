@@ -1,6 +1,7 @@
 package statedb
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"errors"
@@ -56,22 +57,6 @@ type MachineDelete struct {
 	ExpectedVersion uint64
 }
 
-// MachineSerials lists every certificate serial of a machine, for the
-// caller to stage onto the revocation list before the revoke's store
-// write (02g write order). A missing machine has none.
-func MachineSerials(ctx context.Context, s *store.Store, machineID string) ([]MachineSerial, error) {
-	var out []MachineSerial
-	err := s.Read(ctx, func(tx *sql.Tx) error {
-		var err error
-		out, err = machineSerials(ctx, tx, machineID)
-		return err
-	})
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 // machineSerials lists every certificate serial of a machine.
 func machineSerials(ctx context.Context, tx *sql.Tx, machineID string) ([]MachineSerial, error) {
 	rows, err := tx.QueryContext(ctx, `SELECT serial, not_after_time FROM cert_serials
@@ -91,6 +76,88 @@ func machineSerials(ctx context.Context, tx *sql.Tx, machineID string) ([]Machin
 		out = append(out, s)
 	}
 	return out, rows.Err()
+}
+
+// RevokePlan is the read-pool pre-check of one RevokeMachine: whether
+// the request replays a stored response, and otherwise the machine's
+// current serials to stage before the writer job. LiveRevoked is the
+// current row's REVOKED state. A replay stages and closes nothing new:
+// while the row is still REVOKED the caller re-cuts the live stream and
+// re-stages the serials (healing a first attempt whose file write
+// failed), but a replay after a re-enroll leaves the new serial and the
+// new stream alone. A commit on an already REVOKED row is the idempotent
+// already-revoked path. The writer job re-checks everything
+// authoritatively, so a race between the pre-check and the commit fails
+// closed (lines already staged stay revoked) and never misses a serial:
+// the commit reconciles the serials the job itself revoked.
+type RevokePlan struct {
+	Replay      *MachineStored
+	Serials     []MachineSerial
+	LiveRevoked bool
+}
+
+// PrecheckRevoke decides a RevokeMachine on the read pool without
+// writing: a replayed request_id returns the stored response, a missing
+// row is [ErrMachineUnknown], a reused request_id for another request
+// (another body, kind or machine) is [ErrRequestConflict], and a stale
+// version is [VersionStale]. Otherwise the plan carries the serials to
+// stage. An expired idempotency row reads as a miss here; the writer job
+// drops it and prunes.
+func PrecheckRevoke(ctx context.Context, s *store.Store, w MachineWrite, machineID string,
+	expectedVersion uint64,
+) (RevokePlan, error) {
+	var plan RevokePlan
+	err := s.Read(ctx, func(tx *sql.Tx) error {
+		row, err := readMachineLog(ctx, tx, w.Principal, w.RequestID)
+		switch {
+		case errors.Is(err, sql.ErrNoRows):
+		case err != nil:
+			return fmt.Errorf("statedb: look up machine request_id: %w", err)
+		case machineLogExpired(w.Now, row.createMs):
+		case !bytes.Equal(row.hash, w.RequestHash[:]) || row.machine != machineID || row.kind != machineKindRevoke:
+			return ErrRequestConflict
+		case row.deleted:
+			// A revoke never stores a tombstone: the row belongs to a
+			// delete under the same key, which is a different request.
+			return ErrRequestConflict
+		default:
+			stored, err := storedFromLogRow(row)
+			if err != nil {
+				return err
+			}
+			rev, err := withRevocation(ctx, tx, stored)
+			if err != nil {
+				return err
+			}
+			plan.Replay = &rev
+		}
+		got, err := readMachineRow(ctx, tx, machineID)
+		if errors.Is(err, ErrMachineUnknown) {
+			if plan.Replay != nil {
+				// Revoked, then deleted: answer the stored response
+				// with no effects.
+				return nil
+			}
+			return err
+		}
+		if err != nil {
+			return err
+		}
+		serials, err := machineSerials(ctx, tx, machineID)
+		if err != nil {
+			return err
+		}
+		plan.Serials = serials
+		plan.LiveRevoked = got.State == MachineRevoked
+		if plan.Replay != nil || plan.LiveRevoked {
+			return nil
+		}
+		return checkVersion(got.Version, expectedVersion, "machine")
+	})
+	if err != nil {
+		return RevokePlan{}, err
+	}
+	return plan, nil
 }
 
 // RevokeMachine marks a machine REVOKED in one writer transaction: a

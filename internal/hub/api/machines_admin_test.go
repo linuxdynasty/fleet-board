@@ -25,11 +25,14 @@ import (
 )
 
 // fakeRevoker is the test revocation list: the in-memory set every
-// handshake reads, with Stage recorded.
+// handshake reads, with Stage recorded. onStage, when set, runs before
+// each Stage records: a test observes or delays the exact moment the
+// handler stages (a cancel, or a serial that lands in the gap).
 type fakeRevoker struct {
-	mu     sync.Mutex
-	set    map[string]time.Time
-	staged [][]revocation.Entry
+	mu      sync.Mutex
+	set     map[string]time.Time
+	staged  [][]revocation.Entry
+	onStage func()
 }
 
 func (f *fakeRevoker) Revoked(serial string) bool {
@@ -40,6 +43,9 @@ func (f *fakeRevoker) Revoked(serial string) bool {
 }
 
 func (f *fakeRevoker) Stage(add []revocation.Entry) error {
+	if f.onStage != nil {
+		f.onStage()
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.staged = append(f.staged, add)
@@ -54,18 +60,31 @@ func (f *fakeRevoker) Stage(add []revocation.Entry) error {
 
 // testMachineAdmin carries the fakes behind one machine admin test.
 type testMachineAdmin struct {
+	mu      sync.Mutex
 	revoker *fakeRevoker
 	byes    []string
 	closed  [][]outbox.Closed
 }
 
 func (a *testMachineAdmin) bye(machineID string) bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	a.byes = append(a.byes, machineID)
 	return true
 }
 
 func (a *testMachineAdmin) onClosed(_ context.Context, list []outbox.Closed) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	a.closed = append(a.closed, list)
+}
+
+// byeCount reads the recorded stream cuts under the lock, for tests
+// that poll while the handler still runs.
+func (a *testMachineAdmin) byeCount() int {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return len(a.byes)
 }
 
 // newMachineEnv is newFleetEnv with the machine admin wiring: the fake

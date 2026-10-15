@@ -180,11 +180,15 @@ func storedFromLogRow(row machineLogRow) (MachineStored, error) {
 }
 
 // checkMachineReplay returns the stored response when the principal
-// already used the request_id for the same request body on the same
-// machine, or [ErrRequestConflict] when the body or machine differs. A
-// miss, or a row past the 24 h window (deleted here, with a bounded
-// sweep of its peers), is a nil stored machine and no error. A replayed
-// delete answers the same empty outcome.
+// already used the request_id for the same request body of the same
+// kind on the same machine, or [ErrRequestConflict] when the body, the
+// kind or the machine differs. The kind matters because a
+// RevokeMachineRequest with an empty reason and a DeleteMachineRequest
+// share wire fields 1-3, so the same principal, request id, machine id
+// and version hash identically across the two RPCs. A miss, or a row
+// past the 24 h window (deleted here, with a bounded sweep of its
+// peers), is a nil stored machine and no error. A replayed delete
+// answers the same empty outcome.
 func checkMachineReplay(ctx context.Context, tx *sql.Tx, w MachineWrite, kind, machineID string) (*MachineStored, error) {
 	row, err := readMachineLog(ctx, tx, w.Principal, w.RequestID)
 	switch {
@@ -198,7 +202,7 @@ func checkMachineReplay(ctx context.Context, tx *sql.Tx, w MachineWrite, kind, m
 			return nil, fmt.Errorf("statedb: drop expired machine request: %w", err)
 		}
 		return nil, nil
-	case !bytes.Equal(row.hash, w.RequestHash[:]) || row.machine != machineID:
+	case !bytes.Equal(row.hash, w.RequestHash[:]) || row.machine != machineID || row.kind != kind:
 		return nil, ErrRequestConflict
 	case row.deleted:
 		out := MachineStored{MachineID: machineID, Replay: true, Deleted: true}

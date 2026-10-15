@@ -284,16 +284,41 @@ func (f *Fleet) UpdateMachine(ctx context.Context, req *connect.Request[hubv1.Up
 	return connect.NewResponse(&hubv1.UpdateMachineResponse{Machine: machineFromStored(stored)}), nil
 }
 
+// stageMissing stages the serials the revocation set lacks, so a call
+// that changes nothing (a replay, an already-staged commit) never
+// rewrites the revoked-serials file.
+func (f *Fleet) stageMissing(serials []statedb.MachineSerial) error {
+	var add []revocation.Entry
+	for _, s := range serials {
+		if !f.revoker.Revoked(s.Serial) {
+			add = append(add, revocation.Entry{Serial: s.Serial, NotAfter: s.NotAfter})
+		}
+	}
+	if len(add) == 0 {
+		return nil
+	}
+	return f.revoker.Stage(add)
+}
+
 // RevokeMachine cuts a machine off and keeps its row (02g "Machine
-// lifecycle: revoke and delete"). The serials land on the revocation
-// list first (the revoked-serials file and the in-memory set, 02g write
-// order: a store failure leaves them revoked, fail closed, and a retry
-// converges), then one writer job marks the row REVOKED, revokes the
-// serials in state.db, closes the open outbox rows and audits. After
-// commit the live Connect stream gets Bye{REVOKED} and the closed
-// commands go to the outbox service. Idempotent: a revoked machine
-// returns itself. A stale expected_version is FAILED_PRECONDITION with
-// VERSION_MISMATCH.
+// lifecycle: revoke and delete"). A read-pool pre-check decides replay,
+// refusal or commit before any external effect: a replayed request
+// stages and closes nothing new (and re-cuts the live stream only while
+// the row is still REVOKED, so a retry after a re-enroll leaves the new
+// serial and the new stream alone), and a stale version or unknown
+// machine is refused before its serials are staged. Otherwise the
+// serials land on the revocation list first (the revoked-serials file
+// and the in-memory set, 02g write order: a store failure leaves them
+// revoked, fail closed, and a retry converges), then one writer job
+// marks the row REVOKED, revokes the serials in state.db, closes the
+// open outbox rows and audits. After commit the serials the job itself
+// revoked are staged again, so a RenewCert that committed between the
+// pre-check and the job leaves no valid certificate behind; then the
+// live Connect stream gets Bye{REVOKED} and the closed commands go to
+// the outbox service. The store wait and the after-commit work run
+// detached from the request: a client that disconnects mid-commit still
+// gets its stream cut. Idempotent: a revoked machine returns itself. A
+// stale expected_version is FAILED_PRECONDITION with VERSION_MISMATCH.
 func (f *Fleet) RevokeMachine(ctx context.Context, req *connect.Request[hubv1.RevokeMachineRequest],
 ) (*connect.Response[hubv1.RevokeMachineResponse], error) {
 	who, err := authorizeAdmin(ctx)
@@ -326,32 +351,64 @@ func (f *Fleet) RevokeMachine(ctx context.Context, req *connect.Request[hubv1.Re
 			errors.New("api: revoke needs the revocation list"))
 	}
 	now := f.hubNow()
-	serials, err := statedb.MachineSerials(ctx, f.store, id)
+	write := statedb.MachineWrite{
+		Principal: actor, RequestID: m.GetRequestId(),
+		RequestHash: sum, Actor: actorOf(who), Now: now,
+	}
+	plan, err := statedb.PrecheckRevoke(ctx, f.store, write, id, m.GetExpectedVersion())
 	if err != nil {
 		return nil, f.machineWriteError(ctx, opMachineRevoke, "revoke", actor, machineStoreError("revoke", err))
 	}
-	var add []revocation.Entry
-	for _, s := range serials {
-		if !f.revoker.Revoked(s.Serial) {
-			add = append(add, revocation.Entry{Serial: s.Serial, NotAfter: s.NotAfter})
+	if plan.Replay != nil {
+		if plan.LiveRevoked {
+			if f.byeMachine == nil {
+				return nil, f.machineFailed(ctx, opMachineRevoke, "revoke", actor, "wiring",
+					errors.New("api: revoke needs the live stream"))
+			}
+			// The first attempt may have committed its serials to
+			// state.db without staging them: reconcile before
+			// re-cutting the stream, so a retry converges.
+			if err := f.stageMissing(plan.Serials); err != nil {
+				return nil, f.machineFailed(ctx, opMachineRevoke, "revoke", actor, "revocation", err)
+			}
+			f.byeMachine(id)
 		}
+		f.machineWrote(ctx, opMachineRevoke, actor, id, plan.Replay.Version, true)
+		return connect.NewResponse(&hubv1.RevokeMachineResponse{Machine: machineFromStored(*plan.Replay)}), nil
 	}
-	if len(add) > 0 {
-		if err := f.revoker.Stage(add); err != nil {
-			return nil, f.machineFailed(ctx, opMachineRevoke, "revoke", actor, "revocation", err)
-		}
+	if err := f.stageMissing(plan.Serials); err != nil {
+		return nil, f.machineFailed(ctx, opMachineRevoke, "revoke", actor, "revocation", err)
 	}
-	revoked, err := statedb.RevokeMachine(ctx, f.store, statedb.MachineRevoke{
-		MachineWrite: statedb.MachineWrite{
-			Principal: actor, RequestID: m.GetRequestId(),
-			RequestHash: sum, Actor: actorOf(who), Now: now,
-		},
-		MachineID: id, ExpectedVersion: m.GetExpectedVersion(), Reason: m.GetReason(),
+	// Detached: the commit's outcome decides the after-commit work, and
+	// a canceled request must not skip the stream cut or the telemetry.
+	jctx := context.WithoutCancel(ctx)
+	revoked, err := statedb.RevokeMachine(jctx, f.store, statedb.MachineRevoke{
+		MachineWrite:    write,
+		MachineID:       id,
+		ExpectedVersion: m.GetExpectedVersion(), Reason: m.GetReason(),
 		CloseOpen: closeOpenForRevoke,
 	})
 	if err != nil {
-		return nil, f.machineWriteError(ctx, opMachineRevoke, "revoke", actor, machineStoreError("revoke", err))
+		return nil, f.machineWriteError(jctx, opMachineRevoke, "revoke", actor, machineStoreError("revoke", err))
 	}
+	if err := f.stageMissing(revoked.Serials); err != nil {
+		f.deliverClosed(jctx, revoked, now)
+		return nil, f.machineFailed(jctx, opMachineRevoke, "revoke", actor, "revocation", err)
+	}
+	f.deliverClosed(jctx, revoked, now)
+	if f.byeMachine == nil {
+		return nil, f.machineFailed(jctx, opMachineRevoke, "revoke", actor, "wiring",
+			errors.New("api: revoke needs the live stream"))
+	}
+	f.byeMachine(id)
+	f.machineWrote(jctx, opMachineRevoke, actor, id, revoked.Machine.Version, revoked.Machine.Replay)
+	return connect.NewResponse(&hubv1.RevokeMachineResponse{Machine: machineFromStored(revoked.Machine)}), nil
+}
+
+// deliverClosed hands the revoke's closed outbox rows to the outbox
+// service. The rows already committed closed; this is their signal, so
+// it runs even when a later step fails.
+func (f *Fleet) deliverClosed(ctx context.Context, revoked statedb.RevokedMachine, now time.Time) {
 	if len(revoked.Closed) > 0 && f.onCommandsClosed != nil {
 		closed := make([]outbox.Closed, 0, len(revoked.Closed))
 		for _, c := range revoked.Closed {
@@ -362,13 +419,6 @@ func (f *Fleet) RevokeMachine(ctx context.Context, req *connect.Request[hubv1.Re
 		}
 		f.onCommandsClosed(ctx, closed)
 	}
-	if f.byeMachine == nil {
-		return nil, f.machineFailed(ctx, opMachineRevoke, "revoke", actor, "wiring",
-			errors.New("api: revoke needs the live stream"))
-	}
-	f.byeMachine(id)
-	f.machineWrote(ctx, opMachineRevoke, actor, id, revoked.Machine.Version, revoked.Machine.Replay)
-	return connect.NewResponse(&hubv1.RevokeMachineResponse{Machine: machineFromStored(revoked.Machine)}), nil
 }
 
 // DeleteMachine forgets a machine that is already REVOKED (02g). A
