@@ -3,6 +3,9 @@
 # test-make-test-flags.sh: seeded RED/GREEN cases for the flags `make test`
 # hands to go test (CI decision 3, #107): a first pass with -shuffle=on and
 # -count=$(TEST_COUNT) (default 3), then a -race -shuffle=on -count=1 pass.
+# Both passes set -timeout 15m (#293: the live tmux inventory suite alone runs
+# ~9.5 min at -count=3 against go's 10m default); `make test-all` keeps the
+# default timeout.
 #
 # Builds a throwaway git repo (never this one) holding a copy of the Makefile,
 # tool-versions.env and scripts/changed-go-packages.sh, plus a tiny Go module:
@@ -93,8 +96,8 @@ func TestRecordFlags(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer f.Close()
-	fmt.Fprintf(f, "shuffle=%s count=%s race=%t goflags=%s\n",
-		flag.Lookup("test.shuffle").Value, flag.Lookup("test.count").Value, raceOn, os.Getenv("GOFLAGS"))
+	fmt.Fprintf(f, "shuffle=%s count=%s race=%t goflags=%s timeout=%s\n",
+		flag.Lookup("test.shuffle").Value, flag.Lookup("test.count").Value, raceOn, os.Getenv("GOFLAGS"), flag.Lookup("test.timeout").Value)
 }
 EOF
   printf '//go:build !race\n\npackage probe\n\nconst raceOn = false\n' > "$repo/probe/norace_test.go"
@@ -156,18 +159,18 @@ contains() {
 # GREEN: clean tests pass, and each pass got the flags it should.
 fresh
 make_test "clean packages pass" 0
-flags_are "default flags reach go test" "shuffle=on count=3 race=false goflags=
-shuffle=on count=3 race=false goflags=
-shuffle=on count=3 race=false goflags=
-shuffle=on count=1 race=true goflags="
+flags_are "default flags reach go test" "shuffle=on count=3 race=false goflags= timeout=15m0s
+shuffle=on count=3 race=false goflags= timeout=15m0s
+shuffle=on count=3 race=false goflags= timeout=15m0s
+shuffle=on count=1 race=true goflags= timeout=15m0s"
 
 # The pre-push hook runs make with GOFLAGS=-count=1; the command line wins.
 fresh
 GOFLAGS=-count=1 make_test "clean packages pass under the pre-push GOFLAGS" 0
-flags_are "GOFLAGS=-count=1 does not lower the count" "shuffle=on count=3 race=false goflags=-count=1
-shuffle=on count=3 race=false goflags=-count=1
-shuffle=on count=3 race=false goflags=-count=1
-shuffle=on count=1 race=true goflags=-count=1"
+flags_are "GOFLAGS=-count=1 does not lower the count" "shuffle=on count=3 race=false goflags=-count=1 timeout=15m0s
+shuffle=on count=3 race=false goflags=-count=1 timeout=15m0s
+shuffle=on count=3 race=false goflags=-count=1 timeout=15m0s
+shuffle=on count=1 race=true goflags=-count=1 timeout=15m0s"
 
 # RED: package-level state passes at -count=1 but fails under make test.
 fresh
@@ -184,8 +187,8 @@ fi
 fresh
 add_state
 make_test "TEST_COUNT=1 runs each test once" 0 TEST_COUNT=1
-flags_are "TEST_COUNT=1 reaches go test" "shuffle=on count=1 race=false goflags=
-shuffle=on count=1 race=true goflags="
+flags_are "TEST_COUNT=1 reaches go test" "shuffle=on count=1 race=false goflags= timeout=15m0s
+shuffle=on count=1 race=true goflags= timeout=15m0s"
 
 # RED: a TEST_COUNT that is not a positive integer fails before go runs and is
 # never run as shell text (it would turn make test into a green no-op).
@@ -244,8 +247,8 @@ fresh
 g checkout -q main
 g merge -q --ff-only work
 make_test_all "test-all on main (nothing changed) still runs every package" 0 TEST_COUNT=2
-flags_are "test-all: race, shuffled, TEST_COUNT times" "shuffle=on count=2 race=true goflags=
-shuffle=on count=2 race=true goflags="
+flags_are "test-all: race, shuffled, TEST_COUNT times" "shuffle=on count=2 race=true goflags= timeout=10m0s
+shuffle=on count=2 race=true goflags= timeout=10m0s"
 
 fresh
 g checkout -q main
