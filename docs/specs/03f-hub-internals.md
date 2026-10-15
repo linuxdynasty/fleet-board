@@ -108,7 +108,11 @@ and `agent.db` (plan row 2):
   `ResultAck`) is never ahead of the disk.
 - **The queue is bounded** (the writer queue in [defaults](defaults.md));
   submitting waits while it is full. This is where the ingest channel's
-  backpressure reaches the writer.
+  backpressure reaches the writer. The submit that fills the last slot, or
+  one that finds no room, stamps when the full period started; the writer
+  clears the stamp when it takes a job and the queue has room, so only an
+  unbroken full stretch counts. The stamp is the `WRITER_QUEUE_FULL`
+  reading of 05b.
 - **Migrations** are forward-only and numbered from 1, each committed with its
   row in `schema_migrations` (version, name, a checksum of its SQL, time). A
   binary refuses a file with a newer version or an applied migration whose SQL

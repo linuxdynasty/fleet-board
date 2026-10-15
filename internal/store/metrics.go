@@ -39,6 +39,8 @@ type observed struct {
 	depth func() int
 	// oldest is the Submit time of the oldest unanswered job, zero if none.
 	oldest func() time.Time
+	// fullSince is when the queue became continuously full, zero if not full.
+	fullSince func() time.Time
 }
 
 func newMetrics(tel *telemetry.Telemetry, name string, obs observed) (*metrics, error) {
@@ -55,7 +57,7 @@ func newMetrics(tel *telemetry.Telemetry, name string, obs observed) (*metrics, 
 		aborted:   metric.WithAttributes(db, attribute.String("result", "aborted")),
 	}
 	seconds := []float64{0.0005, 0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5}
-	var errs [10]error
+	var errs [11]error
 	out.batchMessages, errs[0] = m.Int64Histogram(prefix+"_writer_batch_messages",
 		metric.WithDescription("Jobs committed in one writer transaction."),
 		metric.WithExplicitBucketBoundaries(1, 2, 5, 10, 25, 50, 75, 100))
@@ -80,7 +82,9 @@ func newMetrics(tel *telemetry.Telemetry, name string, obs observed) (*metrics, 
 		metric.WithDescription("Jobs queued and not yet taken by the writer."))
 	oldest, err9 := m.Float64ObservableGauge(prefix+"_writer_oldest_job_age_seconds",
 		metric.WithDescription("Age of the oldest job not yet answered; 0 when none waits."), metric.WithUnit("s"))
-	errs[6], errs[7], errs[8], errs[9] = err6, err7, err8, err9
+	fullAge, err10 := m.Float64ObservableGauge(prefix+"_writer_queue_full_seconds",
+		metric.WithDescription("How long the writer queue has been continuously full; 0 when it is not full."), metric.WithUnit("s"))
+	errs[6], errs[7], errs[8], errs[9], errs[10] = err6, err7, err8, err9, err10
 	if err := errors.Join(errs[:]...); err != nil {
 		return nil, err
 	}
@@ -98,8 +102,13 @@ func newMetrics(tel *telemetry.Telemetry, name string, obs observed) (*metrics, 
 			age = max(time.Since(t).Seconds(), 0) // a wall-clock step back must not read negative
 		}
 		o.ObserveFloat64(oldest, age, out.db)
+		full := 0.0
+		if t := obs.fullSince(); !t.IsZero() {
+			full = max(time.Since(t).Seconds(), 0)
+		}
+		o.ObserveFloat64(fullAge, full, out.db)
 		return nil
-	}, storeBytes, walBytes, depth, oldest)
+	}, storeBytes, walBytes, depth, oldest, fullAge)
 	if err != nil {
 		return nil, err
 	}

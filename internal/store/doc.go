@@ -21,6 +21,12 @@
 // Reads go through [Store.Read], a short read transaction on the pool that
 // sees the last commit and never waits for the writer.
 //
+// The Submit that fills the last slot, or one that finds no room, stamps
+// when the queue became continuously full; the writer clears the stamp
+// when it takes a job and the queue has room. [Store.QueueFullSince]
+// reports the stamp (zero when the queue is not full), the
+// WRITER_QUEUE_FULL reading of 05b.
+//
 // [VacuumInto] copies a file with VACUUM INTO on its own read-only (mode=ro)
 // connection, never the pools (VACUUM INTO fails on a query_only one), and
 // [OpenReadOnly] opens a copy to check it; backups use both.
