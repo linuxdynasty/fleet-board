@@ -7,7 +7,9 @@ to the one already there with `reuse`. A harness to start, or resume of a
 harness conversation, is refused until the adapter start surface lands in a
 later slice. F3 `SendKeys` types operator free text (`OPERATOR_TEXT` only)
 into a harness pane at a proven-ready prompt; every other purpose waits for
-its slice.
+its slice. F4 `Interrupt` sends a fixed C-c to the pane: no screen gate (a
+turn is running, so a ready prompt must never be required), idempotent in
+effect, so the class is `RepeatSafe` and a resume re-sends.
 
 ```go
 runner, _ := proc.NewRunner(tel)
@@ -28,7 +30,8 @@ res := e.SendKeys(ctx, cmd.GetSendKeys())
 // and w := e.WindowHandler() (Kind EnsureWindow), each with tmux.control
 // plus the server-specific capability, RepeatSafe; s := e.SendKeysHandler()
 // (Kind SendKeys) is NotRepeatSafe: a resume ends UNKNOWN_OUTCOME and never
-// retypes. The wiring row registers them.
+// retypes; i := e.InterruptHandler() (Kind Interrupt) is RepeatSafe: a
+// resume re-sends the C-c. The wiring row registers them.
 ```
 
 ## Order of checks
@@ -93,6 +96,19 @@ res := e.SendKeys(ctx, cmd.GetSendKeys())
    (the class is `NotRepeatSafe`: a retry after `UNKNOWN_OUTCOME` is refused
    by the executor, never retyped). The OK result names the count and
    carries no screen text.
+10. **Pane and send** (F4): the pane key names this server, a `%N` pane id
+    and a server start id (`INVALID_ARGUMENT` else, before any tmux call),
+    the start id still matches the server's and the pane is listed (a stale
+    key or a missing pane reads `PANE_NOT_FOUND`) and alive (a dead pane
+    reads `PANE_BUSY`, not retryable: nothing becomes interruptible by
+    waiting; respawn is F5's). The check-and-send holds that pane's lock,
+    shared with F3, so a C-c never lands between F3's screen read and its
+    typing. The fixed C-c travels as one-shot CLI argv — a constant key
+    with a re-validated id, never a shell string — not through `typing`:
+    no `SendKeys` purpose names this gate, and a borrowed purpose would
+    mislabel the keystroke in telemetry. A pane lost under the send reads
+    `PANE_NOT_FOUND`; any other send failure reads `INTERNAL`. The OK
+    result names the pane and carries no screen text.
 
 ## Results report stored tags
 

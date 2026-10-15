@@ -57,7 +57,11 @@ All pass local policy, carry a `command_id`, and are idempotent except F3.
   `typing.New…` constructor, and the tmux client package import it to name the
   type, and no non-test file in `internal/` or `cmd/` import `unsafe` (a
   `//go:linkname` to a constructor needs it);
-  `scripts/test-lint-typing-rules.sh` seeds a violation of each.
+  `scripts/test-lint-typing-rules.sh` seeds a violation of each. The one send
+  outside `typing` is F4's fixed C-c below: a constant control key with a
+  re-validated pane id sent as one-shot CLI argv, never a control-mode
+  line; no `SendKeys` purpose names its gate, and a borrowed purpose would
+  mislabel the keystroke in telemetry.
   Landed in slices like F1: `OPERATOR_TEXT` first (`internal/agent/control`,
   issue #67): the pane's start id, its listing, the developer-input read at
   that moment (E13), a known harness command (the four with a usage probe;
@@ -70,7 +74,13 @@ All pass local policy, carry a `command_id`, and are idempotent except F3.
   whose reply never came back reads `UNKNOWN_OUTCOME`. A resume
   ends `UNKNOWN_OUTCOME` and never retypes. The other purposes wait for
   their slices.
-- **F4 Interrupt**, **F5 Respawn pane** (adapter `ResumeArgs`), **F6 Kill
+- **F4 Interrupt:** C-c to the pane, idempotent in effect (RepeatSafe: a
+  resume re-sends). The pane key, the server start id and the pane's
+  listing hold under that pane's lock, shared with F3; a stale key or a
+  missing pane reads `PANE_NOT_FOUND`, a dead pane `PANE_BUSY` (not
+  retryable; respawn is F5's). No screen gate: the pane is interrupted
+  because a turn is running. Landed (`internal/agent/control`, issue #67).
+- **F5 Respawn pane** (adapter `ResumeArgs`), **F6 Kill
   window.** Resize belongs to J1.
 - **F8 Run harness command:** `RunHarnessCommand{target, command, args}`,
   where `command` must be in the machine's catalog (C4) and its class must be

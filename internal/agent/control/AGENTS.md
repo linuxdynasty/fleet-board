@@ -7,7 +7,9 @@ Read the root `AGENTS.md` first; it applies here. Rules for this package:
 - Every argument after the binary and `-S` is a separate element, never a
   shell string; names from the hub are re-validated before use.
 - Nothing here types into a pane. Keystrokes stay in the `SendKeys` slice,
-  built by `internal/agent/tmux/typing` only.
+  built by `internal/agent/tmux/typing` only. The one exception is
+  `Interrupt`'s fixed C-c (F4): a constant control key, not operator text,
+  sent as one-shot CLI argv with a re-validated pane id (01f F4).
 - Behavior lands with a test against a real `tmuxtest` server; a refusal
   names its status and reason in the test.
 - A change here updates this README and `doc.go` in the same commit, and

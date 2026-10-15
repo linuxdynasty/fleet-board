@@ -156,3 +156,46 @@ func (h sendHandler) Resume(context.Context, exec.Request) *agentv1.CommandResul
 		Message: "SendKeys is never retyped after a restart; ask whether the keys landed",
 	}
 }
+
+// interruptHandler is the exec.Handler for Interrupt. The wiring row
+// registers one per server the agent serves, next to the session, window
+// and send-keys handlers.
+type interruptHandler struct {
+	e *Ensurer
+}
+
+// InterruptHandler returns the Ensurer as the executor's Handler for
+// Interrupt.
+func (e *Ensurer) InterruptHandler() exec.Handler { return interruptHandler{e: e} }
+
+// Kind is the Command.kind arm's message name.
+func (h interruptHandler) Kind() string { return "Interrupt" }
+
+// Capabilities are advertised in Hello while the handler is registered.
+func (h interruptHandler) Capabilities() []*typev1.Capability {
+	return capabilitiesFor(h.e.kind)
+}
+
+// Class re-runs the command from the start: C-c is idempotent in effect
+// (02e), so a replayed command_id or a resumed Interrupt sends it again.
+func (h interruptHandler) Class(*agentv1.Command) exec.Class { return exec.RepeatSafe }
+
+// Run does the command and returns its result. The executor sets the id,
+// the times and the trace, and scrubs the message.
+func (h interruptHandler) Run(ctx context.Context, r exec.Request) *agentv1.CommandResult {
+	cmd, ok := r.Command.GetKind().(*agentv1.Command_Interrupt)
+	if !ok || cmd.Interrupt == nil {
+		return &agentv1.CommandResult{
+			Status:  typev1.Status_STATUS_FAILED,
+			Reason:  typev1.ReasonCode_REASON_CODE_INTERNAL,
+			Message: "control: Interrupt handler got another kind",
+		}
+	}
+	return h.e.Interrupt(ctx, cmd.Interrupt)
+}
+
+// Resume re-runs from the start: C-c is idempotent in effect, so there is
+// nothing to continue, only to send again.
+func (h interruptHandler) Resume(ctx context.Context, r exec.Request) *agentv1.CommandResult {
+	return h.Run(ctx, r)
+}
