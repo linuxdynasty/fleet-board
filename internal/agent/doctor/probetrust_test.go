@@ -91,6 +91,44 @@ func TestProbeTrustIsUnknownWhenNothingCouldBeRead(t *testing.T) {
 	}
 }
 
+func TestProbeTrustIsUnknownWhenOneScreenFailsBesideAReadyOne(t *testing.T) {
+	t.Parallel()
+	ready := trustFixture(t, "claude", filepath.Join("2.1.296", "ready-ansi.txt"))
+	c := runProbeTrust(t, func(_ context.Context, harness, _ string) (string, bool, error) {
+		if harness == "claude" {
+			return ready, true, nil
+		}
+		if harness == "codex" {
+			return "", true, errors.New("the screen never settled")
+		}
+		return "", false, nil
+	})
+	if c.Status != doctor.Unknown {
+		t.Fatalf("probe_trust status = %s (%q, fix %q), want unknown: a failed look must not report ok", c.Status, c.Reason, c.Fix)
+	}
+}
+
+func TestProbeTrustIsUnknownWhenAScreenProvesNothing(t *testing.T) {
+	t.Parallel()
+	ready := trustFixture(t, "claude", filepath.Join("2.1.296", "ready-ansi.txt"))
+	update := trustFixture(t, "codex", filepath.Join("0.160.0", "startup-update-prompt.txt"))
+	c := runProbeTrust(t, func(_ context.Context, harness, _ string) (string, bool, error) {
+		if harness == "claude" {
+			return ready, true, nil
+		}
+		if harness == "codex" {
+			return update, true, nil
+		}
+		return "", false, nil
+	})
+	if c.Status != doctor.Unknown {
+		t.Fatalf("probe_trust status = %s (%q, fix %q), want unknown: an update screen hides the trust answer", c.Status, c.Reason, c.Fix)
+	}
+	if got := c.Reason + " | " + c.Fix; !strings.Contains(got, "Codex") {
+		t.Errorf("the reason should name the unverified harness: %q", got)
+	}
+}
+
 func TestProbeTrustIsUnknownWithoutACaptureFunc(t *testing.T) {
 	t.Parallel()
 	c := runProbeTrust(t, nil)

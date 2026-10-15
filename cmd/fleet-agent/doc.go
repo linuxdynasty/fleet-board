@@ -15,7 +15,10 @@
 // is a `policy_changed` event and each resource sample a `resource_sample`
 // event. The durable ones wait in the event ring until the hub acknowledges
 // them, and the connection loop sends them on the stream. `doctor [--json]`
-// prints the local checks of internal/agent/doctor (exit 1 when one fails).
+// prints the local checks of internal/agent/doctor (exit 1 when one fails);
+// its probe-trust check starts each installed harness once in the probe
+// folder on a throwaway tmux server, reads the first screen, sends no key
+// and tears the session down.
 // Exit codes: 0 (a signal, even during startup, is a clean stop unless a
 // real failure came with it), 1 when a command fails, 2 for bad usage. The rest of the agent arrives with plan
 // row 4 onward of docs/plan/v1-implementation-plan.md. This package is wiring

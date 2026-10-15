@@ -46,7 +46,7 @@ that is not ok or not_checked has a fix line.
 | `probe_folder` | the usage probe's folder: exists, private, empty (names inside are never printed) | warns |
 | `hub_handshake` | a TLS handshake against the pinned CA, never a `Connect` call | warns when unreachable, fails when untrusted; unknown with no identity or address |
 | `linger` | `loginctl show-user --property=Linger` on Linux (ok on other systems) | fails when off; unknown when unreadable |
-| `probe_trust` | the probe folder trust per harness: each installed harness starts once in the probe folder on a throwaway tmux server, the first screen is read through the probe's trust detection, no key is sent and the session is torn down | fails when a harness shows its trust screen (the fix is the one-time step per harness, 01 C3); unknown when no screen could be read |
+| `probe_trust` | the probe folder trust per harness: each installed harness starts once in the probe folder on a throwaway tmux server, the first screen is read through the probe's trust detection, no key is sent and the session is torn down | fails when a harness shows its trust screen (the fix is the one-time step per harness, 01 C3); unknown when a screen could not be read or proved nothing (ok needs every installed harness at a proven ready prompt) |
 | `harness_paths`, `two_pane_folders` | nothing yet | `not_checked` (rows 8 and 9) |
 
 ## Not here

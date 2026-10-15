@@ -139,8 +139,12 @@ fleet-agent run    # logs to stderr; stop with Ctrl-C or SIGTERM
   failed. It reads `status.json` and `enroll.json` and prints their age, looks
   at the dates and modes of `identity.json`, `cert.pem` and `renew.key` without
   reading a key, reads `policy.yaml` fresh, and runs `tmux -V`; so it works
-  while the agent is down and leaves a running agent's stream alone. It never
-  opens `agent.log` or `agent.db`, and creates, writes and removes nothing.
+  while the agent is down and leaves a running agent's stream alone. The
+  probe-trust check is the one exception to read-only: it starts each
+  installed harness once in the probe folder on a throwaway tmux server,
+  reads the first screen, sends no key and tears the session down (01 C3).
+  Apart from those throwaway sessions it never opens `agent.log` or
+  `agent.db`, and creates, writes and removes nothing.
   Every printed string is stripped of control characters and bounded.
 
 `--state-dir` and `--config-dir` are flags of every command.

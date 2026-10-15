@@ -34,7 +34,9 @@ func probeTrustSteps(dir string) []probeTrustHarness {
 // starts the harness in the probe folder, reads the first screen, sends no
 // key and tears the session down; nothing is ever typed into a trust
 // screen. A harness is named waiting only when its own trust screen was
-// seen; otherwise the check says it was not checked.
+// seen. Ok needs every installed harness at a proven ready prompt: a failed
+// read, or a screen that proves nothing (an update prompt, a busy pane),
+// keeps the check unknown, since trust may still hide behind it.
 func probeTrustCheck(ctx context.Context, e *Env) Outcome {
 	dir := e.opts.ProbeDir
 	if dir == "" {
@@ -45,18 +47,31 @@ func probeTrustCheck(ctx context.Context, e *Env) Outcome {
 		return unknown("the probe folder trust was not checked on this run", "report this as a bug in fleet-agent doctor")
 	}
 	var waiting []probeTrustHarness
-	read := 0
+	var unverified []string
+	read, failed := 0, false
 	for _, h := range probeTrustSteps(dir) {
 		screen, installed, err := capture(ctx, h.name, dir)
 		if ctx.Err() != nil {
 			return unknown("doctor was stopped before the trust screens were read", "run fleet-agent doctor again")
 		}
-		if err != nil || !installed {
+		if err != nil {
+			failed = true
+			continue
+		}
+		if !installed {
 			continue
 		}
 		read++
-		if probe.Classify(h.name, screen).Outcome == probe.OutcomeTrust {
+		switch probe.Classify(h.name, screen).Outcome {
+		case probe.OutcomeTrust:
 			waiting = append(waiting, h)
+		case probe.OutcomeReady:
+			// A proven idle prompt: this harness is checked.
+		default:
+			// A screen that proves nothing (an update prompt, a busy
+			// pane): trust may still hide behind it, so it stays
+			// unverified and never counts toward an all-clear.
+			unverified = append(unverified, h.display)
 		}
 	}
 	if len(waiting) > 0 {
@@ -69,10 +84,27 @@ func probeTrustCheck(ctx context.Context, e *Env) Outcome {
 		return fail(joinNames(names)+" waiting for you to trust the probe folder",
 			"In a terminal of your own, once per harness: "+strings.Join(steps, " "))
 	}
-	if read == 0 {
-		return unknown("the probe folder trust was not checked: no harness screen could be read", "check that a harness is installed and run fleet-agent doctor again")
+	if failed || read == 0 || len(unverified) > 0 {
+		return unknown("the probe folder trust was not checked ("+strings.Join(uncheckedWords(failed, read, unverified), ", ")+")",
+			"check that the harnesses are installed and run fleet-agent doctor again")
 	}
 	return ok("no harness is waiting for you to trust the probe folder")
+}
+
+// uncheckedWords names why the trust look proved nothing, in fixed words:
+// a failed read, nothing installed or read, or screens that proved nothing.
+func uncheckedWords(failed bool, read int, unverified []string) []string {
+	var words []string
+	if failed {
+		words = append(words, "a screen could not be read")
+	}
+	if read == 0 {
+		words = append(words, "no installed harness to look at")
+	}
+	if len(unverified) > 0 {
+		words = append(words, strings.Join(unverified, ", ")+" showed no proven prompt")
+	}
+	return words
 }
 
 // joinNames joins display names in plain words: "A", "A and B",
