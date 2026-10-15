@@ -3,8 +3,8 @@
 The hub's HTTP API ([02b](../../../docs/specs/02b-hub-api.md),
 [02f](../../../docs/specs/02f-hub-authentication.md#host-and-origin-checks)).
 Today it serves `/metrics` on the API listener, behind the Host and Origin
-checks, and `FleetService` with only `CreateEnrollmentToken` on the local admin
-socket.
+checks, and `FleetService` with `CreateEnrollmentToken` and the watched-repo
+writes (`CreateRepo`, `UpdateRepo`, `DeleteRepo`) on the local admin socket.
 
 ```go
 srv := api.NewServer(tel, "api", boundPort) // api.Handler plus timeouts and the JSON ErrorLog
@@ -43,10 +43,11 @@ own error lines are debug-level `http.server_error` events, not stderr text.
 ## FleetService
 
 `Fleet` embeds the generated `UnimplementedFleetServiceHandler`, so every
-method but `CreateEnrollmentToken` answers `unimplemented`. `Handler()` is its
-Connect route (requests capped at 1 MiB), ready for a later row to mount on
-the API listener. The caller is the `Principal` the server put in the context
-(`WithPrincipal`); the handler never reads it from the request.
+method but `CreateEnrollmentToken` and the watched-repo writes answers
+`unimplemented`. `Handler()` is its Connect route (requests capped at 1 MiB),
+ready for a later row to mount on the API listener. The caller is the
+`Principal` the server put in the context (`WithPrincipal`); the handler never
+reads it from the request.
 
 `CreateEnrollmentToken` needs `ADMIN` (02d). Until plan row 12 brings scopes,
 only a `LOCAL_USER` principal (the admin socket) holds it: no principal is
@@ -80,6 +81,33 @@ writer transaction appends the `machine.enroll_token` audit row (02m): the
 caller (id, kind, name) as actor, target `enroll_tokens/<id>`, the
 `request_id`, and a detail with the machine name, expected hostname and
 expiry; never the token, its secret or its hash (#104).
+
+`CreateRepo`, `UpdateRepo` and `DeleteRepo` need `SETTINGS` (02d); until plan
+row 12 brings caller scopes only the local user holds it
+(`authorizeSettings`, like `authorizeApprovals`). Then, in 02b's order:
+
+| Check | Refusal |
+|---|---|
+| the local approval secret in `local_trusted` mode | `PERMISSION_DENIED` / `CREDENTIALS_INVALID` |
+| `request_id`, the repo identity (lowercase `host/path`, no `.git`), the spec (branch placeholder, the 02b size caps) | `INVALID_ARGUMENT` / `REQUEST_ID_MISSING`, `FIELD_TOO_LARGE`, `INVALID_NAME`, `INVALID_ARGUMENT` |
+| a bad mask (empty, unknown, repeated, non-updatable) | `INVALID_ARGUMENT` / `UPDATE_MASK_INVALID`, one `FieldViolation` per path |
+| an `id` naming another repo than `spec.repo` | `INVALID_ARGUMENT` on `repo.id` |
+| no code-host integration reaches the host (`CreateRepo`) | `INVALID_ARGUMENT` |
+| same principal and `request_id` again: same body / other body | the stored response / `ALREADY_EXISTS` / `REQUEST_ID_CONFLICT` |
+| missing repo, stale `expected_version` | `NOT_FOUND` / `RESOURCE_NOT_FOUND`; `FAILED_PRECONDITION` / `VERSION_MISMATCH` with `metadata["current_version"]` |
+
+`UpdateRepo` merges the masked patch against the transaction-current row
+(`statedb.UpdateWatchedRepoMasked`), so concurrent updates to different
+fields keep each other's changes; only the merged result is validated, and
+fields outside the mask are ignored. `DeleteRepo` moves the repo's `READY`
+mirrors to `SEEN` in the same transaction (repo.proto); mirrors age out like
+any unwatched item. Every write appends its `repo.*` audit row and its
+idempotency record (the stored response, 24 h, pruned in bounded batches).
+Signals: `fleet_hub_repo_writes_total{op, outcome}` (`ok`, `replayed`,
+`refused`, `failed`) and the log lines `repo.written` (`op`, `repo`,
+`version`, `replayed`, `actor`), `repo.write_refused` (`reason`, `op`,
+`actor`) and `repo.write_failed` (`step` `encode`/`decode`/`store`,
+`err_kind`, `op`, `actor`).
 
 ## Admin socket
 

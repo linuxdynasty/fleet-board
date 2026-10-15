@@ -111,6 +111,10 @@ func Migrations() []store.Migration {
 		Version: 14,
 		Name:    "provider_sync_mirrors",
 		SQL:     syncSQL,
+	}, {
+		Version: 15,
+		Name:    "owner_repo_writes",
+		SQL:     repoRequestLogSQL,
 	}}
 }
 

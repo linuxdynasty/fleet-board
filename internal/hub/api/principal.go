@@ -65,6 +65,24 @@ func authorizeAdmin(ctx context.Context) (*typev1.Principal, error) {
 	return p, nil
 }
 
+// authorizeSettings admits a caller that holds SETTINGS (02d: settings,
+// accounts, repos, routines, integrations' watched projects, machine labels,
+// hook installs, config import). Until plan row 12 brings scopes, that is
+// only the local user on the admin socket, who maps to OWNER and holds
+// every scope.
+func authorizeSettings(ctx context.Context) (*typev1.Principal, error) {
+	p := PrincipalFrom(ctx)
+	if p.GetId().GetValue() == "" {
+		return nil, apiError(connect.CodeUnauthenticated, typev1.ReasonCode_REASON_CODE_CREDENTIALS_INVALID,
+			"no caller identity", nil, nil)
+	}
+	if p.GetKind() != typev1.PrincipalKind_PRINCIPAL_KIND_LOCAL_USER {
+		return nil, apiError(connect.CodePermissionDenied, typev1.ReasonCode_REASON_CODE_SCOPE_MISSING,
+			"this call needs the SETTINGS scope", map[string]string{"scope": "SETTINGS"}, nil)
+	}
+	return p, nil
+}
+
 // apiError is a Connect error with the 02b ErrorDetail.
 func apiError(code connect.Code, reason typev1.ReasonCode, msg string, metadata map[string]string,
 	violations []*typev1.FieldViolation,

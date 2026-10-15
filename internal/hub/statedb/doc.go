@@ -93,6 +93,16 @@
 // and command_results (the first result, never changed). The queries are
 // internal/hub/outbox's.
 //
+// Plan row 13a adds the owner repo writes (repo_request_log migration):
+// [CreateWatchedRepo], [UpdateWatchedRepo], [UpdateWatchedRepoMasked] and
+// [DeleteWatchedRepo] stamp the repos row they change (hub_seq), keep the
+// idempotency record (the stored response, replayed for 24 h, expired rows
+// pruned in bounded batches) and write the repo.* audit row, all in one
+// writer transaction. [UpdateWatchedRepoMasked] merges the masked patch
+// against the transaction-current row. [DeleteWatchedRepo] moves the repo's
+// READY mirrors to SEEN in the same transaction. [LookupRepoReplay] is the
+// read-pool pre-check behind a write.
+//
 // Plan row 11 adds the provider mirrors (provider_sync_mirrors migration):
 // work_items and change_requests keyed canonically with the hub's verdicts
 // beside the provider shape, sync_cursors and rate_limit_state per page
@@ -102,6 +112,7 @@
 // loop's column with its stage recompute; [GetCursor],
 // [GetWorkItemStages], [GetWorkItemState] and [ListClaimCandidates] are the
 // loop's reads; [EnsureIntegration], [GetIntegration] and
-// [SetIntegrationStatus] own the integration row; [UpsertRepo] and
-// [ListWatchedRepos] own the watched repos.
+// [SetIntegrationStatus] own the integration row; [UpsertRepo] keeps the
+// sync-owned repo fields and [ListWatchedRepos] reads them, while the owner
+// writes above own the row once watched.
 package statedb
