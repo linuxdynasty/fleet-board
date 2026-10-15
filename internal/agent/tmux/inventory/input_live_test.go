@@ -259,6 +259,31 @@ func TestAgentActionsCreditNoInput(t *testing.T) {
 			waitSession(t, r, 1)
 			time.Sleep(3500 * time.Millisecond)
 			none("reattach")
+			// The landing is not guaranteed to still hold at one read after
+			// a fixed sleep on a loaded machine: the reattach can still be
+			// settling when the sleep ends (CI saw the client absent here
+			// with tmux.exit events present). Poll for it again with a
+			// deadline instead of asserting once; the want-$1 assertion
+			// below stays.
+			waitSession(t, r, 1)
+			// The landing alone does not prove the guard: the inventory
+			// loop runs syncInput for the reattach only after the client
+			// reports up, so none() could pass before a bad PaneInput
+			// would emit. Give a lagging loop a short grace to run one
+			// post-landing input read first — the same wait-for-advance
+			// the new-session block uses — then assert nothing was
+			// credited by it. When the loop is already settled no
+			// further read comes and the grace expires quietly: that
+			// path is no weaker than before. The grace stays far short
+			// of wait on purpose: this suite already runs near its
+			// timeout budget, and a stalled-longer loop escapes this
+			// check either way.
+			landed := inputReads(t, r, "default")
+			landDeadline := time.Now().Add(5 * time.Second)
+			for inputReads(t, r, "default") == landed && time.Now().Before(landDeadline) {
+				time.Sleep(20 * time.Millisecond)
+			}
+			none("reattach")
 			if got := r.o.Client("default").Session(); got != 1 {
 				t.Fatalf("re-attached to %s, want $1 (extra)", got)
 			}
