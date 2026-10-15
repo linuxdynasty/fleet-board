@@ -435,3 +435,38 @@ values; a 5a-i store gaining the tables; the largest accepted names through
 `InsertEnrollToken` and `Enroll`; the Go-side refusals before a number is
 taken; and `INSERT OR REPLACE`, a counter rollback and a counter delete
 refused on the file.
+
+- **Owner repo writes** (migration 15, plan row 13a; 02b "Idempotency",
+  "Versions and ETags"). `repos` gains `hub_seq` (the Watch stamp of the
+  create, update or delete); `repo_request_log` keys (`principal_id`,
+  `request_id`) to the repo, the SHA-256 of the request body and the stored
+  response (the spec, version, times, stamp and code host; a delete stores
+  only its tombstone). `CreateWatchedRepo`, `UpdateWatchedRepo`,
+  `UpdateWatchedRepoMasked` and `DeleteWatchedRepo` each run in one writer
+  transaction: a replayed key returns the stored response
+  (`ErrRequestConflict` on another body, an expired row past the 24 h window
+  is dropped and the key is free again); an existing row is `ErrRepoExists`,
+  a missing one `ErrRepoUnknown`, a stale `expected_version` a
+  `VersionConflict`; otherwise the row is written at version 1 or rose by 1,
+  stamped, with its `repo.*` audit row. `UpdateWatchedRepoMasked` merges the
+  masked patch against the transaction-current row, so concurrent updates to
+  different fields keep each other's changes. `DeleteWatchedRepo` moves the
+  repo's `READY` code-host mirrors (integration, project) back to `SEEN` in
+  the same transaction; mirrors age out like any unwatched item (30 days).
+  Every insert sweeps a bounded batch (500) of expired idempotency rows.
+  `LookupRepoReplay` is the read-pool pre-check behind a write (a hit replays
+  early; a conflict stays for the writer job, after the 02b field checks).
+
+```go
+got, err := statedb.CreateWatchedRepo(ctx, s, statedb.CreateRepo{RepoWrite: w, Host: h, Path: p, ...})
+got, err := statedb.UpdateWatchedRepoMasked(ctx, s, statedb.MaskedUpdate{RepoWrite: w, Host: h, Path: p,
+    ExpectedVersion: v, Merge: merge}) // merge runs inside the writer job
+got, err := statedb.DeleteWatchedRepo(ctx, s, statedb.DeleteRepo{RepoWrite: w, Host: h, Path: p, ...})
+replay, err := statedb.LookupRepoReplay(ctx, s, principal, requestID, hash, h, p, now)
+```
+
+The row 13a tests (`repos_replay_test.go`, `repos_masked_test.go`) read the
+rows from the file: a replay after an update answers the original response,
+an expired key writes anew, each insert prunes expired rows, a delete moves
+only the repo's `READY` mirrors to `SEEN`, the masked merge sees the latest
+row, and a 2b store gaining the tables.

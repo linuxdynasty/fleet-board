@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"errors"
 	"strconv"
-	"strings"
 
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -30,94 +29,6 @@ var updateRepoAllow = map[string]bool{
 	"spec.hooks_mode":         true,
 	"spec.tracker_projects":   true,
 	"spec.trusted_gate":       true,
-}
-
-// checkRepoRequest applies the 02b field rules to a repo write: the
-// request_id, the repo identity (host and path) and the branch pattern.
-// It returns the identity. Descriptions never echo the request.
-func checkRepoRequest(requestID string, repo *hubv1.Repo) (host, path string, err error) {
-	var v violations
-	switch {
-	case requestID == "":
-		v.add("request_id", typev1.ReasonCode_REASON_CODE_REQUEST_ID_MISSING, "request_id is required")
-	case len(requestID) > maxRequestID:
-		v.add("request_id", typev1.ReasonCode_REASON_CODE_FIELD_TOO_LARGE, "request_id is over 64 bytes")
-	case !printableASCII(requestID):
-		v.add("request_id", typev1.ReasonCode_REASON_CODE_INVALID_ARGUMENT,
-			"request_id must be printable ASCII without spaces (a UUID or ULID)")
-	}
-	spec := repo.GetSpec()
-	switch ref := spec.GetRepo(); {
-	case repo == nil || spec == nil || ref == nil:
-		v.add("repo", typev1.ReasonCode_REASON_CODE_INVALID_ARGUMENT, "repo with its spec and repo ref is required")
-	default:
-		host, path = ref.GetHost(), ref.GetPath()
-		switch {
-		case host == "":
-			v.add("repo.spec.repo.host", typev1.ReasonCode_REASON_CODE_INVALID_ARGUMENT, "repo.spec.repo.host is required")
-		case !hostname.MatchString(host):
-			v.add("repo.spec.repo.host", typev1.ReasonCode_REASON_CODE_INVALID_NAME,
-				"repo.spec.repo.host may hold only letters, digits, '.', '-' and '_'")
-		}
-		if badPath(path) {
-			v.add("repo.spec.repo.path", typev1.ReasonCode_REASON_CODE_INVALID_ARGUMENT,
-				"repo.spec.repo.path names the repo on its host, segments of letters, digits and '., -, _, /'")
-		}
-	}
-	if bp := spec.GetBranchPattern(); bp != "" && !strings.Contains(bp, "{work}") && !strings.Contains(bp, "{goal}") {
-		v.add("repo.spec.branch_pattern", typev1.ReasonCode_REASON_CODE_INVALID_ARGUMENT,
-			"repo.spec.branch_pattern names {work} or {goal}")
-	}
-	if len(v) > 0 {
-		return "", "", apiError(connect.CodeInvalidArgument, v[0].GetReason(),
-			"the request has invalid fields", nil, v)
-	}
-	return host, path, nil
-}
-
-// badPath is a repo path with an empty, dot or unprintable segment.
-func badPath(path string) bool {
-	if path == "" {
-		return true
-	}
-	for _, seg := range strings.Split(path, "/") {
-		switch {
-		case seg == "", seg == ".", seg == "..":
-			return true
-		case !printableASCII(seg):
-			return true
-		}
-		for _, r := range seg {
-			switch {
-			case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
-			case r == '.', r == '-', r == '_':
-			default:
-				return true
-			}
-		}
-	}
-	return false
-}
-
-// repoID is the Repo id for host/path.
-func repoID(host, path string) string {
-	return host + "/" + path
-}
-
-// parseRepoID splits a Repo id back into host and path.
-func parseRepoID(id string) (host, path string, err error) {
-	host, path, found := strings.Cut(id, "/")
-	if !found || host == "" || path == "" || badPath(path) || !hostname.MatchString(host) {
-		return "", "", apiError(connect.CodeInvalidArgument,
-			typev1.ReasonCode_REASON_CODE_INVALID_ARGUMENT,
-			"the request has invalid fields", nil,
-			[]*typev1.FieldViolation{{
-				Field:       "id",
-				Reason:      typev1.ReasonCode_REASON_CODE_INVALID_ARGUMENT,
-				Description: "id is host/path",
-			}})
-	}
-	return host, path, nil
 }
 
 // mergeRepoSpec applies the masked fields of req onto a clone of stored.
@@ -167,8 +78,13 @@ func repoFromStored(stored statedb.RepoStored, spec *hubv1.RepoSpec) *hubv1.Repo
 // repoStoreError renders a repo write's store failure: the replay conflict,
 // the existing or missing repo, the stale version (02b: FAILED_PRECONDITION
 // with VERSION_MISMATCH and metadata["current_version"]), then the hub's
-// own failure as INTERNAL without its text.
+// own failure as INTERNAL without its text. A Connect error (a merged-spec
+// violation from the writer job) passes through untouched.
 func repoStoreError(op string, err error) error {
+	var ce *connect.Error
+	if errors.As(err, &ce) {
+		return err
+	}
 	var conflict *statedb.VersionConflict
 	switch {
 	case errors.Is(err, statedb.ErrRequestConflict):
@@ -206,45 +122,67 @@ func repoBodyHash(m proto.Message) ([32]byte, error) {
 // CreateRepo starts watching a repo (02j). Only repo.spec is read; the id
 // is derived from spec.repo and an existing one is ALREADY_EXISTS. A repo
 // with no code-host integration to reach it is INVALID_ARGUMENT. Order of
-// checks, as 02b ranks them: the caller, the local secret in local_trusted
-// mode, the fields, the code host, then the request_id replay in the
-// writer transaction.
+// checks, as 02b ranks them: the caller (SETTINGS), the local secret in
+// local_trusted mode, the fields, an early replay of the stored response,
+// the code host, then the request_id replay in the writer transaction.
 func (f *Fleet) CreateRepo(ctx context.Context, req *connect.Request[hubv1.CreateRepoRequest],
 ) (*connect.Response[hubv1.CreateRepoResponse], error) {
-	who, err := authorizeAdmin(ctx)
+	who, err := authorizeSettings(ctx)
 	if err != nil {
-		return nil, err
+		return nil, f.repoRefused(ctx, opRepoCreate, "", err)
 	}
 	actor := who.GetId().GetValue()
 	if err := f.checkLocalSecret(hubProcedure("CreateRepo"), req.Header().Get(SecretHeader)); err != nil {
-		return nil, apiError(connect.CodePermissionDenied,
+		return nil, f.repoRefused(ctx, opRepoCreate, actor, apiError(connect.CodePermissionDenied,
 			typev1.ReasonCode_REASON_CODE_CREDENTIALS_INVALID,
-			"this call needs the local approval secret", nil, nil)
+			"this call needs the local approval secret", nil, nil))
 	}
 	m := req.Msg
-	host, path, err := checkRepoRequest(m.GetRequestId(), m.GetRepo())
+	if err := checkRequestID(m.GetRequestId()); err != nil {
+		return nil, f.repoRefused(ctx, opRepoCreate, actor, err)
+	}
+	host, path, err := checkRepoIdentity(m.GetRepo())
 	if err != nil {
-		return nil, err
+		return nil, f.repoRefused(ctx, opRepoCreate, actor, err)
+	}
+	if err := checkRepoSpec(m.GetRepo().GetSpec()); err != nil {
+		return nil, f.repoRefused(ctx, opRepoCreate, actor, err)
+	}
+	sum, err := repoBodyHash(m)
+	if err != nil {
+		return nil, f.repoFailed(ctx, opRepoCreate, "watch", actor, "encode", err)
+	}
+	now := f.hubNow()
+	// An early replay of the stored response wins over the mutable code-host
+	// check below. A conflict stays for the writer job, after the field
+	// checks 02b ranks first.
+	if replay, rerr := statedb.LookupRepoReplay(ctx, f.store, actor,
+		m.GetRequestId(), sum, host, path, now); rerr == nil && replay != nil {
+		var replaySpec hubv1.RepoSpec
+		if err := protojson.Unmarshal(replay.Spec, &replaySpec); err != nil {
+			return nil, f.repoFailed(ctx, opRepoCreate, "watch", actor, "decode", err)
+		}
+		f.repoWrote(ctx, opRepoCreate, actor, repoID(replay.Host, replay.Path), replay.Version, true)
+		return connect.NewResponse(&hubv1.CreateRepoResponse{
+			Repo: repoFromStored(*replay, &replaySpec),
+		}), nil
+	} else if rerr != nil && !errors.Is(rerr, statedb.ErrRequestConflict) {
+		return nil, f.repoWriteError(ctx, opRepoCreate, "watch", actor, repoStoreError("watch", rerr))
 	}
 	codeHost, err := statedb.MatchCodeHost(ctx, f.store, host)
 	if err != nil {
 		if errors.Is(err, statedb.ErrCodeHostUnknown) {
-			return nil, apiError(connect.CodeInvalidArgument,
+			return nil, f.repoRefused(ctx, opRepoCreate, actor, apiError(connect.CodeInvalidArgument,
 				typev1.ReasonCode_REASON_CODE_INVALID_ARGUMENT,
-				"no code-host integration reaches this repo", nil, nil)
+				"no code-host integration reaches this repo", nil, nil))
 		}
-		return nil, repoStoreError("watch", err)
+		return nil, f.repoFailed(ctx, opRepoCreate, "watch", actor, "store", err)
 	}
-	sum, err := repoBodyHash(m)
-	if err != nil {
-		return nil, repoStoreError("watch", err)
-	}
-	now := f.hubNow()
 	spec := proto.Clone(m.GetRepo().GetSpec()).(*hubv1.RepoSpec) //nolint:forcetypeassert // Clone keeps the message type
 	spec.Repo.CodeHost = &typev1.IntegrationId{Value: codeHost}
 	specJSON, err := protojson.Marshal(spec)
 	if err != nil {
-		return nil, repoStoreError("watch", err)
+		return nil, f.repoFailed(ctx, opRepoCreate, "watch", actor, "encode", err)
 	}
 	stored, err := statedb.CreateWatchedRepo(ctx, f.store, statedb.CreateRepo{
 		RepoWrite: statedb.RepoWrite{
@@ -254,106 +192,99 @@ func (f *Fleet) CreateRepo(ctx context.Context, req *connect.Request[hubv1.Creat
 		Host: host, Path: path, CodeHost: codeHost, Enabled: spec.GetEnabled(), Spec: specJSON,
 	})
 	if err != nil {
-		return nil, repoStoreError("watch", err)
+		return nil, f.repoWriteError(ctx, opRepoCreate, "watch", actor, repoStoreError("watch", err))
 	}
-	if stored.Replay {
-		var replaySpec hubv1.RepoSpec
-		if err := protojson.Unmarshal(stored.Spec, &replaySpec); err != nil {
-			return nil, repoStoreError("watch", err)
-		}
-		return connect.NewResponse(&hubv1.CreateRepoResponse{
-			Repo: repoFromStored(stored, &replaySpec),
-		}), nil
+	var outSpec hubv1.RepoSpec
+	if err := protojson.Unmarshal(stored.Spec, &outSpec); err != nil {
+		return nil, f.repoFailed(ctx, opRepoCreate, "watch", actor, "decode", err)
 	}
+	f.repoWrote(ctx, opRepoCreate, actor, repoID(stored.Host, stored.Path), stored.Version, stored.Replay)
 	return connect.NewResponse(&hubv1.CreateRepoResponse{
-		Repo: repoFromStored(stored, spec),
+		Repo: repoFromStored(stored, &outSpec),
 	}), nil
 }
 
 // UpdateRepo rewrites the masked spec fields of a watched repo (02j). The
 // identity comes from spec.repo (an id naming another repo is
-// INVALID_ARGUMENT); every other spec field needs its mask path. A stale
-// expected_version is FAILED_PRECONDITION with VERSION_MISMATCH.
+// INVALID_ARGUMENT); every other spec field needs its mask path. The patch
+// merges against the transaction-current row, so concurrent updates to
+// different fields keep each other's changes. A stale expected_version is
+// FAILED_PRECONDITION with VERSION_MISMATCH.
 func (f *Fleet) UpdateRepo(ctx context.Context, req *connect.Request[hubv1.UpdateRepoRequest],
 ) (*connect.Response[hubv1.UpdateRepoResponse], error) {
-	who, err := authorizeAdmin(ctx)
+	who, err := authorizeSettings(ctx)
 	if err != nil {
-		return nil, err
+		return nil, f.repoRefused(ctx, opRepoUpdate, "", err)
 	}
 	actor := who.GetId().GetValue()
 	if err := f.checkLocalSecret(hubProcedure("UpdateRepo"), req.Header().Get(SecretHeader)); err != nil {
-		return nil, apiError(connect.CodePermissionDenied,
+		return nil, f.repoRefused(ctx, opRepoUpdate, actor, apiError(connect.CodePermissionDenied,
 			typev1.ReasonCode_REASON_CODE_CREDENTIALS_INVALID,
-			"this call needs the local approval secret", nil, nil)
+			"this call needs the local approval secret", nil, nil))
 	}
 	m := req.Msg
-	host, path, err := checkRepoRequest(m.GetRequestId(), m.GetRepo())
+	if err := checkRequestID(m.GetRequestId()); err != nil {
+		return nil, f.repoRefused(ctx, opRepoUpdate, actor, err)
+	}
+	host, path, err := checkRepoIdentity(m.GetRepo())
 	if err != nil {
-		return nil, err
+		return nil, f.repoRefused(ctx, opRepoUpdate, actor, err)
 	}
 	if id := m.GetRepo().GetId().GetValue(); id != "" && id != repoID(host, path) {
-		return nil, apiError(connect.CodeInvalidArgument,
+		return nil, f.repoRefused(ctx, opRepoUpdate, actor, apiError(connect.CodeInvalidArgument,
 			typev1.ReasonCode_REASON_CODE_INVALID_ARGUMENT,
 			"the request has invalid fields", nil,
 			[]*typev1.FieldViolation{{
 				Field:       "repo.id",
 				Reason:      typev1.ReasonCode_REASON_CODE_INVALID_ARGUMENT,
 				Description: "repo.id names another repo; spec.repo is the identity",
-			}})
+			}}))
 	}
 	if err := CheckFieldMask(m.GetUpdateMask(), updateRepoAllow); err != nil {
-		return nil, err
+		return nil, f.repoRefused(ctx, opRepoUpdate, actor, err)
 	}
 	sum, err := repoBodyHash(m)
 	if err != nil {
-		return nil, repoStoreError("update", err)
+		return nil, f.repoFailed(ctx, opRepoUpdate, "update", actor, "encode", err)
 	}
 	now := f.hubNow()
-	current, err := statedb.GetWatchedRepo(ctx, f.store, host, path)
-	if err != nil {
-		return nil, repoStoreError("update", err)
-	}
-	var currentSpec hubv1.RepoSpec
-	if err := protojson.Unmarshal(current.Spec, &currentSpec); err != nil {
-		return nil, repoStoreError("update", err)
-	}
-	merged := mergeRepoSpec(&currentSpec, m.GetRepo().GetSpec(), m.GetUpdateMask().GetPaths())
-	if bp := merged.GetBranchPattern(); bp != "" && !strings.Contains(bp, "{work}") && !strings.Contains(bp, "{goal}") {
-		return nil, apiError(connect.CodeInvalidArgument,
-			typev1.ReasonCode_REASON_CODE_INVALID_ARGUMENT,
-			"the request has invalid fields", nil,
-			[]*typev1.FieldViolation{{
-				Field:       "repo.spec.branch_pattern",
-				Reason:      typev1.ReasonCode_REASON_CODE_INVALID_ARGUMENT,
-				Description: "repo.spec.branch_pattern names {work} or {goal}",
-			}})
-	}
-	specJSON, err := protojson.Marshal(merged)
-	if err != nil {
-		return nil, repoStoreError("update", err)
-	}
-	stored, err := statedb.UpdateWatchedRepo(ctx, f.store, statedb.UpdateRepo{
+	patch, paths := m.GetRepo().GetSpec(), m.GetUpdateMask().GetPaths()
+	stored, err := statedb.UpdateWatchedRepoMasked(ctx, f.store, statedb.MaskedUpdate{
 		RepoWrite: statedb.RepoWrite{
 			Principal: actor, RequestID: m.GetRequestId(),
 			RequestHash: sum, Actor: actorOf(who), Now: now,
 		},
-		Host: host, Path: path, Enabled: merged.GetEnabled(), Spec: specJSON,
+		Host: host, Path: path,
 		ExpectedVersion: m.GetExpectedVersion(),
+		Merge: func(current []byte) ([]byte, bool, error) {
+			var currentSpec hubv1.RepoSpec
+			if err := protojson.Unmarshal(current, &currentSpec); err != nil {
+				return nil, false, err
+			}
+			merged := mergeRepoSpec(&currentSpec, patch, paths)
+			// Only the merged result is validated: fields outside the
+			// mask are ignored, even when the request carries invalid
+			// values for them.
+			if err := checkRepoSpec(merged); err != nil {
+				return nil, false, err
+			}
+			mergedJSON, err := protojson.Marshal(merged)
+			if err != nil {
+				return nil, false, err
+			}
+			return mergedJSON, merged.GetEnabled(), nil
+		},
 	})
 	if err != nil {
-		return nil, repoStoreError("update", err)
+		return nil, f.repoWriteError(ctx, opRepoUpdate, "update", actor, repoStoreError("update", err))
 	}
-	if stored.Replay {
-		var replaySpec hubv1.RepoSpec
-		if err := protojson.Unmarshal(stored.Spec, &replaySpec); err != nil {
-			return nil, repoStoreError("update", err)
-		}
-		return connect.NewResponse(&hubv1.UpdateRepoResponse{
-			Repo: repoFromStored(stored, &replaySpec),
-		}), nil
+	var outSpec hubv1.RepoSpec
+	if err := protojson.Unmarshal(stored.Spec, &outSpec); err != nil {
+		return nil, f.repoFailed(ctx, opRepoUpdate, "update", actor, "decode", err)
 	}
+	f.repoWrote(ctx, opRepoUpdate, actor, repoID(stored.Host, stored.Path), stored.Version, stored.Replay)
 	return connect.NewResponse(&hubv1.UpdateRepoResponse{
-		Repo: repoFromStored(stored, merged),
+		Repo: repoFromStored(stored, &outSpec),
 	}), nil
 }
 
@@ -363,41 +294,30 @@ func (f *Fleet) UpdateRepo(ctx context.Context, req *connect.Request[hubv1.Updat
 // deleting a missing repo is NOT_FOUND.
 func (f *Fleet) DeleteRepo(ctx context.Context, req *connect.Request[hubv1.DeleteRepoRequest],
 ) (*connect.Response[hubv1.DeleteRepoResponse], error) {
-	who, err := authorizeAdmin(ctx)
+	who, err := authorizeSettings(ctx)
 	if err != nil {
-		return nil, err
+		return nil, f.repoRefused(ctx, opRepoDelete, "", err)
 	}
 	actor := who.GetId().GetValue()
 	if err := f.checkLocalSecret(hubProcedure("DeleteRepo"), req.Header().Get(SecretHeader)); err != nil {
-		return nil, apiError(connect.CodePermissionDenied,
+		return nil, f.repoRefused(ctx, opRepoDelete, actor, apiError(connect.CodePermissionDenied,
 			typev1.ReasonCode_REASON_CODE_CREDENTIALS_INVALID,
-			"this call needs the local approval secret", nil, nil)
+			"this call needs the local approval secret", nil, nil))
 	}
 	m := req.Msg
-	var v violations
-	switch id := m.GetRequestId(); {
-	case id == "":
-		v.add("request_id", typev1.ReasonCode_REASON_CODE_REQUEST_ID_MISSING, "request_id is required")
-	case len(id) > maxRequestID:
-		v.add("request_id", typev1.ReasonCode_REASON_CODE_FIELD_TOO_LARGE, "request_id is over 64 bytes")
-	case !printableASCII(id):
-		v.add("request_id", typev1.ReasonCode_REASON_CODE_INVALID_ARGUMENT,
-			"request_id must be printable ASCII without spaces (a UUID or ULID)")
-	}
-	if len(v) > 0 {
-		return nil, apiError(connect.CodeInvalidArgument, v[0].GetReason(),
-			"the request has invalid fields", nil, v)
+	if err := checkRequestID(m.GetRequestId()); err != nil {
+		return nil, f.repoRefused(ctx, opRepoDelete, actor, err)
 	}
 	host, path, err := parseRepoID(m.GetId().GetValue())
 	if err != nil {
-		return nil, err
+		return nil, f.repoRefused(ctx, opRepoDelete, actor, err)
 	}
 	sum, err := repoBodyHash(m)
 	if err != nil {
-		return nil, repoStoreError("delete", err)
+		return nil, f.repoFailed(ctx, opRepoDelete, "delete", actor, "encode", err)
 	}
 	now := f.hubNow()
-	_, err = statedb.DeleteWatchedRepo(ctx, f.store, statedb.DeleteRepo{
+	stored, err := statedb.DeleteWatchedRepo(ctx, f.store, statedb.DeleteRepo{
 		RepoWrite: statedb.RepoWrite{
 			Principal: actor, RequestID: m.GetRequestId(),
 			RequestHash: sum, Actor: actorOf(who), Now: now,
@@ -405,7 +325,9 @@ func (f *Fleet) DeleteRepo(ctx context.Context, req *connect.Request[hubv1.Delet
 		Host: host, Path: path, ExpectedVersion: m.GetExpectedVersion(),
 	})
 	if err != nil {
-		return nil, repoStoreError("delete", err)
+		return nil, f.repoWriteError(ctx, opRepoDelete, "delete", actor, repoStoreError("delete", err))
 	}
+	// A replayed delete answers the same empty outcome.
+	f.repoWrote(ctx, opRepoDelete, actor, repoID(stored.Host, stored.Path), stored.Version, stored.Replay)
 	return connect.NewResponse(&hubv1.DeleteRepoResponse{}), nil
 }

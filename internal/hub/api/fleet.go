@@ -68,6 +68,7 @@ type Fleet struct {
 	tokens       metric.Int64Counter
 	sessCmds     metric.Int64Counter
 	approvals    metric.Int64Counter
+	repos        metric.Int64Counter
 }
 
 // NewFleet builds the service.
@@ -101,6 +102,11 @@ func NewFleet(opts FleetOptions) (*Fleet, error) {
 		metric.WithDescription("Approvals by kind and outcome: created, approved, denied, expired or withdrawn."))
 	if err != nil {
 		return nil, fmt.Errorf("api: approval counter: %w", err)
+	}
+	f.repos, err = f.tel.Meter(scope).Int64Counter(f.tel.MetricPrefix()+"_repo_writes_total",
+		metric.WithDescription("Repo writes by op and outcome: created, updated or deleted; replayed, refused or failed."))
+	if err != nil {
+		return nil, fmt.Errorf("api: repo counter: %w", err)
 	}
 	return f, nil
 }

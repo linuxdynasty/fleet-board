@@ -9,12 +9,15 @@
 // ever sent. [NewServer] wraps it with header and idle timeouts and an
 // ErrorLog that turns net/http's own error lines into debug-level JSON events.
 //
-// [Fleet] is FleetService with only CreateEnrollmentToken built (it writes
-// the machine.enroll_token audit row with the token; every other
-// method is Unimplemented): it checks the caller ([PrincipalFrom], ADMIN),
-// the fields and the request_id (02b), mints the token in package ca and
-// stores only its secret hash. [NewAdmin] serves it on the admin socket over
-// HTTP/1.1, closing unserved every connection whose kernel peer user id
+// [Fleet] is FleetService with CreateEnrollmentToken (it writes the
+// machine.enroll_token audit row with the token) and the watched-repo
+// writes CreateRepo, UpdateRepo and DeleteRepo (each with its repo.* audit
+// row; every other method is Unimplemented): it checks the caller
+// ([PrincipalFrom], ADMIN for enrollment, SETTINGS for repos), the fields
+// and the request_id (02b), mints the token in package ca and stores only
+// its secret hash, or merges the masked repo patch inside the writer
+// transaction. [NewAdmin] serves it on the admin socket over HTTP/1.1,
+// closing unserved every connection whose kernel peer user id
 // ([KernelPeerUID]) is not fleetd's and refusing any request with an Origin
 // header; the caller is [LocalUser] of the peer. [AdminClient] dials the
 // socket. Watch and FleetService on the API listener arrive with their plan

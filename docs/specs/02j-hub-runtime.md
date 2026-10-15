@@ -262,3 +262,12 @@ the same calls are in [02b](02b-hub-api.md), and all need `SETTINGS` or `ADMIN`
 5. Fleet and group limits: `UpdateSettings`.
 6. Or all at once: `ExportConfig` and `ImportConfig` with a `fleet.yaml`
    ([02m](02m-hub-api-actions-and-audit.md#config-export-and-import)).
+
+### Telemetry
+
+- `fleet_hub_repo_writes_total{op, outcome}` (`op`: `create`, `update`,
+  `delete`; `outcome`: `ok`, `replayed`, `refused`, `failed`).
+- Logs: `repo.written{op, repo, version, replayed, actor}`,
+  `repo.write_refused{reason, op, actor}`,
+  `repo.write_failed{step, err_kind, op, actor}` (`step`: `encode`,
+  `decode`, `store).

@@ -1,7 +1,6 @@
 package statedb
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
 	"errors"
@@ -18,9 +17,12 @@ import (
 //   - repos gains hub_seq (Watch order; 0 = never stamped by an owner
 //     write): the stamp of the create, update or delete, so a later read
 //     can name the change without scanning the audit log.
-//   - repo_request_log keys (principal, request_id) to the watched repo
-//     and the SHA-256 of the request body, to tell a retry from a
-//     conflict. The unique key backs the check up.
+//   - repo_request_log keys (principal, request_id) to the watched repo,
+//     the SHA-256 of the request body (to tell a retry from a conflict)
+//     and the stored response (02b "Idempotency": the same key and body
+//     replays the original response for 24 h, even after a later update
+//     or a delete). A delete stores no spec, only its tombstone. The
+//     unique key backs the check up.
 const repoRequestLogSQL = `ALTER TABLE repos ADD COLUMN hub_seq INTEGER NOT NULL DEFAULT 0;
 CREATE TABLE repo_request_log(
 	principal_id TEXT NOT NULL CHECK (principal_id <> ''),
@@ -29,8 +31,25 @@ CREATE TABLE repo_request_log(
 	path TEXT NOT NULL CHECK (path <> ''),
 	request_hash BLOB NOT NULL,
 	create_time INTEGER NOT NULL,
+	response_spec TEXT NOT NULL DEFAULT '',
+	response_version INTEGER NOT NULL DEFAULT 0,
+	response_create_ms INTEGER NOT NULL DEFAULT 0,
+	response_update_ms INTEGER NOT NULL DEFAULT 0,
+	response_hub_seq INTEGER NOT NULL DEFAULT 0,
+	response_code_host TEXT NOT NULL DEFAULT '',
+	deleted INTEGER NOT NULL DEFAULT 0 CHECK (deleted IN (0, 1)),
 	PRIMARY KEY (principal_id, request_id)
 ) STRICT;`
+
+// Work stages from fleet.hub.v1/work.proto; work_items stores the number.
+const (
+	// workStageSeen is WORK_STAGE_SEEN: mirrored and open, not yet evaluated.
+	workStageSeen = 1
+	// workStageReady is WORK_STAGE_READY: trusted, unclaimed, repo watched.
+	workStageReady = 2
+	// workManualReasonUnspecified clears the manual reason off SEEN.
+	workManualReasonUnspecified = 0
+)
 
 // Outcomes of the owner repo writes other than success (02b "Idempotency",
 // "Versions and ETags").
@@ -130,49 +149,6 @@ func auditRepo(ctx context.Context, tx *sql.Tx, action string, stored RepoStored
 		RequestID: w.RequestID, Detail: detail, Now: w.Now,
 	})
 	return err
-}
-
-// checkRepoReplay returns the stored repo when the principal already used
-// the request_id for the same request body, or [ErrRequestConflict] when
-// the body differs. A miss is a nil stored repo and no error.
-func checkRepoReplay(ctx context.Context, tx *sql.Tx, w RepoWrite, host, path string) (*RepoStored, error) {
-	var stored struct {
-		host string
-		path string
-		hash []byte
-	}
-	err := tx.QueryRowContext(ctx, `SELECT host, path, request_hash FROM repo_request_log
-		WHERE principal_id = ? AND request_id = ?`, w.Principal, w.RequestID).
-		Scan(&stored.host, &stored.path, &stored.hash)
-	switch {
-	case errors.Is(err, sql.ErrNoRows):
-		return nil, nil
-	case err != nil:
-		return nil, fmt.Errorf("statedb: look up repo request_id: %w", err)
-	case !bytes.Equal(stored.hash, w.RequestHash[:]) || stored.host != host || stored.path != path:
-		return nil, ErrRequestConflict
-	}
-	got, err := readRepo(ctx, tx, host, path)
-	if errors.Is(err, ErrRepoUnknown) {
-		// The replayed request deleted the repo: the delete is done, so a
-		// retry answers the same empty outcome, marked as a replay.
-		return &RepoStored{Host: host, Path: path, Replay: true}, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	got.Replay = true
-	return &got, nil
-}
-
-func logRepoRequest(ctx context.Context, tx *sql.Tx, w RepoWrite, host, path string) error {
-	_, err := tx.ExecContext(ctx, `INSERT INTO repo_request_log(principal_id, request_id, host, path,
-		request_hash, create_time) VALUES (?, ?, ?, ?, ?, ?)`,
-		w.Principal, w.RequestID, host, path, w.RequestHash[:], w.Now.UnixMilli())
-	if err != nil {
-		return fmt.Errorf("statedb: log repo request: %w", err)
-	}
-	return nil
 }
 
 func readRepo(ctx context.Context, tx *sql.Tx, host, path string) (RepoStored, error) {
@@ -320,7 +296,7 @@ func CreateWatchedRepo(ctx context.Context, s *store.Store, in CreateRepo) (Repo
 		if err := auditRepo(jctx, tx, ActionRepoCreate, out, in.RepoWrite); err != nil {
 			return err
 		}
-		return logRepoRequest(jctx, tx, in.RepoWrite, in.Host, in.Path)
+		return logRepoRequest(jctx, tx, in.RepoWrite, in.Host, in.Path, out, false)
 	})
 	if err != nil {
 		return RepoStored{}, err
@@ -372,7 +348,79 @@ func UpdateWatchedRepo(ctx context.Context, s *store.Store, in UpdateRepo) (Repo
 		if err := auditRepo(jctx, tx, ActionRepoUpdate, out, in.RepoWrite); err != nil {
 			return err
 		}
-		return logRepoRequest(jctx, tx, in.RepoWrite, in.Host, in.Path)
+		return logRepoRequest(jctx, tx, in.RepoWrite, in.Host, in.Path, out, false)
+	})
+	if err != nil {
+		return RepoStored{}, err
+	}
+	return out, nil
+}
+
+// MaskedUpdate merges a requested patch into the stored spec inside one
+// writer transaction. Merge runs against the transaction-current row, so
+// two updates to different fields with expected_version 0 cannot read the
+// same stale version and lose each other's fields. An error from Merge
+// (a field or mask violation on the merged result) aborts without writing.
+type MaskedUpdate struct {
+	RepoWrite
+	Host            string
+	Path            string
+	ExpectedVersion uint64
+	// Merge computes the new spec from the stored protojson and reports the
+	// spec's enabled flag. It runs inside the writer transaction.
+	Merge func(current []byte) (merged []byte, enabled bool, err error)
+}
+
+// UpdateWatchedRepoMasked rewrites a watched repo's masked spec fields in
+// one writer transaction: a replayed request_id returns the stored
+// response, a missing row is [ErrRepoUnknown], a stale version is
+// [VersionConflict]. Otherwise the merged spec replaces the stored one,
+// the version rises by 1 and the row is stamped, with its repo.update
+// audit row.
+func UpdateWatchedRepoMasked(ctx context.Context, s *store.Store, in MaskedUpdate) (RepoStored, error) {
+	jctx := context.WithoutCancel(ctx) // see insertIdentity
+	var out RepoStored
+	err := s.Write(ctx, func(tx *sql.Tx) error {
+		if replay, err := checkRepoReplay(jctx, tx, in.RepoWrite, in.Host, in.Path); err != nil || replay != nil {
+			if err == nil {
+				out = *replay
+			}
+			return err
+		}
+		got, err := readRepo(jctx, tx, in.Host, in.Path)
+		if err != nil {
+			return err
+		}
+		if err := checkRepoVersion(got.Version, in.ExpectedVersion); err != nil {
+			return err
+		}
+		merged, enabled, err := in.Merge(got.Spec)
+		if err != nil {
+			return err
+		}
+		st, err := NextStamp(jctx, tx, in.Now)
+		if err != nil {
+			return err
+		}
+		en := 0
+		if enabled {
+			en = 1
+		}
+		nowMs := in.Now.UnixMilli()
+		if _, err := tx.ExecContext(jctx, `UPDATE repos SET enabled = ?, spec_json = ?,
+			version = version + 1, update_ms = ?, hub_seq = ? WHERE host = ? AND path = ?`,
+			en, string(merged), nowMs, st.HubSeq, in.Host, in.Path); err != nil {
+			return fmt.Errorf("statedb: update repo: %w", err)
+		}
+		out = RepoStored{
+			Host: got.Host, Path: got.Path, CodeHost: got.CodeHost,
+			Version: got.Version + 1, CreateMs: got.CreateMs, UpdateMs: nowMs,
+			HubSeq: st.HubSeq, Spec: merged,
+		}
+		if err := auditRepo(jctx, tx, ActionRepoUpdate, out, in.RepoWrite); err != nil {
+			return err
+		}
+		return logRepoRequest(jctx, tx, in.RepoWrite, in.Host, in.Path, out, false)
 	})
 	if err != nil {
 		return RepoStored{}, err
@@ -402,6 +450,18 @@ func DeleteWatchedRepo(ctx context.Context, s *store.Store, in DeleteRepo) (Repo
 		if err := checkRepoVersion(got.Version, in.ExpectedVersion); err != nil {
 			return err
 		}
+		// The repo is no longer polled, so its mirrors leave READY here, in
+		// the same transaction (repo.proto): back to SEEN, mirrored and open
+		// but not evaluated, like a disabled repo's items at sync. Mirrors
+		// age out like any unwatched item (30 days). Only the code-host
+		// mirrors keyed by this repo move; tracker-mapped items keep the
+		// verdict their next sync computes.
+		if _, err := tx.ExecContext(jctx, `UPDATE work_items SET stage = ?, manual_reason = ?,
+			update_ms = ? WHERE integration = ? AND project = ? AND stage = ?`,
+			workStageSeen, workManualReasonUnspecified, in.Now.UnixMilli(),
+			got.CodeHost, in.Path, workStageReady); err != nil {
+			return fmt.Errorf("statedb: unready repo work items: %w", err)
+		}
 		if _, err := tx.ExecContext(jctx, `DELETE FROM repos WHERE host = ? AND path = ?`,
 			in.Host, in.Path); err != nil {
 			return fmt.Errorf("statedb: delete repo: %w", err)
@@ -410,7 +470,7 @@ func DeleteWatchedRepo(ctx context.Context, s *store.Store, in DeleteRepo) (Repo
 		if err := auditRepo(jctx, tx, ActionRepoDelete, out, in.RepoWrite); err != nil {
 			return err
 		}
-		return logRepoRequest(jctx, tx, in.RepoWrite, in.Host, in.Path)
+		return logRepoRequest(jctx, tx, in.RepoWrite, in.Host, in.Path, out, true)
 	})
 	if err != nil {
 		return RepoStored{}, err

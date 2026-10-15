@@ -37,12 +37,12 @@ func TestCheckFieldMask(t *testing.T) {
 		{
 			name: "nil mask names no field", nilMask: true, wantErr: true,
 			wantFields: []string{"update_mask"},
-			wantReason: typev1.ReasonCode_REASON_CODE_INVALID_ARGUMENT,
+			wantReason: typev1.ReasonCode_REASON_CODE_UPDATE_MASK_INVALID,
 		},
 		{
 			name: "empty mask names no field", paths: nil, wantErr: true,
 			wantFields: []string{"update_mask"},
-			wantReason: typev1.ReasonCode_REASON_CODE_INVALID_ARGUMENT,
+			wantReason: typev1.ReasonCode_REASON_CODE_UPDATE_MASK_INVALID,
 		},
 		{
 			name: "every updatable spec field passes",
@@ -56,19 +56,19 @@ func TestCheckFieldMask(t *testing.T) {
 		{
 			name: "identity is not updatable", paths: []string{"spec.repo"}, wantErr: true,
 			wantFields: []string{"update_mask.paths[0]"},
-			wantReason: typev1.ReasonCode_REASON_CODE_INVALID_ARGUMENT,
+			wantReason: typev1.ReasonCode_REASON_CODE_UPDATE_MASK_INVALID,
 		},
 		{
 			name: "unknown path fails", paths: []string{"spec.enabled", "owner"},
 			wantErr:    true,
 			wantFields: []string{"update_mask.paths[1]"},
-			wantReason: typev1.ReasonCode_REASON_CODE_INVALID_ARGUMENT,
+			wantReason: typev1.ReasonCode_REASON_CODE_UPDATE_MASK_INVALID,
 		},
 		{
 			name: "a repeated path fails", paths: []string{"spec.enabled", "spec.enabled"},
 			wantErr:    true,
 			wantFields: []string{"update_mask.paths[1]"},
-			wantReason: typev1.ReasonCode_REASON_CODE_INVALID_ARGUMENT,
+			wantReason: typev1.ReasonCode_REASON_CODE_UPDATE_MASK_INVALID,
 		},
 		{
 			name:    "each bad path gets its violation",
@@ -77,7 +77,7 @@ func TestCheckFieldMask(t *testing.T) {
 			wantFields: []string{
 				"update_mask.paths[0]", "update_mask.paths[2]", "update_mask.paths[3]",
 			},
-			wantReason: typev1.ReasonCode_REASON_CODE_INVALID_ARGUMENT,
+			wantReason: typev1.ReasonCode_REASON_CODE_UPDATE_MASK_INVALID,
 		},
 	}
 	for _, tc := range cases {
