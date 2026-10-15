@@ -113,7 +113,9 @@ test or on state from an earlier run; a failure prints `-test.shuffle <seed>`,
 and `go test -shuffle=<seed> -count=3` replays it (go shuffles once per test
 binary, and a leak shows only on a repeat). Neither pass reuses cached
 results; `make test TEST_COUNT=1` is the quick local loop. `TEST_COUNT` must
-be a positive integer; anything else fails before go runs.
+be a positive integer; anything else fails before go runs. Both passes set
+`-timeout 15m`: the live tmux inventory suite alone runs about 9.5 minutes at
+`-count=3`, inside test-time variance of go's 10 minute default (#293).
 
 `.githooks/pre-push` is the guard for `main` (ADR 0024, decision 2: the repo is
 private on a plan without branch protection). After `make hooks`, a push that

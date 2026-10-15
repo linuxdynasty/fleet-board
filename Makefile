@@ -10,9 +10,10 @@
 #   make gen        buf generate into gen/ (Go and TypeScript)
 #   make build      CGO_ENABLED=0 go build ./...  (make smoke then runs each binary)
 #   make test       go vet ./..., then on the packages changed against BASE_REF
-#                   (default origin/main): go test -shuffle=on -count=TEST_COUNT
-#                   (default 3), then go test -race -shuffle=on -count=1;
-#                   with COVERPROFILE set, the first pass writes coverage there
+#                   (default origin/main): go test -timeout 15m -shuffle=on
+#                   -count=TEST_COUNT (default 3), then go test -timeout 15m
+#                   -race -shuffle=on -count=1; with COVERPROFILE set, the
+#                   first pass writes coverage there
 #   make lint       golangci-lint on the same packages, once per platform in
 #                   LINT_PLATFORMS (linux and darwin, amd64 and arm64; cgo off)
 #   make vuln       govulncheck ./... (fails on a reachable known vulnerability)
@@ -146,6 +147,14 @@ vet:
 TEST_COUNT ?= 3
 export TEST_COUNT
 
+# Both test passes set an explicit -timeout (go's default is 10m): the live
+# tmux inventory suite alone runs ~9.5 min at -count=3 against the tmux on
+# PATH (CI runners ship one, so it runs even without FLEET_TMUX_*), which left
+# the default budget inside test-time variance of a kill (#293: "panic: test
+# timed out after 10m0s" on an unrelated change; not a hang, no test weakened).
+# 15m restores headroom; revisit if the suite grows again. test-all keeps the
+# default timeout.
+
 # COVERPROFILE, when set, is the file the non-race pass of make test (and the
 # one pass of make test-all) writes its coverage profile to; CI sets it for
 # scripts/coverage-report.py. It is a path, read quoted. Unset, no profile.
@@ -158,8 +167,8 @@ test: vet
 	if [ -z "$$pkgs" ]; then echo "make test: no Go package changed against $$BASE_REF; no tests to run"; exit 0; fi; \
 	echo "make test: $$pkgs"; \
 	cover=""; if [ -n "$$COVERPROFILE" ]; then cover="-coverprofile=$$COVERPROFILE"; fi; \
-	CGO_ENABLED=0 go test -shuffle=on -count="$$TEST_COUNT" $${cover:+"$$cover"} $$pkgs && \
-	CGO_ENABLED=$(RACE_CGO) go test -race -shuffle=on -count=1 $$pkgs
+	CGO_ENABLED=0 go test -timeout 15m -shuffle=on -count="$$TEST_COUNT" $${cover:+"$$cover"} $$pkgs && \
+	CGO_ENABLED=$(RACE_CGO) go test -timeout 15m -race -shuffle=on -count=1 $$pkgs
 
 # test-all is the nightly suite (#107): every package, not only the changed
 # ones, with -race and in a random order, TEST_COUNT times in one pass. It
