@@ -259,13 +259,56 @@ func importEntryCount(doc *hubv1.FleetConfig) int {
 	return n
 }
 
+// configRest is the stored configuration an import plan diffs the
+// non-repo sections against: the fleet layer's hub settings and values
+// with the integrations and accounts by their document keys. A nil rest
+// is an empty hub: every non-empty section plans as skipped, as before.
+type configRest struct {
+	hub          *hubv1.HubSettings
+	fleetValues  *typev1.SettingValues
+	integrations map[string]*hubv1.IntegrationConfig
+	accounts     map[string]*hubv1.AccountConfig
+}
+
+// restHub is the stored hub settings, or an empty one when the owner
+// never wrote the fleet layer.
+func restHub(rest *configRest) *hubv1.HubSettings {
+	if rest == nil || rest.hub == nil {
+		return &hubv1.HubSettings{}
+	}
+	return rest.hub
+}
+
+// restFleetValues is the stored fleet values, or empty ones when the
+// owner never wrote the fleet layer.
+func restFleetValues(rest *configRest) *typev1.SettingValues {
+	if rest == nil || rest.fleetValues == nil {
+		return &typev1.SettingValues{}
+	}
+	return rest.fleetValues
+}
+
+// diffStoredLine plans one stored section against the document: unchanged
+// when the document carries what the hub holds, or the skipped line
+// otherwise. Empty document sections plan nothing, so a document that
+// names only repos still applies on a configured hub.
+func diffStoredLine(entity hubv1.ConfigEntity, name string, equal bool) *hubv1.ConfigChange {
+	if equal {
+		return &hubv1.ConfigChange{Entity: entity, Name: name, Kind: hubv1.ConfigChangeKind_CONFIG_CHANGE_KIND_UNCHANGED}
+	}
+	return nil
+}
+
 // planConfigImport diffs a FleetConfig document against the watched repos
 // (existing maps "host/path" to the stored spec; codeHosts maps a host to
-// its integration id). Only repos are plannable in this slice: any other
-// non-empty section plans one SKIPPED line per entry with CONFIG_INVALID.
-// A document over the 02b line cap is errImportPlanTooLarge.
+// its integration id) and the stored configuration (rest). Repos plan
+// create, update and unchanged; the hub settings, fleet values,
+// integrations and accounts plan unchanged when the document carries
+// what the hub holds, so an export imports to an empty plan. Any other
+// non-empty section plans one SKIPPED line per entry with
+// CONFIG_INVALID. A document over the 02b line cap is errImportPlanTooLarge.
 func planConfigImport(doc *hubv1.FleetConfig, existing map[string]*hubv1.RepoSpec,
-	codeHosts map[string]string,
+	codeHosts map[string]string, rest *configRest,
 ) ([]*hubv1.ConfigChange, error) {
 	if importEntryCount(doc) > importPlanLineCap {
 		return nil, errImportPlanTooLarge
@@ -284,12 +327,22 @@ func planConfigImport(doc *hubv1.FleetConfig, existing map[string]*hubv1.RepoSpe
 		})
 	}
 	if !isEmptyHub(doc.GetHub()) {
-		changes = append(changes, unsupportedImportLine(
-			hubv1.ConfigEntity_CONFIG_ENTITY_HUB_SETTINGS, "hub", "config.hub", "hub settings"))
+		if line := diffStoredLine(hubv1.ConfigEntity_CONFIG_ENTITY_HUB_SETTINGS, "hub",
+			proto.Equal(doc.GetHub(), restHub(rest))); line != nil {
+			changes = append(changes, line)
+		} else {
+			changes = append(changes, unsupportedImportLine(
+				hubv1.ConfigEntity_CONFIG_ENTITY_HUB_SETTINGS, "hub", "config.hub", "hub settings"))
+		}
 	}
 	if !isEmptyFleetValues(doc.GetFleetValues()) {
-		changes = append(changes, unsupportedImportLine(
-			hubv1.ConfigEntity_CONFIG_ENTITY_FLEET_VALUES, "fleet", "config.fleet_values", "fleet values"))
+		if line := diffStoredLine(hubv1.ConfigEntity_CONFIG_ENTITY_FLEET_VALUES, "fleet",
+			proto.Equal(doc.GetFleetValues(), restFleetValues(rest))); line != nil {
+			changes = append(changes, line)
+		} else {
+			changes = append(changes, unsupportedImportLine(
+				hubv1.ConfigEntity_CONFIG_ENTITY_FLEET_VALUES, "fleet", "config.fleet_values", "fleet values"))
+		}
 	}
 	for i, g := range doc.GetGroups() {
 		name := g.GetLabel()
@@ -315,8 +368,17 @@ func planConfigImport(doc *hubv1.FleetConfig, existing map[string]*hubv1.RepoSpe
 		if name == "" {
 			name = fmt.Sprintf("integrations[%d]", i)
 		}
-		changes = append(changes, unsupportedImportLine(
-			hubv1.ConfigEntity_CONFIG_ENTITY_INTEGRATION, name, fmt.Sprintf("config.integrations[%d]", i), "integration"))
+		var stored *hubv1.IntegrationConfig
+		if rest != nil {
+			stored = rest.integrations[ig.GetProviderName()+"\x00"+ig.GetBaseUrl()]
+		}
+		if line := diffStoredLine(hubv1.ConfigEntity_CONFIG_ENTITY_INTEGRATION, name,
+			stored != nil && proto.Equal(ig, stored)); line != nil {
+			changes = append(changes, line)
+		} else {
+			changes = append(changes, unsupportedImportLine(
+				hubv1.ConfigEntity_CONFIG_ENTITY_INTEGRATION, name, fmt.Sprintf("config.integrations[%d]", i), "integration"))
+		}
 	}
 	for i, rt := range doc.GetRoutines() {
 		name := rt.GetDisplayName()
@@ -331,8 +393,17 @@ func planConfigImport(doc *hubv1.FleetConfig, existing map[string]*hubv1.RepoSpe
 		if name == "" {
 			name = fmt.Sprintf("accounts[%d]", i)
 		}
-		changes = append(changes, unsupportedImportLine(
-			hubv1.ConfigEntity_CONFIG_ENTITY_ACCOUNT, name, fmt.Sprintf("config.accounts[%d]", i), "account"))
+		var stored *hubv1.AccountConfig
+		if rest != nil {
+			stored = rest.accounts[ac.GetHarness().GetName()+"\x00"+ac.GetSpec().GetDisplayName()]
+		}
+		if line := diffStoredLine(hubv1.ConfigEntity_CONFIG_ENTITY_ACCOUNT, name,
+			stored != nil && proto.Equal(ac, stored)); line != nil {
+			changes = append(changes, line)
+		} else {
+			changes = append(changes, unsupportedImportLine(
+				hubv1.ConfigEntity_CONFIG_ENTITY_ACCOUNT, name, fmt.Sprintf("config.accounts[%d]", i), "account"))
+		}
 	}
 	return changes, nil
 }

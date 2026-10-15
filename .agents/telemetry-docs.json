@@ -66,6 +66,7 @@
     "commands_": "docs/specs/05b-observability.md",
     "commands_expired_": "docs/specs/03n-reconnect.md",
     "config_imports_": "docs/specs/02m-hub-api-actions-and-audit.md",
+    "config_writes_": "docs/specs/02m-hub-api-actions-and-audit.md",
     "connect_": "docs/specs/03-workflows.md",
     "connected": "docs/specs/03-workflows.md",
     "discovery_": "docs/specs/03-workflows.md",

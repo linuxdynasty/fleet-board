@@ -177,3 +177,196 @@ func ListWatchedRepos(ctx context.Context, s *store.Store, codeHost string) ([]W
 	}
 	return out, nil
 }
+
+// integrationsHubSeqSQL stamps the last owner update on the row, so a
+// later read can order the change without scanning the audit log (part of
+// migration 17).
+const integrationsHubSeqSQL = `ALTER TABLE integrations ADD COLUMN hub_seq INTEGER NOT NULL DEFAULT 0;
+`
+
+// UpdateIntegrationOp is a masked spec rewrite of an integration at
+// ExpectedVersion; 0 skips the check (02b "Versions and ETags").
+// Updatable: the spec label and tracker projects (work.proto); the
+// provider, base URL and status stay syncer-owned.
+type UpdateIntegrationOp struct {
+	ConfigWrite
+	ID              string
+	ExpectedVersion uint64
+	// Merge computes the new spec and label from the stored spec
+	// protojson. It runs inside the writer transaction, so two updates
+	// to different fields keep each other's changes. An error aborts
+	// without writing.
+	Merge func(current []byte) (merged []byte, label string, err error)
+}
+
+// UpdateIntegrationSpec rewrites an integration's masked spec in one
+// writer transaction: a replayed request_id returns the stored spec, a
+// missing row is [ErrIntegrationUnknown], a stale version is
+// [VersionStale]. Otherwise the merged spec replaces the stored one, the
+// version rises by 1 and the row is stamped, with its integration.update
+// audit row (target integrations/<id>, 02m).
+func UpdateIntegrationSpec(ctx context.Context, s *store.Store, in UpdateIntegrationOp) (IntegrationStored, error) {
+	jctx := context.WithoutCancel(ctx) // see insertIdentity
+	var out IntegrationStored
+	err := s.Write(ctx, func(tx *sql.Tx) error {
+		if row, err := configReplay(jctx, tx, in.ConfigWrite, configKindIntegration); err != nil || row != nil {
+			if err == nil {
+				status, rerr := readIntegrationStatus(jctx, tx, in.ID)
+				if rerr != nil {
+					return rerr
+				}
+				out = IntegrationStored{
+					ID: in.ID, Label: status.label, Spec: []byte(row.spec),
+					Version:  uint64(row.version), //nolint:gosec // G115: versions start at 1 and only rise
+					CreateMs: row.respCms, UpdateMs: row.respUms, HubSeq: row.hubSeq,
+					Status: status.raw, Replay: true,
+				}
+			}
+			return err
+		}
+		current, version, createMs, _, rerr := readIntegrationSpec(jctx, tx, in.ID)
+		if rerr != nil {
+			return rerr
+		}
+		if err := checkVersion(uint64(version), in.ExpectedVersion, "integration"); err != nil { //nolint:gosec // G115: versions start at 1 and only rise
+			return err
+		}
+		merged, label, err := in.Merge(current)
+		if err != nil {
+			return err
+		}
+		st, err := NextStamp(jctx, tx, in.Now)
+		if err != nil {
+			return err
+		}
+		nowMs := in.Now.UnixMilli()
+		if _, err := tx.ExecContext(jctx, `UPDATE integrations SET label = ?, spec_json = ?,
+			version = version + 1, update_ms = ?, hub_seq = ? WHERE id = ?`,
+			label, string(merged), nowMs, st.HubSeq, in.ID); err != nil {
+			return fmt.Errorf("statedb: update integration: %w", err)
+		}
+		detail, err := auditDetail(struct {
+			ID      string `json:"id"`
+			Version uint64 `json:"version"`
+		}{in.ID, uint64(version) + 1}) //nolint:gosec // G115: versions start at 1 and only rise
+		if err != nil {
+			return err
+		}
+		if _, err := AppendAudit(jctx, tx, AuditEntry{
+			Actor: configActor(in.ConfigWrite), Action: ActionIntegrationUpdate,
+			Target:    "integrations/" + in.ID,
+			RequestID: in.RequestID, Detail: detail, Now: in.Now,
+		}); err != nil {
+			return err
+		}
+		if err := logConfigRequest(jctx, tx, in.ConfigWrite, configKindIntegration, in.ID,
+			"", "", "", string(merged), version+1, createMs, nowMs, st.HubSeq, false); err != nil {
+			return err
+		}
+		status, err := readIntegrationStatus(jctx, tx, in.ID)
+		if err != nil {
+			return err
+		}
+		out = IntegrationStored{
+			ID: in.ID, Label: label, Spec: merged,
+			Version:  uint64(version) + 1, //nolint:gosec // G115: versions start at 1 and only rise
+			CreateMs: createMs, UpdateMs: nowMs, HubSeq: st.HubSeq, Status: status.raw,
+		}
+		return nil
+	})
+	if err != nil {
+		return IntegrationStored{}, err
+	}
+	return out, nil
+}
+
+// IntegrationStored is the integration after the write: the owner spec
+// with the syncer's status passthrough. Replay is set when the
+// principal already used the request_id for the same request.
+type IntegrationStored struct {
+	ID       string
+	Label    string
+	Spec     []byte
+	Status   []byte
+	Version  uint64
+	CreateMs int64
+	UpdateMs int64
+	HubSeq   int64
+	Replay   bool
+}
+
+type integrationStatus struct {
+	label string
+	raw   []byte
+}
+
+func readIntegrationSpec(ctx context.Context, tx *sql.Tx, id string) (spec []byte, version, createMs, updateMs int64, err error) {
+	var current string
+	err = tx.QueryRowContext(ctx, `SELECT spec_json, version, create_ms, update_ms FROM integrations
+		WHERE id = ?`, id).Scan(&current, &version, &createMs, &updateMs)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		return nil, 0, 0, 0, ErrIntegrationUnknown
+	case err != nil:
+		return nil, 0, 0, 0, fmt.Errorf("statedb: read integration: %w", err)
+	}
+	return []byte(current), version, createMs, updateMs, nil
+}
+
+func readIntegrationStatus(ctx context.Context, tx *sql.Tx, id string) (integrationStatus, error) {
+	var out integrationStatus
+	var raw string
+	err := tx.QueryRowContext(ctx, `SELECT label, status_json FROM integrations WHERE id = ?`,
+		id).Scan(&out.label, &raw)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		return integrationStatus{}, ErrIntegrationUnknown
+	case err != nil:
+		return integrationStatus{}, fmt.Errorf("statedb: read integration status: %w", err)
+	}
+	out.raw = []byte(raw)
+	return out, nil
+}
+
+// IntegrationRow for the export and the import diff: the owner-chosen
+// fields with the provider identity, in id order.
+type IntegrationConfigRow struct {
+	ID       string
+	Provider string
+	BaseURL  string
+	Label    string
+	Spec     []byte
+	Version  uint64
+	HubSeq   int64
+}
+
+// ListIntegrationRows reads every integration in id order, so the export
+// renders a stable document and the import diffs against one.
+func ListIntegrationRows(ctx context.Context, s *store.Store) ([]IntegrationConfigRow, error) {
+	var out []IntegrationConfigRow
+	err := s.Read(ctx, func(tx *sql.Tx) error {
+		rows, err := tx.QueryContext(ctx, `SELECT id, provider, base_url, label, spec_json,
+			version, hub_seq FROM integrations ORDER BY id`)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = rows.Close() }()
+		for rows.Next() {
+			var r IntegrationConfigRow
+			var spec string
+			var version, hubSeq int64
+			if err := rows.Scan(&r.ID, &r.Provider, &r.BaseURL, &r.Label, &spec, &version, &hubSeq); err != nil {
+				return err
+			}
+			r.Spec = []byte(spec)
+			r.Version = uint64(version) //nolint:gosec // G115: versions start at 1 and only rise
+			r.HubSeq = hubSeq
+			out = append(out, r)
+		}
+		return rows.Err()
+	})
+	if err != nil {
+		return nil, fmt.Errorf("statedb: list integrations: %w", err)
+	}
+	return out, nil
+}

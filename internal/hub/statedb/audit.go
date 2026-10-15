@@ -93,6 +93,21 @@ const (
 	// detail. One row covers the whole plan; the repo rows it changes are
 	// stamped but carry no repo.* row of their own.
 	ActionConfigImport = "config.import"
+	// ActionAccountCreate, ActionAccountUpdate and ActionAccountDelete
+	// are the owner account writes (row 13a slice 3): target
+	// accounts/<id>, with the request_id and the id and version in
+	// detail.
+	ActionAccountCreate = "account.create"
+	ActionAccountUpdate = "account.update"
+	ActionAccountDelete = "account.delete"
+	// ActionIntegrationUpdate is the owner integration write (row 13a
+	// slice 3): target integrations/<id>, with the request_id and the id
+	// and version in detail.
+	ActionIntegrationUpdate = "integration.update"
+	// ActionSettingsUpdate is the owner settings write (row 13a slice
+	// 3): target settings/fleet, with the request_id and the scope and
+	// version in detail.
+	ActionSettingsUpdate = "settings.update"
 )
 
 // MaxAuditDetail caps AuditEntry.detail in bytes; the table checks it too.

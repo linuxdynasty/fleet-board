@@ -142,11 +142,14 @@ sequenceDiagram
   H->>H: apply the pending machine's labels and settings, mark the machine drained
 ```
 
-### Import telemetry (slice 2: repos only)
+### Import telemetry (slices 2-3: repos applied, rest diffed)
 
 The first import slice plans and applies watched repos only; any other
 non-empty section plans one SKIPPED line with `CONFIG_INVALID`, so the apply
-answers `applied = false` with something to fix. A repo no integration
+answers `applied = false` with something to fix. Slice 3 extends the diff
+(not the apply) to the hub settings, fleet values, integrations and
+accounts: a section that carries what the hub holds plans unchanged, so
+an export imports to an empty plan. A repo no integration
 reaches is the one waivable skip: SKIPPED with `RESOURCE_NOT_FOUND`, applied
 with the rest when `allow_skipped` is set. A dry run returns the plan and
 its `plan_hash` and writes nothing. An apply with a stale
@@ -163,6 +166,48 @@ idempotent response is kept for 24 h like every write.
   `config.import_applied{plan_hash, created, updated, replayed, actor}`,
   `config.import_refused{reason, actor}`,
   `config.import_failed{step, err_kind, actor}` (`step`: `encode`,
+  `decode`, `store`).
+
+### Slice 3: accounts, settings, integrations, export
+
+`CreateAccount` adds an owner-defined API-key account (`BUDGET_KIND_DOLLAR_CAP`
+only): a new account gets reserve 10 and the push, pr-open and merge consent
+when the request leaves them unset. `UpdateAccount` rewrites the masked spec
+fields (display name, mode, reserve, consent, budget kind, spend cap, and the
+bindings that map a Codex account showing no identity to a machine);
+`DeleteAccount` removes an account nothing uses (`ACCOUNT_IN_USE` follows with
+the dispatch rows, which are the first tables that can reference one).
+`UpdateSettings` rewrites the masked fields of the fleet settings layer,
+creating it at version 1 (group and machine layers follow with their
+management). `UpdateIntegration` rewrites an integration's label and tracker
+projects. Every write checks the caller, the local secret, the fields, then
+the request id in one store transaction (a repeat id with the same body
+returns what is stored, another body is refused), stamps the row, versions
+it (+1 per spec change; a stale `expected_version` is refused with the
+current version named) and leaves its audit row (`accounts/<id>`,
+`settings/fleet`, `integrations/<id>`).
+
+`ExportConfig` renders the whole configuration as one `FleetConfig`
+(format 1, no secrets, no ids). Anything the hub does not hold yet stays
+out of the document, so a fresh hub exports to a literally empty import
+plan.
+
+- `fleet_hub_config_writes_total{op, outcome}` (`op`: `account_create`,
+  `account_update`, `account_delete`, `integration_update`,
+  `settings_update`, `export`; `outcome`: `ok`, `replayed`, `refused`,
+  `failed`).
+- Logs: `config.account_written{op, resource, version, replayed, actor}`,
+  `config.account_write_refused{reason, op, actor}`,
+  `config.account_write_failed{step, err_kind, op, actor}`,
+  `config.integration_written{op, resource, version, replayed, actor}`,
+  `config.integration_write_refused{reason, op, actor}`,
+  `config.integration_write_failed{step, err_kind, op, actor}`,
+  `config.settings_written{op, resource, version, replayed, actor}`,
+  `config.settings_write_refused{reason, op, actor}`,
+  `config.settings_write_failed{step, err_kind, op, actor}`,
+  `config.exported{repos, accounts, integrations, actor}`,
+  `config.export_refused{reason, actor}`,
+  `config.export_failed{step, err_kind, actor}` (`step`: `encode`,
   `decode`, `store`).
 
 ## Local commands

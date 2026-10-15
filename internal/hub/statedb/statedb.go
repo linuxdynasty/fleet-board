@@ -119,6 +119,10 @@ func Migrations() []store.Migration {
 		Version: 16,
 		Name:    "config_import_requests",
 		SQL:     importRequestLogSQL,
+	}, {
+		Version: 17,
+		Name:    "owner_config_writes",
+		SQL:     ownerConfigSQL,
 	}}
 }
 

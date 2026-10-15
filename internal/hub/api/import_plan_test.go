@@ -86,7 +86,7 @@ func TestPlanConfigImportDiffsRepos(t *testing.T) {
 		changedOld,
 	}}
 	codeHosts := map[string]string{"github.com": "github"}
-	changes, err := planConfigImport(doc, existing, codeHosts)
+	changes, err := planConfigImport(doc, existing, codeHosts, nil)
 	if err != nil {
 		t.Fatalf("planConfigImport: %v", err)
 	}
@@ -120,7 +120,7 @@ func TestPlanConfigImportRejectsBadRepoEntries(t *testing.T) {
 		{Repo: &typev1.RepoRef{Host: "github.com", Path: "ACME/API.GIT"}, Enabled: true},
 		{Repo: &typev1.RepoRef{Host: "example.com", Path: "acme/api"}, Enabled: true},
 	}}
-	changes, err := planConfigImport(doc, nil, map[string]string{"github.com": "github"})
+	changes, err := planConfigImport(doc, nil, map[string]string{"github.com": "github"}, nil)
 	if err != nil {
 		t.Fatalf("planConfigImport: %v", err)
 	}
@@ -171,7 +171,7 @@ func TestPlanConfigImportMarksUnsupportedSections(t *testing.T) {
 		Groups:        []*hubv1.GroupConfig{{Label: "g"}},
 		Accounts:      []*hubv1.AccountConfig{{Spec: &hubv1.AccountSpec{DisplayName: "codex"}}},
 	}
-	changes, err := planConfigImport(doc, nil, nil)
+	changes, err := planConfigImport(doc, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("planConfigImport: %v", err)
 	}
@@ -194,7 +194,7 @@ func TestPlanConfigImportEnforcesTheLineCap(t *testing.T) {
 	for i := 0; i < importPlanLineCap+1; i++ {
 		doc.Machines = append(doc.Machines, &hubv1.MachineConfig{Name: "m"})
 	}
-	if _, err := planConfigImport(doc, nil, nil); err == nil {
+	if _, err := planConfigImport(doc, nil, nil, nil); err == nil {
 		t.Fatalf("plan over %d lines accepted", importPlanLineCap)
 	}
 }
