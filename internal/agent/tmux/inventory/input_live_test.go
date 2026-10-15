@@ -266,6 +266,23 @@ func TestAgentActionsCreditNoInput(t *testing.T) {
 			// deadline instead of asserting once; the want-$1 assertion
 			// below stays.
 			waitSession(t, r, 1)
+			// The landing alone does not prove the guard: the inventory
+			// loop runs syncInput for the reattach only after the client
+			// reports up, so none() could pass before a bad PaneInput
+			// would emit. Give a lagging loop a short grace to run one
+			// post-landing input read first — the same wait-for-advance
+			// the new-session block uses — then assert nothing was
+			// credited by it. When the loop is already settled no
+			// further read comes and the grace expires quietly: that
+			// path is no weaker than before. The grace stays far short
+			// of wait on purpose: this suite already runs near its
+			// timeout budget, and a stalled-longer loop escapes this
+			// check either way.
+			landed := inputReads(t, r, "default")
+			landDeadline := time.Now().Add(5 * time.Second)
+			for inputReads(t, r, "default") == landed && time.Now().Before(landDeadline) {
+				time.Sleep(20 * time.Millisecond)
+			}
 			none("reattach")
 			if got := r.o.Client("default").Session(); got != 1 {
 				t.Fatalf("re-attached to %s, want $1 (extra)", got)
