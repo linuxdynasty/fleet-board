@@ -115,6 +115,10 @@ func Migrations() []store.Migration {
 		Version: 15,
 		Name:    "owner_repo_writes",
 		SQL:     repoRequestLogSQL,
+	}, {
+		Version: 16,
+		Name:    "config_import_requests",
+		SQL:     importRequestLogSQL,
 	}}
 }
 

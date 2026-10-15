@@ -88,6 +88,11 @@ const (
 	ActionRepoCreate = "repo.create"
 	ActionRepoUpdate = "repo.update"
 	ActionRepoDelete = "repo.delete"
+	// ActionConfigImport is a config import apply (row 13a slice 2):
+	// target config, with the plan hash and the created/updated counts in
+	// detail. One row covers the whole plan; the repo rows it changes are
+	// stamped but carry no repo.* row of their own.
+	ActionConfigImport = "config.import"
 )
 
 // MaxAuditDetail caps AuditEntry.detail in bytes; the table checks it too.

@@ -30,7 +30,7 @@ func (f *Fleet) countRepo(ctx context.Context, op, outcome string) {
 func (f *Fleet) repoRefused(ctx context.Context, op, actor string, err error) error {
 	f.countRepo(ctx, op, "refused")
 	f.tel.Logger.InfoContext(ctx, "repo.write_refused",
-		"reason", repoReason(err), "op", op, "actor", actor)
+		"reason", errorReason(err), "op", op, "actor", actor)
 	return err
 }
 
@@ -61,9 +61,9 @@ func (f *Fleet) repoWrote(ctx context.Context, op, actor, repo string, version u
 		"op", op, "repo", repo, "version", version, "replayed", replayed, "actor", actor)
 }
 
-// repoReason is the ErrorDetail reason name of a Connect error, without the
-// REASON_CODE_ prefix (a closed set: the reasons repo writes return).
-func repoReason(err error) string {
+// errorReason is the ErrorDetail reason name of a Connect error, without
+// the REASON_CODE_ prefix.
+func errorReason(err error) string {
 	reason := "UNSPECIFIED"
 	var ce *connect.Error
 	if errors.As(err, &ce) {

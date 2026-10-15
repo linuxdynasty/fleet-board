@@ -142,6 +142,29 @@ sequenceDiagram
   H->>H: apply the pending machine's labels and settings, mark the machine drained
 ```
 
+### Import telemetry (slice 2: repos only)
+
+The first import slice plans and applies watched repos only; any other
+non-empty section plans one SKIPPED line with `CONFIG_INVALID`, so the apply
+answers `applied = false` with something to fix. A repo no integration
+reaches is the one waivable skip: SKIPPED with `RESOURCE_NOT_FOUND`, applied
+with the rest when `allow_skipped` is set. A dry run returns the plan and
+its `plan_hash` and writes nothing. An apply with a stale
+`expected_plan_hash` is refused with `VERSION_MISMATCH` before any write. An
+apply writes its repos and one `config.import` audit row (target `config`,
+with the plan hash and the created/updated counts in detail) in one
+transaction, after verifying each updated repo still holds its plan-time
+version; a repo rewritten since the dry run aborts the whole apply. The
+idempotent response is kept for 24 h like every write.
+
+- `fleet_hub_config_imports_total{outcome}` (`planned`, `applied`,
+  `replayed`, `refused`, `failed`).
+- Logs: `config.import_planned{lines, plan_hash, actor}`,
+  `config.import_applied{plan_hash, created, updated, replayed, actor}`,
+  `config.import_refused{reason, actor}`,
+  `config.import_failed{step, err_kind, actor}` (`step`: `encode`,
+  `decode`, `store`).
+
 ## Local commands
 
 Not RPCs, on purpose: **`fleetd backup`, `fleetd restore`, `fleetd enroll-token`
