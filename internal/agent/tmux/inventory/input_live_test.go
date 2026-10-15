@@ -259,6 +259,14 @@ func TestAgentActionsCreditNoInput(t *testing.T) {
 			waitSession(t, r, 1)
 			time.Sleep(3500 * time.Millisecond)
 			none("reattach")
+			// The landing is not guaranteed to still hold at one read after
+			// a fixed sleep on a loaded machine: the reattach can still be
+			// settling when the sleep ends (CI saw the client absent here
+			// with tmux.exit events present). Poll for it again with a
+			// deadline instead of asserting once; the want-$1 assertion
+			// below stays.
+			waitSession(t, r, 1)
+			none("reattach")
 			if got := r.o.Client("default").Session(); got != 1 {
 				t.Fatalf("re-attached to %s, want $1 (extra)", got)
 			}
