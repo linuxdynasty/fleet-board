@@ -2,6 +2,7 @@ package control
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -17,12 +18,13 @@ import (
 
 // Sender types lines and reads screens through the observer client of
 // internal/agent/tmux (doc.go). *tmux.Client satisfies it; the wiring row
-// passes the server's client, tests a stub. Capture returns the visible
-// screen without styling (capture-pane -p), the same read the probe
-// classifies.
+// passes the server's client, tests a stub. CaptureStyled returns the
+// visible screen with styling kept (capture-pane -p -e), the same read the
+// probe classifies: the Claude placeholder check needs the faint
+// attribute a plain read strips (02h 0.19).
 type Sender interface {
 	Send(ctx context.Context, l typing.Line) error
-	Capture(ctx context.Context, pane tmux.PaneID) (tmux.Capture, error)
+	CaptureStyled(ctx context.Context, pane tmux.PaneID) (tmux.Capture, error)
 }
 
 // Compile-time proof the production client satisfies the seam.
@@ -46,7 +48,10 @@ var paneIDRE = regexp.MustCompile(`^%[0-9]{1,10}$`)
 // harnessCommands maps a pane's running command to the harness whose
 // screen the gate classifies. It mirrors probe's harnessBinaries (probe.go):
 // the four harnesses with a usage probe. Anything else is a shell or an
-// unknown program, and this slice types into neither (README).
+// unknown program, and this slice types into neither (README). OpenCode is
+// deferred on purpose: it takes no probe session and has no ready parser,
+// so no screen of it is proven ready yet; its OPERATOR_TEXT waits for that
+// parser (row 8) and meanwhile reads PANE_BUSY, retryable.
 var harnessCommands = map[string]string{
 	"claude":       "claude",
 	"codex":        "codex",
@@ -108,6 +113,11 @@ func (e *Ensurer) SendKeys(ctx context.Context, cmd *agentv1.SendKeys) *agentv1.
 	if res != nil {
 		return res
 	}
+	// One pane's check-and-send is one critical section: the executor runs
+	// each command on its own goroutine, so without this two commands
+	// could both read an empty line and then interleave their typing.
+	unlock := e.lockPane(paneID)
+	defer unlock()
 	start, err := e.startID(ctx)
 	if err != nil {
 		return e.down(err)
@@ -151,10 +161,19 @@ func (e *Ensurer) SendKeys(ctx context.Context, cmd *agentv1.SendKeys) *agentv1.
 
 // sendLines types every built line in order through the observer client and
 // counts each one tmux took. A line tmux refused ends the command FAILED:
-// the lines before it already landed, so the message counts what typed.
+// the lines before it already landed, so the message counts what typed. A
+// line whose write reached tmux but whose reply never came back
+// (tmux.ErrMaybeApplied) ends UNKNOWN_OUTCOME instead: tmux may already
+// have applied it, so the message counts what is certain and the hub asks
+// a person whether the rest landed instead of sending it again. The class
+// is NotRepeatSafe, so a retry after UNKNOWN_OUTCOME is refused by the
+// executor, never retyped.
 func (e *Ensurer) sendLines(ctx context.Context, paneID string, lines []typing.Line) *agentv1.CommandResult {
 	for i, l := range lines {
 		if err := e.sender.Send(ctx, l); err != nil {
+			if errors.Is(err, tmux.ErrMaybeApplied) {
+				return unknown(fmt.Sprintf("typed %d of %d; the next line may have landed, ask whether it did", i, len(lines)))
+			}
 			return refuse(typev1.Status_STATUS_FAILED, typev1.ReasonCode_REASON_CODE_INTERNAL,
 				fmt.Sprintf("typed %d of %d before tmux refused the rest", i, len(lines)))
 		}
@@ -164,6 +183,13 @@ func (e *Ensurer) sendLines(ctx context.Context, paneID string, lines []typing.L
 		Status:  typev1.Status_STATUS_OK,
 		Message: fmt.Sprintf("typed %d keys into %s", len(lines), paneID),
 	}
+}
+
+// unknown builds an ambiguous result: something may have taken effect, so
+// the caller asks before acting again. Never retryable: the executor
+// refuses a retry after UNKNOWN_OUTCOME for a NotRepeatSafe command.
+func unknown(msg string) *agentv1.CommandResult {
+	return &agentv1.CommandResult{Status: typev1.Status_STATUS_UNKNOWN_OUTCOME, Message: msg}
 }
 
 // paneInfo reads one pane's dead flag and running command from list-panes.
@@ -198,17 +224,19 @@ func (e *Ensurer) paneInfo(ctx context.Context, paneID string) (bool, string, *a
 		"no pane "+paneID+" is on this server")
 }
 
-// readScreen returns the pane's visible screen for the gate. A capture the
-// reply bound cut short is incomplete and must not be trusted as whole
-// (message.go), so it reads READY_TIMEOUT, retryable, like an unsettled
-// probe screen.
+// readScreen returns the pane's visible screen for the gate, styling kept:
+// the Claude placeholder check needs the faint attribute (classify.go
+// lineEmpty), and a plain read mistakes a normal prompt for typed text.
+// A capture the reply bound cut short is incomplete and must not be
+// trusted as whole (message.go), so it reads READY_TIMEOUT, retryable,
+// like an unsettled probe screen.
 func (e *Ensurer) readScreen(ctx context.Context, paneID string) (string, *agentv1.CommandResult) {
 	n, err := strconv.Atoi(strings.TrimPrefix(paneID, "%"))
 	if err != nil || n < 0 {
 		return "", refuse(typev1.Status_STATUS_FAILED, typev1.ReasonCode_REASON_CODE_INVALID_ARGUMENT,
 			"a pane id looks like %3")
 	}
-	got, err := e.sender.Capture(ctx, tmux.PaneID(n))
+	got, err := e.sender.CaptureStyled(ctx, tmux.PaneID(n))
 	if err != nil {
 		return "", refuse(typev1.Status_STATUS_FAILED, typev1.ReasonCode_REASON_CODE_INTERNAL,
 			"the screen read failed")
@@ -224,12 +252,12 @@ func (e *Ensurer) readScreen(ctx context.Context, paneID string) (string, *agent
 // screen classifier (probe.Classify: trust, then startup, then ready, so a
 // prompt screen never reads as idle). It returns nil when the screen proves
 // a ready prompt with an empty input line, else the refusal, typed nothing.
-// Capture-pane reads carry no styling, so Cursor panes (whose empty check
-// needs it, 02h) always land on READY_TIMEOUT here; row 30 keeps refusing
-// them with PANE_BUSY in the probe the same way.
+// The screen carries styling (readScreen), but a Cursor pane that proves
+// ready still lands on PANE_BUSY here: row 30 owns the styled-input rule
+// and keeps refusing every SendKeys on a Cursor pane until it proves it.
 func classifyForSend(harness, screen string) *agentv1.CommandResult {
 	switch c := probe.Classify(harness, screen); {
-	case c.Outcome == probe.OutcomeReady && c.Input == probe.InputEmpty:
+	case c.Outcome == probe.OutcomeReady && c.Input == probe.InputEmpty && harness != "cursor":
 		return nil
 	case c.Outcome == probe.OutcomeTrust:
 		return refuse(typev1.Status_STATUS_FAILED, typev1.ReasonCode_REASON_CODE_FOLDER_UNTRUSTED,

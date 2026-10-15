@@ -3,6 +3,7 @@ package control
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -15,30 +16,51 @@ import (
 
 // stubSender stands in for the observer client: it records every line and
 // serves a scripted screen. failAt fails the 1-based Send call of that
-// number (0 never fails), for the partial-send test.
+// number (0 never fails), for the partial-send test; failErr is the error
+// it fails with (a tmux.ErrMaybeApplied stands in for a lost reply).
 type stubSender struct {
-	sent      []typing.Line
-	lines     []string
-	truncated bool
-	capErr    error
-	failAt    int
+	// mu guards sent: one stub serves concurrent commands in the
+	// serialization test. Hooks run outside it; tests guard their own
+	// state.
+	mu              sync.Mutex
+	sent            []typing.Line
+	styledLines     []string
+	styledTruncated bool
+	styledErr       error
+	failAt          int
+	failErr         error
+	// captureHook runs on every CaptureStyled, sendHook on every Send.
+	captureHook func()
+	sendHook    func(typing.Line)
 }
 
 var errStubSend = errors.New("stub sender refused the line")
 
 func (s *stubSender) Send(_ context.Context, l typing.Line) error {
+	s.mu.Lock()
 	s.sent = append(s.sent, l)
-	if s.failAt > 0 && len(s.sent) == s.failAt {
+	n := len(s.sent)
+	s.mu.Unlock()
+	if s.sendHook != nil {
+		s.sendHook(l)
+	}
+	if s.failAt > 0 && n == s.failAt {
+		if s.failErr != nil {
+			return s.failErr
+		}
 		return errStubSend
 	}
 	return nil
 }
 
-func (s *stubSender) Capture(context.Context, tmux.PaneID) (tmux.Capture, error) {
-	if s.capErr != nil {
-		return tmux.Capture{}, s.capErr
+func (s *stubSender) CaptureStyled(context.Context, tmux.PaneID) (tmux.Capture, error) {
+	if s.captureHook != nil {
+		s.captureHook()
 	}
-	return tmux.Capture{Lines: s.lines, Truncated: s.truncated}, nil
+	if s.styledErr != nil {
+		return tmux.Capture{}, s.styledErr
+	}
+	return tmux.Capture{Lines: s.styledLines, Truncated: s.styledTruncated}, nil
 }
 
 // stubCheckInput reports no key ever: the gate tests set their own clock
@@ -197,6 +219,14 @@ func TestClassifyForSend(t *testing.T) {
 			"cursor plain capture stays busy per row 30", "cursor", "→ Plan, search, build anything\n",
 			typev1.ReasonCode_REASON_CODE_PANE_BUSY, true,
 		},
+		{
+			"claude styled placeholder is ready", "claude", "Claude Code v9.9.9\n❯ \x1b[2mTry \"fix it\"\x1b[0m\n",
+			typev1.ReasonCode_REASON_CODE_UNSPECIFIED, false,
+		},
+		{
+			"cursor styled ready stays busy per row 30", "cursor", "Workspace\n\x1b[2m→ Plan, search, build anything\x1b[0m\n",
+			typev1.ReasonCode_REASON_CODE_PANE_BUSY, true,
+		},
 		{"unprobed harness", "opencode", "anything\n", typev1.ReasonCode_REASON_CODE_READY_TIMEOUT, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -319,32 +349,27 @@ func TestSendLinesPartial(t *testing.T) {
 	}
 }
 
-func TestReadScreen(t *testing.T) {
+// TestSendLinesMaybeApplied pins the non-idempotent outcome: a send whose
+// reply was lost (tmux.ErrMaybeApplied) ends UNKNOWN_OUTCOME, never a
+// known failure, so the hub asks a person instead of retyping. A plain
+// refusal stays FAILED/INTERNAL (TestSendLinesPartial).
+func TestSendLinesMaybeApplied(t *testing.T) {
 	t.Parallel()
 	o := testSendOptions()
-	stub := &stubSender{lines: []string{"a", "b"}}
+	stub := &stubSender{failAt: 2, failErr: tmux.ErrMaybeApplied}
 	o.Sender = stub
 	e, err := New(o)
 	if err != nil {
 		t.Fatal(err)
 	}
-	text, res := e.readScreen(t.Context(), "%3")
-	if res != nil {
-		t.Fatalf("readScreen refused a whole capture: %v", res)
+	res := e.sendLines(t.Context(), "%3", testLines(t))
+	if res.GetStatus() != typev1.Status_STATUS_UNKNOWN_OUTCOME {
+		t.Fatalf("sendLines = %v, want UNKNOWN_OUTCOME: %q", res.GetStatus(), res.GetMessage())
 	}
-	if text != "a\nb" {
-		t.Fatalf("readScreen = %q, want %q", text, "a\nb")
+	if res.GetRetryable() {
+		t.Fatalf("sendLines retryable = true, want false (the hub never retries SendKeys): %q", res.GetMessage())
 	}
-	stub.truncated = true
-	_, res = e.readScreen(t.Context(), "%3")
-	if res.GetReason() != typev1.ReasonCode_REASON_CODE_READY_TIMEOUT || !res.GetRetryable() {
-		t.Fatalf("readScreen cut short = (%v, retryable %v), want (READY_TIMEOUT, true)",
-			res.GetReason(), res.GetRetryable())
-	}
-	stub.truncated = false
-	stub.capErr = errors.New("capture exploded")
-	_, res = e.readScreen(t.Context(), "%3")
-	if res.GetReason() != typev1.ReasonCode_REASON_CODE_INTERNAL {
-		t.Fatalf("readScreen error = %v, want INTERNAL", res.GetReason())
+	if len(stub.sent) != 2 {
+		t.Fatalf("sendLines attempted %d sends, want 2 (the failure stops it)", len(stub.sent))
 	}
 }

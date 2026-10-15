@@ -215,6 +215,70 @@ func TestSendKeysLiveInputCheckError(t *testing.T) {
 	}
 }
 
+// TestCaptureStyledKeepsStylingLive proves the production read the gate
+// uses: styled bytes survive the control-mode round trip, while the plain
+// snapshot read strips them. The pane shows a faint placeholder like a
+// harness prompt.
+func TestCaptureStyledKeepsStylingLive(t *testing.T) {
+	for _, b := range tmuxtest.Binaries() {
+		t.Run(b.Name, func(t *testing.T) {
+			srv := tmuxtest.Start(t, b, "-s", "work", "-x", "120", "-y", "20", "exec sleep 60")
+			srv.Run(t, "new-window", "-d", "-t", "work", `exec sh -c 'printf "\033[2mplaceholder\033[0m\n"; exec sleep 60'`)
+			pane := strings.TrimSpace(srv.Run(t, "list-panes", "-t", "work:1", "-F", "#{pane_id}"))
+			runner, err := proc.NewRunner(nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			c, err := tmux.NewClient(tmux.ClientOptions{
+				Program: b.Path, Socket: srv.Socket, Server: "default", Runner: runner,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+			defer cancel()
+			done := make(chan error, 1)
+			go func() { done <- c.Run(ctx) }()
+			if err := c.WaitState(ctx, tmux.StateUp); err != nil {
+				t.Fatal(err)
+			}
+			n, err := strconv.Atoi(strings.TrimPrefix(pane, "%"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			id := tmux.PaneID(n)
+			styled := false
+			deadline := time.Now().Add(10 * time.Second)
+			for !styled && time.Now().Before(deadline) {
+				got, err := c.CaptureStyled(ctx, id)
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, l := range got.Lines {
+					styled = styled || strings.Contains(l, "\x1b[")
+				}
+				if !styled {
+					time.Sleep(100 * time.Millisecond)
+				}
+			}
+			if !styled {
+				t.Fatal("the styled capture carries no escape bytes")
+			}
+			plain, err := c.Capture(ctx, id)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, l := range plain.Lines {
+				if strings.Contains(l, "\x1b[") {
+					t.Fatalf("the plain capture kept styling: %q", l)
+				}
+			}
+			cancel()
+			<-done
+		})
+	}
+}
+
 // TestSendKeysLiveSenderTypesThroughARealClient proves the production seam:
 // a real observer client behind the Sender interface types into real tmux
 // and reads the echo back. The gate itself never sees this pane (cat is no
@@ -269,7 +333,7 @@ func TestSendKeysLiveSenderTypesThroughARealClient(t *testing.T) {
 			found := false
 			deadline := time.Now().Add(10 * time.Second)
 			for !found && time.Now().Before(deadline) {
-				got, err := sender.Capture(ctx, id)
+				got, err := sender.CaptureStyled(ctx, id)
 				if err != nil {
 					t.Fatal(err)
 				}

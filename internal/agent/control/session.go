@@ -75,7 +75,10 @@ type Options struct {
 
 // Ensurer runs EnsureSession (F1), EnsureWindow (F2) and SendKeys (F3,
 // OPERATOR_TEXT only) against one tmux server. One goroutine owns each
-// Ensurer call; tmux serializes the commands itself.
+// Ensurer call; tmux serializes the commands itself. F3 additionally holds
+// one pane's check-and-send lock (lockPane) across its read of the pane
+// and its typing, so two commands to one pane cannot both pass the gate
+// before either types.
 type Ensurer struct {
 	runner     Runner
 	caller     proc.Caller
@@ -96,6 +99,30 @@ type Ensurer struct {
 	// racing commands cannot both land under the cap or the same name.
 	// Never nested: nothing under it calls back into the Ensurer.
 	mu sync.Mutex
+	// paneMu guards panes: one lock per pane id serializing F3's
+	// check-and-send sequence (paneInfo through sendLines). The executor
+	// runs each command on its own goroutine, and fleet-generated keys do
+	// not update the developer-input signal, so without it two commands
+	// could both read an empty line and then interleave their typing.
+	// Never nested: nothing under a pane lock calls back into the
+	// Ensurer, and F1/F2 never take one.
+	paneMu sync.Mutex
+	panes  map[string]*sync.Mutex
+}
+
+// lockPane holds one pane's check-and-send lock; the caller defers the
+// unlock. Panes are independent: commands to different panes never wait on
+// each other.
+func (e *Ensurer) lockPane(id string) func() {
+	e.paneMu.Lock()
+	l, ok := e.panes[id]
+	if !ok {
+		l = &sync.Mutex{}
+		e.panes[id] = l
+	}
+	e.paneMu.Unlock()
+	l.Lock()
+	return l.Unlock
 }
 
 // New checks the setup and fails fast: a half-built Ensurer must never
@@ -143,6 +170,7 @@ func New(o Options) (*Ensurer, error) {
 		rec:        o.Rec,
 		now:        o.Now,
 		start:      o.StartServer,
+		panes:      map[string]*sync.Mutex{},
 	}
 	if e.tmux == "" {
 		e.tmux = "tmux"
