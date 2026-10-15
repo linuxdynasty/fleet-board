@@ -58,6 +58,14 @@ All pass local policy, carry a `command_id`, and are idempotent except F3.
   type, and no non-test file in `internal/` or `cmd/` import `unsafe` (a
   `//go:linkname` to a constructor needs it);
   `scripts/test-lint-typing-rules.sh` seeds a violation of each.
+  Landed in slices like F1: `OPERATOR_TEXT` first (`internal/agent/control`,
+  issue #67): the pane's start id, its listing, the developer-input read at
+  that moment (E13), a known harness command and a fresh capture proving a ready prompt
+  with an empty input line, then each key as its own line; a stale key reads
+  `PANE_NOT_FOUND`, a dead pane, typed text or a shell `PANE_BUSY`, recent
+  input `PANE_BUSY`, trust and startup screens their own reasons. A resume
+  ends `UNKNOWN_OUTCOME` and never retypes. The other purposes wait for
+  their slices.
 - **F4 Interrupt**, **F5 Respawn pane** (adapter `ResumeArgs`), **F6 Kill
   window.** Resize belongs to J1.
 - **F8 Run harness command:** `RunHarnessCommand{target, command, args}`,

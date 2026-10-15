@@ -34,6 +34,8 @@ func testOptions() Options {
 		ResolveWorkdir: func(w *typev1.Workdir) (string, error) {
 			return "/tmp", nil
 		},
+		Sender:     &stubSender{},
+		CheckInput: stubCheckInput,
 	}
 }
 
@@ -50,6 +52,8 @@ func TestNewRefusesAnIncompleteSetup(t *testing.T) {
 		{"no server name", func(o *Options) { o.Server = "" }},
 		{"no kind", func(o *Options) { o.Kind = typev1.TmuxServerKind_TMUX_SERVER_KIND_UNSPECIFIED }},
 		{"no workdir resolver", func(o *Options) { o.ResolveWorkdir = nil }},
+		{"no sender", func(o *Options) { o.Sender = nil }},
+		{"no input check", func(o *Options) { o.CheckInput = nil }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()

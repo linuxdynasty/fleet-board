@@ -5,7 +5,9 @@ F1 `EnsureSession` and F2 `EnsureWindow` for login shells: create the named
 session on the bound server (or the named window in a session), or attach
 to the one already there with `reuse`. A harness to start, or resume of a
 harness conversation, is refused until the adapter start surface lands in a
-later slice.
+later slice. F3 `SendKeys` types operator free text (`OPERATOR_TEXT` only)
+into a harness pane at a proven-ready prompt; every other purpose waits for
+its slice.
 
 ```go
 runner, _ := proc.NewRunner(tel)
@@ -16,13 +18,17 @@ e, err := control.New(control.Options{
 	Roots: func() []string { return pm.Policy().AllowedRepoRoots },
 	ResolveWorkdir: resolveWorkdir, // the repo inventory owns this (row 9)
 	MaxWindows: func() uint32 { return maxWindows }, // the merged settings value (03e2)
+	Sender: client, // the observer client of internal/agent/tmux
+	CheckInput: checkInput, // Observer.CheckInput with the server closed over
 })
 res := e.EnsureSession(ctx, cmd.GetEnsureSession())
 res := e.EnsureWindow(ctx, cmd.GetEnsureWindow())
+res := e.SendKeys(ctx, cmd.GetSendKeys())
 // Handlers: h := e.Handler() satisfies exec.Handler (Kind EnsureSession)
 // and w := e.WindowHandler() (Kind EnsureWindow), each with tmux.control
-// plus the server-specific capability, RepeatSafe. The wiring row registers
-// them.
+// plus the server-specific capability, RepeatSafe; s := e.SendKeysHandler()
+// (Kind SendKeys) is NotRepeatSafe: a resume ends UNKNOWN_OUTCOME and never
+// retypes. The wiring row registers them.
 ```
 
 ## Order of checks
@@ -50,6 +56,33 @@ res := e.EnsureWindow(ctx, cmd.GetEnsureWindow())
    the retried goal; past the per-session window cap a create reads
    `MAX_WINDOWS_REACHED`. A window whose tagging fails is removed again,
    so the retry never meets an orphan it cannot own.
+5. **Shape** (F3, no tmux touch): the purpose is `OPERATOR_TEXT` (an
+   `UNSPECIFIED` purpose or an `answering_prompt` outside a prompt answer
+   reads `INVALID_ARGUMENT`; `PROMPT_ANSWER`, `GOAL_NUDGE` and `GOAL_RESUME`
+   read `UNSUPPORTED`, each landing in a later slice), at least one key, a
+   pane on this server shaped `%N`. The keys' own shape (literals without
+   control characters, named keys from the closed set) fails here too: it is
+   the caller's malformation, never tmux's.
+6. **Pane** (F3): the key's start id still matches the server's (a stale one
+   reads `PANE_NOT_FOUND`), the pane is listed (else `PANE_NOT_FOUND`) and
+   alive (a dead one reads `PANE_BUSY`, retryable).
+7. **Input** (F3): the `CheckInput` read at that moment (02h E13) names a key
+   within the last 10 minutes (the dashboard banner's window): `PANE_BUSY`,
+   retryable, and nothing typed.
+8. **Screen** (F3): the pane runs a known harness (a shell or unknown program
+   reads `PANE_BUSY`, retryable: this slice types into harness panes only)
+   and its fresh capture proves a ready prompt with an empty input line
+   through the probe's screen classifier. A folder-trust screen reads
+   `FOLDER_UNTRUSTED`, a startup screen `STARTUP_PROMPT_SEEN`, typed text in
+   the line `PANE_BUSY` (retryable), anything else `READY_TIMEOUT`
+   (retryable); a Cursor pane that proves nothing stays `PANE_BUSY` (row 30:
+   plain captures never carry the styled empty check). A capture the reply
+   bound cut short is refused `READY_TIMEOUT`: an incomplete screen proves
+   nothing.
+9. **Send** (F3): each key goes as its own `typing.Line` in order through the
+   observer client, counted on success. A refused send ends `INTERNAL`
+   naming how many typed; the OK result names the count and carries no
+   screen text.
 
 ## Results report stored tags
 

@@ -11,6 +11,7 @@ import (
 
 	agentv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1"
 	typev1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/type/v1"
+	"github.com/linuxdynasty/fleet-board/internal/agent/tmux/typing"
 	"github.com/linuxdynasty/fleet-board/internal/proc"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -59,26 +60,38 @@ type Options struct {
 	// refuses every create. The settings merge (03e2) owns the production
 	// value; this slice takes the seam.
 	MaxWindows func() uint32
+	// Sender types lines and reads screens through the observer client
+	// (sendkeys.go). Required: SendKeys never types without it.
+	Sender Sender
+	// CheckInput reports when a pane last saw a key (02h E13), read at
+	// that moment. Required: SendKeys never types without the check.
+	CheckInput CheckInputFunc
+	// Rec counts built and sent lines (typing.sent, typing.refused). Nil
+	// counts nowhere.
+	Rec *typing.Recorder
 	// Now is the clock for result timestamps. Nil means time.Now.
 	Now func() time.Time
 }
 
-// Ensurer runs EnsureSession (F1) and EnsureWindow (F2) against one tmux
-// server. One goroutine owns each Ensurer call; tmux serializes the commands
-// itself.
+// Ensurer runs EnsureSession (F1), EnsureWindow (F2) and SendKeys (F3,
+// OPERATOR_TEXT only) against one tmux server. One goroutine owns each
+// Ensurer call; tmux serializes the commands itself.
 type Ensurer struct {
-	runner  Runner
-	caller  proc.Caller
-	tmux    string
-	socket  string
-	server  string
-	kind    typev1.TmuxServerKind
-	roots   func() []string
-	drain   func() bool
-	start   func() bool
-	workdir func(*typev1.Workdir) (string, error)
-	maxwin  func() uint32
-	now     func() time.Time
+	runner     Runner
+	caller     proc.Caller
+	tmux       string
+	socket     string
+	server     string
+	kind       typev1.TmuxServerKind
+	roots      func() []string
+	drain      func() bool
+	start      func() bool
+	workdir    func(*typev1.Workdir) (string, error)
+	maxwin     func() uint32
+	sender     Sender
+	checkInput CheckInputFunc
+	rec        *typing.Recorder
+	now        func() time.Time
 	// mu serializes F2's list/find/cap/create sequence per server, so two
 	// racing commands cannot both land under the cap or the same name.
 	// Never nested: nothing under it calls back into the Ensurer.
@@ -109,18 +122,27 @@ func New(o Options) (*Ensurer, error) {
 	if o.ResolveWorkdir == nil {
 		return nil, errors.New("control: ResolveWorkdir is required")
 	}
+	if o.Sender == nil {
+		return nil, errors.New("control: Sender is required (SendKeys never types without it)")
+	}
+	if o.CheckInput == nil {
+		return nil, errors.New("control: CheckInput is required (SendKeys never types without the input check)")
+	}
 	e := &Ensurer{
-		runner:  o.Runner,
-		caller:  o.Caller,
-		tmux:    o.Tmux,
-		socket:  o.Socket,
-		server:  o.Server,
-		kind:    o.Kind,
-		roots:   o.Roots,
-		workdir: o.ResolveWorkdir,
-		maxwin:  o.MaxWindows,
-		now:     o.Now,
-		start:   o.StartServer,
+		runner:     o.Runner,
+		caller:     o.Caller,
+		tmux:       o.Tmux,
+		socket:     o.Socket,
+		server:     o.Server,
+		kind:       o.Kind,
+		roots:      o.Roots,
+		workdir:    o.ResolveWorkdir,
+		maxwin:     o.MaxWindows,
+		sender:     o.Sender,
+		checkInput: o.CheckInput,
+		rec:        o.Rec,
+		now:        o.Now,
+		start:      o.StartServer,
 	}
 	if e.tmux == "" {
 		e.tmux = "tmux"

@@ -110,3 +110,49 @@ func (h windowHandler) Run(ctx context.Context, r exec.Request) *agentv1.Command
 func (h windowHandler) Resume(ctx context.Context, r exec.Request) *agentv1.CommandResult {
 	return h.Run(ctx, r)
 }
+
+// sendHandler is the exec.Handler for SendKeys. The wiring row registers
+// one per server the agent serves, next to the session and window handlers.
+type sendHandler struct {
+	e *Ensurer
+}
+
+// SendKeysHandler returns the Ensurer as the executor's Handler for
+// SendKeys.
+func (e *Ensurer) SendKeysHandler() exec.Handler { return sendHandler{e: e} }
+
+// Kind is the Command.kind arm's message name.
+func (h sendHandler) Kind() string { return "SendKeys" }
+
+// Capabilities are advertised in Hello while the handler is registered.
+func (h sendHandler) Capabilities() []*typev1.Capability {
+	return capabilitiesFor(h.e.kind)
+}
+
+// Class never re-runs: SendKeys is not idempotent, and after an agent
+// restart a running SendKeys ends UNKNOWN_OUTCOME (02-contracts).
+func (h sendHandler) Class(*agentv1.Command) exec.Class { return exec.NotRepeatSafe }
+
+// Run does the command and returns its result. The executor sets the id,
+// the times and the trace, and scrubs the message.
+func (h sendHandler) Run(ctx context.Context, r exec.Request) *agentv1.CommandResult {
+	cmd, ok := r.Command.GetKind().(*agentv1.Command_SendKeys)
+	if !ok || cmd.SendKeys == nil {
+		return &agentv1.CommandResult{
+			Status:  typev1.Status_STATUS_FAILED,
+			Reason:  typev1.ReasonCode_REASON_CODE_INTERNAL,
+			Message: "control: SendKeys handler got another kind",
+		}
+	}
+	return h.e.SendKeys(ctx, cmd.SendKeys)
+}
+
+// Resume never retypes: the executor ends a restarted SendKeys
+// UNKNOWN_OUTCOME without calling this (run.go); the belt stays shut if
+// that ever changes, and the hub asks a person whether the keys landed.
+func (h sendHandler) Resume(context.Context, exec.Request) *agentv1.CommandResult {
+	return &agentv1.CommandResult{
+		Status:  typev1.Status_STATUS_UNKNOWN_OUTCOME,
+		Message: "SendKeys is never retyped after a restart; ask whether the keys landed",
+	}
+}
