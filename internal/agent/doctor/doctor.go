@@ -42,8 +42,9 @@ type Outcome struct {
 }
 
 // Check is one named check. Run reads from env and returns an Outcome; it
-// must not write, create or remove anything. A check added by a later row
-// (the harness trust screens) is one more Check passed to [Run].
+// must not change the machine, except the probe-trust look, which runs
+// throwaway harness sessions it tears down (01 C3). A check added by a
+// later row is one more Check passed to [Run].
 type Check struct {
 	// ID is the stable machine name ("state_dir").
 	ID string

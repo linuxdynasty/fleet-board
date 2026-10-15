@@ -3,8 +3,11 @@
 Read the root `AGENTS.md` first; it applies here. Load `fleet-go`,
 `fleet-security` and `fleet-telemetry-coverage`. Rules for this package:
 
-- Doctor is read-only. A check never writes, creates, removes or locks
-  anything, and never calls a function that does: not `policy.Load`
+- Doctor is read-only, except the probe-trust check: it starts each
+  installed harness once in the probe folder on a throwaway tmux server,
+  reads the first screen, sends no key and tears the session down (01 C3).
+  Every other check never writes, creates, removes or locks anything, and
+  never calls a function that does: not `policy.Load`
   (metrics, log, audit row), `conn.CheckEnded` (it removes another machine's
   file), `statusfile.RecordEnroll`, `conn.EnsureDir`, `policy.EnsureDir`.
   Use `policy.Inspect`, `statusfile.Read`, `statusfile.ReadEnroll`,
@@ -22,11 +25,14 @@ Read the root `AGENTS.md` first; it applies here. Load `fleet-go`,
   returned. A check never prints a name found in a folder, an OS error text or a
   child's output: use fixed sentences and the closed words of status.json.
 - Start a process only through `Options` (`TmuxVersion` for `tmux -V`,
-  `Linger` for `loginctl show-user --property=Linger`): the measured proc
-  caller in cmd. The hub handshake dials through `Options.HubHandshake` and
-  never sends a `Connect` call. No `os/exec`, no import of
-  `internal/agent/ring`, `internal/agent/tmux` or `internal/store`;
-  `TestDoctorImportsNoProcessNoRingAndNoTmuxClient` holds it.
+  `Linger` for `loginctl show-user --property=Linger`, `ProbeTrustCapture`
+  for the trust-screen look): the measured proc caller in cmd. The hub
+  handshake dials through `Options.HubHandshake` and never sends a `Connect`
+  call. No `os/exec`, no import of `internal/agent/ring`,
+  `internal/agent/tmux` or `internal/store`;
+  `TestDoctorImportsNoProcessNoRingAndNoTmuxClient` holds it. Importing
+  `internal/agent/probe` for the pure `Classify` trust detection is allowed:
+  it starts nothing.
 - Every check returns a reason. A value never set is `unknown`, never 0 or ok;
   a check this build cannot run is `NotCheckedYet(..., row)`. A silent omission
   is a bug.

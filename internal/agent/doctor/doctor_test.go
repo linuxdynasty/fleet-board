@@ -49,7 +49,10 @@ func TestChecksThatNeedLaterRowsAreListedAsNotChecked(t *testing.T) {
 	t.Parallel()
 	r := newRig(t)
 	r.want("harness_paths", doctor.NotChecked, "this build cannot check it yet (row 8)")
-	r.want("probe_trust", doctor.NotChecked, "this build cannot check it yet (row 8)")
+	// probe_trust used to be listed here: the probe seam (row 8, PR #292)
+	// now exists, so it runs a real check. Without a capture func the rig
+	// cannot look at any screen, which is unknown, never a silent pass.
+	r.want("probe_trust", doctor.Unknown, "not checked")
 	// two_pane_folders landed with row 9: without a status file it reads
 	// unknown, never not_checked.
 	r.want("two_pane_folders", doctor.Unknown, "status.json")

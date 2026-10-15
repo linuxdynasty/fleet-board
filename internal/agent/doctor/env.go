@@ -40,6 +40,13 @@ type Options struct {
 	// Linger runs `loginctl show-user <user> --property=Linger` and returns
 	// its output. Nil means unconfigured; only used on Linux.
 	Linger func(ctx context.Context) (string, error)
+	// ProbeTrustCapture starts one harness in the probe folder, reads its
+	// first screen with styling kept, sends no key and tears the session
+	// down (01 C3). It reports the screen, whether the harness is
+	// installed, and a read failure. Nil means the trust screens were not
+	// looked at. The agent's measured proc caller is the only way to run
+	// it; doctor itself starts nothing.
+	ProbeTrustCapture func(ctx context.Context, harness, probeDir string) (screen string, installed bool, err error)
 	// LingerUser is the user named in the linger fix line.
 	LingerUser string
 	// GOOS overrides runtime.GOOS; empty is the runtime value.
@@ -47,7 +54,8 @@ type Options struct {
 }
 
 // Env is what a check reads: the options and the files read once for the whole
-// run. A check never writes; Env has no way to.
+// run. Files read through Env are never written; the probe-trust look is the
+// one check that starts anything, and only through Options.ProbeTrustCapture.
 type Env struct {
 	opts Options
 

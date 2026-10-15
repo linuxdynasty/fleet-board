@@ -33,7 +33,7 @@ func Local() []Check {
 		{"hub_handshake", "Hub handshake", hubHandshakeCheck},
 		{"linger", "Linux linger", lingerCheck},
 		NotCheckedYet("harness_paths", "Harness paths and versions", 8),
-		NotCheckedYet("probe_trust", "Probe folder trust per harness", 8),
+		{"probe_trust", "Probe folder trust per harness", probeTrustCheck},
 		{"two_pane_folders", "Folders with two harness panes", twoPaneFoldersCheck},
 	}
 }
