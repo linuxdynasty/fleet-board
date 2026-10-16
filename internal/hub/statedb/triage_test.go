@@ -158,6 +158,10 @@ func TestSnoozeTriageItemRefusals(t *testing.T) {
 			Write: triageWrite("local:alice", "s-1", 'a'), ID: "ti-1",
 			ExpectedVersion: seed.Version + 1, Until: until,
 		}, &statedb.VersionStale{}},
+		{"past wake time", statedb.TriageSnooze{
+			Write: triageWrite("local:alice", "p-1", 'a'), ID: "ti-1",
+			ExpectedVersion: seed.Version, Until: triageTime.Add(-time.Hour),
+		}, statedb.ErrTriagePastUntil},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -193,21 +197,31 @@ func TestSnoozeTriageItemRefusals(t *testing.T) {
 }
 
 // TestDismissTriageItemClosesAnItem proves the happy path: state
-// DISMISSED, the operator and time recorded, and one triage.dismiss audit
-// row carrying the note.
+// DISMISSED, the operator and time recorded, the wake time of the
+// earlier snooze cleared, and one triage.dismiss audit row carrying
+// the note.
 func TestDismissTriageItemClosesAnItem(t *testing.T) {
 	t.Parallel()
 	dir, s := openTriageStore(t)
 	seed := seedTriageItem(t, s, "ti-9")
+	if _, err := statedb.SnoozeTriageItem(context.Background(), s, statedb.TriageSnooze{
+		Write: triageWrite("local:alice", "sn-0", 'a'), ID: "ti-9",
+		ExpectedVersion: seed.Version, Until: triageTime.Add(2 * time.Hour),
+	}); err != nil {
+		t.Fatalf("snooze: %v", err)
+	}
 	got, err := statedb.DismissTriageItem(context.Background(), s, statedb.TriageDismiss{
 		Write: triageWrite("local:alice", "di-1", 'a'), ID: "ti-9",
-		ExpectedVersion: seed.Version, Note: "handled at the machine",
+		ExpectedVersion: seed.Version + 1, Note: "handled at the machine",
 	})
 	if err != nil {
 		t.Fatalf("DismissTriageItem: %v", err)
 	}
-	if got.State != "DISMISSED" || got.Version != 2 {
-		t.Errorf("dismissed = state %q version %d, want DISMISSED 2", got.State, got.Version)
+	if got.State != "DISMISSED" || got.Version != 3 {
+		t.Errorf("dismissed = state %q version %d, want DISMISSED 3", got.State, got.Version)
+	}
+	if got.SnoozedUntilMs != 0 {
+		t.Errorf("dismissed snoozed_until_ms = %d, want the wake time cleared", got.SnoozedUntilMs)
 	}
 	if got.ActedBy.ID != "local:alice" || got.ActedMs != triageTime.UnixMilli() {
 		t.Errorf("acted by %+v at %d, want local:alice at %d",
@@ -260,6 +274,78 @@ func TestTriageClosedItemsStayClosed(t *testing.T) {
 		ExpectedVersion: seed.Version,
 	}); !errors.Is(err, statedb.ErrTriageClosed) {
 		t.Errorf("stale dismiss of a dismissed item = %v, want ErrTriageClosed (closed wins)", err)
+	}
+}
+
+// TestSnoozeReplayAfterTheWakeTime proves the 24 h idempotency promise:
+// a retry of a committed snooze returns the stored item even after its
+// wake time passed, because the replay lookup runs before the
+// future-time check.
+func TestSnoozeReplayAfterTheWakeTime(t *testing.T) {
+	t.Parallel()
+	_, s := openTriageStore(t)
+	seed := seedTriageItem(t, s, "ti-p")
+	until := triageTime.Add(time.Hour)
+	first, err := statedb.SnoozeTriageItem(context.Background(), s, statedb.TriageSnooze{
+		Write: triageWrite("local:alice", "sn-p", 'a'), ID: "ti-p",
+		ExpectedVersion: seed.Version, Until: until,
+	})
+	if err != nil {
+		t.Fatalf("first snooze: %v", err)
+	}
+	late := triageWrite("local:alice", "sn-p", 'a')
+	late.Now = triageTime.Add(2 * time.Hour)
+	second, err := statedb.SnoozeTriageItem(context.Background(), s, statedb.TriageSnooze{
+		Write: late, ID: "ti-p", ExpectedVersion: seed.Version, Until: until,
+	})
+	if err != nil {
+		t.Fatalf("late retry: %v, want the stored snooze", err)
+	}
+	if !second.Replay || second.Version != first.Version || second.SnoozedUntilMs != until.UnixMilli() {
+		t.Errorf("late retry = %+v, want the stored snooze %+v", second, first)
+	}
+}
+
+// TestTriagePrunesExpiredIdempotencyRows proves each write sweeps a
+// bounded batch of expired request records: a snooze a day later leaves
+// only its own key behind.
+func TestTriagePrunesExpiredIdempotencyRows(t *testing.T) {
+	t.Parallel()
+	dir, s := openTriageStore(t)
+	seedTriageItem(t, s, "ti-q1")
+	seedTriageItem(t, s, "ti-q2")
+	if _, err := statedb.SnoozeTriageItem(context.Background(), s, statedb.TriageSnooze{
+		Write: triageWrite("local:alice", "old-key", 'a'), ID: "ti-q1",
+		ExpectedVersion: 1, Until: triageTime.Add(time.Hour),
+	}); err != nil {
+		t.Fatalf("first snooze: %v", err)
+	}
+	next := triageWrite("local:alice", "new-key", 'a')
+	next.Now = triageTime.Add(25 * time.Hour)
+	if _, err := statedb.SnoozeTriageItem(context.Background(), s, statedb.TriageSnooze{
+		Write: next, ID: "ti-q2", ExpectedVersion: 1, Until: next.Now.Add(time.Hour),
+	}); err != nil {
+		t.Fatalf("later snooze: %v", err)
+	}
+	var keys []string
+	rows, err := rawDB(t, dir).QueryContext(t.Context(),
+		`SELECT request_id FROM triage_request_log ORDER BY request_id`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var k string
+		if err := rows.Scan(&k); err != nil {
+			t.Fatal(err)
+		}
+		keys = append(keys, k)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if len(keys) != 1 || keys[0] != "new-key" {
+		t.Errorf("request log keys = %q, want only the live new-key", keys)
 	}
 }
 

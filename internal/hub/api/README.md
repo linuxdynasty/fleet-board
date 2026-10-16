@@ -4,9 +4,10 @@ The hub's HTTP API ([02b](../../../docs/specs/02b-hub-api.md),
 [02f](../../../docs/specs/02f-hub-authentication.md#host-and-origin-checks)).
 Today it serves `/metrics` on the API listener, behind the Host and Origin
 checks, and `FleetService` with `CreateEnrollmentToken`, the watched-repo
-writes (`CreateRepo`, `UpdateRepo`, `DeleteRepo`) and the machine admin
-writes (`UpdateMachine`, `RevokeMachine`, `DeleteMachine`) on the local
-admin socket.
+writes (`CreateRepo`, `UpdateRepo`, `DeleteRepo`), the machine admin
+writes (`UpdateMachine`, `RevokeMachine`, `DeleteMachine`) and the
+hub-state triage writes (`SnoozeTriageItem`, `DismissTriageItem`) on the
+local admin socket.
 
 ```go
 srv := api.NewServer(tel, "api", boundPort) // api.Handler plus timeouts and the JSON ErrorLog
@@ -45,8 +46,9 @@ own error lines are debug-level `http.server_error` events, not stderr text.
 ## FleetService
 
 `Fleet` embeds the generated `UnimplementedFleetServiceHandler`, so every
-method but `CreateEnrollmentToken`, the watched-repo writes and the machine
-admin writes answers `unimplemented`. `Handler()` is its Connect route
+method but `CreateEnrollmentToken`, the watched-repo writes, the machine
+admin writes and the hub-state triage writes answers `unimplemented`.
+`Handler()` is its Connect route
 (requests capped at 1 MiB), ready for a later row to mount on the API
 listener. The caller is the `Principal` the server put in the context
 (`WithPrincipal`); the handler never reads it from the request.
@@ -144,6 +146,34 @@ stream cut. Signals: `fleet_hub_config_writes_total{op, outcome}` (`op`
 `config.machine_write_refused` (`reason`, `op`, `actor`) and
 `config.machine_write_failed` (`step` `encode`/`revocation`/`wiring`/
 `store`, `err_kind`, `op`, `actor`).
+
+`SnoozeTriageItem` and `DismissTriageItem` need `APPROVALS` (02d); until
+plan row 12 brings caller scopes only the local user holds it
+(`authorizeTriage`, like `authorizeApprovals`). Then, in 02b's order,
+the caller, the local approval secret in `local_trusted` mode, the
+fields, and the `request_id` replay inside the writer transaction (same
+principal, id and body replays the stored item for 24 h; anything else
+under the key is `REQUEST_ID_CONFLICT`). The wake-time check runs after
+the replay lookup, so a retry of a committed snooze still answers.
+
+| Check | Refusal |
+|---|---|
+| a bad id, `until_time` (missing) or note (over 512 bytes, control characters); a bad `request_id` | `INVALID_ARGUMENT` (one `FieldViolation` per field); `REQUEST_ID_MISSING`, `FIELD_TOO_LARGE` |
+| a missing item | `NOT_FOUND` / `RESOURCE_NOT_FOUND` |
+| an item past `OPEN` and `SNOOZED` (closed wins over a stale version) | `FAILED_PRECONDITION` / `TRIAGE_CLOSED` |
+| a stale `expected_version` (0 is refused: a decision names the state seen) | `FAILED_PRECONDITION` / `VERSION_MISMATCH` with `metadata["current_version"]` |
+| a wake time at or before now | `INVALID_ARGUMENT` on `until_time` |
+
+A snooze moves the item to `SNOOZED` at version + 1 with its stamp; a
+dismiss moves it to `DISMISSED`, records the operator and clears the wake
+time. Both append their `triage.*` audit row (`triage/<id>`, the note or
+wake time in detail) and sweep a bounded batch of expired idempotency
+rows. Signals: `fleet_hub_triage_writes_total{op, outcome}` (`op`
+`triage_snooze`/`triage_dismiss`; `ok`, `replayed`, `refused`, `failed`)
+and the log lines `triage.snoozed` / `triage.dismissed` (`op`, `item`,
+`version`, `replayed`, `actor`), `triage.write_refused` (`reason`, `op`,
+`actor`) and `triage.write_failed` (`step` `encode`/`decode`/`store`,
+`err_kind`, `op`, `actor`).
 
 ## Admin socket
 

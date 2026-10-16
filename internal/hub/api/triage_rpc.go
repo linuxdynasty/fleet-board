@@ -84,6 +84,12 @@ func triageStoreError(ctx context.Context, f *Fleet, op, verb, actor string, err
 		return f.triageRefused(ctx, op, actor, apiError(connect.CodeFailedPrecondition,
 			typev1.ReasonCode_REASON_CODE_TRIAGE_CLOSED,
 			"the triage item already left OPEN and SNOOZED", nil, nil))
+	case errors.Is(err, statedb.ErrTriagePastUntil):
+		var v violations
+		v.add("until_time", typev1.ReasonCode_REASON_CODE_INVALID_ARGUMENT,
+			"until_time is not in the future")
+		return f.triageRefused(ctx, op, actor, apiError(connect.CodeInvalidArgument,
+			v[0].GetReason(), "the request has invalid fields", nil, v))
 	case errors.As(err, &stale):
 		return f.triageRefused(ctx, op, actor, apiError(connect.CodeFailedPrecondition,
 			typev1.ReasonCode_REASON_CODE_VERSION_MISMATCH,
@@ -116,9 +122,8 @@ func (f *Fleet) SnoozeTriageItem(ctx context.Context, req *connect.Request[hubv1
 	}
 	m := req.Msg
 	now := f.hubNow()
-	if m.GetRequestId() == "" {
-		return nil, f.triageRefused(ctx, op, actor, apiError(connect.CodeInvalidArgument,
-			typev1.ReasonCode_REASON_CODE_REQUEST_ID_MISSING, "request_id is required", nil, nil))
+	if err := checkRequestID(m.GetRequestId()); err != nil {
+		return nil, f.triageRefused(ctx, op, actor, err)
 	}
 	if m.GetExpectedVersion() == 0 {
 		return nil, f.triageRefused(ctx, op, actor, apiError(connect.CodeInvalidArgument,
@@ -128,14 +133,14 @@ func (f *Fleet) SnoozeTriageItem(ctx context.Context, req *connect.Request[hubv1
 	if m.GetId().GetValue() == "" {
 		v.add("id", typev1.ReasonCode_REASON_CODE_INVALID_ARGUMENT, "id is required")
 	}
+	// Only presence is checked here: whether the wake time already passed
+	// is decided in the writer job after the replay lookup, so a retry of
+	// a committed snooze still returns the stored item (02b idempotency).
 	var until time.Time
 	if ts := m.GetUntilTime(); ts == nil {
 		v.add("until_time", typev1.ReasonCode_REASON_CODE_INVALID_ARGUMENT, "until_time is required")
 	} else {
 		until = ts.AsTime()
-		if !until.After(now) {
-			v.add("until_time", typev1.ReasonCode_REASON_CODE_INVALID_ARGUMENT, "until_time is not in the future")
-		}
 	}
 	if len(v) > 0 {
 		return nil, f.triageRefused(ctx, op, actor, apiError(connect.CodeInvalidArgument,
@@ -180,9 +185,8 @@ func (f *Fleet) DismissTriageItem(ctx context.Context, req *connect.Request[hubv
 	}
 	m := req.Msg
 	now := f.hubNow()
-	if m.GetRequestId() == "" {
-		return nil, f.triageRefused(ctx, op, actor, apiError(connect.CodeInvalidArgument,
-			typev1.ReasonCode_REASON_CODE_REQUEST_ID_MISSING, "request_id is required", nil, nil))
+	if err := checkRequestID(m.GetRequestId()); err != nil {
+		return nil, f.triageRefused(ctx, op, actor, err)
 	}
 	if m.GetExpectedVersion() == 0 {
 		return nil, f.triageRefused(ctx, op, actor, apiError(connect.CodeInvalidArgument,

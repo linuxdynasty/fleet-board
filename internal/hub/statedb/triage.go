@@ -74,6 +74,10 @@ var (
 	// ErrTriageClosed: the item already left OPEN and SNOOZED (in
 	// flight, acted, retired, expired or dismissed).
 	ErrTriageClosed = errors.New("statedb: the triage item is already closed to operator writes")
+	// ErrTriagePastUntil: the snooze names a wake time that already
+	// passed. It is checked after the replay lookup, so a retry of a
+	// committed snooze still returns the stored item.
+	ErrTriagePastUntil = errors.New("statedb: the snooze wake time is not in the future")
 	// ErrTriageInvalid: an insert or write with no id, or a snooze with
 	// no wake time.
 	ErrTriageInvalid = errors.New("statedb: the triage write is invalid")
@@ -232,6 +236,18 @@ func triageReplay(ctx context.Context, tx *sql.Tx, w TriageWrite, kind string) (
 	return &out, nil
 }
 
+// pruneTriageRequests deletes expired idempotency rows, at most a bounded
+// batch per writer job, so the table cannot grow without bound.
+func pruneTriageRequests(ctx context.Context, tx *sql.Tx, now time.Time) error {
+	_, err := tx.ExecContext(ctx, `DELETE FROM triage_request_log WHERE rowid IN (
+		SELECT rowid FROM triage_request_log WHERE create_time < ? LIMIT 500)`,
+		now.UnixMilli()-configIDWindowMs)
+	if err != nil {
+		return fmt.Errorf("statedb: prune triage requests: %w", err)
+	}
+	return nil
+}
+
 // logTriageRequest stores the acted item as the idempotency record of one
 // triage write. The unique key on (principal, request_id) backs the
 // replay check up.
@@ -303,12 +319,14 @@ func auditTriage(ctx context.Context, tx *sql.Tx, action, id string, w TriageWri
 // ([ErrRequestConflict] on another body); an unknown id is
 // [ErrTriageUnknown]; an item past OPEN and SNOOZED is [ErrTriageClosed]
 // before any version check; a stale expected_version is a [VersionStale]
-// naming the triage version. Otherwise the row moves to SNOOZED at
-// version + 1, stamped, with its triage.snooze audit row. Nothing is
-// written on any error.
+// naming the triage version; a wake time at or before now is
+// [ErrTriagePastUntil]. Otherwise the row moves to SNOOZED at
+// version + 1, stamped, with its triage.snooze audit row, and a bounded
+// batch of expired idempotency rows is swept. Nothing is written on any
+// error.
 func SnoozeTriageItem(ctx context.Context, s *store.Store, in TriageSnooze) (TriageStored, error) {
-	if in.ID == "" || in.Until.IsZero() {
-		return TriageStored{}, fmt.Errorf("%w: a snooze needs an item id and a wake time", ErrTriageInvalid)
+	if in.ID == "" {
+		return TriageStored{}, fmt.Errorf("%w: a snooze needs an item id", ErrTriageInvalid)
 	}
 	jctx := context.WithoutCancel(ctx) // see insertIdentity
 	var out TriageStored
@@ -327,6 +345,12 @@ func SnoozeTriageItem(ctx context.Context, s *store.Store, in TriageSnooze) (Tri
 			return err
 		}
 		if err := checkVersion(got.Version, in.ExpectedVersion, "triage"); err != nil {
+			return err
+		}
+		if !in.Until.After(in.Write.Now) {
+			return ErrTriagePastUntil
+		}
+		if err := pruneTriageRequests(jctx, tx, in.Write.Now); err != nil {
 			return err
 		}
 		st, err := NextStamp(jctx, tx, in.Write.Now)
@@ -394,13 +418,17 @@ func DismissTriageItem(ctx context.Context, s *store.Store, in TriageDismiss) (T
 		if err := checkVersion(got.Version, in.ExpectedVersion, "triage"); err != nil {
 			return err
 		}
+		if err := pruneTriageRequests(jctx, tx, in.Write.Now); err != nil {
+			return err
+		}
 		st, err := NextStamp(jctx, tx, in.Write.Now)
 		if err != nil {
 			return err
 		}
 		nowMs := in.Write.Now.UnixMilli()
 		if _, err := tx.ExecContext(jctx, `UPDATE triage_items SET state = 'DISMISSED',
-			version = version + 1, acted_by_id = ?, acted_by_kind = ?, acted_by_name = ?,
+			version = version + 1, snoozed_until_ms = 0,
+			acted_by_id = ?, acted_by_kind = ?, acted_by_name = ?,
 			acted_ms = ?, update_ms = ?, hub_seq = ? WHERE id = ?`,
 			in.Write.Actor.ID, in.Write.Actor.Kind, in.Write.Actor.Name,
 			nowMs, nowMs, st.HubSeq, in.ID); err != nil {
@@ -421,6 +449,7 @@ func DismissTriageItem(ctx context.Context, s *store.Store, in TriageDismiss) (T
 		out = got
 		out.State = "DISMISSED"
 		out.Version = got.Version + 1
+		out.SnoozedUntilMs = 0
 		out.ActedBy = in.Write.Actor
 		out.ActedMs = nowMs
 		out.UpdateMs = nowMs

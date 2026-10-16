@@ -103,6 +103,16 @@
 // READY mirrors to SEEN in the same transaction. [LookupRepoReplay] is the
 // read-pool pre-check behind a write.
 //
+// Plan row 13a (slice 5) adds the hub-state triage writes
+// (triage_hub_writes migration): [SnoozeTriageItem] and
+// [DismissTriageItem] move an OPEN or SNOOZED triage_items row at version
+// + 1 with its hub_seq stamp, keep the idempotency record (the acted item
+// as JSON, replayed for 24 h, expired rows pruned in bounded batches) and
+// write the triage.snooze or triage.dismiss audit row, all in one writer
+// transaction. A closed item is [ErrTriageClosed] before any version
+// check; a stale expected_version is a [VersionStale]; a past wake time
+// is [ErrTriagePastUntil], checked after the replay lookup.
+//
 // Plan row 11 adds the provider mirrors (provider_sync_mirrors migration):
 // work_items and change_requests keyed canonically with the hub's verdicts
 // beside the provider shape, sync_cursors and rate_limit_state per page

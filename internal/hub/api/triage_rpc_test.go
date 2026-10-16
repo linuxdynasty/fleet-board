@@ -63,31 +63,54 @@ func TestSnoozeTriageItemSnoozesAnOpenItem(t *testing.T) {
 }
 
 // TestDismissTriageItemClosesAnItem proves a dismiss closes the item,
-// records the operator, and refuses a second dismiss as closed.
+// records the operator, clears the wake time of the earlier snooze, and
+// refuses a second dismiss as closed.
 func TestDismissTriageItemClosesAnItem(t *testing.T) {
 	t.Parallel()
 	e := newFleetEnv(t, localUser("alice"), trusted(false))
 	seedTriageItem(t, e, "ti-9")
+	snoozeCall(t, e, "", "sn-0", "ti-9", 1, timestamppb.New(fleetNow.Add(2*time.Hour)))
 	res, err := e.client.DismissTriageItem(t.Context(), withSecret(connect.NewRequest(&hubv1.DismissTriageItemRequest{
 		RequestId: "di-1", Id: &hubv1.TriageItemId{Value: "ti-9"},
-		ExpectedVersion: 1, Note: "handled at the machine",
+		ExpectedVersion: 2, Note: "handled at the machine",
 	}), ""))
 	if err != nil {
 		t.Fatalf("DismissTriageItem: %v", err)
 	}
 	got := res.Msg.GetTriageItem()
-	if got.GetState() != hubv1.TriageState_TRIAGE_STATE_DISMISSED || got.GetVersion() != 2 {
-		t.Errorf("dismissed = state %v version %d, want DISMISSED 2", got.GetState(), got.GetVersion())
+	if got.GetState() != hubv1.TriageState_TRIAGE_STATE_DISMISSED || got.GetVersion() != 3 {
+		t.Errorf("dismissed = state %v version %d, want DISMISSED 3", got.GetState(), got.GetVersion())
 	}
 	if got.GetActedBy().GetId().GetValue() != "local:alice" {
 		t.Errorf("acted_by = %v, want local:alice", got.GetActedBy())
 	}
+	if got.GetSnoozedUntilTime() != nil {
+		t.Errorf("dismissed snoozed_until = %v, want the wake time cleared", got.GetSnoozedUntilTime())
+	}
 	_, err = e.client.DismissTriageItem(t.Context(), withSecret(connect.NewRequest(&hubv1.DismissTriageItemRequest{
-		RequestId: "di-2", Id: &hubv1.TriageItemId{Value: "ti-9"}, ExpectedVersion: 2,
+		RequestId: "di-2", Id: &hubv1.TriageItemId{Value: "ti-9"}, ExpectedVersion: 3,
 	}), ""))
 	code, reason, _ := detail(t, err)
 	if code != connect.CodeFailedPrecondition || reason != typev1.ReasonCode_REASON_CODE_TRIAGE_CLOSED {
 		t.Errorf("second dismiss = %v/%v, want FAILED_PRECONDITION/TRIAGE_CLOSED", code, reason)
+	}
+}
+
+// TestSnoozeReplayAfterTheWakeTime proves a retry of a committed snooze
+// still returns the stored item after its wake time passed: the replay
+// lookup runs before the future-time check.
+func TestSnoozeReplayAfterTheWakeTime(t *testing.T) {
+	t.Parallel()
+	now := fleetNow
+	e := newFleetEnv(t, localUser("alice"), trusted(false), envOpt{now: func() time.Time { return now }})
+	seedTriageItem(t, e, "ti-late")
+	until := timestamppb.New(fleetNow.Add(time.Hour))
+	snoozeCall(t, e, "", "sn-late", "ti-late", 1, until)
+	now = fleetNow.Add(2 * time.Hour)
+	replayed := snoozeCall(t, e, "", "sn-late", "ti-late", 1, until)
+	if replayed.GetVersion() != 2 || replayed.GetState() != hubv1.TriageState_TRIAGE_STATE_SNOOZED {
+		t.Errorf("late retry = state %v version %d, want the stored SNOOZED 2",
+			replayed.GetState(), replayed.GetVersion())
 	}
 }
 
@@ -115,6 +138,14 @@ func TestTriageWriteRefusals(t *testing.T) {
 		{
 			"missing request id", snooze("", "ti-2", 1, until),
 			connect.CodeInvalidArgument, typev1.ReasonCode_REASON_CODE_REQUEST_ID_MISSING,
+		},
+		{
+			"long request id", snooze(strings.Repeat("r", 65), "ti-2", 1, until),
+			connect.CodeInvalidArgument, typev1.ReasonCode_REASON_CODE_FIELD_TOO_LARGE,
+		},
+		{
+			"spaced request id", snooze("has space", "ti-2", 1, until),
+			connect.CodeInvalidArgument, typev1.ReasonCode_REASON_CODE_INVALID_ARGUMENT,
 		},
 		{
 			"missing item id", snooze("f-1", "", 1, until),
