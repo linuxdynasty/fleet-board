@@ -166,9 +166,13 @@ func waitDown(t *testing.T, r *obsRig) {
 // client at most once a second: a retry that lands while the server
 // answers nothing parks the client in StateAbsent, which has no timer
 // and only a Wake retries it, and the %exit rescan can fire while the
-// client still reads up and be lost (CI saw [exit absent] stuck this
-// way). The production loop Snapshot rescans regularly, so this only
-// bites a passive wait; waking here matches the folder watch's own gap.
+// client still reads up and be lost. The production loop Snapshot
+// rescans regularly, so this only bites a passive wait; waking here
+// matches the folder watch's own gap. (A stuck-absent longer than one
+// wake gap means the server itself is gone — killing a session whose
+// window just switched crashes tmux on both CI releases — and no wake
+// can fix that; the test keeps window switches off the killed session
+// for that reason.)
 func waitSession(t *testing.T, r *obsRig, want tmux.SessionID) {
 	t.Helper()
 	c := r.o.Client("default")
