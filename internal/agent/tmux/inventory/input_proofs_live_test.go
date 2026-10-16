@@ -162,18 +162,34 @@ func waitDown(t *testing.T, r *obsRig) {
 // guaranteed to show between two 20 ms polls on a loaded machine, so the
 // wait is for the landed session, not for the drop. A failure prints the
 // recent tmux.exit reasons with the state, so a stuck absent names the
-// trajectory instead of only the timeout.
+// trajectory instead of only the timeout. While waiting it wakes the
+// client at most once a second: a retry that lands while the server
+// answers nothing parks the client in StateAbsent, which has no timer
+// and only a Wake retries it, and the %exit rescan can fire while the
+// client still reads up and be lost. The production loop Snapshot
+// rescans regularly, so this only bites a passive wait; waking here
+// matches the folder watch's own gap. (A stuck-absent longer than one
+// wake gap means the server itself is gone — killing a session whose
+// window just switched crashes tmux on both CI releases — and no wake
+// can fix that; the test keeps window switches off the killed session
+// for that reason.)
 func waitSession(t *testing.T, r *obsRig, want tmux.SessionID) {
 	t.Helper()
 	c := r.o.Client("default")
 	deadline := time.Now().Add(wait)
+	var lastWake time.Time
 	for {
 		if c.Up() && c.Session() == want {
 			return
 		}
-		if time.Now().After(deadline) {
+		now := time.Now()
+		if now.After(deadline) {
 			t.Fatalf("the control client is %s on %s, want up on $%d (exits: %v)",
 				c.State(), c.Session(), want, r.logs.named("tmux.exit"))
+		}
+		if now.Sub(lastWake) >= time.Second {
+			c.Wake()
+			lastWake = now
 		}
 		time.Sleep(20 * time.Millisecond)
 	}

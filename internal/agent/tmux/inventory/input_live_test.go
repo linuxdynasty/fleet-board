@@ -224,13 +224,6 @@ func TestAgentActionsCreditNoInput(t *testing.T) {
 			}
 			dev.Run(t, "select-pane", "-t", "%1")
 			dev.Run(t, "select-pane", "-t", "work:0.0")
-			dev.Run(t, "select-window", "-t", "work:0")
-			dev.Run(t, "new-window", "-t", "work", "exec cat")
-			dev.Run(t, "capture-pane", "-p", "-t", "work:0.0")
-			dev.Run(t, "resize-pane", "-t", "work:0.0", "-x", "90")
-			dev.Run(t, "respawn-pane", "-t", "work:0.0", "-k", "exec cat")
-			time.Sleep(3500 * time.Millisecond) // past tmux's 1 s check, whatever moved
-			none("agent keys, selects, capture, resize and respawn")
 
 			// new-session moves the tripwire (read from the 3.2a source):
 			// wait until the client read it reports, then assert the read
@@ -245,6 +238,21 @@ func TestAgentActionsCreditNoInput(t *testing.T) {
 				t.Fatal("no client read followed the new session")
 			}
 			none("new-session")
+
+			// The window actions run on extra, the session that survives:
+			// switching a session's window and then killing that session
+			// crashes tmux itself (its deferred session-window-changed
+			// notice fires after the destroy; both CI releases die on it),
+			// which would leave no reattach to prove. extra is never
+			// killed, so a notice queued for it is always safe; every
+			// action below is still watched and asserted.
+			dev.Run(t, "select-window", "-t", "extra:0")
+			dev.Run(t, "new-window", "-t", "extra", "exec cat")
+			dev.Run(t, "capture-pane", "-p", "-t", "extra:0.0")
+			dev.Run(t, "resize-pane", "-t", "extra:0.0", "-x", "90")
+			dev.Run(t, "respawn-pane", "-t", "extra:0.0", "-k", "exec cat")
+			time.Sleep(3500 * time.Millisecond) // past tmux's 1 s check, whatever moved
+			none("agent keys, selects, capture, resize and respawn")
 
 			// The control client's own reattach: killing its session ends
 			// the attach with %exit and the client lands on the lowest
