@@ -22,6 +22,7 @@
     "machine.": "docs/specs/03n-reconnect.md",
     "machines.": "docs/specs/02k-v1-surface-and-cli.md",
     "netchange.": "docs/specs/03-workflows.md",
+    "operations.": "docs/specs/02k-v1-surface-and-cli.md",
     "outbox.": "docs/specs/03f-hub-internals.md",
     "policy.": "docs/specs/03e-settings-and-drift.md",
     "proc.": "docs/specs/05b-observability.md",

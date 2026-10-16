@@ -264,6 +264,10 @@ message Operation {
   // Trace id (32 hex) of the hub span that issued the command, so a UI or
   // CLI can link to the trace. Empty when tracing is off.
   string trace_id = 26;
+  // When the agent acked the command (the outbox ack_time). Unset while the
+  // command is still PENDING, so an expiry before delivery (DONE with no
+  // delivered_time) reads apart from one after (DONE with delivered_time).
+  google.protobuf.Timestamp delivered_time = 27;
 }
 
 // GetOperationRequest.

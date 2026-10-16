@@ -214,6 +214,10 @@ contract; this is how the hub runs it.
   after another), and each sender pass waits for its record job: plan row
   5c2's fork-6 benchmark includes the command arms and the sender.
 
+- **Read.** The API's `GetOperation` (plan row 12) reads one `commands`
+  row through the read pool — never the writer — with the ack time, so an
+  expiry before delivery reads apart from one after; unknown ids miss.
+
 **Telemetry.** Metrics: `fleet_hub_commands_total{kind, status}` and
 `fleet_hub_command_roundtrip_seconds{kind}` (03 conventions; a stored
 result), `fleet_hub_command_messages_total{arm, outcome}` (`arm`:

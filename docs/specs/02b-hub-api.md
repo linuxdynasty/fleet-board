@@ -62,6 +62,12 @@ caller and its scopes), `ExportConfig` and `ImportConfig` (below) and
 `GetStoreStatus`. Which release
 serves each RPC and Watch topic: [02k](02k-v1-surface-and-cli.md).
 
+Served so far (row 12 slices): `GetOperation` reads one stored command as
+its `Operation`, with the ack time as `delivered_time` — `DONE` with no
+`delivered_time` expired before delivery, `DONE` with one after. The
+per-kind result decode (`output_text`, `failed_checks`) and the
+`LOGS`-scope redaction stay unset until their slice, as does `trace_id`.
+
 **Authentication** (how a browser, the CLI and a phone prove who they are, the
 claim URL, the credential carriers, Host and Origin checks) is
 [02f](02f-hub-authentication.md); the hub API only says who may call what

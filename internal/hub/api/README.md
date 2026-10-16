@@ -8,8 +8,9 @@ writes (`CreateRepo`, `UpdateRepo`, `DeleteRepo`), the machine admin
 writes (`UpdateMachine`, `RevokeMachine`, `DeleteMachine`), the
 config import and export (`ImportConfig`, `ExportConfig`), the hub-state
 triage writes (`SnoozeTriageItem`, `DismissTriageItem`), the
-session-control and approvals calls, `GetServerInfo`, and the machine
-reads (`ListMachines`, `GetMachine`) on the local admin socket.
+session-control and approvals calls, `GetServerInfo`, the machine
+reads (`ListMachines`, `GetMachine`), and `GetOperation` on the
+local admin socket.
 
 ```go
 srv := api.NewServer(tel, "api", boundPort) // api.Handler plus timeouts and the JSON ErrorLog
@@ -51,7 +52,7 @@ own error lines are debug-level `http.server_error` events, not stderr text.
 method but `CreateEnrollmentToken`, the watched-repo writes, the machine
 admin writes, the config import and export, the hub-state triage
 writes, the session-control and approvals calls, `GetServerInfo`,
-`ListMachines` and `GetMachine`
+`ListMachines`, `GetMachine` and `GetOperation`
 answers `unimplemented`
 ([02k](../../../docs/specs/02k-v1-surface-and-cli.md)).
 `Handler()` is its Connect route (requests capped at 1 MiB), ready for a
@@ -85,6 +86,13 @@ principal (the admin socket) calls, covering both. It sends one `capture_pane`
 agent command through the session path (idempotent on `request_id`, audited as
 `session.capture`): `pane` is required, `max_bytes` caps at 256 KiB, and only
 sessions the hub started route yet (`SESSION_NOT_FOUND` otherwise).
+
+`GetOperation` needs `READ` (02d): until a later row-12 slice brings caller
+scopes, only a `LOCAL_USER` principal (the admin socket) holds it. It reads
+one outbox row with the ack time as `delivered_time`, so an expiry before
+delivery (`DONE` with no `delivered_time`) reads apart from one after. The
+per-kind result decode (`output_text`, `failed_checks`) and the `LOGS`-scope
+redaction stay unset until their slice, as does `trace_id`.
 
 `CreateEnrollmentToken` needs `ADMIN` (02d). Until plan row 12 brings scopes,
 only a `LOCAL_USER` principal (the admin socket) holds it: no principal is
