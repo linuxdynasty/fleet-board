@@ -22,6 +22,10 @@ const SecretHeader = "X-Fleet-Approval-Secret"
 var requiresLocalSecret = map[string]bool{
 	// Approving a request.
 	"/fleet.hub.v1.FleetService/DecideApproval": true,
+	// Deciding triage: the APPROVALS operator writes (02d), like
+	// DecideApproval above.
+	"/fleet.hub.v1.FleetService/SnoozeTriageItem":  true,
+	"/fleet.hub.v1.FleetService/DismissTriageItem": true,
 	// Changing settings: every SETTINGS call (02d).
 	"/fleet.hub.v1.FleetService/UpdateSettings":     true,
 	"/fleet.hub.v1.FleetService/ImportConfig":       true,

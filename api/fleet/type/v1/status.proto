@@ -366,6 +366,9 @@ enum ReasonCode {
   REASON_CODE_ROUTINE_NEEDS_SPARE_QUOTA = 563;
   // Collected report empty, not UTF-8, too large or without the bundle marker.
   REASON_CODE_REPORT_INVALID = 564;
+  // SnoozeTriageItem or DismissTriageItem named an item that already left
+  // OPEN and SNOOZED (in flight, acted, retired, expired or dismissed).
+  REASON_CODE_TRIAGE_CLOSED = 565;
 
   // Enroll and RenewCert errors, carried in the ErrorDetail of the RPC error.
 

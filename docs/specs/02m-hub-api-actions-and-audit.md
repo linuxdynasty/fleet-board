@@ -264,7 +264,18 @@ another body is `REQUEST_ID_CONFLICT`), stamp the row, raise its version by
 1 (a stale `expected_version` is refused with the current version named)
 and audit it with the requester as actor: `machine.update` (detail: the
 display name and the version), `machine.revoke` (detail: the reason and the
-version), `machine.delete` (detail: the version). `hub.restore` writes `hub`, with the OS user
+version), `machine.delete` (detail: the version). The hub-state triage writes
+(`triage.snooze`, `triage.dismiss`) work the same way on `triage/<id>`: idempotent
+on `request_id` for 24 h, the row stamped, its version raised by 1, and one audit
+row with the requester as actor — `triage.snooze` (detail: the wake time and the
+version), `triage.dismiss` (detail: the note and the version). An operator snoozes with
+`SnoozeTriageItem` (an `OPEN` or `SNOOZED` item, a future `until_time`; a second snooze moves
+the wake time) and closes without acting with `DismissTriageItem` (an `OPEN` or `SNOOZED` item,
+an optional note of at most 512 bytes kept in the audit row only). Both need `APPROVALS` and
+the local approval secret in `local_trusted` mode, name a non-zero `expected_version`, and take
+the same `request_id` idempotency; a write against an item that already left `OPEN` and `SNOOZED`
+is `TRIAGE_CLOSED`, which wins over `VERSION_MISMATCH` like `APPROVAL_CLOSED` does (03d W7).
+`hub.restore` writes `hub`, with the OS user
 that ran `fleetd restore` as actor (kind `LOCAL_USER`), in the same
 transaction as the restore on the restored store, and a detail of closed
 fields only: `backup` (the file's base name, letters, digits, `.`, `_` and

@@ -470,3 +470,23 @@ rows from the file: a replay after an update answers the original response,
 an expired key writes anew, each insert prunes expired rows, a delete moves
 only the repo's `READY` mirrors to `SEEN`, the masked merge sees the latest
 row, and a 2b store gaining the tables.
+
+- **Hub-state triage writes** (migration 19, plan row 13a; 02b "Idempotency",
+  "Versions and ETags"; 03d W7). `triage_items` holds one row per hub-state
+  item (the 03d scalar core: kind, severity, state, fingerprint, title, the
+  machine/session/goal/account refs, the detail arm, the snooze and acting
+  stamps; version 1 at insert, +1 per operator write; `hub_seq` the Watch
+  stamp). `triage_request_log` keys (`principal_id`, `request_id`) to the
+  request body hash and the acted item as JSON. `SnoozeTriageItem` and
+  `DismissTriageItem` each run in one writer transaction: a replayed key
+  returns the stored item (`ErrRequestConflict` on another body, an expired
+  row past the 24 h window is dropped and the key is free again); a missing
+  id is `ErrTriageUnknown`; an item past `OPEN` and `SNOOZED` is
+  `ErrTriageClosed` before any version check; a stale `expected_version` is
+  a `VersionStale`; a wake time at or before now is `ErrTriagePastUntil`
+  (checked after the replay lookup, so a late retry still answers).
+  Otherwise the row moves at version + 1, stamped, with its `triage.snooze`
+  or `triage.dismiss` audit row (`triage/<id>`); a dismiss clears the wake
+  time. Each write sweeps a bounded batch (500) of expired idempotency rows.
+  The raise path of plan row 5 fills the source columns and adds the pane,
+  work-item and approval refs in its own migration.
