@@ -223,7 +223,9 @@ line the owner pastes elsewhere.
    permission set of [ADR 0022](../adr/0022-drift-audit-decisions.md) (read-only,
    repository permissions only; the user authorization settings, with callback
    `<public origin>/auth/github/callback`, only in `authenticated` mode with
-   GitHub sign-in on, never in v1).
+   GitHub sign-in on, never in v1). With `--org` the page posts to that
+   organization's manifest endpoint instead of the personal-account one:
+   a private App can only be installed on its owning account.
 2. The owner confirms the App on GitHub. GitHub redirects to the listener with a
    one-time `code` and the `state` the command generated; a wrong `state` is
    refused. The listener serves one redirect and closes.
@@ -236,8 +238,10 @@ line the owner pastes elsewhere.
    `private_key_file` (and `client_id`, `client_secret_file`) to the `github`
    section of `fleetd.yaml`. Nothing secret goes into `state.db`.
 5. The owner installs the App on the watched repos (plan 0.2). Re-running the
-   command signs an App token and lists `GET /app/installations`; with exactly one
-   installation it writes `installation_id`, with several it asks which, with
+   command loads the saved App credentials and only signs an App token and
+   lists `GET /app/installations`: no browser, no new exchange; with exactly
+   one installation it writes `installation_id`, with several it asks which
+   (`--installation-id`, refused when the list does not contain it), with
    none it says to install the App first.
 6. It prints "restart `fleetd` to apply" (the file is read at start, above). After
    the restart the hub creates the `Integration` row from the `github` keys.
