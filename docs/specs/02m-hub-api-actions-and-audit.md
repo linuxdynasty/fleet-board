@@ -197,7 +197,8 @@ plan.
 
 - `fleet_hub_config_writes_total{op, outcome}` (`op`: `account_create`,
   `account_update`, `account_delete`, `integration_update`,
-  `settings_update`, `export`; `outcome`: `ok`, `replayed`, `refused`,
+  `settings_update`, `export`, `machine_update`, `machine_revoke`,
+  `machine_delete`; `outcome`: `ok`, `replayed`, `refused`,
   `failed`).
 - Logs: `config.account_written{op, resource, version, replayed, actor}`,
   `config.account_write_refused{reason, op, actor}`,
@@ -208,10 +209,13 @@ plan.
   `config.settings_written{op, resource, version, replayed, actor}`,
   `config.settings_write_refused{reason, op, actor}`,
   `config.settings_write_failed{step, err_kind, op, actor}`,
+  `config.machine_written{op, resource, version, replayed, actor}`,
+  `config.machine_write_refused{reason, op, actor}`,
+  `config.machine_write_failed{step, err_kind, op, actor}`,
   `config.exported{repos, accounts, integrations, actor}`,
   `config.export_refused{reason, actor}`,
   `config.export_failed{step, err_kind, actor}` (`step`: `encode`,
-  `decode`, `store`).
+  `decode`, `store`; the machine steps add `revocation` and `wiring`).
 
 ## Local commands
 
@@ -253,7 +257,14 @@ writes: session actions (`session.*`, `attach.*`) `sessions/<id>`; goal actions
 `logs.*` `sessions/<id>` (or `logs` for a search); `config.import` `config`;
 settings `settings/<id>`; `machine.enroll_token` writes `enroll_tokens/<id>`;
 `machine.enroll_failed` and `machine.connect_refused` write the collection
-`machines` when no row exists; `hub.restore` writes `hub`, with the OS user
+`machines` when no row exists. The machine admin writes (`machine.update`,
+`machine.revoke`, `machine.delete`) are idempotent on `request_id` for 24 h
+(02b "Idempotency": the same key and body replays the stored response,
+another body is `REQUEST_ID_CONFLICT`), stamp the row, raise its version by
+1 (a stale `expected_version` is refused with the current version named)
+and audit it with the requester as actor: `machine.update` (detail: the
+display name and the version), `machine.revoke` (detail: the reason and the
+version), `machine.delete` (detail: the version). `hub.restore` writes `hub`, with the OS user
 that ran `fleetd restore` as actor (kind `LOCAL_USER`), in the same
 transaction as the restore on the restored store, and a detail of closed
 fields only: `backup` (the file's base name, letters, digits, `.`, `_` and

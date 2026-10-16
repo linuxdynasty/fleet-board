@@ -3,8 +3,10 @@
 The hub's HTTP API ([02b](../../../docs/specs/02b-hub-api.md),
 [02f](../../../docs/specs/02f-hub-authentication.md#host-and-origin-checks)).
 Today it serves `/metrics` on the API listener, behind the Host and Origin
-checks, and `FleetService` with `CreateEnrollmentToken` and the watched-repo
-writes (`CreateRepo`, `UpdateRepo`, `DeleteRepo`) on the local admin socket.
+checks, and `FleetService` with `CreateEnrollmentToken`, the watched-repo
+writes (`CreateRepo`, `UpdateRepo`, `DeleteRepo`) and the machine admin
+writes (`UpdateMachine`, `RevokeMachine`, `DeleteMachine`) on the local
+admin socket.
 
 ```go
 srv := api.NewServer(tel, "api", boundPort) // api.Handler plus timeouts and the JSON ErrorLog
@@ -43,11 +45,11 @@ own error lines are debug-level `http.server_error` events, not stderr text.
 ## FleetService
 
 `Fleet` embeds the generated `UnimplementedFleetServiceHandler`, so every
-method but `CreateEnrollmentToken` and the watched-repo writes answers
-`unimplemented`. `Handler()` is its Connect route (requests capped at 1 MiB),
-ready for a later row to mount on the API listener. The caller is the
-`Principal` the server put in the context (`WithPrincipal`); the handler never
-reads it from the request.
+method but `CreateEnrollmentToken`, the watched-repo writes and the machine
+admin writes answers `unimplemented`. `Handler()` is its Connect route
+(requests capped at 1 MiB), ready for a later row to mount on the API
+listener. The caller is the `Principal` the server put in the context
+(`WithPrincipal`); the handler never reads it from the request.
 
 `CreateEnrollmentToken` needs `ADMIN` (02d). Until plan row 12 brings scopes,
 only a `LOCAL_USER` principal (the admin socket) holds it: no principal is
@@ -63,7 +65,7 @@ only a `LOCAL_USER` principal (the admin socket) holds it: no principal is
 | `ttl` set but not more than 0 and at most 24 h (unset: 15 min) | `INVALID_ARGUMENT` on `ttl` |
 | `previous_machine` sent with an empty id, or one not `[a-z0-9][a-z0-9-]{0,31}` | `INVALID_ARGUMENT` on `previous_machine.value` |
 | same principal and `request_id` again: same body / other body | `ALREADY_EXISTS` / `SECRET_ALREADY_DELIVERED`; `REQUEST_ID_CONFLICT` |
-| any `previous_machine` (2b re-enrolls nothing) | `FAILED_PRECONDITION` / `MACHINE_NOT_REENROLLABLE` |
+| `previous_machine` naming a machine that is neither `REVOKED` nor past its certificate lifetime (checked in the writer transaction, so the row must still exist) | `FAILED_PRECONDITION` / `MACHINE_NOT_REENROLLABLE` |
 
 Every field error is one `FieldViolation` in one `INVALID_ARGUMENT`, whose
 reason is the first violation's; no message echoes the request. The body hash
@@ -108,6 +110,40 @@ Signals: `fleet_hub_repo_writes_total{op, outcome}` (`ok`, `replayed`,
 `version`, `replayed`, `actor`), `repo.write_refused` (`reason`, `op`,
 `actor`) and `repo.write_failed` (`step` `encode`/`decode`/`store`,
 `err_kind`, `op`, `actor`).
+
+`UpdateMachine` needs `SETTINGS`, `RevokeMachine` and `DeleteMachine`
+need `ADMIN` (02d); until plan row 12 brings caller scopes only the
+local user holds them (`authorizeSettings`, `authorizeAdmin`). Then, in
+02b's order, the caller, the local approval secret in `local_trusted`
+mode, the fields, and the `request_id` replay inside the writer
+transaction (same principal, id, body and RPC kind replays the stored
+response for 24 h; anything else under the key is `REQUEST_ID_CONFLICT`).
+
+| Check | Refusal |
+|---|---|
+| a bad id, reason or masked patch (`spec.display_name`, `spec.labels` only) | `INVALID_ARGUMENT` |
+| a missing machine | `NOT_FOUND` / `RESOURCE_NOT_FOUND` |
+| a stale `expected_version` (0 skips the check) | `FAILED_PRECONDITION` / `VERSION_MISMATCH` with `metadata["current_version"]` |
+| `DeleteMachine` on a machine that is not `REVOKED` | `FAILED_PRECONDITION` / `MACHINE_NOT_REVOKED` |
+
+`RevokeMachine` decides replay, refusal or commit on the read pool
+(`statedb.PrecheckRevoke`) before staging any serial, so a retried or
+stale revoke stages nothing and a retry after a re-enroll leaves the new
+serial and the new stream alone. Otherwise the serials land on the
+revocation list first (02g write order, fail closed), then one writer
+job marks the row `REVOKED`, revokes the serials in `state.db`, closes
+the open outbox rows and audits. After commit the serials the job itself
+revoked are staged again (a `RenewCert` that committed in between leaves
+no valid certificate), the live stream gets `Bye{REVOKED}` and the closed
+rows go to the outbox service. The store wait and the after-commit work
+run detached from the request, so a disconnecting client still gets its
+stream cut. Signals: `fleet_hub_config_writes_total{op, outcome}` (`op`
+`machine_update`/`machine_revoke`/`machine_delete`; `ok`, `replayed`,
+`refused`, `failed`) and the log lines `config.machine_written` (`op`,
+`resource`, `version`, `replayed`, `actor`),
+`config.machine_write_refused` (`reason`, `op`, `actor`) and
+`config.machine_write_failed` (`step` `encode`/`revocation`/`wiring`/
+`store`, `err_kind`, `op`, `actor`).
 
 ## Admin socket
 

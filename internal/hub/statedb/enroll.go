@@ -50,14 +50,39 @@ type EnrollToken struct {
 	Actor Actor
 }
 
+// reenrollable reports whether previous names a machine row that may be
+// re-enrolled (02g "Re-enroll"): REVOKED, or past every certificate
+// lifetime. A missing row is not eligible here; what that means depends
+// on the caller (insert refuses, enroll falls back to a fresh machine).
+func reenrollable(ctx context.Context, tx *sql.Tx, previous string, now time.Time) (bool, error) {
+	var state string
+	err := tx.QueryRowContext(ctx, `SELECT state FROM machines WHERE machine_id = ?`, previous).Scan(&state)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("statedb: read previous machine: %w", err)
+	}
+	if state == MachineRevoked {
+		return true, nil
+	}
+	var end sql.NullInt64
+	if err := tx.QueryRowContext(ctx, `SELECT MAX(not_after_time) FROM cert_serials
+		WHERE machine_id = ?`, previous).Scan(&end); err != nil {
+		return false, fmt.Errorf("statedb: read previous serials: %w", err)
+	}
+	return end.Valid && end.Int64 <= now.UnixMilli(), nil
+}
+
 // InsertEnrollToken stores t in one writer transaction. Inside it, in
 // order: an earlier row with the same principal and request_id is
-// [ErrSecretDelivered] (same RequestHash) or [ErrRequestConflict]; a set
-// PreviousMachine is [ErrNotReenrollable]; otherwise the row is inserted
-// with its machine.enroll_token audit row (target enroll_tokens/<id>; the
-// machine name, expected hostname and expiry, never the hash). Nothing is
-// written on any error. The unique index on (principal, request_id) backs
-// the check up.
+// [ErrSecretDelivered] (same RequestHash) or [ErrRequestConflict]; a
+// PreviousMachine on a machine that is neither REVOKED nor past its
+// certificate lifetime (or on no row at all) is [ErrNotReenrollable];
+// otherwise the row is inserted with its machine.enroll_token audit row
+// (target enroll_tokens/<id>; the machine name, expected hostname and
+// expiry, never the hash). Nothing is written on any error. The unique
+// index on (principal, request_id) backs the check up.
 func InsertEnrollToken(ctx context.Context, s *store.Store, t EnrollToken) error {
 	labels := t.Labels
 	if labels == nil {
@@ -80,14 +105,22 @@ func InsertEnrollToken(ctx context.Context, s *store.Store, t EnrollToken) error
 		case !errors.Is(err, sql.ErrNoRows):
 			return fmt.Errorf("statedb: look up request_id: %w", err)
 		}
+		var previous any
 		if t.PreviousMachine != "" {
-			return ErrNotReenrollable
+			ok, err := reenrollable(jctx, tx, t.PreviousMachine, t.Created)
+			if err != nil {
+				return err
+			}
+			if !ok {
+				return ErrNotReenrollable
+			}
+			previous = t.PreviousMachine
 		}
 		res, err := tx.ExecContext(jctx, `INSERT INTO enroll_tokens(secret_hash, machine_name, expected_hostname, labels,
-			start_drained, not_after_time, created_time, principal, request_id, request_hash)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			start_drained, not_after_time, previous_machine, created_time, principal, request_id, request_hash)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			t.SecretHash[:], t.MachineName, t.ExpectedHostname, string(list), t.StartDrained,
-			t.NotAfter.UnixMilli(), t.Created.UnixMilli(), t.Principal, t.RequestID, t.RequestHash[:])
+			t.NotAfter.UnixMilli(), previous, t.Created.UnixMilli(), t.Principal, t.RequestID, t.RequestHash[:])
 		if err != nil {
 			return fmt.Errorf("statedb: insert enroll token: %w", err)
 		}

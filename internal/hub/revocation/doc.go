@@ -9,8 +9,10 @@
 // is [ErrInvalid]), drops a torn last line with a warning, reconciles the
 // file and state.db both ways, and rewrites the file atomically without
 // expired lines. [List.Revoked] reads an atomic pointer, so a handshake never
-// waits. [List.Revoke] appends to the file and fsyncs it, then updates the
-// set, then writes state.db: the file comes first, so a restore from an
+// waits. [List.Stage] appends to the file and updates the set without the
+// state.db write: RevokeMachine stages before its writer job and reconciles
+// after commit. [List.Revoke] appends to the file and fsyncs it, then updates
+// the set, then writes state.db: the file comes first, so a restore from an
 // older backup re-applies it, and a failed state.db write leaves the serial
 // revoked.
 package revocation

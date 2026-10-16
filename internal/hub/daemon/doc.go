@@ -18,7 +18,10 @@
 // agent listener (Enroll; revoked client certificates fail the handshake),
 // the API listener, the optional metrics listener and the
 // admin socket (<state_dir>/admin.sock, mode 0600, a leftover socket removed
-// first and the socket removed on a clean stop) until its context ends. An
+// first and the socket removed on a clean stop) until its context ends: the
+// admin service answers CreateEnrollmentToken and the machine admin writes,
+// wired to the revocation list, the agent listener's live-stream cut and
+// the outbox service for a revoke's after-commit effects. An
 // advertiser (internal/hub/discovery) announces the hub over mDNS once the
 // listeners serve and stops first at shutdown. Then every listener shuts
 // down at the same time within one 10 s grace (the agent listener's

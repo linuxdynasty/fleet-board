@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -10,16 +11,30 @@ import (
 
 	"github.com/linuxdynasty/fleet-board/internal/hub/api"
 	"github.com/linuxdynasty/fleet-board/internal/hub/config"
+	"github.com/linuxdynasty/fleet-board/internal/hub/outbox"
+	"github.com/linuxdynasty/fleet-board/internal/hub/revocation"
 	"github.com/linuxdynasty/fleet-board/internal/hub/statedb"
 	"github.com/linuxdynasty/fleet-board/internal/store"
 )
+
+// machineAdmin wires the machine admin writes behind FleetService:
+// the revocation list RevokeMachine stages serials onto, the live
+// stream cut for Bye{REVOKED} after commit, and the outbox service
+// for the rows a revoke closed.
+type machineAdmin struct {
+	revoked *revocation.List
+	bye     func(machineID string) bool
+	closed  func(ctx context.Context, list []outbox.Closed)
+}
 
 // bindAdmin opens <state_dir>/admin.sock (02j). Call it with fleetd.lock
 // held: a socket already there belongs to a hub that died (SIGKILL leaves
 // it), so it is removed first; anything else at that path is refused and
 // left alone. The new socket is chmod 0600 at once, and closing the
 // listener removes it.
-func bindAdmin(cfg *config.Config, opts Options, st *store.Store, id statedb.Identity, s *session) (listener, error) {
+func bindAdmin(cfg *config.Config, opts Options, st *store.Store, id statedb.Identity, adm machineAdmin,
+	s *session,
+) (listener, error) {
 	path := config.AdminSocketPath(cfg.StateDir)
 	if err := removeStaleSocket(path); err != nil {
 		return listener{}, err
@@ -38,6 +53,7 @@ func bindAdmin(cfg *config.Config, opts Options, st *store.Store, id statedb.Ide
 	fleet, err := api.NewFleet(api.FleetOptions{
 		Store: st, CACert: id.CACert, Telemetry: s.tel, Now: opts.Now,
 		StateDir: cfg.StateDir, LocalTrusted: cfg.Mode == "local_trusted",
+		Revoker: adm.revoked, ByeMachine: adm.bye, OnCommandsClosed: adm.closed,
 	})
 	if err != nil {
 		return listener{}, errors.Join(err, ln.Close())

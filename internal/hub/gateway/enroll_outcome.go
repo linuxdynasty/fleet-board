@@ -105,17 +105,13 @@ func reasonOf(err *connect.Error) string {
 }
 
 // failed counts and logs the hub's own failure at step (a closed set:
-// store, previous_machine, random, sign, encode). A store failure is
-// UNAVAILABLE with retryable set and no reason (02g); the others are
-// INTERNAL. The cause's text is
-// never sent or logged.
+// store, random, sign, encode). A store failure is UNAVAILABLE with
+// retryable set and no reason (02g); the others are INTERNAL. The cause's
+// text is never sent or logged.
 func (d *enrollDeps) failed(ctx context.Context, step string, cause error) error {
 	kind := "io"
-	switch {
-	case errors.Is(cause, context.Canceled), errors.Is(cause, context.DeadlineExceeded):
+	if errors.Is(cause, context.Canceled) || errors.Is(cause, context.DeadlineExceeded) {
 		kind = "timeout"
-	case errors.Is(cause, statedb.ErrPreviousMachine):
-		kind = "refused"
 	}
 	d.enrolls.Add(ctx, 1, metric.WithAttributes(attribute.String("result", "failed")))
 	d.log.ErrorContext(ctx, "enroll.failed", "step", step, "err_kind", kind)

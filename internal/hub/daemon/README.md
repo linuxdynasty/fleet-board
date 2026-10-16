@@ -59,8 +59,12 @@ parses flags and calls `Init`, `Run`, `EnrollToken`, `Backup` or `Restore`.
    there was left by a killed hub (the lock is ours), so it is removed; any
    other file at that path refuses the start (`listen_failed`) and is left
    alone. The new socket is chmod 0600 at once and served by `api.NewAdmin`
-   (FleetService `CreateEnrollmentToken`, kernel peer user id check;
-   `Options.PeerUID` injects the reader in tests). Then it starts the mDNS
+   (FleetService `CreateEnrollmentToken` and the machine admin writes,
+   kernel peer user id check; `Options.PeerUID` injects the reader in
+   tests). The admin service carries the cross-listener wiring a revoke
+   needs after commit: the revocation list its serials stage onto, the
+   agent listener's live-stream cut for `Bye{REVOKED}`, and the outbox
+   service for the commands the revoke closed. Then it starts the mDNS
    advertiser (`internal/hub/discovery`, while `discovery.mdns` is true; it
    never fails the hub, and `Options.Discovery` injects the multicast
    responder and the interface list in tests). A goroutine it owns rechecks

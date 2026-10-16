@@ -65,9 +65,14 @@ var (
 	// response it gave (another install_id or CSR key, past the replay
 	// window, or the machine is no longer live).
 	ErrTokenUsed = errors.New("statedb: the enroll token was already used")
-	// ErrPreviousMachine: the token names a machine to re-enroll, which
-	// plan row 13a builds; the token is never burned here.
-	ErrPreviousMachine = errors.New("statedb: the enroll token names a previous machine; re-enroll is plan row 13a")
+	// ErrPreviousMismatch: the request names a previous machine and the
+	// token names a different one; the token is never burned here
+	// (ENROLL_PREVIOUS_MACHINE_MISMATCH).
+	ErrPreviousMismatch = errors.New("statedb: the request names a different previous machine than the token")
+	// ErrPreviousGone: the token's previous machine was deleted after
+	// the token was issued; the token's previous pointer is cleared
+	// here, so Enroll treats it as a fresh machine.
+	ErrPreviousGone = errors.New("statedb: the previous machine is gone; enroll fresh")
 )
 
 // EnrollKey is what keys an Enroll for replay: SHA-256 of the token secret,
@@ -107,9 +112,10 @@ type querier interface {
 // token is [ErrTokenUnknown]; a burned one replays its stored response for
 // the same key while the response is in its window and the machine is not
 // REVOKED, and is [ErrTokenUsed] otherwise; an unburned token past its TTL
-// is [ErrTokenExpired]; one naming a previous machine is
-// [ErrPreviousMachine]. These facts never change once committed, so the
-// answer holds; a fresh token is decided again by [Enroll].
+// is [ErrTokenExpired]. A token naming a previous machine returns it in
+// [EnrollCheck.Token]; whether the machine is still eligible is decided
+// again by [EnrollPrevious]. These facts never change once committed, so
+// the answer holds; a fresh token is decided again by [Enroll].
 func CheckEnroll(ctx context.Context, s *store.Store, key EnrollKey, now time.Time) (EnrollCheck, error) {
 	var out EnrollCheck
 	err := s.Read(ctx, func(tx *sql.Tx) error {
@@ -156,14 +162,14 @@ func classify(ctx context.Context, q querier, key EnrollKey, now time.Time) (Enr
 	if notAfter <= now.UnixMilli() {
 		return EnrollCheck{}, ErrTokenExpired
 	}
-	if previous.Valid {
-		return EnrollCheck{}, ErrPreviousMachine
-	}
 	if err := json.Unmarshal([]byte(labels), &t.Labels); err != nil {
 		return EnrollCheck{}, fmt.Errorf("statedb: enroll token labels: %w", err)
 	}
 	t.SecretHash = key.SecretHash
 	t.NotAfter = time.UnixMilli(notAfter)
+	if previous.Valid {
+		t.PreviousMachine = previous.String
+	}
 	return EnrollCheck{Token: t}, nil
 }
 
@@ -247,10 +253,10 @@ func insertMachine(ctx context.Context, tx *sql.Tx, m NewMachine) (Enrolled, err
 		return Enrolled{}, err
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO machines(machine_id, name, expected_hostname, labels, drained,
-		install_id, state, hostname_mismatch, facts, created_time, version, observed_time, hub_seq)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
+		install_id, state, hostname_mismatch, facts, created_time, version, observed_time, hub_seq, update_ms)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`,
 		m.MachineID, name, expected, labels, drained, m.Key.InstallID, MachineEnrolled, mismatch, m.Facts, now,
-		st.ObservedTime.UnixMilli(), st.HubSeq); err != nil {
+		st.ObservedTime.UnixMilli(), st.HubSeq, now); err != nil {
 		return Enrolled{}, fmt.Errorf("statedb: insert machine: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO cert_serials(serial, machine_id, not_after_time, created_time)
@@ -280,4 +286,169 @@ func insertMachine(ctx context.Context, tx *sql.Tx, m NewMachine) (Enrolled, err
 	return Enrolled{
 		MachineID: m.MachineID, CertDER: m.CertDER, MachineName: name, ExpectedHostname: expected, HostnameMismatch: mismatch,
 	}, nil
+}
+
+// ReenrollMachine is one Enroll with a token naming a previous machine:
+// the key, the previous id, the request's own previous hint, and the
+// certificate the caller minted and signed for the previous id before
+// submitting, with the agent's facts.
+type ReenrollMachine struct {
+	Key             EnrollKey
+	PreviousMachine string
+	// RequestPrevious is EnrollRequest.previous_machine_id: a hint that
+	// matters only as a mismatch when it names another machine.
+	RequestPrevious string
+	CertDER         []byte
+	Serial          string // ca.SerialHex of the certificate
+	CertNotAfter    time.Time
+	// ReportedHostname is MachineFacts.hostname, compared with the
+	// row's expected hostname.
+	ReportedHostname string
+	// Facts is MachineFacts as protojson, already within the request cap.
+	Facts string
+	Now   time.Time
+}
+
+// EnrollPrevious re-enrolls the token's previous machine in one writer
+// job (02g "Re-enroll"): a request hint naming another machine is
+// [ErrPreviousMismatch] and burns nothing; a deleted previous machine
+// clears the token's previous pointer and is [ErrPreviousGone], so the
+// caller enrolls fresh; a previous machine that is neither REVOKED nor
+// past its certificate lifetime is [ErrNotReenrollable] and burns
+// nothing. Otherwise the token burns and the same machine id returns
+// to ENROLLED with a new serial: the name, labels, expected hostname
+// and drain stay (02g "Revoke, in one transaction": kept on the row),
+// the install, facts and mismatch are refreshed, the version rises by
+// 1 and the row is stamped, with its machine.enroll audit row. The
+// revoked serials stay revoked. A ctx error means the outcome is
+// unknown; a retry finds the replay.
+func EnrollPrevious(ctx context.Context, s *store.Store, m ReenrollMachine) (Enrolled, error) {
+	jctx := context.WithoutCancel(ctx) // see insertIdentity
+	var (
+		out  Enrolled
+		gone bool
+	)
+	err := s.Write(ctx, func(tx *sql.Tx) error {
+		var (
+			previous sql.NullString
+			notAfter int64
+		)
+		err := tx.QueryRowContext(jctx, `SELECT previous_machine, not_after_time
+			FROM enroll_tokens WHERE secret_hash = ?`, m.Key.SecretHash[:]).
+			Scan(&previous, &notAfter)
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrTokenUnknown
+		}
+		if err != nil {
+			return fmt.Errorf("statedb: read enroll token: %w", err)
+		}
+		if !previous.Valid {
+			// Cleared after the machine was deleted: enroll fresh.
+			return ErrPreviousGone
+		}
+		if previous.String != m.PreviousMachine {
+			return ErrPreviousMismatch
+		}
+		if m.RequestPrevious != "" && m.RequestPrevious != previous.String {
+			return ErrPreviousMismatch
+		}
+		var name, expected string
+		err = tx.QueryRowContext(jctx, `SELECT name, expected_hostname FROM machines
+			WHERE machine_id = ?`, previous.String).Scan(&name, &expected)
+		if errors.Is(err, sql.ErrNoRows) {
+			// The job commits the clear (a nil error), so the
+			// caller enrolls fresh; an error would roll it back.
+			if _, err := tx.ExecContext(jctx, `UPDATE enroll_tokens SET previous_machine = NULL
+				WHERE secret_hash = ?`, m.Key.SecretHash[:]); err != nil {
+				return fmt.Errorf("statedb: clear previous machine: %w", err)
+			}
+			gone = true
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("statedb: read previous machine: %w", err)
+		}
+		eligible, err := reenrollable(jctx, tx, previous.String, m.Now)
+		if err != nil {
+			return err
+		}
+		if !eligible {
+			return ErrNotReenrollable
+		}
+		res, err := tx.ExecContext(jctx, `UPDATE enroll_tokens SET used_time = ?
+			WHERE secret_hash = ? AND used_time IS NULL AND not_after_time > ? AND previous_machine = ?`,
+			m.Now.UnixMilli(), m.Key.SecretHash[:], m.Now.UnixMilli(), previous.String)
+		if err != nil {
+			return fmt.Errorf("statedb: burn enroll token: %w", err)
+		}
+		if n, err := res.RowsAffected(); err != nil || n != 1 {
+			if err != nil {
+				return fmt.Errorf("statedb: burn enroll token: %w", err)
+			}
+			c, err := classify(jctx, tx, m.Key, m.Now)
+			if err != nil {
+				return err
+			}
+			if c.Replay == nil {
+				return errors.New("statedb: the enroll token could not be burned")
+			}
+			out = *c.Replay
+			return nil
+		}
+		var tokenID int64
+		if err := tx.QueryRowContext(jctx, `SELECT id FROM enroll_tokens
+			WHERE secret_hash = ?`, m.Key.SecretHash[:]).Scan(&tokenID); err != nil {
+			return fmt.Errorf("statedb: read burned enroll token: %w", err)
+		}
+		mismatch := hostname.Mismatch(expected, m.ReportedHostname)
+		nowMs := m.Now.UnixMilli()
+		st, err := NextStamp(jctx, tx, m.Now)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(jctx, `UPDATE machines SET state = ?, install_id = ?, facts = ?,
+			hostname_mismatch = ?, version = version + 1, update_ms = ?, observed_time = ?, hub_seq = ?
+			WHERE machine_id = ?`,
+			MachineEnrolled, m.Key.InstallID, m.Facts, mismatch, nowMs,
+			st.ObservedTime.UnixMilli(), st.HubSeq, previous.String); err != nil {
+			return fmt.Errorf("statedb: re-enroll machine: %w", err)
+		}
+		if _, err := tx.ExecContext(jctx, `INSERT INTO cert_serials(serial, machine_id, not_after_time, created_time)
+			VALUES (?, ?, ?, ?)`, m.Serial, previous.String, m.CertNotAfter.UnixMilli(), nowMs); err != nil {
+			return fmt.Errorf("statedb: insert cert serial: %w", err)
+		}
+		if _, err := tx.ExecContext(jctx, `INSERT INTO enroll_responses(secret_hash, install_id, csr_key_hash, machine_id,
+			cert, expire_time, created_time) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+			m.Key.SecretHash[:], m.Key.InstallID, m.Key.CSRKeyHash[:], previous.String, m.CertDER,
+			time.UnixMilli(notAfter).Add(ReplayWindow).UnixMilli(), nowMs); err != nil {
+			return fmt.Errorf("statedb: insert enroll response: %w", err)
+		}
+		detail, err := auditDetail(struct {
+			MachineName      string `json:"machine_name"`
+			ExpectedHostname string `json:"expected_hostname"`
+			HostnameMismatch bool   `json:"hostname_mismatch"`
+			EnrollToken      string `json:"enroll_token"`
+		}{name, expected, mismatch, fmt.Sprintf("enroll_tokens/%d", tokenID)})
+		if err != nil {
+			return err
+		}
+		if _, err := AppendAudit(jctx, tx, AuditEntry{
+			Action: ActionEnroll, Target: "machines/" + previous.String,
+			MachineID: previous.String, Detail: detail, Now: m.Now,
+		}); err != nil {
+			return err
+		}
+		out = Enrolled{
+			MachineID: previous.String, CertDER: m.CertDER, MachineName: name,
+			ExpectedHostname: expected, HostnameMismatch: mismatch,
+		}
+		return nil
+	})
+	if err != nil {
+		return Enrolled{}, err
+	}
+	if gone {
+		return Enrolled{}, ErrPreviousGone
+	}
+	return out, nil
 }

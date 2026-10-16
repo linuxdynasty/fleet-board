@@ -123,6 +123,10 @@ func Migrations() []store.Migration {
 		Version: 17,
 		Name:    "owner_config_writes",
 		SQL:     ownerConfigSQL,
+	}, {
+		Version: 18,
+		Name:    "machine_admin_writes",
+		SQL:     machineAdminSQL,
 	}}
 }
 

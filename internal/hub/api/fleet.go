@@ -22,6 +22,7 @@ import (
 	"github.com/linuxdynasty/fleet-board/gen/go/fleet/hub/v1/hubv1connect"
 	typev1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/type/v1"
 	"github.com/linuxdynasty/fleet-board/internal/hub/ca"
+	"github.com/linuxdynasty/fleet-board/internal/hub/outbox"
 	"github.com/linuxdynasty/fleet-board/internal/hub/statedb"
 	"github.com/linuxdynasty/fleet-board/internal/store"
 	"github.com/linuxdynasty/fleet-board/internal/telemetry"
@@ -49,6 +50,20 @@ type FleetOptions struct {
 	// mode DecideApproval and the SETTINGS and ADMIN calls need the local
 	// approval secret as well (ADR 0032).
 	LocalTrusted bool
+	// Revoker stages certificate serials onto the revoked-serials file
+	// and the in-memory set before RevokeMachine's store write (02g
+	// write order). Nil fails RevokeMachine closed; the daemon passes
+	// the hub's revocation list.
+	Revoker Revoker
+	// ByeMachine ends a machine's live Connect stream (true when it
+	// held one). RevokeMachine calls it after commit so a revoked
+	// machine stops receiving commands at once; nil fails the call
+	// closed. The daemon passes the agent listener's stream cut.
+	ByeMachine func(machineID string) bool
+	// OnCommandsClosed takes the outbox rows a revoke closed, for the
+	// outbox service to log and count after commit. Nil skips it. The
+	// daemon passes the agent listener's outbox service.
+	OnCommandsClosed func(ctx context.Context, closed []outbox.Closed)
 }
 
 // Fleet is the hub's FleetService. The caller comes from [PrincipalFrom],
@@ -57,18 +72,21 @@ type FleetOptions struct {
 type Fleet struct {
 	hubv1connect.UnimplementedFleetServiceHandler
 
-	store        *store.Store
-	caDER        []byte
-	fingerprint  string
-	tel          *telemetry.Telemetry
-	now          func() time.Time
-	random       io.Reader
-	stateDir     string
-	localTrusted bool
-	tokens       metric.Int64Counter
-	sessCmds     metric.Int64Counter
-	approvals    metric.Int64Counter
-	repos        metric.Int64Counter
+	store            *store.Store
+	caDER            []byte
+	fingerprint      string
+	tel              *telemetry.Telemetry
+	now              func() time.Time
+	random           io.Reader
+	stateDir         string
+	localTrusted     bool
+	revoker          Revoker
+	byeMachine       func(machineID string) bool
+	onCommandsClosed func(ctx context.Context, closed []outbox.Closed)
+	tokens           metric.Int64Counter
+	sessCmds         metric.Int64Counter
+	approvals        metric.Int64Counter
+	repos            metric.Int64Counter
 }
 
 // NewFleet builds the service.
@@ -76,7 +94,10 @@ func NewFleet(opts FleetOptions) (*Fleet, error) {
 	if opts.Store == nil || len(opts.CACert) == 0 || opts.Telemetry == nil {
 		return nil, errors.New("api: NewFleet needs a store, the CA certificate and telemetry")
 	}
-	f := &Fleet{store: opts.Store, caDER: opts.CACert, tel: opts.Telemetry, now: opts.Now, random: opts.Random}
+	f := &Fleet{
+		store: opts.Store, caDER: opts.CACert, tel: opts.Telemetry, now: opts.Now, random: opts.Random,
+		revoker: opts.Revoker, byeMachine: opts.ByeMachine, onCommandsClosed: opts.OnCommandsClosed,
+	}
 	if f.now == nil {
 		f.now = time.Now
 	}
@@ -169,7 +190,7 @@ func (f *Fleet) CreateEnrollmentToken(ctx context.Context, req *connect.Request[
 			"this request_id was used for a different request", nil, nil))
 	case errors.Is(err, statedb.ErrNotReenrollable):
 		return nil, f.refused(ctx, actor, apiError(connect.CodeFailedPrecondition, typev1.ReasonCode_REASON_CODE_MACHINE_NOT_REENROLLABLE,
-			"re-enrolling a known machine is not built yet", nil, nil))
+			"the previous machine is neither revoked nor past its certificate lifetime", nil, nil))
 	case err != nil:
 		return nil, f.failed(ctx, actor, "store", err)
 	}
