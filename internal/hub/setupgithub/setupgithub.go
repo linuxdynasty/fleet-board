@@ -114,12 +114,17 @@ func Exchange(ctx context.Context, client *http.Client, apiBase, code string) (R
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
 		base+"/app-manifests/"+code+"/conversions", nil)
 	if err != nil {
-		return Result{}, fmt.Errorf("github setup: exchange request: %w", err)
+		// The URL carries the one-time code, so the raw error (which
+		// echoes the URL) must never leave this function.
+		return Result{}, fmt.Errorf("github setup: exchange request (refused)")
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	resp, err := client.Do(req)
 	if err != nil {
-		return Result{}, fmt.Errorf("github setup: exchange: %w", err)
+		// client.Do returns a url.Error holding the full request URL,
+		// whose path carries the still-valid one-time code: name the
+		// step only, never the wrapped error.
+		return Result{}, fmt.Errorf("github setup: exchange (refused)")
 	}
 	defer func() { _ = resp.Body.Close() }()
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
@@ -223,6 +228,43 @@ func cleanLogin(s string) string {
 	return s
 }
 
+// SavedApp is the App identity a first run stored: the re-run path
+// ([LoadSavedApp]) lists installations with it instead of exchanging a
+// new code.
+type SavedApp struct {
+	AppID      int64
+	PrivateKey string
+	ClientID   string
+	PEMPath    string
+	SecretPath string
+}
+
+// LoadSavedApp returns the App identity a first run wrote to the config
+// and the secret files. Errors name the step only, never the path: the
+// caller prints them to stderr.
+func LoadSavedApp(configPath string) (SavedApp, error) {
+	raw, err := os.ReadFile(configPath) //nolint:gosec // G304: path is the operator's own config path; reading it is the job
+	if err != nil {
+		return SavedApp{}, fmt.Errorf("github setup: no saved app (refused)")
+	}
+	cfg, err := config.Parse(raw)
+	if err != nil || cfg.GitHub == nil || cfg.GitHub.AppID <= 0 ||
+		cfg.GitHub.PrivateKeyFile == "" || cfg.GitHub.ClientSecretFile == "" {
+		return SavedApp{}, fmt.Errorf("github setup: no saved app (refused)")
+	}
+	key, err := os.ReadFile(cfg.GitHub.PrivateKeyFile) //nolint:gosec // G304: path comes from the operator's own config file
+	if err != nil || len(key) == 0 {
+		return SavedApp{}, fmt.Errorf("github setup: saved key (refused)")
+	}
+	return SavedApp{
+		AppID:      cfg.GitHub.AppID,
+		PrivateKey: string(key),
+		ClientID:   cfg.GitHub.ClientID,
+		PEMPath:    cfg.GitHub.PrivateKeyFile,
+		SecretPath: cfg.GitHub.ClientSecretFile,
+	}, nil
+}
+
 // WriteSecrets stores the exchanged key material next to fleetd.yaml
 // (02j step 4): github-app.pem and github-client-secret, each mode
 // 0600, created exclusively, never logged. An empty client secret (no
@@ -233,7 +275,7 @@ func WriteSecrets(dir, privateKey, clientSecret string) (pemPath, secretPath str
 		return "", "", fmt.Errorf("github setup: no private key to write")
 	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return "", "", fmt.Errorf("github setup: config dir: %w", err)
+		return "", "", fmt.Errorf("github setup: config dir (refused)")
 	}
 	pemPath = filepath.Join(dir, "github-app.pem")
 	if err := writeExclusive(pemPath, []byte(privateKey)); err != nil {
@@ -248,9 +290,11 @@ func WriteSecrets(dir, privateKey, clientSecret string) (pemPath, secretPath str
 }
 
 func writeExclusive(path string, body []byte) error {
+	// The os error keeps the full file path, which the command prints
+	// to stderr: failures name the step only, never the wrapped error.
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600) //nolint:gosec // G304: path is under the operator's own config dir; the name is fixed
 	if err != nil {
-		return fmt.Errorf("github setup: write file: %w", err)
+		return fmt.Errorf("github setup: write file (refused)")
 	}
 	_, werr := f.Write(body)
 	if werr == nil {
@@ -261,7 +305,7 @@ func writeExclusive(path string, body []byte) error {
 	}
 	if werr != nil {
 		_ = os.Remove(path)
-		return fmt.Errorf("github setup: write file: %w", werr)
+		return fmt.Errorf("github setup: write file (refused)")
 	}
 	return nil
 }
@@ -274,7 +318,7 @@ func writeExclusive(path string, body []byte) error {
 func UpdateConfig(configPath string, appID int64, pemPath, clientID, secretPath string, installationID int64) error {
 	raw, err := os.ReadFile(configPath) //nolint:gosec // G304: path is the operator's own config path (--config, $FLEETD_CONFIG or the default)
 	if err != nil {
-		return fmt.Errorf("github setup: read config: %w", err)
+		return fmt.Errorf("github setup: read config (refused)")
 	}
 	cfg, err := config.Parse(raw)
 	if err != nil {
@@ -298,10 +342,12 @@ func UpdateConfig(configPath string, appID int64, pemPath, clientID, secretPath 
 }
 
 func writeAtomic0600(path string, body []byte) error {
+	// The os errors keep the full file path, which the command prints
+	// to stderr: failures name the step only, never the wrapped error.
 	dir := filepath.Dir(path)
 	tmp, err := os.CreateTemp(dir, ".fleetd.yaml.tmp.*")
 	if err != nil {
-		return fmt.Errorf("github setup: stage config: %w", err)
+		return fmt.Errorf("github setup: stage config (refused)")
 	}
 	tmpName := tmp.Name()
 	_, werr := tmp.Write(body)
@@ -313,15 +359,15 @@ func writeAtomic0600(path string, body []byte) error {
 	}
 	if werr != nil {
 		_ = os.Remove(tmpName)
-		return fmt.Errorf("github setup: stage config: %w", werr)
+		return fmt.Errorf("github setup: stage config (refused)")
 	}
 	if err := os.Chmod(tmpName, 0o600); err != nil {
 		_ = os.Remove(tmpName)
-		return fmt.Errorf("github setup: stage config: %w", err)
+		return fmt.Errorf("github setup: stage config (refused)")
 	}
 	if err := os.Rename(tmpName, path); err != nil {
 		_ = os.Remove(tmpName)
-		return fmt.Errorf("github setup: replace config: %w", err)
+		return fmt.Errorf("github setup: replace config (refused)")
 	}
 	return nil
 }

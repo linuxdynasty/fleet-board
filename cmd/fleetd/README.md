@@ -10,7 +10,7 @@ fleetd enroll-token --machine NAME [--expect-host H] [--ttl 15m] [--label L ...]
 fleetd backup [--encrypt]     # copy state.db into <state_dir>/backups/, with or without fleetd run
 fleetd restore BACKUP [--address A]
                               # replace state.db with a backup; refused while fleetd run is up
-fleetd setup github [--app-name N] [--installation-id ID]
+fleetd setup github [--app-name N] [--org ORG] [--installation-id ID]
                               # connect GitHub through the App manifest flow (writes the github keys)
 fleetd --version              # "fleetd dev", or the release version set with -ldflags -X
 ```
@@ -18,16 +18,24 @@ fleetd --version              # "fleetd dev", or the release version set with -l
 `setup github` binds a one-shot page on 127.0.0.1 and prints its URL:
 confirm the App on GitHub and the redirect comes back with a one-time
 code, which is exchanged once (`POST /app-manifests/{code}/conversions`).
-The private key lands in `github-app.pem` and the client secret in
-`github-client-secret`, both next to `fleetd.yaml`, mode 0600, never
-logged; the `github` keys (`app_id`, `private_key_file`, `client_id`,
-`client_secret_file`, `installation_id`) are added to `fleetd.yaml` and
-nothing secret goes into `state.db`. With exactly one installation it
-writes `installation_id`; with several it lists them for a re-run with
-`--installation-id`; with none it says to install the App first. It
-prints "restart `fleetd` to apply": the file is read at start. The
-flow is in `internal/hub/setupgithub`, tested against recorded GitHub
-responses (a wrong `state`, a used code, the file modes).
+`--org ORG` creates the App under that organization (a private App can
+only be installed on its owning account); without it the App is created
+under the owner's personal account. The private key lands in
+`github-app.pem` and the client secret in `github-client-secret`, both
+next to `fleetd.yaml`, mode 0600, never logged; the `github` keys
+(`app_id`, `private_key_file`, `client_id`, `client_secret_file`,
+`installation_id`) are added to `fleetd.yaml` and nothing secret goes
+into `state.db`. With exactly one installation it writes
+`installation_id`; with several it lists them for a re-run with
+`--installation-id`; with none it says to install the App first. A
+re-run finds the saved App and only lists, selects and saves the
+installation: no browser, no new exchange; a `--installation-id` the
+list does not contain is refused. The callback answers the browser with
+the full confirmation page before the server shuts down. Errors name
+the step only, never a secret, the one-time code or a path. It prints
+"restart `fleetd` to apply": the file is read at start. The flow is in
+`internal/hub/setupgithub`, tested against recorded GitHub responses
+(a wrong `state`, a used code, the file modes).
 
 `backup` prints only the path of the copy on stdout
 (`<state_dir>/backups/manual-<UTC stamp>.db`, mode 0600). It takes no lock, so

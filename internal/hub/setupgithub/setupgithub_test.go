@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -125,6 +126,104 @@ func TestExchangeWritesSecretsAt0600(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, "github-app.pem")); err != nil {
 		t.Errorf("pem is not next to the config dir: %v", err)
+	}
+}
+
+// A network failure during the exchange must not surface the one-time
+// code: http.Client.Do returns a url.Error holding the full request URL,
+// whose path carries the still-valid code.
+func TestExchangeNetworkErrorHidesCode(t *testing.T) {
+	t.Parallel()
+	const code = "secretcode123"
+	broken := &http.Client{Transport: errTransport{err: &url.Error{
+		Op:  "Post",
+		URL: "https://api.github.com/app-manifests/" + code + "/conversions",
+		Err: errors.New("connection refused"),
+	}}}
+	_, err := setupgithub.Exchange(context.Background(), broken, "https://api.github.com", code)
+	if err == nil {
+		t.Fatal("broken transport accepted, want an error")
+	}
+	if strings.Contains(err.Error(), code) {
+		t.Errorf("exchange error leaks the one-time code: %q", err)
+	}
+	var codeErr *setupgithub.CodeError
+	if errors.As(err, &codeErr) {
+		t.Errorf("network failure typed as CodeError: %v", err)
+	}
+}
+
+type errTransport struct{ err error }
+
+func (t errTransport) RoundTrip(*http.Request) (*http.Response, error) {
+	return nil, t.err
+}
+
+// Filesystem failures must name the step only: the raw error keeps the
+// full config or secret-file path, which the command prints to stderr.
+func TestFilesystemFailuresHidePaths(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	if _, _, err := setupgithub.WriteSecrets(dir, "key", "secret"); err != nil {
+		t.Fatalf("WriteSecrets: %v", err)
+	}
+	_, _, err := setupgithub.WriteSecrets(dir, "key", "secret")
+	if err == nil {
+		t.Fatal("second WriteSecrets accepted, want an exclusivity refusal")
+	}
+	if strings.Contains(err.Error(), dir) {
+		t.Errorf("write error leaks the path: %q", err)
+	}
+	missing := filepath.Join(dir, "no-such-dir", "fleetd.yaml")
+	if err := setupgithub.UpdateConfig(missing, 1, "k", "c", "s", 0); err == nil {
+		t.Fatal("UpdateConfig on a missing file accepted, want an error")
+	} else if strings.Contains(err.Error(), missing) {
+		t.Errorf("config error leaks the path: %q", err)
+	}
+}
+
+// A re-run loads the saved App identity instead of exchanging a new
+// code: LoadSavedApp returns what WriteSecrets plus UpdateConfig stored.
+func TestLoadSavedAppRoundTrip(t *testing.T) {
+	t.Parallel()
+	dir, err := os.MkdirTemp("/tmp", "savedapp") //nolint:usetesting // t.TempDir breaks the socket-path check
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	cfgPath := filepath.Join(dir, "fleetd.yaml")
+	base := "state_dir: " + filepath.Join(dir, "state") + "\nlisten: {agent: \"127.0.0.1:0\", api: \"127.0.0.1:0\"}\ndiscovery: {mdns: false}\n"
+	if err := os.WriteFile(cfgPath, []byte(base), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	const pem = "key-body"
+	pemPath, secretPath, err := setupgithub.WriteSecrets(dir, pem, "s")
+	if err != nil {
+		t.Fatalf("WriteSecrets: %v", err)
+	}
+	if err := setupgithub.UpdateConfig(cfgPath, 4321, pemPath, "Iv1.t", secretPath, 0); err != nil {
+		t.Fatalf("UpdateConfig: %v", err)
+	}
+	saved, err := setupgithub.LoadSavedApp(cfgPath)
+	if err != nil {
+		t.Fatalf("LoadSavedApp: %v", err)
+	}
+	if saved.AppID != 4321 || saved.PrivateKey != pem || saved.ClientID != "Iv1.t" ||
+		saved.PEMPath != pemPath || saved.SecretPath != secretPath {
+		t.Errorf("saved app = %+v, want app 4321 with the stored paths", saved)
+	}
+}
+
+func TestLoadSavedAppMissingRefusesWithoutPath(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	missing := filepath.Join(dir, "fleetd.yaml")
+	_, err := setupgithub.LoadSavedApp(missing)
+	if err == nil {
+		t.Fatal("LoadSavedApp on a missing config accepted, want a refusal")
+	}
+	if strings.Contains(err.Error(), missing) {
+		t.Errorf("saved-app error leaks the path: %q", err)
 	}
 }
 
