@@ -50,7 +50,13 @@ no parser until their banner shapes are recorded.
 ## Follow-ups (not this slice)
 
 - The observer call into `BuildPassiveReading`/`PassiveCache` on
-  observed panes (this slice is parse, build and dedup only).
+  observed panes (this slice is parse, build and dedup only). That
+  wiring also owns wrap reassembly: a banner split across a narrow
+  pane's rows must be joined at capture (`capture-pane -J`), never by
+  the parser joining lines blindly.
+- Replacing the spec-recorded banner fixtures with a live near-limit
+  capture when one lands, and only then claiming passive in the
+  conformance table.
 - Wiring into `cmd/fleet-agent` (manager construction, PATH lookup via
   a `proc.LookPath` helper, starting `Run`).
 - `Snapshot.probes[]` from manager state, account-mismatch refusal

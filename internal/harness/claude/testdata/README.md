@@ -36,6 +36,7 @@ starts at the Claude banner.
 
 | File | Screen | How reached |
 |---|---|---|
+| `passive-banner.txt`, `passive-banner-malformed.txt` | the weekly-limit usage banner (01 D3) and its half-read shape | spec-recorded, not a live capture: no probe has ever caught a near-limit banner on demand, so these hold the exact shape 01 D3 records (seen 2026-09-30) with the `Example/Zone` placeholder; a live capture replaces them when one lands, and passive stays out of the conformance table until then |
 | `trust-folder.txt` | "Accessing workspace" trust box, default "No, exit" | start in a new folder |
 | `startup-ready.txt` | banner, "Updated to latest" release line, MCP warning, ready prompt | start in a trusted folder |
 | `ready-auto-mode.txt`, `ready-manual-mode.txt`, `ready-accept-edits-mode.txt`, `ready-plan-mode.txt` | the ready prompt in each permission mode (status line text differs) | Shift+Tab |

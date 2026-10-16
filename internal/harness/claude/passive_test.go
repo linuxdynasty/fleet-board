@@ -19,8 +19,11 @@ func bannerScreen(banner string) string {
 
 func TestParsePassiveBanner(t *testing.T) {
 	t.Parallel()
+	// The fixture names the redaction placeholder zone (testdata/README.md);
+	// the test swaps in a real zone to pin the UTC instant.
+	screen := strings.ReplaceAll(loadScreen(t, "2.1.296", "passive-banner.txt"), "Example/Zone", "Etc/UTC")
 	readTime := time.Date(2026, time.September, 30, 12, 0, 0, 0, time.UTC)
-	got := ParsePassive(bannerScreen("You've used 96% of your weekly limit · resets 10pm (Etc/UTC)"), readTime)
+	got := ParsePassive(screen, readTime)
 	if got.ParseOutcome != typev1.ParseOutcome_PARSE_OUTCOME_OK {
 		t.Fatalf("outcome = %v, want OK", got.ParseOutcome)
 	}
@@ -108,6 +111,24 @@ func TestParsePassiveNoBannerFails(t *testing.T) {
 		if len(got.Buckets) != 0 {
 			t.Errorf("buckets = %d for %q, want none", len(got.Buckets), screen)
 		}
+	}
+}
+
+func TestParsePassiveMalformedFixture(t *testing.T) {
+	t.Parallel()
+	screen := strings.ReplaceAll(loadScreen(t, "2.1.296", "passive-banner-malformed.txt"), "Example/Zone", "Etc/UTC")
+	got := ParsePassive(screen, time.Now())
+	if got.ParseOutcome != typev1.ParseOutcome_PARSE_OUTCOME_PARTIAL {
+		t.Fatalf("outcome = %v, want PARTIAL", got.ParseOutcome)
+	}
+	if len(got.Buckets) != 1 {
+		t.Fatalf("buckets = %d, want 1 unknown bucket", len(got.Buckets))
+	}
+	if got.Buckets[0].GetPercentUsed().GetUnknown() == nil {
+		t.Errorf("percent is a number, want unknown never 140")
+	}
+	if got.Buckets[0].GetResetsTime() != nil {
+		t.Errorf("reset reads %v, want unknown never guessed", got.Buckets[0].GetResetsTime())
 	}
 }
 
