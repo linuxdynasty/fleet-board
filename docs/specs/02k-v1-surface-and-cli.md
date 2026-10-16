@@ -148,3 +148,6 @@ view, the golden CLI output and the contract tests all start from it.
   cannot read the store, and `machines.issue_refused{reason}` for caller
   errors. The reads add no counter: a failure is the hub's own store error,
   diagnosed from this line and the store signals.
+- Logs: `operations.failed{step, err_kind}` when `GetOperation` cannot read
+  the store, and `operations.issue_refused{reason}` for caller errors. The
+  read adds no counter, for the same reason.
