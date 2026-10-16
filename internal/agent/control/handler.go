@@ -199,3 +199,48 @@ func (h interruptHandler) Run(ctx context.Context, r exec.Request) *agentv1.Comm
 func (h interruptHandler) Resume(ctx context.Context, r exec.Request) *agentv1.CommandResult {
 	return h.Run(ctx, r)
 }
+
+// respawnHandler is the exec.Handler for RespawnPane. The wiring row
+// registers one per server the agent serves, next to the session, window,
+// send-keys and interrupt handlers.
+type respawnHandler struct {
+	e *Ensurer
+}
+
+// RespawnHandler returns the Ensurer as the executor's Handler for
+// RespawnPane.
+func (e *Ensurer) RespawnHandler() exec.Handler { return respawnHandler{e: e} }
+
+// Kind is the Command.kind arm's message name.
+func (h respawnHandler) Kind() string { return "RespawnPane" }
+
+// Capabilities are advertised in Hello while the handler is registered.
+func (h respawnHandler) Capabilities() []*typev1.Capability {
+	return capabilitiesFor(h.e.kind)
+}
+
+// Class re-runs the command from the start: re-running the pane's own
+// command is idempotent in effect (02e), so a replayed command_id or a
+// resumed RespawnPane respawns again.
+func (h respawnHandler) Class(*agentv1.Command) exec.Class { return exec.RepeatSafe }
+
+// Run does the command and returns its result. The executor sets the id,
+// the times and the trace, and scrubs the message.
+func (h respawnHandler) Run(ctx context.Context, r exec.Request) *agentv1.CommandResult {
+	cmd, ok := r.Command.GetKind().(*agentv1.Command_RespawnPane)
+	if !ok || cmd.RespawnPane == nil {
+		return &agentv1.CommandResult{
+			Status:  typev1.Status_STATUS_FAILED,
+			Reason:  typev1.ReasonCode_REASON_CODE_INTERNAL,
+			Message: "control: RespawnPane handler got another kind",
+		}
+	}
+	return h.e.RespawnPane(ctx, cmd.RespawnPane)
+}
+
+// Resume re-runs from the start: re-running the pane's own command is
+// idempotent in effect, so there is nothing to continue, only to respawn
+// again.
+func (h respawnHandler) Resume(ctx context.Context, r exec.Request) *agentv1.CommandResult {
+	return h.Run(ctx, r)
+}
