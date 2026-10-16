@@ -29,7 +29,10 @@ import (
 // text, so no tmux version can skew it. Residual race: a server restart
 // between the start-id check and the call could address a reused pane
 // id — the missing -k keeps a live reuse safe, and the start-id check
-// keeps the window to a restart racing the call.
+// keeps the window to a restart racing the call. Follow-up, not
+// silently dropped: the 01f drain rule for F5 (refused while draining
+// except a pane with a registered live goal) needs the goal registry,
+// which this package cannot see yet.
 func (e *Ensurer) RespawnPane(ctx context.Context, cmd *agentv1.RespawnPane) *agentv1.CommandResult {
 	pane := cmd.GetPane()
 	if pane == nil {
