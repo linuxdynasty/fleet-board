@@ -223,8 +223,8 @@ line the owner pastes elsewhere.
    permission set of [ADR 0022](../adr/0022-drift-audit-decisions.md) (read-only,
    repository permissions only; the user authorization settings, with callback
    `<public origin>/auth/github/callback`, only in `authenticated` mode with
-   GitHub sign-in on, never in v1). The page posts to the personal-account
-   endpoint, or to `/organizations/ORG/settings/apps/new` with `--org ORG`:
+   GitHub sign-in on, never in v1). With `--org` the page posts to that
+   organization's manifest endpoint instead of the personal-account one:
    a private App can only be installed on its owning account.
 2. The owner confirms the App on GitHub. GitHub redirects to the listener with a
    one-time `code` and the `state` the command generated; a wrong `state` is
