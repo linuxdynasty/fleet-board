@@ -233,6 +233,12 @@ also filters on `id` (the `.value` string; `in` allowed) and `create_time` and
 | `is_hub` | `status.is_hub` | bool | `=` |
 
 `order_by`: `name`, `ct`, `last_seen_time` (`status.telemetry.last_seen_time`).
+The default `ListMachines` order is display name.
+
+Served so far (row 12 slices): `harness` and `is_hub` filters are refused
+(`FILTER_INVALID`) until their store lands — the hub keeps no per-machine
+harness inventory and no hub-machine link yet. `update_time` filters read as
+`create_time` until `UpdateMachine` (row 13a) can move the version.
 
 | Session (`SESSIONS`, `ListSessions`) | Path | Type | Operators |
 |---|---|---|---|

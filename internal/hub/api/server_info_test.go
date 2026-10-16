@@ -134,8 +134,8 @@ func TestUnbuiltRPCsStayUnimplemented(t *testing.T) {
 	if code, _, _ := detail(t, err); code != connect.CodeUnimplemented {
 		t.Errorf("RedeemInvite code %s, want UNIMPLEMENTED (v3, no row builds it)", code)
 	}
-	_, err = e.client.ListMachines(context.Background(), connect.NewRequest(&hubv1.ListMachinesRequest{}))
+	_, err = e.client.DrainMachine(context.Background(), connect.NewRequest(&hubv1.DrainMachineRequest{}))
 	if code, _, _ := detail(t, err); code != connect.CodeUnimplemented {
-		t.Errorf("ListMachines code %s, want UNIMPLEMENTED (row 12, later slice)", code)
+		t.Errorf("DrainMachine code %s, want UNIMPLEMENTED (row 24, not landed)", code)
 	}
 }

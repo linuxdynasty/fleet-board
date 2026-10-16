@@ -279,6 +279,8 @@ message Machine {
 }
 
 // ListMachinesRequest. Filter and order_by names: 02c-hub-watch-and-filters.md.
+// The default order is display name. Harness and is_hub filters are refused
+// (FILTER_INVALID): the hub stores neither yet.
 message ListMachinesRequest {
   int32 page_size = 1;
   string page_token = 2;

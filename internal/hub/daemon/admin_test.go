@@ -7,16 +7,19 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"io/fs"
 	"net"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"connectrpc.com/connect"
 
 	hubv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/hub/v1"
+	typev1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/type/v1"
 	"github.com/linuxdynasty/fleet-board/internal/hub/api"
 	"github.com/linuxdynasty/fleet-board/internal/hub/config"
 	"github.com/linuxdynasty/fleet-board/internal/hub/daemon"
@@ -247,5 +250,82 @@ func TestANonSocketAtTheAdminPathIsRefusedAndKept(t *testing.T) {
 	}
 	if b, err := os.ReadFile(sock); err != nil || string(b) != "not a socket" { //nolint:gosec // G304: sock is admin.sock in this test's own temp state folder
 		t.Errorf("the file at admin.sock was changed: %q, %v", b, err)
+	}
+}
+
+// enrollSocketMachine enrolls one machine into the hub's store before it
+// starts, so the admin socket test below reads a real row over the real
+// socket.
+func enrollSocketMachine(t *testing.T, state string) {
+	t.Helper()
+	now := time.Now().Truncate(time.Millisecond)
+	secret := sha256.Sum256([]byte{7, 1, 2, 3})
+	s, err := statedb.Open(context.Background(), state, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+	tok := statedb.EnrollToken{
+		SecretHash: secret, MachineName: "laptop", ExpectedHostname: "laptop.lan",
+		Labels: []string{"gpu"}, NotAfter: now.Add(24 * time.Hour), Created: now,
+		Principal: "local:root", RequestID: "req-sock-1",
+		RequestHash: sha256.Sum256([]byte{7}),
+	}
+	if err := statedb.InsertEnrollToken(context.Background(), s, tok); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := statedb.Enroll(context.Background(), s, statedb.NewMachine{
+		Key: statedb.EnrollKey{
+			SecretHash: secret, InstallID: "install-sock-1",
+			CSRKeyHash: sha256.Sum256([]byte{7, 4}),
+		},
+		MachineID: "m-sock-1", CertDER: []byte("cert-sock-1"), Serial: "aa07",
+		CertNotAfter: now.Add(90 * 24 * time.Hour), ReportedHostname: "laptop.lan",
+		Facts: `{"hostname":"laptop.lan","os":"linux","username":"ada"}`, Now: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// The running hub serves the machine reads on the admin socket: the row
+// enrolled before start lists and reads back, and an unknown id is NOT_FOUND.
+func TestTheAdminSocketServesMachines(t *testing.T) {
+	t.Parallel()
+	h := newHub(t, "")
+	h.init(t)
+	enrollSocketMachine(t, h.state)
+	h.start(t, h.options())
+	sock := config.AdminSocketPath(h.state)
+	client := api.AdminClient(sock)
+
+	list, err := client.ListMachines(context.Background(), connect.NewRequest(&hubv1.ListMachinesRequest{}))
+	if err != nil {
+		t.Fatalf("ListMachines: %v", err)
+	}
+	if len(list.Msg.GetMachines()) != 1 {
+		t.Fatalf("machines %d, want the 1 enrolled row", len(list.Msg.GetMachines()))
+	}
+	got := list.Msg.GetMachines()[0]
+	if got.GetId().GetValue() != "m-sock-1" || got.GetSpec().GetDisplayName() != "laptop" {
+		t.Errorf("machine %v, want m-sock-1/laptop", got.GetId())
+	}
+
+	read, err := client.GetMachine(context.Background(), connect.NewRequest(
+		&hubv1.GetMachineRequest{Id: &typev1.MachineId{Value: "m-sock-1"}}))
+	if err != nil {
+		t.Fatalf("GetMachine: %v", err)
+	}
+	if read.Msg.GetMachine().GetStatus().GetHostname() != "laptop.lan" {
+		t.Errorf("hostname %q, want laptop.lan", read.Msg.GetMachine().GetStatus().GetHostname())
+	}
+
+	if _, err := client.GetMachine(context.Background(), connect.NewRequest(
+		&hubv1.GetMachineRequest{Id: &typev1.MachineId{Value: "m-ghost"}})); err == nil {
+		t.Error("GetMachine for an unknown id succeeded, want NOT_FOUND")
+	} else {
+		var ce *connect.Error
+		if !errors.As(err, &ce) || ce.Code() != connect.CodeNotFound {
+			t.Errorf("unknown id: %v, want NOT_FOUND", err)
+		}
 	}
 }

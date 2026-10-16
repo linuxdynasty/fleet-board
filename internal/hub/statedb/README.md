@@ -374,6 +374,13 @@ m, err := statedb.ReadSnapshot(ctx, s, id)       // read pool: what the Snapshot
 `MachineSnapshot` (`ErrMachineUnknown` without a row); conntest's `Machine`
 uses it.
 
+- **The machine reads** (plan row 12): `MachineRow` is one `machines` row as
+  stored (identity, labels, state, facts, times, version, stamp, the
+  Snapshot's resources, policy and event counters); `ReadMachineRow` reads
+  one by id (`ErrMachineUnknown` without a row) and `ListMachineRows` reads
+  them all, both on the read pool. The hub API filters, sorts and pages over
+  the list in memory; the proto assembly lives with the API.
+
 Tests: `CGO_ENABLED=0 go test ./internal/hub/statedb/`. They use real files:
 modes, a refused second create with the file hash unchanged, an injected
 failure before the link leaving an empty folder, the one-row constraint on

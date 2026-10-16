@@ -144,3 +144,7 @@ view, the golden CLI output and the contract tests all start from it.
 - Logs: `server_info.failed{step, err_kind}` when `GetServerInfo` cannot read
   the hub_identity row. The read adds no counter: a failure is the hub's own
   store error, diagnosed from this line and the store signals.
+- Logs: `machines.failed{step, err_kind}` when `ListMachines` or `GetMachine`
+  cannot read the store, and `machines.issue_refused{reason}` for caller
+  errors. The reads add no counter: a failure is the hub's own store error,
+  diagnosed from this line and the store signals.
