@@ -71,6 +71,29 @@ func TestTriageRaiseLevelsMatch05b(t *testing.T) {
 	}
 }
 
+func TestTriageOpenItemStaysUntilRecovery(t *testing.T) {
+	t.Parallel()
+	// A CRITICAL-only signal that falls back to WARNING keeps its item;
+	// losing the reading keeps it too. Only OK retires, after the
+	// Evaluator's five-minute return-to-OK delay.
+	kind := hubv1.SystemSignalKind_SYSTEM_SIGNAL_KIND_OUTBOX_BACKLOG
+	if ShouldRaise(kind, hubv1.SystemState_SYSTEM_STATE_WARNING) {
+		t.Errorf("WARNING on a CRITICAL-only signal should not open, to keep the open/keep split clear")
+	}
+	for _, keep := range []hubv1.SystemState{
+		hubv1.SystemState_SYSTEM_STATE_WARNING,
+		hubv1.SystemState_SYSTEM_STATE_CRITICAL,
+		hubv1.SystemState_SYSTEM_STATE_UNKNOWN,
+	} {
+		if !ShouldKeep(keep) {
+			t.Errorf("ShouldKeep(%v) = false, want true", keep)
+		}
+	}
+	if ShouldKeep(hubv1.SystemState_SYSTEM_STATE_OK) {
+		t.Errorf("ShouldKeep(OK) = true, want false")
+	}
+}
+
 func TestTriageSeverityFollowsState(t *testing.T) {
 	t.Parallel()
 	cases := []struct {

@@ -49,14 +49,32 @@ func RaiseAt(kind hubv1.SystemSignalKind) hubv1.SystemState {
 	}
 }
 
-// ShouldRaise reports whether state opens (or keeps) the signal's SYSTEM
-// item: at or above RaiseAt. OK and UNKNOWN never raise; UNKNOWN (no reading
-// yet) is shown as unknown and raises nothing.
+// ShouldRaise reports whether state opens the signal's SYSTEM item: at or
+// above RaiseAt. OK and UNKNOWN never open; UNKNOWN (no reading yet) is
+// shown as unknown and opens nothing.
 func ShouldRaise(kind hubv1.SystemSignalKind, state hubv1.SystemState) bool {
 	switch state {
 	case hubv1.SystemState_SYSTEM_STATE_WARNING,
 		hubv1.SystemState_SYSTEM_STATE_CRITICAL:
 		return state >= RaiseAt(kind)
+	default:
+		return false
+	}
+}
+
+// ShouldKeep reports whether an open SYSTEM item stays open. Any WARNING,
+// CRITICAL or UNKNOWN keeps it; only OK retires it, and the Evaluator's
+// five-minute return-to-OK delay decides when OK counts (05b section 8,
+// Hysteresis; 03d: the item retires when the signal returns to OK). A
+// CRITICAL-only signal that falls back to WARNING keeps its item with the
+// severity moved in place, and a signal that loses its reading keeps its
+// item instead of retiring unknown.
+func ShouldKeep(state hubv1.SystemState) bool {
+	switch state {
+	case hubv1.SystemState_SYSTEM_STATE_WARNING,
+		hubv1.SystemState_SYSTEM_STATE_CRITICAL,
+		hubv1.SystemState_SYSTEM_STATE_UNKNOWN:
+		return true
 	default:
 		return false
 	}

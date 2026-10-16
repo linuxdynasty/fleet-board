@@ -7,12 +7,14 @@ and the DISK_FREE clear level. `New` plus `Evaluator.Update` judges one
 signal per evaluation: the worst measure's state, then the hysteresis (two
 consecutive worse evaluations to leave OK, five minutes in OK to return).
 `Overall` folds signal states into the SystemStatus overall (UNKNOWN does
-not count). `Fingerprint`, `RaiseAt`/`ShouldRaise` and `SeverityFor` map one
-verdict to its SYSTEM triage item: the `system:<signal>:<subject>` dedupe
-key, the 05b "Item raised at" level, and the severity (DISK_FREE and
-WRITER_BATCH_LAG at CRITICAL raise SEVERITY_CRITICAL since they can lose
-work). It is pure: no state beyond the trackers, no database, no
-telemetry of its own.
+not count). `Fingerprint`, `RaiseAt`/`ShouldRaise`, `ShouldKeep` and
+`SeverityFor` map one verdict to its SYSTEM triage item: the
+`system:<signal>:<subject>` dedupe key, the 05b "Item raised at" opening
+level, the keep rule (an open item stays through WARNING, CRITICAL and
+UNKNOWN and retires only on OK after the five-minute return delay), and the
+severity (DISK_FREE and WRITER_BATCH_LAG at CRITICAL raise
+SEVERITY_CRITICAL since they can lose work). It is pure: no state beyond
+the trackers, no database, no telemetry of its own.
 
 What it applies, in order: UNKNOWN when MAIN has no value (no reading yet,
 a source not enabled, LOG_STORE_USAGE before logs.db exists — never OK,
