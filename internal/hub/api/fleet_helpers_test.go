@@ -158,7 +158,7 @@ func newFleetEnv(t *testing.T, who *typev1.Principal, opts ...envOpt) *fleetEnv 
 	t.Cleanup(func() { _ = e.st.Close() })
 	fleet, err := api.NewFleet(api.FleetOptions{
 		Store: e.st, CACert: e.caDER, Telemetry: e.tel, Now: now,
-		StateDir: e.dir, LocalTrusted: local,
+		StateDir: e.dir, LocalTrusted: local, HubInstanceID: testInstanceID,
 	})
 	if err != nil {
 		t.Fatal(err)

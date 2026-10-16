@@ -5,14 +5,15 @@ The hub's HTTP API ([02b](../../../docs/specs/02b-hub-api.md),
 Today it serves `/metrics` on the API listener, behind the Host and Origin
 checks, and `FleetService` with `CreateEnrollmentToken`, the watched-repo
 writes (`CreateRepo`, `UpdateRepo`, `DeleteRepo`), the machine admin
-writes (`UpdateMachine`, `RevokeMachine`, `DeleteMachine`) and the
-hub-state triage writes (`SnoozeTriageItem`, `DismissTriageItem`) on the
+writes (`UpdateMachine`, `RevokeMachine`, `DeleteMachine`), the
+hub-state triage writes (`SnoozeTriageItem`, `DismissTriageItem`),
+the session-control and approvals calls, and `GetServerInfo` on the
 local admin socket.
 
 ```go
 srv := api.NewServer(tel, "api", boundPort) // api.Handler plus timeouts and the JSON ErrorLog
 
-fleet, err := api.NewFleet(api.FleetOptions{Store: st, CACert: id.CACert, Telemetry: tel})
+fleet, err := api.NewFleet(api.FleetOptions{Store: st, CACert: id.CACert, Telemetry: tel, HubInstanceID: instanceID})
 ln, srv := api.NewAdmin(unixListener, api.AdminOptions{Fleet: fleet, Telemetry: tel, UID: uid})
 err = srv.Serve(ln)
 
@@ -47,11 +48,18 @@ own error lines are debug-level `http.server_error` events, not stderr text.
 
 `Fleet` embeds the generated `UnimplementedFleetServiceHandler`, so every
 method but `CreateEnrollmentToken`, the watched-repo writes, the machine
-admin writes and the hub-state triage writes answers `unimplemented`.
-`Handler()` is its Connect route
-(requests capped at 1 MiB), ready for a later row to mount on the API
-listener. The caller is the `Principal` the server put in the context
+admin writes, the hub-state triage writes, the session-control and
+approvals calls, and `GetServerInfo` answers `unimplemented`
+([02k](../../../docs/specs/02k-v1-surface-and-cli.md)).
+`Handler()` is its Connect route (requests capped at 1 MiB), ready for a
+later row to mount on the API listener. The caller is the `Principal`
+the server put in the context
 (`WithPrincipal`); the handler never reads it from the request.
+
+`GetServerInfo` needs no scope: it answers the API and hub versions, the
+`fleet_id` and `hub_instance_id`, the server time, the (still empty) feature
+list, the auth mode, and the caller with its 02d scopes. A store that cannot
+return the hub identity is `INTERNAL`, logged as `server_info.failed`.
 
 `CreateEnrollmentToken` needs `ADMIN` (02d). Until plan row 12 brings scopes,
 only a `LOCAL_USER` principal (the admin socket) holds it: no principal is

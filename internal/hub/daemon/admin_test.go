@@ -167,6 +167,47 @@ func TestAnInjectedOtherUserIsClosedUnservedByRun(t *testing.T) {
 	}
 }
 
+// The running hub answers GetServerInfo on the admin socket with its own
+// identity: the fleet_id from hub_identity and the agent listener's
+// hub_instance_id (one bindAdmin call wires both, and an empty id would
+// have refused the start). Two reads in one run agree.
+func TestTheAdminSocketServesServerInfo(t *testing.T) {
+	t.Parallel()
+	h := newHub(t, "")
+	h.init(t)
+	id := h.storedIdentity(t)
+	r := h.start(t, h.options())
+	sock := config.AdminSocketPath(h.state)
+	first, err := api.AdminClient(sock).GetServerInfo(context.Background(), connect.NewRequest(&hubv1.GetServerInfoRequest{}))
+	if err != nil {
+		t.Fatalf("GetServerInfo: %v", err)
+	}
+	msg := first.Msg
+	if msg.GetFleetId() != id.FleetID {
+		t.Errorf("fleet_id %q, want the hub_identity row %q", msg.GetFleetId(), id.FleetID)
+	}
+	if msg.GetHubInstanceId() == "" {
+		t.Error("hub_instance_id is empty, want the agent listener's id")
+	}
+	if msg.GetApiVersion() != 1 {
+		t.Errorf("api_version %d, want 1", msg.GetApiVersion())
+	}
+	if msg.GetAuthMode() != hubv1.AuthMode_AUTH_MODE_LOCAL_TRUSTED {
+		t.Errorf("auth_mode %s, want LOCAL_TRUSTED", msg.GetAuthMode())
+	}
+	if !strings.HasPrefix(msg.GetCaller().GetId().GetValue(), "local:") {
+		t.Errorf("caller %v, want the local socket peer", msg.GetCaller())
+	}
+	second, err := api.AdminClient(sock).GetServerInfo(context.Background(), connect.NewRequest(&hubv1.GetServerInfoRequest{}))
+	if err != nil {
+		t.Fatalf("second GetServerInfo: %v", err)
+	}
+	if second.Msg.GetHubInstanceId() != msg.GetHubInstanceId() {
+		t.Error("hub_instance_id changed within one run")
+	}
+	r.stop(t)
+}
+
 // A hub killed with SIGKILL leaves admin.sock behind with no listener; the
 // next run, holding fleetd.lock, removes it and binds a fresh one.
 func TestALeftoverSocketDoesNotBlockTheNextStart(t *testing.T) {

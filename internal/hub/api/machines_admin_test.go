@@ -124,6 +124,7 @@ func newMachineEnv(t *testing.T, who *typev1.Principal, adm *testMachineAdmin) *
 		Store: e.st, CACert: e.caDER, Telemetry: e.tel, Now: now,
 		StateDir: e.dir, LocalTrusted: local,
 		Revoker: adm.revoker, ByeMachine: adm.bye, OnCommandsClosed: adm.onClosed,
+		HubInstanceID: testInstanceID,
 	})
 	if err != nil {
 		t.Fatal(err)

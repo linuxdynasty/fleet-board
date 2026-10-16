@@ -166,6 +166,13 @@ func (s *Server) ByeMachine(machineID string) bool {
 	return s.connect.streams.cancel(machineID, agentv1.ByeReason_BYE_REASON_REVOKED, statedb.EndRevoked)
 }
 
+// InstanceID is the hub_instance_id this process sends on the agent wire
+// (HelloAck): random per process start, shared with GetServerInfo so a new
+// process id invalidates every Watch resume token (02k).
+func (s *Server) InstanceID() string {
+	return s.connect.instanceID
+}
+
 // FlushAudit writes the machine.enroll_failed summary of the minute in
 // progress, if any refusal in it was suppressed, and waits for the commit
 // (at most 5 s). It also stops the command sender and waits, within ctx,

@@ -138,3 +138,9 @@ PRs 12 to 15, 28 and 29 test against one **seed package**, built in PR 12: it re
 recorded agent stream (captured from the PR 5 fake agent) into a real hub store
 under `testdata/`, and is versioned with the protos. The Playwright smoke per
 view, the golden CLI output and the contract tests all start from it.
+
+## Telemetry
+
+- Logs: `server_info.failed{step, err_kind}` when `GetServerInfo` cannot read
+  the hub_identity row. The read adds no counter: a failure is the hub's own
+  store error, diagnosed from this line and the store signals.

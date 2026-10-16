@@ -32,7 +32,9 @@ type machineAdmin struct {
 // it), so it is removed first; anything else at that path is refused and
 // left alone. The new socket is chmod 0600 at once, and closing the
 // listener removes it.
-func bindAdmin(cfg *config.Config, opts Options, st *store.Store, id statedb.Identity, adm machineAdmin,
+// instanceID is the agent listener's hub_instance_id, reported by
+// GetServerInfo so a new process id invalidates every Watch resume token.
+func bindAdmin(cfg *config.Config, opts Options, st *store.Store, id statedb.Identity, adm machineAdmin, instanceID string,
 	s *session,
 ) (listener, error) {
 	path := config.AdminSocketPath(cfg.StateDir)
@@ -54,6 +56,7 @@ func bindAdmin(cfg *config.Config, opts Options, st *store.Store, id statedb.Ide
 		Store: st, CACert: id.CACert, Telemetry: s.tel, Now: opts.Now,
 		StateDir: cfg.StateDir, LocalTrusted: cfg.Mode == "local_trusted",
 		Revoker: adm.revoked, ByeMachine: adm.bye, OnCommandsClosed: adm.closed,
+		HubInstanceID: instanceID,
 	})
 	if err != nil {
 		return listener{}, errors.Join(err, ln.Close())

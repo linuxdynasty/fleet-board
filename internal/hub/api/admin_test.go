@@ -66,7 +66,7 @@ func serveAdmin(t *testing.T, e *fleetEnv, peer api.PeerUID) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	fleet, err := api.NewFleet(api.FleetOptions{Store: e.st, CACert: e.caDER, Telemetry: e.tel})
+	fleet, err := api.NewFleet(api.FleetOptions{Store: e.st, CACert: e.caDER, Telemetry: e.tel, HubInstanceID: testInstanceID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,7 +96,7 @@ func TestTheAdminSocketCutsOffAStalledRequest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	fleet, err := api.NewFleet(api.FleetOptions{Store: e.st, CACert: e.caDER, Telemetry: e.tel})
+	fleet, err := api.NewFleet(api.FleetOptions{Store: e.st, CACert: e.caDER, Telemetry: e.tel, HubInstanceID: testInstanceID})
 	if err != nil {
 		t.Fatal(err)
 	}
