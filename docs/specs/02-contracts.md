@@ -217,7 +217,9 @@ epoch); `seq` greater than the last applied for that epoch (else
 `REJECTED_BY_POLICY` / `SEQ_REPLAYED`); `requires` capability advertised (else `UNSUPPORTED` with
 `missing_capability`); local policy and effective settings (else
 `REJECTED_BY_POLICY`); `requested_by.role` sufficient for the kind or
-harness command class (else `REJECTED_BY_POLICY` / `ROLE_INSUFFICIENT`);
+harness command class (else `REJECTED_BY_POLICY` / `ROLE_INSUFFICIENT`); for
+`KillWindow` the row comes from the fleet's tags read live, so a window the
+tags no longer mark reads the developer's row ([02g](02g-agent-security.md) legend);
 local approval if required (a `CommandProgress` in state
 `AWAITING_LOCAL_CONFIRM`, then the one final result, or `LOCAL_CONFIRM_TIMEOUT`).
 A refusal for `EXPIRED`, `UNSUPPORTED`, `REJECTED_BY_POLICY` (`RATE_LIMITED`
