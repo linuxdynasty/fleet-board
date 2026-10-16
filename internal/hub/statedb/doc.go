@@ -118,6 +118,18 @@
 // check; a stale expected_version is a [VersionStale]; a past wake time
 // is [ErrTriagePastUntil], checked after the replay lookup.
 //
+// Plan row 13a (issue #48) adds the config import (config_import_requests
+// migration) and the pending machines (pending_machines migration):
+// [ApplyConfigImport] applies a verified plan in one writer transaction
+// (the replay check, every repo, machine and pending op, the config.import
+// audit row and the idempotency record, or nothing). A machine op carries
+// the baseline version ([ListMachineIdentities] reads it) and the apply
+// refuses a machine an owner write moved since the dry run
+// ([ErrImportStale]). [ListPendingMachines] reads the kept entries;
+// enroll consumes the matching one (merging its labels, draining the
+// machine, storing its values as the layer), a rename onto a kept name
+// leaves the shadow the next import heals.
+//
 // Plan row 11 adds the provider mirrors (provider_sync_mirrors migration):
 // work_items and change_requests keyed canonically with the hub's verdicts
 // beside the provider shape, sync_cursors and rate_limit_state per page

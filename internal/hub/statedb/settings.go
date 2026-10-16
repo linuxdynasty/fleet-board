@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/linuxdynasty/fleet-board/internal/store"
 )
@@ -28,6 +29,77 @@ const settingsLayersSQL = `CREATE TABLE settings_layers(
 // FleetScope is the scope key of the fleet default layer, the only
 // writable settings scope in this slice.
 const FleetScope = "fleet"
+
+// MachineScopeKey is the settings_layers scope of one machine's layer
+// (config.proto: "the machine/<id> settings layer"). Import and enroll
+// write these rows; group layers and the resolve that reads machine
+// layers follow with their management.
+func MachineScopeKey(machineID string) string { return "machine/" + machineID }
+
+// ReadMachineLayer reads the SettingsSpec protojson of one machine's
+// layer (found is false when the machine has none).
+func ReadMachineLayer(ctx context.Context, s *store.Store, machineID string) (spec []byte, found bool, err error) {
+	err = s.Read(ctx, func(tx *sql.Tx) error {
+		var raw string
+		err := tx.QueryRowContext(ctx, `SELECT spec_json FROM settings_layers WHERE scope = ?`,
+			MachineScopeKey(machineID)).Scan(&raw)
+		switch {
+		case errors.Is(err, sql.ErrNoRows):
+			return nil
+		case err != nil:
+			return fmt.Errorf("statedb: read machine layer: %w", err)
+		}
+		spec, found = []byte(raw), true
+		return nil
+	})
+	if err != nil {
+		return nil, false, err
+	}
+	return spec, found, nil
+}
+
+// ListMachineLayerSpecs reads every machine layer's SettingsSpec
+// protojson by machine id, for the import baseline and the export.
+func ListMachineLayerSpecs(ctx context.Context, s *store.Store) (map[string][]byte, error) {
+	out := map[string][]byte{}
+	err := s.Read(ctx, func(tx *sql.Tx) error {
+		rows, err := tx.QueryContext(ctx, `SELECT scope, spec_json FROM settings_layers
+			WHERE scope LIKE 'machine/%' ORDER BY scope`)
+		if err != nil {
+			return fmt.Errorf("statedb: list machine layers: %w", err)
+		}
+		defer func() { _ = rows.Close() }()
+		for rows.Next() {
+			var scope, raw string
+			if err := rows.Scan(&scope, &raw); err != nil {
+				return fmt.Errorf("statedb: list machine layers: %w", err)
+			}
+			out[scope[len("machine/"):]] = []byte(raw)
+		}
+		return rows.Err()
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// upsertMachineLayerTx replaces one machine's layer, created at
+// version 1 when the machine never had one. It runs inside the
+// import's or the enroll's writer transaction.
+func upsertMachineLayerTx(ctx context.Context, tx *sql.Tx, machineID string, spec []byte,
+	now time.Time, st Stamp,
+) error {
+	nowMs := now.UnixMilli()
+	if _, err := tx.ExecContext(ctx, `INSERT INTO settings_layers(scope, spec_json,
+		version, create_ms, update_ms, hub_seq) VALUES (?, ?, 1, ?, ?, ?)
+		ON CONFLICT (scope) DO UPDATE SET spec_json = excluded.spec_json,
+		version = version + 1, update_ms = excluded.update_ms, hub_seq = excluded.hub_seq`,
+		MachineScopeKey(machineID), string(spec), nowMs, nowMs, st.HubSeq); err != nil {
+		return fmt.Errorf("statedb: upsert machine layer: %w", err)
+	}
+	return nil
+}
 
 // UpdateSettingsOp is a masked spec rewrite of the fleet layer at
 // ExpectedVersion; 0 skips the check (02b "Versions and ETags"). A

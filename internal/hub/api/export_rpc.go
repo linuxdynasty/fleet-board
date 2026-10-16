@@ -90,7 +90,10 @@ func exportAccounts(rows []statedb.AccountRow) ([]*hubv1.AccountConfig, error) {
 // rendering of this message, and it holds no secrets and no ids. It is
 // a read ([SCOPE READ] in service.proto, 02d): the caller needs READ
 // but no request id and no local secret. Exporting then importing (dry
-// run) plans nothing to do: every exported section diffs to unchanged.
+// run) plans nothing to do: every exported section diffs to unchanged,
+// machines included (enrolled entries carry their layer's values, kept
+// entries theirs; a kept row shadowing an enrolled name folds into one
+// entry whose re-import heals the pair).
 func (f *Fleet) ExportConfig(ctx context.Context, req *connect.Request[hubv1.ExportConfigRequest],
 ) (*connect.Response[hubv1.ExportConfigResponse], error) {
 	who, err := authorizeRead(ctx)
@@ -137,15 +140,20 @@ func (f *Fleet) ExportConfig(ctx context.Context, req *connect.Request[hubv1.Exp
 	if err != nil {
 		return nil, f.exportFailed(ctx, actor, "decode")
 	}
+	machines, err := exportMachines(ctx, f.store)
+	if err != nil {
+		return nil, f.exportFailed(ctx, actor, "decode")
+	}
 	f.countConfig(ctx, opExport, "ok")
 	f.tel.Logger.InfoContext(ctx, "config.exported",
 		"repos", len(repos), "accounts", len(accounts),
-		"integrations", len(integrations), "actor", actor)
+		"integrations", len(integrations), "machines", len(machines), "actor", actor)
 	return connect.NewResponse(&hubv1.ExportConfigResponse{
 		Config: &hubv1.FleetConfig{
 			FormatVersion: exportFormatVersion,
 			Hub:           hub, FleetValues: fleetValues,
 			Repos: repos, Integrations: integrations, Accounts: accounts,
+			Machines: machines,
 		},
 		ExportTime: timestamppb.New(now),
 	}), nil

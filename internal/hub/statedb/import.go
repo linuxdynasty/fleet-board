@@ -59,21 +59,65 @@ type ImportRepoOp struct {
 	ExpectedVersion uint64
 }
 
-// ErrImportStale is a repo rewritten after the import plan: the apply
-// aborts with nothing written, and the caller runs a dry run again.
+// ErrImportStale is a repo or machine rewritten after the import plan:
+// the apply aborts with nothing written, and the caller runs a dry run
+// again.
 var ErrImportStale = errors.New("statedb: the repo changed since the import plan")
 
-// ConfigImport applies a verified import plan in one writer transaction:
-// every repo op lands and the config.import audit row with it, or nothing
-// does. PlanHash, Created and Updated go in the audit detail; Response is
+// ImportMachineOp is one enrolled machine's write of a verified import
+// plan: the entry's labels replace the machine's (nil leaves them) and
+// the entry's values replace the machine's settings layer (nil leaves
+// it; import never deletes what the document does not name). The drain
+// flag is never touched: import drains no enrolled machine. DropPending
+// deletes a kept row shadowing the name (only a rename can leave one)
+// in the same transaction.
+type ImportMachineOp struct {
+	MachineID string
+	// Name is the display name the plan matched: the apply verifies the
+	// machine still holds it, so a rename since the dry run aborts the
+	// whole apply instead of labelling the wrong row.
+	Name string
+	// ExpectedVersion is the machine's version at plan time: the apply
+	// verifies it still holds, so an owner write since the dry run
+	// (UpdateMachine, revoke, re-enroll) aborts the whole apply instead
+	// of losing the concurrent change. Heartbeats never bump the
+	// version, so they never trip it.
+	ExpectedVersion uint64
+	Labels          []string
+	// Layer is the SettingsSpec as protojson, nil to leave the layer.
+	Layer       []byte
+	DropPending string
+}
+
+// ImportPendingOp is one machine entry of a verified import plan kept
+// for a name no machine has: the labels with the settings layer's
+// values (a SettingsSpec as protojson with the scope unset), applied
+// when a machine enrolls under the name.
+type ImportPendingOp struct {
+	Name   string
+	Labels []string
+	// Layer is the SettingsSpec as protojson with the scope unset.
+	Layer []byte
+}
+
+// ConfigImport applies a verified import plan in one writer
+// transaction: every repo, machine and pending op lands and the
+// config.import audit row with it, or nothing does. PlanHash, Created,
+// Updated, Machines and Pending go in the audit detail; Response is
 // the deterministic ImportConfigResponse bytes kept for idempotent replay.
 type ConfigImport struct {
 	ImportWrite
 	PlanHash string
 	Created  int
 	Updated  int
+	Machines int
+	Pending  int
 	Ops      []ImportRepoOp
-	Response []byte
+	// MachineOps relabels enrolled machines and replaces their layers.
+	MachineOps []ImportMachineOp
+	// PendingOps keeps entries for names no machine has.
+	PendingOps []ImportPendingOp
+	Response   []byte
 }
 
 // RepoSpecRow is one watched repo for import diffing, in host/path order.
@@ -213,13 +257,15 @@ func insertImportRepo(ctx context.Context, tx *sql.Tx, now time.Time, st Stamp, 
 
 // ApplyConfigImport applies a verified import plan in one writer
 // transaction. In order: a replayed request_id returns the stored response
-// ([ErrRequestConflict] on another body); otherwise every repo op is
-// applied (a repo created since the dry run is [ErrRepoExists], one deleted
-// since is [ErrRepoUnknown]), stamped, with one config.import audit row
-// (target config) and the idempotency record. Nothing is written on any
-// error. The unique key on (principal, request_id) backs the replay check
-// up. A row past the 24 h window is dropped here, with a bounded sweep of
-// its peers, and its key is free again.
+// ([ErrRequestConflict] on another body); otherwise every repo, machine
+// and pending op is applied (a repo created since the dry run is
+// [ErrRepoExists], one deleted since is [ErrRepoUnknown]; a machine
+// renamed, deleted or rewritten since is [ErrImportStale]), stamped, with
+// one config.import
+// audit row (target config) and the idempotency record. Nothing is
+// written on any error. The unique key on (principal, request_id) backs
+// the replay check up. A row past the 24 h window is dropped here, with
+// a bounded sweep of its peers, and its key is free again.
 func ApplyConfigImport(ctx context.Context, s *store.Store, in ConfigImport) (resp []byte, replay bool, err error) {
 	jctx := context.WithoutCancel(ctx) // see insertIdentity
 	err = s.Write(ctx, func(tx *sql.Tx) error {
@@ -249,11 +295,73 @@ func ApplyConfigImport(ctx context.Context, s *store.Store, in ConfigImport) (re
 				return err
 			}
 		}
+		for _, op := range in.MachineOps {
+			st, err := NextStamp(jctx, tx, in.Now)
+			if err != nil {
+				return err
+			}
+			var version int64
+			if err := tx.QueryRowContext(jctx, `SELECT version FROM machines
+				WHERE machine_id = ? AND name = ?`, op.MachineID, op.Name).Scan(&version); err != nil {
+				if errors.Is(err, sql.ErrNoRows) {
+					return ErrImportStale
+				}
+				return fmt.Errorf("statedb: match import machine: %w", err)
+			}
+			if uint64(version) != op.ExpectedVersion { //nolint:gosec // G115: versions start at 1 and only rise
+				return ErrImportStale
+			}
+			if op.Labels != nil {
+				if err := applyMachineLabelsTx(jctx, tx, op.MachineID, op.Labels, in.Now, st); err != nil {
+					return err
+				}
+			}
+			if op.Layer != nil {
+				if err := upsertMachineLayerTx(jctx, tx, op.MachineID, op.Layer, in.Now, st); err != nil {
+					return err
+				}
+			}
+			if op.DropPending != "" {
+				if _, err := tx.ExecContext(jctx, `DELETE FROM pending_machines WHERE name = ?`,
+					op.DropPending); err != nil {
+					return fmt.Errorf("statedb: drop shadowed pending machine: %w", err)
+				}
+			}
+		}
+		for _, op := range in.PendingOps {
+			st, err := NextStamp(jctx, tx, in.Now)
+			if err != nil {
+				return err
+			}
+			// A machine enrolled under the name since the dry run
+			// owns it now: the apply aborts like a rewritten repo
+			// instead of shadowing the enrolled row.
+			var taken bool
+			merr := tx.QueryRowContext(jctx, `SELECT TRUE FROM machines WHERE name = ?`,
+				op.Name).Scan(&taken)
+			switch {
+			case errors.Is(merr, sql.ErrNoRows):
+				// The name is still free.
+			case merr != nil:
+				return fmt.Errorf("statedb: match pending machine: %w", merr)
+			default:
+				return ErrImportStale
+			}
+			labels, err := marshalLabels(op.Labels)
+			if err != nil {
+				return err
+			}
+			if err := upsertPendingTx(jctx, tx, op.Name, labels, string(op.Layer), in.Now, st); err != nil {
+				return err
+			}
+		}
 		detail, err := auditDetail(struct {
 			PlanHash string `json:"plan_hash"`
 			Created  int    `json:"created"`
 			Updated  int    `json:"updated"`
-		}{in.PlanHash, in.Created, in.Updated})
+			Machines int    `json:"machines"`
+			Pending  int    `json:"pending"`
+		}{in.PlanHash, in.Created, in.Updated, in.Machines, in.Pending})
 		if err != nil {
 			return err
 		}

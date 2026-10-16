@@ -3,6 +3,7 @@ package statedb_test
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"errors"
 	"testing"
 	"time"
@@ -126,6 +127,89 @@ func TestApplyConfigImportRefusesAStaleUpdate(t *testing.T) {
 	}
 	if got := rawCount(t, statedb.Path(dir), `SELECT COUNT(*) FROM audit_log`); got != 1 {
 		t.Errorf("audit rows = %d after a stale apply, want only the seed", got)
+	}
+}
+
+// enrollLaptop enrolls one machine named laptop (version 1) for the
+// machine import apply tests.
+func enrollLaptop(t *testing.T, s *store.Store, id string) {
+	t.Helper()
+	key := enrollKey("install-1", 1)
+	if _, err := statedb.Enroll(context.Background(), s, newMachine(key, id, beforeTTL)); err != nil {
+		t.Fatalf("Enroll: %v", err)
+	}
+}
+
+func machineLabels(t *testing.T, s *store.Store, id string) (labels string, version int64) {
+	t.Helper()
+	ctx := context.Background()
+	if err := s.Read(ctx, func(tx *sql.Tx) error {
+		return tx.QueryRowContext(ctx, `SELECT labels, version FROM machines WHERE machine_id = ?`,
+			id).Scan(&labels, &version)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return labels, version
+}
+
+func TestApplyConfigImportAppliesAMachineUpdateAtItsVersion(t *testing.T) {
+	t.Parallel()
+	dir, s := tokenStore(t)
+	enrollLaptop(t, s, "01jmachine0000000000000001")
+	_, _, err := statedb.ApplyConfigImport(context.Background(), s, statedb.ConfigImport{
+		ImportWrite: importWrite("local:alice", "imp-1", 7, importTime),
+		PlanHash:    "abc123",
+		MachineOps: []statedb.ImportMachineOp{{
+			MachineID: "01jmachine0000000000000001", Name: "laptop",
+			Labels: []string{"field"}, ExpectedVersion: 1,
+		}},
+		Response: []byte(`{}`),
+	})
+	if err != nil {
+		t.Fatalf("fresh machine apply = %v, want no error", err)
+	}
+	labels, version := machineLabels(t, s, "01jmachine0000000000000001")
+	if labels != `["field"]` || version != 2 {
+		t.Errorf("machine = %q v%d, want [field] v2", labels, version)
+	}
+	if got := rawCount(t, statedb.Path(dir), `SELECT COUNT(*) FROM audit_log WHERE action = 'config.import'`); got != 1 {
+		t.Errorf("config.import rows = %d, want 1", got)
+	}
+}
+
+// TestApplyConfigImportRefusesAStaleMachineUpdate is the
+// UpdateMachine-after-baseline race: an owner write that lands after the
+// import's baseline but before the apply aborts the whole apply instead
+// of losing the concurrent labels.
+func TestApplyConfigImportRefusesAStaleMachineUpdate(t *testing.T) {
+	t.Parallel()
+	dir, s := tokenStore(t)
+	enrollLaptop(t, s, "01jmachine0000000000000001")
+	if _, err := statedb.UpdateMachine(context.Background(), s, statedb.MachineUpdate{
+		MachineWrite: machineWrite("local:alice", "req-2", 2, importTime),
+		MachineID:    "01jmachine0000000000000001", ExpectedVersion: 1,
+		Labels: []string{"desk"}, HasLabels: true,
+	}); err != nil {
+		t.Fatalf("concurrent UpdateMachine: %v", err)
+	}
+	_, _, err := statedb.ApplyConfigImport(context.Background(), s, statedb.ConfigImport{
+		ImportWrite: importWrite("local:alice", "imp-1", 7, importTime),
+		PlanHash:    "abc123",
+		MachineOps: []statedb.ImportMachineOp{{
+			MachineID: "01jmachine0000000000000001", Name: "laptop",
+			Labels: []string{"gpu"}, ExpectedVersion: 1,
+		}},
+		Response: []byte(`{}`),
+	})
+	if !errors.Is(err, statedb.ErrImportStale) {
+		t.Fatalf("stale machine apply = %v, want ErrImportStale", err)
+	}
+	labels, version := machineLabels(t, s, "01jmachine0000000000000001")
+	if labels != `["desk"]` || version != 2 {
+		t.Errorf("machine = %q v%d after a stale apply, want the concurrent [desk] v2", labels, version)
+	}
+	if got := rawCount(t, statedb.Path(dir), `SELECT COUNT(*) FROM audit_log WHERE action = 'config.import'`); got != 0 {
+		t.Errorf("config.import rows = %d after a stale apply, want 0", got)
 	}
 }
 

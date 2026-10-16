@@ -6,10 +6,10 @@ Today it serves `/metrics` on the API listener, behind the Host and Origin
 checks, and `FleetService` with `CreateEnrollmentToken`, the watched-repo
 writes (`CreateRepo`, `UpdateRepo`, `DeleteRepo`), the machine admin
 writes (`UpdateMachine`, `RevokeMachine`, `DeleteMachine`), the
-hub-state triage writes (`SnoozeTriageItem`, `DismissTriageItem`),
-the session-control and approvals calls, `GetServerInfo`, and the
-machine reads (`ListMachines`, `GetMachine`) on the local admin
-socket.
+config import and export (`ImportConfig`, `ExportConfig`), the hub-state
+triage writes (`SnoozeTriageItem`, `DismissTriageItem`), the
+session-control and approvals calls, `GetServerInfo`, and the machine
+reads (`ListMachines`, `GetMachine`) on the local admin socket.
 
 ```go
 srv := api.NewServer(tel, "api", boundPort) // api.Handler plus timeouts and the JSON ErrorLog
@@ -49,8 +49,9 @@ own error lines are debug-level `http.server_error` events, not stderr text.
 
 `Fleet` embeds the generated `UnimplementedFleetServiceHandler`, so every
 method but `CreateEnrollmentToken`, the watched-repo writes, the machine
-admin writes, the hub-state triage writes, the session-control and
-approvals calls, `GetServerInfo`, `ListMachines` and `GetMachine`
+admin writes, the config import and export, the hub-state triage
+writes, the session-control and approvals calls, `GetServerInfo`,
+`ListMachines` and `GetMachine`
 answers `unimplemented`
 ([02k](../../../docs/specs/02k-v1-surface-and-cli.md)).
 `Handler()` is its Connect route (requests capped at 1 MiB), ready for a
@@ -171,6 +172,32 @@ stream cut. Signals: `fleet_hub_config_writes_total{op, outcome}` (`op`
 `config.machine_write_refused` (`reason`, `op`, `actor`) and
 `config.machine_write_failed` (`step` `encode`/`revocation`/`wiring`/
 `store`, `err_kind`, `op`, `actor`).
+
+`ImportConfig` needs `SETTINGS` and `ExportConfig` needs `READ` (02d).
+`ExportConfig` renders the whole `FleetConfig` as stored: the watched
+repos, integrations, hub and fleet settings, owner accounts and machines
+(one entry per enrolled machine with its layer's values, one per kept
+machine entry; a kept row shadowing an enrolled name folds into it).
+`ImportConfig` diffs a document and applies it in one writer transaction
+or not at all: today only the repo and machine sections apply (other
+sections plan a blocking "not built yet" line). A machine entry matching
+an enrolled display name sets its labels and settings layer; one matching
+none is kept as a pending machine, applied when a machine enrolls under
+the name. A `dry_run` returns the plan and its `plan_hash` and changes
+nothing; the apply passes it back as `expected_plan_hash`, so what runs
+is what was shown. The apply refuses a plan with a blocked line
+(`CONFIG_INVALID` always blocks; other problems pass with
+`allow_skipped`), and a machine an owner write moved since the dry run
+(`VERSION_MISMATCH`: run the dry run again). Signals:
+`fleet_hub_config_imports_total{outcome}` (`planned`, `applied`,
+`replayed`, `refused`, `failed`) and the log lines
+`config.import_planned` (`lines`, `plan_hash`), `config.import_applied`
+(`plan_hash`, `created`, `updated`, `machines`, `pending`, `replayed`),
+`config.import_refused` (`reason`) and `config.import_failed` (`step`,
+`err_kind`); `fleet_hub_config_writes_total{op="export", outcome}` and
+the log lines `config.exported` (`repos`, `accounts`, `integrations`,
+`machines`), `config.export_refused` (`reason`) and
+`config.export_failed` (`step`, `err_kind`).
 
 `SnoozeTriageItem` and `DismissTriageItem` need `APPROVALS` (02d); until
 plan row 12 brings caller scopes only the local user holds it
