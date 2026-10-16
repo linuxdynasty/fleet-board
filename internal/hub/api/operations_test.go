@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	agentv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1"
 	hubv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/hub/v1"
@@ -126,6 +127,11 @@ func TestGetOperationPending(t *testing.T) {
 	if got.GetRequestedBy().GetId().GetValue() != "local:alice" {
 		t.Errorf("requested_by = %q, want local:alice", got.GetRequestedBy().GetId().GetValue())
 	}
+	if by := got.GetRequestedBy(); by.GetName() != "alice" ||
+		by.GetRole() != typev1.Role_ROLE_OWNER ||
+		by.GetKind() != typev1.PrincipalKind_PRINCIPAL_KIND_LOCAL_USER {
+		t.Errorf("requested_by = %v, want the full local alice OWNER principal", by)
+	}
 	if got.GetDeliveredTime() != nil {
 		t.Errorf("delivered_time set on a PENDING operation")
 	}
@@ -218,6 +224,84 @@ func TestGetOperationDoneAfterDelivery(t *testing.T) {
 	}
 	if dt := got.GetDeliveredTime(); dt == nil || dt.AsTime().UnixMilli() != ackAt.UnixMilli() {
 		t.Errorf("delivered_time = %v, want %v", dt, ackAt)
+	}
+}
+
+// TestGetOperationFailedResult: a failed result keeps its retry detail on
+// the read: the reason plus retryable, retry_after and metadata.
+func TestGetOperationFailedResult(t *testing.T) {
+	t.Parallel()
+	e := newFleetEnv(t, localUser("alice"))
+	enrollMachine(t, e, "m1")
+	sess := createSession(t, e, "m1", "work")
+	op := sendKeys(t, e, sess, "%1", "req-keys-fail")
+	svc := opService(t, e, fleetNow.Add(90*time.Second))
+	id := op.GetId().GetValue()
+	if out, err := svc.Ack(context.Background(), liveFrom("m1"), &agentv1.CommandAck{
+		CommandId: &typev1.CommandId{Value: id},
+	}); err != nil || out != outbox.Applied {
+		t.Fatalf("Ack = %v, %v, want Applied, nil", out, err)
+	}
+	doneSvc := opService(t, e, fleetNow.Add(2*time.Minute))
+	if out, err := doneSvc.Result(context.Background(), liveFrom("m1"), &agentv1.CommandResult{
+		CommandId:  &typev1.CommandId{Value: id},
+		Status:     typev1.Status_STATUS_FAILED,
+		Reason:     typev1.ReasonCode_REASON_CODE_RATE_LIMITED,
+		Retryable:  true,
+		RetryAfter: durationpb.New(30 * time.Second),
+		Metadata:   map[string]string{"step": "wait_ready"},
+	}); err != nil || out != outbox.Applied {
+		t.Fatalf("Result = %v, %v, want Applied, nil", out, err)
+	}
+	got := getOp(t, e, id)
+	if got.GetState() != hubv1.OperationState_OPERATION_STATE_DONE {
+		t.Fatalf("state = %v, want DONE", got.GetState())
+	}
+	failure := got.GetError()
+	if failure.GetReason() != typev1.ReasonCode_REASON_CODE_RATE_LIMITED {
+		t.Errorf("error reason = %v, want RATE_LIMITED", failure.GetReason())
+	}
+	if !failure.GetRetryable() {
+		t.Error("error retryable = false, want true")
+	}
+	if failure.GetRetryAfter().AsDuration() != 30*time.Second {
+		t.Errorf("error retry_after = %v, want 30s", failure.GetRetryAfter().AsDuration())
+	}
+	if failure.GetMetadata()["step"] != "wait_ready" {
+		t.Errorf("error metadata = %v, want step=wait_ready", failure.GetMetadata())
+	}
+}
+
+// TestGetOperationUnknownEnum: a result with an agent enum this hub has no
+// name for stays readable: the hub stores its UNKNOWN sentinel and the
+// read reports UNSPECIFIED instead of failing.
+func TestGetOperationUnknownEnum(t *testing.T) {
+	t.Parallel()
+	e := newFleetEnv(t, localUser("alice"))
+	enrollMachine(t, e, "m1")
+	sess := createSession(t, e, "m1", "work")
+	op := sendKeys(t, e, sess, "%1", "req-keys-unknown-enum")
+	svc := opService(t, e, fleetNow.Add(90*time.Second))
+	id := op.GetId().GetValue()
+	if out, err := svc.Ack(context.Background(), liveFrom("m1"), &agentv1.CommandAck{
+		CommandId: &typev1.CommandId{Value: id},
+	}); err != nil || out != outbox.Applied {
+		t.Fatalf("Ack = %v, %v, want Applied, nil", out, err)
+	}
+	doneSvc := opService(t, e, fleetNow.Add(2*time.Minute))
+	if out, err := doneSvc.Result(context.Background(), liveFrom("m1"), &agentv1.CommandResult{
+		CommandId: &typev1.CommandId{Value: id},
+		Status:    typev1.Status(999),
+		Reason:    typev1.ReasonCode(99999),
+	}); err != nil || out != outbox.Applied {
+		t.Fatalf("Result = %v, %v, want Applied, nil", out, err)
+	}
+	got := getOp(t, e, id)
+	if got.GetState() != hubv1.OperationState_OPERATION_STATE_DONE {
+		t.Fatalf("state = %v, want DONE", got.GetState())
+	}
+	if got.GetStatus() != typev1.Status_STATUS_UNSPECIFIED {
+		t.Errorf("status = %v, want UNSPECIFIED for the UNKNOWN sentinel", got.GetStatus())
 	}
 }
 

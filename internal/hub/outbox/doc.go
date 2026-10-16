@@ -30,4 +30,9 @@
 // machine; [CloseForRevoke] closes a revoked machine's open rows inside
 // the revoke's job; [Service.Closed] logs and counts them after the
 // commit. [Service.Prune] deletes rows closed more than [Retention] ago.
+//
+// Reads: [Lookup] serves one row to the API's GetOperation on the read
+// pool — never the writer — with the stored command (whose RequestedBy
+// is the full requesting principal) and the first result, when one
+// arrived.
 package outbox
