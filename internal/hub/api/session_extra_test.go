@@ -293,6 +293,8 @@ func TestSecretListCoversDecide(t *testing.T) {
 	t.Parallel()
 	for _, proc := range []string{
 		"/fleet.hub.v1.FleetService/DecideApproval",
+		"/fleet.hub.v1.FleetService/SnoozeTriageItem",
+		"/fleet.hub.v1.FleetService/DismissTriageItem",
 		"/fleet.hub.v1.FleetService/UpdateSettings",
 		"/fleet.hub.v1.FleetService/ImportConfig",
 		"/fleet.hub.v1.FleetService/CreateRepo",

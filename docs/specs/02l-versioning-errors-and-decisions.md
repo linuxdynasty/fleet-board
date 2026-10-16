@@ -207,6 +207,7 @@ fails when it is out of date:
 | 562 | `CONFIG_INVALID` | ImportConfig could not apply the document: the plan names every entry that failed; nothing was applied. |
 | 563 | `ROUTINE_NEEDS_SPARE_QUOTA` | A spare-quota routine found no account to run on (DispatchBlock reason; a WARN check for RunRoutine, never acknowledged by a trigger). |
 | 564 | `REPORT_INVALID` | Collected report empty, not UTF-8, too large or without the bundle marker. |
+| 565 | `TRIAGE_CLOSED` | SnoozeTriageItem or DismissTriageItem named an item that already left OPEN and SNOOZED (in flight, acted, retired, expired or dismissed). |
 |  | **Enroll and RenewCert errors, carried in the ErrorDetail of the RPC error.** |  |
 | 600 | `ENROLL_TOKEN_UNKNOWN` | The token is not one the hub issued (or its secret part is wrong). |
 | 601 | `ENROLL_TOKEN_EXPIRED` |  |

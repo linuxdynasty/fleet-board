@@ -41,6 +41,7 @@
     "sync.": "docs/specs/03m-work-source-and-code-host-sync.md",
     "tls.": "docs/specs/05b-observability.md",
     "tmux.": "docs/specs/05b-observability.md",
+    "triage.": "docs/specs/03d-triage-sessions-logs.md",
     "typing.": "docs/specs/05b-observability.md",
     "wake.": "docs/specs/03-workflows.md"
   },
@@ -105,6 +106,7 @@
     "sync_": "docs/specs/03m-work-source-and-code-host-sync.md",
     "text_scrub_": "docs/specs/05b-observability.md",
     "tmux_": "docs/specs/05b-observability.md",
+    "triage_writes_": "docs/specs/03d-triage-sessions-logs.md",
     "typing_": "docs/specs/05b-observability.md",
     "unacked_results": "docs/specs/03n-reconnect.md",
     "writer_": "docs/specs/05b-observability.md"

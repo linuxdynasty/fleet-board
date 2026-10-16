@@ -115,6 +115,11 @@ const (
 	ActionMachineUpdate = "machine.update"
 	ActionMachineRevoke = "machine.revoke"
 	ActionMachineDelete = "machine.delete"
+	// ActionTriageSnooze and ActionTriageDismiss are the hub-state triage
+	// writes (row 13a slice 5): target triage/<id>, with the request_id
+	// and the item's version in detail (the wake time, or the note).
+	ActionTriageSnooze  = "triage.snooze"
+	ActionTriageDismiss = "triage.dismiss"
 )
 
 // MaxAuditDetail caps AuditEntry.detail in bytes; the table checks it too.
