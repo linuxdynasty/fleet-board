@@ -13,8 +13,11 @@ effect, so the class is `RepeatSafe` and a resume re-sends. F5
 `RespawnPane` re-runs a dead pane's own command through a plain one-shot
 `respawn-pane` (no `-k`, so tmux itself refuses a pane that is still
 active); a live pane is refused `PANE_BUSY`, not retryable, and any
-harness restart field waits for the adapter slice. E11
-`SetPaneAvailability` records the developer's board mark for one pane on
+harness restart field waits for the adapter slice. F6 `KillWindow` kills
+a window by its `@N` id: a stale start id or a window the listing does
+not know reads `WINDOW_NOT_FOUND`, and the scheduler's fleet cell is
+refused `ROLE_INSUFFICIENT` on a window the fleet's tags do not mark.
+E11 `SetPaneAvailability` records the developer's board mark for one pane on
 the observer's in-memory overlay (or clears it): no tmux call, no screen
 gate, `RepeatSafe` like the other declarative kinds.
 
@@ -42,7 +45,10 @@ res := e.SetAvailability(ctx, cmd.GetSetPaneAvailability())
 // retypes; i := e.InterruptHandler() (Kind Interrupt) is RepeatSafe: a
 // resume re-sends the C-c; r := e.RespawnHandler() (Kind RespawnPane) is
 // RepeatSafe: a resume respawns again; a := e.AvailabilityHandler() (Kind
-// SetPaneAvailability) is RepeatSafe: a resume records the mark again. The
+// SetPaneAvailability) is RepeatSafe: a resume records the mark again;
+// k := e.KillWindowHandler() (Kind KillWindow) is RepeatSafe: a resume
+// kills again, and answers the role-matrix variant (fleet_window only
+// for a window the fleet's tags mark, developer_window else). The
 // wiring row registers them.
 ```
 
@@ -140,7 +146,22 @@ res := e.SetAvailability(ctx, cmd.GetSetPaneAvailability())
     the call. A refused respawn re-reads the listing: a gone pane reads
     `PANE_NOT_FOUND`, a live one `PANE_BUSY`, anything else `INTERNAL`.
     The OK result names the pane and carries no screen text.
-12. **Mark** (E11, no tmux touch): the pane key names this server, a `%N`
+12. **Window and kill** (F6): the window key names this server, an `@N`
+    window id and a server start id (`INVALID_ARGUMENT` else, before any
+    tmux call). One call holds the server lock from the generation check
+    through the kill, shared with F2's create sequence. A stale start id
+    or a window the server-wide listing does not know reads
+    `WINDOW_NOT_FOUND`, never a kill at a reused id. The executor's
+    fleet cell (the scheduler's 02g `F` row) is judged here, where tmux
+    is visible, and the admission is re-checked for every non-owner
+    role: a window neither its own `@fleet_session_id` window option
+    nor its session's marks reads `ROLE_INSUFFICIENT`
+    (`REJECTED_BY_POLICY`), before any kill, so a tag removed after
+    the role check still refuses. A refused kill re-reads
+    the listing: a gone window reads `WINDOW_NOT_FOUND`, anything else
+    `INTERNAL`. The OK result names the window and carries no screen
+    text.
+13. **Mark** (E11, no tmux touch): the pane key names this server, a `%N`
     pane id and a server start id (`INVALID_ARGUMENT` else, before the
     overlay), and the reason is one the hub commands (`MARKED_ON_BOARD`,
     `CLEARED_ON_BOARD`, `GOAL_MERGED`; an empty reason or one the agent

@@ -1,6 +1,7 @@
 package exec_test
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -46,6 +47,33 @@ func TestKillWindowWithNoVariantIsADevelopersWindow(t *testing.T) {
 				t.Errorf("an OWNER's KillWindow ran or was answered (%d results) before an approval", n)
 			}
 		})
+	}
+}
+
+// fleetVariant is a handler that places every KillWindow on a fleet
+// window, pinning the ctx-threaded Variant path to the role matrix: an
+// OPERATOR's KillWindow on a fleet window (cell L) waits for local
+// approval instead of refusing as a developer's window would.
+type fleetVariant struct {
+	*handler
+}
+
+func (h *fleetVariant) Variant(context.Context, *agentv1.Command) string { return "fleet_window" }
+
+func TestKillWindowFleetVariantWaitsForApproval(t *testing.T) {
+	t.Parallel()
+	h := &fleetVariant{&handler{kind: "KillWindow", caps: []*typev1.Capability{{Name: "tmux.control", Version: 1}}}}
+	r := newRig(t, h)
+	r.pol.approval["KillWindow"] = true
+	r.start(t)
+	c := cmd("kw-fleet", 1, "tmux.control")
+	c.RequestedBy.Role = typev1.Role_ROLE_OPERATOR
+	c.Kind = &agentv1.Command_KillWindow{KillWindow: &agentv1.KillWindow{}}
+	c.NotAfterTime = timestamppb.New(hub0.Add(time.Hour))
+	r.give(t, c)
+	waitFor(t, func() bool { _, p, _ := r.count("kw-fleet"); return p == 1 })
+	if _, _, n := r.count("kw-fleet"); n != 0 || h.runs.Load() != 0 {
+		t.Errorf("an OPERATOR's fleet-window KillWindow ran or was answered (%d results) before an approval", n)
 	}
 }
 

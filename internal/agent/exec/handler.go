@@ -85,8 +85,11 @@ type Handler interface {
 // Variant is implemented by a handler whose role-matrix row depends on
 // state the message does not carry: KillWindow on a fleet window
 // ("fleet_window") or a developer's ("developer_window", the default).
+// It may read tmux to place the window; anything it cannot place reads
+// "developer_window", the strictest row. ctx is the executor's command
+// context, used as-is: a cancelled lookup places nothing.
 type Variant interface {
-	Variant(c *agentv1.Command) string
+	Variant(ctx context.Context, c *agentv1.Command) string
 }
 
 // registry is the handlers by kind.

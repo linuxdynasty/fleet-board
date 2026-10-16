@@ -32,7 +32,11 @@ go ex.Run(ctx)
    (`POLICY_SAFE_MODE`); the rate limit (`RATE_LIMITED`, retryable,
    `retry_after` when the window frees).
 7. **Role**: the 02g matrix (`roles.go`, compared cell for cell with the
-   spec by a test); `ROLE_INSUFFICIENT`.
+   spec by a test); `ROLE_INSUFFICIENT`. For `KillWindow` the row comes
+   from the kind's handler, which reads the fleet's tags live on the
+   command context (the safe-mode check in step 6 places the window the
+   same way); a lookup the context cancels, or that tmux fails, reads
+   the developer's window, the strictest row.
 8. **Approval**: an `L!` cell, or a `local_approval` rule for the kind,
    sends `AWAITING_LOCAL_CONFIRM` and waits for the `Approver` until the
    deadline: `LOCAL_DENIED` or `LOCAL_CONFIRM_TIMEOUT`. With no approver
@@ -76,6 +80,12 @@ restart does not reset it; a read that fails is logged
   progress of each) under one mutex, held only for map reads and writes,
   never across a store job or a `Send`. The rate window
   and the registry belong to the envelope goroutine alone.
+- **Decide may read tmux**: the role and safe-mode checks ask the kind's
+  handler to place the command, and that answer may read tmux on the
+  command context. It runs on the envelope goroutine (live commands and
+  the resume pass alike), holding no mutex and doing no store job, so a
+  slow lookup only delays the commands behind it; a cancelled context
+  places nothing.
 - **Channels**: the intake (64) and the resume signal (1) are written
   without blocking by hooks on the connection's sending goroutine.
 - **Store**: every write is one `agent.db` job; none spans a network call.

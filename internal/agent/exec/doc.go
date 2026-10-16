@@ -17,6 +17,9 @@
 // a restart or a failed store write) are deadline-checked and run, run
 // again, resumed per step or ended UNKNOWN_OUTCOME, as their handler's
 // [Class] says. The registry is empty in row 6 ([Handlers]), so
-// nothing is advertised and every command is UNSUPPORTED; no code here
-// reaches tmux.
+// nothing is advertised and every command is UNSUPPORTED. The executor
+// itself never calls tmux, but the role check asks the kind's handler
+// to place the command, and that answer may read tmux on the command
+// context ([Variant]): anything it cannot place reads the developer's
+// window, the strictest row.
 package exec

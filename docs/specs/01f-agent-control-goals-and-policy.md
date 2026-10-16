@@ -107,7 +107,20 @@ All pass local policy, carry a `command_id`, and are idempotent except F3.
   alive under the call. RepeatSafe: a resume respawns again. A harness
   restart through the adapter's `ResumeArgs` waits for a later slice.
   Landed (`internal/agent/control`, issue #67).
-- **F6 Kill window.** Resize belongs to J1.
+- **F6 Kill window:** the window key, the server start id and the
+  server-wide window listing hold under the server lock, shared with
+  F2's create sequence; a stale key or a window the listing does not
+  know reads `WINDOW_NOT_FOUND`, never a kill at a reused id. Only the
+  fleet's tags place a window (its own `@fleet_session_id` window
+  option or its session's): the role-matrix variant reads
+  `fleet_window` for a marked window and `developer_window` — the
+  strictest row — for anything else. The admission is re-checked at
+  kill time for every non-owner role, so a tag removed after the role
+  check (across a local-approval wait) is refused `ROLE_INSUFFICIENT`
+  on an unmarked window before any kill. A refused kill re-reads the
+  listing (gone `WINDOW_NOT_FOUND`, else `INTERNAL`). RepeatSafe: a
+  resume kills again. Resize belongs to J1.
+  Landed (`internal/agent/control`, issue #67).
 - **F8 Run harness command:** `RunHarnessCommand{target, command, args}`,
   where `command` must be in the machine's catalog (C4) and its class must be
   allowed for the requester. Only typed at an idle prompt (ready pattern
