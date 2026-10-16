@@ -9,7 +9,10 @@ later slice. F3 `SendKeys` types operator free text (`OPERATOR_TEXT` only)
 into a harness pane at a proven-ready prompt; every other purpose waits for
 its slice. F4 `Interrupt` sends a fixed C-c to the pane: no screen gate (a
 turn is running, so a ready prompt must never be required), idempotent in
-effect, so the class is `RepeatSafe` and a resume re-sends.
+effect, so the class is `RepeatSafe` and a resume re-sends. E11
+`SetPaneAvailability` records the developer's board mark for one pane on
+the observer's in-memory overlay (or clears it): no tmux call, no screen
+gate, `RepeatSafe` like the other declarative kinds.
 
 ```go
 runner, _ := proc.NewRunner(tel)
@@ -22,16 +25,20 @@ e, err := control.New(control.Options{
 	MaxWindows: func() uint32 { return maxWindows }, // the merged settings value (03e2)
 	Sender: client, // the observer client of internal/agent/tmux
 	CheckInput: checkInput, // Observer.CheckInput with the server closed over
+	Marks: observer, // the inventory observer holding the availability overlay
 })
 res := e.EnsureSession(ctx, cmd.GetEnsureSession())
 res := e.EnsureWindow(ctx, cmd.GetEnsureWindow())
 res := e.SendKeys(ctx, cmd.GetSendKeys())
+res := e.SetAvailability(ctx, cmd.GetSetPaneAvailability())
 // Handlers: h := e.Handler() satisfies exec.Handler (Kind EnsureSession)
 // and w := e.WindowHandler() (Kind EnsureWindow), each with tmux.control
 // plus the server-specific capability, RepeatSafe; s := e.SendKeysHandler()
 // (Kind SendKeys) is NotRepeatSafe: a resume ends UNKNOWN_OUTCOME and never
 // retypes; i := e.InterruptHandler() (Kind Interrupt) is RepeatSafe: a
-// resume re-sends the C-c. The wiring row registers them.
+// resume re-sends the C-c; a := e.AvailabilityHandler() (Kind
+// SetPaneAvailability) is RepeatSafe: a resume records the mark again. The
+// wiring row registers them.
 ```
 
 ## Order of checks
@@ -113,6 +120,16 @@ res := e.SendKeys(ctx, cmd.GetSendKeys())
     `UNKNOWN_OUTCOME`, and a refused send re-reads the listing: a gone
     pane reads `PANE_NOT_FOUND`, a dead one `PANE_BUSY`, anything else
     `INTERNAL`. The OK result names the pane and carries no screen text.
+11. **Mark** (E11, no tmux touch): the pane key names this server, a `%N`
+    pane id and a server start id (`INVALID_ARGUMENT` else, before the
+    overlay), and the reason is one the hub commands (`MARKED_ON_BOARD`,
+    `CLEARED_ON_BOARD`, `GOAL_MERGED`; an empty reason or one the agent
+    itself reports — output, idle threshold, goal started, pane changed —
+    reads `INVALID_ARGUMENT`). The owner's fresh-context choice is kept
+    only while the pane is marked available; a clear or a merged goal
+    drops it. The overlay's refusal (unknown pane, stale start) reads
+    `PANE_NOT_FOUND`, not retryable: the hub re-reads the Snapshot and
+    re-sends. The OK result names the pane and carries no detail.
 
 ## Results report stored tags
 
