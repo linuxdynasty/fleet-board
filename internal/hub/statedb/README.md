@@ -105,16 +105,13 @@ list, err := statedb.RevokedSerials(ctx, s, now)  // revoked and not yet expired
 - **Certificate renewal** (migration 4, plan row 4,
   [02g](../../../docs/specs/02g-agent-security.md#certificate-renewal-a4)):
   `cert_renewals` keeps each certificate `RenewCert` signed: `machine_id`,
-  `csr_key_hash` (SHA-256 of the CSR's SubjectPublicKeyInfo; the pair is the
-  primary key, so one machine and key never get two certificates), `serial`
+  `csr_key_hash` (SHA-256 of the CSR's SubjectPublicKeyInfo; the pair is the primary key, so one machine and key never get two certificates), `serial`
   (unique, a `cert_serials` row), the certificate DER and `created_time`. No
   foreign key to `machines`, like `cert_serials`. **`Renew`** pre-checks on
   the read pool (no machine row `ErrMachineUnknown`, `REVOKED`
   `ErrMachineRevoked`, a peer serial not stored for the machine or revoked
-  `ErrPeerSerialUnknown`, a stored certificate for the key returned with
-  `Replayed`), then one writer job checks the same again and calls
-  `Renewal.Sign` (local CPU only) and inserts the serial and the renewal
-  together. The old serial is not touched.
+  `ErrPeerSerialUnknown`, a stored certificate for the key returned with `Replayed`), then one writer job checks the same again and calls
+  `Renewal.Sign` (local CPU only) and inserts the serial and the renewal together. The old serial is not touched.
 
 ```go
 r, err := statedb.Renew(ctx, s, statedb.Renewal{MachineID: id, PeerSerial: serial, CSRKeyHash: h, Now: now, Sign: sign})
@@ -495,5 +492,15 @@ row, and a 2b store gaining the tables.
   Otherwise the row moves at version + 1, stamped, with its `triage.snooze`
   or `triage.dismiss` audit row (`triage/<id>`); a dismiss clears the wake
   time. Each write sweeps a bounded batch (500) of expired idempotency rows.
-  The raise path of plan row 5 fills the source columns and adds the pane,
-  work-item and approval refs in its own migration.
+  The raise path of plan row 5 fills the source columns and adds the pane, work-item and approval refs in its own migration.
+
+- **Config import and pending machines** (migrations 16, 20, plan row 13a;
+  02m, 02b "Idempotency"): `import_request_log` keys (`principal_id`,
+  `request_id`) to the body hash and stored response (24 h replay, bounded
+  prune). `ApplyConfigImport` applies a verified plan in one writer
+  transaction or nothing, with one `config.import` audit row. A machine op
+  carries the baseline version: a machine moved since the dry run is
+  `ErrImportStale` (heartbeats never bump it). `pending_machines` keeps one
+  row per unknown name; enroll consumes the match (merging labels, draining,
+  storing the layer), a rename onto a kept name leaves the shadow the next
+  import heals.

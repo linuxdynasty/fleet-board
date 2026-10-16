@@ -59,8 +59,9 @@ type ImportRepoOp struct {
 	ExpectedVersion uint64
 }
 
-// ErrImportStale is a repo rewritten after the import plan: the apply
-// aborts with nothing written, and the caller runs a dry run again.
+// ErrImportStale is a repo or machine rewritten after the import plan:
+// the apply aborts with nothing written, and the caller runs a dry run
+// again.
 var ErrImportStale = errors.New("statedb: the repo changed since the import plan")
 
 // ImportMachineOp is one enrolled machine's write of a verified import
@@ -75,8 +76,14 @@ type ImportMachineOp struct {
 	// Name is the display name the plan matched: the apply verifies the
 	// machine still holds it, so a rename since the dry run aborts the
 	// whole apply instead of labelling the wrong row.
-	Name   string
-	Labels []string
+	Name string
+	// ExpectedVersion is the machine's version at plan time: the apply
+	// verifies it still holds, so an owner write since the dry run
+	// (UpdateMachine, revoke, re-enroll) aborts the whole apply instead
+	// of losing the concurrent change. Heartbeats never bump the
+	// version, so they never trip it.
+	ExpectedVersion uint64
+	Labels          []string
 	// Layer is the SettingsSpec as protojson, nil to leave the layer.
 	Layer       []byte
 	DropPending string
@@ -253,7 +260,8 @@ func insertImportRepo(ctx context.Context, tx *sql.Tx, now time.Time, st Stamp, 
 // ([ErrRequestConflict] on another body); otherwise every repo, machine
 // and pending op is applied (a repo created since the dry run is
 // [ErrRepoExists], one deleted since is [ErrRepoUnknown]; a machine
-// deleted since is [ErrMachineUnknown]), stamped, with one config.import
+// renamed, deleted or rewritten since is [ErrImportStale]), stamped, with
+// one config.import
 // audit row (target config) and the idempotency record. Nothing is
 // written on any error. The unique key on (principal, request_id) backs
 // the replay check up. A row past the 24 h window is dropped here, with
@@ -292,13 +300,16 @@ func ApplyConfigImport(ctx context.Context, s *store.Store, in ConfigImport) (re
 			if err != nil {
 				return err
 			}
-			var matched bool
-			if err := tx.QueryRowContext(jctx, `SELECT TRUE FROM machines
-				WHERE machine_id = ? AND name = ?`, op.MachineID, op.Name).Scan(&matched); err != nil {
+			var version int64
+			if err := tx.QueryRowContext(jctx, `SELECT version FROM machines
+				WHERE machine_id = ? AND name = ?`, op.MachineID, op.Name).Scan(&version); err != nil {
 				if errors.Is(err, sql.ErrNoRows) {
 					return ErrImportStale
 				}
 				return fmt.Errorf("statedb: match import machine: %w", err)
+			}
+			if uint64(version) != op.ExpectedVersion { //nolint:gosec // G115: versions start at 1 and only rise
+				return ErrImportStale
 			}
 			if op.Labels != nil {
 				if err := applyMachineLabelsTx(jctx, tx, op.MachineID, op.Labels, in.Now, st); err != nil {

@@ -44,11 +44,13 @@ type PendingMachine struct {
 
 // MachineIdentity is the enrolled-machine baseline an import plan
 // diffs machine entries against: the id (for the settings-layer
-// scope), the display name and the labels.
+// scope), the display name, the labels, and the version (so the apply
+// can refuse a machine an owner write moved since the dry run).
 type MachineIdentity struct {
 	MachineID string
 	Name      string
 	Labels    []string
+	Version   uint64
 }
 
 // parseLabels parses a labels JSON column; a corrupt stored row is the
@@ -112,7 +114,7 @@ func MergeEnrollLabels(tokenJSON string, pending []string) ([]string, error) {
 func ListMachineIdentities(ctx context.Context, s *store.Store) ([]MachineIdentity, error) {
 	var out []MachineIdentity
 	err := s.Read(ctx, func(tx *sql.Tx) error {
-		rows, err := tx.QueryContext(ctx, `SELECT machine_id, name, labels FROM machines ORDER BY machine_id`)
+		rows, err := tx.QueryContext(ctx, `SELECT machine_id, name, labels, version FROM machines ORDER BY machine_id`)
 		if err != nil {
 			return fmt.Errorf("statedb: list machines: %w", err)
 		}
@@ -120,9 +122,11 @@ func ListMachineIdentities(ctx context.Context, s *store.Store) ([]MachineIdenti
 		for rows.Next() {
 			var m MachineIdentity
 			var labels string
-			if err := rows.Scan(&m.MachineID, &m.Name, &labels); err != nil {
+			var version int64
+			if err := rows.Scan(&m.MachineID, &m.Name, &labels, &version); err != nil {
 				return fmt.Errorf("statedb: list machines: %w", err)
 			}
+			m.Version = uint64(version) //nolint:gosec // G115: versions start at 1 and only rise
 			if m.Labels, err = parseLabels(labels); err != nil {
 				return err
 			}
