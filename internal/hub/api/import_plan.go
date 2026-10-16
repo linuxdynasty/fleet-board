@@ -261,13 +261,17 @@ func importEntryCount(doc *hubv1.FleetConfig) int {
 
 // configRest is the stored configuration an import plan diffs the
 // non-repo sections against: the fleet layer's hub settings and values
-// with the integrations and accounts by their document keys. A nil rest
-// is an empty hub: every non-empty section plans as skipped, as before.
+// with the integrations and accounts by their document keys, the
+// enrolled machines by display name and the kept machine entries by
+// name. A nil rest is an empty hub: every non-empty section plans as
+// skipped, as before, except machines, which plan as pending creates.
 type configRest struct {
 	hub          *hubv1.HubSettings
 	fleetValues  *typev1.SettingValues
 	integrations map[string]*hubv1.IntegrationConfig
 	accounts     map[string]*hubv1.AccountConfig
+	machines     map[string][]machineBaseline
+	pending      map[string]pendingBaseline
 }
 
 // restHub is the stored hub settings, or an empty one when the owner
@@ -302,10 +306,12 @@ func diffStoredLine(entity hubv1.ConfigEntity, name string, equal bool) *hubv1.C
 // planConfigImport diffs a FleetConfig document against the watched repos
 // (existing maps "host/path" to the stored spec; codeHosts maps a host to
 // its integration id) and the stored configuration (rest). Repos plan
-// create, update and unchanged; the hub settings, fleet values,
-// integrations and accounts plan unchanged when the document carries
-// what the hub holds, so an export imports to an empty plan. Any other
-// non-empty section plans one SKIPPED line per entry with
+// create, update and unchanged; machines matching an enrolled display
+// name plan the labels and settings update, other machine entries plan
+// the kept pending create, update or unchanged; the hub settings, fleet
+// values, integrations and accounts plan unchanged when the document
+// carries what the hub holds, so an export imports to an empty plan. Any
+// other non-empty section plans one SKIPPED line per entry with
 // CONFIG_INVALID. A document over the 02b line cap is errImportPlanTooLarge.
 func planConfigImport(doc *hubv1.FleetConfig, existing map[string]*hubv1.RepoSpec,
 	codeHosts map[string]string, rest *configRest,
@@ -352,13 +358,14 @@ func planConfigImport(doc *hubv1.FleetConfig, existing map[string]*hubv1.RepoSpe
 		changes = append(changes, unsupportedImportLine(
 			hubv1.ConfigEntity_CONFIG_ENTITY_GROUP, name, fmt.Sprintf("config.groups[%d]", i), "group"))
 	}
+	machineSeen := map[string]bool{}
 	for i, mc := range doc.GetMachines() {
-		name := mc.GetName()
-		if name == "" {
-			name = fmt.Sprintf("machines[%d]", i)
+		var enrolled map[string][]machineBaseline
+		var kept map[string]pendingBaseline
+		if rest != nil {
+			enrolled, kept = rest.machines, rest.pending
 		}
-		changes = append(changes, unsupportedImportLine(
-			hubv1.ConfigEntity_CONFIG_ENTITY_MACHINE, name, fmt.Sprintf("config.machines[%d]", i), "machine"))
+		changes = append(changes, classifyMachine(mc, i, enrolled, kept, machineSeen).line)
 	}
 	for i, ig := range doc.GetIntegrations() {
 		name := ig.GetProviderName()

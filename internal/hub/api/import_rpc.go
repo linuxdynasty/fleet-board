@@ -99,6 +99,11 @@ func (f *Fleet) configRestBaseline(ctx context.Context) (*configRest, error) {
 			Harness: &typev1.Harness{Name: r.Harness}, Provider: r.Provider, Spec: &spec,
 		}
 	}
+	machines, pending, err := machineRestBaseline(ctx, f.store)
+	if err != nil {
+		return nil, err
+	}
+	rest.machines, rest.pending = machines, pending
 	return rest, nil
 }
 
@@ -108,8 +113,10 @@ func (f *Fleet) configRestBaseline(ctx context.Context) (*configRest, error) {
 // nothing. A validation failure here is the hub's own failure: the handler
 // already refused documents with blocking problems before calling it.
 func importOps(doc *hubv1.FleetConfig, existing map[string]*hubv1.RepoSpec,
-	versions map[string]uint64, codeHosts map[string]string,
-) (ops []statedb.ImportRepoOp, created, updated int, err error) {
+	versions map[string]uint64, codeHosts map[string]string, rest *configRest,
+) (ops []statedb.ImportRepoOp, machineOps []statedb.ImportMachineOp,
+	pendingOps []statedb.ImportPendingOp, created, updated int, err error,
+) {
 	seen := map[string]bool{}
 	for i, r := range doc.GetRepos() {
 		kind, name, normalized, _, problem := classifyRepo(r, i, existing, codeHosts, seen)
@@ -117,11 +124,11 @@ func importOps(doc *hubv1.FleetConfig, existing map[string]*hubv1.RepoSpec,
 			if problem.GetProblem().GetReason() != typev1.ReasonCode_REASON_CODE_CONFIG_INVALID {
 				continue
 			}
-			return nil, 0, 0, errors.New("api: a planned repo cannot apply")
+			return nil, nil, nil, 0, 0, errors.New("api: a planned repo cannot apply")
 		}
 		specJSON, merr := protojson.Marshal(normalized)
 		if merr != nil {
-			return nil, 0, 0, merr
+			return nil, nil, nil, 0, 0, merr
 		}
 		switch kind {
 		case hubv1.ConfigChangeKind_CONFIG_CHANGE_KIND_CREATE:
@@ -142,16 +149,39 @@ func importOps(doc *hubv1.FleetConfig, existing map[string]*hubv1.RepoSpec,
 		case hubv1.ConfigChangeKind_CONFIG_CHANGE_KIND_UNCHANGED:
 			// Nothing to write.
 		default:
-			return nil, 0, 0, errors.New("api: a planned repo cannot apply")
+			return nil, nil, nil, 0, 0, errors.New("api: a planned repo cannot apply")
 		}
 	}
-	return ops, created, updated, nil
+	var enrolled map[string][]machineBaseline
+	var kept map[string]pendingBaseline
+	if rest != nil {
+		enrolled, kept = rest.machines, rest.pending
+	}
+	machineSeen := map[string]bool{}
+	for i, mc := range doc.GetMachines() {
+		c := classifyMachine(mc, i, enrolled, kept, machineSeen)
+		if problem := c.line.GetProblem(); problem != nil {
+			if problem.GetReason() != typev1.ReasonCode_REASON_CODE_CONFIG_INVALID {
+				continue
+			}
+			return nil, nil, nil, 0, 0, errors.New("api: a planned machine cannot apply")
+		}
+		if !c.hasOp {
+			continue
+		}
+		if c.isPending {
+			pendingOps = append(pendingOps, c.pending)
+		} else {
+			machineOps = append(machineOps, c.machine)
+		}
+	}
+	return ops, machineOps, pendingOps, created, updated, nil
 }
 
 // importCallerError renders an import apply's store failure when the caller
 // can fix it: the replay conflict, a repo created or deleted since the dry
-// run. Other failures are the hub's own. The second result is false for
-// those.
+// run, a machine renamed, enrolled or deleted since it. Other failures are
+// the hub's own. The second result is false for those.
 func importCallerError(err error) (error, bool) {
 	switch {
 	case errors.Is(err, statedb.ErrRequestConflict):
@@ -169,7 +199,7 @@ func importCallerError(err error) (error, bool) {
 	case errors.Is(err, statedb.ErrImportStale):
 		return apiError(connect.CodeFailedPrecondition,
 			typev1.ReasonCode_REASON_CODE_VERSION_MISMATCH,
-			"a repo changed since the dry run; run it again", nil, nil), true
+			"something changed since the dry run; run it again", nil, nil), true
 	default:
 		return nil, false
 	}
@@ -261,13 +291,17 @@ func (f *Fleet) ImportConfig(ctx context.Context, req *connect.Request[hubv1.Imp
 		}
 		created, updated := 0, 0
 		for _, c := range prev.GetChanges() {
+			if c.GetEntity() != hubv1.ConfigEntity_CONFIG_ENTITY_REPO {
+				continue
+			}
 			if c.GetKind() == hubv1.ConfigChangeKind_CONFIG_CHANGE_KIND_CREATE {
 				created++
 			} else if c.GetKind() == hubv1.ConfigChangeKind_CONFIG_CHANGE_KIND_UPDATE {
 				updated++
 			}
 		}
-		f.configApplied(ctx, actor, prev.GetPlanHash(), created, updated, true)
+		machines, pending := countMachineLines(prev.GetChanges())
+		f.configApplied(ctx, actor, prev.GetPlanHash(), created, updated, machines, pending, true)
 		return connect.NewResponse(&prev), nil
 	}
 	if m.GetExpectedPlanHash() != hash {
@@ -294,10 +328,11 @@ func (f *Fleet) ImportConfig(ctx context.Context, req *connect.Request[hubv1.Imp
 			Changes: changes, PlanHash: hash,
 		}), nil
 	}
-	ops, created, updated, err := importOps(m.GetConfig(), existing, versions, codeHosts)
+	ops, machineOps, pendingOps, created, updated, err := importOps(m.GetConfig(), existing, versions, codeHosts, rest)
 	if err != nil {
 		return nil, f.configFailed(ctx, actor, "encode", err)
 	}
+	machines, pending := countMachineLines(changes)
 	respBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(&hubv1.ImportConfigResponse{
 		Changes: changes, Applied: true, PlanHash: hash,
 	})
@@ -309,7 +344,8 @@ func (f *Fleet) ImportConfig(ctx context.Context, req *connect.Request[hubv1.Imp
 			Principal: actor, RequestID: m.GetRequestId(),
 			RequestHash: sum, Actor: actorOf(who), Now: now,
 		},
-		PlanHash: hash, Created: created, Updated: updated, Ops: ops, Response: respBytes,
+		PlanHash: hash, Created: created, Updated: updated, Machines: machines, Pending: pending,
+		Ops: ops, MachineOps: machineOps, PendingOps: pendingOps, Response: respBytes,
 	})
 	if err != nil {
 		if cerr, ok := importCallerError(err); ok {
@@ -322,10 +358,10 @@ func (f *Fleet) ImportConfig(ctx context.Context, req *connect.Request[hubv1.Imp
 		if err := proto.Unmarshal(stored, &prev); err != nil {
 			return nil, f.configFailed(ctx, actor, "decode", err)
 		}
-		f.configApplied(ctx, actor, prev.GetPlanHash(), created, updated, true)
+		f.configApplied(ctx, actor, prev.GetPlanHash(), created, updated, machines, pending, true)
 		return connect.NewResponse(&prev), nil
 	}
-	f.configApplied(ctx, actor, hash, created, updated, false)
+	f.configApplied(ctx, actor, hash, created, updated, machines, pending, false)
 	return connect.NewResponse(&hubv1.ImportConfigResponse{
 		Changes: changes, Applied: true, PlanHash: hash,
 	}), nil

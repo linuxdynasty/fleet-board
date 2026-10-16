@@ -46,16 +46,18 @@ func (f *Fleet) configPlanned(ctx context.Context, actor string, lines int, hash
 }
 
 // configApplied counts and logs an applied import: ok for a committed
-// apply, replayed for an idempotent retry. The audit row carries the full
-// detail; this is the 3 AM signal.
-func (f *Fleet) configApplied(ctx context.Context, actor, hash string, created, updated int, replayed bool) {
+// apply, replayed for an idempotent retry. created and updated count
+// repos; machines counts relabelled enrolled machines and pending kept
+// entries. The audit row carries the full detail; this is the 3 AM signal.
+func (f *Fleet) configApplied(ctx context.Context, actor, hash string, created, updated, machines, pending int, replayed bool) {
 	outcome := "applied"
 	if replayed {
 		outcome = "replayed"
 	}
 	f.countImport(ctx, outcome)
 	f.tel.Logger.InfoContext(ctx, "config.import_applied",
-		"plan_hash", hash, "created", created, "updated", updated, "replayed", replayed, "actor", actor)
+		"plan_hash", hash, "created", created, "updated", updated,
+		"machines", machines, "pending", pending, "replayed", replayed, "actor", actor)
 }
 
 // configRefused counts and logs an import caller error by its reason and

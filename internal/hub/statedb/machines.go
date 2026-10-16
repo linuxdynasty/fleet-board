@@ -191,10 +191,12 @@ type NewMachine struct {
 
 // Enroll is one writer job that decides the burn: it marks the token used
 // only while it is unburned, unexpired and names no previous machine, then
-// inserts the machine (ENROLLED, version 1, stamped), its serial, the
-// response kept until the token's not_after plus [ReplayWindow] and the
-// machine.enroll audit row (no actor; the detail names the token row, whose
-// own row names who issued it). A replay writes nothing. When the burn changes no row
+// inserts the machine (ENROLLED, version 1, stamped; a pending import
+// entry for the name is consumed here with its labels merged in, the
+// machine drained and its values as the machine's settings layer), its
+// serial, the response kept until the token's not_after plus [ReplayWindow]
+// and the machine.enroll audit row (no actor; the detail names the token
+// row, whose own row names who issued it). A replay writes nothing. When the burn changes no row
 // (another Enroll won, or the token expired since the pre-check), the job
 // classifies again in the same transaction: the winner's response as a
 // replay for the same key, or the [CheckEnroll] error. A ctx error means
@@ -252,12 +254,37 @@ func insertMachine(ctx context.Context, tx *sql.Tx, m NewMachine) (Enrolled, err
 	if err != nil {
 		return Enrolled{}, err
 	}
+	// A pending import entry for the token's name is applied here, in
+	// the same transaction (02m): its labels merge with the token's
+	// and the machine is recorded drained until UndrainMachine. Its
+	// values become the machine's settings layer. Import never drains
+	// an enrolled machine, so only a pending entry drains here.
+	pending, hasPending, err := consumePendingTx(ctx, tx, name)
+	if err != nil {
+		return Enrolled{}, err
+	}
+	if hasPending {
+		merged, merr := MergeEnrollLabels(labels, pending.Labels)
+		if merr != nil {
+			return Enrolled{}, merr
+		}
+		labels, err = marshalLabels(merged)
+		if err != nil {
+			return Enrolled{}, err
+		}
+		drained = true
+	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO machines(machine_id, name, expected_hostname, labels, drained,
 		install_id, state, hostname_mismatch, facts, created_time, version, observed_time, hub_seq, update_ms)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`,
 		m.MachineID, name, expected, labels, drained, m.Key.InstallID, MachineEnrolled, mismatch, m.Facts, now,
 		st.ObservedTime.UnixMilli(), st.HubSeq, now); err != nil {
 		return Enrolled{}, fmt.Errorf("statedb: insert machine: %w", err)
+	}
+	if hasPending && hasPendingValues(pending.Values) {
+		if err := upsertMachineLayerTx(ctx, tx, m.MachineID, pending.Values, m.Now, st); err != nil {
+			return Enrolled{}, err
+		}
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO cert_serials(serial, machine_id, not_after_time, created_time)
 		VALUES (?, ?, ?, ?)`, m.Serial, m.MachineID, m.CertNotAfter.UnixMilli(), now); err != nil {

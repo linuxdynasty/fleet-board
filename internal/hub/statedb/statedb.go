@@ -131,6 +131,10 @@ func Migrations() []store.Migration {
 		Version: 19,
 		Name:    "triage_hub_writes",
 		SQL:     triageHubSQL,
+	}, {
+		Version: 20,
+		Name:    "pending_machines",
+		SQL:     pendingMachineSQL,
 	}}
 }
 
