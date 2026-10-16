@@ -4,11 +4,15 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	agentv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1"
 	typev1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/type/v1"
 	"github.com/linuxdynasty/fleet-board/internal/agent/exec"
+	"github.com/linuxdynasty/fleet-board/internal/agent/tmux/inventory"
+	"github.com/linuxdynasty/fleet-board/internal/agent/tmux/tmuxtest"
 	"github.com/linuxdynasty/fleet-board/internal/proc"
 )
 
@@ -244,6 +248,149 @@ func TestSetAvailabilityMakesNoTmuxCall(t *testing.T) {
 	if marks.calls != 1 {
 		t.Fatalf("overlay calls = %d, want 1", marks.calls)
 	}
+}
+
+// recEmitter records every event the observer emits while the test runs.
+type recEmitter struct {
+	mu  sync.Mutex
+	evs []*agentv1.Event
+}
+
+func (r *recEmitter) Emit(_ context.Context, ev *agentv1.Event) (uint64, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.evs = append(r.evs, ev)
+	return uint64(len(r.evs)), nil
+}
+
+func (r *recEmitter) availEdgeTo(paneID string, available bool) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, ev := range r.evs {
+		if a := ev.GetAvailability(); a != nil && a.GetPane().GetPaneId() == paneID &&
+			a.GetTo().GetAvailableForWork() == available {
+			return true
+		}
+	}
+	return false
+}
+
+// TestSetAvailabilityReachesTheRealObserver runs the handler against a
+// real observer on a throwaway tmux server: the mark the handler records
+// emits AvailabilityChanged and shows in the next Snapshot. The stub tests
+// above pin the handler's own checks; this one pins the composition the
+// suite would otherwise never exercise.
+func TestSetAvailabilityReachesTheRealObserver(t *testing.T) {
+	for _, b := range tmuxtest.Binaries() {
+		t.Run(b.Name, func(t *testing.T) {
+			folder := tmuxtest.Start(t, b, "-s", "unwatched", "exec cat")
+			folder.Sibling(t, "default", "-s", "work", "exec cat")
+			runner, err := proc.NewRunner(nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			rec := &recEmitter{}
+			o, err := inventory.New(inventory.Options{
+				Program: b.Path, Runner: runner, Folder: folder.Dir,
+				Servers: []string{"default"}, Emitter: rec,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			ctx, cancel := context.WithCancel(t.Context())
+			done := make(chan struct{})
+			go func() { o.Run(ctx); close(done) }()
+			t.Cleanup(func() {
+				cancel()
+				select {
+				case <-done:
+				case <-time.After(20 * time.Second):
+					t.Error("observer Run did not return after its context ended")
+				}
+			})
+			// Wait for the first snapshot carrying the pane.
+			var key *typev1.PaneKey
+			deadline := time.Now().Add(20 * time.Second)
+			for key == nil && time.Now().Before(deadline) {
+				snap := &agentv1.Snapshot{}
+				sctx, scancel := context.WithTimeout(ctx, 5*time.Second)
+				serr := o.Snapshot(sctx, snap)
+				scancel()
+				if serr == nil {
+					for _, srv := range snap.GetTmuxServers() {
+						for _, s := range srv.GetSessions() {
+							for _, w := range s.GetWindows() {
+								if len(w.GetPanes()) > 0 {
+									key = w.GetPanes()[0].GetKey()
+								}
+							}
+						}
+					}
+				}
+				if key == nil {
+					time.Sleep(50 * time.Millisecond)
+				}
+			}
+			if key == nil {
+				t.Fatal("no pane appeared in the observer snapshot")
+			}
+			// The handler marks through the real overlay while the
+			// Ensurer's own tmux socket stays the dummy one, proving
+			// again that marking makes no tmux call.
+			eo := testOptions()
+			eo.Marks = o
+			e, err := New(eo)
+			if err != nil {
+				t.Fatal(err)
+			}
+			res := e.SetAvailability(ctx, &agentv1.SetPaneAvailability{
+				Pane: key, AvailableForWork: true, FreshContextOnReuse: true,
+				Reason: typev1.AvailabilityReason_AVAILABILITY_REASON_MARKED_ON_BOARD,
+			})
+			if res.GetStatus() != typev1.Status_STATUS_OK {
+				t.Fatalf("SetAvailability = (%v, %v), want OK: %q",
+					res.GetStatus(), res.GetReason(), res.GetMessage())
+			}
+			deadline = time.Now().Add(20 * time.Second)
+			for !rec.availEdgeTo(key.GetPaneId(), true) && time.Now().Before(deadline) {
+				time.Sleep(50 * time.Millisecond)
+			}
+			if !rec.availEdgeTo(key.GetPaneId(), true) {
+				t.Fatal("no AvailabilityChanged edge to available after the mark")
+			}
+			deadline = time.Now().Add(20 * time.Second)
+			for time.Now().Before(deadline) {
+				snap := &agentv1.Snapshot{}
+				sctx, scancel := context.WithTimeout(ctx, 5*time.Second)
+				serr := o.Snapshot(sctx, snap)
+				scancel()
+				if serr != nil {
+					continue
+				}
+				if paneAvail(snap, key.GetPaneId()) {
+					return
+				}
+				time.Sleep(50 * time.Millisecond)
+			}
+			t.Fatal("the snapshot never showed the pane available")
+		})
+	}
+}
+
+// paneAvail reports whether the snapshot marks the pane id available.
+func paneAvail(snap *agentv1.Snapshot, paneID string) bool {
+	for _, srv := range snap.GetTmuxServers() {
+		for _, s := range srv.GetSessions() {
+			for _, w := range s.GetWindows() {
+				for _, p := range w.GetPanes() {
+					if p.GetKey().GetPaneId() == paneID && p.GetAvailability().GetAvailableForWork() {
+						return true
+					}
+				}
+			}
+		}
+	}
+	return false
 }
 
 // TestAvailabilityHandlerContract pins the executor seam for E11: the kind
