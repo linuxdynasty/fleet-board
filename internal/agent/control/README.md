@@ -9,7 +9,11 @@ later slice. F3 `SendKeys` types operator free text (`OPERATOR_TEXT` only)
 into a harness pane at a proven-ready prompt; every other purpose waits for
 its slice. F4 `Interrupt` sends a fixed C-c to the pane: no screen gate (a
 turn is running, so a ready prompt must never be required), idempotent in
-effect, so the class is `RepeatSafe` and a resume re-sends. E11
+effect, so the class is `RepeatSafe` and a resume re-sends. F5
+`RespawnPane` re-runs a dead pane's own command through a plain one-shot
+`respawn-pane` (no `-k`, so tmux itself refuses a pane that is still
+active); a live pane is refused `PANE_BUSY`, not retryable, and any
+harness restart field waits for the adapter slice. E11
 `SetPaneAvailability` records the developer's board mark for one pane on
 the observer's in-memory overlay (or clears it): no tmux call, no screen
 gate, `RepeatSafe` like the other declarative kinds.
@@ -36,7 +40,8 @@ res := e.SetAvailability(ctx, cmd.GetSetPaneAvailability())
 // plus the server-specific capability, RepeatSafe; s := e.SendKeysHandler()
 // (Kind SendKeys) is NotRepeatSafe: a resume ends UNKNOWN_OUTCOME and never
 // retypes; i := e.InterruptHandler() (Kind Interrupt) is RepeatSafe: a
-// resume re-sends the C-c; a := e.AvailabilityHandler() (Kind
+// resume re-sends the C-c; r := e.RespawnHandler() (Kind RespawnPane) is
+// RepeatSafe: a resume respawns again; a := e.AvailabilityHandler() (Kind
 // SetPaneAvailability) is RepeatSafe: a resume records the mark again. The
 // wiring row registers them.
 ```
@@ -120,7 +125,22 @@ res := e.SetAvailability(ctx, cmd.GetSetPaneAvailability())
     `UNKNOWN_OUTCOME`, and a refused send re-reads the listing: a gone
     pane reads `PANE_NOT_FOUND`, a dead one `PANE_BUSY`, anything else
     `INTERNAL`. The OK result names the pane and carries no screen text.
-11. **Mark** (E11, no tmux touch): the pane key names this server, a `%N`
+11. **Pane and respawn** (F5): the pane key names this server, a `%N`
+    pane id and a server start id (`INVALID_ARGUMENT` else, before any
+    tmux call), and no harness, resume, profile or harness conversation
+    is set (a restart reads `HARNESS_NOT_ALLOWED`, a lone profile or
+    conversation `INVALID_ARGUMENT`: this slice re-runs the pane's own
+    command only). The start id still matches the server's and the pane
+    is listed (a stale key or a missing pane reads `PANE_NOT_FOUND`)
+    and dead (a live pane reads `PANE_BUSY`, not retryable: respawn
+    never kills live work). The check-and-respawn holds that pane's
+    lock, shared with F3 and F4. The respawn is a one-shot
+    `respawn-pane -t` with no `-k` flag and no command, so tmux re-runs
+    what the pane ran and itself refuses a pane that came alive under
+    the call. A refused respawn re-reads the listing: a gone pane reads
+    `PANE_NOT_FOUND`, a live one `PANE_BUSY`, anything else `INTERNAL`.
+    The OK result names the pane and carries no screen text.
+12. **Mark** (E11, no tmux touch): the pane key names this server, a `%N`
     pane id and a server start id (`INVALID_ARGUMENT` else, before the
     overlay), and the reason is one the hub commands (`MARKED_ON_BOARD`,
     `CLEARED_ON_BOARD`, `GOAL_MERGED`; an empty reason or one the agent

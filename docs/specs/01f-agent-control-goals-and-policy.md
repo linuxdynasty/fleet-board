@@ -98,8 +98,16 @@ All pass local policy, carry a `command_id`, and are idempotent except F3.
   stale server start reads `PANE_NOT_FOUND`. No tmux call, no screen gate;
   declarative and last-write-wins, so a resume records the mark again.
   Landed (`internal/agent/control`, issue #67).
-- **F5 Respawn pane** (adapter `ResumeArgs`), **F6 Kill
-  window.** Resize belongs to J1.
+- **F5 Respawn pane:** the pane key, the server start id and the pane's
+  listing hold under that pane's lock, shared with F3 and F4; a stale key
+  or a missing pane reads `PANE_NOT_FOUND`, a live pane `PANE_BUSY` (not
+  retryable; respawn never kills live work). A dead pane is respawned
+  through a plain one-shot `respawn-pane` with no `-k` flag, so tmux
+  re-runs the pane's own command and itself refuses a pane that came
+  alive under the call. RepeatSafe: a resume respawns again. A harness
+  restart through the adapter's `ResumeArgs` waits for a later slice.
+  Landed (`internal/agent/control`, issue #67).
+- **F6 Kill window.** Resize belongs to J1.
 - **F8 Run harness command:** `RunHarnessCommand{target, command, args}`,
   where `command` must be in the machine's catalog (C4) and its class must be
   allowed for the requester. Only typed at an idle prompt (ready pattern
