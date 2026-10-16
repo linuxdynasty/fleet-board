@@ -278,6 +278,8 @@ func operationKind(arm string) hubv1.OperationKind {
 		return hubv1.OperationKind_OPERATION_KIND_RESPAWN_PANE
 	case "kill_window":
 		return hubv1.OperationKind_OPERATION_KIND_KILL_WINDOW
+	case "capture_pane":
+		return hubv1.OperationKind_OPERATION_KIND_CAPTURE_PANE
 	case "run_harness_command":
 		return hubv1.OperationKind_OPERATION_KIND_RUN_HARNESS_COMMAND
 	case "set_pane_availability":
