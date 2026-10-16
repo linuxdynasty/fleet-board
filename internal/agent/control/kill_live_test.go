@@ -77,7 +77,7 @@ func TestKillLiveMissingAndStale(t *testing.T) {
 				{"stale server start", liveKillCmd(id, "0-0")},
 			} {
 				t.Run(tc.name, func(t *testing.T) {
-					res := e.KillWindow(t.Context(), tc.cmd, false)
+					res := e.KillWindow(t.Context(), tc.cmd, false, typev1.Role_ROLE_OWNER)
 					if res.GetStatus() != typev1.Status_STATUS_FAILED ||
 						res.GetReason() != typev1.ReasonCode_REASON_CODE_WINDOW_NOT_FOUND {
 						t.Fatalf("KillWindow = (%v, %v), want (FAILED, WINDOW_NOT_FOUND): %q",
@@ -108,7 +108,7 @@ func TestKillLiveFleetWindowKilled(t *testing.T) {
 			if got := v.Variant(t.Context(), cmd); got != "fleet_window" {
 				t.Fatalf("Variant = %q, want fleet_window for a tagged session's window", got)
 			}
-			res := e.KillWindow(t.Context(), liveKillCmd(id, start), true)
+			res := e.KillWindow(t.Context(), liveKillCmd(id, start), true, typev1.Role_ROLE_SCHEDULER)
 			if res.GetStatus() != typev1.Status_STATUS_OK {
 				t.Fatalf("KillWindow = (%v, %v), want OK: %q",
 					res.GetStatus(), res.GetReason(), res.GetMessage())
@@ -142,7 +142,7 @@ func TestKillLiveDeveloperWindowGate(t *testing.T) {
 			if got := v.Variant(t.Context(), cmd); got != "developer_window" {
 				t.Fatalf("Variant = %q, want developer_window for an untagged window", got)
 			}
-			res := e.KillWindow(t.Context(), liveKillCmd(id, start), true)
+			res := e.KillWindow(t.Context(), liveKillCmd(id, start), true, typev1.Role_ROLE_SCHEDULER)
 			if res.GetStatus() != typev1.Status_STATUS_REJECTED_BY_POLICY ||
 				res.GetReason() != typev1.ReasonCode_REASON_CODE_ROLE_INSUFFICIENT {
 				t.Fatalf("KillWindow = (%v, %v), want (REJECTED_BY_POLICY, ROLE_INSUFFICIENT): %q",
@@ -157,7 +157,15 @@ func TestKillLiveDeveloperWindowGate(t *testing.T) {
 			if !found {
 				t.Fatalf("window %s gone after a refused kill", id)
 			}
-			res = e.KillWindow(t.Context(), liveKillCmd(id, start), false)
+			// An operator ask admitted as a fleet window before a tag
+			// removal meets the same refusal at kill time.
+			res = e.KillWindow(t.Context(), liveKillCmd(id, start), false, typev1.Role_ROLE_OPERATOR)
+			if res.GetStatus() != typev1.Status_STATUS_REJECTED_BY_POLICY ||
+				res.GetReason() != typev1.ReasonCode_REASON_CODE_ROLE_INSUFFICIENT {
+				t.Fatalf("KillWindow = (%v, %v), want (REJECTED_BY_POLICY, ROLE_INSUFFICIENT): %q",
+					res.GetStatus(), res.GetReason(), res.GetMessage())
+			}
+			res = e.KillWindow(t.Context(), liveKillCmd(id, start), false, typev1.Role_ROLE_OWNER)
 			if res.GetStatus() != typev1.Status_STATUS_OK {
 				t.Fatalf("KillWindow = (%v, %v), want OK: %q",
 					res.GetStatus(), res.GetReason(), res.GetMessage())

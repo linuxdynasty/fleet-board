@@ -153,9 +153,11 @@ res := e.SetAvailability(ctx, cmd.GetSetPaneAvailability())
     or a window the server-wide listing does not know reads
     `WINDOW_NOT_FOUND`, never a kill at a reused id. The executor's
     fleet cell (the scheduler's 02g `F` row) is judged here, where tmux
-    is visible: a window neither its own `@fleet_session_id` window
-    option nor its session's marks reads `ROLE_INSUFFICIENT`
-    (`REJECTED_BY_POLICY`), before any kill. A refused kill re-reads
+    is visible, and the admission is re-checked for every non-owner
+    role: a window neither its own `@fleet_session_id` window option
+    nor its session's marks reads `ROLE_INSUFFICIENT`
+    (`REJECTED_BY_POLICY`), before any kill, so a tag removed after
+    the role check still refuses. A refused kill re-reads
     the listing: a gone window reads `WINDOW_NOT_FOUND`, anything else
     `INTERNAL`. The OK result names the window and carries no screen
     text.

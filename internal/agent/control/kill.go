@@ -31,14 +31,18 @@ var windowIDRE = regexp.MustCompile(`^@[0-9]{1,10}$`)
 // Default deny: the window key's shape, its server, and its generation
 // are checked first, then the window is located by id. A stale start id
 // or a window the listing does not know reads WINDOW_NOT_FOUND, never a
-// kill at a reused id. fleetOnly is the executor's 02g F cell
-// (the scheduler's row): only it can see tmux, so it refuses a window
-// the fleet's tags do not mark with ROLE_INSUFFICIENT before any kill.
-// A refused kill re-reads the listing to say whether the window went
-// away under the call (WINDOW_NOT_FOUND) or tmux refused another way
-// (INTERNAL); no message matches tmux's error text, so no tmux version
-// can skew it.
-func (e *Ensurer) KillWindow(ctx context.Context, cmd *agentv1.KillWindow, fleetOnly bool) *agentv1.CommandResult {
+// kill at a reused id. fleetOnly is the executor's 02g F cell (the
+// scheduler's row): only it can see tmux, so it refuses a window the
+// fleet's tags do not mark with ROLE_INSUFFICIENT before any kill. The
+// same re-check covers every non-owner role (role is the command's own
+// requested_by, already admitted by the executor): a tag removed between
+// the role check and the kill — across a local-approval wait, say —
+// reads ROLE_INSUFFICIENT instead of killing under the wrong row. Only
+// an owner kills an unmarked window. A refused kill re-reads the
+// listing to say whether the window went away under the call
+// (WINDOW_NOT_FOUND) or tmux refused another way (INTERNAL); no message
+// matches tmux's error text, so no tmux version can skew it.
+func (e *Ensurer) KillWindow(ctx context.Context, cmd *agentv1.KillWindow, fleetOnly bool, role typev1.Role) *agentv1.CommandResult {
 	win := cmd.GetWindow()
 	if win == nil {
 		return refuse(typev1.Status_STATUS_FAILED, typev1.ReasonCode_REASON_CODE_INVALID_ARGUMENT,
@@ -80,7 +84,7 @@ func (e *Ensurer) KillWindow(ctx context.Context, cmd *agentv1.KillWindow, fleet
 		return refuse(typev1.Status_STATUS_FAILED, typev1.ReasonCode_REASON_CODE_WINDOW_NOT_FOUND,
 			"no window "+winID+" is on this server")
 	}
-	if fleetOnly && !e.fleetMarked(ctx, winID, sess) {
+	if !e.fleetMarked(ctx, winID, sess) && (fleetOnly || role != typev1.Role_ROLE_OWNER) {
 		return refuse(typev1.Status_STATUS_REJECTED_BY_POLICY, typev1.ReasonCode_REASON_CODE_ROLE_INSUFFICIENT,
 			"that window is not the fleet's")
 	}
@@ -205,7 +209,7 @@ func (h killHandler) Run(ctx context.Context, r exec.Request) *agentv1.CommandRe
 			Message: "control: KillWindow handler got another kind",
 		}
 	}
-	return h.e.KillWindow(ctx, cmd.KillWindow, r.FleetOnly)
+	return h.e.KillWindow(ctx, cmd.KillWindow, r.FleetOnly, r.Command.GetRequestedBy().GetRole())
 }
 
 // Resume re-runs from the start: killing is idempotent in effect for a

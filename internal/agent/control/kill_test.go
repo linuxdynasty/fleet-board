@@ -59,7 +59,7 @@ func TestKillRefusesABadShape(t *testing.T) {
 			t.Parallel()
 			cmd := killCmd()
 			tc.mute(cmd)
-			res := e.KillWindow(t.Context(), cmd, false)
+			res := e.KillWindow(t.Context(), cmd, false, typev1.Role_ROLE_OWNER)
 			if res.GetStatus() != typev1.Status_STATUS_FAILED ||
 				res.GetReason() != typev1.ReasonCode_REASON_CODE_INVALID_ARGUMENT {
 				t.Fatalf("KillWindow = (%v, %v), want (FAILED, INVALID_ARGUMENT): %q",
@@ -117,6 +117,58 @@ func TestKillHandlerContract(t *testing.T) {
 		res.GetReason() != typev1.ReasonCode_REASON_CODE_INTERNAL {
 		t.Fatalf("Run(other) = (%v, %v), want (FAILED, INTERNAL): %q",
 			res.GetStatus(), res.GetReason(), res.GetMessage())
+	}
+}
+
+// TestKillRunRechecksTheRole pins the admission re-check through the
+// handler seam: Run carries the command's own role, so an operator ask
+// for a window whose fleet tag is gone is refused with nothing killed,
+// while an owner ask for the same window runs through.
+func TestKillRunRechecksTheRole(t *testing.T) {
+	t.Parallel()
+	start := startID(1000, 2000)
+	for _, tc := range []struct {
+		name   string
+		role   typev1.Role
+		wantOK bool
+	}{
+		{"operator refused", typev1.Role_ROLE_OPERATOR, false},
+		{"owner runs", typev1.Role_ROLE_OWNER, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			o := testOptions()
+			r := killScript(false)
+			o.Runner = r
+			e, err := New(o)
+			if err != nil {
+				t.Fatal(err)
+			}
+			h := e.KillWindowHandler()
+			cmd := &agentv1.Command{
+				Kind:        &agentv1.Command_KillWindow{KillWindow: &agentv1.KillWindow{Window: killKey(start, "@5")}},
+				RequestedBy: &typev1.Principal{Role: tc.role},
+			}
+			res := h.Run(t.Context(), exec.Request{Command: cmd})
+			if tc.wantOK {
+				if res.GetStatus() != typev1.Status_STATUS_OK {
+					t.Fatalf("Run = (%v, %v), want OK: %q",
+						res.GetStatus(), res.GetReason(), res.GetMessage())
+				}
+				if r.kills != 1 {
+					t.Fatalf("kill-window attempted %d times, want one", r.kills)
+				}
+				return
+			}
+			if res.GetStatus() != typev1.Status_STATUS_REJECTED_BY_POLICY ||
+				res.GetReason() != typev1.ReasonCode_REASON_CODE_ROLE_INSUFFICIENT {
+				t.Fatalf("Run = (%v, %v), want (REJECTED_BY_POLICY, ROLE_INSUFFICIENT): %q",
+					res.GetStatus(), res.GetReason(), res.GetMessage())
+			}
+			if r.kills != 0 {
+				t.Fatalf("kill-window attempted %d times on a refused kill, want none", r.kills)
+			}
+		})
 	}
 }
 
@@ -186,7 +238,7 @@ func TestKillWindowChecks(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			res := e.KillWindow(t.Context(), &agentv1.KillWindow{Window: tc.key}, false)
+			res := e.KillWindow(t.Context(), &agentv1.KillWindow{Window: tc.key}, false, typev1.Role_ROLE_OWNER)
 			if res.GetStatus() != typev1.Status_STATUS_FAILED || res.GetReason() != tc.reason {
 				t.Fatalf("KillWindow = (%v, %v), want (FAILED, %v): %q",
 					res.GetStatus(), res.GetReason(), tc.reason, res.GetMessage())
@@ -198,10 +250,12 @@ func TestKillWindowChecks(t *testing.T) {
 	}
 }
 
-// TestKillFleetGate pins the 02g F check the executor hands down: a
-// scheduler cell (FleetOnly) on a developer window is refused
-// ROLE_INSUFFICIENT before any kill, while a fleet window and a
-// non-fleet cell run through.
+// TestKillFleetGate pins the 02g F check the executor hands down, plus
+// the admission re-check at kill time: a non-owner kill runs only while
+// the fleet's tags still mark the window, so a tag removed between the
+// role check and the kill (across a local-approval wait) is refused
+// ROLE_INSUFFICIENT instead of killing under the wrong row. Only an
+// owner kills an unmarked window.
 func TestKillFleetGate(t *testing.T) {
 	t.Parallel()
 	start := startID(1000, 2000)
@@ -209,13 +263,16 @@ func TestKillFleetGate(t *testing.T) {
 		name      string
 		fleetTags bool
 		fleetOnly bool
+		role      typev1.Role
 		wantOK    bool
 		want      typev1.ReasonCode
 	}{
-		{"fleet window with the fleet cell kills", true, true, true, typev1.ReasonCode_REASON_CODE_UNSPECIFIED},
-		{"fleet window without the fleet cell kills", true, false, true, typev1.ReasonCode_REASON_CODE_UNSPECIFIED},
-		{"developer window without the fleet cell kills", false, false, true, typev1.ReasonCode_REASON_CODE_UNSPECIFIED},
-		{"developer window with the fleet cell is refused", false, true, false, typev1.ReasonCode_REASON_CODE_ROLE_INSUFFICIENT},
+		{"fleet window with the fleet cell kills", true, true, typev1.Role_ROLE_SCHEDULER, true, typev1.ReasonCode_REASON_CODE_UNSPECIFIED},
+		{"fleet window without the fleet cell kills", true, false, typev1.Role_ROLE_OPERATOR, true, typev1.ReasonCode_REASON_CODE_UNSPECIFIED},
+		{"owner kills a developer window", false, false, typev1.Role_ROLE_OWNER, true, typev1.ReasonCode_REASON_CODE_UNSPECIFIED},
+		{"fleet cell on a developer window is refused", false, true, typev1.Role_ROLE_SCHEDULER, false, typev1.ReasonCode_REASON_CODE_ROLE_INSUFFICIENT},
+		{"operator re-check on a developer window is refused", false, false, typev1.Role_ROLE_OPERATOR, false, typev1.ReasonCode_REASON_CODE_ROLE_INSUFFICIENT},
+		{"unknown role on a developer window is refused", false, false, typev1.Role_ROLE_UNSPECIFIED, false, typev1.ReasonCode_REASON_CODE_ROLE_INSUFFICIENT},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -226,7 +283,7 @@ func TestKillFleetGate(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			res := e.KillWindow(t.Context(), &agentv1.KillWindow{Window: killKey(start, "@5")}, tc.fleetOnly)
+			res := e.KillWindow(t.Context(), &agentv1.KillWindow{Window: killKey(start, "@5")}, tc.fleetOnly, tc.role)
 			if tc.wantOK {
 				if res.GetStatus() != typev1.Status_STATUS_OK {
 					t.Fatalf("KillWindow = (%v, %v), want OK: %q",
