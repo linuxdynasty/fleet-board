@@ -177,3 +177,20 @@ func TestCapturePaneNeedsACaller(t *testing.T) {
 		t.Fatalf("got %v %v, want unauthenticated CREDENTIALS_INVALID", code, reason)
 	}
 }
+
+// TestCapturePaneNeedsLocalUser: a signed-in user holds no READ scope until
+// row 12 brings caller scopes.
+func TestCapturePaneNeedsLocalUser(t *testing.T) {
+	t.Parallel()
+	e := newFleetEnv(t, &typev1.Principal{
+		Id:   &typev1.PrincipalId{Value: "u-bob"},
+		Kind: typev1.PrincipalKind_PRINCIPAL_KIND_USER,
+		Name: "bob",
+	})
+	pane := &typev1.PaneKey{Server: "fleet", ServerStartId: "s1", PaneId: "%1"}
+	_, err := e.client.CapturePane(context.Background(), connect.NewRequest(captureReq("r1", "sess_x", pane)))
+	code, reason, _ := detail(t, err)
+	if code != connect.CodePermissionDenied || reason != typev1.ReasonCode_REASON_CODE_SCOPE_MISSING {
+		t.Fatalf("got %v %v, want permission_denied SCOPE_MISSING", code, reason)
+	}
+}

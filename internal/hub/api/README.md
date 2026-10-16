@@ -79,6 +79,13 @@ capped, rejected and unenforced sets, heartbeat health past the event
 counters, spool, battery, clock skew, slots, forge state, certificates,
 capabilities, unfit) stay unset until their rows land.
 
+`CapturePane` needs `READ` for the visible screen and `LOGS` for scrollback
+(02d). Until a later row-12 slice brings caller scopes, only a `LOCAL_USER`
+principal (the admin socket) calls, covering both. It sends one `capture_pane`
+agent command through the session path (idempotent on `request_id`, audited as
+`session.capture`): `pane` is required, `max_bytes` caps at 256 KiB, and only
+sessions the hub started route yet (`SESSION_NOT_FOUND` otherwise).
+
 `CreateEnrollmentToken` needs `ADMIN` (02d). Until plan row 12 brings scopes,
 only a `LOCAL_USER` principal (the admin socket) holds it: no principal is
 `UNAUTHENTICATED`/`CREDENTIALS_INVALID`, any other kind is
