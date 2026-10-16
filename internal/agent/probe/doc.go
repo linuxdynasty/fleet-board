@@ -8,7 +8,10 @@
 // STARTUP_PROMPT_SEEN, and only a proven idle prompt with an empty input
 // line is typed into, with the one status command (/usage, or /status on
 // Codex) and nothing else. Every pass emits ProbeHealth; a UsageReading
-// goes out only when a usage screen was read.
+// goes out only when a usage screen was read. Separately, observed panes
+// contribute passive signals (01 D3): BuildPassiveReading turns a banner
+// into a USAGE_SOURCE_PASSIVE reading, and PassiveCache emits it only
+// when a bucket's percent or reset moved since the last emission.
 //
 // Concurrency: one goroutine owns every probe decision (ADR 0001). The
 // hub's commands arrive through the executor on command goroutines; the

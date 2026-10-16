@@ -20,6 +20,15 @@ file; it parses text it is given.
   cleanly, since prompt detection is a later slice. Nothing is ever
   guessed. `ReadyParserVersion` bumps when this parser's behavior
   changes.
+- `passive.go`: `ParsePassive` reads the weekly-limit banner
+  ("You've used 96% of your weekly limit · resets 10pm", 01 D3) out
+  of an observed pane into the `weekly_all` bucket. Only that
+  spec-recorded shape forms a bucket; anything else fails with no
+  buckets, and a half-read banner is `PARTIAL`, never guessed.
+  `PassiveParserVersion` bumps when this parser's behavior changes.
+  The shape is covered by inline unit strings, not a live fixture, so
+  passive stays out of the conformance table until a live probe
+  records a near-limit banner.
 - `claude_test.go`: the adapter's declaration for the shared
   conformance test (`harness.Conform`). Version `2.1.296` is
   `UNVERIFIED_PARSING` with `USAGE` and the trust half of `READY`
