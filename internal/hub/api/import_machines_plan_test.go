@@ -191,6 +191,29 @@ func TestPlanConfigImportRefusesBadMachineEntries(t *testing.T) {
 	}
 }
 
+// TestClassifyMachineCarriesTheBaselineVersion proves the race guard's
+// threading: every op for a matched machine carries the baseline row's
+// version, so the apply refuses a row an owner write moved since the
+// dry run. Both the update and the unchanged shadow-healing paths carry
+// it.
+func TestClassifyMachineCarriesTheBaselineVersion(t *testing.T) {
+	t.Parallel()
+	enrolled := map[string][]machineBaseline{
+		"laptop": {{id: "m1", labels: []string{"gpu"}, values: &typev1.SettingValues{}, version: 7}},
+	}
+	updated := classifyMachine(&hubv1.MachineConfig{Name: "laptop", Labels: []string{"gpu", "field"}},
+		0, enrolled, nil, map[string]bool{})
+	if !updated.hasOp || updated.isPending || updated.machine.ExpectedVersion != 7 {
+		t.Errorf("update op = %+v, want a machine op at ExpectedVersion 7", updated.machine)
+	}
+	shadowed := classifyMachine(&hubv1.MachineConfig{Name: "laptop", Labels: []string{"gpu"}},
+		0, enrolled, map[string]pendingBaseline{"laptop": {}}, map[string]bool{})
+	if !shadowed.hasOp || shadowed.isPending || shadowed.machine.ExpectedVersion != 7 ||
+		shadowed.machine.DropPending != "laptop" {
+		t.Errorf("heal op = %+v, want a machine op at ExpectedVersion 7 dropping the shadow", shadowed.machine)
+	}
+}
+
 // TestMachineLayerSpecRoundTrips proves the stored layer shape survives
 // its own encoding: what the apply writes, the baseline reads back.
 func TestMachineLayerSpecRoundTrips(t *testing.T) {

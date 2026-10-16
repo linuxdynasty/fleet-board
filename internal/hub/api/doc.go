@@ -13,19 +13,24 @@
 // machine.enroll_token audit row with the token), the watched-repo
 // writes CreateRepo, UpdateRepo and DeleteRepo (each with its repo.* audit
 // row), the machine admin writes UpdateMachine, RevokeMachine and
-// DeleteMachine (each with its machine.* audit row), the hub-state
-// triage writes SnoozeTriageItem and DismissTriageItem (each with its
-// triage.* audit row), the session-control and approvals calls,
-// [Fleet.GetServerInfo], [Fleet.ListMachines] and [Fleet.GetMachine]
-// built; every other method is Unimplemented (02k): it checks the caller
-// ([PrincipalFrom], ADMIN for enrollment and revoke/delete, SETTINGS for
-// repos and update, READ for the machine reads, APPROVALS for triage;
+// DeleteMachine (each with its machine.* audit row), the config import
+// and export ImportConfig and ExportConfig (repos and machines apply in
+// one writer transaction with a config.import audit row; other sections
+// are not built yet), the hub-state triage writes SnoozeTriageItem and
+// DismissTriageItem (each with its triage.* audit row), the
+// session-control and approvals calls, [Fleet.GetServerInfo],
+// [Fleet.ListMachines] and [Fleet.GetMachine] built; every other method
+// is Unimplemented (02k): it checks the caller ([PrincipalFrom], ADMIN
+// for enrollment and revoke/delete, SETTINGS for repos, update and
+// import, READ for export and the machine reads, APPROVALS for triage;
 // GetServerInfo needs no scope), the fields and the request_id (02b),
 // mints the token in package ca and stores only its secret hash, merges
 // the masked repo patch inside the writer transaction, revokes a machine
 // through the revocation list and the writer job (pre-check, stage,
-// commit, post-commit reconcile, Bye), or moves a triage item's state
-// with its stamp (snooze, dismiss).
+// commit, post-commit reconcile, Bye), plans an import as ConfigChange
+// lines behind a plan hash a later apply must repeat, keeps a machine
+// entry no machine has as a pending machine for its enroll, or moves a
+// triage item's state with its stamp (snooze, dismiss).
 // [NewAdmin] serves it on the admin socket over HTTP/1.1,
 // closing unserved every connection whose kernel peer user id
 // ([KernelPeerUID]) is not fleetd's and refusing any request with an Origin

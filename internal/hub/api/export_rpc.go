@@ -92,7 +92,8 @@ func exportAccounts(rows []statedb.AccountRow) ([]*hubv1.AccountConfig, error) {
 // but no request id and no local secret. Exporting then importing (dry
 // run) plans nothing to do: every exported section diffs to unchanged,
 // machines included (enrolled entries carry their layer's values, kept
-// entries theirs).
+// entries theirs; a kept row shadowing an enrolled name folds into one
+// entry whose re-import heals the pair).
 func (f *Fleet) ExportConfig(ctx context.Context, req *connect.Request[hubv1.ExportConfigRequest],
 ) (*connect.Response[hubv1.ExportConfigResponse], error) {
 	who, err := authorizeRead(ctx)

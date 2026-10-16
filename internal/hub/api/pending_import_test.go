@@ -144,6 +144,42 @@ func TestImportApplySetsLabelsAndValuesOnEnrolledMachine(t *testing.T) {
 	}
 }
 
+// TestImportApplyAfterAConcurrentMachineWrite is the liveness half of
+// the version check: an owner write between the dry run and the apply
+// moves the row, so a fresh dry run re-plans against it and applies
+// cleanly instead of tripping the staleness guard.
+func TestImportApplyAfterAConcurrentMachineWrite(t *testing.T) {
+	t.Parallel()
+	e := newFleetEnv(t, localUser("alice"), trusted(false))
+	seedMachine(t, e, "01jimportmachine00000001")
+	doc := &hubv1.FleetConfig{FormatVersion: 1, Machines: []*hubv1.MachineConfig{{
+		Name: "laptop", Labels: []string{"field"},
+	}}}
+	ctx := context.Background()
+	if _, err := statedb.UpdateMachine(ctx, e.st, statedb.MachineUpdate{
+		MachineWrite: statedb.MachineWrite{
+			Principal: "local:alice", RequestID: "race-1",
+			RequestHash: sha256.Sum256([]byte("race")), Now: fleetNow,
+		},
+		MachineID: "01jimportmachine00000001", ExpectedVersion: 1,
+		Labels: []string{"desk"}, HasLabels: true,
+	}); err != nil {
+		t.Fatalf("concurrent UpdateMachine: %v", err)
+	}
+	plan := dryRun(t, e, "dry-2", doc)
+	res := applyDoc(t, e, "apply-1", doc, plan.GetPlanHash())
+	if !res.GetApplied() {
+		t.Fatal("re-planned apply did not apply")
+	}
+	identities, err := statedb.ListMachineIdentities(ctx, e.st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(identities) != 1 || len(identities[0].Labels) != 1 || identities[0].Labels[0] != "field" {
+		t.Errorf("machine labels = %+v, want the imported [field]", identities)
+	}
+}
+
 // TestImportPendingAppliedAtEnroll closes the 02m loop over the
 // production path: import keeps the entry, and the enroll with a token
 // for that name merges its labels in, records the machine drained and

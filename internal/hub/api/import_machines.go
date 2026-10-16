@@ -16,11 +16,14 @@ import (
 
 // machineBaseline is one enrolled machine the import plan diffs a
 // machine entry against: the id (for the settings-layer scope), the
-// display name and the labels with the layer's values.
+// display name and the labels with the layer's values. version is the
+// row's version, carried into the apply op so a concurrent owner write
+// aborts the apply instead of losing the change.
 type machineBaseline struct {
-	id     string
-	labels []string
-	values *typev1.SettingValues
+	id      string
+	labels  []string
+	values  *typev1.SettingValues
+	version uint64
 }
 
 // pendingBaseline is one kept machine entry the plan diffs against.
@@ -121,6 +124,7 @@ func machineRestBaseline(ctx context.Context, s *store.Store) (map[string][]mach
 		}
 		enrolled[id.Name] = append(enrolled[id.Name], machineBaseline{
 			id: id.MachineID, labels: id.Labels, values: values,
+			version: id.Version,
 		})
 	}
 	kept := map[string]pendingBaseline{}
@@ -137,8 +141,12 @@ func machineRestBaseline(ctx context.Context, s *store.Store) (map[string][]mach
 // exportMachines renders the machines section (02m): one entry per
 // enrolled machine (its labels with its layer's values, when it holds
 // any) and one per kept entry, in name order. A kept row shadowing an
-// enrolled name (only a rename leaves one) renders beside it; the next
-// import apply heals the pair.
+// enrolled name (only a rename leaves one) folds into the enrolled
+// entry instead of rendering beside it: the enrolled labels and values
+// win, the kept ones fill in where the enrolled entry states none (the
+// import's own fold direction), so the export holds one entry per name
+// and the next import apply heals the pair instead of refusing the
+// second entry as a duplicate.
 func exportMachines(ctx context.Context, s *store.Store) ([]*hubv1.MachineConfig, error) {
 	identities, err := statedb.ListMachineIdentities(ctx, s)
 	if err != nil {
@@ -167,11 +175,14 @@ func exportMachines(ctx context.Context, s *store.Store) ([]*hubv1.MachineConfig
 		out = append(out, mc)
 	}
 	for _, p := range rows {
-		mc := &hubv1.MachineConfig{Name: p.Name, Labels: p.Labels}
 		values, err := layerValues(p.Values)
 		if err != nil {
 			return nil, err
 		}
+		if foldShadowedPending(out, p.Name, p.Labels, values) {
+			continue
+		}
+		mc := &hubv1.MachineConfig{Name: p.Name, Labels: p.Labels}
 		if !emptyValues(values) {
 			mc.Values = values
 		}
@@ -179,6 +190,30 @@ func exportMachines(ctx context.Context, s *store.Store) ([]*hubv1.MachineConfig
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].GetName() < out[j].GetName() })
 	return out, nil
+}
+
+// foldShadowedPending folds a kept row shadowing an enrolled name into
+// the enrolled export entries, the way the import folds a shadowed pair
+// (classifyMatchedMachine): the enrolled entry keeps what it states,
+// the kept labels and values fill in where it states none. It reports
+// whether any enrolled entry held the name.
+func foldShadowedPending(out []*hubv1.MachineConfig, name string, labels []string,
+	values *typev1.SettingValues,
+) bool {
+	matched := false
+	for _, mc := range out {
+		if mc.GetName() != name {
+			continue
+		}
+		matched = true
+		if len(mc.GetLabels()) == 0 && len(labels) > 0 {
+			mc.Labels = labels
+		}
+		if mc.GetValues() == nil && !emptyValues(values) {
+			mc.Values = values
+		}
+	}
+	return matched
 }
 
 // countMachineLines counts a plan's machine lines for the applied log
@@ -272,7 +307,8 @@ func classifyMachine(mc *hubv1.MachineConfig, i int, enrolled map[string][]machi
 // unchanged otherwise. A kept row shadowing the name (only a rename can
 // leave one: enroll consumes it) is dropped by the apply, folding its
 // labels and values in where the entry states none, so the pair cannot
-// linger.
+// linger. Every emitted op carries the baseline version, so the apply
+// refuses a machine an owner write moved since the dry run.
 func classifyMatchedMachine(mc *hubv1.MachineConfig, stored machineBaseline, kept pendingBaseline, hasKept bool) classifiedMachine {
 	name := mc.GetName()
 	labelsSame := len(mc.GetLabels()) == 0 || equalLabelSets(mc.GetLabels(), stored.labels)
@@ -297,13 +333,16 @@ func classifyMatchedMachine(mc *hubv1.MachineConfig, stored machineBaseline, kep
 		if hasKept {
 			// Nothing to change on the machine, but the shadowing
 			// kept row still goes.
-			out.machine = statedb.ImportMachineOp{MachineID: stored.id, Name: name, DropPending: name}
+			out.machine = statedb.ImportMachineOp{
+				MachineID: stored.id, Name: name,
+				ExpectedVersion: stored.version, DropPending: name,
+			}
 			out.hasOp = true
 		}
 		return out
 	}
 	var changed []string
-	op := statedb.ImportMachineOp{MachineID: stored.id, Name: name}
+	op := statedb.ImportMachineOp{MachineID: stored.id, Name: name, ExpectedVersion: stored.version}
 	if hasKept {
 		op.DropPending = name
 	}
