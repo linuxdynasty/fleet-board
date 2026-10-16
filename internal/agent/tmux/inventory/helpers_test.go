@@ -176,12 +176,29 @@ func startObserver(t *testing.T, b tmuxtest.Binary, folder string, edit func(*in
 	return &obsRig{o: o, rec: rec, tel: tel, logs: logs}
 }
 
+// waitState waits until the server's control client reaches s. Like
+// waitSession it wakes the client at most once a second while waiting:
+// a retry that lands while the server answers nothing parks the client
+// in StateAbsent, which only a Wake retries, and a passive wait would
+// otherwise sit out the whole bound (see waitSession).
 func (r *obsRig) waitState(t *testing.T, server string, s tmux.State) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), wait)
-	defer cancel()
-	if err := r.o.Client(server).WaitState(ctx, s); err != nil {
-		t.Fatalf("%s: waiting for %s (now %s): %v", server, s, r.o.Client(server).State(), err)
+	c := r.o.Client(server)
+	deadline := time.Now().Add(wait)
+	var lastWake time.Time
+	for {
+		if c.State() == s {
+			return
+		}
+		now := time.Now()
+		if now.After(deadline) {
+			t.Fatalf("%s: waiting for %s (now %s): timed out after %s", server, s, c.State(), wait)
+		}
+		if now.Sub(lastWake) >= time.Second {
+			c.Wake()
+			lastWake = now
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 }
 
