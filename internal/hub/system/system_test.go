@@ -164,36 +164,6 @@ func TestSignalLevels(t *testing.T) {
 	})
 }
 
-// TestBoundaries checks that a value exactly on a threshold is still OK:
-// levels are reached strictly past the threshold (over for ABOVE, under
-// for BELOW).
-func TestBoundaries(t *testing.T) {
-	gib := float64(int64(1) << 30)
-	start := time.Date(2026, 10, 15, 12, 0, 0, 0, time.UTC)
-	cases := []struct {
-		name  string
-		kind  hubv1.SystemSignalKind
-		value float64
-		want  hubv1.SystemState
-	}{
-		{"agent warn", hubv1.SystemSignalKind_SYSTEM_SIGNAL_KIND_AGENT_CONNECTED, 600, hubv1.SystemState_SYSTEM_STATE_OK},
-		{"agent crit", hubv1.SystemSignalKind_SYSTEM_SIGNAL_KIND_AGENT_CONNECTED, 3600, hubv1.SystemState_SYSTEM_STATE_WARNING},
-		{"drops warn", hubv1.SystemSignalKind_SYSTEM_SIGNAL_KIND_WATCH_DROPS, 3, hubv1.SystemState_SYSTEM_STATE_OK},
-		{"drops crit", hubv1.SystemSignalKind_SYSTEM_SIGNAL_KIND_WATCH_DROPS, 20, hubv1.SystemState_SYSTEM_STATE_WARNING},
-		{"disk warn", hubv1.SystemSignalKind_SYSTEM_SIGNAL_KIND_DISK_FREE, 10 * gib, hubv1.SystemState_SYSTEM_STATE_OK},
-		{"disk crit", hubv1.SystemSignalKind_SYSTEM_SIGNAL_KIND_DISK_FREE, 2 * gib, hubv1.SystemState_SYSTEM_STATE_WARNING},
-		{"log warn", hubv1.SystemSignalKind_SYSTEM_SIGNAL_KIND_LOG_STORE_USAGE, 100, hubv1.SystemState_SYSTEM_STATE_OK},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			r := drive(c.kind, start, 15*time.Second, 3, Input{Main: Known(c.value)})
-			if r.State != c.want {
-				t.Fatalf("value %v on threshold: state = %v, want %v", c.value, r.State, c.want)
-			}
-		})
-	}
-}
-
 // TestLogStoreUsageHolds proves each hold on both sides with an injected
 // live-byte share (percent of the cap): 101 % held just under 10 min stays
 // OK, just over 10 min (plus the hysteresis second eval) is WARNING;

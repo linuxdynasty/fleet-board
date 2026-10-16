@@ -140,12 +140,13 @@ type track struct {
 // Evaluator tracks one signal across evaluations. Use it from the hub's
 // single system-evaluation goroutine; it is not safe for concurrent use.
 type Evaluator struct {
-	kind     hubv1.SystemSignalKind
-	measures []Measure
-	tracks   []track
-	reported hubv1.SystemState
-	worse    int
-	okSince  time.Time
+	kind       hubv1.SystemSignalKind
+	measures   []Measure
+	tracks     []track
+	reported   hubv1.SystemState
+	reportedBy hubv1.SystemMeasureKind
+	worse      int
+	okSince    time.Time
 }
 
 // New starts tracking one signal. The first report is OK until readings say
@@ -252,7 +253,13 @@ func (e *Evaluator) Update(now time.Time, in Input) Result {
 		e.worse = 0
 		e.okSince = time.Time{}
 		for i := range e.tracks {
-			e.tracks[i] = track{}
+			// Reset the hold timers but keep the DISK_FREE CRITICAL
+			// latch: leaving CRITICAL needs the value back past the
+			// clear level, and a missing reading is neither.
+			e.tracks[i].warnPast = false
+			e.tracks[i].warnSince = time.Time{}
+			e.tracks[i].critPast = false
+			e.tracks[i].critSince = time.Time{}
 		}
 		return Result{State: hubv1.SystemState_SYSTEM_STATE_UNKNOWN}
 	}
@@ -290,6 +297,7 @@ func (e *Evaluator) Update(now time.Time, in Input) Result {
 		e.worse++
 		if e.worse >= leaveOK {
 			e.reported = raw
+			e.reportedBy = setBy
 			e.worse = 0
 			e.okSince = time.Time{}
 			return Result{State: raw, SetBy: setBy}
@@ -302,15 +310,17 @@ func (e *Evaluator) Update(now time.Time, in Input) Result {
 			}
 			if now.Sub(e.okSince) >= returnToOK {
 				e.reported = ok
+				e.reportedBy = hubv1.SystemMeasureKind_SYSTEM_MEASURE_KIND_UNSPECIFIED
 				e.worse = 0
 				e.okSince = time.Time{}
 				return Result{State: ok}
 			}
-			return Result{State: e.reported}
+			return Result{State: e.reported, SetBy: e.reportedBy}
 		}
 		e.okSince = time.Time{}
 		e.worse = 0
 		e.reported = raw
+		e.reportedBy = setBy
 		return Result{State: raw, SetBy: setBy}
 	}
 }

@@ -14,9 +14,11 @@ What it applies, in order: UNKNOWN when MAIN has no value (no reading yet,
 a source not enabled, LOG_STORE_USAGE before logs.db exists — never OK,
 never an item); a level when the value is strictly past its threshold (over
 for ABOVE, under for BELOW) and has stayed past it for the hold; DISK_FREE
-stays CRITICAL until free space is back strictly over 3 GiB; CLOCK_SKEW is
+stays CRITICAL until free space is back strictly over 3 GiB, and a missing
+reading resets the hold timers without clearing that latch; CLOCK_SKEW is
 judged on the absolute skew. `Result.SetBy` names the measure that set the
-state (MAIN first, then enum order) for `SystemDetail.measure`.
+state (MAIN first, then enum order) for `SystemDetail.measure`, and stays
+set while the five-minute return-to-OK delay holds the state.
 
 The caller owns the rest: which machines count (always-on or a live goal
 for AGENT_CONNECTED, online 2 min for OUTBOX_BACKLOG), FLEET-mode accounts,
