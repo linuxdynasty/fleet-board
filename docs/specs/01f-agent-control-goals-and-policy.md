@@ -89,6 +89,15 @@ All pass local policy, carry a `command_id`, and are idempotent except F3.
   a refused send re-reads the listing (gone `PANE_NOT_FOUND`, dead
   `PANE_BUSY`, else `INTERNAL`). Landed (`internal/agent/control`,
   issue #67).
+- **E11 Set pane availability:** the developer's board mark for one
+  pane (or its clear, or the hub freeing a merged goal's pane), recorded
+  on the agent's in-memory overlay and reported in every snapshot with an
+  `AvailabilityChanged` edge (02h). The handler commands only
+  `MARKED_ON_BOARD`, `CLEARED_ON_BOARD` and `GOAL_MERGED`; a reason the
+  agent itself reports is refused, and a mark for an unknown pane or a
+  stale server start reads `PANE_NOT_FOUND`. No tmux call, no screen gate;
+  declarative and last-write-wins, so a resume records the mark again.
+  Landed (`internal/agent/control`, issue #67).
 - **F5 Respawn pane** (adapter `ResumeArgs`), **F6 Kill
   window.** Resize belongs to J1.
 - **F8 Run harness command:** `RunHarnessCommand{target, command, args}`,

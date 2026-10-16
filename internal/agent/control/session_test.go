@@ -36,6 +36,7 @@ func testOptions() Options {
 		},
 		Sender:     &stubSender{},
 		CheckInput: stubCheckInput,
+		Marks:      &stubMarks{},
 	}
 }
 
@@ -54,6 +55,7 @@ func TestNewRefusesAnIncompleteSetup(t *testing.T) {
 		{"no workdir resolver", func(o *Options) { o.ResolveWorkdir = nil }},
 		{"no sender", func(o *Options) { o.Sender = nil }},
 		{"no input check", func(o *Options) { o.CheckInput = nil }},
+		{"no marks", func(o *Options) { o.Marks = nil }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()

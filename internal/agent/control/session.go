@@ -66,6 +66,10 @@ type Options struct {
 	// CheckInput reports when a pane last saw a key (02h E13), read at
 	// that moment. Required: SendKeys never types without the check.
 	CheckInput CheckInputFunc
+	// Marks records the developer's availability marks on the observer's
+	// overlay (avail.go). Required: SetPaneAvailability never marks
+	// without it.
+	Marks Marks
 	// Rec counts built and sent lines (typing.sent, typing.refused). Nil
 	// counts nowhere.
 	Rec *typing.Recorder
@@ -73,8 +77,9 @@ type Options struct {
 	Now func() time.Time
 }
 
-// Ensurer runs EnsureSession (F1), EnsureWindow (F2) and SendKeys (F3,
-// OPERATOR_TEXT only) against one tmux server. One goroutine owns each
+// Ensurer runs EnsureSession (F1), EnsureWindow (F2), SendKeys (F3,
+// OPERATOR_TEXT only) and SetPaneAvailability (E11) against one tmux
+// server. One goroutine owns each
 // Ensurer call; tmux serializes the commands itself. F3 additionally holds
 // one pane's check-and-send lock (lockPane) across its read of the pane
 // and its typing, so two commands to one pane cannot both pass the gate
@@ -93,6 +98,7 @@ type Ensurer struct {
 	maxwin     func() uint32
 	sender     Sender
 	checkInput CheckInputFunc
+	marks      Marks
 	rec        *typing.Recorder
 	now        func() time.Time
 	// mu serializes F2's list/find/cap/create sequence per server, so two
@@ -155,6 +161,9 @@ func New(o Options) (*Ensurer, error) {
 	if o.CheckInput == nil {
 		return nil, errors.New("control: CheckInput is required (SendKeys never types without the input check)")
 	}
+	if o.Marks == nil {
+		return nil, errors.New("control: Marks is required (SetPaneAvailability never marks without it)")
+	}
 	e := &Ensurer{
 		runner:     o.Runner,
 		caller:     o.Caller,
@@ -167,6 +176,7 @@ func New(o Options) (*Ensurer, error) {
 		maxwin:     o.MaxWindows,
 		sender:     o.Sender,
 		checkInput: o.CheckInput,
+		marks:      o.Marks,
 		rec:        o.Rec,
 		now:        o.Now,
 		start:      o.StartServer,
