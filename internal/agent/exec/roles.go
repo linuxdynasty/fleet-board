@@ -1,6 +1,7 @@
 package exec
 
 import (
+	"context"
 	"strings"
 
 	agentv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1"
@@ -113,7 +114,7 @@ func column(r typev1.Role) (int, bool) {
 
 // variant is the matrix row a command's own fields select, or the
 // handler's answer for KillWindow.
-func variant(c *agentv1.Command, h Handler) string {
+func variant(ctx context.Context, c *agentv1.Command, h Handler) string {
 	switch k := c.GetKind().(type) {
 	case *agentv1.Command_SendKeys:
 		return strings.TrimPrefix(k.SendKeys.GetPurpose().String(), "SEND_KEYS_PURPOSE_")
@@ -134,7 +135,7 @@ func variant(c *agentv1.Command, h Handler) string {
 			return "read_only"
 		}
 	case *agentv1.Command_KillWindow:
-		if v, ok := h.(Variant); ok && v.Variant(c) == "fleet_window" {
+		if v, ok := h.(Variant); ok && v.Variant(ctx, c) == "fleet_window" {
 			return "fleet_window"
 		}
 		return "developer_window"
@@ -144,12 +145,12 @@ func variant(c *agentv1.Command, h Handler) string {
 
 // roleCell is the cell for c's kind and variant and the requester's role;
 // ok is false when the matrix refuses it (ROLE_INSUFFICIENT).
-func roleCell(c *agentv1.Command, kind string, h Handler) (cell, bool) {
+func roleCell(ctx context.Context, c *agentv1.Command, kind string, h Handler) (cell, bool) {
 	col, ok := column(c.GetRequestedBy().GetRole())
 	if !ok {
 		return cell{}, false
 	}
-	v := variant(c, h)
+	v := variant(ctx, c, h)
 	for _, row := range roleMatrix {
 		if !contains(row.kinds, kind) || !matchVariant(row.variants, v) {
 			continue
@@ -187,8 +188,8 @@ func contains(xs []string, x string) bool {
 // observeOnly reports whether the matrix lets a VIEWER ask for c: the one
 // definition of an observe command, the only kind policy safe mode lets
 // run (03e "observe only"; 02l POLICY_SAFE_MODE).
-func observeOnly(c *agentv1.Command, kind string, h Handler) bool {
-	v := variant(c, h)
+func observeOnly(ctx context.Context, c *agentv1.Command, kind string, h Handler) bool {
+	v := variant(ctx, c, h)
 	for _, row := range roleMatrix {
 		if contains(row.kinds, kind) && matchVariant(row.variants, v) {
 			cl := parseCell(row.cells[0])

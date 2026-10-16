@@ -100,7 +100,7 @@ func TestRoleCells(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			tc.c.RequestedBy = &typev1.Principal{Role: tc.role}
-			cl, ok := roleCell(tc.c, kindOf(tc.c), nil)
+			cl, ok := roleCell(t.Context(), tc.c, kindOf(tc.c), nil)
 			if ok != tc.ok || (tc.check != nil && !tc.check(cl)) {
 				t.Errorf("cell %+v ok %v, want ok %v", cl, ok, tc.ok)
 			}
@@ -123,7 +123,7 @@ func TestObserveOnly(t *testing.T) {
 		{&agentv1.Command{Kind: &agentv1.Command_Interrupt{Interrupt: &agentv1.Interrupt{}}}, false},
 		{&agentv1.Command{}, false},
 	} {
-		if got := observeOnly(tc.c, kindOf(tc.c), nil); got != tc.want {
+		if got := observeOnly(t.Context(), tc.c, kindOf(tc.c), nil); got != tc.want {
 			t.Errorf("%s: observe %v, want %v", kindOf(tc.c), got, tc.want)
 		}
 	}

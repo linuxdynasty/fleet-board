@@ -50,12 +50,12 @@ func (e *Executor) startResumed(ctx context.Context, listed ring.Entry) {
 		e.release(fresh.ID)
 		return
 	}
-	c, p := e.resumeCommand(fresh)
+	c, p := e.resumeCommand(ctx, fresh)
 	e.launch(ctx, c, fresh, p)
 }
 
 // resumeCommand decodes a claimed open entry and decides what to do with it.
-func (e *Executor) resumeCommand(ent ring.Entry) (*agentv1.Command, plan) {
+func (e *Executor) resumeCommand(ctx context.Context, ent ring.Entry) (*agentv1.Command, plan) {
 	c := &agentv1.Command{}
 	if len(ent.Body) == 0 || proto.Unmarshal(ent.Body, c) != nil {
 		c = &agentv1.Command{CommandId: &typev1.CommandId{Value: ent.ID}}
@@ -67,5 +67,5 @@ func (e *Executor) resumeCommand(ent ring.Entry) (*agentv1.Command, plan) {
 		return c, plan{refusal: refusal(typev1.Status_STATUS_EXPIRED, typev1.ReasonCode_REASON_CODE_EXPIRED,
 			"the command's deadline passed before the agent could take it up again")}
 	}
-	return c, e.decide(c, ent.Kind, ent, true)
+	return c, e.decide(ctx, c, ent.Kind, ent, true)
 }

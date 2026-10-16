@@ -85,7 +85,7 @@ func (e *Executor) envelope(ctx context.Context, c *agentv1.Command) {
 		return
 	}
 	e.accepted(ctx, kind, ent, now)
-	e.start(ctx, c, ent, e.decide(c, kind, ent, false))
+	e.start(ctx, c, ent, e.decide(ctx, c, kind, ent, false))
 }
 
 // past reports whether c's deadline has passed in strict hub time; a hub
@@ -148,7 +148,7 @@ func (e *Executor) answerKnown(ctx context.Context, ent ring.Entry) {
 // limit, are all refused RATE_LIMITED: the window seeded from the log holds
 // all k, and each one sees more than the limit. That fails closed, and the
 // refusal is retryable.
-func (e *Executor) decide(c *agentv1.Command, kind string, ent ring.Entry, resumed bool) plan {
+func (e *Executor) decide(ctx context.Context, c *agentv1.Command, kind string, ent ring.Entry, resumed bool) plan {
 	h := e.reg[kind]
 	if !e.reg.supports(kind, c.GetRequires()) {
 		r := refusal(typev1.Status_STATUS_UNSUPPORTED, typev1.ReasonCode_REASON_CODE_UNSPECIFIED,
@@ -159,7 +159,7 @@ func (e *Executor) decide(c *agentv1.Command, kind string, ent ring.Entry, resum
 		return plan{refusal: r}
 	}
 	pol := e.opts.Policy
-	if pol.SafeMode() && !observeOnly(c, kind, h) {
+	if pol.SafeMode() && !observeOnly(ctx, c, kind, h) {
 		return plan{refusal: refusal(typev1.Status_STATUS_REJECTED_BY_POLICY, typev1.ReasonCode_REASON_CODE_POLICY_SAFE_MODE,
 			"the agent is in policy safe mode and runs observe commands only")}
 	}
@@ -183,7 +183,7 @@ func (e *Executor) decide(c *agentv1.Command, kind string, ent ring.Entry, resum
 			return plan{refusal: r}
 		}
 	}
-	cl, ok := roleCell(c, kind, h)
+	cl, ok := roleCell(ctx, c, kind, h)
 	if !ok {
 		return plan{refusal: refusal(typev1.Status_STATUS_REJECTED_BY_POLICY, typev1.ReasonCode_REASON_CODE_ROLE_INSUFFICIENT,
 			"the requester's role may not ask for this command")}
