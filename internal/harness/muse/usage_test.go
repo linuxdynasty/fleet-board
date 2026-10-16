@@ -167,6 +167,75 @@ func TestParseUsageMissingWeekly(t *testing.T) {
 	}
 }
 
+// The session block rides with the reading in the harness's own terms:
+// token counts, turns, subagents and the "as of" stamp of every fixture
+// version, so the board shows what the owner would see typing /usage.
+func TestParseUsageSessionBlock(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		version string
+		asOf    string
+	}{
+		{"1.4.4", "4:47 PM"},
+		{"1.4.6", "2:26 PM"},
+		{"1.4.7", "8:50 PM"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.version, func(t *testing.T) {
+			t.Parallel()
+			got := ParseUsage(loadScreen(t, tc.version, "usage.txt"),
+				time.Date(2026, time.October, 12, 20, 50, 0, 0, time.Local))
+			if got.ParseOutcome != typev1.ParseOutcome_PARSE_OUTCOME_OK {
+				t.Fatalf("outcome = %v, want OK", got.ParseOutcome)
+			}
+			want := map[string]string{
+				"Input": "0", "Cached": "0", "Output": "0", "Total": "0",
+				"Turns": "0", "Subagents": "none", "as of": tc.asOf,
+			}
+			seen := map[string]bool{}
+			for _, f := range got.Shown {
+				if f.GetGroup() != "Session usage" {
+					t.Errorf("field %q group = %q, want Session usage", f.GetLabel(), f.GetGroup())
+				}
+				wantValue, ok := want[f.GetLabel()]
+				if !ok {
+					t.Errorf("unexpected shown field %q = %q", f.GetLabel(), f.GetValue())
+					continue
+				}
+				if f.GetValue() != wantValue {
+					t.Errorf("field %q = %q, want %q", f.GetLabel(), f.GetValue(), wantValue)
+				}
+				seen[f.GetLabel()] = true
+			}
+			for label := range want {
+				if !seen[label] {
+					t.Errorf("shown field %q is missing", label)
+				}
+			}
+		})
+	}
+}
+
+// A session row the box does not show is left out and the reading is
+// partial, never guessed.
+func TestParseUsageMissingSessionRow(t *testing.T) {
+	t.Parallel()
+	screen := dropLines(loadScreen(t, "1.4.7", "usage.txt"), "Subagents")
+	got := ParseUsage(screen, time.Date(2026, time.October, 12, 20, 50, 0, 0, time.Local))
+
+	if got.ParseOutcome != typev1.ParseOutcome_PARSE_OUTCOME_PARTIAL {
+		t.Fatalf("outcome = %v, want PARTIAL", got.ParseOutcome)
+	}
+	for _, f := range got.Shown {
+		if f.GetLabel() == "Subagents" {
+			t.Errorf("Subagents field is present but the box did not show it")
+		}
+	}
+	if len(got.Buckets) != 2 {
+		t.Errorf("buckets = %d, want 2", len(got.Buckets))
+	}
+}
+
 // A screen with no usage box fails cleanly: no buckets, no numbers.
 func TestParseUsageNoBox(t *testing.T) {
 	for name, screen := range map[string]string{

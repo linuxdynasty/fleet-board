@@ -53,6 +53,16 @@ func BuildReading(harnessName, screen string, readTime time.Time, pane *typev1.P
 			Value: scrub.Text(parsed.plan, scrub.Options{MaxBytes: 1024}),
 		}}
 	}
+	// Parser-recognized display fields ride in the harness's own terms
+	// (Muse session tokens, turns, subagents, the "as of" stamp); each
+	// value is capped like any untrusted display text.
+	for _, f := range parsed.shown {
+		r.Shown.Fields = append(r.Shown.Fields, &typev1.ShownField{
+			Group: f.GetGroup(),
+			Label: f.GetLabel(),
+			Value: scrub.Text(f.GetValue(), scrub.Options{MaxBytes: 256}),
+		})
+	}
 	if parsed.overage != typev1.OverageBilling_OVERAGE_BILLING_UNSPECIFIED {
 		r.OverageBilling = parsed.overage
 	}
@@ -63,6 +73,7 @@ func BuildReading(harnessName, screen string, readTime time.Time, pane *typev1.P
 type parsedUsage struct {
 	buckets       []*typev1.LimitBucket
 	plan          string
+	shown         []*typev1.ShownField
 	overage       typev1.OverageBilling
 	outcome       typev1.ParseOutcome
 	parserVersion string
@@ -89,7 +100,7 @@ func parseUsage(harnessName, screen string, readTime time.Time) (parsedUsage, bo
 	case "muse":
 		u := muse.ParseUsage(screen, readTime)
 		return parsedUsage{
-			buckets: u.Buckets, plan: u.Plan, outcome: u.ParseOutcome,
+			buckets: u.Buckets, plan: u.Plan, shown: u.Shown, outcome: u.ParseOutcome,
 			parserVersion: muse.ParserVersion, diag: diag("muse", u.ParseOutcome),
 		}, true
 	case "cursor":
