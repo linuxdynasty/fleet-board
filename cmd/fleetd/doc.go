@@ -9,6 +9,10 @@
 // `fleetd restore BACKUP [--address A]` replaces state.db with a backup
 // offline, under fleetd.lock, so it is refused while fleetd run is up (a
 // failure after the swap still prints that the new store is in place);
+// `fleetd setup github` walks the owner through the GitHub App manifest
+// flow and writes github-app.pem, github-client-secret (mode 0600, never
+// logged) and the github keys of fleetd.yaml, then prints
+// "restart fleetd to apply";
 // `fleetd --version` prints the name and version (internal/buildinfo).
 // Exit codes: 0 success, 1 the command failed, 2 bad usage. This package is
 // wiring only: cobra parses the flags and internal/hub/daemon does the work.

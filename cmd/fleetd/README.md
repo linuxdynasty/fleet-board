@@ -10,8 +10,24 @@ fleetd enroll-token --machine NAME [--expect-host H] [--ttl 15m] [--label L ...]
 fleetd backup [--encrypt]     # copy state.db into <state_dir>/backups/, with or without fleetd run
 fleetd restore BACKUP [--address A]
                               # replace state.db with a backup; refused while fleetd run is up
+fleetd setup github [--app-name N] [--installation-id ID]
+                              # connect GitHub through the App manifest flow (writes the github keys)
 fleetd --version              # "fleetd dev", or the release version set with -ldflags -X
 ```
+
+`setup github` binds a one-shot page on 127.0.0.1 and prints its URL:
+confirm the App on GitHub and the redirect comes back with a one-time
+code, which is exchanged once (`POST /app-manifests/{code}/conversions`).
+The private key lands in `github-app.pem` and the client secret in
+`github-client-secret`, both next to `fleetd.yaml`, mode 0600, never
+logged; the `github` keys (`app_id`, `private_key_file`, `client_id`,
+`client_secret_file`, `installation_id`) are added to `fleetd.yaml` and
+nothing secret goes into `state.db`. With exactly one installation it
+writes `installation_id`; with several it lists them for a re-run with
+`--installation-id`; with none it says to install the App first. It
+prints "restart `fleetd` to apply": the file is read at start. The
+flow is in `internal/hub/setupgithub`, tested against recorded GitHub
+responses (a wrong `state`, a used code, the file modes).
 
 `backup` prints only the path of the copy on stdout
 (`<state_dir>/backups/manual-<UTC stamp>.db`, mode 0600). It takes no lock, so
@@ -67,7 +83,8 @@ make build
 go run ./cmd/fleetd --version
 ```
 
-`main.go`, `enroll.go`, `backup.go` and `restore.go` only parse flags and call `internal/hub/daemon`; what
+`main.go`, `enroll.go`, `backup.go`, `restore.go` and `setup_github.go` only parse flags and call `internal/`
+(`daemon`, or `setupgithub` for the GitHub flow); what
 fleetd does is specified in `docs/specs/02j-hub-runtime.md`, and the build order
 is in `docs/plan/v1-implementation-plan.md` (plan rows 2 to 5). `main_test.go`
 runs the built binary: init, run, a refused second run, SIGTERM, and a start
@@ -81,4 +98,7 @@ no passphrase flag. `restore_test.go` is row 5's restore acceptance: refused
 beside a running hub (which keeps serving); a restore with `--address`, then
 `run` serving a certificate from the pinned CA that covers the address; a
 second restore; and bad backups refused with `state.db` and its WAL byte for
-byte unchanged.
+byte unchanged. `setup_github_test.go` is row 13a's setup acceptance:
+`setup github` prints a loopback URL, the one redirect is exchanged against
+recorded GitHub responses, and `github-app.pem` lands mode 0600 with the
+`github` keys in `fleetd.yaml`.
