@@ -57,7 +57,9 @@ var rows = []row{
 
 // sessionRow is one "Session usage" line carried as shown, in the
 // harness's own terms: token counts and turns read as digits, subagents
-// as shown ("none" when idle), the "as of" stamp as a time of day.
+// as shown ("none" when idle), the "as of" stamp as a time of day. The
+// subagent value never crosses the box border: a row with no value is
+// unreadable, not a border character.
 type sessionRow struct {
 	label string
 	re    *regexp.Regexp
@@ -69,7 +71,7 @@ var sessionRows = []sessionRow{
 	{"Output", regexp.MustCompile(`\bOutput\s+(\d+)`)},
 	{"Total", regexp.MustCompile(`\bTotal\s+(\d+)`)},
 	{"Turns", regexp.MustCompile(`\bTurns\s+(\d+)`)},
-	{"Subagents", regexp.MustCompile(`\bSubagents\s+(\S+)`)},
+	{"Subagents", regexp.MustCompile(`\bSubagents\s+([^\s│]+)`)},
 	{"as of", regexp.MustCompile(`\bas of\s+(\d{1,2}:\d{2} [AP]M)`)},
 }
 

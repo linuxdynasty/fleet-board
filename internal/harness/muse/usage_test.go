@@ -236,6 +236,25 @@ func TestParseUsageMissingSessionRow(t *testing.T) {
 	}
 }
 
+// A session row with no readable value (a truncated capture ending at
+// the box border) is left out with a partial outcome: the border is box
+// drawing, never a subagent count.
+func TestParseUsageTruncatedSessionRow(t *testing.T) {
+	t.Parallel()
+	screen := strings.Replace(
+		loadScreen(t, "1.4.7", "usage.txt"), "Subagents  none", "Subagents", 1)
+	got := ParseUsage(screen, time.Date(2026, time.October, 12, 20, 50, 0, 0, time.Local))
+
+	if got.ParseOutcome != typev1.ParseOutcome_PARSE_OUTCOME_PARTIAL {
+		t.Fatalf("outcome = %v, want PARTIAL", got.ParseOutcome)
+	}
+	for _, f := range got.Shown {
+		if f.GetLabel() == "Subagents" {
+			t.Errorf("Subagents field = %q, want it left out", f.GetValue())
+		}
+	}
+}
+
 // A screen with no usage box fails cleanly: no buckets, no numbers.
 func TestParseUsageNoBox(t *testing.T) {
 	for name, screen := range map[string]string{

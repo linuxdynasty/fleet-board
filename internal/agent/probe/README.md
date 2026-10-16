@@ -18,8 +18,10 @@ and `StopProbe` handlers plus the `Manager` that owns probe passes.
 5. Idle prompt with an empty input line: types only the status command
    (`/usage`, `/status` on Codex), captures the answer, parses it with
    the harness's own `ParseUsage`, and emits `ProbeHealth` with a
-   `UsageReading`. No usage screen means `ProbeHealth` only, never a
-   guessed reading.
+   `UsageReading`. The reading carries parser-recognized display fields
+   in the harness's own terms next to the plan (Muse session tokens,
+   turns, subagents, the "as of" stamp), each scrubbed and capped. No
+   usage screen means `ProbeHealth` only, never a guessed reading.
 
 Login-screen markers are deliberately absent: no fixture shows one, so a
 login screen reads as unknown and types nothing. They land with
