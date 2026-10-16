@@ -237,6 +237,13 @@ on their own resources (a new window on the `Session`, the goal's `phase`).
 | sign-in, user, token and login-session RPCs | none (hub only) |
 | `ProbeAccount` | `EnsureProbe{run_now}` |
 
+Served so far (row 12 slices): `CapturePane` sends the visible screen
+(`last_lines` 0, `READ`) or scrollback (`last_lines` above 0, `LOGS`) as one
+agent command, idempotent on `request_id` and audited as `session.capture`.
+It routes only to sessions the hub started until the session mirror lands
+(any other id is `SESSION_NOT_FOUND`); `pane` is required and `max_bytes`
+caps at 256 KiB.
+
 ## Watch
 
 `Watch(WatchRequest{subscriptions[]{topic, filter, send_initial}, resume_token})`
