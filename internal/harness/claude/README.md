@@ -29,6 +29,14 @@ file; it parses text it is given.
   The shape is covered by inline unit strings, not a live fixture, so
   passive stays out of the conformance table until a live probe
   records a near-limit banner.
+- `commands.go`: `Classify` returns the 01b class of one slash command
+  (C4): the table's own examples keep their class (`/usage` observe,
+  `/model` session, `/goal` goal, `/code-review` review, `/exit`
+  destructive), everything else deny. A discovered command whose effect
+  is unprobed stays deny; it moves only with a probe record. The
+  catalog test pins every name in
+  `testdata/2.1.296/help-commands-catalog.tsv`, so a new command in a
+  later catalog needs a reviewed verdict here.
 - `claude_test.go`: the adapter's declaration for the shared
   conformance test (`harness.Conform`). Version `2.1.296` is
   `UNVERIFIED_PARSING` with `USAGE` and the trust half of `READY`
