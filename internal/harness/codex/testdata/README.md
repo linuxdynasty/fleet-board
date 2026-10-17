@@ -55,6 +55,8 @@ read before the next key; no prompt sent, no quota spent). Started by typing
 | `0.162.1/status.txt` | the `/status` card | `/status` (typed, then Enter on the read screen) |
 | `0.162.1/trust-folder-git.txt` | "Folder access" trust screen, choices "1. Trust and continue" / "2. Back to Agent Command Center" | start in a fresh git repo |
 | `0.162.1/warnings-startup-1-of-1.txt` | the one startup warning ("Under-development features enabled: chronicle") | F2, then Escape |
+| `0.162.1/slash-menu-first.txt`, `0.162.1/slash-menu-later.txt` | the `/` menu (8 rows) at the top and near the end | typed `/`, Down |
+| `0.162.1/slash-menu-catalog.tsv` | all 54 menu commands, `name<TAB>description` (derived by paging with Down until the highlight wrapped back to `/model`) | see above |
 
 What changed since 0.160.0: no daemon-settings screen and no update banner
 appeared (0.162.1 is installed); the `/status` card shows the account email
@@ -64,7 +66,11 @@ background server` row, and no `Credits:` row; the usage URL is now
 "Back to Agent Command Center" (Escape lands there, showing the owner's other
 sessions, so that screen was not kept and Ctrl+C returned to the shell); the
 model line reads `GPT-6-Luna (reasoning high)`. The weekly reading (`0% left`,
-`resets 11:57 PM on 17 Oct`) is the real one from that day.
+`resets 11:57 PM on 17 Oct`) is the real one from that day. The 0.162.1
+menu holds 54 commands: the 49 of 0.160.0 plus `/clear`, `/feedback`,
+`/ps`, `/stop` and `/subagents` (the 0.160.0 capture could not tell
+whether those were hidden at idle or removed; they show at idle here).
+`/mcp` now reads "list MCP tools; use /mcp verbose or /mcp login <name>".
 
 Placeholder against draft: the empty input line renders `›` bold plus
 `Ask Codex to do anything` dim (`^[[2m`); typed text renders in the default
@@ -100,8 +106,8 @@ colour. A parser must match the dim attribute, not the words.
   appeared (0.162.1, installed).
 - A 0.162.1 slash-menu catalog: the TUI would not bootstrap on 2026-10-12
   ("account/read failed ... code -32603", four starts, two folders), so the
-  `/` menu could not be paged; the 0.160.0 49-command catalog stands until a
-  later probe (issue #25).
+  `/` menu could not be paged; captured 2026-10-17 on codex-cli 0.162.1
+  (throwaway server, no prompt sent, no quota spent), closing that gap.
 - Anything past the `/usage` menu ("View analytics" opens a web page and
   "Redeem reset" uses a reset), `/model`, `/permissions`, `/logout`.
 - Prompt and error screens: they need a model call.

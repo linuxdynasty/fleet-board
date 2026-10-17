@@ -1,0 +1,51 @@
+╭─────────────────────────────────────────────────╮
+│ ✨ Update available! 0.162.1 -> 0.163.0         │
+│ Run brew upgrade --cask codex to update.        │
+│                                                 │
+│ See full release notes:                         │
+│ https://github.com/openai/codex/releases/latest │
+╰─────────────────────────────────────────────────╯
+
+
+  >_ OpenAI Codex (v0.162.1)
+     ~/scratch
+  permissions: YOLO mode
+
+  To get started, describe a task or try one of these commands:
+
+  /init - create an AGENTS.md file with instructions for Codex
+  /status - show current session configuration
+  /permissions - choose what Codex is allowed to do
+  /model - choose what model and reasoning effort to use
+  /review - review any changes and find issues
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  /pets          choose or hide the terminal pet
+  /mcp           list MCP tools; use /mcp verbose or /mcp login <name>
+  /plugins       browse plugins
+  /logout        log out of Codex
+  /exit          exit Codex
+  /feedback      send logs to maintainers
+  /ps            list background terminals
+› /stop          stop all background terminals
+
+› /
+
+  GPT-6-Luna high · ~/scratch

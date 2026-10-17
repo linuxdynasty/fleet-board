@@ -1,6 +1,7 @@
 package codex
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -9,7 +10,7 @@ import (
 
 // commandCases is every expectation for Classify, worked out from the 01b
 // class table by hand: the table's own examples keep their class, and every
-// other name in the recorded 0.160.0 catalog is deny, since a discovered
+// other name in the recorded catalogs is deny, since a discovered
 // command whose effect is unprobed is never guessed into a sendable class.
 // The never-send list (/login, /logout, /permissions, /config, /hooks,
 // /plugin(s), /sandbox, usage-buying) is 01b's deny row and holds on every
@@ -68,6 +69,8 @@ var commandCases = []struct {
 	{name: "voice effect unprobed", command: "/voice", want: typev1.CommandClass_COMMAND_CLASS_DENY},
 	{name: "warnings effect unprobed", command: "/warnings", want: typev1.CommandClass_COMMAND_CLASS_DENY},
 	{name: "worktree moves the chat, effect unprobed", command: "/worktree", want: typev1.CommandClass_COMMAND_CLASS_DENY},
+	{name: "feedback sends logs, effect unprobed", command: "/feedback", want: typev1.CommandClass_COMMAND_CLASS_DENY},
+	{name: "subagents switches subagents, effect unprobed", command: "/subagents", want: typev1.CommandClass_COMMAND_CLASS_DENY},
 	{name: "clear is destructive on the shared table", command: "/clear", want: typev1.CommandClass_COMMAND_CLASS_DESTRUCTIVE},
 	{name: "quit is destructive on the shared table", command: "/quit", want: typev1.CommandClass_COMMAND_CLASS_DESTRUCTIVE},
 	{name: "rewind is destructive on the shared table", command: "/rewind", want: typev1.CommandClass_COMMAND_CLASS_DESTRUCTIVE},
@@ -99,24 +102,35 @@ func TestClassify(t *testing.T) {
 	}
 }
 
-// TestClassifyCoversCatalog fails when the recorded 0.160.0 catalog holds a
-// command with no expectation above: the C4 classification must cover every
-// discovered command, and a new command in a later catalog must get a reviewed
-// verdict here instead of silently falling into deny.
+// TestClassifyCoversCatalog fails when any recorded versioned catalog holds
+// a command with no expectation above: the C4 classification must cover
+// every discovered command, and a new command in a later version's catalog
+// must get a reviewed verdict here instead of silently falling into deny.
+// It walks every versioned catalog fixture, so a new version directory is
+// checked as soon as its catalog lands.
 func TestClassifyCoversCatalog(t *testing.T) {
 	t.Parallel()
 	covered := make(map[string]bool, len(commandCases))
 	for _, tc := range commandCases {
 		covered[tc.command] = true
 	}
+	catalogs, err := filepath.Glob(filepath.Join("testdata", "*", "slash-menu-catalog.tsv"))
+	if err != nil {
+		t.Fatalf("glob catalogs: %v", err)
+	}
+	if len(catalogs) == 0 {
+		t.Fatal("no versioned command catalog found under testdata/")
+	}
 	var missing []string
-	for line := range strings.Lines(strings.TrimSuffix(readData(t, "0.160.0/slash-menu-catalog.tsv"), "\n")) {
-		name, _, _ := strings.Cut(line, "\t")
-		if name == "" {
-			continue
-		}
-		if !covered[name] {
-			missing = append(missing, name)
+	for _, catalog := range catalogs {
+		for line := range strings.Lines(strings.TrimSuffix(readData(t, strings.TrimPrefix(catalog, "testdata/")), "\n")) {
+			name, _, _ := strings.Cut(line, "\t")
+			if name == "" {
+				continue
+			}
+			if !covered[name] {
+				missing = append(missing, catalog+": "+name)
+			}
 		}
 	}
 	if len(missing) > 0 {
