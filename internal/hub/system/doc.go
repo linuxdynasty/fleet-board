@@ -8,7 +8,8 @@
 // [Snapshot] renders verdicts as the served SystemStatus with every
 // measure's levels, so the view matches this table by construction.
 // [Monitor] tracks one Evaluator per subject across rounds and stamps
-// Since on state changes; the remaining wiring (the readings, the item
-// writes, the fleet_hub_system_signal_* gauges) reads [Measures] and the
-// mapping too.
+// Since on state changes; [Decide] maps evaluated verdicts plus the open
+// SYSTEM items to the raise, update and retire writes with [MeasureProto]
+// details. The remaining wiring (the readings, the item writer jobs, the
+// fleet_hub_system_signal_* gauges) reads [Measures] and the mapping too.
 package system
