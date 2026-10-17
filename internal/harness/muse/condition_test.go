@@ -3,6 +3,7 @@ package muse
 import (
 	"strings"
 	"testing"
+	"time"
 
 	typev1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/type/v1"
 )
@@ -10,9 +11,10 @@ import (
 // TestParseConditionPaused reads the pause screen (01 E12): after the owner
 // interrupts the goal, Muse prints "goal paused by interrupt" (01b,
 // 02h), so it must read as GOAL_INTERRUPTED on every version. Any other
-// screen is not a condition and fails cleanly: limit screens are a later
-// slice, and a guess would raise the wrong triage item.
+// screen is not a condition and fails cleanly: usage-limit and sign-in
+// screens are a later slice, and a guess would raise the wrong triage item.
 func TestParseConditionPaused(t *testing.T) {
+	now := time.Date(2026, time.October, 17, 20, 0, 0, 0, time.Local)
 	paused144 := loadScreen(t, "1.4.4", "goal-paused-by-interrupt.txt")
 	paused146 := loadScreen(t, "1.4.6", "goal-paused-by-interrupt.txt")
 	paused147 := loadScreen(t, "1.4.7", "goal-paused-by-interrupt.txt")
@@ -40,7 +42,7 @@ func TestParseConditionPaused(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got := ParseCondition(tc.screen)
+			got := ParseCondition(tc.screen, now)
 			if got.Kind != tc.wantKind {
 				t.Errorf("Kind = %v, want %v", got.Kind, tc.wantKind)
 			}
@@ -63,11 +65,12 @@ func TestParseConditionPaused(t *testing.T) {
 // server error (HTTP 500) · retrying in 7s · attempt 6/10" (01, observed
 // shape in api/fleet/agent/v1/screen.proto), so it must read as
 // PROVIDER_ERROR on every version. The status generalizes across the 5xx
-// range. Anything else fails cleanly: a 429 is a rate limit (a later slice),
-// a bare "HTTP 500" without the retry word and counter is not the documented
-// shape, and prose about retrying is working text rather than a harness
-// state, so none of them is ever guessed.
+// range. Anything else fails cleanly: a 429 is a rate limit (the rate-limit
+// arm, not this one), a bare "HTTP 500" without the retry word and counter
+// is not the documented shape, and prose about retrying is working text
+// rather than a harness state, so none of them is ever guessed.
 func TestParseConditionProviderError(t *testing.T) {
+	now := time.Date(2026, time.October, 17, 20, 0, 0, 0, time.Local)
 	err144 := loadScreen(t, "1.4.4", "provider-error-retrying.txt")
 	err146 := loadScreen(t, "1.4.6", "provider-error-retrying.txt")
 	err147 := loadScreen(t, "1.4.7", "provider-error-retrying.txt")
@@ -81,7 +84,7 @@ func TestParseConditionProviderError(t *testing.T) {
 		{"provider retry 1.4.6 reads provider error", err146, typev1.HarnessConditionKind_HARNESS_CONDITION_KIND_PROVIDER_ERROR, true},
 		{"provider retry 1.4.7 reads provider error", err147, typev1.HarnessConditionKind_HARNESS_CONDITION_KIND_PROVIDER_ERROR, true},
 		{"HTTP 503 retrying reads provider error", "HTTP 503 · retrying · attempt 1/10", typev1.HarnessConditionKind_HARNESS_CONDITION_KIND_PROVIDER_ERROR, true},
-		{"HTTP 429 retrying is not a provider error", "HTTP 429 · retrying · attempt 2/10", typev1.HarnessConditionKind_HARNESS_CONDITION_KIND_UNSPECIFIED, false},
+		{"HTTP 429 retrying is not a provider error", "HTTP 429 · retrying · attempt 2/10", typev1.HarnessConditionKind_HARNESS_CONDITION_KIND_RATE_LIMITED, true},
 		{"prose about retrying is not a condition", "Handle HTTP 500 by retrying the request", typev1.HarnessConditionKind_HARNESS_CONDITION_KIND_UNSPECIFIED, false},
 		{"bare HTTP 500 is not a condition", "HTTP 500", typev1.HarnessConditionKind_HARNESS_CONDITION_KIND_UNSPECIFIED, false},
 		{"truncated retry word is not a condition", "HTTP 500 · retr", typev1.HarnessConditionKind_HARNESS_CONDITION_KIND_UNSPECIFIED, false},
@@ -91,7 +94,7 @@ func TestParseConditionProviderError(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got := ParseCondition(tc.screen)
+			got := ParseCondition(tc.screen, now)
 			if got.Kind != tc.wantKind {
 				t.Errorf("Kind = %v, want %v", got.Kind, tc.wantKind)
 			}
@@ -104,6 +107,88 @@ func TestParseConditionProviderError(t *testing.T) {
 			}
 			if tc.wantOK && !strings.Contains(got.Text, "retrying") {
 				t.Errorf("Text = %q, want it to hold the shown signal line", got.Text)
+			}
+		})
+	}
+}
+
+// TestParseConditionRateLimited reads the rate-limit screen (01 E12): when
+// the provider throttles, Muse prints an HTTP 429 (or 529) line with the
+// retry word, the attempt counter and the reset time
+// ("Meta Model API rate limit (HTTP 429) · retrying in 7s · attempt 2/10 ·
+// resets 9:29 PM", reconstructed shape, see testdata/README.md), so it must
+// read as RATE_LIMITED with retrying set and the reset resolved, on every
+// version. Anything else fails cleanly: a 5xx is the provider-error arm, a
+// bare "HTTP 429" without the retry word and counter is not the documented
+// shape, a 429 line that stopped retrying is an unprobed gave-up shape, and
+// prose about retrying is working text rather than a harness state, so none
+// of them is ever guessed.
+func TestParseConditionRateLimited(t *testing.T) {
+	now := time.Date(2026, time.October, 17, 20, 0, 0, 0, time.Local)
+	lim144 := loadScreen(t, "1.4.4", "rate-limit-retrying.txt")
+	lim146 := loadScreen(t, "1.4.6", "rate-limit-retrying.txt")
+	lim147 := loadScreen(t, "1.4.7", "rate-limit-retrying.txt")
+	cases := []struct {
+		name       string
+		screen     string
+		wantKind   typev1.HarnessConditionKind
+		wantOK     bool
+		wantRetry  bool
+		wantAtt    uint32
+		wantMax    uint32
+		wantHTTP   uint32
+		wantResets bool
+	}{
+		{"rate retry 1.4.4 reads rate limited", lim144, typev1.HarnessConditionKind_HARNESS_CONDITION_KIND_RATE_LIMITED, true, true, 2, 10, 429, true},
+		{"rate retry 1.4.6 reads rate limited", lim146, typev1.HarnessConditionKind_HARNESS_CONDITION_KIND_RATE_LIMITED, true, true, 2, 10, 429, true},
+		{"overload retry 1.4.7 reads rate limited", lim147, typev1.HarnessConditionKind_HARNESS_CONDITION_KIND_RATE_LIMITED, true, true, 4, 10, 529, true},
+		{"HTTP 529 retrying reads rate limited", "HTTP 529 · retrying · attempt 1/10", typev1.HarnessConditionKind_HARNESS_CONDITION_KIND_RATE_LIMITED, true, true, 1, 10, 529, false},
+		{"HTTP 500 retrying is not a rate limit", "HTTP 500 · retrying · attempt 6/10", typev1.HarnessConditionKind_HARNESS_CONDITION_KIND_PROVIDER_ERROR, true, false, 0, 0, 0, false},
+		{"bare HTTP 429 is not a condition", "HTTP 429", typev1.HarnessConditionKind_HARNESS_CONDITION_KIND_UNSPECIFIED, false, false, 0, 0, 0, false},
+		{"429 without the retry word is not a condition", "HTTP 429 · attempt 2/10", typev1.HarnessConditionKind_HARNESS_CONDITION_KIND_UNSPECIFIED, false, false, 0, 0, 0, false},
+		{"prose about retrying is not a condition", "Handle HTTP 429 by retrying the request", typev1.HarnessConditionKind_HARNESS_CONDITION_KIND_UNSPECIFIED, false, false, 0, 0, 0, false},
+		{"counter that does not fit is not a condition", "HTTP 429 · retrying · attempt 99999999999/10", typev1.HarnessConditionKind_HARNESS_CONDITION_KIND_UNSPECIFIED, false, false, 0, 0, 0, false},
+		{"empty screen is not a condition", "", typev1.HarnessConditionKind_HARNESS_CONDITION_KIND_UNSPECIFIED, false, false, 0, 0, 0, false},
+		{"oversize screen fails", strings.Repeat("x", 65*1024), typev1.HarnessConditionKind_HARNESS_CONDITION_KIND_UNSPECIFIED, false, false, 0, 0, 0, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := ParseCondition(tc.screen, now)
+			if got.Kind != tc.wantKind {
+				t.Errorf("Kind = %v, want %v", got.Kind, tc.wantKind)
+			}
+			wantOutcome := typev1.ParseOutcome_PARSE_OUTCOME_FAILED
+			if tc.wantOK {
+				wantOutcome = typev1.ParseOutcome_PARSE_OUTCOME_OK
+			}
+			if got.ParseOutcome != wantOutcome {
+				t.Errorf("ParseOutcome = %v, want %v", got.ParseOutcome, wantOutcome)
+			}
+			if got.Retrying != tc.wantRetry {
+				t.Errorf("Retrying = %v, want %v", got.Retrying, tc.wantRetry)
+			}
+			if got.Attempt != tc.wantAtt || got.MaxAttempts != tc.wantMax {
+				t.Errorf("Attempt/MaxAttempts = %d/%d, want %d/%d", got.Attempt, got.MaxAttempts, tc.wantAtt, tc.wantMax)
+			}
+			if got.HTTPStatus != tc.wantHTTP {
+				t.Errorf("HTTPStatus = %d, want %d", got.HTTPStatus, tc.wantHTTP)
+			}
+			if tc.wantResets {
+				if got.ResetsTime == nil {
+					t.Fatalf("ResetsTime is nil, want the shown reset")
+				}
+				// The fixture resets at 9:29 PM, after the 8 PM read:
+				// later the same day, machine-local.
+				rt := got.ResetsTime.GetResolvedTime().AsTime().In(time.Local)
+				if rt.Hour() != 21 || rt.Minute() != 29 {
+					t.Errorf("reset = %v local, want 21:29", rt)
+				}
+				if got.ResetsTime.GetOriginalText() != "resets 9:29 PM" {
+					t.Errorf("reset text = %q, want %q", got.ResetsTime.GetOriginalText(), "resets 9:29 PM")
+				}
+			} else if got.ResetsTime != nil {
+				t.Errorf("ResetsTime = %v, want nil", got.ResetsTime)
 			}
 		})
 	}

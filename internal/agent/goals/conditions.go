@@ -36,42 +36,71 @@ func RescanConditionsInterval() time.Duration { return condRescanInterval }
 
 // openCondition is one showing harness condition: emitted open, listed in
 // Snapshot.conditions while it shows, emitted once more with cleared when
-// it leaves the screen or its goal ends.
+// it leaves the screen or its goal ends. The retry detail rides along so
+// the hub can hold a throttled goal in LIMIT_WAIT (03h): whether the
+// harness retries on its own, the attempt counter, the HTTP status and the
+// reset, as the parser read them.
 type openCondition struct {
-	pane    *typev1.PaneKey
-	harness string
-	kind    typev1.HarnessConditionKind
-	text    string
-	goalID  string
-	cause   typev1.GoalPauseCause
-	since   time.Time
+	pane        *typev1.PaneKey
+	harness     string
+	kind        typev1.HarnessConditionKind
+	text        string
+	goalID      string
+	cause       typev1.GoalPauseCause
+	since       time.Time
+	retrying    bool
+	attempt     uint32
+	maxAttempts uint32
+	httpStatus  uint32
+	resets      *timestamppb.Timestamp
+}
+
+// condDetail is what parseCondition reports for a goal pane's screen: the
+// kind, the shown line and the retry detail. Only adapters with a
+// throttling arm fill the detail today; the rest report zeros.
+type condDetail struct {
+	kind        typev1.HarnessConditionKind
+	text        string
+	retrying    bool
+	attempt     uint32
+	maxAttempts uint32
+	httpStatus  uint32
+	resets      *timestamppb.Timestamp
 }
 
 // parseCondition reads a goal pane's screen with its harness's own
-// condition parser (01 E12). It reports the kind and the shown line, or
-// false: anything else fails cleanly and never guesses, so a usage or
-// trust screen is quiet. OpenCode has no /goal and no condition parser,
-// so its screens are always quiet.
-func parseCondition(harness, screen string) (typev1.HarnessConditionKind, string, bool) {
-	switch harness {
+// condition parser (01 E12). It reports the kind, the shown line and the
+// retry detail, or false: anything else fails cleanly and never guesses,
+// so a usage or trust screen is quiet. OpenCode has no /goal and no
+// condition parser, so its screens are always quiet. now is the read time
+// a shown reset resolves against, machine-local.
+func parseCondition(harnessName, screen string, now time.Time) (condDetail, bool) {
+	switch harnessName {
 	case "claude":
 		if c := claude.ParseCondition(screen); c.ParseOutcome == typev1.ParseOutcome_PARSE_OUTCOME_OK {
-			return c.Kind, c.Text, true
+			return condDetail{kind: c.Kind, text: c.Text}, true
 		}
 	case "codex":
 		if c := codex.ParseCondition(screen); c.ParseOutcome == typev1.ParseOutcome_PARSE_OUTCOME_OK {
-			return c.Kind, c.Text, true
+			return condDetail{kind: c.Kind, text: c.Text}, true
 		}
 	case "muse":
-		if c := muse.ParseCondition(screen); c.ParseOutcome == typev1.ParseOutcome_PARSE_OUTCOME_OK {
-			return c.Kind, c.Text, true
+		if c := muse.ParseCondition(screen, now); c.ParseOutcome == typev1.ParseOutcome_PARSE_OUTCOME_OK {
+			d := condDetail{
+				kind: c.Kind, text: c.Text, retrying: c.Retrying,
+				attempt: c.Attempt, maxAttempts: c.MaxAttempts, httpStatus: c.HTTPStatus,
+			}
+			if c.ResetsTime != nil {
+				d.resets = c.ResetsTime.GetResolvedTime()
+			}
+			return d, true
 		}
 	case "cursor":
 		if c := cursor.ParseCondition(screen); c.ParseOutcome == typev1.ParseOutcome_PARSE_OUTCOME_OK {
-			return c.Kind, c.Text, true
+			return condDetail{kind: c.Kind, text: c.Text}, true
 		}
 	}
-	return typev1.HarnessConditionKind_HARNESS_CONDITION_KIND_UNSPECIFIED, "", false
+	return condDetail{}, false
 }
 
 // pauseCauseFor says who paused the goal for the interrupt and stall
@@ -125,12 +154,12 @@ func (t *Tracker) ScanConditions(ctx context.Context) error {
 		if err != nil {
 			continue // a failed capture keeps the last level
 		}
-		kind, text, ok := parseCondition(harness, screen)
+		d, ok := parseCondition(harness, screen, t.cfg.Clock())
 		if !ok {
 			t.clearCondition(ctx, id)
 			continue
 		}
-		t.openCondition(ctx, id, key, harness, kind, text)
+		t.openCondition(ctx, id, key, harness, d)
 	}
 	for id := range t.cond {
 		if _, live := t.states[id]; !live {
@@ -145,17 +174,21 @@ func (t *Tracker) ScanConditions(ctx context.Context) error {
 // it is new and the cleared-plus-open pair when the kind changed. The
 // same kind showing again only refreshes the kept line: re-emitting it
 // would spam triage with the same (pane, kind) item.
-func (t *Tracker) openCondition(ctx context.Context, id string, key *typev1.PaneKey, harness string, kind typev1.HarnessConditionKind, text string) {
+func (t *Tracker) openCondition(ctx context.Context, id string, key *typev1.PaneKey, harnessName string, d condDetail) {
 	if open, ok := t.cond[id]; ok {
-		if open.kind == kind {
-			open.text = text
+		if open.kind == d.kind {
+			open.text = d.text
+			open.retrying, open.attempt, open.maxAttempts = d.retrying, d.attempt, d.maxAttempts
+			open.httpStatus, open.resets = d.httpStatus, d.resets
 			return
 		}
 		t.emitCondition(ctx, open, true)
 	}
 	open := &openCondition{
-		pane: proto.CloneOf(key), harness: harness, kind: kind, text: text,
-		goalID: id, cause: pauseCauseFor(kind), since: t.cfg.Clock(),
+		pane: proto.CloneOf(key), harness: harnessName, kind: d.kind, text: d.text,
+		goalID: id, cause: pauseCauseFor(d.kind), since: t.cfg.Clock(),
+		retrying: d.retrying, attempt: d.attempt, maxAttempts: d.maxAttempts,
+		httpStatus: d.httpStatus, resets: d.resets,
 	}
 	t.cond[id] = open
 	if t.condPrimed {
@@ -190,6 +223,8 @@ func (t *Tracker) emitCondition(ctx context.Context, open *openCondition, cleare
 			Pane: proto.CloneOf(open.pane), Harness: &typev1.Harness{Name: open.harness},
 			Kind: open.kind, Text: open.text, SinceTime: timestamppb.New(open.since),
 			Cleared: cleared, GoalId: &typev1.GoalId{Value: open.goalID}, PauseCause: open.cause,
+			Retrying: open.retrying, Attempt: open.attempt, MaxAttempts: open.maxAttempts,
+			HttpStatus: open.httpStatus, ResetsTime: open.resets,
 		},
 	}})
 }
@@ -221,6 +256,8 @@ func (t *Tracker) FillConditions(snap *agentv1.Snapshot) {
 			Pane: proto.CloneOf(open.pane), Harness: &typev1.Harness{Name: open.harness},
 			Kind: open.kind, Text: open.text, SinceTime: timestamppb.New(open.since),
 			GoalId: &typev1.GoalId{Value: open.goalID}, PauseCause: open.cause,
+			Retrying: open.retrying, Attempt: open.attempt, MaxAttempts: open.maxAttempts,
+			HttpStatus: open.httpStatus, ResetsTime: open.resets,
 		})
 	}
 }

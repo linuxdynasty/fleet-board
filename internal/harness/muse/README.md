@@ -32,18 +32,23 @@ file; it parses text it is given.
   `testdata/1.4.7/help-commands-catalog.tsv` (rows carry argument
   hints, so only the name before the first space is checked), so a new
   command in a later catalog needs a reviewed verdict here.
-- `condition.go`: `ParseCondition` reads the pause and provider-error lines
-  (01 E12): a line holding "goal paused by interrupt" reads as
-  `GOAL_INTERRUPTED`, and a line holding an HTTP 5xx status with the retry
+- `condition.go`: `ParseCondition` reads the pause, provider-error and
+  rate-limit lines (01 E12): a line holding "goal paused by interrupt" reads
+  as `GOAL_INTERRUPTED`; a line holding an HTTP 5xx status with the retry
   word and the attempt counter ("Meta Model API server error (HTTP 500) ·
-  retrying in 7s · attempt 6/10") reads as `PROVIDER_ERROR`; a bare status,
-  prose about retrying, and any other screen fail cleanly, since limit
-  screens are a later slice. Nothing is ever guessed.
+  retrying in 7s · attempt 6/10") reads as `PROVIDER_ERROR`; a line holding
+  an HTTP 429 or 529 status with the retry word and the attempt counter
+  ("Meta Model API rate limit (HTTP 429) · retrying in 7s · attempt 2/10 ·
+  resets 9:29 PM") reads as `RATE_LIMITED` with retrying set and the reset
+  resolved machine-local (the reset is optional on the screen). The rate arm
+  runs before the provider arm because 529 is numerically 5xx. A bare
+  status, prose about retrying, and any other screen fail cleanly, since
+  usage-limit and sign-in screens are a later slice. Nothing is ever guessed.
   `ConditionParserVersion` bumps when this parser's behavior changes.
 - `muse_test.go`: the adapter's declaration for the shared
   conformance test (`harness.Conform`). Versions `1.4.4`, `1.4.6` and
   `1.4.7` are `UNVERIFIED_PARSING` with `USAGE`, the trust half of
-  `READY` and the pause and provider-error `CONDITION` screens
+  `READY` and the pause, provider-error and rate-limit `CONDITION` screens
   fixture-verified; the golden table is `testdata/support-table.txt`,
   so a claim change is a reviewed diff.
 - Fixtures under `testdata/1.4.4/`, `testdata/1.4.6/` and

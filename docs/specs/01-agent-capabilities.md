@@ -490,7 +490,7 @@ optionally against one limit the owner sets.
   goal is never typed into a pane whose input line is not empty.
 - **E12 Harness condition:** provider errors, rate limits, sign-in needed (e.g.
   Muse's "HTTP 500 · retrying · attempt 6/10"), a goal interrupted or paused
-  at the machine, reported until cleared. Each adapter parses its own interrupt and stall lines (Claude "Interrupted", Codex "Goal paused", Muse "goal paused by interrupt" read as `GOAL_INTERRUPTED`; Cursor "Goal paused (Ns)" as `GOAL_PAUSED`); Muse also reads its "HTTP 500 · retrying" line as `PROVIDER_ERROR`. Other provider-error and limit lines are a later slice.
+  at the machine, reported until cleared. Each adapter parses its own interrupt and stall lines (Claude "Interrupted", Codex "Goal paused", Muse "goal paused by interrupt" read as `GOAL_INTERRUPTED`; Cursor "Goal paused (Ns)" as `GOAL_PAUSED`); Muse also reads its "HTTP 500 · retrying" line as `PROVIDER_ERROR` and its "HTTP 429/529 · retrying" line as `RATE_LIMITED` with retrying and the reset carried for the hub's limit wait (03h). Usage-limit and sign-in lines are a later slice.
 - **E13 Developer input:** when a person last typed into a pane (snapshot field
   plus a rate-limited event); goal panes are never idle, so this is the signal.
   Found from a tmux format subscription with a `list-clients` read on each
