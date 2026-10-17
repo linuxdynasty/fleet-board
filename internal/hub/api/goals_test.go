@@ -219,6 +219,50 @@ func TestListGoalsClosedGoal(t *testing.T) {
 	}
 }
 
+// TestGetGoalAfterSnapshotDrop covers the OBSERVED_GONE path end to end:
+// a snapshot that no longer lists the goal ends it in the row columns
+// only, and the read still reports CLOSED with its end_time, matching
+// what the filter sees.
+func TestGetGoalAfterSnapshotDrop(t *testing.T) {
+	t.Parallel()
+	e := newFleetEnv(t, localUser("alice"))
+	writeObservedGoal(t, e, "obs-gone", "m-one", hubv1.GoalPhase_GOAL_PHASE_RUNNING, "", goalBase)
+	dropMs := goalBase.Add(time.Hour).UnixMilli()
+	err := e.st.Write(context.Background(), func(tx *sql.Tx) error {
+		_, err := statedb.EndObservedGone(context.Background(), tx, "m-one", nil, dropMs, 2)
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	resp, err := e.client.GetGoal(context.Background(), connect.NewRequest(&hubv1.GetGoalRequest{
+		Id: &typev1.GoalId{Value: "obs-gone"},
+	}))
+	if err != nil {
+		t.Fatalf("GetGoal: %v", err)
+	}
+	got := resp.Msg.GetGoal()
+	if got.GetStatus().GetPhase() != hubv1.GoalPhase_GOAL_PHASE_CLOSED {
+		t.Errorf("phase %s, want CLOSED after the snapshot drop", got.GetStatus().GetPhase())
+	}
+	if got.GetStatus().GetPhaseReason() != hubv1.GoalPhaseReason_GOAL_PHASE_REASON_OBSERVED_GONE {
+		t.Errorf("reason %s, want OBSERVED_GONE", got.GetStatus().GetPhaseReason())
+	}
+	if end := got.GetStatus().GetEndTime(); !end.IsValid() ||
+		end.AsTime().UnixMilli() != dropMs {
+		t.Errorf("end_time %v, want the drop time", end)
+	}
+	msg := listGoals(t, e, &hubv1.ListGoalsRequest{Filter: `phase = CLOSED`})
+	if len(msg.GetGoals()) != 1 || msg.GetGoals()[0].GetStatus().GetPhase() != hubv1.GoalPhase_GOAL_PHASE_CLOSED {
+		t.Fatalf("closed goals %v, want [obs-gone] reading CLOSED", msg.GetGoals())
+	}
+	msg = listGoals(t, e, &hubv1.ListGoalsRequest{Filter: `live = false`})
+	if len(msg.GetGoals()) != 1 {
+		t.Fatalf("not-live goals %d, want 1 (the dropped goal)", len(msg.GetGoals()))
+	}
+}
+
 // TestListGoalsRefusesDispatchFilters is the unserved half of the 02c Goal
 // catalogue: dispatch-only fields stay FILTER_INVALID until their rows land.
 func TestListGoalsRefusesDispatchFilters(t *testing.T) {

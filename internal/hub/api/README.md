@@ -125,9 +125,11 @@ pages are 50 by default, 500 at most, with a query-bound token good for
 10 minutes. Version is 1 (the observed spec never changes), `create_time`
 is the first sight and `update_time` the last observed change; an open
 goal has no `end_time`, and `live` follows the 03l phase classes, so an
-open observed goal reads live. Run history and transitions
-stay `UNIMPLEMENTED` until the dispatch rows land. `GetGoal` misses
-an unknown id with `RESOURCE_NOT_FOUND`.
+open observed goal reads live. The read reports the row's phase, reason
+and end over the stored status, so a goal a snapshot drop ended reads
+`CLOSED` with its end_time, matching what the filter sees. Run history
+and transitions stay `UNIMPLEMENTED` until the dispatch rows land.
+`GetGoal` misses an unknown id with `RESOURCE_NOT_FOUND`.
 
 `GetSystemStatus` needs `READ` (02d): until a later row-12 slice brings caller
 scopes, only a `LOCAL_USER` principal (the admin socket) holds it. It lists

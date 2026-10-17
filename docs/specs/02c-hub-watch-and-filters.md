@@ -297,6 +297,8 @@ reported; `account`, `repo`, `routine`, `work_item` and `attempt` are refused
 phase classes, so an open observed goal reads live; `create_time` is the
 first sight, `update_time` the last observed change, and an open goal has no
 `end_time`, so `end_time` comparisons match nothing until it closes. The
+read reports the row's phase, reason and end over the stored status, so a
+goal a snapshot drop ended reads `CLOSED` with its end_time. The
 default `ListGoals` order is `start_time`.
 
 | WorkItem (`WORK_ITEMS`, `ListWorkItems`) | Path | Type | Operators |
