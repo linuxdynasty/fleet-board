@@ -131,6 +131,42 @@ func TestPassUpdateTypesNothing(t *testing.T) {
 	}
 }
 
+// TestPassDaemonSettingsTypesNothing is the unkinded startup case: the
+// Codex daemon-settings screen blocks on a choice the fleet never answers,
+// so the pass ends with STARTUP_PROMPT_SEEN, alive=false, health only and
+// no key press. The kind stays empty rather than guessed.
+func TestPassDaemonSettingsTypesNothing(t *testing.T) {
+	t.Parallel()
+	be, em := newFakeBackend(t), &fakeEmitter{}
+	daemon := loadFixture(t, "../../harness/codex/testdata/0.160.0/startup-daemon-settings-incompatible.txt")
+	be.captures = []string{daemon, daemon}
+	m := runManager(t, be, em)
+
+	res := runEnsure(t, m, ensureCommand("probe-1", "acc-1", "key-1", "codex", true))
+	if res.GetStatus() != typev1.Status_STATUS_FAILED {
+		t.Fatalf("status = %v, want FAILED", res.GetStatus())
+	}
+	if res.GetReason() != typev1.ReasonCode_REASON_CODE_STARTUP_PROMPT_SEEN {
+		t.Errorf("reason = %v, want STARTUP_PROMPT_SEEN", res.GetReason())
+	}
+	if kind := res.GetMetadata()["kind"]; kind != "" {
+		t.Errorf("metadata kind = %q, want empty (no guessed kind)", kind)
+	}
+	if len(be.sent) != 0 {
+		t.Errorf("typed %v on a daemon-settings screen; a startup screen takes no key", be.sent)
+	}
+	if len(em.readings()) != 0 {
+		t.Errorf("usage readings = %d on a daemon-settings screen, want none", len(em.readings()))
+	}
+	health := em.health()
+	if len(health) != 1 || health[0].GetAlive() {
+		t.Fatalf("health = %+v, want one event with alive=false", health)
+	}
+	if health[0].GetLastFailure() != typev1.ReasonCode_REASON_CODE_STARTUP_PROMPT_SEEN {
+		t.Errorf("last_failure = %v, want STARTUP_PROMPT_SEEN", health[0].GetLastFailure())
+	}
+}
+
 // TestPassReadyTypesStatusOnce is the A2 case: on a proven idle screen the
 // pass types only the status command, then reports health and a reading.
 func TestPassReadyTypesStatusOnce(t *testing.T) {
