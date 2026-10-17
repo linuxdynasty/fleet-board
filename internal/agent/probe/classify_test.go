@@ -43,7 +43,7 @@ func TestClassify(t *testing.T) {
 
 		// Startup: never answered, failover tried (03b).
 		{name: "codex update prompt", harness: "codex", file: "../../harness/codex/testdata/0.160.0/startup-update-prompt.txt", outcome: OutcomeStartup, kind: KindUpdate},
-		{name: "codex daemon settings types nothing", harness: "codex", file: "../../harness/codex/testdata/0.160.0/startup-daemon-settings-incompatible.txt", outcome: OutcomeUnknown},
+		{name: "codex daemon settings is startup with no kind", harness: "codex", file: "../../harness/codex/testdata/0.160.0/startup-daemon-settings-incompatible.txt", outcome: OutcomeStartup},
 		{name: "claude release notes dialog", harness: "claude", file: "../../harness/claude/testdata/2.1.296/release-notes.txt", outcome: OutcomeStartup, kind: KindReleaseNotes},
 
 		// Ready: the only screens a status command is ever typed into.

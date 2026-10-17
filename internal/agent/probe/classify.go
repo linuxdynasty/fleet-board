@@ -144,6 +144,9 @@ func classifyCodex(stripped string) Classification {
 		strings.Contains(stripped, "1. Update now") {
 		return Classification{Outcome: OutcomeStartup, Kind: KindUpdate}
 	}
+	if strings.Contains(stripped, "Background server has incompatible feature settings") {
+		return Classification{Outcome: OutcomeStartup}
+	}
 	for line := range strings.Lines(stripped) {
 		if strings.TrimSpace(line) == "› Ask Codex to do anything" {
 			return Classification{Outcome: OutcomeReady, Input: InputEmpty}
