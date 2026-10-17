@@ -11,6 +11,7 @@ import (
 
 	hubv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/hub/v1"
 	typev1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/type/v1"
+	"github.com/linuxdynasty/fleet-board/internal/hub/statedb"
 )
 
 func getFleetSummary(t *testing.T, e *fleetEnv) *hubv1.FleetSummary {
@@ -166,6 +167,33 @@ func TestGetFleetSummaryCountsMachinesSessionsAndSystem(t *testing.T) {
 	if got.GetActiveSlotsFree() != 0 || got.GetTotalSlotsFree() != 0 || got.GetAccountsWasting() != 0 {
 		t.Errorf("slots %d/%d waste %d, want 0 (no scheduler, pacing or slot rows yet)",
 			got.GetActiveSlotsFree(), got.GetTotalSlotsFree(), got.GetAccountsWasting())
+	}
+}
+
+// TestGetFleetSummaryCorruptGoalReadsDecode pins the failure label: a goal
+// row the hub cannot parse is the hub's data error (INTERNAL), logged as
+// summary.failed with step decode, not store.
+func TestGetFleetSummaryCorruptGoalReadsDecode(t *testing.T) {
+	t.Parallel()
+	e := newFleetEnv(t, localUser("alice"))
+	err := e.st.Write(context.Background(), func(tx *sql.Tx) error {
+		return statedb.UpsertObservedGoal(context.Background(), tx, statedb.ObservedRow{
+			ID: "sum-bad", MachineID: "m-one", Spec: "not json",
+			Status: "{}", Phase: "GOAL_PHASE_RUNNING", Reason: "GOAL_PHASE_REASON_UNSPECIFIED",
+			StartMs: goalBase.UnixMilli(), ObservedMs: goalBase.UnixMilli(), HubSeq: 1,
+		})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, gerr := e.client.GetFleetSummary(context.Background(), connect.NewRequest(&hubv1.GetFleetSummaryRequest{}))
+	if code, reason, _ := detail(t, gerr); code != connect.CodeInternal ||
+		reason != typev1.ReasonCode_REASON_CODE_INTERNAL {
+		t.Errorf("got %v %v, want internal INTERNAL", code, reason)
+	}
+	lines := e.logs.events(t, "summary.failed")
+	if len(lines) != 1 || lines[0]["step"] != "decode" {
+		t.Errorf("summary.failed = %v, want one line with step decode", lines)
 	}
 }
 

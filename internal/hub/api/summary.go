@@ -39,9 +39,9 @@ func (f *Fleet) GetFleetSummary(ctx context.Context, _ *connect.Request[hubv1.Ge
 	}
 	actor := who.GetId().GetValue()
 	now := f.hubNow()
-	working, waiting, stuck, limit, err := f.summaryGoalCounts(ctx)
+	working, waiting, stuck, limit, step, err := f.summaryGoalCounts(ctx)
 	if err != nil {
-		return nil, f.summaryFailed(ctx, actor, "store", err)
+		return nil, f.summaryFailed(ctx, actor, step, err)
 	}
 	needs, err := f.summaryNeedsYou(ctx)
 	if err != nil {
@@ -90,17 +90,18 @@ func (f *Fleet) GetFleetSummary(ctx context.Context, _ *connect.Request[hubv1.Ge
 
 // summaryGoalCounts counts the stored goals by strip class over the
 // reconciled phase (goalViewOf, so a goal a snapshot drop ended reads
-// CLOSED, in no class). A row the hub cannot parse is the hub's data
-// error.
-func (f *Fleet) summaryGoalCounts(ctx context.Context) (working, waiting, stuck, limit uint32, err error) {
+// CLOSED, in no class). The step names the failure for the status log:
+// a list the store cannot read is "store", a row the hub cannot parse
+// is "decode".
+func (f *Fleet) summaryGoalCounts(ctx context.Context) (working, waiting, stuck, limit uint32, step string, err error) {
 	rows, err := statedb.ListGoalRows(ctx, f.store)
 	if err != nil {
-		return 0, 0, 0, 0, err
+		return 0, 0, 0, 0, "store", err
 	}
 	for _, r := range rows {
 		v, verr := goalViewOf(r)
 		if verr != nil {
-			return 0, 0, 0, 0, verr
+			return 0, 0, 0, 0, "decode", verr
 		}
 		switch v.status.GetPhase() {
 		case hubv1.GoalPhase_GOAL_PHASE_STARTING, hubv1.GoalPhase_GOAL_PHASE_START_UNKNOWN,
@@ -117,7 +118,7 @@ func (f *Fleet) summaryGoalCounts(ctx context.Context) (working, waiting, stuck,
 			// Every other phase sits in no strip class.
 		}
 	}
-	return working, waiting, stuck, limit, nil
+	return working, waiting, stuck, limit, "", nil
 }
 
 // summaryNeedsYou counts the stored triage items in state OPEN at or
