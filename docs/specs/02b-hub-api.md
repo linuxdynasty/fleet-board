@@ -68,6 +68,13 @@ its `Operation`, with the ack time as `delivered_time` — `DONE` with no
 per-kind result decode (`output_text`, `failed_checks`) and the
 `LOGS`-scope redaction stay unset until their slice, as does `trace_id`.
 
+Served so far (row 13, first slice): `GetSystemStatus` lists one signal per
+(kind, subject) with every measure's unit, direction, thresholds, holds and
+clear level of the 05b section 8 table. Every verdict reads UNKNOWN with its
+value unset until the evaluation loop lands; the open triage item,
+`hub_start_time`, exporters and `watch_subscribers` stay unset until their
+slice.
+
 **Authentication** (how a browser, the CLI and a phone prove who they are, the
 claim URL, the credential carriers, Host and Origin checks) is
 [02f](02f-hub-authentication.md); the hub API only says who may call what

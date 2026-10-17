@@ -154,3 +154,6 @@ view, the golden CLI output and the contract tests all start from it.
 - Logs: `sessions.failed{step, err_kind}` when `ListSessions` or `GetSession`
   cannot read the store, and `sessions.issue_refused{reason}` for caller
   errors. The reads add no counter, for the same reason.
+- Logs: `system.status_failed{step, err_kind}` when `GetSystemStatus` cannot
+  read the store, and `system.issue_refused{reason}` for caller errors. The
+  read adds no counter, for the same reason.

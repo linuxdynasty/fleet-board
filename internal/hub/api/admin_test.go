@@ -248,9 +248,9 @@ func TestOtherMethodsOnTheAdminSocketAreUnimplemented(t *testing.T) {
 	if code := connect.CodeOf(err); code != connect.CodeUnimplemented {
 		t.Errorf("ListGoals: %v, want unimplemented", code)
 	}
-	_, err = c.GetSystemStatus(context.Background(), connect.NewRequest(&hubv1.GetSystemStatusRequest{}))
+	_, err = c.GetInsights(context.Background(), connect.NewRequest(&hubv1.GetInsightsRequest{}))
 	if code := connect.CodeOf(err); code != connect.CodeUnimplemented {
-		t.Errorf("GetSystemStatus: %v, want unimplemented", code)
+		t.Errorf("GetInsights: %v, want unimplemented", code)
 	}
 }
 

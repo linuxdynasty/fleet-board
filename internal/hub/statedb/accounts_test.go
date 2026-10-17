@@ -184,3 +184,23 @@ func TestUpdateAndDeleteOwnerAccount(t *testing.T) {
 		t.Errorf("second delete = %v, want ErrAccountUnknown", err)
 	}
 }
+
+func TestListAccountIDsReadsEveryIdInOrder(t *testing.T) {
+	t.Parallel()
+	_, s := openConfigStore(t)
+	createOwnerAccount(t, s, configWrite("local:alice", "req-1", 'a'))
+	if _, err := statedb.CreateOwnerAccount(context.Background(), s, statedb.CreateAccount{
+		ConfigWrite: configWrite("local:alice", "req-2", 'b'), ID: "acc-aaa", Harness: "codex",
+		Provider: "openai", DisplayName: "other", Origin: statedb.AccountOriginOwner,
+		Spec: []byte(`{}`),
+	}); err != nil {
+		t.Fatalf("CreateOwnerAccount: %v", err)
+	}
+	got, err := statedb.ListAccountIDs(context.Background(), s)
+	if err != nil {
+		t.Fatalf("ListAccountIDs: %v", err)
+	}
+	if len(got) != 2 || got[0] != "acc-aaa" || got[1] != "acc-req-1" {
+		t.Errorf("ids = %v, want [acc-aaa acc-req-1]", got)
+	}
+}

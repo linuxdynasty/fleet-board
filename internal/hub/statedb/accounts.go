@@ -185,6 +185,31 @@ func ListAccountRows(ctx context.Context, s *store.Store) ([]AccountRow, error) 
 	return out, nil
 }
 
+// ListAccountIDs reads every account id in id order, so subject enumeration
+// (05b GetSystemStatus) renders a stable list.
+func ListAccountIDs(ctx context.Context, s *store.Store) ([]string, error) {
+	var out []string
+	err := s.Read(ctx, func(tx *sql.Tx) error {
+		rows, err := tx.QueryContext(ctx, `SELECT id FROM accounts ORDER BY id`)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = rows.Close() }()
+		for rows.Next() {
+			var id string
+			if err := rows.Scan(&id); err != nil {
+				return err
+			}
+			out = append(out, id)
+		}
+		return rows.Err()
+	})
+	if err != nil {
+		return nil, fmt.Errorf("statedb: list account ids: %w", err)
+	}
+	return out, nil
+}
+
 // CreateOwnerAccount inserts an owner-created account in one writer
 // transaction. In order: a replayed request_id returns the stored
 // account ([ErrRequestConflict] on another body or resource); an
