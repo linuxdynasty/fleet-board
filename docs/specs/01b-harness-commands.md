@@ -47,6 +47,18 @@ installed code, or buys usage (Claude's `/usage-credits` and
 `/rate-limit-options` offer paid overage). Local policy can move a command to
 a stricter class, never a looser one.
 
+## Command classification (C4)
+
+The Codex adapter (`internal/harness/codex`, row 8, issue #36) classifies one
+slash command at a time: the table's own examples keep their class
+(`/status` observe, `/model` session, `/goal` goal, `/review` review, `/exit`
+destructive) and every other recorded command is deny. The verdicts cover all
+49 names in the recorded 0.160.0 catalog
+(`testdata/0.160.0/slash-menu-catalog.tsv`); the catalog test fails when a
+later catalog adds a name with no reviewed expectation. A discovered command
+whose effect is unprobed stays deny; it moves only with a probe record.
+(Cursor denies `/plan` as unprobed; that is its stricter local policy.)
+
 ## Usage parsers (D2)
 
 Each adapter reads its own usage screen into the standardized buckets of
