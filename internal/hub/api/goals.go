@@ -154,7 +154,11 @@ func (f *Fleet) GetGoal(ctx context.Context, req *connect.Request[hubv1.GetGoalR
 
 // goalViewOf decodes one stored row's spec and status. A row the hub
 // itself wrote that no longer parses, or that names a phase, reason or
-// origin the contract has no name for, is the hub's data error.
+// origin the contract has no name for, is the hub's data error. The
+// status is reconciled with the row: a snapshot drop ends a goal in the
+// columns only (phase, reason, end and stamp), so without this the read
+// would report the sighting before the drop while the filter treats the
+// same goal as closed.
 func goalViewOf(row statedb.GoalRow) (goalView, error) {
 	var spec hubv1.GoalDefinition
 	if err := protojson.Unmarshal([]byte(row.Spec), &spec); err != nil {
@@ -164,16 +168,34 @@ func goalViewOf(row statedb.GoalRow) (goalView, error) {
 	if err := protojson.Unmarshal([]byte(row.Status), &status); err != nil {
 		return goalView{}, fmt.Errorf("api: goal status: %w", err)
 	}
-	if _, ok := hubv1.GoalPhase_value[row.Phase]; !ok {
+	phase, ok := hubv1.GoalPhase_value[row.Phase]
+	if !ok {
 		return goalView{}, fmt.Errorf("api: unknown goal phase %q", row.Phase)
 	}
-	if _, ok := hubv1.GoalPhaseReason_value[row.Reason]; !ok {
+	reason, ok := hubv1.GoalPhaseReason_value[row.Reason]
+	if !ok {
 		return goalView{}, fmt.Errorf("api: unknown goal phase reason %q", row.Reason)
 	}
 	switch row.Origin {
 	case statedb.OriginObserved, statedb.OriginDispatched:
 	default:
 		return goalView{}, fmt.Errorf("api: unknown goal origin %q", row.Origin)
+	}
+	storedPhase := status.GetPhase()
+	status.Phase = hubv1.GoalPhase(phase)
+	status.PhaseReason = hubv1.GoalPhaseReason(reason)
+	// A row past its stored sighting moved phase since: the snapshot drop
+	// closed it, so the transition time is the drop's stamp, and
+	// phase_time ordering follows it.
+	if status.GetPhaseTime() == nil || hubv1.GoalPhase(phase) != storedPhase {
+		status.PhaseTime = timestamppb.New(time.UnixMilli(row.ObservedMs))
+	}
+	status.ObservedTime = timestamppb.New(time.UnixMilli(row.ObservedMs))
+	status.HubSeq = uint64(row.HubSeq) //nolint:gosec // G115: hub_seq starts at 1
+	if row.EndMs != nil {
+		status.EndTime = timestamppb.New(time.UnixMilli(*row.EndMs))
+	} else {
+		status.EndTime = nil
 	}
 	return goalView{row: row, spec: &spec, status: &status}, nil
 }
