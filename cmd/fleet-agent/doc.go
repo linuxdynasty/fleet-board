@@ -4,7 +4,9 @@
 // it looks for the hub on the local network, mDNS) and `run`, which
 // takes fleet-agent.lock in the state folder and keeps the machine connected
 // (internal/agent/conn) with the machine facts and resource samples
-// (internal/agent/machine), refusing before any network call when ended.json
+// (internal/agent/machine) and the usage-probe manager with one idle harness
+// session per assigned account (internal/agent/probe), refusing before any
+// network call when ended.json
 // records that the hub ended this machine, and prints its name and version
 // (internal/buildinfo). `run` also keeps status.json current and `enroll`
 // leaves a failure's code in enroll.json (internal/agent/statusfile). It also
