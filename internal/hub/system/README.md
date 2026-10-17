@@ -53,14 +53,18 @@ inputs always decide the same writes, and subjects missing from the round
 are left alone, so a round that changes nothing writes nothing and a
 deleted machine's item is never retired by absence.
 
+`Decide`'s writes are persisted by `statedb.ApplySystemChanges` in one
+writer transaction (raises at version 1 with a 7-day expiry, updates in
+place at version + 1, retires closed), read back through
+`statedb.ListOpenSystemItems`.
+
 Not here yet (later slices of issue #41): the readings behind each verdict,
-the ticking evaluation job and the served evaluated status, the writer jobs
-that persist `Decide`'s writes, the `fleet_hub_system_signal_state` and
-`fleet_hub_system_signal_value` gauges, subscription-efficiency rollups with
-`GetInsights`, and `fleetd insights rebuild`. `GetSystemStatus` is served
-(one UNKNOWN verdict per subject with every measure's levels, through
-`Snapshot`); those read `Measures` and the triage mapping, so their levels
-match this table without copying it.
+the ticking evaluation job and the served evaluated status, the
+`fleet_hub_system_signal_state` and `fleet_hub_system_signal_value` gauges,
+subscription-efficiency rollups with `GetInsights`, and `fleetd insights
+rebuild`. `GetSystemStatus` is served (one UNKNOWN verdict per subject with
+every measure's levels, through `Snapshot`); those read `Measures` and the
+triage mapping, so their levels match this table without copying it.
 
 No-Observability-Change: this slice adds no metric, span or log event; the
 `hub.system.evaluate` span and the System gauges arrive with the wiring

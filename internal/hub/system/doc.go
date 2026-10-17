@@ -10,6 +10,7 @@
 // [Monitor] tracks one Evaluator per subject across rounds and stamps
 // Since on state changes; [Decide] maps evaluated verdicts plus the open
 // SYSTEM items to the raise, update and retire writes with [MeasureProto]
-// details. The remaining wiring (the readings, the item writer jobs, the
-// fleet_hub_system_signal_* gauges) reads [Measures] and the mapping too.
+// details. The writes are persisted by the statedb item writer; the
+// remaining wiring (the readings, the fleet_hub_system_signal_* gauges)
+// reads [Measures] and the mapping too.
 package system

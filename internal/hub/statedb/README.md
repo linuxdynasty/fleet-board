@@ -476,24 +476,24 @@ an expired key writes anew, each insert prunes expired rows, a delete moves
 only the repo's `READY` mirrors to `SEEN`, the masked merge sees the latest
 row, and a 2b store gaining the tables.
 
-- **Hub-state triage writes** (migration 19, plan row 13a; 02b "Idempotency",
-  "Versions and ETags"; 03d W7). `triage_items` holds one row per hub-state
-  item (the 03d scalar core: kind, severity, state, fingerprint, title, the
-  machine/session/goal/account refs, the detail arm, the snooze and acting
-  stamps; version 1 at insert, +1 per operator write; `hub_seq` the Watch
-  stamp). `triage_request_log` keys (`principal_id`, `request_id`) to the
-  request body hash and the acted item as JSON. `SnoozeTriageItem` and
-  `DismissTriageItem` each run in one writer transaction: a replayed key
-  returns the stored item (`ErrRequestConflict` on another body, an expired
-  row past the 24 h window is dropped and the key is free again); a missing
-  id is `ErrTriageUnknown`; an item past `OPEN` and `SNOOZED` is
-  `ErrTriageClosed` before any version check; a stale `expected_version` is
-  a `VersionStale`; a wake time at or before now is `ErrTriagePastUntil`
-  (checked after the replay lookup, so a late retry still answers).
-  Otherwise the row moves at version + 1, stamped, with its `triage.snooze`
-  or `triage.dismiss` audit row (`triage/<id>`); a dismiss clears the wake
-  time. Each write sweeps a bounded batch (500) of expired idempotency rows.
-  The raise path of plan row 5 fills the source columns and adds the pane, work-item and approval refs in its own migration.
+- **Hub-state triage writes** (migration 19, plan row 13a; 02b "Idempotency", "Versions
+  and ETags"; 03d W7). `triage_items` holds one row per hub-state item (the 03d scalar
+  core: kind, severity, state, fingerprint, title, the machine/session/goal/account
+  refs, the detail arm, snooze and acting stamps; version 1 at insert, +1 per write;
+  `hub_seq` the Watch stamp). `triage_request_log` keys (`principal_id`, `request_id`)
+  to the request body hash and the acted item as JSON. `SnoozeTriageItem` and
+  `DismissTriageItem` each run in one writer transaction: a replayed key returns the
+  stored item (`ErrRequestConflict` on another body, expired rows dropped past 24 h);
+  `ErrTriageUnknown` for a missing id, `ErrTriageClosed` past `OPEN`/`SNOOZED`,
+  `VersionStale` on a stale version, `ErrTriagePastUntil` for a past wake time (after
+  the replay lookup). Otherwise the row moves at version + 1, stamped, with its audit
+  row (a dismiss clears the wake time), sweeping a bounded batch (500) of expired
+  idempotency rows. The SYSTEM item writer (plan row 13, issue #41) persists one
+  `system.Decide` round in one transaction (`ApplySystemChanges`; `ListOpenSystemItems`
+  reads the open list back): raises at version 1 with a 7-day expiry, in-place updates
+  at version + 1, retires closed; rows that left the open states are skipped, with no
+  audit row like the other raises. The raise path of plan row 5 fills the source
+  columns and adds the pane, work-item and approval refs in its own migration.
 
 - **Config import and pending machines** (migrations 16, 20, plan row 13a):
   see [config-import.md](config-import.md).
