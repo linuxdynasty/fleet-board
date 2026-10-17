@@ -373,9 +373,9 @@ func TestEveryOtherFleetMethodIsUnimplemented(t *testing.T) {
 	t.Parallel()
 	e := newFleetEnv(t, localUser("alice"))
 	ctx := context.Background()
-	_, err := e.client.GetStoreStatus(ctx, connect.NewRequest(&hubv1.GetStoreStatusRequest{}))
+	_, err := e.client.GetFleetSummary(ctx, connect.NewRequest(&hubv1.GetFleetSummaryRequest{}))
 	if code := connect.CodeOf(err); code != connect.CodeUnimplemented {
-		t.Errorf("GetStoreStatus: %v, want unimplemented", code)
+		t.Errorf("GetFleetSummary: %v, want unimplemented", code)
 	}
 	_, err = e.client.CreateApiToken(ctx, connect.NewRequest(&hubv1.CreateApiTokenRequest{RequestId: "x"}))
 	if code := connect.CodeOf(err); code != connect.CodeUnimplemented {

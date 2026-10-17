@@ -94,13 +94,17 @@ type Fleet struct {
 	onCommandsClosed func(ctx context.Context, closed []outbox.Closed)
 	instanceID       string
 	sysLoop          *system.Loop
-	tokens           metric.Int64Counter
-	sessCmds         metric.Int64Counter
-	approvals        metric.Int64Counter
-	repos            metric.Int64Counter
-	workItems        metric.Int64ObservableGauge
-	sysSignalState   metric.Float64ObservableGauge
-	sysSignalValue   metric.Float64ObservableGauge
+	// started is the hub clock when the service was built. Fleet is
+	// built once per fleetd run, so it stands in for the process
+	// start GetStoreStatus reports as hub_start_time.
+	started        time.Time
+	tokens         metric.Int64Counter
+	sessCmds       metric.Int64Counter
+	approvals      metric.Int64Counter
+	repos          metric.Int64Counter
+	workItems      metric.Int64ObservableGauge
+	sysSignalState metric.Float64ObservableGauge
+	sysSignalValue metric.Float64ObservableGauge
 }
 
 // NewFleet builds the service.
@@ -119,6 +123,7 @@ func NewFleet(opts FleetOptions) (*Fleet, error) {
 	if f.now == nil {
 		f.now = time.Now
 	}
+	f.started = f.now()
 	if f.random == nil {
 		f.random = rand.Reader
 	}

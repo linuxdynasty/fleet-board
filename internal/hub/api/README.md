@@ -11,7 +11,7 @@ triage writes (`SnoozeTriageItem`, `DismissTriageItem`), the triage
 reads (`ListTriageItems`, `GetTriageItem`), the usage read
 (`ListUsageReadings`), the integration read (`ListIntegrations`), the
 settings reads (`GetSettings`, `ListSettings`), the audit read
-(`ListAuditEntries`), the
+(`ListAuditEntries`), the store-status read (`GetStoreStatus`), the
 session-control and approvals calls, `GetServerInfo`, the machine
 reads (`ListMachines`, `GetMachine`), `GetOperation`, `CapturePane`,
 the session reads (`ListSessions`, `GetSession`), the observed-goal
@@ -60,7 +60,7 @@ own error lines are debug-level `http.server_error` events, not stderr text.
 `Fleet` embeds the generated `UnimplementedFleetServiceHandler`, so every
 method but `CreateEnrollmentToken`, the watched-repo writes, the machine
 admin writes, the config import and export, the hub-state triage
-writes, the triage reads, the usage read, the integration read, the settings reads, the audit read, the session-control and approvals calls, `GetServerInfo`,
+writes, the triage reads, the usage read, the integration read, the settings reads, the audit read, the store-status read, the session-control and approvals calls, `GetServerInfo`,
 `ListMachines`, `GetMachine`, `GetOperation`, `CapturePane`,
 `ListSessions`, `GetSession`, `ListGoals`, `GetGoal`,
 `ListWorkItems`, `GetWorkItem`, `ListChangeRequests`,
@@ -390,6 +390,17 @@ filter (`actor`, `action`, `target`, `machine`, `goal`, `command`);
 default, 500 at most, with a query-bound token good for 10 minutes.
 Entries are immutable: `version` is always 1 and `update_time` equals
 `create_time`.
+
+`GetStoreStatus` needs `ADMIN` (02d). Until a later row-12 slice
+brings caller scopes, only a `LOCAL_USER` principal (the admin socket)
+holds it, and in `local_trusted` mode the local approval secret as
+well (ADR 0032). It serves the hub's own storage in one message:
+`state.db` with its file size and migrated schema version, the newest
+published backup with its stamp, size, clear-or-encrypted kind and
+path, the free bytes on the state volume, and the hub's start and
+build. `logs.db` has no entry until row 25 brings the file,
+`last_checkpoint_time` stays unset, and `last_backup_includes_logs`
+stays false.
 
 `SnoozeTriageItem` and `DismissTriageItem` need `APPROVALS` (02d); until
 plan row 12 brings caller scopes only the local user holds it

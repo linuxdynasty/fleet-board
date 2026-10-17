@@ -58,7 +58,8 @@ func dialUnix(t *testing.T, path string) net.Conn {
 }
 
 // serveAdmin serves the admin socket for e's store with peer as the
-// peer-credential reader (nil: the kernel's).
+// peer-credential reader (nil: the kernel's). The Fleet gets the env's
+// state dir, like the daemon's, so reads of the hub's own files serve.
 func serveAdmin(t *testing.T, e *fleetEnv, peer api.PeerUID) string {
 	t.Helper()
 	path := socketPath(t)
@@ -66,7 +67,9 @@ func serveAdmin(t *testing.T, e *fleetEnv, peer api.PeerUID) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	fleet, err := api.NewFleet(api.FleetOptions{Store: e.st, CACert: e.caDER, Telemetry: e.tel, HubInstanceID: testInstanceID})
+	fleet, err := api.NewFleet(api.FleetOptions{
+		Store: e.st, CACert: e.caDER, Telemetry: e.tel, StateDir: e.dir, HubInstanceID: testInstanceID,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -240,13 +243,16 @@ func TestTheAdminSocketRefusesAnyOrigin(t *testing.T) {
 
 const hubv1connectCreate = "/fleet.hub.v1.FleetService/CreateEnrollmentToken"
 
-func TestOtherMethodsOnTheAdminSocketAreUnimplemented(t *testing.T) {
+func TestStoreStatusIsServedOnTheAdminSocketWhileTheRestStaysUnimplemented(t *testing.T) {
 	t.Parallel()
 	e := newFleetEnv(t, nil)
 	c := api.AdminClient(serveAdmin(t, e, nil))
-	_, err := c.GetStoreStatus(context.Background(), connect.NewRequest(&hubv1.GetStoreStatusRequest{}))
-	if code := connect.CodeOf(err); code != connect.CodeUnimplemented {
-		t.Errorf("GetStoreStatus: %v, want unimplemented", code)
+	resp, err := c.GetStoreStatus(context.Background(), connect.NewRequest(&hubv1.GetStoreStatusRequest{}))
+	if err != nil {
+		t.Fatalf("GetStoreStatus over the socket: %v", err)
+	}
+	if len(resp.Msg.GetStatus().GetDatabases()) != 1 {
+		t.Errorf("%d databases, want state.db served over the socket", len(resp.Msg.GetStatus().GetDatabases()))
 	}
 	_, err = c.GetInsights(context.Background(), connect.NewRequest(&hubv1.GetInsightsRequest{}))
 	if code := connect.CodeOf(err); code != connect.CodeUnimplemented {
