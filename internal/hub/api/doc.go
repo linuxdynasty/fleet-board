@@ -27,13 +27,15 @@
 // [Fleet.GetWorkItem] (synced mirrors with the hub's verdicts),
 // [Fleet.ListChangeRequests], [Fleet.GetChangeRequest] (synced mirrors
 // with the provider change request), [Fleet.ListRepos], [Fleet.GetRepo]
-// (watched rows with the stored spec, status unset) and
+// (watched rows with the stored spec, status unset), [Fleet.ListAccounts],
+// [Fleet.GetAccount] (owner-created accounts with the stored spec, usage
+// and pacing unset) and
 // [Fleet.GetSystemStatus] built; every other method is Unimplemented
 // (02k): it checks the caller ([PrincipalFrom], ADMIN for enrollment
 // and revoke/delete, SETTINGS for repos, update and import, READ for
 // export, the machine, operation, session, goal, work-item,
-// change-request, repo and system reads and the
-// visible capture (LOGS for its scrollback), APPROVALS for triage;
+// change-request, repo, account and system reads and the
+// visible capture (LOGS for its scrollback and the account raw screen), APPROVALS for triage;
 // GetServerInfo needs no scope), the fields and the request_id (02b),
 // mints the token in package ca and stores only its secret hash, merges
 // the masked repo patch inside the writer transaction, revokes a machine
