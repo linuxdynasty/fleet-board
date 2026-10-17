@@ -112,6 +112,7 @@
     "store_": "docs/specs/05b-observability.md",
     "stream_closed_": "docs/specs/03n-reconnect.md",
     "sync_": "docs/specs/03m-work-source-and-code-host-sync.md",
+    "system_signal_": "docs/specs/05b-observability.md",
     "text_scrub_": "docs/specs/05b-observability.md",
     "tmux_": "docs/specs/05b-observability.md",
     "triage_writes_": "docs/specs/03d-triage-sessions-logs.md",
