@@ -136,10 +136,13 @@ func TestDecideRaise(t *testing.T) {
 	}
 }
 
-// TestDecideOpenItems keeps a flapping signal on one item: the same state
-// writes nothing, a worse state moves the severity in place, a better but
-// still bad state keeps the item, a lost reading keeps it, and only OK
-// retires it.
+// TestDecideOpenItems keeps a flapping signal on one item: the same
+// decision writes nothing, a worse state moves the severity in place, a
+// CRITICAL-only signal falling back to WARNING moves its item down in
+// place without opening a new one, a lost reading keeps the item
+// silently, and only OK retires it. A new reading alone (the same signal,
+// state and measure, a newer value) writes nothing: the item is a
+// decision record, not live telemetry.
 func TestDecideOpenItems(t *testing.T) {
 	t.Parallel()
 	agent := hubv1.SystemSignalKind_SYSTEM_SIGNAL_KIND_AGENT_CONNECTED
@@ -188,8 +191,27 @@ func TestDecideOpenItems(t *testing.T) {
 			},
 		},
 		{
-			"warning on critical-only keeps its item",
+			"moved-down warning at rest writes nothing",
 			syncWarn(),
+			[]system.OpenItem{{
+				Fingerprint: "system:INTEGRATION_SYNC_LAG:github",
+				Severity:    hubv1.Severity_SEVERITY_WARNING,
+				Detail: &hubv1.SystemDetail{
+					Signal: sync, State: warn, Measure: &hubv1.SystemMeasure{
+						Kind: main, Unit: secs, Direction: above,
+						WarningThreshold: f(300), CriticalThreshold: f(600), Value: f(400),
+					},
+					Integration: &typev1.IntegrationId{Value: "github"},
+				},
+			}},
+			system.Change{},
+		},
+		{
+			"critical-only fall to warning moves severity in place",
+			system.Verdict{
+				Kind: sync, State: warn, SetBy: main,
+				Integration: &typev1.IntegrationId{Value: "github"}, Main: system.Known(400),
+			},
 			[]system.OpenItem{{
 				Fingerprint: "system:INTEGRATION_SYNC_LAG:github",
 				Severity:    hubv1.Severity_SEVERITY_ACTION,
@@ -201,6 +223,25 @@ func TestDecideOpenItems(t *testing.T) {
 					Integration: &typev1.IntegrationId{Value: "github"},
 				},
 			}},
+			system.Change{
+				Op: system.OpUpdate, Fingerprint: "system:INTEGRATION_SYNC_LAG:github",
+				Severity: hubv1.Severity_SEVERITY_WARNING, Title: "integration sync is still lagging",
+				Detail: &hubv1.SystemDetail{
+					Signal: sync, State: warn, Measure: &hubv1.SystemMeasure{
+						Kind: main, Unit: secs, Direction: above,
+						WarningThreshold: f(300), CriticalThreshold: f(600), Value: f(400),
+					},
+					Integration: &typev1.IntegrationId{Value: "github"},
+				},
+			},
+		},
+		{
+			"new reading alone writes nothing",
+			system.Verdict{
+				Kind: agent, State: warn, SetBy: main,
+				Machine: &typev1.MachineId{Value: "m1"}, Main: system.Known(915),
+			},
+			[]system.OpenItem{openWarn},
 			system.Change{},
 		},
 		{

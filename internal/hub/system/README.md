@@ -41,14 +41,17 @@ names the measure that set the state for `SystemDetail.measure`.
 `Decide` maps one round of evaluated verdicts plus the open SYSTEM items
 to the writes that round needs: a raise at or above the signal's 05b "Item
 raised at" level (WARNING-only signals stay silent below it), an in-place
-update when the severity or the detail behind it moved, nothing while an
-open item stays bad or unknown, and a retire only on OK. The detail
-carries the full measure that set the state (levels and reading, through
-`MeasureProto`, so the triage card matches the served status) with the
-integration subject inside it. The same inputs always decide the same
-writes, and subjects missing from the round are left alone, so a round
-that changes nothing writes nothing and a deleted machine's item is
-never retired by absence.
+update when the severity or the decision behind it moved (a CRITICAL-only
+signal falling back to WARNING moves its item down in place), nothing
+while an open item stays bad or unknown, and a retire only on OK. The
+update comparison skips the reading value on purpose: the item is a
+decision record, not live telemetry, so a newer value alone never
+rewrites it. The detail carries the full measure that set the state
+(levels and reading, through `MeasureProto`, so the triage card matches
+the served status) with the integration subject inside it. The same
+inputs always decide the same writes, and subjects missing from the round
+are left alone, so a round that changes nothing writes nothing and a
+deleted machine's item is never retired by absence.
 
 Not here yet (later slices of issue #41): the readings behind each verdict,
 the ticking evaluation job and the served evaluated status, the writer jobs

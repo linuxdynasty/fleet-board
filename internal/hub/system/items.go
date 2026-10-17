@@ -3,8 +3,6 @@ package system
 import (
 	"strings"
 
-	"google.golang.org/protobuf/proto"
-
 	hubv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/hub/v1"
 	typev1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/type/v1"
 )
@@ -51,9 +49,10 @@ type Change struct {
 // Decide maps one round of evaluated verdicts plus the open SYSTEM items
 // to the writes that round needs (05b section 8, "What a signal raises").
 // A verdict at or above its signal's RaiseAt opens an item when none is
-// open and refreshes it when the severity or the detail behind it moved;
-// anything else (below the raise level, UNKNOWN with no reading yet)
-// keeps an open item without a write, and only OK retires it. The same
+// open and refreshes it when the severity or the decision behind it
+// moved; a CRITICAL-only signal falling back to WARNING moves its open
+// item down in place without opening a new one; UNKNOWN with no reading
+// yet keeps an open item silently, and only OK retires it. The same
 // inputs always decide the same writes, so a round that changes nothing
 // writes nothing. Subjects missing from the round are left alone: a
 // deleted machine never reports OK, so absence must not retire its item;
@@ -73,25 +72,60 @@ func Decide(verdicts []Verdict, open []OpenItem) []Change {
 				out = append(out, Change{Op: OpRetire, Fingerprint: fp})
 			}
 		case ShouldRaise(v.Kind, v.State):
-			sev := SeverityFor(v.Kind, v.State)
-			d := detailOf(v)
-			c := Change{
-				Op: OpRaise, Fingerprint: fp, Severity: sev,
-				Title: titleFor(v.Kind, v.State), Detail: d,
-				Machine: v.Machine, Account: v.Account,
-			}
-			if !has {
+			if c, ok := refresh(v, fp, o, has, OpRaise); ok {
 				out = append(out, c)
-			} else if o.Severity != sev || !proto.Equal(o.Detail, d) {
+			}
+		case has && v.State == hubv1.SystemState_SYSTEM_STATE_WARNING:
+			// Below the raise level but still bad: move the open
+			// item in place, never open a new one for it.
+			if c, ok := refresh(v, fp, o, has, OpRaise); ok {
 				c.Op = OpUpdate
 				out = append(out, c)
 			}
 		default:
-			// Below the raise level, or UNKNOWN: the open item
-			// stays (ShouldKeep) with no write.
+			// UNKNOWN, or below the raise level with no open
+			// item: the open item stays (ShouldKeep) with no
+			// write.
 		}
 	}
 	return out
+}
+
+// refresh builds the raise or in-place update for one bad verdict, and
+// reports whether the writer must act: a missing item always needs its
+// raise, an open one only when the severity or the decision behind it
+// moved. The comparison skips the reading value on purpose: the item is
+// a decision record (which signal, how bad, against what), not live
+// telemetry, so a newer value alone must not rewrite it and bump its
+// version every evaluation.
+func refresh(v Verdict, fp string, o OpenItem, has bool, op Op) (Change, bool) {
+	sev := SeverityFor(v.Kind, v.State)
+	d := detailOf(v)
+	c := Change{
+		Op: op, Fingerprint: fp, Severity: sev,
+		Title: titleFor(v.Kind, v.State), Detail: d,
+		Machine: v.Machine, Account: v.Account,
+	}
+	if !has {
+		return c, op == OpRaise
+	}
+	if o.Severity != sev || !stableEqual(o.Detail, d) {
+		c.Op = OpUpdate
+		return c, true
+	}
+	return Change{}, false
+}
+
+// stableEqual compares the decision behind two SYSTEM details: the
+// signal, the state and the measure that set it. Unit, direction,
+// thresholds and holds all derive from those, so only the reading value
+// is left out.
+func stableEqual(a, b *hubv1.SystemDetail) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	return a.GetSignal() == b.GetSignal() && a.GetState() == b.GetState() &&
+		a.GetMeasure().GetKind() == b.GetMeasure().GetKind()
 }
 
 // subjectOf is the fingerprint subject of one verdict: the machine,
@@ -126,14 +160,20 @@ func detailOf(v Verdict) *hubv1.SystemDetail {
 	}
 }
 
-// warnTitles names each raisable WARNING state in closed plain words for
-// the item's one-line title. The six CRITICAL-only signals never raise at
-// WARNING, so they have no entry.
+// warnTitles names each WARNING state in closed plain words for the
+// item's one-line title. The six CRITICAL-only signals never raise at
+// WARNING, but their open items move down through it, so they have
+// entries too.
 var warnTitles = map[hubv1.SystemSignalKind]string{
 	hubv1.SystemSignalKind_SYSTEM_SIGNAL_KIND_AGENT_CONNECTED:       "machine has gone quiet",
 	hubv1.SystemSignalKind_SYSTEM_SIGNAL_KIND_USAGE_PROBE_FRESHNESS: "usage readings are stale",
+	hubv1.SystemSignalKind_SYSTEM_SIGNAL_KIND_INTEGRATION_SYNC_LAG:  "integration sync is still lagging",
 	hubv1.SystemSignalKind_SYSTEM_SIGNAL_KIND_WRITER_BATCH_LAG:      "hub writer is lagging",
+	hubv1.SystemSignalKind_SYSTEM_SIGNAL_KIND_OUTBOX_BACKLOG:        "commands are still piling up",
+	hubv1.SystemSignalKind_SYSTEM_SIGNAL_KIND_WATCH_DROPS:           "dashboard streams are still dropping",
+	hubv1.SystemSignalKind_SYSTEM_SIGNAL_KIND_LOG_STORE_USAGE:       "log store is still over its cap",
 	hubv1.SystemSignalKind_SYSTEM_SIGNAL_KIND_DISK_FREE:             "disk space is low",
+	hubv1.SystemSignalKind_SYSTEM_SIGNAL_KIND_CLOCK_SKEW:            "machine clock still disagrees",
 	hubv1.SystemSignalKind_SYSTEM_SIGNAL_KIND_BACKUP_AGE:            "backups are getting old",
 }
 
