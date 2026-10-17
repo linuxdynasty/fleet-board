@@ -130,6 +130,12 @@
 // them all, both on the read pool for the hub API's filter, sort and
 // page.
 //
+// Plan row 12 (usage reads) adds the reading history (usage_readings
+// migration): [InsertUsageReading] appends one reading keyed by
+// (account, read_time, received_time) with no audit row, and
+// [ListStoredUsageReadings] reads them all on the read pool for the hub
+// API's filter, sort and page.
+//
 
 // Plan row 5 (PR 5c2) adds the event history (events migration):
 // [ApplyEvent] stores one event in its writer job (the live, snapshotted

@@ -139,6 +139,10 @@ func Migrations() []store.Migration {
 		Version: 21,
 		Name:    "hub_session_details",
 		SQL:     sessionsDetailsSQL,
+	}, {
+		Version: 22,
+		Name:    "usage_readings",
+		SQL:     usageReadingsSQL,
 	}}
 }
 

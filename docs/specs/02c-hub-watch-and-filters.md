@@ -363,8 +363,8 @@ until the dispatch rows link goals.
 | `read_time` | `read_time` | timestamp | `<` `<=` `>` `>=` |
 | `source` | `source` | `UsageSource` | `=` `in` |
 
-`order_by`: `read_time` (default `read_time desc`). No `id`, `create_time` or
-`update_time`.
+`order_by`: `read_time` (hub-adjusted time, `received_time` breaks ties;
+default `read_time desc`). No `id`, `create_time` or `update_time`.
 
 | TriageItem (`TRIAGE`, `ListTriageItems`) | Path | Type | Operators |
 |---|---|---|---|

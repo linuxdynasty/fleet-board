@@ -47,6 +47,7 @@
     "tls.": "docs/specs/05b-observability.md",
     "tmux.": "docs/specs/05b-observability.md",
     "triage.": "docs/specs/03d-triage-sessions-logs.md",
+    "usage.": "docs/specs/03b-usage-and-sync.md",
     "typing.": "docs/specs/05b-observability.md",
     "wake.": "docs/specs/03-workflows.md",
     "work_items.": "docs/specs/02k-v1-surface-and-cli.md",
