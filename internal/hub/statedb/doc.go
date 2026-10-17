@@ -92,6 +92,12 @@
 // [ReadSessionRow] reads one by id ([ErrSessionUnknown] without a row)
 // and [ListSessionRows] reads them all, both on the read pool.
 //
+// Plan row 12 (goal reads) adds the observed-goal read path over the row
+// 9 goals table: [GoalRow] is one goals row with the stored spec, status,
+// phase, reason and times; [ReadGoalRow] reads one by id ([ErrGoalUnknown]
+// without a row) and [ListGoalRows] reads them all, both on the read pool
+// for the hub API's filter, sort and page.
+//
 // Plan row 5 (PR 5c2) adds the event history (events migration):
 // [ApplyEvent] stores one event in its writer job (the live, snapshotted
 // epoch, [ErrEventNotCurrent]; the stream's chain, [ErrEventChainBroken];
