@@ -44,6 +44,7 @@
     "status.": "docs/specs/03-workflows.md",
     "store.": "docs/specs/05b-observability.md",
     "sync.": "docs/specs/03m-work-source-and-code-host-sync.md",
+    "summary.": "docs/specs/02k-v1-surface-and-cli.md",
     "system.": "docs/specs/02k-v1-surface-and-cli.md",
     "tls.": "docs/specs/05b-observability.md",
     "tmux.": "docs/specs/05b-observability.md",

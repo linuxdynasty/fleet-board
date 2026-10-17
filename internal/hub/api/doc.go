@@ -31,6 +31,7 @@
 // settings layers in id order), [Fleet.ListAuditEntries] (the stored
 // audit rows, newest first), [Fleet.GetStoreStatus] (the hub's storage:
 // state.db, the newest backup, free disk, start and build),
+// [Fleet.GetFleetSummary] (the hub-derived strip counts),
 // [Fleet.ListWorkItems],
 // [Fleet.GetWorkItem] (synced mirrors with the hub's verdicts),
 // [Fleet.ListChangeRequests], [Fleet.GetChangeRequest] (synced mirrors
