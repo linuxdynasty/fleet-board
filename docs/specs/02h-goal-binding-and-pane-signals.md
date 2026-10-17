@@ -253,7 +253,7 @@ context. Model and effort come from the repo, routine or dispatch settings.
 
 **Startup screens.** The agent never answers one (01b). `TRUST_PROMPT_SEEN` is
 the trust case; `STARTUP_PROMPT_SEEN` carries `kind` in `metadata`: `trust`,
-`update`, `login` or `release_notes`. Update and login are durable per
+`update`, `login` or `release_notes`; a startup screen with no proven class (the Codex daemon-settings prompt, 01b) carries no `kind` rather than a guessed one. Update and login are durable per
 `(machine, harness)`: the hub marks the pair unfit and raises a triage item
 instead of retrying (03h, reaction table).
 
