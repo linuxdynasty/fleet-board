@@ -29,6 +29,11 @@ file; it parses text it is given.
   The shape is covered by inline unit strings, not a live fixture, so
   passive stays out of the conformance table until a live probe
   records a near-limit banner.
+- `condition.go`: `ParseCondition` reads the interrupt line (01 E12):
+  a line holding "Interrupted" reads as `GOAL_INTERRUPTED`; any other
+  screen fails cleanly, since provider-error and limit screens are a
+  later slice. Nothing is ever guessed. `ConditionParserVersion` bumps
+  when this parser's behavior changes.
 - `commands.go`: `Classify` returns the 01b class of one slash command
   (C4): the table's own examples keep their class (`/usage` observe,
   `/model` session, `/goal` goal, `/code-review` review, `/exit`
@@ -39,8 +44,8 @@ file; it parses text it is given.
   later catalog needs a reviewed verdict here.
 - `claude_test.go`: the adapter's declaration for the shared
   conformance test (`harness.Conform`). Version `2.1.296` is
-  `UNVERIFIED_PARSING` with `USAGE` and the trust half of `READY`
-  fixture-verified; the golden table
+  `UNVERIFIED_PARSING` with `USAGE`, the trust half of `READY`
+  and the interrupt `CONDITION` fixture-verified; the golden table
   is `testdata/support-table.txt`, so a claim change is a reviewed
   diff.
 - Fixtures under `testdata/2.1.296/`, documented in

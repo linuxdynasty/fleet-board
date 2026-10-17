@@ -1,0 +1,4 @@
+Muse 1.4.7 · Muse Code Power Usage
+Goal: add the widget
+working…
+goal paused by interrupt — resume with /goal resume

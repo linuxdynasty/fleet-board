@@ -1,0 +1,6 @@
+╭─ Claude Code v2.1.296 · Claude Max ─╮
+│ Goal: wire the retry counter         │
+│ ⏺ Working…                           │
+│ Interrupted                          │
+╰──────────────────────────────────────╯
+  ⏵ continue · /goal clear

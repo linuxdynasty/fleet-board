@@ -23,9 +23,15 @@ parses text it is given.
   (C4): `/usage` observe, `/model` session, `/goal` goal, `/quit`
   destructive, everything else deny. A discovered command whose effect
   is unprobed stays deny; it moves only with a probe record.
+- `condition.go`: `ParseCondition` reads the stall line (01 E12): a
+  line holding "Goal paused (Ns)" reads as `GOAL_PAUSED`; any other
+  screen fails cleanly, since provider-error and limit screens are a
+  later slice. Nothing is ever guessed. `ConditionParserVersion` bumps
+  when this parser's behavior changes.
 - `cursor_test.go`: the adapter's declaration for the shared conformance
   test (`harness.Conform`). Version `2026.10.01` is `UNVERIFIED_PARSING`
-  with `USAGE`, `IDENTITY` and `READY` fixture-verified; the golden table is
+  with `USAGE`, `IDENTITY`, `READY` and the stall `CONDITION`
+  fixture-verified; the golden table is
   `testdata/support-table.txt`, so a claim change is a reviewed diff.
 - Fixtures under `testdata/2026.10.01/`, documented in
   `testdata/README.md`.
