@@ -189,6 +189,10 @@ Provider failures arrive as a `ProviderError` kind (03j has the mapping to RPC c
   (the status row did not persist), `sync.provider_skew{integration, skew}`
   (the 03j clock rule), and `sync.triage_raised` /
   `sync.triage_retired{fingerprint}` (the row-12 triage write's seam).
+- Logs: `integrations.issue_refused{reason}` for `ListIntegrations`
+  caller errors and `integrations.failed{step, err_kind, actor}` when
+  the read cannot reach the store. The read adds no counter, like the
+  other row-12 reads.
 
 At 3 AM: "why is the queue empty / dispatch paused?" → `fleet_hub_sync_lag_seconds`
 and `fleet_hub_integration_state`; "why is this goal stuck in verifying?" →

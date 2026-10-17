@@ -136,6 +136,12 @@
 // [ListStoredUsageReadings] reads them all on the read pool for the hub
 // API's filter, sort and page.
 //
+// Plan row 12 (integration reads) adds the configured-integration read
+// path over the integrations table: [EnsureIntegration] and
+// [SetIntegrationStatus] own the rows, and [ListStoredIntegrations]
+// reads them all on the read pool for the hub API's filter, sort and
+// page.
+//
 
 // Plan row 5 (PR 5c2) adds the event history (events migration):
 // [ApplyEvent] stores one event in its writer job (the live, snapshotted

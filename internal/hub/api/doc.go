@@ -26,7 +26,8 @@
 // reads CLOSED with its end_time), [Fleet.ListTriageItems],
 // [Fleet.GetTriageItem] (hub-state items with the stored kind, severity
 // and refs), [Fleet.ListUsageReadings] (the stored reading history,
-// newest first), [Fleet.ListWorkItems],
+// newest first), [Fleet.ListIntegrations] (the configured integrations
+// in id order), [Fleet.ListWorkItems],
 // [Fleet.GetWorkItem] (synced mirrors with the hub's verdicts),
 // [Fleet.ListChangeRequests], [Fleet.GetChangeRequest] (synced mirrors
 // with the provider change request), [Fleet.ListRepos], [Fleet.GetRepo]

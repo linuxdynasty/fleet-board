@@ -438,7 +438,7 @@ write; the `status` stays unset until a later row computes it.
 |---|---|---|---|
 | `health` | `status.health` | `IntegrationHealth` | `=` `in` |
 | `provider` | `status.provider_name` | string | `=` `in` |
-
+`order_by`: `name` (`id`, the default), `ct`.
 | Settings (`SETTINGS`, `ListSettings`) | Path | Type | Operators |
 |---|---|---|---|
 | `layer` (D) | `fleet`, `group` or `machine` from the id | string | `=` `in` |
