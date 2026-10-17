@@ -73,6 +73,10 @@ type FleetOptions struct {
 	// hub signal UNKNOWN with no readings, as before the loop lands. The
 	// daemon passes the loop its system_evaluate job ticks.
 	SystemLoop *system.Loop
+	// DiskFree reads the free bytes on the state volume; nil means
+	// system.DiskFree. Set in tests to prove what GetStoreStatus does
+	// when the volume cannot be statted.
+	DiskFree func(dir string) (int64, bool)
 }
 
 // Fleet is the hub's FleetService. The caller comes from [PrincipalFrom],
@@ -97,7 +101,9 @@ type Fleet struct {
 	// started is the hub clock when the service was built. Fleet is
 	// built once per fleetd run, so it stands in for the process
 	// start GetStoreStatus reports as hub_start_time.
-	started        time.Time
+	started time.Time
+	// diskFree reads the free bytes on the state volume.
+	diskFree       func(dir string) (int64, bool)
 	tokens         metric.Int64Counter
 	sessCmds       metric.Int64Counter
 	approvals      metric.Int64Counter
@@ -126,6 +132,10 @@ func NewFleet(opts FleetOptions) (*Fleet, error) {
 	f.started = f.now()
 	if f.random == nil {
 		f.random = rand.Reader
+	}
+	f.diskFree = opts.DiskFree
+	if f.diskFree == nil {
+		f.diskFree = system.DiskFree
 	}
 	fp := sha256.Sum256(opts.CACert)
 	f.fingerprint = hex.EncodeToString(fp[:])

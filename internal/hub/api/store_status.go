@@ -17,7 +17,6 @@ import (
 	typev1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/type/v1"
 	"github.com/linuxdynasty/fleet-board/internal/buildinfo"
 	"github.com/linuxdynasty/fleet-board/internal/hub/statedb"
-	"github.com/linuxdynasty/fleet-board/internal/hub/system"
 )
 
 // backupName is a published backup in backups/: the fileName of
@@ -42,7 +41,9 @@ const backupStamp = "20060102T150405Z"
 // brings the file, last_checkpoint_time stays unset (the store records
 // no per-file checkpoint time), and last_backup_includes_logs stays
 // false (fleetd backup has no --include-logs yet). A state dir with no
-// state.db is the hub's failure, INTERNAL.
+// state.db, an unreadable backups/ folder, or a volume whose free
+// space cannot be read is the hub's failure, INTERNAL: an unknown free
+// space reading stays unknown, it is never served as 0 (a full disk).
 func (f *Fleet) GetStoreStatus(ctx context.Context, req *connect.Request[hubv1.GetStoreStatusRequest],
 ) (*connect.Response[hubv1.GetStoreStatusResponse], error) {
 	who, err := authorizeAdmin(ctx)
@@ -68,9 +69,9 @@ func (f *Fleet) GetStoreStatus(ctx context.Context, req *connect.Request[hubv1.G
 	if err != nil {
 		return nil, f.storeFailed(ctx, actor, "backup", err)
 	}
-	var free uint64
-	if n, ok := system.DiskFree(f.stateDir); ok && n > 0 {
-		free = uint64(n)
+	freeBytes, ok := f.diskFree(f.stateDir)
+	if !ok {
+		return nil, f.storeFailed(ctx, actor, "disk", errors.New("api: the free space on the state volume is unknown"))
 	}
 	return connect.NewResponse(&hubv1.GetStoreStatusResponse{Status: &hubv1.StoreStatus{
 		Databases: []*hubv1.DatabaseStatus{{
@@ -79,7 +80,7 @@ func (f *Fleet) GetStoreStatus(ctx context.Context, req *connect.Request[hubv1.G
 			SchemaVersion: uint32(f.store.SchemaVersion()), //nolint:gosec // G115: schema versions are small positive integers
 		}},
 		Backup:             backup,
-		StateFreeDiskBytes: free,
+		StateFreeDiskBytes: uint64(freeBytes), //nolint:gosec // G115: DiskFree returns 0..MaxInt64
 		HubStartTime:       timestamppb.New(f.started),
 		HubVersion:         buildinfo.Version,
 	}}), nil

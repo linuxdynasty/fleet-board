@@ -227,6 +227,55 @@ func TestStoreStatusNeedsTheLocalSecret(t *testing.T) {
 	}
 }
 
+// TestStoreStatusReportsHonestFreeSpace pins the disk branch: a volume
+// whose free space cannot be read fails the call (unknown stays
+// unknown, never 0), while a genuinely full volume serves 0.
+func TestStoreStatusReportsHonestFreeSpace(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name    string
+		free    int64
+		ok      bool
+		wantErr bool
+		want    uint64
+	}{
+		{"unknown free space fails", 0, false, true, 0},
+		{"a full disk serves zero", 0, true, false, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			e := newFleetEnv(t, localUser("alice"))
+			fleet, err := api.NewFleet(api.FleetOptions{
+				Store: e.st, CACert: e.caDER, Telemetry: e.tel, Now: func() time.Time { return fleetNow },
+				StateDir: e.dir, LocalTrusted: true, HubInstanceID: testInstanceID,
+				DiskFree: func(string) (int64, bool) { return tc.free, tc.ok },
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			ctx := api.WithPrincipal(context.Background(), localUser("alice"))
+			req := connect.NewRequest(&hubv1.GetStoreStatusRequest{})
+			withStoreSecret(t, e, req)
+			resp, err := fleet.GetStoreStatus(ctx, req)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("GetStoreStatus with unknown free space succeeded, want INTERNAL")
+				}
+				if code, _, _ := detail(t, err); code != connect.CodeInternal {
+					t.Errorf("unknown free space: code %s, want INTERNAL", code)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("GetStoreStatus: %v", err)
+			}
+			if got := resp.Msg.GetStatus().GetStateFreeDiskBytes(); got != tc.want {
+				t.Errorf("state_free_disk_bytes %d, want %d", got, tc.want)
+			}
+		})
+	}
+}
+
 // TestStoreStatusWithoutAStateDirIsTheHubsFailure pins the INTERNAL path:
 // a hub whose state dir holds no state.db cannot answer about it.
 func TestStoreStatusWithoutAStateDirIsTheHubsFailure(t *testing.T) {
