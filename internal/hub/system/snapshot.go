@@ -74,7 +74,7 @@ func signalProto(now time.Time, v Verdict) *hubv1.SystemSignal {
 	ms := Measures(v.Kind)
 	out := make([]*hubv1.SystemMeasure, 0, len(ms))
 	for _, m := range ms {
-		out = append(out, measureProto(m, v.reading(m.Kind)))
+		out = append(out, MeasureProto(m, v.reading(m.Kind)))
 	}
 	s := &hubv1.SystemSignal{
 		Kind: v.Kind, Machine: v.Machine, Account: v.Account, Integration: v.Integration,
@@ -87,11 +87,13 @@ func signalProto(now time.Time, v Verdict) *hubv1.SystemSignal {
 	return s
 }
 
-// measureProto renders one measure's levels: a nil threshold means the
-// measure has no such level, and a zero hold means the level counts at
-// once, so both stay unset on the wire. The value is set only when the
-// reading is known; unknown stays unknown, never 0.
-func measureProto(m Measure, r Reading) *hubv1.SystemMeasure {
+// MeasureProto renders one measure's levels for the wire: a nil threshold
+// means the measure has no such level, and a zero hold means the level
+// counts at once, so both stay unset. The value is set only when the
+// reading is known; unknown stays unknown, never 0. Snapshot and the
+// SYSTEM item detail share it, so the triage card shows the same levels
+// as the served status.
+func MeasureProto(m Measure, r Reading) *hubv1.SystemMeasure {
 	out := &hubv1.SystemMeasure{
 		Kind: m.Kind, Unit: m.Unit, Direction: m.Direction,
 	}

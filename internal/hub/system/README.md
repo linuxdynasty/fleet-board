@@ -38,9 +38,21 @@ per input in input order with State, `SetBy` and Since filled, Since set
 only on a state change, subjects absent from a round dropped. `Verdict.SetBy`
 names the measure that set the state for `SystemDetail.measure`.
 
+`Decide` maps one round of evaluated verdicts plus the open SYSTEM items
+to the writes that round needs: a raise at or above the signal's 05b "Item
+raised at" level (WARNING-only signals stay silent below it), an in-place
+update when the severity or the detail behind it moved, nothing while an
+open item stays bad or unknown, and a retire only on OK. The detail
+carries the full measure that set the state (levels and reading, through
+`MeasureProto`, so the triage card matches the served status) with the
+integration subject inside it. The same inputs always decide the same
+writes, and subjects missing from the round are left alone, so a round
+that changes nothing writes nothing and a deleted machine's item is
+never retired by absence.
+
 Not here yet (later slices of issue #41): the readings behind each verdict,
-the ticking evaluation job and the served evaluated status, the SYSTEM item
-writes with `SystemDetail`, the `fleet_hub_system_signal_state` and
+the ticking evaluation job and the served evaluated status, the writer jobs
+that persist `Decide`'s writes, the `fleet_hub_system_signal_state` and
 `fleet_hub_system_signal_value` gauges, subscription-efficiency rollups with
 `GetInsights`, and `fleetd insights rebuild`. `GetSystemStatus` is served
 (one UNKNOWN verdict per subject with every measure's levels, through
