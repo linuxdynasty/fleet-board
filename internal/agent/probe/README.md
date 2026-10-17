@@ -12,7 +12,10 @@ and `StopProbe` handlers plus the `Manager` that owns probe passes.
 4. Trust screen: the result reports `FOLDER_UNTRUSTED` (01 C3) while
    health reports `STARTUP_PROMPT_SEEN` with kind `trust` (03b, the
    pacing block); type nothing. Update or release-notes screen:
-   `STARTUP_PROMPT_SEEN` with the kind, type nothing. Anything else
+   `STARTUP_PROMPT_SEEN` with the kind, type nothing. The Codex
+   daemon-settings screen (01b records it as a startup prompt the fleet
+   never answers): `STARTUP_PROMPT_SEEN` with no kind, type nothing;
+   the kind stays empty rather than guessed. Anything else
    unproven: type nothing (`PANE_BUSY`, `READY_TIMEOUT`,
    `PROBE_START_FAILED`).
 5. Idle prompt with an empty input line: types only the status command

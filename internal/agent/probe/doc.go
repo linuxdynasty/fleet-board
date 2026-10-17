@@ -5,9 +5,11 @@
 // A pass reads every screen before any key: a trust screen reports
 // FOLDER_UNTRUSTED on the command and STARTUP_PROMPT_SEEN with kind
 // trust on health, update and release-notes screens report
-// STARTUP_PROMPT_SEEN, and only a proven idle prompt with an empty input
-// line is typed into, with the one status command (/usage, or /status on
-// Codex) and nothing else. Every pass emits ProbeHealth; a UsageReading
+// STARTUP_PROMPT_SEEN, the Codex daemon-settings screen reports
+// STARTUP_PROMPT_SEEN with no kind (never guessed), and only a proven
+// idle prompt with an empty input line is typed into, with the one
+// status command (/usage, or /status on Codex) and nothing else. Every
+// pass emits ProbeHealth; a UsageReading
 // goes out only when a usage screen was read, carrying the plan plus
 // parser-recognized display fields in the harness's own terms. Separately,
 // observed panes contribute passive signals: BuildPassiveReading turns a
