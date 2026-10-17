@@ -24,8 +24,9 @@ func readData(t *testing.T, name string) string {
 // matches the claims, the USAGE, READY and CONDITION claims bring a fixture
 // of each version, and every fixture parses or yields unknown, never fails.
 // Every version stays UNVERIFIED_PARSING: USAGE, the trust half of READY and
-// the pause CONDITION are fixture-verified, and PROMPT and IDENTITY (plus
-// prompt detection inside READY) are later slices.
+// the pause and provider-error CONDITION screens are fixture-verified, and
+// PROMPT and IDENTITY (plus prompt detection inside READY) are later
+// slices.
 func TestConform(t *testing.T) {
 	usage := func(screen string) harness.ParseResult {
 		switch ParseUsage(screen, time.Now()).ParseOutcome {
@@ -88,6 +89,7 @@ func TestConform(t *testing.T) {
 					Parse: condition,
 					Fixtures: []harness.Fixture{
 						{Name: "goal-paused-by-interrupt.txt", Screen: readData(t, v+"/goal-paused-by-interrupt.txt")},
+						{Name: "provider-error-retrying.txt", Screen: readData(t, v+"/provider-error-retrying.txt")},
 					},
 				},
 			},

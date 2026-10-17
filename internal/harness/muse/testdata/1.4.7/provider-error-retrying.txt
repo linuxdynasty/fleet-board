@@ -1,0 +1,4 @@
+Muse 1.4.7 · Muse Code Power Usage
+Goal: add the widget
+working…
+Meta Model API server error (HTTP 500) · retrying in 7s · attempt 6/10

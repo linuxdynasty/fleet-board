@@ -67,6 +67,13 @@ var interruptCases = []struct {
 		wantCause: typev1.GoalPauseCause_GOAL_PAUSE_CAUSE_HARNESS,
 		wantText:  "Goal paused (12s)",
 	},
+	{
+		name: "muse provider error retrying", harness: "muse", version: "1.4.7",
+		interrupted: "provider-error-retrying.txt", ready: "startup-ready.txt",
+		wantKind:  typev1.HarnessConditionKind_HARNESS_CONDITION_KIND_PROVIDER_ERROR,
+		wantCause: typev1.GoalPauseCause_GOAL_PAUSE_CAUSE_UNSPECIFIED,
+		wantText:  "retrying",
+	},
 }
 
 // startGoalWithHarness attributes one observed goal on pane %1 running the
