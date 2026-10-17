@@ -151,6 +151,7 @@ func GetAccount(ctx context.Context, s *store.Store, id string) (AccountStored, 
 // AccountRow is one account for the export and the import diff, in
 // harness/display-name order.
 type AccountRow struct {
+	ID          string
 	Harness     string
 	Provider    string
 	DisplayName string
@@ -162,7 +163,7 @@ type AccountRow struct {
 func ListAccountRows(ctx context.Context, s *store.Store) ([]AccountRow, error) {
 	var out []AccountRow
 	err := s.Read(ctx, func(tx *sql.Tx) error {
-		rows, err := tx.QueryContext(ctx, `SELECT harness, provider, display_name, spec_json
+		rows, err := tx.QueryContext(ctx, `SELECT id, harness, provider, display_name, spec_json
 			FROM accounts ORDER BY harness, display_name`)
 		if err != nil {
 			return err
@@ -171,7 +172,7 @@ func ListAccountRows(ctx context.Context, s *store.Store) ([]AccountRow, error) 
 		for rows.Next() {
 			var r AccountRow
 			var spec string
-			if err := rows.Scan(&r.Harness, &r.Provider, &r.DisplayName, &spec); err != nil {
+			if err := rows.Scan(&r.ID, &r.Harness, &r.Provider, &r.DisplayName, &spec); err != nil {
 				return err
 			}
 			r.Spec = []byte(spec)

@@ -5,7 +5,8 @@
 // each measure's holds and the hysteresis, [Overall] folds signal states
 // into the SystemStatus overall, and [Fingerprint], [RaiseAt]/[ShouldRaise],
 // [ShouldKeep] and [SeverityFor] map one verdict to its SYSTEM triage item.
-// The wiring slice (the item writes, GetSystemStatus, the
-// fleet_hub_system_signal_* gauges) reads [Measures] and the mapping so its
-// output matches this table by construction.
+// [Snapshot] renders verdicts as the served SystemStatus with every
+// measure's levels, so the view matches this table by construction; the
+// remaining wiring (the item writes, the readings, the
+// fleet_hub_system_signal_* gauges) reads [Measures] and the mapping too.
 package system

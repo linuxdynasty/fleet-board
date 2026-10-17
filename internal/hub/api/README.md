@@ -10,8 +10,8 @@ config import and export (`ImportConfig`, `ExportConfig`), the hub-state
 triage writes (`SnoozeTriageItem`, `DismissTriageItem`), the
 session-control and approvals calls, `GetServerInfo`, the machine
 reads (`ListMachines`, `GetMachine`), `GetOperation`, `CapturePane`,
-and the session reads (`ListSessions`, `GetSession`) on the
-local admin socket.
+the session reads (`ListSessions`, `GetSession`), and `GetSystemStatus`
+on the local admin socket.
 
 ```go
 srv := api.NewServer(tel, "api", boundPort) // api.Handler plus timeouts and the JSON ErrorLog
@@ -54,7 +54,7 @@ method but `CreateEnrollmentToken`, the watched-repo writes, the machine
 admin writes, the config import and export, the hub-state triage
 writes, the session-control and approvals calls, `GetServerInfo`,
 `ListMachines`, `GetMachine`, `GetOperation`, `CapturePane`,
-`ListSessions` and `GetSession`
+`ListSessions`, `GetSession` and `GetSystemStatus`
 answers `unimplemented`
 ([02k](../../../docs/specs/02k-v1-surface-and-cli.md)).
 `Handler()` is its Connect route (requests capped at 1 MiB), ready for a
@@ -111,6 +111,16 @@ create record, not delivery: a session whose command never reached its
 machine still reads `LIVE`, and the create call's `Operation`
 (`GetOperation`) tells whether it was delivered. `GetSession` misses
 an unknown id with `SESSION_NOT_FOUND`.
+
+`GetSystemStatus` needs `READ` (02d): until a later row-12 slice brings caller
+scopes, only a `LOCAL_USER` principal (the admin socket) holds it. It lists
+one signal per (kind, subject) — the five hub-wide signals, three per
+machine, one per FLEET-mode account (`INTERACTIVE_ONLY` accounts are never
+probed) and one per integration — each with every measure's
+unit, direction, thresholds, holds and clear level from the 05b table. Every
+verdict reads UNKNOWN with its value and `since_time` unset until the
+evaluation loop lands; the open triage item, `hub_start_time`, exporters and
+`watch_subscribers` stay unset until their slice.
 
 `CreateEnrollmentToken` needs `ADMIN` (02d). Until plan row 12 brings scopes,
 only a `LOCAL_USER` principal (the admin socket) holds it: no principal is
