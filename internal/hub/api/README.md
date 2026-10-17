@@ -11,7 +11,8 @@ triage writes (`SnoozeTriageItem`, `DismissTriageItem`), the
 session-control and approvals calls, `GetServerInfo`, the machine
 reads (`ListMachines`, `GetMachine`), `GetOperation`, `CapturePane`,
 the session reads (`ListSessions`, `GetSession`), the observed-goal
-reads (`ListGoals`, `GetGoal`), and `GetSystemStatus`
+reads (`ListGoals`, `GetGoal`), the work-item reads (`ListWorkItems`,
+`GetWorkItem`), and `GetSystemStatus`
 on the local admin socket.
 
 ```go
@@ -55,7 +56,8 @@ method but `CreateEnrollmentToken`, the watched-repo writes, the machine
 admin writes, the config import and export, the hub-state triage
 writes, the session-control and approvals calls, `GetServerInfo`,
 `ListMachines`, `GetMachine`, `GetOperation`, `CapturePane`,
-`ListSessions`, `GetSession`, `ListGoals`, `GetGoal`
+`ListSessions`, `GetSession`, `ListGoals`, `GetGoal`,
+`ListWorkItems`, `GetWorkItem`
 and `GetSystemStatus`
 answers `unimplemented`
 ([02k](../../../docs/specs/02k-v1-surface-and-cli.md)).
@@ -130,6 +132,21 @@ and end over the stored status, so a goal a snapshot drop ended reads
 `CLOSED` with its end_time, matching what the filter sees. Run history
 and transitions stay `UNIMPLEMENTED` until the dispatch rows land.
 `GetGoal` misses an unknown id with `RESOURCE_NOT_FOUND`.
+
+`ListWorkItems` and `GetWorkItem` need `READ` (02d). Until a later row-12
+slice brings caller scopes, only a `LOCAL_USER` principal (the admin socket)
+holds it. The store holds the synced provider mirrors (row 11) with the
+hub's verdicts beside each item: `ListWorkItems` serves the 02c WorkItem
+filter but not `goal` (the goal link needs the dispatch rows, which no row
+stores yet); `order_by` takes `ct`, `ut`, `provider_update_time` and
+`dispatch_order` and defaults to `ct`, and `dispatch_order` takes no `desc`;
+pages are 50 by default, 500 at most, with a query-bound token good for
+10 minutes. `create_time` is the first sight and `last_sync_time` the last
+poll; `update_time` reads as `create_time` until a later row stores the
+hub-change stamp beside the version; the `goal` and `dispatch_block` stay
+unset until the dispatch rows land. `GetWorkItem` misses an unknown id with
+`RESOURCE_NOT_FOUND`, and `include_body` (the provider body fetch) stays
+`UNIMPLEMENTED` until a row builds the provider call.
 
 `GetSystemStatus` needs `READ` (02d): until a later row-12 slice brings caller
 scopes, only a `LOCAL_USER` principal (the admin socket) holds it. It lists
