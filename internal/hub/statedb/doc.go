@@ -147,6 +147,11 @@
 // enroll own the rows, and [ListSettingsLayers] and [ReadSettingsLayer]
 // read them on the read pool for the hub API's filter, sort and page.
 //
+// Plan row 12 (audit reads) adds the audit-log read path over the
+// audit_log table: every writer job appends its rows with [AppendAudit],
+// and [ListStoredAuditEntries] reads them all on the read pool for the
+// hub API's filter, sort and page.
+//
 
 // Plan row 5 (PR 5c2) adds the event history (events migration):
 // [ApplyEvent] stores one event in its writer job (the live, snapshotted

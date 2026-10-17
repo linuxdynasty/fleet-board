@@ -28,7 +28,8 @@
 // and refs), [Fleet.ListUsageReadings] (the stored reading history,
 // newest first), [Fleet.ListIntegrations] (the configured integrations
 // in id order), [Fleet.GetSettings], [Fleet.ListSettings] (the stored
-// settings layers in id order), [Fleet.ListWorkItems],
+// settings layers in id order), [Fleet.ListAuditEntries] (the stored
+// audit rows, newest first), [Fleet.ListWorkItems],
 // [Fleet.GetWorkItem] (synced mirrors with the hub's verdicts),
 // [Fleet.ListChangeRequests], [Fleet.GetChangeRequest] (synced mirrors
 // with the provider change request), [Fleet.ListRepos], [Fleet.GetRepo]

@@ -10,7 +10,8 @@ config import and export (`ImportConfig`, `ExportConfig`), the hub-state
 triage writes (`SnoozeTriageItem`, `DismissTriageItem`), the triage
 reads (`ListTriageItems`, `GetTriageItem`), the usage read
 (`ListUsageReadings`), the integration read (`ListIntegrations`), the
-settings reads (`GetSettings`, `ListSettings`), the
+settings reads (`GetSettings`, `ListSettings`), the audit read
+(`ListAuditEntries`), the
 session-control and approvals calls, `GetServerInfo`, the machine
 reads (`ListMachines`, `GetMachine`), `GetOperation`, `CapturePane`,
 the session reads (`ListSessions`, `GetSession`), the observed-goal
@@ -59,7 +60,7 @@ own error lines are debug-level `http.server_error` events, not stderr text.
 `Fleet` embeds the generated `UnimplementedFleetServiceHandler`, so every
 method but `CreateEnrollmentToken`, the watched-repo writes, the machine
 admin writes, the config import and export, the hub-state triage
-writes, the triage reads, the usage read, the integration read, the settings reads, the session-control and approvals calls, `GetServerInfo`,
+writes, the triage reads, the usage read, the integration read, the settings reads, the audit read, the session-control and approvals calls, `GetServerInfo`,
 `ListMachines`, `GetMachine`, `GetOperation`, `CapturePane`,
 `ListSessions`, `GetSession`, `ListGoals`, `GetGoal`,
 `ListWorkItems`, `GetWorkItem`, `ListChangeRequests`,
@@ -379,6 +380,16 @@ the id as `fleet`, `group` or `machine`); `order_by` takes `name`
 `RESOURCE_NOT_FOUND`. `create_time` is the layer's first write and
 `update_time` its last; the `status` carries that stamp, and the
 delivery generations stay unset until the daemon computes them.
+
+`ListAuditEntries` needs `READ` (02d). Until a later row-12 slice
+brings caller scopes, only a `LOCAL_USER` principal (the admin socket)
+holds it. The store holds the permanent audit rows every hub write
+appended (`audit_log`): `ListAuditEntries` serves the 02c AuditEntry
+filter (`actor`, `action`, `target`, `machine`, `goal`, `command`);
+`order_by` takes only `ct` and defaults to `ct desc`; pages are 50 by
+default, 500 at most, with a query-bound token good for 10 minutes.
+Entries are immutable: `version` is always 1 and `update_time` equals
+`create_time`.
 
 `SnoozeTriageItem` and `DismissTriageItem` need `APPROVALS` (02d); until
 plan row 12 brings caller scopes only the local user holds it
