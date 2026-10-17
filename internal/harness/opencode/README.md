@@ -17,6 +17,15 @@ no `/goal` (01b).
   agent, the model-plus-provider selection as shown, and the variant when
   one is set. The model and provider are never split by guessing; the
   probe matches the selection against the providers list.
+- `commands.go`: `Classify` returns the 01b class of one slash command
+  (C4): the table's own examples keep their class (`/status` and `/diff`
+  observe, `/review` review, `/exit` destructive), everything else deny.
+  OpenCode has no `/usage` and no `/goal`, so neither classifies. A
+  discovered command whose effect is unprobed stays deny; it moves only
+  with a probe record. The catalog test pins every name in
+  `testdata/1.18.34/tui-slash-menu-catalog.tsv` and
+  `testdata/1.19.0/tui-slash-menu-catalog.tsv`, so a new command in a
+  later catalog needs a reviewed verdict here.
 - `opencode_test.go`: the adapter's declaration for the shared
   conformance test (`harness.Conform`). Versions `1.18.34` and `1.19.0`
   are `UNVERIFIED_PARSING` with `USAGE` and `IDENTITY` fixture-verified;
