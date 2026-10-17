@@ -371,13 +371,13 @@ m, err := statedb.ReadSnapshot(ctx, s, id)       // read pool: what the Snapshot
 `MachineSnapshot` (`ErrMachineUnknown` without a row); conntest's `Machine`
 uses it.
 
-- **The machine reads** (plan row 12): `MachineRow` is one `machines` row as
-  stored (identity, state, facts, times, version and counters); `ReadMachineRow` reads
-  one by id (`ErrMachineUnknown` without a row) and `ListMachineRows` reads
-  them all, both on the read pool for the hub API's in-memory filter, sort
-  and page.
-- **The session reads** (plan row 12, migration 21): `SessionRow` is one
-  `hub_sessions` row with the name, server and owner its `CreateSession` stored, read the same way.
+- **The row-12 reads** share one shape: `ReadXRow` reads one row by id on the
+  read pool (`ErrXUnknown` without a row) and `ListXRows` reads them all for
+  the hub API's in-memory filter, sort and page: `MachineRow` (one `machines`
+  row: identity, state, facts, times, version and counters), `SessionRow`
+  (migration 21: name, server and owner), `GoalRow` (spec, status, phase,
+  reason and times), `WorkItemRow` (provider item, verdicts, version, times).
+  `CountWorkItemsByStage` counts mirrors by integration and stage.
 
 Tests: `CGO_ENABLED=0 go test ./internal/hub/statedb/`. They use real files:
 modes, a refused second create with the file hash unchanged, an injected

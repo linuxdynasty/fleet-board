@@ -23,11 +23,12 @@
 // [Fleet.GetOperation], [Fleet.ListSessions], [Fleet.GetSession],
 // [Fleet.ListGoals], [Fleet.GetGoal] (observed goals with the stored spec
 // and status, reconciled with the row so a goal a snapshot drop ended
-// reads CLOSED with its end_time) and
+// reads CLOSED with its end_time), [Fleet.ListWorkItems],
+// [Fleet.GetWorkItem] (synced mirrors with the hub's verdicts) and
 // [Fleet.GetSystemStatus] built; every other method is Unimplemented
 // (02k): it checks the caller ([PrincipalFrom], ADMIN for enrollment
 // and revoke/delete, SETTINGS for repos, update and import, READ for
-// export, the machine, operation, session, goal and system reads and the
+// export, the machine, operation, session, goal, work-item and system reads and the
 // visible capture (LOGS for its scrollback), APPROVALS for triage;
 // GetServerInfo needs no scope), the fields and the request_id (02b),
 // mints the token in package ca and stores only its secret hash, merges

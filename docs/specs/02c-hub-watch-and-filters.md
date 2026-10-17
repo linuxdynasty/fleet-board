@@ -317,6 +317,17 @@ default `ListGoals` order is `start_time`.
 `dispatch_order` (the scheduler's order for READY items: oldest `create_time`
 first, ties by canonical key; `desc` is not allowed).
 
+Served so far (row 12 slices): `id` (the canonical key), `integration`,
+`kind`, `repo`, `stage`, `state`, `trusted`, `label`, `manual_reason`,
+`create_time` and `update_time` read the synced mirrors with the hub's
+verdicts; `goal` is refused (`FILTER_INVALID`) until the dispatch rows
+store the goal link. `update_time` filters read as `create_time` until a
+later row stores the hub-change stamp; `provider_update_time` reads the
+item's own update (0 when the mirror carries none). The default
+`ListWorkItems` order is `ct`. `GetWorkItem` without `include_body`
+returns the mirror with an empty body; `include_body` answers unimplemented
+until a row builds the provider fetch.
+
 | ChangeRequest (`CHANGE_REQUESTS`, `ListChangeRequests`) | Path | Type | Operators |
 |---|---|---|---|
 | `integration` | `id.integration` | string | `=` `in` |
