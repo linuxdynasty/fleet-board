@@ -142,6 +142,11 @@
 // reads them all on the read pool for the hub API's filter, sort and
 // page.
 //
+// Plan row 12 (settings reads) adds the settings-layer read path over
+// the settings_layers table: [UpdateFleetSettings] and the import and
+// enroll own the rows, and [ListSettingsLayers] and [ReadSettingsLayer]
+// read them on the read pool for the hub API's filter, sort and page.
+//
 
 // Plan row 5 (PR 5c2) adds the event history (events migration):
 // [ApplyEvent] stores one event in its writer job (the live, snapshotted

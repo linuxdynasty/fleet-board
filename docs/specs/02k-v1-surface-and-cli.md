@@ -181,6 +181,10 @@ view, the golden CLI output and the contract tests all start from it.
 - Logs: `integrations.failed{step, err_kind}` when `ListIntegrations`
   cannot read the store, and `integrations.issue_refused{reason}` for
   caller errors. The read adds no counter, for the same reason.
+- Logs: `settings.failed{step, err_kind}` when `GetSettings` or
+  `ListSettings` cannot read the store, and
+  `settings.issue_refused{reason}` for caller errors. The reads add no
+  counter, for the same reason.
 - Logs: `system.status_failed{step, err_kind}` when `GetSystemStatus` cannot
   read the store, and `system.issue_refused{reason}` for caller errors. The
   read adds no counter, for the same reason.

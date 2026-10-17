@@ -273,9 +273,9 @@ func TestUnbuiltReadsStayUnimplemented(t *testing.T) {
 	if code, _, _ := detail(t, err); code != connect.CodeUnimplemented {
 		t.Errorf("RedeemInvite code %s, want UNIMPLEMENTED (v3, no row builds it)", code)
 	}
-	_, err = e.client.ListSettings(context.Background(), connect.NewRequest(&hubv1.ListSettingsRequest{}))
+	_, err = e.client.ListAuditEntries(context.Background(), connect.NewRequest(&hubv1.ListAuditEntriesRequest{}))
 	if code, _, _ := detail(t, err); code != connect.CodeUnimplemented {
-		t.Errorf("ListSettings code %s, want UNIMPLEMENTED (row 12, later slice)", code)
+		t.Errorf("ListAuditEntries code %s, want UNIMPLEMENTED (row 12, later slice)", code)
 	}
 }
 
