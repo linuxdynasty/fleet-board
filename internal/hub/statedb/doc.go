@@ -105,6 +105,14 @@
 // [ListWorkItemRows] reads them all, both on the read pool for the hub
 // API's filter, sort and page.
 //
+// Plan row 12 (change-request reads) adds the mirror read path over the
+// row 11 change_requests table: [ChangeRequestRow] is one mirror row with
+// the provider change request, the version and the times;
+// [ReadChangeRequestRow] reads one by canonical key
+// ([ErrChangeRequestUnknown] without a row) and [ListChangeRequestRows]
+// reads them all, both on the read pool for the hub API's filter, sort
+// and page.
+//
 // Plan row 5 (PR 5c2) adds the event history (events migration):
 // [ApplyEvent] stores one event in its writer job (the live, snapshotted
 // epoch, [ErrEventNotCurrent]; the stream's chain, [ErrEventChainBroken];

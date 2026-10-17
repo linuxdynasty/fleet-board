@@ -338,6 +338,15 @@ until a row builds the provider fetch.
 
 `order_by`: `ct`, `ut`, `provider_update_time` (`change_request.update_time`).
 
+Served so far (row 12 slices): `id` (the canonical key), `integration`,
+`repo`, `state`, `create_time` and `update_time` read the synced mirrors;
+`goal` and `owned` are refused (`FILTER_INVALID`) until the dispatch rows
+store the goal link. `ut` reads as `create_time` until a later row stores
+the hub-change stamp; `provider_update_time` reads the change request's own
+update (0 when the mirror carries none). The default `ListChangeRequests`
+order is `ct`. `GetChangeRequest` returns the mirror with an empty goal
+until the dispatch rows link goals.
+
 | Account (`ACCOUNTS`, `ListAccounts`) | Path | Type | Operators |
 |---|---|---|---|
 | `harness` | `status.harness.name` | string | `=` `in` |

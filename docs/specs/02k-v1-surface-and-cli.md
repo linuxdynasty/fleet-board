@@ -160,6 +160,10 @@ view, the golden CLI output and the contract tests all start from it.
 - Logs: `work_items.failed{step, err_kind}` when `ListWorkItems` or
   `GetWorkItem` cannot read the store, and `work_items.issue_refused{reason}`
   for caller errors. The reads add no counter, for the same reason.
+- Logs: `change_requests.failed{step, err_kind}` when `ListChangeRequests`
+  or `GetChangeRequest` cannot read the store, and
+  `change_requests.issue_refused{reason}` for caller errors. The reads add
+  no counter, for the same reason.
 - Logs: `system.status_failed{step, err_kind}` when `GetSystemStatus` cannot
   read the store, and `system.issue_refused{reason}` for caller errors. The
   read adds no counter, for the same reason.
