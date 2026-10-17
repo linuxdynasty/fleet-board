@@ -14,6 +14,7 @@ import (
 	"github.com/linuxdynasty/fleet-board/internal/hub/outbox"
 	"github.com/linuxdynasty/fleet-board/internal/hub/revocation"
 	"github.com/linuxdynasty/fleet-board/internal/hub/statedb"
+	"github.com/linuxdynasty/fleet-board/internal/hub/system"
 	"github.com/linuxdynasty/fleet-board/internal/store"
 )
 
@@ -34,8 +35,10 @@ type machineAdmin struct {
 // listener removes it.
 // instanceID is the agent listener's hub_instance_id, reported by
 // GetServerInfo so a new process id invalidates every Watch resume token.
+// sysLoop is the evaluation loop the system_evaluate job ticks;
+// GetSystemStatus serves its last verdicts.
 func bindAdmin(cfg *config.Config, opts Options, st *store.Store, id statedb.Identity, adm machineAdmin, instanceID string,
-	s *session,
+	sysLoop *system.Loop, s *session,
 ) (listener, error) {
 	path := config.AdminSocketPath(cfg.StateDir)
 	if err := removeStaleSocket(path); err != nil {
@@ -56,7 +59,7 @@ func bindAdmin(cfg *config.Config, opts Options, st *store.Store, id statedb.Ide
 		Store: st, CACert: id.CACert, Telemetry: s.tel, Now: opts.Now,
 		StateDir: cfg.StateDir, LocalTrusted: cfg.Mode == "local_trusted",
 		Revoker: adm.revoked, ByeMachine: adm.bye, OnCommandsClosed: adm.closed,
-		HubInstanceID: instanceID,
+		HubInstanceID: instanceID, SystemLoop: sysLoop,
 	})
 	if err != nil {
 		return listener{}, errors.Join(err, ln.Close())

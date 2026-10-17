@@ -311,3 +311,48 @@ func TestSubmitWaitsWhileTheQueueIsFullAndHonoursItsContext(t *testing.T) {
 		}
 	}
 }
+
+// The writer reports how long its oldest unanswered job has waited, so the
+// WRITER_BATCH_LAG MAIN measure of 05b has a reading (issue #41): 0 with
+// nothing waiting, growing while a batch is held, back to 0 once the
+// batch commits.
+func TestWriterReportsOldestJobAge(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	s := h.open(t, h.options(itemsV1))
+	if got := s.OldestJobAge(time.Now()); got != 0 {
+		t.Fatalf("OldestJobAge with nothing waiting = %v, want 0", got)
+	}
+
+	started, release := make(chan struct{}), make(chan struct{})
+	held, err := s.Submit(context.Background(), func(*sql.Tx) error {
+		close(started)
+		<-release
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("Submit: %v", err)
+	}
+	<-started
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if got := s.OldestJobAge(time.Now()); got > 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("OldestJobAge stayed 0 while a batch was held")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	close(release)
+	if err := <-held; err != nil {
+		t.Fatalf("job: %v", err)
+	}
+	deadline = time.Now().Add(5 * time.Second)
+	for s.OldestJobAge(time.Now()) != 0 {
+		if time.Now().After(deadline) {
+			t.Fatalf("OldestJobAge stayed set after the batch committed")
+		}
+		time.Sleep(time.Millisecond)
+	}
+}

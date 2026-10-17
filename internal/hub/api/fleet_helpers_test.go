@@ -24,6 +24,7 @@ import (
 	"github.com/linuxdynasty/fleet-board/internal/hub/ca"
 	"github.com/linuxdynasty/fleet-board/internal/hub/secret"
 	"github.com/linuxdynasty/fleet-board/internal/hub/statedb"
+	"github.com/linuxdynasty/fleet-board/internal/hub/system"
 	"github.com/linuxdynasty/fleet-board/internal/store"
 	"github.com/linuxdynasty/fleet-board/internal/telemetry"
 )
@@ -67,12 +68,13 @@ func (b *syncBuffer) events(t *testing.T, name string) []map[string]any {
 // fleetEnv is a FleetService on a real state.db, reached over HTTP with the
 // principal a test chose.
 type fleetEnv struct {
-	dir    string
-	caDER  []byte
-	tel    *telemetry.Telemetry
-	logs   *syncBuffer
-	st     *store.Store
-	client hubv1connect.FleetServiceClient
+	dir     string
+	caDER   []byte
+	tel     *telemetry.Telemetry
+	logs    *syncBuffer
+	st      *store.Store
+	client  hubv1connect.FleetServiceClient
+	sysLoop *system.Loop
 }
 
 func localUser(name string) *typev1.Principal {
@@ -88,6 +90,14 @@ func localUser(name string) *typev1.Principal {
 type envOpt struct {
 	now          func() time.Time
 	localTrusted *bool
+	sysSources   *system.Sources
+}
+
+// withSystemSources evaluates the hub signals from fake readings instead
+// of serving them UNKNOWN: the built loop lands on e.sysLoop for the test
+// to tick, with item writes against the env's own store.
+func withSystemSources(src system.Sources) envOpt {
+	return envOpt{sysSources: &src}
 }
 
 // trusted toggles local_trusted mode for the test hub.
@@ -128,12 +138,16 @@ func newFleetEnv(t *testing.T, who *typev1.Principal, opts ...envOpt) *fleetEnv 
 	e := &fleetEnv{dir: filepath.Join(t.TempDir(), "state"), caDER: auth.Cert.Raw, logs: &syncBuffer{}}
 	now := func() time.Time { return fleetNow }
 	local := true
+	var sysSources *system.Sources
 	for _, o := range opts {
 		if o.now != nil {
 			now = o.now
 		}
 		if o.localTrusted != nil {
 			local = *o.localTrusted
+		}
+		if o.sysSources != nil {
+			sysSources = o.sysSources
 		}
 	}
 	if err := statedb.EnsureDir(e.dir); err != nil {
@@ -156,9 +170,22 @@ func newFleetEnv(t *testing.T, who *typev1.Principal, opts ...envOpt) *fleetEnv 
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = e.st.Close() })
+	var sysLoop *system.Loop
+	if sysSources != nil {
+		sysLoop = system.NewLoop(*sysSources,
+			func(ctx context.Context) ([]system.OpenItem, error) {
+				return statedb.ListOpenSystemItems(ctx, e.st)
+			},
+			func(ctx context.Context, changes []system.Change, at time.Time) error {
+				return statedb.ApplySystemChanges(ctx, e.st, changes, at)
+			},
+			e.tel.Tracer("test"))
+	}
+	e.sysLoop = sysLoop
 	fleet, err := api.NewFleet(api.FleetOptions{
 		Store: e.st, CACert: e.caDER, Telemetry: e.tel, Now: now,
 		StateDir: e.dir, LocalTrusted: local, HubInstanceID: testInstanceID,
+		SystemLoop: sysLoop,
 	})
 	if err != nil {
 		t.Fatal(err)

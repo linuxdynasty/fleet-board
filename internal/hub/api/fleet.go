@@ -24,6 +24,7 @@ import (
 	"github.com/linuxdynasty/fleet-board/internal/hub/ca"
 	"github.com/linuxdynasty/fleet-board/internal/hub/outbox"
 	"github.com/linuxdynasty/fleet-board/internal/hub/statedb"
+	"github.com/linuxdynasty/fleet-board/internal/hub/system"
 	"github.com/linuxdynasty/fleet-board/internal/store"
 	"github.com/linuxdynasty/fleet-board/internal/telemetry"
 )
@@ -68,6 +69,10 @@ type FleetOptions struct {
 	// wire (HelloAck): random per process start. GetServerInfo reports it
 	// so a new id invalidates every Watch resume token (02k).
 	HubInstanceID string
+	// SystemLoop is the hub evaluation loop (issue #41): nil serves every
+	// hub signal UNKNOWN with no readings, as before the loop lands. The
+	// daemon passes the loop its system_evaluate job ticks.
+	SystemLoop *system.Loop
 }
 
 // Fleet is the hub's FleetService. The caller comes from [PrincipalFrom],
@@ -88,6 +93,7 @@ type Fleet struct {
 	byeMachine       func(machineID string) bool
 	onCommandsClosed func(ctx context.Context, closed []outbox.Closed)
 	instanceID       string
+	sysLoop          *system.Loop
 	tokens           metric.Int64Counter
 	sessCmds         metric.Int64Counter
 	approvals        metric.Int64Counter
@@ -106,7 +112,7 @@ func NewFleet(opts FleetOptions) (*Fleet, error) {
 	f := &Fleet{
 		store: opts.Store, caDER: opts.CACert, tel: opts.Telemetry, now: opts.Now, random: opts.Random,
 		revoker: opts.Revoker, byeMachine: opts.ByeMachine, onCommandsClosed: opts.OnCommandsClosed,
-		instanceID: opts.HubInstanceID,
+		instanceID: opts.HubInstanceID, sysLoop: opts.SystemLoop,
 	}
 	if f.now == nil {
 		f.now = time.Now

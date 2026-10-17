@@ -77,6 +77,16 @@ func (s *Store) QueueFullSince() time.Time {
 	return time.Time{}
 }
 
+// OldestJobAge is how long the oldest unanswered job has waited at now,
+// the MAIN reading of the WRITER_BATCH_LAG signal of 05b. It is 0 when no
+// job waits. It reads the writer's atomic stamp, never a transaction.
+func (s *Store) OldestJobAge(now time.Time) time.Duration {
+	if t := s.oldestJob(); !t.IsZero() {
+		return now.Sub(t)
+	}
+	return 0
+}
+
 // Write submits a job and waits for its outcome. A ctx error means the
 // outcome is unknown: the job may still commit.
 func (s *Store) Write(ctx context.Context, apply ApplyFunc) error {

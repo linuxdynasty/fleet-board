@@ -24,6 +24,7 @@ import (
 	"github.com/linuxdynasty/fleet-board/internal/hub/outbox"
 	"github.com/linuxdynasty/fleet-board/internal/hub/revocation"
 	"github.com/linuxdynasty/fleet-board/internal/hub/statedb"
+	"github.com/linuxdynasty/fleet-board/internal/hub/system"
 	"github.com/linuxdynasty/fleet-board/internal/store"
 )
 
@@ -219,6 +220,7 @@ func serve(ctx context.Context, cfg *config.Config, opts Options, d hubDeps, s *
 		return s.fail(ReasonListen, err)
 	}
 	agent.RecordStates(ctx, d.swept)
+	sysLoop := newSystemLoop(d.st, cfg.StateDir, s.tel.Tracer(system.Scope))
 	hk, err := housekeeping.New(housekeeping.Options{Now: opts.Now, Telemetry: s.tel}, housekeeping.Job{
 		Name: "machine_state", Every: housekeeping.TickEvery, Run: agent.Housekeep,
 	}, housekeeping.Job{
@@ -227,6 +229,8 @@ func serve(ctx context.Context, cfg *config.Config, opts Options, d hubDeps, s *
 		Name: "outbox_prune", Every: outbox.PruneEvery, Run: agent.Outbox().Prune,
 	}, housekeeping.Job{
 		Name: "events_prune", Every: gateway.PruneEventsEvery, Run: agent.PruneEvents,
+	}, housekeeping.Job{
+		Name: "system_evaluate", Every: system.EvaluateEvery, Run: sysLoop.Run,
 	}, housekeeping.Job{
 		Name: "approvals_expiry", Every: approvalsExpiryEvery, Run: func(ctx context.Context, now time.Time) error {
 			expired, err := approvals.ExpirePass(ctx, d.st, now)
@@ -251,7 +255,7 @@ func serve(ctx context.Context, cfg *config.Config, opts Options, d hubDeps, s *
 	}
 	admin, err := bindAdmin(cfg, opts, d.st, d.id, machineAdmin{
 		revoked: d.revoked, bye: agent.ByeMachine, closed: agent.Outbox().Closed,
-	}, agent.InstanceID(), s)
+	}, agent.InstanceID(), sysLoop, s)
 	if err != nil {
 		for _, l := range ls {
 			_ = l.ln.Close() // the bind error is the one to report
