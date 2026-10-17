@@ -144,6 +144,13 @@ func runAgent(ctx context.Context, dir, cfgDir, version, boot string, tel *telem
 		return failed("goals", err)
 	}
 	wg.Go(func() { observed.run(wctx) })
+	// The usage-probe manager (01 D1): one idle harness session per
+	// assigned account on the fleet-probe server. Its EnsureProbe and
+	// StopProbe handlers register with the command path in a later row;
+	// Snapshot.probes[] lands there too.
+	if _, err := startProbe(wctx, &wg, tel, em, tmx); err != nil {
+		return failed("probe", err)
+	}
 	loop, err = conn.NewLoop(ctx, conn.LoopOptions{
 		Dir: dir, Identity: id, DB: db, Version: version, BootID: boot,
 		Telemetry: tel, Events: netEvents, PushOff: nw.PushOff, Discover: discover,
