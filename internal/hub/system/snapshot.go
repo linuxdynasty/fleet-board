@@ -20,9 +20,13 @@ type Verdict struct {
 	Account     *typev1.AccountId
 	Integration *typev1.IntegrationId
 	State       hubv1.SystemState
-	Main        Reading
-	CommitTime  Reading
-	QueueFull   Reading
+	// SetBy is the measure that set the state (Result.SetBy: MAIN first,
+	// then enum order), for SystemDetail.measure. UNSPECIFIED unless the
+	// state is WARNING or CRITICAL.
+	SetBy      hubv1.SystemMeasureKind
+	Main       Reading
+	CommitTime Reading
+	QueueFull  Reading
 	// Since is when the state last changed; zero until a transition is
 	// known, which leaves since_time unset on the wire.
 	Since time.Time

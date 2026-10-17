@@ -33,13 +33,19 @@ of the cap; WRITER_QUEUE_FULL is seconds continuously full, 0 when not
 full), one `Evaluator` per signal on the evaluation goroutine, and the
 `hub.system.evaluate` span.
 
-Not here yet (later slices of issue #41): the evaluation loop with its
-readings, the SYSTEM item writes with `SystemDetail`, the
-`fleet_hub_system_signal_state` and `fleet_hub_system_signal_value` gauges,
-subscription-efficiency rollups with `GetInsights`, and `fleetd insights
-rebuild`. `GetSystemStatus` is served (one UNKNOWN verdict per subject with
-every measure's levels, through `Snapshot`); those read `Measures` and the
-triage mapping, so their levels match this table without copying it.
+`Monitor` tracks one `Evaluator` per subject across rounds: one verdict
+per input in input order with State, `SetBy` and Since filled, Since set
+only on a state change, subjects absent from a round dropped. `Verdict.SetBy`
+names the measure that set the state for `SystemDetail.measure`.
+
+Not here yet (later slices of issue #41): the readings behind each verdict,
+the ticking evaluation job and the served evaluated status, the SYSTEM item
+writes with `SystemDetail`, the `fleet_hub_system_signal_state` and
+`fleet_hub_system_signal_value` gauges, subscription-efficiency rollups with
+`GetInsights`, and `fleetd insights rebuild`. `GetSystemStatus` is served
+(one UNKNOWN verdict per subject with every measure's levels, through
+`Snapshot`); those read `Measures` and the triage mapping, so their levels
+match this table without copying it.
 
 No-Observability-Change: this slice adds no metric, span or log event; the
 `hub.system.evaluate` span and the System gauges arrive with the wiring
