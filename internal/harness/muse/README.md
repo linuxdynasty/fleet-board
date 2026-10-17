@@ -35,10 +35,11 @@ file; it parses text it is given.
 - `condition.go`: `ParseCondition` reads the pause and provider-error lines
   (01 E12): a line holding "goal paused by interrupt" reads as
   `GOAL_INTERRUPTED`, and a line holding an HTTP 5xx status with the retry
-  word ("HTTP 500 · retrying · attempt 6/10") reads as `PROVIDER_ERROR`;
-  any other screen fails cleanly, since limit screens are a later slice.
-  Nothing is ever guessed. `ConditionParserVersion` bumps when this
-  parser's behavior changes.
+  word and the attempt counter ("Meta Model API server error (HTTP 500) ·
+  retrying in 7s · attempt 6/10") reads as `PROVIDER_ERROR`; a bare status,
+  prose about retrying, and any other screen fail cleanly, since limit
+  screens are a later slice. Nothing is ever guessed.
+  `ConditionParserVersion` bumps when this parser's behavior changes.
 - `muse_test.go`: the adapter's declaration for the shared
   conformance test (`harness.Conform`). Versions `1.4.4`, `1.4.6` and
   `1.4.7` are `UNVERIFIED_PARSING` with `USAGE`, the trust half of

@@ -34,16 +34,23 @@ type Condition struct {
 // KiB cap on HarnessCondition.text.
 const maxConditionText = 4 * 1024
 
-// providerRe reads the provider-error line: "HTTP 500 · retrying · attempt
-// 6/10" (01 E12), the status in the 5xx range as shown. The retry word is
-// part of the signal: a bare "HTTP 500" without it is not the documented
-// shape, and a 429 is a rate limit (a later slice), so neither matches.
+// providerRe reads the provider-error line: "Meta Model API server error
+// (HTTP 500) · retrying in 7s · attempt 6/10" (01 E12, observed shape in
+// api/fleet/agent/v1/screen.proto), the status in the 5xx range as shown.
+// The retry word and the attempt counter are part of the signal: a bare
+// "HTTP 500" without them is not the documented shape, prose about retrying
+// is working text rather than a harness state, and a 429 is a rate limit (a
+// later slice), so none of them matches.
 var providerRe = regexp.MustCompile(`HTTP 5\d\d\b`)
+
+// attemptRe reads the retry counter on the provider-error line:
+// "attempt 6/10" as shown.
+var attemptRe = regexp.MustCompile(`attempt \d+/\d+`)
 
 // ParseCondition reads a Muse screen for the pause and provider-error
 // signals: a line holding "goal paused by interrupt", or a line holding an
-// HTTP 5xx status with the retry word. It keeps that line as the shown text
-// and never guesses.
+// HTTP 5xx status with the retry word and the attempt counter. It keeps that
+// line as the shown text and never guesses.
 func ParseCondition(screen string) *Condition {
 	c := &Condition{ParseOutcome: typev1.ParseOutcome_PARSE_OUTCOME_FAILED}
 	if len(screen) > harness.MaxScreenBytes {
@@ -60,7 +67,7 @@ func ParseCondition(screen string) *Condition {
 			c.ParseOutcome = typev1.ParseOutcome_PARSE_OUTCOME_OK
 			return c
 		}
-		if providerRe.MatchString(text) && strings.Contains(text, "retrying") {
+		if providerRe.MatchString(text) && strings.Contains(text, "retrying") && attemptRe.MatchString(text) {
 			c.Kind = typev1.HarnessConditionKind_HARNESS_CONDITION_KIND_PROVIDER_ERROR
 			c.Text = text
 			if len(c.Text) > maxConditionText {

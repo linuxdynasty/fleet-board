@@ -59,12 +59,14 @@ func TestParseConditionPaused(t *testing.T) {
 }
 
 // TestParseConditionProviderError reads the provider-error screen (01 E12):
-// when the provider returns a server error, Muse prints "HTTP 500 ·
-// retrying · attempt 6/10" (01), so it must read as PROVIDER_ERROR on every
-// version. The status generalizes across the 5xx range. Anything else fails
-// cleanly: a 429 is a rate limit (a later slice), and a bare "HTTP 500"
-// without the retry word is not the documented shape, so it is never
-// guessed.
+// when the provider returns a server error, Muse prints "Meta Model API
+// server error (HTTP 500) · retrying in 7s · attempt 6/10" (01, observed
+// shape in api/fleet/agent/v1/screen.proto), so it must read as
+// PROVIDER_ERROR on every version. The status generalizes across the 5xx
+// range. Anything else fails cleanly: a 429 is a rate limit (a later slice),
+// a bare "HTTP 500" without the retry word and counter is not the documented
+// shape, and prose about retrying is working text rather than a harness
+// state, so none of them is ever guessed.
 func TestParseConditionProviderError(t *testing.T) {
 	err144 := loadScreen(t, "1.4.4", "provider-error-retrying.txt")
 	err146 := loadScreen(t, "1.4.6", "provider-error-retrying.txt")
@@ -80,6 +82,7 @@ func TestParseConditionProviderError(t *testing.T) {
 		{"provider retry 1.4.7 reads provider error", err147, typev1.HarnessConditionKind_HARNESS_CONDITION_KIND_PROVIDER_ERROR, true},
 		{"HTTP 503 retrying reads provider error", "HTTP 503 · retrying · attempt 1/10", typev1.HarnessConditionKind_HARNESS_CONDITION_KIND_PROVIDER_ERROR, true},
 		{"HTTP 429 retrying is not a provider error", "HTTP 429 · retrying · attempt 2/10", typev1.HarnessConditionKind_HARNESS_CONDITION_KIND_UNSPECIFIED, false},
+		{"prose about retrying is not a condition", "Handle HTTP 500 by retrying the request", typev1.HarnessConditionKind_HARNESS_CONDITION_KIND_UNSPECIFIED, false},
 		{"bare HTTP 500 is not a condition", "HTTP 500", typev1.HarnessConditionKind_HARNESS_CONDITION_KIND_UNSPECIFIED, false},
 		{"truncated retry word is not a condition", "HTTP 500 · retr", typev1.HarnessConditionKind_HARNESS_CONDITION_KIND_UNSPECIFIED, false},
 		{"empty screen is not a condition", "", typev1.HarnessConditionKind_HARNESS_CONDITION_KIND_UNSPECIFIED, false},
