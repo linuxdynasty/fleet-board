@@ -7,7 +7,8 @@ checks, and `FleetService` with `CreateEnrollmentToken`, the watched-repo
 writes (`CreateRepo`, `UpdateRepo`, `DeleteRepo`), the machine admin
 writes (`UpdateMachine`, `RevokeMachine`, `DeleteMachine`), the
 config import and export (`ImportConfig`, `ExportConfig`), the hub-state
-triage writes (`SnoozeTriageItem`, `DismissTriageItem`), the
+triage writes (`SnoozeTriageItem`, `DismissTriageItem`), the triage
+reads (`ListTriageItems`, `GetTriageItem`), the
 session-control and approvals calls, `GetServerInfo`, the machine
 reads (`ListMachines`, `GetMachine`), `GetOperation`, `CapturePane`,
 the session reads (`ListSessions`, `GetSession`), the observed-goal
@@ -56,7 +57,7 @@ own error lines are debug-level `http.server_error` events, not stderr text.
 `Fleet` embeds the generated `UnimplementedFleetServiceHandler`, so every
 method but `CreateEnrollmentToken`, the watched-repo writes, the machine
 admin writes, the config import and export, the hub-state triage
-writes, the session-control and approvals calls, `GetServerInfo`,
+writes, the triage reads, the session-control and approvals calls, `GetServerInfo`,
 `ListMachines`, `GetMachine`, `GetOperation`, `CapturePane`,
 `ListSessions`, `GetSession`, `ListGoals`, `GetGoal`,
 `ListWorkItems`, `GetWorkItem`, `ListChangeRequests`,
@@ -326,6 +327,19 @@ is what was shown. The apply refuses a plan with a blocked line
 the log lines `config.exported` (`repos`, `accounts`, `integrations`,
 `machines`), `config.export_refused` (`reason`) and
 `config.export_failed` (`step`, `err_kind`).
+
+`ListTriageItems` and `GetTriageItem` need `READ|APPROVALS` (02d).
+Until a later row-12 slice brings caller scopes, only a `LOCAL_USER`
+principal (the admin socket) holds it (`authorizeTriage`, like
+`authorizeApprovals`). The store holds the hub-state items the raise
+path wrote: `ListTriageItems` serves the 02c TriageItem filter
+(`id`, `state`, `kind`, `severity` with `>=`, `machine`, `session`,
+`goal`, `account`, `create_time`, `update_time`); `order_by` takes
+`severity` and `ct` and defaults to most severe first, then oldest
+first; pages are 50 by default, 500 at most, with a query-bound token
+good for 10 minutes. `create_time` is the raise and `update_time` the
+last state move. `GetTriageItem` misses an unknown id with
+`RESOURCE_NOT_FOUND`.
 
 `SnoozeTriageItem` and `DismissTriageItem` need `APPROVALS` (02d); until
 plan row 12 brings caller scopes only the local user holds it

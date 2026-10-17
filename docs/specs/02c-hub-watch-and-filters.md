@@ -373,7 +373,7 @@ until the dispatch rows link goals.
 | `severity` | `severity` | `Severity` | `=` `>=` `in` |
 | `machine` `session` `goal` `account` | same | string | `=` `in` |
 
-`order_by`: `severity`, `ct` (default `severity desc, ct`).
+`order_by`: `severity` (rank order, so `>=` and the sort agree), `ct` (default `severity desc, ct`). Every field above reads a stored hub-state column.
 
 | Approval (`APPROVALS`, `ListApprovals`) | Path | Type | Operators |
 |---|---|---|---|

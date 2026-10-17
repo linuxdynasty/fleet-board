@@ -171,6 +171,10 @@ view, the golden CLI output and the contract tests all start from it.
   `GetAccount` cannot read the store, and
   `accounts.issue_refused{reason}` for caller errors. The reads add no
   counter, for the same reason.
+- Logs: `triage.failed{step, err_kind}` when `ListTriageItems` or
+  `GetTriageItem` cannot read the store, and
+  `triage.issue_refused{reason}` for caller errors. The reads add no
+  counter, for the same reason.
 - Logs: `system.status_failed{step, err_kind}` when `GetSystemStatus` cannot
   read the store, and `system.issue_refused{reason}` for caller errors. The
   read adds no counter, for the same reason.

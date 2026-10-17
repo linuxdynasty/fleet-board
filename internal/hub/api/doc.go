@@ -23,7 +23,9 @@
 // [Fleet.GetOperation], [Fleet.ListSessions], [Fleet.GetSession],
 // [Fleet.ListGoals], [Fleet.GetGoal] (observed goals with the stored spec
 // and status, reconciled with the row so a goal a snapshot drop ended
-// reads CLOSED with its end_time), [Fleet.ListWorkItems],
+// reads CLOSED with its end_time), [Fleet.ListTriageItems],
+// [Fleet.GetTriageItem] (hub-state items with the stored kind, severity
+// and refs), [Fleet.ListWorkItems],
 // [Fleet.GetWorkItem] (synced mirrors with the hub's verdicts),
 // [Fleet.ListChangeRequests], [Fleet.GetChangeRequest] (synced mirrors
 // with the provider change request), [Fleet.ListRepos], [Fleet.GetRepo]
@@ -35,7 +37,8 @@
 // and revoke/delete, SETTINGS for repos, update and import, READ for
 // export, the machine, operation, session, goal, work-item,
 // change-request, repo, account and system reads and the
-// visible capture (LOGS for its scrollback and the account raw screen), APPROVALS for triage;
+// visible capture (LOGS for its scrollback and the account raw screen), READ|APPROVALS for the triage reads and
+// APPROVALS for the triage writes;
 // GetServerInfo needs no scope), the fields and the request_id (02b),
 // mints the token in package ca and stores only its secret hash, merges
 // the masked repo patch inside the writer transaction, revokes a machine
