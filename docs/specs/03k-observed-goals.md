@@ -114,6 +114,9 @@ no `Command` is ever queued for an observed goal.
 - `goals.refresh_failed`, `goals.scan_failed`: the agent's 60 s tick logs
   which half failed (checkout table, goal scan); the next tick retries and
   the last readings stay.
+- `goals.conditions_scan_failed`: the agent's 10 s condition tick logs when
+  re-reading goal panes for harness conditions (E12) fails; the next tick
+  retries and the last level stays.
 - `GoalState` emission is counted by the shared event counter with
   `kind="goal_state"`; loss is the emitter's, counted there.
 - `goals.failed{step, err_kind}` when `ListGoals` or `GetGoal` cannot read

@@ -12,4 +12,13 @@ The observed-goal tracker (E9, G2).
   folder in `Ambiguous` (status file, doctor) and attribute nothing.
 - `Tracker.Fill` reports the live goals, the pane workdirs from the
   last tick, and binds goals to panes and checkout branches.
+- `Tracker.ScanConditions` runs every 10 s: it captures each live goal's
+  pane screen, parses it with the pane harness's own condition parser
+  (Claude "Interrupted", Codex "Goal paused", Muse
+  "goal paused by interrupt" as `GOAL_INTERRUPTED`; Cursor
+  "Goal paused (Ns)" as `GOAL_PAUSED`), and emits `HarnessCondition`
+  events with cleared pairs. `Tracker.FillConditions` lists the open
+  ones in `Snapshot.conditions` with the tracker's goal id. A failed
+  capture keeps the last level; the first scan primes silently and the
+  snapshot carries it.
 - Episodes persist in agent.db, so a restart keeps every id.

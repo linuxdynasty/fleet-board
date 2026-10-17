@@ -12,7 +12,10 @@ Read the root `AGENTS.md` first; it applies here. Rules for this package:
 - One live episode per goal file: the id is `MintID` over machine, path
   and first-seen time, persisted in agent.db (`internal/agent/ring`),
   never in memory alone. A rewrite after DONE is a new id.
-- The tracker emits GoalState events only: new, changed and terminal
-  DONE. Anything else (a command, a nudge, an answer) from this package
-  is a bug; `assertAllGoalState` in the tests says so on every flow.
+- The tracker emits GoalState events (new, changed and terminal DONE)
+  and HarnessCondition events (open and cleared pairs for 01 E12
+  interrupts and stalls). Anything else (a command, a nudge, an answer)
+  from this package is a bug; `assertAllGoalState` in the tests says so
+  on every goal-only flow, and the condition tests assert the condition
+  events separately.
 - A change here updates this AGENTS.md and `doc.go` in the same commit.

@@ -78,6 +78,28 @@ func (s *stubCheckouts) Detail(top string) (repos.Detail, bool) {
 	return d, ok
 }
 
+type stubCaptures struct {
+	screens map[string]string
+	fail    map[string]bool
+}
+
+func (s *stubCaptures) Capture(_ context.Context, _, pane string) (string, error) {
+	if s.fail[pane] {
+		return "", errCapture
+	}
+	screen, ok := s.screens[pane]
+	if !ok {
+		return "", errCapture
+	}
+	return screen, nil
+}
+
+type stubErr3 struct{ msg string }
+
+func (e stubErr3) Error() string { return e.msg }
+
+var errCapture = stubErr3{"no such capture"}
+
 type rig struct {
 	t          *testing.T
 	dir        string
@@ -86,6 +108,7 @@ type rig struct {
 	procs      *stubProcs
 	procsIface goals.Procs
 	check      *stubCheckouts
+	captures   *stubCaptures
 	emitted    []*agentv1.Event
 	db         *ring.DB
 	tr         *goals.Tracker
@@ -112,6 +135,7 @@ func newRig(t *testing.T) *rig {
 		check: &stubCheckouts{dir: dir, details: map[string]repos.Detail{
 			dir: {Top: dir, Branch: "fleet/12", Head: "abc123", Dirty: false},
 		}},
+		captures: &stubCaptures{screens: map[string]string{}, fail: map[string]bool{}},
 	}
 	stateDir := filepath.Join(t.TempDir(), "state")
 	if err := os.Mkdir(stateDir, 0o700); err != nil {
@@ -140,6 +164,7 @@ func (r *rig) retrack() {
 		DB:        r.db,
 		Emit:      r,
 		Clock:     func() time.Time { return r.now },
+		Captures:  r.captures,
 	})
 }
 

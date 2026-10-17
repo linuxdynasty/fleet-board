@@ -4,4 +4,9 @@
 // shows it and never dispatches, nudges or controls it (02h "Observed
 // goals", 03k). Fleet-started goals arrive with row 21; until then the
 // registry seam answers unbound for every pane.
+//
+// The condition observer (conditions.go, 01 E12) re-reads each live goal's
+// pane screen with its harness's own condition parser, emits
+// HarnessCondition events with cleared pairs, and lists the open ones in
+// Snapshot.conditions with the goal id from the tracker.
 package goals
