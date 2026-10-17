@@ -460,8 +460,8 @@ optionally against one limit the owner sets.
 - **E5 Pane summaries:** last lines, ANSI stripped; at most one per pane every
   5 s; droppable. Row 7 PR 7e: one summary per edge, at most one per pane per 5 s; visible screen, control-stripped, capped at 4 KiB.
 - **E6 Prompt detected:** `prompt_id`, text, options, destructive flag, source
-  (screen pattern or hook) and confidence. Send-to-pane stays disabled for a
-  harness until its detection is verified (Claude first).
+  (screen pattern or hook) and confidence. Send-to-pane stays disabled until
+  detection is verified (Claude first); each adapter holds a `ParsePrompt` seam, unknown until fixtures pin a shape.
 - **E7 Harness ready**: whether the adapter's ready pattern is showing in
   a pane, as a snapshot field and an event for both edges.
 - **E8 Harness hook events**: turn end, session start, Codex interrupt,

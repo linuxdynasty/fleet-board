@@ -147,6 +147,7 @@
   {"token": "PromptPatterns", "kind": "go", "reason": "harness adapter method (01 adapter table)", "files": ["docs/specs/01-agent-capabilities.md"]},
   {"token": "ReadyPattern", "kind": "go", "reason": "harness adapter method (01 adapter table)", "files": ["docs/specs/01-agent-capabilities.md"]},
   {"token": "TrustPrompt", "kind": "go", "reason": "harness adapter method (01 adapter table)", "files": ["docs/specs/01-agent-capabilities.md"]},
+  {"token": "ParsePrompt", "kind": "go", "reason": "harness adapter method (01 E6)", "files": ["docs/specs/01-agent-capabilities.md"]},
   {"token": "ParseStatus", "kind": "go", "reason": "harness adapter method (01 adapter table)", "files": ["docs/specs/01-agent-capabilities.md"]},
   {"token": "ParseUsage", "kind": "go", "reason": "harness adapter method (01 adapter table)", "files": ["docs/specs/01-agent-capabilities.md"]},
   {"token": "StatusCommand", "kind": "go", "reason": "harness adapter method (01 adapter table)", "files": ["docs/specs/01-agent-capabilities.md"]},
