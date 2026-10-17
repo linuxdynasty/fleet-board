@@ -54,8 +54,12 @@ slash command at a time: the table's own examples keep their class
 (`/status` observe, `/model` session, `/goal` goal, `/review` review, `/exit`
 destructive) and every other recorded command is deny. The verdicts cover all
 49 names in the recorded 0.160.0 catalog
-(`testdata/0.160.0/slash-menu-catalog.tsv`); the catalog test fails when a
-later catalog adds a name with no reviewed expectation. A discovered command
+(`testdata/0.160.0/slash-menu-catalog.tsv`) and all 54 in the recorded
+0.162.1 catalog (`testdata/0.162.1/slash-menu-catalog.tsv`): the five new
+names are `/clear` (destructive), `/ps` (observe) and `/stop` (session) from
+the shared table, plus `/feedback` and `/subagents`, both deny as unprobed.
+The catalog test walks every versioned catalog, so a new version directory is
+checked as soon as its catalog lands. A discovered command
 whose effect is unprobed stays deny; it moves only with a probe record.
 (Cursor denies `/plan` as unprobed; that is its stricter local policy.)
 
