@@ -58,20 +58,30 @@ writer transaction (raises at version 1 with a 7-day expiry, updates in
 place at version + 1, retires closed), read back through
 `statedb.ListOpenSystemItems`.
 
-Not here yet (later slices of issue #41): the readings behind each verdict,
-the ticking evaluation job and the served evaluated status, the
-`fleet_hub_system_signal_state` and `fleet_hub_system_signal_value` gauges,
-subscription-efficiency rollups with `GetInsights`, and `fleetd insights
-rebuild`. `GetSystemStatus` is served (one UNKNOWN verdict per subject with
-every measure's levels, through `Snapshot`); those read `Measures` and the
-triage mapping, so their levels match this table without copying it.
+The hub-wide signals are judged live: `Loop` (ticked every
+`EvaluateEvery` by the daemon's `system_evaluate` housekeeping job) reads
+the writer ages from the store and disk and backup age from the state
+folder, evaluates them through `Monitor`, persists `Decide`'s writes, and
+caches the verdicts `GetSystemStatus` serves with their readings, `SetBy`
+and `Since`. `WATCH_DROPS` (no Watch server yet) and `LOG_STORE_USAGE`
+(no logs.db until row 25) stay UNKNOWN, as does the commit-time measure
+(no p95 source yet), which never masks the writer's other two measures.
 
-No-Observability-Change: this slice adds no metric, span or log event; the
-`hub.system.evaluate` span and the System gauges arrive with the wiring
-slice.
+Not here yet (later slices of issue #41): the readings behind each
+per-subject verdict, the `fleet_hub_system_signal_state` and
+`fleet_hub_system_signal_value` gauges, subscription-efficiency rollups
+with `GetInsights`, and `fleetd insights rebuild`. Those read `Measures`
+and the triage mapping, so their levels match this table without copying
+it.
+
+Observability: this slice adds the `hub.system.evaluate` span (05b already
+names it); no new metric or log event.
 
 Tests: `CGO_ENABLED=0 go test ./internal/hub/system/`. Each measure of
 each signal is driven over each of its levels in a seeded table test, each
 hold proved on both sides, and the hysteresis proved both ways. The triage
 mapping has its own table test: the fingerprint shape, each signal's raise
-level, and each severity including the two CRITICAL exceptions.
+level, and each severity including the two CRITICAL exceptions. The loop
+has its own table test over fake sources: warn and raise, CRITICAL by the
+full queue alone, retire on recovery, and a failed write failing the run
+while the served status stays fresh.

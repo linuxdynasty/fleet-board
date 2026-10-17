@@ -25,7 +25,8 @@ hk.Check(ctx)            // one pass, for tests
   failure.
 - Plan row 5b registers `machine_state` (`gateway.Server.Housekeep`);
   5g `outbox_expiry` (every tick) and `outbox_prune` (hourly) from
-  `gateway.Server.Outbox()`; later rows add their prune and expiry jobs to the list in
+  `gateway.Server.Outbox()`; issue #41 registers `system_evaluate` (every
+  15 s, the System health loop); later rows add their prune and expiry jobs to the list in
   `internal/hub/daemon`.
 
 ## Signals

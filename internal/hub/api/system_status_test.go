@@ -3,11 +3,14 @@ package api_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	"connectrpc.com/connect"
 
 	hubv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/hub/v1"
 	"github.com/linuxdynasty/fleet-board/internal/buildinfo"
+	"github.com/linuxdynasty/fleet-board/internal/hub/statedb"
+	"github.com/linuxdynasty/fleet-board/internal/hub/system"
 )
 
 // seedSystemSubjects enrolls two machines, one account and the github
@@ -187,6 +190,77 @@ func TestGetSystemStatusStoreFailure(t *testing.T) {
 	}
 	if got := e.logs.events(t, "system.status_failed"); len(got) != 1 {
 		t.Errorf("system.status_failed lines = %d, want 1", len(got))
+	}
+}
+
+// TestGetSystemStatusServesEvaluatedHubSignals pins the evaluation loop
+// wiring (issue #41): with the loop ticked, the hub signals carry their
+// evaluated states and readings, observed_time is the loop's time rather
+// than the poll time, and the WARNING disk raised a real SYSTEM item.
+func TestGetSystemStatusServesEvaluatedHubSignals(t *testing.T) {
+	t.Parallel()
+	const gib = int64(1) << 30
+	src := system.Sources{
+		Writer: func(time.Time) (time.Duration, time.Duration) { return 0, 0 },
+		DiskFree: func() (int64, bool) {
+			return 9 * gib, true
+		},
+	}
+	e := newFleetEnv(t, localUser("alice"), trusted(false), withSystemSources(src))
+	_ = seedSystemSubjects(t, e)
+	ctx := context.Background()
+	if err := e.sysLoop.Run(ctx, fleetNow); err != nil {
+		t.Fatalf("first Run: %v", err)
+	}
+	tick := fleetNow.Add(time.Second)
+	if err := e.sysLoop.Run(ctx, tick); err != nil {
+		t.Fatalf("second Run: %v", err)
+	}
+	got := getSystemStatus(t, e)
+	if !got.GetObservedTime().AsTime().Equal(tick) {
+		t.Errorf("observed_time = %v, want the loop's time %v", got.GetObservedTime().AsTime(), tick)
+	}
+	if got.GetOverall() != hubv1.SystemState_SYSTEM_STATE_WARNING {
+		t.Errorf("overall = %v, want WARNING", got.GetOverall())
+	}
+	byKind := map[hubv1.SystemSignalKind]*hubv1.SystemSignal{}
+	for _, s := range got.GetSignals() {
+		if s.GetMachine().GetValue() == "" && s.GetAccount().GetValue() == "" && s.GetIntegration().GetValue() == "" {
+			byKind[s.GetKind()] = s
+		}
+	}
+	disk := byKind[hubv1.SystemSignalKind_SYSTEM_SIGNAL_KIND_DISK_FREE]
+	if disk.GetState() != hubv1.SystemState_SYSTEM_STATE_WARNING {
+		t.Fatalf("DISK_FREE = %v, want WARNING", disk.GetState())
+	}
+	var diskValue float64
+	for _, m := range disk.GetMeasures() {
+		if m.GetKind() == hubv1.SystemMeasureKind_SYSTEM_MEASURE_KIND_MAIN {
+			diskValue = m.GetValue()
+		}
+	}
+	if diskValue != float64(9*gib) {
+		t.Errorf("DISK_FREE value = %v, want 9 GiB", diskValue)
+	}
+	writer := byKind[hubv1.SystemSignalKind_SYSTEM_SIGNAL_KIND_WRITER_BATCH_LAG]
+	if writer.GetState() != hubv1.SystemState_SYSTEM_STATE_OK {
+		t.Errorf("WRITER_BATCH_LAG = %v, want OK", writer.GetState())
+	}
+	for _, kind := range []hubv1.SystemSignalKind{
+		hubv1.SystemSignalKind_SYSTEM_SIGNAL_KIND_WATCH_DROPS,
+		hubv1.SystemSignalKind_SYSTEM_SIGNAL_KIND_LOG_STORE_USAGE,
+		hubv1.SystemSignalKind_SYSTEM_SIGNAL_KIND_BACKUP_AGE,
+	} {
+		if byKind[kind].GetState() != hubv1.SystemState_SYSTEM_STATE_UNKNOWN {
+			t.Errorf("%v = %v, want UNKNOWN (no source yet)", kind, byKind[kind].GetState())
+		}
+	}
+	open, err := statedb.ListOpenSystemItems(ctx, e.st)
+	if err != nil {
+		t.Fatalf("ListOpenSystemItems: %v", err)
+	}
+	if len(open) != 1 {
+		t.Fatalf("open SYSTEM items = %d, want the disk's raise", len(open))
 	}
 }
 
