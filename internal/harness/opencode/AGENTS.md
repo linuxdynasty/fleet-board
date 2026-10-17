@@ -6,8 +6,9 @@ here. Rules for this package:
 - This package parses OpenCode output, starting with the `stats` spend table
   (`ParseSpend` in `spend.go`, 01 D2), the `providers list` account output
   and the TUI model line (`ParseProviders` and `ParseModelLine` in
-  `identity.go`, 01 C2). Product code here never runs the harness, never
-  answers a prompt, never opens a credential file.
+  `identity.go`, 01 C2), and the idle TUI prompt with its input state
+  (`ParseReady` in `ready.go`, 01 E7). Product code here never runs the
+  harness, never answers a prompt, never opens a credential file.
 - Never guess: a screen with no stats table fails with no numbers, a table
   missing its Total Cost row is partial with the counts kept, token counts
   stay as shown (no K-base guess), the model and provider are not split

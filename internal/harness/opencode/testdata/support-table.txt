@@ -1,4 +1,4 @@
 harness opencode
 version support USAGE IDENTITY PROMPT READY CONDITION
-1.18.34 UNVERIFIED_PARSING supported supported - - -
-1.19.0 UNVERIFIED_PARSING supported supported - - -
+1.18.34 UNVERIFIED_PARSING supported supported - supported -
+1.19.0 UNVERIFIED_PARSING supported supported - supported -

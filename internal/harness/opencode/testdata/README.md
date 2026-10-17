@@ -66,7 +66,9 @@ from other sessions stay uncaptured.
 
 Placeholder against draft: the placeholder renders in grey
 (`38;2;128;128;128`); typed text renders near-white (`38;2;238;238;238`). A
-parser must match the colour, not the words.
+parser must match the colour, not the words. `ready.go` (`ParseReady`, 01
+E7) implements this: grey reads empty, near-white reads as typed text, and
+a plain capture reads unknown.
 
 ## 1.19.0 slash menu (2026-10-12, issue #25)
 

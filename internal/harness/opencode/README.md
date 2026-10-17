@@ -17,6 +17,12 @@ no `/goal` (01b).
   agent, the model-plus-provider selection as shown, and the variant when
   one is set. The model and provider are never split by guessing; the
   probe matches the selection against the providers list.
+- `ready.go`: `ParseReady` reads the idle TUI input box (01 E7) into
+  whether the prompt shows and what the input line holds. The grey
+  placeholder reads empty, styled text reads as typed text, and a plain
+  capture reads unknown, never empty: the colour decides, not the words.
+  OpenCode never shows a folder-trust screen, so there is no trust box.
+  `ReadyParserVersion` bumps when the parser's behavior changes.
 - `commands.go`: `Classify` returns the 01b class of one slash command
   (C4): the table's own examples keep their class (`/status` and `/diff`
   observe, `/review` review, `/exit` destructive), everything else deny.
@@ -28,9 +34,9 @@ no `/goal` (01b).
   later catalog needs a reviewed verdict here.
 - `opencode_test.go`: the adapter's declaration for the shared
   conformance test (`harness.Conform`). Versions `1.18.34` and `1.19.0`
-  are `UNVERIFIED_PARSING` with `USAGE` and `IDENTITY` fixture-verified;
-  the golden table is `testdata/support-table.txt`, so a claim change is
-  a reviewed diff.
+  are `UNVERIFIED_PARSING` with `USAGE`, `IDENTITY` and `READY`
+  fixture-verified; the golden table is `testdata/support-table.txt`,
+  so a claim change is a reviewed diff.
 - Fixtures under `testdata/1.18.34/` and `testdata/1.19.0/`, documented
   in `testdata/README.md`. The live shape was also checked against
   OpenCode 1.19.0 on the dev machine (`stats` and `providers list`,

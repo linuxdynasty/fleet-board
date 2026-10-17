@@ -30,12 +30,14 @@ func outcomeOf(outcome typev1.ParseOutcome) harness.ParseResult {
 }
 
 // TestConform runs the shared adapter check (row 8's conformance): the
-// golden table matches the claims, USAGE brings the stats fixtures and
+// golden table matches the claims, USAGE brings the stats fixtures,
 // IDENTITY brings the providers and model-line fixtures of each version,
-// and every fixture parses or yields unknown, never fails. Both versions
-// stay UNVERIFIED_PARSING: only USAGE (spend) and IDENTITY (providers,
-// model line) are fixture-verified, and PROMPT, READY and CONDITION are
-// later slices. OpenCode has no usage window and no /goal (01b).
+// and READY brings the idle-prompt, menu and dialog fixtures of each
+// version, and every fixture parses or yields unknown, never fails. Both
+// versions stay UNVERIFIED_PARSING: USAGE (spend), IDENTITY (providers,
+// model line) and READY (idle prompt with its input state) are
+// fixture-verified, and PROMPT and CONDITION are later slices. OpenCode
+// has no usage window, no folder-trust screen and no /goal (01b).
 func TestConform(t *testing.T) {
 	usage := func(screen string) harness.ParseResult {
 		return outcomeOf(ParseSpend(screen).ParseOutcome)
@@ -45,6 +47,9 @@ func TestConform(t *testing.T) {
 			return got
 		}
 		return outcomeOf(ParseModelLine(screen).ParseOutcome)
+	}
+	ready := func(screen string) harness.ParseResult {
+		return outcomeOf(ParseReady(screen).ParseOutcome)
 	}
 	versions := []string{"1.18.34", "1.19.0"}
 	usageFixtures := func() []harness.Fixture {
@@ -70,6 +75,29 @@ func TestConform(t *testing.T) {
 		}
 		return out
 	}
+	// The idle prompt screens prove the ready pattern of each version; the
+	// menu, dialog and CLI screens prove the parser stays silent on them.
+	readyByVersion := map[string][]string{
+		"1.18.34": {
+			"tui-ready.txt", "ready-new-folder.txt",
+			"tui-slash-menu-first.txt", "tui-slash-menu-last.txt",
+			"tui-status-dialog.txt", "tui-help-dialog.txt",
+			"stats.txt", "providers-list.txt",
+		},
+		"1.19.0": {
+			"tui-ready.txt", "tui-ready-ansi.txt",
+			"tui-ready-input-has-draft.txt", "tui-ready-input-has-draft-ansi.txt",
+			"tui-slash-menu-first.txt", "tui-slash-menu-last.txt",
+			"tui-status-dialog.txt", "stats.txt", "providers-list.txt",
+		},
+	}
+	readyFixtures := func(v string) []harness.Fixture {
+		var out []harness.Fixture
+		for _, name := range readyByVersion[v] {
+			out = append(out, harness.Fixture{Name: v + "/" + name, Screen: readFixture(t, v, name)})
+		}
+		return out
+	}
 	harness.Conform(t, harness.Declaration{
 		Harness: "opencode",
 		Versions: []harness.VersionCase{
@@ -87,6 +115,11 @@ func TestConform(t *testing.T) {
 						Parse:    identity,
 						Fixtures: identityFixtures(),
 					},
+					harness.FeatureReady: {
+						Claim:    harness.FeatureClaim{Supported: true},
+						Parse:    ready,
+						Fixtures: readyFixtures("1.18.34"),
+					},
 				},
 			},
 			{
@@ -102,6 +135,11 @@ func TestConform(t *testing.T) {
 						Claim:    harness.FeatureClaim{Supported: true},
 						Parse:    identity,
 						Fixtures: identityFixtures(),
+					},
+					harness.FeatureReady: {
+						Claim:    harness.FeatureClaim{Supported: true},
+						Parse:    ready,
+						Fixtures: readyFixtures("1.19.0"),
 					},
 				},
 			},
