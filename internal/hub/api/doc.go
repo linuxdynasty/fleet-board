@@ -25,7 +25,8 @@
 // and status, reconciled with the row so a goal a snapshot drop ended
 // reads CLOSED with its end_time), [Fleet.ListTriageItems],
 // [Fleet.GetTriageItem] (hub-state items with the stored kind, severity
-// and refs), [Fleet.ListWorkItems],
+// and refs), [Fleet.ListUsageReadings] (the stored reading history,
+// newest first), [Fleet.ListWorkItems],
 // [Fleet.GetWorkItem] (synced mirrors with the hub's verdicts),
 // [Fleet.ListChangeRequests], [Fleet.GetChangeRequest] (synced mirrors
 // with the provider change request), [Fleet.ListRepos], [Fleet.GetRepo]

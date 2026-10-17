@@ -348,6 +348,10 @@ stateDiagram-v2
   two differ by more than an hour, `seven_day_default` or `none`);
   `probe.failover{account, from_machine, to_machine, reason}`;
   `usage.parse_failed{harness, version, parser_version}`.
+- Logs: `usage.issue_refused{reason}` for `ListUsageReadings` caller
+  errors and `usage.failed{step, err_kind, actor}` when the read cannot
+  reach the store. The read adds no counter, like the other row-12
+  reads.
 
 At 3 AM: "why did nothing dispatch on Codex?" → `fleet_hub_pacing_state` and
 the last `pacing.decision`; "is the usage number real?" →

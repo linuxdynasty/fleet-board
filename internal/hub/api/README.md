@@ -8,7 +8,8 @@ writes (`CreateRepo`, `UpdateRepo`, `DeleteRepo`), the machine admin
 writes (`UpdateMachine`, `RevokeMachine`, `DeleteMachine`), the
 config import and export (`ImportConfig`, `ExportConfig`), the hub-state
 triage writes (`SnoozeTriageItem`, `DismissTriageItem`), the triage
-reads (`ListTriageItems`, `GetTriageItem`), the
+reads (`ListTriageItems`, `GetTriageItem`), the usage read
+(`ListUsageReadings`), the
 session-control and approvals calls, `GetServerInfo`, the machine
 reads (`ListMachines`, `GetMachine`), `GetOperation`, `CapturePane`,
 the session reads (`ListSessions`, `GetSession`), the observed-goal
@@ -57,7 +58,7 @@ own error lines are debug-level `http.server_error` events, not stderr text.
 `Fleet` embeds the generated `UnimplementedFleetServiceHandler`, so every
 method but `CreateEnrollmentToken`, the watched-repo writes, the machine
 admin writes, the config import and export, the hub-state triage
-writes, the triage reads, the session-control and approvals calls, `GetServerInfo`,
+writes, the triage reads, the usage read, the session-control and approvals calls, `GetServerInfo`,
 `ListMachines`, `GetMachine`, `GetOperation`, `CapturePane`,
 `ListSessions`, `GetSession`, `ListGoals`, `GetGoal`,
 `ListWorkItems`, `GetWorkItem`, `ListChangeRequests`,
@@ -340,6 +341,16 @@ first; pages are 50 by default, 500 at most, with a query-bound token
 good for 10 minutes. `create_time` is the raise and `update_time` the
 last state move. `GetTriageItem` misses an unknown id with
 `RESOURCE_NOT_FOUND`.
+
+`ListUsageReadings` needs `READ` (02d). Until a later row-12 slice
+brings caller scopes, only a `LOCAL_USER` principal (the admin socket)
+holds it. The store holds the appended reading history (migration 22):
+the typed `account` scopes to one account, the 02c filter takes
+`read_time` and `source`, `order_by` takes `read_time` and defaults to
+newest first, and pages are 50 by default, 500 at most, with a
+query-bound token good for 10 minutes. `read_time` is the hub-adjusted
+read time and `received_time` breaks equal-time ties; readings have no
+`id`, `create_time` or `update_time`.
 
 `SnoozeTriageItem` and `DismissTriageItem` need `APPROVALS` (02d); until
 plan row 12 brings caller scopes only the local user holds it
