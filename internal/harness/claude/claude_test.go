@@ -84,9 +84,11 @@ func TestConform(t *testing.T) {
 			},
 		})
 	}
-	harness.Conform(t, harness.Declaration{
+	decl := harness.Declaration{
 		Harness:  "claude",
 		Versions: versions,
 		Golden:   readData(t, "support-table.txt"),
-	})
+	}
+	harness.Conform(t, decl)
+	harness.ConformDirs(t, "testdata", decl)
 }

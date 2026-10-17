@@ -2,6 +2,7 @@ package harness
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 )
@@ -181,6 +182,38 @@ func Check(d Declaration) []string {
 	return problems
 }
 
+// CheckFixtureDirs covers what Check cannot see: the fixture directories on
+// disk. dirs holds the version directory names under the adapter's
+// testdata/. It returns one message per gap: a directory with no declared
+// version (new fixtures must arrive with their golden-table row, so the
+// claim change is a reviewed diff), and a declared version with no
+// directory (a claim with no fixtures behind it). Empty means every
+// directory is declared and every declared version has its fixtures.
+func CheckFixtureDirs(d Declaration, dirs []string) []string {
+	declared := map[string]bool{}
+	for _, v := range d.Versions {
+		declared[v.Version] = true
+	}
+	onDisk := map[string]bool{}
+	for _, dir := range dirs {
+		onDisk[dir] = true
+	}
+	var problems []string
+	for _, dir := range dirs {
+		if !declared[dir] {
+			problems = append(problems, fmt.Sprintf(
+				"harness %s: fixture directory %s has no declared version", d.Harness, dir))
+		}
+	}
+	for _, v := range d.Versions {
+		if !onDisk[v.Version] {
+			problems = append(problems, fmt.Sprintf(
+				"harness %s version %s has no fixture directory", d.Harness, v.Version))
+		}
+	}
+	return problems
+}
+
 // Conform is what every adapter's test calls, over every fixture of every
 // version it supports (row 30's Cursor adapter too): it fails the test with
 // one message per broken rule of Check.
@@ -190,6 +223,28 @@ func Conform(t *testing.T, d Declaration) {
 	// with a non-static argument in non-test code as a log event, and this
 	// is test reporting, not telemetry.
 	for _, p := range Check(d) {
+		t.Errorf("%s", p)
+	}
+}
+
+// ConformDirs is the fixture-directory half of the gate: every adapter's
+// test calls it with its testdata/ path and the same declaration it passes
+// to Conform. It fails the test with one message per gap of
+// CheckFixtureDirs, so a new version's fixtures cannot land without their
+// golden-table row. Like Conform this is test reporting, not telemetry.
+func ConformDirs(t *testing.T, testdata string, d Declaration) {
+	t.Helper()
+	entries, err := os.ReadDir(testdata)
+	if err != nil {
+		t.Fatalf("read fixture directories in %s: %v", testdata, err)
+	}
+	var dirs []string
+	for _, e := range entries {
+		if e.IsDir() {
+			dirs = append(dirs, e.Name())
+		}
+	}
+	for _, p := range CheckFixtureDirs(d, dirs) {
 		t.Errorf("%s", p)
 	}
 }

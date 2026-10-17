@@ -21,7 +21,10 @@ model line (row 8, issue #36).
   support must match the committed golden table (`SupportTable`), a version
   marked `SUPPORTED` must have every feature supported, a supported feature
   must bring a fixture of that version, and every fixture must parse or
-  cleanly yield unknown, never fail.
+  cleanly yield unknown, never fail. `ConformDirs` with `CheckFixtureDirs`
+  covers what `Check` cannot see: every version directory under the
+  adapter's `testdata/` must have a declared version with its golden-table
+  row, so new fixtures cannot land without a reviewed claim change.
 - `resettime.go`: the calendar half every usage parser shares. Reset texts
   have no year and are local (01 D2), so `NextMonthDayTime` resolves one to
   the next such date and time after the capture and `NextTimeOfDay` to today
