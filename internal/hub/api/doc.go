@@ -21,7 +21,9 @@
 // session-control and approvals calls, [Fleet.GetServerInfo],
 // [Fleet.ListMachines], [Fleet.GetMachine], [Fleet.CapturePane],
 // [Fleet.GetOperation], [Fleet.ListSessions], [Fleet.GetSession],
-// [Fleet.ListGoals], [Fleet.GetGoal] and
+// [Fleet.ListGoals], [Fleet.GetGoal] (observed goals with the stored spec
+// and status, reconciled with the row so a goal a snapshot drop ended
+// reads CLOSED with its end_time) and
 // [Fleet.GetSystemStatus] built; every other method is Unimplemented
 // (02k): it checks the caller ([PrincipalFrom], ADMIN for enrollment
 // and revoke/delete, SETTINGS for repos, update and import, READ for

@@ -253,6 +253,10 @@ func TestGetGoalAfterSnapshotDrop(t *testing.T) {
 		end.AsTime().UnixMilli() != dropMs {
 		t.Errorf("end_time %v, want the drop time", end)
 	}
+	if pt := got.GetStatus().GetPhaseTime(); !pt.IsValid() ||
+		pt.AsTime().UnixMilli() != dropMs {
+		t.Errorf("phase_time %v, want the drop time (the phase moved at the drop)", pt)
+	}
 	msg := listGoals(t, e, &hubv1.ListGoalsRequest{Filter: `phase = CLOSED`})
 	if len(msg.GetGoals()) != 1 || msg.GetGoals()[0].GetStatus().GetPhase() != hubv1.GoalPhase_GOAL_PHASE_CLOSED {
 		t.Fatalf("closed goals %v, want [obs-gone] reading CLOSED", msg.GetGoals())

@@ -181,8 +181,15 @@ func goalViewOf(row statedb.GoalRow) (goalView, error) {
 	default:
 		return goalView{}, fmt.Errorf("api: unknown goal origin %q", row.Origin)
 	}
+	storedPhase := status.GetPhase()
 	status.Phase = hubv1.GoalPhase(phase)
 	status.PhaseReason = hubv1.GoalPhaseReason(reason)
+	// A row past its stored sighting moved phase since: the snapshot drop
+	// closed it, so the transition time is the drop's stamp, and
+	// phase_time ordering follows it.
+	if status.GetPhaseTime() == nil || hubv1.GoalPhase(phase) != storedPhase {
+		status.PhaseTime = timestamppb.New(time.UnixMilli(row.ObservedMs))
+	}
 	status.ObservedTime = timestamppb.New(time.UnixMilli(row.ObservedMs))
 	status.HubSeq = uint64(row.HubSeq) //nolint:gosec // G115: hub_seq starts at 1
 	if row.EndMs != nil {
