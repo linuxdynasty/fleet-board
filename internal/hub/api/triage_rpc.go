@@ -16,8 +16,9 @@ import (
 // maxDismissNote is the 02b cap on DismissTriageItemRequest.note.
 const maxDismissNote = 512
 
-// authorizeTriage admits the caller for SnoozeTriageItem and
-// DismissTriageItem (02d: APPROVALS). Until plan row 12 brings caller
+// authorizeTriage admits the caller for ListTriageItems, GetTriageItem,
+// SnoozeTriageItem and DismissTriageItem (02d: READ|APPROVALS for the
+// reads, APPROVALS for the writes). Until plan row 12 brings caller
 // scopes, that is only the local user, who maps to OWNER.
 func authorizeTriage(ctx context.Context) (*typev1.Principal, error) {
 	p := PrincipalFrom(ctx)

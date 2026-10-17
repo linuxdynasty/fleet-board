@@ -174,7 +174,7 @@ stateDiagram-v2
   `agent.send_keys{prompt_id}`.
 - Logs: `triage.raised{kind, fingerprint, goal_id, machine}`,
   `prompt.answered{prompt_id, by, option, destructive, result}`,
-  `triage.expired{kind, age}`. Operator writes (row 13a): `fleet_hub_triage_writes_total{op, outcome}` (`triage_snooze`, `triage_dismiss`; `ok`, `replayed`, `refused`, `failed`); logs `triage.snoozed{op, item, version, replayed, actor}`, `triage.dismissed{op, item, version, replayed, actor}`, `triage.write_refused{reason, op, actor}`, `triage.write_failed{step, err_kind, op, actor}`, `triage.secret_refused{op, actor}`.
+  `triage.expired{kind, age}`. Operator writes (row 13a): `fleet_hub_triage_writes_total{op, outcome}` (`triage_snooze`, `triage_dismiss`; `ok`, `replayed`, `refused`, `failed`); logs `triage.snoozed{op, item, version, replayed, actor}`, `triage.dismissed{op, item, version, replayed, actor}`, `triage.write_refused{reason, op, actor}`, `triage.write_failed{step, err_kind, op, actor}`, `triage.secret_refused{op, actor}`. Triage reads (row 12): logs `triage.issue_refused{reason}`, `triage.failed{step, err_kind, actor}`; no counter, like the other reads.
 - Hub session and approval calls (row 19): `session.sent{kind, machine,
   command, actor}`, `session.issue_refused{reason, actor}`,
   `session.issue_failed{step, err_kind, actor}`, `approval.created{kind,

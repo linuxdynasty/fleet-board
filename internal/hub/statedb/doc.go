@@ -124,6 +124,12 @@
 // them all, both on the read pool for the hub API's filter, sort and
 // page.
 //
+// Plan row 12 (triage reads) adds the hub-state triage read path over
+// the row 13a triage table: [GetStoredTriageItem] reads one by id
+// ([ErrTriageUnknown] without a row) and [ListStoredTriageItems] reads
+// them all, both on the read pool for the hub API's filter, sort and
+// page.
+//
 
 // Plan row 5 (PR 5c2) adds the event history (events migration):
 // [ApplyEvent] stores one event in its writer job (the live, snapshotted
