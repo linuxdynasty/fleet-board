@@ -373,9 +373,15 @@ func TestEveryOtherFleetMethodIsUnimplemented(t *testing.T) {
 	t.Parallel()
 	e := newFleetEnv(t, localUser("alice"))
 	ctx := context.Background()
-	_, err := e.client.ListGoalRuns(ctx, connect.NewRequest(&hubv1.ListGoalRunsRequest{}))
+	stream, serr := e.client.Watch(ctx, connect.NewRequest(&hubv1.WatchRequest{}))
+	err := serr
+	if serr == nil {
+		stream.Receive()
+		err = stream.Err()
+		_ = stream.Close()
+	}
 	if code := connect.CodeOf(err); code != connect.CodeUnimplemented {
-		t.Errorf("ListGoalRuns: %v, want unimplemented", code)
+		t.Errorf("Watch: %v, want unimplemented", code)
 	}
 	_, err = e.client.CreateApiToken(ctx, connect.NewRequest(&hubv1.CreateApiTokenRequest{RequestId: "x"}))
 	if code := connect.CodeOf(err); code != connect.CodeUnimplemented {

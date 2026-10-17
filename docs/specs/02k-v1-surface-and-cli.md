@@ -154,9 +154,10 @@ view, the golden CLI output and the contract tests all start from it.
 - Logs: `sessions.failed{step, err_kind}` when `ListSessions` or `GetSession`
   cannot read the store, and `sessions.issue_refused{reason}` for caller
   errors. The reads add no counter, for the same reason.
-- Logs: `goals.failed{step, err_kind}` when `ListGoals` or `GetGoal` cannot
-  read the store, and `goals.issue_refused{reason}` for caller errors. The
-  reads add no counter, for the same reason.
+- Logs: `goals.failed{step, err_kind}` when `ListGoals`, `GetGoal`,
+  `ListGoalRuns` or `ListGoalTransitions` cannot read the store, and
+  `goals.issue_refused{reason}` for caller errors. The reads add no
+  counter, for the same reason.
 - Logs: `work_items.failed{step, err_kind}` when `ListWorkItems` or
   `GetWorkItem` cannot read the store, and `work_items.issue_refused{reason}`
   for caller errors. The reads add no counter, for the same reason.
