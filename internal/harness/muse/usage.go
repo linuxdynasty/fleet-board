@@ -15,14 +15,17 @@ import (
 // changes (01b, fleet-harness-adapter).
 var Versions = []string{"1.4.4", "1.4.6", "1.4.7"}
 
-const ParserVersion = "1"
+const ParserVersion = "2"
 
-// Usage is one parsed /usage box: the plan as shown and the two buckets
-// in screen order (Current, then Weekly). A row the box did not show
-// keeps its key with a NOT_SHOWN percent, never a guessed number.
+// Usage is one parsed /usage box: the plan as shown, the two buckets in
+// screen order (Current, then Weekly), and the session block (token
+// counts, turns, subagents) with the "as of" stamp as shown fields. A row
+// the box did not show keeps its key with a NOT_SHOWN percent (buckets)
+// or is left out (shown fields), never a guessed number.
 type Usage struct {
 	Plan         string
 	Buckets      []*typev1.LimitBucket
+	Shown        []*typev1.ShownField
 	ParseOutcome typev1.ParseOutcome
 }
 
@@ -52,6 +55,26 @@ var rows = []row{
 	{"weekly", "Weekly", typev1.WindowKind_WINDOW_KIND_WEEKLY, weeklyRe, true},
 }
 
+// sessionRow is one "Session usage" line carried as shown, in the
+// harness's own terms: token counts and turns read as digits, subagents
+// as shown ("none" when idle), the "as of" stamp as a time of day. The
+// subagent value never crosses the box border: a row with no value is
+// unreadable, not a border character.
+type sessionRow struct {
+	label string
+	re    *regexp.Regexp
+}
+
+var sessionRows = []sessionRow{
+	{"Input", regexp.MustCompile(`\bInput\s+(\d+)`)},
+	{"Cached", regexp.MustCompile(`\bCached\s+(\d+)`)},
+	{"Output", regexp.MustCompile(`\bOutput\s+(\d+)`)},
+	{"Total", regexp.MustCompile(`\bTotal\s+(\d+)`)},
+	{"Turns", regexp.MustCompile(`\bTurns\s+(\d+)`)},
+	{"Subagents", regexp.MustCompile(`\bSubagents\s+([^\s│]+)`)},
+	{"as of", regexp.MustCompile(`\bas of\s+(\d{1,2}:\d{2} [AP]M)`)},
+}
+
 // ParseUsage reads a Muse /usage box (01 D2) as of Versions.
 // readTime is when the screen was captured; it resolves the year-less
 // and time-only reset texts in the machine's timezone. A screen with no
@@ -79,6 +102,18 @@ func ParseUsage(screen string, readTime time.Time) *Usage {
 		if !fillRow(b, r, screen, readTime) {
 			complete = false
 		}
+	}
+	for _, s := range sessionRows {
+		m := s.re.FindStringSubmatch(screen)
+		if m == nil {
+			complete = false
+			continue
+		}
+		u.Shown = append(u.Shown, &typev1.ShownField{
+			Group: "Session usage",
+			Label: s.label,
+			Value: m[1],
+		})
 	}
 	if complete {
 		u.ParseOutcome = typev1.ParseOutcome_PARSE_OUTCOME_OK

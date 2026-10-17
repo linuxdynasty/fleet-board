@@ -6,13 +6,16 @@ file; it parses text it is given.
 
 - `usage.go`: `ParseUsage` reads the `/usage` box (01 D2) into the
   buckets `current` (`WINDOW_KIND_SHORT`) and `weekly`
-  (`WINDOW_KIND_WEEKLY`), plus the plan off the subscription line.
-  The current window's reset is a time of day and the weekly reset is
-  year-less; both resolve in the machine's timezone. A row the box
-  does not show is `NOT_SHOWN`, a shown row that does not read is
-  `PARSE_FAILED`, and a screen with no usage box fails with no
-  buckets. Nothing is ever guessed. `ParserVersion` bumps when the
-  parser's behavior changes.
+  (`WINDOW_KIND_WEEKLY`), plus the plan off the subscription line and
+  the session block (token counts, turns, subagents) with the "as of"
+  stamp as shown fields, in the harness's own terms. The current
+  window's reset is a time of day and the weekly reset is year-less;
+  both resolve in the machine's timezone. A bucket row the box does
+  not show is `NOT_SHOWN`, a shown row that does not read is
+  `PARSE_FAILED`, a missing session row is left out, and a screen
+  with no usage box fails with no buckets and no fields. Nothing is
+  ever guessed. `ParserVersion` bumps when the parser's behavior
+  changes.
 - `ready.go`: `ParseReady` reads the workspace-trust box (01 C3): the
   "Do you trust this workspace?" question with its "Trust and continue"
   row reads as trust (`FOLDER_UNTRUSTED`); any other screen fails

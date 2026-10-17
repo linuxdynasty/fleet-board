@@ -64,6 +64,44 @@ func TestBuildReading(t *testing.T) {
 	}
 }
 
+// TestBuildReadingMuseSessionFields carries the Muse session block
+// (token counts, turns, subagents, the "as of" stamp) as shown fields,
+// in the harness's own terms.
+func TestBuildReadingMuseSessionFields(t *testing.T) {
+	t.Parallel()
+	pane := &typev1.PaneKey{Server: "fleet-probe", ServerStartId: "s", PaneId: "%0"}
+	screen := loadScreen(t, "../../harness/muse/testdata/1.4.6/usage.txt")
+	r, ok := BuildReading("muse", screen,
+		time.Date(2026, time.October, 14, 12, 0, 0, 0, time.UTC),
+		pane, &typev1.ProbeId{Value: "probe-1"}, &typev1.AccountKey{Value: "key-1"},
+		&typev1.Harness{Name: "muse"})
+	if !ok {
+		t.Fatalf("BuildReading(muse) = false")
+	}
+	want := map[string]string{
+		"Plan":  "Muse Code Example Plan",
+		"Input": "0", "Cached": "0", "Output": "0", "Total": "0",
+		"Turns": "0", "Subagents": "none", "as of": "2:26 PM",
+	}
+	seen := map[string]bool{}
+	for _, f := range r.GetShown().GetFields() {
+		wantValue, ok := want[f.GetLabel()]
+		if !ok {
+			t.Errorf("unexpected shown field %q = %q", f.GetLabel(), f.GetValue())
+			continue
+		}
+		if f.GetValue() != wantValue {
+			t.Errorf("shown field %q = %q, want %q", f.GetLabel(), f.GetValue(), wantValue)
+		}
+		seen[f.GetLabel()] = true
+	}
+	for label := range want {
+		if !seen[label] {
+			t.Errorf("shown field %q is missing", label)
+		}
+	}
+}
+
 // TestBuildReadingNoParser refuses harnesses with no usage parser instead
 // of guessing a reading.
 func TestBuildReadingNoParser(t *testing.T) {
