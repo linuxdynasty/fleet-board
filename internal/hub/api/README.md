@@ -13,7 +13,8 @@ reads (`ListMachines`, `GetMachine`), `GetOperation`, `CapturePane`,
 the session reads (`ListSessions`, `GetSession`), the observed-goal
 reads (`ListGoals`, `GetGoal`), the work-item reads (`ListWorkItems`,
 `GetWorkItem`), the change-request reads (`ListChangeRequests`,
-`GetChangeRequest`), and `GetSystemStatus`
+`GetChangeRequest`), the watched-repo reads (`ListRepos`, `GetRepo`),
+and `GetSystemStatus`
 on the local admin socket.
 
 ```go
@@ -59,7 +60,7 @@ writes, the session-control and approvals calls, `GetServerInfo`,
 `ListMachines`, `GetMachine`, `GetOperation`, `CapturePane`,
 `ListSessions`, `GetSession`, `ListGoals`, `GetGoal`,
 `ListWorkItems`, `GetWorkItem`, `ListChangeRequests`,
-`GetChangeRequest`
+`GetChangeRequest`, `ListRepos`, `GetRepo`
 and `GetSystemStatus`
 answers `unimplemented`
 ([02k](../../../docs/specs/02k-v1-surface-and-cli.md)).
@@ -165,6 +166,18 @@ poll; `update_time` reads as `create_time` until a later row stores the
 hub-change stamp beside the version; the `goal` stays unset until the
 dispatch rows land. `GetChangeRequest` misses an unknown id with
 `RESOURCE_NOT_FOUND`.
+
+`ListRepos` and `GetRepo` need `READ` (02d). Until a later row-12 slice
+brings caller scopes, only a `LOCAL_USER` principal (the admin socket)
+holds it. The store holds the watched repos the owner writes (row 13a):
+`ListRepos` serves the 02c Repo filter (`id`, `enabled`, `host`,
+`hooks_mode`, `integration`, `create_time`, `update_time`); `order_by`
+takes `name` (the `host/path` id) and `ct` and defaults to `name`; pages
+are 50 by default, 500 at most, with a query-bound token good for
+10 minutes. `create_time` is the create write and `update_time` the last
+spec write; the `status` stays unset until a later row computes it.
+`GetRepo` misses an unknown id with `RESOURCE_NOT_FOUND`, and a malformed
+id with `INVALID_ARGUMENT`.
 
 `GetSystemStatus` needs `READ` (02d): until a later row-12 slice brings caller
 scopes, only a `LOCAL_USER` principal (the admin socket) holds it. It lists

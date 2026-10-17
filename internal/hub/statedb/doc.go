@@ -113,6 +113,12 @@
 // reads them all, both on the read pool for the hub API's filter, sort
 // and page.
 //
+// Plan row 12 (repo reads) adds the watched-repo read path over the row
+// 13a repos table: [GetWatchedRepo] reads one by host/path
+// ([ErrRepoUnknown] without a row) and [ListWatchedRepoRows] reads them
+// all, both on the read pool for the hub API's filter, sort and page.
+//
+
 // Plan row 5 (PR 5c2) adds the event history (events migration):
 // [ApplyEvent] stores one event in its writer job (the live, snapshotted
 // epoch, [ErrEventNotCurrent]; the stream's chain, [ErrEventChainBroken];

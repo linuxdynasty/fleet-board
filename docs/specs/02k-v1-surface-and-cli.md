@@ -164,6 +164,9 @@ view, the golden CLI output and the contract tests all start from it.
   or `GetChangeRequest` cannot read the store, and
   `change_requests.issue_refused{reason}` for caller errors. The reads add
   no counter, for the same reason.
+- Logs: `repos.failed{step, err_kind}` when `ListRepos` or `GetRepo`
+  cannot read the store, and `repos.issue_refused{reason}` for caller
+  errors. The reads add no counter, for the same reason.
 - Logs: `system.status_failed{step, err_kind}` when `GetSystemStatus` cannot
   read the store, and `system.issue_refused{reason}` for caller errors. The
   read adds no counter, for the same reason.
