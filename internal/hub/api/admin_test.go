@@ -244,9 +244,9 @@ func TestOtherMethodsOnTheAdminSocketAreUnimplemented(t *testing.T) {
 	t.Parallel()
 	e := newFleetEnv(t, nil)
 	c := api.AdminClient(serveAdmin(t, e, nil))
-	_, err := c.ListIntegrations(context.Background(), connect.NewRequest(&hubv1.ListIntegrationsRequest{}))
+	_, err := c.ListSettings(context.Background(), connect.NewRequest(&hubv1.ListSettingsRequest{}))
 	if code := connect.CodeOf(err); code != connect.CodeUnimplemented {
-		t.Errorf("ListIntegrations: %v, want unimplemented", code)
+		t.Errorf("ListSettings: %v, want unimplemented", code)
 	}
 	_, err = c.GetInsights(context.Background(), connect.NewRequest(&hubv1.GetInsightsRequest{}))
 	if code := connect.CodeOf(err); code != connect.CodeUnimplemented {

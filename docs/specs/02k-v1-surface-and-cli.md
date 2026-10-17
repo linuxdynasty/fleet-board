@@ -178,6 +178,9 @@ view, the golden CLI output and the contract tests all start from it.
 - Logs: `usage.failed{step, err_kind}` when `ListUsageReadings` cannot
   read the store, and `usage.issue_refused{reason}` for caller errors.
   The read adds no counter, for the same reason.
+- Logs: `integrations.failed{step, err_kind}` when `ListIntegrations`
+  cannot read the store, and `integrations.issue_refused{reason}` for
+  caller errors. The read adds no counter, for the same reason.
 - Logs: `system.status_failed{step, err_kind}` when `GetSystemStatus` cannot
   read the store, and `system.issue_refused{reason}` for caller errors. The
   read adds no counter, for the same reason.
