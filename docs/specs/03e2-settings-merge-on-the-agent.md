@@ -134,6 +134,8 @@ network call. The worker is the only writer of `settings_held`.
 | `settings.ignored{reason, generation, held_generation}` (info) | `reason` is `repeat`, `older` or `no_epoch` |
 | `settings.reevaluated{old_hash, new_hash, generation, capped}` (info) | at start, the held settings merged under a changed policy file |
 | `settings.store_failed{err_kind}` (warn) | the save failed; no ack was sent |
+| `settings.failed{step, err_kind, actor}` (error) | hub side: `GetSettings` or `ListSettings` could not read the store |
+| `settings.issue_refused{reason}` (info) | hub side: a `GetSettings` or `ListSettings` caller error; the reads add no counter |
 | `settings.ack_unsent{err_kind, generation}` (info) | the ack could not be queued (`no_stream`, `queue_full`, `ended`, `other`); the hub re-sends at the next `Hello` when it holds no ack for the generation (step 7) |
 | `fleet_agent_settings_applied_generation` (gauge) | the generation held, 0 before any |
 | `fleet_agent_settings_capped_total{field}` | fields the file lowered, at each merge |

@@ -10,6 +10,7 @@ config import and export (`ImportConfig`, `ExportConfig`), the hub-state
 triage writes (`SnoozeTriageItem`, `DismissTriageItem`), the triage
 reads (`ListTriageItems`, `GetTriageItem`), the usage read
 (`ListUsageReadings`), the integration read (`ListIntegrations`), the
+settings reads (`GetSettings`, `ListSettings`), the
 session-control and approvals calls, `GetServerInfo`, the machine
 reads (`ListMachines`, `GetMachine`), `GetOperation`, `CapturePane`,
 the session reads (`ListSessions`, `GetSession`), the observed-goal
@@ -58,7 +59,7 @@ own error lines are debug-level `http.server_error` events, not stderr text.
 `Fleet` embeds the generated `UnimplementedFleetServiceHandler`, so every
 method but `CreateEnrollmentToken`, the watched-repo writes, the machine
 admin writes, the config import and export, the hub-state triage
-writes, the triage reads, the usage read, the integration read, the session-control and approvals calls, `GetServerInfo`,
+writes, the triage reads, the usage read, the integration read, the settings reads, the session-control and approvals calls, `GetServerInfo`,
 `ListMachines`, `GetMachine`, `GetOperation`, `CapturePane`,
 `ListSessions`, `GetSession`, `ListGoals`, `GetGoal`,
 `ListWorkItems`, `GetWorkItem`, `ListChangeRequests`,
@@ -363,6 +364,21 @@ at most, with a query-bound token good for 10 minutes. `create_time`
 is the boot ensure and `update_time` the last spec or status write, so
 it moves on every sync round; the `status` is the syncer's passthrough
 and stays empty until the sync loop reports.
+
+`GetSettings` and `ListSettings` need `READ` (02d). Until a later
+row-12 slice brings caller scopes, only a `LOCAL_USER` principal (the
+admin socket) holds it. The store holds one row per settings layer
+the owner wrote (`settings_layers`): the `fleet` defaults with the
+hub's own choices, and each machine's layer the import or the enroll
+stored (no `group/` row exists until the group management row lands).
+`ListSettings` serves the 02c Settings filter (`layer`, derived from
+the id as `fleet`, `group` or `machine`); `order_by` takes `name`
+(the id) and `ct` and defaults to `name`; pages are 50 by default,
+500 at most, with a query-bound token good for 10 minutes.
+`GetSettings` takes the scope and misses an unstored one with
+`RESOURCE_NOT_FOUND`. `create_time` is the layer's first write and
+`update_time` its last; the `status` carries that stamp, and the
+delivery generations stay unset until the daemon computes them.
 
 `SnoozeTriageItem` and `DismissTriageItem` need `APPROVALS` (02d); until
 plan row 12 brings caller scopes only the local user holds it

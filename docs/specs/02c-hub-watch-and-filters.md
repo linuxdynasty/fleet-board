@@ -442,7 +442,7 @@ write; the `status` stays unset until a later row computes it.
 | Settings (`SETTINGS`, `ListSettings`) | Path | Type | Operators |
 |---|---|---|---|
 | `layer` (D) | `fleet`, `group` or `machine` from the id | string | `=` `in` |
-
+`order_by`: `name` (`id`, the default), `ct`.
 `id` is `"fleet"`, `"group/<label>"` or `"machine/<machine id>"`.
 
 | AuditEntry (`AUDIT`, `ListAuditEntries`) | Path | Type | Operators |

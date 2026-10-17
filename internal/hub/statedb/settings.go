@@ -246,3 +246,89 @@ func UpdateFleetSettings(ctx context.Context, s *store.Store, in UpdateSettingsO
 	}
 	return out, nil
 }
+
+// SettingsLayerStored is one settings_layers row: the scope key
+// ("fleet", "group/<label>" or "machine/<id>") with the stored
+// SettingsSpec protojson, the version and the stamps. Group rows do
+// not exist yet: nothing writes the "group/" scope, so reads miss
+// them until the group management row lands.
+type SettingsLayerStored struct {
+	Scope    string
+	Spec     []byte
+	Version  uint64
+	CreateMs int64
+	UpdateMs int64
+	HubSeq   int64
+}
+
+// scanSettingsLayer reads one settings_layers row in list order, in
+// the same column order as the layer readers, so the list and the
+// single reads see the same values.
+func scanSettingsLayer(rows *sql.Rows) (SettingsLayerStored, error) {
+	var got SettingsLayerStored
+	var spec string
+	var version, createMs, updateMs, hubSeq int64
+	if err := rows.Scan(&got.Scope, &spec, &version, &createMs, &updateMs, &hubSeq); err != nil {
+		return SettingsLayerStored{}, fmt.Errorf("statedb: read settings layer: %w", err)
+	}
+	got.Spec = []byte(spec)
+	got.Version = uint64(version) //nolint:gosec // G115: versions start at 1 and only rise
+	got.CreateMs, got.UpdateMs, got.HubSeq = createMs, updateMs, hubSeq
+	return got, nil
+}
+
+// ListSettingsLayers reads every stored settings layer on the read
+// pool. Fleets hold a handful of layers at most, so the API filters,
+// sorts and pages in memory over this snapshot instead of building
+// per-field SQL.
+func ListSettingsLayers(ctx context.Context, s *store.Store) ([]SettingsLayerStored, error) {
+	var out []SettingsLayerStored
+	err := s.Read(ctx, func(tx *sql.Tx) error {
+		rows, err := tx.QueryContext(ctx, `SELECT scope, spec_json, version,
+			create_ms, update_ms, hub_seq FROM settings_layers`)
+		if err != nil {
+			return fmt.Errorf("statedb: list settings layers: %w", err)
+		}
+		defer func() { _ = rows.Close() }()
+		for rows.Next() {
+			r, err := scanSettingsLayer(rows)
+			if err != nil {
+				return err
+			}
+			out = append(out, r)
+		}
+		return rows.Err()
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// ReadSettingsLayer reads one settings layer by its scope key (found
+// is false when nothing stored that scope).
+func ReadSettingsLayer(ctx context.Context, s *store.Store, scope string) (SettingsLayerStored, bool, error) {
+	var out SettingsLayerStored
+	var found bool
+	err := s.Read(ctx, func(tx *sql.Tx) error {
+		rows, err := tx.QueryContext(ctx, `SELECT scope, spec_json, version,
+			create_ms, update_ms, hub_seq FROM settings_layers WHERE scope = ?`, scope)
+		if err != nil {
+			return fmt.Errorf("statedb: read settings layer: %w", err)
+		}
+		defer func() { _ = rows.Close() }()
+		if !rows.Next() {
+			return rows.Err()
+		}
+		r, err := scanSettingsLayer(rows)
+		if err != nil {
+			return err
+		}
+		out, found = r, true
+		return rows.Err()
+	})
+	if err != nil {
+		return SettingsLayerStored{}, false, err
+	}
+	return out, found, nil
+}
