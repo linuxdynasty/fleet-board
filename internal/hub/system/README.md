@@ -7,8 +7,14 @@ and the DISK_FREE clear level. `New` plus `Evaluator.Update` judges one
 signal per evaluation: the worst measure's state, then the hysteresis (two
 consecutive worse evaluations to leave OK, five minutes in OK to return).
 `Overall` folds signal states into the SystemStatus overall (UNKNOWN does
-not count). It is pure: no state beyond the trackers, no database, no
-telemetry of its own.
+not count). `Fingerprint`, `RaiseAt`/`ShouldRaise`, `ShouldKeep` and
+`SeverityFor` map one verdict to its SYSTEM triage item: the
+`system:<signal>:<subject>` dedupe key, the 05b "Item raised at" opening
+level, the keep rule (an open item stays through WARNING, CRITICAL and
+UNKNOWN and retires only on OK after the five-minute return delay), and the
+severity (DISK_FREE and WRITER_BATCH_LAG at CRITICAL raise
+SEVERITY_CRITICAL since they can lose work). It is pure: no state beyond
+the trackers, no database, no telemetry of its own.
 
 What it applies, in order: UNKNOWN when MAIN has no value (no reading yet,
 a source not enabled, LOG_STORE_USAGE before logs.db exists — never OK,
@@ -27,12 +33,12 @@ of the cap; WRITER_QUEUE_FULL is seconds continuously full, 0 when not
 full), one `Evaluator` per signal on the evaluation goroutine, and the
 `hub.system.evaluate` span.
 
-Not here yet (later slices of issue #41): the evaluation loop, SYSTEM
-triage items with `SystemDetail`, `GetSystemStatus`, the
+Not here yet (later slices of issue #41): the evaluation loop, the SYSTEM
+item writes with `SystemDetail`, `GetSystemStatus`, the
 `fleet_hub_system_signal_state` and `fleet_hub_system_signal_value` gauges,
 subscription-efficiency rollups with `GetInsights`, and `fleetd insights
-rebuild`. Those read `Measures`, so their levels match this table without
-copying it.
+rebuild`. Those read `Measures` and the triage mapping, so their levels
+match this table without copying it.
 
 No-Observability-Change: this slice adds no metric, span or log event; the
 `hub.system.evaluate` span and the System gauges arrive with the wiring
@@ -40,4 +46,6 @@ slice.
 
 Tests: `CGO_ENABLED=0 go test ./internal/hub/system/`. Each measure of
 each signal is driven over each of its levels in a seeded table test, each
-hold proved on both sides, and the hysteresis proved both ways.
+hold proved on both sides, and the hysteresis proved both ways. The triage
+mapping has its own table test: the fingerprint shape, each signal's raise
+level, and each severity including the two CRITICAL exceptions.
