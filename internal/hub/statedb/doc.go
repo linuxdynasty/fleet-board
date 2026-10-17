@@ -137,6 +137,15 @@
 // check; a stale expected_version is a [VersionStale]; a past wake time
 // is [ErrTriagePastUntil], checked after the replay lookup.
 //
+// Plan row 13 (issue #41) adds the SYSTEM item writer: [ListOpenSystemItems]
+// reads the open SYSTEM rows as the open list behind system.Decide, and
+// [ApplySystemChanges] persists one round of Decide writes in one writer
+// transaction (raises at version 1 with a 7-day expiry, updates in place at
+// version + 1 keeping OPEN or SNOOZED, retires closed clearing the snooze).
+// A row that left the open states since the round was decided is skipped;
+// the next round re-decides from the fresh open list. Like the other triage
+// raises it writes no audit row.
+//
 // Plan row 13a (issue #48) adds the config import (config_import_requests
 // migration) and the pending machines (pending_machines migration):
 // [ApplyConfigImport] applies a verified plan in one writer transaction
