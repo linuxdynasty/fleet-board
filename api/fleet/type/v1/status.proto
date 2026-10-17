@@ -181,6 +181,8 @@ enum ReasonCode {
   REASON_CODE_FRESH_CONTEXT_NOT_ALLOWED = 306;
   // A startup screen the agent never answers, in a goal's wait_ready or a
   // probe pane: metadata kind is trust, update, login or release_notes (01b).
+  // A startup screen with no proven class (the Codex daemon-settings prompt)
+  // carries no kind rather than a guessed one.
   // TRUST_PROMPT_SEEN stays as the trust case; update and login are durable
   // per (machine, harness) and go to Triage instead of a retry.
   REASON_CODE_STARTUP_PROMPT_SEEN = 307;

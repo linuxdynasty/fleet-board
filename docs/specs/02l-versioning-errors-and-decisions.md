@@ -139,7 +139,7 @@ fails when it is out of date:
 | 304 | `TRUST_PROMPT_SEEN` |  |
 | 305 | `GOAL_SUBCOMMAND_UNSUPPORTED` | The harness's /goal has no such subcommand (for example pause on Claude Code 2.1.286, which offers only set and clear). |
 | 306 | `FRESH_CONTEXT_NOT_ALLOWED` | GoalSpec.fresh_context on a pane the fleet did not start whose mark has no fresh_context_on_reuse; /clear is destructive (01b) and is never typed into the developer's own context unless they chose it. |
-| 307 | `STARTUP_PROMPT_SEEN` | A startup screen the agent never answers, in a goal's wait_ready or a probe pane: metadata kind is trust, update, login or release_notes (01b). TRUST_PROMPT_SEEN stays as the trust case; update and login are durable per (machine, harness) and go to Triage instead of a retry. |
+| 307 | `STARTUP_PROMPT_SEEN` | A startup screen the agent never answers, in a goal's wait_ready or a probe pane: metadata kind is trust, update, login or release_notes (01b). A startup screen with no proven class (the Codex daemon-settings prompt) carries no kind rather than a guessed one. TRUST_PROMPT_SEEN stays as the trust case; update and login are durable per (machine, harness) and go to Triage instead of a retry. |
 | 308 | `MODEL_NOT_AVAILABLE` | The harness's /model picker has no such model for this account. |
 | 309 | `EFFORT_NOT_SUPPORTED` | The harness's /effort has no such level for this model. |
 | 310 | `GOAL_FILE_WRITE_FAILED` | The agent could not write the goal file (disk, sandbox, path). |
