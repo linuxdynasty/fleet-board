@@ -2,6 +2,9 @@ package api_test
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -154,6 +157,10 @@ func TestListWorkItemsFiltersPagesAndOrders(t *testing.T) {
 		{"label", `label : "fleet"`, []string{"7398"}},
 		{"repo", `repo : "github.com/acme/web"`, []string{"7398"}},
 		{"manual reason", `manual_reason = UNSPECIFIED`, []string{"7400", "7398"}},
+		{"id", `id = "github-1/WORK_ITEM_KIND_ISSUE/acme/web/7398"`, []string{"7398"}},
+		{"id in", `id in ("github-1/WORK_ITEM_KIND_ISSUE/acme/web/7398", "other/KIND/p/k")`, []string{"7398"}},
+		{"create time", `create_time > "2026-10-06T03:00:00Z"`, []string{"7398"}},
+		{"update time", `update_time <= "2026-10-06T04:00:00Z"`, []string{"7400", "7398"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -210,6 +217,32 @@ func TestListWorkItemsFiltersPagesAndOrders(t *testing.T) {
 	next := listWorkItems(t, e, &hubv1.ListWorkItemsRequest{Filter: `stage = READY`, OrderBy: "dispatch_order"})
 	if keys := workItemKeys(next); len(keys) != 1 || keys[0] != "7398" {
 		t.Errorf("dispatch_order matched %v, want [7398] (next up first)", keys)
+	}
+}
+
+// TestWorkItemsGaugeCountsMirrorsByStage is the 03m signal row 12 owes
+// the operator diagnosing an empty or paused queue: one series per
+// integration and hub stage, scraped from the store.
+func TestWorkItemsGaugeCountsMirrorsByStage(t *testing.T) {
+	t.Parallel()
+	e := newFleetEnv(t, localUser("alice"))
+	seedWorkPair(t, e)
+	listWorkItems(t, e, &hubv1.ListWorkItemsRequest{})
+
+	rec := httptest.NewRecorder()
+	e.tel.MetricsHandler(func(*http.Request) bool { return true }).ServeHTTP(rec,
+		httptest.NewRequestWithContext(context.Background(), "GET", "/metrics", nil))
+	body := rec.Body.String()
+	// The exporter adds its otel_scope_* labels between ours, so each
+	// series is matched by its head and its labeled value.
+	for _, want := range []string{
+		`fleet_hub_work_items{integration="github-1",`,
+		`stage="CLOSED"} 1`,
+		`stage="READY"} 1`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("metrics scrape lacks %q", want)
+		}
 	}
 }
 

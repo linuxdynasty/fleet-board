@@ -99,6 +99,46 @@ func ReadWorkItemRow(ctx context.Context, s *store.Store, key string) (WorkItemR
 	return out, nil
 }
 
+// WorkItemStageCount is one (integration, stage) mirror count for the
+// fleet_hub_work_items gauge (03m).
+type WorkItemStageCount struct {
+	Integration string
+	Stage       int32
+	Count       int64
+}
+
+// CountWorkItemsByStage counts mirrors by integration and stage on the
+// read pool, one row per series the gauge reports.
+func CountWorkItemsByStage(ctx context.Context, s *store.Store) ([]WorkItemStageCount, error) {
+	var out []WorkItemStageCount
+	err := s.Read(ctx, func(tx *sql.Tx) error {
+		rows, err := tx.QueryContext(ctx, `SELECT integration, stage, COUNT(*) FROM work_items
+			GROUP BY integration, stage`)
+		if err != nil {
+			return fmt.Errorf("statedb: count work items: %w", err)
+		}
+		defer func() { _ = rows.Close() }()
+		for rows.Next() {
+			var c WorkItemStageCount
+			var stage int64
+			if err := rows.Scan(&c.Integration, &stage, &c.Count); err != nil {
+				return fmt.Errorf("statedb: count work items: %w", err)
+			}
+			v, err := int32Range(stage)
+			if err != nil {
+				return err
+			}
+			c.Stage = v
+			out = append(out, c)
+		}
+		return rows.Err()
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ListWorkItemRows reads every mirror row on the read pool. Fleets hold
 // thousands of items at most, so the API filters, sorts and pages in
 // memory over this snapshot instead of building per-field SQL.

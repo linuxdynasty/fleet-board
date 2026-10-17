@@ -137,8 +137,10 @@ and transitions stay `UNIMPLEMENTED` until the dispatch rows land.
 slice brings caller scopes, only a `LOCAL_USER` principal (the admin socket)
 holds it. The store holds the synced provider mirrors (row 11) with the
 hub's verdicts beside each item: `ListWorkItems` serves the 02c WorkItem
-filter but not `goal` (the goal link needs the dispatch rows, which no row
-stores yet); `order_by` takes `ct`, `ut`, `provider_update_time` and
+filter (`id`, `integration`, `kind`, `repo`, `stage`, `state`, `trusted`,
+`label`, `manual_reason`, `create_time`, `update_time`) but not `goal`
+(the goal link needs the dispatch rows, which no row stores yet);
+`order_by` takes `ct`, `ut`, `provider_update_time` and
 `dispatch_order` and defaults to `ct`, and `dispatch_order` takes no `desc`;
 pages are 50 by default, 500 at most, with a query-bound token good for
 10 minutes. `create_time` is the first sight and `last_sync_time` the last

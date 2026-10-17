@@ -22,10 +22,12 @@ import (
 
 // workItemFilterFields is the 02c WorkItem field table. integration,
 // kind, stage, state, trusted, repo, label and manual_reason are served
-// from the mirror row and its stored item and trust; goal needs the
-// dispatch rows' goal link, which no row stores yet, so it is refused
-// until those rows land.
+// from the mirror row and its stored item and trust, with the common
+// id, create_time and update_time every resource filters on; goal needs
+// the dispatch rows' goal link, which no row stores yet, so it is
+// refused until those rows land.
 var workItemFilterFields = map[string]filterField{
+	"id":          {kind: kindString, ops: map[filterOp]bool{opEq: true, opIn: true}},
 	"integration": {kind: kindString, ops: map[filterOp]bool{opEq: true, opIn: true}},
 	"kind":        {kind: kindEnum, ops: map[filterOp]bool{opEq: true, opIn: true}, enum: workItemKinds},
 	"repo":        {kind: kindString, repeated: true, ops: map[filterOp]bool{opHas: true}},
@@ -37,6 +39,12 @@ var workItemFilterFields = map[string]filterField{
 	"manual_reason": {
 		kind: kindEnum, ops: map[filterOp]bool{opEq: true, opIn: true}, enum: workManualReasons,
 	},
+	"create_time": {kind: kindTime, ops: map[filterOp]bool{
+		opEq: true, opNe: true, opLt: true, opLe: true, opGt: true, opGe: true,
+	}},
+	"update_time": {kind: kindTime, ops: map[filterOp]bool{
+		opEq: true, opNe: true, opLt: true, opLe: true, opGt: true, opGe: true,
+	}},
 }
 
 // workItemKinds is the 02c WorkItemKind short-name set, every value the
@@ -174,6 +182,8 @@ func nodeMatchesWorkItem(n *filterNode, v workItemView) bool {
 // here is unreachable and matches nothing.
 func atomMatchesWorkItem(a filterAtom, v workItemView) bool {
 	switch a.field {
+	case "id":
+		return matchStrings(a.op, v.row.Key, a.strs)
 	case "integration":
 		return matchStrings(a.op, v.row.Integration, a.strs)
 	case "kind":
@@ -190,6 +200,12 @@ func atomMatchesWorkItem(a filterAtom, v workItemView) bool {
 		return matchContains(workItemLabels(v.item), a.strs[0])
 	case "manual_reason":
 		return matchStrings(a.op, workReasonShort(v.row.ManualReason), a.strs)
+	case "create_time":
+		return matchTimes(a.op, v.row.CreateMs, a.times)
+	case "update_time":
+		// update_time reads as create_time until a later row stores the
+		// hub-change stamp.
+		return matchTimes(a.op, v.row.CreateMs, a.times)
 	}
 	return false
 }

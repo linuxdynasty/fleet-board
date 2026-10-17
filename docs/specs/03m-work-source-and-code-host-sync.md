@@ -178,9 +178,11 @@ Provider failures arrive as a `ProviderError` kind (03j has the mapping to RPC c
   ours_time, theirs_time, theirs_author}`, `sync.cursor_reset{resource}`.
 - Row 11 implements this list with four deltas: `not_modified` rounds count
   in `sync_requests_total{status="not_modified"}` (the ratio derives from
-  it, with no separate gauge); the `sync_rate_remaining`, `sync_work_items`
-  and `sync_change_requests` gauges wait for row 12's read API (budgets are
-  already visible in `IntegrationStatus.rate_limits`); `hub.sync.verify_one`
+  it, with no separate gauge); the `sync_work_items` gauge
+  (`fleet_hub_work_items{integration, stage}`) landed with row 12's
+  work-item reads, while `sync_rate_remaining` and `sync_change_requests`
+  still wait for their row 12 slices (budgets are already visible in
+  `IntegrationStatus.rate_limits`); `hub.sync.verify_one`
   lands with row 22's verifier; and four operator logs cover the loop
   itself: `sync.round_failed{integration, error}`, `sync.provider_error`
   (an unexpected provider kind: a hub bug), `sync.status_failed`

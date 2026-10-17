@@ -92,6 +92,7 @@ type Fleet struct {
 	sessCmds         metric.Int64Counter
 	approvals        metric.Int64Counter
 	repos            metric.Int64Counter
+	workItems        metric.Int64ObservableGauge
 }
 
 // NewFleet builds the service.
@@ -138,7 +139,42 @@ func NewFleet(opts FleetOptions) (*Fleet, error) {
 	if err != nil {
 		return nil, fmt.Errorf("api: repo counter: %w", err)
 	}
+	f.workItems, err = f.tel.Meter(scope).Int64ObservableGauge(f.tel.MetricPrefix()+"_work_items",
+		metric.WithDescription("Synced work items by integration and hub stage (03m)."))
+	if err != nil {
+		return nil, fmt.Errorf("api: work items gauge: %w", err)
+	}
+	if _, err = f.tel.Meter(scope).RegisterCallback(f.observeWorkItems, f.workItems); err != nil {
+		return nil, fmt.Errorf("api: work items gauge: %w", err)
+	}
 	return f, nil
+}
+
+// observeWorkItems reports the mirror counts by integration and stage for
+// the fleet_hub_work_items gauge (03m). A store the scrape cannot read
+// reports nothing; the read path's own work_items.failed covers the
+// diagnosis. Stage labels are the closed 02c short names.
+func (f *Fleet) observeWorkItems(ctx context.Context, o metric.Observer) error {
+	for _, c := range workItemStageCounts(ctx, f.store) {
+		stage := "UNKNOWN"
+		if _, ok := hubv1.WorkStage_name[c.Stage]; ok {
+			stage = workStageShort(c.Stage)
+		}
+		o.ObserveInt64(f.workItems, c.Count, metric.WithAttributes(
+			attribute.String("integration", c.Integration),
+			attribute.String("stage", stage)))
+	}
+	return nil
+}
+
+// workItemStageCounts returns the mirror counts for the gauge, empty when
+// the scrape cannot read the store.
+func workItemStageCounts(ctx context.Context, s *store.Store) []statedb.WorkItemStageCount {
+	counts, err := statedb.CountWorkItemsByStage(ctx, s)
+	if err != nil {
+		return nil
+	}
+	return counts
 }
 
 // Handler is the Connect route of the service, for a mux.
