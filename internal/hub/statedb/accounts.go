@@ -151,6 +151,7 @@ func GetAccount(ctx context.Context, s *store.Store, id string) (AccountStored, 
 // AccountRow is one account for the export and the import diff, in
 // harness/display-name order.
 type AccountRow struct {
+	ID          string
 	Harness     string
 	Provider    string
 	DisplayName string
@@ -162,7 +163,7 @@ type AccountRow struct {
 func ListAccountRows(ctx context.Context, s *store.Store) ([]AccountRow, error) {
 	var out []AccountRow
 	err := s.Read(ctx, func(tx *sql.Tx) error {
-		rows, err := tx.QueryContext(ctx, `SELECT harness, provider, display_name, spec_json
+		rows, err := tx.QueryContext(ctx, `SELECT id, harness, provider, display_name, spec_json
 			FROM accounts ORDER BY harness, display_name`)
 		if err != nil {
 			return err
@@ -171,7 +172,7 @@ func ListAccountRows(ctx context.Context, s *store.Store) ([]AccountRow, error) 
 		for rows.Next() {
 			var r AccountRow
 			var spec string
-			if err := rows.Scan(&r.Harness, &r.Provider, &r.DisplayName, &spec); err != nil {
+			if err := rows.Scan(&r.ID, &r.Harness, &r.Provider, &r.DisplayName, &spec); err != nil {
 				return err
 			}
 			r.Spec = []byte(spec)
@@ -181,31 +182,6 @@ func ListAccountRows(ctx context.Context, s *store.Store) ([]AccountRow, error) 
 	})
 	if err != nil {
 		return nil, fmt.Errorf("statedb: list accounts: %w", err)
-	}
-	return out, nil
-}
-
-// ListAccountIDs reads every account id in id order, so subject enumeration
-// (05b GetSystemStatus) renders a stable list.
-func ListAccountIDs(ctx context.Context, s *store.Store) ([]string, error) {
-	var out []string
-	err := s.Read(ctx, func(tx *sql.Tx) error {
-		rows, err := tx.QueryContext(ctx, `SELECT id FROM accounts ORDER BY id`)
-		if err != nil {
-			return err
-		}
-		defer func() { _ = rows.Close() }()
-		for rows.Next() {
-			var id string
-			if err := rows.Scan(&id); err != nil {
-				return err
-			}
-			out = append(out, id)
-		}
-		return rows.Err()
-	})
-	if err != nil {
-		return nil, fmt.Errorf("statedb: list account ids: %w", err)
 	}
 	return out, nil
 }

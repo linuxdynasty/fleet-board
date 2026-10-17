@@ -3,10 +3,11 @@ package api
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sort"
-	"time"
 
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/encoding/protojson"
 
 	hubv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/hub/v1"
 	typev1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/type/v1"
@@ -49,9 +50,9 @@ func (f *Fleet) GetSystemStatus(ctx context.Context, _ *connect.Request[hubv1.Ge
 	}
 	actor := who.GetId().GetValue()
 	now := f.hubNow()
-	verdicts, err := f.systemVerdicts(ctx, now)
+	verdicts, step, err := f.systemVerdicts(ctx)
 	if err != nil {
-		return nil, f.sysStatusFailed(ctx, actor, "store", err)
+		return nil, f.sysStatusFailed(ctx, actor, step, err)
 	}
 	return connect.NewResponse(&hubv1.GetSystemStatusResponse{
 		Status: system.Snapshot(now, buildinfo.Version, verdicts),
@@ -59,16 +60,21 @@ func (f *Fleet) GetSystemStatus(ctx context.Context, _ *connect.Request[hubv1.Ge
 }
 
 // systemVerdicts enumerates one UNKNOWN verdict per (kind, subject): the
-// hub-wide signals, then per machine, account and integration in id order,
-// so the served list is stable.
-func (f *Fleet) systemVerdicts(ctx context.Context, now time.Time) ([]system.Verdict, error) {
+// hub-wide signals, then per machine, per FLEET-mode account and per
+// integration in id order, so the served list is stable. INTERACTIVE_ONLY
+// accounts are never probed (05b section 8), so they raise no freshness
+// signal. No verdict carries Since yet: since_time means when the state
+// last changed, and no transition is known until the evaluation loop
+// lands, so it stays unset rather than stamping every poll. The step names
+// the failure for the status log (store, decode).
+func (f *Fleet) systemVerdicts(ctx context.Context) ([]system.Verdict, string, error) {
 	var out []system.Verdict
 	for _, kind := range hubSignals {
-		out = append(out, system.Verdict{Kind: kind, State: hubv1.SystemState_SYSTEM_STATE_UNKNOWN, Since: now})
+		out = append(out, system.Verdict{Kind: kind, State: hubv1.SystemState_SYSTEM_STATE_UNKNOWN})
 	}
 	machines, err := statedb.ListMachineRows(ctx, f.store)
 	if err != nil {
-		return nil, err
+		return nil, "store", err
 	}
 	sort.Slice(machines, func(i, j int) bool { return machines[i].MachineID < machines[j].MachineID })
 	for _, m := range machines {
@@ -76,33 +82,52 @@ func (f *Fleet) systemVerdicts(ctx context.Context, now time.Time) ([]system.Ver
 			out = append(out, system.Verdict{
 				Kind:    kind,
 				Machine: &typev1.MachineId{Value: m.MachineID},
-				State:   hubv1.SystemState_SYSTEM_STATE_UNKNOWN, Since: now,
+				State:   hubv1.SystemState_SYSTEM_STATE_UNKNOWN,
 			})
 		}
 	}
-	accounts, err := statedb.ListAccountIDs(ctx, f.store)
+	accounts, err := statedb.ListAccountRows(ctx, f.store)
 	if err != nil {
-		return nil, err
+		return nil, "store", err
 	}
-	for _, id := range accounts {
+	for _, a := range accounts {
+		probed, err := accountProbed(a.Spec)
+		if err != nil {
+			return nil, "decode", fmt.Errorf("api: system status: account %s: %w", a.ID, err)
+		}
+		if !probed {
+			continue
+		}
 		out = append(out, system.Verdict{
 			Kind:    hubv1.SystemSignalKind_SYSTEM_SIGNAL_KIND_USAGE_PROBE_FRESHNESS,
-			Account: &typev1.AccountId{Value: id},
-			State:   hubv1.SystemState_SYSTEM_STATE_UNKNOWN, Since: now,
+			Account: &typev1.AccountId{Value: a.ID},
+			State:   hubv1.SystemState_SYSTEM_STATE_UNKNOWN,
 		})
 	}
 	integrations, err := statedb.ListIntegrationRows(ctx, f.store)
 	if err != nil {
-		return nil, err
+		return nil, "store", err
 	}
 	for _, in := range integrations {
 		out = append(out, system.Verdict{
 			Kind:        hubv1.SystemSignalKind_SYSTEM_SIGNAL_KIND_INTEGRATION_SYNC_LAG,
 			Integration: &typev1.IntegrationId{Value: in.ID},
-			State:       hubv1.SystemState_SYSTEM_STATE_UNKNOWN, Since: now,
+			State:       hubv1.SystemState_SYSTEM_STATE_UNKNOWN,
 		})
 	}
-	return out, nil
+	return out, "", nil
+}
+
+// accountProbed reports whether the stored account spec belongs to a probed
+// account: every mode but INTERACTIVE_ONLY (pacing's excludedCause agrees:
+// only that mode never dispatches, and 03b probes nothing with probing
+// off). A spec the hub cannot decode is the hub's failure, INTERNAL.
+func accountProbed(specJSON []byte) (bool, error) {
+	var spec hubv1.AccountSpec
+	if err := protojson.Unmarshal(specJSON, &spec); err != nil {
+		return false, err
+	}
+	return spec.GetMode() != hubv1.AccountMode_ACCOUNT_MODE_INTERACTIVE_ONLY, nil
 }
 
 // sysStatusRefused logs a GetSystemStatus caller error by its reason and

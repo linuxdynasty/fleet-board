@@ -96,7 +96,6 @@ delivery (`DONE` with no `delivered_time`) reads apart from one after. The
 per-kind result decode (`output_text`, `failed_checks`) and the `LOGS`-scope
 redaction stay unset until their slice, as does `trace_id`.
 
-<<<<<<< HEAD
 `ListSessions` and `GetSession` need `READ` (02d). Until a later row-12
 slice brings caller scopes, only a `LOCAL_USER` principal (the admin socket)
 holds it. The store holds hub-started sessions only, with the create-time
@@ -116,11 +115,12 @@ an unknown id with `SESSION_NOT_FOUND`.
 `GetSystemStatus` needs `READ` (02d): until a later row-12 slice brings caller
 scopes, only a `LOCAL_USER` principal (the admin socket) holds it. It lists
 one signal per (kind, subject) — the five hub-wide signals, three per
-machine, one per account and one per integration — each with every measure's
+machine, one per FLEET-mode account (`INTERACTIVE_ONLY` accounts are never
+probed) and one per integration — each with every measure's
 unit, direction, thresholds, holds and clear level from the 05b table. Every
-verdict reads UNKNOWN with its value unset until the evaluation loop lands;
-the open triage item, `hub_start_time`, exporters and `watch_subscribers`
-stay unset until their slice.
+verdict reads UNKNOWN with its value and `since_time` unset until the
+evaluation loop lands; the open triage item, `hub_start_time`, exporters and
+`watch_subscribers` stay unset until their slice.
 
 `CreateEnrollmentToken` needs `ADMIN` (02d). Until plan row 12 brings scopes,
 only a `LOCAL_USER` principal (the admin socket) holds it: no principal is

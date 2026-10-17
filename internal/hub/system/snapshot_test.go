@@ -195,12 +195,15 @@ func TestSnapshotOverallIgnoresUnknown(t *testing.T) {
 	t.Parallel()
 	got := system.Snapshot(snapNow, "vtest", []system.Verdict{{
 		Kind:  hubv1.SystemSignalKind_SYSTEM_SIGNAL_KIND_BACKUP_AGE,
-		State: hubv1.SystemState_SYSTEM_STATE_UNKNOWN, Since: snapNow,
+		State: hubv1.SystemState_SYSTEM_STATE_UNKNOWN,
 	}})
 	if got.GetOverall() != hubv1.SystemState_SYSTEM_STATE_UNKNOWN {
 		t.Errorf("overall = %v, want UNKNOWN", got.GetOverall())
 	}
 	if len(got.GetSignals()) != 1 {
 		t.Fatalf("signals = %d, want 1", len(got.GetSignals()))
+	}
+	if got.GetSignals()[0].GetSinceTime() != nil {
+		t.Errorf("since_time = %v, want unset (no transition known)", got.GetSignals()[0].GetSinceTime())
 	}
 }

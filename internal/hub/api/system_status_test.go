@@ -57,6 +57,12 @@ func TestGetSystemStatusListsEverySignalUnknown(t *testing.T) {
 		if s.GetState() != hubv1.SystemState_SYSTEM_STATE_UNKNOWN {
 			t.Errorf("%v state = %v, want UNKNOWN", s.GetKind(), s.GetState())
 		}
+		if s.GetSinceTime() != nil {
+			t.Errorf("%v since_time = %v, want unset (no transition known)", s.GetKind(), s.GetSinceTime())
+		}
+		if !s.GetObservedTime().AsTime().Equal(fleetNow) {
+			t.Errorf("%v observed_time = %v, want %v", s.GetKind(), s.GetObservedTime().AsTime(), fleetNow)
+		}
 		if len(s.GetMeasures()) == 0 {
 			t.Errorf("%v has no measures", s.GetKind())
 		}
@@ -134,6 +140,34 @@ func TestGetSystemStatusCarriesSubjects(t *testing.T) {
 	}
 	if len(integrations) != 1 || integrations["github"] != 1 {
 		t.Errorf("integration signals = %v, want one for github", integrations)
+	}
+}
+
+// TestGetSystemStatusSkipsInteractiveOnlyAccounts pins the 05b subject:
+// USAGE_PROBE_FRESHNESS covers FLEET-mode accounts, so an interactive-only
+// account raises no (permanently UNKNOWN) signal.
+func TestGetSystemStatusSkipsInteractiveOnlyAccounts(t *testing.T) {
+	t.Parallel()
+	e := newFleetEnv(t, localUser("alice"), trusted(false))
+	fleetAcct := createOwnerAccount(t, e, "req-sys-1", accountSpec())
+	spare := accountSpec()
+	spare.DisplayName = "spare"
+	spare.Mode = hubv1.AccountMode_ACCOUNT_MODE_INTERACTIVE_ONLY
+	createOwnerAccount(t, e, "req-sys-2", spare)
+	got := getSystemStatus(t, e)
+	fresh := 0
+	for _, s := range got.GetSignals() {
+		if s.GetKind() != hubv1.SystemSignalKind_SYSTEM_SIGNAL_KIND_USAGE_PROBE_FRESHNESS {
+			continue
+		}
+		fresh++
+		if s.GetAccount().GetValue() != fleetAcct.GetId().GetValue() {
+			t.Errorf("freshness account = %q, want the FLEET-mode account %q",
+				s.GetAccount().GetValue(), fleetAcct.GetId().GetValue())
+		}
+	}
+	if fresh != 1 {
+		t.Errorf("freshness signals = %d, want 1 (no signal for the interactive-only account)", fresh)
 	}
 }
 

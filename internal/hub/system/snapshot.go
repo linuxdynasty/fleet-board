@@ -23,7 +23,8 @@ type Verdict struct {
 	Main        Reading
 	CommitTime  Reading
 	QueueFull   Reading
-	// Since is when the state last changed.
+	// Since is when the state last changed; zero until a transition is
+	// known, which leaves since_time unset on the wire.
 	Since time.Time
 }
 
@@ -62,18 +63,24 @@ func Snapshot(now time.Time, hubVersion string, verdicts []Verdict) *hubv1.Syste
 }
 
 // signalProto renders one verdict: the subject ids, the state, MAIN first,
-// and one SystemMeasure per [Measures] entry.
+// and one SystemMeasure per [Measures] entry. SinceTime is set only when
+// the verdict knows its last transition; a zero Since leaves it unset
+// rather than stamping the poll time as a transition.
 func signalProto(now time.Time, v Verdict) *hubv1.SystemSignal {
 	ms := Measures(v.Kind)
 	out := make([]*hubv1.SystemMeasure, 0, len(ms))
 	for _, m := range ms {
 		out = append(out, measureProto(m, v.reading(m.Kind)))
 	}
-	return &hubv1.SystemSignal{
+	s := &hubv1.SystemSignal{
 		Kind: v.Kind, Machine: v.Machine, Account: v.Account, Integration: v.Integration,
 		State: v.State, Measures: out,
-		SinceTime: timestamppb.New(v.Since), ObservedTime: timestamppb.New(now),
+		ObservedTime: timestamppb.New(now),
 	}
+	if !v.Since.IsZero() {
+		s.SinceTime = timestamppb.New(v.Since)
+	}
+	return s
 }
 
 // measureProto renders one measure's levels: a nil threshold means the
