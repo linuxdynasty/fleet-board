@@ -67,6 +67,16 @@ all 107 names in the recorded 2.1.296 catalog
 (`testdata/2.1.296/help-commands-catalog.tsv`); the catalog test fails
 when a later catalog adds a name with no reviewed expectation.
 
+The Muse adapter (`internal/harness/muse`, row 8, issue #36) does
+the same: the table's own examples keep their class (`/usage` observe,
+`/model` session, `/goal` goal, `/review` review, `/quit`
+destructive) and every other recorded command is deny. The verdicts cover
+all 49 bare names in the recorded 1.4.4 and 1.4.7 catalogs
+(`testdata/1.4.4/help-commands-catalog.tsv`,
+`testdata/1.4.7/help-commands-catalog.tsv`; rows carry argument hints,
+so only the name before the first space is checked); the catalog test
+fails when a later catalog adds a name with no reviewed expectation.
+
 ## Usage parsers (D2)
 
 Each adapter reads its own usage screen into the standardized buckets of
