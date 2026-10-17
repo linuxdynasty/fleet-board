@@ -98,8 +98,11 @@ func (f *Fleet) CreateSession(ctx context.Context, req *connect.Request[hubv1.Cr
 		if err != nil {
 			return mapOutboxError(err)
 		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO hub_sessions(session_id, machine_id, create_time)
-			VALUES (?, ?, ?)`, id, m.GetMachine().GetValue(), now.UnixMilli()); err != nil {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO hub_sessions(session_id, machine_id, create_time,
+			name, server, owner_id, owner_kind, owner_name)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, id, m.GetMachine().GetValue(), now.UnixMilli(),
+			m.GetName(), serverShort(m.GetServer()),
+			who.GetId().GetValue(), roleKindName(who.GetKind()), who.GetName()); err != nil {
 			return fmt.Errorf("record session: %w", err)
 		}
 		if err := logRequest(ctx, tx, actor, m.GetRequestId(), op.CommandID, sum[:], now); err != nil {

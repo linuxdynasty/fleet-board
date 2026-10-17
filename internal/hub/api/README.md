@@ -9,7 +9,8 @@ writes (`UpdateMachine`, `RevokeMachine`, `DeleteMachine`), the
 config import and export (`ImportConfig`, `ExportConfig`), the hub-state
 triage writes (`SnoozeTriageItem`, `DismissTriageItem`), the
 session-control and approvals calls, `GetServerInfo`, the machine
-reads (`ListMachines`, `GetMachine`), and `GetOperation` on the
+reads (`ListMachines`, `GetMachine`), `GetOperation`, `CapturePane`,
+and the session reads (`ListSessions`, `GetSession`) on the
 local admin socket.
 
 ```go
@@ -52,7 +53,8 @@ own error lines are debug-level `http.server_error` events, not stderr text.
 method but `CreateEnrollmentToken`, the watched-repo writes, the machine
 admin writes, the config import and export, the hub-state triage
 writes, the session-control and approvals calls, `GetServerInfo`,
-`ListMachines`, `GetMachine` and `GetOperation`
+`ListMachines`, `GetMachine`, `GetOperation`, `CapturePane`,
+`ListSessions` and `GetSession`
 answers `unimplemented`
 ([02k](../../../docs/specs/02k-v1-surface-and-cli.md)).
 `Handler()` is its Connect route (requests capped at 1 MiB), ready for a
@@ -93,6 +95,22 @@ one outbox row with the ack time as `delivered_time`, so an expiry before
 delivery (`DONE` with no `delivered_time`) reads apart from one after. The
 per-kind result decode (`output_text`, `failed_checks`) and the `LOGS`-scope
 redaction stay unset until their slice, as does `trace_id`.
+
+`ListSessions` and `GetSession` need `READ` (02d). Until a later row-12
+slice brings caller scopes, only a `LOCAL_USER` principal (the admin socket)
+holds it. The store holds hub-started sessions only, with the create-time
+record each `CreateSession` call stored (migration 21): `ListSessions`
+serves the 02c Session filter but not `harness`, `goal` or
+`available_for_work` (they need the pane mirror, which no row stores yet);
+`order_by` takes `name` and `ct` and defaults to name; pages are 50 by
+default, 500 at most, with a query-bound token good for 10 minutes. Every
+row reads `LIVE` with version 1 and `update_time` as `create_time` until
+the mirror learns ends and moves the version; windows, panes, attached
+clients and log info stay unset until their rows land. The rows reflect the
+create record, not delivery: a session whose command never reached its
+machine still reads `LIVE`, and the create call's `Operation`
+(`GetOperation`) tells whether it was delivered. `GetSession` misses
+an unknown id with `SESSION_NOT_FOUND`.
 
 `CreateEnrollmentToken` needs `ADMIN` (02d). Until plan row 12 brings scopes,
 only a `LOCAL_USER` principal (the admin socket) holds it: no principal is
