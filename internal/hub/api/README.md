@@ -12,7 +12,8 @@ session-control and approvals calls, `GetServerInfo`, the machine
 reads (`ListMachines`, `GetMachine`), `GetOperation`, `CapturePane`,
 the session reads (`ListSessions`, `GetSession`), the observed-goal
 reads (`ListGoals`, `GetGoal`), the work-item reads (`ListWorkItems`,
-`GetWorkItem`), and `GetSystemStatus`
+`GetWorkItem`), the change-request reads (`ListChangeRequests`,
+`GetChangeRequest`), and `GetSystemStatus`
 on the local admin socket.
 
 ```go
@@ -57,7 +58,8 @@ admin writes, the config import and export, the hub-state triage
 writes, the session-control and approvals calls, `GetServerInfo`,
 `ListMachines`, `GetMachine`, `GetOperation`, `CapturePane`,
 `ListSessions`, `GetSession`, `ListGoals`, `GetGoal`,
-`ListWorkItems`, `GetWorkItem`
+`ListWorkItems`, `GetWorkItem`, `ListChangeRequests`,
+`GetChangeRequest`
 and `GetSystemStatus`
 answers `unimplemented`
 ([02k](../../../docs/specs/02k-v1-surface-and-cli.md)).
@@ -149,6 +151,20 @@ hub-change stamp beside the version; the `goal` and `dispatch_block` stay
 unset until the dispatch rows land. `GetWorkItem` misses an unknown id with
 `RESOURCE_NOT_FOUND`, and `include_body` (the provider body fetch) stays
 `UNIMPLEMENTED` until a row builds the provider call.
+
+`ListChangeRequests` and `GetChangeRequest` need `READ` (02d). Until a later
+row-12 slice brings caller scopes, only a `LOCAL_USER` principal (the admin
+socket) holds it. The store holds the synced provider mirrors (row 11):
+`ListChangeRequests` serves the 02c ChangeRequest filter (`id`,
+`integration`, `repo`, `state`, `create_time`, `update_time`) but not `goal`
+or `owned` (the goal link needs the dispatch rows, which no row stores yet);
+`order_by` takes `ct`, `ut` and `provider_update_time` and defaults to `ct`;
+pages are 50 by default, 500 at most, with a query-bound token good for
+10 minutes. `create_time` is the first sight and `last_sync_time` the last
+poll; `update_time` reads as `create_time` until a later row stores the
+hub-change stamp beside the version; the `goal` stays unset until the
+dispatch rows land. `GetChangeRequest` misses an unknown id with
+`RESOURCE_NOT_FOUND`.
 
 `GetSystemStatus` needs `READ` (02d): until a later row-12 slice brings caller
 scopes, only a `LOCAL_USER` principal (the admin socket) holds it. It lists

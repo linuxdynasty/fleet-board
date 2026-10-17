@@ -49,7 +49,8 @@
     "triage.": "docs/specs/03d-triage-sessions-logs.md",
     "typing.": "docs/specs/05b-observability.md",
     "wake.": "docs/specs/03-workflows.md",
-    "work_items.": "docs/specs/02k-v1-surface-and-cli.md"
+    "work_items.": "docs/specs/02k-v1-surface-and-cli.md",
+    "change_requests.": "docs/specs/02k-v1-surface-and-cli.md"
   },
   "metric_prefixes": [
     "fleet_hub",
