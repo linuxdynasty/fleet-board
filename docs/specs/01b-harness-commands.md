@@ -50,7 +50,7 @@ a stricter class, never a looser one.
 ## Command classification (C4)
 
 The Codex adapter (`internal/harness/codex`, row 8, issue #36) classifies one
-slash command with `Classify`: the table's own examples keep their class
+slash command at a time: the table's own examples keep their class
 (`/status` observe, `/model` session, `/goal` goal, `/review` review, `/exit`
 destructive) and every other recorded command is deny. The verdicts cover all
 49 names in the recorded 0.160.0 catalog
