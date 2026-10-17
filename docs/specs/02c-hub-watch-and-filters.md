@@ -259,7 +259,9 @@ Served so far (row 12 slices): `machine`, `name`, `started_by_fleet` and
 `state` filters read the hub-started sessions each `CreateSession` stored;
 `harness`, `goal` and `available_for_work` are refused (`FILTER_INVALID`)
 until the pane mirror lands. Every stored row reads `LIVE` until the mirror
-learns ends.
+learns ends. The rows reflect the create record, not delivery: a session
+whose command never reached its machine still reads `LIVE`; the create
+call's `Operation` (`GetOperation`) tells whether it was delivered.
 
 | PaneSummary (`PANE_SUMMARIES`, Watch only) | Path | Type | Operators |
 |---|---|---|---|

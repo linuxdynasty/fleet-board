@@ -106,7 +106,10 @@ serves the 02c Session filter but not `harness`, `goal` or
 default, 500 at most, with a query-bound token good for 10 minutes. Every
 row reads `LIVE` with version 1 and `update_time` as `create_time` until
 the mirror learns ends and moves the version; windows, panes, attached
-clients and log info stay unset until their rows land. `GetSession` misses
+clients and log info stay unset until their rows land. The rows reflect the
+create record, not delivery: a session whose command never reached its
+machine still reads `LIVE`, and the create call's `Operation`
+(`GetOperation`) tells whether it was delivered. `GetSession` misses
 an unknown id with `SESSION_NOT_FOUND`.
 
 `CreateEnrollmentToken` needs `ADMIN` (02d). Until plan row 12 brings scopes,

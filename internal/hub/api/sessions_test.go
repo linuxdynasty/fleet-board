@@ -115,6 +115,46 @@ func TestListSessionsFilters(t *testing.T) {
 	}
 }
 
+// TestListSessionsFiltersByIdAndTime covers the 02c common fields: every
+// resource filters on id, create_time and update_time, and update_time
+// reads as create_time until the mirror can move the version.
+func TestListSessionsFiltersByIdAndTime(t *testing.T) {
+	t.Parallel()
+	e := newFleetEnv(t, localUser("alice"))
+	enrollMachine(t, e, "m-one")
+	alpha := createSession(t, e, "m-one", "alpha")
+	beta := createSession(t, e, "m-one", "beta")
+
+	for _, tc := range []struct {
+		name   string
+		filter string
+		want   []string
+	}{
+		{"id equals", `id = "` + alpha + `"`, []string{"alpha"}},
+		{"id in", `id in ("` + alpha + `", "` + beta + `")`, []string{"alpha", "beta"}},
+		{"created at", `create_time = "2026-10-06T04:00:00Z"`, []string{"alpha", "beta"}},
+		{"created before", `create_time < "2026-10-06T04:00:00Z"`, nil},
+		{"updated is created", `update_time = "2026-10-06T04:00:00Z"`, []string{"alpha", "beta"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			msg := listSessions(t, e, &hubv1.ListSessionsRequest{Filter: tc.filter})
+			var got []string
+			for _, s := range msg.GetSessions() {
+				got = append(got, s.GetStatus().GetName())
+			}
+			if len(got) != len(tc.want) {
+				t.Fatalf("names %v, want %v", got, tc.want)
+			}
+			for i := range got {
+				if got[i] != tc.want[i] {
+					t.Fatalf("names %v, want %v", got, tc.want)
+				}
+			}
+		})
+	}
+}
+
 // TestListSessionsRefusesMirrorFilters is the unserved half of the 02c
 // Session catalogue: pane-mirror fields stay FILTER_INVALID.
 func TestListSessionsRefusesMirrorFilters(t *testing.T) {

@@ -22,8 +22,15 @@ import (
 // harness, goal and available_for_work need the pane mirror, which no row
 // stores yet, so they are refused until it lands.
 var sessionFilterFields = map[string]filterField{
-	"machine":            {kind: kindString, ops: map[filterOp]bool{opEq: true, opNe: true, opIn: true}},
-	"name":               {kind: kindString, ops: map[filterOp]bool{opEq: true, opNe: true}},
+	"machine": {kind: kindString, ops: map[filterOp]bool{opEq: true, opNe: true, opIn: true}},
+	"name":    {kind: kindString, ops: map[filterOp]bool{opEq: true, opNe: true}},
+	"id":      {kind: kindString, ops: map[filterOp]bool{opEq: true, opIn: true}},
+	"create_time": {kind: kindTime, ops: map[filterOp]bool{
+		opEq: true, opNe: true, opLt: true, opLe: true, opGt: true, opGe: true,
+	}},
+	"update_time": {kind: kindTime, ops: map[filterOp]bool{
+		opEq: true, opNe: true, opLt: true, opLe: true, opGt: true, opGe: true,
+	}},
 	"started_by_fleet":   {kind: kindBool, ops: map[filterOp]bool{opEq: true}},
 	"harness":            {unserved: "the hub stores no pane mirror yet"},
 	"goal":               {unserved: "the hub stores no pane mirror yet"},
@@ -78,6 +85,12 @@ func atomMatchesSession(a filterAtom, r statedb.SessionRow) bool {
 		return matchStrings(a.op, r.MachineID, a.strs)
 	case "name":
 		return matchStrings(a.op, r.Name, a.strs)
+	case "id":
+		return matchStrings(a.op, r.SessionID, a.strs)
+	case "create_time", "update_time":
+		// update_time is create_time: nothing moves the version yet, so
+		// the stamp never advances past the create call.
+		return matchTimes(a.op, r.CreatedMillis, a.times)
 	case "started_by_fleet":
 		return a.bools[0]
 	case "state":
