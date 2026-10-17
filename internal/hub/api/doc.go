@@ -29,7 +29,9 @@
 // newest first), [Fleet.ListIntegrations] (the configured integrations
 // in id order), [Fleet.GetSettings], [Fleet.ListSettings] (the stored
 // settings layers in id order), [Fleet.ListAuditEntries] (the stored
-// audit rows, newest first), [Fleet.ListWorkItems],
+// audit rows, newest first), [Fleet.GetStoreStatus] (the hub's storage:
+// state.db, the newest backup, free disk, start and build),
+// [Fleet.ListWorkItems],
 // [Fleet.GetWorkItem] (synced mirrors with the hub's verdicts),
 // [Fleet.ListChangeRequests], [Fleet.GetChangeRequest] (synced mirrors
 // with the provider change request), [Fleet.ListRepos], [Fleet.GetRepo]
@@ -37,8 +39,8 @@
 // [Fleet.GetAccount] (owner-created accounts with the stored spec, usage
 // and pacing unset) and
 // [Fleet.GetSystemStatus] built; every other method is Unimplemented
-// (02k): it checks the caller ([PrincipalFrom], ADMIN for enrollment
-// and revoke/delete, SETTINGS for repos, update and import, READ for
+// (02k): it checks the caller ([PrincipalFrom], ADMIN for enrollment,
+// revoke/delete and store status, SETTINGS for repos, update and import, READ for
 // export, the machine, operation, session, goal, work-item,
 // change-request, repo, account and system reads and the
 // visible capture (LOGS for its scrollback and the account raw screen), READ|APPROVALS for the triage reads and

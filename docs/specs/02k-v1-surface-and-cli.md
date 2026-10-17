@@ -188,6 +188,9 @@ view, the golden CLI output and the contract tests all start from it.
 - Logs: `audit.failed{step, err_kind}` when `ListAuditEntries` cannot
   read the store, and `audit.issue_refused{reason}` for caller errors.
   The read adds no counter, for the same reason.
+- Logs: `store.failed{step, err_kind}` when `GetStoreStatus` cannot
+  read the state dir, and `store.issue_refused{reason}` for caller
+  errors. The read adds no counter, for the same reason.
 - Logs: `system.status_failed{step, err_kind}` when `GetSystemStatus` cannot
   read the store, and `system.issue_refused{reason}` for caller errors. The
   read adds no counter, for the same reason.
