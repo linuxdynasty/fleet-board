@@ -393,6 +393,12 @@ until the dispatch rows link goals.
 
 `order_by`: `name` (`id`), `ct`. The id is `host/path`.
 
+Served so far (row 12 slices): `id` (the `host/path`), `enabled`, `host`,
+`hooks_mode`, `integration` (the spec's code host) and the time filters read
+the watched rows with their stored spec; the default `ListRepos` order is
+`name`. `create_time` is the create write and `update_time` the last spec
+write; the `status` stays unset until a later row computes it.
+
 | StoredSession (`ListStoredSessions`; no Watch topic) | Path | Type | Operators |
 |---|---|---|---|
 | `machine` | `machine` | string | `=` `in` |
