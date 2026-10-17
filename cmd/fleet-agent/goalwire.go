@@ -61,15 +61,33 @@ func startGoals(tel *telemetry.Telemetry, machineID string, db *ring.DB, em *eve
 		tracker: goals.NewTracker(goals.Config{
 			MachineID: machineID, Panes: &observerPanes{obs: tmx.obs}, Checkouts: refresher,
 			Procs: goals.GopsutilProcs{}, Files: goals.OSFiles{}, DB: db, Emit: em,
+			Captures: &observerCaptures{obs: tmx.obs},
 		}),
 		roots: roots,
 		log:   tel,
 	}, nil
 }
 
+// observerCaptures reads goal panes' screens for the condition observer
+// (E12): the whole visible screen, ANSI stripped, through the inventory
+// observer's read path. A capture that fails keeps the last condition
+// level; it never looks like a recovery.
+type observerCaptures struct {
+	obs *inventory.Observer
+}
+
+func (c *observerCaptures) Capture(ctx context.Context, server, pane string) (string, error) {
+	ctx, stop := context.WithTimeout(ctx, 10*time.Second)
+	defer stop()
+	text, _, err := c.obs.CapturePane(ctx, server, pane, 0, false, 0)
+	return text, err
+}
+
 // run ticks every rescan: the table is rebuilt and the goals rescanned. A
 // tick that fails is logged, never fatal: the next tick retries and the
-// last readings stay.
+// last readings stay. Goal panes' screens are re-read for harness
+// conditions (E12) on the faster condition tick, so an interrupt at the
+// machine reaches triage within seconds.
 func (g *goalsRun) run(ctx context.Context) {
 	if g == nil {
 		return
@@ -77,6 +95,8 @@ func (g *goalsRun) run(ctx context.Context) {
 	log := g.log.Logger.With("component", "goals")
 	tick := time.NewTicker(goals.RescanInterval())
 	defer tick.Stop()
+	condTick := time.NewTicker(goals.RescanConditionsInterval())
+	defer condTick.Stop()
 	for {
 		select {
 		case <-ctx.Done():
@@ -94,13 +114,22 @@ func (g *goalsRun) run(ctx context.Context) {
 			if scanErr != nil {
 				log.WarnContext(ctx, "goals.scan_failed", "err_kind", "io")
 			}
+		case <-condTick.C:
+			g.mu.Lock()
+			scanErr := g.tracker.ScanConditions(ctx)
+			g.mu.Unlock()
+			if scanErr != nil {
+				log.WarnContext(ctx, "goals.conditions_scan_failed", "err_kind", "io")
+			}
 		}
 	}
 }
 
 // snapshot is the goals Snapshot hook: the table is rebuilt, the tracker
 // scans once before the first fill (so the first snapshot already carries
-// the goals), then fills the repos, the pane workdirs and the goals.
+// the goals), then fills the repos, the pane workdirs and the goals. Open
+// harness conditions (E12) are primed and filled the same way, so triage
+// is rebuilt at once after a reconnect.
 func (g *goalsRun) snapshot(ctx context.Context, s *agentv1.Snapshot) error {
 	if g == nil {
 		return nil
@@ -117,6 +146,12 @@ func (g *goalsRun) snapshot(ctx context.Context, s *agentv1.Snapshot) error {
 		}
 	}
 	g.tracker.Fill(s)
+	if !g.tracker.ConditionsPrimed() {
+		if err := g.tracker.ScanConditions(ctx); err != nil {
+			return err
+		}
+	}
+	g.tracker.FillConditions(s)
 	return nil
 }
 

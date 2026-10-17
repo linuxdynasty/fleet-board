@@ -39,7 +39,9 @@ type Emitter interface {
 
 // Config wires a Tracker. Bound reports registry-bound panes (02h: a pane
 // a registry entry names never gains an observed goal); nil binds none,
-// which is the whole story until row 21 writes the registry.
+// which is the whole story until row 21 writes the registry. Captures
+// reads goal panes' screens for the condition observer (conditions.go);
+// nil disables it.
 type Config struct {
 	MachineID string
 	Panes     Panes
@@ -50,6 +52,7 @@ type Config struct {
 	DB        Episodes
 	Emit      Emitter
 	Clock     func() time.Time
+	Captures  Captures
 }
 
 // Tracker attributes eshu goal files to panes (02h "Observed goals").
@@ -60,15 +63,17 @@ type Config struct {
 // hold two harness panes, for the status file and doctor. It is not safe
 // for concurrent use; one goroutine scans and fills.
 type Tracker struct {
-	cfg       Config
-	primed    bool                          // set after the first scan; events before it are suppressed
-	states    map[string]*agentv1.GoalState // live episode id -> last built
-	bind      map[string]string             // live episode id -> pane key
-	harness   map[string]string             // live episode id -> harness name
-	sent      map[string]*agentv1.GoalState // live episode id -> last emitted
-	missed    map[string]int                // live episode id -> empty ticks in a row
-	paths     map[string]string             // pane key -> last located folder
-	ambiguous []string
+	cfg        Config
+	primed     bool                          // set after the first scan; events before it are suppressed
+	states     map[string]*agentv1.GoalState // live episode id -> last built
+	bind       map[string]string             // live episode id -> pane key
+	harness    map[string]string             // live episode id -> harness name
+	sent       map[string]*agentv1.GoalState // live episode id -> last emitted
+	missed     map[string]int                // live episode id -> empty ticks in a row
+	paths      map[string]string             // pane key -> last located folder
+	ambiguous  []string
+	cond       map[string]*openCondition // live episode id -> open harness condition (conditions.go)
+	condPrimed bool                      // set after the first condition scan
 }
 
 // NewTracker builds a Tracker.
@@ -82,7 +87,7 @@ func NewTracker(cfg Config) *Tracker {
 	return &Tracker{
 		cfg: cfg, states: map[string]*agentv1.GoalState{}, bind: map[string]string{},
 		harness: map[string]string{}, sent: map[string]*agentv1.GoalState{}, missed: map[string]int{},
-		paths: map[string]string{},
+		paths: map[string]string{}, cond: map[string]*openCondition{},
 	}
 }
 
