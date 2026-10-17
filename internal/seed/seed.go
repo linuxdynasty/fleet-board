@@ -8,12 +8,13 @@ import (
 	"time"
 
 	"github.com/linuxdynasty/fleet-board/internal/hub/statedb"
-	"github.com/linuxdynasty/fleet-board/internal/protoversion"
 )
 
-// Version is the agent wire version the seed was recorded against. A wire
-// change must rebuild the seed, so the build breaks until it does.
-const Version = protoversion.Max
+// Version is the agent wire version this seed was built against, pinned as
+// a literal so a wire change fails [TestVersionFollowsTheWire] until the
+// seed is rebuilt. An alias of protoversion.Max would move with the wire
+// and never fire.
+const Version = 1
 
 // FleetID is the hub_identity fleet_id [Seed] writes.
 const FleetID = "seed-fleet"
@@ -60,13 +61,18 @@ func Seed(ctx context.Context, dir string) error {
 		return fmt.Errorf("seed: open state.db: %w", err)
 	}
 	defer func() { _ = st.Close() }()
-	laptop, server := laptopMachine(), serverMachine()
-	for name, m := range map[string]machine{"laptop": laptop, "server": server} {
-		if err := statedb.InsertEnrollToken(ctx, st, m.token); err != nil {
-			return fmt.Errorf("seed: insert %s token: %w", name, err)
+	// Fixed order: map iteration would hand the earlier hub_seq and audit
+	// rows to whichever machine Go visits first.
+	ordered := []struct {
+		name string
+		m    machine
+	}{{"laptop", laptopMachine()}, {"server", serverMachine()}}
+	for _, o := range ordered {
+		if err := statedb.InsertEnrollToken(ctx, st, o.m.token); err != nil {
+			return fmt.Errorf("seed: insert %s token: %w", o.name, err)
 		}
-		if _, err := statedb.Enroll(ctx, st, m.new); err != nil {
-			return fmt.Errorf("seed: enroll %s: %w", name, err)
+		if _, err := statedb.Enroll(ctx, st, o.m.new); err != nil {
+			return fmt.Errorf("seed: enroll %s: %w", o.name, err)
 		}
 	}
 	if _, err := statedb.Hello(ctx, st, statedb.HelloIn{
