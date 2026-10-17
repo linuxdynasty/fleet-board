@@ -118,6 +118,12 @@
 // ([ErrRepoUnknown] without a row) and [ListWatchedRepoRows] reads them
 // all, both on the read pool for the hub API's filter, sort and page.
 //
+// Plan row 12 (account reads) adds the owner-account read path over the
+// row 13a accounts table: [GetAccount] reads one by id
+// ([ErrAccountUnknown] without a row) and [ListStoredAccounts] reads
+// them all, both on the read pool for the hub API's filter, sort and
+// page.
+//
 
 // Plan row 5 (PR 5c2) adds the event history (events migration):
 // [ApplyEvent] stores one event in its writer job (the live, snapshotted

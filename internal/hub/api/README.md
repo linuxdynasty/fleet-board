@@ -14,7 +14,7 @@ the session reads (`ListSessions`, `GetSession`), the observed-goal
 reads (`ListGoals`, `GetGoal`), the work-item reads (`ListWorkItems`,
 `GetWorkItem`), the change-request reads (`ListChangeRequests`,
 `GetChangeRequest`), the watched-repo reads (`ListRepos`, `GetRepo`),
-and `GetSystemStatus`
+the account reads (`ListAccounts`, `GetAccount`), and `GetSystemStatus`
 on the local admin socket.
 
 ```go
@@ -60,7 +60,8 @@ writes, the session-control and approvals calls, `GetServerInfo`,
 `ListMachines`, `GetMachine`, `GetOperation`, `CapturePane`,
 `ListSessions`, `GetSession`, `ListGoals`, `GetGoal`,
 `ListWorkItems`, `GetWorkItem`, `ListChangeRequests`,
-`GetChangeRequest`, `ListRepos`, `GetRepo`
+`GetChangeRequest`, `ListRepos`, `GetRepo`,
+`ListAccounts`, `GetAccount`
 and `GetSystemStatus`
 answers `unimplemented`
 ([02k](../../../docs/specs/02k-v1-surface-and-cli.md)).
@@ -178,6 +179,23 @@ are 50 by default, 500 at most, with a query-bound token good for
 spec write; the `status` stays unset until a later row computes it.
 `GetRepo` misses an unknown id with `RESOURCE_NOT_FOUND`, and a malformed
 id with `INVALID_ARGUMENT`.
+
+`ListAccounts` and `GetAccount` need `READ` (02d; the raw screen in
+`GetAccount` also needs `LOGS`, which the admin socket's local user
+covers the way `CapturePane` scrollback does). Until a later row-12
+slice brings caller scopes, only a `LOCAL_USER` principal (the admin
+socket) holds them. The store holds the owner-created accounts (row
+13a): `ListAccounts` serves the 02c Account filter (`id`, `harness`,
+`mode`, `budget_kind`, `provider`, `origin`, `create_time`,
+`update_time`) but not `pacing_state` (pacing needs the scheduler row,
+which stores none yet); `order_by` takes `name` (the display name) and
+`rank` and defaults to `name`; pages are 50 by default, 500 at most,
+with a query-bound token good for 10 minutes. `create_time` is the
+create write and `update_time` the last spec write; the `usage`,
+`pacing` and `probe` stay unset until the usage and scheduler rows
+compute them, so `rank` orders by id until then. `GetAccount` misses an
+unknown id with `RESOURCE_NOT_FOUND`; `include_raw_screen` is accepted
+but its `shown` stays unset until the usage row stores readings.
 
 `GetSystemStatus` needs `READ` (02d): until a later row-12 slice brings caller
 scopes, only a `LOCAL_USER` principal (the admin socket) holds it. It lists

@@ -352,11 +352,11 @@ until the dispatch rows link goals.
 | `harness` | `status.harness.name` | string | `=` `in` |
 | `mode` | `spec.mode` | `AccountMode` | `=` `in` |
 | `budget_kind` | `spec.budget_kind` | `BudgetKind` | `=` |
-| `pacing_state` | `status.pacing.state` | `PacingState` | `=` `in` |
+| `pacing_state` (refused `FILTER_INVALID` until the scheduler row stores pacing) | `status.pacing.state` | `PacingState` | `=` `in` |
 | `provider` | `status.provider` | string | `=` `in` |
 | `origin` | `status.origin` | `AccountOrigin` | `=` |
 
-`order_by`: `name` (`spec.display_name`), `rank` (`status.pacing.rank`).
+`order_by`: `name` (`spec.display_name`, the default), `rank` (0 for every account until the scheduler row writes pacing; the id tiebreak decides).
 
 | UsageReading (`ListUsageReadings` only) | Path | Type | Operators |
 |---|---|---|---|
