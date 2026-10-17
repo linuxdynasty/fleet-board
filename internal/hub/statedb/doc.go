@@ -86,6 +86,12 @@
 // row) and [ListMachineRows] reads them all, both on the read pool for the
 // hub API's filter, sort and page.
 //
+// Plan row 12 (session reads) adds the create-time session record
+// (hub_session_details migration): [SessionRow] is one hub_sessions row
+// with the name, server and owner its CreateSession stored;
+// [ReadSessionRow] reads one by id ([ErrSessionUnknown] without a row)
+// and [ListSessionRows] reads them all, both on the read pool.
+//
 // Plan row 5 (PR 5c2) adds the event history (events migration):
 // [ApplyEvent] stores one event in its writer job (the live, snapshotted
 // epoch, [ErrEventNotCurrent]; the stream's chain, [ErrEventChainBroken];

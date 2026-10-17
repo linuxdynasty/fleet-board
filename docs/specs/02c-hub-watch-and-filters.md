@@ -255,6 +255,12 @@ Unless the filter names `state`, `ListSessions` and the initial state of a
 
 `order_by`: `name`, `ct`.
 
+Served so far (row 12 slices): `machine`, `name`, `started_by_fleet` and
+`state` filters read the hub-started sessions each `CreateSession` stored;
+`harness`, `goal` and `available_for_work` are refused (`FILTER_INVALID`)
+until the pane mirror lands. Every stored row reads `LIVE` until the mirror
+learns ends.
+
 | PaneSummary (`PANE_SUMMARIES`, Watch only) | Path | Type | Operators |
 |---|---|---|---|
 | `session` | `session` | string | `=` `in` |
