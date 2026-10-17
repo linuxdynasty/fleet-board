@@ -10,7 +10,8 @@ config import and export (`ImportConfig`, `ExportConfig`), the hub-state
 triage writes (`SnoozeTriageItem`, `DismissTriageItem`), the
 session-control and approvals calls, `GetServerInfo`, the machine
 reads (`ListMachines`, `GetMachine`), `GetOperation`, `CapturePane`,
-the session reads (`ListSessions`, `GetSession`), and `GetSystemStatus`
+the session reads (`ListSessions`, `GetSession`), the observed-goal
+reads (`ListGoals`, `GetGoal`), and `GetSystemStatus`
 on the local admin socket.
 
 ```go
@@ -54,7 +55,8 @@ method but `CreateEnrollmentToken`, the watched-repo writes, the machine
 admin writes, the config import and export, the hub-state triage
 writes, the session-control and approvals calls, `GetServerInfo`,
 `ListMachines`, `GetMachine`, `GetOperation`, `CapturePane`,
-`ListSessions`, `GetSession` and `GetSystemStatus`
+`ListSessions`, `GetSession`, `ListGoals`, `GetGoal`
+and `GetSystemStatus`
 answers `unimplemented`
 ([02k](../../../docs/specs/02k-v1-surface-and-cli.md)).
 `Handler()` is its Connect route (requests capped at 1 MiB), ready for a
@@ -111,6 +113,21 @@ create record, not delivery: a session whose command never reached its
 machine still reads `LIVE`, and the create call's `Operation`
 (`GetOperation`) tells whether it was delivered. `GetSession` misses
 an unknown id with `SESSION_NOT_FOUND`.
+
+`ListGoals` and `GetGoal` need `READ` (02d). Until a later row-12
+slice brings caller scopes, only a `LOCAL_USER` principal (the admin socket)
+holds it. The store holds observed goals only (03k: the hand-started goals
+the agents reported, origin `OBSERVED`): `ListGoals` serves the 02c Goal
+filter but not `account`, `repo`, `routine`, `work_item` or `attempt`
+(they need the dispatch rows, which no row stores yet); `order_by` takes
+`ct`, `ut`, `phase_time` and `start_time` and defaults to `start_time`;
+pages are 50 by default, 500 at most, with a query-bound token good for
+10 minutes. Version is 1 (the observed spec never changes), `create_time`
+is the first sight and `update_time` the last observed change; an open
+goal has no `end_time`, and `live` follows the 03l phase classes, so an
+open observed goal reads live. Run history and transitions
+stay `UNIMPLEMENTED` until the dispatch rows land. `GetGoal` misses
+an unknown id with `RESOURCE_NOT_FOUND`.
 
 `GetSystemStatus` needs `READ` (02d): until a later row-12 slice brings caller
 scopes, only a `LOCAL_USER` principal (the admin socket) holds it. It lists

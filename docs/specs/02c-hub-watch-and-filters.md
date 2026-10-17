@@ -290,6 +290,15 @@ start>" OR live = true)`: goals that ran in the window, including ones created
 before it and ones still running. `create_time` is plan time and is not the
 timeline.
 
+Served so far (row 12 slices): `phase`, `machine`, `session`, `phase_reason`,
+`origin`, `live`, `id` and the time filters read the observed goals the agents
+reported; `account`, `repo`, `routine`, `work_item` and `attempt` are refused
+(`FILTER_INVALID`) until the dispatch rows land. `live` follows the 03l
+phase classes, so an open observed goal reads live; `create_time` is the
+first sight, `update_time` the last observed change, and an open goal has no
+`end_time`, so `end_time` comparisons match nothing until it closes. The
+default `ListGoals` order is `start_time`.
+
 | WorkItem (`WORK_ITEMS`, `ListWorkItems`) | Path | Type | Operators |
 |---|---|---|---|
 | `integration` | `id.integration` | string | `=` `in` |

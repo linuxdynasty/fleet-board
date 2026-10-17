@@ -116,3 +116,7 @@ no `Command` is ever queued for an observed goal.
   the last readings stay.
 - `GoalState` emission is counted by the shared event counter with
   `kind="goal_state"`; loss is the emitter's, counted there.
+- `goals.failed{step, err_kind}` when `ListGoals` or `GetGoal` cannot read
+  the store, and `goals.issue_refused{reason}` for caller errors. The reads
+  add no counter: a failure is the hub's own store error, diagnosed from
+  this line and the store signals.

@@ -20,11 +20,12 @@
 // DismissTriageItem (each with its triage.* audit row), the
 // session-control and approvals calls, [Fleet.GetServerInfo],
 // [Fleet.ListMachines], [Fleet.GetMachine], [Fleet.CapturePane],
-// [Fleet.GetOperation], [Fleet.ListSessions], [Fleet.GetSession] and
+// [Fleet.GetOperation], [Fleet.ListSessions], [Fleet.GetSession],
+// [Fleet.ListGoals], [Fleet.GetGoal] and
 // [Fleet.GetSystemStatus] built; every other method is Unimplemented
 // (02k): it checks the caller ([PrincipalFrom], ADMIN for enrollment
 // and revoke/delete, SETTINGS for repos, update and import, READ for
-// export, the machine, operation, session and system reads and the
+// export, the machine, operation, session, goal and system reads and the
 // visible capture (LOGS for its scrollback), APPROVALS for triage;
 // GetServerInfo needs no scope), the fields and the request_id (02b),
 // mints the token in package ca and stores only its secret hash, merges
