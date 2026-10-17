@@ -153,10 +153,15 @@ Probed 2026-10-01 on OpenCode 1.18.30.
   matches the selection against the providers list. A screen with no stats
   table or no credentials count fails with no numbers; anything less than a
   full read is partial. Versions 1.18.34 and 1.19.0 are `UNVERIFIED_PARSING`
-  with `USAGE` and `IDENTITY` fixture-verified (fixtures in
+  with `USAGE`, `IDENTITY` and `READY` fixture-verified (fixtures in
   `internal/harness/opencode/testdata/`); the `model · provider[ · variant]`
   order was checked against the 1.19.0 binary itself, and the agent-first
-  line shape against the TUI fixtures.
+  line shape against the TUI fixtures. The ready pattern is the idle input
+  box with the model line under it: a styled grey placeholder line reads
+  empty, a styled line at full intensity reads as typed text, and a plain
+  capture reads unknown, never empty (the colour decides, not the words).
+  An open menu or dialog over the box also reads unknown until fixtures
+  pin those shapes.
 - **No folder-trust prompt** at startup.
 - **Server mode:** `opencode serve`, `opencode attach <url>`, `--mdns`. A future
   adapter could read structured session events from it instead of the screen. #46 (2026-10-12) leaves this parked: the serve feed needs a signed-in provider (not probed); verdict in [03b](03b-usage-and-sync.md#push-sources-issue-46).
