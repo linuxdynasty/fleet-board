@@ -44,6 +44,7 @@ section below); every screen was read before each key.
 | `status.txt` | `cursor-agent status`: "✓ Logged in as" with the signed-in email | ran on this machine 2026-10-14 (item 0.22 commands, no prompt sent, no quota spent); the address is redacted to `owner@example.com` |
 | `about.txt` | `cursor-agent about`: CLI version, plan ("Subscription Tier Pro+"), environment rows, "User Email" | same run, same redaction; the "Latest" update line is kept so the parser proves it ignores it |
 | `identity-truncated.txt` | derived, not a capture: the `about` output cut before the "User Email" row | cut by hand to pin the truncated case; the identity parser must fail on it, never guess an address |
+| `goal-paused.txt` | "Goal paused (Ns)" when the goal stalls (01 E12) | reconstructed, not a raw capture: the signal line is the probe-recorded string from the 2026-10-02 goal-control probe (01b); a raw capture replaces it when one lands |
 
 ## Redactions and clean-up
 

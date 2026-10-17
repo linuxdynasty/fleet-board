@@ -32,11 +32,16 @@ file; it parses text it is given.
   `testdata/1.4.7/help-commands-catalog.tsv` (rows carry argument
   hints, so only the name before the first space is checked), so a new
   command in a later catalog needs a reviewed verdict here.
+- `condition.go`: `ParseCondition` reads the pause line (01 E12): a
+  line holding "goal paused by interrupt" reads as `GOAL_INTERRUPTED`;
+  any other screen fails cleanly, since the "HTTP 500 retrying" screen
+  and limit screens are a later slice. Nothing is ever guessed.
+  `ConditionParserVersion` bumps when this parser's behavior changes.
 - `muse_test.go`: the adapter's declaration for the shared
   conformance test (`harness.Conform`). Versions `1.4.4`, `1.4.6` and
-  `1.4.7` are `UNVERIFIED_PARSING` with `USAGE` and the trust half of
-  `READY` fixture-verified; the golden table is
-  `testdata/support-table.txt`, so a claim change is a reviewed
+  `1.4.7` are `UNVERIFIED_PARSING` with `USAGE`, the trust half of
+  `READY` and the pause `CONDITION` fixture-verified; the golden table
+  is `testdata/support-table.txt`, so a claim change is a reviewed
   diff.
 - Fixtures under `testdata/1.4.4/`, `testdata/1.4.6/` and
   `testdata/1.4.7/`, documented in `testdata/README.md`.

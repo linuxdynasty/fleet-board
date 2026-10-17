@@ -42,6 +42,7 @@ choice), Right (help tab), Escape, Ctrl+U (clear the input), and `/quit`.
 | `help-commands-page-{first,middle,last}.txt` | `/help` Commands tab, "Browse built-in commands", at the top, the middle and the end | Right, then Down |
 | `help-commands-catalog.tsv` | all 49 built-in commands with their argument hints, `name<TAB>description` (derived by paging) | see above |
 | `ready-input-has-draft.txt` | input box with unsent text | typed text |
+| `goal-paused-by-interrupt.txt` | "goal paused by interrupt — resume with /goal resume" after the owner interrupts the goal (01 E12) | reconstructed, not a raw capture: the signal line is the probe-recorded string from the 2026-10-02 goal-control probe (01b); a raw capture replaces it when one lands |
 
 ## 1.4.6 (2026-10-12, issue #180)
 
@@ -61,6 +62,7 @@ folder, which `trust.json` already lists, so no trust entry was written.
 | `1.4.6/ready-input-has-draft-ansi.txt` | the draft line with ANSI escapes | typed text, then Ctrl+U to clear |
 | `1.4.6/usage.txt` | the "Session usage" box (Current 4%, Weekly 11%, real readings) | `/usage` (typed, then Enter on the read screen) |
 | `1.4.6/status.txt` | the status box below the usage box | `/status` |
+| `1.4.6/goal-paused-by-interrupt.txt` | "goal paused by interrupt — resume with /goal resume" after the owner interrupts the goal (01 E12) | reconstructed, not a raw capture: the signal line is the probe-recorded string from the 2026-10-02 goal-control probe (01b); a raw capture replaces it when one lands |
 
 What changed since 1.4.4: the ready screen has no "Model set to ..." line; the
 status box is wider and adds `WORKSPACE` (`trusted · not found`, even though
@@ -97,6 +99,7 @@ written.
 | `1.4.7/usage-command-typed.txt` | slash menu line `/usage  Show session usage` | typed `/usage` |
 | `1.4.7/usage.txt` | the "Session usage" box (Current 17%, Weekly 5%, real readings) | Enter on the read screen |
 | `1.4.7/status.txt` | the status box below the usage box | `/status` |
+| `1.4.7/goal-paused-by-interrupt.txt` | "goal paused by interrupt — resume with /goal resume" after the owner interrupts the goal (01 E12) | reconstructed, not a raw capture: the signal line is the probe-recorded string from the 2026-10-02 goal-control probe (01b); a raw capture replaces it when one lands |
 | `1.4.7/help-general.txt` | `/help`, General tab (shortcuts), over the status box | `/help` |
 | `1.4.7/help-commands-page-{first,middle,last}.txt` | `/help` Commands tab at the top, the middle and the end | Right, then Down |
 | `1.4.7/help-commands-catalog.tsv` | all 49 built-in commands with their argument hints, `name<TAB>description` (derived by paging through four windows to cover every row) | see above |

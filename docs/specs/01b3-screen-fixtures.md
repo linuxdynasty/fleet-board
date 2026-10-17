@@ -51,9 +51,13 @@ What the capture found that the notes above did not have:
 The steps, redactions and cleanup (what was restored, what was deleted, what
 was never opened) for each harness are in its README.
 
-Not captured on any harness: prompt and permission screens, condition screens
-such as Muse "HTTP 500 retrying", and limit screens. They need a model call or a
-real failure; they stay open for a probe that is allowed to spend quota.
+Not captured on any harness: prompt and permission screens, provider-error
+condition screens such as Muse "HTTP 500 retrying", and limit screens. They
+need a model call or a real failure; they stay open for a probe that is
+allowed to spend quota. Interrupt and pause conditions needed neither (Esc and
+Ctrl+C send no prompt), so their signal lines are probe-recorded in 01b and
+covered by reconstructed fixtures in each adapter's `testdata/` (issue #36);
+a raw capture replaces each reconstruction when one lands.
 
 Cursor (`cursor-agent`) was not captured here (plan row 30, item 0.19). All
 captures here are ANSI-stripped, so an empty-input placeholder cannot be told

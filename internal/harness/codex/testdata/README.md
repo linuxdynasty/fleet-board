@@ -35,6 +35,7 @@ input), and `/exit`.
 | `warnings-startup-1-of-2.txt`, `warnings-startup-2-of-2.txt` | the startup warnings view | F2, Right |
 | `slash-menu-first.txt`, `slash-menu-later.txt` | the `/` menu (8 rows) at the top and after paging | typed `/`, Down |
 | `slash-menu-catalog.tsv` | all 49 menu commands, `name<TAB>description` (derived by paging until the list wrapped) | see above |
+| `goal-paused.txt` | "Goal paused" after the owner interrupts the goal (01 E12) | reconstructed, not a raw capture: the signal line is the probe-recorded string from the 2026-10-02 goal-control probe (01b); a raw capture replaces it when one lands |
 | `exit.txt` | the line after `/exit` ("Session ID") | `/exit` |
 
 Most files are the visible 50 rows, so earlier output and the top of the update
@@ -57,6 +58,7 @@ read before the next key; no prompt sent, no quota spent). Started by typing
 | `0.162.1/warnings-startup-1-of-1.txt` | the one startup warning ("Under-development features enabled: chronicle") | F2, then Escape |
 | `0.162.1/slash-menu-first.txt`, `0.162.1/slash-menu-later.txt` | the `/` menu (8 rows) at the top and near the end | typed `/`, Down |
 | `0.162.1/slash-menu-catalog.tsv` | all 54 menu commands, `name<TAB>description` (derived by paging with Down until the highlight wrapped back to `/model`) | see above |
+| `0.162.1/goal-paused.txt` | "Goal paused" after the owner interrupts the goal (01 E12) | reconstructed, not a raw capture: the signal line is the probe-recorded string from the 2026-10-02 goal-control probe (01b); a raw capture replaces it when one lands |
 
 What changed since 0.160.0: no daemon-settings screen and no update banner
 appeared (0.162.1 is installed); the `/status` card shows the account email

@@ -24,8 +24,8 @@ func readData(t *testing.T, name string) string {
 // 30's adapter calls too): the golden table matches the claims, a supported
 // feature brings a fixture of this version, and every fixture parses or
 // yields unknown, never fails. 2026.10.01 stays UNVERIFIED_PARSING: USAGE,
-// IDENTITY and READY are fixture-verified, and PROMPT and CONDITION are
-// later slices.
+// IDENTITY, READY and the stall CONDITION are fixture-verified, and PROMPT
+// is a later slice.
 func TestConform(t *testing.T) {
 	usage := func(screen string) harness.ParseResult {
 		switch ParseUsage(screen, time.Now()).ParseOutcome {
@@ -47,6 +47,15 @@ func TestConform(t *testing.T) {
 	}
 	identity := func(screen string) harness.ParseResult {
 		switch ParseIdentity(screen).ParseOutcome {
+		case typev1.ParseOutcome_PARSE_OUTCOME_OK,
+			typev1.ParseOutcome_PARSE_OUTCOME_PARTIAL:
+			return harness.ParseOK
+		default:
+			return harness.ParseUnknown
+		}
+	}
+	condition := func(screen string) harness.ParseResult {
+		switch ParseCondition(screen).ParseOutcome {
 		case typev1.ParseOutcome_PARSE_OUTCOME_OK,
 			typev1.ParseOutcome_PARSE_OUTCOME_PARTIAL:
 			return harness.ParseOK
@@ -76,6 +85,13 @@ func TestConform(t *testing.T) {
 							{Name: "status.txt", Screen: readData(t, "2026.10.01/status.txt")},
 							{Name: "about.txt", Screen: readData(t, "2026.10.01/about.txt")},
 							{Name: "identity-truncated.txt", Screen: readData(t, "2026.10.01/identity-truncated.txt")},
+						},
+					},
+					harness.FeatureCondition: {
+						Claim: harness.FeatureClaim{Supported: true},
+						Parse: condition,
+						Fixtures: []harness.Fixture{
+							{Name: "goal-paused.txt", Screen: readData(t, "2026.10.01/goal-paused.txt")},
 						},
 					},
 					harness.FeatureReady: {
