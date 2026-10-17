@@ -44,8 +44,8 @@ event, a snapshot field or a stream.
    sessions by default and for the developer's own sessions only when turned on
    per session.
 7. **Testable without a real fleet**: every capability behind an interface with
-   a fake; tmux and screen parsing tested against real tmux and captured
-   fixtures.
+   a fake; tmux and screen parsing tested against real tmux and captured fixtures.
+   Every fixture version directory declares its claim in the adapter's committed golden support table; the shared check fails an undeclared directory, so new fixtures arrive with a reviewed claim.
 8. **Every short program the agent runs is bounded.** A one-shot child process
    (`git`, `gh`, `loginctl`, a version check) gets empty stdin, a time cap and
    an output cap (stdout and stderr together), runs in a process group of its

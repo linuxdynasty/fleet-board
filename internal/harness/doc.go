@@ -12,7 +12,10 @@
 // claims before release: a feature marked supported with no fixture of that
 // version, a version marked SUPPORTED with any feature not supported, a
 // fixture that neither parses nor cleanly yields unknown, and declared
-// support that differs from the committed golden table.
+// support that differs from the committed golden table. The same test calls
+// [ConformDirs]: every version directory under the adapter's testdata/ must
+// have a declared version, so new fixtures arrive with their golden-table
+// row and the claim change is a reviewed diff.
 //
 // Reset texts have no year and are local (01 D2): [NextMonthDayTime] and
 // [NextTimeOfDay] resolve one against the capture time in a stated zone,

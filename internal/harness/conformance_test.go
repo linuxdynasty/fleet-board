@@ -184,3 +184,49 @@ func TestCheckRefuses(t *testing.T) {
 		})
 	}
 }
+
+func TestCheckFixtureDirs(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		dirs    []string
+		wantErr []string
+	}{
+		{
+			"every directory declared",
+			[]string{"1.0.0"},
+			nil,
+		},
+		{
+			"fixture directory with no declared version",
+			[]string{"1.0.0", "2.0.0"},
+			[]string{"2.0.0", "no declared version"},
+		},
+		{
+			"declared version with no fixture directory",
+			[]string{},
+			[]string{"1.0.0", "no fixture directory"},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			problems := harness.CheckFixtureDirs(stubDeclaration(), tc.dirs)
+			if tc.wantErr == nil {
+				if len(problems) != 0 {
+					t.Errorf("CheckFixtureDirs() = %q, want no problems", problems)
+				}
+				return
+			}
+			if len(problems) == 0 {
+				t.Fatalf("CheckFixtureDirs() found nothing, want %q", tc.wantErr)
+			}
+			joined := strings.Join(problems, "\n")
+			for _, want := range tc.wantErr {
+				if !strings.Contains(joined, want) {
+					t.Errorf("CheckFixtureDirs() = %q, want it to mention %q", problems, want)
+				}
+			}
+		})
+	}
+}

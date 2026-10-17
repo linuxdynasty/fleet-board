@@ -98,7 +98,7 @@ func TestConform(t *testing.T) {
 		}
 		return out
 	}
-	harness.Conform(t, harness.Declaration{
+	decl := harness.Declaration{
 		Harness: "opencode",
 		Versions: []harness.VersionCase{
 			{
@@ -145,5 +145,7 @@ func TestConform(t *testing.T) {
 			},
 		},
 		Golden: readFixture(t, ".", "support-table.txt"),
-	})
+	}
+	harness.Conform(t, decl)
+	harness.ConformDirs(t, "testdata", decl)
 }
