@@ -43,6 +43,7 @@ choice), Right (help tab), Escape, Ctrl+U (clear the input), and `/quit`.
 | `help-commands-catalog.tsv` | all 49 built-in commands with their argument hints, `name<TAB>description` (derived by paging) | see above |
 | `ready-input-has-draft.txt` | input box with unsent text | typed text |
 | `goal-paused-by-interrupt.txt` | "goal paused by interrupt — resume with /goal resume" after the owner interrupts the goal (01 E12) | reconstructed, not a raw capture: the signal line is the probe-recorded string from the 2026-10-02 goal-control probe (01b); a raw capture replaces it when one lands |
+| `provider-error-retrying.txt` | "HTTP 500 · retrying · attempt 6/10" when the provider returns a server error (01 E12) | reconstructed, not a raw capture: the signal line is the spec-recorded string from 01; a raw capture replaces it when one lands |
 
 ## 1.4.6 (2026-10-12, issue #180)
 
@@ -63,6 +64,7 @@ folder, which `trust.json` already lists, so no trust entry was written.
 | `1.4.6/usage.txt` | the "Session usage" box (Current 4%, Weekly 11%, real readings) | `/usage` (typed, then Enter on the read screen) |
 | `1.4.6/status.txt` | the status box below the usage box | `/status` |
 | `1.4.6/goal-paused-by-interrupt.txt` | "goal paused by interrupt — resume with /goal resume" after the owner interrupts the goal (01 E12) | reconstructed, not a raw capture: the signal line is the probe-recorded string from the 2026-10-02 goal-control probe (01b); a raw capture replaces it when one lands |
+| `1.4.6/provider-error-retrying.txt` | "HTTP 500 · retrying · attempt 6/10" when the provider returns a server error (01 E12) | reconstructed, not a raw capture: the signal line is the spec-recorded string from 01; a raw capture replaces it when one lands |
 
 What changed since 1.4.4: the ready screen has no "Model set to ..." line; the
 status box is wider and adds `WORKSPACE` (`trusted · not found`, even though
@@ -100,6 +102,7 @@ written.
 | `1.4.7/usage.txt` | the "Session usage" box (Current 17%, Weekly 5%, real readings) | Enter on the read screen |
 | `1.4.7/status.txt` | the status box below the usage box | `/status` |
 | `1.4.7/goal-paused-by-interrupt.txt` | "goal paused by interrupt — resume with /goal resume" after the owner interrupts the goal (01 E12) | reconstructed, not a raw capture: the signal line is the probe-recorded string from the 2026-10-02 goal-control probe (01b); a raw capture replaces it when one lands |
+| `1.4.7/provider-error-retrying.txt` | "HTTP 500 · retrying · attempt 6/10" when the provider returns a server error (01 E12) | reconstructed, not a raw capture: the signal line is the spec-recorded string from 01; a raw capture replaces it when one lands |
 | `1.4.7/help-general.txt` | `/help`, General tab (shortcuts), over the status box | `/help` |
 | `1.4.7/help-commands-page-{first,middle,last}.txt` | `/help` Commands tab at the top, the middle and the end | Right, then Down |
 | `1.4.7/help-commands-catalog.tsv` | all 49 built-in commands with their argument hints, `name<TAB>description` (derived by paging through four windows to cover every row) | see above |
@@ -134,8 +137,9 @@ of record for the installed line.
 
 ## Not captured, and why
 
-- The "HTTP 500 retrying" condition and every other error or retry screen: they
-  need a model call or a real failure, and the probe provokes neither.
+- Error and retry screens other than the "HTTP 500 retrying" condition (now a
+  reconstructed fixture, see above): they need a model call or a real failure,
+  and the probe provokes neither.
 - Sign-in and "Custom commands" screens (the account is signed in; the second
   lists installed skills), `/doctor`, `/model`, `/permissions`, `/settings`,
   `/logout`, `/upgrade`.
