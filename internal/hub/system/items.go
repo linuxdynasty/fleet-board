@@ -150,7 +150,7 @@ func detailOf(v Verdict) *hubv1.SystemDetail {
 	var m *hubv1.SystemMeasure
 	for _, c := range Measures(v.Kind) {
 		if c.Kind == v.SetBy {
-			m = MeasureProto(c, v.reading(c.Kind))
+			m = MeasureProto(c, v.Reading(c.Kind))
 			break
 		}
 	}

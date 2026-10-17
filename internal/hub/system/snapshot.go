@@ -32,8 +32,10 @@ type Verdict struct {
 	Since time.Time
 }
 
-// reading returns the verdict's reading for one measure kind.
-func (v Verdict) reading(kind hubv1.SystemMeasureKind) Reading {
+// Reading returns the verdict's reading for one measure kind: the named
+// measure, MAIN for any other kind. The served status and the System
+// gauges share it, so the metric reads the same value the card shows.
+func (v Verdict) Reading(kind hubv1.SystemMeasureKind) Reading {
 	switch kind {
 	case hubv1.SystemMeasureKind_SYSTEM_MEASURE_KIND_WRITER_COMMIT_TIME:
 		return v.CommitTime
@@ -74,7 +76,7 @@ func signalProto(now time.Time, v Verdict) *hubv1.SystemSignal {
 	ms := Measures(v.Kind)
 	out := make([]*hubv1.SystemMeasure, 0, len(ms))
 	for _, m := range ms {
-		out = append(out, MeasureProto(m, v.reading(m.Kind)))
+		out = append(out, MeasureProto(m, v.Reading(m.Kind)))
 	}
 	s := &hubv1.SystemSignal{
 		Kind: v.Kind, Machine: v.Machine, Account: v.Account, Integration: v.Integration,

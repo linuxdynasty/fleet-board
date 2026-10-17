@@ -99,6 +99,8 @@ type Fleet struct {
 	approvals        metric.Int64Counter
 	repos            metric.Int64Counter
 	workItems        metric.Int64ObservableGauge
+	sysSignalState   metric.Float64ObservableGauge
+	sysSignalValue   metric.Float64ObservableGauge
 }
 
 // NewFleet builds the service.
@@ -152,6 +154,9 @@ func NewFleet(opts FleetOptions) (*Fleet, error) {
 	}
 	if _, err = f.tel.Meter(scope).RegisterCallback(f.observeWorkItems, f.workItems); err != nil {
 		return nil, fmt.Errorf("api: work items gauge: %w", err)
+	}
+	if err := f.registerSystemGauges(); err != nil {
+		return nil, err
 	}
 	return f, nil
 }

@@ -67,12 +67,15 @@ and `Since`. `WATCH_DROPS` (no Watch server yet) and `LOG_STORE_USAGE`
 (no logs.db until row 25) stay UNKNOWN, as does the commit-time measure
 (no p95 source yet), which never masks the writer's other two measures.
 
-Not here yet (later slices of issue #41): the readings behind each
-per-subject verdict, the `fleet_hub_system_signal_state` and
-`fleet_hub_system_signal_value` gauges, subscription-efficiency rollups
-with `GetInsights`, and `fleetd insights rebuild`. Those read `Measures`
-and the triage mapping, so their levels match this table without copying
-it.
+Not here yet: the readings behind each per-subject verdict,
+subscription-efficiency rollups with `GetInsights`, and `fleetd insights
+rebuild`. Those read `Measures` and the triage mapping, so their levels
+match this table without copying it. The `fleet_hub_system_signal_state`
+and `fleet_hub_system_signal_value` gauges live in `internal/hub/api`:
+one state series per served (signal, subject) with 0 ok, 1 warning,
+2 critical, 3 unknown, and one value series with the reading behind the
+state (the `SetBy` measure's reading when a measure set it, else MAIN),
+absent while the reading is unknown.
 
 Observability: this slice adds the `hub.system.evaluate` span (05b already
 names it); no new metric or log event.

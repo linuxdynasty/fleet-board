@@ -419,6 +419,16 @@ machine signals repeated in each machine card next to the agent's own health
 links to the same row. There is no Watch topic: the view re-reads
 `GetSystemStatus` every system status poll interval ([defaults](defaults.md)) and on any `TRIAGE` change of kind SYSTEM.
 
+**As metrics.** `fleet_hub_system_signal_state{signal, subject}` carries
+every served verdict (0 ok, 1 warning, 2 critical, 3 unknown), and
+`fleet_hub_system_signal_value{signal, subject}` carries the reading behind
+the state in the signal's unit: the measure that set the state (the
+`SystemDetail` measure), else `MAIN`. The signal label is the lowercase
+signal name (`writer_batch_lag`); the subject label is `hub` for hub-wide
+signals, else the machine, account or integration id (one subject kind per
+signal, so ids cannot collide within a signal). A signal with no reading is
+state 3 with no value series: unknown stays unknown, never 0.
+
 ## 9. pprof
 
 Off by default. `--pprof-addr` enables `/debug/pprof` on a **separate loopback
