@@ -77,6 +77,17 @@ all 49 bare names in the recorded 1.4.4 and 1.4.7 catalogs
 so only the name before the first space is checked); the catalog test
 fails when a later catalog adds a name with no reviewed expectation.
 
+The OpenCode adapter (`internal/harness/opencode`, row 8, issue #36)
+does the same: the table's own examples keep their class (`/status` and
+`/diff` observe, `/review` review, `/exit` destructive) and every other
+recorded command is deny. OpenCode has no `/usage` command and no native
+`/goal`, so neither classifies. The verdicts cover all 17 names in the
+recorded 1.18.34 and 1.19.0 catalogs
+(`testdata/1.18.34/tui-slash-menu-catalog.tsv`,
+`testdata/1.19.0/tui-slash-menu-catalog.tsv`, byte-identical); the
+catalog test fails when a later catalog adds a name with no reviewed
+expectation.
+
 ## Usage parsers (D2)
 
 Each adapter reads its own usage screen into the standardized buckets of
