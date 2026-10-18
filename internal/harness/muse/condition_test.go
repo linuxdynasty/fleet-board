@@ -11,8 +11,8 @@ import (
 // TestParseConditionPaused reads the pause screen (01 E12): after the owner
 // interrupts the goal, Muse prints "goal paused by interrupt" (01b,
 // 02h), so it must read as GOAL_INTERRUPTED on every version. Any other
-// screen is not a condition and fails cleanly: usage-limit and sign-in
-// screens are a later slice, and a guess would raise the wrong triage item.
+// screen is not a condition and fails cleanly: sign-in screens are a later
+// slice, and a guess would raise the wrong triage item.
 func TestParseConditionPaused(t *testing.T) {
 	now := time.Date(2026, time.October, 17, 20, 0, 0, 0, time.Local)
 	paused144 := loadScreen(t, "1.4.4", "goal-paused-by-interrupt.txt")
@@ -180,6 +180,86 @@ func TestParseConditionRateLimited(t *testing.T) {
 				}
 				// The fixture resets at 9:29 PM, after the 8 PM read:
 				// later the same day, machine-local.
+				rt := got.ResetsTime.GetResolvedTime().AsTime().In(time.Local)
+				if rt.Hour() != 21 || rt.Minute() != 29 {
+					t.Errorf("reset = %v local, want 21:29", rt)
+				}
+				if got.ResetsTime.GetOriginalText() != "resets 9:29 PM" {
+					t.Errorf("reset text = %q, want %q", got.ResetsTime.GetOriginalText(), "resets 9:29 PM")
+				}
+			} else if got.ResetsTime != nil {
+				t.Errorf("ResetsTime = %v, want nil", got.ResetsTime)
+			}
+		})
+	}
+}
+
+// TestParseConditionUsageLimit reads the usage-limit screen (01 E12): when
+// the harness hits a usage limit, Muse prints a "Usage limit reached" line
+// with the reset time ("Usage limit reached · resets 9:29 PM",
+// reconstructed shape, see testdata/README.md), so it must read as
+// USAGE_LIMIT with the reset resolved. The harness waits for the reset
+// rather than retrying on its own, so retrying stays unset and no attempt
+// counter or HTTP status rides along. Anything else fails cleanly: the
+// /usage box shows percents with "Resets at" but no limit line, a limit
+// line without a reset still reads as a limit (resets_time is optional,
+// 03h), and help text about limits is working text rather than a harness
+// state, so none of them is ever guessed.
+func TestParseConditionUsageLimit(t *testing.T) {
+	now := time.Date(2026, time.October, 17, 20, 0, 0, 0, time.Local)
+	lim144 := loadScreen(t, "1.4.4", "usage-limit-reached.txt")
+	lim146 := loadScreen(t, "1.4.6", "usage-limit-reached.txt")
+	lim147 := loadScreen(t, "1.4.7", "usage-limit-reached.txt")
+	cases := []struct {
+		name       string
+		screen     string
+		wantKind   typev1.HarnessConditionKind
+		wantOK     bool
+		wantRetry  bool
+		wantAtt    uint32
+		wantMax    uint32
+		wantHTTP   uint32
+		wantResets bool
+	}{
+		{"usage limit 1.4.4 reads usage limit", lim144, typev1.HarnessConditionKind_HARNESS_CONDITION_KIND_USAGE_LIMIT, true, false, 0, 0, 0, true},
+		{"usage limit 1.4.6 reads usage limit", lim146, typev1.HarnessConditionKind_HARNESS_CONDITION_KIND_USAGE_LIMIT, true, false, 0, 0, 0, true},
+		{"usage limit 1.4.7 reads usage limit", lim147, typev1.HarnessConditionKind_HARNESS_CONDITION_KIND_USAGE_LIMIT, true, false, 0, 0, 0, true},
+		{"usage limit with reset reads usage limit", "Usage limit reached · resets 9:29 PM", typev1.HarnessConditionKind_HARNESS_CONDITION_KIND_USAGE_LIMIT, true, false, 0, 0, 0, true},
+		{"limit reached without reset is still a limit", "Weekly limit reached", typev1.HarnessConditionKind_HARNESS_CONDITION_KIND_USAGE_LIMIT, true, false, 0, 0, 0, false},
+		{"usage box is not a condition", "Current        17% used · Resets at 10:24 PM", typev1.HarnessConditionKind_HARNESS_CONDITION_KIND_UNSPECIFIED, false, false, 0, 0, 0, false},
+		{"rate line is not a usage limit", "HTTP 429 · retrying · attempt 2/10 · resets 9:29 PM", typev1.HarnessConditionKind_HARNESS_CONDITION_KIND_RATE_LIMITED, true, true, 2, 10, 429, true},
+		{"provider line is not a usage limit", "HTTP 500 · retrying · attempt 6/10", typev1.HarnessConditionKind_HARNESS_CONDITION_KIND_PROVIDER_ERROR, true, false, 0, 0, 0, false},
+		{"help text about limits is not a condition", "Manage usage limits and upgrade options", typev1.HarnessConditionKind_HARNESS_CONDITION_KIND_UNSPECIFIED, false, false, 0, 0, 0, false},
+		{"empty screen is not a condition", "", typev1.HarnessConditionKind_HARNESS_CONDITION_KIND_UNSPECIFIED, false, false, 0, 0, 0, false},
+		{"oversize screen fails", strings.Repeat("x", 65*1024), typev1.HarnessConditionKind_HARNESS_CONDITION_KIND_UNSPECIFIED, false, false, 0, 0, 0, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := ParseCondition(tc.screen, now)
+			if got.Kind != tc.wantKind {
+				t.Errorf("Kind = %v, want %v", got.Kind, tc.wantKind)
+			}
+			wantOutcome := typev1.ParseOutcome_PARSE_OUTCOME_FAILED
+			if tc.wantOK {
+				wantOutcome = typev1.ParseOutcome_PARSE_OUTCOME_OK
+			}
+			if got.ParseOutcome != wantOutcome {
+				t.Errorf("ParseOutcome = %v, want %v", got.ParseOutcome, wantOutcome)
+			}
+			if got.Retrying != tc.wantRetry {
+				t.Errorf("Retrying = %v, want %v", got.Retrying, tc.wantRetry)
+			}
+			if got.Attempt != tc.wantAtt || got.MaxAttempts != tc.wantMax {
+				t.Errorf("Attempt/MaxAttempts = %d/%d, want %d/%d", got.Attempt, got.MaxAttempts, tc.wantAtt, tc.wantMax)
+			}
+			if got.HTTPStatus != tc.wantHTTP {
+				t.Errorf("HTTPStatus = %d, want %d", got.HTTPStatus, tc.wantHTTP)
+			}
+			if tc.wantResets {
+				if got.ResetsTime == nil {
+					t.Fatalf("ResetsTime is nil, want the shown reset")
+				}
 				rt := got.ResetsTime.GetResolvedTime().AsTime().In(time.Local)
 				if rt.Hour() != 21 || rt.Minute() != 29 {
 					t.Errorf("reset = %v local, want 21:29", rt)

@@ -10,5 +10,6 @@
 // HarnessCondition events with cleared pairs, and lists the open ones in
 // Snapshot.conditions with the goal id from the tracker. A throttling
 // condition carries the retry detail (retrying, attempt, status, reset)
-// for the hub's limit wait (03h).
+// for the hub's limit wait (03h); a usage-limit condition carries the
+// reset with retrying unset.
 package goals

@@ -14,9 +14,11 @@ Read the root `AGENTS.md` first; it applies here. Rules for this package:
   never in memory alone. A rewrite after DONE is a new id.
 - The tracker emits GoalState events (new, changed and terminal DONE)
   and HarnessCondition events (open and cleared pairs for 01 E12
-  interrupts, stalls, provider errors and rate limits). A throttling
-  condition carries the retry detail the parser read (retrying, attempt,
-  status, reset) in the event and the snapshot, for the hub's limit wait.
+  interrupts, stalls, provider errors, rate limits and usage limits). A
+  throttling condition carries the retry detail the parser read (retrying,
+  attempt, status, reset) in the event and the snapshot, for the hub's
+  limit wait; a usage-limit condition carries the reset with retrying
+  unset.
   Anything else (a command, a nudge, an answer) from this package is a
   bug; `assertAllGoalState` in the tests says so on every goal-only flow,
   and the condition tests assert the condition events separately.

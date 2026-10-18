@@ -57,7 +57,9 @@ type openCondition struct {
 
 // condDetail is what parseCondition reports for a goal pane's screen: the
 // kind, the shown line and the retry detail. Only adapters with a
-// throttling arm fill the detail today; the rest report zeros.
+// throttling or usage-limit arm fill the detail today; the rest report
+// zeros. A usage limit waits for its reset rather than retrying, so it
+// carries the reset with retrying unset and no attempt counter or status.
 type condDetail struct {
 	kind        typev1.HarnessConditionKind
 	text        string

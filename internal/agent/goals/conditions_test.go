@@ -81,6 +81,13 @@ var interruptCases = []struct {
 		wantCause: typev1.GoalPauseCause_GOAL_PAUSE_CAUSE_UNSPECIFIED,
 		wantText:  "retrying",
 	},
+	{
+		name: "muse usage limit reached", harness: "muse", version: "1.4.7",
+		interrupted: "usage-limit-reached.txt", ready: "startup-ready.txt",
+		wantKind:  typev1.HarnessConditionKind_HARNESS_CONDITION_KIND_USAGE_LIMIT,
+		wantCause: typev1.GoalPauseCause_GOAL_PAUSE_CAUSE_UNSPECIFIED,
+		wantText:  "Usage limit reached",
+	},
 }
 
 // startGoalWithHarness attributes one observed goal on pane %1 running the
@@ -271,6 +278,57 @@ func TestScanConditionsCarriesRateLimitDetail(t *testing.T) {
 	if !s.GetRetrying() || s.GetAttempt() != 4 || s.GetMaxAttempts() != 10 ||
 		s.GetHttpStatus() != 529 || s.GetResetsTime() == nil {
 		t.Errorf("snapshot condition drops the retry detail: %+v", s)
+	}
+}
+
+// A usage-limit screen on a goal pane emits the condition with the reset
+// the parser read (01 E12): retrying unset, no attempt counter or status,
+// so the hub can hold the goal in LIMIT_WAIT until the reset (03h). The
+// snapshot lists the same detail.
+func TestScanConditionsCarriesUsageLimitReset(t *testing.T) {
+	t.Parallel()
+	r := newRig(t)
+	goalID := startGoalWithHarness(t, r, "muse")
+	r.captures.screens["%1"] = loadHarnessScreen(t, "muse", "1.4.7", "startup-ready.txt")
+	scanConditions(t, r) // prime quiet
+	r.captures.screens["%1"] = loadHarnessScreen(t, "muse", "1.4.7", "usage-limit-reached.txt")
+	scanConditions(t, r)
+	got := harnessConditions(r.emitted)
+	if len(got) != 1 {
+		t.Fatalf("emitted %d conditions, want 1", len(got))
+	}
+	c := got[0]
+	if c.GetKind() != typev1.HarnessConditionKind_HARNESS_CONDITION_KIND_USAGE_LIMIT {
+		t.Fatalf("kind = %v, want USAGE_LIMIT", c.GetKind())
+	}
+	if c.GetRetrying() {
+		t.Errorf("retrying = true, want false: a limit waits, it does not retry")
+	}
+	if c.GetAttempt() != 0 || c.GetMaxAttempts() != 0 {
+		t.Errorf("attempt/max = %d/%d, want 0/0", c.GetAttempt(), c.GetMaxAttempts())
+	}
+	if c.GetHttpStatus() != 0 {
+		t.Errorf("http_status = %d, want 0", c.GetHttpStatus())
+	}
+	if c.GetResetsTime() == nil {
+		t.Fatalf("resets_time is unset, want the shown reset")
+	}
+	if rt := c.GetResetsTime().AsTime().In(time.Local); rt.Hour() != 21 || rt.Minute() != 29 {
+		t.Errorf("resets_time = %v local, want 21:29", rt)
+	}
+	if c.GetGoalId().GetValue() != goalID {
+		t.Errorf("goal_id = %q, want the registry goal %q", c.GetGoalId().GetValue(), goalID)
+	}
+	snap := &agentv1.Snapshot{}
+	r.tr.FillConditions(snap)
+	listed := conditionsOf(snap)
+	if len(listed) != 1 {
+		t.Fatalf("snapshot lists %d conditions, want 1", len(listed))
+	}
+	s := listed[0]
+	if s.GetRetrying() || s.GetAttempt() != 0 || s.GetMaxAttempts() != 0 ||
+		s.GetHttpStatus() != 0 || s.GetResetsTime() == nil {
+		t.Errorf("snapshot condition drops the reset detail: %+v", s)
 	}
 }
 
