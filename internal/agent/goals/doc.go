@@ -8,5 +8,7 @@
 // The condition observer (conditions.go, 01 E12) re-reads each live goal's
 // pane screen with its harness's own condition parser, emits
 // HarnessCondition events with cleared pairs, and lists the open ones in
-// Snapshot.conditions with the goal id from the tracker.
+// Snapshot.conditions with the goal id from the tracker. A throttling
+// condition carries the retry detail (retrying, attempt, status, reset)
+// for the hub's limit wait (03h).
 package goals
