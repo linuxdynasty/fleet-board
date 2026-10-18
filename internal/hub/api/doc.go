@@ -23,7 +23,9 @@
 // [Fleet.GetOperation], [Fleet.ListSessions], [Fleet.GetSession],
 // [Fleet.ListGoals], [Fleet.GetGoal] (observed goals with the stored spec
 // and status, reconciled with the row so a goal a snapshot drop ended
-// reads CLOSED with its end_time), [Fleet.ListTriageItems],
+// reads CLOSED with its end_time), [Fleet.ListGoalRuns] (the single run 1
+// off the row), [Fleet.ListGoalTransitions] (empty until the dispatch rows
+// record transitions), [Fleet.ListTriageItems],
 // [Fleet.GetTriageItem] (hub-state items with the stored kind, severity
 // and refs), [Fleet.ListUsageReadings] (the stored reading history,
 // newest first), [Fleet.ListIntegrations] (the configured integrations

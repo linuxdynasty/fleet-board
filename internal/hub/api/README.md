@@ -63,6 +63,7 @@ admin writes, the config import and export, the hub-state triage
 writes, the triage reads, the usage read, the integration read, the settings reads, the audit read, the store-status read, the summary read, the session-control and approvals calls, `GetServerInfo`,
 `ListMachines`, `GetMachine`, `GetOperation`, `CapturePane`,
 `ListSessions`, `GetSession`, `ListGoals`, `GetGoal`,
+`ListGoalRuns`, `ListGoalTransitions`,
 `ListWorkItems`, `GetWorkItem`, `ListChangeRequests`,
 `GetChangeRequest`, `ListRepos`, `GetRepo`,
 `ListAccounts`, `GetAccount`
@@ -124,9 +125,9 @@ machine still reads `LIVE`, and the create call's `Operation`
 (`GetOperation`) tells whether it was delivered. `GetSession` misses
 an unknown id with `SESSION_NOT_FOUND`.
 
-`ListGoals` and `GetGoal` need `READ` (02d). Until a later row-12
-slice brings caller scopes, only a `LOCAL_USER` principal (the admin socket)
-holds it. The store holds observed goals only (03k: the hand-started goals
+`ListGoals`, `GetGoal`, `ListGoalRuns` and `ListGoalTransitions` need
+`READ` (02d). Until a later row-12 slice brings caller scopes, only a
+`LOCAL_USER` principal (the admin socket) holds it. The store holds observed goals only (03k: the hand-started goals
 the agents reported, origin `OBSERVED`): `ListGoals` serves the 02c Goal
 filter but not `account`, `repo`, `routine`, `work_item` or `attempt`
 (they need the dispatch rows, which no row stores yet); `order_by` takes
@@ -137,9 +138,11 @@ is the first sight and `update_time` the last observed change; an open
 goal has no `end_time`, and `live` follows the 03l phase classes, so an
 open observed goal reads live. The read reports the row's phase, reason
 and end over the stored status, so a goal a snapshot drop ended reads
-`CLOSED` with its end_time, matching what the filter sees. Run history
-and transitions stay `UNIMPLEMENTED` until the dispatch rows land.
-`GetGoal` misses an unknown id with `RESOURCE_NOT_FOUND`.
+`CLOSED` with its end_time, matching what the filter sees. `ListGoalRuns`
+serves the single run 1 off the row (cause `START`, the goal's start,
+machine, session and counters; the ending once the goal closes);
+`ListGoalTransitions` reads empty until the dispatch rows record
+transitions. All three miss an unknown id with `RESOURCE_NOT_FOUND`.
 
 `ListWorkItems` and `GetWorkItem` need `READ` (02d). Until a later row-12
 slice brings caller scopes, only a `LOCAL_USER` principal (the admin socket)

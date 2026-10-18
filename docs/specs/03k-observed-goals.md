@@ -89,7 +89,9 @@ the goals it dispatched.
 `ListGoals` and `GetGoal` (`filter: origin = OBSERVED`), the `GOALS` Watch topic,
 the Session view (a "started by you" marker next to the goal state) and
 `fleet goals` (`origin` in the JSON). The Machines timeline draws it like any goal
-(`start_time` to `end_time`).
+(`start_time` to `end_time`). `ListGoalRuns` serves the single run 1 off the
+goal row, with the ending once the goal closes; `ListGoalTransitions` reads
+empty until the dispatch rows record transitions (row 22).
 
 ## Failure modes
 
@@ -119,7 +121,8 @@ no `Command` is ever queued for an observed goal.
   retries and the last level stays.
 - `GoalState` emission is counted by the shared event counter with
   `kind="goal_state"`; loss is the emitter's, counted there.
-- `goals.failed{step, err_kind}` when `ListGoals` or `GetGoal` cannot read
-  the store, and `goals.issue_refused{reason}` for caller errors. The reads
-  add no counter: a failure is the hub's own store error, diagnosed from
-  this line and the store signals.
+- `goals.failed{step, err_kind}` when `ListGoals`, `GetGoal`,
+  `ListGoalRuns` or `ListGoalTransitions` cannot read the store, and
+  `goals.issue_refused{reason}` for caller errors. The reads add no
+  counter: a failure is the hub's own store error, diagnosed from this
+  line and the store signals.
