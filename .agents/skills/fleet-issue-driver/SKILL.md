@@ -13,7 +13,13 @@ Skill loading never adds authorization for an external act.
 
 Read each issue's title, body, labels and state; take issue numbers from the
 request, never invent them. For an epic, enumerate children recursively and
-deduplicate. Restate each leaf's problem and acceptance criteria. Check open PRs
+deduplicate. Restate each leaf's problem and acceptance criteria. Keep an issue
+inventory in the goal file (or a task record when no goal file exists), with
+parent, dependencies, owner, PR, authorized endpoint and current disposition.
+State the execution order; delegate independent leaves to named role agents,
+using one worktree per leaf. Keep shared-file or dependent work sequential and
+record why. Implementation and independent review are separate assignments;
+children load skill bodies, receive manifest bindings and never dispatch others. Check open PRs
 and recent commits for the same root cause before starting
 (`gh pr list --state open`, `git log origin/main --oneline -20`), and sweep each
 criterion against current `origin/main`; later work may already satisfy it.
@@ -67,9 +73,12 @@ this order.
    line). If the PR changes a row of the v1 plan, it runs
    `scripts/plan-issues.py --check`, then (owner-approved) `--apply`, and says
    so in the body.
-7. **CI:** two stable reads of the full check set, query stated
-   (`gh pr checks <n> --json name,state,bucket`), as in PR and CI Discipline.
-   A red check: reproduce that gate locally, fix, push again.
+7. **Watch immediately:** in the same turn as `gh pr create` or a follow-up
+   push, start or refresh the watcher described in [PR monitoring](references/monitoring.md).
+   It covers CI, conflicts and every author's feedback at the current head.
+   CI is complete only after two stable reads of the full check set, query
+   stated (`gh pr checks <n> --json name,state,bucket`). A red check: reproduce
+   that gate locally, fix, push again.
 8. **Review threads:** reconcile the thread API against the displayed unresolved
    comments and report exact counts.
 9. **Hand off for merge.** The owner merges every v1 PR (ADR 0024 O2); no agent
@@ -83,6 +92,21 @@ Fix related defects inline when they fit the PR and its proof. A defect that
 needs an owner design decision or unrelated work gets one linked issue, with
 owner agreement quoted; do not expand the drive silently or file an issue per
 nit.
+
+## Issues created during a goal
+
+For every authorized issue created during the work, in the same turn:
+
+1. Add it to the active inventory before implementation starts. Record the
+   originating issue, scope and disposition; include it in a named GitHub
+   Project/milestone only when access allows. Never invent a project number.
+2. Select an existing label from `gh label list`. If none fits, record that
+   rather than silently creating one.
+3. Search open epics using the repo's existing labels, link the fitting epic
+   in the issue body and inventory, or record that none fits.
+4. Carry it to the authorized endpoint or record the owner's agreed deferral.
+   Creating an issue does not authorize expanding the drive. Give children
+   this same inventory rule and reconcile their created issues at handoff.
 
 ## Completion
 

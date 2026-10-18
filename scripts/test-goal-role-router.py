@@ -43,7 +43,44 @@ class GoalRoleRouterTests(unittest.TestCase):
         self.assertIn("perf-fleet", output)
         self.assertIn("review-fleet", output)
         self.assertIn("muse-exec", output)
-        self.assertNotIn("develop-fleet", output)
+        self.assertIn("- develop-fleet:", output)
+
+    def test_drive_routes_implementation_and_independent_review(self):
+        for harness in ("claude", "codex", "muse"):
+            for prompt in ("/goal drive epics #12, #13 using fleet-issue-driver",
+                           "/goal drive issues #12, #13", "/goal drive\n#12"):
+                with self.subTest(harness=harness, prompt=prompt):
+                    output = context(prompt, harness)
+                    self.assertIn("- develop-fleet:", output)
+                    self.assertIn("- review-fleet:", output)
+                    self.assertIn("DRIVE CONTRACT", output)
+                    self.assertIn("The owner merges", output)
+                    self.assertIn("authorized endpoint", output)
+                    self.assertIn("fleet-issue-driver stays", output)
+                    self.assertIn("watcher", output)
+
+    def test_drive_detection_does_not_promote_diagnostic_work(self):
+        for prompt in ("/goal Diagnose drive latency; the issue is flaky using fleet-diagnostic-rigor",
+                       "/goal drive the latency investigation; issue #12 using fleet-diagnostic-rigor",
+                       "/goal drive epics #12suffix", "/goal ship it"):
+            with self.subTest(prompt=prompt):
+                output = context(prompt, "codex")
+                self.assertNotIn("DRIVE CONTRACT", output)
+                self.assertNotIn("- develop-fleet:", output)
+
+    def test_drive_keeps_deep_bindings_and_deduplicates_roles(self):
+        output = context("/goal Drive issue #12 with fleet-issue-driver; implement a difficult fix "
+                         "and review using fleet-code-review", "codex")
+        self.assertEqual(1, output.count("- develop-fleet-deep:"))
+        self.assertEqual(1, output.count("- review-fleet-deep:"))
+        self.assertNotIn("- develop-fleet:", output)
+
+    def test_muse_instructions_require_skills_and_manifest_bindings(self):
+        output = context("/goal Diagnose using fleet-diagnostic-rigor", "muse")
+        self.assertIn("load each named skill body", output)
+        self.assertIn("model and effort", output)
+        self.assertNotIn("DRIVE CONTRACT", output)
+        self.assertNotIn("Muse dispatch", context("/goal Diagnose using fleet-diagnostic-rigor", "claude"))
 
     def test_codex_debug_model_is_manifest_binding(self):
         workhorse = json.loads((ROOT / ".agents/roles.json").read_text())["models"]["codex"]["workhorse"]
@@ -126,7 +163,7 @@ class GoalRoleRouterTests(unittest.TestCase):
 
     def test_project_hook_commands_inject_context(self):
         payload = json.dumps({"session_id": "wire-probe", "cwd": str(ROOT), "model": "x",
-                              "prompt": "/goal Diagnose with fleet-diagnostic-rigor",
+                              "prompt": "/goal drive issues #12, #13",
                               "hook_event_name": "UserPromptSubmit"})
         configs = {"codex": ".codex/hooks.json", "claude": ".claude/settings.json", "muse": ".muse/hooks.json"}
         for harness, config in configs.items():
@@ -136,7 +173,10 @@ class GoalRoleRouterTests(unittest.TestCase):
                 env = {**os.environ, "CLAUDE_PROJECT_DIR": str(ROOT), "CODEX_PROJECT_DIR": str(ROOT)}
                 result = subprocess.run(["/bin/sh", "-c", command], input=payload, capture_output=True,
                                         text=True, cwd=ROOT, env=env, check=True)
-                self.assertIn("debug-fleet", json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"])
+                output = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+                self.assertIn("- develop-fleet:", output)
+                self.assertIn("- review-fleet:", output)
+                self.assertIn("DRIVE CONTRACT", output)
 
     def test_prompt_wrappers_fail_quiet_outside_repo(self):
         with tempfile.TemporaryDirectory() as elsewhere:

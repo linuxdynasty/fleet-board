@@ -120,8 +120,10 @@ scripts/test-check-docs-stale.py, test-check-doc-names.py, test-proto-image.py,
 AGENTS.md                     the rules every harness reads (no CLAUDE.md)
 ```
 
-Muse has no project agent files; `scripts/agent-roles.py muse-exec <role>
-"<task>"` runs a role there with the tier's model and the role's access. The
+Muse native project-role discovery is not qualified in this repo.
+`scripts/agent-roles.py muse-exec <role> "<task>"` passes the tier's model,
+effort and role access explicitly. Discovery, model selection and instruction
+following require separate, versioned live proof before claiming native parity. The
 `codex-exec` and `muse-exec` helpers run headless, for developing this repo only;
 the product never runs a harness headless (ADR 0024).
 
@@ -136,3 +138,20 @@ the product never runs a harness headless (ADR 0024).
 
 `scripts/verify-agent-canon.sh` runs on the macOS system bash 3.2 as well as
 Homebrew bash; it uses no bash 4 features.
+
+## Check a fresh clone
+
+Run `python3 scripts/check-agent-env.py` from a clean clone. It checks host
+tools, project skill links, role bindings, hook JSON and referenced scripts
+without installing anything. `python3 scripts/test-check-agent-env.py` seeds
+missing scripts, broken links, invalid JSON and role drift; `make selftest`
+runs those tests too.
+
+Static success proves the repo files fit together. Per-machine steps remain:
+trust the workspace and restart the harness, authenticate `gh` for this repo,
+and opt in to git hooks with `make hooks`. A live proof must separately show
+hook activation, skill-body loading, role/model selection and scoped
+`AGENTS.md` loading. An untrusted Muse workspace does not run project hooks
+([hooks.md](hooks.md)). Never extract credentials or rewrite harness config
+for these checks. Native provider qualification is tracked in #269/#274;
+this development check does not qualify product session behavior.

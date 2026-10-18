@@ -5,7 +5,7 @@ Reads a UserPromptSubmit (or Agent PreToolUse) payload on stdin and the roles
 in .agents/roles.json. Modes (argv[1]):
 
   claude | codex | muse   a /goal or GOAL: prompt that names project skills gets
-                          role hints (phase candidates, not an execution order)
+                          role routing and, for issue drives, the drive contract
                           with the tier's model binding for that harness
   expand                  print the goal text, reading a prepared goal.txt or
                           goal.md named by `/goal <path>` (used by goal-refresh)
@@ -84,7 +84,15 @@ def resolve(manifest: dict, name: str) -> dict:
     return role
 
 
-def pick_roles(skills: set, lower: str) -> list:
+def is_drive(skills: set, body: str) -> bool:
+    """Only an explicit driver skill or an opening drive + issue id opts in."""
+    normalized = " ".join(body.lower().split())
+    return "fleet-issue-driver" in skills or bool(
+        re.match(r"drive\s+(?:(?:issues?|epics?)\s+)?#\d+\b", normalized)
+    )
+
+
+def pick_roles(skills: set, lower: str, drive: bool = False) -> list:
     deep = bool(re.search(r"\b(intermittent|cross.system|difficult|deep diagnosis|deep performance)\b", lower))
     pair = lambda base: base + "-deep" if deep else base  # noqa: E731
     roles = []
@@ -102,7 +110,9 @@ def pick_roles(skills: set, lower: str) -> list:
         roles.append("arbiter-fleet")
     if "fleet-go" in skills and not roles:
         roles.append("develop-fleet")
-    return roles or ["scan-fleet"]
+    if drive:
+        roles.extend((pair("develop-fleet"), pair("review-fleet")))
+    return list(dict.fromkeys(roles)) or ["scan-fleet"]
 
 
 def route(prompt: str, harness: str, cwd: str = "") -> str:
@@ -111,9 +121,12 @@ def route(prompt: str, harness: str, cwd: str = "") -> str:
         return ""
     manifest = json.loads((ROOT / ".agents/roles.json").read_text())
     skills = set(SKILL_PATTERN.findall(body.lower()))
+    drive = is_drive(skills, body)
+    if drive:
+        skills.add("fleet-issue-driver")
     if not skills:
         return ""
-    roles = pick_roles(skills, SKILL_PATTERN.sub(" ", body.lower()))
+    roles = pick_roles(skills, SKILL_PATTERN.sub(" ", body.lower()), drive)
     lines = ["fleet-board goal role hints (phase candidates, not an execution order):"]
     if "fleet-issue-driver" in skills:
         lines.append("- fleet-issue-driver stays with the main coordinator for issue/PR ownership.")
@@ -132,6 +145,33 @@ def route(prompt: str, harness: str, cwd: str = "") -> str:
     elif harness in {"codex", "muse"}:
         lines.append("When the native child tool cannot select this role and binding, the coordinator can run "
                      "scripts/agent-roles.py %s-exec ROLE TASK." % harness)
+    if drive:
+        fanout = {"claude": "native Agent subagents or team teammates",
+                  "muse": "native subagents/workflows when their bindings are qualified; otherwise muse-exec"}.get(
+                      harness, "native named subagents; otherwise codex-exec")
+        lines.append(
+            "DRIVE CONTRACT: load fleet-issue-driver now. The coordinator owns the issue inventory, "
+            "dependencies, PRs and authorized endpoint. Decompose epics into deduplicated leaves, "
+            "check what main already satisfies, and state the execution order. Delegate independent "
+            "leaves through " + fanout + "; keep shared-file or dependent work sequential and record "
+            "why. Route implementation and independent review to the named roles above; commit before "
+            "review dispatch. Each child loads its named skills and receives its worktree, owned files, "
+            "acceptance criteria and manifest binding. Only the coordinator runs the full gate and "
+            "publishes. Start or refresh a PR watcher in the same turn as PR creation or a follow-up "
+            "push; cover checks, conflicts and comments from every author at the current head. "
+            "Track authorized new issues in the goal inventory with existing labels and an epic link "
+            "when one fits. The owner merges every v1 PR. Stop at the owner's authorized endpoint; "
+            "this contract grants no permission to publish, merge or expand scope."
+        )
+    if harness == "muse":
+        lines.append(
+            "Muse dispatch: load each named skill body before working on its surface. Delegate "
+            "independent lanes, or record why inline is correct. Use the manifest model and effort "
+            "for each role; use muse-exec when native role selection/bindings have not been qualified "
+            "for the installed version. Never infer working hooks or model enforcement from file "
+            "discovery alone. Follow fleet-issue-driver's PR watcher and follow-up inventory rules "
+            "when driving issues."
+        )
     lines.append("Preserve the goal's explicit phases and model choices. Do not assign the whole goal from this "
                  "hint; the main session model is unchanged.")
     return "\n".join(lines)

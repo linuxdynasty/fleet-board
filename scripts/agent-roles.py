@@ -11,7 +11,7 @@ Outputs, all generated and never edited by hand:
                                 on Auto keeps Auto; .cursor/ wins over the
                                 .claude/ and .codex/ copies Cursor also loads)
 
-Muse has no project agent files; use `muse-exec` to run a role there.
+Muse native role discovery is not qualified here; use `muse-exec` for a role.
 
 Usage:
   python3 scripts/agent-roles.py generate      (or --generate)
