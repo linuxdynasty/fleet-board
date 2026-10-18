@@ -57,9 +57,9 @@ func (f *Fleet) ListApprovals(ctx context.Context, req *connect.Request[hubv1.Li
 	var next string
 	err := f.store.Write(ctx, func(tx *sql.Tx) error {
 		filter := approvals.Filter{PageSize: int(size), PageToken: m.GetPageToken()}
-		// Validate the cursor before quota admission. List itself is a read;
+		// Validate the cursor before quota admission without reading rows.
 		// ExpireDue below is the first effect in this writer job.
-		if _, _, err := approvals.List(ctx, tx, filter, now); err != nil {
+		if err := approvals.ValidateListInput(filter, now); err != nil {
 			return err
 		}
 		if err := quotaCheckpoint(ctx, quotaRead); err != nil {

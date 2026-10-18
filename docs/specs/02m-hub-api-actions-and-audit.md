@@ -62,6 +62,10 @@ refusal leaves expiry and audit rows untouched; housekeeping still applies
 the deadline fallback. Successful new decisions charge after approval and
 released-command checks, before decision and outbox writes. A successful
 replay spends one allowance, as for other writes ([02b](02b-hub-api.md)).
+`ListApprovals` checks page size, cursor age and query binding, and filter
+validity without scanning approval rows. After admission, it expires due rows
+and reads the requested page once. A bad cursor returns `PAGE_TOKEN_INVALID`
+even when the read allowance is exhausted.
 
 **Control.** `ControlGoal` guards on `expected_phase`; which action is allowed in
 which phase is the table in [03l](03l-goal-lifecycle-and-verification.md#control-actions-by-phase), and a

@@ -11,6 +11,8 @@
 // sent for a denied or expired approval.
 // Local TCP quota checkpoints run after role and decision validation, before
 // a successful decision changes any row, including on a valid replay.
+// ValidateListInput checks paging and filters without loading a page; the
+// API can charge one read before lazy expiry and the final List query.
 // USER deciders must have the required mapped role; the checked local user
 // covers OWNER. Tokens and devices cannot decide.
 package approvals

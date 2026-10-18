@@ -20,6 +20,10 @@ covers OWNER; tokens and devices cannot decide.
 - `ExpireDue` (and the lazy step in `Get` and `Decide`) moves past-due
   `PENDING` approvals to `EXPIRED` with the `DENY` fallback, audited as
   `approval.expire`. The housekeeping job runs the pass every minute.
+- `ValidateListInput` checks page size, cursor age and query binding, and
+  state and kind filters without reading rows. `List` uses the same checks
+  before loading one page. The API checks them before read quota admission,
+  then expires due rows and lists the page in one writer job.
 - `Withdraw` retires a prompt approval whose prompt left the screen
   (`PromptGone`, pane exit), audited as `approval.withdraw`; a later
   decision fails closed. Row 5's ingest calls it from the event's

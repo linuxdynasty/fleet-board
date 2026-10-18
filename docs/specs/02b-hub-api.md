@@ -359,6 +359,8 @@ inside the transaction. An internal failure after admission remains charged.
 For `RevokeMachine`, a late version, request conflict or unknown-machine refusal
 refunds only the reservation's original quota window; serials already staged
 stay revoked ([02g](02g-agent-security.md)).
+Approval read ordering and lazy expiry are detailed in
+[02m](02m-hub-api-actions-and-audit.md#actions-that-need-an-approval).
 
 ## Errors
 

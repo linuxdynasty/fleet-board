@@ -41,6 +41,10 @@ Each successful incoming call, including a replay, spends one allowance
 after validation. [Local TCP rules](local-tcp.md) also describe
 RevokeMachine's held permit across file staging.
 Export success counters and logs run only after read quota admission.
+`ListApprovals` checks its page cursor without loading approval rows, then
+charges one read before expiring due approvals and loading the result page
+in the same writer job. A bad cursor wins over an exhausted read allowance;
+an exhausted allowance leaves due approvals for the next expiry pass.
 
 `NewLocalServer` sets `ReadHeaderTimeout` (10 s) and `IdleTimeout` (2 min, a
 keep-alive connection with no request), no `ReadTimeout` (Watch and attach will
