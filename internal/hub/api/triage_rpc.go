@@ -142,7 +142,8 @@ func (f *Fleet) SnoozeTriageItem(ctx context.Context, req *connect.Request[hubv1
 	if err != nil {
 		return nil, f.triageFailed(ctx, op, "snooze", actor, "encode", err)
 	}
-	stored, err := statedb.SnoozeTriageItem(ctx, f.store, statedb.TriageSnooze{
+	writeCtx := statedb.WithValidatedWrite(ctx, func() error { return quotaCheckpoint(ctx, quotaWrite) })
+	stored, err := statedb.SnoozeTriageItem(writeCtx, f.store, statedb.TriageSnooze{
 		Write: statedb.TriageWrite{
 			Principal: actor, RequestID: m.GetRequestId(),
 			RequestHash: hash, Actor: actorOf(who), Now: now,
@@ -197,7 +198,8 @@ func (f *Fleet) DismissTriageItem(ctx context.Context, req *connect.Request[hubv
 	if err != nil {
 		return nil, f.triageFailed(ctx, op, "dismiss", actor, "encode", err)
 	}
-	stored, err := statedb.DismissTriageItem(ctx, f.store, statedb.TriageDismiss{
+	writeCtx := statedb.WithValidatedWrite(ctx, func() error { return quotaCheckpoint(ctx, quotaWrite) })
+	stored, err := statedb.DismissTriageItem(writeCtx, f.store, statedb.TriageDismiss{
 		Write: statedb.TriageWrite{
 			Principal: actor, RequestID: m.GetRequestId(),
 			RequestHash: hash, Actor: actorOf(who), Now: now,

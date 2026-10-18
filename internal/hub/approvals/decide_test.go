@@ -114,6 +114,47 @@ func TestDecideApproveConfirm(t *testing.T) {
 	}
 }
 
+func TestUserOwnerDecisionCheckpointAndRole(t *testing.T) {
+	t.Parallel()
+	s := newStore(t)
+	id := mustCreate(t, s, confirmIn())
+	owner := &typev1.Principal{
+		Id: &typev1.PrincipalId{Value: "local-owner"}, Name: "owner",
+		Kind: typev1.PrincipalKind_PRINCIPAL_KIND_USER, Role: typev1.Role_ROLE_OWNER,
+	}
+	denied := errors.New("quota exhausted")
+	checks := 0
+	decide := func(decider *typev1.Principal, check func() error) error {
+		return s.Write(context.Background(), func(tx *sql.Tx) error {
+			_, err := approvals.Decide(context.Background(), tx, approvals.DecideInput{
+				ID: id, ExpectedVersion: 1, Decision: "deny", Decider: decider,
+				RequestID: "req-1", Now: t0, Checkpoint: check,
+			})
+			return err
+		})
+	}
+	check := func() error { checks++; return denied }
+	operator := &typev1.Principal{
+		Id:   &typev1.PrincipalId{Value: "operator"},
+		Kind: typev1.PrincipalKind_PRINCIPAL_KIND_USER, Role: typev1.Role_ROLE_OPERATOR,
+	}
+	if err := decide(operator, check); !errors.Is(err, approvals.ErrRole) {
+		t.Fatalf("operator = %v, want role refusal", err)
+	}
+	if checks != 0 {
+		t.Fatal("role refusal called quota checkpoint")
+	}
+	if err := decide(owner, check); !errors.Is(err, denied) {
+		t.Fatalf("owner = %v, want quota refusal", err)
+	}
+	if checks != 1 || len(auditActions(t, s, "approvals/"+id)) != 0 {
+		t.Fatal("quota refusal changed approval or audit")
+	}
+	if err := decide(owner, nil); err != nil {
+		t.Fatalf("owner decision: %v", err)
+	}
+}
+
 func TestDecideDenySendsNothing(t *testing.T) {
 	t.Parallel()
 	s := newStore(t)
@@ -168,7 +209,7 @@ func TestDecideRefusals(t *testing.T) {
 	user := &typev1.Principal{
 		Id:   &typev1.PrincipalId{Value: "u-bob"},
 		Kind: typev1.PrincipalKind_PRINCIPAL_KIND_USER,
-		Name: "bob",
+		Name: "bob", Role: typev1.Role_ROLE_OPERATOR,
 	}
 	token := &typev1.Principal{
 		Id:   &typev1.PrincipalId{Value: "tok-1"},

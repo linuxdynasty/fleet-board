@@ -94,6 +94,9 @@ func (f *Fleet) ListAuditEntries(ctx context.Context, req *connect.Request[hubv1
 		last := views[end-1]
 		next = mintAuditToken(want, auditSortKey(last, order), auditTieID(last), now)
 	}
+	if err := quotaCheckpoint(ctx, quotaRead); err != nil {
+		return nil, err
+	}
 	return connect.NewResponse(&hubv1.ListAuditEntriesResponse{AuditEntries: out, NextPageToken: next}), nil
 }
 

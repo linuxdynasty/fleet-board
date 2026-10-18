@@ -9,7 +9,8 @@ Plan row 5, PRs 5f and 5g (deadlines, expiry, revoke, pruning).
 
 | Call | Where it runs | What it does |
 |---|---|---|
-| `Enqueue(ctx, tx, In)` | inside the caller's writer job | stores one pending row (Operation `PENDING`, version 1, a `hub_seq` stamp); a known `command_id` returns the stored row with `Created` false; mints a `command_id` when the Command has none |
+| `Enqueue(ctx, tx, In)` | inside the caller's writer job | checks the optional request quota callback after command and machine validation, then stores one pending row (Operation `PENDING`, version 1, a `hub_seq` stamp); a known `command_id` calls the callback before returning the stored row with `Created` false; mints a `command_id` when the Command has none |
+| `CheckEnqueue(ctx, tx, In)` | inside the caller's writer job | repeats Enqueue's caller-error checks without changing a row, so a combined approval and command can validate before quota admission |
 | `Service.Notify(ops...)` | after that job committed | logs `outbox.enqueued` and wakes the sender for the machines |
 | `Service.Ready(machine, epoch)` | after the Snapshot of that epoch committed (the gateway's `ready` seam) | the machine's pending commands may go out on that epoch |
 | `Service.Gone(machine, epoch)` | when that epoch's stream ended | stops sending on it |

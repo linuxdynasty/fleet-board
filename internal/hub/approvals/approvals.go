@@ -72,6 +72,9 @@ type Create struct {
 	RequiredRole  typev1.Role
 	// Now is the hub's clock when the caller decided.
 	Now time.Time
+	// Checkpoint runs after input/encoding checks, before the stamp and
+	// row insert. It must not access the store or network.
+	Checkpoint func() error
 }
 
 // Filter lists approvals by state and kind, newest first.
@@ -146,6 +149,11 @@ func CreateApproval(ctx context.Context, tx *sql.Tx, in Create) (*hubv1.Approval
 		rawCmd, err = proto.MarshalOptions{Deterministic: true}.Marshal(in.Command)
 		if err != nil {
 			return nil, fmt.Errorf("%w: encode gated command: %w", ErrInvalid, err)
+		}
+	}
+	if in.Checkpoint != nil {
+		if err := in.Checkpoint(); err != nil {
+			return nil, err
 		}
 	}
 	st, err := statedb.NextStamp(ctx, tx, in.Now)

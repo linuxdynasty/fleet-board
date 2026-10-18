@@ -116,6 +116,9 @@ func InsertEnrollToken(ctx context.Context, s *store.Store, t EnrollToken) error
 			}
 			previous = t.PreviousMachine
 		}
+		if err := validatedWrite(jctx); err != nil {
+			return err
+		}
 		res, err := tx.ExecContext(jctx, `INSERT INTO enroll_tokens(secret_hash, machine_name, expected_hostname, labels,
 			start_drained, not_after_time, previous_machine, created_time, principal, request_id, request_hash)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,

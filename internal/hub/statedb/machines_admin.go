@@ -349,6 +349,9 @@ func UpdateMachine(ctx context.Context, s *store.Store, in MachineUpdate) (Machi
 	err := s.Write(ctx, func(tx *sql.Tx) error {
 		if replay, err := checkMachineReplay(jctx, tx, in.MachineWrite, machineKindUpdate, in.MachineID); err != nil || replay != nil {
 			if err == nil {
+				if err := validatedWrite(jctx); err != nil {
+					return err
+				}
 				rev, rerr := withRevocation(jctx, tx, *replay)
 				if rerr != nil {
 					return rerr
@@ -377,6 +380,9 @@ func UpdateMachine(ctx context.Context, s *store.Store, in MachineUpdate) (Machi
 		list, err := json.Marshal(labels)
 		if err != nil {
 			return fmt.Errorf("statedb: machine labels: %w", err)
+		}
+		if err := validatedWrite(jctx); err != nil {
+			return err
 		}
 		st, err := NextStamp(jctx, tx, in.Now)
 		if err != nil {

@@ -114,6 +114,9 @@ func (f *Fleet) ListUsageReadings(ctx context.Context, req *connect.Request[hubv
 		last := views[end-1]
 		next = mintUsageToken(want, usageSortKey(last, order), usageTieID(last), now)
 	}
+	if err := quotaCheckpoint(ctx, quotaRead); err != nil {
+		return nil, err
+	}
 	return connect.NewResponse(&hubv1.ListUsageReadingsResponse{Readings: out, NextPageToken: next}), nil
 }
 

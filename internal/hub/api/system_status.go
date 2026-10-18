@@ -45,6 +45,9 @@ func (f *Fleet) GetSystemStatus(ctx context.Context, _ *connect.Request[hubv1.Ge
 	if err != nil {
 		return nil, f.sysStatusFailed(ctx, actor, step, err)
 	}
+	if err := quotaCheckpoint(ctx, quotaRead); err != nil {
+		return nil, err
+	}
 	return connect.NewResponse(&hubv1.GetSystemStatusResponse{
 		Status: system.Snapshot(at, buildinfo.Version, verdicts),
 	}), nil

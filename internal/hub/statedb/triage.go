@@ -333,6 +333,9 @@ func SnoozeTriageItem(ctx context.Context, s *store.Store, in TriageSnooze) (Tri
 	err := s.Write(ctx, func(tx *sql.Tx) error {
 		if replay, err := triageReplay(jctx, tx, in.Write, "snooze"); err != nil || replay != nil {
 			if err == nil {
+				if err := validatedWrite(jctx); err != nil {
+					return err
+				}
 				out = *replay
 			}
 			return err
@@ -349,6 +352,9 @@ func SnoozeTriageItem(ctx context.Context, s *store.Store, in TriageSnooze) (Tri
 		}
 		if !in.Until.After(in.Write.Now) {
 			return ErrTriagePastUntil
+		}
+		if err := validatedWrite(jctx); err != nil {
+			return err
 		}
 		if err := pruneTriageRequests(jctx, tx, in.Write.Now); err != nil {
 			return err
@@ -404,6 +410,9 @@ func DismissTriageItem(ctx context.Context, s *store.Store, in TriageDismiss) (T
 	err := s.Write(ctx, func(tx *sql.Tx) error {
 		if replay, err := triageReplay(jctx, tx, in.Write, "dismiss"); err != nil || replay != nil {
 			if err == nil {
+				if err := validatedWrite(jctx); err != nil {
+					return err
+				}
 				out = *replay
 			}
 			return err
@@ -416,6 +425,9 @@ func DismissTriageItem(ctx context.Context, s *store.Store, in TriageDismiss) (T
 			return err
 		}
 		if err := checkVersion(got.Version, in.ExpectedVersion, "triage"); err != nil {
+			return err
+		}
+		if err := validatedWrite(jctx); err != nil {
 			return err
 		}
 		if err := pruneTriageRequests(jctx, tx, in.Write.Now); err != nil {

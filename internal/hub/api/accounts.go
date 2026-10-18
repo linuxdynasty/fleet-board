@@ -104,6 +104,9 @@ func (f *Fleet) ListAccounts(ctx context.Context, req *connect.Request[hubv1.Lis
 		last := matched[end-1]
 		next = mintAccountToken(want, accountSortKey(last, order), last.stored.ID, now)
 	}
+	if err := quotaCheckpoint(ctx, quotaRead); err != nil {
+		return nil, err
+	}
 	return connect.NewResponse(&hubv1.ListAccountsResponse{Accounts: out, NextPageToken: next}), nil
 }
 
@@ -135,6 +138,9 @@ func (f *Fleet) GetAccount(ctx context.Context, req *connect.Request[hubv1.GetAc
 	v, err := accountViewOf(stored)
 	if err != nil {
 		return nil, f.accountReadFailed(ctx, actor, "store", err)
+	}
+	if err := quotaCheckpoint(ctx, quotaRead); err != nil {
+		return nil, err
 	}
 	return connect.NewResponse(&hubv1.GetAccountResponse{Account: accountFromStored(v.stored, v.spec)}), nil
 }

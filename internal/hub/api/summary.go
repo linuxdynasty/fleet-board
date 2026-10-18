@@ -76,6 +76,9 @@ func (f *Fleet) GetFleetSummary(ctx context.Context, _ *connect.Request[hubv1.Ge
 			// OK, UNKNOWN and UNSPECIFIED carry no strip count.
 		}
 	}
+	if err := quotaCheckpoint(ctx, quotaRead); err != nil {
+		return nil, err
+	}
 	return connect.NewResponse(&hubv1.GetFleetSummaryResponse{
 		Summary: &hubv1.FleetSummary{
 			Version: 1, UpdateTime: timestamppb.New(now),

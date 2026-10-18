@@ -276,7 +276,8 @@ func (f *Fleet) UpdateMachine(ctx context.Context, req *connect.Request[hubv1.Up
 			in.HasLabels = true
 		}
 	}
-	stored, err := statedb.UpdateMachine(ctx, f.store, in)
+	writeCtx := statedb.WithValidatedWrite(ctx, func() error { return quotaCheckpoint(ctx, quotaWrite) })
+	stored, err := statedb.UpdateMachine(writeCtx, f.store, in)
 	if err != nil {
 		return nil, f.machineWriteError(ctx, opMachineUpdate, "update", actor, machineStoreError("update", err))
 	}
@@ -450,7 +451,8 @@ func (f *Fleet) DeleteMachine(ctx context.Context, req *connect.Request[hubv1.De
 		return nil, f.machineFailed(ctx, opMachineDelete, "delete", actor, "encode", err)
 	}
 	now := f.hubNow()
-	deleted, err := statedb.DeleteMachine(ctx, f.store, statedb.MachineDelete{
+	writeCtx := statedb.WithValidatedWrite(ctx, func() error { return quotaCheckpoint(ctx, quotaWrite) })
+	deleted, err := statedb.DeleteMachine(writeCtx, f.store, statedb.MachineDelete{
 		MachineWrite: statedb.MachineWrite{
 			Principal: actor, RequestID: m.GetRequestId(),
 			RequestHash: sum, Actor: actorOf(who), Now: now,

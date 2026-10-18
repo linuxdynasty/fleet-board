@@ -243,7 +243,8 @@ func (f *Fleet) CreateEnrollmentToken(ctx context.Context, req *connect.Request[
 	}
 	now := f.now().UTC().Truncate(time.Millisecond)
 	notAfter := now.Add(ttl)
-	err = statedb.InsertEnrollToken(ctx, f.store, statedb.EnrollToken{
+	writeCtx := statedb.WithValidatedWrite(ctx, func() error { return quotaCheckpoint(ctx, quotaWrite) })
+	err = statedb.InsertEnrollToken(writeCtx, f.store, statedb.EnrollToken{
 		SecretHash: tok.SecretHash, MachineName: m.GetMachineName(), ExpectedHostname: m.GetExpectedHostname(),
 		Labels: m.GetLabels(), StartDrained: m.GetStartDrained(), NotAfter: notAfter,
 		PreviousMachine: m.GetPreviousMachine().GetValue(), Created: now,
@@ -262,6 +263,8 @@ func (f *Fleet) CreateEnrollmentToken(ctx context.Context, req *connect.Request[
 	case errors.Is(err, statedb.ErrNotReenrollable):
 		return nil, f.refused(ctx, actor, apiError(connect.CodeFailedPrecondition, typev1.ReasonCode_REASON_CODE_MACHINE_NOT_REENROLLABLE,
 			"the previous machine is neither revoked nor past its certificate lifetime", nil, nil))
+	case connect.CodeOf(err) == connect.CodeResourceExhausted:
+		return nil, err
 	case err != nil:
 		return nil, f.failed(ctx, actor, "store", err)
 	}

@@ -96,6 +96,9 @@ func (f *Fleet) ListMachines(ctx context.Context, req *connect.Request[hubv1.Lis
 		last := matched[end-1]
 		next = mintMachineToken(want, machineSortKey(last, order), last.MachineID, now)
 	}
+	if err := quotaCheckpoint(ctx, quotaRead); err != nil {
+		return nil, err
+	}
 	return connect.NewResponse(&hubv1.ListMachinesResponse{Machines: out, NextPageToken: next}), nil
 }
 
@@ -124,6 +127,9 @@ func (f *Fleet) GetMachine(ctx context.Context, req *connect.Request[hubv1.GetMa
 	pm, err := machineProto(row)
 	if err != nil {
 		return nil, f.machFailed(ctx, actor, "store", err)
+	}
+	if err := quotaCheckpoint(ctx, quotaRead); err != nil {
+		return nil, err
 	}
 	return connect.NewResponse(&hubv1.GetMachineResponse{Machine: pm}), nil
 }

@@ -65,6 +65,12 @@ func localServer(tel *telemetry.Telemetry, listener string, port int, mux *http.
 					typev1.ReasonCode_REASON_CODE_INVALID_ARGUMENT, "Connect protocol header is required", nil, nil))
 				return
 			}
+			if localModeRPC(r.URL.Path) {
+				_ = errs.Write(w, r, apiError(connect.CodeFailedPrecondition,
+					typev1.ReasonCode_REASON_CODE_SIGN_IN_METHOD_DISABLED,
+					"sign-in and devices are unavailable in local mode", nil, nil))
+				return
+			}
 			r = r.WithContext(withQuota(withLocalOwner(r.Context()), quotas, peer))
 		}
 		mux.ServeHTTP(w, r)
@@ -75,7 +81,26 @@ func localServer(tel *telemetry.Telemetry, listener string, port int, mux *http.
 	}
 	return &http.Server{
 		Handler: h, ReadHeaderTimeout: ReadHeaderTimeout,
-		IdleTimeout: IdleTimeout, ErrorLog: tel.HTTPErrorLog(listener),
+		MaxHeaderBytes: 1 << 20, // bounds raw Cookie scanning without treating unrelated cookies as credentials
+		IdleTimeout:    IdleTimeout, ErrorLog: tel.HTTPErrorLog(listener),
+	}
+}
+
+// localModeRPC is the auth.proto and device.proto surface. Token and
+// notification RPCs have no v1 implementation and remain UNIMPLEMENTED.
+func localModeRPC(path string) bool {
+	const prefix = "/fleet.hub.v1.FleetService/"
+	if !strings.HasPrefix(path, prefix) {
+		return false
+	}
+	switch strings.TrimPrefix(path, prefix) {
+	case "RedeemInvite", "BeginPasskeyRegistration", "FinishPasskeyRegistration",
+		"BeginPasskeyLogin", "FinishPasskeyLogin", "DeletePasskey", "SignOut",
+		"ListLoginSessions", "RevokeLoginSession", "ListUsers", "CreateUserInvite", "UpdateUser",
+		"RequestPairing", "ApprovePairing", "RevokeDevice", "ListDevices", "GetDevice":
+		return true
+	default:
+		return false
 	}
 }
 
@@ -89,11 +114,10 @@ func localPeer(remote string) (netip.Addr, bool) {
 }
 
 // suppliedCredential checks presence, including empty and repeated carriers.
-// Cookie names are examined as bounded raw segments so malformed cookie pairs
-// cannot be dropped by net/http's Cookie parser and silently gain OWNER.
+// Cookie names are examined as raw segments bounded by MaxHeaderBytes so
+// malformed cookie pairs cannot be dropped by net/http's Cookie parser.
 func suppliedCredential(h http.Header) bool {
 	const session = "__Host-fleet_session"
-	const maxCookieBytes = 8192
 	for name, values := range h {
 		if strings.EqualFold(name, "Authorization") {
 			return true
@@ -102,9 +126,6 @@ func suppliedCredential(h http.Header) bool {
 			continue
 		}
 		for _, value := range values {
-			if len(value) > maxCookieBytes {
-				return true
-			}
 			for part := range strings.SplitSeq(value, ";") {
 				name, _, _ := strings.Cut(part, "=")
 				if strings.TrimSpace(name) == session {

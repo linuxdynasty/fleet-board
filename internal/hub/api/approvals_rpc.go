@@ -13,11 +13,13 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	agentv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1"
 	hubv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/hub/v1"
 	typev1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/type/v1"
 	"github.com/linuxdynasty/fleet-board/internal/hub/approvals"
+	"github.com/linuxdynasty/fleet-board/internal/hub/outbox"
 )
 
 // authorizeApprovals admits the caller for ListApprovals, GetApproval and
@@ -54,15 +56,26 @@ func (f *Fleet) ListApprovals(ctx context.Context, req *connect.Request[hubv1.Li
 	var list []*hubv1.Approval
 	var next string
 	err := f.store.Write(ctx, func(tx *sql.Tx) error {
+		filter := approvals.Filter{PageSize: int(size), PageToken: m.GetPageToken()}
+		// Validate the cursor before quota admission. List itself is a read;
+		// ExpireDue below is the first effect in this writer job.
+		if _, _, err := approvals.List(ctx, tx, filter, now); err != nil {
+			return err
+		}
+		if err := quotaCheckpoint(ctx, quotaRead); err != nil {
+			return err
+		}
 		if _, err := approvals.ExpireDue(ctx, tx, now, 200); err != nil {
 			return err
 		}
 		var err error
-		list, next, err = approvals.List(ctx, tx,
-			approvals.Filter{PageSize: int(size), PageToken: m.GetPageToken()}, now)
+		list, next, err = approvals.List(ctx, tx, filter, now)
 		return err
 	})
 	if err != nil {
+		if connect.CodeOf(err) == connect.CodeResourceExhausted {
+			return nil, err
+		}
 		if errors.Is(err, approvals.ErrInvalid) {
 			return nil, f.apprRefused(ctx, apiError(connect.CodeInvalidArgument,
 				typev1.ReasonCode_REASON_CODE_PAGE_TOKEN_INVALID, "bad page_token", nil, nil))
@@ -82,11 +95,22 @@ func (f *Fleet) GetApproval(ctx context.Context, req *connect.Request[hubv1.GetA
 	now := f.hubNow()
 	var got *hubv1.Approval
 	err := f.store.Write(ctx, func(tx *sql.Tx) error {
+		// Zero time asks Get to check the id without lazy expiry. An
+		// exhausted quota must not write an expiration audit row.
+		if _, err := approvals.Get(ctx, tx, req.Msg.GetId().GetValue(), time.Time{}); err != nil {
+			return err
+		}
+		if err := quotaCheckpoint(ctx, quotaRead); err != nil {
+			return err
+		}
 		var err error
 		got, err = approvals.Get(ctx, tx, req.Msg.GetId().GetValue(), now)
 		return err
 	})
 	if err != nil {
+		if connect.CodeOf(err) == connect.CodeResourceExhausted {
+			return nil, err
+		}
 		if errors.Is(err, approvals.ErrUnknown) {
 			return nil, f.apprRefused(ctx, apiError(connect.CodeNotFound,
 				typev1.ReasonCode_REASON_CODE_RESOURCE_NOT_FOUND, "unknown approval", nil, nil))
@@ -141,6 +165,18 @@ func (f *Fleet) DecideApproval(ctx context.Context, req *connect.Request[hubv1.D
 		outcome, err = approvals.Decide(ctx, tx, approvals.DecideInput{
 			ID: m.GetId().GetValue(), ExpectedVersion: m.GetExpectedVersion(), Decision: m.GetDecision(),
 			Decider: who, Actor: actorOf(who), RequestID: m.GetRequestId(), Now: now,
+			BeforeDecision: func(a *hubv1.Approval, promptID string) error {
+				cmd, err := commandForDecision(ctx, tx, a, m.GetDecision(), promptID)
+				if err != nil || cmd == nil {
+					return err
+				}
+				cmd.RequestedBy = who
+				cmd.IssuedTime = timestamppb.New(now)
+				return mapOutboxError(outbox.CheckEnqueue(ctx, tx, outbox.In{
+					MachineID: a.GetMachine().GetValue(), Command: cmd, RequestID: m.GetRequestId(), Now: now,
+				}))
+			},
+			Checkpoint: func() error { return quotaCheckpoint(ctx, quotaWrite) },
 		})
 		if err != nil {
 			return err
@@ -258,28 +294,33 @@ func (f *Fleet) sendDecided(ctx context.Context, tx *sql.Tx, who *typev1.Princip
 	outcome approvals.Outcome, requestID string, now time.Time,
 ) (*hubv1.Operation, string, error) {
 	a := outcome.Approval
+	cmd, err := commandForDecision(ctx, tx, a, a.GetDecision(), outcome.PromptID)
+	if err != nil || cmd == nil {
+		return nil, "", err
+	}
+	return f.sendApprovedTx(ctx, tx, who, a, cmd, requestID, now)
+}
+
+func commandForDecision(ctx context.Context, tx *sql.Tx, a *hubv1.Approval,
+	decision, promptID string,
+) (*agentv1.Command, error) {
 	switch a.GetKind() {
 	case hubv1.ApprovalKind_APPROVAL_KIND_PROMPT_ANSWER:
-		cmd := &agentv1.Command{
+		return &agentv1.Command{
 			Kind: &agentv1.Command_SendKeys{SendKeys: &agentv1.SendKeys{
 				Pane: a.GetPane(),
 				Keys: []*typev1.KeyInput{
-					{Input: &typev1.KeyInput_Literal{Literal: a.GetDecision()}},
+					{Input: &typev1.KeyInput_Literal{Literal: decision}},
 					{Input: &typev1.KeyInput_Key{Key: typev1.NamedKey_NAMED_KEY_ENTER}},
 				},
-				AnsweringPrompt: &typev1.PromptId{Value: outcome.PromptID},
+				AnsweringPrompt: &typev1.PromptId{Value: promptID},
 				Purpose:         typev1.SendKeysPurpose_SEND_KEYS_PURPOSE_PROMPT_ANSWER,
 			}},
-		}
-		return f.sendApprovedTx(ctx, tx, who, a, cmd, requestID, now)
+		}, nil
 	case hubv1.ApprovalKind_APPROVAL_KIND_COMMAND_CONFIRM:
-		cmd, err := approvals.StoredCommand(ctx, tx, a.GetId().GetValue())
-		if err != nil {
-			return nil, "", err
-		}
-		return f.sendApprovedTx(ctx, tx, who, a, cmd, requestID, now)
+		return approvals.StoredCommand(ctx, tx, a.GetId().GetValue())
 	default:
-		return nil, "", nil
+		return nil, nil
 	}
 }
 
@@ -308,6 +349,13 @@ func (f *Fleet) gateCommand(ctx context.Context, who *typev1.Principal, req prot
 			if err != nil {
 				return err
 			}
+			// The first read checks the stored id without expiring it.
+			if _, err := approvals.Get(ctx, tx, id, time.Time{}); err != nil {
+				return err
+			}
+			if err := quotaCheckpoint(ctx, quotaWrite); err != nil {
+				return err
+			}
 			approval, err = approvals.Get(ctx, tx, id, now)
 			return err
 		}
@@ -323,6 +371,7 @@ func (f *Fleet) gateCommand(ctx context.Context, who *typev1.Principal, req prot
 			RequiredRole:  typev1.Role_ROLE_OWNER,
 			Command:       cmd,
 			Now:           now,
+			Checkpoint:    func() error { return quotaCheckpoint(ctx, quotaWrite) },
 		})
 		if err != nil {
 			return err

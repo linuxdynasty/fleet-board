@@ -110,6 +110,9 @@ func (f *Fleet) ListChangeRequests(ctx context.Context, req *connect.Request[hub
 		last := matched[end-1]
 		next = mintChangeRequestToken(want, changeRequestSortKey(last, order), last.row.Key, now)
 	}
+	if err := quotaCheckpoint(ctx, quotaRead); err != nil {
+		return nil, err
+	}
 	return connect.NewResponse(&hubv1.ListChangeRequestsResponse{ChangeRequests: out, NextPageToken: next}), nil
 }
 
@@ -147,6 +150,9 @@ func (f *Fleet) GetChangeRequest(ctx context.Context, req *connect.Request[hubv1
 	w, err := changeRequestProto(v)
 	if err != nil {
 		return nil, f.changeRequestReadFailed(ctx, actor, "store", err)
+	}
+	if err := quotaCheckpoint(ctx, quotaRead); err != nil {
+		return nil, err
 	}
 	return connect.NewResponse(&hubv1.GetChangeRequestResponse{ChangeRequest: w}), nil
 }

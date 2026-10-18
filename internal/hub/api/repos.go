@@ -101,6 +101,9 @@ func (f *Fleet) ListRepos(ctx context.Context, req *connect.Request[hubv1.ListRe
 		last := matched[end-1]
 		next = mintRepoToken(want, repoSortKey(last, order), repoIDOf(last), now)
 	}
+	if err := quotaCheckpoint(ctx, quotaRead); err != nil {
+		return nil, err
+	}
 	return connect.NewResponse(&hubv1.ListReposResponse{Repos: out, NextPageToken: next}), nil
 }
 
@@ -135,6 +138,9 @@ func (f *Fleet) GetRepo(ctx context.Context, req *connect.Request[hubv1.GetRepoR
 	v, err := repoViewOf(stored)
 	if err != nil {
 		return nil, f.repoReadFailed(ctx, actor, "store", err)
+	}
+	if err := quotaCheckpoint(ctx, quotaRead); err != nil {
+		return nil, err
 	}
 	return connect.NewResponse(&hubv1.GetRepoResponse{Repo: repoFromStored(v.stored, v.spec)}), nil
 }

@@ -103,6 +103,9 @@ func (f *Fleet) ListIntegrations(ctx context.Context, req *connect.Request[hubv1
 		last := matched[end-1]
 		next = mintIntegrationToken(want, integrationSortKey(last, order), last.stored.ID, now)
 	}
+	if err := quotaCheckpoint(ctx, quotaRead); err != nil {
+		return nil, err
+	}
 	return connect.NewResponse(&hubv1.ListIntegrationsResponse{Integrations: out, NextPageToken: next}), nil
 }
 

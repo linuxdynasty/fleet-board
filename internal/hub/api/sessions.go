@@ -98,6 +98,9 @@ func (f *Fleet) ListSessions(ctx context.Context, req *connect.Request[hubv1.Lis
 		last := matched[end-1]
 		next = mintSessionToken(want, sessionSortKey(last, order), last.SessionID, now)
 	}
+	if err := quotaCheckpoint(ctx, quotaRead); err != nil {
+		return nil, err
+	}
 	return connect.NewResponse(&hubv1.ListSessionsResponse{Sessions: out, NextPageToken: next}), nil
 }
 
@@ -126,6 +129,9 @@ func (f *Fleet) GetSession(ctx context.Context, req *connect.Request[hubv1.GetSe
 	ps, err := sessionProto(row)
 	if err != nil {
 		return nil, f.sessReadFailed(ctx, actor, "store", err)
+	}
+	if err := quotaCheckpoint(ctx, quotaRead); err != nil {
+		return nil, err
 	}
 	return connect.NewResponse(&hubv1.GetSessionResponse{Session: ps}), nil
 }

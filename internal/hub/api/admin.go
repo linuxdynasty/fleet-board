@@ -60,6 +60,12 @@ func NewAdmin(ln *net.UnixListener, opts AdminOptions) (net.Listener, *http.Serv
 				"the admin socket takes no browser requests")
 			return
 		}
+		if opts.Fleet.localTrusted && localModeRPC(r.URL.Path) {
+			_ = errs.Write(w, r, apiError(connect.CodeFailedPrecondition,
+				typev1.ReasonCode_REASON_CODE_SIGN_IN_METHOD_DISABLED,
+				"sign-in and devices are unavailable in local mode", nil, nil))
+			return
+		}
 		mux.ServeHTTP(w, r)
 	})
 	timeout := opts.RequestTimeout

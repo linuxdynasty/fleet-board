@@ -117,6 +117,9 @@ func (f *Fleet) ListWorkItems(ctx context.Context, req *connect.Request[hubv1.Li
 		last := matched[end-1]
 		next = mintWorkItemToken(want, workItemSortKey(last, order), last.row.Key, now)
 	}
+	if err := quotaCheckpoint(ctx, quotaRead); err != nil {
+		return nil, err
+	}
 	return connect.NewResponse(&hubv1.ListWorkItemsResponse{WorkItems: out, NextPageToken: next}), nil
 }
 
@@ -157,6 +160,9 @@ func (f *Fleet) GetWorkItem(ctx context.Context, req *connect.Request[hubv1.GetW
 	w, err := workItemProto(v)
 	if err != nil {
 		return nil, f.workItemReadFailed(ctx, actor, "store", err)
+	}
+	if err := quotaCheckpoint(ctx, quotaRead); err != nil {
+		return nil, err
 	}
 	return connect.NewResponse(&hubv1.GetWorkItemResponse{WorkItem: w}), nil
 }

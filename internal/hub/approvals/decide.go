@@ -71,6 +71,13 @@ type DecideInput struct {
 	Actor           statedb.Actor
 	RequestID       string
 	Now             time.Time
+	// BeforeDecision may check the command released by an approve choice
+	// after all approval refusals, before quota or state changes. It must
+	// only read within the caller's writer transaction.
+	BeforeDecision func(a *hubv1.Approval, promptID string) error
+	// Checkpoint runs after replay and decision validation, before a
+	// successful decision changes any row. A valid replay runs it too.
+	Checkpoint func() error
 }
 
 // Outcome is what Decide stored.
@@ -106,6 +113,11 @@ func Decide(ctx context.Context, tx *sql.Tx, in DecideInput) (Outcome, error) {
 		if err != nil {
 			return Outcome{}, err
 		}
+		if in.Checkpoint != nil {
+			if err := in.Checkpoint(); err != nil {
+				return Outcome{}, err
+			}
+		}
 		out := Outcome{Approval: a, Sends: sendsFor(a, in.Decision), Replay: true, OperationID: rec.operation}
 		if a.GetKind() == hubv1.ApprovalKind_APPROVAL_KIND_PROMPT_ANSWER {
 			out.PromptID = rec.promptID
@@ -131,6 +143,21 @@ func Decide(ctx context.Context, tx *sql.Tx, in DecideInput) (Outcome, error) {
 		return Outcome{}, fmt.Errorf("%w: %q", ErrDecision, in.Decision)
 	}
 	sends := sendsFor(a, in.Decision)
+	if sends && a.GetKind() == hubv1.ApprovalKind_APPROVAL_KIND_PROMPT_ANSWER {
+		if err := checkInflight(ctx, tx, a.GetMachine().GetValue(), rec.promptID); err != nil {
+			return Outcome{}, err
+		}
+	}
+	if sends && in.BeforeDecision != nil {
+		if err := in.BeforeDecision(a, rec.promptID); err != nil {
+			return Outcome{}, err
+		}
+	}
+	if in.Checkpoint != nil {
+		if err := in.Checkpoint(); err != nil {
+			return Outcome{}, err
+		}
+	}
 	if sends && a.GetKind() == hubv1.ApprovalKind_APPROVAL_KIND_PROMPT_ANSWER {
 		if err := holdInflight(ctx, tx, a.GetMachine().GetValue(), rec.promptID,
 			a.GetId().GetValue(), in.Now); err != nil {
@@ -178,11 +205,16 @@ func checkRole(decider *typev1.Principal, required typev1.Role) error {
 	if decider.GetKind() == typev1.PrincipalKind_PRINCIPAL_KIND_LOCAL_USER {
 		return nil
 	}
-	if required == typev1.Role_ROLE_OWNER {
-		return fmt.Errorf("%w: needs OWNER", ErrRole)
-	}
 	if decider.GetKind() == typev1.PrincipalKind_PRINCIPAL_KIND_USER {
-		return nil
+		role := decider.GetRole()
+		if role == typev1.Role_ROLE_OWNER ||
+			required == typev1.Role_ROLE_VIEWER && role == typev1.Role_ROLE_OPERATOR {
+			return nil
+		}
+		if required == typev1.Role_ROLE_OPERATOR && role == typev1.Role_ROLE_OPERATOR {
+			return nil
+		}
+		return fmt.Errorf("%w: needs %s", ErrRole, required)
 	}
 	return fmt.Errorf("%w: caller kind decides nothing", ErrRole)
 }
@@ -265,6 +297,25 @@ func storeDecision(ctx context.Context, tx *sql.Tx, a *hubv1.Approval, in Decide
 // fingerprints include the machine id).
 func promptKey(machineID, promptID string) string {
 	return machineID + "\x00" + promptID
+}
+
+// checkInflight gives an already-held prompt's caller error precedence over
+// a quota refusal. The later INSERT remains the unique-constraint backstop.
+func checkInflight(ctx context.Context, tx *sql.Tx, machineID, promptID string) error {
+	if promptID == "" {
+		return fmt.Errorf("%w: prompt approval needs its prompt id", ErrInvalid)
+	}
+	var held string
+	err := tx.QueryRowContext(ctx, `SELECT approval_id FROM approval_inflight WHERE prompt_key = ?`,
+		promptKey(machineID, promptID)).Scan(&held)
+	switch {
+	case err == nil:
+		return fmt.Errorf("%w: %s", ErrInflight, promptID)
+	case errors.Is(err, sql.ErrNoRows):
+		return nil
+	default:
+		return fmt.Errorf("approvals: check in-flight: %w", err)
+	}
 }
 
 // holdInflight reserves the prompt's answer row. A held row refuses the

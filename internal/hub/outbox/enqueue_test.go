@@ -44,6 +44,33 @@ func TestEnqueueStoresOnePendingRow(t *testing.T) {
 	}
 }
 
+func TestEnqueueCheckpointFollowsValidationAndPrecedesWrite(t *testing.T) {
+	t.Parallel()
+	s := newStore(t)
+	denied := errors.New("quota exhausted")
+	checks := 0
+	check := func() error { checks++; return denied }
+	if _, err := enqueue(t, s, outbox.In{MachineID: "m9", Command: interrupt("c1"), Now: t0, Checkpoint: check}); !errors.Is(err, outbox.ErrMachineUnknown) {
+		t.Fatalf("missing machine = %v", err)
+	}
+	if checks != 0 {
+		t.Fatalf("invalid command called checkpoint %d times", checks)
+	}
+	if _, err := enqueue(t, s, outbox.In{MachineID: "m1", Command: interrupt("c1"), Now: t0, Checkpoint: check}); !errors.Is(err, denied) {
+		t.Fatalf("valid command = %v, want checkpoint error", err)
+	}
+	if n := count(t, s, `SELECT count(*) FROM commands`); n != 0 {
+		t.Fatalf("denied command wrote %d rows", n)
+	}
+	mustEnqueue(t, s, "m1", "c1")
+	if _, err := enqueue(t, s, outbox.In{MachineID: "m1", Command: interrupt("c1"), Now: t0, Checkpoint: check}); !errors.Is(err, denied) {
+		t.Errorf("valid stored command = %v, want checkpoint error", err)
+	}
+	if checks != 2 {
+		t.Errorf("checkpoint calls = %d, want 2", checks)
+	}
+}
+
 // A command_id already stored is a no-op that returns the stored row: no
 // second row, no new hub_seq, nothing changed, even with another body.
 func TestEnqueueIsIdempotentOnCommandID(t *testing.T) {

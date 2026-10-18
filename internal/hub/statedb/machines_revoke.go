@@ -279,6 +279,9 @@ func DeleteMachine(ctx context.Context, s *store.Store, in MachineDelete) (Machi
 	err := s.Write(ctx, func(tx *sql.Tx) error {
 		if replay, err := checkMachineReplay(jctx, tx, in.MachineWrite, machineKindDelete, in.MachineID); err != nil || replay != nil {
 			if err == nil {
+				if err := validatedWrite(jctx); err != nil {
+					return err
+				}
 				out = *replay
 			}
 			return err
@@ -291,6 +294,9 @@ func DeleteMachine(ctx context.Context, s *store.Store, in MachineDelete) (Machi
 			return ErrMachineNotRevoked
 		}
 		if err := checkVersion(got.Version, in.ExpectedVersion, "machine"); err != nil {
+			return err
+		}
+		if err := validatedWrite(jctx); err != nil {
 			return err
 		}
 		for _, q := range []struct {

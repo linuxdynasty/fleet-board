@@ -47,8 +47,10 @@ func (f *Fleet) GetServerInfo(ctx context.Context, _ *connect.Request[hubv1.GetS
 		mode = hubv1.AuthMode_AUTH_MODE_LOCAL_TRUSTED
 	}
 	caller := PrincipalFrom(ctx)
-	if _, err := authorizeScope(ctx, "READ"); err != nil {
-		caller = nil
+	if caller.GetKind() == typev1.PrincipalKind_PRINCIPAL_KIND_USER || caller.GetRole() == typev1.Role_ROLE_OWNER {
+		if _, err := authorizeScope(ctx, "READ"); err != nil {
+			caller = nil
+		}
 	}
 	return connect.NewResponse(&hubv1.GetServerInfoResponse{
 		ApiVersion: APIVersion, HubVersion: buildinfo.Version,

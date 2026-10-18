@@ -95,6 +95,9 @@ func (f *Fleet) ListTriageItems(ctx context.Context, req *connect.Request[hubv1.
 		last := matched[end-1]
 		next = mintTriageToken(want, triageSortKey(last, order), last.stored.ID, now)
 	}
+	if err := quotaCheckpoint(ctx, quotaRead); err != nil {
+		return nil, err
+	}
 	return connect.NewResponse(&hubv1.ListTriageItemsResponse{TriageItems: out, NextPageToken: next}), nil
 }
 
@@ -124,6 +127,9 @@ func (f *Fleet) GetTriageItem(ctx context.Context, req *connect.Request[hubv1.Ge
 	item, err := triageItem(stored)
 	if err != nil {
 		return nil, f.triageReadFailed(ctx, actor, "store", err)
+	}
+	if err := quotaCheckpoint(ctx, quotaRead); err != nil {
+		return nil, err
 	}
 	return connect.NewResponse(&hubv1.GetTriageItemResponse{TriageItem: item}), nil
 }

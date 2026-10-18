@@ -117,6 +117,9 @@ func (f *Fleet) GetSettings(ctx context.Context, req *connect.Request[hubv1.GetS
 	if err != nil {
 		return nil, f.settingsReadFailed(ctx, actor, "store", err)
 	}
+	if err := quotaCheckpoint(ctx, quotaRead); err != nil {
+		return nil, err
+	}
 	return connect.NewResponse(&hubv1.GetSettingsResponse{Settings: settingsFromLayer(v.stored, v.spec)}), nil
 }
 
@@ -200,6 +203,9 @@ func (f *Fleet) ListSettings(ctx context.Context, req *connect.Request[hubv1.Lis
 	if end < len(matched) {
 		last := matched[end-1]
 		next = mintSettingsToken(want, settingsSortKey(last, order), last.stored.Scope, now)
+	}
+	if err := quotaCheckpoint(ctx, quotaRead); err != nil {
+		return nil, err
 	}
 	return connect.NewResponse(&hubv1.ListSettingsResponse{Settings: out, NextPageToken: next}), nil
 }

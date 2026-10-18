@@ -5,13 +5,15 @@ confirming a destructive command or a `KillWindow` on a developer's window,
 or confirming a dispatch with a `CONFIRM` check (03d W7, 02m).
 
 - `CreateApproval` stores one `PENDING` approval (version 1) in the raising
-  writer job's transaction and stamps it for Watch.
+  writer job's transaction and stamps it for Watch. An optional local TCP
+  quota checkpoint runs after input checks and before the stamp.
 - `Decide` records the decision and audits `approval.decide`. Checks run in
   order: the `request_id` replay, the state (`ErrClosed` wins over
   `ErrVersion`), the version, the role, then the decision. An approve
   decision for a prompt reserves the in-flight row; the caller enqueues the
   command with `outbox.Enqueue` and records it with `AttachOperation` in the
-  same transaction. A deny sends nothing.
+  same transaction. A deny sends nothing. A valid replay or decision checks
+  the caller's write quota before any new state change.
 - `ExpireDue` (and the lazy step in `Get` and `Decide`) moves past-due
   `PENDING` approvals to `EXPIRED` with the `DENY` fallback, audited as
   `approval.expire`. The housekeeping job runs the pass every minute.

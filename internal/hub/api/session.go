@@ -103,6 +103,9 @@ func (f *Fleet) sendOne(ctx context.Context, who *typev1.Principal, req proto.Me
 			if err != nil {
 				return err
 			}
+			if err := quotaCheckpoint(ctx, quotaWrite); err != nil {
+				return err
+			}
 			out = op
 			emitKind, emitOutcome = outbox.KindName(cmd), "replayed"
 			return nil
@@ -111,6 +114,7 @@ func (f *Fleet) sendOne(ctx context.Context, who *typev1.Principal, req proto.Me
 		cmd.IssuedTime = timestamppb.New(now)
 		op, err := outbox.Enqueue(ctx, tx, outbox.In{
 			MachineID: machine, Command: cmd, RequestID: requestID, Now: now,
+			Checkpoint: func() error { return quotaCheckpoint(ctx, quotaWrite) },
 		})
 		if err != nil {
 			return mapOutboxError(err)

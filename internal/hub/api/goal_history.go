@@ -76,6 +76,9 @@ func (f *Fleet) ListGoalRuns(ctx context.Context, req *connect.Request[hubv1.Lis
 	if end < len(runs) {
 		next = mintGoalToken(want, []string{runNumberKey(page[len(page)-1].GetNumber())}, id, now)
 	}
+	if err := quotaCheckpoint(ctx, quotaRead); err != nil {
+		return nil, err
+	}
 	return connect.NewResponse(&hubv1.ListGoalRunsResponse{Runs: page, NextPageToken: next}), nil
 }
 
@@ -121,6 +124,9 @@ func (f *Fleet) ListGoalTransitions(ctx context.Context, req *connect.Request[hu
 				typev1.ReasonCode_REASON_CODE_PAGE_TOKEN_INVALID, "bad page_token", nil,
 				[]*typev1.FieldViolation{{Field: "page_token", Description: "bad page_token"}}))
 		}
+	}
+	if err := quotaCheckpoint(ctx, quotaRead); err != nil {
+		return nil, err
 	}
 	return connect.NewResponse(&hubv1.ListGoalTransitionsResponse{}), nil
 }
