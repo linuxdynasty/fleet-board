@@ -116,7 +116,11 @@ func TestAWakeCutsTheBackoffButKeepsTheGap(t *testing.T) {
 			browseStarts := make(chan time.Time, 2)
 			d := &fakeDiscover{hold: true}
 			d.onBrowse = func() {
-				browseStarts <- time.Now()
+				// Only the first two starts matter; later reconnects keep running.
+				select {
+				case browseStarts <- time.Now():
+				default:
+				}
 				d.mu.Lock()
 				d.hold = false
 				d.mu.Unlock()
@@ -146,7 +150,14 @@ func TestAWakeCutsTheBackoffButKeepsTheGap(t *testing.T) {
 			if got := h.stream(2).hello.GetReason(); got != tc.ev.Reason {
 				t.Errorf("the Hello after a %s in backoff says %v, want %v", tc.name, got, tc.ev.Reason)
 			}
-			if got := d.count(); got != 2 {
+			// A later reconnect can begin before the timing observer is read.
+			// It must not hold discovery or shutdown when the channel is full.
+			h.restart(t)
+			removeState(t, a, conn.HubAddressFile)
+			waitFor(t, 5*time.Second, "backoff after restart", func() bool { return r.loop.Status().State == conn.StateBackoff })
+			events <- tc.ev
+			h.connected(t, 3)
+			if got := d.count(); got != 3 {
 				t.Fatalf("browses = %d, want one per attempt", got)
 			}
 			first, second := <-browseStarts, <-browseStarts
