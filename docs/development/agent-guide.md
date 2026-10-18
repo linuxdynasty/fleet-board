@@ -252,6 +252,14 @@ nightly run does the same for `make test-all` and uploads the whole profile as
 the `coverage-profile` artifact (kept 14 days); `go tool cover
 -html=cover.out` shows it line by line.
 
+The gates job has a 55-minute execution ceiling. In [PR #370’s full-scope
+run](https://github.com/linuxdynasty/fleet-board/actions/runs/39164587340),
+all required steps passed in 37 minutes 25 seconds. Its benchmark report could
+run for eight more minutes, so the old 45-minute ceiling cancelled the job.
+The ceiling increases by ten minutes; jobs, triggers, test counts and the
+report’s eight-minute cap stay the same. Normal runs do not automatically take
+ten more minutes. This one run does not establish a new monthly estimate.
+
 The plan includes 2000 GitHub Actions minutes a month. Estimates, in minutes
 a month (typical / worst case):
 
