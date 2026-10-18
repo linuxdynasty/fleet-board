@@ -10,9 +10,10 @@
 // be exactly 127.0.0.1 or ::1, with no override. Keys this build does not
 // implement yet (mode authenticated, listen.pprof, the authenticated-mode TLS
 // and allow-list keys, OTLP export) are refused as "not built yet";
-// rate_limits, timing and github are loaded and checked but have no effect
-// until the plan rows 02k names (discovery.mdns turns the mDNS advertisement
-// on or off). state_dir is refused when <state_dir>/admin.sock
+// rate_limits apply to the local TCP API and /metrics. timing and github are
+// loaded and checked but have no effect until the plan rows 02k names.
+// discovery.mdns turns the mDNS advertisement on or off.
+// state_dir is refused when <state_dir>/admin.sock
 // would not fit in sun_path (104 bytes on darwin, 108 on Linux). The github
 // section is checked for shape only; its key files are never opened here.
 package config
