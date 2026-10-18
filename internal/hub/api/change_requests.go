@@ -22,16 +22,7 @@ import (
 // GetChangeRequest (02d: READ). Until a later row-12 slice brings caller
 // scopes, that is only the local user, who maps to OWNER and covers READ.
 func authorizeChangeRequests(ctx context.Context) (*typev1.Principal, error) {
-	p := PrincipalFrom(ctx)
-	if p.GetId().GetValue() == "" {
-		return nil, apiError(connect.CodeUnauthenticated, typev1.ReasonCode_REASON_CODE_CREDENTIALS_INVALID,
-			"no caller identity", nil, nil)
-	}
-	if p.GetKind() != typev1.PrincipalKind_PRINCIPAL_KIND_LOCAL_USER {
-		return nil, apiError(connect.CodePermissionDenied, typev1.ReasonCode_REASON_CODE_SCOPE_MISSING,
-			"this call needs the READ scope", map[string]string{"scope": "READ"}, nil)
-	}
-	return p, nil
+	return authorizeScope(ctx, "READ")
 }
 
 // ListChangeRequests lists the synced provider mirrors (02k): the change

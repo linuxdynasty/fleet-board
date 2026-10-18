@@ -1,12 +1,14 @@
 // Package api is the hub's HTTP API (docs/specs/02b-hub-api.md, 02f).
 //
-// [Handler] is the whole surface of the local_trusted API listener (and of
-// the optional metrics listener): the 02f Host and Origin checks before any
-// handler, then GET /metrics, and 404 for every other path. A refused Host or
+// [NewLocalServer] serves the generated FleetService and GET /metrics on the
+// local_trusted API listener. [NewMetricsServer] serves only metrics on the
+// optional listener. Both check the loopback peer, Host, Origin and unsupported
+// credential carriers before any handler and share [Quotas]. A refused Host or
 // Origin is a Connect permission_denied error (HTTP 403) whose ErrorDetail
 // reason is HOST_NOT_ALLOWED or ORIGIN_NOT_ALLOWED, counted in
 // fleet_hub_auth_failures_total{reason="host"|"origin"}. No CORS header is
-// ever sent. [NewServer] wraps it with header and idle timeouts and an
+// ever sent. [NewServer] remains a metrics-only helper. Servers use header and
+// idle timeouts and an
 // ErrorLog that turns net/http's own error lines into debug-level JSON events.
 //
 // [Fleet] is FleetService with CreateEnrollmentToken (it writes the
@@ -60,6 +62,5 @@
 // closing unserved every connection whose kernel peer user id
 // ([KernelPeerUID]) is not fleetd's and refusing any request with an Origin
 // header; the caller is [LocalUser] of the peer. [AdminClient] dials the
-// socket. Watch and FleetService on the API listener arrive with their plan
-// rows.
+// socket. Watch remains unimplemented until its plan-row proof is complete.
 package api

@@ -35,16 +35,7 @@ var sessionNameRule = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
 // calls (02d). Until plan row 12 brings caller scopes, that is only the
 // local user, who maps to OWNER.
 func authorizeSessionsWrite(ctx context.Context) (*typev1.Principal, error) {
-	p := PrincipalFrom(ctx)
-	if p.GetId().GetValue() == "" {
-		return nil, apiError(connect.CodeUnauthenticated, typev1.ReasonCode_REASON_CODE_CREDENTIALS_INVALID,
-			"no caller identity", nil, nil)
-	}
-	if p.GetKind() != typev1.PrincipalKind_PRINCIPAL_KIND_LOCAL_USER {
-		return nil, apiError(connect.CodePermissionDenied, typev1.ReasonCode_REASON_CODE_SCOPE_MISSING,
-			"this call needs the SESSIONS_WRITE scope", map[string]string{"scope": "SESSIONS_WRITE"}, nil)
-	}
-	return p, nil
+	return authorizeScope(ctx, "SESSIONS_WRITE")
 }
 
 // actorOf is the audit actor for a principal.

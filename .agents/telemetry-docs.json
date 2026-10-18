@@ -62,6 +62,7 @@
     "fleet_agent"
   ],
   "metrics": {
+    "api_rate_limited_": "docs/specs/05b-observability.md",
     "agent_cert_": "docs/specs/05b-observability.md",
     "agent_rollback_": "docs/specs/03n-reconnect.md",
     "approvals_": "docs/specs/03d-triage-sessions-logs.md",

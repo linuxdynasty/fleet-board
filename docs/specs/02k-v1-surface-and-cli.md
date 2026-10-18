@@ -29,12 +29,12 @@ it belongs and a reader can tell "not built yet" from "forgotten".
   authenticated-mode keys `public_hosts`, `public_origins`, `tls.api_cert_file`,
   `tls.api_key_file`, `tls.api_tailscale` (v3); `listen.pprof` (no plan row builds
   it yet); `telemetry.otlp.endpoint` (until OTLP export lands).
-  **Loaded and checked, no effect until the row that uses it:** `rate_limits.*` (row 12, the per-principal and
-  per-peer limits, `/metrics` included); `timing.max_sync_lag` (rows 13 and 23);
+  **Loaded and checked, no effect until the row that uses it:** `timing.max_sync_lag` (rows 13 and 23);
   `timing.verify_grace` (row 22); `timing.ready_timeout` and
   `timing.goal_file_timeout` (row 21); the `github` section (row 11; its key files
   are never opened before then); the other `telemetry.otlp` keys (with the
   endpoint).
+- `rate_limits.*` is enforced on the local TCP API and `/metrics` by row 12.
 - Sign-in and device RPCs in `local_trusted` stay `FAILED_PRECONDITION`
   ([02f](02f-hub-authentication.md#modes)); that is a mode rule, not a release rule.
 

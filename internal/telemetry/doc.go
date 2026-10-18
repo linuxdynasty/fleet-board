@@ -14,6 +14,8 @@
 //   - an OpenTelemetry tracer provider with no exporter: spans give log lines
 //     their trace ids and go nowhere else.
 //
+// The auth-failure counter also records unsupported local TCP credentials
+// and requests missing the Connect protocol header, with closed reasons.
 // The metric prefix is fleet_hub for fleetd and fleet_agent for fleet-agent
 // ([Telemetry.MetricPrefix]). OTLP export is opt-in and arrives with the
 // configuration rows of the plan.
