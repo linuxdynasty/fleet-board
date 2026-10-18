@@ -12,8 +12,8 @@ import (
 )
 
 // healthSeams are the AgentHealth numbers the machine hooks read from other
-// parts of the agent. A nil one reads 0 (machine.Hooks). Row 6e wires Refused
-// and row 7 ControlDown.
+// parts of the agent. A nil one reads 0 (machine.Hooks). run wires the
+// executor's refusal count and the configured observer clients' down count.
 type healthSeams struct {
 	Unacked     func() int
 	Reconnects  func() uint64

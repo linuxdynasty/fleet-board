@@ -294,7 +294,8 @@ resident memory, read by the resource sampler on its 30 s tick (gopsutil
 `process`, [ADR 0031](../adr/0031-gopsutil-process-for-own-rss.md)), unset when
 it could not be read or the sample is older than three intervals;
 `commands_refused_total` and `tmux_control_down` come from the command executor
-and the tmux control clients (rows 6e and 7), and read 0 until those exist;
+and the configured tmux control clients (rows 6e and 7); both are wired by
+`fleet-agent run` for the default-server Interrupt slice;
 `ring_events` and `ring_bytes` are what the event ring holds (entries and
 bytes, `events.Emitter.Size`), set by the connection loop at each heartbeat;
 `probes_failing` is row 8's. The agent's own gauge `fleet_agent_unacked_results` is set by the connection loop at each snapshot and `ResultAck`, so it can differ for a moment from the exact `unacked_results` of the heartbeat, which is the store's count. Counters are plain numbers, because 0 is a true

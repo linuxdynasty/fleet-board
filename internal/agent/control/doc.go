@@ -2,7 +2,8 @@
 // issue #67): F1 EnsureSession, F2 EnsureWindow, F3 SendKeys
 // (OPERATOR_TEXT only), F4 Interrupt, F5 RespawnPane (the pane's own
 // command only), F6 KillWindow and E11 SetPaneAvailability here, the
-// rest in later slices.
+// rest in later slices. Production registers only F4 for the default server;
+// its capability is tmux.default_server.interrupt version 1.
 //
 // A command arrives from the hub through the executor, which already checked
 // the deadline, the epoch and seq, the safe mode, the rate limit, the role

@@ -214,7 +214,8 @@ time (else `EXPIRED`);
 `epoch` equals the current `HelloAck.epoch` (else `FAILED` /
 `EPOCH_MISMATCH`, `retryable = true`: the hub re-issues it under the new
 epoch); `seq` greater than the last applied for that epoch (else
-`REJECTED_BY_POLICY` / `SEQ_REPLAYED`); `requires` capability advertised (else `UNSUPPORTED` with
+`REJECTED_BY_POLICY` / `SEQ_REPLAYED`); `requires` capability advertised at a
+nonzero version (else `UNSUPPORTED` with
 `missing_capability`); local policy and effective settings (else
 `REJECTED_BY_POLICY`); `requested_by.role` sufficient for the kind or
 harness command class (else `REJECTED_BY_POLICY` / `ROLE_INSUFFICIENT`); for

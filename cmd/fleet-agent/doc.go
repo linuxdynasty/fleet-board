@@ -16,7 +16,10 @@
 // one event emitter on agent.db (internal/agent/events): each policy change
 // is a `policy_changed` event and each resource sample a `resource_sample`
 // event. The durable ones wait in the event ring until the hub acknowledges
-// them, and the connection loop sends them on the stream. `doctor [--json]`
+// them, and the connection loop sends them on the stream. `run` also merges
+// saved hub settings under local policy, and executes only default-server F4
+// Interrupt commands through the durable command executor and observer.
+// `doctor [--json]`
 // prints the local checks of internal/agent/doctor (exit 1 when one fails);
 // its probe-trust check starts each installed harness once in the probe
 // folder on a throwaway tmux server, reads the first screen, sends no key

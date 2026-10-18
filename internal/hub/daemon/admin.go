@@ -12,6 +12,7 @@ import (
 	"github.com/linuxdynasty/fleet-board/internal/hub/config"
 )
 
+
 // bindAdmin opens <state_dir>/admin.sock (02j). Call it with fleetd.lock
 // held: a socket already there belongs to a hub that died (SIGKILL leaves
 // it), so it is removed first; anything else at that path is refused and
@@ -37,6 +38,7 @@ func bindAdmin(cfg *config.Config, opts Options, fleet *api.Fleet, s *session) (
 	if err := os.Chmod(path, 0o600); err != nil {
 		return listener{}, errors.Join(fmt.Errorf("daemon: chmod admin socket: %w", err), ln.Close())
 	}
+
 	wrapped, srv := api.NewAdmin(ln, api.AdminOptions{
 		Fleet: fleet, Telemetry: s.tel, UID: uint32(uid), PeerUID: opts.PeerUID,
 	})

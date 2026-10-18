@@ -21,6 +21,14 @@ E11 `SetPaneAvailability` records the developer's board mark for one pane on
 the observer's in-memory overlay (or clears it): no tmux call, no screen
 gate, `RepeatSafe` like the other declarative kinds.
 
+Production currently constructs only `NewInterrupt` for the default server.
+The agent wraps its F4 handler with the effective settings check and
+advertises only `tmux.default_server.interrupt` version 1. The other
+handlers here remain unregistered. A resumed unfinished F4 command may send
+C-c again; a completed command replays its saved result.
+E11's in-memory mark still differs from the state-directory persistence
+required by `command_tmux.proto`; it is not a complete production operation.
+
 ```go
 runner, _ := proc.NewRunner(tel)
 caller, _ := proc.For("tmux")

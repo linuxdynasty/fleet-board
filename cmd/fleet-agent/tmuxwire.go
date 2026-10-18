@@ -7,6 +7,7 @@ import (
 
 	agentv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1"
 	"github.com/linuxdynasty/fleet-board/internal/agent/machine"
+	"github.com/linuxdynasty/fleet-board/internal/agent/tmux"
 	"github.com/linuxdynasty/fleet-board/internal/agent/tmux/inventory"
 	"github.com/linuxdynasty/fleet-board/internal/proc"
 	"github.com/linuxdynasty/fleet-board/internal/telemetry"
@@ -55,4 +56,19 @@ func (t tmuxRun) watch() (string, bool) {
 		return "", false
 	}
 	return t.obs.Folder(), t.obs.WatchOff()
+}
+
+// controlDown reports every configured observer client, including the probe
+// server, without exposing either server to command dispatch.
+func (t tmuxRun) controlDown() uint32 {
+	if t.obs == nil {
+		return 0
+	}
+	clients := make([]*tmux.Client, 0, 3)
+	for _, name := range []string{"default", "fleet", "fleet-probe"} {
+		if client := t.obs.Client(name); client != nil {
+			clients = append(clients, client)
+		}
+	}
+	return tmux.ControlDown(clients...)
 }

@@ -22,7 +22,8 @@
 // admin service answers CreateEnrollmentToken, the machine admin writes,
 // and GetServerInfo, wired to the revocation list, the agent listener's
 // live-stream cut and the outbox service for a revoke's after-commit
-// effects. One Fleet instance is served on both API and admin listeners and
+// effects and each newly committed session command. One Fleet instance is
+// served on both API and admin listeners and
 // reports the agent listener's hub_instance_id,
 // so the id on the API is the one the agents see. An
 // advertiser (internal/hub/discovery) announces the hub over mDNS once the

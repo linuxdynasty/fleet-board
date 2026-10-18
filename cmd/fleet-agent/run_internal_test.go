@@ -25,9 +25,13 @@ type startup struct {
 	hub     *conntest.Hub
 }
 
-func newStartup(t *testing.T) *startup {
+func newStartup(t *testing.T, opts ...conntest.Options) *startup {
 	t.Helper()
-	h := conntest.StartHub(t, conntest.Options{})
+	var hubOpts conntest.Options
+	if len(opts) > 0 {
+		hubOpts = opts[0]
+	}
+	h := conntest.StartHub(t, hubOpts)
 	logs := &conntest.Buffer{}
 	tel, err := telemetry.New(telemetry.Config{Service: telemetry.Agent, Version: "test", InstanceID: "boot", LogOutput: logs})
 	if err != nil {

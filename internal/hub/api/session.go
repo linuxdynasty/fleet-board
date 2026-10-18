@@ -93,7 +93,8 @@ func (f *Fleet) sendOne(ctx context.Context, who *typev1.Principal, req proto.Me
 	// Telemetry waits for the commit: a job that rolls back must not
 	// leave a "sent" count or log behind.
 	var emitKind, emitOutcome, emitMachine, emitCommand string
-	err = f.store.Write(ctx, func(tx *sql.Tx) error {
+	var queued outbox.Op
+	done, err := f.store.Submit(ctx, func(tx *sql.Tx) error {
 		machine, err := resolveSession(ctx, tx, sessionID)
 		if err != nil {
 			return err
@@ -131,11 +132,21 @@ func (f *Fleet) sendOne(ctx context.Context, who *typev1.Principal, req proto.Me
 		if err != nil {
 			return err
 		}
+		queued = op
 		emitKind, emitOutcome, emitMachine, emitCommand = op.Kind, "sent", machine, op.CommandID
 		return nil
 	})
+	if err == nil {
+		// A submitted job can commit after the RPC context is cancelled.
+		// Always await the writer's definitive outcome before reading its
+		// outputs and waking delivery of a new row.
+		err = <-done
+	}
 	if err != nil {
 		return nil, f.storeError(ctx, actor, err)
+	}
+	if queued.Created && f.onCommandQueued != nil {
+		f.onCommandQueued(queued)
 	}
 	f.countSession(ctx, emitKind, emitOutcome)
 	if emitOutcome == "sent" {

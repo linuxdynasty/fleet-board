@@ -3,17 +3,22 @@
 The agent's command executor (plan row 6, PR 6e). It answers every
 `Command` the hub sends with one `CommandResult`, after the envelope
 checks of [02, "Envelope checks"](../../../docs/specs/02-contracts.md#delivery-semantics),
-and never types into a pane itself: that is a handler's job, and row 6
-registers none.
+and never types into a pane itself: that is a handler's job. The current
+production run registers only default-server `Interrupt` (F4).
 
 ```go
 ex, err := exec.New(exec.Options{
-	DB: db, Sender: loop, Clock: loop.HubClock(), Policy: exec.FromPolicy(pm),
-	Audit: auditLog, Home: home, Telemetry: tel, Handlers: exec.Handlers(),
+	DB: db, Sender: loop, Clock: loop.HubClock(), Policy: settingsManager,
+	Audit: auditLog, Home: home, Telemetry: tel, Handlers: handlers,
 })
 go ex.Run(ctx)
 // LoopOptions: Command: ex.Command, OnConnected: ex.OnConnected, Capabilities: ex.Capabilities
 ```
+
+The production wiring also passes `settingsManager.Hook` as the connection's
+Settings hook and runs that manager before connecting. F4's handler checks the
+effective default-server mode again when it executes or resumes. With no local
+approver yet, a required approval waits until `LOCAL_CONFIRM_TIMEOUT`.
 
 ## Order of checks
 
@@ -26,7 +31,7 @@ go ex.Run(ctx)
    (`ring.LogAndApply`). `EPOCH_MISMATCH` (retryable) and `SEQ_REPLAYED`
    are answered unlogged and unacked. Then `CommandAck`.
 5. **Requires**: a handler for the kind and some handler advertising the
-   capability at that version, else `UNSUPPORTED` with
+   capability at that nonzero version, else `UNSUPPORTED` with
    `missing_capability`.
 6. **Policy**: safe mode lets only observe commands through
    (`POLICY_SAFE_MODE`); the rate limit (`RATE_LIMITED`, retryable,

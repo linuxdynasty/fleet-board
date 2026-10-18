@@ -131,14 +131,16 @@ lacks it answers `UNSUPPORTED` without decoding the kind. `requires` carries
 one capability, the most specific; the agent derives the others locally and
 answers `CAPABILITY_MISSING` with `missing_capability` for any it lacks.
 `Capability.version` in a requirement is a **minimum**: an advertised version
-equal or higher satisfies it. Versions start at 1 and a capability's version
+equal or higher satisfies it. Versions start at 1; a zero-version requirement
+is unsupported. A capability's version
 rises only when its behaviour changes in a way a command could notice.
 
 | Command kind | `requires` | Repeat safe |
 |---|---|---|
 | `EnsureProbe`, `StopProbe` | `usage.probe.<harness>` | yes |
 | `EnsureSession`, `EnsureWindow` | `tmux.control`; `tmux.default_server.control` for the developer's server; `tmux.fleet_server` for `tmux -L fleet`; launching a harness also needs `harness.<name>` | yes |
-| `SendKeys`, `Interrupt`, `RespawnPane`, `KillWindow`, `SetPaneAvailability` | `tmux.control` (`tmux.default_server.control` on the developer's server) | `SendKeys` no ([02](02-contracts.md#delivery-semantics)); `Interrupt` effectively; the others yes |
+| `Interrupt` on the default server | `tmux.default_server.interrupt` version 1: the complete F4 operation, subject to current policy and approval | effectively; a resumed unfinished attempt may resend C-c |
+| `SendKeys`, `RespawnPane`, `KillWindow`, `SetPaneAvailability` | `tmux.control` (`tmux.default_server.control` on the developer's server) | `SendKeys` no ([02](02-contracts.md#delivery-semantics)); the others yes |
 | `CapturePane` | `tmux.observe` | yes |
 | `RunHarnessCommand` | `harness.catalog` | `OBSERVE` class only ([02](02-contracts.md#delivery-semantics)) |
 | `Preflight` | `preflight` | yes |

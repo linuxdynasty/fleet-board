@@ -71,8 +71,8 @@ fleet-agent run    # logs to stderr; stop with Ctrl-C or SIGTERM
   version, user, binary hash) and the latest resource sample (load, memory,
   memory pressure, free disk under the state folder), and each heartbeat the
   load and its health numbers (results not yet acknowledged, reconnects since
-  start, its own resident memory; the refused-command and tmux counts read 0
-  until those parts exist). A reading that failed is left out, not sent as 0
+  start, refused commands, tmux control clients down, and its own resident
+  memory). A reading that failed is left out, not sent as 0
   (`internal/agent/machine`; `sample.failed` in the log).
 - It makes the config folder (mode 0700) when it is missing, loads
   `policy.yaml` once, and watches the folder: an edit, a replace by rename, a
@@ -85,6 +85,36 @@ fleet-agent run    # logs to stderr; stop with Ctrl-C or SIGTERM
   A missing file is a normal first run; an invalid one starts
   the agent in safe mode (`policy.safe_mode`, one line naming the line number and
   key, never the file's text). `run` never writes `policy.yaml`.
+- It loads saved hub settings from `agent.db`, merges them under local
+  policy, and answers new settings on the connection. Its Snapshot carries
+  the held settings generation. The executor uses the same merged settings
+  for rate limits, safe mode and local approval. `InterruptPane` is the only
+  production control handler: it advertises `tmux.default_server.interrupt`
+  version 1, requires effective `default_server: control`, and sends fixed
+  C-c through the observer's default-server client. A local approval rule
+  waits without typing and times out until the local approval command lands.
+  Scheduler requests are refused until an agent-local fleet-ownership guard
+  can prove they target a fleet session; manual owner/operator requests remain
+  allowed by the role matrix.
+  The hub can route only sessions already in its `hub_sessions` table;
+  arbitrary developer sessions still need the session mirror. Its current
+  `CreateSession` path queues an unregistered `EnsureSession` command, so
+  it does not create a working pane for this slice.
+
+The run path keeps its shared state and shutdown order explicit:
+
+```text
+connection receive hook -> bounded executor/settings intake
+  -> agent.db single writer (command/settings commit)
+  -> per-pane lock -> observer client mutex -> tmux C-c
+  -> agent.db result commit -> connection send -> hub result commit
+
+stop: cancel workers -> join executor/settings/observers
+  -> close settings metrics and audit log -> close event emitter -> close agent.db
+```
+
+No lock or database transaction spans a stream send or tmux call. A new
+hub outbox row wakes the connection only after the hub writer commits it.
 - Exit codes: 0 after a signal (it says goodbye to the hub first; a
   signal while it is still starting is a clean stop too, logged as
   `run.stopped{step}`; a real startup failure at the same moment still

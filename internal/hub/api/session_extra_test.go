@@ -21,10 +21,11 @@ func TestSessionCallsSend(t *testing.T) {
 	enrollMachine(t, e, "m1")
 	sess := createSession(t, e, "m1", "work")
 	pane := &typev1.PaneKey{Server: "fleet", ServerStartId: "s1", PaneId: "%1"}
+	defaultPane := &typev1.PaneKey{Server: "default", ServerStartId: "s1", PaneId: "%1"}
 	sid := &typev1.SessionId{Value: sess}
 	before := pendingCommands(t, e, "m1")
 	if _, err := e.client.InterruptPane(context.Background(), connect.NewRequest(&hubv1.InterruptPaneRequest{
-		RequestId: "req-int-1", Session: sid, Pane: pane,
+		RequestId: "req-int-1", Session: sid, Pane: defaultPane,
 	})); err != nil {
 		t.Fatalf("InterruptPane: %v", err)
 	}
@@ -57,6 +58,7 @@ func TestSessionCallRefusals(t *testing.T) {
 	enrollMachine(t, e, "m1")
 	sess := createSession(t, e, "m1", "work")
 	pane := &typev1.PaneKey{Server: "fleet", ServerStartId: "s1", PaneId: "%1"}
+	defaultPane := &typev1.PaneKey{Server: "default", ServerStartId: "s1", PaneId: "%1"}
 	sid := &typev1.SessionId{Value: sess}
 	bad := &typev1.SessionId{Value: "sess_missing"}
 	cases := []struct {
@@ -101,7 +103,7 @@ func TestSessionCallRefusals(t *testing.T) {
 		}, connect.CodeInvalidArgument, typev1.ReasonCode_REASON_CODE_INVALID_ARGUMENT},
 		{"missing request id", func() error {
 			_, err := e.client.InterruptPane(context.Background(), connect.NewRequest(&hubv1.InterruptPaneRequest{
-				Session: sid, Pane: pane,
+				Session: sid, Pane: defaultPane,
 			}))
 			return err
 		}, connect.CodeInvalidArgument, typev1.ReasonCode_REASON_CODE_REQUEST_ID_MISSING},

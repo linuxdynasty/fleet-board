@@ -199,6 +199,25 @@ func New(o Options) (*Ensurer, error) {
 	return e, nil
 }
 
+// NewInterrupt binds only F4 to the default server. The other Ensurer
+// dependencies are deliberately absent: registering a broader handler later
+// requires its own complete wiring and proof.
+func NewInterrupt(o Options) (*Ensurer, error) {
+	if o.Runner == nil || o.Caller.Name() == "" || o.Socket == "" || o.Sender == nil ||
+		o.Server != "default" || o.Kind != typev1.TmuxServerKind_TMUX_SERVER_KIND_DEFAULT {
+		return nil, errors.New("control: Interrupt needs the default server, runner, tmux caller, socket and observer client")
+	}
+	tmuxProgram := o.Tmux
+	if tmuxProgram == "" {
+		tmuxProgram = "tmux"
+	}
+	return &Ensurer{
+		runner: o.Runner, caller: o.Caller, tmux: tmuxProgram, socket: o.Socket,
+		server: o.Server, kind: o.Kind, sender: o.Sender, rec: o.Rec,
+		panes: map[string]*sync.Mutex{},
+	}, nil
+}
+
 // nameRE is the fleet session name (command_tmux.proto EnsureSession.name),
 // re-checked on the agent: the hub validates, the agent fails closed.
 var nameRE = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)

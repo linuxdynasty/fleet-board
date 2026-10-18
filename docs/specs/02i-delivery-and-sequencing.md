@@ -227,6 +227,9 @@ flag, so a restart keeps the id and the hub's apply stays idempotent.
 
 Code comments cite the plan row 6 ruling (#34) by fork: "fork 4 i" is the log row and the seq advance in one transaction, with `EPOCH_MISMATCH` and `SEQ_REPLAYED` answered unlogged; "fork 4 iii" is the restart recovery in the `command_log` row above.
 
+A command with a missing or zero-version `requires` is logged and answered
+`UNSUPPORTED`; repeating its id returns that saved refusal without a new effect.
+
 Losing `agent.db` is a re-install: a new `install_id` and `seq_hwm` from 0,
 which the hub treats as an agent rollback (rule 3 above). Enrollment is not
 in it: the key, certificate, CA, `machine_id`, salt, `fleet_id` and the

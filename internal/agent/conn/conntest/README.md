@@ -19,6 +19,7 @@ h.SetState(t, machineID, "ONLINE"); h.State(t, machineID) // seed and read machi
 h.Housekeep(t, now)                                    // the hub's machine-state job once (STALE, OFFLINE, cuts)
 m := h.Machine(t, machineID)                           // statedb.ReadSnapshot: state, facts, policy, seq floor
 ops := h.Enqueue(t, machineID, cmd)                    // outbox.Enqueue in a writer job, then Outbox().Notify
+h.CurrentStore(); h.Telemetry(); h.NotifyCommand(ops[0]) // production API integration seam; no retention across Restart
 h.Commands(t, machineID); h.Results(t, machineID)      // commands, command_results
 h.LogText()                                            // every hub log line, to check order
 ```
@@ -46,7 +47,9 @@ and `Housekeep` runs the machine-state job of `fleetd run`'s housekeeping
 once at the given hub clock. `Enqueue` is the product path of a command:
 `outbox.Enqueue` inside one writer job, then `Outbox().Notify` after the
 commit; the hub sends it once the machine's Snapshot of its epoch
-committed. `Commands` reads `commands` (outbox and Operation state, the
+committed. `CurrentStore`, `Telemetry` and `NotifyCommand` let an
+integration test build the real `api.Fleet` against this listener and use
+the daemon's after-commit wake path. `Commands` reads `commands` (outbox and Operation state, the
 last send's epoch and seq) and `Results` reads `command_results`. Tests that need what a real hub cannot do (a deaf hub, a
 cut after HelloAck) keep the in-package fakes and route `Connect` to them
 through `Wrap`.
