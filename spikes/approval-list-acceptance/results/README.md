@@ -10,10 +10,11 @@ the Q4 load budget are **NOT_CHECKED**.
 
 ## Workload and measurement boundaries
 
-Host: Apple M4 Pro (`Mac16,11`), Darwin 27.0.0 arm64, external APFS volume,
-Go 1.27.2, `CGO_ENABLED=0`. Benchstat is `golang.org/x/perf` at
+Host: Apple M4 Pro (`Mac16,11`), Darwin 27.0.0 arm64, Go 1.27.2, `CGO_ENABLED=0`. Benchstat is `golang.org/x/perf` at
 `v0.0.0-20260709024250-82a0b07e230d`. Root granted a quiet-host window:
-other agents held builds and tests while these measurements ran. Both variants
+other agents held builds and tests while these measurements ran. The source
+checkout was on external APFS; the fixture uses `testing.TempDir`, and its
+exact database volume was not recorded during the original run. Both variants
 ran in the same process against the same real `state.db` created with
 `statedb.Create/Open`. The store sets WAL, `synchronous=FULL`, macOS
 `fullfsync=ON`, and a single writer (`internal/store/store.go`). The fixture has
@@ -40,7 +41,7 @@ expired and mismatched tokens, and invalid filters; that test was **not run in
 this measurement window** because the overlay temporarily replaced its file.
 
 The earlier `deff9a6827c0688d4acb9e5f6f98d49990b37058` shim probe on the
-same host, OS, filesystem, and Go toolchain had a warm baseline callback median
+same host, OS, and Go toolchain had a warm baseline callback median
 of 28.89 ms (27.01–31.58 ms). The current paired baseline median was 25.88 ms
 (18.01–30.07 ms), so the contemporaneous pair below is the comparison used
 for acceptance. The predeclared threshold was at least 20% lower callback time
