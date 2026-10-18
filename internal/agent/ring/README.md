@@ -33,6 +33,12 @@ n, err := db.AckResults(ctx, ack.GetCommandIds(), now)        // unknown or alre
 err = db.SaveSettings(ctx, ring.Held{Epoch: e, Generation: g, Settings: kept, Ack: ack, PolicyHash: h}) // ErrSettingsOrder below the held generation of e
 h, ok, err := db.HeldSettings(ctx)                           // the held settings; State has their epoch and generation for Hello
 n, err = db.Prune(ctx, hubNow)                                // hub time; 7 days and 10,000 entries, never one the hub may re-send
+native, err := db.CreateNativeSession(ctx, record)            // dormant #266 ownership row, generation 1
+effect, dup, err := db.AdmitNativeEffect(ctx, input)           // PREPARED; digest binds the logged command
+effect, err = db.ClaimNativeEffect(ctx, id, owner, generation) // MAY_HAVE_RUN only after committed writer job
+native, err = db.BindNativeProviderSession(ctx, sessionID, owner, generation, startEffectID, providerID)
+effect, err = db.ResolveNativeEffect(ctx, id, owner, generation, outcome, evidence)
+page, err := db.RecoverNativeEffects(ctx, afterEffectID, 100) // mark uncertainty and hold session
 ```
 
 - **Private.** `Open` creates `agent.db` with mode 0600 before SQLite opens
@@ -125,10 +131,28 @@ n, err = db.Prune(ctx, hubNow)                                // hub time; 7 day
   one per unsaved event (refused at emit, or a failed ring write) and one per
   named entry this job deleted (`RowsAffected`), so an entry already gone is
   not counted twice.
+- **Disabled native journal** (migration 9, #266; [02n](../../../docs/specs/02n-native-execution.md)).
+  `native_sessions` keeps machine/installation/controller ownership under the
+  existing Fleet `SessionId`; a provider ID is bound only to one exact claimed
+  start effect and both IDs then stay fixed. `native_effects` keeps per-session
+  admission order and `CommandBodyDigest`, SHA-256 of the exact stored encoded
+  command. It verifies command binding, not logical input equivalence. A fresh
+  retry needs a new effect and command ID, one retained `NO_EFFECT` predecessor
+  in the same session/kind/generation, and a unique predecessor link. Both
+  tables use this file's single writer.
+  A claim checks owner, generation, state and earlier unresolved work inside
+  the writer; only a successful commit returns `MAY_HAVE_RUN`. Restart changes
+  an uncertain claim to `RECONCILE_REQUIRED` and holds ordinary session work.
+  No command-log foreign key permits its normal pruning without deleting the
+  journal. Reads and recovery are paged at 1–1,000 effects. There is no
+  runtime producer, adapter, public command, or measured retention policy yet.
 
 Signals: none of its own. `store.opened`, `store.migrated` and the
 `fleet_agent_writer_*` and `fleet_agent_store_*` metrics (`db="agent"`, 05b)
 come from `internal/store`.
+No-Observability-Change: these existing store signals also cover the dormant
+native journal; its runtime producer needs admission and reconciliation
+signals before it can be enabled.
 
 Tests use a real file in `t.TempDir()`: migrations on a fresh file and a
 reopen, a migration from schema 2, the file mode, a loose file refused,

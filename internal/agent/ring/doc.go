@@ -38,4 +38,14 @@
 // sent, never a lower generation within an epoch ([ErrSettingsOrder]);
 // [DB.HeldSettings] reads it back, and [State] carries its epoch and
 // generation for Hello. The merge is internal/agent/settings.
+// Migration 9 adds the disabled native journal (#266; 02n):
+// [DB.CreateNativeSession] saves machine-side ownership under the existing
+// Fleet SessionId, and [DB.AdmitNativeEffect] binds a digest-only intent to a
+// logged command. CommandBodyDigest hashes exact stored command bytes, not a
+// canonical native input. [DB.BindNativeProviderSession] keeps a provider ID
+// with its exact claimed start effect. [DB.ClaimNativeEffect] commits MAY_HAVE_RUN before any
+// future adapter call can be authorized. [DB.RecoverNativeEffects] holds
+// uncertain work for reconciliation; [DB.ResolveNativeEffect] records bounded
+// evidence. Neither table depends on command_log for its lifetime, so normal
+// pruning cannot erase uncertain native work. There is no runtime caller yet.
 package ring
