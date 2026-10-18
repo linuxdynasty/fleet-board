@@ -18,12 +18,20 @@ transport, and how a terminal attach over WebSocket is opened and closed.
 
 ## Modes
 
+**Release boundary.** v1 ships only `local_trusted`. Before admitting its fixed
+owner, it refuses any present `Authorization` header and any exact
+`__Host-fleet_session` cookie with `CREDENTIALS_INVALID`, including empty or
+malformed carriers. Unrelated cookies, including `__Host-fleet_oauth`, grant no
+identity. The local approval secret remains required for protected calls.
+The credential flows below describe the planned v3 surface; [02k](02k-v1-surface-and-cli.md)
+lists what is currently built.
+
 | | `local_trusted` | `authenticated` |
 |---|---|---|
 | Listens on | loopback only (`127.0.0.1`, `::1`), plain HTTP; `fleetd` refuses to start on any other address, with no override flag | any address the owner configures, normally the Tailscale or LAN interface, **HTTPS only**: the owner supplies a certificate or uses a Tailscale certificate, and `fleetd` refuses to start in this mode without one (no plain-HTTP listener, no override flag) |
 | Who calls | the owner, with no sign-in | users (passkey or GitHub), API tokens, paired devices |
-| Principal | fixed `{id "local-owner", name "owner", kind USER, role OWNER}`; a valid `Authorization: Bearer` token narrows it to that token's scopes (a convenience, not a boundary: no header means OWNER); an invalid one is `CREDENTIALS_INVALID` | by credential, below |
-| Sign-in and device RPCs | `FAILED_PRECONDITION`: every RPC of [auth.proto](../../api/fleet/hub/v1/auth.proto) (users, invites, passkeys, login sessions, sign-out) and the device RPCs of `device.proto` (`RequestPairing`, `ApprovePairing`, `ListDevices`, `GetDevice`, `RevokeDevice`). API-token RPCs and notification targets work for the local owner | all of them |
+| Principal | fixed `{id "local-owner", name "owner", kind USER, role OWNER}`; v1 refuses `Authorization`. When v3 API tokens ship, a valid `Authorization: Bearer` token narrows it to that token's scopes (a convenience, not a boundary: no header means OWNER); an invalid one is `CREDENTIALS_INVALID` | by credential, below |
+| Sign-in and device RPCs | `FAILED_PRECONDITION`: every RPC of [auth.proto](../../api/fleet/hub/v1/auth.proto) (users, invites, passkeys, login sessions, sign-out) and the device RPCs of `device.proto` (`RequestPairing`, `ApprovePairing`, `ListDevices`, `GetDevice`, `RevokeDevice`). API-token RPCs and notification targets work for the local owner in v3; until built they return `UNIMPLEMENTED` | all of them |
 | Attach | a WebSocket needs a ticket in both modes; a CLI over HTTP/2 needs none. Both pass the Host and Origin checks | same |
 
 Listening only on the Tailscale interface, and needing login to attach, apply to
@@ -106,7 +114,9 @@ credentials and 403 for Host and Origin. A WebSocket refused before the upgrade
 gets the same.
 
 **Operational endpoints.** `GET /metrics` and the optional `/debug/pprof` are
-not RPCs and take only two credentials: a loopback TCP peer (proxy headers are
+not RPCs. In v1, metrics accepts only the checked loopback peer and refuses the
+credential carriers above; pprof is not built. The planned v3 endpoints take
+only two credentials: a loopback TCP peer (proxy headers are
 never trusted) or an API token (`Authorization: Bearer`) whose effective scopes
 include `ADMIN`; `/debug/pprof` needs both the loopback listener and `ADMIN`. A
 cookie or a device signature is refused, so a browser page cannot scrape them,
