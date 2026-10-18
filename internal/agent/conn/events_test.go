@@ -112,14 +112,13 @@ func TestAWakeCutsTheBackoffButKeepsTheGap(t *testing.T) {
 			a := enrolled(t, h)
 			removeState(t, a, conn.HubAddressFile)
 			// The first search takes time; the next one returns at once.
-			// Browse starts mark the beginning of each whole attempt here.
-			browseStarts := make(chan time.Time, 2)
+			// The loop reports its exact pacing timestamp before starting discovery.
+			attemptStarts := make(chan time.Time, 2)
 			d := &fakeDiscover{hold: true}
 			d.onBrowse = func() {
-				// Only the first two starts matter; later reconnects keep running.
-				select {
-				case browseStarts <- time.Now():
-				default:
+				// Model delayed scheduling before the asynchronous observer runs.
+				if d.count() == 1 {
+					time.Sleep(100 * time.Millisecond)
 				}
 				d.mu.Lock()
 				d.hold = false
@@ -137,10 +136,17 @@ func TestAWakeCutsTheBackoffButKeepsTheGap(t *testing.T) {
 			const gap = 300 * time.Millisecond
 			r := startLoop(t, a, func(o *conn.LoopOptions) {
 				slowBackoff(o)
+				conn.SetAttemptHook(o, func(at time.Time) {
+					// Only the first two starts matter; later reconnects keep running.
+					select {
+					case attemptStarts <- at:
+					default:
+					}
+				})
 				o.Backoff.MinGap = gap
 				o.Events = events
 				useMDNS(o, d)
-				o.BrowseTimeout = 250 * time.Millisecond
+				o.BrowseTimeout = 100 * time.Millisecond
 				o.Identity.HubAddresses = []string{h.addr}
 			})
 			waitFor(t, 5*time.Second, "the first Hello", func() bool { return h.count() == 1 && h.stream(1).ended })
@@ -151,7 +157,7 @@ func TestAWakeCutsTheBackoffButKeepsTheGap(t *testing.T) {
 				t.Errorf("the Hello after a %s in backoff says %v, want %v", tc.name, got, tc.ev.Reason)
 			}
 			// A later reconnect can begin before the timing observer is read.
-			// It must not hold discovery or shutdown when the channel is full.
+			// It must not hold the loop or shutdown when the channel is full.
 			h.restart(t)
 			removeState(t, a, conn.HubAddressFile)
 			waitFor(t, 5*time.Second, "backoff after restart", func() bool { return r.loop.Status().State == conn.StateBackoff })
@@ -160,9 +166,8 @@ func TestAWakeCutsTheBackoffButKeepsTheGap(t *testing.T) {
 			if got := d.count(); got != 3 {
 				t.Fatalf("browses = %d, want one per attempt", got)
 			}
-			first, second := <-browseStarts, <-browseStarts
-			const startSkew = 20 * time.Millisecond
-			if d := second.Sub(first); d < gap-startSkew {
+			first, second := <-attemptStarts, <-attemptStarts
+			if d := second.Sub(first); d < gap {
 				t.Errorf("two whole attempts %v apart, want at least %v", d, gap)
 			}
 		})

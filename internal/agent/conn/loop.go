@@ -120,6 +120,8 @@ type LoopOptions struct {
 	// stream reads its next events from the ring ("events_next"); and on the
 	// receiver's goroutine once it handed a message over ("received").
 	stepHook func(step string)
+	// attemptHook, for tests only, receives the exact pacing timestamp on Run.
+	attemptHook func(time.Time)
 	// hookWarn, for tests only, replaces hookHeldWarn.
 	hookWarn time.Duration
 }
@@ -276,6 +278,9 @@ func (l *Loop) Run(ctx context.Context) error {
 			}
 		}
 		last = time.Now()
+		if l.opts.attemptHook != nil {
+			l.opts.attemptHook(last)
+		}
 		l.presented.Store(nil)
 		out := l.attempt(ctx, p.reason)
 		if !out.connected && out.end == "" && ctx.Err() == nil {

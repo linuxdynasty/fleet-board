@@ -22,8 +22,9 @@
 // addresses ([HubAddressesFile], the hub's latest list, else the
 // identity's) over mTLS pinned to the enrolled CA, sends Hello, takes HelloAck's epoch and seq floor
 // (02i). The minimum reconnect gap starts before that whole candidate search;
-// connect.attempt logs mark individual candidates later in the search. It
-// sends a Snapshot built for that stream and the results the hub has
+// connect.attempt logs mark individual candidates later in the search.
+// Tests observe the exact loop pacing timestamp, before asynchronous discovery.
+// The loop sends a Snapshot built for that stream and the results the hub has
 // not acknowledged, and serves the stream until it ends. Then it backs off
 // ([Backoff]), or reconnects at once after a wake or a network change that
 // touched the connection (ADR 0029). An HTTP/2 keepalive ([Keepalive])

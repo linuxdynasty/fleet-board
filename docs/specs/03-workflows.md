@@ -174,7 +174,7 @@ advertisement carries a TXT record (the library hands over only answers that
 have one), and the hub never advertises a loopback address or name. Wake, network change and a successful connect reset the backoff
 to its first step; the attempt a wake or network change starts waits a short
 random delay first ([defaults](defaults.md)), so machines that see the same
-event do not query together. The minimum reconnect gap starts before the whole
+event do not query together. The minimum reconnect gap uses the loop timestamp before the whole
 candidate search; `connect.attempt` logs each candidate later. A network change here means a confirmed one
 (01 A6): a push message with no change in the interface, address or
 default-route list is ignored.

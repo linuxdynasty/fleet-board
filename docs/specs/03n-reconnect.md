@@ -8,7 +8,8 @@
 wake); the agent reconnects with backoff, and after a short random delay on
 wake/network change (A6, A2). Also: a second connection for the same
 `machine_id` (duplicate identity).
-The minimum gap is between starts of whole candidate searches. A later
+The minimum gap is between loop timestamps at the start of whole candidate
+searches, before asynchronous browse scheduling. A later
 `connect.attempt` log marks one candidate inside that search.
 
 **Actors.** `fleet-agent` (ring, command log, probes keep running), `fleetd`
