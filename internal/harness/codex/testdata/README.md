@@ -36,6 +36,7 @@ input), and `/exit`.
 | `slash-menu-first.txt`, `slash-menu-later.txt` | the `/` menu (8 rows) at the top and after paging | typed `/`, Down |
 | `slash-menu-catalog.tsv` | all 49 menu commands, `name<TAB>description` (derived by paging until the list wrapped) | see above |
 | `goal-paused.txt` | "Goal paused" after the owner interrupts the goal (01 E12) | reconstructed, not a raw capture: the signal line is the probe-recorded string from the 2026-10-02 goal-control probe (01b); a raw capture replaces it when one lands |
+| `sign-in-required.txt` | the "Sign in with ChatGPT" login screen a signed-out Codex opens on (01 E12) | reconstructed, not a raw capture: the signal lines are the observed screen from the 2026-10-17 isolated sign-in probe below; a raw capture replaces it when one lands |
 | `exit.txt` | the line after `/exit` ("Session ID") | `/exit` |
 
 Most files are the visible 50 rows, so earlier output and the top of the update
@@ -59,6 +60,7 @@ read before the next key; no prompt sent, no quota spent). Started by typing
 | `0.162.1/slash-menu-first.txt`, `0.162.1/slash-menu-later.txt` | the `/` menu (8 rows) at the top and near the end | typed `/`, Down |
 | `0.162.1/slash-menu-catalog.tsv` | all 54 menu commands, `name<TAB>description` (derived by paging with Down until the highlight wrapped back to `/model`) | see above |
 | `0.162.1/goal-paused.txt` | "Goal paused" after the owner interrupts the goal (01 E12) | reconstructed, not a raw capture: the signal line is the probe-recorded string from the 2026-10-02 goal-control probe (01b); a raw capture replaces it when one lands |
+| `0.162.1/sign-in-required.txt` | the "Sign in with ChatGPT" login screen a signed-out Codex opens on (01 E12) | reconstructed, not a raw capture: the signal lines are the observed screen from the 2026-10-17 isolated sign-in probe below; a raw capture replaces it when one lands |
 
 What changed since 0.160.0: no daemon-settings screen and no update banner
 appeared (0.162.1 is installed); the `/status` card shows the account email
@@ -77,6 +79,31 @@ whether those were hidden at idle or removed; they show at idle here).
 Placeholder against draft: the empty input line renders `›` bold plus
 `Ask Codex to do anything` dim (`^[[2m`); typed text renders in the default
 colour. A parser must match the dim attribute, not the words.
+
+## Sign-in reconstruction (2026-10-17, issue #36)
+
+Signing out would break the developer's login, so the login screen was
+observed with an isolated home instead of a raw capture. Protocol: throwaway
+tmux server (`-L probe-signin -f /dev/null`, pane 200x50), `CODEX_HOME` set
+to an empty temp dir, Codex 0.162.1 started there, the screen read with
+`capture-pane -p` before the next key. No prompt was sent, so no quota was
+spent. The server was killed and the temp dir deleted after; the real
+`~/.codex/config.toml`, credential files, the keychain and `gh` auth were
+never opened.
+
+What it showed: the logo, "Welcome to Codex, OpenAI's command-line coding
+agent", "Sign in with ChatGPT to use Codex as part of your paid plan / or
+connect an API key for usage-based billing", three choices ("1. Sign in with
+ChatGPT", "2. Sign in with Device Code", "3. Provide your own API key") and
+"Press enter to continue". No key was pressed on it. Separately,
+`CODEX_HOME=<empty> codex login status` prints "Not logged in" (exit 1);
+that is the CLI's wording, never a pane line, so the parser stays quiet on
+it and keys on the TUI's "Sign in with ChatGPT" instead.
+
+`sign-in-required.txt` (both versions) is reconstructed from that screen
+with the logo art trimmed; the 0.160.0 copy assumes the same shape, since
+the login screen carries no version string. A raw capture replaces each one
+when it lands.
 
 ## Redactions and clean-up
 

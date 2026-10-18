@@ -193,3 +193,21 @@ break the login); a blocking Codex update prompt (none appeared); the Codex
 Cursor draft half of 0.19 (typing forbidden; item 0.19, #96). With this
 capture, every installed version has usage, status, startup, trust and
 catalog fixtures except where noted here; these notes close issue #25.
+
+## Sign-in screen, 2026-10-17 (issue #36)
+
+The Codex login screen behind the first sign-in `CONDITION` fixture.
+Signing out would break the developer's login, so instead of a raw capture
+the screen was observed with an isolated home: throwaway tmux server (`-L
+probe-signin -f /dev/null`, pane 200x50), CODEX_HOME set to an empty temp
+dir, Codex 0.162.1 started there, the screen read with `capture-pane -p`
+before the next key. No prompt was sent, so no quota was spent; the server
+was killed and the temp dir deleted after, and the real `~/.codex/config.toml`,
+credential files, the keychain and `gh` auth were never opened. It showed
+"Sign in with ChatGPT to use Codex as part of your paid plan" with the
+device-code and API-key choices and "Press enter to continue"; no key was
+pressed on it. The `sign-in-required.txt` fixtures in
+`internal/harness/codex/testdata/` (both versions) are reconstructed from
+that screen — the 0.160.0 copy assumes the same shape — and a raw capture
+replaces each one when it lands. Other sign-in screens stay open: signing
+out any account is still off limits.

@@ -25,10 +25,12 @@ func loadHarnessScreen(t *testing.T, harness, version, name string) string {
 	return string(raw)
 }
 
-// interruptCases covers one interrupt or stall screen per harness that
-// reports conditions: Claude, Codex and Muse read GOAL_INTERRUPTED after
-// the owner pressed Esc (so DEVELOPER_INPUT), Cursor reads its stall line
-// as GOAL_PAUSED (the harness paused itself: HARNESS).
+// interruptCases covers one interrupt, stall, error or login screen per
+// harness that reports conditions: Claude, Codex and Muse read
+// GOAL_INTERRUPTED after the owner pressed Esc (so DEVELOPER_INPUT), Cursor
+// reads its stall line as GOAL_PAUSED (the harness paused itself: HARNESS),
+// Muse reads its provider-error and rate-limit lines, and Codex reads its
+// login screen as SIGN_IN_REQUIRED (no pause cause).
 var interruptCases = []struct {
 	name        string
 	harness     string
@@ -80,6 +82,13 @@ var interruptCases = []struct {
 		wantKind:  typev1.HarnessConditionKind_HARNESS_CONDITION_KIND_RATE_LIMITED,
 		wantCause: typev1.GoalPauseCause_GOAL_PAUSE_CAUSE_UNSPECIFIED,
 		wantText:  "retrying",
+	},
+	{
+		name: "codex login screen", harness: "codex", version: "0.162.1",
+		interrupted: "sign-in-required.txt", ready: "startup-ready.txt",
+		wantKind:  typev1.HarnessConditionKind_HARNESS_CONDITION_KIND_SIGN_IN_REQUIRED,
+		wantCause: typev1.GoalPauseCause_GOAL_PAUSE_CAUSE_UNSPECIFIED,
+		wantText:  "Sign in with ChatGPT",
 	},
 }
 
