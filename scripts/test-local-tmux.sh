@@ -183,10 +183,17 @@ chmod +x "$work/go-bin/go"
 export FLEET_GO_LOG="$work/go.log"
 out="$(cd "$integration" && PATH="$work/go-bin:$PATH" FLEET_TMUX_32=/pin/32 FLEET_TMUX_LATEST=/pin/latest FLEET_REQUIRE_TMUX=1 TEST_COUNT=3 TEST_TIMEOUT=30m scripts/local-tmux.sh extra-tests origin/main 2>&1)"
 rc=$?
+repeat_pattern='-count=3 .*./internal/agent/tmux/'
+race_pattern='-race .* -count=1 .*./internal/agent/tmux/'
+pins_pattern='32=/pin/32 . latest=/pin/latest . require=1'
+repeat_found=0 race_found=0 pins_found=0
+while IFS= read -r go_line; do
+  if [[ "$go_line" =~ $repeat_pattern ]]; then repeat_found=1; fi
+  if [[ "$go_line" =~ $race_pattern ]]; then race_found=1; fi
+  if [[ "$go_line" =~ $pins_pattern ]]; then pins_found=1; fi
+done < "$FLEET_GO_LOG"
 if [ "$rc" -eq 0 ] && [ "$(wc -l < "$FLEET_GO_LOG" | tr -d ' ')" = 2 ] &&
-  rg -q -- '-count=3 .*./internal/agent/tmux/' "$FLEET_GO_LOG" &&
-  rg -q -- '-race .* -count=1 .*./internal/agent/tmux/' "$FLEET_GO_LOG" &&
-  rg -q -- '32=/pin/32 . latest=/pin/latest . require=1' "$FLEET_GO_LOG"; then
+  [ "$repeat_found" -eq 1 ] && [ "$race_found" -eq 1 ] && [ "$pins_found" -eq 1 ]; then
   ok
 else
   bad "script-only gate change missed both-pin repeat and race tests: rc=$rc, output=$out"
