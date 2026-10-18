@@ -99,6 +99,7 @@ func TestLocalAPIRejectsCredentialCarriersBeforeOwnerAdmission(t *testing.T) {
 	if !errors.As(err, &ce) {
 		t.Fatal("credential refusal had no Connect details")
 	}
+	found := false
 	for _, d := range ce.Details() {
 		v, derr := d.Value()
 		if derr != nil {
@@ -106,10 +107,19 @@ func TestLocalAPIRejectsCredentialCarriersBeforeOwnerAdmission(t *testing.T) {
 		}
 		if detail, ok := v.(*typev1.ErrorDetail); ok &&
 			detail.GetReason() == typev1.ReasonCode_REASON_CODE_CREDENTIALS_INVALID {
-			return
+			found = true
 		}
 	}
-	t.Error("credential refusal lacked CREDENTIALS_INVALID")
+	if !found {
+		t.Error("credential refusal lacked CREDENTIALS_INVALID")
+	}
+	metrics := scrapeLocalAPI(t, r.addrs.API.String())
+	if strings.Contains(metrics, marker) || strings.Contains(metrics, localSecret) {
+		t.Error("credential value reached metrics")
+	}
+	if got := sample(metrics, "fleet_hub_auth_failures_total", `reason="credentials"`); got != 9 {
+		t.Errorf("credential refusals = %v, want 9", got)
+	}
 }
 
 func TestLocalAPIModeStubsAndUnbuiltCalls(t *testing.T) {
@@ -158,5 +168,8 @@ func TestLocalAPIRequiresConnectProtocolHeader(t *testing.T) {
 	}
 	if got := resp.Header.Get("Access-Control-Allow-Origin"); got != "" {
 		t.Errorf("CORS header = %q", got)
+	}
+	if got := sample(scrapeLocalAPI(t, r.addrs.API.String()), "fleet_hub_auth_failures_total", `reason="protocol"`); got != 1 {
+		t.Errorf("protocol refusals = %v, want 1", got)
 	}
 }

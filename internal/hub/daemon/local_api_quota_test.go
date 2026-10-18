@@ -1,10 +1,14 @@
 package daemon_test
 
 import (
+	"context"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"os"
+	"strconv"
+	"sync"
 	"testing"
 
 	"connectrpc.com/connect"
@@ -75,6 +79,7 @@ func TestLocalAPIPublicQuotaSharesPeerAcrossConnectionsAndForwardingHeaders(t *t
 	if !errors.As(err, &ce) {
 		t.Fatal("rate refusal lacked Connect details")
 	}
+	found := false
 	for _, d := range ce.Details() {
 		v, derr := d.Value()
 		if derr != nil {
@@ -83,10 +88,77 @@ func TestLocalAPIPublicQuotaSharesPeerAcrossConnectionsAndForwardingHeaders(t *t
 		ed, ok := v.(*typev1.ErrorDetail)
 		if ok && ed.GetReason() == typev1.ReasonCode_REASON_CODE_RATE_LIMITED &&
 			ed.GetRetryAfter().AsDuration() > 0 {
-			return
+			found = true
 		}
 	}
-	t.Error("rate refusal lacked RATE_LIMITED with positive retry_after")
+	if !found {
+		t.Error("rate refusal lacked RATE_LIMITED with positive retry_after")
+	}
+	if got := sample(scrapeLocalAPI(t, r.addrs.API.String()), "fleet_hub_api_rate_limited_total",
+		`class="unauthenticated"`, `cause="budget"`); got != 1 {
+		t.Errorf("unauthenticated budget refusals = %v, want 1", got)
+	}
+}
+
+func TestLocalAPIConcurrentPublicQuotaIsAtomicAcrossConnections(t *testing.T) {
+	const limit, requests = 7, 48
+	_, r := startLocalAPI(t, "rate_limits: {unauthenticated: 7}\n")
+	var dialMu sync.Mutex
+	ports := make(map[string]struct{})
+	dials := 0
+	transport := &http.Transport{DisableKeepAlives: true}
+	transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+		conn, err := (&net.Dialer{}).DialContext(ctx, network, addr)
+		if err == nil {
+			dialMu.Lock()
+			dials++
+			ports[conn.LocalAddr().String()] = struct{}{}
+			dialMu.Unlock()
+		}
+		return conn, err
+	}
+	t.Cleanup(transport.CloseIdleConnections)
+	client := hubv1connect.NewFleetServiceClient(&http.Client{Transport: transport}, "http://"+r.addrs.API.String())
+	start := make(chan struct{})
+	outcomes := make(chan error, requests)
+	var wg sync.WaitGroup
+	for i := range requests {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			req := connect.NewRequest(&hubv1.GetServerInfoRequest{})
+			req.Header().Set("X-Forwarded-For", "203.0.113."+strconv.Itoa(i+1))
+			_, err := client.GetServerInfo(t.Context(), req)
+			outcomes <- err
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(outcomes)
+	var admitted, limited int
+	for err := range outcomes {
+		switch {
+		case err == nil:
+			admitted++
+		case connect.CodeOf(err) == connect.CodeResourceExhausted:
+			limited++
+		default:
+			t.Errorf("unexpected public call result: %v", err)
+		}
+	}
+	if admitted != limit || limited != requests-limit {
+		t.Errorf("concurrent results = %d admitted, %d limited; want %d and %d",
+			admitted, limited, limit, requests-limit)
+	}
+	if dials != requests || len(ports) < 2 {
+		t.Errorf("connections = %d dials, %d source ports; want %d dials and multiple ports",
+			dials, len(ports), requests)
+	}
+	if got := sample(scrapeLocalAPI(t, r.addrs.API.String()), "fleet_hub_api_rate_limited_total",
+		`class="unauthenticated"`, `cause="budget"`); got != requests-limit {
+		t.Errorf("concurrent quota metric = %v, want %d", got, requests-limit)
+	}
 }
 
 func TestLocalAPIReadQuotaFollowsRequestValidation(t *testing.T) {
@@ -104,6 +176,10 @@ func TestLocalAPIReadQuotaFollowsRequestValidation(t *testing.T) {
 	}
 	if err := read(""); connect.CodeOf(err) != connect.CodeResourceExhausted {
 		t.Errorf("valid second read = %v, want RESOURCE_EXHAUSTED", err)
+	}
+	if got := sample(scrapeLocalAPI(t, r.addrs.API.String()), "fleet_hub_api_rate_limited_total",
+		`class="read"`, `cause="budget"`); got != 1 {
+		t.Errorf("read budget refusals = %v, want 1", got)
 	}
 }
 
@@ -145,6 +221,10 @@ func TestLocalAPIProtectedWriteChecksSecretAndQuotaBeforeStoreEffect(t *testing.
 	}
 	if got := audit.Msg.GetAuditEntries()[0].GetActor().GetId().GetValue(); got != "local-owner" {
 		t.Errorf("audit actor = %q, want local-owner", got)
+	}
+	if got := sample(scrapeLocalAPI(t, r.addrs.API.String()), "fleet_hub_api_rate_limited_total",
+		`class="write"`, `cause="budget"`); got != 1 {
+		t.Errorf("write budget refusals = %v, want 1", got)
 	}
 }
 

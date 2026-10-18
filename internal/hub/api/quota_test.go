@@ -78,8 +78,28 @@ func TestMetricsPeerTableKeepsSpentAllowancesAtCapacity(t *testing.T) {
 		}
 	}
 	now = now.Add(time.Minute + time.Millisecond)
-	if got := metricsAt(t, srv.Handler, 7080, peer(1024)).Code; got != http.StatusOK {
-		t.Errorf("new peer after old debt expires status %d, want 200", got)
+	refreshed := metricsAt(t, srv.Handler, 7080, peer(1024))
+	if refreshed.Code != http.StatusOK {
+		t.Errorf("new peer after old debt expires status %d, want 200", refreshed.Code)
+	}
+	body := refreshed.Body.String()
+	series := 0
+	for _, line := range strings.Split(body, "\n") {
+		if strings.HasPrefix(line, "fleet_hub_api_rate_limited_total{") {
+			series++
+			if !strings.Contains(line, `class="metrics"`) {
+				t.Errorf("unexpected rate-limit class in %q", line)
+			}
+		}
+	}
+	if series != 2 {
+		t.Errorf("rate-limit series = %d, want only budget and capacity", series)
+	}
+	if got := sample(body, "fleet_hub_api_rate_limited_total", `cause="budget"`); got != 3 {
+		t.Errorf("metrics budget refusals = %v, want 3", got)
+	}
+	if got := sample(body, "fleet_hub_api_rate_limited_total", `cause="capacity"`); got != 2 {
+		t.Errorf("metrics capacity refusals = %v, want 2", got)
 	}
 	if got := metricsAt(t, srv.Handler, 7080, peer(0)).Code; got != http.StatusOK {
 		t.Errorf("old peer after debt expires status %d, want 200", got)

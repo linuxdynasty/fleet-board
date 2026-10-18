@@ -3,11 +3,16 @@
 // [NewLocalServer] serves the generated FleetService and GET /metrics on the
 // local_trusted API listener. [NewMetricsServer] serves only metrics on the
 // optional listener. Both check the loopback peer, Host, Origin and unsupported
-// credential carriers before any handler and share [Quotas]. TCP writes
-// reserve one owner allowance after validation and before mutation.
+// credential carriers before any handler and share [Quotas]. Checked TCP
+// admission mints only the fixed USER local-owner with OWNER scopes; the
+// admin socket keeps the kernel peer's distinct LOCAL_USER identity. Admitted
+// TCP RPCs use configured per-class allowances after validation.
 // A refused Host or Origin is Connect permission_denied (HTTP 403), with
 // ErrorDetail reason HOST_NOT_ALLOWED or ORIGIN_NOT_ALLOWED, counted in
-// fleet_hub_auth_failures_total{reason="host"|"origin"}. No CORS header is
+// fleet_hub_auth_failures_total{reason="host"|"origin"}. Unsupported
+// credentials and missing Connect protocol count under credentials and
+// protocol; quota refusals count in fleet_hub_api_rate_limited_total with
+// closed class and cause labels. No CORS header is
 // ever sent. [NewServer] remains a metrics-only helper. Servers use header and
 // idle timeouts and an
 // ErrorLog that turns net/http's own error lines into debug-level JSON events.
@@ -44,8 +49,9 @@
 // (watched rows with the stored spec, status unset), [Fleet.ListAccounts],
 // [Fleet.GetAccount] (owner-created accounts with the stored spec, usage
 // and pacing unset) and
-// [Fleet.GetSystemStatus] built; every other method is Unimplemented
-// (02k): it checks the caller ([PrincipalFrom], ADMIN for enrollment,
+// [Fleet.GetSystemStatus] built; other methods are Unimplemented except
+// sign-in and device calls, which are FailedPrecondition in local mode
+// (02k). Implemented methods check the caller ([PrincipalFrom], ADMIN for enrollment,
 // revoke/delete and store status, SETTINGS for repos, update and import, READ for
 // export, the machine, operation, session, goal, work-item,
 // change-request, repo, account and system reads and the

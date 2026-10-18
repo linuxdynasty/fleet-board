@@ -62,3 +62,25 @@ func startLocalAPI(t *testing.T, extra string) (*hub, *running) {
 	}
 	return h, h.start(t, opts)
 }
+
+// scrapeLocalAPI reads the same public metrics route an operator uses.
+func scrapeLocalAPI(t *testing.T, addr string) string {
+	t.Helper()
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://"+addr+"/metrics", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("metrics status = %d, want 200", resp.StatusCode)
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(body)
+}
