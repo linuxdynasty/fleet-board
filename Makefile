@@ -260,6 +260,7 @@ selftest: tools
 	python3 scripts/test-coverage-report.py
 	python3 scripts/test-check-attribution.py
 	python3 scripts/test-check-file-cap.py
+	scripts/test-dev-hooks.sh
 	python3 scripts/test-agent-roles.py
 	python3 scripts/test-cursor-hook.py
 	python3 scripts/test-cursor-hook-edges.py
