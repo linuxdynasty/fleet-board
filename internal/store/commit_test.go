@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"slices"
+	"sync"
 	"testing"
 	"time"
 
@@ -163,6 +164,9 @@ func TestCommitWakeSurvivesCallerCancelAfterEnqueue(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	started, release := make(chan struct{}), make(chan struct{})
+	releaseJob := sync.OnceFunc(func() { close(release) })
+	// Unblock the writer before store cleanup even when an assertion fails.
+	t.Cleanup(releaseJob)
 	returned := make(chan error, 1)
 	go func() {
 		returned <- s.Write(ctx, func(tx *sql.Tx) error {
@@ -185,7 +189,7 @@ func TestCommitWakeSurvivesCallerCancelAfterEnqueue(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("Write did not return on caller cancel")
 	}
-	close(release)
+	releaseJob()
 	waitForWake(t, s.CommitWake())
 	if got := rawValues(t, h.path); !slices.Equal(got, []string{"after cancel"}) {
 		t.Fatalf("rows after canceled caller = %v, want [after cancel]", got)
