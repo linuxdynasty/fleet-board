@@ -16,10 +16,8 @@ import (
 	"github.com/linuxdynasty/fleet-board/internal/hub/statedb"
 )
 
-// authorizeGoals admits the caller for ListGoals, GetGoal, ListGoalRuns
-// and ListGoalTransitions (02d: READ). Until a later row-12 slice brings
-// caller scopes, that is only the local user, who maps to OWNER and
-// covers READ.
+// authorizeGoals admits the checked admin user or local TCP owner for
+// ListGoals, GetGoal, ListGoalRuns and ListGoalTransitions (02d: READ).
 func authorizeGoals(ctx context.Context) (*typev1.Principal, error) {
 	return authorizeScope(ctx, "READ")
 }

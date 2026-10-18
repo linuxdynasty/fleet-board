@@ -17,8 +17,9 @@ and other unbuilt RPCs return `UNIMPLEMENTED`; Watch remains unbuilt.
 The API and optional metrics listeners share one `Quotas` instance. Read and
 write allowances belong to the fixed owner. `GetServerInfo` and `/metrics`
 use the connection's canonical source IP, never a forwarding header or source
-port. The peer table holds at most 1024 records, about 100 KiB of counters,
-IP keys and map slots. A full table keeps every peer's spent allowance and
+port. The peer table holds at most 1024 records. Each record has a canonical
+IP key and two fixed counters; it stores no header, path or token text. A
+full table keeps every peer's spent allowance and
 refuses a new peer until one record's debt expires. It never evicts a live
 allowance to make room. There is no second request quota from this table size.
 

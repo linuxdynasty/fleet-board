@@ -31,9 +31,8 @@ const approvalTimeout = 30 * time.Minute
 // sessionNameRule is the CreateSession name rule (session.proto field 3).
 var sessionNameRule = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
 
-// authorizeSessionsWrite admits the caller for the SESSIONS_WRITE session
-// calls (02d). Until plan row 12 brings caller scopes, that is only the
-// local user, who maps to OWNER.
+// authorizeSessionsWrite admits the checked admin user or local TCP owner
+// for SESSIONS_WRITE session calls (02d).
 func authorizeSessionsWrite(ctx context.Context) (*typev1.Principal, error) {
 	return authorizeScope(ctx, "SESSIONS_WRITE")
 }

@@ -18,8 +18,8 @@ const maxDismissNote = 512
 
 // authorizeTriage admits the caller for ListTriageItems, GetTriageItem,
 // SnoozeTriageItem and DismissTriageItem (02d: READ|APPROVALS for the
-// reads, APPROVALS for the writes). Until plan row 12 brings caller
-// scopes, that is only the local user, who maps to OWNER.
+// reads, APPROVALS for the writes). The checked admin user and admitted
+// local TCP owner cover both.
 func authorizeTriage(ctx context.Context) (*typev1.Principal, error) {
 	return authorizeScope(ctx, "APPROVALS")
 }

@@ -88,25 +88,23 @@ func LocalUser(uid uint32, lookup func(string) (*user.User, error)) *typev1.Prin
 	}
 }
 
-// authorizeAdmin admits a caller that holds ADMIN (02d). Until plan row 12
-// brings scopes, that is only the local user on the admin socket.
+// authorizeAdmin admits ADMIN (02d) for the kernel-checked admin user or
+// the fixed owner admitted by the local TCP listener.
 func authorizeAdmin(ctx context.Context) (*typev1.Principal, error) {
 	return authorizeScope(ctx, "ADMIN")
 }
 
 // authorizeSettings admits a caller that holds SETTINGS (02d: settings,
 // accounts, repos, routines, integrations' watched projects, machine labels,
-// hook installs, config import). Until plan row 12 brings scopes, that is
-// only the local user on the admin socket, who maps to OWNER and holds
-// every scope.
+// hook installs, config import). The kernel-checked admin user and the
+// fixed owner admitted by local TCP both cover it.
 func authorizeSettings(ctx context.Context) (*typev1.Principal, error) {
 	return authorizeScope(ctx, "SETTINGS")
 }
 
 // authorizeRead admits a caller that holds READ (02d: config export,
-// audit reads, watches). Until plan row 12 brings scopes, that is only
-// the local user on the admin socket, who maps to OWNER and holds every
-// scope.
+// audit reads, watches). The kernel-checked admin user and the fixed
+// owner admitted by local TCP both cover it.
 func authorizeRead(ctx context.Context) (*typev1.Principal, error) {
 	return authorizeScope(ctx, "READ")
 }

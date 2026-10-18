@@ -17,9 +17,8 @@ import (
 	"github.com/linuxdynasty/fleet-board/internal/hub/statedb"
 )
 
-// authorizeWorkItems admits the caller for ListWorkItems and GetWorkItem
-// (02d: READ). Until a later row-12 slice brings caller scopes, that is
-// only the local user, who maps to OWNER and covers READ.
+// authorizeWorkItems admits the checked admin user or local TCP owner for
+// ListWorkItems and GetWorkItem (02d: READ).
 func authorizeWorkItems(ctx context.Context) (*typev1.Principal, error) {
 	return authorizeScope(ctx, "READ")
 }

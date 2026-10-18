@@ -14,10 +14,8 @@ import (
 	"github.com/linuxdynasty/fleet-board/internal/hub/statedb"
 )
 
-// authorizeAccounts admits the caller for ListAccounts and GetAccount
-// (02d: READ, with LOGS for GetAccount's raw screen). Until a later
-// row-12 slice brings caller scopes, that is only the local user, who
-// maps to OWNER and covers both.
+// authorizeAccounts admits the checked admin user or local TCP owner for
+// ListAccounts and GetAccount (02d: READ, with LOGS for raw screen data).
 func authorizeAccounts(ctx context.Context) (*typev1.Principal, error) {
 	return authorizeScope(ctx, "READ")
 }

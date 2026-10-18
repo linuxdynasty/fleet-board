@@ -24,8 +24,8 @@ import (
 
 // authorizeApprovals admits the caller for ListApprovals, GetApproval and
 // DecideApproval (02d: READ|APPROVALS for the reads, APPROVALS to decide).
-// Until plan row 12 brings caller scopes, that is only the local user, who
-// maps to OWNER and covers every required_role below.
+// The checked admin user and admitted local TCP owner cover every required
+// role. Other USER principals need their own matching role.
 func authorizeApprovals(ctx context.Context) (*typev1.Principal, error) {
 	return authorizeScope(ctx, "APPROVALS")
 }

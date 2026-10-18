@@ -17,6 +17,8 @@ import (
 	"github.com/linuxdynasty/fleet-board/internal/hub/statedb"
 )
 
+// authorizeMachines admits the checked admin user or local TCP owner for
+// ListMachines and GetMachine (02d: READ).
 func authorizeMachines(ctx context.Context) (*typev1.Principal, error) {
 	return authorizeScope(ctx, "READ")
 }

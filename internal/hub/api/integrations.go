@@ -14,9 +14,8 @@ import (
 	"github.com/linuxdynasty/fleet-board/internal/hub/statedb"
 )
 
-// authorizeIntegrations admits the caller for ListIntegrations (02d:
-// READ). Until a later row-12 slice brings caller scopes, that is only
-// the local user, who maps to OWNER and covers READ.
+// authorizeIntegrations admits the checked admin user or local TCP owner
+// for ListIntegrations (02d: READ).
 func authorizeIntegrations(ctx context.Context) (*typev1.Principal, error) {
 	return authorizeScope(ctx, "READ")
 }

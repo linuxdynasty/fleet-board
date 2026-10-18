@@ -14,10 +14,8 @@ import (
 // 256 KiB (command_tmux.proto) and 02b caps capture output_text there.
 const maxCaptureBytes = 256 * 1024
 
-// authorizeCapturePane admits the caller for CapturePane (02d: READ for the
-// visible screen, LOGS when last_lines is above 0). Until a later row-12
-// slice brings caller scopes, only the local user calls, who maps to OWNER
-// and covers both.
+// authorizeCapturePane admits the checked admin user or local TCP owner
+// for CapturePane (02d: READ for the visible screen, LOGS for scrollback).
 func authorizeCapturePane(ctx context.Context) (*typev1.Principal, error) {
 	return authorizeScope(ctx, "READ")
 }

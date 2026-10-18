@@ -31,8 +31,8 @@ const (
 const quotaWindow = time.Minute
 
 // maxPeerQuotaStates is a memory bound, not a request budget. Each peer has
-// two small fixed-window counters and a canonical IP key. Even with map and
-// string overhead, 1024 records are well below a MiB. A full table never
+// two small fixed-window counters and a canonical IP key, with no
+// header or token strings. A full table never
 // evicts an indebted peer or resets its allowance on a new connection.
 const maxPeerQuotaStates = 1024
 

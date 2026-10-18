@@ -16,9 +16,8 @@ import (
 	"github.com/linuxdynasty/fleet-board/internal/hub/statedb"
 )
 
-// authorizeUsage admits the caller for ListUsageReadings (02d: READ).
-// Until a later row-12 slice brings caller scopes, that is only the
-// local user, who maps to OWNER.
+// authorizeUsage admits the checked admin user or local TCP owner for
+// ListUsageReadings (02d: READ).
 func authorizeUsage(ctx context.Context) (*typev1.Principal, error) {
 	return authorizeScope(ctx, "READ")
 }

@@ -18,9 +18,8 @@ import (
 	"github.com/linuxdynasty/fleet-board/internal/hub/statedb"
 )
 
-// authorizeChangeRequests admits the caller for ListChangeRequests and
-// GetChangeRequest (02d: READ). Until a later row-12 slice brings caller
-// scopes, that is only the local user, who maps to OWNER and covers READ.
+// authorizeChangeRequests admits the checked admin user or local TCP owner
+// for ListChangeRequests and GetChangeRequest (02d: READ).
 func authorizeChangeRequests(ctx context.Context) (*typev1.Principal, error) {
 	return authorizeScope(ctx, "READ")
 }
