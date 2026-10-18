@@ -129,8 +129,7 @@ tier to the difficulty, cheapest first:
 | arbiter (escalation) | `arbiter-fleet` | design forks, disputed findings, waivers, irreversible acts; returns `RULING:` |
 
 `agent-roles.py codex-exec|muse-exec <role> <task>` runs a headless role for
-**development on this repo only**. Muse native role discovery is not qualified
-here; use `muse-exec`. Product-native work follows ADR 0033.
+**development on this repo only**. Muse native role discovery is unqualified; use `muse-exec`. Product-native work follows ADR 0033.
 
 A subagent never changes its own model; leaf agents dispatch no others. Only the
 orchestrator runs the full local gate, once, before push. Task-to-skill map and
