@@ -385,3 +385,22 @@ without it.
   probe while another holds the harness) belongs here, next to `fleet-live-probe`.
 - eshu's golden-corpus, Postgres and Cypher arms in the skill map, and its
   `.eshu-doc-state/` snapshot file (doc-staleness reports to the agent instead).
+
+## Issue-drive routing
+
+For Claude, Codex and Muse, a goal invoking `fleet-issue-driver` (using/with/apply it) or a goal
+opening with `drive issues #N`, `drive epics #N` or `drive #N` loads the drive
+contract. Whitespace is normalized, including multiline prepared goals. The
+router selects implementation and independent review roles with manifest
+bindings. Other phase roles remain available. A diagnostic sentence that
+mentions a drive, an issue or the driver skill does not opt in.
+
+The coordinator loads the driver, enumerates dependencies, delegates independent
+leaves, owns the PR inventory and runs the full gate. Shared-file work stays
+sequential. Children load named skill bodies; a hook's context is instruction,
+not proof that a child tool was called. Muse instructions use `muse-exec` when
+native bindings are unqualified; they make no new native-discovery claim.
+
+The driver owns the [PR watcher and follow-up rules](../../.agents/skills/fleet-issue-driver/SKILL.md).
+The owner still merges every v1 PR. Explicit endpoints and model choices win;
+routing grants no publication, merge or expanded-scope permission.

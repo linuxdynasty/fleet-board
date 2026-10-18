@@ -95,8 +95,7 @@ stopping point. Report actual state; anything not checked is `NOT_CHECKED`.
 ## Skill Routing
 
 Skills in `.agents/skills/` are the source of truth; `.claude/skills/` and
-`.codex/skills/` symlink to them. Load the smallest set that covers the task,
-once. State which skills are active.
+`.codex/skills/` symlink to them. Load only what the task needs; state the active skills.
 
 | Skill | Use when |
 |---|---|
@@ -130,8 +129,8 @@ tier to the difficulty, cheapest first:
 | arbiter (escalation) | `arbiter-fleet` | design forks, disputed findings, waivers, irreversible acts; returns `RULING:` |
 
 `agent-roles.py codex-exec|muse-exec <role> <task>` runs a role headless for
-**development work on this repo only** (ADR 0024; Muse has no project agent
-files). The product never runs a harness headless.
+**development work on this repo only** (ADR 0024). Muse native role discovery
+is not qualified here; use `muse-exec`. The product never runs headless.
 
 A subagent never changes its own model; leaf agents dispatch no others. Only the
 orchestrator runs the full local gate, once, before push. Task-to-skill map and
@@ -169,21 +168,22 @@ Before a push: focused proof, a clean `fleet-code-review`, `make gates` once (th
 ## Orchestration, PR And CI Discipline
 
 - Check open PRs and recent commits for the same root cause before starting.
-- The PR **title and description** must match the final diff and carry the
-  before and after evidence; a reworked approach needs a reworked title.
-- CI is complete only after two consecutive stable reads of the full check set
-  (`pending == 0`, count unchanged); state the query; reconcile review threads
-  and report exact counts.
+- Issue drives delegate independent leaves and independent review to named roles;
+  record why dependent work stays inline. The coordinator owns PRs and runs the gate.
+- Start or refresh a watcher in the same turn as PR creation or follow-up push;
+  watch checks, conflicts and every author's feedback at the current head.
+- Follow [issue-driver](.agents/skills/fleet-issue-driver/SKILL.md) for watcher,
+  follow-up inventory, stable CI reads, review threads and final PR evidence.
+- Address feedback from every reviewer; the owner merges.
 - Irreversible acts other than merging (release, deletion, data change) get an
-  `arbiter-fleet` ruling first and are named in the report; the owner merges.
+  `arbiter-fleet` ruling first; name it in the report.
 
 ## Documentation Discipline
 
 A contract change updates `docs/specs` (and the ADR index if a decision changed)
 in the same PR. ADRs are not edited after acceptance; a later ADR supersedes.
 When documents disagree, the order in [design.md](docs/design.md) wins (ADR 0026).
-This file governs how to work, not what the product does.
-Every Go package directory carries `doc.go`, `README.md` and a scoped
+This file governs how to work. Every Go package directory carries `doc.go`, `README.md` and a scoped
 `AGENTS.md` (`internal/buildinfo` is the model). Do not remove a scoped `AGENTS.md` unless
 its replacement is proven to load.
 
