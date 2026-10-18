@@ -2,7 +2,10 @@
 
 The actual `ValidateListInput` implementation at commit
 `45c4ba3a07d9c711150a64b00506e7bbc765ca55` passed the page and token
-parity check. In this real SQLite writer fixture, its writer callback was 35.10%
+parity check. That measured commit was later rebased. Reachable revision
+`7d8b2890a89f9ac35e0b2a7af7586a1eecc5a509` has identical approval, store,
+statedb and module objects (`git diff --exit-code OLD NEW -- PATHS`, exit 0).
+This identity check is not a new measurement. In this real SQLite writer fixture, its writer callback was 35.10%
 faster and allocated 49.89% fewer bytes than the old two-`List` path. The full
 `Store.Write` call was 3.20% faster because the writer normally waits up to
 250 ms to collect a batch. This is a local path result. A full API request and
