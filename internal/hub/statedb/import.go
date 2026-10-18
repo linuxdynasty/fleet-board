@@ -255,6 +255,81 @@ func insertImportRepo(ctx context.Context, tx *sql.Tx, now time.Time, st Stamp, 
 	return nil
 }
 
+// validateImportPlan repeats the dry run's mutable checks in the writer
+// transaction before quota admission or any import effect. The apply still
+// checks each row while writing, but no other writer can interleave here.
+func validateImportPlan(ctx context.Context, tx *sql.Tx, in ConfigImport) error {
+	seenRepos := make(map[string]bool, len(in.Ops))
+	for _, op := range in.Ops {
+		key := op.Host + "\x00" + op.Path
+		if seenRepos[key] {
+			if op.Create {
+				return ErrRepoExists
+			}
+			return ErrImportStale
+		}
+		seenRepos[key] = true
+		var version uint64
+		err := tx.QueryRowContext(ctx, `SELECT version FROM repos WHERE host = ? AND path = ?`,
+			op.Host, op.Path).Scan(&version)
+		if op.Create {
+			switch {
+			case err == nil:
+				return ErrRepoExists
+			case !errors.Is(err, sql.ErrNoRows):
+				return fmt.Errorf("statedb: look up repo: %w", err)
+			}
+			continue
+		}
+		switch {
+		case errors.Is(err, sql.ErrNoRows):
+			return ErrRepoUnknown
+		case err != nil:
+			return fmt.Errorf("statedb: read repo version: %w", err)
+		case version != op.ExpectedVersion:
+			return ErrImportStale
+		}
+	}
+	seenMachines := make(map[string]bool, len(in.MachineOps))
+	for _, op := range in.MachineOps {
+		if seenMachines[op.MachineID] {
+			return ErrImportStale
+		}
+		seenMachines[op.MachineID] = true
+		var version uint64
+		err := tx.QueryRowContext(ctx, `SELECT version FROM machines
+			WHERE machine_id = ? AND name = ?`, op.MachineID, op.Name).Scan(&version)
+		switch {
+		case errors.Is(err, sql.ErrNoRows):
+			return ErrImportStale
+		case err != nil:
+			return fmt.Errorf("statedb: match import machine: %w", err)
+		case version != op.ExpectedVersion:
+			return ErrImportStale
+		}
+		if op.Labels != nil {
+			if _, err := marshalLabels(op.Labels); err != nil {
+				return err
+			}
+		}
+	}
+	for _, op := range in.PendingOps {
+		var taken bool
+		err := tx.QueryRowContext(ctx, `SELECT TRUE FROM machines WHERE name = ?`, op.Name).Scan(&taken)
+		switch {
+		case errors.Is(err, sql.ErrNoRows):
+		case err != nil:
+			return fmt.Errorf("statedb: match pending machine: %w", err)
+		default:
+			return ErrImportStale
+		}
+		if _, err := marshalLabels(op.Labels); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // ApplyConfigImport applies a verified import plan in one writer
 // transaction. In order: a replayed request_id returns the stored response
 // ([ErrRequestConflict] on another body); otherwise every repo, machine
@@ -283,8 +358,17 @@ func ApplyConfigImport(ctx context.Context, s *store.Store, in ConfigImport) (re
 		case !bytes.Equal(hash, in.RequestHash[:]):
 			return ErrRequestConflict
 		default:
+			if err := validatedWrite(jctx); err != nil {
+				return err
+			}
 			resp, replay = stored, true
 			return nil
+		}
+		if err := validateImportPlan(jctx, tx, in); err != nil {
+			return err
+		}
+		if err := validatedWrite(jctx); err != nil {
+			return err
 		}
 		for _, op := range in.Ops {
 			st, err := NextStamp(jctx, tx, in.Now)

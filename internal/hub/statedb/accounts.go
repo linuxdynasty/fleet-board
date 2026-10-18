@@ -199,6 +199,9 @@ func CreateOwnerAccount(ctx context.Context, s *store.Store, in CreateAccount) (
 	err := s.Write(ctx, func(tx *sql.Tx) error {
 		if row, err := configReplay(jctx, tx, in.ConfigWrite, configKindAccount); err != nil || row != nil {
 			if err == nil {
+				if err := validatedWrite(jctx); err != nil {
+					return err
+				}
 				out = replayAccount(row)
 			}
 			return err
@@ -211,6 +214,9 @@ func CreateOwnerAccount(ctx context.Context, s *store.Store, in CreateAccount) (
 			return ErrAccountExists
 		case !errors.Is(err, sql.ErrNoRows):
 			return fmt.Errorf("statedb: look up account: %w", err)
+		}
+		if err := validatedWrite(jctx); err != nil {
+			return err
 		}
 		st, err := NextStamp(jctx, tx, in.Now)
 		if err != nil {
@@ -267,6 +273,9 @@ func UpdateOwnerAccount(ctx context.Context, s *store.Store, in UpdateAccountOp)
 	err := s.Write(ctx, func(tx *sql.Tx) error {
 		if row, err := configReplay(jctx, tx, in.ConfigWrite, configKindAccount); err != nil || row != nil {
 			if err == nil {
+				if err := validatedWrite(jctx); err != nil {
+					return err
+				}
 				out = replayAccount(row)
 			}
 			return err
@@ -293,6 +302,9 @@ func UpdateOwnerAccount(ctx context.Context, s *store.Store, in UpdateAccountOp)
 			case !errors.Is(err, sql.ErrNoRows):
 				return fmt.Errorf("statedb: look up account: %w", err)
 			}
+		}
+		if err := validatedWrite(jctx); err != nil {
+			return err
 		}
 		st, err := NextStamp(jctx, tx, in.Now)
 		if err != nil {
@@ -336,6 +348,9 @@ func DeleteOwnerAccount(ctx context.Context, s *store.Store, in DeleteAccountOp)
 	err := s.Write(ctx, func(tx *sql.Tx) error {
 		if row, err := configReplay(jctx, tx, in.ConfigWrite, configKindAccount); err != nil || row != nil {
 			if err == nil {
+				if err := validatedWrite(jctx); err != nil {
+					return err
+				}
 				out = AccountStored{
 					ID:      in.ID,
 					Version: uint64(row.version), //nolint:gosec // G115: versions start at 1 and only rise
@@ -349,6 +364,9 @@ func DeleteOwnerAccount(ctx context.Context, s *store.Store, in DeleteAccountOp)
 			return err
 		}
 		if err := checkVersion(got.Version, in.ExpectedVersion, "account"); err != nil {
+			return err
+		}
+		if err := validatedWrite(jctx); err != nil {
 			return err
 		}
 		if _, err := tx.ExecContext(jctx, `DELETE FROM accounts WHERE id = ?`, in.ID); err != nil {
