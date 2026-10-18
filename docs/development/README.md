@@ -123,9 +123,9 @@ AGENTS.md                     the rules every harness reads (no CLAUDE.md)
 Muse native project-role discovery is not qualified in this repo.
 `scripts/agent-roles.py muse-exec <role> "<task>"` passes the tier's model,
 effort and role access explicitly. Discovery, model selection and instruction
-following require separate, versioned live proof before claiming native parity. The
-`codex-exec` and `muse-exec` helpers run headless, for developing this repo only;
-the product never runs a harness headless (ADR 0024).
+following require separate, versioned live proof before claiming native parity.
+The `codex-exec` and `muse-exec` helpers run headless for developing this repo.
+Product-native execution is separately disabled until qualified under ADR 0033.
 
 ## Change the setup
 

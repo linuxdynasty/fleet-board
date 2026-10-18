@@ -420,6 +420,6 @@ for them, the coordinator supplies its exact output.
   `readonly: true` (no file edits and no state-changing shell commands; such a
   role asks the coordinator for command output it cannot produce).
 
-`codex-exec` and `muse-exec` run a role headless. That is allowed for developing
-this repo only; the product never runs a harness headless (ADR 0024, AGENTS.md
-principle 1). Use `--dry-run` to print the command and prompt first.
+`codex-exec` and `muse-exec` run a role headless for developing this repo.
+Product-native execution is a separate path, disabled until ADR 0033's exact
+qualification passes. Use `--dry-run` to print the helper command and prompt first.

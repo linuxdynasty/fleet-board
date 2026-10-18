@@ -16,17 +16,17 @@ A harness adapter is the extension point for one tool
 
 ## Pass-through rules (never traded away)
 
-- Run the harness exactly as the developer does: interactive, same user, same
-  logins, same permission and sandbox settings. **The product never runs a harness
-  headless with `-p` or an SDK** (the development helpers `agent-roles.py
-  codex-exec|muse-exec` may, for work on this repo only: ADR 0024), never add a
-  sandbox, never require root
-  ([01 principle 0](../../../docs/specs/01-agent-capabilities.md#principles),
-  [terms-of-service.md](../../../docs/research/terms-of-service.md)).
+- Terminal adapters run the harness as the developer does: same user, native
+  login, permission and sandbox settings. A native SDK or `-p` adapter starts
+  disabled and qualifies per version, interface, auth/billing mode, approval
+  behavior and deployment under [ADR 0033](../../../docs/adr/0033-native-sessions-and-handoff.md).
+  It must not add root or an unrequested sandbox. Terminal fallback stays
+  explicit ([01](../../../docs/specs/01-agent-capabilities.md#principles)).
 - **Never read credentials**: no `auth.json`, keychain item, `gh` token or
-  secret environment variable. Identity and sign-in state come only from the
-  harness's own status screen. The account key is a hash of what the screen
-  shows, with the fleet salt; email stays hidden unless the owner opts in.
+  secret environment variable. Terminal identity comes from the harness's
+  status screen; a native interface needs its own proven non-secret signal.
+  The account key is a hash of the approved identity signal with the fleet
+  salt; email stays hidden unless the owner opts in.
 - Unknown slash commands are `deny`. `/login`, `/logout`, `/permissions`,
   `/config`, `/hooks`, `/plugin(s)`, `/sandbox`, usage-buying commands and
   anything unknown are never sent. Local policy may tighten a class, never
@@ -77,7 +77,8 @@ A harness adapter is the extension point for one tool
 ## Checklist
 
 - [ ] Fixtures for each supported version and a failure fixture per feature.
-- [ ] No credential file is opened, no `-p` or headless invocation in product code.
+- [ ] No credential file is opened; any native invocation has a recorded ADR
+      0033 qualification and stays off until its gate passes.
 - [ ] Command catalog classification covers every discovered command; unknown
       is `deny`.
 - [ ] Capability strings (`harness.<name>`, `usage.probe.<harness>`,

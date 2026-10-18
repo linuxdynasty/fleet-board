@@ -9,7 +9,6 @@
   `goal.proto`, `session.proto` in `api/fleet/hub/v1/`
 - Decisions: [ADR 0019](../adr/0019-pre-implementation-contract-decisions.md)
   (decision 1: reuse and the goal registry; addendum items 17 to 19),
-  [ADR 0024](../adr/0024-pre-build-owner-decisions.md) (decision 1: observed goals),
   [ADR 0024](../adr/0024-pre-build-owner-decisions.md) (decision 1: observed goals)
 - Workflows that use it: [03c](03c-goals.md) (W5), [03l](03l-goal-lifecycle-and-verification.md) (W6),
   [03d](03d-triage-sessions-logs.md), [01d](01d-goal-hooks.md)
@@ -21,6 +20,7 @@ the capability map there points here.
 
 ## Goal registry
 
+Observed goals stay read-only until #270's durable handoff ([ADR 0033](../adr/0033-native-sessions-and-handoff.md)).
 A running harness cannot gain an environment variable or change its folder.
 So in a reused pane `FLEET_GOAL_ID` is missing (a session the developer
 marked available) or is the previous goal's id, and the Muse hook never sees
