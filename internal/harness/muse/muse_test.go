@@ -47,7 +47,7 @@ func TestConform(t *testing.T) {
 		}
 	}
 	condition := func(screen string) harness.ParseResult {
-		switch ParseCondition(screen).ParseOutcome {
+		switch ParseCondition(screen, time.Now()).ParseOutcome {
 		case typev1.ParseOutcome_PARSE_OUTCOME_OK,
 			typev1.ParseOutcome_PARSE_OUTCOME_PARTIAL:
 			return harness.ParseOK
@@ -90,6 +90,7 @@ func TestConform(t *testing.T) {
 					Fixtures: []harness.Fixture{
 						{Name: "goal-paused-by-interrupt.txt", Screen: readData(t, v+"/goal-paused-by-interrupt.txt")},
 						{Name: "provider-error-retrying.txt", Screen: readData(t, v+"/provider-error-retrying.txt")},
+						{Name: "rate-limit-retrying.txt", Screen: readData(t, v+"/rate-limit-retrying.txt")},
 					},
 				},
 			},

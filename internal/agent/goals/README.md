@@ -16,9 +16,11 @@ The observed-goal tracker (E9, G2).
   pane screen, parses it with the pane harness's own condition parser
   (Claude "Interrupted", Codex "Goal paused", Muse
   "goal paused by interrupt" as `GOAL_INTERRUPTED`; Cursor
-  "Goal paused (Ns)" as `GOAL_PAUSED`), and emits `HarnessCondition`
-  events with cleared pairs. `Tracker.FillConditions` lists the open
-  ones in `Snapshot.conditions` with the tracker's goal id. A failed
-  capture keeps the last level; the first scan primes silently and the
-  snapshot carries it.
+  "Goal paused (Ns)" as `GOAL_PAUSED`; Muse "HTTP 500 · retrying" as
+  `PROVIDER_ERROR` and "HTTP 429/529 · retrying" as `RATE_LIMITED`), and
+  emits `HarnessCondition` events with cleared pairs, carrying the retry
+  detail (retrying, attempt, status, reset) for the hub's limit wait.
+  `Tracker.FillConditions` lists the open ones in `Snapshot.conditions`
+  with the tracker's goal id. A failed capture keeps the last level; the
+  first scan primes silently and the snapshot carries it.
 - Episodes persist in agent.db, so a restart keeps every id.

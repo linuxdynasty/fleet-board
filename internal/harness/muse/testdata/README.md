@@ -44,6 +44,7 @@ choice), Right (help tab), Escape, Ctrl+U (clear the input), and `/quit`.
 | `ready-input-has-draft.txt` | input box with unsent text | typed text |
 | `goal-paused-by-interrupt.txt` | "goal paused by interrupt — resume with /goal resume" after the owner interrupts the goal (01 E12) | reconstructed, not a raw capture: the signal line is the probe-recorded string from the 2026-10-02 goal-control probe (01b); a raw capture replaces it when one lands |
 | `provider-error-retrying.txt` | "Meta Model API server error (HTTP 500) · retrying in 7s · attempt 6/10" when the provider returns a server error (01 E12) | reconstructed, not a raw capture: the signal line is the spec-recorded string from 01; a raw capture replaces it when one lands |
+| `rate-limit-retrying.txt` | "Meta Model API rate limit (HTTP 429) · retrying in 7s · attempt 2/10 · resets 9:29 PM" when the provider throttles (01 E12) | reconstructed, not a raw capture: status, retry word and counter mirror the observed provider-error shape, the resets tail is the shape `api/fleet/agent/v1/screen.proto` documents; a raw capture replaces it when one lands (see the 2026-10-17 probe below) |
 
 ## 1.4.6 (2026-10-12, issue #180)
 
@@ -65,6 +66,7 @@ folder, which `trust.json` already lists, so no trust entry was written.
 | `1.4.6/status.txt` | the status box below the usage box | `/status` |
 | `1.4.6/goal-paused-by-interrupt.txt` | "goal paused by interrupt — resume with /goal resume" after the owner interrupts the goal (01 E12) | reconstructed, not a raw capture: the signal line is the probe-recorded string from the 2026-10-02 goal-control probe (01b); a raw capture replaces it when one lands |
 | `1.4.6/provider-error-retrying.txt` | "Meta Model API server error (HTTP 500) · retrying in 7s · attempt 6/10" when the provider returns a server error (01 E12) | reconstructed, not a raw capture: the signal line is the spec-recorded string from 01; a raw capture replaces it when one lands |
+| `1.4.6/rate-limit-retrying.txt` | "Meta Model API rate limit (HTTP 429) · retrying in 7s · attempt 2/10 · resets 9:29 PM" when the provider throttles (01 E12) | reconstructed, not a raw capture: same reconstruction as the 1.4.4 file; a raw capture replaces it when one lands |
 
 What changed since 1.4.4: the ready screen has no "Model set to ..." line; the
 status box is wider and adds `WORKSPACE` (`trusted · not found`, even though
@@ -103,6 +105,7 @@ written.
 | `1.4.7/status.txt` | the status box below the usage box | `/status` |
 | `1.4.7/goal-paused-by-interrupt.txt` | "goal paused by interrupt — resume with /goal resume" after the owner interrupts the goal (01 E12) | reconstructed, not a raw capture: the signal line is the probe-recorded string from the 2026-10-02 goal-control probe (01b); a raw capture replaces it when one lands |
 | `1.4.7/provider-error-retrying.txt` | "Meta Model API server error (HTTP 500) · retrying in 7s · attempt 6/10" when the provider returns a server error (01 E12) | reconstructed, not a raw capture: the signal line is the spec-recorded string from 01; a raw capture replaces it when one lands |
+| `1.4.7/rate-limit-retrying.txt` | "Meta Model API overload (HTTP 529) · retrying in 12s · attempt 4/10 · resets 9:29 PM" when the provider throttles (01 E12) | reconstructed, not a raw capture: the 529 overload variant of the 1.4.4 reconstruction; a raw capture replaces it when one lands |
 | `1.4.7/help-general.txt` | `/help`, General tab (shortcuts), over the status box | `/help` |
 | `1.4.7/help-commands-page-{first,middle,last}.txt` | `/help` Commands tab at the top, the middle and the end | Right, then Down |
 | `1.4.7/help-commands-catalog.tsv` | all 49 built-in commands with their argument hints, `name<TAB>description` (derived by paging through four windows to cover every row) | see above |
@@ -118,6 +121,21 @@ the real ones; names are placeholders as below.
 No 1.4.6 command catalog was captured: the binary moved to 1.4.7 before the
 catalog round, so the 1.4.6 Commands tab is skipped and 1.4.7 is the catalog
 of record for the installed line.
+
+## Rate-limit probe, 2026-10-17 (issue #36)
+
+Question: does a live Muse screen show a 429/529 rate-limit shape to
+capture? Setup: throwaway tmux server (`-L probe36e12 -f /dev/null`), Muse
+started by typing `muse` in the home folder (already trusted, so no trust
+entry was written), screen read with `capture-pane -p` before any other key.
+Observed: Muse 1.4.10 (auto-updated from 1.4.9 on launch) at its ready
+screen; zero matches for `429`, `529`, `rate limit`, `retrying`, `resets` or
+`HTTP 5`. No prompt was sent, so no quota was spent and no limit could be
+provoked. Cleanup: `/quit`, server killed, `settings.json` and `trust.json`
+checksums unchanged, `auth.json` and the keychain never opened, no
+recordings kept. The rate-limit fixtures above stay reconstructed until a
+real limit lands on a probe. Claiming 1.4.10 support is out of scope here:
+it needs its own fixtures.
 
 ## Redactions and clean-up
 
@@ -137,9 +155,9 @@ of record for the installed line.
 
 ## Not captured, and why
 
-- Error and retry screens other than the "HTTP 500 retrying" condition (now a
-  reconstructed fixture, see above): they need a model call or a real failure,
-  and the probe provokes neither.
+- Error and retry screens other than the "HTTP 500 retrying" and "HTTP
+  429/529 retrying" conditions (now reconstructed fixtures, see above): they
+  need a model call or a real failure, and the probe provokes neither.
 - Sign-in and "Custom commands" screens (the account is signed in; the second
   lists installed skills), `/doctor`, `/model`, `/permissions`, `/settings`,
   `/logout`, `/upgrade`.
