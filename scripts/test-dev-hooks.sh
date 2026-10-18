@@ -299,5 +299,7 @@ if python3 "$root/scripts/test-check-attribution.py" >"$work/py3" 2>&1; then ok;
 if python3 "$root/scripts/test-check-file-cap.py" >"$work/py4" 2>&1; then ok; else bad "test-check-file-cap.py"; cat "$work/py4" >&2; fi
 if python3 "$root/scripts/test-plan-issues.py" >"$work/py5" 2>&1; then ok; else bad "test-plan-issues.py"; cat "$work/py5" >&2; fi
 
+if python3 "$root/scripts/test-check-agent-env.py" >"$work/py6" 2>&1; then ok; else bad "test-check-agent-env.py"; cat "$work/py6" >&2; fi
+
 printf 'test-dev-hooks: %s passed, %s failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
