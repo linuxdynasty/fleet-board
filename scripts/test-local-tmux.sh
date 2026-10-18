@@ -212,5 +212,77 @@ for changed in Makefile tool-versions.env; do
   if [ "$rc" -eq 0 ] && [ -f "$FLEET_GO_LOG" ] && [ "$(wc -l < "$FLEET_GO_LOG" | tr -d ' ')" = 2 ]; then ok; else bad "$changed-only change missed tmux tests: rc=$rc, output=$out"; fi
 done
 
+# A changed package outside internal/agent/tmux can run tmuxtest from its
+# tests. The selector must build both pins for that package, and skip a package
+# whose tests do not import tmuxtest. Metadata is stubbed here so this test
+# checks the selector without downloading or compiling tmux.
+selector="$work/selector"
+mkdir -p "$selector/scripts" "$work/selector-go-bin"
+cp "$root/scripts/local-tmux.sh" "$selector/scripts/"
+cp "$root/tool-versions.env" "$selector/"
+cat > "$selector/scripts/changed-go-packages.sh" <<'EOF'
+#!/bin/sh
+printf '%s\n' "$FLEET_CHANGED_PACKAGE"
+EOF
+cat > "$selector/scripts/install-tmux.sh" <<'EOF'
+#!/bin/sh
+set -eu
+printf '%s\n' "$1" >> "$FLEET_SELECTOR_BUILD_LOG"
+mkdir -p "$3/bin"
+printf '#!/bin/sh\nprintf "tmux %s\\n"\n' "$1" > "$3/bin/tmux"
+chmod +x "$3/bin/tmux"
+EOF
+cat > "$work/selector-go-bin/go" <<'EOF'
+#!/bin/sh
+if [ "$1" = list ]; then
+  case "$3" in
+    *'.TestImports'*'.XTestImports'*) ;;
+    *) exit 8 ;;
+  esac
+  case "$FLEET_CHANGED_PACKAGE" in
+    ./internal/agent/control)
+      printf '%s\n' 'github.com/linuxdynasty/fleet-board/internal/agent/tmux/tmuxtest'
+      ;;
+    ./internal/agent/policy)
+      printf '%s\n' 'github.com/linuxdynasty/fleet-board/internal/agent/tmux/tmuxtest/helper'
+      ;;
+    *) exit 9 ;;
+  esac
+  exit 0
+fi
+exit 9
+EOF
+chmod +x "$selector/scripts/"*.sh "$work/selector-go-bin/go"
+printf '.bin/\n' > "$selector/.gitignore"
+git -C "$selector" init -q -b main
+git -C "$selector" add -A
+git -C "$selector" -c user.name=test -c user.email=test@example.com commit -qm base
+export FLEET_SELECTOR_BUILD_LOG="$work/selector-build.log"
+
+mkdir -p "$selector/docs"
+printf 'docs-only change\n' > "$selector/docs/readme.md"
+out="$(cd "$selector" && PATH="$work/selector-go-bin:$PATH" FLEET_CHANGED_PACKAGE= scripts/local-tmux.sh prepare HEAD 2>&1)"
+rc=$?
+if [ "$rc" -eq 0 ] && [[ "$out" == *'no tmux package reached'* ]] && [ ! -e "$FLEET_SELECTOR_BUILD_LOG" ]; then
+  ok
+else
+  bad "docs-only change queried Go or built tmux pins: rc=$rc, output=$out"
+fi
+out="$(cd "$selector" && PATH="$work/selector-go-bin:$PATH" FLEET_CHANGED_PACKAGE=./internal/agent/policy scripts/local-tmux.sh prepare HEAD 2>&1)"
+rc=$?
+if [ "$rc" -eq 0 ] && [[ "$out" == *'no tmux package reached'* ]] && [ ! -e "$FLEET_SELECTOR_BUILD_LOG" ]; then
+  ok
+else
+  bad "nonconsumer package built tmux pins: rc=$rc, output=$out"
+fi
+out="$(cd "$selector" && PATH="$work/selector-go-bin:$PATH" FLEET_CHANGED_PACKAGE=./internal/agent/control scripts/local-tmux.sh prepare HEAD 2>&1)"
+rc=$?
+if [ "$rc" -eq 0 ] && [ -f "$FLEET_SELECTOR_BUILD_LOG" ] && [ "$(wc -l < "$FLEET_SELECTOR_BUILD_LOG" | tr -d ' ')" = 2 ] &&
+  [[ "$out" == *'tmux 3.2a'* ]] && [[ "$out" == *'tmux 3.7c'* ]]; then
+  ok
+else
+  bad "outside tmux consumer missed both pins: rc=$rc, output=$out"
+fi
+
 printf 'test-local-tmux: %s passed, %s failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

@@ -114,9 +114,19 @@ script_reaches_tmux() {
 }
 
 reaches_tmux() {
-  local pkgs
+  local pkgs pkg test_imports
+  local -a selected=()
   pkgs="$("$root/scripts/changed-go-packages.sh" "$1")" || die 'cannot find changed Go packages'
   case "$pkgs" in *./internal/agent/tmux*|*./...*) return 0 ;; esac
+  while IFS= read -r pkg; do
+    [ -n "$pkg" ] && selected+=("$pkg")
+  done <<< "$pkgs"
+  if [ "${#selected[@]}" -gt 0 ]; then
+    test_imports="$(cd "$root" && go list -f '{{range .TestImports}}{{.}}{{"\n"}}{{end}}{{range .XTestImports}}{{.}}{{"\n"}}{{end}}' "${selected[@]}")" || die 'cannot find selected package test imports'
+    case $'\n'"$test_imports"$'\n' in
+      *$'\n'github.com/linuxdynasty/fleet-board/internal/agent/tmux/tmuxtest$'\n'*) return 0 ;;
+    esac
+  fi
   script_reaches_tmux "$1"
 }
 
