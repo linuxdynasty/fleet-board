@@ -106,6 +106,8 @@ sessions the hub started route yet (`SESSION_NOT_FOUND` otherwise).
 `GetOperation` needs `READ` (02d). It reads
 one outbox row with the ack time as `delivered_time`, so an expiry before
 delivery (`DONE` with no `delivered_time`) reads apart from one after. The
+fresh session action and approval responses use that queued row's deadline,
+so their `not_after_time` agrees with retries and `GetOperation`. The
 per-kind result decode (`output_text`, `failed_checks`) and the `LOGS`-scope
 redaction stay unset until their slice, as does `trace_id`.
 

@@ -127,7 +127,10 @@ func (f *Fleet) sendOne(ctx context.Context, who *typev1.Principal, req proto.Me
 		}); err != nil {
 			return err
 		}
-		out = operationFromOp(op, machine, who, requestID, now, cmd.GetNotAfterTime().AsTime())
+		out, err = operationFromOp(ctx, tx, op, machine, who, requestID, now)
+		if err != nil {
+			return err
+		}
 		emitKind, emitOutcome, emitMachine, emitCommand = op.Kind, "sent", machine, op.CommandID
 		return nil
 	})
@@ -159,8 +162,8 @@ func (f *Fleet) sendApprovedTx(ctx context.Context, tx *sql.Tx, who *typev1.Prin
 	if err := approvals.AttachOperation(ctx, tx, approval.GetId().GetValue(), op.CommandID, now); err != nil {
 		return nil, "", err
 	}
-	return operationFromOp(op, approval.GetMachine().GetValue(), who, requestID, now,
-		cmd.GetNotAfterTime().AsTime()), op.Kind, nil
+	queued, err := operationFromOp(ctx, tx, op, approval.GetMachine().GetValue(), who, requestID, now)
+	return queued, op.Kind, err
 }
 
 // storeError renders a writer-job failure: caller errors stay as refused,
@@ -297,8 +300,15 @@ func operationState(s string) hubv1.OperationState {
 	}
 }
 
-// operationFromOp builds the response Operation of a fresh enqueue.
-func operationFromOp(op outbox.Op, machine string, by *typev1.Principal, requestID string, now, notAfter time.Time) *hubv1.Operation {
+// operationFromOp builds the response from the queued command's deadline.
+// Enqueue fills that deadline on a clone, leaving the caller's command unset.
+func operationFromOp(ctx context.Context, tx *sql.Tx, op outbox.Op, machine string,
+	by *typev1.Principal, requestID string, now time.Time,
+) (*hubv1.Operation, error) {
+	stored, err := loadOperation(ctx, tx, op.CommandID)
+	if err != nil {
+		return nil, err
+	}
 	return &hubv1.Operation{
 		Id:           &typev1.CommandId{Value: op.CommandID},
 		Version:      uint64(op.Version), //nolint:gosec // G115: commands.version starts at 1
@@ -309,8 +319,8 @@ func operationFromOp(op outbox.Op, machine string, by *typev1.Principal, request
 		State:        operationState(op.OpState),
 		RequestedBy:  by,
 		RequestId:    requestID,
-		NotAfterTime: timestamppb.New(notAfter),
-	}
+		NotAfterTime: stored.GetNotAfterTime(),
+	}, nil
 }
 
 // mapOutboxError renders an enqueue refusal as a Connect error.

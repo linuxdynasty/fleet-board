@@ -118,8 +118,11 @@ func (f *Fleet) CreateSession(ctx context.Context, req *connect.Request[hubv1.Cr
 		}); err != nil {
 			return err
 		}
-		sessID, out = id, operationFromOp(op, m.GetMachine().GetValue(), who, m.GetRequestId(), now,
-			cmd.GetNotAfterTime().AsTime())
+		out, err = operationFromOp(ctx, tx, op, m.GetMachine().GetValue(), who, m.GetRequestId(), now)
+		if err != nil {
+			return err
+		}
+		sessID = id
 		emitKind, emitOutcome = op.Kind, "sent"
 		return nil
 	})

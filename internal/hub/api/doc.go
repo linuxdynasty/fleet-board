@@ -27,7 +27,8 @@
 // one writer transaction with a config.import audit row; other sections
 // are not built yet), the hub-state triage writes SnoozeTriageItem and
 // DismissTriageItem (each with its triage.* audit row), the
-// session-control and approvals calls, [Fleet.GetServerInfo],
+// session-control and approvals calls (their fresh Operation deadlines
+// come from the queued commands), [Fleet.GetServerInfo],
 // [Fleet.ListMachines], [Fleet.GetMachine], [Fleet.CapturePane],
 // [Fleet.GetOperation], [Fleet.ListSessions], [Fleet.GetSession],
 // [Fleet.ListGoals], [Fleet.GetGoal] (observed goals with the stored spec
