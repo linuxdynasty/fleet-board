@@ -271,7 +271,8 @@ func (f *Fleet) UpdateSettings(ctx context.Context, req *connect.Request[hubv1.U
 	}
 	now := f.hubNow()
 	patch, paths := m.GetSettings().GetSpec(), m.GetUpdateMask().GetPaths()
-	stored, err := statedb.UpdateFleetSettings(ctx, f.store, statedb.UpdateSettingsOp{
+	writeCtx := statedb.WithValidatedWrite(ctx, func() error { return quotaCheckpoint(ctx, quotaWrite) })
+	stored, err := statedb.UpdateFleetSettings(writeCtx, f.store, statedb.UpdateSettingsOp{
 		ConfigWrite: statedb.ConfigWrite{
 			Principal: actor, RequestID: m.GetRequestId(),
 			RequestHash: sum, Actor: actorOf(who), Now: now,

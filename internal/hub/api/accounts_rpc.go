@@ -274,7 +274,8 @@ func (f *Fleet) CreateAccount(ctx context.Context, req *connect.Request[hubv1.Cr
 		return nil, f.configOpFailed(ctx, opAccountCreate, "create", actor, "encode", err)
 	}
 	now := f.hubNow()
-	stored, err := statedb.CreateOwnerAccount(ctx, f.store, statedb.CreateAccount{
+	writeCtx := statedb.WithValidatedWrite(ctx, func() error { return quotaCheckpoint(ctx, quotaWrite) })
+	stored, err := statedb.CreateOwnerAccount(writeCtx, f.store, statedb.CreateAccount{
 		ConfigWrite: statedb.ConfigWrite{
 			Principal: actor, RequestID: m.GetRequestId(),
 			RequestHash: sum, Actor: actorOf(who), Now: now,
@@ -338,7 +339,8 @@ func (f *Fleet) UpdateAccount(ctx context.Context, req *connect.Request[hubv1.Up
 	}
 	now := f.hubNow()
 	patch, paths := m.GetAccount().GetSpec(), m.GetUpdateMask().GetPaths()
-	stored, err := statedb.UpdateOwnerAccount(ctx, f.store, statedb.UpdateAccountOp{
+	writeCtx := statedb.WithValidatedWrite(ctx, func() error { return quotaCheckpoint(ctx, quotaWrite) })
+	stored, err := statedb.UpdateOwnerAccount(writeCtx, f.store, statedb.UpdateAccountOp{
 		ConfigWrite: statedb.ConfigWrite{
 			Principal: actor, RequestID: m.GetRequestId(),
 			RequestHash: sum, Actor: actorOf(who), Now: now,
@@ -413,7 +415,8 @@ func (f *Fleet) DeleteAccount(ctx context.Context, req *connect.Request[hubv1.De
 		return nil, f.configOpFailed(ctx, opAccountDelete, "delete", actor, "encode", err)
 	}
 	now := f.hubNow()
-	stored, err := statedb.DeleteOwnerAccount(ctx, f.store, statedb.DeleteAccountOp{
+	writeCtx := statedb.WithValidatedWrite(ctx, func() error { return quotaCheckpoint(ctx, quotaWrite) })
+	stored, err := statedb.DeleteOwnerAccount(writeCtx, f.store, statedb.DeleteAccountOp{
 		ConfigWrite: statedb.ConfigWrite{
 			Principal: actor, RequestID: m.GetRequestId(),
 			RequestHash: sum, Actor: actorOf(who), Now: now,

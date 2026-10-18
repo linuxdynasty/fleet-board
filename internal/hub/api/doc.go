@@ -3,9 +3,10 @@
 // [NewLocalServer] serves the generated FleetService and GET /metrics on the
 // local_trusted API listener. [NewMetricsServer] serves only metrics on the
 // optional listener. Both check the loopback peer, Host, Origin and unsupported
-// credential carriers before any handler and share [Quotas]. A refused Host or
-// Origin is a Connect permission_denied error (HTTP 403) whose ErrorDetail
-// reason is HOST_NOT_ALLOWED or ORIGIN_NOT_ALLOWED, counted in
+// credential carriers before any handler and share [Quotas]. TCP writes
+// reserve one owner allowance after validation and before mutation.
+// A refused Host or Origin is Connect permission_denied (HTTP 403), with
+// ErrorDetail reason HOST_NOT_ALLOWED or ORIGIN_NOT_ALLOWED, counted in
 // fleet_hub_auth_failures_total{reason="host"|"origin"}. No CORS header is
 // ever sent. [NewServer] remains a metrics-only helper. Servers use header and
 // idle timeouts and an

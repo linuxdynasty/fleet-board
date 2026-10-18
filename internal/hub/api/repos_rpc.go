@@ -162,6 +162,9 @@ func (f *Fleet) CreateRepo(ctx context.Context, req *connect.Request[hubv1.Creat
 		if err := protojson.Unmarshal(replay.Spec, &replaySpec); err != nil {
 			return nil, f.repoFailed(ctx, opRepoCreate, "watch", actor, "decode", err)
 		}
+		if err := quotaCheckpoint(ctx, quotaWrite); err != nil {
+			return nil, f.repoRefused(ctx, opRepoCreate, actor, err)
+		}
 		f.repoWrote(ctx, opRepoCreate, actor, repoID(replay.Host, replay.Path), replay.Version, true)
 		return connect.NewResponse(&hubv1.CreateRepoResponse{
 			Repo: repoFromStored(*replay, &replaySpec),
@@ -184,7 +187,8 @@ func (f *Fleet) CreateRepo(ctx context.Context, req *connect.Request[hubv1.Creat
 	if err != nil {
 		return nil, f.repoFailed(ctx, opRepoCreate, "watch", actor, "encode", err)
 	}
-	stored, err := statedb.CreateWatchedRepo(ctx, f.store, statedb.CreateRepo{
+	writeCtx := statedb.WithValidatedWrite(ctx, func() error { return quotaCheckpoint(ctx, quotaWrite) })
+	stored, err := statedb.CreateWatchedRepo(writeCtx, f.store, statedb.CreateRepo{
 		RepoWrite: statedb.RepoWrite{
 			Principal: actor, RequestID: m.GetRequestId(),
 			RequestHash: sum, Actor: actorOf(who), Now: now,
@@ -249,7 +253,8 @@ func (f *Fleet) UpdateRepo(ctx context.Context, req *connect.Request[hubv1.Updat
 	}
 	now := f.hubNow()
 	patch, paths := m.GetRepo().GetSpec(), m.GetUpdateMask().GetPaths()
-	stored, err := statedb.UpdateWatchedRepoMasked(ctx, f.store, statedb.MaskedUpdate{
+	writeCtx := statedb.WithValidatedWrite(ctx, func() error { return quotaCheckpoint(ctx, quotaWrite) })
+	stored, err := statedb.UpdateWatchedRepoMasked(writeCtx, f.store, statedb.MaskedUpdate{
 		RepoWrite: statedb.RepoWrite{
 			Principal: actor, RequestID: m.GetRequestId(),
 			RequestHash: sum, Actor: actorOf(who), Now: now,
@@ -317,7 +322,8 @@ func (f *Fleet) DeleteRepo(ctx context.Context, req *connect.Request[hubv1.Delet
 		return nil, f.repoFailed(ctx, opRepoDelete, "delete", actor, "encode", err)
 	}
 	now := f.hubNow()
-	stored, err := statedb.DeleteWatchedRepo(ctx, f.store, statedb.DeleteRepo{
+	writeCtx := statedb.WithValidatedWrite(ctx, func() error { return quotaCheckpoint(ctx, quotaWrite) })
+	stored, err := statedb.DeleteWatchedRepo(writeCtx, f.store, statedb.DeleteRepo{
 		RepoWrite: statedb.RepoWrite{
 			Principal: actor, RequestID: m.GetRequestId(),
 			RequestHash: sum, Actor: actorOf(who), Now: now,

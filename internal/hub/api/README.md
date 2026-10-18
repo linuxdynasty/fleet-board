@@ -34,9 +34,9 @@ resp, err := api.AdminClient(sockPath).CreateEnrollmentToken(ctx, req) // fleetd
 
 ## API listener
 
-`NewLocalServer` mounts the same `Fleet` as the admin socket. Local admission
-and quota rules are in [local-tcp.md](local-tcp.md). `NewMetricsServer` keeps
-FleetService off the separate metrics listener.
+`NewLocalServer` serves the admin `Fleet`; `NewMetricsServer` serves metrics only.
+Account, settings, integration, repo and import writes share one owner
+allowance after validation ([local-tcp.md](local-tcp.md)).
 
 `NewLocalServer` sets `ReadHeaderTimeout` (10 s) and `IdleTimeout` (2 min, a
 keep-alive connection with no request), no `ReadTimeout` (Watch and attach will

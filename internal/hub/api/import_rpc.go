@@ -267,6 +267,9 @@ func (f *Fleet) ImportConfig(ctx context.Context, req *connect.Request[hubv1.Imp
 	}
 	hash := planConfigHash(changes)
 	if m.GetDryRun() {
+		if err := quotaCheckpoint(ctx, quotaWrite); err != nil {
+			return nil, f.configRefused(ctx, actor, err)
+		}
 		f.configPlanned(ctx, actor, len(changes), hash)
 		return connect.NewResponse(&hubv1.ImportConfigResponse{
 			Changes: changes, PlanHash: hash,
@@ -301,6 +304,9 @@ func (f *Fleet) ImportConfig(ctx context.Context, req *connect.Request[hubv1.Imp
 			}
 		}
 		machines, pending := countMachineLines(prev.GetChanges())
+		if err := quotaCheckpoint(ctx, quotaWrite); err != nil {
+			return nil, f.configRefused(ctx, actor, err)
+		}
 		f.configApplied(ctx, actor, prev.GetPlanHash(), created, updated, machines, pending, true)
 		return connect.NewResponse(&prev), nil
 	}
@@ -319,6 +325,9 @@ func (f *Fleet) ImportConfig(ctx context.Context, req *connect.Request[hubv1.Imp
 		}
 	}
 	if blocked && (!waivable || !m.GetAllowSkipped()) {
+		if err := quotaCheckpoint(ctx, quotaWrite); err != nil {
+			return nil, f.configRefused(ctx, actor, err)
+		}
 		reason := "SKIPPED"
 		if !waivable {
 			reason = "CONFIG_INVALID"
@@ -339,7 +348,8 @@ func (f *Fleet) ImportConfig(ctx context.Context, req *connect.Request[hubv1.Imp
 	if err != nil {
 		return nil, f.configFailed(ctx, actor, "encode", err)
 	}
-	stored, replay, err := statedb.ApplyConfigImport(ctx, f.store, statedb.ConfigImport{
+	writeCtx := statedb.WithValidatedWrite(ctx, func() error { return quotaCheckpoint(ctx, quotaWrite) })
+	stored, replay, err := statedb.ApplyConfigImport(writeCtx, f.store, statedb.ConfigImport{
 		ImportWrite: statedb.ImportWrite{
 			Principal: actor, RequestID: m.GetRequestId(),
 			RequestHash: sum, Actor: actorOf(who), Now: now,
@@ -348,6 +358,10 @@ func (f *Fleet) ImportConfig(ctx context.Context, req *connect.Request[hubv1.Imp
 		Ops: ops, MachineOps: machineOps, PendingOps: pendingOps, Response: respBytes,
 	})
 	if err != nil {
+		var ce *connect.Error
+		if errors.As(err, &ce) && ce.Code() == connect.CodeResourceExhausted {
+			return nil, f.configRefused(ctx, actor, err)
+		}
 		if cerr, ok := importCallerError(err); ok {
 			return nil, f.configRefused(ctx, actor, cerr)
 		}
