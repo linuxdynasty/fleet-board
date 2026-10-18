@@ -25,14 +25,15 @@ err = config.WriteDefault(path)           // fleetd init: the defaults, mode 060
 - **Not built yet.** `mode: authenticated`, `listen.pprof`, `public_hosts`,
   `public_origins`, `tls.api_cert_file`, `tls.api_key_file`, `tls.api_tailscale`
   and `telemetry.otlp.endpoint` are refused (`Error.NotBuilt`) until their plan
-  rows land. `timing` (rows 13, 21, 22, 23) and `github` (row 11) are loaded
-  and checked but have no effect until those rows; 02k keeps both lists.
+  rows land. `timing` (rows 13, 21, 22, 23) is loaded and checked but has no
+  effect until those rows; 02k keeps both lists.
 - **Rate limits.** `rate_limits` applies to the local TCP API and `/metrics`.
   The admin socket keeps its kernel-checked local identity and has no TCP quota.
 - **Admin socket path.** `state_dir` is refused when `<state_dir>/admin.sock`
   would not fit in `sun_path` (104 bytes on darwin, 108 on Linux, counting the
   closing NUL). `AdminSocketPath` names it.
-- **`github`** is checked for shape only; the key files are never opened here.
+- **`github`** configures the daemon's provider sync loop when present. This
+  package checks its shape only; the key files are never opened here.
 
 ## Testing
 
