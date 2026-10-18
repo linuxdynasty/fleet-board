@@ -410,8 +410,8 @@ writer time. **Decision:** keep 200 ev/s per agent and 2,500 ev/s per hub
 burst (row 5 ruling, fork 6) are measured in
 [04c](04c-event-ingest-benchmark.md): 04c measured per-message jobs at
 2,499-2,500 jobs/s, commit p99 36.8 ms, 42 % busy and enqueue → commit p99
-62.4 ms, and set that line at 90 ms (fill plus the commit budget; arbiter
-round 4).
+62.4 ms, with a 90 ms line (fill plus commit budget; arbiter round 4).
+[Commit-wake measurements](../../spikes/commitwake/README.md) cover an absent reader; active Watch dispatch and fan-out still need measurement.
 
 **Hub scrubber cost (2026-10-10, row 5l).** The hub's secret scrubbing over
 free text the agent already scrubbed is measured in
