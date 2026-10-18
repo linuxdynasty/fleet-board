@@ -59,6 +59,15 @@ class GoalRoleRouterTests(unittest.TestCase):
                     self.assertIn("fleet-issue-driver stays", output)
                     self.assertIn("watcher", output)
 
+    def test_driver_invocations_allow_the_article(self):
+        for harness in ("claude", "codex", "muse"):
+            for verb in ("Use", "Apply", "Follow"):
+                with self.subTest(harness=harness, verb=verb):
+                    output = context("/goal %s the fleet-issue-driver to drive issue #12" % verb, harness)
+                    self.assertIn("DRIVE CONTRACT", output)
+                    self.assertIn("- develop-fleet:", output)
+                    self.assertIn("- review-fleet:", output)
+
     def test_drive_detection_does_not_promote_diagnostic_work(self):
         for prompt in ("/goal update the fleet-issue-driver skill docs",
                        "/goal Diagnose why fleet-issue-driver hook fires using fleet-diagnostic-rigor",

@@ -88,7 +88,7 @@ def is_drive(skills: set, body: str) -> bool:
     """Only an explicit driver skill or an opening drive + issue id opts in."""
     normalized = " ".join(body.lower().split())
     invokes_driver = "fleet-issue-driver" in skills and bool(re.search(
-        r"(?:^(?:\$)?|\b(?:using|with|use|follow|apply|load|invoke|run)\s+\$?)"
+        r"(?:^(?:\$)?|\b(?:using|with|use|follow|apply|load|invoke|run)\s+(?:the\s+)?\$?)"
         r"fleet-issue-driver\b", normalized
     ))
     return invokes_driver or bool(
