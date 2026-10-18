@@ -1,0 +1,31 @@
+Deadline-cost run: fresh processes, five calls/sample, 10 normal and 10 reverse samples per arm.
+cold-process-baseline: /tmp/fleet-deadline-cost-baseline/api.test -test.run=^$ -test.bench=^BenchmarkDeadlineCost(Send|Decide)$ -test.benchmem -test.benchtime=5x -test.count=1
+exit=0 wall_s=8.546
+cold-process-candidate: /tmp/fleet-deadline-cost-candidate/api.test -test.run=^$ -test.bench=^BenchmarkDeadlineCost(Send|Decide)$ -test.benchmem -test.benchtime=5x -test.count=1
+exit=0 wall_s=8.536
+normal-baseline: /tmp/fleet-deadline-cost-baseline/api.test -test.run=^$ -test.bench=^BenchmarkDeadlineCost(Send|Decide)$ -test.benchmem -test.benchtime=5x -test.count=10
+exit=0 wall_s=85.428
+normal-candidate: /tmp/fleet-deadline-cost-candidate/api.test -test.run=^$ -test.bench=^BenchmarkDeadlineCost(Send|Decide)$ -test.benchmem -test.benchtime=5x -test.count=10
+exit=0 wall_s=85.534
+reverse-candidate: /tmp/fleet-deadline-cost-candidate/api.test -test.run=^$ -test.bench=^BenchmarkDeadlineCost(Send|Decide)$ -test.benchmem -test.benchtime=5x -test.count=10
+exit=0 wall_s=85.385
+reverse-baseline: /tmp/fleet-deadline-cost-baseline/api.test -test.run=^$ -test.bench=^BenchmarkDeadlineCost(Send|Decide)$ -test.benchmem -test.benchtime=5x -test.count=10
+exit=0 wall_s=85.548
+baseline-profile: /tmp/fleet-deadline-cost-baseline/api.test -test.run=^$ -test.bench=^BenchmarkDeadlineCost(Send|Decide)$ -test.benchmem -test.benchtime=20x -test.count=1 -test.cpuprofile=/tmp/fleet-deadline-cost-baseline/cpu.prof -test.memprofile=/tmp/fleet-deadline-cost-baseline/heap.prof -test.mutexprofile=/tmp/fleet-deadline-cost-baseline/mutex.prof -test.mutexprofilefraction=1
+exit=0 wall_s=20.455
+go tool pprof -top -nodecount=25 /tmp/fleet-deadline-cost-baseline/api.test /tmp/fleet-deadline-cost-baseline/cpu.prof
+exit=0
+go tool pprof -top -nodecount=25 -alloc_space /tmp/fleet-deadline-cost-baseline/api.test /tmp/fleet-deadline-cost-baseline/heap.prof
+exit=0
+go tool pprof -top -nodecount=25 -sample_index=delay /tmp/fleet-deadline-cost-baseline/api.test /tmp/fleet-deadline-cost-baseline/mutex.prof
+exit=0
+candidate-profile: /tmp/fleet-deadline-cost-candidate/api.test -test.run=^$ -test.bench=^BenchmarkDeadlineCost(Send|Decide)$ -test.benchmem -test.benchtime=20x -test.count=1 -test.cpuprofile=/tmp/fleet-deadline-cost-candidate/cpu.prof -test.memprofile=/tmp/fleet-deadline-cost-candidate/heap.prof -test.mutexprofile=/tmp/fleet-deadline-cost-candidate/mutex.prof -test.mutexprofilefraction=1
+exit=0 wall_s=20.343
+go tool pprof -top -nodecount=25 /tmp/fleet-deadline-cost-candidate/api.test /tmp/fleet-deadline-cost-candidate/cpu.prof
+exit=0
+go tool pprof -top -nodecount=25 -alloc_space /tmp/fleet-deadline-cost-candidate/api.test /tmp/fleet-deadline-cost-candidate/heap.prof
+exit=0
+go tool pprof -top -nodecount=25 -sample_index=delay /tmp/fleet-deadline-cost-candidate/api.test /tmp/fleet-deadline-cost-candidate/mutex.prof
+exit=0
+/Users/linuxdynasty/go/bin/benchstat /Volumes/Development/personal-repos/fleet-board-worktrees/drive-40-deadline-cost/spikes/deadline-cost/results/baseline.bench /Volumes/Development/personal-repos/fleet-board-worktrees/drive-40-deadline-cost/spikes/deadline-cost/results/candidate.bench
+exit=0

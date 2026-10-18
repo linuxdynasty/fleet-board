@@ -1,0 +1,5 @@
+=== RUN   TestDeadlineCostProbeSemantics
+    session_deadline_test.go:203: state.db fixture directory: /var/folders/9z/l8tldrc54xqfnvbrgcvyr2pc0000gn/T/TestDeadlineCostProbeSemantics1323237235/001/state; df -P: Filesystem   512-blocks      Used Available Capacity  Mounted on
+        /dev/disk3s5  965595304 470187224 444182696    52%    /System/Volumes/Data
+--- PASS: TestDeadlineCostProbeSemantics (1.76s)
+PASS

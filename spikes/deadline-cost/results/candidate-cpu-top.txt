@@ -1,0 +1,32 @@
+File: api.test
+Type: cpu
+Time: 2026-10-18 19:46:49 EDT
+Duration: 20.32s, Total samples = 610ms ( 3.00%)
+Showing nodes accounting for 610ms, 100% of 610ms total
+Showing top 25 nodes out of 320
+      flat  flat%   sum%        cum   cum%
+     190ms 31.15% 31.15%      190ms 31.15%  syscall.rawsyscalln
+     160ms 26.23% 57.38%      160ms 26.23%  runtime.pthread_cond_signal
+      60ms  9.84% 67.21%       60ms  9.84%  runtime.pthread_cond_wait
+      50ms  8.20% 75.41%       50ms  8.20%  runtime.kevent
+      40ms  6.56% 81.97%       40ms  6.56%  runtime.usleep
+      20ms  3.28% 85.25%       20ms  3.28%  internal/runtime/atomic.(*UnsafePointer).Load (inline)
+      20ms  3.28% 88.52%       20ms  3.28%  runtime.madvise
+      10ms  1.64% 90.16%       10ms  1.64%  modernc.org/sqlite.(*rows).Close
+      10ms  1.64% 91.80%       10ms  1.64%  modernc.org/sqlite/lib._findElementWithHash
+      10ms  1.64% 93.44%       10ms  1.64%  modernc.org/sqlite/lib._sqlite3FinishCoding
+      10ms  1.64% 95.08%       10ms  1.64%  modernc.org/sqlite/lib._sqlite3MemMalloc
+      10ms  1.64% 96.72%       90ms 14.75%  modernc.org/sqlite/lib._sqlite3Prepare
+      10ms  1.64% 98.36%       80ms 13.11%  modernc.org/sqlite/lib._sqlite3RunParser
+      10ms  1.64%   100%       10ms  1.64%  runtime.(*spanSet).push
+         0     0%   100%       80ms 13.11%  _.goready.func1
+         0     0%   100%       10ms  1.64%  bufio.(*Reader).Peek
+         0     0%   100%       10ms  1.64%  bufio.(*Reader).fill
+         0     0%   100%       10ms  1.64%  bytes.(*Buffer).WriteTo
+         0     0%   100%       10ms  1.64%  compress/flate.NewWriter (inline)
+         0     0%   100%       10ms  1.64%  compress/gzip.(*Writer).Write
+         0     0%   100%       40ms  6.56%  connectrpc.com/connect.(*Handler).ServeHTTP
+         0     0%   100%       10ms  1.64%  connectrpc.com/connect.(*compressionPool).Compress
+         0     0%   100%       10ms  1.64%  connectrpc.com/connect.(*connectUnaryHandlerConn).Send
+         0     0%   100%       10ms  1.64%  connectrpc.com/connect.(*connectUnaryMarshaler).Marshal
+         0     0%   100%       10ms  1.64%  connectrpc.com/connect.(*errorTranslatingHandlerConnCloser).Send

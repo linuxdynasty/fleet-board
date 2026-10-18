@@ -1,0 +1,31 @@
+File: api.test
+Type: alloc_space
+Time: 2026-10-18 19:47:10 EDT
+Showing nodes accounting for 49.48MB, 81.81% of 60.48MB total
+Showing top 25 nodes out of 266
+      flat  flat%   sum%        cum   cum%
+    7.87MB 13.01% 13.01%     7.87MB 13.01%  compress/flate.newFastEnc (inline)
+    7.04MB 11.64% 24.65%    19.60MB 32.41%  compress/flate.NewWriter
+    5.38MB  8.89% 33.55%     5.38MB  8.89%  compress/flate.(*fastGen).reset
+    3.36MB  5.56% 39.10%     3.36MB  5.56%  compress/flate.(*fastGen).addBlock
+    3.19MB  5.28% 44.38%    12.56MB 20.77%  compress/flate.(*compressor).init
+    2.50MB  4.14% 48.52%     2.50MB  4.14%  runtime.mallocgc
+    2.50MB  4.13% 52.65%     3.50MB  5.79%  connectrpc.com/connect.(*protocolGRPC).NewHandler
+       2MB  3.31% 55.96%        2MB  3.31%  strings.genSplit
+    1.50MB  2.48% 58.44%     1.50MB  2.48%  compress/flate.newHuffmanEncoder (inline)
+    1.50MB  2.48% 60.92%     1.50MB  2.48%  mime.ParseMediaType
+    1.50MB  2.48% 63.40%        6MB  9.92%  connectrpc.com/connect.(*handlerConfig).newProtocolHandlers
+    1.50MB  2.48% 65.88%        2MB  3.31%  regexp/syntax.(*Regexp).Simplify
+    1.39MB  2.30% 68.19%     4.28MB  7.08%  modernc.org/libc/honnef.co/go/netdb.init.0
+    1.16MB  1.91% 70.10%     1.16MB  1.91%  runtime/pprof.StartCPUProfile
+    1.13MB  1.86% 71.96%     1.13MB  1.86%  regexp/syntax.(*compiler).inst
+    1.03MB  1.71% 73.67%     1.03MB  1.71%  compress/flate.(*dictDecoder).init
+    0.89MB  1.48% 75.14%     0.89MB  1.48%  os.readFileContents
+    0.52MB  0.85% 75.99%     0.52MB  0.85%  net/http.init.func2
+    0.51MB  0.85% 76.84%     0.51MB  0.85%  google.golang.org/protobuf/internal/strs.(*Builder).grow
+    0.50MB  0.83% 77.67%     0.50MB  0.83%  bufio.NewReaderSize
+    0.50MB  0.83% 78.50%     0.50MB  0.83%  google.golang.org/protobuf/internal/impl.(*MessageInfo).makeStructInfo
+    0.50MB  0.83% 79.33%     0.50MB  0.83%  sync.(*Pool).pinSlow
+    0.50MB  0.83% 80.16%     0.50MB  0.83%  regexp/syntax.(*parser).calcSize
+    0.50MB  0.83% 80.98%     0.50MB  0.83%  connectrpc.com/connect.withGzip.func1
+    0.50MB  0.83% 81.81%     0.50MB  0.83%  github.com/linuxdynasty/fleet-board/internal/hub/outbox.Lookup

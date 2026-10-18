@@ -1,0 +1,4 @@
+   Device Node:               /dev/disk3s5
+   Mount Point:               /System/Volumes/Data
+   File System Personality:   APFS
+   Device Location:           Internal

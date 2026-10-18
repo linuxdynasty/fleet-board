@@ -1,0 +1,4 @@
+   Device Node:               /dev/disk7s1
+   Mount Point:               /Volumes/Development
+   File System Personality:   APFS
+   Device Location:           External

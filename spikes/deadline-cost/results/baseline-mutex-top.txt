@@ -1,0 +1,31 @@
+File: api.test
+Type: delay
+Time: 2026-10-18 19:46:49 EDT
+Showing nodes accounting for 359.01us, 100% of 359.01us total
+Showing top 25 nodes out of 66
+      flat  flat%   sum%        cum   cum%
+  317.64us 88.48% 88.48%   317.64us 88.48%  runtime.unlock (inline)
+   36.08us 10.05% 98.53%    36.08us 10.05%  sync.(*Mutex).Unlock (partial-inline)
+    5.29us  1.47%   100%     5.29us  1.47%  runtime._LostContendedRuntimeLock
+         0     0%   100%     7.62us  2.12%  compress/gzip.NewWriterLevel
+         0     0%   100%     2.71us  0.75%  context.(*cancelCtx).Done
+         0     0%   100%     2.71us  0.75%  database/sql.(*Rows).awaitDone
+         0     0%   100%     2.71us  0.75%  database/sql.(*Rows).initContextClose.gowrap1
+         0     0%   100%    10.29us  2.87%  net/http.(*Server).SetKeepAlivesEnabled
+         0     0%   100%    10.29us  2.87%  net/http.(*Server).closeIdleConns
+         0     0%   100%    10.58us  2.95%  net/http.(*Transport).CloseIdleConnections
+         0     0%   100%    12.50us  3.48%  net/http.(*Transport).dialConn.gowrap2
+         0     0%   100%    10.58us  2.95%  net/http.(*persistConn).close
+         0     0%   100%    12.50us  3.48%  net/http.(*persistConn).readLoop
+         0     0%   100%    20.87us  5.81%  net/http/httptest.(*Server).Close
+         0     0%   100%    20.87us  5.81%  net/http/httptest.(*Server).Close-fm
+         0     0%   100%     4.25us  1.18%  runtime.(*cleanupQueue).wake
+         0     0%   100%     7.62us  2.12%  runtime.(*mcache).nextFree
+         0     0%   100%     7.62us  2.12%  runtime.(*mcache).refill
+         0     0%   100%     7.62us  2.12%  runtime.(*mcentral).cacheSpan
+         0     0%   100%     7.62us  2.12%  runtime.(*mcentral).grow
+         0     0%   100%     7.62us  2.12%  runtime.(*mheap).alloc
+         0     0%   100%     7.62us  2.12%  runtime.(*mheap).alloc.func1
+         0     0%   100%     7.62us  2.12%  runtime.(*mheap).allocSpan
+         0     0%   100%     7.62us  2.12%  runtime.(*mheap).initSpan
+         0     0%   100%       18us  5.01%  runtime.allocm
