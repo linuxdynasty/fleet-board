@@ -2,12 +2,11 @@
 
 - Status: Accepted
 - Date: 2026-10-18
-- Deciders: linuxdynasty (headless direction, 2026-10-13); arbiter-fleet
-  (policy boundaries for #265, 2026-10-18)
+- Decider: linuxdynasty (headless direction, 2026-10-13)
 - Supersedes, in part: [0024](0024-pre-build-owner-decisions.md) decision 1
-  (observed goals are always uncontrollable), and its terminal-only execution
-  assumption; [0027](0027-cursor-first-class-copilot-and-messaging-later.md)
-  (native message sending was deferred)
+  (observed goals cannot ever be handed off) and decision 10 (the product
+  never runs headless); [0027](0027-cursor-first-class-copilot-and-messaging-later.md)
+  decision 1 (Cursor's blanket no-headless rule)
 - Builds on: [0008](0008-goal-consent-and-account-modes.md),
   [0025](0025-v1-includes-dispatch.md), [0032](0032-local-trusted-approval-secret.md)
 
@@ -56,7 +55,11 @@ keeps evidence and missing proof visible.
    state. Permission to merge is separate from both. For Fleetboard's own
    v1 PRs, the owner-merges rule from ADR 0024 remains the standing project
    rule. This decision does not widen default goal consent.
-6. Existing deployment stays local: browser to hub, outbound agent stream to
+6. A managed native session can receive turns through its own qualified
+   session interface. This does not enable sending messages through another
+   running session's inbox or `codex queue`: that cross-session feature
+   remains `later` under ADR 0027 decision 4, with its own checks.
+7. Existing deployment stays local: browser to hub, outbound agent stream to
    a worker on an allowed machine, and a local harness there. Cloud workers,
    remote browser access to a worker, root and new sandbox requirements are
    outside this decision. The hub still sends typed, replay-protected commands;
@@ -75,3 +78,6 @@ normal OAuth/keychain route and needs a separately qualified API billing path.
 The current observed-goal contract remains read-only until #270 adds an
 explicit, durable handoff protocol. No existing plan row or issue completion
 criterion is changed by this policy decision.
+ADR 0024's headless development-helper allowance still applies only to
+building this repository. ADR 0027's credential and pane-typing checks remain
+in force for Cursor; only its blanket native-execution ban is superseded.

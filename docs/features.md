@@ -203,9 +203,10 @@ These are dropped or out of scope on purpose. They are not forgotten.
   ([ADR 0022](adr/0022-drift-audit-decisions.md) decision 7, finished by
   [ADR 0024](adr/0024-pre-build-owner-decisions.md) decision 6). Pacing, the reserve
   and the short-window limit bound spend instead. Nor does the scheduler predict what one issue costs.
-- **Headless harness runs.** The product never runs a harness with `-p`
-  ([AGENTS.md](../AGENTS.md) principle 1); only the development helpers run a role
-  headless, to build this repo (ADR 0024 decision 10).
+- **Unqualified native harness runs.** SDK or `-p` execution stays off until
+  its exact version, auth/billing mode, approval behavior, deployment and
+  machine-side caller pass [ADR 0033](adr/0033-native-sessions-and-handoff.md).
+  Development helpers remain separate (ADR 0024 decision 10).
 - **A monthly cap period for API-key accounts, and a GitHub token fallback**
   (ADR 0024 decisions 7 and 15).
 - **Storing or reading credentials, running as root, needing a sandbox, or raw shell or tmux
