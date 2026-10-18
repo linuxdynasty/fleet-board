@@ -110,6 +110,17 @@ func TestAWakeCutsTheBackoffButKeepsTheGap(t *testing.T) {
 			t.Parallel()
 			h := startConnectHub(t)
 			a := enrolled(t, h)
+			removeState(t, a, conn.HubAddressFile)
+			// The first search takes time; the next one returns at once.
+			// Browse starts mark the beginning of each whole attempt here.
+			browseStarts := make(chan time.Time, 2)
+			d := &fakeDiscover{hold: true}
+			d.onBrowse = func() {
+				browseStarts <- time.Now()
+				d.mu.Lock()
+				d.hold = false
+				d.mu.Unlock()
+			}
 			h.set(func(h *connectHub) {
 				h.onHello = func(n int, _ *agentv1.Hello) *agentv1.Bye {
 					if n == 1 {
@@ -124,6 +135,9 @@ func TestAWakeCutsTheBackoffButKeepsTheGap(t *testing.T) {
 				slowBackoff(o)
 				o.Backoff.MinGap = gap
 				o.Events = events
+				useMDNS(o, d)
+				o.BrowseTimeout = 250 * time.Millisecond
+				o.Identity.HubAddresses = []string{h.addr}
 			})
 			waitFor(t, 5*time.Second, "the first Hello", func() bool { return h.count() == 1 && h.stream(1).ended })
 			waitFor(t, 5*time.Second, "backoff", func() bool { return r.loop.Status().State == conn.StateBackoff })
@@ -132,15 +146,13 @@ func TestAWakeCutsTheBackoffButKeepsTheGap(t *testing.T) {
 			if got := h.stream(2).hello.GetReason(); got != tc.ev.Reason {
 				t.Errorf("the Hello after a %s in backoff says %v, want %v", tc.name, got, tc.ev.Reason)
 			}
-			attempts := a.events(t, "connect.attempt")
-			if len(attempts) != 2 {
-				t.Fatalf("connect.attempt = %v", attempts)
+			if got := d.count(); got != 2 {
+				t.Fatalf("browses = %d, want one per attempt", got)
 			}
-			// The gap runs from just before the first connect.attempt line;
-			// without it the two would be about the 2 ms event delay apart.
-			const logSkew = 100 * time.Millisecond
-			if d := logTime(t, attempts[1]).Sub(logTime(t, attempts[0])); d < gap-logSkew {
-				t.Errorf("two connects %v apart, want at least %v", d, gap)
+			first, second := <-browseStarts, <-browseStarts
+			const startSkew = 20 * time.Millisecond
+			if d := second.Sub(first); d < gap-startSkew {
+				t.Errorf("two whole attempts %v apart, want at least %v", d, gap)
 			}
 		})
 	}
