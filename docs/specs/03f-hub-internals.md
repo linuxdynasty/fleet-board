@@ -138,7 +138,7 @@ contract; this is how the hub runs it.
   wakes the sender. A REVOKED machine is refused (`MACHINE_REVOKED`, 02b)
   and nothing is written. Local TCP API calls reserve their configured write
   allowance after these checks and before a new row or replay succeeds. An
-  approval decision checks its command with `CheckEnqueue` in the same job
+  approval decision checks its command with `outbox.CheckEnqueue` in the same job
   before the decision's quota checkpoint and first stamp.
 - **Send.** One sender goroutine does every send. A machine
   gets commands only after the Snapshot of its current epoch committed: the
