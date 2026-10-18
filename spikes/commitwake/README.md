@@ -8,7 +8,12 @@ dispatcher, browser fan-out, or the complete A50 workload.
 ## Reproduction
 
 Baseline `ef3ead1925732ba3993371059443a8a1ee380c27`; candidate
-`ebc58249174acf310572eaabd00294743b259a6f`. Same Apple M4 Pro (12 cores),
+`ebc58249174acf310572eaabd00294743b259a6f` was the measured local revision.
+After rebasing, use reachable ancestor
+`966a5b4cce07aaf6b2fc50015afc649ec5dbabdb` to reproduce its store and ingest
+benchmarks. Their source and module inputs are byte-identical; this is source
+identity proof, not a second measurement. See [source-identity.md](source-identity.md).
+Same Apple M4 Pro (12 cores),
 64 GB RAM, Darwin kernel 27.0.0, Go 1.27.2, internal SSD/APFS. Each invocation creates
 a fresh temporary SQLite database using the benchmark's normal durable store.
 Other builds and tests were paused for the entire measurement window.

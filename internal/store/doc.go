@@ -20,6 +20,8 @@
 // a nonblocking hint on [Store.CommitWake]. One future hub Watch dispatcher
 // consumes it and reads committed state; hints can coalesce. The writer closes
 // the channel after the final flush during [Store.Close].
+// Cancellation after admission does not discard a job or its committed wake;
+// its regression test cancels inside a bounded callback without waiting.
 // BenchmarkWriterBatch times one such batch at 1, 10 and 100 jobs.
 //
 // Reads go through [Store.Read], a short read transaction on the pool that

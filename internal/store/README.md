@@ -44,7 +44,9 @@ wake := s.CommitWake() // one future Watch dispatcher reads this hint
   hints; one hub Watch dispatcher reads committed rows to find changes. A
   failed outer commit sends no hint. A no-op committed batch may send one.
   `Close` flushes queued jobs, then closes the channel. See [commit.md](commit.md)
-  for the ownership and ordering diagram.
+  for the ownership and ordering diagram. Cancellation after admission does not
+  discard the job or suppress its committed wake; the cancellation test uses
+  a bounded callback that never waits on another goroutine.
 - **One change, one job.** A lone job waits up to the 250 ms window for
   company before it commits, so a loop of `Write` calls costs up to 250 ms
   each. Put related changes in one job, or `Submit` them all and then wait.

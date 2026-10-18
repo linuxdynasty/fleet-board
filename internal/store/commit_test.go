@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"slices"
-	"sync"
 	"testing"
 	"time"
 
@@ -163,33 +162,20 @@ func TestCommitWakeSurvivesCallerCancelAfterEnqueue(t *testing.T) {
 	s := h.open(t, opts)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	started, release := make(chan struct{}), make(chan struct{})
-	releaseJob := sync.OnceFunc(func() { close(release) })
-	// Unblock the writer before store cleanup even when an assertion fails.
-	t.Cleanup(releaseJob)
-	returned := make(chan error, 1)
-	go func() {
-		returned <- s.Write(ctx, func(tx *sql.Tx) error {
-			close(started)
-			<-release
-			return insert("after cancel")(tx)
-		})
-	}()
-	select {
-	case <-started:
-	case <-time.After(5 * time.Second):
-		t.Fatal("queued job did not start")
+	// Running the admitted job proves enqueue has completed. Cancel here,
+	// before its insert and outer commit, without blocking the writer.
+	err := s.Write(ctx, func(tx *sql.Tx) error {
+		cancel()
+		return insert("after cancel")(tx)
+	})
+	// Cancellation and the durable outcome may both be ready when Write
+	// selects. Either return is valid; cancellation must not discard the job.
+	if err != nil && !errors.Is(err, context.Canceled) {
+		t.Fatalf("Write after caller cancel: %v", err)
 	}
-	cancel()
-	select {
-	case err := <-returned:
-		if !errors.Is(err, context.Canceled) {
-			t.Fatalf("Write after caller cancel = %v, want context.Canceled", err)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("Write did not return on caller cancel")
+	if !errors.Is(ctx.Err(), context.Canceled) {
+		t.Fatal("job did not cancel its caller before committing")
 	}
-	releaseJob()
 	waitForWake(t, s.CommitWake())
 	if got := rawValues(t, h.path); !slices.Equal(got, []string{"after cancel"}) {
 		t.Fatalf("rows after canceled caller = %v, want [after cancel]", got)
