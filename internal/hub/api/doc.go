@@ -7,6 +7,7 @@
 // admission mints only the fixed USER local-owner with OWNER scopes; the
 // admin socket keeps the kernel peer's distinct LOCAL_USER identity. Admitted
 // TCP RPCs use configured per-class allowances after validation.
+// Export success counters and logs follow read quota admission.
 // A refused Host or Origin is Connect permission_denied (HTTP 403), with
 // ErrorDetail reason HOST_NOT_ALLOWED or ORIGIN_NOT_ALLOWED, counted in
 // fleet_hub_auth_failures_total{reason="host"|"origin"}. Unsupported

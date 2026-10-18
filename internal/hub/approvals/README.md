@@ -4,6 +4,9 @@ The hub's owner decisions: answering a harness permission prompt,
 confirming a destructive command or a `KillWindow` on a developer's window,
 or confirming a dispatch with a `CONFIRM` check (03d W7, 02m).
 
+USER deciders need the required mapped role. The kernel-checked local user
+covers OWNER; tokens and devices cannot decide.
+
 - `CreateApproval` stores one `PENDING` approval (version 1) in the raising
   writer job's transaction and stamps it for Watch. An optional local TCP
   quota checkpoint runs after input checks and before the stamp.

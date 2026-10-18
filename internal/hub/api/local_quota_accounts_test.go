@@ -26,6 +26,11 @@ type quotaWriteEnv struct {
 
 func newQuotaWriteEnv(t *testing.T, limit int) *quotaWriteEnv {
 	t.Helper()
+	return newLocalQuotaEnv(t, 100, limit)
+}
+
+func newLocalQuotaEnv(t *testing.T, readLimit, writeLimit int) *quotaWriteEnv {
+	t.Helper()
 	e := newFleetEnv(t, localUser("alice"), trusted(false))
 	fleet, err := api.NewFleet(api.FleetOptions{
 		Store: e.st, CACert: e.caDER, Telemetry: e.tel, Now: func() time.Time { return fleetNow },
@@ -35,7 +40,7 @@ func newQuotaWriteEnv(t *testing.T, limit int) *quotaWriteEnv {
 		t.Fatal(err)
 	}
 	quotas, err := api.NewQuotas(config.RateLimits{
-		Read: 100, Write: limit, Unauthenticated: 100, Metrics: 100,
+		Read: readLimit, Write: writeLimit, Unauthenticated: 100, Metrics: 100,
 	}, e.tel, func() time.Time { return fleetNow })
 	if err != nil {
 		t.Fatal(err)

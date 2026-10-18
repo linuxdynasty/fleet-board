@@ -195,9 +195,8 @@ func allowed(a *hubv1.Approval, decision string) bool {
 }
 
 // checkRole covers required_role with the decider's mapped role (02d).
-// Until plan row 12 brings caller scopes, the local user maps to OWNER and
-// covers every role; a signed-in user covers OPERATOR; tokens, devices and
-// unknown callers decide nothing.
+// The kernel-checked local user covers OWNER; USER principals are checked
+// against their mapped role. Tokens, devices and unknown callers decide nothing.
 func checkRole(decider *typev1.Principal, required typev1.Role) error {
 	if decider.GetId().GetValue() == "" {
 		return fmt.Errorf("%w: no decider", ErrRole)

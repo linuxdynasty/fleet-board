@@ -144,13 +144,13 @@ func (f *Fleet) ExportConfig(ctx context.Context, req *connect.Request[hubv1.Exp
 	if err != nil {
 		return nil, f.exportFailed(ctx, actor, "decode")
 	}
+	if err := quotaCheckpoint(ctx, quotaRead); err != nil {
+		return nil, err
+	}
 	f.countConfig(ctx, opExport, "ok")
 	f.tel.Logger.InfoContext(ctx, "config.exported",
 		"repos", len(repos), "accounts", len(accounts),
 		"integrations", len(integrations), "machines", len(machines), "actor", actor)
-	if err := quotaCheckpoint(ctx, quotaRead); err != nil {
-		return nil, err
-	}
 	return connect.NewResponse(&hubv1.ExportConfigResponse{
 		Config: &hubv1.FleetConfig{
 			FormatVersion: exportFormatVersion,
