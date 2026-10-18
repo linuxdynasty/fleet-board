@@ -107,6 +107,7 @@ func (s *Store) Write(ctx context.Context, apply ApplyFunc) error {
 // batch as one transaction. It exits after Close, once the queue is drained.
 func (s *Store) run() {
 	defer close(s.stopped)
+	defer close(s.wake)
 	timer := time.NewTimer(s.window)
 	timer.Stop()
 	var wait <-chan time.Time
@@ -167,6 +168,13 @@ func (s *Store) flush(batch []job) {
 		s.log.Error("store.batch_failed", "jobs", len(batch), "err_kind", errKind(err), "sqlite_code", sqliteCode(err))
 		for i := range results {
 			results[i] = err
+		}
+	} else {
+		// A hint needs no payload: the sole consumer re-reads committed state.
+		// Coalescing keeps the writer independent of a slow or absent consumer.
+		select {
+		case s.wake <- struct{}{}:
+		default:
 		}
 	}
 	s.m.batch(ctx, len(batch), end.Sub(start))

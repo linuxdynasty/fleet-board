@@ -106,6 +106,12 @@ and `agent.db` (plan row 2):
 - **Outcomes follow the commit.** A job's result reaches its caller only after
   the commit is durable, so an ack sent on it (`LogAck`, `CommandAck`,
   `ResultAck`) is never ahead of the disk.
+- **Commit wake follows the commit.** After a successful outer commit and
+  before buffered job outcomes, the store offers a nonblocking hint on its
+  capacity-one wake channel. One hub Watch dispatcher consumes it and reads
+  committed rows in order. Hints may coalesce, including no-op batches; a
+  failed outer commit sends none. The writer closes the channel after its
+  final flush at shutdown. The wake carries no rows or callbacks.
 - **The queue is bounded** (the writer queue in [defaults](defaults.md));
   submitting waits while it is full. This is where the ingest channel's
   backpressure reaches the writer. The submit that fills the last slot, or
