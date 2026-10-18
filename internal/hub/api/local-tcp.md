@@ -39,3 +39,34 @@ Other requests: never hold Quotas.mu while waiting for the writer or network
 
 The quota table has no database connection. No path takes a quota lock and
 then waits for a store transaction, so the lock order cannot cycle.
+
+`RevokeMachine` has a file write before its final database write. Its short,
+non-mutating writer job checks replay, conflict, machine, and version, then
+reserves one write allowance while that job still holds the database
+transaction. The transaction ends before any revocation file I/O. A replay
+and an already-revoked no-op each spend one allowance. A valid request that
+finds no allowance does not stage serials, cut a stream, or write an audit or
+request record. A canceled request before reservation is not admitted; once
+reserved, the hub finishes staging and the final writer job even if the
+client disconnects.
+
+```text
+request -> writer precheck: BEGIN IMMEDIATE -> row/replay/version checks
+  -> quotaRequest.mu -> Quotas.mu -> reserve permit -> unlock quota/request
+  -> COMMIT and release writer transaction
+request -> List.Stage: List.mu across file append/fsync and in-memory set swap
+  -> unlock List.mu
+request -> final writer: BEGIN IMMEDIATE -> recheck mutable rows
+  -> consume permit -> state.db changes and audit -> COMMIT
+request -> reconcile new serials under List.mu -> Bye after commit
+late version/conflict/unknown refusal -> refund permit under permit.mu,
+  then Quotas.mu; staged serials stay revoked (fail closed)
+```
+
+The file lock never surrounds a writer job or a network call. The quota and
+request locks never surround file I/O, a writer wait, or `Bye`. A refund can
+credit only its original minute, and finalizing or refunding the same permit
+again has no effect. The existing `fleet_hub_api_rate_limited_total` and
+`config.machine_write_refused` signals show quota refusals; the existing
+`config.machine_written` and `config.machine_write_failed` signals show the
+result after admission.

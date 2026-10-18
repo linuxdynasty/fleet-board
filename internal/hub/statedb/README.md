@@ -495,4 +495,4 @@ row, and a 2b store gaining the tables.
   audit row like the other raises. The raise path of plan row 5 fills the source
   columns and adds the pane, work-item and approval refs in its own migration.
 
-- **Config import and pending machines** (migrations 16, 20, plan row 13a): see [config-import.md](config-import.md). `WithValidatedWrite` checks local TCP quota inside the writer after mutable checks for config, enrollment, machine and triage writes, including replay; a refusal rolls back the job.
+- **Config import and pending machines** (migrations 16, 20, plan row 13a): see [config-import.md](config-import.md). `WithValidatedWrite` checks local TCP quota inside the writer after mutable checks for config, enrollment, machine and triage writes, including replay; a refusal rolls back the job. `PrecheckRevokeForWrite` uses a short non-mutating writer job to reserve before the revocation file is staged; the final writer rechecks the row.

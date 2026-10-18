@@ -37,13 +37,15 @@ const quotaWindow = time.Minute
 const maxPeerQuotaStates = 1024
 
 type quotaWindowState struct {
-	started time.Time
-	used    int
+	started    time.Time
+	used       int
+	generation uint64 // a refunded permit never credits a later window
 }
 
 func (w *quotaWindowState) take(now time.Time, limit int) (time.Duration, bool) {
 	if w.used == 0 || !now.Before(w.started.Add(quotaWindow)) {
 		w.started, w.used = now, 0
+		w.generation++
 	}
 	if w.used >= limit {
 		return w.started.Add(quotaWindow).Sub(now), false
@@ -104,12 +106,13 @@ func NewQuotas(limits config.RateLimits, tel *telemetry.Telemetry, now func() ti
 type quotaContextKey struct{}
 
 type quotaRequest struct {
-	mu     sync.Mutex
-	quota  *Quotas
-	peer   netip.Addr
-	class  quotaClass
-	result error
-	done   bool
+	mu          sync.Mutex
+	quota       *Quotas
+	peer        netip.Addr
+	class       quotaClass
+	result      error
+	reservation *quotaReservation
+	done        bool
 }
 
 func withQuota(ctx context.Context, q *Quotas, peer netip.Addr) context.Context {
@@ -189,6 +192,10 @@ func (q *Quotas) take(ctx context.Context, peer netip.Addr, class quotaClass) er
 	if capacity {
 		cause = "capacity"
 	}
+	return q.rateLimited(ctx, class, cause, wait)
+}
+
+func (q *Quotas) rateLimited(ctx context.Context, class quotaClass, cause string, wait time.Duration) error {
 	q.denied.Add(ctx, 1, metric.WithAttributes(attribute.String("class", string(class)), attribute.String("cause", cause)))
 	if wait < time.Millisecond {
 		wait = time.Millisecond

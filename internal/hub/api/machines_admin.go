@@ -302,8 +302,9 @@ func (f *Fleet) stageMissing(serials []statedb.MachineSerial) error {
 }
 
 // RevokeMachine cuts a machine off and keeps its row (02g "Machine
-// lifecycle: revoke and delete"). A read-pool pre-check decides replay,
-// refusal or commit before any external effect: a replayed request
+// lifecycle: revoke and delete"). A non-mutating writer pre-check decides
+// replay, refusal or commit. On local TCP it reserves quota before any
+// effect: a replayed request
 // stages and closes nothing new (and re-cuts the live stream only while
 // the row is still REVOKED, so a retry after a re-enroll leaves the new
 // serial and the new stream alone), and a stale version or unknown
@@ -356,10 +357,23 @@ func (f *Fleet) RevokeMachine(ctx context.Context, req *connect.Request[hubv1.Re
 		Principal: actor, RequestID: m.GetRequestId(),
 		RequestHash: sum, Actor: actorOf(who), Now: now,
 	}
-	plan, err := statedb.PrecheckRevoke(ctx, f.store, write, id, m.GetExpectedVersion())
+	var permit *quotaReservation
+	precheckCtx := statedb.WithValidatedWrite(ctx, func() error {
+		var reserveErr error
+		permit, reserveErr = reserveWriteQuota(ctx)
+		return reserveErr
+	})
+	plan, err := statedb.PrecheckRevokeForWrite(precheckCtx, f.store, write, id, m.GetExpectedVersion())
 	if err != nil {
+		// A store failure after the admission callback may have left a
+		// permit held; internal failures after admission still count.
+		permit.consume()
 		return nil, f.machineWriteError(ctx, opMachineRevoke, "revoke", actor, machineStoreError("revoke", err))
 	}
+	defer permit.consume()
+	// After admission the revoke is owned by the hub. A client disconnect
+	// cannot skip staging, the store result, or the stream cut.
+	jctx := context.WithoutCancel(ctx)
 	if plan.Replay != nil {
 		if plan.LiveRevoked {
 			if f.byeMachine == nil {
@@ -380,16 +394,19 @@ func (f *Fleet) RevokeMachine(ctx context.Context, req *connect.Request[hubv1.Re
 	if err := f.stageMissing(plan.Serials); err != nil {
 		return nil, f.machineFailed(ctx, opMachineRevoke, "revoke", actor, "revocation", err)
 	}
-	// Detached: the commit's outcome decides the after-commit work, and
-	// a canceled request must not skip the stream cut or the telemetry.
-	jctx := context.WithoutCancel(ctx)
-	revoked, err := statedb.RevokeMachine(jctx, f.store, statedb.MachineRevoke{
+	writeCtx := statedb.WithValidatedWrite(jctx, func() error { permit.consume(); return nil })
+	revoked, err := statedb.RevokeMachine(writeCtx, f.store, statedb.MachineRevoke{
 		MachineWrite:    write,
 		MachineID:       id,
 		ExpectedVersion: m.GetExpectedVersion(), Reason: m.GetReason(),
 		CloseOpen: closeOpenForRevoke,
 	})
 	if err != nil {
+		var stale *statedb.VersionStale
+		if errors.Is(err, statedb.ErrMachineUnknown) || errors.Is(err, statedb.ErrRequestConflict) ||
+			errors.As(err, &stale) {
+			permit.refund()
+		}
 		return nil, f.machineWriteError(jctx, opMachineRevoke, "revoke", actor, machineStoreError("revoke", err))
 	}
 	if err := f.stageMissing(revoked.Serials); err != nil {

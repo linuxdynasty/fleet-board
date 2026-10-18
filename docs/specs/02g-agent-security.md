@@ -291,7 +291,7 @@ certificate back.
 fsync the file (fsync the folder too when the file is new), then add them to
 the in-memory set every handshake reads, then submit the `state.db` write; a
 `state.db` failure leaves the serial revoked (fail closed) and the next start
-repairs it. **At start**, before the agent listener binds, `fleetd run` loads
+repairs it. Local TCP reserves quota before staging; a late row refusal refunds that minute's permit but keeps staged serials revoked. **At start**, before the agent listener binds, `fleetd run` loads
 the list: a missing file is normal; a loose mode refuses the start
 (`mode_loose`); a torn last line with no newline (a crash mid-append) is
 dropped with the warning `hub.revocations_torn_line`; any other bad line or an

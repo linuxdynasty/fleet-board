@@ -60,7 +60,7 @@
 // GetServerInfo needs no scope), the fields and the request_id (02b),
 // mints the token in package ca and stores only its secret hash, merges
 // the masked repo patch inside the writer transaction, revokes a machine
-// through the revocation list and the writer job (pre-check, stage,
+// through a writer pre-check with a held local TCP permit, then the revocation list and writer job (stage,
 // commit, post-commit reconcile, Bye), plans an import as ConfigChange
 // lines behind a plan hash a later apply must repeat, keeps a machine
 // entry no machine has as a pending machine for its enroll, or moves a

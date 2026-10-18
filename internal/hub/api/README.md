@@ -38,7 +38,8 @@ resp, err := api.AdminClient(sockPath).CreateEnrollmentToken(ctx, req) // fleetd
 `NewMetricsServer` serves metrics only.
 Admitted writes share the fixed owner's configured write-class allowance.
 Each successful incoming call, including a replay, spends one allowance
-after validation ([local-tcp.md](local-tcp.md)).
+after validation. [Local TCP rules](local-tcp.md) also describe
+RevokeMachine's held permit across file staging.
 
 `NewLocalServer` sets `ReadHeaderTimeout` (10 s) and `IdleTimeout` (2 min, a
 keep-alive connection with no request), no `ReadTimeout` (Watch and attach will
