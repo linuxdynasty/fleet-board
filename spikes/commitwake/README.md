@@ -46,7 +46,8 @@ benchstat tables are in [results/](results/).
 | Failed jobs | 0 | 0 |
 
 All offered jobs committed: the generator offers 2,500/s for sixty seconds;
-reported throughput includes final drain. Every burst sample stayed within
+reported throughput divides all committed jobs by the offered window.
+Final drain is reported separately. Every burst sample stayed within
 [04c's budgets](../../docs/specs/04c-event-ingest-benchmark.md): commit p99
 50 ms, submit-to-result p99 90 ms, writer busy 70%. The submit-to-result p99 implies about 141 jobs in flight
 at the offered rate, below the 256 cap; this is an estimate, not an observed
