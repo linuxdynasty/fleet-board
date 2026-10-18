@@ -7,7 +7,10 @@
 // test if has-session still finds it. [Binaries] names the two releases a
 // test runs against, from FLEET_TMUX_32 and FLEET_TMUX_LATEST (the tmux on
 // PATH stands in for the latest); a missing one skips, or fails under
-// FLEET_REQUIRE_TMUX=1. [Main] is the TestMain body: it runs [Sweep] (kill
+// FLEET_REQUIRE_TMUX=1. Local make gates selects both CI releases from
+// tool-versions.env through scripts/local-tmux.sh, which publishes complete
+// builds in a private ignored .bin cache. A direct make test keeps the PATH
+// fallback. [Main] is the TestMain body: it runs [Sweep] (kill
 // the servers a dead test process left: only this user's private fbt*
 // folders whose [OwnerFile] pid is gone, with the rig's own tmux) and
 // points TMUX_TMPDIR at an empty folder for the whole test binary. One-shot
