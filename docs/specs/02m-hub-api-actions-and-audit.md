@@ -108,7 +108,8 @@ Anthropic subscription" rule reads.
 settings, groups, machine entries by name, repos, tracker projects, routines,
 account specs). The **hub database is the source of truth**; `fleet.yaml` is only
 the CLI's YAML rendering of that message, never read by the hub, and it holds no
-secrets and no ids. `ImportConfig` validates the whole document, diffs it, and
+secrets. It must use portable references in place of hub IDs, as explained
+below. `ImportConfig` validates the whole document, diffs it, and
 applies it in **one transaction or not at all**; `dry_run` returns the plan
 (`ConfigChange` lines: create, update, unchanged, skipped) and its `plan_hash`,
 and a real import passes that hash as `expected_plan_hash`, so what runs is what
@@ -122,6 +123,25 @@ never drains an enrolled machine. An integration is never created by import
 (credentials are not in the document): it is skipped with a problem. The
 enrollment token carries `expected_hostname`, `labels` and `start_drained` for the
 same purpose by hand.
+
+The offline `FleetConfig` codec is a preparatory part of `fleet export` and
+`fleet import`. It uses protobuf JSON field values in YAML: proto field names,
+full enum names, quoted 64-bit numbers, and protobuf duration strings. It
+requires `format_version: 1`, sorts mapping keys, and preserves list order and
+optional false or zero values. The parser accepts either proto field names or
+their JSON aliases, but rejects duplicate aliases, unknown fields, and YAML
+features outside that mapping. Its input, output, depth, and node limits are
+listed in [defaults](defaults.md#offline-fleetconfig-yaml). The codec has no
+CLI caller yet.
+
+The current `FleetConfig` contract embeds some hub ID wrappers in repo,
+account, routine, and trust fields. `ExportConfig` currently copies stored repo
+and account specs with those wrappers. Until #48 defines portable references
+and hub-side translation, the codec refuses every present hub ID wrapper,
+including an empty wrapper, on both read and write. Exported configurations
+that contain one cannot be rendered as portable YAML yet. The provider's own
+`TrustedUser.provider_user_id` is retained. #43 and #48 still require a working
+same-hub and cross-hub export/import walk after that translation lands.
 
 **Import with a machine that has not enrolled yet, as messages.** Import applies what it can
 now and keeps the rest for when the machine joins. The mark "drained" is recorded at once and
@@ -191,7 +211,7 @@ current version named) and leaves its audit row (`accounts/<id>`,
 `settings/fleet`, `integrations/<id>`).
 
 `ExportConfig` renders the whole configuration as one `FleetConfig`
-(format 1, no secrets, no ids). Anything the hub does not hold yet stays
+(format 1, no secrets; the hub ID limitation is above). Anything the hub does not hold yet stays
 out of the document, so a fresh hub exports to a literally empty import
 plan.
 

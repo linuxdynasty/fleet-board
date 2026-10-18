@@ -18,6 +18,14 @@ policy file or built-in value ([02g](02g-agent-security.md),
 [03e](03e-settings-and-drift.md)). `fixed`: a constant in code; changing it is a
 spec change. "Decided here" marks a value no earlier document gave.
 
+## Offline FleetConfig YAML
+
+| Name | Value | Unit | Owner | Kind |
+|---|---|---|---|---|
+| `fleet.yaml` input and rendered output | 4 | MiB each | [02m](02m-hub-api-actions-and-audit.md#config-export-and-import) | fixed |
+| `fleet.yaml` accepted depth (checked after YAML parsing) | 64 | YAML nodes along one path | 02m | fixed |
+| `fleet.yaml` accepted node count (checked after YAML parsing) | 100,000 | nodes, including mapping keys | 02m | fixed |
+
 ## Machines and the agent connection
 
 | Name | Value | Unit | Owner | Kind |

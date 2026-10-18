@@ -1,0 +1,46 @@
+format_version: 1
+accounts:
+  - harness:
+      name: "codex"
+    provider: "openai"
+    spec:
+      consent:
+        - "CONSENT_ACT_PUSH"
+        - "CONSENT_ACT_MERGE"
+      display_name: "work"
+      spend_cap_micros: "-9007199254740993"
+fleet_values:
+  default_server: "DEFAULT_SERVER_MODE_CONTROL"
+  max_active: 0
+  spool_cap_bytes: "18446744073709551615"
+groups:
+  - label: "yes"
+    priority: 2
+    values:
+      max_total: 3
+hub:
+  auto_dispatch: false
+  log_size_cap_bytes: "9007199254740993"
+  triage_expiry: "3600s"
+integrations:
+  - base_url: "https://github.com"
+    label: "main"
+    provider_name: "github"
+machines:
+  - labels:
+      - "a"
+      - "b"
+    name: "café"
+    values:
+      share_identity_email: false
+repos:
+  - branch_pattern: "line one\nline two"
+    repo:
+      host: "github.com"
+      path: "acme/tool"
+    worktree_mode: "REPO_WORKTREE_MODE_AGENT_ENSURES"
+routines:
+  - blocked_after: "7200s"
+    display_name: "sweep"
+    done_rule: "DONE_RULE_GOAL_DONE_ONLY"
+    enabled: true
