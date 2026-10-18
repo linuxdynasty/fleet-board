@@ -54,7 +54,9 @@ for _, b := range tmuxtest.Binaries() {               // "3.2" and "latest"
   `FLEET_TMUX_LATEST` the latest release, else the tmux on `PATH`. A missing
   one skips its subtest with a message; `FLEET_REQUIRE_TMUX=1` (CI) fails
   it instead. CI builds both with `scripts/install-tmux.sh` from the pins in
-  `tool-versions.env`.
+  `tool-versions.env`. Local `make gates` uses `scripts/local-tmux.sh` to select
+  those same pins for all tmux tests; its private `.bin/` cache publishes only
+  complete builds in the worktree. A direct `make test` keeps the `PATH` fallback.
 - One-shot commands go through `internal/proc` (caller `tmux`), so this
   package imports no `os/exec` (the depguard rule allows it only in the
   `internal/agent/tmux` package's own files). A long-lived client, such as

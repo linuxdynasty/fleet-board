@@ -35,7 +35,8 @@
 # so it beats a GOFLAGS set in the go.env config file, which an empty value would
 # not (GOFLAGS=-run=NoSuch turns a failing go test into "no tests to run"). It
 # names the base itself on the make command line (BASE_REF=origin/main), which
-# beats the environment inside make.
+# beats the environment inside make. The gates target then selects the pinned
+# tmux builds for its tests; no ambient FLEET_TMUX_* value survives this scrub.
 #
 # Trust boundary. The hook trusts the local environment and git configuration:
 # BASH_ENV, `git update-index --assume-unchanged` and .git/info/exclude (they

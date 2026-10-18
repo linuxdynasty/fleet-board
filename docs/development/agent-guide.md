@@ -81,7 +81,7 @@ The `Makefile` is the one entry point; CI runs the same targets, one per step
 | `tools` | builds the pinned `golangci-lint`, `gofumpt` and `govulncheck` into `.bin/`; rebuilt when a pin or the Go version changes |
 | `gen` | removes `gen/`, then `buf generate` into it (Go and TypeScript), through `go run` at the pinned buf |
 | `build`, `smoke` | `CGO_ENABLED=0 go build ./...`; builds each `cmd/<name>` and checks that `--version` prints its name |
-| `test` | `go vet ./...`, then on the changed packages `go test -shuffle=on -count=3` (`TEST_COUNT`) and `go test -race -shuffle=on -count=1`; with `COVERPROFILE` set, the first pass writes its coverage profile there |
+| `test` | `go vet ./...`, then on the changed packages `go test -shuffle=on -count=3` (`TEST_COUNT`) and `go test -race -shuffle=on -count=1`; both use a 15-minute timeout outside `gates`; with `COVERPROFILE` set, the first pass writes its coverage profile there |
 | `lint` | the pinned `golangci-lint` on the same packages, once for each of linux and darwin on amd64 and arm64 (LINT_PLATFORMS in the Makefile; cgo off; the linter reads only the files that build for its own GOOS and GOARCH, so a `_darwin.go` or `_arm64.go` file would pass the Linux amd64 CI run with one pass; the package list is worked out for each platform too). Linters and settings are in `.golangci.yml`; a `//nolint` names its linter and says why. It includes two process rules: `depguard` lets only `internal/proc`, `internal/agent/tmux` and `internal/agent/attach` import `os/exec` (or `golang.org/x/sys/execabs`) in `internal/` and `cmd/` (tests excepted), and `forbidigo` forbids starting a process any other way outside `internal/proc` (01 principle 8). Two typing rules keep every `send-keys` line in `internal/agent/tmux/typing`: `depguard` lets only `internal/agent/control`, `start`, `probe` and the `internal/agent/tmux` client import it, and `forbidigo` lets only `control`, `start` and `probe` call a `typing.New…` function; a third `depguard` rule bars `unsafe` outside tests, so no `//go:linkname` reaches a constructor (tests excepted; 01f F3); a fourth lets only test files import the tmux test rig `internal/agent/tmux/tmuxtest` |
 | `vuln` | the pinned `govulncheck ./...` on every package; a known vulnerability the code can reach fails it (exit 3). Needs `gen/` and network access to vuln.go.dev |
 | `test-all` | `go vet ./...`, then `go test -race -shuffle=on -count=TEST_COUNT ./...` on every package (the nightly run sets `TEST_COUNT=10`), with a coverage profile when `COVERPROFILE` is set. Not part of `gates` |
@@ -97,7 +97,7 @@ The `Makefile` is the one entry point; CI runs the same targets, one per step
 | `telemetry-names` | every log event and metric name in non-test Go code is a static string listed in the one spec `.agents/telemetry-docs.json` maps its area to (`tools/telemetrynames`); spec names with no code are a report until plan row 17 |
 | `capability-tests` | lists the v1 capabilities no product test (Go outside `scripts/` and `testdata/`, or web) names; a report (exit 0) until plan row 17 |
 | `docs-stale-ci`, `docs-stale` | a change in `BASE_REF..HEAD` to a mapped folder changes one of its specs or a commit carries `No-Doc-Change: <reason>`, and changed Go packages have their three docs; `docs-stale` only prints the hook reminders |
-| `gates` | all of the above (not `docs-stale`, `test-all`, `fuzz` or `bench-report`) plus the file cap, agent canon and roles check; prints the tool versions it used first |
+| `gates` | all of the above (not `docs-stale`, `test-all`, `fuzz` or `bench-report`) plus the file cap, agent canon and roles check; prints the tool versions it used first. When a selected package is under `internal/agent/tmux` or its tests import `tmuxtest`, `scripts/local-tmux.sh` selects both releases pinned in `tool-versions.env`, builds missing copies in this worktree's ignored `.bin/` cache, and fails if either is unavailable or invalid. A change only to the gate, hook, installer or tmux workflow still runs the tmux packages three times and once with race checks. Its test timeout is 30 minutes because both releases run in one test binary. Direct `make test` still uses the usual tmux on `PATH` when no pin is set |
 | `hooks` | turns on the pre-push guard (`core.hooksPath` is `.githooks`; once per clone, and all its worktrees share it) |
 
 "Changed packages" come from `scripts/changed-go-packages.sh`: the files that
@@ -114,8 +114,26 @@ and `go test -shuffle=<seed> -count=3` replays it (go shuffles once per test
 binary, and a leak shows only on a repeat). Neither pass reuses cached
 results; `make test TEST_COUNT=1` is the quick local loop. `TEST_COUNT` must
 be a positive integer; anything else fails before go runs. Both passes set
-`-timeout 15m`: the live tmux inventory suite alone runs about 9.5 minutes at
-`-count=3`, inside test-time variance of go's 10 minute default (#293).
+`-timeout 15m` outside `gates`: the live tmux inventory suite alone runs about
+9.5 minutes at `-count=3`, inside test-time variance of go's 10 minute default
+(#293).
+
+The local tmux cache is shared by gate processes in one worktree. It uses no
+lock and holds no transaction open while downloading or compiling. Each process
+builds in its own `.build.*` folder; after version and hash checks, one atomic
+symlink publishes a complete folder under a key made from the pin, platform,
+compiler, libraries and build scripts. A second process either wins the same
+key or checks the winner, then removes its own folder. An interrupted build
+leaves an unused folder, never a selectable tmux.
+
+```mermaid
+flowchart LR
+  A[Gate A] --> BA[Private build A]
+  B[Gate B] --> BB[Private build B]
+  BA --> L[Atomic key symlink]
+  BB --> L
+  L --> T[Verified tmux binary]
+```
 
 `.githooks/pre-push` is the guard for `main` (ADR 0024, decision 2: the repo is
 private on a plan without branch protection). After `make hooks`, a push that
@@ -233,6 +251,14 @@ leaving out the generated code in `gen/` (`scripts/coverage-report.py`). The
 nightly run does the same for `make test-all` and uploads the whole profile as
 the `coverage-profile` artifact (kept 14 days); `go tool cover
 -html=cover.out` shows it line by line.
+
+The gates job has a 55-minute execution ceiling. In [PR #370’s full-scope
+run](https://github.com/linuxdynasty/fleet-board/actions/runs/39164587340),
+all required steps passed in 37 minutes 25 seconds. Its benchmark report could
+run for eight more minutes, so the old 45-minute ceiling cancelled the job.
+The ceiling increases by ten minutes; jobs, triggers, test counts and the
+report’s eight-minute cap stay the same. Normal runs do not automatically take
+ten more minutes. This one run does not establish a new monthly estimate.
 
 The plan includes 2000 GitHub Actions minutes a month. Estimates, in minutes
 a month (typical / worst case):
