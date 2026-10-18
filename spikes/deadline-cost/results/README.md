@@ -44,7 +44,7 @@ stores a filled clone. That defect is verified explicitly; it is not parity.
   the two versioned source files change behavior.
 - **Samples:** one fresh-process sample per arm, then 10 warm samples per
   arm in baseline→candidate order and 10 more in candidate→baseline order.
-  Each warm sample has five calls. A separate 20-call process per arm captures
+  Each warm sample has five calls. A separate 20-call run per benchmark and arm captures
   CPU, heap, and mutex profiles. Binary profiles and test binaries stay in
   `/tmp`; this directory keeps text results only. "Cold" means a new process,
   **not** cold OS or database cache: fixture creation warms the database.
