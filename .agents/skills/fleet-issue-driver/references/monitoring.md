@@ -3,8 +3,9 @@
 Start or refresh a live watcher in the same turn as PR creation or a follow-up
 push. Track only PRs owned by this task's branches/worktrees; the shared GitHub
 account's author filter is not ownership. One watcher can cover all of the
-coordinator's PRs. Add newly created PRs immediately. Child PR owners must do
-the same; do not take over a peer's PR.
+coordinator's PRs. Add newly created PRs immediately. Children hand off commits
+and evidence; the coordinator publishes and owns the watcher. A peer coordinator
+owns its own PRs; do not take them over.
 
 Poll about every 60 seconds with sparse state-change output. Use the harness's
 native monitor when available, otherwise a live background process with its
@@ -36,8 +37,8 @@ same total and the same head. Green requires every required check to pass;
 stable failures are not success. Reproduce failures locally, fix, re-run proof
 and publish within the existing authorization. Review each finding against
 current code, fix before replying, and resolve each thread only after its
-finding is addressed. Never request Copilot review or wait for its silence;
-handle its comments if present. The owner merges every v1 PR.
+finding is addressed. A silent or unavailable reviewer is not evidence of a
+completed review. The owner merges every v1 PR.
 
 Honor an explicit PR-creation-only endpoint: hand off its URL and current CI
 and review state, then stop the watcher. Otherwise report an outside wait as

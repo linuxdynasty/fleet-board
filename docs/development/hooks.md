@@ -388,12 +388,12 @@ without it.
 
 ## Issue-drive routing
 
-For Claude, Codex and Muse, an explicit `fleet-issue-driver` goal or a goal
+For Claude, Codex and Muse, a goal invoking `fleet-issue-driver` (using/with/apply it) or a goal
 opening with `drive issues #N`, `drive epics #N` or `drive #N` loads the drive
 contract. Whitespace is normalized, including multiline prepared goals. The
 router selects implementation and independent review roles with manifest
 bindings. Other phase roles remain available. A diagnostic sentence that
-mentions a drive and an issue does not opt in.
+mentions a drive, an issue or the driver skill does not opt in.
 
 The coordinator loads the driver, enumerates dependencies, delegates independent
 leaves, owns the PR inventory and runs the full gate. Shared-file work stays

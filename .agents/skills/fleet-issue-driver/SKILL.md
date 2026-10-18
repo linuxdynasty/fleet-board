@@ -68,9 +68,9 @@ this order.
 5. **Push** only when authorized, never to `main`. Verify the pushed SHA equals
    local HEAD before opening or updating the PR
    ([agent-guide](../../../docs/development/agent-guide.md#worktrees-and-git-recipes)).
-6. **PR title and body** follow [PR and CI Discipline](../../../AGENTS.md#orchestration-pr-and-ci-discipline),
-   written with `fleet-humanizer` (its publishing reference has the merge danger
-   line). If the PR changes a row of the v1 plan, it runs
+6. **PR title and body** describe the final diff and carry before/after
+   evidence, with commands and exit codes. Rewrite both if the approach changes.
+   Use `fleet-humanizer` (its publishing reference has the merge danger line). If the PR changes a row of the v1 plan, it runs
    `scripts/plan-issues.py --check`, then (owner-approved) `--apply`, and says
    so in the body.
 7. **Watch immediately:** in the same turn as `gh pr create` or a follow-up

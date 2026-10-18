@@ -87,7 +87,11 @@ def resolve(manifest: dict, name: str) -> dict:
 def is_drive(skills: set, body: str) -> bool:
     """Only an explicit driver skill or an opening drive + issue id opts in."""
     normalized = " ".join(body.lower().split())
-    return "fleet-issue-driver" in skills or bool(
+    invokes_driver = "fleet-issue-driver" in skills and bool(re.search(
+        r"(?:^(?:\$)?|\b(?:using|with|use|follow|apply|load|invoke|run)\s+\$?)"
+        r"fleet-issue-driver\b", normalized
+    ))
+    return invokes_driver or bool(
         re.match(r"drive\s+(?:(?:issues?|epics?)\s+)?#\d+\b", normalized)
     )
 
@@ -128,7 +132,7 @@ def route(prompt: str, harness: str, cwd: str = "") -> str:
         return ""
     roles = pick_roles(skills, SKILL_PATTERN.sub(" ", body.lower()), drive)
     lines = ["fleet-board goal role hints (phase candidates, not an execution order):"]
-    if "fleet-issue-driver" in skills:
+    if drive:
         lines.append("- fleet-issue-driver stays with the main coordinator for issue/PR ownership.")
     bindings = manifest["models"].get(harness, {})
     for name in dict.fromkeys(roles):

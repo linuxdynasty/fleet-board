@@ -174,7 +174,7 @@ Before a push: focused proof, a clean `fleet-code-review`, `make gates` once (th
   watch checks, conflicts and every author's feedback at the current head.
 - Follow [issue-driver](.agents/skills/fleet-issue-driver/SKILL.md) for watcher,
   follow-up inventory, stable CI reads, review threads and final PR evidence.
-- Never request Copilot review; handle its comments if present. The owner merges.
+- Address feedback from every reviewer; the owner merges.
 - Irreversible acts other than merging (release, deletion, data change) get an
   `arbiter-fleet` ruling first; name it in the report.
 

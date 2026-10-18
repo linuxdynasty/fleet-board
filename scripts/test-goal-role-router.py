@@ -60,7 +60,9 @@ class GoalRoleRouterTests(unittest.TestCase):
                     self.assertIn("watcher", output)
 
     def test_drive_detection_does_not_promote_diagnostic_work(self):
-        for prompt in ("/goal Diagnose drive latency; the issue is flaky using fleet-diagnostic-rigor",
+        for prompt in ("/goal update the fleet-issue-driver skill docs",
+                       "/goal Diagnose why fleet-issue-driver hook fires using fleet-diagnostic-rigor",
+                       "/goal Diagnose drive latency; the issue is flaky using fleet-diagnostic-rigor",
                        "/goal drive the latency investigation; issue #12 using fleet-diagnostic-rigor",
                        "/goal drive epics #12suffix", "/goal ship it"):
             with self.subTest(prompt=prompt):
