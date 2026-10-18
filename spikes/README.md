@@ -18,6 +18,9 @@ result files were replaced with sample values (the measurements are unchanged).
 | [0.7 `mdns/`](mdns/results/README.md) | Does `hashicorp/mdns` advertise `_fleetd._tcp` next to macOS mDNSResponder, and what browse timeout and re-query interval should the agent use? (plan item 0.7, #52) | `go build -o mdns . && ./mdns advertise\|browse\|summarize` |
 | [5l `scrubcost/`](scrubcost/results/README.md) | What does the hub's secret scrubbing cost in CPU cores at the caps and the real rates? (plan row 5l, #33; the benchmark is `internal/scrub/hub_pass_test.go`, this keeps only the output) | `go test -run '^$' -bench BenchmarkHub -count=10 ./internal/scrub/`, then `benchstat` |
 
+The [commit wake comparison](commitwake/README.md) records paired store and
+event-ingest measurements for the #40 foundation, including its limits.
+
 ## S1 setup
 
 - Machines: the hub machine (macbook, Apple silicon,

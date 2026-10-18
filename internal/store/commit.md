@@ -28,3 +28,7 @@ The transaction ends before notification, and no mutex spans the transaction.
 Callers whose context ends after enqueue can stop waiting; their job still
 commits or fails and a successful batch still wakes the consumer. During
 `Close`, queued jobs are flushed before the wake channel closes.
+
+Paired before/after measurements of the absent-reader case are recorded in
+[the commit wake report](../../spikes/commitwake/README.md). Active dispatch
+and fan-out still require their own measurement.

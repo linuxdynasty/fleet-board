@@ -1,0 +1,148 @@
+CommitWake profile summaries (separate 10-second profiled EventBurst runs)
+These profiled runs are not part of the 60-second budget medians.
+Capture command per side: FLEET_EVENT_BURST=1 FLEET_EVENT_BURST_DURATION=10s <side>-ingest.test -test.run=^$ -test.bench=^BenchmarkEventBurst$ -test.benchmem -test.count=1 -test.benchtime=1x -test.cpuprofile=<side>-cpu.pprof -test.memprofile=<side>-heap.pprof -test.mutexprofile=<side>-mutex.pprof -test.mutexprofilefraction=1
+Profile runner terminal exit code: 0
+
+BASE benchmark subprocess exit code: 0
+
+BASE CPU profile
+Command: go tool pprof -top -nodecount=12 /tmp/fleet-wake-performance/base-ingest.test /tmp/fleet-wake-performance/base-cpu.pprof
+Exit code: 0
+File: base-ingest.test
+Type: cpu
+Time: 2026-10-18 15:01:48 EDT
+Duration: 11.57s, Total samples = 2.82s (24.36%)
+Showing nodes accounting for 2.77s, 98.23% of 2.82s total
+Dropped 117 nodes (cum <= 0.01s)
+Showing top 12 nodes out of 110
+      flat  flat%   sum%        cum   cum%
+     2.06s 73.05% 73.05%      2.06s 73.05%  runtime.pthread_cond_signal
+     0.29s 10.28% 83.33%      0.29s 10.28%  runtime.usleep
+     0.22s  7.80% 91.13%      0.22s  7.80%  runtime.pthread_cond_wait
+     0.14s  4.96% 96.10%      0.14s  4.96%  syscall.rawsyscalln
+     0.03s  1.06% 97.16%      0.03s  1.06%  runtime.kevent
+     0.02s  0.71% 97.87%      0.02s  0.71%  modernc.org/sqlite/lib._sqlite3MemMalloc
+     0.01s  0.35% 98.23%      0.02s  0.71%  modernc.org/sqlite/lib._sqlite3Parser
+         0     0% 98.23%      0.04s  1.42%  database/sql.(*DB).execDC
+         0     0% 98.23%      0.04s  1.42%  database/sql.(*DB).execDC.func2
+         0     0% 98.23%      0.02s  0.71%  database/sql.(*DB).queryDC
+         0     0% 98.23%      0.02s  0.71%  database/sql.(*DB).queryDC.func1
+         0     0% 98.23%      0.10s  3.55%  database/sql.(*Tx).Commit
+
+BASE HEAP profile
+Command: go tool pprof -top -nodecount=12 /tmp/fleet-wake-performance/base-ingest.test /tmp/fleet-wake-performance/base-heap.pprof
+Exit code: 0
+File: base-ingest.test
+Type: alloc_space
+Time: 2026-10-18 15:02:00 EDT
+Showing nodes accounting for 78.38MB, 71.71% of 109.30MB total
+Dropped 97 nodes (cum <= 0.55MB)
+Showing top 12 nodes out of 87
+      flat  flat%   sum%        cum   cum%
+   16.51MB 15.10% 15.10%    16.51MB 15.10%  database/sql.driverArgsConnLocked
+   10.50MB  9.61% 24.71%       18MB 16.47%  modernc.org/sqlite.newRows
+       8MB  7.32% 32.03%    32.50MB 29.74%  database/sql.(*DB).queryDC
+    7.50MB  6.86% 38.89%     7.50MB  6.86%  modernc.org/libc.GoString
+    6.50MB  5.95% 44.84%     6.50MB  5.95%  google.golang.org/protobuf/proto.MarshalOptions.marshal
+    6.50MB  5.95% 50.79%       10MB  9.15%  github.com/linuxdynasty/fleet-board/internal/hub/ingest.SubmitEvent
+       5MB  4.57% 55.36%    65.01MB 59.48%  github.com/linuxdynasty/fleet-board/internal/hub/statedb.ApplyEvent
+       4MB  3.66% 59.02%     4.50MB  4.12%  database/sql.(*Rows).nextLocked
+       4MB  3.66% 62.68%        4MB  3.66%  modernc.org/sqlite.newStmt
+    3.50MB  3.20% 65.89%     3.50MB  3.20%  github.com/linuxdynasty/fleet-board/internal/store.(*Store).Submit
+    3.36MB  3.08% 68.96%    21.38MB 19.56%  github.com/linuxdynasty/fleet-board/internal/hub/ingest_test.runBurst
+       3MB  2.74% 71.71%        3MB  2.74%  database/sql.(*Rows).close
+
+BASE MUTEX profile
+Command: go tool pprof -top -nodecount=12 /tmp/fleet-wake-performance/base-ingest.test /tmp/fleet-wake-performance/base-mutex.pprof
+Exit code: 0
+File: base-ingest.test
+Type: delay
+Time: 2026-10-18 15:02:00 EDT
+Showing nodes accounting for 452.08us, 99.38% of 454.92us total
+Dropped 15 nodes (cum <= 2.27us)
+Showing top 12 nodes out of 25
+      flat  flat%   sum%        cum   cum%
+  452.08us 99.38% 99.38%   452.08us 99.38%  runtime.unlock (partial-inline)
+         0     0% 99.38%    26.96us  5.93%  github.com/linuxdynasty/fleet-board/internal/store.(*Store).run
+         0     0% 99.38%   100.67us 22.13%  runtime.findRunnable
+         0     0% 99.38%   315.87us 69.44%  runtime.forEachP (inline)
+         0     0% 99.38%   315.87us 69.44%  runtime.forEachP.func1
+         0     0% 99.38%   315.87us 69.44%  runtime.forEachPInternal
+         0     0% 99.38%   318.62us 70.04%  runtime.gcBgMarkWorker
+         0     0% 99.38%   318.62us 70.04%  runtime.gcMarkDone
+         0     0% 99.38%     2.75us   0.6%  runtime.gcMarkDone.func2
+         0     0% 99.38%   313.25us 68.86%  runtime.gcMarkTermination
+         0     0% 99.38%    31.96us  7.03%  runtime.goexit0
+         0     0% 99.38%    38.50us  8.46%  runtime.gopreempt_m
+
+HEAD benchmark subprocess exit code: 0
+
+HEAD CPU profile
+Command: go tool pprof -top -nodecount=12 /tmp/fleet-wake-performance/head-ingest.test /tmp/fleet-wake-performance/head-cpu.pprof
+Exit code: 0
+File: head-ingest.test
+Type: cpu
+Time: 2026-10-18 15:02:00 EDT
+Duration: 11.57s, Total samples = 2.91s (25.14%)
+Showing nodes accounting for 2.84s, 97.59% of 2.91s total
+Dropped 80 nodes (cum <= 0.01s)
+Showing top 12 nodes out of 125
+      flat  flat%   sum%        cum   cum%
+     2.03s 69.76% 69.76%      2.03s 69.76%  runtime.pthread_cond_signal
+     0.35s 12.03% 81.79%      0.35s 12.03%  runtime.usleep
+     0.24s  8.25% 90.03%      0.24s  8.25%  runtime.pthread_cond_wait
+     0.12s  4.12% 94.16%      0.12s  4.12%  syscall.rawsyscalln
+     0.06s  2.06% 96.22%      0.06s  2.06%  runtime.madvise
+     0.04s  1.37% 97.59%      0.04s  1.37%  runtime.kevent
+         0     0% 97.59%      0.02s  0.69%  _.goready.func1
+         0     0% 97.59%      0.05s  1.72%  database/sql.(*DB).execDC
+         0     0% 97.59%      0.05s  1.72%  database/sql.(*DB).execDC.func2
+         0     0% 97.59%      0.02s  0.69%  database/sql.(*DB).retry
+         0     0% 97.59%      0.10s  3.44%  database/sql.(*Tx).Commit
+         0     0% 97.59%      0.10s  3.44%  database/sql.(*Tx).Commit.func1
+
+HEAD HEAP profile
+Command: go tool pprof -top -nodecount=12 /tmp/fleet-wake-performance/head-ingest.test /tmp/fleet-wake-performance/head-heap.pprof
+Exit code: 0
+File: head-ingest.test
+Type: alloc_space
+Time: 2026-10-18 15:02:12 EDT
+Showing nodes accounting for 94.01MB, 73.65% of 127.65MB total
+Dropped 38 nodes (cum <= 0.64MB)
+Showing top 12 nodes out of 110
+      flat  flat%   sum%        cum   cum%
+   17.51MB 13.71% 13.71%    17.51MB 13.71%  database/sql.driverArgsConnLocked
+      13MB 10.18% 23.90%       19MB 14.89%  modernc.org/sqlite.newRows
+   11.50MB  9.01% 32.91%       17MB 13.32%  github.com/linuxdynasty/fleet-board/internal/hub/ingest.SubmitEvent
+   10.50MB  8.23% 41.14%    10.50MB  8.23%  google.golang.org/protobuf/proto.MarshalOptions.marshal
+       8MB  6.27% 47.40%    39.50MB 30.95%  database/sql.(*DB).queryDC
+       6MB  4.70% 52.10%        6MB  4.70%  context.withCancel (inline)
+       6MB  4.70% 56.80%        6MB  4.70%  modernc.org/libc.GoString
+    5.50MB  4.31% 61.11%    73.51MB 57.58%  github.com/linuxdynasty/fleet-board/internal/hub/statedb.ApplyEvent
+    4.50MB  3.53% 64.64%     4.50MB  3.53%  github.com/linuxdynasty/fleet-board/internal/store.(*Store).Submit
+       4MB  3.13% 67.77%     5.50MB  4.31%  database/sql.(*Rows).nextLocked
+       4MB  3.13% 70.91%        4MB  3.13%  modernc.org/sqlite.newResult
+    3.50MB  2.74% 73.65%    25.01MB 19.59%  database/sql.(*DB).execDC
+
+HEAD MUTEX profile
+Command: go tool pprof -top -nodecount=12 /tmp/fleet-wake-performance/head-ingest.test /tmp/fleet-wake-performance/head-mutex.pprof
+Exit code: 0
+File: head-ingest.test
+Type: delay
+Time: 2026-10-18 15:02:12 EDT
+Showing nodes accounting for 417.91us, 100% of 417.91us total
+Dropped 30 nodes (cum <= 2.09us)
+Showing top 12 nodes out of 38
+      flat  flat%   sum%        cum   cum%
+  411.37us 98.43% 98.43%   411.37us 98.43%  runtime.unlock
+    6.54us  1.57%   100%     6.54us  1.57%  sync.(*Mutex).Unlock
+         0     0%   100%     4.29us  1.03%  context.(*cancelCtx).Done
+         0     0%   100%     3.25us  0.78%  database/sql.(*DB).queryDC
+         0     0%   100%     3.29us  0.79%  database/sql.(*Rows).awaitDone
+         0     0%   100%     2.54us  0.61%  database/sql.(*Rows).close
+         0     0%   100%     3.25us  0.78%  database/sql.(*Rows).initContextClose
+         0     0%   100%     3.29us  0.79%  database/sql.(*Rows).initContextClose.gowrap1
+         0     0%   100%     3.25us  0.78%  database/sql.(*Tx).QueryContext
+         0     0%   100%     3.25us  0.78%  database/sql.(*Tx).QueryRowContext (inline)
+         0     0%   100%     2.25us  0.54%  database/sql.(*closingMutex).Lock
+         0     0%   100%     3.54us  0.85%  github.com/linuxdynasty/fleet-board/internal/hub/ingest.SubmitEvent.func1

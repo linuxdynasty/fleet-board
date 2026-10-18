@@ -1,0 +1,21 @@
+CommitWake measurement tool provenance
+Repository pin: BENCHSTAT_VERSION=v0.0.0-20260929162123-406019bb8b68
+Command: go version -m /tmp/fleet-wake-performance/benchstat
+Exit code: 0
+/tmp/fleet-wake-performance/benchstat: go1.27.2
+	path	golang.org/x/perf/cmd/benchstat
+	mod	golang.org/x/perf	v0.0.0-20260929162123-406019bb8b68	h1:nyQ/b4GTH65GoH7T/JFxssBadcBB57DTy6JNyQEfZBA=
+	dep	github.com/aclements/go-moremath	v0.0.0-20210112150236-f10218a38794	h1:xlwdaKcTNVW4PtpQb8aKA4Pjy0CdJHEqvFbAnvR5m2g=
+	build	-buildmode=exe
+	build	-compiler=gc
+	build	DefaultGODEBUG=tracebacklabels=0,x509sslcertoverrideplatform=0
+	build	CGO_ENABLED=0
+	build	GOARCH=arm64
+	build	GOOS=darwin
+	build	GOARM64=v8.0
+Benchstat store comparison command: /tmp/fleet-wake-performance/benchstat base=/tmp/fleet-wake-performance/base-store.txt head=/tmp/fleet-wake-performance/head-store.txt
+Exit code: 0
+Benchstat burst comparison command: /tmp/fleet-wake-performance/benchstat base=/tmp/fleet-wake-performance/base-burst.txt head=/tmp/fleet-wake-performance/head-burst.txt
+Exit code: 0
+Profile runner command: bash /tmp/fleet-wake-performance/run-measurements.sh profiles
+Exit code: 0
