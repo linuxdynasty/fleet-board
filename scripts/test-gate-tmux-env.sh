@@ -51,3 +51,46 @@ else
   printf 'FAIL: missing latest export was not detected\n' >&2
   exit 1
 fi
+
+# Package selection needs generated imports in a fresh worktree. Execute the
+# real gate's gen/prepare lines in their original order, with a selector that
+# refuses to run until generation has finished.
+awk '
+  $0 == "gates: tools" { print "gates:"; recipe = 1; next }
+  recipe && /^\t/ {
+    if ($0 == "\t$(MAKE) gen" || $0 ~ /^\tscripts\/local-tmux.sh prepare /) print
+    next
+  }
+  recipe { exit }
+' "$root/Makefile" > "$work/order.mk"
+cat >> "$work/order.mk" <<'EOF'
+gen:
+	@mkdir -p gen
+	@touch gen/ready
+EOF
+cat > "$work/scripts/local-tmux.sh" <<'EOF'
+#!/bin/sh
+[ "$1" = prepare ] || exit 2
+[ -f gen/ready ] || { echo 'selection ran before generation' >&2; exit 1; }
+EOF
+chmod +x "$work/scripts/local-tmux.sh"
+out="$(cd "$work" && make --no-print-directory -f order.mk MAKE="make --no-print-directory -f order.mk" gates 2>&1)"
+rc=$?
+if [ "$rc" -eq 0 ] && [ -f "$work/gen/ready" ]; then
+  printf 'test-gate-tmux-env: fresh gate generates before selecting packages\n'
+else
+  printf 'FAIL: fresh gate selection order: rc=%s, output=%s\n' "$rc" "$out" >&2
+  exit 1
+fi
+
+# Removing generation must expose the missing prerequisite rather than pass.
+rm "$work/gen/ready"
+awk '$0 != "\t$(MAKE) gen"' "$work/order.mk" > "$work/without-gen.mk"
+out="$(cd "$work" && make --no-print-directory -f without-gen.mk gates 2>&1)"
+rc=$?
+if [ "$rc" -ne 0 ]; then
+  printf 'test-gate-tmux-env: seeded missing generation is detected\n'
+else
+  printf 'FAIL: missing generation was not detected\n' >&2
+  exit 1
+fi

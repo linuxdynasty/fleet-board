@@ -346,9 +346,9 @@ gates: tools
 	@go version -m $(GOVULNCHECK) | awk '$$1 == "mod" { print "govulncheck " $$3 }'
 	@sha="$$(git rev-parse --verify -q "$$BASE_REF^{commit}")" || sha="not a commit here, so make test and make lint use every package"; \
 	echo "== gates (base $$BASE_REF at $$sha) =="
-	scripts/local-tmux.sh prepare "$$BASE_REF"
 	scripts/check-versions.sh
 	$(MAKE) gen
+	scripts/local-tmux.sh prepare "$$BASE_REF"
 	$(MAKE) proto-check
 	$(MAKE) doc-names
 	$(MAKE) doc-tables
