@@ -1,0 +1,26 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/linuxdynasty/fleet-board/internal/hub/approvals
+cpu: Apple M4 Pro
+BenchmarkListProbe/Candidate-12         	       3	 270869319 ns/op	  18580667 callback-ns/op	 2166805 B/op	   31259 allocs/op
+BenchmarkListProbe/Candidate-12         	       3	 271696764 ns/op	  19733597 callback-ns/op	 2158432 B/op	   31245 allocs/op
+BenchmarkListProbe/Candidate-12         	       3	 270665708 ns/op	  18700389 callback-ns/op	 2162061 B/op	   31251 allocs/op
+BenchmarkListProbe/Candidate-12         	       3	 263044083 ns/op	  11503806 callback-ns/op	 2159026 B/op	   31246 allocs/op
+BenchmarkListProbe/Candidate-12         	       3	 268045583 ns/op	  16610917 callback-ns/op	 2164253 B/op	   31257 allocs/op
+BenchmarkListProbe/Candidate-12         	       3	 267195833 ns/op	  15204306 callback-ns/op	 2159976 B/op	   31245 allocs/op
+BenchmarkListProbe/Candidate-12         	       3	 271032431 ns/op	  19702361 callback-ns/op	 2163976 B/op	   31255 allocs/op
+BenchmarkListProbe/Candidate-12         	       3	 269258986 ns/op	  17033903 callback-ns/op	 2163514 B/op	   31250 allocs/op
+BenchmarkListProbe/Candidate-12         	       3	 268650431 ns/op	  16533861 callback-ns/op	 2157154 B/op	   31243 allocs/op
+BenchmarkListProbe/Candidate-12         	       3	 262552292 ns/op	  11332139 callback-ns/op	 2162248 B/op	   31252 allocs/op
+BenchmarkListProbe/Baseline-12          	       3	 278459458 ns/op	  26732431 callback-ns/op	 4322682 B/op	   62445 allocs/op
+BenchmarkListProbe/Baseline-12          	       3	 277872056 ns/op	  26260806 callback-ns/op	 4324285 B/op	   62443 allocs/op
+BenchmarkListProbe/Baseline-12          	       3	 276956972 ns/op	  24685972 callback-ns/op	 4316922 B/op	   62432 allocs/op
+BenchmarkListProbe/Baseline-12          	       3	 281211403 ns/op	  29353028 callback-ns/op	 4324325 B/op	   62449 allocs/op
+BenchmarkListProbe/Baseline-12          	       3	 278824278 ns/op	  26703694 callback-ns/op	 4309821 B/op	   62421 allocs/op
+BenchmarkListProbe/Baseline-12          	       3	 278265014 ns/op	  26214972 callback-ns/op	 4316592 B/op	   62436 allocs/op
+BenchmarkListProbe/Baseline-12          	       3	 273151792 ns/op	  21007722 callback-ns/op	 4317368 B/op	   62437 allocs/op
+BenchmarkListProbe/Baseline-12          	       3	 280797917 ns/op	  29594903 callback-ns/op	 4320981 B/op	   62441 allocs/op
+BenchmarkListProbe/Baseline-12          	       3	 278334278 ns/op	  26057528 callback-ns/op	 4313565 B/op	   62426 allocs/op
+BenchmarkListProbe/Baseline-12          	       3	 275555945 ns/op	  23341584 callback-ns/op	 4317426 B/op	   62434 allocs/op
+PASS
+ok  	github.com/linuxdynasty/fleet-board/internal/hub/approvals	22.791s

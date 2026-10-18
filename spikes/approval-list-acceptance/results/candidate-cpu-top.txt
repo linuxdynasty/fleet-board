@@ -1,0 +1,22 @@
+File: approvals.test
+Type: cpu
+Time: 2026-10-18 18:56:55 EDT
+Duration: 5.79s, Total samples = 350ms ( 6.04%)
+Showing nodes accounting for 350ms, 100% of 350ms total
+Showing top 15 nodes out of 117
+      flat  flat%   sum%        cum   cum%
+     230ms 65.71% 65.71%      230ms 65.71%  syscall.rawsyscalln
+      40ms 11.43% 77.14%       40ms 11.43%  runtime.pthread_cond_signal
+      20ms  5.71% 82.86%       20ms  5.71%  runtime.madvise
+      20ms  5.71% 88.57%       20ms  5.71%  runtime.pthread_cond_wait
+      10ms  2.86% 91.43%       30ms  8.57%  modernc.org/sqlite/lib._accessPayload
+      10ms  2.86% 94.29%      250ms 71.43%  modernc.org/sqlite/lib._sqlite3VdbeExec
+      10ms  2.86% 97.14%       10ms  2.86%  runtime.(*gcWork).tryStealSpan
+      10ms  2.86%   100%       10ms  2.86%  runtime.kevent
+         0     0%   100%      200ms 57.14%  database/sql.(*DB).queryDC
+         0     0%   100%      200ms 57.14%  database/sql.(*DB).queryDC.func1
+         0     0%   100%       50ms 14.29%  database/sql.(*Rows).Next
+         0     0%   100%       50ms 14.29%  database/sql.(*Rows).Next.func1
+         0     0%   100%       50ms 14.29%  database/sql.(*Rows).nextLocked
+         0     0%   100%      200ms 57.14%  database/sql.(*Tx).QueryContext
+         0     0%   100%      200ms 57.14%  database/sql.ctxDriverQuery

@@ -1,0 +1,22 @@
+File: approvals.test
+Type: delay
+Time: 2026-10-18 18:57:01 EDT
+Showing nodes accounting for 2718.11us, 100% of 2718.11us total
+Dropped 8 nodes (cum <= 13.59us)
+Showing top 15 nodes out of 24
+      flat  flat%   sum%        cum   cum%
+ 2718.11us   100%   100%  2718.11us   100%  runtime.unlock (inline)
+         0     0%   100%   677.98us 24.94%  runtime.allocm
+         0     0%   100%  1482.85us 54.55%  runtime.findRunnable
+         0     0%   100%      143us  5.26%  runtime.forEachP (inline)
+         0     0%   100%      143us  5.26%  runtime.forEachP.func1
+         0     0%   100%      143us  5.26%  runtime.forEachPInternal
+         0     0%   100%      143us  5.26%  runtime.gcBgMarkWorker
+         0     0%   100%      143us  5.26%  runtime.gcMarkDone
+         0     0%   100%      143us  5.26%  runtime.gcMarkTermination
+         0     0%   100%   414.12us 15.24%  runtime.gopreempt_m (inline)
+         0     0%   100%   414.12us 15.24%  runtime.goschedImpl
+         0     0%   100%  2160.83us 79.50%  runtime.mcall
+         0     0%   100%   677.98us 24.94%  runtime.mcommoninit
+         0     0%   100%   414.12us 15.24%  runtime.morestack
+         0     0%   100%   677.98us 24.94%  runtime.newm
