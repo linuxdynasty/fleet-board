@@ -26,6 +26,7 @@
 #                   and at HEAD, compared by benchstat (a report, never a gate)
 #   make fmt        gofumpt -l -w on every Go file (fmt-check only checks)
 #   make gates      everything a push needs, one command (prints tool versions)
+#                   and tests tmux with the same two pinned builds as CI
 #   make hooks      turn on the pre-push guard (.githooks/pre-push)
 
 include tool-versions.env
@@ -152,8 +153,11 @@ export TEST_COUNT
 # PATH (CI runners ship one, so it runs even without FLEET_TMUX_*), which left
 # the default budget inside test-time variance of a kill (#293: "panic: test
 # timed out after 10m0s" on an unrelated change; not a hang, no test weakened).
-# 15m restores headroom; revisit if the suite grows again. test-all keeps the
+# 15m restores headroom; revisit if the suite grows again. The local gate uses
+# 30m because the same test binary now runs both pins. test-all keeps the
 # default timeout.
+TEST_TIMEOUT ?= 15m
+export TEST_TIMEOUT
 
 # COVERPROFILE, when set, is the file the non-race pass of make test (and the
 # one pass of make test-all) writes its coverage profile to; CI sets it for
@@ -167,8 +171,8 @@ test: vet
 	if [ -z "$$pkgs" ]; then echo "make test: no Go package changed against $$BASE_REF; no tests to run"; exit 0; fi; \
 	echo "make test: $$pkgs"; \
 	cover=""; if [ -n "$$COVERPROFILE" ]; then cover="-coverprofile=$$COVERPROFILE"; fi; \
-	CGO_ENABLED=0 go test -timeout 15m -shuffle=on -count="$$TEST_COUNT" $${cover:+"$$cover"} $$pkgs && \
-	CGO_ENABLED=$(RACE_CGO) go test -timeout 15m -race -shuffle=on -count=1 $$pkgs
+	CGO_ENABLED=0 go test -timeout "$$TEST_TIMEOUT" -shuffle=on -count="$$TEST_COUNT" $${cover:+"$$cover"} $$pkgs && \
+	CGO_ENABLED=$(RACE_CGO) go test -timeout "$$TEST_TIMEOUT" -race -shuffle=on -count=1 $$pkgs
 
 # test-all is the nightly suite (#107): every package, not only the changed
 # ones, with -race and in a random order, TEST_COUNT times in one pass. It
@@ -253,6 +257,8 @@ selftest: tools
 	scripts/test-make-tools.sh
 	scripts/test-make-gates.sh
 	scripts/test-make-test-flags.sh
+	scripts/test-local-tmux.sh
+	scripts/test-gate-tmux-env.sh
 	scripts/test-ci-report-failure.sh
 	scripts/test-nightly-should-run.sh
 	scripts/test-bench-report.sh
@@ -323,8 +329,13 @@ docs-stale:
 docs-stale-ci:
 	python3 scripts/check-docs-stale.py --ci --range "$$BASE_REF"..HEAD
 
-# gates is the whole local gate, in the order of AGENTS.md "Local Gates". It
-# prints the tool versions it used before it runs anything.
+# gates is the whole local gate, in the order of AGENTS.md "Local Gates". Its
+# target-only exports reach every recursive make and Go test. Ad hoc `make test`
+# keeps its usual PATH fallback. The cache step runs before any gate tests.
+gates: export FLEET_TMUX_32 = $(shell scripts/local-tmux.sh path 32)
+gates: export FLEET_TMUX_LATEST = $(shell scripts/local-tmux.sh path latest)
+gates: export FLEET_REQUIRE_TMUX = 1
+gates: export TEST_TIMEOUT = 30m
 gates: tools
 	@echo "== tool versions used =="
 	@$(GOLANGCI_LINT) version
@@ -335,6 +346,7 @@ gates: tools
 	@go version -m $(GOVULNCHECK) | awk '$$1 == "mod" { print "govulncheck " $$3 }'
 	@sha="$$(git rev-parse --verify -q "$$BASE_REF^{commit}")" || sha="not a commit here, so make test and make lint use every package"; \
 	echo "== gates (base $$BASE_REF at $$sha) =="
+	scripts/local-tmux.sh prepare "$$BASE_REF"
 	scripts/check-versions.sh
 	$(MAKE) gen
 	$(MAKE) proto-check
@@ -348,6 +360,7 @@ gates: tools
 	$(MAKE) mod-check
 	$(MAKE) fmt-check
 	$(MAKE) test
+	scripts/local-tmux.sh extra-tests "$$BASE_REF"
 	$(MAKE) lint
 	$(MAKE) vuln
 	$(MAKE) actionlint

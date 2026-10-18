@@ -43,7 +43,7 @@ bad() {
 }
 
 # Keep git and make from reading the caller's repo, config or flags.
-unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE BASE_REF FLEET_BASE_REF GOFLAGS TEST_COUNT COVERPROFILE
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE BASE_REF FLEET_BASE_REF GOFLAGS TEST_COUNT TEST_TIMEOUT COVERPROFILE
 unset MAKEFLAGS MFLAGS MAKEOVERRIDES MAKELEVEL MAKEFILES GNUMAKEFLAGS
 # Nor the caller's go.work or go env file (GOFLAGS there would reach go test).
 export GOWORK=off GOENV=off

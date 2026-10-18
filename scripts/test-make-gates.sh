@@ -123,8 +123,10 @@ diff_check "names that merely contain a ref name pass" 0 ""
 # ---- 2. make gates lists every gate -----------------------------------------
 gates="gen proto-check doc-names doc-tables telemetry-names capability-tests ts-check build smoke mod-check fmt-check test lint vuln actionlint selftest diff-check docs-stale-ci"
 
-# The four direct lines of the gates recipe (the others are $(MAKE) lines).
-direct="scripts/check-versions.sh
+# Direct lines of the gates recipe (the others are $(MAKE) lines).
+direct="scripts/local-tmux.sh prepare \"\$BASE_REF\"
+scripts/local-tmux.sh extra-tests \"\$BASE_REF\"
+scripts/check-versions.sh
 scripts/check-file-cap.sh
 scripts/verify-agent-canon.sh
 python3 scripts/agent-roles.py --check"
@@ -158,8 +160,16 @@ EOF3
 }
 
 scratch="$work/gates"
-mkdir -p "$scratch"
+mkdir -p "$scratch/scripts"
 cp "$root/Makefile" "$root/tool-versions.env" "$scratch/"
+# The gate-list check only reads `make -n` output. Keep its target-specific
+# path lookup cheap; test-gate-tmux-env.sh runs the real selector.
+cat > "$scratch/scripts/local-tmux.sh" <<'EOF'
+#!/bin/sh
+[ "$1" = path ] || exit 2
+printf '/fake/tmux-%s\n' "$2"
+EOF
+chmod +x "$scratch/scripts/local-tmux.sh"
 missing="$(missing_gates "$scratch")"
 if [ -z "$missing" ]; then ok; else bad "make gates does not run:$missing"; fi
 
@@ -176,7 +186,11 @@ done
 
 while IFS= read -r line; do
   cp "$root/Makefile" "$scratch/Makefile"
-  grep -v -x -F "	$line" "$root/Makefile" > "$scratch/Makefile"
+  source_line="$line"
+  case "$line" in
+    scripts/local-tmux.sh*) source_line="${line/\$BASE_REF/\$\$BASE_REF}" ;;
+  esac
+  grep -v -x -F "	$source_line" "$root/Makefile" > "$scratch/Makefile"
   if cmp -s "$root/Makefile" "$scratch/Makefile"; then
     bad "the Makefile has no '$line' recipe line to delete from the scratch copy"
     continue
