@@ -347,7 +347,20 @@ Whole messages stay under the 1 MiB Connect cap (02e).
 | `PaneSummary.last_lines` | 4 KiB |
 | `AttachTerminalResponse.output` | 64 KiB per message; `ReadSessionLogResponse.data` 256 KiB |
 | `ListXxxRequest.page_size` | 500 |
-| Rate limits | per principal and RPC class, values in the hub configuration ([02j](02j-hub-runtime.md)), never in the contract; `RATE_LIMITED` carries `retry_after` |
+| Rate limits | per principal and RPC class, values in the hub configuration ([02j](02j-hub-runtime.md)), never in the contract; `RATE_LIMITED` carries `retry_after`. In local TCP mode the fixed owner shares the read and write allowances; `GetServerInfo` spends the per-peer unauthenticated allowance and `/metrics` spends its own per-peer allowance, both keyed by the connection source IP. The two metrics listeners share that allowance. A fixed 1024-record peer table bounds memory; a new peer waits when all records still have allowance debt |
+
+On local TCP, each successful incoming read or write spends one allowance.
+Successful writes include stored replays, no-ops, import dry-runs and import
+responses with `applied=false`. Each incoming retry is a new request for this
+budget, even when its idempotency key repeats. The admin socket is exempt.
+Higher-priority domain refusals below spend nothing. Admission follows mutable
+state checks and precedes the first effect; writer callbacks keep that order
+inside the transaction. An internal failure after admission remains charged.
+For `RevokeMachine`, a late version, request conflict or unknown-machine refusal
+refunds only the reservation's original quota window; serials already staged
+stay revoked ([02g](02g-agent-security.md)).
+Approval read ordering and lazy expiry are detailed in
+[02m](02m-hub-api-actions-and-audit.md#actions-that-need-an-approval).
 
 ## Errors
 

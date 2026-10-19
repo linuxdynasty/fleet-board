@@ -1,7 +1,6 @@
 package daemon
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -11,22 +10,7 @@ import (
 
 	"github.com/linuxdynasty/fleet-board/internal/hub/api"
 	"github.com/linuxdynasty/fleet-board/internal/hub/config"
-	"github.com/linuxdynasty/fleet-board/internal/hub/outbox"
-	"github.com/linuxdynasty/fleet-board/internal/hub/revocation"
-	"github.com/linuxdynasty/fleet-board/internal/hub/statedb"
-	"github.com/linuxdynasty/fleet-board/internal/hub/system"
-	"github.com/linuxdynasty/fleet-board/internal/store"
 )
-
-// machineAdmin wires the machine admin writes behind FleetService:
-// the revocation list RevokeMachine stages serials onto, the live
-// stream cut for Bye{REVOKED} after commit, and the outbox service
-// for the rows a revoke closed.
-type machineAdmin struct {
-	revoked *revocation.List
-	bye     func(machineID string) bool
-	closed  func(ctx context.Context, list []outbox.Closed)
-}
 
 // bindAdmin opens <state_dir>/admin.sock (02j). Call it with fleetd.lock
 // held: a socket already there belongs to a hub that died (SIGKILL leaves
@@ -37,9 +21,7 @@ type machineAdmin struct {
 // GetServerInfo so a new process id invalidates every Watch resume token.
 // sysLoop is the evaluation loop the system_evaluate job ticks;
 // GetSystemStatus serves its last verdicts.
-func bindAdmin(cfg *config.Config, opts Options, st *store.Store, id statedb.Identity, adm machineAdmin, instanceID string,
-	sysLoop *system.Loop, s *session,
-) (listener, error) {
+func bindAdmin(cfg *config.Config, opts Options, fleet *api.Fleet, s *session) (listener, error) {
 	path := config.AdminSocketPath(cfg.StateDir)
 	if err := removeStaleSocket(path); err != nil {
 		return listener{}, err
@@ -54,15 +36,6 @@ func bindAdmin(cfg *config.Config, opts Options, st *store.Store, id statedb.Ide
 	}
 	if err := os.Chmod(path, 0o600); err != nil {
 		return listener{}, errors.Join(fmt.Errorf("daemon: chmod admin socket: %w", err), ln.Close())
-	}
-	fleet, err := api.NewFleet(api.FleetOptions{
-		Store: st, CACert: id.CACert, Telemetry: s.tel, Now: opts.Now,
-		StateDir: cfg.StateDir, LocalTrusted: cfg.Mode == "local_trusted",
-		Revoker: adm.revoked, ByeMachine: adm.bye, OnCommandsClosed: adm.closed,
-		HubInstanceID: instanceID, SystemLoop: sysLoop,
-	})
-	if err != nil {
-		return listener{}, errors.Join(err, ln.Close())
 	}
 	wrapped, srv := api.NewAdmin(ln, api.AdminOptions{
 		Fleet: fleet, Telemetry: s.tel, UID: uint32(uid), PeerUID: opts.PeerUID,

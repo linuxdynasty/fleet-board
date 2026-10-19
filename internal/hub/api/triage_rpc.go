@@ -18,19 +18,10 @@ const maxDismissNote = 512
 
 // authorizeTriage admits the caller for ListTriageItems, GetTriageItem,
 // SnoozeTriageItem and DismissTriageItem (02d: READ|APPROVALS for the
-// reads, APPROVALS for the writes). Until plan row 12 brings caller
-// scopes, that is only the local user, who maps to OWNER.
+// reads, APPROVALS for the writes). The checked admin user and admitted
+// local TCP owner cover both.
 func authorizeTriage(ctx context.Context) (*typev1.Principal, error) {
-	p := PrincipalFrom(ctx)
-	if p.GetId().GetValue() == "" {
-		return nil, apiError(connect.CodeUnauthenticated, typev1.ReasonCode_REASON_CODE_CREDENTIALS_INVALID,
-			"no caller identity", nil, nil)
-	}
-	if p.GetKind() != typev1.PrincipalKind_PRINCIPAL_KIND_LOCAL_USER {
-		return nil, apiError(connect.CodePermissionDenied, typev1.ReasonCode_REASON_CODE_SCOPE_MISSING,
-			"this call needs the APPROVALS scope", map[string]string{"scope": "APPROVALS"}, nil)
-	}
-	return p, nil
+	return authorizeScope(ctx, "APPROVALS")
 }
 
 // triageSecret refuses a triage write without the local approval secret
@@ -151,7 +142,8 @@ func (f *Fleet) SnoozeTriageItem(ctx context.Context, req *connect.Request[hubv1
 	if err != nil {
 		return nil, f.triageFailed(ctx, op, "snooze", actor, "encode", err)
 	}
-	stored, err := statedb.SnoozeTriageItem(ctx, f.store, statedb.TriageSnooze{
+	writeCtx := statedb.WithValidatedWrite(ctx, func() error { return quotaCheckpoint(ctx, quotaWrite) })
+	stored, err := statedb.SnoozeTriageItem(writeCtx, f.store, statedb.TriageSnooze{
 		Write: statedb.TriageWrite{
 			Principal: actor, RequestID: m.GetRequestId(),
 			RequestHash: hash, Actor: actorOf(who), Now: now,
@@ -206,7 +198,8 @@ func (f *Fleet) DismissTriageItem(ctx context.Context, req *connect.Request[hubv
 	if err != nil {
 		return nil, f.triageFailed(ctx, op, "dismiss", actor, "encode", err)
 	}
-	stored, err := statedb.DismissTriageItem(ctx, f.store, statedb.TriageDismiss{
+	writeCtx := statedb.WithValidatedWrite(ctx, func() error { return quotaCheckpoint(ctx, quotaWrite) })
+	stored, err := statedb.DismissTriageItem(writeCtx, f.store, statedb.TriageDismiss{
 		Write: statedb.TriageWrite{
 			Principal: actor, RequestID: m.GetRequestId(),
 			RequestHash: hash, Actor: actorOf(who), Now: now,

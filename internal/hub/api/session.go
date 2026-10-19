@@ -31,20 +31,10 @@ const approvalTimeout = 30 * time.Minute
 // sessionNameRule is the CreateSession name rule (session.proto field 3).
 var sessionNameRule = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
 
-// authorizeSessionsWrite admits the caller for the SESSIONS_WRITE session
-// calls (02d). Until plan row 12 brings caller scopes, that is only the
-// local user, who maps to OWNER.
+// authorizeSessionsWrite admits the checked admin user or local TCP owner
+// for SESSIONS_WRITE session calls (02d).
 func authorizeSessionsWrite(ctx context.Context) (*typev1.Principal, error) {
-	p := PrincipalFrom(ctx)
-	if p.GetId().GetValue() == "" {
-		return nil, apiError(connect.CodeUnauthenticated, typev1.ReasonCode_REASON_CODE_CREDENTIALS_INVALID,
-			"no caller identity", nil, nil)
-	}
-	if p.GetKind() != typev1.PrincipalKind_PRINCIPAL_KIND_LOCAL_USER {
-		return nil, apiError(connect.CodePermissionDenied, typev1.ReasonCode_REASON_CODE_SCOPE_MISSING,
-			"this call needs the SESSIONS_WRITE scope", map[string]string{"scope": "SESSIONS_WRITE"}, nil)
-	}
-	return p, nil
+	return authorizeScope(ctx, "SESSIONS_WRITE")
 }
 
 // actorOf is the audit actor for a principal.
@@ -112,6 +102,9 @@ func (f *Fleet) sendOne(ctx context.Context, who *typev1.Principal, req proto.Me
 			if err != nil {
 				return err
 			}
+			if err := quotaCheckpoint(ctx, quotaWrite); err != nil {
+				return err
+			}
 			out = op
 			emitKind, emitOutcome = outbox.KindName(cmd), "replayed"
 			return nil
@@ -120,6 +113,7 @@ func (f *Fleet) sendOne(ctx context.Context, who *typev1.Principal, req proto.Me
 		cmd.IssuedTime = timestamppb.New(now)
 		op, err := outbox.Enqueue(ctx, tx, outbox.In{
 			MachineID: machine, Command: cmd, RequestID: requestID, Now: now,
+			Checkpoint: func() error { return quotaCheckpoint(ctx, quotaWrite) },
 		})
 		if err != nil {
 			return mapOutboxError(err)
@@ -133,7 +127,10 @@ func (f *Fleet) sendOne(ctx context.Context, who *typev1.Principal, req proto.Me
 		}); err != nil {
 			return err
 		}
-		out = operationFromOp(op, machine, who, requestID, now, cmd.GetNotAfterTime().AsTime())
+		out, err = operationFromOp(ctx, tx, op, machine, who, requestID, now)
+		if err != nil {
+			return err
+		}
 		emitKind, emitOutcome, emitMachine, emitCommand = op.Kind, "sent", machine, op.CommandID
 		return nil
 	})
@@ -165,8 +162,8 @@ func (f *Fleet) sendApprovedTx(ctx context.Context, tx *sql.Tx, who *typev1.Prin
 	if err := approvals.AttachOperation(ctx, tx, approval.GetId().GetValue(), op.CommandID, now); err != nil {
 		return nil, "", err
 	}
-	return operationFromOp(op, approval.GetMachine().GetValue(), who, requestID, now,
-		cmd.GetNotAfterTime().AsTime()), op.Kind, nil
+	queued, err := operationFromOp(ctx, tx, op, approval.GetMachine().GetValue(), who, requestID, now)
+	return queued, op.Kind, err
 }
 
 // storeError renders a writer-job failure: caller errors stay as refused,
@@ -303,8 +300,15 @@ func operationState(s string) hubv1.OperationState {
 	}
 }
 
-// operationFromOp builds the response Operation of a fresh enqueue.
-func operationFromOp(op outbox.Op, machine string, by *typev1.Principal, requestID string, now, notAfter time.Time) *hubv1.Operation {
+// operationFromOp builds the response from the queued command's deadline.
+// Enqueue fills that deadline on a clone, leaving the caller's command unset.
+func operationFromOp(ctx context.Context, tx *sql.Tx, op outbox.Op, machine string,
+	by *typev1.Principal, requestID string, now time.Time,
+) (*hubv1.Operation, error) {
+	stored, err := loadOperation(ctx, tx, op.CommandID)
+	if err != nil {
+		return nil, err
+	}
 	return &hubv1.Operation{
 		Id:           &typev1.CommandId{Value: op.CommandID},
 		Version:      uint64(op.Version), //nolint:gosec // G115: commands.version starts at 1
@@ -315,8 +319,8 @@ func operationFromOp(op outbox.Op, machine string, by *typev1.Principal, request
 		State:        operationState(op.OpState),
 		RequestedBy:  by,
 		RequestId:    requestID,
-		NotAfterTime: timestamppb.New(notAfter),
-	}
+		NotAfterTime: stored.GetNotAfterTime(),
+	}, nil
 }
 
 // mapOutboxError renders an enqueue refusal as a Connect error.

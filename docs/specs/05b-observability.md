@@ -180,7 +180,8 @@ metrics below fill the gaps between them.
 | `fleet_hub_watch_subscribers`, `fleet_hub_watch_queue_depth` | gauges | how many streams, the deepest queue |
 | `fleet_hub_watch_messages_total{topic}`, `fleet_hub_watch_dropped_total{topic}`, `fleet_hub_watch_resync_total{reason}` | counters | fan-out volume, summaries dropped for slow browsers, streams ended `RESYNC_REQUIRED` |
 | `fleet_hub_rpc_total{rpc, code}`, `fleet_hub_rpc_seconds{rpc}` | counter, histogram | API errors and latency per RPC |
-| `fleet_hub_auth_failures_total{reason}` | counter | sign-in, token, device, Host (`host`), Origin (`origin`, on the API listener and the admin socket), `/metrics` (`metrics`), admin socket peer (`peer_uid`: another OS user, or credentials the kernel would not give) and agent listener handshake with a revoked client certificate serial (`revoked`, with the log event `tls.client_cert_revoked`) refusals |
+| `fleet_hub_auth_failures_total{reason}` | counter | sign-in, token, device, Host (`host`), Origin (`origin`, on the API listener and the admin socket), unsupported local TCP credentials (`credentials`), missing Connect protocol header (`protocol`), `/metrics` (`metrics`), admin socket peer (`peer_uid`: another OS user, or credentials the kernel would not give) and agent listener handshake with a revoked client certificate serial (`revoked`, with the log event `tls.client_cert_revoked`) refusals |
+| `fleet_hub_api_rate_limited_total{class,cause}` | counter | local TCP requests refused by the configured per-minute allowance (`cause="budget"`) or the bounded peer table (`cause="capacity"`); `class` is `read`, `write`, `unauthenticated`, or `metrics`. It carries no peer address or request text |
 | `fleet_hub_enroll_tokens_total{result}` | counter | `CreateEnrollmentToken` calls (`fleetd enroll-token`): `issued`, `refused` (the caller's error; the log line `enroll.issue_refused` names the reason) or `failed` (the hub's; `enroll.issue_failed` with `step` = `encode`, `random` or `store`). Each issued token logs `enroll.issued` with `machine`, `expire_time` and `actor`, never the token, its secret or any part of its hash |
 | `fleet_hub_enroll_audit_rows_total{result}` | counter | refused Enrolls by their `machine.enroll_failed` audit row ([02g](02g-agent-security.md)): `written` (a row of its own), `suppressed` (past the cap in [defaults](defaults.md); counted in the minute's summary row), `summary` (a minute's summary row written) or `write_failed` (rows the store did not take; `enroll.audit_failed` with `rows` and `err_kind`). Answers "why is this refusal not in the audit log?" |
 | `fleet_hub_start_failures_total{command, reason}` | counter | why `fleetd init`, `fleetd run` or `fleetd restore` refused to start (`command`: `init`, `run`, `restore`; `reason`: `config_invalid`, `lock_held`, `mode_loose`, `store_missing`, `store_exists`, `identity_missing`, `store_failed`, `store_not_synced` (state.db was created but the folder sync after it failed), `identity_failed`, `cert_failed`, `listen_failed`, `revocations_invalid` (run: `revoked-serials` has a bad line or cannot be read, or the list could not be reconciled with state.db; [02g](02g-agent-security.md#hub-identity-and-restore))); each refusal also logs `hub.start_failed` with the same fields and an `err_kind` |
@@ -232,11 +233,9 @@ A cookie, a device signature or a tokenless remote request is refused (401, or
 logged-in browser. The Host allow-list of 02f applies, and no CORS header is
 sent, so DNS rebinding does not work either. `local_trusted` mode is loopback
 only, so every local process may read it, the same trust as the local owner.
-A scrape is rate limited per peer (60 per minute) and counted
-(`fleet_hub_rpc_total{rpc="metrics"}`); both arrive with plan row 12, the API
-row that builds the rate limits and `fleet_hub_rpc_total`. Until then a scrape
-is not rate limited, and only its refusals are counted
-(`fleet_hub_auth_failures_total`). The agent has no listener and so no
+A scrape is rate limited per peer using `rate_limits.metrics` (60 per minute
+by default), shared across the API and optional metrics listeners. Refusals
+count in `fleet_hub_api_rate_limited_total{class="metrics"}`. The agent has no listener and so no
 `/metrics` by default; an owner who scrapes agents sets a loopback
 `metrics_listen` in the agent's **local** policy file (the hub cannot push it,
 there is no config-push RPC), and most owners will not need it, because the hub

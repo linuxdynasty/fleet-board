@@ -78,7 +78,7 @@ func machineSerials(ctx context.Context, tx *sql.Tx, machineID string) ([]Machin
 	return out, rows.Err()
 }
 
-// RevokePlan is the read-pool pre-check of one RevokeMachine: whether
+// RevokePlan is the non-mutating pre-check of one RevokeMachine: whether
 // the request replays a stored response, and otherwise the machine's
 // current serials to stage before the writer job. LiveRevoked is the
 // current row's REVOKED state. A replay stages and closes nothing new:
@@ -108,56 +108,95 @@ func PrecheckRevoke(ctx context.Context, s *store.Store, w MachineWrite, machine
 ) (RevokePlan, error) {
 	var plan RevokePlan
 	err := s.Read(ctx, func(tx *sql.Tx) error {
-		row, err := readMachineLog(ctx, tx, w.Principal, w.RequestID)
-		switch {
-		case errors.Is(err, sql.ErrNoRows):
-		case err != nil:
-			return fmt.Errorf("statedb: look up machine request_id: %w", err)
-		case machineLogExpired(w.Now, row.createMs):
-		case !bytes.Equal(row.hash, w.RequestHash[:]) || row.machine != machineID || row.kind != machineKindRevoke:
-			return ErrRequestConflict
-		case row.deleted:
-			// A revoke never stores a tombstone: the row belongs to a
-			// delete under the same key, which is a different request.
-			return ErrRequestConflict
-		default:
-			stored, err := storedFromLogRow(row)
-			if err != nil {
-				return err
-			}
-			rev, err := withRevocation(ctx, tx, stored)
-			if err != nil {
-				return err
-			}
-			plan.Replay = &rev
-		}
-		got, err := readMachineRow(ctx, tx, machineID)
-		if errors.Is(err, ErrMachineUnknown) {
-			if plan.Replay != nil {
-				// Revoked, then deleted: answer the stored response
-				// with no effects.
-				return nil
-			}
-			return err
-		}
-		if err != nil {
-			return err
-		}
-		serials, err := machineSerials(ctx, tx, machineID)
-		if err != nil {
-			return err
-		}
-		plan.Serials = serials
-		plan.LiveRevoked = got.State == MachineRevoked
-		if plan.Replay != nil || plan.LiveRevoked {
-			return nil
-		}
-		return checkVersion(got.Version, expectedVersion, "machine")
+		var err error
+		plan, err = precheckRevokeTx(ctx, tx, w, machineID, expectedVersion)
+		return err
 	})
 	if err != nil {
 		return RevokePlan{}, err
 	}
 	return plan, nil
+}
+
+// PrecheckRevokeForWrite runs the same non-mutating decision on the single
+// writer, then invokes the request's bounded admission callback before the
+// transaction ends. The callback must not read the store or perform I/O.
+// Once Submit accepts the job, this waits for its definitive outcome even if
+// the client disconnects; an allowance cannot be stranded by an unknown job.
+func PrecheckRevokeForWrite(ctx context.Context, s *store.Store, w MachineWrite, machineID string,
+	expectedVersion uint64,
+) (RevokePlan, error) {
+	var plan RevokePlan
+	jctx := context.WithoutCancel(ctx)
+	done, err := s.Submit(ctx, func(tx *sql.Tx) error {
+		var err error
+		plan, err = precheckRevokeTx(jctx, tx, w, machineID, expectedVersion)
+		if err != nil {
+			return err
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		return validatedWrite(jctx)
+	})
+	if err != nil {
+		return RevokePlan{}, err
+	}
+	if err := <-done; err != nil {
+		return RevokePlan{}, err
+	}
+	return plan, nil
+}
+
+func precheckRevokeTx(ctx context.Context, tx *sql.Tx, w MachineWrite, machineID string,
+	expectedVersion uint64,
+) (RevokePlan, error) {
+	var plan RevokePlan
+	row, err := readMachineLog(ctx, tx, w.Principal, w.RequestID)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+	case err != nil:
+		return RevokePlan{}, fmt.Errorf("statedb: look up machine request_id: %w", err)
+	case machineLogExpired(w.Now, row.createMs):
+	case !bytes.Equal(row.hash, w.RequestHash[:]) || row.machine != machineID || row.kind != machineKindRevoke:
+		return RevokePlan{}, ErrRequestConflict
+	case row.deleted:
+		// A revoke never stores a tombstone: the row belongs to a
+		// delete under the same key, which is a different request.
+		return RevokePlan{}, ErrRequestConflict
+	default:
+		stored, err := storedFromLogRow(row)
+		if err != nil {
+			return RevokePlan{}, err
+		}
+		rev, err := withRevocation(ctx, tx, stored)
+		if err != nil {
+			return RevokePlan{}, err
+		}
+		plan.Replay = &rev
+	}
+	got, err := readMachineRow(ctx, tx, machineID)
+	if errors.Is(err, ErrMachineUnknown) {
+		if plan.Replay != nil {
+			// Revoked, then deleted: answer the stored response
+			// with no effects.
+			return plan, nil
+		}
+		return RevokePlan{}, err
+	}
+	if err != nil {
+		return RevokePlan{}, err
+	}
+	serials, err := machineSerials(ctx, tx, machineID)
+	if err != nil {
+		return RevokePlan{}, err
+	}
+	plan.Serials = serials
+	plan.LiveRevoked = got.State == MachineRevoked
+	if plan.Replay != nil || plan.LiveRevoked {
+		return plan, nil
+	}
+	return plan, checkVersion(got.Version, expectedVersion, "machine")
 }
 
 // RevokeMachine marks a machine REVOKED in one writer transaction: a
@@ -181,6 +220,9 @@ func RevokeMachine(ctx context.Context, s *store.Store, in MachineRevoke) (Revok
 	err := s.Write(ctx, func(tx *sql.Tx) error {
 		if replay, err := checkMachineReplay(jctx, tx, in.MachineWrite, machineKindRevoke, in.MachineID); err != nil || replay != nil {
 			if err == nil {
+				if err := validatedWrite(jctx); err != nil {
+					return err
+				}
 				rev, rerr := withRevocation(jctx, tx, *replay)
 				if rerr != nil {
 					return rerr
@@ -206,10 +248,16 @@ func RevokeMachine(ctx context.Context, s *store.Store, in MachineRevoke) (Revok
 			if err != nil {
 				return err
 			}
+			if err := validatedWrite(jctx); err != nil {
+				return err
+			}
 			out = RevokedMachine{Machine: rev, Serials: serials}
 			return logMachineRequest(jctx, tx, in.MachineWrite, machineKindRevoke, rev, false)
 		}
 		if err := checkVersion(got.Version, in.ExpectedVersion, "machine"); err != nil {
+			return err
+		}
+		if err := validatedWrite(jctx); err != nil {
 			return err
 		}
 		st, err := NextStamp(jctx, tx, in.Now)
@@ -279,6 +327,9 @@ func DeleteMachine(ctx context.Context, s *store.Store, in MachineDelete) (Machi
 	err := s.Write(ctx, func(tx *sql.Tx) error {
 		if replay, err := checkMachineReplay(jctx, tx, in.MachineWrite, machineKindDelete, in.MachineID); err != nil || replay != nil {
 			if err == nil {
+				if err := validatedWrite(jctx); err != nil {
+					return err
+				}
 				out = *replay
 			}
 			return err
@@ -291,6 +342,9 @@ func DeleteMachine(ctx context.Context, s *store.Store, in MachineDelete) (Machi
 			return ErrMachineNotRevoked
 		}
 		if err := checkVersion(got.Version, in.ExpectedVersion, "machine"); err != nil {
+			return err
+		}
+		if err := validatedWrite(jctx); err != nil {
 			return err
 		}
 		for _, q := range []struct {

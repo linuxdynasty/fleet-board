@@ -1,0 +1,7 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/linuxdynasty/fleet-board/internal/hub/api
+cpu: Apple M4 Pro
+BenchmarkDeadlineCostSend-12      	       5	 260597492 ns/op	   1836458 callback-ns/op	 260596417 rpc-ns/op	  502228 B/op	     627 allocs/op
+BenchmarkDeadlineCostDecide-12    	       5	 259703333 ns/op	   2272500 callback-ns/op	 259702342 rpc-ns/op	  763028 B/op	    1291 allocs/op
+PASS

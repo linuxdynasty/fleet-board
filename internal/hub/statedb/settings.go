@@ -171,6 +171,9 @@ func UpdateFleetSettings(ctx context.Context, s *store.Store, in UpdateSettingsO
 	err := s.Write(ctx, func(tx *sql.Tx) error {
 		if row, err := configReplay(jctx, tx, in.ConfigWrite, configKindSettings); err != nil || row != nil {
 			if err == nil {
+				if err := validatedWrite(jctx); err != nil {
+					return err
+				}
 				out = replaySettings(row)
 			}
 			return err
@@ -196,6 +199,9 @@ func UpdateFleetSettings(ctx context.Context, s *store.Store, in UpdateSettingsO
 		}
 		merged, err := in.Merge(current)
 		if err != nil {
+			return err
+		}
+		if err := validatedWrite(jctx); err != nil {
 			return err
 		}
 		st, err := NextStamp(jctx, tx, in.Now)

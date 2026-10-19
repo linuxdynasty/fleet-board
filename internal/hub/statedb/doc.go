@@ -205,6 +205,11 @@
 // enroll consumes the matching one (merging its labels, draining the
 // machine, storing its values as the layer), a rename onto a kept name
 // leaves the shadow the next import heals.
+// [WithValidatedWrite] lets local TCP config, enrollment, machine and triage
+// owner writes reserve quota in that writer job after replay and mutable checks,
+// before the first change. A denied check rolls back the whole job. Revoke
+// reserves in [PrecheckRevokeForWrite] before its separate file stage and
+// rechecks the row in the final writer job.
 //
 // Plan row 11 adds the provider mirrors (provider_sync_mirrors migration):
 // work_items and change_requests keyed canonically with the hub's verdicts

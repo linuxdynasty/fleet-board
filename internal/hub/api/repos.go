@@ -14,20 +14,10 @@ import (
 	"github.com/linuxdynasty/fleet-board/internal/hub/statedb"
 )
 
-// authorizeRepos admits the caller for ListRepos and GetRepo (02d: READ).
-// Until a later row-12 slice brings caller scopes, that is only the local
-// user, who maps to OWNER and covers READ.
+// authorizeRepos admits the checked admin user or local TCP owner for
+// ListRepos and GetRepo (02d: READ).
 func authorizeRepos(ctx context.Context) (*typev1.Principal, error) {
-	p := PrincipalFrom(ctx)
-	if p.GetId().GetValue() == "" {
-		return nil, apiError(connect.CodeUnauthenticated, typev1.ReasonCode_REASON_CODE_CREDENTIALS_INVALID,
-			"no caller identity", nil, nil)
-	}
-	if p.GetKind() != typev1.PrincipalKind_PRINCIPAL_KIND_LOCAL_USER {
-		return nil, apiError(connect.CodePermissionDenied, typev1.ReasonCode_REASON_CODE_SCOPE_MISSING,
-			"this call needs the READ scope", map[string]string{"scope": "READ"}, nil)
-	}
-	return p, nil
+	return authorizeScope(ctx, "READ")
 }
 
 // ListRepos lists the watched repos (02k): the owner's repo rows with the
@@ -67,6 +57,19 @@ func (f *Fleet) ListRepos(ctx context.Context, req *connect.Request[hubv1.ListRe
 		size = 500
 	}
 	now := f.hubNow()
+	want := repoQueryHash(m.GetFilter(), m.GetOrderBy(), size)
+	var cursor repoCursor
+	if m.GetPageToken() != "" {
+		cursor, err = parseRepoToken(m.GetPageToken(), want, len(order), now)
+		if err != nil {
+			return nil, f.repoReadRefused(ctx, apiError(connect.CodeInvalidArgument,
+				typev1.ReasonCode_REASON_CODE_PAGE_TOKEN_INVALID, "bad page_token", nil,
+				[]*typev1.FieldViolation{{Field: "page_token", Description: "bad page_token"}}))
+		}
+	}
+	if err := quotaCheckpoint(ctx, quotaRead); err != nil {
+		return nil, err
+	}
 	rows, err := statedb.ListWatchedRepoRows(ctx, f.store)
 	if err != nil {
 		return nil, f.repoReadFailed(ctx, actor, "store", err)
@@ -86,15 +89,8 @@ func (f *Fleet) ListRepos(ctx context.Context, req *connect.Request[hubv1.ListRe
 		}
 	}
 	sortRepoViews(matched, order)
-	want := repoQueryHash(m.GetFilter(), m.GetOrderBy(), size)
 	start := 0
 	if m.GetPageToken() != "" {
-		cursor, err := parseRepoToken(m.GetPageToken(), want, len(order), now)
-		if err != nil {
-			return nil, f.repoReadRefused(ctx, apiError(connect.CodeInvalidArgument,
-				typev1.ReasonCode_REASON_CODE_PAGE_TOKEN_INVALID, "bad page_token", nil,
-				[]*typev1.FieldViolation{{Field: "page_token", Description: "bad page_token"}}))
-		}
 		start = sort.Search(len(matched), func(i int) bool {
 			return repoKeyAfter(matched[i], order, cursor.key, cursor.id)
 		})
@@ -144,6 +140,9 @@ func (f *Fleet) GetRepo(ctx context.Context, req *connect.Request[hubv1.GetRepoR
 	v, err := repoViewOf(stored)
 	if err != nil {
 		return nil, f.repoReadFailed(ctx, actor, "store", err)
+	}
+	if err := quotaCheckpoint(ctx, quotaRead); err != nil {
+		return nil, err
 	}
 	return connect.NewResponse(&hubv1.GetRepoResponse{Repo: repoFromStored(v.stored, v.spec)}), nil
 }

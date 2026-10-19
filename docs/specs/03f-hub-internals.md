@@ -136,7 +136,10 @@ contract; this is how the hub runs it.
   `command_id` is a no-op that returns the stored row. After the commit the
   caller hands the row back to the outbox, which logs `outbox.enqueued` and
   wakes the sender. A REVOKED machine is refused (`MACHINE_REVOKED`, 02b)
-  and nothing is written.
+  and nothing is written. Local TCP API calls reserve their configured write
+  allowance after these checks and before a new row or replay succeeds. An
+  approval decision checks its command with `outbox.CheckEnqueue` in the same job
+  before the decision's quota checkpoint and first stamp.
 - **Send.** One sender goroutine does every send. A machine
   gets commands only after the Snapshot of its current epoch committed: the
   Snapshot step calls the gateway's `ready(machine, epoch)` seam after its

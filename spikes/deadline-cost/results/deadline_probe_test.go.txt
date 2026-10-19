@@ -1,0 +1,295 @@
+package api_test
+
+import (
+	"context"
+	"database/sql"
+	"fmt"
+	"os"
+	"os/exec"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"connectrpc.com/connect"
+
+	hubv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/hub/v1"
+	typev1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/type/v1"
+	"github.com/linuxdynasty/fleet-board/internal/hub/api"
+)
+
+var (
+	deadlineSendCallbackNS   atomic.Int64
+	deadlineSendCallbackN    atomic.Int64
+	deadlineDecideCallbackNS atomic.Int64
+	deadlineDecideCallbackN  atomic.Int64
+)
+
+func deadlineProbeArm(t testing.TB) string {
+	t.Helper()
+	arm := os.Getenv("FLEET_DEADLINE_ARM")
+	if arm != "baseline" && arm != "candidate" {
+		t.Fatalf("FLEET_DEADLINE_ARM = %q, want baseline or candidate", arm)
+	}
+	return arm
+}
+
+func deadlineProbeRecord(kind string, elapsed time.Duration) {
+	switch kind {
+	case "send":
+		deadlineSendCallbackNS.Add(elapsed.Nanoseconds())
+		deadlineSendCallbackN.Add(1)
+	case "decide":
+		deadlineDecideCallbackNS.Add(elapsed.Nanoseconds())
+		deadlineDecideCallbackN.Add(1)
+	}
+}
+
+func deadlineProbeEnv(t testing.TB) (*quotaWriteEnv, string) {
+	t.Helper()
+	api.DeadlineCostRecord = deadlineProbeRecord
+	e := newLocalQuotaEnv(t, 1000, 1000)
+	enrollMachine(t, e.fleetEnv, "m1")
+	return e, createSession(t, e.fleetEnv, "m1", "deadline-probe")
+}
+
+func deadlineProbeRead(t testing.TB, e *quotaWriteEnv, id string) *hubv1.Operation {
+	t.Helper()
+	res, err := e.tcp.GetOperation(context.Background(), connect.NewRequest(&hubv1.GetOperationRequest{
+		Id: &typev1.CommandId{Value: id},
+	}))
+	if err != nil {
+		t.Fatalf("GetOperation(%s): %v", id, err)
+	}
+	return res.Msg.GetOperation()
+}
+
+func deadlineProbeCheck(t testing.TB, arm, label string, e *quotaWriteEnv,
+	op *hubv1.Operation, want time.Time,
+) {
+	t.Helper()
+	if op == nil || op.GetId().GetValue() == "" {
+		t.Fatalf("%s returned no operation", label)
+	}
+	stored := deadlineProbeRead(t, e, op.GetId().GetValue())
+	if got := stored.GetNotAfterTime().AsTime(); !got.Equal(want) {
+		t.Fatalf("%s durable deadline = %s, want %s", label, got, want)
+	}
+	got := op.GetNotAfterTime().AsTime()
+	if arm == "candidate" && !got.Equal(want) {
+		t.Fatalf("%s candidate reply deadline = %s, want stored %s", label, got, want)
+	}
+	if arm == "baseline" {
+		// The source command's deadline is nil. Its AsTime() becomes the Unix
+		// epoch, which the old reply copied; this arm is intentionally wrong.
+		if !got.Equal(time.Unix(0, 0).UTC()) || got.Equal(want) {
+			t.Fatalf("%s baseline reply deadline = %s, want wrong Unix epoch", label, got)
+		}
+	}
+}
+
+func deadlineProbeSend(t testing.TB, e *quotaWriteEnv, session, id string) *hubv1.Operation {
+	t.Helper()
+	req := sendKeysReq(session, "%1")
+	req.RequestId = id
+	res, err := e.tcp.SendKeys(context.Background(), connect.NewRequest(req))
+	if err != nil {
+		t.Fatalf("SendKeys(%s): %v", id, err)
+	}
+	return res.Msg.GetOperation()
+}
+
+func deadlineProbePending(t testing.TB, e *quotaWriteEnv, session, id string) *hubv1.ApprovalId {
+	t.Helper()
+	req := destructiveReq(session)
+	req.RequestId = id
+	res, err := e.tcp.RunHarnessCommand(context.Background(), connect.NewRequest(req))
+	if err != nil {
+		t.Fatalf("RunHarnessCommand(%s): %v", id, err)
+	}
+	if res.Msg.GetApproval().GetValue() == "" || res.Msg.GetOperation() != nil {
+		t.Fatalf("RunHarnessCommand(%s) did not hold one approval", id)
+	}
+	return res.Msg.GetApproval()
+}
+
+func deadlineProbeDecide(t testing.TB, e *quotaWriteEnv, approval *hubv1.ApprovalId,
+	id string,
+) *hubv1.Operation {
+	t.Helper()
+	req := connect.NewRequest(&hubv1.DecideApprovalRequest{
+		RequestId: id, Id: approval, ExpectedVersion: 1, Decision: "approve",
+	})
+	req.Header().Set(api.SecretHeader, e.secret)
+	res, err := e.tcp.DecideApproval(context.Background(), req)
+	if err != nil {
+		t.Fatalf("DecideApproval(%s): %v", id, err)
+	}
+	return res.Msg.GetOperation()
+}
+
+// This runs after the timer stops. A response alone would not prove that each
+// measured call produced exactly one durable command and replay receipt.
+func deadlineProbeReceipts(t testing.TB, e *quotaWriteEnv, kind string, ops map[string]string) {
+	t.Helper()
+	seen := make(map[string]bool, len(ops))
+	for requestID, commandID := range ops {
+		if commandID == "" || seen[commandID] {
+			t.Fatalf("%s returned an empty or repeated operation ID", kind)
+		}
+		seen[commandID] = true
+		if requestID == "" {
+			t.Fatalf("%s returned an operation without request ID", kind)
+		}
+	}
+	err := e.st.Read(context.Background(), func(tx *sql.Tx) error {
+		var rows, uniqueOps, uniqueRequests int
+		var countSQL, exactSQL string
+		switch kind {
+		case "send":
+			countSQL = `SELECT count(*), count(DISTINCT c.command_id), count(DISTINCT r.request_id)
+				FROM commands c JOIN request_log r ON r.command_id = c.command_id
+					AND r.request_id = c.request_id
+				WHERE c.request_id GLOB 'probe-send-*' AND c.kind = 'send_keys'`
+			exactSQL = `SELECT count(*) FROM commands c JOIN request_log r
+				ON r.command_id = c.command_id AND r.request_id = c.request_id
+				WHERE c.request_id = ? AND c.command_id = ? AND c.kind = 'send_keys'`
+		case "decide":
+			countSQL = `SELECT count(*), count(DISTINCT a.operation), count(DISTINCT a.decide_request_id)
+				FROM approvals a JOIN commands c ON c.command_id = a.operation
+					AND c.request_id = a.decide_request_id
+				WHERE a.decide_request_id GLOB 'probe-decide-*'
+					AND a.state = 'DECIDED' AND a.decision = 'approve'
+					AND a.kind = 'COMMAND_CONFIRM' AND c.kind = 'run_harness_command'`
+			exactSQL = `SELECT count(*) FROM approvals a JOIN commands c
+				ON c.command_id = a.operation AND c.request_id = a.decide_request_id
+				WHERE a.decide_request_id = ? AND a.operation = ?
+					AND a.state = 'DECIDED' AND a.decision = 'approve'
+					AND a.kind = 'COMMAND_CONFIRM' AND c.kind = 'run_harness_command'`
+		default:
+			return fmt.Errorf("unknown receipt kind %q", kind)
+		}
+		if err := tx.QueryRowContext(context.Background(), countSQL).
+			Scan(&rows, &uniqueOps, &uniqueRequests); err != nil {
+			return err
+		}
+		if rows != len(ops) || uniqueOps != len(ops) || uniqueRequests != len(ops) {
+			return fmt.Errorf("%s durable receipts rows=%d operations=%d requests=%d, want %d each",
+				kind, rows, uniqueOps, uniqueRequests, len(ops))
+		}
+		for requestID, commandID := range ops {
+			var count int
+			if err := tx.QueryRowContext(context.Background(), exactSQL, requestID, commandID).
+				Scan(&count); err != nil {
+				return err
+			}
+			if count != 1 {
+				return fmt.Errorf("%s %s / %s has %d matching receipts", kind, requestID, commandID, count)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("%s receipt check: %v", kind, err)
+	}
+}
+
+func TestDeadlineCostProbeSemantics(t *testing.T) {
+	arm := deadlineProbeArm(t)
+	e := newLocalQuotaEnv(t, 1000, 1000)
+	mount, err := exec.Command("df", "-P", e.dir).CombinedOutput()
+	if err != nil {
+		t.Fatalf("fixture filesystem: %v: %s", err, mount)
+	}
+	t.Logf("state.db fixture directory: %s; df -P: %s", e.dir, mount)
+	enrollMachine(t, e.fleetEnv, "m1")
+	create, err := e.tcp.CreateSession(context.Background(), connect.NewRequest(&hubv1.CreateSessionRequest{
+		RequestId: "probe-create", Machine: &typev1.MachineId{Value: "m1"},
+		Name: "deadline-probe", Server: typev1.TmuxServerKind_TMUX_SERVER_KIND_FLEET,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadlineProbeCheck(t, arm, "CreateSession", e, create.Msg.GetOperation(), fleetNow.Add(10*time.Minute))
+	session := create.Msg.GetSession().GetValue()
+	sent := deadlineProbeSend(t, e, session, "probe-send-0")
+	deadlineProbeCheck(t, arm, "SendKeys", e, sent, fleetNow.Add(2*time.Minute))
+	deadlineProbeReceipts(t, e, "send", map[string]string{
+		"probe-send-0": sent.GetId().GetValue(),
+	})
+	approval := deadlineProbePending(t, e, session, "probe-gate")
+	approved := deadlineProbeDecide(t, e, approval, "probe-decide-0")
+	deadlineProbeCheck(t, arm, "DecideApproval", e, approved, fleetNow.Add(2*time.Minute))
+	deadlineProbeReceipts(t, e, "decide", map[string]string{
+		"probe-decide-0": approved.GetId().GetValue(),
+	})
+}
+
+func BenchmarkDeadlineCostSend(b *testing.B) {
+	arm := deadlineProbeArm(b)
+	e, session := deadlineProbeEnv(b)
+	deadlineSendCallbackNS.Store(0)
+	deadlineSendCallbackN.Store(0)
+	b.ResetTimer()
+	b.StopTimer()
+	var rpcNS int64
+	receipts := make(map[string]string, b.N)
+	for i := 0; i < b.N; i++ {
+		id := fmt.Sprintf("probe-send-%d", i)
+		message := sendKeysReq(session, "%1")
+		message.RequestId = id
+		request := connect.NewRequest(message)
+		b.StartTimer()
+		start := time.Now()
+		response, err := e.tcp.SendKeys(context.Background(), request)
+		rpcNS += time.Since(start).Nanoseconds()
+		b.StopTimer()
+		if err != nil {
+			b.Fatalf("SendKeys(%s): %v", id, err)
+		}
+		op := response.Msg.GetOperation()
+		deadlineProbeCheck(b, arm, "SendKeys", e, op, fleetNow.Add(2*time.Minute))
+		receipts[id] = op.GetId().GetValue()
+	}
+	deadlineProbeReceipts(b, e, "send", receipts)
+	if got := deadlineSendCallbackN.Load(); got != int64(b.N) {
+		b.Fatalf("send writer callback count = %d, want %d", got, b.N)
+	}
+	b.ReportMetric(float64(deadlineSendCallbackNS.Load())/float64(b.N), "callback-ns/op")
+	b.ReportMetric(float64(rpcNS)/float64(b.N), "rpc-ns/op")
+}
+
+func BenchmarkDeadlineCostDecide(b *testing.B) {
+	arm := deadlineProbeArm(b)
+	e, session := deadlineProbeEnv(b)
+	deadlineDecideCallbackNS.Store(0)
+	deadlineDecideCallbackN.Store(0)
+	b.ResetTimer()
+	b.StopTimer()
+	var rpcNS int64
+	receipts := make(map[string]string, b.N)
+	for i := 0; i < b.N; i++ {
+		approval := deadlineProbePending(b, e, session, fmt.Sprintf("probe-gate-%d", i))
+		requestID := fmt.Sprintf("probe-decide-%d", i)
+		request := connect.NewRequest(&hubv1.DecideApprovalRequest{
+			RequestId: requestID, Id: approval, ExpectedVersion: 1, Decision: "approve",
+		})
+		request.Header().Set(api.SecretHeader, e.secret)
+		b.StartTimer()
+		start := time.Now()
+		response, err := e.tcp.DecideApproval(context.Background(), request)
+		rpcNS += time.Since(start).Nanoseconds()
+		b.StopTimer()
+		if err != nil {
+			b.Fatalf("DecideApproval(%s): %v", requestID, err)
+		}
+		op := response.Msg.GetOperation()
+		deadlineProbeCheck(b, arm, "DecideApproval", e, op, fleetNow.Add(2*time.Minute))
+		receipts[requestID] = op.GetId().GetValue()
+	}
+	deadlineProbeReceipts(b, e, "decide", receipts)
+	if got := deadlineDecideCallbackN.Load(); got != int64(b.N) {
+		b.Fatalf("decide writer callback count = %d, want %d", got, b.N)
+	}
+	b.ReportMetric(float64(deadlineDecideCallbackNS.Load())/float64(b.N), "callback-ns/op")
+	b.ReportMetric(float64(rpcNS)/float64(b.N), "rpc-ns/op")
+}

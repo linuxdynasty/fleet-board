@@ -1,0 +1,211 @@
+package approvals
+
+import (
+	"bytes"
+	"context"
+	"database/sql"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"google.golang.org/protobuf/proto"
+
+	agentv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1"
+	hubv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/hub/v1"
+	typev1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/type/v1"
+	"github.com/linuxdynasty/fleet-board/internal/hub/statedb"
+	"github.com/linuxdynasty/fleet-board/internal/store"
+)
+
+var (
+	probeOnce   sync.Once
+	probeDB     *store.Store
+	probeDir    string
+	probeFilter Filter
+	probeNow    time.Time
+	probeErr    error
+)
+
+func TestMain(m *testing.M) {
+	if err := setupListProbe(); err != nil {
+		fmt.Fprintln(os.Stderr, "approval list probe setup:", err)
+		os.Exit(1)
+	}
+	code := m.Run()
+	_ = probeDB.Close()
+	_ = os.RemoveAll(probeDir)
+	os.Exit(code)
+}
+
+// A throwaway probe, not a production test. The same real file and writer are
+// reused by every benchmark sample. The process removes its temporary folder.
+func setupListProbe() error {
+	probeOnce.Do(func() {
+		ctx := context.Background()
+		probeNow = time.Date(2026, 10, 12, 12, 0, 0, 0, time.UTC)
+		dir, err := os.MkdirTemp("", "fleet-approval-list-probe-")
+		if err != nil {
+			probeErr = err
+			return
+		}
+		probeDir = dir
+		path := filepath.Join(dir, "state")
+		if err := statedb.EnsureDir(path); err != nil {
+			probeErr = err
+			return
+		}
+		id := statedb.Identity{
+			FleetID: "fleet-probe", CACert: []byte("ca"), CAKey: []byte("key"),
+			ServerCert: []byte("cert"), ServerKey: []byte("skey"),
+			ServerNames: []string{"hub"}, AccountSalt: bytes.Repeat([]byte{7}, 32),
+			SaltVersion: 1, SettingsEpoch: "probe-epoch", CreatedTime: probeNow,
+		}
+		if err := statedb.Create(ctx, path, id, statedb.CreateOptions{}); err != nil {
+			probeErr = err
+			return
+		}
+		probeDB, err = statedb.Open(ctx, path, nil)
+		if err != nil {
+			probeErr = err
+			return
+		}
+		defer func() {
+			if probeErr != nil {
+				_ = probeDB.Close()
+			}
+		}()
+		preview := strings.Repeat("p", MaxPreview)
+		cmd := &agentv1.Command{Kind: &agentv1.Command_KillWindow{KillWindow: &agentv1.KillWindow{
+			Window: &typev1.WindowKey{Server: "dev", ServerStartId: "s9", WindowId: "3"},
+		}}}
+		probeErr = probeDB.Write(ctx, func(tx *sql.Tx) error {
+			for i := 0; i < 1002; i++ {
+				_, err := CreateApproval(ctx, tx, Create{
+					ID: fmt.Sprintf("appr_%016x", i), Kind: hubv1.ApprovalKind_APPROVAL_KIND_COMMAND_CONFIRM,
+					Severity: hubv1.Severity_SEVERITY_WARNING, Preview: preview, MachineID: "m1",
+					Allowed: []Choice{{Key: "approve"}, {Key: "deny"}}, Command: cmd,
+					DefaultChoice: "deny", Fallback: hubv1.ApprovalFallback_APPROVAL_FALLBACK_DENY,
+					ExpireTime: probeNow.Add(time.Hour), RequiredRole: typev1.Role_ROLE_OWNER, Now: probeNow,
+				})
+				if err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+		if probeErr != nil {
+			return
+		}
+		probeErr = probeDB.Read(ctx, func(tx *sql.Tx) error {
+			first, cursor, err := List(ctx, tx, Filter{PageSize: 500}, probeNow)
+			if err != nil {
+				return err
+			}
+			if len(first) != 500 || cursor == "" {
+				return fmt.Errorf("first page: len=%d, cursor empty=%v", len(first), cursor == "")
+			}
+			probeFilter = Filter{PageSize: 500, PageToken: cursor}
+			return nil
+		})
+	})
+	return probeErr
+}
+
+func probeBaseline(ctx context.Context, tx *sql.Tx) ([]*hubv1.Approval, string, error) {
+	if _, _, err := List(ctx, tx, probeFilter, probeNow); err != nil {
+		return nil, "", err
+	}
+	if _, err := ExpireDue(ctx, tx, probeNow, 200); err != nil {
+		return nil, "", err
+	}
+	return List(ctx, tx, probeFilter, probeNow)
+}
+
+func probeCandidate(ctx context.Context, tx *sql.Tx) ([]*hubv1.Approval, string, error) {
+	// Exercise the production validator called by ListApprovals.
+	if err := ValidateListInput(probeFilter, probeNow); err != nil {
+		return nil, "", err
+	}
+	if _, err := ExpireDue(ctx, tx, probeNow, 200); err != nil {
+		return nil, "", err
+	}
+	return List(ctx, tx, probeFilter, probeNow)
+}
+
+func TestListProbeParity(t *testing.T) {
+	if err := setupListProbe(); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	var oldPage, newPage []*hubv1.Approval
+	var oldNext, newNext string
+	if err := probeDB.Write(ctx, func(tx *sql.Tx) error { var e error; oldPage, oldNext, e = probeBaseline(ctx, tx); return e }); err != nil {
+		t.Fatal(err)
+	}
+	if err := probeDB.Write(ctx, func(tx *sql.Tx) error { var e error; newPage, newNext, e = probeCandidate(ctx, tx); return e }); err != nil {
+		t.Fatal(err)
+	}
+	if len(oldPage) != 500 || len(newPage) != 500 || oldNext != newNext {
+		t.Fatalf("page lengths %d/%d, next equal %v", len(oldPage), len(newPage), oldNext == newNext)
+	}
+	for i := range oldPage {
+		if !proto.Equal(oldPage[i], newPage[i]) {
+			t.Fatalf("page row %d differs", i)
+		}
+	}
+	for _, invalid := range []string{"bad", "v1.", probeFilter.PageToken + "x"} {
+		f := probeFilter
+		f.PageToken = invalid
+		if err := probeDB.Read(ctx, func(tx *sql.Tx) error { _, _, err := List(ctx, tx, f, probeNow); return err }); !errors.Is(err, ErrInvalid) {
+			t.Fatalf("List invalid %q: %v", invalid, err)
+		}
+		if err := ValidateListInput(f, probeNow); !errors.Is(err, ErrInvalid) {
+			t.Fatalf("validator invalid %q: %v", invalid, err)
+		}
+	}
+}
+
+func BenchmarkListProbe(b *testing.B) {
+	if err := setupListProbe(); err != nil {
+		b.Fatal(err)
+	}
+	ctx := context.Background()
+	cases := []struct {
+		name string
+		run  func(context.Context, *sql.Tx) ([]*hubv1.Approval, string, error)
+	}{
+		{"Baseline", probeBaseline}, {"Candidate", probeCandidate},
+	}
+	if os.Getenv("FLEET_PROBE_REVERSE") == "1" {
+		cases[0], cases[1] = cases[1], cases[0]
+	}
+	for _, tc := range cases {
+		b.Run(tc.name, func(b *testing.B) {
+			var callbackTotal time.Duration
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				var callback time.Duration
+				err := probeDB.Write(ctx, func(tx *sql.Tx) error {
+					start := time.Now()
+					page, _, err := tc.run(ctx, tx)
+					callback = time.Since(start)
+					if err == nil && len(page) != 500 {
+						return fmt.Errorf("page rows=%d", len(page))
+					}
+					return err
+				})
+				if err != nil {
+					b.Fatal(err)
+				}
+				callbackTotal += callback
+			}
+			b.ReportMetric(float64(callbackTotal.Nanoseconds())/float64(b.N), "callback-ns/op")
+		})
+	}
+}

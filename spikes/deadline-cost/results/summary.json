@@ -1,0 +1,134 @@
+{
+  "baseline": {
+    "BenchmarkDeadlineCostSend": {
+      "ns/op": {
+        "n": 20,
+        "median": 260126058.5,
+        "min": 258779908.0,
+        "max": 261170967.0
+      },
+      "callback-ns/op": {
+        "n": 20,
+        "median": 1413396.0,
+        "min": 1057225.0,
+        "max": 1845509.0
+      },
+      "rpc-ns/op": {
+        "n": 20,
+        "median": 260125087.5,
+        "min": 258779075.0,
+        "max": 261170125.0
+      },
+      "B/op": {
+        "n": 20,
+        "median": 515014.0,
+        "min": 271528.0,
+        "max": 758456.0
+      },
+      "allocs/op": {
+        "n": 20,
+        "median": 559.0,
+        "min": 549.0,
+        "max": 577.0
+      }
+    },
+    "BenchmarkDeadlineCostDecide": {
+      "ns/op": {
+        "n": 20,
+        "median": 261441574.5,
+        "min": 258657175.0,
+        "max": 262865350.0
+      },
+      "callback-ns/op": {
+        "n": 20,
+        "median": 2510033.5,
+        "min": 1283209.0,
+        "max": 3063316.0
+      },
+      "rpc-ns/op": {
+        "n": 20,
+        "median": 261440604.0,
+        "min": 258656583.0,
+        "max": 262864525.0
+      },
+      "B/op": {
+        "n": 20,
+        "median": 771975.5,
+        "min": 525385.0,
+        "max": 1200870.0
+      },
+      "allocs/op": {
+        "n": 20,
+        "median": 1221.0,
+        "min": 1208.0,
+        "max": 1232.0
+      }
+    }
+  },
+  "candidate": {
+    "BenchmarkDeadlineCostSend": {
+      "ns/op": {
+        "n": 20,
+        "median": 260526870.5,
+        "min": 257990742.0,
+        "max": 261725158.0
+      },
+      "callback-ns/op": {
+        "n": 20,
+        "median": 1617158.5,
+        "min": 644900.0,
+        "max": 2232509.0
+      },
+      "rpc-ns/op": {
+        "n": 20,
+        "median": 260526149.5,
+        "min": 257990233.0,
+        "max": 261724200.0
+      },
+      "B/op": {
+        "n": 20,
+        "median": 510610.0,
+        "min": 289163.0,
+        "max": 973286.0
+      },
+      "allocs/op": {
+        "n": 20,
+        "median": 621.5,
+        "min": 616.0,
+        "max": 647.0
+      }
+    },
+    "BenchmarkDeadlineCostDecide": {
+      "ns/op": {
+        "n": 20,
+        "median": 261247842.0,
+        "min": 258196350.0,
+        "max": 262795683.0
+      },
+      "callback-ns/op": {
+        "n": 20,
+        "median": 2548995.5,
+        "min": 1088167.0,
+        "max": 2957983.0
+      },
+      "rpc-ns/op": {
+        "n": 20,
+        "median": 261246867.0,
+        "min": 258195658.0,
+        "max": 262794733.0
+      },
+      "B/op": {
+        "n": 20,
+        "median": 758759.0,
+        "min": 316508.0,
+        "max": 1174401.0
+      },
+      "allocs/op": {
+        "n": 20,
+        "median": 1286.0,
+        "min": 1268.0,
+        "max": 1298.0
+      }
+    }
+  }
+}

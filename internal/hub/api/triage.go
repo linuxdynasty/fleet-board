@@ -52,6 +52,19 @@ func (f *Fleet) ListTriageItems(ctx context.Context, req *connect.Request[hubv1.
 		size = 500
 	}
 	now := f.hubNow()
+	want := triageQueryHash(m.GetFilter(), m.GetOrderBy(), size)
+	var cursor triageCursor
+	if m.GetPageToken() != "" {
+		cursor, err = parseTriageToken(m.GetPageToken(), want, len(order), now)
+		if err != nil {
+			return nil, f.triageReadRefused(ctx, apiError(connect.CodeInvalidArgument,
+				typev1.ReasonCode_REASON_CODE_PAGE_TOKEN_INVALID, "bad page_token", nil,
+				[]*typev1.FieldViolation{{Field: "page_token", Description: "bad page_token"}}))
+		}
+	}
+	if err := quotaCheckpoint(ctx, quotaRead); err != nil {
+		return nil, err
+	}
 	rows, err := statedb.ListStoredTriageItems(ctx, f.store)
 	if err != nil {
 		return nil, f.triageReadFailed(ctx, actor, "store", err)
@@ -67,15 +80,8 @@ func (f *Fleet) ListTriageItems(ctx context.Context, req *connect.Request[hubv1.
 		}
 	}
 	sortTriageViews(matched, order)
-	want := triageQueryHash(m.GetFilter(), m.GetOrderBy(), size)
 	start := 0
 	if m.GetPageToken() != "" {
-		cursor, err := parseTriageToken(m.GetPageToken(), want, len(order), now)
-		if err != nil {
-			return nil, f.triageReadRefused(ctx, apiError(connect.CodeInvalidArgument,
-				typev1.ReasonCode_REASON_CODE_PAGE_TOKEN_INVALID, "bad page_token", nil,
-				[]*typev1.FieldViolation{{Field: "page_token", Description: "bad page_token"}}))
-		}
 		start = sort.Search(len(matched), func(i int) bool {
 			return triageKeyAfter(matched[i], order, cursor.key, cursor.id)
 		})
@@ -124,6 +130,9 @@ func (f *Fleet) GetTriageItem(ctx context.Context, req *connect.Request[hubv1.Ge
 	item, err := triageItem(stored)
 	if err != nil {
 		return nil, f.triageReadFailed(ctx, actor, "store", err)
+	}
+	if err := quotaCheckpoint(ctx, quotaRead); err != nil {
+		return nil, err
 	}
 	return connect.NewResponse(&hubv1.GetTriageItemResponse{TriageItem: item}), nil
 }

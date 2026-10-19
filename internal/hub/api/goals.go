@@ -16,21 +16,10 @@ import (
 	"github.com/linuxdynasty/fleet-board/internal/hub/statedb"
 )
 
-// authorizeGoals admits the caller for ListGoals, GetGoal, ListGoalRuns
-// and ListGoalTransitions (02d: READ). Until a later row-12 slice brings
-// caller scopes, that is only the local user, who maps to OWNER and
-// covers READ.
+// authorizeGoals admits the checked admin user or local TCP owner for
+// ListGoals, GetGoal, ListGoalRuns and ListGoalTransitions (02d: READ).
 func authorizeGoals(ctx context.Context) (*typev1.Principal, error) {
-	p := PrincipalFrom(ctx)
-	if p.GetId().GetValue() == "" {
-		return nil, apiError(connect.CodeUnauthenticated, typev1.ReasonCode_REASON_CODE_CREDENTIALS_INVALID,
-			"no caller identity", nil, nil)
-	}
-	if p.GetKind() != typev1.PrincipalKind_PRINCIPAL_KIND_LOCAL_USER {
-		return nil, apiError(connect.CodePermissionDenied, typev1.ReasonCode_REASON_CODE_SCOPE_MISSING,
-			"this call needs the READ scope", map[string]string{"scope": "READ"}, nil)
-	}
-	return p, nil
+	return authorizeScope(ctx, "READ")
 }
 
 // ListGoals lists the observed goals (02k): the hand-started goals the
@@ -70,6 +59,19 @@ func (f *Fleet) ListGoals(ctx context.Context, req *connect.Request[hubv1.ListGo
 		size = 500
 	}
 	now := f.hubNow()
+	want := goalQueryHash(m.GetFilter(), m.GetOrderBy(), size)
+	var cursor goalCursor
+	if m.GetPageToken() != "" {
+		cursor, err = parseGoalToken(m.GetPageToken(), want, len(order), now)
+		if err != nil {
+			return nil, f.goalReadRefused(ctx, apiError(connect.CodeInvalidArgument,
+				typev1.ReasonCode_REASON_CODE_PAGE_TOKEN_INVALID, "bad page_token", nil,
+				[]*typev1.FieldViolation{{Field: "page_token", Description: "bad page_token"}}))
+		}
+	}
+	if err := quotaCheckpoint(ctx, quotaRead); err != nil {
+		return nil, err
+	}
 	rows, err := statedb.ListGoalRows(ctx, f.store)
 	if err != nil {
 		return nil, f.goalReadFailed(ctx, actor, "store", err)
@@ -89,15 +91,8 @@ func (f *Fleet) ListGoals(ctx context.Context, req *connect.Request[hubv1.ListGo
 		}
 	}
 	sortGoalViews(matched, order)
-	want := goalQueryHash(m.GetFilter(), m.GetOrderBy(), size)
 	start := 0
 	if m.GetPageToken() != "" {
-		cursor, err := parseGoalToken(m.GetPageToken(), want, len(order), now)
-		if err != nil {
-			return nil, f.goalReadRefused(ctx, apiError(connect.CodeInvalidArgument,
-				typev1.ReasonCode_REASON_CODE_PAGE_TOKEN_INVALID, "bad page_token", nil,
-				[]*typev1.FieldViolation{{Field: "page_token", Description: "bad page_token"}}))
-		}
 		start = sort.Search(len(matched), func(i int) bool {
 			return goalKeyAfter(matched[i], order, cursor.key, cursor.id)
 		})
@@ -149,6 +144,9 @@ func (f *Fleet) GetGoal(ctx context.Context, req *connect.Request[hubv1.GetGoalR
 	g, err := goalProto(v)
 	if err != nil {
 		return nil, f.goalReadFailed(ctx, actor, "store", err)
+	}
+	if err := quotaCheckpoint(ctx, quotaRead); err != nil {
+		return nil, err
 	}
 	return connect.NewResponse(&hubv1.GetGoalResponse{Goal: g}), nil
 }

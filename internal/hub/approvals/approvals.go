@@ -72,6 +72,9 @@ type Create struct {
 	RequiredRole  typev1.Role
 	// Now is the hub's clock when the caller decided.
 	Now time.Time
+	// Checkpoint runs after input/encoding checks, before the stamp and
+	// row insert. It must not access the store or network.
+	Checkpoint func() error
 }
 
 // Filter lists approvals by state and kind, newest first.
@@ -81,7 +84,7 @@ type Filter struct {
 	Kind     hubv1.ApprovalKind
 	HasKind  bool
 	PageSize int
-	// PageToken is the offset; empty starts at 0. Opaque to callers.
+	// PageToken is an opaque cursor; empty starts the first page.
 	PageToken string
 }
 
@@ -146,6 +149,11 @@ func CreateApproval(ctx context.Context, tx *sql.Tx, in Create) (*hubv1.Approval
 		rawCmd, err = proto.MarshalOptions{Deterministic: true}.Marshal(in.Command)
 		if err != nil {
 			return nil, fmt.Errorf("%w: encode gated command: %w", ErrInvalid, err)
+		}
+	}
+	if in.Checkpoint != nil {
+		if err := in.Checkpoint(); err != nil {
+			return nil, err
 		}
 	}
 	st, err := statedb.NextStamp(ctx, tx, in.Now)
@@ -286,48 +294,26 @@ const pageTokenLife = 10 * time.Minute
 // valid while rows only arrive in front of it, so inserts between pages
 // neither repeat nor skip rows.
 func List(ctx context.Context, tx *sql.Tx, f Filter, now time.Time) ([]*hubv1.Approval, string, error) {
-	size := f.PageSize
-	if size <= 0 {
-		size = 50
-	}
-	if size > 500 {
-		size = 500
-	}
-	if now.IsZero() {
-		return nil, "", fmt.Errorf("%w: now is required", ErrInvalid)
-	}
-	want := queryHash(f, size)
-	var cursor *pageCursor
-	if f.PageToken != "" {
-		var err error
-		if cursor, err = parseToken(f.PageToken, want, now); err != nil {
-			return nil, "", err
-		}
+	in, err := parseListInput(f, now)
+	if err != nil {
+		return nil, "", err
 	}
 	q := `SELECT ` + rowColumns + ` FROM approvals WHERE 1 = 1`
 	var args []any
 	if f.HasState {
-		name := stateName(f.State)
-		if name == "" {
-			return nil, "", fmt.Errorf("%w: bad state filter", ErrInvalid)
-		}
 		q += ` AND state = ?`
-		args = append(args, name)
+		args = append(args, in.state)
 	}
 	if f.HasKind {
-		name := kindName(f.Kind)
-		if name == "" {
-			return nil, "", fmt.Errorf("%w: bad kind filter", ErrInvalid)
-		}
 		q += ` AND kind = ?`
-		args = append(args, name)
+		args = append(args, in.kind)
 	}
-	if cursor != nil {
+	if in.cursor != nil {
 		q += ` AND (create_time < ? OR (create_time = ? AND id < ?))`
-		args = append(args, cursor.CreateMillis, cursor.CreateMillis, cursor.ID)
+		args = append(args, in.cursor.CreateMillis, in.cursor.CreateMillis, in.cursor.ID)
 	}
 	q += ` ORDER BY create_time DESC, id DESC LIMIT ?`
-	args = append(args, size+1)
+	args = append(args, in.size+1)
 	rows, err := tx.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, "", fmt.Errorf("approvals: list: %w", err)
@@ -344,11 +330,11 @@ func List(ctx context.Context, tx *sql.Tx, f Filter, now time.Time) ([]*hubv1.Ap
 	if err := rows.Err(); err != nil {
 		return nil, "", fmt.Errorf("approvals: list: %w", err)
 	}
-	if len(out) <= size {
+	if len(out) <= in.size {
 		return out, "", nil
 	}
-	last := out[size-1]
-	return out[:size], mintToken(want, last.GetCreateTime().AsTime(), last.GetId().GetValue(), now), nil
+	last := out[in.size-1]
+	return out[:in.size], mintToken(in.want, last.GetCreateTime().AsTime(), last.GetId().GetValue(), now), nil
 }
 
 // queryHash binds a page token to the query that minted it: state, kind

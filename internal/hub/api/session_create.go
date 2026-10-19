@@ -75,6 +75,9 @@ func (f *Fleet) CreateSession(ctx context.Context, req *connect.Request[hubv1.Cr
 			if err != nil {
 				return err
 			}
+			if err := quotaCheckpoint(ctx, quotaWrite); err != nil {
+				return err
+			}
 			out = op
 			emitKind, emitOutcome = "ensure_session", "replayed"
 			return nil
@@ -94,6 +97,7 @@ func (f *Fleet) CreateSession(ctx context.Context, req *connect.Request[hubv1.Cr
 		cmd.IssuedTime = timestamppb.New(now)
 		op, err := outbox.Enqueue(ctx, tx, outbox.In{
 			MachineID: m.GetMachine().GetValue(), Command: cmd, RequestID: m.GetRequestId(), Now: now,
+			Checkpoint: func() error { return quotaCheckpoint(ctx, quotaWrite) },
 		})
 		if err != nil {
 			return mapOutboxError(err)
@@ -114,8 +118,11 @@ func (f *Fleet) CreateSession(ctx context.Context, req *connect.Request[hubv1.Cr
 		}); err != nil {
 			return err
 		}
-		sessID, out = id, operationFromOp(op, m.GetMachine().GetValue(), who, m.GetRequestId(), now,
-			cmd.GetNotAfterTime().AsTime())
+		out, err = operationFromOp(ctx, tx, op, m.GetMachine().GetValue(), who, m.GetRequestId(), now)
+		if err != nil {
+			return err
+		}
+		sessID = id
 		emitKind, emitOutcome = op.Kind, "sent"
 		return nil
 	})

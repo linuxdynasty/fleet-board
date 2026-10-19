@@ -1,0 +1,21 @@
+File: approvals.test
+Type: alloc_space
+Time: 2026-10-18 18:57:01 EDT
+Showing nodes accounting for 57.21MB, 91.95% of 62.22MB total
+Showing top 15 nodes out of 123
+      flat  flat%   sum%        cum   cum%
+   22.54MB 36.22% 36.22%    22.54MB 36.22%  modernc.org/sqlite.(*conn).columnText
+      17MB 27.33% 63.55%       21MB 33.75%  github.com/linuxdynasty/fleet-board/internal/hub/approvals.scan
+       3MB  4.83% 68.38%        3MB  4.83%  runtime.mallocgc
+       2MB  3.21% 71.59%        2MB  3.21%  google.golang.org/protobuf/types/known/timestamppb.New (inline)
+       2MB  3.21% 74.81%    24.54MB 39.44%  modernc.org/sqlite.(*rows).Next
+    1.50MB  2.41% 77.22%     1.50MB  2.41%  strings.Fields
+    1.50MB  2.41% 79.63%     1.50MB  2.41%  strings.genSplit
+    1.39MB  2.24% 81.87%     5.28MB  8.49%  modernc.org/libc/honnef.co/go/netdb.init.0
+    1.16MB  1.86% 83.72%     1.16MB  1.86%  runtime/pprof.StartCPUProfile
+    1.02MB  1.64% 85.36%     1.02MB  1.64%  google.golang.org/protobuf/reflect/protoregistry.(*Files).RegisterFile.func2
+       1MB  1.61% 86.97%        1MB  1.61%  database/sql.driverArgsConnLocked
+       1MB  1.61% 88.58%        2MB  3.21%  github.com/linuxdynasty/fleet-board/internal/hub/approvals.choicesFromJSON
+    0.89MB  1.43% 90.01%     0.89MB  1.43%  os.readFileContents
+    0.67MB  1.08% 91.09%     0.67MB  1.08%  compress/flate.(*fastGen).addBlock
+    0.53MB  0.85% 91.95%     0.53MB  0.85%  compress/flate.(*compressor).init

@@ -39,11 +39,19 @@ func (f *Fleet) GetServerInfo(ctx context.Context, _ *connect.Request[hubv1.GetS
 		return nil, apiError(connect.CodeInternal, typev1.ReasonCode_REASON_CODE_INTERNAL,
 			"the hub could not read its identity", nil, nil)
 	}
+	if err := quotaCheckpoint(ctx, quotaPublic); err != nil {
+		return nil, err
+	}
 	mode := hubv1.AuthMode_AUTH_MODE_AUTHENTICATED
 	if f.localTrusted {
 		mode = hubv1.AuthMode_AUTH_MODE_LOCAL_TRUSTED
 	}
 	caller := PrincipalFrom(ctx)
+	if caller.GetKind() == typev1.PrincipalKind_PRINCIPAL_KIND_USER || caller.GetRole() == typev1.Role_ROLE_OWNER {
+		if _, err := authorizeScope(ctx, "READ"); err != nil {
+			caller = nil
+		}
+	}
 	return connect.NewResponse(&hubv1.GetServerInfoResponse{
 		ApiVersion: APIVersion, HubVersion: buildinfo.Version,
 		FleetId: id.FleetID, HubInstanceId: f.instanceID, ServerTime: timestamppb.New(f.hubNow()),

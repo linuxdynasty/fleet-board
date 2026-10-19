@@ -16,13 +16,14 @@
 // listener binds, sweeps the store (rows left live closed as hub_restart,
 // ONLINE machines made STALE) before any listener binds, makes sure the server certificate is current, and serves the
 // agent listener (Enroll; revoked client certificates fail the handshake),
-// the API listener, the optional metrics listener and the
+// the local TCP FleetService API listener, the optional metrics-only listener and the
 // admin socket (<state_dir>/admin.sock, mode 0600, a leftover socket removed
 // first and the socket removed on a clean stop) until its context ends: the
 // admin service answers CreateEnrollmentToken, the machine admin writes,
 // and GetServerInfo, wired to the revocation list, the agent listener's
 // live-stream cut and the outbox service for a revoke's after-commit
-// effects. The Fleet service reports the agent listener's hub_instance_id,
+// effects. One Fleet instance is served on both API and admin listeners and
+// reports the agent listener's hub_instance_id,
 // so the id on the API is the one the agents see. An
 // advertiser (internal/hub/discovery) announces the hub over mDNS once the
 // listeners serve and stops first at shutdown. Then every listener shuts

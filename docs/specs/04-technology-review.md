@@ -254,7 +254,7 @@ The load model needs ≤ 10 reads/s of ≈ 500 rows under 100 ms. S1 measured th
 including during the 2,500 rows/s burst. **Decision:** the UI and the
 scheduler read the store; there is no cache process and no in-memory copy of
 record. The fan-out bus still pushes changes after commit so browsers do not
-poll.
+poll. Local API writer costs and their limits are [recorded separately](04d-local-api-cost.md).
 
 ## Q5. Browser fan-out and terminal attach
 

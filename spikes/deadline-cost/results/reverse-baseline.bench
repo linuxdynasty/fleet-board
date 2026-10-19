@@ -1,0 +1,25 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/linuxdynasty/fleet-board/internal/hub/api
+cpu: Apple M4 Pro
+BenchmarkDeadlineCostSend-12      	       5	 259729600 ns/op	   1474083 callback-ns/op	 259728642 rpc-ns/op	  758456 B/op	     577 allocs/op
+BenchmarkDeadlineCostSend-12      	       5	 261040317 ns/op	   1488525 callback-ns/op	 261039042 rpc-ns/op	  496249 B/op	     561 allocs/op
+BenchmarkDeadlineCostSend-12      	       5	 259590892 ns/op	   1251800 callback-ns/op	 259590008 rpc-ns/op	  501224 B/op	     556 allocs/op
+BenchmarkDeadlineCostSend-12      	       5	 260752100 ns/op	   1606025 callback-ns/op	 260750984 rpc-ns/op	  718214 B/op	     560 allocs/op
+BenchmarkDeadlineCostSend-12      	       5	 259481192 ns/op	   1338267 callback-ns/op	 259480234 rpc-ns/op	  501817 B/op	     555 allocs/op
+BenchmarkDeadlineCostSend-12      	       5	 258940067 ns/op	   1192050 callback-ns/op	 258938900 rpc-ns/op	  506080 B/op	     553 allocs/op
+BenchmarkDeadlineCostSend-12      	       5	 260096659 ns/op	   1299075 callback-ns/op	 260095500 rpc-ns/op	  517475 B/op	     562 allocs/op
+BenchmarkDeadlineCostSend-12      	       5	 260124842 ns/op	   1845509 callback-ns/op	 260123708 rpc-ns/op	  514044 B/op	     554 allocs/op
+BenchmarkDeadlineCostSend-12      	       5	 260485017 ns/op	   1614908 callback-ns/op	 260483858 rpc-ns/op	  303427 B/op	     559 allocs/op
+BenchmarkDeadlineCostSend-12      	       5	 260905683 ns/op	   1633267 callback-ns/op	 260904584 rpc-ns/op	  719772 B/op	     565 allocs/op
+BenchmarkDeadlineCostDecide-12    	       5	 261665791 ns/op	   2866750 callback-ns/op	 261664858 rpc-ns/op	  975144 B/op	    1221 allocs/op
+BenchmarkDeadlineCostDecide-12    	       5	 261088833 ns/op	   2602158 callback-ns/op	 261087858 rpc-ns/op	  551345 B/op	    1216 allocs/op
+BenchmarkDeadlineCostDecide-12    	       5	 260363517 ns/op	   2074125 callback-ns/op	 260362567 rpc-ns/op	  748072 B/op	    1226 allocs/op
+BenchmarkDeadlineCostDecide-12    	       5	 259046524 ns/op	   1283209 callback-ns/op	 259045617 rpc-ns/op	  956692 B/op	    1222 allocs/op
+BenchmarkDeadlineCostDecide-12    	       5	 262069508 ns/op	   2491367 callback-ns/op	 262068209 rpc-ns/op	  750635 B/op	    1217 allocs/op
+BenchmarkDeadlineCostDecide-12    	       5	 262418834 ns/op	   2944125 callback-ns/op	 262417367 rpc-ns/op	  951974 B/op	    1221 allocs/op
+BenchmarkDeadlineCostDecide-12    	       5	 260487975 ns/op	   1801083 callback-ns/op	 260486758 rpc-ns/op	  978550 B/op	    1226 allocs/op
+BenchmarkDeadlineCostDecide-12    	       5	 261929884 ns/op	   2674575 callback-ns/op	 261928742 rpc-ns/op	  730129 B/op	    1215 allocs/op
+BenchmarkDeadlineCostDecide-12    	       5	 261217358 ns/op	   2528700 callback-ns/op	 261216350 rpc-ns/op	  756355 B/op	    1221 allocs/op
+BenchmarkDeadlineCostDecide-12    	       5	 261668692 ns/op	   2317325 callback-ns/op	 261667625 rpc-ns/op	 1188193 B/op	    1232 allocs/op
+PASS

@@ -54,6 +54,19 @@ func (f *Fleet) ListAuditEntries(ctx context.Context, req *connect.Request[hubv1
 		size = 500
 	}
 	now := f.hubNow()
+	want := auditQueryHash(m.GetFilter(), m.GetOrderBy(), size)
+	var cursor auditCursor
+	if m.GetPageToken() != "" {
+		cursor, err = parseAuditToken(m.GetPageToken(), want, len(order), now)
+		if err != nil {
+			return nil, f.auditReadRefused(ctx, apiError(connect.CodeInvalidArgument,
+				typev1.ReasonCode_REASON_CODE_PAGE_TOKEN_INVALID, "bad page_token", nil,
+				[]*typev1.FieldViolation{{Field: "page_token", Description: "bad page_token"}}))
+		}
+	}
+	if err := quotaCheckpoint(ctx, quotaRead); err != nil {
+		return nil, err
+	}
 	rows, err := statedb.ListStoredAuditEntries(ctx, f.store)
 	if err != nil {
 		return nil, f.auditReadFailed(ctx, actor, "store", err)
@@ -66,15 +79,8 @@ func (f *Fleet) ListAuditEntries(ctx context.Context, req *connect.Request[hubv1
 		}
 	}
 	sortAuditViews(views, order)
-	want := auditQueryHash(m.GetFilter(), m.GetOrderBy(), size)
 	start := 0
 	if m.GetPageToken() != "" {
-		cursor, err := parseAuditToken(m.GetPageToken(), want, len(order), now)
-		if err != nil {
-			return nil, f.auditReadRefused(ctx, apiError(connect.CodeInvalidArgument,
-				typev1.ReasonCode_REASON_CODE_PAGE_TOKEN_INVALID, "bad page_token", nil,
-				[]*typev1.FieldViolation{{Field: "page_token", Description: "bad page_token"}}))
-		}
 		start = sort.Search(len(views), func(i int) bool {
 			return auditKeyAfter(views[i], order, cursor.key, cursor.id)
 		})

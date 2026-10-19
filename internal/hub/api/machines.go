@@ -17,17 +17,10 @@ import (
 	"github.com/linuxdynasty/fleet-board/internal/hub/statedb"
 )
 
+// authorizeMachines admits the checked admin user or local TCP owner for
+// ListMachines and GetMachine (02d: READ).
 func authorizeMachines(ctx context.Context) (*typev1.Principal, error) {
-	p := PrincipalFrom(ctx)
-	if p.GetId().GetValue() == "" {
-		return nil, apiError(connect.CodeUnauthenticated, typev1.ReasonCode_REASON_CODE_CREDENTIALS_INVALID,
-			"no caller identity", nil, nil)
-	}
-	if p.GetKind() != typev1.PrincipalKind_PRINCIPAL_KIND_LOCAL_USER {
-		return nil, apiError(connect.CodePermissionDenied, typev1.ReasonCode_REASON_CODE_SCOPE_MISSING,
-			"this call needs the READ scope", map[string]string{"scope": "READ"}, nil)
-	}
-	return p, nil
+	return authorizeScope(ctx, "READ")
 }
 
 // ListMachines lists enrolled machines (02k): the spec as enrolled and the
@@ -66,6 +59,19 @@ func (f *Fleet) ListMachines(ctx context.Context, req *connect.Request[hubv1.Lis
 		size = 500
 	}
 	now := f.hubNow()
+	want := machineQueryHash(m.GetFilter(), m.GetOrderBy(), size)
+	var cursor machineCursor
+	if m.GetPageToken() != "" {
+		cursor, err = parseMachineToken(m.GetPageToken(), want, len(order), now)
+		if err != nil {
+			return nil, f.machRefused(ctx, apiError(connect.CodeInvalidArgument,
+				typev1.ReasonCode_REASON_CODE_PAGE_TOKEN_INVALID, "bad page_token", nil,
+				[]*typev1.FieldViolation{{Field: "page_token", Description: "bad page_token"}}))
+		}
+	}
+	if err := quotaCheckpoint(ctx, quotaRead); err != nil {
+		return nil, err
+	}
 	rows, err := statedb.ListMachineRows(ctx, f.store)
 	if err != nil {
 		return nil, f.machFailed(ctx, actor, "store", err)
@@ -77,15 +83,8 @@ func (f *Fleet) ListMachines(ctx context.Context, req *connect.Request[hubv1.Lis
 		}
 	}
 	sortMachineRows(matched, order)
-	want := machineQueryHash(m.GetFilter(), m.GetOrderBy(), size)
 	start := 0
 	if m.GetPageToken() != "" {
-		cursor, err := parseMachineToken(m.GetPageToken(), want, len(order), now)
-		if err != nil {
-			return nil, f.machRefused(ctx, apiError(connect.CodeInvalidArgument,
-				typev1.ReasonCode_REASON_CODE_PAGE_TOKEN_INVALID, "bad page_token", nil,
-				[]*typev1.FieldViolation{{Field: "page_token", Description: "bad page_token"}}))
-		}
 		start = sort.Search(len(matched), func(i int) bool {
 			return machineKeyAfter(matched[i], order, cursor.key, cursor.id)
 		})
@@ -133,6 +132,9 @@ func (f *Fleet) GetMachine(ctx context.Context, req *connect.Request[hubv1.GetMa
 	pm, err := machineProto(row)
 	if err != nil {
 		return nil, f.machFailed(ctx, actor, "store", err)
+	}
+	if err := quotaCheckpoint(ctx, quotaRead); err != nil {
+		return nil, err
 	}
 	return connect.NewResponse(&hubv1.GetMachineResponse{Machine: pm}), nil
 }

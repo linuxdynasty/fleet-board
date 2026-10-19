@@ -57,6 +57,11 @@ type In struct {
 	// Now is the hub's clock when the caller decided: the create time and
 	// the stamp's observed_time. not_after_time must be after it.
 	Now time.Time
+	// Checkpoint runs after command and machine checks, before the first
+	// state change. A request-local quota check may be passed here; it must
+	// be bounded and must not access the store or network. A stored-command
+	// replay also calls it before returning success.
+	Checkpoint func() error
 }
 
 // Op is a commands row: the Operation the outbox row is.
@@ -105,21 +110,24 @@ func Enqueue(ctx context.Context, tx *sql.Tx, in In) (Op, error) {
 		if err == nil && op.MachineID != in.MachineID {
 			return Op{}, ErrConflict
 		}
+		if err == nil && in.Checkpoint != nil {
+			if err := in.Checkpoint(); err != nil {
+				return Op{}, err
+			}
+		}
 		return op, err
 	}
-	var state string
-	err := tx.QueryRowContext(ctx, `SELECT state FROM machines WHERE machine_id = ?`, in.MachineID).Scan(&state)
-	switch {
-	case errors.Is(err, sql.ErrNoRows):
-		return Op{}, ErrMachineUnknown
-	case err != nil:
-		return Op{}, fmt.Errorf("outbox: look up machine: %w", err)
-	case state == statedb.MachineRevoked:
-		return Op{}, ErrMachineRevoked
+	if err := checkMachine(ctx, tx, in.MachineID); err != nil {
+		return Op{}, err
 	}
 	body, err := proto.MarshalOptions{Deterministic: true}.Marshal(cmd)
 	if err != nil {
 		return Op{}, fmt.Errorf("%w: encode: %w", ErrInvalid, err)
+	}
+	if in.Checkpoint != nil {
+		if err := in.Checkpoint(); err != nil {
+			return Op{}, err
+		}
 	}
 	st, err := statedb.NextStamp(ctx, tx, in.Now)
 	if err != nil {
@@ -136,6 +144,53 @@ func Enqueue(ctx context.Context, tx *sql.Tx, in In) (Op, error) {
 	op, _, err := loadOp(ctx, tx, id)
 	op.Created = true
 	return op, err
+}
+
+// CheckEnqueue repeats Enqueue's caller-error checks without a stamp or
+// write. A caller can run it in the same writer transaction before an
+// admission checkpoint that must precede another part of the decision.
+// Enqueue still performs these checks as the final backstop.
+func CheckEnqueue(ctx context.Context, tx *sql.Tx, in In) error {
+	if err := validate(in); err != nil {
+		return err
+	}
+	cmd := proto.CloneOf(in.Command)
+	if id := cmd.GetCommandId().GetValue(); id != "" {
+		op, found, err := loadOp(ctx, tx, id)
+		if err != nil {
+			return err
+		}
+		if found {
+			if op.MachineID != in.MachineID {
+				return ErrConflict
+			}
+			return nil
+		}
+	}
+	if err := checkMachine(ctx, tx, in.MachineID); err != nil {
+		return err
+	}
+	if cmd.GetNotAfterTime() == nil {
+		cmd.NotAfterTime = timestamppb.New(in.Now.Add(DefaultDeadline(KindName(cmd))))
+	}
+	if _, err := (proto.MarshalOptions{Deterministic: true}).Marshal(cmd); err != nil {
+		return fmt.Errorf("%w: encode: %w", ErrInvalid, err)
+	}
+	return nil
+}
+
+func checkMachine(ctx context.Context, tx *sql.Tx, machineID string) error {
+	var state string
+	err := tx.QueryRowContext(ctx, `SELECT state FROM machines WHERE machine_id = ?`, machineID).Scan(&state)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		return ErrMachineUnknown
+	case err != nil:
+		return fmt.Errorf("outbox: look up machine: %w", err)
+	case state == statedb.MachineRevoked:
+		return ErrMachineRevoked
+	}
+	return nil
 }
 
 func validate(in In) error {

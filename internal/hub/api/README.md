@@ -2,8 +2,9 @@
 
 The hub's HTTP API ([02b](../../../docs/specs/02b-hub-api.md),
 [02f](../../../docs/specs/02f-hub-authentication.md#host-and-origin-checks)).
-Today it serves `/metrics` on the API listener, behind the Host and Origin
-checks, and `FleetService` with `CreateEnrollmentToken`, the watched-repo
+The API listener serves `/metrics` and `FleetService` behind the Host and
+Origin checks. The optional metrics listener serves only `/metrics`.
+`FleetService` includes `CreateEnrollmentToken`, the watched-repo
 writes (`CreateRepo`, `UpdateRepo`, `DeleteRepo`), the machine admin
 writes (`UpdateMachine`, `RevokeMachine`, `DeleteMachine`), the
 config import and export (`ImportConfig`, `ExportConfig`), the hub-state
@@ -19,12 +20,12 @@ reads (`ListGoals`, `GetGoal`), the work-item reads (`ListWorkItems`,
 `GetWorkItem`), the change-request reads (`ListChangeRequests`,
 `GetChangeRequest`), the watched-repo reads (`ListRepos`, `GetRepo`),
 the account reads (`ListAccounts`, `GetAccount`), and `GetSystemStatus`
-on the local admin socket.
+on the local admin socket and local TCP API.
 
 ```go
-srv := api.NewServer(tel, "api", boundPort) // api.Handler plus timeouts and the JSON ErrorLog
-
 fleet, err := api.NewFleet(api.FleetOptions{Store: st, CACert: id.CACert, Telemetry: tel, HubInstanceID: instanceID})
+quotas, err := api.NewQuotas(cfg.RateLimits, tel, nil)
+srv, err := api.NewLocalServer(tel, boundPort, fleet, quotas)
 ln, srv := api.NewAdmin(unixListener, api.AdminOptions{Fleet: fleet, Telemetry: tel, UID: uid})
 err = srv.Serve(ln)
 
@@ -33,56 +34,65 @@ resp, err := api.AdminClient(sockPath).CreateEnrollmentToken(ctx, req) // fleetd
 
 ## API listener
 
-`NewServer` sets `ReadHeaderTimeout` (10 s) and `IdleTimeout` (2 min, a
+`NewLocalServer` serves the same `Fleet` as the admin socket;
+`NewMetricsServer` serves metrics only.
+Admitted writes share the fixed owner's configured write-class allowance.
+Each successful incoming call, including a replay, spends one allowance
+after validation. [Local TCP rules](local-tcp.md) also describe
+RevokeMachine's held permit across file staging.
+Export success counters and logs run only after read quota admission.
+`ListApprovals` checks its page cursor without loading approval rows, then
+charges one read before expiring due approvals and loading the result page
+in the same writer job. A bad cursor wins over an exhausted read allowance;
+an exhausted allowance leaves due approvals for the next expiry pass.
+Bulk list reads validate their filter, ordering and page token, then reserve
+read quota before loading or sorting stored rows. A spent allowance cannot
+force another full list scan. A rate-limited `CreateEnrollmentToken` call
+counts as an enrollment refusal and logs its closed `RATE_LIMITED` reason.
+
+`NewLocalServer` sets `ReadHeaderTimeout` (10 s) and `IdleTimeout` (2 min, a
 keep-alive connection with no request), no `ReadTimeout` (Watch and attach will
 be long streams), and `ErrorLog` through `telemetry.HTTPErrorLog`, so net/http's
 own error lines are debug-level `http.server_error` events, not stderr text.
 
-- **Host check first.** The `Host` header must be `localhost`, `127.0.0.1` or
-  `[::1]` with the bound port (case-insensitive; the bare name too on port
-  80). Anything else is HTTP 403, a Connect `permission_denied` error whose
-  `ErrorDetail.reason` is `HOST_NOT_ALLOWED`. This is what stops DNS
-  rebinding.
+- **Host check first.** Only loopback names with the bound port are allowed;
+  another Host is HTTP 403 `HOST_NOT_ALLOWED` (see 02f).
 - **Origin check next.** A request that sends `Origin` must send exactly
   `http://` plus one of those host-and-port pairs, or it gets 403 with
   `ORIGIN_NOT_ALLOWED` (`null`, `https://` and other ports are refused).
-- **Then the routes:** `GET /metrics` (the telemetry handler, which also
-  admits only a loopback peer), and 404 for every other path. No
-  `FleetService`, no `/healthz`, no CORS header.
-- Refusals count in `fleet_hub_auth_failures_total{reason="host"|"origin"}`.
-- The same handler serves the optional `listen.metrics` listener, with that
-  listener's port.
+- **Then the routes:** `GET /metrics` and the generated `FleetService` route
+  on the API listener. Other paths return 404; no `/healthz` or CORS header.
+- Host, Origin, unsupported credential, and missing protocol refusals count in
+  `fleet_hub_auth_failures_total{reason}`. Rate refusals count in
+  `fleet_hub_api_rate_limited_total{class,cause}`. Both use fixed labels;
+  [local-tcp.md](local-tcp.md) names the admission and quota rules.
+- `NewMetricsServer` serves optional `listen.metrics` with its own port check.
 - `local_trusted` only; the allow-lists of authenticated mode
   (`public_hosts`, `public_origins`) are refused by config until v3.
 
 ## FleetService
 
-`Fleet` embeds the generated `UnimplementedFleetServiceHandler`, so every
-method but `CreateEnrollmentToken`, the watched-repo writes, the machine
-admin writes, the config import and export, the hub-state triage
-writes, the triage reads, the usage read, the integration read, the settings reads, the audit read, the store-status read, the summary read, the session-control and approvals calls, `GetServerInfo`,
-`ListMachines`, `GetMachine`, `GetOperation`, `CapturePane`,
-`ListSessions`, `GetSession`, `ListGoals`, `GetGoal`,
-`ListGoalRuns`, `ListGoalTransitions`,
-`ListWorkItems`, `GetWorkItem`, `ListChangeRequests`,
-`GetChangeRequest`, `ListRepos`, `GetRepo`,
-`ListAccounts`, `GetAccount`
-and `GetSystemStatus`
-answers `unimplemented`
+`Fleet` embeds the generated `UnimplementedFleetServiceHandler`. The methods
+named above and described below are built. Other calls return `UNIMPLEMENTED`,
+except sign-in and device calls in local mode, which return
+`FAILED_PRECONDITION`. Watch remains unbuilt and unadvertised
 ([02k](../../../docs/specs/02k-v1-surface-and-cli.md)).
-`Handler()` is its Connect route (requests capped at 1 MiB), ready for a
-later row to mount on the API listener. The caller is the `Principal`
-the server put in the context
-(`WithPrincipal`); the handler never reads it from the request.
+`Handler()` is its Connect route (requests capped at 1 MiB), mounted on the
+local TCP listener and admin socket. The listener puts the caller in the
+context; the handler never reads it from the request. Local TCP uses the
+fixed `USER` id `local-owner`, name `owner`, role `OWNER`, minted only after
+the peer, Host, Origin and credential checks. The admin socket uses the
+kernel peer's `LOCAL_USER` id `local:<os user>`. Both cover the six OWNER
+scopes in 02d; an arbitrary `USER` context has no local TCP authority.
+Protected calls still check `X-Fleet-Approval-Secret` per RPC in local mode.
 
 `GetServerInfo` needs no scope: it answers the API and hub versions, the
 `fleet_id` and `hub_instance_id`, the server time, the (still empty) feature
 list, the auth mode, and the caller with its 02d scopes. A store that cannot
 return the hub identity is `INTERNAL`, logged as `server_info.failed`.
 
-`ListMachines` and `GetMachine` need `READ` (02d). Until a later row-12
-slice brings caller scopes, only a `LOCAL_USER` principal (the admin socket)
-holds it. `ListMachines` serves the 02c Machine filter but not `harness`
+`ListMachines` and `GetMachine` need `READ` (02d). `ListMachines` serves the
+02c Machine filter but not `harness`
 (the hub stores no harness inventory yet) or `is_hub` (the hub keeps no
 hub-machine link yet); `order_by` takes `name`, `ct` and `last_seen_time`
 and defaults to display name; pages are 50 by default, 500 at most, with a
@@ -96,22 +106,21 @@ counters, spool, battery, clock skew, slots, forge state, certificates,
 capabilities, unfit) stay unset until their rows land.
 
 `CapturePane` needs `READ` for the visible screen and `LOGS` for scrollback
-(02d). Until a later row-12 slice brings caller scopes, only a `LOCAL_USER`
-principal (the admin socket) calls, covering both. It sends one `capture_pane`
+(02d). It sends one `capture_pane`
 agent command through the session path (idempotent on `request_id`, audited as
 `session.capture`): `pane` is required, `max_bytes` caps at 256 KiB, and only
 sessions the hub started route yet (`SESSION_NOT_FOUND` otherwise).
 
-`GetOperation` needs `READ` (02d): until a later row-12 slice brings caller
-scopes, only a `LOCAL_USER` principal (the admin socket) holds it. It reads
+`GetOperation` needs `READ` (02d). It reads
 one outbox row with the ack time as `delivered_time`, so an expiry before
 delivery (`DONE` with no `delivered_time`) reads apart from one after. The
+fresh session action and approval responses use that queued row's deadline,
+so their `not_after_time` agrees with retries and `GetOperation`. The
 per-kind result decode (`output_text`, `failed_checks`) and the `LOGS`-scope
 redaction stay unset until their slice, as does `trace_id`.
 
-`ListSessions` and `GetSession` need `READ` (02d). Until a later row-12
-slice brings caller scopes, only a `LOCAL_USER` principal (the admin socket)
-holds it. The store holds hub-started sessions only, with the create-time
+`ListSessions` and `GetSession` need `READ` (02d). The store holds
+hub-started sessions only, with the create-time
 record each `CreateSession` call stored (migration 21): `ListSessions`
 serves the 02c Session filter but not `harness`, `goal` or
 `available_for_work` (they need the pane mirror, which no row stores yet);
@@ -126,8 +135,7 @@ machine still reads `LIVE`, and the create call's `Operation`
 an unknown id with `SESSION_NOT_FOUND`.
 
 `ListGoals`, `GetGoal`, `ListGoalRuns` and `ListGoalTransitions` need
-`READ` (02d). Until a later row-12 slice brings caller scopes, only a
-`LOCAL_USER` principal (the admin socket) holds it. The store holds observed goals only (03k: the hand-started goals
+`READ` (02d). The store holds observed goals only (03k: the hand-started goals
 the agents reported, origin `OBSERVED`): `ListGoals` serves the 02c Goal
 filter but not `account`, `repo`, `routine`, `work_item` or `attempt`
 (they need the dispatch rows, which no row stores yet); `order_by` takes
@@ -144,9 +152,8 @@ machine, session and counters; the ending once the goal closes);
 `ListGoalTransitions` reads empty until the dispatch rows record
 transitions. All three miss an unknown id with `RESOURCE_NOT_FOUND`.
 
-`ListWorkItems` and `GetWorkItem` need `READ` (02d). Until a later row-12
-slice brings caller scopes, only a `LOCAL_USER` principal (the admin socket)
-holds it. The store holds the synced provider mirrors (row 11) with the
+`ListWorkItems` and `GetWorkItem` need `READ` (02d). The store holds the
+synced provider mirrors (row 11) with the
 hub's verdicts beside each item: `ListWorkItems` serves the 02c WorkItem
 filter (`id`, `integration`, `kind`, `repo`, `stage`, `state`, `trusted`,
 `label`, `manual_reason`, `create_time`, `update_time`) but not `goal`
@@ -161,9 +168,8 @@ unset until the dispatch rows land. `GetWorkItem` misses an unknown id with
 `RESOURCE_NOT_FOUND`, and `include_body` (the provider body fetch) stays
 `UNIMPLEMENTED` until a row builds the provider call.
 
-`ListChangeRequests` and `GetChangeRequest` need `READ` (02d). Until a later
-row-12 slice brings caller scopes, only a `LOCAL_USER` principal (the admin
-socket) holds it. The store holds the synced provider mirrors (row 11):
+`ListChangeRequests` and `GetChangeRequest` need `READ` (02d). The store
+holds the synced provider mirrors (row 11):
 `ListChangeRequests` serves the 02c ChangeRequest filter (`id`,
 `integration`, `repo`, `state`, `create_time`, `update_time`) but not `goal`
 or `owned` (the goal link needs the dispatch rows, which no row stores yet);
@@ -175,9 +181,8 @@ hub-change stamp beside the version; the `goal` stays unset until the
 dispatch rows land. `GetChangeRequest` misses an unknown id with
 `RESOURCE_NOT_FOUND`.
 
-`ListRepos` and `GetRepo` need `READ` (02d). Until a later row-12 slice
-brings caller scopes, only a `LOCAL_USER` principal (the admin socket)
-holds it. The store holds the watched repos the owner writes (row 13a):
+`ListRepos` and `GetRepo` need `READ` (02d). The store holds the watched
+repos the owner writes (row 13a):
 `ListRepos` serves the 02c Repo filter (`id`, `enabled`, `host`,
 `hooks_mode`, `integration`, `create_time`, `update_time`); `order_by`
 takes `name` (the `host/path` id) and `ct` and defaults to `name`; pages
@@ -187,11 +192,8 @@ spec write; the `status` stays unset until a later row computes it.
 `GetRepo` misses an unknown id with `RESOURCE_NOT_FOUND`, and a malformed
 id with `INVALID_ARGUMENT`.
 
-`ListAccounts` and `GetAccount` need `READ` (02d; the raw screen in
-`GetAccount` also needs `LOGS`, which the admin socket's local user
-covers the way `CapturePane` scrollback does). Until a later row-12
-slice brings caller scopes, only a `LOCAL_USER` principal (the admin
-socket) holds them. The store holds the owner-created accounts (row
+`ListAccounts` and `GetAccount` need `READ` (02d); raw screen data in
+`GetAccount` also needs `LOGS`. The store holds the owner-created accounts (row
 13a): `ListAccounts` serves the 02c Account filter (`id`, `harness`,
 `mode`, `budget_kind`, `provider`, `origin`, `create_time`,
 `update_time`) but not `pacing_state` (pacing needs the scheduler row,
@@ -204,8 +206,7 @@ compute them, so `rank` orders by id until then. `GetAccount` misses an
 unknown id with `RESOURCE_NOT_FOUND`; `include_raw_screen` is accepted
 but its `shown` stays unset until the usage row stores readings.
 
-`GetSystemStatus` needs `READ` (02d): until a later row-12 slice brings caller
-scopes, only a `LOCAL_USER` principal (the admin socket) holds it. It lists
+`GetSystemStatus` needs `READ` (02d). It lists
 one signal per (kind, subject) — the five hub-wide signals, three per
 machine, one per FLEET-mode account (`INTERACTIVE_ONLY` accounts are never
 probed) and one per integration — each with every measure's
@@ -214,10 +215,9 @@ verdict reads UNKNOWN with its value and `since_time` unset until the
 evaluation loop lands; the open triage item, `hub_start_time`, exporters and
 `watch_subscribers` stay unset until their slice.
 
-`CreateEnrollmentToken` needs `ADMIN` (02d). Until plan row 12 brings scopes,
-only a `LOCAL_USER` principal (the admin socket) holds it: no principal is
-`UNAUTHENTICATED`/`CREDENTIALS_INVALID`, any other kind is
-`PERMISSION_DENIED`/`SCOPE_MISSING`. Then, in 02b's order:
+`CreateEnrollmentToken` needs `ADMIN` (02d) and the local approval secret.
+A missing caller is `UNAUTHENTICATED`/`CREDENTIALS_INVALID`; a caller without
+scope is `PERMISSION_DENIED`/`SCOPE_MISSING`. Then, in 02b's order:
 
 | Check | Refusal |
 |---|---|
@@ -247,9 +247,8 @@ caller (id, kind, name) as actor, target `enroll_tokens/<id>`, the
 `request_id`, and a detail with the machine name, expected hostname and
 expiry; never the token, its secret or its hash (#104).
 
-`CreateRepo`, `UpdateRepo` and `DeleteRepo` need `SETTINGS` (02d); until plan
-row 12 brings caller scopes only the local user holds it
-(`authorizeSettings`, like `authorizeApprovals`). Then, in 02b's order:
+`CreateRepo`, `UpdateRepo` and `DeleteRepo` need `SETTINGS` (02d) and the
+local approval secret. Then, in 02b's order:
 
 | Check | Refusal |
 |---|---|
@@ -274,9 +273,8 @@ Signals: `fleet_hub_repo_writes_total{op, outcome}` (`ok`, `replayed`,
 `actor`) and `repo.write_failed` (`step` `encode`/`decode`/`store`,
 `err_kind`, `op`, `actor`).
 
-`UpdateMachine` needs `SETTINGS`, `RevokeMachine` and `DeleteMachine`
-need `ADMIN` (02d); until plan row 12 brings caller scopes only the
-local user holds them (`authorizeSettings`, `authorizeAdmin`). Then, in
+`UpdateMachine` needs `SETTINGS`; `RevokeMachine` and `DeleteMachine`
+need `ADMIN` (02d). All three need the local approval secret. Then, in
 02b's order, the caller, the local approval secret in `local_trusted`
 mode, the fields, and the `request_id` replay inside the writer
 transaction (same principal, id, body and RPC kind replays the stored
@@ -335,9 +333,7 @@ the log lines `config.exported` (`repos`, `accounts`, `integrations`,
 `config.export_failed` (`step`, `err_kind`).
 
 `ListTriageItems` and `GetTriageItem` need `READ|APPROVALS` (02d).
-Until a later row-12 slice brings caller scopes, only a `LOCAL_USER`
-principal (the admin socket) holds it (`authorizeTriage`, like
-`authorizeApprovals`). The store holds the hub-state items the raise
+The store holds the hub-state items the raise
 path wrote: `ListTriageItems` serves the 02c TriageItem filter
 (`id`, `state`, `kind`, `severity` with `>=`, `machine`, `session`,
 `goal`, `account`, `create_time`, `update_time`); `order_by` takes
@@ -347,9 +343,8 @@ good for 10 minutes. `create_time` is the raise and `update_time` the
 last state move. `GetTriageItem` misses an unknown id with
 `RESOURCE_NOT_FOUND`.
 
-`ListUsageReadings` needs `READ` (02d). Until a later row-12 slice
-brings caller scopes, only a `LOCAL_USER` principal (the admin socket)
-holds it. The store holds the appended reading history (migration 22):
+`ListUsageReadings` needs `READ` (02d). The store holds the appended
+reading history (migration 22):
 the typed `account` scopes to one account, the 02c filter takes
 `read_time` and `source`, `order_by` takes `read_time` and defaults to
 newest first, and pages are 50 by default, 500 at most, with a
@@ -357,9 +352,8 @@ query-bound token good for 10 minutes. `read_time` is the hub-adjusted
 read time and `received_time` breaks equal-time ties; readings have no
 `id`, `create_time` or `update_time`.
 
-`ListIntegrations` needs `READ` (02d). Until a later row-12 slice
-brings caller scopes, only a `LOCAL_USER` principal (the admin socket)
-holds it. The store holds the configured integrations the `github:`
+`ListIntegrations` needs `READ` (02d). The store holds the configured
+integrations the `github:`
 keys of fleetd.yaml created (no `CreateIntegration` call):
 `ListIntegrations` serves the 02c Integration filter (`id`, `health`,
 `provider`, `create_time`, `update_time`); `order_by` takes `name`
@@ -369,9 +363,8 @@ is the boot ensure and `update_time` the last spec or status write, so
 it moves on every sync round; the `status` is the syncer's passthrough
 and stays empty until the sync loop reports.
 
-`GetSettings` and `ListSettings` need `READ` (02d). Until a later
-row-12 slice brings caller scopes, only a `LOCAL_USER` principal (the
-admin socket) holds it. The store holds one row per settings layer
+`GetSettings` and `ListSettings` need `READ` (02d). The store holds one row
+per settings layer
 the owner wrote (`settings_layers`): the `fleet` defaults with the
 hub's own choices, and each machine's layer the import or the enroll
 stored (no `group/` row exists until the group management row lands).
@@ -384,20 +377,16 @@ the id as `fleet`, `group` or `machine`); `order_by` takes `name`
 `update_time` its last; the `status` carries that stamp, and the
 delivery generations stay unset until the daemon computes them.
 
-`ListAuditEntries` needs `READ` (02d). Until a later row-12 slice
-brings caller scopes, only a `LOCAL_USER` principal (the admin socket)
-holds it. The store holds the permanent audit rows every hub write
-appended (`audit_log`): `ListAuditEntries` serves the 02c AuditEntry
+`ListAuditEntries` needs `READ` (02d). The store holds permanent audit rows
+appended by hub writes (`audit_log`): `ListAuditEntries` serves the 02c AuditEntry
 filter (`actor`, `action`, `target`, `machine`, `goal`, `command`);
 `order_by` takes only `ct` and defaults to `ct desc`; pages are 50 by
 default, 500 at most, with a query-bound token good for 10 minutes.
 Entries are immutable: `version` is always 1 and `update_time` equals
 `create_time`.
 
-`GetStoreStatus` needs `ADMIN` (02d). Until a later row-12 slice
-brings caller scopes, only a `LOCAL_USER` principal (the admin socket)
-holds it, and in `local_trusted` mode the local approval secret as
-well (ADR 0032). It serves the hub's own storage in one message:
+`GetStoreStatus` needs `ADMIN` (02d) and the local approval secret in
+`local_trusted` mode (ADR 0032). It serves the hub's own storage in one message:
 `state.db` with its file size and migrated schema version, the newest
 published backup with its stamp, size, clear-or-encrypted kind and
 path, the free bytes on the state volume, and the hub's start and
@@ -405,9 +394,7 @@ build. `logs.db` has no entry until row 25 brings the file,
 `last_checkpoint_time` stays unset, and `last_backup_includes_logs`
 stays false.
 
-`GetFleetSummary` needs `READ|APPROVALS` (02d). Until a later row-12
-slice brings caller scopes, only a `LOCAL_USER` principal (the admin
-socket) holds it (`authorizeTriage`, like the triage reads). It counts
+`GetFleetSummary` needs `READ|APPROVALS` (02d). It counts
 working (`STARTING`, `START_UNKNOWN`, `RUNNING`, `STOPPED`), waiting
 (`WAITING`, `COOLDOWN`, `VERIFYING`), stuck (`STUCK`, `PANE_LOST`) and
 limit-wait (`LIMIT_WAIT`) goals; `needs_you` counts `OPEN` items at or
@@ -418,9 +405,8 @@ verdict is `UNKNOWN`). Version is 1 and `update_time` is the read; slots,
 `accounts_wasting` and `dispatch_blocks` stay empty until the scheduler,
 pacing and slot rows land.
 
-`SnoozeTriageItem` and `DismissTriageItem` need `APPROVALS` (02d); until
-plan row 12 brings caller scopes only the local user holds it
-(`authorizeTriage`, like `authorizeApprovals`). Then, in 02b's order,
+`SnoozeTriageItem` and `DismissTriageItem` need `APPROVALS` (02d) and the
+local approval secret. Then, in 02b's order,
 the caller, the local approval secret in `local_trusted` mode, the
 fields, and the `request_id` replay inside the writer transaction (same
 principal, id and body replays the stored item for 24 h; anything else

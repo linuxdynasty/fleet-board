@@ -48,6 +48,9 @@ func (f *Fleet) GetOperation(ctx context.Context, req *connect.Request[hubv1.Get
 	if err != nil {
 		return nil, f.opFailed(ctx, actor, "store", err)
 	}
+	if err := quotaCheckpoint(ctx, quotaRead); err != nil {
+		return nil, err
+	}
 	return connect.NewResponse(&hubv1.GetOperationResponse{Operation: op}), nil
 }
 

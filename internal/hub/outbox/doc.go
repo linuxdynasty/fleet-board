@@ -4,7 +4,11 @@
 // the Operation, and command_results holds each command's first result.
 //
 // [Enqueue] runs inside the writer job of the decision that caused the
-// command and is a no-op for a known command_id; the caller hands the
+// command. Its optional checkpoint runs after validation and before a new
+// row or a successful replay; it is a no-op for a known command_id.
+// [CheckEnqueue] runs the same caller-error checks without a write when a
+// decision needs to validate its command before its own first state change.
+// The caller hands the
 // committed [Op] to [Service.Notify]. [Service.Run] is the one sender: once
 // a machine's Snapshot of its current epoch committed ([Service.Ready],
 // called through the gateway's ready seam), it reads that machine's pending

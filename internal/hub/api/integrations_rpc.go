@@ -156,7 +156,8 @@ func (f *Fleet) UpdateIntegration(ctx context.Context, req *connect.Request[hubv
 	}
 	now := f.hubNow()
 	patch, paths := m.GetIntegration().GetSpec(), m.GetUpdateMask().GetPaths()
-	stored, err := statedb.UpdateIntegrationSpec(ctx, f.store, statedb.UpdateIntegrationOp{
+	writeCtx := statedb.WithValidatedWrite(ctx, func() error { return quotaCheckpoint(ctx, quotaWrite) })
+	stored, err := statedb.UpdateIntegrationSpec(writeCtx, f.store, statedb.UpdateIntegrationOp{
 		ConfigWrite: statedb.ConfigWrite{
 			Principal: actor, RequestID: m.GetRequestId(),
 			RequestHash: sum, Actor: actorOf(who), Now: now,

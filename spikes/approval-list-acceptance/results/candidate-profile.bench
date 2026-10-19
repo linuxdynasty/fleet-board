@@ -1,0 +1,7 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/linuxdynasty/fleet-board/internal/hub/approvals
+cpu: Apple M4 Pro
+BenchmarkListProbe/Candidate-12         	      20	 268297321 ns/op	  16424158 callback-ns/op	 2158354 B/op	   31245 allocs/op
+PASS
+ok  	github.com/linuxdynasty/fleet-board/internal/hub/approvals	6.715s

@@ -1,0 +1,32 @@
+File: api.test
+Type: cpu
+Time: 2026-10-18 19:46:28 EDT
+Duration: 20.42s, Total samples = 670ms ( 3.28%)
+Showing nodes accounting for 670ms, 100% of 670ms total
+Showing top 25 nodes out of 376
+      flat  flat%   sum%        cum   cum%
+     240ms 35.82% 35.82%      240ms 35.82%  syscall.rawsyscalln
+     190ms 28.36% 64.18%      190ms 28.36%  runtime.pthread_cond_signal
+      40ms  5.97% 70.15%       40ms  5.97%  runtime.pthread_cond_wait
+      30ms  4.48% 74.63%       30ms  4.48%  runtime.kevent
+      30ms  4.48% 79.10%       30ms  4.48%  runtime.madvise
+      10ms  1.49% 80.60%       10ms  1.49%  modernc.org/libc.(*TLS).Alloc
+      10ms  1.49% 82.09%       10ms  1.49%  modernc.org/sqlite/lib._sqlite3MemMalloc
+      10ms  1.49% 83.58%      200ms 29.85%  modernc.org/sqlite/lib._sqlite3VdbeExec
+      10ms  1.49% 85.07%       10ms  1.49%  modernc.org/sqlite/lib._whereLoopAddBtreeIndex
+      10ms  1.49% 86.57%       10ms  1.49%  modernc.org/sqlite/lib._yy_find_shift_action
+      10ms  1.49% 88.06%       10ms  1.49%  modernc.org/sqlite/lib._yy_shift
+      10ms  1.49% 89.55%       10ms  1.49%  runtime.(*heapStatsDelta).merge
+      10ms  1.49% 91.04%       10ms  1.49%  runtime.(*unwinder).resolveInternal
+      10ms  1.49% 92.54%       10ms  1.49%  runtime.mallocgcSmallScanNoHeaderSC5
+      10ms  1.49% 94.03%       10ms  1.49%  runtime.memclrNoHeapPointers
+      10ms  1.49% 95.52%       10ms  1.49%  runtime.memmove
+      10ms  1.49% 97.01%       10ms  1.49%  runtime.scanObject
+      10ms  1.49% 98.51%       10ms  1.49%  runtime.usleep
+      10ms  1.49%   100%       10ms  1.49%  slices.Collect[go.shape.string]
+         0     0%   100%       90ms 13.43%  _.goready.func1
+         0     0%   100%       10ms  1.49%  bufio.(*Reader).Peek
+         0     0%   100%       10ms  1.49%  bufio.(*Reader).fill
+         0     0%   100%       30ms  4.48%  bufio.(*Writer).Flush
+         0     0%   100%       20ms  2.99%  bytes.(*Buffer).WriteTo
+         0     0%   100%       20ms  2.99%  compress/flate.(*compressor).init

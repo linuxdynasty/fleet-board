@@ -73,6 +73,9 @@ func (f *Fleet) GetStoreStatus(ctx context.Context, req *connect.Request[hubv1.G
 	if !ok {
 		return nil, f.storeFailed(ctx, actor, "disk", errors.New("api: the free space on the state volume is unknown"))
 	}
+	if err := quotaCheckpoint(ctx, quotaRead); err != nil {
+		return nil, err
+	}
 	return connect.NewResponse(&hubv1.GetStoreStatusResponse{Status: &hubv1.StoreStatus{
 		Databases: []*hubv1.DatabaseStatus{{
 			Name:          statedb.FileName,

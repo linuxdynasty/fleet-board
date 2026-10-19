@@ -18,20 +18,10 @@ import (
 	"github.com/linuxdynasty/fleet-board/internal/hub/statedb"
 )
 
-// authorizeChangeRequests admits the caller for ListChangeRequests and
-// GetChangeRequest (02d: READ). Until a later row-12 slice brings caller
-// scopes, that is only the local user, who maps to OWNER and covers READ.
+// authorizeChangeRequests admits the checked admin user or local TCP owner
+// for ListChangeRequests and GetChangeRequest (02d: READ).
 func authorizeChangeRequests(ctx context.Context) (*typev1.Principal, error) {
-	p := PrincipalFrom(ctx)
-	if p.GetId().GetValue() == "" {
-		return nil, apiError(connect.CodeUnauthenticated, typev1.ReasonCode_REASON_CODE_CREDENTIALS_INVALID,
-			"no caller identity", nil, nil)
-	}
-	if p.GetKind() != typev1.PrincipalKind_PRINCIPAL_KIND_LOCAL_USER {
-		return nil, apiError(connect.CodePermissionDenied, typev1.ReasonCode_REASON_CODE_SCOPE_MISSING,
-			"this call needs the READ scope", map[string]string{"scope": "READ"}, nil)
-	}
-	return p, nil
+	return authorizeScope(ctx, "READ")
 }
 
 // ListChangeRequests lists the synced provider mirrors (02k): the change
@@ -72,6 +62,19 @@ func (f *Fleet) ListChangeRequests(ctx context.Context, req *connect.Request[hub
 		size = 500
 	}
 	now := f.hubNow()
+	want := changeRequestQueryHash(m.GetFilter(), m.GetOrderBy(), size)
+	var cursor changeRequestCursor
+	if m.GetPageToken() != "" {
+		cursor, err = parseChangeRequestToken(m.GetPageToken(), want, len(order), now)
+		if err != nil {
+			return nil, f.changeRequestReadRefused(ctx, apiError(connect.CodeInvalidArgument,
+				typev1.ReasonCode_REASON_CODE_PAGE_TOKEN_INVALID, "bad page_token", nil,
+				[]*typev1.FieldViolation{{Field: "page_token", Description: "bad page_token"}}))
+		}
+	}
+	if err := quotaCheckpoint(ctx, quotaRead); err != nil {
+		return nil, err
+	}
 	rows, err := statedb.ListChangeRequestRows(ctx, f.store)
 	if err != nil {
 		return nil, f.changeRequestReadFailed(ctx, actor, "store", err)
@@ -91,15 +94,8 @@ func (f *Fleet) ListChangeRequests(ctx context.Context, req *connect.Request[hub
 		}
 	}
 	sortChangeRequestViews(matched, order)
-	want := changeRequestQueryHash(m.GetFilter(), m.GetOrderBy(), size)
 	start := 0
 	if m.GetPageToken() != "" {
-		cursor, err := parseChangeRequestToken(m.GetPageToken(), want, len(order), now)
-		if err != nil {
-			return nil, f.changeRequestReadRefused(ctx, apiError(connect.CodeInvalidArgument,
-				typev1.ReasonCode_REASON_CODE_PAGE_TOKEN_INVALID, "bad page_token", nil,
-				[]*typev1.FieldViolation{{Field: "page_token", Description: "bad page_token"}}))
-		}
 		start = sort.Search(len(matched), func(i int) bool {
 			return changeRequestKeyAfter(matched[i], order, cursor.key, cursor.id)
 		})
@@ -156,6 +152,9 @@ func (f *Fleet) GetChangeRequest(ctx context.Context, req *connect.Request[hubv1
 	w, err := changeRequestProto(v)
 	if err != nil {
 		return nil, f.changeRequestReadFailed(ctx, actor, "store", err)
+	}
+	if err := quotaCheckpoint(ctx, quotaRead); err != nil {
+		return nil, err
 	}
 	return connect.NewResponse(&hubv1.GetChangeRequestResponse{ChangeRequest: w}), nil
 }

@@ -1,0 +1,33 @@
+Working directory: /Volumes/Development/personal-repos/fleet-board-worktrees/drive-40-approval-list-acceptance
+Commit: 45c4ba3a07d9c711150a64b00506e7bbc765ca55
+Overlay: /var/folders/9z/l8tldrc54xqfnvbrgcvyr2pc0000gn/T/fleet-approval-acceptance-j33jzvlg/overlay.json
+Profile directory: /var/folders/9z/l8tldrc54xqfnvbrgcvyr2pc0000gn/T/fleet-approval-acceptance-j33jzvlg
+
+make gen
+exit 0
+CGO_ENABLED=0 go test -overlay=/var/folders/9z/l8tldrc54xqfnvbrgcvyr2pc0000gn/T/fleet-approval-acceptance-j33jzvlg/overlay.json -run '^TestListProbeParity$' -count=1 ./internal/hub/approvals
+exit 0, parity.txt
+CGO_ENABLED=0 go test -overlay=/var/folders/9z/l8tldrc54xqfnvbrgcvyr2pc0000gn/T/fleet-approval-acceptance-j33jzvlg/overlay.json -run '^$' -bench '^BenchmarkListProbe$' -benchtime=1x -count=1 -benchmem ./internal/hub/approvals
+exit 0, cold-process.txt
+CGO_ENABLED=0 go test -overlay=/var/folders/9z/l8tldrc54xqfnvbrgcvyr2pc0000gn/T/fleet-approval-acceptance-j33jzvlg/overlay.json -run '^$' -bench '^BenchmarkListProbe$' -benchtime=3x -count=10 -benchmem ./internal/hub/approvals
+exit 0, paired.txt
+FLEET_PROBE_REVERSE=1 CGO_ENABLED=0 go test -overlay=/var/folders/9z/l8tldrc54xqfnvbrgcvyr2pc0000gn/T/fleet-approval-acceptance-j33jzvlg/overlay.json -run '^$' -bench '^BenchmarkListProbe$' -benchtime=3x -count=10 -benchmem ./internal/hub/approvals
+exit 0, reverse.txt
+CGO_ENABLED=0 go test -overlay=/var/folders/9z/l8tldrc54xqfnvbrgcvyr2pc0000gn/T/fleet-approval-acceptance-j33jzvlg/overlay.json -run '^$' -bench '^BenchmarkListProbe/Baseline$' -benchtime=20x -count=1 -benchmem -cpuprofile=/var/folders/9z/l8tldrc54xqfnvbrgcvyr2pc0000gn/T/fleet-approval-acceptance-j33jzvlg/baseline-cpu.pprof -memprofile=/var/folders/9z/l8tldrc54xqfnvbrgcvyr2pc0000gn/T/fleet-approval-acceptance-j33jzvlg/baseline-heap.pprof -mutexprofile=/var/folders/9z/l8tldrc54xqfnvbrgcvyr2pc0000gn/T/fleet-approval-acceptance-j33jzvlg/baseline-mutex.pprof -mutexprofilefraction=1 ./internal/hub/approvals
+exit 0, baseline-profile.bench
+CGO_ENABLED=0 go test -overlay=/var/folders/9z/l8tldrc54xqfnvbrgcvyr2pc0000gn/T/fleet-approval-acceptance-j33jzvlg/overlay.json -run '^$' -bench '^BenchmarkListProbe/Candidate$' -benchtime=20x -count=1 -benchmem -cpuprofile=/var/folders/9z/l8tldrc54xqfnvbrgcvyr2pc0000gn/T/fleet-approval-acceptance-j33jzvlg/candidate-cpu.pprof -memprofile=/var/folders/9z/l8tldrc54xqfnvbrgcvyr2pc0000gn/T/fleet-approval-acceptance-j33jzvlg/candidate-heap.pprof -mutexprofile=/var/folders/9z/l8tldrc54xqfnvbrgcvyr2pc0000gn/T/fleet-approval-acceptance-j33jzvlg/candidate-mutex.pprof -mutexprofilefraction=1 ./internal/hub/approvals
+exit 0, candidate-profile.bench
+/Users/linuxdynasty/go/bin/benchstat spikes/approval-list-acceptance/results/baseline.bench spikes/approval-list-acceptance/results/candidate.bench
+exit 0, benchstat.txt
+
+go tool pprof -top -nodecount=15 BASELINE_OR_CANDIDATE-cpu.pprof
+exit 0 for both, corresponding *-cpu-top.txt
+go tool pprof -top -alloc_space -nodecount=15 BASELINE_OR_CANDIDATE-heap.pprof
+exit 0 for both, corresponding *-heap-top.txt
+go tool pprof -top -nodecount=15 BASELINE_OR_CANDIDATE-mutex.pprof
+exit 0 for both, corresponding *-mutex-top.txt
+
+The first two overlay attempts used a symlink path rather than the canonical
+/Volumes/Development path. Both exited 0 with '[no tests to run]' and were
+rejected as non-evidence. The canonical overlay parity command above ran the
+test and passed.

@@ -119,6 +119,12 @@ rate_limits: {read: 600, write: 120, unauthenticated: 30, metrics: 60}   # per m
 telemetry: {}                  # the keys of 05b section 5
 ```
 
+`rate_limits` applies to the local TCP API and `/metrics`. Read and write
+budgets belong to the fixed local owner; public `GetServerInfo` and metrics
+budgets use the connection's peer IP. API and metrics listeners share these
+counters. The admin socket has no TCP quota. [02b](02b-hub-api.md) defines
+charging and error order.
+
 The file is read strictly: an unknown key, a second YAML document or a value of
 the wrong type refuses the start, naming the key. A key whose feature this build
 does not have yet is either refused as "not built yet" or loaded with no effect

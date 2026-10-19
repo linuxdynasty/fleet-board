@@ -211,6 +211,9 @@ func UpdateIntegrationSpec(ctx context.Context, s *store.Store, in UpdateIntegra
 	err := s.Write(ctx, func(tx *sql.Tx) error {
 		if row, err := configReplay(jctx, tx, in.ConfigWrite, configKindIntegration); err != nil || row != nil {
 			if err == nil {
+				if err := validatedWrite(jctx); err != nil {
+					return err
+				}
 				// The status replays from the log, not the row: the
 				// syncer may have moved it after the original call.
 				out = replayIntegration(in.ID, row)
@@ -226,6 +229,9 @@ func UpdateIntegrationSpec(ctx context.Context, s *store.Store, in UpdateIntegra
 		}
 		merged, label, err := in.Merge(current)
 		if err != nil {
+			return err
+		}
+		if err := validatedWrite(jctx); err != nil {
 			return err
 		}
 		st, err := NextStamp(jctx, tx, in.Now)

@@ -215,12 +215,12 @@ type listener struct {
 // them all down (which removes admin.sock) and waits for every goroutine it
 // started.
 func serve(ctx context.Context, cfg *config.Config, opts Options, d hubDeps, s *session) error {
-	ls, agent, err := bind(ctx, cfg, opts, d, s)
+	sysLoop := newSystemLoop(d.st, cfg.StateDir, s.tel.Tracer(system.Scope))
+	ls, agent, fleet, err := bind(ctx, cfg, opts, d, sysLoop, s)
 	if err != nil {
 		return s.fail(ReasonListen, err)
 	}
 	agent.RecordStates(ctx, d.swept)
-	sysLoop := newSystemLoop(d.st, cfg.StateDir, s.tel.Tracer(system.Scope))
 	hk, err := housekeeping.New(housekeeping.Options{Now: opts.Now, Telemetry: s.tel}, housekeeping.Job{
 		Name: "machine_state", Every: housekeeping.TickEvery, Run: agent.Housekeep,
 	}, housekeeping.Job{
@@ -253,9 +253,7 @@ func serve(ctx context.Context, cfg *config.Config, opts Options, d hubDeps, s *
 	if len(ls) > 2 {
 		addrs.Metrics = ls[2].ln.Addr()
 	}
-	admin, err := bindAdmin(cfg, opts, d.st, d.id, machineAdmin{
-		revoked: d.revoked, bye: agent.ByeMachine, closed: agent.Outbox().Closed,
-	}, agent.InstanceID(), sysLoop, s)
+	admin, err := bindAdmin(cfg, opts, fleet, s)
 	if err != nil {
 		for _, l := range ls {
 			_ = l.ln.Close() // the bind error is the one to report
@@ -398,7 +396,7 @@ func stopAll(ls []listener) error {
 
 // bind opens the agent, API and (when set) metrics listeners, in that
 // order, and returns the agent listener's server too.
-func bind(ctx context.Context, cfg *config.Config, opts Options, d hubDeps, s *session) ([]listener, *gateway.Server, error) {
+func bind(ctx context.Context, cfg *config.Config, opts Options, d hubDeps, sysLoop *system.Loop, s *session) ([]listener, *gateway.Server, *api.Fleet, error) {
 	// Row 9 stores the observed goals (03k): the snapshot and event
 	// appliers run in the stream's writer jobs.
 	now := time.Now
@@ -411,7 +409,20 @@ func bind(ctx context.Context, cfg *config.Config, opts Options, d hubDeps, s *s
 		EventAppliers: []ingest.EventApplier{observed.Applier{Now: now}},
 	})
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
+	}
+	fleet, err := api.NewFleet(api.FleetOptions{
+		Store: d.st, CACert: d.id.CACert, Telemetry: s.tel, Now: opts.Now,
+		StateDir: cfg.StateDir, LocalTrusted: cfg.Mode == "local_trusted",
+		Revoker: d.revoked, ByeMachine: agent.ByeMachine, OnCommandsClosed: agent.Outbox().Closed,
+		HubInstanceID: agent.InstanceID(), SystemLoop: sysLoop,
+	})
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	quotas, err := api.NewQuotas(cfg.RateLimits, s.tel, opts.Now)
+	if err != nil {
+		return nil, nil, nil, err
 	}
 	type want struct{ name, addr string }
 	wants := []want{{"agent", cfg.Listen.Agent}, {"api", cfg.Listen.API}}
@@ -429,20 +440,32 @@ func bind(ctx context.Context, cfg *config.Config, opts Options, d hubDeps, s *s
 		ln, err := lc.Listen(ctx, "tcp", w.addr)
 		if err != nil {
 			closeAll()
-			return nil, nil, fmt.Errorf("daemon: listen.%s %s: %w", w.name, w.addr, err)
+			return nil, nil, nil, fmt.Errorf("daemon: listen.%s %s: %w", w.name, w.addr, err)
 		}
 		addr, ok := ln.Addr().(*net.TCPAddr)
 		if !ok {
 			_ = ln.Close()
 			closeAll()
-			return nil, nil, fmt.Errorf("daemon: listen.%s %s: not a TCP address: %v", w.name, w.addr, ln.Addr())
+			return nil, nil, nil, fmt.Errorf("daemon: listen.%s %s: not a TCP address: %v", w.name, w.addr, ln.Addr())
 		}
 		port := addr.Port
 		l := listener{name: w.name, ln: ln, tls: w.name == "agent"}
 		if l.tls {
 			l.srv, l.flush = agent, agent.FlushAudit
+		} else if w.name == "api" {
+			l.srv, err = api.NewLocalServer(s.tel, port, fleet, quotas)
+			if err != nil {
+				_ = ln.Close()
+				closeAll()
+				return nil, nil, nil, err
+			}
 		} else {
-			l.srv = api.NewServer(s.tel, w.name, port)
+			l.srv, err = api.NewMetricsServer(s.tel, port, quotas)
+			if err != nil {
+				_ = ln.Close()
+				closeAll()
+				return nil, nil, nil, err
+			}
 		}
 		if opts.afterBind != nil {
 			opts.afterBind(l.name, l.srv)
@@ -450,5 +473,5 @@ func bind(ctx context.Context, cfg *config.Config, opts Options, d hubDeps, s *s
 		ls = append(ls, l)
 		s.tel.Logger.Info("hub.listener_opened", "listener", w.name, "port", port)
 	}
-	return ls, agent, nil
+	return ls, agent, fleet, nil
 }

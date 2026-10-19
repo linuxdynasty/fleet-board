@@ -52,7 +52,10 @@ parses flags and calls `Init`, `Run`, `EnrollToken`, `Backup` or `Restore`.
    rows_closed}`; `fleet_hub_machine_state` set through
    `gateway.Server.RecordStates` once the agent listener is built). A store
    failure refuses the start (`store_failed`).
-8. Binds the agent listener (`gateway.NewServer` with the store, the identity
+8. Builds one `FleetService` with the store, identity, revocation, outbox and
+   system-loop dependencies. The admin socket and local TCP API serve this
+   same instance. One quota table is shared by the API and optional metrics
+   listeners. Binds the agent listener (`gateway.NewServer` with the store, the identity
    and the revocation list: `Enroll`, and a revoked client certificate fails
    its handshake), then the API and optional metrics listeners (port 0 is allowed; the
    real port is logged), then `<state_dir>/admin.sock`: a socket already

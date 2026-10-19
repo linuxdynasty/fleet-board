@@ -52,9 +52,6 @@ var machineOrderFields = map[string]bool{"name": true, "ct": true, "last_seen_ti
 // (documented on ListMachinesRequest).
 var defaultMachineOrder = []orderTerm{{field: "name"}}
 
-// authorizeMachines admits the caller for ListMachines and GetMachine (02d:
-// READ). Until a later row-12 slice brings caller scopes, that is only the
-// local user, who maps to OWNER and covers READ.
 func nodeMatchesMachine(n *filterNode, r statedb.MachineRow) bool {
 	if n == nil {
 		return true

@@ -1,0 +1,24 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/linuxdynasty/fleet-board/internal/hub/approvals
+cpu: Apple M4 Pro
+BenchmarkListProbe-12         	       3	 277809861 ns/op	  26440445 callback-ns/op	 4318085 B/op	   62438 allocs/op
+BenchmarkListProbe-12         	       3	 274808945 ns/op	  22590667 callback-ns/op	 4313877 B/op	   62429 allocs/op
+BenchmarkListProbe-12         	       3	 282428472 ns/op	  30066458 callback-ns/op	 4312669 B/op	   62430 allocs/op
+BenchmarkListProbe-12         	       3	 274151139 ns/op	  21926958 callback-ns/op	 4313792 B/op	   62431 allocs/op
+BenchmarkListProbe-12         	       3	 275861444 ns/op	  23749375 callback-ns/op	 4308114 B/op	   62419 allocs/op
+BenchmarkListProbe-12         	       3	 278703764 ns/op	  26425680 callback-ns/op	 4313509 B/op	   62428 allocs/op
+BenchmarkListProbe-12         	       3	 274280042 ns/op	  22008931 callback-ns/op	 4311800 B/op	   62425 allocs/op
+BenchmarkListProbe-12         	       3	 278146944 ns/op	  25696694 callback-ns/op	 4311933 B/op	   62427 allocs/op
+BenchmarkListProbe-12         	       3	 270170736 ns/op	  18014597 callback-ns/op	 4309973 B/op	   62422 allocs/op
+BenchmarkListProbe-12         	       3	 272304403 ns/op	  20223556 callback-ns/op	 4316146 B/op	   62434 allocs/op
+BenchmarkListProbe-12          	       3	 278459458 ns/op	  26732431 callback-ns/op	 4322682 B/op	   62445 allocs/op
+BenchmarkListProbe-12          	       3	 277872056 ns/op	  26260806 callback-ns/op	 4324285 B/op	   62443 allocs/op
+BenchmarkListProbe-12          	       3	 276956972 ns/op	  24685972 callback-ns/op	 4316922 B/op	   62432 allocs/op
+BenchmarkListProbe-12          	       3	 281211403 ns/op	  29353028 callback-ns/op	 4324325 B/op	   62449 allocs/op
+BenchmarkListProbe-12          	       3	 278824278 ns/op	  26703694 callback-ns/op	 4309821 B/op	   62421 allocs/op
+BenchmarkListProbe-12          	       3	 278265014 ns/op	  26214972 callback-ns/op	 4316592 B/op	   62436 allocs/op
+BenchmarkListProbe-12          	       3	 273151792 ns/op	  21007722 callback-ns/op	 4317368 B/op	   62437 allocs/op
+BenchmarkListProbe-12          	       3	 280797917 ns/op	  29594903 callback-ns/op	 4320981 B/op	   62441 allocs/op
+BenchmarkListProbe-12          	       3	 278334278 ns/op	  26057528 callback-ns/op	 4313565 B/op	   62426 allocs/op
+BenchmarkListProbe-12          	       3	 275555945 ns/op	  23341584 callback-ns/op	 4317426 B/op	   62434 allocs/op

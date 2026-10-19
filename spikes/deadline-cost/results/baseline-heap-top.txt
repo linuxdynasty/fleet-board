@@ -1,0 +1,31 @@
+File: api.test
+Type: alloc_space
+Time: 2026-10-18 19:46:49 EDT
+Showing nodes accounting for 52.48MB, 85.36% of 61.48MB total
+Showing top 25 nodes out of 294
+      flat  flat%   sum%        cum   cum%
+   10.02MB 16.30% 16.30%    10.02MB 16.30%  compress/flate.newFastEnc (inline)
+    9.41MB 15.31% 31.61%     9.41MB 15.31%  compress/flate.(*fastGen).reset
+    7.68MB 12.49% 44.10%    20.86MB 33.93%  compress/flate.NewWriter
+    3.36MB  5.47% 49.57%     3.36MB  5.47%  compress/flate.(*fastGen).addBlock
+    2.66MB  4.33% 53.89%    13.18MB 21.44%  compress/flate.(*compressor).init
+    2.50MB  4.07% 57.97%     2.50MB  4.07%  runtime.mallocgc
+    2.06MB  3.36% 61.32%     2.06MB  3.36%  compress/flate.(*dictDecoder).init
+    1.64MB  2.66% 63.98%     1.64MB  2.66%  regexp/syntax.(*compiler).inst
+    1.50MB  2.44% 66.42%     1.50MB  2.44%  strings.genSplit
+    1.16MB  1.88% 68.31%     1.16MB  1.88%  runtime/pprof.StartCPUProfile
+    1.03MB  1.68% 69.99%     1.03MB  1.68%  google.golang.org/protobuf/internal/strs.(*Builder).grow (inline)
+    1.03MB  1.68% 71.67%     3.42MB  5.57%  modernc.org/libc/honnef.co/go/netdb.init.0
+       1MB  1.63% 73.29%        2MB  3.25%  connectrpc.com/connect.newHandlerConfig
+       1MB  1.63% 74.92%        1MB  1.63%  regexp/syntax.(*parser).newRegexp
+       1MB  1.63% 76.55%        1MB  1.63%  regexp/syntax.simplify1
+    0.89MB  1.45% 78.00%     0.89MB  1.45%  os.readFileContents
+    0.52MB  0.84% 78.84%     0.52MB  0.84%  net/http.init.func2
+    0.50MB  0.82% 79.66%     0.50MB  0.82%  runtime/pprof.(*profileBuilder).emitLocation
+    0.50MB  0.82% 80.47%     0.50MB  0.82%  bufio.NewReaderSize
+    0.50MB  0.82% 81.29%     1.51MB  2.45%  google.golang.org/protobuf/internal/impl.(*MessageInfo).makeCoderMethods
+    0.50MB  0.81% 82.10%     0.50MB  0.81%  google.golang.org/protobuf/internal/filedesc.(*Enum).unmarshalSeed
+    0.50MB  0.81% 82.92%     0.50MB  0.81%  compress/flate.newHuffmanEncoder (inline)
+    0.50MB  0.81% 83.73%     0.50MB  0.81%  os.(*File).readdir
+    0.50MB  0.81% 84.55%     1.01MB  1.64%  google.golang.org/protobuf/internal/filedesc.(*Message).unmarshalFull
+    0.50MB  0.81% 85.36%     0.50MB  0.81%  internal/bytealg.MakeNoZero
