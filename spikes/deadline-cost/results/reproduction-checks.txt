@@ -1,0 +1,12 @@
+Post-rebase historical reproduction checks; no new timed measurements.
+prepare.py baseline /tmp/fleet-deadline-historical-baseline: exit 0
+prepare.py candidate /tmp/fleet-deadline-historical-candidate: exit 0
+Both arms: original seven instrumented API files vs reproduction bytes: identical, exit 0
+Historical store identity vs main6ac9e9b6 and reachable API ancestry/source comparisons: exit 0
+CGO_ENABLED=0 go test -c -overlay=/tmp/fleet-deadline-historical-baseline/overlay.json -o /tmp/fleet-deadline-historical-baseline/api.test ./internal/hub/api: exit 0
+FLEET_DEADLINE_ARM=baseline /tmp/fleet-deadline-historical-baseline/api.test -test.run=^TestDeadlineCostProbeSemantics$ -test.count=1: exit 0
+CGO_ENABLED=0 go test -c -overlay=/tmp/fleet-deadline-historical-candidate/overlay.json -o /tmp/fleet-deadline-historical-candidate/api.test ./internal/hub/api: exit 0
+FLEET_DEADLINE_ARM=candidate /tmp/fleet-deadline-historical-candidate/api.test -test.run=^TestDeadlineCostProbeSemantics$ -test.count=1: exit 0
+Candidate overlay plus approval list probe mapping:
+CGO_ENABLED=0 go test -overlay=/tmp/fleet-deadline-historical-candidate/approval-overlay.json -run=^TestListProbeParity$ -count=1 ./internal/hub/approvals: exit 0
+summarize.py: exit 0; 20 five-call samples per arm and operation, original data unchanged

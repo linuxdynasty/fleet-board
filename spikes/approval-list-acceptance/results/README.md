@@ -3,8 +3,7 @@
 The actual `ValidateListInput` implementation at commit
 `45c4ba3a07d9c711150a64b00506e7bbc765ca55` passed the page and token
 parity check. That measured commit was later rebased. Reachable revision
-`7d8b2890a89f9ac35e0b2a7af7586a1eecc5a509` has identical approval, store,
-statedb and module objects (`git diff --exit-code OLD NEW -- PATHS`, exit 0).
+`a1ecb102dcbfccc2b5ad569fcfe3d71c9464316a` has identical approval, statedb and module objects (`git diff --exit-code OLD NEW -- PATHS`, exit 0).
 This identity check is not a new measurement. In this real SQLite writer fixture, its writer callback was 35.10%
 faster and allocated 49.89% fewer bytes than the old two-`List` path. The full
 `Store.Write` call was 3.20% faster because the writer normally waits up to
@@ -106,3 +105,12 @@ from this evidence folder.
 This acceptance evidence can accompany the approval quota source commit. It
 supports the validator before the lazy expiry write. It does not approve the
 full RPC/load budget; that requires a separate A50 test.
+
+
+The later base includes CommitWake; this original comparison used the store at
+reachable main revision `6ac9e9b6`. For exact historical reproduction, first run
+`spikes/deadline-cost/results/prepare.py candidate TEMP_DIR`, then add the list
+probe mapping described above to that overlay's Replace map. Its API-file
+mappings do not participate in the approvals-package test; its four store-file
+mappings restore the historical common store. The original measured Store.Write
+medians remain historical. Combined current-stack latency is NOT_CHECKED.

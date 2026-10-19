@@ -4,8 +4,8 @@ This probe compares the code before and after the fresh operation deadline
 repair. It is evidence for the coordinator's review, not a production edit.
 The baseline uses `session.go` and `session_create.go` from
 `deff9a6827c0688d4acb9e5f6f98d49990b37058`; the candidate uses those
-files from `4ffa40fa60dddbcb1c573d1df49e12e9862bd118`. Every other
-production source file comes from the candidate. The rebased reproduction
+files from `4ffa40fa60dddbcb1c573d1df49e12e9862bd118`. Other API source files come from the candidate. The common store is pinned
+to its measured historical source as explained below. The rebased reproduction
 revisions and exact object checks are in [source-identity.md](source-identity.md).
 `prepare.py` now uses those reachable, identical revisions. `prepare.py` applies the same
 temporary instrumentation to both arms through Go overlays; it never changes
@@ -123,3 +123,15 @@ This closes the isolated cost question for this correctness repair. A50 load,
 full concurrent traffic, Linux, cold OS cache, offline behavior and a production
 network are NOT_CHECKED. The wrong baseline fresh deadlines and the correct
 candidate fresh/stored/public-read values were checked explicitly in both arms.
+
+
+## Store version after the later rebase
+
+These samples used the store before CommitWake merged. Reproduction pins that
+historical store from reachable main revision `6ac9e9b6` in both arms, using
+temporary overlays for store.go, writer.go, doc.go and the later commit.go.
+The API replacements use reachable rebased source with identical measured bytes.
+CommitWake has separate [paired evidence](../../commitwake/README.md). It adds its
+nonblocking hint after COMMIT, outside this probe's callback timing boundary.
+Combined current-stack latency is NOT_CHECKED; the full RPC medians above remain
+historical isolated comparisons, not new measurements of the combined stack.

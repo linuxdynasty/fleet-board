@@ -27,3 +27,9 @@ source identities are recorded without claiming that the measurements reran.
 These are local, isolated comparisons. Full concurrent traffic, the A50 p99
 budget, Linux, cold OS cache and production network behavior are NOT_CHECKED.
 The evidence does not justify changing the store's durability or batch window.
+
+Both probes used the historical store at main revision `6ac9e9b6`. Their
+reproduction overlays pin that store after later rebases. CommitWake's separate
+paired evidence is linked from the deadline report; its hint follows COMMIT,
+outside the writer-callback measurement. Combined current-stack latency remains
+NOT_CHECKED, and the recorded full RPC medians remain historical comparisons.

@@ -9,8 +9,9 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[3]
 API = pathlib.Path("internal/hub/api")
-BASELINE = "40b8527405774aa189bef1c902c0bf2efa6d57a9"
-CANDIDATE = "7d8b2890a89f9ac35e0b2a7af7586a1eecc5a509"
+BASELINE = "7502ecd932ed1be243ba2d2be0922e5702a3451b"
+CANDIDATE = "a1ecb102dcbfccc2b5ad569fcfe3d71c9464316a"
+HISTORICAL_STORE = "6ac9e9b662aae4993831dbb9b2cbd966d8c6ceed"
 
 
 def source(rev: str, name: str) -> str:
@@ -101,6 +102,16 @@ def main() -> None:
         replacement = target / name
         replacement.write_text(body)
         overlay[str(actual)] = str(replacement)
+    # The measurements predate CommitWake. Reproduce that historical store
+    # while using reachable rebased API source; this is not a new measurement.
+    for name in ("store.go", "writer.go", "doc.go", "commit.go"):
+        relative = pathlib.Path("internal/store") / name
+        body = "package store\n" if name == "commit.go" else subprocess.check_output(
+            ["git", "show", f"{HISTORICAL_STORE}:{relative}"], cwd=ROOT, text=True
+        )
+        replacement = target / f"store-{name}"
+        replacement.write_text(body)
+        overlay[str(ROOT / relative)] = str(replacement)
     (target / "overlay.json").write_text(json.dumps({"Replace": overlay}, indent=2))
     print(target / "overlay.json")
 
