@@ -90,8 +90,46 @@ and the pane kept its process ID and continued printing after stop and restart.
 The program cleaned up its helper on SIGTERM; the helper was gone after both
 stop and restart. This checks the unit's kill behavior. The
 test program is [fleet-agent-stub.py](../../scripts/testdata/linux-agent-unit/fleet-agent-stub.py).
-The live test does not prove the real agent's own transient-child cleanup.
 
-Logout followed by an ONLINE reading, a hard-kill cleanup check, and the four
-named machine checks remain **NOT_CHECKED**. The whole #44 install and upgrade
-flow also remains **NOT_CHECKED**.
+A follow-up used the built, enrolled agent and an isolated tmux socket folder
+named in a VM-only `TMUX_TMPDIR` service drop-in. Its real `tmux -C` observer
+was a direct child of the agent in the same service control group. The
+[real-child test](../../scripts/test-linux-agent-real-child.py) checked the
+executable paths and process IDs, then stopped and restarted the service. Each
+old observer process was gone after stop or restart; a new observer appeared
+after start. The separate tmux server and pane kept running and the pane output
+advanced throughout. A second real agent was refused by the state-folder lock.
+The test resets systemd's start counter between quick test restarts; the start
+limit was checked separately above. To repeat this check, use a disposable VM
+named `fleet44unit` with an enrolled agent. Create a test-only socket and pane
+as that VM user, then set `TMUX_TMPDIR` only in a test drop-in:
+
+```sh
+test_root="$XDG_RUNTIME_DIR/fleet44-real-tmux"
+test_socket="$test_root/tmux-$(id -u)/default"
+mkdir -p "$test_root/tmux-$(id -u)" ~/.config/systemd/user/fleet-agent.service.d
+tmux -S "$test_socket" new-session -d -s fleet44-proof \
+  'while :; do date +%s; sleep 1; done'
+printf '[Service]\nEnvironment="TMUX_TMPDIR=%s"\n' "$test_root" \
+  > ~/.config/systemd/user/fleet-agent.service.d/90-fleet44-tmux.conf
+systemctl --user daemon-reload
+systemctl --user reset-failed fleet-agent.service
+systemctl --user start fleet-agent.service
+```
+
+Once the enrolled service is active, run:
+
+```sh
+FLEET44_DISPOSABLE_VM=yes \
+FLEET44_TEST_SOCKET="$XDG_RUNTIME_DIR/fleet44-real-tmux/tmux-$(id -u)/default" \
+python3 scripts/test-linux-agent-real-child.py
+```
+
+The test ends with the agent stopped and the pane running. Remove the test
+drop-in and socket only from that disposable VM after reviewing the proof.
+
+Other transient child kinds and a hard-killed agent's cleanup remain untested.
+
+Logout followed by an ONLINE reading and the four named machine checks remain
+**NOT_CHECKED**. The whole #44 install and upgrade flow also remains
+**NOT_CHECKED**.
