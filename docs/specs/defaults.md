@@ -194,6 +194,7 @@ spec change. "Decided here" marks a value no earlier document gave.
 | Idempotency record | 24 | h | [02b](02b-hub-api.md) | fixed |
 | Watch change log | at least 10 min or 100,000 changes | | [02c](02c-hub-watch-and-filters.md) | fixed |
 | `page_size` | 50 (max 500) | rows | 02b | per call |
+| `fleet` read command network budget | 30, cumulative across RPCs; `doctor` counts preflight but pauses for terminal entry | s | [02k](02k-v1-surface-and-cli.md) | fixed |
 | Rate limits (hub, per principal) | read 600, write 120, per peer without credentials 30, `/metrics` 60 | per min | 02b, decided here | `rate_limits.*` config |
 | Backup | nightly `VACUUM INTO` at 03:00 hub local time; keep the last 7 nightly copies (manual copies are never pruned); checked every 1 min; catch-up at start or wake when the newest nightly copy is older than 24 h or there is none; crashed backups' temporary files removed at start once older than 1 h; a stamp more than 10 min past the clock does not count as the newest | | ADR 0014; hour and count ADR 0024; check and catch-up [02j](02j-hub-runtime.md#state-directory) | fixed |
 | Log shipping pauses below; resumes above (free disk on the hub's `logs.db` volume) | 5; 8 | GiB | [03d](03d-triage-sessions-logs.md), ADR 0024 | fixed |

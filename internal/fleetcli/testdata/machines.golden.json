@@ -1,0 +1,49 @@
+{
+  "machines": [
+    {
+      "createTime": "\u003ctime\u003e",
+      "id": {
+        "value": "01jseedlap00000000000001"
+      },
+      "spec": {
+        "displayName": "laptop",
+        "drain": {}
+      },
+      "status": {
+        "hostname": "laptop.lan",
+        "hubSeq": "10",
+        "installId": "cli-seed-install",
+        "observedTime": "\u003ctime\u003e",
+        "os": "darwin",
+        "policyHash": "cli-seed",
+        "state": "MACHINE_STATE_STALE",
+        "telemetry": {
+          "agentHealth": {},
+          "lastSeenTime": "\u003ctime\u003e",
+          "load1": 0.5
+        }
+      },
+      "updateTime": "\u003ctime\u003e",
+      "version": "1"
+    },
+    {
+      "createTime": "\u003ctime\u003e",
+      "id": {
+        "value": "01jseedsrv00000000000002"
+      },
+      "spec": {
+        "displayName": "server",
+        "drain": {}
+      },
+      "status": {
+        "hostname": "server.lan",
+        "hubSeq": "5",
+        "installId": "cli-seed-server-install",
+        "observedTime": "\u003ctime\u003e",
+        "state": "MACHINE_STATE_ENROLLED"
+      },
+      "updateTime": "\u003ctime\u003e",
+      "version": "1"
+    }
+  ]
+}

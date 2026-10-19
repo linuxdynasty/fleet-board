@@ -1,0 +1,23 @@
+{
+  "accounts": [
+    {
+      "createTime": "\u003ctime\u003e",
+      "id": {
+        "value": "cli-account"
+      },
+      "spec": {
+        "displayName": "test account",
+        "mode": "ACCOUNT_MODE_INTERACTIVE_ONLY"
+      },
+      "status": {
+        "harness": {
+          "name": "codex"
+        },
+        "origin": "ACCOUNT_ORIGIN_OWNER_CREATED",
+        "provider": "openai"
+      },
+      "updateTime": "\u003ctime\u003e",
+      "version": "1"
+    }
+  ]
+}

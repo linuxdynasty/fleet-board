@@ -1,0 +1,28 @@
+{
+  "machine": {
+    "createTime": "\u003ctime\u003e",
+    "id": {
+      "value": "01jseedlap00000000000001"
+    },
+    "spec": {
+      "displayName": "laptop",
+      "drain": {}
+    },
+    "status": {
+      "hostname": "laptop.lan",
+      "hubSeq": "10",
+      "installId": "cli-seed-install",
+      "observedTime": "\u003ctime\u003e",
+      "os": "darwin",
+      "policyHash": "cli-seed",
+      "state": "MACHINE_STATE_STALE",
+      "telemetry": {
+        "agentHealth": {},
+        "lastSeenTime": "\u003ctime\u003e",
+        "load1": 0.5
+      }
+    },
+    "updateTime": "\u003ctime\u003e",
+    "version": "1"
+  }
+}
