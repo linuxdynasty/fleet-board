@@ -122,7 +122,7 @@ func TestEncodeRejectsUnknownWireFields(t *testing.T) {
 			if tc.name == "root" {
 				tc.config.ProtoReflect().SetUnknown([]byte{0xa0, 0x06, 0x01})
 			} else {
-				tc.config.Groups[0].ProtoReflect().SetUnknown([]byte{0xa0, 0x06, 0x01})
+				tc.config.GetGroups()[0].ProtoReflect().SetUnknown([]byte{0xa0, 0x06, 0x01})
 			}
 			if _, err := Encode(tc.config); err == nil {
 				t.Fatal("Encode accepted unknown protobuf fields")

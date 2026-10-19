@@ -7,6 +7,7 @@ are sorted. Lists keep their order, 64-bit integers stay quoted, and optional
 false or zero values stay present. The parser accepts protobuf field names and
 JSON aliases, with one spelling per field.
 
+Trailing comments are allowed after the single document.
 The parser accepts one mapping document and rejects unknown fields, duplicate
 fields, unsupported YAML tags, anchors, aliases, and YAML-specific number
 forms. The [limits](../../docs/specs/defaults.md#offline-fleetconfig-yaml)

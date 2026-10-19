@@ -40,9 +40,9 @@ func TestNodeCountBoundary(t *testing.T) {
 	if _, err := fleetconfig.Decode([]byte(inside + "  - {}\n")); err == nil {
 		t.Fatal("100001 nodes were accepted")
 	}
-	groups := make([]*hubv1.GroupConfig, 99995)
-	for i := range groups {
-		groups[i] = &hubv1.GroupConfig{}
+	groups := make([]*hubv1.GroupConfig, 0, 99995)
+	for range 99995 {
+		groups = append(groups, &hubv1.GroupConfig{})
 	}
 	if _, err := fleetconfig.Encode(&hubv1.FleetConfig{FormatVersion: 1, Groups: groups}); err != nil {
 		t.Fatalf("Encode rejected 100000 nodes: %v", err)
@@ -85,10 +85,10 @@ func TestDepthBoundary(t *testing.T) {
 func TestDurationCountsAsOneYAMLScalar(t *testing.T) {
 	// The five root nodes plus three nodes per routine (mapping, key,
 	// duration scalar) stay below the 100000-node bound at 33331.
-	routines := make([]*hubv1.RoutineSpec, 33331)
+	routines := make([]*hubv1.RoutineSpec, 0, 33331)
 	duration := durationpb.New(time.Second)
-	for i := range routines {
-		routines[i] = &hubv1.RoutineSpec{BlockedAfter: duration}
+	for range 33331 {
+		routines = append(routines, &hubv1.RoutineSpec{BlockedAfter: duration})
 	}
 	if _, err := fleetconfig.Encode(&hubv1.FleetConfig{FormatVersion: 1, Routines: routines}); err != nil {
 		t.Fatalf("Encode overcounted duration internals: %v", err)

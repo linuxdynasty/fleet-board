@@ -71,7 +71,7 @@ func Decode(input []byte) (*hubv1.FleetConfig, error) {
 		return nil, errors.New("fleet config: invalid YAML")
 	}
 	var extra yaml.Node
-	if err := decoder.Decode(&extra); err != io.EOF {
+	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
 		return nil, errors.New("fleet config: expected one document")
 	}
 	if len(document.Content) != 1 || document.Content[0].Kind != yaml.MappingNode {
