@@ -84,8 +84,12 @@ Cursor created one empty workspace folder under `~/.cursor/projects/`; it was
 removed and the listing matches the baseline. `~/.codex/config.toml` and
 Muse's `trust.json`/`settings.json` kept their baselined checksums.
 `~/.claude.json` (checksummed, never opened) changed under the Claude start's
-own bookkeeping — the same class as the Codex counter bump in 01b, left as
-is. OpenCode touched only its own run state (`opencode.db`/log), left as is.
+own bookkeeping — the same class as the Codex counter bump in 01b. It was left
+as is, and restoration is now impossible: the baselined scratch copies were
+deleted during cleanup, and overwriting the owner's live state file blind (its
+contents were never read) would risk owner state for no verified gain. Its
+mtime is unchanged since the probe window, so nothing newer was disturbed.
+OpenCode touched only its own run state (`opencode.db`/log), left as is.
 No auth file was opened; raw captures were deleted.
 
 Still open, unchanged: the Claude Code plain-parent cell and the Codex
