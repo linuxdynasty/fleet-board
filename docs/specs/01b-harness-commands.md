@@ -85,12 +85,13 @@ The OpenCode adapter (`internal/harness/opencode`, row 8, issue #36)
 does the same: the table's own examples keep their class (`/status` and
 `/diff` observe, `/review` review, `/exit` destructive) and every other
 recorded command is deny. OpenCode has no `/usage` command and no native
-`/goal`, so neither classifies. The verdicts cover all 17 names in the
-recorded 1.18.34 and 1.19.0 catalogs
+`/goal`, so neither classifies. The verdicts cover all 19 names in the
+recorded 1.18.34, 1.19.0 and 1.19.3 catalogs
 (`testdata/1.18.34/tui-slash-menu-catalog.tsv`,
-`testdata/1.19.0/tui-slash-menu-catalog.tsv`, byte-identical); the
-catalog test fails when a later catalog adds a name with no reviewed
-expectation.
+`testdata/1.19.0/tui-slash-menu-catalog.tsv`, byte-identical, plus
+`testdata/1.19.3/tui-slash-menu-catalog.tsv`, which adds `/update` and
+`/variants`, both deny as unprobed); the catalog test fails when a later
+catalog adds a name with no reviewed expectation.
 
 ## Usage parsers (D2)
 
@@ -152,7 +153,7 @@ Probed 2026-10-01 on OpenCode 1.18.30.
   The parser never splits the model from the provider by guessing; the probe
   matches the selection against the providers list. A screen with no stats
   table or no credentials count fails with no numbers; anything less than a
-  full read is partial. Versions 1.18.34 and 1.19.0 are `UNVERIFIED_PARSING`
+  full read is partial. Versions 1.18.34, 1.19.0 and 1.19.3 are `UNVERIFIED_PARSING`
   with `USAGE`, `IDENTITY` and `READY` fixture-verified (fixtures in
   `internal/harness/opencode/testdata/`); the `model · provider[ · variant]`
   order was checked against the 1.19.0 binary itself, and the agent-first
