@@ -84,7 +84,21 @@ func TestObserverSummaryTimeoutKeepsLoopAlive(t *testing.T) {
 				time.Sleep(200 * time.Millisecond)
 			}
 			// The edge went out and the loop stayed up: the summary was
-			// skipped for its failed capture, counted, never emitted.
+			// skipped for its failed capture, counted, never emitted. The
+			// edge is recorded before its capture finishes, so await the
+			// count instead of asserting it the moment the edge appears:
+			// on a fast tick the poll otherwise lands inside the 300 ms
+			// capture window and reads 0 (CI red from exactly this).
+			settle := time.Now().Add(5 * time.Second)
+			for {
+				if n := r.count(t, "fleet_agent_tmux_pane_summaries_total", `server_kind="default"`, `result="capture_failed"`); n >= 1 {
+					break
+				}
+				if time.Now().After(settle) {
+					t.Fatalf("capture never settled after the idle edge; loop may be frozen past the bound")
+				}
+				time.Sleep(100 * time.Millisecond)
+			}
 			if n := r.count(t, "fleet_agent_tmux_pane_summaries_total", `server_kind="default"`, `result="capture_failed"`); n < 1 {
 				t.Errorf("pane_summaries_total{server_kind=default,result=capture_failed} = %d, want at least 1", n)
 			}
