@@ -30,6 +30,7 @@ the next started; the owner has approved the plan and implementation follows it.
 | 2j | [02j-hub-runtime.md](02j-hub-runtime.md) | Which listeners and ports does fleetd open, where do its configuration and state live, and how does an owner set up a fresh hub? | Accepted |
 | 2k | [02k-v1-surface-and-cli.md](02k-v1-surface-and-cli.md) | Which release serves each RPC and Watch topic, which PR builds it, and what each program's commands are? | Accepted |
 | 2m | [02m-hub-api-actions-and-audit.md](02m-hub-api-actions-and-audit.md) | Part 2 of the hub API: routines, goal dispatch and control, stored logs, accounts, config export and import, audit actions | Accepted |
+| 2n | [02n-native-execution.md](02n-native-execution.md) | How does a disabled machine-side journal keep native ownership and uncertain external work across restart? What must later runtime work prove? | Journal slice; runtime open |
 | 3 | [03-workflows.md](03-workflows.md) (+ [03b](03b-usage-and-sync.md)–[03n](03n-reconnect.md)) | How do agent and hub cooperate for each flow (sequence, state machines, volumes, consistency)? | Accepted |
 | 4 | [04-technology-review.md](04-technology-review.md) + [`spikes/`](../../spikes/README.md) | Given the workflows, which storage, queueing and other technologies do we need? | Accepted |
 | 4b | [04b-hub-scrubber-cost.md](04b-hub-scrubber-cost.md) + [`internal/scrub`](../../internal/scrub/README.md) | What does the hub's secret scrubbing cost in CPU, at the caps and at the real message rates? | Accepted |

@@ -37,6 +37,10 @@ func Migrations() []store.Migration {
 		Version: 8,
 		Name:    "observed_episodes",
 		SQL:     observedEpisodesSQL,
+	}, {
+		Version: 9,
+		Name:    "native_journal",
+		SQL:     nativeJournalSQL,
 	}}
 }
 

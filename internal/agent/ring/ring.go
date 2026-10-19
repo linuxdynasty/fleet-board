@@ -12,6 +12,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -42,6 +43,12 @@ type Options struct {
 // DB is agent.db: one store with its single writer goroutine.
 type DB struct {
 	s *store.Store
+	// nativeSlot keeps a native write out of the next batch until the
+	// preceding native job's commit or rollback is known.
+	nativeSlot      chan struct{}
+	nativeClosed    chan struct{}
+	nativeCloseOnce sync.Once
+	nativeCloseErr  error
 	// unacked is [DB.UnackedCount]'s number.
 	unacked atomic.Int64
 }
@@ -71,7 +78,8 @@ func Open(ctx context.Context, dir string, opts Options) (*DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("ring: open agent.db: %w", err)
 	}
-	d := &DB{s: s}
+	d := &DB{s: s, nativeSlot: make(chan struct{}, 1), nativeClosed: make(chan struct{})}
+	d.nativeSlot <- struct{}{}
 	if err := d.mintInstallID(ctx, opts.Random, opts.Now()); err != nil {
 		return nil, errors.Join(err, s.Close())
 	}
@@ -84,8 +92,16 @@ func Open(ctx context.Context, dir string, opts Options) (*DB, error) {
 // SchemaVersion is the highest migration applied to agent.db.
 func (d *DB) SchemaVersion() int { return d.s.SchemaVersion() }
 
-// Close commits every queued write and closes the file.
-func (d *DB) Close() error { return d.s.Close() }
+// Close joins an unsettled native write, drains every queued store write,
+// and closes the file. Concurrent and repeated calls receive one outcome.
+func (d *DB) Close() error {
+	d.nativeCloseOnce.Do(func() {
+		close(d.nativeClosed)
+		<-d.nativeSlot
+		d.nativeCloseErr = d.s.Close()
+	})
+	return d.nativeCloseErr
+}
 
 // createPrivate makes an empty agent.db with mode 0600 before SQLite opens
 // it, so the file never exists with a wider mode. SQLite gives the -wal and
