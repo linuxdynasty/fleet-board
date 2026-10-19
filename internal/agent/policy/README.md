@@ -24,7 +24,9 @@ res := policy.Parse(data) // the strict parse alone: res.Policy or res.Problem
   file again. A different hash is `policy.changed` (log, counter, local audit
   row, `OnChange`). No timer reads the file; `Snapshot` and `Recheck` are the
   event-driven safety net. If the watch cannot be set, `WatchOff()` is true and
-  `policy.watch_off` is logged once.
+  `policy.watch_off` is logged once. Startup may lose a temporary child during
+  an editor rename even while the config folder exists. Snapshot still detects
+  the change, reports it once, and leaves the loaded policy unchanged.
 - The loaded policy never changes while the agent runs.
 - `Inspect(dir)` reads and judges the file with no side effect (no metric, log line or audit row): the one decision `Load` and `fleet-agent doctor` share. Doctor runs it fresh, so it works while the agent is down.
 - `WriteStarter(dir, repos)` writes the starter file for `fleet-agent enroll`

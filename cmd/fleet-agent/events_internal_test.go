@@ -64,7 +64,16 @@ func TestTheRunWiresSamplesAndPolicyChangesIntoTheEmitter(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer pol.close()
+	waitTrue(t, 20*time.Second, "policy watcher startup", func() bool {
+		return pol.mgr.Watching() || pol.mgr.WatchOff()
+	})
+	watchOff := pol.mgr.WatchOff()
 	writePolicy(t, s.cfg, "schema_version: \"1\"\nallowed_repo_roots: []\n")
+	if watchOff {
+		if err := pol.mgr.Snapshot(ctx, &agentv1.Snapshot{}); err != nil {
+			t.Fatal(err)
+		}
+	}
 	kinds := map[string]agentv1.DeliveryClass{}
 	end := time.Now().Add(30 * time.Second)
 	for len(kinds) < 2 && time.Now().Before(end) {
@@ -84,7 +93,7 @@ func TestTheRunWiresSamplesAndPolicyChangesIntoTheEmitter(t *testing.T) {
 	}
 	if kinds["resource_sample"] != agentv1.DeliveryClass_DELIVERY_CLASS_SHED ||
 		kinds["policy_changed"] != agentv1.DeliveryClass_DELIVERY_CLASS_NEVER_DROP {
-		t.Errorf("events seen %v, want a SHED resource_sample and a NEVER_DROP policy_changed", kinds)
+		t.Errorf("events seen %v (watch off at startup: %v), want a SHED resource_sample and a NEVER_DROP policy_changed", kinds, watchOff)
 	}
 }
 

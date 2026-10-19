@@ -16,6 +16,10 @@
 // to [Options.OnChange] (the seam row 7's policy_changed event reads) after it
 // counts it, logs it and writes the local audit row.
 //
+// Failed watch startup closes the partial watch. [Manager.Snapshot] remains
+// the change-detection fallback, including when an editor removes a temporary
+// child during directory registration. It does not reload the policy.
+//
 // [WriteStarter] writes the starter file `fleet-agent enroll` offers, never
 // over an existing one. [DefaultDir], [ResolveDir] and [EnsureDir] name and
 // make the config folder.

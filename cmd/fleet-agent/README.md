@@ -200,3 +200,7 @@ and `runAgent`.
 The logic is in `internal/agent/conn`. What the agent will do is specified
 in `docs/specs/01-agent-capabilities.md`; the build order is in
 `docs/plan/v1-implementation-plan.md` (plan row 4).
+
+The policy wiring test waits for watch startup before replacing the file. When
+startup reports watch-off, it exercises the documented Snapshot recheck; a live
+watch must deliver its change without that fallback.
