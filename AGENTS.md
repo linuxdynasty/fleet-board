@@ -35,10 +35,10 @@ stopping point. Report actual state; anything not checked is `NOT_CHECKED`.
 
 ## Product Principles
 
-1. **Pass-through.** Run harnesses exactly as the developer does. Never read,
-   store, copy or proxy harness credentials (auth files, keychains, `gh` tokens);
-   v1 edits no harness config (ADR 0024). The product never runs a harness
-   headless (`-p`). No root, no sandbox.
+1. **Qualified harness control.** Keep credentials in the worker's native
+   login; never read or move auth files, keychains or tokens. Native SDK or
+   `-p` starts disabled until qualified by version, auth/billing, approval and
+   deployment ([ADR 0033](docs/adr/0033-native-sessions-and-handoff.md)). Terminal control stays; v1 edits no harness config (ADR 0024). No root or added sandbox.
 2. **Never lose or double-run a goal.** Idempotent commands, the outbox, one
    writer per database, unique constraints behind every ownership rule.
 3. **Never waste or overspend quota.** Pacing and the reserve line decide
@@ -128,9 +128,8 @@ tier to the difficulty, cheapest first:
 | deep (escalation) | `develop-fleet-deep`, `debug-fleet-deep`, `perf-fleet-deep`, `review-fleet-deep` | concurrency, the single-writer store, the agent wire protocol, tmux control mode, or a fix the workhorse got wrong |
 | arbiter (escalation) | `arbiter-fleet` | design forks, disputed findings, waivers, irreversible acts; returns `RULING:` |
 
-`agent-roles.py codex-exec|muse-exec <role> <task>` runs a role headless for
-**development work on this repo only** (ADR 0024). Muse native role discovery
-is not qualified here; use `muse-exec`. The product never runs headless.
+`agent-roles.py codex-exec|muse-exec <role> <task>` runs a headless role for
+**development on this repo only**. Muse native role discovery is unqualified; use `muse-exec`. Product-native work follows ADR 0033.
 
 A subagent never changes its own model; leaf agents dispatch no others. Only the
 orchestrator runs the full local gate, once, before push. Task-to-skill map and
@@ -194,7 +193,8 @@ its replacement is proven to load.
   build and lint pass; phase (unfrozen or additive-only) stated.
 - Store or concurrency: single writer intact, no transaction across a network
   call. Telemetry added or `No-Observability-Change:` named.
-- No credential read, no headless `-p` in product code, no keys typed without the checks.
+- No credential read; native execution needs ADR 0033 qualification; no keys
+  typed without the checks.
 - Specs and docs updated; files under 500 lines; `git diff --check` clean.
 - Focused and full gates run after the last edit, exit codes listed.
 - Branch named, pushed SHA equals HEAD, PR title and body match the diff.

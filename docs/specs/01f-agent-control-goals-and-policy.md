@@ -12,6 +12,11 @@
 
 ## F. tmux control
 
+This section specifies the terminal-backed path in the current wire contract.
+Native commands are a separate, disabled-until-qualified path under
+[ADR 0033](../adr/0033-native-sessions-and-handoff.md) and #266. A manual
+session becomes managed only through #270's explicit durable handoff.
+
 All pass local policy, carry a `command_id`, and are idempotent except F3.
 
 - **F1 Ensure session:** create a new session or attach to an existing one on

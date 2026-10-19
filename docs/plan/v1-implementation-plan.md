@@ -298,7 +298,7 @@ run before the rows they gate.
 | Risk | Handling |
 |---|---|
 | A harness auto-updates and its screens change | `parsing_live` keeps dispatch-relevant parsing going (ADR 0018); fixtures are refreshed with the probe protocol; `UNKNOWN` is shown rather than a guess |
-| Provider terms on automation ([terms-of-service.md](../research/terms-of-service.md)) | each harness runs unmodified, signed in by the owner, in tmux sessions the owner can see; no headless use, no credential reads; the hub never writes to GitHub; written confirmation from providers is still needed before offering fleet-board to others (design.md) |
+| Provider terms on automation ([terms-of-service.md](../research/terms-of-service.md)) | terminal-backed work stays available; native SDK or `-p` execution is disabled until exact interface, version, auth/billing mode, approvals and deployment qualify under ADR 0033; credentials stay with the worker-side harness; written confirmation may still be needed for a specific third-party deployment |
 | Laptop hub sleeps | the hub's launchd unit runs `fleetd` under `caffeinate -s`, so it stays awake while it runs (PR 16, decision 12 of ADR 0024); if it still stops, agents back off and reconnect and the ring replays; acceptance criterion 1 tests it |
 | tmux versions differ (3.2 to 3.7 on the fleet) | CI runs both ends; control-mode features gated by version |
 | GitHub rate limits | conditional requests and the 26 % budget measured in 04; sync lag is a System signal |

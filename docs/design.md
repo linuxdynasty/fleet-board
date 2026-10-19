@@ -18,6 +18,7 @@ The old flow pages are retired; each workflow is told once, in its spec.
 - The clickable mockup: [`mockup/`](../mockup/README.md). Facts checked by running the harnesses:
   [research/verified-facts.md](research/verified-facts.md).
 - How agents work on this repo: [AGENTS.md](../AGENTS.md).
+- Native-session candidates and open proof: [capability record](research/native-session-capabilities.md).
 
 ## Goal
 
@@ -187,14 +188,14 @@ Plain words first; the proto name is in brackets.
 | **goal** | One job handed to a harness, like "get issue #12 merged". Every dispatch attempt is a new goal [`Goal`, `GoalDefinition`, `GoalStatus`] |
 | **goal file** | The file whose first line says how the goal is going: the objective while working, `BLOCKED: ...`, or `DONE`. The agent writes the first version (not where the repo ships its own hooks), the model updates it, and hooks only read it ([02h](specs/02h-goal-binding-and-pane-signals.md) step 12, [01d](specs/01d-goal-hooks.md)) [`GoalState`, `GoalLineState`] |
 | **goal registry** | The agent's table that ties a goal to a pane, the one goal identity for every harness [`GoalRegistration`] |
-| **harness** | The AI coding tool itself, unmodified, in a tmux pane: Claude Code, Codex, Muse, Cursor (`cursor-agent`), OpenCode. Never run headless, never touched for credentials |
+| **harness** | The AI coding tool: Claude Code, Codex, Muse, Cursor (`cursor-agent`), OpenCode. Terminal panes are the built path; qualified native interfaces are planned under [ADR 0033](adr/0033-native-sessions-and-handoff.md). Credentials stay with each tool on its worker |
 | **heartbeat** | The agent's regular "I am alive" message; too many missed make a machine `STALE`, then `OFFLINE` [`Heartbeat`] |
 | **hub** | The main program (`fleetd`) on one machine. It keeps track of everything |
 | **insight** | A number the hub computes from its own rows with no model: efficiency, outcomes, where work gets stuck [`GetInsights`] |
 | **launchd and systemd** | The built-in tools that keep a program running on a Mac (launchd) and on Linux (systemd). "User" units run as you, with no root |
 | **limit wait** | A held phase for a goal whose harness hit a usage limit; the hub resumes it at the reset [`GOAL_PHASE_LIMIT_WAIT`] |
 | **local policy ceiling** | The machine's own file saying what the fleet may do there. Hub settings can only tighten it |
-| **observed goal** | A goal you started yourself in your own pane. The fleet sees it but never starts, nudges or controls it [`obs-` ids, binding `OBSERVED`] |
+| **observed goal** | A goal you started yourself in your own pane. Today's contract reports it without control. An explicit handoff to managed work needs the durable ownership path in #270 [`obs-` ids, binding `OBSERVED`] |
 | **operation** | The handle a hub action returns at once when it makes an agent do something; its final state arrives through `Watch` [`Operation`] |
 | **OTLP** | A standard way to send a program's numbers and traces to a monitoring tool. Off unless you turn it on |
 | **outbox** | The hub's table of commands for agents, committed with the decision that caused them and sent after commit, so a crash loses nothing |

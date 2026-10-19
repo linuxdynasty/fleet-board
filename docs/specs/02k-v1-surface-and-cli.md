@@ -40,6 +40,11 @@ it belongs and a reader can tell "not built yet" from "forgotten".
 
 ## Hub RPCs by release
 
+The table below describes the current proto. [ADR 0033](../adr/0033-native-sessions-and-handoff.md)
+permits qualified native and explicit handoff paths, but adds no RPC or CLI
+command in #265. #266 and #270 own the contract extensions; native execution
+stays disabled until those commands and their local policy checks exist.
+
 `PR` is the plan row that builds the handler. Reads of a resource need its store
 and sync to exist first (PR 5, 10, 11); the handler itself is the PR named.
 

@@ -4,6 +4,11 @@ Researched 2026-09-28; Cursor added 2026-10-08 (plan item 0.24, #101). Not
 legal advice. Re-check before relying on it; terms change and several pages
 were only partly readable.
 
+**2026-10-18 update.** [ADR 0033](../adr/0033-native-sessions-and-handoff.md)
+removes the blanket product headless ban. The [native capability record](native-session-capabilities.md)
+tracks exact candidate interfaces and unresolved qualification. This earlier
+research's terminal-only design consequences are historical, not active bans.
+
 Usage pattern checked: one owner, their own paid subscription per harness,
 signed in on several of their own machines, a self-hosted controller starting
 unattended goal sessions around the clock and pacing weekly quota. No sharing,
@@ -41,9 +46,14 @@ and the Claude Code legal page.
   Claude Code is in the group that stays on the subscription. The same page
   says teams running shared production automation should use an API key.
   [E, support.claude.com/en/articles/15036540, updated June 16, 2026]
-  **Design consequence:** fleet-board drives interactive sessions in tmux,
-  not `claude -p`, which keeps it in the category least affected if the
-  change resumes.
+  **Superseded billing snapshot:** the October 7, 2026 update on the same
+  primary page says Claude Max and Team include monthly API credits and that
+  Agent SDK, `claude -p` and third-party apps can still draw from subscription
+  limits. That is positive documented support for a candidate path. The
+  [SDK overview](https://code.claude.com/docs/en/agent-sdk/overview) still
+  says prior approval is needed for a third-party product to offer claude.ai
+  login or limits. Fleetboard's exact deployment and auth qualification is
+  unresolved; no native route is enabled on this evidence alone.
 - **Unverified:** a user in paperclipai/paperclip#2681 quotes an Anthropic
   email: "Starting April 4 … you'll no longer be able to use your Claude
   subscription limits for third-party harnesses including OpenClaw." Not
@@ -55,8 +65,12 @@ usage" sit awkwardly with unattended 24/7 fleets, even though headless modes
 are documented. [I]
 
 **Product constraint (clear):** fleet-board must never collect, store or proxy
-Claude credentials. Each user signs in to the unmodified `claude` binary on
-their own machines; fleet-board only starts and observes that binary.
+Claude credentials. The owner signs in through Claude's supported flow on
+their own worker. Normal SDK or `claude -p` is a documented candidate under
+ADR 0033. Bare `-p` skips OAuth/keychain auth and cannot silently replace the
+subscription path. Normal `-p` loads project hooks and MCP servers without a
+workspace trust dialog or server approval prompt; #268 must prove a prelaunch
+boundary.
 
 ## OpenAI: ChatGPT Plus/Pro via Codex CLI
 
@@ -191,8 +205,9 @@ implication 7). If Cursor says this use is not allowed, or its terms change to
 say so, set Cursor accounts to `interactive-only` and reopen 0.24.
 
 **Product constraint (clear):** never read `~/.cursor/cli-config.json` (it
-holds `authInfo`) or any Cursor token, and never call a Cursor endpoint; drive
-only the unmodified `cursor-agent` binary.
+holds `authInfo`) or any Cursor token. The current terminal path drives
+`cursor-agent`; the official SDK is a disabled candidate whose local
+approval and billing behavior must qualify under ADR 0033.
 
 ## Across all four
 
@@ -213,7 +228,8 @@ consistently using 100% of quota.
 
 ## Design implications
 
-1. Never touch credentials. Drive the unmodified harness binaries only.
+1. Never touch credentials. Use a qualified native local interface or the
+   existing terminal path, with the harness's own login on the worker.
 2. Keep the fleet identifiable as automation; do not disguise sessions.
 3. Offer a human gate at merge as a setting (the owner currently allows
    goals to merge).

@@ -31,7 +31,9 @@ itself adds is kept safe by construction, with no setup:
   harness, so goals the owner starts by hand are shown as **observed goals**
   ([02h](02h-goal-binding-and-pane-signals.md#observed-goals-v1)). It reads only
   those goal files, only their first lines (G2), and never the pane's contents,
-  logs or transcripts. Observed goals are shown and never controlled.
+  logs or transcripts. The current observed-goal contract only shows them.
+  Explicit control transfer needs the durable #270 protocol and a qualified
+  runtime under [ADR 0033](../adr/0033-native-sessions-and-handoff.md).
 - **Harness configuration.** The agent never opens a harness's settings or
   trust files. Goal hooks add one narrow case: the agent may add,
   update and remove its own named hook entries in the user-level settings, never
@@ -47,6 +49,12 @@ itself adds is kept safe by construction, with no setup:
   [01d2](01d2-goal-file-safe-writes.md).
 - **Secrets on screen** stay on the hub, behind the `LOGS` scope (owner by default; [0010](../adr/0010-session-logs.md)).
 - **Emails** hidden by default; account keys are pseudonymous.
+- **Native candidate boundary.** A native SDK or structured local protocol
+  runs on the worker only after exact version, interface, auth/billing,
+  approvals and deployment qualification. Its supported login stays in the
+  harness; the hub stores a non-secret account reference. The initial mode is
+  disabled. A successful turn does not grant issue completion or merge
+  permission ([ADR 0033](../adr/0033-native-sessions-and-handoff.md)).
 
 **Known limit, stated plainly.** The harness and the agent run as the same
 user, as the harness does today, so a goal that goes wrong can do whatever that

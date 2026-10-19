@@ -22,6 +22,11 @@ the hub does with it.
 
 ## What the hub stores
 
+These are the current observed-only contract rules. [ADR 0033](../adr/0033-native-sessions-and-handoff.md)
+allows a future explicit handoff, but this origin cannot gain control from an
+ordinary state event. #270 must add the durable ownership transition and
+single-controller proof before managed commands can reach such a session.
+
 On the first `GoalState` with `binding = OBSERVED` for an unknown `goal_id`, the
 writer inserts one `goals` row in the same transaction as the event:
 

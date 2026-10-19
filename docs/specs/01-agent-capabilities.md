@@ -15,13 +15,12 @@ event, a snapshot field or a stream.
 
 ## Principles
 
-0. **Pass-through: nothing the developer doesn't already do.** fleet-board is
+0. **Qualified local control.** fleet-board is
    a fleet dashboard and dispatcher for developers running subscription
-   harnesses across machines and projects. It runs each harness exactly as the
-   developer already runs it: same user, same logins, same permission and
-   sandbox settings, same repos. It requires no root, no extra accounts, no
-   sandbox mode and no new security setup. Its goals are visibility across
-   machines and keeping subscription quota from sitting idle.
+   harnesses across machines and projects. Terminal control keeps the same
+   user, native login, permission and sandbox settings, and repos. A native
+   interface can be added only after [ADR 0033](../adr/0033-native-sessions-and-handoff.md)
+   qualification. It requires no root, extra account or added sandbox.
 1. **The agent reports facts; the hub decides.** The agent is the source of
    truth for its machine (tmux, goal files, harnesses, usage, resources). The
    hub owns desired state, assignments, settings and anything computed from
@@ -31,12 +30,12 @@ event, a snapshot field or a stream.
    pane is a line built by one package, `internal/agent/tmux/typing`, and lint
    rules keep it that way ([01f](01f-agent-control-goals-and-policy.md) F3).
 3. **Never touch credentials.** No harness auth files, keychain items, `gh`
-   tokens or secret environment variables. Identity and sign-in state come only
-   from each tool's own status output.
+   tokens or secret environment variables. Terminal identity comes from the
+   tool's own status output; a native path needs a proven non-secret signal.
 4. **Declarative where possible**, so a repeated command is harmless.
 5. **Every capability is advertised** with a versioned capability string
    (`usage.probe.codex@1`), so the hub never sends what a machine can't run.
-6. **Your tmux is the fleet's tmux.** The agent works with the developer's
+6. **Your tmux is the fleet's tmux.** For terminal sessions the agent works with the developer's
    normal tmux server, the one `tmux ls` shows: it lists every session there,
    lets the developer attach to any of them or create new ones, and starts
    goals there too. Only the usage probes live on a hidden internal server
