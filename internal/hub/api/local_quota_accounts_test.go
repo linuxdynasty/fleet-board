@@ -45,11 +45,16 @@ func newLocalQuotaEnv(t *testing.T, readLimit, writeLimit int) *quotaWriteEnv {
 	if err != nil {
 		t.Fatal(err)
 	}
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	listener, err := new(net.ListenConfig).Listen(t.Context(), "tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	port := listener.Addr().(*net.TCPAddr).Port
+	tcpAddr, ok := listener.Addr().(*net.TCPAddr)
+	if !ok {
+		_ = listener.Close()
+		t.Fatalf("unexpected listener address type %T", listener.Addr())
+	}
+	port := tcpAddr.Port
 	srv, err := api.NewLocalServer(e.tel, port, fleet, quotas)
 	if err != nil {
 		_ = listener.Close()

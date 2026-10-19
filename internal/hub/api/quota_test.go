@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"net/netip"
 	"strings"
 	"testing"
 	"time"
@@ -64,8 +63,7 @@ func TestMetricsPeerTableKeepsSpentAllowancesAtCapacity(t *testing.T) {
 		t.Fatal(err)
 	}
 	peer := func(i int) string {
-		ip := netip.AddrFrom4([4]byte{127, byte(i >> 16), byte(i >> 8), byte(i)})
-		return netip.AddrPortFrom(ip, 1000).String()
+		return fmt.Sprintf("127.0.%d.%d:1000", i/256, i%256)
 	}
 	for i := range 1024 {
 		if got := metricsAt(t, srv.Handler, 7080, peer(i)).Code; got != http.StatusOK {
