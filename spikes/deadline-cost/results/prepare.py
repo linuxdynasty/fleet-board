@@ -9,14 +9,15 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[3]
 API = pathlib.Path("internal/hub/api")
-BASELINE = "7502ecd932ed1be243ba2d2be0922e5702a3451b"
-CANDIDATE = "a1ecb102dcbfccc2b5ad569fcfe3d71c9464316a"
+# API tree objects survive a rebase and are included in this branch history.
+BASELINE = "dbd18ef4b022648a45f7e82c7221e68640fd00a9"
+CANDIDATE = "515526b8925cab1dc1a647473ceee418b880d399"
 HISTORICAL_STORE = "6ac9e9b662aae4993831dbb9b2cbd966d8c6ceed"
 
 
 def source(rev: str, name: str) -> str:
     return subprocess.check_output(
-        ["git", "show", f"{rev}:{API / name}"], cwd=ROOT, text=True
+        ["git", "show", f"{rev}:{name}"], cwd=ROOT, text=True
     )
 
 
@@ -103,7 +104,7 @@ def main() -> None:
         replacement.write_text(body)
         overlay[str(actual)] = str(replacement)
     # The measurements predate CommitWake. Reproduce that historical store
-    # while using reachable rebased API source; this is not a new measurement.
+    # while using historical API tree objects; this is not a new measurement.
     for name in ("store.go", "writer.go", "doc.go", "commit.go"):
         relative = pathlib.Path("internal/store") / name
         body = "package store\n" if name == "commit.go" else subprocess.check_output(
