@@ -190,8 +190,8 @@ says so (`ErrHubFailed` or the stop), with no advice. Nothing was sent.
    both); each wait is logged as `connect.backoff{failures, wait_ms,
    reason}`. A wake read in the gap starts its try when the gap ends,
    without the 20 to 120 ms random delay a wake in the backoff wait gets
-   (accepted: the gap has already spread the tries); attempts at least 5 s apart. While connected, a
-   wake, or a network change that removed the connection's local address
+   (accepted: the gap has already spread the tries); whole candidate searches
+   start at least 5 s apart, measured by the loop pacing timestamp rather than asynchronous browse entry. While connected, a wake or network change that removed the connection's local address
    or changed the default route (`wakenet.Decide`), closes the stream; in
    backoff, a wake or any network change cuts the wait. Either resets the
    backoff and reconnects after 20 to 120 ms with that reason.

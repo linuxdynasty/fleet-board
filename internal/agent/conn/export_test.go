@@ -68,3 +68,7 @@ func SetHookWarn(o *LoopOptions, d time.Duration) { o.hookWarn = d }
 // goroutine's report to the gate ("reported"); returning true stops the
 // renewal there as a crash would.
 func SetRenewHook(o *LoopOptions, f func(step string) bool) { o.renewHook = f }
+
+// SetAttemptHook observes the exact timestamp used to pace whole searches.
+// It runs on Run's goroutine and must not block.
+func SetAttemptHook(o *LoopOptions, f func(time.Time)) { o.attemptHook = f }

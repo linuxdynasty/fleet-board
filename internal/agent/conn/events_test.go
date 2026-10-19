@@ -110,6 +110,20 @@ func TestAWakeCutsTheBackoffButKeepsTheGap(t *testing.T) {
 			t.Parallel()
 			h := startConnectHub(t)
 			a := enrolled(t, h)
+			removeState(t, a, conn.HubAddressFile)
+			// The first search takes time; the next one returns at once.
+			// The loop reports its exact pacing timestamp before starting discovery.
+			attemptStarts := make(chan time.Time, 2)
+			d := &fakeDiscover{hold: true}
+			d.onBrowse = func() {
+				// Model delayed scheduling before the asynchronous observer runs.
+				if d.count() == 1 {
+					time.Sleep(100 * time.Millisecond)
+				}
+				d.mu.Lock()
+				d.hold = false
+				d.mu.Unlock()
+			}
 			h.set(func(h *connectHub) {
 				h.onHello = func(n int, _ *agentv1.Hello) *agentv1.Bye {
 					if n == 1 {
@@ -122,8 +136,18 @@ func TestAWakeCutsTheBackoffButKeepsTheGap(t *testing.T) {
 			const gap = 300 * time.Millisecond
 			r := startLoop(t, a, func(o *conn.LoopOptions) {
 				slowBackoff(o)
+				conn.SetAttemptHook(o, func(at time.Time) {
+					// Only the first two starts matter; later reconnects keep running.
+					select {
+					case attemptStarts <- at:
+					default:
+					}
+				})
 				o.Backoff.MinGap = gap
 				o.Events = events
+				useMDNS(o, d)
+				o.BrowseTimeout = 100 * time.Millisecond
+				o.Identity.HubAddresses = []string{h.addr}
 			})
 			waitFor(t, 5*time.Second, "the first Hello", func() bool { return h.count() == 1 && h.stream(1).ended })
 			waitFor(t, 5*time.Second, "backoff", func() bool { return r.loop.Status().State == conn.StateBackoff })
@@ -132,15 +156,19 @@ func TestAWakeCutsTheBackoffButKeepsTheGap(t *testing.T) {
 			if got := h.stream(2).hello.GetReason(); got != tc.ev.Reason {
 				t.Errorf("the Hello after a %s in backoff says %v, want %v", tc.name, got, tc.ev.Reason)
 			}
-			attempts := a.events(t, "connect.attempt")
-			if len(attempts) != 2 {
-				t.Fatalf("connect.attempt = %v", attempts)
+			// A later reconnect can begin before the timing observer is read.
+			// It must not hold the loop or shutdown when the channel is full.
+			h.restart(t)
+			removeState(t, a, conn.HubAddressFile)
+			waitFor(t, 5*time.Second, "backoff after restart", func() bool { return r.loop.Status().State == conn.StateBackoff })
+			events <- tc.ev
+			h.connected(t, 3)
+			if got := d.count(); got != 3 {
+				t.Fatalf("browses = %d, want one per attempt", got)
 			}
-			// The gap runs from just before the first connect.attempt line;
-			// without it the two would be about the 2 ms event delay apart.
-			const logSkew = 100 * time.Millisecond
-			if d := logTime(t, attempts[1]).Sub(logTime(t, attempts[0])); d < gap-logSkew {
-				t.Errorf("two connects %v apart, want at least %v", d, gap)
+			first, second := <-attemptStarts, <-attemptStarts
+			if d := second.Sub(first); d < gap {
+				t.Errorf("two whole attempts %v apart, want at least %v", d, gap)
 			}
 		})
 	}
