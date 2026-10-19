@@ -1,0 +1,206 @@
+{
+  "summary": {
+    "summary": {
+      "goalsWorking": 1,
+      "machinesTotal": 2,
+      "updateTime": "\u003ctime\u003e",
+      "version": "1"
+    }
+  },
+  "system": {
+    "status": {
+      "hubVersion": "dev",
+      "observedTime": "\u003ctime\u003e",
+      "overall": "SYSTEM_STATE_UNKNOWN",
+      "signals": [
+        {
+          "kind": "SYSTEM_SIGNAL_KIND_WRITER_BATCH_LAG",
+          "measures": [
+            {
+              "criticalThreshold": 5,
+              "direction": "SYSTEM_DIRECTION_ABOVE",
+              "kind": "SYSTEM_MEASURE_KIND_MAIN",
+              "unit": "SYSTEM_UNIT_SECONDS",
+              "warningThreshold": 1
+            },
+            {
+              "direction": "SYSTEM_DIRECTION_ABOVE",
+              "kind": "SYSTEM_MEASURE_KIND_WRITER_COMMIT_TIME",
+              "unit": "SYSTEM_UNIT_SECONDS",
+              "warningThreshold": 0.25
+            },
+            {
+              "criticalThreshold": 30,
+              "direction": "SYSTEM_DIRECTION_ABOVE",
+              "kind": "SYSTEM_MEASURE_KIND_WRITER_QUEUE_FULL",
+              "unit": "SYSTEM_UNIT_SECONDS"
+            }
+          ],
+          "observedTime": "\u003ctime\u003e",
+          "state": "SYSTEM_STATE_UNKNOWN"
+        },
+        {
+          "kind": "SYSTEM_SIGNAL_KIND_WATCH_DROPS",
+          "measures": [
+            {
+              "criticalThreshold": 20,
+              "direction": "SYSTEM_DIRECTION_ABOVE",
+              "kind": "SYSTEM_MEASURE_KIND_MAIN",
+              "unit": "SYSTEM_UNIT_COUNT",
+              "warningThreshold": 3
+            }
+          ],
+          "observedTime": "\u003ctime\u003e",
+          "state": "SYSTEM_STATE_UNKNOWN"
+        },
+        {
+          "kind": "SYSTEM_SIGNAL_KIND_LOG_STORE_USAGE",
+          "measures": [
+            {
+              "criticalHold": "3600s",
+              "criticalThreshold": 100,
+              "direction": "SYSTEM_DIRECTION_ABOVE",
+              "kind": "SYSTEM_MEASURE_KIND_MAIN",
+              "unit": "SYSTEM_UNIT_PERCENT",
+              "warningHold": "600s",
+              "warningThreshold": 100
+            }
+          ],
+          "observedTime": "\u003ctime\u003e",
+          "state": "SYSTEM_STATE_UNKNOWN"
+        },
+        {
+          "kind": "SYSTEM_SIGNAL_KIND_DISK_FREE",
+          "measures": [
+            {
+              "criticalClearThreshold": 3221225472,
+              "criticalThreshold": 2147483648,
+              "direction": "SYSTEM_DIRECTION_BELOW",
+              "kind": "SYSTEM_MEASURE_KIND_MAIN",
+              "unit": "SYSTEM_UNIT_BYTES",
+              "warningThreshold": 10737418240
+            }
+          ],
+          "observedTime": "\u003ctime\u003e",
+          "state": "SYSTEM_STATE_UNKNOWN"
+        },
+        {
+          "kind": "SYSTEM_SIGNAL_KIND_BACKUP_AGE",
+          "measures": [
+            {
+              "criticalThreshold": 604800,
+              "direction": "SYSTEM_DIRECTION_ABOVE",
+              "kind": "SYSTEM_MEASURE_KIND_MAIN",
+              "unit": "SYSTEM_UNIT_SECONDS",
+              "warningThreshold": 129600
+            }
+          ],
+          "observedTime": "\u003ctime\u003e",
+          "state": "SYSTEM_STATE_UNKNOWN"
+        },
+        {
+          "kind": "SYSTEM_SIGNAL_KIND_AGENT_CONNECTED",
+          "machine": {
+            "value": "01jseedlap00000000000001"
+          },
+          "measures": [
+            {
+              "criticalThreshold": 3600,
+              "direction": "SYSTEM_DIRECTION_ABOVE",
+              "kind": "SYSTEM_MEASURE_KIND_MAIN",
+              "unit": "SYSTEM_UNIT_SECONDS",
+              "warningThreshold": 600
+            }
+          ],
+          "observedTime": "\u003ctime\u003e",
+          "state": "SYSTEM_STATE_UNKNOWN"
+        },
+        {
+          "kind": "SYSTEM_SIGNAL_KIND_OUTBOX_BACKLOG",
+          "machine": {
+            "value": "01jseedlap00000000000001"
+          },
+          "measures": [
+            {
+              "criticalThreshold": 600,
+              "direction": "SYSTEM_DIRECTION_ABOVE",
+              "kind": "SYSTEM_MEASURE_KIND_MAIN",
+              "unit": "SYSTEM_UNIT_SECONDS",
+              "warningThreshold": 120
+            }
+          ],
+          "observedTime": "\u003ctime\u003e",
+          "state": "SYSTEM_STATE_UNKNOWN"
+        },
+        {
+          "kind": "SYSTEM_SIGNAL_KIND_CLOCK_SKEW",
+          "machine": {
+            "value": "01jseedlap00000000000001"
+          },
+          "measures": [
+            {
+              "criticalThreshold": 900,
+              "direction": "SYSTEM_DIRECTION_ABOVE",
+              "kind": "SYSTEM_MEASURE_KIND_MAIN",
+              "unit": "SYSTEM_UNIT_SECONDS",
+              "warningThreshold": 300
+            }
+          ],
+          "observedTime": "\u003ctime\u003e",
+          "state": "SYSTEM_STATE_UNKNOWN"
+        },
+        {
+          "kind": "SYSTEM_SIGNAL_KIND_AGENT_CONNECTED",
+          "machine": {
+            "value": "01jseedsrv00000000000002"
+          },
+          "measures": [
+            {
+              "criticalThreshold": 3600,
+              "direction": "SYSTEM_DIRECTION_ABOVE",
+              "kind": "SYSTEM_MEASURE_KIND_MAIN",
+              "unit": "SYSTEM_UNIT_SECONDS",
+              "warningThreshold": 600
+            }
+          ],
+          "observedTime": "\u003ctime\u003e",
+          "state": "SYSTEM_STATE_UNKNOWN"
+        },
+        {
+          "kind": "SYSTEM_SIGNAL_KIND_OUTBOX_BACKLOG",
+          "machine": {
+            "value": "01jseedsrv00000000000002"
+          },
+          "measures": [
+            {
+              "criticalThreshold": 600,
+              "direction": "SYSTEM_DIRECTION_ABOVE",
+              "kind": "SYSTEM_MEASURE_KIND_MAIN",
+              "unit": "SYSTEM_UNIT_SECONDS",
+              "warningThreshold": 120
+            }
+          ],
+          "observedTime": "\u003ctime\u003e",
+          "state": "SYSTEM_STATE_UNKNOWN"
+        },
+        {
+          "kind": "SYSTEM_SIGNAL_KIND_CLOCK_SKEW",
+          "machine": {
+            "value": "01jseedsrv00000000000002"
+          },
+          "measures": [
+            {
+              "criticalThreshold": 900,
+              "direction": "SYSTEM_DIRECTION_ABOVE",
+              "kind": "SYSTEM_MEASURE_KIND_MAIN",
+              "unit": "SYSTEM_UNIT_SECONDS",
+              "warningThreshold": 300
+            }
+          ],
+          "observedTime": "\u003ctime\u003e",
+          "state": "SYSTEM_STATE_UNKNOWN"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "goal": {
+    "createTime": "\u003ctime\u003e",
+    "id": {
+      "value": "cli-goal"
+    },
+    "spec": {
+      "harness": {
+        "name": "codex"
+      },
+      "machine": {
+        "value": "01jseedlap00000000000001"
+      }
+    },
+    "status": {
+      "hubSeq": "10",
+      "observedTime": "\u003ctime\u003e",
+      "phase": "GOAL_PHASE_RUNNING",
+      "phaseTime": "\u003ctime\u003e"
+    },
+    "updateTime": "\u003ctime\u003e",
+    "version": "1"
+  }
+}

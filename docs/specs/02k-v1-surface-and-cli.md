@@ -93,9 +93,21 @@ the Connect JSON of the response message unchanged: field names as protobuf
 writes them in JSON, enum names in full, 64-bit integers as decimal strings
 ([02b](02b-hub-api.md#64-bit-integers)). `fleet status` prints one object,
 `{"summary": <GetFleetSummary>, "system": <GetSystemStatus>}`. The golden files
-of plan PR 15 fix these shapes. `FLEET_URL` names the hub; `FLEET_TOKEN` is
-optional in `local_trusted` (a valid token only narrows the owner's scopes, 02f).
+of plan PR 15 fix these shapes. `FLEET_URL` names the hub. The current v1
+read CLI accepts only loopback `http://` and refuses any present `FLEET_TOKEN`;
+API tokens are not yet served. When tokens arrive in v3, a valid token in
+`local_trusted` will narrow the owner's scopes (02f).
 Destructive commands need `--yes`.
+
+The six read commands use one 30-second network budget per invocation. For
+`doctor`, the `GetServerInfo` preflight uses part of that budget. Time spent
+entering the terminal secret is paused; `GetSystemStatus` and `GetStoreStatus`
+share the remaining time. Lists fetch one page; `--page-size` accepts 1 to
+500 and `--page-token` passes the prior response's opaque token unchanged.
+`doctor --json` prints `{"system": <GetSystemStatus>, "store":
+<GetStoreStatus>, "server": <GetServerInfo>}`. It needs a terminal, asks once
+for the local approval secret with echo off, and sends that secret only on
+`GetStoreStatus`. A failed read leaves stdout empty.
 
 | Command | Does | RPC or local action | Release (PR) |
 |---|---|---|---|

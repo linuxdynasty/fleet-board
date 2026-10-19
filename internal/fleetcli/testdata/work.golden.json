@@ -1,0 +1,25 @@
+{
+  "workItems": [
+    {
+      "createTime": "\u003ctime\u003e",
+      "id": {
+        "integration": {
+          "value": "github-1"
+        },
+        "key": "7398",
+        "kind": "WORK_ITEM_KIND_ISSUE",
+        "project": "acme/web"
+      },
+      "item": {
+        "title": "Fix\n\u001b[31m the parser"
+      },
+      "lastSyncTime": "\u003ctime\u003e",
+      "stage": "WORK_STAGE_READY",
+      "trust": {
+        "trusted": true
+      },
+      "updateTime": "\u003ctime\u003e",
+      "version": "9007199254740993"
+    }
+  ]
+}
