@@ -1,0 +1,19 @@
+/agents	Switch agent
+/connect	Connect provider
+/debug	View debug info
+/diff	Open diff viewer
+/editor	Open editor
+/exit	Exit the app
+/help	Help
+/init	guided AGENTS.md setup
+/mcps	Toggle MCPs
+/models	Switch model
+/move	Move to another project dir
+/new	New session
+/review	review changes [commit|branch|pr], defaults to uncommitted
+/sessions	Switch session
+/skills	Skills
+/status	View status
+/themes	Switch theme
+/update	Update OpenCode
+/variants	Switch model variant

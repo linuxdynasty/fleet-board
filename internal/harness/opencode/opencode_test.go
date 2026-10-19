@@ -33,8 +33,8 @@ func outcomeOf(outcome typev1.ParseOutcome) harness.ParseResult {
 // golden table matches the claims, USAGE brings the stats fixtures,
 // IDENTITY brings the providers and model-line fixtures of each version,
 // and READY brings the idle-prompt, menu and dialog fixtures of each
-// version, and every fixture parses or yields unknown, never fails. Both
-// versions stay UNVERIFIED_PARSING: USAGE (spend), IDENTITY (providers,
+// version, and every fixture parses or yields unknown, never fails. All
+// three versions stay UNVERIFIED_PARSING: USAGE (spend), IDENTITY (providers,
 // model line) and READY (idle prompt with its input state) are
 // fixture-verified, and PROMPT and CONDITION are later slices. OpenCode
 // has no usage window, no folder-trust screen and no /goal (01b).
@@ -51,7 +51,7 @@ func TestConform(t *testing.T) {
 	ready := func(screen string) harness.ParseResult {
 		return outcomeOf(ParseReady(screen).ParseOutcome)
 	}
-	versions := []string{"1.18.34", "1.19.0"}
+	versions := []string{"1.18.34", "1.19.0", "1.19.3"}
 	usageFixtures := func() []harness.Fixture {
 		var out []harness.Fixture
 		for _, v := range versions {
@@ -85,6 +85,12 @@ func TestConform(t *testing.T) {
 			"stats.txt", "providers-list.txt",
 		},
 		"1.19.0": {
+			"tui-ready.txt", "tui-ready-ansi.txt",
+			"tui-ready-input-has-draft.txt", "tui-ready-input-has-draft-ansi.txt",
+			"tui-slash-menu-first.txt", "tui-slash-menu-last.txt",
+			"tui-status-dialog.txt", "stats.txt", "providers-list.txt",
+		},
+		"1.19.3": {
 			"tui-ready.txt", "tui-ready-ansi.txt",
 			"tui-ready-input-has-draft.txt", "tui-ready-input-has-draft-ansi.txt",
 			"tui-slash-menu-first.txt", "tui-slash-menu-last.txt",
@@ -140,6 +146,27 @@ func TestConform(t *testing.T) {
 						Claim:    harness.FeatureClaim{Supported: true},
 						Parse:    ready,
 						Fixtures: readyFixtures("1.19.0"),
+					},
+				},
+			},
+			{
+				Version: "1.19.3",
+				Support: harness.UnverifiedParsing,
+				Features: map[harness.Feature]harness.FeatureCase{
+					harness.FeatureUsage: {
+						Claim:    harness.FeatureClaim{Supported: true},
+						Parse:    usage,
+						Fixtures: usageFixtures(),
+					},
+					harness.FeatureIdentity: {
+						Claim:    harness.FeatureClaim{Supported: true},
+						Parse:    identity,
+						Fixtures: identityFixtures(),
+					},
+					harness.FeatureReady: {
+						Claim:    harness.FeatureClaim{Supported: true},
+						Parse:    ready,
+						Fixtures: readyFixtures("1.19.3"),
 					},
 				},
 			},

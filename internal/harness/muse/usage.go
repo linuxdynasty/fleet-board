@@ -13,7 +13,7 @@ import (
 // Versions are the Muse versions this parser has fixtures for, and
 // ParserVersion is its own version: bump it when the parser's behavior
 // changes (01b, fleet-harness-adapter).
-var Versions = []string{"1.4.4", "1.4.6", "1.4.7"}
+var Versions = []string{"1.4.4", "1.4.6", "1.4.7", "1.4.11"}
 
 const ParserVersion = "2"
 

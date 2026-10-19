@@ -13,7 +13,7 @@ import (
 // Versions are the Codex versions this parser has fixtures for, and
 // ParserVersion is its own version: bump it when the parser's behavior
 // changes (01b, fleet-harness-adapter).
-var Versions = []string{"0.160.0", "0.162.1"}
+var Versions = []string{"0.160.0", "0.162.1", "0.163.0"}
 
 const ParserVersion = "1"
 

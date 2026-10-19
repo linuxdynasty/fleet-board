@@ -56,6 +56,29 @@ func TestParseProvidersEnvSection(t *testing.T) {
 	}
 }
 
+// The live 1.19.3 providers fixture carries the Environment section this
+// machine shows: zero credentials plus one `name ENV_VAR` row. The env
+// var's value is never shown, only its name.
+func TestParseProvidersEnvFixture(t *testing.T) {
+	got := ParseProviders(readFixture(t, "1.19.3", "providers-list.txt"))
+
+	if got.ParseOutcome != typev1.ParseOutcome_PARSE_OUTCOME_OK {
+		t.Fatalf("outcome = %v, want OK", got.ParseOutcome)
+	}
+	if got.Credentials != 0 {
+		t.Errorf("credentials = %d, want 0", got.Credentials)
+	}
+	if !got.EnvSeen || got.EnvCount != 1 {
+		t.Fatalf("env = seen %v count %d, want seen true count 1", got.EnvSeen, got.EnvCount)
+	}
+	if len(got.EnvProviders) != 1 {
+		t.Fatalf("env providers = %d, want 1", len(got.EnvProviders))
+	}
+	if got.EnvProviders[0].Name != "DeepSeek" || got.EnvProviders[0].Detail != "DEEPSEEK_API_KEY" {
+		t.Errorf("env provider = %+v, want DeepSeek/DEEPSEEK_API_KEY", got.EnvProviders[0])
+	}
+}
+
 // A `●` row in a shape the parser does not know is partial, never dropped:
 // the count it shows is kept and the row is flagged by the outcome.
 func TestParseProvidersUnknownRow(t *testing.T) {
@@ -97,6 +120,9 @@ func TestParseModelLineFixture(t *testing.T) {
 		"1.18.34": {Agent: "Build", Selection: "Big Pickle OpenCode Zen"},
 		// "Build · Big Pickle OpenCode".
 		"1.19.0": {Agent: "Build", Selection: "Big Pickle OpenCode"},
+		// "Build · DeepSeek V4 Pro DeepSeek": this machine exposes an
+		// env-var provider, so the default model line names it.
+		"1.19.3": {Agent: "Build", Selection: "DeepSeek V4 Pro DeepSeek"},
 	} {
 		got := ParseModelLine(readFixture(t, version, "tui-ready.txt"))
 

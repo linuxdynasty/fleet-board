@@ -1,8 +1,8 @@
 # OpenCode screen fixtures
 
 Real output and screens from OpenCode, for the parser tests in
-`internal/harness/opencode` (plan item 0.1, issues #25 and #180). Files are in
-`1.18.34/` and `1.19.0/`.
+`internal/harness/opencode` (plan item 0.1, issues #25, #180 and #36). Files
+are in `1.18.34/`, `1.19.0/` and `1.19.3/`.
 
 | Field | Value |
 |---|---|
@@ -86,6 +86,45 @@ tail of whichever menu row sits on its screen row (`/mcps` read
 OpenCode 2.0"). A catalog parser must key on the command name, never on the
 description tail.
 
+## 1.19.3 (2026-10-19, issue #36)
+
+Same protocol (throwaway server `-L probe36oc -f /dev/null`, killed at the
+end; every screen read before the next key; no prompt sent and no model
+called). `opencode --version` read `1.19.3` in the probe pane. The TUI was
+started by typing `opencode` in an empty scratch folder: no trust, startup,
+update or sign-in screen appeared (as 01b says, OpenCode has no folder-trust
+prompt). The CLI outputs ran in the same pane after the TUI was left with
+`/exit`.
+
+| File | Output | How reached |
+|---|---|---|
+| `1.19.3/tui-ready.txt`, `tui-ready-ansi.txt` | start screen: logo, input box, model line "Build · DeepSeek V4 Pro DeepSeek", hint, status bar with version | `opencode` |
+| `1.19.3/tui-ready-input-has-draft.txt`, `tui-ready-input-has-draft-ansi.txt` | input box with unsent text | typed text, then Ctrl+U to clear |
+| `1.19.3/tui-slash-menu-first.txt` | the `/` menu, top rows `/agents` to `/models` | typed `/` |
+| `1.19.3/tui-slash-menu-last.txt` | the `/` menu scrolled to `/variants` (10 rows `/models` to `/variants`) | Down (13 + 5 presses to the tail; further Down wrapped to the top, proving the full list) |
+| `1.19.3/tui-slash-menu-catalog.tsv` | all 19 menu commands, `name<TAB>description` (derived from the views, clean descriptions only) | see above |
+| `1.19.3/tui-status-dialog.txt` | `/status`: "No MCP Servers", "No Formatters", "No Plugins" | `/status` (typed, then Enter on the read screen; the first Enter was eaten by the open dialog, Escape closed it) |
+| `1.19.3/providers-list.txt` | `opencode providers list`: "Credentials ... 0 credentials" plus an "Environment" section with one `DeepSeek DEEPSEEK_API_KEY` row | CLI |
+| `1.19.3/stats.txt` | `opencode stats`: OVERVIEW, COST & TOKENS and TOOL USAGE | CLI |
+
+What changed since 1.19.0: the menu holds 19 commands, adding `/update`
+("Update OpenCode") and `/variants` ("Switch model variant"); both are deny
+in the command classification (unprobed effects, and an update is never sent)
+and `TestClassifyCoversCatalog` pins that verdict. The ready, dialog and
+stats shapes are unchanged: the same logo, input box, model line row, status
+bar, and dialog rows in the same places. `stats` is byte-identical to the
+1.19.0 fixture (the same cumulative on-disk totals, so the file is copied,
+not re-captured). The `providers list` Environment section is machine state,
+not a version change: this shell exposes one provider env var, so the harness
+lists it; the identity parser already handles that section (OK, with the
+counts kept) and the 1.19.3 fixture proves it live. Only the variable's name
+is shown, never its value. The model line names the env-provided default
+("DeepSeek V4 Pro DeepSeek"); a parser must not depend on that name. No tip
+line appeared this run (transient onboarding).
+
+Placeholder against draft: same bytes as 1.19.0 (grey placeholder,
+near-white draft); re-verified by the kept ANSI pair.
+
 ## Redactions and clean-up
 
 - Paths are `~/scratch`. The status bar keeps its right-aligned version.
@@ -99,10 +138,12 @@ description tail.
   `stats` with real totals: this machine has no provider and no sessions now
   (01b's 1.18.30 probe saw both). Needs a machine that is signed in.
 - A startup, update, trust or sign-in screen: none appeared (no folder-trust
-  prompt, as 01b says).
+  prompt, as 01b says; re-verified on 1.19.3).
 - A model-call screen of any kind, and `opencode models` output (public list,
   not kept).
-- The `/variants` command and installed command packs: not in this menu now.
+- Installed command packs: none installed here.
+- The `/variants` command was not in the 1.18.34/1.19.0 menus; it appears in
+  the 1.19.3 menu (see above).
 
 ## Limits of these captures
 
