@@ -15,4 +15,6 @@
 // lines and the F4 interrupt's fixed C-c with an atomic server-start
 // check. It never imports os/exec directly (the depguard rule names who
 // may).
+// Interrupt, SendKeys, and RespawnPane share a pane lock for each live call;
+// the last holder or waiter removes it after the pane operation ends.
 package control

@@ -29,6 +29,14 @@ C-c again; a completed command replays its saved result.
 E11's in-memory mark still differs from the state-directory persistence
 required by `command_tmux.proto`; it is not a complete production operation.
 
+`Interrupt`, `SendKeys`, and `RespawnPane` share one lock per pane while they
+check and act. Waiting commands count as users of that lock. The last user
+removes it, including after a missing pane or stale server is refused, so
+unknown pane IDs cannot fill the agent's lock map. Commands for separate
+panes still proceed on separate locks. The production F4 slice refuses
+scheduler calls until an agent-local fleet-ownership check is available;
+manual owner and operator calls remain subject to local policy.
+
 ```go
 runner, _ := proc.NewRunner(tel)
 caller, _ := proc.For("tmux")

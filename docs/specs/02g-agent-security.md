@@ -409,20 +409,20 @@ An **observe command** is one the VIEWER column allows (`CapturePane`, `RunHarne
 | `SetLogShipping` | — | — | A | A | — |
 | `Drain`, `Undrain` | — | — | A | — | — |
 
-The hub refuses `DrainMachine` and `UndrainMachine` up front for a caller whose
-mapped role is not `OWNER` ([02d](02d-hub-authz.md#role-sent-to-the-agent)), so
-`spec.drain` never changes for a drain the agent would refuse.
+The hub refuses `DrainMachine` and `UndrainMachine` unless the caller is `OWNER`
+([02d](02d-hub-authz.md#role-sent-to-the-agent)), so refused drains never change `spec.drain`.
 
 Notes:
 
 - **The scheduler** is the hub's own principal: unattended auto-dispatch (with
   `GoalSpec.model` and `effort`), the nudge, Claude's `continue` and limit-wait
-  resume, `/goal pause` at the reserve line, `Interrupt`, probes, and
+  resume, `/goal pause` at the reserve line, probes, and
   `PruneWorktree` and `KillWindow` after `merged_grace`. It never answers a
   prompt, never types a REVIEW, SESSION-only or DESTRUCTIVE command on its own,
   never drains, and never touches a developer's window or session.
   In a developer-marked pane the scheduler therefore cannot nudge, type
   `continue` or respawn: a stop there is `STUCK` with a triage item (03c).
+  Scheduler `Interrupt` is a future ceiling; F4 refuses it pending agent-local fleet ownership proof ([01f](01f-agent-control-goals-and-policy.md#f-tmux-control)).
 - **`fresh_context`** is judged as part of `StartGoal`, not as a separate
   DESTRUCTIVE command: the owner or operator chose it in the goal (or the
   routine), and the agent refuses it with `FRESH_CONTEXT_NOT_ALLOWED` unless

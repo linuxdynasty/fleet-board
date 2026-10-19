@@ -101,6 +101,10 @@ All pass local policy, carry a `command_id`, and are idempotent except F3.
   session to a machine. The developer-session mirror has not landed, so
   an arbitrary developer session still reads `SESSION_NOT_FOUND`. Other
   control operations and servers remain unregistered in this slice.
+  Each command registers a reference before waiting for the shared pane
+  lock. The agent removes that lock after its last holder or waiter leaves,
+  including when a stale or missing pane is refused. This keeps repeated
+  refusals from growing the lock map while preserving same-pane ordering.
   Scheduler Interrupt is refused until an agent-local fleet-ownership check
   can prove it stays out of developer sessions (02g); manual owner/operator
   Interrupt remains available under the same local controls.

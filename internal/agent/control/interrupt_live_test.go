@@ -2,6 +2,7 @@ package control
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -73,6 +74,37 @@ func TestInterruptLivePaneNotFound(t *testing.T) {
 				res.GetReason() != typev1.ReasonCode_REASON_CODE_PANE_NOT_FOUND {
 				t.Fatalf("Interrupt = (%v, %v), want (FAILED, PANE_NOT_FOUND): %q",
 					res.GetStatus(), res.GetReason(), res.GetMessage())
+			}
+		})
+	}
+}
+
+// Missing pane IDs must not leave behind locks in the long-lived ensurer.
+func TestInterruptLiveMissingPanesReleaseLocks(t *testing.T) {
+	for _, b := range tmuxtest.Binaries() {
+		t.Run(b.Name, func(t *testing.T) {
+			live, _, _, start := liveInterruptEnsurer(t, b)
+			e, err := NewInterrupt(Options{
+				Runner: live.runner, Caller: live.caller, Tmux: live.tmux,
+				Socket: live.socket, Server: live.server, Kind: live.kind,
+				Sender: live.sender, Rec: live.rec,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			for id := 90; id < 98; id++ {
+				res := e.Interrupt(t.Context(), liveInterruptCmd(fmt.Sprintf("%%%d", id), start))
+				if res.GetStatus() != typev1.Status_STATUS_FAILED ||
+					res.GetReason() != typev1.ReasonCode_REASON_CODE_PANE_NOT_FOUND {
+					t.Fatalf("Interrupt missing pane %d = (%v, %v), want (FAILED, PANE_NOT_FOUND): %q",
+						id, res.GetStatus(), res.GetReason(), res.GetMessage())
+				}
+			}
+			e.paneMu.Lock()
+			retained := len(e.panes)
+			e.paneMu.Unlock()
+			if retained != 0 {
+				t.Fatalf("%d locks retained after refused missing pane IDs, want none", retained)
 			}
 		})
 	}
