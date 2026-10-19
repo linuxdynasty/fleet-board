@@ -30,4 +30,8 @@
 // real failure came with it), 1 when a command fails, 2 for bad usage. The rest of the agent arrives with plan
 // row 4 onward of docs/plan/v1-implementation-plan.md. This package is wiring
 // only: parse flags, build dependencies, call into internal/.
+// Policy wiring checks wait for watch startup and use Snapshot detection when
+// startup reports watch-off, matching the existing policy safety net.
+// The full-run policy test forces watch-off through private factory wiring,
+// then checks the first reconnect Snapshot and the hub's saved event.
 package main

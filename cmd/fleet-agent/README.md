@@ -200,3 +200,11 @@ and `runAgent`.
 The logic is in `internal/agent/conn`. What the agent will do is specified
 in `docs/specs/01-agent-capabilities.md`; the build order is in
 `docs/plan/v1-implementation-plan.md` (plan row 4).
+
+The policy wiring test waits for watch startup before replacing the file. When
+startup reports watch-off, it exercises the documented Snapshot recheck; a live
+watch must deliver its change without that fallback.
+The full-run policy test forces watch setup to fail through the existing watcher
+factory, waits for watch-off, then edits and restarts the hub. It checks the first
+reconnect Snapshot and the committed policy event body. Private run dependencies
+carry the factory; normal entry points keep the fsnotify default.

@@ -266,7 +266,7 @@ on a timer (ADR 0022 rule 6). The safety net is event-driven too: the file is
 hashed again when each `Snapshot` is built (this PR) and when a `Settings` message
 arrives (from PR 6f). When the watch cannot be set (the inotify limit, no file
 handles) the agent logs `policy.watch_off` once, and `status.json` says
-`policy_watch: off` (from PR 6d). It does not poll. The loaded policy never
+`policy_watch: off` (from PR 6d). Startup is asynchronous; Snapshot and Settings still recheck when off. No polling. The loaded policy never
 changes while the agent runs. A change is reported (counter, log line, audit row,
 the Changed seam) by a goroutine of the policy loader, in order, so building a
 `Snapshot` never waits for the audit sync or for the seam's consumer.
