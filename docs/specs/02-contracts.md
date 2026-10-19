@@ -214,7 +214,8 @@ time (else `EXPIRED`);
 `epoch` equals the current `HelloAck.epoch` (else `FAILED` /
 `EPOCH_MISMATCH`, `retryable = true`: the hub re-issues it under the new
 epoch); `seq` greater than the last applied for that epoch (else
-`REJECTED_BY_POLICY` / `SEQ_REPLAYED`); `requires` capability advertised (else `UNSUPPORTED` with
+`REJECTED_BY_POLICY` / `SEQ_REPLAYED`); `requires` capability advertised at a
+nonzero version (else `UNSUPPORTED` with
 `missing_capability`); local policy and effective settings (else
 `REJECTED_BY_POLICY`); `requested_by.role` sufficient for the kind or
 harness command class (else `REJECTED_BY_POLICY` / `ROLE_INSUFFICIENT`); for
@@ -240,6 +241,10 @@ slept; 02i, "Clocks"). For the agent `not_after_time` is the latest start; for t
 authority: it measures skew from `Hello.sent_time` and `Heartbeat.sent_time`,
 warns over 5 minutes, orders cross-machine data by hub-adjusted time and
 distrusts a machine's clock over 15 minutes (02i, "Clocks"; ADR 0004).
+
+The agent checks strict hub time again after saving its running state, before
+calling a handler. A late or unreadable clock returns `EXPIRED`; an approval
+received after the deadline returns `LOCAL_CONFIRM_TIMEOUT`.
 
 **Not idempotent: `SendKeys`.** After an agent restart mid-command the
 result is `UNKNOWN_OUTCOME`; the hub never retries it and asks a person.

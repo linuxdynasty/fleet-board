@@ -46,8 +46,13 @@ func (f *Fleet) InterruptPane(ctx context.Context, req *connect.Request[hubv1.In
 		return nil, f.sessRefused(ctx, "", err)
 	}
 	m := req.Msg
+	if m.GetPane().GetServer() != "default" {
+		return nil, f.sessRefused(ctx, who.GetId().GetValue(), apiError(connect.CodeInvalidArgument,
+			typev1.ReasonCode_REASON_CODE_INVALID_ARGUMENT, "InterruptPane serves only the default tmux server", nil, nil))
+	}
 	cmd := &agentv1.Command{
-		Kind: &agentv1.Command_Interrupt{Interrupt: &agentv1.Interrupt{Pane: m.GetPane()}},
+		Kind:     &agentv1.Command_Interrupt{Interrupt: &agentv1.Interrupt{Pane: m.GetPane()}},
+		Requires: &typev1.Capability{Name: "tmux.default_server.interrupt", Version: 1},
 	}
 	op, err := f.sendOne(ctx, who, m, m.GetRequestId(), m.GetSession().GetValue(), "session.interrupt", cmd)
 	if err != nil {

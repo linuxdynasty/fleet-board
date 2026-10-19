@@ -150,7 +150,7 @@ func New(opts Options) (*Executor, error) {
 }
 
 // Capabilities is the Hello list (LoopOptions.Capabilities): what the
-// registered handlers advertise. Row 6 advertises none.
+// registered handlers advertise. The production run currently registers F4.
 func (e *Executor) Capabilities() []*typev1.Capability { return e.reg.capabilities() }
 
 // Command is the LoopOptions.Command hook. It runs on the stream's sending

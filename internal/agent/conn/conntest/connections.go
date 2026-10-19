@@ -7,7 +7,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/linuxdynasty/fleet-board/internal/hub/outbox"
 	"github.com/linuxdynasty/fleet-board/internal/store"
+	"github.com/linuxdynasty/fleet-board/internal/telemetry"
 )
 
 // Connection is one machine_connections row: its epoch and, once closed,
@@ -22,6 +24,23 @@ func (h *Hub) current() *store.Store {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	return h.store
+}
+
+// CurrentStore exposes the real listener's state.db to a test that calls a
+// production hub API handler. Do not retain it across Restart.
+func (h *Hub) CurrentStore() *store.Store { return h.current() }
+
+// Telemetry is the real listener's hub telemetry for a production API handler
+// under test.
+func (h *Hub) Telemetry() *telemetry.Telemetry { return h.tel }
+
+// NotifyCommand uses the real listener's outbox wake after an API write
+// commits, matching the daemon's FleetService callback.
+func (h *Hub) NotifyCommand(op outbox.Op) {
+	h.mu.Lock()
+	srv := h.srv
+	h.mu.Unlock()
+	srv.Outbox().Notify(op)
 }
 
 // Restart stops the listener the way fleetd run does (Shutdown: every live

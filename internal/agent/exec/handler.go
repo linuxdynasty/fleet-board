@@ -57,8 +57,8 @@ type Request struct {
 	Progress func(ctx context.Context, p *agentv1.CommandProgress) error
 }
 
-// Handler runs one command kind. Every handler is a later plan row; row 6
-// registers none, so every command is UNSUPPORTED. Run and Resume must
+// Handler runs one command kind. The production run currently registers
+// only default-server Interrupt. Run and Resume must
 // return soon after ctx ends: the executor's Run waits for every command
 // goroutine before it returns, so a handler that ignores ctx holds the
 // agent's shutdown.
@@ -123,7 +123,7 @@ func (r registry) capabilities() []*typev1.Capability {
 // handler advertises the capability the command requires, at its version
 // or above. A command with no requires is never supported.
 func (r registry) supports(kind string, req *typev1.Capability) bool {
-	if r[kind] == nil || req.GetName() == "" {
+	if r[kind] == nil || req.GetName() == "" || req.GetVersion() == 0 {
 		return false
 	}
 	for _, c := range r.capabilities() {
@@ -134,8 +134,6 @@ func (r registry) supports(kind string, req *typev1.Capability) bool {
 	return false
 }
 
-// Handlers is the production registry. It is empty in plan row 6: each
-// kind's handler, and the capability it advertises, comes with the row that
-// builds it (03n "Capabilities"), so until then every command is
-// UNSUPPORTED.
+// Handlers is the empty row-6 baseline. The run wiring supplies each later
+// handler explicitly, along with its narrow advertised capability.
 func Handlers() []Handler { return nil }

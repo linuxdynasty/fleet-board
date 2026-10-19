@@ -10,7 +10,8 @@ Rules for this package:
 - `EPOCH_MISMATCH` and `SEQ_REPLAYED` are never logged or acked; every
   other refusal is logged, acked and answered once.
 - Deadlines use the strict `conn.HubClock` only; a hub time the agent
-  cannot read is past.
+  cannot read is past. Recheck after the running-state write, immediately
+  before handler entry, and after an approval answer.
 - A result is committed to the command log before it is queued; send with
   the run's context, never a hook's. Hooks (`Command`, `OnConnected`) only
   hand over without blocking.

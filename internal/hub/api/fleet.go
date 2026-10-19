@@ -65,6 +65,9 @@ type FleetOptions struct {
 	// outbox service to log and count after commit. Nil skips it. The
 	// daemon passes the agent listener's outbox service.
 	OnCommandsClosed func(ctx context.Context, closed []outbox.Closed)
+	// OnCommandQueued wakes delivery after sendOne commits a new command.
+	// Nil leaves the row pending until the machine's next ready connection.
+	OnCommandQueued func(outbox.Op)
 	// HubInstanceID is the hub_instance_id the gateway sends on the agent
 	// wire (HelloAck): random per process start. GetServerInfo reports it
 	// so a new id invalidates every Watch resume token (02k).
@@ -96,6 +99,7 @@ type Fleet struct {
 	revoker          Revoker
 	byeMachine       func(machineID string) bool
 	onCommandsClosed func(ctx context.Context, closed []outbox.Closed)
+	onCommandQueued  func(outbox.Op)
 	instanceID       string
 	sysLoop          *system.Loop
 	// started is the hub clock when the service was built. Fleet is
@@ -124,7 +128,8 @@ func NewFleet(opts FleetOptions) (*Fleet, error) {
 	f := &Fleet{
 		store: opts.Store, caDER: opts.CACert, tel: opts.Telemetry, now: opts.Now, random: opts.Random,
 		revoker: opts.Revoker, byeMachine: opts.ByeMachine, onCommandsClosed: opts.OnCommandsClosed,
-		instanceID: opts.HubInstanceID, sysLoop: opts.SystemLoop,
+		onCommandQueued: opts.OnCommandQueued,
+		instanceID:      opts.HubInstanceID, sysLoop: opts.SystemLoop,
 	}
 	if f.now == nil {
 		f.now = time.Now

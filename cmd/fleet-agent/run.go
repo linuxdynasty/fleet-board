@@ -10,9 +10,13 @@ import (
 
 	"github.com/spf13/cobra"
 
+	agentv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/agent/v1"
+	typev1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/type/v1"
 	"github.com/linuxdynasty/fleet-board/internal/agent/conn"
 	"github.com/linuxdynasty/fleet-board/internal/agent/events"
+	"github.com/linuxdynasty/fleet-board/internal/agent/exec"
 	"github.com/linuxdynasty/fleet-board/internal/agent/ring"
+	"github.com/linuxdynasty/fleet-board/internal/agent/settings"
 	"github.com/linuxdynasty/fleet-board/internal/agent/wakenet"
 	"github.com/linuxdynasty/fleet-board/internal/hub/lock"
 	"github.com/linuxdynasty/fleet-board/internal/telemetry"
@@ -56,6 +60,15 @@ func runCommand(dir, cfg func() (string, error), version string, discover conn.D
 }
 
 func runAgent(ctx context.Context, dir, cfgDir, version, boot string, tel *telemetry.Telemetry, discover conn.Discover) error {
+	return runAgentWithTmux(ctx, dir, cfgDir, version, boot, tel, discover, startTmux)
+}
+
+// runAgentWithTmux keeps the production run path while tests place its real
+// observer on an isolated tmux socket rather than the developer's server.
+func runAgentWithTmux(ctx context.Context, dir, cfgDir, version, boot string, tel *telemetry.Telemetry,
+	discover conn.Discover, tmuxStart func(context.Context, *sync.WaitGroup, *telemetry.Telemetry) (tmuxRun, error),
+	onWired ...func(*settings.Manager),
+) error {
 	log := tel.Logger.With("component", "run")
 	failed := func(step string, err error) error {
 		// A signal during startup is a clean stop, not a failure, but only
@@ -110,12 +123,20 @@ func runAgent(ctx context.Context, dir, cfgDir, version, boot string, tel *telem
 
 	wctx, stop := context.WithCancel(ctx)
 	var wg sync.WaitGroup
-	defer func() { stop(); wg.Wait() }()
 	pol, err := startPolicy(wctx, cfgDir, dir, id.MachineID, tel, events.PolicyChanges(em))
 	if err != nil {
+		stop()
 		return failed("policy", err)
 	}
-	defer pol.close()
+	var sm *settings.Manager
+	defer func() {
+		stop()
+		wg.Wait()
+		if sm != nil {
+			sm.Close()
+		}
+		pol.close()
+	}()
 	netEvents := make(chan wakenet.Event)
 	wlog := tel.Logger.With("component", "wakenet")
 	wake, nw := wakenet.NewWake(wlog), wakenet.NewNet(wlog)
@@ -125,13 +146,17 @@ func runAgent(ctx context.Context, dir, cfgDir, version, boot string, tel *telem
 	// The heartbeat hook reads the loop's reconnect count; the loop exists only
 	// after the hook, and the hook runs only inside loop.Run.
 	var loop *conn.Loop
+	var ex *exec.Executor
+	var tmx tmuxRun
 	snapshot, heartbeat, err := machineHooks(wctx, &wg, tel, dir, nil, healthSeams{
 		Unacked: db.UnackedCount, Reconnects: func() uint64 { return loop.Reconnects() },
+		Refused:     func() uint64 { return ex.RefusedTotal() },
+		ControlDown: func() uint32 { return tmx.controlDown() },
 	}, em)
 	if err != nil {
 		return failed("machine", err)
 	}
-	tmx, err := startTmux(wctx, &wg, tel)
+	tmx, err = tmuxStart(wctx, &wg, tel)
 	if err != nil {
 		return failed("tmux", err)
 	}
@@ -154,10 +179,43 @@ func runAgent(ctx context.Context, dir, cfgDir, version, boot string, tel *telem
 	loop, err = conn.NewLoop(ctx, conn.LoopOptions{
 		Dir: dir, Identity: id, DB: db, Version: version, BootID: boot,
 		Telemetry: tel, Events: netEvents, PushOff: nw.PushOff, Discover: discover,
-		Snapshot: chainSnapshot(snapshot, pol.mgr.Snapshot, tmx.snapshot, observed.snapshot), Heartbeat: heartbeat, Emitter: em,
+		Snapshot: chainSnapshot(snapshot, pol.mgr.Snapshot, func(ctx context.Context, s *agentv1.Snapshot) error {
+			return sm.Snapshot(ctx, s)
+		}, tmx.snapshot, observed.snapshot), Heartbeat: heartbeat, Emitter: em,
+		Command:      func(ctx context.Context, epoch uint64, c *agentv1.Command) bool { return ex.Command(ctx, epoch, c) },
+		Settings:     func(ctx context.Context, epoch uint64, s *agentv1.Settings) bool { return sm.Hook(ctx, epoch, s) },
+		OnConnected:  func(ctx context.Context, epoch uint64, clock conn.HubClock) { ex.OnConnected(ctx, epoch, clock) },
+		Capabilities: func() []*typev1.Capability { return ex.Capabilities() },
 	})
 	if err != nil {
 		return failed("loop", err)
+	}
+	sm, err = settings.Open(wctx, settings.Options{
+		DB: db, Local: pol.mgr, Sender: loop, Telemetry: tel,
+	})
+	if err != nil {
+		return failed("settings", err)
+	}
+	h, err := interruptHandler(tmx, sm, tel)
+	if err != nil {
+		return failed("interrupt", err)
+	}
+	var handlers []exec.Handler
+	if h != nil {
+		handlers = append(handlers, h)
+	}
+	ex, err = exec.New(exec.Options{
+		DB: db, Sender: loop, Clock: loop.HubClock(), Policy: sm,
+		Audit: pol.audit, Handlers: handlers, Telemetry: tel,
+		Logger: tel.Logger.With("component", "exec", "machine_id", id.MachineID),
+	})
+	if err != nil {
+		return failed("executor", err)
+	}
+	wg.Go(func() { _ = sm.Run(wctx) })
+	wg.Go(func() { _ = ex.Run(wctx) })
+	for _, report := range onWired {
+		report(sm)
 	}
 	defer startStatusFile(dir, tel, loop, pol.mgr.WatchOff, tmx.watch, observed.ambiguous)()
 	if err := loop.Run(ctx); err != nil {

@@ -258,6 +258,14 @@ It routes only to sessions the hub started until the session mirror lands
 (any other id is `SESSION_NOT_FOUND`); `pane` is required and `max_bytes`
 caps at 256 KiB.
 
+`InterruptPane` now routes a mapped session to the default tmux server
+through the durable outbox. Both local listeners share the same service. A
+fresh command wakes delivery only after its write commits, even if the caller
+cancelled while waiting; request replay does not wake it again. Another tmux
+server is refused before enqueue. The ordinary route for developer sessions
+still needs the observed-session mirror; CreateSession has no production
+EnsureSession handler yet.
+
 ## Watch
 
 `Watch(WatchRequest{subscriptions[]{topic, filter, send_initial}, resume_token})`

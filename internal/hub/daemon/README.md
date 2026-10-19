@@ -67,7 +67,10 @@ parses flags and calls `Init`, `Run`, `EnrollToken`, `Backup` or `Restore`.
    the reader in tests). The admin service carries the cross-listener
    wiring a revoke needs after commit: the revocation list its serials
    stage onto, the agent listener's live-stream cut for `Bye{REVOKED}`,
-   and the outbox service for the commands the revoke closed. The Fleet
+   and the outbox service for the commands the revoke closed. The same
+   service is notified after a direct pane-control command commits through
+   `sendOne`, so an already connected machine receives it without waiting to
+   reconnect. The Fleet
    service reports the agent listener's `hub_instance_id`, so the id on
    the API is the one the agents see. Then it starts the mDNS
    advertiser (`internal/hub/discovery`, while `discovery.mdns` is true; it

@@ -415,7 +415,8 @@ func bind(ctx context.Context, cfg *config.Config, opts Options, d hubDeps, sysL
 		Store: d.st, CACert: d.id.CACert, Telemetry: s.tel, Now: opts.Now,
 		StateDir: cfg.StateDir, LocalTrusted: cfg.Mode == "local_trusted",
 		Revoker: d.revoked, ByeMachine: agent.ByeMachine, OnCommandsClosed: agent.Outbox().Closed,
-		HubInstanceID: agent.InstanceID(), SystemLoop: sysLoop,
+		OnCommandQueued: func(op outbox.Op) { agent.Outbox().Notify(op) },
+		HubInstanceID:   agent.InstanceID(), SystemLoop: sysLoop,
 	})
 	if err != nil {
 		return nil, nil, nil, err

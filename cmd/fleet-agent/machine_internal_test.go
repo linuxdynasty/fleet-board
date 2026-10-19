@@ -23,8 +23,10 @@ func TestMachineHooksFillHealthFromTheSeams(t *testing.T) {
 	var wg sync.WaitGroup
 	t.Cleanup(func() { cancel(); wg.Wait() })
 	seams := healthSeams{
-		Unacked:    func() int { return 5 },
-		Reconnects: func() uint64 { return 9 },
+		Unacked:     func() int { return 5 },
+		Reconnects:  func() uint64 { return 9 },
+		Refused:     func() uint64 { return 3 },
+		ControlDown: func() uint32 { return 2 },
 	}
 	_, heartbeat, err := machineHooks(ctx, &wg, tel, t.TempDir(), nil, seams, nil)
 	if err != nil {
@@ -35,8 +37,9 @@ func TestMachineHooksFillHealthFromTheSeams(t *testing.T) {
 		hb := &agentv1.Heartbeat{}
 		heartbeat(ctx, hb)
 		h := hb.GetHealth()
-		if h.GetUnackedResults() != 5 || h.GetReconnectsTotal() != 9 {
-			t.Fatalf("health = %v, want unacked 5 and reconnects 9", h)
+		if h.GetUnackedResults() != 5 || h.GetReconnectsTotal() != 9 ||
+			h.GetCommandsRefusedTotal() != 3 || h.GetTmuxControlDown() != 2 {
+			t.Fatalf("health = %v, want unacked 5, reconnects 9, refused 3 and control down 2", h)
 		}
 		if h.RssBytes != nil { // the first sample has arrived
 			if h.GetRssBytes() < 1<<20 {

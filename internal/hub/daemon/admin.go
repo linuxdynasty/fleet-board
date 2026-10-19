@@ -37,6 +37,7 @@ func bindAdmin(cfg *config.Config, opts Options, fleet *api.Fleet, s *session) (
 	if err := os.Chmod(path, 0o600); err != nil {
 		return listener{}, errors.Join(fmt.Errorf("daemon: chmod admin socket: %w", err), ln.Close())
 	}
+
 	wrapped, srv := api.NewAdmin(ln, api.AdminOptions{
 		Fleet: fleet, Telemetry: s.tel, UID: uint32(uid), PeerUID: opts.PeerUID,
 	})

@@ -127,6 +127,12 @@ forward the port over SSH with the same port number on both sides
 `Host` header the hub refuses (`HOST_NOT_ALLOWED`, [02f](02f-hub-authentication.md)).
 From v3 `fleet` runs on any machine that can reach the API (`authenticated`).
 
+The agent run path now registers Interrupt for the default tmux server and
+advertises `tmux.default_server.interrupt` version 1 only when that handler is
+available. Envelope, deadline and local policy checks still run before input.
+An unfinished command uses the same guarded executor when resumed. This does
+not add an EnsureSession handler or complete the session mirror.
+
 ## Labels that change behaviour
 
 A label is free text the owner or the local policy adds ([03e](03e-settings-and-drift.md)).

@@ -93,7 +93,24 @@ All pass local policy, carry a `command_id`, and are idempotent except F3.
   detached client `TMUX_SERVER_DOWN`, a lost reply `UNKNOWN_OUTCOME`, and
   a refused send re-reads the listing (gone `PANE_NOT_FOUND`, dead
   `PANE_BUSY`, else `INTERNAL`). Landed (`internal/agent/control`,
-  issue #67).
+  issue #67). The first production slice accepts only the default server
+  under `tmux.default_server.interrupt` version 1. It checks the merged
+  local and hub `default_server` mode at execution time, including after
+  an approval wait or restart; only `CONTROL` permits C-c. The hub can
+  route the call only when its `hub_sessions` table already maps the
+  session to a machine. The developer-session mirror has not landed, so
+  an arbitrary developer session still reads `SESSION_NOT_FOUND`. Other
+  control operations and servers remain unregistered in this slice.
+  Each command registers a reference before waiting for the shared pane
+  lock. The agent removes that lock after its last holder or waiter leaves,
+  including when a stale or missing pane is refused. This keeps repeated
+  refusals from growing the lock map while preserving same-pane ordering.
+  Scheduler Interrupt is refused until an agent-local fleet-ownership check
+  can prove it stays out of developer sessions (02g); manual owner/operator
+  Interrupt remains available under the same local controls.
+  `CreateSession` records a route but its `EnsureSession` is still
+  unregistered, so it cannot create a working pane for Interrupt yet. The
+  observed-session mirror in #40 supplies the future ordinary route.
 - **E11 Set pane availability:** the developer's board mark for one
   pane (or its clear, or the hub freeing a merged goal's pane), recorded
   on the agent's in-memory overlay and reported in every snapshot with an

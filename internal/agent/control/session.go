@@ -107,30 +107,46 @@ type Ensurer struct {
 	// racing commands cannot both land under the cap or the same name.
 	// Never nested: nothing under it calls back into the Ensurer.
 	mu sync.Mutex
-	// paneMu guards panes: one lock per pane id serializing F3's
-	// check-and-send sequence (paneInfo through sendLines). The executor
-	// runs each command on its own goroutine, and fleet-generated keys do
-	// not update the developer-input signal, so without it two commands
-	// could both read an empty line and then interleave their typing.
-	// Never nested: nothing under a pane lock calls back into the
-	// Ensurer, and F1/F2 never take one.
+	// paneMu guards the pane-lock map and reference counts. A reference
+	// covers both waiting and holding a pane lock. It is never held while
+	// waiting on a pane lock or doing tmux I/O.
 	paneMu sync.Mutex
-	panes  map[string]*sync.Mutex
+	panes  map[string]*paneLock
+}
+
+type paneLock struct {
+	mu   sync.Mutex
+	refs int
 }
 
 // lockPane holds one pane's check-and-send lock; the caller defers the
 // unlock. Panes are independent: commands to different panes never wait on
-// each other.
+// each other. The registered reference keeps a waiter on the same lock as
+// its current holder even if that holder finishes before the waiter runs.
+//
+// Lock order: paneMu protects lookup/ref updates and is released before
+// waiting on the entry mutex. Unlock releases the entry mutex first, then
+// takes paneMu to drop the reference. No locks cover network or tmux calls
+// except the selected pane mutex; there is no database transaction here.
 func (e *Ensurer) lockPane(id string) func() {
 	e.paneMu.Lock()
 	l, ok := e.panes[id]
 	if !ok {
-		l = &sync.Mutex{}
+		l = &paneLock{}
 		e.panes[id] = l
 	}
+	l.refs++
 	e.paneMu.Unlock()
-	l.Lock()
-	return l.Unlock
+	l.mu.Lock()
+	return func() {
+		l.mu.Unlock()
+		e.paneMu.Lock()
+		l.refs--
+		if l.refs == 0 {
+			delete(e.panes, id)
+		}
+		e.paneMu.Unlock()
+	}
 }
 
 // New checks the setup and fails fast: a half-built Ensurer must never
@@ -182,7 +198,7 @@ func New(o Options) (*Ensurer, error) {
 		rec:        o.Rec,
 		now:        o.Now,
 		start:      o.StartServer,
-		panes:      map[string]*sync.Mutex{},
+		panes:      map[string]*paneLock{},
 	}
 	if e.tmux == "" {
 		e.tmux = "tmux"
@@ -197,6 +213,25 @@ func New(o Options) (*Ensurer, error) {
 		e.now = time.Now
 	}
 	return e, nil
+}
+
+// NewInterrupt binds only F4 to the default server. The other Ensurer
+// dependencies are deliberately absent: registering a broader handler later
+// requires its own complete wiring and proof.
+func NewInterrupt(o Options) (*Ensurer, error) {
+	if o.Runner == nil || o.Caller.Name() == "" || o.Socket == "" || o.Sender == nil ||
+		o.Server != "default" || o.Kind != typev1.TmuxServerKind_TMUX_SERVER_KIND_DEFAULT {
+		return nil, errors.New("control: Interrupt needs the default server, runner, tmux caller, socket and observer client")
+	}
+	tmuxProgram := o.Tmux
+	if tmuxProgram == "" {
+		tmuxProgram = "tmux"
+	}
+	return &Ensurer{
+		runner: o.Runner, caller: o.Caller, tmux: tmuxProgram, socket: o.Socket,
+		server: o.Server, kind: o.Kind, sender: o.Sender, rec: o.Rec,
+		panes: map[string]*paneLock{},
+	}, nil
 }
 
 // nameRE is the fleet session name (command_tmux.proto EnsureSession.name),
