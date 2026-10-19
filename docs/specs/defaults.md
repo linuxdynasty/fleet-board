@@ -30,6 +30,10 @@ spec change. "Decided here" marks a value no earlier document gave.
 
 | Name | Value | Unit | Owner | Kind |
 |---|---|---|---|---|
+| Linux agent restart interval | 60 | s | [02j](02j-hub-runtime.md#staying-awake-and-surviving-logout), #44 | fixed |
+| Linux agent restart burst | 5 | starts | [02j](02j-hub-runtime.md#staying-awake-and-surviving-logout), #44 | fixed |
+| Linux agent restart delay | 5 | s | [02j](02j-hub-runtime.md#staying-awake-and-surviving-logout), #44 | fixed |
+| Linux agent stop grace | 30 | s | [02j](02j-hub-runtime.md#staying-awake-and-surviving-logout), #44 | fixed |
 | Heartbeat | 15 (the agent follows `HelloAck.heartbeat_interval` from 1 to 15 s) | s | [03](03-workflows.md) A5 | fixed |
 | Resource sample (B2) | 30 | s | [02i](02i-delivery-and-sequencing.md) | fixed |
 | tmux server discovery: a directory watch (fsnotify, ADR 0020) on the tmux socket folder (`$TMUX_TMPDIR` or `/tmp`, then `tmux-<uid>`, created 0700 when missing); also rescanned at each Snapshot build, each SnapshotRequest and after a control client exits; no timer; a change wakes that server's control client at most once a second (each wake of an absent client costs one `tmux list-sessions`). A server started with `-S` elsewhere is never seen; one with no session (`exit-empty` off) cannot be attached and its first `new-session` changes no socket, so it is seen at the next rescan | 1 | s | [01](01-agent-capabilities.md) E2, [ADR 0022](../adr/0022-drift-audit-decisions.md) rule 6, [ADR 0024](../adr/0024-pre-build-owner-decisions.md) decision 9; decided here | fixed |

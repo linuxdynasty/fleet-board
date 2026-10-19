@@ -1,0 +1,20 @@
+[Unit]
+Description=Fleet agent
+StartLimitIntervalSec=60s
+StartLimitBurst=5
+
+[Service]
+Type=simple
+ExecStart="%h/.local/bin/fleet-agent" run
+WorkingDirectory=%h
+Restart=on-failure
+RestartSec=5s
+RestartPreventExitStatus=2
+KillSignal=SIGTERM
+TimeoutStopSec=30s
+KillMode=process
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target
