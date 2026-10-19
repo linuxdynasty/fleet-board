@@ -46,13 +46,13 @@ file; it parses text it is given.
   usage-limit and sign-in screens are a later slice. Nothing is ever guessed.
   `ConditionParserVersion` bumps when this parser's behavior changes.
 - `muse_test.go`: the adapter's declaration for the shared
-  conformance test (`harness.Conform`). Versions `1.4.4`, `1.4.6` and
-  `1.4.7` are `UNVERIFIED_PARSING` with `USAGE`, the trust half of
-  `READY` and the pause, provider-error and rate-limit `CONDITION` screens
-  fixture-verified; the golden table is `testdata/support-table.txt`,
-  so a claim change is a reviewed diff.
-- Fixtures under `testdata/1.4.4/`, `testdata/1.4.6/` and
-  `testdata/1.4.7/`, documented in `testdata/README.md`.
+  conformance test (`harness.Conform`). Versions `1.4.4`, `1.4.6`,
+  `1.4.7` and `1.4.11` are `UNVERIFIED_PARSING` with `USAGE`, the trust
+  half of `READY` and the pause, provider-error and rate-limit
+  `CONDITION` screens fixture-verified; the golden table is
+  `testdata/support-table.txt`, so a claim change is a reviewed diff.
+- Fixtures under `testdata/1.4.4/`, `testdata/1.4.6/`, `testdata/1.4.7/`
+  and `testdata/1.4.11/`, documented in `testdata/README.md`.
 
 Tests: `CGO_ENABLED=0 go test -shuffle=on -count=3
 ./internal/harness/muse/`. The fixtures need no harness.

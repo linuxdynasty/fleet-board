@@ -31,13 +31,13 @@ file; it parses text it is given.
   later slice. Nothing is ever guessed. `ConditionParserVersion` bumps
   when this parser's behavior changes.
 - `codex_test.go`: the adapter's declaration for the shared
-  conformance test (`harness.Conform`). Versions `0.160.0` and
-  `0.162.1` are `UNVERIFIED_PARSING` with `USAGE`, the trust half
-  of `READY` and the pause `CONDITION` fixture-verified;
-  the golden table is `testdata/support-table.txt`, so a claim change
-  is a reviewed diff.
-- Fixtures under `testdata/0.160.0/` and `testdata/0.162.1/`,
-  documented in `testdata/README.md`.
+  conformance test (`harness.Conform`). Versions `0.160.0`,
+  `0.162.1` and `0.163.0` are `UNVERIFIED_PARSING` with `USAGE`,
+  the trust half of `READY` and the pause `CONDITION`
+  fixture-verified; the golden table is `testdata/support-table.txt`,
+  so a claim change is a reviewed diff.
+- Fixtures under `testdata/0.160.0/`, `testdata/0.162.1/` and
+  `testdata/0.163.0/`, documented in `testdata/README.md`.
 
 Tests: `CGO_ENABLED=0 go test -shuffle=on -count=3
 ./internal/harness/codex/`. The fixtures need no harness.

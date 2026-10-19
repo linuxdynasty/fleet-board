@@ -13,7 +13,7 @@ import (
 // ParserVersion is its own version: bump it when the parser's behavior
 // changes (01b, fleet-harness-adapter).
 const (
-	Version       = "1.19.0"
+	Version       = "1.19.3"
 	ParserVersion = "1"
 )
 
