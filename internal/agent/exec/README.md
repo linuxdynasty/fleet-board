@@ -126,3 +126,7 @@ with `FLEET_EXEC_CORPUS_OUT`); ack then result, the result sent equal to
 the logged one; a known id never run twice; the sleep acceptance line; the
 approval wait re-sent on connect; restart recovery per class; the role
 matrix against 02g; and that nothing here imports `internal/agent/tmux`.
+
+The strict deadline is checked again after the durable running-state write,
+before calling any handler. Expiry or an unreadable clock returns EXPIRED
+without a handler run. An approval returned after that deadline times out.

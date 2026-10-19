@@ -59,6 +59,13 @@ func (e *Executor) do(ctx context.Context, c *agentv1.Command, ent ring.Entry, p
 		e.storeFailed(ctx, ent.ID, "running", err)
 		return
 	}
+	// SetRunning may wait behind other durable writes. No transaction is
+	// held here: re-read the strict clock before any handler can take effect.
+	if e.past(c) {
+		e.finish(ctx, c, ent, refusal(typev1.Status_STATUS_EXPIRED, typev1.ReasonCode_REASON_CODE_EXPIRED,
+			"the command passed its deadline before the handler could start"), time.Time{}, true, sp)
+		return
+	}
 	req := Request{
 		Command: c, Step: ent.Step, FleetOnly: p.cell.fleetOnly, FleetOrMarked: p.cell.fleetOrMarked,
 		Progress: e.progress(ent.ID, ent.Kind),
@@ -116,6 +123,12 @@ func (e *Executor) await(ctx context.Context, c *agentv1.Command, ent ring.Entry
 		}
 		if !decided {
 			continue
+		}
+		// An approver can return as its wait expires or the machine wakes.
+		// Only an answer received before the strict deadline can approve.
+		if e.past(c) {
+			return refusal(typev1.Status_STATUS_REJECTED_BY_POLICY, typev1.ReasonCode_REASON_CODE_LOCAL_CONFIRM_TIMEOUT,
+				"nobody approved the command at the machine before its deadline"), false
 		}
 		decision := "denied"
 		if approved {

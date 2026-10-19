@@ -432,3 +432,7 @@ that machine and for nothing that decides between machines.
   started. The agent keeps that strict clock apart from the lenient ones it
   uses for pruning and renewal, which may run late but never expire a
   command.
+
+Before handler entry the agent rechecks the strict command deadline after its
+running-state write. A late approval times out; a command that expires while
+waiting for that write answers `EXPIRED` without starting the handler.

@@ -23,4 +23,6 @@
 // to place the command, and that answer may read tmux on the command
 // context ([Variant]): anything it cannot place reads the developer's
 // window, the strictest row.
+// The strict deadline is rechecked after the running-state write and before
+// handler entry; a late approval cannot start a handler.
 package exec

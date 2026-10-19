@@ -242,6 +242,10 @@ authority: it measures skew from `Hello.sent_time` and `Heartbeat.sent_time`,
 warns over 5 minutes, orders cross-machine data by hub-adjusted time and
 distrusts a machine's clock over 15 minutes (02i, "Clocks"; ADR 0004).
 
+The agent checks strict hub time again after saving its running state, before
+calling a handler. A late or unreadable clock returns `EXPIRED`; an approval
+received after the deadline returns `LOCAL_CONFIRM_TIMEOUT`.
+
 **Not idempotent: `SendKeys`.** After an agent restart mid-command the
 result is `UNKNOWN_OUTCOME`; the hub never retries it and asks a person.
 `RunHarnessCommand` is idempotent only for `OBSERVE` class; a `SESSION`,
