@@ -36,7 +36,7 @@ type invocation struct {
 }
 
 type listFlags struct {
-	size                 int
+	size                 int32
 	token, filter, order string
 }
 
@@ -119,7 +119,7 @@ func (i *invocation) command() *cobra.Command {
 		}}
 		c.Flags().BoolVar(&i.json, "json", false, "print the full response as JSON")
 		if name == "machines" || name == "accounts" || name == "goals" || name == "work" {
-			c.Flags().IntVar(&i.flags.size, "page-size", 0, "rows in one page (1 to 500)")
+			c.Flags().Int32Var(&i.flags.size, "page-size", 0, "rows in one page (1 to 500)")
 			c.Flags().StringVar(&i.flags.token, "page-token", "", "opaque next-page token from the previous response")
 			c.Flags().StringVar(&i.flags.filter, "filter", "", "server filter")
 			c.Flags().StringVar(&i.flags.order, "order-by", "", "server order")

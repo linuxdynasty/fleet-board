@@ -3,6 +3,7 @@ package fleetcli
 import (
 	"bytes"
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -26,7 +27,7 @@ func TestClientAcceptsOnlyLocalPlainHTTP(t *testing.T) {
 	} {
 		t.Run(raw, func(t *testing.T) {
 			_, _, err := newClient(raw)
-			if err != errUsage {
+			if !errors.Is(err, errUsage) {
 				t.Fatalf("newClient(%q) = %v, want usage refusal", raw, err)
 			}
 		})

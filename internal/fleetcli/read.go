@@ -83,7 +83,7 @@ func (i *invocation) read(ctx context.Context, c hubv1connect.FleetServiceClient
 			}
 			return machineTable([]*hubv1.Machine{r.Msg.GetMachine()}, ""), nil
 		}
-		r, err := c.ListMachines(ctx, connect.NewRequest(&hubv1.ListMachinesRequest{PageSize: int32(i.flags.size), PageToken: i.flags.token, Filter: i.flags.filter, OrderBy: i.flags.order}))
+		r, err := c.ListMachines(ctx, connect.NewRequest(&hubv1.ListMachinesRequest{PageSize: i.flags.size, PageToken: i.flags.token, Filter: i.flags.filter, OrderBy: i.flags.order}))
 		if err != nil {
 			return nil, err
 		}
@@ -105,7 +105,7 @@ func (i *invocation) read(ctx context.Context, c hubv1connect.FleetServiceClient
 			}
 			return accountTable([]*hubv1.Account{r.Msg.GetAccount()}, ""), nil
 		}
-		r, err := c.ListAccounts(ctx, connect.NewRequest(&hubv1.ListAccountsRequest{PageSize: int32(i.flags.size), PageToken: i.flags.token, Filter: i.flags.filter, OrderBy: i.flags.order}))
+		r, err := c.ListAccounts(ctx, connect.NewRequest(&hubv1.ListAccountsRequest{PageSize: i.flags.size, PageToken: i.flags.token, Filter: i.flags.filter, OrderBy: i.flags.order}))
 		if err != nil {
 			return nil, err
 		}
@@ -127,7 +127,7 @@ func (i *invocation) read(ctx context.Context, c hubv1connect.FleetServiceClient
 			}
 			return goalTable([]*hubv1.Goal{r.Msg.GetGoal()}, ""), nil
 		}
-		r, err := c.ListGoals(ctx, connect.NewRequest(&hubv1.ListGoalsRequest{PageSize: int32(i.flags.size), PageToken: i.flags.token, Filter: i.flags.filter, OrderBy: i.flags.order}))
+		r, err := c.ListGoals(ctx, connect.NewRequest(&hubv1.ListGoalsRequest{PageSize: i.flags.size, PageToken: i.flags.token, Filter: i.flags.filter, OrderBy: i.flags.order}))
 		if err != nil {
 			return nil, err
 		}
@@ -154,7 +154,7 @@ func (i *invocation) read(ctx context.Context, c hubv1connect.FleetServiceClient
 			}
 			return workTable([]*hubv1.WorkItem{r.Msg.GetWorkItem()}, ""), nil
 		}
-		r, err := c.ListWorkItems(ctx, connect.NewRequest(&hubv1.ListWorkItemsRequest{PageSize: int32(i.flags.size), PageToken: i.flags.token, Filter: i.flags.filter, OrderBy: i.flags.order}))
+		r, err := c.ListWorkItems(ctx, connect.NewRequest(&hubv1.ListWorkItemsRequest{PageSize: i.flags.size, PageToken: i.flags.token, Filter: i.flags.filter, OrderBy: i.flags.order}))
 		if err != nil {
 			return nil, err
 		}

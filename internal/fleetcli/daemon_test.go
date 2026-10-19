@@ -27,12 +27,13 @@ type localHub struct {
 }
 
 func startHub(t *testing.T) localHub {
+	t.Helper()
 	return startHubWithSeed(t, true)
 }
 
 func startHubWithSeed(t *testing.T, withSeed bool) localHub {
 	t.Helper()
-	dir, err := os.MkdirTemp("/tmp", "fleet-cli-")
+	dir, err := os.MkdirTemp("/tmp", "fleet-cli-") //nolint:usetesting // macOS t.TempDir paths can exceed the hub admin Unix socket limit
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -421,14 +422,14 @@ func golden(t *testing.T, name, raw string) {
 	pretty = append(pretty, '\n')
 	path := filepath.Join("testdata", name+".golden.json")
 	if os.Getenv("FLEET_CLI_UPDATE_GOLDEN") == "1" {
-		if err := os.MkdirAll("testdata", 0o755); err != nil {
+		if err := os.MkdirAll("testdata", 0o700); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(path, pretty, 0o644); err != nil {
+		if err := os.WriteFile(path, pretty, 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
-	want, err := os.ReadFile(path)
+	want, err := os.ReadFile(path) //nolint:gosec // G304: committed golden fixture path from literal test names, no external input
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -449,7 +450,9 @@ func normalize(value any) {
 			case strings.HasSuffix(key, "Bytes"):
 				v[key] = "<bytes>"
 			case key == "lastBackupPath":
-				v[key] = "<state>/backups/" + filepath.Base(item.(string))
+				if path, ok := item.(string); ok {
+					v[key] = "<state>/backups/" + filepath.Base(path)
+				}
 			default:
 				normalize(item)
 			}

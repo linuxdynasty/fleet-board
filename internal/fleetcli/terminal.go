@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"math"
 	"os"
 
 	"golang.org/x/sys/unix"
@@ -29,6 +30,9 @@ func readSecret(ctx context.Context, in *os.File, prompt io.Writer) (line []byte
 		return nil, errNotTerminal
 	}
 	fd := int(in.Fd())
+	if fd < 0 || fd > math.MaxInt32 {
+		return nil, errNotTerminal
+	}
 	old, err := unix.IoctlGetTermios(fd, ioctlReadTermios)
 	if err != nil {
 		return nil, errNotTerminal
