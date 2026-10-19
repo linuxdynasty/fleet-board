@@ -8,6 +8,8 @@
 // admin socket keeps the kernel peer's distinct LOCAL_USER identity. Admitted
 // TCP RPCs use configured per-class allowances after validation.
 // Export success counters and logs follow read quota admission.
+// Bulk list reads validate paging and reserve read quota before loading rows;
+// rate-limited enrollment requests count as enrollment refusals.
 // ListApprovals validates paging without reading rows before quota admission;
 // it expires due approvals and reads the page afterward in one writer job.
 // A refused Host or Origin is Connect permission_denied (HTTP 403), with

@@ -70,6 +70,19 @@ func (f *Fleet) ListUsageReadings(ctx context.Context, req *connect.Request[hubv
 		size = 500
 	}
 	now := f.hubNow()
+	want := usageQueryHash(m.GetFilter(), m.GetOrderBy(), account, size)
+	var cursor usageCursor
+	if m.GetPageToken() != "" {
+		cursor, err = parseUsageToken(m.GetPageToken(), want, len(order), now)
+		if err != nil {
+			return nil, f.usageReadRefused(ctx, apiError(connect.CodeInvalidArgument,
+				typev1.ReasonCode_REASON_CODE_PAGE_TOKEN_INVALID, "bad page_token", nil,
+				[]*typev1.FieldViolation{{Field: "page_token", Description: "bad page_token"}}))
+		}
+	}
+	if err := quotaCheckpoint(ctx, quotaRead); err != nil {
+		return nil, err
+	}
 	rows, err := statedb.ListStoredUsageReadings(ctx, f.store)
 	if err != nil {
 		return nil, f.usageReadFailed(ctx, actor, "store", err)
@@ -85,15 +98,8 @@ func (f *Fleet) ListUsageReadings(ctx context.Context, req *connect.Request[hubv
 		}
 	}
 	sortUsageViews(views, order)
-	want := usageQueryHash(m.GetFilter(), m.GetOrderBy(), account, size)
 	start := 0
 	if m.GetPageToken() != "" {
-		cursor, err := parseUsageToken(m.GetPageToken(), want, len(order), now)
-		if err != nil {
-			return nil, f.usageReadRefused(ctx, apiError(connect.CodeInvalidArgument,
-				typev1.ReasonCode_REASON_CODE_PAGE_TOKEN_INVALID, "bad page_token", nil,
-				[]*typev1.FieldViolation{{Field: "page_token", Description: "bad page_token"}}))
-		}
 		start = sort.Search(len(views), func(i int) bool {
 			return usageKeyAfter(views[i], order, cursor.key, cursor.id)
 		})
@@ -112,9 +118,6 @@ func (f *Fleet) ListUsageReadings(ctx context.Context, req *connect.Request[hubv
 	if end < len(views) {
 		last := views[end-1]
 		next = mintUsageToken(want, usageSortKey(last, order), usageTieID(last), now)
-	}
-	if err := quotaCheckpoint(ctx, quotaRead); err != nil {
-		return nil, err
 	}
 	return connect.NewResponse(&hubv1.ListUsageReadingsResponse{Readings: out, NextPageToken: next}), nil
 }

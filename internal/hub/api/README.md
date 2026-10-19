@@ -45,6 +45,10 @@ Export success counters and logs run only after read quota admission.
 charges one read before expiring due approvals and loading the result page
 in the same writer job. A bad cursor wins over an exhausted read allowance;
 an exhausted allowance leaves due approvals for the next expiry pass.
+Bulk list reads validate their filter, ordering and page token, then reserve
+read quota before loading or sorting stored rows. A spent allowance cannot
+force another full list scan. A rate-limited `CreateEnrollmentToken` call
+counts as an enrollment refusal and logs its closed `RATE_LIMITED` reason.
 
 `NewLocalServer` sets `ReadHeaderTimeout` (10 s) and `IdleTimeout` (2 min, a
 keep-alive connection with no request), no `ReadTimeout` (Watch and attach will

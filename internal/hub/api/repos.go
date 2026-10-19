@@ -57,6 +57,19 @@ func (f *Fleet) ListRepos(ctx context.Context, req *connect.Request[hubv1.ListRe
 		size = 500
 	}
 	now := f.hubNow()
+	want := repoQueryHash(m.GetFilter(), m.GetOrderBy(), size)
+	var cursor repoCursor
+	if m.GetPageToken() != "" {
+		cursor, err = parseRepoToken(m.GetPageToken(), want, len(order), now)
+		if err != nil {
+			return nil, f.repoReadRefused(ctx, apiError(connect.CodeInvalidArgument,
+				typev1.ReasonCode_REASON_CODE_PAGE_TOKEN_INVALID, "bad page_token", nil,
+				[]*typev1.FieldViolation{{Field: "page_token", Description: "bad page_token"}}))
+		}
+	}
+	if err := quotaCheckpoint(ctx, quotaRead); err != nil {
+		return nil, err
+	}
 	rows, err := statedb.ListWatchedRepoRows(ctx, f.store)
 	if err != nil {
 		return nil, f.repoReadFailed(ctx, actor, "store", err)
@@ -76,15 +89,8 @@ func (f *Fleet) ListRepos(ctx context.Context, req *connect.Request[hubv1.ListRe
 		}
 	}
 	sortRepoViews(matched, order)
-	want := repoQueryHash(m.GetFilter(), m.GetOrderBy(), size)
 	start := 0
 	if m.GetPageToken() != "" {
-		cursor, err := parseRepoToken(m.GetPageToken(), want, len(order), now)
-		if err != nil {
-			return nil, f.repoReadRefused(ctx, apiError(connect.CodeInvalidArgument,
-				typev1.ReasonCode_REASON_CODE_PAGE_TOKEN_INVALID, "bad page_token", nil,
-				[]*typev1.FieldViolation{{Field: "page_token", Description: "bad page_token"}}))
-		}
 		start = sort.Search(len(matched), func(i int) bool {
 			return repoKeyAfter(matched[i], order, cursor.key, cursor.id)
 		})
@@ -99,9 +105,6 @@ func (f *Fleet) ListRepos(ctx context.Context, req *connect.Request[hubv1.ListRe
 	if end < len(matched) {
 		last := matched[end-1]
 		next = mintRepoToken(want, repoSortKey(last, order), repoIDOf(last), now)
-	}
-	if err := quotaCheckpoint(ctx, quotaRead); err != nil {
-		return nil, err
 	}
 	return connect.NewResponse(&hubv1.ListReposResponse{Repos: out, NextPageToken: next}), nil
 }

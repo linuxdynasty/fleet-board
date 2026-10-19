@@ -59,6 +59,19 @@ func (f *Fleet) ListIntegrations(ctx context.Context, req *connect.Request[hubv1
 		size = 500
 	}
 	now := f.hubNow()
+	want := integrationQueryHash(m.GetFilter(), m.GetOrderBy(), size)
+	var cursor integrationCursor
+	if m.GetPageToken() != "" {
+		cursor, err = parseIntegrationToken(m.GetPageToken(), want, len(order), now)
+		if err != nil {
+			return nil, f.integrationReadRefused(ctx, apiError(connect.CodeInvalidArgument,
+				typev1.ReasonCode_REASON_CODE_PAGE_TOKEN_INVALID, "bad page_token", nil,
+				[]*typev1.FieldViolation{{Field: "page_token", Description: "bad page_token"}}))
+		}
+	}
+	if err := quotaCheckpoint(ctx, quotaRead); err != nil {
+		return nil, err
+	}
 	rows, err := statedb.ListStoredIntegrations(ctx, f.store)
 	if err != nil {
 		return nil, f.integrationReadFailed(ctx, actor, "store", err)
@@ -78,15 +91,8 @@ func (f *Fleet) ListIntegrations(ctx context.Context, req *connect.Request[hubv1
 		}
 	}
 	sortIntegrationViews(matched, order)
-	want := integrationQueryHash(m.GetFilter(), m.GetOrderBy(), size)
 	start := 0
 	if m.GetPageToken() != "" {
-		cursor, err := parseIntegrationToken(m.GetPageToken(), want, len(order), now)
-		if err != nil {
-			return nil, f.integrationReadRefused(ctx, apiError(connect.CodeInvalidArgument,
-				typev1.ReasonCode_REASON_CODE_PAGE_TOKEN_INVALID, "bad page_token", nil,
-				[]*typev1.FieldViolation{{Field: "page_token", Description: "bad page_token"}}))
-		}
 		start = sort.Search(len(matched), func(i int) bool {
 			return integrationKeyAfter(matched[i], order, cursor.key, cursor.id)
 		})
@@ -101,9 +107,6 @@ func (f *Fleet) ListIntegrations(ctx context.Context, req *connect.Request[hubv1
 	if end < len(matched) {
 		last := matched[end-1]
 		next = mintIntegrationToken(want, integrationSortKey(last, order), last.stored.ID, now)
-	}
-	if err := quotaCheckpoint(ctx, quotaRead); err != nil {
-		return nil, err
 	}
 	return connect.NewResponse(&hubv1.ListIntegrationsResponse{Integrations: out, NextPageToken: next}), nil
 }

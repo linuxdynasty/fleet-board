@@ -59,6 +59,19 @@ func (f *Fleet) ListMachines(ctx context.Context, req *connect.Request[hubv1.Lis
 		size = 500
 	}
 	now := f.hubNow()
+	want := machineQueryHash(m.GetFilter(), m.GetOrderBy(), size)
+	var cursor machineCursor
+	if m.GetPageToken() != "" {
+		cursor, err = parseMachineToken(m.GetPageToken(), want, len(order), now)
+		if err != nil {
+			return nil, f.machRefused(ctx, apiError(connect.CodeInvalidArgument,
+				typev1.ReasonCode_REASON_CODE_PAGE_TOKEN_INVALID, "bad page_token", nil,
+				[]*typev1.FieldViolation{{Field: "page_token", Description: "bad page_token"}}))
+		}
+	}
+	if err := quotaCheckpoint(ctx, quotaRead); err != nil {
+		return nil, err
+	}
 	rows, err := statedb.ListMachineRows(ctx, f.store)
 	if err != nil {
 		return nil, f.machFailed(ctx, actor, "store", err)
@@ -70,15 +83,8 @@ func (f *Fleet) ListMachines(ctx context.Context, req *connect.Request[hubv1.Lis
 		}
 	}
 	sortMachineRows(matched, order)
-	want := machineQueryHash(m.GetFilter(), m.GetOrderBy(), size)
 	start := 0
 	if m.GetPageToken() != "" {
-		cursor, err := parseMachineToken(m.GetPageToken(), want, len(order), now)
-		if err != nil {
-			return nil, f.machRefused(ctx, apiError(connect.CodeInvalidArgument,
-				typev1.ReasonCode_REASON_CODE_PAGE_TOKEN_INVALID, "bad page_token", nil,
-				[]*typev1.FieldViolation{{Field: "page_token", Description: "bad page_token"}}))
-		}
 		start = sort.Search(len(matched), func(i int) bool {
 			return machineKeyAfter(matched[i], order, cursor.key, cursor.id)
 		})
@@ -97,9 +103,6 @@ func (f *Fleet) ListMachines(ctx context.Context, req *connect.Request[hubv1.Lis
 	if end < len(matched) {
 		last := matched[end-1]
 		next = mintMachineToken(want, machineSortKey(last, order), last.MachineID, now)
-	}
-	if err := quotaCheckpoint(ctx, quotaRead); err != nil {
-		return nil, err
 	}
 	return connect.NewResponse(&hubv1.ListMachinesResponse{Machines: out, NextPageToken: next}), nil
 }

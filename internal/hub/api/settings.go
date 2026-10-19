@@ -161,6 +161,19 @@ func (f *Fleet) ListSettings(ctx context.Context, req *connect.Request[hubv1.Lis
 		size = 500
 	}
 	now := f.hubNow()
+	want := settingsQueryHash(m.GetFilter(), m.GetOrderBy(), size)
+	var cursor settingsCursor
+	if m.GetPageToken() != "" {
+		cursor, err = parseSettingsToken(m.GetPageToken(), want, len(order), now)
+		if err != nil {
+			return nil, f.settingsReadRefused(ctx, apiError(connect.CodeInvalidArgument,
+				typev1.ReasonCode_REASON_CODE_PAGE_TOKEN_INVALID, "bad page_token", nil,
+				[]*typev1.FieldViolation{{Field: "page_token", Description: "bad page_token"}}))
+		}
+	}
+	if err := quotaCheckpoint(ctx, quotaRead); err != nil {
+		return nil, err
+	}
 	rows, err := statedb.ListSettingsLayers(ctx, f.store)
 	if err != nil {
 		return nil, f.settingsReadFailed(ctx, actor, "store", err)
@@ -180,15 +193,8 @@ func (f *Fleet) ListSettings(ctx context.Context, req *connect.Request[hubv1.Lis
 		}
 	}
 	sortSettingsViews(matched, order)
-	want := settingsQueryHash(m.GetFilter(), m.GetOrderBy(), size)
 	start := 0
 	if m.GetPageToken() != "" {
-		cursor, err := parseSettingsToken(m.GetPageToken(), want, len(order), now)
-		if err != nil {
-			return nil, f.settingsReadRefused(ctx, apiError(connect.CodeInvalidArgument,
-				typev1.ReasonCode_REASON_CODE_PAGE_TOKEN_INVALID, "bad page_token", nil,
-				[]*typev1.FieldViolation{{Field: "page_token", Description: "bad page_token"}}))
-		}
 		start = sort.Search(len(matched), func(i int) bool {
 			return settingsKeyAfter(matched[i], order, cursor.key, cursor.id)
 		})
@@ -203,9 +209,6 @@ func (f *Fleet) ListSettings(ctx context.Context, req *connect.Request[hubv1.Lis
 	if end < len(matched) {
 		last := matched[end-1]
 		next = mintSettingsToken(want, settingsSortKey(last, order), last.stored.Scope, now)
-	}
-	if err := quotaCheckpoint(ctx, quotaRead); err != nil {
-		return nil, err
 	}
 	return connect.NewResponse(&hubv1.ListSettingsResponse{Settings: out, NextPageToken: next}), nil
 }

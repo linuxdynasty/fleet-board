@@ -69,6 +69,19 @@ func (f *Fleet) ListWorkItems(ctx context.Context, req *connect.Request[hubv1.Li
 		size = 500
 	}
 	now := f.hubNow()
+	want := workItemQueryHash(m.GetFilter(), m.GetOrderBy(), size)
+	var cursor workItemCursor
+	if m.GetPageToken() != "" {
+		cursor, err = parseWorkItemToken(m.GetPageToken(), want, len(order), now)
+		if err != nil {
+			return nil, f.workItemReadRefused(ctx, apiError(connect.CodeInvalidArgument,
+				typev1.ReasonCode_REASON_CODE_PAGE_TOKEN_INVALID, "bad page_token", nil,
+				[]*typev1.FieldViolation{{Field: "page_token", Description: "bad page_token"}}))
+		}
+	}
+	if err := quotaCheckpoint(ctx, quotaRead); err != nil {
+		return nil, err
+	}
 	rows, err := statedb.ListWorkItemRows(ctx, f.store)
 	if err != nil {
 		return nil, f.workItemReadFailed(ctx, actor, "store", err)
@@ -88,15 +101,8 @@ func (f *Fleet) ListWorkItems(ctx context.Context, req *connect.Request[hubv1.Li
 		}
 	}
 	sortWorkItemViews(matched, order)
-	want := workItemQueryHash(m.GetFilter(), m.GetOrderBy(), size)
 	start := 0
 	if m.GetPageToken() != "" {
-		cursor, err := parseWorkItemToken(m.GetPageToken(), want, len(order), now)
-		if err != nil {
-			return nil, f.workItemReadRefused(ctx, apiError(connect.CodeInvalidArgument,
-				typev1.ReasonCode_REASON_CODE_PAGE_TOKEN_INVALID, "bad page_token", nil,
-				[]*typev1.FieldViolation{{Field: "page_token", Description: "bad page_token"}}))
-		}
 		start = sort.Search(len(matched), func(i int) bool {
 			return workItemKeyAfter(matched[i], order, cursor.key, cursor.id)
 		})
@@ -115,9 +121,6 @@ func (f *Fleet) ListWorkItems(ctx context.Context, req *connect.Request[hubv1.Li
 	if end < len(matched) {
 		last := matched[end-1]
 		next = mintWorkItemToken(want, workItemSortKey(last, order), last.row.Key, now)
-	}
-	if err := quotaCheckpoint(ctx, quotaRead); err != nil {
-		return nil, err
 	}
 	return connect.NewResponse(&hubv1.ListWorkItemsResponse{WorkItems: out, NextPageToken: next}), nil
 }

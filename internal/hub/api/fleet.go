@@ -264,7 +264,7 @@ func (f *Fleet) CreateEnrollmentToken(ctx context.Context, req *connect.Request[
 		return nil, f.refused(ctx, actor, apiError(connect.CodeFailedPrecondition, typev1.ReasonCode_REASON_CODE_MACHINE_NOT_REENROLLABLE,
 			"the previous machine is neither revoked nor past its certificate lifetime", nil, nil))
 	case connect.CodeOf(err) == connect.CodeResourceExhausted:
-		return nil, err
+		return nil, f.refused(ctx, actor, err)
 	case err != nil:
 		return nil, f.failed(ctx, actor, "store", err)
 	}

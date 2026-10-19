@@ -59,6 +59,19 @@ func (f *Fleet) ListAccounts(ctx context.Context, req *connect.Request[hubv1.Lis
 		size = 500
 	}
 	now := f.hubNow()
+	want := accountQueryHash(m.GetFilter(), m.GetOrderBy(), size)
+	var cursor accountCursor
+	if m.GetPageToken() != "" {
+		cursor, err = parseAccountToken(m.GetPageToken(), want, len(order), now)
+		if err != nil {
+			return nil, f.accountReadRefused(ctx, apiError(connect.CodeInvalidArgument,
+				typev1.ReasonCode_REASON_CODE_PAGE_TOKEN_INVALID, "bad page_token", nil,
+				[]*typev1.FieldViolation{{Field: "page_token", Description: "bad page_token"}}))
+		}
+	}
+	if err := quotaCheckpoint(ctx, quotaRead); err != nil {
+		return nil, err
+	}
 	rows, err := statedb.ListStoredAccounts(ctx, f.store)
 	if err != nil {
 		return nil, f.accountReadFailed(ctx, actor, "store", err)
@@ -78,15 +91,8 @@ func (f *Fleet) ListAccounts(ctx context.Context, req *connect.Request[hubv1.Lis
 		}
 	}
 	sortAccountViews(matched, order)
-	want := accountQueryHash(m.GetFilter(), m.GetOrderBy(), size)
 	start := 0
 	if m.GetPageToken() != "" {
-		cursor, err := parseAccountToken(m.GetPageToken(), want, len(order), now)
-		if err != nil {
-			return nil, f.accountReadRefused(ctx, apiError(connect.CodeInvalidArgument,
-				typev1.ReasonCode_REASON_CODE_PAGE_TOKEN_INVALID, "bad page_token", nil,
-				[]*typev1.FieldViolation{{Field: "page_token", Description: "bad page_token"}}))
-		}
 		start = sort.Search(len(matched), func(i int) bool {
 			return accountKeyAfter(matched[i], order, cursor.key, cursor.id)
 		})
@@ -101,9 +107,6 @@ func (f *Fleet) ListAccounts(ctx context.Context, req *connect.Request[hubv1.Lis
 	if end < len(matched) {
 		last := matched[end-1]
 		next = mintAccountToken(want, accountSortKey(last, order), last.stored.ID, now)
-	}
-	if err := quotaCheckpoint(ctx, quotaRead); err != nil {
-		return nil, err
 	}
 	return connect.NewResponse(&hubv1.ListAccountsResponse{Accounts: out, NextPageToken: next}), nil
 }

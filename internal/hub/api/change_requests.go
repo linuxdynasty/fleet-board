@@ -62,6 +62,19 @@ func (f *Fleet) ListChangeRequests(ctx context.Context, req *connect.Request[hub
 		size = 500
 	}
 	now := f.hubNow()
+	want := changeRequestQueryHash(m.GetFilter(), m.GetOrderBy(), size)
+	var cursor changeRequestCursor
+	if m.GetPageToken() != "" {
+		cursor, err = parseChangeRequestToken(m.GetPageToken(), want, len(order), now)
+		if err != nil {
+			return nil, f.changeRequestReadRefused(ctx, apiError(connect.CodeInvalidArgument,
+				typev1.ReasonCode_REASON_CODE_PAGE_TOKEN_INVALID, "bad page_token", nil,
+				[]*typev1.FieldViolation{{Field: "page_token", Description: "bad page_token"}}))
+		}
+	}
+	if err := quotaCheckpoint(ctx, quotaRead); err != nil {
+		return nil, err
+	}
 	rows, err := statedb.ListChangeRequestRows(ctx, f.store)
 	if err != nil {
 		return nil, f.changeRequestReadFailed(ctx, actor, "store", err)
@@ -81,15 +94,8 @@ func (f *Fleet) ListChangeRequests(ctx context.Context, req *connect.Request[hub
 		}
 	}
 	sortChangeRequestViews(matched, order)
-	want := changeRequestQueryHash(m.GetFilter(), m.GetOrderBy(), size)
 	start := 0
 	if m.GetPageToken() != "" {
-		cursor, err := parseChangeRequestToken(m.GetPageToken(), want, len(order), now)
-		if err != nil {
-			return nil, f.changeRequestReadRefused(ctx, apiError(connect.CodeInvalidArgument,
-				typev1.ReasonCode_REASON_CODE_PAGE_TOKEN_INVALID, "bad page_token", nil,
-				[]*typev1.FieldViolation{{Field: "page_token", Description: "bad page_token"}}))
-		}
 		start = sort.Search(len(matched), func(i int) bool {
 			return changeRequestKeyAfter(matched[i], order, cursor.key, cursor.id)
 		})
@@ -108,9 +114,6 @@ func (f *Fleet) ListChangeRequests(ctx context.Context, req *connect.Request[hub
 	if end < len(matched) {
 		last := matched[end-1]
 		next = mintChangeRequestToken(want, changeRequestSortKey(last, order), last.row.Key, now)
-	}
-	if err := quotaCheckpoint(ctx, quotaRead); err != nil {
-		return nil, err
 	}
 	return connect.NewResponse(&hubv1.ListChangeRequestsResponse{ChangeRequests: out, NextPageToken: next}), nil
 }
