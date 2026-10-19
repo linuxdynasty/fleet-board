@@ -32,5 +32,6 @@
 // only: parse flags, build dependencies, call into internal/.
 // Policy wiring checks wait for watch startup and use Snapshot detection when
 // startup reports watch-off, matching the existing policy safety net.
-// The full-run policy test checks the event stored by the hub after reconnect.
+// The full-run policy test forces watch-off through private factory wiring,
+// then checks the first reconnect Snapshot and the hub's saved event.
 package main

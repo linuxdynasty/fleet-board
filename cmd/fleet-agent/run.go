@@ -15,6 +15,7 @@ import (
 	"github.com/linuxdynasty/fleet-board/internal/agent/conn"
 	"github.com/linuxdynasty/fleet-board/internal/agent/events"
 	"github.com/linuxdynasty/fleet-board/internal/agent/exec"
+	"github.com/linuxdynasty/fleet-board/internal/agent/policy"
 	"github.com/linuxdynasty/fleet-board/internal/agent/ring"
 	"github.com/linuxdynasty/fleet-board/internal/agent/settings"
 	"github.com/linuxdynasty/fleet-board/internal/agent/wakenet"
@@ -63,11 +64,25 @@ func runAgent(ctx context.Context, dir, cfgDir, version, boot string, tel *telem
 	return runAgentWithTmux(ctx, dir, cfgDir, version, boot, tel, discover, startTmux)
 }
 
+type agentRunDeps struct {
+	tmuxStart        func(context.Context, *sync.WaitGroup, *telemetry.Telemetry) (tmuxRun, error)
+	onWired          []func(*settings.Manager)
+	newPolicyWatcher func() (policy.Watcher, error)
+}
+
 // runAgentWithTmux keeps the production run path while tests place its real
 // observer on an isolated tmux socket rather than the developer's server.
 func runAgentWithTmux(ctx context.Context, dir, cfgDir, version, boot string, tel *telemetry.Telemetry,
 	discover conn.Discover, tmuxStart func(context.Context, *sync.WaitGroup, *telemetry.Telemetry) (tmuxRun, error),
 	onWired ...func(*settings.Manager),
+) error {
+	return runAgentWithDeps(ctx, dir, cfgDir, version, boot, tel, discover, agentRunDeps{
+		tmuxStart: tmuxStart, onWired: onWired,
+	})
+}
+
+func runAgentWithDeps(ctx context.Context, dir, cfgDir, version, boot string, tel *telemetry.Telemetry,
+	discover conn.Discover, deps agentRunDeps,
 ) error {
 	log := tel.Logger.With("component", "run")
 	failed := func(step string, err error) error {
@@ -123,7 +138,7 @@ func runAgentWithTmux(ctx context.Context, dir, cfgDir, version, boot string, te
 
 	wctx, stop := context.WithCancel(ctx)
 	var wg sync.WaitGroup
-	pol, err := startPolicy(wctx, cfgDir, dir, id.MachineID, tel, events.PolicyChanges(em))
+	pol, err := startPolicyWithWatcher(wctx, cfgDir, dir, id.MachineID, tel, events.PolicyChanges(em), deps.newPolicyWatcher)
 	if err != nil {
 		stop()
 		return failed("policy", err)
@@ -156,7 +171,7 @@ func runAgentWithTmux(ctx context.Context, dir, cfgDir, version, boot string, te
 	if err != nil {
 		return failed("machine", err)
 	}
-	tmx, err = tmuxStart(wctx, &wg, tel)
+	tmx, err = deps.tmuxStart(wctx, &wg, tel)
 	if err != nil {
 		return failed("tmux", err)
 	}
@@ -214,7 +229,7 @@ func runAgentWithTmux(ctx context.Context, dir, cfgDir, version, boot string, te
 	}
 	wg.Go(func() { _ = sm.Run(wctx) })
 	wg.Go(func() { _ = ex.Run(wctx) })
-	for _, report := range onWired {
+	for _, report := range deps.onWired {
 		report(sm)
 	}
 	defer startStatusFile(dir, tel, loop, pol.mgr.WatchOff, tmx.watch, observed.ambiguous)()
