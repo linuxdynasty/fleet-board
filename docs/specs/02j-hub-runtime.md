@@ -187,7 +187,9 @@ sync, the scheduler, the System signals and the nightly backup (decisions 12 and
   ends unless lingering is on. The owner runs `sudo loginctl enable-linger <user>`
   once per worker (one admin step, the only one fleet-board asks for);
   `fleet-agent doctor` runs `loginctl show-user <user> --property=Linger` and says
-  how to fix it.
+  how to fix it. The [Linux agent runbook](../runbooks/linux-agent.md) gives the
+  unit's restart, stop and tmux survival rules. Their numbers live in
+  [defaults](defaults.md#machines-and-the-agent-connection).
 
 ## Install and upgrade
 
