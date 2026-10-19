@@ -125,6 +125,7 @@ func runAgentWithTmux(ctx context.Context, dir, cfgDir, version, boot string, te
 	var wg sync.WaitGroup
 	pol, err := startPolicy(wctx, cfgDir, dir, id.MachineID, tel, events.PolicyChanges(em))
 	if err != nil {
+		stop()
 		return failed("policy", err)
 	}
 	var sm *settings.Manager
