@@ -167,8 +167,8 @@ Before a push: focused proof, a clean `fleet-code-review`, `make gates` once (th
 ## Orchestration, PR And CI Discipline
 
 - Check open PRs and recent commits for the same root cause before starting.
-- Issue drives delegate independent leaves and independent review to named roles;
-  record why dependent work stays inline. The coordinator owns PRs and runs the gate.
+- Run ready independent issues and reviews in parallel; reserve one slot for the
+  coordinator's work and checks. Explain why work runs in sequence. The coordinator owns PRs and gates.
 - Start or refresh a watcher in the same turn as PR creation or follow-up push;
   watch checks, conflicts and every author's feedback at the current head.
 - Follow [issue-driver](.agents/skills/fleet-issue-driver/SKILL.md) for watcher,
