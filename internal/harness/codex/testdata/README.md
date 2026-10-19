@@ -1,7 +1,8 @@
 # Codex screen fixtures
 
 Real screens from Codex, for the parser tests in `internal/harness/codex`
-(plan item 0.1, issues #25 and #180). Files are in `0.160.0/` and `0.162.1/`.
+(plan item 0.1, issues #25, #180 and #36). Files are in `0.160.0/`, `0.162.1/`
+and `0.163.0/`.
 
 | Field | Value |
 |---|---|
@@ -73,6 +74,35 @@ menu holds 54 commands: the 49 of 0.160.0 plus `/clear`, `/feedback`,
 `/ps`, `/stop` and `/subagents` (the 0.160.0 capture could not tell
 whether those were hidden at idle or removed; they show at idle here).
 `/mcp` now reads "list MCP tools; use /mcp verbose or /mcp login <name>".
+
+## 0.163.0 (2026-10-19, issue #36)
+
+Same protocol (throwaway server `-L probe36codex -f /dev/null`, killed at the
+end; every screen read before the next key; no prompt sent, no quota spent).
+`codex --version` read `codex-cli 0.163.0` in the probe pane. The trust screen
+was captured in a fresh git repo and declined with Ctrl+C (never "Trust and
+continue", so no trust entry was written); Ctrl+C first landed in the Agent
+Command Center, which was not kept, and a second Ctrl+C returned to the shell.
+The other screens come from a plain scratch folder.
+
+| File | Screen | How reached |
+|---|---|---|
+| `0.163.0/trust-folder-git.txt` | "Folder access" trust screen, choices "1. Trust and continue" / "2. Back to Agent Command Center" | start in a fresh git repo |
+| `0.163.0/startup-ready.txt` | header, getting-started list, weekly-limit heads-up notice, ready prompt, footer | start in a plain folder |
+| `0.163.0/status.txt` | the `/status` card | `/status` (typed, then Enter on the read screen) |
+| `0.163.0/goal-paused.txt` | "Goal paused" after the owner interrupts the goal (01 E12) | reconstructed, not a raw capture: the signal line is the probe-recorded string from the 2026-10-02 goal-control probe (01b); a raw capture replaces it when one lands |
+
+What changed since 0.162.1: only values, no shape. The trust screen is
+identical apart from the folder path. The status card keeps every row in the
+same order (Server, Model, Model provider, Directory, Permissions, Agents.md,
+Account, Collaboration mode, Session, Weekly limit); the values are the real
+ones from that day (model `GPT-6.1-Sol (reasoning low)`, `Workspace
+(granular)` permissions, weekly `25% left`, `resets 4:57 PM on 24 Oct`). The
+startup screen has no `permissions: YOLO mode` line because this folder runs
+with Workspace permissions, and it carries a transient "Heads up ... weekly
+limit" notice plus the matching footer (kept; a parser must skip unknown
+lines). Redactions follow the same rules: paths are `~/scratch`, the account
+email is `user@example.com`, the session id is zeroed.
 
 Placeholder against draft: the empty input line renders `›` bold plus
 `Ask Codex to do anything` dim (`^[[2m`); typed text renders in the default

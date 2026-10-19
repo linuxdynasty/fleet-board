@@ -1,8 +1,8 @@
 # Muse Code screen fixtures
 
 Real screens from Muse Code, for the parser tests in `internal/harness/muse`
-(plan item 0.1, issues #25 and #180). Files are in `1.4.4/`, `1.4.6/` and
-`1.4.7/`.
+(plan item 0.1, issues #25, #180 and #36). Files are in `1.4.4/`, `1.4.6/`,
+`1.4.7/` and `1.4.11/`.
 
 | Field | Value |
 |---|---|
@@ -121,6 +121,35 @@ the real ones; names are placeholders as below.
 No 1.4.6 command catalog was captured: the binary moved to 1.4.7 before the
 catalog round, so the 1.4.6 Commands tab is skipped and 1.4.7 is the catalog
 of record for the installed line.
+
+## 1.4.11 (2026-10-19, issue #36)
+
+Same protocol (throwaway server `-L probe36muse -f /dev/null`, killed at the
+end; every screen read before the next key; no prompt sent, no quota spent).
+`muse --version` read `Muse Code 1.4.11 (1.4.11-R6667.1)` in the probe pane
+(1.4.10 was the installed version at the 2026-10-17 probe, so the binary
+moved since; no update notice appeared on screen during this probe). The trust screen was
+captured in a new empty folder and answered "2 Quit" (Down and Enter, on
+purpose: the default is "1 Trust and continue"). The other screens come from
+the home folder, which `trust.json` already lists, so no trust entry was
+written.
+
+| File | Screen | How reached |
+|---|---|---|
+| `1.4.11/trust-workspace.txt` | "Do you trust this workspace?", 2 choices, default 1 | start in a new folder |
+| `1.4.11/startup-ready.txt` | version header, voice line, input box, model line | start in a trusted folder |
+| `1.4.11/usage.txt` | the "Session usage" box (Current 39%, Weekly 61%, real readings) | `/usage` (typed, then Enter on the read screen) |
+| `1.4.11/status.txt` | the usage box plus the wide status box below it | `/status` |
+| `1.4.11/goal-paused-by-interrupt.txt` | "goal paused by interrupt — resume with /goal resume" after the owner interrupts the goal (01 E12) | reconstructed, not a raw capture: the signal line is the probe-recorded string from the 2026-10-02 goal-control probe (01b); a raw capture replaces it when one lands |
+| `1.4.11/provider-error-retrying.txt` | "Meta Model API server error (HTTP 500) · retrying in 7s · attempt 6/10" when the provider returns a server error (01 E12) | reconstructed, not a raw capture: the signal line is the spec-recorded string from 01; a raw capture replaces it when one lands |
+| `1.4.11/rate-limit-retrying.txt` | "Meta Model API overload (HTTP 529) · retrying in 12s · attempt 4/10 · resets 9:29 PM" when the provider throttles (01 E12) | reconstructed, not a raw capture: the 529 overload variant of the 1.4.4 reconstruction; a raw capture replaces it when one lands |
+
+What changed since 1.4.7: only values, no shape. The trust, startup, usage
+and status screens keep every row in the same order; the usage box is one
+column wider because "61%" has two digits (a parser must not depend on the
+box width). Percentages and reset times are the real ones; names are
+placeholders as below (the random session nickname is `example-name` here,
+the session id is zeroed).
 
 ## Rate-limit probe, 2026-10-17 (issue #36)
 

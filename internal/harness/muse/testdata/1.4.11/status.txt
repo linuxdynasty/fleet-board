@@ -1,0 +1,46 @@
+  Muse Code 1.4.11
+
+┌───────────────────────────────────────────────────────┐
+│  Session usage                                        │
+│                                                       │
+│    Input      0                                       │
+│    Cached     0                                       │
+│    Output     0                                       │
+│    Total      0                                       │
+│                                                       │
+│    Turns         0                                    │
+│    Subagents  none                                    │
+│                                                       │
+│  Subscription · Muse Code Example Plan                │
+│    Current        39% used · Resets at 3:55 PM        │
+│    Weekly         61% used · Resets Oct 25 at 8:00 PM │
+│    as of 3:52 PM                                      │
+└───────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│  MUSE CODE 1.4.11 / example-name                                               IDLE │
+│                                                                                     │
+│  MODEL          muse-model-x   · xhigh                                              │
+│                 example                                                             │
+│                                                                                     │
+│  WORKSPACE      ~                                                                   │
+│                 trusted · not found                                                 │
+│  ACCESS         Auto-review                                                         │
+│                 Example account                                                     │
+│  ACCOUNT        Example User (user@example.com)                                     │
+│                                                                                     │
+│  USAGE          0 tokens · 0 turns · 0 subagents                                    │
+│  CONTEXT        not projected · 1008K limit                                         │
+│                 Usage: cumulative session tokens; context: current prompt estimate. │
+│                                                                                     │
+│  SESSION        00000000-0000-4000-8000-000000000008                                │
+│  ACTIVITY       no tasks                                                            │
+│                 0 terminals · inbox clear                                           │
+│                                                                                     │
+│  BILLING        Subscription · Muse Code Example Plan                               │
+└─────────────────────────────────────────────────────────────────────────────────────┘
+
+── Voice input (alt(option)+v to start) ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  muse-model-x · xhigh · ~ · Auto-review

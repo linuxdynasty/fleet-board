@@ -1,0 +1,49 @@
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                                                               ┃ /models     Switch model                                                ┃
+                                                               ┃ /move       Move to another project dir                                 ┃
+                                                               ┃ /new        New session                                                 ┃
+                                                               ┃ /review     review changes [commit|branch|pr], defaults to uncommitted  ┃
+                                                               ┃ /sessions   Switch session                                              ┃
+                                                               ┃ /skills     Skills                                                      ┃
+                                                               ┃ /status     View status                                                 ┃
+                                                               ┃ /themes     Switch theme                                                ┃
+                                                               ┃ /update     Update/updatedto upgrade to OpenCode 2.0                    ┃
+                                                               ┃ /variants   Switch model variant                                        ┃
+                                                               ┃
+                                                               ┃  /
+                                                               ┃
+                                                               ┃  Build · DeepSeek V4 Pro DeepSeek
+                                                               ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+                                                                                                               tab agents  ctrl+p commands
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  ~/scratch                                                                                                                                                                   1.19.3

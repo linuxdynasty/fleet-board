@@ -58,9 +58,10 @@ func TestConform(t *testing.T) {
 	// 1.4.4 captured three trust shapes (the update banner, a plain folder
 	// and a git root); the other versions captured one each.
 	trustFixtures := map[string][]string{
-		"1.4.4": {"trust-workspace.txt", "trust-workspace-plain-folder.txt", "trust-workspace-git-root.txt"},
-		"1.4.6": {"trust-workspace.txt"},
-		"1.4.7": {"trust-workspace.txt"},
+		"1.4.4":  {"trust-workspace.txt", "trust-workspace-plain-folder.txt", "trust-workspace-git-root.txt"},
+		"1.4.6":  {"trust-workspace.txt"},
+		"1.4.7":  {"trust-workspace.txt"},
+		"1.4.11": {"trust-workspace.txt"},
 	}
 	var versions []harness.VersionCase
 	for _, v := range Versions {

@@ -29,16 +29,17 @@ no `/goal` (01b).
   OpenCode has no `/usage` and no `/goal`, so neither classifies. A
   discovered command whose effect is unprobed stays deny; it moves only
   with a probe record. The catalog test pins every name in
-  `testdata/1.18.34/tui-slash-menu-catalog.tsv` and
-  `testdata/1.19.0/tui-slash-menu-catalog.tsv`, so a new command in a
+  `testdata/1.18.34/tui-slash-menu-catalog.tsv`,
+  `testdata/1.19.0/tui-slash-menu-catalog.tsv` and
+  `testdata/1.19.3/tui-slash-menu-catalog.tsv`, so a new command in a
   later catalog needs a reviewed verdict here.
 - `opencode_test.go`: the adapter's declaration for the shared
-  conformance test (`harness.Conform`). Versions `1.18.34` and `1.19.0`
-  are `UNVERIFIED_PARSING` with `USAGE`, `IDENTITY` and `READY`
-  fixture-verified; the golden table is `testdata/support-table.txt`,
-  so a claim change is a reviewed diff.
-- Fixtures under `testdata/1.18.34/` and `testdata/1.19.0/`, documented
-  in `testdata/README.md`. The live shape was also checked against
+  conformance test (`harness.Conform`). Versions `1.18.34`, `1.19.0`
+  and `1.19.3` are `UNVERIFIED_PARSING` with `USAGE`, `IDENTITY` and
+  `READY` fixture-verified; the golden table is
+  `testdata/support-table.txt`, so a claim change is a reviewed diff.
+- Fixtures under `testdata/1.18.34/`, `testdata/1.19.0/` and
+  `testdata/1.19.3/`, documented in `testdata/README.md`. The live shape was also checked against
   OpenCode 1.19.0 on the dev machine (`stats` and `providers list`,
   including an Environment section the fixtures do not have).
 

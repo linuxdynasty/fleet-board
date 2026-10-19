@@ -38,6 +38,8 @@ var commandCases = []struct {
 	{name: "sessions switches session, effect unprobed", command: "/sessions", want: typev1.CommandClass_COMMAND_CLASS_DENY},
 	{name: "skills effect unprobed", command: "/skills", want: typev1.CommandClass_COMMAND_CLASS_DENY},
 	{name: "themes switches theme, effect unprobed", command: "/themes", want: typev1.CommandClass_COMMAND_CLASS_DENY},
+	{name: "update upgrades the harness, never sent", command: "/update", want: typev1.CommandClass_COMMAND_CLASS_DENY},
+	{name: "variants switches model variant, effect unprobed", command: "/variants", want: typev1.CommandClass_COMMAND_CLASS_DENY},
 	{name: "goal has no native command on OpenCode", command: "/goal", want: typev1.CommandClass_COMMAND_CLASS_DENY},
 	{name: "usage has no command on OpenCode", command: "/usage", want: typev1.CommandClass_COMMAND_CLASS_DENY},
 	{name: "model singular is not the shown name", command: "/model", want: typev1.CommandClass_COMMAND_CLASS_DENY},

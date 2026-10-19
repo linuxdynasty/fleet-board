@@ -33,8 +33,8 @@ func outcomeOf(outcome typev1.ParseOutcome) harness.ParseResult {
 // golden table matches the claims, USAGE brings the stats fixtures,
 // IDENTITY brings the providers and model-line fixtures of each version,
 // and READY brings the idle-prompt, menu and dialog fixtures of each
-// version, and every fixture parses or yields unknown, never fails. Both
-// versions stay UNVERIFIED_PARSING: USAGE (spend), IDENTITY (providers,
+// version, and every fixture parses or yields unknown, never fails. All
+// three versions stay UNVERIFIED_PARSING: USAGE (spend), IDENTITY (providers,
 // model line) and READY (idle prompt with its input state) are
 // fixture-verified, and PROMPT and CONDITION are later slices. OpenCode
 // has no usage window, no folder-trust screen and no /goal (01b).
@@ -51,10 +51,9 @@ func TestConform(t *testing.T) {
 	ready := func(screen string) harness.ParseResult {
 		return outcomeOf(ParseReady(screen).ParseOutcome)
 	}
-	versions := []string{"1.18.34", "1.19.0"}
 	usageFixtures := func() []harness.Fixture {
 		var out []harness.Fixture
-		for _, v := range versions {
+		for _, v := range Versions {
 			out = append(out,
 				harness.Fixture{Name: v + "/stats.txt", Screen: readFixture(t, v, "stats.txt")},
 				// A TUI dialog with no stats table yields unknown, never a number.
@@ -65,7 +64,7 @@ func TestConform(t *testing.T) {
 	}
 	identityFixtures := func() []harness.Fixture {
 		var out []harness.Fixture
-		for _, v := range versions {
+		for _, v := range Versions {
 			out = append(out,
 				harness.Fixture{Name: v + "/providers-list.txt", Screen: readFixture(t, v, "providers-list.txt")},
 				harness.Fixture{Name: v + "/tui-ready.txt", Screen: readFixture(t, v, "tui-ready.txt")},
@@ -90,6 +89,12 @@ func TestConform(t *testing.T) {
 			"tui-slash-menu-first.txt", "tui-slash-menu-last.txt",
 			"tui-status-dialog.txt", "stats.txt", "providers-list.txt",
 		},
+		"1.19.3": {
+			"tui-ready.txt", "tui-ready-ansi.txt",
+			"tui-ready-input-has-draft.txt", "tui-ready-input-has-draft-ansi.txt",
+			"tui-slash-menu-first.txt", "tui-slash-menu-last.txt",
+			"tui-status-dialog.txt", "stats.txt", "providers-list.txt",
+		},
 	}
 	readyFixtures := func(v string) []harness.Fixture {
 		var out []harness.Fixture
@@ -98,53 +103,34 @@ func TestConform(t *testing.T) {
 		}
 		return out
 	}
+	versionCases := make([]harness.VersionCase, 0, len(Versions))
+	for _, v := range Versions {
+		versionCases = append(versionCases, harness.VersionCase{
+			Version: v,
+			Support: harness.UnverifiedParsing,
+			Features: map[harness.Feature]harness.FeatureCase{
+				harness.FeatureUsage: {
+					Claim:    harness.FeatureClaim{Supported: true},
+					Parse:    usage,
+					Fixtures: usageFixtures(),
+				},
+				harness.FeatureIdentity: {
+					Claim:    harness.FeatureClaim{Supported: true},
+					Parse:    identity,
+					Fixtures: identityFixtures(),
+				},
+				harness.FeatureReady: {
+					Claim:    harness.FeatureClaim{Supported: true},
+					Parse:    ready,
+					Fixtures: readyFixtures(v),
+				},
+			},
+		})
+	}
 	decl := harness.Declaration{
-		Harness: "opencode",
-		Versions: []harness.VersionCase{
-			{
-				Version: "1.18.34",
-				Support: harness.UnverifiedParsing,
-				Features: map[harness.Feature]harness.FeatureCase{
-					harness.FeatureUsage: {
-						Claim:    harness.FeatureClaim{Supported: true},
-						Parse:    usage,
-						Fixtures: usageFixtures(),
-					},
-					harness.FeatureIdentity: {
-						Claim:    harness.FeatureClaim{Supported: true},
-						Parse:    identity,
-						Fixtures: identityFixtures(),
-					},
-					harness.FeatureReady: {
-						Claim:    harness.FeatureClaim{Supported: true},
-						Parse:    ready,
-						Fixtures: readyFixtures("1.18.34"),
-					},
-				},
-			},
-			{
-				Version: "1.19.0",
-				Support: harness.UnverifiedParsing,
-				Features: map[harness.Feature]harness.FeatureCase{
-					harness.FeatureUsage: {
-						Claim:    harness.FeatureClaim{Supported: true},
-						Parse:    usage,
-						Fixtures: usageFixtures(),
-					},
-					harness.FeatureIdentity: {
-						Claim:    harness.FeatureClaim{Supported: true},
-						Parse:    identity,
-						Fixtures: identityFixtures(),
-					},
-					harness.FeatureReady: {
-						Claim:    harness.FeatureClaim{Supported: true},
-						Parse:    ready,
-						Fixtures: readyFixtures("1.19.0"),
-					},
-				},
-			},
-		},
-		Golden: readFixture(t, ".", "support-table.txt"),
+		Harness:  "opencode",
+		Versions: versionCases,
+		Golden:   readFixture(t, ".", "support-table.txt"),
 	}
 	harness.Conform(t, decl)
 	harness.ConformDirs(t, "testdata", decl)

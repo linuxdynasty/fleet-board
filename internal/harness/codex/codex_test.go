@@ -23,7 +23,7 @@ func readData(t *testing.T, name string) string {
 // TestConform runs the shared adapter check (row 8): the golden table
 // matches the claims, the USAGE, READY and CONDITION claims bring a fixture
 // of each version, and every fixture parses or yields unknown, never fails.
-// Both versions stay UNVERIFIED_PARSING: USAGE, the trust half of READY and
+// Every version stays UNVERIFIED_PARSING: USAGE, the trust half of READY and
 // the pause CONDITION are fixture-verified, and PROMPT and IDENTITY (plus
 // prompt detection inside READY) are later slices.
 func TestConform(t *testing.T) {

@@ -13,9 +13,15 @@ import (
 // ParserVersion is its own version: bump it when the parser's behavior
 // changes (01b, fleet-harness-adapter).
 const (
-	Version       = "1.19.0"
+	Version       = "1.19.3"
 	ParserVersion = "1"
 )
+
+// Versions are the OpenCode versions this parser has fixtures for. The
+// conformance test drives its fixture lists from here, so a new version
+// lands in production code and test together (01b,
+// fleet-harness-adapter).
+var Versions = []string{"1.18.34", "1.19.0", "1.19.3"}
 
 // Spend is one parsed `opencode stats` table (01b D2): the all-time counts
 // as shown, and the total cost as exact micro-units. Token counts stay text:
