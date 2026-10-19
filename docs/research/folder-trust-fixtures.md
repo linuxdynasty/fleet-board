@@ -62,6 +62,8 @@ files were written.
 
 ## Re-verification, 2026-10-19 (issue #54)
 
+Environment: macOS 27.0.1, tmux 3.8, default pane size (per-pane geometry not recorded).
+
 Read-only re-run of the first screens on the installed versions, same
 `fleet-live-probe` shape: throwaway servers (`-L probe54c-<harness> -f
 /dev/null`), empty scratch folders, `capture-pane -p` read before any key, no
