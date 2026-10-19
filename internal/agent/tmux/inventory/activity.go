@@ -246,6 +246,11 @@ func (s *server) reapIdle(ctx context.Context) {
 // rendered to capped, ANSI-stripped text.
 func (s *server) emitChanges(ctx context.Context, start string, changes []activityChange) {
 	now := s.track.now()
+	// One wedged capture must not eat the batch: past the first capture
+	// that hits the bound the server is not answering, so the rest of this
+	// batch's captures are skipped (counted, never served) instead of
+	// burning a fresh bound per pane. Edges still go out for every change.
+	captureWedged := false
 	for _, ch := range changes {
 		edge := "to_active"
 		if ch.to == typev1.Activity_ACTIVITY_IDLE {
@@ -259,32 +264,47 @@ func (s *server) emitChanges(ctx context.Context, start string, changes []activi
 		if s.o.opts.Emitter == nil || !dueSummary(s.summaries, ch.pane, now) {
 			continue
 		}
-		if s.summarize(ctx, key, ch) {
+		if captureWedged {
+			s.o.tel.summary(ctx, s.kind, "capture_failed")
+			continue
+		}
+		ok, timedOut := s.summarize(ctx, key, ch)
+		if ok {
 			s.summaries[ch.pane] = now
+		} else if timedOut {
+			captureWedged = true
 		}
 	}
 }
 
 // summarize captures one pane's visible screen and emits it as an E5
-// summary. It reports whether the summary went out; a failed capture is
-// counted and the edge keeps its transition without one.
-func (s *server) summarize(ctx context.Context, key *typev1.PaneKey, ch activityChange) bool {
+// summary. It reports whether the summary went out and whether the capture
+// hit the bound: a bound hit means the server is not answering, so the
+// caller stops the batch instead of spending a fresh bound on every pane.
+// A failed capture is counted and the edge keeps its transition without
+// one. The capture is bounded at readTimeout like every other observer
+// read: a server that stops answering mid-sync (#208) must not hold the
+// loop past it, or no further read runs and snapshots stop being served.
+func (s *server) summarize(ctx context.Context, key *typev1.PaneKey, ch activityChange) (bool, bool) {
 	id, ok := parsePaneID(ch.pane)
 	if !ok {
 		s.o.tel.summary(ctx, s.kind, "capture_failed")
-		return false
+		return false, false
 	}
-	cap, err := s.c.Capture(ctx, id)
+	rctx, cancel := context.WithTimeout(ctx, readTimeout)
+	cap, err := s.c.Capture(rctx, id)
+	timedOut := err != nil && rctx.Err() != nil
+	cancel()
 	if err != nil {
 		s.o.tel.summary(ctx, s.kind, "capture_failed")
-		return false
+		return false, timedOut
 	}
 	text, _ := renderScreen(cap.Lines, false, maxSummaryBytes)
 	s.emit(ctx, &agentv1.Event{Body: &agentv1.Event_PaneSummary{PaneSummary: &agentv1.PaneSummary{
 		Pane: key, LastLines: text, LastOutputTime: timestamppb.New(ch.lastOut), Activity: ch.to,
 	}}})
 	s.o.tel.summary(ctx, s.kind, "ok")
-	return true
+	return true, false
 }
 
 // parsePaneID parses a "%N" pane id the read reported; anything else is not
