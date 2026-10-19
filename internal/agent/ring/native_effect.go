@@ -14,7 +14,7 @@ const nativeEffectColumns = `effect_id, command_id, session_id, generation, kind
 
 func readNativeEffect(ctx context.Context, tx *sql.Tx, id string) (NativeEffectRecord, error) {
 	var r NativeEffectRecord
-	var generation, order int64
+	var generation, order uint64
 	err := tx.QueryRowContext(ctx, `SELECT `+nativeEffectColumns+` FROM native_effects WHERE effect_id = ?`, id).
 		Scan(&r.EffectID, &r.CommandID, &r.SessionID, &generation, &r.Kind,
 			&r.CommandBodyDigest, &order, &r.State, &r.RetryOfEffectID, &r.EvidenceKind, &r.EvidenceDigest)
@@ -24,7 +24,7 @@ func readNativeEffect(ctx context.Context, tx *sql.Tx, id string) (NativeEffectR
 	if err != nil {
 		return NativeEffectRecord{}, fmt.Errorf("ring: read native effect: %w", err)
 	}
-	r.Generation, r.AdmissionOrder = uint64(generation), uint64(order)
+	r.Generation, r.AdmissionOrder = generation, order
 	return r, nil
 }
 
@@ -104,21 +104,21 @@ func (d *DB) AdmitNativeEffect(ctx context.Context, r NativeEffectRecord) (Nativ
 		if verifiedDigest != r.CommandBodyDigest {
 			return ErrNativeConflict
 		}
-		var order int64
+		var order uint64
 		if err := tx.QueryRowContext(ctx, `SELECT coalesce(max(admission_order), 0) + 1 FROM native_effects
 			WHERE session_id = ?`, r.SessionID).Scan(&order); err != nil {
 			return fmt.Errorf("ring: native effect order: %w", err)
 		}
 		_, err = tx.ExecContext(ctx, `INSERT INTO native_effects(`+nativeEffectColumns+`)
 			VALUES (?, ?, ?, ?, ?, ?, ?, 'prepared', ?, '', '')`,
-			r.EffectID, r.CommandID, r.SessionID, int64(r.Generation), r.Kind,
+			r.EffectID, r.CommandID, r.SessionID, r.Generation, r.Kind,
 			verifiedDigest, order, r.RetryOfEffectID)
 		if err != nil {
 			return fmt.Errorf("ring: admit native effect: %w", errors.Join(ErrNativeConflict, err))
 		}
 		out = r
 		out.CommandBodyDigest = verifiedDigest
-		out.AdmissionOrder, out.State = uint64(order), NativeEffectPrepared
+		out.AdmissionOrder, out.State = order, NativeEffectPrepared
 		return nil
 	})
 	if err != nil {
@@ -161,7 +161,7 @@ func (d *DB) ClaimNativeEffect(ctx context.Context, id, controller string, gener
 			var blocked bool
 			if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM native_effects
 				WHERE session_id = ? AND admission_order < ?
-				AND state NOT IN ('confirmed', 'no_effect'))`, e.SessionID, int64(e.AdmissionOrder)).Scan(&blocked); err != nil {
+				AND state NOT IN ('confirmed', 'no_effect'))`, e.SessionID, e.AdmissionOrder).Scan(&blocked); err != nil {
 				return fmt.Errorf("ring: check native effect order: %w", err)
 			}
 			if blocked {

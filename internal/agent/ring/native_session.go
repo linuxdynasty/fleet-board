@@ -13,7 +13,7 @@ const nativeSessionColumns = `session_id, machine_id, install_id, harness, inter
 
 func readNativeSession(ctx context.Context, tx *sql.Tx, id string) (NativeSessionRecord, error) {
 	var r NativeSessionRecord
-	var generation int64
+	var generation uint64
 	var provider, startEffect sql.NullString
 	err := tx.QueryRowContext(ctx, `SELECT `+nativeSessionColumns+` FROM native_sessions WHERE session_id = ?`, id).
 		Scan(&r.SessionID, &r.MachineID, &r.InstallID, &r.Harness, &r.Interface,
@@ -25,7 +25,7 @@ func readNativeSession(ctx context.Context, tx *sql.Tx, id string) (NativeSessio
 	if err != nil {
 		return NativeSessionRecord{}, fmt.Errorf("ring: read native session: %w", err)
 	}
-	r.Generation = uint64(generation)
+	r.Generation = generation
 	r.ProviderSessionID = provider.String
 	r.StartEffectID = startEffect.String
 	return r, nil
@@ -83,7 +83,7 @@ func (d *DB) CreateNativeSession(ctx context.Context, r NativeSessionRecord) (Na
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			r.SessionID, r.MachineID, r.InstallID, r.Harness, r.Interface,
 			r.AccountRef, r.ProfileRef, r.WorkdirRef, r.Model, r.Effort,
-			r.QualificationRef, r.ControllerID, int64(r.Generation), r.ControlState, nil, nil)
+			r.QualificationRef, r.ControllerID, r.Generation, r.ControlState, nil, nil)
 		if err != nil {
 			return fmt.Errorf("ring: create native session: %w", errors.Join(ErrNativeConflict, err))
 		}
