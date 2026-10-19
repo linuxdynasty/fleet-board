@@ -20,6 +20,10 @@ covers OWNER; tokens and devices cannot decide.
 - `ExpireDue` (and the lazy step in `Get` and `Decide`) moves past-due
   `PENDING` approvals to `EXPIRED` with the `DENY` fallback, audited as
   `approval.expire`. The housekeeping job runs the pass every minute.
+  `ExpirePass` returns IDs only after the writer commits. Cancellation returns
+  an error and no IDs because the queued write's outcome may still be unknown.
+  No-Observability-Change: the existing `approval.expired` log counts only a
+  pass whose writer commit finished successfully.
 - `ValidateListInput` checks page size, cursor age and query binding, and
   state and kind filters without reading rows. `List` uses the same checks
   before loading one page. The API checks them before read quota admission,

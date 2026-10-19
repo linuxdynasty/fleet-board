@@ -9,6 +9,8 @@
 // command when approved, and audits both. A PENDING approval past its
 // expire_time gets the DENY fallback from the expiry job; nothing is ever
 // sent for a denied or expired approval.
+// ExpirePass reports expired IDs only after the writer commits. A canceled
+// pass reports no IDs because its queued write may still finish later.
 // Local TCP quota checkpoints run after role and decision validation, before
 // a successful decision changes any row, including on a valid replay.
 // ValidateListInput checks paging and filters without loading a page; the

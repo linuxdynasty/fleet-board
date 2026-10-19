@@ -26,7 +26,12 @@ func ExpirePass(ctx context.Context, s *store.Store, now time.Time) ([]string, e
 		expired, err = ExpireDue(ctx, tx, now, 200)
 		return err
 	})
-	return expired, err
+	if err != nil {
+		// A canceled caller can return before the writer runs its callback.
+		// Only a successful Write makes its captured result safe to read.
+		return nil, err
+	}
+	return expired, nil
 }
 
 // ExpireDue moves every PENDING approval past its expire_time to EXPIRED
