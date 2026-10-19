@@ -238,6 +238,20 @@
   {"token": "O_EXCL", "kind": "syscall-flag", "reason": "POSIX open(2) flag named in the goal-file safe writes (01d2)", "files": ["docs/specs/01d2-goal-file-safe-writes.md"]},
   {"token": "O_RDONLY", "kind": "syscall-flag", "reason": "POSIX open(2) flag named in the goal-file safe writes (01d2)", "files": ["docs/specs/01d2-goal-file-safe-writes.md"]},
   {"token": "EvalSymlinks", "kind": "go", "reason": "Go standard library function path/filepath.EvalSymlinks (02h step 4)", "files": ["docs/specs/02h-goal-binding-and-pane-signals.md"]},
-  {"token": "PaneLocation", "kind": "go", "reason": "internal/agent/tmux Client method result for the observed-goal tracker (plan row 9)", "files": ["docs/specs/02h-goal-binding-and-pane-signals.md"]}
+  {"token": "PaneLocation", "kind": "go", "reason": "internal/agent/tmux Client method result for the observed-goal tracker (plan row 9)", "files": ["docs/specs/02h-goal-binding-and-pane-signals.md"]},
+  {"token": "PREPARED", "kind": "journal-state", "reason": "agent.db native effect state, not a proto enum (#266)", "files": ["docs/specs/02i-delivery-and-sequencing.md", "docs/specs/02n-native-execution.md"]},
+  {"token": "MAY_HAVE_RUN", "kind": "journal-state", "reason": "agent.db native effect state, not a proto enum (#266)", "files": ["docs/specs/02i-delivery-and-sequencing.md", "docs/specs/02n-native-execution.md"]},
+  {"token": "NO_EFFECT", "kind": "journal-state", "reason": "agent.db native effect state, not a proto enum (#266)", "files": ["docs/specs/02i-delivery-and-sequencing.md", "docs/specs/02n-native-execution.md"]},
+  {"token": "CONFIRMED", "kind": "journal-state", "reason": "agent.db native effect state, not a proto enum (#266)", "files": ["docs/specs/02n-native-execution.md"]},
+  {"token": "RECONCILE_REQUIRED", "kind": "journal-state", "reason": "agent.db native effect state, not a proto enum (#266)", "files": ["docs/specs/02n-native-execution.md"]},
+  {"token": "CommandBodyDigest", "kind": "go", "reason": "ring native effect field, not a proto field (#266)", "files": ["docs/specs/02n-native-execution.md"]},
+  {"token": "CreateNativeSession", "kind": "go", "reason": "ring native journal method, not a proto RPC (#266)", "files": ["docs/specs/02n-native-execution.md"]},
+  {"token": "AdmitNativeEffect", "kind": "go", "reason": "ring native journal method, not a proto RPC (#266)", "files": ["docs/specs/02n-native-execution.md"]},
+  {"token": "ClaimNativeEffect", "kind": "go", "reason": "ring native journal method, not a proto RPC (#266)", "files": ["docs/specs/02n-native-execution.md"]},
+  {"token": "ResolveNativeEffect", "kind": "go", "reason": "ring native journal method, not a proto RPC (#266)", "files": ["docs/specs/02n-native-execution.md"]},
+  {"token": "RecoverNativeEffects", "kind": "go", "reason": "ring native journal method, not a proto RPC (#266)", "files": ["docs/specs/02n-native-execution.md"]},
+  {"token": "ReadNativeSession", "kind": "go", "reason": "ring native journal method, not a proto RPC (#266)", "files": ["docs/specs/02n-native-execution.md"]},
+  {"token": "ReadNativeEffect", "kind": "go", "reason": "ring native journal method, not a proto RPC (#266)", "files": ["docs/specs/02n-native-execution.md"]},
+  {"token": "ListUnresolvedNativeEffects", "kind": "go", "reason": "ring native journal method, not a proto RPC (#266)", "files": ["docs/specs/02n-native-execution.md"]}
  ]
 }
