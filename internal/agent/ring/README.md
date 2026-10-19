@@ -35,7 +35,7 @@ h, ok, err := db.HeldSettings(ctx)                           // the held setting
 n, err = db.Prune(ctx, hubNow)                                // hub time; 7 days and 10,000 entries, never one the hub may re-send
 native, err := db.CreateNativeSession(ctx, record)            // dormant #266 ownership row, generation 1
 effect, dup, err := db.AdmitNativeEffect(ctx, input)           // PREPARED; digest binds the logged command
-effect, err = db.ClaimNativeEffect(ctx, id, owner, generation) // MAY_HAVE_RUN only after committed writer job
+effect, err = db.ClaimNativeEffect(ctx, id, owner, generation) // historical MAY_HAVE_RUN commit receipt
 native, err = db.BindNativeProviderSession(ctx, sessionID, owner, generation, startEffectID, providerID)
 effect, err = db.ResolveNativeEffect(ctx, id, owner, generation, outcome, evidence)
 page, err := db.RecoverNativeEffects(ctx, afterEffectID, 100) // mark uncertainty and hold session
@@ -141,8 +141,13 @@ page, err := db.RecoverNativeEffects(ctx, afterEffectID, 100) // mark uncertaint
   in the same session/kind/generation, and a unique predecessor link. Both
   tables use this file's single writer.
   A claim checks owner, generation, state and earlier unresolved work inside
-  the writer; only a successful commit returns `MAY_HAVE_RUN`. Restart changes
-  an uncertain claim to `RECONCILE_REQUIRED` and holds ordinary session work.
+  one writer job. A per-DB native gate prevents another native job from
+  sharing its unsettled commit. A claim receipt proves that transition
+  committed; it is historical, so later recovery or resolution may already
+  have committed when the caller sees it. Restart changes an uncertain claim
+  to `RECONCILE_REQUIRED` and holds ordinary session work.
+  One live `ring.DB` per `agent.db` is a caller precondition;
+  `fleet-agent run` holds `fleet-agent.lock` from before Open through Close.
   No command-log foreign key permits its normal pruning without deleting the
   journal. Reads and recovery are paged at 1–1,000 effects. There is no
   runtime producer, adapter, public command, or measured retention policy yet.

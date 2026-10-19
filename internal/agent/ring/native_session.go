@@ -58,7 +58,7 @@ func (d *DB) CreateNativeSession(ctx context.Context, r NativeSessionRecord) (Na
 		return NativeSessionRecord{}, err
 	}
 	var out NativeSessionRecord
-	err := d.s.Write(ctx, func(tx *sql.Tx) error {
+	err := d.nativeWrite(ctx, func(tx *sql.Tx) error {
 		stored, err := readNativeSession(ctx, tx, r.SessionID)
 		if err == nil {
 			if !nativeSessionSame(stored, r) ||
@@ -104,7 +104,7 @@ func (d *DB) BindNativeProviderSession(ctx context.Context, id, controller strin
 		return NativeSessionRecord{}, ErrNativeBadInput
 	}
 	var out NativeSessionRecord
-	err := d.s.Write(ctx, func(tx *sql.Tx) error {
+	err := d.nativeWrite(ctx, func(tx *sql.Tx) error {
 		r, err := readNativeSession(ctx, tx, id)
 		if err != nil {
 			return err

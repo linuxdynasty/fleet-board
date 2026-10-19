@@ -57,7 +57,7 @@ func (d *DB) AdmitNativeEffect(ctx context.Context, r NativeEffectRecord) (Nativ
 	}
 	var out NativeEffectRecord
 	var duplicate bool
-	err := d.s.Write(ctx, func(tx *sql.Tx) error {
+	err := d.nativeWrite(ctx, func(tx *sql.Tx) error {
 		stored, err := readNativeEffect(ctx, tx, r.EffectID)
 		if err == nil {
 			if !nativeEffectSame(stored, r) {
@@ -131,15 +131,17 @@ func nativeUrgent(kind NativeEffectKind) bool {
 	return kind == NativeEffectInterrupt || kind == NativeEffectStop
 }
 
-// ClaimNativeEffect is the only transition that can authorize one external
-// call. The caller receives MAY_HAVE_RUN only after this writer job commits.
-// A cancelled or uncertain write returns no permission; it must be read back.
+// ClaimNativeEffect returns a historical receipt of a committed MAY_HAVE_RUN
+// transition. A later recovery or resolution can commit before the caller
+// sees this receipt. A future one-owner controller must serialize claim,
+// dispatch, recovery and resolution before it can authorize an external call.
+// A canceled or uncertain write returns no receipt; the caller must read back.
 func (d *DB) ClaimNativeEffect(ctx context.Context, id, controller string, generation uint64) (NativeEffectRecord, error) {
 	if !validNativeRef(id, 128) || !validNativeRef(controller, 128) || generation == 0 {
 		return NativeEffectRecord{}, ErrNativeBadInput
 	}
 	var out NativeEffectRecord
-	err := d.s.Write(ctx, func(tx *sql.Tx) error {
+	err := d.nativeWrite(ctx, func(tx *sql.Tx) error {
 		e, err := readNativeEffect(ctx, tx, id)
 		if err != nil {
 			return err

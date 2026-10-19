@@ -9,7 +9,7 @@ import (
 	"github.com/linuxdynasty/fleet-board/internal/agent/ring"
 )
 
-func TestNativeFailedAndUncertainClaimGiveNoCallPermission(t *testing.T) {
+func TestNativeFailedAndUncertainClaimReturnNoReceipt(t *testing.T) {
 	db, dir, session := nativeFixture(t)
 	ctx := context.Background()
 	effect := admitNative(t, db, session, "effect-a", "command-a", ring.NativeEffectStart)
@@ -19,7 +19,7 @@ func TestNativeFailedAndUncertainClaimGiveNoCallPermission(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := db.ClaimNativeEffect(ctx, effect.EffectID, session.ControllerID, 1); err == nil {
-		t.Fatal("failed claim returned call permission")
+		t.Fatal("failed claim returned a receipt")
 	}
 	stored, err := db.ReadNativeEffect(ctx, effect.EffectID)
 	if err != nil || stored.State != ring.NativeEffectPrepared {
@@ -32,7 +32,7 @@ func TestNativeFailedAndUncertainClaimGiveNoCallPermission(t *testing.T) {
 	defer cancel()
 	_, err = db.ClaimNativeEffect(short, effect.EffectID, session.ControllerID, 1)
 	if !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("uncertain claim returned %v, want deadline with no permission", err)
+		t.Fatalf("uncertain claim returned %v, want deadline with no receipt", err)
 	}
 	// A later writer job is a barrier: if the timed-out claim was queued, its
 	// outcome has committed or rolled back before this read.
@@ -44,8 +44,8 @@ func TestNativeFailedAndUncertainClaimGiveNoCallPermission(t *testing.T) {
 	if stored.State != ring.NativeEffectPrepared && stored.State != ring.NativeEffectMayHaveRun {
 		t.Fatalf("uncertain claim has impossible state %s", stored.State)
 	}
-	// The caller of the timed-out claim cannot infer a fresh call permission
-	// from this read. If it committed, a second claim is refused.
+	// The caller of the timed-out claim cannot infer dispatch authority from
+	// this read. If it committed, a second claim is refused.
 	if stored.State == ring.NativeEffectMayHaveRun {
 		if _, err := db.ClaimNativeEffect(ctx, effect.EffectID, session.ControllerID, 1); !errors.Is(err, ring.ErrNativeClaimed) {
 			t.Fatalf("second claim after uncertain commit: %v", err)

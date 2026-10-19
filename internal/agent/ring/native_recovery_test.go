@@ -23,7 +23,7 @@ func TestNativePreparedRestartAndUncertainExecution(t *testing.T) {
 	if _, err := db.ClaimNativeEffect(ctx, e.EffectID, session.ControllerID, 1); err != nil {
 		t.Fatal(err)
 	}
-	externalCalls := 1 // synthetic adapter: call happens after the committed claim
+	externalCalls := 1 // synthetic sole controller in this test calls after the committed claim
 	if err := db.Close(); err != nil {
 		t.Fatal(err)
 	}

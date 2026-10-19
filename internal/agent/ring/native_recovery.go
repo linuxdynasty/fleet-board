@@ -41,7 +41,7 @@ func (d *DB) ResolveNativeEffect(ctx context.Context, id, controller string, gen
 		return NativeEffectRecord{}, ErrNativeBadInput
 	}
 	var out NativeEffectRecord
-	err := d.s.Write(ctx, func(tx *sql.Tx) error {
+	err := d.nativeWrite(ctx, func(tx *sql.Tx) error {
 		e, err := readNativeEffect(ctx, tx, id)
 		if err != nil {
 			return err
@@ -89,7 +89,8 @@ func (d *DB) ResolveNativeEffect(ctx context.Context, id, controller string, gen
 // RecoverNativeEffects inspects one bounded page after a restart. Every
 // MAY_HAVE_RUN on the page becomes RECONCILE_REQUIRED, and its session is
 // held in the same writer job. PREPARED grants no external-call authority and
-// remains prepared. Use the last returned EffectID as the next cursor.
+// remains prepared. A returned page is a committed historical receipt. Use
+// the last returned EffectID as the next cursor.
 func (d *DB) RecoverNativeEffects(ctx context.Context, afterEffectID string, limit int) ([]NativeEffectRecord, error) {
 	if err := nativePageLimit(limit); err != nil {
 		return nil, err
@@ -98,7 +99,7 @@ func (d *DB) RecoverNativeEffects(ctx context.Context, afterEffectID string, lim
 		return nil, ErrNativeBadInput
 	}
 	var out []NativeEffectRecord
-	err := d.s.Write(ctx, func(tx *sql.Tx) error {
+	err := d.nativeWrite(ctx, func(tx *sql.Tx) error {
 		out = nil
 		ids, err := nativeUnresolvedIDs(ctx, tx, afterEffectID, limit)
 		if err != nil {

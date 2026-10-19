@@ -83,7 +83,8 @@ sequenceDiagram
   Agent->>DB: Admit input with logged command and digest
   DB-->>Agent: PREPARED after commit
   Agent->>DB: Claim with controller, generation, state and order checks
-  DB-->>Agent: MAY_HAVE_RUN after commit
+  DB-->>Agent: Historical MAY_HAVE_RUN commit receipt
+  Agent->>Agent: One owner checks recovery and dispatch order (later)
   Agent->>Adapter: One external call, outside every DB transaction
   Adapter-->>Agent: Bounded receipt or uncertain outcome
   Agent->>DB: Resolve with evidence, or recover later
@@ -92,11 +93,13 @@ sequenceDiagram
 ```
 
 The writer checks ownership, generation, control state, and applicable order
-again at claim time. Only a successful **committed** `MAY_HAVE_RUN` claim can
-authorize an external call. A cancelled or uncertain commit returns no
-authority: the caller reads the row or enters recovery. Two claimers cannot
-both receive permission. Ordinary start, send-turn, and resume claims wait for
-earlier unresolved effects in the same session. Interrupt and stop may bypass
+again at claim time. A successful `MAY_HAVE_RUN` receipt proves that the
+checked transition committed. It is historical: a later recovery or
+resolution may commit before the caller sees it. A canceled or uncertain
+write returns no receipt: the caller reads the row or enters recovery. Two
+claimers cannot both receive a successful claim receipt. Ordinary start,
+send-turn, and resume claims wait for earlier unresolved effects in the same
+session. Interrupt and stop may bypass
 that order and may be admitted while a session is held; their later runtime
 must still pass qualification, policy, and ownership checks. No SQL transaction
 or ownership lock spans a provider call or process wait. Approval, interrupt,
@@ -105,9 +108,25 @@ stop, and heartbeat paths must remain responsive behind output handling.
 The only shared state here is `agent.db`. `ring.DB` queues each write to
 `internal/store`'s one writer. That writer holds one short SQLite transaction
 while it checks current rows and changes them; jobs never wait on the adapter.
-Read methods use a short read transaction. There is no native ownership mutex
-and no nested lock order. The transaction ends before the caller may use a
-committed claim.
+The six native mutations first take a context-aware per-DB gate, then queue a
+job. The gate stays held until that job's actual commit or rollback completes,
+even if its caller cancels and returns no receipt. One DB-owned waiter releases
+the gate after such a canceled job; closing the DB drains and joins it. Ordinary
+command and event writes, and all reads, stay outside this gate. The writer
+never takes it; no SQL transaction or gate covers provider I/O. The gate
+prevents a later native mutation from changing a claim inside the same commit.
+It does not keep the receipt current after return. A future one-owner
+controller must serialize claim completion, dispatch, recovery and resolution:
+recovery first suppresses dispatch from the old receipt; dispatch first leaves
+an outstanding effect that cannot become `NO_EFFECT` or runnable until the
+operation finishes or is fenced against late effects with absence evidence.
+Restart quiesces the old controller and adapter before recovery and new
+dispatch. No ownership lock spans provider I/O.
+
+One live `ring.DB` and store owner per `agent.db` is a caller precondition. The
+existing `fleet-agent.lock` is held before `ring.Open` until the DB closes. This
+gate is per DB; it does not fence another process or handle that ignores that
+precondition. Read methods use a short read transaction.
 
 | State | Meaning | Next durable state |
 |---|---|---|
@@ -148,7 +167,8 @@ unadvertised until the real caller and all contract checks pass.
 
 No-Observability-Change: this dormant store uses `store.opened`,
 `store.migrated`, `fleet_agent_writer_*`, and `fleet_agent_store_*` with
-`db="agent"`. The runtime producer must add admission, claim, reconciliation,
+`db="agent"`. The native gate's cost must be measured before runtime
+activation. The runtime producer must add admission, claim, reconciliation,
 and capacity signals before enabling native execution. Tests with synthetic
 external-call counts prove only the journal protocol; they do not prove
 provider qualification, process cleanup, or the full acceptance of #266.
