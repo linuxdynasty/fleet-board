@@ -114,14 +114,17 @@ func TestObserverSummaryTimeoutKeepsLoopAlive(t *testing.T) {
 // Eight panes going idle together on a wedged server must not cost eight
 // fresh bounds. emitChanges stops the batch past the first capture that
 // hits the bound (the server is not answering) and counts the skipped
-// panes. Measured on this Mac: without the batch stop the wedged batch
-// takes 5.3 to 6.3 s (eight serial 300 ms captures past the 1 s idle
-// threshold, spread over syncs); with it, 2.3 to 2.8 s (idle, one bound,
-// event and poll slack, with and without -race). The 4.0 s budget below
-// fails without the stop and passes with it. A broadcast refreshes every
-// pane's output clock at once so the batch is one emitChanges call, not
-// eight syncs. Edges still go out for every pane and no summary is
-// emitted for a capture past the bound.
+// panes. The budget below measures the capture span, not wall time from
+// the wedge: from the first observed capture_failed to all eight panes
+// settled. Timeout-driven captures are wall-clock fixed (300 ms test
+// bound), so the span is load-insensitive where wall time is not (idle
+// phase, poll and event slack all cancel out). Without the stop the span
+// covers the seven remaining serial captures, 2.1 s at minimum; with it,
+// the skips land in the same batch, ~0.5 s at most. The broadcast runs
+// after the loop is evaluating with a 10 s idle threshold, so the wedge
+// lands ~9 s before any pane can idle and the batch is one emitChanges
+// call, not eight syncs. Edges still go out for every pane and no summary
+// is emitted for a capture past the bound.
 func TestObserverSummaryBatchStopsPastFirstTimeout(t *testing.T) {
 	restoreTimeout := inventory.SetReadTimeoutForTest(300 * time.Millisecond)
 	t.Cleanup(restoreTimeout)
@@ -138,12 +141,21 @@ func TestObserverSummaryBatchStopsPastFirstTimeout(t *testing.T) {
 				dev.Run(t, "split-window", "-d", "-t", "work:0", "-l", "2", "exec cat")
 			}
 			dev.Run(t, "set-window-option", "-t", "work:0", "synchronize-panes", "on")
-			dev.Run(t, "send-keys", "-t", "work:0", "-l", "hi")
-			dev.Run(t, "send-keys", "-t", "work:0", "Enter")
 			r := startObserver(t, b, folder.Dir, func(o *inventory.Options) {
-				o.IdleThreshold = 1 * time.Second
+				// Long threshold on purpose: setup (splits, broadcast,
+				// first evaluation) must finish before any pane can go
+				// idle, or panes summarize healthy pre-wedge and the
+				// completion condition below can never trigger. The
+				// span budget is measured past the first failed
+				// capture, so the idle wait does not soften it.
+				o.IdleThreshold = 10 * time.Second
 			}, "default")
 			r.waitState(t, "default", tmux.StateUp)
+			// One broadcast refreshes every pane's output clock at once,
+			// after the loop is already evaluating, so all eight go idle
+			// in the same tick and land in one emitChanges batch.
+			dev.Run(t, "send-keys", "-t", "work:0", "-l", "hi")
+			dev.Run(t, "send-keys", "-t", "work:0", "Enter")
 			var panes []*agentv1.TmuxPane
 			for _, w := range r.snapshot(t).GetTmuxServers()[0].GetSessions()[0].GetWindows() {
 				panes = append(panes, w.GetPanes()...)
@@ -167,17 +179,20 @@ func TestObserverSummaryBatchStopsPastFirstTimeout(t *testing.T) {
 
 			wedged := time.Now()
 			from := len(r.rec.all())
+			var firstFailed time.Time
 			deadline := wedged.Add(30 * time.Second)
+			// Fast poll loop with no snapshots in it: the span below is
+			// only honest if the first failed capture is observed
+			// promptly, and a snapshot round trip through a wedged loop
+			// costs up to a bound each, which ate the whole signal.
+			// Liveness needs no snapshot here: eight idle edges plus
+			// eight counted failures arriving proves the loop progresses
+			// (a frozen loop emits nothing; the deadline catches that).
+			// Snapshot service under a wedge is the single-pane test's
+			// job, where one bound fits inside its context.
 			for {
 				if time.Now().After(deadline) {
 					t.Fatalf("batch not done within 30s of the wedge; events: %v", r.rec.all()[from:])
-				}
-				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-				snap := &agentv1.Snapshot{}
-				err := r.o.Snapshot(ctx, snap)
-				cancel()
-				if err != nil {
-					t.Fatalf("snapshot while the server is wedged: %v (the loop is frozen)", err)
 				}
 				summaries := 0
 				for _, ev := range r.rec.all()[from:] {
@@ -197,13 +212,20 @@ func TestObserverSummaryBatchStopsPastFirstTimeout(t *testing.T) {
 					}
 				}
 				failed := r.count(t, "fleet_agent_tmux_pane_summaries_total", `server_kind="default"`, `result="capture_failed"`)
-				if idle == 8 && failed >= 7 && summaries <= 1 {
-					if elapsed := time.Since(wedged); elapsed >= 4000*time.Millisecond {
-						t.Fatalf("wedged batch of 8 took %v, want under 4.0s (one bound past the idle threshold, not eight)", elapsed)
+				if firstFailed.IsZero() && failed >= 1 {
+					firstFailed = time.Now()
+				}
+				// Exact idle and summary counts: no pane may idle before
+				// the wedge (10 s threshold vs ~1 s setup), so no summary
+				// may go out healthy. The failed count stays a lower
+				// bound: later syncs retry the unserved panes.
+				if idle == 8 && failed >= 8 && summaries == 0 {
+					if span := time.Since(firstFailed); span >= 1500*time.Millisecond {
+						t.Fatalf("wedged batch of 8 spanned %v past the first failed capture, want under 1.5s (skips land in the same batch, not seven more bounds)", span)
 					}
 					return
 				}
-				time.Sleep(200 * time.Millisecond)
+				time.Sleep(50 * time.Millisecond)
 			}
 		})
 	}
