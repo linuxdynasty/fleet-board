@@ -79,10 +79,13 @@ func startPolicy(ctx context.Context, cfgDir, stateDir, machineID string, tel *t
 	return p, nil
 }
 
-// close stops the watch, lets the manager report the changes it already
-// found (they write audit rows), and only then closes audit.log.
+// close joins the watch and checks the file even if watch setup failed, then
+// lets the manager report every change before closing audit.log.
 func (p *policyRun) close() {
-	p.stopWatch()    // the watch ends and looks at the file one last time
+	p.stopWatch()
+	if p.mgr != nil {
+		p.mgr.Recheck(context.Background())
+	}
 	p.closeManager() // the loader reports what it found, writing audit rows
 	p.closeAudit()   // only now may audit.log close
 }
