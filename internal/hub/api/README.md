@@ -13,7 +13,7 @@ reads (`ListTriageItems`, `GetTriageItem`), the usage read
 (`ListUsageReadings`), the integration read (`ListIntegrations`), the
 settings reads (`GetSettings`, `ListSettings`), the audit read
 (`ListAuditEntries`), the store-status read (`GetStoreStatus`), the summary read (`GetFleetSummary`), the
-[session-control and approvals calls](interrupt.md), `GetServerInfo`, the machine
+[session-control and approvals calls](interrupt.md) (with a committed-row wake test), `GetServerInfo`, the machine
 reads (`ListMachines`, `GetMachine`), `GetOperation`, `CapturePane`,
 the session reads (`ListSessions`, `GetSession`), the observed-goal
 reads (`ListGoals`, `GetGoal`), the work-item reads (`ListWorkItems`,

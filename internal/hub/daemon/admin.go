@@ -12,7 +12,6 @@ import (
 	"github.com/linuxdynasty/fleet-board/internal/hub/config"
 )
 
-
 // bindAdmin opens <state_dir>/admin.sock (02j). Call it with fleetd.lock
 // held: a socket already there belongs to a hub that died (SIGKILL leaves
 // it), so it is removed first; anything else at that path is refused and

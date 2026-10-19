@@ -33,7 +33,7 @@
 // DismissTriageItem (each with its triage.* audit row), the
 // session-control and approvals calls (their fresh Operation deadlines
 // come from the queued commands; new session commands wake the outbox only
-// after the writer commits), [Fleet.GetServerInfo],
+// after a definitive commit, even when the request was cancelled), [Fleet.GetServerInfo],
 // [Fleet.ListMachines], [Fleet.GetMachine], [Fleet.CapturePane],
 // [Fleet.GetOperation], [Fleet.ListSessions], [Fleet.GetSession],
 // [Fleet.ListGoals], [Fleet.GetGoal] (observed goals with the stored spec

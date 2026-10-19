@@ -22,6 +22,7 @@ import (
 	typev1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/type/v1"
 	"github.com/linuxdynasty/fleet-board/internal/hub/api"
 	"github.com/linuxdynasty/fleet-board/internal/hub/ca"
+	"github.com/linuxdynasty/fleet-board/internal/hub/outbox"
 	"github.com/linuxdynasty/fleet-board/internal/hub/secret"
 	"github.com/linuxdynasty/fleet-board/internal/hub/statedb"
 	"github.com/linuxdynasty/fleet-board/internal/hub/system"
@@ -73,6 +74,7 @@ type fleetEnv struct {
 	tel     *telemetry.Telemetry
 	logs    *syncBuffer
 	st      *store.Store
+	fleet   *api.Fleet
 	client  hubv1connect.FleetServiceClient
 	sysLoop *system.Loop
 }
@@ -91,7 +93,10 @@ type envOpt struct {
 	now          func() time.Time
 	localTrusted *bool
 	sysSources   *system.Sources
+	onQueued     func(outbox.Op)
 }
+
+func withCommandQueued(fn func(outbox.Op)) envOpt { return envOpt{onQueued: fn} }
 
 // withSystemSources evaluates the hub signals from fake readings instead
 // of serving them UNKNOWN: the built loop lands on e.sysLoop for the test
@@ -139,6 +144,7 @@ func newFleetEnv(t *testing.T, who *typev1.Principal, opts ...envOpt) *fleetEnv 
 	now := func() time.Time { return fleetNow }
 	local := true
 	var sysSources *system.Sources
+	var onQueued func(outbox.Op)
 	for _, o := range opts {
 		if o.now != nil {
 			now = o.now
@@ -148,6 +154,9 @@ func newFleetEnv(t *testing.T, who *typev1.Principal, opts ...envOpt) *fleetEnv 
 		}
 		if o.sysSources != nil {
 			sysSources = o.sysSources
+		}
+		if o.onQueued != nil {
+			onQueued = o.onQueued
 		}
 	}
 	if err := statedb.EnsureDir(e.dir); err != nil {
@@ -185,11 +194,12 @@ func newFleetEnv(t *testing.T, who *typev1.Principal, opts ...envOpt) *fleetEnv 
 	fleet, err := api.NewFleet(api.FleetOptions{
 		Store: e.st, CACert: e.caDER, Telemetry: e.tel, Now: now,
 		StateDir: e.dir, LocalTrusted: local, HubInstanceID: testInstanceID,
-		SystemLoop: sysLoop,
+		SystemLoop: sysLoop, OnCommandQueued: onQueued,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
+	e.fleet = fleet
 	path, h := fleet.Handler()
 	mux := http.NewServeMux()
 	mux.Handle(path, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

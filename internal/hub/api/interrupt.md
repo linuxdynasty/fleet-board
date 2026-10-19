@@ -13,3 +13,12 @@ production handler, so it does not create a usable pane for this slice. The
 integration proof seeds a row that `InterruptPane` resolves through its normal
 production query; it does not establish an ordinary end-user route yet. The
 observed-session mirror that will supply that route is #40.
+
+The `InterruptPane` store test holds a real writer batch between its SQL
+callback and commit, then cancels the request. The API still returns the
+committed operation and wakes delivery once; the callback reads the row on a
+separate connection to prove that it is visible. A failed audit insert after
+enqueue rolls the whole command job back and causes no wake. Retrying that
+request commits one row; later replay returns its saved operation and wakes
+nothing. These tests cover hub persistence and delivery notification. They do
+not establish a public route to ordinary developer sessions before #40.
