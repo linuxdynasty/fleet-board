@@ -25,6 +25,12 @@
   },
   "store": {
     "status": {
+      "backup": {
+        "lastBackupBytes": "\u003cbytes\u003e",
+        "lastBackupPath": "\u003cstate\u003e/backups/nightly-20261019T000000Z.db",
+        "lastBackupTime": "\u003ctime\u003e",
+        "lastBackupUnencrypted": true
+      },
       "databases": [
         {
           "name": "state.db",

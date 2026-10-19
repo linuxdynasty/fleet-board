@@ -82,6 +82,21 @@ func startHubWithSeed(t *testing.T, withSeed bool) localHub {
 			t.Error("Run did not stop")
 		}
 	})
+	// Run checks for a nightly backup at startup. Wait for its published copy
+	// before reading the store, so the golden response has a stable shape.
+	backupPath := filepath.Join(state, "backups", "nightly-20261019T000000Z.db")
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if _, err := os.Stat(backupPath); err == nil {
+			break
+		} else if !os.IsNotExist(err) {
+			t.Fatalf("stat nightly backup: %v", err)
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("hub did not publish its nightly backup")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
 	return localHub{url: "http://" + addr.API.String(), secret: secret}
 }
 
@@ -389,7 +404,7 @@ func TestDoctorUsesTerminalSecretOnTheRealAdminRead(t *testing.T) {
 }
 
 // Golden files preserve the complete public response shape. Only runtime
-// timestamps, random hub IDs, and host disk byte counts are normalized.
+// timestamps, random hub IDs, host disk byte counts and temporary paths are normalized.
 func golden(t *testing.T, name, raw string) {
 	t.Helper()
 	dec := json.NewDecoder(strings.NewReader(raw))
@@ -433,6 +448,8 @@ func normalize(value any) {
 				v[key] = "<time>"
 			case strings.HasSuffix(key, "Bytes"):
 				v[key] = "<bytes>"
+			case key == "lastBackupPath":
+				v[key] = "<state>/backups/" + filepath.Base(item.(string))
 			default:
 				normalize(item)
 			}
