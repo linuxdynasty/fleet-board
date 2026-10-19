@@ -51,7 +51,7 @@ ExecStart="/home/alice/.local/bin/fleet-agent" --state-dir "/home/alice/fleet st
 
 Replace the example paths with absolute paths for that user. `ExecStart` is an
 argument list parsed by systemd, not a shell command. Check the resulting unit
-with `systemd-analyze --user verify` and
+with `systemd-analyze --user verify fleet-agent.service` and
 `systemctl --user cat fleet-agent.service` before restarting it.
 
 `systemctl --user stop fleet-agent.service` is a manual stop and stays stopped.
@@ -67,7 +67,8 @@ writer when it starts again. Inspect `journalctl --user -u fleet-agent.service`
 and `fleet-agent doctor` if it cannot start.
 
 The unit's source test is `python3 scripts/test-linux-agent-unit.py`. It checks
-the template and the numeric defaults. On Linux it also runs
+the template and the numeric defaults and runs in `make selftest`, which the
+required gate calls. On Linux it also runs
 `systemd-analyze --user verify` when a binary is present at the unit's path.
 Without that binary, the parser check is skipped and reported as such.
 
@@ -127,6 +128,11 @@ python3 scripts/test-linux-agent-real-child.py
 
 The test ends with the agent stopped and the pane running. Remove the test
 drop-in and socket only from that disposable VM after reviewing the proof.
+
+The installed-name verification command above also loaded its drop-ins in
+that VM. A temporary drop-in with a missing executable made verification
+exit 1; removing only that test drop-in restored exit 0. The command without
+a unit argument exited 1 with `Too few arguments.`
 
 Other transient child kinds and a hard-killed agent's cleanup remain untested.
 

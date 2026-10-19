@@ -211,6 +211,24 @@ for prefix in '-' '@-'; do
   if [ "$missing" = " ignore-errors" ]; then ok; else bad "'${prefix}\$(MAKE) lint' in a scratch copy was reported as:'$missing'"; fi
 done
 
+# The portable service contract must run in selftest. Detect its omission in
+# a scratch Makefile; the disposable-VM lifecycle test stays opt-in.
+service_test='python3 scripts/test-linux-agent-unit.py'
+cp "$root/Makefile" "$scratch/Makefile"
+out="$(cd "$scratch" && make -n selftest 2>&1)"
+if printf '%s\n' "$out" | grep -x -F -q "$service_test"; then
+  ok
+else
+  bad "make selftest does not run the portable Linux agent unit test"
+fi
+grep -v -x -F "	$service_test" "$root/Makefile" > "$scratch/Makefile"
+out="$(cd "$scratch" && make -n selftest 2>&1)"
+if printf '%s\n' "$out" | grep -x -F -q "$service_test"; then
+  bad "removing the portable Linux agent unit test was not detected"
+else
+  ok
+fi
+
 # Case 3: the recipes clear FLEET_PROTO_IMAGE, and a stale value does not break them.
 for target in doc-names doc-tables; do
   recipe="$(cd "$root" && make --no-print-directory -n "$target" 2>&1)"

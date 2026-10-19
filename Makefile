@@ -277,6 +277,7 @@ selftest: tools
 	python3 scripts/test-check-docs-stale.py
 	python3 scripts/test-gen-doc-tables.py
 	python3 scripts/test-report-capability-tests.py
+	python3 scripts/test-linux-agent-unit.py
 
 # diff-check fails on a file named like a git ref (HEAD, main, ...) at any path,
 # tracked or not yet added: it makes `git diff HEAD` ambiguous and one was once
