@@ -96,3 +96,101 @@ func TestObserverSummaryTimeoutKeepsLoopAlive(t *testing.T) {
 		})
 	}
 }
+
+// Eight panes going idle together on a wedged server must not cost eight
+// fresh bounds. emitChanges stops the batch past the first capture that
+// hits the bound (the server is not answering) and counts the skipped
+// panes. Measured on this Mac: without the batch stop the wedged batch
+// takes 5.3 to 6.3 s (eight serial 300 ms captures past the 1 s idle
+// threshold, spread over syncs); with it, 2.3 to 2.8 s (idle, one bound,
+// event and poll slack, with and without -race). The 4.0 s budget below
+// fails without the stop and passes with it. A broadcast refreshes every
+// pane's output clock at once so the batch is one emitChanges call, not
+// eight syncs. Edges still go out for every pane and no summary is
+// emitted for a capture past the bound.
+func TestObserverSummaryBatchStopsPastFirstTimeout(t *testing.T) {
+	restoreTimeout := inventory.SetReadTimeoutForTest(300 * time.Millisecond)
+	t.Cleanup(restoreTimeout)
+	for _, b := range tmuxtest.Binaries() {
+		t.Run(b.Name, func(t *testing.T) {
+			folder := tmuxtest.Start(t, b, "-s", "unwatched", "exec cat")
+			dev := folder.Sibling(t, "default", "-s", "work", "exec cat")
+			// Eight full splits do not fit the test terminal's geometry
+			// ("no space for a new pane"), so take 2-line panes in one
+			// window. One broadcast then refreshes every pane's output
+			// clock at once, so all eight go idle in the same tick and
+			// land in one emitChanges batch.
+			for i := 0; i < 7; i++ {
+				dev.Run(t, "split-window", "-d", "-t", "work:0", "-l", "2", "exec cat")
+			}
+			dev.Run(t, "set-window-option", "-t", "work:0", "synchronize-panes", "on")
+			dev.Run(t, "send-keys", "-t", "work:0", "-l", "hi")
+			dev.Run(t, "send-keys", "-t", "work:0", "Enter")
+			r := startObserver(t, b, folder.Dir, func(o *inventory.Options) {
+				o.IdleThreshold = 1 * time.Second
+			}, "default")
+			r.waitState(t, "default", tmux.StateUp)
+			var panes []*agentv1.TmuxPane
+			for _, w := range r.snapshot(t).GetTmuxServers()[0].GetSessions()[0].GetWindows() {
+				panes = append(panes, w.GetPanes()...)
+			}
+			if len(panes) != 8 {
+				t.Fatalf("panes = %d, want 8", len(panes))
+			}
+			ids := map[string]bool{}
+			for _, p := range panes {
+				ids[p.GetKey().GetPaneId()] = false
+			}
+			out := dev.Run(t, "display-message", "-p", "#{pid}")
+			pid, err := strconv.Atoi(strings.TrimSpace(out))
+			if err != nil {
+				t.Fatalf("server pid %q: %v", out, err)
+			}
+			if err := syscall.Kill(pid, syscall.SIGSTOP); err != nil {
+				t.Fatalf("SIGSTOP %d: %v", pid, err)
+			}
+			t.Cleanup(func() { _ = syscall.Kill(pid, syscall.SIGCONT) })
+
+			wedged := time.Now()
+			from := len(r.rec.all())
+			deadline := wedged.Add(30 * time.Second)
+			for {
+				if time.Now().After(deadline) {
+					t.Fatalf("batch not done within 30s of the wedge; events: %v", r.rec.all()[from:])
+				}
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				snap := &agentv1.Snapshot{}
+				err := r.o.Snapshot(ctx, snap)
+				cancel()
+				if err != nil {
+					t.Fatalf("snapshot while the server is wedged: %v (the loop is frozen)", err)
+				}
+				summaries := 0
+				for _, ev := range r.rec.all()[from:] {
+					if a := ev.GetActivity(); a != nil && a.GetTo() == typev1.Activity_ACTIVITY_IDLE {
+						if seen, ok := ids[a.GetPane().GetPaneId()]; ok && !seen {
+							ids[a.GetPane().GetPaneId()] = true
+						}
+					}
+					if ev.GetPaneSummary() != nil {
+						summaries++
+					}
+				}
+				idle := 0
+				for _, seen := range ids {
+					if seen {
+						idle++
+					}
+				}
+				failed := r.count(t, "fleet_agent_tmux_pane_summaries_total", `server_kind="default"`, `result="capture_failed"`)
+				if idle == 8 && failed >= 7 && summaries <= 1 {
+					if elapsed := time.Since(wedged); elapsed >= 4000*time.Millisecond {
+						t.Fatalf("wedged batch of 8 took %v, want under 4.0s (one bound past the idle threshold, not eight)", elapsed)
+					}
+					return
+				}
+				time.Sleep(200 * time.Millisecond)
+			}
+		})
+	}
+}

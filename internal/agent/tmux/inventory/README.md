@@ -142,7 +142,10 @@ screen through `capture-pane -p`, ANSI-stripped, control-stripped and capped
 at 4 KiB (droppable). The per-pane gate means quick edges share one summary.
 The capture behind a summary shares the observer's 10 s read bound ("When
 reads fail"): past it the edge goes out without a summary, counted as
-`capture_failed`, so a wedged server cannot hold the loop (#208).
+`capture_failed`, so a wedged server cannot hold the loop (#208). Past the
+first capture that hits the bound in one batch, the rest of the batch's
+captures are skipped (counted): one wedged batch costs one bound, not one
+per pane.
 
 The loop arms an idle timer while any pane is active: a server gone quiet
 emits its idle edges from the cached times with no new notice (E4 feeds the
