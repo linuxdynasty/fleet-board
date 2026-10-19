@@ -10,3 +10,16 @@ FLEET_DEADLINE_ARM=candidate /tmp/fleet-deadline-historical-candidate/api.test -
 Candidate overlay plus approval list probe mapping:
 CGO_ENABLED=0 go test -overlay=/tmp/fleet-deadline-historical-candidate/approval-overlay.json -run=^TestListProbeParity$ -count=1 ./internal/hub/approvals: exit 0
 summarize.py: exit 0; 20 five-call samples per arm and operation, original data unchanged
+
+Fresh single-branch history check after later rebase (no timings):
+git merge-base --is-ancestor 7502ecd932ed1be243ba2d2be0922e5702a3451b HEAD: exit 1
+git merge-base --is-ancestor a1ecb102dcbfccc2b5ad569fcfe3d71c9464316a HEAD: exit 1
+git clone --no-local --single-branch --no-tags --branch drive-40-local-api /Users/linuxdynasty/personal-repos/fleet-board /tmp/fleet-deadline-fresh-history: exit 0
+Old prepare.py baseline /tmp/fleet-deadline-fresh-red in that clone: exit 1 (git show of old7502 failed with exit128)
+After tree-pin fix, git fetch origin drive-40-local-api and git merge --ff-only FETCH_HEAD in that fixture: exit 0 each
+python3 spikes/deadline-cost/results/prepare.py baseline /tmp/fleet-deadline-fresh-baseline in clone: exit 0
+python3 spikes/deadline-cost/results/prepare.py candidate /tmp/fleet-deadline-fresh-candidate in clone: exit 0
+git cat-file -e old7502 and olda1ec in fresh clone: exit 1 each (old commits remain absent)
+Python bytes comparison: all 11 replacement files per arm match historical overlays exactly, exit 0
+Current ancestry inputs 2a254/c43e vs old7502/a1ec measured source object comparisons: exit 0
+Recorded benchmark data and summary unchanged; no new timing commands run.

@@ -9,7 +9,7 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[3]
 API = pathlib.Path("internal/hub/api")
-# API tree objects survive a rebase and are included in this branch history.
+# These API trees are reachable through ancestors of this rebased branch.
 BASELINE = "dbd18ef4b022648a45f7e82c7221e68640fd00a9"
 CANDIDATE = "515526b8925cab1dc1a647473ceee418b880d399"
 HISTORICAL_STORE = "6ac9e9b662aae4993831dbb9b2cbd966d8c6ceed"
