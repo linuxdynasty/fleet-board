@@ -22,6 +22,7 @@ err = s.Write(ctx, func(tx *sql.Tx) error { // waits for the durable commit
 })
 done, err := s.Submit(ctx, apply) // queue now, read the outcome from done later
 err = s.Read(ctx, func(tx *sql.Tx) error { ... }) // short read on the pool
+wake := s.CommitWake() // one future Watch dispatcher reads this hint
 ```
 
 ## What it guarantees
@@ -38,6 +39,14 @@ err = s.Read(ctx, func(tx *sql.Tx) error { ... }) // short read on the pool
   arrives only after its batch commits. A job that returns an error is rolled
   back to its own savepoint and the rest of the batch commits. If the
   transaction itself breaks, every job in the batch gets the error.
+- **Commit wake.** Each successful outer batch commit offers a nonblocking
+  hint on `CommitWake` before job outcomes. The capacity-one channel coalesces
+  hints; one hub Watch dispatcher reads committed rows to find changes. A
+  failed outer commit sends no hint. A no-op committed batch may send one.
+  `Close` flushes queued jobs, then closes the channel. See [commit.md](commit.md)
+  for the ownership and ordering diagram. Cancellation after admission does not
+  discard the job or suppress its committed wake; the cancellation test uses
+  a bounded callback that never waits on another goroutine.
 - **One change, one job.** A lone job waits up to the 250 ms window for
   company before it commits, so a loop of `Write` calls costs up to 250 ms
   each. Put related changes in one job, or `Submit` them all and then wait.
@@ -82,6 +91,12 @@ or `fleet_agent`): `_writer_batch_messages`, `_writer_batch_seconds`,
 `store.batch_failed` (with `err_kind` and `sqlite_code`, SQLite's numeric
 result code), `store.closed`. No paths or SQL text
 are logged.
+
+No-Observability-Change: `fleet_hub_writer_batch_messages`,
+`fleet_hub_writer_batch_seconds` and `fleet_hub_writer_jobs_total{result}`
+already show whether hub batches commit or fail (with the matching
+`fleet_agent_` series on agents); the wake itself carries no resource identity
+and does not change a row.
 
 ## Tests
 

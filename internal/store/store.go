@@ -81,6 +81,7 @@ type Store struct {
 	closed  bool
 	jobs    chan job
 	stopped chan struct{}
+	wake    chan struct{} // writer-owned, coalesced hint after successful commit
 	// oldest is the Submit time (Unix ns) of the first job of the batch the
 	// writer holds, 0 when it holds none. Jobs are FIFO, so no queued job is
 	// older.
@@ -173,6 +174,7 @@ func Open(ctx context.Context, opts Options) (*Store, error) {
 		log:     slog.New(slog.DiscardHandler),
 		jobs:    make(chan job, opts.QueueSize),
 		stopped: make(chan struct{}),
+		wake:    make(chan struct{}, 1),
 	}
 	if opts.Telemetry != nil {
 		s.log = opts.Telemetry.Logger.With("component", "store", "db", opts.Name)

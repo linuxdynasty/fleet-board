@@ -1,0 +1,29 @@
+                        │    base     │                head                │
+                        │   sec/op    │   sec/op     vs base               │
+WriterBatch/jobs=1-12     3.928m ± 3%   3.904m ± 1%       ~ (p=0.393 n=10)
+WriterBatch/jobs=10-12    4.109m ± 2%   4.166m ± 2%       ~ (p=0.190 n=10)
+WriterBatch/jobs=100-12   5.229m ± 6%   5.142m ± 6%       ~ (p=0.481 n=10)
+geomean                   4.386m        4.373m       -0.30%
+
+                        │    base    │                head                 │
+                        │ jobs/batch │ jobs/batch  vs base                 │
+WriterBatch/jobs=1-12     1.000 ± 0%   1.000 ± 0%       ~ (p=1.000 n=10) ¹
+WriterBatch/jobs=10-12    10.00 ± 0%   10.00 ± 0%       ~ (p=1.000 n=10) ¹
+WriterBatch/jobs=100-12   100.0 ± 0%   100.0 ± 0%       ~ (p=1.000 n=10) ¹
+geomean                   10.00        10.00       +0.00%
+¹ all samples are equal
+
+                        │     base     │                head                 │
+                        │     B/op     │     B/op      vs base               │
+WriterBatch/jobs=1-12     1.115Ki ± 2%   1.114Ki ± 4%       ~ (p=0.897 n=10)
+WriterBatch/jobs=10-12    5.884Ki ± 1%   5.897Ki ± 1%       ~ (p=0.448 n=10)
+WriterBatch/jobs=100-12   55.10Ki ± 0%   55.07Ki ± 0%       ~ (p=0.324 n=10)
+geomean                   7.124Ki        7.126Ki       +0.03%
+
+                        │    base     │                 head                 │
+                        │  allocs/op  │  allocs/op   vs base                 │
+WriterBatch/jobs=1-12      33.00 ± 0%    33.00 ± 0%       ~ (p=1.000 n=10) ¹
+WriterBatch/jobs=10-12     249.0 ± 0%    249.0 ± 0%       ~ (p=1.000 n=10)
+WriterBatch/jobs=100-12   2.409k ± 0%   2.409k ± 0%       ~ (p=1.000 n=10)
+geomean                    270.5         270.5       +0.00%
+¹ all samples are equal
