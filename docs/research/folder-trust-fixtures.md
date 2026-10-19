@@ -59,3 +59,33 @@ The probe's tmux server was killed. Scratch folders (under the system temp
 folder, the home folder and the repos folder) were removed. The Cursor trust
 entries the probe made were deleted. Raw captures were deleted after the redacted
 files were written.
+
+## Re-verification, 2026-10-19 (issue #54)
+
+Read-only re-run of the first screens on the installed versions, same
+`fleet-live-probe` shape: throwaway servers (`-L probe54c-<harness> -f
+/dev/null`), empty scratch folders, `capture-pane -p` read before any key, no
+prompt sent to any model (no quota). Every trust screen got the "no" answer
+(Esc, or Ctrl-C for Cursor without touching the box); nothing was trusted and
+no harness config was edited.
+
+| Harness and version | Observed | Against the fixture |
+|---|---|---|
+| Claude Code 2.1.296 | "Accessing workspace" box, "No, exit" selected, Esc cancels | same shape as `trust-folder.txt` |
+| Codex 0.163.0 (newer than the fixtures) | "Folder access" / "Trust this folder?", "1. Trust and continue" selected, second choice "2. Back to Agent Command Center"; no daemon or update prompt; Esc backs out to the Agent Command Center | same shape as the 0.162.1 `trust-folder-git.txt`; not a new fixture (a new version dir needs its golden-table row; claiming 0.163.0 is the adapter lane's call) |
+| Muse 1.4.10 (newer than the fixtures) | "Do you trust this workspace?", "1 Trust and continue" / "2 Quit"; Esc quits to the shell | same shape as the 1.4.6 `trust-workspace.txt`; not a new fixture, same reason |
+| Cursor `cursor-agent` 2026.10.01 | "Workspace Trust Required" box, `[a]` selected; quit with Ctrl-C, no prompt key pressed | same shape as `trust-workspace.txt` |
+| OpenCode 1.19.3 (newer than the fixtures) | straight to the ready screen ("Ask anything…") plus the passive "/update to upgrade to OpenCode 2.0" line | still no trust screen, as `ready-new-folder.txt` says |
+
+Cleanup: all five servers killed; scratch folders removed. Starting
+Cursor created one empty workspace folder under `~/.cursor/projects/`; it was
+removed and the listing matches the baseline. `~/.codex/config.toml` and
+Muse's `trust.json`/`settings.json` kept their baselined checksums.
+`~/.claude.json` (checksummed, never opened) changed under the Claude start's
+own bookkeeping — the same class as the Codex counter bump in 01b, left as
+is. OpenCode touched only its own run state (`opencode.db`/log), left as is.
+No auth file was opened; raw captures were deleted.
+
+Still open, unchanged: the Claude Code plain-parent cell and the Codex
+YOLO-off plain-folder cell. Both need an owner hand act (a yes-answer on a
+trust screen, or a `config.toml` edit), which the agent never does (01 C3).
