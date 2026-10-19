@@ -443,8 +443,9 @@ optionally against one limit the owner sets.
   server burns CPU (83 to 90%, control connection idle;
   `internal/agent/tmux/testdata/flood-stalled-3.8.txt` pins the signature).
   Same family as upstream #4969 (fixed) and #5024 (open): the pinned latest
-  stays 3.7c, the flood test skips 3.8 (full check on 3.2a/3.7c), and one read
-  stays bounded at 10 s and counted (defaults): wedges degrade, never freeze.
+  stays 3.7c, the flood test skips 3.8 (full check on 3.2a/3.7c), and the inventory
+  read and the E5 summary capture stay bounded at 10 s and counted (defaults):
+  wedges degrade, never freeze.
 - **E3 Pane lifecycle:** created and exited with exit status. "Stopped without
   DONE" (the one-nudge rule) depends on this. The status is known only when
   tmux kept the pane (`remain-on-exit`, which the agent never sets on a
