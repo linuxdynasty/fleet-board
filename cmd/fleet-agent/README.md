@@ -179,6 +179,10 @@ hub outbox row wakes the connection only after the hub writer commits it.
 
 `--state-dir` and `--config-dir` are flags of every command.
 
+Shutdown joins the policy watcher, checks the policy file once more even when
+the watcher could not start, and drains change reports before closing the
+audit log. The loaded policy stays in force until the next start.
+
 `fleet-agent --version` prints the name and the version; `-h` prints the
 usage. Release builds set the version with `-ldflags -X` (see
 `internal/buildinfo`); other builds say `dev`.
