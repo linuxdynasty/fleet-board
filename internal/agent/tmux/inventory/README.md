@@ -140,6 +140,9 @@ become `ActivityTransition` events (never dropped). Activity never raises
 E5 summaries go out on each edge, at most one per pane per 5 s: the visible
 screen through `capture-pane -p`, ANSI-stripped, control-stripped and capped
 at 4 KiB (droppable). The per-pane gate means quick edges share one summary.
+The capture behind a summary shares the observer's 10 s read bound ("When
+reads fail"): past it the edge goes out without a summary, counted as
+`capture_failed`, so a wedged server cannot hold the loop (#208).
 
 The loop arms an idle timer while any pane is active: a server gone quiet
 emits its idle edges from the cached times with no new notice (E4 feeds the

@@ -267,14 +267,19 @@ func (s *server) emitChanges(ctx context.Context, start string, changes []activi
 
 // summarize captures one pane's visible screen and emits it as an E5
 // summary. It reports whether the summary went out; a failed capture is
-// counted and the edge keeps its transition without one.
+// counted and the edge keeps its transition without one. The capture is
+// bounded at readTimeout like every other observer read: a server that
+// stops answering mid-sync (#208) must not hold the loop past it, or no
+// further read runs and snapshots stop being served.
 func (s *server) summarize(ctx context.Context, key *typev1.PaneKey, ch activityChange) bool {
 	id, ok := parsePaneID(ch.pane)
 	if !ok {
 		s.o.tel.summary(ctx, s.kind, "capture_failed")
 		return false
 	}
-	cap, err := s.c.Capture(ctx, id)
+	rctx, cancel := context.WithTimeout(ctx, readTimeout)
+	cap, err := s.c.Capture(rctx, id)
+	cancel()
 	if err != nil {
 		s.o.tel.summary(ctx, s.kind, "capture_failed")
 		return false
