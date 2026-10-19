@@ -154,7 +154,7 @@ func TestInterruptPaneTravelsFromHubToRealTmux(t *testing.T) {
 			if lines := conntest.Lines(t, s.logs.String(), "command.finished"); len(lines) != 1 || lines[0]["command_id"] != commandID {
 				t.Fatalf("command.finished = %v", lines)
 			}
-			req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+			req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/metrics", nil)
 			req.RemoteAddr = "127.0.0.1:1234"
 			rec := httptest.NewRecorder()
 			s.tel.MetricsHandler(nil).ServeHTTP(rec, req)

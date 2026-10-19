@@ -210,7 +210,7 @@ func TestInterruptWakeOnlyForCommittedNewRows(t *testing.T) {
 	before := pendingCommands(t, e, "m1")
 
 	if err := e.st.Write(context.Background(), func(tx *sql.Tx) error {
-		_, err := tx.Exec(`CREATE TRIGGER fail_interrupt_audit BEFORE INSERT ON audit_log
+		_, err := tx.ExecContext(context.Background(), `CREATE TRIGGER fail_interrupt_audit BEFORE INSERT ON audit_log
 			WHEN NEW.action = 'session.interrupt'
 			BEGIN SELECT RAISE(ABORT, 'injected after enqueue'); END`)
 		return err
@@ -225,7 +225,7 @@ func TestInterruptWakeOnlyForCommittedNewRows(t *testing.T) {
 	}
 	noInterruptWake(t, wakes)
 	if err := e.st.Write(context.Background(), func(tx *sql.Tx) error {
-		_, err := tx.Exec(`DROP TRIGGER fail_interrupt_audit`)
+		_, err := tx.ExecContext(context.Background(), `DROP TRIGGER fail_interrupt_audit`)
 		return err
 	}); err != nil {
 		t.Fatal(err)

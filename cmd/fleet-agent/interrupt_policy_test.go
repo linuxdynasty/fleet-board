@@ -168,7 +168,7 @@ func TestInterruptPolicyRefusesRealTmux(t *testing.T) {
 				}); err != nil {
 					t.Fatal(err)
 				}
-				time.Sleep(time.Until(cmd.NotAfterTime.AsTime()) + 100*time.Millisecond)
+				time.Sleep(time.Until(cmd.GetNotAfterTime().AsTime()) + 100*time.Millisecond)
 				if rows := s.hub.Commands(t, s.machine); len(rows) != 1 || rows[0].SentEpoch != 0 || len(s.hub.Results(t, s.machine)) != 0 {
 					t.Fatalf("connected command advanced before after-commit wake: %+v", rows)
 				}

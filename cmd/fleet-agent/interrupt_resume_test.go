@@ -91,7 +91,7 @@ func TestUnfinishedInterruptResumesAgainstRealTmux(t *testing.T) {
 					}
 					if _, _, err := db.LogAndApply(ctx, ring.Command{
 						ID: cmd.GetCommandId().GetValue(), Kind: "Interrupt", Epoch: 1, Seq: 1,
-						Received: time.Now(), NotAfter: cmd.NotAfterTime.AsTime(), Body: body,
+						Received: time.Now(), NotAfter: cmd.GetNotAfterTime().AsTime(), Body: body,
 					}); err != nil {
 						t.Fatal(err)
 					}
@@ -100,7 +100,7 @@ func TestUnfinishedInterruptResumesAgainstRealTmux(t *testing.T) {
 					}
 					if saved {
 						result, err := proto.Marshal(&agentv1.CommandResult{
-							CommandId: cmd.CommandId, Status: typev1.Status_STATUS_OK,
+							CommandId: cmd.GetCommandId(), Status: typev1.Status_STATUS_OK,
 							Message: "saved result from the earlier attempt",
 						})
 						if err != nil {
