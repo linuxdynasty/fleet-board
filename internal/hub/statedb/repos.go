@@ -433,6 +433,13 @@ func DeleteWatchedRepo(ctx context.Context, s *store.Store, in DeleteRepo) (Repo
 			return fmt.Errorf("statedb: delete repo: %w", err)
 		}
 		out = got
+		// The deleted row carries the delete's own position for Watch: a
+		// resume must order the DELETED after every earlier change.
+		st, err := NextStamp(jctx, tx, in.Now)
+		if err != nil {
+			return err
+		}
+		out.HubSeq = st.HubSeq
 		if err := auditRepo(jctx, tx, ActionRepoDelete, out, in.RepoWrite); err != nil {
 			return err
 		}

@@ -16,7 +16,7 @@ import (
 func seedListApproval(t *testing.T, e *quotaWriteEnv, id string, created, expires time.Time) {
 	t.Helper()
 	if err := e.st.Write(context.Background(), func(tx *sql.Tx) error {
-		_, err := approvals.CreateApproval(context.Background(), tx, approvals.Create{
+		_, _, err := approvals.CreateApproval(context.Background(), tx, approvals.Create{
 			ID: id, Kind: hubv1.ApprovalKind_APPROVAL_KIND_DISPATCH_CONFIRM,
 			Severity: hubv1.Severity_SEVERITY_WARNING, Preview: "dispatch work",
 			Allowed:       []approvals.Choice{{Key: "approve"}, {Key: "deny"}},

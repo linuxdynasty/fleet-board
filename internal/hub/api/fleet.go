@@ -80,6 +80,9 @@ type FleetOptions struct {
 	// system.DiskFree. Set in tests to prove what GetStoreStatus does
 	// when the volume cannot be statted.
 	DiskFree func(dir string) (int64, bool)
+	// WatchLogCap bounds the Watch change log; zero means the 02c
+	// default. Tests set a small cap to evict tokens on purpose.
+	WatchLogCap int
 }
 
 // Fleet is the hub's FleetService. The caller comes from [PrincipalFrom],
@@ -107,7 +110,11 @@ type Fleet struct {
 	// start GetStoreStatus reports as hub_start_time.
 	started time.Time
 	// diskFree reads the free bytes on the state volume.
-	diskFree       func(dir string) (int64, bool)
+	diskFree func(dir string) (int64, bool)
+	// watch is the Watch fan-out bus and its bounded change log (02c).
+	watch          *watchBus
+	watchStreams   metric.Int64Counter
+	watchResyncs   metric.Int64Counter
 	tokens         metric.Int64Counter
 	sessCmds       metric.Int64Counter
 	approvals      metric.Int64Counter
@@ -142,6 +149,19 @@ func NewFleet(opts FleetOptions) (*Fleet, error) {
 	if f.diskFree == nil {
 		f.diskFree = system.DiskFree
 	}
+	f.watch = newWatchBus(f.now, opts.WatchLogCap)
+	streams, werr := f.tel.Meter(scope).Int64Counter(f.tel.MetricPrefix()+"_watch_streams_total",
+		metric.WithDescription("Watch streams by result: opened, refused or resync."))
+	if werr != nil {
+		return nil, fmt.Errorf("api: watch streams counter: %w", werr)
+	}
+	f.watchStreams = streams
+	resyncs, werr := f.tel.Meter(scope).Int64Counter(f.tel.MetricPrefix()+"_watch_resync_total",
+		metric.WithDescription("Watch streams ended with RESYNC_REQUIRED, by reason."))
+	if werr != nil {
+		return nil, fmt.Errorf("api: watch resync counter: %w", werr)
+	}
+	f.watchResyncs = resyncs
 	fp := sha256.Sum256(opts.CACert)
 	f.fingerprint = hex.EncodeToString(fp[:])
 	f.stateDir = opts.StateDir

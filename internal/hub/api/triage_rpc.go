@@ -158,6 +158,7 @@ func (f *Fleet) SnoozeTriageItem(ctx context.Context, req *connect.Request[hubv1
 		return nil, f.triageFailed(ctx, op, "snooze", actor, "decode", err)
 	}
 	f.triageWrote(ctx, op, actor, stored.ID, stored.Version, stored.Replay)
+	f.publishTriageWatch(ctx, stored, item)
 	return connect.NewResponse(&hubv1.SnoozeTriageItemResponse{TriageItem: item}), nil
 }
 
@@ -214,5 +215,6 @@ func (f *Fleet) DismissTriageItem(ctx context.Context, req *connect.Request[hubv
 		return nil, f.triageFailed(ctx, op, "dismiss", actor, "decode", err)
 	}
 	f.triageWrote(ctx, op, actor, stored.ID, stored.Version, stored.Replay)
+	f.publishTriageWatch(ctx, stored, item)
 	return connect.NewResponse(&hubv1.DismissTriageItemResponse{TriageItem: item}), nil
 }

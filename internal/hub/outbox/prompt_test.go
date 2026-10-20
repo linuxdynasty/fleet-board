@@ -39,7 +39,7 @@ func holdAnswer(t *testing.T, s *store.Store) {
 	t.Helper()
 	ctx := context.Background()
 	err := s.Write(ctx, func(tx *sql.Tx) error {
-		a, err := approvals.CreateApproval(ctx, tx, approvals.Create{
+		a, _, err := approvals.CreateApproval(ctx, tx, approvals.Create{
 			Kind:      hubv1.ApprovalKind_APPROVAL_KIND_PROMPT_ANSWER,
 			Severity:  hubv1.Severity_SEVERITY_WARNING,
 			Preview:   `allow "deploy"?`,

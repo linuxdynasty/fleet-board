@@ -271,6 +271,8 @@ func (f *Fleet) UpdateSettings(ctx context.Context, req *connect.Request[hubv1.U
 	}
 	now := f.hubNow()
 	patch, paths := m.GetSettings().GetSpec(), m.GetUpdateMask().GetPaths()
+	// oldSpec keeps the pre-update spec for UNMATCHED evaluation.
+	var oldSpec []byte
 	writeCtx := statedb.WithValidatedWrite(ctx, func() error { return quotaCheckpoint(ctx, quotaWrite) })
 	stored, err := statedb.UpdateFleetSettings(writeCtx, f.store, statedb.UpdateSettingsOp{
 		ConfigWrite: statedb.ConfigWrite{
@@ -279,6 +281,7 @@ func (f *Fleet) UpdateSettings(ctx context.Context, req *connect.Request[hubv1.U
 		},
 		ExpectedVersion: m.GetExpectedVersion(),
 		Merge: func(current []byte) ([]byte, error) {
+			oldSpec = current
 			currentSpec := fleetScopeSpec()
 			if len(current) > 0 {
 				if err := protojson.Unmarshal(current, &currentSpec); err != nil {
@@ -310,6 +313,7 @@ func (f *Fleet) UpdateSettings(ctx context.Context, req *connect.Request[hubv1.U
 		return nil, f.configOpFailed(ctx, opSettingsUpdate, "update", actor, "decode", err)
 	}
 	f.configOpWrote(ctx, opSettingsUpdate, actor, statedb.FleetScope, stored.Version, stored.Replay)
+	f.publishSettingsWatch(ctx, stored, oldSpec, stored.Replay)
 	return connect.NewResponse(&hubv1.UpdateSettingsResponse{
 		Settings: settingsFromStored(stored, &outSpec),
 	}), nil

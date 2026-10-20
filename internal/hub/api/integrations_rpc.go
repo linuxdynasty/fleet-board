@@ -156,6 +156,8 @@ func (f *Fleet) UpdateIntegration(ctx context.Context, req *connect.Request[hubv
 	}
 	now := f.hubNow()
 	patch, paths := m.GetIntegration().GetSpec(), m.GetUpdateMask().GetPaths()
+	// oldSpec keeps the pre-update spec for UNMATCHED evaluation.
+	var oldSpec []byte
 	writeCtx := statedb.WithValidatedWrite(ctx, func() error { return quotaCheckpoint(ctx, quotaWrite) })
 	stored, err := statedb.UpdateIntegrationSpec(writeCtx, f.store, statedb.UpdateIntegrationOp{
 		ConfigWrite: statedb.ConfigWrite{
@@ -164,6 +166,7 @@ func (f *Fleet) UpdateIntegration(ctx context.Context, req *connect.Request[hubv
 		},
 		ID: inIntegrationID(m), ExpectedVersion: m.GetExpectedVersion(),
 		Merge: func(current []byte) ([]byte, string, error) {
+			oldSpec = current
 			var currentSpec hubv1.IntegrationSpec
 			if err := protojson.Unmarshal(current, &currentSpec); err != nil {
 				return nil, "", err
@@ -200,6 +203,7 @@ func (f *Fleet) UpdateIntegration(ctx context.Context, req *connect.Request[hubv
 		}
 	}
 	f.configOpWrote(ctx, opIntegrationUpdate, actor, stored.ID, stored.Version, stored.Replay)
+	f.publishIntegrationWatch(ctx, stored, oldSpec, stored.Replay)
 	return connect.NewResponse(&hubv1.UpdateIntegrationResponse{
 		Integration: integrationFromStored(stored, &outSpec, &outStatus),
 	}), nil

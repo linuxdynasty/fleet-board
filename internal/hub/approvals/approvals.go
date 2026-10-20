@@ -128,37 +128,38 @@ func mintID() (string, error) {
 }
 
 // CreateApproval stores one PENDING approval with version 1 inside tx, the
-// raising writer job's transaction, and stamps its hub_seq for Watch.
-func CreateApproval(ctx context.Context, tx *sql.Tx, in Create) (*hubv1.Approval, error) {
+// raising writer job's transaction, and stamps its hub_seq for Watch. It
+// returns the stamp with the approval.
+func CreateApproval(ctx context.Context, tx *sql.Tx, in Create) (*hubv1.Approval, int64, error) {
 	if err := checkCreate(in); err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	id := in.ID
 	if id == "" {
 		var err error
 		if id, err = mintID(); err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 	}
 	allowed, err := json.Marshal(in.Allowed)
 	if err != nil {
-		return nil, fmt.Errorf("%w: encode allowed decisions: %w", ErrInvalid, err)
+		return nil, 0, fmt.Errorf("%w: encode allowed decisions: %w", ErrInvalid, err)
 	}
 	var rawCmd []byte
 	if in.Command != nil {
 		rawCmd, err = proto.MarshalOptions{Deterministic: true}.Marshal(in.Command)
 		if err != nil {
-			return nil, fmt.Errorf("%w: encode gated command: %w", ErrInvalid, err)
+			return nil, 0, fmt.Errorf("%w: encode gated command: %w", ErrInvalid, err)
 		}
 	}
 	if in.Checkpoint != nil {
 		if err := in.Checkpoint(); err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 	}
 	st, err := statedb.NextStamp(ctx, tx, in.Now)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	a := &hubv1.Approval{
 		Id:               &hubv1.ApprovalId{Value: id},
@@ -202,11 +203,11 @@ func CreateApproval(ctx context.Context, tx *sql.Tx, in Create) (*hubv1.Approval
 		in.Now.UnixMilli(), in.Now.UnixMilli(), st.HubSeq, st.ObservedTime.UnixMilli())
 	if err != nil {
 		if isConflict(err) {
-			return nil, fmt.Errorf("%w: %s", ErrConflict, id)
+			return nil, 0, fmt.Errorf("%w: %s", ErrConflict, id)
 		}
-		return nil, fmt.Errorf("approvals: insert: %w", err)
+		return nil, 0, fmt.Errorf("approvals: insert: %w", err)
 	}
-	return a, nil
+	return a, st.HubSeq, nil
 }
 
 func checkCreate(in Create) error {

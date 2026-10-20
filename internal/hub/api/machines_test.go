@@ -273,15 +273,6 @@ func TestUnbuiltReadsStayUnimplemented(t *testing.T) {
 	if code, _, _ := detail(t, err); code != connect.CodeUnimplemented {
 		t.Errorf("RedeemInvite code %s, want UNIMPLEMENTED (v3, no row builds it)", code)
 	}
-	stream, werr := e.client.Watch(context.Background(), connect.NewRequest(&hubv1.WatchRequest{}))
-	if werr == nil {
-		stream.Receive()
-		werr = stream.Err()
-		_ = stream.Close()
-	}
-	if code, _, _ := detail(t, werr); code != connect.CodeUnimplemented {
-		t.Errorf("Watch code %s, want UNIMPLEMENTED (row 12, later slice)", code)
-	}
 }
 
 // TestListMachinesCoversTheRestOfTheCatalogue exercises what the contract

@@ -76,5 +76,8 @@
 // closing unserved every connection whose kernel peer user id
 // ([KernelPeerUID]) is not fleetd's and refusing any request with an Origin
 // header; the caller is [LocalUser] of the peer. [AdminClient] dials the
-// socket. Watch remains unimplemented until its plan-row proof is complete.
+// socket. [Fleet.Watch] serves the per-topic subscriptions with the
+// initial state, resume tokens, RESYNC_REQUIRED and latest-wins summaries
+// (02c); the in-package writes publish their stamped changes to its bus,
+// and agent-driven changes follow once ingest publishes too.
 package api

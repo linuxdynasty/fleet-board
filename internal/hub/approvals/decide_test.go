@@ -44,7 +44,7 @@ func mustCreate(t *testing.T, s *store.Store, in approvals.Create) string {
 	t.Helper()
 	var id string
 	err := s.Write(context.Background(), func(tx *sql.Tx) error {
-		a, err := approvals.CreateApproval(context.Background(), tx, in)
+		a, _, err := approvals.CreateApproval(context.Background(), tx, in)
 		if err != nil {
 			return err
 		}

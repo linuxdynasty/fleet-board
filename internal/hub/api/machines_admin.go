@@ -282,6 +282,7 @@ func (f *Fleet) UpdateMachine(ctx context.Context, req *connect.Request[hubv1.Up
 		return nil, f.machineWriteError(ctx, opMachineUpdate, "update", actor, machineStoreError("update", err))
 	}
 	f.machineWrote(ctx, opMachineUpdate, actor, id, stored.Version, stored.Replay)
+	f.publishMachineWatch(ctx, id, hubv1.ChangeType_CHANGE_TYPE_UPDATED, stored.Replay)
 	return connect.NewResponse(&hubv1.UpdateMachineResponse{Machine: machineFromStored(stored)}), nil
 }
 
@@ -420,6 +421,7 @@ func (f *Fleet) RevokeMachine(ctx context.Context, req *connect.Request[hubv1.Re
 	}
 	f.byeMachine(id)
 	f.machineWrote(jctx, opMachineRevoke, actor, id, revoked.Machine.Version, revoked.Machine.Replay)
+	f.publishMachineWatch(jctx, id, hubv1.ChangeType_CHANGE_TYPE_UPDATED, revoked.Machine.Replay)
 	return connect.NewResponse(&hubv1.RevokeMachineResponse{Machine: machineFromStored(revoked.Machine)}), nil
 }
 

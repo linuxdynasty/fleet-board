@@ -22,7 +22,7 @@ func TestValidateListInputKeepsListErrors(t *testing.T) {
 		for i := 0; i < 2; i++ {
 			in := confirmIn()
 			in.ID = ""
-			if _, err := approvals.CreateApproval(ctx, tx, in); err != nil {
+			if _, _, err := approvals.CreateApproval(ctx, tx, in); err != nil {
 				return err
 			}
 		}

@@ -203,6 +203,7 @@ func (f *Fleet) CreateRepo(ctx context.Context, req *connect.Request[hubv1.Creat
 		return nil, f.repoFailed(ctx, opRepoCreate, "watch", actor, "decode", err)
 	}
 	f.repoWrote(ctx, opRepoCreate, actor, repoID(stored.Host, stored.Path), stored.Version, stored.Replay)
+	f.publishRepoWatch(ctx, stored, hubv1.ChangeType_CHANGE_TYPE_CREATED, nil, stored.Replay)
 	return connect.NewResponse(&hubv1.CreateRepoResponse{
 		Repo: repoFromStored(stored, &outSpec),
 	}), nil
@@ -253,6 +254,9 @@ func (f *Fleet) UpdateRepo(ctx context.Context, req *connect.Request[hubv1.Updat
 	}
 	now := f.hubNow()
 	patch, paths := m.GetRepo().GetSpec(), m.GetUpdateMask().GetPaths()
+	// oldSpec keeps the pre-update spec for UNMATCHED evaluation: a repo
+	// that leaves a subscription's filter is sent once as UNMATCHED.
+	var oldSpec []byte
 	writeCtx := statedb.WithValidatedWrite(ctx, func() error { return quotaCheckpoint(ctx, quotaWrite) })
 	stored, err := statedb.UpdateWatchedRepoMasked(writeCtx, f.store, statedb.MaskedUpdate{
 		RepoWrite: statedb.RepoWrite{
@@ -262,6 +266,7 @@ func (f *Fleet) UpdateRepo(ctx context.Context, req *connect.Request[hubv1.Updat
 		Host: host, Path: path,
 		ExpectedVersion: m.GetExpectedVersion(),
 		Merge: func(current []byte) ([]byte, bool, error) {
+			oldSpec = current
 			var currentSpec hubv1.RepoSpec
 			if err := protojson.Unmarshal(current, &currentSpec); err != nil {
 				return nil, false, err
@@ -288,6 +293,7 @@ func (f *Fleet) UpdateRepo(ctx context.Context, req *connect.Request[hubv1.Updat
 		return nil, f.repoFailed(ctx, opRepoUpdate, "update", actor, "decode", err)
 	}
 	f.repoWrote(ctx, opRepoUpdate, actor, repoID(stored.Host, stored.Path), stored.Version, stored.Replay)
+	f.publishRepoWatch(ctx, stored, hubv1.ChangeType_CHANGE_TYPE_UPDATED, oldSpec, stored.Replay)
 	return connect.NewResponse(&hubv1.UpdateRepoResponse{
 		Repo: repoFromStored(stored, &outSpec),
 	}), nil
@@ -335,5 +341,6 @@ func (f *Fleet) DeleteRepo(ctx context.Context, req *connect.Request[hubv1.Delet
 	}
 	// A replayed delete answers the same empty outcome.
 	f.repoWrote(ctx, opRepoDelete, actor, repoID(stored.Host, stored.Path), stored.Version, stored.Replay)
+	f.publishRepoWatch(ctx, stored, hubv1.ChangeType_CHANGE_TYPE_DELETED, nil, stored.Replay)
 	return connect.NewResponse(&hubv1.DeleteRepoResponse{}), nil
 }

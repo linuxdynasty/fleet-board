@@ -148,6 +148,9 @@ func (f *Fleet) sendOne(ctx context.Context, who *typev1.Principal, req proto.Me
 	if queued.Created && f.onCommandQueued != nil {
 		f.onCommandQueued(queued)
 	}
+	if queued.Created {
+		f.publishOperationWatch(queued.HubSeq, out)
+	}
 	f.countSession(ctx, emitKind, emitOutcome)
 	if emitOutcome == "sent" {
 		f.tel.Logger.InfoContext(ctx, "session.sent", "kind", emitKind,

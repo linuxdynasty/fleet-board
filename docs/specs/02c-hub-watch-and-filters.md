@@ -21,7 +21,7 @@ first. At most one per topic. An empty list means every topic the caller's
 scopes allow ([02d](02d-hub-authz.md)) except `PANE_SUMMARIES`, unfiltered,
 with `send_initial`. A filter names fields of that topic's resource only; a
 field the topic does not have is `INVALID_ARGUMENT` / `FILTER_INVALID`, never
-ignored, so a sidebar filter cannot leak into the goal or triage topics.
+ignored, so a sidebar filter cannot leak into the goal or triage topics. `fleet_hub_watch_streams_total{result}` counts opens by result (`opened`, `refused`, `resync`); `watch.opened` and `watch.refused` log them with the actor.
 
 - **Order.** `hub_seq` is the hub-wide sequence of committed changes in
   commit order, increasing within one `hub_instance_id`; gaps are normal.
@@ -111,7 +111,7 @@ changed), `FELL_BEHIND` (the client lagged on a never-dropped topic), or
 allowed). A changed subscription is never a reason. A token that does not
 parse is `INVALID_ARGUMENT` / `RESUME_TOKEN_INVALID` at open. After
 `RESYNC_REQUIRED` the client reopens with `send_initial` on every
-subscription and no token.
+subscription and no token. `fleet_hub_watch_resync_total{reason}` counts each close; `watch.resync` logs it with the actor and the reason.
 
 ### One change, from the harness to the screen
 
@@ -153,7 +153,7 @@ sequenceDiagram
 This matches 03f's fan-out rule (summaries shed first, goal, triage and
 command notices re-read). Filtering `PANE_SUMMARIES` to the visible panes
 keeps browser fan-out near 140 KB/s at A50 instead of 2 MB/s (04's load model).
-Revoking a device or token closes its streams.
+Revoking a device or token closes its streams. A hub-side failure serving a stream logs `watch.failed`; a committed change the hub cannot offer logs `watch.publish_failed` with the topic. No filter text, token or resource lands in a label or a log line.
 
 ### Volatile fields
 

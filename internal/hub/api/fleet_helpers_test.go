@@ -94,7 +94,16 @@ type envOpt struct {
 	localTrusted *bool
 	sysSources   *system.Sources
 	onQueued     func(outbox.Op)
+	instanceID   string
+	watchLogCap  int
 }
+
+// withInstanceID runs the test hub under another hub_instance_id, so a
+// resume token from elsewhere reads HUB_RESTARTED.
+func withInstanceID(id string) envOpt { return envOpt{instanceID: id} }
+
+// withWatchLogCap bounds the Watch change log, evicting old tokens fast.
+func withWatchLogCap(cap int) envOpt { return envOpt{watchLogCap: cap} }
 
 func withCommandQueued(fn func(outbox.Op)) envOpt { return envOpt{onQueued: fn} }
 
@@ -143,8 +152,10 @@ func newFleetEnv(t *testing.T, who *typev1.Principal, opts ...envOpt) *fleetEnv 
 	e := &fleetEnv{dir: filepath.Join(t.TempDir(), "state"), caDER: auth.Cert.Raw, logs: &syncBuffer{}}
 	now := func() time.Time { return fleetNow }
 	local := true
+	instanceID := testInstanceID
 	var sysSources *system.Sources
 	var onQueued func(outbox.Op)
+	watchLogCap := 0
 	for _, o := range opts {
 		if o.now != nil {
 			now = o.now
@@ -157,6 +168,12 @@ func newFleetEnv(t *testing.T, who *typev1.Principal, opts ...envOpt) *fleetEnv 
 		}
 		if o.onQueued != nil {
 			onQueued = o.onQueued
+		}
+		if o.instanceID != "" {
+			instanceID = o.instanceID
+		}
+		if o.watchLogCap != 0 {
+			watchLogCap = o.watchLogCap
 		}
 	}
 	if err := statedb.EnsureDir(e.dir); err != nil {
@@ -193,8 +210,8 @@ func newFleetEnv(t *testing.T, who *typev1.Principal, opts ...envOpt) *fleetEnv 
 	e.sysLoop = sysLoop
 	fleet, err := api.NewFleet(api.FleetOptions{
 		Store: e.st, CACert: e.caDER, Telemetry: e.tel, Now: now,
-		StateDir: e.dir, LocalTrusted: local, HubInstanceID: testInstanceID,
-		SystemLoop: sysLoop, OnCommandQueued: onQueued,
+		StateDir: e.dir, LocalTrusted: local, HubInstanceID: instanceID,
+		SystemLoop: sysLoop, OnCommandQueued: onQueued, WatchLogCap: watchLogCap,
 	})
 	if err != nil {
 		t.Fatal(err)

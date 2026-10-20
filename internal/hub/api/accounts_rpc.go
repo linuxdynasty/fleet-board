@@ -291,6 +291,7 @@ func (f *Fleet) CreateAccount(ctx context.Context, req *connect.Request[hubv1.Cr
 		return nil, f.configOpFailed(ctx, opAccountCreate, "create", actor, "decode", err)
 	}
 	f.configOpWrote(ctx, opAccountCreate, actor, stored.ID, stored.Version, stored.Replay)
+	f.publishAccountWatch(ctx, stored, hubv1.ChangeType_CHANGE_TYPE_CREATED, nil, stored.Replay)
 	return connect.NewResponse(&hubv1.CreateAccountResponse{
 		Account: accountFromStored(stored, &outSpec),
 	}), nil
@@ -339,6 +340,8 @@ func (f *Fleet) UpdateAccount(ctx context.Context, req *connect.Request[hubv1.Up
 	}
 	now := f.hubNow()
 	patch, paths := m.GetAccount().GetSpec(), m.GetUpdateMask().GetPaths()
+	// oldSpec keeps the pre-update spec for UNMATCHED evaluation.
+	var oldSpec []byte
 	writeCtx := statedb.WithValidatedWrite(ctx, func() error { return quotaCheckpoint(ctx, quotaWrite) })
 	stored, err := statedb.UpdateOwnerAccount(writeCtx, f.store, statedb.UpdateAccountOp{
 		ConfigWrite: statedb.ConfigWrite{
@@ -347,6 +350,7 @@ func (f *Fleet) UpdateAccount(ctx context.Context, req *connect.Request[hubv1.Up
 		},
 		ID: inAccountID(m), ExpectedVersion: m.GetExpectedVersion(),
 		Merge: func(current []byte) ([]byte, string, error) {
+			oldSpec = current
 			var currentSpec hubv1.AccountSpec
 			if err := protojson.Unmarshal(current, &currentSpec); err != nil {
 				return nil, "", err
@@ -377,6 +381,7 @@ func (f *Fleet) UpdateAccount(ctx context.Context, req *connect.Request[hubv1.Up
 		return nil, f.configOpFailed(ctx, opAccountUpdate, "update", actor, "decode", err)
 	}
 	f.configOpWrote(ctx, opAccountUpdate, actor, stored.ID, stored.Version, stored.Replay)
+	f.publishAccountWatch(ctx, stored, hubv1.ChangeType_CHANGE_TYPE_UPDATED, oldSpec, stored.Replay)
 	return connect.NewResponse(&hubv1.UpdateAccountResponse{
 		Account: accountFromStored(stored, &outSpec),
 	}), nil

@@ -219,6 +219,7 @@ func (f *Fleet) DecideApproval(ctx context.Context, req *connect.Request[hubv1.D
 	f.tel.Logger.InfoContext(ctx, "approval.decided", "kind", kind,
 		"approval", outcome.Approval.GetId().GetValue(),
 		"sends", outcome.Sends, "replay", outcome.Replay, "actor", actor)
+	f.publishApprovalWatch(outcome.HubSeq, outcome.Approval, hubv1.ChangeType_CHANGE_TYPE_UPDATED, outcome.Replay)
 	return connect.NewResponse(&hubv1.DecideApprovalResponse{
 		Approval: outcome.Approval, Operation: sent,
 	}), nil
@@ -340,6 +341,7 @@ func (f *Fleet) gateCommand(ctx context.Context, who *typev1.Principal, req prot
 	sum := sha256.Sum256(body)
 	var approval *hubv1.Approval
 	var fresh *hubv1.Approval
+	var freshSeq int64
 	err = f.store.Write(ctx, func(tx *sql.Tx) error {
 		machine, err := resolveSession(ctx, tx, sessionID)
 		if err != nil {
@@ -359,7 +361,7 @@ func (f *Fleet) gateCommand(ctx context.Context, who *typev1.Principal, req prot
 			approval, err = approvals.Get(ctx, tx, id, now)
 			return err
 		}
-		created, err := approvals.CreateApproval(ctx, tx, approvals.Create{
+		created, seq, err := approvals.CreateApproval(ctx, tx, approvals.Create{
 			Kind:      hubv1.ApprovalKind_APPROVAL_KIND_COMMAND_CONFIRM,
 			Severity:  hubv1.Severity_SEVERITY_WARNING,
 			Preview:   truncatePreview(preview),
@@ -380,6 +382,7 @@ func (f *Fleet) gateCommand(ctx context.Context, who *typev1.Principal, req prot
 			return err
 		}
 		approval, fresh = created, created
+		freshSeq = seq
 		return nil
 	})
 	if err != nil {
@@ -390,6 +393,7 @@ func (f *Fleet) gateCommand(ctx context.Context, who *typev1.Principal, req prot
 			attribute.String("kind", "command_confirm"), attribute.String("outcome", "created")))
 		f.tel.Logger.InfoContext(ctx, "approval.created", "kind", "command_confirm",
 			"approval", fresh.GetId().GetValue(), "actor", actor)
+		f.publishApprovalWatch(freshSeq, fresh, hubv1.ChangeType_CHANGE_TYPE_CREATED, false)
 	}
 	return approval, nil
 }
