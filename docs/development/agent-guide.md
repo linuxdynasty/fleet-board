@@ -84,7 +84,7 @@ The `Makefile` is the one entry point; CI runs the same targets, one per step
 | `test` | `go vet ./...`, then on the changed packages `go test -shuffle=on -count=3` (`TEST_COUNT`) and `go test -race -shuffle=on -count=1`; both use a 15-minute timeout outside `gates`; with `COVERPROFILE` set, the first pass writes its coverage profile there |
 | `lint` | the pinned `golangci-lint` on the same packages, once for each of linux and darwin on amd64 and arm64 (LINT_PLATFORMS in the Makefile; cgo off; the linter reads only the files that build for its own GOOS and GOARCH, so a `_darwin.go` or `_arm64.go` file would pass the Linux amd64 CI run with one pass; the package list is worked out for each platform too). Linters and settings are in `.golangci.yml`; a `//nolint` names its linter and says why. It includes two process rules: `depguard` lets only `internal/proc`, `internal/agent/tmux` and `internal/agent/attach` import `os/exec` (or `golang.org/x/sys/execabs`) in `internal/` and `cmd/` (tests excepted), and `forbidigo` forbids starting a process any other way outside `internal/proc` (01 principle 8). Two typing rules keep every `send-keys` line in `internal/agent/tmux/typing`: `depguard` lets only `internal/agent/control`, `start`, `probe` and the `internal/agent/tmux` client import it, and `forbidigo` lets only `control`, `start` and `probe` call a `typing.New…` function; a third `depguard` rule bars `unsafe` outside tests, so no `//go:linkname` reaches a constructor (tests excepted; 01f F3); a fourth lets only test files import the tmux test rig `internal/agent/tmux/tmuxtest` |
 | `vuln` | the pinned `govulncheck ./...` on every package; a known vulnerability the code can reach fails it (exit 3). Needs `gen/` and network access to vuln.go.dev |
-| `test-all` | `go vet ./...`, then `go test -race -shuffle=on -count=TEST_COUNT ./...` on every package (the nightly run sets `TEST_COUNT=10`), with a coverage profile when `COVERPROFILE` is set. Not part of `gates` |
+| `test-all` | `go vet ./...`, then `go test -race -shuffle=on -count=TEST_COUNT ./...` on every package (the nightly run sets `TEST_COUNT=1`), with a coverage profile when `COVERPROFILE` is set. Not part of `gates` |
 | `fuzz` | each Go fuzz target (`FuzzParse` in `internal/hub/config` and in `internal/agent/tmux`, `FuzzOutputRoundTrip`, `FuzzCheckEnrollRequest`, `FuzzText`) for `FUZZTIME` (default `60s`), one `go test -fuzz` each; the seeds already run in `test`. Not part of `gates` |
 | `bench-report` | the benchmarks of the changed packages at the merge base with `BASE_REF` and at `HEAD`, `BENCH_COUNT` times each (default 10, `-benchtime` `BENCH_TIME`, default `1s`), compared by the pinned `benchstat`; a markdown report that marks REVIEW rows and fails only when a `HEAD` benchmark fails. Not part of `gates` |
 | `proto-check`, `ts-check` | `buf build` and `buf lint`; the generated TypeScript compiles (`tools/tscheck`) |
@@ -214,7 +214,7 @@ minutes count ten times.
 
 `.github/workflows/nightly.yml` runs at 07:17 UTC, on demand (`gh workflow run
 nightly`), and on a PR that changes the file. It runs `make test-all` with
-`TEST_COUNT=10`, then `make fuzz` on the corpus earlier nights grew (cached;
+`TEST_COUNT=1`, then `make fuzz` on the corpus earlier nights grew (cached;
 only `main` saves it), then `make vuln`, which runs even after a test or fuzz
 failure. A crash uploads only the new input files (kept 14 days)
 and prints the command that replays each. A scheduled night skips the work when

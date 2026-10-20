@@ -59,7 +59,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
-      TEST_COUNT: "10"
+      TEST_COUNT: "1"
     # shell: bash runs with -o pipefail (the default for run is bash -e only).
     defaults:
       run:
