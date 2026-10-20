@@ -105,7 +105,11 @@ func TestWatchSlowConsumerDropsSummariesOnly(t *testing.T) {
 	t.Parallel()
 	now := time.Now()
 	bus := newWatchBus(func() time.Time { return now }, 0)
-	sub, _ := bus.subscribe()
+	sub, _ := bus.subscribe([]hubv1.WatchTopic{
+		hubv1.WatchTopic_WATCH_TOPIC_REPOS,
+		hubv1.WatchTopic_WATCH_TOPIC_PANE_SUMMARIES,
+		hubv1.WatchTopic_WATCH_TOPIC_FLEET_SUMMARY,
+	})
 	stub := newStubSend()
 	stub.setMode("block")
 	sess := &watchSession{
@@ -115,7 +119,7 @@ func TestWatchSlowConsumerDropsSummariesOnly(t *testing.T) {
 			{def: watchTopics[hubv1.WatchTopic_WATCH_TOPIC_FLEET_SUMMARY]},
 		},
 		sub: sub, send: stub.send, now: func() time.Time { return now },
-		checkpoint: time.Hour, resyncs: testResyncs(t),
+		checkpoint: time.Hour, resyncs: testResyncs(t), logger: testLogger(),
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -204,14 +208,14 @@ func TestWatchSummarySendsAtMostOnePerSecond(t *testing.T) {
 	fakeNow.Store(now.UnixNano())
 	clock := func() time.Time { return time.Unix(0, fakeNow.Load()) }
 	bus := newWatchBus(clock, 0)
-	sub, _ := bus.subscribe()
+	sub, _ := bus.subscribe([]hubv1.WatchTopic{hubv1.WatchTopic_WATCH_TOPIC_FLEET_SUMMARY})
 	stub := newStubSend()
 	sess := &watchSession{
 		bus: bus, instanceID: "test-hub", subs: []*watchSubscription{
 			{def: watchTopics[hubv1.WatchTopic_WATCH_TOPIC_FLEET_SUMMARY]},
 		},
 		sub: sub, send: stub.send, now: clock,
-		checkpoint: time.Hour, resyncs: testResyncs(t),
+		checkpoint: time.Hour, resyncs: testResyncs(t), logger: testLogger(),
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -247,14 +251,14 @@ func TestWatchIdleStreamCheckpoints(t *testing.T) {
 	t.Parallel()
 	now := time.Now()
 	bus := newWatchBus(func() time.Time { return now }, 0)
-	sub, _ := bus.subscribe()
+	sub, _ := bus.subscribe([]hubv1.WatchTopic{hubv1.WatchTopic_WATCH_TOPIC_REPOS})
 	stub := newStubSend()
 	sess := &watchSession{
 		bus: bus, instanceID: "test-hub", subs: []*watchSubscription{
 			{def: watchTopics[hubv1.WatchTopic_WATCH_TOPIC_REPOS]},
 		},
 		sub: sub, send: stub.send, now: func() time.Time { return now },
-		checkpoint: 20 * time.Millisecond, resyncs: testResyncs(t),
+		checkpoint: 20 * time.Millisecond, resyncs: testResyncs(t), logger: testLogger(),
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

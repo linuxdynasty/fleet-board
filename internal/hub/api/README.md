@@ -24,8 +24,10 @@ on the local admin socket and local TCP API. `Watch` streams per-topic
 subscriptions with the initial state, resume tokens, `RESYNC_REQUIRED`
 and latest-wins summaries (02c); the in-package writes publish their
 stamped changes, and agent-driven changes follow once ingest publishes
-too. Unserved topics (`ROUTINES`, the v3 `DEVICES` and
-`NOTIFICATION_TARGETS`) are refused as whole subscriptions.
+too. `AUDIT` serves its initial state only until then: audit rows commit
+in every writer job (owner and ingest alike), so no single slice can keep
+the topic live on its own. Unserved topics (`ROUTINES`, the v3 `DEVICES`
+and `NOTIFICATION_TARGETS`) are refused as whole subscriptions.
 
 ```go
 fleet, err := api.NewFleet(api.FleetOptions{Store: st, CACert: id.CACert, Telemetry: tel, HubInstanceID: instanceID})

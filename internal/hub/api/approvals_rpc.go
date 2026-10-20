@@ -160,51 +160,58 @@ func (f *Fleet) DecideApproval(ctx context.Context, req *connect.Request[hubv1.D
 	var outcome approvals.Outcome
 	var sent *hubv1.Operation
 	var sentKind string
-	err = f.store.Write(ctx, func(tx *sql.Tx) error {
-		var err error
-		outcome, err = approvals.Decide(ctx, tx, approvals.DecideInput{
-			ID: m.GetId().GetValue(), ExpectedVersion: m.GetExpectedVersion(), Decision: m.GetDecision(),
-			Decider: who, Actor: actorOf(who), RequestID: m.GetRequestId(), Now: now,
-			BeforeDecision: func(a *hubv1.Approval, promptID string) error {
-				cmd, err := commandForDecision(ctx, tx, a, m.GetDecision(), promptID)
-				if err != nil || cmd == nil {
-					return err
-				}
-				cmd.RequestedBy = who
-				cmd.IssuedTime = timestamppb.New(now)
-				return mapOutboxError(outbox.CheckEnqueue(ctx, tx, outbox.In{
-					MachineID: a.GetMachine().GetValue(), Command: cmd, RequestID: m.GetRequestId(), Now: now,
-				}))
-			},
-			Checkpoint: func() error { return quotaCheckpoint(ctx, quotaWrite) },
-		})
-		if err != nil {
-			return err
-		}
-		if outcome.Replay {
-			// A retry returns the stored response, operation included
-			// (02b idempotency): nothing is decided or sent twice.
-			if outcome.Sends && outcome.OperationID != "" {
-				sent, err = loadOperation(ctx, tx, outcome.OperationID)
+	commitErr := f.commitWatch(
+		func() error {
+			return f.store.Write(ctx, func(tx *sql.Tx) error {
+				var err error
+				outcome, err = approvals.Decide(ctx, tx, approvals.DecideInput{
+					ID: m.GetId().GetValue(), ExpectedVersion: m.GetExpectedVersion(), Decision: m.GetDecision(),
+					Decider: who, Actor: actorOf(who), RequestID: m.GetRequestId(), Now: now,
+					BeforeDecision: func(a *hubv1.Approval, promptID string) error {
+						cmd, err := commandForDecision(ctx, tx, a, m.GetDecision(), promptID)
+						if err != nil || cmd == nil {
+							return err
+						}
+						cmd.RequestedBy = who
+						cmd.IssuedTime = timestamppb.New(now)
+						return mapOutboxError(outbox.CheckEnqueue(ctx, tx, outbox.In{
+							MachineID: a.GetMachine().GetValue(), Command: cmd, RequestID: m.GetRequestId(), Now: now,
+						}))
+					},
+					Checkpoint: func() error { return quotaCheckpoint(ctx, quotaWrite) },
+				})
 				if err != nil {
 					return err
 				}
-			}
-			return nil
-		}
-		if !outcome.Sends {
-			return nil
-		}
-		sent, sentKind, err = f.sendDecided(ctx, tx, who, outcome, m.GetRequestId(), now)
-		if err != nil {
-			return err
-		}
-		// Reload: the attach stamped the sent operation onto the row.
-		outcome.Approval, err = approvals.Get(ctx, tx, outcome.Approval.GetId().GetValue(), now)
-		return err
-	})
-	if err != nil {
-		return nil, f.decideStoreError(ctx, err)
+				if outcome.Replay {
+					// A retry returns the stored response, operation included
+					// (02b idempotency): nothing is decided or sent twice.
+					if outcome.Sends && outcome.OperationID != "" {
+						sent, err = loadOperation(ctx, tx, outcome.OperationID)
+						if err != nil {
+							return err
+						}
+					}
+					return nil
+				}
+				if !outcome.Sends {
+					return nil
+				}
+				sent, sentKind, err = f.sendDecided(ctx, tx, who, outcome, m.GetRequestId(), now)
+				if err != nil {
+					return err
+				}
+				// Reload: the attach stamped the sent operation onto the row.
+				outcome.Approval, err = approvals.Get(ctx, tx, outcome.Approval.GetId().GetValue(), now)
+				return err
+			})
+		},
+		func() {
+			f.publishApprovalWatch(outcome.HubSeq, outcome.Approval, hubv1.ChangeType_CHANGE_TYPE_UPDATED, outcome.Replay)
+		},
+	)
+	if commitErr != nil {
+		return nil, f.decideStoreError(ctx, commitErr)
 	}
 	kind := approvalKindAttr(outcome.Approval.GetKind())
 	outcomeName := "denied"
@@ -219,7 +226,6 @@ func (f *Fleet) DecideApproval(ctx context.Context, req *connect.Request[hubv1.D
 	f.tel.Logger.InfoContext(ctx, "approval.decided", "kind", kind,
 		"approval", outcome.Approval.GetId().GetValue(),
 		"sends", outcome.Sends, "replay", outcome.Replay, "actor", actor)
-	f.publishApprovalWatch(outcome.HubSeq, outcome.Approval, hubv1.ChangeType_CHANGE_TYPE_UPDATED, outcome.Replay)
 	return connect.NewResponse(&hubv1.DecideApprovalResponse{
 		Approval: outcome.Approval, Operation: sent,
 	}), nil
@@ -342,58 +348,67 @@ func (f *Fleet) gateCommand(ctx context.Context, who *typev1.Principal, req prot
 	var approval *hubv1.Approval
 	var fresh *hubv1.Approval
 	var freshSeq int64
-	err = f.store.Write(ctx, func(tx *sql.Tx) error {
-		machine, err := resolveSession(ctx, tx, sessionID)
-		if err != nil {
-			return err
-		}
-		if id, replay, err := checkGateReplay(ctx, tx, actor, requestID, sum[:]); err != nil || replay {
-			if err != nil {
-				return err
+	commitErr := f.commitWatch(
+		func() error {
+			return f.store.Write(ctx, func(tx *sql.Tx) error {
+				machine, err := resolveSession(ctx, tx, sessionID)
+				if err != nil {
+					return err
+				}
+				if id, replay, err := checkGateReplay(ctx, tx, actor, requestID, sum[:]); err != nil || replay {
+					if err != nil {
+						return err
+					}
+					// The first read checks the stored id without expiring it.
+					if _, err := approvals.Get(ctx, tx, id, time.Time{}); err != nil {
+						return err
+					}
+					if err := quotaCheckpoint(ctx, quotaWrite); err != nil {
+						return err
+					}
+					approval, err = approvals.Get(ctx, tx, id, now)
+					return err
+				}
+				created, seq, err := approvals.CreateApproval(ctx, tx, approvals.Create{
+					Kind:      hubv1.ApprovalKind_APPROVAL_KIND_COMMAND_CONFIRM,
+					Severity:  hubv1.Severity_SEVERITY_WARNING,
+					Preview:   truncatePreview(preview),
+					MachineID: machine, SessionID: sessionID, Pane: pane,
+					Allowed:       []approvals.Choice{{Key: "approve"}, {Key: "deny"}},
+					DefaultChoice: "deny",
+					Fallback:      hubv1.ApprovalFallback_APPROVAL_FALLBACK_DENY,
+					ExpireTime:    now.Add(approvalTimeout),
+					RequiredRole:  typev1.Role_ROLE_OWNER,
+					Command:       cmd,
+					Now:           now,
+					Checkpoint:    func() error { return quotaCheckpoint(ctx, quotaWrite) },
+				})
+				if err != nil {
+					return err
+				}
+				if err := logGate(ctx, tx, actor, requestID, created.GetId().GetValue(), sum[:], now); err != nil {
+					return err
+				}
+				approval, fresh = created, created
+				freshSeq = seq
+				return nil
+			})
+		},
+		func() {
+			// A replayed gating raises nothing new: fresh stays nil.
+			if fresh != nil {
+				f.publishApprovalWatch(freshSeq, fresh, hubv1.ChangeType_CHANGE_TYPE_CREATED, false)
 			}
-			// The first read checks the stored id without expiring it.
-			if _, err := approvals.Get(ctx, tx, id, time.Time{}); err != nil {
-				return err
-			}
-			if err := quotaCheckpoint(ctx, quotaWrite); err != nil {
-				return err
-			}
-			approval, err = approvals.Get(ctx, tx, id, now)
-			return err
-		}
-		created, seq, err := approvals.CreateApproval(ctx, tx, approvals.Create{
-			Kind:      hubv1.ApprovalKind_APPROVAL_KIND_COMMAND_CONFIRM,
-			Severity:  hubv1.Severity_SEVERITY_WARNING,
-			Preview:   truncatePreview(preview),
-			MachineID: machine, SessionID: sessionID, Pane: pane,
-			Allowed:       []approvals.Choice{{Key: "approve"}, {Key: "deny"}},
-			DefaultChoice: "deny",
-			Fallback:      hubv1.ApprovalFallback_APPROVAL_FALLBACK_DENY,
-			ExpireTime:    now.Add(approvalTimeout),
-			RequiredRole:  typev1.Role_ROLE_OWNER,
-			Command:       cmd,
-			Now:           now,
-			Checkpoint:    func() error { return quotaCheckpoint(ctx, quotaWrite) },
-		})
-		if err != nil {
-			return err
-		}
-		if err := logGate(ctx, tx, actor, requestID, created.GetId().GetValue(), sum[:], now); err != nil {
-			return err
-		}
-		approval, fresh = created, created
-		freshSeq = seq
-		return nil
-	})
-	if err != nil {
-		return nil, f.storeError(ctx, actor, err)
+		},
+	)
+	if commitErr != nil {
+		return nil, f.storeError(ctx, actor, commitErr)
 	}
 	if fresh != nil {
 		f.approvals.Add(ctx, 1, metric.WithAttributes(
 			attribute.String("kind", "command_confirm"), attribute.String("outcome", "created")))
 		f.tel.Logger.InfoContext(ctx, "approval.created", "kind", "command_confirm",
 			"approval", fresh.GetId().GetValue(), "actor", actor)
-		f.publishApprovalWatch(freshSeq, fresh, hubv1.ChangeType_CHANGE_TYPE_CREATED, false)
 	}
 	return approval, nil
 }

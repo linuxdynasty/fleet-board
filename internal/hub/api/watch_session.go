@@ -2,7 +2,9 @@ package api
 
 import (
 	"context"
+	"log/slog"
 	"sort"
+	"strings"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -12,6 +14,12 @@ import (
 	hubv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/hub/v1"
 	"github.com/linuxdynasty/fleet-board/internal/store"
 )
+
+// shortResyncReason is the log form of a resync reason: the enum short
+// name without its RESYNC_REASON_ prefix.
+func shortResyncReason(reason hubv1.ResyncReason) string {
+	return strings.TrimPrefix(reason.String(), "RESYNC_REASON_")
+}
 
 // This file pumps one Watch stream: the initial state, the replay, then
 // live (02c). send is stream.Send in production and a stub in unit tests,
@@ -59,6 +67,10 @@ type watchSession struct {
 	lastSeq    uint64
 	summaryAt  time.Time
 	resyncs    metric.Int64Counter
+	// logger carries the hub logger for watch.resync: every resync
+	// reason logs with its actor in this shared path (02c), never at
+	// the call sites.
+	logger *slog.Logger
 }
 
 func (s *watchSession) token(seq uint64) string {
@@ -354,9 +366,13 @@ func (s *watchSession) live(ctx context.Context) error {
 
 // resync ends the stream with RESYNC_REQUIRED and closes cleanly: the
 // client reopens with send_initial and no token (02c). No resume token is
-// minted, so a client cannot resume from a dead position.
+// minted, so a client cannot resume from a dead position. Every reason
+// logs here with its actor, including FELL_BEHIND from the session loop.
 func (s *watchSession) resync(ctx context.Context, reason hubv1.ResyncReason) error {
 	s.resyncs.Add(ctx, 1, metric.WithAttributes(attribute.String("reason", reason.String())))
+	// The log carries the short reason (TOKEN_TOO_OLD, not the metric's
+	// RESYNC_REASON_TOKEN_TOO_OLD), as the open path always has.
+	s.logger.InfoContext(ctx, "watch.resync", "reason", shortResyncReason(reason), "actor", watchActor(ctx))
 	msg := &hubv1.WatchResponse{
 		ChangeType: hubv1.ChangeType_CHANGE_TYPE_RESYNC_REQUIRED, ResyncReason: reason, HubSeq: s.lastSeq,
 	}

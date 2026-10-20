@@ -12,6 +12,27 @@ import (
 // and a publish failure never fails the RPC (the change is already
 // committed; the next resume replays it from the log). Idempotent replays
 // publish nothing: the first commit already did.
+//
+// Commit order is the publish order: the store stamps hub_seq in commit
+// order, but handlers wake in goroutine order after their Write returns,
+// so two concurrent commits would publish backwards without [Fleet.commitWatch].
+// Every post-commit publish runs inside it; nothing else takes watchMu.
+
+// commitWatch runs one committed write and its Watch publish as a single
+// ordered step: the commit (a store Write) first, the publish only when
+// it succeeded. Concurrent writers queue here, so the bus appends in
+// commit order (02c "Order"). The critical section holds no other lock:
+// the commit runs its writer job, the publish reads the read pool at
+// most, and both are short and non-blocking.
+func (f *Fleet) commitWatch(commit func() error, publish func()) error {
+	f.watchMu.Lock()
+	defer f.watchMu.Unlock()
+	if err := commit(); err != nil {
+		return err
+	}
+	publish()
+	return nil
+}
 
 // offerWatch logs one never-dropped change with the store stamp. A
 // non-positive seq means the write carried no stamp and stays unpublished.
@@ -53,10 +74,23 @@ func (f *Fleet) publishRepoWatch(ctx context.Context, stored statedb.RepoStored,
 	})
 }
 
+// machineOldRow links a pre-write read to its write: the old row is
+// exact only when its version is the write's predecessor, so a
+// concurrent change that slipped between the read and the commit reads
+// unknown instead of stale.
+func machineOldRow(pre *statedb.MachineRow, stored statedb.MachineStored) *statedb.MachineRow {
+	//nolint:gosec // G115: versions start at 1 and only rise
+	if pre != nil && pre.Version+1 == int64(stored.Version) {
+		return pre
+	}
+	return nil
+}
+
 // publishMachineWatch offers a machine write: the row is re-read so live
-// filtering sees exactly what ListMachines serves. Replay publishes
+// filtering sees exactly what ListMachines serves. old is the pre-update
+// row for UNMATCHED evaluation, nil when unknown; replay publishes
 // nothing.
-func (f *Fleet) publishMachineWatch(ctx context.Context, id string, change hubv1.ChangeType, replay bool) {
+func (f *Fleet) publishMachineWatch(ctx context.Context, id string, change hubv1.ChangeType, old *statedb.MachineRow, replay bool) {
 	if replay {
 		return
 	}
@@ -65,37 +99,74 @@ func (f *Fleet) publishMachineWatch(ctx context.Context, id string, change hubv1
 		f.tel.Logger.ErrorContext(ctx, "watch.publish_failed", "topic", "MACHINES", "err_kind", "io")
 		return
 	}
+	f.publishMachineWatchRow(ctx, row, change, old)
+}
+
+// publishMachineWatchRow offers a machine write from its already-read
+// rows: row is the new state, old the pre-update state for UNMATCHED
+// evaluation, nil when unknown.
+func (f *Fleet) publishMachineWatchRow(ctx context.Context, row statedb.MachineRow, change hubv1.ChangeType, old *statedb.MachineRow) {
 	m, err := machineProto(row)
 	if err != nil {
 		f.tel.Logger.ErrorContext(ctx, "watch.publish_failed", "topic", "MACHINES", "err_kind", "io")
 		return
 	}
 	match := func(n *filterNode) bool { return nodeMatchesMachine(n, row) }
+	var was func(*filterNode) bool
+	if old != nil {
+		was = func(n *filterNode) bool { return nodeMatchesMachine(n, *old) }
+	}
 	f.offerWatch(row.HubSeq, watchChange{
 		topic: hubv1.WatchTopic_WATCH_TOPIC_MACHINES, change: change,
 		msg: &hubv1.WatchResponse{
 			Topic: hubv1.WatchTopic_WATCH_TOPIC_MACHINES, ChangeType: change,
 			Resource: &hubv1.WatchResponse_Machine{Machine: m},
 		},
-		match: match,
+		match: match, was: was,
 	})
 }
 
-// publishTriageWatch offers a triage write with its UPDATED item. Replay
+// publishMachineDeleted offers a machine delete with the last state: the
+// row is gone, so the caller passes it with the delete's fresh stamp.
+// Replay publishes nothing.
+func (f *Fleet) publishMachineDeleted(ctx context.Context, row statedb.MachineRow, hubSeq int64, replay bool) {
+	if replay {
+		return
+	}
+	row.HubSeq = hubSeq
+	f.publishMachineWatchRow(ctx, row, hubv1.ChangeType_CHANGE_TYPE_DELETED, nil)
+}
+
+// triageOldItem links a pre-write read to its write, as [machineOldRow]:
+// exact only when its version is the write's predecessor.
+func triageOldItem(pre *statedb.TriageStored, stored statedb.TriageStored) *statedb.TriageStored {
+	if pre != nil && pre.Version+1 == stored.Version {
+		return pre
+	}
+	return nil
+}
+
+// publishTriageWatch offers a triage write with its UPDATED item. old is
+// the pre-write item for UNMATCHED evaluation, nil when unknown; replay
 // publishes nothing.
-func (f *Fleet) publishTriageWatch(ctx context.Context, stored statedb.TriageStored, item *hubv1.TriageItem) {
+func (f *Fleet) publishTriageWatch(ctx context.Context, stored statedb.TriageStored, item *hubv1.TriageItem, old *statedb.TriageStored) {
 	if stored.Replay {
 		return
 	}
 	v := triageView{stored: stored}
 	match := func(n *filterNode) bool { return nodeMatchesTriage(n, v) }
+	var was func(*filterNode) bool
+	if old != nil {
+		ov := triageView{stored: *old}
+		was = func(n *filterNode) bool { return nodeMatchesTriage(n, ov) }
+	}
 	f.offerWatch(stored.HubSeq, watchChange{
 		topic: hubv1.WatchTopic_WATCH_TOPIC_TRIAGE, change: hubv1.ChangeType_CHANGE_TYPE_UPDATED,
 		msg: &hubv1.WatchResponse{
 			Topic: hubv1.WatchTopic_WATCH_TOPIC_TRIAGE, ChangeType: hubv1.ChangeType_CHANGE_TYPE_UPDATED,
 			Resource: &hubv1.WatchResponse_TriageItem{TriageItem: item},
 		},
-		match: match,
+		match: match, was: was,
 	})
 }
 

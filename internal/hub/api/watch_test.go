@@ -2,6 +2,7 @@ package api_test
 
 import (
 	"context"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -215,12 +216,19 @@ func TestWatchTokenFromAnotherHubNeedsResync(t *testing.T) {
 }
 
 // A token older than the bounded change log ends the stream with
-// RESYNC_REQUIRED/TOKEN_TOO_OLD, and the close is clean.
+// RESYNC_REQUIRED/TOKEN_TOO_OLD, and the close is clean. Eviction keeps
+// the larger of the time and count guarantees (02c), so the entries must
+// both overflow the cap and outlast the age floor before the token falls
+// out.
 func TestWatchEvictedTokenNeedsResync(t *testing.T) {
 	t.Parallel()
-	e := newFleetEnv(t, localUser("alice"), trusted(false), withWatchLogCap(4))
+	// The clock is atomic: server goroutines read it on every publish
+	// while the test advances it below.
+	var nowNanos atomic.Int64
+	nowNanos.Store(fleetNow.UnixNano())
+	e := newFleetEnv(t, localUser("alice"), trusted(false), withWatchLogCap(4),
+		withNow(func() time.Time { return time.Unix(0, nowNanos.Load()) }))
 	seedGitHub(t, e)
-	createWatchedRepo(t, e, "r-1", "github.com", "acme/api")
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	stream, err := e.client.Watch(ctx, connect.NewRequest(&hubv1.WatchRequest{
@@ -231,6 +239,8 @@ func TestWatchEvictedTokenNeedsResync(t *testing.T) {
 	}
 	_, done := drainInitial(t, stream, hubv1.WatchTopic_WATCH_TOPIC_REPOS)
 	token := done.GetResumeToken()
+	createWatchedRepo(t, e, "r-1", "github.com", "acme/api")
+	nowNanos.Add(int64(11 * time.Minute))
 	for i := 2; i <= 7; i++ {
 		createWatchedRepo(t, e, "r-"+string(rune('0'+i)), "github.com", "acme/api"+string(rune('0'+i)))
 	}

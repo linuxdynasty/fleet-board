@@ -339,9 +339,13 @@ func UpdateOwnerAccount(ctx context.Context, s *store.Store, in UpdateAccountOp)
 }
 
 // DeleteOwnerAccount removes an account in one writer transaction: a
-// replayed request_id answers the same empty outcome, a missing row is
+// replayed request_id answers the same outcome, a missing row is
 // [ErrAccountUnknown], a stale version is [VersionStale]. Otherwise the
 // row is deleted with its account.delete audit row.
+//
+// The returned row keeps the last state with the delete's own Watch
+// stamp (a resume orders the DELETED after every earlier change, as the
+// repo delete does), so the Watch DELETED carries the exact last state.
 func DeleteOwnerAccount(ctx context.Context, s *store.Store, in DeleteAccountOp) (AccountStored, error) {
 	jctx := context.WithoutCancel(ctx) // see insertIdentity
 	var out AccountStored
@@ -372,15 +376,22 @@ func DeleteOwnerAccount(ctx context.Context, s *store.Store, in DeleteAccountOp)
 		if _, err := tx.ExecContext(jctx, `DELETE FROM accounts WHERE id = ?`, in.ID); err != nil {
 			return fmt.Errorf("statedb: delete account: %w", err)
 		}
+		// The deleted row carries the delete's own position for
+		// Watch, as the repo delete does.
+		st, err := NextStamp(jctx, tx, in.Now)
+		if err != nil {
+			return err
+		}
 		if err := auditAccount(jctx, tx, ActionAccountDelete, in.ID, got.Version, in.ConfigWrite); err != nil {
 			return err
 		}
 		if err := logConfigRequest(jctx, tx, in.ConfigWrite, configKindAccount, in.ID,
-			got.Harness, got.Provider, got.Origin, "", int64(got.Version), //nolint:gosec // G115: versions start at 1 and only rise
-			got.CreateMs, got.UpdateMs, got.HubSeq, "", true); err != nil {
+			got.Harness, got.Provider, got.Origin, string(got.Spec), int64(got.Version), //nolint:gosec // G115: versions start at 1 and only rise
+			got.CreateMs, got.UpdateMs, st.HubSeq, "", true); err != nil {
 			return err
 		}
-		out = AccountStored{ID: in.ID, Version: got.Version}
+		out = got
+		out.HubSeq, out.Replay = st.HubSeq, false
 		return nil
 	})
 	if err != nil {

@@ -274,38 +274,47 @@ func (f *Fleet) UpdateSettings(ctx context.Context, req *connect.Request[hubv1.U
 	// oldSpec keeps the pre-update spec for UNMATCHED evaluation.
 	var oldSpec []byte
 	writeCtx := statedb.WithValidatedWrite(ctx, func() error { return quotaCheckpoint(ctx, quotaWrite) })
-	stored, err := statedb.UpdateFleetSettings(writeCtx, f.store, statedb.UpdateSettingsOp{
-		ConfigWrite: statedb.ConfigWrite{
-			Principal: actor, RequestID: m.GetRequestId(),
-			RequestHash: sum, Actor: actorOf(who), Now: now,
+	var stored statedb.SettingsStored
+	if err := f.commitWatch(
+		func() error {
+			var err error
+			stored, err = statedb.UpdateFleetSettings(writeCtx, f.store, statedb.UpdateSettingsOp{
+				ConfigWrite: statedb.ConfigWrite{
+					Principal: actor, RequestID: m.GetRequestId(),
+					RequestHash: sum, Actor: actorOf(who), Now: now,
+				},
+				ExpectedVersion: m.GetExpectedVersion(),
+				Merge: func(current []byte) ([]byte, error) {
+					oldSpec = current
+					currentSpec := fleetScopeSpec()
+					if len(current) > 0 {
+						if err := protojson.Unmarshal(current, &currentSpec); err != nil {
+							return nil, err
+						}
+					}
+					merged, err := applyMaskedFields(&currentSpec, patch, paths, "spec")
+					if err != nil {
+						return nil, err
+					}
+					mergedSpec := merged.(*hubv1.SettingsSpec) //nolint:forcetypeassert // applyMaskedFields clones the stored type
+					// Only the merged result is validated: fields outside the
+					// mask are ignored, even when the request carries invalid
+					// values for them.
+					if err := checkMergedHub(mergedSpec.GetHub()); err != nil {
+						return nil, err
+					}
+					if err := checkMergedValues(mergedSpec.GetValues()); err != nil {
+						return nil, err
+					}
+					return protojson.Marshal(mergedSpec)
+				},
+			})
+			return err
 		},
-		ExpectedVersion: m.GetExpectedVersion(),
-		Merge: func(current []byte) ([]byte, error) {
-			oldSpec = current
-			currentSpec := fleetScopeSpec()
-			if len(current) > 0 {
-				if err := protojson.Unmarshal(current, &currentSpec); err != nil {
-					return nil, err
-				}
-			}
-			merged, err := applyMaskedFields(&currentSpec, patch, paths, "spec")
-			if err != nil {
-				return nil, err
-			}
-			mergedSpec := merged.(*hubv1.SettingsSpec) //nolint:forcetypeassert // applyMaskedFields clones the stored type
-			// Only the merged result is validated: fields outside the
-			// mask are ignored, even when the request carries invalid
-			// values for them.
-			if err := checkMergedHub(mergedSpec.GetHub()); err != nil {
-				return nil, err
-			}
-			if err := checkMergedValues(mergedSpec.GetValues()); err != nil {
-				return nil, err
-			}
-			return protojson.Marshal(mergedSpec)
+		func() {
+			f.publishSettingsWatch(ctx, stored, oldSpec, stored.Replay)
 		},
-	})
-	if err != nil {
+	); err != nil {
 		return nil, f.configOpWriteError(ctx, opSettingsUpdate, "update", actor, settingsStoreError(err))
 	}
 	var outSpec hubv1.SettingsSpec
@@ -313,7 +322,6 @@ func (f *Fleet) UpdateSettings(ctx context.Context, req *connect.Request[hubv1.U
 		return nil, f.configOpFailed(ctx, opSettingsUpdate, "update", actor, "decode", err)
 	}
 	f.configOpWrote(ctx, opSettingsUpdate, actor, statedb.FleetScope, stored.Version, stored.Replay)
-	f.publishSettingsWatch(ctx, stored, oldSpec, stored.Replay)
 	return connect.NewResponse(&hubv1.UpdateSettingsResponse{
 		Settings: settingsFromStored(stored, &outSpec),
 	}), nil

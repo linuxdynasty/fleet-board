@@ -105,9 +105,11 @@ func (f *Fleet) Watch(ctx context.Context, req *connect.Request[hubv1.WatchReque
 				[]*typev1.FieldViolation{{Field: "resume_token", Description: "resume_token does not parse"}}))
 		}
 		if token.IID != f.instanceID {
-			sess := &watchSession{bus: f.watch, instanceID: f.instanceID, resyncs: f.watchResyncs, send: stream.Send}
+			sess := &watchSession{
+				bus: f.watch, instanceID: f.instanceID, resyncs: f.watchResyncs,
+				send: stream.Send, logger: f.tel.Logger,
+			}
 			f.countWatch(ctx, "resync")
-			f.tel.Logger.InfoContext(ctx, "watch.resync", "reason", "HUB_RESTARTED", "actor", watchActor(ctx))
 			return sess.resync(ctx, hubv1.ResyncReason_RESYNC_REASON_HUB_RESTARTED)
 		}
 		for _, sub := range parsed {
@@ -117,24 +119,36 @@ func (f *Fleet) Watch(ctx context.Context, req *connect.Request[hubv1.WatchReque
 	if err := quotaCheckpoint(ctx, quotaRead); err != nil {
 		return err
 	}
-	busSub, snap := f.watch.subscribe()
+	var topics []hubv1.WatchTopic
+	for _, sub := range parsed {
+		topics = append(topics, sub.def.topic)
+	}
+	busSub, snap := f.watch.subscribe(topics)
 	defer f.watch.unsubscribe(busSub)
 	sess := &watchSession{
 		bus: f.watch, instanceID: f.instanceID, store: f.store, subs: parsed,
-		sub: busSub, snap: snap, send: stream.Send, now: f.now, checkpoint: watchCheckpointInterval,
+		sub: busSub, snap: snap, send: stream.Send, now: f.now, checkpoint: f.checkpoint,
 		summarize: func(ctx context.Context) (*hubv1.FleetSummary, error) {
 			summary, _, err := f.buildFleetSummary(ctx)
 			return summary, err
 		},
-		resyncs: f.watchResyncs,
+		resyncs: f.watchResyncs, logger: f.tel.Logger,
 	}
+	// An idle stream emits nothing, so the checkpoint would mint a
+	// sequence-zero token without this: start the emitted position at
+	// the snapshot (or the token past it, pathologically).
+	sess.lastSeq = snap
 	if hasToken {
 		sess.resumeSeq, sess.hasResume = token.Seq, true
+		if token.Seq > sess.lastSeq {
+			sess.lastSeq = token.Seq
+		}
 		if token.Seq < snap {
-			_, oldest, _ := f.watch.snapshot(token.Seq, snap)
-			if oldest == 0 || token.Seq < oldest {
+			// Only eviction proves a range is gone: hub_seq gaps
+			// are normal (02c), so a token below the oldest
+			// retained entry still replays when nothing evicted.
+			if token.Seq < f.watch.evictedSeq() {
 				f.countWatch(ctx, "resync")
-				f.tel.Logger.InfoContext(ctx, "watch.resync", "reason", "TOKEN_TOO_OLD", "actor", watchActor(ctx))
 				return sess.resync(ctx, hubv1.ResyncReason_RESYNC_REASON_TOKEN_TOO_OLD)
 			}
 		}

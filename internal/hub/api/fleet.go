@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"connectrpc.com/connect"
@@ -83,6 +84,10 @@ type FleetOptions struct {
 	// WatchLogCap bounds the Watch change log; zero means the 02c
 	// default. Tests set a small cap to evict tokens on purpose.
 	WatchLogCap int
+	// WatchCheckpoint is the idle-stream CHECKPOINT interval; zero
+	// means the defaults.md value. Tests set a short one to read
+	// checkpoints without waiting out the production interval.
+	WatchCheckpoint time.Duration
 }
 
 // Fleet is the hub's FleetService. The caller comes from [PrincipalFrom],
@@ -112,7 +117,14 @@ type Fleet struct {
 	// diskFree reads the free bytes on the state volume.
 	diskFree func(dir string) (int64, bool)
 	// watch is the Watch fan-out bus and its bounded change log (02c).
-	watch          *watchBus
+	watch *watchBus
+	// checkpoint is the idle-stream CHECKPOINT interval
+	// (watchCheckpointInterval by default).
+	checkpoint time.Duration
+	// watchMu serializes one committed write with its Watch publish, so
+	// concurrent handlers publish in commit order (02c "Order"). See
+	// commitWatch: the only lock it nests is the bus or store lock.
+	watchMu        sync.Mutex
 	watchStreams   metric.Int64Counter
 	watchResyncs   metric.Int64Counter
 	tokens         metric.Int64Counter
@@ -150,6 +162,10 @@ func NewFleet(opts FleetOptions) (*Fleet, error) {
 		f.diskFree = system.DiskFree
 	}
 	f.watch = newWatchBus(f.now, opts.WatchLogCap)
+	f.checkpoint = opts.WatchCheckpoint
+	if f.checkpoint <= 0 {
+		f.checkpoint = watchCheckpointInterval
+	}
 	streams, werr := f.tel.Meter(scope).Int64Counter(f.tel.MetricPrefix()+"_watch_streams_total",
 		metric.WithDescription("Watch streams by result: opened, refused or resync."))
 	if werr != nil {

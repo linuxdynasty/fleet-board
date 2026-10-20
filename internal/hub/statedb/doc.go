@@ -185,6 +185,13 @@
 // check; a stale expected_version is a [VersionStale]; a past wake time
 // is [ErrTriagePastUntil], checked after the replay lookup.
 //
+// Plan row 13a (issue #40) stamps the owner machine and account deletes:
+// [DeleteMachine] and [DeleteOwnerAccount] take the next hub_seq after
+// the row is gone and return the last state with it (the machine delete
+// also returns the full list row), so Watch replays the DELETED after
+// every earlier change; a replayed request_id answers the stored
+// outcome.
+//
 // Plan row 13 (issue #41) adds the SYSTEM item writer: [ListOpenSystemItems]
 // reads the open SYSTEM rows as the open list behind system.Decide, and
 // [ApplySystemChanges] persists one round of Decide writes in one writer

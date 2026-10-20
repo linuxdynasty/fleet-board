@@ -142,15 +142,37 @@ func (f *Fleet) SnoozeTriageItem(ctx context.Context, req *connect.Request[hubv1
 	if err != nil {
 		return nil, f.triageFailed(ctx, op, "snooze", actor, "encode", err)
 	}
+	// preItem keeps the pre-write item for UNMATCHED evaluation: a
+	// snooze that leaves a subscription's filter (usually state = OPEN)
+	// is sent once as UNMATCHED. Linking drops it on a race, as the
+	// machine update's.
+	var preItem *statedb.TriageStored
+	if pre, err := statedb.GetStoredTriageItem(ctx, f.store, m.GetId().GetValue()); err == nil {
+		preItem = &pre
+	}
 	writeCtx := statedb.WithValidatedWrite(ctx, func() error { return quotaCheckpoint(ctx, quotaWrite) })
-	stored, err := statedb.SnoozeTriageItem(writeCtx, f.store, statedb.TriageSnooze{
-		Write: statedb.TriageWrite{
-			Principal: actor, RequestID: m.GetRequestId(),
-			RequestHash: hash, Actor: actorOf(who), Now: now,
+	var stored statedb.TriageStored
+	if err := f.commitWatch(
+		func() error {
+			var err error
+			stored, err = statedb.SnoozeTriageItem(writeCtx, f.store, statedb.TriageSnooze{
+				Write: statedb.TriageWrite{
+					Principal: actor, RequestID: m.GetRequestId(),
+					RequestHash: hash, Actor: actorOf(who), Now: now,
+				},
+				ID: m.GetId().GetValue(), ExpectedVersion: m.GetExpectedVersion(), Until: until,
+			})
+			return err
 		},
-		ID: m.GetId().GetValue(), ExpectedVersion: m.GetExpectedVersion(), Until: until,
-	})
-	if err != nil {
+		func() {
+			item, err := triageItem(stored)
+			if err != nil {
+				f.tel.Logger.ErrorContext(ctx, "watch.publish_failed", "topic", "TRIAGE", "err_kind", "io")
+				return
+			}
+			f.publishTriageWatch(ctx, stored, item, triageOldItem(preItem, stored))
+		},
+	); err != nil {
 		return nil, triageStoreError(ctx, f, op, "snooze", actor, err)
 	}
 	item, err := triageItem(stored)
@@ -158,7 +180,6 @@ func (f *Fleet) SnoozeTriageItem(ctx context.Context, req *connect.Request[hubv1
 		return nil, f.triageFailed(ctx, op, "snooze", actor, "decode", err)
 	}
 	f.triageWrote(ctx, op, actor, stored.ID, stored.Version, stored.Replay)
-	f.publishTriageWatch(ctx, stored, item)
 	return connect.NewResponse(&hubv1.SnoozeTriageItemResponse{TriageItem: item}), nil
 }
 
@@ -199,15 +220,35 @@ func (f *Fleet) DismissTriageItem(ctx context.Context, req *connect.Request[hubv
 	if err != nil {
 		return nil, f.triageFailed(ctx, op, "dismiss", actor, "encode", err)
 	}
+	// preItem keeps the pre-write item for UNMATCHED evaluation, as the
+	// snooze's: a dismiss leaves a state filter behind.
+	var preItem *statedb.TriageStored
+	if pre, err := statedb.GetStoredTriageItem(ctx, f.store, m.GetId().GetValue()); err == nil {
+		preItem = &pre
+	}
 	writeCtx := statedb.WithValidatedWrite(ctx, func() error { return quotaCheckpoint(ctx, quotaWrite) })
-	stored, err := statedb.DismissTriageItem(writeCtx, f.store, statedb.TriageDismiss{
-		Write: statedb.TriageWrite{
-			Principal: actor, RequestID: m.GetRequestId(),
-			RequestHash: hash, Actor: actorOf(who), Now: now,
+	var stored statedb.TriageStored
+	if err := f.commitWatch(
+		func() error {
+			var err error
+			stored, err = statedb.DismissTriageItem(writeCtx, f.store, statedb.TriageDismiss{
+				Write: statedb.TriageWrite{
+					Principal: actor, RequestID: m.GetRequestId(),
+					RequestHash: hash, Actor: actorOf(who), Now: now,
+				},
+				ID: m.GetId().GetValue(), ExpectedVersion: m.GetExpectedVersion(), Note: m.GetNote(),
+			})
+			return err
 		},
-		ID: m.GetId().GetValue(), ExpectedVersion: m.GetExpectedVersion(), Note: m.GetNote(),
-	})
-	if err != nil {
+		func() {
+			item, err := triageItem(stored)
+			if err != nil {
+				f.tel.Logger.ErrorContext(ctx, "watch.publish_failed", "topic", "TRIAGE", "err_kind", "io")
+				return
+			}
+			f.publishTriageWatch(ctx, stored, item, triageOldItem(preItem, stored))
+		},
+	); err != nil {
 		return nil, triageStoreError(ctx, f, op, "dismiss", actor, err)
 	}
 	item, err := triageItem(stored)
@@ -215,6 +256,5 @@ func (f *Fleet) DismissTriageItem(ctx context.Context, req *connect.Request[hubv
 		return nil, f.triageFailed(ctx, op, "dismiss", actor, "decode", err)
 	}
 	f.triageWrote(ctx, op, actor, stored.ID, stored.Version, stored.Replay)
-	f.publishTriageWatch(ctx, stored, item)
 	return connect.NewResponse(&hubv1.DismissTriageItemResponse{TriageItem: item}), nil
 }

@@ -204,7 +204,7 @@ func TestEnrollPreviousGoneFallsBackToFresh(t *testing.T) {
 	if err := statedb.InsertEnrollToken(ctx, s, tok); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := statedb.DeleteMachine(ctx, s, statedb.MachineDelete{
+	if _, _, err := statedb.DeleteMachine(ctx, s, statedb.MachineDelete{
 		MachineWrite: machineWrite("local:alice", "del-1", 12, at),
 		MachineID:    id,
 	}); err != nil {
