@@ -18,7 +18,7 @@
 #                   LINT_PLATFORMS (linux and darwin, amd64 and arm64; cgo off)
 #   make vuln       govulncheck ./... (fails on a reachable known vulnerability)
 #   make test-all   go vet ./..., then go test -race -shuffle=on -count=TEST_COUNT
-#                   on every package (the nightly run sets TEST_COUNT=1, and
+#                   on every package (the nightly run sets TEST_COUNT=10, and
 #                   COVERPROFILE, which this pass then writes)
 #   make fuzz       each fuzz target for FUZZTIME (default 60s); their seeds
 #                   already run in make test
