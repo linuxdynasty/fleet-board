@@ -43,7 +43,7 @@ Makefile, tool-versions.env   make targets (make lint, make vuln, make gates, ..
                               title and body
 .github/workflows/macos.yml   weekly (and on demand) go test -race on macOS; fails unless the
                               macOS-only store and admin-socket tests ran and passed
-.github/workflows/nightly.yml daily make test-all (TEST_COUNT=2) with a coverage report, make
+.github/workflows/nightly.yml daily make test-all (TEST_COUNT=1) with a coverage report, make
                               fuzz on a cached corpus and make vuln; skipped when main did not
                               move, except Sundays
 scripts/nightly-should-run.sh decides that skip (the nightly check job);
