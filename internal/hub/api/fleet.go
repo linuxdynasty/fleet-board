@@ -123,8 +123,26 @@ type Fleet struct {
 	checkpoint time.Duration
 	// watchMu serializes one committed write with its Watch publish, so
 	// concurrent handlers publish in commit order (02c "Order"). See
-	// commitWatch: the only lock it nests is the bus or store lock.
-	watchMu        sync.Mutex
+	// commitWatch: the only lock it nests is the bus or store lock. The
+	// ingest path (gateway, syncer) publishes through the same lock from
+	// its post-commit hooks, so every publish below is serialized here.
+	watchMu sync.Mutex
+	// auditSeq is the highest audit hub_seq published as AUDIT live; the
+	// tail (commitWatch and the publish tick) moves it forward only.
+	auditSeq int64
+	// summaryDirty is set by every never-dropped publish; the publish
+	// tick recomputes the fleet summary when it is set. summarySeq is the
+	// highest hub_seq offered since the last summary publish, carried as
+	// the summary message's position.
+	summaryDirty bool
+	summarySeq   uint64
+	summaryAt    time.Time
+	// volatile holds volatile-only changes inside their 02c interval
+	// (machines 30 s, goals 5 s); the tick flushes what came due.
+	volatile *volatileGates
+	// paneVersions counts the published summaries per pane, so a client
+	// dedupes them by version.
+	paneVersions   map[string]uint64
 	watchStreams   metric.Int64Counter
 	watchResyncs   metric.Int64Counter
 	tokens         metric.Int64Counter
@@ -162,6 +180,16 @@ func NewFleet(opts FleetOptions) (*Fleet, error) {
 		f.diskFree = system.DiskFree
 	}
 	f.watch = newWatchBus(f.now, opts.WatchLogCap)
+	f.volatile = newVolatileGates()
+	f.paneVersions = map[string]uint64{}
+	// The audit tail starts at the highest stamped row, so rows committed
+	// before this process serves never publish as live (their streams
+	// open with the initial state instead).
+	seq, serr := statedb.MaxAuditSeq(context.Background(), f.store)
+	if serr != nil {
+		return nil, fmt.Errorf("api: audit tail position: %w", serr)
+	}
+	f.auditSeq = seq
 	f.checkpoint = opts.WatchCheckpoint
 	if f.checkpoint <= 0 {
 		f.checkpoint = watchCheckpointInterval

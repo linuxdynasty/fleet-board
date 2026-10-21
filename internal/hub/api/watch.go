@@ -37,9 +37,25 @@ func (f *Fleet) Watch(ctx context.Context, req *connect.Request[hubv1.WatchReque
 	if !explicit {
 		subs = defaultWatchSubs()
 	}
+	// The token parses before the scope check: a resume whose caller
+	// lost a covered topic's scope resyncs as SCOPES_CHANGED instead of
+	// refusing (02c).
+	var token watchToken
+	hasToken := msg.GetResumeToken() != ""
+	if hasToken {
+		var err error
+		token, err = parseWatchToken(msg.GetResumeToken())
+		if err != nil {
+			return f.watchRefused(ctx, apiError(connect.CodeInvalidArgument,
+				typev1.ReasonCode_REASON_CODE_RESUME_TOKEN_INVALID, "resume_token does not parse", nil,
+				[]*typev1.FieldViolation{{Field: "resume_token", Description: "resume_token does not parse"}}))
+		}
+	}
 	// firstSkipped names the scope the default set dropped first, for the
 	// refusal when nothing remains.
 	firstSkipped := ""
+	// scopesChanged marks a resume that lost a covered topic's scope.
+	scopesChanged := false
 	seen := map[hubv1.WatchTopic]int{}
 	parsed := make([]*watchSubscription, 0, len(subs))
 	for i, sub := range subs {
@@ -64,6 +80,10 @@ func (f *Fleet) Watch(ctx context.Context, req *connect.Request[hubv1.WatchReque
 		}
 		seen[sub.GetTopic()] = i
 		if _, err := authorizeScope(ctx, def.scope); err != nil {
+			if hasToken && token.hasTopic(def.topic) {
+				scopesChanged = true
+				continue
+			}
 			if !explicit {
 				if firstSkipped == "" {
 					firstSkipped = def.scope
@@ -87,23 +107,24 @@ func (f *Fleet) Watch(ctx context.Context, req *connect.Request[hubv1.WatchReque
 		}
 		sub.node = node
 	}
-	// An empty default set means the caller may read no Watch topic: the
+	// A lost scope on a covered topic resyncs the resume, so the client
+	// reopens with send_initial over what is still allowed (02c). An
+	// empty default set means the caller may read no Watch topic: the
 	// stream opens refused, never silently empty.
+	if scopesChanged {
+		sess := &watchSession{
+			bus: f.watch, instanceID: f.instanceID, resyncs: f.watchResyncs,
+			send: stream.Send, logger: f.tel.Logger,
+		}
+		f.countWatch(ctx, "resync")
+		return sess.resync(ctx, hubv1.ResyncReason_RESYNC_REASON_SCOPES_CHANGED)
+	}
 	if len(parsed) == 0 {
 		return f.watchRefused(ctx, apiError(connect.CodePermissionDenied,
 			typev1.ReasonCode_REASON_CODE_SCOPE_MISSING, "no Watch topic this caller may read",
 			map[string]string{"scope": firstSkipped}, nil))
 	}
-	var token watchToken
-	hasToken := msg.GetResumeToken() != ""
 	if hasToken {
-		var err error
-		token, err = parseWatchToken(msg.GetResumeToken())
-		if err != nil {
-			return f.watchRefused(ctx, apiError(connect.CodeInvalidArgument,
-				typev1.ReasonCode_REASON_CODE_RESUME_TOKEN_INVALID, "resume_token does not parse", nil,
-				[]*typev1.FieldViolation{{Field: "resume_token", Description: "resume_token does not parse"}}))
-		}
 		if token.IID != f.instanceID {
 			sess := &watchSession{
 				bus: f.watch, instanceID: f.instanceID, resyncs: f.watchResyncs,
