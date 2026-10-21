@@ -147,10 +147,10 @@ func UpdateWorkItemClaims(ctx context.Context, s *store.Store, key string, claim
 	var out WorkItemChange
 	err := s.Write(ctx, func(tx *sql.Tx) error {
 		var before WorkItemRow
-		var stage, reason int64
+		var storedStage, storedReason int64
 		err := tx.QueryRowContext(jctx, `SELECT `+workItemColumns+` FROM work_items WHERE key = ?`,
 			key).Scan(&before.Key, &before.Integration, &before.Kind, &before.Project, &before.ItemKey,
-			&before.ItemJSON, &before.UpdateMs, &stage, &before.TrustJSON, &reason,
+			&before.ItemJSON, &before.UpdateMs, &storedStage, &before.TrustJSON, &storedReason,
 			&before.Version, &before.CreateMs, &before.LastSyncMs, &before.HubSeq)
 		if err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
@@ -158,10 +158,10 @@ func UpdateWorkItemClaims(ctx context.Context, s *store.Store, key string, claim
 			}
 			return err
 		}
-		if before.Stage, err = int32Range(stage); err != nil {
+		if before.Stage, err = int32Range(storedStage); err != nil {
 			return err
 		}
-		if before.ManualReason, err = int32Range(reason); err != nil {
+		if before.ManualReason, err = int32Range(storedReason); err != nil {
 			return err
 		}
 		st, err := NextStamp(jctx, tx, time.UnixMilli(nowMs))
