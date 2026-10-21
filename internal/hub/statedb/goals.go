@@ -90,13 +90,14 @@ func UpsertObservedGoal(ctx context.Context, tx *sql.Tx, row ObservedRow) error 
 // EndObservedGone closes the machine's observed goals the snapshot no
 // longer lists (03k): CLOSED with OBSERVED_GONE, the end stamped. A goal
 // already CLOSED stays as its own ending left it (DONE beats gone). It
-// returns how many goals closed. The drop set is computed in Go and each
-// goal closed by id: no SQL is built from data.
-func EndObservedGone(ctx context.Context, tx *sql.Tx, machineID string, keep []string, nowMs, hubSeq int64) (int64, error) {
+// returns the ids it closed, so the caller can publish each job's stamped
+// after-images. The drop set is computed in Go and each goal closed by
+// id: no SQL is built from data.
+func EndObservedGone(ctx context.Context, tx *sql.Tx, machineID string, keep []string, nowMs, hubSeq int64) ([]string, error) {
 	rows, err := tx.QueryContext(ctx, `SELECT id FROM goals
 		WHERE machine_id = ? AND origin = 'observed' AND phase <> 'GOAL_PHASE_CLOSED'`, machineID)
 	if err != nil {
-		return 0, fmt.Errorf("statedb: list observed goals: %w", err)
+		return nil, fmt.Errorf("statedb: list observed goals: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 	var drop []string
@@ -107,16 +108,16 @@ func EndObservedGone(ctx context.Context, tx *sql.Tx, machineID string, keep []s
 	for rows.Next() {
 		var id string
 		if err := rows.Scan(&id); err != nil {
-			return 0, fmt.Errorf("statedb: list observed goals: %w", err)
+			return nil, fmt.Errorf("statedb: list observed goals: %w", err)
 		}
 		if !held[id] {
 			drop = append(drop, id)
 		}
 	}
 	if err := rows.Err(); err != nil {
-		return 0, fmt.Errorf("statedb: list observed goals: %w", err)
+		return nil, fmt.Errorf("statedb: list observed goals: %w", err)
 	}
-	var closed int64
+	var closed []string
 	for _, id := range drop {
 		res, err := tx.ExecContext(ctx, `UPDATE goals SET phase = 'GOAL_PHASE_CLOSED',
 			phase_reason = 'GOAL_PHASE_REASON_OBSERVED_GONE', end_time = ?, observed_time = ?, hub_seq = ?
@@ -128,7 +129,9 @@ func EndObservedGone(ctx context.Context, tx *sql.Tx, machineID string, keep []s
 		if err != nil {
 			return closed, fmt.Errorf("statedb: end observed goal: %w", err)
 		}
-		closed += n
+		if n > 0 {
+			closed = append(closed, id)
+		}
 	}
 	return closed, nil
 }

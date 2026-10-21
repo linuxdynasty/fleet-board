@@ -17,9 +17,8 @@ err = statedb.ReplaceServerCert(ctx, s, oldDER, certDER, keyDER, names)
   the row through the store's writer, closes it (the WAL is checkpointed and
   removed), then links it to `state.db`. The link fails if `state.db` exists
   (`ErrExists`), so an existing store is never replaced; a rename would
-  silently replace it. A failure before the link leaves no `state.db` and no
-  temporary file. A failure syncing the folder after the link leaves a
-  complete `state.db` and is `ErrCreatedNotSynced`, which says so.
+  silently replace it. A failure before the link leaves nothing; after it,
+  a complete `state.db` as `ErrCreatedNotSynced`.
 - **Leftovers.** `RemoveLeftovers` deletes the `.state.db.init-*` files of a
   `Create` that crashed, including a second link to `state.db` left between
   the link and the cleanup, and the `.state.db.restore-*` files of a crashed
@@ -379,6 +378,16 @@ uses it.
   (migration 21: name, server and owner), `GoalRow` (spec, status, phase,
   reason and times), `WorkItemRow` (provider item, verdicts, version, times).
   `CountWorkItemsByStage` counts mirrors by integration and stage.
+- **Watch ingest stamps** (migrations 23, 24, plan row 12): `hub_sessions`
+  gains `hub_seq` (the create write's Watch position, read as
+  `SessionRow.HubSeq`; 0 on older rows, which never publish as live) and
+  both mirrors gain `hub_seq` (the last real change's position, read as
+  `WorkItemRow.HubSeq` and `ChangeRequestRow.HubSeq`; a `last_sync_ms`
+  touch takes none). Every stamped write takes it with `NextStamp` inside
+  its committing job and publishes under it; `RestampMachine` and
+  `RestampGoal` move one row to a fresh stamp for the volatile flush,
+  `ReadGoalTx` reads a goal in-tx for applier after-images, and
+  `EndObservedGone` returns the ids it closed for the same publish.
 
 Tests: `CGO_ENABLED=0 go test ./internal/hub/statedb/`. They use real files:
 modes, a refused second create with the file hash unchanged, an injected
@@ -394,27 +403,19 @@ store gaining the tables. The row 4 tests cover `Renew`: a stored then
 replayed certificate (one signature, rows read from the file), each refusal
 before `Sign` runs, eight concurrent renewals with one key (one serial), the
 `cert_renewals` constraints by raw SQL, and a row 3 store gaining the table.
-The row 5 tests cover `Hello` and `EndConnection` with rows read from the
-file: epoch 1 with the machine state unchanged, `max(stored, last_epoch) + 1`
-(agent behind, equal, ahead of a restored hub), the epoch kept across a
-reopen, displacement with and without a known heartbeat age, each refusal
-writing nothing (the machine checked before the epoch), a serial the store
-lacks accepted, 48 concurrent Hellos for one machine leaving one live row, a
-Hello for one machine never touching another at the same epoch,
-`EndConnection` closing once (moving `last_seen_time`) and a displaced
-stream's close as a no-op, times never stepping back, `Live` copied while
-the caller keeps writing its entry (`-race`), every end reason stored, the
-table constraints by raw SQL, a row 4 store gaining the table, and
-`MaxEpoch` equal to the agent's `ring.MaxEpoch`. The 5c1 tests apply
-Snapshots and read the row from the file: ENROLLED after `Hello`, then the
-stored Snapshot and ONLINE with one stamp; a second Snapshot replacing the
-facts (unknown resources as NULL); a displaced or closed epoch, a missing
-and a REVOKED machine refused with nothing changed; out-of-range numbers;
-each rollback cause alone (each counter too) and together (generation,
-audit row, stored values, no repeat); later Snapshots on an epoch judged no
-more and keeping newer counters; `ReadSnapshot` returning every stored value;
-`Hello` returning the stored event seq; and a 5j store
-gaining the columns with their defaults.
+The row 5 tests cover `Hello` and `EndConnection` from the file: epoch 1
+leaving state alone, `max(stored, last_epoch) + 1` (behind, equal, ahead),
+the epoch surviving reopen, displacement with and without a known heartbeat
+age, refusals writing nothing, an unknown serial accepted, 48 concurrent
+Hellos leaving one live row, per-machine isolation, `EndConnection` closing
+once and a displaced close as a no-op, times never stepping back, `Live`
+copied under write (`-race`), every end reason, raw-SQL constraints, a row 4
+store gaining the table, and `MaxEpoch` matching `ring.MaxEpoch`. The 5c1
+tests apply Snapshots: ENROLLED after `Hello`, then stored Snapshot and
+ONLINE with one stamp; a second Snapshot replacing facts; displaced, closed,
+missing and REVOKED refused unchanged; out-of-range numbers; each rollback
+cause alone and together; later Snapshots judged no more; `ReadSnapshot` and
+the event seq; and a 5j store gaining the columns.
 
 The 5c2 tests (`events_test.go`, `eventloss_test.go`) read `events` and
 the machine row from the file: history only at or below the Snapshot
@@ -437,10 +438,9 @@ fields and none for a replay; an injected trigger that fails the audit insert
 leaving no token, machine or renewal and `hub_seq` unchanged; a failed job's
 numbers rolled back; bad entries refused; `UPDATE` and `DELETE` refused and
 the rows surviving a restart; racing actions with distinct rising `hub_seq`
-values; a 5a-i store gaining the tables; the largest accepted names through
-`InsertEnrollToken` and `Enroll`; the Go-side refusals before a number is
-taken; and `INSERT OR REPLACE`, a counter rollback and a counter delete
-refused on the file.
+values; a 5a-i store gaining the tables; the largest names through token
+and enroll; refusals before a number is taken; and `INSERT OR REPLACE`,
+counter rollback and counter delete refused.
 
 - **Owner repo writes** (migration 15, plan row 13a; 02b "Idempotency",
   "Versions and ETags"). `repos` gains `hub_seq` (the Watch stamp of the

@@ -26,8 +26,11 @@ and latest-wins summaries (02c). Every writer publishes through the same
 commit-then-publish step (`watch_ingest.go`, `watch_tick.go`): the
 in-package writes and the ingest hooks (the statedb writer jobs, the
 gateway's agent writes through its `WatchSink`, the syncer's mirror pages)
-commit first, then offer their stamped changes in commit order; the publish
-tick tails new audit rows, flushes volatile-only holds and recomputes a
+commit first, then offer their stamped changes in commit order (a job's goal
+writes publish from the after-images its appliers captured, so rapid
+transitions keep every intermediate change); the publish tick tails new
+audit rows, flushes volatile-only holds at fresh positions a resume cannot
+skip (a failed flush keeps its hold for the next tick) and recomputes a
 dirty summary at most once a second. Unserved topics (`ROUTINES`, the v3
 `DEVICES` and `NOTIFICATION_TARGETS`) are refused as whole subscriptions.
 

@@ -141,7 +141,7 @@ func TestWatchIngestGoalsPublishLive(t *testing.T) {
 	pump := pumpWatch(stream)
 	before := goalRowsFor(t, e, "m-goals")
 	stampGoal(t, e, "g-new", "m-goals", hubv1.GoalPhase_GOAL_PHASE_RUNNING, "fresh", at.Add(time.Second), at.Add(time.Second))
-	e.fleet.PublishGoalsCommitted(context.Background(), "m-goals", before)
+	e.fleet.PublishGoalsCommitted(context.Background(), "m-goals", before, goalRowsFor(t, e, "m-goals"))
 	got := pump.recvLive(t)
 	if got.GetChangeType() != hubv1.ChangeType_CHANGE_TYPE_CREATED || got.GetGoal().GetId().GetValue() != "g-new" {
 		t.Fatalf("live = %v %q, want CREATED g-new", got.GetChangeType(), got.GetGoal().GetId().GetValue())
@@ -152,7 +152,7 @@ func TestWatchIngestGoalsPublishLive(t *testing.T) {
 	// A phase move out of the filter arrives once as UNMATCHED.
 	before = goalRowsFor(t, e, "m-goals")
 	stampGoal(t, e, "g-new", "m-goals", hubv1.GoalPhase_GOAL_PHASE_WAITING, "fresh", at.Add(2*time.Second), at.Add(2*time.Second))
-	e.fleet.PublishGoalsCommitted(context.Background(), "m-goals", before)
+	e.fleet.PublishGoalsCommitted(context.Background(), "m-goals", before, goalRowsFor(t, e, "m-goals"))
 	unmatched := pump.recvLive(t)
 	if unmatched.GetChangeType() != hubv1.ChangeType_CHANGE_TYPE_UNMATCHED ||
 		unmatched.GetGoal().GetId().GetValue() != "g-new" {
@@ -160,8 +160,60 @@ func TestWatchIngestGoalsPublishLive(t *testing.T) {
 			unmatched.GetChangeType(), unmatched.GetGoal().GetId().GetValue())
 	}
 	// An unchanged row publishes nothing.
-	e.fleet.PublishGoalsCommitted(context.Background(), "m-goals", goalRowsFor(t, e, "m-goals"))
+	e.fleet.PublishGoalsCommitted(context.Background(), "m-goals", goalRowsFor(t, e, "m-goals"), goalRowsFor(t, e, "m-goals"))
 	pump.expectNone(t)
+}
+
+// Each queued goal event publishes its own committed state: with two rapid
+// transitions, the first publish carries the intermediate change and the
+// second the final one, in stamp order. Re-reading the current row for
+// every settlement would publish the final state twice and lose the
+// intermediate change.
+func TestWatchIngestGoalsPublishEachJobsState(t *testing.T) {
+	t.Parallel()
+	e := newFleetEnv(t, localUser("alice"), trusted(false))
+	seedMachine(t, e, "m-seq")
+	at := fleetNow
+	stampGoal(t, e, "g-seq", "m-seq", hubv1.GoalPhase_GOAL_PHASE_RUNNING, "step zero", at, at)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	stream, err := e.client.Watch(ctx, connect.NewRequest(&hubv1.WatchRequest{
+		Subscriptions: []*hubv1.TopicSubscription{watchSub(hubv1.WatchTopic_WATCH_TOPIC_GOALS, "", true)},
+	}))
+	if err != nil {
+		t.Fatalf("Watch: %v", err)
+	}
+	if initial, _ := drainInitial(t, stream, hubv1.WatchTopic_WATCH_TOPIC_GOALS); len(initial) != 1 {
+		t.Fatalf("%d INITIAL goals, want 1", len(initial))
+	}
+	pump := pumpWatch(stream)
+	// Two transitions commit before either settles, as up to 256 event
+	// jobs may: each settlement publishes its own job's after-image.
+	beforeFirst := goalRowsFor(t, e, "m-seq")
+	stampGoal(t, e, "g-seq", "m-seq", hubv1.GoalPhase_GOAL_PHASE_WAITING, "step one", at, at.Add(time.Second))
+	afterFirst := goalRowsFor(t, e, "m-seq")
+	beforeSecond := goalRowsFor(t, e, "m-seq")
+	stampGoal(t, e, "g-seq", "m-seq", hubv1.GoalPhase_GOAL_PHASE_RUNNING, "step two", at.Add(time.Second), at.Add(2*time.Second))
+	afterSecond := goalRowsFor(t, e, "m-seq")
+	e.fleet.PublishGoalsCommitted(context.Background(), "m-seq", beforeFirst, afterFirst)
+	e.fleet.PublishGoalsCommitted(context.Background(), "m-seq", beforeSecond, afterSecond)
+	first := pump.recvLive(t)
+	if first.GetChangeType() != hubv1.ChangeType_CHANGE_TYPE_UPDATED ||
+		first.GetGoal().GetStatus().GetPhase() != hubv1.GoalPhase_GOAL_PHASE_WAITING ||
+		first.GetGoal().GetStatus().GetFirstLine() != "step one" {
+		t.Fatalf("first = %v %v %q, want UPDATED WAITING step one",
+			first.GetChangeType(), first.GetGoal().GetStatus().GetPhase(), first.GetGoal().GetStatus().GetFirstLine())
+	}
+	second := pump.recvLive(t)
+	if second.GetChangeType() != hubv1.ChangeType_CHANGE_TYPE_UPDATED ||
+		second.GetGoal().GetStatus().GetPhase() != hubv1.GoalPhase_GOAL_PHASE_RUNNING ||
+		second.GetGoal().GetStatus().GetFirstLine() != "step two" {
+		t.Fatalf("second = %v %v %q, want UPDATED RUNNING step two",
+			second.GetChangeType(), second.GetGoal().GetStatus().GetPhase(), second.GetGoal().GetStatus().GetFirstLine())
+	}
+	if first.GetHubSeq() >= second.GetHubSeq() {
+		t.Fatalf("seqs %d then %d, want strictly ascending", first.GetHubSeq(), second.GetHubSeq())
+	}
 }
 
 // touchMachine stamps one machine row with a fresh hub_seq after applying
@@ -212,14 +264,14 @@ func TestWatchIngestGoalsVolatileGate(t *testing.T) {
 	// a second one inside it is held.
 	before := goalRowsFor(t, e, "m-vol")
 	stampGoal(t, e, "g-vol", "m-vol", hubv1.GoalPhase_GOAL_PHASE_RUNNING, "line one-prime", cur, cur)
-	e.fleet.PublishGoalsCommitted(context.Background(), "m-vol", before)
+	e.fleet.PublishGoalsCommitted(context.Background(), "m-vol", before, goalRowsFor(t, e, "m-vol"))
 	primed := pump.recvLive(t)
 	if primed.GetChangeType() != hubv1.ChangeType_CHANGE_TYPE_UPDATED {
 		t.Fatalf("primed = %v, want the first change at once", primed.GetChangeType())
 	}
 	before = goalRowsFor(t, e, "m-vol")
 	stampGoal(t, e, "g-vol", "m-vol", hubv1.GoalPhase_GOAL_PHASE_RUNNING, "line two", cur, cur.Add(time.Second))
-	e.fleet.PublishGoalsCommitted(context.Background(), "m-vol", before)
+	e.fleet.PublishGoalsCommitted(context.Background(), "m-vol", before, goalRowsFor(t, e, "m-vol"))
 	pump.expectNone(t)
 	if err := e.fleet.PublishTick(context.Background()); err != nil {
 		t.Fatalf("PublishTick: %v", err)
@@ -238,7 +290,7 @@ func TestWatchIngestGoalsVolatileGate(t *testing.T) {
 	// A phase move is not volatile: it publishes at once.
 	before = goalRowsFor(t, e, "m-vol")
 	stampGoal(t, e, "g-vol", "m-vol", hubv1.GoalPhase_GOAL_PHASE_WAITING, "line two", cur.Add(time.Second), cur.Add(time.Second))
-	e.fleet.PublishGoalsCommitted(context.Background(), "m-vol", before)
+	e.fleet.PublishGoalsCommitted(context.Background(), "m-vol", before, goalRowsFor(t, e, "m-vol"))
 	moved := pump.recvLive(t)
 	if moved.GetChangeType() != hubv1.ChangeType_CHANGE_TYPE_UPDATED ||
 		moved.GetGoal().GetStatus().GetPhase() != hubv1.GoalPhase_GOAL_PHASE_WAITING {
@@ -317,6 +369,15 @@ func TestWatchCreateSessionPublishes(t *testing.T) {
 	}
 	pump := pumpWatch(stream)
 	sess := createSession(t, e, "m-sess", "work")
+	// The operation stamps first (outbox.Enqueue) and the session second
+	// (NextStamp), so the stream carries OPERATIONS before SESSIONS in
+	// ascending stamp order: a resume from the first never skips the
+	// second.
+	omsg := pump.recvLive(t)
+	if omsg.GetChangeType() != hubv1.ChangeType_CHANGE_TYPE_CREATED ||
+		omsg.GetTopic() != hubv1.WatchTopic_WATCH_TOPIC_OPERATIONS {
+		t.Fatalf("operation = %v %v, want OPERATIONS CREATED", omsg.GetChangeType(), omsg.GetTopic())
+	}
 	smsg := pump.recvLive(t)
 	if smsg.GetChangeType() != hubv1.ChangeType_CHANGE_TYPE_CREATED ||
 		smsg.GetTopic() != hubv1.WatchTopic_WATCH_TOPIC_SESSIONS ||
@@ -327,10 +388,8 @@ func TestWatchCreateSessionPublishes(t *testing.T) {
 	if smsg.GetHubSeq() == 0 || smsg.GetResumeToken() == "" {
 		t.Error("live session carries no position")
 	}
-	omsg := pump.recvLive(t)
-	if omsg.GetChangeType() != hubv1.ChangeType_CHANGE_TYPE_CREATED ||
-		omsg.GetTopic() != hubv1.WatchTopic_WATCH_TOPIC_OPERATIONS {
-		t.Fatalf("operation = %v %v, want OPERATIONS CREATED", omsg.GetChangeType(), omsg.GetTopic())
+	if omsg.GetHubSeq() == 0 || omsg.GetHubSeq() >= smsg.GetHubSeq() {
+		t.Fatalf("operation seq %d session seq %d, want strictly ascending", omsg.GetHubSeq(), smsg.GetHubSeq())
 	}
 	// The replay of the same request_id publishes nothing new.
 	createSession(t, e, "m-sess", "work")

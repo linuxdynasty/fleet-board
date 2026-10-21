@@ -321,10 +321,10 @@ Served so far (row 12 slices): `id` (the canonical key), `integration`,
 `kind`, `repo`, `stage`, `state`, `trusted`, `label`, `manual_reason`,
 `create_time` and `update_time` read the synced mirrors with the hub's
 verdicts; `goal` is refused (`FILTER_INVALID`) until the dispatch rows
-store the goal link. `update_time` filters read the hub-change stamp on
-rows a syncer page touched (untouched mirrors read `create_time`);
-`provider_update_time` reads the item's own update (0 when the mirror
-carries none). The default `ListWorkItems` order is `ct`. `GetWorkItem` without `include_body`
+store the goal link. `update_time` reads `create_time` (no hub update
+timestamp is stored yet; migration 24 keeps only the Watch position
+`hub_seq`); `provider_update_time` reads the item's own update (0 when the
+mirror carries none). The default `ListWorkItems` order is `ct`. `GetWorkItem` without `include_body`
 returns the mirror with an empty body; `include_body` answers unimplemented
 until a row builds the provider fetch.
 
@@ -341,9 +341,9 @@ until a row builds the provider fetch.
 Served so far (row 12 slices): `id` (the canonical key), `integration`,
 `repo`, `state`, `create_time` and `update_time` read the synced mirrors;
 `goal` and `owned` are refused (`FILTER_INVALID`) until the dispatch rows
-store the goal link. `ut` reads the hub-change stamp on rows a syncer
-page touched (untouched mirrors read `create_time`); `provider_update_time`
-reads the change request's own update (0 when the mirror carries none).
+store the goal link. `ut` reads `create_time` (the first sight), as for
+work items above; `provider_update_time` reads the change request's own
+update (0 when the mirror carries none).
 The default `ListChangeRequests` order is `ct`. `GetChangeRequest` returns the mirror with an empty goal
 until the dispatch rows link goals.
 

@@ -46,10 +46,10 @@ func TestALiveCoalesceMovesTheSeqAndAKnownEventCallsNoApplier(t *testing.T) {
 		mu    sync.Mutex
 		calls []statedb.EventOut
 	)
-	rec := eventApplierFunc(func(ctx context.Context, tx *sql.Tx, id string, out statedb.EventOut, _ *agentv1.Event) error {
+	rec := eventApplierFunc(func(ctx context.Context, tx *sql.Tx, id string, out statedb.EventOut, _ *agentv1.Event) ([]statedb.GoalRow, error) {
 		var seq int64
 		if err := tx.QueryRowContext(ctx, `SELECT hub_last_event_seq FROM machines WHERE machine_id = ?`, id).Scan(&seq); err != nil {
-			return err
+			return nil, err
 		}
 		if uint64(seq) != out.HubLastEventSeq { //nolint:gosec // G115: CHECK >= 0
 			t.Errorf("applier saw hub_last_event_seq %d in its tx, want %d (the same job)", seq, out.HubLastEventSeq)
@@ -57,7 +57,7 @@ func TestALiveCoalesceMovesTheSeqAndAKnownEventCallsNoApplier(t *testing.T) {
 		mu.Lock()
 		defer mu.Unlock()
 		calls = append(calls, out)
-		return nil
+		return nil, nil
 	})
 	h := startHub(t, func(o *gateway.ServerOptions) { o.EventAppliers = []ingest.EventApplier{rec} })
 	m, s := h.snapshotted(t, 10)

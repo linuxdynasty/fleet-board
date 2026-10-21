@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	hubv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/hub/v1"
@@ -16,8 +17,9 @@ import (
 //     the last position (gateway, syncer, housekeeping expiry — every
 //     writer job appends its rows, so no single commit hook sees them
 //     all) as AUDIT CREATED in hub_seq order;
-//   - the volatile flush re-reads the held volatile-only changes whose
-//     interval passed and publishes the latest values;
+//   - the volatile flush restamps the held volatile-only changes whose
+//     interval passed and publishes the latest values at the fresh
+//     position, so a resume never skips them;
 //   - the summary recompute publishes the fleet summary when a published
 //     change dirtied it, at most once per second.
 //
@@ -41,8 +43,8 @@ func (f *Fleet) PublishTick(ctx context.Context) error {
 }
 
 // flushVolatile publishes the held volatile-only changes whose interval
-// passed, re-read so the message carries the latest values. The caller
-// holds watchMu.
+// passed, restamped so the message carries the latest values at a fresh
+// position. The caller holds watchMu.
 func (f *Fleet) flushVolatile(ctx context.Context) {
 	now := f.now()
 	for key, held := range f.volatile.held {
@@ -71,19 +73,26 @@ func (f *Fleet) flushVolatile(ctx context.Context) {
 	}
 }
 
-// flushMachine publishes one held machine change with its current row.
-// The caller holds watchMu.
+// flushMachine publishes one held machine change with its current row,
+// restamped to a position newer than every entry published while it was
+// held: the held row's own stamp went stale behind them, and a resume
+// from one of them must not skip this message. The restamp commits under
+// the held watchMu, so its commit order is its publish order. A retryable
+// failure keeps the hold for the next tick; only a success or a confirmed
+// permanent deletion (the row is gone) drops it. The caller holds watchMu.
 func (f *Fleet) flushMachine(ctx context.Context, id, key string) {
-	row, err := statedb.ReadMachineRow(ctx, f.store, id)
+	row, err := statedb.RestampMachine(ctx, f.store, id, f.now())
 	if err != nil {
+		if errors.Is(err, statedb.ErrMachineUnknown) {
+			delete(f.volatile.held, key)
+			return
+		}
 		f.tel.Logger.ErrorContext(ctx, "watch.publish_failed", "topic", "MACHINES", "err_kind", "io")
-		delete(f.volatile.held, key)
 		return
 	}
 	m, err := machineProto(row)
 	if err != nil {
 		f.tel.Logger.ErrorContext(ctx, "watch.publish_failed", "topic", "MACHINES", "err_kind", "io")
-		delete(f.volatile.held, key)
 		return
 	}
 	delete(f.volatile.held, key)
@@ -98,25 +107,29 @@ func (f *Fleet) flushMachine(ctx context.Context, id, key string) {
 	})
 }
 
-// flushGoal publishes one held goal change with its current row. The
-// caller holds watchMu.
+// flushGoal publishes one held goal change with its current row,
+// restamped to a position newer than every entry published while it was
+// held, as flushMachine does for machines. A retryable failure keeps the
+// hold for the next tick; only a success or a confirmed permanent
+// deletion (the row is gone) drops it. The caller holds watchMu.
 func (f *Fleet) flushGoal(ctx context.Context, id, key string) {
-	row, err := statedb.ReadGoalRow(ctx, f.store, id)
+	row, err := statedb.RestampGoal(ctx, f.store, id, f.now())
 	if err != nil {
+		if errors.Is(err, statedb.ErrGoalUnknown) {
+			delete(f.volatile.held, key)
+			return
+		}
 		f.tel.Logger.ErrorContext(ctx, "watch.publish_failed", "topic", "GOALS", "err_kind", "io")
-		delete(f.volatile.held, key)
 		return
 	}
 	v, err := goalViewOf(row)
 	if err != nil {
 		f.tel.Logger.ErrorContext(ctx, "watch.publish_failed", "topic", "GOALS", "err_kind", "io")
-		delete(f.volatile.held, key)
 		return
 	}
 	g, err := goalProto(v)
 	if err != nil {
 		f.tel.Logger.ErrorContext(ctx, "watch.publish_failed", "topic", "GOALS", "err_kind", "io")
-		delete(f.volatile.held, key)
 		return
 	}
 	delete(f.volatile.held, key)

@@ -38,9 +38,10 @@ type WatchSink struct {
 	// filterable, so the write is always volatile-only and waits out its
 	// interval behind the Watch gate.
 	MachineEvent func(ctx context.Context, machineID string)
-	// GoalsCommitted publishes an ingest job's observed-goal writes,
+	// GoalsCommitted publishes an ingest job's observed-goal writes: the
+	// stamped after-images the job's appliers captured in its transaction,
 	// diffed by stamp against the before image the arm read.
-	GoalsCommitted func(ctx context.Context, machineID string, before []statedb.GoalRow)
+	GoalsCommitted func(ctx context.Context, machineID string, before, after []statedb.GoalRow)
 	// Pane publishes one applied agent PaneSummary event with the
 	// machine stamp of its event job.
 	Pane func(ctx context.Context, p PanePublication)
@@ -84,9 +85,9 @@ func (a *agentService) publishMachineEvent(ctx context.Context, machineID string
 	}
 }
 
-func (a *agentService) publishGoalsCommitted(ctx context.Context, machineID string, before []statedb.GoalRow) {
+func (a *agentService) publishGoalsCommitted(ctx context.Context, machineID string, before, after []statedb.GoalRow) {
 	if a.watch.GoalsCommitted != nil {
-		a.watch.GoalsCommitted(ctx, machineID, before)
+		a.watch.GoalsCommitted(ctx, machineID, before, after)
 	}
 }
 

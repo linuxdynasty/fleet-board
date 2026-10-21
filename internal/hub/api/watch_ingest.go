@@ -155,27 +155,29 @@ func (f *Fleet) PublishMachineEvent(ctx context.Context, machineID string) {
 // PublishGoalsCommitted publishes an ingest job's observed-goal writes:
 // the snapshot or event applier's upserts and ends, diffed by stamp
 // against the caller's before image. before holds the machine's goal rows
-// as the commit found them; rows it no longer stamps are untouched. A
+// as the commit found them; after holds the stamped after-images the job's
+// appliers captured in its transaction, so rapid transitions publish every
+// intermediate change instead of re-reading the latest state twice. A
 // goal whose view does not parse logs publish_failed and skips only that
 // goal. The caller holds no lock.
-func (f *Fleet) PublishGoalsCommitted(ctx context.Context, machineID string, before []statedb.GoalRow) {
+func (f *Fleet) PublishGoalsCommitted(ctx context.Context, machineID string, before, after []statedb.GoalRow) {
 	f.watchMu.Lock()
 	defer f.watchMu.Unlock()
-	rows, err := statedb.ListGoalRows(ctx, f.store)
-	if err != nil {
-		f.tel.Logger.ErrorContext(ctx, "watch.publish_failed", "topic", "GOALS", "err_kind", "io")
-		return
-	}
 	old := map[string]statedb.GoalRow{}
 	for _, b := range before {
 		old[b.ID] = b
 	}
 	type offer struct {
 		seq    int64
+		id     string
 		change watchChange
 	}
 	var offers []offer
-	for _, row := range rows {
+	// Publish the job's own after-images, never the current rows: later
+	// jobs may already have committed newer states, and re-reading would
+	// publish the newest state once per settlement, losing every
+	// intermediate change.
+	for _, row := range after {
 		if row.MachineID != machineID {
 			continue
 		}
@@ -208,7 +210,7 @@ func (f *Fleet) PublishGoalsCommitted(ctx context.Context, machineID string, bef
 		if !f.volatileAllow(hubv1.WatchTopic_WATCH_TOPIC_GOALS, row.ID, volatileOnly, goalVolatileInterval) {
 			continue
 		}
-		offers = append(offers, offer{seq: row.HubSeq, change: watchChange{
+		offers = append(offers, offer{seq: row.HubSeq, id: row.ID, change: watchChange{
 			topic: hubv1.WatchTopic_WATCH_TOPIC_GOALS, change: change,
 			msg: &hubv1.WatchResponse{
 				Topic: hubv1.WatchTopic_WATCH_TOPIC_GOALS, ChangeType: change,
@@ -218,22 +220,34 @@ func (f *Fleet) PublishGoalsCommitted(ctx context.Context, machineID string, bef
 			was:   was,
 		}})
 	}
-	// One job's writes publish in stamp order (02c "Order").
-	sort.Slice(offers, func(i, j int) bool { return offers[i].seq < offers[j].seq })
+	// One job's writes publish in stamp order (02c "Order"), by id for
+	// writes that share one stamp.
+	sort.Slice(offers, func(i, j int) bool {
+		if offers[i].seq != offers[j].seq {
+			return offers[i].seq < offers[j].seq
+		}
+		return offers[i].id < offers[j].id
+	})
 	for _, o := range offers {
 		f.offerWatch(o.seq, o.change)
 	}
 }
 
-// publishSessionCreated publishes a hub-started session (CreateSession)
-// with its create write, and the queued EnsureSession command as an
-// OPERATIONS CREATED. A request_id replay publishes nothing: the first
-// call already did. The caller holds watchMu (it runs in the
-// CreateSession commitWatch publish step, which serializes commit and
-// publish as one ordered step).
+// publishSessionCreated publishes a hub-started session (CreateSession):
+// the queued EnsureSession command as OPERATIONS CREATED first, then the
+// session with its create write as SESSIONS CREATED, in ascending stamp
+// order. A request_id replay publishes nothing: the first call already
+// did. The caller holds watchMu (it runs in the CreateSession commitWatch
+// publish step, which serializes commit and publish as one ordered step).
 func (f *Fleet) publishSessionCreated(ctx context.Context, sessID string, op *hubv1.Operation, opSeq int64, replay bool) {
 	if replay {
 		return
+	}
+	// The operation stamps first (outbox.Enqueue takes its hub_seq before
+	// the session row takes its own), so it publishes first: ascending
+	// stamp order keeps a resume from the first from skipping the second.
+	if op != nil {
+		f.publishOperationWatch(opSeq, op)
 	}
 	row, err := statedb.ReadSessionRow(ctx, f.store, sessID)
 	if err != nil {
@@ -253,9 +267,6 @@ func (f *Fleet) publishSessionCreated(ctx context.Context, sessID string, op *hu
 		},
 		match: func(n *filterNode) bool { return nodeMatchesSession(n, row) },
 	})
-	if op != nil {
-		f.publishOperationWatch(opSeq, op)
-	}
 }
 
 // PublishWorkItems publishes a syncer page's work-item changes with the

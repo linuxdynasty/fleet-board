@@ -281,9 +281,10 @@ srv, err := gateway.NewServer(gateway.ServerOptions{
 - **Watch** (`watch_sink.go`): the daemon sets one `WatchSink` with
   `SetWatchSink` (unset, the gateway publishes nothing). The Snapshot and
   event arms take their read-side images before they submit, settle their
-  publishes in submission order, and report abandoned Snapshots as machine
-  state only; presence and enroll publish through the sink's choke too, so
-  agent-driven writes reach Watch in commit order.
+  publishes in submission order, and report abandoned Snapshots with their
+  committed goal writes as well as the machine state; presence and enroll
+  publish through the sink's choke too, so agent-driven writes reach Watch
+  in commit order.
 - **Request cap**: `connect.WithReadMaxBytes(MaxMessageBytes)`, the 1 MiB of 02e;
   on Connect the stream ends `RESOURCE_EXHAUSTED` and its row closes as
   `stream_closed`.

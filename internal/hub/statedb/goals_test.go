@@ -114,7 +114,7 @@ func TestEndObservedGone(t *testing.T) {
 
 	writeObserved(t, s, observedRow("obs-1"))
 	writeObserved(t, s, observedRow("obs-2"))
-	var ended int64
+	var ended []string
 	if err := s.Write(context.Background(), func(tx *sql.Tx) error {
 		var err error
 		ended, err = statedb.EndObservedGone(context.Background(), tx, "m1", []string{"obs-2"}, 3000, 5)
@@ -122,8 +122,8 @@ func TestEndObservedGone(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("EndObservedGone: %v", err)
 	}
-	if ended != 1 {
-		t.Fatalf("ended = %d, want 1", ended)
+	if len(ended) != 1 || ended[0] != "obs-1" {
+		t.Fatalf("ended = %v, want [obs-1]", ended)
 	}
 	gone := readGoal(t, dir, "obs-1")
 	if gone.Phase != "GOAL_PHASE_CLOSED" || gone.Reason != "GOAL_PHASE_REASON_OBSERVED_GONE" {

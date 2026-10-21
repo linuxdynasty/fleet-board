@@ -186,6 +186,45 @@ func TestWatchPaneSummariesLive(t *testing.T) {
 	}
 }
 
+// Pane keys are unique only within one machine, so the same server,
+// start and pane tuple on two machines keeps two latest summaries with
+// independent versions: neither overwrites the other on resume.
+func TestWatchPaneKeysIncludeMachine(t *testing.T) {
+	t.Parallel()
+	e := newFleetEnv(t, localUser("alice"), trusted(false))
+	at := fleetNow
+	key := &typev1.PaneKey{Server: "default", ServerStartId: "boot-1", PaneId: "%0"}
+	for i, tc := range []struct{ machine, lines string }{
+		{"m-pane-a", "alpha"},
+		{"m-pane-b", "beta"},
+	} {
+		e.fleet.PublishPane(context.Background(), api.PanePublication{
+			Pane: key, MachineID: tc.machine, SessionID: "s-1", LastLines: tc.lines,
+			LastOutputTime: at.Add(time.Duration(i) * time.Second),
+			Activity:       typev1.Activity_ACTIVITY_ACTIVE, Seq: nextStamp(t, e, at),
+		})
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	stream, err := e.client.Watch(ctx, connect.NewRequest(&hubv1.WatchRequest{
+		Subscriptions: []*hubv1.TopicSubscription{watchSub(hubv1.WatchTopic_WATCH_TOPIC_PANE_SUMMARIES, "", true)},
+	}))
+	if err != nil {
+		t.Fatalf("Watch: %v", err)
+	}
+	initial, _ := drainInitial(t, stream, hubv1.WatchTopic_WATCH_TOPIC_PANE_SUMMARIES)
+	if len(initial) != 2 {
+		t.Fatalf("%d INITIAL panes, want one per machine", len(initial))
+	}
+	seen := map[string]uint64{}
+	for _, m := range initial {
+		seen[m.GetPaneSummary().GetMachine().GetValue()] = m.GetPaneSummary().GetVersion()
+	}
+	if seen["m-pane-a"] != 1 || seen["m-pane-b"] != 1 {
+		t.Fatalf("versions = %v, want v1 per machine", seen)
+	}
+}
+
 // clientAs opens a second client over the same Fleet as a different
 // caller, so resume tests can change scopes between streams.
 func clientAs(t *testing.T, e *fleetEnv, who *typev1.Principal) hubv1connect.FleetServiceClient {

@@ -2,6 +2,8 @@ package gateway_test
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -37,6 +39,9 @@ type createdCall struct {
 type goalsCall struct {
 	id     string
 	before int
+	// after is how many stamped after-images the job captured in its
+	// transaction: the publish carries each job's own writes.
+	after int
 }
 
 func (r *watchRecorder) sink() gateway.WatchSink {
@@ -61,9 +66,9 @@ func (r *watchRecorder) sink() gateway.WatchSink {
 			r.events = append(r.events, id)
 			r.mu.Unlock()
 		},
-		GoalsCommitted: func(_ context.Context, id string, before []statedb.GoalRow) {
+		GoalsCommitted: func(_ context.Context, id string, before, after []statedb.GoalRow) {
 			r.mu.Lock()
-			r.goals = append(r.goals, goalsCall{id, len(before)})
+			r.goals = append(r.goals, goalsCall{id, len(before), len(after)})
 			r.mu.Unlock()
 		},
 		Pane: func(_ context.Context, p gateway.PanePublication) {
@@ -194,7 +199,7 @@ func TestWatchSinkSnapshotPublishes(t *testing.T) {
 	})
 	rec.waitSink(t, "snapshot goals", func(r *watchRecorder) bool {
 		for _, g := range r.goals {
-			if g.id == m.id && g.before == 0 {
+			if g.id == m.id && g.before == 0 && g.after == 1 {
 				return true
 			}
 		}
@@ -227,7 +232,7 @@ func TestWatchSinkEventsPublish(t *testing.T) {
 	})
 	rec.waitSink(t, "event goals with before", func(r *watchRecorder) bool {
 		for _, g := range r.goals {
-			if g.id == m.id && g.before == 1 {
+			if g.id == m.id && g.before == 1 && g.after == 1 {
 				return true
 			}
 		}
@@ -269,4 +274,116 @@ func TestWatchSinkClosePublishesOffline(t *testing.T) {
 		}
 		return false
 	})
+}
+
+// blockApplier holds a Snapshot writer job inside its transaction until
+// unblock closes, so a test can end the stream mid-wait: the arm reads its
+// before images and submits while live, abandons the wait when the agent
+// leaves, and the teardown publishes a job that commits afterwards.
+type blockApplier struct {
+	started chan struct{}
+	unblock chan struct{}
+}
+
+func (b *blockApplier) Apply(_ context.Context, _ *sql.Tx, _ string, _ *agentv1.Snapshot) ([]statedb.GoalRow, error) {
+	close(b.started)
+	select {
+	case <-b.unblock:
+		return nil, nil
+	case <-time.After(20 * time.Second):
+		return nil, errors.New("gateway_test: blockApplier stuck")
+	}
+}
+
+// A Snapshot job that commits after its wait was abandoned still publishes
+// its committed goal writes with its machine write at the teardown: the
+// abandoned entry carries the pre-submit before images, so GOALS watchers
+// see the change and resume replay has the goal entry.
+func TestWatchSinkAbandonedSnapshotPublishesGoals(t *testing.T) {
+	t.Parallel()
+	var rec watchRecorder
+	block := &blockApplier{started: make(chan struct{}), unblock: make(chan struct{})}
+	h := startHub(t, func(o *gateway.ServerOptions) {
+		o.Watch = rec.sink()
+		o.Appliers = []ingest.Applier{block, observed.Applier{}}
+		o.EventAppliers = []ingest.EventApplier{observed.Applier{}}
+	})
+	m := h.enrollMachine(t)
+	s := h.open(t, m)
+	s.send(t, hello(m, 0))
+	s.ack(t)
+	s.send(t, snapshotWithGoal(5, "Working"))
+	select {
+	case <-block.started:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the Snapshot job never started")
+	}
+	leave(s)
+	h.waitEvents(t, "snapshot.abandoned", 1)
+	close(block.unblock)
+	h.waitClosed(t, 1)
+	rec.waitSink(t, "abandoned goals", func(r *watchRecorder) bool {
+		for _, g := range r.goals {
+			if g.id == m.id && g.before == 0 && g.after == 1 {
+				return true
+			}
+		}
+		return false
+	})
+	rec.waitSink(t, "abandoned machine", func(r *watchRecorder) bool {
+		for _, id := range r.committed {
+			if id == m.id {
+				return true
+			}
+		}
+		return false
+	})
+}
+
+// A Snapshot commit publishes the goal writes before the machine write:
+// the goal appliers stamp before MarkOnline stamps the machine, so goals
+// first is ascending stamp order and a resume from a goal never skips it.
+func TestWatchSinkSnapshotPublishesGoalsBeforeMachine(t *testing.T) {
+	t.Parallel()
+	var mu sync.Mutex
+	var order []string
+	done := make(chan struct{})
+	var once sync.Once
+	sink := (&watchRecorder{}).sink()
+	sink.GoalsCommitted = func(_ context.Context, id string, _, _ []statedb.GoalRow) {
+		mu.Lock()
+		order = append(order, "goals")
+		if len(order) == 2 {
+			once.Do(func() { close(done) })
+		}
+		mu.Unlock()
+	}
+	sink.MachineCommitted = func(_ context.Context, _ string, _ *statedb.MachineRow) {
+		mu.Lock()
+		order = append(order, "machine")
+		if len(order) == 2 {
+			once.Do(func() { close(done) })
+		}
+		mu.Unlock()
+	}
+	h := startHub(t, func(o *gateway.ServerOptions) {
+		o.Watch = sink
+		o.Appliers = []ingest.Applier{observed.Applier{}}
+		o.EventAppliers = []ingest.EventApplier{observed.Applier{}}
+	})
+	m := h.enrollMachine(t)
+	s := h.open(t, m)
+	s.send(t, hello(m, 0))
+	s.ack(t)
+	s.send(t, snapshotWithGoal(5, "Working"))
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("timed out waiting for snapshot publishes")
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(order) != 2 || order[0] != "goals" || order[1] != "machine" {
+		t.Fatalf("publish order = %v, want [goals machine]", order)
+	}
 }

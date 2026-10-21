@@ -30,6 +30,16 @@ type helloMarks struct {
 	installID    string
 }
 
+// abandonedSnapshot is a Snapshot job whose wait the arm gave up, with
+// the pre-submit before images its post-commit Watch publish diffs
+// against at the teardown.
+type abandonedSnapshot struct {
+	pending *ingest.Pending
+	machine *statedb.MachineRow
+	goals   []statedb.GoalRow
+	goalsOK bool
+}
+
 func marksOf(h *agentv1.Hello) helloMarks {
 	c := h.GetEventCounters()
 	return helloMarks{
@@ -126,9 +136,12 @@ func snapshotArm(ctx context.Context, a *agentService, s *stream, m *agentv1.Con
 	switch {
 	case err != nil && (ctx.Err() != nil || a.stopping.Err() != nil):
 		// Not a failure: the stream is ending and the outcome is unknown
-		// here; a queued job's result is read at the teardown.
+		// here; a queued job's result is read at the teardown, with the
+		// before images read above for its Watch publish.
 		if p != nil { // nil when Submit itself gave up: no job, nothing to read
-			s.abandoned = append(s.abandoned, p)
+			s.abandoned = append(s.abandoned, abandonedSnapshot{
+				pending: p, machine: beforeMachine, goals: beforeGoals, goalsOK: goalsOK,
+			})
 		}
 		done("abandoned")
 		a.log.InfoContext(ctx, "snapshot.abandoned", "machine_id", s.machineID, "epoch", s.epoch, "seq", snap.GetSeq(),
@@ -168,14 +181,16 @@ func snapshotArm(ctx context.Context, a *agentService, s *stream, m *agentv1.Con
 	if out.Change != nil {
 		a.stateChanged(ctx, *out.Change)
 	}
-	// The commit moved the machine row and the observed goals: publish
-	// them with their new stamps for the Watch ingest slice. The before
-	// images above predate the submit, so the diff sees exactly this
-	// job's writes.
-	a.publishMachineCommitted(ctx, s.machineID, beforeMachine)
+	// The commit moved the observed goals and the machine row: publish
+	// them with their new stamps for the Watch ingest slice, goals first.
+	// The goal appliers stamp before MarkOnline stamps the machine, so
+	// goals first is ascending stamp order: a client that resumes from a
+	// goal update never skips it. The before images above predate the
+	// submit, so the diff sees exactly this job's writes.
 	if goalsOK {
-		a.publishGoalsCommitted(ctx, s.machineID, beforeGoals)
+		a.publishGoalsCommitted(ctx, s.machineID, beforeGoals, p.Goals())
 	}
+	a.publishMachineCommitted(ctx, s.machineID, beforeMachine)
 	a.noteSnapshotPanes(s, snap)
 	a.log.InfoContext(ctx, "snapshot.applied", "machine_id", s.machineID, "epoch", s.epoch, "seq", snap.GetSeq(),
 		"bytes", size, "ms", time.Since(start).Milliseconds(), "event_generation", out.Generation,
@@ -250,19 +265,24 @@ func (a *agentService) abandonedSnapshots(ctx context.Context, s *stream) {
 	}
 	wctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), endWait)
 	defer cancel()
-	for _, p := range s.abandoned {
-		out, err := p.Wait(wctx)
+	for _, ab := range s.abandoned {
+		out, err := ab.pending.Wait(wctx)
 		if err == nil {
 			if out.Change != nil {
 				a.stateChanged(wctx, *out.Change)
 			}
-			// The job committed: publish its machine write for the
-			// Watch ingest slice. There is no before image this late
-			// (the stream is gone), so goals stay unpublished: without
-			// a diff every row would look created.
-			a.publishMachineCommitted(wctx, s.machineID, nil)
+			// The job committed: publish its goal writes before its
+			// machine write for the Watch ingest slice, in ascending
+			// stamp order like the applied path. The abandoned entry
+			// carries the pre-submit before images and the job its
+			// stamped after-images, so the publish sees exactly this
+			// job's writes.
+			if ab.goalsOK {
+				a.publishGoalsCommitted(wctx, s.machineID, ab.goals, ab.pending.Goals())
+			}
+			a.publishMachineCommitted(wctx, s.machineID, ab.machine)
 		}
-		a.outbox.Closed(wctx, p.Expired())
+		a.outbox.Closed(wctx, ab.pending.Expired())
 	}
 	s.abandoned = nil
 }

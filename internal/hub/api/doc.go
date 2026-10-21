@@ -78,6 +78,9 @@
 // header; the caller is [LocalUser] of the peer. [AdminClient] dials the
 // socket. [Fleet.Watch] serves the per-topic subscriptions with the
 // initial state, resume tokens, RESYNC_REQUIRED and latest-wins summaries
-// (02c); the in-package writes publish their stamped changes to its bus,
-// and agent-driven changes follow once ingest publishes too.
+// (02c); the in-package writes publish their stamped changes to its bus
+// through the same commit-then-publish step, and agent-driven changes
+// publish through it too: the gateway's snapshot, event, presence and
+// enrollment commits via its WatchSink, and the syncer's mirror pages via
+// its OnWorkItems and OnChangeRequests hooks.
 package api

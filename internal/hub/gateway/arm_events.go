@@ -194,7 +194,7 @@ func (a *agentService) settle(ctx context.Context, s *stream, err error) {
 			// per stream, so one machine's publishes keep commit order.
 			a.publishMachineEvent(ctx, s.machineID)
 			if !out.History && f.kind == "goal_state" && f.goalsOK {
-				a.publishGoalsCommitted(ctx, s.machineID, f.goals)
+				a.publishGoalsCommitted(ctx, s.machineID, f.goals, f.p.Goals())
 			}
 			if f.pane != nil && !out.History {
 				pane := *f.pane

@@ -45,7 +45,10 @@ out, err := p.Wait(ctx) // out.Generation, out.Rollback (02i rule 3 causes), out
   agent data.
 - **`Applier`** is the seam plan rows 7 to 10 fill: `Apply(ctx, tx,
   machineID, snap)` replaces that row's tables for the machine inside the
-  job. The gateway's `ServerOptions.Appliers` is the ordered list (empty
+  job and returns the stamped goal after-images it wrote (`Pending.Goals`
+  reads them after `Wait` succeeds), so Watch publishes each job's own
+  writes instead of re-reading the latest state. The gateway's
+  `ServerOptions.Appliers` is the ordered list (empty
   in 5c1). Notes for the rows that build on it:
   - Inventory rows (7 to 10) replace their tables wholesale from the
     Snapshot and diff derived state (03 "Ordering and consistency").
@@ -94,10 +97,11 @@ err = <-p.Result()                                // in submission order; then p
   fails every later job of the stream, so no commit moves the seq past a
   lost event.
 - **`EventApplier`** is the seam rows 7 to 10 fill:
-  `ApplyEvent(ctx, tx, machineID, out, ev)`. `out.History` true means the
-  event is at or below the Snapshot floor: write history (an audit row
-  idempotent on machine, generation and seq: 02i "Audit is not derived
-  state"), run no rule.
+  `ApplyEvent(ctx, tx, machineID, out, ev)`, returning the stamped goal
+  after-images it wrote (`EventPending.Goals` reads them after `Result`).
+  `out.History` true means the event is at or below the Snapshot floor:
+  write history (an audit row idempotent on machine, generation and seq:
+  02i "Audit is not derived state"), run no rule.
 - **The fork 6 gate**: `BenchmarkEventBurst` (`burst_bench_test.go`) runs
   the S1 burst shape through the real writer and `SubmitEvent`; how to run
   it and the numbers are in [04c](../../../docs/specs/04c-event-ingest-benchmark.md).
