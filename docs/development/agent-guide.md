@@ -230,10 +230,12 @@ closes it (`scripts/ci-report-failure.sh`). The issue holds the run link, the
 commit and the failed job names, never log text. The `report` job is the only
 one with write access, and only to issues. On a PR it shows as skipped.
 
-On a PR, the last gates step runs `make bench-report` and adds its table to the
-job summary: the benchmarks of the changed packages at the base and at the
-head, on the same runner, taking turns one sample at a time
-(`scripts/bench-report.sh`). `scripts/bench-review.py` marks a
+On a PR, a `benchmarks` job beside the gates runs `make bench-report` and
+adds its table to the job summary: the benchmarks of the changed packages at
+the base and at the head, on the same runner, taking turns one sample at a
+time (`scripts/bench-report.sh`). It used to be the last gates step, until its
+minutes against the 55-minute ceiling killed full-scope PR runs mid-report
+(#389). `scripts/bench-review.py` marks a
 row REVIEW when benchstat calls the change significant (p < 0.05) and time per
 op rose more than 10%, or allocations per op rose at all. It is a report, not a
 gate: the step never fails the job, and a REVIEW row asks the reviewer to look.
@@ -259,6 +261,12 @@ run for eight more minutes, so the old 45-minute ceiling cancelled the job.
 The ceiling increases by ten minutes; jobs, triggers, test counts and the
 report’s eight-minute cap stay the same. Normal runs do not automatically take
 ten more minutes. This one run does not establish a new monthly estimate.
+Two full-scope PR runs later hit the 55-minute ceiling itself (#389): at the
+default test count of 3, `make test` took 32 of those minutes, and the ceiling
+killed the job during the advisory benchmark report with every required step
+green. After that, PR runs test once (`TEST_COUNT=1` in `ci.yml`; the race
+pass still runs, and pushes to `main` and local `make gates` keep 3), and the
+benchmark report runs in its own parallel job outside the ceiling.
 
 The plan includes 2000 GitHub Actions minutes a month. Estimates, in minutes
 a month (typical / worst case):
