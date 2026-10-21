@@ -30,8 +30,8 @@ pages were read on 2026-10-02.
 | Q3 queue or broker | **None.** In-process bounded channels as in 03f | Load is 110 msg/s; at-least-once already comes from the agent ring and the outbox |
 | Q4 hot state | **Read from the store.** No cache process, no in-memory copy of record | S1: 500-row sidebar read p99 21 ms under burst |
 | Q5 browser fan-out | **Connect** (unary + server streaming, one stream per tab); terminal attach over **WebSocket** with byte acks | Vendor docs (browsers cannot stream requests) |
-| Q6 log storage | **`logs.db`**: zstd chunks as rows in a second SQLite file with its own writer; replaces "files on disk" in ADR 0010 | S1: 30 chunks/s commit p99 ≤ 19 ms; delete one session 6 ms; prune and vacuum in ≈ 55 ms steps; at the 50 GiB cap commit p99 ≤ 24 ms, vacuum step p99 ≤ 74 ms (2026-10-08) |
-| Q6 chunk framing | One zstd frame per stream for ≤ 5 min or 4 MiB raw, flushed into a chunk every 10 s; replay seeks by frame | S2: 14× vs 8× for independent 10 s frames (Codex, 60 min); Claude Code 2026-10-12 confirms the same 14× vs 8× |
+| Q6 log storage | **`logs.db`**: zstd chunks as rows in a second SQLite file with its own writer; replaces "files on disk" in ADR 0010 | S1: 30 chunks/s commit p99 ≤ 19 ms; delete one session 6 ms; prune and vacuum in ≈ 55 ms steps; at the 50 GiB cap commit p99 ≤ 24 ms, vacuum step p99 ≤ 74 ms (2026-10-08); cold re-run at the cap passes every threshold 2026-10-20 (#60) |
+| Q6 chunk framing | One zstd frame per stream for ≤ 5 min or 4 MiB raw, flushed into a chunk every 10 s; replay seeks by frame | S2: 14× vs 8× for independent 10 s frames (Codex, 60 min); Claude Code 2026-10-12 confirms the same 14× vs 8×; Muse 2026-10-20: 31× vs 20× (#60) |
 | Q6 log volume | The first estimate was low: Codex output compresses 15×, not 115× (Muse); A50 is **50–270 GB/month** depending on the harness mix; default size cap 50 GiB | S2 |
 | Q7 replay budget | 200 ev/s per agent, 2,500 ev/s per hub, as proposed | S1 burst |
 | Q8 provider limits | Polling only in v1; webhook ingress later and optional | GitHub docs: 5,000 req/h per installation; 304s free |
@@ -182,9 +182,8 @@ re-run above shows they came from the I/O class, not from SQLite or btrfs.
 btrfs (copy-on-write) writes about twice the bytes of APFS at the 50 ms
 window; the 250 ms window halves it.
 
-Every commit rewrites whole 4 KiB pages twice (WAL, then checkpoint), so
-volume follows the commit count and the number of distinct pages touched, not
-row size; compressing summaries saves nothing.
+Every commit rewrites whole 4 KiB pages twice (WAL, then checkpoint), so volume
+follows the commit count and distinct pages touched, not row size; compressing summaries saves nothing.
 
 **Decision.**
 
@@ -218,11 +217,10 @@ summary of each of its panes moves to `logs.db` next to that session's
 terminal log and is pruned with it.
 
 Cost from S1 at A50: ≈ 0.8 MB/s (APFS) to 1.0 MB/s (btrfs) of disk writes at
-the 250 ms window, ≈ 68–85 GB a day of SSD writes on the hub; at A4 (≈ 4
-updates/s) it is negligible. The agent already sends a summary only when the pane changed and at most every 5 s
-(02), so the rate is an upper bound. If SSD wear becomes a concern, writing
-the latest summary per pane every 30 s cuts total disk writes to ≈ 0.3 MB/s
-(S1, `summary-rate=17`, 250 ms window); that is a setting, not a design change.
+the 250 ms window, ≈ 68–85 GB a day of SSD writes on the hub; at A4 it is
+negligible. The agent sends a summary only on change and at most every 5 s
+(02), so the rate is an upper bound; writing the latest per pane every 30 s
+cuts the total to ≈ 0.3 MB/s (S1, `summary-rate=17`), a setting, not a design change.
 
 ## Q3. Queue or broker
 
@@ -320,28 +318,27 @@ S1 (`logs.db`, 1,389 one-hour sessions prefilled, 30 chunks/s):
 
 At the 50 GiB cap (plan 0.15, 2026-10-08): S1 `logs` again, 2,048 B chunks,
 on the Mac mini (M4 Pro, 64 GiB RAM, internal SSD, APFS), a shared host
-(other agents running, load average 1.3 to 3.3), runs interleaved 2 GB /
-50 GiB in one session; ranges over 3 runs at 2 GB and 2 at 50 GiB
-([raw](../../spikes/sqlite/results/s1-logs-50g.txt)). Depth is read from the
-file and matches SQLite's `dbstat` table.
+(load 1.3 to 3.3), 3 runs at 2 GB and 2 at 50 GiB interleaved in one session
+([raw](../../spikes/sqlite/results/s1-logs-50g.txt)); depth matches `dbstat`.
 
 | File | Prefill | Depth: table / indexes | Commit p99 | Replay 1 h p50 / p99 | Offset lookup p99 | Delete 1 session | Prune 10 % | Vacuum (step p99) |
 |---|---|---|---|---|---|---|---|---|
 | 2.1 GB, 0.5 M chunks | 7–10 s | 4 / 3 | 20–34 ms | 11–20 / 24–34 ms | 1.0–2.5 ms | 4.8–9.2 ms | 138 sessions, 0.85–1.29 s | 50,568 pages in 0.86–0.91 s (36–45 ms) |
 | 53.6 GB (49.9 GiB), 12.9 M chunks | 4 m 42–45 s | 4 / 4 | 21–24 ms | 16–17 / 35–40 ms | 1.2–1.4 ms | 5.8–6.2 ms | 3,583 sessions, 21.6–22.0 s | 1,305,360 pages in 23–26 s (70–74 ms) |
 
-The indexes gain one level and the table none. Commit, lookup and delete
-showed no change beyond run-to-run spread; replay p99 rises by about 9 ms and vacuum step p99
-nearly doubles. Single outliers were a 242 ms commit at 2 GB and a 344 ms vacuum step
-at 50 GiB, both inside the 1 s batch window. Prune and vacuum time grow with
-the amount removed. No block reads were counted in any run (`/usr/bin/time
--l`): the file was served from memory, so a cold cache is not measured. With
-smaller chunks (Muse ≈ 650 B; Claude ≈ 470 B, 2026-10-12) hold several times
-more rows, a shape not run at 50 GiB. Each 2,048 B chunk took a 4 KiB
-page of its own (12.9 M chunks, 26.4 GB of chunk data, in a 53.6 GB file): a
-chunk of about 2 to 4 KB costs one page, so the store on disk is larger than
-the chunk bytes and the cap holds fewer days than the monthly volumes below
-suggest.
+Cold-cache re-run at the cap (#60, 2026-10-20, same host, file on an external
+USB SSD, `synchronous=FULL`, `fullfsync=ON`;
+[raw](../../spikes/sqlite/results/s1-logs-50g-cold.txt)): prefill and measure as separate
+processes (`-reuse`), the cache cycled with 84 GB of random reads (86 MB free at start).
+Cold: commit p99 181 ms, replay p99 180 ms,
+lookup p99 1.2 ms, prune 23.3 s, vacuum 90.5 s (step p99 166 ms); maxima under
+182 ms, so every threshold passes. Same-disk warm medians (replay p50 14.4 ms,
+vacuum step p50 55.1 ms) put the cold penalty in reads (replay p50 140.5 ms,
+vacuum 2.4×); commit p50 is identical (106 vs 112 ms, fsync-bound). `time -l`
+counts 0 block inputs on this host, so coldness rests on the cycling, ~25 GB of
+disk traffic, and this signature. Each 2,048 B chunk takes a 4 KiB page of its
+own; shapes with smaller chunks (Muse p50 10 B; Claude 470 B) hold many more
+rows and are not run at 50 GiB.
 
 **Decision: B.** A second SQLite file, `logs.db`, with its own writer
 goroutine (the `logReceiver`'s writer), same pragmas as `state.db` plus
@@ -378,6 +375,9 @@ Claude Code, one goal hour 2026-10-12 (Mac mini, 2.1.296, 120×40 pipe-pane; [ra
 one scratch session (Go CLI from nothing, 7 prompts, 5 answers), 2.35 MB over 1.01 h.
 Same shape as Codex: 5-minute framing **14×** (48 B/s, p50 470 B) vs 8× independent 10 s frames;
 whole-stream 16× (40 B/s).
+Muse, one goal hour 2026-10-20 (same Mac mini, 1.4.11; [raw deleted, full table kept](../../spikes/zstdchunk/results/s2-copilot-mac-mini.txt)):
+scratch Go CLI plus REPL, fuzz, profiling, flags and docs (6 prompts), 7.8 MB over 1.09 h.
+Same decision, stronger win: 5-minute framing **31×** (64 B/s, p50 10 B) vs 20× independent 10 s frames; whole-stream 35× (57 B/s).
 
 - A frame needs no end to be read: each flush emits complete zstd blocks, so
   a frame cut short by an agent crash still decodes up to its last block
@@ -394,12 +394,12 @@ or the limit starts a new frame. Each chunk carries `frame_start` and
 the chunk that starts the frame, so seeking costs at most 5 minutes of
 output (≈ 1.5 MB raw for Codex). This is within 7 % of the whole-hour ratio.
 
-**Volume, corrected.** Busy panes write 65 B/s (Muse, verified-facts) to 348 B/s (Codex,
-S2) after compression. Claude Code measured 40 B/s whole-stream (48 at 5-minute
-framing) on 2026-10-12, below the span's floor; the budgeted span is unchanged until
-the Muse leg lands and re-derives it (#60). The size cap therefore matters: **default
+**Volume, corrected.** Busy panes write 64 B/s (Muse, S2 2026-10-20: 7.1 MB/h raw,
+31× at the 5-minute framing) to 348 B/s (Codex, S2) after compression; Claude Code
+measured 48 B/s at the framing on 2026-10-12. The budgeted span is unchanged: Muse
+lands on its old 65 B/s floor (#60). The size cap therefore matters: **default
 50 GiB**, oldest `FINAL` sessions pruned first, and the Usage view shows how many days
-the cap currently holds. Chunks are ≈ 3.3 KB, which S1 measured above.
+the cap currently holds. Shipped chunks span ≈ 10 B (Muse) to ≈ 3.3 KB (Codex).
 
 ## Q7. Replay budget
 
@@ -494,6 +494,6 @@ second engine to learn.
 
 | Gap | Cover |
 |---|---|
-| `logs.db` at the 50 GiB cap with a cold page cache | Measured warm on 2026-10-08 (Q6, issue #60): indexes one level deeper, every single transaction and vacuum step within the 1 s batch window; no block reads were counted on the 64 GiB host. A cold run gates the merge of plan row 25, not its start: the `logs` scenario with a new spike flag, `-reuse`, that opens a prefilled `logs.db` and skips schema, vacuum and prefill, so prefill and measuring run as separate processes (prune and vacuum change the file, so each prefill gives one cold run); on a file larger than the machine's RAM (the hub MacBook preferred), or after the owner runs `sudo purge` by hand between the two processes, with the measuring process showing disk reads (`/usr/bin/time -l` block input operations in the thousands, not 0). Pass: commit p99 ≤ 250 ms; every commit, prune transaction and vacuum step under 1 s; replay 1 h p99 ≤ 1 s; offset lookup p99 ≤ 100 ms |
-| Muse under the framing above (S2 measured Codex; Claude Code measured 2026-10-12: 14× at the 5-minute framing vs 8× for independent 10 s frames, same shape as Codex, Q6 table) | Re-run `zstdchunk` on one Muse goal hour; this measurement (issue #60) gates the v1 logs work, plan item 0.15 (section 3). Blocked 2026-10-12: the plan stands 98% used (6,888 / 7,000 AIC), so an hour-long recording would overspend the owner's quota — it needs a quota reset or top-up, or owner-designated live sessions |
+| `logs.db` at the 50 GiB cap with a cold page cache | **Measured 2026-10-20 (#60, [raw](../../spikes/sqlite/results/s1-logs-50g-cold.txt))**: thresholds pass on a cache-cycled run — commit p99 181 ms, replay p99 180 ms, lookup p99 1.2 ms, prune and vacuum steps under 182 ms. Gate letter NOT met as written: 53.6 GiB file < 64 GiB RAM, no `sudo purge` on this host, `time -l` reads 0 even for disk I/O here; coldness rests instead on 84 GB random-read cycling (86 MB free at start), ~25 GB disk traffic in the run, and the same-disk latency signature (replay p50 14.4→140.5 ms, vacuum step 2.4×; commit p50 identical 106 vs 112 ms, fsync-bound), with a 2 GiB A/B control proving the procedure yields disk-served reads. Same host, pragmas, WAL, one writer; file on an external USB SSD whose commits cost ~110 ms vs ~8 ms internal, so commit numbers carry that disk penalty. Row closed on this substitute evidence (arbiter ruling, #391); row 25 may merge on this. |
+| Muse under the framing above | **Measured 2026-10-20 (#60, [raw deleted, full table kept](../../spikes/zstdchunk/results/s2-copilot-mac-mini.txt))**: one Muse goal hour (1.4.11, 7.1 MB/h raw) gives **31×** at the 5-minute framing vs 20× for independent 10 s frames (whole-stream 35×) — a stronger win than Codex/Claude (14× vs 8×), so the framing decision holds for all three harnesses. The 2026-10-12 quota block lifted with the Oct 18 weekly reset; the hour cost ~4% of the weekly budget. Row closed. |
 | Harness transcripts (K3) compression | Measured in v3 before K3 ships. At A50 the raw transcript rate (1.08 MB/s) is higher than the terminal logs, so K3 stays opt-in and compressed |

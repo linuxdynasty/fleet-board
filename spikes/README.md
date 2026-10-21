@@ -47,7 +47,7 @@ event-ingest measurements for the #40 foundation, including its limits.
   64 GiB RAM, internal SSD, APFS), `-prefill 12900000` (49.9 GiB) against
   `-prefill 500000` in the same session; the run prints each B-tree's depth
   ([`results/s1-logs-50g.txt`](sqlite/results/s1-logs-50g.txt)).
-- `logs` cold-cache run (plan 0.15, still open): fill and measure run as
+- `logs` cold-cache run (plan 0.15, recorded 2026-10-20 in #60): fill and measure run as
   separate processes — `./s1 -scenario logs -prefill 12900000 -prefill-only
   -dir <dir>`, drop the page cache, then `./s1 -scenario logs -reuse -dir
   <dir>`; each prefill gives one cold run.
