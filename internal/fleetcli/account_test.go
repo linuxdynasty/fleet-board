@@ -150,3 +150,20 @@ func TestAccountUsageErrors(t *testing.T) {
 		})
 	}
 }
+
+// TestAccountCreateKeepsAnExplicitZeroReserve proves presence survives the
+// create path: --reserve-percent 0 stores a zero reserve instead of
+// silently defaulting to 10.
+func TestAccountCreateKeepsAnExplicitZeroReserve(t *testing.T) {
+	h := startHubWithExtra(t, false, seedGitHubRow)
+	code, out, diagnostic := invokeSecret(t, h, h.secret,
+		"account", "create", "--harness", "opencode", "--provider", "anthropic",
+		"--display-name", "flat", "--reserve-percent", "0",
+		"--request-id", "cli-acc-zero", "--json")
+	if code != 0 {
+		t.Fatalf("create = %d: %s", code, diagnostic)
+	}
+	if !strings.Contains(out, `"reservePercent":0`) {
+		t.Fatalf("explicit zero reserve = %s, want reservePercent 0", out)
+	}
+}

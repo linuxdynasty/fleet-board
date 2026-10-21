@@ -2,10 +2,12 @@ package fleetcli
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
 	"github.com/spf13/cobra"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 
@@ -72,6 +74,27 @@ func (i *invocation) addMachineCommands(root *cobra.Command) {
 	root.AddCommand(parent)
 }
 
+// writeTokenJSON renders the enrollment answer without the standalone
+// token field: the fresh secret reaches stdout exactly once, inside the
+// ready-to-copy enroll command. The shape keeps the response's JSON names
+// and value encodings, minus that one field.
+func writeTokenJSON(res *hubv1.CreateEnrollmentTokenResponse) ([]byte, error) {
+	raw, err := (protojson.MarshalOptions{}).Marshal(res)
+	if err != nil {
+		return nil, err
+	}
+	var doc map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		return nil, err
+	}
+	delete(doc, "token")
+	out, err := json.Marshal(doc)
+	if err != nil {
+		return nil, err
+	}
+	return append(out, '\n'), nil
+}
+
 // splitLabels reads --labels as a comma list. An explicitly empty list
 // clears the labels; every label is capped like other owner text.
 func splitLabels(raw string) ([]string, error) {
@@ -132,7 +155,7 @@ func (i *invocation) machineAdd(c *cobra.Command, f *machineAddFlags) error {
 			return nil, errMalformed
 		}
 		if f.json {
-			return writeJSON(res.Msg)
+			return writeTokenJSON(res.Msg)
 		}
 		// The token is shown once, inside the ready-to-copy enroll line.
 		out := res.Msg.GetEnrollCommand() + "\n"

@@ -2,6 +2,7 @@ package fleetcli
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -147,6 +148,22 @@ func overlayRepoSpec(c *cobra.Command, f *repoFlags) (*hubv1.RepoSpec, []string,
 	return spec, derived, nil
 }
 
+// specJSONSetsEnabled reports whether --spec-json explicitly names the
+// enabled field. Proto JSON carries no presence for the scalar, so only
+// the raw document tells an explicit false from an omitted field; an
+// explicit false must survive the true default above.
+func specJSONSetsEnabled(raw string) bool {
+	if raw == "" {
+		return false
+	}
+	var doc map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(raw), &doc); err != nil {
+		return false
+	}
+	_, ok := doc["enabled"]
+	return ok
+}
+
 func (i *invocation) repoCreate(c *cobra.Command, f *repoFlags, id string) error {
 	host, path, err := splitRepoID(id)
 	if err != nil {
@@ -156,7 +173,7 @@ func (i *invocation) repoCreate(c *cobra.Command, f *repoFlags, id string) error
 	if err != nil {
 		return err
 	}
-	if !c.Flags().Changed("enabled") && f.specJSON == "" {
+	if !c.Flags().Changed("enabled") && !specJSONSetsEnabled(f.specJSON) {
 		spec.Enabled = true
 	}
 	spec.Repo = &typev1.RepoRef{Host: host, Path: path}

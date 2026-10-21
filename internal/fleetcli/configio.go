@@ -18,6 +18,19 @@ import (
 // carries no file contents, only the failure.
 var errReadFile = errors.New("could not read fleet.yaml")
 
+// errPlanHash reports a bare import: the server applies only the hash of a
+// plan the owner already saw, so a run without --dry-run or
+// --expected-plan-hash applies nothing and names that flow instead of
+// silently applying a plan nobody reviewed.
+var errPlanHash = errors.New("import needs the reviewed plan hash")
+
+// errNotPortable reports an export the YAML exchange cannot render yet:
+// the hub carries hub IDs (account bindings, tracker projects) whose
+// portable references land with #48, so export refuses by name instead of
+// failing in the codec. The first unportable path rides along for tests;
+// the diagnostic stays fixed.
+var errNotPortable = errors.New("this hub cannot be rendered as portable YAML yet")
+
 type importFlags struct {
 	json             bool
 	requestID        string
@@ -29,7 +42,7 @@ type importFlags struct {
 func (i *invocation) addImportCommand(root *cobra.Command) {
 	var f importFlags
 	importCmd := &cobra.Command{
-		Use: "import FILE", Short: "Validate and apply a fleet.yaml",
+		Use: "import FILE", Short: "Show a fleet.yaml plan and apply a reviewed one",
 		Args: cobra.ExactArgs(1), RunE: func(c *cobra.Command, argv []string) error {
 			return i.configImport(c, &f, argv[0])
 		},
@@ -45,15 +58,20 @@ func (i *invocation) addImportCommand(root *cobra.Command) {
 // not carry. The hub stamps repo.code_host (an integration id) on export,
 // but a document carries ids nowhere and import re-derives the host by
 // matching, so clearing it is lossless; --json keeps the raw response.
-// Anything else unportable (tracker or binding machine ids) still fails
-// loudly in Encode: dropping those would silently lose them on re-import.
-func portableConfig(cfg *hubv1.FleetConfig) *hubv1.FleetConfig {
+// Anything else unportable (tracker or binding machine ids) still fails,
+// loudly and by name: dropping those would silently lose them on
+// re-import, and portable references with hub-side translation are #48's
+// work, so export names the gap instead of an opaque codec error.
+func portableConfig(cfg *hubv1.FleetConfig) (*hubv1.FleetConfig, error) {
 	for _, r := range cfg.GetRepos() {
 		if repo := r.GetRepo(); repo != nil {
 			repo.CodeHost = nil
 		}
 	}
-	return cfg
+	if unportable := fleetconfig.UnportableIDs(cfg); len(unportable) > 0 {
+		return nil, fmt.Errorf("%w: %s", errNotPortable, unportable[0])
+	}
+	return cfg, nil
 }
 
 // readImportFile loads one fleet.yaml exchange document. The file is the
@@ -122,25 +140,10 @@ func (i *invocation) configImport(c *cobra.Command, f *importFlags, path string)
 			}
 			return renderPlan(f.json, res.Msg)
 		default:
-			// Show-what-runs: plan first under a throwaway key, then
-			// apply quoting that plan's hash, so the apply runs only
-			// what was shown.
-			planID, err := defaultRequestID()
-			if err != nil {
-				return nil, err
-			}
-			planned, err := plan(planID)
-			if err != nil {
-				return nil, err
-			}
-			res, err := client.ImportConfig(ctx, withSecret(&hubv1.ImportConfigRequest{
-				RequestId: requestID, Config: cfg,
-				ExpectedPlanHash: planned.GetPlanHash(), AllowSkipped: f.allowSkipped,
-			}, secret))
-			if err != nil {
-				return nil, err
-			}
-			return renderPlan(f.json, res.Msg)
+			// No reviewed hash: the plan this run would apply was never
+			// shown, so apply nothing. The owner reviews it with
+			// --dry-run and re-runs quoting its hash.
+			return nil, fmt.Errorf("%w: %w", errCommand, errPlanHash)
 		}
 	})
 }
@@ -161,7 +164,9 @@ func renderPlan(jsonOut bool, res *hubv1.ImportConfigResponse) ([]byte, error) {
 		}
 		entity := strings.TrimPrefix(change.GetEntity().String(), "CONFIG_ENTITY_")
 		kind := strings.TrimPrefix(change.GetKind().String(), "CONFIG_CHANGE_KIND_")
-		fmt.Fprintf(&b, "%s %s %s", entity, change.GetName(), kind)
+		// The name comes from the owner's document and may carry terminal
+		// control characters, so it is quoted at this output boundary.
+		fmt.Fprintf(&b, "%s %s %s", entity, strconvQuote(change.GetName()), kind)
 		if len(change.GetChangedFields()) > 0 {
 			fmt.Fprintf(&b, " changed=%s", strings.Join(change.GetChangedFields(), ","))
 		}

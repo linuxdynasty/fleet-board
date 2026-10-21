@@ -123,5 +123,11 @@ func safeError(err error) string {
 	if errors.Is(err, errReadFile) {
 		return "could not read fleet.yaml"
 	}
+	if errors.Is(err, errPlanHash) {
+		return "run fleet import --dry-run first, then re-run with --expected-plan-hash"
+	}
+	if errors.Is(err, errNotPortable) {
+		return "fleet export cannot render this hub as portable YAML yet"
+	}
 	return "request failed"
 }

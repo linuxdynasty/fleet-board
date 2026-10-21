@@ -3,6 +3,7 @@ package fleetcli_test
 import (
 	"crypto/sha256"
 	"database/sql"
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -62,7 +63,13 @@ func TestMachineAddPrintsTheEnrollCommand(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("add --json = %d: %s", code, diagnostic)
 	}
-	if !strings.Contains(jsonOut, `"token":"fbe1_`) {
+	// The projection carries no standalone token field; the secret shows
+	// up once, inside the ready-to-copy command (see
+	// TestMachineAddJSONShowsTheTokenOnce).
+	if strings.Contains(jsonOut, `"token":`) {
+		t.Fatalf("add JSON = %s", jsonOut)
+	}
+	if !strings.Contains(jsonOut, `"enrollCommand":"fleet-agent enroll --token fbe1_`) {
 		t.Fatalf("add JSON = %s", jsonOut)
 	}
 	golden(t, "machine-add", jsonOut)
@@ -158,4 +165,45 @@ func TestMachineUsageErrors(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestMachineAddJSONShowsTheTokenOnce proves the --json projection carries
+// no standalone token field: the fresh secret reaches stdout exactly once,
+// inside the ready-to-copy enroll command.
+func TestMachineAddJSONShowsTheTokenOnce(t *testing.T) {
+	h := startHubWithExtra(t, false, seedGitHubRow)
+	code, jsonOut, diagnostic := invokeSecret(t, h, h.secret,
+		"machine", "add", "--name", "solo", "--request-id", "cli-madd-1", "--json")
+	if code != 0 {
+		t.Fatalf("add --json = %d: %s", code, diagnostic)
+	}
+	if strings.Contains(jsonOut, `"token":`) {
+		t.Fatalf("add --json carries a standalone token field: %s", jsonOut)
+	}
+	token := tokenFromEnrollCommand(t, jsonOut)
+	if got := strings.Count(jsonOut, token); got != 1 {
+		t.Fatalf("add --json shows the token %d times, want once: %s", got, jsonOut)
+	}
+}
+
+// tokenFromEnrollCommand reads the fbe1_ secret out of the enroll command
+// in a machine-add response, failing the test when it is missing.
+func tokenFromEnrollCommand(t *testing.T, jsonOut string) string {
+	t.Helper()
+	var res struct {
+		EnrollCommand string `json:"enrollCommand"`
+	}
+	if err := json.Unmarshal([]byte(jsonOut), &res); err != nil {
+		t.Fatal(err)
+	}
+	const prefix = "fbe1_"
+	at := strings.Index(res.EnrollCommand, prefix)
+	if at < 0 {
+		t.Fatalf("enroll command has no token: %q", res.EnrollCommand)
+	}
+	end := at + len(prefix)
+	for end < len(res.EnrollCommand) && res.EnrollCommand[end] != ' ' && res.EnrollCommand[end] != '"' {
+		end++
+	}
+	return res.EnrollCommand[at:end]
 }

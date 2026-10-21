@@ -96,3 +96,37 @@ func TestRepoUsageErrors(t *testing.T) {
 		})
 	}
 }
+
+// TestRepoCreateSpecJSONWithoutEnabledKeepsTheTrueDefault proves a spec
+// document that sets other fields but omits enabled still watches an
+// enabled repo: only an explicit --enabled or an explicit JSON enabled
+// may start a repo paused.
+func TestRepoCreateSpecJSONWithoutEnabledKeepsTheTrueDefault(t *testing.T) {
+	h := startHubWithExtra(t, false, seedGitHubRow)
+	code, out, diagnostic := invokeSecret(t, h, h.secret,
+		"repo", "create", "github.com/acme/api", "--request-id", "cli-repo-spec-1",
+		"--spec-json", `{"branch_pattern":"fleet/{work}"}`, "--json")
+	if code != 0 {
+		t.Fatalf("create = %d: %s", code, diagnostic)
+	}
+	if !strings.Contains(out, `"enabled":true`) {
+		t.Fatalf("spec-json create without enabled = %s, want enabled true", out)
+	}
+}
+
+// TestRepoCreateSpecJSONExplicitEnabledFalseStaysPaused proves the default
+// above does not bulldoze an explicit false: a paused repo stays pausable
+// through the document. Proto JSON drops a false scalar, so the test
+// asserts the true default was not forced on.
+func TestRepoCreateSpecJSONExplicitEnabledFalseStaysPaused(t *testing.T) {
+	h := startHubWithExtra(t, false, seedGitHubRow)
+	code, out, diagnostic := invokeSecret(t, h, h.secret,
+		"repo", "create", "github.com/acme/api", "--request-id", "cli-repo-spec-2",
+		"--spec-json", `{"enabled":false,"branch_pattern":"fleet/{work}"}`, "--json")
+	if code != 0 {
+		t.Fatalf("create = %d: %s", code, diagnostic)
+	}
+	if strings.Contains(out, `"enabled":true`) {
+		t.Fatalf("explicit paused create = %s, want no forced enabled true", out)
+	}
+}

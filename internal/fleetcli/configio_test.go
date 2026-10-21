@@ -78,7 +78,7 @@ func TestImportDryRunShowsThePlan(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("dry run = %d: %s", code, diagnostic)
 	}
-	if !strings.Contains(out, "REPO github.com/acme/web CREATE") || !strings.Contains(out, "plan_hash") {
+	if !strings.Contains(out, `REPO "github.com/acme/web" CREATE`) || !strings.Contains(out, "plan_hash") {
 		t.Fatalf("dry run output = %q", out)
 	}
 	code, jsonOut, diagnostic := invokeSecret(t, h, h.secret,
@@ -102,11 +102,35 @@ func TestImportDryRunShowsThePlan(t *testing.T) {
 	golden(t, "import-dry-run", jsonOut)
 }
 
+// reviewedPlanHash runs the dry run the apply must quote and returns its
+// hash, failing the test when the plan does not come back unapplied.
+func reviewedPlanHash(t *testing.T, h localHub, path, requestID string) string {
+	t.Helper()
+	code, dryOut, diagnostic := invokeSecret(t, h, h.secret,
+		"import", path, "--dry-run", "--request-id", requestID, "--json")
+	if code != 0 {
+		t.Fatalf("dry run = %d: %s", code, diagnostic)
+	}
+	var dry struct {
+		Applied  bool   `json:"applied"`
+		PlanHash string `json:"planHash"`
+	}
+	if err := json.Unmarshal([]byte(dryOut), &dry); err != nil {
+		t.Fatal(err)
+	}
+	if dry.Applied || dry.PlanHash == "" {
+		t.Fatalf("dry run = %+v, want unapplied with a hash", dry)
+	}
+	return dry.PlanHash
+}
+
 func TestImportAppliesThenRefusesAStaleHash(t *testing.T) {
 	h := startHubWithExtra(t, false, seedGitHubRow)
 	path := writeYAML(t, "format_version: 1\nrepos:\n  - repo:\n      host: github.com\n      path: acme/web\n")
+	hash := reviewedPlanHash(t, h, path, "cli-imp-0")
 	code, jsonOut, diagnostic := invokeSecret(t, h, h.secret,
-		"import", path, "--request-id", "cli-imp-1", "--json")
+		"import", path, "--request-id", "cli-imp-1",
+		"--expected-plan-hash", hash, "--json")
 	if code != 0 {
 		t.Fatalf("apply = %d: %s", code, diagnostic)
 	}
@@ -252,10 +276,12 @@ func TestConfigWalkThroughCLI(t *testing.T) {
 	}
 	changedPath := writeYAML(t, string(changedYAML))
 	code, dryOut, diagnostic := run("import", changedPath, "--dry-run", "--request-id", "walk-dry")
-	if code != 0 || !strings.Contains(dryOut, "REPO github.com/acme/web CREATE") {
+	if code != 0 || !strings.Contains(dryOut, `REPO "github.com/acme/web" CREATE`) {
 		t.Fatalf("walk changed dry run = %d, %q, %q", code, dryOut, diagnostic)
 	}
-	code, appliedJSON, diagnostic := run("import", changedPath, "--request-id", "walk-apply", "--json")
+	hash := reviewedPlanHash(t, h, changedPath, "walk-plan-hash")
+	code, appliedJSON, diagnostic := run("import", changedPath,
+		"--request-id", "walk-apply", "--expected-plan-hash", hash, "--json")
 	if code != 0 {
 		t.Fatalf("walk apply = %d: %s", code, diagnostic)
 	}
@@ -328,5 +354,63 @@ func TestExportThenImportPlansNothing(t *testing.T) {
 		if c.Kind != "CONFIG_CHANGE_KIND_UNCHANGED" {
 			t.Errorf("round-trip line %+v is not unchanged", c)
 		}
+	}
+}
+
+// TestImportWithoutHashNeedsAReviewedPlan proves a bare import applies
+// nothing: the server only applies the hash of a plan the owner already
+// saw, so the command fails and names the --dry-run then
+// --expected-plan-hash flow instead of silently applying a fresh plan.
+func TestImportWithoutHashNeedsAReviewedPlan(t *testing.T) {
+	h := startHubWithExtra(t, false, seedGitHubRow)
+	path := writeYAML(t, "format_version: 1\nrepos:\n  - repo:\n      host: github.com\n      path: acme/web\n")
+	code, out, diagnostic := invokeSecret(t, h, h.secret,
+		"import", path, "--request-id", "cli-imp-plain")
+	if code != 1 || out != "" || !strings.Contains(diagnostic, "expected-plan-hash") {
+		t.Fatalf("plain import = %d, %q, %q, want a refusal naming expected-plan-hash", code, out, diagnostic)
+	}
+}
+
+// TestImportPlanQuotesUntrustedNames proves a document name with terminal
+// control characters never reaches the terminal raw: the plan line quotes
+// the name at the output boundary.
+func TestImportPlanQuotesUntrustedNames(t *testing.T) {
+	h := startHubWithExtra(t, false, seedGitHubRow)
+	path := writeYAML(t, "format_version: 1\naccounts:\n  - harness:\n      name: codex\n    provider: openai\n    spec:\n      display_name: \"\\u001b[2Jpwned\"\n")
+	code, out, diagnostic := invokeSecret(t, h, h.secret,
+		"import", path, "--dry-run", "--request-id", "cli-imp-quote")
+	if code != 0 {
+		t.Fatalf("dry run = %d: %s", code, diagnostic)
+	}
+	if strings.Contains(out, "\x1b") {
+		t.Fatalf("plan printed a raw escape sequence: %q", out)
+	}
+	if !strings.Contains(out, `"\x1b[2Jpwned"`) {
+		t.Fatalf("plan did not quote the name: %q", out)
+	}
+}
+
+// TestExportAfterMappingNamesThePortableGap proves the walk-test gap: once
+// a Codex account is mapped to its machine, the hub carries IDs the YAML
+// exchange cannot render yet, and export refuses with a clear diagnostic
+// instead of an opaque failure.
+func TestExportAfterMappingNamesThePortableGap(t *testing.T) {
+	h := startHubWithExtra(t, true, seedGitHubRow)
+	code, created, diagnostic := invokeSecret(t, h, h.secret,
+		"account", "create", "--harness", "codex", "--provider", "openai",
+		"--display-name", "mapped", "--request-id", "cli-exp-map-1", "--json")
+	if code != 0 {
+		t.Fatalf("create = %d: %s", code, diagnostic)
+	}
+	id := createdAccountID(t, created)
+	if code, _, diagnostic := invokeSecret(t, h, h.secret,
+		"account", "update", id,
+		"--spec-json", `{"bindings":[{"machine":{"value":"`+seed.MachineLaptop+`"},"profile":""}]}`,
+		"--update-mask", "spec.bindings", "--request-id", "cli-exp-map-2"); code != 0 {
+		t.Fatalf("bindings update = %d: %s", code, diagnostic)
+	}
+	code, out, diagnostic := invoke(t, h, "export")
+	if code != 1 || out != "" || !strings.Contains(diagnostic, "portable") {
+		t.Fatalf("mapped export = %d, %q, %q, want a refusal naming the portable gap", code, out, diagnostic)
 	}
 }

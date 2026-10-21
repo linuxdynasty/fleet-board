@@ -175,7 +175,11 @@ func (i *invocation) read(ctx context.Context, c hubv1connect.FleetServiceClient
 			return messageJSON(r.Msg)
 		}
 		// The exchange document: canonical FleetConfig JSON as YAML.
-		return fleetconfig.Encode(portableConfig(r.Msg.GetConfig()))
+		portable, err := portableConfig(r.Msg.GetConfig())
+		if err != nil {
+			return nil, fmt.Errorf("%w: %w", errCommand, err)
+		}
+		return fleetconfig.Encode(portable)
 	}
 	return nil, errUsage
 }

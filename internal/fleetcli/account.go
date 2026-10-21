@@ -125,7 +125,10 @@ func overlayAccountSpec(c *cobra.Command, f *accountFlags) (*hubv1.AccountSpec, 
 		derived = append(derived, "spec.budget_kind")
 	}
 	if changed("reserve-percent") {
-		spec.ReservePercent = f.reservePercent
+		// The contract field is optional, so an explicit zero arrives as
+		// a set zero instead of reading as unset on the server.
+		v := f.reservePercent
+		spec.ReservePercent = &v
 		derived = append(derived, "spec.reserve_percent")
 	}
 	if changed("consent") {

@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/proto"
 
 	hubv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/hub/v1"
 	typev1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/type/v1"
@@ -77,7 +78,7 @@ func TestCreateAccountValidatesItsFields(t *testing.T) {
 		}(), field: "spec.budget_kind"},
 		{name: "reserve capped", requestID: "r", harness: "opencode", provider: "anthropic", spec: func() *hubv1.AccountSpec {
 			s := accountSpec()
-			s.ReservePercent = 51
+			s.ReservePercent = proto.Uint32(51)
 			return s
 		}(), field: "spec.reserve_percent"},
 		{name: "display name required", requestID: "r", harness: "opencode", provider: "anthropic", spec: func() *hubv1.AccountSpec {
@@ -152,7 +153,7 @@ func TestUpdateAccountMasksAndVersions(t *testing.T) {
 		RequestId: "req-2",
 		Account: &hubv1.Account{
 			Id:   first.GetId(),
-			Spec: &hubv1.AccountSpec{ReservePercent: 25},
+			Spec: &hubv1.AccountSpec{ReservePercent: proto.Uint32(25)},
 		},
 		UpdateMask: fieldMask([]string{"spec.reserve_percent"}),
 	}))
@@ -170,7 +171,7 @@ func TestUpdateAccountMasksAndVersions(t *testing.T) {
 		RequestId: "req-3",
 		Account: &hubv1.Account{
 			Id:   first.GetId(),
-			Spec: &hubv1.AccountSpec{ReservePercent: 30},
+			Spec: &hubv1.AccountSpec{ReservePercent: proto.Uint32(30)},
 		},
 		UpdateMask: fieldMask([]string{"spec.reserve_percent"}), ExpectedVersion: 1,
 	}
@@ -186,7 +187,7 @@ func TestUpdateAccountMasksAndVersions(t *testing.T) {
 		RequestId: "req-4",
 		Account: &hubv1.Account{
 			Id:   &typev1.AccountId{Value: "missing"},
-			Spec: &hubv1.AccountSpec{ReservePercent: 30},
+			Spec: &hubv1.AccountSpec{ReservePercent: proto.Uint32(30)},
 		},
 		UpdateMask: fieldMask([]string{"spec.reserve_percent"}),
 	}))
@@ -198,7 +199,7 @@ func TestUpdateAccountMasksAndVersions(t *testing.T) {
 		RequestId: "req-5",
 		Account: &hubv1.Account{
 			Id:   first.GetId(),
-			Spec: &hubv1.AccountSpec{ReservePercent: 30},
+			Spec: &hubv1.AccountSpec{ReservePercent: proto.Uint32(30)},
 		},
 		UpdateMask: fieldMask([]string{"spec.harness"}),
 	}))
@@ -301,7 +302,7 @@ func TestAccountReserveBoundary(t *testing.T) {
 	t.Parallel()
 	e := newFleetEnv(t, localUser("alice"), trusted(false))
 	fifty := accountSpec()
-	fifty.ReservePercent = 50
+	fifty.ReservePercent = proto.Uint32(50)
 	got := createOwnerAccount(t, e, "req-50", fifty)
 	if got.GetSpec().GetReservePercent() != 50 {
 		t.Errorf("reserve = %d, want 50 stored", got.GetSpec().GetReservePercent())

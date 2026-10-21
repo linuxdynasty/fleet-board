@@ -1,6 +1,5 @@
 {
   "caFingerprint": "\u003csecret\u003e",
   "enrollCommand": "\u003csecret\u003e",
-  "expireTime": "\u003ctime\u003e",
-  "token": "\u003csecret\u003e"
+  "expireTime": "\u003ctime\u003e"
 }
