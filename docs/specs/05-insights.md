@@ -329,7 +329,8 @@ Coverage per `fleet-telemetry-coverage`; names follow
   `hub.insights.collect_report{goal_id}`, `hub.insights.suggest`;
   `agent.scratch.ensure`, `agent.scratch.collect`.
 - Logs: `insights.rollup{day, rows}`, `insights.rebuilt{from, windows,
-  accounts}`, `insights.queried{efficiency, series, goals_live}`,
+  accounts}`, `insights.pruned{rows, before}`,
+  `insights.queried{efficiency, series, goals_live}`,
   `insights.query_refused{reason}`,
   `insights.query_failed{step, err_kind, actor}`,
   `insights.report_stored{goal_id,

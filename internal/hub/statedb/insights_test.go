@@ -140,6 +140,122 @@ func TestInsightRollupMetaRoundTrip(t *testing.T) {
 	}
 }
 
+// TestInsightRollupPassCommitsRowsAndMetaTogether: one rollup pass is
+// one writer transaction (rollup AGENTS.md), so the window rows and
+// both meta keys land together and an invalid row stores nothing.
+func TestInsightRollupPassCommitsRowsAndMetaTogether(t *testing.T) {
+	t.Parallel()
+	dir := stateDir(t)
+	create(t, dir)
+	s := open(t, dir)
+	ctx := context.Background()
+	end := time.Date(2026, time.October, 13, 0, 0, 0, 0, time.UTC)
+	computed := time.Date(2026, time.October, 14, 1, 0, 0, 0, time.UTC)
+	start := time.Date(2026, time.October, 6, 0, 0, 0, 0, time.UTC)
+
+	if err := statedb.StoreInsightRollupPass(ctx, s, []statedb.InsightQuotaWindow{
+		{
+			AccountID: "acct-1", BucketKey: "weekly_all", WindowEnd: end,
+			WindowJSON: []byte(`{"bucketKey":"weekly_all"}`), Updated: end,
+		},
+	}, computed, start); err != nil {
+		t.Fatalf("StoreInsightRollupPass: %v", err)
+	}
+	rows, err := statedb.ListInsightQuotaWindows(ctx, s, "acct-1", end.Add(-time.Hour), end.Add(time.Hour))
+	if err != nil {
+		t.Fatalf("ListInsightQuotaWindows: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("windows = %d, want the 1 stored row", len(rows))
+	}
+	gotComputed, gotStart, err := statedb.InsightRollupMeta(ctx, s)
+	if err != nil {
+		t.Fatalf("InsightRollupMeta: %v", err)
+	}
+	if !gotComputed.Equal(computed) || !gotStart.Equal(start) {
+		t.Errorf("meta = (%v, %v), want (%v, %v)", gotComputed, gotStart, computed, start)
+	}
+
+	// An invalid row stores nothing: no window rows and no meta keys.
+	bad := statedb.InsightQuotaWindow{WindowEnd: end, WindowJSON: []byte(`{}`), Updated: end}
+	if err := statedb.StoreInsightRollupPass(ctx, s, []statedb.InsightQuotaWindow{bad}, computed, start); err == nil {
+		t.Fatal("StoreInsightRollupPass with an invalid row succeeded, want an error")
+	}
+	rows, err = statedb.ListInsightQuotaWindows(ctx, s, "", end.Add(-time.Hour), end.Add(time.Hour))
+	if err != nil {
+		t.Fatalf("ListInsightQuotaWindows: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Errorf("windows after the failed pass = %d, want still 1 (nothing stored)", len(rows))
+	}
+}
+
+// TestInsightRollupPassWithoutStartSkipsMeta: with no history yet the
+// rows land but the meta stays unset, so GetInsights falls back to the
+// live clock.
+func TestInsightRollupPassWithoutStartSkipsMeta(t *testing.T) {
+	t.Parallel()
+	dir := stateDir(t)
+	create(t, dir)
+	s := open(t, dir)
+	ctx := context.Background()
+	end := time.Date(2026, time.October, 13, 0, 0, 0, 0, time.UTC)
+	computed := time.Date(2026, time.October, 14, 1, 0, 0, 0, time.UTC)
+
+	if err := statedb.StoreInsightRollupPass(ctx, s, []statedb.InsightQuotaWindow{
+		{
+			AccountID: "acct-1", BucketKey: "weekly_all", WindowEnd: end,
+			WindowJSON: []byte(`{}`), Updated: end,
+		},
+	}, computed, time.Time{}); err != nil {
+		t.Fatalf("StoreInsightRollupPass: %v", err)
+	}
+	gotComputed, gotStart, err := statedb.InsightRollupMeta(ctx, s)
+	if err != nil {
+		t.Fatalf("InsightRollupMeta: %v", err)
+	}
+	if !gotComputed.IsZero() || !gotStart.IsZero() {
+		t.Errorf("meta = (%v, %v), want both zero with no history", gotComputed, gotStart)
+	}
+}
+
+// TestInsightQuotaWindowPruneDeletesOnlyOldRows: the 1-year retention
+// (05 section 2) deletes rollup rows older than a year in bounded
+// batches and keeps fresh rows.
+func TestInsightQuotaWindowPruneDeletesOnlyOldRows(t *testing.T) {
+	t.Parallel()
+	dir := stateDir(t)
+	create(t, dir)
+	s := open(t, dir)
+	ctx := context.Background()
+	now := time.Date(2026, time.October, 14, 1, 0, 0, 0, time.UTC)
+	oldEnd := now.Add(-400 * 24 * time.Hour)
+	freshEnd := now.Add(-24 * time.Hour)
+	for _, w := range []statedb.InsightQuotaWindow{
+		{AccountID: "acct-1", BucketKey: "weekly_all", WindowEnd: oldEnd, WindowJSON: []byte(`{}`), Updated: oldEnd},
+		{AccountID: "acct-1", BucketKey: "weekly_all", WindowEnd: freshEnd, WindowJSON: []byte(`{}`), Updated: freshEnd},
+		{AccountID: "acct-2", BucketKey: "weekly_all", WindowEnd: oldEnd, WindowJSON: []byte(`{}`), Updated: oldEnd},
+	} {
+		if err := statedb.UpsertInsightQuotaWindow(ctx, s, w); err != nil {
+			t.Fatalf("UpsertInsightQuotaWindow: %v", err)
+		}
+	}
+	n, err := statedb.PruneInsightQuotaWindows(ctx, s, now.Add(-365*24*time.Hour), 500)
+	if err != nil {
+		t.Fatalf("PruneInsightQuotaWindows: %v", err)
+	}
+	if n != 2 {
+		t.Errorf("pruned = %d, want the 2 rows older than a year", n)
+	}
+	rows, err := statedb.ListInsightQuotaWindows(ctx, s, "", oldEnd.Add(-time.Hour), now)
+	if err != nil {
+		t.Fatalf("ListInsightQuotaWindows: %v", err)
+	}
+	if len(rows) != 1 || !rows[0].WindowEnd.Equal(freshEnd) {
+		t.Errorf("rows left = %v, want only the fresh window", rows)
+	}
+}
+
 func TestInsightQuotaWindowRangesByAccountAndEnd(t *testing.T) {
 	t.Parallel()
 	dir := stateDir(t)

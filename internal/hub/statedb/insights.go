@@ -68,27 +68,86 @@ func UpsertInsightQuotaWindow(ctx context.Context, s *store.Store, w InsightQuot
 // history.
 func UpsertInsightQuotaWindows(ctx context.Context, s *store.Store, wins []InsightQuotaWindow) error {
 	for _, w := range wins {
-		if w.AccountID == "" || w.BucketKey == "" || w.WindowEnd.IsZero() || w.Updated.IsZero() {
-			return fmt.Errorf("%w: a window needs an account, a bucket, an end and an update time", ErrInsightInvalid)
-		}
-		if !json.Valid(w.WindowJSON) || len(w.WindowJSON) == 0 {
-			return fmt.Errorf("%w: the window is not valid JSON", ErrInsightInvalid)
+		if err := validateInsightQuotaWindow(w); err != nil {
+			return err
 		}
 	}
 	jctx := context.WithoutCancel(ctx) // see insertIdentity
 	return s.Write(ctx, func(tx *sql.Tx) error {
 		for _, w := range wins {
-			_, err := tx.ExecContext(jctx, `INSERT INTO insight_quota_window(account_id, bucket_key, window_end_ms, window_json, updated_ms)
-				VALUES (?, ?, ?, ?, ?)
-				ON CONFLICT(account_id, bucket_key, window_end_ms)
-				DO UPDATE SET window_json = excluded.window_json, updated_ms = excluded.updated_ms`,
-				w.AccountID, w.BucketKey, w.WindowEnd.UnixMilli(), string(w.WindowJSON), w.Updated.UnixMilli())
-			if err != nil {
-				return fmt.Errorf("statedb: upsert insight quota window: %w", err)
+			if err := upsertInsightQuotaWindowTx(jctx, tx, w); err != nil {
+				return err
 			}
 		}
 		return nil
 	})
+}
+
+// StoreInsightRollupPass stores one rollup pass in a single writer
+// transaction: the window rows plus both rollup meta keys (rollup
+// AGENTS.md: one transaction per pass), so a crash never leaves rows
+// without their clock. With no start (no history yet) only the rows
+// land and the meta stays unset, so GetInsights falls back to the
+// live clock. It writes no audit row: rollups are hub-derived history.
+func StoreInsightRollupPass(ctx context.Context, s *store.Store, wins []InsightQuotaWindow, computed, start time.Time) error {
+	for _, w := range wins {
+		if err := validateInsightQuotaWindow(w); err != nil {
+			return err
+		}
+	}
+	if !start.IsZero() && computed.IsZero() {
+		return fmt.Errorf("%w: the rollup meta needs a computed time and a data start", ErrInsightInvalid)
+	}
+	jctx := context.WithoutCancel(ctx) // see insertIdentity
+	return s.Write(ctx, func(tx *sql.Tx) error {
+		for _, w := range wins {
+			if err := upsertInsightQuotaWindowTx(jctx, tx, w); err != nil {
+				return err
+			}
+		}
+		if start.IsZero() {
+			return nil
+		}
+		return setInsightRollupMetaTx(jctx, tx, computed, start)
+	})
+}
+
+// validateInsightQuotaWindow rejects a quota-window row that fails
+// validation: an empty account or bucket, a missing window end, window
+// JSON that is not JSON, or a missing update time.
+func validateInsightQuotaWindow(w InsightQuotaWindow) error {
+	if w.AccountID == "" || w.BucketKey == "" || w.WindowEnd.IsZero() || w.Updated.IsZero() {
+		return fmt.Errorf("%w: a window needs an account, a bucket, an end and an update time", ErrInsightInvalid)
+	}
+	if !json.Valid(w.WindowJSON) || len(w.WindowJSON) == 0 {
+		return fmt.Errorf("%w: the window is not valid JSON", ErrInsightInvalid)
+	}
+	return nil
+}
+
+// upsertInsightQuotaWindowTx rewrites one rollup window row inside the
+// caller's writer transaction.
+func upsertInsightQuotaWindowTx(ctx context.Context, tx *sql.Tx, w InsightQuotaWindow) error {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO insight_quota_window(account_id, bucket_key, window_end_ms, window_json, updated_ms)
+		VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT(account_id, bucket_key, window_end_ms)
+		DO UPDATE SET window_json = excluded.window_json, updated_ms = excluded.updated_ms`,
+		w.AccountID, w.BucketKey, w.WindowEnd.UnixMilli(), string(w.WindowJSON), w.Updated.UnixMilli()); err != nil {
+		return fmt.Errorf("statedb: upsert insight quota window: %w", err)
+	}
+	return nil
+}
+
+// setInsightRollupMetaTx records both rollup meta keys inside the
+// caller's writer transaction.
+func setInsightRollupMetaTx(ctx context.Context, tx *sql.Tx, computed, start time.Time) error {
+	for key, ms := range map[string]int64{insightMetaComputed: computed.UnixMilli(), insightMetaStart: start.UnixMilli()} {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO insight_rollup_meta(key, ms) VALUES (?, ?)
+			ON CONFLICT(key) DO UPDATE SET ms = excluded.ms`, key, ms); err != nil {
+			return fmt.Errorf("statedb: set insight rollup meta: %w", err)
+		}
+	}
+	return nil
 }
 
 // ListInsightQuotaWindows reads the stored windows of one account (empty
@@ -140,14 +199,39 @@ func SetInsightRollupMeta(ctx context.Context, s *store.Store, computed, start t
 	}
 	jctx := context.WithoutCancel(ctx) // see insertIdentity
 	return s.Write(ctx, func(tx *sql.Tx) error {
-		for key, ms := range map[string]int64{insightMetaComputed: computed.UnixMilli(), insightMetaStart: start.UnixMilli()} {
-			if _, err := tx.ExecContext(jctx, `INSERT INTO insight_rollup_meta(key, ms) VALUES (?, ?)
-				ON CONFLICT(key) DO UPDATE SET ms = excluded.ms`, key, ms); err != nil {
-				return fmt.Errorf("statedb: set insight rollup meta: %w", err)
-			}
+		return setInsightRollupMetaTx(jctx, tx, computed, start)
+	})
+}
+
+// PruneInsightQuotaWindows deletes the rollup windows ending before
+// before, oldest first, at most limit rows in one writer job, and
+// reports how many it deleted. The hourly housekeeping job calls it
+// until a pass deletes fewer than the limit, so one run never holds
+// the writer long and a backlog clears over a few runs. It writes no
+// audit row: rollups are hub-derived history.
+func PruneInsightQuotaWindows(ctx context.Context, s *store.Store, before time.Time, limit int) (int64, error) {
+	if limit <= 0 {
+		return 0, fmt.Errorf("%w: the prune limit must be positive", ErrInsightInvalid)
+	}
+	jctx := context.WithoutCancel(ctx) // see insertIdentity
+	var n int64
+	err := s.Write(ctx, func(tx *sql.Tx) error {
+		res, err := tx.ExecContext(jctx, `DELETE FROM insight_quota_window WHERE rowid IN (
+			SELECT rowid FROM insight_quota_window WHERE window_end_ms < ? ORDER BY window_end_ms LIMIT ?)`,
+			before.UnixMilli(), limit)
+		if err != nil {
+			return fmt.Errorf("statedb: prune insight quota windows: %w", err)
+		}
+		n, err = res.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("statedb: prune insight quota windows: %w", err)
 		}
 		return nil
 	})
+	if err != nil {
+		return 0, err
+	}
+	return n, nil
 }
 
 // InsightRollupMeta reads the rollup clock: when the job last ran and the

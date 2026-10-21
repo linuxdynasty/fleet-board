@@ -57,7 +57,9 @@
 // [Fleet.GetAccount] (owner-created accounts with the stored spec, usage
 // and pacing unset) and
 // [Fleet.GetSystemStatus] and [Fleet.GetInsights] (EFFICIENCY and SERIES;
-// the OUTCOMES, STUCK and ROUTINES sections land with row 27) built; other
+// the OUTCOMES, STUCK and ROUTINES sections land with row 27, and an
+// empty section list names every section so it answers UNIMPLEMENTED)
+// built; other
 // methods are Unimplemented except
 // sign-in and device calls, which are FailedPrecondition in local mode
 // (02k). Implemented methods check the caller ([PrincipalFrom], ADMIN for enrollment,

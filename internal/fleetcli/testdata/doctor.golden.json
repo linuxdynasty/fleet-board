@@ -34,7 +34,7 @@
       "databases": [
         {
           "name": "state.db",
-          "schemaVersion": 25,
+          "schemaVersion": 27,
           "sizeBytes": "\u003cbytes\u003e"
         }
       ],

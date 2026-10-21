@@ -21,8 +21,15 @@ var insightBase = time.Date(2026, time.October, 6, 0, 0, 0, 0, time.UTC)
 // 10 to 75 through the week, then a reset to 5 after the Monday reset.
 func insightReading(t *testing.T, e *fleetEnv, at time.Time, used float64, resets time.Time) {
 	t.Helper()
+	insightReadingForBucket(t, e, "weekly_all", at, used, resets)
+}
+
+// insightReadingForBucket stores one noon reading of the named weekly
+// bucket, so a test can give one account several buckets.
+func insightReadingForBucket(t *testing.T, e *fleetEnv, bucketKey string, at time.Time, used float64, resets time.Time) {
+	t.Helper()
 	bucket := &typev1.LimitBucket{
-		Key:         "weekly_all",
+		Key:         bucketKey,
 		Kind:        typev1.WindowKind_WINDOW_KIND_WEEKLY,
 		Window:      durationpb.New(7 * 24 * time.Hour),
 		PercentUsed: &typev1.Percent{Kind: &typev1.Percent_Value{Value: uint32(used)}},
@@ -195,6 +202,61 @@ func TestGetInsightsServesStoredRollups(t *testing.T) {
 	}
 }
 
+// TestGetInsightsEmitsIdleBehindOncePerAccount: the idle-behind series
+// is per account, not per bucket, so two buckets of one account plot
+// two USED plus two UNUSED plus one IDLE_BEHIND series (5), and the
+// series fit the 200-series cap one account at a time.
+func TestGetInsightsEmitsIdleBehindOncePerAccount(t *testing.T) {
+	t.Parallel()
+	e := newFleetEnv(t, localUser("alice"), withNow(func() time.Time { return insightNow }))
+	seedInsightWeek(t, e)
+	for i, used := range []float64{12, 22, 32, 42, 52, 62, 72, 7} {
+		resets := insightBase
+		if i == 7 {
+			resets = insightBase.Add(7 * 24 * time.Hour)
+		}
+		// Half past noon: one row holds one account's buckets per
+		// read time, so the second bucket reads at its own time.
+		at := time.Date(2026, time.October, 6+i, 12, 30, 0, 0, time.UTC)
+		insightReadingForBucket(t, e, "monthly_all", at, used, resets)
+	}
+	msg := getInsights(t, e, &hubv1.GetInsightsRequest{
+		Range: &hubv1.InsightRange{
+			StartTime: timestamppb.New(insightBase),
+			EndTime:   timestamppb.New(insightBase.Add(8 * 24 * time.Hour)),
+		},
+		Sections:    []hubv1.InsightSection{hubv1.InsightSection_INSIGHT_SECTION_SERIES},
+		Granularity: hubv1.InsightGranularity_INSIGHT_GRANULARITY_DAY,
+	})
+	idle := 0
+	used := 0
+	unused := 0
+	for _, s := range msg.GetSeries() {
+		switch s.GetMetric() {
+		case hubv1.InsightMetric_INSIGHT_METRIC_IDLE_BEHIND_SECONDS:
+			idle++
+		case hubv1.InsightMetric_INSIGHT_METRIC_QUOTA_USED_PERCENT:
+			used++
+		case hubv1.InsightMetric_INSIGHT_METRIC_QUOTA_UNUSED_PERCENT:
+			unused++
+		case hubv1.InsightMetric_INSIGHT_METRIC_UNSPECIFIED,
+			hubv1.InsightMetric_INSIGHT_METRIC_GOALS_ENDED,
+			hubv1.InsightMetric_INSIGHT_METRIC_GOALS_MERGED,
+			hubv1.InsightMetric_INSIGHT_METRIC_MERGE_RATE_PERCENT,
+			hubv1.InsightMetric_INSIGHT_METRIC_GOALS_STUCK,
+			hubv1.InsightMetric_INSIGHT_METRIC_NUDGES,
+			hubv1.InsightMetric_INSIGHT_METRIC_QUOTA_POINTS_SPENT:
+			t.Errorf("series metric = %v, want only the quota metrics", s.GetMetric())
+		}
+	}
+	if used != 2 || unused != 2 {
+		t.Errorf("used = %d, unused = %d, want 2 and 2 (one per bucket)", used, unused)
+	}
+	if idle != 1 {
+		t.Errorf("idle_behind series = %d, want 1 (one per account)", idle)
+	}
+}
+
 // TestGetInsightsServesSeries plots the quota series from the readings
 // and windows: used percent per day, waste at each reset, idle-behind
 // seconds (0 with no pace rows stored yet).
@@ -265,11 +327,32 @@ func TestGetInsightsRefusesBadRanges(t *testing.T) {
 			t.Parallel()
 			_, err := e.client.GetInsights(context.Background(), connect.NewRequest(&hubv1.GetInsightsRequest{
 				Range: &hubv1.InsightRange{StartTime: timestamppb.New(tc.start), EndTime: timestamppb.New(tc.end)},
+				Sections: []hubv1.InsightSection{
+					hubv1.InsightSection_INSIGHT_SECTION_EFFICIENCY,
+				},
 			}))
 			if code, _, fields := detail(t, err); code != connect.CodeInvalidArgument {
 				t.Errorf("GetInsights: code %v, want invalid_argument (fields %v)", code, fields)
 			}
 		})
+	}
+}
+
+// TestGetInsightsEmptySectionsStayUnimplemented pins the insights.proto
+// contract (Empty = every section): an empty section list names the
+// unbuilt OUTCOMES, STUCK and ROUTINES sections too, so it answers
+// UNIMPLEMENTED naming row 27 instead of serving EFFICIENCY and SERIES.
+func TestGetInsightsEmptySectionsStayUnimplemented(t *testing.T) {
+	t.Parallel()
+	e := newFleetEnv(t, localUser("alice"))
+	_, err := e.client.GetInsights(context.Background(), connect.NewRequest(&hubv1.GetInsightsRequest{
+		Range: &hubv1.InsightRange{
+			StartTime: timestamppb.New(insightBase),
+			EndTime:   timestamppb.New(insightBase.Add(24 * time.Hour)),
+		},
+	}))
+	if code := connect.CodeOf(err); code != connect.CodeUnimplemented {
+		t.Errorf("empty sections: code %v, want unimplemented (row 27)", code)
 	}
 }
 

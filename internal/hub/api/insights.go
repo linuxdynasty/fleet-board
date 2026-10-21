@@ -23,7 +23,9 @@ import (
 
 // Insight sections this row serves (02k): subscription efficiency and
 // its series. OUTCOMES, STUCK and ROUTINES land with row 27; asking for
-// them answers UNIMPLEMENTED so a view knows to wait for that row.
+// them answers UNIMPLEMENTED so a view knows to wait for that row. An
+// empty section list names every section (insights.proto), so it answers
+// UNIMPLEMENTED too.
 const (
 	maxInsightDays   = 366
 	maxInsightSeries = 200
@@ -71,12 +73,15 @@ func (f *Fleet) GetInsights(ctx context.Context, req *connect.Request[hubv1.GetI
 }
 
 // validatedSections splits the requested sections into the two this row
-// serves. Empty means both. An unbuilt section (OUTCOMES, STUCK,
-// ROUTINES) is UNIMPLEMENTED with the row that builds it; an unknown
-// section value is INVALID_ARGUMENT.
+// serves. Empty means every section (insights.proto), which names the
+// unbuilt OUTCOMES, STUCK and ROUTINES sections too, so it is
+// UNIMPLEMENTED with the row that builds them. An unbuilt section is
+// UNIMPLEMENTED with the row that builds it; an unknown section value
+// is INVALID_ARGUMENT.
 func validatedSections(sections []hubv1.InsightSection) (eff, series bool, err error) {
 	if len(sections) == 0 {
-		return true, true, nil
+		return false, false, connect.NewError(connect.CodeUnimplemented,
+			fmt.Errorf("api: GetInsights with no sections names every section and OUTCOMES, STUCK and ROUTINES land in row 27"))
 	}
 	for _, s := range sections {
 		switch s {
@@ -139,7 +144,10 @@ func (f *Fleet) buildInsights(ctx context.Context, req *hubv1.GetInsightsRequest
 	if err != nil {
 		return nil, "store", err
 	}
-	inputs, err := rollup.Inputs(ctx, f.store, now)
+	// The live recompute covers the served range from the bounded scan
+	// [ReadMargin] before its start: windows ending inside the range
+	// may start before it, but never before the bound.
+	inputs, err := rollup.InputsSince(ctx, f.store, start.Add(-rollup.ReadMargin), now)
 	if err != nil {
 		return nil, "store", err
 	}
@@ -302,10 +310,10 @@ func efficiencyBlocks(windows []accountWindow) []*hubv1.AccountEfficiency {
 	return out
 }
 
-// insightSeries plots one USED, one UNUSED and one IDLE_BEHIND series
-// per account and bucket from its readings and merged windows, oldest
-// group first, capped at 200 series (05: rows are ordered by their
-// impact and capped).
+// insightSeries plots one USED and one UNUSED series per account and
+// bucket plus one IDLE_BEHIND series per account, from its readings and
+// merged windows, oldest group first, capped at 200 series (05: rows are
+// ordered by their impact and capped).
 func insightSeries(inputs []insights.AccountInput, merged []accountWindow,
 	start, end time.Time, gran hubv1.InsightGranularity,
 ) ([]*hubv1.InsightSeries, bool) {
@@ -324,7 +332,6 @@ func insightSeries(inputs []insights.AccountInput, merged []accountWindow,
 			for _, s := range []*hubv1.InsightSeries{
 				insights.QuotaUsedSeries(in.Account, b.Key, b.Readings, start, end, gran),
 				insights.QuotaUnusedSeries(in.Account, b.Key, byKey[k], start, end, gran),
-				insights.IdleBehindSeries(in.Account, in.Pace, start, end, gran),
 			} {
 				if len(out) >= maxInsightSeries {
 					return out, true
@@ -332,6 +339,12 @@ func insightSeries(inputs []insights.AccountInput, merged []accountWindow,
 				out = append(out, s)
 			}
 		}
+		// Idle-behind is per account, not per bucket: one series per
+		// account so several buckets do not eat the 200-series cap.
+		if len(out) >= maxInsightSeries {
+			return out, true
+		}
+		out = append(out, insights.IdleBehindSeries(in.Account, in.Pace, start, end, gran))
 	}
 	return out, truncated
 }

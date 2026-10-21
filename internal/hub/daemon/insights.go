@@ -29,6 +29,17 @@ func InsightsRollupJob(roller *rollup.Roller, st *store.Store) housekeeping.Job 
 	}
 }
 
+// InsightsPruneJob is the hourly 1-year retention job fleetd run
+// registers (05 section 2): rollup windows that ended more than a year
+// before now are deleted in bounded batches, fresh rows stay.
+func InsightsPruneJob(roller *rollup.Roller, st *store.Store) housekeeping.Job {
+	return housekeeping.Job{
+		Name: "insights_prune", Every: rollup.PruneEvery, Run: func(ctx context.Context, now time.Time) error {
+			return roller.Prune(ctx, st, now)
+		},
+	}
+}
+
 // InsightsRebuildRequest is what `fleetd insights rebuild` asks for: the
 // UTC day the recompute starts at.
 type InsightsRebuildRequest struct {

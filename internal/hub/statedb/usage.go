@@ -33,6 +33,13 @@ const usageReadingsSQL = `CREATE TABLE usage_readings(
 	PRIMARY KEY (account_id, read_ms, received_ms)
 ) STRICT;`
 
+// usageReadingsReadMsSQL is migration 27 (plan row 13): the read_ms
+// index behind the time-bounded reading scans. The hourly rollup and
+// GetInsights recompute only recent windows, so they filter by read_ms
+// instead of loading the whole retained history (the primary key leads
+// with account_id and cannot serve that bound).
+const usageReadingsReadMsSQL = `CREATE INDEX usage_readings_read_ms ON usage_readings(read_ms);`
+
 // ErrUsageInvalid: a usage reading with no account, no read or received
 // time, an unknown source or parse, or buckets/spend that are not JSON.
 var ErrUsageInvalid = errors.New("statedb: the usage reading is invalid")

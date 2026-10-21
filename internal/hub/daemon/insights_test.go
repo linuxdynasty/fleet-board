@@ -144,6 +144,50 @@ func TestInsightsRollupJobRunsHourly(t *testing.T) {
 	}
 }
 
+// TestInsightsPruneJobDeletesOnlyOldWindows: the fleetd run prune job
+// carries the hourly schedule and deletes a rollup window older than a
+// year while keeping a fresh one.
+func TestInsightsPruneJobDeletesOnlyOldWindows(t *testing.T) {
+	t.Parallel()
+	h := newHub(t, "")
+	h.init(t)
+	st, err := statedb.Open(context.Background(), h.state, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = st.Close() }()
+	ctx := context.Background()
+	oldEnd := rebuildNow.Add(-400 * 24 * time.Hour)
+	freshEnd := rebuildNow.Add(-24 * time.Hour)
+	for _, w := range []statedb.InsightQuotaWindow{
+		{AccountID: "acct-1", BucketKey: "weekly_all", WindowEnd: oldEnd, WindowJSON: []byte(`{}`), Updated: oldEnd},
+		{AccountID: "acct-1", BucketKey: "weekly_all", WindowEnd: freshEnd, WindowJSON: []byte(`{}`), Updated: freshEnd},
+	} {
+		if err := statedb.UpsertInsightQuotaWindow(ctx, st, w); err != nil {
+			t.Fatalf("UpsertInsightQuotaWindow: %v", err)
+		}
+	}
+	roller, err := rollup.New(rollup.Options{Telemetry: h.tel})
+	if err != nil {
+		t.Fatal(err)
+	}
+	job := daemon.InsightsPruneJob(roller, st)
+	if job.Name != "insights_prune" || job.Every != time.Hour {
+		t.Errorf("job = %q every %v, want insights_prune every 1h", job.Name, job.Every)
+	}
+	if err := job.Run(ctx, rebuildNow); err != nil {
+		t.Fatalf("job run: %v", err)
+	}
+	rows, err := statedb.ListInsightQuotaWindows(ctx, st, "",
+		oldEnd.Add(-time.Hour), rebuildNow.Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || !rows[0].WindowEnd.Equal(freshEnd) {
+		t.Errorf("rows left = %d, want only the fresh window", len(rows))
+	}
+}
+
 // TestInsightsRebuildKeepsOlderWindows: a rebuild from a later date
 // leaves earlier stored windows untouched.
 func TestInsightsRebuildKeepsOlderWindows(t *testing.T) {

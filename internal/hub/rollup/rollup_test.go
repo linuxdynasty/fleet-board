@@ -265,6 +265,103 @@ func TestRollup_ReserveComesFromTheAccountSpec(t *testing.T) {
 	}
 }
 
+// TestRollup_ReserveHistoryAppliesPerWindow: the usable line uses the
+// reserve in force when the window ended (05 section 3). An account
+// created with reserve 20 and raised to 40 after the first window
+// closed rolls the closed window at 20 (75 used of 80 usable: 94 with
+// 5 points of waste) and the open window at 40.
+func TestRollup_ReserveHistoryAppliesPerWindow(t *testing.T) {
+	t.Parallel()
+	s := testStore(t)
+	seedWeek(t, s)
+	ctx := context.Background()
+	if _, err := statedb.CreateOwnerAccount(ctx, s, statedb.CreateAccount{
+		ConfigWrite: statedb.ConfigWrite{
+			Principal: "local:alice", RequestID: "req-1",
+			RequestHash: [32]byte{1}, Actor: statedb.Actor{ID: "local:alice", Kind: "LOCAL_USER", Name: "alice"},
+			Now: weekReset,
+		},
+		ID: "acct-1", Harness: "claude", Provider: "anthropic",
+		DisplayName: "work", Origin: statedb.AccountOriginOwner,
+		Spec: []byte(`{"displayName":"work","reservePercent":20}`),
+	}); err != nil {
+		t.Fatalf("CreateOwnerAccount: %v", err)
+	}
+	raised := weekReset.Add(7*24*time.Hour + 12*time.Hour)
+	merge := func(current []byte) ([]byte, string, error) {
+		return []byte(`{"displayName":"work","reservePercent":40}`), "work", nil
+	}
+	if _, err := statedb.UpdateOwnerAccount(ctx, s, statedb.UpdateAccountOp{
+		ConfigWrite: statedb.ConfigWrite{
+			Principal: "local:alice", RequestID: "req-2",
+			RequestHash: [32]byte{2}, Actor: statedb.Actor{ID: "local:alice", Kind: "LOCAL_USER", Name: "alice"},
+			Now: raised,
+		},
+		ID: "acct-1", Merge: merge,
+	}); err != nil {
+		t.Fatalf("UpdateOwnerAccount: %v", err)
+	}
+	r, err := rollup.New(rollup.Options{Telemetry: testTelemetry(t)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Rollup(ctx, s, weekNow); err != nil {
+		t.Fatalf("Rollup: %v", err)
+	}
+	wins := storedWindows(t, s)
+	if len(wins) != 2 {
+		t.Fatalf("stored windows = %d, want 2", len(wins))
+	}
+	if got := wins[0].GetReservePercent(); got != 20 {
+		t.Errorf("closed window reserve = %d, want 20 in force when it ended", got)
+	}
+	if got := wins[0].GetUsableUsed().GetValue(); got != 94 {
+		t.Errorf("closed window usable_used = %d, want 94 (75 of 80 usable)", got)
+	}
+	if got := wins[0].GetUnused().GetValue(); got != 5 {
+		t.Errorf("closed window unused = %d, want 5", got)
+	}
+	if got := wins[1].GetReservePercent(); got != 40 {
+		t.Errorf("open window reserve = %d, want the raised 40", got)
+	}
+}
+
+// TestRollup_BoundedInputsMatchFullInputs: the hourly pass reads from
+// the bounded scan, so a bound before the history must group the same
+// inputs as the full scan, and a bound past the history must read
+// nothing.
+func TestRollup_BoundedInputsMatchFullInputs(t *testing.T) {
+	t.Parallel()
+	s := testStore(t)
+	seedWeek(t, s)
+	ctx := context.Background()
+
+	full, err := rollup.Inputs(ctx, s, weekNow)
+	if err != nil {
+		t.Fatalf("Inputs: %v", err)
+	}
+	bounded, err := rollup.InputsSince(ctx, s, weekReset.Add(-rollup.ReadMargin), weekNow)
+	if err != nil {
+		t.Fatalf("InputsSince: %v", err)
+	}
+	if len(full) != 1 || len(bounded) != 1 {
+		t.Fatalf("inputs = %d full, %d bounded, want 1 and 1", len(full), len(bounded))
+	}
+	if len(full[0].Buckets) != len(bounded[0].Buckets) ||
+		len(full[0].Buckets[0].Readings) != len(bounded[0].Buckets[0].Readings) {
+		t.Errorf("bounded readings = %v, want the full %v",
+			len(bounded[0].Buckets[0].Readings), len(full[0].Buckets[0].Readings))
+	}
+
+	empty, err := rollup.InputsSince(ctx, s, weekNow, weekNow)
+	if err != nil {
+		t.Fatalf("InputsSince past history: %v", err)
+	}
+	if len(empty) != 0 {
+		t.Errorf("inputs past history = %d accounts, want 0", len(empty))
+	}
+}
+
 func TestRollup_EmptyStoreWritesNothing(t *testing.T) {
 	t.Parallel()
 	s := testStore(t)

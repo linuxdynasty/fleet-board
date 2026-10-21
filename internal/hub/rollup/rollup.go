@@ -29,12 +29,17 @@ const scope = "github.com/linuxdynasty/fleet-board/internal/hub/rollup"
 const tableName = "insight_quota_window"
 
 // defaultReserve is the quota kept for interactive use when an account
-// has no stored spec (a new account gets 10, 05 section 3).
+// has no stored spec (a new account gets 10, 05 section 3). It mirrors
+// statedb's default so the no-account path reads the same value the
+// reserve history falls back to.
 const defaultReserve = 10
 
-// maxReserve caps a stored reserve the way pacing does (defaults.md: 0
-// to 50).
-const maxReserve = 50
+// ReadMargin is how far back the recurring passes read before the
+// oldest window they recompute: the longest monthly bucket (31 days)
+// plus the 24-hour closing-reading lookback plus a week of margin for
+// late resets. A recomputed window ends at or after its pass's cutoff,
+// so every reading it needs falls inside the bound.
+const ReadMargin = 40 * 24 * time.Hour
 
 // Options build a Roller. Telemetry is required.
 type Options struct {
@@ -100,10 +105,11 @@ func New(opts Options) (*Roller, error) {
 var errRebuildRange = errors.New("the rebuild start is past now")
 
 // Rollup is the hourly pass: every window the stored readings imply is
-// recomputed through insights.Windows. The first pass backfills history;
-// later passes rewrite only windows ending yesterday or later (older
-// windows are final). It stamps the rollup meta and records the 05
-// section 9 signals.
+// recomputed through insights.Windows. The first pass backfills history
+// from the full scan; later passes rewrite only windows ending
+// yesterday or later (older windows are final) from the bounded scan
+// [ReadMargin] before the cutoff. It stamps the rollup meta and records
+// the 05 section 9 signals.
 func (r *Roller) Rollup(ctx context.Context, s *store.Store, now time.Time) (Result, error) {
 	ctx, span := r.tracer.Start(ctx, "hub.insights.rollup")
 	defer span.End()
@@ -112,13 +118,16 @@ func (r *Roller) Rollup(ctx context.Context, s *store.Store, now time.Time) (Res
 	if err != nil {
 		return r.fail(ctx, fmt.Errorf("rollup: read meta: %w", err))
 	}
-	inputs, err := Inputs(ctx, s, now)
+	cutoff := time.Time{}
+	var inputs []insights.AccountInput
+	if prevStart.IsZero() {
+		inputs, err = Inputs(ctx, s, now)
+	} else {
+		cutoff = dayStart(now).Add(-24 * time.Hour)
+		inputs, err = InputsSince(ctx, s, cutoff.Add(-ReadMargin), now)
+	}
 	if err != nil {
 		return r.fail(ctx, fmt.Errorf("rollup: read inputs: %w", err))
-	}
-	cutoff := time.Time{}
-	if !prevStart.IsZero() {
-		cutoff = dayStart(now).Add(-24 * time.Hour)
 	}
 	wins, accounts := buildWindows(inputs, now, cutoff)
 	res, err := r.commit(ctx, s, wins, accounts, now, prevStart)
@@ -211,19 +220,15 @@ func buildWindows(inputs []insights.AccountInput, now, cutoff time.Time) ([]stat
 	return wins, accounts
 }
 
-// commit writes one pass in a single writer transaction and stamps the
-// rollup meta: computed is now, and the data start is the earliest
-// window start this pass wrote (or the previous start when earlier).
+// commit writes one pass in a single writer transaction (one job for the
+// rows plus both meta keys) and stamps the rollup meta: computed is now,
+// and the data start is the earliest window start this pass wrote (or
+// the previous start when earlier).
 // With no windows and no previous start there is no history yet, so the
 // meta stays unset and GetInsights falls back to the live clock.
 func (r *Roller) commit(ctx context.Context, s *store.Store, wins []statedb.InsightQuotaWindow,
 	accounts map[string]bool, now, prevStart time.Time,
 ) (Result, error) {
-	if len(wins) > 0 {
-		if err := statedb.UpsertInsightQuotaWindows(ctx, s, wins); err != nil {
-			return Result{}, fmt.Errorf("rollup: store windows: %w", err)
-		}
-	}
 	start := prevStart
 	for _, w := range wins {
 		var q hubv1.QuotaWindow
@@ -235,35 +240,63 @@ func (r *Roller) commit(ctx context.Context, s *store.Store, wins []statedb.Insi
 		}
 	}
 	res := Result{Windows: len(wins), Accounts: len(accounts), Computed: now, DataStart: start}
-	if start.IsZero() {
-		return res, nil
-	}
-	if err := statedb.SetInsightRollupMeta(ctx, s, now, start); err != nil {
-		return Result{}, fmt.Errorf("rollup: store meta: %w", err)
+	if err := statedb.StoreInsightRollupPass(ctx, s, wins, now, start); err != nil {
+		return Result{}, fmt.Errorf("rollup: store pass: %w", err)
 	}
 	return res, nil
 }
 
+// InputsSince reads the usage readings at or after since (the bounded
+// scan behind the recurring passes) and groups them like [Inputs]. The
+// reserve history is small and read whole; callers outside the
+// backfill and rebuild paths pass a bound of [ReadMargin] before the
+// oldest window they recompute.
+func InputsSince(ctx context.Context, s *store.Store, since, now time.Time) ([]insights.AccountInput, error) {
+	readings, err := statedb.ListStoredUsageReadingsSince(ctx, s, since)
+	if err != nil {
+		return nil, fmt.Errorf("rollup: list usage readings: %w", err)
+	}
+	return assembleInputs(ctx, s, readings, now)
+}
+
 // Inputs reads every stored usage reading and account, grouping the
-// readings by account into one insights.AccountInput each. The reserve
-// comes from the account spec (capped at 50 like pacing); an account
-// with no stored spec reads the 10-point default. Pace intervals and
-// goal spends have no stored rows yet, so they stay empty and the
-// windows derived from them read 0. GetInsights builds the day in
-// progress from the same inputs, so the served trailing window matches
-// the rollup's by construction.
+// readings by account into one insights.AccountInput each. Only the
+// backfill (the first rollup pass) and the rebuild command use it;
+// recurring passes use [InputsSince]. The reserve history carries each
+// past reserve from its effective time, so a window uses the reserve
+// in force when it ended (05 section 3); an account with no history
+// rows (created before migration 26) keeps its current reserve for
+// all windows. Pace intervals and goal spends have no stored rows yet,
+// so they stay empty and the windows derived from them read 0.
+// GetInsights builds the day in progress from the same inputs, so the
+// served trailing window matches the rollup's by construction.
 func Inputs(ctx context.Context, s *store.Store, now time.Time) ([]insights.AccountInput, error) {
 	readings, err := statedb.ListStoredUsageReadings(ctx, s)
 	if err != nil {
 		return nil, fmt.Errorf("rollup: list usage readings: %w", err)
 	}
+	return assembleInputs(ctx, s, readings, now)
+}
+
+// assembleInputs groups stored readings by account into one
+// insights.AccountInput each, with the current reserve and its history.
+func assembleInputs(ctx context.Context, s *store.Store, readings []statedb.UsageReadingStored, now time.Time) ([]insights.AccountInput, error) {
 	rows, err := statedb.ListAccountRows(ctx, s)
 	if err != nil {
 		return nil, fmt.Errorf("rollup: list accounts: %w", err)
 	}
 	reserves := map[string]uint32{}
 	for _, row := range rows {
-		reserves[row.ID] = reserveOf(row.Spec)
+		reserves[row.ID] = statedb.ReservePercentOfSpec(row.Spec)
+	}
+	history, err := statedb.ListAccountReserveHistory(ctx, s, "")
+	if err != nil {
+		return nil, fmt.Errorf("rollup: list reserve history: %w", err)
+	}
+	byHistory := map[string][]insights.ReserveChange{}
+	for _, h := range history {
+		byHistory[h.AccountID] = append(byHistory[h.AccountID],
+			insights.ReserveChange{Time: h.From, Percent: h.Percent})
 	}
 	byAccount := map[string]*insights.AccountInput{}
 	ordered := []string{}
@@ -277,6 +310,7 @@ func Inputs(ctx context.Context, s *store.Store, now time.Time) ([]insights.Acco
 			in = &insights.AccountInput{
 				Account:        &typev1.AccountId{Value: stored.AccountID},
 				ReservePercent: reserve,
+				Reserves:       byHistory[stored.AccountID],
 				Now:            now,
 			}
 			byAccount[stored.AccountID] = in
@@ -350,19 +384,6 @@ func percentValue(p *typev1.Percent) (float64, bool) {
 		return 0, false
 	}
 	return float64(v.Value), true
-}
-
-// reserveOf reads the reserve from an account spec, capped at 50 like
-// pacing; an unreadable spec reads the 10-point default.
-func reserveOf(spec []byte) uint32 {
-	var parsed hubv1.AccountSpec
-	if err := protojson.Unmarshal(spec, &parsed); err != nil {
-		return defaultReserve
-	}
-	if parsed.GetReservePercent() > maxReserve {
-		return maxReserve
-	}
-	return parsed.GetReservePercent()
 }
 
 // dayStart truncates to the UTC day.

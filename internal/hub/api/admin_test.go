@@ -257,7 +257,9 @@ func TestStoreStatusIsServedOnTheAdminSocketWhileTheRestStaysUnimplemented(t *te
 	// GetInsights serves over the admin socket too (READ held by the
 	// kernel-checked local user): an empty fleet reads empty efficiency
 	// with the read time as its computed_time.
-	insights, err := c.GetInsights(context.Background(), connect.NewRequest(&hubv1.GetInsightsRequest{}))
+	insights, err := c.GetInsights(context.Background(), connect.NewRequest(&hubv1.GetInsightsRequest{
+		Sections: []hubv1.InsightSection{hubv1.InsightSection_INSIGHT_SECTION_EFFICIENCY},
+	}))
 	if err != nil {
 		t.Fatalf("GetInsights over the socket: %v", err)
 	}

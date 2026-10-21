@@ -248,7 +248,7 @@ func serve(ctx context.Context, cfg *config.Config, opts Options, d hubDeps, s *
 		Name: "watch_publish", Every: housekeeping.TickEvery, Run: func(ctx context.Context, _ time.Time) error {
 			return fleet.PublishTick(ctx)
 		},
-	}, InsightsRollupJob(roller, d.st), housekeeping.Job{
+	}, InsightsRollupJob(roller, d.st), InsightsPruneJob(roller, d.st), housekeeping.Job{
 		Name: "approvals_expiry", Every: approvalsExpiryEvery, Run: func(ctx context.Context, now time.Time) error {
 			expired, err := approvals.ExpirePass(ctx, d.st, now)
 			if err != nil {
