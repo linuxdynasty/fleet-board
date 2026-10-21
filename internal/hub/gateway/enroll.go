@@ -35,9 +35,6 @@ type agentService struct {
 	agentv1connect.UnimplementedAgentServiceHandler
 	*enrollDeps
 	*connectDeps
-	// watch publishes committed gateway changes to Watch subscribers
-	// (the Watch ingest slice); the zero value publishes nothing.
-	watch WatchSink
 }
 
 // Enroll checks, in order: install_id, the token's format and CA hash

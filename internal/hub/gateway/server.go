@@ -127,8 +127,9 @@ func NewServer(opts ServerOptions) (*Server, error) {
 			userApplied(machineID, epoch)
 		}
 	}
+	cdeps.watch = opts.Watch
 	mux := http.NewServeMux()
-	path, h := agentv1connect.NewAgentServiceHandler(&agentService{enrollDeps: deps, connectDeps: cdeps, watch: opts.Watch},
+	path, h := agentv1connect.NewAgentServiceHandler(&agentService{enrollDeps: deps, connectDeps: cdeps},
 		connect.WithReadMaxBytes(MaxMessageBytes))
 	mux.Handle(path, withPeerCert(h))
 	handlers := newInflight()
@@ -169,6 +170,13 @@ type Server struct {
 // own teardown closes the connection row with EndRevoked.
 func (s *Server) ByeMachine(machineID string) bool {
 	return s.connect.streams.cancel(machineID, agentv1.ByeReason_BYE_REASON_REVOKED, statedb.EndRevoked)
+}
+
+// SetWatchSink wires committed gateway changes to Watch subscribers (the
+// Watch ingest slice): the daemon calls it with the Fleet publish
+// methods once both exist. It must run before the server serves.
+func (s *Server) SetWatchSink(sink WatchSink) {
+	s.connect.watch = sink
 }
 
 // InstanceID is the hub_instance_id this process sends on the agent wire
