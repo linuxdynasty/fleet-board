@@ -11,7 +11,7 @@
       },
       "status": {
         "hostname": "laptop.lan",
-        "hubSeq": "10",
+        "hubSeq": "11",
         "installId": "cli-seed-install",
         "observedTime": "\u003ctime\u003e",
         "os": "darwin",
