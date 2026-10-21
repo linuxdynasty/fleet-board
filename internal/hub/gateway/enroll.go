@@ -35,6 +35,9 @@ type agentService struct {
 	agentv1connect.UnimplementedAgentServiceHandler
 	*enrollDeps
 	*connectDeps
+	// watch publishes committed gateway changes to Watch subscribers
+	// (the Watch ingest slice); the zero value publishes nothing.
+	watch WatchSink
 }
 
 // Enroll checks, in order: install_id, the token's format and CA hash
@@ -167,6 +170,9 @@ func (s *agentService) enrollNew(ctx context.Context, peer string, key statedb.E
 	if err != nil {
 		return statedb.Enrolled{}, s.storeOutcome(ctx, peer, err)
 	}
+	// The enroll job committed: the machine is new to Watch subscribers
+	// (a replay publishes nothing; the first enroll already did).
+	s.publishMachineCreated(ctx, id, e.Replayed)
 	return e, nil
 }
 

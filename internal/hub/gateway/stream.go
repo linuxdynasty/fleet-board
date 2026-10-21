@@ -93,8 +93,13 @@ type stream struct {
 	// seenWritten is the hub clock of the last last_seen_time write for
 	// this stream (the Hello's at first); only the handler goroutine uses it.
 	seenWritten time.Time
-	in          chan *agentv1.ConnectRequest
-	out         chan *agentv1.ConnectResponse
+	// panes maps a pane key to the snapshot's hub session id for it
+	// (empty for the developer's own panes): PaneSummary attribution for
+	// the Watch ingest slice. Only the handler goroutine touches it; a
+	// newer Snapshot replaces it whole.
+	panes map[string]string
+	in    chan *agentv1.ConnectRequest
+	out   chan *agentv1.ConnectResponse
 
 	once   sync.Once
 	ended  chan struct{} // closed by end

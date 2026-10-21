@@ -66,6 +66,11 @@ type ServerOptions struct {
 	// machine is ONLINE on that stream. It runs after the outbox's ready
 	// seam, which sends the machine's pending commands. It must not block.
 	OnSnapshotApplied func(machineID string, epoch uint64)
+	// Watch publishes committed gateway changes (snapshots, events,
+	// state changes, enrolls, pane summaries) to Watch subscribers: the
+	// daemon wires each hook to a Fleet publish method. The zero value
+	// publishes nothing.
+	Watch WatchSink
 	// EventAppliers are the later rows' parts of an Event's writer job
 	// (ingest.EventApplier), run in order for an event the hub did not
 	// already hold; empty until plan rows 7 to 10.
@@ -123,7 +128,7 @@ func NewServer(opts ServerOptions) (*Server, error) {
 		}
 	}
 	mux := http.NewServeMux()
-	path, h := agentv1connect.NewAgentServiceHandler(&agentService{enrollDeps: deps, connectDeps: cdeps},
+	path, h := agentv1connect.NewAgentServiceHandler(&agentService{enrollDeps: deps, connectDeps: cdeps, watch: opts.Watch},
 		connect.WithReadMaxBytes(MaxMessageBytes))
 	mux.Handle(path, withPeerCert(h))
 	handlers := newInflight()

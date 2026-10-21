@@ -103,6 +103,9 @@ func snapshotArm(ctx context.Context, a *agentService, s *stream, m *agentv1.Con
 	if a.beforeSnapshot != nil {
 		a.beforeSnapshot(ctx)
 	}
+	// The before images predate the submit, so the post-commit Watch
+	// publish diffs exactly this job's writes (the Watch ingest slice).
+	beforeMachine, beforeGoals, goalsOK := a.snapshotBefore(ctx, s.machineID)
 	// As for a Hello (connect.go), the wait ends when the agent leaves, a
 	// housekeeping cut or Shutdown begins, so the teardown closes the row
 	// before the store closes; the job itself still runs and may commit,
@@ -165,6 +168,15 @@ func snapshotArm(ctx context.Context, a *agentService, s *stream, m *agentv1.Con
 	if out.Change != nil {
 		a.stateChanged(ctx, *out.Change)
 	}
+	// The commit moved the machine row and the observed goals: publish
+	// them with their new stamps for the Watch ingest slice. The before
+	// images above predate the submit, so the diff sees exactly this
+	// job's writes.
+	a.publishMachineCommitted(ctx, s.machineID, beforeMachine)
+	if goalsOK {
+		a.publishGoalsCommitted(ctx, s.machineID, beforeGoals)
+	}
+	a.noteSnapshotPanes(s, snap)
 	a.log.InfoContext(ctx, "snapshot.applied", "machine_id", s.machineID, "epoch", s.epoch, "seq", snap.GetSeq(),
 		"bytes", size, "ms", time.Since(start).Milliseconds(), "event_generation", out.Generation,
 		"text_cut", cleaned.Cut, "text_scrubbed", cleaned.Scrubbed, "expired", len(p.Expired()))
@@ -240,8 +252,15 @@ func (a *agentService) abandonedSnapshots(ctx context.Context, s *stream) {
 	defer cancel()
 	for _, p := range s.abandoned {
 		out, err := p.Wait(wctx)
-		if err == nil && out.Change != nil {
-			a.stateChanged(wctx, *out.Change)
+		if err == nil {
+			if out.Change != nil {
+				a.stateChanged(wctx, *out.Change)
+			}
+			// The job committed: publish its machine write for the
+			// Watch ingest slice. There is no before image this late
+			// (the stream is gone), so goals stay unpublished: without
+			// a diff every row would look created.
+			a.publishMachineCommitted(wctx, s.machineID, nil)
 		}
 		a.outbox.Closed(wctx, p.Expired())
 	}
