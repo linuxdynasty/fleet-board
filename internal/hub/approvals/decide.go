@@ -83,6 +83,8 @@ type DecideInput struct {
 // Outcome is what Decide stored.
 type Outcome struct {
 	Approval *hubv1.Approval
+	// HubSeq is the decision's Watch position.
+	HubSeq int64
 	// Sends is false for a deny: nothing is enqueued.
 	Sends bool
 	// Replay is true when request_id repeated the stored decision: the
@@ -164,11 +166,11 @@ func Decide(ctx context.Context, tx *sql.Tx, in DecideInput) (Outcome, error) {
 			return Outcome{}, err
 		}
 	}
-	decided, err := storeDecision(ctx, tx, a, in, sends, in.Now)
+	decided, seq, err := storeDecision(ctx, tx, a, in, sends, in.Now)
 	if err != nil {
 		return Outcome{}, err
 	}
-	out := Outcome{Approval: decided, Sends: sends}
+	out := Outcome{Approval: decided, HubSeq: seq, Sends: sends}
 	if a.GetKind() == hubv1.ApprovalKind_APPROVAL_KIND_PROMPT_ANSWER {
 		out.PromptID = rec.promptID
 	}
@@ -252,11 +254,13 @@ func uint64String(n uint64) string {
 }
 
 // storeDecision writes the DECIDED row, stamps it for Watch and audits
-// approval.decide, all in the caller's transaction.
-func storeDecision(ctx context.Context, tx *sql.Tx, a *hubv1.Approval, in DecideInput, sends bool, now time.Time) (*hubv1.Approval, error) {
+// approval.decide, all in the caller's transaction. It returns the stamp
+// with the re-read approval.
+func storeDecision(ctx context.Context, tx *sql.Tx, a *hubv1.Approval, in DecideInput, sends bool, now time.Time,
+) (*hubv1.Approval, int64, error) {
 	st, err := statedb.NextStamp(ctx, tx, now)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	res, err := tx.ExecContext(ctx, `UPDATE approvals SET version = version + 1, state = 'DECIDED',
 		decided_by_id = ?, decided_by_kind = ?, decided_by_name = ?, decision = ?, decided_time = ?,
@@ -267,29 +271,33 @@ func storeDecision(ctx context.Context, tx *sql.Tx, a *hubv1.Approval, in Decide
 		in.Decider.GetId().GetValue(), in.RequestID, mustDecodeHash(decideHash(in)),
 		now.UnixMilli(), st.HubSeq, st.ObservedTime.UnixMilli(), in.ID)
 	if err != nil {
-		return nil, fmt.Errorf("approvals: decide: %w", err)
+		return nil, 0, fmt.Errorf("approvals: decide: %w", err)
 	}
 	if n, err := res.RowsAffected(); err != nil {
-		return nil, fmt.Errorf("approvals: decide: %w", err)
+		return nil, 0, fmt.Errorf("approvals: decide: %w", err)
 	} else if n == 0 {
 		// Lost the race: read the closer's state in this same job.
 		rec, rerr := getRow(ctx, tx, in.ID)
 		if rerr != nil {
-			return nil, rerr
+			return nil, 0, rerr
 		}
-		return nil, &ClosedError{ID: in.ID, State: rec.approval.GetState()}
+		return nil, 0, &ClosedError{ID: in.ID, State: rec.approval.GetState()}
 	}
 	detail, err := json.Marshal(map[string]any{"decision": in.Decision, "sends": sends})
 	if err != nil {
-		return nil, fmt.Errorf("approvals: decide detail: %w", err)
+		return nil, 0, fmt.Errorf("approvals: decide detail: %w", err)
 	}
 	if _, err := statedb.AppendAudit(ctx, tx, statedb.AuditEntry{
 		Actor: in.Actor, Action: "approval.decide", Target: "approvals/" + in.ID,
 		Detail: string(detail), Now: now,
 	}); err != nil {
-		return nil, err
+		return nil, 0, err
 	}
-	return Get(ctx, tx, in.ID, now)
+	got, err := Get(ctx, tx, in.ID, now)
+	if err != nil {
+		return nil, 0, err
+	}
+	return got, st.HubSeq, nil
 }
 
 // promptKey is the in-flight key: one answer per prompt per machine (03d:

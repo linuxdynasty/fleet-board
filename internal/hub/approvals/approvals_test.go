@@ -70,7 +70,7 @@ func TestCreateGet(t *testing.T) {
 	ctx := context.Background()
 	var got *hubv1.Approval
 	err := s.Write(ctx, func(tx *sql.Tx) error {
-		a, err := approvals.CreateApproval(ctx, tx, confirmIn())
+		a, _, err := approvals.CreateApproval(ctx, tx, confirmIn())
 		if err != nil {
 			return err
 		}
@@ -102,7 +102,7 @@ func TestStoredCommandRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	id := ""
 	err := s.Write(ctx, func(tx *sql.Tx) error {
-		a, err := approvals.CreateApproval(ctx, tx, confirmIn())
+		a, _, err := approvals.CreateApproval(ctx, tx, confirmIn())
 		if err != nil {
 			return err
 		}
@@ -134,7 +134,7 @@ func TestAbsentFieldsStayAbsent(t *testing.T) {
 	ctx := context.Background()
 	var id string
 	if err := s.Write(ctx, func(tx *sql.Tx) error {
-		a, err := approvals.CreateApproval(ctx, tx, confirmIn())
+		a, _, err := approvals.CreateApproval(ctx, tx, confirmIn())
 		if err != nil {
 			return err
 		}
@@ -170,7 +170,7 @@ func TestListFiltersState(t *testing.T) {
 	s := newStore(t)
 	ctx := context.Background()
 	err := s.Write(ctx, func(tx *sql.Tx) error {
-		if _, err := approvals.CreateApproval(ctx, tx, confirmIn()); err != nil {
+		if _, _, err := approvals.CreateApproval(ctx, tx, confirmIn()); err != nil {
 			return err
 		}
 		return nil
@@ -221,7 +221,7 @@ func TestListPages(t *testing.T) {
 		for i := 0; i < 51; i++ {
 			in := confirmIn()
 			in.ID = ""
-			if _, err := approvals.CreateApproval(ctx, tx, in); err != nil {
+			if _, _, err := approvals.CreateApproval(ctx, tx, in); err != nil {
 				return err
 			}
 		}
@@ -285,7 +285,7 @@ func TestListPagesSurviveInserts(t *testing.T) {
 			in.ID = ""
 			in.Now = at
 			in.ExpireTime = at.Add(30 * time.Minute)
-			_, err := approvals.CreateApproval(ctx, tx, in)
+			_, _, err := approvals.CreateApproval(ctx, tx, in)
 			return err
 		}); err != nil {
 			t.Fatal(err)
@@ -307,7 +307,7 @@ func TestListPagesSurviveInserts(t *testing.T) {
 		in.ID = ""
 		in.Now = t0.Add(3 * time.Second)
 		in.ExpireTime = t0.Add(33 * time.Minute)
-		_, err := approvals.CreateApproval(ctx, tx, in)
+		_, _, err := approvals.CreateApproval(ctx, tx, in)
 		return err
 	}); err != nil {
 		t.Fatal(err)
@@ -347,7 +347,7 @@ func TestListRejectsBadTokens(t *testing.T) {
 	s := newStore(t)
 	ctx := context.Background()
 	if err := s.Write(ctx, func(tx *sql.Tx) error {
-		_, err := approvals.CreateApproval(ctx, tx, confirmIn())
+		_, _, err := approvals.CreateApproval(ctx, tx, confirmIn())
 		return err
 	}); err != nil {
 		t.Fatal(err)
@@ -356,7 +356,7 @@ func TestListRejectsBadTokens(t *testing.T) {
 		for i := 0; i < 2; i++ {
 			in := confirmIn()
 			in.ID = ""
-			if _, err := approvals.CreateApproval(ctx, tx, in); err != nil {
+			if _, _, err := approvals.CreateApproval(ctx, tx, in); err != nil {
 				return err
 			}
 		}
@@ -403,7 +403,7 @@ func TestListCapsPageSize(t *testing.T) {
 	s := newStore(t)
 	ctx := context.Background()
 	if err := s.Write(ctx, func(tx *sql.Tx) error {
-		_, err := approvals.CreateApproval(ctx, tx, confirmIn())
+		_, _, err := approvals.CreateApproval(ctx, tx, confirmIn())
 		return err
 	}); err != nil {
 		t.Fatal(err)

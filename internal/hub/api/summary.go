@@ -38,18 +38,33 @@ func (f *Fleet) GetFleetSummary(ctx context.Context, _ *connect.Request[hubv1.Ge
 		return nil, f.summaryRefused(ctx, err)
 	}
 	actor := who.GetId().GetValue()
-	now := f.hubNow()
-	working, waiting, stuck, limit, step, err := f.summaryGoalCounts(ctx)
+	summary, step, err := f.buildFleetSummary(ctx)
 	if err != nil {
 		return nil, f.summaryFailed(ctx, actor, step, err)
 	}
+	if err := quotaCheckpoint(ctx, quotaRead); err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&hubv1.GetFleetSummaryResponse{Summary: summary}), nil
+}
+
+// buildFleetSummary assembles the summary strip over the stored goals,
+// triage items, machines and sessions with the loop's system verdicts
+// beside it. Watch reads the same strip for FLEET_SUMMARY initial state.
+// The step names the failure for the status log.
+func (f *Fleet) buildFleetSummary(ctx context.Context) (*hubv1.FleetSummary, string, error) {
+	now := f.hubNow()
+	working, waiting, stuck, limit, step, err := f.summaryGoalCounts(ctx)
+	if err != nil {
+		return nil, step, err
+	}
 	needs, err := f.summaryNeedsYou(ctx)
 	if err != nil {
-		return nil, f.summaryFailed(ctx, actor, "store", err)
+		return nil, "store", err
 	}
 	machines, err := statedb.ListMachineRows(ctx, f.store)
 	if err != nil {
-		return nil, f.summaryFailed(ctx, actor, "store", err)
+		return nil, "store", err
 	}
 	var online uint32
 	for _, m := range machines {
@@ -59,11 +74,11 @@ func (f *Fleet) GetFleetSummary(ctx context.Context, _ *connect.Request[hubv1.Ge
 	}
 	sessions, err := statedb.ListSessionRows(ctx, f.store)
 	if err != nil {
-		return nil, f.summaryFailed(ctx, actor, "store", err)
+		return nil, "store", err
 	}
 	verdicts, _, step, err := f.systemVerdicts(ctx)
 	if err != nil {
-		return nil, f.summaryFailed(ctx, actor, step, err)
+		return nil, step, err
 	}
 	var warnings, critical uint32
 	for _, v := range verdicts {
@@ -76,19 +91,14 @@ func (f *Fleet) GetFleetSummary(ctx context.Context, _ *connect.Request[hubv1.Ge
 			// OK, UNKNOWN and UNSPECIFIED carry no strip count.
 		}
 	}
-	if err := quotaCheckpoint(ctx, quotaRead); err != nil {
-		return nil, err
-	}
-	return connect.NewResponse(&hubv1.GetFleetSummaryResponse{
-		Summary: &hubv1.FleetSummary{
-			Version: 1, UpdateTime: timestamppb.New(now),
-			GoalsWorking: working, GoalsWaiting: waiting, GoalsStuck: stuck,
-			GoalsLimitWait: limit, NeedsYou: needs,
-			AvailableSessions: uint32(len(sessions)),                        //nolint:gosec // G115: fleets hold tens of sessions
-			MachinesOnline:    online, MachinesTotal: uint32(len(machines)), //nolint:gosec // G115: fleets hold tens of machines
-			SystemWarnings: warnings, SystemCritical: critical,
-		},
-	}), nil
+	return &hubv1.FleetSummary{
+		Version: 1, UpdateTime: timestamppb.New(now),
+		GoalsWorking: working, GoalsWaiting: waiting, GoalsStuck: stuck,
+		GoalsLimitWait: limit, NeedsYou: needs,
+		AvailableSessions: uint32(len(sessions)),                        //nolint:gosec // G115: fleets hold tens of sessions
+		MachinesOnline:    online, MachinesTotal: uint32(len(machines)), //nolint:gosec // G115: fleets hold tens of machines
+		SystemWarnings: warnings, SystemCritical: critical,
+	}, "", nil
 }
 
 // summaryGoalCounts counts the stored goals by strip class over the

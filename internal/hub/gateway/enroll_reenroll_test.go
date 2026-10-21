@@ -125,7 +125,7 @@ func TestReenrollAfterDeleteEnrollsFresh(t *testing.T) {
 	id := first.GetMachineId().GetValue()
 	revokeMachine(t, h, id)
 	tok := previousToken(t, h, id, h.clock.now().Add(time.Hour))
-	if _, err := statedb.DeleteMachine(context.Background(), h.store, statedb.MachineDelete{
+	if _, _, err := statedb.DeleteMachine(context.Background(), h.store, statedb.MachineDelete{
 		MachineWrite: statedb.MachineWrite{
 			Principal: "local:alice", RequestID: "del-" + id,
 			RequestHash: sha256.Sum256([]byte("del-" + id)), Now: h.clock.now(),

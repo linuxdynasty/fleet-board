@@ -1,11 +1,13 @@
 package daemon_test
 
 import (
+	"context"
 	"errors"
 	"io"
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"connectrpc.com/connect"
 
@@ -122,7 +124,7 @@ func TestLocalAPIRejectsCredentialCarriersBeforeOwnerAdmission(t *testing.T) {
 	}
 }
 
-func TestLocalAPIModeStubsAndUnbuiltCalls(t *testing.T) {
+func TestLocalAPIModeStubsAndBuiltWatch(t *testing.T) {
 	h, r := startLocalAPI(t, "")
 	client := hubv1connect.NewFleetServiceClient(http.DefaultClient, "http://"+r.addrs.API.String())
 	if _, err := client.RedeemInvite(t.Context(), connect.NewRequest(&hubv1.RedeemInviteRequest{})); connect.CodeOf(err) != connect.CodeFailedPrecondition {
@@ -134,15 +136,33 @@ func TestLocalAPIModeStubsAndUnbuiltCalls(t *testing.T) {
 	if _, err := client.CreateApiToken(t.Context(), connect.NewRequest(&hubv1.CreateApiTokenRequest{})); connect.CodeOf(err) != connect.CodeUnimplemented {
 		t.Errorf("CreateApiToken = %v, want UNIMPLEMENTED", err)
 	}
-	stream, err := client.Watch(t.Context(), connect.NewRequest(&hubv1.WatchRequest{}))
-	if err == nil {
-		if stream.Receive() {
-			t.Error("unbuilt Watch returned a message")
-		}
-		err = stream.Err()
+	// Watch is built (row 12): the stream opens and starts with INITIAL
+	// or INITIAL_DONE instead of answering UNIMPLEMENTED.
+	ctx, stop := context.WithCancel(t.Context())
+	defer stop()
+	stream, err := client.Watch(ctx, connect.NewRequest(&hubv1.WatchRequest{}))
+	if err != nil {
+		t.Fatalf("Watch = %v, want a served stream", err)
 	}
-	if connect.CodeOf(err) != connect.CodeUnimplemented {
-		t.Errorf("Watch = %v, want UNIMPLEMENTED", err)
+	first := make(chan *hubv1.WatchResponse, 1)
+	go func() {
+		defer close(first)
+		if stream.Receive() {
+			first <- stream.Msg()
+		}
+	}()
+	select {
+	case m, ok := <-first:
+		if !ok {
+			t.Fatalf("Watch closed: %v", stream.Err())
+		}
+		switch m.GetChangeType() {
+		case hubv1.ChangeType_CHANGE_TYPE_INITIAL, hubv1.ChangeType_CHANGE_TYPE_INITIAL_DONE:
+		default:
+			t.Fatalf("first Watch message = %v, want INITIAL or INITIAL_DONE", m.GetChangeType())
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("no Watch message within 10s")
 	}
 	admin := api.AdminClient(config.AdminSocketPath(h.state))
 	if _, err := admin.RedeemInvite(t.Context(), connect.NewRequest(&hubv1.RedeemInviteRequest{})); connect.CodeOf(err) != connect.CodeFailedPrecondition {

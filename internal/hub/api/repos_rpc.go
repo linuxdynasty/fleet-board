@@ -188,14 +188,23 @@ func (f *Fleet) CreateRepo(ctx context.Context, req *connect.Request[hubv1.Creat
 		return nil, f.repoFailed(ctx, opRepoCreate, "watch", actor, "encode", err)
 	}
 	writeCtx := statedb.WithValidatedWrite(ctx, func() error { return quotaCheckpoint(ctx, quotaWrite) })
-	stored, err := statedb.CreateWatchedRepo(writeCtx, f.store, statedb.CreateRepo{
-		RepoWrite: statedb.RepoWrite{
-			Principal: actor, RequestID: m.GetRequestId(),
-			RequestHash: sum, Actor: actorOf(who), Now: now,
+	var stored statedb.RepoStored
+	if err := f.commitWatch(
+		func() error {
+			var err error
+			stored, err = statedb.CreateWatchedRepo(writeCtx, f.store, statedb.CreateRepo{
+				RepoWrite: statedb.RepoWrite{
+					Principal: actor, RequestID: m.GetRequestId(),
+					RequestHash: sum, Actor: actorOf(who), Now: now,
+				},
+				Host: host, Path: path, CodeHost: codeHost, Enabled: spec.GetEnabled(), Spec: specJSON,
+			})
+			return err
 		},
-		Host: host, Path: path, CodeHost: codeHost, Enabled: spec.GetEnabled(), Spec: specJSON,
-	})
-	if err != nil {
+		func() {
+			f.publishRepoWatch(ctx, stored, hubv1.ChangeType_CHANGE_TYPE_CREATED, nil, stored.Replay)
+		},
+	); err != nil {
 		return nil, f.repoWriteError(ctx, opRepoCreate, "watch", actor, repoStoreError("watch", err))
 	}
 	var outSpec hubv1.RepoSpec
@@ -253,34 +262,47 @@ func (f *Fleet) UpdateRepo(ctx context.Context, req *connect.Request[hubv1.Updat
 	}
 	now := f.hubNow()
 	patch, paths := m.GetRepo().GetSpec(), m.GetUpdateMask().GetPaths()
+	// oldSpec keeps the pre-update spec for UNMATCHED evaluation: a repo
+	// that leaves a subscription's filter is sent once as UNMATCHED.
+	var oldSpec []byte
 	writeCtx := statedb.WithValidatedWrite(ctx, func() error { return quotaCheckpoint(ctx, quotaWrite) })
-	stored, err := statedb.UpdateWatchedRepoMasked(writeCtx, f.store, statedb.MaskedUpdate{
-		RepoWrite: statedb.RepoWrite{
-			Principal: actor, RequestID: m.GetRequestId(),
-			RequestHash: sum, Actor: actorOf(who), Now: now,
+	var stored statedb.RepoStored
+	if err := f.commitWatch(
+		func() error {
+			var err error
+			stored, err = statedb.UpdateWatchedRepoMasked(writeCtx, f.store, statedb.MaskedUpdate{
+				RepoWrite: statedb.RepoWrite{
+					Principal: actor, RequestID: m.GetRequestId(),
+					RequestHash: sum, Actor: actorOf(who), Now: now,
+				},
+				Host: host, Path: path,
+				ExpectedVersion: m.GetExpectedVersion(),
+				Merge: func(current []byte) ([]byte, bool, error) {
+					oldSpec = current
+					var currentSpec hubv1.RepoSpec
+					if err := protojson.Unmarshal(current, &currentSpec); err != nil {
+						return nil, false, err
+					}
+					merged := mergeRepoSpec(&currentSpec, patch, paths)
+					// Only the merged result is validated: fields outside the
+					// mask are ignored, even when the request carries invalid
+					// values for them.
+					if err := checkRepoSpec(merged); err != nil {
+						return nil, false, err
+					}
+					mergedJSON, err := protojson.Marshal(merged)
+					if err != nil {
+						return nil, false, err
+					}
+					return mergedJSON, merged.GetEnabled(), nil
+				},
+			})
+			return err
 		},
-		Host: host, Path: path,
-		ExpectedVersion: m.GetExpectedVersion(),
-		Merge: func(current []byte) ([]byte, bool, error) {
-			var currentSpec hubv1.RepoSpec
-			if err := protojson.Unmarshal(current, &currentSpec); err != nil {
-				return nil, false, err
-			}
-			merged := mergeRepoSpec(&currentSpec, patch, paths)
-			// Only the merged result is validated: fields outside the
-			// mask are ignored, even when the request carries invalid
-			// values for them.
-			if err := checkRepoSpec(merged); err != nil {
-				return nil, false, err
-			}
-			mergedJSON, err := protojson.Marshal(merged)
-			if err != nil {
-				return nil, false, err
-			}
-			return mergedJSON, merged.GetEnabled(), nil
+		func() {
+			f.publishRepoWatch(ctx, stored, hubv1.ChangeType_CHANGE_TYPE_UPDATED, oldSpec, stored.Replay)
 		},
-	})
-	if err != nil {
+	); err != nil {
 		return nil, f.repoWriteError(ctx, opRepoUpdate, "update", actor, repoStoreError("update", err))
 	}
 	var outSpec hubv1.RepoSpec
@@ -323,14 +345,23 @@ func (f *Fleet) DeleteRepo(ctx context.Context, req *connect.Request[hubv1.Delet
 	}
 	now := f.hubNow()
 	writeCtx := statedb.WithValidatedWrite(ctx, func() error { return quotaCheckpoint(ctx, quotaWrite) })
-	stored, err := statedb.DeleteWatchedRepo(writeCtx, f.store, statedb.DeleteRepo{
-		RepoWrite: statedb.RepoWrite{
-			Principal: actor, RequestID: m.GetRequestId(),
-			RequestHash: sum, Actor: actorOf(who), Now: now,
+	var stored statedb.RepoStored
+	if err := f.commitWatch(
+		func() error {
+			var err error
+			stored, err = statedb.DeleteWatchedRepo(writeCtx, f.store, statedb.DeleteRepo{
+				RepoWrite: statedb.RepoWrite{
+					Principal: actor, RequestID: m.GetRequestId(),
+					RequestHash: sum, Actor: actorOf(who), Now: now,
+				},
+				Host: host, Path: path, ExpectedVersion: m.GetExpectedVersion(),
+			})
+			return err
 		},
-		Host: host, Path: path, ExpectedVersion: m.GetExpectedVersion(),
-	})
-	if err != nil {
+		func() {
+			f.publishRepoWatch(ctx, stored, hubv1.ChangeType_CHANGE_TYPE_DELETED, nil, stored.Replay)
+		},
+	); err != nil {
 		return nil, f.repoWriteError(ctx, opRepoDelete, "delete", actor, repoStoreError("delete", err))
 	}
 	// A replayed delete answers the same empty outcome.

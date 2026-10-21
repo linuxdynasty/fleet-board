@@ -55,7 +55,8 @@
     "work_items.": "docs/specs/02k-v1-surface-and-cli.md",
     "change_requests.": "docs/specs/02k-v1-surface-and-cli.md",
     "repos.": "docs/specs/02k-v1-surface-and-cli.md",
-    "accounts.": "docs/specs/02k-v1-surface-and-cli.md"
+    "accounts.": "docs/specs/02k-v1-surface-and-cli.md",
+    "watch.": "docs/specs/02c-hub-watch-and-filters.md"
   },
   "metric_prefixes": [
     "fleet_hub",
@@ -124,7 +125,9 @@
     "typing_": "docs/specs/05b-observability.md",
     "unacked_results": "docs/specs/03n-reconnect.md",
     "writer_": "docs/specs/05b-observability.md",
-    "work_items": "docs/specs/03m-work-source-and-code-host-sync.md"
+    "work_items": "docs/specs/03m-work-source-and-code-host-sync.md",
+    "watch_streams_": "docs/specs/02c-hub-watch-and-filters.md",
+    "watch_resync_": "docs/specs/02c-hub-watch-and-filters.md"
   },
   "note": "Telemetry name map for tools/telemetrynames (make telemetry-names). Every log event (`<area>.<event>`, the first string argument of a slog call) and every metric name (the static tail after the program prefix) in non-test Go code under code_dirs must appear as a whole token in the ONE spec its log area or metric tail prefix maps to; being listed only in another spec still fails. Specs only (docs/specs/), never READMEs. An unmapped area fails: add it here, mapped to the spec that owns the workflow (03 to 03n) or to 05b for platform signals. Metric keys match the longest prefix of the name after `<metric prefix>_`. Names in a mapped spec with no code are a report only until plan row 17.",
   "version": 1

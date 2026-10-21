@@ -276,9 +276,28 @@ func (f *Fleet) UpdateMachine(ctx context.Context, req *connect.Request[hubv1.Up
 			in.HasLabels = true
 		}
 	}
+	// preRow keeps the pre-update row for UNMATCHED evaluation: a rename
+	// or relabel that leaves a subscription's filter is sent once as
+	// UNMATCHED. A linking version check drops it when a concurrent
+	// change slipped in between, and a read failure drops it too: the
+	// write below is authoritative either way.
+	var preRow *statedb.MachineRow
+	if pre, err := statedb.ReadMachineRow(ctx, f.store, id); err == nil {
+		preRow = &pre
+	}
 	writeCtx := statedb.WithValidatedWrite(ctx, func() error { return quotaCheckpoint(ctx, quotaWrite) })
-	stored, err := statedb.UpdateMachine(writeCtx, f.store, in)
-	if err != nil {
+	var stored statedb.MachineStored
+	if err := f.commitWatch(
+		func() error {
+			var err error
+			stored, err = statedb.UpdateMachine(writeCtx, f.store, in)
+			return err
+		},
+		func() {
+			f.publishMachineWatch(ctx, id, hubv1.ChangeType_CHANGE_TYPE_UPDATED,
+				machineOldRow(preRow, stored), stored.Replay)
+		},
+	); err != nil {
 		return nil, f.machineWriteError(ctx, opMachineUpdate, "update", actor, machineStoreError("update", err))
 	}
 	f.machineWrote(ctx, opMachineUpdate, actor, id, stored.Version, stored.Replay)
@@ -394,14 +413,30 @@ func (f *Fleet) RevokeMachine(ctx context.Context, req *connect.Request[hubv1.Re
 	if err := f.stageMissing(plan.Serials); err != nil {
 		return nil, f.machineFailed(ctx, opMachineRevoke, "revoke", actor, "revocation", err)
 	}
+	// preRow keeps the pre-revoke row for UNMATCHED evaluation, as the
+	// update's: REVOKED leaves a state filter behind.
+	var preRow *statedb.MachineRow
+	if pre, err := statedb.ReadMachineRow(jctx, f.store, id); err == nil {
+		preRow = &pre
+	}
 	writeCtx := statedb.WithValidatedWrite(jctx, func() error { permit.consume(); return nil })
-	revoked, err := statedb.RevokeMachine(writeCtx, f.store, statedb.MachineRevoke{
-		MachineWrite:    write,
-		MachineID:       id,
-		ExpectedVersion: m.GetExpectedVersion(), Reason: m.GetReason(),
-		CloseOpen: closeOpenForRevoke,
-	})
-	if err != nil {
+	var revoked statedb.RevokedMachine
+	if err := f.commitWatch(
+		func() error {
+			var err error
+			revoked, err = statedb.RevokeMachine(writeCtx, f.store, statedb.MachineRevoke{
+				MachineWrite:    write,
+				MachineID:       id,
+				ExpectedVersion: m.GetExpectedVersion(), Reason: m.GetReason(),
+				CloseOpen: closeOpenForRevoke,
+			})
+			return err
+		},
+		func() {
+			f.publishMachineWatch(jctx, id, hubv1.ChangeType_CHANGE_TYPE_UPDATED,
+				machineOldRow(preRow, revoked.Machine), revoked.Machine.Replay)
+		},
+	); err != nil {
 		var stale *statedb.VersionStale
 		if errors.Is(err, statedb.ErrMachineUnknown) || errors.Is(err, statedb.ErrRequestConflict) ||
 			errors.As(err, &stale) {
@@ -437,48 +472,4 @@ func (f *Fleet) deliverClosed(ctx context.Context, revoked statedb.RevokedMachin
 		}
 		f.onCommandsClosed(ctx, closed)
 	}
-}
-
-// DeleteMachine forgets a machine that is already REVOKED (02g). A
-// machine in any other state is FAILED_PRECONDITION with
-// MACHINE_NOT_REVOKED; a stale expected_version is FAILED_PRECONDITION
-// with VERSION_MISMATCH.
-func (f *Fleet) DeleteMachine(ctx context.Context, req *connect.Request[hubv1.DeleteMachineRequest],
-) (*connect.Response[hubv1.DeleteMachineResponse], error) {
-	who, err := authorizeAdmin(ctx)
-	if err != nil {
-		return nil, f.machineRefused(ctx, opMachineDelete, "", err)
-	}
-	actor := who.GetId().GetValue()
-	if err := f.checkLocalSecret(hubProcedure("DeleteMachine"), req.Header().Get(SecretHeader)); err != nil {
-		return nil, f.machineRefused(ctx, opMachineDelete, actor, apiError(connect.CodePermissionDenied,
-			typev1.ReasonCode_REASON_CODE_CREDENTIALS_INVALID,
-			"this call needs the local approval secret", nil, nil))
-	}
-	m := req.Msg
-	if err := checkRequestID(m.GetRequestId()); err != nil {
-		return nil, f.machineRefused(ctx, opMachineDelete, actor, err)
-	}
-	id := m.GetId().GetValue()
-	if err := checkMachineID("id", id); err != nil {
-		return nil, f.machineRefused(ctx, opMachineDelete, actor, err)
-	}
-	sum, err := machineBodyHash(m)
-	if err != nil {
-		return nil, f.machineFailed(ctx, opMachineDelete, "delete", actor, "encode", err)
-	}
-	now := f.hubNow()
-	writeCtx := statedb.WithValidatedWrite(ctx, func() error { return quotaCheckpoint(ctx, quotaWrite) })
-	deleted, err := statedb.DeleteMachine(writeCtx, f.store, statedb.MachineDelete{
-		MachineWrite: statedb.MachineWrite{
-			Principal: actor, RequestID: m.GetRequestId(),
-			RequestHash: sum, Actor: actorOf(who), Now: now,
-		},
-		MachineID: id, ExpectedVersion: m.GetExpectedVersion(),
-	})
-	if err != nil {
-		return nil, f.machineWriteError(ctx, opMachineDelete, "delete", actor, machineStoreError("delete", err))
-	}
-	f.machineWrote(ctx, opMachineDelete, actor, id, deleted.Version, deleted.Replay)
-	return connect.NewResponse(&hubv1.DeleteMachineResponse{}), nil
 }

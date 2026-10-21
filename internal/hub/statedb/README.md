@@ -216,7 +216,8 @@ Notes for the rows that build on this:
   its `last_seen_time` on the read pool.
 - **13a:** `RevokeMachine` closes the live row with
   `EndConnection(EndRevoked)` after sending `Bye{REVOKED}`, and
-  `DeleteMachine` closes any live row; the history rows stay.
+  `DeleteMachine` closes any live row; the history rows stay. Owner deletes
+  mint their own Watch stamp after the row is gone, returning the last state.
 - **5c:** the Snapshot transaction marks `ONLINE` with the same stamp
   (`NextStamp`); a `STALE` from the start sweep returns only that way.
 - **5m:** the 30-day prune of `machine_connections` (03f) is 5m's; nothing

@@ -124,7 +124,7 @@ func TestDeleteMachineNeedsARevokedMachine(t *testing.T) {
 	ctx := context.Background()
 	at := beforeTTL.Add(time.Minute)
 
-	_, err := statedb.DeleteMachine(ctx, s, statedb.MachineDelete{
+	_, _, err := statedb.DeleteMachine(ctx, s, statedb.MachineDelete{
 		MachineWrite: machineWrite("local:alice", "req-1", 9, at),
 		MachineID:    id,
 	})
@@ -138,7 +138,7 @@ func TestDeleteMachineNeedsARevokedMachine(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	gone, err := statedb.DeleteMachine(ctx, s, statedb.MachineDelete{
+	gone, _, err := statedb.DeleteMachine(ctx, s, statedb.MachineDelete{
 		MachineWrite: machineWrite("local:alice", "req-3", 11, at.Add(time.Minute)),
 		MachineID:    id,
 	})
@@ -181,7 +181,7 @@ func TestDeleteMachineNeedsARevokedMachine(t *testing.T) {
 		t.Fatalf("delete effects: %v", err)
 	}
 
-	again, err := statedb.DeleteMachine(ctx, s, statedb.MachineDelete{
+	again, _, err := statedb.DeleteMachine(ctx, s, statedb.MachineDelete{
 		MachineWrite: machineWrite("local:alice", "req-3", 11, at.Add(2*time.Minute)),
 		MachineID:    id,
 	})
@@ -213,7 +213,7 @@ func TestMachineReplayNeedsTheKind(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := statedb.DeleteMachine(ctx, s, statedb.MachineDelete{
+	if _, _, err := statedb.DeleteMachine(ctx, s, statedb.MachineDelete{
 		MachineWrite: machineWrite("local:alice", "req-1", 9, at.Add(time.Minute)),
 		MachineID:    id,
 	}); !errors.Is(err, statedb.ErrRequestConflict) {

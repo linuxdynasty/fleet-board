@@ -311,7 +311,7 @@ func actorOrPrincipal(w MachineWrite) Actor {
 }
 
 // DeleteMachine forgets a REVOKED machine in one writer transaction: a
-// replayed request_id answers the same empty outcome, a missing row is
+// replayed request_id answers the same outcome, a missing row is
 // [ErrMachineUnknown], a machine that is not REVOKED is
 // [ErrMachineNotRevoked] and a stale version is [VersionStale]. The
 // machines row goes with the rows that only make sense with it
@@ -321,9 +321,15 @@ func actorOrPrincipal(w MachineWrite) Actor {
 // not_after, and the audit log keeps everything, with the
 // machine.delete row. After delete a token's previous_machine can no
 // longer name the id: Enroll treats it as a fresh machine.
-func DeleteMachine(ctx context.Context, s *store.Store, in MachineDelete) (MachineStored, error) {
+//
+// The returned row keeps the last state with the delete's own Watch
+// stamp (a resume orders the DELETED after every earlier change, as the
+// repo delete does), and the full list row beside it for the Watch
+// DELETED message; both carry Deleted.
+func DeleteMachine(ctx context.Context, s *store.Store, in MachineDelete) (MachineStored, MachineRow, error) {
 	jctx := context.WithoutCancel(ctx) // see insertIdentity
 	var out MachineStored
+	var row MachineRow
 	err := s.Write(ctx, func(tx *sql.Tx) error {
 		if replay, err := checkMachineReplay(jctx, tx, in.MachineWrite, machineKindDelete, in.MachineID); err != nil || replay != nil {
 			if err == nil {
@@ -344,6 +350,13 @@ func DeleteMachine(ctx context.Context, s *store.Store, in MachineDelete) (Machi
 		if err := checkVersion(got.Version, in.ExpectedVersion, "machine"); err != nil {
 			return err
 		}
+		// The list row is read before the DELETE, in the same
+		// transaction, so the DELETED carries the exact last state.
+		row, err = scanMachineRow(tx.QueryRowContext(jctx, `SELECT `+machineColumns+` FROM machines WHERE machine_id = ?`,
+			in.MachineID))
+		if err != nil {
+			return err
+		}
 		if err := validatedWrite(jctx); err != nil {
 			return err
 		}
@@ -360,7 +373,15 @@ func DeleteMachine(ctx context.Context, s *store.Store, in MachineDelete) (Machi
 				return fmt.Errorf("statedb: delete machine %s: %w", q.what, err)
 			}
 		}
-		out = MachineStored{MachineID: in.MachineID, Replay: false, Deleted: true}
+		// The deleted row carries the delete's own position for
+		// Watch, as the repo delete does.
+		st, err := NextStamp(jctx, tx, in.Now)
+		if err != nil {
+			return err
+		}
+		out = got
+		out.HubSeq, out.Deleted, out.Replay = st.HubSeq, true, false
+		row.HubSeq = st.HubSeq
 		if err := auditMachine(jctx, tx, ActionMachineDelete, MachineStored{
 			MachineID: in.MachineID, Version: got.Version,
 		}, in.MachineWrite, nil); err != nil {
@@ -369,7 +390,7 @@ func DeleteMachine(ctx context.Context, s *store.Store, in MachineDelete) (Machi
 		return logMachineRequest(jctx, tx, in.MachineWrite, machineKindDelete, out, true)
 	})
 	if err != nil {
-		return MachineStored{}, err
+		return MachineStored{}, MachineRow{}, err
 	}
-	return out, nil
+	return out, row, nil
 }

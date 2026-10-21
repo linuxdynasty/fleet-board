@@ -328,7 +328,7 @@ func TestAnswerToGonePromptFails(t *testing.T) {
 	sess := createSession(t, e, "m1", "work")
 	var id string
 	err := e.st.Write(context.Background(), func(tx *sql.Tx) error {
-		a, err := approvals.CreateApproval(context.Background(), tx, approvals.Create{
+		a, _, err := approvals.CreateApproval(context.Background(), tx, approvals.Create{
 			Kind:      hubv1.ApprovalKind_APPROVAL_KIND_PROMPT_ANSWER,
 			Severity:  hubv1.Severity_SEVERITY_WARNING,
 			Preview:   `allow "deploy"?`,

@@ -94,7 +94,25 @@ type envOpt struct {
 	localTrusted *bool
 	sysSources   *system.Sources
 	onQueued     func(outbox.Op)
+	instanceID   string
+	watchLogCap  int
+	checkpoint   time.Duration
 }
+
+// withInstanceID runs the test hub under another hub_instance_id, so a
+// resume token from elsewhere reads HUB_RESTARTED.
+func withInstanceID(id string) envOpt { return envOpt{instanceID: id} }
+
+// withWatchLogCap bounds the Watch change log, evicting old tokens fast.
+func withWatchLogCap(cap int) envOpt { return envOpt{watchLogCap: cap} }
+
+// withNow swaps the test hub clock for a mutable one, so a test can age
+// entries past the change-log floor without waiting it out.
+func withNow(now func() time.Time) envOpt { return envOpt{now: now} }
+
+// withWatchCheckpoint shortens the idle-stream CHECKPOINT interval, so a
+// test reads checkpoints without waiting out the production interval.
+func withWatchCheckpoint(d time.Duration) envOpt { return envOpt{checkpoint: d} }
 
 func withCommandQueued(fn func(outbox.Op)) envOpt { return envOpt{onQueued: fn} }
 
@@ -143,8 +161,11 @@ func newFleetEnv(t *testing.T, who *typev1.Principal, opts ...envOpt) *fleetEnv 
 	e := &fleetEnv{dir: filepath.Join(t.TempDir(), "state"), caDER: auth.Cert.Raw, logs: &syncBuffer{}}
 	now := func() time.Time { return fleetNow }
 	local := true
+	instanceID := testInstanceID
 	var sysSources *system.Sources
 	var onQueued func(outbox.Op)
+	watchLogCap := 0
+	var checkpoint time.Duration
 	for _, o := range opts {
 		if o.now != nil {
 			now = o.now
@@ -157,6 +178,15 @@ func newFleetEnv(t *testing.T, who *typev1.Principal, opts ...envOpt) *fleetEnv 
 		}
 		if o.onQueued != nil {
 			onQueued = o.onQueued
+		}
+		if o.instanceID != "" {
+			instanceID = o.instanceID
+		}
+		if o.watchLogCap != 0 {
+			watchLogCap = o.watchLogCap
+		}
+		if o.checkpoint != 0 {
+			checkpoint = o.checkpoint
 		}
 	}
 	if err := statedb.EnsureDir(e.dir); err != nil {
@@ -193,8 +223,9 @@ func newFleetEnv(t *testing.T, who *typev1.Principal, opts ...envOpt) *fleetEnv 
 	e.sysLoop = sysLoop
 	fleet, err := api.NewFleet(api.FleetOptions{
 		Store: e.st, CACert: e.caDER, Telemetry: e.tel, Now: now,
-		StateDir: e.dir, LocalTrusted: local, HubInstanceID: testInstanceID,
-		SystemLoop: sysLoop, OnCommandQueued: onQueued,
+		StateDir: e.dir, LocalTrusted: local, HubInstanceID: instanceID,
+		SystemLoop: sysLoop, OnCommandQueued: onQueued, WatchLogCap: watchLogCap,
+		WatchCheckpoint: checkpoint,
 	})
 	if err != nil {
 		t.Fatal(err)
