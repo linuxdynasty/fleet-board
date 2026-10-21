@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/linuxdynasty/fleet-board/internal/store"
 )
@@ -150,13 +151,20 @@ type RateLimitValue struct {
 // UpsertWorkItemPage commits one API response page: the mirrors with the
 // update_time guard (an older poll result never overwrites a newer row),
 // then the page's cursors and rate limits (03m persistence). nowMs stamps
-// the sync time.
-func UpsertWorkItemPage(ctx context.Context, s *store.Store, integration string, items []WorkItemMirror, cursors []CursorValue, limits []RateLimitValue, nowMs int64) error {
+// the sync time. It reports the rows the page created or replaced with
+// their stamps, so Watch can publish them; a last_sync_ms touch and a
+// dropped page report nothing.
+func UpsertWorkItemPage(ctx context.Context, s *store.Store, integration string, items []WorkItemMirror, cursors []CursorValue, limits []RateLimitValue, nowMs int64) ([]WorkItemChange, error) {
 	jctx := context.WithoutCancel(ctx)
-	return s.Write(ctx, func(tx *sql.Tx) error {
+	var out []WorkItemChange
+	err := s.Write(ctx, func(tx *sql.Tx) error {
 		for _, it := range items {
-			if err := upsertWorkItem(jctx, tx, integration, it, nowMs); err != nil {
+			c, err := upsertWorkItem(jctx, tx, integration, it, nowMs)
+			if err != nil {
 				return err
+			}
+			if c != nil {
+				out = append(out, *c)
 			}
 		}
 		if err := upsertCursors(jctx, tx, integration, cursors, nowMs); err != nil {
@@ -164,9 +172,43 @@ func UpsertWorkItemPage(ctx context.Context, s *store.Store, integration string,
 		}
 		return upsertRateLimits(jctx, tx, integration, limits, nowMs)
 	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
-func upsertWorkItem(ctx context.Context, tx *sql.Tx, integration string, it WorkItemMirror, nowMs int64) error {
+// mirrorHubSeqSQL is migration 24 (plan row 12, the Watch ingest slice):
+// the hub-change stamp on both mirrors, so Watch publishes a synced row
+// with its commit position. Rows from before this migration read back 0
+// and never publish as live; the initial state covers them.
+const mirrorHubSeqSQL = `ALTER TABLE work_items ADD COLUMN hub_seq INTEGER NOT NULL DEFAULT 0 CHECK (hub_seq >= 0);
+ALTER TABLE change_requests ADD COLUMN hub_seq INTEGER NOT NULL DEFAULT 0 CHECK (hub_seq >= 0);`
+
+// WorkItemChange is one mirror row an upsert created or replaced: the key,
+// whether it is new, the stamp the write took, and the row it replaced
+// (nil when created) for UNMATCHED evaluation.
+type WorkItemChange struct {
+	Key     string
+	Created bool
+	HubSeq  int64
+	Before  *WorkItemRow
+}
+
+// ChangeRequestChange is one change-request row an upsert created or
+// replaced, as [WorkItemChange].
+type ChangeRequestChange struct {
+	Key     string
+	Created bool
+	HubSeq  int64
+	Before  *ChangeRequestRow
+}
+
+// upsertWorkItem writes one mirror row and reports the change, or nil when
+// the page left the row alone (an older poll result, or a last_sync_ms
+// touch on identical content). A real change takes a hub_seq stamp, so
+// Watch publishes it with its commit position.
+func upsertWorkItem(ctx context.Context, tx *sql.Tx, integration string, it WorkItemMirror, nowMs int64) (*WorkItemChange, error) {
 	key := SyncKey(integration, it.Kind, it.Project, it.ItemKey)
 	item := it.ItemJSON
 	if len(item) == 0 {
@@ -177,40 +219,66 @@ func upsertWorkItem(ctx context.Context, tx *sql.Tx, integration string, it Work
 		trust = []byte("{}")
 	}
 	var stored struct {
-		updateMs int64
-		item     string
-		stage    int64
-		trust    string
-		reason   int64
-		version  int64
+		stored WorkItemRow
+		stage  int64
+		reason int64
+		found  bool
 	}
-	err := tx.QueryRowContext(ctx, `SELECT update_ms, item_json, stage, trust_json, manual_reason, version
-		FROM work_items WHERE key = ?`, key).Scan(
-		&stored.updateMs, &stored.item, &stored.stage, &stored.trust, &stored.reason, &stored.version)
+	err := tx.QueryRowContext(ctx, `SELECT update_ms, item_json, stage, trust_json, manual_reason, version,
+		create_ms, last_sync_ms FROM work_items WHERE key = ?`, key).Scan(
+		&stored.stored.UpdateMs, &stored.stored.ItemJSON, &stored.stage, &stored.stored.TrustJSON,
+		&stored.reason, &stored.stored.Version, &stored.stored.CreateMs, &stored.stored.LastSyncMs)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
-		_, err = tx.ExecContext(ctx, `INSERT INTO work_items(key, integration, kind, project, item_key, item_json,
-			update_ms, stage, trust_json, manual_reason, version, create_ms, last_sync_ms)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
-			key, integration, it.Kind, it.Project, it.ItemKey, string(item),
-			it.UpdateMs, it.Stage, string(trust), it.ManualReason, nowMs, nowMs)
-		return err
 	case err != nil:
-		return fmt.Errorf("statedb: read work item: %w", err)
+		return nil, fmt.Errorf("statedb: read work item: %w", err)
+	default:
+		stored.found = true
 	}
-	if it.UpdateMs < stored.updateMs {
-		return nil
+	if !stored.found {
+		st, err := NextStamp(ctx, tx, time.UnixMilli(nowMs))
+		if err != nil {
+			return nil, err
+		}
+		_, err = tx.ExecContext(ctx, `INSERT INTO work_items(key, integration, kind, project, item_key, item_json,
+			update_ms, stage, trust_json, manual_reason, version, create_ms, last_sync_ms, hub_seq)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`,
+			key, integration, it.Kind, it.Project, it.ItemKey, string(item),
+			it.UpdateMs, it.Stage, string(trust), it.ManualReason, nowMs, nowMs, st.HubSeq)
+		if err != nil {
+			return nil, err
+		}
+		return &WorkItemChange{Key: key, Created: true, HubSeq: st.HubSeq}, nil
 	}
-	if it.UpdateMs == stored.updateMs && string(item) == stored.item &&
-		int64(it.Stage) == stored.stage && string(trust) == stored.trust &&
+	before := stored.stored
+	before.Key, before.Integration, before.Kind = key, integration, it.Kind
+	before.Project, before.ItemKey = it.Project, it.ItemKey
+	if before.Stage, err = int32Range(stored.stage); err != nil {
+		return nil, err
+	}
+	if before.ManualReason, err = int32Range(stored.reason); err != nil {
+		return nil, err
+	}
+	if it.UpdateMs < before.UpdateMs {
+		return nil, nil
+	}
+	if it.UpdateMs == before.UpdateMs && string(item) == before.ItemJSON &&
+		int64(it.Stage) == stored.stage && string(trust) == before.TrustJSON &&
 		int64(it.ManualReason) == stored.reason {
 		_, err = tx.ExecContext(ctx, `UPDATE work_items SET last_sync_ms = ? WHERE key = ?`, nowMs, key)
-		return err
+		return nil, err
+	}
+	st, err := NextStamp(ctx, tx, time.UnixMilli(nowMs))
+	if err != nil {
+		return nil, err
 	}
 	_, err = tx.ExecContext(ctx, `UPDATE work_items SET item_json = ?, update_ms = ?, stage = ?,
-		trust_json = ?, manual_reason = ?, version = version + 1, last_sync_ms = ? WHERE key = ?`,
-		string(item), it.UpdateMs, it.Stage, string(trust), it.ManualReason, nowMs, key)
-	return err
+		trust_json = ?, manual_reason = ?, version = version + 1, last_sync_ms = ?, hub_seq = ? WHERE key = ?`,
+		string(item), it.UpdateMs, it.Stage, string(trust), it.ManualReason, nowMs, st.HubSeq, key)
+	if err != nil {
+		return nil, err
+	}
+	return &WorkItemChange{Key: key, HubSeq: st.HubSeq, Before: &before}, nil
 }
 
 // ChangeRequestMirror is one provider change request for the mirror.
@@ -224,47 +292,19 @@ type ChangeRequestMirror struct {
 
 // UpsertChangeRequestPage commits one change-request page with its cursors
 // and rate limits, under the same guard and version rule as work items.
-func UpsertChangeRequestPage(ctx context.Context, s *store.Store, integration string, items []ChangeRequestMirror, cursors []CursorValue, limits []RateLimitValue, nowMs int64) error {
+// It reports the rows the page created or replaced, as
+// [UpsertWorkItemPage].
+func UpsertChangeRequestPage(ctx context.Context, s *store.Store, integration string, items []ChangeRequestMirror, cursors []CursorValue, limits []RateLimitValue, nowMs int64) ([]ChangeRequestChange, error) {
 	jctx := context.WithoutCancel(ctx)
-	return s.Write(ctx, func(tx *sql.Tx) error {
+	var out []ChangeRequestChange
+	err := s.Write(ctx, func(tx *sql.Tx) error {
 		for _, it := range items {
-			key := SyncKey(integration, "CHANGE_REQUEST", it.Project, it.ItemKey)
-			body := it.CRJSON
-			if len(body) == 0 {
-				body = []byte("{}")
+			c, err := upsertChangeRequest(jctx, tx, integration, it, nowMs)
+			if err != nil {
+				return err
 			}
-			var stored struct {
-				updateMs int64
-				body     string
-				version  int64
-			}
-			err := tx.QueryRowContext(ctx, `SELECT update_ms, cr_json, version FROM change_requests WHERE key = ?`,
-				key).Scan(&stored.updateMs, &stored.body, &stored.version)
-			switch {
-			case errors.Is(err, sql.ErrNoRows):
-				_, err = tx.ExecContext(jctx, `INSERT INTO change_requests(key, integration, project, item_key,
-					cr_json, update_ms, version, create_ms, last_sync_ms)
-					VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)`,
-					key, integration, it.Project, it.ItemKey, string(body), it.UpdateMs, nowMs, nowMs)
-				if err != nil {
-					return err
-				}
-			case err != nil:
-				return fmt.Errorf("statedb: read change request: %w", err)
-			default:
-				if it.UpdateMs < stored.updateMs {
-					continue
-				}
-				if it.UpdateMs == stored.updateMs && string(body) == stored.body {
-					_, err = tx.ExecContext(jctx, `UPDATE change_requests SET last_sync_ms = ? WHERE key = ?`, nowMs, key)
-				} else {
-					_, err = tx.ExecContext(jctx, `UPDATE change_requests SET cr_json = ?, update_ms = ?,
-						version = version + 1, last_sync_ms = ? WHERE key = ?`,
-						string(body), it.UpdateMs, nowMs, key)
-				}
-				if err != nil {
-					return err
-				}
+			if c != nil {
+				out = append(out, *c)
 			}
 		}
 		if err := upsertCursors(jctx, tx, integration, cursors, nowMs); err != nil {
@@ -272,6 +312,66 @@ func UpsertChangeRequestPage(ctx context.Context, s *store.Store, integration st
 		}
 		return upsertRateLimits(jctx, tx, integration, limits, nowMs)
 	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// upsertChangeRequest writes one change-request row and reports the
+// change, or nil when the page left the row alone, as [upsertWorkItem].
+func upsertChangeRequest(ctx context.Context, tx *sql.Tx, integration string, it ChangeRequestMirror, nowMs int64) (*ChangeRequestChange, error) {
+	key := SyncKey(integration, "CHANGE_REQUEST", it.Project, it.ItemKey)
+	body := it.CRJSON
+	if len(body) == 0 {
+		body = []byte("{}")
+	}
+	var stored ChangeRequestRow
+	var found bool
+	err := tx.QueryRowContext(ctx, `SELECT update_ms, cr_json, version, create_ms, last_sync_ms
+		FROM change_requests WHERE key = ?`, key).Scan(
+		&stored.UpdateMs, &stored.CRJSON, &stored.Version, &stored.CreateMs, &stored.LastSyncMs)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+	case err != nil:
+		return nil, fmt.Errorf("statedb: read change request: %w", err)
+	default:
+		found = true
+	}
+	if !found {
+		st, err := NextStamp(ctx, tx, time.UnixMilli(nowMs))
+		if err != nil {
+			return nil, err
+		}
+		_, err = tx.ExecContext(ctx, `INSERT INTO change_requests(key, integration, project, item_key,
+			cr_json, update_ms, version, create_ms, last_sync_ms, hub_seq)
+			VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`,
+			key, integration, it.Project, it.ItemKey, string(body), it.UpdateMs, nowMs, nowMs, st.HubSeq)
+		if err != nil {
+			return nil, err
+		}
+		return &ChangeRequestChange{Key: key, Created: true, HubSeq: st.HubSeq}, nil
+	}
+	stored.Key, stored.Integration, stored.Project, stored.ItemKey = key, integration, it.Project, it.ItemKey
+	if it.UpdateMs < stored.UpdateMs {
+		return nil, nil
+	}
+	if it.UpdateMs == stored.UpdateMs && string(body) == stored.CRJSON {
+		_, err = tx.ExecContext(ctx, `UPDATE change_requests SET last_sync_ms = ? WHERE key = ?`, nowMs, key)
+		return nil, err
+	}
+	st, err := NextStamp(ctx, tx, time.UnixMilli(nowMs))
+	if err != nil {
+		return nil, err
+	}
+	_, err = tx.ExecContext(ctx, `UPDATE change_requests SET cr_json = ?, update_ms = ?,
+		version = version + 1, last_sync_ms = ?, hub_seq = ? WHERE key = ?`,
+		string(body), it.UpdateMs, nowMs, st.HubSeq, key)
+	if err != nil {
+		return nil, err
+	}
+	before := stored
+	return &ChangeRequestChange{Key: key, HubSeq: st.HubSeq, Before: &before}, nil
 }
 
 func upsertCursors(ctx context.Context, tx *sql.Tx, integration string, cursors []CursorValue, nowMs int64) error {

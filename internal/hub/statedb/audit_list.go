@@ -54,6 +54,46 @@ func scanAuditListRow(rows *sql.Rows) (AuditStored, error) {
 	return out, nil
 }
 
+// MaxAuditSeq reads the highest stamped audit row, 0 when the log is
+// empty. A Watch publisher starts its tail here, so rows committed before
+// it started serving never publish as live.
+func MaxAuditSeq(ctx context.Context, s *store.Store) (int64, error) {
+	var out int64
+	err := s.Read(ctx, func(tx *sql.Tx) error {
+		return tx.QueryRowContext(ctx, `SELECT COALESCE(MAX(hub_seq), 0) FROM audit_log`).Scan(&out)
+	})
+	if err != nil {
+		return 0, fmt.Errorf("statedb: max audit seq: %w", err)
+	}
+	return out, nil
+}
+
+// ListAuditSince reads the audit rows past seq in hub_seq order: the new
+// tail of the log since the publisher's last position. hub_seq is unique,
+// so the order is exact.
+func ListAuditSince(ctx context.Context, s *store.Store, seq int64) ([]AuditStored, error) {
+	var out []AuditStored
+	err := s.Read(ctx, func(tx *sql.Tx) error {
+		rows, err := tx.QueryContext(ctx, `SELECT `+auditListColumns+` FROM audit_log WHERE hub_seq > ? ORDER BY hub_seq`, seq)
+		if err != nil {
+			return fmt.Errorf("statedb: list audit tail: %w", err)
+		}
+		defer func() { _ = rows.Close() }()
+		for rows.Next() {
+			r, err := scanAuditListRow(rows)
+			if err != nil {
+				return err
+			}
+			out = append(out, r)
+		}
+		return rows.Err()
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ListStoredAuditEntries reads every audit row on the read pool. Fleets
 // hold a bounded audit history (03f: rows are never pruned, but each row
 // is small), so the API filters, sorts and pages in memory over this

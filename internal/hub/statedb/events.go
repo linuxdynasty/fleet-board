@@ -114,6 +114,9 @@ type EventOut struct {
 	HubLastEventSeq uint64
 	// Stored says a history row was written.
 	Stored bool
+	// HubSeq is the stamp the job took on the machine row: the Watch
+	// position of the change it made, 0 when nothing was written.
+	HubSeq int64
 }
 
 // ApplyEvent stores one event in the writer job's tx: the machine must
@@ -180,6 +183,7 @@ func ApplyEvent(ctx context.Context, tx *sql.Tx, in EventIn) (EventOut, error) {
 		WHERE machine_id = ?`, seq, st.ObservedTime.UnixMilli(), st.HubSeq, in.MachineID); err != nil {
 		return EventOut{}, fmt.Errorf("statedb: move hub_last_event_seq: %w", err)
 	}
+	out.HubSeq = st.HubSeq
 	return out, nil
 }
 

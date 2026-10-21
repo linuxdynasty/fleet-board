@@ -90,14 +90,14 @@ func TestAnEventIsStoredAsHistoryAtOrBelowTheSnapshotFloorAndLiveAbove(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if out != (statedb.EventOut{Outcome: statedb.EventApplied, History: true, Generation: 1, HubLastEventSeq: 100, Stored: true}) {
+	if out != (statedb.EventOut{Outcome: statedb.EventApplied, History: true, Generation: 1, HubLastEventSeq: 100, Stored: true, HubSeq: before + 1}) {
 		t.Errorf("seq 100: %+v, want applied, history only", out)
 	}
 	out, err = applyEvent(t, s, evIn(105, 100))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if out != (statedb.EventOut{Outcome: statedb.EventApplied, Generation: 1, HubLastEventSeq: 105, Stored: true}) {
+	if out != (statedb.EventOut{Outcome: statedb.EventApplied, Generation: 1, HubLastEventSeq: 105, Stored: true, HubSeq: before + 2}) {
 		t.Errorf("seq 105: %+v, want applied live", out)
 	}
 	got := eventRows(t, dir)
@@ -272,6 +272,33 @@ func TestMarkersAndTheEventsConstraintsOnTheFile(t *testing.T) {
 	if _, err := db.ExecContext(t.Context(), `INSERT INTO events(machine_id, event_generation, seq, kind, delivery,
 		observed_time, hub_seq, body) VALUES ('`+renewMachineID+`', 2, 101, 'pane_exited', 'never_drop', 1, 95, x'00')`); err != nil {
 		t.Errorf("same seq in generation 2: %v", err)
+	}
+}
+
+// The applied event reports the stamp its job took on the machine row, so
+// Watch publishes the change with its store stamp.
+func TestApplyEventReportsMachineHubSeq(t *testing.T) {
+	t.Parallel()
+	_, s := snappedStore(t)
+	out, err := applyEvent(t, s, evIn(101, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Outcome != statedb.EventApplied {
+		t.Fatalf("outcome = %v, want applied", out.Outcome)
+	}
+	if out.HubSeq <= 0 {
+		t.Fatalf("hub_seq = %d, want the positive machine stamp", out.HubSeq)
+	}
+	var stored int64
+	if err := s.Read(t.Context(), func(tx *sql.Tx) error {
+		return tx.QueryRowContext(t.Context(), `SELECT hub_seq FROM machines WHERE machine_id = ?`,
+			renewMachineID).Scan(&stored)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if out.HubSeq != stored {
+		t.Errorf("hub_seq = %d, want the machine row stamp %d", out.HubSeq, stored)
 	}
 }
 

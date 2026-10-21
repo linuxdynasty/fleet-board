@@ -26,16 +26,19 @@ type ChangeRequestRow struct {
 	Version     int64
 	CreateMs    int64
 	LastSyncMs  int64
+	// HubSeq is the stamp of the last real change (migration 24); 0 on
+	// rows from before it, which never publish as live.
+	HubSeq int64
 }
 
 // changeRequestColumns lists every change_requests column a row scan reads.
 const changeRequestColumns = `key, integration, project, item_key, cr_json,
-	update_ms, version, create_ms, last_sync_ms`
+	update_ms, version, create_ms, last_sync_ms, hub_seq`
 
 func scanChangeRequestRow(row *sql.Row) (ChangeRequestRow, error) {
 	var c ChangeRequestRow
 	if err := row.Scan(&c.Key, &c.Integration, &c.Project, &c.ItemKey,
-		&c.CRJSON, &c.UpdateMs, &c.Version, &c.CreateMs, &c.LastSyncMs); err != nil {
+		&c.CRJSON, &c.UpdateMs, &c.Version, &c.CreateMs, &c.LastSyncMs, &c.HubSeq); err != nil {
 		return ChangeRequestRow{}, fmt.Errorf("statedb: read change request row: %w", err)
 	}
 	return c, nil
@@ -44,7 +47,7 @@ func scanChangeRequestRow(row *sql.Row) (ChangeRequestRow, error) {
 func scanChangeRequestRows(rows *sql.Rows) (ChangeRequestRow, error) {
 	var c ChangeRequestRow
 	if err := rows.Scan(&c.Key, &c.Integration, &c.Project, &c.ItemKey,
-		&c.CRJSON, &c.UpdateMs, &c.Version, &c.CreateMs, &c.LastSyncMs); err != nil {
+		&c.CRJSON, &c.UpdateMs, &c.Version, &c.CreateMs, &c.LastSyncMs, &c.HubSeq); err != nil {
 		return ChangeRequestRow{}, fmt.Errorf("statedb: read change request row: %w", err)
 	}
 	return c, nil

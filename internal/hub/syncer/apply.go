@@ -115,7 +115,7 @@ func (s *Syncer) workItemsRound(ctx context.Context, a Adapter, id string, repo 
 	if ts := nextSince.GetUpdatedAfterTime(); ts != nil {
 		cursorOut.SinceMs, cursorOut.HasSince = ts.AsTime().UnixMilli(), true
 	}
-	if err := statedb.UpsertWorkItemPage(ctx, s.Store, id, mirrors,
+	if _, err := statedb.UpsertWorkItemPage(ctx, s.Store, id, mirrors,
 		[]statedb.CursorValue{cursorOut}, rateLimitValues(page.Meta), now.UnixMilli()); err != nil {
 		return err
 	}
@@ -356,7 +356,7 @@ func (s *Syncer) VerifyBranches(ctx context.Context, id, project string, branche
 		})
 	}
 	cursorOut := statedb.CursorValue{Resource: ResourceChangeRequests, Page: project}
-	if err := statedb.UpsertChangeRequestPage(ctx, s.Store, id, mirrors,
+	if _, err := statedb.UpsertChangeRequestPage(ctx, s.Store, id, mirrors,
 		[]statedb.CursorValue{cursorOut}, rateLimitValues(out.Meta), now.UnixMilli()); err != nil {
 		return nil, err
 	}

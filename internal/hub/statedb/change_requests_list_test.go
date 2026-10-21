@@ -24,7 +24,7 @@ func TestChangeRequestListAndRead(t *testing.T) {
 			UpdateMs: 50,
 		}
 	}
-	if err := statedb.UpsertChangeRequestPage(ctx, s, "github-1",
+	if _, err := statedb.UpsertChangeRequestPage(ctx, s, "github-1",
 		[]statedb.ChangeRequestMirror{mirror("101"), mirror("102")}, nil, nil, 60); err != nil {
 		t.Fatal(err)
 	}

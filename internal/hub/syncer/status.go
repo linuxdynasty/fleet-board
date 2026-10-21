@@ -88,7 +88,7 @@ func (s *Syncer) storeLimits(ctx context.Context, id, resource, page string, cur
 	if cursor.HasSince {
 		out.SinceMs, out.HasSince = cursor.SinceMs, true
 	}
-	_ = statedb.UpsertWorkItemPage(ctx, s.Store, id, nil,
+	_, _ = statedb.UpsertWorkItemPage(ctx, s.Store, id, nil,
 		[]statedb.CursorValue{out}, rateLimitValues(meta), now.UnixMilli())
 }
 

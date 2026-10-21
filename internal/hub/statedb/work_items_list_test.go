@@ -26,7 +26,7 @@ func TestWorkItemListAndRead(t *testing.T) {
 			TrustJSON: []byte(`{"trusted":true}`),
 		}
 	}
-	if err := statedb.UpsertWorkItemPage(ctx, s, "github-1",
+	if _, err := statedb.UpsertWorkItemPage(ctx, s, "github-1",
 		[]statedb.WorkItemMirror{mirror("7398", 2), mirror("7400", 9)}, nil, nil, 60); err != nil {
 		t.Fatal(err)
 	}

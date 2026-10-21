@@ -143,6 +143,14 @@ func Migrations() []store.Migration {
 		Version: 22,
 		Name:    "usage_readings",
 		SQL:     usageReadingsSQL,
+	}, {
+		Version: 23,
+		Name:    "hub_session_watch_stamp",
+		SQL:     sessionsHubSeqSQL,
+	}, {
+		Version: 24,
+		Name:    "mirror_watch_stamps",
+		SQL:     mirrorHubSeqSQL,
 	}}
 }
 
