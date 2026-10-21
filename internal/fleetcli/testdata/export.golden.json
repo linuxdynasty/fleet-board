@@ -1,0 +1,12 @@
+{
+  "config": {
+    "formatVersion": 1,
+    "integrations": [
+      {
+        "baseUrl": "https://api.github.com",
+        "providerName": "github"
+      }
+    ]
+  },
+  "exportTime": "\u003ctime\u003e"
+}

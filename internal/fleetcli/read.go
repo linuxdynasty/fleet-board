@@ -15,6 +15,7 @@ import (
 	hubv1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/hub/v1"
 	"github.com/linuxdynasty/fleet-board/gen/go/fleet/hub/v1/hubv1connect"
 	typev1 "github.com/linuxdynasty/fleet-board/gen/go/fleet/type/v1"
+	"github.com/linuxdynasty/fleet-board/internal/fleetconfig"
 )
 
 var errMalformed = errors.New("incomplete response")
@@ -162,6 +163,19 @@ func (i *invocation) read(ctx context.Context, c hubv1connect.FleetServiceClient
 			return messageJSON(r.Msg)
 		}
 		return workTable(r.Msg.GetWorkItems(), r.Msg.GetNextPageToken()), nil
+	case "export":
+		r, err := c.ExportConfig(ctx, connect.NewRequest(&hubv1.ExportConfigRequest{}))
+		if err != nil {
+			return nil, err
+		}
+		if r.Msg.GetConfig() == nil {
+			return nil, errMalformed
+		}
+		if i.json {
+			return messageJSON(r.Msg)
+		}
+		// The exchange document: canonical FleetConfig JSON as YAML.
+		return fleetconfig.Encode(portableConfig(r.Msg.GetConfig()))
 	}
 	return nil, errUsage
 }
