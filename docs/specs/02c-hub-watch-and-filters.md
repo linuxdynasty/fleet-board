@@ -41,9 +41,8 @@ ignored, so a sidebar filter cannot leak into the goal or triage topics. `fleet_
   client drops its copies on `RESYNC_REQUIRED` or `HUB_RESTARTED` before
   the new `INITIAL` messages arrive, or keys its dedupe on
   `hub_instance_id` as well (plan row 12).
-- **Checkpoints.** Every message carries a `resume_token`. An idle stream
-  gets `CHECKPOINT` (new token, no resource) every checkpoint interval ([defaults](defaults.md)), which doubles as a
-  keepalive.
+- **Checkpoints.** Every message carries a `resume_token`; an idle stream
+  gets `CHECKPOINT` (new token, no resource) every checkpoint interval ([defaults](defaults.md)) as a keepalive.
 
 ### A dashboard load, as messages
 
@@ -69,8 +68,7 @@ sequenceDiagram
   H->>H: authenticate, scope check per topic, subscribe to the fan-out bus, read initial state at a consistent hub_seq
   H-->>D: WatchResponse{hub_seq, change_type INITIAL, topic, resource} (repeated per resource)
   H-->>D: WatchResponse{change_type INITIAL_DONE, topic} (once per topic)
-  H-->>D: WatchResponse{change_type CREATED or UPDATED or DELETED or UNMATCHED, resource, resume_token} (live)
-  H-->>D: WatchResponse{change_type CHECKPOINT, resume_token} every checkpoint interval when idle
+  H-->>D: WatchResponse{change_type CREATED or UPDATED or DELETED or UNMATCHED, resource, resume_token} (live; CHECKPOINT with a bare token when idle)
   D->>H: ListGoalRuns, ListGoalTransitions, ListUsageReadings, ListStoredSessions, ... (reads with no topic)
 ```
 
@@ -91,13 +89,11 @@ subscription of the new request:
 | Not in the token (new topic or changed filter) | sends the initial state if `send_initial`, otherwise live only from the moment the stream opens |
 | Topic dropped | nothing; no message |
 
-So scrolling a session sidebar changes only the `PANE_SUMMARIES` filter:
-that topic restarts with `send_initial`, every other topic resumes, and no
-`RESYNC_REQUIRED` is sent. The visible-pane filter is
-`session in ("s-1", "s-2", …)` (or `machine = "m-12"`): a pane is filtered
-by its session or machine, never by `PaneKey`. `PaneKey` has a canonical string
-form (`ids.proto`) for coalesce keys and `FLEET_PANE_KEY`, but it is not a filter
-field.
+So scrolling a session sidebar restarts only `PANE_SUMMARIES` with
+`send_initial`; every other topic resumes with no `RESYNC_REQUIRED`. The
+visible-pane filter is `session in ("s-1", "s-2", …)` (or `machine = "m-12"`):
+a pane is filtered by its session or machine, never by `PaneKey` (canonical
+string form in `ids.proto`, not a filter field).
 
 ### Resume and `RESYNC_REQUIRED`
 
@@ -117,7 +113,10 @@ subscription and no token. `fleet_hub_watch_resync_total{reason}` counts each cl
 
 A goal file changes, the agent sends an `Event`, the store writer commits it (deriving goal
 and triage state in the same transaction), and the fan-out bus delivers it to each matching
-`Watch`. One transaction can produce several changes (a goal and its triage item); per
+`Watch`. Every writer uses the same commit-then-publish step: the ingest jobs, the gateway's
+agent writes and the syncer's mirror pages commit first, then offer their stamped changes in
+commit order, and the publish tick tails new audit entries the same way
+(a rolled-back job publishes nothing). One transaction can produce several changes (a goal and its triage item); per
 resource they arrive in order. After a drop the client reopens with the last `resume_token`;
 `RESYNC_REQUIRED` comes only when the hub cannot honour that token.
 
@@ -165,6 +164,7 @@ volatile fields, the hub sends at most one Watch message per resource per
 interval and the message carries the latest values; a change to any other
 field is sent at once and includes the current volatile values. Volatile
 values are held in memory and the change log stores the coalesced message.
+Values the hub derives at read time (machine `unfit` next checks, the agent-health rollup) commit no change and ride the next publish.
 
 | Resource | Volatile fields | Interval |
 |---|---|---|
@@ -321,10 +321,10 @@ Served so far (row 12 slices): `id` (the canonical key), `integration`,
 `kind`, `repo`, `stage`, `state`, `trusted`, `label`, `manual_reason`,
 `create_time` and `update_time` read the synced mirrors with the hub's
 verdicts; `goal` is refused (`FILTER_INVALID`) until the dispatch rows
-store the goal link. `update_time` filters read as `create_time` until a
-later row stores the hub-change stamp; `provider_update_time` reads the
-item's own update (0 when the mirror carries none). The default
-`ListWorkItems` order is `ct`. `GetWorkItem` without `include_body`
+store the goal link. `update_time` filters read the hub-change stamp on
+rows a syncer page touched (untouched mirrors read `create_time`);
+`provider_update_time` reads the item's own update (0 when the mirror
+carries none). The default `ListWorkItems` order is `ct`. `GetWorkItem` without `include_body`
 returns the mirror with an empty body; `include_body` answers unimplemented
 until a row builds the provider fetch.
 
@@ -341,10 +341,10 @@ until a row builds the provider fetch.
 Served so far (row 12 slices): `id` (the canonical key), `integration`,
 `repo`, `state`, `create_time` and `update_time` read the synced mirrors;
 `goal` and `owned` are refused (`FILTER_INVALID`) until the dispatch rows
-store the goal link. `ut` reads as `create_time` until a later row stores
-the hub-change stamp; `provider_update_time` reads the change request's own
-update (0 when the mirror carries none). The default `ListChangeRequests`
-order is `ct`. `GetChangeRequest` returns the mirror with an empty goal
+store the goal link. `ut` reads the hub-change stamp on rows a syncer
+page touched (untouched mirrors read `create_time`); `provider_update_time`
+reads the change request's own update (0 when the mirror carries none).
+The default `ListChangeRequests` order is `ct`. `GetChangeRequest` returns the mirror with an empty goal
 until the dispatch rows link goals.
 
 | Account (`ACCOUNTS`, `ListAccounts`) | Path | Type | Operators |

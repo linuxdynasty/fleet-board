@@ -15,4 +15,8 @@ every 60 s, claim re-check every 5 min, full poll without validators every
 30 min. Rate rules (03j): remaining under 10 % slows polling four times,
 zero sleeps to `reset_time`, `RATE_LIMITED` backs off to `retry_after`.
 
+- Watch: the `OnWorkItems` and `OnChangeRequests` hooks (set by the
+  daemon) receive each committed page's stamped changes, so the hub API can
+  offer them to Watch in commit order. Unset, the syncer publishes nothing.
+
 Tests: `CGO_ENABLED=0 go test ./internal/hub/syncer/`.
