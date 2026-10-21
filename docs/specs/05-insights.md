@@ -328,7 +328,11 @@ Coverage per `fleet-telemetry-coverage`; names follow
 - Spans: `hub.insights.rollup{day}`, `hub.insights.export_bundle`,
   `hub.insights.collect_report{goal_id}`, `hub.insights.suggest`;
   `agent.scratch.ensure`, `agent.scratch.collect`.
-- Logs: `insights.rollup{day, rows}`, `insights.report_stored{goal_id,
+- Logs: `insights.rollup{day, rows}`, `insights.rebuilt{from, windows,
+  accounts}`, `insights.queried{efficiency, series, goals_live}`,
+  `insights.query_refused{reason}`,
+  `insights.query_failed{step, err_kind, actor}`,
+  `insights.report_stored{goal_id,
   bytes}`, `insights.report_invalid{goal_id, reason}`,
   `routine.guard_wait{routine, reason}`.
 

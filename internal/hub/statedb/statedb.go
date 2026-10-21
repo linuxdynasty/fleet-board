@@ -151,6 +151,10 @@ func Migrations() []store.Migration {
 		Version: 24,
 		Name:    "mirror_watch_stamps",
 		SQL:     mirrorHubSeqSQL,
+	}, {
+		Version: 25,
+		Name:    "insight_quota_window",
+		SQL:     insightsRollupSQL,
 	}}
 }
 
