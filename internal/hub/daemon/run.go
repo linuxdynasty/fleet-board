@@ -220,23 +220,7 @@ func serve(ctx context.Context, cfg *config.Config, opts Options, d hubDeps, s *
 	if err != nil {
 		return s.fail(ReasonListen, err)
 	}
-	// The Watch ingest slice (plan row 12, slice 2): gateway commits
-	// publish to Watch subscribers through the Fleet, serialized on its
-	// watchMu with the in-package writes.
-	agent.SetWatchSink(gateway.WatchSink{
-		MachineState:     fleet.PublishMachineState,
-		MachineCreated:   fleet.PublishMachineCreated,
-		MachineCommitted: fleet.PublishMachineCommitted,
-		MachineEvent:     fleet.PublishMachineEvent,
-		GoalsCommitted:   fleet.PublishGoalsCommitted,
-		Pane: func(ctx context.Context, p gateway.PanePublication) {
-			fleet.PublishPane(ctx, api.PanePublication{
-				Pane: p.Pane, MachineID: p.MachineID, SessionID: p.SessionID,
-				LastLines: p.LastLines, LastOutputTime: p.LastOutputTime,
-				Activity: p.Activity, Seq: p.Seq,
-			})
-		},
-	})
+	wireWatchSink(agent, fleet)
 	agent.RecordStates(ctx, d.swept)
 	hk, err := housekeeping.New(housekeeping.Options{Now: opts.Now, Telemetry: s.tel}, housekeeping.Job{
 		Name: "machine_state", Every: housekeeping.TickEvery, Run: agent.Housekeep,
