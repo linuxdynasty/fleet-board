@@ -134,7 +134,11 @@
 // migration): [InsertUsageReading] appends one reading keyed by
 // (account, read_time, received_time) with no audit row, and
 // [ListStoredUsageReadings] reads them all on the read pool for the hub
-// API's filter, sort and page.
+// API's filter, sort and page. Plan row 13 adds the bounded
+// [ListStoredUsageReadingsSince] scan (read_ms index) for the recurring
+// rollup and insights passes, plus the account_reserve_history table:
+// [ReservePercentOfSpec] reads the current reserve (default 10, cap 50)
+// and [ListAccountReserveHistory] its effective-time history.
 //
 // Plan row 12 (integration reads) adds the configured-integration read
 // path over the integrations table: [EnsureIntegration] and

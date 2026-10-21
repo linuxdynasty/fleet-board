@@ -56,12 +56,16 @@
 // (watched rows with the stored spec, status unset), [Fleet.ListAccounts],
 // [Fleet.GetAccount] (owner-created accounts with the stored spec, usage
 // and pacing unset) and
-// [Fleet.GetSystemStatus] built; other methods are Unimplemented except
+// [Fleet.GetSystemStatus] and [Fleet.GetInsights] (EFFICIENCY and SERIES;
+// the OUTCOMES, STUCK and ROUTINES sections land with row 27, and an
+// empty section list names every section so it answers UNIMPLEMENTED)
+// built; other
+// methods are Unimplemented except
 // sign-in and device calls, which are FailedPrecondition in local mode
 // (02k). Implemented methods check the caller ([PrincipalFrom], ADMIN for enrollment,
 // revoke/delete and store status, SETTINGS for repos, update and import, READ for
 // export, the machine, operation, session, goal, work-item,
-// change-request, repo, account and system reads and the
+// change-request, repo, account, system and insights reads and the
 // visible capture (LOGS for its scrollback and the account raw screen), READ|APPROVALS for the triage reads and
 // APPROVALS for the triage writes;
 // GetServerInfo needs no scope), the fields and the request_id (02b),

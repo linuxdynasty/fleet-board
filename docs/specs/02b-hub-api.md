@@ -76,6 +76,16 @@ reads UNKNOWN with its value and `since_time` unset until the evaluation
 loop lands; the open triage item, `hub_start_time`, exporters and
 `watch_subscribers` stay unset until their slice.
 
+Served so far (row 13, second slice): `GetInsights` serves EFFICIENCY and
+SERIES. The range defaults to 30 days, aligns to UTC days and caps at 366.
+Stored complete windows serve as stored; the open window is recomputed
+live from the source readings, so it is never more than an hour stale.
+`computed_time` and `data_start_time` come from the rollup clock (05
+section 6); with no rollup yet the response falls back to the live clock.
+OUTCOMES, STUCK and ROUTINES answer UNIMPLEMENTED until row 27, and an
+empty section list names every section (insights.proto) so it answers
+UNIMPLEMENTED too.
+
 **Authentication** (how a browser, the CLI and a phone prove who they are, the
 claim URL, the credential carriers, Host and Origin checks) is
 [02f](02f-hub-authentication.md); the hub API only says who may call what

@@ -23,6 +23,7 @@ import (
 	"github.com/linuxdynasty/fleet-board/internal/hub/observed"
 	"github.com/linuxdynasty/fleet-board/internal/hub/outbox"
 	"github.com/linuxdynasty/fleet-board/internal/hub/revocation"
+	"github.com/linuxdynasty/fleet-board/internal/hub/rollup"
 	"github.com/linuxdynasty/fleet-board/internal/hub/statedb"
 	"github.com/linuxdynasty/fleet-board/internal/hub/system"
 	"github.com/linuxdynasty/fleet-board/internal/store"
@@ -222,6 +223,13 @@ func serve(ctx context.Context, cfg *config.Config, opts Options, d hubDeps, s *
 	}
 	wireWatchSink(agent, fleet)
 	agent.RecordStates(ctx, d.swept)
+	roller, err := rollup.New(rollup.Options{Now: opts.Now, Telemetry: s.tel})
+	if err != nil {
+		for _, l := range ls {
+			_ = l.ln.Close() // the rollup error is the one to report
+		}
+		return s.fail(ReasonListen, err)
+	}
 	hk, err := housekeeping.New(housekeeping.Options{Now: opts.Now, Telemetry: s.tel}, housekeeping.Job{
 		Name: "machine_state", Every: housekeeping.TickEvery, Run: agent.Housekeep,
 	}, housekeeping.Job{
@@ -240,7 +248,7 @@ func serve(ctx context.Context, cfg *config.Config, opts Options, d hubDeps, s *
 		Name: "watch_publish", Every: housekeeping.TickEvery, Run: func(ctx context.Context, _ time.Time) error {
 			return fleet.PublishTick(ctx)
 		},
-	}, housekeeping.Job{
+	}, InsightsRollupJob(roller, d.st), InsightsPruneJob(roller, d.st), housekeeping.Job{
 		Name: "approvals_expiry", Every: approvalsExpiryEvery, Run: func(ctx context.Context, now time.Time) error {
 			expired, err := approvals.ExpirePass(ctx, d.st, now)
 			if err != nil {

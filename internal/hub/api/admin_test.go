@@ -254,9 +254,20 @@ func TestStoreStatusIsServedOnTheAdminSocketWhileTheRestStaysUnimplemented(t *te
 	if len(resp.Msg.GetStatus().GetDatabases()) != 1 {
 		t.Errorf("%d databases, want state.db served over the socket", len(resp.Msg.GetStatus().GetDatabases()))
 	}
-	_, err = c.GetInsights(context.Background(), connect.NewRequest(&hubv1.GetInsightsRequest{}))
-	if code := connect.CodeOf(err); code != connect.CodeUnimplemented {
-		t.Errorf("GetInsights: %v, want unimplemented", code)
+	// GetInsights serves over the admin socket too (READ held by the
+	// kernel-checked local user): an empty fleet reads empty efficiency
+	// with the read time as its computed_time.
+	insights, err := c.GetInsights(context.Background(), connect.NewRequest(&hubv1.GetInsightsRequest{
+		Sections: []hubv1.InsightSection{hubv1.InsightSection_INSIGHT_SECTION_EFFICIENCY},
+	}))
+	if err != nil {
+		t.Fatalf("GetInsights over the socket: %v", err)
+	}
+	if len(insights.Msg.GetEfficiency()) != 0 {
+		t.Errorf("efficiency blocks = %d, want 0 on an empty fleet", len(insights.Msg.GetEfficiency()))
+	}
+	if !insights.Msg.GetComputedTime().IsValid() {
+		t.Error("computed_time unset, want the read time as fallback with no rollup")
 	}
 }
 

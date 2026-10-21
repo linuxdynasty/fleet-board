@@ -233,6 +233,9 @@ func CreateOwnerAccount(ctx context.Context, s *store.Store, in CreateAccount) (
 		if err := auditAccount(jctx, tx, ActionAccountCreate, in.ID, 1, in.ConfigWrite); err != nil {
 			return err
 		}
+		if err := recordAccountReserveTx(jctx, tx, in.ID, in.Spec, in.Now); err != nil {
+			return err
+		}
 		if err := logConfigRequest(jctx, tx, in.ConfigWrite, configKindAccount, in.ID,
 			in.Harness, in.Provider, in.Origin, string(in.Spec), 1, nowMs, nowMs, st.HubSeq, "", false); err != nil {
 			return err
@@ -317,6 +320,9 @@ func UpdateOwnerAccount(ctx context.Context, s *store.Store, in UpdateAccountOp)
 			return fmt.Errorf("statedb: update account: %w", err)
 		}
 		if err := auditAccount(jctx, tx, ActionAccountUpdate, in.ID, got.Version+1, in.ConfigWrite); err != nil {
+			return err
+		}
+		if err := recordAccountReserveTx(jctx, tx, in.ID, merged, in.Now); err != nil {
 			return err
 		}
 		if err := logConfigRequest(jctx, tx, in.ConfigWrite, configKindAccount, in.ID,

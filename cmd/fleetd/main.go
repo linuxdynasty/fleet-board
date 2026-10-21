@@ -82,7 +82,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 			return nil
 		},
 	}, enrollCommand(options, stdout, stderr), backupCommand(options, os.Stdin, stdout, stderr), restoreCommand(options, stdout),
-		setupCommand(options, stdout, stderr))
+		insightsCommand(options, stdout), setupCommand(options, stdout, stderr))
 
 	err := root.ExecuteContext(ctx)
 	if err == nil {
