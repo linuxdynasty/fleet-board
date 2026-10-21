@@ -64,6 +64,9 @@ func (f *Fleet) flushVolatile(ctx context.Context) {
 			f.flushMachine(ctx, held.id, key)
 		case hubv1.WatchTopic_WATCH_TOPIC_GOALS:
 			f.flushGoal(ctx, held.id, key)
+		default:
+			// Unreachable: the sweep above keeps only MACHINES and GOALS holds.
+			delete(f.volatile.held, key)
 		}
 	}
 }

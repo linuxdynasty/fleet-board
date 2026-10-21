@@ -176,6 +176,7 @@ func touchMachine(t *testing.T, e *fleetEnv, id, sets string, args []any, at tim
 			return err
 		}
 		seq = st.HubSeq
+		//nolint:gosec // G202: test-only helper; SET clause is a fixed caller literal, values are bound args
 		_, err = tx.ExecContext(context.Background(), `UPDATE machines SET hub_seq = ?, `+sets+` WHERE machine_id = ?`,
 			append([]any{st.HubSeq}, append(args, id)...)...)
 		return err

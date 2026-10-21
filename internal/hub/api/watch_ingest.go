@@ -382,10 +382,8 @@ func (f *Fleet) PublishPane(ctx context.Context, p PanePublication) {
 		Resource: &hubv1.WatchResponse_PaneSummary{PaneSummary: summary},
 	}
 	key := paneKeyOf(msg)
-	//nolint:gosec // G115: per-pane versions start at 1 and only rise
 	f.paneVersions[key]++
 	summary.Version = f.paneVersions[key]
-	//nolint:gosec // G115: stamps are positive (checked above)
 	f.watch.publishPane(key, watchEntry{at: f.now(), seq: uint64(p.Seq), change: watchChange{
 		topic: hubv1.WatchTopic_WATCH_TOPIC_PANE_SUMMARIES, change: hubv1.ChangeType_CHANGE_TYPE_UPDATED,
 		msg:   msg,

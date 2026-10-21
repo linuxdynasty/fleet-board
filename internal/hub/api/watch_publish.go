@@ -47,7 +47,6 @@ func (f *Fleet) offerWatch(seq int64, change watchChange) {
 	if seq <= 0 {
 		return
 	}
-	//nolint:gosec // G115: stamps are positive (checked above)
 	if u := uint64(seq); u > f.summarySeq {
 		f.summarySeq = u
 	}
